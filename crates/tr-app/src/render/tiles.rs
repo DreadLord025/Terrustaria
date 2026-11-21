@@ -65,6 +65,13 @@ pub(crate) struct DrawScratch {
     /// world range is rebuilt, so it always matches the liquid sprites the
     /// cached range still holds.
     pub(crate) water_rects: Vec<[f32; 4]>,
+    /// S1-G-13 consumers: the vine roots the `tile2` callback's crawl
+    /// collected (`TileDrawing._vineRootsPositions`, `TileDrawing.cs:120`)
+    /// — the `PostDrawTiles(solidLayer: false)` screen-batch `DrawVines`
+    /// (`:429`) consumes them AFTER the tile2 composite, so the split path
+    /// parks them here between the two callbacks. The fused default never
+    /// reads it.
+    pub(crate) vine_roots: Vec<(i32, i32)>,
 }
 
 /// `WallID.EchoWall`. `WallDrawing.DrawWalls` skips it unless
@@ -275,6 +282,20 @@ pub(crate) enum TileFilter {
     /// true)`): the dark-cell merge only, no tile sprites (the wall sprites
     /// ride [`draw_wall_layer`] beside it).
     Wall,
+    /// S1-G-13 consumers: the gated frame path's DIRECT-SCREEN extras —
+    /// the cluster `Main.DoDraw_WallsTilesNPCs` draws between the tile2
+    /// composite (`Main.cs:63367`) and the tile composite (`:63333`):
+    /// `DoDraw_Waterfalls` (`:63306-63320`), the behind-tiles NPCs
+    /// (`DoDraw_DrawNPCsBehindTiles`, `:63293/63298`) and `PostDrawTiles
+    /// (solidLayer: false)`'s foliage/vines (`TileDrawing.cs:414-432`).
+    /// NO tile cells, NO liquids, NO entity tail.
+    ScreenExtras,
+    /// S1-G-13 consumers: the gated frame path's DIRECT-SCREEN entity tail
+    /// — the passes after the tile composite: NPCs over tiles
+    /// (`Main.cs:63301`), the players (`:62256`), the dropped items
+    /// (`:62278`) and the edit cursor. NO tile cells (the tile targets own
+    /// them), NO liquid passes (the water/backWater targets own them).
+    Screen,
 }
 
 /// `TileDrawing.IsTileDrawLayerSolid` (`TileDrawing.cs:4469-4475`): the
@@ -307,8 +328,12 @@ impl TileFilter {
             // `DrawBlack`'s own walk keeps every cell (the wall pass runs
             // before the per-cell filter arm ever asks); never reached.
             Self::Wall => true,
+            // The direct-screen blocks draw no tile cells — the cell loop
+            // skips before ever asking.
+            Self::ScreenExtras | Self::Screen => false,
         }
     }
+}
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -530,9 +555,11 @@ pub(crate) fn draw_tiles(
     }
     // `Main.DrawLiquid(bg: true, ...)`: water is drawn before walls and tiles at
     // `Opacity` (usually 1.0), so the parallax background never shows through it.
-    // S1-G-13 consumers: under a split half the backWaterTarget callback owns
-    // this pass (`Main.RenderBackgroundWater`, `Main.cs:55183-55198` drives
-    // `DrawWaters(isBackground: true)`); the tile halves draw tiles only.
+    // S1-G-13 consumers: only the fused default draws it here — under the
+    // gated path the backWaterTarget callback owns this pass
+    // (`Main.RenderBackgroundWater`, `Main.cs:55183-55198` drives
+    // `DrawWaters(isBackground: true)`), and the direct-screen block draws
+    // no liquids at all (the composites carry them).
     if tile_filter == TileFilter::All && !crate::env::no_liqback() {
         stats.liquids += draw_waters(
             r,
@@ -554,9 +581,13 @@ pub(crate) fn draw_tiles(
     // were walked once per frame in the pre-draw phase (`App::frame`), which also
     // collects their `AddLight` list for the light map — keeping the walk out of
     // the G6-cached path makes the light feed deterministic per frame index.
-    // S1-G-13 consumers: under a split half the falls stay in the scratch for
-    // the frame's direct-screen push (`DoDraw_Waterfalls`, `Main.cs:63306`).
-    if tile_filter == TileFilter::All {
+    // S1-G-13 consumers: under a split tile half the falls stay in the
+    // scratch for the direct-screen extras' `DoDraw_Waterfalls` push
+    // (`Main.cs:63306-63320`, between the tile2 and tile composites); the
+    // fused default AND the extras block emit them here (the fused path's
+    // documented approximation keeps them early; the extras block sits at
+    // the C# site).
+    if matches!(tile_filter, TileFilter::All | TileFilter::ScreenExtras) {
         for d in std::mem::take(&mut scratch.waterfall_quads) {
             let Some(uv) = lookups.waterfall_uv(d.texture as usize, d.source) else {
                 continue;
@@ -584,12 +615,11 @@ pub(crate) fn draw_tiles(
         );
     }
 
-    // Main.cs:22320,56951,63390 — behind-tiles NPCs draw before the tile layer
-    // so they appear inside/behind solid tiles (worms, WoF segments). S1-G-13
-    // consumers: under a split half the entity passes stay in the frame's
-    // direct-screen block (`DoDraw_WallsTilesNPCs`' entity arms draw straight
-    // to the screen between the layer composites, `Main.cs:63265-63305`).
-    if tile_filter == TileFilter::All {
+    // S1-G-13 consumers: the direct-screen extras block (`ScreenExtras`)
+    // owns the behind-tiles NPC pass at its `DoDraw_DrawNPCsBehindTiles`
+    // site (`Main.cs:63293/63298`, between the tile2 and tile composites);
+    // the tile halves never draw entities. The fused default is unchanged.
+    if matches!(tile_filter, TileFilter::All | TileFilter::ScreenExtras) {
         draw_phase("npcs_behind_tiles");
         stats.quads += draw_npcs(
             r,
@@ -1214,19 +1244,27 @@ pub(crate) fn draw_tiles(
         stats.dark_rects += 1;
     }
 
-    // S1-G-13 consumers: under either split half the foliage/vine passes
-    // below stay OUT of the tile targets — `PostDrawTiles(solidLayer: false)`
-    // (`TileDrawing.cs:414-432`) draws them into the SCREEN batch after the
-    // tile2 composite (`Main.cs:63358-63380`); the frame's direct-screen
-    // block re-runs them there. The entity/liquid-front/edit passes are
-    // likewise screen-batch passes between the layer composites.
-    if tile_filter != TileFilter::All {
+    // S1-G-13 consumers: the layer callbacks (solid/nonSolid halves, the
+    // wall blacks) stop here — `PostDrawTiles(solidLayer: false)`
+    // (`TileDrawing.cs:414-432`) draws the foliage/vines into the SCREEN
+    // batch after the tile2 composite (`Main.cs:63358-63380`); the
+    // direct-screen extras block (`TileFilter::ScreenExtras`) re-runs them
+    // there. The tile2 callback's crawl parks its roots for that block
+    // (`_vineRootsPositions` survives the callback, `:120`). The entity
+    // tail (`TileFilter::Screen`) skips the foliage/vines and continues.
+    if matches!(
+        tile_filter,
+        TileFilter::Solid | TileFilter::NonSolid | TileFilter::Wall
+    ) {
+        if tile_filter == TileFilter::NonSolid {
+            scratch.vine_roots = std::mem::take(&mut vine_roots);
+        }
         stats.instances = stats.quads;
         stats.draw_ms = t_total.elapsed().as_secs_f32() * 1000.0;
         return stats;
     }
 
-    if !crate::env::no_foliage() {
+    if tile_filter != TileFilter::Screen && !crate::env::no_foliage() {
         stats.foliage = draw_tree_foliage(
             r,
             world,
@@ -1247,7 +1285,12 @@ pub(crate) fn draw_tiles(
     // `TileDrawing.PostDrawTiles`' `DrawTrees` → `DrawVines` order
     // (`TileDrawing.cs:428-429`): the vine strips draw right after the tree
     // canopies (S1-G-1). `DrawReverseVines` (`:430`) and the multi-tile-vine
-    // pass (`:421`) are separate passes, still unported.
+    // pass (`:421`) are separate passes, still unported. S1-G-13 consumers:
+    // the direct-screen extras block reads the roots the tile2 callback
+    // parked.
+    if tile_filter == TileFilter::ScreenExtras {
+        vine_roots = std::mem::take(&mut scratch.vine_roots);
+    }
     if !vine_roots.is_empty() {
         stats.quads += crate::render::vines::draw_vines(
             r,
@@ -1261,6 +1304,14 @@ pub(crate) fn draw_tiles(
             vine_wind_counter,
             &vine_roots,
         );
+    }
+    // `TileDrawing.PostDrawTiles` closes before the entity tail — the
+    // direct-screen extras block stops here; the entity tail rides its own
+    // `TileFilter::Screen` pass after the tile composite.
+    if tile_filter == TileFilter::ScreenExtras {
+        stats.instances = stats.quads;
+        stats.draw_ms = t_total.elapsed().as_secs_f32() * 1000.0;
+        return stats;
     }
     // Main.cs:22320,63305 — normal NPC pass (non-behind-tiles).
     draw_phase("npcs");
@@ -1356,8 +1407,11 @@ pub(crate) fn draw_tiles(
         stats.items += it.draw(r, lookups, light, style, anim_time);
     }
     // `Main.DrawLiquid(bg: false, ...)` runs after entities: the foreground water
-    // layer tints everything that stands in it.
-    if !crate::env::no_liqfront() {
+    // layer tints everything that stands in it. S1-G-13 consumers: the
+    // waterTarget callback owns this pass under the gated path
+    // (`Main.RenderWater` → `DrawWaters()`, `Main.cs:57371-57386`, composited
+    // at `:62308`); the direct-screen block skips it.
+    if tile_filter == TileFilter::All && !crate::env::no_liqfront() {
         stats.liquids += draw_waters(
             r,
             lookups,

@@ -1211,6 +1211,56 @@ impl SpriteRenderer {
         self.clip.clear();
     }
 
+    /// S1-G-13 consumers: clear ONLY the world range — one per-layer render
+    /// callback's batch (`Main.spriteBatch.Begin/End` around each
+    /// `RenderX`, `Main.cs:57371-57386` etc.). The layer executor renders
+    /// the back/fx ranges (if any) around it; the frozen frame path never
+    /// calls this.
+    pub fn begin_world_batch(&mut self) {
+        self.world.clear();
+    }
+
+    /// S1-G-13 consumers: clear ONLY the background range — the
+    /// `RenderBackground` callback's batch (`Main.cs:55200-55218` pushes
+    /// the cave backdrop into the back range via `push_back_sprite`).
+    pub fn begin_back_batch(&mut self) {
+        self.back.clear();
+    }
+
+    /// S1-G-13 consumers: park the frame's world range (the direct-screen
+    /// entity passes) while the layer executor renders its own per-layer
+    /// batches into the same range slot; [`Self::restore_world`] puts it
+    /// back. The C# equivalent is the separate `spriteBatch` per callback
+    /// (`Main.cs:57374-57384`) — the port multiplexes one range.
+    pub fn take_world(&mut self) -> Vec<SpriteInstance> {
+        std::mem::take(&mut self.world)
+    }
+
+    /// [`Self::take_world`]'s restore half.
+    pub fn restore_world(&mut self, world: Vec<SpriteInstance>) {
+        self.world = world;
+    }
+
+    /// S1-G-13 consumers: park the frame's background range (the sky quads)
+    /// while the `RenderBackground` callback renders the cave backdrop into
+    /// the same range slot (`draw_background` pushes via `push_back_sprite`).
+    pub fn take_back(&mut self) -> Vec<SpriteInstance> {
+        std::mem::take(&mut self.back)
+    }
+
+    /// [`Self::take_back`]'s restore half.
+    pub fn restore_back(&mut self, back: Vec<SpriteInstance>) {
+        self.back = back;
+    }
+
+    /// S1-G-13 consumers: set/clear the layer framebuffer size override
+    /// (`WorldSceneLayerTarget.UpdateContent`'s `Main.screenWidth/Height`,
+    /// `WorldSceneLayerTarget.cs:49-50`). `None` restores the surface size
+    /// (the C#'s `:61-62` restore).
+    pub fn set_screen_override(&mut self, size: Option<[f32; 2]>) {
+        self.screen_override = size;
+    }
+
     /// G6: clear only the UI range and keep the previous frame's world instances. The
     /// caller must have proven that camera, zoom, screen size, sky tint and world
     /// contents are unchanged (see `WorldFrameKey` in the app), otherwise the kept
@@ -1291,6 +1341,30 @@ impl SpriteRenderer {
         self.draw_ranges(gpu, view, camera, zoom, time, None, false, true)
     }
 
+    /// S1-G-13 consumers: the world range ALONE — one layer callback's
+    /// batch drawn into the layer view (`RenderTiles`/`RenderWater`/etc.
+    /// push into the world range, then this renders it; `Main.cs:57329-
+    /// 57386`). Same mechanism as [`Self::render_back`]: back/fx are
+    /// temporarily emptied so `draw_ranges` neither uploads nor draws them.
+    /// `clear: None` keeps the transparent content `UpdateContent` cleared
+    /// (`WorldSceneLayerTarget.cs:56`).
+    pub fn render_world_only(
+        &mut self,
+        gpu: &Gpu,
+        view: &wgpu::TextureView,
+        camera: [f32; 2],
+        zoom: f32,
+        time: f32,
+        clear: Option<wgpu::Color>,
+    ) -> RenderStats {
+        let back = std::mem::take(&mut self.back);
+        let fx = std::mem::take(&mut self.fx);
+        let stats = self.draw_ranges(gpu, view, camera, zoom, time, clear, true, false);
+        self.back = back;
+        self.fx = fx;
+        stats
+    }
+
     /// S1-G-13 consumers: the background range alone (the sky half of the
     /// gated layer path — the skyTarget bind renders the sky quads into the
     /// sky target while the world/fx ranges stay parked for the screenTarget
@@ -1326,9 +1400,10 @@ impl SpriteRenderer {
         camera: [f32; 2],
         zoom: f32,
         time: f32,
+        clear: Option<wgpu::Color>,
     ) -> RenderStats {
         let back = std::mem::take(&mut self.back);
-        let stats = self.draw_ranges(gpu, view, camera, zoom, time, None, true, false);
+        let stats = self.draw_ranges(gpu, view, camera, zoom, time, clear, true, false);
         self.back = back;
         stats
     }
