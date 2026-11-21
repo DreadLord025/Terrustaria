@@ -404,18 +404,98 @@ the menu ladder still wins) + the closeout's full-ladder sweep (§5).
   ByProjectile source through the same lane (`hurt_inner`'s dodge block,
   `player.rs:4356-4374`).
 
-## 6. Cross-refs
+## 6. Cross-refs (updated at the retire pass)
 
 - research/93 (`93-torch-god-949-keep-one.md`) — the arm-by-arm verdict
   this addendum's §2 executes; its `a4185f89` line numbers are
-  superseded by §2's `1054c396` hunks.
-- research/103 (g88 tip `c8985b53`) — THE merger contract; §1a's v11
-  torch-pair line is this branch's fold-input to its §6 rule 5.
+  superseded by §2's `1054c396` hunks. Its §3 keep-one table is
+  re-adjudicated by §3b above (a6b row-targeted now; the f33 full body
+  still wins on the rest of the C# body).
+- research/103 (g88 tip ~~`c8985b53`~~ → **`a9f1c29d`, v11 FINAL**) —
+  THE merger contract; §1a's v11 torch-pair line LANDED (§1-receipt);
+  §9 is its FULL merger persist-checklist.
 - research/122 (g89d, carried on g88) — the v9/v10 unlock-line
   contract; the torch pair is OUTSIDE its token map (§1a).
 - research/135 (g90 tip `b3b82d07`) — the g90 fold-input; its §2
-  recognition rule does not cover f33's 2-token v7 line (§1's
-  collision note).
-- research/138 (a6b) — NOT pushed at closeout; when it lands, its
-  use-arm keep-one adjudication should agree with §3's table (f33's
-  5043 arm is the named-dispatcher + permanence carrier).
+  six-line rule LANDED in the g88 v11 reader (`g90bs_six_line_v7_loads_positionally`,
+  the bounded-misread witness retired per `a9f1c29d`).
+- research/138 (a6b `d7de8bd5`) — PUSHED + read; its 5043 keep-one is
+  re-adjudicated by §3b (its f33 probe `333479e0` predates the use arm);
+  its four OTHER fidelity fixes + the persist-layer split + the v18
+  65-byte union stand endorsed.
+
+---
+
+## 7. The torch-god EVENT final-verify (retire pass — the whole window re-read)
+
+`Player.cs:17813-17910` (`TorchAttack`) re-read WHOLE against
+`crates/tr-app/src/torch_god.rs` (tip), plus the surrounding arms
+`:17718-17811` / `:18060-18088`. **Verdict: NO C# arm missed — every leg
+of the window is ported; the base stands.** Line-by-line:
+
+| C# leg | Lines | Port site | Status |
+| --- | --- | --- | --- |
+| `whoAmI != Main.myPlayer` head | `:17815-17818` | folded (single local player — the `local_owner` gate rides the 949 AI instead) | documented fold |
+| Surface abort → `EndOngoingTorchGodEvent` | `:17819-17823` | `torch_attack_step`'s head (`torch_god.rs:225-228`) — feet-Y `(pos_y as f64) < world_surface * 16.0`, BEFORE the buff/cadence | faithful |
+| `AddBuff(80, 2)` Blackout every event tick | `:17824` | `buffs.add_buff(80, 2)` after the abort gate | faithful |
+| 21-tick volley cadence (`++` then `<= 20` return, reset 0) | `:17825-17830` | `torch_god.rs:234-238`; witness `…volley_cadence_is_21_ticks` | faithful |
+| ±100-tile box, `Utils.Clamp(…, 10, max−10)` ×4 | `:17833-17840` | `utils_clamp` (max-test-FIRST fold) + the four bounds | faithful |
+| Candidate scan x-OUTER/y-inner, `active & type==4 & frameX<66`, 400-cap with BOTH breaks | `:17841-17861` | `'outer:` loop + `TORCH_ATTACK_CANDIDATES = 400` (`:57129` `new int[400]` re-verified); witness `…caps_at_400_and_orders_x_outer` | faithful |
+| End arm: `num == 0 \|\| attacks >= maxTorchAttacks(200)` → Relight + flag clear | `:17862-17865` | `torch_god.rs:267-270` (`MAX_TORCH_ATTACKS = 200`, `:57128` re-verified) | faithful |
+| `netMode == 1` SendData(4) on the end arm | `:17866-17869` | net-only fold; the flag itself rides `4 PlayerInfo` bitsByte16 bit 1 (`NetMessage.cs:183` — netglue `:1132`/`:1145`/`:1917` send, `:1376` receive) | covered by the identity sync |
+| Survival `>= 95` → `RequestNewItem(5043, ReserveForLocalPlayer)` | `:17870-17873` | `favor_drop` + `push_favor_drop` — the NewItem velocity pair `Next(-30,31)*0.1` / `Next(-40,-15)*0.1` drawn IN-TICK (`Item.cs:49749-49750` re-read whole `:49726-49751`: `Prefix(0)` no draw, 5043 not ItemNoGravity → the else pair), the 18×18 box (`Item.cs:40440-40441` re-verified), SP reserve no-op | faithful |
+| ONE `Main.rand.Next(num)` pick | `:17881` | `rng.next_range(0, num)` — byte-equal stream witness | faithful |
+| Re-validate picked cell | `:17884` | `torch_god.rs:295-300` | faithful |
+| Damage `(int)(40f * HostileProjectileDamageMultiplier.Sample)` | `:17887` | `torch_attack_damage` — the identity-line curve, four difficulties witnessed | faithful |
+| `clamp(frameY/22, 0, Count−1)` → `TorchID.Dust[…]` | `:17888-17889` | `TORCH_ID_COUNT = 24` + the verbatim `TORCH_DUST` table | faithful |
+| Snuff `frameX += 66` + the unlit-list record + counter++ | `:17890-17893` | in-tick list/counter writes, the tile snuff defers via `pending.snuff` (drain applies `+= 66` with the same lit-torch gate) | faithful (the pending convention) |
+| `SendTileSquare` | `:17894` | net-only fold (the port's tile-sync lane owns squares) | documented fold |
+| Spawn `(x*16+8, y*16)`, aim = Length→Normalize→×8 | `:17895-17899` | `launch_aim` — XNA f32-sum/f64-sqrt Length + the reciprocal-multiply Normalize (zero-vector NaN kept, no guard — C# has none) | faithful |
+| `NewProjectile(Misc(10), …, 949, dmg, 1f, owner, dust, dist)` + `ai[0]/ai[1]` re-writes + `netUpdate = true` | `:17900-17903` | `spawn_with_data_ai_owned` + `friendly = false` (the stock `Projectile.cs:788` the pool default overrode) + `net_update = true` | faithful |
+| Finale `(num == 1 && attacks >= 95) \|\| attacks >= 200` → `torchFunTimer = −180` | `:17904-17907` | `torch_god.rs:331-335`; the 201-tick-gap witness | faithful |
+| Surrounding: `EndOngoingTorchGodEvent` (`:17718-17729`), the event head + cooldown decrement (`:17733-17742`), `RelightTorches` (`:17797-17810`, cooldown FIRST then the `frameX >= 66` −66 loop), `KillMe`'s abort (`:38855-38858` → `player.rs:3709`), the trigger tail (`:18066-18087`: the six gates + the 59-slot 5043 inventory scan + `nearbyTorches = 0` AFTER) | — | `end_ongoing_torch_god_event` / `try_recalculating_torch_luck_head` / `apply_relight` / `start_death` / `torch_god_trigger_check` + `world_sim/player.rs:602`'s scan (the mouse-item join is the recorded drop convention) | faithful |
+
+The volley's only RNG is the one `Next(num)` + the grant's velocity pair
+— both witnessed byte-equal; the dust censuses ride the 949 AI module
+(the `UpdateProjectiles` stream, §2/research/93). **Nothing to add,
+nothing to fix.** (Witnesses WRITTEN NOT RUN — code-only lane.)
+
+---
+
+## 8. FINAL merger instruction (research/93 + 93a — the retire closeout)
+
+The keeper executes, in order:
+
+1. **949 projectile (research/93 + §2):** KEEP f33's
+   `projectile_ai_torch_god.rs` + dispatch arm + Kill-census hook + lane
+   exclusions. DROP d19b's hunks A/B/C/I/K/L exactly as §2 pins
+   (`1054c396`); repoint D/E/F/G/H + the anchors/ANALYSIS/PORT_MAP stale
+   clauses (§2d). Merge both comment halves onto the surviving row.
+2. **Event machine (§7):** f33's `torch_god.rs` + the `luck.rs` seam +
+   the `world_sim` drain land AS-IS — final-verified whole-window, no
+   other lane ports any leg (138 §8 rule 5 agrees: "Keep f33's Torch God
+   event machine + flag reads").
+3. **5043 use arm (§3/§3b):** KEEP f33's full-body
+   `torch_god_favor_use.rs` + the `editing.rs:2007` seam + the
+   `handle_special_event` dispatcher. DROP a6b's `powerups.rs:347-366`
+   + its `5043` dispatch/`is_powerup` legs + its two torch witnesses
+   (re-pin onto f33's six); DROP c36's reduced arm + its `is_summon`
+   5043 entry/call block (§3's table); KEEP c36's enter-world re-check
+   (`achievement_hooks.rs:173-176`) and the GAIN_TORCH_GODS_FAVOR row
+   (blob-identical). Dedup `complete_condition` (a6b == c36 == f33 —
+   ONE helper; a6b's clears `frac`, keep that line on the survivor if
+   the shared `Condition` carries `frac`).
+4. **Persist (§1/§1-receipt):** the g88 **v11** superset
+   (`a9f1c29d`) is THE `.trplayer` writer/reader — f33's v7 sites are
+   marked DEPRECATED-BY-SUPERSET (`46ceb43d`, comments-only). Follow
+   103 §9's full checklist (L1 f44c base + named-bool dedups / L2 the
+   v11 superset / L3 the v18 65-byte union per 138 §5). The sidecar
+   torch line drops ONLY when 103 §2b rule 3's two seams land (132 §2c);
+   until then it stays the dual-carrier. f33's `.plr` halves dedup onto
+   f44c's identical named fields; the four f33 witnesses re-pin per
+   §1-receipt.
+5. **Music (§4):** the 101 ladder arm + the box override stand verified
+   — no merger action.
+
+**Everything on this branch is either the keeper or the fold-input;
+nothing here needs a follow-up pass. The branch retires at this commit.**

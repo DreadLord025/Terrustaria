@@ -39584,3 +39584,37 @@ The full closeout record is `docs/research/93-torch-god-fold-input-addendum.md`
 Closeout witnesses: 2 WRITTEN NOT RUN (`projectile_ai_torch_god.rs` the
 dodge contract; `audio.rs` the full-ladder sweep). No cargo/rustc/tests/
 graphify invoked.
+
+### RETIRE pass (W4-f33, 2026-11-21, code-only) — the branch final state
+
+The retire record is research/93a's updated §§1-receipt/3b/7/8 (FINAL):
+
+- **The g88 v11 fold LANDED** (`a9f1c29d`, research/103 §2b): f33's pair
+  is the superset's line 16; the v7 reader's lone-all-0/1-pair rule reads
+  f33's torch-only files LOSSLESSLY (the closeout's life-pair-first
+  bounded-loss recommendation is superseded). f33's `persist.rs`
+  writer/reader sites carry DEPRECATED-BY-SUPERSET banner comments
+  (`46ceb43d`, comments-only, still compiling); the conditional line-drop
+  stays gated on 132 §2c's two seams (character-load hydration + the
+  exit `.plr` re-save).
+- **The a6b 5043 re-compare** (138 pushed at `d7de8bd5`, read): a6's
+  achievement credit is row-targeted now — the broadcast objection is
+  RETIRED — but the f33 full-body arm stays the keeper (ApplyItemTime
+  before the grant, the `UsingBiomeTorches` property accessor the v11
+  writer reads, the host/client bestiary split + the msg-51 request, the
+  `:43323` 0-stack re-arm). Both dispatchers are faithful → keep ONE,
+  the f33 full body; the `complete_condition` helper dedups a6b == c36
+  == f33 (93a §3b). 138's stale "f33 completes NO achievement" probe
+  (`333479e0`, pre-use-arm) is corrected there; its four other fidelity
+  fixes + the persist-layer split + the v18 65-byte union stand endorsed.
+- **The EVENT final-verify**: `Player.cs:17813-17910` re-read WHOLE vs
+  `torch_god.rs` — every leg ported (the 21-tick cadence, the ±100 box +
+  `Utils.Clamp` fold, the 400-cap x-outer scan, the one-`Next(num)`
+  volley draw, the snuff/unlit-list/counter order, the XNA
+  Length/Normalize aim, the `friendly = false` + `netUpdate` spawn tail,
+  the −180 finale, the 95-survival NewItem velocity pair, the 200-cap);
+  the surrounding arms (`:17718-17811`/`:18060-18088`/`KillMe:38855`)
+  re-verified. **No C# arm missed; nothing to fix** (93a §7).
+- **The FINAL merger instruction** is 93a §8 (the 949 dedupe → the event
+  as-is → the 5043 keep-f33 → the v11 persist per 103 §9 → music stands).
+  The branch retires; no follow-up pass needed.

@@ -76,7 +76,7 @@ per `docs/superpowers` agreements).
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base - no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 93 | The 949 Torch God keep-one (W4-f33 vs W4-d19): the arm-by-arm verdict — KEEP f33's `projectile_ai_torch_god.rs` (the 32-draw census, the Kill arm, the live hitbox, the XNA float forms) | `93-torch-god-949-keep-one.md` | ✅ recommendation |
-| 93a | The f33 closeout fold-input (the v7 biome-torch pair's exact shape/position for the g88 v10 superset + the v11 torch-line recommendation, the d19b-tip exact 949 drop-hunks, the c36 GAIN_TORCH_GODS_FAVOR row-chain verification, the music-101 priority census) | `93-torch-god-fold-input-addendum.md` | ✅ fold-input |
+| 93a | The f33 closeout fold-input + RETIRE FINAL (the v7 pair's fold-input CONSUMED by g88 v11 `a9f1c29d` — §1-receipt ↔ 103 §2b; the d19b-tip exact 949 drop-hunks; the c36 row-chain verification; the music-101 census; §3b the a6b `d7de8bd5` 5043 re-compare — KEEP the f33 full body; §7 the whole-window event final-verify — no arm missed; §8 the FINAL merger instruction) | `93-torch-god-fold-input-addendum.md` | ✅ FINAL (retire) |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
