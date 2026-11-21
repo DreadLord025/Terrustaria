@@ -23156,8 +23156,10 @@ feed is pure, so its placement cannot move any stream.
   (`:40896`), 1020 drone (`:41031`), 973/972/984 sword beams (`:41775`/`:42181`/
   `:42206`), 933/1100 fractals (`:43172`/`:43173`), 535 medusa head (`:44612`),
   855 release lantern (`:47569`), 1127 saber stab (`:47649`), 756 sharp tears
-  (`:51492`); the mount light (`:17343`, the Chillet mounts 62-65 have no
-  `mount.rs` row); and the rand-gated 409 Typhoon (`:30378`, inside `Next(3)==0`),
+  (`:51492`); the mount light (`:17343` — the Chillet `MountData` rows 62-65 DO
+  exist in `mount.rs`, but the arm's `!hostile && !noEnchantments` gate reads two
+  slot fields the port does not carry, so it lands with the enchantment-visuals
+  fields); and the rand-gated 409 Typhoon (`:30378`, inside `Next(3)==0`),
   849 ScytheWhip (`:47846`) and 912 CoolWhip (`:48011`).
 
 **The two state-driven deviations (recorded).** The Storm Tigers 833-835 and the
