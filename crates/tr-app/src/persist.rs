@@ -4,23 +4,28 @@
 //! small versioned text file. Loading validates that the saved position is not inside a
 //! solid tile.
 //!
-//! ## The v7 line contract (W4-g88 ⨉ W4-g89 reconciliation)
+//! ## The FINAL v7 line contract (W4-g88 superset fold — g89/g90)
 //!
-//! Both the aegis lane (g89, `920014cb`) and the life-fruit lane (g88,
-//! `f1eb9b60`) independently bumped the sidecar to version 7, each
-//! appending ONE line after the dye line. The reconciled SUPERSET v7
+//! Three lanes independently bumped the sidecar to version 7, each
+//! appending ONE line after the dye line: g89 (`920014cb`) the
+//! `usedAegisFruit` flag, g88 (`f1eb9b60`) the life-maxima pair, g90
+//! (`1f1b88f0`) the `ateArtisanBread` flag. The reconciled SUPERSET v7
 //! order (this branch's writer) is:
 //!
 //! 1. the aegis flag line — `usedAegisFruit` 0/1 (g89's position, ONE token),
 //! 2. the life-maxima pair — `statLifeMax statLifeMax2` (TWO tokens),
-//! 3. the mana-maxima pair — `statManaMax statManaMax2` (TWO tokens).
+//! 3. the mana-maxima pair — `statManaMax statManaMax2` (TWO tokens),
+//! 4. the artisan-bread flag line — `ateArtisanBread` 0/1 (ONE token,
+//!    after the mana pair per the fold contract).
 //!
-//! The reader tolerates both single-lane predecessors: it walks the
-//! post-dye lines and dispatches on TOKEN COUNT — a one-token line is
-//! the aegis flag, the first two-token line is the life pair, the second
-//! is the mana pair. So g89's flag-only v7, g88's life-only v7 and this
-//! superset all load; missing pieces keep their fresh defaults. Any
-//! merge of the two lanes keeps this reader (the superset).
+//! The reader tolerates every predecessor: it walks the post-dye lines
+//! and dispatches on TOKEN COUNT — the FIRST one-token line is the aegis
+//! flag, the SECOND is the bread flag; the first two-token line is the
+//! life pair, the second is the mana pair. So g89's flag-only v7, g88's
+//! life-only v7, g90's bread-only v7, the three-line g88⨉g89 superset and
+//! this four-line superset all load; missing pieces keep their fresh
+//! defaults. Any merge of the lanes keeps this reader (the superset).
+//! The full layout + back-compat matrix: `docs/research/103-persist-v7-layout.md`.
 
 use std::path::{Path, PathBuf};
 
@@ -46,6 +51,13 @@ pub struct SavedPlayer {
     /// superset carries it at the SAME post-dye position); older files
     /// load with the unlock absent.
     pub used_aegis_fruit: bool,
+    /// `Player.ateArtisanBread` (`Player.cs:2048`) — version 7 (W4-g90,
+    /// folded into the superset as the FOURTH post-dye line); older files
+    /// load false (the ctor default, `Player.cs:56077`). The vanilla
+    /// persists it in the `.plr` (`Serialize:54779`, `Deserialize:55245`,
+    /// gate 256); the port's live-session sidecar carries it so the
+    /// permanent +4 crafting reach survives a `.trwld` reload.
+    pub ate_artisan_bread: bool,
     pub inventory: [(u16, u32); 50],
     pub coins: u64,
     /// `Player.armor[0..3]` item ids — head, body, legs (0 = empty). Version 4
@@ -103,15 +115,17 @@ pub fn save(
         s.push_str(&format!("{kind} "));
     }
     s.push_str("\n");
-    // Version 7 SUPERSET (the W4-g88 ⨉ W4-g89 reconciliation, the module
-    // header's contract): the aegis flag FIRST (g89's post-dye position,
+    // Version 7 SUPERSET (the module header's contract, the g88⨉g89⨉g90
+    // fold): the aegis flag FIRST (g89's post-dye position,
     // `Player.usedAegisFruit` save `Player.cs:54782`), then the life pair
     // (`statLifeMax statLifeMax2`, `:54773`), then the mana pair
-    // (`statManaMax statManaMax2`, `:54775`). Vanilla rides all three in
-    // the .plr; the port's live-session sidecar appends them after dye.
+    // (`statManaMax statManaMax2`, `:54775`), then the artisan-bread flag
+    // (`Player.ateArtisanBread`, `:54779`, W4-g90). Vanilla rides all four
+    // in the .plr; the port's live-session sidecar appends them after dye.
     s.push_str(&format!("{}\n", u8::from(player.used_aegis_fruit)));
     s.push_str(&format!("{} {}\n", player.life_max_base, player.max_hp));
     s.push_str(&format!("{} {}\n", player.mana_max_base, player.mana_max));
+    s.push_str(&format!("{}\n", u8::from(player.ate_artisan_bread)));
     std::fs::write(player_path(world), s)
 }
 
@@ -182,22 +196,33 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         }
     }
     // Version 7 SUPERSET (the module header's contract): walk the
-    // post-dye lines and dispatch on TOKEN COUNT — ONE token is the
-    // aegis flag (g89's line, `Player.cs:55256`'s read), the FIRST
+    // post-dye lines and dispatch on TOKEN COUNT — the FIRST one-token
+    // line is the aegis flag (g89's line, `Player.cs:55256`'s read), the
+    // SECOND is the artisan-bread flag (g90's line, `:55245`); the FIRST
     // two-token line is the life pair (`:55220-55224`, permanent half
     // clamps to 500), the SECOND is the mana pair (`:55226-55229`,
     // permanent half clamps to 200). This reads g89's flag-only v7, the
-    // pre-reconciliation life-only v7 AND the full superset; missing
-    // pieces keep None/false and the loader keeps the fresh defaults.
+    // pre-reconciliation life-only v7, g90's bread-only v7, the three-line
+    // g88⨉g89 superset AND the full four-line superset; missing pieces
+    // keep None/false and the loader keeps the fresh defaults.
     let mut life_max = None;
     let mut mana_max = None;
     let mut used_aegis_fruit = false;
+    let mut ate_artisan_bread = false;
+    let mut flag_seen = false;
     if version == "7" {
         while let Some(line) = lines.next() {
             let mut toks = line.split_whitespace();
             let Some(first) = toks.next() else { continue };
             match toks.next() {
-                None => used_aegis_fruit = first == "1",
+                None => {
+                    if flag_seen {
+                        ate_artisan_bread = first == "1";
+                    } else {
+                        used_aegis_fruit = first == "1";
+                        flag_seen = true;
+                    }
+                }
                 Some(second) => {
                     let base: i32 = first.parse().ok()?;
                     let effective: i32 = second.parse().ok()?;
@@ -217,6 +242,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         life_max,
         mana_max,
         used_aegis_fruit,
+        ate_artisan_bread,
         inventory,
         coins,
         armor,
@@ -244,6 +270,7 @@ mod tests {
         p.mana_max_base = 40;
         p.mana_max = 40;
         p.used_aegis_fruit = true;
+        p.ate_artisan_bread = true;
         let dir = crate::test_world_helpers::test_scratch("persist-player-state");
         let path = dir.join("tr-persist-test.trwld");
         let mut inv = [(0u16, 0u32); 50];
@@ -270,6 +297,7 @@ mod tests {
         assert_eq!(s.life_max, Some((405, 405)), "the v7 life-maxima pair");
         assert_eq!(s.mana_max, Some((40, 40)), "the v7 mana-maxima pair");
         assert!(s.used_aegis_fruit, "the g89 flag at its post-dye position");
+        assert!(s.ate_artisan_bread, "the g90 flag after the mana pair");
         assert_eq!(s.inventory[0], (2, 12));
         assert_eq!(s.inventory[3], (12, 1));
         assert_eq!(s.inventory[49], (0, 0));
@@ -311,6 +339,7 @@ mod tests {
         assert_eq!(s.life_max, None, "pre-v7 files carry no life maxima");
         assert_eq!(s.mana_max, None, "pre-v7 files carry no mana maxima");
         assert!(!s.used_aegis_fruit, "pre-v7 files carry no unlock");
+        assert!(!s.ate_artisan_bread, "pre-v7 files carry no loaf unlock");
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
@@ -336,6 +365,7 @@ mod tests {
         assert_eq!(s.life_max, None);
         assert_eq!(s.mana_max, None);
         assert!(!s.used_aegis_fruit);
+        assert!(!s.ate_artisan_bread, "v6 loads false — the ctor default");
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
@@ -383,6 +413,7 @@ mod tests {
         assert!(s.used_aegis_fruit, "the flag rides its own position");
         assert_eq!(s.life_max, None, "no life pair in g89's writer");
         assert_eq!(s.mana_max, None, "no mana pair in g89's writer");
+        assert!(!s.ate_artisan_bread, "no bread line in g89's writer");
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
@@ -408,13 +439,68 @@ mod tests {
         assert_eq!(s.life_max, Some((405, 405)));
         assert_eq!(s.mana_max, None);
         assert!(!s.used_aegis_fruit);
+        assert!(!s.ate_artisan_bread);
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
-    /// The superset round-trip: all three post-dye lines survive a
-    /// save/load, in the contract order (flag, life pair, mana pair).
+    /// The fold witness: g90's BREAD-ONLY v7 (`1f1b88f0`'s writer — one
+    /// post-dye flag line) loads into the FIRST flag slot (aegis), because
+    /// a single flag line cannot self-identify; the bread half keeps false.
+    /// The g90 lane's own reader maps that line to bread — after the merge
+    /// the superset writer emits both flags, so the ambiguity only affects
+    /// pre-fold single-flag files (documented in 103-persist-v7-layout.md).
     #[test]
-    fn the_v7_superset_round_trips_all_three_lines() {
+    fn g90s_bread_only_v7_loads_into_the_first_flag_slot() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v7-g90");
+        let path = dir.join("tr-persist-v7-g90.trwld");
+        let mut line = String::from("7\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n0 0 0\n0 \n");
+        for _ in 0..10 {
+            line.push_str("0 ");
+        }
+        line.push_str("\n1\n"); // g90's single flag line
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("g90's v7 sidecar");
+        assert!(s.used_aegis_fruit, "the lone flag rides slot 1 (g89's)");
+        assert!(!s.ate_artisan_bread, "no second flag line to read");
+        assert_eq!(s.life_max, None);
+        assert_eq!(s.mana_max, None);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// The fold witness: the three-line g88⨉g89 superset (`717e0640`'s
+    /// writer — flag, life pair, mana pair, NO bread line) still loads;
+    /// the bread half keeps its ctor default.
+    #[test]
+    fn the_three_line_superset_still_loads_without_bread() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v7-3line");
+        let path = dir.join("tr-persist-v7-3line.trwld");
+        let mut line = String::from("7\n1.0 2.0 420\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n0 0 0\n0 \n");
+        for _ in 0..10 {
+            line.push_str("0 ");
+        }
+        line.push_str("\n1\n420 420\n60 80\n");
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("the three-line superset sidecar");
+        assert!(s.used_aegis_fruit);
+        assert_eq!(s.life_max, Some((420, 420)));
+        assert_eq!(s.mana_max, Some((60, 80)));
+        assert!(!s.ate_artisan_bread, "the pre-fold writer had no bread line");
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// The superset round-trip: all four post-dye lines survive a
+    /// save/load, in the contract order (aegis flag, life pair, mana pair,
+    /// bread flag).
+    #[test]
+    fn the_v7_superset_round_trips_all_four_lines() {
         let world = World::new("t".into(), 32, 32);
         let mut p = Player::spawn(&world);
         p.used_aegis_fruit = true;
@@ -422,16 +508,37 @@ mod tests {
         p.max_hp = 420;
         p.mana_max_base = 60;
         p.mana_max = 80; // an Arcane-inflated effective half rides verbatim
+        p.ate_artisan_bread = true;
         let dir = crate::test_world_helpers::test_scratch("persist-v7-superset");
         let path = dir.join("tr-persist-v7-superset.trwld");
         save(&path, &p, [(0, 0); 50], 0, [0; 3], &[0; 10], &[]).unwrap();
         let text = std::fs::read_to_string(player_path(&path)).unwrap();
         let post_dye: Vec<&str> = text.lines().skip(7).collect();
-        assert_eq!(post_dye, ["1", "420 420", "60 80"], "the contract order");
+        assert_eq!(post_dye, ["1", "420 420", "60 80", "1"], "the contract order");
         let s = load(&path).expect("the superset v7 sidecar");
         assert!(s.used_aegis_fruit);
         assert_eq!(s.life_max, Some((420, 420)));
         assert_eq!(s.mana_max, Some((60, 80)));
+        assert!(s.ate_artisan_bread);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-g90 fold: the artisan-bread flag round-trips alone (the fresh
+    /// player never ate one; the flag survives, everything else defaults).
+    #[test]
+    fn the_artisan_bread_flag_round_trips() {
+        let world = World::new("t".into(), 32, 32);
+        let mut p = Player::spawn(&world);
+        p.ate_artisan_bread = true;
+        let dir = crate::test_world_helpers::test_scratch("persist-bread");
+        let path = dir.join("tr-persist-bread.trwld");
+        save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[]).unwrap();
+        let s = load(&path).expect("v7 sidecar");
+        assert!(s.ate_artisan_bread, "the flag survives the round trip");
+        assert!(!s.used_aegis_fruit, "the aegis slot stays clear");
+        let fresh = Player::spawn(&world);
+        save(&path, &fresh, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[]).unwrap();
+        assert!(!load(&path).expect("v7 sidecar").ate_artisan_bread);
         crate::test_world_helpers::remove_scratch(&dir);
     }
 

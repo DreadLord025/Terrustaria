@@ -39352,27 +39352,35 @@ click buffers; the player tick applies).
   ManaEffect queue, STAR_POWER + TOPPED_OFF timing + the GET_A_LIFE
   sparing, the CCed refusal) — WRITTEN, NOT RUN.
 
-## The v7 sidecar superset (W4-g88 ⨉ W4-g89 reconciliation)
+## The v7 sidecar superset (W4-g88 ⨉ W4-g89 ⨉ W4-g90 reconciliation)
 
-- **The collision.** Both lanes independently bumped the `.trplayer`
+- **The collision.** Three lanes independently bumped the `.trplayer`
   sidecar to version 7, each appending ONE line after the dye line:
   g89 (`920014cb`, `origin/task/W4-g89-aegis-fruit-use`) wrote the
   `usedAegisFruit` 0/1 flag; g88 (`f1eb9b60`) wrote the
-  `statLifeMax statLifeMax2` pair. A naive merge would misparse one
-  lane's file as the other's.
+  `statLifeMax statLifeMax2` pair; g90 (`1f1b88f0`,
+  `origin/task/W4-g90-artisan-bread-use`) wrote the `ateArtisanBread`
+  0/1 flag. A naive merge would misparse one lane's file as another's.
 - **The ONE v7 contract (this branch's writer).** After the dye line:
   **(1)** the aegis flag line (ONE token — g89's position kept), **(2)**
   the life pair `statLifeMax statLifeMax2` (TWO tokens), **(3)** the mana
-  pair `statManaMax statManaMax2` (TWO tokens). Vanilla rides all three
-  in the .plr (`Player.cs:54773`/`:54775`/`:54782` writes;
-  `:55220-55229`/`:55256` reads).
+  pair `statManaMax statManaMax2` (TWO tokens), **(4)** the artisan-bread
+  flag line (ONE token — g90's flag, after the mana pair per the fold
+  contract). Vanilla rides all four in the .plr
+  (`Player.cs:54773`/`:54775`/`:54779`/`:54782` writes;
+  `:55220-55229`/`:55245`/`:55256` reads).
 - **The tolerant reader.** The v7 load walks the post-dye lines and
-  dispatches on TOKEN COUNT: one token → the flag; the first two-token
-  line → the life pair (permanent half clamps 500, `:55221-55224`); the
-  second → the mana pair (permanent half clamps 200, `:55227-55229`).
-  So g89's flag-only v7, g88's pre-reconciliation life-only v7 and the
-  full superset all load; missing pieces keep None/false and the fresh
-  defaults. Any merge of the two lanes keeps THIS reader (the superset).
+  dispatches on TOKEN COUNT: the FIRST one-token line → the aegis flag,
+  the SECOND → the bread flag; the first two-token line → the life pair
+  (permanent half clamps 500, `:55221-55224`); the second → the mana pair
+  (permanent half clamps 200, `:55227-55229`). So g89's flag-only v7,
+  g88's pre-reconciliation life-only v7, g90's bread-only v7, the
+  three-line g88⨉g89 superset and the full four-line superset all load;
+  missing pieces keep None/false and the fresh defaults. Any merge of
+  the lanes keeps THIS reader (the superset). Known ambiguity: a lone
+  flag line cannot self-identify, so g90's bread-only file reads into
+  the aegis slot (slot 1 wins); the superset writer emits both flags so
+  the ambiguity ends at the fold (the layout doc records it).
 - **The flag field is carried, not used.** `Player.used_aegis_fruit`
   lands on this branch ONLY for the sidecar round-trip (declared at
   g89's exact position after `used_gummy_worm`, ctor false `:56079`, so

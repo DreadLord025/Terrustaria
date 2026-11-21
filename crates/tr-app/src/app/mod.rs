@@ -2954,6 +2954,13 @@ impl App {
                         p.mana_max = effective;
                     }
                     p.used_aegis_fruit = saved.used_aegis_fruit;
+                    // W4-g90 fold: the permanent artisan-loaf unlock rides
+                    // the superset's FOURTH post-dye line
+                    // (`Player.ateArtisanBread`, `Player.cs:2048`; vanilla
+                    // persists it in the `.plr`, `:54779`/`:55245`). Older
+                    // sidecars load false. The +4 crafting reach consumer
+                    // (`craft.rs::tile_reach`, `:35671`) reads the flag.
+                    p.ate_artisan_bread = saved.ate_artisan_bread;
                     p.hp = saved.hp.clamp(1, p.max_hp);
                     coins = saved.coins;
                     armor_kinds = saved.armor;
