@@ -22,7 +22,11 @@ sibling correction publishes 244/245 were ALSO inside the registry's
 consumed 244–280 assignment block (244 → c31, 245 → the d81/g53 fork)
 and renumbered in the same round: 244 → **281**, 245 → **282** (fresh
 362-tip sweep, 281/282 unclaimed; the registry cutoff note: post-sweep
-pushes self-adjudicate, free numbers ≥281).
+pushes self-adjudicate, free numbers ≥281). Chain history: those two
+self-renames were later ruled CONTESTED by the UNIFIED FINAL
+(research/150 §9.2, d54 `b243c7086` — 281/282 = f26's §7.3 assignments):
+final chains 244→281→**310**, 245→282→**318**; g48's 244/245 KEY WINS
+stand, only the doc filenames renumber.
 
 ## The defect (f11 branch tail, STILL wrong at its tip)
 

@@ -39680,7 +39680,7 @@ stands, the receipt lives in research/17 after the declaration):
   app-side no-kill 314 slice) — the hunk binds only on any
   f11-body-survives merge path; the g48 net-17 kind-15 reader keeps
   the landed no-op form.
-- **The c28 send-switch correction (research/281, renamed 244→281).** The C# has ZERO
+- **The c28 send-switch correction (research/310, chain 244→281→310).** The C# has ZERO
   `SendData(18)` sites (c28's own census json has no 18 key) — the
   live clock sync rides `7 WorldData` (the event edges + the
   3600-tick `UpdateServer` heartbeat, `Main.cs:64560`). The
@@ -39688,7 +39688,7 @@ stands, the receipt lives in research/17 after the declaration):
   cadence"; the exact 5-step switch is published for the c28 lane
   (the c27 18 reader stays wire-compat). The internal-205 deviation
   (research/17 row 13) stays admitted until that switch lands.
-- **The 39 item-lane task-seed (research/282, renamed 245→282).** The lane
+- **The 39 item-lane task-seed (research/318, chain 245→282→318).** The lane
   adjudication: not g49/g50/g51 (grep-empty re-verified), not the
   landed M6-NET-5 ATLAS row (the 27/28/29 sync) — the ROADMAP
   S1-I-4a "stay M6-NET-5" note is a forward-reference to the
@@ -39710,14 +39710,38 @@ this branch per the registry + the post-sweep self-adjudication rule:
 - **239-f11-tail-fix → 272** (§6.3 g48 row assigns 272; chain
   237→239→272 — 237 = e23 `7a7779690` 10:53:03, 239 = d42 `bac408be0`
   12:55:30, both earlier than this lane's claims).
-- **244-c28-18-send-switch → 281**: 244 sits inside the refresh's
+- **244-c28-18-send-switch → 281** (chain later extended → **310**, see
+  the UNIFIED FINAL receipt below): 244 sits inside the refresh's
   consumed 244–280 assignment block (= c31 jungle-residuals §6.3) and
   was additionally claimed post-sweep by f39 (`8704691a3` 14:32:01)
   and d53 (`a106d13e8` 14:56:57). Fresh 362-tip sweep: 281 unclaimed.
-- **245-39-item-ownership-seed → 282**: 245 = the d81/g53 18b-fork
+- **245-39-item-ownership-seed → 282** (chain later extended → **318**,
+  see the UNIFIED FINAL receipt below): 245 = the d81/g53 18b-fork
   assignment (§6.3), never free. Fresh 362-tip sweep: 282 unclaimed
   (only 280+ doc anywhere: c42's assigned `280-c42-wiring-seal.md`).
 
 All refs re-pointed (INDEX rows + note, these ANALYSIS sections, the
 PORT_MAP minecart row, research/17 rows/receipt). Docs-only — no
+cargo/rustc/tests/rustfmt/graphify invoked.
+
+### NET-APPLY-1 UNIFIED FINAL registry rename (W4-g48, 2026-11-21, code-only)
+
+The research/150 UNIFIED FINAL (d54 tip `b243c7086`, §9.2 rows
+310/318) rules the round-2 self-renames 244→281 / 245→282 CONTESTED:
+281/282 are f26's §7.3 assignments (`68-findframe-census-addendum-7h/7i.md`),
+the 281–303 block was RESERVED at §7.3 publication, and a self-pick
+into it is NOT honored. Two renames executed on this branch per §9.2:
+
+- **281-c28-18-send-switch → 310** — chain **244→281→310** (§9.2 row
+  310). **g48's 244 KEY WIN stands** (§7.1/§7.4 pre-publish 14:30:16);
+  244 stays winner-consumed — only the doc filename renumbers.
+- **282-39-item-ownership-seed → 318** — chain **245→282→318** (§9.2
+  row 318). **g48's 245 KEY WIN stands** (§7.1 pre-publish); 245 stays
+  winner-consumed — only the doc filename renumbers.
+
+All refs re-pointed (INDEX rows 310/318 + the lane note, these ANALYSIS
+sections, research/17 rows/receipts + the new §9.2 receipt after the
+REGISTRY-RENAME receipt, research/272's sibling-chain note, the two
+docs' headers/chain-banners). The research/17 SEAL stands — renumber
+citations only, no scope re-open. Docs-only — no
 cargo/rustc/tests/rustfmt/graphify invoked.

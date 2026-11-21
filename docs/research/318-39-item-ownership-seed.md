@@ -1,19 +1,26 @@
-# 282 — W4-g48: the 39 ReleaseItemOwnership item-lane task-seed (FindOwner/22 scope)
+# 318 — W4-g48: the 39 ReleaseItemOwnership item-lane task-seed (FindOwner/22 scope)
 
-Number **282** — RENAMED from 245 (REGISTRY-RENAME round, 2026-11-21).
-The 245 pick was made on the correction-phase 358-tip scan (pushed
-`2b61530b4` 14:30:16) BEFORE the research/150 round-2 refresh (d54 tip
-`72226e500`) was visible: that refresh CONSUMED the whole 244–280
-assignment block (245 = the d81/g53 `18b-element-census` fork copy per
-§6.3), so 245 was never free. Per the registry cutoff note (post-sweep
-pushes self-adjudicate; losers take free numbers **≥281** after a fresh
-all-tip sweep), a fresh 362-tip sweep found **282 unclaimed at every
-tip** (the only 280+ doc anywhere: c42's assigned
-`280-c42-wiring-seal.md`). This doc takes **282**; the sibling c28
-send-switch publish 244 → **281** in the same round (244 = c31 per
-§6.3, also claimed by f39 `8704691a3` + d53 `a106d13e8`). Winner
-context per the refresh: 237 = e23, 238+239 = d42, 240–243 = g58; this
-lane's f11-tail-fix chain 237→239→272.
+Number **318** — RENAMED chain **245 → 282 → 318** (UNIFIED FINAL per
+research/150 §9.2, d54 tip `b243c7086`, 2026-11-21). The 282 step was
+this lane's contested self-rename (`9c776ca2f` 15:50:24) INTO f26's
+§7.3-assigned 281–303 block (282 = f26 `68-findframe-census-addendum-7i.md`),
+so §9 does NOT honor it: this doc takes the §9.2-assigned **318**.
+**g48's 245 KEY WIN stands** (§7.1, pre-publish — the key verdict is
+unaffected; only the doc filename renumbers, 245 stays winner-consumed).
+Chain history: the initial 245 pick was made on the correction-phase
+358-tip scan (pushed `2b61530b4` 14:30:16) BEFORE the research/150
+round-2 refresh (d54 tip `72226e500`) was visible: that refresh
+CONSUMED the whole 244–280 assignment block (245 = the d81/g53
+`18b-element-census` fork copy per §6.3), so 245 was never free; a
+fresh 362-tip sweep found 282 unclaimed at every tip (the only 280+
+doc anywhere: c42's assigned `280-c42-wiring-seal.md`) and it was taken
+per the round-2 cutoff note (post-sweep pushes self-adjudicate) — but
+281–303 was RESERVED by §7.2/§7.3, the self-pick collided and §9.2
+re-assigns **318**. The sibling c28 send-switch publish rides the
+parallel chain 244 → 281 → **310** in the same round (281 = f26
+addendum-7h; g48's 244 KEY WIN stands likewise). Winner context per
+the refresh: 237 = e23, 238+239 = d42, 240–243 = g58; this lane's
+f11-tail-fix chain 237→239→272.
 Published by the g48 NET-APPLY-1 correction phase — the SEALED
 research/17 tail's row-39 PARKED dependency hand-off (re-probe
 citations only, never re-open scope).

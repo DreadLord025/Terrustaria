@@ -1,23 +1,28 @@
-# 281 — W4-g48: the 18 SetTime send-switch instruction for the c28 lane (upstream publish)
+# 310 — W4-g48: the 18 SetTime send-switch instruction for the c28 lane (upstream publish)
 
-Number **281** — RENAMED from 244 (REGISTRY-RENAME round, 2026-11-21).
-The 244 pick was made on the correction-phase 358-tip scan (pushed
-`2b61530b4` 14:30:16) BEFORE the research/150 round-2 refresh (d54 tip
-`72226e500`) was visible: that refresh CONSUMED the whole 244–280
-assignment block (244 = c31 jungle-residuals per §6.3), so 244 was
-never free. Per the registry cutoff note (post-sweep pushes
-self-adjudicate; losers take free numbers **≥281** after a fresh
-all-tip sweep), a fresh 362-tip sweep found 244 additionally claimed by
-f39 `244-f39-v18-claim-input.md` (`8704691a3` 14:32:01) and d53
-`244-proj-dust-retire.md` (`a106d13e8` 14:56:57), and **281 unclaimed
-at every tip** (the only 280+ doc anywhere: c42's assigned
-`280-c42-wiring-seal.md`). This doc takes **281**; the sibling
-item-lane seed 245 → **282** in the same round (245 = the d81/g53
-18b-fork assignment). Winner context per the refresh: 237 = e23,
-238+239 = d42, 240–243 = g58; this lane's f11-tail-fix chain
-237→239→272. Published by the g48 NET-APPLY-1 correction phase (the
-SEALED research/17 tail's external-dependency hand-off, re-probe
-citations only).
+Number **310** — RENAMED chain **244 → 281 → 310** (UNIFIED FINAL per
+research/150 §9.2, d54 tip `b243c7086`, 2026-11-21). The 281 step was
+this lane's contested self-rename (`9c776ca2f` 15:50:24) INTO f26's
+§7.3-assigned 281–303 block (281 = f26 `68-findframe-census-addendum-7h.md`),
+so §9 does NOT honor it: this doc takes the §9.2-assigned **310**.
+**g48's 244 KEY WIN stands** (§7.1/§7.4, pre-publish 14:30:16 — the key
+verdict is unaffected; only the doc filename renumbers, 244 stays
+winner-consumed). Chain history: the initial 244 pick was made on the
+correction-phase 358-tip scan (pushed `2b61530b4` 14:30:16) BEFORE the
+research/150 round-2 refresh (d54 tip `72226e500`) was visible: that
+refresh CONSUMED the whole 244–280 assignment block (244 = c31
+jungle-residuals per §6.3), and a fresh 362-tip sweep found 244
+additionally claimed by f39 `244-f39-v18-claim-input.md` (`8704691a3`
+14:32:01) and d53 `244-proj-dust-retire.md` (`a106d13e8` 14:56:57); the
+then-unclaimed 281 was taken per the round-2 cutoff note (post-sweep
+pushes self-adjudicate) — but 281–303 was RESERVED by §7.2/§7.3, the
+self-pick collided and §9.2 re-assigns **310**. The sibling item-lane
+seed rides the parallel chain 245 → 282 → **318** in the same round
+(282 = f26 addendum-7i; g48's 245 KEY WIN stands likewise). Winner
+context per the refresh: 237 = e23, 238+239 = d42, 240–243 = g58; this
+lane's f11-tail-fix chain 237→239→272. Published by the g48 NET-APPLY-1
+correction phase (the SEALED research/17 tail's external-dependency
+hand-off, re-probe citations only).
 
 **Audience:** `task/W4-c28-net-send-cadences` (c28c-cadence-resume-active).
 The g48 census pinned the lane's remaining 18 scope as "the 205→18 send

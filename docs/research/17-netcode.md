@@ -262,7 +262,7 @@ reader/writer (the f21 census verdicts); **N/A** = the id is not a
 | 15 | Unknown15 | :4483-4490 | DEAD — the reader ignore group (d89) |
 | 16 | PlayerLifeMana | :1095-1117 | WIRED g48 — hp store + dead derivation + relay (`e50c2919`) |
 | 17 | TileManipulation | :1119-1288 | WIRED g48 — the full kind dispatch (`e50c2919`); kind 15 FrameTrack (`3a310ccc`) + kind 21 ReplaceTile (`cafd7f2f`) closed the last two cited kinds; kinds 18/19 SetCurrentUser attribution stays the M7-WIRE-2 gap |
-| 18 | SetTime | :1289-1297 | PARKED on this tip — FINAL re-probe: the reader/codec LANDED on the clock lane's c27 tip `412b6bc0d` (batch 1 `6fb7bcb25`: `id::SET_TIME = 18` + `SetTime` body `NetMessage.cs:531-536` + client apply arm + `w4_c27_set_time_applies_the_hosts_clock`; sunModY/moonModY parked, no port field). The g48 tip still rides internal 205 (the 10 Hz host broadcast); the send switch is c28's cadence lane — c28 tip `6379f881b` is census-only (tool + tables, no switch; its `net_player_sync.rs:24-25` explicitly assigns the 18 body/apply to c27). CORRECTION re-probe: the C# has ZERO `SendData(18)` sites (the census `per_id_counts` has no 18 key) — the live clock sync rides `7 WorldData` (event-driven + the 3600-tick `UpdateServer` heartbeat); the exact c28 switch instruction is published in research/281 (renamed 244→281, registry round 2) |
+| 18 | SetTime | :1289-1297 | PARKED on this tip — FINAL re-probe: the reader/codec LANDED on the clock lane's c27 tip `412b6bc0d` (batch 1 `6fb7bcb25`: `id::SET_TIME = 18` + `SetTime` body `NetMessage.cs:531-536` + client apply arm + `w4_c27_set_time_applies_the_hosts_clock`; sunModY/moonModY parked, no port field). The g48 tip still rides internal 205 (the 10 Hz host broadcast); the send switch is c28's cadence lane — c28 tip `6379f881b` is census-only (tool + tables, no switch; its `net_player_sync.rs:24-25` explicitly assigns the 18 body/apply to c27). CORRECTION re-probe: the C# has ZERO `SendData(18)` sites (the census `per_id_counts` has no 18 key) — the live clock sync rides `7 WorldData` (event-driven + the 3600-tick `UpdateServer` heartbeat); the exact c28 switch instruction is published in research/310 (chain 244→281→310, registry UNIFIED FINAL §9.2) |
 | 19 | ToggleDoorState | :1299-1334 | WIRED g48 — doors 0/1 (`0e6fd9c2`) + trapdoors 2/3 / tall gates 4/5 via the c42 canonical `edit/shift.rs` (`a714f106`; the wiring-lane SendData(19) echoes stay research/95 §8.2) |
 | 20 | SectionRange | :1335-1443 | WIRED — `apply_section_range` (pre-g48); the g52 latch filter is that lane's |
 | 21 | ItemDrop | :1445-1535 | WIRED — the item store (pre-g48, d98 grab-delay tail) |
@@ -283,7 +283,7 @@ reader/writer (the f21 census verdicts); **N/A** = the id is not a
 | 36 | SyncPlayerZone | :2178-2201 | WIRED g48 — six-byte store + relay (`9e037b7c`) + the faeling edge → `spawner::spawn_faelings` (`9c7646e0`; the Shimmerfly 677 spawn roster-gated, the scan draws verbatim) |
 | 37 | PasswordRequest | :2203-2216 | N/A — the join FSM (pre-g48) |
 | 38 | Password | :2218-2231 | N/A — the join FSM (pre-g48) |
-| 39 | ReleaseItemOwnership | :2232-2255 | PARKED — FINALIZED (close-or-finalize verdict): f21 codec `RELEASE_ITEM_OWNERSHIP = 39` (`e1d90bcd`, tip `5274a097` — slot i16 + forceAssignToServer bool, `NetMessage.cs:948-951`), the dispatcher arm stays the item lane's. Scope pin (`MessageBuffer.cs:2232-2255`): host leg = reservation-is-mine gate → `FindOwner(forceAssignToServer: true)`; client leg = clear reservation (255, timer 0) → `FindOwner(force)` → if still 255 re-announce via `22`. `WorldItem.FindOwner` (`WorldItem.cs:188-271`) needs the `CanPullItem`/`ItemSpace`/magnet/hopper peer scan + `timeToKeepReservation` + `instanced` — none rowed on this tip (`ItemDrop` carries no reservation fields; `net_reserved` is the client-side 22 store). No apply-arm lane g49/g50/g51 took it (grep empty at all three tips); M6-NET-5's ATLAS row is the 27/28/29 sync, so the 39 arm is the ITEM lane's remaining scope — parked with citation, not a g48 gap. CORRECTION re-probe: the full task-seed (the FindOwner/ReserveFor `:188-285` window, the unrowed-fields census, the lane adjudication incl. the ROADMAP S1-I-4a "stay M6-NET-5" forward-reference correction) is published in research/282 (renamed 245→282, registry round 2) |
+| 39 | ReleaseItemOwnership | :2232-2255 | PARKED — FINALIZED (close-or-finalize verdict): f21 codec `RELEASE_ITEM_OWNERSHIP = 39` (`e1d90bcd`, tip `5274a097` — slot i16 + forceAssignToServer bool, `NetMessage.cs:948-951`), the dispatcher arm stays the item lane's. Scope pin (`MessageBuffer.cs:2232-2255`): host leg = reservation-is-mine gate → `FindOwner(forceAssignToServer: true)`; client leg = clear reservation (255, timer 0) → `FindOwner(force)` → if still 255 re-announce via `22`. `WorldItem.FindOwner` (`WorldItem.cs:188-271`) needs the `CanPullItem`/`ItemSpace`/magnet/hopper peer scan + `timeToKeepReservation` + `instanced` — none rowed on this tip (`ItemDrop` carries no reservation fields; `net_reserved` is the client-side 22 store). No apply-arm lane g49/g50/g51 took it (grep empty at all three tips); M6-NET-5's ATLAS row is the 27/28/29 sync, so the 39 arm is the ITEM lane's remaining scope — parked with citation, not a g48 gap. CORRECTION re-probe: the full task-seed (the FindOwner/ReserveFor `:188-285` window, the unrowed-fields census, the lane adjudication incl. the ROADMAP S1-I-4a "stay M6-NET-5" forward-reference correction) is published in research/318 (chain 245→282→318, registry UNIFIED FINAL §9.2) |
 | 40 | SyncTalkNPC | :2256-2270 | WIRED g48 — SetTalkNPC store + bestiary chat registration + relay (`9e037b7c`) |
 
 The g48 witnesses: `netglue::g48_apply_tests::g48_*` — one loopback pair
@@ -307,13 +307,13 @@ The ids 1-40 table above is FINAL for the g48 lane. Re-probe evidence:
   clock sync rides `7 WorldData` (event edges + the 3600-tick
   `UpdateServer` heartbeat); the exact switch instruction (205 → the
   id-7 cadence, the c27 18 reader kept wire-compat) is published in
-  research/281.
+  research/310.
 - **39 ReleaseItemOwnership:** finalized PARKED with the full scope pin
   (the table row) — no lane g49/g50/g51 carries an apply arm; the item
   lane owns FindOwner + the 22 re-announce. Not closable on g48.
   CORRECTION re-probe: the item-lane task-seed (the lane adjudication +
   the `WorldItem.cs:188-285` FindOwner/ReserveFor window + the unrowed
-  reservation-fields census) is published in research/282.
+  reservation-fields census) is published in research/318.
 - Every other 1-40 id: WIRED (30 — ids 2/4-14/16/17/19-23/27-36/40),
   N/A join-FSM (4: 1/3/37/38), DEAD (4: 15/24/25/26), PARKED-with-owner
   (2: 18/39). Counted 40/40 mechanically off the table's status column.
@@ -454,7 +454,7 @@ Vanilla keeps the local player fully authoritative on the client and interpolate
 | 10 | **NPC stale timeout (200 ms) is port-only** — vanilla despawns only on an explicit server `23` with `active = false`. | behavioural | no |
 | 11 | **The port's `12 PlayerSpawn` arm is gate-whitelisted** (`GATE_WHITELIST` contains 12) whereas C# allows `b > 12` for the 9 whitelisted ids only; harmless, but the gate no longer matches `MessageBuffer.cs:165` literally. | cosmetic | no |
 | 12 | **Idle sweep is tick-count → wall-clock**: `TimeOutTimer > 7200` ticks (`Main.cs:64610-64618`) became a 120 s `IDLE_TIMEOUT` (`net.rs:41`). 7200 ticks at 60 Hz = 120 s, so the intent matches, but a frame-paced sweep is not tick-exact. | determinism | yes — ANALYSIS.md:7294-7297 "port-tuned" |
-| 13 | **`18 SetTime` unported** — the clock rides internal `205 Time` at 10 Hz instead of C#'s join-time `7` + world flags (ANALYSIS.md:7275-7278). CORRECTION re-probe: the C# never sends 18 at all (zero census sites) — the faithful target is the id-7 event cadence + the 3600-tick heartbeat; the switch instruction is research/281 (c28's). | behavioural | yes |
+| 13 | **`18 SetTime` unported** — the clock rides internal `205 Time` at 10 Hz instead of C#'s join-time `7` + world flags (ANALYSIS.md:7275-7278). CORRECTION re-probe: the C# never sends 18 at all (zero census sites) — the faithful target is the id-7 event cadence + the 3600-tick heartbeat; the switch instruction is research/310 (c28's). | behavioural | yes |
 | 14 | **`138/145/148` have no read arm at all** in `GetData` — if any peer ever sends them the packet is silently dropped (the `default` arm only boots a pre-spawn client). | behavioural | n/a (deprecated ids) |
 | 15 | **Name gate is ported, creative-mode mismatch checks are not** (`Net.PlayerIsCreativeAndWorldIsNotCreative`) — ANALYSIS.md:7279-7283 defers them, so a creative player can join a non-creative world silently. | behavioural | yes |
 | 16 | **`PlayerSpawnContext.SpawningIntoWorld` / the `WorldGen.clearWorld` arm has no port equivalent** (`Netplay.cs:484-505`); the in-process world swap replaces it (ANALYSIS.md:7288-7293). | behavioural | yes |
@@ -484,7 +484,7 @@ Vanilla keeps the local player fully authoritative on the client and interpolate
   half LANDED on c27 `412b6bc0d`; the remaining scope is c28's send-switch
   cadence — see the FINAL census verdict above. CORRECTION: the C# sends
   ZERO 18s — the clock rides `7 WorldData`; the exact switch instruction
-  is research/281.)
+  is research/310.)
 - **M — Remote-player smoothing parity**: document or port the C#/ReLogic interpolation
   so `net_interp_tick`'s constants are not arbitrary. Depends on: nothing (research).
 - **L — The per-system passes** ROADMAP.md:1067-1071 parks: peer inventories, creative
@@ -584,8 +584,9 @@ scope re-open, no code change). Receipt of the five items:
    union-survivor fail slice re-probed ALREADY correct (the
    condition-return + the app-side no-kill 314 slice, tip `46fdcfd8e`),
    so the hunk binds only on any f11-body-survives merge path.
-3. **The c28-18-send-switch publish:** research/281 (published as 244,
-   renamed in the REGISTRY-RENAME round) — the C# has ZERO
+3. **The c28-18-send-switch publish:** research/310 (published as 244,
+   chain 244→281→310 — the REGISTRY-RENAME round, then the UNIFIED
+   FINAL §9.2) — the C# has ZERO
    `SendData(18)` sites (c28's own census json, no 18 key); the live
    clock sync rides `7 WorldData` (the event edges + the 3600-tick
    `UpdateServer` heartbeat). The "205→18" framing is corrected to
@@ -593,8 +594,9 @@ scope re-open, no code change). Receipt of the five items:
    wire-compat; the exact 5-step switch instruction is published for
    the c28 lane (its tip `6379f881b` remains census-only — the switch
    is still pending there).
-4. **The 39-ReleaseItemOwnership item-lane task-seed:** research/282
-   (published as 245, renamed in the REGISTRY-RENAME round) —
+4. **The 39-ReleaseItemOwnership item-lane task-seed:** research/318
+   (published as 245, chain 245→282→318 — the REGISTRY-RENAME round,
+   then the UNIFIED FINAL §9.2) —
    the lane adjudication (NOT g49/g50/g51, grep-empty re-verified at
    `af1f172f5`/`714f1f736`/`fcfb92f26`; NOT the landed M6-NET-5 ATLAS
    row — that is the 27/28/29 sync; the ROADMAP S1-I-4a "stay M6-NET-5"
@@ -638,11 +640,14 @@ sweep). Three renames executed on this branch, docs-only:
    sits inside the refresh's consumed 244–280 assignment block
    (= c31 jungle-residuals, §6.3); a fresh 362-tip sweep also found
    post-sweep 244 claims by f39 (`8704691a3` 14:32:01) and d53
-   (`a106d13e8` 14:56:57). **281 unclaimed at every tip.**
+   (`a106d13e8` 14:56:57). **281 unclaimed at every tip.** (Chain
+   history — the 281 self-pick was later ruled CONTESTED by the
+   UNIFIED FINAL §9.2: chain extended 244→281→**310**, receipt below.)
 3. **`245-39-item-ownership-seed.md` → `282-39-item-ownership-seed.md`**
    — 245 = the d81/g53 `18b-element-census` fork assignment (§6.3),
    never free. **282 unclaimed at every tip** (the only 280+ doc
-   anywhere: c42's assigned `280-c42-wiring-seal.md`).
+   anywhere: c42's assigned `280-c42-wiring-seal.md`). (Chain history
+   — likewise CONTESTED per §9.2: chain extended 245→282→**318**.)
 
 All refs re-pointed: INDEX rows 272/281/282 + the lane note, ANALYSIS
 (the final-phase + correction-phase sections + the REGISTRY-RENAME
@@ -653,3 +658,29 @@ carrying the rename citation). `17-netcode.md` itself stays 17 (the
 base-trunk master, not a collision key). The SEAL stands — renumber
 citations only, no scope re-open, no code change, no
 cargo/rustc/tests/rustfmt/graphify invoked.
+
+## NET-APPLY-1 UNIFIED FINAL receipt (W4-g48, 2026-11-21) — §9.2 renumbers, the SEAL stands
+
+The research/150 UNIFIED FINAL (d54 tip `b243c7086`, §9.2) rules the
+round-2 self-renames above CONTESTED: 281/282 belong to f26's §7.3
+assignments (`68-findframe-census-addendum-7h/7i.md`) — the 281–303
+block was RESERVED at §7.3 publication, self-picks into it are NOT
+honored. Two renames executed on this branch per the §9.2 rows:
+
+1. **`281-c28-18-send-switch.md` → `310-c28-18-send-switch.md`** —
+   chain **244→281→310** (§9.2 row 310). **g48's 244 KEY WIN stands**
+   (§7.1/§7.4, pre-publish 14:30:16) — the key stays winner-consumed,
+   only the doc filename renumbers.
+2. **`282-39-item-ownership-seed.md` → `318-39-item-ownership-seed.md`**
+   — chain **245→282→318** (§9.2 row 318). **g48's 245 KEY WIN stands**
+   (§7.1, pre-publish) — likewise winner-consumed.
+
+All refs re-pointed: INDEX rows **310/318** + the lane note, ANALYSIS
+(the correction-phase pointers + the REGISTRY-RENAME chain-history +
+the new UNIFIED FINAL section), research/272's sibling-chain note,
+this file (rows 18/39 + the FINAL verdict bullets + deviations row 13
++ the task seeds + the correction receipt items 3/4 + the
+REGISTRY-RENAME receipt chain-history annotations), and the two docs'
+headers/chain-banners. The SEAL stands — renumber citations only, no
+scope re-open, no code change, no cargo/rustc/tests/rustfmt/graphify
+invoked.
