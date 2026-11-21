@@ -1472,4 +1472,86 @@ mod tests {
         tick_catchable_immunity(&mut z);
         assert_eq!(z.friendly, was);
     }
+
+    /// W4-d127 chain item 3 — the BIRD catch chain census
+    /// (c4/c7 pattern): every style-24 catchable bird's `catch_item`
+    /// row matches BOTH the module's `STYLE24_BIRDS` census row and
+    /// the C# SetDefaults citation; the produced item exists in
+    /// `itemdata::ITEMS` with `make_npc` pointing BACK at the same
+    /// type (the release round-trip); the release whitelist agrees
+    /// (`Main.cs:9326-9418` — the mimic 689 is NOT catchable, its
+    /// reveal is the Transform, chain item 1). WRITTEN NOT RUN.
+    #[test]
+    fn the_bird_catch_rows_round_trip_through_the_item_table() {
+        // (type, catchItem, C# citation) — NPC.cs:9760/:9764/:9768,
+        // :14258 (the 442..448 gold row), :16857, :17507/:17521/
+        // :17535/:17549/:17563.
+        let rows = [
+            (74, 2015), (297, 2016), (298, 2017), (442, 2889), (611, 4395),
+            (671, 5212), (672, 5300), (673, 5311), (674, 5312), (675, 5313),
+        ];
+        for (ty, item) in rows {
+            assert_eq!(catch_item(ty, 0.0), item, "type {ty} catch row");
+            // The module's census row agrees (one source of truth).
+            let m = crate::npc_ai_style24::STYLE24_BIRDS
+                .iter()
+                .find(|r| r.ty == ty)
+                .unwrap();
+            assert_eq!(m.catch_item, item, "type {ty} module row");
+            // The release whitelist carries every catchable bird.
+            assert!(npc_catchable(ty), "type {ty} is releasable");
+            // The item exists and releases BACK into the same type
+            // (`Item.makeNPC`, the SetDefaults item rows).
+            let def = &crate::itemdata::ITEMS[item as usize];
+            assert_eq!(def.id, item as u16);
+            assert_eq!(def.make_npc, ty, "item {item} releases type {ty}");
+            assert_eq!(def.tile, Some(724), "the critter-release use places via tile 724");
+        }
+        // The mimic: NO catchItem (NPC.cs:17667-17679 writes none),
+        // NOT in the whitelist — the catch chain does not apply.
+        assert_eq!(catch_item(689, 0.0), 0);
+        assert!(!npc_catchable(689));
+        // The 317 reveal target is not catchable either.
+        assert_eq!(catch_item(317, 0.0), 0);
+        assert!(!npc_catchable(317));
+    }
+
+    /// W4-d127 chain item 3 — the CAGE results census: every bird
+    /// critter item has its Terrarium + critter → cage recipe in the
+    /// generated table (`recipes_gen.rs`, the Recipe.cs SetupRecipes
+    /// rows: BirdCage 2166 / BlueJayCage 2167 / CardinalCage 2168 /
+    /// GoldBirdCage 3070 / OwlCage 4396 / ScarletMacawCage 5213 /
+    /// BlueMacawCage 5301 / ToucanCage 5314 / YellowCockatielCage
+    /// 5315 / GrayCockatielCage 5316), each requiring the Terrarium
+    /// 2208 + the critter, no station (the C# registers them
+    /// station-free). The cage ITEMS exist with their furniture
+    /// tiles. WRITTEN NOT RUN.
+    #[test]
+    fn every_bird_critter_has_its_cage_recipe() {
+        // (critter item, cage item, cage tile) — itemdata.rs rows.
+        let cages = [
+            (2015, 2166, 279), (2016, 2167, 280), (2017, 2168, 281),
+            (2889, 3070, 358), (4395, 4396, 542), (5212, 5213, 632),
+            (5300, 5301, 640), (5311, 5314, 643), (5312, 5315, 644),
+            (5313, 5316, 645),
+        ];
+        for (critter, cage, tile) in cages {
+            let recipe = crate::craft::RECIPES
+                .iter()
+                .find(|r| r.create == (cage as u16, 1))
+                .unwrap_or_else(|| panic!("cage {cage} recipe missing"));
+            assert!(
+                recipe.required.contains(&crate::craft::Requirement::item(2208, 1)),
+                "cage {cage} needs the Terrarium"
+            );
+            assert!(
+                recipe.required.contains(&crate::craft::Requirement::item(critter as u16, 1)),
+                "cage {cage} needs critter {critter}"
+            );
+            assert!(recipe.stations.is_empty(), "cage {cage} is station-free");
+            let def = &crate::itemdata::ITEMS[cage as usize];
+            assert_eq!(def.id, cage as u16);
+            assert_eq!(def.tile, Some(tile), "cage {cage} furniture tile");
+        }
+    }
 }
