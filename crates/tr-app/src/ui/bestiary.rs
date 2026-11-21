@@ -360,7 +360,7 @@ pub fn draw_screen(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     screen: Vec2,
-    tracker: &KillTracker,
+    tracker: &tr_core::bestiary::WorldBestiary,
     selected: Option<usize>,
     mouse: Vec2,
 ) {
@@ -409,7 +409,7 @@ pub fn draw_screen(
     // EmptyColor (35, 43, 81); the percent label rides the hover
     // (`ShowStats_Completion` -> `MouseText`, `:181-188`).
     let panel = panel_rect(screen);
-    let pct = crate::bestiary::completion_percent(tracker);
+    let pct = crate::bestiary::completion_percent_world(tracker);
     let bar = progress_bar_rect(&panel);
     r.push_ui_sprite([bar[0], bar[1]], [bar[2], bar[3]], r.white_uv(), super::color::tint([35, 43, 81, 255]));
     r.push_ui_sprite(
@@ -473,7 +473,7 @@ fn draw_grid(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     screen: Vec2,
-    tracker: &KillTracker,
+    tracker: &tr_core::bestiary::WorldBestiary,
     mouse: Vec2,
 ) {
     let panel = panel_rect(screen);
@@ -507,7 +507,7 @@ fn draw_grid(
     // `:209-221`).
     if let Some(idx) = card_at(screen, mouse) {
         let entry = &crate::bestiary::ENTRIES[idx];
-        let state = crate::bestiary::unlock_state(entry, tracker);
+        let state = crate::bestiary::unlock_state_world(entry, tracker);
         super::tooltip::draw_mouse_text(
             r,
             lookups,
@@ -529,12 +529,12 @@ fn draw_card(
     lookups: &Lookups,
     cell: [f32; 4],
     entry: &crate::bestiary::BestiaryEntryDef,
-    tracker: &KillTracker,
+    tracker: &tr_core::bestiary::WorldBestiary,
     idx: usize,
     hover: bool,
 ) {
     let inner = inner_box(cell);
-    let state = crate::bestiary::unlock_state(entry, tracker);
+    let state = crate::bestiary::unlock_state_world(entry, tracker);
     // The inner container is `OverflowHidden = true`
     // (`UIBestiaryEntryButton.cs:30-38`): the back, the portrait and the
     // locked icon are its children and clip to the 68 px box; the overlay /
@@ -1628,13 +1628,13 @@ fn draw_info_page(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     screen: Vec2,
-    tracker: &KillTracker,
+    tracker: &tr_core::bestiary::WorldBestiary,
     idx: usize,
     mouse: Vec2,
 ) {
     let panel = panel_rect(screen);
     let entry = &crate::bestiary::ENTRIES[idx];
-    let state = crate::bestiary::unlock_state(entry, tracker);
+    let state = crate::bestiary::unlock_state_world(entry, tracker);
     if let Some(portrait_bg) = lookups.ui_bestiary_portrait {
         // The portrait card left of the info (the pretty-portrait mode's
         // 72 px card scaled up).
@@ -1757,7 +1757,7 @@ fn draw_info_page(
     // (`NPCKillCounterInfoElement.cs:24-96`): the raw count (no "/needed" —
     // the progress fraction is the port's own earlier stand-in) from the
     // first kill, with the `BestiaryInfo.Slain` hover (`:90-96`).
-    let (kills, _needed) = crate::bestiary::kill_progress(entry, tracker);
+    let (kills, _needed) = crate::bestiary::kill_progress(entry, &tracker.kills);
     if let Some(count) = kill_counter_text(kills) {
         text::hud_text(r, lookups, tx, ty, 0.85, [0.8, 0.85, 1.0, 1.0], &count);
         if super::in_rect(mouse, [tx, ty, 60.0, 20.0]) {

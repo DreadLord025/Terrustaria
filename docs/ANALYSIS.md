@@ -30985,6 +30985,38 @@ portraits and the netglue bare seed. The wiring:
   airborne tilt + row-1 pin) and the 485/486/487 group (`:72829-72883`,
   `spriteDirection = direction`, the `|vx| * 5`-weighted 10-tick
   four-frame cycle). All nine rotate (the draw whitelist).
+- **The bestiary unlock conditions (W4-c8 sweep census)**: the nine
+  kinds unlock on neither catch nor kill — on SIGHT (proximity). The
+  populator registers every `CountsAsACritter` NPC
+  (`NPC.cs:6887-6897` — `lifeMax <= 5 && damage == 0`, all nine qualify)
+  through `BestiaryEntry.Critter` (`BestiaryEntry.cs:82-101`,
+  `AddEmptyEntries_CrittersAndEnemies_Automated`
+  `BestiaryDatabaseNPCsPopulator.cs:851-860`) →
+  `CritterUICollectionInfoProvider` (`:14-20`): tier 4 once
+  `Sights.GetWasNearbyBefore(creditId)`, else tier 0. The GoldWorm 448
+  gets the `GoldCritterUICollectionInfoProvider` override (the
+  populator's dictionary `:715` — peer list `{357}`): max(own sight,
+  357's sight), gated on ANY `GoldCrittersCollection` member seen
+  (`NPCID.cs:10121-10125`, the provider `:46-52`). The sight credit is
+  `NPCWasNearPlayerTracker.ScanWorldForFinds` (`:102-130`, run from
+  `Main.cs:17914` BEFORE the UpdateNPC loop): the NPC hitbox vs the
+  player's `HitboxForBestiaryNearbyCheck` (the box inflated 300×200,
+  `Player.cs:3313-3321`). The kill credit still registers on death
+  (`IsNPCValidForBestiaryKillCredit` `:78901-78914` — true for all
+  nine) but the critter UI never reads it. The port wired the census:
+  `bestiary.rs::unlock_state_world` dispatches the nine entries to the
+  sight providers (`critter_unlock_state` / `gold_critter_unlock_state`
+  — the 14-member collection gate), `scan_world_for_critter_sights`
+  runs at the `update_npcs` head (the C# position), the bestiary UI +
+  completion + the BOOK_WORM achievement hook ride the world-aware
+  forms (`completion_percent_world`, the `WorldBestiary` tracker
+  through the draw chain). The Goldfish 55's C# provider is also the
+  critter one but its port entry keeps the kill provider (the c4
+  wave's row — the no-behaviour-change freeze; recorded for the c4
+  follow-up). Witnesses: `w4_c8_the_critter_entries_unlock_on_sight_not_kills`,
+  `w4_c8_the_gold_worm_entry_gates_on_any_gold_critter_seen`,
+  `w4_c8_the_completion_counts_critter_sights`,
+  `w4_c8_the_critter_sight_scan_registers_proximity_once`.
 - **The catch-net chain (W4-c8 sweep census)**: all nine kinds were
   ALREADY in the c4/c7 catch pattern (`bug_net.rs`) — the sweep verified
   and pinned them per kind (`w4_c8_the_nine_crawlers_ride_the_catch_chain`):

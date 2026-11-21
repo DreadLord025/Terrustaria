@@ -930,7 +930,7 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         golfer_score: app.player.as_ref().map_or(0, |p| p.golfer_score),
         // `Main.GetBestiaryProgressReport()` (`Chest.cs:3265`) — the
         // port's tracker over the ENTRIES' unlock states.
-        bestiary_completion: crate::bestiary::completion_percent(&app.bestiary.kills),
+        bestiary_completion: crate::bestiary::completion_percent_world(&app.bestiary),
         // `NPC.unlockedPrincessSpawn` (`Main.cs:65948`) — the debug
         // override; the port's roster is the other half of her gate.
         unlocked_princess: false,
@@ -3802,6 +3802,14 @@ fn king_slime_minion_batch(king: &Npc, count: u32, rng: &mut UnifiedRandom) -> V
 }
 
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
+    // W4-c8 sweep — `Main.BestiaryTracker.Sights.ScanWorldForFinds()`
+    // (`Main.cs:17912-17915`, under `netMode != 1` — the port folds
+    // true): the critter proximity scan runs BEFORE the `UpdateNPC`
+    // loop (`:17948-17952`), so a critter that despawns this tick still
+    // earns its sight. RNG-free (the set insert + the achievement
+    // hook). The kill tracker's entries are untouched — the critter
+    // bestiary unlocks ride the SIGHT providers (the W4-c8 census).
+    crate::bestiary::scan_world_for_critter_sights(app);
     // `Main.UpdateTime`'s Moon-Lord block (`Main.cs:64987-64994`): the
     // apocalypse's countdown ticks down and at zero the boss spawns.
     crate::world_sim::lunar::update_moon_lord_countdown(app);
@@ -14278,6 +14286,53 @@ mod worm_tests {
             &mut next_id2,
         );
         assert!(npcs2[0].vx < 0.0, "the dig aim inverts — flees LEFT (vx {})", npcs2[0].vx);
+    }
+
+    /// W4-c8 sweep — `ScanWorldForFinds` (`NPCWasNearPlayerTracker.cs:
+    /// 102-130`): a crawler within the player's 300×200-inflated hitbox
+    /// registers its sight; a far one does not; a non-critter (the
+    /// zombie — lifeMax > 5) never does; the insert is idempotent.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c8_the_critter_sight_scan_registers_proximity_once() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 40.0;
+        player.y = 40.0;
+        app.player = Some(player);
+        // A Maggot 100 px right of the player — inside the inflated box.
+        let mut near = Npc::new(NpcKind::Maggot, 140.0, 40.0, 1, 0.0);
+        near.hp = near.max_hp;
+        // A Worm 2000 px away — outside.
+        let mut far = Npc::new(NpcKind::Worm, 2040.0, 40.0, 1, 0.0);
+        far.hp = far.max_hp;
+        // A zombie near — NOT a critter (lifeMax > 5).
+        let mut zombie = Npc::new(NpcKind::Zombie, 150.0, 40.0, 1, 0.0);
+        zombie.hp = zombie.max_hp;
+        // A dead crawler near — the active gate skips it.
+        let mut dead = Npc::new(NpcKind::Grubby, 160.0, 40.0, 1, 0.0);
+        dead.hp = 0;
+        app.npcs = vec![near, far, zombie, dead];
+        crate::bestiary::scan_world_for_critter_sights(&mut app);
+        assert!(app.bestiary.was_seen_near_player("Maggot"), "the near crawler");
+        assert!(!app.bestiary.was_seen_near_player("Worm"), "the far one stays unseen");
+        assert!(!app.bestiary.was_seen_near_player("Zombie"), "not a critter");
+        assert!(!app.bestiary.was_seen_near_player("Grubby"), "the dead one is inactive");
+        // Idempotent: a second scan adds nothing new.
+        let count = app.bestiary.sights.len();
+        crate::bestiary::scan_world_for_critter_sights(&mut app);
+        assert_eq!(app.bestiary.sights.len(), count, "the set insert dedups");
+        // The kill tracker is untouched — sights are the credit.
+        assert_eq!(app.bestiary.kills.get_kill_count("Maggot"), 0);
+        // The Maggot entry now reads tier 4 through the sight provider.
+        let maggot = crate::bestiary::ENTRIES
+            .iter()
+            .find(|e| e.credit_id == "Maggot")
+            .unwrap();
+        assert_eq!(
+            crate::bestiary::unlock_state_world(maggot, &app.bestiary),
+            tr_core::bestiary::UnlockState::CanShowDropsWithDropRates
+        );
     }
 
     #[test]
