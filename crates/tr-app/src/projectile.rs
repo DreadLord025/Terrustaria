@@ -17057,11 +17057,16 @@ impl ProjectilePool {
                                                 Vec2::new(crate::player::WIDTH as f32, p.height),
                                                 Vec2::new(center.0, center.1),
                                             );
-                                            // `Player.Teleport(vector, 10)` — the
-                                            // style-10 instant move. (The effect
-                                            // pair is style 10 — g12's arm; the
-                                            // movement stand-in stays.)
-                                            p.teleport(target.x, target.y);
+                                            // W4-g11 union-exec (research/116
+                                            // gap 1): `Player.Teleport(vector,
+                                            // 10)` (`Player.cs:22753`) — the
+                                            // style-10 queue path (the
+                                            // movement stand-in `p.teleport`
+                                            // retired): the Entry/Exit
+                                            // shimmer replays at the pass
+                                            // tail (`world_sim/projectiles.rs`,
+                                            // the UpdateProjectiles stream).
+                                            p.teleport_style(target.x, target.y, 10);
                                         }
                                     }
                                 }

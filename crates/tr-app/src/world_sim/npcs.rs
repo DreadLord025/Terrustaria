@@ -4552,6 +4552,38 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         play_npc_sound_request(audio, req, npcs_rng);
                     }
                     black_slime_darkness_touch(n, player, npcs_rng);
+                    // W4-g11 union-exec (research/116 §2) —
+                    // `NPC.UpdateNPC_TeleportVisuals` (`NPC.cs:90322`,
+                    // body `:92194-92241`): the per-tick teleport fade at
+                    // the C# position — AFTER the AI + cast lights, BEFORE
+                    // the critter sounds / look-for-home decay — on the
+                    // `UpdateNPCs` stream. The g61 body
+                    // (`teleport_dust::update_npc_teleport_visuals`) reads
+                    // the g11 `Npc` teleport fields. The style-12 clock is
+                    // `Main.timeForVisualEffects` (`Main.cs:1181`): the
+                    // `anim_time`-derived stand-in (`frame/draw.rs:374`'s
+                    // `time_for_visuals` convention) until the sim clock
+                    // lands; style 12 has no live producer yet (the fade
+                    // draws no RNG unless a teleport grant is live, so the
+                    // existing streams are untouched at rest).
+                    {
+                        let mut no_sound = |_: i32, _: i32, _: f32, _: f32| {};
+                        let mut tv_env = crate::teleport_dust::TeleportDustEnv {
+                            world,
+                            dust: &mut *dust,
+                            dust_ctx: &dust_ctx,
+                            rng: &mut *npcs_rng,
+                            play_sound: &mut no_sound,
+                        };
+                        crate::teleport_dust::update_npc_teleport_visuals(
+                            &mut tv_env,
+                            &mut npcs[i],
+                            0.0,
+                        );
+                    }
+                    // Re-borrow after the fade's scoped env borrows (the
+                    // `let n` tail below resumes the slot's mutable borrow).
+                    let n = &mut npcs[i];
                     // `NPC.UpdateNPC`'s tail (`NPC.cs:90324-90327`): the
                     // look-for-home timer decays one per tick.
                     if n.look_for_home_timeout > 0 {

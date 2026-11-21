@@ -1680,14 +1680,16 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     for (x, y) in switch_sends {
         app.send_hit_switch(x, y);
     }
-    // W4-g11 — the `Player.Teleport` effect pair (`Player.cs:37444`/`:37489`):
-    // the Entry effect at the OLD box, the move, the Exit at the NEW box, the
-    // grants — on the `UpdatePlayers` stream. The same-tick deferral is
-    // observation-identical: the reachable player-tick caller (the no-space /
-    // Shellphone fallback) rides style 11 — g12's arm, which draws no dust and
-    // rolls no RNG — so the replay only re-applies the (already-inline) move +
-    // the grants. It drains beside `force_clear` (both post-step; nothing probes
-    // the spawn area between the teleport and the clear).
+    // W4-g11 union-exec — the `Player.Teleport` effect pair
+    // (`Player.cs:37444`/`:37489`): the Entry effect at the OLD box, the
+    // move, the Exit at the NEW box, the grants + the camera transition —
+    // on the `UpdatePlayers` stream. The reachable player-tick caller (the
+    // no-space / Shellphone fallback) rides style 11, which NOW fires
+    // through the union dispatcher (50 Perfect dust, no sound — g61's
+    // arm); the replay re-applies the (already-inline) move and owns the
+    // C#-position grants (gap 6). It drains beside `force_clear` (both
+    // post-step; nothing probes the spawn area between the teleport and
+    // the clear).
     if let Some(req) = teleport_effect_req {
         crate::main_dust::player_teleport(app, req);
     }

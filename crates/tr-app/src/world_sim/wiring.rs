@@ -301,32 +301,16 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                 ux1 >= ux0 && uy1 >= uy0
             };
             if !app.wiring.block_player_teleportation() {
-                // W4-g11 — `Main.player[j].Teleport(vector2)` (`Wiring.cs:3154`,
-                // the default style 0): the movement core queues the effect
-                // pair; the replay needs `&mut App` (the pool + the player),
-                // which the closure's disjoint captures cannot hand out — it
-                // rides the post-step drain (the `party_credits` convention).
-                // The camera transition stays inline (`Player.cs:37463` — the
-                // lerp reads the OLD centre either way).
+                // W4-g11 union-exec: queue ONLY (the move defers to the
+                // replay so the Entry effect reads the true OLD box — the
+                // C# order Entry-at-OLD, move, Exit-at-NEW). The camera
+                // transition moved INTO the replay (`player_teleport`,
+                // `Player.cs:37456-37463` — research/116 gap 5: the pad and
+                // the player-tick callers share the one C#-position arm).
                 if let Some(p) = &mut app.player {
                     let px = p.x;
                     let py = p.y;
                     if !p.dead && hits(px, py, crate::player::WIDTH, crate::player::HEIGHT) {
-                        // `Player.Teleport`'s camera transition
-                        // (`Player.cs:37463`, `Main.cs:62572` — the wiring pad
-                        // rides the default style, so the lerp delay is 0).
-                        let old_center = glam::Vec2::from(p.center());
-                        let mut state = std::mem::take(&mut app.camera_state);
-                        crate::world_sim::camera::start_camera_transition_for_player_teleport(
-                            &mut state,
-                            old_center,
-                            0.1,
-                            0,
-                        );
-                        app.camera_state = state;
-                        // W4-g11: queue ONLY (the move defers to the replay so
-                        // the Entry effect reads the true OLD box — the C#
-                        // order Entry-at-OLD, move, Exit-at-NEW).
                         p.queue_teleport_effect(px + dx, py + dy, 0, 0);
                         if let Some((ox, oy, nx, ny, style, e2, ei, mult)) =
                             p.take_teleport_effect()
@@ -1014,8 +998,9 @@ mod tests {
     /// (`Wiring.cs:3154`/`:3170`, the default style 0): both entities move by
     /// the pad delta, the Entry/Exit effect pairs draw type-159 dust on the
     /// `UpdateWorldGen` stream (the wiring tick's swap), and the
-    /// `teleportTime`/`teleportStyle` grants land. The player's camera
-    /// transition stays armed (the `:37463` seam).
+    /// `teleportTime`/`teleportStyle` grants land. Union-exec: the camera
+    /// transition is armed by the REPLAY (`player_teleport`, gap 5 — the
+    /// pad's inline arm retired; style 0 → delay 0).
     #[test]
     fn w4_g11_the_pads_teleport_with_the_effect_pair() {
         let mut app = flow_app(None, vec![], vec![]);
@@ -1070,6 +1055,9 @@ mod tests {
         assert_eq!((p.x, p.y), (490.0, 342.0));
         assert_eq!(p.teleport_time, 1.0);
         assert_eq!(p.teleport_style_id, 0);
+        // The replay armed the camera transition (style 0 → delay 0).
+        assert_eq!(app.camera_state.camera_lerp, 0.1);
+        assert_eq!(app.camera_state.camera_lerp_time_toggle, 0);
         assert!(app.player.as_mut().unwrap().take_teleport_effect().is_none(), "the drain consumed the pair");
         assert_eq!((app.npcs[0].x, app.npcs[0].y), (490.0, 342.0));
         assert_eq!(app.npcs[0].teleport_time, 1.0);

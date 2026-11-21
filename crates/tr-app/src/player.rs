@@ -1952,6 +1952,11 @@ pub struct Player {
     /// the portal pair's colour index — the Entry effect reads the OLD
     /// value, the post-move write arms the Exit effect's.
     pub last_portal_color_index: i32,
+    /// W4-g11 union-exec (research/116 gap 3) —
+    /// `Player.lastTeleportPylonStyleUsed` (`Player.cs:37439`): the pylon
+    /// hop's tile style — style 9 latches `extraInfo` here and the Entry
+    /// effect reads it back as `extraInfo2` (`:37437-37441`).
+    pub last_teleport_pylon_style_used: i32,
     /// W4-g11 — the `Player.Teleport` effect request (`Player.cs:37444`/
     /// `:37489`): `(old_x, old_y, new_x, new_y, style, extra_info2,
     /// extra_info, dust_count_mult)` — the movement core
@@ -2908,6 +2913,7 @@ impl Player {
             teleport_time: 0.0,
             teleport_style_id: 0,
             last_portal_color_index: 0,
+            last_teleport_pylon_style_used: 0,
             pending_teleport_effect: None,
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
             pending_sparks: Vec::new(),
@@ -9508,10 +9514,12 @@ impl Player {
     pub fn teleport_style_with_extra(&mut self, new_x: f32, new_y: f32, style: i32, extra_info: i32) {
         self.queue_teleport_effect(new_x, new_y, style, extra_info);
         self.teleport_move_core(new_x, new_y, style);
-        // `:37490-37491` — the grants (the drain re-arms them after the Exit
-        // effect; the C# writes them at the Teleport tail).
-        self.teleport_time = 1.0;
-        self.teleport_style_id = style;
+        // Union-exec (research/116 gap 6): the grants moved to the replay
+        // (`main_dust::player_teleport`, the C#-position write at
+        // `:37490-37491`) — the inline duplicate is retired. The queue
+        // captured the PRE-move mult, so the drain's effect counts are
+        // unchanged; the drain runs the same tick (nothing probes
+        // `teleportTime` between the move and the drain).
     }
 
     /// W4-g11 — queue the `Player.Teleport` effect pair WITHOUT moving: the
@@ -9522,7 +9530,13 @@ impl Player {
     /// post-step drain convention).
     pub(crate) fn queue_teleport_effect(&mut self, new_x: f32, new_y: f32, style: i32, extra_info: i32) {
         // `:37432-37436` — the Entry effect reads the OLD portal colour.
-        let extra_info2 = if style == 4 { self.last_portal_color_index } else { 0 };
+        let mut extra_info2 = if style == 4 { self.last_portal_color_index } else { 0 };
+        // `:37437-37441` — the pylon hop latches the tile style and reads
+        // it back (research/116 gap 3).
+        if style == 9 {
+            self.last_teleport_pylon_style_used = extra_info;
+            extra_info2 = self.last_teleport_pylon_style_used;
+        }
         // `:37442` — `MathHelper.Clamp(1 - teleportTime*0.99, 0.01, 1)`.
         let mult = (1.0 - self.teleport_time * 0.99).clamp(0.01, 1.0);
         // `:37444`/`:37489` — the effect pair rides the drain (the Entry at
