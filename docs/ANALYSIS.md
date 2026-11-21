@@ -39247,10 +39247,37 @@ click buffers; the player tick applies).
 ## The NPC HitEffect gore table (W4-f10, wave C, task/W4-f10-gore-sites-3, 2026-11-21, code-only mode)
 
 The THIRD batch of `NPC.HitEffect`'s per-NPC gore/dust death arms
-(`NPC.cs:81654+`), covering `NPC.cs:82206-89831` — from the 551 Betsy
+(`NPC.cs:81654+`). **OVERRUN-DELETE LANDED (f5 research/111 §8 / g60
+§12.8 drop-hunks):** the waves' later `:85560-89832` port (sites 562-1441,
+the b138-170 appends) duplicated f5's claimed window and was DELETED at
+the live tip `012bdcec3` — re-censused with g60's committed scripts
+(`g60_f10_overrun.py` + `g60_f10_gates.py` @ `30fea0fe1`). The delete at
+this tip: **band A `:3692-8872` (152 fn bodies incl. the cite-less
+`five_gore_ladder`/`smoke_99_trio`/`mech_explosion_tail`/
+`red_hat_skeletron_adjustments_enabled` helpers + the straddling
+`town_pet_death`, 597 gore literals), band B `:9296-9966` (147 dispatch
+gates incl. the 5 comment-less), band C `:12314-15633` (157 witnesses),
+the header scope rows `:136-270` (sites 562-1441) and the
+`king_slime_babies`/`maggot_zombie_spawns`/`destroyer_probe_drop` outcome
+fields** — 9 328 lines, a pure delete (byte-verified against the pre-image
+minus exactly those ranges). The b157→live drift: +21 fns / +19 gates /
++19 witnesses (the Skeletron-RedHat through RedDevil tail, b158-170) and
+the third seam field. What KEEPS: sites 1-561 (`:82206-85559`), the legit
+385 sites — the DD2 band (incl. the 558/559/560 `wyvern_death` NAME-TWIN,
+the overrun 87-92 twin dropped), the 3 substring-collision witnesses
+(`blood_squid`/`desert_scorpion`/`martian_probe`, all min-cite < 85560),
+the Slimer 561 tail + `slimer_spawn` seam, the flipped-Betsy dispatch
+witness — 94 legit witnesses + 1 new delete-receipt witness
+(`w4_f10_the_overrun_delete_leaves_the_f5_window_unclaimed`, WRITTEN NOT
+RUN). f5's 853-canonical (`npc_hit_effect_d.rs`) owns `:85560+`; the
+`:86532` WanderingEye latch replacement is f5 §7.3's wiring-caller (the
+merger's). Post-delete module: ~6 370 lines, 95 witnesses.
+
+### The original wave-C record (pre-delete, historical)
+
+The port covered `NPC.cs:82206-89831` — from the 551 Betsy
 flipped branch to the terminal 156 RedDevil `else` where the C# chain
-closes (`:89832-89834`). **The HitEffect gore table is now COMPLETE for
-the wave-C range**: 1441 numbered gore sites across 170 commits (first
+closes (`:89832-89834`): 1441 numbered gore sites across 170 commits (first
 `215bcd2d5`, tip `1fb60ae39`; base `a725acb0`), ported into the
 self-contained `crates/tr-app/src/npc_hit_effect_c.rs` (~15 660 lines,
 251 witness tests). Wave A (d55, sites 1-30, `:81660-81941`) and wave B
