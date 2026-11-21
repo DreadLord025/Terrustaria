@@ -416,7 +416,11 @@ fn in_world(world: &World, x: i32, y: i32, fluff: i32) -> bool {
 /// slice because it mutates `prev`/`next` (the C# object links).
 pub(crate) fn adjust_tangents(lines: &mut [ControlLine], index: usize) -> bool {
     let mut line = lines[index];
-    if !line.is_self_intersecting() {
+    // `IsSelfIntersecting` calls `CacheNormals` on the shared object even
+    // when it returns false — the cached normals persist either way.
+    let intersecting = line.is_self_intersecting();
+    lines[index] = line;
+    if !intersecting {
         return false;
     }
     let start_tangent = (line.start_tangent - line.end_tangent / 2.0).safe_normalize(Vec2::ZERO);
@@ -446,11 +450,11 @@ mod tests {
     /// a neighbour returns None.
     #[test]
     fn w4_f24_can_paint_projects_and_blends() {
-        // A horizontal segment (0,0)->(10,0), tangents set by SetTangents
-        // equivalent: start tangent +X, end tangent +X (a straight line).
+        // A horizontal segment (0,0)->(10,0), tangents as SetTangents writes
+        // them for a single line: start +X, end -X (the negated direction).
         let mut a = line(0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0);
         a.start_tangent = Vec2::UNIT_X;
-        a.end_tangent = Vec2::UNIT_X;
+        a.end_tangent = -Vec2::UNIT_X;
         a.cache_normals();
         let lines = [a];
         // Midpoint (5,0): distance 0, progress 0.5.
@@ -481,7 +485,7 @@ mod tests {
     fn w4_f24_is_inside_border_safe_radius() {
         let mut a = line(0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0);
         a.start_tangent = Vec2::UNIT_X;
-        a.end_tangent = Vec2::UNIT_X;
+        a.end_tangent = -Vec2::UNIT_X;
         a.cache_normals();
         let lines = [a];
         // radius 10, safe 0.9 -> 9 - 4 = 5; (5,4) inside, (5,6) outside.

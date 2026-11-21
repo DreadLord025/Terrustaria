@@ -129,14 +129,44 @@ runtime-side, not the skyblock generator's tail).
 
 | unit | commit | status |
 | --- | --- | --- |
-| census + claim (this doc) | (this commit) | claimed |
-| B1 snake_math + dungeon_bounds | (this commit) | landed (code-only; unwired, both pins unchanged) |
-| B2 DungeonControlLine | (this commit) | landed (code-only; unwired, both pins unchanged) |
-| B3 DitherSnake | (this commit) | landed (code-only; unwired, both pins unchanged) |
-| B4 DitherSnakePass | (this commit) | landed (code-only; unwired, both pins unchanged) |
-| B5 producer chain + style statics | (this commit) | landed (code-only; unwired, both pins unchanged) |
-| B6 pipeline wire (dither snake) | (this commit) | landed (code-only; gated, both classic pins unchanged) |
-| A1 Skyblock statics + gate census | (this commit) | landed (code-only; gated, both classic pins unchanged) |
-| A2 SkyblockIsland | (this commit) | landed (code-only; unwired, both classic pins unchanged) |
-| A3 shared tail helpers | (this commit) | landed (code-only; unwired, both classic pins unchanged) |
-| A4 GenerateSkyBlockWorld + wire | (this commit) | landed (code-only; gated, both classic pins unchanged) — LANE A COMPLETE |
+| census + claim (this doc) | f353e13f | claimed |
+| B1 snake_math + dungeon_bounds | 341b6643 | landed (code-only; unwired, both pins unchanged) |
+| B2 DungeonControlLine | 3abf580d | landed (code-only; unwired, both pins unchanged) |
+| B3 DitherSnake | 37c0cdc8 | landed (code-only; unwired, both pins unchanged) |
+| B4 DitherSnakePass | fd816665 | landed (code-only; unwired, both pins unchanged) |
+| B5 producer chain + style statics | 126e9ab6 | landed (code-only; unwired, both pins unchanged) |
+| B6 pipeline wire (dither snake) | 993864e1 | landed (code-only; gated, both classic pins unchanged) |
+| A1 Skyblock statics + gate census | 372a4ec7 | landed (code-only; gated, both classic pins unchanged) |
+| A2 SkyblockIsland | a9eb3fc3 | landed (code-only; unwired, both classic pins unchanged) |
+| A3 shared tail helpers | b37de294 | landed (code-only; unwired, both classic pins unchanged) |
+| A4 GenerateSkyBlockWorld + wire | 9cbbf9de | landed (code-only; gated, both classic pins unchanged) — LANE A COMPLETE |
+
+## Lane result
+
+Both gated passes executed: `EXECUTED_PIPELINE` grows 66 → 68 steps
+(`dither snake` at the `:14755` slot, `skyblock` at the `:11511` slot). The
+unexecuted census closes from 53 (51 classic + 2 gated) to 51 — every one of
+the 51 classic names is claimed by a pushed sibling ledger (d101-d106 +
+g36-g39 + f25), and the two gated names are now executed here. The skyblock
+"Jungle" registration (`:11509`) is dead code (`denyAllGeneration` is always
+true under skyblock, so the `!denyAllGeneration` guard never adds it) — no
+row needed.
+
+Both classic hash pins (`SEED42_512`/`DEFAULT_WORLD`) are UNCHANGED: every
+new draw is gated behind `SeedFlags::SKYBLOCK` /
+`MicroSeedFlags::DUAL_DUNGEONS`, and the A1 denyAll/denySome pruning + the
+B6/A4 step bodies are no-ops on a classic world. The affected seeds' hashes
+move by design and ride the `a == b` witnesses
+(`w4_f24_the_dither_snake_is_gated_and_deterministic`,
+`w4_f24_the_skyblock_world_is_gated_and_deterministic`, plus the per-unit
+witnesses) — all written NOT run (code-only lane); the merge gate measures
+the per-seed constants. The `a == b` determinism halves of both pin tests
+are untouched.
+
+New modules: `snake_math.rs`, `dungeon_bounds.rs`,
+`dungeon_control_line.rs`, `dither_snake.rs`, `dungeon_genvars.rs`,
+`skyblock.rs`, `seed_tails.rs` (7 files, ~4300 lines incl. witnesses).
+`anchors.txt` gains 11 rows (one per unit). The merger may dedupe B5's
+paint-field style rows onto c32's `dungeon_styles.rs` tables and A3's tail
+helpers onto the sibling passes' call sites (Beaches `:14894`, Life Crystals
+`:16761`).
