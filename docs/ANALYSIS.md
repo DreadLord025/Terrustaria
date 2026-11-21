@@ -39439,9 +39439,13 @@ and the floor-row-30 anchor verified against `can_place`'s scoring).
 
 ## The W4-d2 RETIRE — band-11-20 SEALED (2026-11-21, code-only)
 
-research/**283** (number per registry-150's refresh `72226e500` s6 + a
-fresh all-tip ls-tree sweep: 281 seven-claimant, 282 two-claimant, 283
-first-free) publishes the five-part FINAL: (1) the git-log census —
+research/**310** (number per registry-150's §7.4 AUTHORITY at the latest
+d54 tip `0a658c7b3` + a fresh all-tip ls-tree sweep: the first publish's
+283 loses to f26's §7.3 re-issue (14:18:55, published 15:35:39) and
+g59's `283-death-effects-family-bible.md`; 308 four-claimant
+(c24/d21/g13/g65), 309=g15, 310 first-free — chain 283→310, rename
+executed on this branch per the registry procedure) publishes the
+five-part FINAL: (1) the git-log census —
 five commits `ebf418031`/`15e5448a9`/`61c47ed79` + the two witness-fix
 rounds `b1c4ec0a8`/`f430ccf83`, 20 rows + 40 module witnesses (the
 light-pets commit message's "12" undercounts: the tip's `#[test]` census

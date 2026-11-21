@@ -1,14 +1,29 @@
-# 283 — Projectile aiStyles 11-20 RETIRE FINAL (W4-d2, code-only)
+# 310 — Projectile aiStyles 11-20 RETIRE FINAL (W4-d2, code-only)
 
 Branch `task/W4-d2-proj-ai-11-20`, worktree TR-W4-d2. RETIRE base tip
-`f430ccf83` (clean). Number per the collision registry
-(`150-research-number-registry.md`, d54 refresh `72226e500` §6: 151-236 +
-244-280 assigned, 281+ self-adjudicated) + a fresh all-tip
-`git ls-tree docs/research/` sweep at the RETIRE fetch: 281 has SEVEN live
-claimants (c9/c25/d106/d125/d30/d9/g48), 282 has two (d125
-`282-d125-retire-final.md`, g48 `282-39-item-ownership-seed.md`) —
-**283 is first-free at this tip**. Witnesses stay WRITTEN NOT RUN
-(no cargo/tests/rustfmt/graphify per lane constraint).
+`f430ccf83` (clean); SEAL commit `a3b364350` (first published as 283 —
+renamed here, chain **283→310**).
+
+**Numbering (corrected per the registry §7.4 AUTHORITY):** the first
+publish's "283 first-free" scan read the round-2 refresh `72226e500` §6
+and missed the round-3 tables — registry-150 at the latest d54 tip
+`0a658c7b3` (publish 16:33:29, §7.3/§7.4) assigns **281/282/283 to f26**
+(the 68→281/282/283 re-issues; 283's claim `b89812bf7` 14:18:55,
+published `51a28d09e` 15:35:39 — both BEFORE this lane's 17:19:28 push),
+and **283 is additionally held by g59**
+(`283-death-effects-family-bible.md`). Per §7.4's cutoff note (losers
+take ≥308 after a fresh sweep), a fresh all-tip `git ls-tree
+docs/research/` sweep at THIS rename: 308 has FOUR claimants
+(c24 `308-journey-family-final.md`, d21
+`308-projectile-ai-201-210-final.md`, g13 `308-dust-main-family-bible.md`,
+g65 `308-g65-kill-death-dust-family-final.md`), 309 = g15
+(`309-item-dust-family-bible.md`), 312 = c9 (`312-snail-family-final.md`);
+306/307 are g86/g43's §7.4 assignments, 304 = d50 (§7.4) contested by
+d119's earlier `304-housing-relocation-family-bible.md` (16:22:58 —
+not this lane's collision), 305 = f4 (§7.4). **310 is first-free and
+uncontested at this sweep** — this doc takes it; the 308 four-way and
+304 are the merger's registry round-4, not this lane's. Witnesses stay
+WRITTEN NOT RUN (no cargo/tests/rustfmt/graphify per lane constraint).
 
 ## 1. The git-log census — what landed on band-11-20
 
