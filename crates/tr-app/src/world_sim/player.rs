@@ -1683,9 +1683,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     // W4-g11 — the `Player.Teleport` effect pair (`Player.cs:37444`/`:37489`):
     // the Entry effect at the OLD box, the move, the Exit at the NEW box, the
     // grants — on the `UpdatePlayers` stream. The same-tick deferral is
-    // observation-identical (nothing probes the dust between the move and
-    // this drain); it runs BEFORE the force-clear so the Shellphone fallback's
-    // tile kills follow the teleport exactly like the C#.
+    // observation-identical: the reachable player-tick caller (the no-space /
+    // Shellphone fallback) rides style 11 — g12's arm, which draws no dust and
+    // rolls no RNG — so the replay only re-applies the (already-inline) move +
+    // the grants. It drains beside `force_clear` (both post-step; nothing probes
+    // the spawn area between the teleport and the clear).
     if let Some(req) = teleport_effect_req {
         crate::main_dust::player_teleport(app, req);
     }
