@@ -10576,10 +10576,44 @@ impl Projectile {
             self.ai[1] = rng.next_range(80, 121) as f32 / 100.0;
         }
         self.scale = self.ai[1];
-        // `HandleMovement`'s terminal default (`:19848-19851`): the bubble's
-        // row keeps its `tileCollide`, so a blocked move steps into the tile
-        // and dies.
-        self.kill_step(world);
+        // `HandleMovement`'s type-405 arm (`:18317-18335`, W4-d7 F5): the
+        // bubble bounces once (full-speed per-axis reflect) then dies on the
+        // second block — NOT the kill-on-tile default. The dry collision pass
+        // (`flag6 = true`, 405 is not projPet / decidesManualFallThrough) then
+        // the bounce; `UpdatePosition`'s integrate (`:20445`, 70 not skipped).
+        self.bubble_movement(world);
+    }
+
+    /// `HandleMovement`'s half for the Flairon Bubble (405, W4-d7 F5): the dry
+    /// `Collision.TileCollision` pass (`flag6 = true`), the type-405 blocked
+    /// arm ([`crate::projectile_ai_style69::bubble_bounce`], `:18317-18335` —
+    /// the first bounce reflects both changed axes, the second `Kill()`s),
+    /// then `UpdatePosition`'s `position += velocity` (`:19858`/`:20445`).
+    /// SKIPPED (ANALYSIS, the `pirate_movement` precedent): the slope passes,
+    /// the `SwitchTiles` plate presses, the `HitTiles` dust.
+    fn bubble_movement(&mut self, world: &World) {
+        if !self.tile_collide {
+            self.pos += self.vel;
+            return;
+        }
+        let last_velocity = self.vel;
+        let tc = crate::collision::tile_collision(
+            world,
+            [self.pos.x, self.pos.y],
+            [self.vel.x, self.vel.y],
+            self.w,
+            self.h,
+            true,
+            true,
+        );
+        self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
+        // `:17896-17898` + `:18317-18335` — a blocked move bounces (or dies).
+        if self.vel != last_velocity {
+            crate::projectile_ai_style69::bubble_bounce(self, last_velocity);
+        }
+        // `UpdatePosition` (`:20445`) — the dry integrate (a dead slot's
+        // integrate is a no-op the C# also runs, `:19858`).
+        self.pos += self.vel;
     }
 
     /// `AI()`'s aiStyle-133 block (`Projectile.cs:36435-36498`) — the Dark
@@ -20180,6 +20214,19 @@ impl ProjectilePool {
                     rng,
                     luck,
                 );
+                // W4-d7 wiring (F5) — `Kill()`'s type-405 arm
+                // (`Projectile.cs:72849-72873`): sound Item54 + 20× dust 212,
+                // each ONE NextDouble hue draw (the num286<30 branch always
+                // taken, the Next(45,91) else dead). C# body order: the 405
+                // arm (:72849) follows the 669 (:71952).
+                if self.slots[i].kind == FLAIRON_BUBBLE {
+                    let (bx, by) = {
+                        let p = &self.slots[i];
+                        (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+                    };
+                    self.pending_proj_sounds.push((2, 54, bx, by, 0.0));
+                    crate::projectile_ai_style69::bubble_kill_draws(rng);
+                }
                 // W4-d7 wiring — `Kill()`'s 379/377 dust census
                 // (`Projectile.cs:75522-75532`): 5× dust 171, each ONE
                 // `Next(1,10)` scale draw (the bodies skipped). The 377

@@ -226,6 +226,44 @@ pub fn flairon_tile_hit(p: &mut Projectile) {
     p.wants_sound = Some((0, 0, p.pos.x, p.pos.y, 0.0));
 }
 
+/// `HandleMovement`'s type-405 blocked-move arm (`Projectile.cs:18317-18335`,
+/// W4-d7 F5): `localAI[0]++`; the FIRST bounce (`localAI[0] < 2`) reflects
+/// each changed axis from `lastVelocity` (full speed, no damping); the
+/// SECOND (`localAI[0] >= 2`) `Kill()`s. The wiring caller invokes it when
+/// the move was blocked (the `:18398` gate is NOT reached — the 405 type arm
+/// precedes it), with the pre-collision velocity. Returns true when the
+/// bubble died (the second bounce).
+pub fn bubble_bounce(p: &mut Projectile, last_vel: Vec2) -> bool {
+    p.local_ai[0] += 1.0;
+    if p.local_ai[0] < 2.0 {
+        if p.vel.x != last_vel.x {
+            p.vel.x = 0.0 - last_vel.x;
+        }
+        if p.vel.y != last_vel.y {
+            p.vel.y = 0.0 - last_vel.y;
+        }
+        false
+    } else {
+        // `:18333` — `Kill()` (the pool's kill convention).
+        p.kill_time_left = p.time_left;
+        p.active = false;
+        p.time_left = 0;
+        true
+    }
+}
+
+/// `Kill()`'s type-405 arm (`Projectile.cs:72849-72873`, W4-d7 F5): sound
+/// Item54 + 20× dust 212, each ONE `NextDouble` hue draw (`:72868`). The
+/// `num286 < 30` branch (`:72860`) is ALWAYS taken (the loop runs 0..20), so
+/// the `Next(45,91)` else arm (`:72866`) is DEAD — zero draws there. The 20
+/// hue draws stay on the stream (the bodies skipped); the sound cue rides
+/// the pool's death hook.
+pub fn bubble_kill_draws(rng: &mut dyn DropRng) {
+    for _ in 0..20 {
+        let _ = rng.next_double(); // `:72868` — the hslToRgb hue
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -425,5 +463,40 @@ mod tests {
         assert_eq!(p.vel, Vec2::new(14.0, 3.0), "69 keeps its velocity");
         assert_eq!(p.wants_sound, Some((0, 0, 100.0, 100.0, 0.0)));
         assert!(p.active, "the head recalls, it does not die on the tile");
+    }
+
+    /// W4-d7 F5 — `:18317-18335`: the first bounce reflects each changed axis
+    /// at full speed; the second kills. An unchanged axis keeps its value.
+    #[test]
+    fn w4_d7_f5_the_bubble_bounce_ladder() {
+        let mut p = head(Vec2::new(100.0, 100.0), Vec2::new(0.0, 4.0));
+        p.kind = 405;
+        // First block: X changed (6→0), Y unchanged (4→4).
+        let died = bubble_bounce(&mut p, Vec2::new(6.0, 4.0));
+        assert!(!died);
+        assert_eq!(p.local_ai[0], 1.0);
+        assert!((p.vel.x - (-6.0)).abs() < 1e-6, "X reflects full speed");
+        assert_eq!(p.vel.y, 4.0, "Y unchanged — no reflect");
+        assert!(p.active);
+        // Second block: both axes changed → Kill.
+        p.vel = Vec2::new(0.0, 0.0);
+        let died = bubble_bounce(&mut p, Vec2::new(-6.0, 4.0));
+        assert!(died);
+        assert_eq!(p.local_ai[0], 2.0);
+        assert!(!p.active, "the second bounce kills");
+        assert_eq!(p.time_left, 0);
+    }
+
+    /// W4-d7 F5 — `:72849-72873`: the Kill census draws exactly 20 NextDouble
+    /// hue values (the num286<30 branch always taken, the Next(45,91) dead).
+    #[test]
+    fn w4_d7_f5_the_bubble_kill_draws_twenty_hues() {
+        let mut rng = UnifiedRandom::new(405);
+        let mut oracle = UnifiedRandom::new(405);
+        bubble_kill_draws(&mut rng);
+        for _ in 0..20 {
+            let _ = oracle.next_double();
+        }
+        assert_eq!(rng.next_range(0, 1), oracle.next_range(0, 1), "exactly 20 draws");
     }
 }
