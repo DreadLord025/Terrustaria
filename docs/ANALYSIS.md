@@ -39244,3 +39244,61 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+
+## The shadow orb / crimson heart draw slice (W4-g85, code-only)
+
+`crates/tr-app/src/render/orb_draw.rs` ports the orb family's draw-side
+behaviour as an UNWIRED slice (the `render/special_tiles.rs`
+convention); the census + keep-one boundaries live in
+`docs/research/W4-g85-orb-draw.md`. CODE-ONLY: no compiler invoked,
+the 12 witness tests are WRITTEN NOT RUN.
+
+**Scope.** The crimson heart is the `frameX >= 36` half of the tile-31
+sheet (`AddShadowOrb` `WorldGen.cs:32111-32115`), not a separate
+tile; 696 mirrors 31's animation frame (`Main.cs:18588`). Three sites
+share that stage bit: (1) the glow pulse — ALREADY landed in
+`tile_light/scanner.rs` (`TileLightScanner.cs:2965-2983`), this slice
+adds 2 stage/jitter witnesses only; (2) the ambient draw dust
+(`TileDrawing.cs:7335-7347`: `Next(20)` gate on `_rand`, heart
+stage dust 5 alpha 100 + `velocity.Y=0; velocity.X*=0.3`, orb stage
+dust 14) — `orb_ambient_dust`; (3) the hammer-break dust stages
+(`WorldGen.cs:68966-68969`: heart dust 5 draw-free, orb
+`genRand.Next(2)!=0?1:14`, plain `:69166` tail; fail 3 / break 10
+from `:66601-66606`) — `orb_break_dust_type`/`orb_break_burst`.
+Plus the shine sparkle slice for Heart 12 (red) / ManaCrystal 639 (blue)
+(`:7413-7432` gate + `:7511-7518` colours + `:7527-7528` dust 43
+alpha 254 scale 0.5 velocity 0).
+
+**Census pins.** The `:7511` colour row also lists 665, but
+`Main.tileShine[665]` is never written (only `[12]=300`
+`Main.cs:7518`, `[639]=300` `:9652`) — the row is dead code and
+the port refuses 665 with zero draws (witnessed). The altar pair 26/695
+(threshold `>= 54`) is the g86 lane — `orb_break_stage` returns
+`None` for them. No `MakeTileDust` arm other than `:68966/:68968`
+mentions 31/696 (full `:66687-69169` scan), so the burst tail is the
+plain `NewDust` (alpha 0, scale 1).
+
+**RNG (S1-A-10).** Three streams kept separate: `_rand` gates
+(`Next(20)` once per emit tick miss included; shine `Next(300)`
+drawn BEFORE the `>= max/30` miss test, the dark-light early return
+draws nothing), `Main.rand` (every `NewDust` internal + the break
+stage `Next(2)` — `genRand` IS `Main.rand`, `WorldGen.cs:4445`;
+per dust: stage draw THEN internals), and the scanner's per-tile
+`FastRandom` (the glow jitter, untouched).
+
+**Deviations / deferred seams.** UNWIRED: the emit entry gate
+(`TileDrawing.cs:965-968`, the `FastRandom(TileFrameSeed)`
+quarter-roll) and the `KillTile` dust-seam call site are the wiring
+wave's obligation. Keep-one at merge: W4-d60's whole
+`DrawTiles_EmitParticles` battery and W4-d54's whole
+`KillTile_MakeTileDust` table carry the same arms — one body per arm
+survives; this slice's witnesses pin the contract either way. The
+CheckOrb break-tick sound tail is W4-c14's (in flight), not touched.
+
+Verification: 10 `render/orb_draw.rs` + 2 `tile_light/scanner.rs`
+witnesses (stage bit, gate-once/miss-zero-draw, heart clamp vs a
+mirrored plain spawn, shine dark-return/roll-before-miss/colours/
+665-dead, break draw census, burst counts + stream-order mirror, glow
+stage flip + per-tile jitter bands) — WRITTEN, NOT RUN (no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked).
