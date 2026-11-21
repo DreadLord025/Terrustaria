@@ -53,6 +53,15 @@
 //!   gate (the C#'s `Player.tileTargetY` static write).
 //!
 //! Deviations (recorded in docs/ANALYSIS.md "The rope-coil lane (W4-g82)"):
+//! * **FINAL keep-one (2026-11-21, `docs/research/26e-f-rope-union-final.md`)**:
+//!   this module's [`coil_step`] is the CANONICAL style-35 machine — the
+//!   d4 branch's `ai_rope_coil` + its four `data.rs` const rows are the
+//!   drop half (the re-adjudication reversed 26e's KEEP-d4 verdict after
+//!   g82 wired the full lane: refund + cue + usability + chain draw +
+//!   the friendly pin + PVP exemption + the style-35 direction write,
+//!   none of which d4 carries; the two faithfulness deltas 26e found —
+//!   the null-abort integrate and the dead-tick integrate — are FIXED
+//!   here, so the machine is now a superset of d4's).
 //! * The dust walks that share the chain geometry (`Projectile.cs:74615-
 //!   74677` for 475/505/506, `:74679-74731` for 171 — 4 dust per segment
 //!   past `ai[1]`, types 3/30/239/129) are SKIPPED with the dust layer;
@@ -240,7 +249,13 @@ pub(crate) fn coil_step(p: &mut Projectile, world: &mut World, local_owner: u8) 
     p.pos += adjusted;
     let mut budget = 10;
     // :27244-27247 — a null tile aborts WITHOUT Kill (the coil keeps flying).
+    // The C# returns from AI only — HandleMovement still runs (`:17015` →
+    // `UpdatePosition` `:20445` integrates the dead/alive slot alike; 35 is
+    // not on the `:20435` skip list), so the free integrate runs on this
+    // abort too (the final-phase fix — d4's arm carried it, the port's
+    // first landing missed it; the 26e-f final union doc, delta 5).
     if world.tile(tx, ty).is_none() {
+        p.pos += p.vel;
         return kills;
     }
     // :27248-27250 — skip down through the existing rope column.
@@ -288,6 +303,12 @@ pub(crate) fn coil_step(p: &mut Projectile, world: &mut World, local_owner: u8) 
     p.kill_time_left = p.time_left;
     p.active = false;
     p.time_left = 0;
+    // The dead-tick integrate: C# `Update` calls HandleMovement →
+    // `UpdatePosition` (`:20445` `position += velocity`) BEFORE the
+    // `!active` return (`:17027`), so the placement tick moves the dead
+    // slot too — on top of the collision-adjusted step above, faithful
+    // (the ai_trap_spear precedent; the 26e-f final union doc, delta 8).
+    p.pos += p.vel;
     kills
 }
 
@@ -673,6 +694,56 @@ mod tests {
             assert_eq!(w.tile(19, y).unwrap().kind, 213, "link at row {y}");
         }
         assert!(!w.tile(19, 29).unwrap().active(), "the 11th cell stays free");
+    }
+
+    // The final-phase faithfulness fixes (26e-f deltas 5+8): the C# `AI()`
+    // returns leave HandleMovement running (`:17015` → `UpdatePosition`
+    // `:20445`, 35 not on the `:20435` skip list; the `!active` return sits
+    // AFTER, `:17027`) — so BOTH the null-tile abort AND the placement kill
+    // tick integrate the velocity.
+    #[test]
+    fn w4_g82_the_null_abort_and_the_kill_tick_still_integrate() {
+        // The kill-tick integrate: the floor-contact rig — after the
+        // adjusted step (+0, +6) the dead slot ALSO adds vel (0, 10).
+        let mut w = world();
+        for x in 18..24 {
+            put(&mut w, x, 30, 1);
+        }
+        let mut p = proj(171);
+        p.pos = Vec2::new(320.0 - 7.0, 460.0);
+        p.vel = Vec2::new(0.0, 10.0);
+        coil_step(&mut p, &mut w, 0);
+        assert!(!p.active);
+        assert!(
+            (p.pos.y - (460.0 + 6.0 + 10.0)).abs() < 1e-4,
+            "the adjusted +6 THEN the dead-tick +10 (`:20445`)"
+        );
+        // The null-tile abort: a short world (32 rows) with a side wall.
+        // The box (300..314, 490..504) flies right into the wall's left
+        // face at x=320: vx 10 clamps to 6 (contact), vy 0 stays 0 (the
+        // box rows 30..31 are wall-free at x 18..19 — the wall column is
+        // 20). Centre (307, 497) → tile (19, 31)… row 31 exists, so seat
+        // the box one row lower: y = 500 → centre y 507 → ty 31 still.
+        // Instead push the centre PAST the world: y = 506 → centre 513 →
+        // ty 32 > 31 → world.tile(19, 32) = None. The box bottom 520 is
+        // past the world too, but the X probe still hits the wall column
+        // at rows 30..31 (the box top 506 spans rows 31..32; row 31 of
+        // column 20 is solid), so the collision clamps vx → contact.
+        let mut w2 = World::new("t".into(), 64, 32);
+        for y in 28..32 {
+            put(&mut w2, 20, y, 1);
+        }
+        let mut q = proj(171);
+        q.pos = Vec2::new(300.0, 506.0);
+        q.vel = Vec2::new(10.0, 0.0);
+        let kills = coil_step(&mut q, &mut w2, 0);
+        assert!(kills.is_empty());
+        assert!(q.active, "the null abort never kills (`:27244-27247`)");
+        assert_eq!(q.ai[1], 0.0);
+        assert!(
+            (q.pos.x - 310.0).abs() < 1e-4,
+            "the abort integrates the raw vel (HandleMovement, `:17015`)"
+        );
     }
 
     // Main.cs:28504-28547 — the chain geometry: count ramp, sag, reverse
