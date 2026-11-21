@@ -75,7 +75,7 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
-| 109 | DOC-SWEEP lane 28: proj aiStyle 191-200 skip census (W4-d20: drone camera / flint jitter / 200-droppings keep-one / Jumino 5276 pet chain / terra-chain use-path / tracked-loops d80 contract; code-only) | `109-doc-sweep-proj-191.md` | 🟡 6 skips verified; T5 terra-chain use-path gap (cross-lane) |
+| 109 | DOC-SWEEP lane 28 + SEAL: proj aiStyle 191-200 skip census + FINAL band census + sword-family declaration (W4-d20: 7 arms landed, T5 terra-use-arms + slash-row copies + ai2 drain fix landed, T4b landed; slashes keep-d19 dedupe published; code-only) | `109-doc-sweep-proj-191.md` | 🟢 SEALED — all ten styles ARMED+ROWED; witnesses written not run |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

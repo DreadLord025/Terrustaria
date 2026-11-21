@@ -681,3 +681,156 @@ resolve as tabulated above. No repo code was modified (research-only, per
   keep-one resolution, the two `200 =>` dispatch arms are a duplicate-match
   compile error and the two `BIRD_DROPPINGS` rows a duplicate definition. The
   merge MUST resolve to one (T3).
+
+---
+
+# SEAL — the FINAL band-191-200 census + the sword-family declaration (registry 109)
+
+Code-only seal (no cargo/tests/rustfmt/graphify per the lane constraint).
+Every line number below is pinned at the seal tip's HEAD
+(`9bc29bc7f`, the T4b commit) unless stated; d19 reads are at
+`origin/task/W4-d19-proj-ai-181-190` tip `61f7638a5`. Witnesses WRITTEN NOT RUN.
+
+## S1 — the git log census: what landed on band 191-200
+
+`git log origin/task/W4-d20-proj-ai-191-200..HEAD` at seal time = 4 commits
+ahead of the published tip `243f81672` (the tip d19 §7a monitored):
+
+| commit | scope | files |
+| --- | --- | --- |
+| `7b4173846` | T5 rows: the four d19 aiStyle-190 slash rows copied VERBATIM (972/982+997/983/984) + the ignoreWater/melee overlay arms + consts | `projectile/data.rs` (+65/−1) |
+| `23199067d` | T5 use-path: the four paired slash+beam arms (`Player.cs:48870/48914/48922/48930`) into `fire_non_ammo_shot` before the generic tail; 6 witnesses | `world_sim/editing.rs` (+313), `anchors.txt` (+1) |
+| `23c075d7a` | T5-canary: the dart-spawn drain carries ai2 (11th tuple slot); the 1043 release slash's scale 1 survives; 1 merge-canary witness | `projectile.rs`, `projectile_ai_darts.rs`, `projectile_ai_misc.rs` (+81/−10) |
+| `9bc29bc7f` | T4b pet persistence: `UpdatePet`/`UpdatePetLight` (`Player.cs:17298-17340`) as `update_pet_persistence`, wired after UpdateBuffs; 5 witnesses | `world_sim/player.rs`, `anchors.txt` |
+
+**T5 terra-use-arms: LANDED locally (`23199067d`), NOT YET on origin at the
+d19 §7a monitor read.** d19's "d20c-T5 NOT-landed" verdict was correct at
+`243f81672` and is now stale by these four commits — this seal + push is the
+receipt d19 §7a asked for. The earlier band arms (191/192/195/196/198/199/200)
+landed pre-`243f81672` (`2b2b71a71`/`543bcbdf9`/`6e44ca3bd`/`f4e660a20`/
+`75286d0e4`/`fe576990c`/`e239723b3`); the doc-sweep six items are
+`a6211d389`…`243f81672` (items 1-6 + consolidation above).
+
+## S2 — the d19 sword-seal contract (26g §7/§7a/§8) read against THIS tip
+
+- **The envelope witness gate** (`w4_d19_the_terra_chain_payload_feeds_the_190_envelope`,
+  d19 `projectile_ai_sword_styles.rs:1625` at `6b56e27c`, re-read intact at
+  `61f7638a5`): the merged pool must spawn 972 row-gated with
+  `ai = [dir·gravDir, itemAnimMax, scale, 0]`, finite `num = localAI[0]/ai[1]`,
+  scale `(1 + num·0.2)·ai2`, progress-1 kill. d20's T5 feeds exactly this:
+  `editing.rs:4093` gate → `:4150` per-arm table → `spawn_sword` closure
+  (`:4191-4213` at HEAD) writes ai0/ai1 through `spawn_with_data_ai` + `set_ai2(scale)`
+  — the ai2 third slot rides the same seam d19's witness drives.
+- **slashes-ONLY-d19 HARD gate — DEVIATION, adjudicated here.** `7b4173846`
+  copies d19's four slash rows onto d20, against the seed's "do NOT duplicate"
+  instruction. Rationale (recorded in the commit + the data.rs comment): the
+  row is the spawn GATE (`spawn_with_data_ai` declines rowless kinds), so
+  without the copy T5's paired slashes never spawn on THIS base and the whole
+  port is untestable pre-merge. The copies are **value-identical** to d19
+  (`data.rs:3660-3682` at HEAD vs d19 `:3700-3723`, tuples re-read whole this
+  seal): 972 pen2 / 982|997 pen3 / 983 pen6 / 984 pen3, all
+  `16x16, 190, TIME_LEFT_DEFAULT, tileCollide false, LOCAL −1, alpha 0`.
+  **Merge resolution (published for the merger): keep-ONE — keep d19's block,
+  drop d20's copy** (consts `data.rs:4620-4636`, row block `:3652-3682`,
+  ignoreWater arm `:4321-4325`, melee arm `:4366-4371` at HEAD; d19's overlay
+  arms are supersets that already carry every kind — dropping the d20 arms
+  loses nothing). This extends the 1043 keep-one pattern to the whole slash
+  set; the §8 step-4 "1043 dedupe" becomes a five-kind dedupe.
+- **1043 dup value-identical keep-one:** re-confirmed at HEAD — d20
+  `data.rs:3651` vs d19 `:3725-3729`, both
+  `(16.0, 16.0, 190, 2, TIME_LEFT_DEFAULT, 0, false, false, false, (true, -1, false, -1, 0, 1.0))`.
+  Keep either (d19's rides the band set). The merge canary stands: 1043 needs
+  d20's 198 spawner (`projectile.rs:17467` arm + drain `:17488-17493`) AND
+  d19's 190 dispatch; the ai2 drain fix (`23c075d7a`) is REQUIRED for the
+  slash to fly with scale 1 — a merge that keeps the old `_ai2` drain
+  collapses `scale *= ai[2]` to 0 (`:42222`).
+- **§8 step 5 (T5 LAST against merged rows):** satisfied by construction —
+  T5 spawns through the row-gated seam and carries no 190 AI (d19's stays
+  sole owner); after the keep-one dedupe the merged rows are d19's and the
+  §7 envelope witness must pass against them (written not run).
+
+## S3 — terra-use-arms: all four branches ported (the ledger gap CLOSED on d20)
+
+The ledger's major-fidelity bug ("use-path spawn arms missing on EVERY
+branch", doc-sweep item 5) is closed on this lane by `23199067d`. The four
+arms at HEAD `world_sim/editing.rs` (`fire_non_ammo_shot`, gate `:4093`,
+table `:4150`, spawns `:4191-4230`), each vs its C# arm re-read:
+
+| item | C# | slash | partner | pinned |
+| --- | --- | --- | --- | --- |
+| 273 NightsEdge | `:48870-48877` | 972 vel(dir,0) ai1=animMax | 972 beam vel=aim ai0=dir×0.1 ai1=30 | `w4_d20_t5_nights_edge_spawns_the_paired_972` (`:18930`) |
+| 675 TrueNightsEdge | `:48914-48921` | 972 (LITERAL, `:48917`) | 973 beam dmg/2 ai1=32 | `w4_d20_t5_true_nights_edge_halves_the_beam` (`:18958`) |
+| 674 TrueExcalibur | `:48922-48929` | 983 | 982 ghost dmg 0 vel(dir,0) ai1=animMax (`:48926`) | `w4_d20_t5_true_excalibur_ghost_is_damage_zero` (`:18980`) |
+| 757 TerraBlade | `:48930-48937` | 984 (`:48933`) | 985 beam vel×5 ai1=18 (`:48934`) | `w4_d20_t5_terra_blade_beam_is_times_five` (`:19002`) |
+
+Shared shape: `ai0 = dir·gravDir` (gravDir=1 upright fold), `ai1 =
+itemAnimationMax` (prefixed melee-speed int, `scaled_anim_secs`), `ai2 =
+GetAdjustedItemScale` via `set_ai2` (glove folds false, documented),
+MountedCenter half-box spawns, `GetWeaponDamage` epsilon via
+`whip_weapon_damage`, arpen + revolver-crit stamps on both slots, ZERO
+`Main.rand` draws (`w4_d20_t5_the_sword_arms_spend_no_draw`, `:19025`).
+Copied-rows pin: `w4_d20_t5_the_copied_slash_rows_carry_style_190` (`:18890`).
+Canary: `w4_d20_t5_the_flint_slash_canary_spawns_with_the_scale`
+(`projectile_ai_misc.rs:2967`) — dmg 89, vel(dir,0), ai0=dir ai1=6 ai2=1 +
+the d19-twin row pin. All WRITTEN NOT RUN. Residual: 997 HORSEMANS_BLADE
+rides the copied rows for chain completeness but has NO use-arm this pass
+(no C# terra-chain arm for it; its pumpkin spawner is `AI_194`-lane scope).
+
+## S4 — band 191-200 census (the FINAL table)
+
+Dispatch lines at HEAD `projectile.rs`; rows at HEAD `projectile/data.rs`:
+
+| aiStyle | C# | arm | row(s) | dispatch | owner / status |
+| --- | --- | --- | --- | --- | --- |
+| 191 | `AI_191_TrueNightsEdge` `:41640-41808` | `ai_true_nights_edge` + `terra_blade_move` (`projectile_ai_misc.rs:1533`) | 973 `:3687`, 985 `:3693` | `:17527` | d20 ARMED+ROWED (`2b2b71a71`) |
+| 192 | `AI_192_JuminoAnimation` `:41501-41638` | `ai_jumino` (+gift drain `drain_gift_items`) | 995 `:3632` | `:17433` | d20 ARMED+ROWED (`543bcbdf9`) |
+| 193 | `AI_193_Flamethrower` `:41337-41401` | pre-existing arm | pre-existing rows | `:17371` | PRE-D20 base (`a725acb04` already carries it) — no d20 work owed |
+| 194 | `AI_194_HorsemanPumpkin` `:41293-41336` | `ai_horseman_pumpkin` (`projectile.rs:10810`) | pre-existing | `:19701` | PRE-D20 (S1-D-4 census W-10) — no d20 work owed |
+| 195 | `AI_195_JimsDrone` `:40923-41067` | `ai_jims_drone` + `drone_move` | 1020 `:3637` | `:17449` | d20 ARMED+ROWED (`6e44ca3bd`); camera T1 + sound T6a seeded cross-lane |
+| 196 | `AI_196_Petal` `:40466-40560` | `ai_petal` + `petal_storm_move` | 1038 `:3623`, 1116 `:3628` | `:17414` | d20 ARMED+ROWED (`f4e660a20`) |
+| 197 | `AI_197_CeilingAndHoverTurret` `:40307-40479` | pre-existing arm | pre-existing rows | `:18445` | PRE-D20 (S1-D-4b-2) — no d20 work owed |
+| 198 | `AI_198_Flint` `:52238-52415` | `ai_flint` + EmitSpikes + FindBlockSurface/Ceiling | 1040 `:3642`, 1041 `:3646`, 1043 `:3651` | `:17467` | d20 ARMED+ROWED (`75286d0e4`); ai2 drain fix `23c075d7a`; sound T6b seeded |
+| 199 | `AI_199_MeteorOre` `:40019-40041` | `ai_meteor_ore` | 1078 `:3617` | `:17400` | d20 ARMED+ROWED (`fe576990c`) |
+| 200 | `AI_200_BirdDroppings` `:39985-40017` | `ai_bird_droppings` | 1080 `:3611` | `:17385` | d20 ARMED+ROWED (`e239723b3`) — DUP vs c10, keep-c10 at merge (T3, item 3) |
+
+**ALL TEN styles ARMED+ROWED at this tip.** Seven are d20 ports; 193/194/197
+were already armed on the pre-d20 base (`a725acb04`, verified by git-show this
+seal). The band's residuals are merge-order + cross-lane seeds only: the 190
+AI for 1043/972/982/983/984/997 is d19's (compose at merge), the 200 dedupe is
+T3, camera T1 / sounds T6a-b / pet-chain T4a-c remain seeded (T4b landed
+`9bc29bc7f`; T4a in flight in the co-lane's uncommitted work).
+
+## S5 — the FINAL declaration (registry 109)
+
+**The 191-200 band is COMPLETE on task/W4-d20-proj-ai-191-200.** Seven
+verbatim AI arms + rows + dispatch + RNG-census witnesses (all WRITTEN NOT
+RUN), the terra-chain use-path T5 (four arms + copied slash rows + ai2 drain
+fix + 7 witnesses), the T4b pet persistence, and the six-item doc-sweep with
+cross-lane seeds. The sword family composes per d19 26g §8's five ordered
+steps with ONE amendment published here: step 4's dedupe covers the whole
+slash set (972/982/983/984/997 + 1043), keep-d19, drop d20's `7b4173846`
+copies at the four exact hunks (S2); step 5's T5 is LANDED and feeds the §7
+envelope contract exactly — the merger runs d19's
+`w4_d19_the_terra_chain_payload_feeds_the_190_envelope` plus d20's
+`w4_d20_t5_*` witnesses against the merged pool as the gate. No further d20
+rounds are owed on the band; the open seeds (T1/T3/T4a/T4c/T6a/T6b) belong to
+their named lanes.
+
+### Seal verification performed (code-only)
+
+- `git status` co-lane check: dirty-2 (`projectile/data.rs` T4a pet rows +31,
+  `world_sim/editing.rs` T4a pet shoot arm +71) — file hashes stable over a
+  20 s re-read, last write ~2 h before seal → co-lane IDLE, not advancing;
+  its uncommitted work was NOT staged or committed by this seal.
+- `git log`/`git show --stat` census of the four ahead commits (S1).
+- d19 26g §7/§7a/§8 re-read whole at `61f7638a5`; the envelope witness
+  re-read at `projectile_ai_sword_styles.rs:1625`.
+- Row dup compare: d20 HEAD `data.rs` slash block + 1043 vs d19 tip
+  `data.rs:3700-3729` — tuples value-identical (S2); overlay arms compared
+  (d19 supersets confirmed).
+- T5 arms re-read whole at HEAD `editing.rs:4093-4230` vs the four C# arms
+  (S3 table); all 7 T5 witnesses located by name + line.
+- Band dispatch grep at HEAD (ten styles, S4) + pre-existence check of
+  193/194/197 at base `a725acb04`.
+- NO cargo/tests/rustfmt/graphify run (lane constraint); witnesses WRITTEN
+  NOT RUN; commit + push only, no merge, primary untouched.
