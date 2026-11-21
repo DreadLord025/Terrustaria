@@ -1285,8 +1285,12 @@ f3 3980e0c5b / f47 13eb89e60 / f32 c7c107fec / f18 4ee1579aa) + §9 additions
 370-d54j 97c8c5180 / 382-g81 a978fbd6a. Zero-stale verified per lane.
 **The number race is CLOSED for the second time — 62 total renames executed
 (§9 49 + §10 11 + 370/382). NO SELF-PICKS; new docs ≥383 Lead-assignment only.**
-Still-owed round-1 renames (outside §9/§10 scope, merger dedupes by final key):
-f6-198, g1-160, g2-157+163, f3-303, g78-179, f47-277+278, g46-70-fork-252.
+Still-owed round-1 renames — **ALL EXECUTED (7/7, Nov22 recovery wave)**:
+f6-198 4afa8db32 / g1-160 291b27eb0 / g2-157+163 b744a30f1 / f3-303 96074e92e /
+g78-179 839c5257d / f47-277+278 5b8dbbf9c / g46-70fork-252 22584a2c4.
+**REGISTRY 100% EXECUTED: 69 renames total (§9 49 + §10 11 + 370/382 + round-1 7).
+The owed-list is EMPTY. Merger dedupes by final key per §9/§10 tables.**
+Newly noted (round-1, non-blocking): f6-65→191 (separate doc, dispatch when convenient).
 
 ### §9.4 — EXECUTION COMPLETE (49/49)
 
