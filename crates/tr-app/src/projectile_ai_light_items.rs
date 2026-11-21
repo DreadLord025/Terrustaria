@@ -596,11 +596,13 @@ pub(crate) fn flare_step_with_spot(
             p.local_ai[1] = 30.0;
         }
     } else {
-        // Stuck: a SolidCollision miss un-sticks (back to flight); the
-        // damage zeroes. W4-g78 wiring: the 1008 spot call (`:27124-27127`)
-        // runs AFTER the un-stick check, EVERY stuck tick, behind the
-        // netMode + distance gates (the unwired `None` path keeps the
-        // S1-P-i42 skip — research/77 §1.2).
+        // `:27119-27127` — Stuck: a SolidCollision miss un-sticks (back to
+        // flight); the 1008 spot check runs AFTER it and REGARDLESS of the
+        // un-stick (the C# `if` is a sibling, not an else — a flare that
+        // just un-stuck still checks its centre this tick); the damage
+        // zeroes. W4-g78 wiring: with a SpelunkerSpot attached the call is
+        // live behind the netMode + distance gates (the unwired `None`
+        // path keeps the S1-P-i42 skip — research/77 §1.2).
         if !flare_solid_collision(world, p.pos.x, p.pos.y, p.w, p.h) {
             p.local_ai[0] = 0.0;
             p.local_ai[1] = 30.0;

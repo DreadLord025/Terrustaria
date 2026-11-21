@@ -2178,6 +2178,35 @@ pub(crate) fn draw_npcs(
         let ty = (cy / TILE_PX) as i32;
         let l = light.get(tx, ty);
         let c = style.shade(l, tx, ty, anim_time);
+        // W4-g78 wiring — the behind-tiles black-out scan
+        // (`Main.cs:22922-22938`): BEFORE the tint chain, a behind-tiles
+        // NPC whose ±8 px box overlaps ANY zero-brightness cell paints
+        // BLACK (`Lighting.Brightness == 0f` — the raw light, NOT the
+        // brightness-scaled shade, so the port tests the raw `l` sum; the
+        // 113/114 Wall of Flesh pair is exempt). This is the C# order the
+        // tint chain then runs on (a blacked-out ichored NPC still goes
+        // yellow — the chain's ichor REPLACE lifts it).
+        let c = if behind_tiles
+            && !matches!(n.kind, NpcKind::WallOfFlesh | NpcKind::WallOfFleshEye)
+        {
+            let (bw, bh) = n.size();
+            let x0 = ((n.x - 8.0) / 16.0) as i32;
+            let x1 = ((n.x + bw + 8.0) / 16.0) as i32;
+            let y0 = ((n.y - 8.0) / 16.0) as i32;
+            let y1 = ((n.y + bh + 8.0) / 16.0) as i32;
+            let mut blacked = false;
+            for lx in x0..=x1 {
+                for ly in y0..=y1 {
+                    let b = light.get(lx, ly);
+                    if b[0] + b[1] + b[2] == 0.0 {
+                        blacked = true;
+                    }
+                }
+            }
+            if blacked { [0.0, 0.0, 0.0] } else { c }
+        } else {
+            c
+        };
         // W4-g78 wiring — `Main.DrawNPC`'s `npcColor =
         // rCurrentNPC.GetNPCColorTintedByBuffs(npcColor)` (`Main.cs:22939`):
         // the 14-arm debuff tint chain (midas/ichor/poison/… — the family
@@ -2195,9 +2224,9 @@ pub(crate) fn draw_npcs(
         // → `npc_hunter_tint::tint_key`) so a gain/loss rebuilds the range.
         // The Hunter floor's `hunter_active` input stays false until the
         // contested `draw_npcs` tail threading lands (research/77 §2 —
-        // c39/d70 own the signature); the behind-tiles black-out scan
-        // (`Main.cs:22922-22938`) that PRECEDES the chain in C# is the same
-        // contract's second hunk.
+        // c39/d70 own the signature). The behind-tiles black-out scan
+        // (`Main.cs:22922-22938`) that PRECEDES the chain in C# is WIRED
+        // above (the same uncontested window).
         let c = {
             let f = crate::npc_hunter_tint::tint_flags_from_buffs(n);
             if f.can_display_buffs && crate::npc_hunter_tint::tint_key(n) != 0 {

@@ -37,9 +37,12 @@
 //! the perspective player's `detectCreature`) needs the `draw_npcs`
 //! signature threaded with the player flag — that tail is contested by
 //! c39/d70, so it stays `false` here and the exact hunk is published in
-//! research/77 §2. The G6 `npc_key` is widened to hash the tint-relevant
-//! buff state (`npc.rs::render_key`, the uncontested free fn) so a buff
-//! gain/loss invalidates the cached world range (the d70-tint precedent).
+//! research/77 §2. The behind-tiles black-out scan (`Main.cs:22922-22938`)
+//! that PRECEDES the chain in C# is WIRED at the same site (the ±8 px box
+//! vs zero-brightness cells, the 113/114 WoF exemption). The G6 `npc_key`
+//! is widened to hash the tint-relevant buff state (`npc.rs::render_key`,
+//! the uncontested free fn) so a buff gain/loss invalidates the cached
+//! world range (the d70-tint precedent).
 
 use crate::npc::Npc;
 
