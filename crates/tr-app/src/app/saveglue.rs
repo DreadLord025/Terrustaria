@@ -1754,7 +1754,15 @@ mod chest_save_tests {
     fn w4_g47_app_new_settles_a_suspended_blob() {
         let mut w = World::new("settle".into(), 40, 80);
         w.frame_important = vec![false; tr_core::tiledata::TILE_COUNT];
-        // A floor row at y=70 and a suspended blob at (20, 10).
+        // A walled shaft at x=20 (walls x=19/21) down to a floor row at y=70,
+        // so only the down arm runs and the blob lands whole at (20, 69) —
+        // the row-averaging cannot spread it past the walls.
+        for y in 0..=70 {
+            for x in [19, 21] {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, flags: FLAG_ACTIVE, ..Default::default() };
+            }
+        }
         for x in 0..40 {
             let i = w.index(x, 70);
             w.tiles[i] = Tile { kind: 1, flags: FLAG_ACTIVE, ..Default::default() };
