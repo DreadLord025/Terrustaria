@@ -458,6 +458,63 @@ pub(crate) fn fairy_queen_death_draws(rng: &mut dyn DropRng) {
     }
 }
 
+/// W4-f50 — the Solar Flare hurt blast's `Kill()` dust/gore burst
+/// (`Projectile.cs:72183-72224`), as the DRAW CENSUS: every explicit
+/// `Main.rand` draw stays on the stream in the C#'s order, the `NewDust`/
+/// `NewGore` internal draws + bodies are the visual lane (the dust-pool
+/// task, the `celeb2_explosion` precedent). The burst:
+/// - 4× dust 31 (`:72183-72187`): each a `RotatedByRandom(π)` (TWO
+///   `NextDouble`) + one `NextDouble` (the radius) = 3 doubles.
+/// - 30× dust-6 pairs (`:72188-72201`): each pair two `RotatedByRandom(π)`
+///   + `NextDouble` triples = 6 doubles.
+/// - 10× dust 6 (`:72202-72209`): each a `RotatedByRandom(π)` = 2 doubles
+///   (the `RotatedBy(velocity.ToRotation())` draws nothing).
+/// - 10× dust 31 (`:72210-72216`): each a `RotatedByRandom(π)` = 2 doubles.
+/// - 2× gore 61-63 (`:72217-72224`): each the position `Next(100)` pair +
+///   the `Next(61, 64)` type + the `NewGore` kicks `Next(10, 31)`/
+///   `Next(-20, 21)` (`Gore.cs:1327-1328`) + the `RotatedByRandom(π)` +
+///   `NextDouble` reposition + the two `Next(-10, 11)` velocity kicks.
+pub(crate) fn solar_flare_blast_draws(rng: &mut dyn DropRng) {
+    // `RotatedByRandom(π)` = two `NextDouble` (`Utils.cs:1697-1700`).
+    fn rotated(rng: &mut dyn DropRng) {
+        let _ = rng.next_double();
+        let _ = rng.next_double();
+    }
+    // 4× dust 31: RotatedByRandom + NextDouble each.
+    for _ in 0..4 {
+        rotated(rng);
+        let _ = rng.next_double();
+    }
+    // 30× dust-6 pairs: two (RotatedByRandom + NextDouble) each.
+    for _ in 0..30 {
+        rotated(rng);
+        let _ = rng.next_double();
+        rotated(rng);
+        let _ = rng.next_double();
+    }
+    // 10× dust 6: RotatedByRandom each (the velocity-rotation draws nothing).
+    for _ in 0..10 {
+        rotated(rng);
+    }
+    // 10× dust 31: RotatedByRandom each.
+    for _ in 0..10 {
+        rotated(rng);
+    }
+    // 2× gore: the position pair, the type, the NewGore kicks, the
+    // RotatedByRandom + NextDouble reposition, the two velocity kicks.
+    for _ in 0..2 {
+        let _ = rng.next_range(0, 100);
+        let _ = rng.next_range(0, 100);
+        let _ = rng.next_range(61, 64);
+        let _ = rng.next_range(10, 31);
+        let _ = rng.next_range(-20, 21);
+        rotated(rng);
+        let _ = rng.next_double();
+        let _ = rng.next_range(-10, 11);
+        let _ = rng.next_range(-10, 11);
+    }
+}
+
 /// `AI_147_Explosion` (`Projectile.cs:53130-53399`) — the per-state
 /// firework burst, as the DRAW CENSUS: every explicit `Main.rand` draw
 /// stays on the stream in the C#'s order, the dust/gore bodies are

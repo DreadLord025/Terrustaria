@@ -1392,6 +1392,36 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 slot.velocity *= 0.1;
                 slot.no_gravity = true;
             }
+            // W4-f50 — the Solar Flare shield-grant dust burst (`Player.cs:
+            // 16387-16395`): 16 dust-6 particles at the player's box, each
+            // `noGravity`, scale 1.7, fadeIn 0.5, velocity ×5. The set-bonus
+            // machine queued the flag; the dust pool lives on the App, so the
+            // drain spawns them on the `UpdatePlayers` stream (the
+            // `pending_sticky_dust` convention). The `NewDust` alpha is 100,
+            // scale 1 (the post-arm overrides it to 1.7).
+            if p.take_solar_grant_dust() {
+                for _ in 0..16 {
+                    let idx = app.dust.new_dust(
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        &spawn_ctx,
+                        &app.world,
+                        glam::Vec2::new(p.x, p.y),
+                        p.width as i32,
+                        p.height as i32,
+                        6,
+                        0.0,
+                        0.0,
+                        100,
+                        tr_core::particles::Color::default(),
+                        1.0,
+                    );
+                    let slot = app.dust.slot_mut(idx);
+                    slot.no_gravity = true;
+                    slot.scale = 1.7;
+                    slot.fade_in = 0.5;
+                    slot.velocity *= 5.0;
+                }
+            }
             // `Player.ManaEffect` (`Player.cs:4531-4538`): the cuffs' restore
             // spawns `CombatText.NewText(playerRect, HealMana, amount)` at the
             // hurt position (`:4533`); the NetMessage 43 send (`:4534-4537`)
@@ -1439,6 +1469,23 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.local_id as u8,
                     expert,
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // W4-f50 — the Solar Flare hurt blast (`Player.cs:38316-38318`):
+            // the fall/petrify lane's accepted hit consumed a shield charge
+            // and queued the 608 blast; the drain rides the `UpdatePlayers`
+            // stream (the `Main.cs:17754` swap), the S1-E-21c batch convention.
+            if let Some((center, damage)) = p.take_solar_blast() {
+                let dolls = p.doll_flags();
+                let luck = p.luck();
+                app.projectiles.solar_flare_blast(
+                    center,
+                    damage,
+                    app.local_id as u8,
+                    &mut app.npcs,
+                    dolls,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    luck,
                 );
             }
             // `Player.PlayHurtSound` (`Player.cs:38525`): the hurt cue plays

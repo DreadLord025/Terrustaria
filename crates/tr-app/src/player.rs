@@ -1491,6 +1491,24 @@ pub struct Player {
     /// (`:18616`) and the equip rows re-arm per tick. W4-f50 (the d116
     /// deferred hurt-reaction list, ANALYSIS wave B "Deferred families").
     pub panic: bool,
+    /// W4-f50 — the Solar Flare / Beetle armor-set hurt-reaction state
+    /// (`Player.cs:896-912`/`:2816`). `set_solar`/`beetle_defense`/
+    /// `beetle_offense` are the completed-set flags (`ApplySetBonus_Solar`
+    /// `:16366`, `ApplySetBonus_BeetleDefense` `:16499`,
+    /// `ApplySetBonus_BeetleDamage` `:16529`); the orb/shield counts and
+    /// counters drive the hurt reductions (`Hurt` `:38305-38337`) and the
+    /// per-tick recharge machines. `ResetEffects` zeroes `beetle_orbs`/
+    /// `beetle_buff`/`solar_shields` (`:18501-18505`); the `Player.Update`
+    /// head clears the three set flags (`:25618-25620`).
+    pub set_solar: bool,
+    pub solar_shields: i32,
+    pub solar_counter: i32,
+    pub beetle_defense: bool,
+    pub beetle_offense: bool,
+    pub beetle_orbs: i32,
+    pub beetle_counter: f32,
+    pub beetle_countdown: i32,
+    pub beetle_buff: bool,
     /// `Player.shadowDodgeTimer` (`Player.cs:1184`): the Hallowed set-bonus
     /// cooldown — set 1800 by a shadow dodge (`:38043`), decayed one per tick
     /// in `Player.Update` (`:25461-25464`).
@@ -1919,6 +1937,20 @@ pub struct Player {
     /// membership of the cooldown counter; `hurt_inner`'s `retaliate_lane`
     /// carries the membership (the lava/tile lanes pass false).
     pending_retaliate: Option<crate::hurt_modifiers::RetaliateRequest>,
+    /// W4-f50 — the Solar Flare hurt blast request (`Player.cs:38316-38318`):
+    /// `(center, damage)` — the 608 projectile spawns at the player's center
+    /// with `(int)(150 * meleeDamage)` damage, kb 15, then immediately
+    /// `Kill()`s (its aiStyle-117 `Damage()` walks the 160×160 box). The
+    /// spawn + box walk need the projectile pool + NPC list, so `hurt_inner`
+    /// queues it and the world-sim drain resolves it (the `pending_retaliate`
+    /// convention). `None` when no charge was consumed.
+    pending_solar_blast: Option<((f32, f32), i32)>,
+    /// W4-f50 — the Solar Flare shield-grant dust burst flag
+    /// (`Player.cs:16387-16395`): 16 dust-6 particles at the player's box
+    /// (noGravity, scale 1.7, fadeIn 0.5, velocity ×5). The dust pool lives
+    /// on the App, so the set-bonus machine queues the flag and the
+    /// world-sim drain spawns them (the `pending_sticky_dust` convention).
+    pending_solar_grant_dust: bool,
     /// S1-C-7 wave B: the dismount-on-hit request (`Player.cs:38396-38400`) —
     /// the damage source was a projectile of `ProjectileID.Sets.
     /// DismountsPlayersOnHit` (`ProjectileID.cs:546`, {877, 878, 879}) and a
@@ -2771,6 +2803,15 @@ impl Player {
             honey_comb: false,
             strong_bees: false,
             panic: false,
+            set_solar: false,
+            solar_shields: 0,
+            solar_counter: 0,
+            beetle_defense: false,
+            beetle_offense: false,
+            beetle_orbs: 0,
+            beetle_counter: 0.0,
+            beetle_countdown: 0,
+            beetle_buff: false,
             shadow_dodge_timer: 0,
             brain_of_confusion_dodge_animation_counter: 0,
             breath: BREATH_MAX,
@@ -2885,6 +2926,8 @@ impl Player {
             pending_mana_effect: None,
             pending_heal_effect: None,
             pending_retaliate: None,
+            pending_solar_blast: None,
+            pending_solar_grant_dust: false,
             pending_dismount: false,
             pending_chillet_sound: None,
             pending_no_space_sound: None,
@@ -3453,6 +3496,19 @@ impl Player {
         self.pending_retaliate.take()
     }
 
+    /// W4-f50 — takes the Solar Flare hurt blast request (`Player.cs:38316-
+    /// 38318`): `(center, damage)` for the 608 spawn + immediate Kill. The
+    /// caller owns the projectile pool + NPC list (`world_sim` drain).
+    pub(crate) fn take_solar_blast(&mut self) -> Option<((f32, f32), i32)> {
+        self.pending_solar_blast.take()
+    }
+
+    /// W4-f50 — takes the Solar Flare shield-grant dust burst flag
+    /// (`Player.cs:16387-16395`). The caller owns the dust pool.
+    pub(crate) fn take_solar_grant_dust(&mut self) -> bool {
+        std::mem::take(&mut self.pending_solar_grant_dust)
+    }
+
     /// S1-C-7 wave B: takes the dismount-on-hit request (`Player.cs:38396-
     /// 38400`) — the caller owns `&World` (`try_dismount`).
     pub(crate) fn take_dismount_request(&mut self) -> bool {
@@ -3655,6 +3711,8 @@ impl Player {
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
         self.pending_retaliate = None;
+        self.pending_solar_blast = None;
+        self.pending_solar_grant_dust = false;
         self.pending_double_jump_sound = None;
         self.pending_fart_sound = None;
         self.pending_splash_sound = None;
@@ -4300,6 +4358,287 @@ impl Player {
         total
     }
 
+    /// `Player.ConsumeSolarFlare` (`Player.cs:56742-56762`): the Solar Flare
+    /// set's hurt shield — consumes one shield charge, deletes the 170-172
+    /// buff rows, re-grants the lower-tier buff (`170 + shields - 1`, 5 ticks)
+    /// while charges remain, and zeroes the recharge counter. Returns `true`
+    /// when a charge was consumed (the `Hurt` ×0.8 gate, `:38305`). W4-f50.
+    pub fn consume_solar_flare(&mut self) -> bool {
+        if self.set_solar && self.solar_shields > 0 {
+            self.solar_shields -= 1;
+            // `:56747-56753`: delete every 170-172 buff slot. The C# loops
+            // `DelBuff(i)` with NO rescan; `clear_buff` matches that shape.
+            for id in 170..=172 {
+                self.buffs.clear_buff(id);
+            }
+            // `:56754-56757`: `solarShields > 0 && whoAmI == Main.myPlayer`
+            // (always true single-player) → `AddBuff(170 + shields - 1, 5)`.
+            if self.solar_shields > 0 {
+                self.buffs.add_buff(170 + self.solar_shields - 1, 5);
+            }
+            self.solar_counter = 0;
+            return true;
+        }
+        false
+    }
+
+    /// `Player.ApplySetBonus_Solar` (`Player.cs:16366-16439`): the Solar
+    /// Flare set's per-tick bonus — `endurance += 0.12`, `setSolar = true`,
+    /// the shield recharge (one charge per 180 ticks, cap 3, the 170-172
+    /// buff ladder) and the dash-type grant. The shield-orbit positions
+    /// (`solarShieldPos`/`Vel`, `:16403-16428`) are cosmetic and unported;
+    /// the 16-dust grant burst (`:16387-16395`) queues for the world-sim
+    /// drain (the `pending_retaliate` convention). W4-f50.
+    pub fn apply_set_bonus_solar(&mut self) {
+        self.endurance += 0.12;
+        self.set_solar = true;
+        self.solar_counter += 1;
+        let num = 180;
+        if self.solar_counter >= num {
+            // `:16374-16383`: delete the 170-171 rows while 0 < shields < 3.
+            if self.solar_shields > 0 && self.solar_shields < 3 {
+                for id in 170..=171 {
+                    self.buffs.clear_buff(id);
+                }
+            }
+            if self.solar_shields < 3 {
+                // `:16386`: `AddBuff(170 + solarShields, 5)`.
+                self.buffs.add_buff(170 + self.solar_shields, 5);
+                // `:16387-16395`: the 16-dust grant burst (dust 6, noGravity,
+                // scale 1.7, fadeIn 0.5, velocity ×5) — queued for the drain.
+                self.pending_solar_grant_dust = true;
+                self.solar_counter = 0;
+            } else {
+                self.solar_counter = num;
+            }
+        }
+        // `:16429-16438`: the dash latch — `dashDelay >= 0` clears the dash
+        // state; `solarShields > 0 || (solarDashing && dashDelay < 0)` arms
+        // `dashType = 3`. The port's `solar_dashing` is unported (the dash
+        // machine is the melee lane's), so the second disjunct folds false.
+        if self.dash_delay >= 0 {
+            // solarDashing / solarDashConsumedFlare = false (no port fields).
+        }
+        if self.solar_shields > 0 {
+            self.dash_type = 3;
+        }
+    }
+
+    /// `Player.ApplySetBonus_BeetleDefense` (`Player.cs:16499-16527`): the
+    /// Beetle Scale Mail's per-tick bonus — `beetleDefense = true`, the orb
+    /// recharge (one orb per 180 ticks, cap 3, the 95-97 buff ladder). W4-f50.
+    pub fn apply_set_bonus_beetle_defense(&mut self) {
+        self.beetle_defense = true;
+        self.beetle_counter += 1.0;
+        let num = 180.0;
+        if self.beetle_counter < num {
+            return;
+        }
+        // `:16508-16517`: delete the 95-96 rows while 0 < orbs < 3.
+        if self.beetle_orbs > 0 && self.beetle_orbs < 3 {
+            for id in 95..=96 {
+                self.buffs.clear_buff(id);
+            }
+        }
+        if self.beetle_orbs < 3 {
+            // `:16520`: `AddBuff(95 + beetleOrbs, 5)`.
+            self.buffs.add_buff(95 + self.beetle_orbs, 5);
+            self.beetle_counter = 0.0;
+        } else {
+            self.beetle_counter = num;
+        }
+    }
+
+    /// `Player.ApplySetBonus_BeetleDamage` (`Player.cs:16529-16581`): the
+    /// Beetle Shell's per-tick bonus — `beetleOffense = true`, the damage-orb
+    /// decay (`beetleCounter -= 3 + beetleCountdown/20`, `beetleCountdown++`)
+    /// and the 98-100 buff ladder by the counter's tier (400/1600/5200). The
+    /// melee-hit `beetleCounter += num2` feed (`:44111-44115`) is the melee
+    /// lane's (unported here — the counter only decays). W4-f50.
+    pub fn apply_set_bonus_beetle_damage(&mut self) {
+        let mut num = 0;
+        self.beetle_offense = true;
+        self.beetle_counter -= 3.0;
+        self.beetle_counter -= self.beetle_countdown as f32 / 20.0;
+        self.beetle_countdown += 1;
+        if self.beetle_counter < 0.0 {
+            self.beetle_counter = 0.0;
+        }
+        let num2 = 400.0;
+        let num3 = 1200.0;
+        let num4 = 3600.0;
+        if self.beetle_counter > num2 + num3 + num4 + num3 {
+            self.beetle_counter = num2 + num3 + num4 + num3;
+        }
+        if self.beetle_counter > num2 + num3 + num4 {
+            self.buffs.add_buff(100, 5);
+            num = 3;
+        } else if self.beetle_counter > num2 + num3 {
+            self.buffs.add_buff(99, 5);
+            num = 2;
+        } else if self.beetle_counter > num2 {
+            self.buffs.add_buff(98, 5);
+            num = 1;
+        }
+        if num < self.beetle_orbs {
+            self.beetle_countdown = 0;
+        } else if num > self.beetle_orbs {
+            self.beetle_counter += 200.0;
+        }
+        if num == self.beetle_orbs || self.beetle_orbs <= 0 {
+            return;
+        }
+        // `:16574-16580`: delete the 98-100 rows that are not the new tier.
+        for id in 98..=100 {
+            if id != 97 + num {
+                self.buffs.clear_buff(id);
+            }
+        }
+    }
+
+    /// `Player.UpdateArmorSets_Always_Solar` (`Player.cs:16358-16364`): the
+    /// counter zero when the set is not worn. W4-f50.
+    pub fn update_armor_sets_always_solar(&mut self) {
+        if !self.set_solar {
+            self.solar_counter = 0;
+        }
+    }
+
+    /// W4-f50 — the Beetle/Solar hurt-reaction tick (`Player.cs:16304-16312`
+    /// `UpdateArmorSets` + the `UpdateBuffs` buff-ladder arms `:10342-10443`):
+    /// the buff-ladder re-derivation (the counts + the 98-100 melee rows),
+    /// then the completed set's recharge machine and the always-counter
+    /// zeros. The port runs this at the `UpdateArmorSets` seam inside
+    /// `update_with_grapple` (after the set flags re-arm in the armor-set
+    /// match) — the C# runs the ladder in `UpdateBuffs` and the machines in
+    /// `UpdateArmorSets`, both inside `Player.Update`; the re-derivation is
+    /// idempotent per tick, so the relative order of the count reads is
+    /// preserved.
+    pub fn update_beetle_solar_sets(&mut self) {
+        self.rederive_beetle_solar_buffs();
+        if self.set_solar {
+            self.apply_set_bonus_solar();
+        }
+        if self.beetle_defense {
+            self.apply_set_bonus_beetle_defense();
+        }
+        if self.beetle_offense {
+            self.apply_set_bonus_beetle_damage();
+        }
+        self.update_armor_sets_always_beetle();
+        self.update_armor_sets_always_solar();
+    }
+
+    /// `Player.UpdateArmorSets_Always_Beetle` (`Player.cs:16441-16497`): the
+    /// counter zero when neither Beetle set is worn. The orb-orbit positions
+    /// (`beetlePos`/`Vel`, `:16458-16496`) are cosmetic and unported (their
+    /// `Next(-100,101)` draws ride the visual lane). W4-f50.
+    pub fn update_armor_sets_always_beetle(&mut self) {
+        if !self.beetle_defense && !self.beetle_offense {
+            self.beetle_counter = 0.0;
+        }
+    }
+
+    /// W4-f50 — the Beetle/Solar buff-ladder re-derivation (`Player.cs:10342-
+    /// 10443`): the slot-ordered `UpdateBuffs` arms that pin the 95-100/170-172
+    /// buffs at 5 ticks and set `beetleOrbs`/`solarShields` to the tier, with
+    /// the mismatch ladder (a lower tier deletes the slot + rescans, a higher
+    /// tier deletes the lower rows) and the set-flag gate (without the set the
+    /// count zeroes and the buff is deleted). The 98-100 melee damage/speed
+    /// rows (`0.1 * orbs`) fold here too.
+    pub fn rederive_beetle_solar_buffs(&mut self) {
+        let mut j = 0usize;
+        while j < crate::buffs::MAX_BUFFS {
+            let buff = self.buffs.buff_type[j];
+            if buff <= 0 || self.buffs.buff_time[j] <= 0 {
+                j += 1;
+                continue;
+            }
+            let mut deleted = false;
+            match buff {
+                // `:10342-10376` — the Beetle Defense ladder (95-97).
+                95..=97 => {
+                    self.buffs.buff_time[j] = 5;
+                    let num8 = 1 + buff - 95;
+                    if self.beetle_orbs > 0 && self.beetle_orbs != num8 {
+                        if self.beetle_orbs > num8 {
+                            self.buffs.del_buff(j);
+                            deleted = true;
+                        } else {
+                            for id in 95..=(95 + num8 - 1) {
+                                self.buffs.clear_buff(id);
+                            }
+                        }
+                    }
+                    if !deleted {
+                        self.beetle_orbs = num8;
+                        if !self.beetle_defense {
+                            self.beetle_orbs = 0;
+                            self.buffs.del_buff(j);
+                            deleted = true;
+                        } else {
+                            self.beetle_buff = true;
+                        }
+                    }
+                }
+                // `:10377-10407` — the Solar Flare ladder (170-172).
+                170..=172 => {
+                    self.buffs.buff_time[j] = 5;
+                    let num9 = 1 + buff - 170;
+                    if self.solar_shields > 0 && self.solar_shields != num9 {
+                        if self.solar_shields > num9 {
+                            self.buffs.del_buff(j);
+                            deleted = true;
+                        } else {
+                            for id in 170..=(170 + num9 - 1) {
+                                self.buffs.clear_buff(id);
+                            }
+                        }
+                    }
+                    if !deleted {
+                        self.solar_shields = num9;
+                        if !self.set_solar {
+                            self.solar_shields = 0;
+                            self.buffs.del_buff(j);
+                            deleted = true;
+                        }
+                    }
+                }
+                // `:10408-10443` — the Beetle Damage ladder (98-100).
+                98..=100 => {
+                    let num10 = 1 + buff - 98;
+                    if self.beetle_orbs > 0 && self.beetle_orbs != num10 {
+                        if self.beetle_orbs > num10 {
+                            self.buffs.del_buff(j);
+                            deleted = true;
+                        } else {
+                            for id in 98..=(98 + num10 - 1) {
+                                self.buffs.clear_buff(id);
+                            }
+                        }
+                    }
+                    if !deleted {
+                        self.beetle_orbs = num10;
+                        self.melee_damage += 0.1 * self.beetle_orbs as f32;
+                        self.melee_speed_bonus += 0.1 * self.beetle_orbs as f32;
+                        if !self.beetle_offense {
+                            self.beetle_orbs = 0;
+                            self.buffs.del_buff(j);
+                            deleted = true;
+                        } else {
+                            self.beetle_buff = true;
+                        }
+                    }
+                }
+                _ => {}
+            }
+            if !deleted {
+                j += 1;
+            }
+            // else: `DelBuff(j); j--` — rescan the slot the compaction filled.
+        }
+    }
+
     pub(crate) fn hurt_inner(
         &mut self,
         amount: i32,
@@ -4414,6 +4753,34 @@ impl Player {
         // `Player.cs:38304`: the endurance step — `(int)((1 - endurance) *
         // damage)` after the defense reduction.
         let amount = ((1.0 - self.endurance) * amount as f32) as i32;
+        // W4-f50 — the Solar Flare shield (`Player.cs:38305-38320`): the
+        // Counter-set gate (`ImmunityCooldownID.Sets.Counter` = {General,
+        // BossNoCheese}, `ImmunityCooldownID.cs:50`) folds to the port's
+        // single General lane (every accepted hit reaches here). On a
+        // consumed charge `num2 = (int)(0.8 * num2)`; the 608 blast spawn +
+        // immediate Kill needs the projectile pool + NPC list, so it queues
+        // for the world-sim drain (the `pending_retaliate` convention).
+        let mut amount = amount;
+        if self.consume_solar_flare() {
+            amount = (0.800000011920929f32 * amount as f32) as i32;
+            self.pending_solar_blast = Some((self.center(), (150.0 * self.melee_damage) as i32));
+        }
+        // W4-f50 — the Beetle Defense orbs (`Player.cs:38321-38337`):
+        // `num2 = (int)((1 - 0.15 * beetleOrbs) * num2)`, one orb consumed,
+        // the 95-97 buff rows deleted and the lower-tier buff re-granted
+        // (`95 + orbs - 1`, 5 ticks) while orbs remain, `beetleCounter = 0`.
+        // No cooldown-set gate (the C# runs it on every lane).
+        if self.beetle_defense && self.beetle_orbs > 0 {
+            amount = ((1.0 - 0.15 * self.beetle_orbs as f32) * amount as f32) as i32;
+            self.beetle_orbs -= 1;
+            for id in 95..=97 {
+                self.buffs.clear_buff(id);
+            }
+            if self.beetle_orbs > 0 {
+                self.buffs.add_buff(95 + self.beetle_orbs - 1, 5);
+            }
+            self.beetle_counter = 0.0;
+        }
         // `Player.cs:38378-38381`: the `num2 < 1 -> 1` floor. The endurance
         // truncation can drive a hit to 0; the C# lifts it back to 1 (which
         // also selects the 20-tick immunity window below, not 40).
@@ -5720,6 +6087,14 @@ impl Player {
         // `Player.Update` → `UpdateBuffs(i)` (`Player.cs:24535`): the timer head runs
         // early in the tick. Nothing grants buffs yet, so this only decrements.
         self.buffs.update_buffs_tick();
+        // W4-f50 — `Player.Update`'s Beetle/Solar set-flag clears
+        // (`Player.cs:25618-25620`): `beetleDefense`/`beetleOffense`/`setSolar`
+        // reset here (after the buff timer head, before `UpdateArmorSets`
+        // `:25685` re-arms them from the worn set). The buff-scan arms
+        // (`:10342-10443`) read the flags to gate the orb counts.
+        self.beetle_defense = false;
+        self.beetle_offense = false;
+        self.set_solar = false;
         // `Player.Update` → `UpdateImmunity` (`Player.cs:25456`): the spawn
         // i-frames count down before the AI.
         self.update_immunity();
@@ -6103,6 +6478,14 @@ impl Player {
         // W4-f50 — `ResetEffects`' `panic = false` (`Player.cs:18616`): the
         // Panic Necklace rows (1290/1578/6187) re-arm it per tick.
         self.panic = false;
+        // W4-f50 — `ResetEffects`' Beetle/Solar orb clears (`Player.cs:18501-
+        // 18505`): `beetleOrbs = 0`, `beetleBuff = false`, `solarShields = 0`.
+        // The buff-scan arms (`:10342-10443`) re-derive the counts from the
+        // live 95-100/170-172 buffs each tick; the set flags clear at the
+        // `Player.Update` head (`:25618-25620`) and re-arm in `UpdateArmorSets`.
+        self.beetle_orbs = 0;
+        self.beetle_buff = false;
+        self.solar_shields = 0;
         self.well_fed = false;
         self.pick_speed_bonus = 0.0;
         self.melee_speed_bonus = 0.0;
@@ -6435,6 +6818,24 @@ impl Player {
             // are the guardian's own lane (deferred, ANALYSIS).
             (3381, 3382, 3383) => {
                 self.set_stardust = true;
+            }
+            // W4-f50 — the Solar Flare triple (`ArmorSetBonuses.cs:479`,
+            // `Benefits.Solar` `:37-40`): arms `setSolar`. The recharge
+            // machine (`ApplySetBonus_Solar` `Player.cs:16366-16439`) runs
+            // after the buff re-derivation below (it reads the shield count).
+            (2763, 2764, 2765) => {
+                self.set_solar = true;
+            }
+            // W4-f50 — the Beetle set's two body variants (`ArmorSetBonuses.cs:
+            // 419-420`, head 2199 + legs 2202 shared): the Scale Mail (2201)
+            // is `BeetleDefense` (`:317-320`), the Shell (2200) is
+            // `BeetleDamage` (`:322-325`). The recharge machines run after the
+            // buff re-derivation below (they read the orb count).
+            (2199, 2201, 2202) => {
+                self.beetle_defense = true;
+            }
+            (2199, 2200, 2202) => {
+                self.beetle_offense = true;
             }
             _ => {}
         }
@@ -6928,6 +7329,14 @@ impl Player {
         // `UpdateEquips` (`:25633`) and the equipment-flag clears
         // (`ResetEffects` `:25491`), matching this position.
         crate::armor_sets::apply_armor_set_bonuses(self);
+        // W4-f50 — the Beetle/Solar hurt-reaction machines (`Player.cs:16304-
+        // 16312` `UpdateArmorSets`): the buff-ladder re-derivation (the
+        // `UpdateBuffs` arms `:10342-10443`) + the completed set's recharge
+        // machine + the always-counter zeros. The set flags re-armed in the
+        // armor-set match above; the counts re-derive from the live buffs
+        // before the machines read them (the C# order: `UpdateBuffs` →
+        // `UpdateArmorSets`, both inside `Player.Update`).
+        self.update_beetle_solar_sets();
         // `Player.cs:25900-25911` — the Mana Sickness damage cut: after every
         // `magicDamage` grant (the buff scan, the equip/set rows), the recalc
         // multiplies `magicDamage *= 1 - manaSickReduction` then `*= manaHeat`
@@ -15534,6 +15943,170 @@ mod tests {
             (p.move_speed - (base + 1.0)).abs() < 1e-4,
             "the Panic! buff adds moveSpeed++ (base {base}, got {})",
             p.move_speed
+        );
+    }
+
+    #[test]
+    fn w4_f50_the_solar_flare_shield_cuts_the_hurt_and_queues_the_blast() {
+        // `Player.Hurt`'s Solar Flare arm (`Player.cs:38305-38320`): a
+        // consumed charge cuts `num2` to `(int)(0.8 * num2)` and queues the
+        // 608 blast at the player's center with `(int)(150 * meleeDamage)`.
+        // `ConsumeSolarFlare` (`:56742-56762`) drops one shield, deletes the
+        // 170-172 rows, re-grants the lower tier and zeroes the counter.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_solar = true;
+        p.solar_shields = 2;
+        p.melee_damage = 1.0;
+        p.buffs.add_buff(171, 5); // the 2-shield tier
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        let hp = p.hp;
+        // 20 damage, no defense/endurance → num2 = 20 → 0.8*20 = 16.
+        assert!(p.hurt(20, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(p.hp, hp - 16, "the shield cuts 20 → 16 (:38307)");
+        assert_eq!(p.solar_shields, 1, "one charge consumed");
+        assert_eq!(p.solar_counter, 0, "the counter zeroes (:56758)");
+        assert!(p.buffs.find_buff_index(171).is_none(), "the old tier deleted");
+        assert!(p.buffs.find_buff_index(170).is_some(), "the lower tier re-granted (:56756)");
+        let (center, damage) = p.take_solar_blast().expect("the blast queues");
+        assert_eq!(center, p.center());
+        assert_eq!(damage, 150, "(int)(150 * meleeDamage) (:38316)");
+        assert!(p.take_solar_blast().is_none(), "the request is a one-shot");
+        // No charge → no cut, no blast.
+        let mut q = Player::spawn(&w);
+        q.set_solar = true;
+        q.solar_shields = 0;
+        q.hurt_cd = 0.0;
+        q.immune = false;
+        let qhp = q.hp;
+        assert!(q.hurt(20, q.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(q.hp, qhp - 20, "no charge, no cut");
+        assert!(q.take_solar_blast().is_none());
+    }
+
+    #[test]
+    fn w4_f50_the_beetle_orbs_cut_the_hurt_by_fifteen_percent_each() {
+        // `Player.Hurt`'s Beetle Defense arm (`Player.cs:38321-38337`):
+        // `num2 = (int)((1 - 0.15 * beetleOrbs) * num2)`, one orb consumed,
+        // the 95-97 rows deleted + the lower tier re-granted, counter zeroed.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.beetle_defense = true;
+        p.beetle_orbs = 3;
+        p.buffs.add_buff(97, 5); // the 3-orb tier
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        let hp = p.hp;
+        // 20 damage → (1 - 0.45)*20 = 11.
+        assert!(p.hurt(20, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(p.hp, hp - 11, "3 orbs cut 20 → 11 (:38323)");
+        assert_eq!(p.beetle_orbs, 2, "one orb consumed");
+        assert_eq!(p.beetle_counter, 0.0, "the counter zeroes (:38336)");
+        assert!(p.buffs.find_buff_index(97).is_none(), "the old tier deleted");
+        assert!(p.buffs.find_buff_index(96).is_some(), "the lower tier re-granted (:38334)");
+        // No orbs → no cut.
+        let mut q = Player::spawn(&w);
+        q.beetle_defense = true;
+        q.beetle_orbs = 0;
+        q.hurt_cd = 0.0;
+        q.immune = false;
+        let qhp = q.hp;
+        assert!(q.hurt(20, q.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(q.hp, qhp - 20, "no orbs, no cut");
+    }
+
+    #[test]
+    fn w4_f50_the_solar_set_recharges_a_shield_every_180_ticks() {
+        // `ApplySetBonus_Solar` (`Player.cs:16366-16439`): endurance +0.12,
+        // `setSolar`, one shield per 180 ticks (cap 3), the 170-172 buff
+        // ladder, `dashType = 3` while shields remain. The always-machine
+        // (`:16358-16364`) zeroes the counter when the set is not worn.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[0] = 2763;
+        p.equipped[1] = 2764;
+        p.equipped[2] = 2765;
+        // 180 ticks of recharge → the first shield.
+        for _ in 0..180 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.set_solar, "the Solar triple arms setSolar");
+        assert!(p.solar_shields >= 1, "a shield recharges after 180 ticks");
+        assert!(p.endurance >= 0.12, "the endurance +0.12 row");
+        assert_eq!(p.dash_type, 3, "the dash-type grant (:16437)");
+        assert!(p.buffs.find_buff_index(170).is_some(), "the 1-shield buff");
+        // The counter zeroes without the set.
+        p.equipped[0] = 0;
+        p.equipped[1] = 0;
+        p.equipped[2] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.set_solar);
+        assert_eq!(p.solar_counter, 0, "the always-machine zeroes (:16362)");
+    }
+
+    #[test]
+    fn w4_f50_the_beetle_defense_set_recharges_an_orb_every_180_ticks() {
+        // `ApplySetBonus_BeetleDefense` (`Player.cs:16499-16527`): one orb
+        // per 180 ticks (cap 3), the 95-97 buff ladder. The Shell (2200) is
+        // the damage variant (`ApplySetBonus_BeetleDamage` `:16529-16581`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[0] = 2199;
+        p.equipped[1] = 2201; // the Scale Mail (defense)
+        p.equipped[2] = 2202;
+        for _ in 0..180 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.beetle_defense, "the Scale Mail arms beetleDefense");
+        assert!(p.beetle_orbs >= 1, "an orb recharges after 180 ticks");
+        assert!(p.buffs.find_buff_index(95).is_some(), "the 1-orb buff");
+        // The Shell arms the offense flag instead.
+        let mut q = Player::spawn(&w);
+        q.equipped[0] = 2199;
+        q.equipped[1] = 2200; // the Shell (damage)
+        q.equipped[2] = 2202;
+        q.update(&w, PlayerInput::default());
+        assert!(q.beetle_offense, "the Shell arms beetleOffense");
+        assert!(!q.beetle_defense);
+    }
+
+    #[test]
+    fn w4_f50_the_beetle_solar_buff_ladder_rederives_the_counts() {
+        // `Player.UpdateBuffs`' Beetle/Solar arms (`Player.cs:10342-10443`):
+        // the 95-100/170-172 buffs pin at 5 ticks and set the orb/shield
+        // count to the tier; without the set flag the count zeroes and the
+        // buff is deleted. The 98-100 melee rows add `0.1 * orbs`.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.beetle_defense = true;
+        p.buffs.add_buff(97, 5); // the 3-orb tier
+        p.rederive_beetle_solar_buffs();
+        assert_eq!(p.beetle_orbs, 3, "the 97 buff sets 3 orbs");
+        assert!(p.beetle_buff);
+        // Without the set the orbs zero and the buff is deleted.
+        let mut q = Player::spawn(&w);
+        q.beetle_defense = false;
+        q.buffs.add_buff(97, 5);
+        q.rederive_beetle_solar_buffs();
+        assert_eq!(q.beetle_orbs, 0, "no set, no orbs");
+        assert!(q.buffs.find_buff_index(97).is_none(), "the buff is deleted");
+        // The Solar ladder.
+        let mut r = Player::spawn(&w);
+        r.set_solar = true;
+        r.buffs.add_buff(172, 5); // the 3-shield tier
+        r.rederive_beetle_solar_buffs();
+        assert_eq!(r.solar_shields, 3, "the 172 buff sets 3 shields");
+        // The damage ladder's melee rows.
+        let mut s = Player::spawn(&w);
+        s.beetle_offense = true;
+        s.buffs.add_buff(100, 5); // the 3-orb damage tier
+        let md = s.melee_damage;
+        s.rederive_beetle_solar_buffs();
+        assert_eq!(s.beetle_orbs, 3);
+        assert!(
+            (s.melee_damage - (md + 0.3)).abs() < 1e-4,
+            "the 98-100 melee row adds 0.1 * orbs (:10431)"
         );
     }
 

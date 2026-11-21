@@ -4794,6 +4794,25 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             app.rngs.stream(RngKey::UpdateNpcs),
         );
     }
+    // W4-f50 — the Solar Flare hurt blast (`Player.cs:38316-38318`): the
+    // accepted contact hit consumed a shield charge and queued the 608
+    // blast; the C# spawns + Kills it inline under the `UpdateNPCs` swap
+    // (`Main.cs:17767`), the port drains at the pass tail on the same stream
+    // (the S1-E-21c batch convention). The blast's box walk + Item14 cue +
+    // draw census ride the pool seam.
+    if let Some((center, damage)) = app.player.as_mut().and_then(|p| p.take_solar_blast()) {
+        let dolls = app.player.as_ref().map_or((false, false), |p| p.doll_flags());
+        let luck = app.player.as_ref().map_or(0.0, |p| p.luck());
+        app.projectiles.solar_flare_blast(
+            center,
+            damage,
+            app.local_id as u8,
+            &mut app.npcs,
+            dolls,
+            app.rngs.stream(RngKey::UpdateNpcs),
+            luck,
+        );
+    }
     // `NPC.cs:77986-77996`: `this.timeLeft--` once per NPC update, and
     // `timeLeft <= 0` deactivates it — no distance gate. The aiStyle-4
     // day/dead arm (`:20071-20074`) is the only writer so far, so this is the

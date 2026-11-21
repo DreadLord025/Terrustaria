@@ -23399,6 +23399,72 @@ impl ProjectilePool {
         }
     }
 
+    /// W4-f50 — the Solar Flare hurt blast (`Player.cs:38316-38318` →
+    /// `Projectile.Kill` `:72177-72225`): the 608 projectile spawns at the
+    /// player's center with `(int)(150 * meleeDamage)` damage, kb 15, then
+    /// immediately `Kill()`s. The Kill's type-608 arm opens the penetration
+    /// to −1, walks the 160×160 box (`Damage()`), queues the Item14 cue and
+    /// the dust/gore burst. The port spawns the slot, resizes it to the
+    /// 160×160 blast box centred on the spawn, runs the box walk, queues the
+    /// cue, then kills the slot (the `celeb2_death` resize-and-walk shape).
+    /// The dust/gore burst bodies are the visual lane (the draw census is
+    /// recorded, the spawns ride the dust-pool task). `owner` is the local
+    /// player id; `dolls` the worn-doll friendly gate; `rng`/`luck` the hit
+    /// lane's stream + the owner's luck.
+    pub fn solar_flare_blast(
+        &mut self,
+        center: (f32, f32),
+        damage: i32,
+        owner: u8,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn DropRng,
+        luck: f32,
+    ) {
+        let (cx, cy) = center;
+        // `NewProjectile(.., base.Center.X, base.Center.Y, 0f, 0f, 608,
+        // (int)(150f * meleeDamage), 15f, Main.myPlayer)` (`:38316`): the
+        // spawn centres the box (`NewProjectileSetup` `:10876-10877`), so the
+        // 6×6 default box sits at center − 3. The plain `spawn` carries the
+        // slot (the 608 row is unported — the pet precedent).
+        let Some(slot) = self.spawn(
+            608,
+            owner,
+            Vec2::new(cx - 3.0, cy - 3.0),
+            Vec2::ZERO,
+            damage,
+            15.0,
+            false,
+        ) else {
+            return;
+        };
+        // `Kill()`'s type-608 arm (`:72177-72181`): `maxPenetrate = -1`,
+        // `penetrate = -1`, then `Damage()`. The SetDefaults row (`:6554-
+        // 6566`) is 160×160; the blast box centres on the spawn point.
+        {
+            let p = &mut self.slots[slot];
+            p.max_penetrate = -1;
+            p.penetrate = -1;
+            p.w = 160.0;
+            p.h = 160.0;
+            p.pos = Vec2::new(cx - 80.0, cy - 80.0);
+            p.friendly = true;
+            p.tile_collide = false;
+        }
+        // `:72181` — `Damage()`: the box walk through the resized box.
+        self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+        // `:72182` — `SoundEngine.PlaySound(SoundID.Item14, base.position)`:
+        // the id-2 style-14 cue (the `play_proj_sound` façade).
+        self.pending_proj_sounds.push((2, 14, cx - 80.0, cy - 80.0, 0.0));
+        // `:72183-72224` — the dust/gore burst (4× dust 31, 30× dust-6 pairs,
+        // 10× dust 6, 10× dust 31, 2× gore 61-63): the visual lane, the draw
+        // census recorded (the spawns ride the dust-pool task). The explicit
+        // `Main.rand` draws stay on the stream in the C#'s order.
+        crate::projectile_ai_misc::solar_flare_blast_draws(rng);
+        // `Kill()`'s tail (`:70644+`): the slot deactivates.
+        self.kill(slot);
+    }
+
     /// The hostile shot's player contact: the box overlap with the
     /// player's rect hurts through `Player.hurt` (its iframe gate holds
     /// the per-tick repeats off) and kills the shot (the single-hit
