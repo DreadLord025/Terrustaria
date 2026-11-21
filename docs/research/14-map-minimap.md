@@ -134,7 +134,7 @@ full-screen zoom/pan view — with the colour of each tile derived from the orig
 | Minimap alpha (`mapMinimapAlpha`) | PORTED | `map.rs::WorldMap::minimap_alpha` + `map_key_alpha`/`map_alpha_clamp`, `app/mod.rs::update_minimap_zoom_keys`, `frame/draw.rs` (backdrop + tile + layer alpha) | `Main.cs:55523-55532` (the clamp + `b` byte), `Player.cs:24921-24928` (the ±0.015 keys); W4-f46 dup fold `a352b16e` (g53 superset + e18 `249a0c1b` alpha state) — D17 closed. |
 | Minimap frame chrome + zoom buttons | PORTED | `ui/minimap.rs` (whole file) | Nine styles, hitboxes, hover sheets, `DEFAULT_ZOOM 1.05`, ×1.025/×0.975, clamp 0.2..3 (`MinimapFrame.cs:59-63`, `:107-136`, `:138-208`). |
 | Frame-style selection UI | PORTED | `menu/pages.rs:268-284`, `menu/actions.rs:332-333`, `settings.rs:113-115` | `MinimapFrame` config key + `CycleSelection` order. |
-| Map style switcher (`mapStyle` 0/1/2) | PARTIAL | icon row `clicks.rs:1572-1602` + `ui/chrome.rs::draw_map_style_icons`; cycle key `app/loop.rs::world_key` (`MapAction::Style`) | The inventory icon row (`Main.cs:41087-41120`, the style icons play `PlaySound(12)` — e18 `4ad0f041` re-fold) and the Tab cycle (`Player.cs:24949-24965`, W4-f46 closeout) are landed; `mapStyle == 2`'s screen-overlay draw (`Main.cs:55548-55578`, `mapOverlayScale`) and style 0's no-HUD state exist as states, but the style-2 draw half is absent (D18). |
+| Map style switcher (`mapStyle` 0/1/2) | PARTIAL | icon row `clicks.rs:1572-1602` + `ui/chrome.rs::draw_map_style_icons`; cycle key `app/loop.rs::world_key` (`MapAction::Style`) | The inventory icon row (`Main.cs:41087-41120`, the style icons play `PlaySound(12)` — e18 `4ad0f041` re-fold) and the Tab cycle (`Player.cs:24949-24965`, W4-f46 closeout) are landed; the style-2 screen-overlay DRAW (`Main.cs:55548-55578`, `mapOverlayScale`) is **ported e18 `099beeba5`, re-fold OWED onto this union** (compose step 0, research/84 §10.4 — was D18's absent half); style 0 is a phantom (no style-0 arm, callers gate 1/2). |
 | Player head icon | PORTED | `map.rs::head_icon_pos` (76) + `render/entities.rs::draw_player_map_icon` | Position ported (`Main.cs:55937-55954`); the 84×84 `MapHeadRenderer` render target is replaced by a hand-drawn head (ANALYSIS.md:1584-1593). |
 | Other players' head icons | PARTIAL | same draw path | `Main.cs:55931-55954` loops all 255 players; single-player only here. |
 | NPC / chest / pylon / ping / boss-bag icons | PORTED (f29/e17, keep-one PENDING at merge) | `map_layers.rs` (S1-L-4, on this union) + `map_overlay.rs`/`map_pylons.rs` (W4-f29) vs `map_npc_icons.rs`/`map_player_icons.rs` (W4-e17) | The six `Map/*Layer*.cs` layers landed S1-L-4; the nine `Main.DrawMap` overlay pieces (pylon lines/click/pan, boss/town heads, death markers, revenge coins, misc portals+golf, minimap heads, hover names) are ported TWICE on the sibling branches — the merger takes ONE per research/140 (e17 skeleton + f29 F1-F6 fixes) and the composition note below. The ping detector (`Main.cs:55486-55495`) is `clicks.rs::handle_fullmap_ping` (S1-L-4, on this union). |
@@ -304,14 +304,18 @@ Structural (already admitted in `docs/ANALYSIS.md` or the Rust "ruling" comments
   read the live alpha. The C# has NO settings key for it — the alpha is
   key-driven runtime state, not config (the old seed's "config key" reading
   was wrong; e18 `249a0c1b` reached the same conclusion).
-- **D18 — `mapStyle` switcher's style-2 draw half absent.** behavioural · *not admitted*
-  (keys half CLOSED, W4-f46 dup fold `a352b16e`). The
+- **D18 — `mapStyle` switcher's style-2 draw half.** behavioural · **closed across
+  branches at seal (ported e18 `099beeba5`, RE-FOLD OWED onto this union — compose
+  step 0, research/84 §10.4; keys half CLOSED earlier, W4-f46 dup fold `a352b16e`)**. The
   switcher itself is landed (the inventory icon row `Main.cs:41087-41120` + the Tab cycle key
   `Player.cs:24949-24965`, W4-f46 closeout), and the style-2 KEY rows now step
   `WorldMap.overlay_scale`/`overlay_alpha` (`Player.cs:24930-24947`, seeds 2.5/0.35
-  `Main.cs:66754-66755`, clamps `:55550-55566`); only the `mapStyle == 2`
-  screen-overlay map DRAW (`Main.cs:55548-55578`) still has no counterpart
-  (style 0 correctly draws no map — `DrawMap`'s branch chain has no style-0 arm).
+  `Main.cs:66754-66755`, clamps `:55550-55566`); the `mapStyle == 2`
+  screen-overlay map DRAW (`Main.cs:55548-55578` + `:55609` + `:55615-55625` + the `:56046`
+  hover tail) is ported on e18 (`draw_overlay`/`map_overlay_quad`/`clamp_overlay_axes` +
+  2 witnesses + anchor) and re-folds per e18 §10.10's SEALED 16-hunk table — this union
+  alone still lacks it until step 0 runs. Style 0 is a PHANTOM (`DrawMap`'s branch chain
+  has no style-0 arm; callers gate 1/2 at `Main.cs:45778`/`:62231`, e18 `a1a8be6e9` census).
 - **D19 — map icon overlays entirely missing.** behavioural · **closed across
   branches (S1-L-4 + W4-f29/W4-e17, keep-one PENDING at merge)**. The six
   `Map/*Layer*.cs` layers landed S1-L-4 (`map_layers.rs`, on this union); the
@@ -352,11 +356,12 @@ Structural (already admitted in `docs/ANALYSIS.md` or the Rust "ruling" comments
   chunk-invariant on the vanilla runtime (the `fw48/` generator reports "chunked == single: yes";
   modern .NET's is not).
 
-Risk summary (updated W4-f46 final-retire): D14 (map invalidation) closed W4-c35, D19 (icon
-layers) closed across branches (S1-L-4 + the f29/e17 overlay pick, keep-one pending at merge),
-D17 (minimap alpha) closed the dup fold. The remaining behavioural gaps are D18's
-`mapStyle == 0/2` draw halves (the switcher + keys landed) and D22's content-lost refresh
-(no GPU-reset path in the port).
+Risk summary (updated W4-f46 seal): D14 (map invalidation) closed W4-c35, D19 (icon
+layers) closed across branches (S1-L-4 + the f29/e17 overlay pick, keep-one EXECUTED on the
+f29 tip — landing pending), D17 (minimap alpha) closed the dup fold, D18 closed across
+branches at seal (style-2 draw ported e18 `099beeba5`, re-fold owed as compose step 0;
+style-0 half a phantom). The only remaining behavioural gap is D22's content-lost refresh
+(no GPU-reset path in the port — recorded deviation, out of family scope).
 
 ## Task seeds
 
@@ -385,10 +390,11 @@ D17 (minimap alpha) closed the dup fold. The remaining behavioural gaps are D18'
 - **M — Fullscreen map input parity**: ~~`mapStyle` cycling (0/1/2, `Main.cs:41101-41118`), the
   `mapOverlayScale` screen-overlay map (`:55548-55578`), minimap zoom key/wheel wiring, and
   `DebugOptions.unlockMap` (`Main.cs:61873-61882`, `WorldMap.cs:109-174`). Depends on the UI
-  framework research row 18 for the in-game options rows.~~ **PARTIAL (W4-e18 + W4-f46)** — the
+  framework research row 18 for the in-game options rows.~~ **DONE across branches (W4-e18 + W4-f46, seal)** — the
   `mapStyle` cycling (Tab key + icon clicks), the minimap zoom/alpha keys (both styles) and
   `DebugOptions.unlockMap` landed the first half + closeout + dup fold; the `mapOverlayScale`
-  screen-overlay map DRAW (`mapStyle == 2`) stays unported (D18's draw half).
+  screen-overlay map DRAW (`mapStyle == 2`) is ported e18 `099beeba5` — re-fold owed onto
+  this union as compose step 0 (research/84 §10.4; D18 closed across branches).
 - **L — Replace the four substituted `GetTileBaseOption` cases**: `461` needs `SceneMetrics`
   ZoneCorrupt/Crimson/Hallow (blocks on row 16), `80` needs `WorldGen.GetCactusType`, `529`/`530`
   need `WorldGen.GetBiomeInfluence` (blocks on row 12, worldgen). Fixes D21.
@@ -620,6 +626,20 @@ census below). If e18d still lands commits later, the re-fold recipe above
 stands unchanged (fetch tip → cherry-pick each commit past `75289a2db` →
 per-hunk resolve onto the union seams).
 
+**Seal re-fetch (fifth, same day):** the e18 tip moved `75289a2db` →
+**`5509cb87a`** (MAP SEAL — 8 commits: retire docs/banners `503200389`/
+`f0453a632`/`a757a5282` + the D18/D22 census close `a1a8be6e9` + the
+D18 style-2 DRAW port `099beeba5` + the witness re-pin mirror
+`4cc600a97` (already on this union as `44749457`) + the fold-monitor
+docs `310c7b9b4` + the seal `5509cb87a` itself). **e18 declares STATUS
+SEALED — no further e18 work.** The ONE owed re-fold is `099beeba5`
+per e18 §10.10's 16-hunk table (research/84 §10.4(c), compose step 0 —
+BEFORE this branch lands; the f29 seal `ff819421d` §11.1 adopts the
+same table). The 43-vs-36 `w4_e18` census re-ran identical at seal
+(7 e18-only fns: 4 keep-one drops + 1 step-0 DROP + 2 step-0 TAKEs,
+zero union-only names). The contract now reads: past `5509cb87a`,
+nothing owed — tip re-check only.
+
 ## W4-f46 closeout census (2026-11-21, code-only, third pass)
 
 The e18d brief's remaining candidates re-censused against the union
@@ -823,8 +843,9 @@ proper:
 
 - The union's minimap zoom/alpha fn covers BOTH styles (`Player.cs:24911` style-1 rows +
   `:24930-24947` style-2 rows, the g53 superset fold) — e18's own sweep deferred style 2 to
-  D18; the union's dup fold closed that keys half. The style-2 DRAW stays D18. The style
-  cycle fires in every non-fullscreen style (the shared else row).
+  D18; the union's dup fold closed that keys half. The style-2 DRAW is ported e18
+  `099beeba5` (re-fold owed, compose step 0 — research/84 §10.4; D18 closed across
+  branches at seal). The style cycle fires in every non-fullscreen style (the shared else row).
 - The fullscreen draw head's `ToggleInv` call reaches the talk/inventory arms, NOT the map-close
   first arm (`Player.cs:4972-4978`) — the map is already open, so the C# falls through; the port
   applies exactly the talk/inventory writes.

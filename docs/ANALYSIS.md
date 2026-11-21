@@ -19196,6 +19196,24 @@ seed: the Unity-potion teleport block (`Main.cs:55960-55975`, `:55998-56010`) �
 MP-client-only (`netMode == 1`), the netcode ladder's territory, the overlay
 pick's head-loop seam.
 
+**MAP-FAMILY SEAL note (W4-f46 seal phase, same day — research/84 §10.4):**
+the e18 seal (`5509cb87a`, its research/84 §10.10) ported D18's style-2
+overlay DRAW as `099beeba5` (`draw_overlay`/`map_overlay_quad`/
+`clamp_overlay_axes` + the `num37` layer walk + the `:56046` hover tail,
+`Main.cs:55548-55625`; style-0 retro censused a PHANTOM — callers gate
+1/2 at `:45778`/`:62231`); it RE-FOLDS onto this union per the SEALED
+16-hunk recipe as compose step 0 BEFORE this branch lands (the f29 seal
+`ff819421d`, research/140 §11, adopts the same table and publishes the
+joint compose steps 0-4: f46-union-FIRST → f29-TIP-SECOND, e17 drops).
+The union's stale "draws nothing" (minimap deviation above +
+`frame/draw.rs:1471`) and "D18 out of scope" (`map.rs:448`) wording goes
+with that re-fold; the `:55626-55694` icon block stays with the f29-tip
+landing. The witness union is exact at seal: 34 (f29) + 56 (f46) + 2
+(D18) = 92, zero shared names; the composed atlas measures 8131 px /
+9606 sheets (margin 61, 140 §11.3). D22's content-lost refresh stays the
+recorded deviation (no GPU-reset path; `ensure_map_texture` +
+`needs_full_upload` is the creation-time equivalent).
+
 ## The crafting focus + quantity (S1-H-7, 2026-11-13)
 
 `Main.HoverOverCraftingItemButton` (`Main.cs:42252-42305`) is ported into
