@@ -399,4 +399,5 @@ merger-reconciled. No other lane's landed pass was touched.
 | B6 Quick Cleanup | b48a702b | ported — witnesses written not run |
 | B7 Hellforge | 454e43ba | ported — witnesses written not run |
 | B8 Spreading Grass | df468d00 | ported — witnesses written not run |
-| B9 Surface Ore and Stone | (this commit) | ported — witnesses written not run |
+| B9 Surface Ore and Stone | 94c365ee | ported — witnesses written not run |
+| B2/B3 slot fix (chest-family group) | 809a61a8 | ordering corrected — witnesses updated |
