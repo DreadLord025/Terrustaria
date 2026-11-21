@@ -1041,3 +1041,34 @@ rows unchanged (d125 309 … g8 317). Free floor moves to **339+**.
   238→247/239→248 draft was discarded by the lane itself — zero residue
   verified `adb304ab8`). No §8 move for d42.
 - Free floor: **341+**. §8.1/§8.2 all other rows unchanged.
+
+### §8.7 — AMENDMENT 3 (BATCH): ALL post-§8 self-picks → 341+ (FROZEN TABLE)
+
+Every lane below self-picked a number AFTER §8 publication (`0a658c7b3`, 16:4x)
+using tips-only sweeps that missed §8's reservations. ALL are contested →
+renumber 341+ in first-add (%cI) order. **THIS TABLE IS FROZEN. NO lane may
+self-pick any number again — execute §8/§8.7 assignments ONLY. New docs take
+≥360 after a registry check (round 5 will re-scan).**
+
+| Lane | Self-picked | Commit %cI | §8.7 FINAL |
+|---|---|---|---|
+| e2 | 285-npc-dust-window-coverage + 286-bible | 38cda1294 16:36:38 | **341** (+342 bible) |
+| d43 | 304-d43-kinds-631-697-final | 31310b652 16:40:35 | **343** |
+| c24 | 308-journey-family-final | 935c47617 16:43:22 | **344** |
+| d40 | 285-d40-kinds-421-490-final | 78ee5647c 16:44:49 | **345** |
+| g65 | 308-g65-kill-death-dust-family-final | 573ec7a8c 16:47:47 | **346** |
+| g15 | 309-item-dust-family-bible | 131961a73 16:48:33 | **347** |
+| d32 | 284-band-85-93-retire | 4165e7dd9 16:49:06 | **348** |
+| c9 | 312 (281→312 self) | 222ad0a9d ~16:5x | **349** |
+| c7 | 283-c7-critter-family-final | 09978b3bd ~16:5x | **350** |
+| e5 | 304-gore-sites-family-bible | 96be85530 ~16:5x | **351** |
+
+- §8.1 rows d30→338/d125→309/g48→310/c9→311(SUPERSEDED-by-349)/d106→312(SUPERSEDED-by-c9-349? NO: d106-312-assignment-stands; c9-312-self-contested→349)/d9→313/c25→314/c32→315/f39→316/g8→317: **d106 KEEPS 312 (§8.1 assignment); c9's 312 self-pick → 349.** d125-309 vs g15-309-self: g15→347 (§8.7); d125-309 stands.
+- 285: d40/e2 both self → 345/341 (§8.7); §7.2's 285 owner keeps 285.
+- 286: e2-bible → 342; §7.2's 286 owner keeps 286.
+- 283: f26-reservation KEEPS; g59→321 (§8.2); c7→350 (§8.7).
+- 284: g52-executed-0224fff80-16:0x-PRE-§8 → **g52 KEEPS 284** (executed-pre-authority); d32→348.
+- 304: d50 KEEPS (§7.4); g17→339 (§8.6); d119→333 (§8.2); d43→343; e5→351.
+- 308: g13 KEEPS (§8.5); d21→340 (§8.6); c24→344; g65→346.
+- **FROZEN live set: {151..236}∪{246..280}∪{281..303}∪{304..307}∪{308..337}∪{338..351} = 191 assignments. Free floor 352+ (new docs ≥360 after round-5 re-scan).**
+- **ENFORCEMENT: any future self-pick outside this table is INVALID; the lane must renumber to the §8/§8.7 assignment or request round 5. Merger dedupes by this table.**
