@@ -393,13 +393,19 @@ fn use_peddlers_satchel(app: &mut App) -> bool {
 ///
 /// Deviation (ANALYSIS "W4-a6 pet licenses"): the port ships no
 /// TownCat/TownDog/TownBunny `NpcKind` (637/638/656) and no
-/// `TownNPCProfiles.RollVariation`, so `AnyNPCs(npcType)` is always false
-/// and the exchange legs (`RerollVariationForNPCType` → the
-/// PetExchangeSuccess/Fail chats, `NPC.cs:80910-80917`) are unreachable —
-/// a bought license's use is refused (no `ApplyItemTime`, no consume),
-/// exactly the C# verdict with no resident pet. The bought flags are
-/// World fields (the `combat_book_was_used` standing-in); the town
-/// arrival gates (`Main.cs:65900-65911`) are the deferred consumer.
+/// `TownNPCProfiles.RollVariation`, so the LIVE `AnyNPCs` scan never
+/// answers today — a bought license's use is refused (no `ApplyItemTime`,
+/// no consume), exactly the C# verdict with no resident pet. When a
+/// town-pet kind lands the gate passes and the exchange dispatch folds
+/// to the `Misc.PetExchangeFail` line (`NPC.cs:80914-80917` —
+/// `RerollVariation` returns false with no profile, `:80935-80938`),
+/// consuming one with the chat the C# always posts; the g87 closeout
+/// `26620538e`'s fold shape (research/138 §11.3). The Success leg
+/// (`RerollVariationForNPCType` → `RollVariation`, `:80910-80912`) is
+/// the remaining merge debt — it lands WITH `TownNPCProfiles`. The
+/// bought flags are World fields (the `combat_book_was_used`
+/// standing-in); the town arrival gates (`Main.cs:65900-65911`) are the
+/// deferred consumer.
 fn use_pet_license(app: &mut App, kind: u16) -> bool {
     let (npc_type, key) = match kind {
         4829 => (637, "Misc.LicenseCatUsed"),
@@ -414,7 +420,7 @@ fn use_pet_license(app: &mut App, kind: u16) -> bool {
     };
     // `NPC.AnyNPCs(npcType)` (`NPC.cs:89873-89883`): active && type match.
     // No ported kind carries these net ids, so the scan never answers —
-    // kept for the shape (the exchange gate above).
+    // kept LIVE for the shape (the exchange gate above).
     let any = app
         .npcs
         .iter()
@@ -430,6 +436,15 @@ fn use_pet_license(app: &mut App, kind: u16) -> bool {
         }
         app.chat
             .new_text(crate::lang::text(key), crate::chat::COLOR_WORLD);
+    } else {
+        // `RerollVariationForNPCType` (`:80910`) finds the resident pet
+        // but `RerollVariation` has no profile → false → the fail line
+        // (`:80914-80917`). No flag re-raise, no license re-print; the
+        // generic tail pays one (the C# consumes either way, `:45442`).
+        app.chat.new_text(
+            crate::lang::text("Misc.PetExchangeFail"),
+            crate::chat::COLOR_WORLD,
+        );
     }
     true
 }
@@ -1180,6 +1195,38 @@ mod tests {
         assert_eq!(app.inventory[app.selected].count, 2, "no consume on refusal");
         assert!(app.chat.messages.is_empty(), "no exchange chat");
     }
+
+    /// A resident NON-pet NPC does not open the exchange gate — the LIVE
+    /// scan matches net ids, not mere liveness (`NPC.cs:89873-89883`;
+    /// the g87 closeout `26620538e`'s twin witness, research/138 §11.3).
+    #[test]
+    fn a_resident_non_pet_does_not_open_the_exchange() {
+        let mut app = rig(4829, 2);
+        app.world.bought_cat = true;
+        let mut npc = crate::npc::Npc::new(crate::npc::NpcKind::Slime, 32.0, 32.0, 1, 0.4);
+        npc.hp = 10;
+        npc.max_hp = 10;
+        app.npcs.push(npc);
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert_eq!(
+            app.inventory[app.selected].count, 2,
+            "a slime is not the cat — the exchange refuses, nothing consumed"
+        );
+        assert!(app.chat.messages.is_empty(), "no exchange chat on refusal");
+    }
+
+    // The exchange-fail fold (research/138 §11.3, the g87 closeout
+    // `26620538e` shape): when a resident pet DOES answer the scan, the
+    // arm consumes one and posts `Misc.PetExchangeFail` — the C# always
+    // chats on the exchange (`NPC.cs:80914-80917`, `RerollVariation`
+    // false with no `TownNPCProfiles`), never a silent consume. No
+    // ported kind carries net id 637/638/656 today, so the positive
+    // path is unwitnessable end-to-end until the town-pet lane lands
+    // (the same boundary g87's closeout records); the gate + scan are
+    // pinned by the two refusal witnesses above, the fail-chat dispatch
+    // by the direct C#-shape read (`use_pet_license`'s else arm).
 
     /// The six shimmer permanents each set their OWN flag and consume one
     /// (`:45385-45423`): 5337 aegis crystal, 5338 aegis fruit, 5339 arcane

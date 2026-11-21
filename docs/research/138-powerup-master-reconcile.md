@@ -69,7 +69,7 @@ the generic tail `:43280-43326` pays ONE only when `itemTime == itemTimeMax`
 | **4382 / 5336** Combat Book + Vol Two | `:45322-45350` | a6, g89e, g90 | All three port the two independent WORLD-flag once-ever gates, ApplyItemTime 45, the `Misc.CombatBookUsed`/`Misc.CombatBookVolumeTwoUsed` ChatColors.World line (vol-two key is a `{$Misc.CombatBookUsed}` copy command), consume + TurnToAir. MP SendData(61,-11/-17) folds out. Equal fidelity (kinds disjoint from every other arm → press-edge position observation-identical). | **keep ONE** — recommend **a6** (`use_combat_book`, the single cluster seam) or g89e (pushed precedent); dedup the other two. The TRAINING_DAY progression-40 consumer (`:25695-25698`) lands once (§3.5, a6 now carries it; g89e/g90 also do). | `.wld` book2 byte tail **2036** gate 259: **f45** supersedes a6/g89e/g90 (§4). book1 tail 1939 gate 204 pre-existing (i35). `.trwld` book2: g90 v18 union offset **22** (§5a — moved from 19 by g87's pet trio). NO sidecar token (world global, 122 §5). |
 | **5043** Torch God's Favor | `:45226-45243` | a6, c36, f33 | **a6 MORE faithful than c36**: the C# sets `UsingBiomeTorches = true` whose SETTER writes `builderAccStatus[11] = 0` (`:3960-3963`); a6 does BOTH (`unlocked_biome_torches = true` + `builder_acc_status[11] = 0`), c36 folds UsingBiomeTorches into the unlocked flag (its research/30 deviation). a6 also ports HandleSpecialEvent(24) + the SP bestiary TorchGod(664) RegisterKill. **Fixed §3.1**: a6's credit now row-targeted `complete_condition("GAIN_TORCH_GODS_FAVOR","Use")` (== c36). f33 owns the EVENT machine + flag READS, completes no achievement. | **a6** use arm (the faithful setter) — **supersedes c36 research/30's "keep c36's write" note** (C# re-read `:3960-3963`). **c36**'s `complete_condition` helper is the shared dispatch (a6 now carries the identical helper, dedup). **f33** event machine + `has_torch_gods_favor`/`unlocked_biome_torches` reads. Three-way split by responsibility, no overlap to delete. | `.plr` torch pair `:54777-54778` gate 229: **f44** (`unlocked_biome_torches` + `using_biome_torches`, L1-only). NO sidecar. No `.wld`. |
 | **5343** Peddler's Satchel | `:45368-45383` | a6, g90 | Both port the WORLD-flag once-ever gate, ApplyItemTime, `Misc.PeddlersSatchelUsed` World line, consume; the travel-shop +1 slot consumer `Chest.cs:1303-1306` (plain `num++`, NO RNG draw). Equal fidelity. | **keep ONE** — recommend **a6** (`use_peddlers_satchel`) or g90; dedup. The shop +1 consumer is identical on both (`shop.rs::setup_travel_shop`). | `.wld` satchel byte tail **2037** gate 260: **f45** supersedes a6/g90 (§4). `.trwld` satchel: g90 v18 union offset **23** (§5a — moved from 20). NO sidecar token. |
-| **4829 / 4830 / 4910** Pet Licenses | `:45352-45365` / `:45438-45445` / `NPC.cs:80894-80918` | a6, g87 (`dfbcaf94b`) | Both port the mid-swing `ItemTimeIsZero && (!bought \|\| AnyNPCs(npcType))` gate + the SP purchase arm (flag + `Misc.License*Used` World line + consume). **Exchange-fail adjudication:** the C# exchange legs (`:80910-80917`) are unreachable on BOTH ports today (no TownCat/Dog/Bunny kind, AnyNPCs always false → a bought license refuses the gate). BUT a6 keeps a LIVE `AnyNPCs` scan (`n.hp > 0 && kind.net_id() == npc_type`) and, if a resident pet ever lands, its gate passes → `ApplyItemTime` + consume with NO chat — the C# ALWAYS posts PetExchangeSuccess (`RerollVariation` true) or **PetExchangeFail** (`:80916`). g87 hardcodes `any_npcs = false` (documented deviation), so its bought-license ALWAYS refuses — the C# verdict with no resident pet, no future silent-consume leg. a6's shape is closer to the C# scan but incomplete on the exchange-fail chat; g87's is the safer closed world. **Verdict: a6 keeps the arm** (the live scan is the faithful shape); the merge must add the exchange legs (RollVariation + the Success/Fail chats) when the town pets land — flagged §10.3. | **a6** (`use_pet_license`) + the §10.3 exchange-fail merge debt. The town-arrival gates `Main.cs:65900-65911` are the deferred consumer. g87's arm DROP. | `.wld` bought-pet bytes tail **2021/2022/2023** gate 217: **f45** supersedes a6 **and g87** (§4/§10.5). g87's `.trwld` 3-byte v18 pet tail rides the union (§5a). NO sidecar (world globals). |
+| **4829 / 4830 / 4910** Pet Licenses | `:45352-45365` / `:45438-45445` / `NPC.cs:80894-80918` | a6, g87 (`dfbcaf94b` + closeout `26620538e`) | Both port the mid-swing `ItemTimeIsZero && (!bought \|\| AnyNPCs(npcType))` gate + the SP purchase arm (flag + `Misc.License*Used` World line + consume). **Exchange-fail adjudication (FINAL §10.3, closed at the retire pass §11.3):** the C# exchange legs (`:80910-80917`) always chat — Success on a reroll, **Fail** otherwise — and consume either way. At the FINAL probe a6's live scan had NO chat on the bought-and-resident pass (a future silent-consume leg) and g87 hardcoded `any_npcs = false`. **g87's closeout `26620538e` folded a6's live scan + `!bought` guard AND added the PetExchangeFail line; a6's retire pass adopts the same fail-chat fold (§11.3) — the lanes are now shape-identical on all three families.** The Success leg (RerollVariation + the chat) remains the shared merge debt, landing WITH the town-pet kinds + `TownNPCProfiles`. | **a6** (`use_pet_license`, the single-seam cluster machine) + the §11.3 shared Success-leg debt. The town-arrival gates `Main.cs:65900-65911` are the deferred consumer. g87's arm dedups onto a6's at merge (shape-identical now). | `.wld` bought-pet bytes tail **2021/2022/2023** gate 217: **f45** supersedes a6 **and g87** (§4/§10.5). g87's `.trwld` 3-byte v18 pet tail rides the UNIFIED union at offsets **51-53** (§11.2; five-way §5a superseded). NO sidecar (world globals). |
 | **5337-5342** six shimmer permanents | `:45385-45423` | a6 (all six), g89 (5338/5341/5342), g90 (5337/5339/5340/5341/5342) | Use arms: all faithful (once-ever `!used*` gate, ApplyItemTime 45, consume + TurnToAir, SendData(4) folds out). a6's mid-swing machine is the most literal (keeps the per-tick re-check for refused arms); g89/g90 fold onto the press tick (i37 convention, observation-identical SP). **Consumers were the gap — fixed §3.2-3.4**: pearl ownership (g90's Player field + mirror), aegis-crystal f32 order (g90's own `RegenInputs.aegis_crystal` slot), booster row order (g89's fruit→worm→ambrosia). a6 now matches every claimant consumer shape. | **a6** `use_shimmer_permanent` machine = the single use-arm owner for all six (the only one covering the full cluster on one seam); **dedup** g89's `use_aegis_fruit`/`use_gummy_worm`/`use_ambrosia` + g90's `use_shimmer_permanent_item`. **g90's Player field declarations + consumer shapes** are the merge anchors (a6 now matches): `used_aegis_crystal`/`used_arcane_crystal`/`used_galaxy_pearl` after `used_ambrosia`, the `update_luck` pearl mirror, the regen slots. g89's `used_aegis_fruit`/`used_ambrosia` decls dedup (same anchor). | `.plr` six unlock bools `:54781-54786` gate 260: **f44** `used_upgrades[6]` array (g89's 3 + g90's 5 named bools dedup onto it, 132 §3 L1). `.trplayer` unlock line 8 tokens 1-6: **g88 v10** (§6). No `.wld`. |
 | **5451 / 5738** Jim's Drone / Remote Control Car | `:45245-45272` + refusal `:52067-52074` + shoot suppression `:43519-43526` | a6 only | a6 ports `ItemCheck_TryDestroyingDrones`: the mid-swing `ownedProjectileCounts[proj] > 0 && controlUseItem && ItemTimeIsZero && !mouseInterface` kill of the owner's 1020/1105 projectiles, `releaseUseItem = false`, NO ApplyItemTime (weapons, not consumable), the use-start refusal + shoot suppression. The 1020/1105 AI is unported (dormant until it lands). Sole claimant. | **a6** (`drone_destroy_check`). | NO persist (the remotes are weapons; the projectile counts are live pool state). |
 
@@ -625,6 +625,10 @@ dedups onto a6's `minecart_powerup_unlocks_and_grants_the_mech`.
 
 ### 10.3 Pet Licenses 4829/4830/4910 — **a6 KEEPS** + the exchange-fail merge debt
 
+> **Retire-pass banner:** the debt below is HALF-CLOSED on both lanes —
+> g87's closeout `26620538e` added the Fail chat, a6's retire pass folds
+> the same (§11.3). The Success leg is the one remaining shared debt.
+
 Both port `LicenseOrExchangePet`'s gate (`:45440`: `ItemTimeIsZero &&
 (!petBoughtFlag || NPC.AnyNPCs(npcType))`), the SP purchase arm
 (`NPC.cs:80904-80909`: flag + `Misc.License*Used` World chat), ApplyItemTime
@@ -915,3 +919,66 @@ shape either way.
 not 132's 97); f44's 132 §3-L3 needs the one-byte correction receipted
 here (flag to the f44 lane — a6 edits no foreign doc); g87's pets seat
 51-53, g90's pair 55/56, the identity block 57..101, d109 dense LAST.
+
+### 11.3 g87b-143 — the closeout cross-receipt + a6's exchange-fail fold
+
+**Ref census:** no `g87b` branch exists on origin (full `git branch -r`),
+no `research/143` doc exists on any read tip (g87's tree carries only the
+base research set; the sole `143-*` file in the whole ref database is
+c4's d40-465 retire hunk on `task/W4-c4-style44-flying-fish`, unrelated).
+The Lead's "g87b-143 / g87b active closeout" is the **g87 lane's closeout
+commit `26620538e`** — local in `TR-W4-g87` over the pushed `dfbcaf94b`
+at this probe (its `permanent_upgrades.rs` cites "research/143" as the
+fold-input doc it intends to publish; the doc is not yet written). a6
+receipts the COMMIT, not the phantom ref.
+
+**The closeout folds ALL THREE a6 deltas** (verified by the full diff
+read + the committed file at `26620538e`, +243/-63 on
+`permanent_upgrades.rs`):
+
+1. **Demon Heart start refusal** — `use_start_refused` added
+   (`Player.cs:52051-52054` via `TryStartUse :52021-52023`, citing a6
+   `ea478936`); the press edge returns before the swing; the
+   `ApplyItemAnimation` reuseDelay tail (`:4496`) added (a6's machine
+   already carried it, `powerups.rs:606-607`). Witnesses re-pinned: the
+   classic + used-heart refusals now assert NO swing
+   (`w4_g87_the_demon_heart_refuses_in_classic_mode` /
+   `w4_g87_a_used_demon_heart_refuses_the_start`). **§10.1's fidelity gap
+   is CLOSED on g87's side.**
+2. **QuickSpawnItem full walk** — `deposit_pickup` + per-slot
+   chime/`NotifyItemPickup` + void-vault LAST resort + prefix-preserved
+   overflow with the pinned velocity triplet; `Prefix(-1)` re-pinned
+   UpdateItems → **UpdatePlayers** (the use's swap, citing a6
+   `bb36e6ee`); the Mech non-prefixable zero-draw census witness added.
+   **§10.2's gaps CLOSED.** The re-use witness now pins the SECOND Mech
+   (`:45204` no flag gate — both lanes agree, the census's "flag-gate"
+   reading is wrong).
+3. **Pet licenses** — the hardcoded `any_npcs = false` replaced by a6's
+   LIVE net-id scan (`d46221b2`'s shape), the `!bought` guard added, and
+   the bought-and-resident pass posts **`Misc.PetExchangeFail`**
+   (`NPC.cs:80914-80917`) — the fail-chat leg a6 lacked. Witness
+   `w4_g87_a_resident_non_pet_does_not_open_the_exchange` (a slime does
+   not open the cat gate).
+
+**a6's reciprocal fold (LANDED this pass, `powerups.rs`):** the
+`use_pet_license` else-arm now posts `Misc.PetExchangeFail` in the World
+colour on the bought-and-resident pass (the C# always chats; the generic
+tail consumes one either way, `:45442`). The doc comment's deviation
+paragraph re-written: the silent-consume leg is GONE; the remaining debt
+is the **Success leg only** (`RerollVariationForNPCType` →
+`RollVariation` + `Misc.PetExchangeSuccess`, `:80910-80912`), shared with
+g87, landing WITH the town-pet kinds + `TownNPCProfiles`. New witness
+`a_resident_non_pet_does_not_open_the_exchange` (g87's twin). The
+positive fail-chat path stays unwitnessable end-to-end until a ported
+kind carries net id 637/638/656 — the same boundary g87's closeout
+records. ANALYSIS's pet-license + g87 bullets updated to match.
+
+**Cross-receipt verdict:** the §10.1-10.3 keep-owns STAND (a6's
+single-seam `powerups.rs` machine owns the cluster; g87's module dedups
+onto it at the merge) — but the dedup is now **shape-identical on all
+three families**, no semantic conflict remains. The exchange-fail debt
+is SHARED and half-closed: both lanes post the Fail line today; the
+Success dispatch is the one remaining leg, flagged to the town-pet lane
+(`Main.cs:65900-65911` arrival + `TownNPCProfiles.RollVariation`). g87's
+`dh` sidecar DROP (§10.4) is untouched by the closeout (its
+`persist.rs` still writes v7 + `dh` at `26620538e` — verified).

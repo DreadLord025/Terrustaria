@@ -36104,29 +36104,38 @@ never consume.
   treeTop[0]/manifest.
 - **Pet licenses (4829/4830/4910)**: the port ships no TownCat/TownDog/
   TownBunny `NpcKind` (637/638/656) and no `TownNPCProfiles.RollVariation`,
-  so `NPC.AnyNPCs(npcType)` is always false and the EXCHANGE legs
-  (`RerollVariationForNPCType` → the PetExchangeSuccess/Fail chats,
-  `NPC.cs:80910-80917`) are unreachable — a bought license's use is
-  refused (no `ApplyItemTime`, no consume), exactly the C# verdict with
+  so the LIVE `AnyNPCs` scan never answers today — a bought license's use
+  is refused (no `ApplyItemTime`, no consume), exactly the C# verdict with
   no resident pet. The purchase arm (flag + `Misc.License*Used` chat)
   is ported; the town arrival gates (`Main.cs:65900-65911`) are the
-  deferred consumer of the bought flags. **Merge debt (research/138
-  §10.3, FINAL):** a6 keeps the LIVE `AnyNPCs` scan — when the town-pet
-  kinds land, the gate will pass and the arm would consume with NO chat;
-  the `RerollVariationForNPCType` dispatch + the Success/Fail chats must
-  land WITH the pets (g87's hardcoded `any_npcs = false` avoids the leg
-  but closes the exchange path — a6's live-scan shape is the keep-one).
-- **g87 re-adjudication (research/138 §10, FINAL)**: g87 `dfbcaf94b`
-  pushed the same three families (3335/5289/licenses). a6 keeps all
-  three arms: g87 lacks the Demon Heart `CheckCanUse` start refusal
-  (`:52051-52054` — its classic-mode use swings), its QuickSpawnItem twin
-  is the bobber-catch simplification (no void vault / chime / notify,
-  the prefix roll mis-pinned to UpdateItems), and its `.trplayer` v7
-  `dh` line collides with the g88 superset's v7 (DROP — the fields are
-  f44's L1-only `.plr` lane). Both minecart ports are NO-flag-gate
-  ALWAYS-spawn (`:45204` has no `!unlockedSuperCart` leg). g87's `.wld`
-  pet flips dedup onto f45; its `.trwld` 3-byte pet tail rides the
-  68-byte five-way v18 union at offsets 19-21 (138 §5a's exact table).
+  deferred consumer of the bought flags. **Exchange-fail fold (retire
+  pass, research/138 §11.3 — the g87 closeout `26620538e` shape):** when
+  a town-pet kind lands and the scan answers, the arm now consumes one
+  and posts `Misc.PetExchangeFail` (`NPC.cs:80914-80917` —
+  `RerollVariation` returns false with no profile, `:80935-80938`),
+  never a silent consume; no flag re-raise, no license re-print. The
+  Success leg (`RerollVariationForNPCType` → `RollVariation` +
+  `Misc.PetExchangeSuccess`, `:80910-80912`) is the remaining merge
+  debt — it lands WITH `TownNPCProfiles`. Witnesses:
+  `a_bought_license_without_a_resident_pet_refuses` +
+  `a_resident_non_pet_does_not_open_the_exchange` (the net-id scan, not
+  mere liveness); the positive path is unwitnessable until the pets land.
+- **g87 re-adjudication (research/138 §10 FINAL + §11.3 retire)**: g87
+  `dfbcaf94b` pushed the same three families (3335/5289/licenses); its
+  closeout `26620538e` (local over the pushed tip at the retire probe)
+  then FOLDED all three a6 deltas — the Demon Heart `CheckCanUse` start
+  refusal (`:52051-52054`), the full QuickSpawnItem walk (deposit +
+  chime/notify + void vault + prefix-preserved overflow, the roll on
+  UpdatePlayers), and the live license scan + `!bought` guard + the
+  PetExchangeFail line. The §10 keep-owns stand (a6's machine is the
+  single-seam cluster owner; g87's module dedups onto it at the merge —
+  now a shape-identical dedup, no semantic conflict). g87's `.trplayer`
+  v7 `dh` line still collides with the g88 superset's v7 (DROP — the
+  fields are f44's L1-only `.plr` lane). Both minecart ports are
+  NO-flag-gate ALWAYS-spawn (`:45204` has no `!unlockedSuperCart` leg).
+  g87's `.wld` pet flips dedup onto f45; its `.trwld` 3-byte pet tail
+  rides the UNIFIED 101-byte-head v18 union at offsets 51-53 (138 §11.2;
+  the five-way 68-byte table §5a is superseded).
 - **QuickSpawnItem (the minecart powerup's 3353 grant)**: the `GetItem`
   deposit walk with the per-slot chime + `NotifyItemPickup`, the void
   vault as the LAST resort and the overflow world drop at the player
