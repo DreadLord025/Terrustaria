@@ -285,6 +285,17 @@
 //! - 87968 — the Golfers 588/589 (`:87962-87969`): ×100 dust 5.
 //! - 88125 — 229 (`:88119-88126`): ×100 dust 5.
 //! - 88159 — 142 (`:88153-88160`): ×100 dust 5.
+//! Batch 20 (the remaining town/misc live arms — ×100 dust 5):
+//! - 88182 — 178 (`:88176-88183`).
+//! - 88204 — the Stylists 353/354 (`:88198-88205`).
+//! - 88228 — 37 (`:88222-88229`).
+//! - 88248 — Clothier 54 (`:88242-88249`).
+//! - 88268 — 160 (`:88262-88269`): ×100 dust 26 (NOT 5).
+//! - 88434 — 209 (`:88428-88435`).
+//! - 88454 — the pirates 212-216 (`:88448-88455`).
+//! - 88507 — 220/221 (`:88503-88510`): ×50 dust 151, scale 0.7.
+//! - 86613 — Vulture 61 (`:86607-86614`): ×100 dust 5.
+//! - 86631 — 301 (`:86625-86632`): ×100 dust 5.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -1400,6 +1411,26 @@ pub fn replay_hit_dust(
         236 | 237 => {
             for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
                 live_dust(s, 18, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:88176-88455`/`:86607-86632` — the ×100 dust-5 group: 178,
+        // the Stylists, 37, the Clothier, 209, the pirates 212-216, the
+        // Vulture, 301.
+        178 | 353 | 354 | 37 | 54 | 209 | 212..=216 | 61 | 301 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:88262-88269` — 160: ×100 dust 26 (the skeleton dust, not 5).
+        160 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 26, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:88503-88510` — 220/221: ×50 dust 151, scale 0.7.
+        220 | 221 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                live_dust(s, 151, dir, -1.0, 0, Color::default(), 0.7, rng, dust, ctx, world);
             }
         }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
@@ -2791,5 +2822,34 @@ mod tests {
             assert_eq!(live.len(), 10, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == 18 && d.alpha == 0), "type {t}");
         }
+    }
+
+    /// W4-g62 batch 20 — the last simple rows: 160 is dust 26, 220/221
+    /// are ×50 dust 151 scale 0.7, the rest the ×100 dust-5 shape.
+    #[test]
+    fn w4_g62_the_batch20_rows() {
+        let world = air();
+        let ctx = ctx();
+        for t in [178, 353, 354, 37, 54, 209, 212, 216, 61, 301] {
+            let s = snap(t, 250, 250, 25.0);
+            let mut r = UnifiedRandom::new(181);
+            let mut p = DustPool::new();
+            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 10, "type {t}");
+            assert!(live.iter().all(|d| d.dust_type == 5), "type {t}");
+        }
+        let s = snap(160, 250, 250, 25.0);
+        let mut r = UnifiedRandom::new(181);
+        let mut p = DustPool::new();
+        replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+        assert!(p.slots().iter().filter(|d| d.active).all(|d| d.dust_type == 26));
+        let s2 = snap(220, 100, 100, 10.0); // ×50 → 5
+        let mut r2 = UnifiedRandom::new(181);
+        let mut p2 = DustPool::new();
+        replay_hit_dust(&s2, &mut r2, &mut p2, &ctx, &world);
+        let live: Vec<_> = p2.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 5);
+        assert!(live.iter().all(|d| d.dust_type == 151));
     }
 }
