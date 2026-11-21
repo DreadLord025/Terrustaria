@@ -2171,6 +2171,46 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Force Bubble",
     },
+    BestiaryEntryDef {
+        credit_id: "RockGolem",
+        net_id: 631,
+        kind: NpcKind::RockGolem,
+        variant: None,
+        quick_unlock: false,
+        name: "Rock Golem",
+    },
+    BestiaryEntryDef {
+        credit_id: "MaggotZombie",
+        net_id: 632,
+        kind: NpcKind::MaggotZombie,
+        variant: None,
+        quick_unlock: false,
+        name: "Maggot Zombie",
+    },
+    BestiaryEntryDef {
+        credit_id: "SporeBat",
+        net_id: 634,
+        kind: NpcKind::SporeBat,
+        variant: None,
+        quick_unlock: false,
+        name: "Spore Bat",
+    },
+    BestiaryEntryDef {
+        credit_id: "SporeSkeleton",
+        net_id: 635,
+        kind: NpcKind::SporeSkeleton,
+        variant: None,
+        quick_unlock: false,
+        name: "Spore Skeleton",
+    },
+    BestiaryEntryDef {
+        credit_id: "HallowBoss",
+        net_id: 636,
+        kind: NpcKind::HallowBoss,
+        variant: None,
+        quick_unlock: true,
+        name: "Empress of Light",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

@@ -1595,6 +1595,36 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        (NpcKind::RockGolem, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 21.0)
+                .unwrap_or(48.0);
+            (sheet_i, h, 36.0, h, white)
+        }
+        (NpcKind::MaggotZombie, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::SporeBat, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(18.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::SporeSkeleton, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::HallowBoss, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(100.0);
+            (sheet_i, h, 100.0, h, white)
+        }
     }
 }
 

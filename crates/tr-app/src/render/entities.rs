@@ -515,6 +515,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(DESTROYER_SHEETS)
             .chain(FISHRON_SHEETS)
             .chain(SMALL_KIND_SHEETS)
+            .chain(W4_D43_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -646,6 +647,77 @@ fn deerclops_frame_uv(tex: &BgTex, cell: u32) -> [f32; 4] {
         tex.uv[0] + du * (c + 1.0) + ox,
         tex.uv[1] + dv * (r + 1.0) + oy,
     ]
+}
+
+/// W4-d43 — the Queen Slime's 2x16 grid cell (`Main.cs:23632`'s
+/// `value.Frame(2, 16, num96 / num95, num96 % num95)`): NPC_657's 360x1952
+/// sheet is 2 columns x 16 rows of 180x122 cells (the `frame.Width = 180`
+/// override, `NPC.cs:66851`); the cell index rides `npc.frame` (0..31).
+fn queen_slime_frame_uv(tex: &BgTex, cell: u32) -> [f32; 4] {
+    let span = (tex.uv[2] - tex.uv[0], tex.uv[3] - tex.uv[1]);
+    let (du, dv) = (span.0 / 2.0, span.1 / 16.0);
+    let (col, row) = (cell / 16, cell % 16);
+    let (c, r) = (col as f32, row as f32);
+    [
+        tex.uv[0] + du * c,
+        tex.uv[1] + dv * r,
+        tex.uv[0] + du * (c + 1.0),
+        tex.uv[1] + dv * (r + 1.0),
+    ]
+}
+
+/// W4-d43 — the distressed Foxparks' 6x27 grid cell (`Main.cs:23832`'s
+/// `value.Frame(6, 27, frame.Y / 9, frame.Y % 9)`): NPC_696's 384x1242 sheet
+/// is 6 columns x 27 rows of 64x46 cells; the cell index rides `npc.frame`.
+fn foxparks_frame_uv(tex: &BgTex, cell: u32) -> [f32; 4] {
+    let span = (tex.uv[2] - tex.uv[0], tex.uv[3] - tex.uv[1]);
+    let (du, dv) = (span.0 / 6.0, span.1 / 27.0);
+    let (col, row) = (cell / 9, cell % 9);
+    let (c, r) = (col as f32, row as f32);
+    [
+        tex.uv[0] + du * c,
+        tex.uv[1] + dv * r,
+        tex.uv[0] + du * (c + 1.0),
+        tex.uv[1] + dv * (r + 1.0),
+    ]
+}
+
+/// W4-d43 — the Queen Slime's grid draw: the 180x122 cell at the generic
+/// centre anchor (the `Main.cs:23626` Bottom anchor + the wing/shader overlays
+/// are the documented draw-pass remainder; the cell quad is the body).
+fn queen_slime_draw<'a>(
+    tex: Option<&'a BgTex>,
+    n: &Npc,
+    w: f32,
+    h: f32,
+) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
+    let fh = tex.map_or(122.0, |t| t.h / 16.0);
+    let fw = tex.map_or(180.0, |t| t.w / 2.0);
+    (
+        tex,
+        fh,
+        [fw, fh],
+        [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5],
+    )
+}
+
+/// W4-d43 — the distressed Foxparks' grid draw: the 64x46 cell at the generic
+/// centre anchor (the `Main.cs:23828` Bottom anchor + the opacity ghost copies
+/// are the documented draw-pass remainder; the cell quad is the body).
+fn foxparks_draw<'a>(
+    tex: Option<&'a BgTex>,
+    n: &Npc,
+    w: f32,
+    h: f32,
+) -> (Option<&'a BgTex>, f32, [f32; 2], [f32; 2]) {
+    let fh = tex.map_or(46.0, |t| t.h / 27.0);
+    let fw = tex.map_or(64.0, |t| t.w / 6.0);
+    (
+        tex,
+        fh,
+        [fw, fh],
+        [n.x + w * 0.5 - fw * 0.5, n.y + h * 0.5 - fh * 0.5],
+    )
 }
 
 /// The humanoid walkers' draw: the sheet's real row (`t.h / count`, the
@@ -1245,6 +1317,16 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     250, // the Angry Nimbus
     288, // the Dungeon Spirit
     384, // the Force Bubble
+];
+
+/// W4-d43 — the 631-696 kinds' own sheets (`TextureAssets.Npc[type]`), keyed by
+/// the vanilla net id in `NpcAssets::npc_sheets` (the SMALL_KIND_SHEETS shape).
+pub(crate) const W4_D43_SHEETS: &[u32] = &[
+    631, 632, 634, 635, 636, 637, 638, 639, 640, 641, 642, 643, 644, 645,
+    646, 647, 648, 649, 650, 651, 652, 653, 654, 655, 656, 657, 658, 659,
+    660, 661, 662, 664, 665, 666, 667, 669, 670, 671, 672, 673, 674, 675,
+    676, 677, 678, 679, 680, 681, 682, 683, 684, 685, 686, 687, 688, 689,
+    690, 691, 692, 693, 694, 695, 696,
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -3167,6 +3249,21 @@ pub(crate) fn draw_npcs(
             NpcKind::AngryNimbus => {
                 pumpkin_moon_draw(assets.npc_sheet(250), npc_rows(250), n, w, h)
             }
+            NpcKind::RockGolem => {
+                scaled_anchor(assets.npc_sheet(631), npc_rows(631), n, w, h)
+            }
+            NpcKind::MaggotZombie => {
+                pumpkin_moon_draw(assets.npc_sheet(632), npc_rows(632), n, w, h)
+            }
+            NpcKind::SporeBat => {
+                pumpkin_moon_draw(assets.npc_sheet(634), npc_rows(634), n, w, h)
+            }
+            NpcKind::SporeSkeleton => {
+                pumpkin_moon_draw(assets.npc_sheet(635), npc_rows(635), n, w, h)
+            }
+            NpcKind::HallowBoss => {
+                pumpkin_moon_draw(assets.npc_sheet(636), npc_rows(636), n, w, h)
+            }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
@@ -3235,6 +3332,10 @@ pub(crate) fn draw_npcs(
         let flip_dir = n.sprite_dir;
         let uv = if n.kind == NpcKind::Deerclops {
             flip_uv(deerclops_frame_uv(tex, n.frame()), flip_dir < 0)
+        } else if n.kind == NpcKind::QueenSlimeBoss {
+            flip_uv(queen_slime_frame_uv(tex, n.frame()), flip_dir > 0)
+        } else if n.kind == NpcKind::PalworldFoxsparksDistressed {
+            flip_uv(foxparks_frame_uv(tex, n.frame()), flip_dir > 0)
         } else if n.kind == NpcKind::MoonLordHead {
             flip_uv(moon_lord_head_uv(tex, n.frame()), flip_dir > 0)
         } else {
@@ -3318,6 +3419,7 @@ pub(crate) fn draw_npcs(
                     // (`NPC.cs:24626`/`:24645`, ±0.13/tick) and the Dungeon
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
                     | NpcKind::BlazingWheel
+                    | NpcKind::SporeBat
                     | NpcKind::DungeonSpirit
             )
         {

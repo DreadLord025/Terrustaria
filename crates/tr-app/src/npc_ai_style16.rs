@@ -103,6 +103,10 @@ fn vanilla_type(kind: NpcKind) -> i32 {
         NpcKind::Goldfish => 55,
         NpcKind::Piranha => 58,
         NpcKind::Shark => 65,
+        // W4-d43: the Pufferfish (688) and the Orca (692) — the
+        // ai_016_arm already carries their branches (`:23498`/`:23698`).
+        NpcKind::Pufferfish => 688,
+        NpcKind::Orca => 692,
         _ => unreachable!("only aiStyle-16 kinds reach the family arm"),
     }
 }

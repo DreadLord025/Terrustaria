@@ -586,6 +586,11 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            NpcKind::RockGolem => 631,
+            NpcKind::MaggotZombie => 632,
+            NpcKind::SporeBat => 634,
+            NpcKind::SporeSkeleton => 635,
+            NpcKind::HallowBoss => 636,
         }
     }
 
@@ -916,6 +921,11 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            631 => NpcKind::RockGolem,
+            632 => NpcKind::MaggotZombie,
+            634 => NpcKind::SporeBat,
+            635 => NpcKind::SporeSkeleton,
+            636 => NpcKind::HallowBoss,
             _ => return None,
         })
     }
@@ -1796,6 +1806,11 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            NpcKind::RockGolem => "NPC_Hit_41",
+            NpcKind::MaggotZombie => "NPC_Hit_1",
+            NpcKind::SporeBat => "NPC_Hit_1",
+            NpcKind::SporeSkeleton => "NPC_Hit_2",
+            NpcKind::HallowBoss => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2100,6 +2115,11 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            NpcKind::RockGolem => "NPC_Killed_43",
+            NpcKind::MaggotZombie => "NPC_Killed_2",
+            NpcKind::SporeBat => "NPC_Killed_4",
+            NpcKind::SporeSkeleton => "NPC_Killed_2",
+            NpcKind::HallowBoss => "NPC_Killed_65",
             _ => return None,
         })
     }
@@ -2200,6 +2220,8 @@ impl NpcKind {
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
             NpcKind::AngryNimbus => true,
+            // W4-d43: the SetDefaults noGravity flyers (kb > 0) + the AI-head writers.
+            NpcKind::SporeBat => true,
             _ => false,
         }
     }
@@ -2451,6 +2473,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            NpcKind::RockGolem => 3,
+            NpcKind::MaggotZombie => 3,
+            NpcKind::SporeBat => 14,
+            NpcKind::SporeSkeleton => 3,
+            NpcKind::HallowBoss => 120,
         }
     }
 
@@ -2559,6 +2586,9 @@ impl NpcKind {
             NpcKind::Nutcracker | NpcKind::Krampus => 2.0,
             NpcKind::NutcrackerSpinning => 6.0,
             NpcKind::ElfArcher => 1.0,
+            NpcKind::RockGolem => 0.9,
+            NpcKind::MaggotZombie => 0.8,
+            NpcKind::SporeSkeleton => 1.5,
             _ => return None,
         })
     }
@@ -2981,6 +3011,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            NpcKind::RockGolem => (36.0, 48.0),
+            NpcKind::MaggotZombie => (18.0, 40.0),
+            NpcKind::SporeBat => (22.0, 18.0),
+            NpcKind::SporeSkeleton => (18.0, 40.0),
+            NpcKind::HallowBoss => (100.0, 100.0),
         }
     }
 
@@ -3057,6 +3092,11 @@ impl NpcKind {
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
             NpcKind::ForceBubble => 384,
+            NpcKind::RockGolem => 631,
+            NpcKind::MaggotZombie => 632,
+            NpcKind::SporeBat => 634,
+            NpcKind::SporeSkeleton => 635,
+            NpcKind::HallowBoss => 636,
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
             NpcKind::Goldfish => 55,
@@ -3131,6 +3171,8 @@ impl NpcKind {
             NpcKind::GoblinArcher => 21,
             NpcKind::GoblinPeon | NpcKind::GoblinThief | NpcKind::GoblinWarrior => 16,
             NpcKind::Skeleton | NpcKind::UndeadMiner => 15,
+            NpcKind::MaggotZombie => 16,
+            NpcKind::SporeSkeleton => 16,
             // The Zombie Elf trio (`S1-F-13c`): `FindFrame`'s humanoid-group
             // case list carries 338-340 (`NPC.cs:68603-68605`) on their
             // 15-frame strips (`Main.npcFrameCount[338..340]`, `Main.cs`).
@@ -3622,6 +3664,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            NpcKind::RockGolem => 1000,
+            NpcKind::MaggotZombie => 45,
+            NpcKind::SporeBat => 16,
+            NpcKind::SporeSkeleton => 60,
+            NpcKind::HallowBoss => 70000,
         }
     }
 
@@ -3986,6 +4033,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            NpcKind::RockGolem => 85,
+            NpcKind::MaggotZombie => 14,
+            NpcKind::SporeBat => 13,
+            NpcKind::SporeSkeleton => 20,
+            NpcKind::HallowBoss => 80,
         }
     }
 }

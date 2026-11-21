@@ -77,7 +77,7 @@ const WALL_DUNGEON: [u16; 9] = [7, 8, 9, 94, 95, 96, 97, 98, 99];
 /// The C#'s type-32 / 281-286 / 693 group (`NPC.cs:18960`) — the teleport
 /// spot must sit in front of a dungeon wall unless Skeletron is alive.
 fn dungeon_wall_gated(kind: NpcKind) -> bool {
-    matches!(kind, NpcKind::DarkCaster)
+    matches!(kind, NpcKind::DarkCaster | NpcKind::LibrarianSkeleton)
 }
 
 /// `Collision.SolidTiles(startX, endX, startY, endY)`
@@ -455,9 +455,9 @@ pub fn ai_style_8_step(
                     shot = Some(CasterShot { kind: NpcKind::ChaosBall, x: sx, y: sy, ai3: 0.0 });
                 }
                 NpcKind::Tim => {
-                    // `:21242` — type 665, the ChaosBallTim clone; the port
-                    // folds it into ChaosBall (identical stats and name).
-                    shot = Some(CasterShot { kind: NpcKind::ChaosBall, x: sx, y: sy, ai3: 0.0 });
+                    // `:21242` — type 665, the ChaosBallTim clone (W4-d43: its
+                    // own kind now; identical stats, its own bestiary credit).
+                    shot = Some(CasterShot { kind: NpcKind::ChaosBallTim, x: sx, y: sy, ai3: 0.0 });
                 }
                 NpcKind::DarkCaster => {
                     // `:21246` — the Water Sphere 33 carries

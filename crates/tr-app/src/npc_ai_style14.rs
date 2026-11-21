@@ -93,7 +93,13 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
     target_closest(npc, env.world, env.players, true, 14, env.ticker);
     // `:22899-23182` — the per-type approach arms: 158/226/660 unported;
     // the else arm (`:23116-23182`) is the shared 0.1/4 X + 0.04/1.5 Y.
-    generic_approach(npc);
+    // W4-d43: the HeavenlySlime minion (660) rides its own 0.35/0.3/6/5
+    // approach (`NPC.cs:23038-23115`); every other kind the shared arm.
+    if net_id == 660 {
+        queen_slime_minion_approach(npc);
+    } else {
+        generic_approach(npc);
+    }
     // `:23183-23332` — the water group. NOTE the C# structure: the wet
     // lift is gated on `base.wet`, but the SECOND approach pass below is
     // not — types 49/51/66 run the generic approach twice per tick, and
@@ -201,6 +207,58 @@ pub fn bounce(npc: &mut Npc) {
 /// brake, cap ±1.5. The C#'s `(double)velocity.Y` comparisons promote the
 /// exact f32 values against exactly-representable ±1.5 — the f32
 /// comparison is identical.
+/// W4-d43 — the HeavenlySlime minion's own approach (`NPC.cs:23038-23115`,
+/// the `else if (this.type == 660)` arm): the 0.35 X accel / 0.3 Y accel and
+/// the 6 / 5 caps (the shared arm's 0.1/0.04/4/1.5 overridden at `:23044-23050`).
+pub fn queen_slime_minion_approach(npc: &mut Npc) {
+    let num225 = 0.35f32;
+    let num226 = 0.3f32;
+    let num227 = 6f32;
+    let num228 = 5f32;
+    if npc.facing == -1 && npc.vx > -num227 {
+        npc.vx -= num225;
+        if npc.vx > num227 {
+            npc.vx -= num225;
+        } else if npc.vx > 0.0 {
+            npc.vx += num225 * 0.5;
+        }
+        if npc.vx < -num227 {
+            npc.vx = -num227;
+        }
+    } else if npc.facing == 1 && npc.vx < num227 {
+        npc.vx += num225;
+        if npc.vx < -num227 {
+            npc.vx += num225;
+        } else if npc.vx < 0.0 {
+            npc.vx -= num225 * 0.5;
+        }
+        if npc.vx > num227 {
+            npc.vx = num227;
+        }
+    }
+    if npc.direction_y == -1 && npc.vy > -num228 {
+        npc.vy -= num226;
+        if npc.vy > num228 {
+            npc.vy -= num226;
+        } else if npc.vy > 0.0 {
+            npc.vy += num226 * 0.75;
+        }
+        if npc.vy < -num228 {
+            npc.vy = -num228;
+        }
+    } else if npc.direction_y == 1 && npc.vy < num228 {
+        npc.vy += num226;
+        if npc.vy < -num228 {
+            npc.vy += num226;
+        } else if npc.vy < 0.0 {
+            npc.vy -= num226 * 0.75;
+        }
+        if npc.vy > num228 {
+            npc.vy = num228;
+        }
+    }
+}
+
 pub fn generic_approach(npc: &mut Npc) {
     // `:23118-23149`.
     if npc.facing == -1 && npc.vx > -4.0 {

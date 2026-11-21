@@ -484,6 +484,11 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+            NpcKind::RockGolem => &[20, 24, 31, 323],
+            NpcKind::MaggotZombie => &[],
+            NpcKind::SporeBat => &[],
+            NpcKind::SporeSkeleton => &[20],
+            NpcKind::HallowBoss => &[31],
     }
 }
 

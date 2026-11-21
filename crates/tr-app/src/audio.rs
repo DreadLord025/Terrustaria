@@ -181,6 +181,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_59", 4),
     ("NPC_Killed_62", 4),
     ("NPC_Killed_66", 4),
+    ("NPC_Hit_41", 3),
+    ("NPC_Killed_43", 4),
+    ("NPC_Killed_65", 4),
     // The NPC death family (the sound id 4, `LegacySoundPlayer.cs:676`): the
     // per-kind death cues (`NPC.DeathSound`, `NPC.cs:6477`).
     ("Double_Jump", 16),

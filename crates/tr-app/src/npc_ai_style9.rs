@@ -281,7 +281,7 @@ pub fn sphere_family_step(
     // (`:21519-21521`, types 30/665 — idempotent across the 2 iterations,
     // so one write is exact). The `netOffset` add/subtract pair
     // (`:21516`/`:21569`) brackets only the dust and nets to zero.
-    if npc.kind == NpcKind::ChaosBall {
+    if npc.kind == NpcKind::ChaosBall || npc.kind == NpcKind::ChaosBallTim {
         npc.alpha = 255;
     }
     // `:21568` — the spin rides `base.direction` (the facing the

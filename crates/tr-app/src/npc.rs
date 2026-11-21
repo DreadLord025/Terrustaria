@@ -1086,6 +1086,26 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.RockGolem` (631) — Rock Golem (`aiStyle 3`):
+    /// 36x48, dmg 85, def 35, 1000 HP, kb 0.1,
+    /// value 25000.0 (`NPC.cs:17120-17133`). W4-d43.
+    RockGolem,
+    /// `NPCID.MaggotZombie` (632) — Maggot Zombie (`aiStyle 3`):
+    /// 18x40, dmg 14, def 6, 45 HP, kb 0.5,
+    /// value 60.0 (`NPC.cs:17134-17146`). W4-d43.
+    MaggotZombie,
+    /// `NPCID.SporeBat` (634) — Spore Bat (`aiStyle 14`):
+    /// 22x18, dmg 13, def 2, 16 HP, kb 0.8,
+    /// value 90.0 (`NPC.cs:17161-17174`). W4-d43.
+    SporeBat,
+    /// `NPCID.SporeSkeleton` (635) — Spore Skeleton (`aiStyle 3`):
+    /// 18x40, dmg 20, def 8, 60 HP, kb 0.5,
+    /// value 100.0 (`NPC.cs:17175-17187`). W4-d43.
+    SporeSkeleton,
+    /// `NPCID.HallowBoss` (636) — Empress of Light (`aiStyle 120`):
+    /// 100x100, dmg 80, def 50, 70000 HP, kb 0.0,
+    /// value 250000.0, noGravity, boss, dontTakeDamage (`NPC.cs:17188-17206`). W4-d43.
+    HallowBoss,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -2952,7 +2972,10 @@ impl Npc {
                 .or_else(|| kind.holiday_zombie_scale())
                 // The BlazingWheel's `scale = 1.2f` row (`NPC.cs:9730`,
                 // the small-kinds wiring wave).
-                .unwrap_or(if kind == NpcKind::BlazingWheel { 1.2 } else { 1.0 }),
+                .unwrap_or(match kind {
+                    NpcKind::BlazingWheel => 1.2, NpcKind::RockGolem => 1.1,
+                    _ => 1.0,
+                }),
             net_offset: Vec2::ZERO,
             burn: 0.0,
             wants_minion: false,
@@ -2982,7 +3005,7 @@ impl Npc {
             // S1-D-3 W-9: Duke Fishron's `boss = true` row
             // (`NPC.cs:13716`) — the target-facing inheritance gate
             // (`npc_target.rs`'s `!npc.boss` term) reads it.
-            boss: kind == NpcKind::DukeFishron,
+            boss: matches!(kind, NpcKind::DukeFishron | NpcKind::HallowBoss),
             collide_x: false,
             collide_y: false,
             old_vx: 0.0,
@@ -3032,7 +3055,7 @@ impl Npc {
             // the false default (`NPC.cs:8507`, the SetDefaults reset).
             dont_take_damage: matches!(
                 kind,
-                NpcKind::PlanterasHook | NpcKind::MartianSaucerCore | NpcKind::BlazingWheel
+                NpcKind::PlanterasHook | NpcKind::MartianSaucerCore | NpcKind::BlazingWheel | NpcKind::HallowBoss
             ),
             // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
             behind_tiles: kind.behind_tiles(),
@@ -3529,6 +3552,11 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            NpcKind::RockGolem => 0.1,
+            NpcKind::MaggotZombie => 0.5,
+            NpcKind::SporeBat => 0.8,
+            NpcKind::SporeSkeleton => 0.5,
+            NpcKind::HallowBoss => 0.0,
             _ => 0.4,
         }
     }
@@ -3909,6 +3937,11 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            NpcKind::RockGolem => 35,
+            NpcKind::MaggotZombie => 6,
+            NpcKind::SporeBat => 2,
+            NpcKind::SporeSkeleton => 8,
+            NpcKind::HallowBoss => 50,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4281,6 +4314,11 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            NpcKind::RockGolem => 25000.0,
+            NpcKind::MaggotZombie => 60.0,
+            NpcKind::SporeBat => 90.0,
+            NpcKind::SporeSkeleton => 100.0,
+            NpcKind::HallowBoss => 250000.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6287,6 +6325,13 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            NpcKind::RockGolem => self.update_skeleton(world, player, dt),
+            NpcKind::MaggotZombie => self.update_zombie(world, player, dt),
+            NpcKind::SporeBat => self.update_cave_bat(world, player, rng),
+            NpcKind::SporeSkeleton => self.update_skeleton(world, player, dt),
+            // W4-d43: AI_120_HallowBoss (NPC.cs:45953-46942, npc_ai_empress.rs ported unwired). The kind holds
+            // still until its machine lands (the MartianTurret stand-in precedent).
+            NpcKind::HallowBoss => {}
         }
     }
 
@@ -9040,6 +9085,75 @@ impl Npc {
                     }
                 }
             }
+            NpcKind::RockGolem => {
+                // `case 631` (`NPC.cs:75259-75313`): the rock golem's walk —
+                // grounded, the `ai[2]` attack wind-up lerps rows 10..20 (the
+                // player-relative pose, unported: the port has no per-tick
+                // `Collision.CanHit`/Hitbox feed here, so the walk band rides),
+                // the idle row 0, the `0.2 + |vx|` accumulator >8 advances and
+                // the row wraps at 8 back to 1. Airborne holds row 0.
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                    if self.ai[2] != 0.0 && self.ai[2] < 100.0 {
+                        // The attack pose (`:75266-75281`): the lerp rows need
+                        // the player hitbox/CanHit feed the port does not carry
+                        // in FindFrame — the idle row stands in (the walk band
+                        // below resumes once ai[2] clears).
+                        self.frame = 0;
+                    } else if self.vx == 0.0 {
+                        self.frame_counter = 0.0;
+                        self.frame = 0;
+                    } else {
+                        self.frame_counter += 0.2 + self.vx.abs();
+                        if self.frame_counter > 8.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= 8 {
+                            self.frame = 1;
+                        } else if self.frame < 1 {
+                            self.frame = 1;
+                        }
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                }
+            }
+            // W4-d43: the humanoid-group walk (`NPC.cs:68619/68621`).
+            NpcKind::MaggotZombie => self.humanoid_town_frame(),
+            NpcKind::SporeBat => {
+                // `case 634 : case 662 : case 664` (`NPC.cs:74835-74884`): the
+                // spore-bat / pirate-ghost / torch-god flap — the sprite flips
+                // on the velocity sign, the rotation tilts `vx * 0.1`, the
+                // 6-tick counter advances one row and wraps at the strip
+                // (the 634 arm decrements the count by one, `:74868`).
+                if self.vx > 0.0 {
+                    self.sprite_dir = 1;
+                }
+                if self.vx < 0.0 {
+                    self.sprite_dir = -1;
+                }
+                self.rotation = self.vx * 0.1;
+                self.frame_counter += 1.0;
+                let mut count = self.rows();
+                count -= 1;
+                if self.frame_counter >= 6.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= count {
+                    self.frame = 0;
+                }
+            }
+            // W4-d43: the humanoid-group walk (`NPC.cs:68619/68621`).
+            NpcKind::SporeSkeleton => self.humanoid_town_frame(),
+            NpcKind::HallowBoss => {
+                // `case 636` (`NPC.cs:67022-67024`): the Empress of Light's two
+                // rows — row 1 in phase 2 (`ai[3]` 1 or 3, `AI_120_HallowBoss_
+                // IsInPhase2`, `:45814-45821`), row 0 otherwise.
+                self.frame = if self.ai[3] == 1.0 || self.ai[3] == 3.0 { 1 } else { 0 };
+            }
         }
     }
 
@@ -10046,7 +10160,9 @@ impl Npc {
     /// one-tile obstacles. The chase/doors/talk arms land with their
     /// systems.
     fn update_guide(&mut self, world: &World, _dt: f32) {
-        let (w, h) = NpcKind::Guide.size();
+        // W4-d43: the kind's own box (every existing town caller is 18x40,
+        // so byte-identical; the new ai7 pets/critters carry their own boxes).
+        let (w, h) = self.kind.size();
         // The wander: a walking pace with the random turn every few
         // seconds (`ai[3]`'s idle timer shape).
         self.anim += 1.0;
@@ -10713,6 +10829,30 @@ impl Npc {
     /// `NPC.NewNPC`'s `Bottom` semantics (`:80770`). The Poltergeist (aiStyle
     /// 22) rides this arm as its documented stand-in and stays shotless (the
     /// step's standard shoot match has no arm for it).
+    /// W4-d43 — the Water Bolt Mimic (694, aiStyle 10): the faithful
+    /// `npc_ai_style10::style10_ai` book machine (`NPC.cs:21572-21918`), the
+    /// 600-tick cycle / charge / dash / Water-Sphere summon. The arm owns its
+    /// noTileCollide integration; the kb write and the sphere spawn ride the
+    /// port's override / wants_sphere seams.
+    fn update_water_bolt_mimic(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let out = crate::npc_ai_style10::style10_ai(
+            self, world, player, 694, self.just_hit, 0, rng,
+        );
+        if let Some(kb) = out.knock_back_resist {
+            self.kb_resist_override = Some(kb);
+        }
+        if out.play_item8_sound {
+            self.wants_sound.push(crate::npc::NpcSoundRequest {
+                cue: crate::npc::NpcSoundCue::Item8,
+                x: self.x,
+                y: self.y,
+            });
+        }
+        if let Some((sx, sy)) = out.spawn_water_sphere {
+            self.wants_sphere.push((NpcKind::WaterSphere, sx as f32, sy as f32, 0.0));
+        }
+    }
+
     fn update_caster(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         self.ai[0] = self.caster_counter as f32;
         self.ai[1] = self.cast_windup as f32;
@@ -18600,6 +18740,11 @@ impl Npc {
             NpcKind::WyvernBody => 225,
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
+            NpcKind::RockGolem => 631,
+            NpcKind::MaggotZombie => 632,
+            NpcKind::SporeBat => 634,
+            NpcKind::SporeSkeleton => 635,
+            NpcKind::HallowBoss => 636,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -23669,7 +23814,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 275] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -23947,6 +24092,11 @@ mod tests {
         NpcKind::WyvernBody,
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
+        NpcKind::RockGolem,
+        NpcKind::MaggotZombie,
+        NpcKind::SporeBat,
+        NpcKind::SporeSkeleton,
+        NpcKind::HallowBoss,
         NpcKind::WyvernTail,
     ];
 
@@ -23996,6 +24146,37 @@ mod tests {
         );
     }
 
+
+    /// W4-d43 batch 1 — the new kinds' `SetDefaults` rows pin against the
+    /// C# (`NPC.cs` SetDefaults arms), through the port's tables — the
+    /// `s1_d_3_wire_smallkinds_the_defaults_match_the_csharp_rows` shape.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d43_batch1_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::RockGolem, 631, 3u8, 36.0, 48.0, 85, 35, 1000, 0.1, 25000.0),
+            (NpcKind::MaggotZombie, 632, 3u8, 18.0, 40.0, 14, 6, 45, 0.5, 60.0),
+            (NpcKind::SporeBat, 634, 14u8, 22.0, 18.0, 13, 2, 16, 0.8, 90.0),
+            (NpcKind::SporeSkeleton, 635, 3u8, 18.0, 40.0, 20, 8, 60, 0.5, 100.0),
+            (NpcKind::HallowBoss, 636, 120u8, 100.0, 100.0, 80, 50, 70000, 0.0, 250000.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(kind.to_u16(), ty, "{kind:?} protocol id = vanilla id");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+    }
     /// The small-kinds wiring wave (S1-D-3-wire-smallkinds): the four wired
     /// kinds' `SetDefaults` rows pin against the C# (`NPC.cs:9714-9731` /
     /// `:12221-12233` / `:12738-12752` / `:13882-13894`), through the port's
@@ -27559,7 +27740,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
+            275,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
