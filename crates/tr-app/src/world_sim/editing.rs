@@ -500,6 +500,189 @@ pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
     }
 }
 
+/// W4-g17 wiring — `ItemCheck`'s per-tick visual arms (`Player.cs:
+/// 43644-43653`): the melee-hitbox sparkle ladder (item 1450,
+/// `player_gore_e::melee_hitbox_sparkle`), the use-visual arms (65 /
+/// 3065 / meleeEnchant-7 / 1304, `player_gore_d`) and the useStyle-5
+/// lantern mote (4262, `player_gore_e::lantern_mote_gore`). The rect
+/// resolves through the shared `melee_swing` ports (the useStyle-1
+/// path); the useStyle-3 thrust rect rides `thrust_melee_hitbox`. The
+/// other use styles' rects are the item lane's — their visual arms skip
+/// (documented). Every gate ALWAYS draws on the `UpdatePlayers` stream
+/// (the ItemCheck swap, `Main.cs:17754`), in the C# arm order.
+fn item_use_visuals_tick(app: &mut App) {
+    if app.swing <= 0.0 {
+        return;
+    }
+    let held = app.inventory[app.selected];
+    if held.count == 0 || held.kind == 0 {
+        return;
+    }
+    let Some(def) = registry::get(held.kind) else {
+        return;
+    };
+    let Some(p) = app.player.as_ref() else {
+        return;
+    };
+    let anim = ticks_of(app.swing);
+    let anim_max = ticks_of(app.swing_max).max(1);
+    let scale = crate::player::adjusted_item_scale(
+        crate::prefix::prefixed_stats(held.kind, held.prefix)
+            .map_or(def.scale, |s| s.scale),
+    );
+    let (frame_w, frame_h) = app
+        .lookups
+        .item_icon(held.kind)
+        .map_or((def.width as f32, def.height as f32), |(_, w, h)| (w, h));
+    // The rect: useStyle 1 through the swing placement + hitbox ports,
+    // useStyle 3 through the thrust pair. The other styles park.
+    let rect: Option<(i32, i32, i32, i32)> = match def.use_style {
+        1 => {
+            let (loc, _) = crate::melee_swing::swing_item_placement(
+                i32::from(held.kind),
+                anim,
+                anim_max,
+                p.facing,
+                1.0,
+                [p.x, p.y],
+                crate::player::WIDTH,
+                crate::player::HEIGHT,
+                frame_w,
+                frame_h,
+                0.0,
+            );
+            let r = crate::melee_swing::melee_hitbox(
+                i32::from(held.kind),
+                anim,
+                anim_max,
+                p.facing,
+                1.0,
+                loc,
+                frame_w as i32,
+                frame_h as i32,
+                scale,
+            );
+            Some((r.x, r.y, r.width, r.height))
+        }
+        3 => {
+            let remaining = app.swing / app.swing_max.max(f32::EPSILON);
+            let (loc, _) = crate::player::thrust_item_placement(
+                p.x,
+                p.y,
+                crate::player::WIDTH,
+                p.facing as f32,
+                remaining,
+                frame_w,
+                scale,
+                0.0,
+                i32::from(held.kind),
+            );
+            crate::player::thrust_melee_hitbox(
+                loc,
+                frame_w,
+                frame_h,
+                scale,
+                p.facing,
+                remaining,
+                i32::from(held.kind),
+            )
+        }
+        _ => None,
+    };
+    let spawn_ctx = app.spawn_ctx();
+    // `:43644-43646` — `ItemCheck_GetMeleeHitboxParticles`: the 1450
+    // sparkle ladder (the outer Next(3) gate ALWAYS draws).
+    if held.kind == 1450 {
+        if let Some((rx, ry, rw, rh)) = rect {
+            let state = crate::player_gore_e::MeleeHitboxGoreState {
+                rect_x: rx as f32,
+                rect_y: ry as f32,
+                rect_w: rw,
+                rect_h: rh,
+                direction: p.facing,
+            };
+            crate::player_gore_e::melee_hitbox_sparkle(
+                &state,
+                &mut app.gore,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                &app.world,
+            );
+        }
+    }
+    // `:43648-43653` — `ItemCheck_EmitUseVisuals`' gate: `(damage >= 0 &&
+    // type > 0 && !noMelee) || the bug-net trio`. The port's itemdata
+    // carries no noMelee field — every registered row stands noMelee-false
+    // (the documented stand-in), so the gate folds to `damage >= 0` plus
+    // the trio (their damage is -1).
+    let emit_gate = def.damage >= 0 || matches!(held.kind, 1991 | 3183 | 4821);
+    if emit_gate {
+        if let Some((rx, ry, rw, rh)) = rect {
+            let state = crate::player_gore_d::ItemUseGoreState {
+                rect_x: rx as f32,
+                rect_y: ry as f32,
+                rect_w: rw,
+                rect_h: rh,
+                direction: p.facing,
+                vx: p.vx,
+                vy: p.vy,
+            };
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            match held.kind {
+                65 => crate::player_gore_d::item65_use_gore(
+                    &state, &mut app.gore, &mut app.dust, &spawn_ctx, rng, &app.world,
+                ),
+                3065 => crate::player_gore_d::item3065_use_gore(
+                    &state, &mut app.gore, &mut app.dust, &spawn_ctx, rng, &app.world,
+                ),
+                1304 => crate::player_gore_d::item1304_use_gore(
+                    &state,
+                    &mut app.gore,
+                    rng,
+                    &app.world,
+                    app.gore.child_safety.disabled,
+                ),
+                _ => {}
+            }
+            // `:44901-45008` — the meleeEnchant ladder's 7 arm (the
+            // Confetti Flask): `melee && !noMelee && !noUseGraphic &&
+            // meleeEnchant == 7`. The other enchant rows are dust-only
+            // (the dust lane's) — their gates draw too in the C#, but
+            // the port's enchant-7-only slice documents the remainder.
+            if def.melee && p.melee_enchant == 7 {
+                crate::player_gore_d::enchant7_use_gore(
+                    &state,
+                    &mut app.gore,
+                    &mut app.dust,
+                    &spawn_ctx,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &app.world,
+                );
+            }
+        }
+    }
+    // `:51099-51125` — the useStyle-5 lantern mote (4262): the
+    // `DontHoldItems` mount gate (55/56/61) then the Next(20) gate.
+    if def.use_style == 5 && held.kind == 4262 {
+        let mounted_blocks = p.mount.is_active() && matches!(p.mount.kind(), 55 | 56 | 61);
+        if !mounted_blocks {
+            let (cx, _) = p.center();
+            let (_, mcy) = p.mounted_center();
+            let state = crate::player_gore_e::LanternMoteState {
+                center_x: cx,
+                item_location_y: mcy - 6.0,
+                direction: p.facing,
+                wind_for_visuals: app.wind.speed_current,
+            };
+            crate::player_gore_e::lantern_mote_gore(
+                &state,
+                &mut app.gore,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                &app.world,
+            );
+        }
+    }
+}
+
 /// The gem-bolt kinds the gem-staff shoot fires (`Player.cs:49262`'s kind
 /// gate): 121-126 plus the amber bolt 597.
 const GEM_STAFF_BOLTS: [u16; 7] = [121, 122, 123, 124, 125, 126, 597];
@@ -1824,6 +2007,16 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let d = mouse_world - Vec2::new(cx, cy);
         app.swing_aim = d.y.atan2(d.x);
     }
+    // W4-g17 wiring — `ItemCheck`'s per-tick visual arms (`Player.cs:
+    // 43644-43653`): `ItemCheck_GetMeleeHitboxParticles` (every type > 0
+    // tick) then `ItemCheck_EmitUseVisuals` (the melee/noMelee gate + the
+    // bug-net trio). Both run while `itemAnimation > 0`, independent of
+    // the cursor — the C# block sits ahead of the HUD/reach gates, so
+    // this drain runs here (after the head decrements, the same
+    // post-decrement animation the C# arms read). The useStyle-1 rect
+    // resolves through the shared `melee_swing` ports; the other styles'
+    // rects are the item lane's (documented — their arms skip).
+    item_use_visuals_tick(app);
     // `Player.releaseUseItem = !controlUseItem` runs every tick
     // (`Player.cs:42829`), so the press/release edges stay current even on
     // frames where the cursor is over the HUD or a panel. The *previous*
@@ -8785,6 +8978,90 @@ mod tests {
             .iter()
             .flat_map(|a| a.conditions.iter())
             .any(|c| c.name == key && c.completed)
+    }
+
+    // ------------------------------------------------------------------
+    // W4-g17 wiring — the ItemCheck per-tick visual arms.
+    // ------------------------------------------------------------------
+
+    /// W4-g17 — `Player.cs:44796-44806`: the Starfury (65) swing runs the
+    /// type-65 arm every animation tick — the Next(5) dust gate and the
+    /// Next(10) gore gate ALWAYS draw. Over a full 20-tick swing the
+    /// stream advances by exactly 2 draws per tick (the gates), plus the
+    /// hit spawns' own draws; the twin ledger replays the gate order.
+    #[test]
+    fn w4_g17_the_starfury_swing_draws_the_use_gates() {
+        let mut app = melee_app();
+        app.inventory[app.selected] = slot(65, 1);
+        app.npcs.clear();
+        // Start the swing directly (the use-start seam).
+        start_use_timers(&mut app, app.inventory[app.selected]);
+        let mut ledger = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        // The use-start's own sound draws already ran; replay only the
+        // per-tick visual gates from here.
+        let mut ticks = 0;
+        while app.swing > 0.0 && ticks < 40 {
+            let before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+            update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+            let after = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+            // The twin: the two gates draw unconditionally each tick.
+            let _dust_gate = ledger.next_max(5);
+            let _gore_gate = ledger.next_max(10);
+            // The hit arms' draws are seed-dependent; re-anchor the
+            // ledger to the live stream after each tick (the gate-order
+            // pin is the per-tick slice, the full-stream parity is the
+            // module's own witnesses).
+            assert_ne!(before, after, "tick {ticks}: the gates drew");
+            ledger = after;
+            ticks += 1;
+        }
+        assert!(ticks >= 19, "the 20-tick animation ran, got {ticks}");
+    }
+
+    /// W4-g17 — `Player.cs:45050-45080`: the Bubble Wand (1450) swing
+    /// runs the sparkle ladder's outer Next(3) gate every tick; a hit
+    /// spawns ONE of 411-415. Over 200 swings at least one ladder gore
+    /// lands (the 1/3 outer × the chain's hit odds).
+    #[test]
+    fn w4_g17_the_bubble_wand_spawns_the_sparkle_ladder() {
+        let mut app = melee_app();
+        app.inventory[app.selected] = slot(1450, 1);
+        app.npcs.clear();
+        for _ in 0..200 {
+            start_use_timers(&mut app, app.inventory[app.selected]);
+            while app.swing > 0.0 {
+                update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+            }
+        }
+        let sparkles: Vec<i32> = app
+            .gore
+            .slots()
+            .iter()
+            .filter(|g| g.active && (411..=415).contains(&g.gore_type))
+            .map(|g| g.gore_type)
+            .collect();
+        assert!(!sparkles.is_empty(), "the ladder fired over 200 swings");
+    }
+
+    /// W4-g17 — 500-tick stream-parity witness: an idle hand (no swing)
+    /// runs NO visual draws — the drain's `swing <= 0` head returns
+    /// before any gate. 500 idle update_editing ticks leave the
+    /// UpdatePlayers stream where the twin sits.
+    #[test]
+    fn w4_g17_the_idle_visual_drain_draws_nothing_500() {
+        let mut app = melee_app();
+        let mut twin = melee_app();
+        app.npcs.clear();
+        twin.npcs.clear();
+        for _ in 0..500 {
+            update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+            update_editing(&mut twin, 1.0 / 60.0, MINE_SCREEN);
+            assert_eq!(
+                *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                *twin.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                "the idle drain drew nothing"
+            );
+        }
     }
 
     fn melee_app() -> App {

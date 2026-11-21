@@ -1,10 +1,10 @@
 //! Player-side `Gore.NewGore*` sites, wave E (FINAL): the melee-hitbox
 //! sparkle ladder + the use-style-5 lantern mote
-//! (`Player.cs:45048-51125`). W4-g17 (code-only mode): the module +
-//! witnesses land first; the dispatch claims (the `ItemCheck_GetMelee
-//! HitboxParticles` / `ItemCheck_ApplyUseStyle` lanes) are the wiring
-//! wave — the `npc_hit_effect_a.rs` (W4-d55) precedent. With this
-//! commit the Player.cs census (32 sites) is COMPLETE.
+//! (`Player.cs:45048-51125`). WIRED (W4-g17 wiring wave):
+//! `world_sim::editing::item_use_visuals_tick` runs both arms — the
+//! 1450 ladder off the resolved melee rect, the 4262 mote behind the
+//! `DontHoldItems` mount gate — on the `UpdatePlayers` stream. With
+//! this wiring the Player.cs census (32 sites) is COMPLETE and live.
 //!
 //! ## Scope — this commit's sites (source order)
 //!
@@ -50,7 +50,7 @@
 //! * netMode: single-player port, the pool's own convention.
 //!
 //! See docs/ANALYSIS.md "The player gore sites (W4-g17, wave E)".
-#![allow(dead_code)] // wiring deferred (code-only mode) — the ItemCheck claims are the follow-up round
+// W4-g17 wiring: both arms are live (item_use_visuals_tick).
 
 use glam::Vec2;
 use tr_core::gore::GorePool;
