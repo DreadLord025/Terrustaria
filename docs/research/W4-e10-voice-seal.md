@@ -358,3 +358,8 @@ reads `mount.kind()` only, so the seam merge owns these.
 future item-use-census candidates, NOT voice work; no code ports in
 this pass (census-only). Verification: census re-run 211/160/51;
 context dump read for all 51; §S4 table read at `24ce8aa0d` verbatim.
+
+**Dispositioned (the gap-census phase, same branch):** 4 of the 51
+PORTED (the pet grants 17306/17338 + the sign tails 33537/33547) and
+the remainder owner-contract task-seeded — census FINAL 211/164/47.
+The full table + the contracts: **`W4-e10-gap-census.md`**.

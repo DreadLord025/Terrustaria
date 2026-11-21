@@ -77,6 +77,7 @@ per `docs/superpowers` agreements).
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 
 | W4-e10 | Voice-family SEAL receipts (the f44g hydration closure + the d79 rewire hunks + the g21 disjointness + the f3 65-seam compose-note + the voice bible; docs-only over 8e0d951fc) | `W4-e10-voice-seal.md` | ✅ SEALED 2026-11-21 |
+| W4-e10 gap | The 51-unclaimed gap census: 4 PORTED (pet grants 17306/17338 + sign tails 33537/33547) → 211/164/47; the d79 cross-check (16 strict instrument sites, 63/64/65/66 zero Player.cs) + the owner-contract task seeds (instruments/Journey/QueenSlime/type-75 + the 23-site backlog); code-only, 10 witnesses written not run | `W4-e10-gap-census.md` | 🟡 CODE-ONLY 2026-11-21 |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

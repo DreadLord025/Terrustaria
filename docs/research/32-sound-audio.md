@@ -206,6 +206,31 @@ order). The stale MISSING rows above (D1-D6 pitch/pool/variation) are
 d79/d80's lanes — the voice façades already ride the faithful per-case
 paths on this branch.
 
+## The W4-e10 gap-census addendum (2026-11-21, code-only)
+
+The 51 deferred sites re-swept and dispositioned
+(**`W4-e10-gap-census.md`** — the full 51-row table, the d79 cross-check,
+the owner-contracts): **4 PORTED** — the pet/light-pet grant arms
+(`Player.cs:17306`/`:17338`, `UpdatePet`/`UpdatePetLight` →
+`player.rs::update_pet_grant`/`update_light_pet_grant`, the fairy-27
+`SelectRandom` one-`Next(3)` pick + the wave-A UseSound façade,
+`91a266876`/`966d2b34f`) and the sign open/close menu-tails
+(`:33537`/`:33547`, `OpenSign`/`CloseSign` → `signs.rs` + the
+`Player.sign` latch, all seven close callers + the case-47 net tail +
+the range close, `158a5b529`). Census FINAL: **211 / 164 / 47**. The
+d79 out-of-band cross-check: **16 of the 51 are the strict 47-52/53-62
+instrument seeds** (18 seam-wide with the two `ItemCheck_PlayInstruments`
+use-cues); 63/64/65/66 contribute ZERO Player.cs sites (other-file
+callers — c24's Journey animation ALREADY plays 63/64; the QueenSlime
+65 / type-75 66 contracts are seeded for d33/d43 and d8 with the exact
+draw orders, incl. case 66's pick-before-guards quirk). The remaining 47
+are unported-CALLER deferrals with owner-contracts (the instrument-use
+seam, the f3 65-seam DST quartet, the d79/f49 pickup keep-ones, the
+23-site e10-backlog table). 10 witnesses WRITTEN NOT RUN; the recorded
+deviations: the Carrot-603 CE gate folds true, the dense-store sign
+index probe. The sign EDITOR stays S1-E-26; the voice lane stays SEALED
+(no voice-family site among the 51).
+
 ## Tests
 
 `crates/tr-app/src/audio.rs` — 10 tests: `the_ladder_order_beats_the_surface_tail`,

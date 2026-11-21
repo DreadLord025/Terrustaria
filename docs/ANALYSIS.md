@@ -2540,6 +2540,27 @@ family (`:46681-46746`, `ItemCheck_PlayInstruments`/`PlayGuitarChord`/`PlayDrums
 unported — **the S1-E-21f census mislabelled these as "rocket-boot/wing"; they
 are the music instruments**).
 
+**Gap-census update (W4-e10, 2026-11-21, code-only —
+research/W4-e10-gap-census.md):** FOUR of the 51 PORTED — the pet/light-pet
+grant arms (`:17306`/`:17338`: `Player::update_pet_grant`/
+`update_light_pet_grant`, the `:25573-25574` seam after `UpdateBuffs`; the
+fairy-27 alias ladder + the one-`Next(3)` `SelectRandom` pick; the
+Carrot-603 `runningCollectorsEdition` gate folds TRUE — the retail copy
+ships the CE content, no `CheckBunny` probe) and the sign open/close
+menu-tails (`:33537`/`:33547`: `signs.rs::open_sign`/`close_sign` + the
+`Player.sign` latch — the doors.rs sign arm, the case-47 client tail, the
+Escape `ToggleInv` arm, the map-open quiet prologue, the chest/dresser/bank
+prologues, the chat Close button, the per-tick range close; the dense-store
+sign-index probe is the recorded `Main.sign[num58] != null` mapping — the
+port splices dead records where the C# keeps null holes). The sign EDITOR
+(`Main.editSign`/`InputTextSign`) + the chat panel's sign-draw half stay
+S1-E-26. Census FINAL 211/164/47; the remaining 47 are unported-CALLER
+deferrals with owner-contracts (the instrument-use seam 18 sites — 16
+strict d79 47-52/53-62 seeds; 63/64/65/66 contribute zero Player.cs sites,
+c24's Journey animation already plays 63/64; the f3 65-seam DST quartet;
+the d79/f49 pickup keep-ones; the 23-site backlog table). 10 witnesses
+WRITTEN NOT RUN.
+
 #### The voice hydration cast-seam (published for f44 — CONSUMED, research/132 §4)
 
 The `.plr` voice pair transport is complete on this branch (the write
