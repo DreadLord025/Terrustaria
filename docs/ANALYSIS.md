@@ -39332,43 +39332,93 @@ per-site post-arms. Nine batches, 66 sites:
   (`particles.rs`'s note); `customData` likewise (the Bat-30 sparkle's
   1/10 draw still rides the stream).
 - `netOffset` folds to zero (no net smoothing on the local player).
-- The wings-33/38/47/49/50 `WingFrame` arms (the eye-colour HSL pair, the
-  under-shirt orbit triples, the Chicken Bones/Heroicis/Kazzymodus dust)
-  stay unported: 33 needs `eyeColor` + the HSL round-trip on the live
-  player, 38 needs `underShirtColor`, and 47/49/50 need the
-  `justSwitched` frame machines plus (Heroicis) a `Lighting.GetColor` +
-  `rgbToHsl` read at the mounted centre — the player-colour fields and the
-  light-map read have no tick-side producer yet. Their frame machines are
-  visual seams (the S1-P-i40 deviation stands); the dust rolls land with
-  the player-appearance lane.
-- The WallClimb/Wallslide/Carpet type-31 wall dust (`:21654-21826`) rides
-  the unported movement tasks (the Rat mount / spiked boots / carpet).
+- ~~The wings-33/38/47/49/50 `WingFrame` arms stay unported~~ — **LANDED
+  (gap-fill, 2026-11-21)**: the live `Player.eye_color`/`under_shirt_color`
+  fields (`Player.cs:2558`/`:2562` ctor inits) carry the appearance; the
+  producer is `App::apply_session_appearance` (the session draft's colours
+  at `enter_loaded_world`, the `active_player_difficulty` routing-only
+  precedent — the `.plr`-backed hydrate rides the W4-f44 save lane, whose
+  branch extends `player_file.rs` but does NOT claim the live-player
+  fields). The 33 arm's HSL round-trip rides the tested `ui::color`
+  helpers; the 38 orbit triples read `miscCounter`; the 47/49/50
+  `justSwitched` machines run tick-side (`dev_wing_frame_machine` — the
+  47/49 shape wraps at 10 with the 3→1 flag3 edge, 50 at 9 with the 2→1
+  edge and the 1→3 fold; `GetWingsFunctionalityForVisuals` collapses to
+  the 2/4 flap ladder for all three). The Heroicis-49 light gate samples
+  `Lighting.GetColor(MountedCenter tile)` in the drain (the legacy engine
+  when active, else the modern map — the raw engine read × the
+  blind-aware GlobalBrightness, XNA byte truncation, `rgbToHsl().Z` →
+  `Utils.Remap(0.2, 0.4)`); the Color-mode style transforms stay draw-pass
+  conventions. The default-machine exclusion gate (`:26835` port) now
+  excludes 38/47/49/50 too (their arms early-return), and the flap-sound
+  edge reads frame 5 for wings 49 (`:26842-26845`). The
+  `ShouldDrawWingsThatAreAlwaysAnimated` mount gate was FIXED to
+  `mount.CanUseWings` (`Mount.cs:570-580` returns true unmounted — the
+  old `data().is_some_and` starved the Rainbow/Spooky arms).
+- ~~The WallClimb/Wallslide/Carpet type-31 wall dust rides the unported
+  movement tasks~~ — **LANDED (gap-fill)**: `WallClimbMovement`
+  (`:21607-21748`, the Rat-55 mount), `WallslideMovement` (`:21750-21840`)
+  and `CarpetMovement` (`:21842-21890`, no dust — the vy pin + frame
+  machine) ported with the shared type-31 8×8 puff
+  (`player_trail_dust::drain_wall_dust`, the `WallDust` snapshot taken
+  post-velocity-write; the Rat halves the scale). The producers landed:
+  the Climbing Claws 953 / Shoe Spikes 975 (+1), Tiger Gear 976 (+2),
+  Master Ninja Gear 984 (=2), Frog Leg/Gear/Webbing 3994/3995/3996 and
+  Magic Carpet 934 equip grants; the `canCarpet` rest/grapple re-arms
+  (`:26100-26115`/`:22624`). Documented remainder: the pulley `canCarpet`
+  re-arm (`:26483`) rides the unported pulley movement, and the
+  gravDir −1 mirrors fold to +1 (the lane convention).
 - The Mount.cs minecart gem/steam/exhaust/confetti effects
-  (`Mount.cs:4697-4793`) are the minecart-visuals lane's — the port's
-  cart sparks (`minecart.rs`, the `spark_rng` named stream) already cover
-  the wheel sparks; the delegation effects need the cart frame state.
-- The rocket Item13/Item24 `rocketSoundDelay` cues (`:26884-26896`) and
-  the wings-4/45 `WingFrame` cadences stay audio seams (S1-E-21 family).
+  (`Mount.cs:4697-4793`) are **W4-f6's claimed lane** (cross-note, not
+  this task's): its `mount_dust.rs` ports all four emitters
+  (`gem_minecart_sparkle`/`steam_minecart_puff`/`exhaust_minecart_smoke`/
+  `confetti_minecart_burst`, batch 2 `d6f555b8`) as staged emitters; the
+  `update_mount` call-site wiring rides that branch's merge (the port's
+  `MountState::frame()` already carries the steam gate's `_frame`). The
+  cart wheel sparks (`minecart.rs`, the `spark_rng` named stream) are
+  separate and landed.
+- ~~The rocket Item13/Item24 `rocketSoundDelay` cues and the wings-4/45
+  `WingFrame` cadences stay audio seams~~ — **LANDED (gap-fill)**: the
+  boot cue block (`:26884-26896`, vanity 1/5 → Item13 cadence 30, 2/3/4/6
+  → Item24 cadence 15) + the `:26903-26906` decrement, the jetpack-4 flap
+  wrap (`:29478`), the Rainbow-45 flutter (`:30172`) and the wings-4 glide
+  cadence (`:27151-27156`) queue on `pending_rocket_sound` — the
+  `pending_flap_sound` convention (the play queues at the C# moment, the
+  case-2 pitch draw lands at the drain on `UpdatePlayers`; on a tick
+  where a cue AND a dust arm both roll, the pitch-vs-dust interleave
+  rides the queue order — the same documented seam deviation as the
+  Item32 flap).
+- The Sandstorm `miscCounter % 3` gore sibling (`:21922-21924`) stays
+  **W4-d55's** (cross-note): its `Next(220,223)` draw is the gore lane's;
+  d55's wave A (`ec78d152`) covers the NPC hit-effect tables, the player
+  jump-gore sites ride its later waves.
 
 ### RNG order (S1-A-10 contract)
 
 Every drain rides the `UpdatePlayers` stream in the C# call order:
-fast-run (W4-d51) → jump start burst → dash burst → DoubleJumpVisuals
-(`:26767`) → WingAirVisuals (`:26817`) → WingFrame (`:26820`) →
+fast-run (W4-d51) → jump start burst → dash burst → the wall-cling puff
+(gap-fill, `:26758-26766`) → DoubleJumpVisuals (`:26767`) → WingAirVisuals
+(`:26817`) → WingFrame (`:26820`) → the boot/jetpack Item13/Item24 cue
+(gap-fill, `:26884`/`:29478`/`:30172`/`:27154` — the queued-sound seam) →
 RocketBootVisuals (`:26918`) → the wing glide (`:27040`) → MakeFloorDust
 (`:28271`) → the PlayerFrame walking block (`:35996`) → the Rudolph trail
 (`:36164`). No new streams; the per-arm gates short-circuit BEFORE their
 rolls (a non-matching armor/wing id draws nothing), and the dead draws
 (the Sail vector, the Festive SelectRandom/colour, the Bat customData
-roll) are kept.
+roll) are kept. The gap-fill arms keep the C# argument-evaluation order:
+the 47/49/50 scale arguments' `NextFloatDirection` draws precede their
+spawns' default blocks; the Heroicis per-iteration `NextFloat` gate
+preceded its scale draw; the 33 clone re-spawns its own six-draw block.
 
 ### Verification
 
 Code-only: every arm re-read against the cited C# windows; the seam call
 sites checked against the actual signatures by read/grep (`App.dust`/
 `rngs`/`spawn_ctx`/`entity_lights`, `DustPool::new_dust/new_dust_direct/
-slot_mut`, `Player` fields, `registry::get`, `buffs.add_buff`,
-`audio.play_use_sound`, `soundid::SOUND_STYLES`). The 39 witness tests
+new_dust_perfect/clone_dust/slot_mut`, `Player` fields, `registry::get`,
+`buffs.add_buff`, `audio.play_use_sound`, `soundid::SOUND_STYLES`,
+`ui::color::rgb_to_hsl/hsl_to_rgb`, `LightMap::get`/
+`LegacyLighting::get_color`). The 39 witness tests
 (`player_trail_dust.rs` 10 + `player_wing_dust.rs` 16 +
 `player_boot_dust.rs` 13) are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/
 tests/dotnet/graphify invoked**. Each drain witness mirrors the full draw
@@ -39376,3 +39426,17 @@ sequence per arm (the `default_block` six-draw contract + the per-site
 post rolls) and pins the stream state; the tick witnesses pin the
 snapshot moments (pre-thrust velocity, pre-integration `falling`, the
 frame machines) and the grant/clear edges.
+
+**Gap-fill round (2026-11-21, same branch):** 13 more witnesses WRITTEN
+NOT RUN — `player_wing_dust.rs` +5 (the Fairy-33 corner/clone mirror, the
+Leaf-38 orbit phase, the Chicken Bones-47 burst/rest, the Heroicis-49
+dark/lit light gates, the Kazzymodus-50 velocity overwrites incl. the
+type-6 tweak draw), `player_trail_dust.rs` +1 (the wall puff's
+mirror/halver), `player.rs` +7 (the Wallslide cling/slide arms, the Rat
+WallClimb arms, the Carpet latch/vy-pin/frame machine, the boot cue's
+vanity tiers + cadence, the WingFrame Item13/Item24 wraps, the dev-wing
+machine edges, the session-appearance producer). The f44/f6/d55 co-lane
+claims were read off their origin branches (f44 `18c133ce` extends
+`player_file.rs` only — the live-player appearance fields are this
+lane's; f6 `d6f555b8` owns the minecart emitters; d55 `ec78d152` owns the
+gore draws).
