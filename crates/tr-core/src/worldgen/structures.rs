@@ -40,6 +40,16 @@ pub(crate) const WALL_SHRINE: u16 = 24;
 /// `num9` (`:35978-35988`): the caller's `chestStyle` when `>= 0`, else the
 /// `flag15` default (1 — the gold chest — below `worldSurface + 25`).
 pub(crate) fn place_chest(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+    place_chest_kind(world, x, y, TILE_CHEST, style)
+}
+
+/// `WorldGen.PlaceChest(x, y, type, notNearOtherChests, style)`
+/// (`WorldGen.cs:57813-57846`), the kind-aware twin: the mahogany chest 467
+/// shares the 21 frame grid (`TileObjectData`'s chest defs — 36 px per
+/// style, 2×2), so only the written kind differs. The `AddBuriedChest`
+/// core's remix sky arm (`:36190-36194`) and noTraps swap (`:36201-36205`)
+/// place 467 through it (W4-g44, the d103 `buried_chest` graft).
+pub(crate) fn place_chest_kind(world: &mut World, x: i32, y: i32, kind: u16, style: i32) -> bool {
     let base = (18 * style) as i16;
     for (dx, dy, fx, fy) in [
         (0i32, 0i32, base, 0i16),
@@ -63,7 +73,7 @@ pub(crate) fn place_chest(world: &mut World, x: i32, y: i32, style: i32) -> bool
     ] {
         let i = world.index(x + dx, y + dy);
         let t = &mut world.tiles[i];
-        t.kind = TILE_CHEST;
+        t.kind = kind;
         t.frame_x = fx;
         t.frame_y = fy;
         t.flags |= FLAG_ACTIVE;

@@ -900,3 +900,4 @@ crates/tr-core/src/worldgen/islands.rs|fn pass_floating_islands|W4-g44 - the ver
 crates/tr-core/src/worldgen/islands.rs|fn pass_floating_island_houses|W4-g44 - the FloatingIslandHouses pass (sunplate/disc-wall IslandHouse)
 crates/tr-core/src/worldgen/islands.rs|fn variant_cloud_island|W4-g44 variant A - the verbatim drunk SnowCloudIsland/DesertCloudIsland bodies (one shared port, 4 constants apart)
 crates/tr-core/src/worldgen/islands.rs|fn switch_fountain|W4-g44 variant A - the IslandHouse fountain arm (Place2xX 207 + SwitchFountain +/-72)
+crates/tr-core/src/worldgen/buried_chest.rs|fn add_buried_chest|W4-g44 - the full AddBuriedChest placement core (the d103 salvage graft: shimmer/larva/altar vetoes + the flag12 remix sky retype), the IslandHouse chest call re-pointed

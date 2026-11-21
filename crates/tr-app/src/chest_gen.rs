@@ -695,11 +695,12 @@ fn stock_band(
             _ => 5388,
         };
         out.push(Row::stacked(pottery, 1));
-        // The Cloud stack is 21-block only (`:37447-37453`) — the 467 block
-        // stops at the pottery.
-        if chest_kind == 21 {
-            out.push(Row::stacked(751, ranged(rng, 50, 101) as u32));
-        }
+        // The Cloud stack rides BOTH blocks — the 21 block at
+        // `:37447-37452` AND the 467 block at `:37522-37527` (W4-g44
+        // re-census: the old "467 stops at the pottery" gate dropped the
+        // remix corrupt sky chest's stack; the full buried-chest core
+        // now produces those 467 anchors).
+        out.push(Row::stacked(751, ranged(rng, 50, 101) as u32));
     }
     // `:37400-37407` — the ice family's tail: the Ice Machine at 1/7 and the
     // Fish at 1/50.
@@ -929,9 +930,12 @@ fn stock_chest(
     if chest_kind == 21 && (23..=27).contains(&chest_style) && next(rng, 2) == 0 {
         rows.push(Row::plain(5234));
     }
-    // `:37529-37531` — the skyware style-13 pottery row: a SECOND 1/2 roll
-    // on its own (the vanilla keeps the two style rows separate).
-    if chest_kind == 21 && chest_style == 13 && next(rng, 2) == 0 {
+    // `:37528-37531` — the skyware style-13 pottery row: a SECOND 1/2 roll
+    // on its own (the vanilla keeps the two style rows separate). W4-g44
+    // re-census: the row sits in the 467 block (`:37471-47532`), NOT the
+    // 21 block — the remix corrupt sky chest (the buried-chest core's
+    // flag12 swap, `:36190-36194`) is its producer.
+    if chest_kind == 467 && chest_style == 13 && next(rng, 2) == 0 {
         rows.push(Row::plain(5234));
     }
     if chest_kind == 21 && ctx.water {
@@ -1811,12 +1815,14 @@ mod tests {
         assert!(hits > 0, "the 1/4 flag4 row fires on some stream ({hits})");
         assert!(hits < 400, "and not on every one — the 1/4 gate is real");
 
-        // A style-13 anchor takes its own 1/2 pottery row.
+        // A style-13 MAHOGANY anchor takes its own 1/2 pottery row
+        // (`:37528-37531` sits in the 467 block — W4-g44 re-census).
         let mut w = rig();
         put_chest(&mut w, 100, 198);
         for dy in 0..2 {
             for dx in 0..2 {
                 let i = w.index(100 + dx, 198 + dy);
+                w.tiles[i].kind = 467;
                 w.tiles[i].frame_x = 18 * 13;
                 w.tiles[i].frame_y = 18 * dy as i16;
             }
@@ -1824,7 +1830,7 @@ mod tests {
         let rows13 = (1u64..64).any(|seed| {
             let mut stock = ChestStock::new(seed, false);
             let mut rng = tr_core::UnifiedRandom::new(seed as i32);
-            stock_chest_at(&mut stock, &w, 100, 198, false, 13, 21, 0, &mut rng)
+            stock_chest_at(&mut stock, &w, 100, 198, false, 13, 467, 0, &mut rng)
                 .iter()
                 .any(|r| r.kind == 5234)
         });

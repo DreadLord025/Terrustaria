@@ -387,6 +387,12 @@ pub(crate) struct GenVars {
     pub(crate) island_house_y: Vec<i32>,
     pub(crate) island_style: Vec<i32>,
     pub(crate) sky_lake: Vec<bool>,
+    /// `GenVars.hellChest` (`GenVars.cs:107`, the counter the hell arm of
+    /// `AddBuriedChest` advances, `WorldGen.cs:36210-36217`) — the shared
+    /// `buried_chest` core's `gv_hell` slot (W4-g44, the d103 graft). The
+    /// shuffled `hellChestItem` table itself stays with the tr-app driver
+    /// (the S1-A-4 seam); the core only carries the counter.
+    pub(crate) hell_chest: usize,
 }
 
 impl Default for GenVars {
@@ -433,6 +439,8 @@ impl Default for GenVars {
             island_house_y: Vec::new(),
             island_style: Vec::new(),
             sky_lake: Vec::new(),
+            // `GenVars.hellChest` zero-inits with the statics.
+            hell_chest: 0,
             shell_start_x_left: 0,
             shell_start_y_left: 0,
             shell_start_x_right: 0,

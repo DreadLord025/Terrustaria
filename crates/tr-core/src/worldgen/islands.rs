@@ -36,7 +36,6 @@
 //! passes run later — the temple precedent).
 
 use super::pipeline::GenVars;
-use super::structures::place_chest;
 use crate::seeds::{MicroSeedFlags, SeedFlags};
 use crate::tile::{FLAG_ACTIVE, FLAG_HALF_BRICK, Tile};
 use crate::tiledata as td;
@@ -1157,9 +1156,11 @@ mod furniture {
 /// `:79377-79392`), the window strips + banners under the classic /
 /// anniversary-not-getGood gate, the remix evil-flavour table/chairs
 /// (`:79421-79435`), the style-1 palms (`:79462-79483`). The chest
-/// placement rides the port's `place_chest` + `stock_placed_chest` seam
-/// (the `AddBuriedChest` floor-scan is the compact stand-in — the house
-/// floor is already carved at `num13`, the C# scan's first solid row).
+/// placement rides the FULL `buried_chest::add_buried_chest` core (the
+/// d103 salvage graft, research/87 §KEEP-3) + the `stock_placed_chest`
+/// hook — the down-scan vetoes (shimmer/larva-231/±2 boulder+altar),
+/// the flag12 remix evil retype (`:36176-36196`) and the errorWorld
+/// style shuffle all run at the house's call, exactly the C#.
 #[allow(clippy::too_many_arguments)]
 fn island_house(
     world: &mut World,
@@ -1175,6 +1176,7 @@ fn island_house(
     crimson: bool,
     crimson_left: bool,
     sky_count: &mut u32,
+    gv_hell: &mut usize,
 ) {
     // `:79205-79216`: the ±30 dungeon-wall abort (`Main.wallDungeon` +
     // the temple wall 87 + the evil walls 3/83).
@@ -1311,7 +1313,7 @@ fn island_house(
     }
     // `:79348-79376`: the chest — the `skyIslandHouseCount` cycle (the
     // `> 3 → Next(4)` re-roll), the style 13 / getGood 2, the anchor
-    // `(i, num13 - 3)` through the port's AddBuriedChest seam.
+    // `(i, num13 - 3)` through the full AddBuriedChest core.
     let mut num16 = *sky_count;
     if num16 > 3 {
         num16 = rng.range(0, 4) as u32;
@@ -1323,39 +1325,61 @@ fn island_house(
         _ => 2219,
     };
     let chest_style = if get_good { 2 } else { 13 };
-    // `AddBuriedChest(i, num13 - 3, …)` (`:79371`/`:79375` → `:35889-35963`
-    // + `:36206`): the downward scan for the first solid row, the chest
-    // one row above it at column `i - 1`. The house floor is the sunplate
-    // row `num13 + 1`, so the scan lands there and the 2×2 occupies rows
-    // `num13 - 1`/`num13` — the port's `place_chest` takes the top-left
-    // anchor `(i - 1, k - 2)`.
-    let mut chest_anchor = None;
-    for k in (num13 - 3)..(world.height - 10) {
-        if furniture::solid(world, i, k) {
-            chest_anchor = Some((i - 1, k - 2));
-            break;
-        }
-    }
-    if let Some((cx, cy)) = chest_anchor {
-        let style = super::structures::resolved_chest_style(
-            chest_style,
+    // `AddBuriedChest(i, num13 - 3, mainItemInChest, false, 13/2, false, 0)`
+    // (`:79371`/`:79375`) through the FULL core (`:35877-36217` — the
+    // research/87 §KEEP-3 salvage graft): the down-scan with the
+    // shimmer/larva-231 aborts, the ±2 boulder/altar-26/237 exclusion
+    // (fluff 100), the flag15 default, the errorWorld style shuffle and
+    // the flag12 remix evil retype (crimson 43 wood / corrupt 3 mahogany
+    // 467, `:36176-36196`) — the arms the compact stand-in omitted. On a
+    // fresh sunplate island floor the vetoes are inert and the scan lands
+    // on the floor row `num13 + 1`; the 2×2 occupies rows `num13 - 1`/
+    // `num13` (the core returns the top-left `(i - 1, k - 2)`).
+    let seed_flags = super::buried_chest::ChestSeedFlags {
+        remix,
+        get_good,
+        drunk,
+        anniversary,
+        not_the_bees: world.seeds.contains(SeedFlags::NOT_THE_BEES),
+        dont_starve: world.seeds.contains(SeedFlags::DONT_STARVE),
+        no_traps: world.seeds.contains(SeedFlags::NO_TRAPS),
+        error_world: world.micro_seeds.contains(MicroSeedFlags::ERROR_WORLD),
+        crimson,
+        crimson_left,
+    };
+    // `GenVars.desertHiveHigh/Low`'s Reset sentinels (`:11147-11148`:
+    // maxTilesY / 0) until the hive bounds land; the desert arm never
+    // fires on the sky band (main > 0, above the surface) either way.
+    let placed = super::buried_chest::add_buried_chest(
+        world,
+        i,
+        num13 - 3,
+        main,
+        false,
+        chest_style,
+        false,
+        0,
+        world.world_surface,
+        world.rock_layer,
+        seed_flags,
+        world.height,
+        0,
+        gv_hell,
+        5,
+        rng,
+    );
+    if let Some(p) = placed {
+        super::chest_stock::stock_placed_chest(
+            world,
+            stock.as_deref_mut(),
+            rng,
+            p.x,
+            p.y,
+            p.style,
+            p.kind,
             main,
-            cy,
-            world.world_surface,
+            false,
         );
-        if place_chest(world, cx, cy, style) {
-            super::chest_stock::stock_placed_chest(
-                world,
-                stock.as_deref_mut(),
-                rng,
-                cx,
-                cy,
-                style,
-                21,
-                main,
-                false,
-            );
-        }
     }
     // `:79377-79392`: the fountain scatter (islandStyle > 0 — the drunk
     // snow 3 / desert 1 islands and the remix/getGood styles 4/5/6): the
@@ -1511,6 +1535,7 @@ pub(crate) fn pass_floating_island_houses(
             crimson,
             crimson_left,
             &mut gv.sky_island_house_count,
+            &mut gv.hell_chest,
         );
     }
 }
@@ -2097,6 +2122,135 @@ mod tests {
             super::super::world_hash::world_hash(&w)
         };
         assert_eq!(run(), run(), "the drunk variant passes must be deterministic");
+    }
+
+    /// The full-core graft (research/87 §KEEP-3): the house chest runs
+    /// `buried_chest::add_buried_chest` — the plain remix world's flag12
+    /// arm (`:36176-36196`) retypes the sky chest: crimson keeps the wood
+    /// 21 at style 43, corruption takes the mahogany 467 at style 3. The
+    /// stocking event carries the RESOLVED style/kind (the compact
+    /// stand-in always reported 13/21).
+    #[test]
+    fn the_remix_house_chest_takes_the_evil_retype() {
+        for (crimson, kind, style) in [(true, 21u16, 43i32), (false, 467, 3)] {
+            let mut w = sky_world(4200, 1200, 520);
+            w.seeds |= SeedFlags::REMIX;
+            let mut gv = GenVars::default();
+            build_island(&mut w, 1000, 200, 50, false, &mut Rng(5));
+            house_ground(&mut w, 1000, 205);
+            gv.island_house_x.push(1000);
+            gv.island_house_y.push(200);
+            gv.island_style.push(0);
+            gv.sky_lake.push(false);
+            gv.num_island_houses = 1;
+            let mut events: Vec<(i32, u16)> = Vec::new();
+            {
+                let mut hook = |ev: &super::super::chest_stock::ChestSiteEvent,
+                                _rng: &mut dyn super::super::chest_stock::WorldGenRand|
+                 -> Vec<crate::save::ChestItem> {
+                    events.push((ev.chest_style, ev.chest_tile_type));
+                    Vec::new()
+                };
+                pass_floating_island_houses(&mut w, &mut gv, &mut Rng(11), Some(&mut hook), crimson);
+            }
+            assert_eq!(events, vec![(style, kind)], "crimson={crimson}");
+            assert!(count_kind(&w, kind) >= 4, "the retyped chest places");
+        }
+        // The classic world keeps the wood style 13 (the control).
+        let mut w = sky_world(4200, 1200, 520);
+        let mut gv = GenVars::default();
+        build_island(&mut w, 1000, 200, 50, false, &mut Rng(5));
+        house_ground(&mut w, 1000, 205);
+        gv.island_house_x.push(1000);
+        gv.island_house_y.push(200);
+        gv.island_style.push(0);
+        gv.sky_lake.push(false);
+        gv.num_island_houses = 1;
+        let mut events: Vec<(i32, u16)> = Vec::new();
+        {
+            let mut hook = |ev: &super::super::chest_stock::ChestSiteEvent,
+                            _rng: &mut dyn super::super::chest_stock::WorldGenRand|
+             -> Vec<crate::save::ChestItem> {
+                events.push((ev.chest_style, ev.chest_tile_type));
+                Vec::new()
+            };
+            pass_floating_island_houses(&mut w, &mut gv, &mut Rng(11), Some(&mut hook), false);
+        }
+        assert_eq!(events, vec![(13, 21)]);
+    }
+
+    /// The core's scan vetoes reach the house seam: a larva 231 in the
+    /// chest column (`:35910-35913`) refuses the chest — the house still
+    /// builds and the counter still advances (`:79394` runs regardless),
+    /// but no chest event fires. Inert on a fresh sunplate floor; the
+    /// witness plants the bulb by hand (the errorWorld deep-island case).
+    #[test]
+    fn the_larva_in_the_chest_column_refuses_the_chest() {
+        let mut w = sky_world(4200, 1200, 520);
+        let mut gv = GenVars::default();
+        build_island(&mut w, 1000, 200, 50, false, &mut Rng(5));
+        house_ground(&mut w, 1000, 205);
+        // The scan column is the anchor x; the floor lands at vy+1. A
+        // bulb above the floor inside the scan band aborts the place.
+        let b = w.index(1000, 203);
+        w.tiles[b].kind = 231;
+        w.tiles[b].flags |= FLAG_ACTIVE;
+        gv.island_house_x.push(1000);
+        gv.island_house_y.push(200);
+        gv.island_style.push(0);
+        gv.sky_lake.push(false);
+        gv.num_island_houses = 1;
+        let mut events = 0usize;
+        {
+            let mut hook = |_ev: &super::super::chest_stock::ChestSiteEvent,
+                            _rng: &mut dyn super::super::chest_stock::WorldGenRand|
+             -> Vec<crate::save::ChestItem> {
+                events += 1;
+                Vec::new()
+            };
+            pass_floating_island_houses(&mut w, &mut gv, &mut Rng(11), Some(&mut hook), false);
+        }
+        assert_eq!(events, 0, "the larva veto refuses the chest");
+        assert_eq!(gv.sky_island_house_count, 1, "the house still counts");
+        assert!(count_kind(&w, TILE_SUNPLATE) > 0, "the house still builds");
+    }
+
+    /// The errorWorld style shuffle (`:35986-36014`) draws on the house's
+    /// stream: with ERROR_WORLD stamped, the resolved chest style leaves
+    /// the fixed 13 on some seeds (the Next(2) gate + the 1/3 Next(52)
+    /// re-roll) — the placement draw the compact stand-in never made.
+    #[test]
+    fn the_error_world_house_chest_shuffles_the_style() {
+        let mut saw_other = false;
+        let mut saw_13 = false;
+        for seed in 1..64u64 {
+            let mut w = sky_world(4200, 1200, 520);
+            w.micro_seeds |= MicroSeedFlags::ERROR_WORLD;
+            let mut gv = GenVars::default();
+            build_island(&mut w, 1000, 200, 50, false, &mut Rng(5));
+            house_ground(&mut w, 1000, 205);
+            gv.island_house_x.push(1000);
+            gv.island_house_y.push(200);
+            gv.island_style.push(0);
+            gv.sky_lake.push(false);
+            gv.num_island_houses = 1;
+            let mut styles: Vec<i32> = Vec::new();
+            {
+                let mut hook = |ev: &super::super::chest_stock::ChestSiteEvent,
+                                _rng: &mut dyn super::super::chest_stock::WorldGenRand|
+                 -> Vec<crate::save::ChestItem> {
+                    styles.push(ev.chest_style);
+                    Vec::new()
+                };
+                pass_floating_island_houses(&mut w, &mut gv, &mut Rng(seed), Some(&mut hook), false);
+            }
+            if let Some(s) = styles.first() {
+                saw_13 |= *s == 13;
+                saw_other |= *s != 13;
+            }
+        }
+        assert!(saw_13, "the Next(2) gate keeps 13 on some seeds");
+        assert!(saw_other, "the shuffle leaves 13 on others");
     }
 
     /// The skyblock island-side arms (`:12960-12962`, `:13003-13006`,
