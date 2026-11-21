@@ -1348,6 +1348,15 @@ impl App {
             // the slot when it actually changes.
             self.net_item_last.insert(slot, st);
         }
+        // `MessageBuffer.cs:870` — `TrySendData(136, whoAmI)`: the cavern
+        // grid rides the join bundle BEFORE the bestiary burst (`:871`'s
+        // `OnPlayerJoining`), the C#'s exact order.
+        server.send(
+            id,
+            &S2c::CavernMonsterTypes(net::CavernMonsterTypes {
+                types: self.world.cavern_monster_type.map(|row| row.map(|t| t as u16)),
+            }),
+        );
         // `MessageBuffer.cs:871` → `BestiaryUnlocksTracker.OnPlayerJoining`
         // → `NPCKillsTracker.OnPlayerJoining` (`NPCKillsTracker.cs:98-107`):
         // every recorded credit's current count goes to the joining slot as a
@@ -2191,11 +2200,18 @@ impl App {
             // render-side ghost fade (S1-I-4).
             S2c::DeadPlayer { .. } => {}
             // `case 136`'s client half (`MessageBuffer.cs:4204-4217`): the
-            // 2×3 `NPC.cavernMonsterType` grid stores verbatim. The port has
-            // no cavern-monster spawn grid yet (the deep-cavern spawn pass
-            // reads a fixed roster), so there is no field to write; the arm
-            // is parked with the cavern spawn system (S1-I-4).
-            S2c::CavernMonsterTypes(_) => {}
+            // 2×3 `NPC.cavernMonsterType` grid stores verbatim (the host
+            // ignores it, `:4206-4209`). The port's world field is the
+            // Main-global standing-in (`World::cavern_monster_type`); the
+            // deep-cavern spawn ladder's `:5099` grid arm stays censused
+            // (the 494-506 kinds have no NpcKind — the roster gap).
+            S2c::CavernMonsterTypes(t) => {
+                for i in 0..2 {
+                    for j in 0..3 {
+                        self.world.cavern_monster_type[i][j] = t.types[i][j] as i32;
+                    }
+                }
+            }
             // `case 140` (`MessageBuffer.cs:4238-4263`): kind 0 is the
             // client's `CreditsRollEvent.SetRemainingTimeDirect` — the port
             // has no timed credits-roll state (the Credits front screen is
@@ -4550,6 +4566,38 @@ mod handshake_tests {
         assert!(
             host_app.world.unlocked_slime_red_spawn,
             "the first 682 flipped the unlock"
+        );
+    }
+
+    /// W4-g51 `136 SyncCavernMonsterType`: the client stores the 2×3 grid
+    /// verbatim (`MessageBuffer.cs:4210-4216`), and the join bundle pushes
+    /// the host's rolled grid (`:870`) — the joined client's field equals
+    /// the host's.
+    #[test]
+    fn the_cavern_grid_stores_and_rides_the_join_bundle() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The join tail rolled the host's grid (`WorldFile.cs:771`); the
+        // join push carried it to the client verbatim.
+        assert_eq!(
+            client_app.world.cavern_monster_type, host_app.world.cavern_monster_type,
+            "the join push delivered the host's grid"
+        );
+        // A later re-sync overwrites verbatim (row-major).
+        let grid = [[494u16, 495, 494], [499, 502, 506]];
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::CavernMonsterTypes(net::CavernMonsterTypes {
+                    types: grid,
+                })),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(
+            client_app.world.cavern_monster_type,
+            [[494, 495, 494], [499, 502, 506]],
+            "the six ushorts stored row-major"
         );
     }
 

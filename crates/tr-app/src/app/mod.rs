@@ -2315,6 +2315,13 @@ impl App {
         if let Some(engine) = self.legacy_light.as_mut() {
             engine.reset_map_delay();
         }
+        // `NPC.SetWorldSpecificMonstersByWorldID` (`WorldFile.cs:771`, the
+        // world-load tail): the cavern roster rolls from the world id. The
+        // net client's install runs the same tail (`WorldFile.LoadWorld`'s
+        // `Netplay.Connection.State != 10` arm skips it there, but the
+        // client's `136` join push overwrites the grid verbatim right
+        // after — the roll is harmless and keeps SP/host 1:1).
+        self.world.set_world_specific_monsters();
     }
 
     pub(crate) fn is_client(&self) -> bool {

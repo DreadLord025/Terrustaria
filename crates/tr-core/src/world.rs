@@ -592,6 +592,15 @@ pub struct World {
     pub unique_id: [u8; 16],
     /// `Main.ActiveWorldFileData.WorldId` (`WorldFile.cs:1227`, footer `:1756`).
     pub world_id: i32,
+    /// `NPC.cavernMonsterType` (`NPC.cs:6585`, `new int[2, 3]` at `:95268`) —
+    /// the world-id-seeded cavern roster the deep-cavern spawn roll reads
+    /// (`NPC.cs:5099`'s `[rand.Next(2), rand.Next(3)]`). A `Main`-global in
+    /// the C#; a world field is the port's standing-in (the
+    /// `unlocked_slime_red_spawn` precedent). Rolled by
+    /// [`World::set_world_specific_monsters`] at the world-load tail
+    /// (`WorldFile.cs:771`); the `136 SyncCavernMonsterType` client arm
+    /// overwrites it verbatim (`MessageBuffer.cs:4210-4216`).
+    pub cavern_monster_type: [[i32; 3]; 2],
     /// `Main.ActiveWorldFileData.LastPlayed` as `DateTime.ToBinary` ticks
     /// (`WorldFile.cs:1251` write, `:2048`/`:313` read). 0 = unset/min.
     pub last_played: i64,
@@ -801,8 +810,35 @@ impl World {
             generator_version: 0,
             unique_id: [0u8; 16],
             world_id: 0,
+            cavern_monster_type: [[0; 3]; 2],
             last_played: 0,
             creation_time: 0,
+        }
+    }
+
+    /// `NPC.SetWorldSpecificMonstersByWorldID` (`NPC.cs:18102-18134`): a
+    /// fresh `UnifiedRandom(Main.worldID)` picks two DISTINCT column bands
+    /// (`Next(3)` twice, re-rolling the first while equal — the re-roll
+    /// draws only `num`, `:18107-18110`), then each row's three cells roll
+    /// the band's range: 0 → `Next(494, 496)` (Crawdads), 1 →
+    /// `Next(496, 498)` (Giant Shellies), else `Next(498, 507)`
+    /// (Salamanders). Called at the world-load tail (`WorldFile.cs:771`).
+    pub fn set_world_specific_monsters(&mut self) {
+        let mut rng = crate::unified_random::UnifiedRandom::new(self.world_id);
+        let mut num = rng.next_max(3);
+        let num2 = rng.next_max(3);
+        while num == num2 {
+            num = rng.next_max(3);
+        }
+        for i in 0..2 {
+            let band = if i == 1 { num2 } else { num };
+            for j in 0..3 {
+                self.cavern_monster_type[i][j] = match band {
+                    0 => rng.next_range(494, 496),
+                    1 => rng.next_range(496, 498),
+                    _ => rng.next_range(498, 507),
+                };
+            }
         }
     }
 
@@ -1458,6 +1494,44 @@ impl World {
 
 #[cfg(test)]
 mod tests {
+    /// W4-g51 id-136: `NPC.SetWorldSpecificMonstersByWorldID`
+    /// (`NPC.cs:18102-18134`) — the two rows carry DISTINCT bands, every
+    /// cell lands in its band's range, and the roll is a pure function of
+    /// the world id (the same id replays the same grid).
+    #[test]
+    fn w4_g51_the_cavern_grid_rolls_two_distinct_bands_from_the_world_id() {
+        for id in [0i32, 1, 7, 4242, 0x1234_5678, -3] {
+            let mut w = super::World::new("t".into(), 8, 8);
+            w.world_id = id;
+            w.set_world_specific_monsters();
+            let band = |t: i32| match t {
+                494..=495 => 0,
+                496..=497 => 1,
+                498..=506 => 2,
+                _ => panic!("cell {t} outside every band range"),
+            };
+            let b0 = band(w.cavern_monster_type[0][0]);
+            let b1 = band(w.cavern_monster_type[1][0]);
+            assert_ne!(b0, b1, "id {id}: the two rows must differ");
+            for row in 0..2 {
+                for col in 0..3 {
+                    assert_eq!(
+                        band(w.cavern_monster_type[row][col]),
+                        if row == 0 { b0 } else { b1 },
+                        "id {id}: row {row} stays in its band"
+                    );
+                }
+            }
+            let mut again = super::World::new("t".into(), 8, 8);
+            again.world_id = id;
+            again.set_world_specific_monsters();
+            assert_eq!(
+                again.cavern_monster_type, w.cavern_monster_type,
+                "id {id}: the roll replays"
+            );
+        }
+    }
+
     #[test]
     fn surface_bg_style_tables_match_set_bg() {
         // Spot rows from `WorldGen.setBG`, including the `default:` rows and

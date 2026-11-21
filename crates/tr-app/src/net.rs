@@ -166,8 +166,8 @@ pub mod id {
     pub const UPDATE_PLAYER_LUCK_FACTORS: u8 = 134;
     /// `136 SyncCavernMonsterType` (`MessageID.cs:286`) — the cavern spawn
     /// grid (`NetMessage.cs:1572-1582`, `MessageBuffer.cs:4204-4217`).
-    /// W4-g51 lifted the parked d92 codec; the client store is parked (the
-    /// port has no cavern-monster grid yet).
+    /// W4-g51 lifted the parked d92 codec and wired the client store
+    /// (`World::cavern_monster_type`) + the join push (`:870`).
     pub const CAVERN_MONSTER_TYPES: u8 = 136;
     /// `137 RequestNPCBuffRemoval` (`MessageID.cs:288`) — a client asks the
     /// host to drop an NPC buff (`NetMessage.cs:1583-1586`,

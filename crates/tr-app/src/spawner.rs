@@ -1395,6 +1395,24 @@ fn spawn_npc_at(
     if rng.next_max(20) == 0 {
         return Npc::spawn_cave_walker(ctx.world, x, NpcKind::UndeadMiner);
     }
+    // The cavern-monster grid arm (`NPC.cs:5097-5101`): `Next(3) == 0` →
+    // `SpawnNPC(NPC.cavernMonsterType[Next(2), Next(3)])` — the world-id
+    // roster (`World::set_world_specific_monsters`, the `136` client
+    // store). The roll and BOTH index draws consume exactly where the
+    // C#'s do; the picked type (494-506: Crawdads/Giant Shellies/
+    // Salamanders) has no `NpcKind` yet (the roster gap — the grid is
+    // stored and read, the spawn falls through to the skeleton arm like
+    // the other unmodelled kinds).
+    if rng.next_max(3) == 0 {
+        let row = rng.next_max(2) as usize;
+        let col = rng.next_max(3) as usize;
+        let ty = ctx.world.cavern_monster_type[row][col];
+        if let Some((kind, _)) = crate::npc::kind_from_net_id(ty) {
+            return Npc::spawn_cave_walker(ctx.world, x, kind);
+        }
+        // Unmodelled grid type: the C# would spawn it; the port falls
+        // through (documented roster gap, W4-g51 id-136).
+    }
     // The skeleton family: `switch Next(4)` case 0's `Next(3) != 0 → 21`
     // (`:5133-5135`) — the port folds the big/small variants (-47/-46) out
     // and keeps the base skeleton.
@@ -2927,6 +2945,73 @@ mod tests {
             }
         }
         assert!(hellbats > 0, "no hellbat in the underworld sweep");
+    }
+
+    /// W4-g51 id-136: the cavern-grid arm (`NPC.cs:5097-5101`) consumes
+    /// `Next(3)` + (on a hit) `Next(2)` + `Next(3)` exactly where the C#
+    /// draws them. The grid kinds (494-506) are the roster gap, so the
+    /// outcome falls through to the skeleton arm; the DRAWS are the
+    /// contract — the post-call stream equals the hand-replayed vanilla
+    /// chain (style 7, worm 50, worm 50, Tim 200, imp 14, miner 20, grid
+    /// 3, row 2, col 3, skeleton 4, skeleton-variant 3/2).
+    #[test]
+    fn w4_g51_the_cavern_grid_arm_consumes_the_vanilla_draws() {
+        let mut w = ground_tall();
+        w.cavern_monster_type = [[494, 495, 494], [499, 502, 506]];
+        for x in 205..215 {
+            for y in 335..352 {
+                let i = w.index(x, y);
+                w.tiles[i].flags &= !tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let c = ctx(&w, 350.0 * 16.0, true);
+        let mut hits = 0;
+        for seed in 1..4000u64 {
+            // Pre-roll the gate chain to find a grid HIT whose skeleton
+            // arm takes the Next(3) != 0 branch (one deterministic extra
+            // draw). The Tim depth gate is true at y=350 (rock 40, h 800).
+            let mut probe = UnifiedRandom::new(seed as i32);
+            let _ = probe.next_max(7); // GetZombieSettings
+            if probe.next_max(50) == 0 {
+                continue; // the underground worm arm returns early
+            }
+            if probe.next_max(50) == 0 {
+                continue; // the Giant Worm
+            }
+            if probe.next_max(200) == 0 {
+                continue; // Tim
+            }
+            // The Fire Imp's `underworld_depth` gate is OFF at y=350
+            // (350 < 700-190) — no Next(14) draw on this path.
+            if probe.next_max(20) == 0 || probe.next_max(3) != 0 {
+                continue; // miner hit / grid miss
+            }
+            let _ = probe.next_max(2);
+            let _ = probe.next_max(3);
+            if probe.next_max(4) != 0 || probe.next_max(3) == 0 {
+                continue; // want the skeleton's one-extra-draw branch
+            }
+            hits += 1;
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let _ = spawn_npc_at(&c, &mut rng, 210, 350 * 16, false, false, false);
+            // (The spawn ctor may refuse the carved pocket's geometry —
+            // the DRAWS are the contract, not the placement.)
+            // The hand replay: the same chain, then one more draw — the
+            // streams must agree (the grid arm consumed exactly 3+2+3).
+            let mut want = UnifiedRandom::new(seed as i32);
+            for m in [7, 50, 50, 200, 20, 3, 2, 3, 4, 3] {
+                let _ = want.next_max(m);
+            }
+            assert_eq!(
+                rng.next_max(1000),
+                want.next_max(1000),
+                "seed {seed}: the post-ladder streams agree"
+            );
+            if hits >= 50 {
+                break;
+            }
+        }
+        assert!(hits >= 50, "the sweep found grid hits");
     }
 
     #[test]
