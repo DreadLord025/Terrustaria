@@ -601,6 +601,7 @@ impl NpcKind {
             NpcKind::TownSlimeRainbow => 681,
             NpcKind::TownSlimeRed => 682,
             NpcKind::TownSlimeYellow => 683,
+            NpcKind::TownSlimeCopper => 684,
         }
     }
 
@@ -944,6 +945,7 @@ impl NpcKind {
             681 => NpcKind::TownSlimeRainbow,
             682 => NpcKind::TownSlimeRed,
             683 => NpcKind::TownSlimeYellow,
+            684 => NpcKind::TownSlimeCopper,
             _ => return None,
         })
     }
@@ -1221,6 +1223,7 @@ impl NpcKind {
                 | NpcKind::TownSlimeRainbow
                 | NpcKind::TownSlimeRed
                 | NpcKind::TownSlimeYellow
+                | NpcKind::TownSlimeCopper
         )
     }
 
@@ -1636,7 +1639,8 @@ impl NpcKind {
             | NpcKind::TownSlimePurple
             | NpcKind::TownSlimeRainbow
             | NpcKind::TownSlimeRed
-            | NpcKind::TownSlimeYellow => "NPC_Hit_1",
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => "NPC_Hit_1",
             NpcKind::QueenBee => "NPC_Hit_1",
             NpcKind::SkeletronHead => "NPC_Hit_2",
             NpcKind::WallOfFlesh => "NPC_Hit_8",
@@ -1950,7 +1954,8 @@ impl NpcKind {
             | NpcKind::TownSlimePurple
             | NpcKind::TownSlimeRainbow
             | NpcKind::TownSlimeRed
-            | NpcKind::TownSlimeYellow => "NPC_Killed_6",
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => "NPC_Killed_6",
             NpcKind::QueenBee => "NPC_Killed_66",
             NpcKind::SkeletronHead => "NPC_Killed_2",
             NpcKind::WallOfFlesh => "NPC_Killed_10",
@@ -2398,7 +2403,8 @@ impl NpcKind {
             | NpcKind::TownSlimePurple
             | NpcKind::TownSlimeRainbow
             | NpcKind::TownSlimeRed
-            | NpcKind::TownSlimeYellow => 7,
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => 7,
             // aiStyle 8 - NPC.cs:9083, :9125, :9326, :14978, :15690
             NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => 8,
             // aiStyle 9 - NPC.cs:9097, :9139, :15703
@@ -3099,7 +3105,8 @@ impl NpcKind {
             | NpcKind::TownSlimePurple
             | NpcKind::TownSlimeRainbow
             | NpcKind::TownSlimeRed
-            | NpcKind::TownSlimeYellow => (18.0, 20.0),
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => (18.0, 20.0),
         }
     }
 
@@ -3255,7 +3262,7 @@ impl NpcKind {
             // 15-frame strips (`Main.npcFrameCount[338..340]`, `Main.cs`).
             NpcKind::ZombieElf | NpcKind::ZombieElfBeard | NpcKind::ZombieElfGirl => 15,
             // W4-g10 lane 3 — the town pets' `Main.npcFrameCount` rows:
-            // 637/638 = 28, 656 = 27, the town slimes 670/678-683 = 14
+            // 637/638 = 28, 656 = 27, the town slimes 670/678-684 = 14
             // (`Main.cs`'s npcFrameCount init; `FindFrame`'s pet branches
             // `NPC.cs:68610-69655` wrap the walk band on these strips).
             NpcKind::TownCat | NpcKind::TownDog => 28,
@@ -3266,7 +3273,8 @@ impl NpcKind {
             | NpcKind::TownSlimePurple
             | NpcKind::TownSlimeRainbow
             | NpcKind::TownSlimeRed
-            | NpcKind::TownSlimeYellow => 14,
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => 14,
             _ => 1,
         }
     }
@@ -3313,7 +3321,8 @@ impl NpcKind {
             | NpcKind::TownSlimePurple
             | NpcKind::TownSlimeRainbow
             | NpcKind::TownSlimeRed
-            | NpcKind::TownSlimeYellow => 6,
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => 6,
             _ => 0,
         }
     }
@@ -3780,7 +3789,8 @@ impl NpcKind {
             | NpcKind::TownSlimePurple
             | NpcKind::TownSlimeRainbow
             | NpcKind::TownSlimeRed
-            | NpcKind::TownSlimeYellow => 250,
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => 250,
         }
     }
 
@@ -4157,7 +4167,8 @@ impl NpcKind {
             | NpcKind::TownSlimePurple
             | NpcKind::TownSlimeRainbow
             | NpcKind::TownSlimeRed
-            | NpcKind::TownSlimeYellow => 10,
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => 10,
         }
     }
 }

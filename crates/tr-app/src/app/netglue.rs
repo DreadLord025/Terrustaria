@@ -3251,7 +3251,8 @@ fn npc_seed(
         | crate::npc::NpcKind::TownSlimePurple
         | crate::npc::NpcKind::TownSlimeRainbow
         | crate::npc::NpcKind::TownSlimeRed
-        | crate::npc::NpcKind::TownSlimeYellow => crate::npc::Npc::spawn_guide(world, tx)?,
+        | crate::npc::NpcKind::TownSlimeYellow
+        | crate::npc::NpcKind::TownSlimeCopper => crate::npc::Npc::spawn_guide(world, tx)?,
         crate::npc::NpcKind::EyeOfCthulhu => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?

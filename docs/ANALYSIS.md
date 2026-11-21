@@ -39245,9 +39245,9 @@ cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
 
-## W4-g10 lane 3 — the town pets (637/638/656/670/678-683)
+## W4-g10 lane 3 — the town pets (637/638/656/670/678-684)
 
-The ten town pets (`NPCID.Sets.IsTownPet`, `NPCID.cs:10118`) land as
+The eleven town pets (`NPCID.Sets.IsTownPet`, `NPCID.cs:10118`) land as
 `NpcKind` rows and wire to the ALREADY-LANDED pet-aware
 `npc_ai_town::town_npc_ai` machine (`AI_007_TownEntities`,
 `NPC.cs:52965-55561`). Every pet is `aiStyle 7` in `SetDefaults`
@@ -39255,6 +39255,10 @@ The ten town pets (`NPCID.Sets.IsTownPet`, `NPCID.cs:10118`) land as
 `:17481-17495` 670, `:17594-17608` the 678-684 arm): 18x20 (the dog
 18x28, the cat's 20-height override `:17213-17216`), dmg 10, def 15,
 250 HP, kb 0.5, value 0, `townNPC + friendly`, `housingCategory 1`.
+Batch 1 landed the ten (637/638/656/670/678-683); batch 2 adds the
+copper slime TownSlimeCopper 684 (the 678-684 arm's last member, the
+`CanConvertIntoCopperSlimeTownNPC` shimmer target `NPCID.cs:10120`) at
+every site — the same rows as the other town slimes.
 
 ### The axis claim (disjoint from the in-flight W4-b3 town lane)
 
@@ -39338,8 +39342,9 @@ exhaustive-match sites (`to_u16`/`from_u16`/`ai_style`/`size`/`max_hp`/
 `contact_damage`/`knock_back_resist`/`defense`/`value`/`render_key`/
 `find_frame`/`update_kind_ai`/`debuff_immune_ids`/`npc_seed`/
 `portrait_data`/the draw match) verified to carry the ten pet arms; the
-protocol ids are a bijection (280 arms, no dup); the bestiary credit
-ids are unique; `BESTIARY_NPC_SHEET_IDS` (191) matches the
-`bestiary_npc_sheets` vec (191). The 8 wiring witnesses
-(`npc.rs::w4_g10_town_pet_wiring`) are WRITTEN, NOT RUN — **no
-cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
+protocol ids are a bijection (281 arms, no dup); the bestiary credit
+ids are unique; `BESTIARY_NPC_SHEET_IDS` (192) matches the
+`bestiary_npc_sheets` vec (192). The 8 wiring witnesses
+(`npc.rs::w4_g10_town_pet_wiring`, the PETS table carries all eleven)
+are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/graphify
+invoked**.

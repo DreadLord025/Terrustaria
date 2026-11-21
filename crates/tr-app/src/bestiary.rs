@@ -2173,12 +2173,12 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     },
     // W4-g10 lane 3 — the town pets' entries: the populator registers one
     // `BestiaryEntry.TownNPC` per town-pet net id
-    // (`BestiaryDatabaseNPCsPopulator.cs:833-842`); the credit ids are
+    // (`BestiaryDatabaseNPCsPopulator.cs:833-843`); the credit ids are
     // `NPCID.Search.GetName`'s spellings (`lang_tables.rs`'s NPC_ID rows).
     // The cat/dog/bunny name plates are overridden to `Friends.TownCat`
     // etc. (`:646-648` → `en-US.json:839-841` "Town Cat"/"Town Dog"/
     // "Town Bunny"); the slimes keep `NPCName.TownSlime*`
-    // (`en-US.NPCs.json:715-721`).
+    // (`en-US.NPCs.json:715-722`).
     BestiaryEntryDef {
         credit_id: "TownCat",
         net_id: 637,
@@ -2258,6 +2258,16 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Mystic Slime",
+    },
+    // W4-g10 lane 3 batch 2 — the copper slime (the populator's
+    // `BestiaryEntry.TownNPC(684)` row, `BestiaryDatabaseNPCsPopulator.cs:843`).
+    BestiaryEntryDef {
+        credit_id: "TownSlimeCopper",
+        net_id: 684,
+        kind: NpcKind::TownSlimeCopper,
+        variant: None,
+        quick_unlock: false,
+        name: "Squire Slime",
     },
 ];
 

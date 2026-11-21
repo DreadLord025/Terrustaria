@@ -898,6 +898,7 @@ fn npc_add_height(n: &Npc) -> f32 {
                 | TownSlimeRainbow
                 | TownSlimeRed
                 | TownSlimeYellow
+                | TownSlimeCopper
         ) {
             shift -= 10.0;
         }
@@ -1267,7 +1268,7 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
 
 /// W4-g10 lane 3 — the town pets' sheets: one sheet per kind exactly as the
 /// vanilla's `TextureAssets.Npc[type]` — the cat (637), the dog (638), the
-/// bunny (656) and the seven town slimes (670/678-683). Keyed by the vanilla
+/// bunny (656) and the eight town slimes (670/678-684). Keyed by the vanilla
 /// net id ([`NpcKind::cs_id`]) in [`NpcAssets::npc_sheet`].
 pub(crate) const TOWN_PET_SHEETS: &[u32] = &[
     637, // the town cat
@@ -1280,6 +1281,7 @@ pub(crate) const TOWN_PET_SHEETS: &[u32] = &[
     681, // Diva Slime
     682, // Surly Slime
     683, // Mystic Slime
+    684, // Squire Slime (the copper slime, W4-g10 batch 2)
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -2309,6 +2311,7 @@ pub(crate) fn draw_npcs(
             NpcKind::TownSlimeRainbow => humanoid_draw(assets.npc_sheet(681), 14, n, w, h),
             NpcKind::TownSlimeRed => humanoid_draw(assets.npc_sheet(682), 14, n, w, h),
             NpcKind::TownSlimeYellow => humanoid_draw(assets.npc_sheet(683), 14, n, w, h),
+            NpcKind::TownSlimeCopper => humanoid_draw(assets.npc_sheet(684), 14, n, w, h),
             // The sleeping Golfer: NPC_589's sheet over the flat 18x34
             // body.
             NpcKind::SleepingGolfer => (

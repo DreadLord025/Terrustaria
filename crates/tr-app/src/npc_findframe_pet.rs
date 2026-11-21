@@ -79,6 +79,7 @@ fn is_slime(kind: NpcKind) -> bool {
             | NpcKind::TownSlimeRainbow
             | NpcKind::TownSlimeRed
             | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper
     )
 }
 

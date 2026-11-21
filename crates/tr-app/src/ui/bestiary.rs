@@ -926,7 +926,8 @@ fn portrait_data(
             | NpcKind::TownSlimePurple
             | NpcKind::TownSlimeRainbow
             | NpcKind::TownSlimeRed
-            | NpcKind::TownSlimeYellow,
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper,
             _,
         ) => {
             let rows = entry.kind.humanoid_frame_count();

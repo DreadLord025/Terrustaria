@@ -1158,6 +1158,12 @@ pub enum NpcKind {
     /// `NPCID.TownSlimeYellow` (683, `NPCID.cs:12043`) — the yellow
     /// slime.
     TownSlimeYellow,
+    /// `NPCID.TownSlimeCopper` (684, `NPCID.cs:12045`) — the copper
+    /// slime, the 678-684 shared arm's last member (`NPC.cs:17594-17608`):
+    /// the same 18x20 / aiStyle 7 / 250-HP row; `npcFrameCount[684]` = 14,
+    /// `ExtraFramesCount` 6. The `CanConvertIntoCopperSlimeTownNPC`
+    /// shimmer target (`NPCID.cs:10120`).
+    TownSlimeCopper,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3491,7 +3497,8 @@ impl Npc {
             | NpcKind::TownSlimePurple
             | NpcKind::TownSlimeRainbow
             | NpcKind::TownSlimeRed
-            | NpcKind::TownSlimeYellow => 0.5,
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => 0.5,
             NpcKind::EyeOfCthulhu => 0.0,
             NpcKind::QueenBee => 0.0,
             // The volley bees: kb 0.5 (`NPC.cs:11705`/`:11718`).
@@ -3871,7 +3878,8 @@ impl Npc {
             | NpcKind::TownSlimePurple
             | NpcKind::TownSlimeRainbow
             | NpcKind::TownSlimeRed
-            | NpcKind::TownSlimeYellow => 15,
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => 15,
             NpcKind::EyeOfCthulhu => 12,
             NpcKind::QueenBee => 8,
             // The volley bees' SetDefaults defense (`NPC.cs:11702`/`:11715`).
@@ -4270,7 +4278,8 @@ impl Npc {
             | NpcKind::TownSlimePurple
             | NpcKind::TownSlimeRainbow
             | NpcKind::TownSlimeRed
-            | NpcKind::TownSlimeYellow => 0.0,
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => 0.0,
             // `SetDefaults` case 4: value 30000 (the coin drop).
             NpcKind::EyeOfCthulhu => 30000.0,
             NpcKind::QueenBee => 50000.0,
@@ -6066,7 +6075,8 @@ impl Npc {
             | NpcKind::TownSlimePurple
             | NpcKind::TownSlimeRainbow
             | NpcKind::TownSlimeRed
-            | NpcKind::TownSlimeYellow => {
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => {
                 unreachable!("aiStyle 7 rides the style axis (W4-g10 town-pet wiring)")
             }
             NpcKind::QueenBee => {
@@ -6999,7 +7009,8 @@ impl Npc {
             | NpcKind::TownSlimePurple
             | NpcKind::TownSlimeRainbow
             | NpcKind::TownSlimeRed
-            | NpcKind::TownSlimeYellow => {
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => {
                 crate::npc_findframe_pet::town_pet_find_frame(self);
             }
             // The Prime's limbs: `Main.npcFrameCount` 128 = 1, 129 = 2,
@@ -18570,6 +18581,7 @@ impl Npc {
                     | NpcKind::TownSlimeRainbow
                     | NpcKind::TownSlimeRed
                     | NpcKind::TownSlimeYellow
+                    | NpcKind::TownSlimeCopper
             ) {
                 let base_dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
@@ -18951,7 +18963,7 @@ impl Npc {
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
             // W4-g10 lane 3 — the town pets' vanilla types (the G6 key
-            // stays injective; 637/638/656/670/678-683 are unused above).
+            // stays injective; 637/638/656/670/678-684 are unused above).
             NpcKind::TownCat => 637,
             NpcKind::TownDog => 638,
             NpcKind::TownBunny => 656,
@@ -18962,6 +18974,7 @@ impl Npc {
             NpcKind::TownSlimeRainbow => 681,
             NpcKind::TownSlimeRed => 682,
             NpcKind::TownSlimeYellow => 683,
+            NpcKind::TownSlimeCopper => 684,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -19106,7 +19119,7 @@ pub fn to_wld(npcs: &[Npc]) -> tr_core::wld::sections::WldNpcs {
 #[cfg(test)]
 mod w4_g10_town_pet_wiring {
     //! W4-g10 lane 3 (code-only): the town-pet wiring witnesses, WRITTEN
-    //! NOT RUN. The ten pets (637/638/656/670/678-683) ride the kind-
+    //! NOT RUN. The eleven pets (637/638/656/670/678-684) ride the kind-
     //! guarded aiStyle-7 axis arm into the landed pet-aware
     //! `npc_ai_town::town_npc_ai`; these pin the `SetDefaults` rows, the
     //! protocol round-trip, the town-flag predicates, the pet idle RNG
@@ -19114,8 +19127,9 @@ mod w4_g10_town_pet_wiring {
     use super::*;
     use crate::npc_ai_town::{TownDoorLatch, TownEnv, TownKindStats, TownOutputs, TownPlayer};
 
-    /// The ten batch-1 pets with their vanilla ids.
-    const PETS: [(NpcKind, u16); 10] = [
+    /// The eleven town pets with their vanilla ids (batch 1's ten +
+    /// batch 2's TownSlimeCopper 684).
+    const PETS: [(NpcKind, u16); 11] = [
         (NpcKind::TownCat, 637),
         (NpcKind::TownDog, 638),
         (NpcKind::TownBunny, 656),
@@ -19126,6 +19140,7 @@ mod w4_g10_town_pet_wiring {
         (NpcKind::TownSlimeRainbow, 681),
         (NpcKind::TownSlimeRed, 682),
         (NpcKind::TownSlimeYellow, 683),
+        (NpcKind::TownSlimeCopper, 684),
     ];
 
     #[test]
@@ -19162,7 +19177,7 @@ mod w4_g10_town_pet_wiring {
     #[test]
     fn w4_g10_the_pet_protocol_ids_round_trip_at_the_vanilla_ids() {
         // The pets ride their VANILLA ids in the protocol space (the
-        // pumpkin/frost precedent — 637/638/656/670/678-683 are free).
+        // pumpkin/frost precedent — 637/638/656/670/678-684 are free).
         for (kind, ty) in PETS {
             assert_eq!(kind.to_u16(), ty, "{kind:?} encodes its vanilla id");
             assert_eq!(NpcKind::from_u16(ty), Some(kind), "{kind:?} decodes");
@@ -24324,7 +24339,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 280] = [
+    pub(super) const ALL_KINDS: [NpcKind; 281] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24603,7 +24618,7 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
-        // W4-g10 lane 3 — the town pets (637/638/656/670/678-683).
+        // W4-g10 lane 3 — the town pets (637/638/656/670/678-684).
         NpcKind::TownCat,
         NpcKind::TownDog,
         NpcKind::TownBunny,
@@ -24614,6 +24629,7 @@ mod tests {
         NpcKind::TownSlimeRainbow,
         NpcKind::TownSlimeRed,
         NpcKind::TownSlimeYellow,
+        NpcKind::TownSlimeCopper,
     ];
 
     #[test]
