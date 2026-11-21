@@ -4164,8 +4164,8 @@ fn cyborg_death(
 /// the 50x dust-5 burst at (2.5·hd, −2.5), then the per-kind ladder,
 /// scale 1f, NO shimmer (the invasion pirates have no town variants):
 /// 212 Deckhand → 336/337x2/338x2, 213 Corsair → 339/340x2/341x2, 214
-/// Deadeye → 342/343x2/344x2, 215 Crossbower → 345/346x2/347x2; the 216
-/// Captain tail (348/349x2/350x2) lands next batch.
+/// Deadeye → 342/343x2/344x2, 215 Crossbower → 345/346x2/347x2, 216
+/// Captain → 348/349x2/350x2.
 fn pirate_crew_death(
     npc: &Npc,
     npc_type: i32,
@@ -4191,13 +4191,47 @@ fn pirate_crew_death(
         213 => (339, 340, 341), // :88472-88476
         214 => (342, 343, 344), // :88480-88484
         215 => (345, 346, 347), // :88488-88492
-        _ => return,            // the 216 Captain tail lands next batch
+        _ => (348, 349, 350),   // :88496-88500 (the 216 Captain)
     };
     gore.new_gore(rng, world, pos, vel, head, 1.0);
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0);
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0);
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
+}
+
+/// The 220/221 sea snail/squid death (`NPC.cs:88503-88526`, sites
+/// 645-647): the 20x dust-151 burst at (2.5·hd, −2.5), scale 0.7 (the
+/// ink), then the per-kind — 221 Squid → 298/299 (`:88519-88520`), the
+/// 220 Sea Snail fallthrough → 297 (`:88524`), `this.scale` carried.
+fn squid_snail_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88513-88516` — the 20x dust-151 burst at the wider velocity,
+    // scale 0.7.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 151, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 0.7,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    if npc_type == 221 {
+        gore.new_gore(rng, world, pos, vel, 298, s); // :88519
+        gore.new_gore(rng, world, pos, vel, 299, s); // :88520
+    } else {
+        gore.new_gore(rng, world, pos, vel, 297, s); // :88524
+    }
 }
 
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
@@ -4702,10 +4736,14 @@ pub fn hit_effect_d(
     else if npc_type == 209 {
         cyborg_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:88448-88502` — the 212-216 pirate crew arm; the 212-215 ladders
-    // are live (sites 620-639), the 216 Captain tail lands next batch.
+    // `:88448-88502` — the 212-216 pirate crew arm, COMPLETE (sites
+    // 620-644).
     else if (212..=216).contains(&npc_type) {
         pirate_crew_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88503-88526` — the 220/221 sea snail/squid arm (sites 645-647).
+    else if npc_type == 220 || npc_type == 221 {
+        squid_snail_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -8156,6 +8194,54 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "pirate {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:88496-88500` — the 216 Captain ladder 348/349x2/350x2;
+    /// `:88519-88524` — the Squid pair 298/299 vs the Sea Snail single
+    /// 297 (20x dust-151 scale-0.7 ink census, this.scale carried).
+    #[test]
+    fn w4_f5d_the_captain_ladder_and_the_squid_snail_split() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(641);
+        let _ = hit_effect_d(&n, 216, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![348, 349, 349, 350, 350]);
+        let mut twin = UnifiedRandom::new(641);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the captain mirrors the C# draws");
+        for (kind, want) in [(221, vec![298, 299]), (220, vec![297])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(643);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "kind {kind}");
+            let ink = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(ink.dust_type, 151);
+            let mut twin = UnifiedRandom::new(643);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
         }
     }
 }
