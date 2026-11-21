@@ -3075,7 +3075,7 @@ geometry; the screens, coordinates and flow are in `docs/UI.md` в†’
   false); (5) no consumer is wired yet — the crafting search box
   (`ItemFilters.BySearch`) and the chest rename keep their current paths until
   their own tasks attach the field.
-  **W4-c25 RETIRE FINAL (SEALED, `docs/research/281-c25-keyboard-text-field-final.md`)**:
+  **W4-c25 RETIRE FINAL (SEALED, `docs/research/314-c25-keyboard-text-field-final.md`)**:
   the two-commit census (`420fa3ecf` bindings + `e5daa96f7` docs/anchors),
   the f22 sign co-lane compose re-verified at the moved f22 tip `c727ebc02`
   (the retire-4 instruction `a2fdf86fb` stands — keyboard.rs auto-merges
@@ -3088,9 +3088,10 @@ geometry; the screens, coordinates and flow are in `docs/UI.md` в†’
   `UIVirtualKeyboard.DrawSelf:750`'s `GetInputText` call), and the
   KEYBOARD-FAMILY bible SEALED (f22-sign-CANONICAL + c25-text-entry-
   CANONICAL + c24-search-STAND-IN + the M3 chest-rename path; no further
-  keyboard port work on any lane). Registry: 281 per research/150 §6.3
-  round 2 (d54 `72226e500`, 281+ free after a fresh 719-ref sweep — the
-  provisional 246 is double-taken f19/g43). 3 new SEAL witnesses WRITTEN
+  keyboard port work on any lane). Registry: 314 per research/150 §8.1
+  ROUND 4 FINAL (d54 `a15cb634b`; chain 281→314 — the 281-block self-pick
+  race; the original 281 pick per §6.3 round 2 after a fresh 719-ref
+  sweep, the provisional 246 double-taken f19/g43). 3 new SEAL witnesses WRITTEN
   NOT RUN (the sign Enter newline outside the pass, the pinned-caret
   TextField/KeyboardState agreement, the search 50-cap/stop-flag seam);
   12 c25 tests total. No c25 follow-up open.

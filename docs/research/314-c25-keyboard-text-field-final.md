@@ -1,11 +1,23 @@
-# 281 — W4-c25 RETIRE FINAL: the keyboard-text-field census, the f22 sign co-lane compose-verify and the KEYBOARD-FAMILY bible (SEALED)
+# 314 — W4-c25 RETIRE FINAL: the keyboard-text-field census, the f22 sign co-lane compose-verify and the KEYBOARD-FAMILY bible (SEALED)
+
+> **Renumber chain: 281 → 314.** This seal originally took 281 (self-pick per
+> §6.3 round 2); research/150 §8.1 ROUND 4 FINAL (W4-d54 `a15cb634b`) adjudicated
+> the 281-block self-pick race — §7.2's owner keeps 281, the 10 self-pickers take
+> 308–317 in claim order — and assigns c25 **314**. Executed per §8.3: `git mv`
+> + header + all refs (INDEX/ANALYSIS/UI/anchors/keyboard.rs comments);
+> `git grep` zero-stale at the pushed tip. The three `research/281` short-form
+> citations inside `keyboard.rs`'s SEAL comment lines are left byte-identical
+> (the keyboard blob `e72b3efe7` is pinned verbatim for the f22 keep-both
+> compose, §2); they resolve through this chain 281→314.
 
 Lane: `task/W4-c25-keyboard-text-field`, tip `e5daa96f7` at the seal (2 commits
 over base `a725acb04`, the wave-3 landing). Code-only lane: no cargo / tests /
 rustfmt / graphify invoked; all witnesses WRITTEN NOT RUN. No merge performed,
 no other branch touched.
 
-**Registry number: 281.** Picked per `research/150-research-number-registry.md`
+**Registry number: 314** (chain 281→314 per research/150 §8.1 ROUND 4 FINAL,
+d54 `a15cb634b`; the original 281 pick below is the seal-time history).
+Originally picked as 281 per `research/150-research-number-registry.md`
 §6.3 round 2 (W4-d54 tip `72226e500`): the round-2 block 244–280 is fully
 assigned (123 total assignments 151–236 + 244–280, machine-checked), **281+
 FREE**, and new lanes must NOT pick "max-on-origin + 1" — a fresh all-tip
@@ -217,7 +229,9 @@ the seal commit. All WRITTEN NOT RUN per the lane constraint.
   with §3's ownership split; the portrait remainder is f22's/successor's,
   NOT c25's.
 * Registry: `research/150` §6.3 round 2 at d54 `72226e500` — 281 taken
-  per the ≥281 rule after the fresh 719-ref sweep (§0).
+  per the ≥281 rule after the fresh 719-ref sweep (§0); SUPERSEDED by
+  §8.1 ROUND 4 FINAL (d54 `a15cb634b`): 281 → **314** (the 281-block
+  self-pick race; chain-banner above).
 * c24 tip `ff99f1486` — the search stand-in recorded in its own commit
   message; no c24 edit owed by this lane.
 

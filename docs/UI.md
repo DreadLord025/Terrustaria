@@ -251,7 +251,7 @@ paste filter (`Clipboard.cs:21-32`). Pure bindings — no `UIElement`, no draw, 
 wiring yet; the consumers attach in their own tasks. Note: the 1.4.5.8 decompilation
 has no `UITextField.cs` — these three sources ARE the text field's semantics; there
 is no ranged selection (copy/cut operate on the whole string). **SEALED** — the
-retire FINAL (`docs/research/281-c25-keyboard-text-field-final.md`) records the
+retire FINAL (`docs/research/314-c25-keyboard-text-field-final.md`) records the
 f22 keep-both compose (the sign editor keeps the `KeyboardState` path; the search
 keeps c24's event.text stand-in) and the keyboard-family bible.
 
