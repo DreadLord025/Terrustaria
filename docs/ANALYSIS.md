@@ -11669,6 +11669,68 @@ Deliberate deviations and notes:
   `NPC.GetShimmered`'s own transform (`NPC.cs:91548`, the map is ported as a
   table); `Collision.shimmer`-driven entity wet flags beyond the item's box; the
   shimmer tile's rendering/animation.
+
+### W4-e19 — the f47-second-half census (the item chain re-verified)
+
+The landed M7-SHIMMER-1 item chain was re-read against `WorldItem.cs:1691-1853`
++ `UpdateShimmer`/`MoveInWorld` (`:338-546`/`:772-864`) and corrected (branch
+`task/W4-e19-liquid-quicksell-shimmer`, code-only — witnesses WRITTEN NOT RUN).
+The six transform tables re-verified verbatim + order-preserved against the
+decompiled sets (316/114/6/1/6/4 entries — `ItemID.cs:353-356`/`:1318`,
+`NPCID.cs:10470`). Fixes:
+
+- **The shared tail** (`:1835-1852`) now runs for EVERY arm that reaches it:
+  `shimmerTime = stack > 0 ? 1 : 0`, `shimmerWet = true`, `velocity *= 0.1f`,
+  `ShimmerEffect(Center)` (the `Item176` cue + 20 dust 309 with the `Next(6)`
+  four-colour switch, `:1661-1689`), `TurnToAir` at stack 0. The old port set
+  these only on the Transform arm and skipped `ShimmerEffect` entirely. The
+  draws ride `UpdateItems` (`Main.cs:17779`'s swap). `Item_176` joined the SFX
+  bank.
+- **The coin merge** calls `Player.add_coin_luck` (no eager `RecalculateLuck` —
+  the C# sets `luckNeedsSync` only, `Player.cs:18099`); copper (71) has no
+  switch case (x1).
+- **The transform** resolves `createTile`/`placeStyle` on the EQUIVALENT type
+  (`:1695`, `ShimmerTransforms.cs:95-108`), not the raw kind. No current
+  `ShimmerCountsAsItem` row exercises the trophy/lunar arm through a remap (all
+  six pairs are non-placeable) — the fix is structural, pinned by the cite.
+- **The decraft** spends `customShimmerResults` when present (the five
+  `Recipe.cs` rows: 278/4915/3509/3506/3507 — `AddCustomShimmerResult`
+  `:2193-2194`/`:2202-2203`/`:9664-9665`/`:9674-9675`/`:9694`), keyed by the
+  created type in `shimmer.rs::custom_shimmer_results` (the generator does not
+  extract the list yet). `SpawnShimmeredItem` (`:628-637`) spawns at the source
+  `Centre` with the alternating `n * (n % 2 * 2 - 1)` fan velocity + the shimmer
+  flags, `prefix: 0` — RNG-free apart from the alchemy `Next(3)` discount (the
+  old port ran the random scatter + prefix roll, a stream deviation). The arm
+  runs at `amount == 0` (`:1788` has no `amount > 0` guard); a surviving source
+  is NOT `shimmered` (`:1828-1833`).
+- **The release arm** (`:1766-1787`) runs the 50-attempt + free-slot budget loop
+  (`GetAvailableAmountOfNPCsToSpawnUpToSlot`, `NPC.cs:80635-80654`), decrementing
+  the stack BEFORE each release (a failed release still consumes a unit);
+  truncated `(int)Center.X`/`(int)Bottom.Y`, style 0 on a transform-map hit else
+  the item's `placeStyle`. Routes through `bug_net::release_npc` (the full
+  `NPC.ReleaseNPC` switch + `CanReleaseNPCs` gates) + the `shimmerTransparency =
+  1f` post-write; the 148 penguin draw is pre-rolled on `UpdateItems`. The 4986
+  arm spawns DIRECTLY via `NPC.NewNPC` (no `ReleaseNPC` gate), truncated coords
+  +4, the spawned NPC keeps the item velocity, the source is NOT `shimmered`.
+- **`downed_moonlord`** reads `world.downed_moon_lord` (was hardcoded false).
+- **The liquid physics** (`item.rs`): the shimmer-wet gravity head (0.065 / cap
+  4, `:380-385`) was missing — now read from the previous tick's `shimmerWet`;
+  the shimmered drop runs `MoveInWorld` (gravity 0 + friction + conveyor +
+  collision) like the C# (the old port skipped it with a bare `pos += vel`);
+  `UpdateShimmer`'s rise scan is the two-row centre probe (`:493-504`), split
+  from the ramp's `CanShimmerAtPosition` single above-top-left tile (`:762-763`);
+  `box_in_shimmer`/`box_is_wet` reuse the faithful `Collision.WetCollision`
+  ports (the centre-shrunk probe, the `(256-liquid)/32*2` surface offset, the
+  sloped-tile-under-liquid arm) — the old naive full-box overlap had none.
+
+Still deferred (W4-e19): the shimmered-item repulsion scan (`:790-847`), the
+`ItemNoGravity` float (`:774-786`), the `wetVelocity` blend
+(`:379-396`/`:1046-1066`), the entry/exit splash dust (`:888-992`), the
+honey/water gravity arms (no per-drop `honeyWet`/`wet` flag yet), the
+crimson/corruption decraft variant (the generator tags). The ramp-tick witness
+re-pinned to a 90..=93 band: the faithful surface offset starts the resting
+drop's ramp one tick later than the old naive probe (the 91-tick ramp arithmetic
+is unchanged).
 ## Ocean passes fidelity (M5-OCEAN)
 
 The full ocean family landed 2026-11-08 (branch `M5-OCEAN`, commits
