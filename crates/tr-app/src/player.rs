@@ -4665,6 +4665,17 @@ impl Player {
         speed * self.whip_use_time_multiplier
     }
 
+    /// `Player.UsingBiomeTorches` (`Player.cs:3950-3959`): the Torch God's
+    /// favour unlock AND the builder toggle `builderAccStatus[11] == 0`
+    /// (the toggle's UI cycle, `Main.cs:47549-47555`). The hold-style
+    /// consumers (`BiomeTorchHoldStyle`/`BiomeCampfireHoldStyle`) and the
+    /// placement conversions read it; the port's `player_lights` /
+    /// `biome_torch_place_style` callers fold the toggle to 0/on (their
+    /// documented deviation) — this accessor is the full gate.
+    pub fn using_biome_torches(&self) -> bool {
+        self.unlocked_biome_torches && self.builder_acc_status[11] == 0
+    }
+
     /// `Player.tileSpeed` as `ApplyItemAnimation` reads it (`:4486`):
     /// `UpdateEquips`' tail caps the accumulated speed at 3f and inverts
     /// (`Player.cs:25913-25917`).
@@ -20410,6 +20421,23 @@ mod summon_tests {
         let mut q = Player::spawn(&w);
         assert!(q.set_mount(10, false));
         assert!(q.mount.allow_direction_change());
+    }
+
+    /// W4-g79 — `Player.UsingBiomeTorches` (`Player.cs:3950-3959`): the
+    /// Torch God unlock AND the builder toggle `builderAccStatus[11] == 0`.
+    /// The hold-style consumers and the cursor icon pass read the full gate.
+    #[test]
+    fn w4_g79_using_biome_torches_reads_the_unlock_and_the_toggle() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.unlocked_biome_torches = false;
+        assert!(!p.using_biome_torches(), "no unlock");
+        p.unlocked_biome_torches = true;
+        assert!(p.using_biome_torches(), "unlock + toggle 0");
+        p.builder_acc_status[11] = 1;
+        assert!(!p.using_biome_torches(), "the toggle off wins");
+        p.builder_acc_status[11] = 2;
+        assert!(!p.using_biome_torches(), "only 0 is on");
     }
 }
 
