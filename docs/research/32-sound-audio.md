@@ -241,12 +241,12 @@ BUG-17 "2 tests" for the front-end click cues are not in the audio modules eithe
 | D17 | **The ROADMAP summary row is stale**: `docs/ROADMAP.md:78` still says "front-end music and UI sounds missing (BUG-01/17)" although both were fixed on 2026-11-10, and it calls the bank "the 8-cue bank" while the table now holds 26 entries. `docs/PORT_MAP.md:240` likewise predates BUG-01/BUG-17. | cosmetic (docs) | No. |
 | D18 | The `M6-AUDIO-1` row claims the blizzard/thunder/critter/liquid-merge work; re-reading the Rust confirms the tables and the engine half, but two of the four emitters still have no caller (D14) and the thunder pitch/slot gaps persist (D1). The row's own text admits both. | — | Yes (the row text) |
 
-## S1-E-21h d75 — the first-120 final census (2026-11-21, part 5)
+## S1-E-21h d75 — the first-120 final census (2026-11-21, part 5, SEALED part 6)
 
 The d75 lane (`task/W4-d75-proj-sounds-1`) owns `Projectile.cs`'s
 PlaySound sites #1-#120 in line order (site #120 = `:41968`; d76 takes
 #121-#240, d77 #241-#436 + the Kill tail). Final coverage after parts
-1-5 (the full per-site tables live in ANALYSIS "Part 1/2/3/4/5 (d75)"):
+1-6 (the full per-site tables live in ANALYSIS "Part 1/2/3/4/5/6 (d75)"):
 
 - **Part 1**: 21 sites (11 first-tick latches + 10 cooldown/bounce arms).
 - **Part 2**: 10 sites (the 601 impact pair, the sonar bite, the
@@ -260,21 +260,58 @@ PlaySound sites #1-#120 in line order (site #120 = `:41968`; d76 takes
 - **Part 5**: the 502 Meowmere ROW (`Projectile.cs:5732-5742` — the
   else-if arm, no `case 502` exists) + the `:24346-24352` velocity
   rotation: the part-4 bounce gate is live through `spawn_with_data`.
+- **Part 6 (SEAL)**: the 19-kind phaseblade ROW-SET + the `AI_003`
+  phaseblade machine (the whoosh family `:39080-39393` now live), the
+  261/1023 owed arms armed + task-seeded, the moved-tip re-probe (the
+  1081 RETIRED — d1 rowed + cued it).
 
-**Remaining unrowed after part 5** (no `proj_data` row on any pushed
-tip — d1 `e271b5bc8`, d77 `d61e6362d`, f1 `bcdfcd62e` re-checked):
+**Remaining unrowed after the SEAL** (re-probed at the MOVED tips — d1
+`212516a82`, d2 `f430ccf83`, d3 `740026af6`, d77 `5f10560b2`, f1
+`3065492b0`; the part-5 `e271b5bc8`/`d61e6362d`/`bcdfcd62e` scan was
+STALE):
 
-| kind(s) | site(s) | blocker |
+| kind(s) | site(s) | status at the SEAL |
 | --- | --- | --- |
-| 261 BoulderOfEarth | `:19649` | row + the style-14 boulder movement (`:19643` ±3 gate, `MakeBoulderOfEarthExplosion` `:20391`); the flail machine is style 15, NOT 14 |
-| 1023 DeadCellsBarrel | `:18780` | row + movement (d3's boulder family stopped short of it) |
-| 1081 MudBallPlayer | `:19845` | row + movement (same) |
-| the phaseblades: 1059-1072, 1074, 1075, 1076, 1101, 1102 (`ProjectileID.cs:192`, 19 kinds — 1073 NOT in the set) | `:39080-39393` | rows + the unported `AI_003` phaseblade machine; the `:19392/:19401/:19468` lines are DUST, not sound |
+| the phaseblades: 1059-1072, 1074, 1075, 1076, 1101, 1102 (`ProjectileID.cs:192`, 19 kinds — 1073 NOT in the set) | `:39080-39393` | **ROWED + MACHINED (part 6)** — the three `SetDefaults` arms (`:10006-10058`) + the `AI_003` outbound/stuck/return whoosh machine; the `:19392/:19401/:19468` lines are DUST (the part-4 correction stands) |
+| 1081 MudBallPlayer | `:19845` | **RETIRED** — d1 wave 3c `e47181798` rows it (`:10087-10094`) + cues the Dig (`projectile_ai_falling.rs`); the part-5 flag was STALE (d3's SEAL §4 agrees) |
+| 261 BoulderOfEarth | `:19649` | row + the style-14 movement owed — **S1-P-i61** (this SEAL's seed); the < 3.5 halving (`:13568`) ARMED in `damage_pve`; the flail machine is style 15, NOT 14 |
+| 1023 DeadCellsBarrel | `:18780` | row + movement owed — **S1-P-i58** (d3's SEAL seed, research/248 §4); the bounce arm (`:18752-18781`) ARMED in the aiStyle-1 dispatch; the Kill cue (`:76868`) is d77's trackable band |
 | 288 / 465 / 383 | `:24506` / `:31943` / `:19531` | rows only — the machines are in-tree and the owed gates ARMED (part 4); they go live on the row merge, the 502 precedent |
 
 The f1/d77 compose-receipt (the disjoint kind sets, the id-4
-style-vs-int overload collision, the id-29 gate truncation, the boulder
-kill-map double-play warning) is recorded in ANALYSIS "Part 5 (d75)".
+style-vs-int overload collision — BOTH paths needed, the id-29 gate
+truncation, the boulder kill-map double-play keep-one, the f1
+`kill_sound_cue` + `rocket_kill_census` DROP per d77c) is recorded in
+ANALYSIS "Part 5/6 (d75)", re-pinned at the moved tips.
+
+### The first-120 sounds-family bible (SEAL)
+
+The C# anchor → port → owner map for the d75 band's cue families (the
+merger's cross-reference; the per-site tables stay in ANALYSIS):
+
+| family | C# anchor(s) | port | owner / status |
+| --- | --- | --- | --- |
+| the first-tick latches (aiStyle-2/4/27/28/50/53, the gem-staff 205) | `:24235`/`:26529`/`:26648`/`:28361`/`:37864` et al. | `projectile.rs` the per-style heads + `wants_sound` | d75 part 1 — LIVE |
+| the cooldown/bounce families (the falling-star hum, the drill hum, the music note, the style-8/Sword-Beam bounces, the gem Dig, the turret pair) | `:18206`/`:25514`/`:25604`/`:40249` et al. | `ai_ball_of_fire`/`ai_spear`/`sentry_turret_step` + the drain | d75 part 1 — LIVE |
+| the boomerang whoosh + the wall thud | `:38868-38891`/`:19571` | `ai_boomerang` head + the movement tail | d75 part 1 — LIVE (the 383/phaseblade exclusions explicit) |
+| the 601 impact pair / the sonar bite / the Spider-Egg/Saucer/Greek latches / the Shatter / the yoyo-dash roar | `:18090`/`:20751`/`:25062`/`:25943`/`:36821` | the per-arm latches + `play_shatter_sound`/`play_roar`/`play_dash_roar` | d75 part 2 — LIVE |
+| the 455 zombie-voice latch | `:31504` | `ai_phasmal_deathray` + the drain id-29 → `play_fighter_moan` | d75 part 3 — LIVE (the gate-truncation wrinkle: d77's drain-side trunc is faithful) |
+| the 502 five-bounce star chime | `:18209` | `ai_ball_of_fire` kind-first arm + `play_star_chime`/`star_chime_case37` | d75 part 4 gate + part 5 ROW — LIVE |
+| the 288/465/383/1106 owed cues | `:24506`/`:31943`/`:19531`/`:41369` | the kind-gated heads + `cultist_lightning_latch`/`play_foxparks_flame` | d75 part 4 — ARMED (rows owed: 288/465/383 the AI lanes, 1106 d18 rowed) |
+| the d3 boulder-family death/bounce cues | `:74857-74876`/`:20104`/`:71194` | d3 `boulder_kill` queues; d75 drain id-3/id-4 STYLE routes + `rainbow_boulder`/`NPC_Hit_29` | d75 part 4 — SIBLING-CUED (the id-4 style-vs-int split: keep BOTH paths) |
+| the phaseblade whoosh family (outbound/stuck/return) | `:39080-39393`/`:39342-39363`/`:39367-39397` | `ai_boomerang` + `phaseblade_outbound` + the wall-stick arm; `Item_182` bank | d75 part 6 — LIVE (the 19-kind row-set) |
+| the 1023 bounce Dig | `:18780` | the aiStyle-1 dispatch owed arm | d75 part 6 — ARMED (S1-P-i58 row owed) |
+| the 261 slow-roll halving (damage, not a cue) | `:13568` | `damage_pve` owed gate | d75 part 6 — ARMED (S1-P-i61 row owed); the bounce/Kill Digs ride d2's movement half |
+| the 1081 bounce Dig | `:19845` | d1 `projectile_ai_falling.rs` | d1 wave 3c — SIBLING-CUED (RETIRED from d75's flag) |
+
+**The drain contract (the merger's seam).** d75's `wants_sound` is the
+5-tuple `(id, style, x, y, pitch)`; the world-sim drain
+(`world_sim/projectiles.rs`) routes id 0/13/15/36/29/3/4/37 + the
+`(2,-34)` marker to their façades, every other id to `play_proj_sound`.
+d77/f1 widen to the 6-tuple `volumeScale` — every d75 push folds to
+volume 1.0 (the −34/Shatter volumes live inside their façades). The
+id-4 STYLE route (d75/d3) and the id-4 INT route (d77) BOTH survive the
+compose; the boulder-kind kill-map arms drop (keep-one d3).
 
 ## Task seeds
 
