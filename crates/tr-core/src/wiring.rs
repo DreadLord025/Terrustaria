@@ -3241,6 +3241,24 @@ impl Wiring {
         }
     }
 
+    /// `WorldGen.SwitchMonolith` on the RIGHT-CLICK use path
+    /// (`Player.cs:32271-32277`, W4-c42 final — the g78 research/76
+    /// contested-seam request): the same kept body the wired case-657 arm
+    /// runs (the e21 nine-kind gate), with `running == false` outside a
+    /// flood — the C# `Wiring.running` SkipWire tail (`WorldGen.cs:51137`)
+    /// is inert on the use path. The app plays the Mech-28 click and arms
+    /// the grapple cooldown around this call (the `MonolithToggle` arm).
+    pub fn use_switch_monolith(&mut self, world: &mut World, i: i32, j: i32) {
+        let Some(t) = world.tile(i, j) else {
+            return;
+        };
+        if !t.active() {
+            return;
+        }
+        let (kind, fx, fy) = (t.kind, t.frame_x, t.frame_y);
+        self.switch_monolith(world, i, j, kind, fx, fy);
+    }
+
     /// `Wiring.HitWireSingle` cases 356/663 (`Wiring.cs:1137-1175`): the
     /// dial's anchor decodes from `frameX % 36 / 18` / `frameY % 54 / 18`,
     /// the whole 2×3 sprite is `SkipWire`'d, then the use path's compound

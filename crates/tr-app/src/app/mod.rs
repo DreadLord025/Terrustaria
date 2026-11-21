@@ -4593,6 +4593,9 @@ fn apply_tr_toggles(world: &mut World, ops: &[crate::env::TrToggle]) {
                 edit::TileInteraction::HitSwitch { x, y } => {
                     log::info!("TR_TOGGLE {},{} -> switch {x},{y}", op.x, op.y)
                 }
+                edit::TileInteraction::MonolithToggle { x, y } => {
+                    log::info!("TR_TOGGLE {},{} -> monolith {x},{y}", op.x, op.y)
+                }
             }
         }
     }

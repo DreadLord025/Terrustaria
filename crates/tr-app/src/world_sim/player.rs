@@ -576,6 +576,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         if p.wire_operations_cooldown > 0 {
             p.wire_operations_cooldown -= 1;
         }
+        // `Player.cs:24439-24448` (W4-c42 final): the quick-grapple cooldown
+        // — the fullscreen-map arm RE-ARMS it every tick (`:24441-24443`),
+        // otherwise it decrements while positive (`:24445-24448`).
+        if map_open {
+            p.gamepad_enable_grapple_cooldown();
+        } else if p.quick_grapple_cooldown > 0 {
+            p.quick_grapple_cooldown -= 1;
+        }
         // `Player.ResetEffects`' journey block, re-run every tick: the godmode
         // flag (`:18789` clears, `:25493-25497` sets) and the far-placement
         // tile-range toggle (`:18815-18828`).

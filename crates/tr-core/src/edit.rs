@@ -197,10 +197,18 @@ pub enum TileInteraction {
     /// emission follow the frame.
     CandleToggled,
     /// `Player.cs:32174-32178`: the used tile is a lever (132), a switch
-    /// (136) or a timer (144) — `Wiring.HitSwitch` fires and the click is
+    /// (136) or a timer (144) - `Wiring.HitSwitch` fires and the click is
     /// consumed. The wiring itself is app-side (the core has no wiring
     /// state), so the interaction carries the cell.
     HitSwitch { x: i32, y: i32 },
+    /// `Player.cs:32271-32277` (W4-c42 final, the g78 research/76 contested
+    /// seam request): the used tile is one of the nine monolith kinds
+    /// (410/480/509/657/658/720/721/725/733) - `PlaySound(28)` +
+    /// `GamepadEnableGrappleCooldown` + `WorldGen.SwitchMonolith(myX, myY)`.
+    /// The flip is app-side (`Wiring::use_switch_monolith` over the wired
+    /// path's kept body - the e21 nine-kind gate); the interaction carries
+    /// the cell like `HitSwitch`.
+    MonolithToggle { x: i32, y: i32 },
     /// The chair sit decoded (`PlayerSittingHelper.GetSittingTargetInfo`'s
     /// case 15, `PlayerSittingHelper.cs:163-182`): the seat world position is
     /// the chair's bottom-centre shifted `targetDirection * 6` px, the
@@ -286,6 +294,15 @@ pub fn interact_at(
     // the kind literal before the dials and the furniture.
     if matches!(t.kind, 132 | 136 | 144) {
         return TileInteraction::HitSwitch { x: i, y: j };
+    }
+    // The monolith family (`Player.cs:32271-32277`, W4-c42 final — the g78
+    // research/76 request): the nine kinds flip via `SwitchMonolith` on
+    // right-click. The C# chain sits after the fountain (207) arm and
+    // before the party box (455); neither has a port arm, so the literal
+    // test lands here beside the switch family (the same pre-registry
+    // shape — 657's def carries `Interaction::None`).
+    if matches!(t.kind, 410 | 480 | 509 | 657 | 658 | 720 | 721 | 725 | 733) {
+        return TileInteraction::MonolithToggle { x: i, y: j };
     }
     // The dial branches (`Player.cs:32636-32653`): the C# chain tests
     // `Main.tile[myX, myY].type` literals here. The port's registry has no
