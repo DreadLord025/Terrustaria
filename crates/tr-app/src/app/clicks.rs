@@ -909,8 +909,10 @@ impl App {
         }
         // The toggles before the grid: the nearby-chests toggle flips the
         // setting (`CraftingUI.cs:336-355`), and a consumed press does not
-        // reach the recipe cells.
-        if ui::crafting::nearby_toggle_hit(screen, self.mouse_pos) {
+        // reach the recipe cells. The toggle reads `Main.mouseLeft &&
+        // Main.mouseLeftRelease` (`:346`) — LEFT only, unlike the recipe
+        // cells' either-button arms.
+        if self.mine_down && ui::crafting::nearby_toggle_hit(screen, self.mouse_pos) {
             self.settings.craft_from_nearby_chests = !self.settings.craft_from_nearby_chests;
             self.ui_left_press = false;
             return true;
