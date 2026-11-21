@@ -35,6 +35,26 @@ use crate::ui::text::{border_string, hud_text, hud_text_width};
 
 use super::draw_phase;
 
+/// `Main.DoUpdate_AnimateCursorColors`' masterColor / `DoUpdate_AnimateTileGlows`'
+/// martianLight + demonTorch bounce (`Main.cs:18225-18235`/`:18240-18261`):
+/// `value += dir * step`, clamped to `[0, 1]` with the direction flipping at
+/// each rail. W4-e7 lane 23 — the shared oscillator the three global-flicker
+/// pulses ride (the per-tile torch flicker itself is the scanner's, d56/e8).
+/// RNG-free. Returns the new `(value, dir)`.
+fn bounce_oscillator(value: f32, dir: f32, step: f32) -> (f32, f32) {
+    let mut value = value + dir * step;
+    let mut dir = dir;
+    if value > 1.0 {
+        value = 1.0;
+        dir = -1.0;
+    }
+    if value < 0.0 {
+        value = 0.0;
+        dir = 1.0;
+    }
+    (value, dir)
+}
+
 impl App {
     /// The buff bar's cancel gate — `Main.mouseRight && Main.mouseRightRelease`
     /// (`Main.cs:43333`) with the vanilla's end-of-draw latch recompute
@@ -336,6 +356,13 @@ impl App {
                     if self.mouse_text_color <= 190 {
                         self.mouse_text_color_dir = 1;
                     }
+                    // `Main.DoUpdate_AnimateCursorColors`' masterColor pulse
+                    // (`Main.cs:18225-18235`): 0..1 by 0.05 per frame, the
+                    // master-mode text colour. W4-e7 lane 23 — the oscillator
+                    // lands (the demon_torch precedent); its readers (rarity
+                    // -13) stay unported (research/102). RNG-free.
+                    (self.master_color, self.master_color_dir) =
+                        bounce_oscillator(self.master_color, self.master_color_dir, 0.05);
                     // `Main.mouseColor = Main.selColor` runs every frame the colour
                     // screen is open (`Main.cs:50324`), and `CursorColor`
                     // (`Main.cs:52490`) reads that static, so the tint follows the
@@ -357,6 +384,14 @@ impl App {
                         self.demon_torch = 0.0;
                         self.demon_torch_dir = 1.0;
                     }
+                    // `Main.DoUpdate_AnimateTileGlows`' martianLight pulse
+                    // (`Main.cs:18251-18261`): 0..1 by 0.015 per frame, the
+                    // Martian Madness glow. W4-e7 lane 23 — the oscillator
+                    // lands; its reader (`TileDrawing.cs:498`'s `_martianGlow`)
+                    // stays fed 0 until the glow pass + event land
+                    // (research/102). RNG-free.
+                    (self.martian_light, self.martian_light_dir) =
+                        bounce_oscillator(self.martian_light, self.martian_light_dir, 0.015);
                     // `TileLightScanner.Update()`: one `NextSeed()` per frame, then
                     // `WithModifier(x, y)` per tile (done inside the scanner).
                     let mut light_rng = tr_core::tile_light::FastRandom::new(self.light_rng_seed);
@@ -2276,5 +2311,58 @@ mod s1_p_i53_tests {
         // The next press fires again.
         app.place_down = true;
         assert!(app.buff_cancel_gate());
+    }
+}
+
+#[cfg(test)]
+mod w4_e7_global_flicker_tests {
+    use super::bounce_oscillator;
+
+    /// W4-e7 lane 23 — the masterColor pulse (`Main.cs:18225-18235`): +0.05
+    /// per frame from the 1f init, flipping at the rails. WRITTEN NOT RUN.
+    #[test]
+    fn w4_e7_master_color_bounces_at_the_rails() {
+        // Init 1f / dir 1 (Main.cs:66833-66834): the first step clamps to 1
+        // and flips dir to -1.
+        let (v, d) = bounce_oscillator(1.0, 1.0, 0.05);
+        assert_eq!((v, d), (1.0, -1.0), "the top rail flips");
+        // Then it descends by 0.05.
+        let (v, d) = bounce_oscillator(v, d, 0.05);
+        assert!((v - 0.95).abs() < 1e-6 && d == -1.0);
+        // The bottom rail: 0.02 - 0.05 < 0 → clamp 0, flip +1.
+        let (v, d) = bounce_oscillator(0.02, -1.0, 0.05);
+        assert_eq!((v, d), (0.0, 1.0), "the bottom rail flips");
+    }
+
+    /// The martianLight pulse (`Main.cs:18251-18261`): +0.015 per frame.
+    #[test]
+    fn w4_e7_martian_light_bounces_at_the_rails() {
+        let (v, d) = bounce_oscillator(1.0, 1.0, 0.015);
+        assert_eq!((v, d), (1.0, -1.0));
+        let (v, d) = bounce_oscillator(v, d, 0.015);
+        assert!((v - 0.985).abs() < 1e-6 && d == -1.0);
+        let (v, d) = bounce_oscillator(0.01, -1.0, 0.015);
+        assert_eq!((v, d), (0.0, 1.0));
+    }
+
+    /// The oscillator stays bounded in [0, 1] and reverses at the rails (the
+    /// demon_torch 0.01 shape): deterministic and RNG-free, so the flicker
+    /// phase is a pure function of the frame count. The C# clamp holds one
+    /// frame at each rail before descending (the `> 1` / `< 0` flip fires on
+    /// the overshoot step), so the value never leaves the unit interval.
+    #[test]
+    fn w4_e7_the_oscillator_stays_bounded_and_rng_free() {
+        let (mut v, mut d) = (1.0f32, 1.0f32);
+        let mut saw_bottom = false;
+        for _ in 0..200 {
+            (v, d) = bounce_oscillator(v, d, 0.05);
+            assert!((0.0..=1.0).contains(&v), "bounded: {v}");
+            if v == 0.0 {
+                saw_bottom = true;
+            }
+        }
+        assert!(saw_bottom, "the pulse reaches the bottom rail");
+        // After reaching 0 it climbs back toward 1 (the dir flipped +1).
+        assert!(d == 1.0 || v > 0.0, "the reversal climbs back");
     }
 }
