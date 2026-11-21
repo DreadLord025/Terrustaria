@@ -1,4 +1,4 @@
-# 121 — the shimmer doc-sweep (W4-f47 lane 36, DOC-SWEEP phase)
+# 121 — the shimmer doc-sweep (W4-f47 lane 36, DOC-SWEEP phase) — FINAL
 
 > Coded 2026-11-21 on `task/W4-f47-liquid-shimmer-2` (base `507a0da5`,
 > the DONE tip), the DOC-SWEEP lane 36 continuation. C# cites are
@@ -9,6 +9,24 @@
 > Co-lane claims read from the pushed tips: W4-b3 `96a5d88f`, W4-g2
 > `8ac7d95e`, W4-e19 `f7561091`, W4-c7 `c2cc6ec6`, W4-c9 `c2316284`,
 > W4-f43 `79a037f5`, W4-b1 `f010b85b`.
+>
+> **FINAL (the keep-one round, 2026-11-21)**: the e19 co-lane pushed its
+> own splash port (`7d3cb5e3` + the round-3 fixes, tip `939e45dc8`) —
+> the 2-way keep-one verdict + fold-hunks + witness dedupe live in
+> `docs/research/144-item-splash-keep-one.md`. The folded wins on this
+> branch: the C# 16 drop box (`WorldItem.cs:138`, every probe + the
+> witness re-pins, the 14 px DRAW visual kept centred), the `box_is_wet`
+> restoration (the doc-sweep 36 deletion was a compile break —
+> `app/frame/draw.rs:419` still called it), the wiring.rs literal field
+> fixes (a second compile break), the e19 pass-level splash quartet +
+> the flush landing/rest pair + the surface-offset witness folded as
+> `w4_f47k1_*`/`w4_f47ds_*`. The f47 `Splash` latch shape KEPT (the
+> verbatim LOCAL entry-lava gate, the once-per-pass water style); the
+> e19 `ItemSplash` queue is the merge dedupe loser. The 676 light/dust
+> arm (`NPC.cs:61128-61150`) WIRED (the censused skip retired — §4
+> below updated). The §1/§2 records stand as the lane's original
+> derivation; the 14→16 geometry supersedes every 14-box number in
+> them (the probe is 10x8 at +3/+4, the splash roll `Next(24)`).
 
 ## The six deviations, resolved
 
@@ -188,8 +206,14 @@ The census (`NPCID.cs:12029`/`:12031`, `NPC.cs:17566-17593`):
   the 8-tick hop strip wrapping `npcFrameCount[676]` = 2), the NPC_676
   sheet request + draw arm + portrait, the null debuff row, the netglue
   surface seed, the bestiary credit. ALL_KINDS 270 → 271. The 676
-  light/dust arm (`NPC.cs:61128-61150`) stays the censused skip
-  (`npc_ai_slime.rs`'s module docs carry its full draw census).
+  light/dust arm (`NPC.cs:61128-61150`) was the censused skip — **WIRED
+  by the keep-one round** (research/144): the gate + the 4-NextFloat
+  body roll in `ai_001_slimes`, the 306 `NewDustPerfect` via
+  `wants_shimmer_slime_dust` → the sim drain, the torch-23 centre light
+  via `npc_lights::shimmer_slime_light` (the draw-side feed). The live
+  stand-in route draws nothing until b1's adapter lands (the merge
+  seam); the `HitEffect` 676 arm (`:82058-82078`) stays cited-unwired
+  (the HitEffect dust pass is unported port-wide).
 - **677 Shimmerfly**: NOT a town pet either — a 10x10 aiStyle-64
   critter, noGravity/noTileCollide, catchItem 5350, the
   `ShimmerTransformToNPC` target of **82** critter rows. **NOT landed
@@ -287,7 +311,11 @@ the same sticky-flag shape this sweep's item port now carries.
    cross-noted to c7/c9), 1 row witness.
 4. `4a9d1912` — item 5: the transform-table completeness census (zero
    missing entries), 1 census witness.
-5. (this doc) — item 6's cross-note + the sweep record.
+5. `eaa6f112` — item 6's cross-note + the sweep record.
+6. `a2561d6d` — the two anchors rows.
+7. (the keep-one round) — the e19 2-way verdict (research/144): the 16
+   box fold + the `box_is_wet`/wiring compile-break fixes + the 676
+   light/dust wiring + the folded witnesses; this doc's FINAL header.
 
 ## Verification
 

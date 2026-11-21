@@ -11805,6 +11805,68 @@ RNG: the NPC drain's `ShimmerEffect`/`SpawnShimmeredItem` draws ride
 stream in C# order; the item physics is draw-free by construction (the splash
 arms skipped). 29 witnesses across the four phases, WRITTEN NOT RUN.
 
+**Keep-one 144 (the e19 splash 2-way, 2026-11-21).** The e19 co-lane
+(`task/W4-e19-liquid-quicksell-shimmer`, tip `939e45dc8`) ported the SAME
+entry/exit splash region (`7d3cb5e3` deferred 4 + the `3ea49d98b` wet flags
++ the round-3 `e2003946b` box fix / `939e45dc8` flush fix). The arm-by-arm
+verdict + fold-hunks live in `docs/research/144-item-splash-keep-one.md`;
+the folded changes on THIS branch:
+
+- **The drop box is the C# 16** (`WorldItem.cs:138`): `item::SIZE` 14 → 16
+  across every probe; the DRAW quad keeps the 14 px visual centred
+  (`pos + 1`, `SIZE - 2`) so pixels are unchanged. The wet probe grows
+  10x7 → 10x8 at `(pos+3, pos+4)`; the splash dust box width+12 = 28 (the
+  `NewDust` `Next(24)` roll); the witnesses re-pinned (grab-rect 42/43 edge,
+  magnet centre-8 spawns 292/192, light anchors 168/184 + the −12
+  truncation, resting fixtures 19*16 flush, the entry-latch park 184, the
+  aetherium normal-platform residual 0).
+- **`box_is_wet` restored** (the e19 name kept): the doc-sweep 36 deletion
+  left `app/frame/draw.rs:419` calling a missing method — a compile break.
+  The restored fn is the faithful `player::wet_collision` bool half (the
+  same inset maths as `wet_probe`'s `npc_ai_slime` engine).
+- **The splash latch KEPT** (this lane's `Splash`/`splash_due` shape): both
+  lanes are faithful; this lane's entry gate reads the LOCAL `flag2`
+  verbatim (`:886`) where e19 reads the sticky `lava_wet` (equivalent at
+  the entry edge — the probe just set it — but not verbatim). The e19
+  `ItemSplash` queue + `take_splash` + the free-fn `item_splash` are the
+  dedupe losers; the four pass-level e19 witnesses folded as
+  `w4_f47k1_*` (the unit-level 71/31-draw twins stay this lane's).
+- **The dry flush residual**: this lane never had e19's snap-and-zero
+  stand-in (`tile_collision_opts` keeps the residual verbatim in both
+  arms); the e19 round-3 landing/rest witness pair folded as `w4_f47k1_*`.
+- **The 676 ShimmerSlime light/dust arm WIRED** (`NPC.cs:61128-61150`, the
+  censused skip retired): the gate + the 4-NextFloat body roll in
+  `npc_ai_slime::ai_001_slimes` (the exact `(speed > 1 && Next(3) == 0) ||
+  Next(5) == 0` short-circuit), the `NewDustPerfect(306)` spawn rides
+  `wants_shimmer_slime_dust` to the sim drain (the gallop-dust seam — the
+  hue colour `(tve/300 + jitter*0.1) % 1` sat 1 lum 0.65 A=0, alpha 127,
+  fadeIn 0.9, noGravity + noLightEmittance, the netOffset on the position
+  only); the torch-23 centre light is the draw-side
+  `npc_lights::shimmer_slime_light` feed (the `CenterTruncated` anchor —
+  `Lighting.cs:154` truncates before dividing — and the animated
+  `ShimmerTorchLight` colour). The live `update_slime` stand-in route
+  draws nothing until b1's `ai_001_slime_family` lands (the documented
+  merge seam — the faithful core + the drain are wired, the stand-in
+  keeps its byte-identical behaviour). The `HitEffect` 676 arm
+  (`NPC.cs:82058-82078`: 8/40 dust 310, the `Next(3)` noGravity gate,
+  vel ×1.5 + base.vel ×0.1) stays a cited skip (the HitEffect dust pass
+  is unported port-wide).
+- **The wiring.rs `ItemDrop` literals** gained the missing
+  `honey_wet`/`lava_wet`/`wet_count`/`splash_due`/`repulsion_brake` fields
+  (the phase-3 addition never updated them — a compile break the keep-one
+  census caught).
+
+The e19-owned hunks NOT folded (their lane's claim, the merge keeps them):
+the `shimmer_tail`/`apply_decraft` `wet = true` writes (`3ea49d98b`,
+`WorldItem.cs:1844`/`:635` — this lane's Transform arm still misses the
+shared-tail `wet` write; e19's chain-apply half carries it), the
+`rise_over_shimmer` two-row centre scan (e19's `UpdateShimmer` shape vs
+this lane's `over_shimmer` single-tile — both cited, the merge reconciles),
+and the wetVelocity blocked-axis refresh ordering (e19's hand-rolled
+TileCollision vs this lane's `tile_collision_opts` — the residual semantics
+agree). 12 new witnesses (3 gate + 1 light + 1 drain + 4 pass-level splash
++ 2 flush + 1 box_is_wet), WRITTEN NOT RUN.
+
 ## Ocean passes fidelity (M5-OCEAN)
 
 The full ocean family landed 2026-11-08 (branch `M5-OCEAN`, commits
@@ -23070,9 +23132,11 @@ rand-drawing item arms feed the same list from the fixed step instead
   `base.wet` from `Collision.WetCollision(position, width, height)`
   (`WorldItem.cs:870`) in the movement half that runs *before*
   `UpdateItem_VisualEffects` (`:436`). `ItemDrop::box_is_wet` (`crates/tr-app/src/item.rs`)
-  tests the same 14Г—14 box for `tile.liquid > 0`; `box_in_shimmer` is the same helper
-  with the shimmer predicate. The item box is `ItemDrop::SIZE` (14) in both, matching
-  `Entity.width`/`height` for a dropped item.
+  is the faithful centre-inset `Collision.WetCollision` bool half (the
+  `player::wet_collision` port — keep-one 144 restored the name the
+  doc-sweep 36 deletion dropped; the draw feed re-probes, the S1-E-5
+  draw-side convention). The item box is `ItemDrop::SIZE` (16,
+  `WorldItem.cs:138`), matching `Entity.width`/`height` for a dropped item.
 * **The `createTile == 4` arm shadows 19 per-id arms.** `WorldItem.cs:1375` comes
   before every later `type == N` test, and every placeable torch has
   `createTile == 4` вЂ” so the per-id arms for 3114, 1245, 433, 523, 974, 1333, 4383,
@@ -23681,9 +23745,12 @@ Deliberate gaps, all recorded here rather than guessed:
 * The NPC path (`NPC.cs:92575-92578`, gated by `ConveyorBeltCollision`)
   is **not** wired: the port has no unified `NPC.UpdateCollision` to hang it
   on, and `NPCID.Sets.ConveyorBeltCollision` is not in `tiledata` yet.
-* The item box stays the port's 14 px (`item.rs::SIZE`) rather than the C#'s
-  16 (`WorldItem.cs:138`): widening it changes every existing drop's
-  collision, which is a separate task.
+* The item box is the C# 16 (`item.rs::SIZE`, `WorldItem.cs:138` — keep-one
+  144 folded the e19 round-3 fix `e2003946b`; the old 14 px stand-in is
+  retired). The DRAW quad keeps the 14 px visual centred in the box
+  (`pos + 1`, `SIZE - 2`), so pixels are unchanged; every probe (grab rect,
+  WetCollision/LavaCollision, conveyor, TileCollision, the repulsion span,
+  the splash width+12) reads the 16.
 
 ## The screen effects (S1-E-16, 2026-11-16)
 
