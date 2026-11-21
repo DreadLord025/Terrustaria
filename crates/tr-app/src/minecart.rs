@@ -1310,33 +1310,44 @@ pub(crate) fn minecart_bumper_sound(
 /// `right` (0→8, 1→0x10, 2→0x20); a dead-end side (−1) contributes 0. With
 /// fewer than 2 neighbour tracks the mask must match exactly; otherwise it
 /// must be a non-zero subset. `None` when no frame fits (the C# null array).
-fn track_switch_options(mask: u32) -> Option<Vec<i32>> {
-    let neighbour_count = mask.count_ones();
-    let mut options = Vec::new();
-    for (frame, data) in TRACK_FRAMES.iter().enumerate() {
-        let mut frame_mask = 0u32;
-        match data.left_connection {
-            0 => frame_mask |= 1,
-            1 => frame_mask |= 2,
-            2 => frame_mask |= 4,
-            _ => {}
-        }
-        match data.right_connection {
-            0 => frame_mask |= 8,
-            1 => frame_mask |= 0x10,
-            2 => frame_mask |= 0x20,
-            _ => {}
-        }
-        let fits = if neighbour_count < 2 {
-            mask == frame_mask
-        } else {
-            frame_mask != 0 && (mask & frame_mask) == frame_mask
-        };
-        if fits {
-            options.push(frame as i32);
-        }
-    }
-    if options.is_empty() { None } else { Some(options) }
+/// Built ONCE from `TRACK_FRAMES` behind a `OnceLock` (the f11 cache shape
+/// merged over the e20 table, research/71 §3b.2 — the C# `Initialize` builds
+/// the table once; output identical, no per-hit Vec allocation).
+fn track_switch_options(mask: u32) -> Option<&'static [i32]> {
+    static OPTIONS: std::sync::OnceLock<Vec<Option<Vec<i32>>>> = std::sync::OnceLock::new();
+    let table = OPTIONS.get_or_init(|| {
+        (0..64u32)
+            .map(|mask| {
+                let neighbour_count = mask.count_ones();
+                let mut options = Vec::new();
+                for (frame, data) in TRACK_FRAMES.iter().enumerate() {
+                    let mut frame_mask = 0u32;
+                    match data.left_connection {
+                        0 => frame_mask |= 1,
+                        1 => frame_mask |= 2,
+                        2 => frame_mask |= 4,
+                        _ => {}
+                    }
+                    match data.right_connection {
+                        0 => frame_mask |= 8,
+                        1 => frame_mask |= 0x10,
+                        2 => frame_mask |= 0x20,
+                        _ => {}
+                    }
+                    let fits = if neighbour_count < 2 {
+                        mask == frame_mask
+                    } else {
+                        frame_mask != 0 && (mask & frame_mask) == frame_mask
+                    };
+                    if fits {
+                        options.push(frame as i32);
+                    }
+                }
+                if options.is_empty() { None } else { Some(options) }
+            })
+            .collect()
+    });
+    table[mask as usize].as_deref()
 }
 
 /// `Minecart.GetNearbyTilesSetLookupIndex` (`Minecart.cs:1170-1198`): the
@@ -1620,6 +1631,41 @@ mod tests {
         // A second flip wraps 31 → 30 (the only other same-type through option).
         flip_switch_track(&mut w, 10, 10);
         assert_eq!(w.tile(10, 10).unwrap().frame_x, 30);
+    }
+
+    /// The f11 table-sanity pin (research/71 §3c:
+    /// `w4_f11_the_track_tables_transcribe_the_isolated_and_straight_frames`,
+    /// re-pointed at the kept e20 `TRACK_FRAMES` superset). Frame 0 is the
+    /// isolated rail (both sides −1), frame 1 the level straight (both 1);
+    /// the pressure frames 20..23 are type 1, the boosters 30..35 type 2.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f11_the_track_tables_transcribe_the_isolated_and_straight_frames() {
+        assert_eq!(TRACK_FRAMES[0].left_connection, -1);
+        assert_eq!(TRACK_FRAMES[0].right_connection, -1);
+        assert_eq!(TRACK_FRAMES[0].track_type, 0);
+        assert_eq!(TRACK_FRAMES[1].left_connection, 1);
+        assert_eq!(TRACK_FRAMES[1].right_connection, 1);
+        assert_eq!(TRACK_FRAMES[20].track_type, 1);
+        assert_eq!(first_pressure_frame(), 20);
+        assert_eq!(TRACK_FRAMES[30].track_type, 2);
+        assert!(!TRACK_FRAMES[30].boost_left);
+        assert!(TRACK_FRAMES[31].boost_left);
+    }
+
+    /// The f11 lookup-mask pin (research/71 §3c:
+    /// `w4_f11_the_lookup_index_masks_the_six_track_neighbours`, re-pointed
+    /// at the kept e20 `nearby_track_mask`). `Minecart.cs:1170-1198`: the
+    /// six-neighbour mask, `kind == 314` with NO activity gate.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f11_the_lookup_index_masks_the_six_track_neighbours() {
+        let mut w = track_world();
+        place_track(&mut w, 10, 20, 1, -1);
+        assert_eq!(nearby_track_mask(&w, 10, 20), 0);
+        place_track(&mut w, 9, 20, 1, -1); // (i−1, j) → bit 2
+        place_track(&mut w, 11, 20, 1, -1); // (i+1, j) → bit 16
+        assert_eq!(nearby_track_mask(&w, 10, 20), 2 + 16);
     }
 
     /// A player position whose bottom-center magnet sits at `magnet`:
