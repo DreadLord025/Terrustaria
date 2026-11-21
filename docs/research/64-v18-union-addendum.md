@@ -1,8 +1,10 @@
 # 64-addendum — the W4-g72 31-byte v18 claim, input to the g71c UNION
 
-> **SEALED (W4-g72 retire, 2026-11-21).** The claim (§1) landed and is
-> carried verbatim into the FINAL union; the layout authority is g71's
-> research/92 §1-FULL.2 (107-byte head) via research/64b. Nothing owed.
+> **SEALED (W4-g72 retire, 2026-11-21; D5-RE-PIN same day).** The claim (§1)
+> landed and is carried verbatim into the FINAL union; the layout authority
+> is **g88's research/103 §L3-DEFINITIVE D3/D5** (tip `fc5cf11ae`) via
+> research/64b. Nothing owed. OUR cave block's union prefix [0..50)
+> (forest 16 + cave 31 + surface 3) is UNAFFECTED by the D5 middle re-order.
 
 > **SUPERSEDED for the final union by research/64b** (the CONSOLIDATED
 > claimant registry, W4-g72 closeout; retire-updated to the **107-byte**
@@ -10,8 +12,12 @@
 > blocks once g87's pet trio, the c39≡f39 seasonal five, d125's empress
 > byte, the c43/f45 identity block AND g71's FIRED underworld byte (§3's
 > flagged seat — rolled + `.wld`-persisted at g71 tip `f2d8c2c67`) were
-> seated. The layout AUTHORITY is g71's research/92 §1-FULL.2, which keeps
-> OUR 53-byte prefix (§2) VERBATIM at [0..53]; OUR 31-byte claim (§1) is
+> seated. The retire pass pinned the authority to g71's research/92
+> §1-FULL.2 (books inside the 53-byte prefix); **the D5-RE-PIN supersedes
+> that pin** — g88-103-D5 + g90g's independent C# direct check
+> (`WorldFile.cs:1392-1394`→`:1395`→`:1407-1408`) confirm the strict-C#
+> middle: §2's draft books tail [51..53] moves to [61..63] in the FINAL
+> union (64b §2); OUR 31-byte claim (§1) and the [0..50) prefix rows are
 > unchanged. The §3 truncation moves now target **107**, not 53/106.
 
 **Branch:** `task/W4-g72-bg-layers-3` (final phase, continues DONE `2b02345c`).
@@ -126,6 +132,15 @@ v18 UNION tail (53 bytes), offsets relative to the v18 block start:
 
 **Total 53 bytes: 16 (g70) + 31 (g72) + 3 (g71) + 1 (g69) + 2 (g90).**
 
+**D5-RE-PIN note (historical draft):** this five-claimant layout is the
+closeout-era DRAFT. In the FINAL 107-byte union (g88 103 §L3-DEFINITIVE D3
+via 64b §2) the rows [0..50) stand VERBATIM but the books tail does NOT
+close the prefix: books move to [61..63] (the LAST flags rows,
+`WorldFile.cs:1407-1408`), with moon [51..56], underworld [56], pets
+[57..60], empress [60] between crimson [50] and them. The draft's
+books-at-[51..53] seat was carried into 92 §1-FULL.2 and retired by the
+D5 correction (64b §5).
+
 Ordering rationale: g70's forest block stays first (research/92 §1's fixed
 contract — do NOT re-shuffle it); our cave block follows because the C#
 writes caveBackX/Style immediately after treeX/treeStyle (`:1260` follows
@@ -158,10 +173,11 @@ fixed shared order; this note publishes the recommended one.
   g71 DOES roll `RandomizeBackgrounds`' underworld `Next(3)`
   (`WorldGen.cs:8011`, `bg_rolls.rs:168`/`:311`) and `.wld`-persists it
   (`flags.rs:186`/`:577`) at tip `f2d8c2c67`. In the FINAL 107-byte union
-  (92 §1-FULL.2) the byte sits at **[58]** (after the moon-boss block, ahead
-  of the pets — the extension group's C# order; this note's original
-  "between surface and crimson" suggestion was superseded by the
-  keep-64a-prefix-stable rule). This flag is CLOSED.
+  (g88 103 §L3-DEFINITIVE D3, D5-RE-PIN) the byte sits at **[56]** (after
+  the moon-boss block [51..56], ahead of the pets [57..60] — strict C#
+  row order `:1347-1351` < `:1376` < `:1392-1394`; the retire-era 92
+  §1-FULL.2 seat [58] and this note's original "between surface and
+  crimson" suggestion are both superseded). This flag is CLOSED.
 
 ## 4. Witnesses
 

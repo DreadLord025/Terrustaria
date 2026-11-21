@@ -276,8 +276,9 @@ The port's `step_world_tail` (`pipeline.rs:2685-2752`) draws, in order:
    `RandomizeBackgrounds`) feeds `underworldBG` (`WorldFile.cs:1376`,
    still skip-read at `flags.rs:573`). **SEAT FIRED (retire, §7):** g71
    owns that byte — rolled (`bg_rolls.rs:168`/`:311`) + `.wld`-persisted
-   (`flags.rs:186`/`:577`) at tip `f2d8c2c67`; its v18 seat is [58] in the
-   FINAL 107-byte union (research/64b §0/§2, 92 §1-FULL.2); the underworld
+   (`flags.rs:186`/`:577`) at tip `f2d8c2c67`; its v18 seat is [56] in the
+   FINAL 107-byte union (research/64b §0/§2, g88 103 §L3-DEFINITIVE D3 —
+   D5-RE-PIN; the retire-era 92 §1-FULL.2 seat was [58]); the underworld
    DRAW stack stays ours (UNWIRED, the d35 §9.1
    screenTarget escape).
 

@@ -1,18 +1,34 @@
 # 64b — the CONSOLIDATED v18 claimant registry (the final-union input)
 
-> **SEALED (W4-g72 retire, 2026-11-21).** The registry's job is done: both
-> consumers (g71 92 §1-FULL, f44 132 §3-L3 FINAL-FINAL) published the
-> 107-byte union. The layout AUTHORITY is **g71's research/92 §1-FULL.2**;
-> this note is the per-lane byte/anchor input table + the audit trail.
+> **SEALED (W4-g72 retire, 2026-11-21; D5-RE-PIN same day).** The registry's
+> job is done: both consumers (g71 92 §1-FULL, f44 132 §3-L3 FINAL-FINAL)
+> published the 107-byte union. The layout AUTHORITY is **g88's research/103
+> §L3-DEFINITIVE D3/D5** (`origin/task/W4-g88-life-fruit-use` tip `fc5cf11ae`,
+> SEALED); this note is the per-lane byte/anchor input table + the audit
+> trail.
+
+> **D5-RE-PIN (W4-g72 D5-correction, 2026-11-21): 92's books-in-prefix order
+> is WRONG; the middle re-pins to strict C# rows.** g88-103-D5 plus g90g's
+> INDEPENDENT C# direct check (`WorldFile.cs:1392-1394` pets → `:1395`
+> empress → `:1407-1408` books) CONFIRM the strict-C#-order middle:
+> crimson [50] → moon [51..56] → underworld **[56]** → pets [57..60] →
+> empress [60] → books **[61..63]** → identity [63..107]. The retire pin to
+> 92 §1-FULL.2 (books [51..53], underworld [58]) protected a 64a
+> stable-prefix that is NOT the C# write order — that concession is
+> retired (103 §L3-DEFINITIVE D2/D3/D5). OUR cave 31-byte prefix
+> [0..50) (forest 16 + cave 31 + surface 3) is UNAFFECTED; crimson [50]
+> unchanged. §2 below is re-pinned to D3; the retire-era 92-pin text is
+> kept as the audit trail.
 
 > **RETIRED-UPDATE (W4-g72 retire, 2026-11-21): the head is 107, not 106.**
 > The g71 underworld seat FIRED — g71 rolls AND `.wld`-persists
 > `underworld_bg_style` (§0's receipt) — so the 1-byte conditional below is
-> seated and every 106 in this note moves to **107**. **AUTHORITY for the
-> final layout is g71's research/92 §1-FULL** (`92-doc-sweep-bg.md` at tip
-> `f2d8c2c67`): §2 below is re-pinned to its offsets (the 64a 53-byte prefix
-> kept VERBATIM, books inside it). This note stays the per-lane
-> bytes/C#-anchor/W:-R: input table; the layout it points at is 92 §1-FULL.2.
+> seated and every 106 in this note moves to **107**. The retire pass
+> pinned the layout to g71's research/92 §1-FULL (`92-doc-sweep-bg.md` at
+> tip `f2d8c2c67`); that pin is SUPERSEDED by the D5-RE-PIN above (92's
+> byte census stands, its books-in-prefix ORDER does not). This note stays
+> the per-lane bytes/C#-anchor/W:-R: input table; the layout it points at
+> is g88 103 §L3-DEFINITIVE D3.
 
 **Branch:** `task/W4-g72-bg-layers-3` (closeout, continues DONE `4a75715e` +
 item 1 `ba6da402e`; retire update on `fafd0659`). **Mode:** code-only — no
@@ -41,17 +57,37 @@ and FIRED, verified on g71's own code:
   at the merge (its lane owns the byte).
 - **`.trwld`:** g71's own `save.rs` still writes only the 3 surface bytes
   (W:434/R:826) — the underworld `.trwld` byte materialises at the union
-  merge per 92 §1-FULL.2 offset **[58]** (a rolled-and-`.wld`-persisted
+  merge per g88 103 §L3-DEFINITIVE D3 offset **[56]** (D5-RE-PIN; the
+  retire-era 92 §1-FULL.2 seat was [58]) (a rolled-and-`.wld`-persisted
   style with no `.trwld` byte is exactly the loss class the union prevents,
   f44 research/132 §3-L3's FIRED-seat note).
 
 `origin/task/W4-f44-save-plr-2` tip **`d35876af9`** — research/132 §3-L3 is
 now the FINAL-FINAL **107-byte** ten-claimant union (it seats the same
 underworld byte and confirms our 98-not-97 arithmetic correction). Its
-flag-single ORDER differs from 92 §1-FULL.2 (it puts underworld at [50] and
-books at [61..63]); both are 107 + W×H. **Per the Lead, 92 §1-FULL is the
-layout authority** (it keeps our published 64a prefix offsets stable);
-132 §3-L3 agrees on every byte count and the truncation arithmetic.
+flag-single ORDER (underworld at [50], before crimson) inverts the C# rows
+`:1376` > `:1281` — g88 103 D3 moves underworld [50]→[56]; its books at
+[61..63] are CORRECT. The retire pass made 92 §1-FULL the authority (its
+books-in-prefix concession); **the D5-RE-PIN reverses that: g88 103
+§L3-DEFINITIVE D3 is the layout of record** — both consolidators' byte
+counts (107 + W×H) and truncation arithmetic stand, only the flag middle
+moves.
+
+**The D5 correction input (read this pass):** g88
+`origin/task/W4-g88-life-fruit-use` tip **`fc5cf11ae`** — research/103
+§L3-DEFINITIVE D1-D5 + the SEAL merger-bible paragraph. No separate
+§L3-ARBITER section exists at that tip (verified by full-text read); D5 IS
+the broadcast/receipt section and its tie-breaker rule stands: "If either
+lands a later revision first, the merger takes D3's strict-row-order
+middle — the C# rows are the tie-breaker, not publication timestamp."
+D1's 13-branch census confirms OUR registry's block set/dedups (e19≡g69,
+c39≡f39, c43≡f45) and the FIRED underworld seat; D2 adjudicates both
+consolidators' middles (132 inverts underworld-before-crimson; 92 inverts
+books-into-the-64a-prefix); D3 publishes the definitive offsets; D5 lists
+the per-layout deltas AND flags three stale tip-hashes in 92 §1-FULL.1's
+registry column (e19's actual tip `e7e466d46`, d125's `d8047a109`, c43's
+`076970809` — OUR §1 table already carries the correct hashes; block
+attributions everywhere correct). The mutual receipt to g71f is §5 below.
 
 **Historical probe (the closeout read, superseded by the above):** g71 at
 `f08e8d41e` carried only FIVE claimants / a 21-byte head (our 31 + g90's 2
@@ -88,7 +124,7 @@ cites W4-g69) — one byte, g69 the claimant of record.
 | 7 | g87 `task/W4-g87-demon-heart-use` | `dfbcaf94b` | **3** | bought_cat/bought_dog/bought_bunny u8×3 | `WorldFile.cs:1392-1394` (the 4829/4830/4910 Pet License unlocks) | 434 / 826 | false×3 |
 | 8 | c39 `task/W4-c39-lantern-birthday` | `8ecb288aa` | **5** | downed_halloween_king/tree + christmas_ice_queen/santank/tree u8×5 | `WorldFile.cs:1347-1351`; `NPC.cs:79210-79238` death arms | 437 / 831 | false×5 |
 | 9 | f39 `task/W4-f39-weather-slimerain` | `bd5a5a24a` | **5** | **IDENTICAL to #8** — same five fields, same order, same C# anchor | `WorldFile.cs:1347-1351` | 438 / 832 | false×5 |
-| 10 | f45 `task/W4-f45-wld-header-2` (carries c43 `076970809`) | `6352d3840` | **44** | generator_version u64 + unique_id 16×u8 + world_id i32 + creation_time i64 + last_played i64 | `WorldFile.cs:1225-1227` (header) + `:1250-1251` (SaveWorldFlags stamps) | 438 / 832 | `World::new` zeros |
+| 10 | f45 `task/W4-f45-wld-header-2` (carries c43 — c43's own tip `076970809`) | `6352d3840` | **44** | generator_version u64 + unique_id 16×u8 + world_id i32 + creation_time i64 + last_played i64 | `WorldFile.cs:1225-1227` (header) + `:1250-1251` (SaveWorldFlags stamps) | 438 / 832 | `World::new` zeros |
 | 11 | d109 `task/W4-d109-framing-genrand-a3` | `81894095e` | **W×H** | `variants` dense u8, row-major (port-only: `Tile.bTileHeader2` bits 4-7, `Tile.cs:464-482`; the C# `.wld` never writes them) | port-only | 440 / 836 | zeros + `variants_from_save=false` (re-roll) |
 
 **Dedup verdicts (mechanical, no adjudication needed):**
@@ -103,14 +139,17 @@ cites W4-g69) — one byte, g69 the claimant of record.
 
 ## 2. The FINAL union layout (eleven distinct blocks, 107-byte head + dense)
 
-**AUTHORITY: g71's research/92 §1-FULL.2** (tip `f2d8c2c67`). Its order rule
-keeps OUR published 64a 53-byte prefix VERBATIM at [0..53] (forest 16 →
-cave 31 → surface 3 → crimson 1 → books 2 — every offset 64a published
-stays stable), then appends the remaining claims in C# `.wld` relative
-order among themselves: moon bosses (`:1347-1351`) → underworld (`:1376`,
-the FIRED seat, §0) → pets (`:1392-1394`) → empress (`:1395`); the identity
-block (header fields, no flags position) closes the fixed head; d109's
-variable-length dense block LAST (self-delimiting by `tiles.len()`):
+**AUTHORITY: g88's research/103 §L3-DEFINITIVE D3** (tip `fc5cf11ae`,
+SEALED; D5-RE-PIN supersedes the retire-era 92 §1-FULL.2 pin). The frame
+is the shared 64a forest-first frame — OUR published cave prefix
+[0..50) stays VERBATIM (forest 16 → cave 31 → surface 3) — but the 13-byte
+flag middle is ordered by **STRICT C# `WorldFile.cs` row order**: crimson
+(`:1281`) → moon bosses (`:1347-1351`) → underworld (`:1376`, the FIRED
+seat, §0) → pets (`:1392-1394`) → empress (`:1395`) → books
+(`:1407-1408`, the LAST flags rows — g90g's independent direct check
+confirms pets→empress→books); the identity block (header fields, no
+flags position) closes the fixed head; d109's variable-length dense block
+LAST (self-delimiting by `tiles.len()`):
 
 ```
 … v17 downedFishron byte (1)
@@ -119,42 +158,51 @@ v18 UNION tail — fixed head (107 bytes) + dense variants (W×H):
   [16..47]   g72 cave block         3×i32 bands + 4×i32 styles
                                     + ice/jungle/hell u8            (#2, 64a §1)
   [47..50]   g71 surface bytes      snow/desert/ocean u8            (#3)
+  ---- the flag middle: STRICT C# row order (103 D3) ----
   [50]       g69 crimson            u8 (e19 dup drops)              (#4)
-  [51..53]   g90 book-two + satchel u8×2 — closes 64a's prefix       (#6)
-  [53..58]   seasonal moon-boss 5   u8×5 (c39≡f39, keep one)        (#8/#9)
-  [58]       g71 underworld_bg_style u8 — the FIRED seat (:1376)    (#3a)
-  [59..62]   g87 pet licenses       u8×3                            (#7)
-  [62]       d125 downedEmpress     u8                              (#5)
+  [51..56]   seasonal moon-boss 5   u8×5 (c39≡f39, keep one)        (#8/#9)
+  [56]       g71 underworld_bg_style u8 — the FIRED seat (:1376)    (#3a)
+  [57..60]   g87 pet licenses       u8×3                            (#7)
+  [60]       d125 downedEmpress     u8 (:1395 — AFTER pets)         (#5)
+  [61..63]   g90 book-two + satchel u8×2 (:1407-1408, flags LAST)   (#6)
   [63..107]  c43/f45 identity       u64 + 16B GUID + i32 + 2×i64    (#10)
   [107..107+W*H]  d109 dense variants (LAST, self-delimiting)       (#11)
 ```
 
-**Fixed head = 107 bytes: 16+31+3+1+2+5+1+3+1+44. Total = 107 + W×H.**
+**Fixed head = 107 bytes: 16+31+3 +1+5+1+3+1+2 +44. Total = 107 + W×H.**
 
 Ordering notes:
-- This SUPERSEDES the closeout draft's strict-C#-flag-order layout (books
-  after empress): 92 §1-FULL keeps books INSIDE the 64a prefix so our
-  published [51..53] offsets never move — the empress byte rides the
-  extension group instead (a free move under the forward-only rule, no
-  released v18 exists).
+- The D5-RE-PIN RESTORES the closeout draft's strict-C#-flag-order middle
+  (books after empress) that the retire pass had superseded: 92
+  §1-FULL's books-INSIDE-the-64a-prefix concession protected offsets of
+  an UNMERGED proposal (103 D2: "the same argument 103 §8 used to move
+  the crystal tokens"). g90's books move [51..53]→[61..63], moon
+  [53..58]→[51..56], underworld [58]→[56], pets [59..62]→[57..60],
+  empress [62]→[60]; crimson [50], identity [63..107] and OUR cave
+  prefix [0..50) never move. Forward-only, zero back-compat cost — no
+  released v18 exists.
 - f44 research/132 §3-L3's FINAL-FINAL layout is byte-count-identical
-  (107 + W×H) but seats underworld at [50] and books at [61..63]; per the
-  Lead, **92 §1-FULL.2 is the layout of record** — the merger follows it.
-- The `underworldBG` conditional (64a §3's flag, C# `:1376`) is CLOSED:
-  g71 rolls + `.wld`-persists it (§0's receipt), the byte is seated at
-  [58], no further re-pin owed.
+  (107 + W×H); its ONE inversion is underworld-before-crimson ([50]),
+  which 103 D3 fixes ([50]→[56]); its books/pets/empress/identity seats
+  already match D3.
+- The `underworldBG` conditional (64a §3's flag, C# `:1376`) stays CLOSED:
+  g71 rolls + `.wld`-persists it (§0's receipt); the byte is seated at
+  **[56]** per D3 — the seat FIRED verdict is unchanged, only the offset
+  re-pins.
 
 ## 3. Merge instructions (mechanical)
 
 - **Writer:** after the v17 fishron byte, write the eleven blocks in §2's
-  order (92 §1-FULL.2's writer snippet is the reference); d109's dense
+  order (g88 103 §L3-DEFINITIVE D3's layout is the reference); d109's dense
   block is the LAST thing `write_world` emits.
   **Reader:** one `if version >= 18` arm reading all 107 + `tiles.len()`.
 - **Truncation constants → 107:** OUR eleven sites currently carry `+ 31`
   (`save.rs:1111/:1207/:1285/:1349/:1378/:1567/:1588/:1610/:1726/:1846/
   :1961/:2088/:2189` — the EMPTY_V16_TAIL family, the v12/v14 tail
   arithmetic and the six mid-record cuts re-armed in `2b02345c`); each
-  moves 31 → 107. g70/g71's 16/3(+1) → 107 (92 §1-FULL.4's table), g69/e19/
+  moves 31 → 107. g70/g71's 16/3(+1) → 107 (92 §1-FULL.4's per-branch site
+  table STANDS as the merge arithmetic per 103 D3 — only the middle-offset
+  assertions inside round-trip witnesses move), g69/e19/
   d125's 1 → 107, g90's 2 → 107 (135 §4), g87's 3 → 107, c39/f39's 5 → 107
   (ONE set of sites after the dedup), c43/f45's 44 → 107. d109's
   end-relative sites need only `v18_tail_len`'s new return value
@@ -180,4 +228,46 @@ byte-identical by construction (§1 #8/#9 — same fields, same order, same
 C# lines), so either lane's seasonal round-trip witness pins the kept
 block; the e19≡g69 crimson dedup likewise (§1 #4). g71's underworld
 round-trip witness (`wld/mod.rs:1754`) pins the `.wld` byte; the `.trwld`
-seat [58] is pinned by the union writer/reader at the merge.
+seat [56] (D5-RE-PIN; was [58] under the retire-era 92 pin) is pinned by
+the union writer/reader at the merge.
+
+## 5. The g71f mutual receipt — 92 MUST re-pin books to D5 (D5-correction)
+
+**Published to `g71f-bg-seal-receipt-active` (the g71f seal-receipt lane).**
+This is the g72-side half of the mutual receipt; g71f owns the 92-side
+re-pin execution.
+
+- **Input read:** g88 `origin/task/W4-g88-life-fruit-use` tip `fc5cf11ae`
+  (SEAL, research/103 §L3-DEFINITIVE D1-D5 + the merger-bible SEAL
+  paragraph). No §L3-ARBITER section is published at that tip — D5 is the
+  broadcast/receipt section and carries the standing tie-breaker: the C#
+  rows win over publication timestamp.
+- **The correction 92 owes:** its §1-FULL.2 seats books at [51..53] to keep
+  64a's 53-byte prefix stable — but `WorldFile.cs:1407-1408` (books) are
+  the LAST flags rows, AFTER pets `:1392-1394` and empress `:1395` (g90g's
+  independent direct C# check confirms the same rows g88 re-read). 92's
+  own order rule ("remaining claims append in C# `.wld` relative order")
+  is violated by its own books seat (103 D2). **92 must re-pin: books
+  [51..53]→[61..63], moon [53..58]→[51..56], underworld [58]→[56], pets
+  [59..62]→[57..60], empress [62]→[60]; crimson [50], identity [63..107],
+  forest/cave/surface [0..50) unchanged.** Its §1-FULL.4 truncation site
+  table and §1-FULL.3 back-compat rule stand; its registry's three stale
+  tip-hashes (e19/d125/c43 rows, 103 D5) should ride the same correction
+  pass — the block attributions are correct.
+- **Our side, executed this pass:** 64b's authority DEFERS TO D5/D3, NOT
+  to 92 — the retire-era "92 wins on order per the Lead" pin is retired;
+  §0/§2/§3/§4 re-pinned (underworld [58]→[56], books citations →
+  [61..63]). OUR cave 31-byte prefix is UNAFFECTED: forest 16 + cave 31 +
+  surface 3 = 50, then crimson [50] — verified against 103 D3's layout
+  line-for-line ([0..12] tree_x, [12..16] styles, [16..28] cave_back_x,
+  [28..44] cave_back_style, [44/45/46] ice/jungle/hell, [47/48/49]
+  snow/desert/ocean). 64a's §1 claim and §2's [0..50) rows stand verbatim;
+  only its 53-byte five-claimant draft's books tail ([51..53]) is
+  superseded.
+- **The SEALED receipt (D5-authority):** this registry (64b) is SEALED
+  under **g88 103 §L3-DEFINITIVE D3 @ `fc5cf11ae`** as the layout of
+  record; 92 §1-FULL @ `f2d8c2c67` remains a valid byte CENSUS (13
+  branches, 11 blocks, 107 + W×H) but NOT the order authority until g71f
+  lands the re-pin. If 92's re-pin lands matching D3, both notes agree
+  and the merger has one order; if it lands differing, D5's tie-breaker
+  applies — the C# rows win.

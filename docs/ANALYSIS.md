@@ -1637,8 +1637,10 @@ owns the SURFACE rolls + tables** — `bg_rolls.rs`'s tree/surface/boot rolls
 shared stream), the `setBG` style→ids expansion (`surface_bg_texture_ids`,
 which our five v16-owned surface variants already read LIVE), the
 snow/desert/ocean style bytes AND the FIRED underworld style byte (rolled +
-`.wld`-persisted; `.trwld` seat [58] of the 107-byte union, layout authority
-g71 research/92 §1-FULL.2); **g70 owns the FOREST set** — `tree_x` +
+`.wld`-persisted; `.trwld` seat [56] of the 107-byte union, layout authority
+g88 research/103 §L3-DEFINITIVE D3/D5 @ `fc5cf11ae` — D5-RE-PIN, the
+retire-era 92 §1-FULL.2 order pin retired, books [61..63] flags-LAST);
+**g70 owns the FOREST set** — `tree_x` +
 `forest_bg_styles` (16 bytes, union offsets [0..16]) and the
 `SetForestBGSet` tables our style-0-pinned forest chain lifts to at the
 merge; **g69 owns the CRIMSON byte + consumers** — the 1-byte `crimson`
