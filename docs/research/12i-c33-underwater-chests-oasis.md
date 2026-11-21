@@ -59,4 +59,13 @@ Pass 1 is this claim + census doc.
 | census + claim (this doc) | 512c4cff | claimed |
 | Pyramids faithful rewrite | 524d94a7 | landed (code-only; pins deferred) |
 | Water Chests (UnderwaterChests) | 321c9b66 | landed (code-only; pins deferred) |
-| lily/cattail/bamboo arms | (this commit) | landed (code-only; pins deferred) |
+| lily/cattail/bamboo arms | fd7fae0e | landed (code-only; pins deferred) |
+
+## Sweep + reconcile phase (2026-11-21, on fd7fae0e)
+
+| item | commit | outcome |
+| --- | --- | --- |
+| (1) Water Chests matrix conflict — arm-by-arm d103 vs c33 vs C# `:17245-17355` | (docs commit) | **ADDENDUM `120-water-chests-keep-one.md`** — confirms matrix §2.9 KEEP d103 (9 arm wins, 0 c33 wins); flags d103's extraLiquid single-draw deviation the matrix missed; re-scopes the stocking carry to c33's WHOLE `chest_gen.rs` block (post-3ecb8b08 superset); witness union + 4 new witnesses for the merge gate; matrix line 616's "unbounded loops" note corrected (d103's outer caps are present) |
+| (2) pyramid loot table | 3ecb8b08 | flag11 is main-based (`:36172`) — the wall-34 chamber now stocks the Pharaoh main + Prefix(-1) + robe; flag11 forces the surface band at depth; preset mains skip the num10==0 weapon ladders; the phantom ctx.pyramid 4346/4066 gate removed (flag3 = desert/mahogany); the flag12 1/40 CreativeWings 4978 row lands; Pharaoh set + carpet + bottle table-complete in itemdata |
+| (3) oasis remainder census | c7393225 + docs | no unclaimed oasis worldgen arm (d103 owns Oasis+PlaceOasis+cacti block; c33's plant deferral closed fd7fae0e); "mirage bg" = HeatDistortion (ported), oasis falls = waterfall 23 (ported); the real gap was the **UndergroundDesert 61 music arm** (constants-off since S1-L-1) — landed c7393225 |
+| (4) flag5 4425/4460 verify | 3ecb8b08 | the pair is TWO INDEPENDENT 1/2 rolls (`:36515/:36845`), style-17 gated — the phantom ctx.mahogany/ctx.sky either-or rows deleted; the mid band's common rows re-derived to `:36668-36801`; all six water mains (863/186/277/187/4404/268 — trident 277 + breathing reed 186 present) stock with the pair; 5 new witnesses |
