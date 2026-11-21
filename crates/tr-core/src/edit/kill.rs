@@ -5209,6 +5209,11 @@ mod tests {
     #[test]
     fn w4_g83_the_seaweed_tip_rerolls_draw_the_callers_genrand() {
         let mut w = World::new("t".into(), 120, 120);
+        // The 549 frame-important bit (Main.cs:7373, boot_statics) — the
+        // generated world carries it, so `after_edit`'s cosmetic reframe
+        // keeps the tip columns the check wrote.
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        w.frame_important[549] = true;
         // The water column (4 deep so BOTH 549 cells pass the 3-cell gate).
         for y in 57..=60 {
             let i = w.index(60, y);
