@@ -40480,3 +40480,205 @@ sheet, `:67998-68421`), 568/569 the wither beasts (the aura ladder,
 `:67887-67978`), 576/577 the ogres (the variable strides,
 `:67584-67709`). This lane's next ascending window starts at 564
 (the dark mage) — the remaining DEFERRED tail.
+
+### W4-f27 extra wave 12 (slice 12) — the 551/564-577 DD2 tail (complete)
+
+`crates/tr-app/src/npc_findframe_extra12.rs` — the slice-11 DEFERRED
+551/564-577 window (14 ids) re-checked mechanically per cited range
+(a `Main.rand`/`.Next(`/`NextFloat`/`NextDouble`/`NewBubble`/
+`Dust.NewDust` grep). The verdict splits THREE ways:
+
+| id | kind | C# case | RNG grep | disposition |
+| --- | --- | --- | --- | --- |
+| 551 | DD2Betsy | `:67258-67451` | ZERO | ported + wired (the prior run `70762233d`/`01888909a`, the ai[0] phase ladders) |
+| 566/567 | DD2SkeletonT1/T3 | `:67559-67583` | ZERO | ported (batch 1) + wired (the concurrent slice-13 `af5d54b61`, the dup below) |
+| 568/569 | DD2WitherBeastT2/T3 | `:67025-67257` | ZERO | ported (batch 1) + wired THIS slice (`9b4ca40f7`) |
+| 570/571 | DD2DrakinT2/T3 | `:67711-67755` | ZERO | ported (batch 1) + wired (the concurrent slice-13, the dup below) |
+| 564/565 | DD2DarkMageT1/T3 | `:67998-68421` | ZERO | ported PURE (batch 2, the GRID-cell convention) — the wiring GATED on the grid-draw seam |
+| 576/577 | DD2OgreT2/T3 | `:67584-67709` | ZERO | ported PURE (batch 2, the GRID-cell convention) — the wiring GATED on the grid-draw seam |
+| 572/573 | DD2KoboldWalkerT2/T3 | `:67493-67558` | the `:67506` emote | DEFERRED — the emote-seam contract below |
+| 574/575 | DD2KoboldFlyerT2/T3 | `:67887-67978` | the `:67959` RNG dust | DEFERRED — the RNG-dust-seam contract below |
+
+**The per-case notes (the 6 strip + 4 grid machines):**
+
+* **566/567 the skeletons** (`:67559-67583`): the goblin-shape WALK
+  ONLY — the vy == 0 sprite copy, the air-OR-backpedal row-8 pin, the
+  idle row-0 snap (NOT the goblins' 9), the |vx| >= 64 reset +
+  `(int)(counter/8)` row 0-7. The 9-row sheet (`Main.cs:67140` slots
+  6/7). The slice-11 "materialize-cycle" deferral is AI-side
+  (localAI[3]), NOT this zero-RNG range.
+* **568/569 the wither beasts** (`:67025-67257`): the ai[0] > 0 aura
+  ladder — the UNCONDITIONAL sprite copy, the entry row-outside-5..16
+  LIVE counter-zero (the ++ follows, no overwrite), the base-7 row,
+  the ++counter, the 27-rung 5-tick ladder rows 8/9/10 (k 1-3) then
+  7/8/9/10 x5 (k 4-23) then 11/12/13/14 (k 24-27) (the ILSpy num60 +1
+  noise = the static 5*k thresholds, last-match-wins), the >= 270 tail
+  pinning row 14 + SUBTRACTING 10 (`:67227-67231` — the counter cycles
+  260..270 forever, never resets 0); else the walk air row 4 / idle
+  row 6 / the |vx| >= 56 reset + `(int)(counter/8)` row 0-6. The
+  17-row sheet (`:67140` slots 8/9).
+* **570/571 the drakins** (`:67711-67755`): the ai[1] > 0 && ai[0] > 0
+  attack ladder rows 10-15 (the ai[1] == 59 reset, num188 = 5 EXCEPT
+  row 14 = 35 the long hold, the ++counter >= num188 step gated
+  row < 15 — the row-15 counter-keep-growing quirk); else the walk
+  air row 1 / idle row 9 / the |vx| >= 64 reset + `(int)(counter/8+2)`
+  row 2-9 (the +2 INSIDE the cast). The 16-row sheet (`:67141` slots
+  0/1).
+* **564/565 the dark mages** (`:67998-68421`, the RAW-cell GRID): the
+  frame.Width/Height = 80 override (`:68002-68003`, draw-side); the
+  ai[0] > 0 && ai[1] == 0 summon ladder (7-tick, the 13 rungs rows
+  6/7 then 5/6/7 x2 then 8..12, the >= 98 reset-to-5 + counter 0), the
+  ai[1] == 1 attack ladder (8-tick, the 15 rungs rows 14..20 then
+  18/19/20 then 21..25, the >= 128 reset-to-14), the ai[1] == 2 gate
+  ladder (8-tick, the 22 rungs rows 27/28/29 then 26/27/28/29 x2 then
+  30..40, the >= 184 reset-to-26) — each the LIVE entry out-of-band
+  counter-zero + the UNCONDITIONAL sprite copy; else the hover walk
+  counter += |velocity|*0.1 + 1 (the one non-integer feed), the >= 40
+  reset, `(int)(counter/8)` rows 0-4. The cells run to 40 PAST
+  npcFrameCount[564] = 9 — the draw samples the 5x9 grid
+  (`Main.cs:23890`, `Frame(5, 9, y/9, y%9)`).
+* **576/577 the ogres** (`:67584-67709`, the RAW-cell GRID): the
+  frame.Width = 80 override (`:67588`, draw-side); the entry gate
+  reads the RAW cell (`num144 = frame.Y` `:67587`); the ai[1] == 0
+  stomp (cells 11-20, the variable strides 4 / 8 at 13/19 / 2 at
+  14/18, gated cell < 20), the ai[1] == 2 pound (the entry snap to 39
+  NOT 37, the strides 5 / 6 at 42 / 8 at 45 / 4 at 46 / 26 at 47 / 7
+  at 37-38, the counter-HOLD at 38 and at 46-while-airborne (flag10),
+  the >= 47 wrap-to-37 — the step NOT gated on advance), the ai[1] == 1
+  swipe (cells 21-38, the 5-tick step gated cell < 38); else the walk
+  air cell 43 (NO backpedal branch) / idle cell 0 / the |vx| >= 60
+  reset + `1 + (int)(counter/6)` cells 1-10. The cells run to 47 PAST
+  npcFrameCount[576] = 10 — the draw samples the 5x10 grid
+  (`Main.cs:23792`, `Frame(5, 10, y/10, y%10)`).
+
+**The GRID-DRAW SEAM CONTRACT (the wiring gate for 564/565/576/577):**
+the port's draw arms sample STRIPS (`t.h / 20` / `t.h / 10` rows,
+`render/entities.rs`'s dark_mage/dd2_ogres anchors) — wiring the
+raw-cell machines under the strip draw would sample the wrong pixels.
+The wire round must FIRST convert the four draw arms to grid sampling
+(the deerclops 5x5 `deerclops_frame_uv` precedent): dark mage
+`Frame(5, 9, cell/9, cell%9)` (`Main.cs:23890`, the origin-X 52/-52
+sprite flip + the origin-Y -10 + the localAI[3] materialize fade),
+ogre `Frame(5, 10, cell/10, cell%10)` (`:23792`, the origin-X 94 + the
+origin-Y -4). Until then the four machines ride PURE (the seam fn
+claims the ids; the npc.rs v1 strip arms stand — the 435/436
+pure-landing precedent). `FindFrameExtra12Kind::is_grid()` marks them.
+
+**The 572/573 kobold-walker EMOTE-SEAM CONTRACT (DEFERRED):** the
+lit-state pin (`NPC.cs:67495-67508`) — `ai[0] > 0 && ai[1] == 0`:
+the UNCONDITIONAL sprite copy, the row != 8 OR counter > 2 reset to
+row 8 + counter 0, then `if (counter == 0) { counter = 1;
+EmoteBubble.NewBubble(3, new WorldUIAnchor(this), 60); }` (`:67503-
+67507`). The emote is a SIDE EFFECT keyed on the counter-0 → 1
+transition (one bubble per lit-state entry, the 60-tick lifetime).
+The seam-fed wire round resolves the emote spawn bridge-side (the
+634 SporeBat resolved-draw precedent) and feeds the post-emote frame
+machine: the row-8 pin + the counter-1 latch, ZERO RNG. The rest of
+the case is pure: the ai[1] == 1 sprint walk (`:67510-67534`, air
+row 17 / idle row 8 / the |vx| >= 64 reset + `(int)(counter/8)+8`
+rows 8-15) + the default walk (`:67536-67557`, air row 16 / idle
+row 0 / the |vx| >= 64 reset + `(int)(counter/8)` rows 0-7). The
+18-row sheet (`Main.cs:67141` slots 2/3).
+
+**The 574/575 kobold-flyer RNG-DUST-SEAM CONTRACT (DEFERRED):** the
+case (`NPC.cs:67887-67978`) — the vx-sign sprite copies (`:67890-
+67897`), the `ToRotation` aim + `(float)Math.PI` when vx < 0
+(`:67898-67902`), the `rotation.AngleTowards(aim, 0.02f)` EVERY tick
+(`:67903`); the ai[0] != 0 altimeter walk (`:67904-67933`): the
+row < 2 lift-to-2 + counter 0, the num187 = 4 step (8 when row >= 5),
+the ++counter >= num187 step gated row < 9, the row-9 ignition burst
+(8 dusts, `:67923-67931` — `Dust.NewDustDirect` at the rotated
+`Center + (56*spriteDir, -30)` point, velocity*3, scale 0.6, fadeIn
+1.2, noGravity/noLight); then the ai[0] >= 3 RNG trail dust
+(`:67934-67967`): the maxValue ladder 5 / 4 at counter > 60 / 3 at
+> 180 / 2 at > 300 / 1 at > 600, the TWO `Main.rand.Next(maxValue)`
+draws (`:67957-67959`, n = 0/1) each gating a dust at
+`Lerp(oldPos[3]-offset, vector4, n/10+0.1)` (scale 0.3, fadeIn 1.5,
+noGravity/noLight); else the ai[0] == 0 idle flap (`:67969-67977`):
+the ++counter >= 6 step over rows 0-1 with the >= 2 wrap. The
+seam-fed wire round draws the TWO `Next(maxValue)` rolls bridge-side
+EVERY tick the ai[0] >= 3 && row >= 9 gate holds (the UpdateNPC order
+AI → FindFrame, the 634 precedent), feeds the RESOLVED booleans +
+the dust spawns, and the post-seam frame machine is ZERO RNG (the
+AngleTowards rotation the one transcendental, the e11 wyvern
+precedent — the sweep checks rows only). The 10-row sheet
+(`Main.cs:67141` slots 4/5).
+
+**The same-task race + the f27i-dup dedupe note (566/567/570/571
+both-modules) — PUBLISHED for the merger:** the concurrent slice-13
+commit `af5d54b61` (landed BETWEEN this slice's batch-1 and batch-2
+commits) ported + wired the skeletons 566/567 + drakins 570/571 to a
+NEW `npc_findframe_extra13.rs`. The machines are BYTE-IDENTICAL to
+this slice's extra-12 batch-1 ports (verified line-for-line: the
+skeleton walk + the drakin row-14 hold ladder, the same C#
+transcriptions, the same frame counts 9/16, the same zero-RNG grep).
+**KEEP-ONE at the merge: keep the f27 extra-12 arms** (the e12 module
+carries the wider 11-kind claim 551/564-571/576/577; the extra-13
+module's four drop to parity references — the f26h-dup keep-one
+precedent). The npc.rs skeleton/drakin arms currently delegate to
+extra-13 (the slice-13 wiring); the merger re-points them to extra-12
+(or keeps extra-13 as the parity twin — behaviour-identical either
+way). The wither beasts 568/569 are THIS slice's unique wiring
+(`9b4ca40f7`, untouched by slice 13).
+
+**Census count update (the MECHANICAL re-derivation at the CURRENT
+pushed tips — the slice-13 "73 − 5 = 68" note MIS-COUNTS):** the
+slice-11 "73 unclaimed" base itself mis-counted — it subtracted the
+d42 578-630 band as 47 ids and the f26 7e five, but the DD2 tail
+551/564-577 are INLINE-ARM (port-covered with the v1 stand-ins, the
+d44 master §2 table) — FIXING them changes NO claim count (the
+slice-9/10/11 fix precedent). The correct base is the d44 master
+wire-census §6 UNCLAIMED worklist at the refresh-4 vintage = **106**
+(the 130 refresh-2 base − the 24 f26 7d/7e/7f + f27 e10 claims
+516/521/523-532/534-545). Re-probed at the CURRENT tips
+(`git fetch origin --prune`, every claim grep'd against the pushed
+npc.rs/npc_findframe*.rs seams):
+
+| step | subtraction | remaining |
+| --- | --- | --- |
+| the d44 §6 refresh-4 base | — | 106 |
+| f26 7g (435/436 the e11 dup + 631/632/635) | 5 | 101 |
+| f26 7h (636/639-645) | 8 | 93 |
+| f26 7i (646-649) | 4 | 89 |
+| f26 7j (650-655) | 6 | 83 |
+| g10 town pets (637/638/656/670/678-684) | 11 | 72 |
+| c4 (581/587/592/607/615) | 5 | 67 |
+| c8 (606) | 1 | 66 |
+| e26 (604/605) | 2 | 64 |
+| d42 band arms (578/580/582-586/590/591/593-603/608-614/616-620/624-629, 38 case ids) | 38 | **26** |
+
+**26 unclaimed after** — the worklist: **634** (the RNG SporeBat, the
+f26 7h seam contract), **657-662** (6), **664** (1), **667** (1),
+**669** (1), **671-677** (7), **687-689** (3), **691-696** (6) =
+1+6+1+1+1+7+3+6 = **26**. This MATCHES the f26 7j addendum's
+independent 26-id derivation (the two lanes agree id-for-id). The
+551/564-577 DD2 tail is NOT in the unclaimed pool (INLINE-ARM
+throughout) — this slice's 11 ports + 7 wirings are QUALITY FIXES of
+port-covered arms (the 549/471/492 precedent), not new claims; the
+572-575 four stay DEFERRED (the emote/RNG seams above), still
+port-covered with the v1 stand-ins. The d41 tip ADVANCED
+(`4ed22f0b` → `1a1b07ff`, batches 3-6: the 508-512 antlions + the
+513-516/519 tomb/solar + the 522-526 orbs/ghouls + the 527-531
+lamias/poachers) — its new FindFrame arms (508/509/516/523/527-531)
+are all TWIN claims inside the f26/f27/e10 sets already subtracted
+(the d41 roster lane's arms ride the same machines), NO new
+subtraction. The d42 tip `bac408be0` (the doc-only finals) — the
+578-630 band arms stand (the 38 case ids above; 581/587/592/607/615
+ceded to c4, 604/605 to e26, 606 to c8, 588/589 base-reserved, the
+19 holes itemized in its research/239). The g10 tip `5dee2865`
+UNCHANGED (the 11 town pets). The f26 tip `b89812bf` (7j) — the
+650-655 claims above; 7k/7l NOT yet pushed at census time.
+
+Zero RNG: the mechanical grep over the 10 ported ranges
+(`:67258-67451`, `:67559-67583`, `:67025-67257`, `:67711-67755`,
+`:67998-68421`, `:67584-67709`) = ZERO Main.rand/.Next(/NextFloat/
+NextDouble hits (the 572/573 emote `:67506` and the 574/575 RNG dust
+`:67959` are the DEFERRED kinds, NOT ported). Frame counts
+cross-checked against `render/entities.rs::NPC_FRAME_COUNT` — all 11
+agree (551 = 11, 564/565 = 9, 566/567 = 9, 568/569 = 17, 570/571 = 16,
+576/577 = 10; the full-697 mechanical diff EMPTY). 7 module witnesses
++ 1 wiring witness WRITTEN NOT RUN (code-only), every replay vector
+re-derived by mechanical Python replay of line-for-line C#
+transcriptions (`tools/_f27_s12_replay.py`, the integer accumulators
+exact in f32; the dark-mage hover |v|*0.1+1 the one non-integer feed,
+f32-rounded, the reset at tick 31 for vx3).
