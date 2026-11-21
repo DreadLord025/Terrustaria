@@ -491,6 +491,32 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         n.worm_id = 1;
         app.npcs.push(n);
     }
+    // W4-d11 DOC-SWEEP — the 584's catch `HealEffect`
+    // (`Projectile.cs:34089` → `NPC.HealEffect`, `NPC.cs:77433-77448`):
+    // the HealLife combat text at the host's hitbox. The C# call sits
+    // inside `UpdateProjectiles` (`Main.cs:17775`), so the placement
+    // draws ride THIS pass's stream (the S1-E-21c drain convention —
+    // the potion heal-text seam's `spawn_amount` shape, but the NPC
+    // rect + the projectile stream, not the player's).
+    for (x, y, w, h, amount) in app.projectiles.drain_heal_texts() {
+        let text = amount.to_string();
+        let size = match app.lookups.combat_text_font.as_ref() {
+            Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+            None => [text.chars().count() as f32 * 8.0, 10.0],
+        };
+        let location = crate::combat_text::Rect { x, y, width: w, height: h };
+        crate::combat_text::spawn_amount(
+            &mut app.combat_texts,
+            location,
+            crate::combat_text::HEAL_LIFE,
+            amount,
+            false,
+            false,
+            size,
+            1.0,
+            app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
+        );
+    }
     // `AI_108`'s 578 bolt spawn (`Projectile.cs:33838-33841`): the lightning
     // marker resolves into the ritual bolt (580) with the marker's payload.
     for (owner, damage, kb, x, y, vx, vy, ai0) in app.projectiles.drain_ritual_bolts() {

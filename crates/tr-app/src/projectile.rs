@@ -656,6 +656,13 @@ pub struct Projectile {
     /// ai[1] - 1)`): (x, y, vx, vy, ai1). The sim re-spawns the same kind
     /// with ai0 = 10 (the pool cannot spawn from a slot arm mid-iteration).
     pub wants_cloud_segment: Option<(f32, f32, f32, f32, f32)>,
+    /// W4-d11 DOC-SWEEP — the 584 NurseSyringeHeal's catch `HealEffect`
+    /// (`Projectile.cs:34089` → `NPC.HealEffect`, `NPC.cs:77433-77448`):
+    /// (x, y, w, h, amount) — the host NPC's hitbox + the healed life.
+    /// The world-sim pass spawns the HealLife combat text on the
+    /// `UpdateProjectiles` stream (the `wants_mark_spawn` intent shape —
+    /// the pool cannot borrow the App's combat-text vec).
+    pub wants_heal_text: Option<(f32, f32, f32, f32, i32)>,
     /// The aiStyle-50 one-shot (`Projectile.cs:74341-74350`'s `Kill()` arm):
     /// the Inferno Fork bolt 295 spawns its blast 296 exactly once, however
     /// the bolt died (the arm's fade kill, `timeLeft`, or a penetrating hit).
@@ -829,6 +836,7 @@ impl Default for Projectile {
             wants_ritual_bolt: None,
             wants_shark_spawn: None,
             wants_cloud_segment: None,
+            wants_heal_text: None,
             minion: false,
             sentry: false,
             minion_slots: 0.0,
@@ -16197,6 +16205,21 @@ impl ProjectilePool {
         self.lazy_npc_owned_search[npc_slot] = proj_slot;
     }
 
+    /// W4-d11 DOC-SWEEP — the 584's catch `HealEffect` intents
+    /// (`Projectile.cs:34089` → `NPC.HealEffect`, `NPC.cs:77433-77448`):
+    /// (x, y, w, h, amount) — the host's hitbox + the healed life. The
+    /// world-sim pass spawns the HealLife combat texts on the
+    /// `UpdateProjectiles` stream (the `drain_mark_spawns` shape).
+    pub fn drain_heal_texts(&mut self) -> Vec<(f32, f32, f32, f32, i32)> {
+        let mut out = Vec::new();
+        for p in self.slots.iter_mut() {
+            if let Some(req) = p.wants_heal_text.take() {
+                out.push(req);
+            }
+        }
+        out
+    }
+
     /// S1-D-3 W-9 fishron wiring — the aiStyle-64 cloud's shark spawn
     /// (`Projectile.cs:29509-29516`): the (npc_type, x, y, vx, vy, ai2,
     /// ai3) the world sim resolves into the NPC vec (the mark-spawn
@@ -30676,6 +30699,7 @@ mod phasmal_projectile_tests {
             wants_ritual_bolt: None,
             wants_shark_spawn: None,
             wants_cloud_segment: None,
+            wants_heal_text: None,
             w: 14.0,
             h: 14.0,
             tile_collide: true,
@@ -31143,6 +31167,7 @@ mod ritual_projectile_tests {
             wants_ritual_bolt: None,
             wants_shark_spawn: None,
             wants_cloud_segment: None,
+            wants_heal_text: None,
             w: 32.0,
             h: 32.0,
             tile_collide: false,

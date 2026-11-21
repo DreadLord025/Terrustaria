@@ -827,10 +827,13 @@ fn wrench_movement(p: &mut Projectile, world: &World) {
 /// max(value.Y, vel.Y)` then `++`) and the `vel.X * 0.05` spin.
 ///
 /// `host` is the pool-resolved `ai[0]` NPC slot (the C#
-/// `Main.npc[(int)ai[0]]`). The `HealEffect` (`:34089`) is the combat-
-/// text visual — the heal itself (`life += num822`) is the state write;
-/// the visual is a cited skip (no combat-text layer in the pool). ZERO
-/// `Main.rand` draws.
+/// `Main.npc[(int)ai[0]]`). W4-d11 DOC-SWEEP: the `HealEffect`
+/// (`:34089` → `NPC.cs:77433-77448`) rides the `wants_heal_text` intent
+/// — the world-sim pass spawns the HealLife combat text at the host's
+/// hitbox on the `UpdateProjectiles` stream (the C# call sits inside
+/// `UpdateProjectiles`, `Main.cs:17775`; the heal-text seam's
+/// `combat_text::spawn_amount` shape). ZERO `Main.rand` draws in the
+/// arm itself (the text's two placement draws run at the drain).
 ///
 /// Movement: 110 is not on `UpdatePosition`'s skip list (`:20435`), so
 /// the dispatch's `kill_step` integrates the seek velocity.
@@ -862,7 +865,11 @@ pub(crate) fn ai_nurse_syringe(p: &mut Projectile, host: Option<&mut Npc>) {
         }
         if num822 > 0 {
             h.hp += num822;
-            // `:34089`'s HealEffect: the combat-text visual, cited skip.
+            // `:34089`'s HealEffect (W4-d11 DOC-SWEEP): the intent carries
+            // the host's hitbox + the healed amount; the world-sim pass
+            // spawns the HealLife text (`NPC.HealEffect`,
+            // `NPC.cs:77433-77448` — the rect is the NPC's position/size).
+            p.wants_heal_text = Some((h.x, h.y, hw, hh, num822));
         }
     } else {
         // `:34094-34102` — the seek: normalize to the latched speed, the
@@ -1695,7 +1702,8 @@ mod tests {
     }
 
     /// `:34078-34090` — the catch heals min(lifeMax - life, 20), positive
-    /// only; a full-health host heals nothing.
+    /// only; a full-health host heals nothing. W4-d11 DOC-SWEEP: the
+    /// heal queues the HealEffect intent (the host hitbox + the amount).
     #[test]
     fn w4_d11_110_the_catch_heals_up_to_twenty() {
         let mut nurse = host_npc(crate::npc::NpcKind::Nurse, 1002.0, 1000.0);
@@ -1707,7 +1715,13 @@ mod tests {
         ai_nurse_syringe(&mut p, Some(&mut nurse));
         assert!(!p.active, "the catch kills the syringe");
         assert_eq!(nurse.hp, 220, "min(50, 20) = 20");
-        // A full-health host: no heal.
+        // The HealEffect intent: the host's hitbox + the healed amount.
+        let (hx, hy, hw, hh, amount) = p.wants_heal_text.expect("the heal text");
+        assert_eq!(amount, 20);
+        assert_eq!((hx, hy), (nurse.x, nurse.y), "the NPC rect, not the centre");
+        let (nw, nh) = nurse.size();
+        assert_eq!((hw, hh), (nw, nh));
+        // A full-health host: no heal, no text.
         let mut nurse = host_npc(crate::npc::NpcKind::Nurse, 1002.0, 1000.0);
         nurse.max_hp = 250;
         nurse.hp = 250;
@@ -1716,6 +1730,7 @@ mod tests {
         p.local_ai[1] = 6.0;
         ai_nurse_syringe(&mut p, Some(&mut nurse));
         assert_eq!(nurse.hp, 250, "no missing life -> no heal");
+        assert!(p.wants_heal_text.is_none(), "no heal -> no text");
         // A small wound heals exactly the wound.
         let mut nurse = host_npc(crate::npc::NpcKind::Nurse, 1002.0, 1000.0);
         nurse.max_hp = 250;
@@ -1725,6 +1740,7 @@ mod tests {
         p.local_ai[1] = 6.0;
         ai_nurse_syringe(&mut p, Some(&mut nurse));
         assert_eq!(nurse.hp, 250, "min(7, 20) = 7");
+        assert_eq!(p.wants_heal_text.map(|r| r.4), Some(7));
     }
 
     /// `:34094-34102` — the seek: the Y floor (value.Y = max(value.Y,
