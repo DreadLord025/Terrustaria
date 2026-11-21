@@ -4391,6 +4391,11 @@ mod d38_sheet_tests {
         (NpcKind::AngryBonesBig, 40.0, 896.0, 16),
         (NpcKind::AngryBonesBigMuscle, 40.0, 840.0, 15),
         (NpcKind::AngryBonesBigHelmet, 40.0, 840.0, 15),
+        (NpcKind::BirdBlue, 30.0, 120.0, 5),
+        (NpcKind::BirdRed, 30.0, 120.0, 5),
+        (NpcKind::Squirrel, 50.0, 192.0, 6),
+        (NpcKind::Mouse, 20.0, 96.0, 6),
+        (NpcKind::Raven, 44.0, 270.0, 5),
     ];
 
     /// Every wave kind draws its OWN sheet, the row count is the verbatim
@@ -4399,7 +4404,7 @@ mod d38_sheet_tests {
     /// non-multiple, kept as the C# drops it).
     #[test]
     fn w4_d38_the_strips_divide_into_their_vanilla_rows() {
-        assert_eq!(STRIPS.len(), 15, "the wave so far");
+        assert_eq!(STRIPS.len(), 20, "the wave so far");
         for &(kind, w, h, rows) in STRIPS {
             let net = texture_net_id(kind);
             assert_eq!(net, kind.cs_id(), "{kind:?} draws its own sheet");
