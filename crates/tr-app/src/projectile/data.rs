@@ -3649,6 +3649,37 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // LOCAL pair (-1), tileCollide false, ignoreWater, ownerHitCheck
             // (the 190 arm is d19's lane; the row lets the spawn land).
             DEAD_CELLS_FLINT_SLASH => (16.0, 16.0, 190, 2, TIME_LEFT_DEFAULT, 0, false, false, false, (true, -1, false, -1, 0, 1.0)),
+            // W4-d20 T5 — copied VERBATIM from d19 (`projectile/data.rs`
+            // :3696-3723) so the terra-chain use-path arms' paired slashes
+            // spawn on this base. Merge keep-one: the rows are identical;
+            // the 1043 row above is d19's :3725 twin (the merge canary).
+            // `Projectile.cs:9298-9314` — the Night's Edge slash (972):
+            // 16x16, aiStyle 190, melee (the overlay), penetrate 2, the
+            // local-immunity pair (-1), tileCollide false, ignoreWater
+            // (the overlay).
+            NIGHTS_EDGE => (
+                16.0, 16.0, 190, 2, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (true, -1, false, -1, 0, 1.0),
+            ),
+            // `Projectile.cs:9354-9370` / `:9466-9482` — the Excalibur
+            // (982) and the Horseman's Blade (997): the 972 shape with
+            // penetrate 3.
+            EXCALIBUR | HORSEMANS_BLADE => (
+                16.0, 16.0, 190, 3, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (true, -1, false, -1, 0, 1.0),
+            ),
+            // `Projectile.cs:9371-9387` — the True Excalibur (983): the
+            // 982 shape with penetrate 6.
+            TRUE_EXCALIBUR => (
+                16.0, 16.0, 190, 6, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (true, -1, false, -1, 0, 1.0),
+            ),
+            // `Projectile.cs:9388-9404` — the Terra Blade's slash (984):
+            // the 982 shape (penetrate 3).
+            TERRA_BLADE_2 => (
+                16.0, 16.0, 190, 3, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (true, -1, false, -1, 0, 1.0),
+            ),
             // W4-d20 — `Projectile.cs:9315-9329` (973, the True Night's Edge
             // spin slash): 30x30, aiStyle 191, friendly, melee, penetrate 3,
             // LOCAL pair (10), tileCollide false, ignoreWater, alpha 255,
@@ -4286,7 +4317,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || matches!(kind, DEAD_CELLS_FLINT | DEAD_CELLS_FLINT_SHOT | DEAD_CELLS_FLINT_SLASH)
             // W4-d20 — `Projectile.cs:9325`/`:9415`: the two aiStyle-191
             // sword shots (973/985) set `ignoreWater = true`.
-            || matches!(kind, TRUE_NIGHTS_EDGE | TERRA_BLADE_2_SHOT),
+            || matches!(kind, TRUE_NIGHTS_EDGE | TERRA_BLADE_2_SHOT)
+            // W4-d20 T5 — d19 copy (the overlay list at d19 data.rs
+            // :4387-4388): `Projectile.cs:9308`/`:9364`/`:9381`/`:9398`/
+            // `:9476` — the four 190-slash rows set `ignoreWater = true`
+            // (the 1043 already rides the flint-trio arm above).
+            || matches!(kind, NIGHTS_EDGE | EXCALIBUR | TRUE_EXCALIBUR | TERRA_BLADE_2 | HORSEMANS_BLADE),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4327,6 +4363,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // W4-d20 — `Projectile.cs:9321`/`:9411`: the two
                     // aiStyle-191 sword shots (973/985) set melee.
                     | TRUE_NIGHTS_EDGE | TERRA_BLADE_2_SHOT
+                    // W4-d20 T5 — d19 copy (the melee list at d19 data.rs
+                    // :4428-4429): `Projectile.cs:9304`/`:9360`/`:9377`/
+                    // `:9394`/`:9472` — the four 190-slash rows set melee
+                    // (the 1043 already rides the flint arm above).
+                    | NIGHTS_EDGE | EXCALIBUR | TRUE_EXCALIBUR | TERRA_BLADE_2
+                    | HORSEMANS_BLADE
             ),
         ranged: matches!(
             kind,
@@ -4570,6 +4612,28 @@ pub const DEAD_CELLS_FLINT_SHOT: u16 = 1041;
 /// aiStyle 190 (`Projectile.cs:9858-9874`). W4-d20 (the 190 arm is d19's
 /// lane; the row lets the flint's spawn land).
 pub const DEAD_CELLS_FLINT_SLASH: u16 = 1043;
+/// `ProjectileID.NightsEdge` (972, `ProjectileID.cs:2498`) — the
+/// Night's Edge slash, aiStyle 190 (`:9298-9314`). W4-d20 T5 — copied
+/// VERBATIM from d19 (`task/W4-d19-proj-ai-181-190`, data.rs:1145) so the
+/// terra-chain use-path arms spawn on this base; merge keep-one (the
+/// definitions are identical).
+pub const NIGHTS_EDGE: u16 = 972;
+/// `ProjectileID.Excalibur` (982, `ProjectileID.cs:2518`) — the
+/// Excalibur slash, aiStyle 190 (`:9354-9370`). W4-d20 T5 — d19 copy
+/// (data.rs:1148), merge keep-one.
+pub const EXCALIBUR: u16 = 982;
+/// `ProjectileID.TrueExcalibur` (983, `ProjectileID.cs:2520`) — the
+/// True Excalibur slash, aiStyle 190 (`:9371-9387`). W4-d20 T5 — d19 copy
+/// (data.rs:1151), merge keep-one.
+pub const TRUE_EXCALIBUR: u16 = 983;
+/// `ProjectileID.TerraBlade2` (984, `ProjectileID.cs:2522`) — the Terra
+/// Blade's big-sword slash, aiStyle 190 (`:9388-9404`). W4-d20 T5 — d19
+/// copy (data.rs:1154), merge keep-one.
+pub const TERRA_BLADE_2: u16 = 984;
+/// `ProjectileID.TheHorsemansBlade` (997, `ProjectileID.cs:2548`) — the
+/// Horseman's Blade slash, aiStyle 190 (`:9466-9482`). W4-d20 T5 — d19
+/// copy (data.rs:1157), merge keep-one.
+pub const HORSEMANS_BLADE: u16 = 997;
 /// `ProjectileID.TrueNightsEdge` (973) — the True Night's Edge spin slash,
 /// aiStyle 191 (`Projectile.cs:9315-9329`). W4-d20.
 pub const TRUE_NIGHTS_EDGE: u16 = 973;
