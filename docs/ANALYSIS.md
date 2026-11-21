@@ -1207,12 +1207,14 @@ five items, each re-verified against the cited C# windows:
      frameY ±72 flip; new witness
      `the_water_fountain_trip_flips_the_2x4_body_frame`); the flowing
      frame feeds `SceneMetrics.ActiveFountainColor` ✓ (`scene.rs:648-662`,
-     witnesses in `scene_scan.rs`); the water-style consumer ✗ — the
-     port's `biome::calculate_water_style` does not read
-     `active_fountain_color` (the `Main.cs:57390-57393` head arm), so the
-     fountain's water recolour does not reach the liquid/waterfall passes
-     yet. End-to-end status: **place → switch → scene metric work; the
-     water-style head arm is the remaining gap** (a biome-lane item).
+     witnesses in `scene_scan.rs`); the water-style consumer ✓ AS OF THE
+     RETIRE PHASE — `biome::calculate_water_style_with_fountain` ports the
+     `Main.cs:57390-57393` head arm and the draw/rain consumers read it
+     (see "The fountain head arm" below). End-to-end status: **place →
+     switch → scene metric → water-style recolour all work** (the
+     closeout's "remaining biome-lane gap" is closed on THIS branch —
+     g46/g47's `biome.rs` was byte-identical to the pre-port version, the
+     arm was unclaimed).
 4. **StopWaterfallAmbienceAudio — the g24/g73 quit-stop KEEP-ONE (retire
    phase).** The closeout (`4e7e3f58`) claimed g24's recorded deferral and
    wired `save_and_quit` → `stop_waterfall_ambience` (`:6704`), routing the
@@ -1312,6 +1314,47 @@ every semantic it carries is folded above. The merger still takes ONLY
 this branch. Re-check `git log 41b64b04..origin/task/W4-g75-honeyfall-draw`
 at merge time for any further sweep commits.
 
+### The fountain head arm (W4-g73 RETIRE phase, 2026-11-21, code-only)
+
+The closeout's noted biome-lane gap — `Main.CalculateWaterStyle`'s fountain
+head arm (`Main.cs:57390-57393`: `SceneMetrics.ActiveFountainColor >= 0 &&
+!ignoreFountains` returns the colour outright, BEFORE the blood-moon 9 arm
+and the bgStyle switch) — is PORTED on this branch. Claim census first:
+g46/g47's `crates/tr-app/src/biome.rs` is byte-identical to the pre-port
+version (empty diff), their ANALYSIS carries the same "ActiveFountainColor
+has no consumer yet" note, and no biome lane (g40-g44, d129) touches the
+file — the arm was UNCLAIMED, so the falls lane takes it (the tile-207
+chain's last link, closeout item 3).
+
+* `biome::calculate_water_style_with_fountain(world, camera, colour)` — the
+  head arm first, then the existing camera-derived biome walk (the walk
+  stands in for the C# bgStyle switch, the pre-existing recorded
+  approximation; the blood-moon/remix arms stay unported as before).
+  `calculate_water_style` stays the `ignoreFountains: true` shape — its
+  remaining caller is the capture path (`CaptureBiome.cs:158`), which must
+  NOT see fountain colours.
+* Consumers wired: `render/tiles.rs::draw_tiles` takes
+  `active_fountain_color` (fed from `self.scene_metrics` at the frame call)
+  and resolves `Main.waterStyle` through the head arm — the liquid passes,
+  the liquid-behind masks and the waterfall sheet tints all recolour;
+  `frame/draw.rs`'s `DrawWaters` liquidAlpha ramp (`:57475`) and the
+  legacy-light `water_style` input read it too.
+* `Rain.NewRain` (`Rain.cs:205`) reads the STORED `Main.waterStyle` static,
+  not a spawn-time re-derivation: `Rain::water_style` is a new latch field
+  the weather pass (`world_sim/weather.rs::update_rain`) feeds beside
+  `gfx_quality` — the port's spawn previously re-derived from the camera
+  (a deviation the head arm would have made visible); now the fountain
+  colour reaches the drop frame types (`waterStyle*3 + Next(3)`).
+* The colour source is unchanged: the tile-207 flowing-frame scan
+  (`scene.rs`, `SceneMetrics.cs:486-517`'s 0/12/3/5/2/10/4/9/8/6 column
+  table) — place → `SwitchFountain`'s frameY ±72 flip → scan → head arm →
+  recolour is the complete C# chain.
+
+4 witnesses written NOT run (`the_fountain_head_arm_outranks_every_biome_arm`,
+`no_fountain_falls_through_and_the_capture_path_ignores_fountains`,
+`the_stored_fountain_water_style_feeds_the_drop_frame_types`,
+`the_tile_pass_water_style_carries_the_fountain_head_arm`) + anchors row.
+The stale "no consumer yet" S1-L-1 note below is superseded by this record.
 
 ## Wind sway and tree leaves (TILE-DRAW-3)
 
@@ -22421,12 +22464,12 @@ source order: `ScanTiles`, `ScanOnScreenTiles`, `ScanNPCPositions`,
   `player.musicBox`/`musicBoxSilence`/`happyFunTorchTime` (`:747-774`) - the player
   struct has none of those fields. `shimmerWet` is the one `AddPlayerEffects` input
   the port does carry and it is wired (it was already).
-* **`ActiveFountainColor` has no consumer yet.** `Main.CalculateWaterStyle`
-  (`Main.cs:57387-57392`) returns it when `>= 0`, but the port's
-  `biome::calculate_water_style` derives the style from the camera alone and does not
-  take the metrics. Wiring it means threading the scan through three call sites
-  (`frame.rs:1131`, `render/tiles.rs:322`, `rain.rs:941`) вЂ” the water-style half of
-  the row, not this one.
+* **`ActiveFountainColor`'s consumer — SUPERSEDED by the W4-g73 retire
+  phase.** This note recorded the gap (`Main.CalculateWaterStyle`
+  `Main.cs:57388-57393` returns the colour when `>= 0`, the port derived
+  the style from the camera alone); the head arm is now PORTED as
+  `biome::calculate_water_style_with_fountain` with the draw/rain consumers
+  wired — see ANALYSIS "The fountain head arm (W4-g73 RETIRE phase)".
 * **`TownNPCCount` is now real.** It feeds `MusicEnv.town_npcs` (the `>= 3` town
   music gate, `Main.cs:12199`) and `SpawnContext.town_npcs` (the spawn-pressure
   tiers, `NPC.cs:604-621`), both of which were hardcoded to `0` with an "M4-TOWN"

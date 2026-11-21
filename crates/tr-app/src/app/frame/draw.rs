@@ -623,8 +623,13 @@ impl App {
                     // `Main.DrawWaters` (`Main.cs:57473-57489`): the `liquidAlpha`
                     // cross-fade ramps per frame while the current water style is a
                     // plain water style — lava (1), honey (11) and shimmer (14) sit
-                    // outside the ramp.
-                    let water_style_now = crate::biome::calculate_water_style(world, draw_cam);
+                    // outside the ramp. The style carries the fountain head arm
+                    // (`CalculateWaterStyle`, `:57390-57393`) like `Main.waterStyle`.
+                    let water_style_now = crate::biome::calculate_water_style_with_fountain(
+                        world,
+                        draw_cam,
+                        self.scene_metrics.active_fountain_color,
+                    );
                     if crate::render::liquids::is_liquid_style_water(water_style_now) {
                         for (i, a) in liquid_alpha.iter_mut().enumerate() {
                             *a = if i == water_style_now {
@@ -734,7 +739,11 @@ impl App {
                         scratch.all_lights.extend_from_slice(&scratch.waterfall_lights);
                         scratch.all_lights.extend_from_slice(self.entity_lights.visible());
                         let mut legacy_water_style =
-                            crate::biome::calculate_water_style(world, *camera);
+                            crate::biome::calculate_water_style_with_fountain(
+                                world,
+                                *camera,
+                                self.scene_metrics.active_fountain_color,
+                            );
                         if let Some(n) = crate::env::water_style() {
                             legacy_water_style = n.min(14);
                         }
@@ -1207,6 +1216,10 @@ impl App {
                             &remote_players.values().cloned().collect::<Vec<_>>(),
                             *edit_target,
                             liquid_alpha,
+                            // The `CalculateWaterStyle` head arm's input
+                            // (`Main.cs:57390-57393`): the scene scan's
+                            // flowing-fountain colour (-1 = none).
+                            self.scene_metrics.active_fountain_color,
                             // `TrySparkling`'s draw thread: the frame count pins it.
                             (*frame_count as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ world.seed,
                             wind,
