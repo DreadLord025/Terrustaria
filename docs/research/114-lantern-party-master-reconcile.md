@@ -818,4 +818,95 @@ cargo/rustc/tests/rustfmt/graphify invoked in any phase.
 | `5cdf6da6` | 1 — §8 the v18 9-way union input (moon-boss byte layout, C# order) |
 | `96b13e3b` | 2 — §9 the event-flag census (26 sites, ids 0–25, two kind-gaps) |
 | `9ac39893` | 3 — §10 wind/rain compose-verify (split returns + compose witness + arg re-pin) |
-| (this commit) | 4 — §11 the FINAL checklist + 105/70 cross-receipts |
+| `4f72847e` | 4 — §11 the FINAL checklist + 105/70 cross-receipts |
+
+---
+
+## 12. RETIRE — the 106-byte-union BROADCAST: f44/g71 FINAL read, CORRECTION-input
+
+Both persist FINALs re-read off their pushed tips at retire (this phase):
+
+- **f44 FINAL** = `bdd1cc79a` (`origin/task/W4-f44-save-plr-2`),
+  research/132 §3-L3: the "reconciled FINAL **97-byte** head" —
+  g70 forest `[0..16]` → g72 cave `[16..47]` → g71 surface `[47..50]` →
+  g69 crimson `[50]` → d125 empress `[51]` → g90 books `[52..54]` →
+  c43 identity `[54..97]` → d109 dense LAST.
+- **g71 FINAL** = `f08e8d41e` (`origin/task/W4-g71-bg-layers-2`),
+  research/**92-doc-sweep-bg.md** §1 (the union lives THERE — the
+  same-tip `92-roadmap-reverification.md` is a different, ROADMAP doc):
+  the **21-byte** five-branch head — g70 forest `[0..16]` → g71 surface
+  `[16..19]` → g69 crimson `[19]` → d125 empress `[20]` → d109 dense LAST.
+
+**NEITHER aligns with §8's 106-byte head. This is the CORRECTION-input**
+(their-scope-missing blocks, not a layout dispute):
+
+### 12a. The missing-quintet delta (both FINALs)
+
+| Block | §8 seat | f44 97-head | g71 21-head |
+| --- | --- | --- | --- |
+| **c39 moon-boss quintet, 5 B** (`WorldFile.cs:1347-1351`, C# ROW order — IceQueen before Santank before Tree) | `[95..100]` | **ABSENT** | **ABSENT** |
+| **g87 licenses, 3 B** (`:1392-1394`, tip `dfbcaf94`) | `[101..104]` | **ABSENT** | **ABSENT** |
+| g72 cave, 31 B | `[60..91]` | present `[16..47]` | absent |
+| g90 boosters, 2 B | `[104..106]` | present `[52..54]` | absent |
+| c43/f45 identity, 44 B | `[0..44]` FIRST | present LAST `[54..97]` | absent |
+| g70/g71/g69/d125 (16+3+1+1) | `[44..60]`/`[91..95]`/`[100]` | present | present |
+| d109 dense LAST | `[106..]` | LAST | LAST |
+
+Arithmetic: **21 + 85 = 106** (g71's head + cave 31 + quintet 5 +
+licenses 3 + boosters 2 + identity 44); **97 + 9 = 106** only after
+f44's own off-by-one is fixed (below). f44's §3-L3 claimant table lists
+eight claimants (g70/g71/g69/d125/g90/g72/c43/d109) — **c39 and g87 are
+not in its set at all**; g71's §1 seats five. d125 IS seated in both —
+its empress byte is not part of the correction.
+
+### 12b. f44's internal off-by-one (independent of the missing blocks)
+
+f44's stated sum "16+31+3+1+1+2+44" = **98**, not 97 — and its own
+offset table contradicts it: the c43 identity block is 44 B but seated
+`[54..97]`, a **43-byte span**. Either the books end at `[54]` and
+identity runs `[54..98]` (head 98), or one byte of identity is silently
+dropped. The 97 total, the `v18_tail_len = 97 + W*H` return and every
+"→ 97" truncation move in its §3-L3/§5 inherit the error. **The
+correction stands regardless: neither 97 nor 98 carries the quintet or
+the licenses.**
+
+### 12c. The order divergence (identity FIRST vs LAST)
+
+f44 seats identity LAST ("identity fields are not bg-family, so they
+close the fixed head after the books"); §8 seats it FIRST because
+`SaveWorldHeader` writes generator version/GUID/worldId at
+`WorldFile.cs:1225-1227` and CreationTime/LastPlayed at `:1250-1251`
+BEFORE `SaveWorldFlags` starts — the C# `.wld` field order both notes'
+own order-rules invoke. §8 also keeps g70→g71 adjacency with crimson as
+the group tail (g71 §1's unit rule), while f44 puts surface before
+crimson. The merger must pick ONE order; **§8's is the C#-field-order
+reading** and the one every §8 truncation constant already pins. If the
+merger instead keeps f44's order, the quintet/licenses/boosters/empress
+still ride in C# row order after the style groups — the correction
+below re-seats mechanically either way.
+
+### 12d. The CORRECTION-input (the exact insertions)
+
+Into f44's head (after fixing 12b): insert **c39's quintet (5 B,
+`[1347-1351]` row order) immediately after the empress byte**, then
+**g87's licenses (3 B)** — the C# rows `:1347-1351` → `:1392-1394` with
+empress (`NPC.cs:6393`'s flag, the `.wld` row between) preceding both;
+the books (`:1407-1408`) close the flags. Into g71's head: seat g72's
+31-B cave block between forest and surface (its own 64-add §2 seat),
+g90's 2-B books, c43's 44-B identity, AND the same quintet+licenses.
+**Either path reconciles to §8's 106-byte head** (or §8's block set in
+f44's order — one head, one order, 106 fixed bytes + W×H dense, VERSION
+18, forward-only). The `underworldBG` open seat (f44 §3-L3, C# `:1376`)
+is orthogonal: if it lands, +1 byte → 107, re-pin once, both notes.
+
+### 12e. Receipt state
+
+- **f44**: DIVERGES — correction-input published (missing quintet +
+  licenses; its own 97/98 arithmetic error; identity-order divergence).
+- **g71**: DIVERGES — correction-input published (its five-branch §1
+  predates the four later claims: g72/g90/c43-f45/c39/g87 — 85 bytes).
+- **§8 stands as the authoritative c39 input** — no §8 byte moves; the
+  quintet layout, the 106 head and the +106/-106 constants are unchanged
+  on this tip (`4f72847e` lineage). The broadcast IS this section; the
+  merger takes §8's head or mechanically re-seats per 12d — never a
+  97/98/21-byte head that drops a claimant.
