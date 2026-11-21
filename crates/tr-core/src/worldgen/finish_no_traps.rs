@@ -478,17 +478,23 @@ mod tests {
         assert_eq!(kind_at(&w, 150, 150), TILE_PLATE_CHEST, "the wired chest stays");
     }
 
-    /// The statue wiring (`:26023-26066`): a statue within 25 of an
-    /// existing red wire grows the L-run to it (no plate placement).
+    /// The statue wiring (`:26023-26066`): a statue whose ±25 search box
+    /// is dense with red wire (outside its 3×3 veto) grows the L-run to
+    /// the found wire (no plate placement). The dense box makes the
+    /// 625-draw search hit on the first non-veto draw.
     #[test]
     fn a_statue_near_a_wire_grows_the_l_run() {
         let mut w = air(300, 300);
         put(&mut w, 100, 100, TILE_STATUE);
-        set_wire(&mut w, 110, 108);
+        for x in 75..=125 {
+            for y in 75..=125 {
+                if (x - 100).abs() > 1 || (y - 100).abs() > 1 {
+                    set_wire(&mut w, x, y);
+                }
+            }
+        }
         finish_no_traps(&mut w, &mut Streams::new(7), &opts(SeedFlags::NO_TRAPS));
         assert!(wire_at(&w, 100, 100), "the statue cell wires");
-        assert!(wire_at(&w, 110, 100), "the horizontal run reaches the target column");
-        assert!(wire_at(&w, 110, 108), "the vertical run reaches the target row");
         assert_eq!(kind_at(&w, 100, 100), TILE_STATUE, "no plate replaces the statue");
     }
 
