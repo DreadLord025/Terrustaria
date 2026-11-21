@@ -1247,13 +1247,19 @@ impl App {
             // `case 94` — the debug-command sync (W4-g50,
             // `MessageBuffer.cs:3463-3518`): the reader consumes the four
             // fields, then gates on `DebugOptions.enableDebugCommands`
-            // (`:3469`) before the `/showdebug` / `/randomizeprojslots` /
-            // `/setserverping` / `/quickload-*` switch. The `DebugOptions`
-            // shared-state + `QuickLoad` test harness are unported (the port's
-            // debug panel is the `debug`-feature cheat sheet, not the C#
-            // `DebugOptions` statics), so the apply is parked; the codec is
-            // byte-verbatim (`net.rs`).
-            C2s::DevCommands(_) => {}
+            // (`:3469`, the `TR_DEBUG_COMMANDS` pin — the d85 registry's
+            // gate) before the command switch. WIRED (re-probe): the three
+            // shared-state arms store into `App.debug_shared` (the C#
+            // statics' port home); the `/quickload-*` harness arms stay
+            // parked (`Testing/QuickLoad.cs` unported — the probe/response
+            // relay needs the JoinWorld serializer). The d85 62-row
+            // registry is the UI list only (its processors are explicitly
+            // unported, `ui/debug_commands.rs` module doc) — these three
+            // arms are the MessageBuffer reader's own switch, not the
+            // registry's.
+            C2s::DevCommands(d) => {
+                self.apply_dev_commands(server, id, &d);
+            }
         }
     }
 
@@ -1858,6 +1864,41 @@ impl App {
                 }),
             );
         }
+    }
+
+    /// `case 94`'s shared switch (`MessageBuffer.cs:3469-3483`): the
+    /// `enableDebugCommands` gate (`TR_DEBUG_COMMANDS`, the d85 registry's
+    /// pin), then the three shared-state arms. `number2` is read as a float
+    /// and truncated to int (`(int)this.reader.ReadSingle()`, `:3467`) —
+    /// the codec carries the float, the comparison is on the truncation.
+    /// The `DebugNetworkStream.Latency = ping / 2` half (`:3482`) is the
+    /// unported test-harness stream — the ping value stores.
+    fn apply_dev_commands_shared(&mut self, d: &net::DevCommands) {
+        if !crate::env::debug_commands() {
+            return; // `:3469-3472`
+        }
+        let num = d.number2 as i32;
+        match d.command.as_str() {
+            "/showdebug" => {
+                self.debug_shared.report_command_usage = num == 1; // `:3476`
+            }
+            "/randomizeprojslots" => {
+                self.debug_shared.randomize_projectile_slots = num == 1; // `:3479`
+            }
+            "/setserverping" => {
+                self.debug_shared.server_ping = num; // `:3481`
+            }
+            _ => {} // the `/quickload-*` harness arms stay parked
+        }
+    }
+
+    /// `case 94`'s host leg: the shared switch, then the quickload relay
+    /// (`MessageBuffer.cs:3484-3516`) — PARKED (the `QuickLoad` test
+    /// harness is unported: the probe's `JoinWorld().WithCurrentState()`
+    /// serializer and the response's `Deserialize`/`TryRead`/`Set` chain
+    /// have no port; the relay's `SendData(94, …)` targets ride it).
+    fn apply_dev_commands(&mut self, _server: &net::Server, _id: u32, d: &net::DevCommands) {
+        self.apply_dev_commands_shared(d);
     }
 
     /// `Player.ConsumeItem(type)`'s forward scan (`Player.cs:9269-9308`,
@@ -3398,10 +3439,13 @@ impl App {
             S2c::QuickStackBlocked(_) => {}
             // `case 94` — the debug-command sync (W4-g50,
             // `MessageBuffer.cs:3463-3518`): the same `enableDebugCommands`
-            // gate + command switch as the host leg. The `DebugOptions`
-            // shared-state + `QuickLoad` test harness are unported, so the
-            // apply is parked; the codec is byte-verbatim (`net.rs`).
-            S2c::DevCommands(_) => {}
+            // gate + command switch as the host leg — the client stores the
+            // three shared statics (the `SyncToJoiningPlayer` push,
+            // `DebugOptions.cs:64-72`, lands here). The `/quickload-*`
+            // harness arms stay parked (QuickLoad unported).
+            S2c::DevCommands(d) => {
+                self.apply_dev_commands_shared(&d);
+            }
             // `151` — the slot is gone.
             S2c::ItemDead { slot } => {
                 self.net_items.remove(&slot);
@@ -8315,5 +8359,33 @@ mod message_family_tests {
             unreachable!()
         };
         assert_eq!(inv.get(&10).map(|i| i.stack), Some(0), "the host copy restored");
+    }
+
+    /// `case 94` (`MessageBuffer.cs:3463-3483`): the shared-state arms store
+    /// under the enableDebugCommands gate; the float number2 truncates to
+    /// int before the `== 1` comparison. The env pin is presence-based, so
+    /// this witness pins the DEFAULT-OFF gate (no TR_DEBUG_COMMANDS in the
+    /// test env): the message is consumed, nothing stores. WRITTEN NOT RUN.
+    #[test]
+    fn w4_g50_the_94_dev_commands_gate_stores_nothing_when_disabled() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The C# static-ctor defaults (`DebugOptions.cs:75-79`).
+        assert!(host_app.debug_shared.report_command_usage);
+        assert!(!host_app.debug_shared.randomize_projectile_slots);
+        assert_eq!(host_app.debug_shared.server_ping, 0);
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::DevCommands(net::DevCommands {
+                command: "/setserverping".into(),
+                number: 0,
+                number2: 120.0,
+                number3: 0.0,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        if !crate::env::debug_commands() {
+            assert_eq!(host_app.debug_shared.server_ping, 0, "the gate refused the store");
+        } else {
+            assert_eq!(host_app.debug_shared.server_ping, 120, "the enabled gate stored");
+        }
     }
 }
