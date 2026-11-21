@@ -183,6 +183,8 @@
 //! | 793-800 | `:86746-86756` | the shark family 65/692 death (4 gores each, vel x0.8, +14 X tails) |
 //! | 801-808 | `:86760-86770` | the sandshark 542/543 death (4 gores each) |
 //! | 809-816 | `:86774-86784` | the sandshark 544/545 death (completes the shark family) |
+//! | 817-821 | `:86801-86805` | the 195/196 LostGirl/Nymph death (5 gores 254/255/255/256/256) |
+//! | 822-826 | `:86842-86846` | the 206 IcyMerman death (5 gores 273/274/274/275/275, type-137 dust) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4889,6 +4891,74 @@ fn shark_family_death(
     gore.new_gore(rng, world, pos + Vec2::new(14.0, 0.0), vel, gores[3], 1.0);
 }
 
+/// The general 5-gore death ladder: a dust burst (`dust_count` dusts of
+/// `dust_type`, SpeedX `speed_x*hitDirection`, SpeedY `speed_y`), then 5
+/// gores at the +0/+20/+20/+34/+34 Y ladder at `this.scale` — the head, the
+/// middle pair, the tail pair. Used by the nymph/icy-merman/gingerbread
+/// arms (the blood-zombie ladder is the SpeedX-2.5 special case).
+fn five_gore_ladder(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+    dust_type: i32,
+    dust_count: i32,
+    speed_x: f32,
+    speed_y: f32,
+    head: i32,
+    middle: i32,
+    tail: i32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..dust_count {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, dust_type, speed_x * hit_direction,
+            speed_y, 0, Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, head, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, middle, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, middle, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, tail, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, tail, s);
+}
+
+/// The 195/196 LostGirl/Nymph death (`NPC.cs:86797-86805`, sites 817-821):
+/// the 75-dust type-5 burst (SpeedX `2*hitDirection`, SpeedY -2), then the
+/// 5-gore ladder (254,255,256).
+fn nymph_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    five_gore_ladder(npc, dust, dust_ctx, gore, rng, world, hit_direction, 5, 75, 2.0, -2.0, 254, 255, 256);
+}
+
+/// The 206 IcyMerman death (`NPC.cs:86838-86846`, sites 822-826): the
+/// 75-dust type-137 burst (SpeedX `2*hitDirection`, SpeedY -2), then the
+/// 5-gore ladder (273,274,275).
+fn icy_merman_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    five_gore_ladder(npc, dust, dust_ctx, gore, rng, world, hit_direction, 137, 75, 2.0, -2.0, 273, 274, 275);
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -5494,6 +5564,14 @@ pub fn hit_effect_c(
         && npc.hp <= 0
     {
         shark_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86787-86806` — the 195/196 LostGirl/Nymph arm (sites 817-821).
+    if (npc_type == 195 || npc_type == 196) && npc.hp <= 0 {
+        nymph_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86828-86847` — the 206 IcyMerman arm (sites 822-826).
+    if npc_type == 206 && npc.hp <= 0 {
+        icy_merman_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -8668,6 +8746,30 @@ mod tests {
             assert_eq!(gore.slot(3).position, Vec2::new(114.0, 100.0));
             // The velocity x0.8 plus the kicks.
             assert!((gore.slot(0).velocity.x - 4.0).abs() <= 2.0);
+        }
+    }
+
+    /// `NPC.cs:86801-86805` / `:86842-86846` — the Nymph (254/255/256,
+    /// type-5 dust) and IcyMerman (273/274/275, type-137 dust) deaths: the
+    /// 5-gore +0/+20/+34 ladder at this.scale after the 75-dust burst.
+    #[test]
+    fn w4_f10_the_nymph_and_icy_merman_deaths_use_the_ladder() {
+        let w = air();
+        for (f, gores) in [
+            (nymph_death as fn(&Npc, &mut DustPool, &SpawnCtx, &mut GorePool, &mut UnifiedRandom, &World, f32), [254, 255, 255, 256, 256]),
+            (icy_merman_death, [273, 274, 274, 275, 275]),
+        ] {
+            let mut n = boss(100.0, 100.0, 40.0, 56.0);
+            n.scale = 1.0;
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(761);
+            f(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores);
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
         }
     }
 
