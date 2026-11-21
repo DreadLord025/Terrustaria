@@ -69,13 +69,18 @@ const MARTIAN_TURRET_BOLT: u16 = 435;
 /// (`Projectile.cs:6258-6269`). Module-private: the `data.rs` const lands
 /// with the d11 merge (no import until then — the row-gated inertness).
 const NEBULA_LASER: u16 = 576;
+/// `ProjectileID.MonkStaffT3AltShot` (709) — the W4-d15 row's kind
+/// (`Projectile.cs:7508-7520`). Module-private: the `data.rs` const lands
+/// with the d15 merge (no import until then — the row-gated inertness).
+const MONK_STAFF_T3_ALT_SHOT: u16 = 709;
 
 /// The slice-E kind set — kind-disjoint from `projectile_ai001_a/b/c/d`,
 /// the riders, the frostmoon/moonlord/darts/special-arrow/special-bullet
 /// gates, the javelin and the Book of Skulls (the seam chains E after D).
-pub(crate) const SLICE_E_KINDS: [u16; 2] = [
-    MARTIAN_TURRET_BOLT, // 435
-    NEBULA_LASER,        // 576
+pub(crate) const SLICE_E_KINDS: [u16; 3] = [
+    MARTIAN_TURRET_BOLT,  // 435
+    NEBULA_LASER,         // 576
+    MONK_STAFF_T3_ALT_SHOT, // 709
 ];
 
 /// Whether this module owns the kind's aiStyle-1 arm.
@@ -159,6 +164,59 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
             // gravity never fires — a straight laser. The rotation tail
             // is the DEFAULT (`:57750` — 576 is not in the :57642 arm).
             finish(p, world, false);
+        }
+        MONK_STAFF_T3_ALT_SHOT => {
+            // `:54696-54725` — the head block. `:54698-54702`:
+            // `alpha -= 30`, clamp 0 (the d15 row seeds alpha 255,
+            // `:7513`).
+            p.alpha -= 30;
+            if p.alpha < 0 {
+                p.alpha = 0;
+            }
+            // `:54703` — `spriteDirection = base.direction` (the
+            // velocity-sign stand-in, module doc).
+            p.sprite_direction = if p.vel.x < 0.0 { -1 } else { 1 };
+            // `:54704-54713` — `frameCounter++`, at 3: `frame++`,
+            // `frameCounter = 0`, wrap at 3 (`Main.projFrames[709] = 3`,
+            // `Main.cs:8554`, the d15 row's `proj_frames`).
+            p.frame_counter += 1;
+            if p.frame_counter >= 3 {
+                p.frame += 1;
+                p.frame_counter = 0;
+                if p.frame >= 3 {
+                    p.frame = 0;
+                }
+            }
+            // `:54714` — the light (0.4, 0.85, 0.9) SKIPPED (the
+            // proj_lights layer's census).
+            // `:54715-54718` — the `ai[1] == 0f` first-tick
+            // `PlayTrackedSound(DD2_SkyDragonsFuryShot)` cue FOLDS to the
+            // inert no-cue latch (the pool has no tracked-sound layer,
+            // S1-E-23 — the d15 `projectile_ai_dd2` ghast/twister
+            // precedent). The `ai[1]` AGE state rides alone below; the
+            // C#'s gate reads `ai[1]` BEFORE the increment, so the cue
+            // would fire on tick 1 only — the fold keeps no state.
+            // `:54719-54724` — `ai[1]++`; at `>= 30f`: `Kill(); return`.
+            // The d15 spawn carries `ai1: None` (the age starts at 0), so
+            // the kill fires on tick 30 — BEFORE the flight/rotation tail
+            // (the C# `return` exits AI_001, skipping the counter, the
+            // gravity chain, the rotation and the clamp). The port's
+            // death convention (`active = false`, `time_left = 0`) plus
+            // the `kill_time_left` capture (`Kill()`'s `num`, `:70649`)
+            // the pool's death hooks read. The Kill-hook half
+            // (`:73372-73388`, the 1110 circle spawn + the sibling pull)
+            // is the g1 Kill-hook lane's deferred set — census 26f F3.
+            p.ai[1] += 1.0;
+            if p.ai[1] >= 30.0 {
+                p.kill_time_left = p.time_left;
+                p.active = false;
+                p.time_left = 0;
+                return;
+            }
+            // `flag3 = false` (`:56025`): the counter rests, the generic
+            // gravity never fires — a straight shot. The rotation tail
+            // is the 435/459/682/709 arm (`:57642-57648`).
+            finish(p, world, true);
         }
         _ => unreachable!("the dispatch gates on SLICE_E_KINDS"),
     }
@@ -277,6 +335,29 @@ mod tests {
         p
     }
 
+    /// A slot carrying the 709 row slice BY HAND (`Projectile.cs:7508-
+    /// 7520` — the d15 row `79576fbf`): 12x12, friendly melee, alpha 255,
+    /// ignoreWater, extraUpdates 1, scale 0.6, the stock penetrate 1
+    /// (`:774`) / tileCollide true (`:775`) / timeLeft 3600 (`:787`).
+    /// The d15 spawn carries `ai1: None` — the age starts at 0.
+    fn shot(vx: f32, vy: f32) -> Projectile {
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = MONK_STAFF_T3_ALT_SHOT;
+        p.owner = 0; // the local player's volley (the d15 spawn seam)
+        p.pos = Vec2::new(10.0 * TILE_PX, 10.0 * TILE_PX);
+        p.vel = Vec2::new(vx, vy);
+        p.w = 12.0;
+        p.h = 12.0;
+        p.tile_collide = true;
+        p.alpha = 255;
+        p.scale = 0.6;
+        p.time_left = 3600;
+        p.penetrate = 1;
+        p.extra_updates = 1;
+        p
+    }
+
     /// The gate is disjoint from A/B/C/D's kind lists and the generic
     /// arrows — `covers` is the seam's whole contract.
     #[test]
@@ -298,6 +379,7 @@ mod tests {
         assert!(!covers(436)); // the Scrambler keeps slice A
         assert!(!covers(459)); // the Charged Blaster keeps its rider
         assert!(!covers(577)); // the 577 sibling stays unrowed (d11)
+        assert!(!covers(708)); // the T3-alt swing keeps the d15 142 arm
         for k in SLICE_E_KINDS {
             assert!(covers(k));
         }
@@ -405,5 +487,63 @@ mod tests {
         step(&mut p, &w);
         let want = p.vel.y.atan2(p.vel.x) + 1.57;
         assert!((p.rot - want).abs() < 1e-6, "(`:57750`)");
+    }
+
+    /// 709 (`:54696-54725`, `:56025` flag3 = false): 29 ticks at (4, 0)
+    /// → ai[1] = 29 (alive), alpha 255 − 30×9 → 0 (9 ticks: 255→225→…→
+    /// 15→0 at the 9th), ai[0] = 0 (rests), vel.y = 0, the 3-tick frame
+    /// machine advances 9 times → frame 9 mod 3 = 0, spriteDirection 1,
+    /// rot = atan2(0, 4) = 0. NO tracked-sound state (the fold).
+    #[test]
+    fn w4_f20e_the_monk_shot_fades_frames_and_counts_to_twenty-nine() {
+        let w = world();
+        let mut p = shot(4.0, 0.0);
+        for _ in 0..29 {
+            step(&mut p, &w);
+        }
+        assert!(p.active, "alive at ai[1] = 29 (`:54720`)");
+        assert_eq!(p.ai[1], 29.0, "the age counter (`:54719`)");
+        assert_eq!(p.alpha, 0, "255 - 30×9 clamps at 0 (`:54699`)");
+        assert_eq!(p.ai[0], 0.0, "flag3 = false (`:56025`)");
+        assert_eq!(p.vel.y, 0.0, "no gravity — the counter rests");
+        assert_eq!(p.frame, 0, "29 ticks / 3 = 9 advances mod 3 (`:54709`)");
+        assert_eq!(p.frame_counter, 2, "29 mod 3 = 2 (`:54705`)");
+        assert_eq!(p.sprite_direction, 1, "vx > 0 (`:54703`)");
+        assert!(p.rot.abs() < 1e-6, "atan2(0, 4) = 0 (`:57644`)");
+        assert!((p.pos.x - (160.0 + 116.0)).abs() < 1e-4, "4 px/tick × 29");
+    }
+
+    /// 709's 30-tick kill (`:54720-54724`): the 30th tick increments
+    /// ai[1] to 30 → `Kill(); return` BEFORE the flight tail — the slot
+    /// dies, `kill_time_left` captures the pre-kill life, and the
+    /// position does NOT advance on the kill tick (the C# return skips
+    /// the movement; the port's `step` returns before `finish`).
+    #[test]
+    fn w4_f20e_the_monk_shot_kills_at_thirty_before_the_flight() {
+        let w = world();
+        let mut p = shot(4.0, 0.0);
+        for _ in 0..29 {
+            step(&mut p, &w);
+        }
+        let x_before = p.pos.x;
+        let life_before = p.time_left;
+        step(&mut p, &w);
+        assert!(!p.active, "the 30-tick kill (`:54722`)");
+        assert_eq!(p.time_left, 0, "the death convention");
+        assert_eq!(p.ai[1], 30.0, "the increment precedes the kill");
+        assert_eq!(p.kill_time_left, life_before, "Kill()'s num (`:70649`)");
+        assert_eq!(p.pos.x, x_before, "the return skips the movement");
+    }
+
+    /// 709's left-facing tail (`:57645-57647`): from (−4, 0) →
+    /// spriteDirection −1, rot = atan2(0, −4) + π.
+    #[test]
+    fn w4_f20e_the_monk_shot_adds_pi_when_left_facing() {
+        let w = world();
+        let mut p = shot(-4.0, 0.0);
+        step(&mut p, &w);
+        assert_eq!(p.sprite_direction, -1, "vx < 0 (`:54703`)");
+        let want = p.vel.y.atan2(p.vel.x) + std::f32::consts::PI;
+        assert!((p.rot - want).abs() < 1e-6, "(`:57646`)");
     }
 }
