@@ -1117,9 +1117,12 @@ pub enum NpcKind {
     /// `NPCID.Grasshopper` (377, `NPCID.cs:11431`) — the surface hopper
     /// (`NPC.cs:13811-13824`): 14x10, aiStyle 1, dmg 0, def 0, 5 HP,
     /// friendly, catchItem 2740, slots 0.1. Protocol id 820. Rides the
-    /// aiStyle-1 hop stand-in (`update_slime`, the wave-A precedent —
-    /// the C#'s `AI_001_Slimes` has no 377 branch, the generic hop IS
-    /// the machine).
+    /// aiStyle-1 hop stand-in (`update_slime`, the wave-A precedent).
+    /// SEAL CORRECTION: `AI_001_Slimes` DOES carry 377 branches
+    /// (`NPC.cs:61080` flee flag3, `:61440` the 90-tick friendly
+    /// latch, `:61588` the +3 hop charge, `:61684` the 0.9/0.6 hop
+    /// damping + flee-flip + ceiling clamp) — the faithful rows are
+    /// f18's `ai_001_grasshopper` (research/125 §6 keep-one).
     Grasshopper,
     /// `NPCID.ChatteringTeethBomb` (378, `NPCID.cs:11433`) — the blood
     /// moon's hopping bomb (`NPC.cs:13825-13838`): 20x26, aiStyle 41,
@@ -6441,8 +6444,10 @@ impl Npc {
             // critter band — the wander stand-in holds (the MartianTurret
             // precedent; `npc_ai_town::town_npc_ai` is the faithful
             // module the wiring wave claims). The grasshopper's aiStyle 1
-            // hop rides the wave-A slime stand-in (the C#'s `AI_001_Slimes`
-            // carries no 377 branch — the generic hop IS the machine).
+            // hop rides the wave-A slime stand-in — SEAL CORRECTION:
+            // `AI_001_Slimes` DOES carry the 377 rows (`NPC.cs:61080/
+            // :61440/:61588/:61684`); the faithful arm is f18's
+            // `ai_001_grasshopper`, keep-f18 at merge (research/125 §6).
             NpcKind::ScorpionBlack | NpcKind::Scorpion => self.update_guide(world, dt),
             NpcKind::Grasshopper => self.update_slime(world, player, dt),
             // W4-d39 batch 3: the teeth bomb's aiStyle 41 rides the

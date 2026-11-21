@@ -39273,8 +39273,16 @@ Deliberate deviations (all cited in the arms):
    `npc_ai_town::town_npc_ai` module exists but its critter wiring is a
    later wave; the kinds ride the `update_guide` wander stand-in (the
    MartianTurret precedent). The grasshopper's aiStyle 1 rides the
-   wave-A `update_slime` hop (the C#'s `AI_001_Slimes` carries no 377
-   branch — the generic hop IS the machine).
+   wave-A `update_slime` hop stand-in. **SEAL CORRECTION (research/125
+   §6c):** the earlier claim "`AI_001_Slimes` carries no 377 branch"
+   was WRONG — `NPC.cs:61080` (the ≤200px flee flag), `:61440` (the
+   90-tick friendly latch), `:61588` (the +3 hop charge) and `:61684`
+   (the 0.9/0.6 hop damping + flee-flip + ceiling clamp) all read type
+   377. The faithful arm is f18's `ai_001_grasshopper` (keep-f18's
+   machine on d39's roster row at the merge); the stand-in stays a
+   deliberate deviation until that splice. The same keep-one applies
+   to the scorpion pair (f18's `npc_ai_town_critter` arm) and the
+   archer pair (f18's `update_cultist_archer` shooter block).
 3. **The archer pair's aiStyle 3 rides the `update_zombie` stand-in** —
    the `AI_003` 379/380 retreat branch (`NPC.cs:56181-56214`, the
    summoner link + the 1300-tick cycle) is the c1 cultist lane's; the
@@ -39303,3 +39311,11 @@ at every batch: ALL_KINDS 277 = enum 277 = to_u16 277 = from_u16 277
 credits + positive net ids), BESTIARY_NPC_SHEET_IDS 187 == the vec 187,
 the s1_d_4c one-arm-per-kind scan 277×1. **No cargo/rustc/rustfmt/
 tests/graphify invoked** (code-only mode).
+
+SEAL (research/125 §6): the four seal items verified by
+`tools/_d39_seal_census.py` (ALL GREEN); the d37-SEAL reconciliation
+(d39's pushed ids ARE R7's 817-823 — S4's "781-787 accepted" and
+"788-790 for the remaining 3" rows are stale: the 3 are dead ids, the
+grand max is 823); the f18 dedupe (all 20 of f18's 237-258 rows drop
+or keep-one — d39 keeps the 7 roster rows @ 817-823, f18's faithful
+scorpion/grasshopper/archer AI arms splice onto them at the merge).

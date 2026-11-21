@@ -1,0 +1,311 @@
+{
+ "enum_variants": 277,
+ "all_kinds_decl": 277,
+ "all_kinds_rows": 277,
+ "to_u16_arms": 277,
+ "from_u16_arms": 277,
+ "all_kinds_dups": 0,
+ "enum_set_eq_allkinds_set": true,
+ "to_from_bijection": true,
+ "arm_set_eq_allkinds_set": true,
+ "max_proto": 823,
+ "i16_safe": true,
+ "d39_band": {
+  "Butterfly": 817,
+  "ScorpionBlack": 818,
+  "Scorpion": 819,
+  "Grasshopper": 820,
+  "ChatteringTeethBomb": 821,
+  "CultistArcherBlue": 822,
+  "CultistArcherWhite": 823
+ },
+ "s1_f_3_literal": 277,
+ "dead_ids_absent": true,
+ "entries_rows": 255,
+ "entries_credit_dups": 0,
+ "entries_positive_net_dups": 0,
+ "sheet_ids_decl": 187,
+ "sheet_ids_elems": 187,
+ "sheet_ids_dups": 0,
+ "s1_d_4c_kinds": 277,
+ "s1_d_4c_multi_arm": {},
+ "s1_d_4c_set_eq_enum": true,
+ "npc_rs_w4_d39_tests": 16,
+ "style65_tests": 8,
+ "f18_band": {
+  "Firefly": 237,
+  "Butterfly": 238,
+  "Worm": 239,
+  "LightningBug": 240,
+  "Snail": 241,
+  "GlowingSnail": 242,
+  "Frog": 243,
+  "Duck": 244,
+  "Duck2": 245,
+  "DuckWhite": 246,
+  "DuckWhite2": 247,
+  "ScorpionBlack": 248,
+  "Scorpion": 249,
+  "TruffleWorm": 252,
+  "TruffleWormDigger": 253,
+  "Grasshopper": 254,
+  "ChatteringTeethBomb": 255,
+  "CultistArcherBlue": 256,
+  "CultistArcherWhite": 257,
+  "ArmedZombie": 258
+ },
+ "overlap_7": {
+  "Butterfly": {
+   "d39": 817,
+   "f18": 238
+  },
+  "ScorpionBlack": {
+   "d39": 818,
+   "f18": 248
+  },
+  "Scorpion": {
+   "d39": 819,
+   "f18": 249
+  },
+  "Grasshopper": {
+   "d39": 820,
+   "f18": 254
+  },
+  "ChatteringTeethBomb": {
+   "d39": 821,
+   "f18": 255
+  },
+  "CultistArcherBlue": {
+   "d39": 822,
+   "f18": 256
+  },
+  "CultistArcherWhite": {
+   "d39": 823,
+   "f18": 257
+  }
+ },
+ "f18_nonoverlap_vs_canonical": {
+  "Firefly": {
+   "f18": 237,
+   "canonical": 735
+  },
+  "LightningBug": {
+   "f18": 240,
+   "canonical": 736
+  },
+  "Worm": {
+   "f18": 239,
+   "canonical": 737
+  },
+  "TruffleWorm": {
+   "f18": 252,
+   "canonical": 738
+  },
+  "TruffleWormDigger": {
+   "f18": 253,
+   "canonical": 739
+  },
+  "Snail": {
+   "f18": 241,
+   "canonical": 740
+  },
+  "GlowingSnail": {
+   "f18": 242,
+   "canonical": 741
+  },
+  "Frog": {
+   "f18": 243,
+   "canonical": 744
+  },
+  "Duck": {
+   "f18": 244,
+   "canonical": 731
+  },
+  "Duck2": {
+   "f18": 245,
+   "canonical": 732
+  },
+  "DuckWhite": {
+   "f18": 246,
+   "canonical": 733
+  },
+  "DuckWhite2": {
+   "f18": 247,
+   "canonical": 734
+  },
+  "ArmedZombie": {
+   "f18": 258,
+   "canonical": 430
+  }
+ },
+ "cs_ai001_377_branches": [
+  61080,
+  61440,
+  61588,
+  61684
+ ],
+ "f18_stat_spotcheck": {
+  "size": {
+   "d39": {
+    "Butterfly": "(10.0, 10.0)",
+    "ScorpionBlack": "(26.0, 18.0)",
+    "Scorpion": "(26.0, 18.0)",
+    "Grasshopper": "(14.0, 10.0)",
+    "ChatteringTeethBomb": "(20.0, 26.0)",
+    "CultistArcherBlue": "(18.0, 40.0)",
+    "CultistArcherWhite": "(18.0, 40.0)"
+   },
+   "f18": {
+    "Butterfly": "(10.0, 10.0)",
+    "ScorpionBlack": "(26.0, 18.0)",
+    "Scorpion": "(26.0, 18.0)",
+    "Grasshopper": "(14.0, 10.0)",
+    "ChatteringTeethBomb": "(20.0, 26.0)",
+    "CultistArcherBlue": "(18.0, 40.0)",
+    "CultistArcherWhite": "(18.0, 40.0)"
+   },
+   "agree": true
+  },
+  "ai_style": {
+   "d39": {
+    "Butterfly": "65",
+    "ScorpionBlack": "7",
+    "Scorpion": "7",
+    "Grasshopper": "1",
+    "ChatteringTeethBomb": "41",
+    "CultistArcherBlue": "3",
+    "CultistArcherWhite": "3"
+   },
+   "f18": {
+    "Butterfly": "65",
+    "ScorpionBlack": "7",
+    "Scorpion": "7",
+    "Grasshopper": "1",
+    "ChatteringTeethBomb": "41",
+    "CultistArcherBlue": "3",
+    "CultistArcherWhite": "3"
+   },
+   "agree": true
+  },
+  "max_hp": {
+   "d39": {
+    "Butterfly": "5",
+    "ScorpionBlack": "5",
+    "Scorpion": "5",
+    "Grasshopper": "5",
+    "ChatteringTeethBomb": "200",
+    "CultistArcherBlue": "210",
+    "CultistArcherWhite": "210"
+   },
+   "f18": {
+    "Butterfly": "5",
+    "ScorpionBlack": "5",
+    "Scorpion": "5",
+    "Grasshopper": "5",
+    "ChatteringTeethBomb": "200",
+    "CultistArcherBlue": "210",
+    "CultistArcherWhite": "210"
+   },
+   "agree": true
+  },
+  "contact_damage": {
+   "d39": {
+    "Butterfly": "0",
+    "ScorpionBlack": "0",
+    "Scorpion": "0",
+    "Grasshopper": "0",
+    "ChatteringTeethBomb": "120",
+    "CultistArcherBlue": "45",
+    "CultistArcherWhite": "45"
+   },
+   "f18": {
+    "Butterfly": "0",
+    "ScorpionBlack": "0",
+    "Scorpion": "0",
+    "Grasshopper": "0",
+    "ChatteringTeethBomb": "120",
+    "CultistArcherBlue": "45",
+    "CultistArcherWhite": "45"
+   },
+   "agree": true
+  },
+  "defense": {
+   "d39": {
+    "Butterfly": "0",
+    "ScorpionBlack": "0",
+    "Scorpion": "0",
+    "Grasshopper": "0",
+    "ChatteringTeethBomb": "30",
+    "CultistArcherBlue": "14",
+    "CultistArcherWhite": "14"
+   },
+   "f18": {
+    "Butterfly": "0",
+    "ScorpionBlack": "0",
+    "Scorpion": "0",
+    "Grasshopper": "0",
+    "ChatteringTeethBomb": "30",
+    "CultistArcherBlue": "14",
+    "CultistArcherWhite": "14"
+   },
+   "agree": true
+  },
+  "value": {
+   "d39": {
+    "Butterfly": "0.0",
+    "ScorpionBlack": "0.0",
+    "Scorpion": "0.0",
+    "Grasshopper": "0.0",
+    "ChatteringTeethBomb": "450.0",
+    "CultistArcherBlue": "1000.0",
+    "CultistArcherWhite": "1000.0"
+   },
+   "f18": {
+    "Butterfly": "0.0",
+    "ScorpionBlack": "0.0",
+    "Scorpion": "0.0",
+    "Grasshopper": "0.0",
+    "ChatteringTeethBomb": "450.0",
+    "CultistArcherBlue": "1000.0",
+    "CultistArcherWhite": "1000.0"
+   },
+   "agree": true
+  },
+  "knock_back_resist": {
+   "d39": {
+    "Butterfly": "1.0",
+    "ScorpionBlack": "1.0",
+    "Scorpion": "1.0",
+    "Grasshopper": "1.0",
+    "ChatteringTeethBomb": "0.5",
+    "CultistArcherBlue": "0.55",
+    "CultistArcherWhite": "0.55"
+   },
+   "f18": {
+    "Butterfly": "1.0",
+    "ScorpionBlack": "1.0",
+    "Scorpion": "1.0",
+    "Grasshopper": "1.0",
+    "ChatteringTeethBomb": "0.5",
+    "CultistArcherBlue": "0.55",
+    "CultistArcherWhite": "0.55"
+   },
+   "agree": true
+  }
+ },
+ "hi_corridor_scan": {
+  "origin/task/W4-d36-npc-kinds-141-210": {
+   "Moth": 793
+  },
+  "origin/task/W4-d39-npc-kinds-351-420": {
+   "Butterfly": 817,
+   "ScorpionBlack": 818,
+   "Scorpion": 819,
+   "Grasshopper": 820,
+   "ChatteringTeethBomb": 821,
+   "CultistArcherBlue": 822,
+   "CultistArcherWhite": 823
+  }
+ },
+ "hi_corridor_branches_scanned": 362
+}
