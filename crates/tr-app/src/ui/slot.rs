@@ -476,6 +476,29 @@ fn draw_slot_flagged(
     }
 }
 
+/// `ItemSlot.Draw`'s shared-loadout overlay (`ItemSlot.cs:2474-2488` +
+/// `:2733-2746`): an AIR equip slot whose item is shared from another loadout
+/// draws that item's icon at 0.6 fade (no empty glyph — `num15 = -1`), plus the
+/// sharing loadout's corner badge. The badge sheets (`Extra_310..315`) are not
+/// packed, so the badge is a recorded skip (ANALYSIS); the ghost icon is the
+/// visible share indicator. `shared` is the effective item, `fade` the 0.6.
+pub(crate) fn draw_shared_item(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    shared: &ItemSlot,
+    x: f32,
+    y: f32,
+    scale: f32,
+) {
+    if shared.count == 0 {
+        return;
+    }
+    let cell = lookups.ui_back.map(|b| b.width as f32).unwrap_or(52.0);
+    let center = (x + cell * 0.5 * scale, y + cell * 0.5 * scale);
+    // `itemFade *= 0.6f` (`:2483`) then `DrawItemIcon(..., itemFade)` (`:2515`).
+    draw_item_icon(r, lookups, shared, center, scale, [1.0, 1.0, 1.0, 0.6]);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

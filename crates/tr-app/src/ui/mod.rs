@@ -856,6 +856,22 @@ pub fn draw_hud(
     // (`Main.DrawLoadoutButtons:41972`), printed instead of an item tooltip.
     let mut loadout_hover_text: Option<String> = None;
     if inventory_open {
+        // `GetEffectiveArmor`/`GetEffectiveDye` (`Player.cs:5690-5764`): the
+        // shared item for each AIR equip slot (the ghost icon). A live slot
+        // returns itself (`sharedFromLoadout == None`), so only the genuinely
+        // shared ones carry `Some`.
+        let shared_armor: [Option<ItemSlot>; 20] = std::array::from_fn(|i| {
+            player.and_then(|p| {
+                let (item, from) = p.get_effective_armor(i);
+                from.map(|_| item)
+            })
+        });
+        let shared_dye: [Option<ItemSlot>; 10] = std::array::from_fn(|i| {
+            player.and_then(|p| {
+                let (item, from) = p.get_effective_dye(i);
+                from.map(|_| item)
+            })
+        });
         // `Main.DrawInventory` (`Main.cs:41001`): the bounded 10x5 grid, the coin and
         // ammo columns, the equipment/vanity/dye columns (or the misc-equip page),
         // the trash slot and the "Inventory"/"Coins"/"Ammo" labels.
@@ -902,6 +918,8 @@ pub fn draw_hud(
             mouse_item_is_air,
             current_loadout,
             loadout_flash,
+            &shared_armor,
+            &shared_dye,
         );
         open_hover = hit.hovered;
         open_housing = hit.housing;

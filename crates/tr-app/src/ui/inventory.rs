@@ -547,6 +547,11 @@ pub fn draw(
     // The loadout-change flash factor (`ItemSlot.GetColorByLoadout:2786-2791`,
     // precomputed by `loadout_flash`).
     loadout_flash: f32,
+    // `GetEffectiveArmor`/`GetEffectiveDye` (`Player.cs:5690-5764`): the
+    // shared item for an AIR equip slot (the ghost icon), `None` when the slot
+    // is live or unshared. Computed by the caller from the Player.
+    shared_armor: &[Option<ItemSlot>; 20],
+    shared_dye: &[Option<ItemSlot>; 10],
 ) -> InventoryHit {
     // `Main.DrawInventory`'s button pair (`Main.cs:41012-41013`):
     // `DrawBestiaryIcon` rides beside `DrawEmoteBubblesButton`. The bestiary
@@ -786,6 +791,13 @@ pub fn draw(
                 INVENTORY_SCALE,
                 equip_tint(context, INVENTORY_BACK, current_loadout, loadout_flash),
             );
+            // `ItemSlot.cs:2474-2488`: an air slot shared from another loadout
+            // draws the shared item's ghost icon over the empty glyph.
+            if equip.armor[idx].count == 0 {
+                if let Some(shared) = &shared_armor[idx] {
+                    slot::draw_shared_item(r, lookups, shared, armor_x, y, INVENTORY_SCALE);
+                }
+            }
             if hit.hovered.is_none() && hit_test(mouse, armor_x, y, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Armor(idx));
             }
@@ -837,6 +849,11 @@ pub fn draw(
                 INVENTORY_SCALE,
                 equip_tint(context, INVENTORY_BACK, current_loadout, loadout_flash),
             );
+            if equip.armor[idx].count == 0 {
+                if let Some(shared) = &shared_armor[idx] {
+                    slot::draw_shared_item(r, lookups, shared, vanity_x, y, INVENTORY_SCALE);
+                }
+            }
             if hit.hovered.is_none() && hit_test(mouse, vanity_x, y, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Armor(idx));
             }
@@ -863,6 +880,11 @@ pub fn draw(
                 INVENTORY_SCALE,
                 equip_tint(12, INVENTORY_BACK, current_loadout, loadout_flash),
             );
+            if equip.dye[idx].count == 0 {
+                if let Some(shared) = &shared_dye[idx] {
+                    slot::draw_shared_item(r, lookups, shared, dye_x, y, INVENTORY_SCALE);
+                }
+            }
             if hit.hovered.is_none() && hit_test(mouse, dye_x, y, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Dye(idx));
             }

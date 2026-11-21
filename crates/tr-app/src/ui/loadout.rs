@@ -149,6 +149,13 @@ pub fn hover_label(i: usize) -> String {
     crate::lang::text(&format!("UI.Loadout{}", i + 1))
 }
 
+/// `ItemSlot.canLoadoutShareAt` (`ItemSlot.cs:395-399`): the equip contexts
+/// 8/9/10/11/12 (armour, vanity, accessories, vanity accessories, dye) carry
+/// the loadout-share flag in place of the grid favourite.
+pub fn can_loadout_share_at(context: i32) -> bool {
+    matches!(context, 8 | 9 | 10 | 11 | 12)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

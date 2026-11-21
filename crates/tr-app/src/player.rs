@@ -1042,11 +1042,18 @@ pub struct Player {
     /// update's grant pass reads (`UpdateEquips`, `Player.cs:12892`). Filled
     /// from `App.equip` per tick.
     pub equipped: [u16; 20],
+    /// The LIVE `Player.armor[0..20]` items (not just kinds) — the
+    /// `GetEffectiveArmor` share scan (`Player.cs:5690-5710`) reads the live
+    /// slot's `IsAir` and the stored sets' favorited items. Filled from
+    /// `App.equip.armor` per tick next to `equipped`.
+    pub armor_items: [ItemSlot; 20],
     /// `Player.dye[0..10]`'s kinds — `UpdateDyes`' input through
-    /// `GetEffectiveDye` (`Player.cs:5742-5764`; the port has no loadouts, so
-    /// the slot itself is the source). Filled from `App.equip` per tick next
-    /// to `equipped`.
+    /// `GetEffectiveDye` (`Player.cs:5742-5764`). Filled from `App.equip` per
+    /// tick next to `equipped`.
     pub dye_slots: [u16; 10],
+    /// The LIVE `Player.dye[0..10]` items — the `GetEffectiveDye` share scan
+    /// (`Player.cs:5748-5764`). Filled from `App.equip.dye` per tick.
+    pub dye_items: [ItemSlot; 10],
     /// `Player.miscDyes[0..5]`'s kinds (`Player.cs:1494`; pet/light/cart/
     /// mount/hook). Filled from `App.equip` per tick.
     pub misc_dye_slots: [u16; 5],
@@ -2685,7 +2692,9 @@ impl Player {
             accessory_life_regen: 0,
             swing_aim: 0.0,
             equipped: [0; 20],
+            armor_items: [crate::item::EMPTY_SLOT; 20],
             dye_slots: [0; 10],
+            dye_items: [crate::item::EMPTY_SLOT; 10],
             misc_dye_slots: [0; 5],
             hide_misc: [false; 2],
             c_head: 0,
@@ -9107,6 +9116,87 @@ impl Player {
         self.try_switching_loadout(prev, armor, dye, live_favorited, using_or_reusing)
     }
 
+    /// `Player.GetEffectiveArmor` (`Player.cs:5690-5710`): when the live
+    /// `armor[slot]` is air, the FIRST loadout whose stored `Armor[slot]` is a
+    /// favorited (shared) non-air item that `CanShareArmor` accepts supplies
+    /// it; the returned `Option<usize>` is the sharing loadout's index
+    /// (`sharedFromLoadout`). Otherwise the live slot itself. Reads the live
+    /// `armor_items` snapshot (filled from `App.equip` per tick).
+    pub fn get_effective_armor(&self, slot: usize) -> (ItemSlot, Option<usize>) {
+        if slot >= crate::inv::ARMOR {
+            return (crate::item::EMPTY_SLOT, None);
+        }
+        let live = self.armor_items[slot];
+        if live.count == 0 {
+            for (i, loadout) in self.loadouts.iter().enumerate() {
+                let item = loadout.armor[slot];
+                if item.count != 0 && loadout.is_shared(slot) {
+                    if !self.can_share_armor(&item, slot) {
+                        break; // `:5699-5702` — the first shared item refuses
+                    }
+                    return (item, Some(i));
+                }
+            }
+        }
+        (live, None)
+    }
+
+    /// `Player.CanShareArmor` (`Player.cs:5712-5740`): the shared item must
+    /// fit the slot (`CanEquipInArmorSlot`), and walking the accessory rows
+    /// below it (`slot % 10 > 3`), every air live row's first shared loadout
+    /// item must be co-equippable (`CanEquipBothAccessories`) — a non-air live
+    /// row is skipped (`continue`).
+    fn can_share_armor(&self, share_item: &ItemSlot, slot: usize) -> bool {
+        if !crate::app::equip_swap::can_equip_in_armor_slot(
+            share_item,
+            slot,
+            self,
+            &self.armor_items,
+        ) {
+            return false;
+        }
+        let vanity = slot >= 10;
+        let mut s = slot;
+        while s % 10 > 3 {
+            s -= 1;
+            if self.armor_items[s].count != 0 {
+                continue;
+            }
+            for loadout in &self.loadouts {
+                let item = loadout.armor[s];
+                if item.count != 0 && loadout.is_shared(s) {
+                    if crate::app::equip_swap::can_equip_both_accessories(
+                        share_item, &item, vanity,
+                    ) {
+                        break;
+                    }
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// `Player.GetEffectiveDye` (`Player.cs:5748-5764`): when the live
+    /// `dye[slot]` is air, the FIRST loadout whose stored `Dye[slot]` is a
+    /// favorited non-air item supplies it (no `CanShare` gate — dyes always
+    /// share). Reads the live `dye_items` snapshot.
+    pub fn get_effective_dye(&self, slot: usize) -> (ItemSlot, Option<usize>) {
+        if slot >= crate::inv::DYE {
+            return (crate::item::EMPTY_SLOT, None);
+        }
+        let live = self.dye_items[slot];
+        if live.count == 0 {
+            for (i, loadout) in self.loadouts.iter().enumerate() {
+                let item = loadout.dye[slot];
+                if item.count != 0 && loadout.is_shared(crate::inv::ARMOR + slot) {
+                    return (item, Some(i));
+                }
+            }
+        }
+        (live, None)
+    }
+
     /// `Player.ClearBuff` (`Player.cs:5472-5481`): every slot whose
     /// `buffType == type` dels — NO `buffImmune` or `buffTime >= 1` gate
     /// (those are `FindBuffIndex`'s, `:5249-5255`; the old port looped
@@ -12072,6 +12162,49 @@ mod w4_g55_loadout_tests {
         assert_eq!(p.current_loadout_index, 0, "2 -> 0 wraps");
         assert!(p.try_switching_to_previous_loadout(&mut armor, &mut dye, &mut fav, false));
         assert_eq!(p.current_loadout_index, 2, "0 -> 2 wraps back");
+    }
+
+    /// W4-g55 — `GetEffectiveArmor` (`Player.cs:5690-5710`): an air live head
+    /// slot takes the first loadout's shared head; a live (non-air) slot keeps
+    /// itself; an unshared stored item does not supply.
+    #[test]
+    fn w4_g55_get_effective_armor_shares_the_first_favorited() {
+        let (mut p, _armor, _dye, _fav) = rig();
+        // Loadout 1 stores a shared Iron Helmet in the head slot.
+        p.loadouts[1].armor[0] = slot(90);
+        p.loadouts[1].set_shared(0, true);
+        // The live head is air → the shared item supplies, from loadout 1.
+        let (item, from) = p.get_effective_armor(0);
+        assert_eq!(item.kind, 90);
+        assert_eq!(from, Some(1));
+        // A live head keeps itself (no share).
+        p.armor_items[0] = slot(954);
+        let (item, from) = p.get_effective_armor(0);
+        assert_eq!(item.kind, 954);
+        assert_eq!(from, None);
+        // An unshared stored item does not supply an air slot.
+        p.armor_items[0] = EMPTY_SLOT;
+        p.loadouts[1].set_shared(0, false);
+        let (item, from) = p.get_effective_armor(0);
+        assert_eq!(item, EMPTY_SLOT);
+        assert_eq!(from, None);
+    }
+
+    /// W4-g55 — `GetEffectiveDye` (`Player.cs:5748-5764`): an air live dye slot
+    /// takes the first loadout's shared dye (no CanShare gate).
+    #[test]
+    fn w4_g55_get_effective_dye_shares_the_first_favorited() {
+        let (mut p, _armor, _dye, _fav) = rig();
+        p.loadouts[2].dye[0] = slot(1007); // Red Dye
+        p.loadouts[2].set_shared(crate::inv::ARMOR + 0, true);
+        let (item, from) = p.get_effective_dye(0);
+        assert_eq!(item.kind, 1007);
+        assert_eq!(from, Some(2));
+        // A live dye keeps itself.
+        p.dye_items[0] = slot(1015);
+        let (item, from) = p.get_effective_dye(0);
+        assert_eq!(item.kind, 1015);
+        assert_eq!(from, None);
     }
 }
 

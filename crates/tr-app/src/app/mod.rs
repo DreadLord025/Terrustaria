@@ -1403,6 +1403,46 @@ impl App {
         ok
     }
 
+    /// `ItemSlot.ToggleLoadoutShare` (`ItemSlot.cs:879-889`): flip the equip
+    /// slot's share flag (`Item.favorited` in the `canLoadoutShareAt` contexts)
+    /// + `PlaySound(12)`; turning it ON clears the same slot's share in every
+    /// stored loadout (`ClearSlotShareInOtherLoadouts`, `:891-912`). `context`
+    /// 8/9/10/11 index `Player.armor`, 12 `Player.dye`; `idx` is the array
+    /// index. Returns `true` when the toggle ran (the caller plays the cue).
+    pub(crate) fn toggle_loadout_share(&mut self, context: i32, idx: usize) -> bool {
+        if !crate::ui::loadout::can_loadout_share_at(context) {
+            return false;
+        }
+        let is_dye = context == 12;
+        let cap = if is_dye { crate::inv::DYE } else { crate::inv::ARMOR };
+        if idx >= cap {
+            return false;
+        }
+        let bit = if is_dye { crate::inv::ARMOR + idx } else { idx };
+        let now_on = self.equip_share_flags & (1 << bit) == 0;
+        if now_on {
+            self.equip_share_flags |= 1 << bit;
+            // `ClearSlotShareInOtherLoadouts` (`:891-912`): the stored sets'
+            // same-slot share clears (the live set is not in `Loadouts`).
+            if let Some(p) = self.player.as_mut() {
+                for loadout in p.loadouts.iter_mut() {
+                    loadout.set_shared(bit, false);
+                }
+            }
+        } else {
+            self.equip_share_flags &= !(1 << bit);
+        }
+        self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:883`)
+        true
+    }
+
+    /// The equip slot's live share flag (`Item.favorited` in the
+    /// `canLoadoutShareAt` contexts) — the draw's shared-item overlay reads it.
+    pub(crate) fn equip_slot_shared(&self, context: i32, idx: usize) -> bool {
+        let bit = if context == 12 { crate::inv::ARMOR + idx } else { idx };
+        bit < 30 && self.equip_share_flags & (1 << bit) != 0
+    }
+
     /// `Main.mouseNPC`'s per-frame lifecycle
     /// (`DrawInterface_38_MouseCarriedObject`, `Main.cs:45182-45211` +
     /// `DrawInterface_25`'s closed-inventory clear, `:45664-45667`):

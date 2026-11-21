@@ -34,7 +34,7 @@ fn incompatibility_type(kind: u16) -> i32 {
 /// exception aside), and the `AccessoryIncompatibilityType` classes collide.
 /// The wings test reads the port's `Player::wing_slot` table (the i40 census,
 /// `player.rs` — the same 47 `Item.wingSlot` assignments).
-fn can_equip_both_accessories(a: &ItemSlot, b: &ItemSlot, vanity: bool) -> bool {
+pub(crate) fn can_equip_both_accessories(a: &ItemSlot, b: &ItemSlot, vanity: bool) -> bool {
     if a.kind == b.kind {
         return false; // `:3453-3456`
     }

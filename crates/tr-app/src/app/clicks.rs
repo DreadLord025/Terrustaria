@@ -586,6 +586,14 @@ impl App {
     /// `RightClick` ladder's vanity swap (`:1678-1684`) or the shared paced
     /// pickup split.
     fn equip_slot_click(&mut self, context: i32, idx: usize, left: bool, right_edge: bool) {
+        // `OverrideLeftClick`'s cursor-3 arm (`ItemSlot.cs:745-756`): the
+        // equip contexts are `canLoadoutShareAt`, so Alt+click toggles the
+        // loadout share (`ToggleLoadoutShare`, `:879-889`) and consumes the
+        // press before the movement arms (`LeftClick:922-926` returns on it).
+        if left && self.cursor_override == CURSOR_FAVORITE {
+            self.toggle_loadout_share(context, idx);
+            return;
+        }
         // `LeftClick`'s busy gate (`ItemSlot.cs:922-926`): while an item
         // animation or the use cooldown runs, the press does nothing (the
         // `OverrideLeftClick` half rides the cursor-override arms above).
@@ -2303,6 +2311,27 @@ impl App {
                 if slot < crate::item::INV
                     && self.inventory[slot].count > 0
                     && chest::can_favorite_at(0)
+                {
+                    self.cursor_override = CURSOR_FAVORITE;
+                    return;
+                }
+            }
+            // `ItemSlot.cs:616-619` + `:752-756`: the equip contexts
+            // (8/9/10/11/12) are `canLoadoutShareAt`, not `canFavoriteAt` —
+            // Alt+hover lights the same cursor-3, and the click toggles the
+            // loadout share (`ToggleLoadoutShare`) instead of the favourite.
+            let (sw, sh) = self.screen_size();
+            let screen = Vec2::new(sw, sh);
+            let cell = self.lookups.ui_back.map_or(52.0, |b| b.width as f32);
+            if let Some((ctx, idx)) = ui::inventory::equip_cell_at(
+                self.mouse_pos,
+                screen,
+                self.main_m_h(),
+                self.equip_page,
+                cell,
+            ) {
+                if self.equip_cell(ctx, idx).count > 0
+                    && ui::loadout::can_loadout_share_at(ctx)
                 {
                     self.cursor_override = CURSOR_FAVORITE;
                     return;
@@ -4126,6 +4155,30 @@ mod tests {
             0,
             "no switch on the misc page"
         );
+    }
+
+    /// W4-g55 — `ToggleLoadoutShare` (`ItemSlot.cs:879-912`): the toggle flips
+    /// the live share flag, and turning it ON clears the same slot's share in
+    /// every stored loadout; a non-share context refuses.
+    #[test]
+    fn w4_g55_toggle_loadout_share_flips_and_clears_the_stored_sets() {
+        let mut app = inv_app();
+        app.equip.armor[0] = slot(90, 1);
+        // Loadout 1 already shares the head slot.
+        app.player.as_mut().unwrap().loadouts[1].set_shared(0, true);
+        // Toggle ON: the live flag sets, the stored share clears.
+        assert!(app.toggle_loadout_share(8, 0));
+        assert!(app.equip_slot_shared(8, 0));
+        assert!(!app.player.as_ref().unwrap().loadouts[1].is_shared(0));
+        // Toggle OFF: the live flag clears.
+        assert!(app.toggle_loadout_share(8, 0));
+        assert!(!app.equip_slot_shared(8, 0));
+        // The dye context (12) maps to bit 20 + idx.
+        app.equip.dye[1] = slot(1007, 1);
+        assert!(app.toggle_loadout_share(12, 1));
+        assert!(app.equip_slot_shared(12, 1));
+        // A non-share context (the grid, 0) refuses.
+        assert!(!app.toggle_loadout_share(0, 0));
     }
 
     /// M7-UI-2b — the coin (ctx 1) and ammo (ctx 2) rows became click
