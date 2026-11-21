@@ -9,12 +9,20 @@
 //! at the bottom (`GoToBottom`, `:124`), and the fat Back panel.
 //!
 //! The reporters (`IProvideReports.GetReports`) are `Main.IssueReporter`
-//! + the Workshop reporter; the port has no issue-report pipeline, so the
-//! log is empty and the `Workshop.ReportLogsInitialMessage` row draws
-//! (`PopulateLogs`'s empty arm, `:147-160`) — documented deviation
-//! (docs/ANALYSIS.md "Reports page (W4-d85)"). The screen is reachable
-//! through `TR_UI=reports` (the port's preset; the vanilla entry is the
-//! Workshop hub's Reports button, d84's lane).
+//! (the [`GeneralIssueReporter`] below — the only non-Steam producer is
+//! the resource-pack music failure, `LegacyAudioSystem.cs:114-119`) +
+//! the Steam Workshop reporter (`SocialAPI.Workshop != null` only). The
+//! port has no resource-pack pipeline, so the log is empty and the
+//! `Workshop.ReportLogsInitialMessage` row draws (`PopulateLogs`'s empty
+//! arm, `:147-160`) — the exact vanilla state with no packs and no Steam
+//! (docs/research/112-doc-sweep-screens.md §3). **The page has no report
+//! SUBMIT**: `UIReportsPage` is a read-only log viewer; the only "send"
+//! in the C# is the SteamUGC publish (`WorkshopHelper.cs:247-318`,
+//! `CreateItem`/`SubmitItemUpdate`), Steam-only and out of scope (§38).
+//! The screen is reachable through `TR_UI=reports` (the port's preset;
+//! the vanilla entries are the Workshop hub's Reports button,
+//! `UIWorkshopHub.cs:295-300`, and the issue indicator's click,
+//! `IssueReportsIndicator.cs:64-68`).
 
 use glam::Vec2;
 use tr_render::SpriteRenderer;
@@ -31,6 +39,60 @@ use crate::lang;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Report {
     pub text: String,
+}
+
+/// `GeneralIssueReporter` (`DataStructures/GeneralIssueReporter.cs:5-18`)
+/// — `Main.IssueReporter` (`Main.cs:2169`, created `:10832`): an unbounded
+/// append log. The only non-Steam producer is the resource-pack music
+/// replacement failure (`LegacyAudioSystem.FindReplacementTrack`'s catch,
+/// `LegacyAudioSystem.cs:114-119` — "A resource pack failed to load
+/// {assetPath}!"); the port has no resource-pack pipeline, so the log
+/// stays empty exactly as vanilla with no packs installed.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GeneralIssueReporter {
+    reports: Vec<Report>,
+}
+
+impl GeneralIssueReporter {
+    /// `AddReport` (`:9-12`) — `new IssueReport(text)` appends.
+    pub fn add_report(&mut self, text: String) {
+        self.reports.push(Report { text });
+    }
+
+    /// `GetReports` (`:14-17`) — the live list.
+    pub fn get_reports(&self) -> &[Report] {
+        &self.reports
+    }
+}
+
+/// `WorkshopIssueReporter._maxReports` (`Social/Base/WorkshopIssueReporter.
+/// cs:10`) — the Steam reporter's 1000-entry ring: `AddReport` appends then
+/// drops from the front while over the cap (`:18-26`). Steam-only
+/// (`SocialAPI.Workshop != null`, `Main.cs:52356-52359`); the port's
+/// `Workshop == null` state never constructs one — the shape is pinned
+/// here for the census.
+pub const WORKSHOP_MAX_REPORTS: usize = 1000;
+
+/// The Workshop reporter's capped append (`AddReport`, `:18-26`) over a
+/// caller-owned log — the ring rule without the Steam events.
+pub fn workshop_add_report(reports: &mut Vec<Report>, text: String) {
+    reports.push(Report { text });
+    while reports.len() > WORKSHOP_MAX_REPORTS {
+        reports.remove(0);
+    }
+}
+
+/// `Main.OpenReportsMenu`'s reporter merge (`Main.cs:52352-52363`):
+/// `Main.IssueReporter` first, then `SocialAPI.Workshop.IssueReporter`
+/// when Steam is live; `PopulateLogs` orders the merged rows by
+/// `timeReported` (a stable sort — the append order already is it).
+/// The port passes only the general log (the `Workshop == null` arm).
+pub fn merged_reports(general: &[Report], workshop: Option<&[Report]>) -> Vec<Report> {
+    let mut out = general.to_vec();
+    if let Some(w) = workshop {
+        out.extend_from_slice(w);
+    }
+    out
 }
 
 /// `PopulateLogs` (`UIReportsPage.cs:142-184`): the reports ordered by
@@ -429,5 +491,43 @@ mod tests {
         assert!(!wheel_target(screen, Vec2::new(1030.0, 400.0), 496.0, 128.0));
         // Overflowing: the bar attaches and takes the wheel.
         assert!(wheel_target(screen, Vec2::new(1030.0, 400.0), 496.0, 1000.0));
+    }
+
+    /// `GeneralIssueReporter.AddReport`/`GetReports`
+    /// (`GeneralIssueReporter.cs:9-17`): the unbounded append log;
+    /// `OpenReportsMenu`'s merge passes the general rows first, the
+    /// Workshop rows after (`Main.cs:52354-52359`).
+    #[test]
+    fn the_general_reporter_appends_and_merges() {
+        let mut r = GeneralIssueReporter::default();
+        assert!(r.get_reports().is_empty());
+        r.add_report("A resource pack failed to load Music\\Music_1.ogg!".into());
+        r.add_report("second".into());
+        assert_eq!(r.get_reports().len(), 2);
+        assert_eq!(r.get_reports()[0].text, "A resource pack failed to load Music\\Music_1.ogg!");
+        // The merge: general first, workshop after; the null-Steam arm
+        // passes only the general log.
+        let workshop = vec![Report { text: "w1".into() }];
+        let merged = merged_reports(r.get_reports(), Some(&workshop));
+        assert_eq!(merged.len(), 3);
+        assert_eq!(merged[2].text, "w1");
+        assert_eq!(merged_reports(r.get_reports(), None), r.get_reports());
+    }
+
+    /// `WorkshopIssueReporter.AddReport`'s 1000-entry ring
+    /// (`WorkshopIssueReporter.cs:10/:18-26`): the append drops from the
+    /// front while over the cap.
+    #[test]
+    fn the_workshop_ring_caps_at_1000() {
+        let mut reports = Vec::new();
+        for i in 0..WORKSHOP_MAX_REPORTS {
+            workshop_add_report(&mut reports, format!("r{i}"));
+        }
+        assert_eq!(reports.len(), 1000);
+        assert_eq!(reports[0].text, "r0");
+        workshop_add_report(&mut reports, "overflow".into());
+        assert_eq!(reports.len(), 1000, "the cap holds");
+        assert_eq!(reports[0].text, "r1", "the front dropped");
+        assert_eq!(reports[999].text, "overflow");
     }
 }

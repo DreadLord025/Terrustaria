@@ -341,6 +341,11 @@ pub(crate) struct App {
     /// fresh per `UIWorldCreationAdvanced` ctor, ticked once per UI update
     /// while the screen is live (W4-d85 doc-sweep).
     pub(crate) world_advanced_glitch: ui::world_creation_advanced::EverythingGlitch,
+    /// `Main.IssueReporter` (`Main.cs:2169`, created `:10832`) — the
+    /// general issue log the reports page reads (`OpenReportsMenu`,
+    /// `:52352-52363`). Empty in the port: the only non-Steam producer is
+    /// the resource-pack music failure, which has no pipeline here.
+    pub(crate) issue_reporter: ui::reports::GeneralIssueReporter,
     /// The four category toggles, all on at `OnActivate`
     /// (`UIAchievementsMenu.InitializePage`'s `SetState(value: true)`).
     pub(crate) achievements_categories: [bool; 4],
@@ -3861,6 +3866,7 @@ impl App {
             debug_loadouts_last_search: String::new(),
             debug_loadouts_scroll: 0.0,
             world_advanced_glitch: ui::world_creation_advanced::EverythingGlitch::default(),
+            issue_reporter: ui::reports::GeneralIssueReporter::default(),
             // The filter bits default to all-on (`SetState(value: true)`);
             // a shot run can pin a single category through the bitmask.
             achievements_categories: {

@@ -1420,24 +1420,41 @@ impl App {
     }
 
     /// `Main.OpenReportsMenu` (`Main.cs:52352-52363`): the reporters'
-    /// log (empty in the port), the current front/menu state parked as
-    /// the Back target, `menuMode = 888` + `SetState(state)`. The
-    /// scrollbar starts at the bottom (`GoToBottom`, `UIReportsPage.
-    /// cs:124`).
+    /// merged log (`Main.IssueReporter` + the Steam Workshop reporter
+    /// when live — the port's `Workshop == null` arm passes only the
+    /// general log), the current front/menu state parked as the Back
+    /// target, `menuMode = 888` + `SetState(state)`. The scrollbar starts
+    /// at the bottom (`GoToBottom`, `UIReportsPage.cs:124`) over the
+    /// MERGED rows' content height.
     pub(crate) fn open_reports(&mut self) {
         let back_front = self.front.clone();
         let back_page = self.menu.as_ref().map(|m| m.page);
+        let reports = ui::reports::merged_reports(self.issue_reporter.get_reports(), None);
         let (sw, sh) = self.screen_size();
         let screen = Vec2::new(sw, sh);
         let container = ui::reports::container_rect(screen);
         let panel = ui::reports::panel_rect(&container);
         let log = ui::reports::log_rect(&panel);
-        // The empty log: one initial-message row between the spacers.
         let line_h = ui::text::line_height(&self.lookups);
-        let content = ui::reports::content_height(&[line_h]);
+        // The content height: the wrapped rows, or the single
+        // initial-message row when the log is empty (`PopulateLogs`).
+        let heights: Vec<f32> = if reports.is_empty() {
+            vec![line_h]
+        } else {
+            let list = ui::reports::list_rect(&log, false);
+            let wrap_w = list[2] - 20.0;
+            reports
+                .iter()
+                .map(|rep| {
+                    let lines = ui::reports::wrap_line_count(&rep.text, wrap_w, &self.lookups);
+                    ui::reports::row_height(lines, &self.lookups)
+                })
+                .collect()
+        };
+        let content = ui::reports::content_height(&heights);
         let scroll = ui::reports::go_to_bottom(log[3], content);
         self.enter_front(FrontScreen::Reports(Box::new(ReportsState {
-            reports: Vec::new(),
+            reports,
             scroll,
             back_front,
             back_page,
@@ -2676,6 +2693,7 @@ pub(crate) mod front_flow_tests {
             debug_loadouts_last_search: String::new(),
             debug_loadouts_scroll: 0.0,
             world_advanced_glitch: ui::world_creation_advanced::EverythingGlitch::default(),
+            issue_reporter: ui::reports::GeneralIssueReporter::default(),
             notifications: ui::notifications::NotificationsTracker::default(),
             emotes: crate::emotes::EmoteSystem::default(),
             banners: crate::banners::BannerSystem::default(),

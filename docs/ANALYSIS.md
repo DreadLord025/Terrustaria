@@ -39334,12 +39334,31 @@ The `UIReportsPage` port (`ui/reports.rs`, table row 10):
   re-derives the content height through the renderer-free
   `wrap_line_count` (the detached-list wrap width — the C# re-wraps on
   the attach flip, a 15 px difference the port approximates).
-- **Deviations**: (1) the port has no `IProvideReports` pipeline — the
-  log is always empty and the `Workshop.ReportLogsInitialMessage` row
-  draws (`PopulateLogs`'s empty arm, `:147-160`); (2) the entry is the
-  `TR_UI=reports` preset (the vanilla entry is the Workshop hub's
-  Reports button, `UIWorkshopHub.cs:298` — d84's lane); (3) the gamepad
-  snap points (`SetupGamepadPoints`, `:232-247`) are out of scope (§J.3).
+- **The reporter pipeline landed 2026-11-21 (DOC-SWEEP lane 30)**:
+  `GeneralIssueReporter` (`GeneralIssueReporter.cs:5-18`) ports as
+  `ui::reports::GeneralIssueReporter` on the App (`Main.IssueReporter`,
+  `Main.cs:2169/:10832`); `open_reports` runs `OpenReportsMenu`'s merge
+  (`merged_reports` — general first, Workshop after when live) and the
+  `GoToBottom` over the merged rows. The Workshop reporter's 1000-entry
+  ring (`WorkshopIssueReporter.cs:10/:18-26`) is pinned as
+  `workshop_add_report` + `WORKSHOP_MAX_REPORTS` (Steam-only, never
+  constructed — the port's `SocialAPI.Workshop == null` state).
+- **No report SUBMIT exists** (census, docs/research/112 §3):
+  `UIReportsPage` is a read-only log viewer — the only "send" in the C#
+  is the SteamUGC publish (`WorkshopHelper.cs:247-318`,
+  `CreateItem`/`StartItemUpdate`/`SubmitItemUpdate`), Steam-only and out
+  of scope (§38). The only non-Steam report producer is the
+  resource-pack music failure (`LegacyAudioSystem.cs:114-119`); the port
+  has no resource-pack pipeline, so the log stays empty exactly as
+  vanilla with no packs.
+- **Deviations**: (1) the log is always empty in practice (no
+  resource-pack pipeline — the `Workshop.ReportLogsInitialMessage` row
+  draws, `PopulateLogs`'s empty arm, `:147-160`); (2) the entry is the
+  `TR_UI=reports` preset (the vanilla entries are the Workshop hub's
+  Reports button, `UIWorkshopHub.cs:295-300`, and the issue indicator's
+  click, `IssueReportsIndicator.cs:64-68` — the indicator itself is
+  unported, d84's lane); (3) the gamepad snap points
+  (`SetupGamepadPoints`, `:232-247`) are out of scope (§J.3).
 - **Back**: `GoBackClick` (`:206-211`) returns the parked
   `_previousUIState` / `_menuIdToGoBackTo` — the flow table's
   `FlowClick::ReportsBack` row carries both.
