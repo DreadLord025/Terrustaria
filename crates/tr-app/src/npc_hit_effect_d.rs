@@ -2067,9 +2067,10 @@ fn moss_zombie_death(
 /// branches: 104 Werewolf → 117/118x2/119x2 (`:86982-86986`, sites
 /// 286-290), 632 Maggot Zombie → 1214/1215x2/1216x2 + the Next(2)+2
 /// maggot-spawn seam (`:86991-87006`, sites 291-295), 331 Xmas Zombie →
-/// 488/489x2/490x2 (`:87011-87015`, sites 296-300); the 332/109/...
-/// tails land in later batches. The hit-half 186/632 Next(5) gore gates
-/// (`:86945-86952`) are g62's lane.
+/// 488/489x2/490x2 (`:87011-87015`, sites 296-300), 332 Sweater Zombie →
+/// 491/492x2/493x2 (`:87020-87024`, sites 301-305); the 109/161/...
+/// tails land in later batches. The hit-half
+/// 186/632 Next(5) gore gates (`:86945-86952`) are g62's lane.
 fn zombie_arm_death(
     npc: &Npc,
     npc_type: i32,
@@ -2151,6 +2152,15 @@ fn zombie_arm_death(
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 489, s); // :87013
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 490, s); // :87014
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 490, s); // :87015
+        return;
+    }
+    if npc_type == 332 {
+        // `:87018-87026` — the Sweater Zombie ladder + return.
+        gore.new_gore(rng, world, pos, vel, 491, s); // :87020
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 492, s); // :87021
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 492, s); // :87022
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 493, s); // :87023
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 493, s); // :87024
         return;
     }
 }
@@ -2401,7 +2411,8 @@ pub fn hit_effect_d(
     }
     // `:86937-...` — the giant zombie arm (430-436/590/591/3/52/53/536/
     // 104/109/331/332/132/161/162/186-189/200/223/251/319-321/632); the
-    // 104/632/331 branches are live (sites 286-300), the rest land later.
+    // 104/632/331/332 branches are live (sites 286-305), the rest land
+    // later.
     else if matches!(npc_type, 430..=436 | 590 | 591 | 3 | 52 | 53 | 536 | 104 | 109 | 331 | 332 | 132 | 161 | 162 | 186 | 187 | 188 | 189 | 200 | 223 | 251 | 319 | 320 | 321 | 632)
     {
         zombie_arm_death(
@@ -4240,5 +4251,28 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the xmas zombie mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87020-87024` — the Sweater Zombie ladder 491/492x2/493x2.
+    #[test]
+    fn w4_f5d_the_sweater_zombie_ladder_spawns_the_five() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(311);
+        let _ = hit_effect_d(&n, 332, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![491, 492, 492, 493, 493]);
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        let mut twin = UnifiedRandom::new(311);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the sweater zombie mirrors the C# draws");
     }
 }
