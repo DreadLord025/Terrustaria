@@ -39437,3 +39437,35 @@ every expected value hand-derived from the cited C# lines (the
 placement fixture's probe cell (20,29), the 2Г—2 object (20,28)-(21,29)
 and the floor-row-30 anchor verified against `can_place`'s scoring).
 
+## The W4-d2 RETIRE — band-11-20 SEALED (2026-11-21, code-only)
+
+research/**283** (number per registry-150's refresh `72226e500` s6 + a
+fresh all-tip ls-tree sweep: 281 seven-claimant, 282 two-claimant, 283
+first-free) publishes the five-part FINAL: (1) the git-log census —
+five commits `ebf418031`/`15e5448a9`/`61c47ed79` + the two witness-fix
+rounds `b1c4ec0a8`/`f430ccf83`, 20 rows + 40 module witnesses (the
+light-pets commit message's "12" undercounts: the tip's `#[test]` census
+is 13; the chain message's "16" is 14 module + 3 damage_pve = 17); (2) the **261 resolution** — the flail machine is aiStyle **15**
+(`DefaultToFlail` `Projectile.cs:10753-10759`), d75's correction STANDS;
+the 261 BoulderStaffOfEarth is aiStyle **14** (`:3452-3462`), UNROWED on
+every pushed tip (re-probed d3/d75/d77/f1/g2/e3 + HEAD), band-11-20 owns
+it by the style axis, and the gap is TWO halves (the `:24989-25042` AI
+type-arm + the `HandleMovement` `:19643` ±3 gate -> `MakeBoulderOfEarthExplosion`
+`:20391` RNG body) — **task-seeded S1-P-i61 (i58 double-seeded g65/d3, i59/i60 g65's)**, not ported in the retire
+round; (3) the all-styles/kinds census: **10/10 styles armed**, 196 C#
+band kinds, **169 rowed / 27 unrowed** — every remainder named with its
+SetDefaults cite (the 5 style-14 kinds incl. 261, the 17 style-16
+bomb/rocket kinds, 288, the 3 style-18 sickle/book kinds, the 252
+jackhammer); (4) the **d77c/f1 compose receipt** at the moved tips
+(d77 `5f10560b2` / f1 `3065492b0`): the band's 20 landed kinds are
+DISJOINT from both kill maps (the C# Kill range names none of them —
+mechanical sweep), the inherited rowed kinds overlap only via
+keep-one-identical arms (44/45, 928, 346, 183 — the d77-superset drop
+plays once), the f1-UNIQUE fold remainder touches no band kind, and the
+one merger obligation is the mechanical 5->6-tuple `volumeScale` forward;
+(5) the band declaration: **SEALED** — no census/arm/row work owed
+beyond the named seeds (S1-P-i61 + the d75-armed 288 gate). 3 RETIRE
+witnesses appended to `projectile.rs`'s tests tail (the band-arm scan,
+the landed-roster pin, the 261-unrowed activation pin) — WRITTEN NOT
+RUN, no cargo/tests/rustfmt/graphify invoked.
+

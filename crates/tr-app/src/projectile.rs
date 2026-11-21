@@ -44610,4 +44610,79 @@ mod s1_p_i25_dragon_tests {
         assert!((cx - 412.0).abs() < 0.01, "the centre kept: {cx}");
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
     }
+
+    /// W4-d2 RETIRE (research/283 §5) — the band-11-20 declaration pin:
+    /// every style label 11..=20 appears EXACTLY ONCE as a top-level arm
+    /// of the aiStyle dispatch (the s1_d_4c scan shape, band-scoped).
+    /// The three missing styles (11/13/17) landed on this lane; the
+    /// other seven were armed at base — the band is 10/10 SEALED.
+    #[test]
+    fn w4_d2_retire_the_band_styles_all_have_live_arms() {
+        let src = include_str!("projectile.rs");
+        let start = src
+            .find("match data.ai_style {")
+            .expect("the aiStyle dispatch");
+        let mut counts = std::collections::BTreeMap::new();
+        for line in src[start..].lines().skip(1) {
+            if line == "                        _ => {}" {
+                break;
+            }
+            if let Some(rest) = line.strip_prefix("                        ") {
+                if rest.starts_with(' ') {
+                    continue;
+                }
+                let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+                if !digits.is_empty()
+                    && rest[digits.len()..].trim_start().starts_with("=>")
+                {
+                    *counts.entry(digits.parse::<u8>().unwrap()).or_insert(0u32) += 1;
+                }
+            }
+        }
+        for style in 11..=20u8 {
+            assert_eq!(
+                counts.get(&style).copied().unwrap_or(0),
+                1,
+                "band style {style} must have exactly one live arm (research/283)"
+            );
+        }
+    }
+
+    /// W4-d2 RETIRE — the landed roster: the 20 kinds this lane rowed
+    /// carry their band styles, and the three kind-gate tables are
+    /// EXACTLY the landed sets (a stray kind added to a gate without a
+    /// row — or vice versa — fails here).
+    #[test]
+    fn w4_d2_retire_the_band_rows_match_the_landed_roster() {
+        let pets = crate::projectile_ai_light_pets::LIGHT_PET_KINDS;
+        assert_eq!(pets, [18, 72, 86, 87]);
+        for k in pets {
+            assert_eq!(proj_data(k).unwrap().ai_style, 11, "kind {k}");
+        }
+        let chains = crate::projectile_ai_chain::CHAIN_KINDS;
+        assert_eq!(chains, [23, 262, 271, 273, 481]);
+        for k in chains {
+            assert_eq!(proj_data(k).unwrap().ai_style, 13, "kind {k}");
+        }
+        let tombs = crate::projectile_ai_tombstone::TOMB_KINDS;
+        assert_eq!(tombs, [43, 201, 202, 203, 204, 205, 527, 528, 529, 530, 531]);
+        for k in tombs {
+            assert_eq!(proj_data(k).unwrap().ai_style, 17, "kind {k}");
+        }
+    }
+
+    /// W4-d2 RETIRE — the 261 BoulderStaffOfEarth stays UNROWED until
+    /// S1-P-i61 lands it (research/283 §2: aiStyle 14, NOT the flail 15;
+    /// the row + the `HandleMovement` ±3 boulder half are the seed's).
+    /// The activation-contract pin: when the seed lands the row, this
+    /// witness flips to the `:3452-3462` row assertion (32×34, style 14,
+    /// penetrate 6, extraUpdates 1) and d18's rowless `<1.5` refusal
+    /// term auto-activates at its merge.
+    #[test]
+    fn w4_d2_retire_261_stays_unrowed_until_the_seed_lands() {
+        assert!(
+            proj_data(261).is_none(),
+            "261 is S1-P-i61's — a row here without the movement half desyncs the band census"
+        );
+    }
 }
