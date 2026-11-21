@@ -39317,7 +39317,10 @@ Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked
 
 ## The projectile dust sites, third batch (W4-f5, task/W4-f5-dust-proj-3, 2026-11-21, code-only mode)
 
-The `Projectile.cs` `Dust.NewDust*` census is 1220 sites. The co-lane split:
+The `Projectile.cs` `Dust.NewDust*` census is **1196 sites** (891 plain
+`NewDust(` + 112 `NewDustPerfect(` + 193 `NewDustDirect(`; the earlier "1220"
+was a stale over-count — re-grepped at the final phase, research/111 §4.2).
+The co-lane split:
 W4-d53 owns sites 1-40 (unpushed), W4-e3 owns sites 41-82 (`:22230-24336`, the
 aiStyle-2/4/5/6/8/152 chains, in-flight in its worktree) AND the
 `ProjectilePool::update` -> `update_dust` plumbing + the `particles.rs`
@@ -39388,4 +39391,4 @@ window before merge.
 
 Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked** (user directive). Batches land <=10 sites per commit, witnesses owed a compile window before merge.
 
-**Completion (batch 103, tip `fa3c526d5`).** All 853 gore sites of `NPC.cs:85560-89835` are ported (source count re-verified: 853 `Gore.NewGore(` lines in the window; 685 `gore.new_gore` call sites in the module — the difference is the shared `mech_smoke_burst`/`mech_quadrant_smoke`/ladder helpers fanning out to the mech rows). The NO-gore arms are recorded in dispatcher comments, not ported: 59/60/151 lava, 687/685, 265 Spore, 663 (`:88411` unreachable), 277-280, 169, 316/330, 662, 34, 289, 23 Meteor Head, 25 Burning Sphere, 33 Water Sphere, 30/665. The else-arm's `type != 156` early-return is the dispatcher fallthrough (unmatched types draw nothing; witness-pinned). Witness fix `086827426`: the dust-6 per-type tweak draws a SEVENTH `Next(-10,6)` (`Dust.cs:214-218`) — `twin_dust6` replays it in the 7 mech/twins witnesses. Stand-ins unchanged: no `Npc.altTexture` (default-0 keeps head gores), no `Npc.color` (`Color::default()` for dye rows), `netMode` SP fold, sounds c13.
+**Completion (batch 103, tip `fa3c526d5`).** All 853 gore sites of `NPC.cs:85560-89835` are ported (source count re-verified: 853 `Gore.NewGore(` lines in the window; 685 `gore.new_gore` call sites in the module — the difference is the shared `mech_smoke_burst`/`mech_quadrant_smoke`/ladder helpers fanning out to the mech rows). **FINAL verification (research/111): the 853 split 849 DEATH-half (f5's, all citation-covered, 0 missed) + 4 HIT-half (`:86532/86947/86951/88648`, g62's lane — f5 references none; their gore BODIES are a wiring hand-off, the one residual, see 111 §1.2).** The NO-gore arms are recorded in dispatcher comments, not ported: 59/60/151 lava, 687/685, 265 Spore, 663 (`:88411` unreachable), 277-280, 169, 316/330, 662, 34, 289, 23 Meteor Head, 25 Burning Sphere, 33 Water Sphere, 30/665. The else-arm's `type != 156` early-return is the dispatcher fallthrough (unmatched types draw nothing; witness-pinned). Witness fix `086827426`: the dust-6 per-type tweak draws a SEVENTH `Next(-10,6)` (`Dust.cs:214-218`) — `twin_dust6` replays it in the 7 mech/twins witnesses. Stand-ins unchanged: no `Npc.altTexture` (default-0 keeps head gores), no `Npc.color` (`Color::default()` for dye rows), `netMode` SP fold, sounds c13. **The gore-family total census (1578 sites, 5 files) + the f10-overrun merger-delete hunks (f10 tip `05f40324e`, b137) are published in research/111.**
