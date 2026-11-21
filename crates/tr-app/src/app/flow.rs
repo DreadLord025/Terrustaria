@@ -1606,6 +1606,35 @@ pub(crate) mod front_flow_tests {
         assert_eq!(app.audio.played_count(), before, "a dead click is silent");
     }
 
+    /// W4-g22 DOC-SWEEP wiring witness — the naming plate plays ONE
+    /// Menu_Open (`Click_Naming`'s 10, `:1661`) and opens the keyboard;
+    /// Back on a clean draft plays ONE Menu_Close (`GoBack`'s 11, `:1212`)
+    /// and returns to the char select — no second cue from the hop.
+    #[test]
+    fn doc_sweep_naming_and_back_play_their_own_cues_once() {
+        let mut app = flow_app(
+            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Vec::new(),
+            Vec::new(),
+        );
+        app.pointer.tick(300.0);
+        let (sw, sh) = app.screen_size();
+        let l = ui::char_creation::layout(Vec2::new(sw, sh), 0.0);
+        app.mouse_pos = centre(l.info_name);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 10 on the name plate");
+        assert!(matches!(app.front, Some(FrontScreen::Keyboard(_))));
+        // Cancel back to the creator (the keyboard's own 11), then Back.
+        app.keyboard_cancel();
+        app.pointer.tick(300.0);
+        app.mouse_pos = centre(l.back);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 11 on Back");
+        assert!(matches!(app.front, Some(FrontScreen::CharSelect)));
+    }
+
     #[test]
     fn bug17_a_front_click_plays_the_activation_cue() {
         // Bug 17: the front-end clicks play the menu open (10) — the vanilla

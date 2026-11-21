@@ -1522,6 +1522,15 @@ pub fn click_cue(click: Click) -> Option<u32> {
         // (the armor-guard re-entry through `EquipArmorNone` `:1281`
         // plays the same 12, `:532`).
         Click::ClothStyle(_) => 12,
+        // `Click_Naming` (`:1661`) and `Click_NamingAndCreating` (`:1670`)
+        // play 10 BEFORE the keyboard opens / the character finishes.
+        Click::Name | Click::Create => 10,
+        // `GoBack` (`:1212`) plays 11 before the dirty check parks the
+        // mode-40 confirm or the char select reopens.
+        Click::Back => 11,
+        // `Click_CopyHex` (`:1333`) / `Click_PasteHex` (`:1339`) play 12
+        // before the clipboard read/write (a failed paste still played).
+        Click::CopyHex | Click::PasteHex => 12,
         _ => return None,
     })
 }
@@ -2715,8 +2724,15 @@ mod tests {
         for style in VALID_CLOTH_STYLES {
             assert_eq!(click_cue(Click::ClothStyle(style)), Some(12), "style {style}");
         }
-        // The remaining sites land in their own witnesses (the naming pair,
-        // Back, the clipboard rows); a dead click is silent.
+        // The naming pair plays 10 (`:1661`/`:1670`), Back plays 11
+        // (`GoBack`, `:1212`), the hex clipboard pair plays 12
+        // (`:1333`/`:1339`).
+        assert_eq!(click_cue(Click::Name), Some(10));
+        assert_eq!(click_cue(Click::Create), Some(10));
+        assert_eq!(click_cue(Click::Back), Some(11));
+        assert_eq!(click_cue(Click::CopyHex), Some(12));
+        assert_eq!(click_cue(Click::PasteHex), Some(12));
+        // A dead click is silent.
         assert_eq!(click_cue(Click::None), None);
     }
 
