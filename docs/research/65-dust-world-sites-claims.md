@@ -1,13 +1,26 @@
 # 65 — World-sim dust-site batches (W4-d54 / W4-e4 / W4-f6): claims + census
 
-Status: DELIVERED (W4-f6, batch 3 of the world lane). All 40 sites ported
-across 4 commits — `885a6bfa` (batch 1, Mount movement 10), `d6f555b8`
-(batch 2, Mount effects 10), `9dec91b0` (batch 3, Mount spawn/dismount 7),
-`680ac9d8` (batch 4, small world files 13). Code-only: WRITTEN NOT RUN, the
-32 witnesses are owed a compile window before merge. The claim below was
-written early per the lane's coordination rule — the branch list is the
-claim record; this doc pins the file split so the world batches never
-overlap the entity lanes or the g11-g15 Main/WorldGen/WorldItem lanes.
+Status: DELIVERED + WIRED (W4-f6, batch 3 of the world lane). All 40 sites
+ported across 4 commits — `885a6bfa` (batch 1, Mount movement 10),
+`d6f555b8` (batch 2, Mount effects 10), `9dec91b0` (batch 3, Mount
+spawn/dismount 7), `680ac9d8` (batch 4, small world files 13) — then WIRED
+to the live machines across 6 wiring commits (`bebd0c55` spawn/dismount,
+`ac0c7edc` movement, `65ec64a2` effects, `bcd63051` chest+poof, `7dfcd098`
+pylon+void-lens, `7c9165da` lava bubbles). The wiring seam census + the e4
+keep-one decision live in research/67. Code-only: WRITTEN NOT RUN, the 32
+draw-mirror + 6 wiring witnesses are owed a compile window before merge.
+The claim below was written early per the lane's coordination rule — the
+branch list is the claim record; this doc pins the file split so the world
+batches never overlap the entity lanes or the g11-g15 Main/WorldGen/WorldItem
+lanes.
+
+WIRING NOTE (research/67): the chest unlock rides **UpdatePlayers**
+(ItemCheck→TileInteractionsUse), NOT the bare global the Contract section
+below guessed; the pylon/void-lens/lava sites are draw-side (private
+`tile_draw_rand`/`liquid_rand` + bare global). The popup flash (g57), rain
+(d130) and nebula net-102 (f12/MP-only) stay staged — their machines are on
+other branches / unported in SP. f6's 27 Mount sites SUPERSEDE e4's 19
+(keep-one: f6 canonical, e4 wires orch 41-61 only).
 
 ## Lane boundary (what "world" means here)
 
