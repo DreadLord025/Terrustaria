@@ -24767,6 +24767,88 @@ mod tests {
         assert!(player4.parry_damage_buff, "the ranged shot keeps the flag");
     }
 
+    /// W4-f48 lane 20 — the Star Veil's star DEALS damage: the retaliate
+    /// drain spawns kind 725 (`Player.cs:38432-38481`, damage 75 classic /
+    /// ×2 expert), and the spawned star's contact lands through
+    /// `damage_pve` — the NPC's life drops. The spawn seam + the damage
+    /// gate were both ported; this pins the end-to-end "the star hurts".
+    #[test]
+    fn w4_f48_the_star_veil_star_lands_damage() {
+        // A zero-returning scripted stream for the drain's nine star rolls
+        // (3 stars × x/y/jitter) — the spawn positions are deterministic.
+        struct ZeroRng;
+        impl tr_core::loot::DropRng for ZeroRng {
+            fn next_range(&mut self, _min: i32, _max: i32) -> i32 { 0 }
+            fn next_float(&mut self) -> f32 { 0.0 }
+        }
+        // A tall empty world so the high star spawn stays in bounds.
+        let w = World::new("t".into(), 64, 800);
+        let mut p = crate::player::Player::spawn(&w);
+        p.star_cloak = true;
+        p.star_veil_override = true;
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 100_000;
+        npc.max_hp = 100_000;
+        let mut rng = ZeroRng;
+        let r = crate::hurt_modifiers::RetaliateRequest {
+            damage: 10,
+            x: p.x,
+            y: p.y,
+            center: p.center(),
+            vx: p.vx,
+            vy: p.vy,
+        };
+        crate::hurt_modifiers::drain_retaliate(
+            &mut p, &mut pool, std::slice::from_mut(&mut npc), r, 0, false, &mut rng,
+        );
+        assert_eq!(pool.active_count(), 3, "three stars spawn");
+        let slot = pool
+            .slots()
+            .iter()
+            .position(|s| s.active && s.kind == STAR_VEIL_STAR)
+            .expect("the 725 star");
+        assert_eq!(pool.slots()[slot].damage, 75, "classic damage 75");
+        // Reposition the star onto the NPC and land the contact.
+        pool.slots_mut()[slot].pos = Vec2::new(npc.x, npc.y);
+        let mut drng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(
+            &w, slot, std::slice::from_mut(&mut npc), None, None, Some(&mut p), &mut drng,
+        );
+        assert!(npc.hp < 100_000, "the star's contact lands: hp {}", npc.hp);
+        // Expert doubles the spawn damage to 150.
+        let mut p2 = crate::player::Player::spawn(&w);
+        p2.star_cloak = true;
+        p2.star_veil_override = true;
+        let mut pool2 = ProjectilePool::new();
+        let mut npc2 = one_npc(&w);
+        npc2.x = 20.0 * TILE_PX;
+        npc2.y = 24.0 * TILE_PX;
+        npc2.hp = 100_000;
+        npc2.max_hp = 100_000;
+        let mut rng2 = ZeroRng;
+        let r2 = crate::hurt_modifiers::RetaliateRequest {
+            damage: 10, x: p2.x, y: p2.y, center: p2.center(), vx: p2.vx, vy: p2.vy,
+        };
+        crate::hurt_modifiers::drain_retaliate(
+            &mut p2, &mut pool2, std::slice::from_mut(&mut npc2), r2, 0, true, &mut rng2,
+        );
+        let slot2 = pool2
+            .slots()
+            .iter()
+            .position(|s| s.active && s.kind == STAR_VEIL_STAR)
+            .expect("the expert 725 star");
+        assert_eq!(pool2.slots()[slot2].damage, 150, "expert ×2");
+        pool2.slots_mut()[slot2].pos = Vec2::new(npc2.x, npc2.y);
+        let mut drng2 = tr_core::tile_light::FastRandom::new(7);
+        pool2.damage_pve(
+            &w, slot2, std::slice::from_mut(&mut npc2), None, None, Some(&mut p2), &mut drng2,
+        );
+        assert!(npc2.hp < 100_000, "the expert star lands too");
+    }
+
     /// The shielded NPC refuses the shot — `Damage_PVE`'s outer gate
     /// (`Projectile.cs:12583`): `!nPC.dontTakeDamage`. The Moon Lord's
     /// core wears the shield until its parts are dead; the Brain's
