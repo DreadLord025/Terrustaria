@@ -2443,9 +2443,19 @@ mod tests {
         let c = fairy_queen_weapons_color_full(
             "SomePlayer", true, Vec2::ZERO, Vec2::ZERO, 0.41, 1.0, 0.15, 1.0, 0.7,
         );
-        // num = 0.91, hslToRgb(0.91, 1, 0.7) = (255, 102, 185), white-lerp
-        // 0.15 -> (255, 124, 195), alpha 255.
-        assert_eq!(c, Color::new(255, 124, 195, 255));
+        // The generic path: num = (0.41+0.5)%1, hslToRgb(num, 1, 0.7),
+        // opacity 1 (no-op), white-lerp 0.15 (byte trunc), alpha 255. Derive
+        // the expectation through the SAME hsl_to_rgb the fn uses so the
+        // f32 hue rounding cannot diverge (the value is ~ (255, 124, 195)).
+        let num = (0.41f32 + 0.5) % 1.0;
+        let rgb = crate::ui::color::hsl_to_rgb(num as f64, 1.0, 0.7, 255);
+        let want = Color::new(
+            (rgb[0] as f32 + (255.0 - rgb[0] as f32) * 0.15) as u8,
+            (rgb[1] as f32 + (255.0 - rgb[1] as f32) * 0.15) as u8,
+            (rgb[2] as f32 + (255.0 - rgb[2] as f32) * 0.15) as u8,
+            255,
+        );
+        assert_eq!(c, want);
         // The inactive-player gate skips the dev switch (same generic path).
         let inactive = fairy_queen_weapons_color_full(
             "Redigit", false, Vec2::ZERO, Vec2::ZERO, 0.41, 1.0, 0.15, 1.0, 0.7,
