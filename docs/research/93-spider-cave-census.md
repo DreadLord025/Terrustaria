@@ -122,3 +122,73 @@ track pair + the spiders' own hit/death cues (`NPCHit29`/`NPCDeath32`,
 `NPC.cs:11038-11039`/`:11067-11068`) — the cues ride the SPAWN pool row below
 (the kind registration), not a music gate. This section closes the ambience
 axis: no code change, no claim, no witness needed (there is no behaviour).
+
+## SPAWN pool (W4-g41 FINAL) — the wall-62 spider arm ported, the kinds cross-noted to d36
+
+The brief's spawn axis: the wall-creeper/spider spawns on spider-walls.
+Co-lane claim check FIRST: `origin/task/W4-g61-npc-spawn-dust` (tip
+`a96289284`) is the spawn/teleport-in DUST lane — its pushed diff touches
+`npc_spawn_visuals.rs`/`particles.rs`/`main.rs` only, ZERO spawner changes;
+no `SpawnNPC` pool claim. The g61b spawn-wiring window overlaps nothing
+here. The KINDS 163/164 (Black Recluse / Wall Creeper) sit in
+`origin/task/W4-d36-npc-kinds-141-210`'s claimed band — its pushed tip
+`65e481f96` is a CLAIM commit only (zero code, `git diff origin/main` empty).
+So the ARM is unclaimed and taken here; the KINDS stay d36's (the
+consume-and-None idiom until they land — the Wyvern-arm precedent).
+
+### The C# machinery (read verbatim)
+
+| C# | Lines | Role |
+| --- | --- | --- |
+| `SetSpawnFlagsForChosenTile` spider band | `NPC.cs:1148-1176` | the per-chosen-tile `spawnSpider` latch: depth `spawnTileY > rockLayer && < UnderworldLayer` (DST drops the rock floor, `:1149-1152`), `!ZoneDungeon && !invaders`, `Next(3)==0` → `Next(5,15)` radius + the ±r wall-62 box scan (x-bounds-guarded, no break) vs the else arm (the player's own tile wall, `pX/pY` = centre tile `:367-368`) |
+| the pool arm | `:1660-1678` | `(tile.wall == 62 \|\| spawnSpider) && CheckToSpawnSpider` → flag7 (`deeperThanRockLayer && spawnTileY < maxTilesY-210`, DST override `:1663-1666`) → the Stylist sub-arm (`tile.wall==62 && Next(8)==0 && !waterTile & flag7 && !savedStylist && !AnyNPCs(354)` → `SpawnNPC(354)`) → hardmode `Next(10)!=0` → 163 else 164. TERMINAL (no fallthrough). Position: after the wall-244 critter block `:1584` + bartender `:1656`, BEFORE the water ladder `:1795` + desert arm `:1680` |
+| `CheckToSpawnSpider` | `:5777-5788` | NTB+FTW (non-anniversary) at/below UnderworldLayer → `Next(5)==0`; else unconditional true |
+| `SetDefaults` 163/164 | `:11030-11072` | 163: 50x20 aiStyle 3 dmg 90 def 40 350 HP kb 0.25 value 500 slots 0.5, NPCHit29/NPCDeath32; 164: 50x20 aiStyle 3 dmg 30 def 10 80 HP kb 0.25 value 100 slots 0.5, same cues. The wall forms 165/238 are aiStyle 40 (`:11044-11058`/`:11073-11087`) — d36's band too |
+| the wall-stick transform | `:58875-58905` | `velocity.Y==0` → 164→165 / 163→238 via `NPCCanStickToWalls` + `TryMoveToTransformableSpaceInto`, `localAI[1]=12` cooldown; the expert web-shot `:58855-58874` (472, `Next(20,60)` justHit decrement + `Next(180,900)` threshold) — ALL ride the kinds (d36) |
+| `FindFrame` 163/164 | `:73083-73111`/`:73227-73267` | 164: the 4-frame walk (`|vx|*1.1` counter, 6-tick rows, air pins); 163: the 8-frame walk (the −12 air counter, the <−6/<0/<6/<12/<18 row ladder) — d36's band |
+
+### The port (this task)
+
+- `spawner.rs::set_spawn_spider_flag` — the `:1148-1176` band verbatim (the
+  scan's early-return on a hit is stream-identical: the scan draws nothing).
+  Runs at the head of `spawn_npc_at` BEFORE `GetZombieSettings` (the C#
+  caller order — `SetSpawnFlagsForChosenTile` precedes `SpawnAnNPC`).
+- `spawner.rs::check_to_spawn_spider` — the `:5777-5788` veto verbatim.
+- the pool arm in `spawn_npc_at` at the C# chain position (before the water
+  ladder): the Stylist sub-arm SPAWNS (`NpcKind::WebbedStylist` exists —
+  the caster Bottom placement); the 163/164 pick DRAWS and returns None
+  (d36's kinds). `SpawnFlags.dont_starve` added (the DST overrides), fed
+  from `World.seeds` at the production ctx (`world_sim/npcs.rs`).
+- **The `try_spawn_webbed_stylist` stand-in RETIRED** (`world_sim/npcs.rs`):
+  it spawned the Stylist on the UpdateTime stream with NO wall-62 check —
+  a double-spawn against the faithful arm. The rescue path + the
+  `saved_stylist` latch stay.
+- Deviations: the marble/granite scans ahead of the spider band
+  (`:1076-1141`) stay unmodelled (research/24's pre-existing note — their
+  draws are skipped); the remix `deeperThanRockLayer` override
+  (`:1206-1215`) is constants-off (the spawner's remix note); the
+  `AnyNPCs(354)` roster check reads the WIRE id (`to_u16` = 161) because
+  the ctx's roster list is built from `to_u16`.
+- **Stream impact**: the flag's `Next(3)` [+`Next(5,15)`] draws run on
+  every deep non-dungeon non-invasion spawn attempt — the deep-cavern
+  spawn stream SHIFTS by design (the C# draws there too; the port's
+  pre-existing deep witnesses are count/sweep-based and tolerate the
+  shift). The surface + invasion streams are UNCHANGED (the flag gate
+  draws nothing there — witnessed). No worldgen pass touched: both
+  world-hash pins UNCHANGED.
+- 9 witnesses written NOT run (the draw literals replayed against the
+  UnifiedRandom Knuth subtractive algorithm): the scan-arm latch, the
+  player-tile else arm, the depth/zone/DST gates, the Stylist spawn +
+  draw order, the saved/alive/water refusals, the consume-and-None pick
+  (hardmode + pre-hardmode), the off-wall flag-only arm, the NTB+FTW
+  veto, the surface/invasion stream-inertness pin.
+
+### d36 cross-note (the kinds hand-off)
+
+When d36 lands 163/164 (+ the wall forms 165/238): replace the two
+`return None` arms in `spawn_npc_at`'s spider pool with
+`Npc::spawn_cave_walker(ctx.world, x, NpcKind::BlackRecluse/WallCreeper)`
+(the aiStyle-3 walker — the C# `SpawnNPC(spawnTileX*16+8, spawnTileY*16,
+type)` Bottom placement); the `SetDefaults` rows + the `FindFrame` cases +
+the wall-stick transform + the expert web-shot are d36's census above.
+The arm's gates/draws are ALREADY faithful — d36 only swaps the outcome.

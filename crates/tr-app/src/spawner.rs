@@ -41,6 +41,11 @@ pub struct SpawnFlags {
     pub eclipse: bool,
     /// `Main.pumpkinMoon || Main.snowMoon`.
     pub moon_event: bool,
+    /// `Main.dontStarveWorld` (`World.seeds` DONT_STARVE) — the spider
+    /// band's depth-gate override (`NPC.cs:1149-1152`) and the Stylist
+    /// arm's flag7 override (`:1663-1666`). W4-g41 spawn-pool port;
+    /// default false (the classic path).
+    pub dont_starve: bool,
     pub zone_dungeon: bool,
     /// `NPC.downedBoss3` (Skeletron defeated).
     pub downed_boss3: bool,
@@ -652,6 +657,67 @@ fn post_check_chosen_spawn_tile(world: &World, x: i32, y: i32, ground_y: i32) ->
     true
 }
 
+/// `Spawner.SetSpawnFlagsForChosenTile`'s spider band (`NPC.cs:1148-1176`):
+/// the per-chosen-tile `spawnSpider` latch the `:1660` pool arm reads. The
+/// depth gate is `spawnTileY > rockLayer && spawnTileY < UnderworldLayer`
+/// (DST drops the rock floor, `:1149-1152`); behind `!ZoneDungeon &&
+/// !invaders` a `Next(3)` picks the scan arm (hit → `Next(5,15)` radius +
+/// the ±radius wall-62 box scan, x-bounds-guarded, NO break on a hit) vs
+/// the else arm (the PLAYER's own tile wall, `pX/pY` = the centre tile,
+/// `:367-368`). The marble/granite scans ahead of this block (`:1076-1141`)
+/// are unmodelled (research/24 — their draws are skipped, the pre-existing
+/// deviation); this is the first DRAW-bearing `SetSpawnFlagsForChosenTile`
+/// product to land, so it runs at the head of `spawn_npc_at` BEFORE the
+/// `GetZombieSettings` style draw (the C# call order). W4-g41 spawn pool.
+fn set_spawn_spider_flag(ctx: &SpawnContext, x: i32, y_tile: i32, rng: &mut UnifiedRandom) -> bool {
+    let underworld = UNDERWORLD_LAYER(ctx.world.height);
+    let mut depth_ok = (y_tile as f64) > ctx.world.rock_layer && y_tile < underworld;
+    if ctx.flags.dont_starve {
+        depth_ok = y_tile < underworld; // `:1151`
+    }
+    if !depth_ok || ctx.flags.zone_dungeon || ctx.invaders {
+        return false; // `:1153` — the whole block (and its Next(3)) is gated
+    }
+    if rng.next_max(3) == 0 {
+        // `:1155-1170` — the scan arm. The radius draw runs even when the
+        // x-bounds guard then skips the scan (the C# draws before checking).
+        let r = rng.next_range(5, 15);
+        if x - r >= 0 && x + r < ctx.world.width {
+            for m in (x - r)..(x + r) {
+                for n in (y_tile - r)..(y_tile + r) {
+                    if ctx.world.tile(m, n).is_some_and(|t| t.wall == 62) {
+                        return true; // a hit latches; the C# keeps scanning
+                        // but the flag is already true — same result, and
+                        // the scan draws NOTHING, so the early return is
+                        // stream-identical.
+                    }
+                }
+            }
+        }
+        false
+    } else {
+        // `:1172-1175` — the else arm reads the PLAYER's tile wall.
+        let px = (ctx.player_center.0 / 16.0) as i32;
+        let py = (ctx.player_center.1 / 16.0) as i32;
+        ctx.world.tile(px, py).is_some_and(|t| t.wall == 62)
+    }
+}
+
+/// `Spawner.CheckToSpawnSpider` (`NPC.cs:5777-5788`): the NTB+FTW
+/// (non-anniversary) underworld veto — at/below `UnderworldLayer` a
+/// `Next(5) == 0` gate, above it (and on every other seed) unconditional
+/// true. The draw rides the spawn stream exactly where the C# makes it.
+fn check_to_spawn_spider(ctx: &SpawnContext, y_tile: i32, rng: &mut UnifiedRandom) -> bool {
+    let seeds = ctx.world.seeds;
+    let combo = seeds.contains(tr_core::seeds::SeedFlags::NOT_THE_BEES)
+        && seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY)
+        && !seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+    if combo && y_tile >= UNDERWORLD_LAYER(ctx.world.height) {
+        return rng.next_max(5) == 0; // `:5783`
+    }
+    true
+}
+
 /// One `Spawner.TrySpawnAnNPC` attempt (NPC.cs:308-342). Returns the spawned
 /// NPC, or `None` when any gate rejects the attempt.
 /// One `NPC.SpawnNPC` call (`NPC.cs:80170-80176`): the `noSpawnCycle` latch
@@ -912,6 +978,11 @@ fn spawn_npc_at(
     no_worms: bool,
     spawn_friendly: bool,
 ) -> Option<Npc> {
+    // `SetSpawnFlagsForChosenTile`'s spider band (`NPC.cs:1148-1176`) runs
+    // BEFORE `SpawnAnNPC` (the caller order) — its draws precede the
+    // GetZombieSettings style draw below. W4-g41 spawn pool; the
+    // marble/granite scans ahead of it stay unmodelled (research/24).
+    let spawn_spider = set_spawn_spider_flag(ctx, x, y / 16, rng);
     // `GetZombieSettings` (`NPC.cs:5583-5612`) is `SpawnAnNPC`'s FIRST
     // statement (`NPC.cs:1284`) — the style roll happens for every spawn,
     // day or night, surface or underground.
@@ -1028,6 +1099,60 @@ fn spawn_npc_at(
             .tile(x, y / 16 + dy)
             .is_some_and(|t| t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Water)
     };
+    // ---- the spider-cave pool (`NPC.cs:1660-1678`) ---- the zone chain's
+    // `(tile.wall == 62 || spawnSpider) && CheckToSpawnSpider` arm. The C#
+    // position: after the wall-244 critter block (`:1584`, unmodelled —
+    // its rolls sit behind the marble-wall gate that never fires here)
+    // and the bartender arm (`:1656`, constants-off), BEFORE the hardmode
+    // water-jungle/crimson arms (`:1763-1773`, unmodelled) and the water
+    // ladder (`:1795`), the underground-desert arm (`:1680`, unmodelled)
+    // and the natural ladders. W4-g41 spawn pool.
+    let spider_wall = ctx.world.tile(x, y / 16).is_some_and(|t| t.wall == 62);
+    if (spider_wall || spawn_spider) && check_to_spawn_spider(ctx, y / 16, rng) {
+        // `:1662-1666` — flag7: the Stylist's depth band
+        // (`deeperThanRockLayer && spawnTileY < maxTilesY - 210`; DST
+        // drops the rock floor). `deeperThanRockLayer` is `spawnTileY >=
+        // rockLayer` (`:1203`); the remix override (`:1206-1215`) is
+        // unmodelled (the spawner's remix constants-off note).
+        let mut flag7 = (y as f64 / 16.0) >= ctx.world.rock_layer
+            && (y / 16) < ctx.world.height - 210;
+        if ctx.flags.dont_starve {
+            flag7 = (y / 16) < ctx.world.height - 210;
+        }
+        // `:1667-1670` — the webbed Stylist: the spawn tile's OWN wall 62
+        // (not the flag), `Next(8) == 0` (the draw runs whenever the wall
+        // gate passes — the C# `&` is NON-short-circuit on flag7 but the
+        // `&&` chain still gates the draw on the wall), no water, flag7,
+        // unsaved + none alive (`AnyNPCs(354)`). The roster list rides
+        // `to_u16` (the wire id — WebbedStylist's is 161, its vanilla
+        // type 354 rides `cs_id`), so the alive check reads the wire id.
+        // The waterTile read is the two-tiles-above WATER probe (`:1057`).
+        let water_tile = water_above(-1) && water_above(-2);
+        if spider_wall
+            && rng.next_max(8) == 0
+            && !water_tile
+            && flag7
+            && !ctx.world.saved_stylist
+            && !ctx.moon_npc_counts.contains(&NpcKind::WebbedStylist.to_u16())
+        {
+            // `SpawnNPC(spawnTileX * 16 + 8, spawnTileY * 16, 354)` —
+            // the Bottom placement on the found tile (the caster ctor).
+            return Npc::spawn_caster(ctx.world, x, y / 16, NpcKind::WebbedStylist);
+        }
+        // `:1671-1678` — the pool pick: hardmode `Next(10) != 0` → the
+        // Black Recluse 163, else the Wall Creeper 164. BOTH kinds are
+        // d36's claimed band (141-210, the CLAIM commit 65e481f96 — zero
+        // code pushed at this port); the arm draws the pick and returns
+        // no spawn until the kinds land (the Wyvern-arm consume-and-None
+        // precedent, `:1407-1410`). The C# arm is TERMINAL either way —
+        // matching it never falls through to the water/natural ladders.
+        if ctx.flags.hard_mode && rng.next_max(10) != 0 {
+            // 163 — `NpcKind::BlackRecluse` lands with d36.
+            return None;
+        }
+        // 164 — `NpcKind::WallCreeper` lands with d36.
+        return None;
+    }
     if water_above(-1) && water_above(-2) {
         // The ocean arm (`:1795`): `isOcean` = the x-edge within
         // `WorldGen.oceanDistance` = 250 (`WorldGen.cs:86913`) on a sand
@@ -4647,5 +4772,273 @@ mod tests {
         assert_eq!((rate.spawn_rate, rate.max_spawns), (360, 6));
         let rate = get_spawn_rate(&day, &mut UnifiedRandom::new(1));
         assert_eq!((rate.spawn_rate, rate.max_spawns), (600, 5));
+    }
+
+    // ---- W4-g41: the spider-cave spawn pool (`NPC.cs:1148-1176` +
+    // `:1660-1678` + `:5777-5788`) ----
+    //
+    // Co-lane: the 163/164 KINDS are d36's claimed band (141-210, CLAIM
+    // 65e481f96, zero code pushed) — the arm draws the pick and returns
+    // None until they land (the Wyvern precedent). The Stylist (354) kind
+    // EXISTS, so its sub-arm spawns. The witnesses below pin the gates,
+    // the draw ORDER (the flag draws precede GetZombieSettings) and the
+    // consume-and-None outcomes; the draw literals were replayed against
+    // the UnifiedRandom algorithm (the .NET Knuth subtractive generator).
+
+    /// A spider-cave pocket: `ground_tall`'s bands (surface 310, rock 320,
+    /// height 700 → UnderworldLayer 500) with an air pocket x 205..216
+    /// (rows 344..349) whose cells AND floor row 350 carry wall 62 — the
+    /// spawn tile is the FLOOR (FindSpawnTile's descent), so the tile's
+    /// own wall read at `:1660`/`:1667` sees the floor's wall.
+    fn spider_pocket() -> World {
+        let mut w = ground_tall();
+        for cx in 205..216 {
+            for y in 344..350 {
+                let i = w.index(cx, y);
+                w.tiles[i] = Tile::default();
+                w.tiles[i].wall = 62;
+            }
+            let i = w.index(cx, 350);
+            w.tiles[i].wall = 62;
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_spider_flag_scan_arm_latches_on_a_wall62_box_hit() {
+        // `NPC.cs:1155-1170`: Next(3) == 0 → Next(5,15) radius + the ±r
+        // wall-62 box scan. Seed 26: Next(3)=0, radius 9 — the pocket's
+        // wall-62 cells sit inside the box around (210, 350).
+        let w = spider_pocket();
+        let c = ctx(&w, 350.0 * 16.0, true);
+        let mut rng = UnifiedRandom::new(26);
+        assert!(set_spawn_spider_flag(&c, 210, 350, &mut rng));
+        // The flag drew exactly Next(3) + Next(5,15): the tail matches a
+        // reference stream that made the same two draws.
+        let mut r#ref = UnifiedRandom::new(26);
+        assert_eq!(r#ref.next_max(3), 0);
+        assert_eq!(r#ref.next_range(5, 15), 9);
+        assert_eq!(rng, r#ref, "the scan itself draws nothing");
+    }
+
+    #[test]
+    fn the_spider_flag_else_arm_reads_the_player_tile_wall() {
+        // `NPC.cs:1172-1175`: Next(3) != 0 → the PLAYER's tile wall.
+        // Seed 9: Next(3)=1 (no radius draw). The ctx's player centre is
+        // (0, y) — tile (0, 350) is plain ground (wall 0) → false; a
+        // wall-62 cell under the player flips it.
+        let w = spider_pocket();
+        let c = ctx(&w, 350.0 * 16.0, true);
+        let mut rng = UnifiedRandom::new(9);
+        assert!(!set_spawn_spider_flag(&c, 210, 350, &mut rng));
+        let mut w2 = spider_pocket();
+        let i = w2.index(0, 350);
+        w2.tiles[i].wall = 62;
+        let c2 = ctx(&w2, 350.0 * 16.0, true);
+        let mut rng = UnifiedRandom::new(9);
+        assert!(set_spawn_spider_flag(&c2, 210, 350, &mut rng));
+        // Exactly ONE draw either way (the Next(3); no radius).
+        let mut r#ref = UnifiedRandom::new(9);
+        assert_eq!(r#ref.next_max(3), 1);
+        assert_eq!(rng, r#ref);
+    }
+
+    #[test]
+    fn the_spider_flag_depth_and_zone_gates_draw_nothing() {
+        // `NPC.cs:1148-1153`: above the rock layer (or at/below the
+        // UnderworldLayer), in the dungeon, or during an invasion the
+        // whole block — INCLUDING the Next(3) — is skipped.
+        let w = spider_pocket();
+        for (y, dungeon, invaders) in [
+            (300i32, false, false), // above rock 320
+            (500, false, false),    // at UnderworldLayer (height-200)
+            (350, true, false),     // ZoneDungeon
+            (350, false, true),     // invaders
+        ] {
+            let mut c = ctx(&w, y as f32 * 16.0, true);
+            c.flags.zone_dungeon = dungeon;
+            c.invaders = invaders;
+            let mut rng = UnifiedRandom::new(26);
+            assert!(!set_spawn_spider_flag(&c, 210, y, &mut rng));
+            assert_eq!(rng, UnifiedRandom::new(26), "the gate draws nothing");
+        }
+        // DST drops the rock floor (`:1149-1152`): above-rock now draws.
+        let mut c = ctx(&w, 300.0 * 16.0, true);
+        c.flags.dont_starve = true;
+        let mut rng = UnifiedRandom::new(26);
+        let _ = set_spawn_spider_flag(&c, 210, 300, &mut rng);
+        assert_ne!(rng, UnifiedRandom::new(26), "the DST arm draws Next(3)");
+    }
+
+    #[test]
+    fn the_spider_pool_stylist_arm_spawns_on_the_wall_and_the_next8() {
+        // `NPC.cs:1667-1670`: the spawn tile's own wall 62 + Next(8)==0 +
+        // no water + flag7 + unsaved + none alive → SpawnNPC(354).
+        // Seed 26: flag Next(3)=0/radius 9 (the pocket hit), zombie
+        // Next(7)=6, stylist Next(8)=0. The Stylist lands on the pocket
+        // floor via the caster Bottom placement.
+        let w = spider_pocket();
+        let c = ctx(&w, 350.0 * 16.0, true);
+        let mut rng = UnifiedRandom::new(26);
+        let n = spawn_npc_at(&c, &mut rng, 210, 350 * 16, false, false, false)
+            .expect("the Stylist sub-arm spawns");
+        assert_eq!(n.kind, NpcKind::WebbedStylist);
+        // The full draw order: Next(3), Next(5,15), Next(7), Next(8).
+        let mut r#ref = UnifiedRandom::new(26);
+        assert_eq!(r#ref.next_max(3), 0);
+        assert_eq!(r#ref.next_range(5, 15), 9);
+        assert_eq!(r#ref.next_max(7), 6);
+        assert_eq!(r#ref.next_max(8), 0);
+        assert_eq!(rng, r#ref, "the arm is terminal after the Next(8)");
+    }
+
+    #[test]
+    fn the_spider_pool_stylist_gates_refuse_before_or_after_the_draw() {
+        // The saved latch / a live Stylist refuse AFTER the Next(8) draw
+        // (the C# && order); water refuses after it too. The pool pick
+        // then draws (classic: no Next(10)) and returns None (the kinds
+        // are d36's). Seed 26's Next(8)=0 either way.
+        let mut w = spider_pocket();
+        w.saved_stylist = true;
+        let c = ctx(&w, 350.0 * 16.0, true);
+        let mut rng = UnifiedRandom::new(26);
+        assert!(spawn_npc_at(&c, &mut rng, 210, 350 * 16, false, false, false).is_none());
+        let mut r#ref = UnifiedRandom::new(26);
+        r#ref.next_max(3);
+        r#ref.next_range(5, 15);
+        r#ref.next_max(7);
+        assert_eq!(r#ref.next_max(8), 0);
+        assert_eq!(rng, r#ref, "the Next(8) still ran behind the saved latch");
+        // A live WebbedStylist on the roster (the wire id 161).
+        let w2 = spider_pocket();
+        let roster = [NpcKind::WebbedStylist.to_u16()];
+        let mut c2 = ctx(&w2, 350.0 * 16.0, true);
+        c2.moon_npc_counts = &roster;
+        let mut rng2 = UnifiedRandom::new(26);
+        assert!(spawn_npc_at(&c2, &mut rng2, 210, 350 * 16, false, false, false).is_none());
+        assert_eq!(rng2, r#ref);
+    }
+
+    #[test]
+    fn the_spider_pool_pick_consumes_and_returns_none_until_d36_lands() {
+        // `NPC.cs:1671-1678`: the Stylist arm misses (seed 1: Next(8)=6),
+        // hardmode draws Next(10)=6 (!=0 → the 163 arm) — the kind is
+        // unported, so the arm consumes and returns None. Pre-hardmode
+        // the Next(10) never runs (the && short-circuit) → the 164 arm,
+        // also None. Both are TERMINAL (no fallthrough to the ladders).
+        let w = spider_pocket();
+        let mut hm = ctx(&w, 350.0 * 16.0, true);
+        hm.flags.hard_mode = true;
+        let mut rng = UnifiedRandom::new(1);
+        assert!(spawn_npc_at(&hm, &mut rng, 210, 350 * 16, false, false, false).is_none());
+        let mut r#ref = UnifiedRandom::new(1);
+        assert_eq!(r#ref.next_max(3), 0); // the flag scan arm
+        assert_eq!(r#ref.next_range(5, 15), 6);
+        assert_eq!(r#ref.next_max(7), 3); // zombie style
+        assert_eq!(r#ref.next_max(8), 6); // stylist miss
+        assert_eq!(r#ref.next_max(10), 6); // the 163 pick
+        assert_eq!(rng, r#ref);
+        // Pre-hardmode: the Next(10) is short-circuited.
+        let c = ctx(&w, 350.0 * 16.0, true);
+        let mut rng = UnifiedRandom::new(1);
+        assert!(spawn_npc_at(&c, &mut rng, 210, 350 * 16, false, false, false).is_none());
+        let mut ref2 = UnifiedRandom::new(1);
+        ref2.next_max(3);
+        ref2.next_range(5, 15);
+        ref2.next_max(7);
+        ref2.next_max(8);
+        assert_eq!(rng, ref2, "no Next(10) before hardmode");
+    }
+
+    #[test]
+    fn the_spider_flag_alone_opens_the_pool_off_wall() {
+        // `NPC.cs:1660`: `tile.wall == 62 || spawnSpider` — the spawn
+        // tile's wall is 0 (the floor row 350 outside the pocket columns
+        // is plain ground; spawn at x=180), but the flag's scan hit opens
+        // the arm (the ±6 box around (180, 350) reaches the pocket's
+        // wall-62 floor at x 205..215? No — seed 1's radius is 6, the box
+        // x 174..186 misses the pocket; the scan finds nothing, so use
+        // the PLAYER-tile arm instead: seed 2's Next(3)=2 reads the
+        // player tile (0, 350) — wall 62 set there). The Stylist sub-arm
+        // needs the spawn tile's OWN wall (false at x=180), so the pool
+        // pick runs: seed 2 pre-hardmode → the 164 consume-and-None
+        // (the Next(8) never draws — the tile-wall gate short-circuits).
+        let mut w = spider_pocket();
+        let i = w.index(0, 350);
+        w.tiles[i].wall = 62;
+        let c = ctx(&w, 350.0 * 16.0, true);
+        assert_eq!(w.tile(180, 350).map(|t| t.wall), Some(0));
+        let mut rng = UnifiedRandom::new(2);
+        assert!(spawn_npc_at(&c, &mut rng, 180, 350 * 16, false, false, false).is_none());
+        // The arm ran: Next(3)=2 (the player-tile arm, no radius), the
+        // zombie Next(7), then NO Next(8) (the off-wall Stylist gate).
+        let mut r#ref = UnifiedRandom::new(2);
+        assert_eq!(r#ref.next_max(3), 2);
+        r#ref.next_max(7);
+        assert_eq!(rng, r#ref, "the off-wall Stylist gate draws no Next(8)");
+    }
+
+    #[test]
+    fn check_to_spawn_spider_vetoes_the_ntb_ftw_underworld() {
+        // `NPC.cs:5777-5788`: NTB+FTW (non-anniversary) at/below the
+        // UnderworldLayer draws Next(5); a miss refuses the pool. Above
+        // the line (and every other seed combo) it is unconditional true
+        // and draws NOTHING.
+        let mut w = spider_pocket();
+        w.seeds = tr_core::seeds::SeedFlags::from(
+            tr_core::seeds::SeedFlags::NOT_THE_BEES | tr_core::seeds::SeedFlags::FOR_THE_WORTHY,
+        );
+        let c = ctx(&w, 350.0 * 16.0, true);
+        // Above the line: true, no draw.
+        let mut rng = UnifiedRandom::new(1);
+        assert!(check_to_spawn_spider(&c, 350, &mut rng));
+        assert_eq!(rng, UnifiedRandom::new(1));
+        // At the line (500): seed 1's Next(5)=3 → refused, one draw.
+        let mut rng = UnifiedRandom::new(1);
+        assert!(!check_to_spawn_spider(&c, 500, &mut rng));
+        let mut r#ref = UnifiedRandom::new(1);
+        assert_eq!(r#ref.next_max(5), 3);
+        assert_eq!(rng, r#ref);
+        // Seed 2's Next(5)=0 → passes.
+        let mut rng = UnifiedRandom::new(2);
+        assert!(check_to_spawn_spider(&c, 500, &mut rng));
+        // Anniversary defuses the combo (no draw even at the line) — a
+        // separate world so the ctx borrow stays immutable.
+        let mut w2 = spider_pocket();
+        w2.seeds = tr_core::seeds::SeedFlags::from(
+            tr_core::seeds::SeedFlags::NOT_THE_BEES
+                | tr_core::seeds::SeedFlags::FOR_THE_WORTHY
+                | tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY,
+        );
+        let c2 = ctx(&w2, 350.0 * 16.0, true);
+        let mut rng = UnifiedRandom::new(1);
+        assert!(check_to_spawn_spider(&c2, 500, &mut rng));
+        assert_eq!(rng, UnifiedRandom::new(1));
+    }
+
+    #[test]
+    fn the_spider_arm_is_terminal_and_leaves_the_surface_stream_alone() {
+        // The surface (above rock) never draws the flag — the classic
+        // surface ladders' stream fingerprint is UNCHANGED by this port
+        // (the frozen-behaviour pin: the flag helper draws nothing).
+        let w = ground_tall();
+        let c = ctx(&w, 295.0 * 16.0, false);
+        for seed in [1u64, 7, 26, 42] {
+            let mut r#ref = UnifiedRandom::new(seed as i32);
+            assert!(!set_spawn_spider_flag(&c, 210, 295, &mut r#ref));
+            assert_eq!(r#ref, UnifiedRandom::new(seed as i32));
+        }
+        // And the invasion path: the flag gate is invaders-closed, so
+        // the DW-1.2 stream-order witnesses stay byte-identical.
+        let mut ci = ctx(&w, 350.0 * 16.0, true);
+        ci.invaders = true;
+        ci.invasion_type = 1;
+        let mut rng = UnifiedRandom::new(3);
+        let _ = spawn_npc_at(&ci, &mut rng, 210, 350 * 16, false, false, false);
+        let mut r#ref = UnifiedRandom::new(3);
+        let _style = r#ref.next_max(7);
+        let _ = invasion_spawn_pick(&ci, &mut r#ref);
+        assert_eq!(rng, r#ref, "the invasion ladder's draw order is intact");
     }
 }

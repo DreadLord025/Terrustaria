@@ -744,10 +744,9 @@ pub(crate) fn resolve_angler_swap(app: &mut App) {
 /// their own pass (the same player-tile scan, the same roll count).
 /// `NPC.cs:1660-1670`'s spider-wall arm: the webbed Stylist waits on a
 /// spider wall (`wall == 62`) in the rock layer — `Next(8) == 0`, no
-/// water, once per save (`!savedStylist && !AnyNPCs(354)`). The port has
-/// no spider-wall tile table, so the wall gate rides the world's wall id
-/// at the player's spawn tile (the same depth band as the C#'s
-/// `deeperThanRockLayer`).
+/// water, once per save (`!savedStylist && !AnyNPCs(354)`). W4-g41: the
+/// arm is ported faithfully in `spawner.rs::spawn_npc_at` (the old
+/// player-tile stand-in here is retired).
 /// `NPC.cs:1680-1695`'s underground-desert arm: the sleeping Golfer waits
 /// below the rock layer — `Next(20) == 0`, no water, once per save
 /// (`!savedGolfer && !AnyNPCs(589)`). The vanilla's arm is gated on the
@@ -790,35 +789,12 @@ pub(crate) fn try_spawn_sleeping_golfer(app: &mut App) -> bool {
     true
 }
 
-pub(crate) fn try_spawn_webbed_stylist(app: &mut App) -> bool {
-    if app.world.saved_stylist || app.npcs.iter().any(|n| n.kind == NpcKind::WebbedStylist) {
-        return false;
-    }
-    let Some(p) = app.player.as_ref() else {
-        return false;
-    };
-    let tx = (p.x / TILE_PX) as i32;
-    let ty = (p.y / TILE_PX) as i32;
-    if (ty as f64) <= app.world.rock_layer {
-        return false;
-    }
-    let water = app.world.tile(tx, ty).is_some_and(|t| t.has_any_liquid());
-    // `Next(8) == 0` (`NPC.cs:1670`'s spider-wall arm).
-    if water || app.rngs.stream(RngKey::UpdateTime).next_max(8) != 0 {
-        return false;
-    }
-    let mut m = Npc::new(
-        NpcKind::WebbedStylist,
-        tx as f32 * TILE_PX + 8.0 - 9.0,
-        ty as f32 * TILE_PX - 34.0,
-        1,
-        0.0,
-    );
-    m.hp = m.max_hp;
-    app.npcs.push(m);
-    true
-}
-
+/// RETIRED (W4-g41 spawn pool): the webbed Stylist's world spawn now rides
+/// the faithful `NPC.cs:1660-1670` arm in `spawner.rs::spawn_npc_at` (the
+/// wall-62 gate + the `spawnSpider` flag + flag7 + the SpawnNPC-stream
+/// `Next(8)`); the old stand-in (no wall check, the UpdateTime stream)
+/// would double-spawn against it. The rescue path (`rescue_webbed_stylist`)
+/// and the `saved_stylist` latch stay.
 pub(crate) fn try_spawn_sleeping_angler(app: &mut App) -> bool {
     if app.world.saved_angler || app.npcs.iter().any(|n| n.kind == NpcKind::SleepingAngler) {
         return false;
@@ -4946,11 +4922,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // unsaved — the vanilla's arm sits in `SpawnAnNPC`'s ladder,
         // the port's `Next(20)` roll rides this cadence.
         try_spawn_sleeping_angler(app);
-        // The webbed Stylist's world spawn (`NPC.cs:1660-1670`'s
-        // spider-wall arm): a spider wall in the rock layer, `Next(8) == 0`,
-        // once per save — the vanilla's arm sits in `SpawnAnNPC`'s ladder,
-        // the port's roll rides this cadence with the same gates.
-        try_spawn_webbed_stylist(app);
+        // The webbed Stylist's world spawn is NO LONGER a stand-in here:
+        // W4-g41's spawn-pool port wired the faithful `NPC.cs:1660-1670`
+        // arm into `spawner.rs::spawn_npc_at` (the wall-62 gate + the
+        // spawnSpider flag + flag7 + the SpawnNPC-stream Next(8)); the
+        // old `try_spawn_webbed_stylist` stand-in (no wall check, the
+        // UpdateTime stream) is retired — the ladder arm owns the spawn.
         // The sleeping Golfer's world spawn (`NPC.cs:1691`).
         try_spawn_sleeping_golfer(app);
         // The Merchant is NOT spawned here any more: he is ladder arm
@@ -6642,6 +6619,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // moon override (`NPC.cs:771-774`): the events force
                     // `5·2.3` max spawns / rate 20 the moment they are up.
                     moon_event: app.world.pumpkin_moon || app.world.snow_moon,
+                    // `Main.dontStarveWorld` — the spider band's depth
+                    // override + the Stylist flag7 override (W4-g41).
+                    dont_starve: app
+                        .world
+                        .seeds
+                        .contains(tr_core::seeds::SeedFlags::DONT_STARVE),
                     ..spawner::SpawnFlags::default()
                 },
                 world: &app.world,
