@@ -25087,6 +25087,49 @@ and never reads the slot — the frozen path is byte-identical. Witnesses:
 re-seed repeats the first draw — the divergence pin),
 `the_gated_consumers_pre_seed_and_clear_the_shared_stream`.
 
+### The g72b bg_target.rs seam cross-verification (S1-G-13 consumers, 2026-11-21)
+
+The sibling lane `origin/task/W4-g72-bg-layers-3` (tip `1f5c2b1e`, re-fetched
+2026-11-21 — unchanged since the escalation) adds
+`crates/tr-app/src/render/bg_target.rs` (501 lines, UNWIRED) consuming this
+lane's executor seams. Every consumed signature was cross-checked against
+the current branch — **all match**:
+
+| g72b seam | Current definition | Match |
+|---|---|---|
+| `LayerCamera.screen_position: [f32; 2]` / `.screen_size: [f32; 2]` / `.zoom: f32` (`background_capture_view`'s inputs) | `targets.rs:120-124` — identical fields | ✓ |
+| `family.layout.offscreen_range` (`background_capture_view`'s `offscreen_range` arg) | `TargetLayout.offscreen_range: i32` (`targets.rs:48`), `RenderTargetFamily.layout` pub (`:562`) | ✓ (g72b passes it as f32 — the caller casts) |
+| `layer_composite_position(SceneLayer::Background, position, layer_size, screen_position, camera_center, cave_parallax)` (`BackgroundConsume::Composite`'s field list) | `targets.rs:499-517` — identical 6-arg order, the X-only parallax shift about the target centre | ✓ |
+| `sky_target_active(can_capture, foreground_sunlight_effects, draw_to_screen, map_fullscreen, only_draw_fancy_ui, lighting_not_retro)` (`underworld_capture_target`'s `flag3`) | `targets.rs:525-535` — identical 6-bool order | ✓ |
+| `SceneLayer::Background` / `BackgroundSwap` | `targets.rs:309-317` | ✓ |
+| `WorldSceneLayerTarget.position()` / `.size()` | `targets.rs:155-170` | ✓ |
+| `super::BgTex` / `super::bg::push_screen` | `render/mod.rs:32`, `render/bg.rs:1054` | ✓ |
+
+Semantic assumptions g72b makes that the current consumers satisfy:
+- **The cavern tree renders into `backgroundTarget`** via the
+  `RenderBackground` callback at zoom 1 with the `Utils.Round`ed camera
+  override — the current `render_one_layer` Background arm
+  (`layer_targets.rs`) and `render_capture_layer` Background arm
+  (`capture_render.rs`) both call `draw_background` at the layer camera,
+  zoom 1, exactly the `background_capture_view` shape.
+- **The underworld stack lands in `screenTarget`, NOT `backgroundTarget`**
+  (g72b's routing correction, `FilterManager.cs:146-152` sky-then-screen
+  composite). The current gated frame path renders the sky range into
+  `family.sky` (`render_sky_target`) and the world layers into their own
+  targets; the underworld stack is not yet a separate pass in either lane
+  (the atlas-blocked sheets), so no conflict — when g72c wires it, the
+  `sky_target_active` gate it reads is the same one `render_sky_target`
+  consumes.
+- **The `DrawCapture` `!CameraSpaceEffects` underworld re-framing**
+  (`underworld_capture_camera_override`, `Main.cs:56844-56858`) is a pure
+  plan g72b witnesses; the current capture's Background arm renders the
+  surface chains + the underground backdrop at the chunk camera (the
+  underworld band's own re-frame is the atlas-blocked half, unwired in
+  both lanes).
+
+No signature drift; the lanes compose. If g72c advances the executor
+signature, re-run this table against the new tip.
+
 ### The DrawCapture entity arms (S1-G-13 consumers census, 2026-11-21)
 
 Full census of the `captureEntities` arms (`Main.cs:56876-57017`) and the
