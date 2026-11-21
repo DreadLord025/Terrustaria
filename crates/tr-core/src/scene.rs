@@ -276,6 +276,9 @@ pub struct Zones {
     pub jungle: bool,
     /// `ZoneGlowshroom` — `EnoughTilesForGlowingMushroom` (`:698-701`).
     pub glowshroom: bool,
+    /// `ZoneGraveyard` (`SceneMetrics.cs:679`) — the vampire seed's
+    /// sun-exposure gate reads it (`Player.cs:28681`, W4-d80).
+    pub graveyard: bool,
     pub dungeon: bool,
     /// `ZoneLihzhardTemple` (`SceneMetrics.cs:694`, wall 87) — the Golem
     /// family's enrage gate input (`NPC.cs:19513`/`:31136`/`:19238`/
@@ -441,6 +444,7 @@ impl SceneMetrics {
             hallow: self.zone_hallow,
             jungle: self.zone_jungle,
             glowshroom: self.enough_tiles_for_glowing_mushroom(),
+            graveyard: self.zone_graveyard,
             dungeon: self.zone_dungeon,
             temple: self.zone_lihzhard_temple,
         }

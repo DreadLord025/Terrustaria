@@ -2075,8 +2075,8 @@ pub struct Player {
     /// `Player.vampireBurningInSunlight` (`Player.cs:28709`): the vampire
     /// seed's sun-scorch flag — the gate on the Molten set's
     /// `buffImmune[24]` (`ArmorSetBonuses.cs:285-288`). The granter
-    /// (`VampireSeedSunlightExposure`, `:28672-28719`) is unported, so the
-    /// flag stays false in play; `ResetEffects` clears it (`:18730`).
+    /// (`VampireSeedSunlightExposure`, `:28672-28719`) runs each live tick
+    /// before the counter (W4-d80); `ResetEffects` clears it (`:18730`).
     pub vampire_burning_in_sunlight: bool,
     /// `Player.sunScorchCounter` (`Player.cs:28588`): the vampire seed's
     /// sun-scorch ramp — `Clamp(counter + (burning ? 1 : -num), 0, 300)`,
@@ -3865,6 +3865,96 @@ impl Player {
     /// sizzle loop's volume override.
     pub fn sun_scorch_lerp(&self) -> f32 {
         tr_core::scene::get_lerp_value(0.0, 120.0, self.sun_scorch_counter as f32, true)
+    }
+
+    /// `Player.VampireSeedSunlightExposure` (`Player.cs:28672-28719`) — the
+    /// vampire seed's sun-burning flag granter, called by `UpdateSunScorch`
+    /// (`:28632`) BEFORE the counter tick. W4-d80 (the deferred granter the
+    /// sizzle loop's ensure reads). ZERO draws.
+    ///
+    /// The gate chain: the seed off returns; the surface/day/dry/no-eclipse/
+    /// no-graveyard/no-glowshroom flag; the Moon Lord sky-shade override; the
+    /// wet refusal; the umbrella (946/4707) refusal (the bat mount 56 cancels
+    /// it); then the 15-tile upward wall scan — an open wall (0/21/318 or an
+    /// echo-invisible wall) sets the burning flag, a solid roof stops the scan.
+    ///
+    /// Folds (ANALYSIS): `MoonLordSkyIntensity` is unported (`None` — the
+    /// shade gate is vacuous); `ShouldShowInvisibleBlocksAndWalls` reads false
+    /// (the `framing.rs` precedent); `base.wet` is `WetCollision` (ANY liquid,
+    /// `Player.cs:27749`/`:27850`) — the port's four wet flags' union;
+    /// `Main.raining` is the live `Rain::is_raining()` (the `raining` arg).
+    pub fn vampire_seed_sunlight_exposure(&mut self, world: &World, raining: bool) {
+        // `:28674-28675` — the scan anchors: `(int)Center.X / 16` and
+        // `(int)(Bottom.Y - 1f) / 16` (the live width/height, i41).
+        let (cx, _) = self.center();
+        let num = cx as i32 / 16;
+        let mut num2 = (self.y + self.height - 1.0) as i32 / 16;
+        // `:28676-28679` — the seed gate.
+        if !world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM)
+        {
+            return;
+        }
+        // `:28680-28681` — the exposure flag: below the surface, day, dry,
+        // no eclipse, no graveyard, no glowshroom.
+        let flag = (num2 as f64) < world.world_surface
+            && world.day_time
+            && !raining
+            && !world.eclipse
+            && !self.zones.graveyard
+            && !self.zones.glowshroom;
+        // `:28682-28685` — the Moon Lord sky-shade override (> 0.5 cancels).
+        // `MoonLordSkyIntensity` is unported (`None`), so the gate is vacuous.
+        // `:28686-28689` — the flag-off / wet refusal (`base.wet` = any liquid).
+        let any_wet = self.wet || self.lava_wet || self.honey_wet || self.shimmer_wet;
+        if !flag || any_wet {
+            return;
+        }
+        // `:28690-28698` — the umbrella refusal; the bat mount (56) cancels it.
+        let mut flag2 = self.held_item_kind == 946 || self.held_item_kind == 4707;
+        if self.mount.is_active() && self.mount.kind() == 56 {
+            flag2 = false;
+        }
+        if flag2 {
+            return;
+        }
+        // `:28699-28718` — the 15-tile upward wall scan.
+        let mut num4 = 15;
+        while num4 > 0 {
+            // `:28702-28706` — the current cell; a null tile breaks.
+            let Some(tile) = world.tile(num, num2) else {
+                break;
+            };
+            let old_row = num2;
+            let old_kind = tile.kind;
+            let old_wall = tile.wall;
+            // `:28707-28711` — an open wall sets the burning flag. The
+            // `ShouldShowInvisibleBlocksAndWalls` override reads false, so the
+            // echo-invisible-wall term is unconditional.
+            if old_wall == 0
+                || old_wall == 21
+                || old_wall == 318
+                || world.invisible_wall(num, old_row)
+            {
+                self.vampire_burning_in_sunlight = true;
+                break;
+            }
+            // `:28712-28713` — step up one tile.
+            num4 -= 1;
+            num2 -= 1;
+            // `:28714-28717` — the roof stop. The C# quirk: `SolidTile3` reads
+            // the NEW (upper) cell, but `tile.type`/`invisibleBlock` still read
+            // the OLD cell. `ShouldShowInvisibleBlocksAndWalls` false folds the
+            // two `|| ShouldShow` terms to the plain tests.
+            if tr_core::stray::solid_tile3(world, num, num2)
+                && old_kind != 54
+                && !world.invisible_block(num, old_row)
+                && old_kind != 541
+            {
+                break;
+            }
+        }
     }
 
     /// `Player.Spawn(ReviveFromDeath)`: the dead flags clear, then the
@@ -6925,13 +7015,18 @@ impl Player {
         // per-tick clear runs after this update). The C# call sits after
         // `UpdateEquips` (`:25633`) and the equipment-flag clears
         // (`ResetEffects` `:25491`), matching this position.
-        // W4-d80 — `Player.UpdateSunScorch` (`Player.cs:25634`): the live
-        // tick's sun-scorch counter (the burning flag's granter,
-        // `VampireSeedSunlightExposure` `:28672-28719`, is unported — the
-        // flag stays false in play, so the counter decays; the Molten
-        // gate's test seam still drives it). The sizzle play/follow half
-        // rides the sim drain (`update_sizzle_audio`). The C# call sits
+        // W4-d80 — `Player.UpdateSunScorch` (`Player.cs:25634` →
+        // `:28626-28670`): the burning flag's granter
+        // (`VampireSeedSunlightExposure` `:28632`) runs BEFORE the counter
+        // tick (`:28634`), exactly the C#'s order. The sizzle play/follow
+        // half rides the sim drain (`update_sizzle_audio`). The C# call sits
         // just before `UpdateArmorSets` (`:25685`), matching this position.
+        // The `whoAmI != Main.myPlayer` gate (`:28628`) folds to the port's
+        // single local player. The post-120-counter scorch effects
+        // (`:28635-28669`: the buff-immunity wipe, the OnFire/Dazed/Cursed
+        // grants, the mount dismount, the wings/rocket strip) are the
+        // vampire seed's damage half — deferred with the seed's combat wave.
+        self.vampire_seed_sunlight_exposure(world, raining);
         self.tick_sun_scorch();
         crate::armor_sets::apply_armor_set_bonuses(self);
         // `Player.cs:25900-25911` — the Mana Sickness damage cut: after every
@@ -13834,6 +13929,180 @@ mod tests {
         w.spawn_x = 10;
         w.spawn_y = 40;
         w
+    }
+
+    // ---- W4-d80: VampireSeedSunlightExposure (Player.cs:28672-28719) ----
+    // WRITTEN NOT RUN (code-only mode). The granter's gate chain + the
+    // 15-tile wall scan; zero draws (the method takes no rng).
+
+    /// A vampire-seed world: day, dry, surface at row 60, the player standing
+    /// at row 50 (above the surface) in open air (no walls). The granter's
+    /// happy path — the open wall at the player's feet sets the burning flag.
+    fn vampire_world() -> World {
+        let mut w = World::new("vamp".into(), 64, 128);
+        w.micro_seeds.insert(tr_core::seeds::MicroSeedFlags::VAMPIRISM);
+        w.world_surface = 60.0;
+        w.day_time = true;
+        w.eclipse = false;
+        w
+    }
+
+    /// A player whose feet sit at tile row `foot_row` (Bottom.Y = foot_row*16),
+    /// centre at tile column 10. `Bottom.Y - 1` truncates to row foot_row-1
+    /// when the feet are exactly on the boundary; place the feet mid-tile so
+    /// the scan anchor is `foot_row`.
+    fn vampire_player(w: &World, foot_row: i32) -> Player {
+        let mut p = Player::spawn(w);
+        // Bottom.Y = foot_row*16 + 8 (mid-tile) → (int)(Bottom.Y-1)/16 = foot_row.
+        p.y = (foot_row * 16 + 8) as f32 - p.height;
+        p.x = 10.0 * 16.0 + 8.0 - p.width * 0.5; // centre at column 10
+        p
+    }
+
+    /// The seed gate (`:28676-28679`): no vampire seed → the flag never sets.
+    #[test]
+    fn w4_d80_the_sun_exposure_needs_the_vampire_seed() {
+        let mut w = vampire_world();
+        w.micro_seeds = tr_core::seeds::MicroSeedFlags::none();
+        let mut p = vampire_player(&w, 50);
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight, "the seed gate refuses");
+    }
+
+    /// The happy path (`:28681`/`:28707-28710`): below-surface false (the
+    /// player is ABOVE the surface row 60), day, dry, no eclipse/graveyard/
+    /// glowshroom, no umbrella, open air (wall 0) → the burning flag sets.
+    #[test]
+    fn w4_d80_the_sun_exposure_burns_in_open_daylight() {
+        let w = vampire_world();
+        let mut p = vampire_player(&w, 50); // row 50 < surface 60
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(p.vampire_burning_in_sunlight, "open daylight burns");
+    }
+
+    /// The surface gate (`:28681`): at/below the surface row → no burn.
+    #[test]
+    fn w4_d80_the_sun_exposure_refuses_below_the_surface() {
+        let w = vampire_world();
+        let mut p = vampire_player(&w, 61); // row 61 >= surface 60
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight, "below the surface");
+    }
+
+    /// The night / rain / eclipse gates (`:28681`): each refuses the burn.
+    #[test]
+    fn w4_d80_the_sun_exposure_refuses_night_rain_eclipse() {
+        let mut w = vampire_world();
+        let mut p = vampire_player(&w, 50);
+        w.day_time = false;
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight, "night");
+        w.day_time = true;
+        p.vampire_seed_sunlight_exposure(&w, true); // raining
+        assert!(!p.vampire_burning_in_sunlight, "rain");
+        w.eclipse = true;
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight, "eclipse");
+    }
+
+    /// The graveyard / glowshroom zone gates (`:28681`): each refuses.
+    #[test]
+    fn w4_d80_the_sun_exposure_refuses_graveyard_and_glowshroom() {
+        let w = vampire_world();
+        let mut p = vampire_player(&w, 50);
+        p.zones.graveyard = true;
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight, "graveyard");
+        p.zones.graveyard = false;
+        p.zones.glowshroom = true;
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight, "glowshroom");
+    }
+
+    /// The wet gate (`:28686`): any liquid (the four-flag union) refuses.
+    #[test]
+    fn w4_d80_the_sun_exposure_refuses_any_liquid() {
+        let w = vampire_world();
+        for wet in ["water", "lava", "honey", "shimmer"] {
+            let mut p = vampire_player(&w, 50);
+            match wet {
+                "water" => p.wet = true,
+                "lava" => p.lava_wet = true,
+                "honey" => p.honey_wet = true,
+                _ => p.shimmer_wet = true,
+            }
+            p.vampire_seed_sunlight_exposure(&w, false);
+            assert!(!p.vampire_burning_in_sunlight, "{wet} refuses");
+        }
+    }
+
+    /// The umbrella gate (`:28690-28698`): 946/4707 held refuses; the bat
+    /// mount (56) cancels the umbrella so the burn lands.
+    #[test]
+    fn w4_d80_the_sun_exposure_umbrella_and_bat_mount() {
+        let w = vampire_world();
+        let mut p = vampire_player(&w, 50);
+        p.held_item_kind = 946; // Umbrella
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight, "the umbrella shades");
+        p.held_item_kind = 4707; // Tragic Umbrella
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight, "the tragic umbrella shades");
+        // The bat mount (56) cancels the umbrella (`:28691-28694`).
+        p.mount.set_mount(56, false);
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(p.vampire_burning_in_sunlight, "the bat mount cancels the umbrella");
+    }
+
+    /// The wall scan (`:28707-28711`): a solid roof (wall != 0/21/318) above
+    /// the player stops the scan before it reaches open air → no burn. The
+    /// C# quirk: `SolidTile3` reads the UPPER cell, `tile.type` the current.
+    #[test]
+    fn w4_d80_the_sun_exposure_roof_stops_the_scan() {
+        let mut w = vampire_world();
+        // A stone roof (kind 1, wall 1) at row 49 — one tile above the feet
+        // anchor (row 50). The scan reads row 50 (wall 0 → would burn), but
+        // place a wall at row 50 itself so the FIRST cell is walled.
+        let i = w.index(10, 50);
+        w.tiles[i].wall = 1; // a normal wall — not 0/21/318
+        w.tiles[i].kind = 1;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        // The cell above (row 49) is solid stone → the roof stop fires.
+        let j = w.index(10, 49);
+        w.tiles[j] = Tile { kind: 1, ..Default::default() };
+        w.tiles[j].flags |= FLAG_ACTIVE;
+        let mut p = vampire_player(&w, 50);
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight, "the roof stops the scan");
+    }
+
+    /// The wall scan's open-wall ids (`:28707`): wall 21 and 318 burn like 0.
+    #[test]
+    fn w4_d80_the_sun_exposure_open_wall_ids_burn() {
+        for wall in [0u16, 21, 318] {
+            let mut w = vampire_world();
+            let i = w.index(10, 50);
+            w.tiles[i].wall = wall;
+            let mut p = vampire_player(&w, 50);
+            p.vampire_seed_sunlight_exposure(&w, false);
+            assert!(p.vampire_burning_in_sunlight, "wall {wall} burns");
+        }
+    }
+
+    /// The RNG contract: the granter draws nothing (it takes no rng — the
+    /// gate chain + the wall scan are pure reads). The counter tick that
+    /// follows is also draw-free (`tick_sun_scorch`).
+    #[test]
+    fn w4_d80_the_sun_exposure_is_draw_free() {
+        let w = vampire_world();
+        let mut p = vampire_player(&w, 50);
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        let peek = rng.peek();
+        p.vampire_seed_sunlight_exposure(&w, false);
+        p.tick_sun_scorch();
+        assert_eq!(rng.peek(), peek, "zero Main.rand draws on the granter path");
+        assert!(p.vampire_burning_in_sunlight);
+        assert_eq!(p.sun_scorch_counter, 1, "the burning tick ramps +1");
     }
 
     #[test]
