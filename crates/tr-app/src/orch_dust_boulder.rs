@@ -128,10 +128,10 @@ pub(crate) fn rainbow_boulder1(
         let _num6 = rng.next_max(20) + 180;
         let _vector3 = next_vector2_circular(rng, 16.0, 16.0);
         let _vector2 = circular_edge(rng, 1.5, 1.5);
-        // `:1527-1528` — both hsl writes draw (the second overwrites).
+        // `:1527` draws TWO NextFloat; `:1528`'s overwrite `(num4+num3)%1`
+        // draws NONE (the dead first write still consumed its two).
         let _c1a = rng.next_float();
         let _c1b = rng.next_float();
-        let _c2 = rng.next_float();
         num4 += 1.0 / num2 as f32;
     }
     for _ in 0..21 {
@@ -180,10 +180,9 @@ pub(crate) fn rainbow_boulder3(
         let _vector3 = 0.3 + 1.5 * rng.next_float();
         let _num7 = rng.next_max(20) + 70;
         let _radius = 14.0 - num2 as f32 + rng.next_float() * 3.0;
-        // `:1604-1605` — both hsl writes draw (2 + 1 NextFloat).
+        // `:1604` draws TWO NextFloat; `:1605`'s overwrite draws NONE.
         let _c1a = rng.next_float();
         let _c1b = rng.next_float();
-        let _c2 = rng.next_float();
         num5 += 1.0 / num2 as f32;
     }
     for _ in 0..4 {
@@ -575,7 +574,6 @@ mod tests {
                 probe.next_float(); // edge unit
                 probe.next_float();
                 probe.next_float();
-                probe.next_float();
                 num4 += 1.0 / num2 as f32;
             }
             for _ in 0..21 {
@@ -615,7 +613,6 @@ mod tests {
                 probe.next_float();
                 probe.next_float();
                 probe.next_max(20);
-                probe.next_float();
                 probe.next_float();
                 probe.next_float();
                 probe.next_float();
