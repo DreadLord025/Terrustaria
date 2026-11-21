@@ -6856,6 +6856,24 @@ one-row delta pin (`w4_g90_the_b3_book_two_fold_drops_exactly_one_ladder_row`
 — 750 HP/def 31 vs 500/23, exactly +250/+8/+0.25/×0.8). Feeder-canonical
 banners landed comments-only on `from_world` + the pre-pass.
 
+**W4-g90 RETIRE FINAL-FINAL — the booster-family declaration
+(research/135 §11/§11b)**: the lane is COMPLETE. All four families —
+**bread** (5326, the keep-own: `use_artisan_loaf` + the reach + the
+merchant gate), **books** (4382/5336: the world flags + the town
+ladder/fishing/TRAINING_DAY consumers), **satchel** (5343: the shop +1),
+**shimmer-6** (5337-5342 minus g89's 5338: the regen/luck/fishing/speed
+consumers) — are landed with every carrier (`.plr`/`.trplayer`/`.trwld`/
+`.wld`/net) and every live consumer; the retire anchor census (§11b)
+re-verified all 15 cited sites present at the tip. The merger's ordered
+checklist (§11b): L1 f44c's walk + the bool dedups, L2 g88 v11 (the v7
+block is the consumed fold source), L3 the 106-byte nine-way union
+(pair at 104/105, +106 constants) + f45's `.wld` superset, the use-arm
+keep-ones per 138, all consumers stay g90's, the 26 `w4_g90_*`
+witnesses re-pin. **No open g90 obligations remain** — the recorded
+remainders are other lanes' scope (b3 phase 2, d125's empress flag, the
+g71c union landing, the g88/f44/f45 persist bases). The branch is
+RETIRED: code-only, nothing run, every receipt published (135 §8-§11).
+
 **W4-g90 artisan-loaf consumer census (`33d4b1625`)**: the
 `ateArtisanBread` full-source census is exactly four families — the
 use arm (`Player.cs:45218-45221`), `AdjTiles`' TB=4 crafting reach

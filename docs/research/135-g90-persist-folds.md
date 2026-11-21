@@ -761,9 +761,14 @@ every claimant is unmerged task work off wave-3 `a725acb04`).
 
 ## 11. RETIRE — the BOOSTER-FAMILY declaration: all carriers + consumers landed
 
-The g90 lane's full scope, declared at retire. **Every family below is
-LANDED on this branch with its carriers AND its live consumers** — the
-merger's job is dedup (per 103 §9 + 138 + this doc), never re-porting.
+**FINAL-FINAL (the retire declaration, this phase):** the g90 lane is
+COMPLETE — every family below is LANDED on this branch with its
+carriers AND its live consumers, every anchor re-verified present at
+the retire tip (`b3c286f59` lineage), and every merge verdict consumed
+(103 §9 + 138 + this doc §8/§9/§10). The merger's job is dedup, never
+re-porting. The lane's four retire phases: §10 the 68-vs-106 union
+receipt (phase 1), the DEPRECATED-BY-SUPERSET banners (phase 2), the
+b3 feeder receipt §11a (phase 3), this declaration (phase 4).
 
 | Family | Use arm (this branch) | Carriers (all landed) | Live consumers (all armed) | Merge owner (138/103) |
 | --- | --- | --- | --- | --- |
@@ -856,10 +861,65 @@ field-for-field census, b3's inline env transcribed from its tip) +
 banner is landed on `from_world`'s doc + the `update_npcs` pre-pass
 comment (comments-only).
 
-**Witness census (all WRITTEN NOT RUN — code-only lane):** the lane-7
-17 + the feeder 4 + the fishing 1 + the loaf live-chain 2 = 24 g90
-witnesses across `editing.rs`/`player.rs`/`persist.rs`/`player_file.rs`/
-`save.rs`/`wld/mod.rs`/`npc_ai_town.rs`/`npcs.rs`/`fishing.rs`; the
-merger re-pins the persist witnesses onto the superset writer's version
-(103 §4's matrix) and the union tail lengths (§10c). Nothing on this
-branch was executed: no cargo/tests/rustfmt/graphify.
+**Witness census (all WRITTEN NOT RUN — code-only lane, re-counted at
+retire):** **26 `w4_g90_*` witnesses** — `editing.rs` ×12 (the use-arm
+flag/consume/cadence/refusal sweep + the two loaf live-chain witnesses),
+`npc_ai_town.rs` ×5 (the book-stack row, the env-flags feeder pin, the
+idempotence + tipsy seam, the two b3-dedup retire witnesses),
+`player.rs` ×3 (the Ambrosia triple, the pearl mirror, the crystal
+regen rows), `persist.rs` ×2 (the five-flag round trip, the bread-only
+v7 back-compat), `world_sim/npcs.rs` ×2 (the two live town-tick
+witnesses), `player_file.rs` ×1 (the `.plr` bool round trip), `save.rs`
+×1 (the v18 pair round trip), `tr-core/fishing.rs` ×1 (the drop-condition
+census) — plus the EXTENDED `wld/mod.rs` gate witness
+(`gate_v3_i35_…`, v258/259/260 + the 2036/2037 pins). The merger re-pins
+the persist witnesses onto the superset writer's version (103 §4's
+matrix) and the union tail lengths (§10c). Nothing on this branch was
+executed: no cargo/tests/rustfmt/graphify.
+
+### 11b. The retire anchor census — every cited site re-verified present
+
+Re-read at the retire tip (direct file reads, no junction recursion):
+
+| Anchor | Site at this tip | State |
+| --- | --- | --- |
+| `use_artisan_loaf` | `editing.rs:15966` | present (the 5326 keep-own) |
+| `use_combat_book` | `editing.rs:16003` | present |
+| `use_peddlers_satchel` | `editing.rs:16041` | present |
+| `use_shimmer_permanent_item` | `editing.rs:16073` | present (the five non-5338 arms) |
+| the skeleton-merchant gate | `shop.rs:1455` (`StockWhen::ArtisanLoafWindow`, the 5326 row `:715`) | present |
+| the +4 crafting reach | `craft.rs::tile_reach:547` (the +4 after the 20-clamp) | present |
+| the pearl mirror | `player.rs:10633` (`update_luck` seeds `LuckState` from the Player field `:2153`) | present |
+| the aegis regen slot | `regen.rs:109/:190` (`RegenInputs.aegis_crystal`) | present |
+| the satchel shop +1 | `shop.rs:808` (`world.peddlers_satchel_was_used`) | present |
+| TRAINING_DAY progression-40 | `world_sim/player.rs:1626` | present |
+| the town feeder pre-pass | `world_sim/npcs.rs:4414-4457` (`from_world` + the per-NPC ladder) | present |
+| the `.trwld` v18 pair | `save.rs` writer `:442-445` / reader `:832-835`, VERSION 18 `:72` | present (the 2-byte shape, union seat 104/105 annotated) |
+| the `.trplayer` v7 block | `persist.rs` writer `:103-112` / reader `:193-207` | present (DEPRECATED-BY-SUPERSET banners landed) |
+| the App restores | `app/mod.rs:2944-2952` | present (banner landed) |
+| the six truncation sites | `save.rs:1202/:1314/:1345/:1532/:1555/:1584` | present (+106 re-pin notes landed) |
+
+**The merger's ordered checklist for THIS lane (the retire summary):**
+1. **L1** `.plr`: f44c's walk is the base; dedup the bread + five bools
+   onto `used_upgrades[6]` + the G7 field (103 §9 steps 1-5).
+2. **L2** `.trplayer`: g88 v11 is canonical; this branch's v7 block is
+   the consumed fold source — drop the writer, dedup the fields +
+   restores (103 §9 steps 6-9; the banners mark every site).
+3. **L3** `.trwld`: the 106-byte nine-way union (c39 114 §8, §10 here) —
+   this pair at 104/105, the six constants +106, VERSION 18. **L3**
+   `.wld`: f45's superset — the 2036/2037 flips dedup (138 §4).
+4. **Use arms**: keep the loaf (g90 keep-own); the books/satchel
+   keep-one (a6 or g89e/g90); the shimmer arms onto a6's machine with
+   g90's field decls + consumer shapes as the anchors (138 §1/§3).
+5. **Consumers**: all g90's stay — the town feeder (b3's arm dedups
+   onto it, §11a), fishing, TRAINING_DAY, the shop gates, the regen/
+   luck/speed rows, the net carriers.
+6. **Witnesses**: re-pin per 103 §4 + §10c; the 26 g90 witnesses ride
+   the merge (the b3-dedup pair retires once b3's env builds through
+   `from_world`).
+
+**No open g90 obligations remain.** The lane's remainders are all
+OTHER lanes' scope, recorded not owned: b3 phase 2 (the `TownOutputs`
+drain), d125's empress flag wiring (the shared false fold), the g71c
+union landing (§10), the g88/f44/f45 persist bases (103 §9/132 §3).
+The branch is RETIRED — code-only, nothing run, every receipt published.
