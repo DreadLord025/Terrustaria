@@ -1225,3 +1225,31 @@ pub const ROWS: &[Row] = &[
 		tracker: None,
 	},
 ];
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	/// The temple-FINAL seal receipt (research/246 §1, FINAL 3): the door
+	/// unlock's `NotifyProgressionEvent(22)` has exactly ONE registry consumer
+	/// — the TEMPLE_RAIDER row, `Cond::Progression(22)`
+	/// (`AchievementInitializer.cs:112-114`, Collector, icon 30, no tracker).
+	/// The g43 `unlock_temple_door` and the c36 `try_unlock_temple_door` pair
+	/// feed the SAME seam; this pins the keep-one's registry half so the
+	/// merge can drop the c36 pair without losing the credit.
+	/// WRITTEN NOT RUN (code-only mode).
+	#[test]
+	fn w4_g43_seal_progression_22_is_temple_raider_alone() {
+		let hits: Vec<&Row> = ROWS
+			.iter()
+			.filter(|r| r.conditions.iter().any(|c| matches!(c, Cond::Progression(22))))
+			.collect();
+		assert_eq!(hits.len(), 1, "one row consumes progression 22");
+		let row = hits[0];
+		assert_eq!(row.name, "TEMPLE_RAIDER");
+		assert_eq!(row.category, Category::Collector);
+		assert_eq!(row.icon, 30);
+		assert_eq!(row.conditions, &[Cond::Progression(22)]);
+		assert_eq!(row.tracker, None);
+	}
+}

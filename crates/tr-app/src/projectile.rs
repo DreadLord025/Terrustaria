@@ -43125,6 +43125,52 @@ mod s1_d_5_data_row_tests {
         );
     }
 
+    /// The temple-FINAL seal receipt (research/246 §1-2): the spear/jet/child
+    /// trio's data rows are the C# `SetDefaults` arms verbatim — the 185
+    /// stand-in is retired (the FINAL 2 `0f92565b` activation), the jet row is
+    /// the keep-one union's g43 half (FINAL 1), and the child row carries the
+    /// `extraUpdates = 2` three-sub-step flight the emitter witness rides.
+    /// The 188 row's fields are pinned here for the first time (the ramp
+    /// witnesses exercise the gate, not the row). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g43_seal_the_temple_trap_trio_rows_are_the_csharp_defaults() {
+        // `Projectile.cs:2728-2740` — the spear (186): 10x14, aiStyle 37,
+        // penetrate -1, timeLeft 300, tileCollide FALSE, ignoreWater, trap.
+        let spear = proj_data(TRAP_SPEAR).expect("the faithful 186 row");
+        assert_eq!((spear.w, spear.h), (10.0, 14.0));
+        assert_eq!(spear.ai_style, 37, "NOT the 185 stand-in's 14");
+        assert_eq!(spear.penetrate, -1);
+        assert_eq!(spear.time_left, 300, "NOT the stand-in's 900");
+        assert_eq!(spear.extra_updates, 0);
+        assert!(!spear.tile_collide);
+        assert!(spear.ignore_water);
+        assert!(spear.trap);
+        // `Projectile.cs:2741-2751` — the jet (187): 6x6, aiStyle 38, alpha
+        // 255, tileCollide false, ignoreWater, timeLeft 60, trap; the stock
+        // penetrate 1 (`:774`) stands (the emitter never deals contact
+        // damage — neither friendly nor hostile).
+        let jet = proj_data(FLAMETHROWER_TRAP).expect("the keep-one 187 row");
+        assert_eq!((jet.w, jet.h), (6.0, 6.0));
+        assert_eq!(jet.ai_style, 38);
+        assert_eq!(jet.penetrate, 1);
+        assert_eq!(jet.time_left, 60);
+        assert_eq!(jet.alpha, 255);
+        assert!(!jet.tile_collide);
+        assert!(jet.ignore_water);
+        assert!(jet.trap);
+        // `Projectile.cs:2752-2763` — the child (188): 6x6, aiStyle 23,
+        // alpha 255, penetrate -1, extraUpdates 2 (3 sub-steps per tick),
+        // trap; the stock tileCollide (`:775`) and stock timeLeft stand.
+        let child = proj_data(FLAMES_TRAP).expect("the 188 row");
+        assert_eq!((child.w, child.h), (6.0, 6.0));
+        assert_eq!(child.ai_style, 23);
+        assert_eq!(child.alpha, 255);
+        assert_eq!(child.penetrate, -1);
+        assert_eq!(child.extra_updates, 2);
+        assert!(child.tile_collide);
+        assert!(child.trap);
+    }
+
     #[test]
     fn s1_d_5_the_alias_pairs_resolve_one_row_each() {
         // The C# has ONE id per pair (`ProjectileID.cs:1426` BrainScramblerBolt

@@ -10004,6 +10004,29 @@ witness tests WRITTEN NOT RUN. The full census + citations ride
   bank4 fallback; the altar bottom-centre coords + target + the ammo-row
   cell scan; the flame jet's stationary 6-tick emission of the 188 child.
 
+## The temple-family SEAL (W4-g43, research/246)
+
+SEALED 2026-11-21 at tip `fc5bdd806` (code-only). The FINAL trio landed on
+this branch: FINAL 1 `b67cb867f` (the 187 keep-one — the W4-d4 `a336f4aa7`
+`ai_flame_jet` machine wins, the g43 row + the d4 `509b9943` 188 launch-ramp
+gate stay), FINAL 2 `fda203872` (the 186 stand-in retires — the d4 `0f92565bf`
+`ai_trap_spear` arm + faithful row activated), FINAL 3 `fc5bdd806` (the
+temple-door keep-one — g43's `unlock_temple_door` supersedes the c36
+`ec832b440`/`5f4032d02` pair; both feed the same progression-22 →
+TEMPLE_RAIDER seam, the c36 pair drops at the merge). The dispatched-earlier
+"g43c-temple-final" IS this trio — no g43c ref exists, nothing left to
+execute. Co-lane disjointness proven by read-only `merge-tree` at the seal
+tips: g43 × f24 conflicts ONLY in `anchors.txt` (f24's dungeon-Temple STYLE
+is `DungeonGenerationStyles.cs:760-797`, not the Lihzahrd temple); g43 × c31
+conflicts only in the three ledgers (`anchors.txt`/`world_hash.rs` pin
+notes/`PORT_MAP.md`) — zero logic conflicts, c31 owns
+JungleShrines/Plantera-bulb, g43 owns `temple.rs` whole. Merger: keep BOTH
+sides of every ledger conflict; the classic hash re-pin stays deferred to
+the gate (all three lanes' stream shifts compose there). 2 seal witnesses
+WRITTEN NOT RUN (the 186/187/188 row trio vs `Projectile.cs:2728-2763`; the
+progression-22 registry singleton). The bible + gate command:
+research/246-temple-family-seal.md.
+
 ## Polish passes (M1.4-WGEN-7)
 
 The worldgen rounding-out:
