@@ -204,6 +204,21 @@ pub mod id {
     /// and relays, the client plays the held instrument's sound
     /// (`Player.cs:46544`/`:46573`/`:46587`/`:46602`/`:46622` send sites).
     pub const INSTRUMENT_SOUND: u8 = 58;
+    /// `76 QuestsCountSync` (`MessageID.cs:165`) — writer
+    /// `NetMessage.cs:1149-1153` (`(byte)player + int anglerQuestsFinished
+    /// + int golferScoreAccumulated`); reader
+    /// `MessageBuffer.cs:3164-3182`: the host forces the id to the sender
+    /// and relays (`:3178`, the only live send site), the client stores a
+    /// peer's counts when `id != myPlayer || ServerSideCharacter`.
+    pub const QUESTS_COUNT_SYNC: u8 = 76;
+    /// `79 PlaceObject` (`MessageID.cs:171`) — writer
+    /// `NetMessage.cs:1166-1174`, reader `MessageBuffer.cs:3192-3215`
+    /// (host spam count + `InWorld(…, 10)` + section-sent gate, then
+    /// `WorldGen.PlaceObject` + `SendObjectPlacement` relay).
+    /// `SendObjectPlacement` (`NetMessage.cs:2573-2588`) sends it BOTH
+    /// ways: client placement asks (`Player.cs:40147`/`:45819`,
+    /// `Projectile.cs:25356`) and the host's placement relay.
+    pub const PLACE_OBJECT: u8 = 79;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -640,6 +655,10 @@ pub struct PlayerNet {
     /// `Main.player[id].team`, fed by `45 TeamChange`
     /// (`MessageBuffer.cs:2325-2336`). W4-g49.
     pub team: i32,
+    /// `Main.player[id].anglerQuestsFinished`/`golferScoreAccumulated`, fed
+    /// by `76 QuestsCountSync` (`MessageBuffer.cs:3174-3175`). W4-g49.
+    pub angler_quests_finished: i32,
+    pub golfer_score: i32,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
@@ -1679,6 +1698,37 @@ pub struct InstrumentSound {
     pub pitch: f32,
 }
 
+/// `msg 76 QuestsCountSync`'s body (`NetMessage.cs:1149-1153`): the player
+/// id byte, `anglerQuestsFinished` int, `golferScoreAccumulated` int. The
+/// reader (`MessageBuffer.cs:3164-3182`) skips its own echo unless
+/// `ServerSideCharacter`, forces the id to the sender on the host and
+/// relays to the others.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct QuestsCountSync {
+    pub player_id: u8,
+    pub angler_quests_finished: i32,
+    pub golfer_score: i32,
+}
+
+/// `msg 79 PlaceObject`'s body (`NetMessage.cs:1166-1174`): the tile as two
+/// `(short)`s, the object `(short)` type, the `(short)` style, the
+/// `(byte)` alternative, the `(sbyte)` random and `number7 == 1` as a bool
+/// (the reader maps it back to `direction = 1 : -1`,
+/// `MessageBuffer.cs:3200`). The host gates on `InWorld(x, y, 10)` + the
+/// section having been sent (`:3204`) before `WorldGen.PlaceObject`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlaceObject {
+    pub x: i16,
+    pub y: i16,
+    pub kind: i16,
+    pub style: i16,
+    pub alternative: u8,
+    pub random: i8,
+    /// The writer's `number7 == 1` bool; the reader's `direction` is
+    /// `1` when true, `-1` when false.
+    pub direction: bool,
+}
+
 /// `msg 72 TravelMerchantItems`'s body (`NetMessage.cs:1134-1141`): the
 /// `Main.travelShop` array — `Main.TravelShopMaxSlots = 40` (`Main.cs:67029`)
 /// `short` item types (`MessageBuffer.cs:3118-3126`).
@@ -1904,6 +1954,15 @@ pub enum C2s {
     /// (`Player.cs:46544` etc.; host id-force + relay
     /// `MessageBuffer.cs:2642-2650`). W4-g49 (from W4-f21).
     InstrumentSound(InstrumentSound),
+    /// `76 QuestsCountSync` — a client's quest/golf counts (the reader
+    /// accepts them from a peer or `ServerSideCharacter`,
+    /// `MessageBuffer.cs:3164-3182`).
+    QuestsCountSync(QuestsCountSync),
+    /// `79 PlaceObject` — a client placed a multi-tile object
+    /// (`Player.cs:40147`/`:45819`, `Projectile.cs:25356` via
+    /// `SendObjectPlacement`; host gate + relay
+    /// `MessageBuffer.cs:3192-3215`).
+    PlaceObject(PlaceObject),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2051,6 +2110,13 @@ pub enum S2c {
     /// `58 InstrumentSound` — a peer's instrument, host relay
     /// (`MessageBuffer.cs:2649`). W4-g49 (from W4-f21).
     InstrumentSound(InstrumentSound),
+    /// `76 QuestsCountSync` — a peer's quest/golf counts, host relay
+    /// (`MessageBuffer.cs:3178`).
+    QuestsCountSync(QuestsCountSync),
+    /// `79 PlaceObject` — the host's placement relay
+    /// (`SendObjectPlacement`'s `netMode == 2` half,
+    /// `NetMessage.cs:2577-2581` + `MessageBuffer.cs:3212`).
+    PlaceObject(PlaceObject),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2149,6 +2215,8 @@ impl C2s {
             Self::ProjectileTrackers(_) => id::PROJECTILE_TRACKERS,
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::InstrumentSound(_) => id::INSTRUMENT_SOUND,
+            Self::QuestsCountSync(_) => id::QUESTS_COUNT_SYNC,
+            Self::PlaceObject(_) => id::PLACE_OBJECT,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2257,6 +2325,21 @@ impl C2s {
             Self::SyncLoadout(l) => w.u8(l.player_id).u8(l.loadout).u16(l.hide_accessory),
             // `NetMessage.cs:1059-1062`: (byte)player + raw float pitch.
             Self::InstrumentSound(s) => w.u8(s.player_id).f32(s.pitch),
+            // `NetMessage.cs:1149-1153`: (byte)player + two raw ints.
+            Self::QuestsCountSync(q) => w
+                .u8(q.player_id)
+                .i32(q.angler_quests_finished)
+                .i32(q.golfer_score),
+            // `NetMessage.cs:1166-1174`: two (short)s + (short)type +
+            // (short)style + (byte)alt + (sbyte)random + (number7 == 1).
+            Self::PlaceObject(p) => w
+                .i16(p.x)
+                .i16(p.y)
+                .i16(p.kind)
+                .i16(p.style)
+                .u8(p.alternative)
+                .i8(p.random)
+                .bool(p.direction),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2424,6 +2507,24 @@ impl C2s {
             id::INSTRUMENT_SOUND => Self::InstrumentSound(InstrumentSound {
                 player_id: r.u8()?,
                 pitch: r.f32()?,
+            }),
+            // `MessageBuffer.cs:3166-3175`: ReadByte + two ReadInt32.
+            id::QUESTS_COUNT_SYNC => Self::QuestsCountSync(QuestsCountSync {
+                player_id: r.u8()?,
+                angler_quests_finished: r.i32()?,
+                golfer_score: r.i32()?,
+            }),
+            // `MessageBuffer.cs:3194-3200`: two ReadInt16 + ReadInt16 type +
+            // ReadInt16 style + ReadByte alt + ReadSByte random + ReadBoolean
+            // (mapped to direction 1/-1 by the apply arm).
+            id::PLACE_OBJECT => Self::PlaceObject(PlaceObject {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.i16()?,
+                style: r.i16()?,
+                alternative: r.u8()?,
+                random: r.i8()?,
+                direction: r.bool()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2623,6 +2724,8 @@ impl S2c {
             Self::SyncLoadout(_) => id::SYNC_LOADOUT,
             Self::WorldEvilBytes(_) => id::WORLD_EVIL_BYTES,
             Self::InstrumentSound(_) => id::INSTRUMENT_SOUND,
+            Self::QuestsCountSync(_) => id::QUESTS_COUNT_SYNC,
+            Self::PlaceObject(_) => id::PLACE_OBJECT,
         }
     }
 
@@ -2813,6 +2916,20 @@ impl S2c {
             Self::WorldEvilBytes(e) => w.u8(e.good).u8(e.evil).u8(e.blood),
             // `NetMessage.cs:1059-1062` — the shared body.
             Self::InstrumentSound(s) => w.u8(s.player_id).f32(s.pitch),
+            // `NetMessage.cs:1149-1153` — the shared quest/golf body.
+            Self::QuestsCountSync(q) => w
+                .u8(q.player_id)
+                .i32(q.angler_quests_finished)
+                .i32(q.golfer_score),
+            // `NetMessage.cs:1166-1174` — the shared placement body.
+            Self::PlaceObject(p) => w
+                .i16(p.x)
+                .i16(p.y)
+                .i16(p.kind)
+                .i16(p.style)
+                .u8(p.alternative)
+                .i8(p.random)
+                .bool(p.direction),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -3068,6 +3185,22 @@ impl S2c {
             id::INSTRUMENT_SOUND => Self::InstrumentSound(InstrumentSound {
                 player_id: r.u8()?,
                 pitch: r.f32()?,
+            }),
+            // `MessageBuffer.cs:3166-3175` — the shared quest/golf read.
+            id::QUESTS_COUNT_SYNC => Self::QuestsCountSync(QuestsCountSync {
+                player_id: r.u8()?,
+                angler_quests_finished: r.i32()?,
+                golfer_score: r.i32()?,
+            }),
+            // `MessageBuffer.cs:3194-3200` — the shared placement read.
+            id::PLACE_OBJECT => Self::PlaceObject(PlaceObject {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.i16()?,
+                style: r.i16()?,
+                alternative: r.u8()?,
+                random: r.i8()?,
+                direction: r.bool()?,
             }),
             _ => return None,
         })
@@ -5453,6 +5586,89 @@ mod tests {
         assert_eq!(&f[3..], &body);
         // A truncated pitch must not decode.
         assert!(C2s::decode(58, &mut NetReader::new(&[4, 0, 0])).is_none());
+    }
+
+    /// W4-g49 F21-TAIL `76 QuestsCountSync` — byte-pin transplanted verbatim
+    /// from W4-f21 batch 6 (`w4_f21_quests_count_sync_round_trips_both_directions`).
+    #[test]
+    fn w4_g49_quests_count_sync_round_trips_both_directions() {
+        // `NetMessage.cs:1149-1153`: (byte)number + raw int
+        // anglerQuestsFinished + raw int golferScoreAccumulated.
+        let b = QuestsCountSync {
+            player_id: 2,
+            angler_quests_finished: 42,
+            golfer_score: 1_000_000_000, // the AccumulateGolfingScore cap
+        };
+        let mut body = vec![2u8];
+        body.extend_from_slice(&42i32.to_le_bytes());
+        body.extend_from_slice(&1_000_000_000i32.to_le_bytes());
+        let f = C2s::QuestsCountSync(b).encode();
+        assert_eq!(f[2], 76);
+        assert_eq!(f.len(), 3 + 9);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::QuestsCountSync(d) => assert_eq!(d, b),
+            other => panic!("expected 76, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::QuestsCountSync(b).encode();
+        assert_eq!(f[2], 76);
+        match S2c::decode(76, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::QuestsCountSync(d) => assert_eq!(d, b),
+            other => panic!("expected 76, got {:?}", other.msg_id()),
+        }
+        // A truncated golf score must not decode.
+        assert!(S2c::decode(76, &mut NetReader::new(&body[..8])).is_none());
+    }
+
+    /// W4-g49 F21-TAIL `79 PlaceObject` — byte-pin transplanted verbatim
+    /// from W4-f21 batch 6 (`w4_f21_place_object_round_trips_both_directions`).
+    #[test]
+    fn w4_g49_place_object_round_trips_both_directions() {
+        // `NetMessage.cs:1166-1174`: (short)x + (short)y + (short)type +
+        // (short)style + (byte)alt + (sbyte)random + (number7 == 1) bool.
+        let b = PlaceObject {
+            x: -3,
+            y: 500,
+            kind: 21, // a chest
+            style: 4,
+            alternative: 2,
+            random: -7,
+            direction: true,
+        };
+        let mut body = (-3i16).to_le_bytes().to_vec();
+        body.extend_from_slice(&500i16.to_le_bytes());
+        body.extend_from_slice(&21i16.to_le_bytes());
+        body.extend_from_slice(&4i16.to_le_bytes());
+        body.push(2);
+        body.push((-7i8) as u8);
+        body.push(1);
+        let f = C2s::PlaceObject(b).encode();
+        assert_eq!(f[2], 79);
+        assert_eq!(f.len(), 3 + 12);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::PlaceObject(d) => assert_eq!(d, b),
+            other => panic!("expected 79, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::PlaceObject(b).encode();
+        assert_eq!(f[2], 79);
+        match S2c::decode(79, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlaceObject(d) => assert_eq!(d, b),
+            other => panic!("expected 79, got {:?}", other.msg_id()),
+        }
+        // direction=false rides as 0 (the reader maps it to -1).
+        let left = PlaceObject {
+            direction: false,
+            ..b
+        };
+        let f = C2s::PlaceObject(left).encode();
+        assert_eq!(*f.last().unwrap(), 0);
+        // A truncated direction byte must not decode.
+        assert!(C2s::decode(79, &mut NetReader::new(&body[..11])).is_none());
     }
 
     #[test]

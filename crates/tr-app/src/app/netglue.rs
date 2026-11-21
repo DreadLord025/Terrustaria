@@ -1289,6 +1289,77 @@ impl App {
                     self.world.angler_who_finished_today.push(name);
                 }
             }
+            // `case 76` — a client's quest/golf counts
+            // (`MessageBuffer.cs:3164-3182`): the host forces the subject to
+            // the sender (`:3169-3172`), stores both ints (`:3174-3175`) and
+            // relays to the others (`:3178`, the id's only live send site).
+            // The `num187 != Main.myPlayer || ServerSideCharacter` gate
+            // (`:3167`): `Main.myPlayer` is the local slot 0 and SSC is false
+            // in the port — a self-addressed echo (id 0) is dropped, exactly
+            // the C# dedicated server's behaviour. W4-g49.
+            C2s::QuestsCountSync(q) => {
+                if q.player_id != 0 {
+                    let subject = id as u8; // `:3171` — forced to the sender
+                    let peer = self.remote_players.entry(id).or_default();
+                    peer.angler_quests_finished = q.angler_quests_finished; // `:3174`
+                    peer.golfer_score = q.golfer_score; // `:3175`
+                    server.broadcast_except(
+                        &S2c::QuestsCountSync(net::QuestsCountSync {
+                            player_id: subject,
+                            angler_quests_finished: q.angler_quests_finished,
+                            golfer_score: q.golfer_score,
+                        }),
+                        id,
+                    ); // `:3178`
+                }
+            }
+            // `case 79` — a client placed a multi-tile object
+            // (`MessageBuffer.cs:3192-3215`): the spam count (`:3203`) is
+            // dormant (`Netplay.SpamCheck` defaults false, `Netplay.cs:867` —
+            // the `-secure` flag is unported, the g48 `17` arm precedent);
+            // the `InWorld(x, y, 10)` + section-sent gate (`:3204`) refuses,
+            // then `WorldGen.PlaceObject` (`:3209`, mute: false) and the
+            // `SendObjectPlacement` relay to the others (`:3212`,
+            // `NetMessage.cs:2577-2581`). W4-g49.
+            C2s::PlaceObject(p) => {
+                let (x, y) = (p.x as i32, p.y as i32);
+                let (w, h) = (self.world.width, self.world.height);
+                // `:3204` — `WorldGen.InWorld(x12, y12, 10)`
+                // (`WorldGen.cs:9688-9695`) + `TileSections[GetSectionX/Y]`.
+                if x < 10 || x >= w - 10 || y < 10 || y >= h - 10 {
+                    return;
+                }
+                if !server.is_section_sent(id, net::section_x(x), net::section_y(y)) {
+                    return;
+                }
+                let dir = if p.direction { 1 } else { -1 }; // `:3200`
+                // `:3209` — `WorldGen.PlaceObject(x, y, type, mute: false,
+                // style, num162, random, direction)` (`WorldGen.cs:51425`).
+                let landed = tr_core::edit::place_object(
+                    &mut self.world,
+                    x,
+                    y,
+                    p.kind.max(0) as u16,
+                    p.style as i32,
+                    p.random as i32,
+                    dir,
+                );
+                if landed {
+                    // The `mute: false` Dig cue (`WorldGen.cs:51441`): the
+                    // handler runs outside every swap (`Main.cs:16895`), so
+                    // the draws ride the bare-`Main.rand` stand-in.
+                    self.audio.play_place_sound(
+                        (0, 1),
+                        x as f32 * TILE_PX,
+                        y as f32 * TILE_PX,
+                        self.rngs.global(),
+                    );
+                }
+                self.world_key = None;
+                // `:3212` — the relay fires regardless of the Place result
+                // (the C# ignores `PlaceObject`'s return).
+                server.broadcast_except(&S2c::PlaceObject(p), id);
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:4282-4297`, `:4328-4343`) land
@@ -2535,6 +2606,46 @@ impl App {
                 self.invasion_progress_icon = p.icon as i32; // `:47691`
                 self.invasion_progress_wave = p.wave as i32; // `:47692`
                 self.invasion_progress_display_left = 160; // `:47693`
+            }
+            // `case 76` — a peer's quest/golf counts
+            // (`MessageBuffer.cs:3164-3182`): our own echo is skipped
+            // (`:3167`, `ServerSideCharacter` is false in the port), a peer's
+            // lands in its record (`:3174-3175`). W4-g49.
+            S2c::QuestsCountSync(q) => {
+                if q.player_id as u32 == self.local_id {
+                    return; // `:3167`
+                }
+                let peer = self.remote_players.entry(q.player_id as u32).or_default();
+                peer.angler_quests_finished = q.angler_quests_finished; // `:3174`
+                peer.golfer_score = q.golfer_score; // `:3175`
+            }
+            // `case 79` — the host's placement relay
+            // (`MessageBuffer.cs:3192-3215`): the client runs the same
+            // `WorldGen.PlaceObject` (`:3209`, mute: false) — the host-only
+            // spam/section gate (`:3201-3208`) and relay (`:3210-3213`) are
+            // not the client's. W4-g49.
+            S2c::PlaceObject(p) => {
+                let dir = if p.direction { 1 } else { -1 }; // `:3200`
+                let landed = tr_core::edit::place_object(
+                    &mut self.world,
+                    p.x as i32,
+                    p.y as i32,
+                    p.kind.max(0) as u16,
+                    p.style as i32,
+                    p.random as i32,
+                    dir,
+                );
+                if landed {
+                    // The `mute: false` Dig cue (`WorldGen.cs:51441`), the
+                    // bare-`Main.rand` stand-in (`Main.cs:16895`).
+                    self.audio.play_place_sound(
+                        (0, 1),
+                        p.x as f32 * TILE_PX,
+                        p.y as f32 * TILE_PX,
+                        self.rngs.global(),
+                    );
+                }
+                self.world_key = None;
             }
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
@@ -6602,5 +6713,135 @@ mod message_family_tests {
         // slot; 58 has no own-echo gate, so the default arm stored the pitch.
         assert_eq!(second.music_pitch, 0.25, "the relay carried the pitch");
         assert_ne!(sender_slot, second.local_id, "distinct slots");
+    }
+
+    /// W4-g49 `76 QuestsCountSync` (`MessageBuffer.cs:3164-3182`): the host
+    /// forces the subject to the sender (`:3169-3172`), stores both ints
+    /// (`:3174-3175`) and relays to the OTHER clients (`:3178`). A second
+    /// client's copy of the sender takes the counts; a self-addressed echo
+    /// (player id 0 = the host's `Main.myPlayer`) is dropped (`:3167`).
+    #[test]
+    fn w4_g49_quests_count_sync_stores_and_relays() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let addr = match &host_app.net {
+            NetRole::Host(server) => server.addr().to_string(),
+            _ => unreachable!("host role"),
+        };
+        let mut second = crate::app::flow::front_flow_tests::flow_app(
+            None,
+            Vec::<crate::ui::save_list::PlayerEntry>::new(),
+            Vec::<crate::ui::save_list::WorldEntry>::new(),
+        );
+        second.player_name = "second".into();
+        second.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        second.join_target = Some((addr, String::new()));
+        drive_to(&mut host_app, &mut second, net::client_state::IN_WORLD);
+        let sender_slot = client_app.local_id;
+        // The second client's copy of the sender peer, counts at zero.
+        second.remote_players.insert(sender_slot, net::PlayerNet { id: sender_slot, ..Default::default() });
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::QuestsCountSync(net::QuestsCountSync {
+                player_id: 99, // forced to the sender on the host (`:3171`)
+                angler_quests_finished: 42,
+                golfer_score: 1500,
+            }));
+        }
+        for _ in 0..40 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            second.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            second.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        let host_peer = host_app.remote_players.get(&sender_slot).expect("host peer");
+        assert_eq!(host_peer.angler_quests_finished, 42, "the host stored the quest count (`:3174`)");
+        assert_eq!(host_peer.golfer_score, 1500, "the host stored the golf score (`:3175`)");
+        let relayed = second.remote_players.get(&sender_slot).expect("second's sender peer");
+        assert_eq!(relayed.angler_quests_finished, 42, "the relay carried the quest count (`:3178`)");
+        assert_eq!(relayed.golfer_score, 1500, "the relay carried the golf score (`:3178`)");
+        // A self-addressed echo (id 0 = the host's myPlayer, SSC false) is
+        // dropped (`:3167`) — the host's peer record stays unchanged.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::QuestsCountSync(net::QuestsCountSync {
+                player_id: 0,
+                angler_quests_finished: 999,
+                golfer_score: 999,
+            }));
+        }
+        for _ in 0..20 {
+            host_app.poll_net();
+            client_app.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        let host_peer = host_app.remote_players.get(&sender_slot).expect("host peer");
+        assert_eq!(host_peer.angler_quests_finished, 42, "the self-echo did not overwrite (`:3167`)");
+    }
+
+    /// W4-g49 `79 PlaceObject` (`MessageBuffer.cs:3192-3215`): the host's
+    /// `InWorld(x, y, 10)` + section-sent gate (`:3204`) passes for a table
+    /// inside the streamed join box; `WorldGen.PlaceObject` (`:3209`) fills
+    /// the 3×2 footprint and the relay (`:3212`) places the client's copy.
+    #[test]
+    fn w4_g49_place_object_places_and_relays() {
+        let (mut host_app, mut client_app) = connect_pair("", "");
+        host_app.world = tr_core::World::new("flow".into(), 900, 600);
+        host_app.world.spawn_x = 100;
+        host_app.world.spawn_y = 100;
+        host_app.world.column_surface = vec![host_app.world.height; 900];
+        // A solid floor row at y=120 (the table's AnchorBottom row) on the
+        // host — the join stream carries it to the client.
+        for x in 90..=110 {
+            let i = host_app.world.index(x, 120);
+            host_app.world.tiles[i].kind = 1;
+            host_app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
+        assert_eq!(client_app.net_state, net::client_state::IN_WORLD);
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlaceObject(net::PlaceObject {
+                x: 100,
+                y: 119,
+                kind: 14, // a table (3×2, origin (1,1))
+                style: 0,
+                alternative: 0,
+                random: -1,
+                direction: true,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        // The table footprint: x 99-101, rows 118-119.
+        for app in [&host_app, &client_app] {
+            for x in 99..=101 {
+                for y in 118..=119 {
+                    let t = app.world.tile(x, y).expect("table cell");
+                    assert!(t.active() && t.kind == 14, "table cell {x},{y} placed (`:3209`)");
+                }
+            }
+        }
+    }
+
+    /// W4-g49 `79`'s gate half (`MessageBuffer.cs:3204`): a placement outside
+    /// `InWorld(x, y, 10)` is refused — no tile lands and no relay goes out.
+    #[test]
+    fn w4_g49_place_object_out_of_world_is_refused() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlaceObject(net::PlaceObject {
+                x: 2, // inside the 10-tile border (`:3204`)
+                y: 4,
+                kind: 14,
+                style: 0,
+                alternative: 0,
+                random: -1,
+                direction: true,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        for app in [&host_app, &client_app] {
+            let t = app.world.tile(2, 4).expect("cell");
+            assert!(!t.active(), "the border placement was refused (`:3204`)");
+        }
     }
 }
