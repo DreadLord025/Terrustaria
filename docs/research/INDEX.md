@@ -75,6 +75,7 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 139 | RoD teleport_style(1) ⨉ TeleportEffect-union composition (W4-g89h: the rod call COMPOSES with g11's executed union — style-1 Entry/Exit dust now-live via the queue; NEW gap 7: the editing-phase caller drains a tick late so the chaos Next(2) swaps ahead of the dust draws on UpdatePlayers [determinism break] — the editing-tail drain fix; the gap-5 camera dedup the rod's inline call needs at the union; both merger actions WRITTEN NOT APPLIED) | `139-rod-teleport-union-composition.md` | cross-note for the g11/g89 merger |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

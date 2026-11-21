@@ -53,6 +53,17 @@
 //! * The `Main.TeleportEffect` dust/sound bursts (`:37444`/`:37489`) are
 //!   the unported `TeleportEffect` system (the recall module's §Scope
 //!   precedent — `recall_teleport.rs:88`); the camera lerp IS ported.
+//!   W4-g89h: this citation is SUPERSEDED for the rod once the g11
+//!   TeleportEffect union lands — the `teleport_style(…, 1)` call queues
+//!   the Entry/Exit pair and the union's style-1 arm (`teleport_dust.rs`,
+//!   the `0 | 1` shape: Item8 cue + type-164 dust) fires through the
+//!   replay, no rod-side dust code. TWO merger actions ride research/139:
+//!   the editing-phase drain (the rod fires in `update_editing`, AFTER the
+//!   player tick — the queue must drain at the editing tail on
+//!   `UpdatePlayers` or the chaos `Next(2)` roll swaps ahead of the dust
+//!   draws, a determinism break) + the inline-camera dedup (the replay
+//!   owns the style-1 camera, gap 5 — retire this module's inline call at
+//!   the union). Neither is applied here (the union is not on this base).
 //! * `Teleport`'s unported tails (`teleport_style`'s own doc): the
 //!   funkytown/environment-immunity timers, the pressure-plate scans,
 //!   the spectating reset, the unbreakable-wall scan, the shadows.

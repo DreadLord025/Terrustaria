@@ -39590,3 +39590,54 @@ Code-only: re-read `Player.cs:45476-45534` / `:1986` / `:10090-10093` /
 cargo run). Two witness tests WRITTEN, NOT RUN: `rod_teleport.rs` (the
 chaos-state consumer census) and `tr-core/src/shimmer.rs` (the rod
 transform + the Moon-Lord lock).
+
+## W4-g89h — the RoD teleport_style(1) ⨉ TeleportEffect-union composition (2026-11-21, code-only)
+
+Cross-note for the g11 union merger, published as **research/139** (the full
+derivation + the two merger actions). The g11 union is EXECUTED on its tip
+(`9a9ac1fd0`, the research/116 keep-one: g61's widest-11 body →
+`teleport_dust.rs` + g11's App-level `main_dust` dispatcher). Verdicts:
+
+1. **The rod call COMPOSES, zero rod-side dust code.** g89f's
+   `p.teleport_style(point.x, point.y, 1)` is g11's
+   `teleport_style_with_extra(…, 0)` wrapper — it queues the Entry/Exit pair
+   (`pending_teleport_effect`, the OLD box + PRE-move mult) and the player
+   replay (`main_dust::player_teleport`) fires the style-1 arm
+   (`teleport_dust.rs:90-129`, the `0 | 1` shape: the Item8 cue FIRST, then
+   `(W*H/5)*mult` type-164 dust with the `Next(20,70)*0.01` scale + j<10/j<5
+   bumps, `Main.cs:13256-13274`) at BOTH legs. The style-1 Entry/Exit dust is
+   NOW-LIVE through the union; the g89f "bursts stay unported (recall
+   precedent)" citation is superseded FOR THE ROD (the module doc updated).
+2. **NEW gap 7 (not in research/116's six): the editing-phase caller drains
+   a tick late — the chaos-roll RNG order flips.** The rod fires in
+   `update_editing` (`editing.rs:2139`), which the frame runs in
+   `editing_net_phase` (`app/frame/world.rs:658`) AFTER `players_phase`
+   (`:633`). g11's drain lives in the player tick, so the rod's queue drains
+   NEXT tick — the chaos `Next(2)` (`Player.cs:45522`, drawn THIS tick in
+   `chaos_state_tax`) lands AHEAD of the Entry/Exit dust draws on
+   `UpdatePlayers`, the reverse of the C# order (dust `:37444`/`:37489`
+   inside `Teleport` BEFORE the chaos block `:45518`). A determinism break.
+   Fix: drain the pending effect at the EDITING tail on `UpdatePlayers`
+   right after the rod arm (the recall post-step convention); the player-tick
+   drain stays for the player-tick callers (disjoint per tick).
+3. **The gap-5 camera dedup.** g11's replay OWNS the style-1 camera
+   (`main_dust.rs:435-450`, delay 10); the rod's INLINE call
+   (`rod_teleport.rs:121-126`) would double-set it (the second
+   `set_camera_lerp` resets the timer, re-arming the delay a tick late).
+   Retire the inline call at the union — NOT before (the replay is absent on
+   this base, so retiring now would drop the camera).
+
+Both merger actions are WRITTEN, NOT APPLIED (the union code is not on g89's
+base `a725acb04`); research/139 §2/§3 carry the exact worklist + the
+re-pinned chaos witness (the cloned-stream expectation gains the dust draws
+AHEAD of the Next(2)).
+
+### Verification (W4-g89h)
+
+Code-only: re-read `Main.cs:13233-13274` / `Player.cs:37414-37496` /
+`:45476-45534` / `app/frame/world.rs:627-670` (the phase order) + the g11-tip
+bodies (`git show origin/task/W4-g11-dust-main-sites-1:<path>`:
+`teleport_dust.rs`, `main_dust.rs`, `player.rs`, `world_sim/player.rs`);
+**no cargo/rustc/rustfmt/tests/graphify invoked**. No code change to the rod
+machine — the module doc's §Scope citation updated + research/139 + the INDEX
+row + this section + the PORT_MAP cross-note.
