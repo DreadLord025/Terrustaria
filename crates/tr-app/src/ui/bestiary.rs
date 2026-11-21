@@ -1632,6 +1632,32 @@ fn portrait_data(
                 .unwrap_or(44.0);
             (sheet_i, h, 24.0, h, white)
         }
+        // W4-d41 — the desert antlions' portraits: the sheet's own row
+        // height over `Main.npcFrameCount[type]` (508 six, 509 nine),
+        // the frame width the sheet's own.
+        (NpcKind::GiantWalkingAntlion, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(31.0);
+            (sheet_i, h, 50.0, h, white)
+        }
+        (NpcKind::GiantFlyingAntlion, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 9.0)
+                .unwrap_or(31.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        // W4-d41 — the Dune Splicer's portrait: the single-frame NPC_510
+        // sheet (the entry's own; the segments fold onto it). The
+        // segments' arms exist for the match's exhaustiveness.
+        (NpcKind::DuneSplicerHead, _)
+        | (NpcKind::DuneSplicerBody, _)
+        | (NpcKind::DuneSplicerTail, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32)
+                .unwrap_or(34.0);
+            (sheet_i, h, 34.0, h, white)
+        }
     }
 }
 

@@ -1089,6 +1089,10 @@ pub(crate) fn update_worms(app: &mut App) {
         dead: p.dead,
         zone_corrupt: app.scene_metrics.zone_corrupt,
         zone_crimson: app.scene_metrics.zone_crimson,
+        // W4-d41 — the Dune Splicer's sandstorm gate + the Tomb
+        // Crawler's underground-desert gate (`NPC.cs:51709`/`:51115`).
+        zone_sandstorm: app.scene_metrics.zone_sandstorm,
+        zone_underground_desert: app.scene_metrics.zone_underground_desert,
     });
     update_worms_ctx(world, ctx, &mut app.npcs, rng, &mut app.next_worm_id);
     // S1-E-21g — the worm pass's queued plays (the leech entry burst,
@@ -1114,6 +1118,13 @@ pub(crate) struct WormHeadCtx {
     pub dead: bool,
     pub zone_corrupt: bool,
     pub zone_crimson: bool,
+    /// W4-d41 — `Main.player[target].ZoneSandstorm` (`NPC.cs:51709`): the
+    /// Dune Splicer head's 16/0.35 dig-tunable override. Stock false in
+    /// the centre-only seam; production feeds `scene_metrics`.
+    pub zone_sandstorm: bool,
+    /// W4-d41 — `Main.player[target].ZoneUndergroundDesert`
+    /// (`NPC.cs:51115`): the Tomb Crawler head's surface-gate flag.
+    pub zone_underground_desert: bool,
 }
 
 /// S1-E-21g — one drained [`crate::npc::NpcSoundRequest`]: the queue's
@@ -1184,6 +1195,8 @@ pub(crate) fn update_worms_in(
         dead: false,
         zone_corrupt: false,
         zone_crimson: false,
+        zone_sandstorm: false,
+        zone_underground_desert: false,
     });
     update_worms_ctx(world, ctx, npcs, rng, next_worm_id);
 }
@@ -1247,6 +1260,11 @@ fn update_worms_ctx(
                 // The crawltipede's fixed 30-link spawn (`:51369-51392`,
                 // `num34 = 30`) draws NOTHING — outside the budget list.
                 NpcKind::SolarCrawltipedeHead => 29,
+                // W4-d41 — the Dune Splicer head's own fixed-budget spawn
+                // (`NPC.cs:51259`, `num24 = Main.rand.Next(12, 21)`): ONE
+                // draw, outside the shared `:51301` budget list (the
+                // crawltipede precedent — no discarded Next(8,13)).
+                NpcKind::DuneSplicerHead => rng.next_range(12, 21) as u32,
                 _ => {
                     // The budget roll (`NPC.cs:51303-51342`): EVERY head
                     // type in the `:51303` list rolls `ai[2] =
@@ -1663,16 +1681,19 @@ fn worm_head_step(
 ) -> bool {
     let (w, h) = npc.size();
     // The surface gate (`NPC.cs:51110-51148`): `flag = true` for types
-    // 10/39/95/117/510 — the ported kinds GiantWorm (10) and Leech (117).
-    // Target dead OR (flag && player above `worldSurface * 16`) →
-    // `EncourageDespawn(300)` and `velocity.Y += 0.2` while gated. The
-    // `TargetClosest()` retarget has no seam in the single-player port
-    // (the target IS the one player) — documented.
-    let surface_flag = matches!(npc.kind, NpcKind::GiantWormHead | NpcKind::LeechHead);
+    // 10/39/95/117/510 — the ported kinds GiantWorm (10), Leech (117) and
+    // the Dune Splicer head (510). Target dead OR (flag && player above
+    // `worldSurface * 16`) → `EncourageDespawn(300)` and `velocity.Y +=
+    // 0.2` while gated. The `TargetClosest()` retarget has no seam in the
+    // single-player port (the target IS the one player) — documented.
+    let surface_flag = matches!(
+        npc.kind,
+        NpcKind::GiantWormHead | NpcKind::LeechHead | NpcKind::DuneSplicerHead
+    );
     if ctx.dead || (surface_flag && (ctx.py as f64) < world.world_surface * 16.0) {
         npc.encourage_despawn(300);
         if surface_flag {
-            npc.vy += 0.2; // `num10` (`:51111`; the 513's 0.1 is unported)
+            npc.vy += 0.2; // `num10` (`:51111`; the 513's 0.1 rides its own arm)
         }
     }
     // `flag3`: the dig-mode scan (`:51525-51597`). The always-fly presets
@@ -1746,6 +1767,9 @@ fn worm_head_step(
                 | NpcKind::GiantWormHead
                 | NpcKind::EaterOfWorldsHead
                 | NpcKind::LeechHead
+                // W4-d41 — the Dune Splicer head (510) is on the
+                // `:51598` list.
+                | NpcKind::DuneSplicerHead
         )
     {
         let (nx, ny) = (npc.x as i32, npc.y as i32);
@@ -1756,7 +1780,14 @@ fn worm_head_step(
             flag3 = true; // `flag5` stayed true (`:51611-51614`)
         }
     }
-    let (num45, num46) = npc.kind.worm_tunables();
+    let (mut num45, mut num46) = npc.kind.worm_tunables();
+    // W4-d41 — the Dune Splicer head's sandstorm override
+    // (`NPC.cs:51709-51718`): a live target in ZoneSandstorm digs at
+    // 16/0.35, else the 10/0.25 base.
+    if npc.kind == NpcKind::DuneSplicerHead && !ctx.dead && ctx.zone_sandstorm {
+        num45 = 16.0;
+        num46 = 0.35;
+    }
     let mut despawn_chain = false;
     if !flag3 {
         // The air stumble (`:51927-51973`) — the stand-in steer (T1b's

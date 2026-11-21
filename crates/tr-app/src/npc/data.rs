@@ -604,6 +604,14 @@ impl NpcKind {
             NpcKind::Salamander7 => 504,
             NpcKind::Salamander8 => 505,
             NpcKind::Salamander9 => 506,
+            // W4-d41 — the antlions + the Dune Splicer chain keep their
+            // vanilla ids (508-512 free in the wire space).
+            // `NPCID.cs:11687-11695`.
+            NpcKind::GiantWalkingAntlion => 508,
+            NpcKind::GiantFlyingAntlion => 509,
+            NpcKind::DuneSplicerHead => 510,
+            NpcKind::DuneSplicerBody => 511,
+            NpcKind::DuneSplicerTail => 512,
         }
     }
 
@@ -949,6 +957,12 @@ impl NpcKind {
             504 => NpcKind::Salamander7,
             505 => NpcKind::Salamander8,
             506 => NpcKind::Salamander9,
+            // W4-d41 — the antlions + the Dune Splicer chain (`to_u16`).
+            508 => NpcKind::GiantWalkingAntlion,
+            509 => NpcKind::GiantFlyingAntlion,
+            510 => NpcKind::DuneSplicerHead,
+            511 => NpcKind::DuneSplicerBody,
+            512 => NpcKind::DuneSplicerTail,
             _ => return None,
         })
     }
@@ -1017,6 +1031,12 @@ impl NpcKind {
                 // outside the `:51301` spawn lists, so `is_worm_head`
                 // stays false and the init never grows links).
                 | NpcKind::StardustWormHead
+                // W4-d41 — the Dune Splicer chain (510-512): the head's
+                // own fixed-budget spawn (`NPC.cs:51253-51276`, the
+                // Next(12,21) roll) + the shared follower trail.
+                | NpcKind::DuneSplicerHead
+                | NpcKind::DuneSplicerBody
+                | NpcKind::DuneSplicerTail
         )
     }
 
@@ -1057,6 +1077,12 @@ impl NpcKind {
                 | NpcKind::WyvernBody2
                 | NpcKind::WyvernBody3
                 | NpcKind::WyvernTail
+                // W4-d41 — the Dune Splicer chain shares the head's life
+                // pool (`NPC.cs:51255-51256`/`:51268-51269`: `ai[3] =
+                // whoAmI`, `realLife = whoAmI` on the head and every link).
+                | NpcKind::DuneSplicerHead
+                | NpcKind::DuneSplicerBody
+                | NpcKind::DuneSplicerTail
         )
     }
 
@@ -1083,6 +1109,11 @@ impl NpcKind {
                 | NpcKind::EaterOfWorldsHead
                 | NpcKind::LeechHead
                 | NpcKind::SolarCrawltipedeHead
+                // W4-d41 — the Dune Splicer head (510): its own
+                // fixed-budget chain (`NPC.cs:51253-51276`), NOT the
+                // shared `:51301` budget list — the init's budget match
+                // rolls Next(12,21) for it directly.
+                | NpcKind::DuneSplicerHead
         )
     }
 
@@ -1097,6 +1128,11 @@ impl NpcKind {
                 | NpcKind::EaterOfWorldsBody
                 | NpcKind::LeechBody
                 | NpcKind::SolarCrawltipedeBody
+                // W4-d41 — the Dune Splicer body (511): the head's chain
+                // spawns it directly (the budget loop), so the mid-body
+                // self-chain flag is NOT used for the spawn — but the
+                // followerless-link death gate (`:51419-51433`) reads it.
+                | NpcKind::DuneSplicerBody
         )
     }
 
@@ -1120,6 +1156,11 @@ impl NpcKind {
             NpcKind::SolarCrawltipedeBody | NpcKind::SolarCrawltipedeTail => {
                 NpcKind::SolarCrawltipedeTail
             }
+            // W4-d41 — the Dune Splicer chain (`NPC.cs:51262-51266`):
+            // the head spawns the body, the body self-chains while the
+            // budget holds, the last link is the tail.
+            NpcKind::DuneSplicerHead => NpcKind::DuneSplicerBody,
+            NpcKind::DuneSplicerBody | NpcKind::DuneSplicerTail => NpcKind::DuneSplicerTail,
             _ => NpcKind::EaterOfWorldsTail,
         }
     }
@@ -1137,6 +1178,11 @@ impl NpcKind {
             NpcKind::DevourerHead => (9.0, 0.1),
             NpcKind::GiantWormHead => (6.0, 0.05),
             NpcKind::EaterOfWorldsHead => (10.0, 0.07),
+            // W4-d41 — the Dune Splicer head's 10/0.25 base
+            // (`NPC.cs:51716-51717`); the sandstorm 16/0.35 override
+            // (`:51711-51712`) reads the target's ZoneSandstorm — the
+            // worm pass's ctx carries it (`worm_head_step`).
+            NpcKind::DuneSplicerHead => (10.0, 0.25),
             // The wyvern head's 11/0.25 (`:51720-51724`). The kind stays
             // OUT of `is_worm`/`is_worm_head` (the StardustWormHead
             // precedent): the shared pass's budget chain + dig head are
@@ -1843,6 +1889,15 @@ impl NpcKind {
             | NpcKind::Salamander7
             | NpcKind::Salamander8
             | NpcKind::Salamander9 => "NPC_Hit_50",
+            // W4-d41 — the antlion charger's `SoundID.NPCHit31`
+            // (`NPC.cs:14836`) and the swarmer's `NPCHit32` (`:14850`).
+            NpcKind::GiantWalkingAntlion => "NPC_Hit_31",
+            NpcKind::GiantFlyingAntlion => "NPC_Hit_32",
+            // W4-d41 — the Dune Splicer chain's `SoundID.NPCHit1`
+            // (`NPC.cs:14782`/`:14799`/`:14816`).
+            NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => "NPC_Hit_1",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2162,6 +2217,15 @@ impl NpcKind {
             | NpcKind::Salamander7
             | NpcKind::Salamander8
             | NpcKind::Salamander9 => "NPC_Killed_53",
+            // W4-d41 — the antlion charger's `SoundID.NPCDeath34`
+            // (`NPC.cs:14837`) and the swarmer's `NPCDeath35` (`:14851`).
+            NpcKind::GiantWalkingAntlion => "NPC_Killed_34",
+            NpcKind::GiantFlyingAntlion => "NPC_Killed_35",
+            // W4-d41 — the Dune Splicer chain's `SoundID.NPCDeath1`
+            // (`NPC.cs:14783`/`:14800`/`:14817`).
+            NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => "NPC_Killed_1",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2234,6 +2298,15 @@ impl NpcKind {
             | NpcKind::DungeonSpirit
             | NpcKind::Piranha
             | NpcKind::Shark => true,
+            // W4-d41 — the antlion swarmer (509, `NPC.cs:14841-14853`
+            // writes no noGravity row, but the aiStyle-44 head sets it
+            // every tick, `:30863`; kb 0.3 `:14849`) and the Dune Splicer
+            // chain (510-512, `:14784`/`:14801`/`:14820`; kb 0 — the
+            // knockback gate refuses them, the row kept for the census).
+            NpcKind::GiantFlyingAntlion
+            | NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => true,
             // The Hungry (115, `NPC.cs:10388`) — knockBackResist 1.1, so its
             // noGravity matters to the knockback (the leeches are resist 0).
             NpcKind::Hungry => true,
@@ -2533,6 +2606,15 @@ impl NpcKind {
             | NpcKind::Salamander7
             | NpcKind::Salamander8
             | NpcKind::Salamander9 => 3,
+            // W4-d41 — aiStyle 3, the antlion charger (`NPC.cs:14832`).
+            NpcKind::GiantWalkingAntlion => 3,
+            // W4-d41 — aiStyle 44, the antlion swarmer (`NPC.cs:14845`).
+            NpcKind::GiantFlyingAntlion => 44,
+            // W4-d41 — aiStyle 6, the Dune Splicer chain
+            // (`NPC.cs:14778`/`:14794`/`:14813`).
+            NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => 6,
             // W4-d41 — aiStyle 39, the shelly pair (`NPC.cs:14682`).
             NpcKind::GiantShelly | NpcKind::GiantShelly2 => 39,
         }
@@ -2648,6 +2730,11 @@ impl NpcKind {
             // the 1f default scale). The ladder's charge arm owns the
             // live walk; this row feeds the walker fallback + the pin.
             NpcKind::Crawdad | NpcKind::Crawdad2 => 1.0,
+            // W4-d41 — the antlion charger's lerp-machine base cap
+            // (`NPC.cs:58141`: `num98 = 2.5f` — the speed-tiered bumps
+            // ride the ladder's own arm; this row feeds the walker
+            // fallback + the pin).
+            NpcKind::GiantWalkingAntlion => 2.5,
             NpcKind::Salamander
             | NpcKind::Salamander2
             | NpcKind::Salamander3
@@ -3093,6 +3180,15 @@ impl NpcKind {
             | NpcKind::Salamander7
             | NpcKind::Salamander8
             | NpcKind::Salamander9 => (24.0, 44.0),
+            // W4-d41 — the antlion charger's 50x31 box
+            // (`NPC.cs:14830-14831`), the swarmer's 40x31
+            // (`:14843-14844`), the Dune Splicer chain's 34x34
+            // (`:14776-14777`/`:14792-14793`/`:14811-14812`).
+            NpcKind::GiantWalkingAntlion => (50.0, 31.0),
+            NpcKind::GiantFlyingAntlion => (40.0, 31.0),
+            NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => (34.0, 34.0),
         }
     }
 
@@ -3190,6 +3286,16 @@ impl NpcKind {
             // which 499 satisfies identically; the REAL draw types ride
             // render_key/texture_net_id.
             NpcKind::Salamander => 498,
+            // W4-d41 — the antlions keep their vanilla types
+            // (`NPCID.cs:11687-11689`); the Dune Splicer head keeps its
+            // own (510). The body/tail have NO hand row — they fold onto
+            // the head's bestiary net id (the worm-family precedent,
+            // s1_f_3's cs_id==net_id invariant); the chain's type gates
+            // read the KIND, and the REAL draw types ride
+            // render_key/texture_net_id.
+            NpcKind::GiantWalkingAntlion => 508,
+            NpcKind::GiantFlyingAntlion => 509,
+            NpcKind::DuneSplicerHead => 510,
             NpcKind::Goldfish => 55,
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
@@ -3335,6 +3441,11 @@ impl NpcKind {
                 // W4-d41: the lane portal's `behindTiles = true` row
                 // (`NPC.cs:16048`).
                 | NpcKind::DD2LanePortal
+                // W4-d41 — the Dune Splicer chain's `behindTiles = true`
+                // rows (`NPC.cs:14787`/`:14804`/`:14823`).
+                | NpcKind::DuneSplicerHead
+                | NpcKind::DuneSplicerBody
+                | NpcKind::DuneSplicerTail
         )
     }
 
@@ -3770,6 +3881,14 @@ impl NpcKind {
             | NpcKind::Salamander7
             | NpcKind::Salamander8
             | NpcKind::Salamander9 => 65,
+            // W4-d41 — the antlion charger's lifeMax 110
+            // (`NPC.cs:14835`), the swarmer's 90 (`:14848`), the Dune
+            // Splicer chain's 500 (`:14781`/`:14798`/`:14815`).
+            NpcKind::GiantWalkingAntlion => 110,
+            NpcKind::GiantFlyingAntlion => 90,
+            NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => 500,
         }
     }
 
@@ -4148,6 +4267,14 @@ impl NpcKind {
             | NpcKind::Salamander7
             | NpcKind::Salamander8
             | NpcKind::Salamander9 => 18,
+            // W4-d41 — the antlion charger's damage 38 (`NPC.cs:14833`),
+            // the swarmer's 34 (`:14846`), the Dune Splicer head's 58
+            // (`:14779`), body's 54 (`:14796`), tail's 50 (`:14814`).
+            NpcKind::GiantWalkingAntlion => 38,
+            NpcKind::GiantFlyingAntlion => 34,
+            NpcKind::DuneSplicerHead => 58,
+            NpcKind::DuneSplicerBody => 54,
+            NpcKind::DuneSplicerTail => 50,
         }
     }
 }

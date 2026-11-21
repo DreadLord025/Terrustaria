@@ -516,6 +516,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(FISHRON_SHEETS)
             .chain(SMALL_KIND_SHEETS)
             .chain(CAVERN_SHEETS)
+            .chain(DESERT_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1132,6 +1133,12 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         NpcKind::Salamander7 => 504,
         NpcKind::Salamander8 => 505,
         NpcKind::Salamander9 => 506,
+        // W4-d41 — the Dune Splicer segments fold onto the head's
+        // bestiary entry, but their DRAW sheets are their own
+        // NPC_511/NPC_512 — the fishron-hazard precedent. (510 is the
+        // entry's own id, so the head rides the fallback.)
+        NpcKind::DuneSplicerBody => 511,
+        NpcKind::DuneSplicerTail => 512,
         _ => kind.net_id() as u16,
     }
 }
@@ -1276,6 +1283,11 @@ pub(crate) const CAVERN_SHEETS: &[u32] = &[
     // W4-d41 — the nine salamander colours (498-506).
     498, 499, 500, 501, 502, 503, 504, 505, 506,
 ];
+
+/// W4-d41 — the desert antlions' + the Dune Splicer chain's own sheets
+/// (the vanilla's `TextureAssets.Npc[type]`), keyed by the vanilla net id
+/// in `NpcAssets::npc_sheets` exactly like `CAVERN_SHEETS`.
+pub(crate) const DESERT_SHEETS: &[u32] = &[508, 509, 510, 511, 512];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3224,6 +3236,19 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // W4-d41 — the desert antlions + the Dune Splicer chain draw
+            // their OWN sheets (`DESERT_SHEETS`) at `Main.npcFrameCount`
+            // rows (`Main.cs:67082`: 508 six, 509 nine, 510-512 one) with
+            // the generic centred anchor — the wave-A shape. The chain's
+            // segments rotate with the trail (the rotation whitelist).
+            NpcKind::GiantWalkingAntlion
+            | NpcKind::GiantFlyingAntlion
+            | NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3325,6 +3350,14 @@ pub(crate) fn draw_npcs(
                     | NpcKind::WyvernBody2
                     | NpcKind::WyvernBody3
                     | NpcKind::WyvernTail
+                    // W4-d41 — the Dune Splicer chain's trail/head
+                    // rotations (the same `AI_006` atan2 tilt) and the
+                    // antlion swarmer's velocity tilt (`NPC.cs:30963`,
+                    // `velocity.X * 0.1`).
+                    | NpcKind::DuneSplicerHead
+                    | NpcKind::DuneSplicerBody
+                    | NpcKind::DuneSplicerTail
+                    | NpcKind::GiantFlyingAntlion
                     // The saucer family (`Main.cs:24586-24612`) rotates
                     // about its CENTRE (the `origin = halfSize` draw point
                     // — the quad the anchors computed sits at that centre,

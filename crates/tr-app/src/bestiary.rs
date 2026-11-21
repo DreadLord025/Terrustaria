@@ -665,6 +665,36 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Salamander",
     },
+    // W4-d41 — the desert antlions (`BestiaryEntry.Enemy`, the automated
+    // populator; the UndergroundDesert tag `:1256-1257`/`:1523`).
+    BestiaryEntryDef {
+        credit_id: "GiantWalkingAntlion",
+        net_id: 508,
+        kind: NpcKind::GiantWalkingAntlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Antlion Charger",
+    },
+    BestiaryEntryDef {
+        credit_id: "GiantFlyingAntlion",
+        net_id: 509,
+        kind: NpcKind::GiantFlyingAntlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Antlion Swarmer",
+    },
+    // W4-d41 — the Dune Splicer: ONE entry on the head's id 510 — the
+    // body/tail's draw modifiers hide them (the leinfors dictionary's
+    // `Hide = true`) and the kills credit the head (the Devourer's fold,
+    // `entry_for_npc`). The UndergroundDesert tag (`:626`/`:1385`).
+    BestiaryEntryDef {
+        credit_id: "DuneSplicerHead",
+        net_id: 510,
+        kind: NpcKind::DuneSplicerHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Dune Splicer",
+    },
     // The spheres: the Chaos Ball entry also covers Tim's ChaosBallTim
     // clone 665 (the port folds it — identical stats and name).
     BestiaryEntryDef {
@@ -2347,6 +2377,10 @@ pub fn try_entry_for_npc(
         | NpcKind::Salamander7
         | NpcKind::Salamander8
         | NpcKind::Salamander9 => NpcKind::Salamander2,
+        // W4-d41 — the Dune Splicer segments fold onto the head's entry
+        // (the leinfors dictionary's `Hide = true` — one credit for the
+        // whole worm, the Devourer precedent).
+        NpcKind::DuneSplicerBody | NpcKind::DuneSplicerTail => NpcKind::DuneSplicerHead,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -2433,6 +2467,9 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         | NpcKind::Salamander7
         | NpcKind::Salamander8
         | NpcKind::Salamander9 => NpcKind::Salamander2,
+        // W4-d41 — the Dune Splicer segments ride the head's row (the
+        // leinfors dictionary's `Hide = true`).
+        NpcKind::DuneSplicerBody | NpcKind::DuneSplicerTail => NpcKind::DuneSplicerHead,
         other => other,
     };
     ENTRIES

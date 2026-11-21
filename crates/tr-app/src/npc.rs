@@ -1152,6 +1152,41 @@ pub enum NpcKind {
     /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
     /// folds onto 499; the draw sheet stays NPC_506. W4-d41.
     Salamander9,
+    /// `NPCID.GiantWalkingAntlion` (508, `NPCID.cs:11687`) — the desert
+    /// antlion charger (`aiStyle 3`, `NPC.cs:14828-14840`): 50x31,
+    /// dmg 38, def 16, 110 HP, kb 0.4, value 175, NPCHit31/NPCDeath34.
+    /// The `AI_003_Fighters` 508/580/582 lerp machine
+    /// (`NPC.cs:58139-58202`): the 2.5/10 base, the speed-tiered
+    /// 3.5/90 + 3/70 bumps, the near-ground counter brake, the airborne
+    /// weight ×3. W4-d41.
+    GiantWalkingAntlion,
+    /// `NPCID.GiantFlyingAntlion` (509, `NPCID.cs:11689`) — the desert
+    /// antlion swarmer (`aiStyle 44`, `NPC.cs:14841-14853`): 40x31,
+    /// dmg 34, def 12, 90 HP, kb 0.3, value 195, NPCHit32/NPCDeath35.
+    /// The style-44 swimmer's 509 parameter overrides
+    /// (`npc_ai_style44.rs`: the 0.08/0.03 accel, the 4.5/2 caps, the
+    /// 40/150 bands, the swarm separation). W4-d41.
+    GiantFlyingAntlion,
+    /// `NPCID.DuneSplicerHead` (510, `NPCID.cs:11691`) — the desert
+    /// worm's head (`aiStyle 6`, `NPC.cs:14773-14789`): 34x34, dmg 58,
+    /// def 18, 500 HP, kb 0, value 700, noGravity/noTileCollide/
+    /// behindTiles, npcSlots 5, NPCHit1/NPCDeath1. The `AI_006_Worms`
+    /// chain (`NPC.cs:51253-51276`): the Next(12,21) body budget, the
+    /// sandstorm 16/0.35 vs 10/0.25 dig tunables (`:51707-51718`).
+    /// W4-d41.
+    DuneSplicerHead,
+    /// `NPCID.DuneSplicerBody` (511, `NPCID.cs:11693`) — the desert
+    /// worm's body (`aiStyle 6`, `NPC.cs:14790-14808`): 34x34, dmg 54,
+    /// def 28, 500 HP, kb 0, value 700, noGravity/noTileCollide/
+    /// behindTiles, netAlways/dontCountMe/npcSlots 0. The bestiary
+    /// credit folds onto 510 (the head); the draw sheet stays NPC_511.
+    /// W4-d41.
+    DuneSplicerBody,
+    /// `NPCID.DuneSplicerTail` (512, `NPCID.cs:11695`) — the desert
+    /// worm's tail (`aiStyle 6`, `NPC.cs:14809-14827`): 34x34, dmg 50,
+    /// def 34, 500 HP, the rest of the 511 row. The bestiary credit
+    /// folds onto 510; the draw sheet stays NPC_512. W4-d41.
+    DuneSplicerTail,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3617,6 +3652,14 @@ impl Npc {
             | NpcKind::Salamander7
             | NpcKind::Salamander8
             | NpcKind::Salamander9 => 0.45,
+            // W4-d41 — the antlion charger's kb 0.4 (`NPC.cs:14838`),
+            // the swarmer's 0.3 (`:14849`), the Dune Splicer chain's 0
+            // (`:14786`/`:14803`/`:14822`).
+            NpcKind::GiantWalkingAntlion => 0.4,
+            NpcKind::GiantFlyingAntlion => 0.3,
+            NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => 0.0,
             _ => 0.4,
         }
     }
@@ -4011,6 +4054,14 @@ impl Npc {
             | NpcKind::Salamander7
             | NpcKind::Salamander8
             | NpcKind::Salamander9 => 10,
+            // W4-d41 — the antlion charger's defense 16 (`NPC.cs:14834`),
+            // the swarmer's 12 (`:14847`), the Dune Splicer head's 18
+            // (`:14780`), body's 28 (`:14797`), tail's 34 (`:14815`).
+            NpcKind::GiantWalkingAntlion => 16,
+            NpcKind::GiantFlyingAntlion => 12,
+            NpcKind::DuneSplicerHead => 18,
+            NpcKind::DuneSplicerBody => 28,
+            NpcKind::DuneSplicerTail => 34,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4397,6 +4448,14 @@ impl Npc {
             | NpcKind::Salamander7
             | NpcKind::Salamander8
             | NpcKind::Salamander9 => 120.0,
+            // W4-d41 — the antlion charger's value 175 (`NPC.cs:14839`),
+            // the swarmer's 195 (`:14852`), the Dune Splicer chain's 700
+            // (`:14788`/`:14805`/`:14824`).
+            NpcKind::GiantWalkingAntlion => 175.0,
+            NpcKind::GiantFlyingAntlion => 195.0,
+            NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => 700.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -5978,6 +6037,26 @@ impl Npc {
             // damage) rides `npc_ai3_speeds::apply_ladder` through
             // `run_ai3_ladder` (the type reads cs_id 494/495).
             NpcKind::Crawdad | NpcKind::Crawdad2 => self.update_skeleton(world, player, dt),
+            // W4-d41 — the antlion charger (508, aiStyle 3): the walker
+            // family; the `AI_003_Fighters` 508/580/582 lerp machine
+            // (`NPC.cs:58139-58202`) rides `npc_ai3_speeds::apply_ladder`
+            // through `run_ai3_ladder` (the type reads cs_id 508).
+            NpcKind::GiantWalkingAntlion => self.update_skeleton(world, player, dt),
+            // W4-d41 — the antlion swarmer (509, aiStyle 44): the
+            // style-44 swimmer's 509 parameter overrides
+            // (`npc_ai_style44.rs`, `NPC.cs:30954-30985`). The solo path
+            // runs a one-slot pool (no siblings); the SIM's pooled path
+            // (`world_sim/npcs.rs`) feeds the whole roster so the swarm
+            // separation resolves.
+            NpcKind::GiantFlyingAntlion => self.update_giant_flying_antlion(world, player, rng),
+            // W4-d41 — the Dune Splicer chain (510-512, aiStyle 6): the
+            // movement runs in the world sim's worm pass (the chain
+            // needs the sibling segments; `AI_006` reads `Main.npc` the
+            // same way). The head's own fixed-budget spawn
+            // (`NPC.cs:51253-51276`) + the dig tunables ride that pass.
+            NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => {}
             // W4-d41 — the salamanders (498-506, aiStyle 3): the
             // `AI_003_Fighters` SHOOTER block (`NPC.cs:59069-59801`, the
             // 498-506 terms) — the 70-tick cadence, the 7-speed spit 572
@@ -7506,6 +7585,63 @@ impl Npc {
                     self.frame_counter = 0.0;
                     self.frame = 10;
                 }
+            }
+            // W4-d41 — `case 508` (shared with 532/580/582,
+            // `NPC.cs:70067-70103`): the antlion charger's grounded walk
+            // climbs from row 2 at the `1 + |vx|/2` accumulator's >6
+            // step, wrapping at the 6-row strip; the air holds row 1,
+            // the idle row 0.
+            NpcKind::GiantWalkingAntlion => {
+                if self.vy != 0.0 {
+                    self.frame = 1;
+                    return;
+                }
+                if self.vx == 0.0 {
+                    self.frame = 0;
+                    return;
+                }
+                if self.facing < 0 && self.vx < 0.0 {
+                    self.sprite_dir = -1;
+                }
+                if self.facing > 0 && self.vx > 0.0 {
+                    self.sprite_dir = 1;
+                }
+                if self.frame < 2 {
+                    self.frame = 2;
+                }
+                self.frame_counter += 1.0 + self.vx.abs() / 2.0;
+                if self.frame_counter > 6.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= 6 {
+                    self.frame = 2;
+                }
+            }
+            // W4-d41 — `case 509` (shared with 581, `NPC.cs:70104-70119`):
+            // the antlion swarmer's 3-tick counter over the 9-row strip;
+            // the sprite faces the motion only when they agree.
+            NpcKind::GiantFlyingAntlion => {
+                if (self.vx > 0.0 && self.facing > 0) || (self.vx < 0.0 && self.facing < 0) {
+                    self.sprite_dir = self.facing;
+                }
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 3.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame >= 9 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d41 — the Dune Splicer chain has NO `FindFrame` case
+            // (`NPC.cs:66684-77370` has no `case 510/511/512`;
+            // `Main.npcFrameCount[510..512]` = 1, `Main.cs:67082`) — the
+            // single frame never advances (the worm-segment precedent).
+            NpcKind::DuneSplicerHead
+            | NpcKind::DuneSplicerBody
+            | NpcKind::DuneSplicerTail => {
+                self.frame = 0;
             }
             // W4-d41 — `case 494 : case 495` (`NPC.cs:69657-69733`): the
             // crawdads' charge bands (ai[2] 1..7/7..14/14..20 → rows
@@ -12078,6 +12214,55 @@ impl Npc {
                 self.on_ground = true;
             }
         }
+    }
+
+    /// W4-d41 — `NPC.AI()`'s aiStyle-44 block (`NPC.cs:30861-31124`) for
+    /// the GiantFlyingAntlion (509). The faithful module
+    /// (`npc_ai_style44.rs`) owns the steering machine; this wrapper
+    /// fills the Env seam (the session player as slot 0, the NPC's own
+    /// wet probe, the ticker-0 stand-in) and runs the caller-side
+    /// integration tail the module leaves to `UpdateNPC`
+    /// (`NPC.cs:92523-92580` — the no-gravity flyer collision, the
+    /// bat/fish convention). The solo path runs a one-slot sibling pool
+    /// (the separation loop finds no neighbours); the SIM's pooled path
+    /// feeds the whole roster.
+    fn update_giant_flying_antlion(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let (w, h) = self.size();
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        let cand = crate::npc_target::session_candidate(player);
+        let players = [cand];
+        let player_wet = [player.wet];
+        let siblings = [crate::npc_ai_style44::Style44Sibling {
+            active: true,
+            npc_type: crate::npc_ai_style44::GIANT_FLYING_ANTLION,
+            x: self.x,
+            y: self.y,
+        }];
+        let dust_ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: glam::Vec2::ZERO,
+            screen_size: glam::Vec2::new(8000.0, 8000.0),
+            max_dust_to_draw: 6000,
+        };
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut env = crate::npc_ai_style44::Style44Env {
+            npc_type: crate::npc_ai_style44::GIANT_FLYING_ANTLION,
+            self_index: 0,
+            siblings: &siblings,
+            world,
+            players: &players,
+            player_wet: &player_wet,
+            ticker: 0,
+            dust: &mut dust,
+            dust_ctx: &dust_ctx,
+            rng,
+            wants_no_gravity: false,
+        };
+        crate::npc_ai_style44::style44_step(self, &mut env);
+        // The no-gravity flyer collision tail (`NPC.cs:92523-92580`).
+        self.integrate_flyer_collision(world);
     }
 
     // `update_scutlix_rider` RETIRED (S1-D-3-wire-saucer): the 390 arm is
@@ -19100,6 +19285,14 @@ impl Npc {
             NpcKind::Salamander7 => 504,
             NpcKind::Salamander8 => 505,
             NpcKind::Salamander9 => 506,
+            // W4-d41 — the antlions + the Dune Splicer chain's vanilla
+            // type ids (the same values `to_u16` rides) — unused by every
+            // arm above, so the G6 key stays injective.
+            NpcKind::GiantWalkingAntlion => 508,
+            NpcKind::GiantFlyingAntlion => 509,
+            NpcKind::DuneSplicerHead => 510,
+            NpcKind::DuneSplicerBody => 511,
+            NpcKind::DuneSplicerTail => 512,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -24168,7 +24361,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 283] = [
+    pub(super) const ALL_KINDS: [NpcKind; 288] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24462,6 +24655,12 @@ mod tests {
         NpcKind::Salamander7,
         NpcKind::Salamander8,
         NpcKind::Salamander9,
+        // W4-d41 — the antlions + the Dune Splicer chain.
+        NpcKind::GiantWalkingAntlion,
+        NpcKind::GiantFlyingAntlion,
+        NpcKind::DuneSplicerHead,
+        NpcKind::DuneSplicerBody,
+        NpcKind::DuneSplicerTail,
     ];
 
     #[test]
@@ -24880,6 +25079,190 @@ mod tests {
         assert_eq!(d.alpha, 255);
         assert!(d.tile_collide);
         assert_eq!(d.time_left, 3600);
+    }
+
+    /// The antlions' + the Dune Splicer chain's `SetDefaults` rows
+    /// (`NPC.cs:14828-14840` for 508, `:14841-14853` for 509,
+    /// `:14773-14827` for 510-512).
+    #[test]
+    fn w4_d41_the_antlion_splicer_setdefaults_rows() {
+        // (kind, vanilla, w, h, ai, hp, dmg, def, value, kb)
+        let table = [
+            (NpcKind::GiantWalkingAntlion, 508u16, 50.0, 31.0, 3u8, 110, 38, 16, 175.0, 0.4f32),
+            (NpcKind::GiantFlyingAntlion, 509, 40.0, 31.0, 44, 90, 34, 12, 195.0, 0.3),
+            (NpcKind::DuneSplicerHead, 510, 34.0, 34.0, 6, 500, 58, 18, 700.0, 0.0),
+            (NpcKind::DuneSplicerBody, 511, 34.0, 34.0, 6, 500, 54, 28, 700.0, 0.0),
+            (NpcKind::DuneSplicerTail, 512, 34.0, 34.0, 6, 500, 50, 34, 700.0, 0.0),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb) in table {
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+        }
+        // The sound rows.
+        assert_eq!(NpcKind::GiantWalkingAntlion.hit_sound(), Some("NPC_Hit_31"));
+        assert_eq!(NpcKind::GiantWalkingAntlion.death_sound(), Some("NPC_Killed_34"));
+        assert_eq!(NpcKind::GiantFlyingAntlion.hit_sound(), Some("NPC_Hit_32"));
+        assert_eq!(NpcKind::GiantFlyingAntlion.death_sound(), Some("NPC_Killed_35"));
+        for kind in [NpcKind::DuneSplicerHead, NpcKind::DuneSplicerBody, NpcKind::DuneSplicerTail] {
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
+        }
+        // The gravity/behind-tiles flags: the charger is a grounded
+        // walker, the swarmer + the chain are gravity-free; the chain
+        // draws behind tiles.
+        assert!(!NpcKind::GiantWalkingAntlion.no_gravity());
+        assert!(!NpcKind::GiantWalkingAntlion.behind_tiles());
+        assert!(NpcKind::GiantFlyingAntlion.no_gravity());
+        assert!(!NpcKind::GiantFlyingAntlion.behind_tiles());
+        for kind in [NpcKind::DuneSplicerHead, NpcKind::DuneSplicerBody, NpcKind::DuneSplicerTail] {
+            assert!(kind.no_gravity(), "{kind:?} noGravity");
+            assert!(kind.behind_tiles(), "{kind:?} behindTiles");
+        }
+        // The immunity rows: the antlions null (`NPCID.cs:8960-8961`),
+        // the chain Confused [31] (`:8962-8983`).
+        for kind in [NpcKind::GiantWalkingAntlion, NpcKind::GiantFlyingAntlion] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(!b.buff_immune.iter().any(|x| *x), "{kind:?} null immunity");
+        }
+        for kind in [NpcKind::DuneSplicerHead, NpcKind::DuneSplicerBody, NpcKind::DuneSplicerTail] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[31], "{kind:?} Confused-immune");
+        }
+    }
+
+    /// The bestiary rows: the antlions carry their own entries; the Dune
+    /// Splicer chain folds onto the head's 510 entry (the leinfors
+    /// dictionary's `Hide = true`). The draw sheets stay the segments'
+    /// own.
+    #[test]
+    fn w4_d41_the_antlion_splicer_bestiary_and_sheets() {
+        let charger = crate::bestiary::entry_for_npc(NpcKind::GiantWalkingAntlion, SlimeVariant::Blue);
+        assert_eq!(charger.net_id, 508);
+        assert_eq!(charger.credit_id, "GiantWalkingAntlion");
+        assert_eq!(charger.name, "Giant Antlion Charger");
+        let swarmer = crate::bestiary::entry_for_npc(NpcKind::GiantFlyingAntlion, SlimeVariant::Blue);
+        assert_eq!(swarmer.net_id, 509);
+        assert_eq!(swarmer.credit_id, "GiantFlyingAntlion");
+        assert_eq!(swarmer.name, "Giant Antlion Swarmer");
+        let head = crate::bestiary::entry_for_npc(NpcKind::DuneSplicerHead, SlimeVariant::Blue);
+        assert_eq!(head.net_id, 510);
+        assert_eq!(head.credit_id, "DuneSplicerHead");
+        assert_eq!(head.name, "Dune Splicer");
+        for kind in [NpcKind::DuneSplicerBody, NpcKind::DuneSplicerTail] {
+            assert_eq!(
+                crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue).net_id,
+                510,
+                "{kind:?} folds onto the head"
+            );
+        }
+        // The DRAW sheets + row counts (`Main.npcFrameCount`,
+        // `Main.cs:67082`: 508 six, 509 nine, 510-512 one).
+        for (kind, net, rows) in [
+            (NpcKind::GiantWalkingAntlion, 508u16, 6u32),
+            (NpcKind::GiantFlyingAntlion, 509, 9),
+            (NpcKind::DuneSplicerHead, 510, 1),
+            (NpcKind::DuneSplicerBody, 511, 1),
+            (NpcKind::DuneSplicerTail, 512, 1),
+        ] {
+            assert_eq!(crate::render::entities::texture_net_id(kind), net);
+            assert_eq!(crate::render::entities::npc_rows(net), rows, "{kind:?} rows");
+        }
+    }
+
+    /// The antlion charger's `FindFrame` case (`NPC.cs:70067-70103`): the
+    /// grounded walk climbs from row 2 at the `1 + |vx|/2` >6 step, the
+    /// air holds row 1, the idle row 0. The swarmer's case
+    /// (`:70104-70119`): the 3-tick counter over the 9-row strip.
+    #[test]
+    fn w4_d41_the_antlions_find_frame_bands() {
+        let mut c = bare(NpcKind::GiantWalkingAntlion);
+        // The idle + air.
+        c.vx = 0.0;
+        c.vy = 0.0;
+        c.frame = 3;
+        c.find_frame();
+        assert_eq!(c.frame, 0, "the idle row");
+        c.vy = 1.0;
+        c.find_frame();
+        assert_eq!(c.frame, 1, "the air row");
+        c.vy = 0.0;
+        // The walk: 4 px/tick → 1 + 2 = 3/tick, a row every 3 ticks
+        // (>6), climbing from 2 and wrapping at 6 back to 2.
+        c.vx = 4.0;
+        c.facing = 1;
+        c.frame = 0;
+        c.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..12 {
+            c.find_frame();
+            rows.push(c.frame);
+        }
+        assert_eq!(&rows[..], &[2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 2], "the 2..5 cycle");
+        // The swarmer: the 3-tick counter.
+        let mut s = bare(NpcKind::GiantFlyingAntlion);
+        s.frame = 0;
+        s.frame_counter = 0.0;
+        for _ in 0..2 {
+            s.find_frame();
+        }
+        assert_eq!(s.frame, 0, "the stride holds for 2 ticks");
+        s.find_frame();
+        assert_eq!(s.frame, 1, "the third tick advances");
+        s.frame = 8;
+        s.frame_counter = 2.5;
+        s.find_frame();
+        assert_eq!(s.frame, 0, "the wrap at 9");
+    }
+
+    /// The Dune Splicer chain: the head's fixed-budget spawn
+    /// (`NPC.cs:51259`, Next(12,21)), the segments' single frame, the
+    /// shared life pool, and the sandstorm dig-tunable override.
+    #[test]
+    fn w4_d41_the_dune_splicer_chain_assembles() {
+        // The segments hold row 0 (no FindFrame case).
+        for kind in [NpcKind::DuneSplicerHead, NpcKind::DuneSplicerBody, NpcKind::DuneSplicerTail] {
+            let mut s = bare(kind);
+            s.find_frame();
+            assert_eq!(s.frame, 0, "{kind:?} row 0");
+            s.find_frame();
+            assert_eq!(s.frame, 0, "{kind:?} never advances");
+        }
+        // The chain flags.
+        assert!(NpcKind::DuneSplicerHead.is_worm());
+        assert!(NpcKind::DuneSplicerHead.is_worm_head());
+        assert!(NpcKind::DuneSplicerBody.is_worm_mid());
+        assert_eq!(NpcKind::DuneSplicerHead.worm_next(), NpcKind::DuneSplicerBody);
+        assert_eq!(NpcKind::DuneSplicerBody.worm_next(), NpcKind::DuneSplicerTail);
+        assert!(NpcKind::DuneSplicerHead.shares_carrier_life());
+        assert!(NpcKind::DuneSplicerBody.shares_carrier_life());
+        // The dig tunables: the 10/0.25 base.
+        assert_eq!(NpcKind::DuneSplicerHead.worm_tunables(), (10.0, 0.25));
+        // The chain assembles through the worm pass: the head spawns
+        // Next(12,21) links, the last a tail, all sharing the head's life.
+        let w = ground();
+        let mut npcs = vec![Npc::new(NpcKind::DuneSplicerHead, 100.0, 100.0, 1, 0.0)];
+        npcs[0].hp = npcs[0].max_hp;
+        let mut rng = UnifiedRandom::new(7);
+        let mut next_id = 1u32;
+        crate::world_sim::npcs::update_worms_in(&w, Some((200.0, 200.0)), &mut npcs, &mut rng, &mut next_id);
+        let links = npcs.len();
+        assert!((13..=21).contains(&links), "the head + Next(12,21) links: {links}");
+        assert_eq!(npcs[links - 1].kind, NpcKind::DuneSplicerTail, "the last link is the tail");
+        for n in &npcs[1..links - 1] {
+            assert_eq!(n.kind, NpcKind::DuneSplicerBody, "the mid links are bodies");
+        }
+        // The shared life pool: every segment mirrors the head.
+        for n in &npcs[1..] {
+            assert_eq!(n.hp, npcs[0].hp, "the segment mirrors the head's life");
+        }
     }
 
     /// The small-kinds wiring wave (S1-D-3-wire-smallkinds): the four wired
@@ -28445,8 +28828,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            283,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d41's cavern crawdads/shellies four + the nine salamanders)"
+            288,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d41's cavern crawdads/shellies four + the nine salamanders + the antlions/Dune Splicer five)"
         );
         assert!(
             covered > 43,

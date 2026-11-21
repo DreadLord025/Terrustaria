@@ -505,6 +505,15 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::Salamander7
         | NpcKind::Salamander8
         | NpcKind::Salamander9 => &[],
+        // W4-d41 — the antlions: `{ 508, null }` / `{ 509, null }`
+        // (`NPCID.cs:8960-8961`) — no immunity rows.
+        NpcKind::GiantWalkingAntlion | NpcKind::GiantFlyingAntlion => &[],
+        // W4-d41 — the Dune Splicer chain: `{ 510..512,
+        // SpecificallyImmuneTo: [31] }` (`NPCID.cs:8962-8983`) — the
+        // Confused debuff, all three.
+        NpcKind::DuneSplicerHead
+        | NpcKind::DuneSplicerBody
+        | NpcKind::DuneSplicerTail => &[31],
     }
 }
 

@@ -668,6 +668,9 @@ pub fn fighter_walker_kind(kind: crate::npc::NpcKind) -> bool {
             | Salamander7
             | Salamander8
             | Salamander9
+            // W4-d41 — the antlion charger rides the same counter-only
+            // walker (the `:57072` flag8 list names 508).
+            | GiantWalkingAntlion
     )
 }
 

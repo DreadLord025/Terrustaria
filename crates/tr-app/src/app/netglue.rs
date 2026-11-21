@@ -3590,6 +3590,24 @@ fn npc_seed(
         | crate::npc::NpcKind::Salamander9 => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
+        // W4-d41 — the antlion charger (aiStyle 3): the ground walker
+        // plants its feet (`NPC.cs:14828-14840` writes no
+        // noGravity/noTileCollide).
+        crate::npc::NpcKind::GiantWalkingAntlion => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d41 — the antlion swarmer (aiStyle 44) + the Dune Splicer
+        // chain (aiStyle 6, noGravity/noTileCollide): the flyers ride the
+        // hover ctor (the net state overwrites the position below); the
+        // chain links rebuild through the worm pass — a lone segment
+        // dies finding no leader (the worm families' net shape).
+        crate::npc::NpcKind::GiantFlyingAntlion
+        | crate::npc::NpcKind::DuneSplicerHead
+        | crate::npc::NpcKind::DuneSplicerBody
+        | crate::npc::NpcKind::DuneSplicerTail => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 
