@@ -3829,7 +3829,12 @@ impl Projectile {
             self.rot -= std::f32::consts::PI / 30.0;
             if self.alpha >= 255 {
                 self.active = false;
-                return;
+                // W4-d11: the C# `Kill()` does NOT return (`:33947-33950`)
+                // — the 813's death-tick dust gates + opacity tail below
+                // still roll. The old `return` here is dropped: for the
+                // 578/579 it is a no-op (the slot is dead, `ai[0] != 90`,
+                // the opacity tail is 813-only), so their state stays
+                // byte-identical.
             }
             // The 813's two Next(3) switch gates (`:33955`, the case-2
             // no-op draws nothing further).
@@ -3982,11 +3987,11 @@ impl Projectile {
         let _ = npcs;
     }
 
-    /// W4-d11 — the 574-only `ai_nebula_eye` stand-in that sat here is
-    /// REPLACED by the verbatim three-kind aiStyle-102 machine
-    /// (`projectile_ai_101_110::ai_tower_orb`, `Projectile.cs:33222-
-    /// 33447`): the stand-in lacked the release volley, the dust-gate
-    /// census, the frames and the 539/573 kinds entirely.
+    // W4-d11 — the 574-only `ai_nebula_eye` stand-in that sat here is
+    // REPLACED by the verbatim three-kind aiStyle-102 machine
+    // (`projectile_ai_101_110::ai_tower_orb`, `Projectile.cs:33222-
+    // 33447`): the stand-in lacked the release volley, the dust-gate
+    // census, the frames and the 539/573 kinds entirely.
 
     /// `AI()`'s aiStyle-122 block (`Projectile.cs:34896-34931`) — the
     /// TowerDamageBolt: the host-homing 5-px bolt that dies when the host
@@ -31291,13 +31296,21 @@ mod ritual_projectile_tests {
                 0.0
             }
         }
-        // Wind-up tick (ai[0] = 1): two Next(4) + the opacity gate (alpha
-        // 0 -> opacity 1, the NextFloat gate passes -> +2 circular floats).
+        // Wind-up tick (ai[0] = 1): two Next(4) + the opacity gate. The
+        // 813 spawns alpha 255 (the shared row), but the wind-up keeps
+        // alpha 255 -> opacity 0 -> the gate FAILS (one NextFloat, no
+        // circular pair). Set alpha 0 to exercise the taken branch.
         let mut p = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
+        p.alpha = 0;
         let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
         p.ai_vortex_ritual((300.0, 300.0), &mut rng);
         assert_eq!(rng.ranges, vec![(0, 4), (0, 4)], ":33762/:33772");
         assert_eq!(rng.floats, 3, "the opacity gate + the circular pair");
+        // The stock alpha-255 wind-up: the gate fails, one float only.
+        let mut p = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
+        let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
+        p.ai_vortex_ritual((300.0, 300.0), &mut rng);
+        assert_eq!(rng.floats, 1, "opacity 0 -> the gate fails");
         // Charge tick (ai[0] = 51): two Next(2) + the opacity gate.
         let mut p = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
         p.ai[0] = 50.0;

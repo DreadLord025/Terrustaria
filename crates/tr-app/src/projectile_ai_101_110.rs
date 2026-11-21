@@ -137,6 +137,12 @@ pub(crate) fn ai_medusa_ray(
     let _ = expected_type;
 }
 
+/// `Entity.Center` for a slot (the free-fn shape — a closure would hold
+/// an immutable borrow across the arm's mutations).
+fn slot_center(p: &Projectile) -> Vec2 {
+    Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+}
+
 /// `AI()`'s aiStyle-102 block (`Projectile.cs:33222-33447`) — the three
 /// tower orbs: the 539 StardustJellyfishSmall (the 407 host), the 573
 /// NebulaBolt (the 424 host) and the 574 NebulaEye (the 420 host, the
@@ -180,8 +186,7 @@ pub(crate) fn ai_tower_orb(
         574 => (420, 180.0, 0.15, 0.075, 8.0, true, 576, if expert { 50 } else { 65 }, true),
         _ => return,
     };
-    let center = || Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
-    // `:33266-33275` — the 574's host lock: die when the host is gone,
+        // `:33266-33275` — the 574's host lock: die when the host is gone,
     // else pin timeLeft = 2.
     if host_lock {
         let ok = host.is_some_and(|(_, h)| h.kind.net_id() == host_type as i32 && h.hp > 0);
@@ -212,7 +217,7 @@ pub(crate) fn ai_tower_orb(
         if flag51 && drag {
             let (_, h) = host.unwrap();
             let (hx, hy) = h.center();
-            let c = center();
+            let c = slot_center(p);
             p.vel += Vec2::new(csign(hx - c.x), csign(hy - c.y)) * Vec2::new(ax, ay);
             let l = p.vel.length();
             if l > 6.0 {
@@ -250,7 +255,7 @@ pub(crate) fn ai_tower_orb(
                     // player when the LOS holds, else the velocity.
                     let mut num795 = p.vel.y.atan2(p.vel.x);
                     if let (Some((px, py)), Some((_, h))) = (target_player, host) {
-                        let c = center();
+                        let c = slot_center(p);
                         if crate::projectile::can_hit_line(
                             world, c.x, c.y, 0.0, 0.0, px, py, 0.0, 0.0,
                         ) {
@@ -276,7 +281,7 @@ pub(crate) fn ai_tower_orb(
         // host lives (flag48 false), else FindClosest (the single-player
         // fold: the local player either way).
         let target = target_player.unwrap_or((0.0, 0.0));
-        let c = center();
+        let c = slot_center(p);
         let mut value8 = Vec2::new(target.0, target.1) - c;
         // `:33380-33383` — the four jitter draws, in order.
         value8.x += rng.next_range(-50, 51) as f32;
@@ -417,7 +422,7 @@ pub(crate) fn ai_spore_sac(
     index_for_visuals: usize,
     local_owner: u8,
 ) {
-    let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+    let center = slot_center(p);
     // `:40047` — the sac-trap flag (both rowed kinds are traps).
     let flag = p.kind == 567 || p.kind == 568;
     // `:40048-40060` — the breathing scale.
@@ -605,8 +610,7 @@ pub(crate) fn ai_nebula_sphere(
     let mut num801 = 10.0f32;
     let mut num802 = 5.0f32;
     let num803 = 40.0f32;
-    let center = || Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
-    match p.kind {
+        match p.kind {
         575 => {
             // `:33558-33581` — the sphere's fade + frame + light.
             if p.time_left > 30 && p.alpha > 0 {
@@ -673,7 +677,7 @@ pub(crate) fn ai_nebula_sphere(
             // ten dust kicks (the SelectRandom picks stay on the stream).
             if p.time_left < 4 {
                 let num807 = if expert { 22 } else { 30 };
-                let c = center();
+                let c = slot_center(p);
                 p.pos = c;
                 p.w = 60.0;
                 p.h = 60.0;
@@ -690,7 +694,7 @@ pub(crate) fn ai_nebula_sphere(
     let num809 = p.ai[0] as i32;
     if num809 >= 0 && target_active {
         if let Some((px, py)) = player {
-            let c = center();
+            let c = slot_center(p);
             let target = Vec2::new(px, py);
             if (c - target).length() > num803 {
                 let mut vector114 = safe_normalize(target - c);
@@ -761,7 +765,7 @@ pub(crate) fn ai_mechanic_wrench(
         let zero3 = crate::projectile::npc_center(h);
         p.tile_collide = false;
         let num820 = p.local_ai[1];
-        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        let center = slot_center(p);
         let mut value9 = zero3 - center;
         if value9.length() < num820 {
             kill(p);
@@ -834,7 +838,7 @@ pub(crate) fn ai_nurse_syringe(p: &mut Projectile, host: Option<&mut Npc>) {
     };
     let zero4 = crate::projectile::npc_center(h);
     let num821 = p.local_ai[1];
-    let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+    let center = slot_center(p);
     let mut value10 = zero4 - center;
     // `:34078-34091` — the catch: the latch radius OR the hitbox overlap.
     let (hw, hh) = h.size();
