@@ -1017,6 +1017,16 @@ pub enum NpcKind {
     /// def 14, 50 HP, kb 0.6, NPCHit19/NPCDeath22, value 150. The
     /// aiStyle-22 machine's 490 branches ride `npc_ai_drippler.rs`.
     Drippler,
+    /// `NPCID.BloodSquid` (619, `NPCID.cs:11915`) — the Blood Nautilus's
+    /// tear-spawned squid (`NPC.cs:16934-16949`): noGravity, 44x44,
+    /// aiStyle 5, dmg 60, def 16, 750 HP, kb 0, NPCHit1/NPCDeath1,
+    /// value 500, alpha 255 (the spawn fade-in, `AI_005`'s 619 block
+    /// `NPC.cs:50254-50292`). W4-d11 DOC-SWEEP: the 813
+    /// BloodNautilusTears' 90th-tick spawn (`Projectile.cs:33882-33886`)
+    /// carried the raw id while the kind was unrowed — the drain's
+    /// `from_u16` folded it to a Slime. The row lands here; the 619
+    /// branches of `AI_005_EaterOfSouls` ride `npc_ai_blood_squid.rs`.
+    BloodSquid,
     /// `NPCID.ZombieElf` (338) — the Frost Moon wave's walker (`aiStyle 3`):
     /// 18x40, dmg 65, def 18, 600 HP, kb 0.4, value 1200, npcSlots 0.5
     /// (`NPC.cs:13281-13296`).
@@ -3129,6 +3139,10 @@ impl Npc {
                             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                                 255
                             }
+                            // W4-d11 DOC-SWEEP — the BloodSquid's alpha 255
+                            // spawn row (`NPC.cs:16948`); AI_005's 619 block
+                            // fades it -15/tick (`:50275-50279`).
+                            NpcKind::BloodSquid => 255,
                             _ => 0,
                         }
                     }),
@@ -3529,6 +3543,9 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // W4-d11 DOC-SWEEP — the BloodSquid's knockBackResist 0
+            // (`NPC.cs:16946`).
+            NpcKind::BloodSquid => 0.0,
             _ => 0.4,
         }
     }
@@ -3909,6 +3926,9 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // W4-d11 DOC-SWEEP — the BloodSquid's defense 16
+            // (`NPC.cs:16941`).
+            NpcKind::BloodSquid => 16,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4281,6 +4301,9 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // W4-d11 DOC-SWEEP — the BloodSquid's value 500
+            // (`NPC.cs:16947`).
+            NpcKind::BloodSquid => 500.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -5142,6 +5165,21 @@ impl Npc {
             // type-210/211 branch (`NPC.cs:50384-50413`): num 5, num2
             // 0.1·num3 with the (ai[1]-60)/60 ramp and the ±6 clamps.
             NpcKind::Bee | NpcKind::BeeSmall => self.update_bee_hover(world, player),
+            // The BloodSquid (619) — AI_005's own 619 branches
+            // (`NPC.cs:50254-50292`/`:50323-50327`/`:50446-50488`/
+            // `:50643-50646`/`:50656-50694`/`:50714-50725`), W4-d11
+            // DOC-SWEEP: the spawn fade, the every-tick drift, the
+            // below-target rise, the 0.7 bounce + the wet rise.
+            NpcKind::BloodSquid => {
+                let (pcx, pcy) = player.center();
+                let target = crate::npc_ai::HoverTarget {
+                    center_x: pcx,
+                    center_y: pcy,
+                    top_y: player.y,
+                    dead: player.hp <= 0,
+                };
+                crate::npc_ai_blood_squid::blood_squid_step(self, world, target, world.day_time);
+            }
             // The Probe (139): its laser/rotation arm runs in the sim's
             // `update_destroyers` pass (`npc_ai_style37::probe_step` — the
             // shot needs the hostile-shot seam); the per-NPC step is the
@@ -6287,6 +6325,12 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // W4-d11 DOC-SWEEP — the BloodSquid rides the aiStyle-5 axis
+            // (`ai_005_hover_family`'s 619 arm); this keeps the kind match
+            // exhaustive for direct-kind callers (the fishron precedent).
+            NpcKind::BloodSquid => {
+                unreachable!("aiStyle 5 rides the style axis (W4-d11 DOC-SWEEP)")
+            }
         }
     }
 
@@ -6648,6 +6692,16 @@ impl Npc {
                 }
                 if self.frame >= 3 {
                     self.frame = 0;
+                }
+            }
+            // W4-d11 DOC-SWEEP — the BloodSquid's `case 619`
+            // (`NPC.cs:67011-67021`): the 6-tick counter over the 6-frame
+            // strip (`Main.npcFrameCount[619]` = 6, `Main.cs:67082`).
+            NpcKind::BloodSquid => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = self.next_row(1);
                 }
             }
             // The ForceBubble has NO `FindFrame` case (`NPC.cs:66684-
@@ -18601,6 +18655,9 @@ impl Npc {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-d11 DOC-SWEEP — the BloodSquid's vanilla type (unused by
+            // every arm above, the G6 key stays injective).
+            NpcKind::BloodSquid => 619,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23669,7 +23726,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 271] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -23948,6 +24005,8 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-d11 DOC-SWEEP — the BloodSquid.
+        NpcKind::BloodSquid,
     ];
 
     #[test]

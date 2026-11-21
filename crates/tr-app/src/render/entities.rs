@@ -1245,6 +1245,7 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     250, // the Angry Nimbus
     288, // the Dungeon Spirit
     384, // the Force Bubble
+    619, // the Blood Squid (W4-d11 DOC-SWEEP)
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -3170,6 +3171,13 @@ pub(crate) fn draw_npcs(
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
+            // W4-d11 DOC-SWEEP — the BloodSquid draws its own sheet
+            // (`SMALL_KIND_SHEETS`' 619 row) at the 6-frame strip
+            // (`Main.npcFrameCount[619]` = 6) with the generic centred
+            // anchor — the small-kinds shape.
+            NpcKind::BloodSquid => {
+                pumpkin_moon_draw(assets.npc_sheet(619), npc_rows(619), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3319,6 +3327,10 @@ pub(crate) fn draw_npcs(
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
                     | NpcKind::BlazingWheel
                     | NpcKind::DungeonSpirit
+                    // W4-d11 DOC-SWEEP — the BloodSquid's aim rotation
+                    // (`AI_005`'s 619 arm, `NPC.cs:50643-50646`, the
+                    // atan2 - 1.57).
+                    | NpcKind::BloodSquid
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

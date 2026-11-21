@@ -1595,6 +1595,14 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        // W4-d11 DOC-SWEEP — the BloodSquid's portrait rests the 44x44
+        // `SetDefaults` box (`NPC.cs:16937-16938`) over the 6-frame strip.
+        (NpcKind::BloodSquid, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 44.0, h, white)
+        }
     }
 }
 

@@ -3566,6 +3566,14 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-d11 DOC-SWEEP — the BloodSquid (619, noGravity aiStyle 5):
+        // the hover ctor's open-air seed (the Drippler precedent); the
+        // 813 tear's spawn intent resolves through `Npc::new` in the
+        // world-sim drain, this arm serves the net join.
+        crate::npc::NpcKind::BloodSquid => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

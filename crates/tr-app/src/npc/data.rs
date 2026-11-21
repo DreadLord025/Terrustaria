@@ -586,6 +586,10 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-d11 DOC-SWEEP — the BloodSquid (619): the vanilla id is
+            // free in the protocol space (the highest landed band is 353),
+            // so it keeps its own id like the Frost Moon family.
+            NpcKind::BloodSquid => 619,
         }
     }
 
@@ -916,6 +920,8 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // W4-d11 DOC-SWEEP — the BloodSquid's vanilla id (`to_u16`).
+            619 => NpcKind::BloodSquid,
             _ => return None,
         })
     }
@@ -1796,6 +1802,9 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            // W4-d11 DOC-SWEEP — the BloodSquid's NPCHit1
+            // (`NPC.cs:16943`).
+            NpcKind::BloodSquid => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2100,6 +2109,9 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            // W4-d11 DOC-SWEEP — the BloodSquid's NPCDeath1
+            // (`NPC.cs:16944`).
+            NpcKind::BloodSquid => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -2151,6 +2163,9 @@ impl NpcKind {
             | NpcKind::ServantOfCthulhu
             | NpcKind::Bee
             | NpcKind::BeeSmall => true,
+            // W4-d11 DOC-SWEEP — the BloodSquid's noGravity row
+            // (`NPC.cs:16945`).
+            NpcKind::BloodSquid => true,
             // The Creeper (267, `NPC.cs:12466`), the Probe (139, `:10731`),
             // the Martian Drone (388, `:13948`), the Drippler (490,
             // `:14620`), the Poltergeist (330, `:13190`), the Dungeon
@@ -2279,6 +2294,9 @@ impl NpcKind {
             // The Queen Bee's volley bees — `NPC.cs:11700`/`:11713`
             // (the type-210/211 branch of AI_005, `:50384-50413`).
             NpcKind::Bee | NpcKind::BeeSmall => 5,
+            // The BloodSquid — `NPC.cs:16939` (W4-d11 DOC-SWEEP; AI_005's
+            // 619 branches, `:50254-50292`/`:50323-50327`/`:50485-50488`).
+            NpcKind::BloodSquid => 5,
             // aiStyle 6 - NPC.cs:8768, :8796, :8825, :8854, :8871, :8889, :8908, :8927, :8947, :10409, :10425, :10441 (the leech tail, W-A2-3), :15010, :15269, :15287, :15305
             NpcKind::SolarCrawltipedeHead | NpcKind::SolarCrawltipedeBody | NpcKind::SolarCrawltipedeTail |
             NpcKind::StardustWormHead | NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail |
@@ -2981,6 +2999,9 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-d11 DOC-SWEEP — the BloodSquid's 44x44 box
+            // (`NPC.cs:16937-16938`).
+            NpcKind::BloodSquid => (44.0, 44.0),
         }
     }
 
@@ -3622,6 +3643,9 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-d11 DOC-SWEEP — the BloodSquid's lifeMax 750
+            // (`NPC.cs:16942`).
+            NpcKind::BloodSquid => 750,
         }
     }
 
@@ -3986,6 +4010,9 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-d11 DOC-SWEEP — the BloodSquid's damage 60
+            // (`NPC.cs:16940`).
+            NpcKind::BloodSquid => 60,
         }
     }
 }

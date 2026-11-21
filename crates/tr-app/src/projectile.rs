@@ -3758,9 +3758,9 @@ impl Projectile {
     /// gate rolls are NOT on the stream, the 578/579 witnesses pin the
     /// current stream); the 813's dust GATES are modelled (the W4-d11
     /// census, the bodies skip). The late-stage clone spawn rides the
-    /// 580's own machine. The 813's 619 spawn intent carries the raw C#
-    /// NPC id (the BloodSquid kind is unported — the drain's `from_u16`
-    /// folds it, a cited skip).
+    /// 580's own machine. The 813's 619 spawn intent carries the rowed
+    /// BloodSquid kind (W4-d11 DOC-SWEEP — `NpcKind::BloodSquid.to_u16()`
+    /// keeps the vanilla 619; the drain's `from_u16` resolves it).
     fn ai_vortex_ritual(&mut self, player: (f32, f32), rng: &mut dyn tr_core::loot::DropRng) {
         // `:33681` — flag53: the 578/579 pair (the 813 is NOT on it).
         let flag53 = self.kind == VORTEX_PORTAL || self.kind == VORTEX_LIGHTNING;
@@ -3877,9 +3877,11 @@ impl Projectile {
                 }
             } else if self.kind == BLOOD_NAUTILUS_TEARS {
                 // `:33882-33886`'s BloodSquid (619) at the centre, zero
-                // velocity. The raw C# id rides the intent (the kind is
-                // unported — the drain folds it, a cited skip).
-                self.wants_mark_spawn.push((619, self.pos.x, self.pos.y, 0.0, 0.0));
+                // velocity. W4-d11 DOC-SWEEP: the kind is rowed now —
+                // `to_u16` keeps the vanilla 619, the drain's `from_u16`
+                // resolves the real kind (the old raw-id fold is gone).
+                self.wants_mark_spawn
+                    .push((NpcKind::BloodSquid.to_u16(), self.pos.x, self.pos.y, 0.0, 0.0));
             }
         }
         // `:34018-34024` — the 813's opacity dust tail: one NextFloat
@@ -31270,7 +31272,12 @@ mod ritual_projectile_tests {
         assert_eq!(p.ai[0], 90.0);
         assert_eq!(p.wants_mark_spawn.len(), 1, "one BloodSquid");
         let (kind, x, y, vx, vy) = p.wants_mark_spawn[0];
-        assert_eq!(kind, 619, "the raw C# NPC id (the kind is unported)");
+        assert_eq!(kind, 619, "the rowed BloodSquid keeps the vanilla id");
+        assert_eq!(
+            crate::npc::NpcKind::from_u16(kind),
+            Some(crate::npc::NpcKind::BloodSquid),
+            "W4-d11 DOC-SWEEP: the drain resolves the real kind"
+        );
         assert!((x - 200.0).abs() < 1.0 && (y - 200.0).abs() < 1.0);
         assert_eq!((vx, vy), (0.0, 0.0), ":33884's zero velocity");
         assert_eq!(p.local_ai[1], 0.0, "the 813 is not on flag53");
