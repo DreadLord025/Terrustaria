@@ -39310,7 +39310,7 @@ only the `mod npc_ai_style83;` seam landed.
 
 The d10 CultistTablet-437 activation contract (`649b18aef`, docsweep 26d
 §98) is DISCHARGED — the style-83 dispatch + the sim plumbing landed
-(research/352 the RETIRE/FINAL + the cultist-ritual family declaration):
+(research/363 the RETIRE/FINAL + the cultist-ritual family declaration):
 
 - **The dispatch**: `npc.rs::update_rng_dust`'s `83 =>` axis arm (the solo
   path `update_rng_style83_solo`) + the pooled branch in
@@ -39350,7 +39350,7 @@ The d10 CultistTablet-437 activation contract (`649b18aef`, docsweep 26d
 - **The census witness re-pinned merge-safe**: any style-83 kind must be
   437/438 (was "no kind claims 83" — breaks when d40 merges). 9 wiring
   witnesses WRITTEN NOT RUN (2 module guards + 2 movement-tail + 4 sim
-  plumbing + the re-pin). The family declaration (research/352 §6): d31
+  plumbing + the re-pin). The family declaration (research/363 §6): d31
   machine+dispatch / d40 kinds / d10 526 row+seek / c1 boss-84 — DISJOINT,
   no two branches own the same fn body.
 

@@ -1,10 +1,19 @@
-# 352 — W4-d31 aiStyle-83 WIRING + RETIRE/FINAL (the cultist-ritual family declaration)
+# 363 — W4-d31 aiStyle-83 WIRING + RETIRE/FINAL (the cultist-ritual family declaration)
+
+> **CHAIN-BANNER (registry §9 rename, d54 tip b4c94432c):** this doc was self-picked
+> as **352** (post-§9, tip `1f0bd6385`), colliding with d1's assigned 352
+> (352 = d1, §9-EXECUTED `194c66ce6`). Renumbered **352 → 363** per the UNIFIED FINAL
+> registry §9.2 row 363. Every reference below and in INDEX/ANALYSIS/PORT_MAP/ROADMAP/
+> anchors.txt reads **363**; the original 352-claim narrative is kept as chain history.
 
 Lane: **W4-d31** (`task/W4-d31-npc-ai-styles-75-83`), worktree TR-W4-d31.
 Phase: the wiring wave + RETIRE/SEAL. **Code-only** — no cargo/tests/rustfmt/graphify
 invoked; every witness below is **WRITTEN NOT RUN**.
 
-Research number **352** per the registry-150 first-pushed-wins protocol
+Research number **363** per the registry-150 UNIFIED FINAL §9.2 assignment
+(the original 352 self-pick below is CHAIN HISTORY, superseded by the §9 rename):
+
+*Chain history — the original 352 claim:* Research number **352** per the registry-150 first-pushed-wins protocol
 (`origin/task/W4-d54-dust-sites-world` `docs/research/150-research-number-registry.md`
 §4-REFRESH: 281+ free). A fresh 362-tip `git ls-tree docs/research/` scan at the
 RETIRE tip found the 281–351 block churning under parallel pushes (281/282/283/284/
