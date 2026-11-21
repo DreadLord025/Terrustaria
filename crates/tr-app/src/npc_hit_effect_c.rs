@@ -81,6 +81,8 @@
 //! | 333-342 | `:83734` | the 492 Flying Dutchman (cannon) death: 7-dust type-31 burst + 10-gore Next(61,64) scatter |
 //! | 343-348 | `:83789-83794` | the 524-527 Desert Ghoul (normal/corrupt/crimson/hallow) death (6 gores, per-tier base) |
 //! | 349-352 | `:83818-83821` | the 528-529 Desert Lamia (light/dark) death (4 gores, per-tier head) |
+//! | 353-357 | `:83839-83843` | the 530/531 Desert Scorpion death (5 gores 883-887, alpha-100 type-250 dust) |
+//! | 358-361 | `:83861-83864` | the 532 Desert Beast death (4 gores 888-891, alpha-100 type-5 dust) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -1943,6 +1945,64 @@ fn desert_lamia_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 878, s); // :83821
 }
 
+/// The 530/531 Desert Scorpion death (`NPC.cs:83835-83843`, sites 353-357):
+/// the 20-dust type-250 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5, alpha
+/// 100), then the 5 gores 883/884/885/886/887 at position. Scale defaults
+/// to 1 (the 3-arg NewGore).
+fn desert_scorpion_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:83835-83838` — the 20-dust type-250 burst (alpha 100).
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 250, 2.5 * hit_direction, -2.5, 100,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 883, 1.0); // :83839
+    gore.new_gore(rng, world, pos, vel, 884, 1.0); // :83840
+    gore.new_gore(rng, world, pos, vel, 885, 1.0); // :83841
+    gore.new_gore(rng, world, pos, vel, 886, 1.0); // :83842
+    gore.new_gore(rng, world, pos, vel, 887, 1.0); // :83843
+}
+
+/// The 532 Desert Beast death (`NPC.cs:83857-83864`, sites 358-361): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5, alpha 100),
+/// then the 4 gores 888/889/890/891 at position. Scale defaults to 1.
+fn desert_beast_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:83857-83860` — the 50-dust type-5 burst (alpha 100).
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 100,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 888, 1.0); // :83861
+    gore.new_gore(rng, world, pos, vel, 889, 1.0); // :83862
+    gore.new_gore(rng, world, pos, vel, 890, 1.0); // :83863
+    gore.new_gore(rng, world, pos, vel, 891, 1.0); // :83864
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -2151,6 +2211,14 @@ pub fn hit_effect_c(
     // `:83797-83823` — the 528-529 Desert Lamia arm (sites 349-352).
     if (npc_type == 528 || npc_type == 529) && npc.hp <= 0 {
         desert_lamia_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:83824-83845` — the 530/531 Desert Scorpion arm (sites 353-357).
+    if (npc_type == 530 || npc_type == 531) && npc.hp <= 0 {
+        desert_scorpion_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:83846-83866` — the 532 Desert Beast arm (sites 358-361).
+    if npc_type == 532 && npc.hp <= 0 {
+        desert_beast_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -3495,6 +3563,43 @@ mod tests {
             let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
             assert_eq!(types, vec![head, 877, 877, 878], "lamia {ty}");
             assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        }
+    }
+
+    /// `NPC.cs:83839-83843` — the Desert Scorpion death: the 5 gores
+    /// 883-887 at position, after the 20-dust type-250 alpha-100 burst.
+    #[test]
+    fn w4_f10_the_desert_scorpion_death_spawns_the_five_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 44.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(239);
+        desert_scorpion_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![883, 884, 885, 886, 887]);
+        for i in 0..5 {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+        }
+        // The dust carries alpha 100.
+        let d = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(d.alpha, 100);
+    }
+
+    /// `NPC.cs:83861-83864` — the Desert Beast death: the 4 gores 888-891
+    /// at position, after the 50-dust type-5 alpha-100 burst.
+    #[test]
+    fn w4_f10_the_desert_beast_death_spawns_the_four_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 60.0, 50.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(241);
+        desert_beast_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, -1.0);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![888, 889, 890, 891]);
+        for i in 0..4 {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
         }
     }
 
