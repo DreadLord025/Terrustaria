@@ -46,7 +46,14 @@ pub fn grow_alch(world: &mut World, x: i32, y: i32, day_time: bool, raining: boo
         let frame_x = world.tile(x, y).map(|t| t.frame_x).unwrap_or(0);
         let below_surface = y as f64 > world.world_surface;
         let near_underworld = y > world.height - 200;
-        let bloom = if rng.next_max(50) == 0 && (frame_x == 108 || rng.next_max(2) == 0) {
+        // `:45798-45811`: the generic 1/50 arm. Only the fireblossom stem
+        // (frameX 108) needs the extra `Next(2) == 0`; every other frame
+        // blooms straight through (the C# `else { flag = true; }`). The
+        // `Next(2)` draw rides the `||` short-circuit, so it fires ONLY on
+        // frame 108 — the draw order matches the source. (W4-d105 doc-sweep:
+        // the prior `frame_x == 108` inverted the gate — it bloomed 108
+        // unconditionally and made every other frame draw the extra `Next(2)`.)
+        let bloom = if rng.next_max(50) == 0 && (frame_x != 108 || rng.next_max(2) == 0) {
             true
         } else if day_time && frame_x == 0 && rng.next_max(50) == 0 {
             true
@@ -68,7 +75,12 @@ pub fn grow_alch(world: &mut World, x: i32, y: i32, day_time: bool, raining: boo
         }
         return;
     }
-    // `:45862-45883`: the stage-3 flash (`frameX == 36`, 2 of 3 rolls skip).
+    // `:45868-45889`: the stage-3 flash (`frameX == 36`, 2 of 3 rolls skip).
+    // The C# else-if chain: the `Next(3)` draws on EVERY frame-36 cell (a 0
+    // falls out of the whole chain — the 108 tail cannot match frame 36);
+    // the 108 tail below is the chain's final `else if`, so it runs only
+    // when the frame-36 gate fails. The port keeps the else-if shape so the
+    // stream matches (no early return on a failed Next(3)).
     if world.tile(x, y).is_some_and(|t| t.frame_x == 36) && rng.next_max(3) != 0 {
         let kind = world.tile(x, y).map(|t| t.kind).unwrap_or(0);
         if kind == 83 {
@@ -81,6 +93,16 @@ pub fn grow_alch(world: &mut World, x: i32, y: i32, day_time: bool, raining: boo
             if let Some(t) = world.tile_mut(x, y) {
                 t.kind = 83;
             }
+        }
+    } else if world.tile(x, y).is_some_and(|t| t.frame_x == 108 && t.kind == 83)
+        && rng.next_max(30) == 0
+    {
+        // `:45890-45898`: the fireblossom tail — a blooming fireblossom
+        // (83, frameX 108) matures to 84 at 1/30. (W4-d105 doc-sweep: the
+        // arm was missing; the `Next(30)` draws only on a kind-83
+        // frame-108 cell.)
+        if let Some(t) = world.tile_mut(x, y) {
+            t.kind = 84;
         }
     }
 }
@@ -224,6 +246,83 @@ mod tests {
             w.tile(30, 90).unwrap().flags & FLAG_ACTIVE == 0,
             "the water on the stage-0 herb kills it"
         );
+    }
+
+    /// W4-d105 doc-sweep: the generic 1/50 arm's frame-108 gate
+    /// (`WorldGen.cs:45798-45811`). The fireblossom stem (frameX 108) blooms
+    /// only when the extra `Next(2) == 0` passes; every other frame blooms
+    /// straight through. Seeds 35/102 are hand-derived .NET UnifiedRandom
+    /// fixtures whose FIRST `Next(50)` is 0 and whose following `Next(2)` is
+    /// 0 (seed 35) / 1 (seed 102) — one tick, no cue arms involved.
+    #[test]
+    fn w4_d105_the_generic_bloom_gate_is_frame_108_only() {
+        // Frame 0 (daybloom stem): the generic arm blooms with NO extra
+        // draw — seed 35's first Next(50) == 0 suffices.
+        let mut w = world();
+        put(&mut w, 30, 90, 82, 0);
+        let mut rng = UnifiedRandom::new(35);
+        grow_alch(&mut w, 30, 90, false, false, &mut rng);
+        assert_eq!(w.tile(30, 90).unwrap().kind, 83, "frame 0 blooms outright");
+        // Frame 108 + Next(2) == 0 (seed 35): the fireblossom blooms too.
+        let mut w = world();
+        put(&mut w, 30, 90, 82, 108);
+        let mut rng = UnifiedRandom::new(35);
+        grow_alch(&mut w, 30, 90, false, false, &mut rng);
+        assert_eq!(w.tile(30, 90).unwrap().kind, 83, "108 blooms on Next(2)==0");
+        // Frame 108 + Next(2) == 1 (seed 102): the gate holds the sprout —
+        // and the cue arms cannot rescue it (108 matches no cue), so the
+        // tick ends with the kind unchanged.
+        let mut w = world();
+        put(&mut w, 30, 90, 82, 108);
+        let mut rng = UnifiedRandom::new(102);
+        grow_alch(&mut w, 30, 90, false, false, &mut rng);
+        assert_eq!(w.tile(30, 90).unwrap().kind, 82, "108 holds on Next(2)==1");
+        // The stream order: on frame 108 the extra Next(2) IS drawn (two
+        // samples per armed tick); on frame 0 it is not (one sample). The
+        // third raw draw differs between the two replays of seed 35.
+        let mut r108 = UnifiedRandom::new(35);
+        let _ = r108.next_max(50);
+        let _ = r108.next_max(2);
+        let after108 = r108.next();
+        let mut r0 = UnifiedRandom::new(35);
+        let _ = r0.next_max(50);
+        let after0 = r0.next();
+        assert_ne!(after108, after0, "the Next(2) rides only frame 108");
+    }
+
+    /// W4-d105 doc-sweep: the fireblossom maturity tail
+    /// (`WorldGen.cs:45890-45898`) — a blooming fireblossom (83, frameX 108)
+    /// matures to 84 at 1/30. Seed 35's first `Next(30)` is 0 (fires), seed
+    /// 1's is non-zero (skips); both hand-derived .NET fixtures.
+    #[test]
+    fn w4_d105_the_fireblossom_tail_matures_at_one_in_thirty() {
+        let mut w = world();
+        put(&mut w, 30, 90, 83, 108);
+        let mut rng = UnifiedRandom::new(35);
+        grow_alch(&mut w, 30, 90, false, false, &mut rng);
+        assert_eq!(w.tile(30, 90).unwrap().kind, 84, "the 1/30 tail fires");
+        // The miss: seed 1's Next(30) != 0 — the bloom stays.
+        let mut w = world();
+        put(&mut w, 30, 90, 83, 108);
+        let mut rng = UnifiedRandom::new(1);
+        grow_alch(&mut w, 30, 90, false, false, &mut rng);
+        assert_eq!(w.tile(30, 90).unwrap().kind, 83, "the 1/30 tail skips");
+        // The kind gate: a frame-108 SPROUT (82) never reaches the tail —
+        // the 82 arm returns first (its generic gate misses on seed 1).
+        let mut w = world();
+        put(&mut w, 30, 90, 82, 108);
+        let mut rng = UnifiedRandom::new(1);
+        grow_alch(&mut w, 30, 90, false, false, &mut rng);
+        assert_eq!(w.tile(30, 90).unwrap().kind, 82, "the tail is 83-only");
+        // The frame gate: a frame-36 bloom (blinkroot) takes the stage-3
+        // flash arm instead — never the 108 tail. Seed 35's first Next(3)
+        // is 0, so the flash arm's `Next(3) != 0` gate FAILS and the tick
+        // ends with the kind unchanged (the 108 tail must not have run).
+        let mut w = world();
+        put(&mut w, 30, 90, 83, 36);
+        let mut rng = UnifiedRandom::new(35);
+        grow_alch(&mut w, 30, 90, false, false, &mut rng);
+        assert_eq!(w.tile(30, 90).unwrap().kind, 83, "the flash arm owns frame 36");
     }
 
     #[test]
