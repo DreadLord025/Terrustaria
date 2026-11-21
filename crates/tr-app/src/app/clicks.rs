@@ -3426,8 +3426,8 @@ mod tests {
     /// DW-4.5 — the shift hover evaluation (`GetAlternateClickAction`,
     /// `ItemSlot.cs:644-726`): cursor 8 on a chest cell with inventory room,
     /// 9 on an inventory slot with a placeable stack, −1 without Shift and
-    /// −1 when nothing has room. (The Cursors_8/9 texture draw is the
-    /// recorded follow-up — the state is what the click arms consume.)
+    /// −1 when nothing has room. (The override texture draw landed W4-e19 —
+    /// `ui::cursor::draw_override`; the state is what the click arms consume.)
     #[test]
     fn dw_4_5_cursor_override_eval_per_hover_and_shift() {
         let mut app = chest_app(vec![slot(9, 5)]);
@@ -6047,5 +6047,47 @@ mod s1_p_i44_shop_click_tests {
         let last = app.shop_stock.last().unwrap();
         assert!(last.buy_once);
         assert_eq!((last.item, last.stack), (8, 6));
+    }
+
+    /// W4-e19 final — the shift-quicksell UI-hint census: the C# mouse path
+    /// has NO text tooltip for the sell action — the hint IS the cursor
+    /// override (id 10, `ItemSlot.cs:218`'s `AlternateClickAction.Sell`,
+    /// drawn white/no-shadow at `Main.cs:45293-45309`). The
+    /// `gamepadHintText` (`Lang.misc[75]` "Sell") rides the gamepad-only
+    /// `BuildCommand` chain (`ItemSlot.cs:4446`), unported. This witness
+    /// pins the hint's full gate ladder: the coin refusal (71-74 → no
+    /// cursor), the favourite refusal (`:632`), the no-shop trash fallback
+    /// (`GetSellOrTrash` `:200-203`), and the shift release clearing it.
+    #[test]
+    fn w4_e19_the_quicksell_hint_is_the_cursor_gate_ladder() {
+        let mut app = shop_app();
+        app.inventory[0] = ItemSlot {
+            kind: 8,
+            name: crate::registry::name(8),
+            count: 6,
+            prefix: 0,
+        };
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.mouse_pos = Vec2::new(42.0, 42.0);
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, CURSOR_SELL, "the sell hint lights");
+        // The coin refusal (`:204-207`): a copper stack never sells.
+        app.inventory[0].kind = 71;
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, -1, "coins refuse the sell cursor");
+        // The favourite refusal (`:632`): favorited slots answer null.
+        app.inventory[0].kind = 8;
+        app.favorite_slots.push(0);
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, -1, "favorites refuse");
+        app.favorite_slots.clear();
+        // No shop → the trash cursor (`GetSellOrTrash` `:200-203`).
+        app.shop_npc = None;
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, CURSOR_TRASH, "the trash fallback");
+        // Shift released → nothing (`ShiftInUse` gate, `:644`).
+        app.keys.remove(&KeyCode::ShiftLeft);
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, -1, "no shift, no hint");
     }
 }

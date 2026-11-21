@@ -78,6 +78,7 @@ per `docs/superpowers` agreements).
 | 144 | Item liquid-splash keep-one verdict (W4-e19 final: e19 16-box half kept, f47 dup-half retires at merge; TR_WATER_STYLE pin adopted; 3 census witnesses) | `144-splash-keep-one.md` | ✅ verdict applied |
 | 145 | The 16-box cross-lane repin list (W4-e19 final: SIZE 14→16 per WorldItem.cs:138; per-lane witness repins for 141/master — grab edge 42/43, magnet 292/192, floor−SIZE) | `145-16box-cross-lane-repins.md` | ✅ published |
 | 146 | The AETHER biome census (W4-e19 final: ZoneShimmer metric/music already faithful; bg-skip + star-dim + monolith ramp terms ported; liquidAlpha[13] dead-code census; g69d/g72/g76 co-lane claims) | `146-aether-biome-census.md` | ✅ census + 3 small ports |
+| 147 | The quicksell SHIFT-click UI-hint census (W4-e19 final: the C# mouse hint IS the cursor-10 icon, no text tooltip; the override texture draw ported — 6 sheets + draw_override + the draw_hud thread; gamepad hint stays unported) | `147-quicksell-ui-hint-census.md` | ✅ census + the draw port |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

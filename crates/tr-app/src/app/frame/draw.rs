@@ -1788,6 +1788,9 @@ impl App {
                             // draws while the talk latch holds.
                             self.talk_npc,
                             &self.npc_chat_text,
+                            // `Main.cursorOverride` — the shift-hover sell/
+                            // trash/transfer cursor (W4-e19).
+                            self.cursor_override,
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after
