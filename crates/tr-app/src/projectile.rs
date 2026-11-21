@@ -20291,17 +20291,6 @@ impl ProjectilePool {
                     }
                 }
                 self.spawn_inferno_blast(i);
-                // W4-d17 — `Kill()`'s 818 arms (`Projectile.cs:71587-71596`
-                // + `:71631-71634`): the pounce's death runs the two
-                // 3-iteration 278-dust rings (the bodies skip, the 30
-                // explicit NextFloat call-site draws stay — per iteration
-                // the square-position pair, the rotated velocity's random
-                // half-turn + radius floats, and the colour lerp float),
-                // then re-runs `Damage()` at the completed arc (`ai[0] >= 1`
-                // passes the `:12448` refusal — the pounce's ONLY landing
-                // window). The death hook fires once per death (the pool's
-                // `!active` transition), the C#'s Kill-once shape.
-                self.tiger_pounce_kill(i, npcs, doll_flags(player.as_deref()), rng, luck);
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
                 // moving cloud's death spawns the raining cloud 238.
                 self.spawn_rain_cloud(i);
@@ -20313,6 +20302,20 @@ impl ProjectilePool {
                 // burst — the AoeExplosion damage rides the dying slot, so it
                 // runs at the same death hook the blast does.
                 let luck = player.as_deref().map(|p| p.luck_state.luck).unwrap_or(0.0);
+                // W4-d17 — `Kill()`'s 818 arms (`Projectile.cs:71587-71596`
+                // + `:71631-71634`): the pounce's death runs the two
+                // 3-iteration 278-dust rings (the bodies skip, the 30
+                // explicit NextFloat call-site draws stay — per iteration
+                // the square-position pair, the rotated velocity's random
+                // half-turn + radius floats, and the colour lerp float),
+                // then re-runs `Damage()` at the completed arc (`ai[0] >= 1`
+                // passes the `:12448` refusal — the pounce's ONLY landing
+                // window). The death hook fires once per death (the pool's
+                // `!active` transition), the C#'s Kill-once shape. The C#
+                // body order puts the 818 dust (`:71587`) above the gem arm
+                // (`:75425`); the kinds are disjoint so the relative order
+                // is unobservable.
+                self.tiger_pounce_kill(i, npcs, doll_flags(player.as_deref()), rng, luck);
                 self.gem_bolt_aoe(i, npcs, doll_flags(player.as_deref()), rng, luck);
                 // `Kill()`'s debris arm (`Kill_ExplodeTiles` `:77369-77385`,
                 // called from `Kill()` `:77258-77261`): the trio's death
@@ -21771,7 +21774,9 @@ impl ProjectilePool {
             // are the C#'s float→int casts. `num` keeps the C# int's exact
             // value (the `(int)(16f * ai[1])` product + 5).
             num = (16.0 * p.ai[1]) as i32 + 5;
-            num4 = num4.min((16.0 * p.ai[1]) as i32 as f32);
+            // `:47624` — `Math.Min(num4, (int)(num * ai[1]))` reads the
+            // REASSIGNED num (21 at ai1 = 1), not the original 16.
+            num4 = num4.min((num as f32 * p.ai[1]) as i32 as f32);
             num3 = (7.0 * p.ai[1]) as i32;
             num2 = (12.0 * p.ai[1]) as i32;
             if p.vel.x != 0.0 {
@@ -21838,13 +21843,15 @@ impl ProjectilePool {
     /// (`ai[1] < 1` re-arms 60). The arc's control points sag by
     /// `distance·1.5` on Y and over-shoot the ends by ±0.1.
     ///
-    /// RNG (the first live tick ONLY, `:46737-46762`): two `Next(19)` dust
-    /// gates (num3 = 0, 0.5); a taken gate draws the position's
-    /// `NextVector2Square` pair + the velocity's `NextVector2Circular` pair
-    /// (4 floats, `Utils.cs:1251-1268`) then the DISCARDED `Next(5)`
-    /// (`:46747` — the C# rolls it and drops it, kept). Then one `Next(2)`
-    /// gate (`:46754`); the taken branch's `Dust.NewDust` body skips with
-    /// its internals. Every later tick draws NOTHING.
+    /// RNG (EVERY live tick — the C#'s `flag` is true unconditionally at
+    /// `:46710`, so the `if (flag)` block `:46737-46762` runs each sub-step,
+    /// not just the first): two `Next(19)` dust gates (num3 = 0, 0.5); a
+    /// taken gate draws the position's `NextVector2Square` pair + the
+    /// velocity's `NextVector2Circular` pair (4 floats, `Utils.cs:1251-1268`)
+    /// then the DISCARDED `Next(5)` (`:46747` — the C# rolls it and drops
+    /// it, kept). Then one `Next(2)` gate (`:46754`); the taken branch's
+    /// `Dust.NewDust` body skips with its internals. The stagger-delay
+    /// sub-steps (`ai[0] < 0`) return before the block and draw NOTHING.
     ///
     /// Movement: 818 is on `UpdatePosition`'s skip list (`:20435`) — the
     /// arc IS the position, the dispatch adds NO integrate. The opacity
