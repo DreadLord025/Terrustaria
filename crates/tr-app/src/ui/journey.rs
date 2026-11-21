@@ -109,6 +109,31 @@ pub struct JourneyMenu {
     /// the raw [0,1] slider value; the derived 1..24 rate lives in
     /// `CreativePowers` (`PowerId::TimeRate`).
     pub time_rate_cache: f32,
+    /// `ModifyWindDirectionAndStrength._sliderCurrentValueCache` — the port
+    /// keeps no cache: `GetSliderValueInner` reads the LIVE wind target
+    /// (`CreativePowers.cs:1193-1196`), so the draw derives the position
+    /// from `Wind.speed_target` per frame (the walk moves it under the
+    /// slider, exactly like the C#).
+    /// `ModifyRainPower._sliderCurrentValueCache` — same: the slider reads
+    /// the live `Main.cloudAlpha` (`:1332-1335`), so the draw derives from
+    /// `Rain.cloud_alpha()`.
+    /// `DifficultySliderPower._sliderCurrentValueCache` (`:1014`): the raw
+    /// [0,1] cache; the derived strength lives in `CreativePowers`
+    /// (`PowerId::Difficulty`). The C# reads the cache back (`GetSliderValue
+    /// Inner` is not overridden), so the port keeps it.
+    pub difficulty_cache: f32,
+    /// `SpawnRateSliderPerPlayerPower._sliderCurrentValueCache` (`:1580`'s
+    /// default 0.5): the raw [0,1] cache, mirrored in `CreativePowers`
+    /// (`PowerId::SpawnRate`) for the sim.
+    pub spawn_rate_cache: f32,
+    /// `UISearchBar.actualContents` (`UISearchBar.cs:17`) — the duplication
+    /// search box's text (`UIWrappedSearchBar._searchString`, `:32`).
+    /// Empty = the "Name:" placeholder (`UI.PlayerNameSlot`).
+    pub search: String,
+    /// `UISearchBar.IsWritingText` (`:25`): the box takes keyboard input
+    /// (`Main.GetInputText`, `Main.cs:20010-20121` — the port's chat-style
+    /// `event.text` seam, `app/loop.rs`).
+    pub search_writing: bool,
 }
 
 impl Default for JourneyMenu {
@@ -131,6 +156,10 @@ impl Default for JourneyMenu {
             toggle_hovered: false,
             hovered_button: -1,
             time_rate_cache: 0.0,
+            difficulty_cache: 0.0,
+            spawn_rate_cache: 0.5,
+            search: String::new(),
+            search_writing: false,
         }
     }
 }
@@ -578,17 +607,23 @@ pub fn sacrifice_confirm(m: &mut JourneyMenu, tracker: &mut ResearchTracker) -> 
 
 /// `UpdateContents` (`UICreativeInfiniteItemsDisplay.cs:536-549`) + the
 /// sorter (`:96-102`): every kind with positive progress that passes the
-/// filter, sorted `ByUnlockStatus` (newly-researched first, then fully
-/// researched — `SortingSteps.cs:91-113`), then `ByCreativeSortingId`, then
-/// `Alphabetical` (`:143-146`).
+/// filterer — the search filter FIRST (`EntryFilterer.FitsFilter`,
+/// `EntryFilterer.cs:30-35`), then the active tab — sorted `ByUnlockStatus`
+/// (newly-researched first, then fully researched — `SortingSteps.cs:91-113`),
+/// then `ByCreativeSortingId`, then `Alphabetical` (`:143-146`).
 ///
 /// Deviation (docs/ANALYSIS.md): `ContentSamples.ItemCreativeSortingId`
 /// (`SortingSteps.cs:125-131`) is a generated group/order table the port does
 /// not carry; the middle step falls through to the alphabetical tie-break.
-pub fn grid_items(tracker: &ResearchTracker, filters: &FilterBoard) -> Vec<u16> {
+pub fn grid_items(
+    tracker: &ResearchTracker,
+    filters: &FilterBoard,
+    search: &str,
+    player: Option<&crate::player::Player>,
+) -> Vec<u16> {
     let mut items: Vec<u16> = tracker
         .items_with_progress()
-        .filter(|&id| filters.fits(id))
+        .filter(|&id| search_fits(id, search, player) && filters.fits(id))
         .collect();
     items.sort_by(|&a, &b| {
         let rank = |id: u16| {
@@ -602,6 +637,37 @@ pub fn grid_items(tracker: &ResearchTracker, filters: &FilterBoard) -> Vec<u16> 
             .then_with(|| crate::lang::item_name(a).cmp(&crate::lang::item_name(b)))
     });
     items
+}
+
+/// `ItemFilters.BySearch.FitsFilter` (`ItemFilters.cs:28-48`) + the
+/// `EntryFilterer.SetSearchFilter` whitespace gate (`EntryFilterer.cs:85-94`):
+/// a null/whitespace search passes everything; else the item's tooltip lines
+/// (`Main.MouseText_DrawItemTooltip_GetLinesInfo` at stack 1, `:34-39`) are
+/// scanned case-insensitively for the substring. The port's tooltip seam is
+/// `ui::tooltip::item_tooltip_lines` (the same rows, the player's layers
+/// folded in); the 30-line cap is the C#'s `_toolTipLines` buffer.
+pub fn search_fits(kind: u16, search: &str, player: Option<&crate::player::Player>) -> bool {
+    if search.trim().is_empty() {
+        return true; // `SetSearchFilter`'s IsNullOrWhiteSpace arm
+    }
+    let Some(d) = crate::registry::get(kind) else {
+        return false;
+    };
+    let lines = super::tooltip::item_tooltip_lines(
+        kind,
+        d,
+        super::tooltip::TooltipContext {
+            prefix: 0,
+            stack: 1, // `entry.stack = 1` (`ItemFilters.cs:37`)
+            player,
+            held_crit: 0,
+        },
+    );
+    let needle = search.to_lowercase();
+    lines
+        .iter()
+        .take(30) // `_tooltipMaxLines` (`:18`)
+        .any(|(text, _)| text.to_lowercase().contains(&needle))
 }
 
 /// `UIDynamicItemCollection.UpdateSize` (`UIDynamicItemCollection.cs:160-165`):
@@ -983,18 +1049,20 @@ fn draw_duplication_page(
     m: &JourneyMenu,
     tracker: &ResearchTracker,
     mouse: Vec2,
+    player: Option<&crate::player::Player>,
 ) {
     let bg = color::tint(color::mul(color::mul([63, 82, 151, 255], 0.7), 0.8));
     let border = color::tint(color::mul([0, 0, 0, 255], 0.8));
     panel::draw_panel(r, lookups, lookups.ui_panel_bg, l.dup_panel, bg);
     panel::draw_panel(r, lookups, lookups.ui_panel_border, l.dup_panel, border);
 
-    // The search bar (`UIWrappedSearchBar`, Blue theme — `:97-118`): the
-    // magnifier (Button_Search), the (35,40,83) box, the "Name:" placeholder
-    // and the cancel button. Static chrome like `ui::crafting`'s (the port
-    // has no keyboard text field wired here — the recorded deviation).
-    let search = [l.dup_inner[0], l.dup_inner[1], l.dup_inner[2], 24.0];
-    let button = [search[0], search[1] + 1.0, 22.0, 22.0];
+    // The search bar (`UIWrappedSearchBar`, Blue theme — `:97-151`): the
+    // magnifier (Button_Search), the (35,40,83) box, the text (the "Name:"
+    // placeholder when empty, `UISearchBar.SetContents:72-82`) and the
+    // cancel button. While writing, the box border turns OurFavoriteColor
+    // (`OnStartTakingInput`, `:199-202`).
+    let search = search_bar_rect(l);
+    let button = search_button_rect(l);
     if let Some(s) = lookups.ui_search_icon_blue {
         super::push_whole(r, lookups, &s, button, [1.0; 4]);
     }
@@ -1003,21 +1071,40 @@ fn draw_duplication_page(
             super::push_whole(r, lookups, &s, button, [1.0; 4]);
         }
     }
-    let box_w = search[2] - 22.0 - 3.0;
-    let search_box = [search[0] + 25.0, search[1], box_w, 24.0];
+    let search_box = search_box_rect(l);
+    let box_w = search_box[2];
     let field = color::tint([35, 40, 83, 255]);
+    let border_tint = if m.search_writing {
+        color::tint(FAVORITE)
+    } else {
+        field
+    };
     panel::draw_panel(r, lookups, lookups.ui_panel_bg, search_box, field);
-    panel::draw_panel(r, lookups, lookups.ui_panel_border, search_box, field);
-    ui_text(
-        r,
-        lookups,
-        search_box[0] + 12.0,
-        search_box[1] + 5.6,
-        0.8,
-        color::tint([128, 128, 128, 255]),
-        "Name:",
-    );
-    let cancel = [search_box[0] + box_w - 24.0 - 2.0, search_box[1], 24.0, 24.0];
+    panel::draw_panel(r, lookups, lookups.ui_panel_border, search_box, border_tint);
+    if m.search.is_empty() {
+        // The empty placeholder (`UI.PlayerNameSlot`, Gray at 0.8 scale).
+        ui_text(
+            r,
+            lookups,
+            search_box[0] + 12.0,
+            search_box[1] + 5.6,
+            0.8,
+            color::tint([128, 128, 128, 255]),
+            &crate::lang::text("UI.PlayerNameSlot"),
+        );
+    } else {
+        // The contents (`UISearchBar.SetContents`'s white arm, `:79-81`).
+        ui_text(
+            r,
+            lookups,
+            search_box[0] + 12.0,
+            search_box[1] + 5.6,
+            0.8,
+            [1.0; 4],
+            &m.search,
+        );
+    }
+    let cancel = search_cancel_rect(l);
     let cancel_tint = if in_rect(mouse, cancel) {
         [1.0; 4]
     } else {
@@ -1029,7 +1116,7 @@ fn draw_duplication_page(
 
     // The grid (`UIDynamicItemCollection.DrawSelf`, `:38-71`): the items at
     // GRID_SCALE on the 44 px lattice, clipped to the list.
-    let items = grid_items(tracker, &m.filters);
+    let items = grid_items(tracker, &m.filters, &m.search, player);
     let cols = grid_cols(l.list);
     let view = l.list[3];
     let max_view = grid_height(items.len(), cols).max(view);
@@ -1110,7 +1197,11 @@ pub struct Hover {
 /// The caller gates on difficulty 3 + !blocked; `inventory_open` gates the
 /// powers UI half (`CreativeUI.Update`, `:84-90` — the port draws the window
 /// only while the inventory is open, the C# close rule
-/// `Main.cs:45664` keeps them in step).
+/// `Main.cs:45664` keeps them in step). `wind_target`/`cloud_alpha` are the
+/// live weather values the wind/rain sliders' `GetSliderValueInner` read
+/// (`CreativePowers.cs:1193-1196`/`:1332-1335`); `player` feeds the search
+/// filter's tooltip scan (`ItemFilters.BySearch`, the local player's
+/// damage/crit layers).
 #[allow(clippy::too_many_arguments)]
 pub fn draw(
     r: &mut SpriteRenderer,
@@ -1122,6 +1213,10 @@ pub fn draw(
     powers: &CreativePowers,
     inventory_open: bool,
     pulse: super::UiPulse,
+    wind_target: f32,
+    cloud_alpha: f32,
+    max_raining: f32,
+    player: Option<&crate::player::Player>,
 ) -> Hover {
     let (toggle_size, plate_size) = sheet_sizes(lookups);
     let l = layout(screen, m.enabled, toggle_size, plate_size);
@@ -1182,8 +1277,8 @@ pub fn draw(
             }
         }
         CATEGORY_DUPLICATION => {
-            draw_duplication_page(r, lookups, &l, m, tracker, mouse);
-            let items = grid_items(tracker, &m.filters);
+            draw_duplication_page(r, lookups, &l, m, tracker, mouse, player);
+            let items = grid_items(tracker, &m.filters, &m.search, player);
             if let Some(i) = grid_hit(l.list, m.scroll, items.len(), mouse) {
                 let kind = items[i];
                 hover.item = Some(ItemSlot {
@@ -1203,13 +1298,40 @@ pub fn draw(
             }
         }
         CATEGORY_TIME => draw_time_strip(r, lookups, &l, m, powers, mouse, screen, pulse, &mut hover),
-        CATEGORY_WEATHER => draw_weather_strip(r, lookups, &l, m, mouse, screen, pulse, &mut hover),
+        CATEGORY_WEATHER => draw_weather_strip(
+            r, lookups, &l, m, powers, wind_target, cloud_alpha, max_raining, mouse, screen, pulse, &mut hover,
+        ),
         CATEGORY_PERSONAL => draw_personal_strip(r, lookups, &l, m, powers, mouse, screen, pulse, &mut hover),
         _ => {
             // `RefreshElementsOrder` (`UICreativePowersMenu.cs:432-435`):
-            // the difficulty slider (option 5) appends its slider element —
-            // `DifficultySliderPower` is unported (creative.rs v1), so the
-            // slot stays empty (docs/ANALYSIS.md).
+            // the difficulty slider (option 5) appends its slider element.
+            if m.category == 5 {
+                draw_difficulty_slider(r, lookups, &l, m, powers.difficulty_strength(), mouse);
+                // The slider's hover text (`UpdateSliderColorAndShowMultiplier
+                // MouseOver`, `CreativePowers.cs:1142-1149`): "x" + strength F2.
+                let bar = slider_bar(difficulty_slider_panel(&l));
+                if in_rect(mouse, slider_hit_rect(bar)) {
+                    let text = format!("x{:.2}", powers.difficulty_strength());
+                    super::tooltip::draw_mouse_text(r, lookups, mouse, &text, screen, pulse);
+                    hover.text_drawn = true;
+                }
+                // The indication icons' hover texts (`MouseOver_Master/Expert/
+                // Normal/Journey`, `:1106-1140`): the difficulty names.
+                let icon_size = lookups
+                    .wc_difficulty_icons
+                    .iter()
+                    .find_map(|s| s.map(|s| [s.width as f32, s.height as f32]))
+                    .unwrap_or([32.0, 32.0]);
+                let rects = difficulty_icon_rects(difficulty_slider_panel(&l), icon_size);
+                for (i, key) in ["UI.Master", "UI.Expert", "UI.Normal", "UI.Creative"].iter().enumerate() {
+                    if in_rect(mouse, rects[i]) {
+                        super::tooltip::draw_mouse_text(
+                            r, lookups, mouse, &crate::lang::text(key), screen, pulse,
+                        );
+                        hover.text_drawn = true;
+                    }
+                }
+            }
         }
     }
     hover
@@ -1251,6 +1373,33 @@ fn main_button_tooltip(i: usize, m: &JourneyMenu, powers: &CreativePowers) -> Op
 /// The duplication filter strip's tab hit — the shared crafting geometry.
 pub fn filter_hit(l: &Layout, mouse: Vec2) -> Option<usize> {
     (0..11).find(|&i| in_rect(mouse, super::crafting::filter_button_rect(l.filter_strip, i)))
+}
+
+/// The search bar's outer rect (`UIWrappedSearchBar`, `UIWrappedSearchBar.cs:
+/// 81-83`): H 24, W fill, padding 0 — the duplication panel's inner top row.
+pub fn search_bar_rect(l: &Layout) -> [f32; 4] {
+    [l.dup_inner[0], l.dup_inner[1], l.dup_inner[2], 24.0]
+}
+
+/// The magnifier button (`AddSearchBar`, `:102-105`): the 22x22
+/// `Button_Search`, VAlign 0.5.
+pub fn search_button_rect(l: &Layout) -> [f32; 4] {
+    let s = search_bar_rect(l);
+    [s[0], s[1] + 1.0, 22.0, 22.0]
+}
+
+/// The text box panel (`:110-116`): W (-button-3, 1), H fill, HAlign 1.
+pub fn search_box_rect(l: &Layout) -> [f32; 4] {
+    let s = search_bar_rect(l);
+    let w = s[2] - 22.0 - 3.0;
+    [s[0] + 25.0, s[1], w, 24.0]
+}
+
+/// The cancel button (`:142-147`): the 24x24 `SearchCancel`, HAlign 1,
+/// VAlign 0.5, Left -2 — a child of the box.
+pub fn search_cancel_rect(l: &Layout) -> [f32; 4] {
+    let b = search_box_rect(l);
+    [b[0] + b[2] - 24.0 - 2.0, b[1], 24.0, 24.0]
 }
 
 // ---- the sub-strips (Phase 3) ---------------------------------------------------
@@ -1342,6 +1491,82 @@ pub fn time_label_rects(panel: [f32; 4], sizes: [[f32; 2]; 3]) -> [[f32; 4]; 3] 
     })
 }
 
+/// The weather sliders' 132x180 panel (`ModifyWindDirectionAndStrength.
+/// ProvideSlider`, `CreativePowers.cs:1207-1211`; `ModifyRainPower`'s is the
+/// same, `:1346-1350`): Left 20 + 2*60 = 140 (`CreateSubcategoryButton`,
+/// `UICreativePowersMenu.cs:375`), VAlign 0.5.
+pub fn weather_slider_panel(l: &Layout) -> [f32; 4] {
+    [
+        l.container[0] + 140.0,
+        l.container[1] + (l.container[3] - 180.0) * 0.5,
+        132.0,
+        180.0,
+    ]
+}
+
+/// The spawn-rate slider's 77x180 panel (`SpawnRateSliderPerPlayerPower.
+/// ProvideSlider`, `CreativePowers.cs:1614-1618`): same Left 140.
+pub fn spawn_slider_panel(l: &Layout) -> [f32; 4] {
+    [
+        l.container[0] + 140.0,
+        l.container[1] + (l.container[3] - 180.0) * 0.5,
+        77.0,
+        180.0,
+    ]
+}
+
+/// The difficulty slider's 82x180 panel (`DifficultySliderPower.
+/// ProvideSlider`, `CreativePowers.cs:1034-1038`): the MAIN strip's
+/// subcategory at depth 1 (`UICreativePowersMenu.cs:205`), so Left
+/// 20 + 1*60 = 80.
+pub fn difficulty_slider_panel(l: &Layout) -> [f32; 4] {
+    [
+        l.container[0] + 80.0,
+        l.container[1] + (l.container[3] - 180.0) * 0.5,
+        82.0,
+        180.0,
+    ]
+}
+
+/// The vertical slider's bar inside an arbitrary-width panel — the same
+/// `CreateSlider` geometry as [`time_slider_bar`] (`CreativePowersHelper.cs:
+/// 172-184`): W 12, H (-10,1), Left 6, VAlign 0.5 in the inner rect.
+pub fn slider_bar(panel: [f32; 4]) -> [f32; 4] {
+    [panel[0] + 12.0 + 6.0, panel[1] + 12.0 + 5.0, 12.0, panel[3] - 24.0 - 10.0]
+}
+
+/// The three text labels' rects in an arbitrary-width panel — the same
+/// HAlign 1 / VAlign 0,0.5,1 shape as [`time_label_rects`].
+pub fn slider_label_rects(panel: [f32; 4], sizes: [[f32; 2]; 3]) -> [[f32; 4]; 3] {
+    let inner = [panel[0] + 12.0, panel[1] + 12.0, panel[2] - 24.0, panel[3] - 24.0];
+    std::array::from_fn(|i| {
+        let [w, h] = sizes[i];
+        let y = inner[1] + (inner[3] - h) * (i as f32 * 0.5);
+        [inner[0] + inner[2] - w, y, w, h]
+    })
+}
+
+/// The difficulty slider's four indication icons (`AddIndication`,
+/// `CreativePowers.cs:1042-1045,1073-1094`): the 32x32 difficulty icons at
+/// HAlign 1, VAlign 0/1⁄3/2⁄3/1, Left +4, Top +2 — the y anchors are the
+/// CLICK values' inverses (x3 at 0, x2 at 1/3, x1 at 2/3, x0.5 at 1).
+pub fn difficulty_icon_rects(panel: [f32; 4], icon: [f32; 2]) -> [[f32; 4]; 4] {
+    let inner = [panel[0] + 12.0, panel[1] + 12.0, panel[2] - 24.0, panel[3] - 24.0];
+    std::array::from_fn(|i| {
+        let anchor = i as f32 / 3.0;
+        [
+            inner[0] + inner[2] - icon[0] + 4.0,
+            inner[1] + (inner[3] - icon[1]) * anchor + 2.0,
+            icon[0],
+            icon[1],
+        ]
+    })
+}
+
+/// The difficulty icons' click caches (`Click_Master/Expert/Normal/Journey`,
+/// `CreativePowers.cs:1049-1071`): 1, 0.66, 0.33, 0 — top to bottom.
+pub const DIFFICULTY_ICON_CACHES: [f32; 4] = [1.0, 0.66, 0.33, 0.0];
+
 /// The slider panel + the rate labels (`ProvideSlider`'s draw half).
 fn draw_time_slider(
     r: &mut SpriteRenderer,
@@ -1351,25 +1576,7 @@ fn draw_time_slider(
     mouse: Vec2,
 ) {
     let panel = time_slider_panel(l);
-    let bg = color::tint(color::mul([63, 82, 151, 255], 0.7));
-    panel::draw_panel(r, lookups, lookups.ui_panel_bg, panel, bg);
-    panel::draw_panel(r, lookups, lookups.ui_panel_border, panel, [0.0, 0.0, 0.0, 1.0]);
-    let bar = time_slider_bar(panel);
-    // The ColorBar track (`UIVerticalSlider.cs:84-87`): spliced (5,4,4,4).
-    draw_spliced_panel(r, lookups, lookups.ui_color_bar, bar, 5.0, 4.0, 4.0, 4.0, [1.0; 4]);
-    let fill = slider_fill_rect(bar);
-    // EmptyColor OrangeRed (255,69,0), FilledColor CornflowerBlue
-    // (100,149,237) (`CreativePowersHelper.cs:181-182`).
-    r.push_ui_rect([fill[0], fill[1]], [fill[2], fill[3]], color::tint([255, 69, 0, 255]));
-    let fh = (fill[3] * m.time_rate_cache) as i32 as f32;
-    let fy = fill[1] + fill[3] - fh;
-    r.push_ui_rect([fill[0], fy], [fill[2], fh], color::tint([100, 149, 237, 255]));
-    // The knob (`:100-104`): a (w+16)x4 white bar centred on the fill top
-    // (+1 x), with a 2 px black inflate behind it.
-    let kw = fill[2] + 16.0;
-    let kx = fill[0] + fill[2] * 0.5 + 1.0 - kw * 0.5;
-    r.push_ui_rect([kx - 2.0, fy - 4.0], [kw + 4.0, 8.0], [0.0, 0.0, 0.0, 1.0]);
-    r.push_ui_rect([kx, fy - 2.0], [kw, 4.0], [1.0; 4]);
+    draw_slider_chrome(r, lookups, panel, m.time_rate_cache, [255, 69, 0, 255], [100, 149, 237, 255]);
     // The labels.
     let labels = ["x24", "x12", "x1"];
     let sizes: [[f32; 2]; 3] = std::array::from_fn(|i| {
@@ -1386,6 +1593,167 @@ fn draw_time_slider(
         // cosmetic gap) and draws the white text.
         let _ = in_rect(mouse, rects[i]);
         ui_text(r, lookups, rects[i][0], rects[i][1], 1.0, [1.0; 4], labels[i]);
+    }
+}
+
+/// The shared slider chrome — the panel, the ColorBar track, the fill and
+/// the knob (`UIPanel`'s default colours + `UIVerticalSlider.
+/// DrawValueBarDynamicWidth`, `UIVerticalSlider.cs:81-104`). The fill
+/// percent is the RAW `GetSliderValue` (unclamped — the wind slider's
+/// walked target can read past [0,1]; the C# draws the over-height fill
+/// verbatim, `(int)(h * FillPercent)`).
+fn draw_slider_chrome(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    panel: [f32; 4],
+    fill_percent: f32,
+    empty: [u8; 4],
+    filled: [u8; 4],
+) {
+    let bg = color::tint(color::mul([63, 82, 151, 255], 0.7));
+    panel::draw_panel(r, lookups, lookups.ui_panel_bg, panel, bg);
+    panel::draw_panel(r, lookups, lookups.ui_panel_border, panel, [0.0, 0.0, 0.0, 1.0]);
+    let bar = slider_bar(panel);
+    // The ColorBar track (`UIVerticalSlider.cs:84-87`): spliced (5,4,4,4).
+    draw_spliced_panel(r, lookups, lookups.ui_color_bar, bar, 5.0, 4.0, 4.0, 4.0, [1.0; 4]);
+    let fill = slider_fill_rect(bar);
+    r.push_ui_rect([fill[0], fill[1]], [fill[2], fill[3]], color::tint(empty));
+    let fh = (fill[3] * fill_percent) as i32 as f32;
+    let fy = fill[1] + fill[3] - fh;
+    r.push_ui_rect([fill[0], fy], [fill[2], fh], color::tint(filled));
+    // The knob (`:100-104`): a (w+16)x4 white bar centred on the fill top
+    // (+1 x), with a 2 px black inflate behind it.
+    let kw = fill[2] + 16.0;
+    let kx = fill[0] + fill[2] * 0.5 + 1.0 - kw * 0.5;
+    r.push_ui_rect([kx - 2.0, fy - 4.0], [kw + 4.0, 8.0], [0.0, 0.0, 0.0, 1.0]);
+    r.push_ui_rect([kx, fy - 2.0], [kw, 4.0], [1.0; 4]);
+}
+
+/// The three text labels shared by the wind/rain/spawn sliders
+/// (`ProvideSlider`'s `UIText` children): HAlign 1, VAlign 0/0.5/1, the
+/// black-shadow cosmetic gap as the time slider's.
+fn draw_slider_labels(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    panel: [f32; 4],
+    labels: [&str; 3],
+    mouse: Vec2,
+) {
+    let sizes: [[f32; 2]; 3] = std::array::from_fn(|i| {
+        [
+            hud_text_width(r, lookups, labels[i], 1.0),
+            line_height(lookups),
+        ]
+    });
+    let rects = slider_label_rects(panel, sizes);
+    for i in 0..3 {
+        let _ = in_rect(mouse, rects[i]);
+        ui_text(r, lookups, rects[i][0], rects[i][1], 1.0, [1.0; 4], labels[i]);
+    }
+}
+
+/// The wind slider (`ModifyWindDirectionAndStrength.ProvideSlider`,
+/// `CreativePowers.cs:1203-1245`): the West/No Wind/East labels and the
+/// live-target fill (`GetSliderValueInner`, `:1193-1196`).
+fn draw_wind_slider(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    l: &Layout,
+    wind_target: f32,
+    mouse: Vec2,
+) {
+    let panel = weather_slider_panel(l);
+    let v = crate::creative::wind_cache_from_target(wind_target);
+    draw_slider_chrome(r, lookups, panel, v, [255, 69, 0, 255], [100, 149, 237, 255]);
+    draw_slider_labels(
+        r,
+        lookups,
+        panel,
+        [
+            &crate::lang::text("CreativePowers.WindWest"),
+            &crate::lang::text("CreativePowers.WindNone"),
+            &crate::lang::text("CreativePowers.WindEast"),
+        ],
+        mouse,
+    );
+}
+
+/// The rain slider (`ModifyRainPower.ProvideSlider`, `:1342-1384`): the
+/// Monsoon/Drizzle/Clear Sky labels and the live-`cloudAlpha` fill
+/// (`GetSliderValueInner`, `:1332-1335`).
+fn draw_rain_slider(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    l: &Layout,
+    cloud_alpha: f32,
+    mouse: Vec2,
+) {
+    let panel = weather_slider_panel(l);
+    draw_slider_chrome(r, lookups, panel, cloud_alpha, [255, 69, 0, 255], [100, 149, 237, 255]);
+    draw_slider_labels(
+        r,
+        lookups,
+        panel,
+        [
+            &crate::lang::text("CreativePowers.WeatherMonsoon"),
+            &crate::lang::text("CreativePowers.WeatherDrizzle"),
+            &crate::lang::text("CreativePowers.WeatherClearSky"),
+        ],
+        mouse,
+    );
+}
+
+/// The spawn-rate slider (`SpawnRateSliderPerPlayerPower.ProvideSlider`,
+/// `:1610-1652`): the x10/x1/x0 labels and the raw-cache fill.
+fn draw_spawn_slider(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    l: &Layout,
+    m: &JourneyMenu,
+    mouse: Vec2,
+) {
+    let panel = spawn_slider_panel(l);
+    draw_slider_chrome(r, lookups, panel, m.spawn_rate_cache, [255, 69, 0, 255], [100, 149, 237, 255]);
+    draw_slider_labels(r, lookups, panel, ["x10", "x1", "x0"], mouse);
+}
+
+/// The difficulty slider (`DifficultySliderPower.ProvideSlider`,
+/// `:1031-1047`): the four indication icons (Master/Expert/Normal/Journey,
+/// top to bottom) and the cache fill. The fill colour is the difficulty
+/// colour (`UpdateSliderColorAndShowMultiplierMouseOver`, `:1150-1154`):
+/// the port is single-difficulty classic, so the strength < 1 arm answers
+/// `Main.creativeModeColor` (`uistate::CREATIVE_MODE_COLOR`, the pinned
+/// XNA-truncated Lerp(HotPink, White, 0.1)); the EmptyColor is Black
+/// (`:1152`).
+fn draw_difficulty_slider(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    l: &Layout,
+    m: &JourneyMenu,
+    strength: f32,
+    mouse: Vec2,
+) {
+    let panel = difficulty_slider_panel(l);
+    let filled = if strength < 1.0 {
+        super::uistate::CREATIVE_MODE_COLOR
+    } else {
+        [255, 255, 255, 255]
+    };
+    draw_slider_chrome(r, lookups, panel, m.difficulty_cache, [0, 0, 0, 255], filled);
+    // The indication icons (`AddIndication`, `:1073-1094`): the world-
+    // creation difficulty sheets, top to bottom Master/Expert/Normal/
+    // Journey — the `wc_difficulty_icons` table is Creative/Normal/Expert/
+    // Master, so the indices reverse.
+    let icon_size = lookups
+        .wc_difficulty_icons
+        .iter()
+        .find_map(|s| s.map(|s| [s.width as f32, s.height as f32]))
+        .unwrap_or([32.0, 32.0]);
+    let rects = difficulty_icon_rects(panel, icon_size);
+    for (i, sheet) in [3usize, 2, 1, 0].iter().enumerate() {
+        if let Some(s) = lookups.wc_difficulty_icons[*sheet] {
+            super::push_whole(r, lookups, &s, rects[i], [1.0; 4]);
+        }
     }
 }
 
@@ -1436,16 +1804,20 @@ fn draw_time_strip(
     }
 }
 
-/// The weather strip (`CreateWeatherPowerStrip`). The wind/rain powers are
-/// not in the port's registry (`creative.rs`'s v1 scope) — the buttons draw
-/// (the icons + the locked-look colours are the vanilla unlocked ones; the
-/// clicks are inert, docs/ANALYSIS.md).
+/// The weather strip (`CreateWeatherPowerStrip`, `UICreativePowersMenu.cs:
+/// 351-369`): the wind slider + freeze, the rain slider + freeze, then the
+/// open slider panel. The freeze toggles latch on the powers
+/// (`ASharedTogglePower.button_OnUpdate`, `CreativePowers.cs:511-525`).
 #[allow(clippy::too_many_arguments)]
 fn draw_weather_strip(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
     l: &Layout,
     m: &JourneyMenu,
+    powers: &CreativePowers,
+    wind_target: f32,
+    cloud_alpha: f32,
+    max_raining: f32,
     mouse: Vec2,
     screen: Vec2,
     pulse: super::UiPulse,
@@ -1458,8 +1830,9 @@ fn draw_weather_strip(
         let hovered = in_rect(mouse, rect);
         let selected = match i {
             0 => m.weather_sub == 1,
+            1 => powers.freeze_wind(),
             2 => m.weather_sub == 2,
-            _ => false,
+            _ => powers.freeze_rain(),
         };
         let picked = if i == 1 || i == 3 { FAVORITE } else { CATEGORY_PICKED };
         draw_power_button(
@@ -1469,19 +1842,54 @@ fn draw_weather_strip(
         if hovered {
             let key = match i {
                 0 => if selected { "CreativePowers.ModifyWindDirectionAndStrength_Opened" } else { "CreativePowers.ModifyWindDirectionAndStrength_Closed" },
-                1 => "CreativePowers.FreezeWindDirectionAndStrength_Disabled",
+                1 => if selected { "CreativePowers.FreezeWindDirectionAndStrength_Enabled" } else { "CreativePowers.FreezeWindDirectionAndStrength_Disabled" },
                 2 => if selected { "CreativePowers.ModifyRainPower_Opened" } else { "CreativePowers.ModifyRainPower_Closed" },
-                _ => "CreativePowers.FreezeRainPower_Disabled",
+                _ => if selected { "CreativePowers.FreezeRainPower_Enabled" } else { "CreativePowers.FreezeRainPower_Disabled" },
             };
             super::tooltip::draw_mouse_text(r, lookups, mouse, &crate::lang::text(key), screen, pulse);
             hover.text_drawn = true;
         }
     }
+    match m.weather_sub {
+        1 => {
+            draw_wind_slider(r, lookups, l, wind_target, mouse);
+            // The slider's hover text (`UpdateSliderAndShowMultiplierMouseOver`,
+            // `CreativePowers.cs:1291-1308`): `(int)(windSpeedCurrent * 50f)`
+            // mph, East when negative / West when positive, nothing at 0.
+            let bar = slider_bar(weather_slider_panel(l));
+            if in_rect(mouse, slider_hit_rect(bar)) {
+                let num = (wind_target * 50.0) as i32;
+                let text = if num < 0 {
+                    crate::lang::text_args("GameUI.EastWind", &[num.abs().to_string()])
+                } else if num > 0 {
+                    crate::lang::text_args("GameUI.WestWind", &[num.to_string()])
+                } else {
+                    String::new()
+                };
+                super::tooltip::draw_mouse_text(r, lookups, mouse, &text, screen, pulse);
+                hover.text_drawn = true;
+            }
+        }
+        2 => {
+            draw_rain_slider(r, lookups, l, cloud_alpha, mouse);
+            // `Main.maxRaining.ToString("P0")` (`:1430-1438`) — the percent
+            // with no decimals; the C# reads `Main.maxRaining` (the ramp
+            // target), NOT the cloudAlpha the fill reads.
+            let bar = slider_bar(weather_slider_panel(l));
+            if in_rect(mouse, slider_hit_rect(bar)) {
+                let pct = (max_raining * 100.0).round_ties_even() as i32;
+                let text = format!("{pct} %");
+                super::tooltip::draw_mouse_text(r, lookups, mouse, &text, screen, pulse);
+                hover.text_drawn = true;
+            }
+        }
+        _ => {}
+    }
 }
 
 /// The personal strip (`CreatePersonalPowerStrip`): Godmode +
-/// FarPlacementRange toggles, the spawn-rate subcategory button (unported
-/// slider — inert).
+/// FarPlacementRange toggles, the spawn-rate subcategory button + its
+/// slider panel.
 #[allow(clippy::too_many_arguments)]
 fn draw_personal_strip(
     r: &mut SpriteRenderer,
@@ -1516,6 +1924,22 @@ fn draw_personal_strip(
                 _ => if selected { "CreativePowers.NPCSpawnRateSlider_Opened" } else { "CreativePowers.NPCSpawnRateSlider_Closed" },
             };
             super::tooltip::draw_mouse_text(r, lookups, mouse, &crate::lang::text(key), screen, pulse);
+            hover.text_drawn = true;
+        }
+    }
+    if m.personal_sub == 1 {
+        draw_spawn_slider(r, lookups, l, m, mouse);
+        // The slider's hover text (`UpdateSliderAndShowMultiplierMouseOver`,
+        // `CreativePowers.cs:1698-1710`): "x" + the remapped factor at F2,
+        // or the Disabled key at the exact-zero cache.
+        let bar = slider_bar(spawn_slider_panel(l));
+        if in_rect(mouse, slider_hit_rect(bar)) {
+            let text = if powers.spawn_rate_disabled() {
+                crate::lang::text("CreativePowers.NPCSpawnRateSliderEnemySpawnsDisabled")
+            } else {
+                format!("x{:.2}", crate::creative::spawn_rate_multiplier(m.spawn_rate_cache))
+            };
+            super::tooltip::draw_mouse_text(r, lookups, mouse, &text, screen, pulse);
             hover.text_drawn = true;
         }
     }
@@ -1688,13 +2112,64 @@ mod tests {
         t.clear_newly_researched(8);
         t.register_sacrifice(97, 99); // Musket Ball, fully + newly
         t.register_sacrifice(2, 5); // Dirt Block, partial
-        let items = grid_items(&t, &FilterBoard::default());
+        let items = grid_items(&t, &FilterBoard::default(), "", None);
         // Newly first (Musket Ball), then fully (Torch), then partial.
         assert_eq!(items, vec![97, 8, 2]);
         // The filter narrows (`UpdateContents`' FitsFilter, `:542`).
         let mut f = FilterBoard::default();
         f.click(0); // Weapon — none of the three
-        assert!(grid_items(&t, &f).is_empty());
+        assert!(grid_items(&t, &f, "", None).is_empty());
+    }
+
+    /// `ItemFilters.BySearch` (`ItemFilters.cs:28-48`): the tooltip-line
+    /// substring scan, case-insensitive; the whitespace gate passes all.
+    #[test]
+    fn the_search_filter_scans_the_tooltip_lines() {
+        let mut t = ResearchTracker::default();
+        t.register_sacrifice(8, 100); // Torch
+        t.register_sacrifice(2, 5); // Dirt Block
+        // The name row matches case-insensitively.
+        let items = grid_items(&t, &FilterBoard::default(), "torch", None);
+        assert_eq!(items, vec![8]);
+        let items = grid_items(&t, &FilterBoard::default(), "DIRT", None);
+        assert_eq!(items, vec![2]);
+        // A whitespace search passes everything (`SetSearchFilter`,
+        // `EntryFilterer.cs:87-91`).
+        assert_eq!(grid_items(&t, &FilterBoard::default(), "   ", None).len(), 2);
+        // A miss narrows to nothing.
+        assert!(grid_items(&t, &FilterBoard::default(), "zzz", None).is_empty());
+        // The tooltip rows scan too: the Torch's "Provides light when..." —
+        // the ItemTooltip row (`Lang._itemTooltipCache`).
+        let torch_tip = crate::lang::item_tooltip(8);
+        if !torch_tip.is_empty() && torch_tip != "ItemTooltip.Torch" {
+            let word = torch_tip.split_whitespace().next().unwrap();
+            assert!(search_fits(8, word, None), "the tooltip row scans: {word}");
+        }
+    }
+
+    /// The new sliders' panel geometry (`ProvideSlider` widths + the
+    /// `CreateSubcategoryButton` Left offsets).
+    #[test]
+    fn the_new_slider_panels_match_the_source() {
+        let l = lay();
+        // The weather panels: 132x180 at Left 140, VAlign 0.5.
+        assert_eq!(weather_slider_panel(&l), [140.0, 485.0, 132.0, 180.0]);
+        // The spawn panel: 77x180, same Left.
+        assert_eq!(spawn_slider_panel(&l), [140.0, 485.0, 77.0, 180.0]);
+        // The difficulty panel: 82x180 at Left 80 (depth 1).
+        assert_eq!(difficulty_slider_panel(&l), [80.0, 485.0, 82.0, 180.0]);
+        // The bar geometry matches the time slider's shape.
+        let panel = weather_slider_panel(&l);
+        assert_eq!(slider_bar(panel), time_slider_bar([panel[0], panel[1], 87.0, 180.0]));
+        // The difficulty icons' click caches, top to bottom.
+        assert_eq!(DIFFICULTY_ICON_CACHES, [1.0, 0.66, 0.33, 0.0]);
+        // The icon rects: HAlign 1 + Left 4, Top +2, the four y anchors.
+        let rects = difficulty_icon_rects(difficulty_slider_panel(&l), [32.0, 32.0]);
+        let inner_x = 80.0 + 12.0;
+        let inner_w = 82.0 - 24.0;
+        assert_eq!(rects[0][0], inner_x + inner_w - 32.0 + 4.0);
+        assert_eq!(rects[0][1], 485.0 + 12.0 + 2.0);
+        assert_eq!(rects[3][1], 485.0 + 12.0 + (156.0 - 32.0) + 2.0);
     }
 
     #[test]

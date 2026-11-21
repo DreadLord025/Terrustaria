@@ -242,6 +242,32 @@ impl ApplicationHandler for App {
                             }
                             return;
                         }
+                        // The Journey search box's text input
+                        // (`UISearchBar.DrawSelf`, `UISearchBar.cs:145-167`:
+                        // `Main.GetInputText` while `IsWritingText`) — the
+                        // port's chat-style `event.text` seam. Enter/Escape
+                        // stop the input (`:156-164`), Backspace trims, the
+                        // printable text appends (the 50-char cap,
+                        // `UISearchBar.cs:63`).
+                        if self.journey.search_writing {
+                            match code {
+                                KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::Escape => {
+                                    self.journey.search_writing = false;
+                                }
+                                KeyCode::Backspace => {
+                                    self.journey.search.pop();
+                                }
+                                _ => {}
+                            }
+                            if let Some(text) = event.text.as_ref() {
+                                for ch in text.chars() {
+                                    if !ch.is_control() && self.journey.search.chars().count() < 50 {
+                                        self.journey.search.push(ch);
+                                    }
+                                }
+                            }
+                            return;
+                        }
                         // `Main.chatRelease && !drawingPlayerChat` →
                         // `OpenPlayerChat` (`Main.cs:18268-18287`): Enter
                         // opens the chat.

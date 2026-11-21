@@ -1789,7 +1789,18 @@ impl App {
                                     panel_chest >= 0,
                                     self.crafting_open,
                                 ))
-                                .then(|| (&self.journey, &self.research, &self.creative_powers)),
+                                .then(|| {
+                                    (
+                                        &self.journey,
+                                        &self.research,
+                                        &self.creative_powers,
+                                        (
+                                            self.wind.speed_target,
+                                            self.rain.cloud_alpha(),
+                                            self.rain.max_raining(),
+                                        ),
+                                    )
+                                }),
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after

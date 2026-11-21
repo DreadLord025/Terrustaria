@@ -719,8 +719,16 @@ pub fn draw_hud(
     npc_chat_text: &str,
     // The Journey powers menu (W4-c24) — `CreativeUI.Draw`
     // (`Main.cs:41704`): the toggle button draws for every Journey player
-    // (difficulty 3, unblocked), the window while `Enabled`.
-    journey: Option<(&journey::JourneyMenu, &crate::research::ResearchTracker, &crate::creative::CreativePowers)>,
+    // (difficulty 3, unblocked), the window while `Enabled`. The weather
+    // tuple carries the live values the wind/rain sliders read
+    // (`GetSliderValueInner`, `CreativePowers.cs:1193-1196`/`:1332-1335`).
+    journey: Option<(
+        &journey::JourneyMenu,
+        &crate::research::ResearchTracker,
+        &crate::creative::CreativePowers,
+        // (windSpeedTarget, cloudAlpha, maxRaining)
+        (f32, f32, f32),
+    )>,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -1072,7 +1080,7 @@ pub fn draw_hud(
     // panel never coexists — opening the powers menu closes crafting,
     // `CreativeUI.cs:206`).
     let mut journey_hover: Option<journey::Hover> = None;
-    if let Some((jm, tracker, powers)) = journey {
+    if let Some((jm, tracker, powers, (wind_target, cloud_alpha, max_raining))) = journey {
         journey_hover = Some(journey::draw(
             r,
             lookups,
@@ -1083,6 +1091,10 @@ pub fn draw_hud(
             powers,
             inventory_open,
             pulse,
+            wind_target,
+            cloud_alpha,
+            max_raining,
+            player,
         ));
     }
     // Selected item name, centred on x=236 at y=0 like the original

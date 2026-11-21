@@ -43,9 +43,13 @@ impl App {
             if let Some(p) = self.player.as_mut() {
                 p.chest = crate::bank::CHEST_CLOSED;
             }
-        } else if self.journey.sacrifice.count > 0 {
-            self.return_sacrifice_slot();
-            j::stop_animation(&mut self.journey);
+        } else {
+            // The close arm stops the search input (`OnDeactivate`).
+            self.journey.search_writing = false;
+            if self.journey.sacrifice.count > 0 {
+                self.return_sacrifice_slot();
+                j::stop_animation(&mut self.journey);
+            }
         }
     }
 
@@ -56,6 +60,9 @@ impl App {
             self.journey.enabled = false;
             j::stop_animation(&mut self.journey);
         }
+        // The search input stops with the menu (`UISearchBar.OnDeactivate`,
+        // `UISearchBar.cs:190-196`).
+        self.journey.search_writing = false;
     }
 
     /// `Player.GetOrDropItem(sacrifice, ReturnItemFromSlot)`
@@ -118,6 +125,9 @@ impl App {
             self.journey_close_menu();
         }
         if !self.journey.enabled || !self.inventory_open {
+            // The search input stops when the menu closes
+            // (`UISearchBar.OnDeactivate`, `UISearchBar.cs:190-196`).
+            self.journey.search_writing = false;
             return;
         }
         let research_page = self.journey.category == j::CATEGORY_RESEARCH;
@@ -159,7 +169,12 @@ impl App {
         // hovered cell clears its newly-researched status; the scrollbar
         // drag re-derives the view every held frame (`UIScrollbar.cs:109-112`).
         if self.journey.category == j::CATEGORY_DUPLICATION {
-            let items = j::grid_items(&self.research, &self.journey.filters);
+            let items = j::grid_items(
+                &self.research,
+                &self.journey.filters,
+                &self.journey.search,
+                self.player.as_ref(),
+            );
             if let Some(i) = j::grid_hit(l.list, self.journey.scroll, items.len(), self.mouse_pos) {
                 self.research.clear_newly_researched(items[i]);
             }
@@ -193,6 +208,82 @@ impl App {
                     );
                 }
             }
+        }
+        // The weather sliders' held drags — the same `UIVerticalSlider`
+        // machine. The wind slider writes the target directly
+        // (`ModifyWindDirectionAndStrength.UpdateInfoFromSliderValueCache`,
+        // `CreativePowers.cs:1188-1191`); the rain slider runs the full
+        // StartRain/StopRain ladder (`:1320-1330`).
+        if self.journey.category == j::CATEGORY_WEATHER && self.mine_down {
+            let panel = j::weather_slider_panel(&l);
+            let bar = j::slider_bar(panel);
+            if crate::ui::in_rect(self.mouse_pos, j::slider_hit_rect(bar)) {
+                let v = j::slider_value_at(bar, self.mouse_pos.y);
+                match self.journey.weather_sub {
+                    1 => {
+                        let target = crate::creative::wind_target_from_cache(v);
+                        if target != self.wind.speed_target {
+                            // `Main.windSpeedCurrent = Main.windSpeedTarget =
+                            // Lerp(-0.8, 0.8, cache)` — both at once.
+                            self.wind.speed_current = target;
+                            self.wind.speed_target = target;
+                            self.creative_powers
+                                .set(PowerId::WindStrength, PowerState::Slider(target));
+                        }
+                    }
+                    2 => {
+                        if v != self.creative_powers.slider(PowerId::RainStrength) {
+                            self.creative_powers
+                                .set(PowerId::RainStrength, PowerState::Slider(v));
+                            let luck = self.player.as_ref().map(|p| p.luck()).unwrap_or(0.0);
+                            self.rain.set_rain_power(v, &self.world, self.wind.remix_world, luck);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // The spawn-rate slider's held drag — the per-player cache
+        // (`APerPlayerSliderPower.PushChangeAndSetSlider`, `:300-309`,
+        // clamped [0,1]).
+        if self.journey.category == j::CATEGORY_PERSONAL
+            && self.journey.personal_sub == 1
+            && self.mine_down
+        {
+            let bar = j::slider_bar(j::spawn_slider_panel(&l));
+            if crate::ui::in_rect(self.mouse_pos, j::slider_hit_rect(bar)) {
+                let v = j::slider_value_at(bar, self.mouse_pos.y);
+                if v != self.journey.spawn_rate_cache {
+                    self.journey.spawn_rate_cache = v;
+                    self.creative_powers
+                        .set(PowerId::SpawnRate, PowerState::Slider(v));
+                }
+            }
+        }
+        // The difficulty slider's held drag — the cache + the derived
+        // strength (`DifficultySliderPower.UpdateInfoFromSliderValueCache`,
+        // `:1018-1028`).
+        if self.journey.category == 5 && self.mine_down {
+            let bar = j::slider_bar(j::difficulty_slider_panel(&l));
+            if crate::ui::in_rect(self.mouse_pos, j::slider_hit_rect(bar)) {
+                let v = j::slider_value_at(bar, self.mouse_pos.y);
+                if v != self.journey.difficulty_cache {
+                    self.journey.difficulty_cache = v;
+                    self.creative_powers.set(
+                        PowerId::Difficulty,
+                        PowerState::Slider(crate::creative::difficulty_strength_from_cache(v)),
+                    );
+                }
+            }
+        }
+        // The search box's outside-click stop (`UIWrappedSearchBar.Update`,
+        // `UIWrappedSearchBar.cs:239-246`): while writing, a press outside
+        // the bar stops the input.
+        if self.journey.search_writing
+            && (self.ui_left_press || self.ui_right_press)
+            && !crate::ui::in_rect(self.mouse_pos, j::search_bar_rect(&l))
+        {
+            self.journey.search_writing = false;
         }
     }
 
@@ -261,9 +352,9 @@ impl App {
                         self.creative_powers.set(PowerId::StopBiomeSpread, PowerState::Toggle(on));
                     }
                     6 => {
-                        // The difficulty slider's subcategory button — the
-                        // power is unported (creative.rs v1); the category
-                        // opens but no slider draws (docs/ANALYSIS.md).
+                        // The difficulty slider's subcategory button
+                        // (`CreateMainPowerStrip`, `UICreativePowersMenu.cs:
+                        // 205`): the category opens the slider panel.
                         self.journey.category = j::toggle_category(self.journey.category, 5);
                     }
                     _ => {
@@ -280,6 +371,7 @@ impl App {
             j::CATEGORY_TIME => self.journey_time_clicks(&l, left),
             j::CATEGORY_WEATHER => self.journey_weather_clicks(&l, left),
             j::CATEGORY_PERSONAL => self.journey_personal_clicks(&l, left),
+            5 => self.journey_difficulty_clicks(&l, left),
             _ => false,
         }
     }
@@ -377,6 +469,40 @@ impl App {
     /// The duplication page: the filter strip, the scrollbar and the grid
     /// cells (contexts 29/34).
     fn journey_duplication_clicks(&mut self, l: &j::Layout, left: bool, right: bool) -> bool {
+        // The search bar (`UIWrappedSearchBar`, `UIWrappedSearchBar.cs:
+        // 95-151`): the magnifier / box click toggles the input, the cancel
+        // button clears (sound 11 with contents, 12 without, `:153-164`),
+        // the box's right click clears + starts writing (`:230-237`).
+        if left && crate::ui::in_rect(self.mouse_pos, j::search_cancel_rect(l)) {
+            self.ui_left_press = false;
+            if !self.journey.search.trim().is_empty() {
+                self.journey.search.clear();
+                self.audio.play("Menu_Close"); // `SoundEngine.PlaySound(11)` (`:158`)
+            } else {
+                self.audio.play("Menu_Tick"); // `:162`
+            }
+            return true;
+        }
+        if left
+            && (crate::ui::in_rect(self.mouse_pos, j::search_button_rect(l))
+                || crate::ui::in_rect(self.mouse_pos, j::search_box_rect(l)))
+        {
+            self.ui_left_press = false;
+            // `Click_SearchArea` (`:222-228`): the toggle. The cancel button
+            // is a child of the box but its own handler consumed the press
+            // above (the C#'s `evt.Target.Parent != _searchBoxPanel` gate).
+            self.journey.search_writing = !self.journey.search_writing;
+            return true;
+        }
+        if right && crate::ui::in_rect(self.mouse_pos, j::search_box_rect(l)) {
+            // `SearchBox_OnRightClick` (`:230-237`): clear + start writing.
+            if self.ui_right_press {
+                self.ui_right_press = false;
+            }
+            self.journey.search.clear();
+            self.journey.search_writing = true;
+            return true;
+        }
         // The filter tabs (`singleFilterButtonClick`,
         // `UICreativeItemsInfiniteFilteringOptions.cs:80-100`).
         if left {
@@ -387,7 +513,12 @@ impl App {
                 return true;
             }
         }
-        let items = j::grid_items(&self.research, &self.journey.filters);
+        let items = j::grid_items(
+            &self.research,
+            &self.journey.filters,
+            &self.journey.search,
+            self.player.as_ref(),
+        );
         let cols = j::grid_cols(l.list);
         let view = l.list[3];
         let max_view = j::grid_height(items.len(), cols).max(view);
@@ -546,9 +677,10 @@ impl App {
         false
     }
 
-    /// The weather strip — the wind/rain powers are unported (creative.rs
-    /// v1); the subcategory buttons open the (empty) slider slots, the
-    /// freeze toggles are inert chrome (docs/ANALYSIS.md).
+    /// The weather strip (`CreateWeatherPowerStrip` +
+    /// `WeatherCategoryButtonClick`, `UICreativePowersMenu.cs:384-404`):
+    /// the wind/rain subcategory buttons, the two freeze toggles, the
+    /// sliders' label clicks and press-to-set.
     fn journey_weather_clicks(&mut self, l: &j::Layout, left: bool) -> bool {
         if !left {
             return false;
@@ -562,16 +694,90 @@ impl App {
             self.audio.play("Menu_Tick");
             match i {
                 0 => self.journey.weather_sub = if self.journey.weather_sub == 1 { 0 } else { 1 },
+                1 => {
+                    // FreezeWindDirectionAndStrength (`ASharedTogglePower.
+                    // button_OnClick`, `CreativePowers.cs:527-533`).
+                    let on = !self.creative_powers.freeze_wind();
+                    self.creative_powers.set(PowerId::FreezeWind, PowerState::Toggle(on));
+                }
                 2 => self.journey.weather_sub = if self.journey.weather_sub == 2 { 0 } else { 2 },
-                _ => {}
+                _ => {
+                    let on = !self.creative_powers.freeze_rain();
+                    self.creative_powers.set(PowerId::FreezeRain, PowerState::Toggle(on));
+                }
             }
             return true;
+        }
+        // The open slider's labels + bar.
+        if self.journey.weather_sub == 1 || self.journey.weather_sub == 2 {
+            let panel = j::weather_slider_panel(l);
+            let wind = self.journey.weather_sub == 1;
+            // The label clicks: wind West/None/East → 1/0.5/0
+            // (`topText/middleText/bottomText_OnClick`, `CreativePowers.cs:
+            // 1247-1263`); rain Monsoon/Drizzle/ClearSky → 1/0.5/0
+            // (`:1386-1402`).
+            let labels: [String; 3] = if wind {
+                [
+                    crate::lang::text("CreativePowers.WindWest"),
+                    crate::lang::text("CreativePowers.WindNone"),
+                    crate::lang::text("CreativePowers.WindEast"),
+                ]
+            } else {
+                [
+                    crate::lang::text("CreativePowers.WeatherMonsoon"),
+                    crate::lang::text("CreativePowers.WeatherDrizzle"),
+                    crate::lang::text("CreativePowers.WeatherClearSky"),
+                ]
+            };
+            let sizes: [[f32; 2]; 3] = std::array::from_fn(|k| {
+                let w = crate::ui::text::ui_font_width(&self.lookups, &labels[k], 1.0)
+                    .unwrap_or(8.0 * labels[k].len() as f32);
+                let h = crate::ui::text::ui_font_height(&self.lookups, 1.0).unwrap_or(8.0);
+                [w, h]
+            });
+            let rects = j::slider_label_rects(panel, sizes);
+            for (k, v) in [(0, 1.0f32), (1, 0.5), (2, 0.0)] {
+                if crate::ui::in_rect(self.mouse_pos, rects[k]) {
+                    self.ui_left_press = false;
+                    self.audio.play("Menu_Tick");
+                    self.journey_set_weather_slider(wind, v);
+                    return true;
+                }
+            }
+            let bar = j::slider_bar(panel);
+            if crate::ui::in_rect(self.mouse_pos, j::slider_hit_rect(bar)) {
+                self.ui_left_press = false;
+                self.audio.play("Menu_Tick");
+                let v = j::slider_value_at(bar, self.mouse_pos.y);
+                self.journey_set_weather_slider(wind, v);
+                return true;
+            }
         }
         false
     }
 
+    /// The weather sliders' shared set arm — the wind target write
+    /// (`CreativePowers.cs:1188-1191`) or the rain power's Start/Stop ladder
+    /// (`:1320-1330`).
+    fn journey_set_weather_slider(&mut self, wind: bool, v: f32) {
+        if wind {
+            let target = crate::creative::wind_target_from_cache(v);
+            self.wind.speed_current = target;
+            self.wind.speed_target = target;
+            self.creative_powers
+                .set(PowerId::WindStrength, PowerState::Slider(target));
+        } else {
+            self.creative_powers
+                .set(PowerId::RainStrength, PowerState::Slider(v));
+            let luck = self.player.as_ref().map(|p| p.luck()).unwrap_or(0.0);
+            self.rain.set_rain_power(v, &self.world, self.wind.remix_world, luck);
+        }
+    }
+
     /// The personal strip (`CreatePersonalPowerStrip` +
-    /// `PersonalCategoryButtonClick`, `UICreativePowersMenu.cs:416-424`).
+    /// `PersonalCategoryButtonClick`, `UICreativePowersMenu.cs:416-424`):
+    /// the toggles, the spawn-rate subcategory button, the slider's
+    /// x10/x1/x0 labels and press-to-set.
     fn journey_personal_clicks(&mut self, l: &j::Layout, left: bool) -> bool {
         if !left {
             return false;
@@ -598,7 +804,85 @@ impl App {
             }
             return true;
         }
+        // The spawn-rate slider's labels (`topText/middleText/bottomText_
+        // OnClick`, `CreativePowers.cs:1672-1688`): x10/x1/x0 → 1/0.5/0.
+        if self.journey.personal_sub == 1 {
+            let panel = j::spawn_slider_panel(l);
+            let sizes: [[f32; 2]; 3] = std::array::from_fn(|k| {
+                let label = ["x10", "x1", "x0"][k];
+                let w = crate::ui::text::ui_font_width(&self.lookups, label, 1.0)
+                    .unwrap_or(8.0 * label.len() as f32);
+                let h = crate::ui::text::ui_font_height(&self.lookups, 1.0).unwrap_or(8.0);
+                [w, h]
+            });
+            let rects = j::slider_label_rects(panel, sizes);
+            for (k, v) in [(0, 1.0f32), (1, 0.5), (2, 0.0)] {
+                if crate::ui::in_rect(self.mouse_pos, rects[k]) {
+                    self.ui_left_press = false;
+                    self.audio.play("Menu_Tick");
+                    self.journey.spawn_rate_cache = v;
+                    self.creative_powers
+                        .set(PowerId::SpawnRate, PowerState::Slider(v));
+                    return true;
+                }
+            }
+            let bar = j::slider_bar(panel);
+            if crate::ui::in_rect(self.mouse_pos, j::slider_hit_rect(bar)) {
+                self.ui_left_press = false;
+                self.audio.play("Menu_Tick");
+                let v = j::slider_value_at(bar, self.mouse_pos.y);
+                self.journey.spawn_rate_cache = v;
+                self.creative_powers
+                    .set(PowerId::SpawnRate, PowerState::Slider(v));
+                return true;
+            }
+        }
         false
+    }
+
+    /// The difficulty slider's clicks (`DifficultySliderPower.ProvideSlider`'s
+    /// indication icons, `CreativePowers.cs:1049-1071`, + the bar's
+    /// press-to-set): the four icons set the caches 1/0.66/0.33/0, the bar
+    /// sets the drag value; both derive the strength.
+    fn journey_difficulty_clicks(&mut self, l: &j::Layout, left: bool) -> bool {
+        if !left {
+            return false;
+        }
+        let panel = j::difficulty_slider_panel(l);
+        let icon_size = self
+            .lookups
+            .wc_difficulty_icons
+            .iter()
+            .find_map(|s| s.map(|s| [s.width as f32, s.height as f32]))
+            .unwrap_or([32.0, 32.0]);
+        let rects = j::difficulty_icon_rects(panel, icon_size);
+        for (i, &v) in j::DIFFICULTY_ICON_CACHES.iter().enumerate() {
+            if crate::ui::in_rect(self.mouse_pos, rects[i]) {
+                self.ui_left_press = false;
+                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:1052`)
+                self.journey_set_difficulty(v);
+                return true;
+            }
+        }
+        let bar = j::slider_bar(panel);
+        if crate::ui::in_rect(self.mouse_pos, j::slider_hit_rect(bar)) {
+            self.ui_left_press = false;
+            self.audio.play("Menu_Tick");
+            let v = j::slider_value_at(bar, self.mouse_pos.y);
+            self.journey_set_difficulty(v);
+            return true;
+        }
+        false
+    }
+
+    /// The difficulty cache + derived strength write
+    /// (`UpdateInfoFromSliderValueCache`, `CreativePowers.cs:1018-1028`).
+    fn journey_set_difficulty(&mut self, v: f32) {
+        self.journey.difficulty_cache = v;
+        self.creative_powers.set(
+            PowerId::Difficulty,
+            PowerState::Slider(crate::creative::difficulty_strength_from_cache(v)),
+        );
     }
 
     /// The duplication grid's wheel scroll (`UIList.ScrollWheel`,
@@ -617,7 +901,12 @@ impl App {
         if !crate::ui::in_rect(self.mouse_pos, l.dup_panel) {
             return false;
         }
-        let items = j::grid_items(&self.research, &self.journey.filters);
+        let items = j::grid_items(
+            &self.research,
+            &self.journey.filters,
+            &self.journey.search,
+            self.player.as_ref(),
+        );
         let cols = j::grid_cols(l.list);
         let view = l.list[3];
         let max_view = j::grid_height(items.len(), cols).max(view);
@@ -757,7 +1046,7 @@ mod tests {
         app.research.register_sacrifice(8, 100); // Torch, fully
         app.research.register_sacrifice(2, 5); // Dirt, partial
         let l = lay(&app);
-        let items = j::grid_items(&app.research, &app.journey.filters);
+        let items = j::grid_items(&app.research, &app.journey.filters, "", None);
         // Torch sorts first (fully researched beats partial).
         assert_eq!(items[0], 8);
         app.mouse_pos = centre(j::grid_cell(l.list, 0.0, 0));
@@ -870,5 +1159,212 @@ mod tests {
         assert_eq!(app.journey.scroll, 132.0);
         assert!(app.journey_wheel(10));
         assert_eq!(app.journey.scroll, 0.0, "clamped at the top");
+    }
+
+    // ---- W4-c24 phase 4: the weather / spawn-rate / difficulty sliders ------
+
+    /// The weather strip's freeze toggles latch the powers
+    /// (`ASharedTogglePower.button_OnClick`, `CreativePowers.cs:527-533`).
+    #[test]
+    fn the_weather_freezes_toggle_the_powers() {
+        let mut app = journey_app();
+        app.journey.category = j::CATEGORY_WEATHER;
+        let l = lay(&app);
+        let strip = j::weather_strip(&l);
+        // The wind freeze (button 1).
+        app.mouse_pos = centre(j::strip_button(strip, 1));
+        app.ui_left_press = true;
+        assert!(app.handle_journey_clicks());
+        assert!(app.creative_powers.freeze_wind());
+        // The rain freeze (button 3).
+        app.mouse_pos = centre(j::strip_button(strip, 3));
+        app.ui_left_press = true;
+        assert!(app.handle_journey_clicks());
+        assert!(app.creative_powers.freeze_rain());
+        // Re-click clears.
+        app.mouse_pos = centre(j::strip_button(strip, 1));
+        app.ui_left_press = true;
+        assert!(app.handle_journey_clicks());
+        assert!(!app.creative_powers.freeze_wind());
+    }
+
+    /// The wind slider's label clicks set the target
+    /// (`ModifyWindDirectionAndStrength`, `CreativePowers.cs:1247-1263`):
+    /// West → 1 → +0.8, No Wind → 0.5 → 0, East → 0 → -0.8.
+    #[test]
+    fn the_wind_slider_labels_set_the_target() {
+        let mut app = journey_app();
+        app.journey.category = j::CATEGORY_WEATHER;
+        app.journey.weather_sub = 1;
+        let l = lay(&app);
+        let panel = j::weather_slider_panel(&l);
+        let labels = [
+            crate::lang::text("CreativePowers.WindWest"),
+            crate::lang::text("CreativePowers.WindNone"),
+            crate::lang::text("CreativePowers.WindEast"),
+        ];
+        let sizes: [[f32; 2]; 3] = std::array::from_fn(|k| {
+            let w = crate::ui::text::ui_font_width(&app.lookups, &labels[k], 1.0)
+                .unwrap_or(8.0 * labels[k].len() as f32);
+            let h = crate::ui::text::ui_font_height(&app.lookups, 1.0).unwrap_or(8.0);
+            [w, h]
+        });
+        let rects = j::slider_label_rects(panel, sizes);
+        // West → +0.8.
+        app.mouse_pos = centre(rects[0]);
+        app.ui_left_press = true;
+        assert!(app.handle_journey_clicks());
+        assert!((app.wind.speed_target - 0.8).abs() < 1e-6);
+        assert!((app.wind.speed_current - 0.8).abs() < 1e-6, "both at once (:1190)");
+        // East → -0.8.
+        app.mouse_pos = centre(rects[2]);
+        app.ui_left_press = true;
+        assert!(app.handle_journey_clicks());
+        assert!((app.wind.speed_target + 0.8).abs() < 1e-6);
+        // No Wind → 0.
+        app.mouse_pos = centre(rects[1]);
+        app.ui_left_press = true;
+        assert!(app.handle_journey_clicks());
+        assert!(app.wind.speed_target.abs() < 1e-6);
+    }
+
+    /// The rain slider's Monsoon click starts the rain at the override
+    /// strength (`ModifyRainPower.UpdateInfoFromSliderValueCache`,
+    /// `CreativePowers.cs:1320-1330` → `Main.StartRain(instant, override)`).
+    #[test]
+    fn the_rain_slider_monsoon_starts_the_rain() {
+        let mut app = journey_app();
+        app.world.world_surface = 200.0; // isThereAWorldSurface
+        app.journey.category = j::CATEGORY_WEATHER;
+        app.journey.weather_sub = 2;
+        let l = lay(&app);
+        let panel = j::weather_slider_panel(&l);
+        let labels = [
+            crate::lang::text("CreativePowers.WeatherMonsoon"),
+            crate::lang::text("CreativePowers.WeatherDrizzle"),
+            crate::lang::text("CreativePowers.WeatherClearSky"),
+        ];
+        let sizes: [[f32; 2]; 3] = std::array::from_fn(|k| {
+            let w = crate::ui::text::ui_font_width(&app.lookups, &labels[k], 1.0)
+                .unwrap_or(8.0 * labels[k].len() as f32);
+            let h = crate::ui::text::ui_font_height(&app.lookups, 1.0).unwrap_or(8.0);
+            [w, h]
+        });
+        let rects = j::slider_label_rects(panel, sizes);
+        // Monsoon → cache 1 → StartRain(instant, 1).
+        app.mouse_pos = centre(rects[0]);
+        app.ui_left_press = true;
+        assert!(app.handle_journey_clicks());
+        assert!(app.rain.is_raining());
+        assert!((app.rain.max_raining() - 1.0).abs() < 1e-6, "the override strength");
+        assert!((app.rain.cloud_alpha() - 1.0).abs() < 1e-6, "instant snaps cloudAlpha");
+        // Clear Sky → cache 0 → StopRain(instant).
+        app.mouse_pos = centre(rects[2]);
+        app.ui_left_press = true;
+        assert!(app.handle_journey_clicks());
+        assert!(!app.rain.is_raining());
+        assert_eq!(app.rain.max_raining(), 0.0);
+        assert_eq!(app.rain.cloud_alpha(), 0.0, "instant snaps cloudAlpha to 0");
+    }
+
+    /// The spawn-rate slider's x0 label disables the spawns
+    /// (`SpawnRateSliderPerPlayerPower`, `CreativePowers.cs:1684-1688` →
+    /// `GetShouldDisableSpawnsFor`).
+    #[test]
+    fn the_spawn_slider_x0_disables_the_spawns() {
+        let mut app = journey_app();
+        app.journey.category = j::CATEGORY_PERSONAL;
+        app.journey.personal_sub = 1;
+        let l = lay(&app);
+        let panel = j::spawn_slider_panel(&l);
+        let sizes: [[f32; 2]; 3] = std::array::from_fn(|k| {
+            let label = ["x10", "x1", "x0"][k];
+            let w = crate::ui::text::ui_font_width(&app.lookups, label, 1.0)
+                .unwrap_or(8.0 * label.len() as f32);
+            let h = crate::ui::text::ui_font_height(&app.lookups, 1.0).unwrap_or(8.0);
+            [w, h]
+        });
+        let rects = j::slider_label_rects(panel, sizes);
+        // x10 → cache 1 → x10.
+        app.mouse_pos = centre(rects[0]);
+        app.ui_left_press = true;
+        assert!(app.handle_journey_clicks());
+        assert!((app.creative_powers.spawn_rate_multiplier() - 10.0).abs() < 1e-5);
+        assert!(!app.creative_powers.spawn_rate_disabled());
+        // x0 → cache 0 → disabled.
+        app.mouse_pos = centre(rects[2]);
+        app.ui_left_press = true;
+        assert!(app.handle_journey_clicks());
+        assert!(app.creative_powers.spawn_rate_disabled());
+        assert_eq!(app.journey.spawn_rate_cache, 0.0);
+        // x1 → cache 0.5 → x1, enabled.
+        app.mouse_pos = centre(rects[1]);
+        app.ui_left_press = true;
+        assert!(app.handle_journey_clicks());
+        assert!(!app.creative_powers.spawn_rate_disabled());
+        assert!((app.creative_powers.spawn_rate_multiplier() - 1.0).abs() < 1e-6);
+    }
+
+    /// The difficulty slider's indication icons set the caches
+    /// (`DifficultySliderPower.Click_Master/Expert/Normal/Journey`,
+    /// `CreativePowers.cs:1049-1071`): 1/0.66/0.33/0 → strengths 3/2/1/0.5.
+    #[test]
+    fn the_difficulty_icons_set_the_strength() {
+        let mut app = journey_app();
+        app.journey.category = 5;
+        let l = lay(&app);
+        let panel = j::difficulty_slider_panel(&l);
+        let rects = j::difficulty_icon_rects(panel, [32.0, 32.0]);
+        // Master (top) → cache 1 → strength 3.
+        app.mouse_pos = centre(rects[0]);
+        app.ui_left_press = true;
+        assert!(app.handle_journey_clicks());
+        assert_eq!(app.journey.difficulty_cache, 1.0);
+        assert!((app.creative_powers.difficulty_strength() - 3.0).abs() < 1e-6);
+        // Expert → cache 0.66 → strength 2.
+        app.mouse_pos = centre(rects[1]);
+        app.ui_left_press = true;
+        assert!(app.handle_journey_clicks());
+        assert!((app.creative_powers.difficulty_strength() - 2.0).abs() < 1e-6);
+        // Normal → cache 0.33 → strength 1.
+        app.mouse_pos = centre(rects[2]);
+        app.ui_left_press = true;
+        assert!(app.handle_journey_clicks());
+        assert!((app.creative_powers.difficulty_strength() - 1.0).abs() < 1e-6);
+        // Journey (bottom) → cache 0 → strength 0.5.
+        app.mouse_pos = centre(rects[3]);
+        app.ui_left_press = true;
+        assert!(app.handle_journey_clicks());
+        assert!((app.creative_powers.difficulty_strength() - 0.5).abs() < 1e-6);
+        // The override seam answers the strength in a Journey session.
+        assert_eq!(
+            app.creative_powers.game_mode_difficulty_override(true),
+            Some(0.5)
+        );
+    }
+
+    /// The search box's click toggles the input, the cancel clears
+    /// (`UIWrappedSearchBar`, `UIWrappedSearchBar.cs:153-164,222-228`).
+    #[test]
+    fn the_search_box_toggles_and_clears() {
+        let mut app = journey_app();
+        app.journey.category = j::CATEGORY_DUPLICATION;
+        app.journey.search = "torch".into();
+        let l = lay(&app);
+        // The box click toggles the writing flag.
+        app.mouse_pos = centre(j::search_box_rect(&l));
+        app.ui_left_press = true;
+        assert!(app.handle_journey_clicks());
+        assert!(app.journey.search_writing);
+        // The cancel clears the contents (sound 11).
+        app.mouse_pos = centre(j::search_cancel_rect(&l));
+        app.ui_left_press = true;
+        assert!(app.handle_journey_clicks());
+        assert!(app.journey.search.is_empty());
+        // An empty cancel plays sound 12 (the Menu_Tick), keeps the flag.
+        app.mouse_pos = centre(j::search_cancel_rect(&l));
+        app.ui_left_press = true;
+        assert!(app.handle_journey_clicks());
+        assert!(app.journey.search.is_empty());
     }
 }
