@@ -3092,7 +3092,12 @@ fn fire_non_ammo_shot(
     // so it escapes the `dir != ZERO` gate (the facing fallback below).
     let boomerang_use = def.use_style == 1
         && crate::projectile::proj_data(proj).is_some_and(|d| d.ai_style == 3);
-    if dir == Vec2::ZERO && !boomerang_use {
+    // W4-d17 SEAL (f40 RETIRE keep-one, 85a9253c, research/105 §9.1) —
+    // the Release Doves 4682 / Release Lantern 4702 share the boomerangs'
+    // zero-aim escape (`Player.cs:47291-47296`: `num4 = direction,
+    // num5 = 0, num6 = speed`) — the C# fires them at the facing too.
+    let release_use = matches!(held.kind, 4682 | 4702);
+    if dir == Vec2::ZERO && !boomerang_use && !release_use {
         return false;
     }
     let class = def.class;
@@ -3294,7 +3299,7 @@ fn fire_non_ammo_shot(
     // `num4 *= num6` scale — the shot flies at the facing
     // × the shootSpeed (the NaN arm is unreachable through
     // `normalize_or_zero`).
-    let shot = if dir == Vec2::ZERO && boomerang_use {
+    let shot = if dir == Vec2::ZERO && (boomerang_use || release_use) {
         Vec2::new(boomerang_facing as f32 * shot_speed, 0.0)
     } else {
         Vec2::new(dir.x * shot_speed, dir.y * shot_speed)
@@ -3316,10 +3321,16 @@ fn fire_non_ammo_shot(
     // in `damage_pve` (`Projectile.cs:12883-12917`, S1-P-i11). The facing
     // flip (`ChangeDir` `:47202-47224`) writes through a short mutable
     // re-borrow (the shared read borrow is parked for the arm).
-    if boomerang_use {
+    // W4-d17 SEAL (f40 correction 2): the `ChangeDir` flip is the C#
+    // SHARED prologue (`:47214-47223`, `flag` true for every kind but the
+    // Void Vault 3611) — it runs for the release pair too, ahead of their
+    // separate arms (the zero aim's dot is 0 → the −1 arm).
+    if boomerang_use || release_use {
         if let Some(pl) = app.player.as_mut() {
             pl.facing = boomerang_facing;
         }
+    }
+    if boomerang_use {
         // `NewProjectile` centers the box on the point (`Projectile.cs:
         // 10876-10877`: `position = X − width/2, Y − height/2`); the port's
         // spawn seam takes the top-left, so the half-box subtracts here —
@@ -4385,11 +4396,18 @@ fn fire_non_ammo_shot(
         // damage −1 stock rides `weaponDamage` like every thrown item.
         // The Release Lantern 4702 has NO special arm — it keeps the
         // generic single shot (the census: only 4682 is named).
+        // W4-d17 SEAL (f40 correction 1, exact-centre): the C# passes
+        // `pointPosition` itself (the rotated mount anchor, NO `+dir*10`
+        // lead) and `NewProjectile` centres the box (`Projectile.cs:
+        // 10876-10877`), so the half-box subtracts off the player centre,
+        // not the generic arm's led `spawn`.
+        let (bw, bh) = crate::projectile::proj_data(proj)
+            .map_or((0.0, 0.0), |d| (d.w, d.h));
         for _ in 0..3 {
             let vx = shot.x + loot_rng.next_range(-20, 21) as f32 * 0.1;
             let vy = shot.y + loot_rng.next_range(-20, 21) as f32 * 0.1;
             let slot = app.projectiles.spawn_with_data_ai(
-                proj, spawn.x, spawn.y, vx, vy, raw as i32, fx_kb, 0.0, 0.0,
+                proj, pcx - bw * 0.5, pcy - bh * 0.5, vx, vy, raw as i32, fx_kb, 0.0, 0.0,
             );
             if let Some(slot) = slot {
                 app.projectiles.set_armor_penetration(slot, arpen);
@@ -4522,8 +4540,23 @@ fn fire_non_ammo_shot(
                 break;
             }
         }
+        // W4-d17 SEAL (f40 correction 1 for the lantern): the 4702 rides
+        // THIS generic tail (`Player.cs:49437`), which passes
+        // `pointPosition` itself — no `+dir*10` lead — and `NewProjectile`
+        // centres the box (`Projectile.cs:10876-10877`). The release arm
+        // above owns the 4682 volley only; this override gives the lantern
+        // the same exact-centre geometry (the i08 boomerang precedent —
+        // the generic arm's lead stays the M4-PROJ-3 recorded deviation
+        // for OTHER kinds).
+        let release_spawn = if held.kind == 4702 {
+            let (bw, bh) = crate::projectile::proj_data(proj)
+                .map_or((0.0, 0.0), |d| (d.w, d.h));
+            Vec2::new(pcx - bw * 0.5, pcy - bh * 0.5)
+        } else {
+            leaf_spawn
+        };
         let slot = app.projectiles.spawn_with_data_ai(
-            proj, leaf_spawn.x, leaf_spawn.y, vx, vy, raw as i32, fx_kb, ai0, ai1,
+            proj, release_spawn.x, release_spawn.y, vx, vy, raw as i32, fx_kb, ai0, ai1,
         );
         if let Some(slot) = slot {
             app.projectiles.set_armor_penetration(slot, arpen);
@@ -18327,6 +18360,9 @@ mod item_mechanics {
     /// `Next(-20,21)*0.1` per axis — six `UpdatePlayers` draws. ONE bucket
     /// is consumed (the consumable tail runs once per use, not per dove).
     /// The Release Lantern 4702 keeps the generic single shot.
+    /// W4-d17 SEAL (f40 correction 3): the six-draw witness + the lantern's
+    /// zero-draw contrast (`Player.cs:48385-48389` X-before-Y per dove; the
+    /// generic tail draws nothing for 855).
     #[test]
     fn w4_d17_the_doves_release_three_and_the_lantern_one() {
         let mut app = thrown_app(4682, 5);
@@ -18360,6 +18396,106 @@ mod item_mechanics {
             .collect();
         assert_eq!(lanterns.len(), 1, "the lantern is a single generic shot");
         assert_eq!(app.inventory[app.selected].count, 4);
+    }
+
+    /// W4-d17 SEAL (f40 keep-one graft, 85a9253c) — the doves' SIX
+    /// `UpdatePlayers` draws (`Player.cs:48385-48389`: per dove the X
+    /// `Next(-20,21)` evaluates before the Y one — the C# argument order)
+    /// vs the lantern's ZERO (the generic `:49437` tail draws nothing).
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d17_the_doves_spend_six_draws_the_lantern_zero() {
+        let seed = 0x4682;
+        let mut app = thrown_app(4682, 3);
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) =
+            tr_core::UnifiedRandom::new(seed);
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        let mut probe = tr_core::UnifiedRandom::new(seed);
+        for _ in 0..3 {
+            let _ = probe.next_range(-20, 21); // the X jitter first
+            let _ = probe.next_range(-20, 21); // then the Y jitter
+        }
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
+            probe,
+            "the volley spends exactly six UpdatePlayers draws"
+        );
+        let mut app = thrown_app(4702, 3);
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) =
+            tr_core::UnifiedRandom::new(seed);
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
+            tr_core::UnifiedRandom::new(seed),
+            "the lantern rides the draw-free generic tail"
+        );
+    }
+
+    /// W4-d17 SEAL (f40 correction 1, exact-centre) — both release spawns
+    /// take the C# `pointPosition` (the rotated mount anchor, no `+dir*10`
+    /// lead) and `NewProjectile` centres the box (`Projectile.cs:
+    /// 10876-10877`): every dove's and the lantern's box CENTRE lands on
+    /// the player centre exactly. The 851/855 rows are LIVE on this branch
+    /// (d17's own machine commits) — the geometry pins directly.
+    #[test]
+    fn w4_d17_the_release_spawns_centre_on_the_player() {
+        for (kind, proj) in [(4682u16, 851u16), (4702, 855)] {
+            let mut app = thrown_app(kind, 3);
+            let (pcx, pcy) = app.player.as_ref().unwrap().center();
+            update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+            let shots: Vec<_> = app
+                .projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active && p.kind == proj)
+                .collect();
+            assert!(!shots.is_empty(), "{kind}: the release fires");
+            for s in shots {
+                assert!(
+                    (s.pos.x + s.w * 0.5 - pcx).abs() < 1e-3
+                        && (s.pos.y + s.h * 0.5 - pcy).abs() < 1e-3,
+                    "{kind}: exact-centre spawn (:48388/:49437 + :10876)"
+                );
+            }
+        }
+    }
+
+    /// W4-d17 SEAL (f40 correction 2, zero-aim) — the cursor ON the player
+    /// centre still fires (`Player.cs:47291-47296`: `num4 = direction,
+    /// num5 = 0`), at the FACING × shootSpeed, and the shared `ChangeDir`
+    /// prologue (`:47214-47223`) flips to −1 (the zero dot fails `num > 0`).
+    #[test]
+    fn w4_d17_the_zero_aim_release_fires_at_the_facing() {
+        for (kind, proj) in [(4682u16, 851u16), (4702, 855)] {
+            let mut app = thrown_app(kind, 3);
+            app.player.as_mut().unwrap().facing = 1;
+            // The cursor at the player centre: mouse_world == camera +
+            // (mouse - screen/2)/zoom, so pin the mouse there.
+            let (pcx, pcy) = app.player.as_ref().unwrap().center();
+            let (sw, sh) = app.screen_size();
+            app.mouse_pos = Vec2::new(
+                sw * 0.5 + (pcx - app.camera.x) * app.zoom,
+                sh * 0.5 + (pcy - app.camera.y) * app.zoom,
+            );
+            update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+            assert_eq!(
+                app.player.as_ref().unwrap().facing, -1,
+                "{kind}: the zero-aim ChangeDir takes the -1 arm"
+            );
+            assert_eq!(app.inventory[app.selected].count, 2, "{kind}: consumes");
+            let shots: Vec<_> = app
+                .projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active && p.kind == proj)
+                .collect();
+            assert!(!shots.is_empty(), "{kind}: the zero aim still fires");
+            for s in shots {
+                // The facing fallback flies LEFT at shootSpeed 4 (the dove
+                // ±2 jitter band keeps vel.x < 0; the lantern is exact).
+                assert!(s.vel.x < 0.0, "{kind}: the facing-fallback flight");
+            }
+        }
     }
 
     /// The bone javelin throws from the upper third of the hitbox
