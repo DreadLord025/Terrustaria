@@ -407,3 +407,118 @@ cross-note honoured throughout: every
 round (144 wake, 421/422 actuator guard + wake, 235/226 Plant-boss
 conjuncts, 506 validator) stays canonical; the f11 multi-tile witness
 flips a NON-actuated 422 lamp and survives unchanged.
+
+---
+
+## 11. FINAL — the Wiring.cs FULL-FILE census (at the final-phase tip)
+
+Script-diff of the C# fn-list (`decompiled/Terraria/Wiring.cs`, 52 members
+incl. the static ctor, re-read at this tip) vs the port
+(`tr-core/src/wiring.rs` + `tr-app/src/world_sim/wiring.rs` +
+`tr-app/src/minecart.rs` + `edit.rs`/`edit/shift.rs`). **No C# symbol named
+`TrippedSwitch` or `TimerGate` exists anywhere in the decompiled tree**
+(recursive grep) — the tripped-switch behaviour is `HitSwitch`/`TripWire`
+and the timer gate is the tile-144 arms of `HitSwitch` (`:296-310`) +
+`UpdateMech` (`:178-242`), both ported. The actuators-cascade is
+`DeActive`/`ReActive` + `Actuate`/`ActuateForced`, ported.
+
+| C# member (line) | Port | Status |
+| --- | --- | --- |
+| `SetCurrentUser` :77-88 + `CurrentUser` :67 | — | **SP fold** (documented): netMode 0 ⇒ `plr = Main.myPlayer` = 0; the only reader is the cannon owner (`:1341` → `ShootFromCannon`), the port's owner is fixed 0 (`ai1 = owner+1 = 1` pinned by `dw_3_1_the_bunny_cannon…`). The static-ctor 255 default (`:3425`) is dead in SP. |
+| `Initialize` :90-113 | `Wiring::new()`/`Default` | ported-shape: the C# re-news the statics at game init (`Main.cs:6553`); the port's per-App instance starts zeroed. |
+| `SkipWire` ×2 :115-122 | `self.skip.insert` per arm | inlined (every cited site carries its comment). |
+| `ClearAll` :125-143 | `clear_all` | fold-133 `e5569c2a` + the `enter_loaded_world` hook. |
+| `UpdateMech` :145-258 | `update` | + the D16 pop-not-remove/fluff-1 folds. |
+| `HitSwitch` :259-378 | `hit_switch` | all 9 arms incl. the 132/411 else-block. |
+| `PokeLogicGate` :380-387 | `poke_logic_gate` | |
+| `Actuate` :389-405 / `ActuateForced` :407-417 | `actuate` / `actuate_forced` | |
+| `MassWireOperation` :419-453 | app `mass_wire_operation` | fold-133 `05ae5cc6` (the msg-110 bill folds to ConsumeItem, SP). |
+| `CheckMech` :455-473 | `check_mech` | 999 cap + dedupe; all 38 call sites censused (f11 ANALYSIS (2)). |
+| `XferWater` :475-523 | `xfer_water` | e21 active-gate fix `7c9a67a2`. |
+| `TripWire` :525-666 | `trip_wire` + `trip_wire_color` ×4 | the per-colour passes + the teleport tail. |
+| `PixelBoxPass` :668-680 | `pixel_box_pass` | |
+| `LogicGatePass` :682-718 | `logic_gate_pass` | + the teleport-unlatch fold `2458b596`. |
+| `CheckLogicGate` :720-835 | `check_logic_gate` | |
+| `HitWire` :837-979 | `hit_wire` | + the entry-clear fold `4e23f31e`. |
+| `GetProjectileSource` :981 / `GetNPCSource` :986 / `GetItemSource` :991 | — | **GAP (metadata-only)**: all three return `new EntitySource_Wiring(x, y)` (`DataStructures/EntitySource_Wiring.cs` — a bare `AEntitySource_Tile` subclass, zero logic). The port's spawn seams carry no source object; no ported consumer reads the wiring provenance (the C# readers are achievement/Bestiary attribution). Contract: lands with the entity-source system, no gameplay effect until then. |
+| `HitWireSingle` :996-2552 | `hit_wire_single` | the full device family (the §10 union + fold-133). |
+| `Extractinator` :2554-2584 | request seam + app `extractinator_roll` | e20 body. |
+| `TryFindChestForExtractinator` :2586-2608 | `find_chest_for_extractinator` | e20 body. |
+| `IsHopperInRangeOf` :2610-2636 | `is_hopper_in_range_of` | **CLOSED this final phase** (`c6f40d0a`): PORTED-UNWIRED — the only C# caller is `WorldItem.FindOwner` (`WorldItem.cs:243`, the MP reservation refusal); the port's owner-scan is `net_reserved`-based, the FindOwner follow-up attaches it. `WireState::any`'s first consumer (§8.9 closed). |
+| `Hopper` :2638-2678 | request seam + app `hopper_pull` | e20 body + the f11 PlaySound(7) win `e8e6b159`. |
+| `TryToPutItemInChest` :2680-2701 | `try_put_item_in_chest` | `(placed, remaining, filled_empty)`. |
+| `TryMoveCoinsInChest` :2703-2757 | `try_move_coins_in_chest` | |
+| `TryAddingToEmptySlot` :2759-2770 | inside `try_put_item_in_chest` | the `filled_empty` flag carries its PlaySound(7) gate. |
+| `TryAddingToStack` :2772-2798 | `try_adding_to_stack` | |
+| `ToggleHolidayLight`…`ToggleFirePlace` ×10 :2800-3072 | the unified free-fn family + the `Wiring` method wrappers | §10 item 6 `6381b52d` (forced + skips collector). |
+| `ExplodeMine` :3074-3082 | `explode_mine` | |
+| `GeyserTrap` :3084-3118 | `geyser_trap` | |
+| `Teleport` :3120-3183 | `teleport` (engine) + the app drain (entities) | |
+| `TeleporterHitboxIntersects` :3185-3193 | inlined `hits` closure | `world_sim/wiring.rs` drain (the union-box test verbatim). |
+| `DeActive` :3195-3223 / `ReActive` :3225-3233 | `de_active` / `re_active` | the c42 fix-round region, canonical. |
+| `MassWireOperationInner` :3235-3327 | `mass_wire_operation_inner` | fold-133. |
+| `MassWireOperationStep` :3329-3421 | `mass_wire_operation_step` | fold-133. |
+| static ctor :3423-3430 | `Default` + the 192 constant | cooldowns 0; `HopperGrabHitboxSize` 192 → the hopper grab box + `is_hopper_in_range_of`'s 96 half-size. |
+
+**Census verdict**: every gameplay-bearing fn is ported. The two residual
+classes are documented folds, not gaps: (a) `SetCurrentUser`/`CurrentUser`
+(SP owner-0 fold), (b) the three `Get*Source` provenance constructors
+(metadata-only, the entity-source system contract).
+
+## 12. FINAL merger-checklist (95 + 133, the single-branch keep)
+
+**SINGLE-BRANCH KEEP: `task/W4-c42-wiring-device-arms` is the wiring
+canonical.** Merge THIS branch; the f11/e20/e21/g4/d6 wiring content is
+already unioned here (§10 + §10.1 + the final phase) — their branches'
+wiring halves are DEPRECATED-BY-UNION (f11's own banners, `e052a69f`),
+never cherry-pick them again. The §9 playbook ran in full; the
+never-ship-both list (§9 tail) has zero surviving duplicate symbols on
+this tree.
+
+**Final-phase seam state (§8 re-audit at this tip):**
+
+| Seam | State |
+| --- | --- |
+| 8.1 EmptyTile entity half | **CLOSED** (`c6f40d0a`): `Wiring.entity_boxes` + `set_entity_boxes`/`collect_entity_boxes`, stamped at EVERY trip entry (player switch/plate/track, NPC scan, projectile cup/pad, chest rig ×2, netglue ×3, sensor pass, wiring tick, plate break); the wired trapdoor/tall-gate arms consult it. Door 11 stays forced (gate never consulted). The g4 NPC-bash closure stays the reference shape. |
+| 8.2 SendData(19) | **core half CLOSED** (`c6f40d0a`): the `door_echoes` queue computes `(number, x, y, number4)` verbatim at the five sites (trapdoor `3−value`+`num66` ±1, gate `4+flag4` UNCONDITIONAL, close `1`, open `0`+the succeeded direction). SP discards at every drain; the MP relay attaches with the **g48b** codec lane. The g48 APPLY lane (`0e6fd9c27` → `74e1ffa3`) already consumes the canonical `edit/shift.rs` bodies — **merge note**: its `net_apply.rs` calls `open_door`/`close_door` with the PRE-union 5/6-arg shapes; add the trailing `None` (the `wire_skips` Option) at those two call sites when g48 lands. |
+| 8.3 SkipWire netMode gate | CLOSED by the union (§1 Option seam). |
+| 8.4 door-cue stage streams | **CLOSED** (`c6f40d0a`): the drain union now covers EVERY trip site — the two gaps found by the re-audit (the logic-sensor pass and the plate-break site drained switch-clicks only) are fixed; the plate-break poke also moved BEFORE the kill (the C# `KillTile_GetItemDrops` order `:63863` precedes the clear `:63885` — the release trip saw a dead tile and never fired). |
+| 8.5 d6 skip_wires=true | structurally CLOSED (§10 item 6): the collector feeds, the sink discards (no free-fn caller owns a flood skip set) — final contract, documented on `try_toggle_light`. |
+| 8.6 SendTileSquare tails | OPEN (MP-only) — g48b contract, all lanes agree. |
+| 8.7 SyncItem/VisualizeChestTransfer | OPEN (net/draw) — the particles/net lanes' contract. |
+| 8.8 FrameTrack non-pound + KillTile(fail) | OPEN — the hammer-placement half: `edit/hammer.rs:413` keeps the `Consumed` seam; the app `frame_track_pound` (e20) is the wiring half. Follow-up task; use the assert-on-front-absent convention. |
+| 8.9 WireState::any / IsHopperInRangeOf | **CLOSED** (`c6f40d0a`): the fn ported (PORTED-UNWIRED, the `WorldItem.FindOwner` MP owner-scan is the attach follow-up); the app `HOPPER_BANNED` aliases the core set (one copy). |
+| 8.10 boulder aiStyle-25 proj_data row | OPEN — `projectile/data.rs` still has no 99 row; the DeviceShot drops with the ANALYSIS note until the family lane lands (contract). |
+| 8.11 can_kill_tile slice | unchanged — the wiring slice stays; the g48 reader injects the FULL `edit::can_kill_tile` with the chest-store scan (its lane's choice, compatible). |
+
+**Contested-seam requests consumed**: g78 research/76 (`3e7bdba0`, read at
+origin tip) — the 657 right-click `SwitchMonolith` use arm **LANDED**
+(`f173fb88`: `TileInteraction::MonolithToggle` + the doors.rs arm +
+`Player.quick_grapple_cooldown`); the 657 `Check2xX` break check stays the
+c31/g17/g47/f41 break-lane contract (research/76's own co-lane list — NOT
+this lane's). g85's wiring-round note (`c69073b0`) carries no c42 request
+(its contested seams are render/tiles.rs + spawner.rs). g48's `19` apply
+arm arrived and consumes the canonical bodies (the signature merge-note
+above). No g78/g85 publishing hunks target this branch's files.
+
+**Witness-total** (ALL WRITTEN NOT RUN, code-only lane): **282 tests in
+the seven dedicated wiring modules** — core `wiring.rs` 143, app
+`world_sim/wiring.rs` 33, app `minecart.rs` 43, core `edit.rs` 34, app
+`editing/doors.rs` 14, app `editing/wiring.rs` 14, app
+`world_sim/tile_entities.rs` 1 — plus the cross-module pins (the g4 bash
+pair in `world_sim/npcs.rs`, the e20/f11 device pins in chest/netglue/
+player/projectiles, the plate-break pin in `world_sim/editing.rs`). The
+final phase added **7**: 4 core (`w4_c42_final_seam_tests` — the stamped
+trapdoor refusal, the stamped gate refusal + unconditional echo, the
+echo-field computation, the hopper-range scan) + the sensor-drain pin +
+the plate-break-drain pin + the monolith use-arm pin. Every KEEP/unique
+witness named in §1-7 + the 133 receipt §4 ledger is present under its
+original name.
+
+**Gate-command** (the merger runs it, this lane did not):
+`cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids`
+— judge by the `test result: ok` lines (cargo may exit 1 on success).
+Canary: `anchors.txt` rows for every landed feature (the final phase
+added 4: `cell_blocked_by_entity`, `take_door_echoes`,
+`is_hopper_in_range_of`, `use_switch_monolith`); `tr-core/build.rs` +
+`cargo test -p tr-app --test main_anchors` read them.

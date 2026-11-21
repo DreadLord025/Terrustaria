@@ -121,3 +121,35 @@ constructors ride `Player::spawn`, `ItemSlot`/`EquipSlots`/`max_stack`/
 `spawn_item_drop_px` signatures matched, `multi_tool_mode` bits verified
 against `WiresUI.cs:13-21` order). No cargo/tests/rustfmt/graphify run
 (lane rule); every witness WRITTEN NOT RUN.
+
+## 6. FINAL addendum (the wiring final phase, on top of `79b81ae7`)
+
+The 133 fold is COMPLETE and stays canonical — the final phase touched no
+fold-133 region (the mass-wire core/app, the lifecycle folds, the 3625 use
+arm all untouched). What landed after this receipt:
+
+1. `c6f40d0a` — the research/95 §8 seam closures: §8.1 the stamped-boxes
+   entity gate (the wired trapdoor/tall-gate arms + the app stamp at every
+   trip entry), §8.2 the `SendData(19)` echo queue (the five sites'
+   subtype/direction computed verbatim; SP-discard drains at every cue
+   site), §8.4 the two missing door-cue drains (logic sensors, plate
+   break) + the `DestroyPlate` poke moved BEFORE the kill (the C#
+   `KillTile_GetItemDrops` order — the release trip saw a dead tile),
+   §8.9 `is_hopper_in_range_of` (PORTED-UNWIRED; the app `HOPPER_BANNED`
+   aliases the new core `ITEMS_THAT_SHOULD_NOT_BE_IN_INVENTORY` — one
+   copy). 6 witnesses.
+2. `f173fb88` — the g78 research/76 contested-seam request: the monolith
+   right-click use arm (`TileInteraction::MonolithToggle`,
+   `use_switch_monolith` over this fold's untouched e21 body,
+   `Player.quick_grapple_cooldown` + the `Update` decrement/map re-arm).
+   1 witness. The 657 `Check2xX` break check stays the break-lane
+   contract (research/76's co-lane list).
+3. The census + final merger-checklist: research/95 §11-12 (the 52-member
+   full-file diff — no gameplay gap; the single-branch-keep instruction,
+   the 282-witness dedicated-module total, the gate-command).
+
+**Single-branch keep**: `task/W4-c42-wiring-device-arms` — merge this
+branch only; the f11 deprecated halves (this receipt's source lane) never
+re-land. Gate: `cargo test --workspace --skip
+migrates_version_2_kinds_to_item_ids` (the merger runs it; this lane is
+code-only, every witness WRITTEN NOT RUN).
