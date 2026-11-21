@@ -168,6 +168,41 @@ head-claim/override rows (already on c8). At merge the two
 `worm_head_step` bodies are identical except those c8 rows — keep c8's
 (the superset).
 
+### 3a. RETIRE RECEIPT — the d22 saturation cross-warn (2026-11-21 retire phase)
+
+Re-read of `origin/task/W4-d22-npc-ai-styles-3-6` at tip **`bcd42ddd1`**
+(2026-11-21T09:16:23+02:00, the G4 reconcile phase-4 close — the tip
+PREDATES c8's warn commit `708522fc6` 10:30:03, so the warn could not
+have been consumed):
+
+- **NOT FIXED on d22.** `npc.rs::the_worm_head_digs_and_stumbles`
+  (`:21866`, the loop at **`:21889`**) still runs `for _ in 0..150` on
+  the `ground_air` fixture (200×200, dirt y≥120, hole x 60..140 /
+  y 125..135 — identical blob-shape on both branches, `ground_air` at
+  d22 `:20259` / c8 `:20278`), with the same spawn (40,150), player
+  (1600,1856), seed 11 and the same two asserts (`|speed−6|<0.1`,
+  `vy<0`). The comment even says "~110 ticks" while the loop runs 150.
+- **The warn stands**: the c8 numeric JS mirror of the composed
+  `worm_head_step` (f32-rounded, `708522fc6`) shows the head entering
+  the hole at ~tick 118; at 150 ticks speed 5.50 / vy **+1.02** — BOTH
+  d22 asserts FAIL on the composed machine + this fixture. At 110
+  ticks: speed 5.955 / vy −2.5 / y 2165, saturated within 0.1.
+- **c8's fix is live on this branch**: the loop is `0..110`
+  (`npc.rs:21810`) with the window-closure comment (`:21800-21808`).
+  The d22 `worm_head_step` body (`world_sim/npcs.rs:1666` at their tip)
+  was diff-read against c8's (`:1674`): identical kinematics — the only
+  c8-side deltas are the 375 inversion block after the aim snap and
+  the 375 claim/override/tunable rows, neither of which a GiantWorm
+  head (10) touches. The composed machine on d22's own fixture is
+  therefore exactly the machine the mirror simulated.
+- **MERGER ACTION (unchanged, now receipted)**: keep c8's 110-tick pin
+  for `the_worm_head_digs_and_stumbles` (d22's 150 overshoots); the
+  far-player override's 150-tick loop stays on BOTH branches (empty
+  2000×800 world, no hole — speed 6.005 verified, d22
+  `world_sim/npcs.rs:14298` comment "~110 ticks saturate it" is
+  consistent). d22's two `w4_d22_the_*` single-tick witnesses and c8's
+  `w4_c8_compose_*` carries are content-identical — keep-one (§6).
+
 ## 4. The crawler sheets in the union inventory — the d35 lazy-load census
 
 The d35 FINAL (`e5558b0a9`, research/113 §10-12) census: **ALL
@@ -239,7 +274,8 @@ are ENTRIES rows).
   keep-one at merge (either name; the bodies are the same). The
   `the_worm_head_digs_and_stumbles` saturation loop: keep c8's 110-tick
   pin (the numeric mirror shows d22's 150 overshoots the ground_air
-  hole — §3).
+  hole — §3; retire-time re-read of d22 tip `bcd42ddd1` confirms the
+  150-loop UNFIXED at `npc.rs:21889` — the receipt §3a).
 - **c4**: the Goldfish provider freeze is lifted HERE; c4's UI
   `unlock_state` call sites reconcile onto `unlock_state_world` (the
   c8 fold). c4's GoldGoldfish 592 entry auto-rides the gold arm.
