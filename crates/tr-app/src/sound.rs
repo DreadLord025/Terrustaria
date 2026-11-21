@@ -736,6 +736,73 @@ fn s1_e_24_the_perceived_volume_is_the_16609_power() {
     assert!(perceived_volume(0.5) < 0.5);
 }
 
+// ---- FALLS RESIDUALS ambience-consumer witnesses (written, not run — code-only) ----
+
+/// `Main.cs:13475-13477`: a positive-strength tick plays case 34 at the
+/// triple with `(int)` truncation and the strength/50 × 0.2 math
+/// (`LegacySoundPlayer.cs:1251-1256`).
+#[test]
+fn liquid_ambience_plays_the_triple_with_int_truncation() {
+    // strength 25.9 → (int) 25 → 0.5; dist 1250 → atten 0.5;
+    // volume = 0.5 * 0.5 * 0.2 = 0.05; pan = 1250/960 clamped to 1.
+    let (v, p) = liquid_ambience(25.9, 1250.7, 0.2, 0.2, (0.0, 0.0), 1.0, false, 0.0).unwrap();
+    assert!((v - 0.05).abs() < 1e-6, "{v}");
+    assert_eq!(p, 1.0);
+    // strength >= 50 clamps the factor at 1: atten 1 (dist 0) * 1 * 0.65.
+    let (v, _) = liquid_ambience(80.0, 0.0, 0.0, 0.65, (0.0, 0.0), 1.0, false, 0.0).unwrap();
+    assert!((v - 0.65).abs() < 1e-6);
+}
+
+/// `LegacySoundPlayer.cs:395`: the pan denominator is the FIXED
+/// `MaxWorldViewSize.X * 0.5` = 960 (`Main.cs:66714`), independent of the
+/// window width — dx 480 pans 0.5 on any screen.
+#[test]
+fn liquid_ambience_pan_rides_the_fixed_1920_view() {
+    let (_, p) = liquid_ambience(50.0, 480.0, 0.0, 0.2, (0.0, 0.0), 1.0, false, 0.0).unwrap();
+    assert_eq!(p, 0.5);
+    let (_, p) = liquid_ambience(50.0, -480.0, 0.0, 0.2, (0.0, 0.0), 1.0, false, 0.0).unwrap();
+    assert_eq!(p, -0.5);
+}
+
+/// `Main.cs:13480-13486`: a zero-strength tick plays the STOP arm at the
+/// camera centre with strength 0 — volume 0 regardless of the stale triple.
+#[test]
+fn liquid_ambience_zero_strength_stops_at_the_camera() {
+    // The stale triple points far away; the stop arm re-centres, so the
+    // distance is 0 and the walk still runs — volume 0.
+    let (v, p) = liquid_ambience(0.0, 99999.0, 99999.0, 0.2, (100.0, 200.0), 1.0, false, 0.0)
+        .unwrap();
+    assert_eq!(v, 0.0);
+    assert_eq!(p, 0.0);
+}
+
+/// `LegacySoundPlayer.cs:392-397`: beyond the attenuation radius the C#
+/// falls out of the `flag` block without touching the live loop — `None`,
+/// NOT volume 0 (the loop keeps its last volume).
+#[test]
+fn liquid_ambience_out_of_range_leaves_the_loop_untouched() {
+    assert_eq!(
+        liquid_ambience(50.0, 2500.0, 0.0, 0.2, (0.0, 0.0), 1.0, false, 0.0),
+        None
+    );
+    // Just inside stays audible.
+    assert!(liquid_ambience(50.0, 2499.0, 0.0, 0.2, (0.0, 0.0), 1.0, false, 0.0).is_some());
+}
+
+/// `LegacySoundPlayer.cs:419-422` + `:1256`: the ambient slider scales, the
+/// menu/quiet state zeroes, and `(1 - shimmerAlpha)` mutes the loops while
+/// the player is shimmering.
+#[test]
+fn liquid_ambience_scales_with_the_slider_menu_and_shimmer() {
+    let (v, _) = liquid_ambience(50.0, 0.0, 0.0, 0.2, (0.0, 0.0), 0.5, false, 0.0).unwrap();
+    assert!((v - 0.1).abs() < 1e-6);
+    let (v, _) = liquid_ambience(50.0, 0.0, 0.0, 0.2, (0.0, 0.0), 1.0, true, 0.0).unwrap();
+    assert_eq!(v, 0.0);
+    let (v, _) = liquid_ambience(50.0, 0.0, 0.0, 0.2, (0.0, 0.0), 1.0, false, 0.5).unwrap();
+    assert!((v - 0.1).abs() < 1e-6);
+    let (v, _) = liquid_ambience(50.0, 0.0, 0.0, 0.2, (0.0, 0.0), 1.0, false, 1.0).unwrap();
+    assert_eq!(v, 0.0);
+}
 }
 
 #[test]
