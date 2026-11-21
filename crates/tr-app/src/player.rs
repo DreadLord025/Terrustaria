@@ -7049,8 +7049,13 @@ impl Player {
         if self.pinned_rocket_boots > self.rocket_boots {
             self.rocket_boots = self.pinned_rocket_boots;
             // W4-c14 doc-sweep - the pin stands in for the equip row, which
-            // sets both tiers equal (`Player.cs:14420` etc.).
-            self.vanity_rocket_boots = self.pinned_rocket_boots;
+            // sets both tiers equal (`Player.cs:14420` etc.). This block runs
+            // AFTER `update_equips`, so a vanity producer that already set a
+            // tier this tick (the social-slot boot, the Red's Leggings 668
+            // tier 6) WINS - the pin only fills an unset vanity tier.
+            if self.vanity_rocket_boots == 0 {
+                self.vanity_rocket_boots = self.pinned_rocket_boots;
+            }
         }
         if self.pinned_dash != 0 {
             self.dash_type = self.pinned_dash;
