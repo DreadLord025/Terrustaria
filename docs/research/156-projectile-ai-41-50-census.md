@@ -1,5 +1,8 @@
-# 26d — Projectile aiStyles 41-50 dispatch census (W4-d5)
+# 156 — Projectile aiStyles 41-50 dispatch census (W4-d5)
 
+> (Number: was research/26d; renumbered 26d → **156** per the d54
+> research/150 collision registry §3 — d12's `26d-projectile-ai-111-120`
+> pushed first at 00:06:06, this doc 00:24:13 loses the key.)
 > Researched 2026-11-20/21 against `a725acb0` (wave-3 complete). C# cites are
 > `decompiled/Terraria/Projectile.cs` (stable); Rust cites are
 > `crates/tr-app/src/projectile.rs` / `projectile/data.rs` at this revision.
@@ -107,10 +110,15 @@ in `buff_effects_misc.rs`).
   the `Player.crystalLeafDamage/KB` statics (`Player.cs:57098-57099`).
   RNG-free by construction.
 - `projectile_ai_style43.rs` — CrystalLeafShot 227: the `atan2 + 3.14` spin,
-  the `soundDelay == 0` one-shot (sound 6 int overload + 8× dust 157, one
-  `NextFloat` each — kept), the `frameCounter++ >= 1` latch (the hue/particle
-  request is rand-free render state — skipped), the Kill hook
-  (`:74524-74533`: sound 6 + 15× dust 157 `NextFloat` — kept).
+  the `soundDelay == 0` one-shot (sound 6 int overload + 8× dust 157 —
+  the W4-e3 STAGED emitter `style43_crystal_leaf_burst_227` ACTIVATED on
+  this branch as `crystal_leaf_burst_227`: the 8 kept call-site
+  `NextFloat` census SUPERSEDED by the pool internals + the POST-spawn
+  blend, research/231 row 1's REPLACE contract), the
+  `frameCounter++ >= 1` latch (the hue/particle request is rand-free
+  render state — skipped), the Kill hook (`:74524-74533`: sound 6 cue
+  kept draw-free; the 15× dust-157 bodies + their `NextFloat` blends ride
+  the g65 death drain's 227 arm — the g65-Kill-309 compose).
 - `projectile_ai_style46.rs` — RainbowFront 250 / RainbowBack 251: the
   shimmer kill (no return — verbatim), the 250's fluff-2 out-of-world kill,
   the owner-gated `localAI[0] > 4 → 3` 251 spawn cadence + the 2400 life cap,
@@ -129,3 +137,11 @@ in `buff_effects_misc.rs`).
 Witnesses: per-module tests WRITTEN NOT RUN (no compiler/tests on this
 branch, the task contract); verified by re-reading the cited C# blocks and
 hand arithmetic.
+
+## The RETIRE round (2026-11-21, research/360)
+
+The band's landing census, the style-43 STAGED-emitter activation, the
+all-styles-armed/kinds-rowed sweep, the g65-Kill-309 compose and the FINAL
+band declaration live in `360-projectile-ai-41-50-final.md` (this doc's
+companion; number per registry-150 §8.7's new-doc rule, ≥360 after the
+360-ref check). This census doc's rows stay as the port-time record.

@@ -3,7 +3,7 @@
 //! ported 1:1 as a PURE machine (code-only mode: no compiler/tests were
 //! run on this branch; the witness tests below are written, not executed).
 //!
-//! ## Census (research/26d row 42)
+//! ## Census (research/156 row 42 — was 26d, registry §3)
 //!
 //! ONE vanilla member: CrystalLeaf 226 (`ProjectileID.cs:1006`,
 //! `SetDefaults` `Projectile.cs:3111-3123`: `netImportant`, 22×42,

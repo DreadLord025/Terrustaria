@@ -4,7 +4,7 @@
 //! (code-only mode: no compiler/tests were run on this branch; the witness
 //! tests below are written, not executed).
 //!
-//! ## Census (research/26d row 46)
+//! ## Census (research/156 row 46 — was 26d, registry §3)
 //!
 //! TWO vanilla members:
 //! * RainbowFront 250 (`ProjectileID.cs:1054`, `SetDefaults`

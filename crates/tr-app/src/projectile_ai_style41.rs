@@ -3,7 +3,7 @@
 //! ported 1:1 as a PURE machine (code-only mode: no compiler/tests were
 //! run on this branch; the witness tests below are written, not executed).
 //!
-//! ## Census (research/26d row 41)
+//! ## Census (research/156 row 41 — was 26d, registry §3)
 //!
 //! ONE vanilla member: FlowerPetal 221 (`ProjectileID.cs:996`,
 //! `SetDefaults` `Projectile.cs:3066-3078`: 20×20, friendly,
