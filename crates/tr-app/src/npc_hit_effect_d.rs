@@ -4240,8 +4240,9 @@ fn squid_snail_death(
 /// 167 Undead Viking → 213/214 + 43x2 at +20 Y + 212x2 at +34 Y
 /// (`:88543-88548`, sites 648-653), 197 Armored Viking → 257 + 43x2 +
 /// 212x2 (`:88553-88557`, sites 654-658), 481 Greek Skeleton →
-/// 695/696x2/697x2 (`:88562-88566`, sites 659-663); the
-/// 201/202/203/322-324 branches + the generic tail land in later
+/// 695/696x2/697x2 (`:88562-88566`, sites 659-663), 201/450 Headache
+/// Skeleton → 265/267 + 43x2 + 44x2 (`:88571-88576`, sites 664-669);
+/// the 202/203/322-324 branches + the generic tail land in later
 /// batches.
 fn skeleton_family_death(
     npc: &Npc,
@@ -4292,6 +4293,17 @@ fn skeleton_family_death(
         gore.new_gore(rng, world, p20, vel, 696, s); // :88564
         gore.new_gore(rng, world, p34, vel, 697, s); // :88565
         gore.new_gore(rng, world, p34, vel, 697, s); // :88566
+        return;
+    }
+    if npc_type == 201 || npc_type == 450 {
+        // `:88569-88578` — the Headache Skeleton six + return (the 450
+        // slimed variant shares the row, ported as written).
+        gore.new_gore(rng, world, pos, vel, 265, s); // :88571
+        gore.new_gore(rng, world, pos, vel, 267, s); // :88572
+        gore.new_gore(rng, world, p20, vel, 43, s); // :88573
+        gore.new_gore(rng, world, p20, vel, 43, s); // :88574
+        gore.new_gore(rng, world, p34, vel, 44, s); // :88575
+        gore.new_gore(rng, world, p34, vel, 44, s); // :88576
         return;
     }
 }
@@ -4809,7 +4821,7 @@ pub fn hit_effect_d(
     }
     // `:88527-88640` — the skeleton-family arm (21/31/294-296/32/44/45/
     // 77/110/167/197/201-203/287/291-293/322-324/481/449-452/693); the
-    // 167/197/481 branches are live (sites 648-663), the rest land
+    // 167/197/481/201 branches are live (sites 648-669), the rest land
     // later.
     else if matches!(npc_type, 21 | 31 | 294 | 295 | 296 | 32 | 44 | 45 | 77 | 110 | 167 | 197 | 201 | 202 | 203 | 287 | 291 | 292 | 293 | 322 | 323 | 324 | 481 | 449 | 450 | 451 | 452 | 693)
     {
@@ -8371,5 +8383,29 @@ mod tests {
             }
             assert_eq!(rng.peek(), twin.peek(), "skeleton {kind} mirrors the C# draws");
         }
+    }
+
+    /// `NPC.cs:88571-88576` — the Headache Skeleton six: 265/267 at
+    /// position + 43x2 at +20 Y + 44x2 at +34 Y.
+    #[test]
+    fn w4_f5d_the_headache_skeleton_six() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(659);
+        let _ = hit_effect_d(&n, 201, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![265, 267, 43, 43, 44, 44]);
+        assert!(!gore.slot(6).active, "exactly six gores");
+        let mut twin = UnifiedRandom::new(659);
+        for _ in 0..20 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..6 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the headache skeleton mirrors the C# draws");
     }
 }
