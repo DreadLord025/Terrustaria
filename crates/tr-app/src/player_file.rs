@@ -2667,7 +2667,24 @@ mod tests {
             w.bytes(r.take(5).unwrap());
             r.u8().unwrap();
         }
-        // The rest (inventory onward) is identical.
+        // The rest (inventory onward) is identical UP TO the loadouts: the
+        // three EquipmentLoadouts also carry a favourited byte per item at
+        // >= 322 (`EquipmentLoadout.Deserialize:51`/`:55`), so a genuine 321
+        // file has none of those 90 bytes either — strip them too.
+        // inventory 58 x 10 + misc 5 x 10 + banks 120 x 9 + bank4 40 x 10 +
+        // vault 1 + buffs 352 + spawn sentinel 4 + hbLocked 1 + hideInfo 13 +
+        // angler 4 + dpad 16 + builder 48 + bartender 4 + dead 1 + stamp 8 +
+        // golfer 4 + tracker flag 1 + tracker count 4 + temp bits 1 +
+        // powers 16 + supercart 1 + loadout idx 4 = 2593 bytes to the loadouts.
+        w.bytes(r.take(2593).unwrap());
+        for _ in 0..3 {
+            for _ in 0..30 {
+                w.bytes(r.take(9).unwrap()); // (type, stack, prefix), no fav
+                r.u8().unwrap(); // drop the loadout favourited byte
+            }
+            w.bytes(r.take(10).unwrap()); // Hide[10]
+        }
+        // voice + refunds + dialogues are identical.
         w.bytes(r.take(plain.len() - r.pos()).unwrap());
         let lo = w.into_inner();
         let file321 = match read_player_bytes(&lo) {
