@@ -1046,6 +1046,9 @@ pub const SPECTRE_WRATH: u16 = 356;
 /// `ProjectileID.SpiritHeal` (298, `ProjectileID.cs:1150`) — the Spectre
 /// set bonus's heal orb (aiStyle 52, W4-d6).
 pub const SPIRIT_HEAL: u16 = 298;
+/// `ProjectileID.VampireKnife` (304, `ProjectileID.cs:1162`) — the Vampire
+/// Knives' thrown knife (aiStyle 2, W4-d6 residual 5).
+pub const VAMPIRE_KNIFE: u16 = 304;
 /// `ProjectileID.VampireHeal` (305, `ProjectileID.cs:1164`) — the Vampire
 /// Knives' heal orb (aiStyle 52, W4-d6).
 pub const VAMPIRE_HEAL: u16 = 305;
@@ -1577,6 +1580,7 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         GOLEM_EYE_BEAM => 0.3,                 // `:3436`
         CHRISTMAS_HOOK => 0.5,                 // `:4256`
         FLAMING_SCYTHE => 0.25,                // `:4219` (W4-d6)
+        VAMPIRE_KNIFE => 0.2,                  // `:3961` (W4-d6 residual 5)
         MINI_RETINA_LASER => 0.75,             // `:4736`
         ANTI_GRAVITY_HOOK => 0.7,              // `:5186`
         ILLUMINANT_HOOK => 0.3,                // `:5631`
@@ -2836,6 +2840,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `friendly` stays the reset false (`:788` — the heal orb hits
             // nothing); the stock penetrate 1 / timeLeft 3600 stand.
             SPIRIT_HEAL => (6.0, 6.0, 52, 1, TIME_LEFT_DEFAULT, 3, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d6 residual 5 — `:3952-3964` VampireKnife (304): 30x30,
+            // aiStyle 2, friendly, melee, `penetrate = 1`, alpha 255,
+            // light 0.2 (`set_defaults_light` below), `ignoreWater` (the
+            // overlay below), `extraUpdates = 0`. The stock tileCollide
+            // true / timeLeft 3600 stand. The aiStyle-2 arm's spawn latch
+            // (`:23240-23244`) + 30-tick decay (`:23632-23649`) were already
+            // ported kind-gated; this row arms them.
+            VAMPIRE_KNIFE => (30.0, 30.0, 2, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
             // W4-d6 — `:3965-3973` VampireHeal (305): 6x6, aiStyle 52,
             // alpha 255, `tileCollide = false`, `extraUpdates = 10`. NO
             // magic flag (the C# arm sets none — the heal is classless).
@@ -4268,6 +4280,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == GOLF_CLUB_HELPER
             // W4-d6 — `Projectile.cs:4147`: the FlamingJack (321) ignores water.
             || kind == FLAMING_JACK
+            // W4-d6 residual 5 — `Projectile.cs:3962`: the VampireKnife.
+            || kind == VAMPIRE_KNIFE
             // W4-d6 — `Projectile.cs:4495`/`:4876`/`:9856`: the three gun
             // streams ignore water.
             || matches!(kind, WATER_GUN | SLIME_GUN | SHIMMER_GUN_STREAM),
@@ -4307,6 +4321,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
                     // W4-d6 — the FlamingJack's `melee = true` (`:4145`).
                     | FLAMING_JACK
+                    // W4-d6 residual 5 — the VampireKnife's `melee = true`
+                    // (`Projectile.cs:3960`).
+                    | VAMPIRE_KNIFE
             ),
         ranged: matches!(
             kind,

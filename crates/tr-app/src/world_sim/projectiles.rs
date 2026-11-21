@@ -634,6 +634,49 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             ai1,
         );
     }
+    // W4-d6 residual 5 — the Spectre-Mask damage-share spawns
+    // (`Projectile.ghostHurt`, `Projectile.cs:12060`): the damage walk
+    // queued `(owner, x, y, vx, vy, damage, ai0 target)` per qualifying hit
+    // (the direction rolls ran at the hit); the pass spawns each 356
+    // CENTRED on the victim point (the `NewProjectile` half-extent
+    // subtract), zero knockback, ai0 = the RAW npc index the style-59
+    // machine reads. Draw-free spawn (no 356 case in the switch).
+    for (owner, x, y, vx, vy, damage, ai0) in app.projectiles.drain_wraths() {
+        let d = crate::projectile::proj_data(crate::projectile::SPECTRE_WRATH);
+        let (hw, hh) = d.map_or((0.0, 0.0), |d| (d.w * 0.5, d.h * 0.5));
+        app.projectiles.spawn_with_data_ai_owned(
+            crate::projectile::SPECTRE_WRATH,
+            owner,
+            x - hw,
+            y - hh,
+            vx,
+            vy,
+            damage,
+            0.0,
+            ai0,
+            0.0,
+        );
+    }
+    // W4-d6 residual 5 — the Vampire Knives' heal-orb spawns
+    // (`Projectile.vampireHeal`, `Projectile.cs:12104`): `(owner, x, y,
+    // ai0 owner, ai1 float share)` per qualifying 304 hit; the pass spawns
+    // each 305 centred on the victim, zero velocity, damage 0. Draw-free.
+    for (owner, x, y, ai0, ai1) in app.projectiles.drain_vampire_orbs() {
+        let d = crate::projectile::proj_data(crate::projectile::VAMPIRE_HEAL);
+        let (hw, hh) = d.map_or((0.0, 0.0), |d| (d.w * 0.5, d.h * 0.5));
+        app.projectiles.spawn_with_data_ai_owned(
+            crate::projectile::VAMPIRE_HEAL,
+            owner,
+            x - hw,
+            y - hh,
+            0.0,
+            0.0,
+            0,
+            0.0,
+            ai0,
+            ai1,
+        );
+    }
     // S1-P-i55 — the golf arms' queued effects, drained at the pass tail
     // (the `drain_mark_spawns` shape — the pool cannot borrow the App).
     // The C# plays the sounds / trips the wiring mid-walk; the port's

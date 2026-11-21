@@ -10251,10 +10251,18 @@ impl Projectile {
             self.pos += self.vel;
             return;
         }
-        let nx = self.pos.x + self.vel.x;
-        let ny = self.pos.y + self.vel.y;
-        let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
-        let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+        // `GetCollisionParams` (`Projectile.cs:19867-20022`): the probe box
+        // is the slot box except the listed kinds — W4-d6 residual 5 ports
+        // the 304's 4×4 arm (`:20007-20011`); the box anchors at
+        // `Center − (colW, colH) * 0.5` (`:17589`, resizeAnchor (0.5, 0.5)).
+        // Every other kind keeps the full box (the anchor collapses to pos).
+        let (cw, ch) = if self.kind == VAMPIRE_KNIFE { (4.0, 4.0) } else { (self.w, self.h) };
+        let px = self.pos.x + self.w * 0.5 - cw * 0.5;
+        let py = self.pos.y + self.h * 0.5 - ch * 0.5;
+        let nx = px + self.vel.x;
+        let ny = py + self.vel.y;
+        let hit_x = crate::player::collides_rect(world, nx, py, cw, ch);
+        let hit_y = crate::player::collides_rect(world, px, ny, cw, ch);
         self.pos += self.vel;
         if hit_x || hit_y {
             self.kill_time_left = self.time_left;
@@ -14730,6 +14738,17 @@ pub struct ProjectilePool {
     /// itself mid-walk — the `drain_light_drops` intent pattern). The C#
     /// spawn is draw-free (`NewProjectile`'s 298 path rolls nothing).
     pending_heal_orbs: Vec<(u8, f32, f32, f32, f32)>,
+    /// W4-d6 residual 5 — `Projectile.ghostHurt`'s SpectreWrath spawn
+    /// requests (`Projectile.cs:12060`): `(owner, x, y, vx, vy, damage,
+    /// ai0 target)` per qualifying hit, drained by the world-sim pass into
+    /// `spawn_with_data_ai_owned(SPECTRE_WRATH, ...)`. The direction rolls
+    /// ran at the hit (the pool's stream); the spawn itself is draw-free.
+    pending_wraths: Vec<(u8, f32, f32, f32, f32, i32, f32)>,
+    /// W4-d6 residual 5 — `Projectile.vampireHeal`'s VampireHeal spawn
+    /// requests (`Projectile.cs:12104`): `(owner, x, y, ai0 owner, ai1
+    /// heal)` per qualifying 304 hit, drained into
+    /// `spawn_with_data_ai_owned(VAMPIRE_HEAL, ...)`. Draw-free.
+    pending_vampire_orbs: Vec<(u8, f32, f32, f32, f32)>,
     /// S1-P-i55 — the golf family's per-tick context
     /// (`Main.LocalGolfState` + `Main.MouseWorld` + the mouse-right pair +
     /// the player snapshot the aiStyle-150 arm reads). The world-sim pass
@@ -15131,6 +15150,8 @@ impl ProjectilePool {
             pending_catches: Vec::new(),
             pending_light_drops: Vec::new(),
             pending_heal_orbs: Vec::new(),
+            pending_wraths: Vec::new(),
+            pending_vampire_orbs: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
         }
@@ -15241,6 +15262,21 @@ impl ProjectilePool {
     /// subtract rides the spawn seam — the orb's 6×6 half-box).
     pub fn drain_heal_orbs(&mut self) -> Vec<(u8, f32, f32, f32, f32)> {
         std::mem::take(&mut self.pending_heal_orbs)
+    }
+
+    /// W4-d6 residual 5 — the `ghostHurt` SpectreWrath spawn drain
+    /// (`Projectile.cs:12060`): `(owner, x, y, vx, vy, damage, ai0)` per
+    /// qualifying hit; the world sim spawns each as a 356 centred on the
+    /// victim point (the `NewProjectile` half-extent subtract).
+    pub fn drain_wraths(&mut self) -> Vec<(u8, f32, f32, f32, f32, i32, f32)> {
+        std::mem::take(&mut self.pending_wraths)
+    }
+
+    /// W4-d6 residual 5 — the `vampireHeal` VampireHeal spawn drain
+    /// (`Projectile.cs:12104`): `(owner, x, y, ai0, ai1)` per qualifying
+    /// 304 hit; the world sim spawns each as a 305 centred on the victim.
+    pub fn drain_vampire_orbs(&mut self) -> Vec<(u8, f32, f32, f32, f32)> {
+        std::mem::take(&mut self.pending_vampire_orbs)
     }
 
     /// S1-P-i35 — `Player.RemoveAllFishingBobbers` (`Player.cs:33576-33585`):
@@ -16736,6 +16772,130 @@ impl ProjectilePool {
         let target = if !pl.dead && pl.max_hp - pl.hp > 0 { 0 } else { p.owner };
         // `:12095` — the spawn request (draw-free).
         self.pending_heal_orbs.push((p.owner, victim.x, victim.y, target as f32, amount));
+    }
+
+    /// `Projectile.ghostHurt` (`Projectile.cs:12012-12062`, W4-d6 residual 5)
+    /// — the Spectre Mask set's damage-share spawn: only magic shots with
+    /// positive stored damage and a dealt hit above 1 qualify (`:12014-12022`
+    /// — `dmg` is the strike's dealt damage, `this.damage` the shot's stored
+    /// value the 356 inherits). The LOCAL player's `ghostDmg` budget refuses
+    /// above 1500 (`:12024`, `Main.myPlayer` — not the owner) and grows by
+    /// the stored damage BEFORE the target scan (`:12028` — a fruitless scan
+    /// still spends it). The 200-slot scan (`:12033-12053`) keeps chaseable
+    /// NPCs inside the Manhattan 800 box: a `CanHit` LOS pair beyond 50
+    /// enters the PREFERRED list; otherwise the NPC enters the FALLBACK list
+    /// only while the preferred one is still empty (the `num4 == 0` arm —
+    /// early near/blocked NPCs survive as fallbacks until the first
+    /// preferred pick seals the list). The pick is uniform over the
+    /// preferred list when non-empty, else the fallback (`:12056`); the
+    /// velocity is a uniform random direction at speed 4 through the
+    /// `Next(-100,101)` pair + `4/sqrt` normalise (`:12057-12059`). The 356
+    /// spawns at the victim centre with the stored damage, zero knockback,
+    /// ai0 = the RAW npc index (`:12060`).
+    ///
+    /// Deliberate folds (ANALYSIS): the C#'s Manhattan expression at
+    /// `:12039` mis-parenthesises the projectile half (`- base.position.X +
+    /// width/2` instead of `- (base.position.X + width/2)`) — the port keeps
+    /// the verbatim expression (`self.w` rides ADDITIVE) so the box matches
+    /// the shipped game, quirk included. The `(0,0)` direction draw pair
+    /// divides by zero in the C# (NaN velocity) — the port propagates the
+    /// same NaN. `GetProjectileSource_OnHit` bookkeeping has no port seam.
+    fn ghost_hurt_on_hit(
+        &mut self,
+        world: &World,
+        slot: usize,
+        dmg: i32,
+        victim: Vec2,
+        npcs: &[Npc],
+        player: Option<&mut crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        let p = &self.slots[slot];
+        // `:12014-12022` — the magic/damage gates.
+        if !p.magic || p.damage <= 0 {
+            return;
+        }
+        let stored = p.damage;
+        if dmg <= 1 {
+            return;
+        }
+        let Some(pl) = player else { return };
+        // `:12024-12028` — the budget gate, then the spend (before the scan).
+        if pl.ghost_dmg > 1500.0 {
+            return;
+        }
+        pl.ghost_dmg += stored as f32;
+        // `:12029-12053` — the two-list scan. `num3` counts fallbacks,
+        // `num4` preferred picks; both lists share one array in the C#, but
+        // the fallback entries only ever fill while `num4 == 0`, so the two
+        // vectors reproduce the pick ranges exactly.
+        let mut fallback: Vec<usize> = Vec::new();
+        let mut preferred: Vec<usize> = Vec::new();
+        for (i, n) in npcs.iter().enumerate() {
+            if !chaseable(n) {
+                continue;
+            }
+            let (nw, nh) = n.size();
+            // `:12039` — the VERBATIM (mis-parenthesised) Manhattan: the
+            // projectile's half-width/height ride ADDITIVE.
+            let manhattan = (n.x + (nw as i32 / 2) as f32 - p.pos.x + p.w * 0.5).abs()
+                + (n.y + (nh as i32 / 2) as f32 - p.pos.y + p.h * 0.5).abs();
+            if manhattan < 800.0 {
+                if can_hit(world, p.pos.x, p.pos.y, 1.0, 1.0, n.x, n.y, nw, nh)
+                    && manhattan > 50.0
+                {
+                    preferred.push(i);
+                } else if preferred.is_empty() {
+                    fallback.push(i);
+                }
+            }
+        }
+        // `:12054-12060` — the pick + the speed-4 direction + the spawn.
+        let list = if preferred.is_empty() { &fallback } else { &preferred };
+        if list.is_empty() {
+            return;
+        }
+        let target = list[rng.next_range(0, list.len() as i32) as usize];
+        let dx = rng.next_range(-100, 101) as f32;
+        let dy = rng.next_range(-100, 101) as f32;
+        let norm = 4.0 / (dx * dx + dy * dy).sqrt();
+        self.pending_wraths.push((
+            p.owner,
+            victim.x,
+            victim.y,
+            dx * norm,
+            dy * norm,
+            stored,
+            target as f32,
+        ));
+    }
+
+    /// `Projectile.vampireHeal` (`Projectile.cs:12098-12106`, W4-d6
+    /// residual 5) — the Vampire Knives' 7.5% heal share: the truncated
+    /// share must be non-zero AND the LOCAL player's `lifeSteal` budget
+    /// above 0 (`:12101`); the budget drains by the FLOAT share (`:12103`)
+    /// and the 305 spawns at the victim centre, zero velocity, damage 0,
+    /// ai0 = the OWNER index, ai1 = the float share (`:12104` — the orb's
+    /// contact heal truncates it, `:28517`). No magic gate (the knives are
+    /// melee); no target scan (the owner keeps the orb). Draw-free spawn.
+    fn vampire_heal_on_hit(
+        &mut self,
+        slot: usize,
+        dmg: i32,
+        victim: Vec2,
+        player: Option<&mut crate::player::Player>,
+    ) {
+        let amount = dmg as f32 * 0.075;
+        let Some(pl) = player else { return };
+        // `:12101` — the truncation + budget gates.
+        if amount as i32 == 0 || pl.life_steal <= 0.0 {
+            return;
+        }
+        // `:12103` — the budget drains by the float share.
+        pl.life_steal -= amount;
+        // `:12104` — the spawn request (draw-free).
+        let owner = self.slots[slot].owner;
+        self.pending_vampire_orbs.push((owner, victim.x, victim.y, owner as f32, amount));
     }
 
     /// The aiStyle-165 on-hit arms inside `Damage_PVE_Inner`
@@ -23560,27 +23720,55 @@ impl ProjectilePool {
                 // arms: the Cascade's 1125, the Kraken's 3× 1135, the Chik's
                 // 5× 1134 and the Eye-of-Cthulhu's homing 1130.
                 self.yoyo_on_hit(slot, idx as u16, hit, player.as_deref_mut(), rng);
-                // W4-d6 residual — `Damage_PVE_Inner`'s Spectre-heal arm
-                // (`Projectile.cs:13816-13821`, inside `if (flag10)`
-                // `:13810`): `targetNPC.canGhostHeal | flag9` (flag9 is the
-                // debug target-dummy option, folds false) then the owner's
-                // `ghostHeal && !moonLeech` gate. flag10's terms
-                // (`:13659`): num24 > 0, lifeMax > 5, friendly, !hostile,
-                // aiStyle != 59 — the pass simulates friendly non-hostile
-                // shots, so only the damage/lifeMax/style terms stay live
-                // (the Wrath 356 turns friendly at 60 ticks and MUST be
-                // excluded). The victim centre is the POST-strike position
-                // (the knockback moved it — the C# reads it live at
-                // `:13820`).
-                let heal_gate = strike_dmg > 0
+                // W4-d6 residual — `Damage_PVE_Inner`'s Spectre/vampire arms
+                // (`Projectile.cs:13810-13825`, inside `if (flag10)`):
+                // flag10's terms (`:13659`): num24 > 0, lifeMax > 5,
+                // friendly, !hostile, aiStyle != 59 — the pass simulates
+                // friendly non-hostile shots, so only the damage/lifeMax/
+                // style terms stay live (the Wrath 356 turns friendly at 60
+                // ticks and MUST be excluded). The victim centre is the
+                // POST-strike position (the knockback moved it — the C#
+                // reads it live at `:13814`/`:13820`/`:13824`).
+                let flag10 = strike_dmg > 0
                     && npc_life_max_gt5
                     && self.slots[slot].friendly
-                    && npcs[idx].can_ghost_heal
                     && proj_data(self.slots[slot].kind).map_or(0, |d| d.ai_style) != 59;
-                if heal_gate {
+                if flag10 {
                     let (nw, nh) = npcs[idx].size();
                     let victim = Vec2::new(npcs[idx].x + nw * 0.5, npcs[idx].y + nh * 0.5);
-                    self.ghost_heal_on_hit(slot, strike_dmg, victim, player.as_deref_mut());
+                    // `:13812-13815` — the Vampire Knives' 304 arm, OUTSIDE
+                    // the canGhostHeal gate; the owner's MoonLeech (buff
+                    // 145) refuses (the owner folds to the local player).
+                    if self.slots[slot].kind == VAMPIRE_KNIFE
+                        && self.slots[slot].owner == 0
+                        && player
+                            .as_ref()
+                            .is_some_and(|pl| pl.buffs.find_buff_index(145).is_none())
+                    {
+                        self.vampire_heal_on_hit(slot, strike_dmg, victim, player.as_deref_mut());
+                    }
+                    // `:13816` — `targetNPC.canGhostHeal | flag9` (flag9 is
+                    // the debug target-dummy option, folds false).
+                    if npcs[idx].can_ghost_heal {
+                        // `:13818-13821` — the hood's heal-orb arm.
+                        self.ghost_heal_on_hit(slot, strike_dmg, victim, player.as_deref_mut());
+                        // `:13822-13825` — the mask's damage-share arm (NO
+                        // MoonLeech gate on this one — the C# checks only
+                        // `ghostHurt`).
+                        if self.slots[slot].owner == 0
+                            && player.as_ref().is_some_and(|pl| pl.ghost_hurt)
+                        {
+                            self.ghost_hurt_on_hit(
+                                world,
+                                slot,
+                                strike_dmg,
+                                victim,
+                                npcs,
+                                player.as_deref_mut(),
+                                rng,
+                            );
+                        }
+                    }
                 }
             }
             if landed {
@@ -24649,6 +24837,189 @@ mod tests {
         );
         assert!(bubble.hp < 10_000, "the hit lands");
         assert!(pool.drain_heal_orbs().is_empty(), "canGhostHeal=false refuses (:13816)");
+    }
+
+    /// W4-d6 residual 5 — the 304 SetDefaults row (`Projectile.cs:3952-3964`)
+    /// + the aiStyle-2 knife machine's spawn latch/decay (`:23240-23244` /
+    /// `:23632-23649`, already ported kind-gated — the row arms them) + the
+    /// 4×4 `GetCollisionParams` probe (`:20007-20011`). WRITTEN NOT RUN
+    /// (code-only).
+    #[test]
+    fn w4_d6_the_vampire_knife_row_is_verbatim_and_the_ai_runs() {
+        let d = proj_data(VAMPIRE_KNIFE).expect("the row");
+        assert_eq!((d.w, d.h), (30.0, 30.0), "`:3955-3956`");
+        assert_eq!(d.ai_style, 2, "`:3957`");
+        assert_eq!(d.penetrate, 1, "`:3959`");
+        assert_eq!(d.alpha, 255, "`:3954`");
+        assert_eq!(d.light, 0.2, "`:3961`");
+        assert_eq!(d.extra_updates, 0, "`:3963`");
+        assert!(d.ignore_water, "`:3962`");
+        assert!(d.melee, "`:3960`");
+        assert!(d.tile_collide, "the stock `:775` stands");
+        assert!(!d.magic && !d.ranged, "the row sets melee only");
+        // The knife fires from the item (the use arm lands in editing.rs).
+        assert_eq!(crate::registry::projectile(1569), Some(VAMPIRE_KNIFE));
+        // The AI: the spawn latch drops alpha to 0 on the first tick, the
+        // 30-tick decay then ramps +10/tick with the ×0.9 damage decay.
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(VAMPIRE_KNIFE, 320.0, 384.0, 3.0, -4.0, 100, 2.75, 0.0, 0.0)
+            .unwrap();
+        step_player(&mut pool, &mut w, &mut crate::player::Player::spawn(&w));
+        let p = &pool.slots()[slot];
+        assert_eq!(p.alpha, 0, "the :23243 invisible start");
+        assert_eq!(p.local_ai[0], 1.0, "the :23242 latch");
+        let expect_rot = (-4.0f32).atan2(3.0) + 1.57;
+        assert!(
+            (p.rot - expect_rot).abs() < 1e-5,
+            "the :23647 aim OVERWRITES the :23255 spin while rising"
+        );
+        assert_eq!(p.damage, 100, "no decay before tick 30");
+    }
+
+    /// W4-d6 residual 5 — `Projectile.ghostHurt`
+    /// (`Projectile.cs:12012-12062`): the magic + stored-damage + dealt>1
+    /// gates, the 1500 budget refusal, the spend-before-scan, the
+    /// preferred/fallback two-list pick and the speed-4 direction. WRITTEN
+    /// NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_ghost_hurt_spends_the_budget_and_spawns_the_wrath() {
+        let w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        player.ghost_hurt = true;
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        npc.defense_override = Some(0);
+        let slot = pool
+            .spawn_with_data_ai(LOST_SOUL, npc.x - 100.0, npc.y, 0.0, 0.0, 100, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let at = Vec2::new(npc.x + 10.0, npc.y + 10.0);
+        // The gates: a dealt hit of 1 refuses (dmg <= 1, `:12019`).
+        pool.ghost_hurt_on_hit(&w, slot, 1, at, std::slice::from_ref(&npc), Some(&mut player), &mut rng);
+        assert!(pool.drain_wraths().is_empty());
+        assert_eq!(player.ghost_dmg, 0.0, "no spend on the refused hit");
+        // The non-magic shot refuses (`:12014`).
+        let knife = pool
+            .spawn_with_data_ai(SHURIKEN, npc.x - 100.0, npc.y, 0.0, 0.0, 100, 0.0, 0.0, 0.0)
+            .unwrap();
+        pool.ghost_hurt_on_hit(&w, knife, 50, at, std::slice::from_ref(&npc), Some(&mut player), &mut rng);
+        assert!(pool.drain_wraths().is_empty());
+        // A qualifying hit: the budget grows by the STORED damage
+        // (`:12028`), the wrath carries it and a speed-4 velocity.
+        pool.ghost_hurt_on_hit(&w, slot, 50, at, std::slice::from_ref(&npc), Some(&mut player), &mut rng);
+        assert_eq!(player.ghost_dmg, 100.0, "the stored damage, not the dealt 50");
+        let wraths = pool.drain_wraths();
+        assert_eq!(wraths.len(), 1, "the 356 spawn (:12060)");
+        let (owner, x, y, vx, vy, dmg, ai0) = wraths[0];
+        assert_eq!((owner, dmg), (0, 100));
+        assert_eq!((x, y), (at.x, at.y), "the victim centre");
+        assert_eq!(ai0, 0.0, "the RAW npc index");
+        assert!(
+            ((vx * vx + vy * vy).sqrt() - 4.0).abs() < 1e-3,
+            "the speed-4 normalise (:12059)"
+        );
+        // The 1500 gate: at 1500 the spawn still fires (strict >), past it
+        // refuses WITHOUT spending.
+        player.ghost_dmg = 1500.0;
+        pool.ghost_hurt_on_hit(&w, slot, 50, at, std::slice::from_ref(&npc), Some(&mut player), &mut rng);
+        assert_eq!(pool.drain_wraths().len(), 1, "1500 is not > 1500");
+        assert_eq!(player.ghost_dmg, 1600.0);
+        pool.ghost_hurt_on_hit(&w, slot, 50, at, std::slice::from_ref(&npc), Some(&mut player), &mut rng);
+        assert!(pool.drain_wraths().is_empty(), "the :12024 refusal");
+        assert_eq!(player.ghost_dmg, 1600.0, "no spend past the cap");
+        // An empty scan still spends (`:12028` precedes the scan) but
+        // spawns nothing (`:12054`).
+        player.ghost_dmg = 0.0;
+        pool.ghost_hurt_on_hit(&w, slot, 50, at, &[], Some(&mut player), &mut rng);
+        assert!(pool.drain_wraths().is_empty());
+        assert_eq!(player.ghost_dmg, 100.0, "the fruitless scan still spends");
+    }
+
+    /// W4-d6 residual 5 — the PVE walk's `:13812-13825` nesting: the 304's
+    /// vampireHeal fires OUTSIDE the canGhostHeal gate (a ForceBubble
+    /// victim still heals), the MoonLeech buff refuses it, and the
+    /// ghostHurt arm sits INSIDE the gate (the bubble refuses the wrath
+    /// even with the flag). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_pve_walk_routes_the_knife_heal_outside_the_ghost_gate() {
+        let w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        player.ghost_hurt = true;
+        player.life_steal = 80.0;
+        let mut pool = ProjectilePool::new();
+        let mut bubble = Npc::new(crate::npc::NpcKind::ForceBubble, 20.0 * TILE_PX, 24.0 * TILE_PX, 1, 0.0);
+        bubble.hp = 10_000;
+        bubble.max_hp = 10_000;
+        bubble.defense_override = Some(0);
+        assert!(!bubble.can_ghost_heal);
+        let slot = pool
+            .spawn_with_data_ai(VAMPIRE_KNIFE, bubble.x, bubble.y, 0.0, 0.0, 100, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(
+            &w, slot, std::slice::from_mut(&mut bubble), None, None,
+            Some(&mut player), &mut rng,
+        );
+        assert!(bubble.hp < 10_000, "the hit lands");
+        let orbs = pool.drain_vampire_orbs();
+        assert_eq!(orbs.len(), 1, "the :13812 arm is OUTSIDE canGhostHeal");
+        // The strike's dealt damage: DamageVar(seed 7) on 100, then
+        // calculate_damage_npcs_take vs the bubble's 20 def — derive the
+        // dealt amount from the hp delta (the takenDamageMultiplier is 1).
+        let strike = 10_000 - bubble.hp;
+        assert!(strike > 1, "the dealt>1 gate passes");
+        assert!((orbs[0].4 - strike as f32 * 0.075).abs() < 1e-3, "the 7.5% share");
+        assert_eq!(orbs[0].3, 0.0, "ai0 = the owner (:12104)");
+        assert!((player.life_steal - (80.0 - orbs[0].4)).abs() < 1e-3, "the :12103 drain");
+        assert!(pool.drain_wraths().is_empty(), "the :13816 gate refuses the wrath");
+        // MoonLeech refuses the knife heal (`:13812`).
+        player.buffs.add_buff(145, 840);
+        pool.slots_mut()[slot].penetrate = 1;
+        let mut bubble2 = Npc::new(crate::npc::NpcKind::ForceBubble, 22.0 * TILE_PX, 24.0 * TILE_PX, 1, 0.0);
+        bubble2.hp = 10_000;
+        bubble2.max_hp = 10_000;
+        bubble2.defense_override = Some(0);
+        pool.damage_pve(
+            &w, slot, std::slice::from_mut(&mut bubble2), None, None,
+            Some(&mut player), &mut rng,
+        );
+        assert!(pool.drain_vampire_orbs().is_empty(), "the moonLeech gate");
+    }
+
+    /// W4-d6 residual 5 — `Projectile.vampireHeal`
+    /// (`Projectile.cs:12098-12106`): the truncated-zero refusal (13 ×
+    /// 0.075 = 0.975 → 0), the budget gate, the float drain; NO magic gate
+    /// (the melee knife spawns). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_vampire_heal_share_truncates_and_drains_the_float() {
+        let w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        player.life_steal = 80.0;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(VAMPIRE_KNIFE, 320.0, 384.0, 0.0, 0.0, 100, 0.0, 0.0, 0.0)
+            .unwrap();
+        let at = Vec2::new(330.0, 390.0);
+        // 13 damage truncates to 0 — refuses, no drain (`:12101`).
+        pool.vampire_heal_on_hit(slot, 13, at, Some(&mut player));
+        assert!(pool.drain_vampire_orbs().is_empty());
+        assert_eq!(player.life_steal, 80.0);
+        // 14 damage → 1.05: spawns, drains the FLOAT 1.05.
+        pool.vampire_heal_on_hit(slot, 14, at, Some(&mut player));
+        let orbs = pool.drain_vampire_orbs();
+        assert_eq!(orbs.len(), 1, "the melee knife spawns (no magic gate)");
+        assert!((orbs[0].4 - 1.05).abs() < 1e-4, "14 × 0.075");
+        assert!((player.life_steal - 78.95).abs() < 1e-4, "the float drain");
+        // A zero budget refuses.
+        player.life_steal = 0.0;
+        pool.vampire_heal_on_hit(slot, 100, at, Some(&mut player));
+        assert!(pool.drain_vampire_orbs().is_empty());
     }
 
     #[test]

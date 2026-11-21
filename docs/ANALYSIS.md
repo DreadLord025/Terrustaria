@@ -39440,3 +39440,81 @@ a duplicate). Dedupe ALL FIVE shared sites at merge (const, light row,
 proj_data row, the arm, the dispatch arm) — not just the arm. The d6
 anchors row (`fn ai_flaming_scythe`) survives either shape; c6 added no
 arm anchor. No behaviour change lands with this note.
+
+## W4-d6 residual 5 — the Mask-side ghostHurt + the 304 knives (ported)
+
+**The ghostHurt spawn mechanics** (`Projectile.cs:12012-12062`, the PVE
+walk's `:13822-13825` arm — INSIDE `flag10` AND `canGhostHeal`, but with NO
+MoonLeech gate, unlike the hood's heal arm): the magic + stored-damage +
+dealt>1 gates (`:12014-12022` — `dmg` is the strike's dealt damage,
+`this.damage` the stored value the 356 inherits), the LOCAL player's
+`ghostDmg` budget refusing above 1500 (`:12024`, strict `>`) and growing
+by the stored damage BEFORE the target scan (`:12028` — a fruitless scan
+still spends). The 200-slot scan keeps chaseable NPCs inside the
+Manhattan-800 box: a `CanHit(pos, 1, 1, npc)` LOS pair beyond 50 enters
+the PREFERRED list, else the FALLBACK list only while the preferred one
+is empty (`:12042-12051` — the `num4 == 0` arm; early near/blocked NPCs
+survive as fallbacks until the first preferred pick seals the list). The
+pick is uniform over preferred-when-non-empty else fallback (`:12056`),
+the velocity a `Next(-100,101)` pair normalised to speed 4 (`:12057-12059`),
+the 356 at the victim centre with the stored damage, kb 0, ai0 = the RAW
+npc index (`:12060`). The spawn rides `pending_wraths` out to the pass
+tail (the `drain_heal_orbs` intent pattern); the direction rolls run at
+the hit on the pass's stream, the spawn itself is draw-free (no 356 case
+in `NewProjectile`'s switch).
+
+**The `:12039` quirk kept verbatim.** The C#'s Manhattan expression
+mis-parenthesises the projectile half: `npc.X + npc.width/2 −
+base.position.X + base.width/2` — the projectile's half-extent rides
+ADDITIVE instead of subtracting from a parenthesised centre. The port
+reproduces the shipped expression (`- p.pos.x + p.w * 0.5`), so the scan
+box matches the game, quirk included. The `(0,0)` direction pair divides
+by zero in the C# (NaN velocity) — the port propagates the same NaN (the
+out-of-world guard's `is_nan` arm then deactivates it, `:16694`).
+
+**The ghostDmg budget** (`Player.cs:1008`, stock 0): `Player.Update`
+decays −6.6666665/tick while positive, then the independent < 0 floor
+(`:24460-24467`, directly above the lifeSteal regen the residual-3 slice
+landed). NOT a ResetEffects flag.
+
+**The vampireHeal 305 source, now ported** (`Projectile.cs:12098-12106`,
+the walk's `:13812-13815` arm — OUTSIDE the `canGhostHeal` gate, owner
+`!moonLeech` gated): the 7.5% share, the truncated-non-zero + budget
+gates, the FLOAT drain, the draw-free 305 at the victim centre with
+ai0 = the OWNER (no target scan — the owner keeps the orb). The 305 row
++ the style-52 machine already landed (W4-d6 main); this slice adds the
+spawn source the residual-3 census deferred.
+
+**The 304 knife row** (`Projectile.cs:3952-3964`): 30×30, aiStyle 2,
+friendly, melee, penetrate 1, alpha 255, light 0.2, ignoreWater,
+extraUpdates 0. The aiStyle-2 arm's spawn latch (`:23240-23244`) and
+30-tick decay (`:23632-23649`) were ALREADY ported kind-gated (the
+s1_d_4b_8 witness drives them through a hand-built slot) — the row arms
+them for real spawns. `GetCollisionParams`' 4×4 probe (`:20007-20011`)
+lands in `kill_step` (the box anchors at `Center − (colW,colH)·0.5`,
+`:17589`; every other kind's full-box anchor collapses to pos, so the
+generalisation is behaviour-neutral for them).
+
+**The knives' use arm** (`Player.cs:48157-48188`, item 1569): 4 base
+knives + one per taken `Next(2)/Next(4)/Next(8)/Next(16)` gate (the four
+count rolls FIRST), then per knife two `Next(-35,36)` spread draws
+scaled `0.05·index` per axis, renormalised to speed — index 0 draws both
+but spreads nothing. The C# `return`s before the generic tail.
+
+Deliberate folds: the PVP call sites (`:14673-14680`, no PvP),
+`GetProjectileSource_OnHit` bookkeeping (no port seam), the 255-slot
+player terms (single local player). The knife's Kill-dust arm
+(`:74404-74413`, 3× dust 182) is CLAIMED by the g65 death-dust lane
+(batch 7) — not ported here. The `AI_002` display-doll pose (`:22677`)
+and the `:79501`/`:16264` liquid-velocity arms are draw/liquid-lane
+territory (the wet machine is d53's).
+
+Witnesses (WRITTEN NOT RUN, code-only): the 304 row + AI latch
+(`w4_d6_the_vampire_knife_row_is_verbatim_and_the_ai_runs`), the ghostHurt
+gates/budget/pick (`w4_d6_the_ghost_hurt_spends_the_budget_and_spawns_the_
+wrath`), the walk's gate nesting (`w4_d6_the_pve_walk_routes_the_knife_
+heal_outside_the_ghost_gate`), the vampireHeal truncation/drain
+(`w4_d6_the_vampire_heal_share_truncates_and_drains_the_float`), the
+ghostDmg decay (`w4_d6_the_ghost_dmg_budget_decays_and_floors`), the
+knives volley's draw order (`w4_d6_the_vampire_knives_volley_rolls_the_
+count_then_the_spreads`).

@@ -3955,6 +3955,44 @@ fn fire_non_ammo_shot(
                 app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
             }
         }
+    } else if held.kind == 1569 {
+        // W4-d6 residual 5 — `Player.cs:48157-48188`: the Vampire Knives'
+        // volley. The count: 4 base, +1 on `Next(2) == 0`, +1 on
+        // `Next(4) == 0`, +1 on `Next(8) == 0`, +1 on `Next(16) == 0` —
+        // the four count rolls run FIRST, in that order. Each knife: the
+        // aim velocity spread by `Next(-35, 36) * 0.05 * index` per axis
+        // (index 0 spreads nothing but still draws both), renormalised to
+        // `speed`, spawned at the shared point with the item's
+        // damage/knockback. The C# `return`s here — the generic tail never
+        // runs for the knives.
+        let mut count = 4;
+        if loot_rng.next_range(0, 2) == 0 {
+            count += 1;
+        }
+        if loot_rng.next_range(0, 4) == 0 {
+            count += 1;
+        }
+        if loot_rng.next_range(0, 8) == 0 {
+            count += 1;
+        }
+        if loot_rng.next_range(0, 16) == 0 {
+            count += 1;
+        }
+        for n in 0..count {
+            let spread = 0.05 * n as f32;
+            let mut vx = shot.x + loot_rng.next_range(-35, 36) as f32 * spread;
+            let mut vy = shot.y + loot_rng.next_range(-35, 36) as f32 * spread;
+            let k = fx_spd / (vx * vx + vy * vy).sqrt();
+            vx *= k;
+            vy *= k;
+            let slot = app.projectiles.spawn_with_data_ai(
+                proj, spawn.x, spawn.y, vx, vy, raw as i32, fx_kb, 0.0, 0.0,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_armor_penetration(slot, arpen);
+                app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+            }
+        }
     } else if held.kind == 1930 {
         // S1-P-i21 — `Player.cs:47647-47662` — the Razorpine's volley:
         // `2 + Next(3)` needles, each spread by `Next(-35, 36)
@@ -15258,6 +15296,60 @@ mod tests {
             stream_of(&mut app),
             draws_after(seed, 0),
             "no spawn roll for 1042"
+        );
+    }
+
+    /// W4-d6 residual 5 — the Vampire Knives (item 1569, `Item.cs:15773`:
+    /// melee, damage 29, shoot 304, shootSpeed 15, kb 2.75) fire the
+    /// `Player.cs:48157-48188` volley: 4 base knives + one per taken
+    /// `Next(2)/Next(4)/Next(8)/Next(16)` gate (the four count rolls run
+    /// FIRST), then per knife two `Next(-35, 36)` spread draws scaled
+    /// `0.05 * index` and renormalised to speed. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_vampire_knives_volley_rolls_the_count_then_the_spreads() {
+        let mut app = staff_app(1569, "Vampire Knives");
+        let seed = 0x6B1D;
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        // The twin stream: the four count gates, then 2 draws per knife.
+        let mut probe = tr_core::UnifiedRandom::new(seed);
+        let mut count = 4;
+        for max in [2, 4, 8, 16] {
+            if probe.next_range(0, max) == 0 {
+                count += 1;
+            }
+        }
+        let knives: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(knives.len(), count as usize, "the :48159-48175 count");
+        // The base aim: +x at speed 15 (the cursor 80 px right, same row;
+        // meleeSpeed 1 leaves the speed alone).
+        let (shot_x, shot_y) = (15.0f32, 0.0f32);
+        for (n, k) in knives.iter().enumerate() {
+            assert_eq!(k.kind, crate::projectile::VAMPIRE_KNIFE, "Item.shoot 304");
+            assert_eq!(k.damage, 29, "the item damage through the melee x1");
+            // The spread pair per knife (index 0 draws but spreads 0),
+            // then the :48183-48184 renormalise.
+            let spread = 0.05 * n as f32;
+            let mut vx = shot_x + probe.next_range(-35, 36) as f32 * spread;
+            let mut vy = shot_y + probe.next_range(-35, 36) as f32 * spread;
+            let norm = 15.0 / (vx * vx + vy * vy).sqrt();
+            vx *= norm;
+            vy *= norm;
+            assert!(
+                (k.vel.x - vx).abs() < 1e-3 && (k.vel.y - vy).abs() < 1e-3,
+                "knife {n}: the spread + renormalise ({:?} vs {vx},{vy})",
+                k.vel
+            );
+        }
+        assert_eq!(
+            stream_of(&mut app),
+            probe,
+            "exactly 4 count draws + 2 per knife on UpdatePlayers"
         );
     }
 

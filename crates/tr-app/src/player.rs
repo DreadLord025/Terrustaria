@@ -2057,10 +2057,16 @@ pub struct Player {
     /// it (`Player.cs:18723`).
     pub ghost_heal: bool,
     /// `Player.ghostHurt` (`ArmorSetBonuses.cs:259-262`): the Spectre Mask
-    /// set's on-hit Wrath flag (`Projectile.cs:13822-13825` — the 356 spawn
-    /// itself stays the documented M3-EQUIP skip, the `ai_spectre_wrath`
-    /// module note). `ResetEffects` clears it (`Player.cs:18724`).
+    /// set's on-hit Wrath flag — the PVE damage walk's `ghostHurt` spawn
+    /// gate (`Projectile.cs:13822-13825`, W4-d6 residual 5).
+    /// `ResetEffects` clears it (`Player.cs:18724`).
     pub ghost_hurt: bool,
+    /// `Player.ghostDmg` (`Player.cs:1008`, stock 0): the ghostHurt spawn
+    /// budget — each 356 spawn adds the projectile's damage
+    /// (`Projectile.cs:12028`) and a budget above 1500 refuses further
+    /// spawns (`:12024`); `Player.Update` decays it 6.6666665/tick floored
+    /// at 0 (`:24460-24467`). NOT a `ResetEffects` flag — it persists.
+    pub ghost_dmg: f32,
     /// `Player.lifeSteal` (`Player.cs:1006`, stock 99999f): the shared
     /// heal-budget the `ghostHeal`/`vampireHeal` spawns drain
     /// (`Projectile.cs:12072-12076`/`:12101-12103`); `Player.Update`
@@ -2929,6 +2935,8 @@ impl Player {
             crimson_regen: false,
             ghost_heal: false,
             ghost_hurt: false,
+            // `Player.cs:1008` — the stock 0 (field default).
+            ghost_dmg: 0.0,
             // `Player.cs:1006` — the stock lifeSteal budget (the first
             // Update tick clamps it to the 80/70 cap, `:24474-24488`).
             life_steal: 99999.0,
@@ -5723,13 +5731,22 @@ impl Player {
         if self.vy == 0.0 {
             self.mount.fatigue_recovery();
         }
+        // W4-d6 residual — `Player.Update`'s ghostDmg decay
+        // (`Player.cs:24460-24467`): −6.6666665/tick while positive, then
+        // the independent < 0 floor — the ghostHurt spawn budget the 356
+        // spawns drain upward (`Projectile.cs:12024-12028`).
+        if self.ghost_dmg > 0.0 {
+            self.ghost_dmg -= 6.6666665;
+        }
+        if self.ghost_dmg < 0.0 {
+            self.ghost_dmg = 0.0;
+        }
         // W4-d6 residual — `Player.Update`'s lifeSteal regen
         // (`Player.cs:24468-24489`): expert +0.5/tick capped 70, classic
         // +0.6 capped 80 — the shared budget the ghostHeal/vampireHeal
         // spawns drain (`Projectile.cs:12076`/`:12103`). The two `if`s are
         // independent (a below-cap budget adds then re-checks; an over-cap
-        // one only clamps). The `ghostDmg` decay above it (`:24460-24467`)
-        // stays with the unported ghostHurt consumer.
+        // one only clamps).
         if self.buffs.expert_mode {
             if self.life_steal < 70.0 {
                 self.life_steal += 0.5;
@@ -12349,6 +12366,25 @@ mod tests {
         p.life_steal = 69.8;
         p.update(&w, PlayerInput::default());
         assert_eq!(p.life_steal, 70.0, "the expert cap clamps the overshoot");
+    }
+
+    /// W4-d6 residual 5 — `Player.Update`'s ghostDmg decay
+    /// (`Player.cs:24460-24467`): −6.6666665/tick while positive, the
+    /// independent < 0 floor; a zero budget stays zero. WRITTEN NOT RUN
+    /// (code-only).
+    #[test]
+    fn w4_d6_the_ghost_dmg_budget_decays_and_floors() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        assert_eq!(p.ghost_dmg, 0.0, "the :1008 stock");
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.ghost_dmg, 0.0, "zero stays zero (both ifs skip)");
+        p.ghost_dmg = 100.0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.ghost_dmg - 93.333336).abs() < 1e-3, "the −6.6666665 decay");
+        p.ghost_dmg = 3.0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.ghost_dmg, 0.0, "the < 0 floor clamps the overshoot");
     }
 
     /// M3-EQUIP-15 — the thorns rows and the reflection arithmetic.
