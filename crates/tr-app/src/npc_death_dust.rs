@@ -75,6 +75,30 @@
 //!   mirrored twin vs the f10 551 flipped arm ALSO overlap each other
 //!   (same `spriteDirection == -1` branch) — keep one there too.
 //!
+//! # Gore-remainder re-census (the 66 GORE-UNIMPL rows, research/110 §11)
+//!
+//! The playbook's blanket `GORE-UNIMPL` for the 66 g60-owned remainder
+//! kinds was probe-time-stale (f10 tip `a69fb00c`, sites ≤444). The
+//! re-read: f10's pushed tip `67c51ec7` now covers `NPC.cs:82206-85334`
+//! (batches 24-60 landed the `:83562-85559` continuation — the martian
+//! machines 385-387/389/391/399/520, the saucer family 392-395, the
+//! pumpkin family 305-314/325/327/344), and f5's wave-D
+//! claim (`97c70c97`, tip `b33ba0a9`) owns the WHOLE
+//! `NPC.cs:85560-89835` classic-mob chain — gore bodies AND the dust
+//! census ("this module ports the death-half dust loops ONLY as the
+//! gore bodies' draw census … keep-one at merge"). Of the 66: **24
+//! kinds are f10-owned (gore pushed), 32 f5-owned (11 pushed + 21
+//! claimed), 10 have NO gore sites at all** (261/265/288/326/330/352/
+//! 384/402/410/533 — dust-only arms no gore lane carries because there
+//! is nothing to carry; g60's feed is their whole port).
+//! **ZERO gore bodies are unclaimed — g60 ports NO gore bodies here**;
+//! the ARG draws stay consumed by this feed, exactly once. The strip
+//! surface grows: f10's pushed continuation adds 24 overlap kinds
+//! (305-314/325/327/344/385-387/389/391/392-395/399/520), f5's wave-D
+//! claim adds 32 (the 11 PUSHED re-draws 338-340/342/343/348-351/489/
+//! 490 — f5 batches 14/15/24/25/31/32 — + 21 claimed-not-pushed arms
+//! past `:86986`). Per-kind table: research/110 §11.
+//!
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -1626,5 +1650,354 @@ mod tests {
         death_dust_draws(&mut fx);
         assert_eq!(rng, peek, "the default arm draws nothing");
         assert!(!pool.slot(0).active);
+    }
+
+    /// The gore-remainder sweep (§11, f5-owned arms): every listed kind
+    /// pays EXACTLY its census dust count on the UpdateNPCs stream and
+    /// ZERO gore-argument draws — all gores in these arms are
+    /// constant-argument (the shimmer/altTexture picks are data). The
+    /// per-kind draw counts pin the C# death halves one witness row
+    /// each; the shared-arm kinds ride their own row.
+    #[test]
+    fn w4_g60_gore_tail_f5_arms_pay_dust_only() {
+        // (kind, dust count, dust type, w, h, seed) — the §11 census.
+        for (ty, n, dty, w, h, seed) in [
+            (250u16, 20i32, 54i32, 30i32, 30i32, 201i32), // :88971 3×99
+            (315, 20, 54, 30, 40, 202),                  // :89038 3×99+446
+            (329, 50, 5, 26, 40, 203),                   // :87745 485-487
+            (341, 20, 196, 30, 30, 205),                 // :88755 61/62/63
+            (353, 50, 5, 20, 40, 207),                   // :88208 6 cond.
+            (354, 50, 5, 20, 40, 208),                   // the shared arm
+            (368, 50, 5, 20, 40, 209),                   // :88033 5 cond.
+            (441, 50, 5, 20, 40, 210),                   // :87685 768-771
+            (471, 50, 5, 30, 46, 211),                   // :89617 675-678
+            (550, 50, 5, 20, 40, 213),                   // :87952 967-969
+            (588, 50, 5, 20, 40, 214),                   // :87972 5 cond.
+            (589, 50, 5, 20, 40, 215),                   // the shared arm
+            (633, 50, 5, 20, 40, 216),                   // :87995 6 picks
+            (267, 20, 5, 30, 30, 217),                   // :87269 gore 402
+            (338, 50, 5, 20, 40, 218),                   // :86878 494+tail
+            (339, 50, 5, 20, 40, 219),                   // 495 head
+            (340, 50, 5, 20, 40, 220),                   // 496 head
+            (342, 50, 0, 20, 40, 221),                   // :86858 500-502
+            (343, 50, 5, 26, 46, 222),                   // :86908 503-506
+            (348, 10, 5, 24, 40, 223),                   // :86322 528-532
+            (349, 10, 5, 24, 40, 224),                   // the shared arm
+            (350, 10, 5, 20, 40, 225),                   // :86362 533-536
+            (351, 10, 5, 24, 40, 226),                   // :86342 538-542
+            (489, 50, 5, 20, 40, 227),                   // :86669 722-724
+        ] {
+            let wld = air();
+            let c = ctx();
+            let mut pool = DustPool::new();
+            let mut rng = UnifiedRandom::new(seed);
+            let peek = rng.clone();
+            let mut fx = DeathFx {
+                ty,
+                pos: Vec2::new(100.0, 100.0),
+                w,
+                h,
+                vel: Vec2::ZERO,
+                hit_dir: 1,
+                old_pos: [Vec2::ZERO; 10],
+                rng: &mut rng,
+                dust: &mut pool,
+                ctx: &c,
+                world: &wld,
+            };
+            death_dust_draws(&mut fx);
+            let mut r = peek;
+            for k in 0..n {
+                let rolls = replay_spawn(&mut r, w, h);
+                let d = pool.slot(k as usize);
+                assert_eq!(d.dust_type, dty, "{ty} dust {k}");
+                if dty == 54 {
+                    // the smoke54 full-arg shape: alpha 50, scale roll
+                    // ×1.5 then velocity ×2 + noGravity (`:89039-89042`).
+                    assert_eq!(d.alpha, 50);
+                    assert_eq!(d.scale, (1.0 + rolls[5] as f32 * 0.01) * 1.5);
+                    assert_eq!(d.velocity.x, rolls[2] as f32 * 0.1 * 2.0);
+                    assert!(d.no_gravity);
+                }
+                if ty == 341 {
+                    // the Present Mimic's plain (0,0) burst — no writes.
+                    assert_eq!(d.velocity.x, rolls[2] as f32 * 0.1);
+                }
+            }
+            assert_eq!(rng, r, "{ty}: {n}×6 internals, zero gore draws");
+            assert!(pool.slot((n - 1) as usize).active);
+            assert!(!pool.slot(n as usize).active, "{ty}: exactly {n} dusts");
+        }
+    }
+
+    /// The gore-remainder sweep (§11, f10-owned arms): the martian
+    /// machines + probe + walker + spider-small. The 226 bursts carry
+    /// the scale-0.5 OVERWRITE (no extra internals); 227 is a plain
+    /// 6-draw spawn; the 410 stardust pair is 5×(17+229) ungated. All
+    /// gores constant-argument (the probe's ai[0]==3 velocity is data).
+    #[test]
+    fn w4_g60_gore_tail_f10_arms_pay_dust_only() {
+        for (ty, n, w, h, seed) in [
+            (385u16, 30i32, 24i32, 40i32, 302i32), // :84373 597-599
+            (386, 30, 24, 40, 303),                // :84393 600-602
+            (387, 30, 30, 30, 304),                // :84415 603×2/604
+            (389, 30, 30, 40, 305),                // :84459 904-906
+            (391, 30, 40, 20, 306),                // :84545 607/608/609
+            (399, 10, 16, 16, 307),                // :84515 898/899
+            (520, 30, 36, 56, 308),                // :84438 851/852+3
+            (393, 30, 40, 40, 310),                // :84567 gore 616
+            (394, 30, 40, 40, 311),                // :84567 gore 617
+            (395, 30, 60, 60, 312),                // :84567 610-615
+            (306, 60, 24, 46, 313),                // :84806 441-445
+            (307, 60, 24, 46, 314),                // the shared arm
+            (308, 60, 24, 46, 315),                // the shared arm
+            (309, 60, 24, 46, 316),                // the shared arm
+            (310, 60, 24, 46, 317),                // the shared arm
+            (311, 60, 24, 46, 318),                // the shared arm
+            (312, 60, 24, 46, 319),                // the shared arm
+            (313, 60, 24, 46, 320),                // the shared arm
+            (314, 60, 24, 46, 321),                // the shared arm
+            (325, 60, 30, 50, 322),                // :84849 469-475
+            (327, 60, 40, 40, 323),                // :84828 476-484
+            (344, 60, 40, 60, 324),                // :84878 508-512×2
+        ] {
+            let wld = air();
+            let c = ctx();
+            let mut pool = DustPool::new();
+            let mut rng = UnifiedRandom::new(seed);
+            let peek = rng.clone();
+            let mut fx = DeathFx {
+                ty,
+                pos: Vec2::new(100.0, 100.0),
+                w,
+                h,
+                vel: Vec2::ZERO,
+                hit_dir: -1,
+                old_pos: [Vec2::ZERO; 10],
+                rng: &mut rng,
+                dust: &mut pool,
+                ctx: &c,
+                world: &wld,
+            };
+            death_dust_draws(&mut fx);
+            let mut r = peek;
+            for k in 0..n {
+                let rolls = replay_spawn(&mut r, w, h);
+                let d = pool.slot(k as usize);
+                match ty {
+                    385 | 386 | 389 | 391 => assert_eq!(d.dust_type, 227),
+                    393..=395 => {
+                        // the 228 tweak re-rolls vy (one extra draw),
+                        // then the scale-0.5 overwrite (`:84569-84570`).
+                        assert_eq!(d.dust_type, 228);
+                        r.next_range(-10, 6);
+                        assert_eq!(d.scale, 0.5);
+                    }
+                    306..=314 | 325 | 327 => {
+                        let dty = match ty {
+                            325 => 191,
+                            327 => 189,
+                            _ => 194,
+                        };
+                        assert_eq!(d.dust_type, dty);
+                        assert_eq!(d.scale, (1.0 + rolls[5] as f32 * 0.01) * 1.1);
+                    }
+                    344 => assert_eq!(d.dust_type, 196),
+                    _ => {
+                        assert_eq!(d.dust_type, 226);
+                        assert_eq!(d.scale, 0.5, "the 226 overwrite");
+                        let k_f = if ty == 399 { 2.5 } else { 1.5 };
+                        // hit_dir = -1 → sx = -k×hd = +k
+                        assert_eq!(d.velocity.x, rolls[2] as f32 * 0.1 + k_f);
+                    }
+                }
+            }
+            assert_eq!(rng, r, "{ty}: {n}×6 internals, zero gore draws");
+            assert!(pool.slot((n - 1) as usize).active);
+            assert!(!pool.slot(n as usize).active, "{ty}: exactly {n} dusts");
+        }
+        // 410 Stardust Spider (small): 5 × (17 + 229 noGravity ×3), no
+        // gates on the death half (`NPC.cs:83523-83529`); no gores.
+        let wld = air();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(309);
+        let peek = rng.clone();
+        let mut fx = DeathFx {
+            ty: 410,
+            pos: Vec2::new(100.0, 100.0),
+            w: 16,
+            h: 16,
+            vel: Vec2::ZERO,
+            hit_dir: 1,
+            old_pos: [Vec2::ZERO; 10],
+            rng: &mut rng,
+            dust: &mut pool,
+            ctx: &c,
+            world: &wld,
+        };
+        death_dust_draws(&mut fx);
+        let mut r = peek;
+        for k in 0..5 {
+            replay_spawn(&mut r, 16, 16);
+            assert_eq!(pool.slot(k * 2).dust_type, 17);
+            replay_spawn(&mut r, 16, 16);
+            let d = pool.slot(k * 2 + 1);
+            assert_eq!(d.dust_type, 229);
+            assert!(d.no_gravity);
+        }
+        assert_eq!(rng, r, "410: 5×(17+229) pairs, zero gore draws");
+        assert!(pool.slot(9).active);
+        assert!(!pool.slot(10).active);
+    }
+
+    /// `NPC.cs:87186-87218` — the Plantera family, per kind: 150×167
+    /// (the 265 short-circuit kills the gate draw for ALL three family
+    /// types), then the per-kind gore-position pairs: 262 pays NINE
+    /// `Next(w)+Next(h)` pairs (gores 381-387 with 386/387 doubled),
+    /// 263/264 pay TWO each (390/391, 388/389). The gores are f5's
+    /// (claimed `97c70c97`); g60 consumes exactly 18/4/4 argument draws.
+    #[test]
+    fn w4_g60_gore_tail_plantera_trio_pays_per_kind_position_pairs() {
+        for (ty, n_gores, seed) in [(262u16, 9i32, 501i32), (263, 2, 502), (264, 2, 503)] {
+            let wld = air();
+            let c = ctx();
+            let mut pool = DustPool::new();
+            let mut rng = UnifiedRandom::new(seed);
+            let peek = rng.clone();
+            let mut fx = DeathFx {
+                ty,
+                pos: Vec2::new(100.0, 100.0),
+                w: 48,
+                h: 48,
+                vel: Vec2::ZERO,
+                hit_dir: 1,
+                old_pos: [Vec2::ZERO; 10],
+                rng: &mut rng,
+                dust: &mut pool,
+                ctx: &c,
+                world: &wld,
+            };
+            death_dust_draws(&mut fx);
+            let mut r = peek;
+            for k in 0..150 {
+                replay_spawn(&mut r, 48, 48);
+                assert_eq!(pool.slot(k).dust_type, 167, "{ty}: no 166 gate");
+            }
+            for _ in 0..n_gores {
+                r.next_max(48);
+                r.next_max(48);
+            }
+            assert_eq!(rng, r, "{ty}: 150×6 + {} pairs", n_gores * 2);
+            assert!(pool.slot(149).active);
+            assert!(!pool.slot(150).active, "{ty}: exactly 150 dusts");
+        }
+    }
+
+    /// `NPC.cs:88048-88073` — the town smoke arm's OTHER two g60 kinds
+    /// (369 Angler / 376 Sleeping Angler; 663 rides the dedicated
+    /// tombstone witness): each pays 25×31 (alpha 100, scale ×2 roll,
+    /// velocity ×1.4, noLight+noGravity) + FOUR `Next(61,64)` tombstone
+    /// picks. The gores (61/62/63 with scale-1 + velocity±1 writes) are
+    /// f5's — claimed, not yet pushed (`:88046` is past f5's `:86986`).
+    #[test]
+    fn w4_g60_gore_tail_angler_pair_pays_the_four_tombstone_picks() {
+        for (ty, seed) in [(369u16, 601i32), (376, 602)] {
+            let wld = air();
+            let c = ctx();
+            let mut pool = DustPool::new();
+            let mut rng = UnifiedRandom::new(seed);
+            let peek = rng.clone();
+            let mut fx = DeathFx {
+                ty,
+                pos: Vec2::new(100.0, 100.0),
+                w: 18,
+                h: 40,
+                vel: Vec2::ZERO,
+                hit_dir: 1,
+                old_pos: [Vec2::ZERO; 10],
+                rng: &mut rng,
+                dust: &mut pool,
+                ctx: &c,
+                world: &wld,
+            };
+            death_dust_draws(&mut fx);
+            let mut r = peek;
+            for k in 0..25 {
+                let rolls = replay_spawn(&mut r, 18, 40);
+                let d = pool.slot(k);
+                assert_eq!(d.dust_type, 31);
+                assert_eq!(d.alpha, 100);
+                assert_eq!(d.scale, (1.0 + rolls[5] as f32 * 0.01) * 2.0);
+                assert_eq!(d.velocity.x, rolls[2] as f32 * 0.1 * 1.4);
+                assert!(d.no_light && d.no_gravity);
+            }
+            for _ in 0..4 {
+                r.next_range(61, 64);
+            }
+            assert_eq!(rng, r, "{ty}: 25×6 internals + 4 tombstone picks");
+            assert!(pool.slot(24).active);
+            assert!(!pool.slot(25).active, "{ty}: exactly 25 dusts");
+        }
+    }
+
+    /// The gore-remainder sweep (§11, the NO-gore arms): 330/352/384/
+    /// 533 have zero `NewGore` sites — their whole death half is the
+    /// dust burst (288/265/402 already carry dedicated witnesses; 326
+    /// shares the Mourning Wood shape, 663 folds onto the town smoke).
+    #[test]
+    fn w4_g60_gore_tail_no_gore_arms_pay_dust_only() {
+        // (kind, n, dust type, w, h, seed)
+        for (ty, n, dty, w, h, seed) in [
+            (326u16, 60i32, 191i32, 20i32, 20i32, 401i32), // :84903
+            (330, 50, 192, 30, 40, 402),                   // :88996
+            (352, 60, 67, 20, 20, 403),                    // :84788
+            (384, 70, 226, 20, 20, 404),                   // :84355
+            (533, 40, 27, 30, 46, 405),                    // :83880
+        ] {
+            let wld = air();
+            let c = ctx();
+            let mut pool = DustPool::new();
+            let mut rng = UnifiedRandom::new(seed);
+            let peek = rng.clone();
+            let mut fx = DeathFx {
+                ty,
+                pos: Vec2::new(100.0, 100.0),
+                w,
+                h,
+                vel: Vec2::ZERO,
+                hit_dir: 1,
+                old_pos: [Vec2::ZERO; 10],
+                rng: &mut rng,
+                dust: &mut pool,
+                ctx: &c,
+                world: &wld,
+            };
+            death_dust_draws(&mut fx);
+            let mut r = peek;
+            for k in 0..n {
+                let rolls = replay_spawn(&mut r, w, h);
+                let d = pool.slot(k as usize);
+                assert_eq!(d.dust_type, dty, "{ty} dust {k}");
+                match ty {
+                    326 => assert_eq!(d.scale, (1.0 + rolls[5] as f32 * 0.01) * 1.1),
+                    330 => {
+                        assert_eq!(d.alpha, 100);
+                        assert!(d.no_gravity);
+                    }
+                    352 => assert!(d.no_gravity),
+                    384 => assert_eq!(d.scale, 0.5),
+                    533 => {
+                        assert_eq!(d.alpha, 50);
+                        assert!(d.no_gravity);
+                        assert_eq!(d.fade_in, 1.0);
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            assert_eq!(rng, r, "{ty}: {n}×6 internals, zero gore draws");
+            assert!(pool.slot((n - 1) as usize).active);
+            assert!(!pool.slot(n as usize).active, "{ty}: exactly {n} dusts");
+        }
     }
 }
