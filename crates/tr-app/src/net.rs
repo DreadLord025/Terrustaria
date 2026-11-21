@@ -208,6 +208,11 @@ pub mod id {
     /// section (`NetMessage.cs:1662-1665`, `MessageBuffer.cs:4457-4462`).
     /// W4-g51 lifted the parked d90 codec and wired the host `SendSection`.
     pub const SECTION_REQUEST: u8 = 159;
+    /// `162 DamageNPCAck` (`MessageID.cs:338`) — the host's ack of a `28`
+    /// strike, no body (`MessageBuffer.cs:1768-1771` sends, `:1819-1824`
+    /// pops `NPC.pendingDamages[0]`). W4-g51 lifted the parked d92 codec; the
+    /// client `AckDamage` is parked (no pendingDamages queue yet).
+    pub const NPC_STRIKE_ACK: u8 = 162;
     pub const DEAD_PLAYER: u8 = 135; // MessageID.cs:284 / NetMessage.cs:1569-1571 / MessageBuffer.cs:4195-4203
     /// `140 SetMiscEventValues` (`MessageID.cs:294`) — kind 0 is the credits
     /// roll's remaining time (`NetMessage.cs:1591-1594`,
@@ -2112,6 +2117,10 @@ pub enum S2c {
     ExtraSpawnLoaded {
         player_id: u8,
     },
+    /// `162 DamageNPCAck` - the host's ack of a `28` strike, no body
+    /// (`MessageBuffer.cs:1768-1771` sends, `:1819-1824` pops
+    /// `NPC.pendingDamages[0]`).
+    NpcStrikeAck,
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2663,6 +2672,7 @@ impl S2c {
             Self::SpectatePlayer(_) => id::SPECTATE_PLAYER,
             Self::NpcDebuffDamage(_) => id::NPC_DEBUFF_DAMAGE,
             Self::ExtraSpawnLoaded { .. } => id::EXTRA_SPAWN_LOADED,
+            Self::NpcStrikeAck => id::NPC_STRIKE_ACK,
         }
     }
 
@@ -2852,6 +2862,8 @@ impl S2c {
             Self::NpcDebuffDamage(d) => w.u8(d.npc).i16(d.damage),
             // `NetMessage.cs:1659-1661`: one byte.
             Self::ExtraSpawnLoaded { player_id } => w.u8(*player_id),
+            // `SendData` has no case 162 — the bare id is the whole frame.
+            Self::NpcStrikeAck => w,
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -3124,6 +3136,8 @@ impl S2c {
             id::EXTRA_SPAWN_LOADED => Self::ExtraSpawnLoaded {
                 player_id: r.u8()?,
             },
+            // `MessageBuffer.cs:1819-1824`: no body.
+            id::NPC_STRIKE_ACK => Self::NpcStrikeAck,
             _ => return None,
         })
     }
@@ -5537,6 +5551,19 @@ mod tests {
                 section_y,
             } => assert_eq!((section_x, section_y), (21, 7)),
             other => panic!("expected 159, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `162 DamageNPCAck` frame is bodyless — a bare 3-byte
+    /// frame (`SendData` has no case 162; `MessageBuffer.cs:1819-1824`).
+    #[test]
+    fn w4_g51_npc_strike_ack_is_bodyless() {
+        let f = S2c::NpcStrikeAck.encode();
+        assert_eq!(f.len(), 3, "the bare 3-byte frame");
+        assert_eq!(f[2], 162);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::NpcStrikeAck => {}
+            other => panic!("expected 162, got {:?}", other.msg_id()),
         }
     }
 

@@ -2177,6 +2177,12 @@ impl App {
             // `ExtraSpawnPointManager` unported, the `157` tail's note), so
             // the arm parks with them (S1-I-4).
             S2c::ExtraSpawnLoaded { .. } => {}
+            // `case 162`'s client half (`MessageBuffer.cs:1819-1824`):
+            // `NPC.AckDamage` pops `NPC.pendingDamages[0]` (`NPC.cs:90703-
+            // 90713`). The port has no pending-damage queue (the client-side
+            // damage prediction the ack reconciles is unported), so the arm
+            // parks with it (S1-I-4).
+            S2c::NpcStrikeAck => {}
             // `case 135`'s client half (`MessageBuffer.cs:4195-4203`):
             // `Main.player[num103].immuneAlpha = 255` — the dead-peer ghost
             // fade. The port's `immuneAlpha` blinkVisual half is draw-side
