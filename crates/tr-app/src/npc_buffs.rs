@@ -222,8 +222,13 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::GoblinArcher => &[],
         NpcKind::BoundGoblin => &[],
         NpcKind::GoblinTinkerer => &[],
-        // The skeleton family/ the cave bat: no immunity data rows.
-        NpcKind::Skeleton | NpcKind::UndeadMiner | NpcKind::CaveBat => &[],
+        // W4-g4 P9 (the W4-d22 reconcile fold) — the skeleton family's
+        // rows (`NPCID.cs:6207-6212`/`:6357-6362`): Skeleton 21 and
+        // UndeadMiner 44 are [20] (the derived 30/375 ride `for_kind`);
+        // the cave bat 49 has no row. The old "no immunity data rows"
+        // fold was wrong.
+        NpcKind::Skeleton | NpcKind::UndeadMiner => &[20],
+        NpcKind::CaveBat => &[],
         NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => &[],
         // The hovers: the Eater of Souls has no immunity row (the Hornet's
         // venom-immunity rides the hornet projectile set — folded out).
@@ -261,14 +266,19 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::EyeOfCthulhu | NpcKind::ServantOfCthulhu => &[],
         // The hungry/leeches: no `DebuffImmunitySets` rows (119 neither).
         NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody | NpcKind::LeechTail => &[],
-        // The goblins: no `DebuffImmunitySets` rows.
+        // The goblins: the invasion four have no `DebuffImmunitySets`
+        // rows (`NPCID.cs:6241-6243`/`:6756`); W4-g4 P9 — the Summoner
+        // 471 is [31, 153] (`NPCID.cs:8767-8771`) — Confused-immune, so
+        // its P2 phase machine never sees the buff-31 latch.
         NpcKind::GoblinThief
         | NpcKind::GoblinWarrior
         | NpcKind::GoblinArcher
-        | NpcKind::GoblinPeon
-        | NpcKind::GoblinSummoner => &[],
-        // The frost trio: no `DebuffImmunitySets` rows.
-        NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => &[],
+        | NpcKind::GoblinPeon => &[],
+        NpcKind::GoblinSummoner => &[31, 153],
+        // W4-g4 P9 — the frost trio's rows (`NPCID.cs:6970-6990`): the
+        // Gangsta 143, the Stabby 144 (the port's SnowBalla) and the
+        // Balla 145 (the port's MysterySnowman) are [20, 44, 324].
+        NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => &[20, 44, 324],
         // The martians (`S1-F-13d` audit — `NPCID.Sets.DebuffImmunitySets`,
         // `NPCID.cs:8338-8401`/`:8423-8428`/`:9032-9037`): the Officer 383,
         // the Grunt 385, the Engineer 386, the Zapper 389, the rider 390,
@@ -296,26 +306,34 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BrainScrambler => &[31],
         NpcKind::MartianDrone | NpcKind::MartianProbe | NpcKind::MartianTurret => &[20, 31],
         NpcKind::MartianWalker => &[20, 24, 31, 323],
-        NpcKind::FlyingDutchman
-        | NpcKind::FlyingDutchmanCannon
+        // W4-g4 P9 (the W4-d22 reconcile fold) — the DD2 rows
+        // (`NPCID.cs:9183-9390`), per kind: the crystal 548 / bartender
+        // 550 / goblins 552-554 / bombers 555-557 / wyverns 558-560 /
+        // javelineers 561-563 / dark mages 564+565 / wither beasts
+        // 568+569 / drakins 570-571 / kobolds 572-575 / ogres 576-577
+        // are ALL [31] (Confused-immune); Betsy 551 is [24, 31, 323]
+        // (`:9205-9210`); the skeletons 566/567 are [20, 31]
+        // (`:9310-9322`). The lane portal 549 is the
+        // `ImmuneToAllBuffsThatAreNotWhips + ImmuneToWhips` mask
+        // (`:9190-9196`) — the mask loop is unmodelled, `&[]` stands in
+        // (the documented gap) and `ImmuneToWhips` rides `whip_immune`.
+        NpcKind::DD2EterniaCrystal
+        | NpcKind::DD2Bartender
         | NpcKind::DD2GoblinT1
         | NpcKind::DD2GoblinT2
         | NpcKind::DD2GoblinT3
         | NpcKind::DD2GoblinBomberT1
         | NpcKind::DD2GoblinBomberT2
         | NpcKind::DD2GoblinBomberT3
-        | NpcKind::DD2JavelinT1
-        | NpcKind::DD2JavelinT2
-        | NpcKind::DD2JavelinT3
-        | NpcKind::DD2SkeletonT1
-        | NpcKind::DD2SkeletonT3
-        | NpcKind::DD2DarkMage
-        | NpcKind::DD2Betsy
-        | NpcKind::DD2WitherBeast
         | NpcKind::DD2WyvernT1
         | NpcKind::DD2WyvernT2
         | NpcKind::DD2WyvernT3
+        | NpcKind::DD2JavelinT1
+        | NpcKind::DD2JavelinT2
+        | NpcKind::DD2JavelinT3
+        | NpcKind::DD2DarkMage
         | NpcKind::DD2DarkMageT3
+        | NpcKind::DD2WitherBeast
         | NpcKind::DD2WitherBeastT3
         | NpcKind::DD2DrakinT2
         | NpcKind::DD2DrakinT3
@@ -324,9 +342,37 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::DD2KoboldFlyerT2
         | NpcKind::DD2KoboldFlyerT3
         | NpcKind::DD2OgreT2
-        | NpcKind::DD2OgreT3
-        | NpcKind::DD2Bartender
-        | NpcKind::DD2EterniaCrystal
+        | NpcKind::DD2OgreT3 => &[31],
+        NpcKind::DD2Betsy => &[24, 31, 323],
+        NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 => &[20, 31],
+        // W4-g4 P9 — the lunar-mob rows (`NPCID.cs:8445-8560`/`:9019`):
+        // the worm head 402, cells 405/406, jellyfish 407, crawltipede
+        // 412-414, floater 420, suckler 421, headcrab 428 and spearman
+        // 518 are [31]; the Corite 418 is [20, 24, 31, 323]
+        // (`:8521-8526`). The spiders 409/410, soldier 411, drakomire
+        // 415 + rider 416, sroller 417, selenian 419, beast 423,
+        // predictor 424, rifleman 425, hunter 426, alien 427 and
+        // soldier 429 are null rows (`:8493-8495`/`:8517-8519`/
+        // `:8527`/`:8549-8553`/`:8561`) — Confused CAN land on them.
+        NpcKind::StardustWormHead
+        | NpcKind::StardustCellBig
+        | NpcKind::StardustCellSmall
+        | NpcKind::StardustJellyfishBig
+        | NpcKind::SolarCrawltipedeHead
+        | NpcKind::SolarCrawltipedeBody
+        | NpcKind::SolarCrawltipedeTail
+        | NpcKind::NebulaFloater
+        | NpcKind::BrainSuckler
+        | NpcKind::VortexHeadcrab
+        | NpcKind::SolarSpearman => &[31],
+        NpcKind::SolarCorite => &[20, 24, 31, 323],
+        // The null-row remainder: the towers 422/493/507/517 and the
+        // cultist 439 carry `ImmuneToAllBuffsThatAreNotWhips`
+        // (`NPCID.cs:8543-8548`/`:8590`/`:8910`/`:8954`/`:9012`) — the
+        // unmodelled mask rides `&[]` (the documented gap); the
+        // Dutchman pair 491/492 has no rows.
+        NpcKind::FlyingDutchman
+        | NpcKind::FlyingDutchmanCannon
         | NpcKind::AncientCultist
         | NpcKind::StardustTower
         | NpcKind::NebulaTower
@@ -339,9 +385,6 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::MoonLordLeechBlob
         | NpcKind::VortexHunter
         | NpcKind::VortexAlien
-        | NpcKind::VortexHeadcrab
-        | NpcKind::NebulaFloater
-        | NpcKind::BrainSuckler
         | NpcKind::Predictor
         | NpcKind::StardustSpiderBig
         | NpcKind::StardustSpiderSmall
@@ -349,28 +392,20 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::SolarDrakomire
         | NpcKind::SolarDrakomireRider
         | NpcKind::SolarSroller
-        | NpcKind::SolarCorite
-        | NpcKind::SolarCrawltipedeHead
-        | NpcKind::SolarCrawltipedeBody
-        | NpcKind::SolarCrawltipedeTail
-        | NpcKind::StardustWormHead
-        | NpcKind::SolarSpearman
         | NpcKind::SolarSelenian
-        | NpcKind::VortexTower
         | NpcKind::DD2LanePortal
-        | NpcKind::StardustCellBig
-        | NpcKind::VortexTower
-        | NpcKind::StardustCellSmall
-        | NpcKind::StardustJellyfishBig
         | NpcKind::NebulaBeast
         | NpcKind::VortexRifleman
         | NpcKind::VortexSoldier => &[],
-        // The pirates: no `DebuffImmunitySets` rows.
+        // The pirates: W4-g4 P9 — the Captain 216 is [31]
+        // (`NPCID.cs:7331-7336`, Confused-immune); the Deckhand 212,
+        // Mate 213, Deadeye 214 and Crossbower 215 are null rows
+        // (`:7326-7329`).
         NpcKind::PirateDeckhand
         | NpcKind::PirateCaptainsMate
         | NpcKind::PirateArcher
-        | NpcKind::PirateCorsair
-        | NpcKind::PirateCaptain => &[],
+        | NpcKind::PirateCorsair => &[],
+        NpcKind::PirateCaptain => &[31],
         NpcKind::Golem
         | NpcKind::GolemHead
         | NpcKind::GolemFistLeft
@@ -491,11 +526,15 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
 /// (`:6499`/`:6528`/`:8378`/`:8601`/`:8899`/`:9194`/`:9415`/`:9423`/`:9431`/
 /// `:10034`/`:10042`): DungeonGuardian 68, BlazingWheel 72, MartianSaucer 392,
 /// CultistBossClone 440, FlyingDutchman 491, DD2LanePortal 549, the fairy
-/// critters 583/584/585, the bound town slimes 686/687. Only the saucer and
-/// the pirate ship are on the ported roster — the whip tag gate
+/// critters 583/584/585, the bound town slimes 686/687. W4-g4 P9 (the
+/// W4-d22 reconcile fold): the wheel and the lane portal joined the
+/// saucer + the pirate ship on the ported roster — the whip tag gate
 /// (`WhipTagEffect.CanApplyTagToNPC`) reads this.
 pub fn whip_immune(kind: NpcKind) -> bool {
-    matches!(kind, NpcKind::MartianSaucer | NpcKind::FlyingDutchman)
+    matches!(
+        kind,
+        NpcKind::MartianSaucer | NpcKind::FlyingDutchman | NpcKind::BlazingWheel | NpcKind::DD2LanePortal
+    )
 }
 
 impl NpcBuffs {
@@ -1120,6 +1159,92 @@ mod tests {
         let eye = NpcBuffs::for_kind(NpcKind::DemonEye);
         let wandering = NpcBuffs::for_kind(NpcKind::WanderingEye);
         assert!(!eye.buff_immune[20] && !wandering.buff_immune[20]);
+    }
+
+    /// W4-g4 P9 (the W4-d22 reconcile fold) — the fighter-roster
+    /// immunity census fix (`NPCID.Sets.DebuffImmunitySets`,
+    /// `NPCID.cs:6075+`): the old table folded whole families to `&[]`
+    /// where the C# carries rows. The Confused (31) half is the fighter
+    /// lane's: every kind below that is [31]-carrying REJECTS the
+    /// buff-31 add, so the P3/P6 confused arms never fire for it — the
+    /// null-row kinds keep the flip. The [20] rows derive 30/375
+    /// (`NPC.cs:17828-17833`). WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_g4_the_fighter_roster_immunity_rows_match_the_csharp_sets() {
+        // The Confused-immune fighters: the add is rejected outright.
+        for kind in [
+            NpcKind::GoblinSummoner,      // 471 [31, 153] (:8767-8771)
+            NpcKind::VortexHeadcrab,      // 428 [31] (:8555-8559)
+            NpcKind::NebulaFloater,       // 420 [31] (:8529-8533)
+            NpcKind::BrainSuckler,        // 421 [31] (:8536-8540)
+            NpcKind::StardustCellBig,     // 405 [31] (:8466-8470)
+            NpcKind::StardustCellSmall,   // 406 [31] (:8473-8477)
+            NpcKind::StardustJellyfishBig, // 407 [31] (:8480-8484)
+            NpcKind::StardustWormHead,    // 402 [31] (:8445-8449)
+            NpcKind::SolarSpearman,       // 518 [31] (:9019-9023)
+            NpcKind::SolarCrawltipedeHead, // 412 [31] (:8497-8501)
+            NpcKind::SolarCorite,         // 418 [20, 24, 31, 323] (:8521)
+            NpcKind::PirateCaptain,       // 216 [31] (:7331-7336)
+            NpcKind::DD2GoblinT1,         // 552 [31] (:9212-9216)
+            NpcKind::DD2SkeletonT1,       // 566 [20, 31] (:9310-9314)
+            NpcKind::DD2Betsy,            // 551 [24, 31, 323] (:9205)
+            NpcKind::DD2Bartender,        // 550 [31] (:9198-9202)
+            NpcKind::DD2EterniaCrystal,   // 548 [31] (:9183-9187)
+            NpcKind::DD2OgreT2,           // 576 [31] (:9380-9384)
+            NpcKind::DD2KoboldFlyerT2,    // 574 [31] (:9366-9370)
+        ] {
+            let mut b = NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[31], "{kind:?} Confused-immune");
+            b.add_buff(31, 600);
+            assert!(b.find_buff_index(31).is_none(), "{kind:?} rejects the add");
+        }
+        // The null-row fighters: Confused LANDS (the P3/P6 arms fire).
+        for kind in [
+            NpcKind::Zombie,              // 3 null (:6086)
+            NpcKind::GoblinArcher,        // 111 null (:6756)
+            NpcKind::VortexRifleman,      // 425 null (:8551)
+            NpcKind::VortexSoldier,       // 429 null (:8561)
+            NpcKind::MartianEngineer,     // 386 null (:8355)
+            NpcKind::GigaZapper,          // 389 null (:8370)
+            NpcKind::RayGunner,           // 382 null (:8345)
+            NpcKind::Predictor,           // 424 null (:8550)
+            NpcKind::StardustSoldier,     // 411 null (:8495)
+            NpcKind::SolarDrakomire,      // 415 null (:8517)
+            NpcKind::PirateDeckhand,      // 212 null (:7326)
+            NpcKind::Scarecrow1,          // 305 null (:7934)
+            NpcKind::Yeti,                // 343 [44, 324] — no 31 (:8091)
+            NpcKind::Krampus,             // 351 [44, 324] — no 31 (:8129)
+        ] {
+            let mut b = NpcBuffs::for_kind(kind);
+            assert!(!b.buff_immune[31], "{kind:?} Confused can land");
+            b.add_buff(31, 600);
+            assert!(b.find_buff_index(31).is_some(), "{kind:?} takes the add");
+        }
+        // The [20] rows and their derived 30/375 chain.
+        for kind in [
+            NpcKind::Skeleton,            // 21 [20] (:6207-6212)
+            NpcKind::UndeadMiner,         // 44 [20] (:6357-6362)
+            NpcKind::SnowmanGangsta,      // 143 [20, 44, 324] (:6970)
+            NpcKind::SnowBalla,           // 144 [20, 44, 324] (:6977)
+            NpcKind::MysterySnowman,      // 145 [20, 44, 324] (:6984)
+            NpcKind::DD2SkeletonT3,       // 567 [20, 31] (:9317)
+        ] {
+            let b = NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[20], "{kind:?} Poisoned-immune");
+            assert!(b.buff_immune[30] && b.buff_immune[375], "{kind:?} derived");
+        }
+        // The whip rows: the wheel 72 + the lane portal 549 join the
+        // saucer 392 + the Dutchman 491 (`NPCID.cs:6528`/`:9194`).
+        for kind in [
+            NpcKind::MartianSaucer,
+            NpcKind::FlyingDutchman,
+            NpcKind::BlazingWheel,
+            NpcKind::DD2LanePortal,
+        ] {
+            assert!(whip_immune(kind), "{kind:?} ImmuneToWhips");
+        }
+        assert!(!whip_immune(NpcKind::Zombie));
+        assert!(!whip_immune(NpcKind::DD2GoblinT1));
     }
 
     #[test]
