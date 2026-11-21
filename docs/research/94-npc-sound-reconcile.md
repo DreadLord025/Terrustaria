@@ -502,7 +502,7 @@ citations + the cue names) re-adjudicates each:
 | 9 | :45558 | QueenSlime 657 | `queen_slime_landing_cue` | d33 `npc_ai_style121.rs` (the `(2,167)` sounds entry) | DROP helper; **Item_167 row ADOPTED** |
 | 10 | :45759 | QueenSlime 657 | `queen_slime_idle_moan` | d33 `npc_ai_style121.rs` (the `(65,1)` roar entry — the Next(360) gate in the machine) | DROP helper; **case-65 arm + Zombie_115-117 + QueenSlimeMoan cue + play_queen_slime_moan ADOPTED** (the bank superset — d33's machine has no case-65 player yet) |
 | 11 | :47263/:47268/:47293 | BloodNautilus 618 | `blood_nautilus_volley_cue`/`scream_cue` | d33 `npc_ai_style117.rs` (the `(2,170)`/`(2,172)` entries) | DROP helpers; **Item_170/172 rows ADOPTED** |
-| 12 | :48327/:48473/:48545 | FairyCritter 653-655 | `fairy_circle_hum`/`fairy_far_hum` | d33 `npc_ai_style112.rs` (the `(27,1)` entries) | DROP helpers; **Pixie cue + dispatch ADOPTED** (`play_pixie` already landed S1-E-21g) |
+| 12 | :48327/:48473/:48545 | FairyCritter 583-585 (the Pink/Green/Blue — `NPCID.cs:11843-11847`; the retire phase corrects the original 653-655 label, those are HellButterfly/Lavafly/MagmaSnail, `NPCID.cs:11983-11987`) | `fairy_circle_hum`/`fairy_far_hum` | d33 `npc_ai_style112.rs` (the `(27,1)` entries) | DROP helpers; **Pixie cue + dispatch ADOPTED** (`play_pixie` already landed S1-E-21g) |
 | 13 | :48682 | FairyEffects (static) | `fairy_effects_cue` | d33 `npc_ai_style112.rs::fairy_effects` (the `(2,4)` entry) | DROP (Item_4 row already landed) |
 | 14 | :56403 | Medusa 480 | `medusa_gaze_cue` | **UNCLAIMED** — d22's style-3 core claims the 22 plain walkers only (the 480 gaze block unported); d40's Medusa is data-only (SetDefaults/FindFrame), no gaze machine | **PORTED into f2** (`npc_sounds_tail.rs::medusa_gaze_cue`, staged) + NPC_Killed_17 + the int style-17 arm |
 | 15 | :66429 | BigMimic 473-476 | `reflect_projectile_cue` | **UNCLAIMED (the sound body)** — d32's `npc_ai_style87.rs` emits the `reflect_request` out-field (the `ReflectProjectiles(Hitbox)` scan, `:66395-66404`), but NO branch ports the `ReflectProjectile` body (`:66427-66429` — the Item150 play + the velocity/damage rewrite); the sim's projectile pass does not consume the request | **PORTED into f2** (`npc_sounds_tail.rs::reflect_projectile_cue`, staged — the sound seam the projectile pass's reflect wiring consumes) + Item_150 row |
@@ -648,3 +648,131 @@ faithful local shape is the same façade spelling (add the `NpcDeath55`
 variant + dispatch + row + style-55 arm — f2's hunks verbatim); adding
 a `55` arm to `play_npc_death_int` would be the WRONG overload (it
 would drop the NextFloat the C# consumes).
+
+## 13. The 232-site FINAL declaration — the NPC-sound-family merger bible
+
+The count re-verified mechanically this phase: `Select-String NPC.cs
+"SoundEngine.PlaySound"` = **232** (the same count e9d's research/141
+§1 re-ran). Every site is claimed by exactly one keeper below; the
+union branch is f2.
+
+### The merger-bible paragraph (read this first)
+
+**The NPC sound family is ONE bank, ONE dispatch, ONE census-gated
+water pass, ONE idle ladder, and a set of machine-owned tail sites.**
+f2 (`task/W4-f2-npc-sounds-3`) is canonical: it carries the 32-arm
+`idle_sounds` ladder + the `hp>0`-guarded pre-AI wiring, the faithful
+`water_collision_sounds`/`water_collision_tail` superset (the never-wet
+head, the 116 pin, both exit 147-quirks, the `wet_prev` edge latch, the
+exit vx halving, the lava combat half) + the `no_tile_collide`
+87-kind census gate, the `Npc` wet-field quintet, the bank superset
+(`Zombie_24-87`/`115-117`, `NPC_Killed_9/17/55/63`,
+`Item_150/167/170/172`, the 7 Pal/StatueMimic trackables) and every
+`NpcSoundCue` tail variant + dispatch arm; e9 drops wholesale (its
+duplicate ladder/decision/wiring/probes/25 tail helpers — §4 + §9b
+items 1-12, its VileSpit/Ghost extras + `wet_prev`/vx already unioned
+into f2, its two fidelity fixes adopted both ways: the exit-water 147
+on e9 at `712e3c54`, the critter cs_id key on f2 at `c3e5b814`); the
+d-band machines keep their SITES (their `out.sounds` seams drain
+through f2's shared bank/dispatch as one-call consumers — the d33
+consumer note below), d38's inline Ghost cry repoints to the
+`NpcDeath55` façade (§12's exact hunk) and f2's staged `ghost_flee_cry`
+retires, the two genuinely-unclaimed tail sites (Medusa gaze `:56403`,
+BigMimic reflect `:66429`) stay staged in f2's `npc_sounds_tail.rs`
+until the gaze machine / the reflect body land, and the three staged
+movement/AI helpers (`vile_spit_queue_cry`, `water_exit_jump`) activate
+at their named d-band waves (§11). No NPC-sound site is unowned; no
+sound decision is duplicated after the fold.
+
+### The site-family ledger (232 = the sum)
+
+| family | sites | keeper | status |
+|--------|-------|--------|--------|
+| the landed waves (S1-E-21e/g, c13's strike tail, the roar bank `:40581`, the 3 sphere HitEffect sites) | 232 − 40 − 2 − 27 = 163 | the landed modules (the E21e moans, E21g's 19 sites, c13's StrikeNPC lane, the S1-E-21g roar bank) | LANDED (the prior waves' witnesses) |
+| `IdleSounds`' 32-arm ladder (`:90079-90206`) | 32 | f2 `ambient_sound::idle_sounds` + the pre-AI wiring | LIVE (e9's duplicate DROPs, §4.1) |
+| `Collision_WaterCollision`'s 8 splash sites (`:93121-93269`) | 8 | f2 `water_collision_sounds` + the post-machine wiring | LIVE (e9's decision + wiring DROP, §4.4/§9b.8) |
+| e9's two extras — VileSpit `:21480`, Ghost `:24693` | 2 | f2 staged `vile_spit_queue_cry` / d38's `ghost_ai` (the §12 repoint) | STAGED / the d38 merge fold |
+| the 27-tail census (§10) | 27 | 25 machine-owned (d24/d32/d33 out-structs) + 2 f2-staged | the machines UNWIRED-kindless; the 2 staged |
+
+The 620 exit jump (`:93181-93184`) and the lava strike/buff
+(`:93325-93337`) are NOT PlaySound sites (movement/damage halves of
+the water/lava seams) — they ride f2's staged `water_exit_jump` +
+wired `lava_collision_combat` (§8), outside the 232 count. The
+critter emitter (`:92244-92340`, 6 arms) + the Pixie-75 hum
+(`:24853-24856`) are `UpdateNPC`-tail sites inside the landed count:
+the critter table is whole (S1-E-25) with the key space fixed both
+ways this round (§14.3); the Pixie hum is g8's `PixieChirp` (wired on
+g8's tip `82c93cecf`, folds onto f2's `Pixie` cue at the merge — the
+`play_pixie` player is shared, S1-E-21g).
+
+### The d33 `out.sounds` keep-one consumer note (the roster-wave drain)
+
+The d33 style modules (tip `b08acf463`, 15 modules, ALL kindless —
+their census test pins no `NpcKind` for styles
+99-104/111-119/121/122/125-127) carry the tail sites as out-struct
+seams (the style75 convention). At the roster wave each wiring drains
+through f2's shared dispatch — ONE path per site, the module's gate
+maths kept, e9's duplicate helpers dropped (§9b.10). The exact maps
+(verified against the pushed modules this phase):
+
+| module (site) | out-struct push | f2 drain spelling |
+|---------------|-----------------|-------------------|
+| style121 QueenSlime (`:45558`/`:45759`) | `(2, 167, x, y)` (`:717`) / `(65, 1, x, y)` (`:958`) | `ItemCue(167)` → `play_npc_item_cue(167)`; `QueenSlimeMoan` → `play_queen_slime_moan` (the style arg ignored — case 65 reads no Style) |
+| style127 Pals (`:42983-43001`) | `PAL_SOUNDS[idx].0/.1` names (`:350`/`:356`) | `Trackable(name)` → `play_npc_trackable` (the 4 rows landed) |
+| style126 StatueMimic (`:43562-43608`) | `("statuemimic_scare"/"_jump"/"_laugh", x, y)` (`:358-402`) | `Trackable(name)`; **the laugh maps `statuemimic_laugh` → `statuemimic_laugh_0`** (the bank row is the pinned first variation, e9d's note adopted) |
+| style125/113 balloon pops (`:43726`/`:47951`/`:48062`) | `(4, 63, x, y)` (`:310` / the DeathSound row `(4, 63)`) | `NpcDeath63` → `play_npc_death_style(63)` (the façade) |
+| style122 PirateGhost (`:44848`) | `(3, 6)` sounds entry | `NpcHit6` → `play_npc_hit_sound("NPC_Hit_6")` |
+| style117 BloodNautilus (`:47263-47293`) | `(2, 170)` / `(2, 172)` entries | `ItemCue(170/172)` |
+| style112 FairyCritter (`:48327/:48473/:48545`) + `fairy_effects` (`:48682`) | `(27, 1)` / `(2, 4)` entries | `Pixie` → `play_pixie`; `ItemCue(4)` (the Item_4 row landed) |
+| style103 SandShark (`:40632`) | `(14, 542)` + the `math_sign` zero-case | `SandSharkCry` → `play_fighter_moan(14, 542)` (keep-one d33, §7) |
+
+The d24 style-19 Antlion (`:24449`) + d32 style-86 teleports
+(`:37268`/`:37321`) are the same shape: g8's `Item5` cue folds onto
+f2's `ItemCue(5)` at the merge (both drain `play_npc_item_cue(5)`);
+d32's `sound_item8` bool drains `ItemCue(8)` (the `Item8` variant's
+existing callers keep their arm). d32's style-87 `reflect_request`
+(`:66395-66404` scan) is the seam f2's staged `reflect_projectile_cue`
+consumes when the projectile pass's reflect wiring lands.
+
+### The activation re-probe at the CURRENT tips (e9d's census extended)
+
+e9d's research/141 §1 read d41 claim-only / d42 non-compiling WIP.
+Both have since pushed; the tail verdicts re-checked mechanically:
+
+* **d41 `5d036721d`** (batches 1-2): rows 494-506 landed (the
+  crawdads/shellies/salamanders) — NONE of the 27 tail kinds. The
+  Antlion 69 is still unrowed on d34 (`5f3435a87`, the 1-70 band's
+  phase 3); g8's tip carries `NpcKind::Antlion` + the style-19 wiring
+  (the `Item5` push at `npc.rs:5123`), so the Antlion site activates
+  on the g8 merge, not d34's.
+* **d42 `2d7ac08c3`** (the roster-complete + SHEETS tips): the tail
+  kinds 583-585/594/618/620 ARE rowed now, but every one is an UNWIRED
+  stand-in — `FairyCritterPink => {}` (`npc.rs:6822`), `WindyBalloon
+  => {}` (`:6815`), `BloodNautilus => { integrate_no_tile_collide() }`
+  (`:6730`, aiStyle 117 UNWIRED), `GoblinShark => {}` (`:6691`,
+  aiStyle 107 UNWIRED). No machine runs the tail gates; the cues stay
+  staged/unwired exactly as e9d's census concluded.
+* **d43 `a725acb04`** — still zero commits (branch == main). The
+  631-697 tail kinds (Pals 695/696, StatueMimic 690, ClumsySlimeBalloon
+  686, PirateGhost 662, QueenSlime 657) remain unrowed everywhere.
+* **d40 `8fe1d6d31`** — still data-only (the 421-490 band complete,
+  56 kinds; Medusa 480 / BigMimic 473-476 / Apparition 472 rows with
+  FindFrame arms but NO machines — the gaze/reflect sites stay
+  f2-staged).
+
+### The idle-ladder cross-lane note (d41's cs_id folds — a merge caveat)
+
+d41's bestiary-fold cs_id rows (the s1_f_3 cs_id==net_id invariant)
+collide with the ladder's per-type arms for the 2-variants:
+`Crawdad2.cs_id()` folds to 494 (arm 15 plays — the C# 495 is silent),
+`GiantShelly2.cs_id()` folds to 496 (arm 20 plays — the C# 497 plays
+the SAME arm, so this fold is behaviour-correct), and
+`Salamander3-9.cs_id()` fold to 499 (inside the 498-506 range arm —
+also behaviour-correct). The ONE mis-route is **Crawdad2 → 494**: at
+the d41 merge the idle wiring's key for that kind must read the real
+type (the `render_key`/protocol space carries 495) or the ladder arm
+must gate on the pre-fold type — a one-line feed fix in the wiring,
+cross-noted here, NOT applied on this branch (d41's kinds are not on
+f2's tree). The critter table is unaffected (none of 494-506 is a
+critter id; e9d's mechanical scan's single GolemHead-74 collision
+stands, now fixed on BOTH branches).
