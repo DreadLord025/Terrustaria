@@ -1879,17 +1879,23 @@ mod tests {
     /// straights takes the through frame 1; the left neighbour's open-end
     /// front (15, right −1) re-fits to the straight 1 against the new
     /// right-side rail (the through preference, `Minecart.cs:1017-1023`).
+    /// The outer supports (8/12) sit OUTSIDE the 3×3 walk and keep their
+    /// frames — they give the inner neighbours their two-sided masks (18).
     #[test]
     fn dw_e20_the_placement_wake_refits_the_new_piece_and_its_neighbours() {
         let mut w = track_world();
+        place_track(&mut w, 8, 10, 1, -1); // outer support, outside the walk
         place_track(&mut w, 9, 10, 15, -1); // open end, right dead
         place_track(&mut w, 11, 10, 1, -1);
+        place_track(&mut w, 12, 10, 1, -1); // outer support, outside the walk
         // The placed piece: PlaceTrack's style-0 write (front −1, back −1).
         place_track(&mut w, 10, 10, -1, -1);
         refit_tracks_around(&mut w, 10, 10);
         assert_eq!(w.tile(10, 10).unwrap().frame_x, 1, "the −1 front took the straight");
         assert_eq!(w.tile(9, 10).unwrap().frame_x, 1, "the left neighbour re-fit through");
         assert_eq!(w.tile(11, 10).unwrap().frame_x, 1, "the right straight keeps");
+        assert_eq!(w.tile(8, 10).unwrap().frame_x, 1, "outside the walk — untouched");
+        assert_eq!(w.tile(12, 10).unwrap().frame_x, 1, "outside the walk — untouched");
         // A lone placed piece (no neighbours) refits to the isolated frame 0.
         let mut w = track_world();
         place_track(&mut w, 20, 20, -1, -1);
