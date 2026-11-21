@@ -75,8 +75,8 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
 | range doc | 2d9cfcbb | claimed |
 | 28 Floating Island Houses | 93b1938e | landed (code-only; hash re-pin deferred to the gate) |
 | 29 Quick Cleanup | df067118 | landed (code-only; hash re-pin deferred to the gate) |
-| 30 Hellforge | 2ac7c298 | landed (code-only; hash re-pin deferred to the gate) |
-| 31 Spreading Grass | 3a101031 | landed (code-only; classic arm, remix arm deferred to d107; hash re-pin deferred) |
+| 30 Hellforge | 2ac7c298 (+574f1d58 PlaceTile-77 graft) | landed (code-only; hash re-pin deferred to the gate) |
+| 31 Spreading Grass | 3a101031 (+74103ae4 repeat:true fix) | landed (code-only; classic arm, remix arm deferred to d107; hash re-pin deferred) |
 | 32 Surface Ore and Stone | 19bc132b | landed (code-only; 512-pin unchanged by the width guard; default re-pin deferred) |
 | 33 Place Fallen Log | 2fdc8b96 | landed (code-only; 512-pin unchanged by the width guard; default re-pin deferred) |
 | 34 Traps | 7c768356 (+341f4280 witness fix) | landed (code-only; 512-pin unchanged by the width guard; default re-pin deferred) |
@@ -172,20 +172,39 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
   `num = maxTilesX / 200` forges, each a `while (!flag)` retry: the
   `Next(1, maxTilesX)` column + `Next(maxTilesY - 250, maxTilesY - 30)`
   row, the wall 13/14 gate, the drop scan to the first active cell
-  (`j < maxTilesY - 20`), `j--`, `PlaceTile(num3, j, 77)` (the `Place3x2`
-  route `:60079-60083`), the type-77 success check, the 10000-failure
-  valve. The wall-miss arm redraws WITHOUT bumping the failure count
-  (only the place-failure + catch arms do). The `try/catch`'s
-  out-of-bounds reads map to the port's bounds-checked `tile` reads.
-* **Rust**: `structures.rs::pass_hellforge` (+ the `TILE_HELLFORGE`
-  const + the a==b witness), `pipeline.rs` (`step_hellforge` after
-  `quick cleanup`, the skyblock gate), `progress.rs` (`Lang.gen[36]`
-  `:18191`).
+  (`j < maxTilesY - 20`), `j--`, `PlaceTile(num3, j, 77)` (the FULL
+  PlaceTile route — see the graft below), the type-77 success check, the
+  10000-failure valve. The wall-miss arm redraws WITHOUT bumping the
+  failure count (only the place-failure + catch arms do). The
+  `try/catch`'s out-of-bounds reads map to the port's bounds-checked
+  `tile` reads.
+* **Graft (574f1d58, research/86 §6.2)**: g37 research/75 §2.7's
+  recommendation accepted — the bare `evil::place_3x2` write became
+  `structures.rs::place_tile_hellforge`, the PlaceTile-77 slice
+  (`:59342-60295` re-read): the 488 veto `:59345`, the entry gate
+  `:59373` (`tileSolid[77]` is FALSE — the generated `TILE_SOLID` bit 77
+  is 0 — so the entry always admits), the inactive-seat
+  `Clear(Tile|TilePaint|Slope)` `:59473-59476` (incl. the Glow/Echo
+  coatings, the g38 fallen-log idiom), the
+  `ResetsHalfBrickPlacementAttempt[77]` reset `:59477-59482` (the set is
+  default-true, `TileID.cs:497`), the 77 dispatch → `Place3x2` +
+  `SquareTileFrame` `:60079-60083` (`edit::square_tile_frame_gen`, the
+  temple precedent), the tail re-frame + result `:60255-60262`. The
+  sub-vanilla `height <= 250` guard adopted from g37. **The ORDER stays
+  d104's** — hellforge AFTER `hell forts` (g37's slot precedes the
+  wall-14 producer and never fires, §1 B7). The retry draw schedule is
+  unchanged (the route draws no RNG).
+* **Rust**: `structures.rs::pass_hellforge` + `place_tile_hellforge`
+  (+ the `TILE_HELLFORGE` const + the a==b witness + 3 graft witnesses),
+  `pipeline.rs` (`step_hellforge` after `quick cleanup`, the skyblock
+  gate), `progress.rs` (`Lang.gen[36]` `:18191`).
 * **RNG**: the retry draws ride the fresh `pass_rng("Hellforge")`
   stream — no other ledger shifts.
-* **Hash doc**: both pins gain the pass-30 stale-by-design notes.
-  Re-pin DEFERRED to the gate; **a == b untouched** + the pass-level
-  witness `w4_d104_30_the_hellforge_places_and_replays`.
+* **Hash doc**: both pins gain the pass-30 stale-by-design notes (+ the
+  graft notes — the tile bytes may move on residue seats / refused-
+  placement resets; same deferred re-pin). Re-pin DEFERRED to the gate;
+  **a == b untouched** + the pass-level witness
+  `w4_d104_30_the_hellforge_places_and_replays`.
 
 ### Pass 31 — Spreading Grass (landed, classic arm)
 
@@ -195,21 +214,33 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
   jungle-grass 60 → dirt spread, the stone/snow/ore ±3 flavour scan with
   the sand-53 latch + the open-air `flag` gate + the evil cover veto +
   the jungle-band 59/60 split), sweep 2 (`:18314-18351`: the ±10
-  columns, the `flag2` open-sky latch, the first-surface
-  `SpreadGrass(num3, num4, 0, 2, repeat: false)`, the
-  `worldSurfaceHigh` break). The remix arm (`:18352-18443`) is d107's.
-  `SpreadGrass` `:75146-75268` re-read for the `repeat` parameter.
-* **Rust**: `surface.rs::pass_spreading_grass` (+ 2 witnesses),
+  columns, the `flag2` open-sky latch, the first-surface LIVE
+  `SpreadGrass(num3, num4)` call (`:18334` — the defaults `dirt: 0,
+  grass: 2, repeat: true`, `:75146`), the `worldSurfaceHigh` break. The
+  remix arm (`:18352-18443`) is d107's. `SpreadGrass` `:75146-75268`
+  re-read for the `repeat` parameter.
+* **Fix (74103ae4, research/86 §6.1)**: the original port passed
+  `repeat: false` — that is the DEAD `:18339` catch arm (SpreadGrass has
+  its own try/catch `:75148/:75254` and never throws). The call-site
+  flipped to `repeat: true`; the bounded 3×3 recursion
+  (`grassSpread < 1000`, a DEPTH cap — the outer column loop re-seeds
+  past it) now fires. The old single-cell witness was stale-by-design
+  WRONG and re-derived (the recursion grasses the open-flanked column
+  down to the `j >= worldSurface && dirt == 0` refusal); + the shelf
+  recursion witness + the 1100-cell depth-cap/re-seed witness.
+* **Rust**: `surface.rs::pass_spreading_grass` (+ 4 witnesses),
   `evil.rs::spread_evil_grass` gains the `repeat` parameter (the evil
   calls pass `true` — behaviour unchanged; the recursion gate is
   `repeat && grassSpread < 1000`), `pipeline.rs`
   (`step_spreading_grass` after `hellforge`, the gate),
   `progress.rs` (`Lang.gen[37]` `:18241`).
 * **RNG**: the classic arm draws NOTHING — the step's stream slot is
-  the remix arm's future home. No ledger shifts.
-* **Hash doc**: both pins gain the pass-31 stale-by-design notes (the
-  surface cells move; no draws). Re-pin DEFERRED; **a == b untouched** +
-  the pass-level witness `w4_d104_31_the_surface_dirt_takes_grass`.
+  the remix arm's future home. No ledger shifts; no pinned grass-spread
+  draws exist to re-derive.
+* **Hash doc**: both pins gain the pass-31 stale-by-design notes (+ the
+  fix notes — more cells grass, still zero draws; same deferred
+  re-pin). Re-pin DEFERRED; **a == b untouched** + the pass-level
+  witness `w4_d104_31_the_surface_dirt_takes_grass`.
 
 ### Pass 32 — Surface Ore and Stone (landed)
 

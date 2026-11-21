@@ -255,12 +255,14 @@ anchor order**, reconciling each lane's grouped deviations. Owner-branch column
 lists every lane whose pushed tip executes that vanilla name (`base` = present
 in the unmodified 66-step base on all lanes; `gated` = special-seed-gated).
 
-Counts: **55 base** + **44 landed-new** + **3 gated** (Skyblock, Dither Snake,
-and the dead skyblock-Jungle re-registration) = 109 decls; **7 UNLANDED**
-(Flowers, Mushrooms, Random Gems, Moss Grass, Larva, Remove Broken Traps, Final
-Cleanup) remain for d105/d106/g39 to finish. The 44 landed-new + 55 base = 99
-classic executed names; + 2 real gated = 101; the 51-pass census closes as the
-7 unlanded land.
+Counts (updated by the §6 addendum, 2026-11-21): **55 base** + **50
+landed-new** + **3 gated** (Skyblock, Dither Snake, and the dead
+skyblock-Jungle re-registration) + **1 UNLANDED** (Final Cleanup) = 109
+decls. The original reconcile counted 44 landed-new + 7 unlanded; d105
+tip `96f65cd6` landed Flowers/Mushrooms/Random Gems/Moss Grass/Larva and
+d106 tip `e2c2609c` landed Remove Broken Traps (§6.3/§6.4). The 50
+landed-new + 55 base = 105 classic executed names; + 2 real gated = 107;
+the 51-pass census closes as Final Cleanup lands.
 
 | # | anchor | vanilla pass | status | owner-branch(es) | executed step |
 | --- | --- | --- | --- | --- | --- |
@@ -357,13 +359,13 @@ classic executed names; + 2 real gated = 101; the 51-pass census closes as the
 | 91 | :20122 | Glowing Mushrooms and Jungle Plants | base | base | `mushroom and jungle plants` |
 | 92 | :20165 | Jungle Plants | base | base | `jungle plants` |
 | 93 | :20193 | Vines | base | base | `vines` |
-| 94 | :20447 | Flowers | UNLANDED | d105/g39 claim | — |
-| 95 | :20599 | Mushrooms | UNLANDED | d105/g39 claim | — |
+| 94 | :20447 | Flowers | landed | d105 | `flowers` (§6.4) |
+| 95 | :20599 | Mushrooms | landed | d105 | `mushrooms` (§6.4) |
 | 96 | :20697 | Gems In Ice Biome | base | base | `exposed gems` |
-| 97 | :20729 | Random Gems | UNLANDED | d105/g39 claim | — |
-| 98 | :20769 | Moss Grass | UNLANDED | d105/g39 claim | — |
+| 97 | :20729 | Random Gems | landed | d105 | `random gems` (§6.4) |
+| 98 | :20769 | Moss Grass | landed | d105 | `moss grass` (§6.4) |
 | 99 | :20813 | Muds Walls In Jungle | base | base | `muds walls in jungle` |
-| 100 | :20868 | Larva | UNLANDED | d105/g39 claim | — |
+| 100 | :20868 | Larva | landed | d105 | `larva` (§6.3 — g41's is the NTB seed arm, NOT this slot) |
 | 101 | :20901 | Micro Biomes | base | base | `thin ice`/`campsites`/`sword shrines`/`mining explosives`/`mahogany trees` |
 | 102 | :21246 | Settle Liquids Again | landed | d106 | `settle liquids again` |
 | 103 | :21310 | Cactus, Palm Trees, & Coral | base | base | `cacti` |
@@ -371,7 +373,7 @@ classic executed names; + 2 real gated = 101; the 51-pass census closes as the
 | 105 | :21943 | Lihzahrd Altars | base | base | `lihzahrd altar` |
 | 106 | :21973 | Water Plants | base | base | `water plants` |
 | 107 | :22038 | Stalac | landed | d106 | `stalac` |
-| 108 | :22121 | Remove Broken Traps | UNLANDED | d106 claim | — |
+| 108 | :22121 | Remove Broken Traps | landed | d106 | `remove broken traps` (§6.4) |
 | 109 | :22141 | Final Cleanup | UNLANDED | d106 claim | — |
 
 ### Ordering reconciliations the merge must apply
@@ -389,8 +391,10 @@ classic executed names; + 2 real gated = 101; the 51-pass census closes as the
    faithful target).
 3. **Spawn Point lifts out of `step_world_tail`** (d104 pass 36): the tail keeps
    only the moon/hell draws; the spawn search rides its own row after Piles.
-4. **The 7 UNLANDED rows** (Flowers/Mushrooms/Random Gems/Moss Grass/Larva/
-   Remove Broken Traps/Final Cleanup) land on d105/d106/g39 to close the census.
+4. **The UNLANDED rows** — originally 7 (Flowers/Mushrooms/Random Gems/
+   Moss Grass/Larva/Remove Broken Traps/Final Cleanup); the §6 addendum
+   closes six of them (d105 ×5, d106 ×1). Only **Final Cleanup** remains
+   (d106 claim) to close the census.
 
 ## 5. Verification performed
 
@@ -416,3 +420,178 @@ Evidence gathered by direct reads (no junction recursion):
   d103 `island_houses.rs` (the third island-house copy).
 
 No code changed on any sibling; this branch adds only this document.
+
+## 6. Addendum (2026-11-21, post-reconcile dispatch — DONE)
+
+> The four dispatch items, executed on THIS branch. Tips re-read:
+> g37 `53a5b5b5` (its research/75 reconcile — **no research/124 exists**
+> on the pushed tip; the "hellforge-graft-patch" the dispatch mentions
+> was never pushed, so the graft was re-derived from g37's landed
+> `passes_b.rs::place_tile` + a fresh C# read), g41 `b5c8e694`, d105
+> `96f65cd6`, d106 `e2c2609c`. Code-only: witnesses written NOT run;
+> commit-per-phase.
+
+### 6.1 PASS-31 repeat:true FIX — landed `74103ae4`
+
+The §1 B8 finding, executed: `surface.rs::pass_spreading_grass`'s sweep-2
+call flipped `spread_evil_grass(…, false)` → `true` (the one-argument fix
+§2 item 2 predicted). C# re-verified in ≤100-line windows: `:18333-18334`
+`grassSpread = 0; SpreadGrass(num3, num4)` is the LIVE call; the
+signature `:75146` defaults `dirt = 0, grass = 2, repeat = true`; the
+`:18339` `repeat: false` call sits ONLY in the `catch` block, and
+SpreadGrass wraps its whole body in its own try/catch (`:75148` /
+`:75254-75256`) — it never throws, so the catch arm is unreachable. The
+recursion `:75241-75245` (`repeat && grassSpread < 1000`, increment
+before / decrement after) now fires: a DEPTH cap, and the outer column
+loop re-seeds any un-grassed first-surface dirt with a fresh
+`grassSpread = 0`.
+
+**Witness re-derivation (the pins that moved):** the classic arm draws
+NO RNG, so there are no pinned grass-spread DRAWS to re-derive — only
+tile-state witnesses. The old `w4_d104_31_the_surface_dirt_takes_grass`
+asserted the buried row-70 cell STAYS dirt — true only under the buggy
+single-cell write. Under the faithful recursion the open-flanked column
+grasses down to the surface rule's refusal (`j >= worldSurface &&
+dirt == 0`, `:75162`): rows 60..99 grass, row 100 stays dirt. The
+witness was re-derived to assert exactly that; added
+`w4_d104_31_the_grass_spread_recurses` (a 100-cell shelf grasses
+end-to-end from ONE seed call) and
+`w4_d104_31_the_long_shelf_grasses_past_the_depth_cap` (a 1100-cell
+shelf: the depth cap saturates near 1000, the column loop re-seeds —
+the C# behaviour). Both world-hash pins were ALREADY stale-by-design
+from the pass landing; the fix folds into the same deferred gate
+re-pin (stale-by-design notes added to `world_hash.rs`). a == b halves
+untouched. `evil.rs`'s doc comment corrected (every generation call
+takes the default `true`).
+
+### 6.2 B7 HELLFORGE keep-one RE-ADJUDICATION — graft landed `574f1d58`
+
+**Question:** d104's ORDER correct + g37's PLACEMENT body more faithful?
+**Answer: YES to both — graft executed.**
+
+- **ORDER stays d104's.** Re-confirmed against the C#: Underworld
+  `:13645` calls `AddHellHouses` (the wall-13/14 painter) long before
+  Hellforges `:18187`. d104 orders `hell forts` (40) → … → `hellforge`
+  (62); g37's tip still orders hellforge (41) BEFORE hell forts (45) —
+  its B7 remains a no-op as ordered. g37's own research/75 §2.7
+  CONCEDES the ordering (§4's merge table moves its B6-B9 onto d104's
+  slots) and recommends exactly this graft: "KEEP d104's pass shell
+  (gate, slot, witness) but GRAFT g37's `place_tile` route for the 77
+  write". No research/124 / hellforge-graft-patch exists on `53a5b5b5`.
+- **PLACEMENT body: g37 more faithful — verified against a fresh C#
+  read, with one refinement.** `PlaceTile(77)` is NOT a bare Place3x2.
+  Re-read `:59342-59482` + `:60040-60099` + `:60230-60294`:
+  - `:59345` the gen-time existing-488 veto — d104's bare route skipped it.
+  - `:59373` the entry gate `forced || EmptyTile || !tileSolid[num]` —
+    **`Main.tileSolid[77]` is FALSE** (no `Main.cs` assignment exists;
+    verified the port's generated `TILE_SOLID` word 1 bit 13 = 0), so
+    the entry ALWAYS admits for 77. g37 research/75's claim that the
+    gate "refuses an occupied cell" is overstated for THIS kind — the
+    refusal comes from Place3x2's own body scan, which d104 already
+    ran. The gate is ported verbatim anyway.
+  - `:59473-59476` the inactive-seat `Clear(Tile|TilePaint|Slope)` —
+    REAL behavioural arm d104 skipped: a residue seat (stale
+    frames/paint/coatings/slope/halfBrick on an inactive cell) kept its
+    residue under the bare write. Ported with the full
+    `ClearBlockPaintAndCoating` semantics (`Tile.cs:904-909` — paint +
+    Glow + Echo), the g38 `place_tile_fallen_log` idiom (g37's own
+    slice missed the coatings).
+  - `:59477-59482` the `ResetsHalfBrickPlacementAttempt[77]` arm — the
+    set is DEFAULT-TRUE (`TileID.cs:497`, 77 not in the false list): an
+    active non-frame-important seat loses halfBrick + frames EVEN WHEN
+    the placement then fails. Real arm d104 skipped; ported.
+  - `:60079-60083` the dispatch: `Place3x2` + `SquareTileFrame`;
+    `:60255-60262` the tail: `TruncatesWalls[77]` false
+    (`TileID.cs:595`), a second `SquareTileFrame`, `result` = centre
+    active. Both re-frames ride `edit::square_tile_frame_gen` (the
+    temple precedent — g37's slice does the same).
+  - The sub-vanilla `height <= 250 || num <= 0` guard adopted from g37
+    (the C# `Next(maxY-250, maxY-30)` band goes negative below 250).
+- **Body home:** `structures.rs::place_tile_hellforge` (a kind-77
+  PlaceTile slice beside the pass, the g38 fallen-log pattern — NOT
+  g37's monolith). The retry loop / draw schedule / wall-miss no-bump /
+  10000 valve / skyblock adapter gate are UNCHANGED — the route draws
+  no RNG, so no ledger shifts. 3 new witnesses: the Clear-arm residue
+  clean, the halfBrick reset on a refused seat (+ the C#
+  result-is-centre-active semantics — TRUE even when the forge is
+  refused; the pass's own `type == 77` check counts the failure), the
+  488 veto. The existing a==b placement witness still holds (the
+  route's writes on a clean seat are identical).
+- **Merge guidance updated:** §2's "optionally fold in" for g38 C1's
+  PlaceTile preamble stays optional (488's seat is always air); the
+  B7 graft is now DONE on d104 — the merger takes d104's
+  `pass_hellforge` + `place_tile_hellforge` wholesale and drops g37 B7
+  entirely. At the g39-helper convergence, `place_tile_hellforge`
+  folds into the canonical PlaceTile the same way.
+
+### 6.3 Larva UNLANDED claim — ADJUDICATED: g41 does NOT cover the slot; d105 does
+
+The dispatch's claim ("g41 `b5c8e694` `not_the_bees.rs` Place3x3 larva
+landed — verify it covers vanilla Larva pass slot") is **FALSE for the
+vanilla slot**:
+
+- g41's `place_larva` (`not_the_bees.rs:818`) is called from the
+  `FinishNotTheBees` per-cell walk (`:771-791`) — that is the C#
+  **seed-conversion tail** `WorldGen.cs:25608-25629` (the
+  `Next(600)/Next(150)/Next(225) == 0` → `PlaceTile(m, n, 231)` rolls
+  inside `FinishNotTheBees`), dispatched from `Finish()` `:22435-22439`
+  — NOT `GenPassNameID.BeeLarvaInBeehives` `:20868`. g41's own pipeline
+  proves it: its `VANILLA_CHAIN` comment says "Two of the twelve have
+  no executed step in the port yet (`Larva` — `GenPassNameID.
+  BeeLarvaInBeehives` — and `Shimmer`)" and there is NO `step!("larva",
+  …)` in its EXECUTED_PIPELINE; the NTB host runs only under the
+  NOT_THE_BEES flag (a classic world never enters it).
+- **d105 `22a0026c` landed the vanilla slot**: `pass_beehives` publishes
+  the `GenVars.larva` ledger (`HiveBiome.CreateStandForLarva`
+  `HiveBiome.cs:357-365` — the clamp + the 100-entry cap) instead of
+  placing inline; `structures.rs::pass_larva` consumes it at
+  `step!("larva", "Larva", …)` after `muds walls in jungle` — the
+  `:20874-20896` body (the 3×4 clear: three upper rows deactivated, the
+  floor row hive-225 flat; then `PlaceTile(x, y, 231, mute: true)` →
+  the Place3x3 `:53534-53633` slice). The `tileSolid[229/232/162]`
+  writes (`:20872/:20897-20898`) are boot statics the port's generated
+  table already carries (verified `Main.cs:7145/:9612/:10220`).
+- **Union-table row 100 updated: landed, owner d105.** g41's NTB larva
+  is a seed-arm placement (like d107's seed arms), not a classic row —
+  no double-count. At the merge both survive: d105's classic
+  ledger-driven pass + g41's flag-gated seed tail. They are NOT
+  disjoint by flag (the C# Hives pass `:15927-15929` gates only on
+  skyblock, so an NTB world still runs the hive ledger and BOTH larva
+  placements fire — the vanilla behaviour); the two routes write
+  different sites (the hive centres vs the conversion-tail rolls).
+
+### 6.4 Flowers/Mushrooms/Gems/MossGrass — d105 CLOSED; union 7 → 1
+
+d105 tip `96f65cd6` (read past the `d590d99a` the dispatch cites — two
+more commits landed: the lane-5 witness re-pins `93cdd325` + the
+`dye_nearby` faithfulness fix `96f65cd6`):
+
+| vanilla / anchor | d105 commit | evidence (tip read) |
+| --- | --- | --- |
+| Flowers `:20447` | `3980b799` | `step!("flowers", …)` after vines; `pass_rng("Flowers")`; the `:59507-59580` PlaceTile-3 arm + `IsFitToPlaceFlowerIn :58231-58251`; GenVars.logX/logY seam |
+| Mushrooms `:20599` | `03efd7bc` | `step!("mushrooms", …)` after flowers; frameX-144 tuft conversion + the tall-270 glowing arm |
+| Random Gems `:20729` | `9f7b1a24` | `step!("random gems", …)` after mushrooms; the 178 multi-directional anchors + marble/granite diamond patches |
+| Moss Grass `:20769` | `d590d99a` | `step!("moss grass", …)` after random gems; the LongMoss 184 sweep via the PlaceTile-184 two-gate arm |
+| Larva `:20868` | `22a0026c` | §6.3 — LANE 5 COMPLETE 9/9 |
+| Remove Broken Traps `:22121` | d106 `e2c2609c` | `step!("remove broken traps", …)` after stalac; the `ClearBrokenTraps :26840-26958` two-list BFS |
+
+**Union-table status: 7 UNLANDED → 1** (rows 94/95/97/98/100 → d105,
+row 108 → d106; only row 109 **Final Cleanup** `:22141` remains, d106
+claim — its pipeline's `VANILLA_CHAIN` still lists it unexecuted).
+Counts updated in §4. All six landings carry their own witnesses +
+stale-by-design pin notes on their branches (read, not re-run — this
+lane stays code-only).
+
+### 6.5 Verification performed (addendum)
+
+Code-only — **no cargo/tests/rustfmt/graphify run** (lane discipline).
+Evidence: C# re-reads in ≤100-line windows (`WorldGen.cs:18185-18239`,
+`:18300-18359`, `:20860-20959`, `:25595-25639`, `:52066-52165`,
+`:59342-59516`, `:59960-60099`, `:60230-60294`, `:70111-70200`,
+`:75140-75269`, `:80168-80199`; `Tile.cs:744-803/:900-919`;
+`TileID.cs:497/:595`; `Main.cs` tileSolid probes; `HiveBiome.cs:340-374`);
+sibling reads via `git show origin/<branch>:<path>` (g37 `passes_b.rs`
+place_tile + pass_hellforge + research/75 §2.7; g41 `not_the_bees.rs` +
+pipeline; d105 pipeline + structures + 12e; d106 pipeline); the
+`TILE_SOLID` bit-77 check computed from the generated table word.
+Commits: `74103ae4` (§6.1), `574f1d58` (§6.2), this doc (§6.3/§6.4).
