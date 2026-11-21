@@ -39388,10 +39388,22 @@ landed splash lane. Every function now has a port or a cited gap:
   vs 1500 normal (`SceneMetrics.cs:154-163`); the scene scan's
   `ZoneSnow`/`ZoneDesert` read the same arm. Field shape adopted from
   W4-f24's `SkyblockState.low_tiles` (the runtime ledger lives on `World`).
-* **`NewRainForced` (`:135-164`)** — landed as the Eyebrella vanity-drip
-  seam (`Player.DoEyebrellaRainEffect`, `Player.cs:14308-14331` — the
-  caller is unported, `#[allow(dead_code)]`). Budget = `maxRain` cut by
-  `(1+q)/2`, ignoring cloudAlpha/snow/atmo; returns `maxRain` when full.
+* **`NewRainForced` (`:135-164`)** — the Eyebrella vanity-drip seam. Budget =
+  `maxRain` cut by `(1+q)/2`, ignoring cloudAlpha/snow/atmo; returns `maxRain`
+  when full. **The caller is now ported (W4-g67 follow-up):** the `UpdateEquips`
+  arm (`Player.cs:13083-13087`) fires `DoEyebrellaRainEffect` (`:14308-14331`)
+  when the head armor slot 0 or the vanity head slot 10 wears 5101, and arms
+  `eyebrellaCloud` (`ResetEffects` clears it, `:18461`). The drip's `Next(4)`
+  cadence + `NextFloat` window roll ride the player's `UpdatePlayers`
+  `UnifiedRandom` stream (the C# `Main.rand` inside `Player.Update`); the
+  `SolidTile3`/liquid tile gate + the mount head offset (`ApplyHeadOffsetFromMount`
+  + the Velociraptor-54 `(-14,0)` extra) run in the tick, the position queues
+  (`pending_eyebrella_rain`), and `world_sim/player.rs` drains it into
+  `new_rain_forced` with the live `windSpeedCurrent*3, 9` velocity — the scale +
+  frame draws ride Rain's own stream (the `update_drops` convention). The
+  `netMode==2/dedServ/mapFullscreen/!AllowRain` gates fold into `allow_rain`
+  (`window_focused && !game_paused && !map_open`, `FocusHelper.cs:57`). The
+  `eyebrellaCloud` draw layer (`PlayerDrawLayers.cs:4033`) is a render seam.
 * **`ClearRain` (`:22-28`)** — wired into `save_and_quit`
   (`WorldGen.cs:6672`); the gen-side call (`:6747`) is a no-op (a fresh
   world boots a fresh empty `Rain`).

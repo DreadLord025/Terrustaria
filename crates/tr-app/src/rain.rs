@@ -328,11 +328,11 @@ impl Rain {
 
     /// `Rain.NewRainForced` (`Rain.cs:135-164`): the Eyebrella vanity drip
     /// (`Player.DoEyebrellaRainEffect`, `Player.cs:14308-14331` — the caller is
-    /// unported, so this seam has no production writer yet). Unlike `NewRain`
-    /// it ignores `cloudAlpha`/snow/atmo: the budget is `maxRain` cut by the
-    /// gfx `(1+q)/2` when q<0.9 (`:139-143`), then the first inactive slot takes
-    /// the spawn. Returns the slot index, or `maxRain` when full (`:152-155`).
-    #[allow(dead_code)] // the Eyebrella caller (Player.cs:14308) is unported
+    /// the `UpdateEquips` arm `:13083-13087`, drained in `world_sim/player.rs`).
+    /// Unlike `NewRain` it ignores `cloudAlpha`/snow/atmo: the budget is
+    /// `maxRain` cut by the gfx `(1+q)/2` when q<0.9 (`:139-143`), then the first
+    /// inactive slot takes the spawn. Returns the slot index, or `maxRain` when
+    /// full (`:152-155`).
     pub(crate) fn new_rain_forced(
         &mut self,
         world: &World,
