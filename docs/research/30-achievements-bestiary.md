@@ -243,19 +243,19 @@ witness tests are WRITTEN NOT RUN.
 | id | row | C# site | verdict |
 | --- | --- | --- | --- |
 | 21 | MECHA_MAYHEM | `AchievementsHelper.cs:447-483` (`MechaMayhem_Kill`), `NPC.cs:79842`/`:79847` (`CountKillForAchievements`), `:80664-80685` (`SpawnBoss` bookends) | **WIRED** — the machine on `AchievementManager` (`mecha_mayhem_{clear,start,kill}`), the summon bookends in `use_boss_summon_item` (544 per-eye, 556/557 shared), the death-path switch + the `DropEoWLoot` last-segment boss latch (`NPC.cs:78414-78430`). |
-| 33 | FEAR_THE_SUN | `Player.cs:28647` (`UpdateSunScorch`, the vampire 124/85/72 set at `sunScorchCounter` 120) | CITED — the vampire sun-scorch system is unported (`armor_sets.rs:345` "the flag has no writer"); `vampire_burning_in_sunlight` never sets in play. |
+| 33 | FEAR_THE_SUN | `Player.cs:28647` (`UpdateSunScorch`, the vampire 124/85/72 set at `sunScorchCounter` 120) | **WIRED (W4-f30 system 2)** — `sun_scorch.rs`: the exposure scan + the clamp-300 ramp + the 120-crossing burn (the `Array.Clear`/24-23-32 triple/mount-dismount/wings-rocket zero) + the vampire-set check; the `update_equips`-tail call site fires 33, the Molten `buffImmune[24]` gate reads the live flag. The sizzle sound / VampireOnFire particle / PlayerFrame side effects cited. |
 | 34 | ITS_SHALING_OUTSIDE | `WorldGen.cs:71694` (`SpawnFallingObjects`, the boulder-rain start on drunk+getGood+storm) | CITED — `SpawnFallingObjects` / `_isRainingBoulders` unported (no boulder-rain weather pass). |
-| 35 | EXTRA_LIFE | `Player.cs:38782` (`HardcoreDeathPenalty`, `Main.surviveHardcoreDeath` + `statLifeMax -= 60`) | CITED — the hardcore death penalty is unported (`death.rs` drops items/coins but never reduces `max_hp`; no `surviveHardcoreDeath` flag). |
-| 36 | GRAVE_MISTAKE | `Player.cs:20473` (`OnKillNPC`, a gravestone projectile kills a town NPC) + `:38836` (`KillMe`, a teammate's gravestone) | CITED — gravestone projectiles are the falling-tombstone visual (`death.rs::tick_tomb_falls`), not striking projectiles; no `OnKillNPC` killing-blow-source seam, no MP teammate deaths. |
+| 35 | EXTRA_LIFE | `Player.cs:38782` (`HardcoreDeathPenalty`, `Main.surviveHardcoreDeath` + `statLifeMax -= 60`) | **WIRED (W4-f30 system 3)** — `death.rs::hardcore_death_penalty`: the `survive_hardcore_death` seed predicate (DST+Anniversary unless FTW), the `max_hp-60` clamp + the 35 notify on the surviving world, `kill_me_for_good`'s `.plr`/`.bak` erase + session-draft reset; the ghost flag (`update_dead`'s hardcore gate) never respawns. |
+| 36 | GRAVE_MISTAKE | `Player.cs:20473` (`OnKillNPC`, a gravestone projectile kills a town NPC) + `:38836` (`KillMe`, a teammate's gravestone) | **WIRED (W4-f30 system 1)** — the gravestone is the REAL aiStyle-17 projectile (`projectile.rs::ai_gravestone`, the `DropTombstone` spawn with the FTW `friendly&&hostile` pair); the `OnKillNPC` town-kill latch in `damage_pve` + the `KillMe` teammate-gravestone arm (the single-player self-kill stand-in, the MP deviation documented) both fire 36. The landing places tile 85 + the epitaph sign. |
 | 37 | SPICY_LICKS | `Player.cs:46574` (The Axe 1305), `:46588` (Carbon/Ivy guitars 4057/4372), `:46603` (Sparkle Guitar 4715) | **WIRED (4715)** — the Sparkle Guitar's note spawn fires 37 (`fire_non_ammo_shot`'s 4715 arm, the chord-use stand-in). The Axe + Carbon/Ivy guitars have no ported chord-use arm — those two sites CITED. |
 | 38 | ON_FLEEK | `Player.cs:25693` (`UpdateArmorSets`, Sunglasses head-slot 12 in the day window) | **WIRED** — `update_player`'s armor tail: head-slot 12 + `!remix && !rain && dayTime && time in [3600,50400] && y < worldSurface*16`. |
 | 39 | FORTUNE_FAVORS_THE_BOULD | `Main.cs:61828` (`_rainbowBoulderMusicFramesCounter > 0`, the rainbow-boulder draw) | CITED — the rainbow boulder (proj 1047/1090) draw + its music counter are unported (the pet flag exists, `buff_effects_misc.rs:206`, but no boulder projectile/draw). |
 | 40 | TRAINING_DAY | `Player.cs:25697` (`UpdateArmorSets`, `combatBookWasUsed && combatBookVolumeTwoWasUsed`) | CITED — the port carries `world.combat_book_was_used` but the volume-two book (5336) use is unported (`ItemCheck_UseCombatBook` `Player.cs:45337-45349` has no port; the second flag never sets). |
 | 41 | MINI_ME | `Player.cs:25701` (`UpdateArmorSets`, the Moon Lord set 187/249/217) | **WIRED** — `update_player`'s armor tail: effective head 187 + body 249 + legs 217 (the vanity-over-functional fold). |
-| 43 | NEW_DIGS | `NPC.cs:53273` (`AI_007`'s shimmer-dunk transform, `townNpcVariationIndex == 1`) | CITED — the town shimmer state 25 is a cited skip (`npc_ai_town.rs:1613-1619`, the dust/teleport systems unported); the transform never runs. |
+| 43 | NEW_DIGS | `NPC.cs:53273` (`AI_007`'s shimmer-dunk transform, `townNpcVariationIndex == 1`) | **CORE PORTED (W4-f30 system 4)** — `town_shimmer.rs::town_shimmer_step`: the RNG-free state-25 decision core (the ai2 hold/climb/transparency-decay/completion variant-flip + the 43 gate). The full visual/teleport machine + the inline 43 wire are the liquid-shimmer lane's (W4-f47 `e5aebe3e`, on its unmerged branch); the town AI itself is unwired on this base (the `update_guide` stand-in) and the shimmer trigger (buff 353 → GetShimmered) is f47's — the core is exercised by the witnesses, the wiring cites it. |
 | 44 | MY_PEOPLE_NEED_ME | `Player.cs:24076` (`BordersMovement`, the remix/forced-gravity top-world death) | CITED — `BordersMovement` is unported (no world-border movement pass; the port's player has no top-world kill). |
-| 45 | TRASH_COMPACTOR | `AchievementsHelper.cs:387-399` (`CheckResearchAchievement`), `Player.cs:325` (`EnterWorld`, forced) + `:25703` (per tick) | **PREP** — `ResearchTracker` gains `LastEditId` + `count_fully_researched` and the `check_research_achievement` helper (the half-catalogue threshold). The live sacrifice UI is unported (the tracker has no App field/consumer), so the call sites stay CITED until the Journey research lands. |
-| 46 | INTERDIMENSIONAL_RECYCLING | `Main.cs:40294` (`DryadText_Do_StardewValleyBit`, the Joja-cola gift) | CITED — the Dryad Stardew/Joja bit is unported (`npc_chat.rs`'s Dryad arm has the cola *reminder* line but not the status-button gift path; `CanDryadPlayStardewAnimation`/`ConsumeItem(5275)` have no port). |
+| 45 | TRASH_COMPACTOR | `AchievementsHelper.cs:387-399` (`CheckResearchAchievement`), `Player.cs:325` (`EnterWorld`, forced) + `:25703` (per tick) | **WIRED (W4-f30)** — `App.research` + `last_research_version`; the per-tick armor-tail check (`world_sim/player.rs`) + the forced `enter_loaded_world` check both call `check_research_achievement` → 45. The live sacrifice UI is unported, so the tracker never edits in play and the check is inert until the Journey research lands — but the helper, the count, the App field and both call sites are wired (PREP → WIRED). |
+| 46 | INTERDIMENSIONAL_RECYCLING | `Main.cs:40294` (`DryadText_Do_StardewValleyBit`, the Joja-cola gift) | **WIRED (W4-f30 system 5)** — VERIFIED LIVE (`NPCInteractions.cs:517` registers `StardewValleyBit`; the dead wrapper is `DryadText_WorldPurityOrStardewValleyBit`). `dryad_stardew.rs`: `CanDryadPlayStardewAnimation`, the gift (`ConsumeItem(5275, reverseOrder)` + the Dryad state-24 + the Junimo 995 spawn + the 46 notify), the Purify button + the `OverrideChatTextWithShenanigans` reminder/reroll machine. The AI_192 Junimo animation / the 144 relay / the DryadPurification status button cited. |
 
 Also landed: `tr_core::seeds::SeedFlags::mechdusa` (`SpecialSeedFeatures.cs:119-128`,
 remix && for-the-worthy) — the gate the QUEEN_MACHINE (31) death arm
@@ -264,10 +264,19 @@ stays CITED: the Mechdusa summon (5334) + its combined-boss death are unported
 (the summon seam handles 544/556/557 only; `SpecialSeedFeatures.Mechdusa`'s
 `SpawnMechQueen` has no port).
 
-**Net:** 4 progressions wired (21, 37-partial, 38, 41), 1 prep (45), 9 cited
-(33, 34, 35, 36, 39, 40, 43, 44, 46) + 31 cited. The e22 condition table
-(180 conditions) is untouched — f30 wires notify sites only, never
-`achievements_data.rs`.
+**Net (after the W4-f30 owning-systems batch):** 9 progressions wired
+(21, 33, 35, 36, 37-partial, 38, 41, 45, 46), 1 core ported (43 — the decision
+core; the visual/teleport machine + the inline wire are f47's lane), 4 cited
+(34, 39, 40, 44) + 31 cited. The e22 condition table (180 conditions) is
+untouched — f30 wires notify sites only, never `achievements_data.rs`.
+
+The owning-systems batch (2026-11-21, user order "port UNPORTED OWNING
+SYSTEMS"): system 1 gravestone kills (36), system 2 sun-scorch (33), system 3
+hardcore death penalty (35), system 4 town shimmer decision core (43, the
+lane-split with f47), system 5 Dryad Joja bit (46, verified LIVE not dead
+code), then the prepared research 45 wired. The boulder-rain (34),
+rainbow-boulder (39), combat-book-v2 (40) and Mechdusa-summon (31) systems
+stay with their active lanes (worldgen / d54 orch / g89b / boss-summon).
 
 ## Task seeds
 
