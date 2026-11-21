@@ -22830,6 +22830,17 @@ impl ProjectilePool {
             if hellfire_clamp {
                 self.slots[slot].time_left = 1;
             }
+            // W4-g3 — `Damage_PVE_Inner`'s type-659 arm
+            // (`Projectile.cs:13222-13225`): the Spirit Flame's contact
+            // zeroes `timeLeft` — the flame detonates on its first hit (the
+            // Kill arm `:72503-72542` then runs the 80-box burst). The C#
+            // site sits between the 511-513 counter (`:13218`) and the 524
+            // arm (`:13226`), ABOVE the strike; the port keeps it pre-strike
+            // so the lifetime block (`:17197-17209`) collects the death this
+            // same sub-step (the Hellfire-clamp precedent).
+            if pkind == SPIRIT_FLAME {
+                self.slots[slot].time_left = 0;
+            }
             // `Damage_PVE_Inner`'s aiStyle-99 arm (`Projectile.cs:13256-
             // 13300`, S1-P-i09): the dropped twin squashes its velocity to
             // len/5 and takes the `Next(50, 81) * 0.1` upward lift (clamped
@@ -44478,5 +44489,31 @@ mod w4_g3_onhit_direction_tests {
         assert_eq!(p.time_left, life, "no fuse on aiStyle 50");
         // The victim centre (505+12) is RIGHT of the shot centre (500+6).
         assert_eq!(p.direction, 1, "faces the victim (`:13166-13173`)");
+    }
+
+    /// The Spirit Flame (659) zeroes its lifetime on contact
+    /// (`Projectile.cs:13222-13225`) so the lifetime block collects the
+    /// death this sub-step and the Kill burst (`:72503`) fires.
+    #[test]
+    fn w4_g3_the_spirit_flame_hit_zeroes_its_life() {
+        let w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(SPIRIT_FLAME, 500.0, 500.0, 0.0, 0.0, 20, 2.0)
+            .expect("the spirit flame row");
+        assert!(pool.slots()[slot].time_left > 0, "the fresh flame lives");
+        let mut npc = Npc::new(NpcKind::Slime, 500.0, 500.0, 1, 0.0);
+        npc.hp = 500;
+        npc.max_hp = 500;
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            None,
+            None,
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+        assert_eq!(pool.slots()[slot].time_left, 0, "the contact kill (`:13224`)");
     }
 }
