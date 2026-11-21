@@ -18890,6 +18890,55 @@ byte-compares offsets 2402-3827 (timestamp spliced); `the_write_envelope_is_pkcs
 pins the pad rule incl. the aligned full-block case. No new dependency вЂ”
 the existing `aes` crate's raw block API carries the PKCS7 by hand (13 lines).
 
+## The loadout system (W4-g55, 2026-11-21)
+
+The three-loadout equipment swap (`Player.Loadouts[3]` / `CurrentLoadoutIndex`,
+`Player.cs:3200-3207`) is ported: `loadout::EquipmentLoadout` (Armor[20] +
+Dye[10] + Hide[10] + a 30-bit share word) with `Swap` (`EquipmentLoadout.cs:63-80`),
+`Player::try_switching_loadout`'s two-swap rotation + the `:5663` gate
+(`!UsingOrReusingItem && !CCed && !dead`, index differs and is in range) and the
+next/previous modulo wrappers (`:5651-5659`). The live equipment rides
+`App.equip`; the share flags (`Item.favorited` in the `canLoadoutShareAt`
+contexts 8-12) ride `App.equip_share_flags` (the grid favourites stay
+`App.favorite_slots`). `GetEffectiveArmor`/`GetEffectiveDye` (`:5690-5764`) +
+`CanShareArmor` (`:5712-5740`) supply an air live slot from the first shared
+loadout item, over the per-tick `armor_items`/`dye_items` snapshot; the dye
+snapshot (`dye_slots`) now rides `GetEffectiveDye`. The UI is
+`Main.DrawLoadoutButtons` (`Main.cs:41935-41991`) on `Extra_259` (`Frame(3,3)`),
+the equipment-slot tint follows the current loadout's `LoadoutSlotColors` row +
+the 30-frame change flash (`ItemSlot.cs:2778-2837`), and Alt+click toggles the
+share (`ToggleLoadoutShare` + `ClearSlotShareInOtherLoadouts`, `:879-912`).
+
+**Serialization.** The `.plr` writer/reader carry `CurrentLoadoutIndex` +
+`Loadouts[3]` (`Serialize:54919-54923` / `Deserialize:55720-55727`, the >= 322
+favourited gate, the `ItemID.Count` air-gap, the `Utils.Clamp` index); a fresh
+character's three empty sets reproduce the golden 310-zero-byte block, so the
+full-file byte parity with `golden.plr` is untouched. The in-game `.trplayer`
+sidecar gains a **v7** loadout block (index + live share word + the three stored
+sets as kinds/hide/share); v6-and-older files load on loadout 0 with empty sets.
+
+**Recorded deviations / skips.**
+- The vanilla F1/F2/F3 = Loadout1/2/3 keys (`PlayerInput.cs:2088-2090` →
+  `TriggersSet.cs:805-816`) stay the port's debug bindings (F1 debug overlay,
+  F2 light mode, F3 workbench — the S1-E-29 deviation); the loadout swap is
+  reachable through the button UI and the `try_switching_loadout` API. The
+  Next/PreviousLoadout triggers have no vanilla keyboard default.
+- The `Extra_310..315` share-badge corner icons (`ItemSlot.cs:2733-2746`) are
+  not packed; the shared-item ghost icon at 0.6 fade (`:2474-2488`) is the
+  visible share indicator.
+- The `clientCloneLoadouts` / `TrySendData(147)` / `ParticleOrchestraType
+  .LoadoutChange` tails of `TrySwitchingLoadout` (`:5670-5679`) are MP/visual
+  and stay with their systems; the 12 cue + `RecordLoadoutChange` +
+  `mouseLeftRelease = false` are ported.
+- `UsingOrReusingItem`'s `pendingItemReuse` half (`:4074`) has no port state;
+  the gate reads swing/reuseDelay/channel.
+
+**Evidence**: 20 `w4_g55_*` witnesses written not run (code-only lane) — the
+swap rotation/gate/wrap, the `.plr` round-trip + index clamp + fresh-zero block,
+the sidecar v7 round-trip + v6-empty load, the button geometry/hit/colour, the
+tint/flash, the button click + equipment-page gate, the effective-item share
+scan, and the share toggle/clear.
+
 ## The world-format contract (S1-J-8)
 
 **Decision: the two-format split stays, as a documented contract.** The port

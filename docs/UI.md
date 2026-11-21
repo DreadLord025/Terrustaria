@@ -471,6 +471,15 @@ wrong); favorited slots swap their background to the gold `Inventory_Back10`
 (`ItemSlot.cs:2149-2156`, packed as `lookups.ui_back10`, tint still
 `Main.inventoryBack`; `Inventory_Back17`/`_19` are the gamepad-highlight and
 loadout variants — neither surface is ported) and shift-transfer refuses them.
+**The loadout system (W4-g55) is ported** — the three buttons beside the armour
+column (`Main.DrawLoadoutButtons`, `Main.cs:41935-41991`, `ui/loadout.rs` on
+`Extra_259`), the equipment-slot tint following `CurrentLoadoutIndex`'s
+`LoadoutSlotColors` row + the 30-frame change flash, and the Alt+click
+loadout-share toggle (`ToggleLoadoutShare`, `ItemSlot.cs:879-912`) with the
+air-slot shared ghost icon. The `Inventory_Back17` gamepad-highlight variant
+stays unported; the `Extra_310-315` share badges are a recorded skip (ANALYSIS
+"The loadout system (W4-g55)"). The swap itself is `Player.TrySwitchingLoadout`
+(`Player.cs:5661-5682`); the `.plr`/`.trplayer` v7 carriers persist it.
 The coin (ctx 1) and ammo (ctx 2) rows are click surfaces too
 (`Main.cs:41752-41782` handle every cell they draw): left runs the shared
 action-0 move behind `PickItemMovementAction`'s gate (coins 71-74 only; the
