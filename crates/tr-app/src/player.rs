@@ -1554,6 +1554,14 @@ pub struct Player {
     /// (`Projectile.ApplyStatsFromSource`, `Projectile.cs:11129-11132`); the port
     /// folds it into the throw-time crit roll (`world_sim/editing.rs`).
     pub revolver_crit_chance_bonus: i32,
+    /// `Player.rapidAttackBonus` (`Player.cs:18251-18273`'s
+    /// `ApplyRapidAttackBonus`): the Falcon Blade / Dye Trader's Scimitar /
+    /// Cutlass damage ramp. The tooltip reads it WITHOUT the increase arm
+    /// (`Main.cs:20675`, the `increaseBonus=false` default); the +0.12
+    /// per-hit increase (`Player.cs:44291`) and the −0.005 `ResetEffects`
+    /// decay (`:18278-18284`) belong to the melee lane — no writer yet, so
+    /// the field stays 0 (the tooltip read is exact at 0).
+    pub rapid_attack_bonus: f32,
     /// The `Player.ZoneSnow`-family flags the torch-luck table reads
     /// (`Player.cs:17924-18036`); the app copies them from `Main.SceneMetrics`
     /// next to the aura snapshot (`UpdateBiomes`, `Player.cs:16726-16729`).
@@ -2977,6 +2985,9 @@ impl Player {
             // `Player.revolverCritChanceBonus` (`Player.cs:2456`): the int field
             // defaults to 0 (no charge at spawn).
             revolver_crit_chance_bonus: 0,
+            // `Player.rapidAttackBonus` stock 0f (`ApplyRapidAttackBonus`
+            // reads it; the melee lane owns the writers).
+            rapid_attack_bonus: 0.0,
         }
     }
 
@@ -5532,6 +5543,20 @@ impl Player {
             registry::DamageClass::Summon => self.minion_damage,
             _ => 1.0,
         }
+    }
+
+    /// `Player.ApplyRapidAttackBonus(damage, itemType, increaseBonus=false)`
+    /// (`Player.cs:18251-18273`): the read-only tooltip form — the bonus
+    /// clamps to 0.5, then `(int)(damage * (1 + bonus))`. The increase arm
+    /// (+0.12 clamped to 0.62, the melee `:44291` path) is the combat
+    /// lane's; this port keeps the read (W4-e16).
+    pub fn apply_rapid_attack_bonus(&self, damage: i32, item_type: u16) -> i32 {
+        // `ItemID.Sets.RapidAttackBonusDamage` (`ItemID.cs:344`).
+        if !matches!(item_type, 2608 | 3349 | 672) {
+            return damage;
+        }
+        let bonus = self.rapid_attack_bonus.min(0.5);
+        (damage as f32 * (1.0 + bonus)) as i32
     }
 
     /// The class crit source (`Player.meleeCrit`/`rangedCrit`/`magicCrit`,

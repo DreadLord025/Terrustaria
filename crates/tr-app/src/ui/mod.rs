@@ -33,6 +33,7 @@ pub mod select_hit;
 pub mod slot;
 pub mod text;
 pub mod tooltip;
+pub(crate) mod tooltip_sets;
 pub mod uistate;
 pub mod world_creation;
 pub(crate) mod world_load;

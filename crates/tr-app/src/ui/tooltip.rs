@@ -206,6 +206,16 @@ pub struct TooltipContext<'a> {
     /// `Main.LocalPlayer.inventory[Main.LocalPlayer.selectedItem].crit` — the
     /// held item's own crit, which the crit row subtracts (`Main.cs:20701`).
     pub held_crit: i32,
+    /// The held item's kind — the Psycho Knife arm
+    /// (`Main.cs:20762`: held 3106 && hovered 3106).
+    pub held_kind: u16,
+    /// `Main.player[myPlayer].HasItem(905)` (`Player.cs:55894-55904`, the
+    /// 58-slot scan): the Coin Gun lets the coin kinds 71-74 show their
+    /// damage row (`Main.cs:20669`).
+    pub has_coin_gun: bool,
+    /// `Main.npcShop > 0` (`Main.cs:20818`): the shop's equipable row swaps
+    /// to `Lang.tip[60]` for the Pocket Mirror 854 / Peddler's Satchel 3035.
+    pub shop_open: bool,
 }
 
 impl Default for TooltipContext<'_> {
@@ -215,6 +225,9 @@ impl Default for TooltipContext<'_> {
             stack: 1,
             player: None,
             held_crit: 0,
+            held_kind: 0,
+            has_coin_gun: false,
+            shop_open: false,
         }
     }
 }
@@ -263,11 +276,23 @@ pub fn item_tooltip_lines(
         hover_name(kind, ctx.prefix, ctx.stack),
         item_name_color(registry::rare(kind)),
     )];
-    if d.damage > 0 {
+    // `:20669` — the damage gate: `damage > 0 && (!notAmmo || useStyle != 0)
+    // && (type < 71 || type > 74 || HasItem(905))`. The coins 71-74 are
+    // notAmmo placeables — their damage row only shows while the Coin Gun
+    // is carried.
+    if d.damage > 0
+        && (!crate::item::not_ammo(kind) || d.use_style != 0)
+        && (!(71..=74).contains(&kind) || ctx.has_coin_gun)
+    {
         // Damage (`:20672-20700`): the item's own damage × the per-item
-        // tooltip multiplier, then the player's weapon-damage multiplier
-        // (`Main.LocalPlayer.GetWeaponDamageMultiplier`).
-        let base = (d.damage as f32 * tooltip_damage_multiplier(kind)) as i32;
+        // tooltip multiplier, then the rapid-attack ramp
+        // (`ItemID.Sets.RapidAttackBonusDamage`, `:20673-20676` — the
+        // read-only `ApplyRapidAttackBonus`), then the player's
+        // weapon-damage multiplier.
+        let mut base = (d.damage as f32 * tooltip_damage_multiplier(kind)) as i32;
+        if let Some(p) = ctx.player {
+            base = p.apply_rapid_attack_bonus(base, kind);
+        }
         let multiplier = ctx.player.map_or(1.0, |p| {
             p.weapon_damage_multiplier_with_ammo(d.class, kind, d.use_ammo)
         });
@@ -286,22 +311,36 @@ pub fn item_tooltip_lines(
             [1.0, 1.0, 1.0, 1.0],
         ));
         // Crit (`:20701-20717`) — the melee/ranged/magic classes only: the
-        // player's crit, minus the held item's own, plus the hovered item's.
+        // player's crit, minus the held item's own, plus the hovered item's
+        // `GetVisualCritChance` (`Item.cs:637-645`: the Revolver 2269 adds
+        // the charged bonus, clamped to [0, 100]).
         if matches!(
             d.class,
             registry::DamageClass::Melee | registry::DamageClass::Ranged | registry::DamageClass::Magic
         ) {
+            let mut visual_crit = d.crit;
+            if kind == 2269 {
+                if let Some(p) = ctx.player {
+                    if p.revolver_crit_chance_bonus > 0 {
+                        visual_crit = (visual_crit + p.revolver_crit_chance_bonus).clamp(0, 100);
+                    }
+                }
+            }
             let crit = ctx
                 .player
-                .map_or(d.crit, |p| player_crit(p, d.class) - ctx.held_crit + d.crit);
+                .map_or(visual_crit, |p| player_crit(p, d.class) - ctx.held_crit + visual_crit);
             lines.push((
                 format!("{}{}", crit, crate::lang::tip(5)),
                 [1.0, 1.0, 1.0, 1.0],
             ));
         }
-        // Use time (`:20717-20747`) — the `useAnimation` tiers behind
-        // `useStyle != 0`.
-        if d.use_style != 0 {
+        // Use time (`:20717-20752`) — the `useAnimation` tiers behind
+        // `useStyle != 0 && (!summon || IsAWhip[shoot])`: the summon staffs
+        // show no speed row, the whips do (`ProjectileID.cs:193`).
+        let whip = d
+            .projectile
+            .is_some_and(|p| tr_core::whip::is_whip(p));
+        if d.use_style != 0 && (!d.summon || whip) {
             let tier = if d.use_animation <= 8 {
                 6
             } else if d.use_animation <= 20 {
@@ -348,12 +387,22 @@ pub fn item_tooltip_lines(
             .map_or(false, |p| p.magic_quiver && d.use_ammo == crate::ammo::AMMO_ARROW)
             || d.use_ammo == crate::ammo::AMMO_STAKE
         {
-            kb *= 1.1;
+            // `:20760` — `(int)(num6 * 1.1f)`: the C# TRUNCATES here (the
+            // gloves/shroomite scales above stay float).
+            kb = (kb * 1.1) as i32 as f32;
         }
-        // The nine word tiers (`:20766-20798`).
+        // `:20762-20765` — the Psycho Knife (3106) held AND hovered: the
+        // stealth backstab bonus scales the shown knockback.
+        if ctx.held_kind == 3106 && kind == 3106 {
+            if let Some(p) = ctx.player {
+                kb += kb * (1.0 - p.stealth);
+            }
+        }
+        // The nine word tiers (`:20766-20798`); the first compare runs in
+        // f64 (`(double)num6 <= 1.5`, `:20770`).
         let kb = if kb == 0.0 {
             14
-        } else if kb <= 1.5 {
+        } else if kb as f64 <= 1.5 {
             15
         } else if kb <= 3.0 {
             16
@@ -392,21 +441,39 @@ pub fn item_tooltip_lines(
     }
     // `:20816-20830` — the equipable row. The C#'s gate also admits the
     // hook projectiles (`Main.projHook[item.shoot]`), the mounts
-    // (`item.mountType != -1`) and the light / vanity pets.
+    // (`item.mountType != -1`) and the light / vanity pets. `flag` is the
+    // loadout-share arm's latch (`:20653`) — the favourite/loadout family
+    // sets it; until then it stays false (the plain-inventory default).
+    let loadout_share_flag = false;
     let hook = d
         .projectile
         .map_or(false, |p| crate::projectile_id::is_hook_projectile(p as i32));
-    if d.head_slot > 0
-        || d.body_slot > 0
-        || d.leg_slot > 0
-        || d.accessory
-        || hook
-        || d.mount_type != -1
-        || (d.buff_type > 0
-            && (crate::buffs::is_light_pet(d.buff_type)
-                || crate::buffs::is_vanity_pet(d.buff_type)))
+    if !loadout_share_flag
+        && (d.head_slot > 0
+            || d.body_slot > 0
+            || d.leg_slot > 0
+            || d.accessory
+            || hook
+            || d.mount_type != -1
+            || (d.buff_type > 0
+                && (crate::buffs::is_light_pet(d.buff_type)
+                    || crate::buffs::is_vanity_pet(d.buff_type))))
     {
-        lines.push((crate::lang::tip(23), [1.0, 1.0, 1.0, 1.0]));
+        // `:20818-20825` — the Discount Card 854 / Greedy Ring 3035
+        // cannot be equipped or removed while shopping: tip[60].
+        if (kind == 854 || kind == 3035) && ctx.shop_open {
+            lines.push((crate::lang::tip(60), [1.0, 1.0, 1.0, 1.0]));
+        } else {
+            lines.push((crate::lang::tip(23), [1.0, 1.0, 1.0, 1.0]));
+        }
+    }
+    // `:20828-20832` — the tileWand row: tip[52] ("Consumes ") + the
+    // consumed material's name (`Item.cs`'s six tileWand writes).
+    if let Some(wand) = super::tooltip_sets::tile_wand(kind) {
+        lines.push((
+            format!("{}{}", crate::lang::tip(52), crate::lang::item_name(wand)),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
     }
     // `:20828-20841` — the quest / vanity rows.
     if d.quest_item {
@@ -450,12 +517,18 @@ pub fn item_tooltip_lines(
         };
         lines.push((row, [1.0, 1.0, 1.0, 1.0]));
     }
-    // `:20876-20890` — the life / mana restore rows.
+    // `:20876-20893` — the life / mana restore rows. The Strange Brew 3001
+    // prints the RANGE row (`RestoresLifeRange`, healLife..120, `:20878-20882`).
     if d.heal_life > 0 {
-        lines.push((
-            crate::lang::common_item_tooltip_fmt("RestoresLife", d.heal_life),
-            [1.0, 1.0, 1.0, 1.0],
-        ));
+        let row = if kind == 3001 {
+            crate::lang::text_args(
+                "CommonItemTooltip.RestoresLifeRange",
+                &[d.heal_life.to_string(), "120".to_string()],
+            )
+        } else {
+            crate::lang::common_item_tooltip_fmt("RestoresLife", d.heal_life)
+        };
+        lines.push((row, [1.0, 1.0, 1.0, 1.0]));
     }
     if d.heal_mana > 0 {
         lines.push((
@@ -500,19 +573,45 @@ pub fn item_tooltip_lines(
             [1.0, 1.0, 1.0, 1.0],
         ));
     }
-    // `:20911-20930` — the place / ammo / consumable rows.
-    if d.tile.is_some() || d.wall.is_some() || kind == 849 {
-        if d.consumable {
+    // `:20919-20936` — the place / ammo / consumable rows. The place gate is
+    // `createWall > 0 || createTile > -1 || type == 849`; inside it the row
+    // needs `PlaceTileOnAltUse[type] || consumable` (`ItemID.cs:412`). The
+    // ammo row refuses notAmmo; the consumable row refuses the
+    // chlorophyte-extractinator kinds (86/1329/2337-2339).
+    let places = d.wall.map_or(false, |w| w > 0) || d.tile.is_some() || kind == 849;
+    if places {
+        if super::tooltip_sets::place_tile_on_alt_use(kind) || d.consumable {
             lines.push((crate::lang::tip(33), [1.0, 1.0, 1.0, 1.0]));
         }
-    } else if d.ammo > 0 {
+    } else if d.ammo > 0 && !crate::item::not_ammo(kind) {
         lines.push((crate::lang::tip(34), [1.0, 1.0, 1.0, 1.0]));
-    } else if d.consumable {
+    } else if d.consumable && !super::tooltip_sets::chlorophyte_extractinator_consumable(kind) {
         lines.push((crate::lang::tip(35), [1.0, 1.0, 1.0, 1.0]));
     }
-    // `:20931-20933` — the material row.
+    // `:20937-20941` — the material row.
     if d.material {
         lines.push((crate::lang::tip(36), [1.0, 1.0, 1.0, 1.0]));
+    }
+    // `:20942-20956` — the wiring rows: Wireable (the trigger/mechanism tile
+    // sets with the statue carve-out), Container (tile 21/467) and
+    // WireTrigger (tile 441/468).
+    if super::tooltip_sets::wireable(kind, d.tile) {
+        lines.push((
+            crate::lang::common_item_tooltip("Wireable"),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
+    }
+    if matches!(d.tile, Some(21) | Some(467)) {
+        lines.push((
+            crate::lang::common_item_tooltip("Container"),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
+    }
+    if matches!(d.tile, Some(441) | Some(468)) {
+        lines.push((
+            crate::lang::common_item_tooltip("WireTrigger"),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
     }
     // `:20958-20972` — the per-item tooltip text (`Lang.GetTooltip`,
     // `Lang.cs:193-196`): the `ItemTooltip.<ItemID name>` language rows,
@@ -1105,5 +1204,218 @@ mod tests {
             "the mana restore row: {:?}",
             rows.iter().map(|(t, _)| t).collect::<Vec<_>>()
         );
+    }
+
+    // --- W4-e16 family 1: the stat-gate corrections ---------------------------
+
+    /// `Main.cs:20669`: the coins 71-74 (notAmmo, useStyle 1 — the place
+    /// arm admits them) show their damage row ONLY while the Coin Gun 905
+    /// is carried; the acorn 27 (notAmmo, useStyle 1) keeps its gate.
+    #[test]
+    fn w4_e16_the_coin_damage_row_needs_the_coin_gun() {
+        let coin = crate::registry::get(71).expect("the copper coin row");
+        let rows = item_tooltip_lines(71, coin, TooltipContext::default());
+        let dmg = crate::lang::tip(55);
+        assert!(
+            !rows.iter().any(|(t, _)| t.ends_with(&dmg)),
+            "no damage row without the Coin Gun: {rows:?}"
+        );
+        let rows = item_tooltip_lines(
+            71,
+            coin,
+            TooltipContext { has_coin_gun: true, ..Default::default() },
+        );
+        assert!(
+            rows.iter().any(|(t, _)| t == &format!("25{dmg}")),
+            "the coin's 25 damage with the Coin Gun: {rows:?}"
+        );
+    }
+
+    /// `Main.cs:20717`: the summon staffs show no use-time row; the whips
+    /// (IsAWhip[shoot]) do. The Pygmy Staff 1157 (summon, shoot 191 — not a
+    /// whip) vs a whip-shaped summon row.
+    #[test]
+    fn w4_e16_the_use_time_row_skips_the_summon_staffs_but_not_the_whips() {
+        let staff = crate::registry::get(1157).expect("the pygmy staff row");
+        let rows = item_tooltip_lines(1157, staff, TooltipContext::default());
+        let tier = crate::lang::tip(9); // useAnimation 28 -> the <=30 tier
+        assert!(!rows.iter().any(|(t, _)| *t == tier), "no speed row: {rows:?}");
+        let whip = crate::itemdata::ItemDef { projectile: Some(841), ..*staff };
+        let rows = item_tooltip_lines(1157, &whip, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| *t == tier), "the whip keeps it: {rows:?}");
+    }
+
+    /// `Main.cs:20758-20760`: the quiver's ×1.1 TRUNCATES — kb 6.5 → 7.15 →
+    /// (int) 7 → the <=7 "Strong knockback" word, not the <=9 tier the
+    /// untruncated 7.15 would still pick; kb 8.5 → 9.35 → 9 stays <=9, but
+    /// kb 9.5 → 10.45 → 10 crosses into the <=11 word.
+    #[test]
+    fn w4_e16_the_quiver_knockback_truncates_before_the_word_tier() {
+        let bow = crate::registry::get(1).expect("a base row");
+        let row = crate::itemdata::ItemDef {
+            knock_back: 9.5,
+            use_ammo: crate::ammo::AMMO_ARROW,
+            ..*bow
+        };
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut player = crate::player::Player::spawn(&world);
+        player.magic_quiver = true;
+        let rows = item_tooltip_lines(
+            1,
+            &row,
+            TooltipContext { player: Some(&player), ..Default::default() },
+        );
+        // (int)(9.5 * 1.1f) = (int)10.45 = 10 -> tip[21] (<=11), not tip[22].
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(21)), "{rows:?}");
+        assert!(!rows.iter().any(|(t, _)| *t == crate::lang::tip(22)));
+    }
+
+    /// `Main.cs:20762-20765`: the Psycho Knife 3106 held AND hovered adds
+    /// `kb * (1 - stealth)` — at full stealth (0) the shown kb doubles.
+    #[test]
+    fn w4_e16_the_psycho_knife_stealth_arm_doubles_the_shown_knockback() {
+        let base = crate::registry::get(1).expect("a base row");
+        let knife = crate::itemdata::ItemDef { knock_back: 4.0, ..*base };
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut player = crate::player::Player::spawn(&world);
+        player.stealth = 0.0;
+        let ctx = TooltipContext {
+            player: Some(&player),
+            held_kind: 3106,
+            ..Default::default()
+        };
+        let rows = item_tooltip_lines(3106, &knife, ctx);
+        // 4 + 4 * (1 - 0) = 8 -> the <=9 word tip[20], not the <=4 tip[17].
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(20)), "{rows:?}");
+        // A different held kind leaves the row at the base word.
+        let rows = item_tooltip_lines(
+            3106,
+            &knife,
+            TooltipContext { player: Some(&player), ..Default::default() },
+        );
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(17)), "{rows:?}");
+    }
+
+    /// `Main.cs:20673-20676` + `Player.cs:18251-18273`: the rapid-attack
+    /// kinds scale the shown damage by (1 + min(bonus, 0.5)); other kinds
+    /// pass through.
+    #[test]
+    fn w4_e16_the_rapid_attack_bonus_scales_only_the_three_kinds() {
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut player = crate::player::Player::spawn(&world);
+        player.rapid_attack_bonus = 0.7; // clamps to 0.5
+        assert_eq!(player.apply_rapid_attack_bonus(25, 2608), 37); // (int)(25*1.5)
+        assert_eq!(player.apply_rapid_attack_bonus(25, 1), 25, "not in the set");
+        let blade = crate::registry::get(2608).expect("the falcon blade row");
+        let rows = item_tooltip_lines(
+            2608,
+            blade,
+            TooltipContext { player: Some(&player), ..Default::default() },
+        );
+        let dmg = crate::lang::tip(2);
+        assert!(rows.iter().any(|(t, _)| t == &format!("37{dmg}")), "{rows:?}");
+    }
+
+    /// `Item.cs:637-645`: the Revolver 2269's crit row carries the charged
+    /// bonus clamped to [0, 100]; other kinds read the plain crit.
+    #[test]
+    fn w4_e16_the_revolver_visual_crit_clamps_the_charge() {
+        let revolver = crate::registry::get(2269).expect("the revolver row");
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut player = crate::player::Player::spawn(&world);
+        player.ranged_crit = 4;
+        player.revolver_crit_chance_bonus = 120;
+        let rows = item_tooltip_lines(
+            2269,
+            revolver,
+            TooltipContext { player: Some(&player), ..Default::default() },
+        );
+        // clamp(0 + 120, 0, 100) = 100; the row is 4 - 0 + 100.
+        let crit = crate::lang::tip(5);
+        assert!(rows.iter().any(|(t, _)| t == &format!("104{crit}")), "{rows:?}");
+    }
+
+    /// `Main.cs:20818-20825`: the Discount Card 854's equipable row swaps to
+    /// tip[60] while a shop is open.
+    #[test]
+    fn w4_e16_the_shop_swaps_the_pocket_mirror_equipable_row() {
+        let mirror = crate::registry::get(854).expect("the discount card row");
+        let rows = item_tooltip_lines(854, mirror, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(23)));
+        let rows = item_tooltip_lines(
+            854,
+            mirror,
+            TooltipContext { shop_open: true, ..Default::default() },
+        );
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(60)), "{rows:?}");
+        assert!(!rows.iter().any(|(t, _)| *t == crate::lang::tip(23)));
+    }
+
+    /// `Main.cs:20828-20832`: the tileWand row is tip[52] + the material's
+    /// name — the Living Wood Wand 832 consumes Wood 9.
+    #[test]
+    fn w4_e16_the_tile_wand_row_names_the_consumed_material() {
+        let wand = crate::registry::get(832).expect("the living wood wand row");
+        let rows = item_tooltip_lines(832, wand, TooltipContext::default());
+        let want = format!("{}{}", crate::lang::tip(52), crate::lang::item_name(9));
+        assert!(rows.iter().any(|(t, _)| *t == want), "{rows:?}");
+    }
+
+    /// `Main.cs:20878-20882`: the Strange Brew 3001 prints the range row
+    /// (healLife..120), not the plain RestoresLife.
+    #[test]
+    fn w4_e16_the_strange_brew_prints_the_life_range() {
+        let brew = crate::registry::get(3001).expect("the strange brew row");
+        let rows = item_tooltip_lines(3001, brew, TooltipContext::default());
+        let want = crate::lang::text_args(
+            "CommonItemTooltip.RestoresLifeRange",
+            &[brew.heal_life.to_string(), "120".to_string()],
+        );
+        assert!(rows.iter().any(|(t, _)| *t == want), "{rows:?}");
+        let plain = crate::lang::common_item_tooltip_fmt("RestoresLife", brew.heal_life);
+        assert!(!rows.iter().any(|(t, _)| *t == plain));
+    }
+
+    /// `Main.cs:20919-20936`: the extractinator kinds (86, the Shadow
+    /// Scale) drop the Consumable row; the alt-use kinds (4367,
+    /// non-consumable) still show "Can be placed"; the notAmmo acorn 27
+    /// drops the Ammo row.
+    #[test]
+    fn w4_e16_the_place_ammo_consumable_gates() {
+        let sirens = crate::registry::get(86).expect("the shadow scale row");
+        let rows = item_tooltip_lines(86, sirens, TooltipContext::default());
+        assert!(
+            !rows.iter().any(|(t, _)| *t == crate::lang::tip(35)),
+            "the extractinator kind drops Consumable: {rows:?}"
+        );
+        let kite = crate::registry::get(4367).expect("the blue kite row");
+        let rows = item_tooltip_lines(4367, kite, TooltipContext::default());
+        assert!(
+            rows.iter().any(|(t, _)| *t == crate::lang::tip(33)),
+            "the alt-use kind keeps Can be placed: {rows:?}"
+        );
+        // The ale 353: ammo > 0 but notAmmo and no tile — the Ammo row
+        // drops, the Consumable row stays (`Main.cs:20927-20935`).
+        let ale = crate::registry::get(353).expect("the ale row");
+        let rows = item_tooltip_lines(353, ale, TooltipContext::default());
+        assert!(
+            !rows.iter().any(|(t, _)| *t == crate::lang::tip(34)),
+            "the notAmmo ale drops Ammo: {rows:?}"
+        );
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(35)));
+    }
+
+    /// `Main.cs:20942-20956`: the chest 48 shows Wireable + Container; the
+    /// Goblin Statue 441 (tile 105, in the statue set) shows Wireable; the
+    /// non-set statue kind drops it.
+    #[test]
+    fn w4_e16_the_wiring_rows_follow_the_tile_sets() {
+        let chest = crate::registry::get(48).expect("the chest row");
+        let rows = item_tooltip_lines(48, chest, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::common_item_tooltip("Wireable")));
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::common_item_tooltip("Container")));
+        let statue = crate::registry::get(441).expect("the goblin statue row");
+        let rows = item_tooltip_lines(441, statue, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::common_item_tooltip("Wireable")));
     }
 }
