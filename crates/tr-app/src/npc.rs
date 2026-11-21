@@ -6766,32 +6766,17 @@ impl Npc {
         crate::npc_findframe_extra6::find_frame_kind_extra6(cs_id as i16)
     }
 
-    /// W4-d44 wire — the extra-7 claim set: the FIRST ELEVEN slice-7
-    /// ids 316/317/318/322/323/324/333/334/335/336/337 (the ≤11-kind
-    /// batch cap; the Ghost, the two costume eyes, the three costume
-    /// skeletons, the four ribbon slimes, the Christmas bunny). The
-    /// in-module lookup gates to the batch band — 437/438/440/442
-    /// EXCLUDED (a later batch). The band edges stay outside.
+    /// W4-d44 wire — the extra-7 claim set: the FULL slice-7 band
+    /// 316/317/318/322/323/324/333/334/335/336/337 + 437/438/440/442,
+    /// all 15 kinds (the in-module lookup verbatim). The first batch
+    /// claimed the 11-id 316-337 band (the ≤11-kind cap); this batch
+    /// widens to the LAST FOUR 437/438/440/442 (the Cultist Tablet,
+    /// the Cultist Devote, the Cultist Boss Clone, the Gold Bird).
+    /// The band edges stay outside.
     fn find_frame_kind_extra7_claimed(
         cs_id: u16,
     ) -> Option<crate::npc_findframe_extra7::FindFrameExtra7Kind> {
-        use crate::npc_findframe_extra7::FindFrameExtra7Kind as K;
-        match crate::npc_findframe_extra7::find_frame_kind_extra7(cs_id as i16) {
-            Some(
-                k @ (K::Ghost
-                | K::DemonEyeOwl
-                | K::DemonEyeSpaceship
-                | K::SkeletonTopHat
-                | K::SkeletonAstonaut
-                | K::SkeletonAlien
-                | K::SlimeRibbonWhite
-                | K::SlimeRibbonYellow
-                | K::SlimeRibbonGreen
-                | K::SlimeRibbonRed
-                | K::BunnyXmas),
-            ) => Some(k),
-            _ => None,
-        }
+        crate::npc_findframe_extra7::find_frame_kind_extra7(cs_id as i16)
     }
 
     /// W4-d44 wire — the extra-5 claim set: the FULL slice-5 band
@@ -6892,16 +6877,16 @@ impl Npc {
         }
         // W4-d44 wire (f27 slice 7) — the `cs_id`-keyed hook into the
         // extra-wave-7 pure machines (`npc_findframe_extra7.rs`) via
-        // `find_frame_kind_extra7_claimed`: the FIRST ELEVEN ids
-        // 316/317/318/322/323/324/333/334/335/336/337 (the Ghost, the
-        // two costume eyes, the three costume skeletons, the four
-        // ribbon slimes, the Christmas bunny); 437/438/440/442 ride a
-        // later batch (the ≤11-kind cap). NO current kind's `cs_id`
-        // lands in the set (verified over the hand rows + the
-        // bestiary net ids), so this is stream-inert today; the arms
-        // draw no RNG (the floater draw `:74844` is 634-gated, the eye
-        // dust `:74007` is 23-gated — the module header) and none
-        // reads the world. The extra6 hook precedent.
+        // `find_frame_kind_extra7_claimed`: ALL 15 ids
+        // 316/317/318/322/323/324/333/334/335/336/337 + 437/438/440/442
+        // (the Ghost, the two costume eyes, the three costume
+        // skeletons, the four ribbon slimes, the Christmas bunny, the
+        // Cultist Tablet/Devote/Boss Clone, the Gold Bird). NO current
+        // kind's `cs_id` lands in the set (verified over the hand rows
+        // + the bestiary net ids), so this is stream-inert today; the
+        // arms draw no RNG (the floater draw `:74844` is 634-gated,
+        // the eye dust `:74007` is 23-gated — the module header) and
+        // none reads the world. The extra6 hook precedent.
         if let Some(kind) = Self::find_frame_kind_extra7_claimed(self.kind.cs_id()) {
             self.find_frame_wave_extra7(kind);
             return;
@@ -34024,10 +34009,10 @@ mod w4_d44_wire_tests {
         }
     }
 
-    /// The extra-7 claim set is the FIRST ELEVEN slice-7 ids
-    /// 316/317/318/322/323/324/333/334/335/336/337 (the ≤11-kind batch
-    /// cap); 437/438/440/442 ride a later batch and the band edges +
-    /// the port-covered 319-321/325-332 stay outside.
+    /// The extra-7 claim set is the FULL slice-7 band
+    /// 316/317/318/322/323/324/333/334/335/336/337 + 437/438/440/442 —
+    /// all 15 kinds; the band edges + the port-covered
+    /// 319-321/325-332/439/441 stay outside.
     #[test]
     fn w4_d44_the_extra7_claim_set_matches_the_batch_band() {
         use crate::npc_findframe_extra7::FindFrameExtra7Kind as K;
@@ -34043,13 +34028,16 @@ mod w4_d44_wire_tests {
             (335, K::SlimeRibbonGreen),
             (336, K::SlimeRibbonRed),
             (337, K::BunnyXmas),
+            (437, K::CultistTablet),
+            (438, K::CultistDevote),
+            (440, K::CultistBossClone),
+            (442, K::GoldBird),
         ];
         for (id, k) in table {
             assert_eq!(Npc::find_frame_kind_extra7_claimed(id), Some(k), "{id}");
         }
-        // The later-batch ids + the band edges + the port-covered
-        // neighbours stay outside.
-        for id in [315, 319, 321, 325, 332, 338, 437, 438, 440, 442] {
+        // The band edges + the port-covered neighbours stay outside.
+        for id in [315, 319, 321, 325, 332, 338, 436, 439, 441, 443] {
             assert_eq!(Npc::find_frame_kind_extra7_claimed(id), None, "{id}");
         }
     }
@@ -34283,6 +34271,62 @@ mod w4_d44_wire_tests {
         n.vy = -1.0;
         n.find_frame_wave_extra7(K::BunnyXmas);
         assert_eq!((n.frame, n.frame_counter), (4, 0.0));
+        // Cultist Tablet: the 20-tick cycle — the >= 20 reset runs
+        // BEFORE the band read, so counter 19 → 0 shows row 0
+        // (`NPC.cs:71989-71995`); counter 4 → 5 lands band 1.
+        n.vy = 0.0;
+        n.frame = 3;
+        n.frame_counter = 19.0;
+        n.find_frame_wave_extra7(K::CultistTablet);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        n.frame_counter = 4.0;
+        n.find_frame_wave_extra7(K::CultistTablet);
+        assert_eq!((n.frame, n.frame_counter), (1, 5.0));
+        // Cultist Devote: the ai[1]==1 chant doubles the tick —
+        // counter 47 + 2 = 49 >= 49 resets, band 0; the >= 4 bands
+        // MIRROR (counter 28 → 29 lands band 4 → 6-4 = 2).
+        n.ai = [0.0, 1.0, 0.0, 0.0];
+        n.frame = 0;
+        n.frame_counter = 47.0;
+        n.find_frame_wave_extra7(K::CultistDevote);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        n.ai = [0.0; 4];
+        n.frame_counter = 28.0;
+        n.find_frame_wave_extra7(K::CultistDevote);
+        assert_eq!((n.frame, n.frame_counter), (2, 29.0));
+        // Cultist Boss Clone: the local_ai[2] pose ladder — pose 0
+        // off-home rides the 4/5/6 bands (counter 5 → 6 lands row 5),
+        // the >= 15 tail snaps home row 0; an unknown selector writes
+        // NO frame but still ticks (`NPC.cs:72035-72100`).
+        n.local_ai[2] = 0.0;
+        n.frame = 4;
+        n.frame_counter = 5.0;
+        n.find_frame_wave_extra7(K::CultistBossClone);
+        assert_eq!((n.frame, n.frame_counter), (5, 6.0));
+        n.frame_counter = 15.0;
+        n.find_frame_wave_extra7(K::CultistBossClone);
+        assert_eq!((n.frame, n.frame_counter), (0, 1.0));
+        n.local_ai[2] = 7.0;
+        n.frame = 3;
+        n.frame_counter = 2.0;
+        n.find_frame_wave_extra7(K::CultistBossClone);
+        assert_eq!((n.frame, n.frame_counter), (3, 3.0), "unknown pose: no write");
+        // Gold Bird: the UNCONDITIONAL direction copy (0 included),
+        // the vx*0.1 tilt, the still-air row-4 perch, the 4-tick strip
+        // over rows 0..3 (`NPC.cs:73633-73651`).
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.facing = 0;
+        n.sprite_dir = -1;
+        n.find_frame_wave_extra7(K::GoldBird);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (4, 0.0, 0));
+        assert_eq!(n.rotation, 0.0);
+        n.vx = 1.0;
+        n.vy = -1.0;
+        n.frame = 4;
+        n.find_frame_wave_extra7(K::GoldBird);
+        assert_eq!(n.frame, 0, "row 4 >= count-1 wraps immediately");
+        assert_eq!(n.rotation, 0.1);
     }
 
     /// The wave-C bridge copies the five fields both ways and feeds
