@@ -1,5 +1,5 @@
 //! W4-g59 — the NPC death DUST lane: `NPC.HitEffect`'s per-kind death-half
-//! dust bursts (`life <= 0`), kinds 1-230, batches 1-4 (40 kinds).
+//! dust bursts (`life <= 0`), kinds 1-230, batches 1-5 (50 kinds).
 //!
 //! `HitEffect` runs inside `StrikeNPC_Inner` (`NPC.cs:81488`), BEFORE
 //! `checkDead` (`:81561` → `:78040`); the port batches deaths into the NPC
@@ -64,6 +64,23 @@
 //! 205/176 ladder, the bat per-kind gores, the piranha/shark/voodoo
 //! ladders are all constant data). Shared-arm siblings outside the port's
 //! kind set (47/57, 62, 176/205/231-235, 542-545/692) stay cited skips.
+//!
+//! ## Scope — batch 5 (the wyvern/eye/town families + the leech)
+//!
+//! | C# type(s) | port kind(s) | death arm | shape |
+//! | --- | --- | --- | --- |
+//! | 87 | WyvernHead | `:88921-88932` | 10× type-16 vel×2 + gore ARG draws |
+//! | 106/107/108 | BoundWizard/GoblinTinkerer/Wizard | `:87880-87883` | 50× type-5, 2.5×dir/-2.5 |
+//! | 111 | GoblinArcher | `:89560-89563` | 50× type-5, 2.5×dir/-2.5 |
+//! | 117 | LeechHead | `:87446-87449` | 10× type-5, dir/-1 |
+//! | 123/124 | BoundMechanic/Mechanic | `:87912-87915` | 50× type-5, 2.5×dir/-2.5 |
+//! | 190/191 | CataractEye/SleepyEye | `:86459-86462` | 50× type-5, 2×dir/-2 |
+//!
+//! The Wyvern (87) is the FIRST arm with gore ARGUMENT draws: the
+//! `Next(1,4)` gore count + the per-gore `Next(11,14)` type roll
+//! (`:88927-88930`) are consumed in order here; the `NewGore` bodies +
+//! kicks stay d55's (the g63 claim's gore-sibling rule). The other
+//! batch-5 tails draw no arguments.
 //!
 //! The census (the full 1-230 walk, 173 dust-first clean kinds) and the
 //! batch split live in docs/ANALYSIS.md "The NPC death dust table (W4-g59)".
@@ -401,6 +418,80 @@ pub fn death_dust(
         // `NPC.cs:89803-89806` — the Voodoo Demon (66): 50 type-5 puffs
         // at 2×dir/-2 (the 62 sibling is an unported kind).
         66 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // ---- batch 5 (the wyvern/eye/town families + the leech).
+        // `NPC.cs:88921-88932` — the Wyvern head (87): 10 type-16 puffs
+        // (scale 1.5, vel×2, noGravity), then the gore tail's ARGUMENT
+        // draws — Next(1,4) count + Next(11,14) per gore (the bodies +
+        // kicks are d55's; the g63 claim's gore-sibling rule).
+        87 => {
+            for _ in 0..10 {
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, w, h, 16, 0.0, 0.0, 0,
+                    Color::default(), 1.5,
+                );
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+            }
+            let count = rng.next_range(1, 4);
+            for _ in 0..count {
+                let _gore_type = rng.next_range(11, 14);
+            }
+        }
+        // `NPC.cs:87880-87883` — the Bound Wizard (106) / Goblin Tinkerer
+        // (107) / Wizard (108): 50 type-5 puffs at 2.5×dir/-2.5 (the
+        // shimmer/altTexture gore gates are field reads).
+        106 | 107 | 108 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:89560-89563` — the Goblin Archer (111): 50 type-5 puffs
+        // (the goblin arm, batch 3's shape; the 111 gore ladder adds the
+        // 131 bone, constant data).
+        111 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:87446-87449` — the Leech head (117): 10 type-5 puffs at
+        // dir/-1 (the SpeedY stays -1, NOT -2 — the leech arm's own
+        // value; the 118/119 siblings fold onto the head's bestiary id).
+        117 => {
+            for _ in 0..10 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, dir, -1.0, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:87912-87915` — the Bound Mechanic (123) / Mechanic
+        // (124): 50 type-5 puffs at 2.5×dir/-2.5.
+        123 | 124 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:86459-86462` — the Cataract Eye (190) / Sleepy Eye
+        // (191): 50 type-5 puffs at 2×dir/-2 (the demon-eye arm, batch
+        // 2's shape; the per-kind gore types are constants).
+        190 | 191 => {
             for _ in 0..50 {
                 dust.new_dust(
                     rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
@@ -958,5 +1049,95 @@ mod tests {
             assert_eq!(live.len(), count);
             assert!(live.iter().all(|d| d.dust_type == 5));
         }
+    }
+
+    /// `NPC.cs:88921-88932` — the Wyvern head: 10 type-16 puffs (scale
+    /// 1.5, vel×2, noGravity) then the gore tail's ARGUMENT draws — the
+    /// Next(1,4) count + Next(11,14) per gore. The hand-rolled ladder
+    /// pins the exact draw order (the gore bodies are d55's, NOT drawn).
+    #[test]
+    fn w4_g59_the_wyvern_death_consumes_the_gore_argument_draws() {
+        let w = air();
+        let n = corpse(NpcKind::WyvernHead);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(89);
+        assert!(death_dust(&n, 87, &mut dust, &ctx(), &mut rng, &w));
+        // The twin: the dust ladder + the gore argument draws by hand.
+        let (ww, wh) = n.size();
+        let (ww, wh) = (ww as i32, wh as i32);
+        let mut twin = UnifiedRandom::new(89);
+        for _ in 0..10 {
+            let _px = twin.next_max(ww.max(5) - 4);
+            let _py = twin.next_max(wh.max(5) - 4);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        let count = twin.next_range(1, 4);
+        for _ in 0..count {
+            let _ty = twin.next_range(11, 14);
+        }
+        assert_eq!(rng, twin, "the wyvern spends the dust + gore-arg ladder");
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 10);
+        assert!(live.iter().all(|d| d.dust_type == 16 && d.no_gravity));
+    }
+
+    /// `NPC.cs:87446-87449` — the Leech head: 10 type-5 puffs at dir/-1
+    /// (the SpeedY stays -1, the leech arm's own value — NOT the -2 the
+    /// other 10-count arms use).
+    #[test]
+    fn w4_g59_the_leech_death_keeps_speed_y_minus_one() {
+        let w = air();
+        let n = corpse(NpcKind::LeechHead);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(97);
+        assert!(death_dust(&n, 117, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 10);
+        // SpeedY = -1 + the ±2 jitter → [-3, 1].
+        assert!(live.iter().all(|d| d.velocity.y >= -3.0 && d.velocity.y <= 1.0));
+        // SpeedX = dir(-1) + jitter → [-3, 1].
+        assert!(live.iter().all(|d| d.velocity.x >= -3.0 && d.velocity.x <= 1.0));
+    }
+
+    /// `NPC.cs:87880-87883` / `:87912-87915` — the town families
+    /// (106/107/108 and 123/124): 50 type-5 puffs at 2.5×dir/-2.5 each;
+    /// all five ids share the census.
+    #[test]
+    fn w4_g59_the_town_families_share_one_census() {
+        let w = air();
+        let n = corpse(NpcKind::Wizard);
+        let mut states = Vec::new();
+        for ty in [106, 107, 108, 123, 124] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(101);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 50);
+            assert!(live.iter().all(|d| d.dust_type == 5));
+            states.push(rng.peek());
+        }
+        assert!(states.windows(2).all(|p| p[0] == p[1]));
+    }
+
+    /// `NPC.cs:86459-86462` — the eye pair (190/191): 50 type-5 puffs at
+    /// 2×dir/-2 (the demon-eye arm's shape on the new kinds).
+    #[test]
+    fn w4_g59_the_eye_pair_draws_fifty() {
+        let w = air();
+        let n = corpse(NpcKind::CataractEye);
+        let mut states = Vec::new();
+        for ty in [190, 191] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(103);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 50);
+            assert!(live.iter().all(|d| d.dust_type == 5));
+            states.push(rng.peek());
+        }
+        assert!(states.windows(2).all(|p| p[0] == p[1]));
     }
 }

@@ -39375,3 +39375,27 @@ band is g60's.
 5 witnesses WRITTEN NOT RUN (code-only): the bat pair's 15-count, the
 Shark's 75-count, the Hornet's type-18 census, the Piranha/Voodoo
 two-count check.
+
+### W4-g59 batch 5 (the wyvern/eye/town families + the leech, 10 kinds)
+
+87 WyvernHead (`:88921-88932`, 10× type-16 scale 1.5 vel×2 noGravity +
+the gore tail's ARGUMENT draws), 106 BoundWizard / 107 GoblinTinkerer /
+108 Wizard (`:87880-87883`, 50× type-5 2.5×dir/-2.5), 111 GoblinArcher
+(`:89560-89563`, 50× type-5 — the goblin arm), 117 LeechHead
+(`:87446-87449`, 10× type-5 dir/-1 — the SpeedY stays -1), 123
+BoundMechanic / 124 Mechanic (`:87912-87915`, 50× type-5), 190
+CataractEye / 191 SleepyEye (`:86459-86462`, 50× type-5 2×dir/-2 — the
+demon-eye arm).
+
+**The Wyvern (87) is the FIRST arm with gore ARGUMENT draws**: the
+`Next(1,4)` gore count (`:88927`) + the per-gore `Next(11,14)` type roll
+(`:88930`) are consumed in C# order here; the `NewGore` bodies + kicks
+stay d55's (the g63 claim's gore-sibling rule). The witness hand-rolls
+the full ladder (10 dust × 6 draws + the count + the per-gore types).
+The other batch-5 tails draw no arguments (the town shimmer/altTexture
+gates, the goblin 111 ladder's 131 bone, the eye per-kind types are
+constant data / field reads).
+
+5 witnesses WRITTEN NOT RUN (code-only): the Wyvern gore-argument ladder,
+the Leech's -1 SpeedY, the town families' shared census, the eye pair's
+50-count.
