@@ -76,6 +76,7 @@
 //! | 290-293 | `:83688-83689` | the 491 Flying Dutchman death: the 855 loop (2x2 gores) |
 //! | 294-302 | `:83693-83695` | the 491 Flying Dutchman death: the 854/853/856 loop (3x3 gores) |
 //! | 303-312 | `:83699` | the 491 Flying Dutchman death: the 861/862 scatter burst, gores 0-9 |
+//! | 313-322 | `:83699` | the 491 Flying Dutchman death: the 861/862 scatter burst, gores 10-19 |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -1736,7 +1737,7 @@ fn dutchman_death_854(
 /// the type `Next(861,863)` FIRST (the C# named-arg Type evaluates before
 /// Position/Velocity, but those are data here), then the NewGore kicks
 /// (pool), then the post-write NextDouble + two NextFloat. This commit
-/// ports gores 0-9 (sites 303-312); the rest lands with the next batches.
+/// ports gores 0-19 (sites 303-322); the rest lands with the next batch.
 ///
 /// NOTE: the 861/862 types hit the pool's sticky=false arm (`Gore.cs:1343`)
 /// and the SpecialAI==1 velocity roll is NOT in the 861/862 set, so the
@@ -1749,8 +1750,8 @@ fn dutchman_death_scatter(
 ) {
     let (w, h) = npc.size();
     let anchor = center(npc) - Vec2::new(60.0, 60.0);
-    // `:83697` — num187 = 0..30; this commit runs 0..10 only.
-    for _ in 0..10 {
+    // `:83697` — num187 = 0..30; this commit runs 0..20 only.
+    for _ in 0..20 {
         // `:83699` — the type draw, then the spawn at the anchor, vel Zero.
         let ty = rng.next_range(861, 863);
         let idx = gore.new_gore(rng, world, anchor, Vec2::ZERO, ty, 1.0);
@@ -1956,7 +1957,7 @@ pub fn hit_effect_c(
     // `:83664-83722` — the 491 Flying Dutchman arm; the HEAD block (sites
     // 264-274) + the full fan (sites 275-289) + the 855 loop (sites
     // 290-293) + the 854/853/856 loop (sites 294-302) + the scatter gores
-    // 0-9 (sites 303-312); the rest lands with the next batches.
+    // 0-19 (sites 303-322); the rest lands with the next batches.
     if npc_type == 491 && npc.hp <= 0 {
         dutchman_death_head(npc, gore, rng, world);
         dutchman_death_fan(npc, gore, rng, world);
@@ -3131,7 +3132,7 @@ mod tests {
         assert_eq!(gore.slot(8).position, Vec2::new(215.0 + 350.0 * 0.15, 40.0));
     }
 
-    /// `NPC.cs:83699-83702` — the Dutchman scatter (gores 0-9): 10 gores of
+    /// `NPC.cs:83699-83702` — the Dutchman scatter (gores 0-19): 20 gores of
     /// type Next(861,863), alpha 100, velocity (4cosθ,4sinθ) from one
     /// NextDouble, position re-rolled with two NextFloat. The twin replay
     /// pins the per-gore order: type Next(861,863) + 2 kicks + NextDouble +
@@ -3143,9 +3144,9 @@ mod tests {
         let mut gore = GorePool::new();
         let mut rng = UnifiedRandom::new(199);
         dutchman_death_scatter(&n, &mut gore, &mut rng, &w);
-        let active = gore.slots()[..10].iter().filter(|g| g.active).count();
-        assert_eq!(active, 10);
-        for g in &gore.slots()[..10] {
+        let active = gore.slots()[..20].iter().filter(|g| g.active).count();
+        assert_eq!(active, 20);
+        for g in &gore.slots()[..20] {
             assert!(matches!(g.gore_type, 861 | 862), "scatter type {}", g.gore_type);
             assert_eq!(g.alpha, 100);
             // The velocity magnitude is 4 (the (4,0) rotation).
@@ -3155,7 +3156,7 @@ mod tests {
         }
         // The twin: per gore Next(861,863) + 2 kicks + NextDouble + 2 NextFloat.
         let mut twin = UnifiedRandom::new(199);
-        for _ in 0..10 {
+        for _ in 0..20 {
             let _ty = twin.next_range(861, 863);
             let _ky = twin.next_range(10, 31);
             let _kx = twin.next_range(-20, 21);
