@@ -190,6 +190,11 @@ mod projectile_ai001_a;
 mod special_arrows;
 mod projectile_frost_shots;
 mod projectile_ai001_c;
+// W4-f20 slice D — the AI_001 per-type arms for the 7 rowed aiStyle-1
+// kinds the S1-D-5 slices never covered (323/357/485/661/710/719/819,
+// Projectile.cs:54002-57798); census research/26e F6/F7. Code-only mode —
+// witness tests written not run.
+mod projectile_ai001_d;
 mod projectile_ai067_b;
 mod projectile_ai026_a;
 mod projectile_ai026_b;

@@ -225,6 +225,18 @@ pub const SHADOWFLAME_ARROW: u16 = 495;
 /// `ProjectileID.BloodArrow` (`ProjectileID.cs:2192`) — the Blood Rain
 /// Bow's rain shot.
 pub const BLOOD_ARROW: u16 = 819;
+/// `ProjectileID.Stake` (`ProjectileID.cs:1200`) — the Stake Launcher's
+/// shot (W4-f20 slice D, `Projectile.cs:4160-4171`).
+pub const STAKE: u16 = 323;
+/// `ProjectileID.PulseBolt` (`ProjectileID.cs:1268`) — the Pulse Bow's
+/// override shot (W4-f20 slice D, `Projectile.cs:4474-4486`).
+pub const PULSE_BOLT: u16 = 357;
+/// `ProjectileID.Hellwing` (`ProjectileID.cs:1524`) — the Hellwing Bow's
+/// homing bat (W4-f20 slice D, `Projectile.cs:5604-5615`).
+pub const HELLWING: u16 = 485;
+/// `ProjectileID.DD2BetsyArrow` (`ProjectileID.cs:1974`) — the Betsy Bow's
+/// shot (W4-f20 slice D, `Projectile.cs:7521-7535`).
+pub const BETSY_ARROW: u16 = 710;
 /// `ProjectileID.ShimmerArrow` (`ProjectileID.cs:2566`).
 pub const SHIMMER_ARROW: u16 = 1006;
 /// The Destroyer's segment laser (`NPC.cs`'s `num11 = 100`, `:49886`).
@@ -4551,6 +4563,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         454 => 2,
         456 => 4,
         462 => 5,
+        // W4-f20 slice D — the Hellwing bat's 5-frame sheet
+        // (`Main.cs:8482`); the AI_001 rotation tail's 2-tick frame
+        // machine wraps at 5 (`Projectile.cs:57716-57725`).
+        HELLWING => 5,
         519 => 4,
         574 => 2,
         601 => 2,

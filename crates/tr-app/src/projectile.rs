@@ -16796,6 +16796,19 @@ impl ProjectilePool {
                                     sub_steps as i32 - 2 - sub as i32,
                                 )
                             }
+                            // W4-f20 slice D — the 7 rowed aiStyle-1 kinds
+                            // the S1-D-5 slices never covered (323 Stake /
+                            // 357 PulseBolt / 485 Hellwing / 661 BlackBolt /
+                            // 710 BetsyArrow / 719 Stinger / 819 BloodArrow,
+                            // `Projectile.cs:54002-57798`), gated to
+                            // `projectile_ai001_d`'s own kind list ONLY
+                            // (disjoint from A/B/C and every other gate —
+                            // census research/26e F6). The 357 takes NO
+                            // gravity (the chain heads at its fade block,
+                            // F7); the 485 blends toward its launch vector.
+                            kind if crate::projectile_ai001_d::covers(kind) => {
+                                crate::projectile_ai001_d::step(&mut self.slots[i], world)
+                            }
                             // S1-D-4 — the Frost Moon family's four
                             // aiStyle-1 kinds (345/348/349/350,
                             // `projectile_ai_frostmoon`): kind-disjoint
