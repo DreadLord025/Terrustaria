@@ -5675,13 +5675,15 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             &ctx,
         )
     };
-    for (id, count, x, y) in drops {
+    for (id, count, px, py) in drops {
         // The tile-break drops draw the same `UpdatePlayers` stream the
         // break rolls used (`Main.rand` = the active swap, `Main.cs:17754`).
         // No per-drop cue: the C# plays the break sound once, from
         // `KillTile_PlaySounds` (the table above), never per `Item.NewItem`.
+        // The positions are PIXELS (the object records carry the C# rect
+        // centre, the g78 FIX-ONCE) — spawn through the pixel seam.
         let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-        spawn_item_drop(&mut app.items, rng, id, count, x, y);
+        super::items::spawn_item_drop_px(&mut app.items, rng, id, count, Vec2::new(px, py));
     }
     // `WorldGen.CheckPalmTree`'s canopy re-roll (`:54385-54388`): the palm
     // cells whose cell above is gone take a fresh canopy frame. The roll
@@ -5880,10 +5882,14 @@ struct HitCell {
 /// `Item.NewItem` records (:86508/:49424/:43494/:47121/:57972), every pot
 /// event's `SpawnThingsFromPot` loot (:57011-57014), every cascade-killed
 /// herb's rolls (:65674-65698) and every 2x1 pile's loot block
-/// (:47130-47245). `(item, stack, x, y)` in spawn order, plus the Coin
-/// Portal projectile requests. Free of `App` — the RNG streams come in as
-/// parameters (`genRand` = the seeded `FastRandom` stand-in, `Main.rand` =
-/// the caller's `UnifiedRandom` stage stream).
+/// (:47130-47245). `(item, stack, px, py)` in spawn order — PIXEL positions
+/// (W4-g34, the g78 centre-gap FIX-ONCE): the object records resolve their
+/// C# `Item.NewItem` rect centre through [`edit::ObjectDrop::spawn_center_px`]
+/// (`Item.cs:49651`), every other record keeps the tile top-left pixel the
+/// port has always spawned (their rect-centre conversion is a separate
+/// lane). Plus the Coin Portal projectile requests. Free of `App` — the RNG
+/// streams come in as parameters (`genRand` = the seeded `FastRandom`
+/// stand-in, `Main.rand` = the caller's `UnifiedRandom` stage stream).
 fn break_drop_events(
     kill: &edit::TileKill,
     world: &World,
@@ -5892,23 +5898,33 @@ fn break_drop_events(
     axe_power: i32,
     main_rng: &mut UnifiedRandom,
     ctx: &DropCtx,
-) -> (Vec<(u16, u32, i32, i32)>, Vec<(i32, i32)>) {
-    let mut events = Vec::new();
+) -> (Vec<(u16, u32, f32, f32)>, Vec<(i32, i32)>) {
+    let mut events: Vec<(u16, u32, f32, f32)> = Vec::new();
+    // The tile-cell records' spawn point: the tile top-left pixel (the
+    // port's standing spawn for the per-cell/tree/pot/herb lanes).
+    let cell_px = |x: i32, y: i32| (x as f32 * TILE_PX, y as f32 * TILE_PX);
     // The hit cell's per-cell drop (`KillTile_DropItems` for the dying cell —
     // the C# `tileCache` carries the frames; captured pre-kill in
     // [`break_tile`]).
     if let Some(hit) = &hit {
-        events.extend(cell_drops(hit, staff_of_regrowth, main_rng, ctx));
+        for (id, count, x, y) in cell_drops(hit, staff_of_regrowth, main_rng, ctx) {
+            let (px, py) = cell_px(x, y);
+            events.push((id, count, px, py));
+        }
     }
     // The cascade's `Check*` records: the check's own `Item.NewItem` (the
     // sunflower's 63) or the object's item through `registry::tile_drop`.
+    // The spawn point is the C# rect CENTRE (`Item.cs:49651` — the 32x32
+    // furniture box centres +16/+16, the 16x16 door box +8/+8; the g78
+    // centre-gap FIX-ONCE, resolved once here for every check).
     for drop in &kill.object_drops {
         let id = drop
             .item
             .map(|item| item as u16)
             .or_else(|| registry::tile_drop(drop.tile_kind, 0));
         if let Some(id) = id {
-            events.push((id, 1, drop.x, drop.y));
+            let (px, py) = drop.spawn_center_px();
+            events.push((id, 1, px, py));
         }
     }
     // The killed tree cells' wood and acorns (`WorldGen.KillTile_GetTreeDrops`,
@@ -5923,12 +5939,14 @@ fn break_drop_events(
                 item,
             } => {
                 if *item != 0 {
-                    events.push((*item, 1, *x, *y));
+                    let (px, py) = cell_px(*x, *y);
+                    events.push((*item, 1, px, py));
                 }
                 // `if (tileCache.frameX <= 132 && tileCache.frameX >= 88)
                 // secondaryItem = 27;` (`:65239-65242`).
                 if (88..=132).contains(frame_x) {
-                    events.push((27, 1, *x, *y));
+                    let (px, py) = cell_px(*x, *y);
+                    events.push((27, 1, px, py));
                 }
             }
             edit::TreeDropEvent::Trunk {
@@ -5949,7 +5967,8 @@ fn break_drop_events(
                     &mut gen_stream,
                     main_rng,
                 ) {
-                    events.push((id, count, *x, *y));
+                    let (px, py) = cell_px(*x, *y);
+                    events.push((id, count, px, py));
                 }
             }
             edit::TreeDropEvent::Gem {
@@ -5963,17 +5982,20 @@ fn break_drop_events(
                 for (id, count) in
                     gem_tree_drops(*gem, *seed, *frame_x, *frame_y, main_rng)
                 {
-                    events.push((id, count, *x, *y));
+                    let (px, py) = cell_px(*x, *y);
+                    events.push((id, count, px, py));
                 }
             }
             edit::TreeDropEvent::Mushroom { x, y } => {
                 for (id, count) in mushroom_tree_drops(main_rng) {
-                    events.push((id, count, *x, *y));
+                    let (px, py) = cell_px(*x, *y);
+                    events.push((id, count, px, py));
                 }
             }
             edit::TreeDropEvent::Cactus { x, y } => {
                 // `case 80: dropItem = 276;` (`WorldGen.cs:64717-64719`).
-                events.push((276, 1, *x, *y));
+                let (px, py) = cell_px(*x, *y);
+                events.push((276, 1, px, py));
             }
         }
     }
@@ -6004,7 +6026,8 @@ fn break_drop_events(
             portals.push((event.x, event.y));
         }
         for (id, count) in loot {
-            events.push((id, count.max(1) as u32, event.x, event.y));
+            let (px, py) = cell_px(event.x, event.y);
+            events.push((id, count.max(1) as u32, px, py));
         }
     }
     // The cascade-killed herb cells: the per-cell herb rolls (`Main.rand`
@@ -6018,7 +6041,8 @@ fn break_drop_events(
             ctx,
             main_rng,
         ) {
-            events.push((id, count.max(1) as u32, herb.x, herb.y));
+            let (px, py) = cell_px(herb.x, herb.y);
+            events.push((id, count.max(1) as u32, px, py));
         }
     }
     // The broken piles' loot blocks: 185's 2x1 coin/ore table on the seeded
@@ -6029,7 +6053,8 @@ fn break_drop_events(
     for pile in &kill.pile_events {
         if pile.kind == 187 {
             if let Some(id) = sword_pile_roll(pile.frame_x, main_rng) {
-                events.push((id, 1, pile.x, pile.y));
+                let (px, py) = cell_px(pile.x, pile.y);
+                events.push((id, 1, px, py));
             }
             continue;
         }
@@ -6038,11 +6063,13 @@ fn break_drop_events(
         if pile.kind == 488 {
             // `Item.NewItem(…, 9, WorldGen.genRand.Next(10, 21))` (:49553).
             let count = gen_stream.next_range(10, 21).max(1) as u32;
-            events.push((9, count, pile.x, pile.y));
+            let (px, py) = cell_px(pile.x, pile.y);
+            events.push((9, count, px, py));
             continue;
         }
         for (id, count) in pile_loot(pile.frame_x, &mut gen_stream) {
-            events.push((id, count.max(1) as u32, pile.x, pile.y));
+            let (px, py) = cell_px(pile.x, pile.y);
+            events.push((id, count.max(1) as u32, px, py));
         }
     }
     (events, portals)
@@ -6943,13 +6970,15 @@ pub(crate) fn spawn_force_clear_area(app: &mut App, floor_x: i32, floor_y: i32) 
                         .map(|item| item as u16)
                         .or_else(|| registry::tile_drop(drop.tile_kind, 0));
                     if let Some(id) = id {
-                        spawn_item_drop(
+                        // The C# `Item.NewItem` rect centre (the g78
+                        // FIX-ONCE, `ObjectDrop::spawn_center_px`).
+                        let (px, py) = drop.spawn_center_px();
+                        super::items::spawn_item_drop_px(
                             &mut app.items,
                             app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                             id,
                             1,
-                            drop.x,
-                            drop.y,
+                            Vec2::new(px, py),
                         );
                     }
                 }
@@ -9042,7 +9071,7 @@ mod tests {
     fn drop_events(
         kill: &edit::TileKill,
         hit: Option<HitCell>,
-    ) -> (Vec<(u16, u32, i32, i32)>, Vec<(i32, i32)>) {
+    ) -> (Vec<(u16, u32, f32, f32)>, Vec<(i32, i32)>) {
         let mut main = tr_core::UnifiedRandom::new(0);
         break_drop_events(
             kill,
@@ -9194,7 +9223,9 @@ mod tests {
         });
         let (drops, portals) = drop_events(&kill, hit);
         assert!(portals.is_empty());
-        assert_eq!(drops, vec![(3, 1, 7, 12)]);
+        // The per-cell record keeps the tile top-left PIXEL (7*16, 12*16) —
+        // the g78 FIX-ONCE centres only the object records.
+        assert_eq!(drops, vec![(3, 1, 112.0, 192.0)]);
     }
 
     #[test]
@@ -9224,7 +9255,9 @@ mod tests {
         });
         let (drops, portals) = drop_events(&kill, hit);
         assert!(portals.is_empty());
-        assert_eq!(drops, vec![(36, 1, 10, 19)]);
+        // W4-g34 (the g78 FIX-ONCE): the bench record's C# 32x32 rect centre
+        // — (10*16+16, 19*16+16).
+        assert_eq!(drops, vec![(36, 1, 176.0, 320.0)]);
 
         let kill = edit::TileKill {
             kind: 1,
@@ -9245,7 +9278,11 @@ mod tests {
         });
         assert_eq!(
             drop_events(&kill, hit).0,
-            vec![(3, 1, 9, 17), (25, 1, 9, 18)],
+            // The legacy hit drop keeps the tile top-left pixel (9*16,
+            // 17*16); the open-door object drop centres its 16x16 rect
+            // (`DropDoorItem`, :69414) at (9*16+8, 18*16+8) — the g78
+            // FIX-ONCE.
+            vec![(3, 1, 144.0, 272.0), (25, 1, 152.0, 296.0)],
             "legacy hit drop plus the chained open-door object drop"
         );
     }

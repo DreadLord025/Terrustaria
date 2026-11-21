@@ -75,6 +75,9 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 66 | DrawData unwired-arm census SECOND half + wiring (W4-g34: the 50 small-animal/water/jellyfish cage ids; union-executed per research/67) | `66-drawdata-unwired-second-half.md` | ✅ |
+| 67 | Cage-animator triple-dup reconcile (W4-g34 merger assist: f14/g33/g34 KEEP/DROP + the union execution record) | `67-cage-animator-reconcile.md` | ✅ |
+| 68 | Cage critter items census + break-drop cascade + SEAL (W4-g34: the 92-kind union, the d105 Chillet port, the g78 centre-gap FIX-ONCE, the cage-family bible) | `68-cage-critter-items-census.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

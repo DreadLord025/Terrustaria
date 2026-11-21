@@ -39390,3 +39390,51 @@ against the actual signatures by read/grep; the 92-id union verified
 against g33's `cage_table` map + gate list. The research/67 §5 acceptance
 checklist (cargo green, t0 parity, screenshots, cage-free determinism) is
 owed to the verify wave.
+
+## The cage break-drop SEAL round (W4-g34, code-only, 2026-11-21)
+
+The seal round on `task/W4-g34-drawdata-wire-2` (base cf85a1cf): the
+92-kind cage union break-drop verified landed, the g34f cage-retire DROP
+list verified executed, the d105 Chillet-egg task seed ported, and the g78
+ObjectDrop centre-drop gap fixed once. Full receipts + the cage-family
+bible: research/68 §7/§8.
+
+1. **The Chillet egg (752 → 6142) + the Digtoise sibling (751 → 5667)**:
+   `check_2x2` gains the two fixed-item arms (`WorldGen.cs:48573-48578`)
+   and `check_object` the `751 | 752` dispatch. The reach was INTERPRETED
+   from the ILSpy goto-fallthrough (the brace-depth trace): the inner
+   switch lists 751/752 as a plain break (:85689-85691); the break falls
+   past the 316-318 guard to `goto case 132` (:85927) → Check2x2
+   (:85945). Neither kind has a placing item (itemdata tile:None), so the
+   explicit record is the only drop — no per-cell double spawn (751/752
+   are outside the empty case group, but `by_tile` finds nothing).
+   3 witnesses WRITTEN NOT RUN.
+2. **The ObjectDrop 32×32 centre-gap FIX-ONCE** (the g78 research/77 §3.2
+   contract): the C# `Item.NewItem` rect enters only through the centre
+   conversion (`Item.cs:49649-49651`); the port spawned at the tile
+   top-left (~15 px off for the 32×32 box). New
+   `ObjectDrop::spawn_center_px` resolves the rect centre once (32×32
+   +16/+16 furniture/cages, 16×16 +8/+8 doors + on-table 1×1, 48×32
+   +24/+16 oasis echo 705 + worm cages 391-394); all five consumers ride
+   it (`break_drop_events` + its spawn loop, `doors::interaction_events`,
+   the two liquid-wipe drains, the actuation drain). `check_orb`
+   un-pre-centred (its record carried ox+1/oy+1; the C# spawns at the
+   top-left — net position unchanged). **Determinism**: the event stream
+   now carries pixels, but every NON-object record keeps the exact
+   top-left pixel it always spawned — their spawns and the RNG draw order
+   are byte-identical; only the object-drop POSITIONS move (the fix).
+   The non-object lanes' own rect-centre conversion stays a separate
+   lane (the g78 contract scoped the ObjectDrop seam). 1 rect-census
+   witness + the re-pinned DW-3.2/DW-4.1 coordinate assertions, WRITTEN
+   NOT RUN.
+3. **The g34f cage-retire**: research/67 §3's g34-owned DROP items
+   re-censused at the seal tip — all landed (drawdata_cages.rs absent,
+   no world-entry cage reset, the draw/G6 gates widened to is_cage_kind,
+   the fresh-clone warm-up); `is_lane2_cage_kind` stays as the documented
+   census-split predicate (anchors row). The f14/g33-side drops belong to
+   their merges.
+
+Verification: code-only — no cargo/tests/rustfmt/graphify invoked; the
+dispatch interpreted statement-by-statement, the rect census read from
+every ported Check*'s Item.NewItem call, the consumers grep-censused
+(five seams, zero left on the top-left path).

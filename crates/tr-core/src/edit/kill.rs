@@ -16,13 +16,17 @@ use crate::world::World;
 /// One object destruction the kill cascade performed — the world-state effect
 /// of a `WorldGen.Check*` routine (`WorldGen.cs:57923/:86339/:86432/:43335/
 /// :46973/:49187`): the whole object was removed and vanilla would spawn
-/// `Item.NewItem` with the rect origin at `(x, y)` (tile coordinates; the
-/// rect is 32x32 px for furniture, 16x16 for doors). `tile_kind` is the
-/// object's tile id; `item` carries the id only when the `Check*` body spawns
-/// the item itself — the sunflower's `Item.NewItem(…, 63)`
+/// `Item.NewItem` with the rect TOP-LEFT at `(x, y)` (tile coordinates).
+/// `tile_kind` is the object's tile id; `item` carries the id only when the
+/// `Check*` body spawns the item itself — the sunflower's `Item.NewItem(…, 63)`
 /// (`WorldGen.cs:53787-53791`); `None` resolves app-side through
 /// `registry::tile_drop` (style-0 drops: door 25, table 32, chair 34, bench
 /// 36, chest 48 — `WorldGen.cs:69204/:42194/:42635/:42447/:41677`).
+///
+/// W4-g34 (the g78 centre-gap FIX-ONCE): the rect enters `Item.NewItem` ONLY
+/// through the centre conversion (`Item.cs:49651` — `center = (X + Width/2,
+/// Y + Height/2)`); [`ObjectDrop::spawn_center_px`] resolves it once for every
+/// consumer instead of per-check.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct ObjectDrop {
     pub tile_kind: u16,
@@ -30,6 +34,32 @@ pub struct ObjectDrop {
     pub y: i32,
     /// The item the check spawned with the destruction, if any (see above).
     pub item: Option<i32>,
+}
+
+impl ObjectDrop {
+    /// The `Item.NewItem` spawn CENTRE in pixels — the rect top-left
+    /// `(x*16, y*16)` plus half the rect (`Item.cs:49649-49651`). The rect is
+    /// the C# check's own: 32x32 for the furniture/cage/object checks (every
+    /// `Check*` `Item.NewItem` in `WorldGen.cs:37855-57984` reads `32, 32`
+    /// except the arms below), 16x16 for the door drops (`DropDoorItem`,
+    /// `WorldGen.cs:69414`) and the `CheckOnTable1x1` single-cell kill's
+    /// per-cell drop (`KillTile_DropItems`, `:63955` — 13/33/49/78), and
+    /// 48x32 for the two wide echo arms (`case 705` the oasis echo
+    /// `:49454`, `case 391-394` the worm cages `:49481`).
+    pub fn spawn_center_px(&self) -> (f32, f32) {
+        let (hw, hh) = match self.tile_kind {
+            // `DropDoorItem` (:69414) + the on-table 1x1 per-cell drop
+            // (:63955): 16x16 → centre +8.
+            10 | 11 | 13 | 33 | 49 | 78 => (8.0, 8.0),
+            // The 48x32 rects (:49454/:49481): centre +24 x, +16 y.
+            391..=394 | 705 => (24.0, 16.0),
+            _ => (16.0, 16.0),
+        };
+        (
+            self.x as f32 * crate::TILE_PX + hw,
+            self.y as f32 * crate::TILE_PX + hh,
+        )
+    }
 }
 
 /// One broken loot pot — `CheckPot`'s tail (`WorldGen.cs:57011-57014`): after
@@ -709,6 +739,16 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         // dragonflies 521-527, jellyfish 316-318).
         100 | 172 | 282 | 505 | 543 | 598 | 568..=570 | 288..=295 | 360 | 580 | 620 | 521..=527
         | 316..=318 => check_2x2(world, x, y),
+        // W4-g34 — the Palworld crossover 2x2 eggs (`WorldGen.cs:48573-48578`):
+        // the Digtoise 751 (item 5667) and the Chillet Egg 752 (item 6142).
+        // Dispatch: the inner switch lists 751/752 as a PLAIN break
+        // (:85689-85691) — it falls out through the nested defaults to
+        // `goto case 132` (:85927) → `Check2x2` (verified by interpreting the
+        // ILSpy goto-fallthrough; the same route the 316-318 guard takes).
+        // Neither kind places through an item (`itemdata` tile:None), so the
+        // explicit check drop is the ONLY drop (the per-cell `by_tile`
+        // fallback finds nothing — 751/752 are NOT in the empty case group).
+        751 | 752 => check_2x2(world, x, y),
         101 => check_bookcase(world, x, y),
         104 => check_clock(world, x, y),
         185 => check_pile(world, x, y),
@@ -1201,10 +1241,10 @@ fn check_orb(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
             _ => Some(111), // Band of Starpower
         }
     };
-    // The 2x2's drop position: the orb's centre tile (`Item.NewItem`'s
-    // spawn at the object centre).
-    let cx = ox + 1;
-    let cy = oy + 1;
+    // The 2x2's drop rect top-left (`WorldGen.cs:54229` — `num*16, num2*16`,
+    // a 32x32 box). The centre conversion happens ONCE at the app's
+    // ObjectDrop → spawn seam (W4-g34, the g78 centre-gap fix), so the record
+    // carries the top-left like every other check — NOT a pre-centred cell.
     // `:54292-54293`'s flags (outside the drop switch — all three kinds
     // count toward the same world counter).
     world.shadow_orb_smashed = true;
@@ -1212,8 +1252,8 @@ fn check_orb(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     Some(CheckPlan {
         drop: Some(crate::edit::ObjectDrop {
             tile_kind: kind,
-            x: cx,
-            y: cy,
+            x: ox,
+            y: oy,
             item,
         }),
         cells,
@@ -1584,15 +1624,17 @@ fn check_bed_bathtub(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
 }
 
 /// `WorldGen.Check2x2`'s default branch (`WorldGen.cs:48397-48799`) for the
-/// candelabra (100), the sink (172) and the water-cage family (the fish bowls
+/// candelabra (100), the sink (172), the water-cage family (the fish bowls
 /// 282/505/543/598, fairy jars 568-570, butterfly jars 288-295/360/580/620,
-/// dragonfly jars 521-527, jellyfish bowls 316-318): the 2x2 cells with the
+/// dragonfly jars 521-527, jellyfish bowls 316-318) and the Palworld eggs
+/// (751 Digtoise / 752 Chillet Egg, W4-g34): the 2x2 cells with the
 /// style frames (the sink's full height is 38) and the solid-or-table floor
 /// without half-bricks (:48452-48463). The drop (:48570-48751) is the object's
 /// item — every water-cage kind's drop equals its placing item, so `item:
 /// None` resolves through `by_tile`; the candelabra/sink keep their style-0
-/// slice. (The boulder/ceiling/chandelier arms of Check2x2 — 95/126/132/138/
-/// 484/664/665/711-716 — are separate lanes, not ported here.)
+/// slice; the eggs carry the fixed items 5667/6142 (:48573-48578). (The
+/// boulder/ceiling/chandelier arms of Check2x2 — 95/126/132/138/484/664/665/
+/// 711-716 — are separate lanes, not ported here.)
 fn check_2x2(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     let kind = world.tile(x, y)?.kind;
     let t = world.tile(x, y)?;
@@ -1638,12 +1680,22 @@ fn check_2x2(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     if !broken {
         return None;
     }
+    // The drop switch's head (`WorldGen.cs:48570-48578`): the Palworld eggs
+    // carry FIXED items — 751 (Digtoise) → 5667, 752 (Chillet Egg) → 6142
+    // (W4-g34, the d105 task seed). Every other kind this slice covers keeps
+    // `item: None` — the water-cage drops equal their placing items and the
+    // candelabra/sink keep their style-0 slice (`by_tile`).
+    let item = match kind {
+        751 => Some(5667),
+        752 => Some(6142),
+        _ => None,
+    };
     Some(CheckPlan {
         drop: Some(ObjectDrop {
             tile_kind: kind,
             x,
             y,
-            item: None,
+            item,
         }),
         cells: killable_cells(world, &region, kind),
         pot_event: None,
@@ -6014,5 +6066,91 @@ mod tests {
             // order around the hit (11, 18): (10, 18).
             assert_eq!((kill.object_drops[0].x, kill.object_drops[0].y), (10, 18));
         }
+    }
+
+    // ---- W4-g34: the Palworld egg break-drop (the d105 task seed) ----
+
+    #[test]
+    fn w4_g34_chillet_egg_752_break_drops_the_egg_item() {
+        // `Check2x2` case 752 (`WorldGen.cs:48576-48578`): `num14 = 6142`
+        // (the Palworld Chillet Egg item). Breaking any cell of the placed
+        // 2x2 sweeps all four and drops ONE 6142 at the trigger cell — the
+        // egg has NO placing item (`itemdata` 6142 tile:None), so the
+        // explicit check drop is the only drop (no per-cell double spawn:
+        // 752 is not in `KILL_TILE_NO_CELL_DROP`, but `by_tile(752)` finds
+        // nothing). Dispatch: the plain-break group :85689-85691 falls to
+        // `goto case 132` :85927 → Check2x2.
+        let mut w = cage_2x2_world(752);
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        assert_all_gone(&w, &[(10, 18), (10, 19), (11, 18), (11, 19)]);
+        assert_eq!(
+            kill.object_drops,
+            vec![ObjectDrop {
+                tile_kind: 752,
+                x: 10,
+                y: 18,
+                item: Some(6142),
+            }]
+        );
+    }
+
+    #[test]
+    fn w4_g34_digtoise_751_break_drops_the_sibling_item() {
+        // `Check2x2` case 751 (`WorldGen.cs:48573-48575`): `num14 = 5667`
+        // (the Palworld Digtoise item) — the sibling arm ported with the
+        // Chillet egg. Same 2x2 sweep + trigger-cell drop position.
+        let mut w = cage_2x2_world(751);
+        let kill = kill_tile(&mut w, 11, 18, false).unwrap();
+        assert_all_gone(&w, &[(10, 18), (10, 19), (11, 18), (11, 19)]);
+        assert_eq!(
+            kill.object_drops,
+            vec![ObjectDrop {
+                tile_kind: 751,
+                x: 10,
+                y: 18,
+                item: Some(5667),
+            }]
+        );
+    }
+
+    #[test]
+    fn w4_g34_egg_2x2_no_item_support_break_sweeps_without_the_drop() {
+        // `no_item` suppresses the drop record but still sweeps the object:
+        // mining the floor under the left column cascades into `Check2x2`
+        // (the support test :48452-48463 fails), the four cells die, and the
+        // `CheckPlan` gate (`square_tile_frame`'s `!no_item` arm) holds the
+        // egg record back — the same shape as the chest support-break
+        // witness above, with the drops suppressed.
+        let mut w = cage_2x2_world(752);
+        let kill = kill_tile(&mut w, 10, 20, true).unwrap();
+        assert_all_gone(&w, &[(10, 18), (10, 19), (11, 18), (11, 19)]);
+        assert!(kill.object_drops.is_empty(), "no_item suppresses the egg");
+    }
+
+    #[test]
+    fn w4_g34_object_drop_spawn_center_matches_the_csharp_rects() {
+        // The g78 centre-gap FIX-ONCE: `Item.NewItem`'s rect → centre
+        // conversion (`Item.cs:49649-49651` — `center = (X + Width/2,
+        // Y + Height/2)`). The record carries the rect TOP-LEFT in tile
+        // coords; the helper resolves the pixel centre once for every
+        // consumer. Rect census: 32x32 for the furniture/cage/object checks,
+        // 16x16 for the doors (`DropDoorItem` :69414) + the on-table 1x1
+        // per-cell drop (`KillTile_DropItems` :63955), 48x32 for the oasis
+        // echo 705 (:49454) + the worm cages 391-394 (:49481).
+        let at = |kind: u16, x: i32, y: i32| {
+            ObjectDrop { tile_kind: kind, x, y, item: None }.spawn_center_px()
+        };
+        // 32x32: +16/+16.
+        assert_eq!(at(14, 10, 18), (176.0, 304.0), "the table");
+        assert_eq!(at(275, 9, 17), (160.0, 288.0), "the big cage");
+        assert_eq!(at(752, 10, 18), (176.0, 304.0), "the Chillet egg");
+        assert_eq!(at(31, 99, 99), (1600.0, 1600.0), "the orb (top-left, not pre-centred)");
+        // 16x16: +8/+8.
+        assert_eq!(at(10, 9, 18), (152.0, 296.0), "the closed door");
+        assert_eq!(at(11, 9, 18), (152.0, 296.0), "the open door");
+        assert_eq!(at(78, 10, 19), (168.0, 312.0), "the on-table pot");
+        // 48x32: +24/+16.
+        assert_eq!(at(391, 10, 18), (184.0, 304.0), "the worm cage");
+        assert_eq!(at(705, 10, 18), (184.0, 304.0), "the oasis echo");
     }
 }

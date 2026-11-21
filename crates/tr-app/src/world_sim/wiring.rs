@@ -352,8 +352,17 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         if let Some(id) = crate::registry::tile_drop(drop.tile_kind, 0) {
             // The spawn joins the wiring block's own seeded stream (the
             // S1-L-6c contract; the C# truth is `UpdateWorldGen` — ANALYSIS).
+            // The position is the C# `Item.NewItem` rect CENTRE (the g78
+            // FIX-ONCE, `ObjectDrop::spawn_center_px`).
             let rng = app.wiring.rand_mut();
-            crate::world_sim::items::spawn_item_drop(&mut app.items, rng, id, 1, drop.x, drop.y);
+            let (px, py) = drop.spawn_center_px();
+            crate::world_sim::items::spawn_item_drop_px(
+                &mut app.items,
+                rng,
+                id,
+                1,
+                glam::Vec2::new(px, py),
+            );
         }
     }
     // The trap emissions spawn after the fixed step (`NewProjectile` with

@@ -1,5 +1,10 @@
 # 68 — Cage critter items: place / release / light census (W4-g34-drawdata-wire-2)
 
+> **STATUS: SEALED (2026-11-21).** The place/release/light census (§0-§5),
+> the 92-kind break-drop cascade (§6), the seal verification + the Chillet
+> port + the centre-gap FIX-ONCE (§7) and the cage-family bible (§8) are
+> complete on this branch. Witnesses WRITTEN NOT RUN (code-only).
+
 Worker: code-only subagent on `task/W4-g34-drawdata-wire-2`. Read-only census +
 wiring fixes; no builds/tests run. All C# cites are `decompiled/Terraria/…`;
 Rust cites are `crates/…` at the branch tip.
@@ -8,6 +13,12 @@ Rust cites are `crates/…` at the branch tip.
 full 92-kind cage union's break-drop cascade (`Check6x3`/`Check3x2`/`Check2x2`/
 `Check1x2Top`) plus the `Check3x2` furniture/echo/log family. See §2's table
 and §6 below.
+
+**Update (SEAL round, 2026-11-21):** §7 records the seal verification — the
+92-kind union landed at `cf85a1cf`, the g34f cage-retire DROP list verified
+executed, the d105 Chillet-egg task seed PORTED (§7.3), and the g78
+ObjectDrop 32×32 centre-drop gap FIXED ONCE at the spawn seam (§7.4). The
+cage-family bible is §8.
 
 ## 0. The brief's pointers corrected against the source
 
@@ -168,3 +179,141 @@ particles). 19 witness tests WRITTEN NOT RUN across the six families.
 spawn event) unported; the Check2x2 boulder/ceiling/chandelier arms (95/126/132/
 138/484/664/665/711-716) and the Check3x3/Check4x2/Check3x4 extra kinds are
 separate lanes (the brief scoped Check6x3/Check3x2 + the cage union).
+
+## 7. SEAL round (2026-11-21, this branch)
+
+### 7.1 The 92-kind union SEAL — verified landed
+
+The break-drop cascade landed across `9c46ad94a` (Check6x3) → `69aa9a22d`
+(small cages) → `88856797f` (furniture) → `b55043e87` (echo/log) → `3582392f4`
+(bottles) → `9aa1ca722` (water cages) → `c0e5c63ab` (docs) → `cf85a1cf9`
+(witness fixes + the Check2x2 tail ring). Re-verified at the seal tip:
+
+* `check_6x3` — 41 kinds (`CAGE_6X3_DROP`, `:50291-50454`); the critter stays
+  INSIDE the dropped cage item (census: NO release arm in Check6x3 — release
+  is the LMB `ItemCheck_ReleaseCritter`, already ported in `bug_net.rs`).
+* `check_3x2` — 53 kinds (5 tables + 23 small cages + 17 furniture + 8
+  echo/log/sandcastle).
+* `check_2x2` — 100/172 + the 28 water cages (+ 751/752 since §7.3).
+* `check_1x2_top` — 7 kinds (42/270/271/572/581/660/698).
+* The `TileFrameImportant` ILSpy goto-fallthrough dispatch INTERPRETED
+  statement-by-statement (the brace-depth trace): the 275-281 case + the
+  `:85278` guard fall-through (Check6x3), the `:85547` empty-break group →
+  `goto case 14` (Check3x2), the `:85653`/`:85784` groups + the 316-318 range
+  guard `:85662` (Check2x2), the `:85752-85759` group (Check1x2Top).
+* 41 + 23 + 28 = 92 = `drawdata_furniture::is_cage_kind` — the full union.
+
+### 7.2 The g34f cage-retire — verified EXECUTED
+
+The research/67 §3 DROP list (the cage-animator union's retire half) was
+re-censused at the seal tip; every g34-owned DROP item is landed:
+
+| DROP item | State at the seal tip |
+| --- | --- |
+| `drawdata_cages.rs` (f14/g33 variants) | ABSENT from this branch (glob empty) — the kept module is `critter_cage_anim.rs` |
+| g34 `enter_loaded_world` cage reset | GONE — `app/mod.rs:2399-2407` keeps `tile_anim.reset()` only, the PROCESS-state comment cites the static ctor |
+| lane-2-only draw gate | WIDENED — `render/tiles.rs:750` reads `is_cage_kind` (92) |
+| lane-2-only G6 gate | WIDENED — `app/frame/draw.rs:1033` reads `is_cage_kind` |
+| post-slice-A cage position | MOVED — the rewrite rides the FIRST-switch tail before `apply_cases_a` (`render/tiles.rs:735-762`) |
+| g33 live-stream warm-up | NOT on this branch — `app/mod.rs:4191` warms on a fresh `UnifiedRandom::new(world_seed)` clone |
+| `is_lane2_cage_kind` | KEPT deliberately (the census-split documentation predicate + its split witness, anchors row 900) — NOT a retire target |
+
+The f14/g33-side DROPs (their modules, dispatcher slot, key field) belong to
+those branches' merges — the merger drops them wholesale per research/67 §6;
+nothing on THIS branch owes them.
+
+### 7.3 The d105 Chillet-egg task seed — PORTED
+
+The d105 RETIRE receipt (research/129 R2, commit `926bfc377`) pinned the
+egg-tile-break drop UNCLAIMED to this lane: `Check2x2` case 752 → 6142
+(`WorldGen.cs:48576-48578`) + the sibling case 751 → 5667 (`:48573-48575`).
+Ported here:
+
+* **Dispatch** (`check_object`): `751 | 752 => check_2x2`. The reach was
+  interpreted, not guessed: the inner switch lists 751/752 as a PLAIN `break`
+  (`:85689-85691`) inside the `type < 316 || type > 318` guard's switch; the
+  break exits that switch, falls past the guard's closing brace to
+  `goto case 132` (`:85927`) → `Check2x2(i, j, type)` (`:85945`). The same
+  route the 316-318 range guard takes. (`Check2x2Style`'s `goto case 254`
+  tail at `:85950` is NOT reached — the case-132 group's `break` at `:85946`
+  exits the enclosing switch first.)
+* **Geometry**: both eggs are `Style2x2` (`TileObjectData.cs:4015-4017`; the
+  751 carries DrawFrameOffsets for the sleeping Digtoise sprite, the 752 is
+  the plain copy) — the existing `check_2x2` origin/frame/floor judge covers
+  them unchanged (full height 36, solid-or-table floor, no half-bricks).
+* **Drop**: `item = Some(5667)` / `Some(6142)` in the record. Neither kind
+  has a placing item (`itemdata` 5667/6142 `tile: None` — the Digtoise is a
+  summon item, the egg a bag), so the explicit check drop is the ONLY drop:
+  751/752 are NOT in `KILL_TILE_NO_CELL_DROP` (the C# empty group ends at
+  733), but the per-cell `by_tile` fallback finds no placing item — no
+  double spawn.
+* **Witnesses** (WRITTEN NOT RUN): `w4_g34_chillet_egg_752_break_drops_the_egg_item`,
+  `w4_g34_digtoise_751_break_drops_the_sibling_item`,
+  `w4_g34_egg_2x2_no_item_support_break_sweeps_without_the_drop`.
+* The bag-open half stays f35's (`misc_bags::open_chillet_egg`, per the d105
+  receipt) — this lane owns the TILE-break drop only.
+
+### 7.4 The g78 ObjectDrop 32×32 centre-drop gap — FIXED ONCE
+
+The g78 wiring contract (research/77 §3.2, commit `82bc71ea8`) censused the
+PRE-EXISTING gap shared by every `ObjectDrop` consumer: the C# `Item.NewItem`
+rect enters ONLY through the centre conversion (`Item.cs:49649-49651` —
+`center = (X + Width/2, Y + Height/2)`), while the port spawned at the tile
+TOP-LEFT (~15 px left/up of the C# centre for the 32×32 furniture box). Fixed
+ONCE at the seam, not per-check:
+
+* **Core**: `ObjectDrop::spawn_center_px` (`edit/kill.rs`) — the rect census
+  per kind: 32×32 (+16/+16) for the furniture/cage/object checks, 16×16
+  (+8/+8) for the doors (`DropDoorItem` `:69414`) + the on-table 1×1 per-cell
+  drop (`KillTile_DropItems` `:63955` — 13/33/49/78), 48×32 (+24/+16) for the
+  oasis echo 705 (`:49454`) + the worm cages 391-394 (`:49481`).
+* **The orb un-pre-centred**: `check_orb` carried `x: ox+1, y: oy+1` (a
+  pre-centred tile) — the C# spawns at the rect top-left `(num, num2)`
+  (`:54229` etc.); the record now carries `(ox, oy)` like every other check
+  and the seam centres it. Net spawn position UNCHANGED for the orb.
+* **Consumers** (all five): `break_drop_events` (the event stream now carries
+  PIXEL positions — object records centre, every other record keeps the
+  tile top-left pixel the port has always spawned, so the per-cell/tree/pot/
+  herb/pile spawns stay byte-identical and the RNG order is untouched), the
+  `break_tile` spawn loop (`spawn_item_drop_px`), `doors::interaction_events`
+  (+ its spawn loop), the two liquid-wipe drains (`editing.rs` +
+  `recall_teleport.rs`), and the actuation-drop drain (`world_sim/wiring.rs`).
+* **Deliberate scope**: the NON-object lanes (per-cell/tree/pot/herb/pile)
+  keep their standing top-left spawn — their own rect-centre conversion is a
+  separate lane (the g78 contract scoped the ObjectDrop seam only).
+* **Witnesses** (WRITTEN NOT RUN): `w4_g34_object_drop_spawn_center_matches_the_csharp_rects`
+  (the 9-case rect census) + the re-pinned `test_DW_3_2_*` / `test_DW_4_1_*`
+  coordinate assertions (pixel centres).
+
+## 8. The cage-family bible (merger assist)
+
+One table per cage subsystem — the C# anchor, the port site, the owner, the
+ruling. The merger keeps THIS branch's cage wiring wholesale (research/67
+§6); the f14/g33 duplicates drop at their merges.
+
+| Subsystem | C# anchor | Port (this branch) | Owner / ruling |
+| --- | --- | --- | --- |
+| Place (all 92 + bottles) | `TileObjectData` Style6x3/StyleSmallCage/1x2 defs (`:2667-2782`/`:3673-3781`), `Player.cs:39771-39778` | `tileobject::can_place`/`place` via `routes_through_tile_object` (§1) | LANDED pre-wave; no cage place arm missing |
+| LMB critter release | `ItemCheck_ReleaseCritter` `Player.cs:44057-44074` + `NPC.ReleaseNPC` `:80106-80167` | `bug_net.rs` (`release_plan`/`release_npc`), wired `editing.rs:2116` (S1-P-i36) | LANDED; cage items `make_npc: 0` — never fires for them |
+| Right-click release | NONE in vanilla (`TileInteractionsUse` census, §0/§2) | none — correctly absent | NO arm to port; inventing one violates the golden rule |
+| Break-drop: 41 big cages | `Check6x3` `WorldGen.cs:50242-50463` | `check_6x3` + `CAGE_6X3_DROP` | THIS branch (W4-g34); critter stays inside |
+| Break-drop: 23 small cages | `Check3x2` `:49460-49524` + the `:49234` support group | `check_3x2` small-cage arm | THIS branch |
+| Break-drop: 28 water cages | `Check2x2` default `:48397-48799` | `check_2x2` | THIS branch |
+| Break-drop: bottles/lantern | `Check1x2Top` `:46706-46813` | `check_1x2_top` | THIS branch |
+| Break-drop: furniture/echo/log | `Check3x2` `:49432-49706` | `check_3x2` furniture/echo arms | THIS branch; fairy-spawn event unported (deviation) |
+| Break-drop: Palworld eggs 751/752 | `Check2x2` `:48573-48578` | `check_2x2` egg arm (§7.3) | THIS branch (the d105 seed) |
+| Drop spawn geometry | `Item.NewItem` centre `Item.cs:49649-49651` | `ObjectDrop::spawn_center_px` (§7.4) | THIS branch (the g78 FIX-ONCE); the g78 monolith lane composes — its `check_monolith` records ride the same seam |
+| Animator (34 tables) | `AnimateTiles_CritterCages` `Main.cs:13511-16596` + owl/dragonfly helpers | `critter_cage_anim.rs` (whole port) | THIS branch keeps; f14/g33 `drawdata_cages.rs` DROP at their merges (research/67) |
+| Draw rewrite (92 ids) | FIRST `GetTileDrawData` switch tail `TileDrawing.cs:5629-5907` | `cage_draw_data` at the slice-B/A composite position (`render/tiles.rs:750`) | THIS branch; f14 order folded in |
+| Warm-up | `Initialize_TileAndNPCData2` `Main.cs:6802-6807` | `App::new`/`flow_app` fresh world-seed clone (`app/mod.rs:4191`) | THIS branch (f14 semantics); g33 live-stream form DROP |
+| Lifetime | static ctor `Main.cs:66502`/`:66901-66972` | PROCESS state — no world-entry reset | THIS branch; the old reset DROPped |
+| Light: constants | `TileLightScanner.cs:896-934` | `tile_light/scanner.rs` | LANDED pre-wave |
+| Light: jellyfish pulse | `TileLightScanner.cs:714-768` reads `jellyfishCageMode` | `scanner.rs::cage_lights` fed `cage_anim.jellyfish_mode` (`app/frame/draw.rs:393`) | THIS branch (the feed fix) |
+| Egg bag-open | `Player.TryOpenContainer` (the 58-kind dispatch) | `misc_bags::open_chillet_egg` | f35's (landed `0fd244e79`/`00a5b27db`) — NOT this lane |
+
+**Co-lane boundaries:** the g78 monolith `check_monolith` (research/77 §3.2)
+adds a NEW `Check2xX` sibling + dispatch arm — hunk-disjoint from this lane's
+`check_2x2` egg arm; its records ride the §7.4 seam unchanged (the 32×32
+default). The d54 dust lane composes at the same `KillTile` site (particles
+vs records, §6). The g78 FIX-ONCE means the monolith lane must NOT re-centre
+per-check — the seam owns it.
