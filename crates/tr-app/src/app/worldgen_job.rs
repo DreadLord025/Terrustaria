@@ -314,6 +314,7 @@ mod tests {
             ..Default::default()
         };
         let path = dir.join("job.trwld");
+        let micro_flags = opts.micro_flags;
         let job = WorldGenJob::spawn(
             opts,
             path.clone(),
@@ -338,7 +339,7 @@ mod tests {
         // executed step completed, none running after the task lands.
         assert_eq!(
             snap.completed_steps,
-            tr_core::worldgen::pipeline::executed_steps(opts.micro_flags).len(),
+            tr_core::worldgen::pipeline::executed_steps(micro_flags).len(),
             "every executed step appended a GenPassResult"
         );
         assert!(snap.current_step.is_empty(), "no pass runs after completion");

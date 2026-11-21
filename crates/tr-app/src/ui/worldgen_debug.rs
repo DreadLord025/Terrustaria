@@ -98,11 +98,21 @@ pub(crate) fn content_height(rows: usize) -> f32 {
 /// `GenPassElement`'s state for one executed step (`UIWorldGenDebug.cs:243-275`):
 /// `IsRunning` = `Controller.CurrentPass == Pass` (`:245`), `HasCompleted` =
 /// `GenPassResults.Count > Index` (`:247`), `Skipped` = the result's flag
-/// (`:249-259` — the port's compact pipeline records no per-step skip flag, so
-/// a disabled step that ran reads completed-not-skipped; the special-seed
-/// disable gate rides `enabled`). `IsHighlighted`/`CurrentTargetPass` are the
-/// controller's alt-click highlight / pause target — both off in the read-only
-/// driver (no controller actions, d86 scope).
+/// (`:249-259`). `IsHighlighted`/`CurrentTargetPass` are the controller's
+/// alt-click highlight / pause target — both off in the read-only driver (no
+/// controller actions, d86 scope).
+///
+/// Skipped-pass limitation (documented, dual-dungeons only): the C# `RunPass`
+/// appends a `Skipped=true` `GenPassResult` for a disabled pass WITHOUT the
+/// `Start`/`End` bookends (`WorldGenerator.cs:488-495`), so `GenPassResults.
+/// Count` counts it; the port's `apply_step` skips a disabled pass without
+/// notifying the `GenProgressHook`, so `completed_steps` (bumped by `end_step`)
+/// counts only the enabled passes that ran. For a classic world (no disabled
+/// passes) the two align exactly; for a DUAL_DUNGEONS world the completed
+/// marker's row alignment shifts past the first disabled step. The port's
+/// progress feed already excludes disabled passes from `total_weight`, so this
+/// is the same model — the driver reads `enabled` from the special-seed gate
+/// and leaves `skipped` false (the hook reports no per-step skip flag).
 pub(crate) fn pass_state(
     step: &ExecutedStep,
     index: usize,
