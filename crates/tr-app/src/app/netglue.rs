@@ -417,15 +417,12 @@ impl App {
                     server.broadcast_except(&S2c::Left { id }, id);
                 }
             }
-            // `case 16` — the health report; the server forces the subject to
-            // the sender (`MessageBuffer.cs:1100-1103`).
+            // `case 16` — the health report (`MessageBuffer.cs:1095-1117`):
+            // the server forces the subject to the sender (`:1100-1103`),
+            // derives `dead` (`:1111`) and relays (`:1114`) — W4-g48. The
+            // statLifeMax >= 20 floor is the decode's (`net.rs`'s 16 arm).
             C2s::PlayerHp { hp, max_hp, .. } => {
-                if let Some(p) = self.remote_players.get_mut(&id) {
-                    p.hp = hp as i32;
-                    // The statLifeMax >= 20 floor is the decode's now
-                    // (`MessageBuffer.cs:1107-1110`, `net.rs`'s 16 arm).
-                    p.max_hp = max_hp as i32;
-                }
+                crate::app::net_apply::host_player_hp(self, server, id, hp, max_hp);
             }
             // `case 13` — the per-tick player state. The server forces the
             // subject to the sender (`MessageBuffer.cs:959`) and relays to
@@ -909,13 +906,18 @@ impl App {
             | C2s::TeamChange(_)
             | C2s::ProjectileTrackers(_)
             | C2s::SyncLoadout(_) => {}
-            // S1-I-1 wave B: the world-sync region's client-sent ids have
-            // bodies + codecs (`net.rs`); the host apply/relay arms
-            // (`MessageBuffer.cs:1119-1288`, `:1299-1334`, `:2909-2948`,
-            // `:4023-4042`, `:2355-2363`, `:4457-4462`) land with the
-            // send-path pass (S1-I-4).
-            C2s::TileEdit(_)
-            | C2s::DoorToggle(_)
+            // `case 17` — a client's single-tile edit
+            // (`MessageBuffer.cs:1119-1288`): the full kind dispatch + the
+            // survive/falling relay rules — W4-g48 (`net_apply`).
+            C2s::TileEdit(e) => {
+                crate::app::net_apply::host_tile_edit(self, server, id, e);
+            }
+            // S1-I-1 wave B: the world-sync region's remaining client-sent
+            // ids have bodies + codecs (`net.rs`); the host apply/relay arms
+            // (`MessageBuffer.cs:1299-1334`, `:2909-2948`, `:4023-4042`,
+            // `:2355-2363`, `:4457-4462`) land with the send-path pass
+            // (S1-I-4).
+            C2s::DoorToggle(_)
             | C2s::TilePaint(_)
             | C2s::WallPaint(_)
             | C2s::TilePicking(_)
@@ -1028,7 +1030,7 @@ impl App {
 
     /// Extracts one tile's sync record — the C#'s compressor fields
     /// (`NetMessage.cs:1952-2168`) read out of the port's storage.
-    fn tile_record_at(&self, x: i32, y: i32) -> net::TileRecord {
+    pub(crate) fn tile_record_at(&self, x: i32, y: i32) -> net::TileRecord {
         let Some(t) = self.world.tile(x, y) else {
             return net::TileRecord {
                 active: false,
@@ -1471,12 +1473,10 @@ impl App {
                 hp,
                 max_hp,
             } => {
-                if let Some(p) = self.remote_players.get_mut(&(player_id as u32)) {
-                    p.hp = hp as i32;
-                    // The statLifeMax >= 20 floor is the decode's now
-                    // (`MessageBuffer.cs:1107-1110`, `net.rs`'s 16 arm).
-                    p.max_hp = max_hp as i32;
-                }
+                // `case 16` client half (`MessageBuffer.cs:1104-1111`): the
+                // peer's health + the `dead` derivation — W4-g48. The
+                // statLifeMax >= 20 floor is the decode's (`net.rs`).
+                crate::app::net_apply::client_player_hp(self, player_id, hp, max_hp);
             }
             S2c::PlayerActive { player_id, active } => {
                 if active && player_id as u32 != self.local_id {
@@ -2082,14 +2082,20 @@ impl App {
             | S2c::MiscEventValue(_)
             | S2c::ProjectileTrackers(_)
             | S2c::SyncLoadout(_) => {}
-            // S1-I-1 wave B: the world-sync region's server-sent ids have
-            // bodies + codecs (`net.rs`); the client read sites
-            // (`MessageBuffer.cs:895-900`, `:1119-1288`, `:1299-1334`,
-            // `:2909-2948`, `:4023-4042`, `:4450-4456`) land with the
-            // send-path pass (S1-I-4) — nothing sends them yet. The `11`
-            // arm is the d89 one above (keep-one dedupe at the g48 merge).
-            S2c::TileEdit(_)
-            | S2c::DoorToggle(_)
+            // `case 17` on a client — the host's edit relay
+            // (`MessageBuffer.cs:1157-1275`, the `netMode == 1` path): the
+            // same kind dispatch, no spam/section gates, no relay; kind 0
+            // clears the crack book (`:1160-1163`) — W4-g48 (`net_apply`).
+            S2c::TileEdit(e) => {
+                crate::app::net_apply::client_tile_edit(self, e);
+            }
+            // S1-I-1 wave B: the world-sync region's remaining server-sent
+            // ids have bodies + codecs (`net.rs`); the client read sites
+            // (`MessageBuffer.cs:1299-1334`, `:2909-2948`, `:4023-4042`,
+            // `:4450-4456`) land with the send-path pass (S1-I-4) — nothing
+            // sends them yet. The `11` arm is the d89 one above (keep-one
+            // dedupe at the g48 merge).
+            S2c::DoorToggle(_)
             | S2c::TilePaint(_)
             | S2c::WallPaint(_)
             | S2c::TilePicking(_)
@@ -6004,5 +6010,136 @@ mod g48_apply_tests {
         assert!((second_peer.x - want_x).abs() < 0.01);
         assert!((second_peer.y - want_y).abs() < 0.01);
         assert_eq!(second_peer.off_x, 0.0, "Spawn zeroes netOffset (:37638)");
+    }
+
+    /// `case 16` (`MessageBuffer.cs:1095-1117`): a client's health report
+    /// stores hp/max on the host's peer copy, derives `dead` from
+    /// `statLife <= 0` (`:1111`) and relays to the other peers (`:1114`).
+    #[test]
+    fn g48_16_player_hp_relays_and_derives_dead() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlayerHp {
+                player_id: 255, // the host forces the sender (`:1100-1103`)
+                hp: 0,
+                max_hp: 100,
+            });
+        }
+        let mut landed = false;
+        for _ in 0..60 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            landed = host_app
+                .remote_players
+                .get(&client_app.local_id)
+                .is_some_and(|p| p.hp == 0 && p.dead);
+            if landed {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(landed, "the 16 arm stored hp and derived dead");
+        let peer = &host_app.remote_players[&client_app.local_id];
+        assert_eq!(peer.max_hp, 100);
+    }
+
+    /// `case 17` kind 0 (`MessageBuffer.cs:1157-1163`): a client's KillTile
+    /// edit breaks the host's tile (the cascade + drops) and relays the edit
+    /// to the other peers (`:1285`); the receiving client breaks its own
+    /// copy without spawning local drops (the `netMode != 1` gate).
+    #[test]
+    fn g48_17_kill_tile_edit_breaks_and_relays() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // A stone block at (6, 3) on both sides (above the dirt row).
+        for app in [&mut host_app, &mut client_app] {
+            let i = app.world.index(6, 3);
+            app.world.tiles[i] = tr_core::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TileEdit(net::TileEdit {
+                kind: 0,
+                x: 6,
+                y: 3,
+                value: 0,
+                style: 0,
+            }));
+        }
+        let mut broken = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            broken = !host_app.world.tile_active(6, 3) && !client_app.world.tile_active(6, 3);
+            if broken {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(broken, "the 17 kill broke both copies");
+        // The host spawned the stone drop (item 3); the client did not spawn
+        // a local one (its copy arrives through the 21 cadence).
+        assert!(host_app.items.iter().any(|d| d.kind == 3), "the host's loot");
+    }
+
+    /// `case 17` kind 5/6 (`MessageBuffer.cs:1187-1194`): the wire place/kill
+    /// edits flip the host's wire side-table and relay; the kill drops the
+    /// 530 wire item host-side (`WorldGen.cs:58130`).
+    #[test]
+    fn g48_17_wire_place_and_kill_edit_replicates() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TileEdit(net::TileEdit {
+                kind: 5, // PlaceWire (red)
+                x: 7,
+                y: 3,
+                value: 0,
+                style: 0,
+            }));
+        }
+        let mut wired = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            wired = host_app.world.wires.get(7, 3, tr_core::wiring::WireColor::Red)
+                && client_app.world.wires.get(7, 3, tr_core::wiring::WireColor::Red);
+            if wired {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(wired, "the red wire landed on both sides");
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TileEdit(net::TileEdit {
+                kind: 6, // KillWire (red)
+                x: 7,
+                y: 3,
+                value: 0,
+                style: 0,
+            }));
+        }
+        let mut cut = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            cut = !host_app.world.wires.get(7, 3, tr_core::wiring::WireColor::Red)
+                && !client_app.world.wires.get(7, 3, tr_core::wiring::WireColor::Red);
+            if cut {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(cut, "the wire came off both sides");
+        assert!(host_app.items.iter().any(|d| d.kind == 530), "the 530 drop");
     }
 }
