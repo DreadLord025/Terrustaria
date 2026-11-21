@@ -75,8 +75,8 @@ reassigns; the merger reconciles per `12h`.
 | pass | commit | status |
 | --- | --- | --- |
 | range claim (this doc) | d32b13cc | claimed |
-| C1 Place Fallen Log | (this commit) | landed (code-only, witnesses written NOT run) |
-| C2 Traps | — | pending |
+| C1 Place Fallen Log | 8c9b7b60 | landed (code-only, witnesses written NOT run) |
+| C2 Traps | (this commit) | landed (code-only, witnesses written NOT run) |
 | C3 Piles | — | pending |
 | C4 Spawn Point | — | pending |
 | C5 Guide | — | pending |
@@ -119,3 +119,37 @@ the gate; `a == b` halves untouched. Witnesses: 3 unit tests in
 veto, the gates + width-guard draw schedule) + the pipeline positional
 witness `w4_g38_c1_the_fallen_log_step_sits_after_the_cave_houses`; the
 step-count/name-list tests updated 66→67.
+
+## C2 landing note (2026-11-21)
+
+C2 ports `WorldGen.cs:18657-18787` (the Traps pass) + `placeTrap`
+(`:8922-9513`, all four variants) + `PlaceSandTrap` (`:35463-35739`) +
+`placeTNTBarrel` (`:8886-8907`) verbatim into `structures.rs`
+(`pass_traps` + `place_trap`/`place_trap_dart`/`place_trap_boulder`/
+`place_trap_explosive`/`place_trap_geyser` + `place_sand_trap` +
+`place_tnt_barrel`, with local `trap_*` helpers for `SolidTile`/
+`SolidTile2`/`SolidTileAllowBottomSlope`/`Place1x1`/`Place2x2`/`PlaceTile`/
+`KillTile`/`IsTileNearby`/`CanGeneratePressurePlateAt`/the three
+`closeEnoughTo*` proximity scans). Slot: after `fallen log`, before
+`thin ice` (the vanilla `:18657` slot between Place Fallen Log `:18513`
+and Piles `:18788`). Stream: `pass_rng("Traps")` — no other step's ledger
+shifts. `GenVars.boulder_pets_placed` (Reset 0, `:8323`) published for the
+pet-boulder budget. Boot statics: 135/138/664/484/711-716/443/654
+frame-important (`Main.cs:7721`/`:7432-7441`/`:9716`/`:7362`; 137/141
+already present). Progress message `Lang.gen[34]` (`:18663`). The
+pass-local `Main.tileSolid[379]=false` + `SetBoulderSolidity` windows ride
+a `boulder_solid` flag threaded into `trap_solid` (the port's `TILE_SOLID`
+is static). Deferred (flag-gated / port-model seams, documented in the
+section note): `placingTraps` (UI-only), `starGame` (runtime joke seed),
+`shimmerPosition` proximity (no shimmer position yet), the dual-dungeon
+`placeTrap_CanContinue` arm (no bounds model), `trapDiag` (diagnostics),
+the drunk `Thread.Sleep` delay loop (draws/writes nothing). Hash pins:
+SEED42_512 expected UNCHANGED (the 512 terrain rejects every trap attempt
++ no wall-187 desert); DEFAULT_WORLD moves BY DESIGN (210 trap attempts +
+12 sand-trap attempts place on the 4200-wide world). Re-pins deferred to
+the gate; `a == b` halves untouched. Witnesses: 5 unit tests in
+`structures.rs` (bubble/boulder solidity windows, Place1x1 plate frames +
+floor veto, Place2x2 boulder frames + floor veto, the dart trap
+plate+dart+wire, the pass gates' no-draw schedule) + the pipeline
+positional witness `w4_g38_c2_the_traps_step_sits_after_the_fallen_log`;
+the step-count/name-list tests updated 67→68.

@@ -249,6 +249,17 @@ mod tests {
     // 488 frame-important boot bit is inert without the kind. If a
     // future width change admits the band, the pin moves BY DESIGN;
     // re-pin DEFERRED to the merge gate. a == b stays green.
+    // W4-g38 C2 (2026-11-21, code-only): the `Traps` pass
+    // (`WorldGen.cs:18657-18787` + `placeTrap` `:8922-9513` + `PlaceSandTrap`
+    // `:35463-35739`) lands after `fallen log` on a fresh `pass_rng("Traps")`
+    // stream. The pin is EXPECTED UNCHANGED: on the 512-wide world the trap
+    // x band `[200, width−200)` = `[200, 312)` is live, BUT the classic
+    // trap count is `width * 0.05 = 25` and every attempt's floor walk /
+    // headroom scan rejects on the compact 512 terrain (the same reason the
+    // dungeon trap pass places none there) — and the sand-trap band
+    // `[0.15w, 0.85w)` needs wall 187 the 512 world's desert never paints.
+    // If a trap does place on some seed, the pin moves BY DESIGN; re-pin
+    // DEFERRED to the merge gate. a == b stays green (own fresh stream).
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -299,6 +310,15 @@ mod tests {
     // BY DESIGN. The pass draws only its own fresh stream — no other
     // step's ledger shifts. Re-pin DEFERRED to the merge gate (no
     // compiler on this branch); a == b stays green.
+    // W4-g38 C2 (2026-11-21, code-only): the Traps pass (see SEED42_512
+    // above) — on the 4200-wide default world the `width * 0.05` = 210
+    // trap attempts place dart/boulder/explosive/geyser traps on the cave
+    // floors (the 135 plates, 137 darts, 138-family boulders, 141
+    // explosives, 443 geysers + the red wires), and the `width * 0.003` =
+    // 12 sand-trap attempts carve the underground-desert chambers — this
+    // pin moves BY DESIGN. The pass draws only its own fresh stream; the
+    // downstream tile-dependent passes legitimately re-roll around the
+    // new traps. Re-pin DEFERRED to the merge gate; a == b stays green.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

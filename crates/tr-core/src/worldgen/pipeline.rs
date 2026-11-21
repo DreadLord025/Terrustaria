@@ -374,6 +374,12 @@ pub(crate) struct GenVars {
     pub(crate) log_x: i32,
     #[allow(dead_code)] // consumed by the Flowers pass (d105/g39's slice)
     pub(crate) log_y: i32,
+    /// `GenVars.boulderPetsPlaced` (`GenVars.cs`, reset 0 at
+    /// `WorldGen.cs:8323`) — the Traps pass's pet-boulder budget counter:
+    /// each plain 138 boulder that upgrades to the pet-spawning 716
+    /// increments it, capped at the world-size budget (`:9361-9365`).
+    /// W4-g38 C2.
+    pub(crate) boulder_pets_placed: i32,
 }
 
 impl Default for GenVars {
@@ -414,6 +420,9 @@ impl Default for GenVars {
             // The C# Reset sets both to −1 (`WorldGen.cs:11210-11211`).
             log_x: -1,
             log_y: -1,
+            // `ResetGenerator` zeroes the pet-boulder counter
+            // (`WorldGen.cs:8323`).
+            boulder_pets_placed: 0,
             shell_start_x_left: 0,
             shell_start_y_left: 0,
             shell_start_x_right: 0,
@@ -1335,6 +1344,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // `pass_rng("Place Fallen Log")` stream, so the insertion shifts no
     // other step's ledger.
     step!("fallen log", "Place Fallen Log", step_fallen_log),
+    // The vanilla Traps slot (`WorldGen.cs:18657`): after Place Fallen Log
+    // (`:18513`, C1) and before Piles (`:18788`, this lane's C3) — W4-g38
+    // C2. The pass draws only its own `pass_rng("Traps")` stream, so the
+    // insertion shifts no other step's ledger.
+    step!("traps", "Traps", step_traps),
     // The vanilla slot (`WorldGen.cs:20941-20973`): the Micro Biomes
     // pass's thin-ice block runs FIRST among the port's grouped micro
     // steps — after the dead-man's-chest block (`:20922`, unported) and
@@ -2358,6 +2372,34 @@ fn step_fallen_log(
     gv.log_y = anchor.1;
 }
 
+/// The vanilla Traps slot (`WorldGen.cs:18657-18787`) — W4-g38 C2: the
+/// dart/boulder/explosive/geyser traps, the TNT barrels (no-traps seed) and
+/// the sand traps, on the pass's own stream. The `GenVars.boulderPetsPlaced`
+/// counter rides `gv`; the seed gates live in the pass body.
+fn step_traps(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let layers = *gv.layers();
+    let lava_line = gv.lava_line;
+    let dungeon_x = gv.spans().dungeon_x;
+    let mut pets = gv.boulder_pets_placed;
+    structures::pass_traps(
+        world,
+        &layers,
+        lava_line,
+        dungeon_x,
+        &mut streams.pass_rng("Traps"),
+        opts,
+        &mut pets,
+    );
+    gv.boulder_pets_placed = pets;
+}
+
 fn step_campsites(
     world: &mut World,
     _gv: &mut GenVars,
@@ -2842,6 +2884,20 @@ pub(crate) fn boot_statics(world: &mut World) {
     // Log pass writes its 3×2 `Place3x2` frames, which the framer must
     // keep instead of autotiling the object.
     world.frame_important[488] = true;
+    // The Traps-pass kinds (W4-g38 C2): the pressure plate 135
+    // (`Main.cs:7721`), the boulder family 138/664/484/711-716
+    // (`Main.cs:7432-7441`), the geyser 443 (`Main.cs:9716`) and the TNT
+    // barrel 654 (`Main.cs:7362`) are frame-important — the framer keeps
+    // the stored `Place1x1`/`Place2x2` frames. (137/141 already above.)
+    world.frame_important[135] = true;
+    world.frame_important[138] = true;
+    world.frame_important[664] = true;
+    world.frame_important[484] = true;
+    for kind in 711..=716 {
+        world.frame_important[kind] = true;
+    }
+    world.frame_important[443] = true;
+    world.frame_important[654] = true;
     // The ocean tiles the ocean passes write — the palm trunk 323, the
     // coral 81, the beach piles 324, the shell piles 495, the sea oats 529
     // (`Main.cs:7376`) and the oasis plants 530 (`:7385`) are all
@@ -3190,7 +3246,9 @@ mod tests {
         // `WorldGen.cs:20941`) before `campsites`.
         // W4-g38 C1: + `fallen log` (vanilla "Place Fallen Log",
         // `WorldGen.cs:18513`) after `cave houses`.
-        assert_eq!(names.len(), 67);
+        // W4-g38 C2: + `traps` (vanilla "Traps", `WorldGen.cs:18657`) after
+        // `fallen log`.
+        assert_eq!(names.len(), 68);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3266,6 +3324,7 @@ mod tests {
                 "temple part 2",
                 "cave houses",
                 "fallen log",
+                "traps",
                 "thin ice",
                 "campsites",
                 "spike pits",
@@ -3484,7 +3543,7 @@ mod tests {
     fn s1_k_2c_the_thin_ice_step_precedes_the_micro_group() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("thin ice"), pos("fallen log") + 1);
+        assert_eq!(pos("thin ice"), pos("traps") + 1);
         assert_eq!(pos("thin ice") + 1, pos("campsites"));
         assert!(pos("thin ice") < pos("sword shrines"));
         assert!(pos("thin ice") < pos("mahogany trees"));
@@ -3500,7 +3559,7 @@ mod tests {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("fallen log"), pos("cave houses") + 1);
-        assert_eq!(pos("fallen log") + 1, pos("thin ice"));
+        assert_eq!(pos("fallen log") + 1, pos("traps"));
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -3512,6 +3571,28 @@ mod tests {
         assert!(cpos("Surface Ore and Stone") < cpos("Place Fallen Log"));
         assert!(cpos("Place Fallen Log") < cpos("Traps"));
         assert!(cpos("Place Fallen Log") < cpos("Spawn Point"));
+    }
+
+    /// W4-g38 C2: `traps` sits after `fallen log` and before the grouped
+    /// micro family — the vanilla chain's relative order Place Fallen Log
+    /// (`WorldGen.cs:18513`) → Traps (`:18657`) → Piles (`:18788`, C3) →
+    /// Spawn Point (`:19460`) puts the pass ahead of the micro group.
+    #[test]
+    fn w4_g38_c2_the_traps_step_sits_after_the_fallen_log() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("traps"), pos("fallen log") + 1);
+        assert_eq!(pos("traps") + 1, pos("thin ice"));
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Place Fallen Log") < cpos("Traps"));
+        assert!(cpos("Traps") < cpos("Piles"));
+        assert!(cpos("Traps") < cpos("Spawn Point"));
     }
 
     #[test]
