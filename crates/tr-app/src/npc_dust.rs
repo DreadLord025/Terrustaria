@@ -76,6 +76,18 @@
 //!   the stand-in's invented `ai[1]--` countdown + scatter teleport pick
 //!   are retired for the C#'s `AI_AttemptToFindTeleportSpot` (range 20,
 //!   telefrag 12, centred, in-air) + the strike-hook latch `:81347`).
+//! - 24520 — the Antlion 69's aiStyle-19 fall-drip (`:24517-24529`,
+//!   STAGED — no `NpcKind` yet).
+//! - 24850/24866 — the Pixie 75's type-55 + the Ice Elemental 169's
+//!   type-92 aiStyle-22 ambient drips (`:24848-24852`/`:24864-24869`,
+//!   STAGED — no `NpcKind` yet).
+//! - 35157/35162 — the Martian Turret 387's materialize ring pair
+//!   (`:35133-35166`, the `npc_ai_style73` plan seam's 8 placements —
+//!   STAGED, the style-73 machine is unwired).
+//! - 37289/37307 — the Shadowflame Apparition 472's aiStyle-86 spawn-in
+//!   20×27 ring + the fade drip (`:37279-37297`/`:37302-37314`, STAGED).
+//! - 37337/37464 — the Squidhead 521's aiStyle-86 spawn-in 2×228 ring +
+//!   the every-tick 228 (`:37334-37341`/`:37462-37467`, STAGED).
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -903,6 +915,260 @@ pub fn king_slime_body_drip(
     d.velocity *= 0.5;
 }
 
+// =====================================================================
+// W4-e2 batch 6 — the :21562-39039 gap's unclaimed sites (9). d52's
+// first-40 lane ends at 21562; e2's pillar batch starts at 39007. The
+// gap's kinds are either unported (Antlion 69, Pixie 75, Ice Elemental
+// 169, Shadowflame Apparition 472, Squidhead 521 — no NpcKind) or their
+// machines are unwired (Martian Turret 387, npc_ai_style73's plan seam).
+// STAGED: the dust bodies + RNG order are pinned here; the machines
+// arrive with the wiring wave (the npc_ai_style9 solar-flare precedent).
+// =====================================================================
+
+/// Site 24520 — the Antlion (69)'s aiStyle-19 fall-drip (`NPC.cs:24517-
+/// 24529`). The caller's machine runs the `Next(2) == 0` gate EVERY tick
+/// the body is airborne (the `flag29` ground check returned false); on a
+/// pass ONE type-32 `NewDust((x-4, y+height-8), width+8, 24, 32, 0,
+/// vy/2)`; post `velocity.X *= 0.4`, `velocity.Y *= -1`, then a SECOND
+/// `Next(2) == 0` gate adds noGravity + scale += 0.2. `gate`/`boost` are
+/// the already-drawn results — the gate draws stay at the machine's C#
+/// position even on the dust-free entries. STAGED.
+pub fn antlion_fall_drip(
+    gate: bool,
+    boost: bool,
+    x: f32,
+    y: f32,
+    width: i32,
+    height: f32,
+    vy: f32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    if !gate {
+        return;
+    }
+    let idx = dust.new_dust(
+        rng, ctx, world, Vec2::new(x - 4.0, y + height - 8.0), width + 8, 24, 32,
+        0.0, vy / 2.0, 0, Color::default(), 1.0,
+    );
+    let d = dust.slot_mut(idx);
+    d.velocity.x *= 0.4;
+    d.velocity.y *= -1.0;
+    if boost {
+        d.no_gravity = true;
+        d.scale += 0.2;
+    }
+}
+
+/// Site 24850 — the Pixie (75)'s aiStyle-22 ambient drip (`NPC.cs:24848-
+/// 24852`): the `Next(6) == 0` gate, then ONE type-55 `NewDust(position,
+/// width, height, 55, 0, 0, 200, this.color)`; post `velocity *= 0.3`.
+/// `gate` is the already-drawn result; `color` is the NPC's tint (the
+/// Pixie's `SetDefaults` color). STAGED.
+pub fn pixie_ambient_drip(
+    gate: bool,
+    x: f32,
+    y: f32,
+    width: i32,
+    height: i32,
+    color: Color,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    if !gate {
+        return;
+    }
+    let idx = dust.new_dust(
+        rng, ctx, world, Vec2::new(x, y), width, height, 55,
+        0.0, 0.0, 200, color, 1.0,
+    );
+    dust.slot_mut(idx).velocity *= 0.3;
+}
+
+/// Site 24866 — the Ice Elemental (169)'s aiStyle-22 ambient drip
+/// (`NPC.cs:24864-24869`): the `Next(3) == 0` gate, then ONE type-92
+/// `NewDust(position, width, height, 92, 0, 0, 200)`; post `velocity *=
+/// 0.3`, noGravity. The `:24862` centre AddLight + `alpha = 30` are the
+/// visual lane's (zero RNG). `gate` is the already-drawn result. STAGED.
+pub fn ice_elemental_ambient_drip(
+    gate: bool,
+    x: f32,
+    y: f32,
+    width: i32,
+    height: i32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    if !gate {
+        return;
+    }
+    let idx = dust.new_dust(
+        rng, ctx, world, Vec2::new(x, y), width, height, 92,
+        0.0, 0.0, 200, Color::default(), 1.0,
+    );
+    let d = dust.slot_mut(idx);
+    d.velocity *= 0.3;
+    d.no_gravity = true;
+}
+
+/// Sites 35157/35162 — the Martian Turret (387)'s materialize ring
+/// (`NPC.cs:35133-35166`, aiStyle 73). The `npc_ai_style73` plan seam
+/// (`turret_materialize_dust_plan`) computes the 8 placements: for each
+/// of the four offsets ((0,-15)×0.15, (0,-5)×0.3, (0,5)×0.6, (0,20)×0.45)
+/// a MIRRORED pair — first at `Center + spin*scale + offset`, then
+/// `spin *= -1` and the twin. Every dust is type-226 `NewDust(Center, 0,
+/// 0, 226, 0, 0, 100, default, 0.5)`; post noGravity, position = the
+/// placement, velocity = Zero. The plan's `placements` array is in C#
+/// order (the pair interleaving). STAGED — the style-73 machine is
+/// unwired (the kind arm is a stand-in hold).
+pub fn turret_materialize_ring(
+    cx: f32,
+    cy: f32,
+    placements: &[(f32, f32); 8],
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for &(px, py) in placements.iter() {
+        let idx = dust.new_dust(
+            rng, ctx, world, Vec2::new(cx, cy), 0, 0, 226,
+            0.0, 0.0, 100, Color::default(), 0.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.position = Vec2::new(px, py);
+        d.velocity = Vec2::ZERO;
+    }
+}
+
+/// Sites 37289/37307 — the Shadowflame Apparition (472)'s aiStyle-86
+/// spawn-in ring + fade drip (`NPC.cs:37279-37314`). The `localAI[0]==0`
+/// one-shot fires the 20×27 ring: per dust the position is `Center -
+/// (0,18) + normalize(Next(-100,101), Next(-100,101)) * (Next(0,100)*0.1)`,
+/// the velocity is `-normalize(that offset) * (Next(50,90)*0.2) * 0.3`;
+/// `NewDust(center31, 1, 1, 27)`, post velocity = the computed value,
+/// alpha 100, then `Next(2)==0` adds noGravity + scale += 0.3. The fade
+/// drip (37307) runs while `localAI[0] < 120`: the count is the FLOAT
+/// `(1 - localAI[0]/120) * 20` (the C#'s `(float)num1205 < num1204`
+/// loop), each gated `Next(5)==0`, ONE type-27 `NewDust(position, width,
+/// height, 27)`; post alpha 100, velocity *= 0.3, velocity += base.velocity
+/// * 0.75, noGravity. STAGED — no NpcKind yet.
+pub fn shadowflame_apparition_spawn_ring(
+    cx: f32,
+    cy: f32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for _ in 0..20 {
+        // `center31 = Center - (0, 18)`.
+        let (mut px, mut py) = (cx, cy - 18.0);
+        // `vector167 = (Next(-100,101), Next(-100,101))`, normalize, then
+        // `*= Next(0,100) * 0.1` — the position offset.
+        let ox = rng.next_range(-100, 101) as f32;
+        let oy = rng.next_range(-100, 101) as f32;
+        let mut v = normalize(Vec2::new(ox, oy));
+        let r = rng.next_range(0, 100) as f32 * 0.1;
+        v *= r;
+        px += v.x;
+        py += v.y;
+        // Re-normalize the offset, then `*= Next(50,90) * 0.2` — the
+        // velocity magnitude (the C# re-normalizes vector167 AFTER the
+        // position add, so the direction is the unit offset again).
+        let mut vel = normalize(v);
+        let speed = rng.next_range(50, 90) as f32 * 0.2;
+        vel *= speed;
+        let idx = dust.new_dust(
+            rng, ctx, world, Vec2::new(px, py), 1, 1, 27,
+            0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity = vel * -0.3;
+        d.alpha = 100;
+        if rng.next_max(2) == 0 {
+            d.no_gravity = true;
+            d.scale += 0.3;
+        }
+    }
+}
+
+/// Site 37307 — the Shadowflame Apparition's fade drip (the second half
+/// of the 37289/37307 pair). `count` is the FLOAT bound `(1 -
+/// localAI[0]/120) * 20` AFTER the increment; the loop runs while
+/// `(float)i < count`. Each iteration gates `Next(5)==0`; on a pass ONE
+/// type-27 box dust, post alpha 100, velocity *= 0.3, velocity +=
+/// (vx,vy)*0.75, noGravity. `gates` are the already-drawn Next(5) results
+/// (one per iteration, in order). STAGED.
+pub fn shadowflame_apparition_fade_drip(
+    count: f32,
+    gates: &[bool],
+    x: f32,
+    y: f32,
+    width: i32,
+    height: i32,
+    vx: f32,
+    vy: f32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let mut i = 0.0f32;
+    let mut g = 0;
+    while i < count {
+        if gates.get(g).copied().unwrap_or(false) {
+            let idx = dust.new_dust(
+                rng, ctx, world, Vec2::new(x, y), width, height, 27,
+                0.0, 0.0, 0, Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.alpha = 100;
+            d.velocity *= 0.3;
+            d.velocity += Vec2::new(vx, vy) * 0.75;
+            d.no_gravity = true;
+        }
+        g += 1;
+        i += 1.0;
+    }
+}
+
+/// Sites 37337/37464 — the Squidhead (521)'s aiStyle-86 spawn-in 2×228
+/// ring + the every-tick 228 (`NPC.cs:37334-37341`/`:37462-37467`). The
+/// spawn-in (localAI[0] < 120) fires 2 iterations of `NewDust(position -
+/// (10,10), width+20, height+20, 228, 0, 0, 100, default, 2)`; post
+/// noGravity + noLight. The every-tick site (37464) is the SAME body but
+/// ONE iteration (the C#'s `for num1224 < 1`). `iterations` is 2 for the
+/// spawn-in, 1 for the every-tick. STAGED — no NpcKind yet.
+pub fn squidhead_228_ring(
+    iterations: i32,
+    x: f32,
+    y: f32,
+    width: i32,
+    height: i32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for _ in 0..iterations {
+        let idx = dust.new_dust(
+            rng, ctx, world, Vec2::new(x - 10.0, y - 10.0), width + 20, height + 20, 228,
+            0.0, 0.0, 100, Color::default(), 2.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.no_light = true;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1528,6 +1794,254 @@ mod tests {
         assert_eq!(pool.slot(0).position, mpool.slot(0).position);
         assert_eq!(pool.slot(0).velocity, mpool.slot(0).velocity);
         assert_eq!(pool.slot(0).scale, mpool.slot(0).scale);
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e2 batch 6 — site 24520: the Antlion fall-drip. A failed gate
+    /// spawns nothing (the machine already drew the Next(2)); a passed
+    /// gate spawns ONE type-32 at (x-4, y+height-8), box (width+8, 24),
+    /// speedY vy/2; post velocity.X *= 0.4, velocity.Y *= -1, then the
+    /// boost gate adds noGravity + scale += 0.2. Mirrored pool internals.
+    #[test]
+    fn w4_e2_antlion_fall_drip_gates_and_chains() {
+        let w = world();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(151);
+        antlion_fall_drip(false, false, 500.0, 500.0, 30, 30.0, -2.0, &mut rng, &mut pool, &c, &w);
+        assert!(active(&pool).is_empty(), "the failed gate spawns nothing");
+        // The passed gate + boost: mirror the pool internals.
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(151);
+        antlion_fall_drip(true, true, 500.0, 500.0, 30, 30.0, -2.0, &mut rng, &mut pool, &c, &w);
+        let idx = mpool.new_dust(
+            &mut mirror, &c, &w, Vec2::new(500.0 - 4.0, 500.0 + 30.0 - 8.0),
+            30 + 8, 24, 32, 0.0, -2.0 / 2.0, 0, Color::default(), 1.0,
+        );
+        let d = mpool.slot_mut(idx);
+        d.velocity.x *= 0.4;
+        d.velocity.y *= -1.0;
+        d.no_gravity = true;
+        d.scale += 0.2;
+        assert_eq!(active(&pool).len(), 1);
+        assert_eq!(pool.slot(0).dust_type, 32);
+        assert!(pool.slot(0).no_gravity);
+        assert_eq!(pool.slot(0).position, mpool.slot(0).position);
+        assert_eq!(pool.slot(0).velocity, mpool.slot(0).velocity);
+        assert_eq!(pool.slot(0).scale, mpool.slot(0).scale);
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e2 batch 6 — sites 24850/24866: the Pixie's type-55 (color tint,
+    /// velocity *= 0.3) and the Ice Elemental's type-92 (velocity *= 0.3,
+    /// noGravity) ambient drips. Both gate on the caller's already-drawn
+    /// result; the mirror pins the pool internals + the post chains.
+    #[test]
+    fn w4_e2_pixie_and_ice_elemental_ambient_drips() {
+        let w = world();
+        let c = ctx();
+        // The Pixie: type 55, alpha 200, the NPC's color, velocity *= 0.3.
+        let mut pool = DustPool::new();
+        let mut mpool = DustPool::new();
+        let mut rng = UnifiedRandom::new(161);
+        let mut mirror = UnifiedRandom::new(161);
+        let tint = Color::new(255, 200, 100, 255);
+        pixie_ambient_drip(true, 600.0, 600.0, 20, 20, tint, &mut rng, &mut pool, &c, &w);
+        let idx = mpool.new_dust(
+            &mut mirror, &c, &w, Vec2::new(600.0, 600.0), 20, 20, 55,
+            0.0, 0.0, 200, tint, 1.0,
+        );
+        mpool.slot_mut(idx).velocity *= 0.3;
+        assert_eq!(active(&pool).len(), 1);
+        assert_eq!(pool.slot(0).dust_type, 55);
+        assert_eq!(pool.slot(0).color, tint);
+        assert_eq!(pool.slot(0).velocity, mpool.slot(0).velocity);
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+        // The Ice Elemental: type 92, alpha 200, velocity *= 0.3, noGravity.
+        let mut pool2 = DustPool::new();
+        let mut mpool2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(163);
+        let mut mirror2 = UnifiedRandom::new(163);
+        ice_elemental_ambient_drip(true, 700.0, 700.0, 30, 40, &mut rng2, &mut pool2, &c, &w);
+        let idx = mpool2.new_dust(
+            &mut mirror2, &c, &w, Vec2::new(700.0, 700.0), 30, 40, 92,
+            0.0, 0.0, 200, Color::default(), 1.0,
+        );
+        let d = mpool2.slot_mut(idx);
+        d.velocity *= 0.3;
+        d.no_gravity = true;
+        assert_eq!(active(&pool2).len(), 1);
+        assert_eq!(pool2.slot(0).dust_type, 92);
+        assert!(pool2.slot(0).no_gravity);
+        assert_eq!(pool2.slot(0).velocity, mpool2.slot(0).velocity);
+        assert_eq!(rng2.next_range(0, 1000), mirror2.next_range(0, 1000));
+    }
+
+    /// W4-e2 batch 6 — sites 35157/35162: the turret materialize ring's 8
+    /// placements (the npc_ai_style73 plan seam). Every dust is type-226
+    /// at Center, 0×0 box, alpha 100, scale 0.5; post noGravity, position
+    /// = the placement, velocity = Zero. The mirror replays the 8 pool
+    /// internals + the position overwrites in C# pair order.
+    #[test]
+    fn w4_e2_turret_materialize_ring_eight_placements() {
+        let w = world();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut mpool = DustPool::new();
+        let mut rng = UnifiedRandom::new(171);
+        let mut mirror = UnifiedRandom::new(171);
+        let plan = crate::npc_ai_style73::turret_materialize_dust_plan(60.0, (1000.0, 1000.0));
+        turret_materialize_ring(1000.0, 1000.0, &plan.placements, &mut rng, &mut pool, &c, &w);
+        for &(px, py) in plan.placements.iter() {
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, Vec2::new(1000.0, 1000.0), 0, 0, 226,
+                0.0, 0.0, 100, Color::default(), 0.5,
+            );
+            let d = mpool.slot_mut(idx);
+            d.no_gravity = true;
+            d.position = Vec2::new(px, py);
+            d.velocity = Vec2::ZERO;
+        }
+        assert_eq!(active(&pool).len(), 8);
+        for i in 0..8 {
+            assert_eq!(pool.slot(i).dust_type, 226);
+            assert!(pool.slot(i).no_gravity);
+            assert_eq!(pool.slot(i).velocity, Vec2::ZERO);
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e2 batch 6 — sites 37337/37464: the Squidhead's 228 ring. The
+    /// spawn-in fires 2 iterations, the every-tick 1; both are the SAME
+    /// body at (x-10, y-10), box (width+20, height+20), alpha 100, scale
+    /// 2; post noGravity + noLight. The mirror pins the pool internals.
+    #[test]
+    fn w4_e2_squidhead_228_ring_two_and_one() {
+        let w = world();
+        let c = ctx();
+        for (iters, seed) in [(2i32, 181u64), (1, 183)] {
+            let mut pool = DustPool::new();
+            let mut mpool = DustPool::new();
+            let mut rng = UnifiedRandom::new(seed);
+            let mut mirror = UnifiedRandom::new(seed);
+            squidhead_228_ring(iters, 800.0, 800.0, 60, 60, &mut rng, &mut pool, &c, &w);
+            for _ in 0..iters {
+                let idx = mpool.new_dust(
+                    &mut mirror, &c, &w, Vec2::new(800.0 - 10.0, 800.0 - 10.0),
+                    60 + 20, 60 + 20, 228, 0.0, 0.0, 100, Color::default(), 2.0,
+                );
+                let d = mpool.slot_mut(idx);
+                d.no_gravity = true;
+                d.no_light = true;
+            }
+            assert_eq!(active(&pool).len(), iters as usize);
+            for i in 0..iters as usize {
+                assert_eq!(pool.slot(i).dust_type, 228);
+                assert!(pool.slot(i).no_gravity);
+                assert!(pool.slot(i).no_light);
+                assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+            }
+            assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+        }
+    }
+
+    /// W4-e2 batch 6 — site 37289: the Shadowflame Apparition's spawn-in
+    /// 20×27 ring. Per dust the argument draws ride FIRST (the two
+    /// Next(-100,101) position components, the Next(0,100) radius, the
+    /// Next(50,90) speed), then the pool internals, then the post
+    /// Next(2) boost gate. The mirror replays the full census.
+    #[test]
+    fn w4_e2_shadowflame_apparition_spawn_ring_census() {
+        let w = world();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut mpool = DustPool::new();
+        let mut rng = UnifiedRandom::new(191);
+        let mut mirror = UnifiedRandom::new(191);
+        shadowflame_apparition_spawn_ring(1000.0, 1000.0, &mut rng, &mut pool, &c, &w);
+        for _ in 0..20 {
+            let (mut px, mut py) = (1000.0f32, 1000.0 - 18.0);
+            let ox = mirror.next_range(-100, 101) as f32;
+            let oy = mirror.next_range(-100, 101) as f32;
+            let mut v = normalize(Vec2::new(ox, oy));
+            let r = mirror.next_range(0, 100) as f32 * 0.1;
+            v *= r;
+            px += v.x;
+            py += v.y;
+            let mut vel = normalize(v);
+            let speed = mirror.next_range(50, 90) as f32 * 0.2;
+            vel *= speed;
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, Vec2::new(px, py), 1, 1, 27,
+                0.0, 0.0, 0, Color::default(), 1.0,
+            );
+            let d = mpool.slot_mut(idx);
+            d.velocity = vel * -0.3;
+            d.alpha = 100;
+            if mirror.next_max(2) == 0 {
+                d.no_gravity = true;
+                d.scale += 0.3;
+            }
+        }
+        assert_eq!(active(&pool).len(), 20);
+        for i in 0..20 {
+            assert_eq!(pool.slot(i).dust_type, 27);
+            assert_eq!(pool.slot(i).alpha, 100);
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e2 batch 6 — site 37307: the Shadowflame Apparition's fade drip.
+    /// The FLOAT bound `(1 - localAI[0]/120) * 20` drives the loop; each
+    /// iteration gates Next(5)==0 (the caller draws them in order). The
+    /// witness passes a mixed gate slice and mirrors the passed spawns'
+    /// pool internals + the post chain (alpha 100, velocity *= 0.3,
+    /// velocity += (vx,vy)*0.75, noGravity).
+    #[test]
+    fn w4_e2_shadowflame_apparition_fade_drip_float_bound() {
+        let w = world();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut mpool = DustPool::new();
+        let mut rng = UnifiedRandom::new(193);
+        let mut mirror = UnifiedRandom::new(193);
+        // localAI[0] = 60 after the increment -> bound = (1 - 60/120)*20 = 10.
+        let count = (1.0 - 60.0f32 / 120.0) * 20.0;
+        assert_eq!(count, 10.0);
+        // 10 gates: indices 0, 3, 7 pass (the Next(5)==0 hits).
+        let gates = [true, false, false, true, false, false, false, true, false, false];
+        shadowflame_apparition_fade_drip(
+            count, &gates, 900.0, 900.0, 40, 24, 1.5, -0.5,
+            &mut rng, &mut pool, &c, &w,
+        );
+        let mut spawned = 0;
+        for &g in gates.iter() {
+            if g {
+                let idx = mpool.new_dust(
+                    &mut mirror, &c, &w, Vec2::new(900.0, 900.0), 40, 24, 27,
+                    0.0, 0.0, 0, Color::default(), 1.0,
+                );
+                let d = mpool.slot_mut(idx);
+                d.alpha = 100;
+                d.velocity *= 0.3;
+                d.velocity += Vec2::new(1.5, -0.5) * 0.75;
+                d.no_gravity = true;
+                spawned += 1;
+            }
+        }
+        assert_eq!(active(&pool).len(), spawned);
+        assert_eq!(spawned, 3);
+        let live = active(&pool);
+        let mlive = active(&mpool);
+        for (&i, &j) in live.iter().zip(mlive.iter()) {
+            assert_eq!(pool.slot(i).dust_type, 27);
+            assert_eq!(pool.slot(i).alpha, 100);
+            assert!(pool.slot(i).no_gravity);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(j).velocity);
+        }
         assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
     }
 }
