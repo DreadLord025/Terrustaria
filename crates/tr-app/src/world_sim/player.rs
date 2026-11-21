@@ -1422,6 +1422,29 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     rng,
                 );
             }
+            // W4-f32 — the TryToPoop drop drain (`Player.cs:18938`): the
+            // 5395 Poop Block at the player's MountedCenter, stack rolled
+            // inside `update_survival` on the `UpdatePlayers` stream;
+            // `RequestNewItem`'s default velocity draws (`Item.cs:49749-
+            // 49750`: Next(-30,31)*0.1, Next(-40,-15)*0.1) ride the same
+            // stream here, then `GrabDelayForAllPlayers`' 100-tick delay.
+            if let Some((stack, mcx, mcy)) = p.take_poop() {
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                let vx = rng.next_range(-30, 31) as f32 * 0.1;
+                let vy = rng.next_range(-40, -15) as f32 * 0.1;
+                let mut drop = crate::item::ItemDrop::new(
+                    5395,
+                    stack.max(1) as u32,
+                    0, // prefix: 0 — no draw
+                    mcx - crate::item::SIZE * 0.5,
+                    mcy - crate::item::SIZE * 0.5,
+                    vx,
+                    vy,
+                    0.0,
+                );
+                drop.apply_grab_delay(crate::item::GRAB_DELAY_ALL);
+                app.items.push(drop);
+            }
             if let Some(req) = p.take_retaliate() {
                 // S1-C-7 wave B — the fall/petrify lane's retaliate block
                 // (`Player.cs:38401-38517`): those hits run inside

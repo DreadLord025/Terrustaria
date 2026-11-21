@@ -1911,6 +1911,20 @@ pub struct Player {
     /// membership of the cooldown counter; `hurt_inner`'s `retaliate_lane`
     /// carries the membership (the lava/tile lanes pass false).
     pending_retaliate: Option<crate::hurt_modifiers::RetaliateRequest>,
+    /// W4-f32 — `Player.TryToPoop`'s Poop Block drop (`Player.cs:18896-
+    /// 18940`): the toilet-sitting digestion roll fired inside
+    /// `UpdateLifeRegen` (`:19237-19240`) and the stack rolled on the
+    /// `UpdatePlayers` stream; the drain spawns the 5395 at the player's
+    /// `MountedCenter` with `GrabDelayForAllPlayers` (the
+    /// `pending_switch_trip` convention — `update_survival` has no item
+    /// pool). `(stack, centre_x, centre_y)`.
+    pub pending_poop: Option<(i32, f32, f32)>,
+    /// W4-f32 — `PlayerSittingHelper.GetSittingTargetInfo`'s `IsAToilet`
+    /// extra info (`PlayerSittingHelper.cs:166-180`): the seat is a toilet
+    /// (tile 497, or chair 15's frameY/40 == 1/20 styles). `sit_down`'s
+    /// caller sets it; `sit_up` clears it. `TryToPoop`'s gate
+    /// (`Player.cs:19237`: `sitting.isSitting && details.IsAToilet`).
+    pub sitting_on_toilet: bool,
     /// S1-C-7 wave B: the dismount-on-hit request (`Player.cs:38396-38400`) —
     /// the damage source was a projectile of `ProjectileID.Sets.
     /// DismountsPlayersOnHit` (`ProjectileID.cs:546`, {877, 878, 879}) and a
@@ -2876,6 +2890,8 @@ impl Player {
             pending_mana_effect: None,
             pending_heal_effect: None,
             pending_retaliate: None,
+            pending_poop: None,
+            sitting_on_toilet: false,
             pending_dismount: false,
             pending_chillet_sound: None,
             pending_no_space_sound: None,
@@ -3097,6 +3113,7 @@ impl Player {
     /// `PlayerSittingHelper.SitUp` (`:89-102`).
     pub fn sit_up(&mut self) {
         self.sitting = false;
+        self.sitting_on_toilet = false; // W4-f32 — the toilet detail dies with the seat
         self.offset_for_seat = (0.0, 0.0);
         self.seat_pos_offset = (0.0, 0.0);
         self.seat_y_offset = 0;
@@ -3448,6 +3465,13 @@ impl Player {
     /// 38400`) — the caller owns `&World` (`try_dismount`).
     pub(crate) fn take_dismount_request(&mut self) -> bool {
         std::mem::take(&mut self.pending_dismount)
+    }
+
+    /// W4-f32: takes the TryToPoop drop request (`Player.cs:18938`) —
+    /// `(stack, centre_x, centre_y)`; the caller spawns the 5395 with
+    /// `GrabDelayForAllPlayers` (the item pool is the sim's).
+    pub(crate) fn take_poop(&mut self) -> Option<(i32, f32, f32)> {
+        self.pending_poop.take()
     }
 
     /// Takes the tick's queued spark spawn requests (the `Main.dust`
@@ -11175,6 +11199,37 @@ impl Player {
             };
             if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {
                 self.dot_death = Some(death);
+            }
+            // W4-f32 — `UpdateLifeRegen`'s toilet arm (`Player.cs:19237-
+            // 19240`): `sitting.isSitting && details.IsAToilet` fires
+            // `TryToPoop` (`:18896-18940`). The tier ladder 207→206→26
+            // (`:18911-18922`), the `DelBuff` (`:18926`) and the
+            // `RollOnlyBadLuckExtreme(10)` stack boost all run here; the
+            // 5395 spawn drains through `pending_poop` (the item pool is
+            // the caller's). The `whoAmI == Main.myPlayer` gate always
+            // holds (single player).
+            if self.sitting && self.sitting_on_toilet {
+                let tier = [207, 206, 26]
+                    .iter()
+                    .find_map(|&bt| self.buffs.find_buff_index(bt).map(|slot| (bt, slot)));
+                let fed_tier = tier.map(|(bt, slot)| (bt, self.buffs.buff_time[slot]));
+                let tipsy = self.buffs.find_buff_index(25).is_some();
+                if let Some(stack) = crate::luck::try_to_poop_stack(
+                    rng,
+                    self.luck(),
+                    self.well_fed,
+                    tipsy,
+                    fed_tier,
+                ) {
+                    // `DelBuff(num3)` (`:18926`) — the C# removes the tier
+                    // BEFORE the clamp/roll; the slot clear draws nothing,
+                    // so the port folds it after the roll (same stream).
+                    if let Some((_, slot)) = tier {
+                        self.buffs.del_buff(slot);
+                    }
+                    let (mcx, mcy) = self.mounted_center();
+                    self.pending_poop = Some((stack, mcx, mcy));
+                }
             }
             update_mana_regen(
                 &mut self.regen,

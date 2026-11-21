@@ -516,6 +516,99 @@ pub fn on_town_npc_death(luck: &mut LuckState, npc_type: i32, player_dead: bool)
     }
 }
 
+/// `Player.TryToPoop` (`Player.cs:18896-18940`, W4-f32): the toilet-sitting
+/// digestion roll. `wellFed` gates the whole fn; `Next(600)` (200 tipsy)
+/// gates the tick; the fed-tier ladder 207→3 / 206→2 / 26→1 picks the
+/// stack multiplier; `DelBuff` removes the tier; `Utils.Clamp(buffTime /
+/// 3600 * mult, mult, 999)` sizes the stack; `RollOnlyBadLuckExtreme(10)`
+/// (`Luck.cs:53-60` — bad luck only, `Next(10/10)` = `Next(1)` = always 0
+/// on a gate hit) boosts it ×1.2. Returns the Poop Block (5395) stack to
+/// spawn at the player's `MountedCenter` (`RequestNewItem`,
+/// `GrabDelayForAllPlayers`), or `None` when no roll fires. The caller
+/// owns the sitting gate (`UpdateLifeRegen`'s toilet arm, `:19237-19240`)
+/// and the buff-slot mutation: `fed_slot` is the `FindBuffIndex` result
+/// the caller resolved (the tier ladder order 207/206/26), `buff_time`
+/// that slot's remaining ticks. RNG slots: `Next(num)` FIRST, then the
+/// luck roll — the `DelBuff`/clamp run between them in the C# but draw
+/// nothing.
+pub fn try_to_poop_stack(
+    rng: &mut dyn tr_core::loot::DropRng,
+    luck: f32,
+    well_fed: bool,
+    tipsy: bool,
+    fed_tier: Option<(i32, i32)>, // (buff id 207/206/26, buffTime)
+) -> Option<i32> {
+    if !well_fed {
+        return None; // `:18898-18901`
+    }
+    let num = if tipsy { 600 / 3 } else { 600 }; // `:18902-18906`
+    if rng.next_range(0, num) != 0 {
+        return None; // `:18907-18910`
+    }
+    // `:18911-18922`: the tier ladder — 207 → 3, else 206 → 2, else 26 → 1.
+    let (mult, buff_time) = match fed_tier {
+        Some((207, t)) => (3, t),
+        Some((206, t)) => (2, t),
+        Some((26, t)) => (1, t),
+        _ => return None, // `num3 == -1` — no fed buff, no drop
+    };
+    // `:18925-18927`: DelBuff (the caller's slot clear), then
+    // `Utils.Clamp(num4 / 3600 * num2, num2, 999)` — integer division
+    // first, the max-first clamp fold (`Utils.cs`, the e27 pin).
+    let v = buff_time / 3600 * mult;
+    let mut stack = if v > 999 { 999 } else if v < mult { mult } else { v };
+    // `:18928-18931`: RollOnlyBadLuckExtreme(10) — at luck >= 0 the roll
+    // returns -1 with NO draw; negative luck draws the NextFloat gate,
+    // and a hit rolls Next(1) = 0 → the ×1.2 boost always lands.
+    if tr_core::loot::roll_only_bad_luck_extreme(rng, luck, 10) == 0 {
+        stack = (stack as f64 * 1.2) as i32;
+    }
+    Some(stack) // `:18938` — RequestNewItem(5395, stack)
+}
+
+/// `Player.PlayGuitarChord` (`Player.cs:46671-46703`, W4-f32): the
+/// Carbon/Ivy/Sparkle Guitar's chord cue by cursor distance. The luck
+/// roll runs FIRST (`RollOnlyBadLuckExtreme(10)`, `:46675`): at luck >= 0
+/// no draw; a negative-luck gate hit rolls `Next(1)` = 0 and then the
+/// pitch offset `Next(-50, 51) * 0.01` (`:46677`). The cue ladder
+/// (`:46679-46702`): range > 5/6 → Item49, > 4/6 → Item48, > 3/6 →
+/// Item47, > 2/6 → Item51, > 1/6 → Item52, else Item50. Returns
+/// `(cue, pitch_offset)`; the caller plays it at the player's Centre.
+pub fn guitar_chord_cue(
+    rng: &mut dyn tr_core::loot::DropRng,
+    luck: f32,
+    range: f32,
+) -> (&'static str, f32) {
+    let num = 1.0f32 / 6.0;
+    let mut pitch_offset = 0.0f32;
+    if tr_core::loot::roll_only_bad_luck_extreme(rng, luck, 10) == 0 {
+        pitch_offset = rng.next_range(-50, 51) as f32 * 0.01;
+    }
+    let cue = if range > num * 5.0 {
+        "Item49"
+    } else if range > num * 4.0 {
+        "Item48"
+    } else if range > num * 3.0 {
+        "Item47"
+    } else if range > num * 2.0 {
+        "Item51"
+    } else if range > num {
+        "Item52"
+    } else {
+        "Item50"
+    };
+    (cue, pitch_offset)
+}
+
+/// The `SOUND_STYLES` index of an `Item<N>` cue (the ctor-order table:
+/// `Item1` sits at 126 — the Copper Pickaxe's `use_sound: Some(126)` —
+/// so `ItemN` = 125 + N). The guitar chord's `play_use_sound` seam reads
+/// it.
+pub fn item_sound_style_index(cue: &str) -> Option<u16> {
+    let n: u16 = cue.strip_prefix("Item")?.parse().ok()?;
+    Some(125 + n)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1130,5 +1223,140 @@ mod tests {
         s.coin_luck = 1_000_000.0; // +0.2
         s.recalculate_luck();
         assert!((s.luck - 1.4).abs() < 1e-6, "no upper clamp: {}", s.luck);
+    }
+
+    // ---- W4-f32: TryToPoop + PlayGuitarChord ----
+
+    #[test]
+    fn f32_try_to_poop_gates_and_stack_clamp() {
+        // `Player.cs:18896-18940`: wellFed off → no draw; the Next(600)
+        // gate misses → no luck draw; a hit with tier 207 and buffTime
+        // 7200 → clamp(7200/3600*3, 3, 999) = 6.
+        let mut rng = tr_core::UnifiedRandom::new(1);
+        assert_eq!(try_to_poop_stack(&mut rng, 0.0, false, false, Some((207, 7200))), None);
+        assert_eq!(rng, tr_core::UnifiedRandom::new(1), "wellFed off: no draw");
+        // Find a seed whose Next(600) hits 0.
+        let mut hit = None;
+        for seed in 0..5000i32 {
+            let mut probe = tr_core::UnifiedRandom::new(seed);
+            if probe.next_max(600) == 0 {
+                hit = Some(seed);
+                break;
+            }
+        }
+        let seed = hit.expect("a Next(600) hit");
+        let mut a = tr_core::UnifiedRandom::new(seed);
+        let stack = try_to_poop_stack(&mut a, 0.0, true, false, Some((207, 7200)));
+        assert_eq!(stack, Some(6), "7200/3600*3 = 6, no luck draw at 0");
+        let mut b = tr_core::UnifiedRandom::new(seed);
+        let _ = b.next_max(600);
+        assert_eq!(a, b, "luck 0 consumes only the Next(600)");
+        // Tipsy thirds the gate (`:18903-18906`): Next(200).
+        let mut hit200 = None;
+        for seed in 0..5000i32 {
+            let mut probe = tr_core::UnifiedRandom::new(seed);
+            if probe.next_max(200) == 0 {
+                hit200 = Some(seed);
+                break;
+            }
+        }
+        let seed200 = hit200.expect("a Next(200) hit");
+        let mut c = tr_core::UnifiedRandom::new(seed200);
+        // Tier 26, buffTime 3600 → clamp(1*1, 1, 999) = 1.
+        assert_eq!(
+            try_to_poop_stack(&mut c, 0.0, true, true, Some((26, 3600))),
+            Some(1)
+        );
+        // The clamp floor: buffTime 60 → 60/3600*3 = 0 → clamped to 3.
+        let mut d = tr_core::UnifiedRandom::new(seed);
+        assert_eq!(
+            try_to_poop_stack(&mut d, 0.0, true, false, Some((207, 60))),
+            Some(3)
+        );
+        // The clamp cap: buffTime 3_600_000 → 3000 → 999.
+        let mut e = tr_core::UnifiedRandom::new(seed);
+        assert_eq!(
+            try_to_poop_stack(&mut e, 0.0, true, false, Some((207, 3_600_000))),
+            Some(999)
+        );
+        // No fed tier: the Next(600) still draws, nothing drops.
+        let mut f = tr_core::UnifiedRandom::new(seed);
+        assert_eq!(try_to_poop_stack(&mut f, 0.0, true, false, None), None);
+    }
+
+    #[test]
+    fn f32_try_to_poop_bad_luck_boosts_the_stack() {
+        // `:18928-18931`: RollOnlyBadLuckExtreme(10) — luck -1.0 always
+        // hits the gate, Next(10/10) = Next(1) = 0 → the ×1.2 boost
+        // (f64 truncation). 6 → (6*1.2) = 7.
+        let mut hit = None;
+        for seed in 0..5000i32 {
+            let mut probe = tr_core::UnifiedRandom::new(seed);
+            if probe.next_max(600) == 0 {
+                hit = Some(seed);
+                break;
+            }
+        }
+        let seed = hit.expect("a Next(600) hit");
+        let mut a = tr_core::UnifiedRandom::new(seed);
+        let stack = try_to_poop_stack(&mut a, -1.0, true, false, Some((207, 7200)));
+        assert_eq!(stack, Some(7), "6 * 1.2 = 7.2 → 7");
+        // The draw shape: Next(600), NextFloat gate, Next(1).
+        let mut b = tr_core::UnifiedRandom::new(seed);
+        let _ = b.next_max(600);
+        let _gate = b.next_float();
+        let _one = b.next_max(1);
+        assert_eq!(a, b);
+        // Positive luck: NO draw, no boost (the -1 return).
+        let mut c = tr_core::UnifiedRandom::new(seed);
+        assert_eq!(
+            try_to_poop_stack(&mut c, 0.9, true, false, Some((207, 7200))),
+            Some(6)
+        );
+        let mut d = tr_core::UnifiedRandom::new(seed);
+        let _ = d.next_max(600);
+        assert_eq!(c, d, "positive luck draws nothing extra");
+    }
+
+    #[test]
+    fn f32_guitar_chord_ladder_and_luck_pitch() {
+        // `Player.cs:46671-46703`: the six-range cue ladder, the luck roll
+        // FIRST (no draw at luck >= 0), the pitch Next(-50,51)*0.01 on a
+        // bad-luck gate hit.
+        let mut rng = tr_core::UnifiedRandom::new(1);
+        assert_eq!(guitar_chord_cue(&mut rng, 0.0, 1.0).0, "Item49");
+        assert_eq!(guitar_chord_cue(&mut rng, 0.0, 0.8).0, "Item48");
+        assert_eq!(guitar_chord_cue(&mut rng, 0.0, 0.6).0, "Item47");
+        assert_eq!(guitar_chord_cue(&mut rng, 0.0, 0.4).0, "Item51");
+        assert_eq!(guitar_chord_cue(&mut rng, 0.0, 0.2).0, "Item52");
+        assert_eq!(guitar_chord_cue(&mut rng, 0.0, 0.1).0, "Item50");
+        assert_eq!(rng, tr_core::UnifiedRandom::new(1), "luck 0: no draws");
+        // The boundary values are strict `>`: range == 5/6 falls to Item48.
+        assert_eq!(guitar_chord_cue(&mut rng, 0.0, 5.0 / 6.0).0, "Item48");
+        // Bad luck: gate + Next(1) + the pitch draw.
+        let mut a = tr_core::UnifiedRandom::new(5);
+        let (cue, pitch) = guitar_chord_cue(&mut a, -1.0, 1.0);
+        assert_eq!(cue, "Item49");
+        let mut b = tr_core::UnifiedRandom::new(5);
+        let _gate = b.next_float();
+        let _one = b.next_max(1);
+        let want_pitch = b.next_range(-50, 51) as f32 * 0.01;
+        assert_eq!(pitch, want_pitch);
+        assert_eq!(a, b);
+        assert!((-0.5..=0.5).contains(&pitch));
+    }
+
+    #[test]
+    fn f32_item_sound_style_index_matches_the_table() {
+        // The ctor-order table: Item1 at 126 (the Copper Pickaxe's
+        // use_sound), Item47 at 172 — the chord cues resolve.
+        assert_eq!(item_sound_style_index("Item1"), Some(126));
+        assert_eq!(item_sound_style_index("Item47"), Some(172));
+        assert_eq!(item_sound_style_index("Item49"), Some(174));
+        assert_eq!(item_sound_style_index("Item52"), Some(177));
+        assert_eq!(item_sound_style_index("NPCHit1"), None);
+        for (cue, idx) in [("Item47", 172u16), ("Item48", 173), ("Item49", 174), ("Item50", 175), ("Item51", 176), ("Item52", 177)] {
+            assert_eq!(crate::soundid::SOUND_STYLES[idx as usize].name, cue);
+        }
     }
 }
