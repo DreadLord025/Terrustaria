@@ -7386,9 +7386,10 @@ ONE module + both wired calls.
 * **The coin-purse display census** (research/142 §purse): the ctx-1
   coin column (`Main.cs:41752-41764`) is plain `ItemSlot.Draw` — its
   spin strips/jump/pulse ride `CoinSlot.UpdateDrawState`
-  (`ItemSlot.cs:2349/:2515/:2697-2706`), which `ui/slot.rs::draw_slot`
-  does not consume (the recorded S1-H-9 deviation stands; wiring it
-  touches every slot caller — a dedicated follow-up, NOT this round).
+  (`ItemSlot.cs:2349/:2515/:2697-2706`). The dedicated follow-up LANDED in
+  the final phase (see "The S1-H-9 UpdateDrawState follow-up" below):
+  `ui/slot.rs::draw_slot` now consumes the machine on every mapped-context
+  slot.
 
 Witnesses written, not run (code-only): the fixed text-origin formula
 (rest + pulse, both arms), the medal pile centres + the forge/safe
@@ -7397,6 +7398,137 @@ vertical / scaled origin), `update_custom`'s 3817 pulse + rank
 isolation, `count_savings`' banks-only + caps, the shop chrome's
 bands/P0/offsets (g58b's three, kept), the coin-strip + NPCHappiness
 packing.
+
+## The S1-H-9 UpdateDrawState follow-up (W4-d122, final phase)
+
+The sixth round's recorded dedicated-follow-up lands: `ui/slot.rs::
+draw_slot` now CONSUMES the `CoinSlot` machine (`ui/coin_slot.rs::
+update_draw_state`, already ported) on every slot draw, the C#'s
+`CoinSlot.UpdateDrawState(slot, context, item, out drawState)`
+(`ItemSlot.cs:2349`). The machine existed but no slot draw read it — the
+ctx-1/3/4 coin cells drew static `Item_71..74` icons with `stackTextScale
+= 1`. The port:
+
+* **Threading.** `draw_slot`/`draw_slot_favorited` grow `coin_slot:
+  Option<&mut CoinSlotState>` + `vanilla_slot: i32` (the cell's vanilla
+  inventory index — the coin/ammo rows draw at `Player.inventory[50..57]`,
+  `Main.cs:41757/:41775`, while the equip glyph keeps the display index) +
+  `mouse_air`/`mouse_is_dye` (the dim gate). The mapped contexts (grid 0,
+  coins 1, ammo 2, chest 3, bank 4) pass `Some(&mut state)`; the neutral
+  contexts (hotbar 13, mouse 21, shop 15, equip 8-12/16-20/33, trash 6,
+  crafting 7/42) pass `None` (the C# machine returns the neutral state for
+  them, `CoinSlot.cs:306-311`). The state is threaded through
+  `inventory::draw` (a new param), `chest::PanelState` (a new field) and
+  `draw_hud`'s existing `coin_slot` param; `app/frame/draw.rs` fills the
+  PanelState field from `self.coin_slot`.
+* **The coin arm** (`ItemSlot.cs:2515`): `IsACoin || fadeItem > 0` rides
+  the SPIN strip via the shared `coin_slot::draw_item_coin` (moved out of
+  `savings.rs`, which now reuses it with tint+fade params), `sizeLimit =
+  32`, the centre lifted by `coinYOffset * inventoryScale`, tint
+  `GetAlpha(lightColor) * itemFade * fadeScale`; the medal 3817 keeps its
+  STATIC icon but rides the jump (the third arm); every other item is the
+  plain `draw_item_icon` (now taking `item_fade`).
+* **flag4** (`:2500`): `(type > 0 && stack > 0) || fadeItem > 0` — a
+  fading-out coin keeps drawing its icon + stack text after the slot went
+  air (the `FadeAnimKeys` ramp). The `_nextTickDrawAvailable` throttle
+  (`:2503-2511`) is unported.
+* **The stack text** (`:2697-2706`): drawn when `stack > 1 ||
+  stackTextDrawFadeOverload > 0`, scale `inventoryScale * stackTextScale`,
+  tint `color * (overload > 0 ? overload : 1)`. `stack_number_pos` takes
+  `text_scale` + `context`: the net y is `y + (26 + ls)*scale − ls*num23`
+  (the scaled `(0, LineSpacing)` origin, `DynamicSpriteFont.cs:194`); at
+  rest the ls terms cancel, the pulse lifts the count; context 43 shifts
+  `(−5, +7)` and scales `num23` by 1.2. The `num22` ammo/paint/wand count
+  override is unported (the gate is always true).
+* **The dim** (`GetDimSlotForMouseItem`, `:1361`): the dye contexts 12/33
+  dim to 0.6 for a non-dye cursor (`checkItem.dye <= 0`); the background
+  tint `color2 *= itemFade` (`:2352`). The armour/mount/pet dim arms need
+  the equip-validation tables (`CanEquipInArmorSlot`, `MountID.Sets.Cart`,
+  `vanityPet`/`lightPet`) — unported, they stay 1 (a recorded deviation).
+
+Witnesses written, not run (code-only): the coin-row pulse/jump/fade
+consumption (`coin_slot.rs`), the dye dim + the neutral tail + the
+stack-text rest/pulse/ctx43 positions (`slot.rs`).
+
+## The shop-FULL census (W4-d122, final phase)
+
+The final all-25-NPC census of `Chest.SetupShop` (`Chest.cs:1360-3542`),
+script-diffed against `shop.rs::setup_shop`. The 24 NPC shops map through
+`NPCInteractions.cs:488-511` (`Shop(npcType, shopIndex)`); case 25 is the
+Painter's decor shop (the 25th case, not a 25th NPC). The census splits the
+work by **lane ownership** — d122 owns the first half, d123 the second half
+(`shop.rs`'s own header: "the second-half indexes land with their lanes
+(d123 owns 12/13/15/16/17, the OOA/medal co-lanes 20/21)"), f39b the season
+flags, f41d the party rows. **No unclaimed constants-off row remains in
+d122's lane** — every remainder is claimed by an active sibling lane, so
+this phase ports nothing new (the keep-one rule: never duplicate a claimed
+lane) and records the census + the merge cross-notes.
+
+| Case | NPC (shop index) | C# range | d122 state | Remainder owner |
+| --- | --- | --- | --- | --- |
+| 1 | Merchant (1) | :1371-1483 | COMPLETE | halloween: none; party 5643 = `PartyIsUp` live |
+| 2 | Arms Dealer (2) | :1484-1567 | COMPLETE | halloween trio 1736/1737/1738 → f39b |
+| 3 | Dryad (3) | :1568-1745 | COMPLETE | halloween Goodie Bags 1853/1854 → f39b |
+| 4 | Demolitionist (4) | :1746-1813 | COMPLETE | — |
+| 5 | Clothier (5) | :1814-1988 | COMPLETE | halloween 1740 + 3246/3247 → f39b; `downedClown` (no .wld bit) stays caller-fed false |
+| 6 | Goblin Tinkerer (6) | :1989-2003 | COMPLETE | — |
+| 7 | Wizard (7) | :2004-2032 | COMPLETE | halloween hat 1739 → f39b |
+| 8 | Mechanic (8) | :2033-2090 | COMPLETE | — (goggles 4409 + Angler Rod landed shop 8) |
+| 9 | Santa-decor (9) | :2091-2111 | COMPLETE | the 588/589/590/597/598/596 + 1873..1905 walk, no gates |
+| 10 | Truffle (10) | :2112-2134 | COMPLETE | — |
+| 11 | Steampunker (11) | :2135-2245 | COMPLETE | halloween goggles 1742 → f39b |
+| 12 | Dye Trader (12) | :2246-2273 | PARTIAL | **d123** (4f7c5251): exact moonPhase==0 pair + graveyard 4662; halloween 3248/1741 → f39b; netMode==1 1969 MP-only |
+| 13 | Party Girl (13) | :2274-2359 | PARTIAL | **d123** (e8707b54): golfer 4743 / graveyard 4682 / HasItem(3548) / Pirate 3369 / Golem 3546 / hardmode dye set; day/night 1449/4552 split (d122 double-stocks both — d123's `Day`/`Night` arms fix it); lantern 4702 + party block → f41d/d123 |
+| 14 | Cyborg (14) | :2360-2442 | COMPLETE | halloween outfit 1743/1744/1745 → f39b |
+| 15 | Painter (15) | :2443-2482 | STUB (7 rows) | **d123** (eb13bd5b): the 1073-1084 paint loop + hardmode 1967/1968 + graveyard 4668/5344 |
+| 16 | Witch Doctor (16) | :2615-2671 | STUB (2 rows) | **d123** (eb13bd5b): the full ladder (Wizard-present 2999, jungle/night/Plantera imbuing, ten always rows); halloween Tiki 1791 → f39b |
+| 17 | Pirate (17) | :2672-2697 | MISSING | **d123** (a0e918e6): six always + graveyard 5926 + beach 1180 + hardmode-mech-PartyGirl 1337 |
+| 18 | Stylist (18) | :2698-2790 | COMPLETE | MP team dye 1982 (`team != 0 && netMode == 1`) MP-only; graveyard 5577 landed fifth round |
+| 19 | Travelling Merchant (19) | :2791-2810 | COMPLETE | the `SetupTravelShop` RNG generator (:1275-1358) + the Pal-collab gate rows |
+| 20 | Skeleton Merchant (20) | :2811-2962 | MISSING | **d123** (ecfa5727): the eight-phase ladder + clock pair + mod-4 ladder + hardmode block + artisan-bread 5326 |
+| 21 | Tavernkeep (21) | :2963-3154 | COMPLETE | the medal shop (d122 currency round; d123 d4500f6bf is the same case — keep-one at merge) |
+| 22 | Golfer (22) | :3156-3262 | COMPLETE | golf score stays 0 until M4-GOLF-1 (the rows are faithful, score-gated) |
+| 23 | Zoologist (23) | :3263-3407 | COMPLETE | — (full 41-row case, shop 23) |
+| 24 | Princess (24) | :3409-3470 | COMPLETE | — (anniversary block, shop 24) |
+| 25 | Painter Decor (25) | :2483-2614 | MISSING | **d123** (675744c0): the 2158..2160/2008..2014 walks + moon ladder + biome rows + storm + graveyard octet; xMas walk 1948-1957 → f39b |
+| tail | ALL shops | :3472-3541 | MISSING | **d123** (675744c0): the pylon rows 4876/4920/4919/5652/4917/4918/4875/4916/4921 behind `DoesPositionHaveEnoughNPCs(2)` + the `isAShopItem` stamp |
+
+**The still-constants-off rows, by owner:**
+
+* **f39b (the season lane, `bd5a5a24`)** — every `Main.halloween` row:
+  the Arms Dealer's undertaker trio (`:1558`), the Dryad's Goodie Bags
+  (`:1655`), the Clothier's Frankenstein mask + Cat Ears/Bunny Hood
+  (`:1903`/`:1966`), the Wizard's hat (`:2027`), the Steampunker's goggles
+  (`:2240`), the Dye Trader's pair (`:2249`), the Cyborg's outfit (`:2421`),
+  the Witch Doctor's Tiki mask (`:2667`), and Santa's xMas walk (`:2485`).
+  d122 carries these as `StockWhen::Halloween => false` (the recorded
+  deviation); f39b adds `World.halloween`/`xmas` + `ShopFlags.halloween`/
+  `xmas` and flips the evaluator. **Merge cross-note:** d122's `Halloween`
+  variant + rows and f39b's are the SAME rows — keep one evaluator arm
+  (`flags.halloween`), keep d122's row placement (the C# num order). The
+  Steampunker/Cyborg halloween rows (1742/1743-1745) are d122-only (f39b's
+  diff did not touch cases 11/14) — f39b's flag wire activates them.
+* **f41d (the party lane, `be4cb841`)** — the Merchant's Rainbow Glowstick
+  5643 (`:1435`, d122 already has it as `PartyIsUp`), the Party Girl's
+  eleven-row gift block (`:2345-2358`) + Release Lantern 4702 (`:2309`) +
+  the day/night Bubble/Fog split (`:2285`). **Merge cross-note:** f41d's
+  `PartyUp`/`LanternsUp`/`Day` variants and d122's `PartyIsUp` are the same
+  gate (`world_events::party_is_up`/`lanterns_up`) — keep one name; d123
+  also ports the Party Girl case (e8707b54) with its own `Day`/`LanternNight`/
+  `PartyIsUp` — the three-way keep-one resolves to the live scheduler flags.
+* **d123 (the second-half lane)** — cases 12/13/15/16/17/20/25 + the shared
+  pylon tail. d122's stubs (15: 7 rows, 16: 2 rows, 13: the always subset)
+  are SUPERSEDED by d123's full cases at merge — keep d123's. The
+  `shop_index_for_kind` mapping (`world_sim/npcs.rs:519`) lacks the
+  Steampunker/Truffle/Cyborg/Santa/Pirate/SkeletonMerchant kinds (no
+  `NpcKind` for them yet) — their cases are reachable only once the kinds
+  land (d123's lane / the town-NPC lane); d122's first-half kinds are all
+  mapped.
+
+**Witnesses (written, not run):** the census is a doc-only phase — the
+existing per-case witnesses (shops 1-24, the currency round) already pin
+the d122 rows; no new code, no new witness. The merge cross-notes above are
+the deliverable (the keep-one resolutions for the f39b/f41d/d123 overlaps).
 
 ## Dye Trader/Party Girl (M4-TOWN-20)
 
