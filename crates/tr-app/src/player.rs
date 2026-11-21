@@ -21173,6 +21173,65 @@ mod s1_player_composite_tests {
         assert!(q.take_mana_refill().is_none(), "flag4 = false mid-animation");
     }
 
+    /// W4-d79 PITCH FINAL — the Nebula owner-table's d79-side pre-merge
+    /// contract (`docs/research/W4-d79-pitch-final.md` §F1): the four
+    /// behaviours the 3-way merge's re-targets MUST preserve — the scan
+    /// derives the tier + steps down at time 2 (`:12070-12079`), the
+    /// levelup sweeps the family + climbs (`:57030-57059`), the mana
+    /// counter pays one point per 6 (`:19565-19585`), the reset zeroes
+    /// the trio (`:18755`). At the merge the scan writer moves to f12's
+    /// `apply_orb_arm` (+ the `fold_orb` bridge) and the mana reader to
+    /// f49's `regen.rs` engine form; the levelup/reset/pickup stay this
+    /// tree's. These pins are the contract, not the implementation.
+    #[test]
+    fn w4_d79_final_the_nebula_owner_table_holds_on_this_tree() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // The levelup: the family sweep + the clamp-0..3 climb.
+        p.nebula_levelup(176);
+        assert_eq!(p.nebula_level_mana, 1);
+        assert!(p.buffs.find_buff_index(176).is_some(), "NebulaUpMana1 @ 480");
+        p.nebula_levelup(176);
+        assert_eq!(p.nebula_level_mana, 2);
+        assert!(p.buffs.find_buff_index(176).is_none(), "tier 1 swept");
+        assert!(p.buffs.find_buff_index(177).is_some(), "NebulaUpMana2");
+        // The scan re-derives the tier from the live buff (the assign
+        // shape — the bridge's `p.nebula_level_mana = s.nebula_level_mana`
+        // keeps this contract at the merge).
+        p.update_buffs_nebula_scan();
+        assert_eq!(p.nebula_level_mana, 2, "the scan re-derived the tier");
+        // The time-2 step-down: level--, buffType--, timer 480.
+        let i = p.buffs.find_buff_index(177).unwrap();
+        p.buffs.buff_time[i] = 2;
+        p.update_buffs_nebula_scan();
+        assert_eq!(p.nebula_level_mana, 1, "stepped down");
+        assert!(p.buffs.find_buff_index(176).is_some(), "the id decremented");
+        let j = p.buffs.find_buff_index(176).unwrap();
+        assert_eq!(p.buffs.buff_time[j], 480, "the refresh");
+        // The mana counter: +tier/tick, one point per 6, tier-0 wipe.
+        p.mana = 0;
+        p.nebula_mana_counter = 0;
+        for _ in 0..6 {
+            p.apply_nebula_buff_mana(); // tier 1: six ticks pay one point
+        }
+        assert_eq!(p.mana, 1, "the 6-count paid once");
+        assert_eq!(p.nebula_mana_counter, 0);
+        p.nebula_level_mana = 0;
+        p.nebula_mana_counter = 4;
+        p.apply_nebula_buff_mana();
+        assert_eq!(p.nebula_mana_counter, 0, "tier 0 wipes (:19583)");
+        // The reset zeroes the trio (the chained :18755 assign).
+        p.nebula_level_mana = 3;
+        p.nebula_level_life = 2;
+        p.nebula_level_damage = 1;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.nebula_level_life, 0, "no live buff -> the reset holds");
+        assert_eq!(p.nebula_level_damage, 0);
+        // The mana tier re-derives from the live 176 buff (the scan runs
+        // inside update_with_grapple after the reset).
+        assert_eq!(p.nebula_level_mana, 1, "the scan re-derived tier 1");
+    }
+
     /// S1-E-21f — the wing flap's Item-32 play (`Player.cs:26835-26858`):
     /// the default frame machine (`:30466-30479`) wraps 0..3 every 5 flying
     /// ticks; the frame-3 edge plays ONCE through the `flapSound` latch.

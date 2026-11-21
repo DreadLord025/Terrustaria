@@ -4389,6 +4389,98 @@ mod tests {
         assert_eq!(rng.peek(), peek, "the menu façade is draw-free too");
     }
 
+    /// W4-d79 PITCH FINAL — the ALL-CASE bank-pin census
+    /// (`docs/research/W4-d79-pitch-final.md` §F2): every ported in-band
+    /// case 0-42 resolves a bank row under its legacy id (the script-diff
+    /// of `LegacySoundPlayer.cs`'s switch surface vs the port façades).
+    /// Cases 20/37 are the e10/g23 sibling lanes' (NOT on this tree);
+    /// case 39 is the documented gore-pool drop. The 17-row
+    /// SINGLE_SLOT_CUES table keeps its Stop flags (18/24/25 no-Stop) and
+    /// the two drawing cases (27/41) stay OUT of the draw-free pool.
+    #[test]
+    fn w4_d79_final_the_case_bank_pins_cover_the_in_band_surface() {
+        // (representative cue, legacy case) — one pin per ported case.
+        let pins: &[(&str, u32)] = &[
+            ("Dig_0", 0),
+            ("Player_Hit_0", 1),
+            ("Item_1", 2),
+            ("NPC_Hit_1", 3),
+            ("NPC_Killed_1", 4),
+            ("Player_Killed", 5),
+            ("Grass", 6),
+            ("Grab", 7),
+            ("Door_Opened", 8),
+            ("Door_Closed", 9),
+            ("Menu_Open", 10),
+            ("Menu_Close", 11),
+            ("Menu_Tick", 12),
+            ("Shatter", 13),
+            ("Zombie_0", 14), // the moan/critter family: one row per case
+            ("Roar_0", 15),
+            ("Double_Jump", 16),
+            ("Run", 17),
+            ("Coins", 18),
+            ("Splash_0", 19),
+            ("Tink_0", 21),
+            ("Unlock", 22),
+            ("Drown", 23),
+            ("Chat", 24),
+            ("MaxMana", 25),
+            ("Pixie", 27),
+            ("Mech_0", 28),
+            ("Zombie_5", 29),
+            ("Zombie_10", 30),
+            ("Zombie_13", 31),
+            ("Zombie_14", 32),
+            ("Zombie_15", 33),
+            ("Zombie_106", 44),
+            ("Zombie_109", 45),
+            ("Zombie_110", 46),
+            ("Zombie_118", 67),
+            ("Zombie_126", 68),
+            ("Zombie_129", 69),
+            ("Coin_0", 38),
+            ("Camera", 40),
+            ("Moonlord_Cry", 41),
+            ("trash_item_0", 42), // the trackable family resolves via the
+            // custom-cue lists (`sound_type`'s or_else arm)
+        ];
+        for (cue, id) in pins {
+            assert_eq!(sound_type(cue), *id, "the {cue} bank row pins case {id}");
+        }
+        // Cases 34/35 are the persistent liquid-loop channels (no SFX
+        // row — `set_liquid_loop`'s `liquid_cues` table, the
+        // `Sounds/Custom/Liquids*` assets); case 26's `Zombie_3/4` rows
+        // pin it alongside the moan family. The moan façade's id gate
+        // refuses a non-moan id draw-free.
+        assert_eq!(sound_type("Zombie_3"), 26);
+        let mut audio = Audio::new(None);
+        let mut rng = tr_core::unified_random::UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_fighter_moan(25, 0, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "a non-moan id refuses draw-free");
+        // The 17-row single-slot table: the exact cue order + Stop flags.
+        assert_eq!(SINGLE_SLOT_CUES.len(), 17);
+        let no_stop: Vec<&str> = SINGLE_SLOT_CUES
+            .iter()
+            .filter(|(_, stop)| !stop)
+            .map(|(n, _)| *n)
+            .collect();
+        assert_eq!(no_stop, ["Coins", "Chat", "MaxMana"], "the :866/:958/:964 trio");
+        // The two drawing cases stay OUT of the draw-free pool (their
+        // dedicated slots carry the pitch re-draw / distance volume).
+        assert!(SINGLE_SLOT_CUES.iter().all(|(n, _)| *n != "Pixie"));
+        assert!(SINGLE_SLOT_CUES.iter().all(|(n, _)| *n != "Moonlord_Cry"));
+        assert_eq!(audio.play_single_voice("Pixie", -1.0, -1.0), None);
+        assert_eq!(audio.play_single_voice("Moonlord_Cry", -1.0, -1.0), None);
+        // The sibling-lane cases are NOT on this tree (the merge brings
+        // e10's Female_Hit_0 (20) and g23's Item_57 (37)); the gore drip
+        // (39) has no bank row — the documented drop.
+        assert_eq!(sound_type("Female_Hit_0"), 0, "case 20 is e10's lane");
+        assert_eq!(sound_type("Item_57"), 0, "case 37 is g23's lane");
+        assert_eq!(sound_type("Drip_0"), 0, "case 39 is the gore-pool drop");
+    }
+
     /// W4-d79 — the TrashItem trackable (`SoundID.cs:1738`,
     /// `CreateTrackable("trash_item", 2).WithVolume(0.55).WithPitchVariance(0.25)`):
     /// case 42 (`LegacySoundPlayer.cs:1376-1381`) — the façade's NextFloat on
