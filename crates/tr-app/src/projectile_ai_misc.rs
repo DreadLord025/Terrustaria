@@ -801,6 +801,131 @@ pub(crate) fn ai_meteor_ore(p: &mut Projectile, rng: &mut dyn DropRng) {
     p.rot += direction * 0.06;
 }
 
+/// `AI_196_Petal` (`Projectile.cs:40466-40560`) — the Flower Whip's petal
+/// (1038) and the Petalstorm shot (1116). The first-20-tick drift (the
+/// ×0.95 damp), the frame cycle (8 frames at 4 ticks), the spin, the
+/// nearest-chaseable homing blend and the no-target sine sway. The 1116
+/// (`flag2`) swaps the light colour, the alpha remap, the acquire range
+/// (400, no LOS floor), the homing constants (6/30) and the sway (×0.1).
+///
+/// RNG: the first tick draws `Next(8)` frame (`:40483`), `NextFloat`
+/// rotation (`:40485`) and `NextFloat` scale (`:40486`) — in that order.
+/// The `SoundID.Item17` cue (`:40481`, 1038 only, `netMode != 2`) rides
+/// `wants_sound`. `Lighting.AddLight` (`:40507`/`:40513`) feeds the light
+/// layer only — skipped.
+///
+/// Both rows' movement differs: the 1038 keeps `tileCollide = false`
+/// (`:9803`) — the free integrate; the 1116 keeps stock `tileCollide = true`
+/// (`:10413-10426` sets no override) and its blocked-move arm
+/// (`:18068-18078`) reverses the blocked axis at ×0.25 — [`petal_storm_move`]
+/// ports that bounce (the `ai_music_note` per-axis probe stand-in).
+pub(crate) fn ai_petal(
+    p: &mut Projectile,
+    world: &World,
+    npcs: &[Npc],
+    rng: &mut dyn DropRng,
+) {
+    // `:40468-40475` — the drift flag (read BEFORE the counter advances)
+    // and the 1116 variant's colour/alpha.
+    let flag = p.ai[0] < 20.0;
+    let flag2 = p.kind == 1116;
+    if flag2 {
+        // `alpha = (int)Remap(timeLeft, 30, 0, 0, 255)`.
+        p.alpha = remap(p.time_left as f32, 30.0, 0.0, 0.0, 255.0) as i32;
+    }
+    // `:40476-40491` — the first-tick latch: the cue (1038 only), the
+    // frame roll, the sprite side, the rotation and scale draws.
+    if p.local_ai[0] == 0.0 {
+        p.local_ai[0] = 1.0;
+        if !flag2 {
+            // `SoundID.Item17` at base.Center (netMode != 2 folds open).
+            let cx = p.pos.x + p.w * 0.5;
+            let cy = p.pos.y + p.h * 0.5;
+            p.wants_sound = Some((2, 17, cx, cy, 0.0));
+        }
+        p.frame = rng.next_range(0, 8);
+        p.sprite_direction = if !(p.vel.x < 0.0) { 1 } else { -1 };
+        p.rot = rng.next_float() * std::f32::consts::TAU;
+        p.scale = 0.6 + 0.3 * rng.next_float();
+        if flag2 {
+            p.scale *= 0.75;
+        }
+    }
+    // `:40492-40499` — the 8-frame cycle at 4 ticks.
+    p.frame_counter += 1;
+    if p.frame_counter >= 4 {
+        p.frame_counter = 0;
+        p.frame += 1;
+        if p.frame >= 8 {
+            p.frame = 0;
+        }
+    }
+    // `:40500-40501` — the spin and the age counter.
+    p.rot += p.vel.x * 0.1 + p.vel.y * 0.1;
+    p.ai[0] += 1.0;
+    // `:40502-40510` — the drift window: the ×0.95 damp, then return (the
+    // AddLight at ai[0] >= 10 is the light skip).
+    if flag {
+        p.vel *= 0.95;
+        return;
+    }
+    // `:40515-40537` — the nearest-chaseable acquire. num = 2000 (400 for
+    // 1116), num2 = 400 (0 for 1116): the LOS floor. `CanBeChasedBy(this)`
+    // is the plain chaseable gate.
+    let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+    let (mut num, num2) = if flag2 { (400.0f32, 0.0f32) } else { (2000.0, 400.0) };
+    let mut target = Vec2::ZERO;
+    let mut found = false;
+    for n in npcs {
+        if chaseable(n) {
+            let nc = npc_center(n);
+            let num3 = center.distance(nc);
+            // `!(num3 >= num) && (!(num3 > num2) || CanHit(this, nPC))`.
+            if num3 < num && (num3 <= num2 || can_hit(world, p.pos.x, p.pos.y, p.w, p.h, n.x, n.y, n.size().0, n.size().1)) {
+                num = num3;
+                target = nc;
+                found = true;
+            }
+        }
+    }
+    // `:40538-40559` — the homing blend or the sine sway.
+    if found {
+        let (num4, num5) = if flag2 { (6.0f32, 30.0f32) } else { (24.0, 15.0) };
+        let vector3 = safe_normalize(target - center) * num4;
+        p.vel = (p.vel * num5 + vector3) / (num5 + 1.0);
+    } else if flag2 {
+        // `Lerp(vel.X, Sin(ai[0] * 0.1) * 1.5, 0.1)` / `Lerp(vel.Y, 0.3, 0.1)`.
+        let tx = (p.ai[0] * 0.1).sin() * 1.5;
+        p.vel.x += (tx - p.vel.x) * 0.1;
+        p.vel.y += (0.3 - p.vel.y) * 0.1;
+    } else {
+        let tx = p.ai[0].sin() * 2.5;
+        p.vel.x += (tx - p.vel.x) * 0.1;
+        p.vel.y += (0.3 - p.vel.y) * 0.1;
+    }
+}
+
+/// The 1116 Petalstorm shot's blocked-move arm (`HandleMovement`
+/// `Projectile.cs:18068-18078`): the blocked axis reverses at ×0.25 of the
+/// pre-collision velocity (no speed gate, unlike the 1020 drone's >1f),
+/// then `UpdatePosition` integrates the result. The port's per-axis
+/// destination-box probe stands in for the swept `TileCollision` (the
+/// `ai_music_note` precedent, the recorded death-pixel deviation).
+pub(crate) fn petal_storm_move(p: &mut Projectile, world: &World) {
+    let last = p.vel;
+    let nx = p.pos.x + p.vel.x;
+    let ny = p.pos.y + p.vel.y;
+    let hit_x = crate::player::collides_rect(world, nx, p.pos.y, p.w, p.h);
+    let hit_y = crate::player::collides_rect(world, p.pos.x, ny, p.w, p.h);
+    if hit_x {
+        p.vel.x = -last.x * 0.25;
+    }
+    if hit_y {
+        p.vel.y = -last.y * 0.25;
+    }
+    p.pos += p.vel;
+}
+
 // ---------------------------------------------------------------------------
 // Witnesses (S1-D-4 code-only round — WRITTEN NOT RUN).
 
@@ -1505,5 +1630,146 @@ mod tests {
         let p = &pool.slots()[s];
         assert_eq!(p.local_ai[0], 1.0, "the first-tick latch");
         assert_ne!(p.pos, Vec2::new(1600.0, 400.0), "the movement ran");
+    }
+
+    // ---- W4-d20 aiStyle 196 (Petal) — WRITTEN NOT RUN ----
+
+    /// The two rows carry the census slice (`Projectile.cs:9793-9806` /
+    /// `:10413-10426`): 18x18, aiStyle 196, timeLeft 120, penetrate 1, the
+    /// LOCAL pair (-1), ignoreWater; the 1038 tileCollide false, the 1116
+    /// stock true + magic.
+    #[test]
+    fn w4_d20_the_petal_rows_carry_style_196() {
+        let a = proj_data(1038).unwrap();
+        assert_eq!(a.ai_style, 196);
+        assert_eq!((a.w, a.h), (18.0, 18.0));
+        assert_eq!(a.time_left, 120);
+        assert_eq!(a.penetrate, 1);
+        assert!(a.uses_local_immunity && a.local_hit_cooldown == -1);
+        assert!(!a.tile_collide, "the 1038 sets false (`:9803`)");
+        assert!(a.ignore_water);
+        assert!(!a.magic, "the 1038 sets no magic");
+        let b = proj_data(1116).unwrap();
+        assert_eq!(b.ai_style, 196);
+        assert!(b.tile_collide, "the 1116 keeps stock true");
+        assert!(b.magic, "`:10424`");
+        assert!(b.ignore_water);
+    }
+
+    /// The first-tick census (`:40476-40491`): Next(8) frame, NextFloat
+    /// rotation, NextFloat scale — in order. The 1038 queues the Item17 cue;
+    /// the 1116 does not and scales ×0.75.
+    #[test]
+    fn w4_d20_the_petal_first_tick_census_and_cue() {
+        let w = world();
+        let mut p = proj(1038);
+        p.vel = Vec2::new(2.0, 0.0);
+        let mut rng = census();
+        ai_petal(&mut p, &w, &[], &mut rng);
+        assert_eq!(p.local_ai[0], 1.0);
+        assert_eq!(rng.ranges, vec![(0, 8)], "the frame roll");
+        assert_eq!(rng.floats, 2, "rotation + scale");
+        assert_eq!(p.wants_sound.map(|r| (r.0, r.1)), Some((2, 17)), "Item17");
+        assert_eq!(p.sprite_direction, 1, "vel.x >= 0");
+        // The 1116: no cue, the ×0.75 scale.
+        let mut q = proj(1116);
+        q.vel = Vec2::new(-2.0, 0.0);
+        let mut rng2 = census();
+        ai_petal(&mut q, &w, &[], &mut rng2);
+        assert_eq!(q.wants_sound, None, "the 1116 plays no cue (`:40479`)");
+        assert_eq!(q.sprite_direction, -1, "vel.x < 0");
+        // scale = (0.6 + 0.3 * 0) * 0.75 = 0.45 (census NextFloat = 0).
+        assert!((q.scale - 0.45).abs() < 1e-6, "the ×0.75 (`:40489`)");
+    }
+
+    /// The drift window (`:40502-40510`): while ai[0] < 20 the velocity
+    /// damps ×0.95 and the arm returns before the homing scan.
+    #[test]
+    fn w4_d20_the_petal_drift_damps_and_returns() {
+        let w = world();
+        let mut p = proj(1038);
+        p.local_ai[0] = 1.0; // past the first tick
+        p.ai[0] = 5.0;
+        p.vel = Vec2::new(4.0, 2.0);
+        ai_petal(&mut p, &w, &[], &mut census());
+        assert!((p.vel.x - 4.0 * 0.95).abs() < 1e-6, "the ×0.95 damp");
+        assert!((p.vel.y - 2.0 * 0.95).abs() < 1e-6);
+        assert_eq!(p.ai[0], 6.0, "the counter advanced");
+    }
+
+    /// The no-target sine sway (`:40555-40558`): past the drift, with no
+    /// chaseable NPC, vel.X lerps toward Sin(ai[0]) * 2.5 and vel.Y toward
+    /// 0.3, both at 0.1.
+    #[test]
+    fn w4_d20_the_petal_no_target_sways() {
+        let w = world();
+        let mut p = proj(1038);
+        p.local_ai[0] = 1.0;
+        p.ai[0] = 25.0; // past the drift; the counter advances to 26
+        p.vel = Vec2::ZERO;
+        ai_petal(&mut p, &w, &[], &mut census());
+        let tx = 26.0f32.sin() * 2.5;
+        assert!((p.vel.x - tx * 0.1).abs() < 1e-5, "the X sway");
+        assert!((p.vel.y - 0.3 * 0.1).abs() < 1e-6, "the Y sway");
+    }
+
+    /// The homing blend (`:40538-40549`): a chaseable NPC in range pulls the
+    /// velocity via (v * 15 + dir * 24) / 16 for the 1038.
+    #[test]
+    fn w4_d20_the_petal_homes_the_nearest_chaseable() {
+        let w = world();
+        let mut p = proj(1038);
+        p.local_ai[0] = 1.0;
+        p.ai[0] = 25.0;
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.vel = Vec2::ZERO;
+        let mut n = npc_at(1700.0, 800.0);
+        n.hp = 40;
+        n.max_hp = 40;
+        ai_petal(&mut p, &w, &[n], &mut census());
+        // dir = (1, 0) * 24; vel = (0 * 15 + (24, 0)) / 16 = (1.5, 0).
+        assert!((p.vel.x - 1.5).abs() < 1e-5, "the homing blend");
+        assert!(p.vel.y.abs() < 1e-6);
+    }
+
+    /// The 1116 bounce (`:18068-18078`): the blocked axis reverses at ×0.25.
+    #[test]
+    fn w4_d20_the_petalstorm_bounce_reverses_at_quarter() {
+        let mut w = world();
+        // A solid wall at tile x=102 (spans 1632..1648). The shot's right
+        // edge at 1618 + vel 20 = 1638 overlaps it — the X move is blocked.
+        put(&mut w, 102, 50, 1);
+        let mut p = proj(1116);
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.vel = Vec2::new(20.0, 0.0);
+        petal_storm_move(&mut p, &w);
+        assert!((p.vel.x - (-20.0 * 0.25)).abs() < 1e-6, "the ×0.25 reversal");
+    }
+
+    /// The dispatch wires style 196: one pool update advances the counter
+    /// and integrates the position for both kinds.
+    #[test]
+    fn w4_d20_the_dispatch_arms_style_196() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let a = pool.spawn_with_data(1038, 1600.0, 400.0, 3.0, 0.0, 20, 2.0).unwrap();
+        let b = pool.spawn_with_data(1116, 1600.0, 500.0, 3.0, 0.0, 20, 2.0).unwrap();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            false,
+        );
+        assert_eq!(pool.slots()[a].ai[0], 1.0, "the 1038 counter");
+        assert_eq!(pool.slots()[b].ai[0], 1.0, "the 1116 counter");
+        assert_ne!(pool.slots()[a].pos, Vec2::new(1600.0, 400.0));
+        assert_ne!(pool.slots()[b].pos, Vec2::new(1600.0, 500.0));
     }
 }

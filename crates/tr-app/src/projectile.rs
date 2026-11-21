@@ -17370,6 +17370,26 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d20 — aiStyle 196, the petal
+                        // (`AI_196_Petal` `:40466-40560`): the first-20-tick
+                        // drift, the 8-frame cycle, the spin, the homing
+                        // blend / sine sway. The 1038 keeps tileCollide false
+                        // (free integrate); the 1116's blocked-move arm
+                        // (`:18068-18078`) reverses the blocked axis ×0.25.
+                        196 => {
+                            crate::projectile_ai_misc::ai_petal(
+                                &mut self.slots[i],
+                                world,
+                                &npcs[..],
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            if self.slots[i].kind == crate::projectile::PETALSTORM_SHOT {
+                                crate::projectile_ai_misc::petal_storm_move(&mut self.slots[i], world);
+                            } else {
+                                self.slots[i].kill_step(world);
+                            }
+                        }
                         // S1-P-i56 — `AI()`'s `else if (this.aiStyle == 120)`
                         // (`Projectile.cs:34888-34891`) ->
                         // `AI_120_StardustGuardian` (`:44634-44963`): the

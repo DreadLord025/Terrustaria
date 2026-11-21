@@ -3615,6 +3615,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // the generic PVE pass; the hostile player-contact is the port's
             // !friendly proxy deviation (the ore is friendly, so it hits NPCs).
             METEOR_ORE => (14.0, 14.0, 199, -1, TIME_LEFT_DEFAULT, 0, true, false, true, RESET_STATE),
+            // W4-d20 — `Projectile.cs:9793-9806` (1038, the Flower Whip's
+            // petal): 18x18, aiStyle 196, timeLeft 120, penetrate 1, the
+            // LOCAL pair (-1), tileCollide false, ignoreWater
+            // (armorPenetration = 50 dropped — no ProjData field, the
+            // set_armor_penetration spawn seam carries it).
+            FLOWER_WHIP_PETAL => (18.0, 18.0, 196, 1, 120, 0, false, false, false, (true, -1, false, -1, 0, 1.0)),
+            // W4-d20 — `Projectile.cs:10413-10426` (1116, the Petalstorm
+            // shot): 18x18, aiStyle 196, timeLeft 120, penetrate 1, the
+            // LOCAL pair (-1), ignoreWater, magic, stock tileCollide true
+            // (the blocked-move bounce :18068-18078).
+            PETALSTORM_SHOT => (18.0, 18.0, 196, 1, 120, 0, true, false, false, (true, -1, false, -1, 0, 1.0)),
             932 => (10.0, 10.0, 181, 5, 120, 0, true, true, false, RESET_STATE),
             // `Projectile.cs:939-948` — the Hook (13): 18x18.
             HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
@@ -4229,7 +4240,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == GOLF_CLUB_HELPER
             // W4-d20 — `Projectile.cs:10085`: the bird dropping (1080) sets
             // `ignoreWater = true`.
-            || kind == BIRD_DROPPINGS,
+            || kind == BIRD_DROPPINGS
+            // W4-d20 — `Projectile.cs:9804`/`:10423`: the two aiStyle-196
+            // petals set `ignoreWater = true`.
+            || matches!(kind, FLOWER_WHIP_PETAL | PETALSTORM_SHOT),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4326,6 +4340,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | NEBULA_ARCANUM | NEBULA_ARCANUM_SUBSHOT
                 | LAST_PRISM_LASER | LAST_PRISM | NEBULA_BLAZE_1 | NEBULA_BLAZE_2
                 | POISON_DART | SPIRIT_FLAME | SKY_FRACTURE | BOOK_OF_SKULLS | SPARK
+                // W4-d20 — `Projectile.cs:10424`: the Petalstorm shot (1116)
+                // sets magic (the 1038 Flower Whip petal does NOT).
+                | PETALSTORM_SHOT
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
@@ -4482,6 +4499,12 @@ pub const BIRD_DROPPINGS: u16 = 1080;
 /// `ProjectileID.MeteorOre` (1078) — the meteor ore chunk, aiStyle 199
 /// (`Projectile.cs:10067-10077`). W4-d20.
 pub const METEOR_ORE: u16 = 1078;
+/// `ProjectileID.FlowerWhipPetal` (1038) — the Flower Whip's petal, aiStyle
+/// 196 (`Projectile.cs:9793-9806`). W4-d20.
+pub const FLOWER_WHIP_PETAL: u16 = 1038;
+/// `ProjectileID.PetalstormShot` (1116) — the Petalstorm's shot, aiStyle 196
+/// (`Projectile.cs:10413-10426`). W4-d20.
+pub const PETALSTORM_SHOT: u16 = 1116;
 
 pub const MINION_SACRIFICABLE: &[u16] = &[
     191, 192, 193, 194, 266, 317, 373, 375, 387, 388, 390, 393, 407, 423, 533, 613, 755, 758, 759,
@@ -4626,6 +4649,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // W4-d20 — the meteor ore's 3-frame sheet (`Main.cs:8443`) — the
         // first-tick `Next(3)` frame roll picks it (`Projectile.cs:40024`).
         METEOR_ORE => 3,
+        // W4-d20 — the two aiStyle-196 petals' 8-frame sheets
+        // (`Main.cs:8555-8556`) — the 4-tick cycle wraps at 8
+        // (`Projectile.cs:40492-40499`).
+        FLOWER_WHIP_PETAL | PETALSTORM_SHOT => 8,
         CRIMSON_HEART => 4,
 
         // The Explosive Trap family (`Main.cs:8467-8472`): the traps and the
