@@ -5648,6 +5648,10 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             );
         }
     }
+    // W4-g17 wiring — `CheckPot`'s gore switch (`WorldGen.cs:56878-56954`,
+    // `world_gore_b::pot_break_gores`): AFTER the kill loop + break sound,
+    // BEFORE `SpawnThingsFromPot` (the loot below).
+    pot_gore_drain(app, &kill);
     // The breaking player's staff bonus (`GetPlayerForTile(x, y)
     // .staffOfRegrowthBonus`, `WorldGen.cs:65689` — the flag the placement
     // path sets for held 213/5295): the port reads the held slot at the
@@ -5762,6 +5766,34 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
         );
     }
     app.world_key = None;
+}
+
+/// W4-g17 wiring — `CheckPot`'s gore switch drain (`WorldGen.cs:
+/// 56878-56954` through [`crate::world_gore_b::pot_break_gores`]): one
+/// call per `PotEvent`, AFTER the break sound and BEFORE the
+/// `SpawnThingsFromPot` loot (the C# `CheckPot` order). The kicks ride
+/// the `UpdatePlayers` stream (the break's `Main.rand` swap); each
+/// event's styles 25-33 type picks ride a `FastRandom` genRand stand-in
+/// seeded by ONE throw — the `spawn_things_from_pot` owner's convention,
+/// drawn BEFORE that loot's own seed throw. The seed throw is
+/// unconditional (every style), matching the loot resolver's seam.
+fn pot_gore_drain(app: &mut App, kill: &edit::TileKill) {
+    for event in &kill.events {
+        let mut gen_stream = tr_core::tile_light::FastRandom::new(
+            app.rngs
+                .stream(crate::app::RngKey::UpdatePlayers)
+                .next() as u64,
+        );
+        crate::world_gore_b::pot_break_gores(
+            event.style,
+            event.x,
+            event.y,
+            &mut app.gore,
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            &mut gen_stream,
+            &app.world,
+        );
+    }
 }
 
 /// The world/player inputs the drop resolvers read. Every C# flag with no
@@ -12891,6 +12923,109 @@ mod tests {
                 ),
                 "gore shard {} must not spawn as an item",
                 it.kind
+            );
+        }
+    }
+
+    // W4-g17 wiring — `CheckPot`'s gore switch runs INSIDE break_tile
+    // (`WorldGen.cs:56878-56954` via `world_gore_b::pot_break_gores`):
+    // the style-0 pot spawns its 51/52/53 trio in the gore pool at the
+    // trigger cell, and the kicks ride the SAME `UpdatePlayers` stream
+    // the loot rolls use (the break's `Main.rand` swap).
+    #[test]
+    fn w4_g17_breaking_pot_spawns_the_gore_trio() {
+        let mut w = object_world();
+        set_pot(&mut w, 10, 18, 0);
+        let mut app = break_app(w, 0x5EED);
+        break_tile(&mut app, 10, 18);
+        let live: Vec<i32> = app
+            .gore
+            .slots()
+            .iter()
+            .filter(|g| g.active)
+            .map(|g| g.gore_type)
+            .collect();
+        assert_eq!(live, vec![51, 52, 53], "the CheckPot style-0 trio (:56881-56883)");
+        for g in app.gore.slots().iter().filter(|g| g.active) {
+            assert_eq!(
+                g.position,
+                glam::Vec2::new(10.0 * TILE_PX, 18.0 * TILE_PX),
+                "the trigger cell's top-left, not the 2x2 origin"
+            );
+        }
+    }
+
+    // W4-g17 wiring — the no-gore styles (16-24) leave the pool empty but
+    // still consume the ONE genRand seed throw before the loot's own
+    // (the drain's unconditional seed, `editing.rs`'s break_tile).
+    #[test]
+    fn w4_g17_the_no_gore_pot_style_spawns_no_gores() {
+        let mut w = object_world();
+        set_pot(&mut w, 10, 18, 16);
+        let mut app = break_app(w, 0x5EED);
+        break_tile(&mut app, 10, 18);
+        assert!(
+            !app.gore.slots().iter().any(|g| g.active),
+            "styles 16-24 break with no gores (:56924-56927)"
+        );
+    }
+
+    // W4-g17 wiring — 500-iteration stream-parity witness: the wired
+    // drain (`pot_gore_drain`) advances the `UpdatePlayers` stream
+    // EXACTLY as the C# ledger — per pot event ONE genRand seed throw,
+    // then the gore switch's own draws (the fixed rows: 2 kicks per
+    // gore on Main.rand; the genRand rows: the type picks on the seeded
+    // FastRandom, interleaved with 2 kicks per gore on Main.rand).
+    // All 37 styles cycled; the ledger twin must end on the identical
+    // stream state (the stand-in replacement introduced no drift).
+    #[test]
+    fn w4_g17_pot_gore_drain_stream_parity_500_events() {
+        let mut w = object_world();
+        set_pot(&mut w, 10, 18, 0);
+        let mut app = break_app(w, 0xC0FFEE);
+        let mut ledger = tr_core::UnifiedRandom::new(0xC0FFEEi64 as i32);
+        for i in 0..500 {
+            let style = (i % 37) as i32;
+            let kill = edit::TileKill {
+                events: vec![edit::PotEvent { style, x: 10, y: 18 }],
+                ..Default::default()
+            };
+            pot_gore_drain(&mut app, &kill);
+            // The ledger: the drain's seed throw + the switch's draws.
+            let seed_throw = ledger.next();
+            let mut gen = tr_core::tile_light::FastRandom::new(seed_throw as u64);
+            let fixed: i32 = match style {
+                0..=3 | 34..=36 => 3,
+                4..=15 => 2,
+                _ => 0,
+            };
+            for _ in 0..fixed {
+                let _ky = ledger.next_range(10, 31);
+                let _kx = ledger.next_range(-20, 21);
+            }
+            match style {
+                25..=27 | 28..=30 => {
+                    let (lo, hi) = if style <= 27 { (217, 220) } else { (315, 317) };
+                    for _ in 0..2 {
+                        let _ty = gen.next_range(lo, hi);
+                        let _ky = ledger.next_range(10, 31);
+                        let _kx = ledger.next_range(-20, 21);
+                    }
+                }
+                31..=33 => {
+                    let n = gen.next_range(2, 5);
+                    for _ in 0..n {
+                        let _ty = 698 + gen.next(6);
+                        let _ky = ledger.next_range(10, 31);
+                        let _kx = ledger.next_range(-20, 21);
+                    }
+                }
+                _ => {}
+            }
+            assert_eq!(
+                *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                ledger,
+                "event {i} (style {style}): the drain matches the C# draw ledger"
             );
         }
     }

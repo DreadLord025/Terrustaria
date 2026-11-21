@@ -2360,9 +2360,11 @@ pub fn kill_tile_sound(kind: u16, frame_x: i16, fail: bool) -> KillSounds {
 /// solid-top platforms pass, `Main.tileSolid[19] = true`, `Main.cs:7893`).
 /// On a break the sound plays by style (:56856-56867, [`pot_break_sound`]),
 /// every matching cell dies (:56871-56877) and the loot event fires
-/// (:57011-57014). The Gore shards (:56878-56953) have no port mechanism
-/// (only the leaf `LeafGore`) and stay deferred — no item spawns here for
-/// tile 28 (`Item.NewItem` exists only in the 653 arm, :56955-57009).
+/// (:57011-57014). The Gore shards (:56878-56953) ride the SAME `PotEvent`
+/// channel — the app's `world_gore_b::pot_break_gores` drain (W4-g17
+/// wiring) runs the switch between the sound and the loot; no item
+/// spawns here for tile 28 (`Item.NewItem` exists only in the 653 arm,
+/// :56955-57009).
 fn check_pot(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     let t = world.tile(x, y)?;
     let ox = x - i32::from(t.frame_x) / 18 % 2; // :56808-56811

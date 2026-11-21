@@ -1,8 +1,11 @@
 //! World-side `Gore.NewGore*` sites, wave B: the `WorldGen.CheckPot`
-//! gore switch (`WorldGen.cs:56878-56954`). W4-g17 (code-only mode):
-//! the module + witnesses land first; the dispatch claim (the edit
-//! lane's `check_pot` → `PotEvent`, `tr_core::edit::kill`) is the
-//! wiring wave — the `npc_hit_effect_a.rs` (W4-d55) precedent.
+//! gore switch (`WorldGen.cs:56878-56954`). WIRED (W4-g17 wiring
+//! wave): `world_sim::editing::break_tile` drains the edit lane's
+//! `PotEvent`s (`tr_core::edit::kill::check_pot`) through
+//! [`pot_break_gores`] after the break sound and BEFORE the
+//! `SpawnThingsFromPot` loot — the C# `CheckPot` order
+//! (`:56856-56867` sound → `:56868-56877` kill loop → `:56878-56954`
+//! gore switch → `:57011-57014` loot).
 //!
 //! ## Scope — this wave's sites so far (source order)
 //!
@@ -31,8 +34,10 @@
 //! caller's `Main.rand` stream (Y `Next(10,31)` then X `Next(-20,21)`,
 //! `Gore.cs:1327-1328`). The `genRand` rows (styles 25-33) draw their
 //! type picks on `WorldGen.genRand` — a SEPARATE stream from the
-//! kicks' `Main.rand` (the port has no runtime genRand, `edit.rs:900`;
-//! the caller hands it in). The type draw is an ARGUMENT: it rides
+//! kicks' `Main.rand`. The wiring threads the edit lane's
+//! `FastRandom` genRand stand-in directly (one `Main.rand` throw
+//! seeds it, the `spawn_things_from_pot` owner's convention,
+//! `editing.rs:5989`). The type draw is an ARGUMENT: it rides
 //! genRand BEFORE that gore's kicks; the styles 31-33 count roll
 //! (`Next(2,5)`) rides genRand FIRST.
 //!
@@ -51,10 +56,9 @@
 //! * netMode: single-player port, the pool's own convention.
 //!
 //! See docs/ANALYSIS.md "The world gore sites (W4-g17, wave B)".
-#![allow(dead_code)] // wiring deferred (code-only mode) — the CheckPot/PotEvent claim is the follow-up round
-
 use glam::Vec2;
 use tr_core::gore::GorePool;
+use tr_core::tile_light::FastRandom;
 use tr_core::{UnifiedRandom, World};
 
 /// `WorldGen.CheckPot`'s gore switch (`WorldGen.cs:56878-56954`) —
@@ -62,15 +66,17 @@ use tr_core::{UnifiedRandom, World};
 /// `(i, j)` is the trigger cell — the C# spawns every gore at
 /// `(i*16, j*16)` with zero velocity and scale 1. `rand` is the
 /// kicks' `Main.rand` stream; `gen_rand` is `WorldGen.genRand` — the
-/// SEPARATE stream the styles 25-33 type picks draw on (the port has
-/// no runtime genRand, `edit.rs:900`; the caller hands it in).
+/// SEPARATE stream the styles 25-33 type picks draw on. The wiring
+/// hands the edit lane's `FastRandom` stand-in (one `Main.rand` throw
+/// seeds it, the `spawn_things_from_pot` convention,
+/// `editing.rs:5989`); the record tests drive it directly too.
 pub fn pot_break_gores(
     style: i32,
     i: i32,
     j: i32,
     gore: &mut GorePool,
     rand: &mut UnifiedRandom,
-    gen_rand: &mut UnifiedRandom,
+    gen_rand: &mut FastRandom,
     world: &World,
 ) {
     let pos = Vec2::new((i * 16) as f32, (j * 16) as f32);
@@ -108,7 +114,7 @@ pub fn pot_break_gores(
         31..=33 => {
             let num6 = gen_rand.next_range(2, 5); // :56940
             for _ in 0..num6 {
-                let ty = 698 + gen_rand.next_max(6); // :56943
+                let ty = 698 + gen_rand.next(6); // :56943
                 gore.new_gore(rand, world, pos, Vec2::ZERO, ty, 1.0);
             }
             return;
@@ -143,7 +149,7 @@ mod tests {
             let w = air();
             let mut gore = GorePool::new();
             let mut rand = UnifiedRandom::new(4);
-            let mut gen_rand = UnifiedRandom::new(100);
+            let mut gen_rand = FastRandom::new(100);
             pot_break_gores(style, 7, 9, &mut gore, &mut rand, &mut gen_rand, &w);
             let got: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
             assert_eq!(got, types.to_vec(), "style {style}");
@@ -152,8 +158,8 @@ mod tests {
                 assert!(g.active);
             }
             // The fixed rows never touch genRand.
-            let fresh = UnifiedRandom::new(100);
-            assert_eq!(gen_rand.peek(), fresh.peek(), "style {style}");
+            let fresh = FastRandom::new(100);
+            assert_eq!(gen_rand.seed, fresh.seed, "style {style}");
         }
     }
 
@@ -164,7 +170,7 @@ mod tests {
         let w = air();
         let mut gore = GorePool::new();
         let mut rand = UnifiedRandom::new(8);
-        let mut gen_rand = UnifiedRandom::new(100);
+        let mut gen_rand = FastRandom::new(100);
         pot_break_gores(2, 7, 9, &mut gore, &mut rand, &mut gen_rand, &w);
         let mut twin = UnifiedRandom::new(8);
         for _ in 0..3 {
@@ -189,7 +195,7 @@ mod tests {
             let w = air();
             let mut gore = GorePool::new();
             let mut rand = UnifiedRandom::new(6);
-            let mut gen_rand = UnifiedRandom::new(100);
+            let mut gen_rand = FastRandom::new(100);
             pot_break_gores(style, 3, 4, &mut gore, &mut rand, &mut gen_rand, &w);
             let got: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
             assert_eq!(got, types.to_vec(), "style {style}");
@@ -205,13 +211,13 @@ mod tests {
         for style in [16, 17, 18, 19, 20, 21, 22, 23, 24, 99, -1] {
             let mut gore = GorePool::new();
             let mut rand = UnifiedRandom::new(8);
-            let mut gen_rand = UnifiedRandom::new(100);
+            let mut gen_rand = FastRandom::new(100);
             pot_break_gores(style, 7, 9, &mut gore, &mut rand, &mut gen_rand, &w);
             assert!(!gore.slots().iter().any(|g| g.active), "style {style}");
             let fresh_r = UnifiedRandom::new(8);
-            let fresh_g = UnifiedRandom::new(100);
+            let fresh_g = FastRandom::new(100);
             assert_eq!(rand.peek(), fresh_r.peek(), "style {style} rand");
-            assert_eq!(gen_rand.peek(), fresh_g.peek(), "style {style} genRand");
+            assert_eq!(gen_rand.seed, fresh_g.seed, "style {style} genRand");
         }
     }
 
@@ -226,10 +232,10 @@ mod tests {
             let w = air();
             let mut gore = GorePool::new();
             let mut rand = UnifiedRandom::new(11);
-            let mut gen_rand = UnifiedRandom::new(77);
+            let mut gen_rand = FastRandom::new(77);
             pot_break_gores(style, 5, 6, &mut gore, &mut rand, &mut gen_rand, &w);
             let mut twin_r = UnifiedRandom::new(11);
-            let mut twin_g = UnifiedRandom::new(77);
+            let mut twin_g = FastRandom::new(77);
             for slot in 0..2 {
                 let ty = twin_g.next_range(lo, hi);
                 assert_eq!(gore.slot(slot).gore_type, ty, "style {style} slot {slot}");
@@ -238,7 +244,7 @@ mod tests {
                 let _kx = twin_r.next_range(-20, 21);
             }
             assert_eq!(rand.peek(), twin_r.peek(), "style {style} kicks");
-            assert_eq!(gen_rand.peek(), twin_g.peek(), "style {style} types");
+            assert_eq!(gen_rand.seed, twin_g.seed, "style {style} types");
             assert!(!gore.slot(2).active, "style {style} spawns exactly two");
         }
     }
@@ -251,14 +257,14 @@ mod tests {
             let w = air();
             let mut gore = GorePool::new();
             let mut rand = UnifiedRandom::new(13);
-            let mut gen_rand = UnifiedRandom::new(91);
+            let mut gen_rand = FastRandom::new(91);
             pot_break_gores(style, 5, 6, &mut gore, &mut rand, &mut gen_rand, &w);
             let mut twin_r = UnifiedRandom::new(13);
-            let mut twin_g = UnifiedRandom::new(91);
+            let mut twin_g = FastRandom::new(91);
             let count = twin_g.next_range(2, 5);
             assert!((2..=4).contains(&count));
             for slot in 0..count as usize {
-                let ty = 698 + twin_g.next_max(6);
+                let ty = 698 + twin_g.next(6);
                 assert_eq!(gore.slot(slot).gore_type, ty, "style {style} slot {slot}");
                 assert!((698..=703).contains(&gore.slot(slot).gore_type));
                 let _ky = twin_r.next_range(10, 31);
@@ -266,7 +272,7 @@ mod tests {
             }
             assert!(!gore.slot(count as usize).active, "style {style} count");
             assert_eq!(rand.peek(), twin_r.peek(), "style {style} kicks");
-            assert_eq!(gen_rand.peek(), twin_g.peek(), "style {style} count+types");
+            assert_eq!(gen_rand.seed, twin_g.seed, "style {style} count+types");
         }
     }
 
@@ -278,12 +284,12 @@ mod tests {
             let w = air();
             let mut gore = GorePool::new();
             let mut rand = UnifiedRandom::new(17);
-            let mut gen_rand = UnifiedRandom::new(100);
+            let mut gen_rand = FastRandom::new(100);
             pot_break_gores(style, 5, 6, &mut gore, &mut rand, &mut gen_rand, &w);
             let got: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
             assert_eq!(got, vec![1122, 1123, 1124], "style {style}");
-            let fresh = UnifiedRandom::new(100);
-            assert_eq!(gen_rand.peek(), fresh.peek(), "style {style} no genRand");
+            let fresh = FastRandom::new(100);
+            assert_eq!(gen_rand.seed, fresh.seed, "style {style} no genRand");
         }
     }
 }
