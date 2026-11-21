@@ -1560,6 +1560,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if let Some(burst) = p.take_walk_effect_dust() {
                 crate::player_boot_dust::drain_walk_effects(app, burst);
             }
+            // W4-g66 — `PlayerFrame`'s Rudolph flight trail
+            // (`Player.cs:36164-36198`): the mount animator runs after the
+            // walking block, same `UpdatePlayers` stream.
+            if let Some(burst) = p.take_rudolph_trail() {
+                crate::player_trail_dust::drain_rudolph_trail(app, burst);
+            }
             // S1-E-21f — the liquid entry/exit splash: case 19's playing
             // guard refuses BEFORE the one pitch draw
             // (`LegacySoundPlayer.cs:872-888`); the style picks the slot and

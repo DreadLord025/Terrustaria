@@ -15,7 +15,7 @@
 //! the port treats unported gore (docs/ANALYSIS.md).
 
 use crate::app::App;
-use crate::player::{DoubleJumpDust, ExtraJump, FloorDust};
+use crate::player::{DoubleJumpDust, ExtraJump, FloorDust, RudolphTrail};
 use crate::player_dust::nd;
 use glam::Vec2;
 use tr_core::particles::Color;
@@ -462,7 +462,40 @@ fn floor_puff(app: &mut App, b: &FloorDust, framed_row49: bool, count: i32) {
         d.velocity *= 0.2;
     }
     d.position.x -= num5;
-}#[cfg(test)]
+}
+
+/// Drain the Rudolph flight trail (`Player.cs:36164-36198`): two 1/4 type-64
+/// puffs per flying tick, box `20 × 10` at the facing-mirrored foot boxes,
+/// speed `(vx*0.25, vy*0.25)`, alpha 255. Post: `velocity *= 0.1`, `noLight`.
+pub(crate) fn drain_rudolph_trail(app: &mut App, b: RudolphTrail) {
+    let cx = b.x + (b.width as i32 / 2) as f32;
+    let foot_y = b.y + b.height - 6.0;
+    // `:36168-36197`: facing > 0 → the (-22, +12) pair, else (-32, +2).
+    let offsets: [f32; 2] = if b.facing > 0 { [-22.0, 12.0] } else { [-32.0, 2.0] };
+    for off in offsets {
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        if rng.next_max(4) != 0 {
+            continue;
+        }
+        let idx = nd(
+            app,
+            Vec2::new(cx + off, foot_y),
+            20,
+            10,
+            64,
+            b.vx * 0.25,
+            b.vy * 0.25,
+            255,
+            Color::default(),
+            1.0,
+        );
+        let d = app.dust.slot_mut(idx);
+        d.velocity *= 0.1;
+        d.no_light = true;
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
@@ -893,5 +926,56 @@ mod tests {
         p.update(&w, crate::player::PlayerInput::default());
         let f = p.take_floor_dust().expect("the snapshot still queues");
         assert_eq!(f.kind, -1, "the slope carve-out");
+    }
+    /// `:36164-36198` — the Rudolph trail: two 1/4 gates, the
+    /// facing-mirrored boxes, the type-64 tweak chain, the x0.1 fold.
+    #[test]
+    fn w4_g66_the_rudolph_trail_mirrors_the_facing() {
+        for facing in [1, -1] {
+            let mut app = rig(0x5EED);
+            let b = RudolphTrail {
+                x: 300.0,
+                y: 600.0,
+                width: 20.0,
+                height: 42.0,
+                vx: 3.0,
+                vy: -2.0,
+                facing,
+            };
+            drain_rudolph_trail(&mut app, b);
+            let mut rng = UnifiedRandom::new(0x5EED);
+            let offsets: [f32; 2] = if facing > 0 { [-22.0, 12.0] } else { [-32.0, 2.0] };
+            let mut expect = 0;
+            let mut slots = Vec::new();
+            for off in offsets {
+                if rng.next_max(4) == 0 {
+                    let (pos, vel, mut sc) = default_block(
+                        &mut rng,
+                        Vec2::new(310.0 + off, 636.0),
+                        20,
+                        10,
+                        b.vx * 0.25,
+                        b.vy * 0.25,
+                        1.0,
+                    );
+                    // The type-64 tweak (`Dust.cs:214-219`, 59..=65).
+                    let vy = rng.next_range(-10, 6) as f32 * 0.1;
+                    sc *= 0.7;
+                    slots.push((pos, Vec2::new(vel.x * 0.3, vy) * 0.1, sc));
+                    expect += 1;
+                }
+            }
+            let live_slots = live(&app);
+            assert_eq!(live_slots.len(), expect);
+            for (d, (pos, vel, sc)) in live_slots.iter().zip(&slots) {
+                assert_eq!(d.dust_type, 64);
+                assert_eq!(d.alpha, 255);
+                assert_eq!(d.position, *pos);
+                assert_eq!(d.velocity, *vel);
+                assert_eq!(d.scale, *sc);
+                assert!(d.no_light);
+            }
+            assert_eq!(stream_of(&mut app), rng);
+        }
     }
 }

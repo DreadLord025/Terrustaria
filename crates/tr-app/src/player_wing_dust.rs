@@ -1,4 +1,4 @@
-﻿//! W4-g66 вЂ” the wing-trail dust drains: `WingAirVisuals`
+﻿//! W4-g66 — the wing-trail dust drains: `WingAirVisuals`
 //! (`Player.cs:30750-31013`, the flag19 flying tick). Same queue convention
 //! as `player_dust` (W4-d51): the tick snapshots the box/velocity at the C#
 //! read moment (BEFORE `WingMovement` shapes it); this module replays each
@@ -6,12 +6,12 @@
 //! order.
 //!
 //! The port folds `wings` (the look id) into `wings_logic` (the wing grant's
-//! note), so `wingsLogic != wings` is always false вЂ” every
+//! note), so `wingsLogic != wings` is always false — every
 //! `noLightEmittance = flag` write lands `false` (the default the pool
 //! already writes; the field is set explicitly to keep the mapping). The
 //! `shader` writes are dropped fields (`particles.rs`'s note). `gravDir` is
 //! the vanilla `1f`, so the `gravDir == -1` height folds collapse. The C#
-//! `base.height / 2` / `base.width / 2` are INTEGER divisions вЂ” the port
+//! `base.height / 2` / `base.width / 2` are INTEGER divisions — the port
 //! truncates the f32 hitbox first.
 
 use crate::app::App;
@@ -21,17 +21,17 @@ use glam::Vec2;
 use tr_core::particles::Color;
 
 /// The back-offset the mid-body arms share (`:30755-30759` et al.): 4 facing
-/// left, в€’40 facing right, from the body centre line.
+/// left, −40 facing right, from the body centre line.
 fn back_off(facing: i32) -> f32 {
     if facing == 1 { -40.0 } else { 4.0 }
 }
 
-/// The lower-trail offset (`:30832-30836` et al.): 6 / в€’30.
+/// The lower-trail offset (`:30832-30836` et al.): 6 / −30.
 fn low_off(facing: i32) -> f32 {
     if facing == 1 { -30.0 } else { 6.0 }
 }
 
-/// The second-puff offset (`:30857-30861` et al.): в€’24 / +12.
+/// The second-puff offset (`:30857-30861` et al.): −24 / +12.
 fn second_off(facing: i32) -> f32 {
     if facing == 1 { 12.0 } else { -24.0 }
 }
@@ -45,14 +45,14 @@ fn roll(app: &mut App, n: i32) -> bool {
 }
 
 /// Drain `WingAirVisuals` (`Player.cs:30750-31013`). The arms are sequential
-/// ifs in source order вЂ” a wing id matches at most one, and the ROLLS of the
+/// ifs in source order — a wing id matches at most one, and the ROLLS of the
 /// non-matching arms never happen (each gate short-circuits on the id).
 pub(crate) fn drain_wing_air(app: &mut App, b: WingAirDust) {
     let cx = b.x + (b.width as i32 / 2) as f32;
     let mid_y = b.y + (b.height as i32 / 2) as f32 - 15.0;
     match b.wings {
-        // `:30753-30766`: wings 10 вЂ” 1/2 type-76, fadeIn 1.1, noGravity,
-        // noLight, velocity Г—0.3.
+        // `:30753-30766`: wings 10 — 1/2 type-76, fadeIn 1.1, noGravity,
+        // noLight, velocity ×0.3.
         10 => {
             if roll(app, 2) {
                 let idx = nd(app, Vec2::new(cx + back_off(b.facing), mid_y), 30, 30, 76, 0.0, 0.0, 50, Color::default(), 0.6);
@@ -63,7 +63,7 @@ pub(crate) fn drain_wing_air(app: &mut App, b: WingAirDust) {
                 d.velocity *= 0.3;
             }
         }
-        // `:30767-30781`: wings 34 вЂ” the same shape on type 261.
+        // `:30767-30781`: wings 34 — the same shape on type 261.
         34 => {
             if roll(app, 2) {
                 let idx = nd(app, Vec2::new(cx + back_off(b.facing), mid_y), 30, 30, 261, 0.0, 0.0, 50, Color::default(), 0.6);
@@ -75,7 +75,7 @@ pub(crate) fn drain_wing_air(app: &mut App, b: WingAirDust) {
                 d.velocity *= 0.3;
             }
         }
-        // `:30782-30796`: wings 51 вЂ” type 261 tinted (230,130,55).
+        // `:30782-30796`: wings 51 — type 261 tinted (230,130,55).
         51 => {
             if roll(app, 2) {
                 let idx = nd(app, Vec2::new(cx + back_off(b.facing), mid_y), 30, 30, 261, 0.0, 0.0, 50, Color::new(230, 130, 55, 255), 0.6);
@@ -87,7 +87,7 @@ pub(crate) fn drain_wing_air(app: &mut App, b: WingAirDust) {
                 d.velocity *= 0.3;
             }
         }
-        // `:30805-30817`: wings 9 вЂ” 1/2 type-6, alpha 200, scale 2.
+        // `:30805-30817`: wings 9 — 1/2 type-6, alpha 200, scale 2.
         9 => {
             if roll(app, 2) {
                 let idx = nd(app, Vec2::new(cx + back_off(b.facing), mid_y), 30, 30, 6, 0.0, 0.0, 200, Color::default(), 2.0);
@@ -97,7 +97,7 @@ pub(crate) fn drain_wing_air(app: &mut App, b: WingAirDust) {
                 d.velocity *= 0.3;
             }
         }
-        // `:30818-30829`: wings 6 вЂ” 1/4 type-55, alpha 200, default scale.
+        // `:30818-30829`: wings 6 — 1/4 type-55, alpha 200, default scale.
         6 => {
             if roll(app, 4) {
                 let idx = nd(app, Vec2::new(cx + back_off(b.facing), mid_y), 30, 30, 55, 0.0, 0.0, 200, Color::default(), 1.0);
@@ -106,7 +106,7 @@ pub(crate) fn drain_wing_air(app: &mut App, b: WingAirDust) {
                 d.no_light_emittance = false;
             }
         }
-        // `:30830-30841`: wings 5 вЂ” 1/3 type-58 at the lower box.
+        // `:30830-30841`: wings 5 — 1/3 type-58 at the lower box.
         5 => {
             if roll(app, 3) {
                 let idx = nd(app, Vec2::new(cx + low_off(b.facing), b.y), 18, b.height as i32, 58, 0.0, 0.0, 255, Color::default(), 1.2);
@@ -115,11 +115,11 @@ pub(crate) fn drain_wing_air(app: &mut App, b: WingAirDust) {
                 d.velocity *= 0.3;
             }
         }
-        // `:30842-30874`: wings 26 вЂ” the unconditional type-217 pair.
+        // `:30842-30874`: wings 26 — the unconditional type-217 pair.
         26 => beetle_trail(app, &b),
-        // `:30875-30919`: wings 37 вЂ” the Direct type-31 pair.
+        // `:30875-30919`: wings 37 — the Direct type-31 pair.
         37 => festive_trail(app, &b),
-        // `:30920-30936`: wings 29 вЂ” 1/3 type-6 scale 2.4 + the 1/10 fadeIn.
+        // `:30920-30936`: wings 29 — 1/3 type-6 scale 2.4 + the 1/10 fadeIn.
         29 => {
             if roll(app, 3) {
                 let idx = nd(app, Vec2::new(cx + back_off(b.facing), mid_y), 30, 30, 6, 0.0, 0.0, 100, Color::default(), 2.4);
@@ -133,13 +133,13 @@ pub(crate) fn drain_wing_air(app: &mut App, b: WingAirDust) {
                 }
             }
         }
-        // `:30937-31012`: wings 31 вЂ” the four-roll nebula chain.
+        // `:30937-31012`: wings 31 — the four-roll nebula chain.
         31 => nebula_trail(app, &b),
         _ => {}
     }
 }
 
-/// `:30842-30874` вЂ” the Beetle (26) trail: one type-217 puff at the lower
+/// `:30842-30874` — the Beetle (26) trail: one type-217 puff at the lower
 /// box, then a 1/2 second at the half-height box. Post: `noGravity`,
 /// `noLight`, `velocity /= 4`, `velocity -= playerVel`.
 fn beetle_trail(app: &mut App, b: &WingAirDust) {
@@ -179,10 +179,10 @@ fn ndd(
         .new_dust_direct(rng, &ctx, &app.world, pos, w, h, ty, 0.0, 0.0, alpha, color, scale)
 }
 
-/// `:30875-30919` вЂ” the Festive (37) trail: one `NewDustDirect` of
+/// `:30875-30919` — the Festive (37) trail: one `NewDustDirect` of
 /// `SelectRandom(31,31,31)` at the lower box (24 wide), then a 1/3 second
 /// (16 wide, half height). Post: `noGravity`, `noLight`, `velocity /= 4`,
-/// `velocity -= playerVel/2`. The `type == 55` re-tint arms are DEAD вЂ” the
+/// `velocity -= playerVel/2`. The `type == 55` re-tint arms are DEAD — the
 /// roll list is all 31 (the SelectRandom draws still ride the stream).
 fn festive_trail(app: &mut App, b: &WingAirDust) {
     let cx = b.x + (b.width as i32 / 2) as f32;
@@ -213,7 +213,7 @@ fn festive_trail(app: &mut App, b: &WingAirDust) {
     }
 }
 
-/// `:30937-31012` вЂ” the Nebula (31) chain: 1/6 type-86 + 1/3 type-240 at the
+/// `:30937-31012` — the Nebula (31) chain: 1/6 type-86 + 1/3 type-240 at the
 /// mid box, then (1/2 gate) 1/6 type-86 + 1/3 type-240 at the half box.
 fn nebula_trail(app: &mut App, b: &WingAirDust) {
     let cx = b.x + (b.width as i32 / 2) as f32;
@@ -415,7 +415,9 @@ fn festive_glide(app: &mut App, b: &WingGlideDust) {
         d.velocity /= 4.0;
         d.velocity -= Vec2::new(b.vx, b.vy);
     }
-}#[cfg(test)]
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
@@ -504,7 +506,7 @@ mod tests {
             if ty == 6 {
                 // The type-6 tweak chain rides inside new_dust
                 // (`Dust.cs:214-219`): one extra draw, velocity.Y overwrite,
-                // velocity.X Г—0.3, scale Г—0.7.
+                // velocity.X ×0.3, scale ×0.7.
                 let vy = rng.next_range(-10, 6) as f32 * 0.1;
                 sc *= 0.7;
                 assert_eq!(d.velocity, Vec2::new(vel.x * 0.3, vy) * 0.3);
@@ -534,7 +536,7 @@ mod tests {
         }
     }
 
-    /// `:30818-30829` вЂ” wings 6: the 1/4 gate, type 55, velocity Г—0.3, no
+    /// `:30818-30829` — wings 6: the 1/4 gate, type 55, velocity ×0.3, no
     /// noGravity (the arm never sets it).
     #[test]
     fn w4_g66_the_bone_wing_arm_keeps_gravity() {
@@ -560,8 +562,8 @@ mod tests {
         assert_eq!(stream_of(&mut app), rng);
     }
 
-    /// `:30842-30874` вЂ” the Beetle pair: the first puff unconditional, the
-    /// second on a 1/2 roll; both Г·4 then в€’playerVel.
+    /// `:30842-30874` — the Beetle pair: the first puff unconditional, the
+    /// second on a 1/2 roll; both ÷4 then −playerVel.
     #[test]
     fn w4_g66_the_beetle_trail_folds_the_player_velocity() {
         for facing in [1, -1] {
@@ -607,7 +609,7 @@ mod tests {
         for _ in 0..120 {
             p.update(&w, crate::player::PlayerInput::default());
         }
-        p.equipped[3] = 822; // Frozen Wings вЂ” wings_logic 10
+        p.equipped[3] = 822; // Frozen Wings — wings_logic 10
         p.wing_time = 100.0;
         let held = crate::player::PlayerInput { jump: true, ..Default::default() };
         p.update(&w, held); // the ground jump
@@ -616,8 +618,8 @@ mod tests {
         assert_eq!(s.wings, 10);
         assert_eq!(s.facing, p.facing);
     }
-    /// `:30875-30919` вЂ” the Festive pair: the SelectRandom draws (all 31),
-    /// the Direct spawn, Г·4 then в€’playerVel/2; the second on a 1/3 roll.
+    /// `:30875-30919` — the Festive pair: the SelectRandom draws (all 31),
+    /// the Direct spawn, ÷4 then −playerVel/2; the second on a 1/3 roll.
     #[test]
     fn w4_g66_the_festive_trail_halves_the_velocity_fold() {
         let mut app = rig(0x5EED);
@@ -650,8 +652,8 @@ mod tests {
         assert_eq!(stream_of(&mut app), rng);
     }
 
-    /// `:30920-30936` вЂ” wings 29: the 1/3 gate, the type-6 tweak chain, the
-    /// Г—0.3 fold and the 1/10 fadeIn 2 roll.
+    /// `:30920-30936` — wings 29: the 1/3 gate, the type-6 tweak chain, the
+    /// ×0.3 fold and the 1/10 fadeIn 2 roll.
     #[test]
     fn w4_g66_the_nebula_hover_arm_rolls_the_fade() {
         let mut seed = 1;
@@ -669,7 +671,7 @@ mod tests {
         let _ = rng.next_max(3);
         let (pos, vel, mut sc) =
             default_block(&mut rng, Vec2::new(b.x + 10.0 - 40.0, b.y + 21.0 - 15.0), 30, 30, 2.4);
-        // The type-6 tweak: one draw, velocity.Y overwrite, X Г—0.3, Г—0.7.
+        // The type-6 tweak: one draw, velocity.Y overwrite, X ×0.3, ×0.7.
         let vy = rng.next_range(-10, 6) as f32 * 0.1;
         sc *= 0.7;
         assert_eq!(d.position, pos);
@@ -681,7 +683,7 @@ mod tests {
         assert_eq!(stream_of(&mut app), rng);
     }
 
-    /// `:30937-31012` вЂ” the Nebula 31 chain: the four sequential gates ride
+    /// `:30937-31012` — the Nebula 31 chain: the four sequential gates ride
     /// the stream in order; the mirror replays whichever pass.
     #[test]
     fn w4_g66_the_nebula_chain_gates_in_source_order() {
@@ -743,7 +745,7 @@ mod tests {
         }
     }
 
-    /// `:27040-27083` вЂ” the glide 10/34/51 arms: 1/3, 1/3 (always-animated
+    /// `:27040-27083` — the glide 10/34/51 arms: 1/3, 1/3 (always-animated
     /// gated), 1/5 gates; the 34 gate refuses WITHOUT a roll when grounded.
     #[test]
     fn w4_g66_the_glide_mid_arms_gate_per_wing() {
@@ -781,7 +783,7 @@ mod tests {
         assert_eq!(stream_of(&mut app), UnifiedRandom::new(0x5EED));
     }
 
-    /// `:27122-27148` вЂ” the 6/5 else-if: wings 6 rolls 1/10 at midв€’12; wings
+    /// `:27122-27148` — the 6/5 else-if: wings 6 rolls 1/10 at mid−12; wings
     /// 5 rolls 1/6 at the lower box. The 6 arm never reaches the 5 roll.
     #[test]
     fn w4_g66_the_glide_bone_and_fairy_arms_are_exclusive() {
@@ -827,8 +829,8 @@ mod tests {
         assert_eq!(stream_of(&mut app), rng);
     }
 
-    /// `:27149-27191` вЂ” the jetpack glide flame: the 1/2 side roll picks the
-    /// box, the type-6 tweak chain rides new_dust, then X Г—0.3 / Y += 10.
+    /// `:27149-27191` — the jetpack glide flame: the 1/2 side roll picks the
+    /// box, the type-6 tweak chain rides new_dust, then X ×0.3 / Y += 10.
     #[test]
     fn w4_g66_the_jetpack_glide_flame_picks_a_side() {
         for side in [0, 1] {
@@ -863,7 +865,7 @@ mod tests {
     }
 
     /// The tick side: the glide arm queues the snapshot and runs the frame
-    /// pins вЂ” the wings-26/37 glide pins frame 2, the default arm too.
+    /// pins — the wings-26/37 glide pins frame 2, the default arm too.
     #[test]
     fn w4_g66_the_glide_tick_queues_and_pins_the_frame() {
         let w = World::new("t".into(), 64, 128);
@@ -871,7 +873,7 @@ mod tests {
         for _ in 0..120 {
             p.update(&w, crate::player::PlayerInput::default());
         }
-        p.equipped[3] = 2609; // Beetle Wings вЂ” wings_logic 26
+        p.equipped[3] = 2609; // Beetle Wings — wings_logic 26
         p.update(&w, crate::player::PlayerInput::default());
         assert_eq!(p.wings_logic, 26);
         // Airborne, falling, jump held, no wing budget: the glide arm.
@@ -891,7 +893,7 @@ mod tests {
         assert!(g.vy > 0.0, "the pre-integration velocity");
         assert_eq!(p.wing_frame, 2, "the Beetle glide pin");
     }
-    /// `:27240-27316` вЂ” the glide Beetle/Festive pairs: the Beetle reuses
+    /// `:27240-27316` — the glide Beetle/Festive pairs: the Beetle reuses
     /// the WingAirVisuals shape; the Festive draws the colour NextFloat
     /// FIRST, then the SelectRandom, scale 0.7, second alpha 140.
     #[test]

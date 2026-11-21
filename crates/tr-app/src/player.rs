@@ -786,6 +786,20 @@ pub(crate) struct WalkEffectDust {
     pub(crate) stealth: f32,
 }
 
+/// W4-g66 — one queued Rudolph flight trail (`Player.cs:36164-36198`): the
+/// mount-0 (Rudolph) flight arm inside `PlayerFrame`'s mount animator — two
+/// 1/4 type-64 puffs per tick at the facing-mirrored foot boxes.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RudolphTrail {
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) facing: i32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -2218,6 +2232,8 @@ pub struct Player {
     /// W4-g66 — the tick's queued `PlayerFrame` walking-effect snapshot
     /// (`Player.cs:35996-36136`).
     pending_walk_effect_dust: Option<WalkEffectDust>,
+    /// W4-g66 — the tick's queued Rudolph flight trail (`Player.cs:36164`).
+    pending_rudolph_trail: Option<RudolphTrail>,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -3166,6 +3182,7 @@ impl Player {
             rocket_frame: false,
             social_shadow_rocket_boots: false,
             pending_walk_effect_dust: None,
+            pending_rudolph_trail: None,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -3815,6 +3832,13 @@ impl Player {
         self.pending_walk_effect_dust.take()
     }
 
+    /// W4-g66 — takes the Rudolph flight-trail snapshot
+    /// (`Player.cs:36164-36198`); drained on `UpdatePlayers`
+    /// (`player_trail_dust::drain_rudolph_trail`).
+    pub(crate) fn take_rudolph_trail(&mut self) -> Option<RudolphTrail> {
+        self.pending_rudolph_trail.take()
+    }
+
     /// W4-d51 — queues the dash dust snapshot at the C# read moment (the
     /// velocity writes above each site have already landed).
     fn queue_dash_dust(&mut self, active: bool) {
@@ -4009,6 +4033,7 @@ impl Player {
         self.pending_wing_glide_dust = None;
         self.pending_rocket_flame_dust = None;
         self.pending_walk_effect_dust = None;
+        self.pending_rudolph_trail = None;
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
@@ -8306,9 +8331,23 @@ impl Player {
                     && self.control_jump
                     && !self.mount.can_hover()
                 {
+                    // W4-g66 — `:36164-36198`: the Rudolph (mount 0) flight
+                    // trail — two 1/4 type-64 puffs at the facing-mirrored
+                    // foot boxes, drained on `UpdatePlayers`
+                    // (`player_trail_dust::drain_rudolph_trail`).
+                    if self.mount.kind() == 0 {
+                        self.pending_rudolph_trail = Some(RudolphTrail {
+                            x: self.x,
+                            y: self.y,
+                            width: self.width,
+                            height: self.height,
+                            vx: self.vx,
+                            vy: self.vy,
+                            facing: self.facing,
+                        });
+                    }
                     // `:36199-36200`: `TryBeginningFlight` only fires for
-                    // hover mounts (`Mount.cs:4537` — none in this table);
-                    // the Rudolph dust trail is a visual seam.
+                    // hover mounts (`Mount.cs:4537` — none in this table).
                     self.mount.update_frame(
                         crate::mount::FRAME_FLYING,
                         self.vx,

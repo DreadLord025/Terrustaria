@@ -1,4 +1,4 @@
-﻿//! W4-g66 вЂ” the rocket-boots flame drain (`Player.RocketBootVisuals`,
+﻿//! W4-g66 — the rocket-boots flame drain (`Player.RocketBootVisuals`,
 //! `Player.cs:29330-29458`). Same queue convention as `player_dust`
 //! (W4-d51): the tick snapshots at the C# read moment (the flame pair BEFORE
 //! the thrust velocity writes, `:26918`); this module replays on the shared
@@ -7,7 +7,7 @@
 //! `netOffset` folds to zero (no net smoothing on the local player);
 //! `gravDir` is the vanilla `1f`; the `shader` writes are dropped fields
 //! (`particles.rs`'s note). The tier-4 `cShoe` dye pin reads the port's
-//! `c_shoe` (no `shoeSlot` producer yet вЂ” the dye deviation family).
+//! `c_shoe` (no `shoeSlot` producer yet — the dye deviation family).
 
 use crate::app::App;
 use crate::player::{RocketFlameDust, WalkEffectDust};
@@ -33,18 +33,18 @@ fn ndd(
 }
 
 /// Drain `RocketBootVisuals` (`Player.cs:29330-29458`): the two flame puffs
-/// (i=0 left, i=1 right) at the foot boxes `(xв€’4 | x+widthв€’4, y+heightв€’10)`,
-/// 8Г—8, shifted в€’4 more while facing left. The per-tier switch picks
+/// (i=0 left, i=1 right) at the foot boxes `(x−4 | x+width−4, y+height−10)`,
+/// 8×8, shifted −4 more while facing left. The per-tier switch picks
 /// type/scale/alpha, the shared Direct spawn runs, then the per-tier
 /// post-arms; the fairyBoots tail forces noGravity + noLightEmittance.
 pub(crate) fn drain_rocket_flames(app: &mut App, b: RocketFlameDust) {
-    // `:29332-29335`: no vanity tier в†’ no flames at all.
+    // `:29332-29335`: no vanity tier → no flames at all.
     if b.vanity == 0 {
         return;
     }
     for i in 0..2 {
         // `:29343-29349`: the box + the facing shift; `num2` is the outward
-        // kick sign (i=0 в†’ +2, i=1 в†’ в€’2).
+        // kick sign (i=0 → +2, i=1 → −2).
         let num2: f32 = if i == 0 { 2.0 } else { -2.0 };
         let mut rx = if i != 0 {
             b.x as i32 + b.width as i32 - 4
@@ -99,7 +99,7 @@ pub(crate) fn drain_rocket_flames(app: &mut App, b: RocketFlameDust) {
                 }
             }
             4 => {
-                // `:29393-29421`: the Flame Waker roll вЂ” `Next(6)` ALWAYS
+                // `:29393-29421`: the Flame Waker roll — `Next(6)` ALWAYS
                 // draws, then the dye pin, then the +2 box shift.
                 let mut num4 = {
                     let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
@@ -112,7 +112,7 @@ pub(crate) fn drain_rocket_flames(app: &mut App, b: RocketFlameDust) {
                 if num4 == 0 || num4 == 1 {
                     // The green spark arm: Lerp(LimeGreen, White,
                     // NextFloat*0.3), scale 0.66, the velocity folds, the
-                    // 1/5 fadeIn 0.8 вЂ” then `continue` (no shared spawn).
+                    // 1/5 fadeIn 0.8 — then `continue` (no shared spawn).
                     let t = app
                         .rngs
                         .stream(crate::app::RngKey::UpdatePlayers)
@@ -195,7 +195,7 @@ pub(crate) fn drain_walk_effects(app: &mut App, b: WalkEffectDust) {
     let trail = Vec2::new(b.x - b.vx * 2.0, b.y - 2.0 - b.vy * 2.0);
     let bw = b.width as i32;
     let bh = b.height as i32;
-    // `:35996-36012`: the Red's armor sparkle вЂ” head 267 / body 236 / legs
+    // `:35996-36012`: the Red's armor sparkle — head 267 / body 236 / legs
     // 219|220, miscCounter % 15, then 1/3. The scale sign roll, the offset,
     // the rotation draw, alpha 254, velocity.X, noGravity.
     if h == 267 && bo == 236 && (l == 219 || l == 220) && b.misc_counter % 15 == 0 && roll(app, 3) {
@@ -212,7 +212,7 @@ pub(crate) fn drain_walk_effects(app: &mut App, b: WalkEffectDust) {
         d.velocity.x = num2 * 0.2;
         d.no_gravity = true;
     }
-    // `:36015-36022`: the Jim/Crowno set sparkle вЂ” 1/10 type-43 magenta.
+    // `:36015-36022`: the Jim/Crowno set sparkle — 1/10 type-43 magenta.
     if ((bo == 68 && l == 57 && h == 106) || (bo == 74 && l == 63 && h == 106)) && roll(app, 10) {
         let idx = nd(app, trail, bw, bh, 43, 0.0, 0.0, 100, Color::new(255, 0, 255, 255), 0.3);
         let d = app.dust.slot_mut(idx);
@@ -220,7 +220,7 @@ pub(crate) fn drain_walk_effects(app: &mut App, b: WalkEffectDust) {
         d.no_gravity = true;
         d.velocity *= 2.0;
     }
-    // `:36023-36027`: the Vortex (27) stealth glow вЂ” no draws, the centre
+    // `:36023-36027`: the Vortex (27) stealth glow — no draws, the centre
     // light feeds `entity_lights` (the Chillet convention). The port folds
     // wings/wingsLogic, so the equality gate is the id alone.
     if b.wings == 27 {
@@ -228,16 +228,16 @@ pub(crate) fn drain_walk_effects(app: &mut App, b: WalkEffectDust) {
         app.entity_lights
             .add((b.cx / 16.0) as i32, (b.cy / 16.0) as i32, [num4, num4 * 0.9, num4 * 0.2]);
     }
-    // `:36028-36036`: the full Shadow set (5/5/5) вЂ” 1/10 type-14. (The
+    // `:36028-36036`: the full Shadow set (5/5/5) — 1/10 type-14. (The
     // socialShadowRocketBoots grant is the tick's, `update_frames`.)
     if h == 5 && bo == 5 && l == 5 && roll(app, 10) {
         let _ = nd(app, pos, bw, bh, 14, 0.0, 0.0, 200, Color::default(), 1.2);
     }
-    // `:36041-36049`: the Ancient Shadow set (74/48/44) вЂ” the same roll.
+    // `:36041-36049`: the Ancient Shadow set (74/48/44) — the same roll.
     if h == 74 && bo == 48 && l == 44 && roll(app, 10) {
         let _ = nd(app, pos, bw, bh, 14, 0.0, 0.0, 200, Color::default(), 1.2);
     }
-    // `:36050-36066`: the Chlorophyte set (57/37/35) вЂ” 1/10, or 1/2 while
+    // `:36050-36066`: the Chlorophyte set (57/37/35) — 1/10, or 1/2 while
     // walking; type-115, fadeIn 1.5, the velocity folds.
     if h == 57 && bo == 37 && l == 35 {
         let max = if b.walking { 2 } else { 10 };
@@ -250,7 +250,7 @@ pub(crate) fn drain_walk_effects(app: &mut App, b: WalkEffectDust) {
             d.velocity += Vec2::new(b.vx, b.vy) * 0.2;
         }
     }
-    // `:36067-36078`: the Molten set (6/6/6) вЂ” two type-6 fires while
+    // `:36067-36078`: the Molten set (6/6/6) — two type-6 fires while
     // walking and NOT rocket-framed.
     if h == 6 && bo == 6 && l == 6 && b.walking && !b.rocket_frame {
         for _ in 0..2 {
@@ -262,7 +262,7 @@ pub(crate) fn drain_walk_effects(app: &mut App, b: WalkEffectDust) {
             d.velocity.y -= b.vy * 0.5;
         }
     }
-    // `:36079-36086`: the Necro set (8/8/8) вЂ” one type-40 while walking.
+    // `:36079-36086`: the Necro set (8/8/8) — one type-40 while walking.
     if h == 8 && bo == 8 && l == 8 && b.walking {
         let idx = nd(app, trail, bw, bh, 40, 0.0, 0.0, 50, Color::default(), 1.4);
         let d = app.dust.slot_mut(idx);
@@ -270,7 +270,7 @@ pub(crate) fn drain_walk_effects(app: &mut App, b: WalkEffectDust) {
         d.velocity.x = b.vx * 0.25;
         d.velocity.y = b.vy * 0.25;
     }
-    // `:36087-36098`: the Ninja set (9/9/9) вЂ” the Molten shape.
+    // `:36087-36098`: the Ninja set (9/9/9) — the Molten shape.
     if h == 9 && bo == 9 && l == 9 && b.walking && !b.rocket_frame {
         for _ in 0..2 {
             let idx = nd(app, trail, bw, bh, 6, 0.0, 0.0, 100, Color::default(), 2.0);
@@ -281,7 +281,7 @@ pub(crate) fn drain_walk_effects(app: &mut App, b: WalkEffectDust) {
             d.velocity.y -= b.vy * 0.5;
         }
     }
-    // `:36099-36105`: the Wizard set (body 18 / legs 17 / head 32-34) вЂ”
+    // `:36099-36105`: the Wizard set (body 18 / legs 17 / head 32-34) —
     // 1/10 type-43, velocity zeroed.
     if bo == 18 && l == 17 && (h == 32 || h == 33 || h == 34) && roll(app, 10) {
         let idx = nd(app, trail, bw, bh, 43, 0.0, 0.0, 100, Color::default(), 0.3);
@@ -289,7 +289,49 @@ pub(crate) fn drain_walk_effects(app: &mut App, b: WalkEffectDust) {
         d.fade_in = 0.8;
         d.velocity *= 0.0;
     }
-}#[cfg(test)]
+    // `:36106-36112`: the Hallowed/Titanium sets — airborne + walking +
+    // 1/10 type-43, velocity zeroed.
+    if (bo == 24 || bo == 229)
+        && (l == 23 || l == 212)
+        && matches!(h, 43 | 41 | 42 | 254 | 255 | 256 | 257 | 258)
+        && b.walking
+        && b.vy != 0.0
+        && roll(app, 10)
+    {
+        let idx = nd(app, trail, bw, bh, 43, 0.0, 0.0, 100, Color::default(), 0.3);
+        let d = app.dust.slot_mut(idx);
+        d.fade_in = 0.8;
+        d.velocity *= 0.0;
+    }
+    // `:36113-36123`: the Turtle set (body 36 / head 56) — two type-106
+    // shell motes at the foot line while grounded + walking.
+    if bo == 36 && h == 56 && b.walking && b.vy == 0.0 {
+        for _ in 0..2 {
+            let idx = nd(app, Vec2::new(b.x, b.y + b.height - 2.0), bw, 6, 106, 0.0, 0.0, 100, Color::default(), 0.1);
+            let d = app.dust.slot_mut(idx);
+            d.fade_in = 1.0;
+            d.no_gravity = true;
+            d.velocity *= 0.2;
+        }
+    }
+    // `:36124-36136`: the Frost set (27/46/26) — two type-76 motes on the
+    // even misc ticks while grounded + walking (the coldDash shape).
+    if bo == 27 && h == 46 && l == 26 && b.walking && b.vy == 0.0 && b.misc_counter % 2 == 0 {
+        for j in 0..2 {
+            let px = if j != 0 { b.x + (b.width as i32 / 2) as f32 } else { b.x };
+            let idx = nd(app, Vec2::new(px, b.y + b.height + b.gfx_off_y), b.width as i32 / 2, 6, 76, 0.0, 0.0, 0, Color::default(), 1.35);
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            let d = app.dust.slot_mut(idx);
+            d.scale *= 1.0 + rng.next_range(20, 40) as f32 * 0.01;
+            d.no_gravity = true;
+            d.no_light = true;
+            d.velocity *= 0.001;
+            d.velocity.y -= 0.003;
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
@@ -343,7 +385,7 @@ mod tests {
         (Vec2::new(px, py), Vec2::new(vx, vy), sc)
     }
 
-    /// `:29332-29335` вЂ” vanity 0 spawns nothing, draws nothing.
+    /// `:29332-29335` — vanity 0 spawns nothing, draws nothing.
     #[test]
     fn w4_g66_no_vanity_no_flames() {
         let mut app = rig(0x5EED);
@@ -352,7 +394,7 @@ mod tests {
         assert_eq!(stream_of(&mut app), UnifiedRandom::new(0x5EED));
     }
 
-    /// `:29358-29435` вЂ” the tier-5 pair: two type-6 flames, the kick folds,
+    /// `:29358-29435` — the tier-5 pair: two type-6 flames, the kick folds,
     /// noGravity; the type-6 tweak chain rides each spawn (7 draws each).
     #[test]
     fn w4_g66_the_hellfire_flame_pair_kicks_outward() {
@@ -379,7 +421,7 @@ mod tests {
         assert_eq!(stream_of(&mut app), rng);
     }
 
-    /// `:29369-29373` + `:29442-29451` вЂ” the tier-3 pair: type 76, Г—0.05 +
+    /// `:29369-29373` + `:29442-29451` — the tier-3 pair: type 76, ×0.05 +
     /// Y+0.15, noLight, the 1/2 noGravity/scale-1.75 roll per puff.
     #[test]
     fn w4_g66_the_frost_flame_pair_rolls_the_float() {
@@ -412,8 +454,8 @@ mod tests {
         assert_eq!(stream_of(&mut app), rng);
     }
 
-    /// `:29379-29392` вЂ” the tier-2 fairy arm: ONE Next(6) type roll per
-    /// puff, the Г—0.1 fold, the fairyBoots noGravity/noLightEmittance tail.
+    /// `:29379-29392` — the tier-2 fairy arm: ONE Next(6) type roll per
+    /// puff, the ×0.1 fold, the fairyBoots noGravity/noLightEmittance tail.
     #[test]
     fn w4_g66_the_fairy_flame_pair_rolls_per_puff() {
         let mut app = rig(0x5EED);
@@ -447,9 +489,9 @@ mod tests {
         assert_eq!(stream_of(&mut app), rng);
     }
 
-    /// `:29393-29421` вЂ” the tier-4 Flame Waker: the Next(6) always draws;
-    /// 0/1 в†’ the green 278 spark (the colour float + the 1/5 fadeIn), else
-    /// the 107 flame at Г—0.5. The dye pin forces the 107 arm.
+    /// `:29393-29421` — the tier-4 Flame Waker: the Next(6) always draws;
+    /// 0/1 → the green 278 spark (the colour float + the 1/5 fadeIn), else
+    /// the 107 flame at ×0.5. The dye pin forces the 107 arm.
     #[test]
     fn w4_g66_the_flame_waker_roll_splits_spark_and_flame() {
         // Find a seed whose first Next(6) is 0 (the spark arm).
@@ -478,7 +520,7 @@ mod tests {
         assert!(d.no_gravity);
         let fade = if rng.next_max(5) == 0 { 0.8 } else { 0.0 };
         assert_eq!(d.fade_in, fade);
-        // The dye pin: cShoe > 0 forces num4 = 2 в†’ the 107 flame.
+        // The dye pin: cShoe > 0 forces num4 = 2 → the 107 flame.
         let mut app = rig(seed);
         let mut b = burst(4);
         b.c_shoe = 1;
@@ -552,7 +594,7 @@ mod tests {
         }
     }
 
-    /// `:35996-36012` вЂ” the Red's sparkle: the %15 cadence + 1/3 gate, the
+    /// `:35996-36012` — the Red's sparkle: the %15 cadence + 1/3 gate, the
     /// scale float, the sign roll, the rotation draw; alpha 254.
     #[test]
     fn w4_g66_the_reds_sparkle_rotates_and_signs() {
@@ -591,7 +633,7 @@ mod tests {
         assert_eq!(stream_of(&mut app), UnifiedRandom::new(seed));
     }
 
-    /// `:36050-36066` вЂ” the Chlorophyte aura: 1/2 while walking, 1/10 at
+    /// `:36050-36066` — the Chlorophyte aura: 1/2 while walking, 1/10 at
     /// rest; the velocity folds.
     #[test]
     fn w4_g66_the_chlorophyte_aura_widens_while_walking() {
@@ -620,8 +662,8 @@ mod tests {
         }
     }
 
-    /// `:36067-36098` вЂ” the Molten/Ninja fire pair: two type-6 puffs with
-    /// the tweak chain, the в€’vel/2 folds; the rocketFrame gate skips them.
+    /// `:36067-36098` — the Molten/Ninja fire pair: two type-6 puffs with
+    /// the tweak chain, the −vel/2 folds; the rocketFrame gate skips them.
     #[test]
     fn w4_g66_the_molten_fire_pair_skips_on_rocket_frame() {
         let mut app = rig(0x5EED);
@@ -659,7 +701,7 @@ mod tests {
         assert!(live(&app).iter().all(|d| d.dust_type == 6));
     }
 
-    /// `:36023-36027` вЂ” the Vortex stealth glow: no draws, the centre light
+    /// `:36023-36027` — the Vortex stealth glow: no draws, the centre light
     /// scales with stealth.
     #[test]
     fn w4_g66_the_vortex_stealth_glow_draws_nothing() {
@@ -688,7 +730,7 @@ mod tests {
         for _ in 0..60 {
             p.update(&w, crate::player::PlayerInput::default());
         }
-        // Shadow armor: helmet 102 / scalemail 101 / greaves 100 вЂ” the
+        // Shadow armor: helmet 102 / scalemail 101 / greaves 100 — the
         // texture ids 5/5/5 (verify against the item rows).
         p.equipped[0] = 102;
         p.equipped[1] = 101;
@@ -703,5 +745,87 @@ mod tests {
         p.equipped[2] = 0;
         p.update(&w, crate::player::PlayerInput::default());
         assert!(!p.social_shadow_rocket_boots);
+    }
+    /// `:36106-36112` — the Hallowed aura: airborne + walking + 1/10; the
+    /// grounded tick refuses without a draw.
+    #[test]
+    fn w4_g66_the_hallowed_aura_needs_air() {
+        let mut seed = 1;
+        while UnifiedRandom::new(seed).next_max(10) != 0 {
+            seed += 1;
+        }
+        let mut app = rig(seed);
+        let mut b = walk(43, 24, 23);
+        b.vy = 2.0;
+        drain_walk_effects(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 1);
+        assert_eq!(slots[0].dust_type, 43);
+        assert_eq!(slots[0].fade_in, 0.8);
+        assert_eq!(slots[0].velocity, Vec2::ZERO);
+        let mut rng = UnifiedRandom::new(seed);
+        let _ = rng.next_max(10);
+        let trail = Vec2::new(b.x - b.vx * 2.0, b.y - 2.0 - b.vy * 2.0);
+        let (pos, _, sc) = default_block(&mut rng, trail, 0.3);
+        assert_eq!(slots[0].position, pos);
+        assert_eq!(slots[0].scale, sc);
+        assert_eq!(stream_of(&mut app), rng);
+        // Grounded: the vy gate refuses before the roll.
+        let mut app = rig(seed);
+        let b = walk(43, 24, 23);
+        drain_walk_effects(&mut app, b);
+        assert_eq!(live(&app).len(), 0);
+        assert_eq!(stream_of(&mut app), UnifiedRandom::new(seed));
+    }
+
+    /// `:36113-36136` — the Turtle shell motes and the Frost %2 pair.
+    #[test]
+    fn w4_g66_the_turtle_and_frost_foot_motes() {
+        // Turtle: two type-106 at the foot line, fadeIn 1, velocity x0.2.
+        let mut app = rig(0x5EED);
+        let b = walk(56, 36, 0);
+        drain_walk_effects(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 2);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        for d in &slots {
+            assert_eq!(d.dust_type, 106);
+            assert_eq!(d.fade_in, 1.0);
+            let (pos, vel, sc) =
+                default_block(&mut rng, Vec2::new(b.x, b.y + b.height - 2.0), 0.1);
+            assert_eq!(d.position, pos);
+            assert_eq!(d.velocity, vel * 0.2);
+            assert_eq!(d.scale, sc);
+            assert!(d.no_gravity);
+        }
+        assert_eq!(stream_of(&mut app), rng);
+        // Frost: the even-misc pair, the coldDash post-arms.
+        let mut app = rig(0x5EED);
+        let b = walk(46, 27, 26);
+        drain_walk_effects(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 2);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        for (j, d) in slots.iter().enumerate() {
+            assert_eq!(d.dust_type, 76);
+            let px = if j != 0 { b.x + 10.0 } else { b.x };
+            let (pos, vel, mut sc) =
+                default_block(&mut rng, Vec2::new(px, b.y + b.height), 1.35);
+            sc *= 1.0 + rng.next_range(20, 40) as f32 * 0.01;
+            assert_eq!(d.position, pos);
+            let mut v = vel * 0.001;
+            v.y -= 0.003;
+            assert_eq!(d.velocity, v);
+            assert_eq!(d.scale, sc);
+            assert!(d.no_gravity && d.no_light);
+        }
+        assert_eq!(stream_of(&mut app), rng);
+        // The odd misc tick refuses without a draw.
+        let mut app = rig(0x5EED);
+        let mut b = walk(46, 27, 26);
+        b.misc_counter = 1;
+        drain_walk_effects(&mut app, b);
+        assert_eq!(live(&app).len(), 0);
+        assert_eq!(stream_of(&mut app), UnifiedRandom::new(0x5EED));
     }
 }
