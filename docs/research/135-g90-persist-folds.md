@@ -275,27 +275,28 @@ The brief's question: book 4382's damage buff (`NPC.combatBookWasUsed`,
 
 | Consumer | C# anchor | Port site | Armed live? |
 | --- | --- | --- | --- |
-| Town-NPC stat ladder, book ONE row (+250 lifeMax, ×0.8 knockback, +0.25 dmg, +8 def) | `NPC.cs:53018-53024` | `npc_ai_town.rs::town_stat_bonuses` `:1426-1431` (`env.combat_book`) | **NO — module UNWIRED** (see below) |
-| Town-NPC ladder, book TWO row (same four adds, stacks) | `NPC.cs:53025-53031` | `:1432-1437` (`env.combat_book_two`) | **NO — same seam**; witness `w4_g90_both_combat_books_stack_their_rows` (`:4385`) feeds the env directly: both books → num2 1.5, num3 2×0.8×0.8, max_hp 750, def 31 |
-| Full-heal on growth (`(lifeMax > defLifeMax) & flag3`) | `:53032-53035` | `:1439-1441` (the non-short-circuit `&` kept) | same seam |
-| Fishing `DidNotUseCombatBook` condition (book ONE only) | `Projectile.cs` FishingCheck | `fishing.rs:1450` via `BobberInputs.combat_book_was_used` (`projectile_bobber.rs:128`), fed live at `world_sim/projectiles.rs:327` | **YES** |
+| Town-NPC stat ladder, book ONE row (+250 lifeMax, ×0.8 knockback, +0.25 dmg, +8 def) | `NPC.cs:53018-53024` | `npc_ai_town.rs::town_stat_bonuses` (`env.combat_book`) | **YES — g90 feeder `8521139d`** (see below) |
+| Town-NPC ladder, book TWO row (same four adds, stacks) | `NPC.cs:53025-53031` | same fn (`env.combat_book_two`) | **YES — same feeder**; witness `w4_g90_the_env_flags_feed_both_books_and_the_boss_ladder` + the live `update_npcs` witness `w4_g90_the_town_tick_feeds_both_combat_books_into_the_ladder` (750/750 HP, def 31) |
+| Full-heal on growth (`(lifeMax > defLifeMax) & flag3`) | `:53032-53035` | the non-short-circuit `&` kept | **YES — same feeder** |
+| Fishing `DidNotUseCombatBook` condition (book ONE only) | `GameContentFishDropPopulator.cs:196` (`Add(Legendary, 2, 4382, BloodMoon, DidNotUseCombatBook)` — a DROP condition, NOT a fishing-power penalty; the `Projectile.cs:21056` `Next(3)` inline arm is dead code, `FishingCheck_RollItemDropOld` is never called) | `fishing.rs:1450` via `BobberInputs.combat_book_was_used` (`projectile_bobber.rs:128`), fed live at `world_sim/projectiles.rs:327`; the 1/2 rule `fishing.rs:1691` | **YES** (census witness `w4_g90_the_combat_book_drop_dies_once_the_book_is_used`, `fdffccc4`) |
 | TRAINING_DAY progression-40 (both books up) | `Player.cs:25695-25698` | `world_sim/player.rs:1625-1627` (`notify_progression_net(40)`, idempotent) | **YES** |
 | Travel-shop +1 slot (SATCHEL, not the books) | `Chest.cs:1303-1306` | `shop.rs:808-810` (plain +1, no RNG draw), live via `world_sim/weather.rs:559` | **YES** |
 
-**Why the town ladder is not armed:** `npc_ai_town.rs` is the b3
-(S1-D-3) lane's code-only port — the module header (`:12-22`) documents
-UNWIRED: the live dispatch still routes town kinds through
-`npc.rs::update_guide` (`npc.rs:5753`, the 240-tick stand-in at
-`:10048`), and `TownEnv` is constructed only in the module's tests
-(`:3874`). No production call site builds `TownEnv`, so
-`env.combat_book`/`combat_book_two` have no live feeder. This is NOT a
-g90 gap: the flag, its persistence and its net sync are complete, the
-ladder rows are ported verbatim and witnessed; the wiring belongs to
-the town-AI migration lane (which must feed
-`combat_book: world.combat_book_was_used` /
-`combat_book_two: world.combat_book_volume_two_was_used` when it
-replaces `update_guide`). No code change made here — wiring another
-lane's seam is out of this lane's scope.
+**The town ladder IS armed now (g90 feeder, `8521139d`).** At the first
+probe the `npc_ai_town.rs` module was UNWIRED (the b3/S1-D-3 lane's
+code-only port; the live dispatch routed town kinds through
+`npc.rs::update_guide`). The b3 lane has since pushed phase 1
+(`96a5d88f0`, `ai_007_town_family` — but its env folds
+`combat_book_two: false` and its `TownOutputs` drain is phase 2). The
+g90 feeder wires the STAT half live on this branch:
+`TownEnvFlags::from_world` (the b3 env's scalar half, BOTH book flags +
+the boss progression off the live `World`) + a per-town-NPC
+`town_stat_bonuses` pass in `world_sim/npcs.rs::update_npcs` ahead of the
+slot loop (RNG-free, reset-then-read base, idempotent). The AI dispatch
+stays b3's; at the merge b3's arm's ladder call dedupes onto the feeder
+(same inputs → same writes, zero draws). The `(num2, num3)` attack
+scales have no consumer until b3 drains `TownOutputs` — the defense/HP
+writes are the live observable half.
 
 ---
 
@@ -312,6 +313,105 @@ lane's seam is out of this lane's scope.
    constants, keep VERSION 18 and all three lanes' round-trip
    witnesses (re-pinned).
 4. Keep this branch's consumers (§5) — they are the live ones; the
-   town ladder stays the b3 seam with its witness.
+   town ladder is NOW FED by the g90 feeder (`8521139d`,
+   `TownEnvFlags` + the `update_npcs` pass) — b3's phase-1 arm keeps
+   the AI dispatch, its ladder call dedupes onto the feeder.
 5. Update 103 §2a (tokens 4/5/6 RESERVED → LIVE g90), §4 (the six-line
    row), and 92 §1 (19 → 21, the two new offsets) at the fold.
+
+---
+
+## 7. Reconcile addendum (2026-11-21, second probe) — a6 + g88 latest read
+
+Inputs re-read: `origin/task/W4-a6-crystals-powerups` tip `8ed96ee5d`
+(the six use-arm commits `bb36e6ee`..`8ed96ee5` over the M2 wave-3
+base), `origin/task/W4-g88-life-fruit-use` tip `6998a4ecb` (fold 5
+docs, 06:16) — 23 minutes BEFORE this branch's 135 publication
+(`b3b82d07`, 06:39).
+
+### 7a. a6 — research/138 DOES NOT EXIST on the pushed tip
+
+`git ls-tree origin/task/W4-a6-crystals-powerups docs/research/` shows
+no 138 (nor any new numbered doc); the lane's only doc delta is
+`docs/ANALYSIS.md` +52 ("W4-a6 — the permanent power-up consumables",
+`Player.cs:45192-45423`). **No keep-one verdicts are published.** The
+ANALYSIS section records the lane's own conventions (the
+`powerups.rs` press-edge machine, the World-field statics standing-in,
+the `notify_custom("Use")` all-rows fold, the pet-license refusal with
+no resident pet, the QuickSpawnItem deposit walk) — none of it a
+verdict on g90's copies.
+
+**The overlap is real and total on the use arms.** a6's `powerups.rs`
+(1387 lines, `powerup_item_check` at `:571`, dispatch added to
+`world_sim/editing.rs` +30) ports: Life Crystal 29 / Mana Crystal 109
+(`5eabcbe0`), Life Fruit 1291 / Demon Heart 3335 (`ea478936`), Minecart
+5289 + Artisan Loaf 5326 (`bb36e6ee`), Combat Books 4382/5336
+(`e15e931a`), Torch God 5043 + Satchel 5343 (`6e37aaac`), Pet Licenses
+(`d46221b2`), the six shimmer permanents 5337-5342 (`f23385e5`), the
+drone destroy arms (`8ed96ee5`). This branch carries the SAME use
+semantics for 5326/4382/5336/5343/5337/5339/5340/5341/5342 in
+`world_sim/editing.rs` (`use_artisan_loaf` `:15966`, `use_combat_book`
+`:16003`, `use_peddlers_satchel` `:16041`, `use_shimmer_permanent_item`
+`:16073`, dispatch `:2358-2390`).
+
+**Cross-note verdict proposal (this lane's position, pending a6's
+138):** the two machines are behaviourally equivalent at the grant
+(a6: press-edge start + mid-swing `ItemTimeIsZero` grant; g90: the
+press-tick fold — the same i37 convention the food/drink arms use; the
+once-ever gates, the flags raised, the consumable pay and the
+`ApplyItemTime` cadence all match the C# arms). At the merge ONE
+machine must survive per item (the keep-one rule). This branch's
+proposal: **a6's `powerups.rs` keeps the use arms it exclusively owns**
+(29/109/1291/3335/5289/5043/4829/4830/4910/5451/5738 — g90 ports NONE
+of those); **the overlapping nine** (5326/4382/5336/5343 + the five
+shimmer) keep whichever machine the merger takes FIRST, with the other
+side's dispatch deleted — g90's copies are self-contained in
+`editing.rs` (four fns + one dispatch block + the witnesses), a6's are
+self-contained in `powerups.rs`; neither leaks into the other's files
+except the `editing.rs` dispatch (+30 a6 / the g90 block) and the
+shared `World`/`Player` flag fields (identical names on both branches:
+`combat_book_volume_two_was_used`, `peddlers_satchel_was_used`,
+`used_aegis_crystal`, `used_arcane_crystal`, `used_galaxy_pearl`,
+`used_gummy_worm`, `used_ambrosia`, `ate_artisan_bread` — the field
+dedup is mechanical). **What g90 keeps regardless of the use-arm
+verdict:** the `.wld`/`.trwld` book-two+satchel bytes (§4 — a6 writes
+the same two `.wld` bytes at the same offsets 2036/2037 behind the
+same gates 259/260, byte-identical semantics; a6 has NO `.trwld`
+tail), the `.plr` halves (`player_file.rs` — a6 has no `.plr` delta),
+the `.trplayer` v7 block (§1 — a6 has no sidecar delta), the net
+flags3/WorldInfo bits (a6 folds all SendData out as MP-only; g90's
+netglue wiring is the live one), the consumers (§5 — a6's shop +1 is
+the same `shop.rs` consumer), and the town feeder (§5, `8521139d`).
+**g90 does NOT port Torch God 5043** — a6 owns it (`6e37aaac`); the
+`unlocked_biome_torches` consumers on this branch (craft gates
+`craft.rs:658`, biome-torch placement `editing.rs:7555`, hold light
+`player_lights.rs:377`) are pre-existing and stay.
+
+### 7b. g88 — 135 NOT YET consumed (no receipt); the contract is compatible
+
+g88's tip `6998a4ecb` (fold 5 docs) predates 135's publication; its
+103/122/INDEX carry NO 135 reference and no g90 receipt beyond the
+fold-4-era rows (103's carrier table lists g90 at the OLD tip
+`1f1b88f0`, the bread-only v7). **The v10 status: NOT landed.** 103's
+token map still marks tokens 4/5/6 (galaxy-pearl/arcane-crystal/
+aegis-crystal) `RESERVED — v10 (g90b/a6 pending)`; the writer stays
+**v9** (the 3-token unlock line fruit/gummy/ambrosia), the reader is
+the fold-3 positional one with the v7 token-count walk intact. 122 §6's
+receipt records the deliberate v9-not-v10 choice: "the writer stays 9
+until the crystal tokens land then bumps v10 per 122 §3".
+
+**Compatibility check (135 vs the v9 contract):** 135 §3's mapping
+table already AGREES with 103 §2a's reserved order (pearl=4, arcane=5,
+crystal=6 — the vanilla `.plr` order `:54784/:54783/:54781` after the
+fruit-first deviation 122 §3.1 records); 135 §2's six-line v7
+recognition rule is the piece 103's matrix still lacks (its
+back-compat matrix knows only the bread-only lone-flag v7, resolved
+aegis-first per 122's recommendation — 135 §2's rule subsumes that
+case: a LONE 1-token line stays ambiguous-by-design, the SIX-line
+block is unambiguous). No conflict: when g88 folds 135 it activates
+tokens 4/5/6 from this branch's `SavedPlayer` fields (§1's table),
+bumps v10, and extends the v7 legacy arm with the six-line rule. The
+world-flag boundary 122 §6 honours (5336/5343 never ride line 8)
+matches §4's `.trwld` tail exactly. **This branch keeps its v7/v18
+shape** (the 135 header's standing decision — no rebase to v9/v10; the
+merger folds per 135).

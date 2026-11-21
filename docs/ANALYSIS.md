@@ -6694,6 +6694,73 @@ Deliberate folds (code-only remainders for the wiring round):
   tests account for the social ladder's seven gates drawing after the
   state arms.
 
+**W4-g90 feeder update (2026-11-21, `8521139d`)**: the STAT-LADDER half
+of the wiring is LIVE on the g90 branch, ahead of the b3 AI migration.
+`npc_ai_town.rs` gains `TownEnvFlags` — the OWNED scalar half of
+`TownEnv` (every field that is not a borrow / not per-NPC), built by
+`from_world(world, expert_mode)` with the b3 phase-1 env's exact folds
+(the live `World` flags incl. BOTH `combat_book_was_used` and
+`combat_book_volume_two_was_used` — the b3 feeder
+(`96a5d88f0`, `ai_007_town_family`) still folds book two false; the
+unported statics false, the host net path, Classic ×1.0).
+`world_sim/npcs.rs::update_npcs` runs `town_stat_bonuses` per living
+aiStyle-7 town-like NPC once per tick BEFORE the slot loop (the
+ForceBubble pre-pass ORDER convention — the block reads only the NPC's
+own state + world flags, never a sibling, so the position move is
+state-identical; the ladder is RNG-free by construction). The base
+defense is read with `defense_override` cleared (the reset-then-read
+convention — the ladder rewrites the override every tick, a stale
+value must not compound); the Andrew `defDefense=200` base mirror
+rides the feeder's defaults copy like the arm's. The returned
+`(num2, num3)` attack scales are dropped (no consumer until b3 drains
+`TownOutputs`); the lifeMax/defense writes are the live observable
+half — both books' +250 HP / +8 def and the boss ladder now apply in
+play. The AI dispatch (`update_guide` on this branch, b3's
+`ai_007_town_family` on its own) is UNTOUCHED — at the merge b3's arm's
+ladder call dedupes onto the feeder (same inputs → same writes, zero
+draws, idempotent). Witnesses (WRITTEN NOT RUN): the env-flags
+both-books + boss-ladder pin, the feeder-pass idempotence + tipsy
+seam, and two live `update_npcs` ticks (750/750 HP + def 31 with both
+books; the wild slime untouched; def 17 with EoC down, no books).
+
+**W4-g90 fishing census (`fdffccc4`)**: `DidNotUseCombatBook` is a
+fishing DROP condition, not a fishing-power penalty —
+`GameContentFishDropPopulator.cs:196`
+`Add(Legendary, 2, 4382, BloodMoon, DidNotUseCombatBook)` (the 2-arg
+`Add` = numerator 1 / denominator 2, `AFishDropRulePopulator.cs:201-
+204`; the condition `!NPC.combatBookWasUsed`, `:171`). The
+`Projectile.cs:21056` inline arm (`!combatBookWasUsed && bloodMoon &&
+legendary && Next(3)==0`) lives in `FishingCheck_RollItemDropOld`,
+which is NEVER CALLED — `SetFishingCheckResults:20742` routes to the
+DB-backed `FishingCheck_RollItemDrop` only; the port's 1/2 rule
+(`fishing.rs:1691`) is the LIVE semantics, fully armed
+(`world_sim/projectiles.rs:327` → `BobberInputs` → `FishingContext`
+`projectile_bobber.rs:357` → `FishCondition::DidNotUseCombatBook`
+`fishing.rs:1450`). The condition runs BEFORE the chance draw
+(`FishDropRule.cs:31-51`), so a used book skips the row's `Next(2)`
+entirely — the stream stays aligned (witness
+`w4_g90_the_combat_book_drop_dies_once_the_book_is_used`). Full C#
+`combatBookWasUsed` census: the NPC ladder `:53018` (now fed), the
+TRAINING_DAY hook `Player.cs:25695` (wired), the use arm `:45324-45329`
+(wired), `NetMessage.cs:334` / `MessageBuffer.cs:582`+`:2823` (wired
+netglue), `WorldFile.cs:1380`/`:2315` (wired flags.rs), the
+`WorldGen.cs:7071` / `NPC.cs:95217` world-reset clears (the port's
+fresh `World::new` default false). No missing consumer.
+
+**W4-g90 reconcile cross-note (research/135 §7)**: a6
+(`8ed96ee5d`) has NO research/138 and NO keep-one verdicts — its
+`powerups.rs` machine ports the same nine use arms this branch carries
+in `editing.rs` (5326/4382/5336/5343 + the five shimmer) plus the ones
+g90 does not port (29/109/1291/3335/5289/5043/pet licenses/drones);
+the flag fields are name-identical on both branches, the keep-one
+dedup at the merge is one machine per item (135 §7a's proposal: a6
+keeps its exclusives, the overlap keeps whichever lands first). g88
+(`6998a4ecb`, fold 5 docs) has NOT consumed 135 (its tip predates the
+publication by 23 minutes); its writer stays v9 with tokens 4/5/6
+RESERVED→v10 — 135 §3's mapping already agrees with 103 §2a's reserved
+order, no conflict; this branch keeps its v7/v18 shape (the merger
+folds per 135).
+
 ## Buff slots (M2-BUFF-1)
 
 `crates/tr-app/src/buffs.rs` ports the `Player.buffType[44]`/`buffTime[44]`
