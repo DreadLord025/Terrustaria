@@ -17356,6 +17356,20 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d20 — aiStyle 199, the meteor ore
+                        // (`AI_199_MeteorOre` `:40019-40041`): the first-tick
+                        // frame roll, the dust-31/6 trail draws and the two
+                        // rotation terms. The row keeps tileCollide true; the
+                        // blocked-move default (`:19849-19853`) kills on
+                        // contact — `kill_step`'s shape.
+                        199 => {
+                            crate::projectile_ai_misc::ai_meteor_ore(
+                                &mut self.slots[i],
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
                         // S1-P-i56 — `AI()`'s `else if (this.aiStyle == 120)`
                         // (`Projectile.cs:34888-34891`) ->
                         // `AI_120_StardustGuardian` (`:44634-44963`): the

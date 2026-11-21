@@ -761,6 +761,46 @@ pub(crate) fn ai_bird_droppings(
     }
 }
 
+/// `AI_199_MeteorOre` (`Projectile.cs:40019-40041`) — the meteor ore (1078),
+/// a hostile+friendly+trap falling chunk. The first-tick frame roll, the
+/// dust-31 trail, the `!wet` dust-6 sparkle and the two rotation terms.
+///
+/// RNG: first tick one `Next(3)` frame roll (`:40024`). Every tick the
+/// dust-31 `scale` `Next(5)` (`:40027`) then `fadeIn` `Next(5)` (`:40028`);
+/// when `!wet` the dust-6 branch's `scale` `Next(5)` (`:40033`) then the
+/// position X/Y `Next(-40,41)` jitters (`:40034-40035`). The `NewDust` /
+/// `NewDustDirect` bodies and their internal rolls are the dust skip.
+/// `Lighting.AddLight` (`:40038`) feeds the light layer only — skipped.
+///
+/// `base.direction` is the velocity-sign stand-in (`AutomaticallyChangesDirection`
+/// true for aiStyle 199, `:17283`; the `ai_spray` precedent). The row keeps
+/// stock `tileCollide = true`; the blocked-move default (`:19849-19853`)
+/// kills on contact — `kill_step`'s shape. No gravity in the arm: the spawn
+/// velocity (`WorldGen.cs:71777`) carries the flight.
+pub(crate) fn ai_meteor_ore(p: &mut Projectile, rng: &mut dyn DropRng) {
+    // `:40021-40025` — the first-tick latch and the 3-frame roll.
+    if p.local_ai[0] == 0.0 {
+        p.local_ai[0] = 1.0;
+        p.frame = rng.next_range(0, 3);
+    }
+    // `:40026-40029` — the dust-31 trail: the scale and fadeIn draws stay,
+    // the body (noGravity) is the skip.
+    let _ = rng.next_range(0, 5); // scale = 0.1 + Next(5) * 0.1
+    let _ = rng.next_range(0, 5); // fadeIn = 1.5 + Next(5) * 0.1
+    // `:40030-40037` — the `!wet` dust-6 sparkle: the scale draw and the
+    // two position jitters stay; the body (noGravity) is the skip.
+    if !p.wet {
+        let _ = rng.next_range(0, 5); // scale = 1 + Next(5) * 0.1
+        let _ = rng.next_range(-40, 41); // position.X += Next(-40,41) * 0.1
+        let _ = rng.next_range(-40, 41); // position.Y += Next(-40,41) * 0.1
+    }
+    // `:40039-40040` — the two rotation terms. `direction` is the
+    // velocity-sign stand-in (module doc).
+    let direction = if p.vel.x < 0.0 { -1.0 } else { 1.0 };
+    p.rot += p.vel.x * 0.06;
+    p.rot += direction * 0.06;
+}
+
 // ---------------------------------------------------------------------------
 // Witnesses (S1-D-4 code-only round — WRITTEN NOT RUN).
 
@@ -1386,6 +1426,84 @@ mod tests {
         );
         let p = &pool.slots()[s];
         assert_eq!(p.vel.y, 0.3, "the gravity ticked");
+        assert_ne!(p.pos, Vec2::new(1600.0, 400.0), "the movement ran");
+    }
+
+    // ---- W4-d20 aiStyle 199 (MeteorOre) — WRITTEN NOT RUN ----
+
+    /// The row carries the census slice (`Projectile.cs:10067-10077`):
+    /// 14x14, aiStyle 199, penetrate -1, trap, netImportant, stock
+    /// tileCollide true; the 3-frame sheet (`Main.cs:8443`).
+    #[test]
+    fn w4_d20_the_meteor_ore_row_carries_style_199() {
+        let d = proj_data(1078).unwrap();
+        assert_eq!(d.ai_style, 199);
+        assert_eq!((d.w, d.h), (14.0, 14.0), "`:10069-10070`");
+        assert_eq!(d.penetrate, -1, "`:10074`");
+        assert!(d.trap, "`:10075`");
+        assert!(d.net_important, "`:10076`");
+        assert!(d.tile_collide, "the stock true (`:787`)");
+    }
+
+    /// The first-tick frame roll + the per-tick dust census (`:40021-40035`):
+    /// dry = Next(3) + 2x Next(5) (dust 31) + Next(5) + 2x Next(-40,41)
+    /// (dust 6). The wet slot skips the dust-6 branch.
+    #[test]
+    fn w4_d20_the_meteor_ore_census_dry_and_wet() {
+        let mut p = proj(1078);
+        p.vel = Vec2::new(3.0, 1.0);
+        let mut rng = census();
+        ai_meteor_ore(&mut p, &mut rng);
+        assert_eq!(p.local_ai[0], 1.0, "the first-tick latch");
+        assert_eq!(
+            rng.ranges,
+            vec![(0, 3), (0, 5), (0, 5), (0, 5), (-40, 41), (-40, 41)],
+            "the dry census in C# order"
+        );
+        // The rotation: vel.x * 0.06 + direction * 0.06 (direction = +1).
+        assert!((p.rot - (3.0 * 0.06 + 0.06)).abs() < 1e-6, "`:40039-40040`");
+        // A second tick: no frame roll, the same dust census.
+        let mut rng2 = census();
+        ai_meteor_ore(&mut p, &mut rng2);
+        assert_eq!(
+            rng2.ranges,
+            vec![(0, 5), (0, 5), (0, 5), (-40, 41), (-40, 41)],
+            "no repeat frame roll"
+        );
+        // Wet: the dust-6 branch is skipped.
+        let mut wet = proj(1078);
+        wet.wet = true;
+        let mut rng3 = census();
+        ai_meteor_ore(&mut wet, &mut rng3);
+        assert_eq!(
+            rng3.ranges,
+            vec![(0, 3), (0, 5), (0, 5)],
+            "the wet census drops the dust-6 draws (`:40030`)"
+        );
+    }
+
+    /// The dispatch wires style 199: one pool update rolls the frame and
+    /// integrates the position.
+    #[test]
+    fn w4_d20_the_dispatch_arms_style_199() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let s = pool.spawn_with_data(1078, 1600.0, 400.0, 3.0, 1.0, 20, 5.0).unwrap();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            false,
+        );
+        let p = &pool.slots()[s];
+        assert_eq!(p.local_ai[0], 1.0, "the first-tick latch");
         assert_ne!(p.pos, Vec2::new(1600.0, 400.0), "the movement ran");
     }
 }

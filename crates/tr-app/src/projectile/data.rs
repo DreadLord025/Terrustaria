@@ -3609,6 +3609,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // player-contact Kill() is the only interaction (the debris
             // precedent); the spawner passes damage 0 (NPC.cs:25322).
             BIRD_DROPPINGS => (10.0, 10.0, 200, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d20 — `Projectile.cs:10067-10077` (1078, the meteor ore):
+            // 14x14, aiStyle 199, hostile+friendly+trap, penetrate -1,
+            // netImportant, stock tileCollide true. The friendly damage rides
+            // the generic PVE pass; the hostile player-contact is the port's
+            // !friendly proxy deviation (the ore is friendly, so it hits NPCs).
+            METEOR_ORE => (14.0, 14.0, 199, -1, TIME_LEFT_DEFAULT, 0, true, false, true, RESET_STATE),
             932 => (10.0, 10.0, 181, 5, 120, 0, true, true, false, RESET_STATE),
             // `Projectile.cs:939-948` — the Hook (13): 18x18.
             HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
@@ -4140,7 +4146,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             )
             // S1-P-i55 — `Projectile.cs:7628`: the golf balls (721 + the 14
             // dyed twins) set `netImportant = true` themselves.
-            || matches!(kind, GOLF_BALL | 739..=752),
+            || matches!(kind, GOLF_BALL | 739..=752)
+            // W4-d20 — `Projectile.cs:10076`: the meteor ore (1078) sets
+            // `netImportant = true`.
+            || kind == METEOR_ORE,
         ignore_water: ((minion || sentry)
             && !matches!(
                 kind,
@@ -4470,6 +4479,9 @@ pub const DEAD_CELLS_BARNACLE_SHOT: u16 = 1026; // AI_197 follow-up
 /// `ProjectileID.BirdDroppings` (1080) — the bird dropping, aiStyle 200
 /// (`Projectile.cs:10078-10086`). W4-d20.
 pub const BIRD_DROPPINGS: u16 = 1080;
+/// `ProjectileID.MeteorOre` (1078) — the meteor ore chunk, aiStyle 199
+/// (`Projectile.cs:10067-10077`). W4-d20.
+pub const METEOR_ORE: u16 = 1078;
 
 pub const MINION_SACRIFICABLE: &[u16] = &[
     191, 192, 193, 194, 266, 317, 373, 375, 387, 388, 390, 393, 407, 423, 533, 613, 755, 758, 759,
@@ -4611,6 +4623,9 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // The Crimson Heart's 4-frame sheet (`Main.cs:8484`) — the pet's
         // 6/12-tick pulse wraps at it (`Projectile.cs:49473`). The 1018/1056
         // keep the init default 1 (no override in `Main.cs:8444-8727`).
+        // W4-d20 — the meteor ore's 3-frame sheet (`Main.cs:8443`) — the
+        // first-tick `Next(3)` frame roll picks it (`Projectile.cs:40024`).
+        METEOR_ORE => 3,
         CRIMSON_HEART => 4,
 
         // The Explosive Trap family (`Main.cs:8467-8472`): the traps and the
