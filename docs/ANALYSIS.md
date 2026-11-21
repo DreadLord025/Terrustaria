@@ -22380,7 +22380,8 @@ id). The folded kinds keep their OWN draw sheets via `texture_net_id` hand rows
 
 **Deliberate deviations / deferrals** (the wyvern precedent):
 1. **Draw sheets deferred (MEASURED — research/238, renamed from 143 per
-   research/150's late-push rule).** All 43 `NPC_<id>.xnb`
+   research/150's late-push rule; the 238 key CONFIRMED d42's by registry
+   rounds 2/3 — c8→262, g61→273).** All 43 `NPC_<id>.xnb`
    decode (`tools/_d42_sheets.js`, the atlas_sim stub-reuse technique;
    inventory `tools/_d42_sheet_inventory.json`): **0.807 Mpx padded**. The
    full runtime set (HEAD + gore + font + the 43) measures skyline
@@ -22478,6 +22479,28 @@ interim OWN entry retires at merge). The 592/607/615 re-adjudication
 (keep d34@277 / accept c4@406) are in research/239 §3. The BloodSquid-619
 hover bob/boost/rise gap is CLOSED (deviation 3 above). The 32-kind
 vanilla-free band declaration is research/239 §4.
+
+**SEAL phase (research/239 §6 + research/238 §9)**: the number keys are
+CONFIRMED d42's by registry-150 rounds 2/3 (d54 `72226e500`/`0426245f2`
+§6.2: "d42 … 238 KEEPS; new doc 239 KEEPS … CONFIRMED - no further
+action"; c8→262, g61→273, g56→274, f21→276, g48's 237→272). The d37e
+roster seal (`fbb948172`, research/108 S1) receipts d42 PARTIAL-EXECUTED
+36/36 moves with the 8-kind ownership flip ACCEPTED; its "7 dragonfly
+drops owed" line predates bac408be0 — those drops (and the 4 waterfowl)
+are the §1a EXECUTE-prep hunks under the E8 dropped-lane rule. The
+108-E8/S1 keep-d42-waterfowl order is SUPERSEDED by §1's keep-c10 verdict
+(the fully-wired superset rule, R3's dragonfly precedent) — flagged for
+d37f/the merger. The styles-idle-in-place lane-close publishes the
+per-module ACTIVATION CONTRACT for the d33-wiring-wave (research/239 §6:
+style 114 IS wired on d33's tip; 111/112/113/116/117/118/119 unwired with
+their env seams itemized; 115=e26-wired, 24=d127-wired, 68=c10-wired;
+107/25-for-629/6/7/0 module-less). The c10 Seagull2/Grebe2 credit-fold
+flag is CORRECTED (§1b: the C# has NO 603→602/609→608 credit remap — the
+HighestOf UI provider is the fold; c10's own-row shape is faithful, the
+grid-slot/provider half is the merger obligation). The 43-sheets
+562-union confirm: 14 union-named under owner tags, 29 d42-only names
+union-absent (the NO-pack extraction gap) — all 43 ride research/113 §10's
+lazy-load wave by contract (research/238 §9).
 
 ## The Destroyer machine (aiStyle-37, S1-D-3, 2026-11-18 — code-only mode)
 

@@ -1,9 +1,25 @@
 # 238 - The NPCID 578-630 roster sheets: real-dims inventory + pack verdict (W4-d42)
 
-Status: DONE (measurement + inventory; code-only mode — the packers run under
-node, no cargo/tests). Branch `task/W4-d42-npc-kinds-561-630`, base commit
-`49346dba6` (the research/108 vanilla-id reconcile). Input to d35's
+Status: DONE + SEAL-CONFIRMED (measurement + inventory; code-only mode — the
+packers run under node, no cargo/tests). Branch `task/W4-d42-npc-kinds-561-630`,
+base commit `49346dba6` (the research/108 vanilla-id reconcile). Input to d35's
 `research/113` atlas-final union-forecast (§§10-12 lazy-load contract).
+
+**Number-238 SEAL receipt (registry-150 round 2, d54 `72226e500` §6.2):**
+the TRIPLE 238 collision (c8-crawler / g61-spawn / d42-sheets) resolved in
+d42's favour — d42's 143→238 rename (`9eadc3043`, first-add 12:15:55) is the
+FIRST 238 at any tip and **WINS the key**; c8's 238-crawler-final-census
+(`2a0b5c701` 12:24:19) renumbers →262 and g61's 238-g61-spawn-family-final
+(`6e922fc60` 12:55:22) →273 — BOTH EXECUTED at their origin tips
+(`262-c8-crawler-final-census.md` / `273-g61-spawn-family-final.md`,
+re-fetched this round). Registry §6.2 row verbatim: "d42-npc-kinds-561-630 |
+143 → **238 KEEPS**; new doc **239 KEEPS** … **CONFIRMED - no further
+action.**" The adjudication key is FIRST-ADD %cI (registry §1/§6), NOT
+push time — a concurrent seal-verify draft in this worktree proposed
+238→247 on push-time ordering (c8 pushed 12:40:57 before d42's bac408be0
+push); that draft was discarded unstaged: it contradicts the published
+registry AND 247/248 are §6.1-assigned to d10's 26d doc / g82's 26e-f doc.
+No renumber owed by d42; 238 stands.
 
 ## 1. Scope — the 43 roster kinds after the 108 reconcile
 
@@ -219,3 +235,44 @@ node tools/_d42_sheets.js --json tools/_d42_sheet_inventory.json
 Deterministic: the skyline layout is byte-equal across two runs in every
 scenario (the tool asserts it); `verify()` passes on every skyline and
 maxrects layout. Node-only; no cargo/tests invoked (code-only mode).
+
+## 9. SEAL: the 43-in-562-union confirm (d35 `1afd327b9` research/113 §14-16)
+
+Re-read of d35's RETIRE tip (`1afd327b9`, the 562-name union: 504 pushed +
+56 d40-forecast + 12 d35-deferred + 3 d125-tip + 5 d125-deferred, deduped)
+against this doc's 43-name inventory (`tools/_d42_sheet_inventory.json`,
+mechanical `\bNPC_<id>\b` scan of the 113 text):
+
+- **14 of 43 are ALREADY union-named — but NONE under d42's owner tag.**
+  595-601 ride d33's lunar-band rows (§14.2 "d33's lunar band (NPC_595-601,
+  7)", Appendix B-2 #52-58); 602/603/608/609 ride c10's rows (§4
+  `W4-c10-style68-waterfowl | 8 | NPC_362-365/602/603/608/609`); 580/630
+  ride f42's desert nine (§14.2 f42 `75f055fcf`); 619 rides **d11**'s row
+  (§14.2 "d11 (NPC_619)" — the proj-ai lane packed the sheet). The §5
+  owner-append contract stands for these: the merge adds `W4-d42` to the
+  owners arrays (keep-one name, no new row).
+- **29 of 43 are union-ABSENT — d42-only demand, the extraction gap.**
+  578 579 582 583 584 585 586 590 591 593 594 610 611 612 613 614 616 617
+  618 620 621 622 623 624 625 626 627 628 629. Padded area **610,766 px
+  (0.611 Mpx, ~74.6 px of bin width)**. Cause: d42 rows the kinds but packs
+  NO sheet rows (the §4 NO-pack verdict — the 8382 overflow means the 43
+  never enter `STATIC_SHEET_NAMES`), and `_d35_pushed_extract.py` reads
+  packed-name diffs, not kind rosters. d42's own `STATIC_SHEET_NAMES`
+  (783 rows / 248 NPC rows at `bac408be0`) contains none of the 43 —
+  mechanical check, zero hits.
+- **The confirm verdict: the 43 ride §10's lazy-load wave BY CONTRACT, not
+  by union presence.** Under §10.6/§13.3 step 7 every `NPC_<id>` row leaves
+  the eager pack and joins the per-world NPC page built from the landed
+  spawn/bestiary census — so the union-absent 29 join the per-world page
+  when d42's kinds land (the §14.4 "new claimant kinds are NOT in the
+  landed spawn-roster census… post-merge their spawn arms land, so their
+  sheets join the per-world NPC page" mechanism, verbatim). No eager-union
+  row is owed; the 29-name list above + the §5 dims table are the d35
+  merger's append input (the roster-solo page stays 1768 px, scenario G).
+  The bestiary grid needs the 29 (+ the 14's slots where the owners' rows
+  don't already cover them) in `BESTIARY_NPC_SHEET_IDS` at merge — d42's
+  own table is `[u16; 181]` (`assets.rs:1863`), the 43-kind slot append is
+  merger-mechanical (the d33 182→183 precedent).
+- Cross-check vs the round's other receipts: the 8 dropped kinds' sheets
+  (581/587/592/604/605/606/607/615) are ALL union-present under their
+  owners (c4/e26/c8 rows, §14.2/Appendix B) — the drops lose no sheet.
