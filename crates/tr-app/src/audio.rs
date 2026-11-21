@@ -3432,6 +3432,66 @@ mod tests {
         assert_eq!(m.new_music, 51, "the title track on the front end");
     }
 
+    /// The closeout music-priority census (research/93 addendum §4):
+    /// every below-ladder world input armed AT ONCE behind the minigame
+    /// flag — track 101 still holds (the arm returns before the boss
+    /// ladder and every biome branch, `Main.cs:12542-12545`). The ONE
+    /// override above it is the C#-faithful music-box chain
+    /// (`Main.cs:11076-11350` runs AFTER DecideOnNewMusic); the volume
+    /// mute is the user's slider, not a track. WRITTEN NOT RUN.
+    #[test]
+    fn w4_f33_the_minigame_track_holds_against_every_world_branch() {
+        let mut m = system();
+        let mut e = env(false);
+        e.in_torch_god_minigame = true;
+        // Every input the ladder reads below the minigame arm, armed.
+        e.boss_music = Some(93);
+        e.eclipse = true;
+        e.shimmer = true;
+        e.town_npcs = 5;
+        e.sandstorm = true;
+        e.underworld = true;
+        e.underground = true;
+        e.space_band = true;
+        e.temple_wall = true;
+        e.dungeon = true;
+        e.mushroom_bg = true;
+        e.corrupt = true;
+        e.crimson = true;
+        e.blood_leads_evil = true;
+        e.meteor = true;
+        e.graveyard = true;
+        e.desert = true;
+        e.jungle = true;
+        e.snow = true;
+        e.hallow = true;
+        e.storm = true;
+        e.ocean = true;
+        e.blood_moon = true;
+        e.rain = true;
+        e.windy_music = true;
+        e.quiet_sky = false;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 101, "no world branch overrides the event");
+        // The music box DOES override (the C# box chain sits behind
+        // DecideOnNewMusic — the faithful exception, not a deviation).
+        e.music_box = 42;
+        m.decide_new_music(e);
+        m.apply_music_box_override(&e);
+        assert_eq!(m.new_music, 42, "the box beats the minigame (C# order)");
+        // The silence box cuts it to 0.
+        e.music_box = -1;
+        e.music_box_silence = true;
+        m.decide_new_music(e);
+        m.apply_music_box_override(&e);
+        assert_eq!(m.new_music, 0);
+        // The flag cleared, the same armed env falls to the boss ladder.
+        e.music_box_silence = false;
+        e.in_torch_god_minigame = false;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 93, "the event over, the ladder resumes");
+    }
+
     #[test]
     fn the_surface_tail_blood_rain_and_wind() {
         // Night: blood moon 2 over rain 19 over night 3 (`:12968-12979`).
