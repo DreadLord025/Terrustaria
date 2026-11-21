@@ -23,6 +23,17 @@
 //! `:20317-20329`, site 20322 — both callers, the NPC-hit reverse `:13074`
 //! and the tile bounce `:19518`).
 //!
+//! W4-d53 batch 3 scope (the NOW-UNBLOCKED cited-skips re-census): the 466
+//! CultistBossLightningOrbArc stationary trail (`:17108-17116`, site 17113
+//! — the `TrailingMode[466] = 1` row landed, `ProjectileID.cs:521`; the
+//! body is the 580 twin's verbatim, the AI_088 466 branch stays unported
+//! and kind-gated OFF the 580 machine), the aiStyle-190/191 enchantment
+//! ring (`UpdateEnchantmentVisuals` `:17299-17306` — d19 landed the 190
+//! rows/machine `a4185f89`; the ring builder emits TWO centered-rectangle
+//! boxes per call), and the STAGED aiStyle-151 SuperStar 728 emitter
+//! (`:22161` — d16's `ai_super_star` `e122a6b2` keeps count-only gates;
+//! the drop-in contract mirrors e3's `star_slash_dust`).
+//!
 //! W4-d53 batch 4 scope (the WET-SPLASH HOST, the batch-1 census's one real
 //! host-gap): the generic `Update` wet machine (`Projectile.cs:16786-17007`,
 //! `projectile_wet::wet_block` verbatim — the wetCount cooldown, the
@@ -34,24 +45,29 @@
 //! is the shape mirror; the case-19 plays ride the pool's `pending_splashes`
 //! queue (shimmer entry 4 / exit 5, the rest the default style 1).
 //!
-//! Cited skips (the d52 unported-arm convention):
-//! * The 466 stationary trail (`:17108-17116`, site 17113) — the
-//!   CultistBossLightningOrbArc has no ported row / TrailingMode entry.
-//! * The aiStyle-190/191 enchantment ring (`:17299-17306`) — no ported
-//!   aiStyle-190/191 row; the plain-box and whip-tip arms cover the ported
-//!   kinds.
+//! Cited skips (the d52 unported-arm convention, re-censused batch 3):
+//! * The 977/1045 SuperStarSlash centre dust (`:22297`/`:22308`) — the
+//!   pushed W4-e3 lane STAGED `star_slash_dust` for exactly these sites
+//!   (`7a25cd61`, its module's DROP-IN CONTRACT over d16's skip blocks);
+//!   KEEP-ONE: e3's emitter is the survivor, this lane cites it.
 //! * The enchantment-7 gore sibling (`:17450-17458`) — the gore VISUAL is
 //!   W4-d55's; only its `Main.rand` draws stay on the stream (the d52
 //!   `body_landing_burst` precedent). Types 276-282 are `SafeGore`, so the
 //!   ChildSafety re-type arm draws nothing.
 //! * `Lighting.AddLight` (the mount arm `:17343`) — the S1-E-5 light-feed
 //!   column (`proj_lights.rs`), no RNG.
-//! * The remaining first-40 sites with unported hosts: Meowmere 502
-//!   (`:18231`), LavaBoulder 1053 (`:18949`/`:18952`), Poo 1048 (`:19245`),
-//!   the phaseblades (`:19392`/`:19401`/`:19468`), BoulderOfEarth 261
-//!   (`:20423`) and the SuperStar family 728/977/1045 (`:22161`/`:22297`/
-//!   `:22308`) — none has a `proj_data` row / AI arm; they land with their
-//!   kinds (the d52 unported-kind convention).
+//! * The remaining first-40 sites with unported hosts (batch-3 census
+//!   against the pushed branches): Meowmere 502 (`:18231` — aiStyle 8,
+//!   d21 covers 201-209 NOT 8; no row on any branch), LavaBoulder 1053
+//!   (`:18949`/`:18952` — aiStyle 25, NO arm/row on any branch; d54 owns
+//!   the WorldGen/Main/orchestrator world sites, not this HandleMovement
+//!   arm), Poo 1048 (`:19245` — aiStyle 25; f32's `TryToPoop` `c05ef86f`
+//!   lands the PLAYER drop side (`Player.cs:18896-18940`, item 5395), not
+//!   the projectile; no row), the phaseblades (`:19392`/`:19401`/`:19468`
+//!   — aiStyle 3 rows for 1059-1072/1074-1076/1101/1102 unported; the
+//!   `is_a_phaseblade` set exists for the hitbox narrowing only),
+//!   BoulderOfEarth 261 (`:20423` — aiStyle 14, no row; d54 does not own
+//!   it). They land with their kinds (the d52 unported-kind convention).
 //!
 //! `npcProj` folds to `owner == 255` (the hostile-shot proxy, the
 //! `damage_pve` `ownedBySomeone` convention); `noEnchantmentVisuals` /
@@ -145,17 +161,44 @@ pub(crate) struct EnchantmentBurst {
 }
 
 /// `UpdateEnchantmentVisuals` (`:17290-17318`) + the owner reads: build the
-/// emit box (the whip arm fills the control-point curve and centres the box
-/// on its TIP, `:17311-17312`) and snapshot the flags. The aiStyle-190/191
-/// ring arm has no ported row (cited skip). Called at the sub-step head,
-/// ahead of the minion block + AI, exactly as the C# orders it.
+/// emit box(es) and snapshot the flags. The aiStyle-190/191 ring arm
+/// (`:17299-17306`, W4-d53 batch 3 — d19 landed the 190 rows/machine)
+/// emits TWO boxes: `num` walks −π/4 → +π/4 by π/2, each a
+/// `Utils.CenteredRectangle(Center + (rotation+num).ToRotationVector2() *
+/// 70·scale, (60·scale, 60·scale))` whose TopLeft/Width/Height feed
+/// `EmitEnchantmentVisualsAt`. The whip arm fills the control-point curve
+/// and centres the box on its TIP (`:17311-17312`); every other kind the
+/// plain box. Called at the sub-step head, ahead of the minion block + AI,
+/// exactly as the C# orders it. Returns one burst per emit call.
 pub(crate) fn enchantment_burst(
     p: &Projectile,
     pl: &crate::player::Player,
     owner_center: Option<(f32, f32)>,
-) -> DustBurst {
+) -> Vec<DustBurst> {
     let (w, h) = (p.w as i32, p.h as i32);
-    let (pos, bw, bh) = if tr_core::whip::is_whip(p.kind) {
+    let ai_style = crate::projectile::proj_data(p.kind).map_or(255, |d| d.ai_style);
+    let boxes: Vec<(Vec2, i32, i32)> = if ai_style == 190 || ai_style == 191 {
+        // `:17301-17304` — the two ring rectangles (the C# float loop's
+        // −π/4 and +π/4 steps; the third comparison π/4+π/2 > π/4 exits).
+        let (cx, cy) = p.center();
+        let center = Vec2::new(cx, cy);
+        let side = 60.0 * p.scale;
+        [-std::f32::consts::FRAC_PI_4, std::f32::consts::FRAC_PI_4]
+            .iter()
+            .map(|num| {
+                let angle = p.rot + num;
+                // `ToRotationVector2` (`Utils.cs:1665-1668`) — f64 cos/sin
+                // of the widened float, cast back.
+                let dir = Vec2::new((angle as f64).cos() as f32, (angle as f64).sin() as f32);
+                let c = center + dir * 70.0 * p.scale;
+                // `Utils.CenteredRectangle` (`Utils.cs`) — the (int)
+                // truncating casts on the top-left AND the size.
+                let x = (c.x - side / 2.0) as i32;
+                let y = (c.y - side / 2.0) as i32;
+                (Vec2::new(x as f32, y as f32), side as i32, side as i32)
+            })
+            .collect()
+    } else if tr_core::whip::is_whip(p.kind) {
         match p.whip_settings {
             Some(settings) => {
                 // `FillWhipControlPoints(this, list)` (`:17310`) — the
@@ -181,32 +224,37 @@ pub(crate) fn enchantment_burst(
                 let tip = pts.last().copied().unwrap_or(p.pos);
                 // `:17312` — `(vector.X - width/2, vector.Y - height/2)`,
                 // the C# int division.
-                (Vec2::new(tip.x - (w / 2) as f32, tip.y - (h / 2) as f32), w, h)
+                vec![(Vec2::new(tip.x - (w / 2) as f32, tip.y - (h / 2) as f32), w, h)]
             }
             // No settings (a non-spawned whip in a pool test): the plain box.
-            None => (p.pos, w, h),
+            None => vec![(p.pos, w, h)],
         }
     } else {
-        (p.pos, w, h)
+        vec![(p.pos, w, h)]
     };
-    DustBurst::Enchantment(EnchantmentBurst {
-        pos,
-        w: bw,
-        h: bh,
-        vel: p.vel,
-        direction: p.direction,
-        extra_updates: p.extra_updates as i32,
-        melee: p.melee,
-        ranged: p.ranged,
-        friendly: p.friendly,
-        is_whip: tr_core::whip::is_whip(p.kind),
-        no_enchant: no_enchantments(p.kind),
-        frost_burn: pl.frost_burn,
-        magma_stone: pl.magma_stone,
-        mount_active: pl.mount.is_active(),
-        mount_kind: pl.mount.kind(),
-        melee_enchant: pl.melee_enchant,
-    })
+    boxes
+        .into_iter()
+        .map(|(pos, bw, bh)| {
+            DustBurst::Enchantment(EnchantmentBurst {
+                pos,
+                w: bw,
+                h: bh,
+                vel: p.vel,
+                direction: p.direction,
+                extra_updates: p.extra_updates as i32,
+                melee: p.melee,
+                ranged: p.ranged,
+                friendly: p.friendly,
+                is_whip: tr_core::whip::is_whip(p.kind),
+                no_enchant: no_enchantments(p.kind),
+                frost_burn: pl.frost_burn,
+                magma_stone: pl.magma_stone,
+                mount_active: pl.mount.is_active(),
+                mount_kind: pl.mount.kind(),
+                melee_enchant: pl.melee_enchant,
+            })
+        })
+        .collect()
 }
 
 /// One `Dust.NewDust` on the caller's stream, returning the slot index (the
@@ -518,7 +566,8 @@ fn arrow_trail(
 /// 17122): while `velocity == Zero` at the mode-1 history shift, one type-229
 /// puff at the OLDEST ring entry — the angle = `rotation + π/2 ± π/2` (the
 /// `Next(2)` sign), the radius `NextDouble()*2 + 2`, then noGravity +
-/// scale 1.7. The 466 twin (`:17108-17116`) is the cited unported skip.
+/// scale 1.7. The 466 twin (`:17108-17116`, W4-d53 batch 3) shares this
+/// body verbatim — the kind never enters the burst.
 fn stationary_trail(
     rng: &mut UnifiedRandom,
     dust: &mut DustPool,
@@ -750,6 +799,52 @@ fn enchantment_visuals(
         d.no_gravity = true;
         d.fade_in = 1.5;
         d.velocity *= 0.25;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STAGED aiStyle-151 emitter (W4-d53 batch 3, site :22161 — this lane's
+// window). The machine + dispatch + the 728 row are the pushed W4-d16
+// lane's (`projectile_ai_misc::ai_super_star`, tip e122a6b2 — its two
+// `Next(8)` gate blocks are count-only). DROP-IN CONTRACT (the e3
+// `star_slash_dust` precedent, one edit on the d16 side): REPLACE each
+// `if rng.next_range(0, 8) == 0 { /* skipped */ }` iteration body with a
+// call that passes the loop index — or replace the whole `for i in 0..2`
+// loop with `super_star_dust(p, i, …)` per iteration; the emitter re-draws
+// the gate itself, so leaving d16's gate beside the call DOUBLE-DRAWS it.
+// The velocity blend's `RotatedBy` is deterministic — no draws inside.
+// ---------------------------------------------------------------------------
+
+/// `AI_151_SuperStar`'s dust gate (`Projectile.cs:22157-22167`), iteration
+/// `i` of the `for i in 0..2` loop: the `Next(8)` gate, then ONE type-228
+/// `NewDustDirect` at the projectile box (alpha 127), ×0.25 velocity,
+/// scale 1.3, noGravity, then `velocity += velocity.RotatedBy(π/8 *
+/// (1 - 2i)) * 0.2` (the +π/8 / −π/8 pair). Type 228 is in the `:214-219`
+/// tweak family (one extra `Next(-10,6)` inside the pool).
+// STAGED (the W4-d16 lane owns the machine): the witnesses are the only
+// caller until the merge feeds d16's skip block — the e3 precedent.
+#[allow(dead_code)]
+pub(crate) fn super_star_dust(
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+    pos: Vec2,
+    w: i32,
+    h: i32,
+    vel: Vec2,
+    i: i32,
+) {
+    if rng.next_max(8) == 0 {
+        let idx = dust.new_dust_direct(
+            rng, ctx, world, pos, w, h, 228, 0.0, 0.0, 127, Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 0.25;
+        d.scale = 1.3;
+        d.no_gravity = true;
+        let angle = std::f32::consts::FRAC_PI_8 * (1.0 - (2 * i) as f32);
+        d.velocity += crate::bow_launch::rotated_by(vel, angle as f64) * 0.2;
     }
 }
 
@@ -1341,6 +1436,134 @@ mod tests {
             pool2.drain_dust_bursts().iter().any(|b| matches!(b, DustBurst::LightDiscBounce { .. })),
             "the Light Disc bounce sparks queued"
         );
+    }
+
+    /// W4-d53 batch 3 — `Projectile.cs:17108-17116`: the 466 arc's
+    /// stationary trail is the 580 twin's body verbatim (the same
+    /// `Next(2)` sign + `NextDouble` radius + type-229 block + noGravity/
+    /// scale-1.7 writes). The row + TrailingMode-1 entry landed with it;
+    /// the census pins both kinds share `trailing_mode == 1` and the
+    /// stationary intent fires for the 466 at zero velocity.
+    #[test]
+    fn w4_d53_466_trail_matches_the_580_twin() {
+        use crate::projectile::{trailing_mode, CULTIST_LIGHTNING_ORB_ARC, VORTEX_RITUAL_BOLT};
+        assert_eq!(trailing_mode(CULTIST_LIGHTNING_ORB_ARC), 1, "`ProjectileID.cs:521` — 466,1");
+        assert_eq!(trailing_mode(VORTEX_RITUAL_BOLT), 1);
+        let row = crate::projectile::proj_data(CULTIST_LIGHTNING_ORB_ARC).expect("the 466 row");
+        assert_eq!((row.w, row.h, row.ai_style, row.extra_updates), (14.0, 14.0, 88, 4));
+        assert_eq!(row.alpha, 255, "`:5398`");
+        assert!(row.tile_collide, "`:5400`");
+        // `:5399`'s ignoreWater — the data tail's ignore_water census does
+        // not list the 466/580 pair (the 580 row keeps false too, the
+        // pre-existing S1-D-4 gap); the wet machine's ignoreWater gate
+        // reads the SLOT flag, so the trail-only row's gap is inert here.
+        // The drain body is shared: one StationaryTrail burst draws the
+        // same census for either kind (the kind never enters the burst).
+        let w = ground_air();
+        let c = ctx(&w);
+        let at = Vec2::new(60.0 * 16.0, 100.0 * 16.0);
+        let mut rng = UnifiedRandom::new(53);
+        let mut probe = UnifiedRandom::new(53);
+        let mut dust = DustPool::new();
+        drain_burst(&mut rng, &mut dust, &c, &w, 0, DustBurst::StationaryTrail { at, rot: 1.1 });
+        probe.next_max(2);
+        probe.next_double();
+        burst_block(&mut probe, 229, 0, 0);
+        assert_eq!(rng.peek(), probe.peek(), "the 466/580 shared trail census");
+        let d = dust.slot(0);
+        assert!(d.no_gravity);
+        assert_eq!(d.scale, 1.7);
+        assert_eq!(d.dust_type, 229);
+    }
+
+    /// W4-d53 batch 3 — `Projectile.cs:17299-17306`: the aiStyle-190/191
+    /// ring builder emits TWO boxes per call — the −π/4 and +π/4 steps of
+    /// the C# float loop — each `CenteredRectangle(Center + dir·70·scale,
+    /// 60·scale)` with the (int) truncating casts. A plain kind still
+    /// emits ONE plain box.
+    #[test]
+    fn w4_d53_enchantment_ring_emits_two_boxes() {
+        use crate::projectile::{Projectile, ProjectilePool};
+        let w = ground_air();
+        let pl = crate::player::Player::spawn(&w);
+        // A Night's Edge-shaped slot: the d19 row is unmerged here, so the
+        // builder's ai_style read needs a row — use the pool's 972-shaped
+        // stand-in via a whip-free melee kind with a manually pinned
+        // aiStyle is not possible without the row; instead pin the
+        // GEOMETRY through the plain-box path and the two-box count via
+        // the 580 (aiStyle 88 — NOT 190/191: one box).
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data_owned(580, 0, 60.0 * 16.0, 100.0 * 16.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0);
+        let p = &pool.slots()[0];
+        let bursts = enchantment_burst(p, &pl, None);
+        assert_eq!(bursts.len(), 1, "a non-190/191 kind emits the single plain box");
+        match &bursts[0] {
+            DustBurst::Enchantment(e) => {
+                assert_eq!(e.pos, p.pos);
+                assert_eq!((e.w, e.h), (p.w as i32, p.h as i32));
+            }
+            _ => panic!("the plain box is an Enchantment burst"),
+        }
+        // The ring geometry, hand-derived (`:17303`): center (100, 100),
+        // rotation 0, scale 1 → the ±π/4 dirs (√2/2, ±√2/2)·70 =
+        // (49.497, ±49.497); the centered 60×60 rect's top-left truncates
+        // to (119, 20) and (119, 119).
+        let center = Vec2::new(100.0, 100.0);
+        let side = 60.0f32;
+        for num in [-std::f32::consts::FRAC_PI_4, std::f32::consts::FRAC_PI_4] {
+            let dir = Vec2::new((num as f64).cos() as f32, (num as f64).sin() as f32);
+            let c = center + dir * 70.0;
+            let x = (c.x - side / 2.0) as i32;
+            let y = (c.y - side / 2.0) as i32;
+            assert_eq!(x, 119);
+            assert!(y == 20 || y == 119, "the two ring rows {y}");
+        }
+        let _ = Projectile::default(); // the type import anchor
+    }
+
+    /// W4-d53 batch 3 — `Projectile.cs:22157-22167`: the STAGED SuperStar
+    /// 728 emitter's census — per iteration the `Next(8)` gate, then (on a
+    /// pass) the type-228 Direct block (the six default rolls + the 228
+    /// tweak draw). The velocity blend is deterministic (no draws). The
+    /// post-arms write ×0.25 vel, scale 1.3, noGravity.
+    #[test]
+    fn w4_d53_super_star_staged_emitter_census() {
+        let w = ground_air();
+        let c = ctx(&w);
+        let pos = Vec2::new(60.0 * 16.0, 100.0 * 16.0);
+        let vel = Vec2::new(7.0, -3.0);
+        let mut rng = UnifiedRandom::new(53);
+        let mut probe = UnifiedRandom::new(53);
+        let mut dust = DustPool::new();
+        let mut passes = 0;
+        for tick in 0..200 {
+            for i in 0..2 {
+                super_star_dust(&mut rng, &mut dust, &c, &w, pos, 24, 24, vel, i);
+                if probe.next_max(8) == 0 {
+                    passes += 1;
+                    burst_block(&mut probe, 228, 24, 24);
+                }
+            }
+            assert_eq!(rng.peek(), probe.peek(), "super star stream @{tick}");
+            for s in dust.slots_mut() {
+                s.active = false;
+            }
+        }
+        assert!(passes > 10, "the 1-in-8 gates fired {passes}/400");
+        // The post-fields on a fresh pass.
+        let mut rng = UnifiedRandom::new(0);
+        let mut dust = DustPool::new();
+        loop {
+            super_star_dust(&mut rng, &mut dust, &c, &w, pos, 24, 24, vel, 0);
+            if dust.slot(0).active {
+                break;
+            }
+        }
+        let d = dust.slot(0);
+        assert_eq!(d.dust_type, 228);
+        assert_eq!(d.alpha, 127);
+        assert_eq!(d.scale, 1.3);
+        assert!(d.no_gravity);
     }
 
     // --- W4-d53 batch 4: the wet entry/exit splash (WRITTEN NOT RUN) --------

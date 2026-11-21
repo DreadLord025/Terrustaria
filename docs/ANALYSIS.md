@@ -39388,6 +39388,82 @@ differ (10 dust per arm, scale 1.3 flat, the exit-water box drops the `-8`
 — the SAME asymmetry as the item's `:1011` — `wetCount = 10` on EXIT only,
 the entry arm sets NO cooldown, `Projectile.cs:16843-16915` verbatim).
 
+### Batch 3 (the NOW-UNBLOCKED cited-skips re-census; the claimed wet block lands as batch 4)
+
+The Lead's re-census directive: the 19 batch-1/2 cited skips were checked
+against the PUSHED host branches (not main — d16/d19/d21 are unmerged).
+Verdicts:
+
+* **466 stationary trail (`:17113`) — ARMED.** The host is
+  `CultistBossLightningOrbArc`, aiStyle **88** (`Projectile.cs:5392-5403`) —
+  NOT d19's 182-190 slice (no FinalFractal/CrystalBullet involvement; the
+  census question resolved by reading SetDefaults). `TrailingMode[466] = 1`
+  (`ProjectileID.cs:521`). The trail body (`:17108-17116`) is byte-identical
+  to the 580 twin's (`:17117-17125`): the `Next(2)` sign + `NextDouble`
+  radius + type-229 puff at the oldest ring entry + noGravity/scale 1.7.
+  The row + `trailing_mode` entry landed (`CULTIST_LIGHTNING_ORB_ARC`,
+  alpha 255 per `:5398`); the shared `StationaryTrail` burst serves both
+  kinds. **The AI_088 466 branch (`:32046-32143`) stays UNPORTED** — the
+  aiStyle-88 dispatch is now kind-gated to the 580 so the new row cannot
+  ride the 580 machine (the row exists for the trail only; the 466's
+  per-`ai[1]`-seed wander machine is the AI lane's follow-up). The row's
+  `ignoreWater` (`:5399`) is NOT in the data tail's ignore_water census
+  (the 580 row has the same pre-existing S1-D-4 gap) — inert for the trail.
+* **aiStyle-190/191 enchantment ring (`:17299-17306`) — ARMED.** d19
+  (`a4185f89`, pushed) landed the 190 rows (972/982/983/984/997/1043/1126)
+  + `ai_nights_edge`; 191 (973/985) has no arm on any branch (the ring
+  builder covers both styles regardless — it reads `proj_data.ai_style`).
+  `enchantment_burst` now returns a LIST: the ring arm emits TWO
+  `Utils.CenteredRectangle(Center + (rotation±π/4).ToRotationVector2() *
+  70·scale, 60·scale)` boxes (the C# float loop's −π/4 → +π/4 steps, the
+  (int) truncating casts on top-left AND size), each feeding the full
+  `EmitEnchantmentVisualsAt` chain — so an imbued slash draws the ladder
+  TWICE per tick, exactly as the C# does. The dispatch `extend`s the list.
+* **SuperStar 728 (`:22161`) — STAGED.** d16 (`e122a6b2`, pushed) landed
+  `ai_super_star` with count-only `Next(8)` gates. This lane's window owns
+  the site: `super_star_dust` (the e3 `star_slash_dust` STAGED precedent)
+  replays the gate + the type-228 Direct (alpha 127) + ×0.25 vel / scale
+  1.3 / noGravity + the `RotatedBy(π/8·(1−2i))·0.2` blend. DROP-IN: replace
+  d16's two gate bodies at the merge (leaving the gate beside the call
+  DOUBLE-DRAWS it — the e3 contract note).
+* **977/1045 (`:22297`/`:22308`) — KEEP-ONE, e3's.** The pushed W4-e3 lane
+  (`7a25cd61`) STAGED `star_slash_dust` for exactly these sites with the
+  same drop-in contract over d16's `ai_super_star_slash`. This lane cites
+  e3's emitter as the survivor; no duplicate written.
+* **502 / 1053 / 1048 / phaseblades / 261 — STAY SKIPPED (census
+  clarified).** Meowmere 502 is aiStyle 8 (`:5736`) — d21 covers 201-209,
+  not 8; no row on any branch. LavaBoulder 1053 + Poo 1048 are aiStyle 25
+  (`:1837`/`:9932`) — NO aiStyle-25 arm/row on any branch; d54 owns the
+  WorldGen/Main/ParticleOrchestrator world sites, NOT these HandleMovement
+  arms; f32's `TryToPoop` (`c05ef86f`) lands the PLAYER drop side
+  (`Player.cs:18896-18940`, item 5395), not the projectile. The phaseblades
+  (1059-1072/1074-1076/1101/1102, aiStyle 3) have no rows (the
+  `is_a_phaseblade` set serves the hitbox narrowing only). BoulderOfEarth
+  261 (aiStyle 14, `:3456`) has no row; d54 does not own it.
+
+**The e3 name collision (merge hazard).** Both this lane and W4-e3 created
+`crates/tr-app/src/projectile_dust.rs` and declare `mod projectile_dust;`
+in `main.rs` (d53 `:189`, e3 `:184`) — DIFFERENT modules with the SAME
+name (d53: the queue→drain `DustBurst` replay on the live pool; e3: the
+inline `ProjDust` bundle on `update_dust`'s threaded pool). The merge MUST
+keep-one: rename one module (suggested: e3's → `projectile_dust_inline`,
+its `ProjDust`/`ProjDustRng` types are self-contained) or union the files
+under one module with disjoint item names (the two `lerp_color` /
+`next_vector2_circular` helpers collide too). The `mod` declaration
+conflicts in `main.rs`; the `world_sim/projectiles.rs` drains are
+additive. Recorded here so the merge agent reconciles instead of
+double-declaring.
+
+### Verification (batch 3)
+
+Code-only: the 466/580 trail bodies diffed line-by-line (`:17108-17125`),
+the ring geometry hand-derived (center (100,100), rot 0, scale 1 →
+top-lefts (119,20)/(119,119)), the SuperStar census re-read (`:22157-
+22167`). 3 new witnesses (`w4_d53_466_trail_matches_the_580_twin`,
+`w4_d53_enchantment_ring_emits_two_boxes`,
+`w4_d53_super_star_staged_emitter_census`) WRITTEN NOT RUN — no
+cargo/rustc/tests/graphify invoked (user directive).
+
 ### Batch 4 (the WET-SPLASH HOST — the claimed generic wet machine, WIRED)
 
 The WET-BLOCK CLAIM above is now landed. **The machine** lives in the new

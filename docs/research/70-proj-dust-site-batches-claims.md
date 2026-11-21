@@ -80,24 +80,26 @@ disjoint by construction for d53's range:
 | - | ------- | ---- | ----------- |
 | 1-8 | 16851/16878/16891/16905/16933/16960/16973/16987 | `Update` wet entry/exit splash (`:16843-16996`) | **batch 4 WIRED** (ANALYSIS "Batch 4") — the generic wet machine (`projectile_wet::wet_block`, `:16786-17007` verbatim) + the 8-site `WetSplash` drain, the g15 WorldItem precedent |
 | 9-14 | 17038/17042/17046/17055/17066/17071 | per-tick arrow trail (`:17036-17077`, kinds 2/82/172/103/278/4/5) | **batch 1 WIRED** |
-| 15 | 17113 | stationary 466 trail (`:17108-17116`) | CITED SKIP — CultistBossLightningOrbArc has no ported row / TrailingMode entry |
+| 15 | 17113 | stationary 466 trail (`:17108-17116`) | **batch 3 ARMED** — the TrailingMode-1 row landed (`CULTIST_LIGHTNING_ORB_ARC`); the 580 twin's body verbatim; the AI_088 466 branch stays unported + kind-gated |
 | 16 | 17122 | stationary Vortex-bolt 580 puff (`:17117-17125`) | **batch 1 WIRED** |
 | 17-28 | 17325/17332/17346/17368/17377/17387/17397/17408/17418/17428/17443/17462 | enchantment visuals (`:17290-17467`, frostBurn/magmaStone/bee-mount/imbue 1-8) | **batch 1 WIRED** (incl the Party gore sibling's draws) |
-| 29 | 18231 | Meowmere 502 bounce ring (`:18226-18237`) | CITED SKIP — no `proj_data` row |
-| 30-31 | 18949/18952 | LavaBoulder 1053 impact (`:18947-18956`) | CITED SKIP — no row |
-| 32 | 19245 | Poo 1048 bounce (`:19242-19246`) | CITED SKIP — no row |
-| 33-35 | 19392/19401/19468 | phaseblades / Keybrand 1074 (`:19375-19508`) | CITED SKIP — no rows |
+| 29 | 18231 | Meowmere 502 bounce ring (`:18226-18237`) | CITED SKIP (batch-3 census: aiStyle 8, d21 covers 201-209 NOT 8; no row on any branch) |
+| 30-31 | 18949/18952 | LavaBoulder 1053 impact (`:18947-18956`) | CITED SKIP (batch-3 census: aiStyle 25, no arm/row on any branch; d54 owns the world/orch sites, not this HandleMovement arm) |
+| 32 | 19245 | Poo 1048 bounce (`:19242-19246`) | CITED SKIP (batch-3 census: aiStyle 25; f32's TryToPoop c05ef86f is the PLAYER drop side, not the projectile) |
+| 33-35 | 19392/19401/19468 | phaseblades / Keybrand 1074 (`:19375-19508`) | CITED SKIP (batch-3 census: aiStyle-3 rows unported; `is_a_phaseblade` serves the hitbox narrowing only) |
 | 36 | 19811 | Sword Beam 116 impact burst (`:19809-19814`) | **batch 2 WIRED** |
 | 37 | 20322 | Light Disc 106 bounce sparks (`LightDisc_Bounce` `:20317-20329`, both callers `:13074`/`:19518`) | **batch 2 WIRED** |
-| 38 | 20423 | BoulderOfEarth 261 explosion (`:20421-20430`) | CITED SKIP — no row |
-| 39 | 22161 | SuperStar 728 trail (`AI_151` `:22157-22167`) | CITED SKIP — no row |
-| 40 | 22297 | SuperStarSlash 977 trail (`AI_152` `:22292-22301`) | CITED SKIP — no row |
+| 38 | 20423 | BoulderOfEarth 261 explosion (`:20421-20430`) | CITED SKIP (batch-3 census: aiStyle 14, no row; d54 does not own it) |
+| 39 | 22161 | SuperStar 728 trail (`AI_151` `:22157-22167`) | **batch 3 STAGED** — d16's `ai_super_star` (e122a6b2) keeps count-only gates; `super_star_dust` replays them (the e3 drop-in contract) |
+| 40 | 22297 | SuperStarSlash 977 trail (`AI_152` `:22292-22301`) | **KEEP-ONE e3** — the pushed W4-e3 lane STAGED `star_slash_dust` (7a25cd61) for :22297/:22308; this lane cites it |
 
 **Totals (after batch 4): 29 wired (batch 1 = 19, batch 2 = 2, batch 4 =
-the 8 wet sites) + 11 remaining cited unported-host skips = 40.** (The
-batch-3 re-census of the 11 skips — the 466 trail, the 190/191 ring, the
-728 emitter, the e3 keep-one — is the co-lane's in-flight work, recorded
-in its own commit.) The batch-4 wet machine is ANALYSIS "Batch 4".
+the 8 wet sites) + 2 armed / 1 staged (batch 3: the 466 trail, the 190/191
+ring lane, the 728 emitter) + 1 keep-one-e3 (:22297, with :22308 in e3's
+window) + 7 remaining unported-host skips = 40.** The batch-3 re-census
+verdicts are recorded in ANALYSIS "Batch 3" (the pushed-branch host
+checks: d16 e122a6b2, d19 a4185f89, d21 9fa9e9ba, d54 8cb5d5a4, f32
+c05ef86f); the batch-4 wet machine in ANALYSIS "Batch 4".
 
 ### Commits
 
@@ -106,6 +108,9 @@ in its own commit.) The batch-4 wet machine is ANALYSIS "Batch 4".
   `pending_dust_bursts` queue + the tick snapshots.
 - `e5893283` — batch 2: Sword Beam 116 + Light Disc 106 (both callers), the
   remaining first-40 unported hosts cited skips.
+- batch 3 — the NOW-UNBLOCKED arms: the 466 TrailingMode-1 row + shared
+  stationary trail, the 190/191 two-box enchantment ring, the STAGED 728
+  `super_star_dust`; the e3 name-collision merge note (ANALYSIS).
 - batch 4 — the WET-SPLASH HOST: `projectile_wet.rs` (the generic wet
   machine `:16786-17007` verbatim — wetCount, the liquid-flag latching, the
   IsDestroyedByWater/2-transform/34-dryout/80-kill arms, the entry/exit
@@ -115,14 +120,16 @@ in its own commit.) The batch-4 wet machine is ANALYSIS "Batch 4".
 
 ### Witnesses
 
-17 draw-mirror witnesses in `projectile_dust.rs` (the d52 `burst_block`
-oracle shape + the post-field writes + the queue half; batch 4 adds the
-wet-splash per-kind census, the post-fields + `dustWater` style feed, the
-exit-water box asymmetry and the wet queue half) + 9 machine witnesses in
-`projectile_wet.rs` (the entry no-cooldown asymmetry, the exit 10-tick
-cooldown, the four liquid-kind transitions, the water-kill + 2→1
-transform, the 34/80 arms, the 155 carve-out, the preamble + ignoreWater
-gate, the ≤40 dry fold, the dry-clear tail), **WRITTEN NOT RUN**
-(code-only mode — no cargo/rustc/tests invoked). The stationary-580 witness
+20 draw-mirror witnesses in `projectile_dust.rs` (the d52 `burst_block`
+oracle shape + the post-field writes + the queue half; batch 3 adds the
+466/580 twin census, the ring two-box geometry and the staged SuperStar
+census; batch 4 adds the wet-splash per-kind census, the post-fields +
+`dustWater` style feed, the exit-water box asymmetry and the wet queue
+half) + 9 machine witnesses in `projectile_wet.rs` (the entry no-cooldown
+asymmetry, the exit 10-tick cooldown, the four liquid-kind transitions,
+the water-kill + 2→1 transform, the 34/80 arms, the 155 carve-out, the
+preamble + ignoreWater gate, the ≤40 dry fold, the dry-clear tail),
+**WRITTEN NOT RUN** (code-only mode — no cargo/rustc/tests
+invoked). The stationary-580 witness
 pins the 0×0-box `+4` inset (`Dust.cs:155-171`: the box clamps to 5×5, so the
 default position is `anchor + Next(1) + 4`, NOT the exact anchor).

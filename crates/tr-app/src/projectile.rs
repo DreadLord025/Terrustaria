@@ -10160,10 +10160,9 @@ impl Projectile {
         if mode < 0 {
             return;
         }
-        // `:17101`: mode 1's animation-boundary gate. The 580 dust spawn that
-        // shares the branch (`:17117-17125`) is captured below as a drain
-        // intent (W4-d53); the 466 twin (`:17108-17116`) stays the cited
-        // unported skip (no row / TrailingMode entry).
+        // `:17101`: mode 1's animation-boundary gate. The 466/580 dust spawns
+        // that share the branch (`:17108-17125`) are captured below as drain
+        // intents (W4-d53 batches 1+3 — the bodies are byte-identical).
         if mode == 1 && self.frame_counter != 0 && self.old_pos[0] != Vec2::ZERO {
             return;
         }
@@ -10180,11 +10179,16 @@ impl Projectile {
             self.old_rot[0] = self.rot;
             self.old_sprite_direction[0] = self.sprite_direction;
         }
-        // W4-d53 — `:17117-17125`: the stationary Vortex-bolt (580) puff.
-        // After the ring shift, `velocity == Zero` opens one type-229 dust at
-        // the OLDEST ring entry (`oldPos[len-1]`), the angle/radius draws ride
-        // the drain. The 466 twin is the unported skip.
-        if mode == 1 && self.kind == VORTEX_RITUAL_BOLT && self.vel == Vec2::ZERO {
+        // W4-d53 — `:17108-17125`: the stationary mode-1 puffs. After the
+        // ring shift, `velocity == Zero` opens one type-229 dust at the
+        // OLDEST ring entry (`oldPos[len-1]`), the angle/radius draws ride
+        // the drain. The 466 arc (`:17108-17116`) and the 580 bolt
+        // (`:17117-17125`) bodies are byte-identical (batch 3 arms the 466
+        // twin — the TrailingMode-1 row landed with it).
+        if mode == 1
+            && matches!(self.kind, VORTEX_RITUAL_BOLT | CULTIST_LIGHTNING_ORB_ARC)
+            && self.vel == Vec2::ZERO
+        {
             self.wants_stationary_trail =
                 Some((self.old_pos[self.old_pos.len() - 1], self.rot));
         }
@@ -13488,8 +13492,9 @@ pub(crate) fn trailing_mode(kind: u16) -> i32 {
         // (`ProjectileID.cs:522`) — the port's fixed 10-entry ring is the
         // recorded trail-density deviation (ANALYSIS).
         | MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL => 0,
-        // `:17099`'s mode 1 — the Vortex Ritual's bolt.
-        VORTEX_RITUAL_BOLT => 1,
+        // `:17099`'s mode 1 — the Vortex Ritual's bolt and the Cultist's
+        // lightning-orb arc (`ProjectileID.cs:521`: `466, 1` / `580, 1`).
+        VORTEX_RITUAL_BOLT | CULTIST_LIGHTNING_ORB_ARC => 1,
         // `:17128`'s mode 2 — the gem bolts' family plus the Gradient yoyo and
         // Betsy's fireball.
         GRADIENT_YOYO | BETSY_FIREBALL | GEM_BOLT_AMETHYST | GEM_BOLT_TOPAZ
@@ -16778,7 +16783,10 @@ impl ProjectilePool {
                     && self.slots[i].owner != 255
                 {
                     if let Some(pl) = player.as_deref() {
-                        self.pending_dust_bursts.push(
+                        // W4-d53 batch 3 — the aiStyle-190/191 ring arm
+                        // (`:17299-17306`) emits TWO boxes per call; every
+                        // other kind one (the builder returns the list).
+                        self.pending_dust_bursts.extend(
                             crate::projectile_dust::enchantment_burst(&self.slots[i], pl, owner),
                         );
                     }
@@ -18065,8 +18073,15 @@ impl ProjectilePool {
                         88 => {
                             // `AI()`'s aiStyle-88 block (`Projectile.cs:32145-32249`):
                             // the Vortex ritual bolt (580) — wrap latch, tile stop,
-                            // stationary kill and the wand step.
-                            self.slots[i].ai_vortex_bolt(world, rng);
+                            // stationary kill and the wand step. W4-d53 batch 3:
+                            // the 466 arc's row landed for the TrailingMode-1
+                            // trail dust, but its AI branch (`:32046-32143`,
+                            // the per-ai[1]-seed wander) is UNPORTED — the
+                            // kind gate keeps it off the 580 machine (the
+                            // ring shift + stationary puff still run below).
+                            if self.slots[i].kind == VORTEX_RITUAL_BOLT {
+                                self.slots[i].ai_vortex_bolt(world, rng);
+                            }
                         }
                         108 => {
                             // `AI()`'s aiStyle-108 block (`Projectile.cs:33679-33988`):

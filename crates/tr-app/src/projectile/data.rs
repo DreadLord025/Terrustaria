@@ -299,6 +299,14 @@ pub const NEBULA_EYE: u16 = 574;
 pub const VORTEX_LIGHTNING: u16 = 578;
 pub const VORTEX_PORTAL: u16 = 579;
 pub const VORTEX_RITUAL_BOLT: u16 = 580;
+/// `ProjectileID.CultistBossLightningOrbArc` (466) — the Lunatic Cultist's
+/// lightning-orb arc (`Projectile.cs:5392-5403`: 14x14, aiStyle 88, hostile,
+/// alpha 255, ignoreWater, extraUpdates 4, timeLeft 120*(4+1)=600). The
+/// AI_088 466 branch (`:32046-32143`) is UNPORTED (the 88 dispatch rides
+/// `ai_vortex_bolt`, the 580 machine); the row exists for the
+/// `TrailingMode[466] = 1` history ring + the stationary trail dust
+/// (`:17108-17116`, W4-d53 batch 3 — the 580 twin's body verbatim).
+pub const CULTIST_LIGHTNING_ORB_ARC: u16 = 466;
 pub const TOWER_DAMAGE_BOLT: u16 = 629;
 pub const VORTEX_DART: u16 = 581;
 pub const PHANTASMAL_EYE: u16 = 452;
@@ -2451,6 +2459,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:6294-6305`'s VortexLightning (the 580): 14x14, aiStyle 88,
             // extraUpdates 4, ignoreWater.
             VORTEX_RITUAL_BOLT => (14.0, 14.0, 88, -1, 600, 4, true, false, false, RESET_STATE),
+            // `Projectile.cs:5392-5403` — the CultistBossLightningOrbArc
+            // (466): the 580 shape (14x14, aiStyle 88, extraUpdates 4,
+            // ignoreWater, tileCollide true, timeLeft 600) PLUS `alpha =
+            // 255` (`:5398`). W4-d53 batch 3: the row lands for the
+            // TrailingMode-1 ring + the stationary trail dust; the AI_088
+            // 466 branch stays unported (the dispatch's `ai_vortex_bolt`
+            // is the 580 machine — the kind-gated follow-up).
+            CULTIST_LIGHTNING_ORB_ARC => (
+                14.0, 14.0, 88, -1, 600, 4, true, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             PHANTASMAL_EYE => (14.0, 14.0, 82, -1, 600, 0, true, false, false, RESET_STATE),
             PHANTASMAL_SPHERE => (40.0, 40.0, 83, -1, 600, 0, false, false, false, RESET_STATE),
             PHANTASMAL_DEATHRAY => (36.0, 36.0, 84, -1, 600, 0, false, false, false, RESET_STATE),
