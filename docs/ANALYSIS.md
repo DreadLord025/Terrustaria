@@ -39244,3 +39244,98 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-d13 residuals - the PET/124 census, the 813 machine, the kite latch drain, the geyser hostile proxy (task/W4-d13-proj-ai-121-130, 2026-11-21, code-only mode)
+
+**The AI_124 kind census (the g64-deferral question resolved).** The
+`else if (this.aiStyle == 124)` arm (`Projectile.cs:34970-35696`) reads
+exactly SEVEN kinds: 650 (flag65), 882, 888, 895, 896, 898, 957 - the
+keep-alive pins `:34979-35006`, the home ladder `:35044-35091`, the
+flight machines `:35124-35325` and the idle machines `:35326-35565`
+carry no other type gate. All seven are rowed (`STYLE124_PETS`) with
+their per-kind frame machines; the arm is COMPLETE. The two kinds the
+task brief asked about:
+- **813 is NOT aiStyle 124.** It is `ProjectileID.BloodNautilusTears`
+  (`ProjectileID.cs:2180`), the THIRD aiStyle-108 ritual marker sharing
+  the 578/579 `SetDefaults` block (`Projectile.cs:6282-6293`). g64's
+  ledger deferred its 13-site four-phase dust machine as "a whole-machine
+  port" - that machine lands HERE (below), not in the pet arm.
+- **957 IS rowed** (`GLOMMER_PET`, the ground-bounce machine
+  `:35462-35565` incl. the `Next(150)` rest roll). g64's "957
+  behaviour-coupled spelunker tile scan" deferral is the **650** scan's
+  dust bodies (`:35587-35604`'s per-tile `Next(8)` + the <2 sparkle) -
+  the scan's behaviour + RNG census were already ported in
+  `ai_pets_style124`; the 204/242/80 dust BODIES stay the dust lanes'
+  (g64 batch 4 owns the 895/898 frame-reset trail pair).
+
+**The 813 machine (`ai_vortex_ritual`'s extension).** The four phase
+windows keep their explicit draws on the `UpdateProjectiles` stream in
+C# order (the W4-d13 census convention - bodies skipped, draws kept):
+wind-up two `Next(4)` gates (the type-5 ring's `Next(10,21)` radius,
+the type-240 ring's fixed 30), charge two `Next(2)` gates, full charge
+ONE `Next(2)` pick, dissolve TWO `Next(3)` switch picks (case 2 draws
+nothing), then the `:34018` `NextFloat() < Opacity` drip gate (the
+`NextVector2Circular(3,20)` unit-angle + radius pair). Per ring:
+`RotatedByRandom`'s TWO NextDouble draws (the ai067_b next_float
+convention) then the NextFloat scale. The tick-90 payload: the non-flag53
+`SoundID.Item8` cue (`wants_sound`) + the BloodSquid 619
+(`wants_mark_spawn` - the kind has no NpcKind row, the drain drops it,
+the statue_npc roster-gap precedent). The dissolve's Kill does NOT return
+(the C# `:33949`) - the loops + drip still draw on the kill tick; the
+port's old early-return was a 578/579-visible deviation, fixed (the
+markers' dust was unmodelled so no witness pinned it). The shared row's
+`penetrate` corrected -1 -> 1 (the stock reset `:774`; the block sets
+none) and `alpha` 0 -> 255 (`:6288`); `ignoreWater` added for all
+three (`:6290`). The 578/579 first-tick latch is now flag53-gated
+(`:33696`) - the 813 keeps localAI[1] free.
+
+**The kite MassWireOperation latch drain (f11 coordination).** f11's tip
+(`cf0737da`) keeps the apply deferred (`world_sim/editing/wiring.rs:28-29`
+- the `WiresUI` tool modes, `Wiring.cs:3241`'s `ToolMode` read). The
+pool-side seam is now WIRED: the death hook (`Projectile.cs:72051-72067`)
+queues `(owner, ps, pe)` on the `localAI[0] == 1` latch (ps =
+`(ai[0], ai[1]).ToPoint()`, pe = `Center.ToTileCoordinates()` =
+`(int)X >> 4`, `Utils.cs:1807-1810`), `take_mass_wire_ops` drains at
+the pass tail into `app.pending_mass_wire_ops` - a PER-TICK buffer (the
+C# applies synchronously inside Kill; the apply wave consumes it at the
+same seam before the next pass replaces it). Until the apply lands the
+requests drop tick-end (the documented deferral, no unbounded growth).
+
+**The geyser hostile proxy (e20 coordination).** e20 owns the geyser TILE
+443's wiring arms (the trap trip / the frame-column direction); the 654
+SHOT chain is d13's. Two `damage_player` defects fixed against
+`Damage_EVP`: (1) the hit test was a 6-px centre-point probe - the C#
+`Colliding(projRectangle, getRect())` (`:14816`) is the full
+`Rectangle.Intersects` (`:15887-15890`, strict edge overlap); the
+30-wide/320-tall columns now hit anywhere their box overlaps the player.
+(2) The unconditional post-Hurt kill fired on EVERY hostile shot - the C#
+`Damage_EVP` tail (`:14868-14899`) has NO generic kill (only the trap
+flag + the 435/436/437/681/682 specials). The port's standing single-hit
+convention keeps killing the finite-penetrate shots (the S1-C-7 witnesses
+hold); the `penetrate = -1` columns are exempt - they keep hurting
+through their 60-tick life, the player i-frames pace the repeats.
+`trapDebuffSource`/the dead-man's-sweater halving (`:14845-14848`) have
+no port fields - the standing hazard-lane deviation.
+
+**The 650 pointer pose (g78 coordination).** `tentacle_pointer_pose`
+ports `DrawProjectile`'s 650 arm (`Main.cs:34007-34027`): the state tag
+`(int)(localAI[0]/2pi)` picks the reach (state 1 -> 7 px, else 5), the
+fractional angle + IEEERemainder extension place the Extra[66] sprite,
+`1 + floor(localAI[1])*0.02` scales it. PORTED-UNWIRED - the render
+lane's projectile pass consumes it when the Extra-66 atlas slot lands.
+g78 owns the ECHO-sight chain (`ShouldShowInvisibleBlocksAndWalls`), not
+the spelunker pointer; no g78b branch exists. The 650 scan's
+`IsTileSpelunkable` table was re-censused against `Main.cs:9420-9467`
++ `:9651` + `:21783-21798` - all 49 ids + the two frame-window arms
+match the port verbatim.
+
+### Verification
+
+Code-only: every change re-read against the cited C# windows; the seam
+signatures checked by read/grep (`ProjectilePool::update`,
+`spawn_with_data_ai_owned`, `rects_intersect`, `hurt_inner`'s dodge
+short-circuits, the `wants_sound`/`wants_mark_spawn` drains). The 13
+new witnesses (5x 813 census/row, 2x pointer pose, 1x kite latch drain,
+1x geyser box/survival, 1x geyser trip end-to-end, plus the re-derived
+drip-gate expectations) are WRITTEN, NOT RUN - **no cargo/rustc/rustfmt/
+tests/graphify invoked** (user directive).
