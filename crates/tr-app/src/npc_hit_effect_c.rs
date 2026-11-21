@@ -223,6 +223,7 @@
 //! | 1057-1061 | `:87787-87791` | the 164/165 WallCreeper death (5 gores 207/208/208/208/208) |
 //! | 1062-1071 | `:87807-87831` | the 239/240 BloodCrawler + 236/237 JungleCreeper death (5 gores each) |
 //! | 1072-1078 | `:87847-87868` | the 241 BloodFeeder (2 gores) + 242 BloodJelly (5 gores) death |
+//! | 1079-1088 | `:87886-87900` | the 105/107 GoblinTinkerer + 106/108 Wizard death (5 gores each, shimmer) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -6218,6 +6219,56 @@ fn blood_jelly_death(
     }
 }
 
+/// The 105/107 GoblinTinkerer / 106/108 Wizard death (`NPC.cs:87880-87900`,
+/// sites 1079-1088): the 50-dust type-5 burst (SpeedX `2.5*hitDirection`,
+/// SpeedY -2.5), then the 5-gore ladder with shimmer variants. The 105/107
+/// (BoundGoblin/GoblinTinkerer): 124 (1308 shimmer) head, 125/125 (1309) at
+/// +20, 126/126 (1310) at +34. The 106/108 (BoundWizard/Wizard): 127 (1373
+/// shimmer) head gated on `altTexture == 0 || type == 106`, then 128 (1374)
+/// / 128 (1375) at +20 and 129/129 (1376) at +34. Scale defaults to 1.
+///
+/// `altTexture` stand-in: the port has NO altTexture field, so the head
+/// gate is treated as `altTexture == 0` (always true).
+fn bound_npc_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    if npc_type == 105 || npc_type == 107 {
+        // `:87886-87890` — the GoblinTinkerer ladder.
+        gore.new_gore(rng, world, pos, vel, if shimmer { 1308 } else { 124 }, 1.0);
+        gore.new_gore(rng, world, mid, vel, if shimmer { 1309 } else { 125 }, 1.0);
+        gore.new_gore(rng, world, mid, vel, if shimmer { 1309 } else { 125 }, 1.0);
+        gore.new_gore(rng, world, low, vel, if shimmer { 1310 } else { 126 }, 1.0);
+        gore.new_gore(rng, world, low, vel, if shimmer { 1310 } else { 126 }, 1.0);
+    } else {
+        // `:87893-87900` — the Wizard ladder (the head gate is the stand-in).
+        gore.new_gore(rng, world, pos, vel, if shimmer { 1373 } else { 127 }, 1.0);
+        gore.new_gore(rng, world, mid, vel, if shimmer { 1374 } else { 128 }, 1.0);
+        gore.new_gore(rng, world, mid, vel, if shimmer { 1375 } else { 128 }, 1.0);
+        gore.new_gore(rng, world, low, vel, if shimmer { 1376 } else { 129 }, 1.0);
+        gore.new_gore(rng, world, low, vel, if shimmer { 1376 } else { 129 }, 1.0);
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -6979,6 +7030,11 @@ pub fn hit_effect_c(
     // `:87850-87869` — the 242 BloodJelly arm (sites 1074-1078).
     if npc_type == 242 && npc.hp <= 0 {
         blood_jelly_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87870-87901` — the 105/107 GoblinTinkerer / 106/108 Wizard arm
+    // (sites 1079-1088).
+    if (npc_type == 105 || npc_type == 107 || npc_type == 106 || npc_type == 108) && npc.hp <= 0 {
+        bound_npc_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -10992,6 +11048,39 @@ mod tests {
         blood_jelly_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
         let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![356, 357, 357, 358, 358]);
+    }
+
+    /// `NPC.cs:87886-87900` — the GoblinTinkerer/Wizard death: the 5-gore
+    /// ladder with shimmer variants (105/107 → 124/125/126 or
+    /// 1308/1309/1310; 106/108 → 127/128/129 or 1373/1374/1375/1376).
+    #[test]
+    fn w4_f10_the_bound_npc_death_uses_the_shimmer_variants() {
+        let w = air();
+        // The GoblinTinkerer 107, normal.
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.variation_index = 0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1063);
+        bound_npc_death(&n, 107, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![124, 125, 125, 126, 126]);
+        // The Wizard 108, normal.
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(1063);
+        bound_npc_death(&n, 108, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![127, 128, 128, 129, 129]);
+        // The GoblinTinkerer 107, shimmer.
+        let mut n3 = boss(100.0, 100.0, 40.0, 56.0);
+        n3.variation_index = 1;
+        let mut gore3 = GorePool::new();
+        let mut dust3 = DustPool::new();
+        let mut rng3 = UnifiedRandom::new(1063);
+        bound_npc_death(&n3, 107, &mut dust3, &ctx(), &mut gore3, &mut rng3, &w, 1.0);
+        let types3: Vec<i32> = gore3.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types3, vec![1308, 1309, 1309, 1310, 1310]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
