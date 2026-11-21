@@ -39402,3 +39402,84 @@ writes are the caller's.
 (`world_gore_a`/`world_gore_b`), Player.cs 32 (`player_gore_a`..`e`).
 68 `Gore.NewGore*` sites ported across 9 commits, ≤10 sites each.
 3 witnesses written, NOT run (code-only mode).
+
+## The gore wiring wave (W4-g17, wiring)
+
+The pure gore modules' dispatch claims landed as live call sites. The
+wiring keeps every module's RNG contract: the bursts draw on the
+caller's stage stream in the C# order, the gates ALWAYS draw, and the
+POST-write snapshots ride the state structs.
+
+**The dispatch seams (5 commits):**
+
+1. `pot_gore_drain` (`world_sim/editing.rs`) — `break_tile` drains the
+   edit lane's `PotEvent`s through `pot_break_gores` between the break
+   sound and `SpawnThingsFromPot` (the `CheckPot` order,
+   `WorldGen.cs:56856-57014`). The genRand stand-in is the edit lane's
+   `FastRandom` seeded by ONE `UpdatePlayers` throw per event, drawn
+   BEFORE the loot's own seed throw. `pot_break_gores` takes the
+   `FastRandom` directly (the `spawn_things_from_pot` convention).
+2. The player-tick queues (`player.rs` + `world_sim/player.rs`) —
+   `pending_jump_gores` (the extra-jump chain, after the velocity/jump
+   writes), `pending_dash_gores` (the dash==1 start), and
+   `pending_dodge_gores` (the Hurt dodge handlers) queue at the C#
+   write points; the tick-tail drain runs `player_gore_a`/`b`/`c` on
+   `UpdatePlayers` with the POST-write snapshots (the
+   `pending_sticky_dust` convention — the Player carries no pools).
+3. The death seam (`world_sim/npcs.rs`) — the KillMe confetti runs
+   after `on_player_death` (the PlayDeathSound half) and before
+   `start_death`, gated on `SeedFlags::TENTH_ANNIVERSARY`. The larva
+   break's claim spawns the Queen Bee through
+   `spawn_queen_bee_on_player` — the `NPC.SpawnOnPlayer` 500×50 scan
+   (`NPC.cs:80475-80628`) with the C# flag-persistence shape (`flag`
+   survives the spawn-space refusal; the round-end
+   `CheckNotSpawningOnScreen` gate; the stale-position break), the
+   `HasAwoken` broadcast. `check_3x3_bottom` covers kind 231 (no item
+   drop — the C# case 231 has no `Item.NewItem`).
+4. The tree-FX dispatches (`tr-core/src/tree.rs` +
+   `world_sim/growth.rs` + `axe_tile_hit`) — `GetTreeLeaf` (both hallow
+   tables + the height+5), `TreeGrowFXCheck`'s scan, `PlayerLOS`,
+   `IsTileALeafyTreeTop`, `Collision.SolidTiles` and `ShakeTree`'s
+   dedupe/walk/FX-tail slice ported. The growth pass threads
+   `GrowthFxCtx`/`TreeFxRequests` through
+   `update_world`/overground/underground/grass-growth (the sapling
+   arms + the kind-70 `Next(250)` arm record the check cells);
+   `world_sim::growth` drains them on `UpdateWorldGen`. The axe fail
+   tick runs `shake_tree_fx` → `tree_grow_fx(hitTree: true)` on
+   `UpdatePlayers`. `World.tree_shakes` carries the per-day dedupe
+   bookkeeping; the dawn `ResetTreeShakes` clears it
+   (`UpdateTime_StartDay`'s first call).
+5. `item_use_visuals_tick` (`world_sim/editing.rs`) — the ItemCheck
+   per-tick visual arms (`Player.cs:43644-43653`): the 1450 sparkle
+   ladder, the 65/3065/enchant-7/1304 use arms and the 4262 lantern
+   mote, every animation tick. The melee rect resolves through the
+   shared `melee_swing`/`thrust` ports (useStyle 1/3).
+
+**Documented remainders (the wiring's scope):**
+
+* The sandstorm hold (`sandstorm_jump_gore`) and the hair-dye arms
+  stay unwired: the port has no `DoubleJumpVisuals` dispatch and no
+  team-dye state (`Player.hairDye` unported — the dye cache's recorded
+  deviation).
+* The `MessageBuffer.cs:3828` net arm drops (single-player port).
+* The `ShakeTree` loot ladder (`WorldGen.cs:63163-63403`, the genRand
+  item/NPC/projectile arms) stays the loot lane's — the FX tail's
+  position is independent of it (no RNG before it).
+* The `ItemCheck_EmitUseVisuals` dust-only item arms
+  (989/2880/44-46/273/723/190/213/…) and the other meleeEnchant rows
+  stay the dust lane's; the other use styles' rect resolutions park
+  with the item lane.
+* The `noMelee`/`noUseGraphic` item fields are unported — every
+  registered row stands noMelee-false (the itemdata stand-in), so the
+  EmitUseVisuals gate folds to `damage >= 0` plus the bug-net trio.
+* The Queen Bee scan's `wallHouse` refusal is unmodelled (the port has
+  no house-wall table — the `try_spawn_an_npc` convention); the
+  skyblock midair arm and the type-50 clearance special never fire
+  for 222.
+
+**Witnesses**: 21 wiring witnesses written, NOT run (code-only mode) —
+the per-site spawn assertions plus the 500-tick/500-event
+stream-parity ledgers (the pot drain's all-37-styles replay, the
+player/growth/ItemCheck idle draw-neutrality twins, the confetti
+gate's classic-seed twin). The witness rigs put the camera on the
+player (the `Dust.NewDust` cull reads `SpawnCtx.screen_position`).
