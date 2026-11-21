@@ -39564,6 +39564,36 @@ closure receipts, then declares the band complete.
    check count corrected 44/44 → **41/41** (the committed output and a
    fresh RUN both show 41 PASS lines, 0 FAIL — the 44 was a
    transcription error; the script and its output are unchanged).
+6. **SEAL-RECEIPT addendum (same day, the exact-hunk round,
+   research/125 §§14-18)**: the five receipts published as mechanical
+   edits — (a) the {294,296} mapper-hook task-seed made EXACT for
+   `d44f-wire-lane` (§14: the 3-hunk insertion — the
+   `find_frame_kind_b` mapper {294,296}, the `find_frame_wave_b`
+   bridge, the claim wrapper + the hook after the extra8 block at
+   d44 `ce2c3a24a` `npc.rs:7194`; NO cs_id hand rows needed — the
+   S1-F-3 fallback `data.rs:3363-3370` resolves both through their
+   ENTRIES rows; 289 excluded per E3); (b) the 328 drop-PANIC guard
+   (§15): the consumer census found the panic surface WIDER than
+   RETIRE recorded — `entry_for_npc.expect` is reached by the kill
+   loop `:5283` AND `spawn_loot` `:6840` AND `NpcKind::net_id()`
+   (draw/save/lang/clicks) AND the cs_id fallback; option (a)'s bare
+   `try_entry_for_npc` swap is LOSSY (the town-sleeper folds missing
+   from the try-table) — **recommendation (b)**: the static
+   `PUMPKING_BLADE_CREDIT` stand-in outside ENTRIES + the two `.or`
+   tails + the client kill-arm fallback (the exact hunk published,
+   the vanilla credit chain `NPC.cs:95139-95142` +
+   `ContentSamples.cs:868-870` + `NetBestiaryModule.cs:52` re-verified);
+   (c) the c8 GAP-1 receipt at the PUSHED retire tip `7c2de9c06`
+   (§16: the six auto-covered, the 3 UI sites `:510/:537/:1803` + the
+   full plumbing fold table, the e23 compose hazard — e23's
+   `CRITTER_NET_IDS` static `[55,549]` list must fold onto the
+   generic gate or GAP-1 reopens); (d) the d35 562-union
+   sheets-present receipt at `1afd327b9` (§17: all 35 in the union,
+   dims match the strips witness row-for-row, 717824 padded px, the
+   step-7 obligation unchanged, NPC_328's sheet stays through the
+   card drop); (e) the §13b SEAL re-receipt + the b1-b7 sheets-family
+   table (§18). `tools/_d38_seal_receipt_check.py` RUN **75/75 PASS**,
+   output committed; no game-code file touched.
 
 ### Verification (RETIRE)
 

@@ -1,0 +1,77 @@
+PASS S1 no pushed mapper claims 294/296 at ce2c3a24a
+PASS S1 wave-B still has NO cs_id mapper/hook at ce2c3a24a
+PASS S1 d44 tip has NO AngryBonesBig kind (the hook is stream-inert there)
+PASS S1 wave-B fighter group carries 294/296
+PASS S1 wave-B air pin list carries 294/296 (row 0)
+PASS S1 wave-B vanilla_type rows 294/296
+PASS S1 wave-B frame_count 16/15 (Main.cs:67113)
+PASS S1 humanoid_fighter_frame pub(crate) (the delegate seam)
+PASS S1 extra8 hook precedes the num2 body (the insertion gap)
+PASS S1 insertion boundary lines � num2 at 7198
+PASS S1 find_frame_world falls through to find_frame (no wave-B world arm needed)
+PASS S1 cs_id has NO 294/296 hand row (the fallback resolves them)
+PASS S1 cs_id fallback reads try_entry_for_npc net_id (data.rs:3363-3370)
+PASS S1 ENTRIES rows 294/296 exist (the fallback's source) � lines 2390/2410
+PASS S1 to_u16 hand rows 294/296 (protocol unchanged)
+PASS S1 the stand-in arms at npc.rs:9514-9519
+PASS S1 our humanoid_frame_count 16/15 agrees with the module
+PASS S1 extra_frames_count 0 for both (the full-count wrap)
+PASS S1 the FINAL stand-in witness pins 294/296 (the re-pin target)
+PASS S2 entry_for_npc ends in .expect (the panic) � line 2727
+PASS S2 kill-credit loop :5283 rides entry_for_npc
+PASS S2 spawn_loot :6840 ALSO rides entry_for_npc (the second panic site)
+PASS S2 net_id() rides entry_for_npc (data.rs:1270-1272 � draw/save/lang/clicks)
+PASS S2 texture_net_id fallback rides kind.net_id() (entities.rs:1234)
+PASS S2 the blade draw arm rides texture_net_id (entities.rs:3371-3373)
+PASS S2 the blade's silent despawn sets hp = 0 (style59:255)
+PASS S2 client kill arm gates on kind_from_net_id (netmodules.rs:457-460)
+PASS S2 kind_from_net_id reads ENTRIES (None for 328 post-drop)
+PASS S2 cs_id fallback would sentinel 328 post-drop (the hand-row need)
+PASS S2 try_entry_for_npc LACKS the town-sleeper folds (bare swap loses credits)
+PASS S2 GetBestiaryCreditId reads ContentSamples (NPC.cs:95139-95142)
+PASS S2 the credit id is the vanilla NAME (ContentSamples.cs:868-870)
+PASS S2 the client counts via ContentSamples.NpcsByNetId (NetBestiaryModule.cs:52)
+PASS S2 RegisterKill needs no entry (NPCKillsTracker.cs:23-33)
+PASS S2 NPCID.PumpkingBlade = 328 (the name row)
+PASS S2 no 328 fold in entry_for_npc today
+PASS S3 generic gate at the retire tip (bestiary.rs:2280)
+PASS S3 gate reads max_hp/contact_damage/594/686
+PASS S3 is_critter_entry = gate + the 549 Hide exclusion (:2303)
+PASS S3 unlock_state_world dispatch (:2412)
+PASS S3 completion_percent_world (:2449)
+PASS S3 the scan at the update_npcs head (world_sim/npcs.rs:3950)
+PASS S3 exactly the SIX d38 critters pass the generic gate � ['BirdBlue', 'BirdRed', 'BunnySlimed', 'BunnyXmas', 'Mouse', 'Squirrel']
+PASS S3 exactly 3 kill-only unlock_state call sites � [510, 537, 1803]
+PASS S3 the sites are :510/:537/:1803
+PASS S3 the KillTracker params :363/:476/:532/:1797
+PASS S3 completion_percent kill-only at :412
+PASS S3 kill_progress rides the bare tracker at :1926
+PASS S3 ui::draw kill_tracker param :683
+PASS S3 the caller passes &self.bestiary.kills (draw.rs:1684)
+PASS S3 app.bestiary is ALREADY WorldBestiary (app/mod.rs:276)
+PASS S3 c8 folded its 3 UI sites onto unlock_state_world
+PASS S3 c8 folded completion + kill_progress + the caller
+PASS S3 e23 CRITTER_NET_IDS is the STATIC [55,549] list (bestiary_data.rs:82)
+PASS S3 e23 gate dispatches the list (bestiary_data.rs:227)
+PASS S3 e23 unlock_state already takes WorldBestiary (the c37 shape)
+PASS S3 none of the six is in e23's static list (they would ride the kill ladder)
+PASS S2 DOOR_BASH_TYPES has no 328 (the cs_id hand row changes nothing)
+PASS S2 the ai3 ladder tables carry no 328 row (style-59 never rides them)
+PASS S2 the catch tables carry no 328 (the blade is not catchable)
+PASS S2 the chat cs_id match carries no 328
+PASS S2 npc_target no_aggro rides the cs_id index (the row keeps it in range)
+PASS S4 the union is 562 names � 562
+PASS S4 all 35 d38 sheets present in the union
+PASS S4 every d38 row missing=False (the real dims measured)
+PASS S4 the shared-owner rows are exactly NPC_289/NPC_328 (the E3 dedupes) � ['NPC_289', 'NPC_328']
+PASS S4 the 35-sheet padded contribution 717824 px � 717824
+PASS S4 the union dims == the 35-row strips witness (zero mismatch) � []
+PASS S4 all 35 in STATIC_SHEET_NAMES (the eager superset until step 7)
+PASS S4 d35 �16.1 cross-receipts d38d at 1ba0395c7
+PASS S4 the 328 card drop does NOT touch NPC_328's STATIC row (�12 item 7)
+PASS S5 �13b SEAL declaration present
+PASS S5 slots declared==ids==vec == 216
+PASS S5 35 d38 ENTRIES rows
+PASS S5 the RETIRE receipt 44/44 stands (committed output)
+
+ALL PASS
