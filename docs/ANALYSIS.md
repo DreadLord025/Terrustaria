@@ -39244,3 +39244,62 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-d39 — the NPC kinds band 351-420 (research/125, 108 R7)
+
+The band's 7 unclaimed kinds land at port-local **817-823** (the R7
+re-pin; the first batches rode 781-787 under the superseded §3 guidance
+— branch-only ids, the S1-F-1 gate rule makes the move free):
+Butterfly 356@817, ScorpionBlack 366@818, Scorpion 367@819,
+Grasshopper 377@820, ChatteringTeethBomb 378@821, CultistArcherBlue
+379@822, CultistArcherWhite 380@823. The 12 other missing ids are
+claimed by pushed lanes (c7 355/358, c8 357/374/375, c9 359/360,
+e26 361/362, c10 362-365 — research/125 §2's table); the concurrent
+writer's 355-359 WIP was checkpointed verbatim (`024c9877f`) then
+superseded (`535775fd1`) — the four claimed kinds dropped, their rows
+preserved in the checkpoint for the merge keep-one.
+
+Deliberate deviations (all cited in the arms):
+
+1. **403/404/408 NOT PORTED** — dead legacy ids in 1.4.5.8: no
+   `SetDefaults` arm, no AI arm, no spawn site (the 402 stardust worm is
+   segment-less — `SpawnStardustMark_StardustWorm` spawns 405/402/407
+   through the 540 mark projectile, `Projectile.cs:33470-33474`; the 407
+   never splits). Their only NPC.cs mentions are Gore ids
+   (`:86444-86445`/`:88713`); `Hide = true` (`NPCID.cs:3916/:3923/:3930`)
+   excludes them from the bestiary and the populator's info rows hit the
+   trash entry. A port kind would invent behaviour the C# never runs.
+2. **The scorpion pair's aiStyle 7 is UNWIRED** — the faithful
+   `npc_ai_town::town_npc_ai` module exists but its critter wiring is a
+   later wave; the kinds ride the `update_guide` wander stand-in (the
+   MartianTurret precedent). The grasshopper's aiStyle 1 rides the
+   wave-A `update_slime` hop (the C#'s `AI_001_Slimes` carries no 377
+   branch — the generic hop IS the machine).
+3. **The archer pair's aiStyle 3 rides the `update_zombie` stand-in** —
+   the `AI_003` 379/380 retreat branch (`NPC.cs:56181-56214`, the
+   summoner link + the 1300-tick cycle) is the c1 cultist lane's; the
+   `chaseable = false` row (`:13854`) IS carried (the ctor gate).
+4. **The teeth bomb's dust/gore/sound emissions stay skipped** — the
+   `npc_ai_style41` module's zero-RNG contract (its header census: the
+   fuse trail `Next(3)`, the explosion burst, the Item14/style-29 cues);
+   the axis-41 arm passes `cs_id()` 378, NOT the protocol id (the module
+   doc's `to_u16` note predates the port-local band).
+5. **The white archer (380) folds onto 379's bestiary entry** (Hide=true,
+   the Sharkron2 precedent) but keeps its own NPC_380 draw sheet; its
+   `cs_id` rides the folded 379 (the s1_f_3 invariant) — the AI wiring
+   that needs the 379/380 distinction must read the KIND (the ai_071
+   Sharkron2 precedent).
+6. **The Butterfly's frame-colour bank** (`ai[2]`, 8 bands × 3 rows)
+   rides the case-356 arm verbatim; the `npc_ai_style65` module's
+   threat-scan solo path passes an empty sibling pool (the style75-solo
+   precedent — the sim's pooled path lands with the critter spawn
+   wiring).
+
+Witnesses: 16 tests WRITTEN NOT RUN (the SetDefaults tables, the
+FindFrame replays, the axis-41 wiring tick, the bestiary folds, the
+render-key terms, the family-machine walks). The scripted pins re-run
+at every batch: ALL_KINDS 277 = enum 277 = to_u16 277 = from_u16 277
+(bijection, 0 dups, max 823 i16-safe), s1_f_3 277, ENTRIES 255 (unique
+credits + positive net ids), BESTIARY_NPC_SHEET_IDS 187 == the vec 187,
+the s1_d_4c one-arm-per-kind scan 277×1. **No cargo/rustc/rustfmt/
+tests/graphify invoked** (code-only mode).
