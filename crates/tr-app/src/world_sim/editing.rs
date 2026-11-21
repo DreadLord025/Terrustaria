@@ -1729,6 +1729,61 @@ fn use_ambrosia(app: &mut App, held: ItemSlot) -> bool {
     use_shimmer_permanent_item(app, held, 5342, already, |p| p.used_ambrosia = true)
 }
 
+/// W4-g89e — `ItemCheck_UseCombatBook` (`Player.cs:45322-45350`, called
+/// from `ItemCheck_OwnerOnlyCode` `:43604`): the two WORLD-global books.
+/// 4382 Combat Book (`:45324-45336`, `NPC.combatBookWasUsed` — the flag
+/// landed with i35's fishing condition; this is its MISSING use path) and
+/// 5336 Combat Book Volume Two (`:45337-45348`,
+/// `NPC.combatBookVolumeTwoWasUsed`). Same machine as the shimmer arms
+/// above but the latch is a WORLD flag, not a player bool, and the C#
+/// `Main.NewText(..., ChatColors.World)` announcement rides the netMode==0
+/// arm (the `SendData(61, -11f/-17f)` MP sync has no single-player port).
+/// The generic consumable tail (`:43280-43326` — both rows `consumable`,
+/// `Item.cs:37287-37296`/`:42326-42335`) pays one per use; the mid-swing
+/// window folds onto the press tick (the i37 convention). The consumer is
+/// the town-NPC stat ladder (`NPC.cs:53018-53031` — +250 lifeMax, ×0.8
+/// cooldown, +0.25 damage, +8 defense per book), ported in
+/// `npc_ai_town::town_stat_bonuses` (`env.combat_book`/`combat_book_two`).
+fn use_combat_book(app: &mut App, held: ItemSlot) -> bool {
+    let kind = held.kind;
+    let (already, vol_two) = match kind {
+        4382 => (app.world.combat_book_was_used, false),
+        5336 => (app.world.combat_book_volume_two_was_used, true),
+        _ => return false,
+    };
+    if app.player.is_none() || already {
+        return false; // `!NPC.combatBook...WasUsed` — once ever, per world
+    }
+    if vol_two {
+        app.world.combat_book_volume_two_was_used = true; // `:45342`
+    } else {
+        app.world.combat_book_was_used = true; // `:45329`
+    }
+    // The use START (`ItemCheck_StartActualUse`, `:51678-51680`): the swing
+    // + the Item92 UseSound (`Item.cs:42331`/`:37292`).
+    start_use_timers(app, held);
+    // `ApplyItemTime(sItem)` (`:45326`/`:45339`): the PREFIXED instance
+    // useTime (45 on both rows), the shimmer arms' read shape.
+    app.item_time = crate::prefix::prefixed_stats(held.kind, held.prefix)
+        .map(|s| s.use_time)
+        .or_else(|| registry::get(held.kind).map(|d| d.use_time as i32))
+        .filter(|t| *t > 0)
+        .map(|t| t as f32 * ONE_TICK_SECS)
+        .unwrap_or(app.swing_max);
+    // `Main.NewText(Language.GetTextValue("Misc.CombatBook...Used"),
+    // ChatColors.World)` (`:45330`/`:45343`) — the vol-two key is a
+    // `{$Misc.CombatBookUsed}` copy command (the same line).
+    let key = if vol_two { "Misc.CombatBookVolumeTwoUsed" } else { "Misc.CombatBookUsed" };
+    app.chat.new_text(crate::lang::text(key), crate::chat::COLOR_WORLD);
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    true
+}
+
 /// Refresh the crack overlay's `mine_timer`/`mine_hardness` from the
 /// `HitTile` book's damage at the cell — the port's projection of the C#
 /// `HitTile` damage onto the 0..100 crack ladder (`render/tile_cracks.rs`,
@@ -2442,6 +2497,13 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // permanent mining/placement speed (`:12861-12866`), the LAST arm
         // of `ItemCheck_UseShimmerPermanentItems`.
         if use_ambrosia(app, held) {
+            return;
+        }
+        // W4-g89e — `ItemCheck_UseCombatBook` (`Player.cs:45322-45350`,
+        // called `:43604` BEFORE the shimmer machine `:43607`): the 4382 /
+        // 5336 world-global books. The kinds are disjoint from every arm
+        // above, so the press-edge position is observation-identical.
+        if use_combat_book(app, held) {
             return;
         }
         // (Resync keep-one: the gate's i19 inline mana-potion arm was
@@ -17018,6 +17080,69 @@ mod use_loop_tests {
         let dirt = other.inventory[other.selected];
         assert!(!super::use_aegis_fruit(&mut other, dirt));
         assert!(!other.player.as_ref().unwrap().used_aegis_fruit);
+    }
+
+    /// W4-g89e — the 5336 Combat Book Volume Two use arm
+    /// (`ItemCheck_UseCombatBook`, `Player.cs:45337-45348`): ONE press
+    /// latches the WORLD flag `NPC.combatBookVolumeTwoWasUsed` (`:45342`),
+    /// pays one from the stack (the generic consumable tail `:43280-43326`,
+    /// `Item.cs:42326-42335` consumable) and re-arms the 45-tick cadence
+    /// (`ApplyItemTime` `:45339`). A second book is REFUSED — the
+    /// `!NPC.combatBookVolumeTwoWasUsed` gate (`:45337`) keeps the stack.
+    #[test]
+    fn w4_g89e_the_combat_book_vol_two_latches_the_world_flag_once() {
+        let mut app = app_with_staff(5336);
+        app.inventory[app.selected].count = 2;
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        app.mine_released = true;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert!(
+            app.world.combat_book_volume_two_was_used,
+            "the world flag latched (`:45342`)"
+        );
+        assert!(!app.world.combat_book_was_used, "vol one untouched");
+        assert_eq!(app.inventory[app.selected].count, 1, "one paid (`:43317`)");
+        assert_eq!(
+            app.item_time,
+            45.0 * super::ONE_TICK_SECS,
+            "ApplyItemTime re-armed the 45-tick cadence (`:45339`)"
+        );
+        assert!(app.swing > 0.0, "the use-start swing seam armed");
+        // The second book: the once-ever WORLD gate refuses.
+        let swing_before = app.item_time;
+        let held = app.inventory[app.selected];
+        assert!(!super::use_combat_book(&mut app, held));
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal keeps the stack");
+        assert_eq!(app.item_time, swing_before, "no cadence re-arm on refusal");
+    }
+
+    /// W4-g89e — the 4382 Combat Book (vol one) arm (`Player.cs:45324-45336`):
+    /// the i35 flag's MISSING use path. ONE press latches
+    /// `NPC.combatBookWasUsed` (`:45329`), pays one, re-arms 45 ticks; the
+    /// last book TurnToAirs. The two flags are independent — vol two stays
+    /// false until its own arm runs.
+    #[test]
+    fn w4_g89e_the_combat_book_vol_one_use_path_latches_i35s_flag() {
+        let mut app = app_with_staff(4382);
+        let held = app.inventory[app.selected];
+        assert!(super::use_combat_book(&mut app, held));
+        assert!(app.world.combat_book_was_used, "the i35 flag latched (`:45329`)");
+        assert!(!app.world.combat_book_volume_two_was_used);
+        assert_eq!(app.inventory[app.selected].count, 0);
+        assert_eq!(app.inventory[app.selected].kind, 0, "TurnToAir folded");
+        assert_eq!(app.item_time, 45.0 * super::ONE_TICK_SECS, "`:45326`");
+        // Once ever: a fresh stack is refused while the world flag holds.
+        app.inventory[app.selected].kind = 4382;
+        app.inventory[app.selected].count = 1;
+        let held = app.inventory[app.selected];
+        assert!(!super::use_combat_book(&mut app, held));
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal keeps the stack");
+        // A non-book never enters the arm.
+        let mut other = app_with_staff(2); // Dirt Block
+        let dirt = other.inventory[other.selected];
+        assert!(!super::use_combat_book(&mut other, dirt));
+        assert!(!other.world.combat_book_was_used);
     }
 
     /// S1-P-i25 — the summon spawn arm books the UNSCALED item damage as

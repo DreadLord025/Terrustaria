@@ -231,7 +231,7 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(false); // unlockedArmsDealerSpawn
     w.boolean(false); // unlockedNurseSpawn
     w.boolean(world.unlocked_princess); // unlockedPrincessSpawn
-    w.boolean(false); // combatBookVolumeTwoWasUsed
+    w.boolean(world.combat_book_volume_two_was_used); // combatBookVolumeTwoWasUsed (`:1407`, W4-g89e)
     w.boolean(false); // peddlersSatchelWasUsed
     w.boolean(false); // unlockedSlimeGreenSpawn
     w.boolean(false); // unlockedSlimeOldSpawn
@@ -626,7 +626,9 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.unlocked_princess = r.bool()?; // unlockedPrincessSpawn
     }
     if version >= 259 {
-        r.skip(1)?; // combatBookVolumeTwoWasUsed
+        // WorldFile.cs:2416-2423 — the vol-two flag reads into World state
+        // (W4-g89e); below 259 the C# resets it false (the ctor default).
+        world.combat_book_volume_two_was_used = r.bool()?; // combatBookVolumeTwoWasUsed
     }
     if version >= 260 {
         r.skip(1)?; // peddlersSatchelWasUsed

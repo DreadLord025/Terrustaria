@@ -4378,6 +4378,43 @@ mod tests {
         assert_eq!(n2.defense_override, Some(40));
     }
 
+    /// W4-g89e — `NPC.cs:53025-53031`: the vol-two book's block is the SAME
+    /// +250 lifeMax / ×0.8 cooldown / +0.25 damage / +8 defense as vol one,
+    /// applied AFTER it (both books: 2× each). The `:53032-53035` full-heal
+    /// on growth (`&` non-short-circuit) fires when the NPC was at full
+    /// life before the reset — the 5336 use arm's world flag
+    /// (`Player.cs:45342`) feeds `env.combat_book_two`.
+    #[test]
+    fn w4_g89e_the_vol_two_book_stacks_the_same_bonus_and_heals_on_growth() {
+        let w = ground();
+        let players: Vec<TownPlayer> = Vec::new();
+        let npcs: Vec<(usize, TownNpcView)> = Vec::new();
+        let mut e = env(&w, &players, &npcs);
+        e.combat_book_two = true;
+        let mut n = guide(0.0, 0.0, None);
+        n.hp = n.max_hp; // at full life — flag3 (`:53016`)
+        let (num2, num3) = town_stat_bonuses(&mut n, stats(), &e, false, false);
+        assert!((num2 - 1.25).abs() < 1e-5, "num2 = 1 + 0.25 (`:53029`)");
+        assert!((num3 - 2.0f32 * 0.8).abs() < 1e-5, "num3 = 2 * 0.8 (`:53028`)");
+        assert_eq!(n.max_hp, 500, "the book's +250 (`:53027`)");
+        assert_eq!(n.defense_override, Some(23), "15 + 8 (`:53030`)");
+        assert_eq!(n.hp, 500, "the growth full-heal (`:53032-53035`)");
+        // Both books: the blocks stack in C# order (vol one then vol two).
+        e.combat_book = true;
+        let mut n2 = guide(0.0, 0.0, None);
+        let (num2b, num3b) = town_stat_bonuses(&mut n2, stats(), &e, false, false);
+        assert!((num2b - 1.5).abs() < 1e-5, "1 + 0.25 + 0.25");
+        let expect3 = 2.0f32 * 0.8 * 0.8;
+        assert!((num3b - expect3).abs() < 1e-5, "2 * 0.8 * 0.8");
+        assert_eq!(n2.max_hp, 750, "250 + 250 + 250");
+        assert_eq!(n2.defense_override, Some(31), "15 + 8 + 8");
+        // A damaged NPC keeps its life on growth (flag3 false).
+        let mut n3 = guide(0.0, 0.0, None);
+        n3.hp = 10;
+        let _ = town_stat_bonuses(&mut n3, stats(), &e, false, false);
+        assert_eq!(n3.hp, 10, "no heal when not at full life");
+    }
+
     /// `NPC.cs:55750-55785` — the pet idle: the slime takes state 20
     /// with NO Next(20,20+num) draw, then Next(300) + Next(240).
     #[test]

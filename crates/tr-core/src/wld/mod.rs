@@ -1684,6 +1684,9 @@ mod tests {
         // (`:1413`, v261) — ride the round-trip at non-default values.
         world.combat_book_was_used = true;
         world.unlocked_slime_red_spawn = true;
+        // W4-g89e: the vol-two book flag (WorldFile.cs:1407, v259) rides
+        // the round-trip at a non-default value too.
+        world.combat_book_volume_two_was_used = true;
         world
     }
 
@@ -1907,6 +1910,10 @@ mod tests {
             "{context}: combatBookWasUsed"
         );
         assert_eq!(
+            got.combat_book_volume_two_was_used, want.combat_book_volume_two_was_used,
+            "{context}: combatBookVolumeTwoWasUsed"
+        );
+        assert_eq!(
             got.unlocked_slime_red_spawn, want.unlocked_slime_red_spawn,
             "{context}: unlockedSlimeRedSpawn"
         );
@@ -2053,6 +2060,8 @@ mod tests {
         // +1 partyGirl; +4 dyeTrader/truffle/armsDealer/nurse, +1 princess.
         tail[2030] = u8::from(world.unlocked_party_girl); // (`:1401`)
         tail[2035] = u8::from(world.unlocked_princess); // (`:1406`)
+        // combatBookVolumeTwoWasUsed (`:1407`): princess + 1 (W4-g89e).
+        tail[2036] = u8::from(world.combat_book_volume_two_was_used);
         tail[2026] = u8::from(world.downed_deerclops); // downedDeerclops (`:1397`)
         // The rainbow slime in the 7-slime run at 2038 (`:1410-1414`):
         // green/old/purple, then rainbow@2041, red@2042 (gate V3, i35).
@@ -3661,6 +3670,37 @@ mod tests {
         let tail_at = ptr1 - flags_tail(VER).len();
         assert_eq!(buf[tail_at + 1939], 1, "combatBookWasUsed at tail 1939");
         assert_eq!(buf[tail_at + 2042], 1, "unlockedSlimeRedSpawn at tail 2042");
+    }
+
+    /// W4-g89e — `combatBookVolumeTwoWasUsed` follows its v259 gate
+    /// (`WorldFile.cs:2416-2423`): below 259 the byte does not exist and the
+    /// field keeps false; at 259 it is the LAST byte of the tail (the
+    /// satchel needs 260). The writer pins it at tail 2036 (princess@2035+1,
+    /// `:1407`).
+    #[test]
+    fn w4_g89e_the_combat_book_vol_two_flag_follows_its_version_gate() {
+        // v258: the vol-two byte does not exist yet.
+        let w = parse(&synthetic_file(258, &[2, 144], 160, 11)).expect("v258 loads");
+        assert!(
+            !w.combat_book_volume_two_was_used,
+            "below 259: combatBookVolumeTwoWasUsed stays false"
+        );
+        // v259: it lands — the last byte of the v259 tail.
+        let mut data = synthetic_file(259, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 259);
+        let book_at = flags_tail(259).len() - 1;
+        data[tail_at + book_at] = 1;
+        let w = parse(&data).expect("v259 loads");
+        assert!(
+            w.combat_book_volume_two_was_used,
+            "combatBookVolumeTwoWasUsed reads from 259"
+        );
+        // v326: the writer's pinned offset (the owned-world fixture sets it).
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let tail_at = ptr1 - flags_tail(VER).len();
+        assert_eq!(buf[tail_at + 2036], 1, "combatBookVolumeTwoWasUsed at tail 2036");
     }
 
     // --- S1-A-7: the C#-generated world (real genRand) -----------------------

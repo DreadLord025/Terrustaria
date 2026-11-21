@@ -39384,3 +39384,78 @@ survives ResetEffects), `editing.rs` (unlock-once + consume + cadence +
 TurnToAir + refusal), `player_file.rs` (the :54786/:55260 sixth-bool
 round-trip, all-three independence, walk alignment), `persist.rs` (v9
 round-trip + the v8 two-token back-read; the v6 witness extended).
+
+## W4-g89d — the .trplayer v9 persist ADDENDUM (2026-11-21, docs-only)
+
+`docs/research/122-persist-v9-addendum.md` published: v9 SUPERSEDES the v7
+contract (research/103 does not exist in any ref at probe — g88c in-flight).
+The exact 8-line layout, the line-8 unlock token order (v7=1/v8=2/v9=3
+tokens, short-line back-reads), the two in-flight v7 forks read at their
+tips (g88 `717e0640`'s token-count reader would parse a v9 3-token line as
+a life pair — corruption on merge; g90 `1f1b88f0`'s bread-only v7 misreads
+g89's aegis flag), the reconciled v10+ contract (crystal bools append as
+line-8 tokens 4/5/6; life/mana pairs lines 9/10; bread line 11) and the
+merger recipe (g89 v9 base whole → g88 pairs → g90 flag → a6 tokens).
+
+## W4-g89e — the Combat Book arms + the vol-two world flag (2026-11-21, code-only)
+
+Census (the brief's guesses corrected against `ItemID.cs`):
+- **5336 = CombatBookVolumeTwo** (`ItemID.cs:12355`), NOT Ambrosia (5342,
+  landed g89c). Use arm `Player.ItemCheck_UseCombatBook`
+  (`Player.cs:45322-45350`, called `:43604`): the
+  `!NPC.combatBookVolumeTwoWasUsed` once-ever WORLD gate + `ApplyItemTime`
+  (45 ticks, `Item.cs:42326-42335`) + the netMode==0
+  `Main.NewText(Misc.CombatBookVolumeTwoUsed, ChatColors.World)` (the key
+  is a `{$Misc.CombatBookUsed}` copy command — the same line). The
+  `SendData(61, -17f)` MP sync has no single-player port.
+- **4382 = CombatBook** (vol one, `ItemID.cs:10447`): the SAME machine
+  (`:45324-45336`, `SendData(61, -11f)`). Its flag `NPC.combatBookWasUsed`
+  already had World state (i35's fishing condition `DidNotUseCombatBook`)
+  but NO use path — landed here too (one function, two arms, verbatim).
+- **4383 = DesertTorch** (`ItemID.cs:10449`), NOT UltrabrightTorch (2274,
+  `:6231`). `DefaultToTorch(16)` (`Item.cs:37297-37299`, `TorchID.Desert
+  = 16` `TorchID.cs:117`); the itemdata row (tile 4, place_style 16)
+  already matches. Placement rides the existing torch/biome-torch seam
+  (`editing.rs` `biome_torch_place_style`); d6's claim is the aiStyle-60
+  gun-stream biome-torch CONVERSION (`projectile_ai_guns.rs`, `5d81f2de`)
+  — a different lane, no overlap, nothing to port here.
+- **5335 = RodOfHarmony** (`ItemID.cs:12353`), NOT "Advanced Combat
+  Techniques Vol One" (no such item exists in 1.4.5.8). It is the
+  shimmered Rod of Discord (shimmer table 1326→5335):
+  `ItemCheck_UseTeleportRod` (`Player.cs:45476-45534`) — the 5335 arm
+  SKIPS the chaos-state block (`:45514-45517` early return). Unclaimed
+  (g87's branch is at main tip, zero commits; a6 claimed 3335 DemonHeart,
+  not 5335) — ported in W4-g89f.
+
+What the flag DOES (the consumer census): `NPC.AI_007_TownEntities`'
+`isLikeATownNPC` stat block (`NPC.cs:53025-53031`) — +250 lifeMax,
+cooldown scale ×0.8 (num3), damage scale +0.25 (num2), +8 defense; the
+growth full-heal `:53032-53035`. num2 feeds every town attack's
+`GetAttackDamage_ForTownNPC` (`:54482`/`:54758`/`:54908`/`:55055`); num3
+feeds the attack-chance denominator (`:55443`) and the flee ×0.8
+(`:55201`). The ladder was ALREADY ported
+(`npc_ai_town::town_stat_bonuses`, `env.combat_book_two`) — the flag had
+no writer; this task supplies it. NOT the peddler bonus — the peddler's
+satchel is a SEPARATE flag (`NPC.peddlersSatchelWasUsed`, v260 byte,
+unowned). Second consumer: `Player.cs:25695-25698` — both books fire
+progression event 40 (TRAINING_DAY, `AchievementInitializer.cs:414-416`),
+wired in the `update_player` borrow-free tail.
+
+Persistence: `.wld` flags section — write `WorldFile.cs:1407` (after
+unlockedPrincessSpawn), read `:2416-2423` version ≥259 (below: false).
+The port's `flags.rs` wrote `false`/skipped the byte; now World-owned
+(`world.combat_book_volume_two_was_used`), pinned tail offset 2036
+(princess@2035+1). The `.plr`/`.trplayer` sidecars are NOT touched —
+this is a WORLD global (research/122 §5).
+
+### Verification (W4-g89e)
+
+Code-only: re-read `Player.cs:45322-45350` / `:25695-25698` /
+`NPC.cs:53014-53035` / `:55443` / `WorldFile.cs:1407` / `:2416-2423` /
+`Item.cs:37287-37296` / `:42326-42335`; **no cargo/rustc/rustfmt/tests/
+graphify invoked**. Five witness tests WRITTEN, NOT RUN: `editing.rs`
+(vol-two unlock-once + consume + cadence + refusal; vol-one use path +
+TurnToAir + once-ever), `npc_ai_town.rs` (the vol-two block stacks + the
+growth full-heal + the damaged-NPC refusal), `player.rs` (both books fire
+TRAINING_DAY, one alone does not), `wld/mod.rs` (the v259 gate + the
+tail-2036 pin; the owned-fields round-trip extended).
