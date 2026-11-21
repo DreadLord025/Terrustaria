@@ -1702,13 +1702,14 @@ fn drippler_death(
     gore.new_gore(rng, world, pos, vel, pick2, s);
 }
 
-/// The shark arm (`NPC.cs:86730-86786`): the 75x dust-5 burst, then the
-/// per-kind quad — head at position + three at +14 X, ALL at
-/// `velocity * 0.8` (the dampened kick base), scale 1f. The live
-/// branches: 65 Shark → 89/90/91/92 (`:86746-86749`, sites 228-231),
-/// 692 Orca → 1403/1404/1405/1406 (`:86753-86756`, sites 232-235); the
-/// 542-545 sand sharks land next batch. The C# uses independent ifs —
-/// mutually exclusive on type, the port's else-if is equivalent.
+/// The shark arm (`NPC.cs:86730-86786`, sites 228-251): the 75x dust-5
+/// burst, then the per-kind quad — head at position + three at +14 X,
+/// ALL at `velocity * 0.8` (the dampened kick base), scale 1f. The
+/// branches: 65 Shark → 89/90/91/92 (`:86746-86749`), 692 Orca →
+/// 1403/1404/1405/1406 (`:86753-86756`), the 542-545 sand sharks →
+/// 944+n ladder (`:86758-86785`, base 944/948/952/956 + the 0/1/2/3
+/// tail). The C# uses independent ifs — mutually exclusive on type, the
+/// port's else-if is equivalent.
 fn shark_death(
     npc: &Npc,
     npc_type: i32,
@@ -1747,6 +1748,16 @@ fn shark_death(
         gore.new_gore(rng, world, pos14, vel, 1404, 1.0); // :86754
         gore.new_gore(rng, world, pos14, vel, 1405, 1.0); // :86755
         gore.new_gore(rng, world, pos14, vel, 1406, 1.0); // :86756
+    } else if npc_type == 542 {
+        gore.new_gore(rng, world, pos, vel, 944, 1.0); // :86760
+        gore.new_gore(rng, world, pos14, vel, 945, 1.0); // :86761
+        gore.new_gore(rng, world, pos14, vel, 946, 1.0); // :86762
+        gore.new_gore(rng, world, pos14, vel, 947, 1.0); // :86763
+    } else if npc_type == 543 {
+        gore.new_gore(rng, world, pos, vel, 948, 1.0); // :86767
+        gore.new_gore(rng, world, pos14, vel, 949, 1.0); // :86768
+        gore.new_gore(rng, world, pos14, vel, 950, 1.0); // :86769
+        gore.new_gore(rng, world, pos14, vel, 951, 1.0); // :86770
     }
 }
 
@@ -1962,8 +1973,8 @@ pub fn hit_effect_d(
     else if npc_type == 490 {
         drippler_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:86730-86786` — the shark arm (65/692/542-545); the 65/692 quads
-    // are live (sites 228-235), the sand sharks land next batch.
+    // `:86730-86786` — the shark arm (65/692/542-545); the 65/692/542/543
+    // quads are live (sites 228-243), the 544/545 tails land next batch.
     else if matches!(npc_type, 65 | 692 | 542 | 543 | 544 | 545) {
         shark_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
@@ -3459,6 +3470,32 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "shark {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86760-86770` — the sand shark quads: 542 → 944-947,
+    /// 543 Corrupt → 948-951; same +14 X / velocity*0.8 contract.
+    #[test]
+    fn w4_f5d_the_sand_shark_quads_spawn_the_ladder() {
+        let w = air();
+        let n = mob(100.0, 100.0, 50.0, 30.0);
+        for (kind, want) in [(542, vec![944, 945, 946, 947]), (543, vec![948, 949, 950, 951])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(233);
+            let _ = hit_effect_d(&n, kind, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "sand shark {kind}");
+            assert!(!gore.slot(4).active, "exactly four gores");
+            let mut twin = UnifiedRandom::new(233);
+            for _ in 0..75 {
+                twin_dust(&mut twin, 50, 30);
+            }
+            for _ in 0..4 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "sand shark {kind} mirrors the C# draws");
         }
     }
 }
