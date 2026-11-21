@@ -651,6 +651,12 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         // Heart), 31 (Shadow Orb), 639 (Mana Crystal).
         12 | 31 | 639 => check_orb(world, x, y),
         14 | 87 | 88 | 186 | 187 => check_3x2(world, x, y, kind),
+        // `Check6x3` (`WorldGen.cs:50242`, dispatch :86019-86026 + the
+        // :85278 type-guard fall-through): the 41 cage kinds — 275-281
+        // listed at the case, the rest routed by the default's
+        // `type != 296 && …` guard falling to `goto case 275`.
+        275..=281 | 296 | 297 | 309 | 358 | 359 | 413 | 414 | 542 | 550 | 551 | 553 | 554
+        | 558 | 559 | 599..=612 | 632 | 640 | 643..=645 | 710 => check_6x3(world, x, y, kind),
         15 => check_chair(world, x, y),
         18 => check_bench(world, x, y),
         21 => check_chest(world, x, y),
@@ -1999,6 +2005,117 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
         pot_event: None,
         herb_event: None,
         pile_event,
+        ring: Some(region_ring(&region)),
+    })
+}
+
+/// The `Check6x3` cage-item drop table (`WorldGen.cs:50291-50454`): every
+/// 6x3 kind drops its cage item at the trigger cell (32x32). The census
+/// (research/68 §2) confirms all 41 `Check6x3` kinds are cages and the drop
+/// is the plain cage item — there is NO critter release on break (the
+/// critter stays inside the dropped cage item; releasing it is the LMB
+/// item-use `ItemCheck_ReleaseCritter`, already ported in `bug_net.rs`).
+/// The order mirrors the C# `if (type == …)` chain (275, 413, 414, 276…).
+const CAGE_6X3_DROP: &[(u16, i32)] = &[
+    (275, 2162), // BunnyCage
+    (413, 3565), // SquirrelOrangeCage
+    (414, 3566), // SquirrelGoldCage
+    (276, 2163), // SquirrelCage
+    (277, 2164), // MallardDuckCage
+    (278, 2165), // DuckCage
+    (279, 2166), // BirdCage
+    (280, 2167), // BlueJay
+    (281, 2168), // CardinalCage
+    (296, 2186), // ScorpionCage
+    (297, 2187), // BlackScorpionCage
+    (309, 2206), // PenguinCage
+    (358, 3070), // GoldBirdCage
+    (359, 3071), // GoldBunnyCage
+    (542, 4396), // OwlCage
+    (550, 4461), // TurtleCage
+    (551, 4462), // TurtleJungleCage
+    (553, 4473), // GrebeCage
+    (554, 4474), // SeagullCage
+    (558, 4481), // SeahorseCage
+    (559, 4483), // GoldSeahorseCage
+    (599, 4882), // AmethystBunnyCage
+    (600, 4883), // TopazBunnyCage
+    (601, 4884), // SapphireBunnyCage
+    (602, 4885), // EmeraldBunnyCage
+    (603, 4886), // RubyBunnyCage
+    (604, 4887), // DiamondBunnyCage
+    (605, 4888), // AmberBunnyCage
+    (606, 4889), // AmethystSquirrelCage
+    (607, 4890), // TopazSquirrelCage
+    (608, 4891), // SapphireSquirrelCage
+    (609, 4892), // EmeraldSquirrelCage
+    (610, 4893), // RubySquirrelCage
+    (611, 4894), // DiamondSquirrelCage
+    (612, 4895), // AmberSquirrelCage
+    (632, 5213), // ScarletMacawCage
+    (640, 5301), // BlueMacawCage
+    (643, 5314), // ToucanCage
+    (644, 5315), // YellowCockatielCage
+    (645, 5316), // GrayCockatielCage
+    (710, 5512), // PufferfishCage
+];
+
+/// `WorldGen.Check6x3` (`WorldGen.cs:50242-50463`): the 6x3 cage. The origin
+/// is `frameX / 18` / `frameY / 18` back from the trigger (:50251-50252 —
+/// the cage is a single style, no style offset); all 18 cells must be active
+/// of `kind` with frames `(dx*18, dy*18)` (:50262), and each of the six
+/// columns needs `SolidTileAllowBottomSlope` below OR an active solid-top
+/// tile with `frameY == 0` (a table top, :50271). A broken cage sweeps all
+/// 18 cells and drops its cage item ([`CAGE_6X3_DROP`], :50291-50454) at the
+/// trigger cell, then frames the 8x5 ring (:50456-50462). The per-cell drop
+/// is suppressed (`KILL_TILE_NO_CELL_DROP` — every cage kind is in the
+/// `KillTile_GetItemDrops` empty group), so the object record is the only
+/// drop: breaking a cage returns the cage item with the critter inside.
+fn check_6x3(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> {
+    let t = world.tile(x, y)?;
+    let ox = x - i32::from(t.frame_x) / 18;
+    let oy = y - i32::from(t.frame_y) / 18;
+    let mut broken = false;
+    let mut region = Vec::with_capacity(18);
+    for k in ox..ox + 6 {
+        for l in oy..oy + 3 {
+            region.push((k, l));
+            let expected = (((k - ox) * 18) as i16, ((l - oy) * 18) as i16);
+            if world
+                .tile(k, l)
+                .is_none_or(|c| !c.active() || c.kind != kind || (c.frame_x, c.frame_y) != expected)
+            {
+                broken = true;
+            }
+        }
+        // :50271 — `SolidTileAllowBottomSlope` OR (nactive && solidTop &&
+        // frameY == 0). The solid-top arm is the table-top placement.
+        let below = world.tile(k, oy + 3);
+        let table_top = below.is_some_and(|b| {
+            crate::tileobject::nactive(b) && td::TILE_SOLID_TOP.has(b.kind) && b.frame_y == 0
+        });
+        if !solid_tile_allow_bottom_slope(world, k, oy + 3) && !table_top {
+            broken = true;
+        }
+    }
+    if !broken {
+        return None;
+    }
+    let item = CAGE_6X3_DROP
+        .iter()
+        .find(|&&(k, _)| k == kind)
+        .map(|&(_, item)| item);
+    Some(CheckPlan {
+        drop: item.map(|item| ObjectDrop {
+            tile_kind: kind,
+            x,
+            y,
+            item: Some(item),
+        }),
+        cells: killable_cells(world, &region, kind),
+        pot_event: None,
+        herb_event: None,
+        pile_event: None,
         ring: Some(region_ring(&region)),
     })
 }
@@ -5064,5 +5181,104 @@ mod tests {
             drop2.item
         );
         assert_eq!(w.shadow_orb_count, 2, "both breaks counted");
+    }
+
+    // ---- W4-g34: the Check6x3 cage break-drop cascade (research/68 §2) ----
+
+    /// A placed 6x3 cage over the stone floor: origin (8, 17), cells
+    /// x 8..=13, y 17..=19, frames `(dx*18, dy*18)`.
+    fn cage_6x3_world(kind: u16) -> World {
+        let mut w = object_world();
+        for dx in 0..6 {
+            for dy in 0..3 {
+                set_object_cell(&mut w, 8 + dx, 17 + dy, kind, (dx * 18) as i16, (dy * 18) as i16);
+            }
+        }
+        w
+    }
+
+    #[test]
+    fn w4_g34_cage_6x3_break_drops_the_cage_item_with_critter_inside() {
+        // `Check6x3` (`WorldGen.cs:50242-50463`): breaking any cell sweeps
+        // all 18 and drops the cage item at the trigger cell — the critter
+        // stays inside (no NPC release; the C# has no release arm here).
+        let mut w = cage_6x3_world(275);
+        let kill = kill_tile(&mut w, 10, 18, false).unwrap();
+        let cells: Vec<(i32, i32)> = (8..=13)
+            .flat_map(|x| (17..=19).map(move |y| (x, y)))
+            .collect();
+        assert_all_gone(&w, &cells);
+        // The trigger is the first surviving cell in SquareTileFrame order
+        // around the hit (10, 18): (9, 17).
+        assert_eq!(
+            kill.object_drops,
+            vec![ObjectDrop {
+                tile_kind: 275,
+                x: 9,
+                y: 17,
+                item: Some(2162), // Bunny Cage — the critter stays inside
+            }]
+        );
+        assert!(kill.events.is_empty());
+        assert!(kill.pile_events.is_empty());
+    }
+
+    #[test]
+    fn w4_g34_cage_6x3_drop_table_covers_every_kind() {
+        // The per-kind item mapping (`WorldGen.cs:50291-50454`): each of the
+        // 41 kinds drops its own cage item, never a neighbour's.
+        for &(kind, item) in CAGE_6X3_DROP {
+            let mut w = cage_6x3_world(kind);
+            let kill = kill_tile(&mut w, 10, 18, false).unwrap();
+            assert_eq!(kill.object_drops.len(), 1, "kind {kind}");
+            assert_eq!(kill.object_drops[0].tile_kind, kind);
+            assert_eq!(kill.object_drops[0].item, Some(item), "kind {kind}");
+        }
+        assert_eq!(CAGE_6X3_DROP.len(), 41, "the full Check6x3 census");
+    }
+
+    #[test]
+    fn w4_g34_cage_6x3_intact_survives_and_no_item_suppresses() {
+        // An intact cage on solid ground yields no drop when a far cell
+        // dies; `noItem` keeps the cascade but suppresses the drop record
+        // (the shared `no_item` gate).
+        let mut w = cage_6x3_world(275);
+        let kill = kill_tile(&mut w, 20, 20, false).unwrap();
+        assert!(kill.object_drops.is_empty(), "the intact cage drops nothing");
+        assert!(w.tile(10, 18).is_some_and(|t| t.active() && t.kind == 275));
+        let kill = kill_tile(&mut w, 10, 18, true).unwrap();
+        assert!(kill.object_drops.is_empty(), "noItem suppresses the record");
+        assert!(!w.tile(9, 17).is_some_and(|t| t.active()), "the sweep ran");
+    }
+
+    #[test]
+    fn w4_g34_cage_6x3_stands_on_a_table_top() {
+        // :50271 — the support arm accepts an active solid-top tile with
+        // frameY == 0 (a table top) even when SolidTileAllowBottomSlope
+        // refuses it (a table is not solid). Two intact style-0 tables under
+        // the cage carry it; a break one cell below the cage's edge runs
+        // check_6x3 on the cage and it survives.
+        let mut w = object_world();
+        for dx in 0..6 {
+            for dy in 0..3 {
+                set_object_cell(&mut w, 8 + dx, 17 + dy, 275, (dx * 18) as i16, (dy * 18) as i16);
+            }
+        }
+        // Two 3x2 tables (14) at x 8..10 and 11..13, y 20..21, over the floor.
+        for base in [8i32, 11] {
+            for dx in 0..3 {
+                for dy in 0..2 {
+                    set_object_cell(&mut w, base + dx, 20 + dy, 14, (dx * 18) as i16, (dy * 18) as i16);
+                }
+            }
+        }
+        // Break the floor cell (14, 20): its 3x3 reaches the cage's bottom-
+        // right cell (13, 19), so check_6x3 runs — the table tops carry it.
+        let kill = kill_tile(&mut w, 14, 20, false).unwrap();
+        assert!(
+            !kill.object_drops.iter().any(|d| d.tile_kind == 275),
+            "the table carries the cage"
+        );
+        assert!(w.tile(10, 18).is_some_and(|t| t.active() && t.kind == 275));
     }
 }
