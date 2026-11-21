@@ -240,3 +240,53 @@ MENU-FINAL witnesses (written, not run — code-only lane):
 `audio.rs::menu_final_the_missing_title_arms_land` (the three arms,
 their ladder order, the property gates, the fade jump). All 19
 doc-sweep witnesses from the 57-site pass stay as listed above.
+
+## MENU RETIRE — the menu-family FINAL census (union coverage)
+
+Re-derived 2026-11-21 by grepping every `SoundEngine.PlaySound` in
+`decompiled/Terraria/Main.cs` (271 sites total, matching g23's
+`play_sound_lines_g23.txt`) and reading the three lanes' tips:
+g22 `3b7949ae`, g23 `945391e3` (stale — see
+`91-g23-branch-deprecated.md`), g24 `7ca8b087`.
+
+### Main.cs menu-region union-coverage table
+
+The menu region = `DrawMenu` (`:48201-51927`) + the password/IP
+callbacks (`:51938-52062`): **151 sites**, every one claimed:
+
+| C# span | Sites | Claimant | Coverage |
+| --- | --- | --- | --- |
+| `:48489-49727` (modes 1212/1213/31/14/882/30/889/15/200/201/1/2/222/20/17/colour-Backs/5/40/-7/-71/8/9/3000/112-head) | **70** | **g22 window sites 111-180** | wired via `pending_cue`/`take_cue` + the pure census helpers; unported surfaces recorded (`:48651` mode-882 Steam cancel, `:48790`/`:48794` Friends-XOR rows, `:48942` Workshop, `:48954` ResourcePacks→Hint deviation) |
+| `:49734-51052` (Settings hub 11/112/1112/1111/2008/111/1125/25/252/26/28/272727/27/1127/12/13/131/16/1000000/1000001) | **75** | **g23 `DRAW_MENU_CUE_CENSUS`** | rows landed on g22's seam; the union replayed the 9 g22-missed rows; `:50984`/`:51005`/`:51020`/`:51052` `ported:false` — the front-end seams own them (world-creation size row, rejection notice; the size pick is the g22b blanket deviation) |
+| `:51276` colour-focus / `:51575` volume-hover | 2 | **g23 WIRED** | `pending_ticks` draw-time chrome + the drain after `Menu::draw` |
+| `:51388` RGB +/- hover | 1 | **g23 DEAD ARM** | unreachable in vanilla (`:51284` else-if after `:51110` if) — stays unwired, witnessed |
+| `:51835` focus-change hover | 1 | **landed pre-lane** | `app/loop.rs`'s `m.hover != before` edge (the Bug-17/g21 hover tick); g23's batch-3 header confirms |
+| `:51952` password-cancel / `:52059` IP-submit | 2 | **g23 WIRED (union)** | both on `pending_cue` (moved off `pending_ticks` by `945391e3`) |
+
+The g22 window's other 20 sites (`:44118-47556`, sites 91-110: hair
+pick, clothes-window open/cancel/save, slot/dummy cycles, builder/info
+toggles) are IN-GAME windows, not menu — claimed by g22 batches 1-2.
+g23's remaining 10 tail sites (`:55965`/`:56031` map, `:58761` thunder
+landed, `:62798` click-pan, `:63168-63169` star pair, `:64635`/`:64641`
+NewText wired, `:66224`/`:66248` SelectPlayer) are outside the menu
+region — census/wired/dormant per `main_sounds_batch3.rs`.
+
+### The 888 UI-file half (the doc-sweep's 57)
+
+`UICharacterCreation.cs` 24 + `UIWorldCreation.cs` 7 + the element-file
+hover/click latches + keyboard keys + connecting-cancel + 200/201 =
+**57 sites, all g22** (this doc §1-5). g23's union verified the 4
+front-end census rows (888 GoBack-11 landed-by-equivalent, size pick
+deviation, rejection notice no-Back, 1000001 unreachable) and took
+nothing. **g24 (`7ca8b087`, WorldGen lane): ZERO menu-region claims** —
+its Main.cs citations (`:48176` GoToWorldSelect, `:5671` DedServ) are
+non-sound; its 25+ sites are WorldGen.cs/quit-path.
+
+### Verdict
+
+**No menu-site is unclaimed.** 151/151 Main.cs menu-region sites +
+57/57 doc-sweep UI sites are wired, census-pinned, dead-arm-ruled, or
+recorded-unported with a citation. The only truly unwired menu cues
+are the recorded deviations (Steam/Workshop/Friends surfaces §9.1, the
+ResourcePacks Hint, the front-end size pick) and the census-only
+legacy preview screens whose 888 replacements carry the live cues.
