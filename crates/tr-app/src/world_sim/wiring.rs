@@ -1066,4 +1066,46 @@ mod tests {
             .filter(|p| p.active)
             .any(|p| (419..=422).contains(&p.kind) && p.ai[0] == x && p.ai[1] == y)
     }
+
+    /// W4-d13 — the geyser device-shot chain end to end (`Wiring.cs:3084-
+    /// 3120` → the 654 row `Projectile.cs:7024-7037`): the trip fires the
+    /// column with the C#'s 20 dmg / 2 knockback / ±8 velocity, the spawn
+    /// carries the aiStyle-126 row (30x30, penetrate -1, trap, alpha 255),
+    /// and the hostile proxy flips `friendly = false` so the column's
+    /// contact damage reaches the player (the C# row is friendly AND
+    /// hostile; the port's `!friendly` gate needs the flip).
+    #[test]
+    fn w4_d13_the_geyser_trip_spawns_the_hostile_column() {
+        // The up variant (frameX 0 → column 0 < 2): the jet at
+        // ((num2+1)*16, j*16) with vy -8.
+        let mut app = app_with(443, 0, 0);
+        trip_and_tick(&mut app);
+        let cols: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == crate::projectile::GEYSER_TRAP)
+            .collect();
+        assert_eq!(cols.len(), 1, "the geyser fires one column");
+        let c = cols[0];
+        assert_eq!(c.damage, 20, "the C# damage");
+        assert_eq!(c.knock_back, 2.0, "the C# knockback");
+        assert_eq!(c.vel, glam::Vec2::new(0.0, -8.0), "the up jet");
+        assert_eq!((c.w, c.h), (30.0, 30.0), "the row box");
+        assert_eq!(c.penetrate, -1, "the column pierces");
+        assert!(c.trap, "the trap flag");
+        assert_eq!(c.alpha, 255);
+        assert!(!c.friendly, "the hostile proxy — the player hurt gate");
+        // The down variant (frameX 72 → column 2): vy +8, one row lower.
+        let mut down = app_with(443, 72, 0);
+        trip_and_tick(&mut down);
+        let d = down
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == crate::projectile::GEYSER_TRAP)
+            .expect("the down column");
+        assert_eq!(d.vel, glam::Vec2::new(0.0, 8.0), "the down jet");
+        assert!(!d.friendly, "the proxy holds for the down variant");
+    }
 }
