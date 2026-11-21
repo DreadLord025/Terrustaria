@@ -1,10 +1,13 @@
 # 67 — World-lane dust WIRING (W4-f6): keep-one + seam census
 
-Status: WIRING DELIVERED (W4-f6, the world lane's wiring phase, branch
+Status: FINAL (W4-f6, the world lane's wiring + final phase, branch
 `task/W4-f6-dust-world-3`). The 40 staged emitters (research/65, commits
-`885a6bfa`/`d6f555b8`/`9dec91b0`/`680ac9d8`) are now called from the live
-machines at their C# positions. Code-only: WRITTEN NOT RUN, the new
-wiring witnesses are owed a compile window before merge.
+`885a6bfa`/`d6f555b8`/`9dec91b0`/`680ac9d8`) are called from the live
+machines at their C# positions; the final phase applied the d54 drill-atan2
+fix, published the g68 `tile_draw_rand` keep-one + the mount-abilities
+activation contract, and ported the four unclaimed minecart spark variants
++ the staged fart cloud. Code-only: WRITTEN NOT RUN, the witnesses are owed
+a compile window before merge.
 
 ## The e4 co-lane keep-one (mount 1-19 ⊂ f6's 27)
 
@@ -249,3 +252,36 @@ draws vs the direct emitter): `w4_f6_drain_spawn_matches_the_direct_wolf_emitter
 `w4_f6_pylon_dust_box_centers_the_crystal_rect`,
 `w4_f6_bubble_cells_match_build_and_collect_lava`. The 32 original
 draw-mirror witnesses (research/65) still stand.
+
+## FINAL phase record (2026-11-21, this branch)
+
+The five final-phase items, in order (one commit each):
+
+1. **Drill-atan2 fix** (`76aeaf3c`) — d54 research/131 §7.1 EXACT hunks
+   applied at the fetched d54 tip `c89aea9f`: `mount_dust.rs`
+   `drill_beam_dust` aim → `(d.y as f64).atan2(d.x as f64) as f32` + the
+   drill-beam witness mirror re-pin + the `Utils.cs:1655-1658` citation
+   (re-read verbatim: `(float)Math.Atan2(v.Y, v.X)`, DOUBLE of the widened
+   floats). Signature keeps `(target, player_center)`; no RNG-order change
+   (the atan2 is draw-free). The §7.1 line numbers shifted with the wiring
+   commits (the witness mirror is now :1849, was :1598 at `5daa1d70`) —
+   the hunks applied by content, both sites verified.
+2. **`tile_draw_rand` g68 collision keep-one** (`8a34f664`) — ONE field,
+   BOTH consumers (the census above): `TileDrawing._rand` is one private
+   field on the one `Main.TilesRenderer`; Mount.cs has zero private RNG
+   fields. No rename, no second field; drips-before-pylons merge order.
+3. **Mount ABILITIES activation contract** (`a67d1363`) — c14 (`36732286`)
+   / d8 (`50dcaa75`) censused: neither lands `UseDrill`; the exact seam
+   published above for the mining-machine lane. `ability_active` keep-one
+   with d8's accessors.
+4. **Minecart-track dust** (`573b7e7f`) — the four unclaimed delegate
+   variants ported + the staged fart cloud (the census above), 9 witnesses.
+5. **This FINAL record** — the status header + the phase log.
+
+Verification (code-only mode): no cargo/tests/rustfmt run (the task's
+constraint). Each code change was re-read against the cited C# at the
+decompiled source; the witnesses are WRITTEN NOT RUN and owed the
+merge-verify compile window. The base-213 spark stream is byte-identical
+(the variant adds zero rolls for `SparkVariant::Sparks`); the drill-atan2
+fix changes only the aim angle's last-ulp precision (the cos/sin velocity
+bytes), no draw count.
