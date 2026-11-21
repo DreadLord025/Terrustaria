@@ -39408,3 +39408,35 @@ the flag/leech/budget/magic/canGhostHeal gates
 (`w4_d6_the_ghost_heal_gates_flag_leech_budget_magic_and_the_npc_flag`),
 the budget regen/caps (`w4_d6_the_life_steal_budget_regens_and_caps_per_
 difficulty`).
+
+## W4-d6 residual — the aiStyle-56 duplicate keep-one (d6 b53ee70a vs c6 040b33b5)
+
+Both branches port the FlamingScythe (329) aiStyle-56 arm
+(`Projectile.cs:28845-28866`, re-read whole). Arm-by-arm:
+
+| Piece | d6 b53ee70a | c6 040b33b5 | Verdict |
+| --- | --- | --- | --- |
+| `FLAMING_SCYTHE: u16 = 329` const | data.rs :1057 | data.rs :473 | identical value — keep ONE |
+| `set_defaults_light` 0.25 (`:4219`) | :1579 | :1561 | identical — keep ONE |
+| `proj_data` row `(80, 80, 56, -1, 420, 0, false×3, RESET_STATE)` (`:4215-4225`) | :2852 | :2086 | identical tuple — keep ONE |
+| the one-shot latch (`:28847-28852`): localAI0 0→1, rot=ai0, spriteDirection=−ai1 | same | same | identical |
+| the sub-16 Manhattan ×1.05 (`:28853-28856`, STRICT <) | same | same | identical |
+| direction sign (vx<0 → −1 else +1, `:28857-28864`) | same | same | identical |
+| spin `(|vx|+|vy|)·0.025·dir` on the POST-spin-up velocity (`:28865`) | same | same | identical |
+| hostile hold | `self.friendly = false` EVERY tick (the pool slot defaults true — the `ai_heal_orb`/`ai_dungeon_debris` precedent) | none — relies on `spawn_hostile_ai`'s one-time `friendly = false` | behaviour-identical for every real spawn path (the only spawner is c6's drain); d6's hold is the defensive sibling-arm convention |
+| integration | `self.pos += self.vel` inline (no world param) | `self.kill_step(world)` — `tileCollide = false` (`:4223`) takes the free-move branch `pos += vel; return` | identical result; c6's shape is the shared HandleMovement seam (the 55-arm precedent) |
+| dispatch arm | `56 => ai_flaming_scythe()` after the 55 arm | `56 => ai_flaming_scythe(world)` after the 18 arm | same match, different insertion points — merge conflict, keep ONE |
+| witnesses | 3 AI-level (latch+spin, the 16-Manhattan boundary, the row verbatim) | 2 sim-level (the blade-pair drain, the centred volley) — no AI-arm unit test | complementary — keep BOTH sets |
+| the spawner | none (the arm alone) | the whole style-59 chain: the 328 kind row (93365c72), the carrier pre-pass + pair drain + BladeShot centred spawn (040b33b5), the chain draw (5de68021) | c6 ONLY — without it the 329 never spawns in game |
+
+**Keep-one recommendation:** keep ONE arm — c6's `(world)` + `kill_step`
+signature (the house HandleMovement seam), with d6's per-tick
+`friendly = false` hold line folded in (the sibling-arm convention; the
+C# row's `hostile = true` `:4221` must survive any spawn seam, incl. the
+net relay). Re-point d6's 3 AI-level witnesses at the kept signature
+(add the `world` arg; the expectations are unchanged — the maths is
+identical). Keep c6's NPC-side chain whole (it is the spawn source, not
+a duplicate). Dedupe ALL FIVE shared sites at merge (const, light row,
+proj_data row, the arm, the dispatch arm) — not just the arm. The d6
+anchors row (`fn ai_flaming_scythe`) survives either shape; c6 added no
+arm anchor. No behaviour change lands with this note.
