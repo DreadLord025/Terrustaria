@@ -2940,14 +2940,44 @@ impl Projectile {
     /// `ai[1] >= 6f` last one the tip's type (8); the tip itself spawns
     /// nothing.
     ///
-    /// Returns the segment spawn request — `(kind, x, y, ai1)` — which the pool
-    /// resolves through `Projectile.NewProjectile`'s seam, or `None`.
-    /// `tileCollide = false` (`:874-884`) is the row's own field: the vine
-    /// grows straight through walls.
-    fn ai_style4(&mut self, rng: &mut dyn tr_core::loot::DropRng) -> Option<(u16, f32, f32, f32)> {
+    /// W4-d1 — the Crystal Vile Shard pair (493/494, `:5667-5680`) rides the
+    /// same machine with its own constants: the fade-in is `−100` (the base
+    /// −50 plus the `:23719-23721` extra −50), the fade-out `+4`
+    /// (`:23817-23820`), and the SHAFT (494) chains at depth ≥ `7 + Next(2)`
+    /// (`:23746-23760`) — the head child (493) carries a 1.25× damage and
+    /// knockBack. The one-shot `ai[1] == 0 && localAI[0] == 0` sound latch
+    /// (`:23696-23705`) plays Item8 (the shaft: Item101) at `base.Center`.
+    ///
+    /// Returns the segment spawn request — `(kind, x, y, ai1, damage,
+    /// knock_back)` — which the pool resolves through
+    /// `Projectile.NewProjectile`'s seam, or `None`. The 7/8 and 150-152
+    /// chains pass their own damage/knockBack (the C# re-stamps the child's
+    /// damage, `:23742`/`:23778`); the 494's head child passes the 1.25×
+    /// pair. `tileCollide = false` (`:874-884`/`:5674`) is the row's own
+    /// field: the vine grows straight through walls.
+    fn ai_style4(
+        &mut self,
+        rng: &mut dyn tr_core::loot::DropRng,
+        local_owner: u8,
+    ) -> Option<(u16, f32, f32, f32, i32, f32)> {
+        // W4-d1 — `:23696-23705`: the one-shot cue latch. `netMode != 2`
+        // folds true (single-player); the head plays Item8, the shaft
+        // Item101, at `base.Center` (the `wants_sound` intent, S1-E-21h).
+        if self.ai[1] == 0.0 && self.local_ai[0] == 0.0 {
+            self.local_ai[0] = 1.0;
+            let style = if self.kind == CRYSTAL_VILE_SHAFT { 101 } else { 8 };
+            self.wants_sound = Some((
+                2,
+                style,
+                self.pos.x + self.w * 0.5,
+                self.pos.y + self.h * 0.5,
+                0.0,
+            ));
+        }
         // `:23706` — the orientation.
         self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
         let nettle = matches!(self.kind, NETTLE_BURST_RIGHT | NETTLE_BURST_LEFT | NETTLE_BURST_END);
+        let crystal = matches!(self.kind, CRYSTAL_VILE_HEAD | CRYSTAL_VILE_SHAFT);
         let mut spawn = None;
         if self.ai[0] == 0.0 {
             // S1-P-i22 — `:23709-23713`: the Nettle Burst head's first-tick
@@ -2959,10 +2989,12 @@ impl Projectile {
                 self.net_update = true;
             }
             // `:23714` — the fade-in; `:23715-23718` the Nettle Burst's extra
-            // −25 (the 493/494 variant's −50 at `:23719-23721` is unported).
+            // −25; W4-d1 `:23719-23721` the Crystal Vile Shard's extra −50.
             self.alpha -= 50;
             if nettle {
                 self.alpha -= 25;
+            } else if crystal {
+                self.alpha -= 50;
             }
             if self.alpha <= 0 {
                 self.alpha = 0;
@@ -2972,16 +3004,42 @@ impl Projectile {
                     self.pos += self.vel;
                 }
                 // `:23734-23745` — the base's child (the tip spawns nothing).
-                if self.kind == VILE_BASE && self.owner == 0 {
+                if self.kind == VILE_BASE && self.owner == local_owner {
                     let child = if self.ai[1] >= 6.0 { VILE_TIP } else { VILE_BASE };
                     spawn = Some((
                         child,
                         self.pos.x + self.vel.x + self.w * 0.5,
                         self.pos.y + self.vel.y + self.h * 0.5,
                         self.ai[1] + 1.0,
+                        self.damage,
+                        self.knock_back,
+                    ));
+                } else if self.kind == CRYSTAL_VILE_SHAFT && self.owner == local_owner {
+                    // W4-d1 — `:23746-23760`: the shaft's chain. The depth
+                    // cap rolls `7 + Next(2)` (ONE draw per chain tick); at
+                    // or past it the child is the head 493, else another
+                    // shaft. The head child carries `(int)(damage * 1.25)`
+                    // and `knockBack * 1.25f` (`:23755-23759`); the shaft
+                    // child keeps the parent's pair.
+                    let mut child = self.kind;
+                    if self.ai[1] >= 7.0 + rng.next_range(0, 2) as f32 {
+                        child -= 1;
+                    }
+                    let (dmg, kb) = if child == CRYSTAL_VILE_HEAD {
+                        ((self.damage as f64 * 1.25) as i32, self.knock_back * 1.25)
+                    } else {
+                        (self.damage, self.knock_back)
+                    };
+                    spawn = Some((
+                        child,
+                        self.pos.x + self.vel.x + self.w * 0.5,
+                        self.pos.y + self.vel.y + self.h * 0.5,
+                        self.ai[1] + 1.0,
+                        dmg,
+                        kb,
                     ));
                 } else if (self.kind == NETTLE_BURST_RIGHT || self.kind == NETTLE_BURST_LEFT)
-                    && self.owner == 0
+                    && self.owner == local_owner
                 {
                     // S1-P-i22 — `:23762-23781`: the Nettle Burst chain. The
                     // child alternates 150↔151; the 151 at depth ≥ 10 spawns
@@ -2999,15 +3057,24 @@ impl Projectile {
                         self.pos.x + self.vel.x + self.w * 0.5,
                         self.pos.y + self.vel.y + self.h * 0.5,
                         self.ai[1] + 1.0,
+                        self.damage,
+                        self.knock_back,
                     ));
                 }
             }
         } else {
-            // `:23813-23824` — the fade-out: the Nettle Burst +3, the
-            // Vilethorn +5 (the 493/494 +4 is unported); `:23825-23828` the
-            // `alpha >= 255` kill.
-            self.alpha += if nettle { 3 } else { 5 };
+            // `:23813-23824` — the fade-out: the Nettle Burst +3, the Crystal
+            // Vile Shard +4 (W4-d1, `:23817-23820`), the Vilethorn +5;
+            // `:23825-23828` the `alpha >= 255` kill.
+            self.alpha += if nettle {
+                3
+            } else if crystal {
+                4
+            } else {
+                5
+            };
             if self.alpha >= 255 {
+                self.kill_time_left = self.time_left;
                 self.active = false;
                 self.time_left = 0;
             }
@@ -17573,8 +17640,10 @@ impl ProjectilePool {
                         }
                         // `:23694-23828` — the Vilethorn chain: the arm hands
                         // its segment spawn back to the pool, so it is a
-                        // pool-side step like the magnet sphere's.
-                        4 => self.vilethorn_step(i, rng),
+                        // pool-side step like the magnet sphere's. W4-d1: the
+                        // Crystal Vile Shard pair (493/494) rides the same arm
+                        // (the `:23719`/`:23746`/`:23817` variant constants).
+                        4 => self.vilethorn_step(i, rng, local_owner),
                         // (Resync keep-one: the aiStyle-5 falling stars ride
                         // main's kind-gated i17 arm above — extended there
                         // with the i22 Starfury 9 / Star Cannon 955 rows.)
@@ -21439,14 +21508,25 @@ impl ProjectilePool {
     /// hands back rides `Projectile.NewProjectile`'s seam
     /// (`:23737-23741`) — the child kind, its one-velocity-step-ahead centre
     /// and its `ai[1] + 1f` depth.
-    fn vilethorn_step(&mut self, slot: usize, rng: &mut dyn tr_core::loot::DropRng) {
-        let Some((kind, x, y, ai1)) = self.slots[slot].ai_style4(rng) else {
+    fn vilethorn_step(
+        &mut self,
+        slot: usize,
+        rng: &mut dyn tr_core::loot::DropRng,
+        local_owner: u8,
+    ) {
+        let Some((kind, x, y, ai1, damage, knock_back)) =
+            self.slots[slot].ai_style4(rng, local_owner)
+        else {
             return;
         };
-        let (owner, damage, knock_back, vel) = {
+        let (owner, vel) = {
             let p = &self.slots[slot];
-            (p.owner, p.damage, p.knock_back, p.vel)
+            (p.owner, p.vel)
         };
+        // W4-d1 — the child's damage/knockBack ride the request: the 7/8 and
+        // 150-152 chains pass the parent's pair (the C# `NewProjectile` args,
+        // `:23741`/`:23777`), the 494's head child the 1.25× pair
+        // (`:23755-23760`).
         self.spawn_with_data_ai_owned(
             kind, owner, x, y, vel.x, vel.y, damage, knock_back, 0.0, ai1,
         );
@@ -41872,6 +41952,174 @@ mod projectile_ai_tests {
             "and flies on, x = {}",
             pool.slots[slot].pos.x
         );
+    }
+}
+
+/// W4-d1 — the Crystal Vile Shard pair 493/494 (the aiStyle-4 variant,
+/// `Projectile.cs:5667-5680` rows + the `:23719-23721`/`:23746-23760`/
+/// `:23817-23820` arm constants). Tests-as-code: WRITTEN NOT RUN (the task's
+/// code-only mode); every expected value is hand-derived from the cited C#.
+#[cfg(test)]
+mod w4_d1_crystal_vile_tests {
+    use super::*;
+
+    /// The scripted stream (the `DebrisScript` shape): records every
+    /// `(min, max)` draw, replays the roll list, exhausted reads `max - 1`.
+    struct Script {
+        rolls: Vec<i32>,
+        draws: Vec<(i32, i32)>,
+    }
+    impl Script {
+        fn with_rolls(rolls: &[i32]) -> Self {
+            Self { rolls: rolls.to_vec(), draws: Vec::new() }
+        }
+    }
+    impl tr_core::loot::DropRng for Script {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            if self.rolls.is_empty() { max - 1 } else { self.rolls.remove(0) }
+        }
+        fn next_float(&mut self) -> f32 { 0.5 }
+    }
+
+    fn world() -> World { World::new("t".into(), 128, 128) }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut World, rng: &mut dyn tr_core::loot::DropRng) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w, &mut npcs, None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), rng, 0, true,
+        );
+    }
+
+    /// The 493/494 rows (`Projectile.cs:5667-5680`): 32×32, aiStyle 4,
+    /// penetrate −1, tileCollide false, alpha 255, ignoreWater, light 0.2,
+    /// magic; the stock timeLeft 3600 / extraUpdates 0 / scale 1.
+    #[test]
+    fn w4_d1_the_crystal_vile_rows_match_set_defaults() {
+        for kind in [CRYSTAL_VILE_HEAD, CRYSTAL_VILE_SHAFT] {
+            let d = proj_data(kind).expect("the crystal vile row");
+            assert_eq!((d.w, d.h), (32.0, 32.0), "kind {kind}");
+            assert_eq!(d.ai_style, 4, "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+            assert_eq!(d.time_left, 3600, "kind {kind}");
+            assert_eq!(d.extra_updates, 0, "kind {kind}");
+            assert!(!d.tile_collide, "kind {kind}");
+            assert_eq!(d.alpha, 255, "kind {kind}");
+            assert!(d.ignore_water, "kind {kind}");
+            assert_eq!(d.light, 0.2, "kind {kind}");
+            assert!(d.magic, "kind {kind}");
+            assert!(!d.melee && !d.ranged, "kind {kind}");
+            assert_eq!(d.scale, 1.0, "kind {kind}");
+        }
+    }
+
+    /// The spawn-with-data copies the row (no decline): the 32×32 box, the
+    /// alpha 255, the light 0.2 and the magic flag land on the slot.
+    #[test]
+    fn w4_d1_the_crystal_vile_spawn_carries_the_row() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(CRYSTAL_VILE_SHAFT, 0, 100.0, 100.0, 8.0, 0.0, 40, 4.0, 0.0, 0.0)
+            .expect("the 494 row spawns");
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h), (32.0, 32.0));
+        assert_eq!(p.alpha, 255);
+        assert_eq!(p.light, 0.2);
+        assert!(p.magic);
+        assert_eq!(p.penetrate, -1);
+        assert_eq!(p.max_penetrate, -1);
+        assert!(!p.tile_collide);
+    }
+
+    /// The fade-in is −100 (−50 base −50 crystal, `:23714`/`:23719-23721`):
+    /// 255 → 155 → 55 → 0 (clamped), the chain flip on tick 3. The fade-out
+    /// is +4 (`:23817-23820`): 0 → 4 → … → 252 → 256 kills at tick 67.
+    #[test]
+    fn w4_d1_the_crystal_vile_fade_in_and_out() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(CRYSTAL_VILE_HEAD, 0, 100.0, 100.0, 0.0, 0.0, 40, 4.0, 0.0, 0.0)
+            .expect("the 493 row spawns (the head chains nothing)");
+        let mut w = world();
+        let mut rng = Script::with_rolls(&[]);
+        tick(&mut pool, &mut w, &mut rng);
+        assert_eq!(pool.slots()[slot].alpha, 155, "255 − 100");
+        tick(&mut pool, &mut w, &mut rng);
+        assert_eq!(pool.slots()[slot].alpha, 55);
+        tick(&mut pool, &mut w, &mut rng);
+        assert_eq!(pool.slots()[slot].alpha, 0, "clamped at 0");
+        assert_eq!(pool.slots()[slot].ai[0], 1.0, "the segment is spent");
+        // The head spawns nothing — no other crystal slot exists.
+        assert!(
+            !pool.slots().iter().any(|p| p.active && p.kind == CRYSTAL_VILE_SHAFT),
+            "the head chains nothing (`:23746` is the shaft's arm)"
+        );
+        // The +4 fade-out: tick 4 reads 4, the kill lands when alpha ≥ 255.
+        tick(&mut pool, &mut w, &mut rng);
+        assert_eq!(pool.slots()[slot].alpha, 4, "the +4 fade-out");
+        for _ in 0..63 {
+            tick(&mut pool, &mut w, &mut rng);
+        }
+        assert!(!pool.slots()[slot].active, "0 + 4·64 = 256 ≥ 255 kills");
+    }
+
+    /// The shaft's chain (`:23746-23760`): the depth cap rolls `7 + Next(2)`.
+    /// With the roll 0 the cap is 7, so depths 1-6 chain shafts and depth 7
+    /// tips to the head 493 with `(int)(damage·1.25)` / `knockBack·1.25`.
+    #[test]
+    fn w4_d1_the_crystal_vile_shaft_chains_to_the_head() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(CRYSTAL_VILE_SHAFT, 0, 100.0, 100.0, 8.0, 0.0, 40, 4.0, 0.0, 0.0)
+            .expect("the 494 row spawns");
+        let mut w = world();
+        // Every chain roll reads 0 → cap 7. The fade-in spends no draws.
+        let mut rng = Script::with_rolls(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        // Tick 3 flips the root and spawns the depth-2 shaft.
+        for _ in 0..3 {
+            tick(&mut pool, &mut w, &mut rng);
+        }
+        let d2 = pool.slots().iter().find(|p| p.active && p.ai[1] == 2.0)
+            .expect("the depth-2 child");
+        assert_eq!(d2.kind, CRYSTAL_VILE_SHAFT, "depth 2 < 7 keeps the shaft");
+        assert_eq!(d2.damage, 40, "the shaft child keeps the parent's damage");
+        assert_eq!(d2.knock_back, 4.0);
+        // Run the chain to the head: each segment spends 3 fade-in ticks then
+        // chains. Depth 7 is the head (cap 7).
+        for _ in 0..30 {
+            tick(&mut pool, &mut w, &mut rng);
+        }
+        let head = pool.slots().iter().find(|p| p.active && p.kind == CRYSTAL_VILE_HEAD)
+            .expect("the chain tips to the head at depth ≥ 7");
+        assert_eq!(head.ai[1], 8.0, "the head's depth is the parent's + 1");
+        assert_eq!(head.damage, 50, "(int)(40 · 1.25) = 50 (`:23757`)");
+        assert_eq!(head.knock_back, 5.0, "4 · 1.25 = 5 (`:23758`)");
+        // The chain rolls are all (0, 2) — one per chain tick, none elsewhere.
+        assert!(rng.draws.iter().all(|&(a, b)| (a, b) == (0, 2)), "only the cap rolls");
+    }
+
+    /// The one-shot cue latch (`:23696-23705`): the head plays Item8 (style
+    /// 8), the shaft Item101 (style 101), at `base.Center`, once per life
+    /// (`localAI[0]` latches 1). The `wants_sound` intent drains to the pool.
+    #[test]
+    fn w4_d1_the_crystal_vile_cue_latch() {
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data_ai_owned(CRYSTAL_VILE_HEAD, 0, 100.0, 100.0, 0.0, 0.0, 40, 4.0, 0.0, 0.0)
+            .expect("the 493 row spawns");
+        pool.spawn_with_data_ai_owned(CRYSTAL_VILE_SHAFT, 0, 200.0, 100.0, 0.0, 0.0, 40, 4.0, 0.0, 0.0)
+            .expect("the 494 row spawns");
+        let mut w = world();
+        let mut rng = Script::with_rolls(&[]);
+        tick(&mut pool, &mut w, &mut rng);
+        let cues = pool.drain_proj_sounds();
+        // The head's centre (100 + 16, 100 + 16) = (116, 116), style 8; the
+        // shaft's (216, 116), style 101. Both sound id 2 (the Item family).
+        assert!(cues.iter().any(|&(id, style, x, y, _)| id == 2 && style == 8 && (x - 116.0).abs() < 1e-4 && (y - 116.0).abs() < 1e-4), "the head's Item8");
+        assert!(cues.iter().any(|&(id, style, x, y, _)| id == 2 && style == 101 && (x - 216.0).abs() < 1e-4 && (y - 116.0).abs() < 1e-4), "the shaft's Item101");
+        // The latch holds: a second tick plays nothing new.
+        tick(&mut pool, &mut w, &mut rng);
+        assert!(pool.drain_proj_sounds().is_empty(), "the one-shot latch");
     }
 }
 

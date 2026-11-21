@@ -83,6 +83,16 @@ pub const VILE_BASE: u16 = 7;
 /// `ProjectileID.VilethornTip` (8) — the Vilethorn's last segment, the type
 /// the base chains into once `ai[1] >= 6` (`Projectile.cs:23737-23741`).
 pub const VILE_TIP: u16 = 8;
+/// `ProjectileID.CrystalVileShardHead` (493, `ProjectileID.cs:1540`) — the
+/// Crystal Vile Shard's head segment (aiStyle 4, the Vilethorn family's
+/// chain; `Projectile.cs:5667-5680`). The head spawns nothing; the shaft
+/// chains into it at depth ≥ `7 + Next(2)` (`:23746-23760`) with a 1.25×
+/// damage/knockBack bonus.
+pub const CRYSTAL_VILE_HEAD: u16 = 493;
+/// `ProjectileID.CrystalVileShardShaft` (494, `ProjectileID.cs:1542`) — the
+/// Crystal Vile Shard's chaining segment (`Projectile.cs:5667-5680` shares
+/// the head's row; the `:23746` chain arm is the shaft's alone).
+pub const CRYSTAL_VILE_SHAFT: u16 = 494;
 /// `ProjectileID.ThrowingKnife` (48) — the thrown aiStyle-2 kind
 /// (`Projectile.cs:1310-1316`).
 pub const THROWING_KNIFE: u16 = 48;
@@ -1595,6 +1605,8 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         NANO_BULLET => 0.5,                    // `:3734`
         EXPLODING_BULLET => 0.5,               // `:3747`
         GOLDEN_BULLET => 0.5,                  // `:3765`
+        // W4-d1 — `Projectile.cs:5678`: the Crystal Vile Shard pair's light.
+        CRYSTAL_VILE_HEAD | CRYSTAL_VILE_SHAFT => 0.2,
         // S1-P-i35 — the glow bobbers 987-993 (`Projectile.cs:9430-9434`):
         // `light = 1f` (the 986 plain override keeps the stock 0).
         987..=993 => 1.0,
@@ -1845,6 +1857,25 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             VILE_BASE | VILE_TIP => (
                 28.0,
                 28.0,
+                4,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                false,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-d1 — `Projectile.cs:5667-5680`: the Crystal Vile Shard pair
+            // (493 head / 494 shaft): 32×32, aiStyle 4, `penetrate = -1`,
+            // `tileCollide = false`, `alpha = 255`, `ignoreWater` (the overlay
+            // below), `light = 0.2f` (the light slice), magic; the
+            // `armorPenetration = 10` (`:5679`) has no row consumer (the
+            // NETTLE_BURST precedent). The stock timeLeft 3600 (`:787`) and
+            // extraUpdates 0 (`:771`) stand.
+            CRYSTAL_VILE_HEAD | CRYSTAL_VILE_SHAFT => (
+                32.0,
+                32.0,
                 4,
                 -1,
                 TIME_LEFT_DEFAULT,
@@ -4198,6 +4229,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             ))
             // `Projectile.cs:874-884`: the Vilethorn pair sets `ignoreWater`.
             || matches!(kind, VILE_BASE | VILE_TIP)
+            // W4-d1 — `Projectile.cs:5676`: the Crystal Vile Shard pair's
+            // `ignoreWater = true` (the shared `:5667-5680` arm).
+            || matches!(kind, CRYSTAL_VILE_HEAD | CRYSTAL_VILE_SHAFT)
             // The slice-B pets set `ignoreWater` themselves
             // (`Projectile.cs:5422`/`:9646`/`:9996`) — they are not minions.
             || matches!(kind, CRIMSON_HEART | DIRTIEST_BLOCK | BOULDER_PET)
@@ -4339,6 +4373,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // Skulls (837, `:8131`), the Wand of Sparking spark (954,
             // `:9008`).
             VILE_BASE | VILE_TIP
+                // W4-d1 — `Projectile.cs:5677`: the Crystal Vile Shard pair's
+                // `magic = true` (the shared `:5667-5680` arm).
+                | CRYSTAL_VILE_HEAD | CRYSTAL_VILE_SHAFT
                 | BALL_OF_FIRE | MAGIC_MISSILE | GREEN_LASER | WATER_BOLT | FLAMELASH
                 | DEMON_SCYTHE | RAINBOW_ROD_BULLET | ICE_BLOCK | PURPLE_LASER
                 | CRYSTAL_STORM | CURSED_FLAME_FRIENDLY
