@@ -39,6 +39,8 @@
 //! * `:56403` Medusa stone-gaze NPCDeath17 → [`medusa_gaze_cue`]
 //! * `:66429` BigMimic reflect Item150 → [`reflect_projectile_cue`]
 
+#![allow(dead_code)] // UNWIRED - the kinds are unported; each kind's wiring is a one-call consumer (the style64/67 precedent).
+
 use crate::npc::{Npc, NpcSoundCue, NpcSoundRequest};
 
 /// Queue one cue at the C# call site's world-pixel position. The push
