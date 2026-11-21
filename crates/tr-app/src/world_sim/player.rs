@@ -1688,6 +1688,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     crate::chest::tick_open(app); // `Player.HandleBeingInChestRange` (`Player.cs:25290`/:31015-31124)
     if map_open {
         app.update_map_input();
+    } else {
+        // `Player.cs:24909-24965` — the not-fullscreen map-key block.
+        app.update_map_style_keys();
     }
 }
 
@@ -1908,6 +1911,79 @@ mod tests {
                 key.name()
             );
         }
+    }
+
+    /// W4-g53 doc-sweep — `Player.cs:24911-24928`: the minimap zoom keys
+    /// multiply ×1.025/×0.975 per tick while held (NOT the fullscreen's
+    /// 1.05/0.95), the alpha keys step ±0.015, and the draw-side clamps
+    /// (`Main.cs:55515-55530`) catch both at 0.2..3 / 0.01..1.
+    #[test]
+    fn g53_the_minimap_keys_step_the_scale_and_alpha_with_the_clamps() {
+        let mut app = ammo_app();
+        app.map = Some(crate::map::WorldMap::new(&app.world));
+        app.map_style = 1;
+        // ZoomIn held: 1.05 × 1.025 per tick.
+        app.keys.insert(KeyCode::NumpadAdd);
+        app.update_map_style_keys();
+        let m = app.map.as_ref().unwrap();
+        assert!((m.minimap_scale - 1.05 * 1.025).abs() < 1e-6);
+        // ZoomOut held: × 0.975.
+        app.keys.clear();
+        app.keys.insert(KeyCode::NumpadSubtract);
+        app.update_map_style_keys();
+        let m = app.map.as_ref().unwrap();
+        assert!((m.minimap_scale - 1.05 * 1.025 * 0.975).abs() < 1e-6);
+        // AlphaDown held: −0.015 per tick, floored at 0.01.
+        app.keys.clear();
+        app.keys.insert(KeyCode::PageDown);
+        for _ in 0..200 {
+            app.update_map_style_keys();
+        }
+        assert_eq!(app.map.as_ref().unwrap().minimap_alpha, 0.01);
+        // AlphaUp: back up, capped at 1.
+        app.keys.clear();
+        app.keys.insert(KeyCode::PageUp);
+        for _ in 0..200 {
+            app.update_map_style_keys();
+        }
+        assert_eq!(app.map.as_ref().unwrap().minimap_alpha, 1.0);
+        // The scale clamp: 3.0 max (`Main.cs:55519-55522`).
+        app.keys.clear();
+        app.keys.insert(KeyCode::NumpadAdd);
+        for _ in 0..200 {
+            app.update_map_style_keys();
+        }
+        assert_eq!(app.map.as_ref().unwrap().minimap_scale, 3.0);
+    }
+
+    /// W4-g53 doc-sweep — `Player.cs:24949-24965`: the MapStyle trigger
+    /// (Tab) cycles `Main.mapStyle` 0→1→2→0 on the `releaseMapStyle` press
+    /// latch with sound 12 — held frames never re-cycle.
+    #[test]
+    fn g53_the_tab_key_cycles_the_map_style_once_per_press() {
+        let mut app = ammo_app();
+        app.map = Some(crate::map::WorldMap::new(&app.world));
+        app.map_style = 1;
+        app.release_map_style = true; // the released-frame arm
+        let played = app.audio.played_count();
+        app.keys.insert(KeyCode::Tab);
+        app.update_map_style_keys();
+        assert_eq!(app.map_style, 2, "1 → 2");
+        assert!(app.audio.played_count() > played, "PlaySound(12)");
+        assert!(!app.release_map_style);
+        app.update_map_style_keys();
+        assert_eq!(app.map_style, 2, "held frames never re-cycle");
+        app.keys.clear();
+        app.update_map_style_keys(); // release re-arms
+        assert!(app.release_map_style);
+        app.keys.insert(KeyCode::Tab);
+        app.update_map_style_keys();
+        assert_eq!(app.map_style, 0, "2 → 0 (`> 2` wraps)");
+        app.keys.clear();
+        app.update_map_style_keys();
+        app.keys.insert(KeyCode::Tab);
+        app.update_map_style_keys();
+        assert_eq!(app.map_style, 1, "0 → 1");
     }
 
     /// S1-E-34 — the F3 debug god mode rides `debug_god_mode` and the tick

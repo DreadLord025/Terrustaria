@@ -37,6 +37,36 @@ pub fn map_key_scale(scale: f32, zoom_in: bool) -> f32 {
     if zoom_in { scale * 1.05 } else { scale * 0.95 }
 }
 
+/// `Player.cs:24913-24920`: the minimap's zoom keys use the frame buttons'
+/// multipliers — `* 1.025` / `* 0.975` (`MinimapFrame.cs:61-63`), not the
+/// fullscreen's 1.05/0.95.
+pub fn minimap_key_scale(scale: f32, zoom_in: bool) -> f32 {
+    if zoom_in {
+        scale * crate::ui::minimap::ZOOM_IN_MULTIPLIER
+    } else {
+        scale * crate::ui::minimap::ZOOM_OUT_MULTIPLIER
+    }
+}
+
+/// `Player.cs:24921-24928` / `:24940-24947`: MapAlphaUp/Down step the map
+/// alpha ±0.015 per update while held.
+pub fn map_key_alpha(alpha: f32, up: bool) -> f32 {
+    if up { alpha + 0.015 } else { alpha - 0.015 }
+}
+
+/// `Main.cs:55523-55530` / `:55559-55566`: both map alphas clamp to
+/// `[0.01, 1]` at draw.
+pub fn map_alpha_clamp(alpha: f32) -> f32 {
+    alpha.clamp(0.01, 1.0)
+}
+
+/// `Main.cs:55550-55558`: the overlay scale clamps to
+/// `[screen_w / world_w, 16 * RenderZoom]` (`RenderZoom` is the port's
+/// in-game zoom, 1.0..2.0).
+pub fn overlay_scale_clamp(screen_w: f32, world_w: i32, render_zoom: f32, proposed: f32) -> f32 {
+    proposed.clamp(screen_w / world_w as f32, 16.0 * render_zoom)
+}
+
 /// `Main.cs:55398-55413`: X into `10..=maxTilesX-10`, Y into `10..=maxTilesY-19`.
 pub fn map_clamp_pos(pos: [f32; 2], world: &World) -> [f32; 2] {
     [
@@ -397,8 +427,24 @@ pub struct WorldMap {
     /// `Main.mapFullscreenScale` (px per tile) and `Main.mapFullscreenPos` (tiles).
     pub scale: f32,
     pub pos: [f32; 2],
-    /// `Main.mapMinimapScale` (`Main.cs:66751`), fixed at 1.05 (no minimap-zoom UI yet).
+    /// `Main.mapMinimapScale` (`Main.cs:66751-66752`, default 1.05): the
+    /// minimap zoom axis — the frame buttons (`MinimapFrame.cs:107-136`) and
+    /// the MapZoomIn/Out keys (`Player.cs:24913-24920`) multiply it, clamped
+    /// 0.2..3 (`Main.cs:55515-55522`).
     pub minimap_scale: f32,
+    /// `Main.mapMinimapAlpha` (`Main.cs:66753`, default 1): the MapAlphaUp/Down
+    /// keys step it ±0.015 (`Player.cs:24921-24928`), clamped 0.01..1
+    /// (`Main.cs:55523-55530`); it tints the backdrop AND the tile pass
+    /// (`b = (byte)(255 * alpha)`, `:55532`).
+    pub minimap_alpha: f32,
+    /// `Main.mapOverlayScale` (`Main.cs:66754`, default 2.5): the overlay's
+    /// zoom axis — keys ×1.05/×0.95 (`Player.cs:24932-24939`), clamped
+    /// `screen_w/world_w .. 16*RenderZoom` (`Main.cs:55550-55558`). The
+    /// overlay draw itself is out of P4 scope; the state rides for the keys.
+    pub overlay_scale: f32,
+    /// `Main.mapOverlayAlpha` (`Main.cs:66755`, default 0.35): keys ±0.015
+    /// (`Player.cs:24940-24947`), clamped 0.01..1 (`Main.cs:55559-55566`).
+    pub overlay_alpha: f32,
     /// `Main.mapTime` (`Main.cs:803`) — the countdown that gates the
     /// lighting → map export (`LegacyLighting.cs:349`).
     map_time: i32,
@@ -434,6 +480,9 @@ impl WorldMap {
             scale: MAP_FULLSCREEN_SCALE_DEFAULT,
             pos: [0.0, 0.0],
             minimap_scale: 1.05,
+            minimap_alpha: 1.0,
+            overlay_scale: 2.5,
+            overlay_alpha: 0.35,
             map_time: 0,
             map_time_max: 0,
             dirty: Vec::new(),
@@ -745,11 +794,15 @@ impl WorldMap {
         map_scale: f32,
     ) {
         let q = map_minimap_quad(center_tile, self.minimap_scale, map_scale, screen, world);
+        // `b = (byte)(255f * Main.mapMinimapAlpha)` (`Main.cs:55532`) →
+        // `MapRenderer.DrawMap(..., b)` tints the tile pass
+        // `new Color(alpha, alpha, alpha, alpha)` (`MapRenderer.cs:438`).
+        let a = (255.0 * self.minimap_alpha) as u8 as f32 / 255.0;
         r.push_map_sprite(
             [q.dest[0], q.dest[1]],
             [q.dest[2], q.dest[3]],
             q.uv,
-            [1.0; 4],
+            [a, a, a, a],
         );
     }
 

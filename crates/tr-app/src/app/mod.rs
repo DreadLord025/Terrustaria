@@ -853,6 +853,9 @@ pub(crate) struct App {
     /// `Main.releaseUI` (`Main.cs:2087`): the F11 press latch — starts true
     /// (the key starts released), drops while held, re-arms on release.
     pub(crate) release_ui: bool,
+    /// `Player.releaseMapStyle` (`Player.cs:1838`): the Tab map-style
+    /// cycle's press latch (`:24951-24964`).
+    pub(crate) release_map_style: bool,
     /// `Main.demonTorch` / `Main.demonTorchDir` (`DoUpdate_AnimateTileGlows`).
     pub(crate) demon_torch: f32,
     pub(crate) demon_torch_dir: f32,
@@ -1480,6 +1483,89 @@ impl App {
         }
         m.scale = map::map_scale_clamp(sw, self.world.width, m.scale);
         m.pos = map::map_clamp_pos(m.pos, &self.world);
+    }
+
+    /// `Player.cs:24909-24965` — the NOT-fullscreen map-key block: the
+    /// MapZoomIn/Out and MapAlphaUp/Down triggers step the minimap
+    /// (`mapStyle == 1`, ×1.025/×0.975, ±0.015) or the overlay
+    /// (`mapStyle == 2`, ×1.05/×0.95, ±0.015), and the MapStyle trigger
+    /// (Tab) cycles `Main.mapStyle` 0→1→2→0 with sound 12 on the
+    /// `releaseMapStyle` press latch. Runs once per player tick while the
+    /// map is enabled and NOT fullscreen (the fullscreen arm lives in
+    /// [`Self::update_map_input`]); the clamps are the draw-side ones
+    /// (`Main.cs:55515-55530` / `:55550-55566`).
+    pub(crate) fn update_map_style_keys(&mut self) {
+        if !self.settings.map_enabled || self.map.as_ref().is_some_and(|m| m.open) {
+            return;
+        }
+        let (sw, _) = self.screen_size();
+        let map_binds = self.map_binds.clone();
+        let bound = |action: crate::input_map::MapAction| {
+            self.keys.iter().any(|k| {
+                map_binds[action.index()].as_str() == crate::input_map::key_name(*k)
+            })
+        };
+        let zoom_in = bound(crate::input_map::MapAction::ZoomIn);
+        let zoom_out = bound(crate::input_map::MapAction::ZoomOut);
+        let alpha_up = bound(crate::input_map::MapAction::AlphaUp);
+        let alpha_down = bound(crate::input_map::MapAction::AlphaDown);
+        if let Some(m) = self.map.as_mut() {
+            match self.map_style {
+                // `Player.cs:24911-24928`.
+                1 => {
+                    if zoom_in {
+                        m.minimap_scale = map::minimap_key_scale(m.minimap_scale, true);
+                    }
+                    if zoom_out {
+                        m.minimap_scale = map::minimap_key_scale(m.minimap_scale, false);
+                    }
+                    if alpha_up {
+                        m.minimap_alpha = map::map_key_alpha(m.minimap_alpha, true);
+                    }
+                    if alpha_down {
+                        m.minimap_alpha = map::map_key_alpha(m.minimap_alpha, false);
+                    }
+                    // `Main.cs:55515-55530`.
+                    m.minimap_scale = ui::minimap::clamp_minimap_scale(m.minimap_scale);
+                    m.minimap_alpha = map::map_alpha_clamp(m.minimap_alpha);
+                }
+                // `Player.cs:24930-24947`.
+                2 => {
+                    if zoom_in {
+                        m.overlay_scale = map::map_key_scale(m.overlay_scale, true);
+                    }
+                    if zoom_out {
+                        m.overlay_scale = map::map_key_scale(m.overlay_scale, false);
+                    }
+                    if alpha_up {
+                        m.overlay_alpha = map::map_key_alpha(m.overlay_alpha, true);
+                    }
+                    if alpha_down {
+                        m.overlay_alpha = map::map_key_alpha(m.overlay_alpha, false);
+                    }
+                    // `Main.cs:55550-55566`.
+                    m.overlay_scale =
+                        map::overlay_scale_clamp(sw, self.world.width, self.zoom, m.overlay_scale);
+                    m.overlay_alpha = map::map_alpha_clamp(m.overlay_alpha);
+                }
+                _ => {}
+            }
+        }
+        // `Player.cs:24949-24965` — the style cycle rides `mapStyle != 0`
+        // (the `if (this.mapStyle)` trigger, not the Main.mapStyle value):
+        // the Tab press cycles 0→1→2→0 with sound 12, on the release latch.
+        if bound(crate::input_map::MapAction::Style) {
+            if self.release_map_style {
+                self.audio.play("Menu_Tick");
+                self.map_style += 1;
+                if self.map_style > 2 {
+                    self.map_style = 0;
+                }
+            }
+            self.release_map_style = false;
+        } else {
+            self.release_map_style = true;
+        }
     }
 
     /// `Main.UpdateViewZoomKeys` (`Main.cs:16801-16815`): ViewZoomIn/Out adjust
@@ -4018,6 +4104,7 @@ impl App {
             // false / false — the first released-frame pass arms the latch).
             hide_ui: false,
             release_ui: false,
+            release_map_style: false,
             // `Main.demonTorch = 1f; Main.demonTorchDir = 1` (Main.Initialize).
             demon_torch: 1.0,
             demon_torch_dir: 1.0,
