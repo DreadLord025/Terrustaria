@@ -120,3 +120,40 @@ decompiled junction), both Rust arms read in full (d4
 `projectile_rope_coil.rs` at `origin/task/W4-g82-rope-coil-draw`, 757
 lines incl. its 11 witnesses). No cargo/tests/graphify invoked; no code
 changed by this item.
+
+## Union landing status (2026-11-21, same branch, code-only)
+
+The union recommendation above is now LANDED on this branch (the merge
+keeps d4's machine untouched; the g82 duplicate half stays dropped):
+
+1. **Refund ladder — WIRED** (`bb2f8d2c`): g82's `coil_death_drop` re-homed
+   in `crates/tr-app/src/projectile_rope_coil.rs`, queued at
+   `projectile.rs`'s once-per-death hook (`pending_death_drops`, behind
+   `!died_out_of_world` — the `:16696` guard never calls `Kill()`) and
+   drained by `world_sim/projectiles.rs` as `Item.NewItem` WORLD drops on
+   the `UpdateItems` stream. NOT the `drain_catches` inventory hand-off:
+   the C# `RequestNewItem` (`Item.cs:49639-49646`) spawns a world item —
+   the 26e recommendation's "inventory-first" reading is corrected here
+   (that shape is the bobber's `GiveItemToPlayer`, a different C# path).
+   The beach-ball 859 return (`:77620-77623`) rides the same queue.
+2. **Usability walk — WIRED** (`1cae02fd`): `check_rope_usability` in
+   `world_sim/editing.rs`, called at `use_tile_item`'s head (the `:39726`
+   site — before the `:39727` tile re-read and the `:39743` lava gate).
+3. **Chain preview — geometry landed, EMIT deferred to g82b** (`bb2f8d2c`):
+   `is_coil`/`coil_chain_sheets`/`coil_chain_segments`/`draw_coil_chain`
+   re-homed in the same module. The C# (`Main.cs:28499-28669`) was re-read
+   verbatim this round: the three per-kind bodies are term-for-term
+   identical bar the sheet pick (171 Chain16; 475 Chain38/39; 505/506
+   `Chains[4|6 + drawIndex%2]`), g82's port matches every constant and the
+   write order (count ramp `:28505-28509`, sag ramp `:28510-28517`, the
+   5.6 normalize + manhattan-<1 shrink `:28522-28527`, record-before-
+   advance `:28531-28534`, reset+sag `:28535-28540`, reverse emit
+   `:28542`/`:28593`/`:28654`). The emit half is draw-layer work — d4's
+   slot arms carry no draw and `assets.rs`' sheet list is contested — so
+   it stays `#[allow(dead_code)]` with the wiring contract in ANALYSIS
+   "The rope-coil lane extras (W4-d4 union)": `draw_with_hand` gates on
+   `is_coil`, per-link `Lighting.GetColor`, scale 0.8, half-sheet origin,
+   the Chain16/38/39/Chains_4..7 sheets join `assets.rs` (the FishingLine
+   precedent). The 0/0 NaN pin is kept and witness-pinned (vel = (0, 0.4)
+   at ai[0] ≥ 30 cancels the first sag step exactly).
+4. **Framing arm** — untouched (g82 phase 1's own lane, no d4 overlap).
