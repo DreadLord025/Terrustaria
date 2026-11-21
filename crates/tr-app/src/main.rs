@@ -18,6 +18,7 @@ mod banners;
 mod bestiary;
 mod bestiary_data;
 mod bestiary_filter;
+mod bestiary_sorting_ids;
 mod bestiary_tags;
 mod biome;
 mod buff_effects;
