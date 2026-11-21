@@ -46,12 +46,8 @@ pub(crate) fn advance_time(
             // C# StartNight (W4-d15 final — the growth pass's starfall
             // gate consumes `world.starfall_boost`). 1-3 `UpdateTime`
             // draws per dusk (the gate + the taken band's range roll).
-            world.roll_starfall_night_setup(
-                world
-                    .seeds
-                    .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
-                rng,
-            );
+            let tenth = world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+            world.roll_starfall_night_setup(tenth, rng);
             // `UpdateTime_StartNight`'s blood-moon roll (`Main.cs:65333-65352`):
             // one `Main.rand` draw at the boundary (`Next(maxValue)` in the C#;
             // the port's uniform-threshold form), through the named `UpdateTime`
@@ -296,8 +292,9 @@ mod tests {
         w.time = 53999.0;
         w.sundial_cooldown = 4;
         w.moondial_cooldown = 2;
-        // The roll in the 1-in-9 window with a 120+ player.
-        let mut rng = stream_with_first_roll(|r| r < 1.0 / 9.0);
+        // The roll in the 1-in-9 window with a 120+ player (past the
+        // NightSetup prefix — W4-d15 final).
+        let mut rng = stream_with_dusk_roll(|r| r < 1.0 / 9.0);
         let (blood, eclipse) = advance_time(&mut w, 5.0, &mut rng, true);
         assert!(blood);
         assert!(!eclipse);
@@ -390,12 +387,25 @@ mod tests {
         );
     }
 
-    /// A stream whose first `NextDouble()` satisfies `pred`, positioned
-    /// AFTER the dusk `Star.NightSetup` draws (`Main.cs:65223` — 1-3
-    /// draws, W4-d15 final): the boundary rolls draw exactly once
-    /// (`Main.cs:65333-65352`, `:65421-65430`), so replaying the
-    /// NightSetup prefix on the found seed reproduces that value.
+    /// A stream whose first `NextDouble()` satisfies `pred` — the DAWN
+    /// boundary's roll draws exactly once with no prefix
+    /// (`Main.cs:65421-65430`), so a fresh `UnifiedRandom` from the
+    /// found seed reproduces that value.
     fn stream_with_first_roll(pred: impl Fn(f64) -> bool) -> UnifiedRandom {
+        for seed in 0..10_000 {
+            if pred(UnifiedRandom::new(seed).next_double()) {
+                return UnifiedRandom::new(seed);
+            }
+        }
+        panic!("no seed in 0..10_000 has a first roll matching the predicate");
+    }
+
+    /// The DUSK twin: the boundary's blood-moon draw sits AFTER the
+    /// `Star.NightSetup` prefix (`Main.cs:65223` — 1-3 draws, W4-d15
+    /// final), so the found seed's stream is returned positioned past
+    /// a replayed NightSetup (the classic gates — the fixtures carry
+    /// no tenth-anniversary seed).
+    fn stream_with_dusk_roll(pred: impl Fn(f64) -> bool) -> UnifiedRandom {
         for seed in 0..10_000 {
             let mut r = UnifiedRandom::new(seed);
             let mut w = World::new("probe".into(), 8, 8);

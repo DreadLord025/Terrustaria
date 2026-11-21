@@ -5799,12 +5799,15 @@ impl Player {
         // no movement/torch control → +1; anything else zeroes. The C#
         // block sits after ResetEffects/UpdateDyes and before the
         // movement pass — the port's controls-landed site reads the same
-        // pre-movement velocity. `afkCounterForKiting` (`:25500`) stays
+        // pre-movement velocity. `item_in_use` rides the input struct
+        // (`PlayerInput.item_in_use` — the world-sim fills it from
+        // `app.swing`, the plain harness from the caller).
+        // `afkCounterForKiting` (`:25500`) stays
         // unported (the kite machine has no port state — `selectedKite`
         // folds −1); the `Select` reset (`:515`) rides the hotbar click
         // seam (`app/clicks.rs`).
         let afk_still = self.vx.abs() < 0.05 && self.vy.abs() < 0.05;
-        let afk_idle = !item_in_use || IS_A_KITE.contains(&self.held_item_kind);
+        let afk_idle = !input.item_in_use || IS_A_KITE.contains(&self.held_item_kind);
         if afk_still
             && afk_idle
             && !self.control_up

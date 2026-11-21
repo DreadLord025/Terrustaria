@@ -1881,11 +1881,23 @@ impl App {
     /// `StartDayImmediately`/`StartNightImmediately`/`SetNoon`/`SetMidnight`
     /// (`CreativePowers.cs:769-860`): the clock jumps to the target — the
     /// (dayTime, time) pair from `button_target`. The boundary events (the
-    /// moon-phase roll, the event rolls) land with their tasks.
+    /// moon-phase roll, the event rolls) land with their tasks — EXCEPT
+    /// `Star.NightSetup`: the C# `SkipToTime` (`Main.cs`) loops
+    /// `UpdateTime_StartNight` on a day→night flip, so the starfall-boost
+    /// roll fires here too (W4-d15 final — the boost's writers are
+    /// NightSetup-only, `Star.cs:41-60`).
     pub(crate) fn set_time_of_day(&mut self, id: crate::creative::PowerId) -> bool {
         let Some((day, time)) = self.creative_powers.button_target(id) else {
             return false;
         };
+        if self.world.day_time && !day {
+            let tenth = self
+                .world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+            let rng = self.rngs.stream(crate::app::RngKey::UpdateTime);
+            self.world.roll_starfall_night_setup(tenth, rng);
+        }
         self.world.day_time = day;
         self.world.time = time;
         true

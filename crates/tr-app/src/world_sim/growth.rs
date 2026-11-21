@@ -600,8 +600,10 @@ mod w4_d15_starfall_tests {
     #[test]
     fn the_afk_ceiling_refuses_the_targeted_branch() {
         // Gate hit (Next(8000) == 0), sky point (2 draws), luck roll
-        // Next(15) == 0 — scan the 4-draw prefix.
-        let seed = (0..200_000i32)
+        // Next(15) == 0 — scan the 4-draw prefix. The joint probability
+        // is ~1/120000 per seed, so the scan runs wide (1e6 → <0.03%
+        // miss chance).
+        let seed = (0..1_000_000i32)
             .find(|&s| {
                 let mut r = UnifiedRandom::new(s);
                 if r.next_max(8000) != 0 {
@@ -615,11 +617,16 @@ mod w4_d15_starfall_tests {
         let mut afk = starfall_app();
         afk.world.seed = seed as u64;
         afk.rngs.reset(seed);
+        // Lift both players above the surface gate (`player_y <
+        // world_surface*16` = 1200; the stock spawn sits exactly ON it)
+        // so the afk term is the ONLY difference between the twins.
+        afk.player.as_mut().unwrap().y = 100.0;
         afk.player.as_mut().unwrap().afk_counter =
             crate::player::AFK_TIME_NEEDED_FOR_NO_LUCKY_STARS;
         let mut fresh = starfall_app();
         fresh.world.seed = seed as u64;
         fresh.rngs.reset(seed);
+        fresh.player.as_mut().unwrap().y = 100.0;
         let p1 = afk.player.clone();
         let rng = afk.rngs.stream(RngKey::UpdateWorldGen);
         spawn_natural_starfall(&afk.world, &mut afk.projectiles, p1.as_ref(), 0, rng);
