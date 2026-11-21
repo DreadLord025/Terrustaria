@@ -22865,24 +22865,55 @@ Deliberate folds (host-path stand-ins):
 * The value-zero flag (`:81088`, `:81102-81105`) is inert for this pair
   (both rows carry 20000).
 
-## The buff hover's two dropped arms (S1-E-6 follow-up, 2026-11-16)
+## The buff hover's two restored arms (S1-E-6 follow-up, 2026-11-16; restored W4-f12 final 2026-11-21)
 
 `Main.GetBuffTooltip` (`Main.cs:43254-43289`) has a `switch` over the buff id
 whose two arms print a *player-computed* percentage rather than a static
 localization string:
 
-* `case 94` (`ManaSickness`) formats `Player.manaSickReduction` into the
-  `ManaSickness2` row of `Terraria.Localization.Content.en-US.Game.json`.
-* `case 396` (`ManaHeat`) does the same with `Player.manaHeat`.
+* `case 94` (`ManaSickness`) appends `(int)(Player.manaSickReduction * 100f) + 1`
+  and `"%"` to the description (`:43282`).
+* `case 396` (`ManaHeat`) appends `(int)(Math.Ceiling(Player.manaHeat * 100f) - 100.0)`
+  and `"%"` (`:43285`).
 
-The port has neither `Player.manaSickReduction` nor `Player.manaHeat`: the
-mana-sickness debuff applies its magic-damage multiplier inline in the damage
-path and stores no reduction field, and 396 does not exist at all. Rather than
-invent a field whose value no other system maintains,
-`ui::resources::buff_tooltip` falls back to the plain `BuffDescription.{name}`
-row for both ids. When the 94/396 buff *effects* land (M2-BUFF-3/4) the fields
-will exist and these two arms can be restored вЂ” the ported code is already a
-`match` over the id, so adding them is two arms.
+These were documented drops while the port had neither field. Both fields
+now exist (`Player.mana_sick_reduction`, S1-P-i19; `Player.mana_heat`,
+S1-P-i52, reset to 1 every tick) and the W4-f12 final census restored the
+two arms in `ui::resources::buff_tooltip` — the f32 multiply + `(int)`
+truncation for 94, the `ceil` for 396, exactly as written. The 94 arm's
+`DebugOptions.ManaPotionDelay` early-return (`:43278-43281`, the
+`ManaSickness2` Game.json row) stays constants-off
+(`Testing/DebugOptions.cs:28`, static ctor `:86` false — the same ruling
+as `buff_effects_potions_sets.rs`). Witnesses:
+`w4_f12_final_tooltip_the_mana_percentage_arms_print_the_player_fields`
+(written not run, code-only). **Compose note (W4-c26, 2026-11-21)**: the
+c26 lane closed the same two arms independently; the composed tree keeps
+ONE `buff_tooltip` (the c26 text-then-percent shape — the 396 ceil is
+promoted to f64 before the `- 100.0`, matching `Math.Ceiling`'s double
+signature exactly) and ONE percent witness,
+`w4_c26_the_mana_percent_arms_append_the_player_computed_text`, carrying
+both lanes' edges (the +1-after-truncation floors 26/13/1%, the ceiling
+bumps 13/11/50/0%). The f12 witness name above is retired into it; its
+fixture file was corrected at the compose — the retail rows live in
+`Game.json` (`BuffDescription.ManaSickness` :1083 "Magic damage reduced
+by ", `BuffDescription.ManaHeat` :1342 "Magic damage increased by ");
+`Items.json`'s `BuffDescription` category (:141-144) carries ONLY the
+three `WellFed*_Expert` rows.
+
+The buff-tooltip lane census (W4-f12 final): the f28/e16 tooltip branches
+(`origin/task/W4-f28-tooltip-lines-2`, `origin/task/W4-e16-item-tooltip-lines`)
+touch ONLY the item-tooltip code (`tooltip.rs`'s item lanes + their new
+`tooltip_lines2.rs`/`tooltip_sets.rs`); their `ui/mod.rs` diffs carry no
+buff references — the BUFF tooltip lane (`draw_buff_hover` +
+`buff_tooltip` + `banner_hover_names`) is unclaimed and stays f12's.
+Two geometry deviations remain deliberate: the shared block printer draws
+the opaque box + single-column stack (the C# plain arm `:20218-20319` has
+no box, and `MouseText_DrawBuffTooltip` lays the banner names in 220 px
+columns of `(screenHeight - Y - 24 - 72) / 20` rows with a `UI.Ellipsis`
+cutoff at the screen edge, `:21348-21388`/`:21438-21488`); the port keeps
+the shared printer's box and stacks the banner names vertically. The
+banner LIST and its `(80, 255, 120)` tint are faithful; only the column
+geometry differs.
 
 Two further colours are dropped rather than approximated: `MouseTextInner`'s
 `-13` (master) and `-12` (disco) rarity arms read `Main.masterColor` and
@@ -22891,6 +22922,93 @@ those rarities (`Main.cs:43239-43246` only uses `-10` for the melee buffs and
 `0` otherwise), so they are unreachable from this call site;
 `ui::resources::mouse_text_color` documents them and defers to the shared
 `tooltip::item_name_color` table for every other value.
+
+## The buff-HUD final census (W4-f12 final, 2026-11-21)
+
+The last phase of `task/W4-f12-buff-frame-wiring` re-censused the whole buff
+HUD surface against the C# (`Main.DrawInterface_Resources_Buffs`
+`Main.cs:43202-43252`, `DrawBuffIcon` `:43307-43368`, `GetBuffTooltip`
+`:43254-43289`, `TryGetBuffTime` `:43290-43305`, `TryRemovingBuff`
+`:43370-43404`, `MouseText_DrawBuffTooltip` `:21345-21489`):
+
+1. **ICON draw** — every `Images/Buff_<id>.xnb` (400 files) packs into the
+   atlas (`enumerate_buff_icon_ids` → `buff_icons`); the grid (11/row,
+   38/50 pitch), the per-slot alpha (+0.1 hover / −0.05 decay, [0.4, 1]
+   clamp), the hover pick and the cancel request are 1:1. One drift fixed:
+   the icon text now rides `FontAssets.ItemStack` at scale **0.8** tinted
+   by the SAME `buffAlpha` quadruple as the icon (`:43327`) — it was
+   Mouse_Text at 0.85 full-white.
+2. **TOOLTIP lines** — the name + description lane is f12's (the f28/e16
+   branches' diffs touch only item-tooltip code). The 94/396 percentage
+   arms restored (see "The buff hover's two restored arms" above). The
+   banner list + `(80, 255, 120)` tint are faithful; the 220 px column
+   geometry stays the shared-printer deviation recorded there.
+3. **TIME display** — no drift: the `> 2` tick gate, the whole-second
+   `buffTimeValue / 60` TimeSpan, `Lang.LocalizedDuration`'s strict
+   `> 1 unit` ceilings and the 28-handler `xN` precedence all match
+   (`Lang.cs:1158-1205`).
+4. **DEBUFF cancel** — the i53 gate re-verified against the FULL set: all
+   76 `Main.debuff` ids plus 60/151 refuse the right-click and survive
+   with untouched timers; the non-debuff sample cancels. The
+   `Main.debuff` / `vanityPet` / `lightPet` / `buffNoTimeDisplay` /
+   `meleeBuff` tables were script-diffed against `Main.cs:8865-8940` /
+   `:9214+` / `:9288+` / `:9074-9199` / `:8961+` — 76/74/12/124/8 entries,
+   zero missing, zero extra.
+5. **g27 cross-verify** — `buff_effects_orbs.rs` byte-identical vs
+   `origin/task/W4-g27-orb-keep-one-prep` (1cd7ac367); the 18-id routing
+   exclusivity pinned by witness; the nebula-twin one-writer contract
+   stands (research/W4-f12-sweep-census.md).
+
+Witnesses (written not run, code-only): `w4_f12_final_icon_census_*`,
+`w4_f12_final_tooltip_*`, `w4_f12_final_buff_time_*` (ui/resources.rs),
+`w4_f12_final_cancel_*` (player.rs), `w4_f12_final_g27_*`
+(buff_frame_wiring.rs). The fullscreen-map second `DrawBuffIcon` call site
+(`:41335`, the 46 px column grid + the 0.65 alpha floor) still rides the
+map tasks — unchanged from the S1-E-6 deviation.
+
+## The buff closeout (W4-f12 closeout, 2026-11-21)
+
+The closeout phase (research/W4-f12-closeout.md) closed the five remaining
+questions; the full evidence + the merge rulings live there. The record:
+
+1. **f49d nebula-exec** — NOT landed on `origin/task/W4-f49-mana-regen-2`
+   (tip 6c0ee2aa2 still carries the three scan arms + the pre-seam
+   `update_survival`). The f12 side PUBLISHED the exact `fold_orb` bridge
+   hunk (`p.nebula_level_mana = p.orb_scan.nebula_level_mana`, ASSIGN per
+   `:12072`); it lands with the merge together with f49's R3 deletions —
+   never one half alone.
+2. **Animation census** — `Main.buffFrame`/`buffFrameCounter` do not exist
+   in the C#; `DrawBuffIcon` draws the full static sheet (`:43315`), so
+   all 400 icons are single-frame and NO icon-cycle code is needed (the
+   lane-name premise retired). The one UpdateBuffs frame animation is
+   Ice Barrier 62's 12-frame body overlay (`:10469-10478` →
+   `PlayerDrawLayers:3918-3923`): sim wired (the persist-seeded pair),
+   draw layer unported. Beetle/solar/nebula orbit draws + the titanium
+   shader are player-draw/armor-set lane remainders (counters live).
+3. **Stack display** — the xN is the 28-handler `ownedProjectileCounts`
+   sum, never buff stacks; `AddBuff` has no stack field. Per-buff re-grant
+   semantics censused COMPLETE: default refresh-to-max, the only additive
+   ids 94 (cap 600) / 383 (cap 43200), the fed/pet/flask replace-families,
+   the orb/nebula tier ladders, the mount 10-pin, the 8 no-tick ids.
+4. **UpdateBuffs FINAL re-sweep** — `tools/w4_f12_closeout_sweep.py`
+   (committed, run): the 270-id set-diff is EMPTY on this tree, zero
+   dup-grants. TWO NEW cross-tree dups found in the landed tips: f50's
+   inline Panic-63 `moveSpeed++` (the wiring's DEBUFF_DISPATCH arm is
+   canonical — the inline copy folds out) and f50's
+   `rederive_beetle_solar_buffs` (a full second `:10342-10443` ladder
+   copy — g27 `apply_orb_arm` stays canonical; the machines-only fold
+   needs the post-scan lift + the `OrbContext` set-flag lifecycle fix,
+   the C# clears the flags AFTER UpdateBuffs at `:25618-25620`). The
+   d115-321 / f49-nebula rulings stand; the 59/205/94 grants land clean.
+5. **Research FINAL** — this record + the INDEX/PORT_MAP/ROADMAP rows.
+
+Closeout witnesses (written not run): 
+`w4_f12_closeout_orb_scan_is_assign_shaped`,
+`w4_f12_closeout_ice_frame_persists_and_cycles_across_ticks`,
+`w4_f12_closeout_panic_63_grants_move_speed_once_through_the_wiring`
+(buff_frame_wiring.rs),
+`w4_f12_closeout_regrant_is_refresh_except_the_two_additive_ids`
+(buffs.rs).
 
 ## Entity lights (S1-E-5, 2026-11-16)
 
@@ -26055,6 +26173,127 @@ hang, the sway ladder + anchor walk, the blocking-wall freeze, the remix
 gate, the grid push subtract/bounce, the gap/bottom-bound break, the Echo
 hide-not-break.
 
+## The UpdateBuffs frame (S1-E-7 wave F, 2026-11-20, code-only)
+
+`task/W4-d72-buff-effects-wave-f` — the FIFTH-block census came back with
+**zero unclaimed arm ids**: every one of the 254 `buffType[j]` heads in
+`Player.cs:9855-12069` is owned by the landed waves A-D or the in-flight
+c17 (`fa1e8930`, `:10318-10461`), c18 (`02d946e1`, `:10462-10976`), d71
+(`e2dc1fcf`, `:11406-12012`), d73 (`7cf886f9`, `:10328-10485` + `:9935-9946`)
+and d74 (`dc654c62`, `:10318-10808`) claims (the full table + per-piece
+live-owner evidence: `docs/research/28f-wave-f-claim.md`). Per the
+"genuinely unclaimed" rule this wave re-ports NO arm id; it ports the
+**`UpdateBuffs` FRAME** — the statements around the arm chain no wave's
+range includes — as `crates/tr-app/src/buff_effects_frame.rs`
+(`run_buff_frame` → `FrameEffects` + `FrameState`), the wave-B seam
+pattern. Deliberate deviations:
+
+- **Wiring deferred**: the module is test-only until the waves' merge
+  step copies the accumulator onto the live fields — no runtime behaviour
+  change, no RNG or fixed-step-order change. `player.rs` untouched.
+- **The loop preamble is witness-only**: the slot skip + the
+  `TimeLeftDoesNotDecrease` decrement (`:9865-9874`) is already live
+  (`buffs.rs::update_buffs_tick`); the `s1_e_7f_preamble_*` test pins it,
+  no second copy.
+- **The hunger ladder is keep-one**: `potions.rs::update_hunger_buffs`
+  (the drink path's helper) split into the slot-level
+  `update_hunger_buffs_slots` — the frame's per-tick call site
+  (`:12046`, the missing half: hunger tiers never expired on their own)
+  runs the SAME ladder, no second copy of the expiry logic. The
+  emote/sound halves the potions port deferred are REQUESTS here
+  (`emotes: Vec<i32>` 146/147/148 in C# order, `hungry_sounds` count for
+  `SoundID.Hungry` `:12138`), gated on the same pre-expiry timers.
+- **`FrameState` carries the two persistent fields the port lacks**:
+  `oldLuckPotion` (`Player.cs:1136`, byte) and `lavaOpacity` (`:1534`,
+  `= 1f`); neither is ResetEffects-cleared in the C#, so the port keeps
+  them across ticks. The `luckNeedsSync` flag is the bookkeeping half —
+  the packet-134 send stays net-only (`luck.rs:16-17`).
+- **The lavaOpacity f32 drift is kept**: 0.04 is not exact in binary; the
+  ladder's clamps (0.4 floor / 1.0 ceiling) make the drift observable
+  only mid-fade, exactly like the source. The 0.4 fixed point (the down
+  gate is strict `> 0.4f`) is pinned by test.
+- **soulDrain's producer/consumer stay out**: the head only grants
+  `AddBuff(151, 2)` while `soulDrain > 0` (`:9857-9860`); the counter's
+  writer (the Spirit Flame hit) and the regen consumers (`:19121`,
+  `:19160-19162`'s `(5 + soulDrain) / 2`) ride `RegenInputs.extra_*` —
+  unfilled inputs, the M2-BUFF-2 pattern.
+- **RNG census: ZERO draws** (`:9857-9864`, `:12046-12067`,
+  `:12098-12182` scanned). `AddBuff` draws no rand; the emote makes are
+  deterministic (`emotes.rs::new_bubble`); the Hungry sound's pitch roll
+  rides the audio seam. The `s1_e_7f_the_frame_draws_no_rng` mirror
+  pins two identical runs byte-equal.
+
+Tests: 22 `s1_e_7f_*` witnesses (written, NOT run — code-only mode).
+## The post-debuff buff tail (S1-E-7 wave H, 2026-11-20, code-only)
+
+**Claimed range** (`task/W4-d74-buff-effects-wave-h`, disjoint from the landed
+waves A `:9875-10048` / B `:10049-10317` / C `:10800-11400` / D
+`:11400-12069`+pet head): `Player.cs:10318-10808` — the `UpdateBuffs` arms
+between Electrified (144, B's last) and the Trusty Cattiva keep-alive's tail
+(386) — **exactly 40 buff ids**, the tail of the debuff scan:
+
+- **94 Mana Sickness** (`:10318-10327`) — already ported inline
+  (`player.rs` scan arm → `potions::apply_mana_sickness_arm`); witness-only
+  here (the `DebugOptions.ManaPotionDelay` mirror stays constants-off).
+- **396 Mana Heat** (`:10328-10341`) — MISSING: `manaHeat += latestBonus *
+  buffTime/latestDuration` with the `duration == 0 → 1` guard; the
+  `TryApplyManaHeat` producer is in (`player.rs::try_apply_mana_heat`), only
+  this consumer arm was absent.
+- **The six armor-set orb-tier triples** (`:10342-10461`) — ALL MISSING (18
+  ids): Beetle Defense 95-97 (`buffTime = 5` pin, tier-or-DelBuff ladder vs
+  `beetleOrbs`, `beetleDefense` gate → `beetleBuff`), Solar Shields 170-172
+  (same ladder vs `solarShields`/`setSolar`), Beetle Might 98-100 (no time
+  pin; `meleeDamage`/`meleeSpeed += 0.1 * orbs`, `beetleOffense` gate),
+  Nebula Mana 176-178 / Life 173-175 (+`lifeRegen += 6 * level`) / Damage
+  179-181 (+0.15 * level to all four classes) via
+  `UpdateBuffs_NebulaBuffs` (`:12070-12079`: level = 1 + type − base; at
+  `buffTime == 2` with level > 1: level−−, type−−, time = 480).
+- **62 Ice Barrier** (`:10462-10485`) — PARTIAL inline (the endurance +0.25
+  half rides `player.rs`); MISSING: the `iceBarrier` flag, the 12-frame /
+  3-tick frame counter, and the above-half-life `DelBuff(j); j--`. The light
+  RGB is already in `player_lights.rs` (witness there).
+- **The 19 summon keep-alives** 49/83/64/125/126/133/134/135/214/139/140/
+  182/213/216/355/385/393/394/386 (`:10486-10808`) — already ported
+  (`player.rs::SUMMON_BUFF_ARMS` + `run_baby_bird_arm`); witness-only census
+  here, no second effect path.
+
+Shape: a PURE accumulator module `buff_effects_tail.rs`
+(`apply_tail_effect_arm` → `TailEffects`), the wave-B/C/D pattern — wiring
+rides the waves' merge step. RNG census: the block draws NO `Main.rand` (the
+orb ladders, nebula step and ice frames are deterministic); the only RNG
+nearby is the beetle-orb VISUAL drift in `UpdateArmorSets_Always_Beetle`
+(`:16466-16467`, outside this range, unported draw family).
+
+Landed shape + wiring contract (tests written, NOT run — code-only mode):
+
+- `TailEffects` carries the slot mutations the wave-D pattern established:
+  `delete_buff` + `rescan_slot` (every delete in this block rescans),
+  `clear_buff_range` (the lower-tier purge loop's inclusive id range — the
+  wiring walks the slots `DelBuff(m); m--`), `buff_time_set` (the 5-pin and
+  the nebula 480), `buff_type_decrement` (the nebula step's `buffType[b]--`).
+- The tier/level fields are ASSIGNMENTS (`beetle_orbs_set`,
+  `solar_shields_set`, `nebula_level_*`), not adds — `ResetEffects` zeroes
+  them per tick (`:18501/:18505/:18755`), last live slot wins like the C#
+  `ref`/field writes. The ladder/gate ORDER is pinned per arm: pin → ladder
+  → count assignment → (Might: stat adds) → gate; the gate failure zeroes
+  the count AFTER the adds ran (the C# adds before the gate, `:10431-10435`).
+- `latest_mana_potion_duration_fix` records the 396 arm's real field
+  assignment (`duration == 0 → 1`, `:10331-10334`) — the wiring copies it
+  back, it is not just a local guard.
+- 62's split: the inline `player.rs` arm keeps the endurance +0.25; this
+  table adds the flag/frames/light/DelBuff. The wiring must NOT re-add
+  endurance from the accumulator (there is no endurance field here).
+- The 40-id `TAIL_CENSUS` (`(id, TailOwner)` in chain order) is the per-id
+  witness map: `PlayerScan` (94), `SummonArms` (the 19 keep-alives),
+  `SplitIceBarrier` (62), `Tail` (the 20 missing ids). The dispatch returns
+  `false` for every non-`Tail` id — the census test pins that a second
+  effect path can never double-apply.
+- 15 `s1_e_7h_*` tests: the census sweep, 396 decay + zero-duration guard,
+  the three ladder arms per tier + ladder directions + gate failures, the
+  three nebula families incl. the time-2 step-down (level AND stat add
+  lower), the ice frame 3-tick/12-frame wrap + the `<=` half-life boundary,
+  the 94/summon witness declines, and the RNG-free reproducibility sweep.
+
 ## The accessory/set-bonus buff-effect block (S1-E-7 wave C, 2026-11-18)
 
 `crates/tr-app/src/buff_effects_accessory.rs` ports the `Player.UpdateBuffs`
@@ -26092,6 +26331,100 @@ keep-alives already in `player.rs::SUMMON_BUFF_ARMS`) plus the weapon imbues
   ported yet; the flag is the ported half (like `ballista_panic`).
 
 Tests: `buff_effects_accessory::tests::s1_e_7c_*` (13).
+
+## The booster buff-effect block (S1-E-7 wave G, 2026-11-20, code-only) — RANGE CLAIM
+
+`task/W4-d73-buff-effects-wave-g` claims the SIXTH missing block of
+`Player.UpdateBuffs` (`Player.cs:9855-12069`): **`Player.cs:10328-10485`**
+(the mana-heat + beetle/solar/nebula booster block and the Ice Barrier
+completion) plus the two wave-A stragglers **`:9935-9946`** (Sugar Rush 192,
+Brain of Confusion buff 321). Disjoint from the five landed waves:
+
+| wave | branch | C# range | module |
+| --- | --- | --- | --- |
+| A | c16 (`S1-E-7a`) | `:9875-10048` potion block | `player.rs` effect match |
+| B | c16 (`S1-E-7b`) | `:10049-10317` debuff block | `buff_effects.rs` |
+| C | c17 (`S1-E-7c`) | `:10800-11400` accessory/set + imbues `:12013-12044` | `buff_effects_accessory.rs` |
+| D | c18 (`S1-E-7d`) | `:11400-12069` mount/pet/misc + pet head `:11005-11241` | `buff_effects_misc.rs` |
+| E/F | d71/d72 | (in flight, unpushed at claim time — no committed range) | — |
+| **G** | **d73 (this)** | **`:10328-10485` + `:9935-9946`** | `buff_effects_boosters.rs` (new) |
+
+**Full-region census (2026-11-20).** All 254 `else if (this.buffType[j] …)`
+arm heads in `:9855-12069` were extracted (266 unique ids incl. the range
+arms) and diffed against the ported dispatch sets (`player.rs` effect match +
+`SUMMON_BUFF_ARMS`, `buff_effects.rs`, `buff_effects_misc.rs` `PET_ARMS`,
+`buff_effects_accessory.rs` `PET_BUFF_ARMS`, `world_sim/player.rs` ammo
+grants). Exactly 22 entries are unported; every one sits in this wave's
+claimed range:
+
+- **396 Mana Heat** (`:10328-10341`) — the `manaHeat += bonus * time/duration`
+  decay; the port's `try_apply_mana_heat` (`player.rs:3429`) explicitly
+  defers this arm. The `latestManaPotionDuration == 0 → 1` field write is
+  part of the arm.
+- **95-97 Beetle Endurance** (`:10342-10376`) — `buffTime = 5` pin, the
+  orb-tier `DelBuff` sweep, `beetleDefense` gate, `beetleBuff` flag.
+- **170-172 Solar Shield** (`:10377-10407`) — the same shape on
+  `solarShields`/`setSolar` (no `beetleBuff` flag).
+- **98-100 Beetle Might** (`:10408-10443`) — NO time pin; `meleeDamage`/
+  `meleeSpeed += 0.1 * orbs`, `beetleOffense` gate.
+- **176-178 / 173-175 / 179-181 Nebula** (`:10444-10461`) — the
+  `UpdateBuffs_NebulaBuffs` helper (`:12070-12079`: level = 1 + type − base;
+  at `buffTime == 2 && level > 1` the tier steps down, `buffType--`,
+  `buffTime = 480`); life adds `lifeRegen += 6 * level`, damage adds
+  `0.15 * level` to melee/ranged/magic/minion.
+- **62 Ice Barrier** (`:10462-10485`) — COMPLETION: the endurance half is
+  already in the `player.rs` match (`:6526`) and the light in
+  `player_lights.rs:280`; missing are the `iceBarrier` flag, the 3-tick ×
+  12-frame counter and the `DelBuff(j); j--` when above half life. The
+  module ports the WHOLE arm; the wiring step folds the `player.rs` 62 arm
+  into it (keep-one, like the M2 dedupes) and switches the gate to
+  `statLifeMax2` (the existing arm reads `max_hp`).
+- **192 Sugar Rush** (`:9935-9939`) — `pickSpeed -= 0.2`, `moveSpeed += 0.2`
+  (wave-A range, missed by A; claimed here, A's merge must not re-add).
+- **321 Brain of Confusion buff** (`:9940-9947`) — +10 melee/ranged/magic
+  crit, `minionDamage += 0.1` (the dodge GRANT side is already ported,
+  `player.rs:4233`; this is the effect arm).
+
+Already ported, NOT re-claimed: 94 Mana Sickness (`potions.rs`), 16 Archery
+(`world_sim/player.rs:62`), the 29 summon keep-alives `:10486-10976`
+(`SUMMON_BUFF_ARMS` + the 216/335/263 special cases).
+
+**RNG census: ZERO draws.** `Main.rand`/`Next(`/`Random` appear nowhere in
+`:10328-10485`, `:9935-9946` or the nebula helper `:12070-12079` (verified
+by scan). No stream is touched by this wave.
+
+Shape: a PURE accumulator module (`BoosterEffects` stats + `BoosterState`
+persistent counters), slot mutations (`DelBuff`/time pins/tier step-down)
+run on `BuffSlots` directly like `update_summon_buff_arms`; the `player.rs`
+scan wiring rides the waves' merge step. The C# double-`DelBuff` quirk (the
+`!beetleDefense`/`!setSolar` delete uses the ALREADY-decremented `j` after a
+downgrade delete, `:10350-10351`→`:10369`) is preserved verbatim; a `j < 0`
+guard stands in for the C# `IndexOutOfRangeException` that path would throw.
+
+**Landed** (code-only, tests written not run):
+`crates/tr-app/src/buff_effects_boosters.rs` —
+`apply_booster_effect_arm(e, s, slots, ctx, j) -> BoosterArmResult`
+(`NotHandled` / `NextSlot(i32)` — the C# `j` after the arm plus the loop's
+`j++`, so a `DelBuff(j); j--` rescan returns `j` and the double-delete quirk
+can return `j - 1`; the caller clamps to `>= 0`). The persistent counters
+(`beetleOrbs` shared by both beetle families, `solarShields`, the three
+nebula levels, the ice-barrier frame pair) live in `BoosterState` — the C#
+`ResetEffects` does not clear them, neither does the port. The Might arm's
+stat adds run BEFORE the offense gate (`:10431-10432` precede `:10433`), so
+the stats land on the delete tick too. The nebula mana tier writes only
+`nebulaLevelMana` (its regen consumer reads the level elsewhere). The
+`if (0f == 0f)` at `:10336` is decompilation noise — the multiply always
+runs.
+
+Tests: `buff_effects_boosters::tests::s1_e_7g_*` (20), one or more per id:
+396 ×2 (ratio decay, zero-duration write-back), 192, 321, 95-97 ×4 (pin +
+flag, upgrade sweep, downgrade rescan, defense-off delete) + the
+double-delete quirk ×2 (previous-slot hit, negative-index guard), 98-100 ×2
+(no pin + stats, offense-off stats-then-delete), 170-172 (pin/gate +
+set-absent), 173-175 ×2 (step-down at time 2, tier-3 regen 18), 176-178
+(level only), 179-181 (0.15 × level on four classes), 62 ×2 (half-life
+flag + 3-tick × 12-frame wrap, above-half delete), pass-through (94/49/2/144
+left to their owners).
 
 ## S1-C-12 wave C - the defense/immunity accessory family (2026-11-18)
 
@@ -26176,6 +26509,106 @@ double integer division `statLifeMax / 5 / 20 * 20`). Deliberate deviations:
   no open-dialogue field yet; the luck flag is already live in `player.rs`).
 
 Tests: 19 `s1_e_7b_*` per-buff tests in the module.
+
+## Buff effect table, wave C second block (S1-E-7 c17, code-only)
+
+The MANA-POTION / ARMOR-SET tier block (`Player.cs:10318-10461`, 20 ids:
+94, 396, 95-97, 170-172, 98-100, 176-178, 173-175, 179-181, plus the
+`UpdateBuffs_NebulaBuffs` helper `:12070-12079`) is ported in
+`crates/tr-app/src/buff_effects_potions_sets.rs`. The claim + live-set census
+are in `docs/research/28c-wave-c-claim.md` (c16 owns `:9914-10048`, c18
+`:10486-10972` — disjoint by C# line). Shape: the simple arms (94, 396) fold
+into a `PotionSetEffects` accumulator via `apply_potion_set_effect_arm` (the
+wave-B seam); the set-tier arms read AND write the whole buff bar, so they
+ride the slot-ordered `update_potion_set_buff_arms` driver over
+`&mut BuffSlots` + the accumulator with the C# `DelBuff(j); j--` rescan (the
+`update_summon_buff_arms` convention). Deliberate notes:
+
+* **Code-only, test-only until the merge**: no `player.rs` code, no live-tick
+  wiring. The wiring step copies `latest_mana_potion_*` into
+  `PotionEffectContext`, runs the driver AFTER `update_buffs_tick` (the driver
+  does not decrement — the `:9871-9874` tick already ran), then folds the
+  accumulator: `mana_heat +=`, the stat adds `+=`, the orb/shield/level fields
+  `=` (ResetEffects zeroes them every frame, `:18501-18505`/`:18755`).
+* **Buff 94 is a MIRROR, not a second owner**: the live half already runs via
+  `potions::apply_mana_sickness_arm` (`player.rs:6501`); the table arm matches
+  it bit-for-bit (witness `s1_e_7c17_buff_94_mirrors_the_live_sickness_arm`)
+  and must not be wired twice. The `DebugOptions.ManaPotionDelay` mirror
+  (`:10320-10323`) is constants-off, same as the potions module.
+* **396's zero-duration floor writes the PLAYER field** (`:10331-10334`); the
+  accumulator records it as `mana_potion_duration_floored` for the wiring.
+* **The double-delete path is unreachable in retail play** (the downgrade
+  branch AND the set-flag-off branch on one slot would drive the C# `j`
+  negative): the tier fields reset to 0 every frame, a kept earlier slot's
+  set flag is on, the two beetle flags are mutually exclusive (one
+  chestpiece), and the off-family buff is purged on the first tick after an
+  armor swap. The driver's one-rescan-per-arm shape is therefore exact; the
+  proof sketch rides the driver's doc comment.
+* **The upgrade walk includes the current slot** (`:10357`'s range is
+  `base..=base+num-1`, and `buffType[j] == base+num-1`): after the walk the
+  chain ADVANCES (no rescan in that branch), skipping the compacted foreign
+  buff at `j` for this pass — pinned by
+  `s1_e_7c17_beetle_upgrade_walk_deletes_the_lower_tiers_including_j`.
+* **Beetle Might adds BEFORE the gate** (`:10431-10432` precede `:10433`): a
+  dropped Might buff still adds its damage/speed for the tick. No `buffTime
+  = 5` pin in the Might arm (unlike Endurance/Solar).
+* **RNG census: ZERO draws** in `:10318-10461` + `:12070-12079`. The Nebula
+  downgrade is deterministic timer arithmetic (`buffTime == 2 && level > 1`
+  → level−1, id−1, time 480); no stream or fixed-step-order change.
+
+Tests: 17 `s1_e_7c17_*` witnesses in the module — WRITTEN NOT RUN (code-only
+worker contract; compile-by-inspection).
+## The summon keep-alive buff block (S1-E-7 wave D / W4-c18, 2026-11-20, code-only)
+
+The THIRD missing block of `UpdateBuffs` (`Player.cs:10462-10976`, 30 ids:
+Ice Barrier 62 + the 29 summon keep-alive arms 49…161) is ported as a PURE
+effect table in `crates/tr-app/src/buff_effects_summons.rs`:
+`apply_summon_effect_arm` folds one arm's writes into a `SummonEffects`
+accumulator; `run_summon_buff_chain` is the slot-ordered driver over
+`BuffSlots` with the C# `DelBuff(j); j--` rescan. Claim + live-set census:
+`docs/research/28d-wave-d-claim.md` (c16 = first block `:9914-10048`, c17 =
+second `:10318-10461`, this worker = third). Deliberate deviations:
+
+* **Disjoint-wave shape**: the live `player.rs::SUMMON_BUFF_ARMS` +
+  `update_summon_buff_arms` path stays authoritative; this module is the
+  module-table form the waves' merge reconciles onto. Test-only until then —
+  no behaviour change, no RNG or fixed-step-order change.
+* **RNG census of the block: zero direct draws.** The indirect draws ride
+  the deferred spawn seams: 216's respawn `NewProjectile` (`:10712`, the
+  request records the staff's shoot/damage/knockBack; the wiring maps it onto
+  `spawn_with_data_ai_owned` exactly as `run_baby_bird_arm` does, failure →
+  DelBuff per the `flag2` guard) and the Abigail/StormTiger status updaters'
+  Kill/spawn pairs (live STUBs `player.rs:4137/:4142`, M4-PROJ-8 phases 4/6).
+  The DETERMINISTIC decision cores are ported here
+  (`desired_storm_tiger_rank` `:12337-12354`, `abigail_status_decision`
+  `:12274-12293`, `storm_tiger_status_decision` `:12295-12335`).
+* **62's missing halves**: the live `player.rs:6526` arm has only the
+  endurance add; this table adds the DelBuff-when-healthy half (`:10482`),
+  the `iceBarrier` flag, the light request (RGB 0.1/0.2/0.45, `:10466` — the
+  light itself already rides `player_lights.rs`) and the
+  `iceBarrierFrameCounter`/`iceBarrierFrame` advance (`advance_ice_barrier_frame`,
+  `:10469-10478`). 62 writes NO 18000 refresh.
+* **The persistent-flag read**: the C# keep gate reads `this.X` (`if
+  (!this.pygmy)`), not just the count — an earlier slot's keep in the same
+  tick keeps a later count-0 slot. The accumulator reproduces it (the live
+  driver reads the live fields, same semantics). 216 is the exception: its
+  gate reads ONLY the count (`:10700`).
+* **The unconditional status requests**: the C# runs `UpdateAbigailStatus`/
+  `UpdateStormTigerStatus` AFTER the keep/delete decision even when the buff
+  was DelBuff'd (`:10872-10875`/`:10892-10895` — the orphan-cleanup path).
+  The live driver only calls them on keep (`player.rs:4050-4057`); the table
+  records the faithful shape. Unobservable today (both live updaters are
+  stubs); the merge must keep the C# order when the pool bodies land.
+* **Inferno**: the aura scan (`:10224-10263`) is NOT in this block's range —
+  wave B owns it (roster dependency note stands, see above).
+
+Tests: 12 `s1_e_7d_*` tests — the 29-row keep/refresh/delete sweep (per id,
+per watched kind), 62's half-life boundary + 36-step frame cycle, 216's
+respawn gates, the DelBuff rescan, the persistent-flag read, the
+unconditional status requests, the tiger rank/form ladder + decisions, the
+foreign-id pass-through and the 29-row census pin. WRITTEN NOT RUN
+(code-only worker contract); compile-by-inspection.
+
 ## The NPC aiStyle dispatch axis (S1-D-2, 2026-11-18)
 
 The C# dispatches NPC AI on `aiStyle` first (`NPC.AI`, `NPC.cs:19819-41132`:
@@ -26569,6 +27002,57 @@ timer engine untouched. Deliberate deviations:
   port's sign convention.
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
+
+## The fourth buff block (S1-E-7 wave E, 2026-11-20, code-only)
+
+`crates/tr-app/src/buff_effects_status.rs` ports the FOURTH missing block
+of the `Player.UpdateBuffs` chain — `Player.cs:11406-12012`, **37 ids**:
+the late pet family (84/61/154/65/66/42/45/50/51/52/53/54/55/56/85/81/82/
+57/60/127/136), the DoT/status tail (80/320/353/163/164/194/195/196/197/
+198/145/43), Werewolf (28) and the hunger tiers (333/334) + Hearty Meal
+(336). Claim + live-set census: `docs/research/28e-wave-e-claim.md`
+(commit `e2dc1fcf`); disjoint by C# line from c16 `:9914-10048`, c17
+`:10318-10461`, c18 `:10462-10976` and the landed waves A/B/C/D.
+Deliberate deviations:
+
+- **Wiring deferred** (the wave-B/D admission): `apply_status_effect_arm`
+  folds one slot's writes into a `StatusEffects` accumulator; the module
+  is test-only until the waves' merge step copies it onto the live
+  fields. No `player.rs`/`buffs.rs`/`buff_effects_misc.rs` edits — the
+  wave-D `PET_ARMS` rows for these ids stay as they are; the merge
+  reconciles the two table forms (this module's rows are the disjoint
+  witness form, like c18's summon-table plan).
+- **The slot driver is ported, not just the arms**:
+  `run_status_buff_chain` mirrors the C# `for j` loop's two delete
+  shapes — Werewolf's `DelBuff(j); j--` RESCANS the compacted slot
+  (`:11907-11908`), Shimmering's deletes `continue` WITHOUT the rescan
+  (`:11797`/`:11823`). Two driver witnesses pin the difference (the
+  compacted Blackout runs after a Werewolf delete, is skipped after a
+  Shimmering delete). The timer head stays `buffs.rs::update_buffs_tick`.
+- **Pet spawns are requests** (`pet_spawns: Vec<u16>` at the entity
+  centre, `:11417`'s `position + width/2, height/2`): the
+  `NewProjectile` init rolls ride the pool seam (the wired accessory
+  module's precedent). The 18000 pin, the flag set and the owned-count
+  gate are 1:1; Crystal Leaf's kill-walk (`:11663-11673`) is the
+  `crystal_leaf_dedupe` request with exact 0/1/>1 count gates.
+- **Shimmering's tile scan** (`:11807-11816`) is verbatim against the
+  caller's `SolidTile3` predicate, keeping the C#'s inclusive FLOAT loop
+  bounds (`(float)num <= (pos + size) / 16f` — a witness pins the
+  far-edge tile counting and the one-past exclusion). The underworld
+  gate compares `y / 16f > UnderworldLayer` as f32 like the C#.
+- **Werewolf's 0.051f** melee damage AND speed (not the fed tiers'
+  0.05) is pinned; the day/charmless/merman kill gates each request the
+  delete + rescan.
+- **Hunger `pickSpeed` sign** kept signed like the C# (Hungry/Starving
+  ADD — mines slower); no `moveSpeed` line exists in either arm (the
+  C# omits it; a witness pins the zero). Hearty Meal (336) is flag-only.
+- **RNG census: ZERO direct draws** in `:11406-12012` (the block's only
+  rolls are the pet-spawn init draws, deferred with the requests). The
+  apply signature carries no `UnifiedRandom`; a mirrored-stream witness
+  pins the pass byte-neutral.
+
+Tests: 19 `s1_e_7e_*` witnesses in the module — WRITTEN NOT RUN
+(code-only mode, no cargo/rustc invoked).
 
 ## Frost Moon boss wiring (S1-F-13c, W1-1 resolved, code-only mode, 2026-11-19)
 
@@ -36054,6 +36538,184 @@ Mana Sickness (buff 94) — **not for weapons**:
   (the star-pickup heat `:35071` has no port seam). The
   `DebugOptions.ManaPotionDelay` halves (`:10320-10323`, `:51939-51943`) are
   false in the shipped statics (`DebugOptions.cs:86`) — folded out.
+
+## The orb keep-one prep (W4-g27, 2026-11-20)
+
+Five branches implemented the 18 lunar-orb `UpdateBuffs` arms
+(`Player.cs:10342-10461` + `UpdateBuffs_NebulaBuffs` `:12070-12079`):
+c16 (`buff_effects_orbs.rs`, request accumulator), c17
+(`buff_effects_potions_sets.rs`, slot driver), c18 (no orb arms — the
+summon block), d73 (`buff_effects_boosters.rs`, direct slot mutation),
+d74 (`buff_effects_tail.rs`, request accumulator). The keep-one decision
+(the full per-quirk diff + the merger contract) lives in
+`docs/research/W4-g27-orb-keep-one.md`; the canonical module is
+`crates/tr-app/src/buff_effects_orbs.rs` on `task/W4-g27-orb-keep-one-prep`.
+
+- **Pick: d73's arm core** — the only implementation preserving the
+  adjusted-`j` double-delete quirk verbatim (the downgrade's `j--` feeds
+  the gate-failure's second delete; the C# `DelBuff(-1)` crash path is
+  guarded, a documented deviation). c17 collapses it to one rescan;
+  c16/d74's unadjusted delete requests would replay it at the wrong slot.
+- **Correction ported: c17's zero-seeding.** `ResetEffects` zeroes
+  `beetleOrbs`/`solarShields`/the nebula trio every frame
+  (`Player.cs:18501`/`:18505`/`:18755`) — d73's `BoosterState` "persists
+  across ticks" claim is WRONG; the canonical `OrbScanState::reset_effects()`
+  makes the per-frame zeroing explicit.
+- **Request vocabulary kept for the accumulator-shaped mergers**:
+  `orb_arm_requests` derives the c16/d74 request view from the SAME arm
+  core on a one-slot scratch bar (no second implementation); `next_index`
+  is the authoritative quirk encoding, `purge_band` is inclusive-of-self
+  with no outer `j--`.
+- **Deliberate deviations**: the negative-index delete guard (the C#
+  throws `IndexOutOfRangeException`; unreachable in retail play — the
+  counters reset to 0 every frame, so a downgrade needs an earlier kept
+  slot whose own set flag was on). The set flags
+  (`beetleDefense`/`beetleOffense`/`setSolar`) stay false until the
+  armor-set lane lands (`ApplySetBonus_*` `:16366`/`:16499`/`:16529`
+  unported) — the arms then zero + delete exactly like the C# without the
+  set. c17's swapped chestpiece doc (Scale Mail ↔ Shell) is corrected to
+  c16's mapping.
+- **RNG census**: zero draws in the whole block — stream-neutral.
+- Code-only: 22 `w4_g27_*` witnesses WRITTEN, NOT RUN — no
+  cargo/rustc/rustfmt/tests/graphify invoked. The f12/merger step wires
+  the module and drops the four duplicate orb copies.
+
+## The buff-frame wiring (W4-f12, 2026-11-21)
+
+The gathered wave modules (c16/c17/c18/d71/d72/d73/d74) were pure effect
+tables — test-only until the merge step. W4-f12 wires them into the live
+`Player.UpdateBuffs` frame loop at the EXACT C# call order, in a new
+disjoint module `crates/tr-app/src/buff_frame_wiring.rs::update_buff_frame`
+(hook: `world_sim/player.rs`, after `update_summon_buff_arms`, before
+`update_accessory_buff_arms`).
+
+- **Keep-one (the g27 contract):** the 18 lunar-orb ids (95-100 / 170-181)
+  route EXCLUSIVELY to the canonical `buff_effects_orbs.rs::apply_orb_arm`
+  (the d73 arm core + c17 zero-seeding, adopted byte-exact in phase 1). The
+  duplicate orb dispatches in c17 (`buff_effects_potions_sets.rs`), d73
+  (`buff_effects_boosters.rs`) and d74 (`buff_effects_tail.rs`) are NOT
+  called — their non-orb ids stay with their modules. The orb counters live
+  in `Player.orb_scan` (`OrbScanState`), zeroed every frame by
+  `reset_effects()` in the `ResetEffects` region (the c17 correction).
+- **One slot-ordered pass, exact C# order:** the pass walks the bar
+  (`buffType > 0 && buffTime > 0`, `:9867-9870`) and dispatches the
+  genuinely-missing ids at their C# `else if` positions: the d73 stragglers
+  192/321 (`:9935-9946`), the wave-B debuff block (`:10049-10317`), Mana
+  Heat 396 (`:10328-10341`), the 18 orb ids (`:10342-10461`), Ice Barrier
+  62 (`:10462-10485`), the wave-E status block (`:11406-12012`) and the
+  wave-D DoT flag arms (`:11707-11783`). The frame head (`:9857-9864`,
+  soulDrain 151 + DontStarve 332) runs BEFORE the chain; the tails
+  (`:12046-12067`, hunger ladder + luck diff + lava fade) run AFTER — the
+  `buff_effects_frame.rs` helpers split around the chain.
+- **Ownership gates (no double grant):** the live passes already own many
+  ids — the inline wave-A match (`player.rs`), `update_summon_buff_arms`
+  (the 29 keep-alives + the 110/150/348 cap rows + the 216 respawn) and
+  `update_accessory_buff_arms` (the pets/imbues `:10977-11405` +
+  `:12013-12044`). The wiring's `INLINE_OWNED`/`SUMMON_OWNED`/
+  `ACCESSORY_OWNED` lists skip those ids; the debuff dispatch excludes
+  110/150/348 (summon-owned) and 165 (the inline match owns its
+  defense/thorns halves, the equip pass its +6 regen); the misc dispatch is
+  restricted to the DoT flag arms (Wet 103 stays with `refresh_wet_state`).
+- **Ice Barrier 62 keep-one:** the inline endurance-only half
+  (`player.rs`) is folded out; the WHOLE arm (flag + 3-tick × 12-frame
+  counter + above-half-life `DelBuff(j); j--` + endurance +0.25, the C#
+  `statLifeMax2` f64 gate) now rides d73's `apply_booster_effect_arm`. The
+  ice frame pair persists across ticks (`Player.ice_barrier_frame*`).
+- **The `pet_flags` clear moved** from the accessory pass to the
+  `ResetEffects` region so it precedes BOTH the wiring's late-pet grants
+  (`:11406-11706`) and the accessory pass's pet grants (clearing it after
+  the wiring would wipe the status pets).
+- **New Player fields:** the orb scan state, `beetle_buff`/`ice_barrier` +
+  the ice frame pair, `frame_state` (`oldLuckPotion`/`lavaOpacity`),
+  `soul_drain`, `inferno_counter` (the `:24595-24598` tick, cap 180), the
+  wired debuff/status/DoT flag halves, `block_range`, `stat_life_max2`,
+  `luck_needs_sync`, `buff_life_regen` (a SEPARATE accumulator from
+  `accessory_life_regen`, folded into `RegenInputs::extra_regen` beside it),
+  and the frame's emote/Hungry-sound request queues (drained by the
+  world_sim seam onto `EmoteSystem.new_bubble` / `audio.play("hungry")`).
+- **Deliberate deviations / gaps:** the set flags
+  (`beetleDefense`/`beetleOffense`/`setSolar`) stay false until the
+  armor-set lane lands (the g27 contract — the arms zero + delete like the
+  C# without the set); the DoT flag fields are the C# write's faithful
+  record (the regen lane reads them off the buff bar via `holding()`).
+- **Gap completions (2026-11-21, the recorded-gaps pass):**
+  - **Tipsy 25 (gap 1):** the COMPLETE arm now rides the inline wave-A
+    match (`player.rs`, `Player.cs:11918-11930`) — the flag, −4 defense,
+    +2 melee crit, +0.1 melee damage/speed and the Ale-3821 held ranged
+    pair (+0.1/+5). Keep-one: the wiring's `MISC_DISPATCH` excludes 25, so
+    the misc module's duplicate arm never fires (no double defense grant).
+  - **Inferno aura (gap 2):** the NPC damage ring (`Player.cs:10224-10238`
+    + `ApplyDamageToNPC` `:20437-20461`) ports in
+    `buff_inferno_aura.rs::inferno_aura_scan`, wired at the world_sim seam
+    after the frame fold: the 200-px roster scan spreads Hellfire 323/120
+    every tick and strikes for 20 on the `infernoCounter % 60 == 0`
+    cadence (banner scale → `checkArmorPenetration(melee:false)` with the
+    ichor/broken-armor/Betsy bonuses → the `StrikeNPC_Inner` defence line;
+    the combat text spawns BEFORE the life write on the `UpdatePlayers`
+    stream, the hit sound + Destroyer probe drain after in C# order). The
+    critter-book refusal ports with it (`dontHurtCritters` field, the
+    `:18780` clear + the 4767/5323 grant `:12825-12828`,
+    `CanNPCBeHitByPlayerOrPlayerProjectile` `:20513-20529`; the ported
+    `CountsAsCritter` member is the Goldfish 55). The PvP twin
+    (`:10243-10263`) is single-player dead code (`hostile` defaults false,
+    no second player) — recorded, not ported. The `OnHit` accessory
+    families (`:20443`) are unported player flags — no draws, recorded.
+  - **Moon Charm / wolf_acc (gap 3):** the accessory GRANT lane the d71
+    werewolf effect was waiting on. `Player.wolf_acc` arms from the Moon
+    Charm 485 (`:15182-15189`), Moon Shell 861 (`:15134-15143`) and
+    Celestial Shell 3110 (`:15402-15411`); Neptune's Shell 497 stays
+    accMerman-only (`:15566-15573`). The `:25601-25605` night grant
+    (`wolfAcc && !merman && !dayTime && !wereWolf` → `AddBuff(28, 60)`,
+    then the flag clear) rides the merman-derivation tail; the wiring's
+    status/misc contexts read the live `p.wolf_acc`, so the wave-E
+    werewolf arm now grants the stat block at night. The `hideWolf`/
+    `forceWerewolf` visibility halves stay draw-seam scope (the
+    `ApplyEquipVanity` `:14205-14209` arm is unported — recorded).
+- **RNG census:** the wiring pass draws NOTHING — the only draw in the
+  wired blocks is Rabid (148)'s `Main.rand` triple, already owned by the
+  live accessory pass (the wiring skips 148). The Inferno aura scan draws
+  only the strike's combat-text placement (two `Next` draws per landed
+  strike, `CombatText.cs:88-89`) + the hit-sound pitch + the Destroyer
+  probe roll, all on the `UpdatePlayers` stream in the C# order — the
+  debuff-only pass is stream-neutral.
+- Code-only: the phase-2 16 `w4_f12_*` witnesses + the gap pass's 14
+  (2 Tipsy + 7 Inferno + 5 Moon Charm) WRITTEN, NOT RUN — no
+  cargo/rustc/rustfmt/tests/graphify invoked.
+- **The SWEEP pass (2026-11-21, after 6351c615):** the FULL 270-id census
+  (`docs/research/W4-f12-sweep-census.md`) script-diffed the C# case-list
+  (256 `==` heads + 6 range heads + the MountType set head) against every
+  ownership set and found exactly **10 gaps** — 2 whole ids with NO owner
+  (Bleeding 30 `:10029-10032` inline + INLINE_OWNED; Stoned 156
+  `:10057-10060` joins DEBUFF_DISPATCH — the module arm existed but no
+  dispatch carried it) and 8 partial arms completed INLINE (the Tipsy
+  pattern): Builder 107's `blockRange++` (`:10162`), Dryad's Ward 165's
+  flag (`:10307`), Weak 33's meleeSpeed −0.051 (`:11914`), the three
+  WellFed tiers' minion halves (26/206/207, `:11942-11943`/`:11958-11959`/
+  `:11974-11975` — the fields are live, the "waits for M4-MINION" note
+  retired), Kite 383's whole stat block (`:9916-9919`) + the tier's
+  ON-CHANGE `luckNeedsSync` gate (`:9921-9925`, was firing every tick),
+  and Ichor 69's flag (`:10063` — the −15 defense was inline but
+  `Player.ichor` had no live writer; 69 is inline-owned so the wave-B
+  copy never dispatches). After the sweep the set-diff is EMPTY: one
+  live grant path per id. 8 `w4_f12_sweep_*` witnesses written not run.
+- **The nebula twin contract (sweep, f49 co-check):** f49b (5fbbc430)
+  landed the `:12070-12079` tier writer on the d117 `Player.
+  nebula_level_mana` field and published the one-writer recipe
+  (research/85 on ITS branch). The two writers are semantically
+  identical (assign-derivation + time-2 step-down, both post-tick-head);
+  the f12-side contract is published in the sweep census doc: keep the
+  canonical g27 `apply_orb_arm` as the ONE dispatch, bind the regen read
+  side to `orb_scan.nebula_level_mana` OR retarget the g27 write onto the
+  d117 field at the merge — never both dispatches. The Life/Damage
+  consumers stay f12's (verified live in `apply_orb_arm`).
+- **The buff-321 keep-one (sweep, d115 co-check):** d115b (7c4fcb75)
+  landed an inline 321 arm; THIS branch's d73 booster lane already owns
+  321 at the C# chain position. Both cite `Player.cs:9940-9947`
+  (re-verified: +10 crit ×3 + 0.10 minionDamage) and the values are
+  identical. Merger ruling recorded in the census doc: the d73/wiring
+  arm is canonical (it IS the frame pass); d115's inline copy folds out
+  at the merge (its dodge grant + retaliate census stay d115's) — or 321
+  moves to INLINE_OWNED and out of the booster match; never both.
 
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,

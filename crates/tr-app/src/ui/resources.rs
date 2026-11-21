@@ -10,7 +10,7 @@ use glam::Vec2;
 use tr_render::SpriteRenderer;
 
 use super::UiPulse;
-use super::text::{hud_text, hud_text_width};
+use super::text::{hud_item_text, hud_text, hud_text_width};
 use crate::assets;
 use crate::player::{BREATH_MAX, Player, WIDTH as PLAYER_WIDTH};
 
@@ -459,9 +459,12 @@ pub(crate) fn buff_text(p: &Player, slot: usize) -> Option<String> {
 /// `(int)(manaSickReduction * 100f) + 1` percent (`:43282`) and `ManaHeat`
 /// (396) appends `(int)(Math.Ceiling(manaHeat * 100f) - 100.0)` percent
 /// (`:43285`) — both fields now exist on the port's Player (i19/i52), so
-/// the S1-E-6 documented drops are closed. `DebugOptions.ManaPotionDelay`
-/// (`:43278-43281`, `Testing/DebugOptions.cs` — the developer test toggle)
-/// has no port counterpart and stays false, so the plain arm always runs.
+/// the S1-E-6 documented drops are closed (W4-c26 + the W4-f12 final
+/// census, composed here). The 94 arm's `DebugOptions.ManaPotionDelay`
+/// early-return (`:43278-43281`) is constants-off
+/// (`Testing/DebugOptions.cs:28`, static ctor `:86` false — the same
+/// ruling as `buff_effects_potions_sets.rs:108`), so the plain arm always
+/// runs.
 pub(crate) fn buff_tooltip(p: &Player, buff: i32) -> String {
     let expert = p.buffs.expert_mode;
     let text = match buff {
@@ -477,6 +480,8 @@ pub(crate) fn buff_tooltip(p: &Player, buff: i32) -> String {
         // `:43285` — `manaHeat * 100f` multiplies in f32, `Math.Ceiling`
         // promotes the product to double, minus the double 100.0, then the
         // `(int)` truncation (the ceil of an integral double is exact).
+        // `manaHeat` resets to 1 every tick (`Player.cs:18593`), so the
+        // resting suffix is "0%".
         396 => format!(
             "{text}{}%",
             ((p.mana_heat * 100.0f32) as f64).ceil() as i32 - 100
@@ -621,9 +626,11 @@ pub fn draw_buffs(
         // or the duration — `FontAssets.ItemStack` at 0.8 under the icon,
         // tinted by the SAME slot-alpha colour as the icon (`:43314`'s
         // `color`, reused at `:43327`). The S1-E-6 pass drew it white at
-        // 0.85 on the Mouse_Text font — three verbatim deltas, fixed here.
+        // 0.85 on the Mouse_Text font — three verbatim deltas, fixed by
+        // W4-c26 + the W4-f12 final icon census (composed here; the f12
+        // inline selection is this same `buff_icon_text` body).
         if let Some(text) = buff_icon_text(player, i, vampire_seed) {
-            crate::ui::text::hud_item_text(r, lookups, x, y + h, 0.8, [a, a, a, a], &text);
+            hud_item_text(r, lookups, x, y + h, 0.8, [a, a, a, a], &text);
         }
         // The hover + the right-click removal (`:43329-43349`). The C#'s
         // `!PlayerInput.IgnoreMouseInterface` gate has no port counterpart.
@@ -673,6 +680,39 @@ mod s1_e_6_tests {
         assert!(localized_duration(3600).starts_with("1 "), "h: {}", localized_duration(3600));
         assert!(localized_duration(5400).starts_with("2 "), "h+1: {}", localized_duration(5400));
         assert!(localized_duration(86_400 * 2 + 1).starts_with("3 "), "d+1: {}", localized_duration(86_400 * 2 + 1));
+    }
+
+    #[test]
+    fn w4_f12_final_buff_time_the_unit_boundaries_and_the_two_tick_gate() {
+        // The W4-f12 final buff-time census (`Main.cs:43321-43324` →
+        // `Lang.LocalizedDuration`, `Lang.cs:1158-1205`): the text is the
+        // duration ONLY when `TryGetBuffTime` yields and the tick count is
+        // over 2; the TimeSpan is whole seconds (`buffTimeValue / 60`,
+        // integer division). The exact-unit boundaries do NOT bump
+        // (`time > TimeSpan.FromX(1)` is strict), the remainder above does.
+        assert!(localized_duration(60).starts_with("1 "), "exactly 1 min");
+        assert!(localized_duration(61).starts_with("2 "), "1 min + 1 s ceilings");
+        assert!(localized_duration(3599).starts_with("60 "), "59 min + 59 s");
+        assert!(localized_duration(3601).starts_with("2 "), "1 h + 1 s ceilings");
+        assert!(localized_duration(86_400).starts_with("1 "), "exactly 1 day");
+        assert!(localized_duration(86_401).starts_with("2 "), "1 d + 1 s ceilings");
+        // The >2-tick gate (`:43321`): 2 ticks print nothing, 3 print "0 s"
+        // (3/60 = 0 whole seconds — the C# prints `0 <ShortSeconds>` too).
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut p = crate::player::Player::spawn(&world);
+        p.buffs.buff_type[0] = 5; // Ironskin — no handler, no hide gate
+        for (ticks, want) in [(0, None), (2, None), (3, Some(0)), (120, Some(2))] {
+            p.buffs.buff_time[0] = ticks;
+            let got = try_get_buff_time(&p, 0, false).filter(|t| *t > 2).map(|t| t / 60);
+            assert_eq!(got, want, "ticks {ticks}");
+        }
+        // The handler counter beats the duration (`:43317-43320`): buff 64
+        // with an owned projectile prints xN even at 3 ticks.
+        p.buffs.buff_type[0] = 64;
+        p.buffs.buff_time[0] = 3;
+        p.owned_projectile_counts[266] = 2;
+        assert_eq!(buff_text(&p, 0).as_deref(), Some("x2"));
+        assert!(try_get_buff_time(&p, 0, false).is_some(), "the timer still ticks");
     }
 
     #[test]
@@ -751,9 +791,10 @@ mod s1_e_6_tests {
         // A non-fed buff ignores the flag.
         p.buffs.expert_mode = false;
         assert_eq!(buff_tooltip(&p, 26), "Minor improvements to all stats");
-        // The `ManaHeat` (396) arm now appends the player-computed percent
-        // (`Main.cs:43285`): the default `manaHeat == 1.0` ceils to exactly
-        // 100, so the appended text is "0%" — not a bare description.
+        // The `ManaSickness` (94) / `ManaHeat` (396) percentage arms
+        // (`Main.cs:43282`/`:43285`, W4-c26 + the W4-f12 final census):
+        // 396's resting `manaHeat = 1` ceils to exactly 100, so the
+        // appended text is "0%" — not a bare description.
         assert_eq!(
             buff_tooltip(&p, 396),
             format!("{}0%", crate::lang::buff_description(396))
@@ -762,16 +803,20 @@ mod s1_e_6_tests {
 
     /// W4-c26 — `Main.GetBuffTooltip`'s two player-computed percent arms
     /// (`Main.cs:43282`/`:43285`), the S1-E-6 drops closed now that i19/i52
-    /// landed `Player.manaSickReduction`/`manaHeat`.
+    /// landed `Player.manaSickReduction`/`manaHeat`. Composed with the
+    /// W4-f12 final tooltip census (same arms): the fixture rows are the
+    /// retail en-US strings (`Game.json:1083`/`:1342` — Items.json carries
+    /// only the three WellFed_Expert rows), and the assertions cover both
+    /// lanes' edges (the truncation floors + the ceiling bumps).
     #[test]
     fn w4_c26_the_mana_percent_arms_append_the_player_computed_text() {
         let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         crate::lang::test_register_source(
-            "Terraria.Localization.Content.en-US.Items.json",
+            "Terraria.Localization.Content.en-US.Game.json",
             r#"{
                 "BuffDescription": {
-                    "ManaSickness": "Cannot use magic items ",
-                    "ManaHeat": "Magic damage reduced by "
+                    "ManaSickness": "Magic damage reduced by ",
+                    "ManaHeat": "Magic damage increased by "
                 }
             }"#,
         );
@@ -780,20 +825,31 @@ mod s1_e_6_tests {
         // `:43282` — `(int)(manaSickReduction * 100f) + 1`, the +1 AFTER
         // the truncating cast: 0.25 → 25 + 1 = 26.
         p.mana_sick_reduction = 0.25;
-        assert_eq!(buff_tooltip(&p, 94), "Cannot use magic items 26%");
+        assert_eq!(buff_tooltip(&p, 94), "Magic damage reduced by 26%");
         // The truncation: 0.259 → 25 (not 26) + 1 = 26.
         p.mana_sick_reduction = 0.259;
-        assert_eq!(buff_tooltip(&p, 94), "Cannot use magic items 26%");
+        assert_eq!(buff_tooltip(&p, 94), "Magic damage reduced by 26%");
+        // A half-decayed 0.125 prints 13% (the f12 fixture edge); the
+        // truncation floor 0.129 * 100 = 12.9 → 12, +1 = 13.
+        p.mana_sick_reduction = 0.125;
+        assert_eq!(buff_tooltip(&p, 94), "Magic damage reduced by 13%");
+        p.mana_sick_reduction = 0.129;
+        assert_eq!(buff_tooltip(&p, 94), "Magic damage reduced by 13%");
         // Zero reduction still appends 1% (the vanilla's floor).
         p.mana_sick_reduction = 0.0;
-        assert_eq!(buff_tooltip(&p, 94), "Cannot use magic items 1%");
+        assert_eq!(buff_tooltip(&p, 94), "Magic damage reduced by 1%");
         // `:43285` — `(int)(Math.Ceiling(manaHeat * 100f) - 100.0)`:
         // 1.123 → ceil(112.3…) = 113 − 100 = 13.
         p.mana_heat = 1.123;
-        assert_eq!(buff_tooltip(&p, 396), "Magic damage reduced by 13%");
+        assert_eq!(buff_tooltip(&p, 396), "Magic damage increased by 13%");
+        // The ceiling rounds UP (1.105 → 111 → 11%, the f12 fixture edge).
+        p.mana_heat = 1.105;
+        assert_eq!(buff_tooltip(&p, 396), "Magic damage increased by 11%");
+        p.mana_heat = 1.5;
+        assert_eq!(buff_tooltip(&p, 396), "Magic damage increased by 50%");
         // Exactly 1.0 ceils to 100 → 0%.
         p.mana_heat = 1.0;
-        assert_eq!(buff_tooltip(&p, 396), "Magic damage reduced by 0%");
+        assert_eq!(buff_tooltip(&p, 396), "Magic damage increased by 0%");
     }
 
     /// W4-c26 — `Main.DrawBuffIcon`'s icon-text selection
@@ -899,6 +955,67 @@ mod s1_e_6_tests {
         owned[69] = true;
         let names = banner_hover_names(&owned);
         assert_eq!(names.len(), 1, "{names:?}");
+    }
+
+    #[test]
+    fn w4_f12_final_icon_census_the_gates_are_the_csharp_sets() {
+        // The W4-f12 final-phase icon census (`Main.DrawBuffIcon`
+        // `Main.cs:43307-43368` vs `draw_buffs`): every id the C# gates
+        // out of the duration text hides it here too, and every other
+        // id keeps its timer. The `Main.debuff` / `vanityPet` / `lightPet`
+        // / `buffNoTimeDisplay` tables were script-diffed against
+        // `Main.cs:8865-8940` / `:9214+` / `:9288+` / `:9074-9199` —
+        // 76 / 74 / 12 / 124 entries, zero missing, zero extra.
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut p = crate::player::Player::spawn(&world);
+        // The vanity pets (74) and light pets (12) never show a timer
+        // (`Main.cs:43295`); spot-check the head/tail of each set.
+        for b in [40, 382, 19, 299] {
+            p.buffs.buff_type[0] = b;
+            p.buffs.buff_time[0] = 3600;
+            assert_eq!(try_get_buff_time(&p, 0, false), None, "pet {b} hides");
+        }
+        // The 124-id `buffNoTimeDisplay` set (spot rows across the range).
+        for b in [28, 93, 150, 216, 335, 394] {
+            p.buffs.buff_type[0] = b;
+            assert_eq!(try_get_buff_time(&p, 0, false), None, "no-time {b}");
+        }
+        // The honey-48 wet gate and the expert wet-46 gate (`:43295`).
+        p.buffs.buff_type[0] = 48;
+        p.honey_wet = true;
+        assert_eq!(try_get_buff_time(&p, 0, false), None, "honey wet 48");
+        p.honey_wet = false;
+        assert_eq!(try_get_buff_time(&p, 0, false), Some(3600));
+        p.buffs.buff_type[0] = 46;
+        p.wet = true;
+        p.buffs.expert_mode = true;
+        assert_eq!(try_get_buff_time(&p, 0, false), None, "expert wet 46");
+        p.buffs.expert_mode = false;
+        assert_eq!(try_get_buff_time(&p, 0, false), Some(3600), "classic wet 46 shows");
+        // The vampire seed's sub-10 gates for 23/24/32 (`:43297-43300`).
+        for b in [23, 24, 32] {
+            p.buffs.buff_type[0] = b;
+            p.buffs.buff_time[0] = 9;
+            assert_eq!(try_get_buff_time(&p, 0, true), None, "vampire {b} <10");
+            assert_eq!(try_get_buff_time(&p, 0, false), Some(9), "no seed shows");
+            p.buffs.buff_time[0] = 10;
+            assert_eq!(try_get_buff_time(&p, 0, true), Some(10), "10 is not <10");
+        }
+        // A plain buff keeps its timer regardless of the seed.
+        p.buffs.buff_type[0] = 5;
+        p.buffs.buff_time[0] = 9;
+        assert_eq!(try_get_buff_time(&p, 0, true), Some(9));
+        // The 28 `BuffTextHandlers` ids override the timer with the owned
+        // counter (`:43317-43320`); with zero owned projectiles the
+        // duration fallback returns (`buff_text` yields None) — pinned by
+        // `the_buff_text_counter_is_xn_and_gated_on_a_positive_sum`.
+        assert_eq!(BUFF_TEXT_HANDLERS.len(), 28);
+        // The melee set is exactly the 8 flask ids (`Main.cs:8961+`,
+        // script-diffed): the hover passes rarity -10 for these only.
+        for b in [71, 73, 74, 75, 76, 77, 78, 79] {
+            assert!(crate::buffs::is_melee_buff(b), "flask {b}");
+        }
+        assert!(!crate::buffs::is_melee_buff(72), "72 is Midas, not a flask (BuffID.cs:315; Tipsy is 25, :221)");
     }
 }
 

@@ -34,7 +34,7 @@
 
 use crate::npc::{Npc, NpcKind};
 use crate::player::{Player, HEIGHT, WIDTH};
-use crate::projectile::{ProjectilePool, PROJ_COUNT};
+use crate::projectile::ProjectilePool;
 use tr_core::loot::DropRng;
 
 /// The `BuffHandle_SpawnPetIfNeededAndSetTime` rows
@@ -171,7 +171,10 @@ pub fn update_accessory_buff_arms(
     p.sunflower = false;
     p.rabid = false;
     p.melee_enchant = 0;
-    p.pet_flags = [false; PROJ_COUNT];
+    // W4-f12: the `pet_flags` clear moved to the `ResetEffects` region
+    // (`player.rs`) so it precedes BOTH the wiring pass's late-pet grants
+    // (`buff_frame_wiring.rs`, `:11406-11706`) and this pass's pet grants —
+    // clearing it here (after the wiring) would wipe the status pets.
 
     // `Main.wofNPCIndex >= 0 && npc.active && type == 113`
     // (`Player.cs:10979`): the port's live-WoF scan (hp > 0 is the port's
