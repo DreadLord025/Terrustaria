@@ -53,6 +53,21 @@ const CART_MOUNT_HEIGHT: f32 = 52.0;
 pub const BREATH_MAX: i32 = 200;
 /// `Player.breathCDMax`: ticks between breath decrements.
 const BREATH_CD: i32 = 7;
+/// `Player.AFKTimeNeededForNoLuckyStars` (`Player.cs:990`, set 10800 at
+/// `:57103`): the lucky-star / storm-lightning gates' afk ceiling
+/// (`WorldGen.cs:71842`/`:71905`). W4-d15 final phase.
+pub const AFK_TIME_NEEDED_FOR_NO_LUCKY_STARS: i32 = 10800;
+/// `Player.AFKTimeNeededForNoWormSpawns` (`Player.cs:57102`, 300): the
+/// `NPC.cs:411` `noGroundWorms` threshold — the spawn-info lane's
+/// consumer, recorded here for the cross-note.
+pub const AFK_TIME_NEEDED_FOR_NO_WORM_SPAWNS: i32 = 300;
+/// `ItemID.Sets.IsAKite` (`ItemID.cs:411`): the 24 kite kinds — a held
+/// kite keeps the afk counter climbing through the swing animation
+/// (`Player.cs:25497`'s `itemAnimation == 0 || IsAKite[HeldItem.type]`).
+const IS_A_KITE: [u16; 24] = [
+    4367, 4368, 4369, 4370, 4371, 4379, 4610, 4611, 4612, 4613, 4648, 4649,
+    4650, 4651, 4669, 4670, 4671, 4674, 4675, 4676, 4677, 4681, 4683, 4684,
+];
 
 /// The extra-jump options (`Player.hasJumpOption_*` / `canJumpAgain_*` /
 /// `isPerformingJump_*`, `Player.cs:2664-2716`). The mount jumps
@@ -2000,6 +2015,21 @@ pub struct Player {
     /// `Projectile.cs:52490`/`:52535`). The port's draw/pose consumers land
     /// with the held-item layers; the field keeps the C#'s write exact.
     pub held_proj: i32,
+    /// `Player.controlTorch` (`Main.cTorch`, the LeftShift auto-select
+    /// key): this tick's held state. The afk counter's idle gate reads
+    /// it (`Player.cs:25497`). W4-d15 final phase.
+    pub control_torch: bool,
+    /// `Player.afkCounter` (`Player.cs:986`): the standing-still tick
+    /// counter — `Player.Update` (`:25497-25506`) increments while
+    /// `IsConsideredStandingStill` (`:3323-3332`, |v| < 0.05 both axes)
+    /// AND idle (`itemAnimation == 0` or a kite held) AND no movement/
+    /// torch control; any activity zeroes it. `Select` (`:515`) zeroes
+    /// it on every hotbar selection. Readers: the lucky-star gate
+    /// (`WorldGen.cs:71842`, `< AFK_TIME_NEEDED_FOR_NO_LUCKY_STARS`),
+    /// the storm-lightning gate (`:71905`, unported arm) and the
+    /// worm-spawn suppression (`NPC.cs:411`, `>= 300` — the spawn-info
+    /// lane's fold). W4-d15 final phase (the starfall afk fold).
+    pub afk_counter: i32,
     // ------------------------------- the ammo mastery layer (M3-ITEM-6)
     // `Player.magicQuiver` (`Player.cs:1968`): the quivers 4002/4006/6181/1321
     // (`:14465`, `:14483`, `:14596`, `:15333`) — the 1/5 roll arm (`:53595`) and
@@ -2710,6 +2740,7 @@ impl Player {
             control_jump: false,
             control_down: false,
             control_up: false,
+            control_torch: false,
             jump: 0,
             jump_held: false,
             spawn_x: sx,
@@ -2896,6 +2927,7 @@ impl Player {
             channel_index_expected: 0,
             // `Player.heldProj = -1` (`Player.cs:1516`'s stock).
             held_proj: -1,
+            afk_counter: 0,
             magic_quiver: false,
             minion_kb: 0.0,
             kb_glove: false,
@@ -5760,6 +5792,31 @@ impl Player {
             std::mem::swap(&mut self.control_left, &mut self.control_right);
             self.control_up = self.control_right;
             self.control_down = flag3;
+        }
+        // `Player.cs:25497-25506` — the afk counter (W4-d15 final phase):
+        // standing still (`IsConsideredStandingStill` `:3323-3332`) AND
+        // idle (`itemAnimation == 0` or a kite held, `ItemID.cs:411`) AND
+        // no movement/torch control → +1; anything else zeroes. The C#
+        // block sits after ResetEffects/UpdateDyes and before the
+        // movement pass — the port's controls-landed site reads the same
+        // pre-movement velocity. `afkCounterForKiting` (`:25500`) stays
+        // unported (the kite machine has no port state — `selectedKite`
+        // folds −1); the `Select` reset (`:515`) rides the hotbar click
+        // seam (`app/clicks.rs`).
+        let afk_still = self.vx.abs() < 0.05 && self.vy.abs() < 0.05;
+        let afk_idle = !item_in_use || IS_A_KITE.contains(&self.held_item_kind);
+        if afk_still
+            && afk_idle
+            && !self.control_up
+            && !self.control_down
+            && !self.control_left
+            && !self.control_right
+            && !self.control_jump
+            && !self.control_torch
+        {
+            self.afk_counter += 1;
+        } else {
+            self.afk_counter = 0;
         }
         // `PlayerSittingHelper.UpdateSitting` (`Player.cs:26125`) and
         // `PlayerSleepingHelper.UpdateState` (`:26126`): the stand-up/wake
@@ -11920,6 +11977,52 @@ fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slope
 #[cfg(test)]
 
 mod tests {
+    /// W4-d15 final phase — the afk counter (`Player.cs:25497-25506`).
+    /// WRITTEN NOT RUN (code-only round).
+    #[test]
+    fn w4_d15_the_afk_counter_climbs_idle_and_zeroes_on_activity() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // Settle on the ground first (the fall keeps |vy| >= 0.05).
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.on_ground);
+        p.afk_counter = 0;
+        // Idle + still + no controls: +1 per tick.
+        for i in 1..=3 {
+            p.update(&w, PlayerInput::default());
+            assert_eq!(p.afk_counter, i, "tick {i}");
+        }
+        // A run key zeroes (`:25504`).
+        let mut input = PlayerInput::default();
+        input.right = true;
+        p.update(&w, input);
+        assert_eq!(p.afk_counter, 0, "controlRight zeroes");
+        // The torch key zeroes too (`controlTorch`, `:25497`).
+        p.afk_counter = 5;
+        p.control_torch = true;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.afk_counter, 0, "controlTorch zeroes");
+        p.control_torch = false;
+        // Movement zeroes even with no keys (`IsConsideredStandingStill`).
+        p.afk_counter = 5;
+        p.vx = 1.0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.afk_counter, 0, "|vx| >= 0.05 zeroes");
+        p.vx = 0.0;
+        // A swing zeroes (`itemAnimation != 0`) — unless a kite is held.
+        p.afk_counter = 5;
+        let mut swing = PlayerInput::default();
+        swing.item_in_use = true;
+        p.update(&w, swing);
+        assert_eq!(p.afk_counter, 0, "the swing zeroes");
+        p.held_item_kind = 4367; // a kite (`ItemID.cs:411`)
+        p.afk_counter = 5;
+        p.update(&w, swing);
+        assert_eq!(p.afk_counter, 6, "the kite keeps the climb");
+    }
+
     #[test]
     fn dye_cache_mirrors_update_dyes() {
         let mut p = Player::spawn(&World::new("t".into(), 64, 800));

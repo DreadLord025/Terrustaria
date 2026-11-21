@@ -1845,6 +1845,11 @@ impl App {
                     if self.selection.select(self.selected, slot, false) {
                         self.audio.play("Menu_Tick"); // `Select`, `:506`
                     }
+                    // `Select`'s afk reset (`Player.cs:515-516`) runs on
+                    // EVERY local selection, cue or not (W4-d15 final).
+                    if let Some(p) = self.player.as_mut() {
+                        p.afk_counter = 0;
+                    }
                 }
             }
             return;

@@ -164,7 +164,12 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
 ///   position/luck (the first-active fallback) — the `:71842` gate has
 ///   no dead term.
 /// - `afkCounter < AFKTimeNeededForNoLuckyStars` (`:71842`, 10800 —
-///   `Player.cs:57103`): no port field (the hotbar census), folds 0.
+///   `Player.cs:57103`): LANDED (final phase) — `Player.afk_counter`
+///   (the `:25497-25506` standing-still counter + the `Select` reset),
+///   the inactive slot folds 0. The other readers (`NPC.cs:411`'s
+///   `noGroundWorms >= 300`, `WorldGen.cs:71905`'s storm-lightning
+///   gate) stay their lanes' folds; `afkCounterForKiting` + the
+///   spectating clamp (`:17086`) are unported (no kite/spectate state).
 /// - `Main.isThereAWorldSurface` (`Main.cs:2788`: `worldSurface > 50`)
 ///   gates the WHOLE `SpawnFallingObjects` (`:71678-71681`) — the
 ///   skyblock/no-surface worlds skip the starfall too.
@@ -185,14 +190,15 @@ fn spawn_natural_starfall(
         return;
     }
     // The closest player's snapshot (`Player.FindClosest` — the one
-    // player): position + luck. No player reads the inactive slot
-    // (position (0,0), luck 0). A DEAD player keeps its position/luck —
-    // `FindClosest`'s first-active fallback (`Player.cs:4944-49452`)
-    // returns it and the `:71842` gate carries NO dead term (the
-    // meteor-shower arm's `!dead` at `:71755` is a different branch).
-    let (player_x, player_y, player_luck) = player
-        .map(|p| (p.x, p.y, p.luck()))
-        .unwrap_or((0.0, 0.0, 0.0));
+    // player): position + luck + afkCounter. No player reads the
+    // inactive slot (position (0,0), luck 0, afk 0). A DEAD player keeps
+    // its position/luck — `FindClosest`'s first-active fallback
+    // (`Player.cs:4944-4952`) returns it and the `:71842` gate carries
+    // NO dead term (the meteor-shower arm's `!dead` at `:71755` is a
+    // different branch).
+    let (player_x, player_y, player_luck, player_afk) = player
+        .map(|p| (p.x, p.y, p.luck(), p.afk_counter))
+        .unwrap_or((0.0, 0.0, 0.0, 0));
     // `:71832` — `for (int i = 0; i < Main.dayRate; i++)`.
     for _ in 0..world.day_rate() {
         // `:71834-71835` — the boost-scaled gate roll. `starfallBoost`
@@ -217,7 +223,10 @@ fn spawn_natural_starfall(
         } else {
             tr_core::loot::roll_luck(rng, player_luck, 15)
         };
-        if luck_roll == 0 && (player_y as f64) < world.world_surface * 16.0 {
+        if luck_roll == 0
+            && (player_y as f64) < world.world_surface * 16.0
+            && player_afk < crate::player::AFK_TIME_NEEDED_FOR_NO_LUCKY_STARS
+        {
             // `:71844-71846` — the lateral offset roll: `Next(1, 640)`
             // then `Next(-num20, num20 + 1)`.
             let num20 = rng.next_range(1, 640);
@@ -463,11 +472,11 @@ mod w4_d15_starfall_tests {
         let mut twin = UnifiedRandom::new(app.world.seed as i32);
         let mut twin_app = starfall_app();
         let world = &twin_app.world;
-        let (px, py, luck) = twin_app
+        let (px, py, luck, afk) = twin_app
             .player
             .as_ref()
-            .map(|p| (p.x, p.y, p.luck()))
-            .unwrap_or((0.0, 0.0, 0.0));
+            .map(|p| (p.x, p.y, p.luck(), p.afk_counter))
+            .unwrap_or((0.0, 0.0, 0.0, 0));
         for _ in 0..world.day_rate() {
             let num16 = world.width as f64 / 4200.0 * world.starfall_boost as f64;
             if !((twin.next_max(8000) as f64) < 10.0 * num16) {
@@ -478,7 +487,10 @@ mod w4_d15_starfall_tests {
                 twin.next_max((world.height as f64 * 0.05) as i32) as f32 * 16.0,
             );
             let roll = tr_core::loot::roll_luck(&mut twin, luck, 15);
-            if roll == 0 && (py as f64) < world.world_surface * 16.0 {
+            if roll == 0
+                && (py as f64) < world.world_surface * 16.0
+                && afk < crate::player::AFK_TIME_NEEDED_FOR_NO_LUCKY_STARS
+            {
                 let num20 = twin.next_range(1, 640);
                 pos.x = px + twin.next_range(-num20, num20 + 1) as f32;
             }
@@ -577,5 +589,58 @@ mod w4_d15_starfall_tests {
             boosted.projectiles.slots().iter().any(|p| p.active),
             "boost 5: the roll hits the ≈4.76 threshold"
         );
+    }
+
+    /// W4-d15 final phase: the afk gate (`WorldGen.cs:71842`,
+    /// `afkCounter < 10800`) — a player at the ceiling keeps the luck
+    /// roll spent but the targeted branch REFUSED (ai1 stays −1, no
+    /// offset draws); the fresh twin targets (ai1 = 0). The seed forces
+    /// the gate hit AND the luck-roll 0 (the zero-luck `Next(15)`).
+    /// WRITTEN NOT RUN (code-only round).
+    #[test]
+    fn the_afk_ceiling_refuses_the_targeted_branch() {
+        // Gate hit (Next(8000) == 0), sky point (2 draws), luck roll
+        // Next(15) == 0 — scan the 4-draw prefix.
+        let seed = (0..200_000i32)
+            .find(|&s| {
+                let mut r = UnifiedRandom::new(s);
+                if r.next_max(8000) != 0 {
+                    return false;
+                }
+                let _x = r.next_max(350);
+                let _y = r.next_max(15);
+                r.next_max(15) == 0
+            })
+            .expect("a gate+luck hit seed");
+        let mut afk = starfall_app();
+        afk.world.seed = seed as u64;
+        afk.rngs.reset(seed);
+        afk.player.as_mut().unwrap().afk_counter =
+            crate::player::AFK_TIME_NEEDED_FOR_NO_LUCKY_STARS;
+        let mut fresh = starfall_app();
+        fresh.world.seed = seed as u64;
+        fresh.rngs.reset(seed);
+        let p1 = afk.player.clone();
+        let rng = afk.rngs.stream(RngKey::UpdateWorldGen);
+        spawn_natural_starfall(&afk.world, &mut afk.projectiles, p1.as_ref(), 0, rng);
+        let p2 = fresh.player.clone();
+        let rng = fresh.rngs.stream(RngKey::UpdateWorldGen);
+        spawn_natural_starfall(&fresh.world, &mut fresh.projectiles, p2.as_ref(), 0, rng);
+        let a = afk.projectiles.slots().iter().find(|p| p.active).expect("the afk spawn");
+        let f = fresh.projectiles.slots().iter().find(|p| p.active).expect("the fresh spawn");
+        assert_eq!(a.ai[1], -1.0, ":71842 — the afk gate refuses the target");
+        assert_eq!(f.ai[1], 0.0, "the fresh player targets (FindClosest = 0)");
+        // The afk arm skipped the two offset draws: its first-spawn X
+        // stays the sky roll, the fresh twin's rides the player offset.
+        let mut twin = UnifiedRandom::new(seed);
+        let _gate = twin.next_max(8000);
+        let sky_x = (twin.next_max(350) + 100) as f32 * 16.0;
+        let _y = twin.next_max(15);
+        let _luck = twin.next_max(15);
+        assert_eq!(a.pos.x + 8.0, sky_x, "the afk spawn keeps the sky X");
+        let n = twin.next_range(1, 640);
+        let off = twin.next_range(-n, n + 1);
+        let px = fresh.player.as_ref().unwrap().x;
+        assert_eq!(f.pos.x + 8.0, px + off as f32, "the fresh spawn rides the offset");
     }
 }

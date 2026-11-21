@@ -39494,3 +39494,30 @@ gate consumes the field (`growth.rs`'s `num16`). The second reader
 `starFallCount` (`Star.cs:37`/`:59`) stays unported (the background-
 star layer skip). 3 roll witnesses (tr-core world.rs), 1 dusk-order
 witness (clock.rs), 1 threshold witness (growth.rs). WRITTEN NOT RUN.
+
+**The afkCounter fold — SMALL-PORTED.** The census: `Player.afkCounter`
+(`Player.cs:986`) increments per tick while standing still + idle + no
+controls (`:25497-25506`, after ResetEffects/UpdateDyes), zeroes on any
+activity, and `Select` zeroes it on every local hotbar selection
+(`:515`). Readers: the lucky-star gate (`WorldGen.cs:71842`,
+`< AFKTimeNeededForNoLuckyStars` = 10800, `Player.cs:57103`), the
+storm-lightning near-player gate (`:71905`, the unported
+`SpawnStormLightning` arm) and `NPC.cs:411`'s
+`noGroundWorms = afkCounter >= 300` (the spawn-info lane's fold).
+`FindClosest` itself (`Player.cs:4942-4967`) stays the one-player fold
+(the first-active fallback keeps a dead player's position/luck — the
+`:71842` gate has NO dead term; the shower arm's `!dead` at `:71755` is
+a different branch). The port lands `Player.afk_counter` +
+`Player.control_torch` (the `:25497` gate's last term, fed by the
+world-sim tick's Torch-key read), the `IS_A_KITE` 24-kind set
+(`ItemID.cs:411` — a held kite keeps the climb through the swing), the
+two AFK constants, the tick block at the controls-landed site (the
+pre-movement velocity, the C# position) and the `Select` reset at the
+hotbar click seam. The starfall gate consumes the snapshot (the
+inactive slot folds afk 0). Unported remainders: `afkCounterForKiting`
+(the kite machine — `selectedKite` folds −1), the spectating clamp
+(`:17086`, `Math.Min(afkCounter, 300)` on the spectate-input arm — no
+spectate state), the mouse-item/petting kiting resets (`:25508-25514`,
+kiting-only). 1 tick witness (player.rs), 1 gate witness (growth.rs —
+the ceiling refuses the targeted branch, the offset-draw delta pinned).
+WRITTEN NOT RUN.
