@@ -39277,15 +39277,31 @@ EVP all refuse). **No compiler invoked**; the witnesses are WRITTEN, NOT RUN.
 | aiStyle 25 `localAI[2] <= 7` with the 1021/1047/1005/1014 exceptions (`:12476`), aiStyle 93 `ai[0]` not 0/2 (`:12452`) | PORTED ARM-TOTAL (PROJ-171 retire): no style-25/93 row today; the `proj_data().ai_style` read auto-activates on the d-lane row |
 | the `Main.projPet` block (`:12480` — every pet/minion deals no contact damage EXCEPT the exception ladder: 266/407/317, 388 ai0==2, 390-395, 1093/1112/1118, 533 ai0 6..8, 625-628, 755/946 ai0!=0, 758/951/963/1022, 759 last-frame, 833-835, 864, 623 ai0==2) | PORTED (PROJ-171 retire): `proj_pet_contact_refuses` reads the `PROJ_PET` table (`data.rs`, `Main.cs:8728-8852`) + the decoded ladder. The rowed attack-minions (266/533/623/833-835/759/388/755/946/625-628/390-395/1093/1112/1118/758/951/963/1022/864) are ALL ladder exceptions → their attack windows keep biting; the inert pets + the row-less pygmies (191-194, no attack arm here) refuse, faithful to C#. The 759 polarity: refused only on the last/perch frame (`frame == projFrames-1`). No existing damage-walk test uses a non-exception projPet kind (the 373 recount tests assert counts only). |
 
-**Row deviation surfaced.** The `CANNON_EXPLOSIVE` const is 601 = C#
-`PortalGunBolt` (`ProjectileID.cs:1756`), but its row (`data.rs`, the M7-WIRE-2
-"cannon ammo 178/601" block, `:2357`) carries `penetrate = -1` where the true
-C# 601 (`Projectile.cs:6502-6510`) keeps the stock 1, and its comment cites the
-178 cannonball block (`:2641-2649`). The true C# 601 is the damage-less portal
-bolt — this census's gate refuses it, faithful to the id. The port's cannonball
-damage rides its death blast, so the gate is behaviour-neutral for the
-mislabeled row; the row/const mismatch itself is left for the wiring lane
-(renaming is out of this task's scope).
+**Row deviation surfaced — 601 CANNON_EXPLOSIVE (PROJ-171 retire: cross-note
+d6-lane, NOT fixed here).** The `CANNON_EXPLOSIVE` const is 601 = C#
+`PortalGunBolt` (`ProjectileID.cs:1756`), but its row (`data.rs`, the
+M7-WIRE-2 "cannon ammo 178/601" block, `:2359`, blame `85e1d416e` — NOT this
+lane's) carries `penetrate = -1` / `alpha = 0` (RESET_STATE) where the true
+C# 601 (`Projectile.cs:6502-6510`) keeps the stock `penetrate = 1` (`:774`)
+and writes `alpha = 255` (`:6507`). The row's comment cites the 178
+cannonball block (`:2641-2649`) — but 178 is `ConfettiGun`
+(`ProjectileID.cs:910`), a DIFFERENT kind; the 601 row was mislabeled as
+cannon ammo. **The true C# 601 is aiStyle 1 (`:6506`), NOT aiStyle 0** — the
+earlier "portal-bolt-aiStyle-0?" guess is WRONG; it rides the arrow/bullet
+flight (`AI_001`, the slice-B 601 hook `projectile_ai001_b.rs:153` ports the
+alpha-fade-15 + 2-frame cycle). It is the damage-less portal bolt: this
+census's gate refuses it (`:12448`, faithful to the id), and its teleport
+payload — `PortalHelper.TryPlacingPortal` on the tile-crash
+(`Projectile.cs:18099`, `GameContent/PortalHelper.cs:216`) — is UNPORTED
+(the d6-601-teleport-AI gap). **The earlier "the cannonball's damage rides
+its death blast" claim is WITHDRAWN** — C# 601 has NO death blast (the
+`:72454` Kill block is 6 portal dust only; the `:74565` dust/gore burst is
+178's, not 601's). The gate is behaviour-neutral for the mislabeled row
+because 601 deals no contact damage in C# either. **Disposition: the row is
+M7-WIRE-2's, not W4-d18's — the row-shape fix (penetrate 1 / alpha 255) +
+the teleport-AI port are cross-noted to the d6 wiring/teleport lane, not
+done here** (renaming the const + re-porting the row is out of this retire
+task's scope; the gate already refuses 601 faithfully).
 
 **Witnesses (WRITTEN, NOT RUN).** `w4_d18_the_flames_smoke_tail_deals_no_damage`
 (0/53 bite, 54/71 refuse, both kinds, all three walks, the refused contact

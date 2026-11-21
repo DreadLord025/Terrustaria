@@ -25050,6 +25050,32 @@ mod tests {
         assert!(npc.hp < 10_000, "the 266 exception still bites (`:12480`)");
     }
 
+    /// PROJ-171 RETIRE — the 601 CANNON_EXPLOSIVE row-shape cross-note
+    /// (d6-lane). 601 is C# `PortalGunBolt` (`ProjectileID.cs:1756`), the
+    /// damage-less portal bolt: the gate refuses it (`:12448`) faithful to
+    /// the id, regardless of the M7-WIRE-2 row's mislabeled penetrate/alpha.
+    /// The row-shape fix (penetrate 1 / alpha 255) + the teleport AI
+    /// (`PortalHelper.TryPlacingPortal` `:18099`) are the d6 lane's — this
+    /// witness pins the gate refusal + documents the deviation, NOT a fix.
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d18_the_601_portal_bolt_gate_refusal_cross_note() {
+        let bare = |kind: u16| Projectile { active: true, kind, damage: 10, ..Default::default() };
+        // The gate refuses 601 at ANY state (the unconditional list, `:12448`).
+        assert!(damage_kind_gate_refuses(&bare(CANNON_EXPLOSIVE)), "601 refuses (`:12448`)");
+        // The true C# 601 is aiStyle 1 (`Projectile.cs:6506`), NOT 0 — the
+        // row carries 1 (the mislabel is the penetrate/alpha, not the style).
+        let d = proj_data(CANNON_EXPLOSIVE).expect("the 601 row exists (M7-WIRE-2)");
+        assert_eq!(d.ai_style, 1, "601 is aiStyle 1 (`:6506`), not 0");
+        assert_eq!(d.extra_updates, 30, "`extraUpdates = 30` (`:6509`)");
+        // The DOCUMENTED deviation (the d6-lane fix, NOT applied here): the
+        // M7-WIRE-2 row carries penetrate -1 / alpha 0 where the true C# 601
+        // keeps stock penetrate 1 (`:774`) + alpha 255 (`:6507`). The gate
+        // is behaviour-neutral either way (601 deals no contact damage in C#).
+        assert_eq!(d.penetrate, -1, "the mislabeled row (d6-lane fix pending)");
+        assert_eq!(d.alpha, 0, "the mislabeled row (d6-lane fix pending: alpha 255)");
+    }
+
     /// The shielded NPC refuses the shot — `Damage_PVE`'s outer gate
     /// (`Projectile.cs:12583`): `!nPC.dontTakeDamage`. The Moon Lord's
     /// core wears the shield until its parts are dead; the Brain's

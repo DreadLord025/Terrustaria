@@ -2356,6 +2356,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             EXPLOSIVES_BLAST => (260.0, 260.0, 16, -1, 2, 0, false, false, true, RESET_STATE),
             LANDMINE_BLAST => (128.0, 128.0, 16, -1, 2, 0, false, false, false, RESET_STATE),
             CANNON_BOMB => (10.0, 10.0, 1, -1, 2, 0, true, false, false, RESET_STATE),
+            // PROJ-171 retire cross-note (d6-lane, NOT fixed here): 601 is
+            // C# `PortalGunBolt` (`ProjectileID.cs:1756`), aiStyle 1
+            // (`Projectile.cs:6506`) — NOT cannon ammo. This M7-WIRE-2 row
+            // (blame 85e1d416e) carries penetrate -1 / alpha 0 where the true
+            // C# 601 keeps stock penetrate 1 (`:774`) + alpha 255 (`:6507`).
+            // The damage gate refuses 601 faithfully (`:12448`); the teleport
+            // AI (`PortalHelper.TryPlacingPortal` `:18099`) is unported. The
+            // row-shape fix + teleport port are the d6 wiring lane's — see
+            // ANALYSIS "W4-d18 Damage_CanDealDamage" (the 601 finding).
             CANNON_EXPLOSIVE => (
                 10.0,
                 10.0,
