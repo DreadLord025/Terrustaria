@@ -159,6 +159,8 @@
 //! | 674-675 | `:86287-86288` | the 602/603 Seagull death (2 gores 1150/1151) |
 //! | 676-681 | `:86233-86241` | the 366/367 Scorpion death (3 gores each, type-203 dust) |
 //! | 682-684 | `:86307-86309` | the 608/609 Grebe death (3 gores 1154/1155/1156) |
+//! | 685-690 | `:86260-86268` | the 362-365 Duck family death (3 gores each, per-type) |
+//! | 691-694 | `:86326-86329` | the 348/349 Nutcracker death: the first four gores (528-531) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4296,6 +4298,67 @@ fn grebe_death(
     gore.new_gore(rng, world, pos, vel, 1156, 1.0); // :86309
 }
 
+/// The 362-365 Duck family death (`NPC.cs:86254-86268`, sites 685-690): the
+/// 10-dust type-5 burst, then the per-type 3 gores — 362/363 Duck →
+/// [555,556,557], 364/365 DuckWhite → [558,559,560]. Scale defaults to 1.
+fn duck_family_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    // `:86258-86269` — the per-type gore list.
+    let gores: &[i32] = if npc_type == 362 || npc_type == 363 {
+        &[555, 556, 557]
+    } else {
+        &[558, 559, 560]
+    };
+    let vel = Vec2::new(npc.vx, npc.vy);
+    for &ty in gores {
+        gore.new_gore(rng, world, pos, vel, ty, 1.0);
+    }
+}
+
+/// The 348/349 Nutcracker death (`NPC.cs:86322-86330`, sites 691-695): the
+/// 10-dust type-5 burst, then the 5 gores 528/529/530/531/532 at position.
+/// This commit ports the first four gores (sites 691-694); the 532 tail
+/// lands with the next batch. Scale defaults to 1.
+fn nutcracker_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 528, 1.0); // :86326
+    gore.new_gore(rng, world, pos, vel, 529, 1.0); // :86327
+    gore.new_gore(rng, world, pos, vel, 530, 1.0); // :86328
+    gore.new_gore(rng, world, pos, vel, 531, 1.0); // :86329
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -4811,6 +4874,15 @@ pub fn hit_effect_c(
     // `:86291-86311` — the 608/609 Grebe arm (sites 682-684).
     if (npc_type == 608 || npc_type == 609) && npc.hp <= 0 {
         grebe_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86244-86270` — the 362-365 Duck family arm (sites 685-690).
+    if (362..=365).contains(&npc_type) && npc.hp <= 0 {
+        duck_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86312-86331` — the 348/349 Nutcracker arm (sites 691-694 here; the
+    // 532 tail lands with the next batch).
+    if (npc_type == 348 || npc_type == 349) && npc.hp <= 0 {
+        nutcracker_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -7630,6 +7702,36 @@ mod tests {
         grebe_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
         let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![1154, 1155, 1156]);
+    }
+
+    /// `NPC.cs:86260-86268` — the Duck family death: 362/363→[555,556,557],
+    /// 364/365→[558,559,560].
+    #[test]
+    fn w4_f10_the_duck_family_death_uses_the_per_type_list() {
+        let w = air();
+        for (ty, gores) in [(362, [555, 556, 557]), (363, [555, 556, 557]), (364, [558, 559, 560]), (365, [558, 559, 560])] {
+            let n = boss(100.0, 100.0, 30.0, 24.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(653);
+            duck_family_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores, "duck {ty}");
+        }
+    }
+
+    /// `NPC.cs:86326-86329` — the Nutcracker death's first four gores:
+    /// 528/529/530/531.
+    #[test]
+    fn w4_f10_the_nutcracker_death_spawns_the_first_four_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 50.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(659);
+        nutcracker_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![528, 529, 530, 531]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
