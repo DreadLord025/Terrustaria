@@ -21130,7 +21130,8 @@ mod summon_tests {
     /// `Mount.UseAbility` case 9 (`Mount.cs:3264-3288`): the Scutlix fires
     /// TWO 606 lasers per fire (cooldown 0 only — the 20-tick cycle), from
     /// the eye pair keyed by frameExtra, each one velocity step ahead of
-    /// its eye; NO cue. The aim band rides the target direction.
+    /// its eye; NO cue. The fresh mount floors the cooldown at 20
+    /// (`set_mount`), so the first fire lands at tick 20.
     #[test]
     fn m4_the_scutlix_scan_fires_two_lasers_per_twenty_tick_cycle() {
         let w = World::new("t".into(), 200, 200);
@@ -21143,7 +21144,7 @@ mod summon_tests {
         let mut pool = ProjectilePool::new();
         let mut rng = tr_core::UnifiedRandom::new(5);
         let mut fires = 0;
-        for tick in 0..40 {
+        for tick in 0..60 {
             let before = pool.slots().iter().filter(|s| s.active).count();
             p.update_mount_ability(&w, &npcs, &mut pool, &mut rng);
             let spawned: Vec<_> = pool
@@ -21153,7 +21154,9 @@ mod summon_tests {
                 .skip(before)
                 .map(|s| s.kind)
                 .collect();
-            if tick % 20 == 0 {
+            // The cooldown runs 20→0 over ticks 0..19; the fire lands when
+            // it reads 0 (tick 20), then StopAbilityCharge re-arms 20.
+            if tick > 0 && tick % 20 == 0 {
                 assert_eq!(
                     spawned.iter().filter(|&&k| k == 606).count(),
                     2,
@@ -21165,7 +21168,7 @@ mod summon_tests {
             }
             p.mount.ability_recovery();
         }
-        assert_eq!(fires, 2, "40 ticks / 20");
+        assert_eq!(fires, 2, "ticks 20 + 40");
         assert!(p.take_ability_sounds().is_empty(), "the Scutlix plays no cue");
         // The lasers fly at speed 14 toward the target (the band-8 eyes).
         let laser = pool.slots().iter().find(|s| s.active && s.kind == 606).unwrap();
