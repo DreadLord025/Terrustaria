@@ -18549,6 +18549,51 @@ the handlers are REUSED, not re-ported.
    fixed step at most (the `net_tick` runs in the same step's net phase);
    the remote-copy apply stays parked with c27 (no peer hurt lane).
 
+### W4-d115 lane 19 addendum — the doc-sweep (2026-11-21)
+
+**Code-only**: 16 more witnesses WRITTEN NOT RUN across five items
+(research/97-doc-sweep-dodge.md; commits `709b537b`, `e486e533`,
+`04da95f7`, `6c5a1c57`, `fcb4b17c`).
+
+1. **The dodge afterimages** (`LegacyPlayerRenderer.cs:433-467`) port as
+   pure fns in `player_dodge_draw.rs` (UNWIRED — the `entities.rs` draw
+   wiring is the follow-up round, the g17 precedent): the
+   `shadowDodgeCount` ±1/frame step (cap 30 / floor 0, DRAW-owned — the
+   missing `Player.shadow_dodge_count` field lands, no sim writer), the
+   two ±count shadow ghosts (one `Next(-10,11)` alpha roll each, +count
+   first), the brain six-ghost ring (UNclamped `GetLerpValue(300,270)`
+   gate — only the window's first 30 ticks show, `Lerp(2,120)` radius,
+   π/3 float accumulator). The dust/gore bursts stay g17-owned
+   (`player_gore_c.rs` `3ff14a0a`, censused not touched).
+2. **ImmunityCooldownID** (`ID/ImmunityCooldownID.cs:47-82`) lands in
+   `id_tables.rs`: the 7-id table + Count 6 + the four Sets membership
+   fns. Census verdict: no missing C# ids (`LegacyUnused2` has zero
+   consumers); the port's gap is the M4-HAZARD-1 per-counter collapse —
+   BossNoCheese's land-through-General-iframes semantics and
+   PaladinsShield's effects-only arm (`:38210`) stay unported (recorded).
+3. **The Cross Necklace draws no shield** — `neckSlot = 2`
+   (`Item.cs:7992`) rides the unported Acc_Neck layer family; its only
+   combat write is `longInvince` (f48 `41323c7c`). The shield-raise
+   visual is the Squire/Brand layer (machine f48-owned): the draw halves
+   port in `player_dodge_draw.rs` — the `:36770-36777` first-shieldSlot
+   pick (eocDash twin folded), the `:2965-2976` width swap + flip mirror
+   (the `+= 0` decompilation artifact at `:2971` recorded), the `:2992`
+   int-truncated anchor, the raise/orbit/breathe/parry-ghost pulses
+   (`:2961-3018`).
+4. **Buff 321's stat arm was MISSING** — `Player.cs:9940-9947` (+10
+   melee/ranged/magic crit + 0.10 minionDamage per slot) lands live in
+   the `player.rs` buff scan + the `buff_effects.rs` table mirror. The
+   NPC-confuse aura is NOT the buff's job: it is the retaliate block
+   (`:38403-38431`, `drain_retaliate`, already S1-C-7 wave B). The dart
+   565's aiStyle-104 machine (`Projectile.cs:33478-33511`) stays an
+   unported projectile family (the raw spawn rides the pool).
+5. **The stacking order VERIFIED** — `hurt_inner`'s roll block matches
+   `Player.cs:38216-38235` verbatim (sash → belt → brain → shadow, the
+   brain's Next(6) before the 321 gate, shadow RNG-free). New witnesses:
+   the four-source shadow fallback, the cumulative-not-additive chance
+   walk (1/10, 1/4, 0.325, 100% with buff 59), the brain-gate-skips-
+   only-the-brain case. No defect found, no roll-block change.
+
 ## The magic cuffs (S1-C-7 wave A, 2026-11-18)
 
 `Player.Hurt`'s `magicCuffs` arm (`Player.cs:38291-38303`) lands in
