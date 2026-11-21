@@ -135,6 +135,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "slopes" => PassMessage::Gen(60),
         // WorldGen.cs:16701 (W4-g36 A6).
         "wall variety" => PassMessage::Gen(79),
+        // WorldGen.cs:16771 (W4-g36 A7).
+        "life crystals" => PassMessage::Gen(28),
         // WorldGen.cs:15480.
         "living trees" => PassMessage::Key("WorldGeneration.LivingTrees"),
         // WorldGen.cs:15721 (W4-g36 A4 — the same LivingTrees message).

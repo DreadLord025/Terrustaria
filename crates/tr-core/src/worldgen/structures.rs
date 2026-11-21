@@ -687,3 +687,277 @@ pub(crate) fn pass_hell_forts(
     }
     placed
 }
+
+// --- Life Crystals (W4-g36 A7) -------------------------------------------------
+
+/// `TileID.LifeCrystal` (`TileID.cs:609`) / `TileID.ManaCrystal`
+/// (`TileID.cs:1435`) — the 2×2 heart / star.
+const TILE_LIFE_CRYSTAL: u16 = 12;
+const TILE_MANA_CRYSTAL: u16 = 639;
+/// `Main.offLimitBorderTiles` (`Main.cs:66581`) — the 40-tile placement
+/// margin.
+const OFF_LIMIT_BORDER: i32 = 40;
+/// `Main.wallDungeon` (`Main.cs`) — the nine dungeon walls.
+const WALL_DUNGEON: [u16; 9] = [7, 8, 9, 94, 95, 96, 97, 98, 99];
+
+/// `Tile.anyLava` / `Tile.anyShimmer` (`Tile.cs:410-435`): liquid > 0 AND
+/// the kind bit.
+fn any_lava(t: &Tile) -> bool {
+    t.liquid > 0 && t.flags & crate::tile::FLAG_LIQUID_LAVA != 0
+}
+fn any_shimmer(t: &Tile) -> bool {
+    t.liquid > 0 && t.flags & crate::tile::FLAG_LIQUID_SHIMMER != 0
+}
+
+/// `WorldGen.AddLifeCrystal` (`WorldGen.cs:31912-31979`) /
+/// `AddManaCrystal` (`:31981-32048`) — the two bodies are identical but
+/// for the placed kind (12 / 639) and the skyblock proximity kind
+/// (12 / 639); `kind` selects both. The column scan drops from `j` to the
+/// first active solid tile, then the 2×2 seat validation: no lava/shimmer
+/// in the two cells above the floor, `EmptyTileCheck(i-1, i, num-1, num)`
+/// (ignore −1 — every active cell refuses), no dungeon wall behind the
+/// right foot, both floor cells solid (`nactive` + tileSolid), the
+/// blockType slope/half-brick flatten, then the four frame writes.
+/// RNG-free. `skyblock` enables the `IsTileNearby(i, num, kind, 50)` veto
+/// (`:31935-31938` / `:32004-32007`) — the life crystal refuses near
+/// another life crystal (12), the mana crystal near another mana (639).
+fn add_crystal(world: &mut World, i: i32, j: i32, kind: u16, skyblock: bool) -> bool {
+    for k in j..world.height {
+        let floor = world.tile(i, k);
+        if !floor.is_some_and(|t| t.active() && crate::tiledata::TILE_SOLID.has(t.kind)) {
+            continue;
+        }
+        let num = k - 1;
+        // The lava / shimmer vetoes (`:31919-31926`).
+        let above = world.tile(i, num - 1).copied().unwrap_or_default();
+        let above_left = world.tile(i - 1, num - 1).copied().unwrap_or_default();
+        if any_lava(&above) || any_lava(&above_left) || any_shimmer(&above) {
+            return false;
+        }
+        // `EmptyTileCheck(i-1, i, num-1, num)` — ignore −1 (`:31927`).
+        if !super::biome_detail::empty_tile_check(world, i - 1, i, num - 1, num, -1) {
+            return false;
+        }
+        // The dungeon-wall veto (`:31931`).
+        if WALL_DUNGEON.contains(&world.tile(i, num).map_or(0, |t| t.wall)) {
+            return false;
+        }
+        // The skyblock proximity veto (`:31935-31938`).
+        if skyblock && is_tile_nearby(world, i, num, kind, 50) {
+            return false;
+        }
+        // The two floor cells (`:31939-31948`): nactive + tileSolid.
+        let left = world.tile(i - 1, num + 1).copied().unwrap_or_default();
+        let right = world.tile(i, num + 1).copied().unwrap_or_default();
+        let solid_floor = |t: &Tile| {
+            t.active() && !t.inactive() && crate::tiledata::TILE_SOLID.has(t.kind)
+        };
+        if !solid_floor(&left) || !solid_floor(&right) {
+            return false;
+        }
+        // The blockType flatten (`:31949-31958`).
+        for (dx, t) in [(-1i32, left), (0, right)] {
+            if crate::tileobject::block_type(&t) != 0 {
+                if let Some(cell) = world.tile_mut(i + dx, num + 1) {
+                    cell.set_slope(0);
+                    cell.flags &= !crate::tile::FLAG_HALF_BRICK;
+                }
+            }
+        }
+        // The four frame writes (`:31959-31974`).
+        for (dx, dy, fx, fy) in [(-1i32, -1i32, 0i16, 0i16), (0, -1, 18, 0), (-1, 0, 0, 18), (0, 0, 18, 18)] {
+            let idx = world.index(i + dx, num + dy);
+            let t = &mut world.tiles[idx];
+            t.flags |= FLAG_ACTIVE;
+            t.kind = kind;
+            t.frame_x = fx;
+            t.frame_y = fy;
+        }
+        return true;
+    }
+    false
+}
+
+/// `WorldGen.IsTileNearby` (`WorldGen.cs:8862-8884`): the ±distance box
+/// scan for an active tile of `kind` (the 235 stride-3 special case is
+/// not reached here — the crystal kinds are 12/639).
+fn is_tile_nearby(world: &World, x: i32, y: i32, kind: u16, distance: i32) -> bool {
+    for i in (x - distance)..=(x + distance) {
+        for j in (y - distance)..=(y + distance) {
+            if world.tile(i, j).is_some_and(|t| t.active() && t.kind == kind) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// The Life Crystals pass (`GenPassNameID.LifeCrystals`,
+/// `WorldGen.cs:16755-16852`): `(int)(width*height * 2e-5)` life crystals
+/// (×1.2 anniversary), each a retry loop dropping from a random
+/// `(worldSurface*2 + rockLayer)/3 .. height-300` row (remix:
+/// `worldSurface .. height-400`) until `AddLifeCrystal` seats one or the
+/// 10000-attempt cap (skyblock: 10) fires. The errorWorld/noSurface mana
+/// loop (`:16812-16849`) is the same shape at half density with
+/// `AddManaCrystal`. The `Skyblock.denySomeGeneration` gate is the
+/// caller's. Own `pass_rng("Life Crystals")` stream.
+///
+/// Deferred seed arms (documented, the whole-seed-body convention):
+/// `DoErrorWorldShuffleBlocks` (`:16759-16762`, `:1094-1140`), the
+/// `getGoodWorldGen` `tileSolid[56] = false` toggle (`:16763-16766`),
+/// `NotTheBees` (`:16767-16770`, `:25107-25300`), and the closing
+/// `tileSolid[225] = false` (`:16850`) — the port's boot tileSolid table
+/// stands (the `biome_detail::pass_underground_jungle_trees` toggle-model
+/// note). `Main.starGame`'s `starGameMath(0.2)` multiplier is 1.0 at gen
+/// time (`starsHit == 0`, `Main.cs:62834-62846`) — a no-op.
+pub(crate) fn pass_life_crystals(
+    world: &mut World,
+    world_surface: f64,
+    rock_layer: f64,
+    anniversary: bool,
+    remix: bool,
+    skyblock: bool,
+    error_or_no_surface: bool,
+    rng: &mut super::Rng,
+) {
+    let area = (world.width * world.height) as f64;
+    let mut count = area * 2e-5;
+    if anniversary {
+        count *= 1.2;
+    }
+    // `num2 = 10000`, skyblock 10 (`:16781-16785`).
+    let cap = if skyblock { 10 } else { 10000 };
+    let y_lo = ((world_surface * 2.0 + rock_layer) / 3.0) as i32;
+    let y_hi = world.height - 300;
+    let (remix_lo, remix_hi) = (world_surface as i32, world.height - 400);
+    // Sub-vanilla guard: the y-band collapses on the tiny test worlds
+    // (the `pass_altars` idiom) — skip before any draw.
+    if y_hi <= y_lo || (remix && remix_hi <= remix_lo) {
+        return;
+    }
+    for _ in 0..(count as i32) {
+        let mut attempts = 0i32;
+        loop {
+            let j = if remix {
+                rng.range(remix_lo, remix_hi)
+            } else {
+                rng.range(y_lo, y_hi)
+            };
+            let x = rng.range(OFF_LIMIT_BORDER, world.width - OFF_LIMIT_BORDER);
+            if add_crystal(world, x, j, TILE_LIFE_CRYSTAL, skyblock) {
+                break;
+            }
+            attempts += 1;
+            if attempts >= cap {
+                break;
+            }
+        }
+    }
+    // The errorWorld/noSurface mana loop (`:16812-16849`).
+    if error_or_no_surface {
+        let mut mana_count = area * 1e-5;
+        if anniversary {
+            mana_count *= 1.2;
+        }
+        for _ in 0..(mana_count as i32) {
+            let mut attempts = 0i32;
+            loop {
+                let j = if remix {
+                    rng.range(remix_lo, remix_hi)
+                } else {
+                    rng.range(y_lo, y_hi)
+                };
+                let x = rng.range(OFF_LIMIT_BORDER, world.width - OFF_LIMIT_BORDER);
+                if add_crystal(world, x, j, TILE_MANA_CRYSTAL, skyblock) {
+                    break;
+                }
+                attempts += 1;
+                if attempts >= cap {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A stone world with a flat floor at row `floor` — the crystal seat.
+    fn floor_world(w: i32, h: i32, floor: i32) -> World {
+        let mut world = World::new("lc".into(), w, h);
+        for x in 0..w {
+            for y in floor..h {
+                let i = world.index(x, y);
+                world.tiles[i].kind = 1;
+                world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        world
+    }
+
+    /// W4-g36 A7: `AddLifeCrystal` seats the 2×2 heart on a flat floor —
+    /// the four frames (0/0, 18/0, 0/18, 18/18) at kind 12.
+    #[test]
+    fn a7_add_life_crystal_seats_the_heart() {
+        let mut w = floor_world(120, 120, 60);
+        assert!(add_crystal(&mut w, 60, 40, TILE_LIFE_CRYSTAL, false));
+        // The floor is row 60, so num = 59; the heart occupies rows 58-59.
+        assert_eq!(w.tile(59, 58).unwrap().kind, TILE_LIFE_CRYSTAL);
+        assert_eq!((w.tile(59, 58).unwrap().frame_x, w.tile(59, 58).unwrap().frame_y), (0, 0));
+        assert_eq!((w.tile(60, 58).unwrap().frame_x, w.tile(60, 58).unwrap().frame_y), (18, 0));
+        assert_eq!((w.tile(59, 59).unwrap().frame_x, w.tile(59, 59).unwrap().frame_y), (0, 18));
+        assert_eq!((w.tile(60, 59).unwrap().frame_x, w.tile(60, 59).unwrap().frame_y), (18, 18));
+    }
+
+    /// W4-g36 A7: lava above the floor refuses the seat; a dungeon wall
+    /// behind the right foot refuses too.
+    #[test]
+    fn a7_lava_and_dungeon_wall_refuse() {
+        let mut w = floor_world(120, 120, 60);
+        let i = w.index(60, 58);
+        w.tiles[i].liquid = 100;
+        w.tiles[i].flags |= crate::tile::FLAG_LIQUID_LAVA;
+        assert!(!add_crystal(&mut w, 60, 40, TILE_LIFE_CRYSTAL, false));
+        // Clear the lava, add a dungeon wall behind the right foot (row 59).
+        let mut w2 = floor_world(120, 120, 60);
+        w2.tiles[w2.index(60, 59)].wall = 7;
+        assert!(!add_crystal(&mut w2, 60, 40, TILE_LIFE_CRYSTAL, false));
+    }
+
+    /// W4-g36 A7: the pass is deterministic (a == b) and places crystals
+    /// on a vanilla-sized world; the sub-vanilla y-band guard skips the
+    /// tiny worlds without a draw.
+    #[test]
+    fn a7_the_pass_replays_and_guards_the_tiny_worlds() {
+        let mut a = floor_world(4200, 1200, 400);
+        let mut b = floor_world(4200, 1200, 400);
+        pass_life_crystals(&mut a, 360.0, 500.0, false, false, false, false, &mut super::super::Rng(42));
+        pass_life_crystals(&mut b, 360.0, 500.0, false, false, false, false, &mut super::super::Rng(42));
+        assert_eq!(a.tiles, b.tiles, "a == b");
+        assert!(
+            a.tiles.iter().any(|t| t.kind == TILE_LIFE_CRYSTAL),
+            "the pass must seat life crystals"
+        );
+        // The 512-tall world: y_hi = 212 <= y_lo — the guard skips.
+        let mut small = floor_world(512, 512, 400);
+        let before = small.tiles.clone();
+        let mut rng = super::super::Rng(42);
+        pass_life_crystals(&mut small, 100.0, 220.0, false, false, false, false, &mut rng);
+        assert_eq!(small.tiles, before, "the y-band guard writes nothing");
+        assert_eq!(rng.0, super::super::Rng(42).0, "the guard draws nothing");
+    }
+
+    /// W4-g36 A7: the errorWorld/noSurface mana loop seats mana crystals
+    /// (639) at half density.
+    #[test]
+    fn a7_the_mana_loop_seats_stars() {
+        let mut w = floor_world(4200, 1200, 400);
+        pass_life_crystals(&mut w, 360.0, 500.0, false, false, false, true, &mut super::super::Rng(7));
+        assert!(
+            w.tiles.iter().any(|t| t.kind == TILE_MANA_CRYSTAL),
+            "the mana loop must seat mana crystals"
+        );
+    }
+}

@@ -1412,6 +1412,10 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // (`:16755`, W4-g36 A7) — W4-g36 A6. Own `pass_rng("Wall Variety")`
     // stream; reads the Shimmer pass's published centre.
     step!("wall variety", "Wall Variety", step_wall_variety),
+    // The vanilla Life Crystals slot (`WorldGen.cs:16755`): immediately
+    // after Wall Variety (`:16697`), before Statues (`:16853`, g37's B1)
+    // — W4-g36 A7. Own `pass_rng("Life Crystals")` stream.
+    step!("life crystals", "Life Crystals", step_life_crystals),
     step!("living trees", "Living Trees", step_living_trees),
     // The vanilla Wood Tree Walls slot (`WorldGen.cs:15717`): immediately
     // after Living Trees (`:15476`), before Altars (`:15750`) — W4-g36
@@ -2739,6 +2743,66 @@ fn step_wall_variety(
     );
 }
 
+/// `Skyblock.denySomeGeneration` (`WorldGen.cs:3133-3146`): skyblock
+/// denies the "some" passes UNLESS one of the eight surface-altering
+/// micro seeds is on (then it allows them); a non-skyblock world always
+/// allows. The Life Crystals / Statues / Waterfalls passes gate on it.
+fn deny_some_generation(opts: &GenOptions) -> bool {
+    if !opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return false;
+    }
+    let m = opts.micro_flags;
+    let surface_seed = m.intersects(
+        crate::seeds::MicroSeedFlags::WORLD_IS_FROZEN
+            | crate::seeds::MicroSeedFlags::SURFACE_IS_DESERT
+            | crate::seeds::MicroSeedFlags::SURFACE_IS_MUSHROOMS
+            | crate::seeds::MicroSeedFlags::WORLD_IS_INFECTED
+            | crate::seeds::MicroSeedFlags::HALLOW_ON_THE_SURFACE
+            | crate::seeds::MicroSeedFlags::NO_INFECTION
+            | crate::seeds::MicroSeedFlags::EXTRA_FLOATING_ISLANDS
+            | crate::seeds::MicroSeedFlags::EXTRA_LIQUID,
+    );
+    if surface_seed {
+        return false;
+    }
+    !m.contains(crate::seeds::MicroSeedFlags::EXTRA_LIVING_TREES)
+}
+
+/// The vanilla Life Crystals slot (`WorldGen.cs:16755-16852`) — W4-g36
+/// A7: the life-crystal (and errorWorld/noSurface mana-crystal) placement
+/// on the pass's own stream. The `Skyblock.denySomeGeneration` gate
+/// (`:16757`) lives here.
+fn step_life_crystals(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // `!Skyblock.denySomeGeneration` (`:16757`).
+    if deny_some_generation(opts) {
+        return;
+    }
+    let layers = *gv.layers();
+    let anniversary = opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY);
+    let remix = opts.flags.contains(crate::seeds::SeedFlags::REMIX);
+    let skyblock = opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK);
+    let error_or_no_surface = opts
+        .micro_flags
+        .intersects(crate::seeds::MicroSeedFlags::ERROR_WORLD | crate::seeds::MicroSeedFlags::NO_SURFACE);
+    structures::pass_life_crystals(
+        world,
+        layers.world_surface,
+        layers.rock_layer,
+        anniversary,
+        remix,
+        skyblock,
+        error_or_no_surface,
+        &mut streams.pass_rng("Life Crystals"),
+    );
+}
+
 fn step_living_trees(
     world: &mut World,
     gv: &mut GenVars,
@@ -3008,6 +3072,12 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[467] = true;
     world.frame_important[441] = true;
     world.frame_important[468] = true;
+    // The life crystal 12 (`Main.cs:7639`) and the mana crystal 639
+    // (`Main.cs:9649`) — W4-g36 A7: the Life Crystals pass writes their
+    // 2×2 frames (`WorldGen.cs:31959-31974` / `:32028-32043`), which the
+    // framer must keep instead of autotiling.
+    world.frame_important[12] = true;
+    world.frame_important[639] = true;
 }
 
 /// The vanilla `RunPass` shape over the ported steps: per step, build the
@@ -3334,7 +3404,9 @@ mod tests {
         // `WorldGen.cs:15717`) between `living trees` and `trees`.
         // W4-g36 A6: + `wall variety` (vanilla "Wall Variety",
         // `WorldGen.cs:16697`) between `slopes` and `living trees`.
-        assert_eq!(names.len(), 71);
+        // W4-g36 A7: + `life crystals` (vanilla "Life Crystals",
+        // `WorldGen.cs:16755`) between `wall variety` and `living trees`.
+        assert_eq!(names.len(), 72);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3428,6 +3500,7 @@ mod tests {
                 "shell piles",
                 "slopes",
                 "wall variety",
+                "life crystals",
                 "living trees",
                 "wood tree walls",
                 "trees",
@@ -3688,17 +3761,19 @@ mod tests {
         assert!(cpos("Wood Tree Walls") < cpos("Altars"));
     }
 
-    /// W4-g36 A6: `wall variety` sits after `slopes` (Smooth World
-    /// `WorldGen.cs:16419`) and before `living trees` — the vanilla chain
-    /// Smooth World (`:16419`) → Waterfalls (`:16610`) → Ice (`:16667`) →
-    /// Wall Variety (`:16697`) → Life Crystals (`:16755`) puts it ahead
-    /// of the Living Trees slot (`:15476`) in the port's grouped order.
+    /// W4-g36 A6/A7: `wall variety` + `life crystals` sit after `slopes`
+    /// (Smooth World `WorldGen.cs:16419`) and before `living trees` — the
+    /// vanilla chain Smooth World (`:16419`) → Waterfalls (`:16610`) →
+    /// Ice (`:16667`) → Wall Variety (`:16697`) → Life Crystals
+    /// (`:16755`) → Statues (`:16853`) puts them ahead of the Living
+    /// Trees slot (`:15476`) in the port's grouped order.
     #[test]
     fn w4_g36_a6_the_wall_variety_step_sits_after_the_slopes() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("wall variety"), pos("slopes") + 1);
-        assert_eq!(names[pos("wall variety") + 1], "living trees");
+        assert_eq!(pos("life crystals"), pos("wall variety") + 1);
+        assert_eq!(names[pos("life crystals") + 1], "living trees");
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -3708,6 +3783,7 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Smooth World") < cpos("Wall Variety"));
         assert!(cpos("Wall Variety") < cpos("Life Crystals"));
+        assert!(cpos("Life Crystals") < cpos("Statues"));
     }
 
     #[test]

@@ -266,6 +266,12 @@ mod tests {
     // lands after `slopes` — the cave-wall variety fill (196/204/208/212
     // families) moves this pin BY DESIGN on every world with air pockets;
     // deferred to the gate.
+    // W4-g36 A7 (code-only): the Life Crystals pass
+    // (`WorldGen.cs:16755-16852`, `structures.rs::pass_life_crystals`)
+    // lands after `wall variety` — this pin is UNCHANGED by this pass
+    // alone: the sub-vanilla y-band guard (`height - 300 <= y_lo`) skips
+    // the pass before any draw on a 512-tall world (the `pass_altars`
+    // idiom). The DEFAULT_WORLD re-pin is deferred to the gate.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -328,6 +334,9 @@ mod tests {
     // — the cave-wall fill moves this pin BY DESIGN; deferred. Own
     // `pass_rng("Wall Variety")` stream; the shimmer-safety re-roll reads
     // the A1 centre (a cross-pass GenVars read, no shared-stream draw).
+    // W4-g36 A7 (code-only): the Life Crystals pass (see SEED42_512 above)
+    // — the 2×2 hearts (and the errorWorld/noSurface mana stars) move this
+    // pin BY DESIGN; deferred. Own `pass_rng("Life Crystals")` stream.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
