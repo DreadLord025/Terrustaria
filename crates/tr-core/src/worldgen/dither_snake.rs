@@ -596,7 +596,7 @@ mod tests {
         outer.set_bounds(2142, 100, 3990, 1030);
         let safe = 1.0 - 0.075 * (1200.0 / 1200.0);
         let build = || {
-            let mut rng = super::super::Rng::from_seed(42);
+            let mut rng = crate::worldgen::noise::Rng::from_seed(42);
             calculate_dungeon_dither_snake(&mut rng, 4200, &outer, 1, 3990, 4, safe)
         };
         let a = build();

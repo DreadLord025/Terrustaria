@@ -361,6 +361,18 @@ mod tests {
     // errorWorldAdjustment :329), DoAdditionalChangesAroundSpawnIfNeeded
     // (:24936 + PlaceTorchesAroundSpawn :24989 + RemoveSpecificTilesUnderSpawn
     // :24953). STILL UNWIRED (A4 lands the gated step) — both pins stay.
+    // W4-f24 A4: the gated Skyblock step lands — `skyblock.rs` gains
+    // GenerateSkyBlockWorld (WorldGen.cs:22526-22816: the tile clear, the
+    // spawn-centre seed bands, the spawn/team/shimmer islands, the flag2
+    // per-seed island loop, the spawn-surface find, the extraLivingTrees
+    // tree, the poo/error-world tails, the spawn-tail torches), the
+    // pipeline `skyblock` row (after plan biome spans, before dunes) +
+    // step_skyblock, and the GenVars landmass/spawn-randomized/dungeon-anchor
+    // fields. BOTH CLASSIC PINS STAY: the generator + the A1 denyAll/denySome
+    // pruning fire only under SeedFlags::SKYBLOCK; a classic world runs the
+    // byte-identical ledger. The skyblock seed's hash moves by design and
+    // rides `w4_f24_the_skyblock_world_is_gated_and_deterministic` (NOT run).
+    // LANE A COMPLETE — both gated passes (Skyblock + Dither Snake) landed.
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {

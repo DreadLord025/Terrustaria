@@ -374,6 +374,23 @@ pub(crate) struct GenVars {
     /// under `MicroSeedFlags::DUAL_DUNGEONS`); the snake step is a no-op
     /// until it is `Some`.
     pub(crate) dual_dungeons: Option<super::dungeon_genvars::DualDungeonSetup>,
+    /// W4-f24 A4: `GenVars.landmassData` (`WorldGen.cs:23554`) — the
+    /// skyblock island ledger the generator appends (the round-landmass /
+    /// extra-liquid consumers belong to other lanes). Empty on a classic
+    /// world.
+    pub(crate) landmass_data: Vec<super::skyblock::LandmassData>,
+    /// W4-f24 A4: `GenVars.worldSpawnHasBeenRandomized` (`GenVars.cs`, reset
+    /// false `WorldGen.cs:8321`, set true by the skyblock generator
+    /// `:22811` and the remix spawn `:23849`). The spawn-tail consumers
+    /// (`:680/:1047/:1819/:1892/:22460`) read it; the port carries it for the
+    /// skyblock arm.
+    pub(crate) world_spawn_has_been_randomized: bool,
+    /// W4-f24 A4: `Main.dungeonX`/`dungeonY` — the skyblock generator sets
+    /// both to −1 (`WorldGen.cs:22792-22793`, no dungeon on a skyblock
+    /// world). The port's classic dungeon rides `spans().dungeon_x`; this
+    /// pair carries the C# statics the skyblock arm writes (−1 sentinel).
+    pub(crate) dungeon_x: i32,
+    pub(crate) dungeon_y: i32,
 }
 
 impl Default for GenVars {
@@ -413,6 +430,11 @@ impl Default for GenVars {
             sky_island_house_count: 0,
             // W4-f24 B6: no dual-dungeon setup on a classic world.
             dual_dungeons: None,
+            // W4-f24 A4: the skyblock GenVars statics zero-init.
+            landmass_data: Vec::new(),
+            world_spawn_has_been_randomized: false,
+            dungeon_x: 0,
+            dungeon_y: 0,
             shell_start_x_left: 0,
             shell_start_y_left: 0,
             shell_start_x_right: 0,
@@ -1234,6 +1256,13 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("terrain height map", "Terrain", step_terrain_height_map),
     step!("terrain fill", "Terrain", step_terrain_fill),
     step!("plan biome spans", "", step_plan_biome_spans),
+    // W4-f24 A4: the gated Skyblock slot (`WorldGen.cs:11511`): right after
+    // TerrainPass (`:11504`), before Dunes (`:11517`). The skyblock Jungle
+    // registration (`:11509`) is dead — `denyAllGeneration` is always true
+    // under skyblock (`:3131`), so the `!denyAllGeneration` guard never adds
+    // it; the classic "jungle" step below is pruned by the denyAll table.
+    // A classic world's step is a no-op (the generator is flag-gated).
+    step!("skyblock", "Skyblock", step_skyblock),
     // The vanilla Dunes slot (`WorldGen.cs:11517`, pass #3 after TerrainPass):
     // right after the spans planner, before Ocean Sand (`:11580`). Vanilla
     // runs its dune carver here — the M5-DESERT-structures port (the compact
@@ -1720,6 +1749,27 @@ fn step_plan_biome_spans(
         right_beach_start,
         jungle_origin_x,
     ));
+}
+
+/// W4-f24 A4: the gated `Skyblock` pass (`WorldGen.cs:11511-11515` →
+/// `GenerateSkyBlockWorld` `:22526-22816`). Registered only under
+/// `WorldGen.skyblockWorldGen` (the port's `SeedFlags::SKYBLOCK`); a classic
+/// world's step is a no-op. The generator clears the terrain tiles and
+/// places the island archipelago; the denyAll/denySome pruning (A1) skips
+/// the classic passes that would otherwise overwrite it.
+fn step_skyblock(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if !opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let mut rng = streams.pass_rng("Skyblock");
+    super::skyblock::generate_skyblock_world(world, &mut rng, opts.flags, opts.micro_flags, opts.crimson, gv);
 }
 
 fn step_jungle(
@@ -3229,7 +3279,9 @@ mod tests {
         // W4-f24 B6: + `dither snake` (vanilla "Dual Dungeons Dither Snake",
         // `WorldGen.cs:14755`) between `liquids` and `dungeon` — gated, a
         // classic world's step is a no-op.
-        assert_eq!(names.len(), 67);
+        // W4-f24 A4: + `skyblock` (vanilla "Skyblock", `WorldGen.cs:11511`)
+        // after `plan biome spans`, before `dunes` — gated, classic no-op.
+        assert_eq!(names.len(), 68);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3261,6 +3313,7 @@ mod tests {
                 "terrain height map",
                 "terrain fill",
                 "plan biome spans",
+                "skyblock",
                 "dunes",
                 "ocean sand",
                 "micro grass",
@@ -3282,6 +3335,7 @@ mod tests {
                 "ores and gems",
                 "evil",
                 "liquids",
+                "dither snake",
                 "dungeon",
                 "constant lava layer",
                 "beaches",
@@ -3370,7 +3424,10 @@ mod tests {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("ocean sand"), pos("dunes") + 1);
-        assert_eq!(pos("dunes"), pos("plan biome spans") + 1);
+        // W4-f24 A4: the gated skyblock step sits between the spans planner
+        // and dunes (a classic no-op).
+        assert_eq!(pos("skyblock"), pos("plan biome spans") + 1);
+        assert_eq!(pos("dunes"), pos("skyblock") + 1);
         assert_eq!(names[pos("ocean sand") + 1], "micro grass"); // + the M5-SEED-2 Grass slot
         assert_eq!(names[pos("micro grass") + 1], "jungle");
         assert_eq!(pos("beaches"), pos("dungeon") + 2); // + the seed Constant lava layer (M5-SEED-1)

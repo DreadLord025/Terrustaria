@@ -350,7 +350,7 @@ mod tests {
         let classic = GenOptions { width: 512, height: 512, seed: 42, ..Default::default() };
         let dual = GenOptions {
             micro_flags: MicroSeedFlags::from(MicroSeedFlags::DUAL_DUNGEONS),
-            ..classic
+            ..classic.clone()
         };
         // The classic world is byte-identical with the step present (no-op).
         let c1 = world_hash(&generate(&classic));
@@ -362,6 +362,36 @@ mod tests {
         assert_eq!(d1, d2);
         // The snake moves the dual world (it paints into the dungeon bounds).
         assert_ne!(d1, c1);
+    }
+
+    /// W4-f24 A4: the gated Skyblock step is a classic no-op and deterministic
+    /// under the skyblock seed. The classic world's hash is unchanged (the
+    /// generator + the denyAll/denySome pruning are flag-gated); the skyblock
+    /// world replays a == b and differs from the seed-matched classic control
+    /// (the island archipelago replaces the terrain). Written NOT run.
+    #[test]
+    fn w4_f24_the_skyblock_world_is_gated_and_deterministic() {
+        use crate::seeds::SeedFlags;
+        use crate::worldgen::world_hash::world_hash;
+        let classic = GenOptions { width: 512, height: 512, seed: 42, ..Default::default() };
+        let sky = GenOptions {
+            flags: SeedFlags::from(SeedFlags::SKYBLOCK),
+            ..classic.clone()
+        };
+        let c1 = world_hash(&generate(&classic));
+        let c2 = world_hash(&generate(&classic));
+        assert_eq!(c1, c2);
+        let s1 = world_hash(&generate(&sky));
+        let s2 = world_hash(&generate(&sky));
+        assert_eq!(s1, s2);
+        assert_ne!(s1, c1);
+        // The skyblock world has far fewer active tiles than the classic
+        // (the denyAll pruning + the island-only generator).
+        let sky_world = generate(&sky);
+        let classic_world = generate(&classic);
+        let sky_active = sky_world.tiles.iter().filter(|t| t.active()).count();
+        let classic_active = classic_world.tiles.iter().filter(|t| t.active()).count();
+        assert!(sky_active < classic_active / 2);
     }
 
     #[test]

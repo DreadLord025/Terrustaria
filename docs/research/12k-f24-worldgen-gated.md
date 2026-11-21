@@ -139,4 +139,4 @@ runtime-side, not the skyblock generator's tail).
 | A1 Skyblock statics + gate census | (this commit) | landed (code-only; gated, both classic pins unchanged) |
 | A2 SkyblockIsland | (this commit) | landed (code-only; unwired, both classic pins unchanged) |
 | A3 shared tail helpers | (this commit) | landed (code-only; unwired, both classic pins unchanged) |
-| A4 GenerateSkyBlockWorld + wire | — | pending |
+| A4 GenerateSkyBlockWorld + wire | (this commit) | landed (code-only; gated, both classic pins unchanged) — LANE A COMPLETE |

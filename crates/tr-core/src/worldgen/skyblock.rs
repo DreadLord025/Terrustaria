@@ -1181,6 +1181,343 @@ fn switch_mb(world: &mut World, i: i32, j: i32) {
     }
 }
 
+/// `WorldGen.GenerateSkyBlockWorld` (`WorldGen.cs:22526-22816`) — the
+/// skyblock generator: clear every tile, roll the spawn island's centre
+/// (the randomSpawn/vampire/remix/noSurface/surfaceIsInSpace bands), place
+/// the spawn island (style 0), the team-based spawn islands (style 13), the
+/// shimmer pool island (style 1, the spawnShimmerPool gate), the per-seed
+/// extra islands (the `flag2` loop: extraLiquid 9/10/11, noInfection 4,
+/// surfaceIsDesert 3, worldIsFrozen 2, hallowOnTheSurface 5, worldIsInfected
+/// 6/7, surfaceIsMushrooms 8), find the spawn surface, the extraLivingTrees
+/// tree, the poo/error-world tails, and the spawn-tail torches.
+///
+/// `rng` is the pass stream (`WorldGen.genRand`); `crimson` is
+/// `WorldGen.crimson` (the evil flavour); `gv` carries the landmass ledger +
+/// the spawn-randomized flag + the dungeon anchor the C# statics write. The
+/// progress fractions (`num4`) are loading-screen-only — no behavioural
+/// role, cited skip.
+pub(crate) fn generate_skyblock_world(
+    world: &mut World,
+    rng: &mut super::Rng,
+    flags: SeedFlags,
+    micro: MicroSeedFlags,
+    crimson: bool,
+    gv: &mut super::pipeline::GenVars,
+) {
+    let max_x = world.width;
+    let max_y = world.height;
+    let world_surface = world.world_surface;
+    let rock_layer = world.rock_layer;
+    let underworld_layer = max_y - 200;
+    let num = max_x / 420;
+    // `:22533-22537`: the flag2 gate (any of the seven island micro-seeds).
+    let flag2 = micro.intersects(
+        MicroSeedFlags::EXTRA_LIQUID
+            | MicroSeedFlags::NO_INFECTION
+            | MicroSeedFlags::SURFACE_IS_DESERT
+            | MicroSeedFlags::WORLD_IS_FROZEN
+            | MicroSeedFlags::HALLOW_ON_THE_SURFACE
+            | MicroSeedFlags::WORLD_IS_INFECTED
+            | MicroSeedFlags::SURFACE_IS_MUSHROOMS,
+    );
+    // `:22540-22547`: clear every tile (active false, type 0).
+    for x in 0..max_x {
+        for y in 0..max_y {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.flags &= !FLAG_ACTIVE;
+                t.kind = 0;
+            }
+        }
+    }
+    // `:22551-22585`: the spawn-centre roll (the seed bands).
+    let vampire = micro.contains(MicroSeedFlags::VAMPIRISM);
+    let (num5, num6) = if micro.contains(MicroSeedFlags::RANDOM_SPAWN) || vampire {
+        (
+            rng.range((max_x as f64 * 0.2) as i32, (max_x as f64 * 0.8) as i32),
+            rng.range((world_surface + 200.0) as i32, max_y - 400),
+        )
+    } else if flags.contains(SeedFlags::REMIX) {
+        (
+            rng.range((max_x as f64 * 0.45) as i32, (max_x as f64 * 0.55) as i32),
+            rng.range(underworld_layer + 80, underworld_layer + 120),
+        )
+    } else if micro.contains(MicroSeedFlags::NO_SURFACE) {
+        (
+            rng.range((max_x as f64 * 0.45) as i32, (max_x as f64 * 0.55) as i32),
+            rng.range((rock_layer * 0.3) as i32, (rock_layer * 0.8) as i32),
+        )
+    } else if micro.contains(MicroSeedFlags::SURFACE_IS_IN_SPACE) {
+        let mut lo = (max_y as f64 * 0.05) as i32;
+        if lo < 100 {
+            lo = 100;
+        }
+        let mut hi = (max_y as f64 * 0.08) as i32;
+        if hi < 130 {
+            hi = 130;
+        }
+        (
+            rng.range((max_x as f64 * 0.45) as i32, (max_x as f64 * 0.55) as i32),
+            rng.range(lo, hi),
+        )
+    } else {
+        (
+            rng.range((max_x as f64 * 0.45) as i32, (max_x as f64 * 0.55) as i32),
+            rng.range((world_surface * 0.6) as i32, (world_surface * 0.8) as i32),
+        )
+    };
+    // `:22587`: the spawn island (style 0).
+    skyblock_island(world, rng, flags, micro, num5, num6, 0, -1, false, &mut gv.landmass_data);
+    // `:22589-22608`: the team-based spawn islands (style 13, one per team).
+    let mut force_proximity = false;
+    if micro.contains(MicroSeedFlags::TEAM_BASED_SPAWNS) {
+        force_proximity = true;
+        // PlayerTeamID.Count = 6 (PlayerTeamID.cs:21); teams 1..5.
+        for k in 1..6 {
+            let num9 = (k - 1) as f32 / 6.0;
+            let num10 = if num9 < 0.5 {
+                remap_f32(num9, 0.0, 0.5, 0.1, 0.4)
+            } else {
+                remap_f32(num9, 0.5, 1.0, 0.6, 0.9)
+            };
+            let mut num13 = (max_x as f32 * num10) as i32;
+            let mut budget = 100;
+            while budget >= 0
+                && !skyblock_island(
+                    world, rng, flags, micro, num13, num6 + rng.range(-30, 30), 13, k,
+                    force_proximity, &mut gv.landmass_data,
+                )
+                && in_world(world, num13, num6, 100)
+            {
+                budget -= 1;
+                num13 += 5 * if num13 > max_x / 2 { 1 } else { -1 };
+            }
+        }
+    }
+    // `:22610-22643`: the shimmer pool island (style 1, spawnShimmerPool).
+    if spawn_shimmer_pool(flags) {
+        let mut placed = false;
+        let mut num16;
+        for attempt in (1..=200).rev() {
+            num16 = num6 + rng.range(-50, 50);
+            if attempt < 25 {
+                num16 = 90 + rng.range(0, 30);
+            }
+            let mut i2 = if num5 >= max_x / 2 {
+                rng.range(BEACH_DISTANCE + 200, (max_x as f32 * 0.3) as i32)
+            } else {
+                rng.range((max_x as f32 * 0.7) as i32, max_x - BEACH_DISTANCE - 200)
+            };
+            i2 = super::snake_math::clamp_i(i2, BEACH_DISTANCE + 200, max_x - BEACH_DISTANCE - 200);
+            num16 = super::snake_math::clamp_i(num16, 80, max_y - 80);
+            if attempt < 100 {
+                let mut num17 = rng.next_f64() as f32;
+                num17 = if num17 < 0.5 {
+                    remap_f32(num17, 0.0, 0.5, 0.05, 0.4)
+                } else {
+                    remap_f32(num17, 0.5, 1.0, 0.6, 0.95)
+                };
+                i2 = (max_x as f32 * num17) as i32;
+            }
+            if skyblock_island(world, rng, flags, micro, i2, num16, 1, -1, force_proximity, &mut gv.landmass_data) {
+                placed = true;
+                break;
+            }
+        }
+        if !placed {
+            let x = if num5 >= max_x / 2 {
+                rng.range(BEACH_DISTANCE + 200, (max_x as f32 * 0.3) as i32)
+            } else {
+                rng.range((max_x as f32 * 0.7) as i32, max_x - BEACH_DISTANCE - 200)
+            };
+            skyblock_island(world, rng, flags, micro, x, 90, 1, -1, false, &mut gv.landmass_data);
+        }
+    }
+    // `:22644-22658`: find the spawn surface (the first dirt-0 tile below the
+    // island centre, the two fallback scans).
+    let mut num16 = num6;
+    while (!world.tile(num5, num16).is_some_and(|t| t.active() && t.kind == 0))
+        && num16 < max_y - 1
+    {
+        num16 += 1;
+    }
+    if num16 > max_y - 10 {
+        num16 = 0;
+        while !world.tile(num5, num16).is_some_and(|t| t.active()) && num16 < max_y {
+            num16 += 1;
+        }
+    }
+    if num16 > max_y - 10 {
+        num16 = num6;
+    }
+    world.spawn_x = num5;
+    world.spawn_y = num16;
+    // `:22660-22665`: the extra-island band ceiling.
+    let mut num22 = world_surface as i32;
+    if num22 < 200 {
+        num22 = (200.0 + rock_layer / 2.0) as i32 / 2;
+    }
+    // `:22666-22791`: the per-seed extra islands (the flag2 loop).
+    if flag2 {
+        for l in 0..num {
+            // extraLiquid: the 9/10/11 water/lava/honey islands.
+            if micro.contains(MicroSeedFlags::EXTRA_LIQUID) {
+                match l {
+                    0 => {
+                        skyblock_island(world, rng, flags, micro,
+                            rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE),
+                            rng.range(100, num22 - 50), 9, -1, false, &mut gv.landmass_data);
+                    }
+                    1 => {
+                        skyblock_island(world, rng, flags, micro,
+                            rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE),
+                            rng.range(num22 + 200, max_y - 70), 10, -1, false, &mut gv.landmass_data);
+                    }
+                    _ => {
+                        if flags.contains(SeedFlags::NOT_THE_BEES) && l == 2 {
+                            skyblock_island(world, rng, flags, micro,
+                                rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE),
+                                rng.range(100, underworld_layer - 100), 11, -1, false, &mut gv.landmass_data);
+                        } else if flags.contains(SeedFlags::TENTH_ANNIVERSARY)
+                            && flags.contains(SeedFlags::DRUNK) && l == 3
+                        {
+                            skyblock_island(world, rng, flags, micro,
+                                rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE),
+                                rng.range(num22 + 200, underworld_layer - 100), 11, -1, false, &mut gv.landmass_data);
+                        } else {
+                            let mut kind_roll = rng.range(0, 4);
+                            while (kind_roll == 2 && !flags.contains(SeedFlags::NOT_THE_BEES))
+                                || (kind_roll == 3
+                                    && (!flags.contains(SeedFlags::TENTH_ANNIVERSARY)
+                                        || !flags.contains(SeedFlags::DRUNK)))
+                            {
+                                kind_roll = rng.range(0, 4);
+                            }
+                            let y = rng.range(100, underworld_layer - 100);
+                            if kind_roll <= 1 {
+                                kind_roll = if (y as f64) > (rock_layer + underworld_layer as f64) / 2.0 { 1 } else { 0 };
+                            }
+                            skyblock_island(world, rng, flags, micro,
+                                rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE),
+                                y, 9 + kind_roll, -1, false, &mut gv.landmass_data);
+                        }
+                    }
+                }
+            }
+            // noInfection: the style-4 dirt islands.
+            if micro.contains(MicroSeedFlags::NO_INFECTION) {
+                let y = if l == 0 {
+                    rng.range(100, num22 - 50)
+                } else if l <= num / 5 + 1 {
+                    rng.range(underworld_layer + 30, max_y - 70)
+                } else {
+                    rng.range(100, max_y - 100)
+                };
+                skyblock_island(world, rng, flags, micro,
+                    rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE), y, 4, -1, false, &mut gv.landmass_data);
+            }
+            // surfaceIsDesert: the style-3 sand islands.
+            if micro.contains(MicroSeedFlags::SURFACE_IS_DESERT) {
+                let y = if l == 0 {
+                    rng.range(100, num22 - 50)
+                } else {
+                    rng.range(100, underworld_layer - 100)
+                };
+                skyblock_island(world, rng, flags, micro,
+                    rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE), y, 3, -1, false, &mut gv.landmass_data);
+            }
+            // worldIsFrozen: the style-2 snow islands.
+            if micro.contains(MicroSeedFlags::WORLD_IS_FROZEN) {
+                let y = if l == 0 {
+                    rng.range(100, num22 - 50)
+                } else {
+                    rng.range(100, underworld_layer - 100)
+                };
+                skyblock_island(world, rng, flags, micro,
+                    rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE), y, 2, -1, false, &mut gv.landmass_data);
+            }
+            // hallowOnTheSurface: the style-5 hallow islands.
+            if micro.contains(MicroSeedFlags::HALLOW_ON_THE_SURFACE) {
+                let y = if l == 0 {
+                    rng.range(100, num22 - 50)
+                } else {
+                    rng.range(100, underworld_layer - 100)
+                };
+                skyblock_island(world, rng, flags, micro,
+                    rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE), y, 5, -1, false, &mut gv.landmass_data);
+            }
+            // worldIsInfected: the style-6/7 evil islands (drunk rolls 6-8).
+            if micro.contains(MicroSeedFlags::WORLD_IS_INFECTED) {
+                let drunk = flags.contains(SeedFlags::DRUNK);
+                if l == 0 {
+                    let style = if drunk {
+                        rng.range(6, 8)
+                    } else if crimson {
+                        7
+                    } else {
+                        6
+                    };
+                    skyblock_island(world, rng, flags, micro,
+                        rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE),
+                        rng.range(100, num22 - 50), style, -1, false, &mut gv.landmass_data);
+                } else {
+                    let style = if drunk {
+                        rng.range(6, 8)
+                    } else if crimson {
+                        7
+                    } else {
+                        6
+                    };
+                    skyblock_island(world, rng, flags, micro,
+                        rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE),
+                        rng.range(100, underworld_layer - 100), style, -1, false, &mut gv.landmass_data);
+                }
+            }
+            // surfaceIsMushrooms: the style-8 mushroom islands.
+            if micro.contains(MicroSeedFlags::SURFACE_IS_MUSHROOMS) {
+                skyblock_island(world, rng, flags, micro,
+                    rng.range(BEACH_DISTANCE, max_x - BEACH_DISTANCE),
+                    rng.range(num22 + 200, underworld_layer - 100), 8, -1, false, &mut gv.landmass_data);
+            }
+        }
+    }
+    // `:22792-22793`: no dungeon on a skyblock world.
+    gv.dungeon_x = -1;
+    gv.dungeon_y = -1;
+    // `:22794-22802`: the extraLivingTrees tree beside the spawn.
+    if micro.contains(MicroSeedFlags::EXTRA_LIVING_TREES) {
+        let mut offset = rng.range(40, 80);
+        if rng.range(0, 2) == 0 {
+            offset *= -1;
+        }
+        super::living_trees::grow_living_tree(world, rng, num5 + offset, num6, false);
+    }
+    // `:22803-22810`: the poo / error-world tails.
+    if micro.contains(MicroSeedFlags::POO_EVERYWHERE) {
+        super::seed_tails::do_poo_everywhere(world, rng, flags, micro);
+    }
+    if micro.contains(MicroSeedFlags::ERROR_WORLD) {
+        super::seed_tails::do_error_world_shuffle_blocks(world, rng, flags, micro);
+    }
+    // `:22811-22815`: the spawn-randomized flag + the spawn-tail torches.
+    gv.world_spawn_has_been_randomized = true;
+    if (num6 as f64) > world_surface && (num6 as f64) < underworld_layer as f64 {
+        super::seed_tails::do_additional_changes_around_spawn_if_needed(world, rng, flags);
+    }
+}
+
+/// `Utils.Remap(float, …)` — the f32 remap the team/spawn-island x bands use
+/// (`WorldGen.cs:22599/:22628`, the clamped float overload `Utils.cs:315`).
+fn remap_f32(from: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+    let t = if from < from_min {
+        0.0
+    } else if from > from_max {
+        1.0
+    } else {
+        (from - from_min) / (from_max - from_min)
+    };
+    to_min + (to_max - to_min) * t
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1299,7 +1636,7 @@ mod tests {
                     }
                 }
             }
-            let mut rng = super::super::Rng::from_seed(7);
+            let mut rng = crate::worldgen::noise::Rng::from_seed(7);
             let mut landmass = Vec::new();
             let ok = skyblock_island(
                 &mut w,
@@ -1346,7 +1683,7 @@ mod tests {
             seed: 42,
             ..Default::default()
         });
-        let mut rng = super::super::Rng::from_seed(7);
+        let mut rng = crate::worldgen::noise::Rng::from_seed(7);
         let mut landmass = Vec::new();
         // The classic world is full of active tiles -> the veto fires.
         let ok = skyblock_island(

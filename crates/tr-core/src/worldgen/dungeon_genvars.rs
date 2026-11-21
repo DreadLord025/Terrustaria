@@ -303,7 +303,7 @@ mod tests {
     #[test]
     fn w4_f24_color_roll_is_deterministic() {
         let roll = |flags: SeedFlags| {
-            let mut rng = super::super::Rng::from_seed(7);
+            let mut rng = crate::worldgen::noise::Rng::from_seed(7);
             roll_dungeon_color(&mut rng, flags, false)
         };
         let a = roll(SeedFlags::default());
