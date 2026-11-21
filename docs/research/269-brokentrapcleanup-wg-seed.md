@@ -1,4 +1,12 @@
-# 148 — BrokenTrapCleanup wg-seed: census + dedupe — d106 R5 ALREADY LANDED the same pass; two fidelity items + the seam resolution
+# 269 — BrokenTrapCleanup wg-seed: census + dedupe — d106 R5 ALREADY LANDED the same pass; two fidelity items + the seam resolution
+
+> **RENUMBERED 148 → 269 (2026-11-21, registry research/150 §6.3,
+> `origin/task/W4-d54-dust-sites-world` `72226e500`):** 148 was won by
+> W4-c4's `148-fish-family-declaration.md` (first-add 10:16:16
+> `0df6964be`); this doc's first-add (10:28:49 `d818aee06`) was later →
+> loser, takes the assigned free number 269. Body unchanged; all
+> cross-refs on this branch re-pointed (e20's 147/149/71 KEEP their
+> numbers per the registry).
 
 > **STATUS: TASK-SEED (dedupe-checked) — 2026-11-21, branch
 > `task/W4-e20-wiring-device-arms-2` (retire phase).** The e20 residual

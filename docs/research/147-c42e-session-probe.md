@@ -3,15 +3,18 @@
 > **STATUS: PROBE REPORT — 2026-11-21 10:10 +0200, branch
 > `task/W4-e20-wiring-device-arms-2` (retire phase).** Read-only probe;
 > no file in `TR-W4-c42` was written, no git write ran there. Companion
-> to research-146 (the CRITICAL escalation); number 147 next-free at
-> publication (taken set across all refs ends at 145; 146 taken by this
+> to research-266 (the CRITICAL escalation, renumbered 146→266 per
+> registry research/150 §6.3 — 146 went to W4-g24's earlier push);
+> number 147 KEEPS per the registry (10:25:00 < e19's 12:52:51).
+> Historical numbering note at publication: 147 was next-free (taken
+> set across all refs ended at 145; 146 — now 266 — taken by this
 > lane's phase-1 commit `e47e1399f`).
 
 ## Question
 
 `c42e` was dispatched long ago against `task/W4-c42-wiring-device-arms`.
 Is the session dead? If dead, a `c42-repick-resume` dispatch is needed to
-consume the research-71 §6a/§7a re-pick instruction (research-146).
+consume the research-71 §6a/§7a re-pick instruction (research-266).
 
 ## Evidence (all read-only, direct file paths — no junction recursion)
 
@@ -42,14 +45,14 @@ instruction and shows no sign of acting on it.
 **No `c42-repick-resume` needed for liveness — but the re-pick still will
 not happen by itself.** In preference order:
 
-1. **Merger-side re-pick (recommended, research-146 §1):** take the e20
+1. **Merger-side re-pick (recommended, research-266 §1):** take the e20
    branch's device halves wholesale (state at `02ac64ab6`); c42's
    non-device union-exec + fold-133 + `de176ccdd` + the in-flight §8 work
    merge on their own terms. Zero coordination with c42e required; its
    §8 edits touch the wiring engine's gate/echo seams, not the
    hopper/track device bodies, so the overlap is textual-adjacency only.
 2. **c42-repick-resume dispatch (only if path 1 is rejected):** hand c42e
-   research-146 directly (its worktree research-71 is stale): revert the
+   research-266 directly (its worktree research-71 is stale): revert the
    `e8e6b159c` device halves, take the §1 chain states, keep the §8 dirty
    work. Do NOT kill or reset the worktree — the dirty §8 state is real
    uncommitted work (the 2026-11-08 stale-index rule: never clean a

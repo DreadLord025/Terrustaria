@@ -1,4 +1,12 @@
-# 146 — c42 re-pick CRITICAL: the device-arm halves on `task/W4-c42-wiring-device-arms` CANNOT MERGE AS-IS
+# 266 — c42 re-pick CRITICAL: the device-arm halves on `task/W4-c42-wiring-device-arms` CANNOT MERGE AS-IS
+
+> **RENUMBERED 146 → 266 (2026-11-21, registry research/150 §6.3,
+> `origin/task/W4-d54-dust-sites-world` `72226e500`):** 146 was won by
+> W4-g24's `146-wg-sounds-final.md` (first-add 10:02:44 `2678cfae4`,
+> self-rename 107→146); this doc's first-add (10:22:27 `e47e1399f`) was
+> second of the three 146 claimants (g24 keeps, this doc → 266, g67 →
+> 267). Body unchanged; the original next-free rationale below is kept
+> as historical provenance only. All cross-refs on this branch re-pointed.
 
 > **STATUS: ESCALATION — 2026-11-21 10:10 +0200, branch
 > `task/W4-e20-wiring-device-arms-2` (FINAL `02ac64ab6`, retire phase).**
