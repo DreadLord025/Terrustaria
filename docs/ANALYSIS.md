@@ -11786,7 +11786,12 @@ code-only — witnesses WRITTEN NOT RUN):
   four-colour switch, honey 152 ×5, water `dustWater()` ×10 (scale ×0.8
   MULTIPLY vs the shimmer's 0.8 SET; the water EXIT anchor drops the `- 8`,
   `:1011`); the case-19 play rides style 4/5 for the shimmer entry/exit, the
-  default 1 otherwise, AFTER the dust loop.
+  default 1 otherwise, AFTER the dust loop. The SHIMMER seal made the ENTRY
+  gate verbatim: it reads the LOCAL `LavaCollision` result (`:886` `!flag2`,
+  `lava_now`), not the sticky flag (behaviourally equal at every reachable
+  entry edge — the 144 proof); the EXIT keeps the sticky read (`:965`). The
+  water style is the once-per-pass `TR_WATER_STYLE`-pinned read (the f47
+  seam adopted at the keep-one round).
 - **The crimson/corruption decraft variant** (`ShimmerTransforms.cs:15-31`):
   `gen_recipes.py` extracts the 30 world-evil tags (15 crimson/corruption
   pairs — the census: 273/287/300/556/3266/3267/3268/4076/4131/4745/5092/
@@ -11856,6 +11861,47 @@ field. Census (code-only, witnesses WRITTEN NOT RUN):
   port's `DrawBlack` coverage is folded into the tile pass's dark-cell merge
   (`tiles.rs:769-798`); the aether quad needs a screen-fx seam
   (`screen_fx.rs`) — deferred to the g72/g69d merge lane (research/146).
+
+### The shimmer family — the merger bible (W4-e19 SHIMMER SEAL, 2026-11-21)
+
+The family-wide owner map for 141/master, sealed on
+`task/W4-e19-liquid-quicksell-shimmer` (code-only; receipts in
+research/144-148, every co-lane tip re-read this round). One row per
+C# anchor → port → owner; the merge contracts live in the named receipts.
+
+| C# anchor | Port | Owner / verdict |
+| --- | --- | --- |
+| `WorldItem.cs:138` the 16 drop box | `item::SIZE = 16.0` + every probe + the centred 14 px draw quad | **e19** (`e2003946b`); f47 folded it on its own branch — identical values, trivial dedupe. Cross-lane witness repins: research/145 + its per-lane execution table (each lane on its own branch) |
+| `WorldItem.cs:865-1045` the entry/exit splash | `ItemSplash`/`pending_splash`/`take_splash` + the free-fn `item_splash` (the g67 DustPool/UpdateItems seam) | **e19 KEEPS** (research/144 + seal). The entry gate reads the LOCAL lava probe (`:886` verbatim, the seal fix); the water style is the once-per-pass `TR_WATER_STYLE`-pinned read (f47's seam adopted). f47's `Splash`/`splash_due`/method drain + its superseded witnesses DROP per 144's 8-row table |
+| `WorldItem.cs:1691-1853` the item transform chain | `shimmer.rs` (the shared tail, ShimmerEffect, the decraft/release arms, the equivalent-type resolve) | **e19** (phases 1-4 + round 2/3); f47's 121 agrees the boundary — its NPC drain half is disjoint |
+| `ShimmerTransforms.cs` the six ITEM tables + the evil decraft | `shimmer_tables.rs` + `decrafting_recipe_index(world_crimson)` | **e19** (the moon-phase RAW-enum re-pin, the persisted-crimson consume). `World.crimson` itself is **g69-canonical** (identical row, dedupe at merge) |
+| `NPC.cs:91548-91592` + the NPC/town shimmer sets | `tr-core/shimmer.rs::resolve_npc_shimmer`, the town state-25 arm | **f47** (its phase-1 claims — NOT dropped by the splash keep-one) |
+| `NPC.cs:61128-61150` the 676 ShimmerSlime light/dust | `npc_ai_slime` `wants_shimmer_slime_dust` + `npc_lights::shimmer_slime_light` | **f47** (its keep-one phase 3; the b1 `ai_001_slime_family` adapter is the live-route seam) |
+| `Collision.cs:2332`/`:1825` TileCollision/slope | f47's `tile_collision_opts`/`slope_collision_opts` wrappers | **f47's wrappers are the shared seam** — e19's hand-rolled flush half reconciles onto them at merge (both keep the `:2394`/`:2444` residual; both 144 receipts agree) |
+| `WorldItem.cs:493-504` the two-row rise scan | e19's `rise_over_shimmer` | **e19** (f47's single-tile `over_shimmer` is the ramp probe reused — its 144 concedes the merge takes e19's rise) |
+| `SceneMetrics.ZoneShimmer` + the 91 music gate | `tr-core/scene.rs` + `audio.rs` | already faithful (e19 census, research/146) — no owner conflict |
+| `SceneState.cs:285-289` the monolith ramp | `scene.rs::update_shimmer` states 1/2 | **e19** (the 5347 shader term reads false — ApplyShader unported) |
+| `Main.cs:52800-52805` the bg shimmer-skip | `render/bg.rs::draw_background` | **e19 + g72 same arm** — keep-one at merge, either side faithful; g72's `ug_back_step` keeps the `:52830-52833` transition-zero |
+| `Main.cs:62086-62089`/`:63107-63110` natural-star skip/dim | `render/sky.rs` (`artificial: false` half) | **e19**; the i%3 lerp `:63090-63102` is a decompile no-op (`num*0f`), cited not ported |
+| `Main.cs:62199-62206` the artificial star pass + `:17256-17274` the underground star update | unported (the star fall/respawn machine) | **g69d-star-visual** — DISJOINT from e19's natural half (the seal's 146 boundary table); g69e-clouds-retire touches only the cloud arms |
+| `Main.cs:62184-62187` the black backdrop quad | needs a screen-fx seam | **g72/g69d merge lane** (the artificial pass's backdrop) |
+| `Main.cs:21637-21643` the shimmerShine tint | unported | **g76-shimmer-draw** |
+| `TileLightScanner.cs:3160-3166` liquidAlpha[13] | the 0 feed | DEAD CODE in the C# (e19 census) — faithful, no action |
+| `Main.cs:45269-45310` cursorOverride (layer 36) | the six Cursor sheets + `draw_override` + the clicks.rs evaluation | **e19** (research/147) |
+| `Main.cs:45037-45115` cursorItemIcon (layer 40, 170 sites) | unported | **g86e-cursor-170-sites** — a DIFFERENT layer; compose keeps BOTH (147's seal contract: the two reset clocks stay separate) |
+| `ItemSlot.cs:198-218` the sell/trash hint + the coin math | `evaluate_cursor_override` + the round-3 coin witnesses | **e19** — the C# mouse hint IS the icon; `Lang.misc[75]` is gamepad-only (unported layer) |
+
+**Merge order**: the 16-box lands with whichever of e19/f47 merges first
+(identical constants); the splash shape follows 144 (e19 keeps, the f47
+drop-table applies to the SECOND merge); the per-lane repins execute on
+their own branches BEFORE merging (145's seal table) so the inherited
+blocks arrive pre-repinned; the aether/cursor co-lanes compose in any
+order (disjoint halves).
+
+**Standing deviations** (unchanged, all recorded above): the aggregate
+coin purse, the gamepad input layer (the BuildCommand hint chain, the
+ApplyShader seam, the TOW music swap), the liquidAlpha[13] dead-code 0
+feed, the g69d star machine, the aether black-quad screen-fx seam.
 ## Ocean passes fidelity (M5-OCEAN)
 
 The full ocean family landed 2026-11-08 (branch `M5-OCEAN`, commits

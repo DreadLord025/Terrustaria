@@ -67,3 +67,43 @@ inventing one would break the 1:1 rule.
 The existing round-3 coin witnesses (`w4_e19_the_bought_unit_quicksells_at_
 the_buy_price`, `w4_e19_the_unmemoed_quicksell_pays_the_fifth`) already pin
 the cursor-10 state at the sell click — unchanged.
+
+## SHIMMER SEAL — the g86e-cursor-170-sites keep-one COMPOSE (g86e-active reads)
+
+The seal round read the g86 tip (`e6d02d2f0`, its ANALYSIS altar block:
+"the whole `cursorItemIcon*` system (170 write sites in Player.cs, the
+`DrawCursor` icon draw) is UNPORTED — a separate large system") and
+re-read the two C# draw windows (each ≤100 lines). **The two systems are
+DIFFERENT layers, not competing ports — the compose KEEPS BOTH:**
+
+| | e19 cursor-override (this lane, PORTED) | g86e cursorItemIcon (170 sites, its claim) |
+| --- | --- | --- |
+| C# state | `Main.cursorOverride` (a static int, −1 = none) | `Player.cursorItemIconEnabled/ID/Text/Push/Reversed` (per-player fields) |
+| Set by | `ItemSlot.GetAlternateClickAction` hover evaluation (shift/alt + slot context) | `TileInteractionsMouseOver` + the 170 Player.cs write sites (the tile/NPC hover icon: altar 6135/6136, golem altar 1293, …) |
+| Reset cadence | `Main.cursorOverride = -1` per interface frame (`Main.cs:44941`) | `MouseOversClear()` per UPDATE tick (`Main.cs:17035` → `:46503-46513` zeroes Enabled/ID/Text/Push) — a DIFFERENT clock, do not merge the resets |
+| Draw site | `DrawInterface_36_Cursor` (`Main.cs:45254`, the override arm `:45269-45310`) — REPLACES the pointer texture | `DrawInterface_40_InteractItemIcon` (`Main.cs:45037-45115`) — an ITEM SPRITE overlay at `(mouseX + 10 + push, mouseY + 10 + push) + halfDrawHitbox*scale`, `ItemSlot.DrawItemIcon` ctx 21, white when the id is lit (`:45074-45078`), the ammo sub-icon + the `cursorItemIconText` MouseText ride along |
+| Layer order | 36 (Cursor) | 40 (Interact Item Icon) — AFTER 36/37/38/39 (`Main.cs:44889-44913`'s layer list) |
+| Exclusivity | replaces the normal cursor while lit | gated `cursorItemIconEnabled && num != 0 && MouseDisplayItem.IsAir` (`:45061`) — refuses while the cursor carries an item; NOT gated on cursorOverride |
+
+**Compose contract for the merge (g86e executes on its own branch):**
+
+1. e19's surface survives verbatim: the six `UI/Cursor_{3,6,7,8,9,10}`
+   sheets + `Lookups::cursor_overrides` + `cursor_override(id)`
+   (`assets.rs:2038`/`:2293`), `ui::cursor::draw_override`
+   (`ui/cursor.rs:120`), the `draw_hud` tail's override-first pair
+   (`ui/mod.rs:1211-1213`), `App.cursor_override` + the clicks.rs
+   evaluation. g86e does NOT re-port any of it.
+2. g86e adds the cursorItemIcon fields + the 170-site write census + its
+   OWN draw pass, placed AFTER the `draw_hud` cursor tail (the layer-40
+   position — the icon overlays whatever cursor is on screen, override or
+   normal). Its reset rides the sim/update tick (`MouseOversClear`), NOT
+   the interface-frame `cursor_override = -1` reset.
+3. Both can be lit the same frame in the C# (the override replaces the
+   pointer; the icon floats at +10+push beside it) — no keep-one DROP
+   either way. The only shared asset surface is the item atlas the icon
+   draw loads (`Main.instance.LoadItem(num)`, `:45090`) — the port's
+   existing item-sheet lookup, no new sheets from e19's six.
+4. The e19 id-2 note stands for g86e: id 2 (smart-interact grab) is a
+   cursorOverride case (`:45278-45291`, the 0.7 scale + (0.1,0.1) origin),
+   NOT an AlternateClickAction — it belongs to the smart-cursor lane, not
+   to either cursor system here.

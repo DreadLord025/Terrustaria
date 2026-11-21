@@ -51,3 +51,30 @@ expressions cited above, re-verified against the C# windows.
   update arm (the `Next(numStars)`/`Next(90)` draws) stay its claim.
 - **g76-shimmer-draw**: the `shimmerShine` tile/wall tint + the liquid
   draw's aether arm stay its claim.
+
+## SHIMMER SEAL — the g69d-star-visual boundary CONFIRMED (g69e-clouds-retire-active reads)
+
+The seal round re-read all four boundary windows in the C# (each ≤100
+lines) and the g69 tip (`20d0380f9`, its 117 doc-sweep's falling-star
+VISUAL census). **The e19 natural-star-dim and the g69-artificial-star
+work are DISJOINT — the split stands, no repin either way:**
+
+| Arm | C# window (re-read this seal) | Owner | State |
+| --- | --- | --- | --- |
+| Natural-star SKIP at alpha 1 | `Main.cs:62086-62089` — `if (Main.shimmerAlpha != 1f) DrawStarsInBackground(artificial: false)` | **e19** | PORTED (`render/sky.rs:743` — the `shimmer_alpha != 1.0` gate on the star-field head) |
+| Natural-star DIM | `Main.cs:63107-63110` — the `else` (non-artificial) arm `color *= 1f - num` | **e19** | PORTED (`render/sky.rs:795-806` — `star_dim = 1.0 - shimmer_alpha` on the channels) |
+| The i%3 channel lerp | `Main.cs:63090-63102` — each channel `* (1f - num * 0f)` = ×1 | neither | decompile NO-OP, cited not ported (both lanes agree) |
+| Artificial-star PASS | `Main.cs:62199-62206` — `if (shimmerAlpha > 0f)` … `DrawStarsInBackground(artificial: true)` over the black quad, the `color *= num` arm `:63103-63105` | **g69d-star-visual** | UNPORTED — stays g69d's claim (needs the star fall/respawn machine + the `:62184-62187` black-backdrop screen-fx seam) |
+| Underground star UPDATE | `Main.cs:17256-17274` — below-surface `shimmerAlpha > 0` arm: `Star.UpdateStars()` + `Next(numStars)` + `Next(90) == 0` → `Fall()` + the hidden-slot `SpawnStars(j)` loop | **g69d-star-visual** | UNPORTED — stays g69d's claim (the RNG draws ride the Update stream; the port's static `make_stars` has no per-tick update — g69's 117 §5 censuses the same Fall/Update/trail/NightSetup/starfallBoost chain) |
+
+**g69e-clouds-retire-active consumption note**: g69e's clouds retire reads
+the SAME `Main.shimmerAlpha` scene value but only the cloud arms
+(`numCloudsTemp` cadence, the rain-cloud darkening, `cloudAlpha`); its
+retire does NOT touch the star field. The e19 star-dim is the
+`artificial: false` draw half ONLY — when g69d lands the artificial pass
+it must NOT re-dim the natural field (the `:63103-63110` if/else is one
+switch on the `artificial` parameter, already split across the two lanes
+by that parameter). Merge order: either lane first; the two halves
+compose in `render/sky.rs`'s star loop without conflict (e19 edits the
+`artificial: false` path's gate + tint, g69d adds a NEW artificial pass
+after the world draw).

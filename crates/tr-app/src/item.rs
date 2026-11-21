@@ -932,8 +932,10 @@ pub struct ItemDrop {
     /// cleared only when `!wet` (`:1039`). The honey gravity arm (`:386-391`).
     pub honey_wet: bool,
     /// `Entity.lavaWet` (`WorldItem.cs:865-869`) — `Collision.LavaCollision`
-    /// set it; cleared only when `!wet` (`:1038`). The splash arms read it
-    /// (`:886`/`:965`); lava keeps the air gravity pair (no C# arm).
+    /// set it; cleared only when `!wet` (`:1038`). The EXIT splash arm reads
+    /// it (`:965`); the ENTRY arm reads the LOCAL probe (`:886` `!flag2`,
+    /// the SHIMMER-seal verbatim fix); lava keeps the air gravity pair (no
+    /// C# arm).
     pub lava_wet: bool,
     /// `Entity.wetCount` (`WorldItem.cs:883-1044`) — the splash cooldown: 20
     /// on an entry/exit burst (`:885`/`:964`), 0 on the grabbed arm (`:428`),
@@ -1373,7 +1375,9 @@ impl ItemDrop {
         // clears the three kind flags. The probe feeds BOTH the next tick's
         // gravity head and THIS tick's `ApplyMovement` gate (`:1076` reads
         // `base.wet` post-set).
-        if crate::player::lava_collision(world, self.pos.x, self.pos.y, SIZE, SIZE) {
+        let lava_now =
+            crate::player::lava_collision(world, self.pos.x, self.pos.y, SIZE, SIZE);
+        if lava_now {
             self.lava_wet = true; // `:866-869`
         }
         let (wet_hit, honey_hit, shimmer_hit) = crate::npc_ai_slime::wet_collision(
@@ -1401,7 +1405,14 @@ impl ItemDrop {
                     self.pending_splash = Some(ItemSplash {
                         pos: self.pos,
                         exit: false,
-                        lava: self.lava_wet,
+                        // `:886` reads the LOCAL `flag2` (this tick's
+                        // LavaCollision), NOT the sticky `base.lavaWet`.
+                        // Behaviourally equal at every entry edge (the
+                        // `!wet` tail cleared the sticky flag last tick),
+                        // but the local read is the verbatim one — the
+                        // f47 keep-one 144's only semantic objection,
+                        // resolved on the e19 half (SHIMMER seal).
+                        lava: lava_now,
                         shimmer: self.shimmer_wet,
                         honey: self.honey_wet,
                     });
@@ -2710,5 +2721,88 @@ mod s1_p_i47_tests {
         assert!(!d.being_grabbed);
         // The full-velocity ApplyMovement (`:1082`): pos += vel, no fraction.
         assert!((d.pos.x - (10.0 * TILE_PX + 1.0)).abs() < 1e-5);
+    }
+
+    /// The SHIMMER-seal entry-gate witness: `:886` reads the LOCAL `flag2`
+    /// (this tick's `LavaCollision`), NOT the sticky `base.lavaWet`. A drop
+    /// whose sticky lava flag is FALSE (hand-set state — the C# never has
+    /// this divergence at a reachable entry edge, the seal's verdict) still
+    /// bursts the LAVA family when the local probe hits lava this tick: the
+    /// queued splash reads `lava_now`, and the sticky flag is set by the
+    /// `:866-869` arm the same tick.
+    #[test]
+    fn w4_e19_the_entry_splash_gate_reads_the_local_lava_probe() {
+        // A 40x80 world (the slime-engine probe clamps its scan to
+        // `height - 40`), the lava pool at row 12 — the f47 entry-latch
+        // fixture shape.
+        let mut w = World::new("entrylava".into(), 40, 80);
+        for x in 0..40 {
+            let j = w.index(x, 12);
+            w.tiles[j].liquid = 255;
+            w.tiles[j].set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        // Park at y 184: the inset probe (y+4..+12 = 188..196) overlaps the
+        // row-12 surface (192.06); the full-box LavaCollision hits too.
+        let mut d = ItemDrop::new(2, 1, 0, 30.0 * TILE_PX, 184.0, 0.0, 0.0, 0.0);
+        assert!(!d.lava_wet, "the sticky flag starts false");
+        d.update(&w, 1.0 / 60.0);
+        assert!(d.wet && d.lava_wet, "the :866-869 arm set the sticky flag");
+        let s = d.take_splash().expect("the entry splash armed");
+        assert!(!s.exit && s.lava, "the gate read the LOCAL probe (:886)");
+        assert_eq!(d.wet_count, 19, "20 armed, decremented same tick");
+    }
+
+    /// Folded from the f47 keep-one 144 (`w4_f47ds_the_wet_probe_is_the_
+    /// centre_inset_box`, SHIMMER seal): the inset probe is 10x8 at
+    /// (pos+3, pos+4) (`Collision.cs:1576-1587` integer halves) — a probe
+    /// right edge that TOUCHES the cell's left edge is NOT an overlap
+    /// (strict `>`), the old full-box stand-in read wet there. The probe
+    /// engine is the `npc_ai_slime::wet_collision` port `move_in_world`
+    /// calls (`:870`); the kind statics come from the FIRST overlapping
+    /// cell.
+    #[test]
+    fn w4_e19_the_wet_probe_is_the_centre_inset_box() {
+        let mut w = World::new("probe".into(), 32, 80);
+        let i = w.index(11, 10);
+        w.tiles[i].liquid = 255;
+        w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Shimmer);
+        w.compute_column_surface();
+        w.compute_chunks();
+        // pos (163, 160): probe box x 166..176 — the cell x 176..192; the
+        // touching X edge fails the strict overlap -> dry.
+        let hit = crate::npc_ai_slime::wet_collision(&w, 163.0, 160.0, SIZE as i32, SIZE as i32);
+        assert_eq!(hit, (false, false, false));
+        // Shift 2 px right: probe x 168..178 overlaps 176..192 -> wet +
+        // shimmer (the FIRST-cell-wins kind flag).
+        let hit2 = crate::npc_ai_slime::wet_collision(&w, 165.0, 160.0, SIZE as i32, SIZE as i32);
+        assert_eq!(hit2, (true, false, true));
+    }
+
+    /// Folded from the f47 keep-one 144 (`w4_f47ds_the_wet_probe_respects_
+    /// the_liquid_surface_drop`, SHIMMER seal): the surface drops by
+    /// `(256-liquid)/32*2` (`Collision.cs:1610-1612`) — a quarter-full cell
+    /// (liquid 64) drops 12 px, the probe bottom TOUCHING the surface is
+    /// dry. `LavaCollision` keeps the FULL box (no inset,
+    /// `Collision.cs:1653-1684`) with the SAME surface drop.
+    #[test]
+    fn w4_e19_the_wet_probe_respects_the_liquid_surface_drop() {
+        let mut w = World::new("surf".into(), 32, 80);
+        let i = w.index(10, 10);
+        w.tiles[i].liquid = 64; // surface at y 160+12 = 172, depth 4
+        w.compute_column_surface();
+        w.compute_chunks();
+        // Probe y 164..172 — bottom TOUCHES the 172 surface -> dry.
+        let hit = crate::npc_ai_slime::wet_collision(&w, 160.0, 160.0, SIZE as i32, SIZE as i32);
+        assert!(!hit.0);
+        // Probe y 168..176 overlaps 172..176 -> wet.
+        let hit2 = crate::npc_ai_slime::wet_collision(&w, 160.0, 164.0, SIZE as i32, SIZE as i32);
+        assert!(hit2.0);
+        // Lava: FULL box, same surface drop. Box y 156..172 TOUCHES -> dry;
+        // y 157..173 overlaps the 172 surface -> wet.
+        w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        assert!(!crate::player::lava_collision(&w, 160.0, 156.0, SIZE, SIZE));
+        assert!(crate::player::lava_collision(&w, 160.0, 157.0, SIZE, SIZE));
     }
 }
