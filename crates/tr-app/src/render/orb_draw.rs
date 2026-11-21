@@ -34,15 +34,33 @@
 //! `Main.cs:7518` and `[639] = 300` `Main.cs:9652`), so the `:7413` gate
 //! `tileShine[type] > 0` never admits 665 — the colour row is dead code.
 //!
-//! **UNWIRED** (the `render/special_tiles.rs` convention): the
-//! `DrawSingleTile` entry gate (`TileDrawing.cs:965-968` —
-//! `_isActiveAndNotPaused && (!Lighting.UpdateEveryFrame ||
-//! FastRandom(TileFrameSeed).WithModifier(x, y).Next(4) == 0)`) and the
-//! else-if chain position of the ambient arm (the 22/23/24/32/25/112 arms
-//! precede it; their type tests short-circuit BEFORE their gate draws, so
-//! an orb cell reaches [`orb_ambient_dust`] with zero prior draws) are the
-//! wiring wave's obligation. The break burst rides the `KillTile` dust
-//! seam (the hammer hit path, `Player.cs:45665-45704` → `KillTile`).
+//! **WIRING STATE (W4-g85 wiring round).**
+//! * The ambient/shine bodies are WIRED in `render/tiles.rs::draw_tiles`
+//!   at the `DrawSingleTile` entry slot ([`emit_entry_gate`] ports the
+//!   `TileDrawing.cs:965-968` quarter-roll: `_isActiveAndNotPaused &&
+//!   (!Lighting.UpdateEveryFrame || FastRandom(TileFrameSeed)
+//!   .WithModifier(x, y).Next(4) == 0)`). The else-if chain position is
+//!   stream-safe for the family kinds: every preceding arm (718/244/565/
+//!   215/592/406/452/192/384/666/712/711, the flies/rubble sets, 238/139/
+//!   463/…, 22/23/24/32/25/112, the altars 26/695, 71/72, 17/77/133, 405,
+//!   37, 58/76/684, 61/703) fails its TYPE/SET test for 31/696/12/639
+//!   BEFORE any `_rand` draw — the family reaches its arm with zero prior
+//!   draws (census in docs/research/W4-g85-orb-draw.md §6).
+//! * The draw-side `_rand` rides the port's per-rebuild `leaf_rng`
+//!   (`FastRandom(sparkle_seed ^ golden)`, the documented `_rand` stand-in
+//!   — `render/tiles.rs:330-334`); the `NewDust` internals ride the
+//!   client's `frame_rng` (`world.frame_rng`, the S1-E-1 per-consumer
+//!   `Main.rand` stand-in, cloned through the borrow like the d54 break
+//!   seam). Recorded deviation: vanilla's `_rand` is one session-lived
+//!   `UnifiedRandom`; the port pins it per world-range rebuild.
+//! * The break burst is UNWIRED at the `KillTile` dust slot
+//!   (`WorldGen.cs:63699-63703`): W4-d54 owns that seam (its
+//!   `world_dust_tile::tile_break_burst` call lands in
+//!   `world_sim/editing.rs::break_tile` between the sounds and the drops)
+//!   and W4-g14 ports the same `:68966` table arm in
+//!   `worldgen_dust_tile.rs`. Keep-one: the family slice here is the
+//!   verbatim subset; the merger keeps ONE body. [`orb_break_burst`] is
+//!   the drop-in for the family kinds at that slot.
 //!
 //! **Keep-one boundaries** (docs/research/W4-g85-orb-draw.md): W4-d60
 //! ports the WHOLE `DrawTiles_EmitParticles` battery (its
@@ -50,7 +68,11 @@
 //! ports the WHOLE `KillTile_MakeTileDust` table (`world_dust_tile.rs`,
 //! the `:68966` arm included). This slice is the orb-family verbatim
 //! subset for the g-lane; the merger keeps ONE body per arm — the
-//! witnesses here pin the contract either way.
+//! witnesses here pin the contract either way. The wiring round's
+//! contested-seam note: `render/tiles.rs` is touched by ~12 in-flight
+//! draw lanes; the call site here is a family-kind-gated block (zero
+//! draws for every other kind) so a keep-one merge with d60's battery
+//! replaces the block wholesale.
 //!
 //! **RNG census (S1-A-10, two streams kept separate).** The ambient gate
 //! `Next(20)` and the shine `Next(300)` ride `TileDrawing._rand` (a
@@ -58,11 +80,54 @@
 //! and the break arm's `Next(2)` ride `Main.rand`. The glow pulse's
 //! `Next(-5, 6)` rides the scanner's per-tile `FastRandom` — a THIRD
 //! stream, never mixed. Code-only mode: witnesses WRITTEN NOT RUN.
-#![allow(dead_code)] // UNWIRED — see the module doc; wiring is the merge step.
+#![allow(dead_code)] // the break-burst half stays UNWIRED (d54 owns the KillTile dust slot).
 
 use glam::Vec2;
 use tr_core::World;
 use tr_core::particles::{Color, DustPool, DustRng, SpawnCtx};
+
+/// The `DrawTiles_EmitParticles` entry gate (`TileDrawing.cs:965-968`):
+/// `_isActiveAndNotPaused && (!Lighting.UpdateEveryFrame ||
+/// new FastRandom(Main.TileFrameSeed).WithModifier(tileX, tileY)
+/// .Next(4) == 0)`. `update_every_frame` is `Lighting.UpdateEveryFrame`
+/// (`Lighting.cs:77-87`: `!RenderTargetsRequired && !NotRetro` — true only
+/// in Retro/Trippy at zoom 1); the quarter-roll is a FRESH per-tile
+/// `FastRandom` derivation (no stream advance — the modifier XORs into a
+/// copy, `FastRandom.cs:27-32`), so a miss costs nothing on any stream.
+/// `tile_frame_seed` is `Main.TileFrameSeed` (the port's
+/// `flame::tile_frame_seed_at(anim_time)`).
+pub(crate) fn emit_entry_gate(
+    active_and_not_paused: bool,
+    update_every_frame: bool,
+    tile_frame_seed: u64,
+    x: i32,
+    y: i32,
+) -> bool {
+    active_and_not_paused
+        && (!update_every_frame
+            || tr_core::tile_light::FastRandom::new(tile_frame_seed)
+                .with_modifier(x, y)
+                .next(4)
+                == 0)
+}
+
+/// The `_rand` gate adapter: the port's per-rebuild `leaf_rng`
+/// (`FastRandom`, the documented `TileDrawing._rand` stand-in —
+/// `render/tiles.rs:330-334`) fed to the slice's `DustRng` seam. One
+/// `Next` conversion per draw, no new stream instance (S1-E-1).
+pub(crate) struct GateRand<'a>(pub &'a mut tr_core::tile_light::FastRandom);
+
+impl DustRng for GateRand<'_> {
+    fn next_max(&mut self, max: i32) -> i32 {
+        self.0.next(max)
+    }
+    fn next_range(&mut self, min: i32, max: i32) -> i32 {
+        self.0.next_range(min, max)
+    }
+    fn next_float(&mut self) -> f32 {
+        self.0.next_float()
+    }
+}
 
 /// The break-stage bit shared by all three sites: `Some(true)` = the
 /// crimson heart half (`frameX >= 36`), `Some(false)` = the shadow orb
@@ -504,5 +569,52 @@ mod tests {
         let mut pool3 = DustPool::new();
         assert_eq!(orb_break_burst(&mut main3, &mut pool3, &ctx(), &w, 4, 4, 26, 0, true), 0);
         assert_eq!(main3, m3);
+    }
+
+    #[test]
+    fn entry_gate_pause_and_mode_arms() {
+        // TileDrawing.cs:965 — `_isActiveAndNotPaused` gates the whole
+        // thing; a paused/menu frame never emits.
+        assert!(!emit_entry_gate(false, false, 0x1234, 10, 20));
+        assert!(!emit_entry_gate(false, true, 0x1234, 10, 20));
+        // `!Lighting.UpdateEveryFrame` — every frame emits, no roll.
+        assert!(emit_entry_gate(true, false, 0x1234, 10, 20));
+        assert!(emit_entry_gate(true, false, 0, 0, 0));
+    }
+
+    #[test]
+    fn entry_gate_quarter_roll_is_the_per_tile_fast_random_recipe() {
+        // The gate's roll is `FastRandom(TileFrameSeed).WithModifier(x,y)
+        // .Next(4) == 0` — a fresh derivation per cell, no stream advance:
+        // repeat calls agree, neighbours differ, ~1/4 of cells admit.
+        let seed = tr_core::flame::tile_frame_seed_at(37.0);
+        let mut admits = 0;
+        for x in 0..64 {
+            for y in 0..64 {
+                let want = tr_core::tile_light::FastRandom::new(seed)
+                    .with_modifier(x, y)
+                    .next(4)
+                    == 0;
+                assert_eq!(emit_entry_gate(true, true, seed, x, y), want);
+                // Deterministic: the derivation is pure (no stream state).
+                assert_eq!(
+                    emit_entry_gate(true, true, seed, x, y),
+                    emit_entry_gate(true, true, seed, x, y),
+                );
+                admits += i32::from(want);
+            }
+        }
+        // 4096 cells at 1/4: the band is wide, but a stuck gate (0 or
+        // 4096) fails it.
+        assert!(admits > 700 && admits < 1400, "quarter band: {admits}");
+        // The seed matters (the frame-advance schedule changes the set).
+        let other = tr_core::flame::tile_frame_seed_at(37.0 + 5.0 / 60.0);
+        let differ = (0..32)
+            .filter(|&x| {
+                emit_entry_gate(true, true, seed, x, 7)
+                    != emit_entry_gate(true, true, other, x, 7)
+            })
+            .count();
+        assert!(differ > 0, "the TileFrameSeed advance re-rolls the set");
     }
 }

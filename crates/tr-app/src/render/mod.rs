@@ -11,9 +11,11 @@ pub(crate) mod entities;
 pub(crate) mod foliage;
 pub(crate) mod gore;
 pub(crate) mod liquids;
-// W4-g85: UNWIRED shadow orb / crimson heart draw slice (the ambient
-// TileDrawing.cs:7335-7347 arm + the shine colours + the KillTile
-// hammer-break stage burst) — wiring is the tile-draw family merge step.
+// W4-g85: the shadow orb / crimson heart draw slice — the ambient
+// TileDrawing.cs:7335-7347 arm + the shine colours are WIRED at the
+// DrawSingleTile emit slot (render/tiles.rs, the :965-968 quarter-roll
+// entry gate); the KillTile hammer-break stage burst stays UNWIRED
+// (W4-d54 owns the KillTile dust slot — keep-one at the merge).
 pub(crate) mod orb_draw;
 pub(crate) mod player_layers;
 pub(crate) mod pylons;

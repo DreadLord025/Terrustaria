@@ -1097,6 +1097,20 @@ impl App {
                     crate::render::screen_fx::draw_darkness_back(renderer, screen, scene_state);
                     draw_phase("world");
                     if !reuse_world {
+                        // W4-g85: the NewDust internals' `Main.rand`
+                        // stand-in — the `frame_rng` clone snapshot (the
+                        // d54 break-seam convention: the draw holds
+                        // `&World`, so the stream rides a copy written
+                        // back after the pass).
+                        let mut orb_rand = world.frame_rng.clone();
+                        let orb_ctx = crate::app::spawn_ctx_from(
+                            menu.is_some() || front.is_some(),
+                            game_paused_for_specials,
+                            *camera,
+                            screen,
+                            *zoom,
+                            self.gfx_quality.max_dust_to_draw,
+                        );
                         tile_stats = draw_tiles(
                             renderer,
                             world,
@@ -1183,7 +1197,16 @@ impl App {
                             // S1-G-1f: the wired tile animator's rows/counters
                             // (`Main.tileFrame[kind]`, `TileDrawing.cs:4533`).
                             &self.tile_anim,
+                            // W4-g85: the orb-family emit slice
+                            // (`DrawTiles_EmitParticles`' :7335/:7413 arms).
+                            // The pool is `Main.dust`; the NewDust internals
+                            // ride the `orb_rand` snapshot (Main.rand, S1-E-1).
+                            dust,
+                            &mut orb_rand,
+                            &orb_ctx,
+                            game_paused_for_specials,
                         );
+                        world.frame_rng = orb_rand;
                         *world_key = Some(key);
                     }
 

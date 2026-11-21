@@ -325,6 +325,17 @@ pub(crate) fn draw_tiles(
     // weather-vane bob (`Main.cs:2237`). Ticked once per client update by
     // `App::animate_tiles_phase` (`Main.cs:17150`).
     tile_anim: &tr_core::drawdata_anim::TileAnimator,
+    // W4-g85: the orb-family emit slice's inputs (`DrawTiles_EmitParticles`,
+    // `TileDrawing.cs:7335-7347`/`:7413-7529`, entry gate `:965-968`).
+    // `orb_dust` is the shared pool (`Main.dust`); `orb_main_rand` the
+    // `Main.rand` stand-in for the `NewDust` internals (`world.frame_rng`,
+    // borrowed through the draw like the d54 break seam). `orb_ctx` carries
+    // the `Dust.NewDust` cull inputs (`App::spawn_ctx`). The `_rand` gate
+    // stream is the pass-local `leaf_rng` (the pinned per-rebuild stand-in).
+    orb_dust: &mut tr_core::particles::DustPool,
+    orb_main_rand: &mut tr_core::UnifiedRandom,
+    orb_ctx: &tr_core::particles::SpawnCtx,
+    game_paused: bool,
 ) -> TileDrawStats {
     let t_total = Instant::now();
     // `TileDrawing._rand` (`TileDrawing.cs:191`): the leaf-roll stream, pinned
@@ -763,6 +774,77 @@ pub(crate) fn draw_tiles(
                         tile.frame_x,
                         tile.frame_y,
                         &dd,
+                    );
+                }
+                // W4-g85 — `DrawSingleTile`'s `DrawTiles_EmitParticles` entry
+                // (`TileDrawing.cs:965-968`), the orb-family slice only. The
+                // C# slot is BEFORE the visibility/black gates (`:975-991`):
+                // a fully dark orb cell still runs the battery (the ambient
+                // arm has no light test; the shine arm's dark return is
+                // inside the body). The kind gate precedes every draw: a
+                // non-family cell costs zero RNG (the full battery is
+                // W4-d60's keep-one lane; the family kinds reach their arms
+                // with zero prior `_rand` draws — every preceding arm fails
+                // its type/set test first, census
+                // docs/research/W4-g85-orb-draw.md §6). The entry quarter-roll
+                // is a fresh per-tile FastRandom derivation (no stream state);
+                // the arm gates ride `leaf_rng` (the `_rand` stand-in) and the
+                // NewDust internals ride `orb_main_rand` (Main.rand).
+                if active
+                    && matches!(tile.kind, 31 | 696 | 12 | 639)
+                    && crate::render::orb_draw::emit_entry_gate(
+                        !game_paused,
+                        // `Lighting.UpdateEveryFrame` (`Lighting.cs:77-87`):
+                        // `!RenderTargetsRequired && !NotRetro` — Retro/Trippy
+                        // at zoom 1. The port's frame path never binds the
+                        // target family (S1-G-13 allocation-only), so
+                        // `RenderTargetsRequired` stands false (recorded
+                        // deviation: the zoom > 1 capture path is unported).
+                        matches!(
+                            style.mode,
+                            tr_core::lighting::LightMode::Retro
+                                | tr_core::lighting::LightMode::Trippy
+                        ),
+                        tr_core::flame::tile_frame_seed_at(anim_time),
+                        tx,
+                        ty,
+                    )
+                {
+                    let light_bytes = tr_core::particles::Color::new(
+                        (raw_l[0] * 255.0).min(255.0) as u8,
+                        (raw_l[1] * 255.0).min(255.0) as u8,
+                        (raw_l[2] * 255.0).min(255.0) as u8,
+                        255,
+                    );
+                    // The `:7335` ambient arm — 31/696 only; the type test
+                    // inside draws nothing for 12/639.
+                    crate::render::orb_draw::orb_ambient_dust(
+                        &mut crate::render::orb_draw::GateRand(&mut leaf_rng),
+                        orb_main_rand,
+                        orb_dust,
+                        orb_ctx,
+                        world,
+                        tx,
+                        ty,
+                        tile.kind,
+                        tile.frame_x,
+                    );
+                    // The `:7413` shine arm — the family's live rows are
+                    // 12/639 (`Main.tileShine` 300); 31/696 have no row and
+                    // the slice returns before any draw. The C# reaches the
+                    // shine arm only when the ambient arm's chain test
+                    // failed — for 12/639 the ambient type test always
+                    // fails, so both calls in sequence are stream-exact.
+                    crate::render::orb_draw::orb_shine_sparkle(
+                        &mut crate::render::orb_draw::GateRand(&mut leaf_rng),
+                        orb_main_rand,
+                        orb_dust,
+                        orb_ctx,
+                        world,
+                        tx,
+                        ty,
+                        tile.kind,
+                        light_bytes,
                     );
                 }
                 let solid = (tile.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(tile.kind);
