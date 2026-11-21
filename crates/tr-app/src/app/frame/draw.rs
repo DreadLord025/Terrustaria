@@ -1743,7 +1743,12 @@ impl App {
                                             .map(|s| s.value)
                                             .unwrap_or(0),
                                             self.reforge_slot.count.max(1),
-                                            self.shop_mood,
+                                            // `Main.cs:41591` — the LATCHED
+                                            // `currentShoppingSettings.
+                                            // PriceAdjustment`, the same
+                                            // value the charge reads
+                                            // (`reforge_click`).
+                                            self.shopping_settings.price_adjustment,
                                             self.discount_available,
                                         )
                                     })

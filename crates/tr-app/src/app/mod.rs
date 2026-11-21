@@ -1842,6 +1842,16 @@ impl App {
     /// roll and the tail consume the bare-`Main.rand` stand-in
     /// (`NamedRngs::global`) — the menu path runs outside every swap
     /// (`S1-A-11` §4).
+    /// `Main.DrawInventory`'s inline block (`Main.cs:41584-41591`): the
+    /// charge reads the LATCHED `currentShoppingSettings.PriceAdjustment`
+    /// (`:41591`), NOT a shop-open capture — the vanilla opens the menu
+    /// through the Tinkerer's CHAT button (`NPCChatText_TinkererReforge`,
+    /// `Main.cs:40022-40029`), so the talk latch is live. The port's
+    /// collapsed entry (the #9 deviation — the menu auto-opens beside the
+    /// shop, `world_sim/npcs.rs`) keeps the first press's talk latch: the
+    /// re-click falls through `talk_to_npc` without re-latching
+    /// (`Main.cs:43077`'s `talkNPC != i` gate), exactly the C# state the
+    /// button reads.
     pub(crate) fn reforge_click(&mut self) {
         let Some(def) = crate::registry::get(self.reforge_slot.kind) else {
             return;
@@ -1851,7 +1861,7 @@ impl App {
                 .map(|s| s.value)
                 .unwrap_or(def.value),
             self.reforge_slot.count.max(1),
-            self.shop_mood,
+            self.shopping_settings.price_adjustment,
             self.discount_available,
         );
         if self.reforge_cooldown > 0 || self.coins < cost {
