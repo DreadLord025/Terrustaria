@@ -1,9 +1,16 @@
 # 135 — W4-g90 persist fold-input: the exact token-lines, offsets and reader-gates
 
-**Status: MECHANICAL FOLD-INPUT for g88d (the superset owner) and the g71c
-union extension.** This branch (`task/W4-g90-artisan-bread-use`, tip
-`73367e0a`) keeps its own persist shape — it does NOT rebase to v9/v10
-(the canonical union writer is g88d's; the merger folds per this doc).
+**Status: FINAL — CONSUMED by g88 fold 7 (`a9f1c29d8`, writer v11).**
+The fold-input below (§1–§6) stands as published; §8 records the
+consumption receipts and the two SUPERSESSIONS the pushed writers
+force: the unlock-token order (§3's recommendation overridden by g88's
+written crystal=4/arcane=5/pearl=6, per 103 §8 + 138 §6) and the `.trwld`
+union size (§4's 21 bytes overridden by 138 §5a's FIVE-way **68-byte**
+table — g87's pet trio at 19-21 moves this branch's pair to **22/23**).
+§9 records the 138 keep-one receipts (this lane's carrier-keep list).
+This branch (`task/W4-g90-artisan-bread-use`) keeps its own persist
+shape — it does NOT rebase to v10/v11 (the canonical union writer is
+g88's; the merger folds per this doc + its §8/§9 corrections).
 Code-only lane: no cargo/tests/rustfmt/graphify; nothing here was run.
 
 Inputs read at probe (2026-11-21):
@@ -112,6 +119,12 @@ this rule does not touch it. Add a back-compat row to 103 §4:
 
 ## 3. THE EXACT MAPPING TABLE — my lines/bools vs the union's unlock tokens
 
+> **SUPERSEDED for rows 4/5/6 (§8.1):** g88 fold 6 (`c8985b534`) WROTE
+> tokens 4/5/6 as crystal/arcane/pearl (the vanilla `.plr` order). The
+> "UNION token (recommended)" column below (pearl=4/arcane=5/crystal=6)
+> is the pre-fold recommendation only — the written order is binding
+> (103 §8, 138 §6). Rows 1/2/3/7 and the bread line agree verbatim.
+
 Three coordinate systems meet on the union's line-8 unlock line:
 my v7 lines (§1), my `.plr` 260+ bool positions, and the reserved
 token positions of 103 §2a / 122 §3.
@@ -176,6 +189,16 @@ subset keeps indices 3/4/6/7/8/9 (`:819-824`). The g89 merger flips
 ---
 
 ## 4. MY `.trwld` v18 tail — byte positions for the g71c union extension
+
+> **SUPERSEDED offsets (§8.2):** the 21-byte union below was the
+> g70⨉g71⨉g90 three-way contract. Two more v18 writers surfaced after
+> publication — f45's 44-byte identity block and g87's 3-byte pet trio
+> (`dfbcaf94b`) — and a6's research/138 §5a (`115ce655a`) adjudicates the
+> FIVE-way **68-byte** union: g87's pets take offsets 19-21 (vanilla
+> write order `:1392-1394` precedes the books `:1407-1408`), so THIS
+> branch's pair MOVES to offsets **22/23** and f45's identity block
+> rides 24-67. Every truncation constant below moves to **+68**, not
+> +21. The byte semantics/gates are unchanged.
 
 `crates/tr-core/src/save.rs` on this branch: `VERSION = 18` (`:72`).
 Writer `:442-445` appends **2 bytes** directly after the v17
@@ -302,6 +325,12 @@ writes are the live observable half.
 
 ## 6. Merge checklist (g88d / the merger, in order)
 
+> **Status at the FINAL probe (§8):** steps 1's v7-rule + token
+> activation are DONE on g88 (`a9f1c29d8`, v11 — the written token
+> order per §8.1, NOT 103 §2a's old reservation); step 3's union is
+> the 68-byte five-way table per §8.2/138 §5a, NOT 21. The checklist
+> below stands as the original fold-input.
+
 1. Keep g88's superset `persist.rs` (103 §6 rule 1); extend its v7
    legacy arm with §2's six-line rule; activate unlock tokens 4/5/6
    per §3's table (103 §2a order), restore the three Player fields in
@@ -415,3 +444,148 @@ world-flag boundary 122 §6 honours (5336/5343 never ride line 8)
 matches §4's `.trwld` tail exactly. **This branch keeps its v7/v18
 shape** (the 135 header's standing decision — no rebase to v9/v10; the
 merger folds per 135).
+
+---
+
+## 8. THE PERSIST-MERGE RECEIPT (final probe 2026-11-21 — g88 v11 canonical)
+
+Inputs re-read at the FINAL probe: `origin/task/W4-g88-life-fruit-use`
+tip **`a9f1c29d8`** (fold 7 FINAL, writer **v11**, 08:26), its
+`persist.rs` + research/103 (marked FINAL) + 122; `origin/task/
+W4-a6-crystals-powerups` tip **`115ce655a`** (138 FINAL, 08:59);
+`origin/task/W4-g87-demon-heart-use` tip **`dfbcaf94b`** (07:19).
+
+### 8.1 The token-order supersession — the WRITTEN order wins
+
+135 §3 recommended 103 §2a's reserved order (pearl=4/arcane=5/
+crystal=6) on the "no pushed writer ever emitted token 4+" premise.
+g88 fold 6 (`c8985b534`, 07:15) then WROTE the vanilla `.plr` relative
+order — **crystal=4 / arcane=5 / pearl=6** (`Player.cs:54781`/`:54783`/
+`:54784`) — falsifying the premise. Both g88's 103 §8 and a6's 138 §6
+adjudicate the written order binding; this lane ACCEPTS (its own
+premise grants zero back-compat obligation either way, and the written
+order matches f44's `used_upgrades[6]` file-order indices 0/2/3). The
+§3 table's recommended column is corrected by the banner above; the
+v7 six-line block's own LINE order (§1: crystal, arcane, pearl after
+bread) already agrees with the written token order — only the token
+NUMBERS in §2's recipe comments (`crystal -> token 6` etc.) flip to
+crystal→4, arcane→5, pearl→6. g88's landed reader maps the lines
+positionally to the fields, so no line-order change is needed anywhere.
+
+### 8.2 The `.trwld` union supersession — 21 → 68 bytes, pair at 22/23
+
+§4's three-way 21-byte union predates two pushed v18 writers:
+- **f45** (`6352d3840`): a 44-byte world-identity block (138 §5).
+- **g87** (`dfbcaf94b`): a 3-byte bought-pet tail (`WorldFile.cs:
+  1392-1394`), same insertion point.
+
+a6's 138 §5a publishes the exact FIVE-way byte table: g70 forest
+[0..16] + g71 surface [16..19] + **g87 pets [19..22]** + **g90 books
+[22..24]** + f45 identity [24..68]. This lane's pair moves 19/20 →
+**22/23**; the six truncation-constant sites (§4's table) move to
+**+68**; VERSION stays 18, forward-only. The g71c union owner folds
+per 138 §5a; this branch keeps its own 2-byte v18 shape until the
+merge (the standing decision).
+
+### 8.3 g88 fold 7 consumption receipts — 135 §2 LANDED, §1/§3/§5 verified
+
+Read on `a9f1c29d8`'s `persist.rs` (direct line cites):
+- **§2's six-line v7 recognition rule: LANDED verbatim.** The guard
+  `v7_six_line = v7_flags && nonempty.len() == 6 &&
+  nonempty.iter().all(|t| t.len() == 1)` (`:463-465`) reads the block
+  positionally bread/crystal/arcane/pearl/gummy/ambrosia (`:470-481`,
+  `ate_artisan_bread = nonempty[0][0] == "1"` `:474`), aegis-fruit
+  stays false (`:480` — g90b never wrote it). The witness
+  `g90bs_six_line_v7_loads_positionally` (`:1198`) REPLACED the
+  bounded-misread witness — its asserts pin all six flags + no pairs.
+  **135 §2's collision is CLOSED**: a g90 lane-7 v7 file loads
+  losslessly on the g88 superset reader.
+- **§1's line table**: the v11 writer emits the bread flag on its own
+  line after the mana pair and the six-token unlock line after dye
+  (103 §2's layout); this branch's `SavedPlayer` fields + App restores
+  dedup onto the superset's (103 §9 step 7).
+- **§3's dedup list**: 103 §8.3 confirms "§3's dedup list matches
+  §5a" — the gummy/ambrosia fields+rows, the two use-cores, the `.wld`
+  book-two byte, the `.plr` fruit-slot flips all stand.
+- **§4's tail**: 103 §9 step 10 carries the 21-byte union as L3 scope
+  — itself one pass stale vs 138 §5a's 68-byte five-way table (§8.2
+  above); the merger takes 138 §5a (later, superset).
+- **§5's consumer census**: stands as this lane's recorded remainder;
+  the town feeder `8521139d` is the live half.
+- **v11's own addition** (not in 135): the f33 torch pair rides the
+  LAST post-loadout two-token line; the f33 lone-pair v7 recognition
+  (`:466-469`) coexists with §2's six-line rule — the shapes are
+  disjoint (six 1-token lines vs one 2-token line), no ambiguity.
+
+### 8.4 The stale-flag census (who read whom, when)
+
+| Doc claim | Written | Reality at final probe | Verdict |
+| --- | --- | --- | --- |
+| 138 §0 "g87 = zero commits" (first pass `d7de8bd53`, 08:06) | read g87 at `a725acb04` (local main) | g87 pushed `dfbcaf94b` at **07:19** — 47 min BEFORE the 138 first pass | **138-first-pass STALE on g87**; its own §10 (FINAL, `115ce655a`) re-adjudicates — corrected in-place |
+| 138 §6/§10.6 "g88 tip STILL c8985b534, six-line rule missing" (FINAL 08:59) | read g88 at fold 6 | g88 fold 7 `a9f1c29d8` landed **08:26** — 33 min BEFORE the 138 FINAL | **138-FINAL STALE on g88**: the rule IS landed (§8.3), the flag is retired by this receipt |
+| 103 §9 step 10 "21-byte union" (g88 fold 7, 08:26) | predates 138 FINAL's §5a | g87 pets + f45 identity → 68 bytes | one pass stale; 138 §5a wins |
+| 135 §3 "103 §2a order wins" + §4 "21-byte union" (06:39) | predates g88 fold 6 (07:15) + g87 push (07:19) | written order + five-way union | superseded by §8.1/§8.2 banners |
+
+No `g87b-143` ref exists on origin (full `git branch -r` census at
+this probe, agreeing with 138 §10's census) — the brief's
+"g87b-143 re-adjudicates" resolves to **a6's own 138 §10** (the FINAL
+re-adjudication of the pushed g87, same branch `115ce655a`).
+
+---
+
+## 9. THE 138 KEEP-ONE RECEIPTS — this lane's position after the FINAL verdicts
+
+a6's research/138 (`d7de8bd53` first pass + `115ce655a` FINAL §10)
+adjudicates every overlap. This lane's §7a proposal vs the verdicts:
+
+| Item | 135 §7a proposal | 138 verdict | Align? |
+| --- | --- | --- | --- |
+| 29/109/1291 | a6 keeps (g90 ports none) | **g88 keep-own** (`crystals.rs`/`life_fruit.rs`, 103 §5a — the sidecar carrier lives there); a6's dups DROP | proposal said a6; verdict g88 — no g90 code affected, ACCEPT |
+| 3335/5289/licenses | a6 keeps its exclusives | **a6 keeps** (§10.1-10.3 re-adjudicated vs the NOW-PUSHED g87: start-refusal + full spawn walk + live-scan verdicts; g87's arms DROP, its `dh` sidecar line DROP §10.4, its `.trwld` pets ride the union §10.5) | ALIGNED (g90 ports none) |
+| 5326 loaf | overlap — keep whichever lands first | **g90 KEEP-OWN** (`use_artisan_loaf` + the skeleton-merchant consumer; a6's dup DROP) | **g90 WINS the loaf** — this lane's use arm + shop gate + `.plr` slot are the surviving carriers |
+| 4382/5336 books | overlap — keep whichever lands first | keep ONE — a6 recommended (single cluster seam) or g89e; g90's arm dedups | ACCEPT — g90's CONSUMERS stay regardless (§5: the town feeder, fishing condition, TRAINING_DAY are g90's live halves; 138 §3.5 confirms all three lanes carry TRAINING_DAY, lands once) |
+| 5343 satchel | overlap — keep whichever lands first | keep ONE — a6 or g90; the shop +1 consumer identical on both | ACCEPT either; the `.trwld` satchel byte + WorldInfo net bit stay g90's carriers regardless |
+| five shimmer (5337/39/40/41/42) | overlap — keep whichever lands first | **a6's `use_shimmer_permanent` machine** owns all six arms; g90's `use_shimmer_permanent_item` dedups; **g90's Player field declarations + consumer shapes are the merge anchors** (pearl mirror, regen slots, booster order — a6 fixed to match, §3.2-3.4) | ACCEPT — the arms move, the fields/consumers stay |
+| 5043 torch | g90 does not port; a6 owns | a6 use arm + c36 helper + f33 event machine (three-way split) | ALIGNED |
+
+**THE g90 CARRIER-KEEP LIST (per 138 §1/§2/§7/§8 — what survives the
+merge regardless of the use-arm dedups):**
+1. `use_artisan_loaf` (`editing.rs:15966`) + dispatch `:2365` — the
+   5326 keep-own (138 §1 row 5326).
+2. The skeleton-merchant stock gate (`shop.rs` case 20
+   `ArtisanLoafWindow` `:1455-1457` + the `npcs.rs:969-972` ShopFlags
+   feeder) — the consumer that WON the keep-own.
+3. The `.plr` halves (`player_file.rs` — bread gate 256 + the five
+   unlock bools; dedup onto f44's walk/array per 132 §3-L1).
+4. The `.trplayer` v7 six-line block as the FOLD SOURCE (§1 — already
+   folded into g88 v10/v11; the branch's own writer retires at merge).
+5. The `.trwld` v18 book-two/satchel pair — union offsets **22/23**
+   (138 §5a; a6 has no `.trwld` tail).
+6. The `.wld` book-two/satchel bytes 2036/2037 — dedup onto f45's
+   superset block (138 §4; same fields/gates/offsets, byte-identical).
+7. The net carriers: flags3 bits 0/2/3/4/5/6 + WorldInfo
+   bitsByte9[0]/bitsByte11[6/7] (`netglue.rs` — a6 folds all SendData
+   out as MP-only; g90's netglue wiring is the live one).
+8. The consumers (§5): the town stat-ladder feeder (`8521139d`,
+   `TownEnvFlags::from_world` + the `update_npcs` pre-pass), the
+   fishing `DidNotUseCombatBook` chain, TRAINING_DAY progression-40,
+   the travel-shop +1 — plus the Player field declarations
+   (`used_aegis_crystal`/`used_arcane_crystal`/`used_galaxy_pearl`
+   after `used_ambrosia`), the `update_luck` pearl mirror, the
+   `RegenInputs.aegis_crystal`/`arcane_crystal` slots, the ambrosia
+   speed triple (138 §1 shimmer row: "g90's Player field declarations
+   + consumer shapes are the merge anchors").
+9. The loaf consumer census (`33d4b1625`): NO build-speed leg exists
+   in the C# — the flag's only consumers are AdjTiles' TB=4 reach
+   (`Player.cs:35671`, live via `craft.rs::tile_reach` ← both crafting
+   reads) and the merchant stock gate; two live-chain witnesses
+   WRITTEN NOT RUN.
+
+**The g87-triple flag (the brief's item):** 138's FIRST pass adjudicated
+3335/5289/licenses as a6-sole-claimant on a stale zero-commit g87 read;
+g87's push makes them a THREE-way overlap (a6 ⨉ g87 ⨉ f44/f45 carriers).
+138 §10 (FINAL) already re-adjudicated all three arms — a6 keeps, g87's
+arms + `dh` sidecar DROP, g87's `.wld` flips dedup onto f45, g87's
+`.trwld` pets ride the 68-byte union. This lane ports NONE of the three
+items — no g90 code is affected; the receipt is recorded here so the
+merger sees the full triple resolved (no g87b-143 lane exists).

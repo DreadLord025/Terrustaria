@@ -6759,7 +6759,62 @@ keeps its exclusives, the overlap keeps whichever lands first). g88
 publication by 23 minutes); its writer stays v9 with tokens 4/5/6
 RESERVED→v10 — 135 §3's mapping already agrees with 103 §2a's reserved
 order, no conflict; this branch keeps its v7/v18 shape (the merger
-folds per 135).
+folds per 135). *(Historical probe — superseded by the FINAL receipts
+below and research/135 §8/§9.)*
+
+**W4-g90 FINAL receipts (2026-11-21, research/135 §8/§9 — the persist
+merge is adjudicated)**: g88 fold 7 (`a9f1c29d8`, writer **v11**)
+CONSUMED 135 — §2's six-line v7 recognition rule landed verbatim
+(`persist.rs:463-481`, witness `g90bs_six_line_v7_loads_positionally`
+replacing the bounded-misread witness), so a g90 lane-7 v7 file loads
+LOSSLESSLY on the superset reader. Two supersessions: the unlock-token
+order is the WRITTEN crystal=4/arcane=5/pearl=6 (g88 fold 6, 103 §8 +
+138 §6 — 135 §3's pearl-first recommendation retired, zero back-compat
+cost by its own premise), and the `.trwld` union is a6 138 §5a's
+FIVE-way **68-byte** table (g70 forest 16 + g71 surface 3 + g87 pets 3
+at 19-21 + g90 books 2 at **22/23** + f45 identity 44 at 24-67) —
+135 §4's 21-byte three-way contract is superseded, this branch's pair
+moves +3 and every truncation constant goes +68. a6's research/138
+(`d7de8bd53` + FINAL `115ce655a`) adjudicates the keep-ones: **g90
+KEEPS the 5326 loaf** (`use_artisan_loaf` + the skeleton-merchant stock
+gate — the consumer that won the keep-own), the shimmer USE arms dedup
+onto a6's `use_shimmer_permanent` machine while **g90's Player field
+declarations + consumer shapes are the merge anchors** (the pearl
+mirror, the regen slots, the booster order — a6 fixed itself to match,
+138 §3.2-3.4); the books/satchel keep-one is a6-or-g89e/g90 with g90's
+carriers + consumers surviving regardless. The g87-triple
+(3335/5289/licenses): 138's first pass read g87 as zero commits — STALE
+(g87 pushed `dfbcaf94b` 47 min earlier); its own §10 re-adjudicates
+(a6 keeps all three arms: the start-refusal, the full QuickSpawnItem
+walk with the void vault, the live AnyNPCs scan; g87's arms + its v7
+`dh` sidecar line DROP, its `.wld` flips dedup onto f45, its `.trwld`
+pets ride the union). 138 FINAL's "g88 six-line rule still missing"
+re-flag is itself stale — g88 fold 7 landed 33 min before it (135 §8.4's
+census). No `g87b-143` ref exists on origin; the re-adjudication is
+a6's own 138 §10.
+
+**W4-g90 artisan-loaf consumer census (`33d4b1625`)**: the
+`ateArtisanBread` full-source census is exactly four families — the
+use arm (`Player.cs:45218-45221`), `AdjTiles`' TB=4 crafting reach
+(`:35671` — `TileReachCheckSettings.Simple.GetTileRegion(this,
+ateArtisanBread ? 4 : 0)`, the +4 applied AFTER `GetRanges`' 20-clamp,
+`TileReachCheckSettings.cs:20-54`), the Skeleton Merchant stock gate
+(`Chest.cs:2958`, `!ateArtisanBread && 3 <= moonPhase <= 5`), and the
+net/persist pairs (`NetMessage.cs:195`/`MessageBuffer.cs:355` flags3
+bit 6; `.plr` `:54779`/`:55245` gate 256). **NO build-speed consumer
+exists** — `tileSpeed`/`wallSpeed` read the Brick Layer / Builder
+Potion / Ambrosia rows only; the mining/placement reach carries no
+loaf TB (the SmartCursor TB is `item.tileBoost + blockRange`,
+`SmartCursorHelper.cs:94-99`); the 1.4.5.8 reforge roll does not read
+the flag (the standing census). The port's chain is LIVE end-to-end,
+the combat-book-ladder shape: the press-tick use flips the Player flag
+(`editing.rs:2365` → `use_artisan_loaf:15966`), `craft.rs::tile_reach`
+(`:573`, +4/+4 after the clamp) feeds BOTH live crafting reads
+(`clicks.rs:921-926` + `frame/draw.rs:1575-1583`), and the shop-open's
+`ShopFlags` feeder (`npcs.rs:969-972`) drives `ArtisanLoafWindow`
+(`shop.rs:1455-1457`). Two live-chain witnesses WRITTEN NOT RUN: the
+use→reach chain (a bench 8 tiles out enters the scan after one press)
+and the use→stock-gate chain (phases 3-5 hide the 5326 row once eaten).
 
 ## Buff slots (M2-BUFF-1)
 
@@ -39461,3 +39516,7 @@ moves), and the combat-book consumer census (the town ladder is the b3
 lane's UNWIRED seam — flag/persistence/net complete, live consumers are
 the fishing condition, TRAINING_DAY and the satchel shop +1). This
 branch keeps its persist shape; the merger folds per 135.
+*(Final state: 135 §8/§9 — g88 fold 7 consumed the doc, the six-line
+rule landed; the union is now 138 §5a's 68-byte five-way table with the
+g90 pair at 22/23; the town ladder was FED by `8521139d` before this
+note was written — the §5 census row is the current one.)*
