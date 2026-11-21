@@ -3,6 +3,17 @@
 //! The world format stays tile-only; the player's position, HP and hotbar counts live in a
 //! small versioned text file. Loading validates that the saved position is not inside a
 //! solid tile.
+//!
+//! DEPRECATED-BY-SUPERSET (W4-g90 retire, research/135 §8.3/§11): this
+//! branch's v7 writer/reader is the FOLD SOURCE, not the merge survivor.
+//! g88's v11 superset (`a9f1c29d8`, research/103 §9 step 6) is the
+//! canonical `.trplayer` writer; its v7 legacy arm loads THIS branch's
+//! six-1-token-line block LOSSLESSLY (the 135 §2 recognition rule landed
+//! verbatim at g88 `persist.rs:463-481`, witness
+//! `g90bs_six_line_v7_loads_positionally` `:1198` — re-verified at the
+//! retire probe). At the merge this writer retires and the `SavedPlayer`
+//! flag fields + App restores dedup onto the superset's (103 §9 step 7);
+//! the branch keeps its v7 shape until then (the standing decision).
 
 use std::path::{Path, PathBuf};
 
@@ -100,6 +111,10 @@ pub fn save(
     // Aegis Fruit line is W4-g89's lane and joins at the merge). The g88
     // superset contract places the life-maxima pair line AHEAD of this
     // block at the merge; on this branch the flags follow the dye line.
+    // DEPRECATED-BY-SUPERSET (retire): g88 v11 emits the bread flag on
+    // its own line after the mana pair + the SIX-token unlock line after
+    // dye (103 §2); this six-line block is the fold source its v7 arm
+    // reads positionally (the module banner).
     s.push_str(if player.ate_artisan_bread { "1\n" } else { "0\n" });
     for flag in [
         player.used_aegis_crystal,
@@ -184,6 +199,10 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     // minus the g89-owned 5338 fruit) — a v7 file written before this
     // extension carries the bread line only, so each flag reads its own
     // optional line and defaults false when absent.
+    // DEPRECATED-BY-SUPERSET (retire): this reader rejects every g88/g89
+    // file BY DESIGN (135 §1) — the superset reader wins at the merge;
+    // g88 v11's v7 arm loads this branch's six-line block losslessly
+    // (135 §2's rule, landed verbatim — the module banner).
     let mut ate_artisan_bread = false;
     let mut used_aegis_crystal = false;
     let mut used_arcane_crystal = false;

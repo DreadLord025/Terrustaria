@@ -2945,6 +2945,11 @@ impl App {
                     // W4-g90 lane 7: the five shimmer unlocks ride the same
                     // v7 block (`Player.cs:54781-54786` minus the g89-owned
                     // fruit) — the boosters resume on world reload.
+                    // DEPRECATED-BY-SUPERSET (retire, 135 §11): these six
+                    // restores dedup onto g88 v11's superset restore block
+                    // at the merge (103 §9 step 7 — gummy already restored
+                    // there since fold 3); the sidecar restore runs SECOND
+                    // after the character-load hydration (132 §2c).
                     p.used_aegis_crystal = saved.used_aegis_crystal;
                     p.used_arcane_crystal = saved.used_arcane_crystal;
                     p.used_galaxy_pearl = saved.used_galaxy_pearl;

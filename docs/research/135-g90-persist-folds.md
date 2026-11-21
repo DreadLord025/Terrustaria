@@ -505,6 +505,16 @@ merge (the standing decision).
 
 ### 8.3 g88 fold 7 consumption receipts — 135 §2 LANDED, §1/§3/§5 verified
 
+> **RETIRE re-verification (this phase):** the rule + witness re-read
+> on the pushed `a9f1c29d8` `persist.rs` — the guard at `:463-465`, the
+> positional reads `:470-481`, the witness
+> `g90bs_six_line_v7_loads_positionally` at `:1198`, the v11 writer
+> header `format!("11\n…")` at `:230`. All present, unchanged. The
+> DEPRECATED-BY-SUPERSET banners are landed comments-only on this
+> branch's `persist.rs` (module + writer + reader) and the App restore
+> block (`app/mod.rs`) — the recognition-rule loads this branch's
+> files losslessly, so the banners mark the fold source, not a defect.
+
 Read on `a9f1c29d8`'s `persist.rs` (direct line cites):
 - **§2's six-line v7 recognition rule: LANDED verbatim.** The guard
   `v7_six_line = v7_flags && nonempty.len() == 6 &&
@@ -772,6 +782,10 @@ merger's job is dedup (per 103 §9 + 138 + this doc), never re-porting.
   witness `g90bs_six_line_v7_loads_positionally` at g88 `persist.rs:1198`,
   re-verified at the retire probe). The branch's writer retires at the
   merge; its `SavedPlayer` fields + App restores dedup (step 7).
+  **DEPRECATED-BY-SUPERSET banners landed (comments-only)**: the
+  `persist.rs` module doc + the v7 writer block + the v7 reader arm +
+  the `app/mod.rs` restore block — each cites the superset owner and
+  the lossless-recognition receipt.
 - **L3 `.trwld`**: the **106-byte nine-way union** (§10 — c39 114 §8),
   this pair at 104/105 LAST-fixed, constants +106; VERSION 18,
   forward-only. **L3 `.wld`**: f45's superset flags block (138 §4) —

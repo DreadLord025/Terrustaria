@@ -6816,6 +6816,21 @@ drops a claimant. One order nuance recorded (135 §10e): the empress
 seats empress [100] before the licenses [101..104] — the block set and
 the g90 seat are identical under both readings; no g90 byte moves.
 
+**W4-g90 RETIRE — the DEPRECATED-BY-SUPERSET banners (comments-only)**:
+the branch's `.trplayer` v7 six-line block is the FOLD SOURCE, not the
+merge survivor — g88's v11 superset (`a9f1c29d8`) is canonical (103 §9
+step 6). The lossless-load claim re-verified on the pushed tip at
+retire: the six-line guard `persist.rs:463-465`, the positional reads
+`:470-481` (bread/crystal/arcane/pearl/gummy/ambrosia), the witness
+`g90bs_six_line_v7_loads_positionally` `:1198`, the v11 writer header
+`:230` — all present. Banners landed (comments only, zero behaviour
+change): the `persist.rs` module doc + the v7 writer block + the v7
+reader arm (which rejects g88/g89 files BY DESIGN — the superset reader
+wins at the merge) + the `app/mod.rs` six-flag restore block (dedups
+onto the superset's restore, 103 §9 step 7; the sidecar restore runs
+SECOND after the character-load hydration, 132 §2c). The branch keeps
+its v7 shape until the merge (the standing decision, 135 header).
+
 **W4-g90 artisan-loaf consumer census (`33d4b1625`)**: the
 `ateArtisanBread` full-source census is exactly four families — the
 use arm (`Player.cs:45218-45221`), `AdjTiles`' TB=4 crafting reach
