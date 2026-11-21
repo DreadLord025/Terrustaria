@@ -40186,7 +40186,7 @@ Zero RNG: the mechanical grep over all 11 cited arm ranges
 `:69734-69772`, `:74681-74692`, `:67980-67992`) = ZERO
 Main.rand/.Next(/NextFloat/NextDouble hits. Frame counts
 cross-checked against `render/entities.rs::NPC_FRAME_COUNT` — all
-15 agree (the full-697 mechanical diff EMPTY). 13 module witnesses
+15 agree (the full-697 mechanical diff EMPTY). 14 module witnesses
 + 1 wiring witness WRITTEN NOT RUN (code-only), every replay
 vector re-derived by mechanical Python replay of line-for-line C#
 transcriptions (the f32 round-trip replay verified identical to
