@@ -767,11 +767,12 @@ fn critter_arm_death(
     }
 }
 
-/// The 148/149/168/470 penguin/frog arm (`NPC.cs:86092-86127`): the 10x
-/// dust-5 burst, then the per-kind pair/triple at position, scale 1f.
-/// The 148 Penguin → 160/161 (`:86108-86109`), the 149 Frog → 162/163
-/// (`:86113-86114`), the 168 Frog (corrupt) → 215/216 (`:86118-86119`);
-/// the 470 triple lands next batch.
+/// The 148/149/168/470 penguin arm (`NPC.cs:86092-86127`, sites
+/// 94-102): the 10x dust-5 burst, then the per-kind pair/triple at
+/// position, scale 1f. The 148 Penguin → 160/161 (`:86108-86109`), the
+/// 149 Black Penguin → 162/163 (`:86113-86114`), the 168 Corrupt Penguin
+/// → 215/216 (`:86118-86119`), the 470 Crimson Penguin → the triple
+/// 673/672/674 (`:86123-86125`; NOTE 673 precedes 672, not a ladder).
 fn penguin_frog_death(
     npc: &Npc,
     npc_type: i32,
@@ -807,7 +808,74 @@ fn penguin_frog_death(
     } else if npc_type == 168 {
         gore.new_gore(rng, world, pos, vel, 215, 1.0); // :86118
         gore.new_gore(rng, world, pos, vel, 216, 1.0); // :86119
+    } else if npc_type == 470 {
+        gore.new_gore(rng, world, pos, vel, 673, 1.0); // :86123
+        gore.new_gore(rng, world, pos, vel, 672, 1.0); // :86124
+        gore.new_gore(rng, world, pos, vel, 674, 1.0); // :86125
     }
+}
+
+/// The 361 Frog death (`NPC.cs:86128-86144`, sites 103-104):
+/// the 10x dust-5 burst, then 551/552 at position, scale 1f.
+fn frog_361_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86138-86141` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 551, 1.0); // :86142
+    gore.new_gore(rng, world, pos, vel, 552, 1.0); // :86143
+}
+
+/// The 607 Pupfish death (`NPC.cs:86173-86189`, sites 105-106): the hit
+/// half puffs dust-45 (g62's), the death half the 10x dust-5 burst then
+/// 1152/1153 at position, scale 1f.
+fn pupfish_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86183-86186` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1152, 1.0); // :86187
+    gore.new_gore(rng, world, pos, vel, 1153, 1.0); // :86188
 }
 
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
@@ -917,11 +985,23 @@ pub fn hit_effect_d(
     ) {
         critter_arm_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:86092-86127` — the 148/149/168/470 penguin/frog arm; the
-    // 148/149/168 pairs are live (sites 94-99), the 470 triple lands next
-    // batch.
+    // `:86092-86127` — the 148/149/168/470 penguin arm, COMPLETE (sites
+    // 94-102).
     else if matches!(npc_type, 148 | 149 | 168 | 470) {
         penguin_frog_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86128-86144` — the 361 Frog arm (sites 103-104).
+    else if npc_type == 361 {
+        frog_361_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86145-86158` — the 687 bound-town-slime arm: NO gore sites (the
+    // hit half puffs dust-16, the death half PoofOfSmoke — the dust
+    // lanes'; recorded, not ported).
+    // `:86159-86172` — the 685 bound-town-slime arm: NO gore sites (the
+    // hit half dust-0, the death half PoofOfSmoke; same drop).
+    // `:86173-86189` — the 607 Pupfish arm (sites 105-106).
+    else if npc_type == 607 {
+        pupfish_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -1694,6 +1774,56 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "penguin/frog {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86123-86125` — the 470 Crimson Penguin triple: 673/672/674
+    /// (NOT a ladder — 673 precedes 672).
+    #[test]
+    fn w4_f5d_the_crimson_penguin_triple_is_not_a_ladder() {
+        let w = air();
+        let n = mob(100.0, 100.0, 24.0, 26.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(107);
+        let _ = hit_effect_d(&n, 470, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![673, 672, 674]);
+        assert!(!gore.slot(3).active, "exactly three gores");
+        let mut twin = UnifiedRandom::new(107);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 24, 26);
+        }
+        for _ in 0..3 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the crimson penguin mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86142-86143`/`:86187-86188` — the 361 Frog pair 551/552 and
+    /// the 607 Pupfish pair 1152/1153, both after the 10x dust-5 burst.
+    #[test]
+    fn w4_f5d_the_frog_and_pupfish_pairs_spawn_the_kind_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 24.0, 22.0);
+        for (kind, want) in [(361, vec![551, 552]), (607, vec![1152, 1153])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(109);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "kind {kind}");
+            assert!(!gore.slot(2).active, "exactly two gores");
+            let mut twin = UnifiedRandom::new(109);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 24, 22);
+            }
+            for _ in 0..2 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
         }
     }
 }
