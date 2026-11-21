@@ -7534,8 +7534,19 @@ mod tests {
         app.world.tax_money = 300;
         assert!(tax_collector_payout(&mut app, 0));
         // 300 / 1.5 = 200 copper — LESS than the purse (the unhappy arm).
-        let copper: u32 = app.items.iter().filter(|d| d.kind == 71).map(|d| d.count).sum();
-        assert_eq!(copper, 200, "the latched 1.5 divides the payout");
+        // The split pays denominations (2 silver), so sum the copper VALUE.
+        let value: i64 = app
+            .items
+            .iter()
+            .map(|d| match d.kind {
+                71 => d.count as i64,
+                72 => d.count as i64 * 100,
+                73 => d.count as i64 * 10_000,
+                74 => d.count as i64 * 1_000_000,
+                _ => 0,
+            })
+            .sum();
+        assert_eq!(value, 200, "the latched 1.5 divides the payout");
         assert_eq!(app.world.tax_money, 0);
         // The spawn origin is the PLAYER's centre, not the collector's.
         let pc = app.player.as_ref().unwrap().center();
@@ -7555,8 +7566,18 @@ mod tests {
         app.items.clear();
         app.world.tax_money = 300;
         assert!(tax_collector_payout(&mut app, 0));
-        let copper: u32 = app.items.iter().filter(|d| d.kind == 71).map(|d| d.count).sum();
-        assert_eq!(copper, 400, "the happy 0.75 divides UP");
+        let value: i64 = app
+            .items
+            .iter()
+            .map(|d| match d.kind {
+                71 => d.count as i64,
+                72 => d.count as i64 * 100,
+                73 => d.count as i64 * 10_000,
+                74 => d.count as i64 * 1_000_000,
+                _ => 0,
+            })
+            .sum();
+        assert_eq!(value, 400, "the happy 0.75 divides UP");
     }
 
     /// `Player.CollectTaxes` (`Player.cs:24129-24155`) + the pump
