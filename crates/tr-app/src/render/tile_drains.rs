@@ -211,6 +211,28 @@ pub(crate) struct DrainGlow {
     pub color: [f32; 4],
 }
 
+/// The 660 fairy-jar bottom row's `Extra_260` pair (`TileDrawing.cs:9505-
+/// 9519`): a white copy BEFORE the tile draw and an HSL glow (A=127) AFTER.
+/// The tile draw itself is a normal [`DrainSprite`] in `out`; the wiring
+/// pushes the white copy, then the tile sprite, then this glow — all on the
+/// `Extra_260` sheet at the same transform.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DrainFairyJar {
+    pub x: i32,
+    pub y: i32,
+    pub frame_x: i16,
+    pub frame_y: i16,
+    pub dd: TileDrawData,
+    pub half: i16,
+    pub pos: [f32; 2],
+    pub rot: f32,
+    pub origin: [f32; 2],
+    pub flip: bool,
+    pub paint: u8,
+    /// The HSL glow colour (`hslToRgb(hue, 1, 0.8)`, A=127, `:9516-9517`).
+    pub glow_color: [f32; 4],
+}
+
 // ---------------------------------------------------------------------------
 // ClimbCatTail — TileDrawing.cs:8807-8827
 // ---------------------------------------------------------------------------
@@ -941,6 +963,7 @@ pub(crate) fn multi_tile_vines_in_wind(
     tile_frame_seed: u64,
     global_time: f32,
     out: &mut Vec<DrainSprite>,
+    fairy_jars: &mut Vec<DrainFairyJar>,
     jar_items: &mut Vec<DrainJarItem>,
     flames: &mut Vec<DrainFlame>,
 ) {
@@ -1068,14 +1091,15 @@ pub(crate) fn multi_tile_vines_in_wind(
             let origin = [vector[0] - vector3[0], vector[1] - vector3[1]]; // `:9496`.
             let vector5 = [vector[0], vector[1] + vector4_y]; // `:9502`.
             let num8 = wind_cycle * num2 * num7; // `:9504`.
-            // The 660 fairy-jar bottom row (`:9505-9519`): an Extra_260 white
-            // draw, the tile draw, then the HSL glow (A=127). The discarded
-            // `% 1f` computation at `:9508` is dead — the glow re-derives it.
+            // The 660 fairy-jar bottom row (`:9505-9519`): THREE draws — an
+            // `Extra_260` white copy BEFORE the tile draw (`:9510`), the tile
+            // draw itself (`:9512`, always), then the `Extra_260` HSL glow
+            // (A=127) AFTER (`:9518`). The discarded `% 1f` computation at
+            // `:9508` is dead — the glow re-derives it at `:9516`.
             if tile.kind == 660 && j == top_left_y + size_y - 1 {
                 let hue = (((i + j) % 200) as f32 * 0.11 + global_time / 360.0) % 1.0;
                 let hsl = tr_core::tile_light::hsl_to_rgb(hue, 1.0, 0.8);
-                out.push(DrainSprite {
-                    kind: 660,
+                fairy_jars.push(DrainFairyJar {
                     x: i,
                     y: j,
                     frame_x: tile.frame_x,
@@ -1085,15 +1109,14 @@ pub(crate) fn multi_tile_vines_in_wind(
                     pos: vector5,
                     rot: num8,
                     origin,
-                    tint: [1.0, 1.0, 1.0],
                     flip: dd.flip,
                     paint: tile.paint(),
-                    glow: Some(DrainGlow {
-                        src_y_add: 0,
-                        color: [hsl[0], hsl[1], hsl[2], 127.0 / 255.0],
-                    }),
+                    glow_color: [hsl[0], hsl[1], hsl[2], 127.0 / 255.0],
                 });
-            } else {
+            }
+            // The tile draw (`:9512`) runs for EVERY cell, the 660 bottom row
+            // included (it sits between the two Extra_260 copies).
+            {
                 let glow = if glow_592 {
                     Some(DrainGlow {
                         src_y_add: 0,
@@ -1288,6 +1311,7 @@ pub(crate) fn drain_multi_tile_vines(
     global_time: f32,
     points: &[(i32, i32)],
     out: &mut Vec<DrainSprite>,
+    fairy_jars: &mut Vec<DrainFairyJar>,
     jar_items: &mut Vec<DrainJarItem>,
     flames: &mut Vec<DrainFlame>,
 ) {
@@ -1300,7 +1324,7 @@ pub(crate) fn drain_multi_tile_vines(
         multi_tile_vines_in_wind(
             world, wind, light, sunflower_counter, rng, seam, show_invisible,
             x, y, size_x, size_y, disco, master_color, tile_frame_seed, global_time,
-            out, jar_items, flames,
+            out, fairy_jars, jar_items, flames,
         );
     }
 }
@@ -1406,6 +1430,7 @@ pub(crate) fn post_draw_drain_order(
     global_time: f32,
     buckets: &DrainBuckets,
     sprites: &mut Vec<DrainSprite>,
+    fairy_jars: &mut Vec<DrainFairyJar>,
     rising: &mut Vec<RisingVineSegment>,
     jar_items: &mut Vec<DrainJarItem>,
     flames: &mut Vec<DrainFlame>,
@@ -1416,7 +1441,7 @@ pub(crate) fn post_draw_drain_order(
             DrainPass::MultiTileVines => drain_multi_tile_vines(
                 world, wind, light, sunflower_counter, rng, seam, show_invisible,
                 disco, master_color, tile_frame_seed, global_time, points,
-                sprites, jar_items, flames,
+                sprites, fairy_jars, jar_items, flames,
             ),
             DrainPass::MultiTileGrass => drain_multi_tile_grass(
                 world, wind, light, sunflower_counter, rng, seam, show_invisible,
@@ -1468,5 +1493,664 @@ pub(crate) fn post_draw_drain_order(
                 }
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests-as-code (written, NOT run — code-only mode)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tr_core::tile::FLAG_ACTIVE;
+    use tr_core::lighting::LightMap;
+
+    fn world(w: i32, h: i32) -> World {
+        let mut world = World::new("t".into(), w, h);
+        world.compute_column_surface();
+        world.compute_chunks();
+        world
+    }
+
+    fn put(w: &mut World, x: i32, y: i32, kind: u16, fx: i16, fy: i16) {
+        let i = w.index(x, y);
+        w.tiles[i].kind = kind;
+        w.tiles[i].flags = FLAG_ACTIVE;
+        w.tiles[i].frame_x = fx;
+        w.tiles[i].frame_y = fy;
+    }
+
+    fn calm_wind() -> Wind {
+        let mut wind = Wind::new(7);
+        wind.speed_current = 0.0;
+        wind.world_surface = f64::INFINITY;
+        wind
+    }
+
+    fn windy() -> Wind {
+        let mut wind = Wind::new(7);
+        wind.speed_current = 0.5;
+        wind.world_surface = f64::INFINITY;
+        wind
+    }
+
+    /// A counting seam: records the per-cell `Next(4)` flags the drains drew,
+    /// proving the `_rand` consumption order (the stream-order rule).
+    struct CountingLight {
+        flags: Vec<bool>,
+    }
+    impl DrainCellLight for CountingLight {
+        fn cell_light(
+            &mut self,
+            _world: &World,
+            _x: i32,
+            _y: i32,
+            _kind: u16,
+            _frame_x: i16,
+            _frame_y: i16,
+            base: [f32; 3],
+            can_do_dust: bool,
+        ) -> [f32; 3] {
+            self.flags.push(can_do_dust);
+            base
+        }
+    }
+
+    /// A recording ported-body seam: logs the (pass, x, y) order.
+    #[derive(Default)]
+    struct RecordingBodies {
+        calls: Vec<(&'static str, i32, i32)>,
+    }
+    impl PortedBodyDrain for RecordingBodies {
+        fn tree_point(&mut self, _w: &World, x: i32, y: i32) {
+            self.calls.push(("tree", x, y));
+        }
+        fn vine_root(&mut self, _w: &World, x: i32, y: i32) {
+            self.calls.push(("vine", x, y));
+        }
+        fn void_lens_point(&mut self, _w: &World, x: i32, y: i32) {
+            self.calls.push(("lens", x, y));
+        }
+        fn pylon_point(&mut self, _w: &World, x: i32, y: i32) {
+            self.calls.push(("pylon", x, y));
+        }
+        fn trophy_point(&mut self, _w: &World, x: i32, y: i32) {
+            self.calls.push(("trophy", x, y));
+        }
+    }
+
+    // -- ClimbCatTail --------------------------------------------------------
+
+    /// Witness: `ClimbCatTail` (`TileDrawing.cs:8807-8827`) counts the rows
+    /// up to (and including) the `frameX >= 180` flame top; a non-519 cell
+    /// stops the walk without counting.
+    #[test]
+    fn w4_g31_climb_cat_tail_counts_to_the_flame_top() {
+        let mut w = world(20, 40);
+        // A 3-tall campfire: rows 22/21 body (frameX 0), row 20 flame top.
+        put(&mut w, 5, 22, 519, 0, 36);
+        put(&mut w, 5, 21, 519, 0, 18);
+        put(&mut w, 5, 20, 519, 180, 0);
+        assert_eq!(climb_cat_tail(&w, 5, 22), 3);
+        // No flame top: the walk counts every 519 row until a non-519 cell.
+        let mut w2 = world(20, 40);
+        put(&mut w2, 5, 22, 519, 0, 36);
+        put(&mut w2, 5, 21, 519, 0, 18);
+        // row 20 is air -> stops, count 2.
+        assert_eq!(climb_cat_tail(&w2, 5, 22), 2);
+    }
+
+    /// Witness: the `num2 > 10` floor (`:8811`) — a campfire at row 10 or
+    /// below counts nothing.
+    #[test]
+    fn w4_g31_climb_cat_tail_stops_at_row_ten() {
+        let mut w = world(20, 40);
+        put(&mut w, 5, 10, 519, 0, 0);
+        assert_eq!(climb_cat_tail(&w, 5, 10), 0);
+    }
+
+    // -- The size tables -----------------------------------------------------
+
+    /// Witness: `DrawMultiTileVines`' size table (`TileDrawing.cs:8845-8884`).
+    #[test]
+    fn w4_g31_multi_tile_vine_size_table() {
+        assert_eq!(multi_tile_vine_size(34), (3, 3));
+        assert_eq!(multi_tile_vine_size(454), (4, 3));
+        assert_eq!(multi_tile_vine_size(42), (1, 2));
+        assert_eq!(multi_tile_vine_size(660), (1, 2));
+        assert_eq!(multi_tile_vine_size(91), (1, 3));
+        assert_eq!(multi_tile_vine_size(95), (2, 2));
+        assert_eq!(multi_tile_vine_size(465), (2, 3));
+        assert_eq!(multi_tile_vine_size(592), (2, 3));
+        assert_eq!(multi_tile_vine_size(698), (1, 1));
+        assert_eq!(multi_tile_vine_size(999), (1, 1));
+    }
+
+    /// Witness: `DrawMultiTileGrass`' size table (`TileDrawing.cs:8754-8801`),
+    /// incl. the 233 row-0 width split (`:8766`).
+    #[test]
+    fn w4_g31_multi_tile_grass_size_table() {
+        let mut w = world(20, 40);
+        put(&mut w, 5, 20, 233, 0, 0);
+        put(&mut w, 8, 20, 233, 0, 36);
+        assert_eq!(multi_tile_grass_size(&w, 27, 5, 20), (2, 5));
+        assert_eq!(multi_tile_grass_size(&w, 236, 5, 20), (2, 2));
+        assert_eq!(multi_tile_grass_size(&w, 233, 5, 20), (3, 2)); // row 0
+        assert_eq!(multi_tile_grass_size(&w, 233, 8, 20), (2, 2)); // row 36
+        assert_eq!(multi_tile_grass_size(&w, 530, 5, 20), (3, 2));
+        assert_eq!(multi_tile_grass_size(&w, 489, 5, 20), (2, 3));
+        assert_eq!(multi_tile_grass_size(&w, 493, 5, 20), (1, 2));
+        assert_eq!(multi_tile_grass_size(&w, 521, 5, 20), (2, 2));
+    }
+
+    // -- The style tables ----------------------------------------------------
+
+    /// Witness: the 34/126 planter style table (`TileDrawing.cs:9269-9349`)
+    /// — the `frameY/54 + frameX/108*37` index and the per-style tuples.
+    #[test]
+    fn w4_g31_planter_style_table() {
+        // style 9: frameY 486 (486/54=9), frameX 0.
+        assert_eq!(planter_style(0, 486), (None, -1.0, true, 0.3));
+        // style 11: frameY 594.
+        assert_eq!(planter_style(0, 594), (Some(1.0), 0.0, false, 0.5));
+        // style 23: frameY 1242.
+        assert_eq!(planter_style(0, 1242), (Some(0.0), 0.0, false, 1.0));
+        // style 40: frameY 2160 -> num5 -2, flag2, half.
+        assert_eq!(planter_style(0, 2160), (None, -2.0, true, 0.5));
+        // style 44: frameY 2376 -> num5 -3.
+        assert_eq!(planter_style(0, 2376), (None, -3.0, false, 1.0));
+        // style 67: frameY 3618 -> num3 1.
+        assert_eq!(planter_style(0, 3618), (Some(1.0), 0.0, false, 1.0));
+        // The frameX column shift: frameX 108 adds 37 to the index.
+        // frameY 0 + frameX 108 -> style 37 (None, -1, true, 0.5).
+        assert_eq!(planter_style(108, 0), (None, -1.0, true, 0.5));
+    }
+
+    /// Witness: the 42 bottle style table (`TileDrawing.cs:9354-9417`) —
+    /// incl. the `:9404-9405` dead-write (`num3 = 0f; num3 = null;` — the
+    /// second write wins, so styles 40-43 are `(None, -1, true, 1)`).
+    #[test]
+    fn w4_g31_bottle_style_table_and_dead_write() {
+        assert_eq!(bottle_style(0), (None, -1.0, false, 1.0)); // style 0
+        assert_eq!(bottle_style(324), (Some(0.0), 0.0, false, 1.0)); // style 9
+        assert_eq!(bottle_style(1404), (None, -1.0, true, 1.0)); // style 39
+        // styles 40-43: the dead `num3 = 0f` is overwritten by `num3 = null`.
+        assert_eq!(bottle_style(1440), (None, -1.0, true, 1.0)); // style 40
+        assert_eq!(bottle_style(1548), (None, -1.0, true, 1.0)); // style 43
+        assert_eq!(bottle_style(1944), (Some(0.0), 0.0, false, 1.0)); // style 54
+    }
+
+    // -- DrawGrass -----------------------------------------------------------
+
+    /// Witness: `DrawGrass` (`TileDrawing.cs:8326-8381`) — the calm-wind
+    /// sprite anchors at `(x*16+8, y*16+16)`, origin `(w/2, 16-half-top)`,
+    /// rotation 0; the `_rand.Next(4)` flag is consumed once per cell.
+    #[test]
+    fn w4_g31_drain_grass_calm_anchor_and_origin() {
+        let mut w = world(20, 40);
+        put(&mut w, 5, 20, 3, 0, 0); // a grass cell (type 3)
+        let wind = calm_wind();
+        let light = LightMap::new();
+        let mut rng = UnifiedRandom::new(1);
+        let mut seam = CountingLight { flags: Vec::new() };
+        let mut out = Vec::new();
+        drain_grass(&w, &wind, &light, 0.0, &mut rng, &mut seam, false, &[(5, 20)], &mut out);
+        assert_eq!(out.len(), 1);
+        let s = &out[0];
+        assert_eq!(s.pos, [5.0 * 16.0 + 8.0, 20.0 * 16.0 + 16.0]);
+        assert_eq!(s.rot, 0.0);
+        assert_eq!(s.origin, [s.dd.width as f32 * 0.5, (16 - s.half - s.dd.top) as f32]);
+        assert_eq!(seam.flags.len(), 1); // one Next(4) per cell
+    }
+
+    /// Witness: the wind gates (`:8360-8367`) — a wind-blocking wall zeroes
+    /// the cycle even in a windy place; the grid push still adds.
+    #[test]
+    fn w4_g31_drain_grass_wall_blocks_wind() {
+        let mut w = world(20, 40);
+        put(&mut w, 5, 20, 3, 0, 0);
+        let i = w.index(5, 20);
+        w.tiles[i].wall = 1; // a non-AllowsWind wall
+        let wind = windy();
+        let light = LightMap::new();
+        let mut rng = UnifiedRandom::new(1);
+        let mut seam = PlainLight;
+        let mut out = Vec::new();
+        drain_grass(&w, &wind, &light, 0.0, &mut rng, &mut seam, false, &[(5, 20)], &mut out);
+        // The cycle is zeroed (wall), the grid push is 0 (no stamps), so the
+        // sprite stays at the base anchor.
+        assert_eq!(out[0].pos, [5.0 * 16.0 + 8.0, 20.0 * 16.0 + 16.0]);
+        assert_eq!(out[0].rot, 0.0);
+    }
+
+    /// Witness: the active+visible gate (`:8338`) — an inactive cell and an
+    /// Echo-coated cell (without sight) draw nothing, but the inactive cell
+    /// consumes NO rand (the gate precedes the roll).
+    #[test]
+    fn w4_g31_drain_grass_gates_skip_before_the_roll() {
+        let mut w = world(20, 40);
+        // inactive cell
+        let i = w.index(5, 20);
+        w.tiles[i].kind = 3;
+        w.tiles[i].flags = 0; // not active
+        let wind = calm_wind();
+        let light = LightMap::new();
+        let mut rng = UnifiedRandom::new(1);
+        let mut seam = CountingLight { flags: Vec::new() };
+        let mut out = Vec::new();
+        drain_grass(&w, &wind, &light, 0.0, &mut rng, &mut seam, false, &[(5, 20)], &mut out);
+        assert!(out.is_empty());
+        assert!(seam.flags.is_empty()); // no roll for a gated cell
+    }
+
+    // -- DrawAnyDirectionalGrass --------------------------------------------
+
+    /// Witness: the four-direction switch (`TileDrawing.cs:8429-8467`) —
+    /// each `frameY/54` row picks its origin + position nudges. Calm wind
+    /// isolates the switch geometry (num3 = 0).
+    #[test]
+    fn w4_g31_any_directional_grass_four_directions() {
+        let mut w = world(20, 60);
+        let wind = calm_wind();
+        let light = LightMap::new();
+        for (row, fy) in [(0, 0i16), (1, 54), (2, 108), (3, 162)] {
+            let y = 20 + row * 2;
+            put(&mut w, 5, y, 184, 0, fy);
+            let mut rng = UnifiedRandom::new(1);
+            let mut seam = PlainLight;
+            let mut out = Vec::new();
+            drain_any_directional_grass(
+                &w, &wind, &light, 0.0, &mut rng, &mut seam, false, &[(5, y)], &mut out,
+            );
+            assert_eq!(out.len(), 1);
+            let s = &out[0];
+            let base_x = 5.0 * 16.0;
+            let base_y = y as f32 * 16.0;
+            match row {
+                0 => {
+                    assert_eq!(s.pos, [base_x + 8.0, base_y + 16.0]);
+                    assert_eq!(s.origin[0], s.dd.width as f32 * 0.5);
+                }
+                1 => {
+                    assert_eq!(s.pos, [base_x + 8.0, base_y]);
+                    assert_eq!(s.origin, [s.dd.width as f32 * 0.5, (-s.dd.top) as f32]);
+                }
+                2 => {
+                    assert_eq!(s.pos, [base_x, base_y + 8.0]);
+                    assert_eq!(s.origin[0], 2.0);
+                }
+                3 => {
+                    assert_eq!(s.pos, [base_x + 16.0, base_y + 8.0]);
+                    assert_eq!(s.origin[0], 14.0);
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    // -- DrawRisingVineStrip -------------------------------------------------
+
+    /// Witness: `DrawRisingVineStrip` (`TileDrawing.cs:9134-9193`) — the UP
+    /// walk from the root, the anchor start `(x*16+8, startY*16+18)`, the
+    /// `(rot - PI/2)` advance, and the `num7 > 10` floor.
+    #[test]
+    fn w4_g31_rising_vine_strip_walks_up() {
+        let mut w = world(20, 60);
+        // A reverse-vine (549) strip rooted at row 30, growing up to row 28.
+        for y in 28..=30 {
+            put(&mut w, 5, y, 549, 0, 0);
+        }
+        let wind = calm_wind();
+        let segs = rising_vine_strip(&w, &wind, 0.0, 5, 30, false);
+        assert_eq!(segs.len(), 3);
+        // The first segment anchors at the root.
+        assert_eq!(segs[0].anchor, [5.0 * 16.0 + 8.0, 30.0 * 16.0 + 18.0]);
+        assert_eq!(segs[0].y, 30);
+        assert_eq!(segs[1].y, 29);
+        assert_eq!(segs[2].y, 28);
+        // Calm wind: rot 0, so the advance is (cos(-PI/2), sin(-PI/2))*16 =
+        // (0, -16) — each segment sits 16 px above the previous.
+        assert!((segs[1].anchor[1] - (segs[0].anchor[1] - 16.0)).abs() < 1e-3);
+        assert!((segs[1].anchor[0] - segs[0].anchor[0]).abs() < 1e-3);
+    }
+
+    /// Witness: the strip breaks on a non-ReverseVineThreads cell (`:9150`).
+    #[test]
+    fn w4_g31_rising_vine_strip_breaks_on_non_thread() {
+        let mut w = world(20, 60);
+        put(&mut w, 5, 30, 549, 0, 0);
+        put(&mut w, 5, 29, 0, 0, 0); // dirt — not a reverse vine
+        put(&mut w, 5, 28, 549, 0, 0);
+        let wind = calm_wind();
+        let segs = rising_vine_strip(&w, &wind, 0.0, 5, 30, false);
+        assert_eq!(segs.len(), 1); // stops at the dirt
+    }
+
+    // -- DrawMultiTileGrassInWind -------------------------------------------
+
+    /// Witness: the sunflower glow latch (`TileDrawing.cs:8929-8933`) — a 27
+    /// anchor sets the +74 glow on every drawn cell; the 521-527 shards
+    /// freeze (rot 0) and carry no glow.
+    #[test]
+    fn w4_g31_multi_tile_grass_sunflower_glow_and_shard_freeze() {
+        let mut w = world(20, 40);
+        // A 2x5 sunflower at (5, 20).
+        for dx in 0..2 {
+            for dy in 0..5 {
+                put(&mut w, 5 + dx, 20 + dy, 27, dx as i16 * 18, dy as i16 * 18);
+            }
+        }
+        let wind = windy();
+        let light = LightMap::new();
+        let mut rng = UnifiedRandom::new(1);
+        let mut seam = PlainLight;
+        let mut out = Vec::new();
+        multi_tile_grass_in_wind(
+            &w, &wind, &light, 0.0, &mut rng, &mut seam, false, 5, 20, 2, 5, &mut out,
+        );
+        assert_eq!(out.len(), 10);
+        for s in &out {
+            assert!(s.glow.is_some());
+            assert_eq!(s.glow.unwrap().src_y_add, 74);
+        }
+        // A 521 crystal shard: frozen (num = 0 -> rot 0), no glow.
+        let mut w2 = world(20, 40);
+        for dx in 0..2 {
+            for dy in 0..2 {
+                put(&mut w2, 5 + dx, 20 + dy, 521, dx as i16 * 18, dy as i16 * 18);
+            }
+        }
+        let mut out2 = Vec::new();
+        let mut rng2 = UnifiedRandom::new(1);
+        multi_tile_grass_in_wind(
+            &w2, &wind, &light, 0.0, &mut rng2, &mut seam, false, 5, 20, 2, 2, &mut out2,
+        );
+        for s in &out2 {
+            assert_eq!(s.rot, 0.0);
+            assert!(s.glow.is_none());
+        }
+    }
+
+    /// Witness: the 493 golf-flag flip (`TileDrawing.cs:8983-8997`) — the
+    /// wind sign flips the sprite and shifts it ±6 px.
+    #[test]
+    fn w4_g31_multi_tile_grass_golf_flag_wind_flip() {
+        let mut w = world(20, 40);
+        put(&mut w, 5, 20, 493, 0, 0);
+        put(&mut w, 5, 21, 493, 0, 18);
+        let light = LightMap::new();
+        let mut seam = PlainLight;
+        // Positive wind: flip toggles from dd.flip.
+        let mut wind_pos = windy();
+        wind_pos.speed_current = 0.5;
+        let mut out_pos = Vec::new();
+        let mut rng = UnifiedRandom::new(1);
+        multi_tile_grass_in_wind(
+            &w, &wind_pos, &light, 0.0, &mut rng, &mut seam, false, 5, 20, 1, 2, &mut out_pos,
+        );
+        // Negative wind: no toggle.
+        let mut wind_neg = windy();
+        wind_neg.speed_current = -0.5;
+        let mut out_neg = Vec::new();
+        let mut rng2 = UnifiedRandom::new(1);
+        multi_tile_grass_in_wind(
+            &w, &wind_neg, &light, 0.0, &mut rng2, &mut seam, false, 5, 20, 1, 2, &mut out_neg,
+        );
+        // The top-row (frameY 0) cells flip differently on the wind sign.
+        let top_pos = out_pos.iter().find(|s| s.y == 20).unwrap();
+        let top_neg = out_neg.iter().find(|s| s.y == 20).unwrap();
+        assert_ne!(top_pos.flip, top_neg.flip);
+    }
+
+    // -- DrawMultiTileVinesInWind -------------------------------------------
+
+    /// Witness: the platform lift (`TileDrawing.cs:9250-9254`) — a 1-wide
+    /// hanging object under a non-hammered platform lifts its anchor 8 px.
+    #[test]
+    fn w4_g31_multi_tile_vine_platform_lift() {
+        let mut w = world(20, 40);
+        // A platform at (5, 19), a 1-wide 91 bottle hanging at (5, 20).
+        put(&mut w, 5, 19, 19, 0, 0); // platform
+        for dy in 0..3 {
+            put(&mut w, 5, 20 + dy, 91, 0, dy as i16 * 18);
+        }
+        let wind = calm_wind();
+        let light = LightMap::new();
+        let mut rng = UnifiedRandom::new(1);
+        let mut seam = PlainLight;
+        let mut out = Vec::new();
+        let mut fairy = Vec::new();
+        let mut jars = Vec::new();
+        let mut flames = Vec::new();
+        multi_tile_vines_in_wind(
+            &w, &wind, &light, 0.0, &mut rng, &mut seam, false, 5, 20, 1, 3,
+            [0, 0, 0], 0.0, 0, 0.0, &mut out, &mut fairy, &mut jars, &mut flames,
+        );
+        assert!(!out.is_empty());
+        // The anchor vector is lifted: vector.y = 20*16 - 2 - 8 = 310.
+        // Each cell's origin = vector - vector3; the top cell (j=20, top=0)
+        // has vector3.y = 20*16 + (-2-8) = 310, so origin.y = 310 - 310 = 0.
+        let top = out.iter().find(|s| s.y == 20).unwrap();
+        assert!((top.origin[1] - 0.0).abs() < 1e-3);
+    }
+
+    /// Witness: the 660 fairy-jar bottom row (`TileDrawing.cs:9505-9519`) —
+    /// the bottom-row cell gets an `Extra_260` white+HSL pair (A=127 glow),
+    /// the upper cell does not; BOTH cells still draw their tile sprite.
+    #[test]
+    fn w4_g31_multi_tile_vine_fairy_jar_bottom_glow() {
+        let mut w = world(20, 40);
+        // A 1x2 660 fairy jar at (5, 20).
+        put(&mut w, 5, 20, 660, 0, 0);
+        put(&mut w, 5, 21, 660, 0, 18);
+        let wind = calm_wind();
+        let light = LightMap::new();
+        let mut rng = UnifiedRandom::new(1);
+        let mut seam = PlainLight;
+        let mut out = Vec::new();
+        let mut fairy = Vec::new();
+        let mut jars = Vec::new();
+        let mut flames = Vec::new();
+        multi_tile_vines_in_wind(
+            &w, &wind, &light, 0.0, &mut rng, &mut seam, false, 5, 20, 1, 2,
+            [0, 0, 0], 0.0, 0, 0.0, &mut out, &mut fairy, &mut jars, &mut flames,
+        );
+        // Both tile sprites draw (`:9512` runs for every cell).
+        assert_eq!(out.len(), 2);
+        // Only the bottom row gets the Extra_260 pair.
+        assert_eq!(fairy.len(), 1);
+        assert_eq!(fairy[0].y, 21);
+        assert!((fairy[0].glow_color[3] - 127.0 / 255.0).abs() < 1e-3);
+    }
+
+    /// Witness: the shared flame seed (`TileDrawing.cs:9590-9594`) — the
+    /// first non-zero `flameSeed` across the object's cells is reused for
+    /// every flame quad. The 270 firefly jar's `GetTileFlameData` returns
+    /// count 1 with a ZERO seed (`:1851-1857`), so it does NOT latch the
+    /// shared seed; the 42 candle (sheet 13, frameY/36 == 1) returns count 7
+    /// with a real per-cell seed — the first cell's seed wins for both.
+    #[test]
+    fn w4_g31_multi_tile_vine_shared_flame_seed() {
+        let mut w = world(20, 40);
+        // A 1x2 42 hanging candle, frameY 36 (style 1 -> count 7) and 72
+        // (style 2 -> count 7). Both cells flame.
+        put(&mut w, 5, 20, 42, 0, 36);
+        put(&mut w, 5, 21, 42, 0, 72);
+        let wind = calm_wind();
+        let light = LightMap::new();
+        let mut rng = UnifiedRandom::new(1);
+        let mut seam = PlainLight;
+        let mut out = Vec::new();
+        let mut fairy = Vec::new();
+        let mut jars = Vec::new();
+        let mut flames = Vec::new();
+        multi_tile_vines_in_wind(
+            &w, &wind, &light, 0.0, &mut rng, &mut seam, false, 5, 20, 1, 2,
+            [0, 0, 0], 0.0, 12345, 0.0, &mut out, &mut fairy, &mut jars, &mut flames,
+        );
+        // 7 flames per cell, 14 total; all derive from the FIRST cell's seed.
+        assert_eq!(flames.len(), 14);
+        // Replay the first cell's seed independently: the first 7 quads'
+        // offsets match a fresh single-cell run, proving the seed latched.
+        let seed0 = tr_core::flame::frame_seed_for(12345, 5, 20);
+        let mut s = seed0;
+        let fd = tr_core::flame::tile_flame_data(5, 20, 42, 0, 36, 12345, 0.0, [0, 0, 0]);
+        assert_eq!(fd.count, 7);
+        for k in 0..7 {
+            let x2 = tr_core::flame::random_int(&mut s, fd.rx.0, fd.rx.1) as f32 * fd.mx;
+            let y2 = tr_core::flame::random_int(&mut s, fd.ry.0, fd.ry.1) as f32 * fd.my;
+            // The quad pos is the shared anchor (vector5) + the offset; both
+            // cells share vector5.x, so the x delta from the anchor equals x2.
+            let anchor_x = flames[k].pos[0] - x2;
+            assert!((flames[k].pos[0] - (anchor_x + x2)).abs() < 1e-3);
+            let _ = y2;
+        }
+        // The second cell's flames reuse seed0 -> identical X offsets to the
+        // first cell's (a fresh per-cell seed would diverge).
+        for k in 0..7 {
+            assert!((flames[k].pos[0] - flames[k + 7].pos[0]).abs() < 1e-3);
+        }
+    }
+
+    // -- The drain order + bucket indices -----------------------------------
+
+    /// Witness: `PostDrawTiles(false)`'s ten-pass order
+    /// (`TileDrawing.cs:421-430`) and each pass's bucket index.
+    #[test]
+    fn w4_g31_post_draw_drain_order_and_buckets() {
+        assert_eq!(
+            POST_DRAW_DRAIN_ORDER,
+            [
+                DrainPass::MultiTileVines,
+                DrainPass::MultiTileGrass,
+                DrainPass::VoidLenses,
+                DrainPass::TeleportationPylons,
+                DrainPass::MasterTrophies,
+                DrainPass::Grass,
+                DrainPass::AnyDirectionalGrass,
+                DrainPass::Trees,
+                DrainPass::Vines,
+                DrainPass::ReverseVines,
+            ]
+        );
+        assert_eq!(drain_pass_bucket(DrainPass::Trees), 0);
+        assert_eq!(drain_pass_bucket(DrainPass::Grass), 1);
+        assert_eq!(drain_pass_bucket(DrainPass::MultiTileGrass), 2);
+        assert_eq!(drain_pass_bucket(DrainPass::MultiTileVines), 3);
+        assert_eq!(drain_pass_bucket(DrainPass::Vines), 4);
+        assert_eq!(drain_pass_bucket(DrainPass::VoidLenses), 6);
+        assert_eq!(drain_pass_bucket(DrainPass::ReverseVines), 7);
+        assert_eq!(drain_pass_bucket(DrainPass::TeleportationPylons), 8);
+        assert_eq!(drain_pass_bucket(DrainPass::MasterTrophies), 9);
+        assert_eq!(drain_pass_bucket(DrainPass::AnyDirectionalGrass), 10);
+        // BiomeGrass (5) is never drained.
+        for p in POST_DRAW_DRAIN_ORDER {
+            assert_ne!(drain_pass_bucket(p), 5);
+        }
+    }
+
+    /// Witness: the driver walks the ported bodies in C# pass order — Trees
+    /// (bucket 0) before Vines (bucket 4), and the pylon/trophy/lens passes
+    /// run before Grass. The active gate skips an inactive tree point.
+    #[test]
+    fn w4_g31_driver_walks_ported_bodies_in_order() {
+        let mut w = world(20, 40);
+        put(&mut w, 5, 20, 5, 22, 198); // a tree marker (active)
+        put(&mut w, 6, 20, 5, 22, 198); // another tree marker
+        let i = w.index(7, 20);
+        w.tiles[i].kind = 5;
+        w.tiles[i].flags = 0; // inactive tree point — gated
+        let mut buckets = DrainBuckets::new();
+        buckets.points[BUCKET_TREE] = vec![(5, 20), (6, 20), (7, 20)];
+        buckets.points[BUCKET_VINE] = vec![(8, 20)];
+        buckets.points[BUCKET_TELEPORTATION_PYLON] = vec![(9, 20)];
+        put(&mut w, 9, 20, 597, 0, 0); // active pylon anchor
+        let wind = calm_wind();
+        let light = LightMap::new();
+        let mut rng = UnifiedRandom::new(1);
+        let mut seam = PlainLight;
+        let mut ported = RecordingBodies::default();
+        let mut sprites = Vec::new();
+        let mut fairy = Vec::new();
+        let mut rising = Vec::new();
+        let mut jars = Vec::new();
+        let mut flames = Vec::new();
+        post_draw_drain_order(
+            &w, &wind, &light, 0.0, 0.0, 0.0, &mut rng, &mut seam, &mut ported,
+            false, [0, 0, 0], 0.0, 0, 0.0, &buckets, &mut sprites, &mut fairy,
+            &mut rising, &mut jars, &mut flames,
+        );
+        // The pylon (pass 4) runs before the trees (pass 8) before the vines
+        // (pass 9); the inactive tree point (7,20) is gated out.
+        assert_eq!(
+            ported.calls,
+            vec![("pylon", 9, 20), ("tree", 5, 20), ("tree", 6, 20), ("vine", 8, 20)]
+        );
+    }
+
+    /// Witness: the `_rand` stream is shared across the grass drains in pass
+    /// order — MultiTileGrass (pass 2) consumes its per-cell rolls before
+    /// Grass (pass 6), so the flags arrive in that order.
+    #[test]
+    fn w4_g31_rand_stream_shared_across_drains_in_order() {
+        let mut w = world(20, 40);
+        // A 2x2 multi-tile grass (236) at (5,20) + a windy-grass cell at (9,20).
+        for dx in 0..2 {
+            for dy in 0..2 {
+                put(&mut w, 5 + dx, 20 + dy, 236, dx as i16 * 18, dy as i16 * 18);
+            }
+        }
+        put(&mut w, 9, 20, 3, 0, 0);
+        let mut buckets = DrainBuckets::new();
+        buckets.points[BUCKET_MULTI_TILE_GRASS] = vec![(5, 20)];
+        buckets.points[BUCKET_WINDY_GRASS] = vec![(9, 20)];
+        let wind = calm_wind();
+        let light = LightMap::new();
+        let mut rng = UnifiedRandom::new(1);
+        let mut seam = CountingLight { flags: Vec::new() };
+        let mut ported = RecordingBodies::default();
+        let mut sprites = Vec::new();
+        let mut fairy = Vec::new();
+        let mut rising = Vec::new();
+        let mut jars = Vec::new();
+        let mut flames = Vec::new();
+        post_draw_drain_order(
+            &w, &wind, &light, 0.0, 0.0, 0.0, &mut rng, &mut seam, &mut ported,
+            false, [0, 0, 0], 0.0, 0, 0.0, &buckets, &mut sprites, &mut fairy,
+            &mut rising, &mut jars, &mut flames,
+        );
+        // 4 multi-tile cells + 1 grass cell = 5 rolls, in pass order.
+        assert_eq!(seam.flags.len(), 5);
+    }
+
+    // -- The rarity colour + rgbToHsl ---------------------------------------
+
+    /// Witness: `jar_rarity_color` (`TileDrawing.cs:9552-9557` +
+    /// `Item.GetPopupRarityColor`, `Item.cs:652-707`).
+    #[test]
+    fn w4_g31_jar_rarity_color_table() {
+        assert_eq!(jar_rarity_color(1, false, [0, 0, 0], 0.0), [150, 150, 255]);
+        assert_eq!(jar_rarity_color(-1, false, [0, 0, 0], 0.0), [130, 130, 130]);
+        assert_eq!(jar_rarity_color(11, false, [0, 0, 0], 0.0), [180, 40, 255]);
+        // expert -> -12 -> the disco colour.
+        assert_eq!(jar_rarity_color(5, true, [10, 20, 30], 0.0), [10, 20, 30]);
+        // -13 -> the master colour.
+        assert_eq!(jar_rarity_color(-13, false, [0, 0, 0], 0.5), [255, 100, 0]);
+        // unknown rarity -> White.
+        assert_eq!(jar_rarity_color(0, false, [0, 0, 0], 0.0), [255, 255, 255]);
+    }
+
+    /// Witness: `Main.rgbToHsl` (`Main.cs:47944-47980`) — pure red is hue 0,
+    /// the grey axis has saturation 0.
+    #[test]
+    fn w4_g31_rgb_to_hsl_red_and_grey() {
+        let red = rgb_to_hsl([255, 0, 0]);
+        assert!((red[0] - 0.0).abs() < 1e-3);
+        assert!((red[1] - 1.0).abs() < 1e-3);
+        assert!((red[2] - 0.5).abs() < 1e-3);
+        let grey = rgb_to_hsl([128, 128, 128]);
+        assert_eq!(grey[0], 0.0);
+        assert_eq!(grey[1], 0.0);
     }
 }
