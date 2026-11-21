@@ -3369,6 +3369,21 @@ pub(crate) fn draw_npcs(
             NpcKind::Toucan => {
                 pumpkin_moon_draw(assets.npc_sheet(673), npc_rows(673), n, w, h)
             }
+            NpcKind::YellowCockatiel => {
+                pumpkin_moon_draw(assets.npc_sheet(674), npc_rows(674), n, w, h)
+            }
+            NpcKind::GrayCockatiel => {
+                pumpkin_moon_draw(assets.npc_sheet(675), npc_rows(675), n, w, h)
+            }
+            NpcKind::ShimmerSlime => {
+                pumpkin_moon_draw(assets.npc_sheet(676), npc_rows(676), n, w, h)
+            }
+            NpcKind::Shimmerfly => {
+                pumpkin_moon_draw(assets.npc_sheet(677), npc_rows(677), n, w, h)
+            }
+            NpcKind::TownSlimeGreen => {
+                pumpkin_moon_draw(assets.npc_sheet(678), npc_rows(678), n, w, h)
+            }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
@@ -3534,6 +3549,9 @@ pub(crate) fn draw_npcs(
                     | NpcKind::ScarletMacaw
                     | NpcKind::BlueMacaw
                     | NpcKind::Toucan
+                    | NpcKind::YellowCockatiel
+                    | NpcKind::GrayCockatiel
+                    | NpcKind::Shimmerfly
                     | NpcKind::DungeonSpirit
             )
         {

@@ -586,6 +586,11 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            NpcKind::YellowCockatiel => 674,
+            NpcKind::GrayCockatiel => 675,
+            NpcKind::ShimmerSlime => 676,
+            NpcKind::Shimmerfly => 677,
+            NpcKind::TownSlimeGreen => 678,
             NpcKind::Stinkbug => 669,
             NpcKind::TownSlimeBlue => 670,
             NpcKind::ScarletMacaw => 671,
@@ -956,6 +961,11 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            674 => NpcKind::YellowCockatiel,
+            675 => NpcKind::GrayCockatiel,
+            676 => NpcKind::ShimmerSlime,
+            677 => NpcKind::Shimmerfly,
+            678 => NpcKind::TownSlimeGreen,
             669 => NpcKind::Stinkbug,
             670 => NpcKind::TownSlimeBlue,
             671 => NpcKind::ScarletMacaw,
@@ -1033,6 +1043,7 @@ impl NpcKind {
                 | NpcKind::TownDog
                 | NpcKind::TownBunny
                 | NpcKind::TownSlimeBlue
+                | NpcKind::TownSlimeGreen
                 | NpcKind::PartyGirl
         )
     }
@@ -1215,6 +1226,7 @@ impl NpcKind {
                 | NpcKind::TownDog
                 | NpcKind::TownBunny
                 | NpcKind::TownSlimeBlue
+                | NpcKind::TownSlimeGreen
                 | NpcKind::WitchDoctor
         )
     }
@@ -1247,6 +1259,7 @@ impl NpcKind {
                 | NpcKind::TownDog
                     | NpcKind::TownBunny
                     | NpcKind::TownSlimeBlue
+                    | NpcKind::TownSlimeGreen
                     | NpcKind::Mechanic
             )
     }
@@ -1888,6 +1901,11 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            NpcKind::YellowCockatiel => "NPC_Hit_1",
+            NpcKind::GrayCockatiel => "NPC_Hit_1",
+            NpcKind::ShimmerSlime => "NPC_Hit_1",
+            NpcKind::Shimmerfly => "NPC_Hit_1",
+            NpcKind::TownSlimeGreen => "NPC_Hit_1",
             NpcKind::Stinkbug => "NPC_Hit_1",
             NpcKind::TownSlimeBlue => "NPC_Hit_1",
             NpcKind::ScarletMacaw => "NPC_Hit_1",
@@ -2230,6 +2248,11 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            NpcKind::YellowCockatiel => "NPC_Killed_1",
+            NpcKind::GrayCockatiel => "NPC_Killed_1",
+            NpcKind::ShimmerSlime => "NPC_Killed_1",
+            NpcKind::Shimmerfly => "NPC_Killed_1",
+            NpcKind::TownSlimeGreen => "NPC_Killed_6",
             NpcKind::Stinkbug => "NPC_Killed_1",
             NpcKind::TownSlimeBlue => "NPC_Killed_6",
             NpcKind::ScarletMacaw => "NPC_Killed_1",
@@ -2369,6 +2392,10 @@ impl NpcKind {
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
             NpcKind::AngryNimbus => true,
+            // W4-d43: the SetDefaults noGravity flyers (kb > 0) + the AI-head writers.
+            NpcKind::YellowCockatiel
+            | NpcKind::GrayCockatiel
+            | NpcKind::Shimmerfly => true,
             // W4-d43: the SetDefaults noGravity flyers (kb > 0) + the AI-head writers.
             NpcKind::Stinkbug
             | NpcKind::ScarletMacaw
@@ -2636,6 +2663,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            NpcKind::YellowCockatiel => 24,
+            NpcKind::GrayCockatiel => 24,
+            NpcKind::ShimmerSlime => 1,
+            NpcKind::Shimmerfly => 64,
+            NpcKind::TownSlimeGreen => 7,
             NpcKind::Stinkbug => 115,
             NpcKind::TownSlimeBlue => 7,
             NpcKind::ScarletMacaw => 24,
@@ -3209,6 +3241,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            NpcKind::YellowCockatiel => (14.0, 14.0),
+            NpcKind::GrayCockatiel => (14.0, 14.0),
+            NpcKind::ShimmerSlime => (24.0, 18.0),
+            NpcKind::Shimmerfly => (10.0, 10.0),
+            NpcKind::TownSlimeGreen => (18.0, 20.0),
             NpcKind::Stinkbug => (10.0, 10.0),
             NpcKind::TownSlimeBlue => (18.0, 20.0),
             NpcKind::ScarletMacaw => (14.0, 14.0),
@@ -3325,6 +3362,11 @@ impl NpcKind {
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
             NpcKind::ForceBubble => 384,
+            NpcKind::YellowCockatiel => 674,
+            NpcKind::GrayCockatiel => 675,
+            NpcKind::ShimmerSlime => 676,
+            NpcKind::Shimmerfly => 677,
+            NpcKind::TownSlimeGreen => 678,
             NpcKind::Stinkbug => 669,
             NpcKind::TownSlimeBlue => 670,
             NpcKind::ScarletMacaw => 671,
@@ -3932,6 +3974,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            NpcKind::YellowCockatiel => 5,
+            NpcKind::GrayCockatiel => 5,
+            NpcKind::ShimmerSlime => 80,
+            NpcKind::Shimmerfly => 5,
+            NpcKind::TownSlimeGreen => 250,
             NpcKind::Stinkbug => 5,
             NpcKind::TownSlimeBlue => 250,
             NpcKind::ScarletMacaw => 5,
@@ -4336,6 +4383,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            NpcKind::YellowCockatiel => 0,
+            NpcKind::GrayCockatiel => 0,
+            NpcKind::ShimmerSlime => 20,
+            NpcKind::Shimmerfly => 0,
+            NpcKind::TownSlimeGreen => 10,
             NpcKind::Stinkbug => 0,
             NpcKind::TownSlimeBlue => 10,
             NpcKind::ScarletMacaw => 0,

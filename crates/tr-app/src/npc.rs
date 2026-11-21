@@ -1086,6 +1086,26 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.YellowCockatiel` (674) — Yellow Cockatiel (`aiStyle 24`):
+    /// 14x14, dmg 0, def 0, 5 HP, kb 0.8,
+    /// value 0.0 (`NPC.cs:17538-17551`). W4-d43.
+    YellowCockatiel,
+    /// `NPCID.GrayCockatiel` (675) — Gray Cockatiel (`aiStyle 24`):
+    /// 14x14, dmg 0, def 0, 5 HP, kb 0.8,
+    /// value 0.0 (`NPC.cs:17552-17565`). W4-d43.
+    GrayCockatiel,
+    /// `NPCID.ShimmerSlime` (676) — Shimmer Slime (`aiStyle 1`):
+    /// 24x18, dmg 20, def 5, 80 HP, kb 1.0,
+    /// value 150.0 (`NPC.cs:17566-17578`). W4-d43.
+    ShimmerSlime,
+    /// `NPCID.Shimmerfly` (677) — Faeling (`aiStyle 64`):
+    /// 10x10, dmg 0, def 0, 5 HP, kb 1.0,
+    /// value 0.0, noGravity (`NPC.cs:17579-17593`). W4-d43.
+    Shimmerfly,
+    /// `NPCID.TownSlimeGreen` (678) — Cool Slime (`aiStyle 7`):
+    /// 18x20, dmg 10, def 15, 250 HP, kb 0.5,
+    /// value 0.0, townNPC (`NPC.cs:17594-17608`). W4-d43.
+    TownSlimeGreen,
     /// `NPCID.Stinkbug` (669) — Stinkbug (`aiStyle 115`):
     /// 10x10, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0, noGravity (`NPC.cs:17467-17480`). W4-d43.
@@ -3694,6 +3714,11 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            NpcKind::YellowCockatiel => 0.8,
+            NpcKind::GrayCockatiel => 0.8,
+            NpcKind::ShimmerSlime => 1.0,
+            NpcKind::Shimmerfly => 1.0,
+            NpcKind::TownSlimeGreen => 0.5,
             NpcKind::Stinkbug => 1.0,
             NpcKind::TownSlimeBlue => 0.5,
             NpcKind::ScarletMacaw => 0.8,
@@ -4114,6 +4139,11 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            NpcKind::YellowCockatiel => 0,
+            NpcKind::GrayCockatiel => 0,
+            NpcKind::ShimmerSlime => 5,
+            NpcKind::Shimmerfly => 0,
+            NpcKind::TownSlimeGreen => 15,
             NpcKind::Stinkbug => 0,
             NpcKind::TownSlimeBlue => 15,
             NpcKind::ScarletMacaw => 0,
@@ -4526,6 +4556,11 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            NpcKind::YellowCockatiel => 0.0,
+            NpcKind::GrayCockatiel => 0.0,
+            NpcKind::ShimmerSlime => 150.0,
+            NpcKind::Shimmerfly => 0.0,
+            NpcKind::TownSlimeGreen => 0.0,
             NpcKind::Stinkbug => 0.0,
             NpcKind::TownSlimeBlue => 0.0,
             NpcKind::ScarletMacaw => 0.0,
@@ -6572,6 +6607,17 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // W4-d43: the aiStyle-24 bird arm (NPC.cs:25313-25537, npc_ai_style24.rs ported unwired). The kind holds
+            // still until its machine lands (the MartianTurret stand-in precedent).
+            NpcKind::YellowCockatiel => {}
+            // W4-d43: the aiStyle-24 bird arm (NPC.cs:25313-25537, npc_ai_style24.rs ported unwired). The kind holds
+            // still until its machine lands (the MartianTurret stand-in precedent).
+            NpcKind::GrayCockatiel => {}
+            NpcKind::ShimmerSlime => self.update_slime(world, player, dt),
+            // W4-d43: the aiStyle-64 firefly arm (NPC.cs:34019-34248, npc_ai_style64.rs ported unwired). The kind holds
+            // still until its machine lands (the MartianTurret stand-in precedent).
+            NpcKind::Shimmerfly => {}
+            NpcKind::TownSlimeGreen => self.update_guide(world, dt),
             // W4-d43: AI_115_LadyBugs (NPC.cs:47580-47714) — the ladybug machine is unported. The kind holds
             // still until its machine lands (the MartianTurret stand-in precedent).
             NpcKind::Stinkbug => {}
@@ -10370,6 +10416,95 @@ impl Npc {
                     }
                 }
             }
+            NpcKind::YellowCockatiel => {
+                // `case 671 : case 672 : case 673 : case 674 : case 675`
+                // (`NPC.cs:73654-73677`): the jungle bird flap — the sprite
+                // follows the facing, the rotation tilts `vx * 0.1`, the
+                // stationary pose holds row 0, the 4-tick counter advances and
+                // wraps at the strip back to row 1.
+                self.sprite_dir = self.facing;
+                self.rotation = self.vx * 0.1;
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 0;
+                    self.frame_counter = 0.0;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                    }
+                    if self.frame >= self.rows() {
+                        self.frame = 1;
+                    }
+                }
+            }
+            NpcKind::GrayCockatiel => {
+                // `case 671 : case 672 : case 673 : case 674 : case 675`
+                // (`NPC.cs:73654-73677`): the jungle bird flap — the sprite
+                // follows the facing, the rotation tilts `vx * 0.1`, the
+                // stationary pose holds row 0, the 4-tick counter advances and
+                // wraps at the strip back to row 1.
+                self.sprite_dir = self.facing;
+                self.rotation = self.vx * 0.1;
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 0;
+                    self.frame_counter = 0.0;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                    }
+                    if self.frame >= self.rows() {
+                        self.frame = 1;
+                    }
+                }
+            }
+            NpcKind::ShimmerSlime => {
+                // `case 658 : case 659 : case 667 : case 676` (`NPC.cs:70820-70843`):
+                // the queen-slime minion / golden / shimmer slime flap — the
+                // counter ticks once, doubled while moving (`num2 > 0`) and
+                // tripled in the crouch class (`num2 == 4`); >=8 advances one
+                // row and wraps at the strip. (The 302/304 sprite snap is not
+                // these kinds'.)
+                self.frame_counter += 1.0;
+                if num2 > 0 {
+                    self.frame_counter += 1.0;
+                }
+                if num2 == 4 {
+                    self.frame_counter += 1.0;
+                }
+                if self.frame_counter >= 8.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= self.rows() {
+                    self.frame = 0;
+                }
+            }
+            NpcKind::Shimmerfly => {
+                // `case 677` (`NPC.cs:72710-72721`): the shimmerfly — the sprite
+                // follows the facing, the counter ticks TWICE per frame
+                // (`frameCounter++` then `++frameCounter`, the C#'s own double
+                // increment), >=6 advances one row and wraps at 5 (the sheet
+                // carries a 5th row beyond `npcFrameCount[677]` = 4 — the
+                // strip-test grid bound).
+                self.sprite_dir = self.facing;
+                self.frame_counter += 1.0;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame >= 5 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d43: the town pet rides the humanoid-group case list
+            // (`NPC.cs:68622-68633`); the town machine keeps the walk band in
+            // `humanoid_town_frame` — the Zoologist/Princess no-op precedent
+            // (the strip stays inside the sheet).
+            NpcKind::TownSlimeGreen => {}
         }
     }
 
@@ -19996,6 +20131,11 @@ impl Npc {
             NpcKind::ScarletMacaw => 671,
             NpcKind::BlueMacaw => 672,
             NpcKind::Toucan => 673,
+            NpcKind::YellowCockatiel => 674,
+            NpcKind::GrayCockatiel => 675,
+            NpcKind::ShimmerSlime => 676,
+            NpcKind::Shimmerfly => 677,
+            NpcKind::TownSlimeGreen => 678,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -25065,7 +25205,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 310] = [
+    pub(super) const ALL_KINDS: [NpcKind; 315] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -25383,6 +25523,11 @@ mod tests {
         NpcKind::ScarletMacaw,
         NpcKind::BlueMacaw,
         NpcKind::Toucan,
+        NpcKind::YellowCockatiel,
+        NpcKind::GrayCockatiel,
+        NpcKind::ShimmerSlime,
+        NpcKind::Shimmerfly,
+        NpcKind::TownSlimeGreen,
         NpcKind::WyvernTail,
     ];
 
@@ -25663,6 +25808,37 @@ mod tests {
             (NpcKind::ScarletMacaw, 671, 24u8, 14.0, 14.0, 0, 0, 5, 0.8, 0.0),
             (NpcKind::BlueMacaw, 672, 24u8, 14.0, 14.0, 0, 0, 5, 0.8, 0.0),
             (NpcKind::Toucan, 673, 24u8, 14.0, 14.0, 0, 0, 5, 0.8, 0.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(kind.to_u16(), ty, "{kind:?} protocol id = vanilla id");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+    }
+
+    /// W4-d43 batch 9 — the new kinds' `SetDefaults` rows pin against the
+    /// C# (`NPC.cs` SetDefaults arms), through the port's tables — the
+    /// `s1_d_3_wire_smallkinds_the_defaults_match_the_csharp_rows` shape.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d43_batch9_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::YellowCockatiel, 674, 24u8, 14.0, 14.0, 0, 0, 5, 0.8, 0.0),
+            (NpcKind::GrayCockatiel, 675, 24u8, 14.0, 14.0, 0, 0, 5, 0.8, 0.0),
+            (NpcKind::ShimmerSlime, 676, 1u8, 24.0, 18.0, 20, 5, 80, 1.0, 150.0),
+            (NpcKind::Shimmerfly, 677, 64u8, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::TownSlimeGreen, 678, 7u8, 18.0, 20.0, 10, 15, 250, 0.5, 0.0),
         ];
         for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
             let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
@@ -26414,6 +26590,7 @@ mod tests {
                 // +6/+12 colour offsets (`:73499-73507`) are unreachable
                 // for this kind — the grid/cell bound precedent.
                 NpcKind::PresentMimic => 18,
+                NpcKind::Shimmerfly => 5,
                 NpcKind::QueenSlimeBoss => 32,
                 _ => npc_rows(texture_net_id(kind)),
             };
@@ -29244,7 +29421,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            310,
+            315,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(

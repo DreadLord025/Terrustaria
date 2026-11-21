@@ -484,6 +484,11 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+            NpcKind::YellowCockatiel => &[31],
+            NpcKind::GrayCockatiel => &[31],
+            NpcKind::ShimmerSlime => &[],
+            NpcKind::Shimmerfly => &[31],
+            NpcKind::TownSlimeGreen => &[31],
             NpcKind::Stinkbug => &[31],
             NpcKind::TownSlimeBlue => &[31],
             NpcKind::ScarletMacaw => &[31],
