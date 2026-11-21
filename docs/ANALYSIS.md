@@ -1363,6 +1363,29 @@ isolated `pass_rng` slots, the cave block writes only style fields —
 union is FINALIZED as research/92 §1-FULL: 13 claimant branches, 107-byte fixed head
 + d109 dense LAST (supersedes the 21/53/65-byte drafts).
 
+**W4-g71 BG SEAL (2026-11-21, code-only, `d2fcf9f2` net fix) — 92 SEALED.** The seal
+receipted the three external 107 re-derivations at their latest tips (g88 103
+L3-DEFINITIVE `fc5cf11ae` — its own 100-byte step-10 superseded, an independent
+C#-row re-derivation confirming the 13-branch census/dedups/keep-one; f44 132 RETIRE
+§3-L3 `d35876af9` — same field set, different order; g72 64a/64b SEALED `b069439eb` —
+its 53-byte prefix now-in-107 verbatim, retire defers layout authority here "per the
+Lead") and adjudicated the ORDER: research/92 §1-FULL's 64a-stable [0..53] prefix WINS
+(forward-only, no released v18; g88's strict-C#-row middle — books [61..63], underworld
+[56] — recorded as the standing free alternative, a pure offset slide). g88's D5
+flagged three registry tip-column hash slips (e19/d125/c43) — fixed. §1-FULL is THE
+`.trwld` union-layout authority (INDEX pointer); f44's 132 keeps the L1/L2 +
+merger-bible scope. The f45 flags-block audit (§1-SEAL.2): f45's file is
+the `.wld` base, g71's live setBG 0/3/6/7/9/10-12 hunks supersede its zero stand-ins,
+the five shared live styles + g69's crimson dedup onto f45's write — wire widths
+byte-identical, ownership-only compose. **The net hop was the last LOGIC gap in the
+roll→persist→net→draw chain and this seal closed it:** `WorldInfo.backgrounds` was
+`[u8;11]` (C# writes 13, `NetMessage.cs:245-257` — every post-style header field was
+shifted 2 bytes against a vanilla peer) and unwired (host zeros, client no-op). Fixed
+to `[u8;13]`, `world_info` emits the live rolls + treeX/treeStyle + g72's cave roll,
+`client_install_world` applies via `setBG` wire order 0,10,11,12,1..9
+(`MessageBuffer.cs:493-505`). Remaining gaps are merge-scoped sheet supply (d35) +
+g72's two draw modules + the forest style-0 pin — not logic (research/92 §5).
+
 **Deliberate deviation — the atlas budget guard.** A rolled non-default surface style
 can overflow the 8192 px atlas (style-0 baseline 7847 px; non-default styles add
 336–1503 px, measured). The C# draws surface bgs through `Main.spriteBatch` under the

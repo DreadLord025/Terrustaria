@@ -19,9 +19,33 @@ Four items, four verdicts:
 | 3 | ocean wave ANIMATION | **NO-OP — the C# ocean bg is STATIC** | ocean ids absent from every animation site |
 | 4 | desert oasis row-250 + underground-desert bg | **row-250 VERIFIED live; underground-desert = g72's, no separate bg** | `sky.rs:1735` witness; `Main.cs:54033-54095` has no desert arm |
 
+**BG SEAL phase (this branch, `d2fcf9f2` net fix + this doc):** §1-SEAL the
+three external 107 re-derivation receipts at their LATEST tips (g88 103
+L3-DEFINITIVE `fc5cf11ae` / f44 132 RETIRE `d35876af9` / g72 64a+64b SEALED
+`b069439eb`) + the ORDER adjudication (the 64a-stable prefix WINS per the
+Lead's authority designation; g88's strict-row middle recorded as the free
+alternative) + the three registry tip-column hash slips fixed (e19/d125/c43,
+g88 D5's flag) + the f45 flags-block compose audit; §5 the final
+roll→persist→net→draw witness-chain (the net hop was the last logic gap —
+the `[u8;11]`→`[u8;13]` WorldInfo fix closed it); §1-FULL declared THE
+union-layout authority (INDEX pointer), 92 SEALED.
+
 ---
 
 ## 1-FULL. The TRWLD v18 UNION — FINAL claimant registry + single layout (13 branches)
+
+> **SEAL AUTHORITY NOTE (this branch, the BG SEAL phase).** §1-FULL below is
+> **THE authority** for the `.trwld` v18 union layout — all other union docs
+> point HERE (research/INDEX row 92 carries the pointer; g72's 64a/64b retire
+> headers defer here "per the Lead"). The three independent 107-byte
+> re-derivations are RECEIPTED in §1-SEAL.1 at their latest tips: g88's 103
+> L3-DEFINITIVE (`fc5cf11ae`, its own 100-byte step-10 superseded), f44's 132
+> RETIRE §3-L3 (`d35876af9`) and g72's 64a/64b SEALED (`b069439eb`) all land
+> the same field set + total; §1-SEAL.1 adjudicates the byte ORDER (this
+> doc's 64a-stable prefix WINS; g88's strict-row middle recorded as the
+> standing free alternative). f44's 132 stays THE authority for the **L1/L2
+> persist layers + the cross-layer merger-bible** (its §8) — the scopes are
+> disjoint, the L3 layout authority is HERE.
 
 > **FINAL consolidation (this branch, `fc76a48b`).** SUPERSEDES the earlier §1
 > (five-branch 21-byte head) and reconciles g72's research/64a (53-byte) — BOTH
@@ -36,17 +60,17 @@ Four items, four verdicts:
 | # | Lane | Branch tip | Block | Size | C# anchor (write) | Pre-v18 default |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | **g70** forest-set | `75265591` (`bbe47378` claim) | `tree_x[0..3]` 3×i32 LE + `forest_bg_styles[0..4]` 4×u8 (treeBG1..4) | **16 B** | `WorldFile.cs:1253-1255` (treeX), `:1318` (treeBG1), `:1377-1379` (treeBG2-4) | `tree_x=[width;3]`, styles `[0;4]` |
-| 2 | **g72** cave-bg | `4a75715e` (`715c6096` claim) | `cave_back_x[0..3]` 3×i32 LE + `cave_back_style[0..4]` 4×i32 LE + ice/jungle/hell 3×u8 | **31 B** | `:1260-1266` (i32 verbatim), `:1267-1269` (C# i32, compressed u8) | `World::new` zeros (NOT Reset band defaults — boot dead store) |
+| 2 | **g72** cave-bg | `b069439e` (retire; `715c6096` claim, block unchanged since `4a75715e`) | `cave_back_x[0..3]` 3×i32 LE + `cave_back_style[0..4]` 4×i32 LE + ice/jungle/hell 3×u8 | **31 B** | `:1260-1266` (i32 verbatim), `:1267-1269` (C# i32, compressed u8) | `World::new` zeros (NOT Reset band defaults — boot dead store) |
 | 3 | **g69** crimson | `20d0380f` (`9717c0bb` claim) | `WorldGen.crimson` u8 bool | **1 B** | `:1281`; `:3507` corruption fallback | `false` |
-| 4 | **e19** crimson DUP | `d7de8bd5` | same `crimson` byte (inherited g69 code, comment cites W4-g69) | 1 B (dup of #3) | same | same |
+| 4 | **e19** crimson DUP | `e7e466d4` | same `crimson` byte (inherited g69 code, comment cites W4-g69) | 1 B (dup of #3) | same | same |
 | 5 | **g71** surface | this branch | `snow/desert/ocean_bg_style` 3×u8 | **3 B** | `:1321`/`:1324-1325` | all 0 |
 | 6 | **g71** underworld seat | this branch (rolled + `.wld`-persisted since the wiring phase) | `underworld_bg_style` u8 (setBG 9) | **1 B** | `:1376` | 0 |
-| 7 | **c39** moon bosses | `8ecb288a` | `downed_halloween_king/tree`, `downed_christmas_ice_queen/santank/tree` 5×u8 bool | **5 B** | `:1347-1351`; `NPC.cs:79210-79238` death arms | all `false` |
+| 7 | **c39** moon bosses | `7dd785dc` (retire; `8ecb288a` claim) | `downed_halloween_king/tree`, `downed_christmas_ice_queen/santank/tree` 5×u8 bool | **5 B** | `:1347-1351`; `NPC.cs:79210-79238` death arms | all `false` |
 | 8 | **f39** moon bosses DUP | `bd5a5a24` | byte-identical five flags (inherited c39 code) | 5 B (dup of #7) | same | same |
-| 9 | **g87** pet licenses | `dfbcaf94` | `bought_cat/dog/bunny` 3×u8 bool | **3 B** | `:1392-1394`; items 4829/4830/4910 | all `false` |
-| 10 | **d125** empress | `07697080` (`d8047a10` claim) | `downed_empress_of_light` u8 bool | **1 B** | `:1395`; `NPC.cs:6393`, case-636 `:79351-79353` | `false` |
-| 11 | **g90** books | `94d33f2c` | `combat_book_volume_two_was_used` + `peddlers_satchel_was_used` 2×u8 bool | **2 B** | `:1407-1408`; `.wld` gates v259/v260 (`:2404-2405` read) | both `false` |
-| 12 | **c43/f45** identity | `e7e466d4` / `6352d384` (byte-identical blocks) | `generator_version` u64 + `unique_id` [u8;16] + `world_id` i32 + `creation_time` i64 + `last_played` i64 | **44 B** | `SaveWorldHeader:1225-1227` + `SaveWorldFlags:1250-1251` | `World::new` zeros |
+| 9 | **g87** pet licenses | `e3f81d0b` (closeout 3; `dfbcaf94` claim) | `bought_cat/dog/bunny` 3×u8 bool | **3 B** | `:1392-1394`; items 4829/4830/4910 | all `false` |
+| 10 | **d125** empress | `d8047a10` | `downed_empress_of_light` u8 bool | **1 B** | `:1395`; `NPC.cs:6393`, case-636 `:79351-79353` | `false` |
+| 11 | **g90** books | `5b79ebce` (retire; `94d33f2c` claim) | `combat_book_volume_two_was_used` + `peddlers_satchel_was_used` 2×u8 bool | **2 B** | `:1407-1408`; `.wld` gates v259/v260 (`:2404-2405` read) | both `false` |
+| 12 | **c43/f45** identity | `07697080` / `6352d384` (byte-identical blocks) | `generator_version` u64 + `unique_id` [u8;16] + `world_id` i32 + `creation_time` i64 + `last_played` i64 | **44 B** | `SaveWorldHeader:1225-1227` + `SaveWorldFlags:1250-1251` | `World::new` zeros |
 | 13 | **d109** dense variants | `81894095` | `World::variants` dense `width*height`×u8, row-major | **W×H B** | port-only (`Tile.bTileHeader2` bits 4-7, `Tile.cs:464-482`; never in the `.wld` tile stream) | zeros, `variants_from_save=false` |
 
 **Duplicate adjudications (keep-one, zero layout cost):**
@@ -266,6 +290,76 @@ pattern). All thirteen branches' round-trip witnesses keep their assertions;
 only the tail lengths move. The three duplicate pairs (#4/#8/#12) contribute
 ZERO extra bytes — drop the duplicate writer/reader hunks wholesale, keep the
 claimant of record's fields (the field sets are identical).
+
+---
+
+## 1-SEAL. The 107-broadcast receipts + the f45 flags-block audit (BG SEAL phase)
+
+### 1-SEAL.1 The three external 107 re-derivations — RECEIPTED
+
+Every union doc was re-read at its CURRENT pushed tip (2026-11-21, the seal
+probe). All three independent re-derivations land the same **field set** and
+the same **107-byte total**; the only live disagreement is the flag-middle
+byte ORDER, adjudicated below.
+
+| Receipt | Tip read | Its L3 claim | Verdict vs §1-FULL |
+| --- | --- | --- | --- |
+| **g88** research/103 **L3-DEFINITIVE** (SEAL phase) | `fc5cf11ae` (10:40) | independent C#-row re-derivation: **107-byte head**, 13-branch census, 11 blocks after the three dedup pairs; its old step-10 "100-byte" reconcile SUPERSEDED by its own seal (the 100 missed the moon quintet + the FIRED underworld seat and inherited f44-FINAL's 97/98 slip). Proposes the STRICT-C#-row flag middle: crimson [50] → moon [51..56] → underworld [56] → pets [57..60] → empress [60] → books [61..63] | **SAME total + field set + dedups + roll keep-one + dense-LAST — CONFIRMED both ways.** Its D5 broadcast confirms this registry's census independently (and flagged three tip-column hash slips — e19/d125/c43 — FIXED in §1-FULL.1 this seal). ORDER delta: it moves books out of the 64a prefix ([51..53]→[61..63]) and slides the extension group −2. ADJUDICATION below — 92's order stands per the Lead's authority designation |
+| **f44** research/132 RETIRE §3-L3 (THE persist merger-bible) | `d35876af9` (10:17) | **TEN claimants / 107-byte head**: 16+31+3+1(underworld)+1(crimson)+5(moon)+3(pets)+1(empress)+2(books)+44(identity); the old "97" corrected (16+31+3+1+1+2+44 = 98) | **SAME total + field set, DIFFERENT order.** f44 seats underworld at [50] (before crimson — inverts `:1376` > `:1281`, g88's D2 flags the same) and books at [61..63]. Its claimant census, truncation-move list, roll keep-one + the §8 merger-bible STEPS stay authoritative (order-agnostic); its layout TABLE is superseded by §1-FULL.2 for byte order |
+| **g72** research/64a §2-3 + 64b (SEALED, retire) | `b069439eb` (12:10) | 64a's 53-byte prefix [0..53] VERBATIM (forest 16 + cave 31 + surface 3 + crimson 1 + books 2); its §3 underworld conditional FIRED — 64b seats it at **[58]** per 92 §1-FULL.2; the retire header: "**Per the Lead, 92 §1-FULL is the layout authority** (it keeps our published 64a prefix offsets stable)" | **NOW-IN-107 RECEIPT CLOSED.** The prefix is §1-FULL's [0..53] verbatim — every offset 64a published stays stable; the eleven +31 truncation sites move 31→53→**107** (§1-FULL.4). g72's retire (the LATEST of the three) explicitly DEFERS the layout authority here |
+
+**ORDER ADJUDICATION — §1-FULL's 64a-stable prefix WINS (the Lead's
+designation, receipted by g72's retire).** Three orders are on the table,
+all 107 + W×H, all forward-only (no released v18 — zero back-compat cost
+either way): 92's 64a-stable prefix (books [51..53], underworld [58]),
+f44-RETIRE's (underworld [50], books [61..63]) and g88-DEFINITIVE's
+strict-C#-row middle (underworld [56], books [61..63]). The deciding
+factors: (1) the Lead designated **92 §1-FULL as THE layout authority**
+(the INDEX pointer; this seal's brief); (2) g72's retire — the newest
+publication, 12:10, AFTER g88's 10:40 definitive — explicitly defers to
+92's order "per the Lead" and keeps its published prefix offsets stable;
+(3) g72's eleven truncation sites + round-trip witnesses pin the [0..53]
+prefix, and 64a §2 itself published "the contract only demands ONE fixed
+shared order". g88's D5 tie-breaker claim ("the C# rows, not publication
+timestamp") is its own proposal's rationale, not a cross-lane adjudication
+— it is RECEIPTED as the standing alternative: if the merger ever prefers
+the strict-row middle, the move is free (books [51..53]→[61..63], moon
+[53..58]→[51..56], underworld [58]→[56], pets [59..62]→[57..60], empress
+[62]→[60]; total + field set + §1-FULL.4's site table unchanged) — but the
+PUBLISHED authority the merger seats is §1-FULL.2's writer/reader VERBATIM.
+
+**Scope split (the INDEX pointer):** §1-FULL (this doc) = THE `.trwld` v18
+union LAYOUT authority. f44's 132 = THE L1 `.plr` / L2 `.trplayer` persist
+authority + the cross-layer merger-bible (its §8, L1→L2→L3 order). g88's 103
+= the L2 v11 superset contract + the independent L3 re-derivation receipt
+(its L3-DEFINITIVE confirms the census; its order proposal is the recorded
+alternative). No doc owns two layers' layouts.
+
+### 1-SEAL.2 The f45 flags-block audit vs this head — COMPOSE
+
+f45's `wld/sections/flags.rs` is THE `.wld` merge base (a6 138 §5's
+byte-compare, re-affirmed by 132 §3-L3 rule 3). Audited against THIS branch's
+head at f45's pushed tip `6352d3840` (its worktree `2e13cfafc` is ahead 1 —
+the load-gate census, unpushed, orthogonal to the bg bytes). Every bg field's
+WIRE WIDTH is byte-identical on both sides (both keep the C# widths); the
+compose is field-OWNERSHIP only, no offset moves:
+
+| Field group | f45 base | g71 head (here) | Merge compose |
+| --- | --- | --- | --- |
+| `cave_back_x` | `world.rs [i32;3]`, full-array loop (3 writes) | `[i32;4]` + `[..3]` slice (`flags.rs:46`) | SAME 12 wire bytes; keep g72/g71's `[i32;4]` shape + slice (C# `new int[4]`, `[3]` never persisted); f45's `[i32;3]` array drops |
+| ice/jungle/hell | i32 fields, `w.i32` direct (`:53-55`) | u8 fields, `as i32` casts (`:52-54`) | SAME 4-byte widths; keep g72's u8 fields + casts (the `.trwld` u8 widths) |
+| `WorldGen.crimson` | **owned** write `:70` + read `:441` | `false` stand-in `:68` + skip-read `:408` | f45's write+read ONCE (g69 reads it — 117 §1 cross-note); g71's stand-ins DROP |
+| setBG 0/3/6/7 (treeBG1/snow/desert/ocean) | `w.u8(0)` stand-ins `:103/:106/:109/:110` + skip-reads `:494/:497` | **live** fields `:101/:104/:107/:108` + reads `:461/:464/:467/:468` | g71's live writes SUPERSEDE f45's zeros |
+| setBG 9 + treeBG2..4 | `w.u8(0)` `:203-206` + skip-reads `:659/:662` | **live** `:186-189` + reads `:577/:580` | g71 SUPERSEDES |
+| setBG 1/2/4/5/8 (corrupt/jungle/hallow/crimson/mushroom) | live `:104/:105/:107/:108/:202` | live `:102/:103/:105/:106/:185` | byte-identical — DEDUP, keep one |
+| dungeon/afterParty/cloud/wind/lantern/pets/books/dd2/force-today | f45-owned (force-today defers to f39) | stand-ins where unowned | keep f45's; g71's `0`/`false` stand-ins drop |
+
+**Compose verdict:** take f45's flags.rs as the base, apply g71's bg-ownership
+hunks (the live setBG 0/3/6/7/9/10-12 + the tree/cave arrays + ice/jungle/hell)
+on top, dedup the five shared live styles + g69's crimson read onto f45's
+write. f45's unpushed gate-census (`2e13cfafc`: the >326 reject, the
+flags_tail legacy-u32 window 299..312, FixEndlessRainWorlds) rides its file at
+merge — load-gate fixes, no bg-byte interaction.
 
 ---
 
@@ -630,6 +724,90 @@ change to g72's files.**
 
 ---
 
+## 5. BG-DRAW-CHAIN — the final roll→persist→net→draw witness-chain (SEAL)
+
+The end-to-end chain, every hop cited at the CURRENT tips (g71 here `d2fcf9f2`,
+g72 `b069439e` retire — draw/persist code unchanged since `4a75715e`, g69
+`20d0380f`, f45 `6352d384`). **Verdict: the chain is
+COMPLETE on the logic side after this seal's net fix; the remaining gaps are
+SHEET SUPPLY (d35's atlas pages) + two g72-owned draw modules landing at
+merge — not logic.**
+
+### 5.1 The chain, hop by hop
+
+| Hop | Surface family (g70 forest + g71 surface/underworld) | Cave family (g72) | Evil flavour (g69) |
+| --- | --- | --- | --- |
+| **ROLL** | `bg_rolls::randomize_tree_style` + `randomize_backgrounds` on `pass_rng` slots, `step_world_tail` (`pipeline.rs:2747-2784`, the :11338/:11340 seats) | `cave_bg::randomize_cave_backgrounds` VERBATIM g72 on SHARED `streams.rng` (`pipeline.rs:2760`, the :11339 seat; ONE draw, keep-one §2.1-FINAL) | `GenOptions.crimson` → `World.crimson` at gen (g69 deviation 3); drunk dawn flip (`clock.rs`) |
+| **PERSIST .trwld** | `save.rs:438-440` v18 surface 3 B (union [47..50] §1-FULL); forest/underworld ride the union head | g72's 31 B block (union [16..47]); `.wld` i32 arrays | crimson 1 B (union [50]) |
+| **PERSIST .wld** | `flags.rs:101/:104/:107/:108` setBG 0/3/6/7 + `:185-189` setBG 8/9/10-12 (g71-owned, supersede f45 zeros — §1-SEAL.2) | `flags.rs:46-54` cave arrays + ice/jungle/hell i32s (g72-identical writes) | f45 writes `:70`, g69 reads (117 §1 dedup: write+read ONCE) |
+| **NET** | **THIS SEAL (`d2fcf9f2`)**: `world_info` emits the 13 bg bytes + treeX/treeStyle (`NetMessage.cs:245-270`), client `setBG` wire-order apply (`MessageBuffer.cs:493-505`) | same header: cave arrays + ice/jungle/hell (`NetMessage.cs:258-278`, g72's shape adopted); `cave_back_x[3]` never sent | crimson rides `.wld`/union, NOT the WorldInfo header (C# has no crimson byte there — the client re-derives evil from the world data) |
+| **DRAW** | `sky.rs` SkyAssets builder `:486-510`: snow/desert/ocean/corrupt/jungle/hallow/crimson/mushroom LIVE through `world.*_bg()` → `surface_bg_texture_ids`; forest `[50,51,52]` style-0 PIN (g70's `forest_bg(n)` read lifts at merge, g72 64c); underworld stack = g72 `underworld_bg.rs` (UNWIRED, d35 escape) | g72 `bg_styles.rs` pick + 22-case sheets + `ug_back` latch + cross-fade LIVE on ITS branch (`39479b55`/closeout); lands at merge; non-classic picks gracefully skip (atlas-blocked) | g69's 5 wired feeds + 12 deferred consumers (117 §2 census); the crimson SURFACE draw rides g71's `crimson_bg()` (the style byte, not the evil bool — distinct fields) |
+
+### 5.2 The net-width FIX this seal landed (`d2fcf9f2`)
+
+The pre-seal `WorldInfo.backgrounds` was `[u8; 11]` with `world_info` emitting
+`[0; 11]` and the client install reading NOTHING — two defects:
+1. **Wire-width bug:** C# writes **13** style bytes (`NetMessage.cs:245-257`:
+   treeBG1..4 + corrupt/jungle/snow/hallow/crimson/desert/ocean + mushroom +
+   underworld); the 11-byte block shifted EVERY post-style header field
+   (ice/jungle/hell, wind, clouds, treeX, treeStyle, cave arrays, treeTops,
+   maxRaining, the 14 BitsBytes…) by 2 bytes against a vanilla peer.
+2. **Unwired seam:** the host sent zeros and the client never applied them —
+   a net-joined client drew style-0 backgrounds regardless of the host's roll.
+
+Fixed: `backgrounds: [u8; 13]` (net.rs), `world_info` emits the live rolled
+styles + treeX/treeStyle + g72's cave roll, `client_install_world` applies the
+13 bytes through `set_surface_bg_style` in the C# wire order
+`[0,10,11,12,1,2,3,4,5,6,7,8,9]` (`MessageBuffer.cs:493-505`) + restores
+tree/cave/ice/jungle/hell. Witness `the_world_info_header_carries_the_bg_rolls`
+(netglue.rs, WRITTEN NOT RUN) pins host-emit → client-install for every field;
+`world_info_round_trip` (net.rs) now uses distinct per-slot values so a
+width/order slip cannot pass. 2 anchors rows added.
+
+### 5.3 Remaining gaps (merge-scoped, NOT logic holes)
+
+- **Forest draw pin:** `sky.rs:491` `[50,51,52]` is style-0; g70's
+  `world.forest_bg(n)` reads lift it at merge (g72 64c's published split).
+- **Underworld stack:** g72 `underworld_bg.rs` UNWIRED — d35 §9.1's
+  render-to-texture escape (the sheets never ride the tile atlas in C#
+  either); the style byte IS rolled/persisted/net-carried here, so the draw
+  binding is the only remainder.
+- **Cave sheets:** g72's pick/sheets/latch land at merge; per-biome sheets
+  stay atlas-blocked until d35's pages (graceful degradation, never a wrong
+  sheet).
+- **g69's 12 deferred crimson consumers:** census-recorded (117 §2), each
+  its own lane; the 5 small feeds + dawn flip are live.
+
+**Chain completeness verdict:** roll→persist(.trwld+.wld)→net→draw is
+witness-closed for every style byte this lane owns; the net hop was the last
+LOGIC gap and this seal closed it. What remains is sheet supply + two
+g72-owned draw modules + the forest pin — all merge-time landings with
+published contracts, none a missing port.
+
+### 5.4 92 SEALED — the BG/V18 merger-bible (one paragraph)
+
+**The BG/V18 merger-bible:** the merger seats research/92 §1-FULL.2's union
+writer/reader VERBATIM as the FIRST v18 on main — a 107-byte fixed head
+(g70 forest 16 at [0..16] + g72 cave 31 at [16..47] + g71 surface 3 at
+[47..50] + g69 crimson 1 at [50] + g90 books 2 at [51..53], the 64a-stable
+prefix; then c39⨉f39 moon-boss 5 deduped + g71 underworld 1 + g87 pets 3 +
+d125 empress 1 + c43⨉f45 identity 44 deduped) with d109's W×H dense variants
+LAST, `VERSION` stays 18, forward-only (no released v18), every claimant's
+truncation constants move to 107 (`v18_tail_len` → `107 + width*height`,
+§1-FULL.4's per-branch table) and the three duplicate pairs (e19=g69,
+f39=c39, f45=c43) drop wholesale; the roll keep-one is g72's `cave_bg.rs`
+canonical + g71's surface/tree/boot rolls (ONE cave draw, the :11338→:11341
+compose, §2.1-FINAL); the `.wld` side takes f45's flags.rs as the base with
+g71's live setBG hunks superseding its zeros and g69's crimson write+read
+ONCE (§1-SEAL.2); the net hop is already closed here (`d2fcf9f2`, the 13-byte
+WorldInfo block + setBG wire-order client apply); the draw side lands g72's
+`bg_styles.rs`/`underworld_bg.rs` + g70's forest reads lifting the style-0
+pins, with d35's atlas pages supplying the per-biome/underworld sheets
+(graceful degradation until then) — L1/L2 persist ordering rides f44's 132
+§8 merger-bible (L1→L2→L3), this paragraph is its L3-BG half.
+
+---
+
 ## Files touched this sweep
 
 DOC-SWEEP phase (commit `6b4f9d27` + `e2d085ae`):
@@ -682,6 +860,18 @@ FINAL CONSOLIDATION phase (this branch, `fc76a48b` keep-one code + this doc):
 - `docs/research/92-doc-sweep-bg.md` — §1-FULL (13-branch registry, 107-byte union,
   back-compat matrix, truncation-move table), §2.1-FINAL (keep-one adjudication,
   drop-hunks, order-contract compose); the old §1/§2.1 kept as SUPERSEDED audit trail.
+
+BG SEAL phase (this branch, `d2fcf9f2` net fix + the seal docs):
+- `crates/tr-app/src/net.rs` — `WorldInfo.backgrounds` `[u8;11]`→`[u8;13]`
+  (the C# 13-byte block, `NetMessage.cs:245-257`); reader + both fixtures
+  re-pinned (the round-trip now uses distinct per-slot values).
+- `crates/tr-app/src/app/netglue.rs` — `world_info` emits the live rolled
+  styles + treeX/treeStyle + g72's cave roll; `client_install_world` applies
+  the 13 bytes via `setBG` wire order + restores tree/cave/ice/jungle/hell;
+  `the_world_info_header_carries_the_bg_rolls` witness (WRITTEN NOT RUN).
+- `anchors.txt` — 2 net-seam rows.
+- `docs/research/92-doc-sweep-bg.md` — §1-SEAL (receipts + order adjudication
+  + f45 flags compose), §5 (the draw-chain), the AUTHORITY note; 92 SEALED.
 
 **Verification:** code-only mode — no cargo/tests/rustfmt/graphify run. The roll +
 boot + guard witnesses are WRITTEN NOT RUN; their expectations come from independent
