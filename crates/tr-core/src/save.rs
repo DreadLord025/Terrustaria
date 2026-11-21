@@ -433,8 +433,12 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
     w.write_all(&[u8::from(world.downed_fishron)])?;
     // v18: the town-pet license world flags (W4-g87) — the C#'s
     // `NPC.boughtCat`/`boughtDog`/`boughtBunny` (`WorldFile.cs:1392-1394`),
-    // the 4829/4830/4910 Pet License use-unlocks. (The combat-book-vol-two /
-    // peddler-satchel pair is the g90 lane's v18; the Lead merges the two.)
+    // the 4829/4830/4910 Pet License use-unlocks. At the g71c union merge
+    // these 3 bytes seat [57..60] of the SEALED 107-byte v18 head (g88
+    // research/103 §L3-ARBITER A3: after crimson/moon/underworld, before
+    // empress [60] + the g90 books pair [61..63]; identity 44 B closes the
+    // head, W×H dense LAST — research/263 §6.4; this branch keeps its own
+    // 3-byte tail until then, forward-only).
     w.write_all(&[
         u8::from(world.bought_cat),
         u8::from(world.bought_dog),
@@ -822,7 +826,8 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
     if version >= 17 {
         world.downed_fishron = r.u8()? != 0;
     }
-    // v18: the town-pet license world flags (W4-g87, see the writer).
+    // v18: the town-pet license world flags (W4-g87, see the writer — the
+    // union seats them [57..60], research/263 §6.4).
     if version >= 18 {
         world.bought_cat = r.u8()? != 0;
         world.bought_dog = r.u8()? != 0;

@@ -87,7 +87,13 @@ pub fn save(
     // appends with a shape distinct from the numeric pair/flag/loadout
     // lines, so the superset reader's shape walk never misparses it). The
     // `.plr` halves are f44's lane; the pet `bought_*` flags are WORLD
-    // globals (`.wld`/`.trwld`), never the sidecar.
+    // globals (`.wld`/`.trwld`), never the sidecar. MERGER DEFAULT-DROP
+    // (g87c retire, research/263 §6.2 — a6 138 §10.4 + f44 132 §2f): the
+    // g88 v11 superset stays the sole L2 writer; this line + the v7 bump
+    // + the reader arm + both round-trip witnesses DROP at merge (the v11
+    // reader tolerates the 3-token line lossy-not-corrupt, both flags ride
+    // f44's L1 walk + hydration). The branch keeps the line as the
+    // in-session carrier until then.
     s.push_str(&format!(
         "dh {} {}\n",
         u8::from(player.extra_accessory),
