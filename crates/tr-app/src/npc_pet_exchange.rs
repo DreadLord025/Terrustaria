@@ -168,7 +168,7 @@ pub(crate) fn reroll_variation_for_kind(
     kind: NpcKind,
     roll_rng: &mut UnifiedRandom,
     name_rng: &mut UnifiedRandom,
-    mut gore: Option<(&mut GorePool, &World)>,
+    gore: Option<(&mut GorePool, &World)>,
 ) -> ExchangeOutcome {
     let net_id = kind.net_id();
     // `:80922-80928` — the first active resident of the type; the port's
