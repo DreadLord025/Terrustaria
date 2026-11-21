@@ -48,11 +48,20 @@
 //! (451/464/490/492 d9, 518/535 d10, 567/568/575 d11) — their ten sites
 //! activate here (the 464 pair counts two). The 978 Volcano's d12 row is
 //! aiStyle 189, NOT the `:34487` trio's aiStyle 117 — the third term stays
-//! unreachable (a style mismatch, not a missing row). Accounting: **58 ported
-//! sites (54 in this feed + 4 rand-armed in the sim) / 64 light contributions
-//! (the 464 ring adds 5 extra), 2 audit-landed, 7 absent** (502, 1092, 465,
-//! 466, 731, the phaseblade pair, 756; the 978 trio term is site 26's
-//! unreachable third kind, not a separate site).
+//! unreachable (a style mismatch, not a missing row).
+//!
+//! **Round 4 (the 7-absent re-probe, 2026-11-21):** three of the seven
+//! round-3 absents are NOW ROWED on pushed lanes and activate here — the
+//! 502 Meowmere (site 4, W4-d75 `b59e3a874`), the 1092 LibrarianSkeletonBook
+//! (site 7, W4-g5 `96f074959`, row + `ai_librarian_book` wired) and the 466
+//! CultistBossLightningOrbArc (site 16, W4-d53 `c0dc7d37f`, row only — its
+//! AI branch stays unported there, the light is unconditional). The 502
+//! disco light reads the draw-pass `disco` snapshot (the 79 ProjLight
+//! precedent), a new feed parameter. Accounting: **61 ported sites (57 in
+//! this feed + 4 rand-armed in the sim) / 67 light contributions, 2
+//! audit-landed, 4 absent** (465 — d75's Item121 latch armed but the row is
+//! rows-only owed; 731; the phaseblade pair; 756; the 978 trio term stays
+//! site 26's unreachable third kind, not a separate site).
 //!
 //! **The site register (all 67, in line order):**
 //!
@@ -74,14 +83,16 @@
 //!   aiStyle-190/191 swords emit the two rotated swing rects (`:17299-17305`).
 //! * `:24307` — site 4, the 502 Meowmere's disco light
 //!   (`(0.5 + DiscoX/255)/2` per channel at `Center`, aiStyle-8 tail).
-//!   Absent: 502 has no `proj_data` row.
+//!   PORTED round 4 — rowed by W4-d75 (`b59e3a874`, `:5732-5742`); the
+//!   disco cycle rides the draw-pass snapshot parameter.
 //! * `:24877`/`:24881` — sites 5/6, the 346 OrnamentHostile's frame pair
 //!   (aiStyle-14): `frame = (int)ai[1]`, then `frame == 0` →
 //!   `AddLight(Center, 0.25, 0.2, 0)` else `AddLight(Center, 0.15, 0.15,
 //!   0.15)`. PORTED.
 //! * `:25394` — site 7, the 1092 LibrarianSkeletonBook's
-//!   `AddLight(Center, 0.3, 0.25, 0.1)` (aiStyle-18 head). Absent: 1092 has
-//!   no row.
+//!   `AddLight(Center, 0.3, 0.25, 0.1)` (aiStyle-18 head). PORTED round 4 —
+//!   rowed + wired by W4-g5 (`96f074959`, `ai_librarian_book`); the light
+//!   precedes the ai[0] rand frame pick, unconditional.
 //! * `:27920` — site 8, the 732 ThunderSpearShot's
 //!   `AddLight(Center, 0.3, 0.6, 0.8)` (aiStyle-44 type-732 arm, after the
 //!   rand dust — the light itself is unconditional). PORTED.
@@ -104,9 +115,15 @@
 //!   the 6-point ring). PORTED round 3 — rowed by W4-d9; the spawn
 //!   `ai[1] == 0` reads the ring arm (the state-driven precedent).
 //! * `:31998` — site 15, the 465 CultistBossLightningOrb's
-//!   `AddLight(Center, 0.4, 0.85, 0.9)` (aiStyle-88). Absent: 465 no row.
+//!   `AddLight(Center, 0.4, 0.85, 0.9)` (aiStyle-88). Absent: 465 no row —
+//!   W4-d75's `cultist_lightning_latch` (`:31943` Item121) is ARMED on the
+//!   in-tree machine but the row (`:5382-5390`) is rows-only owed (d75's
+//!   part-5 FINAL census, `b59e3a874`).
 //! * `:32049` — site 16, the 466 CultistBossLightningOrbArc's
-//!   `AddLight(Center, 0.3, 0.45, 0.5)` (aiStyle-88). Absent: 466 no row.
+//!   `AddLight(Center, 0.3, 0.45, 0.5)` (aiStyle-88). PORTED round 4 —
+//!   rowed by W4-d53 (`c0dc7d37f`, `:5392-5403`, the 580 shape + alpha
+//!   255); the 466 AI branch stays unported there, the light reads none
+//!   of it (unconditional after `frameCounter++`).
 //! * `:32155` — site 17, the 580 VortexLightning's
 //!   `AddLight(Center, 0.3, 0.45, 0.5)` (aiStyle-88's `type == 580` else
 //!   arm, after `frameCounter++`). PORTED.
@@ -156,7 +173,10 @@
 //!   PORTED.
 //! * `:37821` — site 31, the 731 ThunderStaffShot's
 //!   `AddLight(Center, 0.2, 0.5, 0.7)` (AI_029's 731 arm). Absent: 731 no
-//!   row.
+//!   row on any pushed lane (round-4 re-probe). Task seed: the row is
+//!   `:7694-7704` (10x10 aiStyle 29, alpha 255, magic/friendly,
+//!   extraUpdates 1, timeLeft 90); the light is unconditional after the
+//!   rand dust — a d-lane row activates this arm with no further work.
 //! * `:38000` — site 32, the gem bolts' per-kind
 //!   `AddLight(Center, num25, num26, num27)` (AI_029_GemStaffs_ActuallyGemStaffs
 //!   tail, `num24 = (type-121+86) - 85`): 121 (0.9,0,0.9), 122 (0.9,0.9,0),
@@ -171,7 +191,13 @@
 //! * `:39020`/`:39021` — sites 35/36, the phaseblade/phaser pair
 //!   `AddLight((int)(Center/16), r,g,b)` + the tile above (AI_003's
 //!   `IsAPhaseblade` block, `Item.GetPhaseColor·0.5`). Absent: no
-//!   1059-1072/1074-1076/1101/1102 row.
+//!   1059-1072/1074-1076/1101/1102 row (round-4 re-probe: d75's part-5
+//!   census re-confirms the 19-kind set, `ProjectileID.cs:192`). Task
+//!   seed: the rows are `:10006-10058` (three arms: 38x38 / 46x46 /
+//!   the 1074 46x46, aiStyle 3, melee, penetrate −1, local immunity 10);
+//!   the colour is `Item.GetPhaseColor` (`Item.cs:49053-49168` — the
+//!   eight direct hues, the 1101/1102 `MultiLerp(miscCounterNormalized)`
+//!   cycle) and the 1074 lights NOTHING (`type != 1074` gate).
 //! * `:39783` — site 37, the storm-lightning's
 //!   `AddLight(Center, GetLightningColor·num9)` (AI_203, types 1091/1117).
 //!   PORTED — rowed by W4-d21; the 1091's `moreLightning && noLightning`
@@ -249,8 +275,11 @@
 //!   `AddLight(Center, 0.9, 0.1, 0.3)` (AI_067's `type == 500` arm). PORTED.
 //! * `:51492` — site 62, the 756 SharpTears'
 //!   `AddLight(Center, (0.5,0.1,0.1)·scale)` (AI_157's `type == 756` arm).
-//!   Absent: 756 no row (the rowed 961 DeerclopsIceSpike rides the same
-//!   style but the light gates on 756 specifically).
+//!   Absent: 756 no row on any pushed lane (round-4 re-probe; the rowed
+//!   961 DeerclopsIceSpike rides the same style but the light gates on
+//!   756 specifically). Task seed: the row is `:7793-7806` (32x32
+//!   aiStyle 157, friendly/magic, alpha 255, penetrate 4, local immunity
+//!   25); the light is unconditional at the arm tail.
 //! * `:52606` — site 63, the 446 AntiGravityHook's
 //!   `AddLight(mountedCenter, 0, 0.4, 0.3)` (AI_007's 446 arm; the
 //!   `PlotTileLine` rope spread is the light-map write with no port —
@@ -390,17 +419,35 @@ pub(crate) fn chillet_mount_light(
 /// `p` is the slot's post-step state; `mounted_center` is the owner's
 /// `MountedCenter` (the hooks' anchor, `Projectile.cs:52572`), resolved by the
 /// feed for `owner == 0` to the local player (the e6 single-player fold) and
-/// `None` otherwise. Pure — no arm draws RNG and none mutates the slot, so
+/// `None` otherwise; `disco` is the `Main.DiscoR/G/B` draw-pass snapshot the
+/// 502 Meowmere tail reads (round 4, the 79 ProjLight `LightParams::disco`
+/// precedent). Pure — no arm draws RNG and none mutates the slot, so
 /// the feed's placement cannot move any stream.
 pub(crate) fn proj_lights_a(
     p: &Projectile,
     mounted_center: Option<Vec2>,
+    disco: [u8; 3],
 ) -> Vec<(i32, i32, [f32; 3])> {
     let mut out = Vec::new();
     let (cx, cy) = centre_tile(p);
     // The per-type arms, in source order. An arm whose kind has no
     // `proj_data` row is absent wholesale (the register above).
-    if p.kind == ORNAMENT_HOSTILE {
+    if p.kind == 502 {
+        // `:24302-24307` — AI_008's 502 Meowmere tail: `num73/74/75 =
+        // Main.DiscoR/G/B / 255f`, then `AddLight(Center, (0.5+n)/2)` per
+        // channel, unconditional. Round-4 activation — the row is W4-d75's
+        // (`b59e3a874`, `:5732-5742`, keep-one); the disco cycle rides the
+        // draw-pass snapshot (`App::disco`, the 79 ProjLight precedent).
+        out.push((
+            cx,
+            cy,
+            [
+                (0.5 + disco[0] as f32 / 255.0) / 2.0,
+                (0.5 + disco[1] as f32 / 255.0) / 2.0,
+                (0.5 + disco[2] as f32 / 255.0) / 2.0,
+            ],
+        ));
+    } else if p.kind == ORNAMENT_HOSTILE {
         // `:24874-24882` — `frame = (int)ai[1]` (the sim's `ornament` writes
         // it), then the frame-0 / else pair at the centre.
         let rgb = if p.frame == 0 {
@@ -409,6 +456,14 @@ pub(crate) fn proj_lights_a(
             [0.15, 0.15, 0.15]
         };
         out.push((cx, cy, rgb));
+    } else if p.kind == 1092 {
+        // `:25392-25394` — AI_018's 1092 LibrarianSkeletonBook head:
+        // `AddLight(Center, 0.3, 0.25, 0.1)` BEFORE the ai[0] state machine
+        // (the rand frame pick at ai[0]==0 comes after — the light itself
+        // is unconditional and RNG-free). Round-4 activation — the row +
+        // the flight arm are W4-g5's (`96f074959`, `:10186-10194` +
+        // `ai_librarian_book`, keep-one).
+        out.push((cx, cy, [0.3, 0.25, 0.1]));
     } else if p.kind == THUNDER_SPEAR_BOLT {
         // `:27920` — the aiStyle-44 type-732 arm's unconditional centre
         // light (after the rand dust, which the feed does not take).
@@ -421,6 +476,15 @@ pub(crate) fn proj_lights_a(
             [0.3, 0.5, 0.7]
         };
         out.push((cx, cy, rgb));
+    } else if p.kind == 466 {
+        // `:32046-32049` — aiStyle-88's 466 CultistBossLightningOrbArc arm:
+        // `frameCounter++` then the unconditional centre light (0.3, 0.45,
+        // 0.5) — the same colour as the 580 else arm below. Round-4
+        // activation — the row is W4-d53's (`c0dc7d37f`, `:5392-5403`:
+        // the 580 shape + alpha 255, keep-one); the 466 AI branch stays
+        // unported there (the dispatch runs the 580 machine), so the slot
+        // keeps its spawn state — the light reads none of it (unconditional).
+        out.push((cx, cy, [0.3, 0.45, 0.5]));
     } else if p.kind == VORTEX_RITUAL_BOLT {
         // `:32145-32155` — aiStyle-88's `else` arm: `type != 580` returns,
         // then `frameCounter++` and the unconditional centre light (the
@@ -988,6 +1052,10 @@ mod tests {
     use super::*;
     use crate::projectile::{proj_data, Projectile};
 
+    /// The steady disco snapshot for every non-502 witness (the arms never
+    /// read it); the 502 witness passes its own fixtures.
+    const DISCO: [u8; 3] = [0, 0, 0];
+
     fn slot(kind: u16) -> Projectile {
         let mut p = Projectile::default();
         p.active = true;
@@ -1004,10 +1072,10 @@ mod tests {
         // 0.15). The 16x16 box at (160, 176) centres on (168, 184) → (10, 11).
         let mut p = slot(ORNAMENT_HOSTILE);
         p.frame = 0;
-        assert_eq!(proj_lights_a(&p, None), vec![(10, 11, [0.25, 0.2, 0.0])]);
+        assert_eq!(proj_lights_a(&p, None, DISCO), vec![(10, 11, [0.25, 0.2, 0.0])]);
         p.frame = 1;
         assert_eq!(
-            proj_lights_a(&p, None),
+            proj_lights_a(&p, None, DISCO),
             vec![(10, 11, [0.15, 0.15, 0.15])]
         );
     }
@@ -1016,7 +1084,7 @@ mod tests {
     fn the_thunder_spear_bolt_lights_a_fixed_blue() {
         // `:27920` — (0.3, 0.6, 0.8) at the centre, unconditional.
         let p = slot(THUNDER_SPEAR_BOLT);
-        assert_eq!(proj_lights_a(&p, None), vec![(10, 11, [0.3, 0.6, 0.8])]);
+        assert_eq!(proj_lights_a(&p, None, DISCO), vec![(10, 11, [0.3, 0.6, 0.8])]);
     }
 
     #[test]
@@ -1024,13 +1092,13 @@ mod tests {
         // `:29674`/`:29678` — `(int)ai[0] % 3 != 2` → warm, else cool.
         let mut p = slot(DEADLY_SPHERE);
         p.ai[0] = 0.0;
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.8, 0.3, 0.1]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.8, 0.3, 0.1]);
         p.ai[0] = 1.0;
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.8, 0.3, 0.1]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.8, 0.3, 0.1]);
         p.ai[0] = 2.0;
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.3, 0.5, 0.7]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.3, 0.5, 0.7]);
         p.ai[0] = 5.0;
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.3, 0.5, 0.7]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.3, 0.5, 0.7]);
     }
 
     #[test]
@@ -1038,7 +1106,7 @@ mod tests {
         // `:32155` — (0.3, 0.45, 0.5) at the centre, unconditional inside
         // the aiStyle-88 type-580 else arm.
         let p = slot(VORTEX_RITUAL_BOLT);
-        assert_eq!(proj_lights_a(&p, None), vec![(10, 11, [0.3, 0.45, 0.5])]);
+        assert_eq!(proj_lights_a(&p, None, DISCO), vec![(10, 11, [0.3, 0.45, 0.5])]);
     }
 
     #[test]
@@ -1048,10 +1116,10 @@ mod tests {
         let mut p = slot(RAINBOW_CRYSTAL_EXPLOSION);
         p.alpha = 0;
         p.ai[0] = 0.0;
-        assert_eq!(proj_lights_a(&p, None), vec![(10, 11, [0.5, 0.0, 0.0])]);
+        assert_eq!(proj_lights_a(&p, None, DISCO), vec![(10, 11, [0.5, 0.0, 0.0])]);
         // The fade gate: alpha > 0 → dark.
         p.alpha = 8;
-        assert!(proj_lights_a(&p, None).is_empty());
+        assert!(proj_lights_a(&p, None, DISCO).is_empty());
     }
 
     #[test]
@@ -1059,7 +1127,7 @@ mod tests {
         // `:34416` — (0.075, 0.3, 0.15), unconditional.
         let p = slot(TERRARIAN_BEAM);
         assert_eq!(
-            proj_lights_a(&p, None),
+            proj_lights_a(&p, None, DISCO),
             vec![(10, 11, [0.075, 0.3, 0.15])]
         );
     }
@@ -1069,9 +1137,9 @@ mod tests {
         // `:34802` — (0.7, 0.2, 0.6) only while alpha < 150.
         let mut p = slot(NEBULA_ARCANUM);
         p.alpha = 149;
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.7, 0.2, 0.6]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.7, 0.2, 0.6]);
         p.alpha = 150;
-        assert!(proj_lights_a(&p, None).is_empty());
+        assert!(proj_lights_a(&p, None, DISCO).is_empty());
     }
 
     #[test]
@@ -1079,11 +1147,11 @@ mod tests {
         // `:37070` — (0.3, 0.9, 0.7) · (1 − alpha/255). alpha 0 → full.
         let mut p = slot(MOONLORD_TURRET);
         p.alpha = 0;
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.3, 0.9, 0.7]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.3, 0.9, 0.7]);
         // alpha 255 → Opacity 0 → a zeroed light is still appended (the
         // C# calls AddLight unconditionally inside the 641 arm).
         p.alpha = 255;
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.0, 0.0, 0.0]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.0, 0.0, 0.0]);
     }
 
     #[test]
@@ -1101,7 +1169,7 @@ mod tests {
         ];
         for (kind, rgb) in cases {
             let p = slot(kind);
-            assert_eq!(proj_lights_a(&p, None), vec![(10, 11, rgb)], "kind {kind}");
+            assert_eq!(proj_lights_a(&p, None, DISCO), vec![(10, 11, rgb)], "kind {kind}");
         }
     }
 
@@ -1110,15 +1178,15 @@ mod tests {
         // `:44662` — 623 (0.9, 0.9, 0.7); `:46037` — 342 (0.65, 0.9, 1);
         // `:46588` — 856 HotPink(255,105,180)/255 · 0.3.
         assert_eq!(
-            proj_lights_a(&slot(STARDUST_GUARDIAN), None)[0].2,
+            proj_lights_a(&slot(STARDUST_GUARDIAN), None, DISCO)[0].2,
             [0.9, 0.9, 0.7]
         );
         assert_eq!(
-            proj_lights_a(&slot(NORTH_POLE), None)[0].2,
+            proj_lights_a(&slot(NORTH_POLE), None, DISCO)[0].2,
             [0.65, 0.9, 1.0]
         );
         assert_eq!(
-            proj_lights_a(&slot(SPARKLE_GUITAR), None)[0].2,
+            proj_lights_a(&slot(SPARKLE_GUITAR), None, DISCO)[0].2,
             [255.0 / 255.0 * 0.3, 105.0 / 255.0 * 0.3, 180.0 / 255.0 * 0.3]
         );
     }
@@ -1129,24 +1197,24 @@ mod tests {
         // Lerp(OurFavoriteColor(255,231,69), White, 0.8) = (255,250,217)/255.
         let mut p = slot(STORM_TIGER_1);
         p.ai[0] = 0.0;
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.5, 0.5, 0.5]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.5, 0.5, 0.5]);
         p.kind = STORM_TIGER_2;
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.8, 0.8, 0.8]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.8, 0.8, 0.8]);
         p.kind = STORM_TIGER_3;
         assert_eq!(
-            proj_lights_a(&p, None)[0].2,
+            proj_lights_a(&p, None, DISCO)[0].2,
             [255.0 / 255.0, 250.0 / 255.0, 217.0 / 255.0]
         );
         // The `ai[0] != 4` gate: the attack state stays dark.
         p.ai[0] = 4.0;
-        assert!(proj_lights_a(&p, None).is_empty());
+        assert!(proj_lights_a(&p, None, DISCO).is_empty());
     }
 
     #[test]
     fn the_crimson_heart_lights_a_fixed_red() {
         // `:49464` — (0.9, 0.1, 0.3), unconditional.
         assert_eq!(
-            proj_lights_a(&slot(CRIMSON_HEART), None)[0].2,
+            proj_lights_a(&slot(CRIMSON_HEART), None, DISCO)[0].2,
             [0.9, 0.1, 0.3]
         );
     }
@@ -1156,10 +1224,10 @@ mod tests {
         // `:52606` — (0, 0.4, 0.3) at mountedCenter, NOT the hook centre.
         let p = slot(ANTI_GRAVITY_HOOK);
         // No owner anchor → no light (the feed's None fold).
-        assert!(proj_lights_a(&p, None).is_empty());
+        assert!(proj_lights_a(&p, None, DISCO).is_empty());
         // mountedCenter (320, 480) → tile (20, 30); the hook's own centre
         // (168, 184) → (10, 11) must NOT appear.
-        let got = proj_lights_a(&p, Some(Vec2::new(320.0, 480.0)));
+        let got = proj_lights_a(&p, Some(Vec2::new(320.0, 480.0)), DISCO);
         assert_eq!(got, vec![(20, 30, [0.0, 0.4, 0.3])]);
     }
 
@@ -1176,10 +1244,10 @@ mod tests {
         ];
         for (kind, rgb) in cases {
             let p = slot(kind);
-            let got = proj_lights_a(&p, Some(Vec2::new(320.0, 480.0)));
+            let got = proj_lights_a(&p, Some(Vec2::new(320.0, 480.0)), DISCO);
             assert_eq!(got, vec![(20, 30, rgb), (10, 11, rgb)], "kind {kind}");
             // Without the owner anchor only the centre half lands.
-            assert_eq!(proj_lights_a(&p, None), vec![(10, 11, rgb)]);
+            assert_eq!(proj_lights_a(&p, None, DISCO), vec![(10, 11, rgb)]);
         }
     }
 
@@ -1189,14 +1257,14 @@ mod tests {
         // state 6 HotPink; the default Transparent → a zeroed light.
         let mut p = slot(715);
         p.ai[0] = 0.0;
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.5, 0.0, 0.0]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.5, 0.0, 0.0]);
         p.ai[0] = 6.0;
         assert_eq!(
-            proj_lights_a(&p, None)[0].2,
+            proj_lights_a(&p, None, DISCO)[0].2,
             [255.0 / 255.0 * 0.5, 105.0 / 255.0 * 0.5, 180.0 / 255.0 * 0.5]
         );
         p.ai[0] = 9.0;
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.0, 0.0, 0.0]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.0, 0.0, 0.0]);
     }
 
     #[test]
@@ -1208,7 +1276,7 @@ mod tests {
         let mut p = slot(CANNON_EXPLOSIVE);
         p.vel = Vec2::new(2.0, 0.0);
         p.ai[0] = 0.0;
-        let got = proj_lights_a(&p, None);
+        let got = proj_lights_a(&p, None, DISCO);
         assert_eq!(got[0].0, 10);
         assert_eq!(got[0].1, 11);
         assert_eq!(
@@ -1217,7 +1285,7 @@ mod tests {
         );
         p.ai[0] = 1.0;
         assert_eq!(
-            proj_lights_a(&p, None)[0].2,
+            proj_lights_a(&p, None, DISCO)[0].2,
             [51.0 / 255.0 * 0.5, 231.0 / 255.0 * 0.5, 255.0 / 255.0 * 0.5]
         );
     }
@@ -1358,27 +1426,27 @@ mod tests {
 
     #[test]
     fn an_unrowed_kind_contributes_nothing() {
-        // Round 3: the d9/d10/d11 lanes rowed nine more of the absent kinds
-        // (451/464/490/492, 518/535, 567/568/575) and their arms are live
-        // (the activation witnesses below); the four rand-gated sites
-        // (409/590/849/912) arm in the SIM's drain seam, never in this pure
-        // feed. What stays absent: the still-unrowed kinds — the 502
-        // Meowmere (site 4), the 1092 book (7), the 465/466 cultist orbs
-        // (15-16), the 731 thunder staff (31), the phaseblades (35-36), the
-        // 756 sharp tears (62); the 978 Volcano's d12 row is aiStyle 189,
-        // not the trio's 117 (the third term unreachable); and the 248
-        // FlowerPowPetal (aiStyle 1, never reaches AI_196) plus the 973/972
-        // sword beams (rowed by d19/d20 but with NO light arm — the wave-1
-        // register misattributed sites 45/46 to them). A slot carrying any of
-        // them feeds no light.
+        // Round 4: the 7-absent re-probe activated three more sites — the
+        // 502 Meowmere (site 4, rowed by d75 `b59e3a874`), the 1092 book
+        // (site 7, rowed + wired by g5 `96f074959`) and the 466 orb-arc
+        // (site 16, rowed by d53 `c0dc7d37f`); their activation witnesses
+        // are below. What stays absent: the still-unrowed kinds — the 465
+        // cultist orb (site 15, d75's Item121 latch armed but the row is
+        // rows-only owed), the 731 thunder staff (31), the phaseblades
+        // (35-36, the 19-kind set), the 756 sharp tears (62); the 978
+        // Volcano's d12 row is aiStyle 189, not the trio's 117 (the third
+        // term unreachable); and the 248 FlowerPowPetal (aiStyle 1, never
+        // reaches AI_196) plus the 973/972 sword beams (rowed by d19/d20
+        // but with NO light arm — the wave-1 register misattributed sites
+        // 45/46 to them). A slot carrying any of them feeds no light.
         for kind in [
-            502u16, 1092, 465, 466, 978, 731,
+            465u16, 978, 731,
             1059, 1074, 248, 973, 972, 756,
             // The rand-gated four: armed in the sim, dark in this feed.
             409, 590, 849, 912,
         ] {
             let p = slot(kind);
-            assert!(proj_lights_a(&p, None).is_empty(), "kind {kind}");
+            assert!(proj_lights_a(&p, None, DISCO).is_empty(), "kind {kind}");
         }
     }
 
@@ -1388,57 +1456,57 @@ mod tests {
         // (0.3, 0.4, 1), the truncate-FIRST centre anchor.
         let mut p = slot(451);
         p.alpha = 255;
-        assert_eq!(proj_lights_a(&p, None), vec![(10, 11, [0.3, 0.4, 1.0])]);
+        assert_eq!(proj_lights_a(&p, None, DISCO), vec![(10, 11, [0.3, 0.4, 1.0])]);
         p.alpha = 0;
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.0, 0.0, 0.0]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.0, 0.0, 0.0]);
         // Sites 13/14 (`:31864`/`:31893`) — the 464 ice mist: the spawn
         // ai[1] == 0 reads the 6-point ring; at ai[0] = 0 the ring collapses
         // to six copies of the centre light. The ai[1] == 1 spawn reads the
         // single spin-arm light.
         let mut p = slot(464);
         p.ai[0] = 0.0;
-        let ring = proj_lights_a(&p, None);
+        let ring = proj_lights_a(&p, None, DISCO);
         assert_eq!(ring.len(), 6, "the 6-point ring");
         for l in &ring {
             assert_eq!(*l, (10, 11, [0.3, 0.75, 0.9]));
         }
         p.ai[1] = 1.0;
-        assert_eq!(proj_lights_a(&p, None), vec![(10, 11, [0.3, 0.75, 0.9])]);
+        assert_eq!(proj_lights_a(&p, None, DISCO), vec![(10, 11, [0.3, 0.75, 0.9])]);
         // Site 18 (`:32384`) — the 490 ritual: the ai[1] >= 0 slot-state
         // half of the flag43 gate (the NPC-active/type half lands with the
         // AI arm).
         let mut p = slot(490);
         p.ai[1] = 0.0;
-        assert_eq!(proj_lights_a(&p, None), vec![(10, 11, [1.1, 0.9, 0.4])]);
+        assert_eq!(proj_lights_a(&p, None, DISCO), vec![(10, 11, [1.1, 0.9, 0.4])]);
         p.ai[1] = -1.0;
         p.alpha = 255;
-        assert!(proj_lights_a(&p, None).is_empty(), "the -1/255 kill arm");
+        assert!(proj_lights_a(&p, None, DISCO).is_empty(), "the -1/255 kill arm");
         // Site 19 (`:32410`) — the 492 lantern: the TOP-LEFT anchor.
         let p = slot(492);
-        assert_eq!(proj_lights_a(&p, None), vec![(10, 11, [0.35, 0.35, 0.1])]);
+        assert_eq!(proj_lights_a(&p, None, DISCO), vec![(10, 11, [0.35, 0.35, 0.1])]);
     }
 
     #[test]
     fn the_d10_d11_activated_arms_light_their_colours() {
         // Site 20 (`:32962`) — the 518 coin portal: the fixed gold.
         assert_eq!(
-            proj_lights_a(&slot(518), None),
+            proj_lights_a(&slot(518), None, DISCO),
             vec![(10, 11, [0.8 * 0.3, 181.0 / 255.0 * 0.3, 72.0 / 255.0 * 0.3])]
         );
         // Site 50 (`:44612`) — the 535 medusa head.
-        assert_eq!(proj_lights_a(&slot(535), None), vec![(10, 11, [0.9, 0.75, 0.1])]);
+        assert_eq!(proj_lights_a(&slot(535), None, DISCO), vec![(10, 11, [0.9, 0.75, 0.1])]);
         // Site 39 (`:40046`) — the 567/568 spore traps: (1-alpha/255)·scale
         // scales (0.2, 0.275, 0.075); the alpha-255 spawn is dark-but-armed.
         for kind in [567u16, 568] {
             let mut p = slot(kind);
             p.alpha = 255;
-            assert_eq!(proj_lights_a(&p, None)[0].2, [0.0, 0.0, 0.0]);
+            assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.0, 0.0, 0.0]);
             p.alpha = 0;
             p.scale = 1.0;
-            assert_eq!(proj_lights_a(&p, None), vec![(10, 11, [0.2, 0.275, 0.075])]);
+            assert_eq!(proj_lights_a(&p, None, DISCO), vec![(10, 11, [0.2, 0.275, 0.075])]);
         }
         // Site 21 (`:33580`) — the 575 nebula sphere.
-        assert_eq!(proj_lights_a(&slot(575), None), vec![(10, 11, [0.5, 0.1, 0.3])]);
+        assert_eq!(proj_lights_a(&slot(575), None, DISCO), vec![(10, 11, [0.5, 0.1, 0.3])]);
     }
 
     #[test]
@@ -1450,17 +1518,17 @@ mod tests {
         p.alpha = 0;
         p.ai[1] = 0.0; // portal 0 → orange hsl(0.12,1,0.5) = (255,184,0)
         p.vel = Vec2::new(2.0, 0.0);
-        let got = proj_lights_a(&p, None);
+        let got = proj_lights_a(&p, None, DISCO);
         assert_eq!(got[0].0, 10); // lead (174,184) → tile 10
         assert_eq!(got[0].1, 11);
         assert_eq!(got[0].2, [255.0 / 255.0 * 0.5, 184.0 / 255.0 * 0.5, 0.0]);
         p.alpha = 25; // the fade gate → dark
-        assert!(proj_lights_a(&p, None).is_empty());
+        assert!(proj_lights_a(&p, None, DISCO).is_empty());
         for k in [612u16, 953] {
-            assert_eq!(proj_lights_a(&slot(k), None), vec![(10, 11, [0.9, 0.8, 0.6])]);
+            assert_eq!(proj_lights_a(&slot(k), None, DISCO), vec![(10, 11, [0.9, 0.8, 0.6])]);
         }
-        assert_eq!(proj_lights_a(&slot(614), None), vec![(10, 11, [0.2, 0.6, 0.7])]);
-        assert_eq!(proj_lights_a(&slot(636), None), vec![(10, 11, [0.8, 0.7, 0.4])]);
+        assert_eq!(proj_lights_a(&slot(614), None, DISCO), vec![(10, 11, [0.2, 0.6, 0.7])]);
+        assert_eq!(proj_lights_a(&slot(636), None, DISCO), vec![(10, 11, [0.8, 0.7, 0.4])]);
     }
 
     #[test]
@@ -1468,18 +1536,18 @@ mod tests {
         // Site 28 (`:36150`) — the 658 mark: alpha==0 → white·0.5.
         let mut p = slot(658);
         p.alpha = 0;
-        assert_eq!(proj_lights_a(&p, None), vec![(10, 11, [0.5, 0.5, 0.5])]);
+        assert_eq!(proj_lights_a(&p, None, DISCO), vec![(10, 11, [0.5, 0.5, 0.5])]);
         p.alpha = 8;
-        assert!(proj_lights_a(&p, None).is_empty());
+        assert!(proj_lights_a(&p, None, DISCO).is_empty());
         // Site 54 (`:47569`) — the 855 lantern: (1,0.6,0.1)·(1-alpha/255).
         let mut p = slot(855);
         p.alpha = 0;
-        assert_eq!(proj_lights_a(&p, None)[0].2, [1.0, 0.6, 0.1]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [1.0, 0.6, 0.1]);
         p.alpha = 255;
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.0, 0.0, 0.0]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.0, 0.0, 0.0]);
         // Site 55 (`:47649`) — the 1127 saber: (32,108,0)/255.
         assert_eq!(
-            proj_lights_a(&slot(1127), None)[0].2,
+            proj_lights_a(&slot(1127), None, DISCO)[0].2,
             [32.0 / 255.0, 108.0 / 255.0, 0.0]
         );
     }
@@ -1488,19 +1556,19 @@ mod tests {
     fn the_d19_sword_arms_light_their_colours() {
         // Site 47 (`:42206`) — the 984 TerraBlade2: (15,84,125)/255.
         assert_eq!(
-            proj_lights_a(&slot(984), None)[0].2,
+            proj_lights_a(&slot(984), None, DISCO)[0].2,
             [15.0 / 255.0, 84.0 / 255.0, 125.0 / 255.0]
         );
         // Site 46 (`:42181`) — the 1126 Claymore: (0,96,0)/255 base; the
         // localAI[2]==1 ground-bloom lerps toward (34,128,0) by localAI[0]/ai[1].
         let mut p = slot(1126);
         p.local_ai[2] = 0.0;
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.0, 96.0 / 255.0, 0.0]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.0, 96.0 / 255.0, 0.0]);
         p.local_ai[2] = 1.0;
         p.local_ai[0] = 5.0;
         p.ai[1] = 10.0; // num = 0.5 → R = (byte)17 = 17, G = (byte)112 = 112
         assert_eq!(
-            proj_lights_a(&p, None)[0].2,
+            proj_lights_a(&p, None, DISCO)[0].2,
             [17.0 / 255.0, 112.0 / 255.0, 0.0]
         );
     }
@@ -1514,7 +1582,7 @@ mod tests {
         p.local_ai[0] = 10.0; // < 60 → the first-second window
         p.alpha = 0;
         p.ai[1] = 65.0;
-        let got = proj_lights_a(&p, Some(Vec2::new(320.0, 480.0)));
+        let got = proj_lights_a(&p, Some(Vec2::new(320.0, 480.0)), DISCO);
         assert_eq!(got.len(), 2);
         assert_eq!(got[0].0, 10);
         assert_eq!(got[0].1, 11);
@@ -1525,28 +1593,28 @@ mod tests {
         assert_eq!(got[1].0, 20); // mounted (320,480) → tile (20,30)
         assert_eq!(got[1].1, 30);
         // The mounted half without an owner anchor: only the centre lands.
-        assert_eq!(proj_lights_a(&p, None).len(), 1);
+        assert_eq!(proj_lights_a(&p, None, DISCO).len(), 1);
         // Past the first second (localAI[0] >= 60) → dark.
         p.local_ai[0] = 60.0;
-        assert!(proj_lights_a(&p, None).is_empty());
+        assert!(proj_lights_a(&p, None, DISCO).is_empty());
         // The unlisted sword id → the White default profile.
         p.local_ai[0] = 10.0;
         p.ai[1] = 99999.0;
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.5, 0.5, 0.5]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.5, 0.5, 0.5]);
     }
 
     #[test]
     fn the_d20_activated_arms_light_their_colours() {
         // Site 38 (`:40038`) — the 1078 meteor ore: (1,0,0).
-        assert_eq!(proj_lights_a(&slot(1078), None), vec![(10, 11, [1.0, 0.0, 0.0])]);
+        assert_eq!(proj_lights_a(&slot(1078), None, DISCO), vec![(10, 11, [1.0, 0.0, 0.0])]);
         // Site 44 (`:41031`) — the 1020 drone: One·0.3.
-        assert_eq!(proj_lights_a(&slot(1020), None), vec![(10, 11, [0.3, 0.3, 0.3])]);
+        assert_eq!(proj_lights_a(&slot(1020), None, DISCO), vec![(10, 11, [0.3, 0.3, 0.3])]);
         // Site 45 (`:41775`) — the 985 TerraBlade2Shot: the rot·85·scale lead,
         // (64,220,96)/255. rot 0, scale 1 → lead (168+85,184) = (253,184) → (15,11).
         let mut p = slot(985);
         p.rot = 0.0;
         p.scale = 1.0;
-        let got = proj_lights_a(&p, None);
+        let got = proj_lights_a(&p, None, DISCO);
         assert_eq!(got[0].0, 15);
         assert_eq!(got[0].1, 11);
         assert_eq!(got[0].2, [64.0 / 255.0, 220.0 / 255.0, 96.0 / 255.0]);
@@ -1558,43 +1626,43 @@ mod tests {
         // (0.5,0,0.2) (the C# flag is pre-increment, so the boundary shifts).
         let mut p = slot(1038);
         p.ai[0] = 9.0;
-        assert!(proj_lights_a(&p, None).is_empty());
+        assert!(proj_lights_a(&p, None, DISCO).is_empty());
         p.ai[0] = 10.0;
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.5, 0.0, 0.2]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.5, 0.0, 0.2]);
         p.ai[0] = 20.0; // still the early-return half (pre-increment 19 < 20)
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.5, 0.0, 0.2]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.5, 0.0, 0.2]);
         p.ai[0] = 21.0; // the 1038 has no >20 light
-        assert!(proj_lights_a(&p, None).is_empty());
+        assert!(proj_lights_a(&p, None, DISCO).is_empty());
         // Site 41 (`:40513`) — the 1116 petalstorm: post-step ai[0] > 20 scales
         // (0,0.6,0.6) by Remap(timeLeft,120,0,1,0). timeLeft 60 → 0.5.
         let mut p = slot(1116);
         p.ai[0] = 25.0;
         p.time_left = 60;
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.0, 0.3, 0.3]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.0, 0.3, 0.3]);
         p.ai[0] = 15.0; // the early-return half uses the 1116 colour
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.0, 0.6, 0.6]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.0, 0.6, 0.6]);
     }
 
     #[test]
     fn the_d21_activated_arms_light_their_colours() {
         // Site 33 (`:38458`) — the 1105 RC car: One·0.3.
-        assert_eq!(proj_lights_a(&slot(1105), None), vec![(10, 11, [0.3, 0.3, 0.3])]);
+        assert_eq!(proj_lights_a(&slot(1105), None, DISCO), vec![(10, 11, [0.3, 0.3, 0.3])]);
         // Site 34 (`:38707`) — the 1098/1123 digtoise: ai[0] in {1,2,3} only.
         for k in [1098u16, 1123] {
             let mut p = slot(k);
             p.ai[0] = 0.0; // the appear state → dark
-            assert!(proj_lights_a(&p, None).is_empty());
+            assert!(proj_lights_a(&p, None, DISCO).is_empty());
             p.ai[0] = 2.0;
-            assert_eq!(proj_lights_a(&p, None)[0].2, [0.3, 0.3, 0.1]);
+            assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.3, 0.3, 0.1]);
             p.ai[0] = 4.0; // the despawn state → dark
-            assert!(proj_lights_a(&p, None).is_empty());
+            assert!(proj_lights_a(&p, None, DISCO).is_empty());
         }
         // Site 29 (`:37022`) — the 1115 glacier fang: (0.2,0.5,0.8)·Remap(ai0,0,60,0.5,1).
         let mut p = slot(1115);
         p.ai[0] = 0.0; // Remap → 0.5
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.1, 0.25, 0.4]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.1, 0.25, 0.4]);
         p.ai[0] = 60.0; // Remap → 1
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.2, 0.5, 0.8]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.2, 0.5, 0.8]);
     }
 
     #[test]
@@ -1605,18 +1673,18 @@ mod tests {
         // num9 = sqrt(0.75)·0.3.
         let mut p = slot(1117); // num = 30, colour (60,120,255)
         p.ai[1] = 0.0;
-        assert_eq!(proj_lights_a(&p, None)[0].2, [0.0, 0.0, 0.0]);
+        assert_eq!(proj_lights_a(&p, None, DISCO)[0].2, [0.0, 0.0, 0.0]);
         p.ai[1] = 7.5; // num7 = 0.25 → num8 = 0.5
         let n9 = (0.75f32).sqrt() * 0.3;
         assert_eq!(
-            proj_lights_a(&p, None)[0].2,
+            proj_lights_a(&p, None, DISCO)[0].2,
             [60.0 / 255.0 * n9, 120.0 / 255.0 * n9, 255.0 / 255.0 * n9]
         );
         // The 1091 trap: num = 240, the teal default (80,220,220).
         let mut p = slot(1091);
         p.ai[1] = 60.0; // num7 = 0.25 → num8 = 0.5
         assert_eq!(
-            proj_lights_a(&p, None)[0].2,
+            proj_lights_a(&p, None, DISCO)[0].2,
             [80.0 / 255.0 * n9, 220.0 / 255.0 * n9, 220.0 / 255.0 * n9]
         );
     }
@@ -1627,14 +1695,66 @@ mod tests {
         // regardless; this pins the spawn-gate invariant conditionally (the
         // W4-d12 `if let Some(d) = proj_data(978)` precedent): once a d-lane's
         // row merges, the kind MUST resolve. On this branch the rows are the
-        // lanes' to merge, so the check is a no-op until then.
+        // lanes' to merge, so the check is a no-op until then. Round 4 adds
+        // the re-probe's three activations: 502 (d75), 1092 (g5), 466 (d53).
         for kind in [
             602u16, 612, 953, 614, 636, 658, 855, 1127, 984, 1126, 933, 1100,
             1078, 1038, 1116, 1020, 985, 1115, 1105, 1098, 1123, 1091, 1117,
+            502, 1092, 466,
         ] {
             if let Some(d) = proj_data(kind) {
                 assert!(d.ai_style > 0, "kind {kind} rowed with a style");
             }
         }
+    }
+
+    #[test]
+    fn the_meowmere_disco_light_rides_the_snapshot() {
+        // Site 4 (`:24307`) — round 4, rowed by W4-d75 (`b59e3a874`,
+        // `:5732-5742`): `AddLight(Center, (0.5 + Disco/255)/2)` per channel,
+        // unconditional inside the AI_008 type-502 arm. The disco cycle is
+        // the draw-pass snapshot (the 79 ProjLight precedent).
+        let p = slot(502);
+        // Main.Initialize's steady start: DiscoR = 255, G = B = 0.
+        assert_eq!(
+            proj_lights_a(&p, None, [255, 0, 0]),
+            vec![(10, 11, [0.75, 0.25, 0.25])]
+        );
+        // Full-white disco → (1, 1, 1); all-zero → the 0.25 floor.
+        assert_eq!(proj_lights_a(&p, None, [255, 255, 255])[0].2, [1.0, 1.0, 1.0]);
+        assert_eq!(proj_lights_a(&p, None, [0, 0, 0])[0].2, [0.25, 0.25, 0.25]);
+        // A mid-cycle byte: G = 128 → (0.5 + 128/255)/2, no byte rounding
+        // (the C# divides the byte by 255f as floats).
+        assert_eq!(
+            proj_lights_a(&p, None, [0, 128, 0])[0].2,
+            [0.25, (0.5 + 128.0 / 255.0) / 2.0, 0.25]
+        );
+    }
+
+    #[test]
+    fn the_librarian_book_lights_a_fixed_warm_head() {
+        // Site 7 (`:25394`) — round 4, rowed + wired by W4-g5 (`96f074959`,
+        // `:10186-10194` + `ai_librarian_book`): the unconditional
+        // (0.3, 0.25, 0.1) at the centre, BEFORE the ai[0] machine (the
+        // rand frame pick at ai[0]==0 comes after the light).
+        let mut p = slot(1092);
+        for state in [0.0f32, 1.0, 2.0] {
+            p.ai[0] = state;
+            assert_eq!(proj_lights_a(&p, None, DISCO), vec![(10, 11, [0.3, 0.25, 0.1])]);
+        }
+    }
+
+    #[test]
+    fn the_cultist_orb_arc_lights_the_580_teal() {
+        // Site 16 (`:32049`) — round 4, rowed by W4-d53 (`c0dc7d37f`,
+        // `:5392-5403` — the 580 shape + alpha 255): `frameCounter++` then
+        // the unconditional (0.3, 0.45, 0.5), the same colour the 580 else
+        // arm lights. The alpha-255 spawn does NOT gate it (unlike the
+        // alpha-gated 644/658 arms).
+        let mut p = slot(466);
+        p.alpha = 255;
+        assert_eq!(proj_lights_a(&p, None, DISCO), vec![(10, 11, [0.3, 0.45, 0.5])]);
+        p.alpha = 0;
+        assert_eq!(proj_lights_a(&p, None, DISCO), vec![(10, 11, [0.3, 0.45, 0.5])]);
     }
 }

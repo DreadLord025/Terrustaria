@@ -609,7 +609,7 @@ impl App {
                             self.entity_lights.add(x, y, rgb);
                         }
                         for (x, y, rgb) in
-                            crate::proj_lights_a::proj_lights_a(p, mounted_center)
+                            crate::proj_lights_a::proj_lights_a(p, mounted_center, self.disco)
                         {
                             self.entity_lights.add(x, y, rgb);
                         }
