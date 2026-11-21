@@ -121,6 +121,14 @@ pub struct World {
     pub hallow_bg_style: u8,
     pub crimson_bg_style: u8,
     pub mushroom_bg_style: u8,
+    /// `WorldGen.crimson` (`WorldGen.cs:4158`) — the WORLD evil type: true
+    /// crimson, false corruption. Set at generation from `GenOptions.crimson`
+    /// (the UI pick / `roll_crimson`), persisted in the `.wld` flags block
+    /// (`WorldFile.cs:1281`/`:2080`) and the `.trwld` v18 tail. W4-g69: the
+    /// cloud lane's `RollRareCloud` type-36 gate (`Cloud.cs:196`,
+    /// `NPC.downedBoss2 && WorldGen.crimson`) reads it; the shop/lang/loot
+    /// consumers still fold their own defaults (their lanes' rows).
+    pub crimson: bool,
     /// Y of the first solid tile in each column (background/sky horizon).
     pub column_surface: Vec<i32>,
     /// Chunk grid size (`ceil(width / CHUNK) * ceil(height / CHUNK)`).
@@ -696,6 +704,7 @@ impl World {
             jungle_bg_style: 0,
             hallow_bg_style: 0,
             crimson_bg_style: 0,
+            crimson: false,
             mushroom_bg_style: 0,
             column_surface: Vec::new(),
             chunks_x: 0,

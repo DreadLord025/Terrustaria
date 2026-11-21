@@ -1356,13 +1356,17 @@ pub(crate) fn chest_change_events(app: &mut App) {
 /// gold styles 5-6 excluded); `num4 == 0 && num2 + num3 == 1` (`:77552`) fires:
 /// clear the slots, `Chest.DestroyChest` (empty now → removes), `ClearTile` the
 /// 2×2, then `NewNPC` at `(x*16+16, y*16+32)` (the bottom-center anchor) with
-/// kind 475 (Light) / 473 corrupt / 474 crimson (`WorldGen.crimson`), and
-/// `BigMimicSpawnSmoke` (`:77602`). The `SendData(34/23)` + `SendTileSquare`
-/// relays are the server arms — dropped. The big-mimic kinds 473-476 are
-/// roster-gapped (the d40 kind lane): the chest still clears, the NPC + smoke
-/// fire only once a kind row lands (the `kind_from_net_id` gate). Returns
-/// whether the summon fired (the C# always returns false — the port's bool is
-/// the test seam).
+/// kind 475 (Light) / 473 corrupt / 474 crimson (`WorldGen.crimson` — LIVE,
+/// the g69 `World.crimson` field), and `BigMimicSpawnSmoke` (`:77602`). The
+/// `SendData(34/23)` + `SendTileSquare` relays are the server arms — dropped.
+/// ROSTER ACTIVATION (W4-g61 final): the big-mimic kinds 473-476 LANDED on
+/// `task/W4-d40-npc-kinds-421-490` (`4860cd88b`, batch 9 — own bestiary
+/// entries 473/474/475/476), so `kind_from_net_id` resolves them at the
+/// d40 merge and the NPC + smoke arms AUTO-ACTIVATE (the gate below reads
+/// the bestiary ENTRIES table — no g61 edit needed then). Until d40 lands
+/// the chest still clears and the gate refuses (the standing parity).
+/// Returns whether the summon fired (the C# always returns false — the
+/// port's bool is the test seam).
 pub(crate) fn big_mimic_summon_check(app: &mut App, x: i32, y: i32) -> bool {
     // `:77519-77522`: `netMode == 1 || !hardMode` refuses.
     if matches!(app.net, crate::app::NetRole::Client(_)) || !app.world.hard_mode {
@@ -1461,12 +1465,14 @@ pub(crate) fn big_mimic_summon_check(app: &mut App, x: i32, y: i32) -> bool {
             }
         }
     }
-    // `:77594-77598`: the kind — 475 Hallow (Light), else 473 corrupt / 474
-    // crimson by `WorldGen.crimson`. The port persists no world-evil type at
-    // runtime (the shop.rs/loot.rs `crimson_world` constants-off convention),
-    // so the Night Key picks the corrupt 473 (the recorded deviation — the
-    // crimson 474 arm fires once a world-evil flag lands).
-    let crimson = false; // `WorldGen.crimson` — constants-off (ANALYSIS)
+    // `:77594-77598`: the kind — `num7 = 475` (Light Key); the Night Key
+    // (`num3 == 1`) picks `!WorldGen.crimson ? 473 : 474`. W4-g61 final:
+    // the constants-off stand-in RETIRED — `World.crimson` is LIVE (the
+    // g69 field, `WorldGen.cs:4158`, set at generation from
+    // `GenOptions.crimson`; the field/ctor/worldgen hunks are g69's
+    // verbatim shape at `20d0380f` — the merger dedupes to ONE). The
+    // shop.rs/loot.rs `crimson_world` folds keep their own lanes' rows.
+    let crimson = app.world.crimson; // `WorldGen.crimson` (`:77597`)
     let kind_id: i32 = if light == 1 {
         475
     } else if crimson {
@@ -1475,10 +1481,11 @@ pub(crate) fn big_mimic_summon_check(app: &mut App, x: i32, y: i32) -> bool {
         473
     };
     // `:77599-77602`: `NewNPC` at the bottom-center anchor `(x*16+16, y*16+32)`,
-    // then `BigMimicSpawnSmoke`. The big-mimic kinds are roster-gapped (the d40
-    // kind lane) — the NPC + smoke fire only once a kind row lands.
+    // then `BigMimicSpawnSmoke`. The d40 kind rows (473-476, `4860cd88b`)
+    // auto-activate this gate at their merge — `kind_from_net_id` reads the
+    // bestiary ENTRIES, no edit here needed.
     let Some((kind, _slime)) = crate::npc::kind_from_net_id(kind_id) else {
-        return true; // the chest cleared; the kind is unported (roster gap)
+        return true; // the chest cleared; the kind row hasn't merged yet
     };
     let (w, h) = kind.size();
     let spawn_x = (bx * 16 + 16) as f32 - w * 0.5;
@@ -4656,14 +4663,47 @@ mod tests {
         assert!(find_chest(&app.world_chests, 10, 18).is_some());
     }
 
-    /// `NPC.cs:77594-77598` — the Night Key (3091) picks the corrupt kind 473
-    /// (the crimson 474 arm is constants-off — the world-evil flag is unported).
-    /// The chest clears the same way; the kind is roster-gapped.
+    /// `NPC.cs:77594-77598` — the Night Key (3091) on a CORRUPTION world
+    /// (`World.crimson == false`, the ctor default) picks the corrupt kind
+    /// 473. The chest clears the same way; the kind row rides d40
+    /// (`4860cd88b`) — until it merges, the gate refuses and no NPC spawns.
     #[test]
     fn w4_g61_the_night_key_summon_clears_the_chest() {
         let mut app = summon_app(vec![slot(3091, 1)]);
         chest_change_events(&mut app);
         assert!(find_chest(&app.world_chests, 10, 18).is_none());
         assert!(!app.world.tile(10, 18).unwrap().active());
+    }
+
+    /// `NPC.cs:77597` — `num7 = !WorldGen.crimson ? 473 : 474`: on a CRIMSON
+    /// world the Night Key picks 474. W4-g61 final: the constants-off
+    /// stand-in retired — the pick reads the LIVE `World.crimson` (the g69
+    /// field, `20d0380f` shape). Both arms clear the chest identically (the
+    /// kind decision is AFTER the clear); the kind-row gate is the d40
+    /// merge's. The witness pins the world-flag read: flipping `crimson`
+    /// flips the resolved kind id once the rows land — today both arms
+    /// refuse at `kind_from_net_id`, so the observable is the chest-clear
+    /// parity plus the flag plumbing (no panic, no stream draw on refusal).
+    #[test]
+    fn w4_g61_the_crimson_night_key_clears_and_reads_the_world_evil() {
+        let mut app = summon_app(vec![slot(3091, 1)]);
+        app.world.crimson = true; // the g69 field (GenOptions.crimson)
+        let before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        chest_change_events(&mut app);
+        assert!(find_chest(&app.world_chests, 10, 18).is_none());
+        assert!(!app.world.tile(10, 18).unwrap().active());
+        // The 474 row is d40's (not merged here) — the gate refuses with
+        // ZERO draws (the smoke only fires after a resolved kind).
+        assert!(app.npcs.is_empty(), "the crimson mimic row rides d40");
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
+            before,
+            "the refusal draws nothing"
+        );
+        // The Light Key ignores the evil flag (`num7 = 475` first).
+        let mut hallow = summon_app(vec![slot(3092, 1)]);
+        hallow.world.crimson = true;
+        chest_change_events(&mut hallow);
+        assert!(find_chest(&hallow.world_chests, 10, 18).is_none());
     }
 }

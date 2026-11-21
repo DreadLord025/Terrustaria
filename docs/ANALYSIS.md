@@ -39417,13 +39417,13 @@ WRITTEN NOT RUN — no cargo/rustc/tests per the lane directive.
   (`NPC.cs:77517-77605`: the hardmode + `BasicChest{21,467}` gold-5-6-
   excluded scan, the one-key gate `num4==0 && num2+num3==1`, the slot
   clear + `DestroyChest` + `ClearTile` 2×2, the kind 475/473/474 by
-  `WorldGen.crimson` — constants-off false, the shop.rs/loot.rs
-  convention, so the Night Key picks the corrupt 473; `NewNPC` at the
-  bottom-center anchor `(x*16+16, y*16+32)` + `BigMimicSpawnSmoke` on
-  the `UpdatePlayers` stream). The big-mimic kinds 473-476 are
-  roster-gapped (the d40 kind lane) — the chest clears, the NPC + smoke
-  fire only once a kind row lands. `GasTrapCheck` (the gas-trap item
-  5346, `Projectile.cs:41242`) is a cited skip (no gas-trap family).
+  `WorldGen.crimson` — constants-off false AT THIS COMMIT, retired by
+  the final phase below; `NewNPC` at the bottom-center anchor
+  `(x*16+16, y*16+32)` + `BigMimicSpawnSmoke` on the `UpdatePlayers`
+  stream). The big-mimic kinds 473-476 are roster-gapped AT THIS
+  COMMIT (the d40 kind lane — landed since, see the activation census
+  below). `GasTrapCheck` (the gas-trap item 5346, `Projectile.cs:41242`)
+  is a cited skip (no gas-trap family).
 
 **KEEP-ONE (ADJUDICATED + EXECUTED on the g11 branch — this note's
 earlier direction is RETIRED):** the `1eedb9a3` note claimed this
@@ -39482,12 +39482,116 @@ type-159 dust + the field latch), the headcrab fairy burst (the 20×
 SelectRandom step), the key-summon (the chest-clear half + the five
 refusal gates). The 18 pure-module `w4_g61_*` witnesses stay.
 
-**Deviations (cited):** the `WorldGen.crimson` constants-off (the Night
-Key picks 473, the crimson 474 arm pending a world-evil flag); the
-roster-gapped kinds (the big mimics 473-476, the vampire 158/159, the
-mothron 478/479, the frog 687 — the d34-d43 kind lanes); the town
-shimmer-state-25 teleport (b3's cited skip); the caster inline bursts
-(d52 batch3's claimed lane); the net-apply teleports (g48-g52); the
-`GasTrapCheck` (no gas-trap family); the `time_for_visuals` stand-in
-(`anim_time*60 % 216000`, the draw.rs:374 convention — the C#
-`Main.timeForVisualEffects` is a double ticks-since-start).
+**Deviations (cited; the final phase retired the first two — see the
+FINAL section below):** the `WorldGen.crimson` constants-off (RETIRED —
+the pick reads the live g69 `World.crimson`); the roster-gapped kinds
+(the big mimics 473-476 + the mothron 478/479 LANDED on d40, the vampire
+158 on g8 — the activation census below; the vampire 159 + the frog 687
+still gapped); the town shimmer-state-25 teleport (b3's cited skip);
+the caster inline bursts (d52 batch3's claimed lane); the net-apply
+teleports (g48-g52); the `GasTrapCheck` (no gas-trap family); the
+`time_for_visuals` stand-in (`anim_time*60 % 216000`, the draw.rs:374
+convention — the C# `Main.timeForVisualEffects` is a double
+ticks-since-start).
+
+## The NPC spawn / teleport-in dust FINAL (W4-g61, code-only)
+
+**2026-11-21, `task/W4-g61-npc-spawn-dust`, the final-phase commits
+(keep-one fix `e6fcb643`, then this section's commits).** Three
+closures + the spawn-family declaration:
+
+### 1. The NightKey crimson pick — LIVE (`World.crimson`, the g69 field)
+
+`chest.rs::big_mimic_summon_check`'s `let crimson = false` constants-off
+stand-in is RETIRED: the pick reads `app.world.crimson`
+(`NPC.cs:77597` — `num7 = ((!WorldGen.crimson) ? 473 : 474)`, re-read
+`:77517-77605`). The field is **g69's** (`origin/task/W4-g69-weather-
+clouds-parallax` tip `20d0380f`): `World.crimson: bool`
+(`WorldGen.cs:4158`, the world evil type — true crimson, false
+corruption), declared after `mushroom_bg_style`, ctor `false`, written
+`world.crimson = opts.crimson` at BOTH worldgen entries
+(`generate_with_progress` + `generate_with_chest_stock` — the UI pick /
+`roll_crimson(seed)` feeds `GenOptions.crimson`, already live on main).
+This branch carries g69's field/ctor/worldgen hunks VERBATIM (the
+merge dedupes to one — identical text, no semantic conflict). The
+`.trwld` v18 tail + the `.wld` flags-byte read (`WorldFile.cs:1281`)
+stay **g69's lane** — NOT duplicated here; until g69's save layer
+merges, a loaded world keeps the ctor `false` (corruption), the same
+standing default the constants-off had, and a GENERATED crimson world
+now picks 474 correctly. The shop.rs/loot.rs `crimson_world` folds keep
+their own lanes' rows (g69's consumer census, research/117 §2). New
+witness `w4_g61_the_crimson_night_key_clears_and_reads_the_world_evil`
+(the crimson flag plumbs through, the refusal draws zero, the Light
+Key ignores the evil flag). WRITTEN NOT RUN.
+
+### 2. The roster-gap activation census (re-derived from the pushed tips)
+
+The seam-6/seam-5 "roster-gapped" notes were true at `8f545007`; the
+kind lanes have since LANDED rows on their pushed branches:
+
+| C# id | kind | landed where | status at THIS branch | activation |
+| --- | --- | --- | --- | --- |
+| 473/474/475/476 | the big mimics | d40 `4860cd88b` (batch 9, own bestiary entries `bestiary.rs:2376-2400`) | gapped (main has no rows) | **AUTO** — `kind_from_net_id` reads the bestiary ENTRIES (`npc/data.rs:3996`); at the d40 merge the chest seam's gate resolves and the `NewNPC` + `BigMimicSpawnSmoke` arms fire with NO g61 edit. The aiStyle-87 machine is d32's (UNWIRED row-0 FindFrame, the d40 note) — the spawn + smoke are live regardless |
+| 478/479 | MothronEgg / MothronSpawn | d40 `cfed253d0` (batch 10; the egg Hide=true folds onto Mothron for credit — the fold table `bestiary.rs:2634`, the 479 own row `:2417`) | gapped | **SEMI-AUTO + A GAP FOUND** — the egg's `Transform(479)` timer is the aiStyle-89 machine (`NPC.cs:38380`, d32's `npc_ai_style89.rs`, g8 carries the dispatch claim with `out.transform = Some(479)`); the sim's `wants_transform` drain (`world_sim/npcs.rs:6195`) matches ONLY `382/518` today — the merger must add the `479 => NpcKind::MothronSpawn` arm there (the c10 research/145 §2.4 activation contract names this the d40 wiring step). The g61 `transform_visuals(478, 479)` arm is module-ready and fires from the SAME drain's parity call once the arm lands. **The 478 RESOLUTION GAP:** `kind_from_net_id` scans the bestiary ENTRIES for `net_id == 478` — the egg has NO own entry (Hide=true, only the credit fold), so a `.wld`/net 478 record resolves `None` even after d40 merges; the fix is the d40 lane's (a resolution row or a fold-aware lookup — the g8 VampireBat precedent adds an own row for exactly this reason, `bestiary.rs:2353-2354`). Declared here, NOT fixed here (the roster is not g61's) |
+| 158 | VampireBat | g8 `0f31e10e3` (batch 3, `bestiary.rs:2421` own row — Hide=true folds onto Vampire 159 for credit) | gapped | **GATED** — the flip callers (`NPC.cs:23353` aiStyle-14 / `:58850` aiStyle-3) are cited machine skips on BOTH branches (g8's `npc_ai_style14.rs:122` still says "VampireBat unported" — the row landed but the Transform branch did not); the 158↔159 arm needs BOTH rows + the flip callers (the c10 §2.3 contract: d36 ports 159 at proto 762+, the callers ride their style lanes) |
+| 159 | Vampire | d36 CLAIMED (research/109 census; `bcf4ac551` supersede-note — 108-E `bdd59afb` authoritative, the 762-789 port-local band) | NOT landed (d36/d36x tips are census-only) | as above — no auto-activation |
+| 687 | MysticFrog | NOWHERE — d43's tip is bare main (`a725acb04`, no kind commits); e26's Frog is **361** (the luck critter, `bestiary.rs:2182` on e26 — a DIFFERENT kind); d127's bird gates cite `SpawnFrog` = 361 too | gapped, UNCLAIMED row | the bug-net `CatchOutcome::MysticFrog` arm stays coded-for-parity (the poof fires when a 687 record arrives; `AI_AttemptToFindTeleportSpot` unported — the teleport-spot search is the d43 kind lane's). The frog's style-13 `NPC.Teleport` (`NPC.cs:79880`) must ride `main_dust::npc_teleport` on the caller's pass when it lands (the g11 §5 census note) |
+| 361 | Frog (the critter) | e26 `048cca6cf` (phase 4, data-only aiStyle-7 walker) | gapped on main | NOT a g61 consumer — the catch CONVERTS (`catch_item(361) = 2121`, `NPC.cs:13611` — the same Frog item the 687 row uses, `:17651`), no poof arm |
+
+**The `kind_from_net_id` auto-activation verdict:** YES for the
+key-summon seam (the gate is a table read — the d40 rows activate the
+NPC + smoke arms at merge with zero g61 edits); NO for the transform
+seams (the `wants_transform` drain's kind match is a hardcoded
+`382/518` — the 479 arm is the d40/c10 merge step, and the 158↔159
+flips need their machine branches first). The g61 witnesses that pin
+"no NPC spawns yet" (`w4_g61_the_light_key_summon_clears_the_chest`'s
+`app.npcs.is_empty()`) are TRUE on this branch and INVERT at the d40
+merge — the merge-verify wave re-pins them (the roster rows are not
+this lane's to add).
+
+### 3. The spawn-family declaration (the lane's complete census)
+
+The g61 lane owns the SPAWN-time visual family, now fully adjudicated:
+
+* **STAYS g61 (this branch, wired):** `poof_of_smoke`
+  (`Utils.cs:1078-1093` — the bug-net catch, the statue body-gate, the
+  lamp burn-out), `big_mimic_spawn_smoke` (`NPC.cs:77494-77515` — the
+  key-summon), `transform_visuals` (`NPC.cs:80963-81033` — the three
+  live pillar flips + the carrier-gone parity drain),
+  `make_transition_effects_for_texture_changes` (`NPC.cs:90236-90263`
+  — module-ready, the town alt-texture seam is b3/e19's), the
+  `Npc` teleport fields (ONE set at merge, g11 names),
+  `wants_transform_visuals`, `Player.last_chest` +
+  `chest_change_events` + `big_mimic_summon_check` (the crimson pick
+  now LIVE), `Audio::play_teleport_cue`.
+* **FOLD-SOURCE (DEPRECATED in-code, the merger drops):** the
+  `teleport_effect`/`npc_teleport`/`update_npc_teleport_visuals`/
+  `portal_color`/`pylon_spawn_in_world_dust` bodies + the 9 teleport
+  witnesses + `npc_teleport_wiring` + the copy-in/out fade drain —
+  g11's `teleport_dust.rs` + `main_dust.rs` seams are the surviving
+  copies (research/116 EXECUTED, the keep-one section above).
+* **CO-LANE DUP DECLARED (c10):** `task/W4-c10-style68-waterfowl`
+  carries `npc_transform_visuals.rs` (`67191299b` + `1e336ee93`) — a
+  DRAW-CENSUS port of the SAME `NPC.TransformVisuals` body (the five
+  arms, the Item8 cue as an INTENT, dust/gore bodies unmodelled) with
+  the SAME three pillar flip sites wired. g61's `transform_visuals`
+  is the FULL pool-writing port (the d50/S1-E-4 contracts, the gores
+  land). At the c10×g61 merge keep ONE: **g61's full body** (the
+  pools write; c10's census draws nothing — a strict subset), c10's
+  flip-site call shape re-points at the g61 module (or retires —
+  the g61 `wants_transform_visuals` stamp already covers the three
+  sites), c10's waterfowl-silence witness transfers (the eight
+  takeoff/landing pairs match no arm — zero draws, both ports agree).
+  The merger adjudicates; neither branch edits the other's module.
+* **CITED SKIPS (unchanged):** the town shimmer-state-25 teleport
+  (b3), the caster inline bursts (d52 batch3), the net-apply
+  teleports (g48-g52), `GasTrapCheck` (no gas-trap family), the
+  `NewNPC` getGoodWorld bunny/squirrel swap (constants-off at the
+  sim's spawn seams), the death dust (g59/g60) + the per-hit dust
+  (g62) — separate lanes, untouched.
+
+**Verification:** code-only — the C# re-read (`NPC.cs:77517-77605`,
+`:77494-77515`, `:79860-79924`, `:80963-80992`), the g69 field hunks
+diffed against `20d0380f` (verbatim), the d40/g8/d36/e26/d43/c10 tips
+re-read from origin. The new/updated witnesses are WRITTEN NOT RUN
+(no cargo/tests/rustfmt/graphify per the lane directive).
