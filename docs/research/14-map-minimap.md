@@ -665,10 +665,13 @@ closeout code):**
   and each held movement row in `update_map_input` sets it to `None` before
   its pan step. The overlay pick folds only its STEP + ARMING hunks onto
   this state; its duplicate field drops. The `resetMapFull` pan clear
-  (`Main.cs:55418`, missing in f29's arm; e17's had it) closes next on the
-  union's recentre seam. The union's `prepare` signature carries the extra
-  `map_enabled` param (the clearMap consume gate) — e17's pan block folds
-  in as a hunk ahead of the clamps.
+  (`Main.cs:55418`, missing in f29's arm; e17's had it) is CLOSED too: the
+  union's `WorldMap::recentre` clears the pan FIRST (`:55418`), then takes
+  the view-centre override + flag disarm (`:55419-55423`, the C# statement
+  order); `prepare`'s reset arm calls it and `set_open`'s re-arm feeds it —
+  every reset path clears the pan. The union's `prepare` signature carries
+  the extra `map_enabled` param (the clearMap consume gate) — e17's pan
+  block folds in as a hunk ahead of the clamps.
 - **`set_open` / `WorldMap` fields:** both add `map_pylon_tile` (+ the pan
   state) and clear the pylon selection in the open arm
   (`Player.cs:29113`/`Main.cs:41102`); the union's `set_open` is the base's

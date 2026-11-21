@@ -922,6 +922,17 @@ impl WorldMap {
         }
     }
 
+    /// `Main.cs:55416-55424`: the `resetMapFull` consume — clear the pan
+    /// target FIRST (`:55418` `PanTargetMapFullscreen = false`, the gap
+    /// f29's arm lacked — W4-f46 shared-gap close), then override the
+    /// clamp with the unclamped view centre
+    /// `(screenPosition + screenSize/2)/16f` and disarm the flag (`:55419`).
+    pub fn recentre(&mut self, center_tile: [f32; 2]) {
+        self.pan_target = None; // `:55418`
+        self.pos = center_tile; // `:55422-55423`
+        self.reset_pos = false; // `:55419`
+    }
+
     /// Per-frame prep: clamp `scale`/`pos`, recentre on the view centre if armed,
     /// then upload the tiles in `take_dirty()` into the map texture.
     ///
@@ -944,10 +955,10 @@ impl WorldMap {
         // `Main.cs:55398-55413`.
         self.pos = map_clamp_pos(self.pos, world);
         // `Main.cs:55416-55424`: `resetMapFull` overrides the clamp with the unclamped
-        // view centre `(screenPosition + screenSize/2)/16f`.
+        // view centre `(screenPosition + screenSize/2)/16f` — and clears the pan
+        // target first (`:55418`, the `recentre` seam).
         if self.reset_pos {
-            self.pos = center_tile;
-            self.reset_pos = false;
+            self.recentre(center_tile);
         }
 
         // `MapRenderer.CheckMapTargets` (`MapRenderer.cs:357-378`).
@@ -2130,6 +2141,33 @@ mod tests {
         // `Player.cs:24900-24907`.
         assert_eq!(map_key_scale(2.0, true), 2.1);
         assert_eq!(map_key_scale(2.0, false), 1.9);
+    }
+
+    /// W4-f46 shared-gap close (written, not run - code-only): the
+    /// `resetMapFull` consume (`Main.cs:55416-55424`) clears the pan target
+    /// FIRST (`:55418` `PanTargetMapFullscreen = false` — the clear f29's
+    /// arm lacked), then recentres on the unclamped view centre and
+    /// disarms the flag (`:55419`). The ctor seeds no pan
+    /// (`Main.cs:66758-66759`).
+    #[test]
+    fn w4_f46_the_reset_clears_the_pan_target_and_recentres() {
+        let world = test_world();
+        let mut m = WorldMap::new(&world);
+        assert_eq!(m.pan_target, None, "`Main.cs:66758` starts false");
+        assert!(m.reset_pos, "the ctor arms the recentre");
+        m.pan_target = Some([30.0, 30.0]);
+        m.pos = [15.0, 15.0];
+        m.recentre([22.5, 17.25]);
+        assert_eq!(m.pan_target, None, "`:55418` cancels the armed pan");
+        assert_eq!(m.pos, [22.5, 17.25], "`:55422-55423` the view centre");
+        assert!(!m.reset_pos, "`:55419` disarms");
+        // The open arm re-arms the reset (`set_open`), so the next
+        // recentre clears a pan armed while the map was closed.
+        m.set_open(true);
+        assert!(m.reset_pos);
+        m.pan_target = Some([10.0, 10.0]);
+        m.recentre([20.0, 20.0]);
+        assert_eq!(m.pan_target, None);
     }
 
     #[test]
