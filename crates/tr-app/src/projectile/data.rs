@@ -2582,10 +2582,18 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // ignoreWater, extraUpdates 2.
             TOWER_DAMAGE_BOLT => (8.0, 8.0, 122, -1, TIME_LEFT_DEFAULT, 2, false, false, true, RESET_STATE),
             // `:6282-6293`'s ritual markers (the 578 lightning + the 579
-            // portal + the 813 Blood Nautilus tears, W4-d11): 32x32,
-            // aiStyle 108, tileCollide false, ignoreWater.
+            // portal + the 813 Blood Nautilus tears, W4-d11/g64/d13): 32x32,
+            // aiStyle 108, friendly AND hostile, alpha 255, tileCollide
+            // false, ignoreWater, drawLayer 1 (a draw-side field, no pool
+            // consumer). `penetrate` keeps the stock 1 (`:774` — the block
+            // never sets it); the row shape carries neither friendly nor
+            // hostile (the data-row deviation census). W4-d11 RETIRE item 3:
+            // the g64/d13 corrected shape adopted for all three kinds — the
+            // old d11 `-1`/RESET_STATE (alpha 0) was stale; this tuple is
+            // BYTE-EQUAL to g64 `3cdc6423` / d13 `b56db900` so the three-way
+            // 813 keep-one merges clean (g64's dust-wired machine survives).
             VORTEX_LIGHTNING | VORTEX_PORTAL | BLOOD_NAUTILUS_TEARS => {
-                (32.0, 32.0, 108, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
+                (32.0, 32.0, 108, 1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
             }
             // `:6294-6305`'s VortexLightning (the 580): 14x14, aiStyle 88,
             // extraUpdates 4, ignoreWater.
@@ -4374,6 +4382,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (`Projectile.cs:6457`); the 575 sphere does NOT
             // (`:6219-6229` has no such line).
             || kind == DESERT_DJINN_CURSE
+            // W4-d11 RETIRE item 3 (the g64 remainder-4 / d13 a2588cd2
+            // residual adopted) — the aiStyle-108 ritual markers' shared
+            // block sets `ignoreWater` (`Projectile.cs:6290`); the 578/579
+            // rows predated the flag list, the 813 joins them.
+            || matches!(kind, VORTEX_LIGHTNING | VORTEX_PORTAL | BLOOD_NAUTILUS_TEARS)
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
             || kind == GOLF_CLUB_HELPER,

@@ -3803,6 +3803,12 @@ impl Projectile {
         if self.ai[0] <= 50.0 {
             // The wind-up: the 578/579 dust arms (unmodelled). The 813's
             // two Next(4) gates (`:33762`/`:33772`) — the bodies skip.
+            // W4-d11 RETIRE item 3: this gates-only stand-in machine DROPS
+            // at the three-way keep-one — g64 `3cdc6423`'s dust-wired
+            // superset survives (it carries the d13 b56db900 wind-up scale
+            // fix: the C# `:33714-33783` writes NO scale, the stock 1 holds;
+            // this arm's `scale = 0.0` is the stale stand-in the g64 machine
+            // corrects). The shared ROW above is byte-equal across the three.
             scale = 0.0;
             if self.kind == BLOOD_NAUTILUS_TEARS {
                 if rng.next_range(0, 4) == 0 {
@@ -31554,13 +31560,51 @@ mod ritual_projectile_tests {
     }
 
     /// W4-d11 — the 813 BloodNautilusTears row rides the shared 108 row
-    /// (`Projectile.cs:6282-6293`).
+    /// (`Projectile.cs:6282-6293`). W4-d11 RETIRE item 3: the corrected
+    /// shape — the stock penetrate 1 (`:774`, the block sets none) + alpha
+    /// 255 (`:6288`) + ignoreWater (`:6290`), NOT the stale `-1`/alpha-0.
     #[test]
     fn w4_d11_108_the_tears_row_rides_the_shared_marker() {
         let d = proj_data(BLOOD_NAUTILUS_TEARS).expect("the 813 row");
         assert_eq!(d.ai_style, 108);
         assert_eq!((d.w, d.h), (32.0, 32.0));
         assert!(!d.tile_collide, ":6289");
+        assert_eq!(d.penetrate, 1, ":774 the stock 1 — the block sets none");
+        assert_eq!(d.alpha, 255, ":6288");
+        assert!(d.ignore_water, ":6290");
+    }
+
+    /// W4-d11 RETIRE item 3 — the three-way 813 keep-one row contract: the
+    /// 578/579/813 share ONE byte-equal row tuple, and that tuple is
+    /// BYTE-EQUAL to g64 `3cdc6423` / d13 `b56db900` (the published
+    /// `(32,32,108,1,3600,0,false,false,false,(false,-2,false,-1,255,1.0))`).
+    /// The g64 dust-wired `ai_vortex_ritual` superset survives the merge;
+    /// d11's gates-only stand-in machine + this row's old `-1`/RESET_STATE
+    /// retire into it. Written NOT run (code-only).
+    #[test]
+    fn w4_d11_retire_the_marker_row_is_byte_equal_across_the_three_way() {
+        let lightning = proj_data(VORTEX_LIGHTNING).expect("the 578 row");
+        let portal = proj_data(VORTEX_PORTAL).expect("the 579 row");
+        let tears = proj_data(BLOOD_NAUTILUS_TEARS).expect("the 813 row");
+        // ONE shared row — the three kinds are value-identical.
+        assert_eq!(lightning, portal, "the 578/579 share the row");
+        assert_eq!(lightning, tears, "the 813 joins the shared row");
+        // The exact corrected tuple the g64/d13 keep-one carries.
+        assert_eq!(
+            (
+                tears.w, tears.h, tears.ai_style, tears.penetrate,
+                tears.time_left, tears.extra_updates, tears.tile_collide,
+                tears.arrow, tears.trap, tears.uses_local_immunity,
+                tears.local_hit_cooldown, tears.uses_id_static_immunity,
+                tears.id_static_hit_cooldown, tears.alpha, tears.scale,
+            ),
+            (
+                32.0, 32.0, 108, 1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                false, -2, false, -1, 255, 1.0,
+            ),
+            "the g64 3cdc6423 / d13 b56db900 byte-equal row"
+        );
+        assert!(tears.ignore_water, ":6290 the flag-list entry");
     }
 
     /// W4-d11 — the 813's 90th-tick BloodSquid (619) spawn
