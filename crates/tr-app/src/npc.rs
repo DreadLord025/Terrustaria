@@ -6798,6 +6798,42 @@ impl Npc {
         self.local_ai[1] = s.local_ai[1];
     }
 
+    /// W4-d44 wire (f26 slice 7c) — the bridge into
+    /// `npc_findframe_extra7c`'s pure machines: copy the four
+    /// `FindFrame` fields out, run one tick, copy them back (the
+    /// `find_frame_wave_extra7` precedent). `direction` is `facing`
+    /// (the C#'s `Entity.direction`); the inputs are vx/vy/direction +
+    /// the four `ai` slots (the crawdad `ai[2]` charge gate,
+    /// `NPC.cs:69659-69673`, the shelly `ai[0]` state / `ai[1]` shell
+    /// bands, `:69996-70060`, the salamander `ai[2]` attack gate /
+    /// `ai[1]` pose bands, `:69867-69884`). NO world read this wave —
+    /// none of the five cited ranges touches `Framing`/`Main.tile`
+    /// (mechanical grep = ZERO), so the bridge rides the world-free
+    /// `find_frame` hook directly; the 7b slope/frame_x36 seams are
+    /// NOT carried. The shelly state-0 rotation zero copies back.
+    fn find_frame_wave_extra7c(
+        &mut self,
+        kind: crate::npc_findframe_extra7c::FindFrameExtra7cKind,
+    ) {
+        let mut s = crate::npc_findframe_extra7c::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+        };
+        let i = crate::npc_findframe_extra7c::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            ai: self.ai,
+        };
+        crate::npc_findframe_extra7c::find_frame_extra7c(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+    }
+
     /// W4-d44 wire (f26 slice 7b) — the Target Dummy's weapon-rack
     /// tile probe, CALLER-RESOLVED (`NPC.cs:70850`):
     /// `Framing.GetTileSafely((int)ai[0], (int)ai[1]).frameX >= 36`.
@@ -6853,6 +6889,29 @@ impl Npc {
         match crate::npc_findframe_extra7b::find_frame_kind_extra7b(cs_id as i16) {
             // The f26e keep-inline verdict — NEVER claimed.
             Some(K::Medusa | K::GreekSkeleton | K::GraniteGolem) => None,
+            other => other,
+        }
+    }
+
+    /// W4-d44 wire — the extra-7c claim set: the FIRST ELEVEN of the
+    /// slice-7c band 494-506/508/509 — the crawdad pair 494/495, the
+    /// giant shelly pair 496/497 and the seven salamanders 498-504
+    /// (the ≤11-kind batch cap, the extra7b-a precedent); 505/506/
+    /// 508/509 ride a later batch. The d41 tip `5d036721` carries
+    /// FAITHFUL inline twins for 494-506 (its batches 1-2, arm-by-arm
+    /// equal — the f26e 480/481/482 keep-inline precedent); the hook
+    /// precedes the roster arm at merge and the machines are
+    /// behaviour-identical, so the claim is safe either way (the
+    /// census research/68 §3.5 note).
+    fn find_frame_kind_extra7c_claimed(
+        cs_id: u16,
+    ) -> Option<crate::npc_findframe_extra7c::FindFrameExtra7cKind> {
+        use crate::npc_findframe_extra7c::FindFrameExtra7cKind as K;
+        match crate::npc_findframe_extra7c::find_frame_kind_extra7c(cs_id as i16) {
+            // The ≤11-kind cap — the LAST FOUR ride a later batch.
+            Some(K::Salamander8 | K::Salamander9 | K::GiantWalkingAntlion | K::GiantFlyingAntlion) => {
+                None
+            }
             other => other,
         }
     }
@@ -7021,6 +7080,20 @@ impl Npc {
         // wave-C hook precedent.
         if let Some(kind) = Self::find_frame_kind_extra7b_claimed(self.kind.cs_id()) {
             self.find_frame_wave_extra7b(kind, 0, false);
+            return;
+        }
+        // W4-d44 wire (f26 slice 7c) — the `cs_id`-keyed hook into the
+        // extra-wave-7c pure machines (`npc_findframe_extra7c.rs`) via
+        // `find_frame_kind_extra7c_claimed`: the FIRST ELEVEN slice-7c
+        // ids 494-504 (the crawdad pair, the giant shelly pair, the
+        // seven salamanders 498-504; 505/506/508/509 ride a later
+        // batch, the ≤11-kind cap). NO current kind's `cs_id` lands in
+        // the set (verified over the hand rows + the bestiary net
+        // ids), so this is stream-inert today; no arm draws RNG and
+        // none reads the world (the f26 7c mechanical grep over the
+        // five cited ranges = ZERO). The extra7 hook precedent.
+        if let Some(kind) = Self::find_frame_kind_extra7c_claimed(self.kind.cs_id()) {
+            self.find_frame_wave_extra7c(kind);
             return;
         }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
@@ -34220,6 +34293,143 @@ mod w4_d44_wire_tests {
         for id in [472, 478, 489] {
             assert_eq!(Npc::find_frame_kind_extra7b_claimed(id), None, "{id}");
         }
+    }
+
+    /// The extra-7c hook fires for NO current kind — the inertness
+    /// proof (494-504 skip the hand rows + net ids).
+    #[test]
+    fn w4_d44_the_extra7c_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                Npc::find_frame_kind_extra7c_claimed(kind.cs_id()),
+                None,
+                "{kind:?} cs_id {} must not ride the extra-7c hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The extra-7c claim set is the FIRST ELEVEN slice-7c ids
+    /// 494-504 (the crawdad pair, the shelly pair, the seven
+    /// salamanders); 505/506/508/509 ride a later batch (the ≤11-kind
+    /// cap), the no-case 491/493 + the band edges stay outside.
+    #[test]
+    fn w4_d44_the_extra7c_claim_set_matches_the_batch_band() {
+        use crate::npc_findframe_extra7c::FindFrameExtra7cKind as K;
+        let table = [
+            (494u16, K::Crawdad),
+            (495, K::Crawdad2),
+            (496, K::GiantShelly),
+            (497, K::GiantShelly2),
+            (498, K::Salamander),
+            (499, K::Salamander2),
+            (500, K::Salamander3),
+            (501, K::Salamander4),
+            (502, K::Salamander5),
+            (503, K::Salamander6),
+            (504, K::Salamander7),
+        ];
+        for (id, k) in table {
+            assert_eq!(Npc::find_frame_kind_extra7c_claimed(id), Some(k), "{id}");
+        }
+        // The ≤11-kind cap — the LAST FOUR ride a later batch.
+        for id in [505, 506, 508, 509] {
+            assert_eq!(Npc::find_frame_kind_extra7c_claimed(id), None, "{id}");
+        }
+        // The no-case 491/493/507 + the band edges.
+        for id in [490, 491, 493, 507, 510] {
+            assert_eq!(Npc::find_frame_kind_extra7c_claimed(id), None, "{id}");
+        }
+    }
+
+    /// The extra-7c bridge copies the four fields both ways and feeds
+    /// vx/vy/facing/ai through — pinned on the crawdad walk bands
+    /// (the |vx| NO-+1 accumulator + the 39 reset,
+    /// `NPC.cs:69704-69733`), the charge ladder's >=20 row-HOLD
+    /// (`:69659-69673`), the shelly state-0 rotation zero + the
+    /// UNCONDITIONAL grounded sprite copy + the 24 reset-tick
+    /// row-HOLD (`:69996-70028`), the shelly state-5 bands
+    /// (`:70045-70060`), the salamander walk's STRICT >7 wrap
+    /// (`:69890-69900`) and the attack pose (`:69867-69884`).
+    #[test]
+    fn w4_d44_the_extra7c_bridge_copies_the_four_fields_both_ways() {
+        use crate::npc_findframe_extra7c::FindFrameExtra7cKind as K;
+        let mut n = bare(NpcKind::Piranha);
+        // Crawdad walk: vx 3, counter 0 → 3 < 8 → row 0; the grounded
+        // flip rides facing -1.
+        n.frame = 4;
+        n.frame_counter = 0.0;
+        n.sprite_dir = 1;
+        n.facing = -1;
+        n.vx = 3.0;
+        n.vy = 0.0;
+        n.rotation = 0.4;
+        n.find_frame_wave_extra7c(K::Crawdad);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (0, 3.0, -1));
+        assert_eq!(n.rotation, 0.4, "no rotation write");
+        // The 39 reset: counter 36 + 3 = 39 → the else pins row 4
+        // AGAIN and zeroes the counter (NOT a wrap-to-0).
+        n.frame_counter = 36.0;
+        n.find_frame_wave_extra7c(K::Crawdad2);
+        assert_eq!((n.frame, n.frame_counter), (4, 0.0));
+        // The charge ladder: ai[2] 10 lands the <14 band row 6; the
+        // >= 20 edge writes NOTHING (row + counter HOLD).
+        n.frame = 2;
+        n.frame_counter = 5.0;
+        n.ai = [0.0, 0.0, 10.0, 0.0];
+        n.find_frame_wave_extra7c(K::Crawdad);
+        assert_eq!((n.frame, n.frame_counter), (6, 5.0));
+        n.ai[2] = 20.0;
+        n.find_frame_wave_extra7c(K::Crawdad);
+        assert_eq!((n.frame, n.frame_counter), (6, 5.0), "the >=20 hold");
+        // Shelly state 0: the rotation zeroes EVERY tick, the grounded
+        // sprite copy is UNCONDITIONAL (facing 0 included); vx 2 →
+        // counter 0 + 2*1.1 = 2.2 < 6 → row 0.
+        n.ai = [0.0; 4];
+        n.frame = 3;
+        n.frame_counter = 0.0;
+        n.rotation = 0.9;
+        n.facing = 0;
+        n.sprite_dir = 1;
+        n.vx = 2.0;
+        n.find_frame_wave_extra7c(K::GiantShelly);
+        assert_eq!((n.frame, n.sprite_dir, n.rotation), (0, 0, 0.0));
+        assert!((n.frame_counter - 2.2).abs() < 1e-6);
+        // The 24 reset-tick row-HOLD: counter 23 + 2.2 = 25.2 → the
+        // else zeroes the counter WITHOUT a row write — row 3 HOLDS.
+        n.frame = 3;
+        n.frame_counter = 23.0;
+        n.find_frame_wave_extra7c(K::GiantShelly2);
+        assert_eq!((n.frame, n.frame_counter), (3, 0.0), "the reset-tick hold");
+        // Shelly state 5: ai[1] 15 lands the <20 band row 11; the
+        // sprite/rotation are NOT touched by the state arms.
+        n.ai = [5.0, 15.0, 0.0, 0.0];
+        n.sprite_dir = -1;
+        n.rotation = 0.2;
+        n.find_frame_wave_extra7c(K::GiantShelly);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (11, 0.0, -1));
+        assert_eq!(n.rotation, 0.2);
+        // Salamander walk: vx 1, counter 4 → 5 > 4 steps row 7 → 8,
+        // the STRICT >7 wrap lands 0.
+        n.ai = [0.0; 4];
+        n.frame = 7;
+        n.frame_counter = 4.0;
+        n.vx = 1.0;
+        n.facing = 1;
+        n.find_frame_wave_extra7c(K::Salamander);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        // The attack pose: ai[2] > 0 copies facing UNCONDITIONALLY
+        // and pins row 9 off the ai[1] <34 band, counter zeroed.
+        n.ai = [0.0, 20.0, 1.0, 0.0];
+        n.facing = -1;
+        n.frame_counter = 3.0;
+        n.find_frame_wave_extra7c(K::Salamander2);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (9, 0.0, -1));
+        // The air pin: row 10, counter zeroed.
+        n.ai = [0.0; 4];
+        n.vy = 2.0;
+        n.find_frame_wave_extra7c(K::Salamander3);
+        assert_eq!((n.frame, n.frame_counter), (10, 0.0));
     }
 
     /// The extra-6 bridge copies the three fields both ways and feeds
