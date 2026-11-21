@@ -5696,7 +5696,7 @@ impl Npc {
     /// STAGED emitter adopted verbatim, keep-one) draws the eight
     /// `Dust.NewDust` internals in C# order on the caller's `UpdateNPCs`
     /// stream through the live pool (the Everscream S1-F-13c precedent;
-    /// research/284 §3).
+    /// research/356 §3).
     ///
     /// The tail: `SetDefaults` 387 writes no noGravity/noTileCollide
     /// (`:13922-13934`), so `UpdateNPC` runs the depth-scaled gravity

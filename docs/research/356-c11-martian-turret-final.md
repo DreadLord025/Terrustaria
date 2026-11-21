@@ -1,7 +1,13 @@
-# 284 — W4-c11 RETIRE/SEAL: the aiStyle-73 Martian Turret FINAL + the martian-turret-family bible
+# 356 — W4-c11 RETIRE/SEAL: the aiStyle-73 Martian Turret FINAL + the martian-turret-family bible
 
 Status: SEALED (W4-c11 retire session, 2026-11-21). Code-only — no
 cargo/rustc/tests/rustfmt/graphify invoked; every witness WRITTEN NOT RUN.
+**Number chain: 284 → 356.** Registry-150 §9 UNIFIED FINAL TABLE
+(`origin/task/W4-d54-dust-sites-world` `b4c94432c`, §9.2 row 356): 284 is
+g52's KEEPS per §9.1 (`0224fff80`, pre-§8) — this doc's tips-only
+max-on-tips self-pick 284 is voided → **356 the §9 FINAL assignment**
+(this file was formerly numbered 284; micro-rename, content unchanged).
+Historical pick narrative below, preserved verbatim:
 Registry number: **284** = max-on-tips (283, f4 `283-npc-dust-final.md`) + 1,
 per research/150's "281+ FREE" guidance re-probed at THIS session's fetch
 (all remote tips `git ls-tree docs/research/`; 281 is now 8-way collided —

@@ -30674,8 +30674,8 @@ arm to claim; only the one-line `mod npc_ai_style72;` seam landed.
 MartianTurret 387 (`SetDefaults` `:13922-13934`, `ID/NPCID.cs:11451`),
 the Martian Madness gun emplacement. CODE-ONLY MODE: no
 cargo/rustc/rustfmt invoked; the 18 module witness tests + the 3 npc.rs
-wiring witnesses are written, not run. RETIRE/SEAL: research/284
-(`284-c11-martian-turret-final.md`) — the git-log census, the
+wiring witnesses are written, not run. RETIRE/SEAL: research/356
+(`356-c11-martian-turret-final.md`) - the git-log census, the
 all-arms-wired census, the e2 ring activation, the g65-Kill-309 compose
 and the martian-turret-family bible.
 
@@ -30699,7 +30699,7 @@ precedent). Two wiring witnesses: the axis run (fade → latch → the
 60-tick shot at classic 35 from the planted muzzle) + the retirement
 guard.
 
-**Dust ring ACTIVATED (W4-c11 retire, research/284 §3)**: the fade's
+**Dust ring ACTIVATED (W4-c11 retire, research/356 §3)**: the fade's
 eight `Dust.NewDust` calls per tick (`:35157`/`:35162`) now DRAW through
 the live pool — `npc_ai_style73::turret_materialize_ring` (the W4-e2
 batch-6 STAGED emitter `npc_dust.rs::turret_materialize_ring`, e2 tip
@@ -30790,8 +30790,8 @@ CLOSED.
   the shot's player re-read uses the same captured slot (nothing moves
   it between `:35111` and `:35196` within one tick); the bolt's own
   projectile machine is f20 slice E's row-gated overlay (activates when
-  this branch's 435 row merges — research/284 §2), the Kill burst is
-  g65's (`:73467-73478`, research/284 §4), the bolt's AddLight `:54932`
+  this branch's 435 row merges - research/356 §2), the Kill burst is
+  g65's (`:73467-73478`, research/356 §4), the bolt's AddLight `:54932`
   is the lights family's one remaining row-absence re-probe.
 
 ## The Martian Saucer core audit (S1-D-3 aiStyle-76, code-only)

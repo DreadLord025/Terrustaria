@@ -72,13 +72,13 @@
 //! ports the ring's branch structure (the spin angle, the four
 //! offsets/scales, the alternating mirror); [`turret_materialize_ring`]
 //! (the W4-e2 batch-6 STAGED emitter adopted verbatim by the W4-c11
-//! retire, keep-one — research/284 §3) draws the internals in C# order
+//! retire, keep-one - research/356 §3) draws the internals in C# order
 //! on the caller's `UpdateNPCs` stream through the live pool. The pure
 //! `style73_step` itself still takes the ring count-only (the plan seam);
 //! the adapter (`npc.rs::ai_073_martian_turret`) drains the plan into the
 //! ring AFTER the arm returns and BEFORE the gravity tail — on fade
 //! ticks the arm makes no other draws (the early `return` precedes the
-//! shot cycle), so the stream order is the C#'s own (research/284 §3).
+//! shot cycle), so the stream order is the C#'s own (research/356 §3).
 //!
 //! `TargetClosest` (`NPC.cs:77652-77781`, the `npc_target.rs` port),
 //! `AI_GlobalFiringDistanceCheck` and `Lighting.AddLight` draw nothing.
@@ -307,7 +307,7 @@ pub fn turret_materialize_dust_plan(ai1: f32, center: (f32, f32)) -> TurretMater
 /// at `9912498fc`) adopted VERBATIM — the keep-one owner moves to the
 /// machine's own module now that the kind + axis arm are wired (the
 /// e2 doc's "STAGED — the style-73 machine is unwired" precondition is
-/// discharged). The e2 copy DROPs at merge (research/284 §3). The
+/// discharged). The e2 copy DROPs at merge (research/356 §3). The
 /// draws ride the caller's `UpdateNPCs` stream through the verbatim
 /// pool internals (`Dust.cs:153-193`, the Everscream precedent).
 pub fn turret_materialize_ring<R: DustRng>(
