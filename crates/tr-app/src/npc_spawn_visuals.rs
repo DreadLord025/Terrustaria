@@ -1,4 +1,5 @@
-//! NPC SPAWN / teleport-in dust — the g61 lane (W4-g61, code-only mode).
+//! NPC SPAWN / teleport-in dust — the g61 lane (W4-g61, code-only mode;
+//! the wiring round connects the live seams below).
 //!
 //! Scope (the spawn-time visual family; the death dust is g59/g60's
 //! `HitEffect`/checkDead lane and the per-hit dust is g62's — neither is
@@ -6,24 +7,32 @@
 //!
 //! * [`poof_of_smoke`] — `Utils.PoofOfSmoke` (`Utils.cs:1078-1093`): the
 //!   statue-spawn / critter-catch poof (3-6 smoke gores 11-13 + ten
-//!   type-16 dust). The standing callers: `Wiring.cs:825`/`:2275`/
-//!   `:2329`/`:2397` (the statue arms — the port's `wiring.rs:980`
-//!   documents the gap), `NPC.cs:79884` (the caught Mystic Frog's
-//!   no-spot poof) and `:79913` (the statue-spawned critter catch poof)
-//!   — `bug_net.rs:56-61` records the skip this module now has a port
-//!   target for; `NPC.cs:90247` (the party-hat-off transition) is the
-//!   `MakeTransitionEffectsForTextureChanges` family, cited below.
+//!   type-16 dust). WIRED at the statue/lamp arms (`Wiring.cs:825`/
+//!   `:2275`/`:2329`/`:2397` — the `world_sim/wiring.rs` drain) and the
+//!   bug-net catch (`NPC.cs:79884` the caught Mystic Frog's no-spot
+//!   poof, `:79913` the statue-spawned critter catch poof —
+//!   `bug_net.rs::catch_npc`); `NPC.cs:90247` (the party-hat-off
+//!   transition) is the `MakeTransitionEffectsForTextureChanges`
+//!   family, cited below (the town alt-texture seam is unported —
+//!   the `npc_ai_town.rs` shimmer-state note).
 //! * [`big_mimic_spawn_smoke`] — `NPC.BigMimicSpawnSmoke`
 //!   (`NPC.cs:77494-77515`): the biome-mimic chest summon's 20× type-54
 //!   smoke + the 3×2 gore-99 grid, called by `BigMimicSummonCheck`
-//!   (`:77602`) right after the `NewNPC` (`:77599`).
+//!   (`:77602`) right after the `NewNPC` (`:77599`). WIRED at the
+//!   `chest.rs::big_mimic_summon_check` spawn seam (the key-summon
+//!   `ChestChangeEvents` edge, `Player.cs:28760-28775`); the big-mimic
+//!   kinds 473-476 are roster-gapped (the d40 kind lane), so the smoke
+//!   fires only once a kind row lands.
 //! * [`transform_visuals`] — `NPC.TransformVisuals`
 //!   (`NPC.cs:80963-81033`): the `Transform` tail's per-kind burst
 //!   (`:81136`) — the 158↔159 gore-only arm, the 478→479 flutterfly
 //!   30× type-238 + four gores, the 406→405 ring, the 428→427 and
-//!   427→426 shimmer-fairy ladders. The port's live
-//!   `transform_to_kind` (`npc.rs:5080`) does not call it yet — the
-//!   wiring round drains it at the C# call position.
+//!   427→426 shimmer-fairy ladders. WIRED at the live in-place
+//!   transform tails (the 406→405 cell, the 428→427 / 427→426 vortex
+//!   ladder — `npc.rs`'s `wants_transform_visuals` drain) and the
+//!   `transform_to_kind` seam (the 382/518 carrier-gone pair, a
+//!   zero-draw parity call); the 158/159 vampire + 478/479 mothron
+//!   arms are roster-gapped (the d35/d40 kind lanes).
 //!
 //! The teleport-in family: [`teleport_effect`] (`Main.TeleportEffect`,
 //! `Main.cs:13233-13464` — all eleven style arms), [`npc_teleport`]
@@ -34,6 +43,15 @@
 //! [`make_transition_effects_for_texture_changes`]
 //! (`NPC.cs:90236-90263` — the town alt-texture puffs, the party-hat /
 //! zoologist transitions).
+//!
+//! **KEEP-ONE (the g11 merge):** this module's [`teleport_effect`] is
+//! the FULL eleven-arm `Main.TeleportEffect` port. W4-g11's
+//! `main_dust.rs::teleport_effect` (batch 1, styles 0-7 only, the
+//! `EffectRect` shape) SUPERSEDES nothing here — at the merge the g11
+//! styles 0/1/2/3/4/5/7 arms are DROPPED in favour of this module's
+//! (the NPC-side driver owns the whole family; g11b wires the
+//! player-side call sites THROUGH this module). The g11 `snowing`
+//! site and the `portal_color` helper keep their own lanes.
 //!
 //! **`NewNPC` itself draws no spawn dust.** `NPC.NewNPC`
 //! (`NPC.cs:80750-80795`) has exactly ONE RNG draw — the
@@ -61,14 +79,15 @@
 //! server arms (`BigMimicSpawnSmoke`'s `SendData(51, .., 4)` relay
 //! `:77496-77500`, the `Transform` `SendData(23/54)` pair) and the
 //! `SoundEngine` pitch draws — the sounds ride the [`SpawnVisualsEnv::
-//! play_sound`] callback AT the C# call position so the wiring round
-//! can roll the case-2 `Next(-6,7)` pitch (`LegacySoundPlayer.cs:632`,
-//! the style75 convention) on the same stream without re-ordering.
+//! play_sound`] callback AT the C# call position WITH the caller's
+//! stream, so the wiring round rolls the case-2 `Next(-6,7)` pitch
+//! (`LegacySoundPlayer.cs:632`, the style75 convention) on the same
+//! stream without re-ordering.
 //!
 //! Witnesses: the tests below record EVERY stream call through a
 //! `RecordingRng` and pin the exact slot sequence per site (WRITTEN
 //! NOT RUN — code-only mode, no cargo per the lane directive).
-#![allow(dead_code)] // UNWIRED (the g61 code-only round): the wiring follow-up drains the poof at the bug-net/statue seams, the mimic smoke at the key-summon seam and TransformVisuals at transform_to_kind's tail.
+#![allow(dead_code)] // The wiring round drains the poof at the bug-net/statue seams, the mimic smoke at the key-summon seam, TransformVisuals at the live transform tails and the teleport family at the statue/pad call sites; arms whose kinds are roster-gapped (the 158/159 vampire pair, the 478/479 mothron hatch, the big mimics) keep their parity code unwired until the kind lanes land.
 
 use crate::npc::Npc;
 use glam::Vec2;
@@ -96,10 +115,14 @@ pub struct SpawnVisualsEnv<'a, R: DustRng + GoreRng> {
     /// the bug-net poof, `SpawnNPC` for the statue arms).
     pub rng: &'a mut R,
     /// `SoundEngine.PlaySound(LegacySoundStyle, x, y)` at the C# call
-    /// position: `(sound_id, style, x, y)`. The wiring round resolves
+    /// position: `(sound_id, style, x, y, rng)`. The wiring round resolves
     /// the cue + its pitch draw here (the style75 `play_use_sound`
-    /// seam); the pure module only records the request.
-    pub play_sound: &'a mut dyn FnMut(i32, i32, f32, f32),
+    /// seam); the pure module only records the request. The caller's
+    /// stream is handed THROUGH the callback (a disjoint-field reborrow
+    /// of [`Self::rng`]) so the case-2 `Next(-6,7)` pitch lands at the
+    /// C# position between the dust draws — a deferred `out.sounds` vec
+    /// would re-order the stream.
+    pub play_sound: &'a mut dyn FnMut(i32, i32, f32, f32, &mut R),
 }
 
 /// `Utils.ToRotationVector2` (`Utils.cs:1665-1668`): `(cos f, sin f)`
@@ -245,7 +268,7 @@ pub fn transform_visuals<R: DustRng + GoreRng>(
         // Item8 cue + three gore-99 puffs at the top / integer-half /
         // bottom edges (−10f each), each velocity ×0.3.
         // `(float)(base.height / 2)` is INTEGER division (`:80971`).
-        (env.play_sound)(2, 8, pos.x, pos.y); // SoundID.Item8 = (2,8), SoundID.cs:1391
+        (env.play_sound)(2, 8, pos.x, pos.y, env.rng); // SoundID.Item8 = (2,8), SoundID.cs:1391
         for y in [
             pos.y - 10.0,
             pos.y + (h / 2) as f32 - 10.0,
@@ -440,6 +463,7 @@ pub fn teleport_effect<R: DustRng + GoreRng>(
                 sound_style,
                 (rect.0 + rect.2 / 2) as f32,
                 (rect.1 + rect.3 / 2) as f32,
+                env.rng,
             );
             let count = ((rect.2 * rect.3 / 5) as f32 * dust_count_mult) as i32;
             for j in 0..count {
@@ -503,6 +527,7 @@ pub fn teleport_effect<R: DustRng + GoreRng>(
                 6,
                 (rect.0 + rect.2 / 2) as f32,
                 (rect.1 + rect.3 / 2) as f32,
+                env.rng,
             );
             let count = (50.0f32 * dust_count_mult) as i32;
             for _ in 0..count {
@@ -553,6 +578,7 @@ pub fn teleport_effect<R: DustRng + GoreRng>(
                 8,
                 (rect.0 + rect.2 / 2) as f32,
                 (rect.1 + rect.3 / 2) as f32,
+                env.rng,
             );
             let count = ((rect.2 * rect.3 / 5) as f32 * dust_count_mult) as i32;
             let mut color = portal_color(extra_info);
@@ -624,9 +650,9 @@ pub fn teleport_effect<R: DustRng + GoreRng>(
             let cx = (rect.0 + rect.2 / 2) as f32;
             let cy = (rect.1 + rect.3 / 2) as f32;
             if style == 5 {
-                (env.play_sound)(19, 0, cx, cy); // PlaySound(19, .., 0)
+                (env.play_sound)(19, 0, cx, cy, env.rng); // PlaySound(19, .., 0)
             } else {
-                (env.play_sound)(2, 8, cx, cy);
+                (env.play_sound)(2, 8, cx, cy, env.rng);
             }
         }
         9 => {
@@ -638,7 +664,7 @@ pub fn teleport_effect<R: DustRng + GoreRng>(
             for _ in 0..count {
                 pylon_spawn_in_world_dust(env, extra_info, rect);
             }
-            (env.play_sound)(2, 6, (rect.0 + rect.2 / 2) as f32, (rect.1 + rect.3 / 2) as f32);
+            (env.play_sound)(2, 6, (rect.0 + rect.2 / 2) as f32, (rect.1 + rect.3 / 2) as f32, env.rng);
         }
         10 => {
             // `:13381-13418` — the Rod-of-Harmony shimmer: Inflate,
@@ -703,7 +729,7 @@ pub fn teleport_effect<R: DustRng + GoreRng>(
                     d.color = Color::WHITE;
                 }
             }
-            (env.play_sound)(2, 8, (rect.0 + rect.2 / 2) as f32, (rect.1 + rect.3 / 2) as f32);
+            (env.play_sound)(2, 8, (rect.0 + rect.2 / 2) as f32, (rect.1 + rect.3 / 2) as f32, env.rng);
         }
         11 => {
             // `:13419-13446` — the mystic-frog / shellphone hop: 50
@@ -749,7 +775,7 @@ pub fn teleport_effect<R: DustRng + GoreRng>(
             // argument (drawn before the allocator), a 2×2 type-27
             // box (alpha 100), velocity ×1.75, the i%3==0 ×1.5 bump,
             // noLightEmittance + noGravity.
-            (env.play_sound)(2, 8, (rect.0 + rect.2 / 2) as f32, (rect.1 + rect.3 / 2) as f32);
+            (env.play_sound)(2, 8, (rect.0 + rect.2 / 2) as f32, (rect.1 + rect.3 / 2) as f32, env.rng);
             for i in 0..21 {
                 let px = rect.0 as f32 + DustRng::next_float(env.rng) * rect.2 as f32;
                 let py = rect.1 as f32 + DustRng::next_float(env.rng) * rect.3 as f32;
@@ -853,8 +879,10 @@ fn pylon_spawn_in_world_dust<R: DustRng + GoreRng>(
 /// then teleportTime = 1 / teleportStyle = Style. The `netMode == 2`
 /// `SendData(65)` relay (`:81054-81057`) is the server arm — dropped.
 /// The teleport fields ride the caller's `(teleport_time,
-/// teleport_style, last_portal_color_index)` triple (the port's Npc
-/// has no teleport fields yet — the wiring round adds them).
+/// teleport_style, last_portal_color_index)` triple — the wiring
+/// copies the `Npc` fields in, calls this, and writes them back (the
+/// `&mut Npc` + `&mut`-field disjoint-borrow convention); the pure fn
+/// stays field-agnostic so the witnesses drive the triple directly.
 #[allow(clippy::too_many_arguments)]
 pub fn npc_teleport<R: DustRng + GoreRng>(
     env: &mut SpawnVisualsEnv<'_, R>,
@@ -895,9 +923,10 @@ pub fn npc_teleport<R: DustRng + GoreRng>(
 }
 
 /// `NPC.UpdateNPC_TeleportVisuals` (`NPC.cs:92194-92241`) — the
-/// per-tick teleport fade, called from `UpdateNPC` (`:90322`) AFTER
-/// the AI + cast lights, on the `UpdateNPCs` stream. The teleport
-/// fields ride the caller's `(teleportTime, teleportStyle,
+/// per-tick teleport fade, called from `UpdateNPC` (`:90322`) after
+/// `UpdateAltTexture` (`:90313`) + `UpdateNPC_CastLights` (`:90320`)
+/// and BEFORE `AI()` (`:90423`), on the `UpdateNPCs` stream. The
+/// teleport fields ride the caller's `(teleportTime, teleportStyle,
 /// lastPortalColorIndex)` triple (see [`npc_teleport`]);
 /// `time_for_visual_effects` is `Main.timeForVisualEffects`
 /// (`Main.cs:1181`, a double).
@@ -1222,7 +1251,7 @@ mod tests {
             dust_ctx: &c,
             gore: &mut gore,
             rng: &mut rng,
-            play_sound: &mut |a, b, x, y| sounds.push((a, b, x, y)),
+            play_sound: &mut |a, b, x, y, _| sounds.push((a, b, x, y)),
         };
         poof_of_smoke(&mut env, Vec2::new(100.0, 100.0));
         let num = UnifiedRandom::new(42).next_range(3, 7);
@@ -1272,7 +1301,7 @@ mod tests {
             dust_ctx: &c,
             gore: &mut gore,
             rng: &mut rng,
-            play_sound: &mut |_, _, _, _| {},
+            play_sound: &mut |_, _, _, _, _| {},
         };
         big_mimic_spawn_smoke(&mut env, Vec2::new(100.0, 100.0), 48, 48);
         let mut expected = Vec::new();
@@ -1322,7 +1351,7 @@ mod tests {
             dust_ctx: &c,
             gore: &mut gore,
             rng: &mut rng,
-            play_sound: &mut |_, _, _, _| {},
+            play_sound: &mut |_, _, _, _, _| {},
         };
         big_mimic_spawn_smoke(&mut env, Vec2::new(100.0, 100.0), 48, 48);
         let mut expected = Vec::new();
@@ -1353,7 +1382,7 @@ mod tests {
             dust_ctx: &c,
             gore: &mut gore,
             rng: &mut rng,
-            play_sound: &mut |_, _, _, _| {},
+            play_sound: &mut |_, _, _, _, _| {},
         };
         transform_visuals(&mut env, &mut npc, 478, 479);
         let mut expected = Vec::new();
@@ -1394,7 +1423,7 @@ mod tests {
             dust_ctx: &c,
             gore: &mut gore,
             rng: &mut rng,
-            play_sound: &mut |_, _, _, _| {},
+            play_sound: &mut |_, _, _, _, _| {},
         };
         transform_visuals(&mut env, &mut npc, 406, 405);
         let count = UnifiedRandom::new(13).next_range(10, 21);
@@ -1438,7 +1467,7 @@ mod tests {
                 dust_ctx: &c,
                 gore: &mut gore,
                 rng: &mut rng,
-                play_sound: &mut |_, _, _, _| {},
+                play_sound: &mut |_, _, _, _, _| {},
             };
             transform_visuals(&mut env, &mut npc, old, new);
             let mut expected = Vec::new();
@@ -1496,7 +1525,7 @@ mod tests {
             dust_ctx: &c,
             gore: &mut gore,
             rng: &mut rng,
-            play_sound: &mut |_, _, _, _| {},
+            play_sound: &mut |_, _, _, _, _| {},
         };
         transform_visuals(&mut env, &mut npc, 428, 427);
         assert_eq!((npc.x, npc.y), (100.0, 100.0), "add-then-subtract restores");
@@ -1526,7 +1555,7 @@ mod tests {
             dust_ctx: &c,
             gore: &mut gore,
             rng: &mut rng,
-            play_sound: &mut |a, b, x, y| sounds.push((a, b, x, y)),
+            play_sound: &mut |a, b, x, y, _| sounds.push((a, b, x, y)),
         };
         transform_visuals(&mut env, &mut npc, 159, 158);
         let mut expected = Vec::new();
@@ -1557,7 +1586,7 @@ mod tests {
             dust_ctx: &c,
             gore: &mut gore,
             rng: &mut rng,
-            play_sound: &mut |a, b, x, y| sounds.push((a, b, x, y)),
+            play_sound: &mut |a, b, x, y, _| sounds.push((a, b, x, y)),
         };
         // 20×40 → 800/5 = 160 dust; mult 1.
         teleport_effect(&mut env, (100, 100, 20, 40), 0, 0, 1.0, Vec2::ZERO, 0);
@@ -1609,7 +1638,7 @@ mod tests {
             dust_ctx: &c,
             gore: &mut gore,
             rng: &mut rng,
-            play_sound: &mut |_, _, _, _| {},
+            play_sound: &mut |_, _, _, _, _| {},
         };
         // mult 0.1 → 5 dust (keeps the witness log readable).
         teleport_effect(&mut env, (100, 100, 20, 40), 3, 0, 0.1, Vec2::ZERO, 0);
@@ -1679,7 +1708,7 @@ mod tests {
             dust_ctx: &c,
             gore: &mut gore,
             rng: &mut rng,
-            play_sound: &mut |_, _, _, _| {},
+            play_sound: &mut |_, _, _, _, _| {},
         };
         // 10×10 → 20 dust; extraInfo 3 → portal 1 (the 0.52 hue).
         teleport_effect(&mut env, (100, 100, 10, 10), 4, 3, 1.0, Vec2::ZERO, 0);
@@ -1722,7 +1751,7 @@ mod tests {
             dust_ctx: &c,
             gore: &mut gore,
             rng: &mut rng,
-            play_sound: &mut |a, b, x, y| sounds.push((a, b, x, y)),
+            play_sound: &mut |a, b, x, y, _| sounds.push((a, b, x, y)),
         };
         // mult 0.05 → 5 dust; style 6 (Snow) — the 1.2 blue clamps.
         teleport_effect(&mut env, (100, 100, 20, 40), 9, 6, 0.05, Vec2::ZERO, 0);
@@ -1759,7 +1788,7 @@ mod tests {
             dust_ctx: &c,
             gore: &mut gore,
             rng: &mut rng,
-            play_sound: &mut |_, _, _, _| {},
+            play_sound: &mut |_, _, _, _, _| {},
         };
         // mult 0.05 → 3 dust (all n < 2.4 → the lerp gate opens).
         teleport_effect(&mut env, (100, 100, 20, 40), 10, 0, 0.05, Vec2::new(500.0, 300.0), 0);
@@ -1809,7 +1838,7 @@ mod tests {
             dust_ctx: &c,
             gore: &mut gore,
             rng: &mut rng,
-            play_sound: &mut |_, _, _, _| {},
+            play_sound: &mut |_, _, _, _, _| {},
         };
         npc_teleport(&mut env, &mut npc, Vec2::new(300.0, 200.0), 4, 5, &mut tp, 0);
         // 20×0.3 = 6 per side → 12 dust, no extra draws.
@@ -1851,7 +1880,7 @@ mod tests {
             dust_ctx: &c,
             gore: &mut gore,
             rng: &mut rng,
-            play_sound: &mut |a, b, x, y| sounds.push((a, b, x, y)),
+            play_sound: &mut |a, b, x, y, _| sounds.push((a, b, x, y)),
         };
         teleport_effect(&mut env, (100, 100, 20, 40), 11, 0, 1.0, Vec2::ZERO, 0);
         let mut expected = Vec::new();
@@ -1915,7 +1944,7 @@ mod tests {
                 dust_ctx: &c,
                 gore: &mut gore,
                 rng: &mut rng,
-                play_sound: &mut |_, _, _, _| {},
+                play_sound: &mut |_, _, _, _, _| {},
             };
             update_npc_teleport_visuals(&mut env, &npc, &mut tp, 0.0);
             let gate = UnifiedRandom::new(59).next_max(100);
@@ -1940,7 +1969,7 @@ mod tests {
                 dust_ctx: &c,
                 gore: &mut gore,
                 rng: &mut rng,
-                play_sound: &mut |_, _, _, _| {},
+                play_sound: &mut |_, _, _, _, _| {},
             };
             update_npc_teleport_visuals(&mut env, &npc, &mut tp, 0.0);
             let gate = UnifiedRandom::new(61).next_max(100);
@@ -1969,7 +1998,7 @@ mod tests {
                 dust_ctx: &c,
                 gore: &mut gore,
                 rng: &mut rng,
-                play_sound: &mut |_, _, _, _| {},
+                play_sound: &mut |_, _, _, _, _| {},
             };
             update_npc_teleport_visuals(&mut env, &npc, &mut tp, 0.0);
             assert!(rng.log.is_empty());
@@ -1988,7 +2017,7 @@ mod tests {
                 dust_ctx: &c,
                 gore: &mut gore,
                 rng: &mut rng,
-                play_sound: &mut |_, _, _, _| {},
+                play_sound: &mut |_, _, _, _, _| {},
             };
             update_npc_teleport_visuals(&mut env, &npc, &mut tp, 0.0);
             assert!(rng.log.is_empty());
@@ -2017,7 +2046,7 @@ mod tests {
             dust_ctx: &c,
             gore: &mut gore,
             rng: &mut rng,
-            play_sound: &mut |_, _, _, _| {},
+            play_sound: &mut |_, _, _, _, _| {},
         };
         // clock 90 → 90/60 = 1.5 → %1 = 0.5.
         update_npc_teleport_visuals(&mut env, &npc, &mut tp, 90.0);
@@ -2048,7 +2077,7 @@ mod tests {
                 dust_ctx: &c,
                 gore: &mut gore,
                 rng: &mut rng,
-                play_sound: &mut |_, _, _, _| {},
+                play_sound: &mut |_, _, _, _, _| {},
             };
             make_transition_effects_for_texture_changes(&mut env, &npc, 0, 1);
             let mut expected = Vec::new();
@@ -2080,7 +2109,7 @@ mod tests {
                 dust_ctx: &c,
                 gore: &mut gore,
                 rng: &mut rng,
-                play_sound: &mut |_, _, _, _| {},
+                play_sound: &mut |_, _, _, _, _| {},
             };
             make_transition_effects_for_texture_changes(&mut env, &npc, 2, 0);
             let mut expected = Vec::new();
@@ -2105,7 +2134,7 @@ mod tests {
                 dust_ctx: &c,
                 gore: &mut gore2,
                 rng: &mut rng2,
-                play_sound: &mut |_, _, _, _| {},
+                play_sound: &mut |_, _, _, _, _| {},
             };
             make_transition_effects_for_texture_changes(&mut env2, &npc2, 2, 0);
             assert!(rng2.log.is_empty());
@@ -2123,7 +2152,7 @@ mod tests {
                 dust_ctx: &c,
                 gore: &mut gore,
                 rng: &mut rng,
-                play_sound: &mut |_, _, _, _| {},
+                play_sound: &mut |_, _, _, _, _| {},
             };
             make_transition_effects_for_texture_changes(&mut env, &npc, 1, 0);
             assert_eq!(rng.log.first(), Some(&Draw::Range(3, 7)), "the poof count");

@@ -1277,6 +1277,21 @@ pub struct Npc {
     /// `MessageBuffer.cs:1636-1646` + `NPC.cs:90287-90311`). Zero on the host
     /// and in single-player, so nothing single-player-rendered moves.
     pub net_offset: Vec2,
+    /// `NPC.teleportTime` (`NPC.cs:6041`) — the teleport-in fade timer
+    /// `NPC.Teleport` (`:81052`) stamps 1 and
+    /// `UpdateNPC_TeleportVisuals` (`:92194-92241`) decays per tick
+    /// (styles 4/12 −0.02 in-arm, style 13 instant clear, the shared
+    /// −0.005 tail). 0 = no fade armed (the head gate draws nothing).
+    pub teleport_time: f32,
+    /// `NPC.teleportStyle` (`NPC.cs:6039`) — the `Teleport` style the
+    /// fade reads (`NPC.cs:81053` writes it last). The pad ride is 0,
+    /// the teleporting statues 14 (no dust arm — fields only), the
+    /// mystic frog 13, the shimmer town hop 12, the portal pair 4.
+    pub teleport_style: i32,
+    /// `NPC.lastPortalColorIndex` (`NPC.cs:6581`) — the style-4 latch
+    /// `Teleport` writes BETWEEN the Entry/Exit bursts (`:81046-81050`)
+    /// and the fade's `GetPortalColor` reads (`:92216`).
+    pub last_portal_color_index: i32,
     /// Accumulated daylight burn time — RETIRED by S1-D-3z (the zombie
     /// fighter audit): the C# `AI_003_Fighters` has no daylight damage, so
     /// the zombie's dawn "burn" was removed in favour of `EncourageDespawn`
@@ -2954,6 +2969,11 @@ impl Npc {
                 // the small-kinds wiring wave).
                 .unwrap_or(if kind == NpcKind::BlazingWheel { 1.2 } else { 1.0 }),
             net_offset: Vec2::ZERO,
+            // `NPC.teleportTime`/`teleportStyle`/`lastPortalColorIndex`
+            // (`NPC.cs:6041`/`:6039`/`:6581`): the C# field zero-init.
+            teleport_time: 0.0,
+            teleport_style: 0,
+            last_portal_color_index: 0,
             burn: 0.0,
             wants_minion: false,
             wants_door_bash: None,
