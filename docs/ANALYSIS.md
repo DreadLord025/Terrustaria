@@ -39251,9 +39251,10 @@ The last third of the 23-site Main.cs `Dust.NewDust*` census (the split is
 `docs/research/64-dust-main-sites-claims.md`, W4-g12's claim; the batch
 report is `docs/research/65-dust-main-sites-3.md`): sites 17-23
 (`Main.cs:24756/27381/27384/38664/57766/57789/57793`) port into
-`crates/tr-app/src/main_dust.rs`, UNWIRED (the d60 precedent) - the
-draw-call seams (`DrawNPCDirect`'s type-398 arm, `DrawNPCExtras`' 550 arm,
-`DrawItem`, the retro `oldDrawWater` path) are the wiring wave's.
+`crates/tr-app/src/main_dust.rs`. The pure emitters landed first (the d60
+code-only precedent); the draw-call wiring wave then landed the feeds
+(`moon_lord_tentacle_feed`, `tavernkeep_ale_feed`, `item_sparkle_feed`,
+`retro_liquid_dust_feed`) and wired them in `app/frame/draw.rs::draw_region`.
 
 - **Site 24756 is a DEAD ARM**: the Moon Lord core's tentacle-tip puff
   sits behind `bool flag8 = false` (`:24703`, never set) - the whole
@@ -39274,19 +39275,47 @@ draw-call seams (`DrawNPCDirect`'s type-398 arm, `DrawNPCExtras`' 550 arm,
   division; coins take `default(Color)`/alpha 0/scale 1 + the type switch
   71-74 -> 244-247; `velocity *= 0f` post.
 - **57766/57789/57793** - the RETRO `oldDrawWater` path (only reached when
-  `!Lighting.NotRetro`, `:57519-57522`; the port draws liquids through the
-  `LiquidRenderer` record path, so these wait on the retro seam): the
-  surface sparkle (`max(R,G,B)/30` integer vs one `Next(20000)`, drawn
-  even at budget 0; white/honey alpha-255 tints) and the lava-bubble pair
-  (`Dust.lavaBubbles < 200` budget - the pool static, maintained by the
-  d50 phase-2 physics lane; independent `Next(700)`/`Next(350)` gates; the
-  surface bubble's `*0.8`/`X*2`/`Next(1,7)*0.1`/1-in-10 `Next(2,5)` post
-  chain after the type-35 internals tweak).
+  `!Lighting.NotRetro` = Retro/Trippy, `:57519-57522`): the surface sparkle
+  (`max(R,G,B)/30` integer vs one `Next(20000)`, drawn even at budget 0;
+  white/honey alpha-255 tints) and the lava-bubble pair
+  (`Dust.lavaBubbles < 200` budget - the pool static, whose reset
+  `Dust.cs:427` + increment `:475` now ride `DustPool::update_dust`;
+  independent `Next(700)`/`Next(350)` gates; the surface bubble's
+  `*0.8`/`X*2`/`Next(1,7)*0.1`/1-in-10 `Next(2,5)` post chain after the
+  type-35 internals tweak). The port's liquid SPRITE draw stays on the
+  `LiquidRenderer` record path (`render/liquids.rs`); the retro feed walks
+  the same screen tile range and runs ONLY the dust gates, with the
+  `oldDrawWater` rect machinery (`retro_surface_rect`, `:57668-57746`)
+  computing the `value.Y`/`vector2.Y` the two gates read. The bg/fg passes
+  carry the `Main.drewLava` latch (`:57472` reset per `DrawWaters`, `:57938`
+  set at pass end) so lava/honey cells draw once per frame.
+
+**Wiring placement**: the feeds run in `draw_region` OUTSIDE the G6-cached
+world pass (the rain/sand/gore dust precedent - the spawns mutate the pool,
+so they cannot live inside the cached range), in the C# relative order:
+retro bg pass -> Moon Lord core arm -> Tavernkeep ale arm -> item sparkle ->
+retro fg pass. The C# runs them inside `DrawNPCDirect`/`DrawNPCExtras`/
+`DrawItem`/`oldDrawWater`, but the port fuses those into the cached
+`draw_tiles`, so the spawns are lifted to the per-frame world-effect range.
+The item dust box uses the C# 16 (`WorldItem.cs:138`), not the port's 14-px
+physics box. `light_color_bytes` applies `GlobalBrightness` (the light map
+stores the raw engine colour; `Lighting.GetColor` multiplies it,
+`Lighting.cs:216-242`).
+
+**Focus gate**: `FocusHelper.Allow*` is `!WorldUpdateStepper.DrawnThisUpdate`.
+The C# sets the mark at the END of Draw (`Main.cs:62478`); the port had it
+at the draw-half head (before `draw_region`), which pre-marked the draw and
+would have gated every emitter off. The wiring relocated the set to after
+`draw_region` returns (the C# position), so the mark reads clear through the
+draw on a stepping frame. The DW-2.3 end-state witness is unchanged (the
+headless `draw_region` returns `Some`, so the set still runs every frame).
 
 **RNG contract**: all seven sites run on the DRAW path, outside every
 `Main.SwapRandom` block - the C# bare `Main.rand`. The wiring passes
 `app.rngs.global()` (the port's bare-stream slot, the recorded world-seed
 deviation), the minecart `dust_phase` player-less precedent; no new
 stream, the 17 named simulation streams untouched. 14 lockstep-mirror
-witnesses (the d51 pattern) pin the per-site draw census; WRITTEN, NOT
-RUN - no cargo/rustc/rustfmt/tests/graphify invoked (code-only mode).
+witnesses (the d51 pattern) pin the per-site draw census, plus 4 wiring
+stream-parity witnesses (the item feed's per-drop walk, the dead Moon Lord
+arm, the ale edge latch, the retro rect machinery); WRITTEN, NOT RUN - no
+cargo/rustc/rustfmt/tests/graphify invoked (code-only mode).

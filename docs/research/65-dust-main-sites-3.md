@@ -106,9 +106,19 @@ probabilistic scans.
 
 ## Deferred seams
 
-- The draw-call wiring (the type-398 arm, `DrawNPCExtras`' 550 arm,
-  `DrawItem`, the retro `oldDrawWater` path) — the wiring wave.
-- `Dust.lavaBubbles` maintenance — d50 phase 2 (`tr_core::dust_physics`,
-  in flight); this module only reads the gate.
+- ~~The draw-call wiring (the type-398 arm, `DrawNPCExtras`' 550 arm,
+  `DrawItem`, the retro `oldDrawWater` path) — the wiring wave.~~ LANDED:
+  the feeds (`moon_lord_tentacle_feed`, `tavernkeep_ale_feed`,
+  `item_sparkle_feed`, `retro_liquid_dust_feed` + `retro_surface_rect` +
+  `light_color_bytes`) run in `app/frame/draw.rs::draw_region` outside the
+  G6 cache on `rngs.global()` in C# relative order. The retro sites gate on
+  `LightMode::Retro | Trippy` (`!Lighting.NotRetro`); the liquid sprite draw
+  stays on the `LiquidRenderer` record path. The `DrawnThisUpdate` set was
+  relocated to end-of-Draw (`Main.cs:62478`) so the focus gate reads clear
+  through the draw.
+- ~~`Dust.lavaBubbles` maintenance — d50 phase 2 (`tr_core::dust_physics`,
+  in flight); this module only reads the gate.~~ LANDED: the increment
+  (`Dust.cs:475`, every live type-35 slot) now rides `DustPool::update_dust`
+  before the move (`:477`); the head reset (`:427`) was already there.
 - g11/g12's thirds (sites 1-16) — their branches; the boundary sites are
   owned whole per the claim doc (24752 g12's, 24756 g13's).
