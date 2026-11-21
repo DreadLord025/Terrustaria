@@ -18933,7 +18933,7 @@ sets as kinds/hide/share); v6-and-older files load on loadout 0 with empty sets.
 - `UsingOrReusingItem`'s `pendingItemReuse` half (`:4074`) has no port state;
   the gate reads swing/reuseDelay/channel.
 
-**Evidence**: 20 `w4_g55_*` witnesses written not run (code-only lane) — the
+**Evidence**: 19 `w4_g55_*` witnesses written not run (code-only lane) — the
 swap rotation/gate/wrap, the `.plr` round-trip + index clamp + fresh-zero block,
 the sidecar v7 round-trip + v6-empty load, the button geometry/hit/colour, the
 tint/flash, the button click + equipment-page gate, the effective-item share
