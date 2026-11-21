@@ -4006,6 +4006,50 @@ fn nurse_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88303
 }
 
+/// The town five-ladder death shape, the second group: the 19 Arms
+/// Dealer → 36/37x2/38x2 (shimmer 1288/1289x2/1290x2, `:88319-88323`,
+/// sites 590-594, NO head gate); the 38 Demolitionist → 64/65x2/66x2
+/// (shimmer 1297/1299x2/1300x2, `:88341-88346`, sites 595-599,
+/// altTexture head gate default-0 stand-in).
+fn arms_dealer_demolitionist_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // The 50x dust-5 burst at the wider velocity (:88315-88318 /
+    // :88335-88338).
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let (head, mid, legs) = if npc_type == 19 {
+        if shimmer { (1288, 1289, 1290) } else { (36, 37, 38) }
+    } else if shimmer {
+        (1297, 1299, 1300)
+    } else {
+        (64, 65, 66)
+    };
+    // The 38's head is altTexture-gated (:88339-88342); the default-0
+    // stand-in keeps it. The 19's head is ungated.
+    gore.new_gore(rng, world, pos, vel, head, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -4476,6 +4520,20 @@ pub fn hit_effect_d(
     // `:88282-88304` — the 18 Nurse arm (sites 585-589).
     else if npc_type == 18 {
         nurse_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88305-88347` — the 19 Arms Dealer + 38 Demolitionist arms (sites
+    // 590-599).
+    else if npc_type == 19 || npc_type == 38 {
+        arms_dealer_demolitionist_death(
+            npc,
+            npc_type,
+            dust,
+            dust_ctx,
+            gore,
+            rng,
+            world,
+            hit_direction,
+        );
     }
     outcome
 }
@@ -7766,6 +7824,38 @@ mod tests {
             let puff = dust.slots().iter().find(|d| d.active).unwrap();
             assert_eq!(puff.dust_type, dt, "town {kind} dust");
             let mut twin = UnifiedRandom::new(601);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "town {kind} shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88319-88323`/`:88341-88346` — the Arms Dealer ladder
+    /// 36/37x2/38x2 (shimmer 1288/1289x2/1290x2) and the Demolitionist
+    /// ladder 64/65x2/66x2 (shimmer 1297/1299x2/1300x2).
+    #[test]
+    fn w4_f5d_the_arms_dealer_and_demolitionist_ladders() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, shimmer, want) in [
+            (19, false, vec![36, 37, 37, 38, 38]),
+            (19, true, vec![1288, 1289, 1289, 1290, 1290]),
+            (38, false, vec![64, 65, 65, 66, 66]),
+            (38, true, vec![1297, 1299, 1299, 1300, 1300]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(607);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "town {kind} shimmer={shimmer}");
+            let mut twin = UnifiedRandom::new(607);
             for _ in 0..50 {
                 twin_dust(&mut twin, 30, 44);
             }
