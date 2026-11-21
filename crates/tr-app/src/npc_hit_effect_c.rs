@@ -213,6 +213,8 @@
 //! | 987-991 | `:87468-87478` | the 217/218/219 beetle death (per-type gores, type-18 alpha dust) |
 //! | 992-997 | `:87495-87500` | the 222 QueenBee death (6 gores 303-308 at spread Y anchors) |
 //! | 998-1006 | `:87518-87534` | the 6/94/166 EaterofSouls/Corruptor/SwampThing death (per-type gores) |
+//! | 1007-1010 | `:87551-87554` | the 101 Clinger death (4 gores 110/114/114/115) |
+//! | 1011-1016 | `:87570-87587` | the 7/8/9 Devourer + 98/99/100 Seeker death (1 gore each, per-type offset) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -5748,6 +5750,88 @@ fn eater_of_souls_death(
     }
 }
 
+/// The 101 Clinger death (`NPC.cs:87547-87554`, sites 1007-1010): the
+/// 50-dust type-18 burst (SpeedX `hitDirection`, SpeedY -2, alpha/color/
+/// scale from the NPC), then the 4 gores 110/114/114/115 at position at
+/// `this.scale`.
+fn clinger_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    let alpha = npc.alpha as i32;
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 18, hit_direction, -2.0, alpha,
+            Color::default(), npc.scale,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 110, s); // :87551
+    gore.new_gore(rng, world, pos, vel, 114, s); // :87552
+    gore.new_gore(rng, world, pos, vel, 114, s); // :87553
+    gore.new_gore(rng, world, pos, vel, 115, s); // :87554
+}
+
+/// The 7/8/9 Devourer death (`NPC.cs:87566-87570`, sites 1011-1013): the
+/// 50-dust type-18 burst (alpha/color/scale from the NPC), then the single
+/// gore `type - 7 + 18` at position (7 → 18, 8 → 19, 9 → 20). Scale defaults
+/// to 1.
+fn devourer_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    let alpha = npc.alpha as i32;
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 18, hit_direction, -2.0, alpha,
+            Color::default(), npc.scale,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, npc_type - 7 + 18, 1.0); // :87570
+}
+
+/// The 98/99/100 Seeker death (`NPC.cs:87583-87587`, sites 1014-1016): the
+/// 50-dust type-18 burst (alpha/color/scale from the NPC), then the single
+/// gore 110 at position. Scale defaults to 1.
+fn seeker_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    let alpha = npc.alpha as i32;
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 18, hit_direction, -2.0, alpha,
+            Color::default(), npc.scale,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 110, 1.0); // :87587
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -6444,6 +6528,18 @@ pub fn hit_effect_c(
     // (sites 998-1006).
     if (npc_type == 6 || npc_type == 94 || npc_type == 166) && npc.hp <= 0 {
         eater_of_souls_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87537-87555` — the 101 Clinger arm (sites 1007-1010).
+    if npc_type == 101 && npc.hp <= 0 {
+        clinger_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87556-87572` — the 7/8/9 Devourer arm (sites 1011-1013).
+    if (npc_type == 7 || npc_type == 8 || npc_type == 9) && npc.hp <= 0 {
+        devourer_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87573-87589` — the 98/99/100 Seeker arm (sites 1014-1016).
+    if (npc_type == 98 || npc_type == 99 || npc_type == 100) && npc.hp <= 0 {
+        seeker_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -10212,6 +10308,47 @@ mod tests {
         assert_eq!(gore3.slot(1).gore_type, 15);
         assert_eq!(gore3.slot(0).alpha, 40);
         assert_eq!(gore3.slot(1).alpha, 40);
+    }
+
+    /// `NPC.cs:87551-87554` — the Clinger death: the 4 gores
+    /// 110/114/114/115.
+    #[test]
+    fn w4_f10_the_clinger_death_spawns_the_four_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 40.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(967);
+        clinger_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![110, 114, 114, 115]);
+    }
+
+    /// `NPC.cs:87570` — the Devourer death: the single gore type-7+18
+    /// (7→18, 8→19, 9→20).
+    #[test]
+    fn w4_f10_the_devourer_death_uses_the_per_type_offset() {
+        let w = air();
+        for (ty, gore_ty) in [(7, 18), (8, 19), (9, 20)] {
+            let n = boss(100.0, 100.0, 30.0, 30.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(971);
+            devourer_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            assert_eq!(gore.slot(0).gore_type, gore_ty, "devourer {ty}");
+        }
+    }
+
+    /// `NPC.cs:87587` — the Seeker death: the single gore 110.
+    #[test]
+    fn w4_f10_the_seeker_death_spawns_the_single_gore() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(977);
+        seeker_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        assert_eq!(gore.slot(0).gore_type, 110);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
