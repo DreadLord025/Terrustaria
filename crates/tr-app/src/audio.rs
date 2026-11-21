@@ -133,6 +133,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     // (`NPC.cs:14850`/`:14877`) — the `Sounds/NPC_Hit_32.xnb` asset
     // exists; the S1-E-21 wave C bank-gap close.
     ("NPC_Hit_32", 3),
+    // W4-c4 (the style-16 swimmers): the BloodFeeder's NPCHit13
+    // (`NPC.cs:12115`) — the `Sounds/NPC_Hit_13.xnb` asset exists; the
+    // S1-E-21 wave C bank-gap close.
+    ("NPC_Hit_13", 3),
     ("NPC_Hit_39", 3),
     ("NPC_Hit_40", 3),
     ("NPC_Hit_42", 3),
@@ -160,6 +164,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     // The Headless Horseman's death cue (`NPC.cs:12987`'s `NPCDeath18`,
     // S1-F-13b's row) — S1-E-21 wave C closes the bank gap.
     ("NPC_Killed_18", 4),
+    // W4-c4 (the style-16 swimmers): the BloodFeeder's NPCDeath19
+    // (`NPC.cs:12116`) — the `Sounds/NPC_Killed_19.xnb` asset exists; the
+    // S1-E-21 wave C bank-gap close.
+    ("NPC_Killed_19", 4),
     // S1-D-3 W-9 fishron wiring — Duke Fishron's death cue
     // (`NPC.cs:13714`'s `NPCDeath20`) — the S1-E-21 bank-gap closure.
     ("NPC_Killed_20", 4),

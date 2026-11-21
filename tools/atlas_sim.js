@@ -369,9 +369,17 @@ const STATIC_NAMES = constStringList(assetsSrc, 'STATIC_SHEET_NAMES');
 const GLOW_NAMES = constStringList(assetsSrc, 'GLOW_SHEET_NAMES');
 
 // The L-8b branch's STATIC_SHEET_NAMES (renamed minecart rows + 25 additions).
+// W4-c4: the branch was merged + deleted (the lifecycle cleanup); when the ref
+// is gone the L-8b scenarios degrade to the main static list — the MAIN-set
+// measurements (the headroom gate) are unaffected.
 const { execSync } = require('child_process');
-const l8bSrc = execSync('git show origin/task/S1-L-8b-mount-data:crates/tr-app/src/assets.rs',
-  { cwd: path.join(__dirname, '..'), maxBuffer: 64 * 1024 * 1024 }).toString();
+let l8bSrc;
+try {
+  l8bSrc = execSync('git show origin/task/S1-L-8b-mount-data:crates/tr-app/src/assets.rs',
+    { cwd: path.join(__dirname, '..'), maxBuffer: 64 * 1024 * 1024 }).toString();
+} catch (e) {
+  l8bSrc = assetsSrc; // merged/deleted: the additions already ride the main list
+}
 const L8B_STATIC = constStringList(l8bSrc, 'STATIC_SHEET_NAMES');
 const L8B_ADDITIONS = L8B_STATIC.filter(n => !STATIC_NAMES.includes(n));
 const L8B_REMOVED = STATIC_NAMES.filter(n => !L8B_STATIC.includes(n));
@@ -451,6 +459,11 @@ function buildSheetList({ gores = false, mountAdditions = false, font = false, s
   for (const id of WORLD_BG_DEFAULT) add('Background_' + id);
   add('Tiles_0');
   for (const name of staticNames) add(name);
+  // W4-c4: candidate sheets under measurement BEFORE they are committed to
+  // STATIC_SHEET_NAMES — `EXTRA_SHEETS=NPC_57,NPC_157,... node tools/atlas_sim.js`
+  // appends them exactly where the static list packs, so the reported height is
+  // the real post-add skyline height (the headroom gate).
+  for (const name of (process.env.EXTRA_SHEETS || '').split(',').map(s => s.trim()).filter(Boolean)) add(name);
   for (const kind of [...PROJ_KINDS].sort((a, b) => a - b)) add('Projectile_' + kind);
   for (const id of enumIds('Item_')) add('Item_' + id);
   for (const id of enumIds('Buff_')) add('Buff_' + id);

@@ -1606,6 +1606,50 @@ fn portrait_data(
                 .unwrap_or(42.0);
             (sheet_i, h, 100.0, h, white)
         }
+        // W4-c4: the style-16 swimmers' portraits — the sheet's own row
+        // height over `Main.npcFrameCount[type]` (57/241/465/592/607 six
+        // frames, 157 six, 615 five, 688 six, 692 sixteen; `Main.cs:67082`),
+        // the frame width the sheet's own (NPC_57/465/592/607 38×168,
+        // NPC_241 36×180, NPC_157 84×168, NPC_615 66×210, NPC_688 46×252 —
+        // the style-44 arms' shape). The Orca's sheet is atlas-deferred —
+        // `entry_sheet` returns None and the portrait draw skips until the
+        // repack (the wyvern precedent); the 136×62 frame box stands.
+        (NpcKind::CorruptGoldfish | NpcKind::CrimsonGoldfish | NpcKind::GoldGoldfish | NpcKind::Pupfish, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(28.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::BloodFeeder, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 36.0, h, white)
+        }
+        (NpcKind::Arapaima, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(28.0);
+            (sheet_i, h, 84.0, h, white)
+        }
+        (NpcKind::Dolphin, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(42.0);
+            (sheet_i, h, 66.0, h, white)
+        }
+        (NpcKind::Pufferfish, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(42.0);
+            (sheet_i, h, 46.0, h, white)
+        }
+        (NpcKind::Orca, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(62.0);
+            (sheet_i, h, 136.0, h, white)
+        }
         // S1-D-3z — the holiday zombies' portrait rests the same 18x40
         // `SetDefaults` box (`NPC.cs:13035-13036`/`:13206-13207`).
         (NpcKind::ZombieDoctor

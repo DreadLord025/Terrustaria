@@ -32771,6 +32771,81 @@ port's tables; `w4_c4_the_style44_pre_pass_separates_the_swarm_and_materializes_
 in `world_sim/npcs.rs` — the cs_id-keyed separation push, the
 pre-separation tilt latch, the shared-pool 587 burst, the sight-gate
 pin). **No compiler invoked** (code-only mode).
+
+## The style-16 swimmers (W4-c4, 2026-11-21, code-only mode)
+
+**The census.** The 44-adjacent swim/fly machines were censused against
+`NPC.cs`'s `SetDefaults` `aiStyle = 44/45/68` rows and the pushed branch
+claims: aiStyle 44 (224/509/581/587) is this branch's phase 1+2; aiStyle
+45 (the Golem 245) is rostered; aiStyle 68 (363/365/603/609) is CLAIMED
+by the pushed `task/W4-c10-style68-waterfowl` (skipped). The lead's
+508/582-586 guesses are aiStyle 3/112 (the fighter/fairy machines, not
+swim/fly); UmbrellaSlime is rostered (aiStyle 1). The genuine unrostered
+44-adjacent SWIM machine is **aiStyle 16** — the fish family
+(`NPC.AI`'s `if (this.aiStyle == 16)` block, `NPC.cs:23492-24021`), which
+rides the EXACT `integrate_flyer_collision` + `is_wet` seam the style-44
+wiring uses. `npc_ai_style16.rs` already ports all 13 vanilla members
+verbatim (the S1-D-3 bat/fish reconcile) but rosters only three
+(Goldfish 55 / Piranha 58 / Shark 65).
+
+**The nine unclaimed members** (a strict `NpcKind::` claim scan over
+every pushed task branch found ZERO claims; the AnglerFish 102 is the
+W4-d35 roster lane — skipped): CorruptGoldfish 57, Arapaima 157,
+BloodFeeder 241, CrimsonGoldfish 465, GoldGoldfish 592, Pupfish 607,
+Dolphin 615, Pufferfish 688, Orca 692. The walker twins GoldfishWalker
+230 / GoldGoldfishWalker 593 are aiStyle 7 (the W4-b3 town machine, a
+separate lane) — documented, not rostered; the rain transform
+(`FishTransformationDuringRain`, `NPC.cs:92883-92915`) and the evil
+conversion (`AttemptToConvertNPCToEvil`, `:91941-91951`) wait on that
+lane.
+
+**The wiring.** Unlike style-44, aiStyle-16 needs NO world-sim pre-pass
+(no sibling scan, no dust — the module's RNG census: the Dolphin idle
+timer `Next(300,1200)`/`Next(1,3)`/`Next(2)` + the dry flop triple are the
+only draws, both on the caller's `UpdateNPCs` stream). The nine kinds
+join the EXISTING `update_swimmer` kind arm (`npc.rs`), which runs
+`ai_016_step` keyed on `cs_id` (`vanilla_type` extended) + the
+`integrate_flyer_collision` tail — behaviour-frozen for the existing
+three. `find_frame` rides the new `style16_find_frame` helper (the five
+C# cases: the 55/57/58/102/241/465/592/607 six-row flap `:74181-74226`,
+the 157 Arapaima 8-band cycle `:74134-74180`, the 615 Dolphin 7-tick
+strip `:74227-74243`, the 688 Pufferfish puff/flop/flap `:74244-74290`,
+the 692 Orca two-half glide `:74693-74762`; the `!IsABestiaryIconDummy`
+flip folds to always-flip — the wave-B documented skip).
+
+**The protocol ids**: CorruptGoldfish takes port-local **229** (the
+vanilla 57 slot is the GoblinThief's), Arapaima **237** (the vanilla 157
+slot is the BoundWizard's); 241/465/592/607/615/688/692 keep their
+vanilla ids (all free). `cs_id()` maps kind → vanilla type for the arm's
+type gates; `render_key` rides the same port-local band (the FlyingFish
+354 precedent).
+
+**The draw**: `STYLE16_SHEETS` packs EIGHT own sheets (57/157/241/465/
+592/607/615/688); the draw arms use `pumpkin_moon_draw` and all nine join
+the rotation whitelist (the generic `vy*direction*0.1` AI tilt
+`:24008-24019`, the Dolphin leap tilt, the Orca aim). The anchor nudges:
+the Pufferfish's `num46 += 10` (`Main.cs:23115-23117`, the same literal
+the historical DD2GoblinT1 row carries) and the Orca's wet-dependent
+`num46 = wet ? 6 : 10` (`:23072-23074`). **Atlas headroom measured**
+(tools/_w4c4_headroom.js's skyline packer over the real content dims):
+the eight sheets lift the main set 7757 → 7762 px and the full gore+font
+set 8143 → 8150 px — both under the 8192 strict-GPU bound. **The Orca's
+NPC_692 (136×992) OVERFLOWS the full set (8226)** — its sheet is
+atlas-deferred (the wyvern precedent); its AI + stats are fully wired and
+the draw arm skips until the repack (`npc_sheet(692)` returns None).
+
+**The debuff immunity**: 57/157/241/465/592/607/615 carry the
+`{ SpecificallyImmuneTo: [31] }` row (`NPCID.cs:6075+`, On Fire! — the
+wyvern precedent); 688/692 have NO row (the null else-branch). The
+bestiary display names ride `en-US NPCs.json` (465 is "Vicious Goldfish",
+NOT the credit-id spelling); the GoldGoldfish 592 keeps its OWN entry
+(only the UI provider folds it onto the Goldfish 55,
+`BestiaryDatabaseNPCsPopulator.cs:706`).
+
+6 witnesses WRITTEN, NOT RUN (`w4_c4_the_style16_defaults_match_the_csharp_rows`
++ `w4_c4_the_style16_swimmers_step_and_walk_their_strips` in `npc.rs`;
+the routing pin + the Arapaima/Dolphin/Pufferfish/Orca FindFrame witnesses
+in `npc_ai_style16.rs`). **No compiler invoked** (code-only mode).
 ## The firefly family (S1-D-3 aiStyle-64, 2026-11-18/19, code-only mode)
 
 **Task row.** ROADMAP `🟡 S1-D-3 aiStyle-64`; module

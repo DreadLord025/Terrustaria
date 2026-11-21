@@ -596,6 +596,24 @@ impl NpcKind {
             NpcKind::GiantFlyingAntlion => 509,
             NpcKind::FlyingAntlion => 581,
             NpcKind::EyeballFlyingFish => 587,
+            // W4-c4 (the style-16 swimmers): the CorruptGoldfish's vanilla
+            // 57 is the GoblinThief's port-local slot above and the
+            // Arapaima's 157 is the BoundWizard's (`to_u16`'s bijection
+            // guard), so they take the next free port-local ids 229/237
+            // (the FlyingFish 354 precedent); 241/465/592/607/615/688/692
+            // keep their vanilla ids (all free). `NPC.cs:9489-9501` /
+            // `:10989-11002` / `:12105-12118` / `:14483-14495` /
+            // `:16679-16693` / `:16795-16808` / `:16892-16904` /
+            // `:17653-17666` / `:17709-17722`.
+            NpcKind::CorruptGoldfish => 229,
+            NpcKind::Arapaima => 237,
+            NpcKind::BloodFeeder => 241,
+            NpcKind::CrimsonGoldfish => 465,
+            NpcKind::GoldGoldfish => 592,
+            NpcKind::Pupfish => 607,
+            NpcKind::Dolphin => 615,
+            NpcKind::Pufferfish => 688,
+            NpcKind::Orca => 692,
         }
     }
 
@@ -933,6 +951,19 @@ impl NpcKind {
             509 => NpcKind::GiantFlyingAntlion,
             581 => NpcKind::FlyingAntlion,
             587 => NpcKind::EyeballFlyingFish,
+            // W4-c4 (the style-16 swimmers): 229/237 are the
+            // CorruptGoldfish/Arapaima port-local ids (the vanilla 57/157
+            // slots are the GoblinThief's/BoundWizard's); 241/465/592/607/
+            // 615/688/692 keep their vanilla ids (`to_u16` above).
+            229 => NpcKind::CorruptGoldfish,
+            237 => NpcKind::Arapaima,
+            241 => NpcKind::BloodFeeder,
+            465 => NpcKind::CrimsonGoldfish,
+            592 => NpcKind::GoldGoldfish,
+            607 => NpcKind::Pupfish,
+            615 => NpcKind::Dolphin,
+            688 => NpcKind::Pufferfish,
+            692 => NpcKind::Orca,
             _ => return None,
         })
     }
@@ -1555,6 +1586,18 @@ impl NpcKind {
             NpcKind::Goldfish => "NPC_Hit_1",
             NpcKind::Piranha => "NPC_Hit_1",
             NpcKind::Shark => "NPC_Hit_1",
+            // W4-c4 (the style-16 swimmers): NPCHit1 for all but the
+            // BloodFeeder's NPCHit13 (`NPC.cs:9498`/`:10999`/`:12115`/
+            // `:14492`/`:16688`/`:16803`/`:16901`/`:17662`/`:17718`).
+            NpcKind::CorruptGoldfish
+            | NpcKind::Arapaima
+            | NpcKind::CrimsonGoldfish
+            | NpcKind::GoldGoldfish
+            | NpcKind::Pupfish
+            | NpcKind::Dolphin
+            | NpcKind::Pufferfish
+            | NpcKind::Orca => "NPC_Hit_1",
+            NpcKind::BloodFeeder => "NPC_Hit_13",
             NpcKind::DevourerHead => "NPC_Hit_1",
             NpcKind::GiantWormHead => "NPC_Hit_1",
             NpcKind::Merchant => "NPC_Hit_1",
@@ -1861,6 +1904,18 @@ impl NpcKind {
             NpcKind::Goldfish => "NPC_Killed_1",
             NpcKind::Piranha => "NPC_Killed_1",
             NpcKind::Shark => "NPC_Killed_1",
+            // W4-c4 (the style-16 swimmers): NPCDeath1 for all but the
+            // BloodFeeder's NPCDeath19 (`NPC.cs:9499`/`:11000`/`:12116`/
+            // `:14493`/`:16689`/`:16804`/`:16902`/`:17663`/`:17719`).
+            NpcKind::CorruptGoldfish
+            | NpcKind::Arapaima
+            | NpcKind::CrimsonGoldfish
+            | NpcKind::GoldGoldfish
+            | NpcKind::Pupfish
+            | NpcKind::Dolphin
+            | NpcKind::Pufferfish
+            | NpcKind::Orca => "NPC_Killed_1",
+            NpcKind::BloodFeeder => "NPC_Killed_19",
             NpcKind::DevourerHead => "NPC_Killed_1",
             NpcKind::GiantWormHead => "NPC_Killed_1",
             NpcKind::Merchant => "NPC_Killed_1",
@@ -2204,6 +2259,20 @@ impl NpcKind {
             | NpcKind::BrainOfCthulhu
             | NpcKind::PlanterasHook
             | NpcKind::PlanterasTentacle => true,
+            // W4-c4 (the style-16 swimmers): every `SetDefaults` row writes
+            // `noGravity = true` (`NPC.cs:9491`/`:10992`/`:12108`/`:14485`/
+            // `:16681`/`:16797`/`:16894`/`:17655`/`:17711`); the kb rows
+            // are 1 (no row, the head's `:8533` reset) for 57/157/241/465
+            // and 0.5/0.7 for the critters/Orca.
+            NpcKind::CorruptGoldfish
+            | NpcKind::Arapaima
+            | NpcKind::BloodFeeder
+            | NpcKind::CrimsonGoldfish
+            | NpcKind::GoldGoldfish
+            | NpcKind::Pupfish
+            | NpcKind::Dolphin
+            | NpcKind::Pufferfish
+            | NpcKind::Orca => true,
             // The Stardust pillars' flyers: the Cell Big/Small (405/406,
             // `:15033`/`:15047`, kb 0.3/0.4), the Jellyfish Big (407,
             // `:15097`, kb 0.03), the Solar Corite (418, `:15378`, kb 0.2),
@@ -2343,6 +2412,22 @@ impl NpcKind {
             NpcKind::KingSlime => 15,
             // aiStyle 16 - NPC.cs:9465, :9508, :9615
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => 16,
+            // aiStyle 16 — W4-c4 (the style-16 swimmers): NPC.cs:9494
+            // (the CorruptGoldfish 57), :10995 (the Arapaima 157), :12111
+            // (the BloodFeeder 241), :14488 (the CrimsonGoldfish 465),
+            // :16684 (the GoldGoldfish 592), :16800 (the Pupfish 607),
+            // :16897 (the Dolphin 615), :17658 (the Pufferfish 688),
+            // :17714 (the Orca 692). The AnglerFish 102 (`:10208`) is the
+            // tenth unported member — its kind is the W4-d35 roster lane.
+            NpcKind::CorruptGoldfish
+            | NpcKind::Arapaima
+            | NpcKind::BloodFeeder
+            | NpcKind::CrimsonGoldfish
+            | NpcKind::GoldGoldfish
+            | NpcKind::Pupfish
+            | NpcKind::Dolphin
+            | NpcKind::Pufferfish
+            | NpcKind::Orca => 16,
             // aiStyle 22 - NPC.cs:13194
             NpcKind::Poltergeist => 22,
             // aiStyle 22 — the Drippler (S1-D-3z; `NPC.cs:14623`).
@@ -2936,6 +3021,18 @@ impl NpcKind {
             NpcKind::Goldfish => (20.0, 18.0),
             NpcKind::Piranha => (18.0, 20.0),
             NpcKind::Shark => (100.0, 24.0),
+            // W4-c4 (the style-16 swimmers): 57/241/465 18x20
+            // (`NPC.cs:9492-9493`/`:12109-12110`/`:14486-14487`), 157
+            // 74x20 (`:10993-10994`), 592/607/615 20x18 (`:16682-16683`/
+            // `:16798-16799`/`:16895-16896`), 688 32x16 (`:17656-17657`),
+            // 692 120x34 (`:17712-17713`).
+            NpcKind::CorruptGoldfish | NpcKind::BloodFeeder | NpcKind::CrimsonGoldfish => {
+                (18.0, 20.0)
+            }
+            NpcKind::Arapaima => (74.0, 20.0),
+            NpcKind::GoldGoldfish | NpcKind::Pupfish | NpcKind::Dolphin => (20.0, 18.0),
+            NpcKind::Pufferfish => (32.0, 16.0),
+            NpcKind::Orca => (120.0, 34.0),
             // The worms: the Devourer 22x22 (`:8763`), the Giant Worm 14x14
             // (`:8850`), the Eater of Worlds 38x38 (`:8903`).
             NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail => (22.0, 22.0),
@@ -3118,6 +3215,20 @@ impl NpcKind {
             NpcKind::Goldfish => 55,
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
+            // W4-c4 (the style-16 swimmers): the vanilla `NPC.type` ids
+            // (`NPCID.cs:10791`/`:10991`/`:11159`/`:11603`/`:11861`/
+            // `:11891`/`:11907`/`:12053`/`:12061`). The CorruptGoldfish/
+            // Arapaima protocol ids are port-local 229/237, so the
+            // style-16 arm's type gates read 57/157 here.
+            NpcKind::CorruptGoldfish => 57,
+            NpcKind::Arapaima => 157,
+            NpcKind::BloodFeeder => 241,
+            NpcKind::CrimsonGoldfish => 465,
+            NpcKind::GoldGoldfish => 592,
+            NpcKind::Pupfish => 607,
+            NpcKind::Dolphin => 615,
+            NpcKind::Pufferfish => 688,
+            NpcKind::Orca => 692,
             // The Plantera minion family (S1-D-3-wire-plantera-minions):
             // `NPCID.FungiSpore` 261 / `PlanterasHook` 263 /
             // `PlanterasTentacle` 264 / `Spore` 265 (`ID/NPCID.cs:11199`/
@@ -3569,6 +3680,16 @@ impl NpcKind {
             NpcKind::Goldfish => 5,
             NpcKind::Piranha => 30,
             NpcKind::Shark => 300,
+            // W4-c4 (the style-16 swimmers): 57 100 (`NPC.cs:9497`), 157
+            // 200 (`:10998`), 241 150 (`:12114`), 465 110 (`:14491`),
+            // 592/607/615/688 5 (`:16687`/`:16802`/`:16900`/`:17661`),
+            // 692 400 (`:17717`).
+            NpcKind::CorruptGoldfish => 100,
+            NpcKind::Arapaima => 200,
+            NpcKind::BloodFeeder => 150,
+            NpcKind::CrimsonGoldfish => 110,
+            NpcKind::GoldGoldfish | NpcKind::Pupfish | NpcKind::Dolphin | NpcKind::Pufferfish => 5,
+            NpcKind::Orca => 400,
             // The worms: the segment HP per family (`:8763`/`:8850`/`:8903`).
             NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail => 100,
             NpcKind::GiantWormHead | NpcKind::GiantWormBody | NpcKind::GiantWormTail => 30,
@@ -3935,6 +4056,16 @@ impl NpcKind {
             NpcKind::Goldfish => 0,
             NpcKind::Piranha => 25,
             NpcKind::Shark => 40,
+            // W4-c4 (the style-16 swimmers): 57 30 (`NPC.cs:9495`), 157 75
+            // (`:10996`), 241 50 (`:12112`), 465 31 (`:14489`), 692 50
+            // (`:17715`); the critters 592/607/615/688 damage 0
+            // (`:16685`/`:16801`/`:16898`/`:17659`).
+            NpcKind::CorruptGoldfish => 30,
+            NpcKind::Arapaima => 75,
+            NpcKind::BloodFeeder => 50,
+            NpcKind::CrimsonGoldfish => 31,
+            NpcKind::GoldGoldfish | NpcKind::Pupfish | NpcKind::Dolphin | NpcKind::Pufferfish => 0,
+            NpcKind::Orca => 50,
             // The worms: the head hits hardest, the tail softest
             // (`:8763`'s 31/16/13, `:8850`'s 8/4/4, `:8903`'s 22/13/11).
             NpcKind::DevourerHead => 31,

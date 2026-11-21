@@ -2209,6 +2209,86 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Wandering Eye Fish",
     },
+    // W4-c4 (the style-16 swimmers): the nine kinds' own entries — the
+    // populator attaches info to all of them
+    // (`BestiaryDatabaseNPCsPopulator.cs:1088`/`:1095`/`:1119`/`:1105`/
+    // `:1107`/`:1108`/`:1298`/`:2025`/`:1607`). The display names ride
+    // `en-US NPCs.json` (465 is "Vicious Goldfish" — NOT the credit-id
+    // spelling "CrimsonGoldfish"). The GoldGoldfish 592 keeps its OWN
+    // entry (its kill credit is "GoldGoldfish"); only the UI provider
+    // folds it onto the Goldfish 55 (`:706`'s GoldCritterUICollectionInfoProvider).
+    BestiaryEntryDef {
+        credit_id: "CorruptGoldfish",
+        net_id: 57,
+        kind: NpcKind::CorruptGoldfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Corrupt Goldfish",
+    },
+    BestiaryEntryDef {
+        credit_id: "Arapaima",
+        net_id: 157,
+        kind: NpcKind::Arapaima,
+        variant: None,
+        quick_unlock: false,
+        name: "Arapaima",
+    },
+    BestiaryEntryDef {
+        credit_id: "BloodFeeder",
+        net_id: 241,
+        kind: NpcKind::BloodFeeder,
+        variant: None,
+        quick_unlock: false,
+        name: "Blood Feeder",
+    },
+    BestiaryEntryDef {
+        credit_id: "CrimsonGoldfish",
+        net_id: 465,
+        kind: NpcKind::CrimsonGoldfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Vicious Goldfish",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldGoldfish",
+        net_id: 592,
+        kind: NpcKind::GoldGoldfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Goldfish",
+    },
+    BestiaryEntryDef {
+        credit_id: "Pupfish",
+        net_id: 607,
+        kind: NpcKind::Pupfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Pupfish",
+    },
+    BestiaryEntryDef {
+        credit_id: "Dolphin",
+        net_id: 615,
+        kind: NpcKind::Dolphin,
+        variant: None,
+        quick_unlock: false,
+        name: "Dolphin",
+    },
+    BestiaryEntryDef {
+        credit_id: "Pufferfish",
+        net_id: 688,
+        kind: NpcKind::Pufferfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Pufferfish",
+    },
+    BestiaryEntryDef {
+        credit_id: "Orca",
+        net_id: 692,
+        kind: NpcKind::Orca,
+        variant: None,
+        quick_unlock: false,
+        name: "Orca",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

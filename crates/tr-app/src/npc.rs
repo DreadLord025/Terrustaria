@@ -1114,6 +1114,70 @@ pub enum NpcKind {
     /// materialize burst is the family's only RNG consumer (the
     /// module's cited pool order on the `UpdateNPCs` stream).
     EyeballFlyingFish,
+    /// `NPCID.CorruptGoldfish` (57, `NPCID.cs:10791`) — the corruption's
+    /// goldfish (`aiStyle 16`): 18x20, dmg 30, def 6, 100 HP, kb 1 (the
+    /// `SetDefaults` head's reset, `NPC.cs:8533` — no row), NPCHit1/
+    /// NPCDeath1, value 500 (`NPC.cs:9489-9501`). WIRED (W4-c4): the
+    /// `update_swimmer` family arm (`npc_ai_style16::ai_016_step`, the
+    /// style-44-adjacent `integrate_flyer_collision` + `is_wet` seam).
+    /// The protocol id is port-local 229 — the vanilla 57 slot is the
+    /// GoblinThief's (`to_u16`'s bijection guard).
+    CorruptGoldfish,
+    /// `NPCID.Arapaima` (157, `NPCID.cs:10991`) — the jungle's big fish
+    /// (`aiStyle 16`): 74x20, dmg 75, def 30, 200 HP, kb 1 (no row),
+    /// NPCHit1/NPCDeath1, value 500, npcSlots 0.5 (`NPC.cs:10989-11002`).
+    /// WIRED (W4-c4), the 57 seam; the module's 157 branches (the
+    /// asymmetric chase caps `:23774-23802`, the own bob `:23853-23902`,
+    /// the ±0.4 damp exemption `:23957`) ride the vanilla type. The
+    /// protocol id is port-local 237 — the vanilla 157 slot is the
+    /// BoundWizard's.
+    Arapaima,
+    /// `NPCID.BloodFeeder` (241, `NPCID.cs:11159`) — the crimson's fish
+    /// (`aiStyle 16`): 18x20, dmg 50, def 20, 150 HP, kb 1 (no row),
+    /// NPCHit13/NPCDeath19, value 500, npcSlots 0.5 (`NPC.cs:12105-12118`).
+    /// WIRED (W4-c4), the 57 seam. The protocol id keeps the vanilla 241
+    /// (free).
+    BloodFeeder,
+    /// `NPCID.CrimsonGoldfish` (465, `NPCID.cs:11603`) — the crimson's
+    /// goldfish (`aiStyle 16`): 18x20, dmg 31, def 7, 110 HP, kb 1 (no
+    /// row), NPCHit1/NPCDeath1, value 500 (`NPC.cs:14483-14495`). The
+    /// bestiary display name is "Vicious Goldfish" (`en-US NPCs.json`).
+    /// WIRED (W4-c4), the 57 seam. The protocol id keeps the vanilla 465
+    /// (free).
+    CrimsonGoldfish,
+    /// `NPCID.GoldGoldfish` (592, `NPCID.cs:11861`) — the golden critter
+    /// (`aiStyle 16`): 20x18, dmg 0, def 0, 5 HP, kb 0.5, NPCHit1/
+    /// NPCDeath1, catchItem 4274, rarity 3 (`NPC.cs:16679-16693`). WIRED
+    /// (W4-c4), the 57 seam; the `:23701` critter exclusion keeps it from
+    /// chasing. The protocol id keeps the vanilla 592 (free).
+    GoldGoldfish,
+    /// `NPCID.Pupfish` (607, `NPCID.cs:11891`) — the desert oasis critter
+    /// (`aiStyle 16`): 20x18, dmg 0, def 0, 5 HP, kb 0.5, NPCHit1/
+    /// NPCDeath1, catchItem 4373 (`NPC.cs:16795-16808`). WIRED (W4-c4),
+    /// the 57 seam; the `:23701` critter exclusion. The protocol id keeps
+    /// the vanilla 607 (free).
+    Pupfish,
+    /// `NPCID.Dolphin` (615, `NPCID.cs:11907`) — the ocean's leaper
+    /// (`aiStyle 16`): 20x18, dmg 0, def 0, 5 HP, kb 0.5, NPCHit1/
+    /// NPCDeath1 (`NPC.cs:16892-16904`). WIRED (W4-c4), the 57 seam; the
+    /// module's 615 idle-timer/leap/float machine (`:23572-23697`) is the
+    /// family's only RNG consumer besides the dry flop. The protocol id
+    /// keeps the vanilla 615 (free).
+    Dolphin,
+    /// `NPCID.Pufferfish` (688, `NPCID.cs:12053`) — the ocean's puffer
+    /// (`aiStyle 16`): 32x16, dmg 0, def 0, 5 HP, kb 0.5, NPCHit1/
+    /// NPCDeath1, catchItem 5511 (`NPC.cs:17653-17666`). WIRED (W4-c4),
+    /// the 57 seam; the module's 688 puff latch (`:23498-23571`) reads
+    /// `justHit`. The protocol id keeps the vanilla 688 (free).
+    Pufferfish,
+    /// `NPCID.Orca` (692, `NPCID.cs:12061`) — the ocean's apex swimmer
+    /// (`aiStyle 16`): 120x34, dmg 50, def 20, 400 HP, kb 0.7, NPCHit1/
+    /// NPCDeath1, value 10000 (`NPC.cs:17709-17722`). WIRED (W4-c4), the
+    /// 57 seam; the module's 692 aim rotation (`:23990-24007`) + the
+    /// Shark-group chase caps (`:23803`). The protocol id keeps the
+    /// vanilla 692 (free). The DRAW sheet is atlas-deferred (the 136x992
+    /// strip overflows the 8192 bound — the wyvern precedent, ANALYSIS).
+    Orca,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3393,6 +3457,13 @@ impl Npc {
             NpcKind::Goldfish => 0.5,
             NpcKind::Piranha => 1.0,
             NpcKind::Shark => 0.7,
+            // W4-c4 (the style-16 swimmers): 57/157/241/465 no kb row —
+            // the `SetDefaults` head's 1f reset (`NPC.cs:8533`); 592/607/
+            // 615/688 0.5 (`:16690`/`:16806`/`:16903`/`:17664`), 692 0.7
+            // (`:17721`).
+            NpcKind::CorruptGoldfish | NpcKind::Arapaima | NpcKind::BloodFeeder | NpcKind::CrimsonGoldfish => 1.0,
+            NpcKind::GoldGoldfish | NpcKind::Pupfish | NpcKind::Dolphin | NpcKind::Pufferfish => 0.5,
+            NpcKind::Orca => 0.7,
             // The worms: knockBackResist 0 (`:8763` family-wide).
             NpcKind::DevourerHead
             | NpcKind::DevourerBody
@@ -3768,6 +3839,16 @@ impl Npc {
             NpcKind::Goldfish => 0,
             NpcKind::Piranha => 2,
             NpcKind::Shark => 2,
+            // W4-c4 (the style-16 swimmers): 57 6 (`NPC.cs:9496`), 157 30
+            // (`:10997`), 241 20 (`:12113`), 465 7 (`:14490`), 692 20
+            // (`:17716`); the critters 592/607/615/688 defense 0
+            // (`:16686`/`:16801`/`:16899`/`:17660`).
+            NpcKind::CorruptGoldfish => 6,
+            NpcKind::Arapaima => 30,
+            NpcKind::BloodFeeder => 20,
+            NpcKind::CrimsonGoldfish => 7,
+            NpcKind::GoldGoldfish | NpcKind::Pupfish | NpcKind::Dolphin | NpcKind::Pufferfish => 0,
+            NpcKind::Orca => 20,
             // The worms: the head 2/0/2, the body 6/4/4, the tail 10/6/8.
             NpcKind::DevourerHead => 2,
             NpcKind::DevourerBody => 6,
@@ -4162,6 +4243,14 @@ impl Npc {
             NpcKind::Goldfish => 0.0,
             NpcKind::Piranha => 50.0,
             NpcKind::Shark => 400.0,
+            // W4-c4 (the style-16 swimmers): 57/157/241/465 value 500
+            // (`NPC.cs:9500`/`:11001`/`:12117`/`:14494`), 692 10000
+            // (`:17720`); the critters 592/607/615/688 no value row (the
+            // head's 0, `:8544` — the catch items ride the critter-catch
+            // work).
+            NpcKind::CorruptGoldfish | NpcKind::Arapaima | NpcKind::BloodFeeder | NpcKind::CrimsonGoldfish => 500.0,
+            NpcKind::GoldGoldfish | NpcKind::Pupfish | NpcKind::Dolphin | NpcKind::Pufferfish => 0.0,
+            NpcKind::Orca => 10000.0,
             // The worms: the per-segment coin value (`:8763`'s 140, `:8850`'s
             // 40, `:8903`'s 800 — the body/tail rows carry the same value).
             NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail => 140.0,
@@ -6217,6 +6306,24 @@ impl Npc {
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
                 self.update_swimmer(world, player, rng)
             }
+            // W4-c4 (the style-16 swimmers): the nine kinds ride the SAME
+            // `update_swimmer` family arm — the faithful
+            // `npc_ai_style16::ai_016_step` machine keyed on the vanilla
+            // type (`cs_id`), the style-44-adjacent `integrate_flyer_collision`
+            // + `is_wet` seam. No world-sim pre-pass: the arm has no sibling
+            // scan and no dust (the module's RNG census — the Dolphin timer
+            // + the dry flop are the only draws, both on the caller's stream).
+            NpcKind::CorruptGoldfish
+            | NpcKind::Arapaima
+            | NpcKind::BloodFeeder
+            | NpcKind::CrimsonGoldfish
+            | NpcKind::GoldGoldfish
+            | NpcKind::Pupfish
+            | NpcKind::Dolphin
+            | NpcKind::Pufferfish
+            | NpcKind::Orca => {
+                self.update_swimmer(world, player, rng)
+            }
             // The worms: the movement runs in the world sim's worm pass
             // (the chain needs the sibling segments; `AI_006` reads
             // `Main.npc` the same way).
@@ -8265,6 +8372,36 @@ impl Npc {
                         self.frame_counter = 0.0;
                     }
                 }
+            }
+            // W4-c4 (the style-16 swimmers): the nine kinds' type cases ride
+            // `style16_find_frame` via cs_id + rows() — the 57/241/465/592/
+            // 607 six-row flap (`NPC.cs:74181-74226`), the 157 Arapaima
+            // 8-band cycle (`:74134-74180`), the 615 Dolphin 7-tick strip
+            // (`:74227-74243`), the 688 Pufferfish puff/flop/flap
+            // (`:74244-74290`) and the 692 Orca two-half glide
+            // (`:74693-74762`). The existing Goldfish/Piranha/Shark arm
+            // above is untouched (behaviour frozen).
+            NpcKind::CorruptGoldfish
+            | NpcKind::Arapaima
+            | NpcKind::BloodFeeder
+            | NpcKind::CrimsonGoldfish
+            | NpcKind::GoldGoldfish
+            | NpcKind::Pupfish
+            | NpcKind::Dolphin
+            | NpcKind::Pufferfish
+            | NpcKind::Orca => {
+                crate::npc_ai_style16::style16_find_frame(
+                    self.kind.cs_id() as i32,
+                    self.wet,
+                    self.vy,
+                    self.facing,
+                    self.ai[0],
+                    self.ai[2],
+                    self.rows(),
+                    &mut self.frame,
+                    &mut self.frame_counter,
+                    &mut self.sprite_dir,
+                );
             }
             // The worms: `Main.npcFrameCount` 7..15 = 1 (`Main.cs:67082`).
             NpcKind::DevourerHead
@@ -18243,8 +18380,8 @@ impl Npc {
             player_wet: player.wet,
             // `NPC.justHit` (`:23502`/`:23518`) — the port's strike path
             // has no one-tick flag; `hurt_cd > 0` is the established
-            // stand-in (`world_sim/npcs.rs`'s fighter-idle wiring). Only
-            // the unported Pufferfish (688) reads it.
+            // stand-in (`world_sim/npcs.rs`'s fighter-idle wiring). The
+            // Pufferfish (688, W4-c4) is the only kind that reads it.
             just_hit: self.hurt_cd > 0.0,
             // The ticker is not plumbed (0 — the `npc_ai_bat` convention).
             ticker: 0,
@@ -18717,6 +18854,20 @@ impl Npc {
             NpcKind::GiantFlyingAntlion => 509,
             NpcKind::FlyingAntlion => 581,
             NpcKind::EyeballFlyingFish => 587,
+            // W4-c4 (the style-16 swimmers): the CorruptGoldfish's vanilla
+            // 57 and the Arapaima's 157 are the GoblinThief's/BoundWizard's
+            // keys above, so their hashes ride the port-local 229/237 band
+            // (the FlyingFish 354 precedent — injective either way);
+            // 241/465/592/607/615/688/692 are unused by every arm above.
+            NpcKind::CorruptGoldfish => 229,
+            NpcKind::Arapaima => 237,
+            NpcKind::BloodFeeder => 241,
+            NpcKind::CrimsonGoldfish => 465,
+            NpcKind::GoldGoldfish => 592,
+            NpcKind::Pupfish => 607,
+            NpcKind::Dolphin => 615,
+            NpcKind::Pufferfish => 688,
+            NpcKind::Orca => 692,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23785,7 +23936,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 274] = [
+    pub(super) const ALL_KINDS: [NpcKind; 283] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24069,6 +24220,16 @@ mod tests {
         NpcKind::GiantFlyingAntlion,
         NpcKind::FlyingAntlion,
         NpcKind::EyeballFlyingFish,
+        // W4-c4 — the style-16 swimmers.
+        NpcKind::CorruptGoldfish,
+        NpcKind::Arapaima,
+        NpcKind::BloodFeeder,
+        NpcKind::CrimsonGoldfish,
+        NpcKind::GoldGoldfish,
+        NpcKind::Pupfish,
+        NpcKind::Dolphin,
+        NpcKind::Pufferfish,
+        NpcKind::Orca,
     ];
 
     #[test]
@@ -24238,6 +24399,130 @@ mod tests {
         ant.rotation = 0.1;
         ant.find_frame();
         assert_eq!(ant.rotation, 0.1, "the antlion's FindFrame leaves the tilt");
+    }
+
+    /// W4-c4 (the style-16 swimmers): the nine kinds' `SetDefaults` rows
+    /// pin against the C# through the port's tables — the same shape as the
+    /// style-44 pin. (kind, cs_id, protocol id, w, h, dmg, def, hp, kb,
+    /// value, sheet rows). WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c4_the_style16_defaults_match_the_csharp_rows() {
+        // `NPC.cs:9489-9501` (57), `:10989-11002` (157), `:12105-12118`
+        // (241), `:14483-14495` (465), `:16679-16693` (592), `:16795-16808`
+        // (607), `:16892-16904` (615), `:17653-17666` (688), `:17709-17722`
+        // (692). The kb rows: 57/157/241/465 no row (the head's 1f reset,
+        // `:8533`); 592/607/615/688 0.5; 692 0.7.
+        for (kind, cs, proto, w, h, dmg, def, hp, kb, value, rows) in [
+            (NpcKind::CorruptGoldfish, 57u16, 229u16, 18.0, 20.0, 30, 6, 100, 1.0, 500.0, 6u32),
+            (NpcKind::Arapaima, 157, 237, 74.0, 20.0, 75, 30, 200, 1.0, 500.0, 6),
+            (NpcKind::BloodFeeder, 241, 241, 18.0, 20.0, 50, 20, 150, 1.0, 500.0, 6),
+            (NpcKind::CrimsonGoldfish, 465, 465, 18.0, 20.0, 31, 7, 110, 1.0, 500.0, 6),
+            (NpcKind::GoldGoldfish, 592, 592, 20.0, 18.0, 0, 0, 5, 0.5, 0.0, 6),
+            (NpcKind::Pupfish, 607, 607, 20.0, 18.0, 0, 0, 5, 0.5, 0.0, 6),
+            (NpcKind::Dolphin, 615, 615, 20.0, 18.0, 0, 0, 5, 0.5, 0.0, 5),
+            (NpcKind::Pufferfish, 688, 688, 32.0, 16.0, 0, 0, 5, 0.5, 0.0, 6),
+            (NpcKind::Orca, 692, 692, 120.0, 34.0, 50, 20, 400, 0.7, 10000.0, 16),
+        ] {
+            assert_eq!(kind.ai_style(), 16, "{kind:?} aiStyle");
+            assert_eq!(kind.cs_id(), cs, "{kind:?} vanilla type");
+            assert_eq!(kind.to_u16(), proto, "{kind:?} protocol id");
+            assert_eq!(kind.size(), (w, h), "{kind:?} box");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert!(kind.no_gravity(), "{kind:?} noGravity");
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(
+                crate::render::entities::texture_net_id(kind),
+                cs,
+                "{kind:?} draws its own vanilla sheet"
+            );
+            assert_eq!(
+                crate::render::entities::npc_rows(cs),
+                rows,
+                "{kind:?} sheet rows"
+            );
+        }
+        // The sound rows: the BloodFeeder's NPCHit13/NPCDeath19, the rest
+        // NPCHit1/NPCDeath1 (`NPC.cs:12115-12116` vs the family's 1/1).
+        assert_eq!(NpcKind::BloodFeeder.hit_sound(), Some("NPC_Hit_13"));
+        assert_eq!(NpcKind::BloodFeeder.death_sound(), Some("NPC_Killed_19"));
+        assert_eq!(NpcKind::Orca.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::Orca.death_sound(), Some("NPC_Killed_1"));
+        // The debuff immunity: 57/157/241/465/592/607/615 the {31} row,
+        // 688/692 null (`NPCID.cs:6075+`).
+        assert!(crate::npc_buffs::NpcBuffs::for_kind(NpcKind::CorruptGoldfish).buff_immune[31]);
+        assert!(!crate::npc_buffs::NpcBuffs::for_kind(NpcKind::Pufferfish).buff_immune[31]);
+        assert!(!crate::npc_buffs::NpcBuffs::for_kind(NpcKind::Orca).buff_immune[31]);
+    }
+
+    /// W4-c4 (the style-16 swimmers): the nine kinds ride the
+    /// `update_swimmer` family arm (the style-44-adjacent
+    /// `integrate_flyer_collision` + `is_wet` seam) and `find_frame` rides
+    /// `style16_find_frame` through cs_id + rows(). A full `update` tick
+    /// steps each kind without panicking and keeps it inside its own frame
+    /// strip; the six-row fish walk the wet flap at the 6-tick bands.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c4_the_style16_swimmers_step_and_walk_their_strips() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for kind in [
+            NpcKind::CorruptGoldfish,
+            NpcKind::Arapaima,
+            NpcKind::BloodFeeder,
+            NpcKind::CrimsonGoldfish,
+            NpcKind::GoldGoldfish,
+            NpcKind::Pupfish,
+            NpcKind::Dolphin,
+            NpcKind::Pufferfish,
+            NpcKind::Orca,
+        ] {
+            let rows = crate::render::entities::npc_rows(
+                crate::render::entities::texture_net_id(kind),
+            );
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            for _ in 0..60 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+                assert!(n.frame < rows, "{kind:?} row {} of {rows}", n.frame);
+            }
+        }
+        // The six-row fish's wet flap (`NPC.cs:74181-74226`): rows 0..3 at
+        // the 6-tick bands, the counter resets at 24. The CorruptGoldfish
+        // stands in for the 57/241/465/592/607 group.
+        let mut fish = Npc::new(NpcKind::CorruptGoldfish, 100.0, 100.0, 1, 0.0);
+        fish.wet = true;
+        fish.facing = 1;
+        for t in 1..=24u32 {
+            fish.find_frame();
+            let want = if t < 6 {
+                0
+            } else if t < 12 {
+                1
+            } else if t < 18 {
+                2
+            } else if t < 24 {
+                3
+            } else {
+                3 // the 24th tick resets the counter, the row holds
+            };
+            assert_eq!(fish.frame, want, "wet flap tick {t}");
+            assert_eq!(fish.sprite_dir, 1, "the sprite faces the direction");
+        }
+        assert_eq!(fish.frame_counter, 0.0, "the 24-tick lap resets");
+        // The dry flop rows 4/5 (`:74214-74225`).
+        let mut dry = Npc::new(NpcKind::GoldGoldfish, 100.0, 100.0, 1, 0.0);
+        dry.wet = false;
+        for _ in 0..6 {
+            dry.find_frame();
+        }
+        assert_eq!(dry.frame, 4, "the dry flop's first band");
+        for _ in 0..6 {
+            dry.find_frame();
+        }
+        assert_eq!(dry.frame, 5, "the dry flop's second band");
     }
 
     /// The small-kinds wiring wave: the style axis claims 21/49/56/72, so
@@ -27755,8 +28040,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            274,
-            "every decodable kind resolves (the wire roster's size - 274 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-c4's four style-44 swimmers)"
+            283,
+            "every decodable kind resolves (the wire roster's size - 283 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-c4's four style-44 swimmers + W4-c4's nine style-16 swimmers)"
         );
         assert!(
             covered > 43,
@@ -31366,6 +31651,18 @@ mod s1_d_2_tests {
         (NpcKind::Goldfish, 16),
         (NpcKind::Piranha, 16),
         (NpcKind::Shark, 16),
+        // W4-c4 (the style-16 swimmers): the nine kinds' aiStyle rows
+        // (`NPC.cs:9494`/`:10995`/`:12111`/`:14488`/`:16684`/`:16800`/
+        // `:16897`/`:17658`/`:17714`).
+        (NpcKind::CorruptGoldfish, 16),
+        (NpcKind::Arapaima, 16),
+        (NpcKind::BloodFeeder, 16),
+        (NpcKind::CrimsonGoldfish, 16),
+        (NpcKind::GoldGoldfish, 16),
+        (NpcKind::Pupfish, 16),
+        (NpcKind::Dolphin, 16),
+        (NpcKind::Pufferfish, 16),
+        (NpcKind::Orca, 16),
         (NpcKind::BoundGoblin, 0),
         (NpcKind::BoundWizard, 0),
         (NpcKind::BoundMechanic, 0),
