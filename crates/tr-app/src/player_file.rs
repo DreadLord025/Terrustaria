@@ -3220,6 +3220,28 @@ mod tests {
         // A Classic fixture (difficulty 0): the loaded (false, false, 0f)
         // is RESET by `LoadToPlayer` (`CreativePowerManager.cs:211-214`).
         assert_eq!(file.powers, CreativePowersSave::default());
+        // W4-f44 ph3: the remainder reads fresh too.
+        assert_eq!(file.play_time_ticks, 0);
+        assert_eq!(file.hair_dye, 0);
+        assert_eq!(file.team, 0);
+        assert_eq!(file.bank, [(0, 0, 0); 40]);
+        assert_eq!(file.bank2, [(0, 0, 0); 40]);
+        assert_eq!(file.bank3, [(0, 0, 0); 40]);
+        assert!(file.buffs.is_empty());
+        assert!(file.spawn_points.is_empty());
+        assert_eq!(file.angler_quests_finished, 0);
+        assert_eq!(file.dpad_bindings, [-1; 4]);
+        assert_eq!(file.builder_acc_status, [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(file.bartender_quest_log, 0);
+        assert!(!file.dead);
+        assert_eq!(file.respawn_timer, 0);
+        assert_eq!(file.golfer_score, 0);
+        assert_eq!(file.temp_slots, [None; 4]);
+        assert_eq!(file.super_cart, 2); // enabled true (`:2054`)
+        assert_eq!(file.voice_variant, 1); // the ctor (`:56045`)
+        assert_eq!(file.voice_pitch_offset, 0.0);
+        assert!(file.refunds.is_empty());
+        assert!(file.dialogues.is_empty());
     }
 
     /// Back-compat gates: the port-only shallow retries (inc1 at the vault
@@ -3235,6 +3257,12 @@ mod tests {
         file.loadouts[1].armor[2] = (90, 1, 0, false);
         file.armor[0] = (89, 81, true);
         file.hide_info[2] = true;
+        // W4-f44 ph3: fields before / between / after the two cuts.
+        file.team = 2;
+        file.bank[3] = (757, 1, 81);
+        file.buffs = vec![(26, 3600)];
+        file.spawn_points = vec![(100, 200, 7, "Alpha".into())];
+        file.angler_quests_finished = 42;
         let plain = serialize_plaintext(&file);
         // inc1: cut after the voidVaultInfo byte (offset 2402).
         let inc1 = read_player_bytes(&plain[..2402]).expect("inc1 reads");
@@ -3245,6 +3273,12 @@ mod tests {
         // W4-f44 ph2: the armor/hide BitsBytes sit BEFORE the cut — captured.
         assert_eq!(inc1.armor[0], (89, 81, true));
         assert_eq!(inc1.hide_info, [false; 13], "inc1 never reached hideInfo");
+        // W4-f44 ph3: team/bank sit before the cut; buffs/spawn/angler after.
+        assert_eq!(inc1.team, 2);
+        assert_eq!(inc1.bank[3], (757, 1, 81));
+        assert!(inc1.buffs.is_empty(), "inc1 never reached the buffs");
+        assert!(inc1.spawn_points.is_empty());
+        assert_eq!(inc1.angler_quests_finished, 0);
         // inc2: cut after hideInfo (offset 2772).
         let inc2 = read_player_bytes(&plain[..2772]).expect("inc2 reads");
         assert_eq!(inc2.void_vault_info, 1);
@@ -3258,6 +3292,11 @@ mod tests {
             CreativePowersSave::default(),
             "inc2 never reached the powers; the non-Journey reset stands"
         );
+        // W4-f44 ph3: buffs + spawn points sit between the cuts — captured;
+        // the angler counter sits after the inc2 cut — fresh default.
+        assert_eq!(inc2.buffs, vec![(26, 3600)]);
+        assert_eq!(inc2.spawn_points, vec![(100, 200, 7, "Alpha".to_string())]);
+        assert_eq!(inc2.angler_quests_finished, 0);
     }
 
     /// An over-count item type in bank4/loadouts airs the slot after the full
