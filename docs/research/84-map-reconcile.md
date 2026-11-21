@@ -1,8 +1,11 @@
 # 84 — Map reveal dup-reconcile: W4-e18 vs W4-f46 (2026-11-21, code-only)
 
-> **STATUS: COMPLETE (2026-11-21 closeout — see §10 for the final status +
-> merger checklist).** EXECUTED (2026-11-21, salvage-exec on
-> `task/W4-f46-minimap-reveal-2`).
+> **STATUS: FINAL (2026-11-21 final-retire pass — the COMPLETE merger
+> checklist is §10 items 1-6 + §10.3's two-landing order; the e18 re-fold
+> is EXECUTED (§10.2), the overlay keep-one is EXECUTED on the f29 tip
+> (§10.3), nothing on the map family is owed on THIS branch except the
+> catalog run at merge).** Previously: COMPLETE (closeout) ← EXECUTED
+> (salvage-exec on `task/W4-f46-minimap-reveal-2`).
 > The §8 union landed on this branch: e18's skeleton adopted verbatim
 > (base commit `0bc3414d`), then the six f46 salvages + the
 > `sections_left()` accessor committed per piece. **Fold phase (same day):
@@ -357,9 +360,14 @@ minimap remaining census: pan inertia PHANTOM, fullscreen zoom keys already
 landed, the style-1 minimap zoom keys + the Tab style-cycle key ported with
 5 witnesses), `8bb34f71` (the f29/e17 overlay composition cross-note,
 research/14), then the shared-gap + dup pass (`aed75d0b`/`3f858937`/
-`a352b16e` + this refresh). The e18d final-sweep contract stays published
-in research/14 "fold status": any later e18 commit re-folds per the recipe
-(fetch tip → cherry-pick → per-hunk onto the union seams).
+`a352b16e` + this refresh), then the **final-retire pass** (`736c86ce`/
+`5566bf25`/`cd24857e`/`7d050b7c`/`b767ef91` re-fold the five e18d
+mechanics, `1e7eadaf` the e18d docs, `9b9d8f1c` the f29-exec status +
+§10.3 final merge instruction + MAP-FAMILY declaration, `44749457` the
+headless-frame witness re-derivation). The e18d final-sweep contract is
+FULFILLED through `75289a2db` (research/14 "fold status" fourth re-fetch);
+any later e18 commit re-folds per the recipe (fetch tip → cherry-pick →
+per-hunk onto the union seams).
 
 ### §10.1 The minimap-key keep-one — g53 `a9774d2a` × e18 `249a0c1b` × the union, arm-by-arm vs `Player.cs:24909-24965`
 
@@ -492,11 +500,21 @@ all nine are now folded; checklist item 2 is CLOSED.**
    SIX `map_delay = 0` re-pins,
    `app::frame::draw::w4_e18_fullmap_draw_head_tests::*`), the f29 tip's
    34-witness union (research/140 §7), and the folded e18/f46 sets (§7).
+   Witness re-derivation note (`44749457`): the headless `flow_app` screen
+   is **1280x720** (`world_sim/camera.rs`'s no-gpu fallback) — the e18
+   close-button/icon-row witnesses were written against a 1600x900
+   assumption and are re-pinned here (close box centre `(26, 695)`, icon
+   row `(840 + k*32, 40)`); any future headless geometry witness derives
+   from the fallback, not the shot frame.
 6. **Docs are already union-shaped:** research/14 (censuses + fold status +
-   composition note), this file, PORT_MAP's map rows, ROADMAP row 14,
-   ANALYSIS's union note. The overlay pick brings its own doc updates —
-   resolve the research/14 append conflicts by keeping both sections (the
-   e18/f29/e17 censuses describe different passes, not rivals).
+   composition note + the final-sweep section), this file (§10.1 keep-one,
+   §10.2 executed re-fold, §10.3 final order + family table), PORT_MAP's
+   map rows, ROADMAP row 14, ANALYSIS's union note + the five-residual
+   section. The f29 tip brings its own deduped docs (research/140,
+   its research/14 SUPERSEDED banner) — resolve the research/14 append
+   conflicts by keeping all sections (the e18/f29/e17/f46 censuses
+   describe different passes, not rivals; this file's §10.3 is the
+   cross-family order record).
 
 ### §10.2 The final-retire re-fold — EXECUTED (2026-11-21, checklist item 2 closed)
 
