@@ -2575,7 +2575,7 @@ fn draw_info_row(
             // inner box, tinted by the portrait color. W4-e23 remainder.
             if let Some((sheet_name, tint)) = portrait_backdrop(entry.net_id) {
                 if let Some(sheet) = lookups.map_bg_sheet(sheet_name) {
-                    push_whole(r, lookups, &sheet, inner, super::color::tint(tint));
+                    push_whole(r, lookups, sheet, inner, super::color::tint(tint));
                 }
             }
             if state.known() {
