@@ -22982,6 +22982,28 @@ impl ProjectilePool {
             }
             // Projectile.cs:12938 — pre-defense variance on the hit damage.
             dmg = tr_core::damage::damage_var(rng, dmg as f32, luck);
+            // W4-f48 parry wave — `Damage_PVE_Inner`'s ParryDamageBuff
+            // consumer (`Projectile.cs:13573-13578`): an owned MELEE
+            // projectile ×5s the rolled damage while the owner's buff-198
+            // flag is live, then clears the flag AND `ClearBuff(198)` (the
+            // melee-item twin, `Player.cs:44307-44312`). The
+            // `DontApplyParryDamageBuff` set (`ProjectileID.cs:187`) —
+            // 524/321/181/566 — refuses the boost. The C# block sits after
+            // the damage math and before `StrikeNPC` (`:13649`); the port's
+            // post-DamageVar position keeps the draw order untouched (no
+            // new draws — the ×5 is a pure multiply).
+            if owned_by_someone
+                && self.slots[slot].melee
+                && !matches!(self.slots[slot].kind, 524 | 321 | 181 | 566)
+            {
+                if let Some(pl) = player.as_deref_mut() {
+                    if pl.parry_damage_buff {
+                        dmg *= 5;
+                        pl.parry_damage_buff = false;
+                        pl.buffs.clear_buff(198);
+                    }
+                }
+            }
             // W4-f48 lane 20 — `Damage_PVE_Inner`'s type-866 arm
             // (`Projectile.cs:13443-13445`): the Bouncing Shield's STORED
             // damage decays ×0.8 (the `(int)((double)damage * 0.8)`
@@ -23663,6 +23685,23 @@ impl ProjectilePool {
             && cy >= player.y
             && cy < player.y + crate::player::HEIGHT;
         if !inside {
+            return;
+        }
+        // W4-f48 parry wave — `Damage_EVP`'s parry verdict
+        // (`Projectile.cs:14822`): `flag2 = CanParryAgainst(player.Hitbox,
+        // base.Hitbox, base.velocity)`. On a parry the whole hurt block
+        // (`:14828-14880`) is skipped — no DamageVar draw, no Hurt, no
+        // StatusPlayer — and the C# does NOT kill the shot (`:14881-14899`
+        // spends penetrate only for 435/682/436/437, never a parry term),
+        // so the parried shot keeps flying. The C# grants NO reflect /
+        // immunity / buff here either (those live in the contact lane's
+        // `Update_NPCCollision`, `Player.cs:31366-31431`, already ported).
+        // The early return skips the port's single-hit kill too — the
+        // faithful "the shield eats the hit, the shot survives" shape.
+        // The enemy centre is the projectile hitbox's integer centre
+        // (`base.Hitbox.Center.X` = `(int)position.X + width/2`).
+        let enemy_cx = p.pos.x as i32 + p.w as i32 / 2;
+        if player.can_parry_against(enemy_cx, p.vel.x, p.vel.y) {
             return;
         }
         // `Projectile.cs:14862-14870` — `bool dodgeable =
@@ -24574,6 +24613,158 @@ mod tests {
         pool.damage_player(slot, Some(&mut player), &mut rng);
         assert!(player.hp < hp0, "the 9999 shot lands through the belt");
         assert!(rng.draws.is_empty(), "no dodge roll ran");
+    }
+
+    /// W4-f48 parry wave — `Damage_EVP`'s parry gate
+    /// (`Projectile.cs:14822-14828`): a live parry window facing a moving
+    /// shot eats the hit whole — no Hurt, no dodge draw, and the shot
+    /// SURVIVES (the C# spends no penetrate on a parry). The four
+    /// `CanParryAgainst` gates refuse it: no window, behind the player,
+    /// a stationary shot, already immune.
+    #[test]
+    fn w4_f48_parry_the_projectile_lane_eats_the_hit() {
+        let w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        player.facing = 1;
+        let (pcx, pcy) = player.center();
+        // The shot approaches from the facing side, moving left.
+        let shot_pos = Vec2::new(pcx + 2.0, pcy - 5.0);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_hostile(100, shot_pos, Vec2::new(-2.0, 0.0), 25, 0.0)
+            .expect("the hostile shot spawns");
+        player.shield_parry_time_left = 5;
+        let mut rng = DodgeScript::with_rolls(&[]);
+        pool.damage_player(slot, Some(&mut player), &mut rng);
+        assert_eq!(player.hp, player.max_hp, "the parry eats the hit");
+        assert!(rng.draws.is_empty(), "no DamageVar/dodge draw on a parry");
+        assert!(pool.slots()[slot].active, "the parried shot keeps flying");
+        // No window: the hit lands.
+        let mut player2 = crate::player::Player::spawn(&w);
+        player2.facing = 1;
+        let (cx2, cy2) = player2.center();
+        let mut pool2 = ProjectilePool::new();
+        let s2 = pool2
+            .spawn_hostile(100, Vec2::new(cx2 + 2.0, cy2 - 5.0), Vec2::new(-2.0, 0.0), 25, 0.0)
+            .unwrap();
+        let mut rng2 = DodgeScript::with_rolls(&[]);
+        pool2.damage_player(s2, Some(&mut player2), &mut rng2);
+        assert!(player2.hp < player2.max_hp, "no window, the hit lands");
+        // Behind the player (the shot on the left, facing right): refused.
+        let mut player3 = crate::player::Player::spawn(&w);
+        player3.facing = 1;
+        let (cx3, cy3) = player3.center();
+        let mut pool3 = ProjectilePool::new();
+        let s3 = pool3
+            .spawn_hostile(100, Vec2::new(cx3 - 12.0, cy3 - 5.0), Vec2::new(2.0, 0.0), 25, 0.0)
+            .unwrap();
+        player3.shield_parry_time_left = 5;
+        let mut rng3 = DodgeScript::with_rolls(&[]);
+        pool3.damage_player(s3, Some(&mut player3), &mut rng3);
+        assert!(player3.hp < player3.max_hp, "the sign mismatch refuses the parry");
+        // A stationary shot never parries (velocity == Zero).
+        let mut player4 = crate::player::Player::spawn(&w);
+        player4.facing = 1;
+        let (cx4, cy4) = player4.center();
+        let mut pool4 = ProjectilePool::new();
+        let s4 = pool4
+            .spawn_hostile(100, Vec2::new(cx4 + 2.0, cy4 - 5.0), Vec2::ZERO, 25, 0.0)
+            .unwrap();
+        player4.shield_parry_time_left = 5;
+        let mut rng4 = DodgeScript::with_rolls(&[]);
+        pool4.damage_player(s4, Some(&mut player4), &mut rng4);
+        assert!(player4.hp < player4.max_hp, "the stationary shot lands");
+    }
+
+    /// W4-f48 parry wave — the projectile-lane ParryDamageBuff consumer
+    /// (`Projectile.cs:13573-13578`): an owned melee projectile ×5s while
+    /// buff 198's flag is live, clears flag + buff; the
+    /// `DontApplyParryDamageBuff` set (524/321/181/566) and the non-melee
+    /// shots keep the flag.
+    #[test]
+    fn w4_f48_parry_the_melee_projectile_consumes_the_buff() {
+        let w = ground();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 100_000;
+        npc.max_hp = 100_000;
+        // The boosted strike: the wooden boomerang (melee) with the flag.
+        let mut player = crate::player::Player::spawn(&w);
+        player.buffs.add_buff(198, 300);
+        player.parry_damage_buff = true;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(WOODEN_BOOMERANG, npc.x, npc.y, 0.0, 0.0, 1000, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(
+            &w, slot, std::slice::from_mut(&mut npc), None, None, Some(&mut player), &mut rng,
+        );
+        let boosted = 100_000 - npc.hp;
+        assert!(!player.parry_damage_buff, "the flag clears");
+        assert!(player.buffs.find_buff_index(198).is_none(), "ClearBuff(198)");
+        // The unboosted baseline: the same shot, no flag.
+        let mut npc2 = one_npc(&w);
+        npc2.x = 20.0 * TILE_PX;
+        npc2.y = 24.0 * TILE_PX;
+        npc2.hp = 100_000;
+        npc2.max_hp = 100_000;
+        let mut player2 = crate::player::Player::spawn(&w);
+        let mut pool2 = ProjectilePool::new();
+        let s2 = pool2
+            .spawn_with_data_ai(WOODEN_BOOMERANG, npc2.x, npc2.y, 0.0, 0.0, 1000, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng2 = tr_core::tile_light::FastRandom::new(7);
+        pool2.damage_pve(
+            &w, s2, std::slice::from_mut(&mut npc2), None, None, Some(&mut player2), &mut rng2,
+        );
+        let plain = 100_000 - npc2.hp;
+        // The ×5 rides the rolled damage; the banker's rounding + the
+        // defense floor keep it within a couple of points of 5×.
+        assert!(
+            boosted >= plain * 5 - 4 && boosted <= plain * 5 + 4,
+            "the ×5 boost: boosted {boosted} vs plain {plain}"
+        );
+        assert!(boosted > plain * 4, "the boost is real, not the variance");
+        // The DontApplyParryDamageBuff set keeps the flag (the bee 181 is
+        // melee-flagged in the C# `Damage_PVE_Inner` census — the port's
+        // slot carries the flag the test pins directly).
+        let mut npc3 = one_npc(&w);
+        npc3.x = 20.0 * TILE_PX;
+        npc3.y = 24.0 * TILE_PX;
+        npc3.hp = 100_000;
+        npc3.max_hp = 100_000;
+        let mut player3 = crate::player::Player::spawn(&w);
+        player3.parry_damage_buff = true;
+        let mut pool3 = ProjectilePool::new();
+        let s3 = pool3
+            .spawn_with_data_ai(WOODEN_BOOMERANG, npc3.x, npc3.y, 0.0, 0.0, 1000, 0.0, 0.0, 0.0)
+            .unwrap();
+        pool3.slots_mut()[s3].kind = BEE; // 181, the excluded set
+        pool3.slots_mut()[s3].melee = true;
+        let mut rng3 = tr_core::tile_light::FastRandom::new(7);
+        pool3.damage_pve(
+            &w, s3, std::slice::from_mut(&mut npc3), None, None, Some(&mut player3), &mut rng3,
+        );
+        assert!(player3.parry_damage_buff, "the excluded kind keeps the flag");
+        // A non-melee shot keeps the flag too.
+        let mut npc4 = one_npc(&w);
+        npc4.x = 20.0 * TILE_PX;
+        npc4.y = 24.0 * TILE_PX;
+        npc4.hp = 100_000;
+        npc4.max_hp = 100_000;
+        let mut player4 = crate::player::Player::spawn(&w);
+        player4.parry_damage_buff = true;
+        let mut pool4 = ProjectilePool::new();
+        let s4 = pool4
+            .spawn_with_data_ai(SHURIKEN, npc4.x, npc4.y, 0.0, 0.0, 1000, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng4 = tr_core::tile_light::FastRandom::new(7);
+        pool4.damage_pve(
+            &w, s4, std::slice::from_mut(&mut npc4), None, None, Some(&mut player4), &mut rng4,
+        );
+        assert!(player4.parry_damage_buff, "the ranged shot keeps the flag");
     }
 
     /// The shielded NPC refuses the shot — `Damage_PVE`'s outer gate
