@@ -46,6 +46,9 @@ mod inv;
 mod luck;
 mod wiring_stub;
 mod yoyo_string;
+// W4-d16 — the kite string + tail geometry (`Main.DrawKite`,
+// `Main.cs:37134-37569`): the pure-math half of the aiStyle-160 draw.
+mod kite_string;
 mod item;
 mod itemdata;
 mod item_sorting;

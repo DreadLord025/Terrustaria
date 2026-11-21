@@ -1340,6 +1340,10 @@ impl App {
                         // `Main.GlobalTimeWrappedHourly` (`anim_time % 3600`, the
                         // same wrapped value the world pass keys on) — the Rainbow
                         // Rod's trail hue scrolls by it (`RainbowRodDrawer.cs:25`).
+                        // W4-d16: the kite draw's two scene reads —
+                        // `Main.WindForVisuals` (`Main.cs:28056`) and the
+                        // `timeForVisualEffects` tick clock (`:37467`, the
+                        // world pass's `anim_time * 60 % 216000` form).
                         p.draw_with_hand(
                             renderer,
                             lookups,
@@ -1349,6 +1353,8 @@ impl App {
                             screen,
                             hand,
                             anim_time % 3600.0,
+                            wind.speed_current,
+                            (anim_time as f64 * 60.0) % 216000.0,
                         );
                     }
 

@@ -10251,14 +10251,18 @@ impl Projectile {
         screen: Vec2,
         global_time: f32,
     ) {
-        self.draw_with_hand(r, lookups, light, camera, zoom, screen, None, global_time);
+        self.draw_with_hand(r, lookups, light, camera, zoom, screen, None, global_time, 0.0, 0.0);
     }
 
     /// The draw entry the frame calls with the player in scope: the yoyo
     /// family takes the string path (`Main.DrawProjDirect`'s aiStyle-99 arm),
     /// the trail families their quad-ribbon trails, the rest keep the
     /// shuriken stub. `global_time` is the frame's `Main.GlobalTimeWrappedHourly`
-    /// analogue — the Rainbow Rod's trail hue scrolls by it.
+    /// analogue — the Rainbow Rod's trail hue scrolls by it. `wind` is
+    /// `Main.WindForVisuals` and `visual_time` the `Main.timeForVisualEffects`
+    /// tick clock — the kite draw's two scene reads (`Main.cs:28056`,
+    /// `:37455-37467`).
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_with_hand(
         &self,
         r: &mut SpriteRenderer,
@@ -10269,9 +10273,19 @@ impl Projectile {
         screen: Vec2,
         owner_hand: Option<(f32, f32)>,
         global_time: f32,
+        wind: f32,
+        visual_time: f64,
     ) {
         if crate::yoyo_string::is_yoyo_sprite(self.kind) {
             self.draw_yoyo(r, lookups, light, camera, zoom, screen, owner_hand);
+            return;
+        }
+        // W4-d16 — `Main.DrawProjDirect`'s aiStyle-160 arm
+        // (`Main.cs:28054-28058`): `DrawKite` owns the string, the tail
+        // ribbons AND the kite sprite (`:37568`), then returns — the
+        // generic emit never runs for kites.
+        if crate::projectile_ai_kites::KITE_KINDS.contains(&self.kind) {
+            self.draw_kite(r, lookups, light, camera, zoom, screen, owner_hand, wind, visual_time);
             return;
         }
         // `Main.DrawProj`'s per-type switch routes 974 to its own drawer
@@ -10365,6 +10379,189 @@ impl Projectile {
         ) {
             r.push_ui_sprite_blend(q.pos, q.size, q.uv, q.tint, self.rot, q.origin, q.blend);
         }
+    }
+
+    /// W4-d16 — `Main.DrawKite` (`Main.cs:37134-37569`), the aiStyle-160
+    /// arm of `DrawProjDirect` (`:28054-28058`): the FishingLine string
+    /// from the owner's arm to the kite (`kite_string_walk`), the per-kind
+    /// tail ribbons over the history ring (`kite_tail_chains`) and the
+    /// kite sprite itself (`:37568`). The geometry lives in
+    /// `crate::kite_string` (the pure-math half); this is the emission.
+    /// `owner_hand` is the `GetArmPosition() + netOffset` stand-in (the
+    /// yoyo-string precedent — the player centre + gfxOffY); a `None`
+    /// owner draws the sprite alone (the string needs the anchor).
+    #[allow(clippy::too_many_arguments)]
+    fn draw_kite(
+        &self,
+        r: &mut SpriteRenderer,
+        lookups: &assets::Lookups,
+        light: &LightMap,
+        camera: Vec2,
+        zoom: f32,
+        screen: Vec2,
+        owner_hand: Option<(f32, f32)>,
+        wind: f32,
+        visual_time: f64,
+    ) {
+        let Some(p) = crate::kite_string::kite_tail_params(self.kind) else {
+            return;
+        };
+        let Some((kite_uv, frame_w, frame_h)) =
+            lookups.proj_frame(self.kind, self.frame.max(0) as u32)
+        else {
+            return;
+        };
+        let world_light = |x: f32, y: f32| -> [f32; 3] {
+            let tx = (x / TILE_PX) as i32;
+            let ty = (y / TILE_PX) as i32;
+            if light.w > 0 && light.h > 0 {
+                light.get(
+                    tx.clamp(light.x0, light.x0 + light.w - 1),
+                    ty.clamp(light.y0, light.y0 + light.h - 1),
+                )
+            } else {
+                [1.0; 3]
+            }
+        };
+        let (cx, cy) = self.center();
+        let center = Vec2::new(cx, cy);
+        // `GetAlpha(Lighting.GetColor(Center))` (`:37346`) — the kite
+        // kinds carry no per-type arm, so the generic tail
+        // (`Projectile.cs:79744-79757`): RGB × (255−alpha)/255, A − alpha.
+        let lc = world_light(cx, cy);
+        let op = (255 - self.alpha).max(0) as f32 / 255.0;
+        let alpha_c = [lc[0] * op, lc[1] * op, lc[2] * op, op];
+        let dir = self.sprite_direction;
+        let flip = dir != 1; // `:37342` — FlipHorizontally on dir != 1
+        let scale = self.scale.max(0.0) * zoom;
+        let snapped = |x: f32, y: f32| {
+            crate::render::entities::snap_to_screen_pub([x, y], camera, zoom, screen)
+        };
+        let line = lookups.fishing_line;
+        let line_atlas = line.map(|l| (1u32.max(l.width), 1u32.max(l.height)));
+        // The string walk (`:37356-37453`) — the anchor is the arm.
+        let (segs, string_end) = if let (Some(hand), Some(_)) = (owner_hand, line) {
+            crate::kite_string::kite_string_walk(
+                center,
+                Vec2::new(hand.0, hand.1),
+                self.vel,
+            )
+        } else {
+            (Vec::new(), Vec2::new(0.0, 5.0))
+        };
+        if let (Some(line), Some(atlas)) = (line, line_atlas) {
+            let lw = line.width as f32;
+            let lh = line.height as f32;
+            for seg in &segs {
+                // `:37450-37452` — the final segment slices `(int)num24`
+                // rows; the rest take the full sheet. Scale (0.8, 1),
+                // origin (width/2, 2), colour light × 109/255 × shade.
+                let h = if seg.height > 0.0 { seg.height.min(lh) } else { lh };
+                let uv = assets::uv_rect(&line, atlas, 0, 0, line.width, h as u32);
+                let shade = 109.0 / 255.0 * seg.shade;
+                r.push_sprite_origin_rot(
+                    snapped(seg.x, seg.y),
+                    [lw * 0.8 * zoom, h * zoom],
+                    uv,
+                    [lc[0] * shade, lc[1] * shade, lc[2] * shade, shade],
+                    seg.rot,
+                    [lw * 0.5 * 0.8 * zoom, 2.0 * zoom],
+                );
+            }
+        }
+        // The tail ribbons (`:37454-37567`).
+        let (chains, num6) = crate::kite_string::kite_tail_chains(
+            &p,
+            center,
+            Vec2::new(self.w * 0.5, self.h * 0.5),
+            frame_w,
+            self.rot,
+            dir,
+            self.local_ai[0],
+            self.local_ai[1],
+            wind,
+            visual_time,
+            string_end.y,
+            &self.old_pos,
+            &self.old_rot,
+            &self.old_sprite_direction,
+        );
+        let tail_sheet = lookups.kite_tails.get(&p.extra).copied();
+        let num2 = if p.quarter_turn {
+            if dir == 1 { std::f32::consts::FRAC_PI_2 } else { -std::f32::consts::FRAC_PI_2 }
+        } else {
+            0.0
+        };
+        for list in &chains {
+            // The FishingLine links (`:37535-37548`, flag-gated): pairs
+            // from the far end toward the head, scale (1, len/height).
+            if p.link {
+                if let (Some(line), Some(atlas)) = (line, line_atlas) {
+                    let lw = line.width as f32;
+                    let lh = line.height as f32;
+                    let uv = assets::uv_rect(&line, atlas, 0, 0, line.width, line.height);
+                    for i in (0..list.len() - 1).rev() {
+                        let v = list[i + 1] - list[i];
+                        let len = v.length();
+                        if len < 2.0 {
+                            continue;
+                        }
+                        let sy = len / lh;
+                        let c = 109.0 / 255.0;
+                        r.push_sprite_origin_rot(
+                            snapped(list[i].x, list[i].y),
+                            [lw * zoom, len * zoom],
+                            uv,
+                            [alpha_c[0] * c, alpha_c[1] * c, alpha_c[2] * c, alpha_c[3] * c],
+                            v.to_angle() - std::f32::consts::FRAC_PI_2,
+                            [lw * 0.5 * zoom, 2.0 * sy * zoom],
+                        );
+                    }
+                }
+            }
+            // The tail sprites (`:37549-37566`): the Extra sheet's
+            // horizontal frames, width − 2, walking the column DOWN from
+            // frames−1 and wrapping to num12 (−1 on flag2).
+            let Some(sheet) = tail_sheet else { continue };
+            let atlas = (1u32.max(sheet.width), 1u32.max(sheet.height));
+            let fw = (sheet.width as i32 / p.frames.max(1)).max(1);
+            let tw = (fw - 2).max(1);
+            let th = sheet.height as f32;
+            let mut col = p.frames - 1;
+            for i in (0..list.len() - 1).rev() {
+                let v2 = list[i + 1] - list[i];
+                let uv = assets::uv_rect(
+                    &sheet, atlas, col * fw, 0, tw as u32, sheet.height,
+                );
+                let uv = crate::render::player_layers::flip_uv(uv, flip);
+                r.push_sprite_origin_rot(
+                    snapped(list[i + 1].x, list[i + 1].y),
+                    [tw as f32 * scale, th * scale],
+                    uv,
+                    alpha_c,
+                    v2.to_angle() - std::f32::consts::FRAC_PI_2 + num2,
+                    [tw as f32 * 0.5 * scale, th * 0.5 * scale],
+                );
+                col -= 1;
+                if col < 0 {
+                    col = if p.wrap_minus1 { p.wrap_start - 1 } else { p.wrap_start };
+                }
+            }
+        }
+        // The kite sprite (`:37568`): the frame rect, rotation + num6,
+        // origin (frameSize/2) with X −= 2·dir (`:37355`), scale, flip.
+        let uv = crate::render::player_layers::flip_uv(kite_uv, flip);
+        r.push_sprite_origin_rot(
+            snapped(cx, cy),
+            [frame_w * scale, frame_h * scale],
+            uv,
+            alpha_c,
+            self.rot + num6,
+            [
+                (frame_w * 0.5 - 2.0 * dir as f32) * scale,
+                frame_h * 0.5 * scale,
+            ],
+        );
     }
 
     /// The followup kinds' frame-sliced quad, computed pure so the unit tests
@@ -13416,11 +13613,18 @@ pub(crate) fn trailing_mode(kind: u16) -> i32 {
         | MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL => 0,
         // `:17099`'s mode 1 — the Vortex Ritual's bolt.
         VORTEX_RITUAL_BOLT => 1,
-        // `:17128`'s mode 2 — the gem bolts' family plus the Gradient yoyo and
+        // `:17128`'s mode 2 - the gem bolts' family plus the Gradient yoyo and
         // Betsy's fireball.
         GRADIENT_YOYO | BETSY_FIREBALL | GEM_BOLT_AMETHYST | GEM_BOLT_TOPAZ
         | GEM_BOLT_SAPPHIRE | GEM_BOLT_EMERALD | GEM_BOLT_RUBY | GEM_BOLT_DIAMOND
         | GEM_BOLT_AMBER => 2,
+        // W4-d16 — the kites' mode 2 (`ProjectileID.cs:521`: every
+        // DefaultToKite kind carries 2): `DrawKite`'s tail walk reads
+        // `oldPos`/`oldRot`/`oldSpriteDirection` (`Main.cs:37513-37521`).
+        // The C# `TrailCacheLength` is 60/65/80 (`:522`) — the port's
+        // fixed 10-entry ring is the recorded trail-density deviation
+        // (ANALYSIS, the 640 precedent).
+        k if crate::projectile_ai_kites::KITE_KINDS.contains(&k) => 2,
         // `:17140`'s mode 3 — the three aimed spells with a trail drawer.
         MAGIC_MISSILE | FLAMELASH | RAINBOW_ROD_BULLET => 3,
         _ => -1,
