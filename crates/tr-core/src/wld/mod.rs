@@ -1684,6 +1684,9 @@ mod tests {
         // (`:1413`, v261) — ride the round-trip at non-default values.
         world.combat_book_was_used = true;
         world.unlocked_slime_red_spawn = true;
+        // W4-g15 lane 5: the copper slime unlock (`WorldFile.cs:1415`, v261)
+        // rides the round-trip at a non-default value too.
+        world.unlocked_slime_copper_spawn = true;
         world
     }
 
@@ -1910,6 +1913,11 @@ mod tests {
             got.unlocked_slime_red_spawn, want.unlocked_slime_red_spawn,
             "{context}: unlockedSlimeRedSpawn"
         );
+        // W4-g15 lane 5: the copper slime unlock byte.
+        assert_eq!(
+            got.unlocked_slime_copper_spawn, want.unlocked_slime_copper_spawn,
+            "{context}: unlockedSlimeCopperSpawn"
+        );
     }
 
     #[test]
@@ -2055,9 +2063,11 @@ mod tests {
         tail[2035] = u8::from(world.unlocked_princess); // (`:1406`)
         tail[2026] = u8::from(world.downed_deerclops); // downedDeerclops (`:1397`)
         // The rainbow slime in the 7-slime run at 2038 (`:1410-1414`):
-        // green/old/purple, then rainbow@2041, red@2042 (gate V3, i35).
+        // green/old/purple, then rainbow@2041, red@2042, yellow@2043,
+        // copper@2044 (gate V3, i35; copper W4-g15 lane 5).
         tail[2041] = u8::from(world.unlocked_slime_rainbow_spawn);
         tail[2042] = u8::from(world.unlocked_slime_red_spawn);
+        tail[2044] = u8::from(world.unlocked_slime_copper_spawn);
         // combatBookWasUsed (`WorldFile.cs:1379`): trio-end 88 + 8 setBG +
         // 10 clouds/wind + 4 angler count + 8 saved-NPC/quest + 8 invasion/
         // cultist + 2+1172+2+586 banners + 1 dawn + 9+9 event/tower + 10
@@ -3652,6 +3662,15 @@ mod tests {
         let w = parse(&data).expect("v261 loads");
         assert!(w.unlocked_slime_red_spawn, "unlockedSlimeRedSpawn reads from 261");
         assert!(!w.unlocked_slime_rainbow_spawn, "the rainbow byte before it stays 0");
+        // W4-g15 lane 5: the copper byte is LAST in the v261 slime block
+        // (green/old/purple(3) rainbow(1) red(1) yellow(1) copper(1)).
+        let mut data = synthetic_file(261, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 261);
+        let copper_at = flags_tail(261).len() - 1;
+        data[tail_at + copper_at] = 1;
+        let w = parse(&data).expect("v261 loads (copper)");
+        assert!(w.unlocked_slime_copper_spawn, "unlockedSlimeCopperSpawn reads from 261");
+        assert!(!w.unlocked_slime_red_spawn, "the red byte before it stays 0");
         // v326 (the writer's version): both round-trip at their pinned tail
         // offsets — the DW-2.2 owned-fields sweep covers the values; here the
         // raw bytes prove the offsets (book@1939, red@2042).
@@ -3661,6 +3680,8 @@ mod tests {
         let tail_at = ptr1 - flags_tail(VER).len();
         assert_eq!(buf[tail_at + 1939], 1, "combatBookWasUsed at tail 1939");
         assert_eq!(buf[tail_at + 2042], 1, "unlockedSlimeRedSpawn at tail 2042");
+        // W4-g15 lane 5: the copper byte at tail 2044 (yellow@2043 stays 0).
+        assert_eq!(buf[tail_at + 2044], 1, "unlockedSlimeCopperSpawn at tail 2044");
     }
 
     // --- S1-A-7: the C#-generated world (real genRand) -----------------------

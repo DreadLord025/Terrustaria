@@ -239,7 +239,7 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(world.unlocked_slime_rainbow_spawn); // unlockedSlimeRainbowSpawn
     w.boolean(world.unlocked_slime_red_spawn); // unlockedSlimeRedSpawn
     w.boolean(false); // unlockedSlimeYellowSpawn
-    w.boolean(false); // unlockedSlimeCopperSpawn
+    w.boolean(world.unlocked_slime_copper_spawn); // unlockedSlimeCopperSpawn (W4-g15 lane 5)
     // WorldFile.cs:1416-1423: the moondial, the forced seasons and the secret
     // seeds — the seasons/seeds have no World store (the port's `micro_seeds`
     // bitmask rides the `.trwld` v12 tail only, `save.rs:382-383`); the two
@@ -635,7 +635,8 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         r.skip(3)?; // unlockedSlimeGreen/Old/Purple
         world.unlocked_slime_rainbow_spawn = r.bool()?; // unlockedSlimeRainbowSpawn
         world.unlocked_slime_red_spawn = r.bool()?; // unlockedSlimeRedSpawn
-        r.skip(2)?; // unlockedSlimeYellow/Copper
+        r.skip(1)?; // unlockedSlimeYellow
+        world.unlocked_slime_copper_spawn = r.bool()?; // unlockedSlimeCopperSpawn (W4-g15 lane 5)
     }
     // WorldFile.cs:2306-2319 — the moondial, the forced seasons, the secret seeds, the
     // meteor shower, the team spawns and the extra spawn points.
