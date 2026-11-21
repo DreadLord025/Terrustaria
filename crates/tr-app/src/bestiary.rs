@@ -2208,6 +2208,35 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Shimmerfly",
     },
+    // The gold critters (W4-c9): the populator registers each
+    // (`BestiaryDatabaseNPCsPopulator.cs`'s
+    // `AddEmptyEntries_CrittersAndEnemies_Automated` — the
+    // `CountsAsACritter` set). The names ride the lang table
+    // (`lang_tables.rs`'s 442/446/447 rows).
+    BestiaryEntryDef {
+        credit_id: "GoldBird",
+        net_id: 442,
+        kind: NpcKind::GoldBird,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Bird",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldGrasshopper",
+        net_id: 446,
+        kind: NpcKind::GoldGrasshopper,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Grasshopper",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldMouse",
+        net_id: 447,
+        kind: NpcKind::GoldMouse,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Mouse",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

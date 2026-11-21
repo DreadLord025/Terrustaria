@@ -3582,6 +3582,17 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // The gold critters (W4-c9): the GoldGrasshopper/GoldMouse plant on
+        // the column surface like the wave-A walkers (their machines take
+        // over on the first tick); the GoldBird rides the hover ctor (the
+        // aiStyle-24 flyer's open-air seed, the fishron-hazard shape).
+        crate::npc::NpcKind::GoldGrasshopper | crate::npc::NpcKind::GoldMouse => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::GoldBird => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

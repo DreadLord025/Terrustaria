@@ -488,6 +488,9 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // 359/360/655/677 has a `DebuffImmunitySets` row (`NPCID.cs:6075+`
         // carries no entry for them) — the null-row else-branch.
         NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail | NpcKind::Shimmerfly => &[],
+        // The gold critters (W4-c9): each carries the Confused (31)
+        // `SpecificallyImmuneTo` row (`NPCID.cs:8612-8652` — 442/446/447).
+        NpcKind::GoldBird | NpcKind::GoldGrasshopper | NpcKind::GoldMouse => &[31],
     }
 }
 

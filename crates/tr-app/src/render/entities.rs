@@ -516,6 +516,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(FISHRON_SHEETS)
             .chain(SMALL_KIND_SHEETS)
             .chain(SNAIL_SHEETS)
+            .chain(GOLD_CRITTER_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1253,6 +1254,12 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
 /// Shimmerfly (677) each draw their own `NPC_<id>` art. Keyed by the
 /// vanilla net id ([`NpcKind::net_id`]) in [`NpcAssets::npc_sheet`].
 pub(crate) const SNAIL_SHEETS: &[u32] = &[359, 360, 655, 677];
+
+/// The gold critters (W4-c9): the Gold Bird (442), the Gold Grasshopper
+/// (446) and the Gold Mouse (447) each draw their own `NPC_<id>` art.
+/// Keyed by the vanilla net id ([`NpcKind::net_id`]) in
+/// [`NpcAssets::npc_sheet`].
+pub(crate) const GOLD_CRITTER_SHEETS: &[u32] = &[442, 446, 447];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3189,6 +3196,16 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 scaled_anchor(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // W4-c9 — the gold critters draw their own sheets
+            // (`GOLD_CRITTER_SHEETS`) at `Main.npcFrameCount[type]` rows
+            // (442 five, 446 two, 447 six — `Main.cs:67128`) with the
+            // generic centred anchor (the pumpkin arm's shape; scale 1).
+            // The GoldBird rotates (the vx*0.1 tilt, the whitelist below);
+            // the grasshopper/mouse do not.
+            NpcKind::GoldBird | NpcKind::GoldGrasshopper | NpcKind::GoldMouse => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3345,6 +3362,10 @@ pub(crate) fn draw_npcs(
                     | NpcKind::GlowingSnail
                     | NpcKind::MagmaSnail
                     | NpcKind::Shimmerfly
+                    // W4-c9 — the GoldBird's `rotation = vx * 0.1` tilt
+                    // (`NPC.cs:73634`). The grasshopper/mouse write no
+                    // rotation.
+                    | NpcKind::GoldBird
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

@@ -1602,6 +1602,12 @@ fn portrait_data(
         (NpcKind::Snail, _) => (sheet_i, 12.0, 12.0, 12.0, white),
         (NpcKind::GlowingSnail | NpcKind::MagmaSnail, _) => (sheet_i, 14.0, 14.0, 14.0, white),
         (NpcKind::Shimmerfly, _) => (sheet_i, 10.0, 10.0, 10.0, white),
+        // W4-c9 — the gold critters: the portrait rests each kind's
+        // `SetDefaults` box (`NPC.cs:14249-14250` / `:14305-14306` /
+        // `:14320-14321`), the wave-A shape.
+        (NpcKind::GoldBird, _) => (sheet_i, 14.0, 14.0, 14.0, white),
+        (NpcKind::GoldGrasshopper, _) => (sheet_i, 10.0, 14.0, 10.0, white),
+        (NpcKind::GoldMouse, _) => (sheet_i, 12.0, 14.0, 12.0, white),
     }
 }
 
