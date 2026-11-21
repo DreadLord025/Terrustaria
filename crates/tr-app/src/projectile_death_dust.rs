@@ -265,26 +265,8 @@ fn dd2_explosion_dust(
         d.no_gravity = true;
         d.velocity *= 3.0;
     }
-    // `:71888-71900` — the trailing gore loop, draws-only census: the
-    // position X/Y Next(100) pair, the Next(61,64) TYPE argument (evaluated
-    // before the call), then the NewGore kicks (Y then X,
-    // `Gore.cs:1327-1328`), the scatter RotatedByRandom + NextDouble
-    // radius, the Next(2) lift gate and the two Next(-10,11) velocity
-    // nudges. The bodies stay the gore lane's.
-    for _ in 0..ngore {
-        let _ = rng.next_max(100);
-        let _ = rng.next_max(100);
-        let _ = rng.next_range(61, 64);
-        let _ = rng.next_range(10, 31);
-        let _ = rng.next_range(-20, 21);
-        let _ = rotated_by_random(rng, Vec2::Y, pi);
-        let _ = rng.next_double();
-        if rng.next_max(2) == 0 {
-            // The −30 lift is a body write; the gate draw stays.
-        }
-        let _ = rng.next_range(-10, 11);
-        let _ = rng.next_range(-10, 11);
-    }
+    // `:71888-71900` — the trailing gore loop (scatter + lift variant).
+    gore_census(rng, ngore, true, true);
 }
 
 /// The trail-position dust PAIR (`:77064-77073`): for `i in start..end`, two
@@ -482,6 +464,9 @@ pub(crate) struct DeathSnapshot {
     /// locally-owned slots, so owner == myPlayer folds — the beenade
     /// precedent); no player → false.
     pub apprentice_t3: bool,
+    /// `this.MaxUpdates` (`extraUpdates + 1`) — the 634/635 lunar-flare
+    /// death's kick vector scales by it (`:72004`).
+    pub max_updates: f32,
 }
 
 impl DeathSnapshot {
@@ -504,6 +489,7 @@ impl DeathSnapshot {
             old_pos: p.pos,
             local_ai1: p.local_ai[1],
             apprentice_t3: false,
+            max_updates: (p.extra_updates + 1) as f32,
         }
     }
 }
@@ -1970,6 +1956,247 @@ fn death_bursts(
                 d.velocity *= 3.0;
             }
         }
+        // `:71995-72050` — the 634/635 lunar flare: resize 50×50 centred,
+        // kick = (rot−π/2).ToRotationVector2()×|vel|×MaxUpdates (635: ×0.5).
+        // 40 PAIRS: a SelectRandom type (634: 242/73/72/71/255, 635:
+        // 242/59/88 — the head ALSO rolls one, consumed before the resize)
+        // dust alpha 200 scale 1.7/3.7 Y-scatter noGravity vel×3 + kick×
+        // NextFloat; then type 255/88 dust alpha 100 scale 0.8/1.5
+        // Y-scatter vel×2 noGravity fadeIn 1 Crimson×0.5 + kick×NextFloat.
+        // Then 20× type 255/88 alpha 0 scale 2/2.2 X-scatter÷3 noGravity
+        // vel×0.5 + kick×(0.6+0.6×NextFloat).
+        634 | 635 => {
+            let is635 = s.kind == 635;
+            // The head roll (`:71997`) runs for BOTH kinds; the 635 then
+            // RE-rolls the 3-set (`:72009`) — two draws for the 635.
+            let _ = rng.next_from_slice(&[242, 73, 72, 71, 255]);
+            if is635 {
+                let _ = rng.next_from_slice(&[242, 59, 88]);
+            }
+            let mid_type = if is635 { 88 } else { 255 };
+            let (big_scale, mid_scale, tail_scale) = if is635 { (3.7, 1.5, 2.2) } else { (1.7, 0.8, 2.0) };
+            let mut kick = rotation_vector(s.rot - std::f32::consts::FRAC_PI_2) * s.vel.length() * s.max_updates;
+            if is635 {
+                kick *= 0.5;
+            }
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let pos = center - Vec2::splat(25.0);
+            let vel_rot = to_rotation(s.vel);
+            for _ in 0..40 {
+                // `:72024-72028` — the 5-set roll, then the 635's 3-set
+                // re-roll (two draws per pair for the 635).
+                let mut dust_type = rng.next_from_slice(&[242, 73, 72, 71, 255]);
+                if is635 {
+                    dust_type = rng.next_from_slice(&[242, 59, 88]);
+                }
+                let idx = scatter_y_dust(dust, rng, ctx, world, pos, 50, center, dust_type, 200, big_scale, 2.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 3.0;
+                d.velocity += kick * rng.next_float();
+                let idx = scatter_y_dust(dust, rng, ctx, world, pos, 50, center, mid_type, 100, mid_scale, 2.0);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+                d.fade_in = 1.0;
+                d.color = crimson_half();
+                d.velocity += kick * rng.next_float();
+            }
+            for _ in 0..20 {
+                let idx = scatter_x_dust(dust, rng, ctx, world, pos, 50, center, vel_rot, mid_type, 0, tail_scale, 3.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 0.5;
+                d.velocity += kick * (0.6 + 0.6 * rng.next_float());
+            }
+        }
+        // `:72094-72125` — the 645: flag8 = SolidTile(pos/16); 4× dust-31
+        // alpha 100 scale 1.5; 4 PAIRS dust-229 (alpha 0 scale 2.5 noGravity
+        // vel×3, then alpha 100 scale 1.5 vel×2 noGravity), flag8 → noLight
+        // on both; then ONE gore (draws-only census, no scatter/lift).
+        645 => {
+            let flag8 = crate::projectile::solid_tile(world, s.pos.x as i32 / 16, s.pos.y as i32 / 16);
+            for _ in 0..4 {
+                dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 31, 0.0, 0.0, 100, Color::default(), 1.5);
+            }
+            for _ in 0..4 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 229, 0.0, 0.0, 0, Color::default(), 2.5);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 3.0;
+                if flag8 {
+                    d.no_light = true;
+                }
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 229, 0.0, 0.0, 100, Color::default(), 1.5);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+                if flag8 {
+                    d.no_light = true;
+                }
+            }
+            gore_census(rng, 1, false, false);
+        }
+        // `:72226-72277` — the 661 nebula blaze explosion: resize 160×160
+        // centred; the spawn box is Center−(20,20) 40×40 (NOT the resized
+        // box), the scatter radius num185/2 = 20. 4× dust-240 alpha 100
+        // scale 1.5 Y-scatter (gravity ON); 20 PAIRS dust-62 (alpha 200
+        // scale 3.7 noGravity noLight vel×3 + DirectionTo(dust pos)×(2+
+        // NextFloat×4); then alpha 100 scale 1.5 vel×2 noGravity fadeIn 1
+        // Crimson×0.5 noLight + DirectionTo×8); 20× dust-62 alpha 0 scale
+        // 2.7 X-scatter noGravity noLight vel×3 + DirectionTo×2; 70×
+        // dust-240 alpha 0 scale 1.5 X-scatter noGravity vel×3 +
+        // DirectionTo×3. DirectionTo = Normalize(dest − Center)
+        // (`Entity.cs:207`), zero-safe.
+        661 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let pos = center - Vec2::splat(20.0);
+            let vel_rot = to_rotation(s.vel);
+            for _ in 0..4 {
+                scatter_y_dust(dust, rng, ctx, world, pos, 40, center, 240, 100, 1.5, 2.0);
+            }
+            for _ in 0..20 {
+                let idx = scatter_y_dust(dust, rng, ctx, world, pos, 40, center, 62, 200, 3.7, 2.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.no_light = true;
+                d.velocity *= 3.0;
+                let dir = safe_normalize(d.position - center);
+                d.velocity += dir * (2.0 + rng.next_float() * 4.0);
+                let idx = scatter_y_dust(dust, rng, ctx, world, pos, 40, center, 62, 100, 1.5, 2.0);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+                d.fade_in = 1.0;
+                d.color = crimson_half();
+                d.no_light = true;
+                let dir = safe_normalize(d.position - center);
+                d.velocity += dir * 8.0;
+            }
+            for _ in 0..20 {
+                let idx = scatter_x_dust(dust, rng, ctx, world, pos, 40, center, vel_rot, 62, 0, 2.7, 2.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.no_light = true;
+                d.velocity *= 3.0;
+                let dir = safe_normalize(d.position - center);
+                d.velocity += dir * 2.0;
+            }
+            for _ in 0..70 {
+                let idx = scatter_x_dust(dust, rng, ctx, world, pos, 40, center, vel_rot, 240, 0, 1.5, 2.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 3.0;
+                let dir = safe_normalize(d.position - center);
+                d.velocity += dir * 3.0;
+            }
+        }
+        // `:72278-72326` — the 617 nebula arcanum explosion: resize 176×176
+        // centred; 4× dust-240 alpha 100 scale 1.5 Y-scatter÷2 (gravity ON);
+        // 30 PAIRS dust-62 alpha 200 scale 3.7 noGravity vel×3 + dust-90
+        // alpha 100 scale 1.5 vel×2 noGravity fadeIn 1 Crimson×0.5; 10×
+        // dust-62 alpha 0 scale 2.7 X-scatter÷2 noGravity vel×3; 10×
+        // dust-240 alpha 0 scale 1.5 X-scatter÷2 noGravity vel×3; 2 gores
+        // (scatter, no lift). The owner-gated 618 chain-kill + the 620
+        // spawn burst (`:72327-72372`) stay unported state — their draws
+        // are NOT consumed here (the spawn lane owns them when it lands).
+        617 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let pos = center - Vec2::splat(88.0);
+            let vel_rot = to_rotation(s.vel);
+            for _ in 0..4 {
+                scatter_y_dust(dust, rng, ctx, world, pos, 176, center, 240, 100, 1.5, 2.0);
+            }
+            for _ in 0..30 {
+                let idx = scatter_y_dust(dust, rng, ctx, world, pos, 176, center, 62, 200, 3.7, 2.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 3.0;
+                let idx = scatter_y_dust(dust, rng, ctx, world, pos, 176, center, 90, 100, 1.5, 2.0);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+                d.fade_in = 1.0;
+                d.color = crimson_half();
+            }
+            for _ in 0..10 {
+                let idx = scatter_x_dust(dust, rng, ctx, world, pos, 176, center, vel_rot, 62, 0, 2.7, 2.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 3.0;
+            }
+            for _ in 0..10 {
+                let idx = scatter_x_dust(dust, rng, ctx, world, pos, 176, center, vel_rot, 240, 0, 1.5, 2.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 3.0;
+            }
+            gore_census(rng, 2, true, false);
+        }
+        // `:72394-72417` — the 620/618 nebula spark: 10× dust-(int)ai[0]
+        // speed vel×0.1 scale 0.5, the crystal-spark Next(3) gate (0 →
+        // fadeIn 0.75+Next(-10,11)×0.01, scale 0.25+×0.005, type++; else
+        // scale 1+×0.01), noGravity vel×1.25 −= oldVel/10. The 618's
+        // ai[0]=86 write happens BEFORE the dust (`:72396-72399`) — the
+        // snapshot's ai0 is pre-write, so the arm uses 86 for the 618.
+        620 | 618 => {
+            let dust_type = if s.kind == 618 { 86 } else { s.ai0 as i32 };
+            crystal_spark_burst(s, dust, rng, ctx, world, 10, dust_type, 0.75, 0.25, 0.005, 1.0, 0.01, 1.25);
+        }
+        // `:72418-72437` — the 619: 20× the 620 shape at fadeIn 1.1 / scale
+        // 0.35+×0.01 / big 1.2 / vel×2.5. The owner-gated 620 spawn burst
+        // (`:72438-72452`) stays unported state (the spawn lane's draws).
+        619 => {
+            crystal_spark_burst(s, dust, rng, ctx, world, 20, s.ai0 as i32, 1.1, 0.35, 0.01, 1.2, 0.01, 2.5);
+        }
+        // `:72454-72469` — the 601 portal: colour GetPortalColor(owner,
+        // (int)ai[0]) with A=255 (single-player: portal!=0 → hsl(0.52,1,0.6)
+        // else hsl(0.12,1,0.5)); 6× dust-263 NewDust at Center 0×0 defaults,
+        // per dust the kick UnitY.RotatedByRandom(τ)×(3×NextFloat) BEFORE
+        // the spawn, then position=Center, vel=kick+vel/5, colour, scale 2
+        // noLight noGravity.
+        601 => {
+            let mut color = portal_color(s.ai0 as i32);
+            color.a = 255;
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let tau = std::f32::consts::PI * 2.0;
+            for _ in 0..6 {
+                let kick = rotated_by_random(rng, Vec2::Y, tau) * (3.0 * rng.next_float());
+                let idx = dust.new_dust(rng, ctx, world, center, 0, 0, 263, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.position = center;
+                d.velocity = kick + s.vel / 5.0;
+                d.color = color;
+                d.scale = 2.0;
+                d.no_light = true;
+                d.no_gravity = true;
+            }
+        }
+        // `:72470-72502` — the 596: resize 60×60 centred (the expert damage
+        // 22 vs 30 + Damage stay unported state); 4× dust-31 alpha 100
+        // scale 1.5 Y-scatter÷2 (gravity ON); 20× dust-27 alpha 0 scale 2.5
+        // Y-scatter÷2 noGravity vel×2; 10× dust-31 alpha 0 scale 1.5
+        // X-scatter÷2 noGravity vel×2.
+        596 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let pos = center - Vec2::splat(30.0);
+            let vel_rot = to_rotation(s.vel);
+            for _ in 0..4 {
+                scatter_y_dust(dust, rng, ctx, world, pos, 60, center, 31, 100, 1.5, 2.0);
+            }
+            for _ in 0..20 {
+                let idx = scatter_y_dust(dust, rng, ctx, world, pos, 60, center, 27, 0, 2.5, 2.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 2.0;
+            }
+            for _ in 0..10 {
+                let idx = scatter_x_dust(dust, rng, ctx, world, pos, 60, center, vel_rot, 31, 0, 1.5, 2.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 2.0;
+            }
+        }
         _ => {}
     }
 }
@@ -2214,6 +2441,99 @@ fn crystal_spark_burst(
     }
 }
 
+/// XNA `Color.Crimson` = (220, 20, 60, 255).
+const CRIMSON: Color = Color { r: 220, g: 20, b: 60, a: 255 };
+
+/// `Color.Crimson * 0.5f` — the XNA byte multiply truncates (`ui::color::mul`):
+/// (110, 10, 30, 127). The 634/635/661/617 mid-loop dust colour.
+fn crimson_half() -> Color {
+    let m = crate::ui::color::mul([CRIMSON.r, CRIMSON.g, CRIMSON.b, CRIMSON.a], 0.5);
+    Color::new(m[0], m[1], m[2], m[3])
+}
+
+/// The resize-centred explosion's Y-scatter dust (`:72241` et al.): spawn at
+/// `pos` box `size`, then position = Center + UnitY.RotatedByRandom(π) ×
+/// NextDouble × size/div. Returns the slot index for the caller's writes.
+fn scatter_y_dust(
+    dust: &mut DustPool,
+    rng: &mut UnifiedRandom,
+    ctx: &SpawnCtx,
+    world: &World,
+    pos: Vec2,
+    size: i32,
+    center: Vec2,
+    dust_type: i32,
+    alpha: i32,
+    scale: f32,
+    div: f32,
+) -> usize {
+    let idx = dust.new_dust(rng, ctx, world, pos, size, size, dust_type, 0.0, 0.0, alpha, Color::default(), scale);
+    let scatter = rotated_by_random(rng, Vec2::Y, std::f32::consts::PI);
+    dust.slot_mut(idx).position = center + scatter * rng.next_double() as f32 * size as f32 / div;
+    idx
+}
+
+/// The X-scatter variant (`:72263` et al.): UnitX.RotatedByRandom(π)
+/// .RotatedBy(velRot) × size/div, no NextDouble radius.
+fn scatter_x_dust(
+    dust: &mut DustPool,
+    rng: &mut UnifiedRandom,
+    ctx: &SpawnCtx,
+    world: &World,
+    pos: Vec2,
+    size: i32,
+    center: Vec2,
+    vel_rot: f32,
+    dust_type: i32,
+    alpha: i32,
+    scale: f32,
+    div: f32,
+) -> usize {
+    let idx = dust.new_dust(rng, ctx, world, pos, size, size, dust_type, 0.0, 0.0, alpha, Color::default(), scale);
+    let scatter = rotated_by_random(rng, Vec2::X, std::f32::consts::PI);
+    dust.slot_mut(idx).position = center + rotated_by(scatter, vel_rot) * size as f32 / div;
+    idx
+}
+
+/// `Kill()`'s trailing gore loop, draws-only census (`:72120-72123` /
+/// `:72319-72325` / `:71890-71899`): per gore the position Next(100) X/Y
+/// pair, the Next(61,64) TYPE argument (before the call), the NewGore kicks
+/// Next(10,31) Y then Next(-20,21) X (`Gore.cs:1327-1328`); `scatter` adds
+/// the RotatedByRandom(π)+NextDouble position scatter and `lift` the
+/// Next(2) −30 gate; then the two Next(-10,11) velocity nudges. The bodies
+/// stay the gore lane's (the beenade precedent).
+fn gore_census(rng: &mut UnifiedRandom, count: i32, scatter: bool, lift: bool) {
+    for _ in 0..count {
+        let _ = rng.next_max(100);
+        let _ = rng.next_max(100);
+        let _ = rng.next_range(61, 64);
+        let _ = rng.next_range(10, 31);
+        let _ = rng.next_range(-20, 21);
+        if scatter {
+            let _ = rotated_by_random(rng, Vec2::Y, std::f32::consts::PI);
+            let _ = rng.next_double();
+        }
+        if lift && rng.next_max(2) == 0 {
+            // The −30 lift is a body write; the gate draw stays.
+        }
+        let _ = rng.next_range(-10, 11);
+        let _ = rng.next_range(-10, 11);
+    }
+}
+
+/// `PortalHelper.GetPortalColor(player, portal)` (`PortalHelper.cs:378-
+/// 392`), single-player (`Main.netMode == 0`): portal != 0 →
+/// hslToRgb(0.52, 1, 0.6), else hslToRgb(0.12, 1, 0.5); A = 66 (the 601
+/// caller overrides A to 255). No draws.
+fn portal_color(portal: i32) -> Color {
+    let c = if portal != 0 {
+        crate::ui::color::hsl_to_rgb(0.52, 1.0, 0.6, 66)
+    } else {
+        crate::ui::color::hsl_to_rgb(0.12, 1.0, 0.5, 66)
+    };
+    Color::new(c[0], c[1], c[2], c[3])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2235,6 +2555,7 @@ mod tests {
             old_pos: Vec2::new(100.0, 100.0),
             local_ai1: 0.0,
             apprentice_t3: false,
+            max_updates: 1.0,
         }
     }
 
@@ -3205,5 +3526,140 @@ mod tests {
         let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(active.len(), 10);
         assert!(active.iter().all(|d| d.dust_type == 229 && d.no_gravity));
+    }
+
+    /// The 634/635 lunar flare: 40 pairs + 20 tail = 100 dust. The 634's
+    /// big dust picks the 5-set, the 635's the 3-set (242/59/88); the mid
+    /// dust is 255 (634) / 88 (635) with Crimson×0.5 = (110,10,30,127).
+    #[test]
+    fn w4_g65_the_634_635_lunar_flare() {
+        let w = world();
+        for kind in [634u16, 635] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 100, "kind {kind}");
+            // Every big dust picks its kind's set (the mid type can also
+            // appear there, so pin membership, not counts).
+            let big_set: &[i32] = if kind == 635 { &[242, 59, 88] } else { &[242, 73, 72, 71, 255] };
+            assert!(active.iter().all(|d| big_set.contains(&d.dust_type)), "kind {kind}");
+            let mid: Vec<_> = active.iter().filter(|d| d.color == Color::new(110, 10, 30, 127)).collect();
+            assert_eq!(mid.len(), 40, "kind {kind}");
+            assert!(mid.iter().all(|d| d.fade_in == 1.0 && d.no_gravity));
+        }
+    }
+
+    /// The 645: 4 dust-31 + 8 dust-229 = 12 dust (the gore census draws
+    /// no dust); the 229s are all noGravity.
+    #[test]
+    fn w4_g65_the_645_burst() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(645)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 12);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 31).count(), 4);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 229).count(), 8);
+        assert!(active.iter().filter(|d| d.dust_type == 229).all(|d| d.no_gravity));
+    }
+
+    /// The 661 nebula blaze: 4 + 40 + 20 + 70 = 134 dust; 74 dust-240,
+    /// 60 dust-62; the 4 head dusts keep gravity, the rest noGravity.
+    #[test]
+    fn w4_g65_the_661_nebula_blaze() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(661)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 134);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 240).count(), 74);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 62).count(), 60);
+        assert!(active[..4].iter().all(|d| !d.no_gravity));
+        assert!(active[4..].iter().all(|d| d.no_gravity));
+        assert_eq!(active.iter().filter(|d| d.color == Color::new(110, 10, 30, 127)).count(), 20);
+    }
+
+    /// The 617 nebula arcanum: 4 + 60 + 10 + 10 = 84 dust; 14 dust-240,
+    /// 40 dust-62, 30 dust-90 (Crimson×0.5, fadeIn 1).
+    #[test]
+    fn w4_g65_the_617_nebula_arcanum() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(617)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 84);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 240).count(), 14);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 62).count(), 40);
+        let mid: Vec<_> = active.iter().filter(|d| d.dust_type == 90).collect();
+        assert_eq!(mid.len(), 30);
+        assert!(mid.iter().all(|d| d.fade_in == 1.0 && d.color == Color::new(110, 10, 30, 127)));
+    }
+
+    /// The 620/618/619 nebula sparks: the crystal-spark shape at the
+    /// ai[0] type (618 folds 86 — the pre-dust ai write). Counts 10/10/20.
+    #[test]
+    fn w4_g65_the_nebula_sparks() {
+        let w = world();
+        let mut s = snap(620);
+        s.ai0 = 86.0;
+        let mut dust = DustPool::new();
+        drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 10);
+        assert!(active.iter().all(|d| matches!(d.dust_type, 86 | 87) && d.no_gravity));
+        // The 618's ai0 snapshot is pre-write; the arm folds 86.
+        let mut s = snap(618);
+        s.ai0 = 0.0;
+        let mut dust = DustPool::new();
+        drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 10);
+        assert!(active.iter().all(|d| matches!(d.dust_type, 86 | 87)));
+        let mut s = snap(619);
+        s.ai0 = 90.0;
+        let mut dust = DustPool::new();
+        drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 20);
+        assert!(active.iter().all(|d| matches!(d.dust_type, 90 | 91) && d.no_gravity));
+    }
+
+    /// The 601 portal: 6 dust-263 at the centre, scale 2 noLight noGravity,
+    /// A=255; ai0=0 → the orange hsl(0.12,1,0.5) arm, ai0=1 → the blue
+    /// hsl(0.52,1,0.6) arm (the colours differ).
+    #[test]
+    fn w4_g65_the_601_portal() {
+        let w = world();
+        let mut s = snap(601);
+        s.ai0 = 0.0;
+        let mut dust = DustPool::new();
+        drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 6);
+        assert!(active.iter().all(|d| d.dust_type == 263 && d.scale == 2.0 && d.no_light && d.no_gravity && d.color.a == 255));
+        let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+        assert!(active.iter().all(|d| d.position == center));
+        let orange = active[0].color;
+        let mut s = snap(601);
+        s.ai0 = 1.0;
+        let mut dust = DustPool::new();
+        drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_ne!(active[0].color, orange);
+    }
+
+    /// The 596: 4 + 20 + 10 = 34 dust; 14 dust-31, 20 dust-27; the 4 head
+    /// dusts keep gravity.
+    #[test]
+    fn w4_g65_the_596_burst() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(596)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 34);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 31).count(), 14);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 27).count(), 20);
+        assert!(active[..4].iter().all(|d| !d.no_gravity));
+        assert!(active[4..].iter().all(|d| d.no_gravity));
     }
 }

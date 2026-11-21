@@ -39551,6 +39551,47 @@ trail caps + Red + determinism, the 664-family 74/133 counts + type splits
 + determinism (gore census included), the 669 172-count/pair bands, the
 614 10-count — WRITTEN NOT RUN.
 
+### Batch 14 (10 kinds, the lunar/nebula/portal bursts `:71995-72502`)
+
+634/635 (the lunar flare: resize 50×50 centred; kick = (rot−π/2).
+ToRotationVector2()×|vel|×MaxUpdates, 635 ×0.5; the head SelectRandom
+rolls the 5-set for BOTH kinds then the 635 RE-rolls the 3-set — two head
+draws for the 635, same per pair; 40 pairs of big dust alpha 200 scale
+1.7/3.7 Y-scatter noGravity vel×3+kick×NextFloat + mid dust 255/88 alpha
+100 scale 0.8/1.5 vel×2 fadeIn 1 Crimson×0.5+kick×NextFloat; 20 tail mid
+type alpha 0 scale 2/2.2 X-scatter÷3 vel×0.5+kick×(0.6+0.6×NextFloat)),
+645 (flag8 = SolidTile(pos/16); 4× dust-31 alpha 100 + 4 pairs dust-229
+(alpha 0 scale 2.5 vel×3 / alpha 100 scale 1.5 vel×2) noGravity, flag8 →
+noLight; ONE gore draws-only census), 661 (the nebula blaze: resize
+160×160 centred but the spawn box stays Center−(20,20) 40×40, scatter
+radius 20; 4× dust-240 gravity + 20 pairs dust-62 (3.7 noLight vel×3 +
+DirectionTo×(2+NextFloat×4) / 1.5 fadeIn 1 Crimson×0.5 noLight +
+DirectionTo×8) + 20 dust-62 X vel×3+DirectionTo×2 + 70 dust-240 X vel×3+
+DirectionTo×3, all noGravity; DirectionTo = Normalize(dest−Center),
+`Entity.cs:207`), 617 (the nebula arcanum: resize 176×176 centred; 4×
+dust-240 gravity + 30 pairs 62/90 (Crimson×0.5 fadeIn 1) + 10 dust-62 X +
+10 dust-240 X, 2 gores scatter-no-lift; the owner-gated 618 chain-kill +
+620 spawn burst `:72327-72372` stay unported state — their draws NOT
+consumed here, the spawn lane owns them), 620/618 (the nebula spark: the
+crystal-spark shape at (int)ai[0] — the 618's ai[0]=86 write precedes the
+dust so the arm folds 86, the snapshot ai0 is pre-write), 619 (20× the
+spark shape fadeIn 1.1/scale 0.35/big 1.2/vel×2.5; the owner-gated 620
+spawn burst `:72438-72452` stays the spawn lane's), 601 (the portal:
+GetPortalColor(owner,(int)ai[0]) A=255 — single-player portal!=0 →
+hsl(0.52,1,0.6) else hsl(0.12,1,0.5), `PortalHelper.cs:378-392`; 6×
+dust-263 at Center 0×0, kick UnitY.RotatedByRandom(τ)×(3×NextFloat)
+BEFORE the spawn, vel=kick+vel/5 scale 2 noLight noGravity), 596 (resize
+60×60 centred; 4× dust-31 gravity + 20× dust-27 noGravity vel×2 + 10×
+dust-31 X noGravity vel×2; the expert damage 22/30 + Damage stay unported
+state). The `DeathSnapshot` gains `max_updates` (extra_updates+1). The
+module gains `scatter_y_dust`/`scatter_x_dust` (the resize-explosion
+scatter shapes), `gore_census` (the shared draws-only gore loop — the DD2
+helper refactored onto it), `crimson_half` (XNA Crimson×0.5 truncation =
+(110,10,30,127)) and `portal_color`. Witnesses: the 634/635 100-count/set
+membership/Crimson mids, the 645 12-count, the 661 134-count/type split,
+the 617 84-count/90-mids, the nebula spark counts/types (618 folds 86),
+the 601 centre/colour arms, the 596 34-count — WRITTEN NOT RUN.
+
 ### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
 
 A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,
