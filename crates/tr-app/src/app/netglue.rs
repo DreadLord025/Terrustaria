@@ -2270,10 +2270,23 @@ impl App {
             }
             // `case 158`'s client half (`MessageBuffer.cs:4450-4456`):
             // `Main.player[b3].Spawn(PlayerSpawnContext.TeamSwap)` — the
-            // team-swap respawn at the extra spawn point. The port has no
-            // team-based spawn seeds (`teamBasedSpawnsSeed` /
-            // `ExtraSpawnPointManager` unported, the `157` tail's note), so
-            // the arm parks with them (S1-I-4).
+            // team-swap respawn at the extra spawn point. DOCUMENTED SKIP
+            // (W4-g51 id-158 census): the whole feature is netMode+seed-gated
+            // and large. The send is the `157` tail (`MessageBuffer.cs:2355-
+            // 2363`) behind `b == 157 && Main.teamBasedSpawnsSeed` AND a
+            // successful `TryGetExtraSpawnPointForTeam`; the client's Spawn
+            // routes through `Spawn_SetPositionAtTeamSpawn`
+            // (`Player.cs:37993-38011`), itself `teamBasedSpawnsSeed`-gated.
+            // The spawn points come from `ExtraSpawnPointManager` (446 lines:
+            // the skyblock/roundLandmass/extraLiquid landmass scans,
+            // `GenerateExtraSpawns_Setup` `:40-82`, the per-team Point[] the
+            // worldgen fills) — a secret-seed worldgen feature
+            // (`MicroSeedFlags::TEAM_BASED_SPAWNS`, bit 33) with no ported
+            // generator. The port's `teamBasedSpawnsSeed` reads false
+            // (`pvp_icon_state`'s note), so the arm is unreachable until the
+            // seed + manager + Spawn team-position land (M5-seed rows). The
+            // `7 WorldInfo` body already carries `extra_spawn_points`
+            // (`ExtraSpawnPointManager.Write`, the empty Vec today).
             S2c::ExtraSpawnLoaded { .. } => {}
             // `case 162`'s client half (`MessageBuffer.cs:1819-1824`):
             // `NPC.AckDamage` pops `NPC.pendingDamages[0]` FIFO
