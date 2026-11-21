@@ -35949,7 +35949,7 @@ writes, `can_hit`'s 9-arg shape, `UnifiedRandom`'s Clone+PartialEq). The
 
 ## The waterfowl wiring (W4-c10, task/W4-c10-style68-waterfowl, 2026-11-21, code-only mode)
 
-Two phases on the branch; witnesses WRITTEN NOT RUN — **no cargo, no
+Three phases on the branch; witnesses WRITTEN NOT RUN — **no cargo, no
 tests, no compiler invoked**.
 
 **Phase 1 — the eight kinds.** ALL EIGHT rows land (not just the four
@@ -36025,6 +36025,34 @@ read/grep (the `Style68Ctx`/`Style68Outcome` shapes, the
 `ProjData`'s tuple unpacking, `DropRng`'s two methods, the
 `pub use data::*` re-export, `app.player_name`'s `pub(crate)`). All
 witnesses WRITTEN NOT RUN — **no build/tests were run**.
+
+**Phase 3 — the bestiary portrait close-out.** A scripted exhaustive-match
+scan (every `match` over `NpcKind` without a `_` arm, depth-tracked) found
+the FIRST wiring pass had missed ONE: `ui/bestiary.rs::portrait_data`
+(the `(entry.kind, entry.variant)` match, 215 arms, no catch-all) — the
+eight new variants made it non-exhaustive (E0004). The two grouped arms
+land there: the walkers `(Duck | DuckWhite | Seagull | Grebe, _)` and the
+swimmers `(Duck2 | DuckWhite2 | Seagull2 | Grebe2, _)`, each
+`frame_h = entry_sheet.height / 15` (the `Main.npcFrameCount[type]` row,
+the small-kinds `sheet.height / count` shape) over the `SetDefaults` box
+(22x26 walkers / 28x22 swimmers). The same scan surfaced the parallel
+TABLE drift: phase 1 appended the eight sheets to the
+`bestiary_npc_sheets` vec (181 → 189) but left `BESTIARY_NPC_SHEET_IDS`
+at `[u16; 181]`, so `bestiary_sheet_index` resolved no slot for the eight
+waterfowl net ids (the portraits would draw nothing and
+`every_catalog_entry_survives_the_portrait_arm` would fail its
+`entry_sheet == tabled` pin). The id table grows to `[u16; 189]` with
+`362, 363, 364, 365, 602, 603, 608, 609` appended last — a scripted
+element-by-element compare confirms the table and the vec agree on all
+189 slots (the order-table invariant the §15 bug report guards). The
+remaining exhaustive matches were re-verified covered (the `find_frame`
+match's two grouped waterfowl arms, `to_u16`/`from_u16` bijection free of
+duplicates, the G6 render-key rows injective). 1 witness (the eight
+portrait boxes + the 448/15 frame height + the table/vec length parity).
+The 1080 `Kill()` hook's Stinky 120/600 (`Projectile.cs:70926-70935`),
+the Item177 cue and the 30-dust splat stay folded (the module's
+documented kill = deactivate; the buff/sound/dust tails are the
+projectile-effects waves' rows). ROADMAP's aiStyle-68 row flips to WIRED.
 
 ## The mana machinery (S1-P-i19)
 

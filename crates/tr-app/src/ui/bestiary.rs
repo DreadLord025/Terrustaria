@@ -1595,6 +1595,25 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        // W4-c10 — the waterfowl family's portraits: the sheet's own row
+        // height over `Main.npcFrameCount[type]` = 15 (`Main.cs:67082`),
+        // the `SetDefaults` box the anchor rests on — the walkers 22x26
+        // (`NPC.cs:13615-13616`/`:13639-13640`/`:16741-16742`/`:16811-
+        // 16812`), the swimmers 28x22 (`:13627-13628`/`:13651-13652`/
+        // `:16753-16754`/`:16823-16824`). The small-kinds precedent: the
+        // frame height rides the sheet, the box is the unscaled size.
+        (NpcKind::Duck | NpcKind::DuckWhite | NpcKind::Seagull | NpcKind::Grebe, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 22.0, 26.0, white)
+        }
+        (NpcKind::Duck2 | NpcKind::DuckWhite2 | NpcKind::Seagull2 | NpcKind::Grebe2, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(22.0);
+            (sheet_i, h, 28.0, 22.0, white)
+        }
     }
 }
 
@@ -2018,6 +2037,52 @@ mod tests {
         assert_eq!(sheet.height, 8 * 56);
         let (_sheet_i, frame_h, w, h, _tint) = portrait_data(entry, &lk);
         assert_eq!((frame_h, w, h), (56.0, 22.0, 56.0));
+    }
+
+    /// W4-c10 — the waterfowl family's portrait arms: the eight entries
+    /// resolve their own sheet slot (the `BESTIARY_NPC_SHEET_IDS` table
+    /// grew 181 → 189 to match the vec), the frame height rides the
+    /// 15-row strip (`Main.npcFrameCount`, `Main.cs:67082`) and the anchor
+    /// box is the `SetDefaults` size — walkers 22x26, swimmers 28x22
+    /// (`NPC.cs:13615-13660`/`:16741-16762`/`:16811-16832`). The fixture
+    /// sheet is 448 px tall (8×56), so the 15-row frame height is
+    /// 448/15 — the small-kinds `sheet.height / count` shape. WRITTEN,
+    /// NOT RUN (code-only mode).
+    #[test]
+    fn w4_c10_the_waterfowl_portraits_rest_their_set_defaults_boxes() {
+        let lk = full_bestiary_lookups();
+        // (net id, box w, box h) — the walkers then the swimmers.
+        let rows = [
+            (362, 22.0, 26.0),
+            (363, 28.0, 22.0),
+            (364, 22.0, 26.0),
+            (365, 28.0, 22.0),
+            (602, 22.0, 26.0),
+            (603, 28.0, 22.0),
+            (608, 22.0, 26.0),
+            (609, 28.0, 22.0),
+        ];
+        for (net_id, bw, bh) in rows {
+            let entry = crate::bestiary::ENTRIES
+                .iter()
+                .find(|e| e.net_id == net_id)
+                .unwrap_or_else(|| panic!("net {net_id} waterfowl entry"));
+            // The sheet slot resolves (the table carries the id now).
+            let slot = lk
+                .bestiary_sheet_index(net_id as u16)
+                .unwrap_or_else(|| panic!("net {net_id} sheet slot"));
+            assert!(slot < crate::assets::BESTIARY_NPC_SHEET_IDS.len());
+            assert!(entry_sheet(&lk, entry).is_some(), "net {net_id} sheet");
+            let (_sheet_i, frame_h, w, h, tint) = portrait_data(entry, &lk);
+            assert_eq!((w, h), (bw, bh), "net {net_id} box");
+            assert_eq!(frame_h, 448.0 / 15.0, "net {net_id} the 15-row frame");
+            assert!(tint.iter().all(|c| c.is_finite()), "net {net_id} tint");
+        }
+        // The table and the vec stay the same length (the drift guard).
+        assert_eq!(
+            lk.bestiary_npc_sheets.len(),
+            crate::assets::BESTIARY_NPC_SHEET_IDS.len()
+        );
     }
 
     #[test]
