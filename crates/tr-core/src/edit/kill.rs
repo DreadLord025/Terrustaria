@@ -32,6 +32,33 @@ pub struct ObjectDrop {
     pub item: Option<i32>,
 }
 
+impl ObjectDrop {
+    /// W4-g78 — the FIX-ONCE centre conversion (research/78 §2). EVERY C#
+    /// `Check*` routine spawns through the obsolete `Item.NewItem(source,
+    /// X, Y, Width, Height, …)` overload (`Item.cs:49649-49652`): the rect
+    /// becomes `center = (X + Width/2, Y + Height/2)` — a 32×32 furniture
+    /// rect centred at `(x*16 + 16, y*16 + 16)`, a 16×16 door rect
+    /// (`DropDoorItem` `WorldGen.cs:69409-69416`) at `(x*16 + 8, y*16 + 8)`.
+    /// The C# `WorldItem` box is 16×16 (`WorldItem.cs:138`), so the drop's
+    /// top-left is `center − 8`. The app spawns the port's 14×14 box at
+    /// `centre − SIZE/2` (the same box-centre convention).
+    ///
+    /// The rect census (research/78 §2): every producer's own `NewItem` is
+    /// 32×32 EXCEPT the closed/open door checks (10/11 — 16×16 via
+    /// `DropDoorItem`) and the on-table 1×1 group (13/33/49/78 —
+    /// `CheckOnTable1x1` `WorldGen.cs:43503-43546` spawns NOTHING itself;
+    /// the drop rides `KillTile`'s per-cell 16×16 `:63955`). The chandelier
+    /// coin arms (`:52913`/`:52929`'s 52×52 at −10,−10 — centre lands at
+    /// +16 anyway) are `PileLootEvent` business, not `ObjectDrop`.
+    pub fn spawn_centre_px(&self) -> (f32, f32) {
+        let half = match self.tile_kind {
+            10 | 11 | 13 | 33 | 49 | 78 => 8.0,
+            _ => 16.0,
+        };
+        (self.x as f32 * 16.0 + half, self.y as f32 * 16.0 + half)
+    }
+}
+
 /// One broken loot pot — `CheckPot`'s tail (`WorldGen.cs:57011-57014`): after
 /// the 2x2 dies, vanilla runs `SpawnThingsFromPot(i, j, num, num2, num4)` at
 /// the check's trigger cell with the pot's style row (`frameY / 36`). The app
@@ -2848,6 +2875,33 @@ mod tests {
     use super::super::{place_item_tile, place_tile};
     use super::*;
     use crate::tile::FLAG_ACTIVE;
+
+    /// W4-g78 FIX-ONCE (research/78 §2) — the `Item.NewItem` rect→centre
+    /// conversion (`Item.cs:49649-49652`): the 32×32 furniture rect at
+    /// `(10*16, 18*16)` centres at `(176, 304)`; the door's 16×16
+    /// (`DropDoorItem` `WorldGen.cs:69413`) at `(168, 296)`; the on-table
+    /// 1×1 group's per-cell `KillTile` 16×16 (`:63955`) the same. The OLD
+    /// top-left feed landed `(161, 288)` — 15 px left / 16 px up.
+    #[test]
+    fn w4_g78_the_object_drop_centre_conversion() {
+        let furniture = ObjectDrop { tile_kind: 21, x: 10, y: 18, item: None };
+        assert_eq!(furniture.spawn_centre_px(), (176.0, 304.0));
+        // Every 32×32 family member shares the +16 centre.
+        for kind in [14u16, 15, 18, 27, 29, 34, 42, 79, 90, 93, 100, 101, 104, 172, 219, 642] {
+            let d = ObjectDrop { tile_kind: kind, x: 10, y: 18, item: None };
+            assert_eq!(d.spawn_centre_px(), (176.0, 304.0), "kind {kind}");
+        }
+        // The doors (10/11) — DropDoorItem's 16×16.
+        for kind in [10u16, 11] {
+            let d = ObjectDrop { tile_kind: kind, x: 10, y: 18, item: None };
+            assert_eq!(d.spawn_centre_px(), (168.0, 296.0), "kind {kind}");
+        }
+        // The on-table 1×1 group (13/33/49/78) — KillTile's per-cell 16×16.
+        for kind in [13u16, 33, 49, 78] {
+            let d = ObjectDrop { tile_kind: kind, x: 10, y: 18, item: None };
+            assert_eq!(d.spawn_centre_px(), (168.0, 296.0), "kind {kind}");
+        }
+    }
 
     /// A tree over a dirt ground: a trunk column of `tree::TREE` cells with
     /// the canopy marker on top.

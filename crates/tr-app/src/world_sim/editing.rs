@@ -5902,6 +5902,10 @@ fn break_drop_events(
     }
     // The cascade's `Check*` records: the check's own `Item.NewItem` (the
     // sunflower's 63) or the object's item through `registry::tile_drop`.
+    // W4-g78 FIX-ONCE PUBLISHED (research/78 §2): these events spawn ~15 px
+    // left/up of the C# rect centre — the one-fix hunk (the provenance tag +
+    // the `spawn_item_drop_centre` drain) is contested here (g85 inserts
+    // INSIDE this loop, g48 copies the drain) and publishes for the merger.
     for drop in &kill.object_drops {
         let id = drop
             .item
