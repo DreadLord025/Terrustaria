@@ -1191,7 +1191,7 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 | 349 | c9 | 349-snail-family-final | DONE 2267c93e8 |
 | 350 | c7 | 350-c7-critter-family-final | DONE 90abc1edf |
 | 351 | e5 | 351-gore-sites-family-bible | DONE 74ae9b085 |
-| 352 | d1 | 246-d1-falling-block-final (47482bdeb) | NEW rename owed |
+| 352 | d1 | 352-d1-falling-block-final | DONE 194c66ce6 (2 code-comment cites owed: data.rs:3611 foreign-dirty + misc.rs:78/844 — code lane) |
 | 353 | d13 | 305-projectile-ai-121-130-band-final (e310bd6e7) | NEW rename owed |
 | 354 | d2 | 283-proj-ai-11-20-retire (a3b364350) | NEW rename owed |
 | 355 | d11 | 245-w4-d11-retire-final (8691a0f33) | NEW rename owed |
