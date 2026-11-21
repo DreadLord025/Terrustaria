@@ -13,7 +13,10 @@
 //! 539/573/574 rows — a different machine, out of NPC scope). The port's
 //! roster has no `NpcKind::SandElemental` — the module lands UNWIRED (the
 //! `npc_ai_style73.rs` precedent), keyed on the vanilla `npc_type` until
-//! the roster wave.
+//! the roster wave. The W4-d33 wiring note (f42's roster-wave routing):
+//! when the kind lands, the axis' 102 arm feeds `cs_id()` to
+//! `style102_step` — the ai_style AXIS dispatch, NOT a kind match (the
+//! 112/113/114 arms' precedent).
 //!
 //! ## The machine
 //!

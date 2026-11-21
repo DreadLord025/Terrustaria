@@ -15,7 +15,10 @@
 //! noGravity, behindTiles, value 400, NPCHit1/NPCDeath1. The port's
 //! roster has no sand-shark kind — the module lands UNWIRED (the
 //! `npc_ai_style73.rs` precedent), keyed on the vanilla `npc_type`
-//! until the roster wave.
+//! until the roster wave. The W4-d33 wiring note (f42's roster-wave
+//! routing): when the kinds land, the axis' 103 arm feeds `cs_id()`
+//! to `style103_step` — the ai_style AXIS dispatch, NOT a kind match
+//! (the 112/113/114 arms' precedent).
 //!
 //! ## The machine
 //!
