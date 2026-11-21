@@ -357,11 +357,57 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             app.world_key = None;
             return true;
         }
-        // The cake (621) right-click rides W4-f34's shared `StationBuff`
-        // arm (`add_buff` then the cue, research/70 §1f — the unpitched
-        // e28 stand-in is f34's recorded deviation; folding this lane's
-        // faithful pitched case-2 play (`play_npc_item_cue(2, …)`) into
-        // that arm is the recorded follow-up, not part of the merge).
+        // W4-f41 final sweep (research/70 §1f follow-up): the cake (621)
+        // right-click rides W4-f34's shared `StationBuff` arm below, with
+        // the faithful pitched case-2 play folded into the 192 row
+        // (`play_npc_item_cue(2, …)` — `SoundID.Item2 = LegacySoundStyle(2,
+        // 2)`, `Player.cs:32604`); the other six rows keep the e28-recorded
+        // unpitched stand-in.
+        edit::TileInteraction::StationBuff {
+            buff_type,
+            buff_time,
+        } => {
+            // W4-e28 + W4-f34 — the seven station-buff arms
+            // (`Player.cs:32594-32635`): `AddBuff(id, time)` THEN the cue at
+            // `base.position` — the PLAYER's position, not the tile's (the
+            // generic cue mapping below plays at the cell, so this arm owns
+            // its own play). The click is consumed (`flag2 = true`). The
+            // cue per arm: 29/348/150 → Item4 (:32598/:32610/:32628),
+            // 192 → Item2 (:32604), 366 → Item179 (:32616, the style's own
+            // `WithVolume(0.6f)`, `SoundID.cs:1563`), 159 → Item37 (:32622,
+            // the case-2 ×0.5 volume tweak, `LegacySoundPlayer.cs:564-565`),
+            // 93 → Item149 (:32634).
+            if let Some(p) = app.player.as_mut() {
+                p.buffs.add_buff(*buff_type, *buff_time);
+                if *buff_type == 192 {
+                    // The cake row plays the FAITHFUL case-2 path (research/
+                    // 70 §1f's recorded follow-up, landed as its own noted
+                    // change): the `GetRandomPitch` NextFloat on the
+                    // audio-only stream, the attenuation gate, then ONE
+                    // `Main.rand.Next(-6, 7) * 0.01` pitch draw
+                    // (`LegacySoundPlayer.cs:632`) on the `UpdatePlayers`
+                    // stream — the tile use runs in `Player.ItemCheck`
+                    // (`Main.cs:17754`). The façade truncates the position
+                    // (`SoundEngine.cs:88-91`).
+                    let (px, py) = (p.x, p.y);
+                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    app.audio.play_npc_item_cue(2, px, py, rng);
+                } else {
+                    // The other six rows keep the e28-recorded unpitched
+                    // stand-in (no case-2 pitch roll); the STATIC volume
+                    // halves ride the volume_scale argument.
+                    let (cue, volume) = match *buff_type {
+                        366 => ("Item_179", 0.6),
+                        159 => ("Item_37", 0.5),
+                        93 => ("Item_149", 1.0),
+                        _ => ("Item_4", 1.0), // 29 / 348 / 150
+                    };
+                    app.audio.play_at(cue, p.x, p.y, volume);
+                }
+            }
+            app.world_key = None;
+            return true;
+        }
         edit::TileInteraction::CandleToggled => {
             app.world_key = None;
             return true;
@@ -462,8 +508,10 @@ fn interaction_events(
         edit::TileInteraction::ClockRead { .. } => (None, Vec::new()),
         // The party monolith is consumed in `interact_tile` ahead of this
         // mapping (the mech cue + ToggleManualParty ride the world events)
-        // — no drops. The cake (621) rides W4-f34's `StationBuff` arm.
+        // — no drops. The station-buff grants (incl. the cake 621) are
+        // consumed there too (the buff + cue are app-side).
         edit::TileInteraction::PartyMonolithToggle => (None, Vec::new()),
+        edit::TileInteraction::StationBuff { .. } => (None, Vec::new()),
         // The bank open is consumed in `interact_tile` ahead of this
         // mapping (the SoundID 10/11/12 keys are absent from the cue set).
         edit::TileInteraction::BankOpen { .. } => (None, Vec::new()),
@@ -608,6 +656,18 @@ mod tests {
     use tr_core::World;
 
     use super::super::tests::{object_world, set_tile};
+
+    /// W4-e28/f34 — the station rig: one active station tile at (10, 19) on
+    /// the object world, the player at spawn (in earshot of the tile).
+    fn station_app(kind: u16) -> App {
+        let mut w = object_world();
+        set_tile(&mut w, 10, 19, kind);
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        let player = Player::spawn(&app.world);
+        app.player = Some(player);
+        app
+    }
 
     /// The bed rig: a floor row at y 60 with a style-0 bed placed at
     /// (40, 59) — columns 39-42, rows 58-59 (`place_item_tile`'s y is the
@@ -1076,6 +1136,161 @@ mod tests {
         assert!(interact_tile(&mut app, 10, 19));
         assert!(app.world_events.manual_party);
         assert!(crate::world_events::party_is_up(&app.world_events));
+    }
+
+    // ---- W4-e28 + W4-f34: the station-buff app arms ------------------------
+
+    #[test]
+    fn w4_e28_the_crystal_ball_grants_clairvoyance_and_plays_item4() {
+        // `Player.cs:32594-32599`: the click on tile 125 grants buff 29 for
+        // 108000 ticks (30 min) and plays `SoundID.Item4` at the PLAYER's
+        // position. The click is consumed; the cell keeps its kind.
+        let mut app = station_app(125);
+        let played0 = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 19), "the click is consumed");
+        let p = app.player.as_ref().unwrap();
+        let slot = p.buffs.find_buff_index(29).expect("Clairvoyance granted");
+        assert_eq!(p.buffs.buff_time[slot], 108000);
+        assert_eq!(app.audio.played_count(), played0 + 1, "one cue played");
+        assert_eq!(app.world.tile(10, 19).unwrap().kind, 125, "no world write");
+    }
+
+    #[test]
+    fn w4_e28_the_ammo_box_grants_buff_93_and_plays_item149() {
+        // `Player.cs:32630-32635`: tile 287 grants buff 93 for 108000 ticks
+        // and plays `SoundID.Item149`. The buff's effect arm
+        // (`:10078-10081`) sets `ammoBox` — the 1/5 not-consume roll's flag.
+        let mut app = station_app(287);
+        let played0 = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 19));
+        let p = app.player.as_ref().unwrap();
+        let slot = p.buffs.find_buff_index(93).expect("Ammo Box granted");
+        assert_eq!(p.buffs.buff_time[slot], 108000);
+        assert_eq!(app.audio.played_count(), played0 + 1);
+    }
+
+    #[test]
+    fn w4_e28_the_station_grants_draw_no_rng() {
+        // RNG-free verify for the UNPITCHED rows: the plain `play_at` path
+        // draws no pitch roll — no stream moves. (The cake 621's faithful
+        // case-2 play DOES draw; its own witness pins that below.)
+        let mut app = station_app(125);
+        let players0 = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let global0 = app.rngs.global().clone();
+        assert!(interact_tile(&mut app, 10, 19));
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            players0,
+            "UpdatePlayers untouched"
+        );
+        assert_eq!(*app.rngs.global(), global0, "global untouched");
+        // The re-click refreshes the time, still no draws (the AddBuff
+        // update-in-place path, `Player.cs:5402-5426`).
+        assert!(interact_tile(&mut app, 10, 19));
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            players0
+        );
+        let p = app.player.as_ref().unwrap();
+        let slot = p.buffs.find_buff_index(29).unwrap();
+        assert_eq!(p.buffs.buff_time[slot], 108000, "refreshed, not stacked");
+    }
+
+    #[test]
+    fn w4_f34_the_cake_war_table_and_dead_cells_station_grant_their_buffs() {
+        // `Player.cs:32600-32617`: tile 621 grants buff 192 (Sugar Rush) for
+        // 7200 ticks + Item2; tile 464 grants 348 (War Table) for 108000 +
+        // Item4; tile 699 grants 366 for 108000 + Item179. Each consumes the
+        // click, plays ONE cue at the player position and writes no world.
+        for (kind, buff, time) in [(621u16, 192, 7_200), (464, 348, 108_000), (699, 366, 108_000)]
+        {
+            let mut app = station_app(kind);
+            let played0 = app.audio.played_count();
+            assert!(interact_tile(&mut app, 10, 19), "tile {kind} consumed");
+            let p = app.player.as_ref().unwrap();
+            let slot = p.buffs.find_buff_index(buff).expect("the grant");
+            assert_eq!(p.buffs.buff_time[slot], time, "tile {kind}'s duration");
+            assert_eq!(app.audio.played_count(), played0 + 1, "one cue");
+            assert_eq!(app.world.tile(10, 19).unwrap().kind, kind, "no world write");
+        }
+    }
+
+    #[test]
+    fn w4_f34_the_sharpening_and_bewitching_tables_grant_their_buffs() {
+        // `Player.cs:32618-32629`: tile 377 grants buff 159 (Sharpened) for
+        // 108000 ticks + Item37 (the case-2 ×0.5 volume rides the arm);
+        // tile 354 grants 150 (Bewitched) for 108000 + Item4.
+        for (kind, buff) in [(377u16, 159), (354u16, 150)] {
+            let mut app = station_app(kind);
+            let played0 = app.audio.played_count();
+            assert!(interact_tile(&mut app, 10, 19), "tile {kind} consumed");
+            let p = app.player.as_ref().unwrap();
+            let slot = p.buffs.find_buff_index(buff).expect("the grant");
+            assert_eq!(p.buffs.buff_time[slot], 108000);
+            assert_eq!(app.audio.played_count(), played0 + 1, "one cue");
+        }
+    }
+
+    /// W4-f34's neighbour no-draw witness, RE-DERIVED for the pitched-cue
+    /// follow-up (research/70 §1f): the cake 621 left the RNG-free loop —
+    /// its faithful case-2 play draws one pitch roll per audible click (the
+    /// `w4_f41_the_cake_click_draws_the_pitched_case2_roll` witness pins
+    /// that). The unpitched rows keep the e28 contract: no stream moves,
+    /// the re-click refreshes in place, never stacks.
+    #[test]
+    fn w4_f34_the_neighbour_grants_draw_no_rng_and_refresh_not_stack() {
+        for (kind, buff, time) in [(699u16, 366, 108_000), (464, 348, 108_000)] {
+            let mut app = station_app(kind);
+            let players0 = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+            let global0 = app.rngs.global().clone();
+            assert!(interact_tile(&mut app, 10, 19));
+            assert!(interact_tile(&mut app, 10, 19), "the re-click");
+            assert_eq!(
+                *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                players0,
+                "tile {kind}: UpdatePlayers untouched"
+            );
+            assert_eq!(*app.rngs.global(), global0, "tile {kind}: global untouched");
+            let p = app.player.as_ref().unwrap();
+            let slot = p.buffs.find_buff_index(buff).unwrap();
+            assert_eq!(p.buffs.buff_time[slot], time, "refreshed, not stacked");
+        }
+    }
+
+    /// W4-f41 final sweep (research/70 §1f follow-up): the cake's faithful
+    /// pitched case-2 play — ONE `Next(-6, 7) * 0.01` draw on the
+    /// `UpdatePlayers` stream per audible click (`LegacySoundPlayer.cs:632`
+    /// via `play_npc_item_cue(2, …)`), the global stream untouched, and the
+    /// re-click refreshes 7200 in place (never stacks) while drawing again.
+    #[test]
+    fn w4_f41_the_cake_click_draws_the_pitched_case2_roll() {
+        let mut app = station_app(621);
+        let mut witness = app
+            .rngs
+            .stream(crate::app::RngKey::UpdatePlayers)
+            .clone();
+        let _ = witness.next_range(-6, 7); // the ONE case-2 pitch draw
+        let global0 = app.rngs.global().clone();
+        let played0 = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 19));
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).peek(),
+            witness.peek(),
+            "exactly one UpdatePlayers draw — the pitched case-2 roll"
+        );
+        assert_eq!(*app.rngs.global(), global0, "global untouched");
+        assert_eq!(app.audio.played_count(), played0 + 1, "the Item_2 cue");
+        // The re-click refreshes in place (`Player.cs:5402-5426`) and draws
+        // the pitch roll again — the faithful path is not draw-free.
+        let _ = witness.next_range(-6, 7);
+        assert!(interact_tile(&mut app, 10, 19), "the re-click");
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).peek(),
+            witness.peek()
+        );
+        let p = app.player.as_ref().unwrap();
+        let slot = p.buffs.find_buff_index(192).unwrap();
+        assert_eq!(p.buffs.buff_time[slot], 7_200, "refreshed, not stacked");
     }
 
     #[test]
