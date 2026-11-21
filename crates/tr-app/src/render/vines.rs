@@ -9,8 +9,11 @@
 //! The port keeps the fused row-major tile pass: the vine cells are skipped
 //! inline (their roots collected in draw-area order, deduplicated like
 //! `_vineRootsPositions`), and this pass runs right after the foliage pass —
-//! the C#'s `DrawTrees` → `DrawVines` order. The reverse-vine (549) and
-//! multi-tile-vine passes are separate C# passes and stay unported (S1-G-1).
+//! the C#'s `DrawTrees` → `DrawVines` order. The reverse-vine (549) rising
+//! strip (`DrawReverseVines`/`DrawRisingVineStrip`, `TileDrawing.cs:8903-8914`,
+//! `:9134-9193`) lands with W4-g83 below — UNWIRED, the `tiles.rs`/`draw.rs`
+//! seam is contested by d56-d60; the multi-tile-vine pass (chandeliers/banners,
+//! `DrawMultiTileVines(:InWind)`) is the furniture lane (d57) and stays out.
 //!
 //! Deviations (docs/ANALYSIS.md "The vine strip pass"): the `NextNatureRenderer`
 //! LitNature dawn/dusk shader is not ported — segments draw plain, like its
@@ -294,10 +297,273 @@ pub(crate) fn draw_vines(
     quads
 }
 
+/// `TileID.Sets.ReverseVineThreads[type]` (`TileID.cs:545`,
+/// `CreateBoolSet(549)`): the seaweed is the only rising vine.
+#[inline]
+#[allow(dead_code)] // UNWIRED (W4-g83) — the reverse pass awaits the d56-d60 seam.
+pub(crate) fn is_reverse_vine_thread(kind: u16) -> bool {
+    td::SET_REVERSE_VINE_THREADS.has(kind)
+}
+
+/// `CrawlToBottomOfReverseVineAndAddSpecialPoint` (`TileDrawing.cs:764-782`):
+/// crawl DOWN from the reverse-vine cell until a tile whose top edge accepts
+/// an attachment (or an inactive cell) is found; the root is the row ABOVE it
+/// (`y = k - 1`, `:772`). The root registers once per frame
+/// (`_reverseVineRootsPositions.Contains`, `:777-780`) — the caller's set is
+/// the per-frame list `ClearSpecialBlockCounts` resets (`TileDrawing.cs:391`).
+///
+/// Unlike the forward crawl (`:747` starts at `j - 1`), the reverse crawl
+/// starts AT `j` (`for (int k = j; k < Main.maxTilesY; k++)`, `:767`) and
+/// runs to `maxTilesY` (no `- 1`); if no break fires the root stays `j`.
+#[allow(dead_code)] // UNWIRED (W4-g83) — the reverse pass awaits the d56-d60 seam.
+pub(crate) fn collect_reverse_vine_root(
+    world: &World,
+    x: i32,
+    j: i32,
+    seen: &mut HashSet<(i32, i32)>,
+    roots: &mut Vec<(i32, i32)>,
+) {
+    let mut y = j;
+    // `for (int k = j; k < Main.maxTilesY; k++)` (`:767`).
+    for k in j..world.height {
+        // `WorldGen.TopEdgeCanBeAttachedTo(i, k) || !tile.active()` (`:770`);
+        // an out-of-world cell reads as attachable (the `tile == null` arm,
+        // `WorldGen.cs:70385-70388`).
+        let attach = tr_core::torch::top_edge_can_be_attached_to(world, x, k);
+        let active = world.tile(x, k).is_some_and(|t| t.active());
+        if attach || !active {
+            y = k - 1;
+            break;
+        }
+    }
+    if seen.insert((x, y)) {
+        roots.push((x, y));
+    }
+}
+
+/// One drawn segment of a rising vine strip — the inputs of the `DrawNature`
+/// call (`TileDrawing.cs:9188`). Pure world/wind state, so the strip maths is
+/// unit-testable without a GPU.
+#[derive(Clone, Copy, Debug)]
+#[allow(dead_code)] // UNWIRED (W4-g83) — the reverse pass awaits the d56-d60 seam.
+pub(crate) struct RisingVineSegment {
+    pub kind: u16,
+    pub x: i32,
+    pub y: i32,
+    pub frame_x: i16,
+    pub frame_y: i16,
+    /// `GetTileDrawData`'s record for the cell (`:9173`).
+    pub dd: TileDrawData,
+    /// `halfBrickHeight` (`TileDrawing.cs:6045-6048`): 8 on a half-brick.
+    pub half: i16,
+    /// The XNA `position` — where the rotation `origin` lands (`:9174`, the
+    /// running `vector` of `:9138`/`:9190`).
+    pub anchor: [f32; 2],
+    /// `num8 = num2 * (0 - num4) * windCycle + num5` (`:9179`).
+    pub rot: f32,
+    /// `IsVisible(tile)` (`:9185`): an Echo-coated segment draws nothing but
+    /// the strip still walks through it.
+    pub visible: bool,
+    /// `tile.fullbrightBlock()` → `Color.White` (`:9175-9178`).
+    pub fullbright: bool,
+    pub paint: u8,
+    /// `seams: SideFlags.Top` when the cell ABOVE is a reverse vine too
+    /// (`:9187-9188`) — consumed only by the unported LitNature shader.
+    pub seam_top: bool,
+}
+
+/// `DrawRisingVineStrip` (`TileDrawing.cs:9134-9193`), maths only: walk UP
+/// from the root while the cells are active reverse-vine threads, accumulate
+/// the sway rotation and the `WindGrid` push, and advance the anchor 16 px
+/// along the rotated up-direction each segment.
+///
+/// Differences from the hanging [`vine_strip_segments`], all verbatim:
+/// * the anchor starts at `(x*16+8, startY*16+16+2)` (`:9138`, +16+2 not -2);
+/// * the walk runs `num7 > 10` descending (`:9144`, not `< maxTilesY-10`);
+/// * the exposure gate has NO remix arm — always `num7 < worldSurface`
+///   (`:9163`);
+/// * the grid push is `GetWindGridPush(x, num7, 40, -0.004f)` (`:9167`, the
+///   40-window / negative force, not 20 / 0.01);
+/// * the rotation negates the ladder: `num2 * (0 - num4) * cycle` (`:9179`);
+/// * the anchor advances along `(rot - PI/2)` (`:9190`, not `+ PI/2`);
+/// * the glow out-params are discarded (`:9173` `out var _`) — the rising
+///   strip draws NO glowmask.
+#[allow(dead_code)] // UNWIRED (W4-g83) — the reverse pass awaits the d56-d60 seam.
+pub(crate) fn rising_vine_strip_segments(
+    world: &World,
+    wind: &Wind,
+    vine_counter: f32,
+    x: i32,
+    start_y: i32,
+) -> Vec<RisingVineSegment> {
+    let mut out = Vec::new();
+    // `vector = new Vector2(x * 16 + 8, startY * 16 + 16 + 2)` (`:9138`).
+    let mut anchor = [x as f32 * 16.0 + 8.0, start_y as f32 * 16.0 + 16.0 + 2.0];
+    // `num3 = MathHelper.Lerp(0.2f, 1f, |WindForVisuals| / 1.2f)` (`:9139`).
+    let num3 = 0.2 + (1.0 - 0.2) * (wind.speed_current.abs() / 1.2);
+    // `num4 = -0.08f * num3` (`:9140`).
+    let mut num4 = -0.08 * num3;
+    // `GetWindCycle(x, startY, _vineWindCounter)` (`:9141`).
+    let wind_cycle = wind.cycle(x, start_y, vine_counter);
+    let mut num5 = 0.0f32;
+    let mut num6 = 0.0f32;
+    let mut num2 = 0i32;
+    // `for (int num7 = startY; num7 > 10; num7--)` (`:9144`).
+    let mut y = start_y;
+    while y > 10 {
+        let Some(tile) = world.tile(x, y) else {
+            // `tile == null`: the C# `if (tile != null)` skips the body but
+            // the loop still decrements (`:9146-9147`, `:9191`); a null cell
+            // in the port's bounded world ends the strip.
+            break;
+        };
+        // `!tile.active() || !TileID.Sets.ReverseVineThreads[type]` (`:9150`).
+        if !tile.active() || !is_reverse_vine_thread(tile.kind) {
+            break;
+        }
+        // The per-segment sway ladder (`:9155-9162`), same thresholds.
+        if num2 >= 5 {
+            num4 += 0.0075 * num3;
+        }
+        if num2 >= 2 {
+            num4 += 0.0025;
+        }
+        // `WallID.Sets.AllowsWind[tile.wall] && num7 < worldSurface`
+        // (`:9163`) — NO remix arm here.
+        let exposed = (y as f64) < wind.world_surface;
+        if tr_core::wind::wall_allows_wind(tile.wall) && exposed {
+            num2 += 1;
+        }
+        // `GetWindGridPush(x, num7, 40, -0.004f)` (`:9167`) and the push
+        // accumulator (`:9168`): a live push subtracts, a dead one bounces
+        // the accumulated sway by -0.78.
+        let push = wind.get_wind_grid_push(x, y, 40, -0.004);
+        num5 = if push != 0.0 || num6 == 0.0 {
+            num5 - push
+        } else {
+            num5 * -0.78
+        };
+        num6 = push;
+        // `GetTileDrawData` (`:9173`) — the strip never runs the
+        // `DrawSingleTile` positional switch, so no world corrections.
+        let solid_above = world.tile(x, y - 1).is_some_and(|t| {
+            t.active() && td::TILE_SOLID.has(t.kind) && !td::TILE_SOLID_TOP.has(t.kind)
+        });
+        let dd = draw_data(tile.kind, x, y, tile.frame_x, tile.frame_y, 0, solid_above);
+        let half = if tile.half_brick() { 8 } else { 0 };
+        // `num8 = num2 * (0 - num4) * windCycle + num5` (`:9179`).
+        let rot = num2 as f32 * (0.0 - num4) * wind_cycle + num5;
+        let above = world.tile(x, y - 1);
+        out.push(RisingVineSegment {
+            kind: tile.kind,
+            x,
+            y,
+            frame_x: tile.frame_x,
+            frame_y: tile.frame_y,
+            dd,
+            half,
+            anchor,
+            rot,
+            visible: !world.invisible_block(x, y),
+            fullbright: tile.fullbright_block(),
+            paint: tile.paint(),
+            seam_top: above.is_some_and(|t| t.active() && is_reverse_vine_thread(t.kind)),
+        });
+        // `vector += (num8 - PI/2).ToRotationVector2() * 16f` (`:9190`,
+        // `Utils.cs:1665-1668`: `(cos, sin)`).
+        let (s, c) = (rot - std::f32::consts::FRAC_PI_2).sin_cos();
+        anchor = [anchor[0] + c * 16.0, anchor[1] + s * 16.0];
+        y -= 1;
+    }
+    out
+}
+
+/// `DrawReverseVines` (`TileDrawing.cs:8903-8914`): one `DrawRisingVineStrip`
+/// per registered reverse root, in registration (draw-area row-major) order.
+/// Returns the quad count. UNWIRED (W4-g83): the `tiles.rs`/`draw.rs` seam is
+/// contested by d56-d60; the intended call site is right after `draw_vines`
+/// (`PostDrawTiles` `DrawVines` → `DrawReverseVines`, `:429-430`).
+#[allow(clippy::too_many_arguments)]
+#[allow(dead_code)] // UNWIRED (W4-g83) — the reverse pass awaits the d56-d60 seam.
+pub(crate) fn draw_reverse_vines(
+    r: &mut SpriteRenderer,
+    world: &World,
+    lookups: &mut assets::Lookups,
+    atlas: Option<&Atlas>,
+    light: &LightMap,
+    style: &LightStyle,
+    anim_time: f32,
+    wind: &Wind,
+    vine_counter: f32,
+    roots: &[(i32, i32)],
+) -> u32 {
+    let mut quads = 0u32;
+    for &(x, start_y) in roots {
+        let segments = rising_vine_strip_segments(world, wind, vine_counter, x, start_y);
+        for seg in segments {
+            // `GetTileDrawTexture` null → `break` (`:9180-9184`); the port's
+            // unframed-cell guard (`resolve_tile_frame`) is the same state.
+            let Some(tf) = resolve_tile_frame(
+                lookups,
+                atlas,
+                false,
+                0,
+                seg.kind,
+                seg.frame_x,
+                seg.frame_y,
+                &seg.dd,
+            ) else {
+                break;
+            };
+            if !seg.visible {
+                continue; // `IsVisible` (`:9185`) — the walk still advances.
+            }
+            // `Lighting.GetColor(x, num7)` (`:9172`) — fullbright → White
+            // (`:9175-9178`); no `GetFinalLight` actuation ghost.
+            let l = if seg.fullbright {
+                [1.0; 3]
+            } else {
+                light.get(seg.x, seg.y)
+            };
+            let tint = style.shade(l, seg.x, seg.y, anim_time);
+            let w = seg.dd.width as f32;
+            let h = (seg.dd.height - seg.half as u16) as f32;
+            // `origin = (tileWidth / 2, halfBrickHeight - tileTop +
+            // tileHeight)` (`:9188`) — the rising strip pivots at the
+            // sprite's BOTTOM-centre (+ tileHeight), not the top.
+            let origin = [w * 0.5, (seg.half - seg.dd.top) as f32 + h];
+            let pos = [seg.anchor[0] - origin[0], seg.anchor[1] - origin[1]];
+            r.push_sprite_origin_rot_paint(
+                pos,
+                [w, h],
+                flip_uv(tf.uv, seg.dd.flip),
+                [tint[0], tint[1], tint[2], 1.0],
+                seg.rot,
+                origin,
+                seg.paint,
+            );
+            quads += 1;
+            // NO glowmask: `:9173` discards the glow out-params and `:9188`
+            // is the only draw call in the visible arm.
+        }
+    }
+    quads
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tr_core::tile::FLAG_ACTIVE;
+
+    /// `TileID.Sets.ReverseVineThreads` (`TileID.cs:545`):
+    /// `CreateBoolSet(549)` — the seaweed is the only rising vine.
+    #[test]
+    fn w4_g83_the_reverse_set_is_the_seaweed_alone() {
+        assert!(td::SET_REVERSE_VINE_THREADS.has(549));
+        for k in VINE_THREADS {
+            assert!(!td::SET_REVERSE_VINE_THREADS.has(k));
+        }
+    }
 
     /// A 40x60 world with a 3-segment jungle-vine strip hanging at x=10 from
     /// y=20, rooted under a dirt block at (10, 19).
@@ -543,5 +809,214 @@ mod tests {
         let segs = vine_strip_segments(&w, &wind, 0.0, 10, 20);
         assert_eq!(segs.len(), 3);
         assert!(segs[0].visible && !segs[1].visible && segs[2].visible);
+    }
+
+    // ---- W4-g83: the rising (reverse-vine 549) strip ----
+
+    /// A 40x60 world with a 3-segment seaweed strip RISING at x=10 from the
+    /// root y=30 (cells 30/29/28), standing on a dirt floor at (10, 31).
+    fn rising_vine_world() -> World {
+        let mut w = World::new("t".into(), 40, 60);
+        let put = |w: &mut World, x: i32, y: i32, kind: u16| {
+            let i = w.index(x, y);
+            w.tiles[i].kind = kind;
+            w.tiles[i].flags = FLAG_ACTIVE;
+        };
+        put(&mut w, 10, 31, 0); // dirt — the top-edge attachment floor
+        for y in 28..=30 {
+            put(&mut w, 10, y, 549);
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    // `CrawlToBottomOfReverseVineAndAddSpecialPoint` (`:764-782`): every cell
+    // of one rising strip resolves the SAME root (the row ABOVE the
+    // attachable dirt floor), and the dedup list registers it once. The
+    // crawl starts AT j (`:767`), so the floor cell itself is the stop.
+    #[test]
+    fn w4_g83_the_reverse_crawl_finds_the_root_above_the_floor() {
+        let w = rising_vine_world();
+        let mut seen = HashSet::new();
+        let mut roots = Vec::new();
+        for y in 28..=30 {
+            collect_reverse_vine_root(&w, 10, y, &mut seen, &mut roots);
+        }
+        assert_eq!(roots, vec![(10, 30)]);
+    }
+
+    // A lone reverse-vine cell with an inactive cell directly below roots at
+    // its OWN row (`y = k - 1` with `k = j + 1`, `:772`) — the g30 fixture
+    // contract.
+    #[test]
+    fn w4_g83_a_lone_reverse_cell_roots_at_its_own_row() {
+        let mut w = rising_vine_world();
+        // Remove the floor and the two upper cells: only (10, 30) stands,
+        // (10, 31) is inactive.
+        for y in [28, 29, 31] {
+            let i = w.index(10, y);
+            w.tiles[i].flags &= !FLAG_ACTIVE;
+        }
+        let mut seen = HashSet::new();
+        let mut roots = Vec::new();
+        collect_reverse_vine_root(&w, 10, 30, &mut seen, &mut roots);
+        assert_eq!(roots, vec![(10, 30)]);
+    }
+
+    // Calm air (`:9139-9143`, `:9179`, `:9190`): the cycle is 0, no grid
+    // stamps → every rotation is 0 and the anchor walks straight UP 16 px
+    // per segment from `(x*16+8, startY*16+16+2)`.
+    #[test]
+    fn w4_g83_a_calm_rising_strip_climbs_straight_up() {
+        let w = rising_vine_world();
+        let wind = calm_wind();
+        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30);
+        assert_eq!(segs.len(), 3);
+        for (k, seg) in segs.iter().enumerate() {
+            assert_eq!(seg.rot, 0.0);
+            // startY=30 → anchor Y = 30*16+16+2 = 498, minus 16 per segment.
+            assert_eq!(seg.anchor, [168.0, 498.0 - 16.0 * k as f32]);
+            assert_eq!(seg.y, 30 - k as i32);
+            assert!(seg.visible);
+        }
+        // The seam is TOP (the cell above), not bottom: cells 30/29 have a
+        // reverse vine above, cell 28 does not.
+        assert!(segs[0].seam_top && segs[1].seam_top);
+        assert!(!segs[2].seam_top);
+    }
+
+    // The sway ladder negates the step (`num2 * (0 - num4) * cycle`, `:9179`)
+    // and the anchor advances along `(rot - PI/2)` (`:9190`). Wall 0 allows
+    // wind and every cell is above the (infinite) surface, so num2 == the
+    // segment index when the rotation is computed.
+    #[test]
+    fn w4_g83_the_rising_sway_negates_the_ladder() {
+        let mut w = rising_vine_world();
+        for y in 21..28 {
+            let i = w.index(10, y);
+            w.tiles[i].kind = 549;
+            w.tiles[i].flags = FLAG_ACTIVE;
+        }
+        let wind = windy();
+        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30);
+        assert_eq!(segs.len(), 10);
+        let num3 = 0.2 + 0.8 * (0.5f32 / 1.2);
+        let cycle = wind.cycle(10, 30, 0.0);
+        assert!(cycle != 0.0);
+        for (k, seg) in segs.iter().enumerate() {
+            let k = k as i32;
+            // Same ladder state as the hanging strip, but the rotation is
+            // num2 * (0 - num4) * cycle (`:9179`).
+            let num4 = -0.08 * num3
+                + 0.0025 * (k - 1).max(0) as f32
+                + 0.0075 * num3 * (k - 4).max(0) as f32;
+            let expect = (k + 1) as f32 * (0.0 - num4) * cycle;
+            assert!(
+                (seg.rot - expect).abs() < 1e-5,
+                "segment {k}: {} vs {expect}",
+                seg.rot
+            );
+        }
+        // The anchor advances along `(rot - PI/2)` (`:9190`) — upward.
+        for pair in segs.windows(2) {
+            let (s, c) = (pair[0].rot - std::f32::consts::FRAC_PI_2).sin_cos();
+            assert!((pair[1].anchor[0] - pair[0].anchor[0] - c * 16.0).abs() < 1e-3);
+            assert!((pair[1].anchor[1] - pair[0].anchor[1] - s * 16.0).abs() < 1e-3);
+            assert!(pair[1].anchor[1] < pair[0].anchor[1], "the strip climbs");
+        }
+    }
+
+    // The rising exposure gate has NO remix arm (`:9163` always
+    // `num7 < worldSurface`). In a remix world BELOW the surface the cycle
+    // is live (`GetWindCycle`'s own remix gate passes, `:9141`), but the
+    // rising exposure counts only `num7 < surface` — false here — so num2
+    // stays 0 and the ladder never sways. The HANGING strip in the same
+    // world DOES sway (its gate flips to `y > surface`, `:9065-9071`): the
+    // contrast pins the rising gate's missing remix arm.
+    #[test]
+    fn w4_g83_the_rising_gate_ignores_remix() {
+        let w = rising_vine_world();
+        let mut wind = windy();
+        wind.remix_world = true;
+        wind.world_surface = 10.0; // the strip (y >= 28) is BELOW it
+        assert!(wind.cycle(10, 30, 0.0) != 0.0, "remix below surface: cycle live");
+        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30);
+        for seg in &segs {
+            assert_eq!(seg.rot, 0.0, "rising exposure ignores remix → num2 = 0");
+        }
+        // The hanging 52 strip in the SAME remix-below-surface world sways.
+        let hw = vine_world();
+        let hsegs = vine_strip_segments(&hw, &wind, 0.0, 10, 20);
+        assert!(hsegs[2].rot != 0.0, "hanging remix below surface sways");
+    }
+
+    // The grid push window is 40 / -0.004 (`:9167`), not the hanging strip's
+    // 20 / 0.01: a stamp at game_time 5 leaves time_left 5 (< 40/2) → push
+    // 5 * -0.004 * 1 = -0.02, subtracted from num5.
+    #[test]
+    fn w4_g83_the_rising_grid_push_uses_the_40_window() {
+        let w = rising_vine_world();
+        let mut wind = calm_wind(); // cycle 0 → rot == num5 exactly
+        wind.wind_grid.set_size(40, 60);
+        wind.wind_grid.set_wind_time(10, 29, 1, 0);
+        for _ in 0..5 {
+            wind.wind_grid.update();
+        }
+        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30);
+        assert_eq!(segs.len(), 3);
+        assert_eq!(segs[0].rot, 0.0, "y=30 unstamped");
+        assert!((segs[1].rot - 0.02).abs() < 1e-6, "y=29: 0 - (-0.02)");
+        assert!(
+            (segs[2].rot - -0.0156).abs() < 1e-6,
+            "y=28: 0.02 * -0.78 = -0.0156"
+        );
+    }
+
+    // The strip breaks on the first non-reverse / inactive cell (`:9150`)
+    // and never walks at or below row 10 (`:9144` `num7 > 10`).
+    #[test]
+    fn w4_g83_the_rising_strip_stops_at_the_first_gap_and_row_10() {
+        let mut w = rising_vine_world();
+        let i = w.index(10, 29);
+        w.tiles[i].flags &= !FLAG_ACTIVE;
+        let wind = calm_wind();
+        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30);
+        assert_eq!(segs.len(), 1);
+        // A foreign active tile breaks it too.
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.tiles[i].kind = 0;
+        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30);
+        assert_eq!(segs.len(), 1);
+        // The top bound: a root at row 10 draws nothing (`num7 > 10`).
+        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 10);
+        assert!(segs.is_empty());
+    }
+
+    // An Echo-coated segment draws nothing but the walk continues
+    // (`IsVisible`, `:9185`).
+    #[test]
+    fn w4_g83_a_rising_echo_segment_hides_but_does_not_break() {
+        let mut w = rising_vine_world();
+        w.set_invisible_block(10, 29, true);
+        let wind = calm_wind();
+        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30);
+        assert_eq!(segs.len(), 3);
+        assert!(segs[0].visible && !segs[1].visible && segs[2].visible);
+    }
+
+    // The rising origin pivots at the sprite's BOTTOM-centre
+    // (`halfBrickHeight - tileTop + tileHeight`, `:9188`): with the 549
+    // drawdata (16x16, top 0, no half-brick) the origin Y is 16, not 0.
+    #[test]
+    fn w4_g83_the_rising_origin_is_the_bottom_centre() {
+        let w = rising_vine_world();
+        let wind = calm_wind();
+        let segs = rising_vine_strip_segments(&w, &wind, 0.0, 10, 30);
+        let seg = &segs[0];
+        let h = (seg.dd.height - seg.half as u16) as f32;
+        let origin_y = (seg.half - seg.dd.top) as f32 + h;
+        assert_eq!(origin_y, 16.0, "16 px tall, top 0, no half-brick");
+        assert_eq!(seg.dd.width as f32 * 0.5, 8.0);
     }
 }
