@@ -297,6 +297,35 @@ struct FlailTick {
     item_rotation: Option<f32>,
 }
 
+/// W4-d14 — one monk staff swing's ground-impact spawn request
+/// (`AI_140_MonkStaffT1`, `Projectile.cs:69500`): the 698 at the dust
+/// anchor + (num6 * -15, -60), velocity (num6, 0), damage = the swing's
+/// damage × 3, knockback 0, `bonusCritChance = 25` (`:69501`). The C#
+/// passes the CENTRE; the dispatch converts to the top-left (the
+/// `FlailSpawnRequest` shape).
+struct MonkGroundImpact {
+    x: f32,
+    y: f32,
+    vx: f32,
+    damage: i32,
+}
+
+/// W4-d14 — what one aiStyle-140 tick hands back to the pool: the 697's
+/// ground-impact spawn, the `player.ChangeDir` facing (`:69464`/`:69538`
+/// mid-swing + `:69596` tail), the `player.reuseDelay` write on the swing's
+/// death (`:69457` = 10, `:69531` = 2 — rides the pool's `pending_monk_reuse`
+/// queue, the App owns the timer), the `player.heldProj` / `SetDummyItemTime`
+/// / `itemRotation` tail writes (`:69597-69599`). The `FlailTick` precedent.
+#[derive(Default)]
+struct MonkStaffTick {
+    ground_impact: Option<MonkGroundImpact>,
+    facing: Option<i32>,
+    reuse_delay: Option<i32>,
+    held_proj: bool,
+    dummy_item_time: Option<i32>,
+    item_rotation: Option<f32>,
+}
+
 
 /// The ported families' `SetDefaults` slice. The boulder (186, aiStyle 37)
 /// and the flame jet (187, aiStyle 38) traps stay passthroughs — their AI
@@ -10908,6 +10937,234 @@ impl Projectile {
         self.pos += vel;
     }
 
+    /// `AI_140_MonkStaffT1` (`Projectile.cs:69416-69600`) — the Brand of the
+    /// Inferno (697) and the Sleepy Octopod (707) swings. W4-d14.
+    ///
+    /// The C# order: the constants (num = 50 the swing length, num2 = 2 the
+    /// spin turns, num3 = 20 the orbit radius, num4 = -π/4 the base angle),
+    /// the owner's `RotatedRelativePoint(MountedCenter)` anchor, the dead
+    /// kill, then the per-kind arm (the velocity sign pin, the first-tick
+    /// rotation, the alpha fade, the age/spin advance, the mid-swing
+    /// direction flip, the dust rows, the 697's ground-impact spawn), then
+    /// the common tail (the position = anchor + orbit offset, the
+    /// spriteDirection, timeLeft = 2, ChangeDir, heldProj, SetDummyItemTime,
+    /// itemRotation).
+    ///
+    /// The player writes ride back in [`MonkStaffTick`] (the `FlailTick`
+    /// precedent — the port's facing is run-key driven); the reuseDelay
+    /// write rides the pool's `pending_monk_reuse` queue (the App owns the
+    /// timer). The 698 ground-impact spawn rides back as a request (the
+    /// `FlailSpawnRequest` shape).
+    ///
+    /// RNG census: the 697's type-31 dust gate `Next(2)` (`:69473`), the
+    /// type-55 dust at num7 >= 0.85 (`:69478`, no gate), the 5-dust burst
+    /// in [num-8, num-2) (`:69485`, no gate); the 707's type-31 gate
+    /// `Next(2)` (`:69553`) and the 4-spoke type-226 web's `Next(6)` gate +
+    /// `NextFloat` radius + `NextFloat` speed + `Next(4)` gravity pick per
+    /// spoke (`:69576-69588`). The dust bodies are SKIPPED (no draw layer);
+    /// the explicit call-site draws stay. The `NewDustDirect` internal
+    /// rolls go with the dust pool (the `ai_style2` precedent).
+    ///
+    /// Deliberate skips: the `Lighting.AddLight` (`:69507`, no pool light
+    /// layer), the `DD2_MonkStaffGroundImpact` tracked cue (`:69502` — the
+    /// pool's sound queue carries only the id-0/2 families, the 131/134
+    /// tracked-sound precedent), the `netUpdate` writes (the MP bookkeeping
+    /// is out of scope), the `drawLayer`/`usesOwnerLight`/`ownerHitCheck`/
+    /// `noEnchantmentVisuals` flags (no consumers). The port keeps
+    /// `gravDir = 1` (the `ai_158_home_location` precedent).
+    fn ai_monk_staff(
+        &mut self,
+        player: Option<&crate::player::Player>,
+        aim: Option<Vec2>,
+        control_use_item: bool,
+        local_owner: u8,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> MonkStaffTick {
+        let mut tick = MonkStaffTick::default();
+        // `:69418-69424` — the constants and the anchor. An absent player
+        // reads as the C#'s inactive `Main.player[owner]` (the flail
+        // orphan-kill precedent).
+        let num = 50.0f32;
+        let num2 = 2.0f32;
+        let num3 = 20.0f32;
+        let num4 = -std::f32::consts::FRAC_PI_4;
+        let Some(player) = player else {
+            self.active = false;
+            self.time_left = 0;
+            return tick;
+        };
+        let (mx, my) = player.mounted_center();
+        let anchor = player.rotated_relative_point(Vec2::new(mx, my), 0);
+        // `:69425-69429` — the dead kill.
+        if player.dead {
+            self.active = false;
+            self.time_left = 0;
+            return tick;
+        }
+        let mut orbit = Vec2::ZERO;
+        if self.kind == MONK_STAFF_T1 {
+            // `:69430-69504` — the 697 arm.
+            let num5 = self.damage * 3;
+            let num6 = csign(self.vel.x);
+            self.vel = Vec2::new(num6, 0.0);
+            // `:69435-69442` — the first-tick rotation.
+            if self.ai[0] == 0.0 {
+                // gravDir = 1 (the port's convention).
+                let v = Vec2::new(num6, -1.0);
+                self.rot = v.y.atan2(v.x) + num4 + std::f32::consts::PI;
+                if self.vel.x < 0.0 {
+                    self.rot -= std::f32::consts::FRAC_PI_2;
+                }
+            }
+            // `:69443-69447` — the alpha fade.
+            self.alpha -= 128;
+            if self.alpha < 0 {
+                self.alpha = 0;
+            }
+            let num7 = self.ai[0] / num;
+            let num8 = 1.0 + self.ai[0] / num * 0.5;
+            let mut flag = self.ai[0] < (num / 2.0) as i32 as f32;
+            self.ai[0] += num8;
+            self.rot += std::f32::consts::TAU * num2 / num * num6 * num8;
+            flag &= self.ai[0] >= (num / 2.0) as i32 as f32;
+            // `:69454-69469` — the end / the mid-swing flip.
+            if self.ai[0] >= num || (flag && !control_use_item) {
+                self.active = false;
+                self.time_left = 0;
+                tick.reuse_delay = Some(10);
+            } else if flag {
+                // `:69461-69468` — the mouse-side flip.
+                if let Some(aim) = aim {
+                    let (pcx, _) = player.center();
+                    let num9 = if aim.x - pcx > 0.0 { 1.0 } else { -1.0 };
+                    if num9 != self.vel.x {
+                        tick.facing = Some(num9 as i32);
+                        self.vel = Vec2::new(num9, 0.0);
+                        self.net_update = true;
+                        self.rot -= std::f32::consts::PI;
+                    }
+                }
+            }
+            // `:69470-69472` — the orbit offset and the dust anchor.
+            let num10 = self.rot - std::f32::consts::FRAC_PI_4 * num6;
+            let angle = num10 + if num6 == -1.0 { std::f32::consts::PI } else { 0.0 };
+            orbit = rotation_vector(angle) * (self.ai[0] / num) * num3;
+            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            let dust_anchor = center + rotation_vector(angle) * 30.0;
+            // `:69473-69477` — the type-31 dust gate.
+            if rng.next_range(0, 2) == 0 {
+                // Dust.NewDustDirect(dust_anchor - 5, 10, 10, 31, ...) —
+                // skipped (the body + its internal rolls).
+            }
+            // `:69478-69484` — the type-55 dust at num7 >= 0.85 (no gate).
+            if num7 >= 0.85 {
+                // Dust.NewDustDirect(..., 55, ...) — skipped.
+            }
+            // `:69485-69495` — the 5-dust burst in [num-8, num-2).
+            if self.ai[0] >= num - 8.0 && self.ai[0] < num - 2.0 {
+                // 5 × Dust.NewDustDirect(..., 55, ...) — skipped.
+            }
+            // `:69496-69503` — the ground-impact spawn (local owner only).
+            if self.ai[0] >= num - 3.0 && self.ai[0] - num8 < num - 3.0
+                && self.owner == local_owner
+            {
+                // `:69500` — the 698 at dust_anchor + (num6 * -15, -60),
+                // velocity (num6, 0), damage num5, knockback 0. The C#
+                // passes the CENTRE; the dispatch converts to the top-left.
+                tick.ground_impact = Some(MonkGroundImpact {
+                    x: dust_anchor.x + num6 * -15.0,
+                    y: dust_anchor.y - 60.0,
+                    vx: num6,
+                    damage: num5,
+                });
+                // `:69501` — bonusCritChance = 25 (the dispatch applies it).
+                // `:69502` — the tracked cue (skipped, module doc).
+            }
+        }
+        if self.kind == MONK_STAFF_T3 {
+            // `:69505-69591` — the 707 arm.
+            // `:69507` — Lighting.AddLight (skipped).
+            let num12 = csign(self.vel.x);
+            self.vel = Vec2::new(num12, 0.0);
+            // `:69510-69517` — the first-tick rotation.
+            if self.ai[0] == 0.0 {
+                let v = Vec2::new(num12, -1.0);
+                self.rot = v.y.atan2(v.x) + num4 + std::f32::consts::PI;
+                if self.vel.x < 0.0 {
+                    self.rot -= std::f32::consts::FRAC_PI_2;
+                }
+            }
+            // `:69518-69522` — the alpha fade.
+            self.alpha -= 128;
+            if self.alpha < 0 {
+                self.alpha = 0;
+            }
+            let num13 = 1.0f32;
+            self.ai[0] += num13;
+            self.rot += std::f32::consts::TAU * num2 / num * num12;
+            let flag2 = self.ai[0] == (num / 2.0) as i32 as f32;
+            // `:69528-69543` — the end / the mid-swing flip.
+            if self.ai[0] >= num || (flag2 && !control_use_item) {
+                self.active = false;
+                self.time_left = 0;
+                tick.reuse_delay = Some(2);
+            } else if flag2 {
+                if let Some(aim) = aim {
+                    let (pcx, _) = player.center();
+                    let num14 = if aim.x - pcx > 0.0 { 1.0 } else { -1.0 };
+                    if num14 != self.vel.x {
+                        tick.facing = Some(num14 as i32);
+                        self.vel = Vec2::new(num14, 0.0);
+                        self.net_update = true;
+                        self.rot -= std::f32::consts::PI;
+                    }
+                }
+            }
+            // `:69544-69547` — the local-owner aim read (a no-op `_ =` in
+            // the C# — the direction-to-mouse times zero; skipped).
+            // `:69548-69552` — the orbit offset and the dust anchors.
+            let num15 = self.rot - std::f32::consts::FRAC_PI_4 * num12;
+            let angle = num15 + if num12 == -1.0 { std::f32::consts::PI } else { 0.0 };
+            orbit = rotation_vector(angle) * (self.ai[0] / num) * num3;
+            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            let _dust_anchor = center + rotation_vector(angle) * 30.0;
+            let vector5 = rotation_vector(num15);
+            let _vector6 = rotate(vector5, std::f32::consts::FRAC_PI_2 * self.sprite_direction as f32);
+            // `:69553-69557` — the type-31 dust gate.
+            if rng.next_range(0, 2) == 0 {
+                // Dust.NewDustDirect(..., 31, ...) — skipped.
+            }
+            // `:69558-69590` — the 4-spoke type-226 web.
+            for j in 0..4 {
+                let (num16, num17) = match j {
+                    1 => (1.0, -1.0),
+                    2 => (0.5, 1.25),
+                    3 => (0.5, -1.25),
+                    _ => (1.0, 1.0),
+                };
+                // `:69576` — the Next(6) gate.
+                if rng.next_range(0, 6) != 0 {
+                    let _radius = rng.next_float(); // `:69579`
+                    let _speed = rng.next_float(); // `:69580`
+                    // Dust.NewDustDirect(..., 226, ...) — skipped; the
+                    // post-spawn writes feed only the body.
+                    let _ = rng.next_range(0, 4); // `:69585` the gravity pick
+                    let _ = (num16, num17);
+                }
+            }
+        }
+        // `:69592-69599` — the common tail.
+        self.pos = anchor - Vec2::new(self.w * 0.5, self.h * 0.5);
+        self.pos += orbit;
+        self.sprite_direction = self.direction;
+        self.time_left = 2;
+        tick.facing = Some(self.direction);
+        tick.held_proj = true;
+        tick.dummy_item_time = Some(2);
+        tick.item_rotation = Some(wrap_angle(self.rot));
+        tick
+    }
+
     /// `AI_187_ShadowHand` (`Projectile.cs:42502-42591`) with its variation
     /// helper (`:42592-42634`) — the Insanity shadow (964 friendly / 965
     /// hostile).
@@ -14788,6 +15045,12 @@ pub struct ProjectilePool {
     /// the step and re-arms `app.swing`/`app.item_time` (the `FlailTick.facing`
     /// write-back precedent). `None` = no hold fired.
     pending_spear_hold: Option<i32>,
+    /// W4-d14 — the monk staff swings' `player.reuseDelay` writes
+    /// (`AI_140_MonkStaffT1`, `Projectile.cs:69457`/`:69531`): the tick count
+    /// the arm asks the App to re-arm on the swing's death. The world-sim
+    /// pass drains it into `app.reuse_delay` (the `take_spear_hold`
+    /// write-back precedent). `None` = no swing died this tick.
+    pending_monk_reuse: Option<i32>,
 
     /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
     /// (`AI_061` + `FishingCheck`'s `Main.player[owner]` reads). The world sim
@@ -15198,6 +15461,7 @@ impl ProjectilePool {
             pending_channel_tracks: Vec::new(),
             spear_owner: None,
             pending_spear_hold: None,
+            pending_monk_reuse: None,
             bobber_inputs: None,
             pending_splashes: Vec::new(),
             pending_catches: Vec::new(),
@@ -15437,6 +15701,13 @@ impl ProjectilePool {
     /// lance held this tick.
     pub fn take_spear_hold(&mut self) -> Option<i32> {
         self.pending_spear_hold.take()
+    }
+
+    /// W4-d14 — drain the monk staff swings' `player.reuseDelay` write
+    /// (`Projectile.cs:69457`/`:69531`): the world-sim pass re-arms
+    /// `app.reuse_delay` to this many ticks. `None` when no swing died.
+    pub fn take_monk_reuse(&mut self) -> Option<i32> {
+        self.pending_monk_reuse.take()
     }
 
     /// `AI_GetMyGroupIndexAndFillBlackList` (`Projectile.cs:51895-51911`) plus
@@ -17836,6 +18107,64 @@ impl ProjectilePool {
                         // (`AI_135_OgreStomp`, `:68671-68787`): the growing
                         // box and the every-3-tick tile walk.
                         135 => self.slots[i].ai_ogre_stomp(world, rng),
+                        // The aiStyle-140 monk staff swings
+                        // (`AI_140_MonkStaffT1`, `:69416-69600`): the 697/707
+                        // orbit machine. The player writes ride back in the
+                        // tick (the FlailTick precedent); the reuseDelay
+                        // rides the pool queue; the 698 ground-impact spawn
+                        // resolves here (the FlailSpawnRequest shape).
+                        140 => {
+                            let aim = flail_inputs.aim.map(|(x, y)| Vec2::new(x, y));
+                            let tick = self.slots[i].ai_monk_staff(
+                                player.as_deref(),
+                                aim,
+                                flail_inputs.control_use_item,
+                                local_owner,
+                                rng,
+                            );
+                            // `:69500-69501` — the 698 ground impact.
+                            if let Some(g) = tick.ground_impact {
+                                let owner = self.slots[i].owner;
+                                let d = proj_data(MONK_STAFF_T1_EXPLOSION)
+                                    .expect("the rowed explosion");
+                                if let Some(slot) = self.spawn_with_data_ai_owned(
+                                    MONK_STAFF_T1_EXPLOSION,
+                                    owner,
+                                    g.x - d.w * 0.5,
+                                    g.y - d.h * 0.5,
+                                    g.vx,
+                                    0.0,
+                                    g.damage,
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                ) {
+                                    self.slots[slot].bonus_crit_chance = 25;
+                                }
+                            }
+                            // `:69457`/`:69531` — the reuseDelay write.
+                            if let Some(rd) = tick.reuse_delay {
+                                self.pending_monk_reuse = Some(rd);
+                            }
+                            // The player-side writes (the FlailTick shape).
+                            if let Some(p) = player.as_deref_mut() {
+                                if let Some(dir) = tick.facing {
+                                    p.facing = dir;
+                                }
+                                if tick.held_proj {
+                                    p.held_proj = i as i32;
+                                }
+                                if let Some(rot) = tick.item_rotation {
+                                    p.item_rotation = rot;
+                                }
+                            }
+                            // `SetDummyItemTime(2)` (`:69598`) rides the
+                            // spear-hold queue (the same swing/item_time
+                            // re-arm the lances use).
+                            if let Some(frames) = tick.dummy_item_time {
+                                self.pending_spear_hold = Some(frames);
+                            }
+                        }
                         // The aiStyle-187 Insanity shadow (`:42502-42591`):
                         // the four variation choreographies and the alpha
                         // ramp.
@@ -24221,7 +24550,11 @@ mod tests {
         // Dragon chain (121) WAS ported at the gate (`dragon_step`) — its
         // deferral collided with the same pin and the machine is one
         // self-contained family.
-        const UNARMED_ROWED: [u8; 4] = [156, 164, 169, 206];
+        // W4-d14: 141 (the MonkStaffT1Explosion 698, `AI_141_MonkStaffT1
+        // Explosion` `:69602+`) is rowed so the 140 arm's ground-impact
+        // spawn resolves, but its arm is d15's claim (141-150) — the
+        // rowed-but-unarmed deferral (the census §3c pattern).
+        const UNARMED_ROWED: [u8; 5] = [141, 156, 164, 169, 206];
         // S1-F-13c: the Frost Moon bosses' seven hostile-shot kinds ride the
         // KIND-gated `projectile_frost_shots::handles` arm ahead of the
         // aiStyle dispatch — their styles are armed there, not in the
@@ -45220,5 +45553,163 @@ mod w4_d14_ogre_stomp_tests {
         // 3 dusts × (2 floats + Next(3)).
         assert_eq!(rng2.floats, 3 + 2 + 6);
         assert_eq!(rng2.ranges, [(0, 3), (0, 3), (0, 3), (0, 3)]);
+    }
+}
+
+/// W4-d14 — aiStyle 140 (`AI_140_MonkStaffT1`, `Projectile.cs:69416-69600`):
+/// the 697/707 swings. Code-only: WRITTEN NOT RUN.
+#[cfg(test)]
+mod w4_d14_monk_staff_tests {
+    use super::*;
+    use crate::player::Player;
+
+    fn swing(kind: u16) -> Projectile {
+        let d = proj_data(kind).expect("the swing row");
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = kind;
+        p.owner = 0;
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.vel = Vec2::new(1.0, 0.0);
+        p.w = d.w;
+        p.h = d.h;
+        p.alpha = d.alpha;
+        p.scale = d.scale;
+        p.time_left = d.time_left;
+        p.tile_collide = d.tile_collide;
+        p.damage = 30;
+        p.direction = 1;
+        p
+    }
+
+    struct R {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl tr_core::loot::DropRng for R {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+
+    /// The rows (`Projectile.cs:7366-7384` / `:7474-7490` / `:7385-7401`).
+    #[test]
+    fn the_monk_rows_match_set_defaults() {
+        let t1 = proj_data(MONK_STAFF_T1).unwrap();
+        assert_eq!((t1.w, t1.h), (16.0, 16.0));
+        assert_eq!(t1.ai_style, 140);
+        assert!(t1.melee);
+        assert!((t1.scale - 1.35).abs() < 1e-6, ":7373");
+        assert_eq!(t1.alpha, 255);
+        assert!(!t1.tile_collide);
+        assert!(t1.ignore_water);
+        assert!(t1.uses_local_immunity);
+        assert_eq!(t1.local_hit_cooldown, 12, ":7381");
+        let t3 = proj_data(MONK_STAFF_T3).unwrap();
+        assert_eq!(t3.ai_style, 140);
+        assert!((t3.scale - 1.0).abs() < 1e-6, "no scale override");
+        assert_eq!(t3.local_hit_cooldown, 6, ":7488");
+        let ex = proj_data(MONK_STAFF_T1_EXPLOSION).unwrap();
+        assert_eq!((ex.w, ex.h), (75.0, 200.0), ":7387-7388");
+        assert_eq!(ex.ai_style, 141, ":7389 — d15's arm claim");
+        assert_eq!(ex.time_left, 5, ":7393");
+        assert!(ex.melee, ":7398");
+        assert_eq!(ex.local_hit_cooldown, -1, ":7397");
+    }
+
+    /// The 697 first tick: the velocity sign pin, the first-tick rotation,
+    /// the alpha fade 255→127, the age advance num8 = 1, the spin, the
+    /// orbit offset and the tail writes. The type-31 gate draws Next(2).
+    #[test]
+    fn the_697_first_tick_pins_and_fades() {
+        let w = World::new("t".into(), 300, 200);
+        let player = Player::spawn(&w);
+        let mut p = swing(MONK_STAFF_T1);
+        let mut rng = R { ranges: Vec::new(), floats: 0 };
+        let tick = p.ai_monk_staff(Some(&player), None, true, 0, &mut rng);
+        assert_eq!(p.vel, Vec2::new(1.0, 0.0), ":69434 the sign pin");
+        assert_eq!(p.alpha, 127, ":69443 255-128");
+        assert_eq!(p.ai[0], 1.0, ":69451 num8 = 1 at ai0 0");
+        assert_eq!(p.time_left, 2, ":69595");
+        assert!(tick.held_proj, ":69597");
+        assert_eq!(tick.dummy_item_time, Some(2), ":69598");
+        assert_eq!(tick.facing, Some(1), ":69596 ChangeDir(direction)");
+        assert!(tick.item_rotation.is_some(), ":69599");
+        assert!(tick.ground_impact.is_none(), "the impact fires near the end");
+        // The type-31 gate drew Next(2); the num7 = 0 < 0.85 and the burst
+        // window is closed, so no other draws.
+        assert_eq!(rng.ranges, [(0, 2)]);
+        assert_eq!(rng.floats, 0);
+    }
+
+    /// The 697 ground impact fires once in [num-3, num-3+num8) with the
+    /// local owner: damage × 3, the (num6 * -15, -60) offset. The death at
+    /// num queues reuseDelay 10.
+    #[test]
+    fn the_697_impact_and_death() {
+        let w = World::new("t".into(), 300, 200);
+        let player = Player::spawn(&w);
+        let mut p = swing(MONK_STAFF_T1);
+        // Jump to just under the impact window: ai0 = 46, num8 = 1+46/50*0.5
+        // = 1.46 → 47.46 crosses num-3 = 47.
+        p.ai[0] = 46.0;
+        let mut rng = R { ranges: Vec::new(), floats: 0 };
+        let tick = p.ai_monk_staff(Some(&player), None, true, 0, &mut rng);
+        let g = tick.ground_impact.expect("the impact fires");
+        assert_eq!(g.damage, 90, ":69432 damage * 3");
+        assert_eq!(g.vx, 1.0, ":69500 (num6, 0)");
+        // The death: ai0 >= 50.
+        let mut q = swing(MONK_STAFF_T1);
+        q.ai[0] = 49.5;
+        let mut rng2 = R { ranges: Vec::new(), floats: 0 };
+        let tick2 = q.ai_monk_staff(Some(&player), None, true, 0, &mut rng2);
+        assert!(!q.active, ":69454 ai0 >= num kills");
+        assert_eq!(tick2.reuse_delay, Some(10), ":69457");
+    }
+
+    /// The 707 arm: the age advances by 1 (num13), the death queues
+    /// reuseDelay 2, and the 4-spoke web draws its Next(6) gates.
+    #[test]
+    fn the_707_counts_by_one_and_webs() {
+        let w = World::new("t".into(), 300, 200);
+        let player = Player::spawn(&w);
+        let mut p = swing(MONK_STAFF_T3);
+        let mut rng = R { ranges: Vec::new(), floats: 0 };
+        let tick = p.ai_monk_staff(Some(&player), None, true, 0, &mut rng);
+        assert_eq!(p.ai[0], 1.0, ":69525 num13 = 1");
+        assert_eq!(p.alpha, 127);
+        assert_eq!(tick.reuse_delay, None, "not dead yet");
+        // The type-31 gate Next(2)=0 taken (no body draws), then 4 spokes
+        // each Next(6)=0 → the gate REFUSES (0 == 0 is the skip), so no
+        // spoke draws. CensusRng returns min, so Next(6)=0 skips all four.
+        assert_eq!(rng.ranges, [(0, 2), (0, 6), (0, 6), (0, 6), (0, 6)]);
+        // The death at num.
+        let mut q = swing(MONK_STAFF_T3);
+        q.ai[0] = 49.0;
+        let mut rng2 = R { ranges: Vec::new(), floats: 0 };
+        let tick2 = q.ai_monk_staff(Some(&player), None, true, 0, &mut rng2);
+        assert!(!q.active);
+        assert_eq!(tick2.reuse_delay, Some(2), ":69531");
+    }
+
+    /// The dead-owner kill (`:69425-69429`) and the absent-player orphan
+    /// kill (the flail precedent).
+    #[test]
+    fn the_dead_and_orphan_kills() {
+        let w = World::new("t".into(), 300, 200);
+        let mut player = Player::spawn(&w);
+        player.dead = true;
+        let mut p = swing(MONK_STAFF_T1);
+        let mut rng = R { ranges: Vec::new(), floats: 0 };
+        p.ai_monk_staff(Some(&player), None, true, 0, &mut rng);
+        assert!(!p.active, ":69427");
+        let mut q = swing(MONK_STAFF_T1);
+        q.ai_monk_staff(None, None, true, 0, &mut rng);
+        assert!(!q.active, "the orphan kill");
     }
 }

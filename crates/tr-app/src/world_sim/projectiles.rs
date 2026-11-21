@@ -420,6 +420,13 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         app.swing = secs;
         app.item_time = secs;
     }
+    // W4-d14 — the monk staff swings' `player.reuseDelay` write
+    // (`Projectile.cs:69457` = 10 / `:69531` = 2): the arm queued the tick
+    // count on the swing's death; the port re-arms `app.reuse_delay` (the
+    // `take_spear_hold` write-back precedent, the seconds timer).
+    if let Some(frames) = app.projectiles.take_monk_reuse() {
+        app.reuse_delay = frames as f32 / 60.0;
+    }
     // S1-C-7 wave B — the hostile-shot lane's hurt modifiers (`Player.Hurt`
     // `:38396-38517` via `Projectile.Damage` `Projectile.cs:14868`): the
     // accepted shot queued its retaliate request and possibly a dismount-on-

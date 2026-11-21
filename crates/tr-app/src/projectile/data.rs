@@ -370,6 +370,22 @@ pub const OGRE_SMASH: u16 = 683;
 /// the 683 row's twin (`Projectile.cs:8745-8756`); `AI_135`'s 922 arms
 /// shrink the box to 30 and swap the gore for the crystal dust.
 pub const QUEEN_SLIME_SMASH: u16 = 922;
+/// `ProjectileID.MonkStaffT1` (697) — the Brand of the Inferno's swing
+/// (`Projectile.cs:7366-7384`: 16x16, aiStyle 140, friendly+melee, scale
+/// 1.35, penetrate -1, alpha 255, tileCollide false, ignoreWater, the
+/// local-immunity 12 pair); `AI_140_MonkStaffT1` `:69416-69600`.
+pub const MONK_STAFF_T1: u16 = 697;
+/// `ProjectileID.MonkStaffT1Explosion` (698) — the T1 swing's ground
+/// impact (`Projectile.cs:7385-7401`: 75x200, aiStyle 141, alpha 255,
+/// tileCollide false, ignoreWater, timeLeft 5, friendly, penetrate -1,
+/// the local-immunity -1 pair, melee). The aiStyle-141 arm is d15's
+/// claim — the row rides here so the 140 arm's spawn resolves.
+pub const MONK_STAFF_T1_EXPLOSION: u16 = 698;
+/// `ProjectileID.MonkStaffT3` (707) — the Sleepy Octopod's swing
+/// (`Projectile.cs:7474-7490`: 16x16, aiStyle 140, friendly+melee,
+/// penetrate -1, alpha 255, tileCollide false, ignoreWater, the
+/// local-immunity 6 pair); the 140 arm's second kind branch.
+pub const MONK_STAFF_T3: u16 = 707;
 /// `ProjectileID.DD2DarkMageShot` (675) — the Dark Mage's shadowflame
 /// (`Projectile.cs:7221-7230`: 10x10, aiStyle 1, alpha 255, penetrate -1).
 pub const DARK_MAGE_FLAME: u16 = 675;
@@ -2627,6 +2643,55 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 (false, -2, false, -1, 255, 1.0),
             ),
+            // `MonkStaffT1` (`Projectile.cs:7366-7384`): 16x16, aiStyle 140,
+            // friendly+melee, scale 1.35, penetrate -1, alpha 255,
+            // tileCollide false, ignoreWater, the local-immunity 12 pair.
+            // W4-d14.
+            MONK_STAFF_T1 => (
+                16.0,
+                16.0,
+                140,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                false,
+                false,
+                false,
+                (true, 12, false, -1, 255, 1.35),
+            ),
+            // `MonkStaffT3` (`Projectile.cs:7474-7490`): the same box/style,
+            // scale 1 (no override), the local-immunity 6 pair. W4-d14.
+            MONK_STAFF_T3 => (
+                16.0,
+                16.0,
+                140,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                false,
+                false,
+                false,
+                (true, 6, false, -1, 255, 1.0),
+            ),
+            // `MonkStaffT1Explosion` (`Projectile.cs:7385-7401`): 75x200,
+            // aiStyle 141, alpha 255, tileCollide false, ignoreWater,
+            // timeLeft 5, friendly, penetrate -1, the local-immunity -1
+            // pair, melee. The aiStyle-141 arm is d15's claim (141-150) —
+            // the row rides here so the 140 arm's ground-impact spawn
+            // (`:69500`) resolves; the kind sits rowed-but-unarmed until
+            // d15 lands the arm (the census §3c deferral pattern). W4-d14.
+            MONK_STAFF_T1_EXPLOSION => (
+                75.0,
+                200.0,
+                141,
+                -1,
+                5,
+                0,
+                false,
+                false,
+                false,
+                (true, -1, false, -1, 255, 1.0),
+            ),
             // `DD2DarkMageRaise` / `DD2DarkMageHeal` (`Projectile.cs:7208-7219`):
             // 10x10, aiStyle 133, `alpha = 255`, `timeLeft = 900`,
             // `penetrate = -1`, no tile collision, water-ignoring. The 674
@@ -4277,7 +4342,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:7203`: the 672 victory marker sets it too.
             || matches!(kind, DARK_MAGE_MARKER | DARK_MAGE_HEAL | DD2_ELDER_WINS)
             // `Projectile.cs:7289`/`:8752` — the Ogre/QueenSlime stomps.
-            || matches!(kind, OGRE_SMASH | QUEEN_SLIME_SMASH),
+            || matches!(kind, OGRE_SMASH | QUEEN_SLIME_SMASH)
+            // `Projectile.cs:7379`/`:7392`/`:7486` — the monk staff family.
+            || matches!(kind, MONK_STAFF_T1 | MONK_STAFF_T1_EXPLOSION | MONK_STAFF_T3),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4312,6 +4379,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                    // W4-d14 — the monk staff swings + the T1 ground impact
+                    // (`Projectile.cs:7372`/`:7398`/`:7480`).
+                    | MONK_STAFF_T1 | MONK_STAFF_T1_EXPLOSION | MONK_STAFF_T3
             ),
         ranged: matches!(
             kind,
