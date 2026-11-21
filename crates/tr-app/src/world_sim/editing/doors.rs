@@ -338,17 +338,10 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             app.world_key = None;
             return true;
         }
-        edit::TileInteraction::CakeEat => {
-            // `Player.cs:32600-32605`: the Slice of Cake tile (621) grants
-            // Sugar Rush (192, 7200 ticks) + SoundID.Item2 at the player.
-            // The tile stays placed (the C# consumes no tile here).
-            if let Some(p) = app.player.as_mut() {
-                p.buffs.add_buff(192, 7200);
-                app.audio.play_at("Item_2", p.x, p.y, 1.0);
-            }
-            app.world_key = None;
-            return true;
-        }
+        // W4-c39 exec (research/114 §1h): the CakeEat app arm DROPPED —
+        // f34's shared `StationBuff` arm is the survivor (the same unpitched
+        // Item_2 stand-in; f41's pitched seam stays research/70 §1f's
+        // recorded follow-up). f41c `f1f95be4` is canonical.
         edit::TileInteraction::StationInteract { kind } => {
             // `Player.cs:33279-33284` (the `TileInteractionsUse` tail): the
             // clicked tile's filter lands in `CraftingUI._lastFilter` via
@@ -458,9 +451,6 @@ fn interaction_events(
         // Returning `None` here keeps `interact_tile`'s "not consumed" answer
         // and the chest/shop/door seam untouched.
         edit::TileInteraction::Extractinator => return None,
-        // The cake is consumed in `interact_tile` ahead of this mapping (the
-        // buff grant + SoundID.Item2 ride there) — no cue, no drops here.
-        edit::TileInteraction::CakeEat => (None, Vec::new()),
     };
     let events = object_drops
         .iter()

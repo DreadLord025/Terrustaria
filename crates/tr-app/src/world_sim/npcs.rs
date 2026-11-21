@@ -208,33 +208,15 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         return None; // `:43077` — the same NPC re-clicked falls through
     }
     app.talk_npc = Some(i); // `:43081` — `player.SetTalkNPC(i)`
-    // W4-c39 — `ConditionalDialogue.FreeCakeDialogue` (`ConditionalDialogue.cs:
-    // 51-67`, registered for the Party Girl 208 at `:124`): `NPC.GetChat`
-    // answers the pending dialogue first (`NPC.cs:93768-93771`). While
-    // `NPC.freeCake` is up, the talk clears it, gifts a Slice of Cake (3750)
-    // at the Party Girl's centre and answers `PartyGirlSpecialText.Cake{1..3}`
-    // (`Main.rand.Next(1, 4)`). The `CheckDialogue` latch (`NPC.cs:90519-90532`,
-    // the `(GameUpdateCount + whoAmI) % 10` poll) folds to the live flag read —
-    // the gift fires on the first talk while the cake is free. The arm runs
-    // before the chat context (which borrows the roster + the global stream).
-    if app.npcs[i].kind == NpcKind::PartyGirl && app.world_events.free_cake {
-        app.world_events.free_cake = false;
-        let (cx, cy) = app.npcs[i].center();
-        // `QuickSpawnItem(EntitySource_Gift, item, GiftRecieved)` — the gift
-        // drop rides the talk's bare-`Main.rand` stream (the GetChat site).
-        let rng = app.rngs.global();
-        crate::world_sim::items::spawn_item_drop_px(
-            &mut app.items,
-            rng,
-            3750,
-            1,
-            Vec2::new(cx, cy),
-        );
-        let n = app.rngs.global().next_range(1, 4);
-        let text = crate::lang::text(&format!("PartyGirlSpecialText.Cake{n}"));
-        app.npc_chat_text = text.clone();
-        return Some(text);
-    }
+    // W4-c39 exec (research/114 §1h): the FreeCake talk arm DROPPED — this
+    // was d120's collapse shape with a WORSE gift arm (the C#
+    // `GetOrDropItem` fills the inventory FIRST, `Player.cs:7193-7200`;
+    // c39 always world-dropped at the NPC centre). research/70 §3's ONE
+    // chain (f38 structure + f41 alive gate + d120/f41 gift-before-text
+    // order, single-slot fill, global stream) supersedes it — f41c
+    // `f1f95be4` is canonical. The `free_cake` field + its writers stay
+    // (the scheduler/dusk/clear-world sites); the gift chain lands with
+    // the surviving GetChat re-pin at the merge.
     // The context off the live state. The world flags the port does not
     // carry yet (the storm clock, the happy-windy-day, `BirthdayParty`,
     // `LanternNight`, the remix world, `WorldGen.crimson`, the Moon Lord)
@@ -283,16 +265,18 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         storming: false,       // `Main.cloudAlpha`'s storm — no storm clock yet
         windy_day: false,      // `Main.IsItAHappyWindyDay` — no wind-day state
         zone_graveyard: false, // `Player.ZoneGraveyard` — the zone rides the biome pass
-        party_is_up: crate::world_events::party_is_up(&app.world_events),
+        // W4-c39 exec (research/114 §1h): the live-feed hunks DROP — d120's
+        // superset ctx (research/70 drop 8) is the survivor at the merge.
+        party_is_up: false,    // `BirthdayParty.PartyIsUp` — unported
         crimson: false,        // `WorldGen.crimson` — the world-evil flag
         downed_boss1: app.world.downed_eoc, // `NPC.downedBoss1`
         downed_boss2: app.world.downed_eow, // `NPC.downedBoss2`
         downed_boss3: app.world.downed_skeletron, // `NPC.downedBoss3`
-        downed_moonlord: app.world.downed_moon_lord,
+        downed_moonlord: false, // `NPC.downedMoonlord` — unported
         dd2_downed_t1: dd2_t1,
         dd2_downed_t2: dd2_t2,
         dd2_ongoing,
-        lanterns_up: crate::world_events::lanterns_up(&app.world_events),
+        lanterns_up: false, // `LanternNight.LanternsUp` — unported
         player_life: life,
         player_life_max: life_max,
         player_base_life_max: life_max, // `Player.statLifeMax` — the port keeps one max

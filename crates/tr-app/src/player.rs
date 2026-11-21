@@ -6451,12 +6451,12 @@ impl Player {
                 // (the port's positive bonus convention: a lower pickSpeed
                 // mines faster).
                 104 => self.pick_speed_bonus += 0.25,
-                // W4-c39 — `:9935-9939`: Sugar Rush (192, the Slice of Cake's
-                // buff) `pickSpeed -= 0.2f; moveSpeed += 0.2f`.
-                192 => {
-                    self.pick_speed_bonus += 0.2;
-                    self.move_speed += 0.2;
-                }
+                // W4-c39 exec (research/114 §1h): the Sugar Rush (192) arm
+                // DROPPED — byte-identical to f34's/f41's; two `192 =>` arms
+                // in one match do not compile (research/70 drop 5 extends to
+                // this third copy). f34's single arm is the survivor; the
+                // full-tick witness below stays in the union (it tests the
+                // surviving arm unchanged). f41c `f1f95be4` is canonical.
                 // `:9956-9959` — Gills (4): `CheckDrowning` inverts the probe.
                 4 => self.gills = true,
                 // `:9964-9967` — ManaRegeneration (6): `manaRegenBuff = true`.
@@ -13026,7 +13026,10 @@ mod tests {
 
     /// W4-c39 — Sugar Rush (192, the Slice of Cake's buff, `Player.cs:9935-9939`):
     /// `pickSpeed -= 0.2f; moveSpeed += 0.2f`. The port's positive pick-bonus
-    /// convention mirrors the Mining (104) arm.
+    /// convention mirrors the Mining (104) arm. KEPT in the witness union
+    /// (research/114 §1h): a third disjoint rig — the full `Player::update`
+    /// tick vs f34's grant/decrement and f41's rebase/expiry — it tests the
+    /// SURVIVING f34 `192 =>` arm unchanged (c39's third copy dropped).
     #[test]
     fn w4_c39_sugar_rush_adds_pick_and_move_speed() {
         let w = ground_world();
