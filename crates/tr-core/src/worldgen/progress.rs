@@ -131,6 +131,9 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "flowers" => PassMessage::Gen(44),
         // WorldGen.cs:20603 (Mushrooms).
         "mushrooms" => PassMessage::Gen(45),
+        // WorldGen.cs:20729-20768 (ExposedGemsUnderground) sets no
+        // progress.Message — only progress.Set(1.0) — so the step carries
+        // none (the C# keeps the previous pass's message).
         // WorldGen.cs:12933.
         "floating islands" => PassMessage::Gen(12),
         // WorldGen.cs:16421.

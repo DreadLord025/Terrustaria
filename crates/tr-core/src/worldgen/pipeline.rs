@@ -1407,6 +1407,12 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // lane 5. The patch rolls ride `pass_rng("Mushrooms")` (the cell
     // writes draw nothing).
     step!("mushrooms", "Mushrooms", step_mushrooms),
+    // The vanilla Random Gems slot (`WorldGen.cs:20729`): after Mushrooms
+    // (`:20599`) / Gems In Ice Biome (`:20697`, the port's `exposed gems`
+    // sits earlier), before Moss Grass (`:20769`) / Muds Walls In Jungle
+    // (`:20813`) — W4-d105 lane 5. The scatter + patch rolls ride
+    // `pass_rng("Random Gems")`.
+    step!("random gems", "Random Gems", step_random_gems),
     // The vanilla slot (`WorldGen.cs:20813`): after Vines, before the
     // islands step the plan pins it against — the M5-BIOME phase-5
     // insertion.
@@ -2454,6 +2460,34 @@ fn step_mushrooms(
     );
 }
 
+/// `Random Gems` (`WorldGen.cs:20729-20768`,
+/// `GenPassNameID.ExposedGemsUnderground`) — the single-gem scatter + the
+/// marble/granite gem patches. The `Skyblock.denyAllGeneration` gate
+/// (`:20731`) rides the adapter; the scatter/patch rolls + the gem frame_y
+/// draws ride `pass_rng("Random Gems")`.
+fn step_random_gems(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if skyblock_deny_all_generation(opts) {
+        return;
+    }
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    spider_gem_moss::pass_random_gems(
+        world,
+        &mut streams.pass_rng("Random Gems"),
+        world_surface,
+        rock_layer,
+    );
+}
+
 /// `Webs And Honey` (`WorldGen.cs:19995`) — the wall-keyed sweep that hangs
 /// cobweb in the spider caves and honeyed speleothems in the hives.
 fn step_webs_and_honey(
@@ -3059,6 +3093,11 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[227] = true;
     world.frame_important[656] = true;
     world.frame_important[752] = true;
+    // The exposed gems 178 (`Main.cs:7413`) and the long moss 184
+    // (`:7414`) — W4-d105 lane 5's Random Gems / Moss Grass passes write
+    // their style + Next(3) variant frames; the framer keeps them.
+    world.frame_important[178] = true;
+    world.frame_important[184] = true;
     world.frame_important[185] = true;
     world.frame_important[186] = true;
     world.frame_important[187] = true;
@@ -3416,8 +3455,9 @@ mod tests {
         // + `dye plants` (vanilla "Dye Plants", `:19981`) between `herbs`
         // and `surface flora`, + `flowers` (vanilla "Flowers", `:20447`)
         // between `vines` and `muds walls in jungle`, + `mushrooms`
-        // (vanilla "Mushrooms", `:20599`) after `flowers`.
-        assert_eq!(names.len(), 72);
+        // (vanilla "Mushrooms", `:20599`) after `flowers`, + `random gems`
+        // (vanilla "Random Gems", `:20729`) after `mushrooms`.
+        assert_eq!(names.len(), 73);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3504,6 +3544,7 @@ mod tests {
                 "vines",
                 "flowers",
                 "mushrooms",
+                "random gems",
                 "muds walls in jungle",
                 "floating islands",
                 "remove water",
@@ -3641,18 +3682,20 @@ mod tests {
     /// `muds walls in jungle` between `vines` and `floating islands` (the
     /// plan's slot; vanilla carries Muds Walls In Jungle after Vines,
     /// `:20193` → `:20813`). W4-d105 lane 5 inserts `flowers` (vanilla
-    /// Flowers `:20447`) and `mushrooms` (vanilla Mushrooms `:20599`)
-    /// between `vines` and `muds walls in jungle`, so the adjacency is +3
-    /// now — the relative pair itself still holds.
+    /// Flowers `:20447`), `mushrooms` (vanilla Mushrooms `:20599`) and
+    /// `random gems` (vanilla Random Gems `:20729`) between `vines` and
+    /// `muds walls in jungle`, so the adjacency is +4 now — the relative
+    /// pair itself still holds.
     #[test]
     fn test_DW_5_3_new_steps_sit_in_their_vanilla_positions() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("wet jungle"), pos("altars") + 1);
         assert_eq!(pos("jungle plants"), pos("mushroom and jungle plants") + 1);
-        // + flowers + mushrooms (W4-d105 lane 5, the vanilla Flowers
-        // `:20447` / Mushrooms `:20599` slots).
-        assert_eq!(pos("muds walls in jungle"), pos("vines") + 3);
+        // + flowers + mushrooms + random gems (W4-d105 lane 5, the vanilla
+        // Flowers `:20447` / Mushrooms `:20599` / Random Gems `:20729`
+        // slots).
+        assert_eq!(pos("muds walls in jungle"), pos("vines") + 4);
         assert_eq!(names[pos("muds walls in jungle") + 1], "floating islands");
         // The vanilla chain carries the same relative pairs.
         let chain: Vec<&str> = VANILLA_CHAIN
@@ -3858,6 +3901,29 @@ mod tests {
         assert!(cpos("Flowers") < cpos("Mushrooms"));
         assert!(cpos("Mushrooms") < cpos("Gems In Ice Biome"));
         assert!(cpos("Mushrooms") < cpos("Muds Walls In Jungle"));
+    }
+
+    /// W4-d105 lane 5 (#43): `random gems` sits immediately after
+    /// `mushrooms` and before `muds walls in jungle` — the vanilla
+    /// Mushrooms (`WorldGen.cs:20599`) → Gems In Ice Biome (`:20697`) →
+    /// Random Gems (`:20729`) → Moss Grass (`:20769`) → Muds Walls In
+    /// Jungle (`:20813`) chain.
+    #[test]
+    fn w4_d105_the_random_gems_step_sits_after_the_mushrooms() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("random gems"), pos("mushrooms") + 1);
+        assert_eq!(pos("random gems") + 1, pos("muds walls in jungle"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Mushrooms") < cpos("Random Gems"));
+        assert!(cpos("Gems In Ice Biome") < cpos("Random Gems"));
+        assert!(cpos("Random Gems") < cpos("Moss Grass"));
+        assert!(cpos("Random Gems") < cpos("Muds Walls In Jungle"));
     }
 
     #[test]

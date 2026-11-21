@@ -262,6 +262,9 @@ mod tests {
     // #42 Mushrooms turns the grass tufts / sunflowers into mushrooms
     // (frameX 144) and the glowing mushrooms tall (frameX 270)
     // (`WorldGen.cs:20599-20696`) — both pins move again by design.
+    // #43 Random Gems scatters the exposed gems 178 (the weighted Next(12)
+    // styles + the Next(3) frame_y) and the marble/granite diamond patches
+    // (`WorldGen.cs:20729-20768`) — both pins move again by design.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its

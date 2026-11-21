@@ -1247,6 +1247,196 @@ pub(crate) fn pass_webs_and_honey(world: &mut World, rng: &mut Rng, _world_surfa
 /// a real dependency — the arms compare against `TILE_STONE` directly).
 const _: (u16, u16, u16, u16) = (TILE_DIRT, TILE_STONE, TILE_SAND, WALL_SANDSTONE);
 
+/// `Main.wallDungeon` (`Main.cs:10598-10606`): the nine dungeon wall ids.
+const WALL_DUNGEON: [u16; 9] = [7, 8, 9, 94, 95, 96, 97, 98, 99];
+
+/// `ExposedGemsUnderground` (`WorldGen.cs:20729-20768`): two `maxTilesX`
+/// loops. The first scatters single gems (178) on the free underground
+/// cells (the rock-layer band, no lava, no dungeon/planked wall) with the
+/// weighted `Next(12)` style; the second fills gem patches (style 6, the
+/// diamond) on the free cells beside the marble/granite walls (216/187) in
+/// the `Next(1,4)`-half-sized rectangles.
+pub(crate) fn pass_random_gems(
+    world: &mut World,
+    rng: &mut Rng,
+    world_surface: f64,
+    rock_layer: f64,
+) {
+    // The sub-vanilla guard: both y bands must be non-empty (the C# throws
+    // on `Next(rockLayer, height-300)` collapsing; the port skips the loops
+    // before any draw — the wave B convention).
+    let y_hi = world.height - 300;
+    if world.width <= 40 || y_hi <= rock_layer as i32 || y_hi <= world_surface as i32 {
+        return;
+    }
+    // `:20734-20744` — the single-gem scatter.
+    for _ in 0..world.width {
+        let x = rng.range(20, world.width - 20);
+        let y = rng.range(rock_layer as i32, y_hi);
+        let Some(t) = world.tile(x, y) else {
+            continue;
+        };
+        let any_lava = t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Lava;
+        if !t.active() && !any_lava && !WALL_DUNGEON.contains(&t.wall) && t.wall != 27 {
+            // `:20740-20742` — the weighted style (`Next(12)`: <3 → 0,
+            // <6 → 1, <8 → 2, <10 → 3, ≥11 → 5, else 4).
+            let roll = rng.range(0, 12);
+            let style = if roll < 3 {
+                0
+            } else if roll < 6 {
+                1
+            } else if roll < 8 {
+                2
+            } else if roll < 10 {
+                3
+            } else if roll >= 11 {
+                5
+            } else {
+                4
+            };
+            place_exposed_gem(world, x, y, style, rng);
+        }
+    }
+    // `:20745-20766` — the marble/granite gem patches.
+    for _ in 0..world.width {
+        let x = rng.range(20, world.width - 20);
+        let y = rng.range(world_surface as i32, y_hi);
+        let Some(t) = world.tile(x, y) else {
+            continue;
+        };
+        let any_lava = t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Lava;
+        if !t.active() && !any_lava && (t.wall == 216 || t.wall == 187) {
+            let left = rng.range(1, 4);
+            let right = rng.range(1, 4);
+            let up = rng.range(1, 4);
+            let down = rng.range(1, 4);
+            for k in x - left..x + right {
+                for l in y - up..y + down {
+                    if world.tile(k, l).is_some_and(|t| !t.active()) {
+                        place_exposed_gem(world, k, l, 6, rng);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// `WorldGen.PlaceTile`'s exposed-gem arm (`WorldGen.cs:59691-59701`, type
+/// 178): `CheckAndAdjustMultiDirectionalTile` finds a solid anchor on one
+/// of the four sides, then the write — `frameX style*18`, `frameY
+/// Next(3)*18`. The liquid gate (`:59454-59471` — 178 is NOT in the refusal
+/// list) passes every liquid cell. The frame_y roll is the C#'s explicit
+/// `Next(3)` (the gem's three vertical variants), drawn only on a
+/// successful anchor.
+fn place_exposed_gem(world: &mut World, x: i32, y: i32, style: i32, rng: &mut Rng) {
+    if !check_and_adjust_multi_directional(world, x, y) {
+        return;
+    }
+    let frame_y = rng.range(0, 3) * 18;
+    if let Some(t) = world.tile_mut(x, y) {
+        t.flags |= FLAG_ACTIVE;
+        t.kind = TILE_EXPOSED_GEMS;
+        t.frame_x = (style * 18) as i16;
+        t.frame_y = frame_y as i16;
+    }
+    crate::edit::square_tile_frame_gen(world, x, y);
+}
+
+/// `WorldGen.CheckAndAdjustMultiDirectionalTile` (`WorldGen.cs:60314-60366`,
+/// the 178 gem's call): the four neighbour anchors are tested in the order
+/// below (1), left (2), right (3), above (0); the first whose kind is solid
+/// and not solid-top wins. Returns whether any anchor matched (the
+/// `newFrameDirection` is the gem's draw-side hint — the port's framer
+/// recomputes the gem frames, so only the boolean gates the write).
+fn check_and_adjust_multi_directional(world: &World, x: i32, y: i32) -> bool {
+    if !in_world(world, x, y, 2) {
+        return false;
+    }
+    // The four `ValidAnchorForMultiDirectionalTile` reads (`:60329-60344`):
+    // below → direction 1 (SolidTileAllowBottomSlope), left → 2
+    // (AllowLeftSlope), right → 3 (AllowRightSlope), above → 0
+    // (AllowTopSlope). Each also refuses a boulder or a door (10).
+    let below = valid_anchor(world, x, y + 1, 1);
+    let left = valid_anchor(world, x - 1, y, 2);
+    let right = valid_anchor(world, x + 1, y, 3);
+    let above = valid_anchor(world, x, y - 1, 0);
+    // `:60345-60364` — the priority order: below, left, right, above.
+    for kind in [below, left, right, above] {
+        if let Some(k) = kind {
+            if crate::tiledata::TILE_SOLID.has(k) && !crate::tiledata::TILE_SOLID_TOP.has(k) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// `WorldGen.ValidAnchorForMultiDirectionalTile` (`WorldGen.cs:60297-60312`):
+/// the anchor cell must be a non-boulder, non-door tile whose slope face
+/// matches the direction. Returns the anchor's kind when valid.
+fn valid_anchor(world: &World, x: i32, y: i32, direction: i32) -> Option<u16> {
+    let t = world.tile(x, y)?;
+    if crate::tiledata::SET_BOULDERS.has(t.kind) || t.kind == 10 {
+        return None;
+    }
+    let ok = match direction {
+        0 => solid_tile_allow_top_slope(world, x, y),
+        1 => crate::edit::solid_tile_allow_bottom_slope(world, x, y),
+        2 => solid_tile_allow_left_slope(world, x, y),
+        3 => solid_tile_allow_right_slope(world, x, y),
+        _ => false,
+    };
+    if ok {
+        Some(t.kind)
+    } else {
+        None
+    }
+}
+
+/// `WorldGen.SolidTileAllowTopSlope` (`WorldGen.cs:70320-70338`): active,
+/// solid (or the planter box 380), not a bottom slope (unless a half-brick
+/// platform), not actuated. Out-of-world reads true (the null arm).
+fn solid_tile_allow_top_slope(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    let platform = crate::tiledata::SET_PLATFORMS.has(t.kind);
+    t.active()
+        && (crate::tiledata::TILE_SOLID.has(t.kind) || t.kind == 380)
+        && ((!platform && !t.bottom_slope()) || (platform && t.half_brick()))
+        && !t.inactive()
+}
+
+/// `WorldGen.SolidTileAllowLeftSlope` (`WorldGen.cs:70340-70358`): active,
+/// solid, not half brick, not a right slope (1/3), not a platform, not
+/// actuated. Out-of-world reads true.
+fn solid_tile_allow_left_slope(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    t.active()
+        && crate::tiledata::TILE_SOLID.has(t.kind)
+        && !t.half_brick()
+        && !matches!(t.slope(), 1 | 3)
+        && !crate::tiledata::SET_PLATFORMS.has(t.kind)
+        && !t.inactive()
+}
+
+/// `WorldGen.SolidTileAllowRightSlope` (`WorldGen.cs:70360-70378`): active,
+/// solid, not half brick, not a left slope (2/4), not a platform, not
+/// actuated. Out-of-world reads true.
+fn solid_tile_allow_right_slope(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    t.active()
+        && crate::tiledata::TILE_SOLID.has(t.kind)
+        && !t.half_brick()
+        && !matches!(t.slope(), 2 | 4)
+        && !crate::tiledata::SET_PLATFORMS.has(t.kind)
+        && !t.inactive()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1692,5 +1882,57 @@ mod tests {
             big > base,
             "the worthy blob covered no more stone ({big} vs {base})"
         );
+    }
+
+    /// `place_exposed_gem` (`WorldGen.cs:59691-59701`): a free cell with a
+    /// solid floor below takes the gem — frameX style*18, frameY a
+    /// Next(3)*18 variant.
+    #[test]
+    fn place_exposed_gem_writes_the_style_and_variant() {
+        let mut w = flat_world(200, 600, 60);
+        // A free cell at (100, 200) with the stone floor at (100, 201).
+        carve_pocket(&mut w, 100, 200, 1, 1);
+        let mut rng = Rng(0x1234);
+        place_exposed_gem(&mut w, 100, 200, 3, &mut rng);
+        let t = w.tile(100, 200).unwrap();
+        assert!(t.active() && t.kind == TILE_EXPOSED_GEMS);
+        assert_eq!(t.frame_x, 3 * 18);
+        assert!(t.frame_y == 0 || t.frame_y == 18 || t.frame_y == 36);
+    }
+
+    /// The multi-directional anchor (`:60314-60366`): a free cell with no
+    /// solid neighbour refuses (no write, no frame_y draw).
+    #[test]
+    fn place_exposed_gem_refuses_without_an_anchor() {
+        let mut w = flat_world(200, 600, 60);
+        // A 3x3 air pocket — the centre cell has no solid neighbour.
+        carve_pocket(&mut w, 99, 199, 3, 3);
+        let mut rng = Rng(0x1234);
+        let mut replay = Rng(0x1234);
+        place_exposed_gem(&mut w, 100, 200, 0, &mut rng);
+        assert!(!w.tile(100, 200).unwrap().active());
+        assert_eq!(rng.next_u32(), replay.next_u32(), "no draw on refusal");
+    }
+
+    /// The full pass (`:20729-20768`): the scatter plants gems on the free
+    /// underground cells; the weighted styles spread across the bands.
+    #[test]
+    fn the_random_gems_pass_scatters_the_gems() {
+        let mut w = flat_world(2000, 600, 60);
+        // Carve a large cavern so the scatter has free cells with anchors.
+        carve_pocket(&mut w, 400, 250, 1200, 200);
+        let mut rng = Rng(0x77);
+        pass_random_gems(&mut w, &mut rng, 60.0, 300.0);
+        let gems = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == TILE_EXPOSED_GEMS)
+            .count();
+        assert!(gems > 0, "the gems scattered ({gems})");
+        // Every gem frame is a style multiple of 18 with a Next(3) variant.
+        for t in w.tiles.iter().filter(|t| t.active() && t.kind == TILE_EXPOSED_GEMS) {
+            assert_eq!(t.frame_x % 18, 0);
+            assert!(t.frame_y == 0 || t.frame_y == 18 || t.frame_y == 36);
+        }
     }
 }

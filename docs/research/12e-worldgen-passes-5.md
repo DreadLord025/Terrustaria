@@ -97,6 +97,17 @@ Jungle `:20813` are already executed steps; #46 Settle Liquids Again
       `flowers` and `muds walls in jungle` (DW-5.3's adjacency re-pinned
       +3); witness `w4_d105_the_mushrooms_step_sits_after_the_flowers`
       + 2 unit tests.
-- [ ] 43 Random Gems
+- [x] 43 Random Gems — `spider_gem_moss.rs::pass_random_gems` +
+      `place_exposed_gem` + `check_and_adjust_multi_directional` +
+      `valid_anchor` + the three `SolidTileAllow*Slope` helpers
+      (`:20729-20768` + the `PlaceTile`-178 arm `:59691-59701` +
+      `CheckAndAdjustMultiDirectionalTile` `:60314-60366` +
+      `ValidAnchorForMultiDirectionalTile` `:60297-60312` +
+      `SolidTileAllowTopSlope/LeftSlope/RightSlope`
+      `:70320-70378`); the 178/184 frame-important boot statics land;
+      step `random gems` between `mushrooms` and `muds walls in jungle`
+      (DW-5.3's adjacency re-pinned +4); witness
+      `w4_d105_the_random_gems_step_sits_after_the_mushrooms` + 3 unit
+      tests.
 - [ ] 44 Moss Grass
 - [ ] 45 Larva
