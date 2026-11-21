@@ -39732,3 +39732,41 @@ Simple reach rect (`Player.cs:31962-31965`); the long-distance pass
 hover arms stay the §4.3 ≤10/commit seed; the styled `GetItemDrop_*`
 tables are NOT in `registry::tile_drop` (style-0 slice only) — the
 styled arms port their tables fresh.
+
+### The cursorItemIcon batch 3 — the first 10 hover arms (W4-g86)
+
+research/244 §5 arms 1-10 landed + WIRED at `update_editing`'s tile-hover
+head (the same seam as B1, after the altar arms). The pure decoders in
+`world_sim/cursor_item_icon.rs`:
+
+* **The styled drop tables** (ported fresh — `registry::tile_drop` is the
+  style-0 slice only): `item_drop_beds` (`WorldGen.cs:39905-40087`),
+  `item_drop_candles` (`:39724-39903`), `item_drop_chests`
+  (`:41554-41839`, the base/second families), `chest_icon`
+  (`GetChestIcon` `:57989-58004` + the `Chest.Initialize` overrides
+  `Chest.cs:236-251`: base 2/36/38/40→327, 4→329, 23..27→1533..1537;
+  second 13→4714; the bounds are the icon-array lengths 52/38).
+* **`hover_icon_simple`** — the bed 79 (`Player.cs:33593-33610`: the
+  `bed_bottom_side` test `:33327-33337` splits the style-item draw from
+  the snap-96 Sleeping Icon 5013; out-of-snap writes NOTHING), the pylon
+  597 (`:33611-33658` — the override chain returns the base switch's own
+  ids, so `PylonType::item_id` is the whole decode), the constants
+  621/464/699, the candles 33, the fake chests 441/468 (`GetChestIcon`,
+  icon 0 → noThrow fires but enabled/ID stay).
+* **`container_hover`** — the 21/467 TEXT arm
+  (`TileInteractionsMouseOver_Containers` `:34755-34813`): the 2x2 origin
+  decode + `FindChest`, the -1 sentinel, the no-chest/named/style-default
+  text arms, the style-name collapse → the icon (the text clears EVEN
+  when the icon is 0 — the C# clears before the `num5 > 0` gate), the
+  3988→306 Dead Man's Chest remap (`:34805-34807`). The style names read
+  `chest::default_chest_name`'s live-localization + fallback chain.
+  `hoveredChestIndex` (`:34812`) has no port field — the returned index
+  is dropped (the open path uses its own find).
+* **`within_snapping_range`** (`Player.cs:17365-17372`) — the snap-range
+  helper the bed/chair/bench/toilet arms share (ported once, the §4.3
+  contract).
+
+9 witnesses WRITTEN NOT RUN (8 decode + 1 wiring), zero RNG. The
+container witnesses pin the lang lock + English init (the
+`default_chest_name_matches_the_chestui_chain` precedent). The remaining
+~89 hover arms stay the §4.3 ≤10/commit seed.

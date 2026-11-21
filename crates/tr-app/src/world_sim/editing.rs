@@ -2184,10 +2184,49 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // seed (≤10 arms/commit); the long-distance pass + the minecart-track
     // hover are §4.4.
     if let Some(tile) = app.world.tile(tx, ty).filter(|t| t.active()) {
-        if let Some(id) = super::cursor_item_icon::altar_hover_icon(tile.kind, tile.frame_x) {
+        let (kind, fx, fy) = (tile.kind, tile.frame_x, tile.frame_y);
+        if let Some(id) = super::cursor_item_icon::altar_hover_icon(kind, fx) {
             app.no_throw = 2;
             app.cursor_item_icon_enabled = true;
             app.cursor_item_icon_id = i32::from(id);
+        }
+        // W4-g86 batch 3 (§5 arms 1-6/9-10): the bed/pylon/constant/candle
+        // arms + the fake-chest icons (`Player.cs:33593-33682`/
+        // `:33691-33732`). The C# arms are SEPARATE `if`s (not else-if) —
+        // a kind matches at most one, so the port's match dispatch is
+        // equivalent. `arm_writes == false` = the bed's out-of-snap top
+        // side (nothing written); `id == 0` = the fake chests' icon-0
+        // refusal (noThrow fired, enabled/ID stay).
+        if let Some(p) = app.player.as_ref() {
+            if let Some((id, arm_writes)) =
+                super::cursor_item_icon::hover_icon_simple(kind, fx, fy, p, tx, ty)
+            {
+                if arm_writes {
+                    app.no_throw = 2;
+                    if id != 0 {
+                        app.cursor_item_icon_enabled = true;
+                        app.cursor_item_icon_id = i32::from(id);
+                    }
+                }
+            }
+        }
+        // W4-g86 batch 3 (§5 arms 7-8): the container TEXT arms 21/467
+        // (`Player.cs:33683-33690` → `TileInteractionsMouseOver_Containers`
+        // `:34755-34813`). The chest-name read + the style-name collapse
+        // → the icon (the 3988→306 remap); `hoveredChestIndex` has no port
+        // field yet (the returned index is dropped — the open path uses
+        // its own find). noThrow = 2 always fires (`:34802`).
+        if kind == 21 || kind == 467 {
+            let (id, text, enabled, _hovered) =
+                super::cursor_item_icon::container_hover(kind, fx, fy, tx, ty, &app.world_chests);
+            app.no_throw = 2;
+            app.cursor_item_icon_id = id;
+            app.cursor_item_icon_text = text;
+            // The C# writes `enabled = true` in the name arms + the icon
+            // arm; the out-of-range-unnamed case leaves it (the per-update
+            // clear already false). The port assigns the computed value —
+            // identical for every reachable state.
+            app.cursor_item_icon_enabled = enabled;
         }
     }
     // S1-W4-g81 residuals — the wiring tools' cursor-icon latch
@@ -11257,6 +11296,44 @@ mod tests {
         update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
         assert_eq!(app.cursor_item_icon_id, 6135, "the hover icon survives");
         assert_eq!(app.cursor_item_icon_push, 0, "the head arm never fired");
+    }
+
+    /// W4-g86 batch 3 — the WIRED container hover arm: an unnamed chest
+    /// (21, style 1) under the cursor collapses its style name to the Gold
+    /// Chest icon 306 (`Player.cs:34796-34810`), `noThrow = 2`, text "";
+    /// a NAMED chest keeps its name + the -1 sentinel. WRITTEN NOT RUN.
+    #[test]
+    fn w4_g86_the_container_hover_wires_the_icon_collapse() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        // An unnamed chest at the cursor tile (30, 260), style 1 (frameX 36).
+        let mut app = pick_world_at(21, 30, 260);
+        app.world.tiles[app.world.index(30, 260)].frame_x = 36;
+        app.world_chests.push(crate::chest::WorldChest {
+            tile: (30, 260),
+            ..Default::default()
+        });
+        app.inventory[app.selected] = crate::item::EMPTY_SLOT;
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.cursor_item_icon_id, 306, "the style-1 icon collapse");
+        assert!(app.cursor_item_icon_text.is_empty(), "the collapse clears text");
+        assert!(app.cursor_item_icon_enabled);
+        assert_eq!(app.no_throw, 2, ":34802");
+        // A named chest keeps its name, ID stays -1.
+        let mut app = pick_world_at(21, 30, 260);
+        app.world.tiles[app.world.index(30, 260)].frame_x = 36;
+        app.world_chests.push(crate::chest::WorldChest {
+            tile: (30, 260),
+            name: "My Stash".into(),
+            ..Default::default()
+        });
+        app.inventory[app.selected] = crate::item::EMPTY_SLOT;
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.cursor_item_icon_id, -1, "the named chest keeps the sentinel");
+        assert_eq!(app.cursor_item_icon_text, "My Stash");
+        assert!(app.cursor_item_icon_enabled);
     }
 
     /// The `HitTile` damage at a cell (0 when no slot tracks it).

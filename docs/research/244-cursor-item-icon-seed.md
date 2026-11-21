@@ -321,19 +321,21 @@ stream.
 C# order, `Player.cs:33587-34743`. `ID` = the cursorItemIconID write;
 `dec` = the decode helper. All arms set `noThrow=2` + `enabled=true`
 unless noted. **B1 = ported batch 1** (`altar_hover_icon`).
+**B3 = ported batch 3** (`hover_icon_simple` + `container_hover` + the
+styled drop tables, WIRED at the tile-hover head).
 
 | # | kind(s) | lines | ID / decode |
 | --- | --- | --- | --- |
-| 1 | 79 bed | :33593-33610 | bottom-side: `GetItemDrop_Beds(frameY/36)`; else snap-96 gate → 5013 |
-| 2 | 597 pylon | :33611-33658 | `GetPylonItemTypeFromTileStyle` then the style 1-10 overrides 4875/4916-4921/4951/5652/5653 |
-| 3 | 621 | :33659-33664 | 3750 |
-| 4 | 464 | :33665-33670 | 3814 |
-| 5 | 699 | :33671-33676 | 5482 |
-| 6 | 33 candles | :33677-33682 | `GetItemDrop_Candles(frameY/22)` |
-| 7 | 21 chest | :33683-33686 | → Containers |
-| 8 | 467 chest2 | :33687-33690 | → Containers |
-| 9 | 441 | :33691-33711 | `GetChestIcon(frameX/36, false)` (the 2x2 origin decode) |
-| 10 | 468 | :33712-33732 | `GetChestIcon(..., true)` (chestIcon2) |
+| 1 | 79 bed | :33593-33610 | bottom-side: `GetItemDrop_Beds(frameY/36)`; else snap-96 gate → 5013 — **B3** |
+| 2 | 597 pylon | :33611-33658 | `GetPylonItemTypeFromTileStyle` then the style 1-10 overrides 4875/4916-4921/4951/5652/5653 — **B3** (the overrides are the base switch's own ids; `PylonType::item_id` reuse) |
+| 3 | 621 | :33659-33664 | 3750 — **B3** |
+| 4 | 464 | :33665-33670 | 3814 — **B3** |
+| 5 | 699 | :33671-33676 | 5482 — **B3** |
+| 6 | 33 candles | :33677-33682 | `GetItemDrop_Candles(frameY/22)` — **B3** |
+| 7 | 21 chest | :33683-33686 | → Containers — **B3** |
+| 8 | 467 chest2 | :33687-33690 | → Containers — **B3** |
+| 9 | 441 | :33691-33711 | `GetChestIcon(frameX/36, false)` (the 2x2 origin decode) — **B3** |
+| 10 | 468 | :33712-33732 | `GetChestIcon(..., true)` (chestIcon2) — **B3** |
 | 11 | 88 dresser | :33733-33771 | TEXT: `dresserType[frameX/54]` / chest name; collapse → `dresserTypeToIcon`; ID=-1 sentinel |
 | 12 | 10/11 doors | :33772-33801 | `GetDoorItem(style)`; style 11 → 1141 (TempleKey); ID≠0 gate |
 | 13 | 104 clocks | :33802-33807 | `GetItemDrop_Clocks(frameX/36)` |
@@ -449,7 +451,16 @@ marks a row done per commit.)
   (`interact_icon_kind` + Push/Reversed/Text/head-gate) + both batches
   wired at their C# call positions; 14 new witnesses (4 clear/defaults +
   4 cache + 1 latch + 3 draw + 2 wiring).
-* The rest of the system is the §4 seed — the ~99 remaining hover arms
+* **Batch 3 (§5 arms 1-10)**: `hover_icon_simple` (the bed 79 bottom-side
+  + snap-96 / pylon 597 / constants 621/464/699 / candles 33 / fake
+  chests 441/468) + `container_hover` (the 21/467 TEXT arm, the
+  style-name collapse + the 3988→306 remap) + the styled drop tables
+  (`item_drop_beds/candles/chests`, `chest_icon` + the `Chest.Initialize`
+  overrides) + the `bed_bottom_side`/`within_snapping_range` helpers.
+  WIRED at the tile-hover head; 8 decode + 1 wiring witnesses. The
+  pylon override chain is the base switch's own ids (a no-op kept for
+  the citation, `PylonType::item_id` reuse).
+* The rest of the system is the §4 seed — the ~89 remaining hover arms
   (§4.3, ≤10/commit) + the remaining feeds (§4.4).
 
 ### 6.1 The g53c cross-note (the flagging lane)

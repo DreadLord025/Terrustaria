@@ -24,6 +24,17 @@
 //! pole's bait icon (push 6) and the Clentaminator/Terraformer's solution
 //! icon (push 10), 9 cursor write sites + the `Fishing_GetBait` scan
 //! (`:42254-42280`) they read.
+//!
+//! Batch 3 (§5 arms 1-10, WIRED at the tile-hover head): the bed 79
+//! (`:33593-33610`, the bottom-side test + the snap-96 Sleeping Icon), the
+//! pylon 597 (`:33611-33658`), the constant arms 621/464/699
+//! (`:33659-33676`), the candles 33 (`:33677-33682`), the container TEXT
+//! arms 21/467 (`:33683-33690` → `TileInteractionsMouseOver_Containers`
+//! `:34755-34813`) and the fake-chest icon arms 441/468
+//! (`:33691-33732`, `WorldGen.GetChestIcon`). The styled drop tables
+//! (`GetItemDrop_Beds/Candles/Chests`, `GetChestIcon` + the
+//! `Chest.Initialize` overrides) are ported here — `registry::tile_drop`
+//! is the style-0 slice only (research/244 §4.3).
 
 /// `Player.TileInteractionsMouseOver`'s altar arms (`Player.cs:34524-34536`
 /// tile 26, `:34309-34314` tile 237): the hover cursor icon for the
@@ -172,6 +183,433 @@ pub(crate) fn item_check_head_icon(
         }
     }
     None
+}
+
+// ---- Batch 3 (§5 arms 1-10): the styled drop tables + the hover arms ------
+
+/// `WorldGen.GetItemDrop_Beds` (`WorldGen.cs:39905-40087`), verbatim: the
+/// bed style's item. Default 224; styles 1-3 → `style + 643`, 4 → 920,
+/// 5-8 → `1465 + style`, 9-12 → `1710 + style`, 13-18 → `2066 + style - 13`,
+/// then the per-style tail (19..64). Out-of-range keeps the 224 default
+/// (the C# `result` init).
+pub(crate) fn item_drop_beds(style: i32) -> u16 {
+    match style {
+        0 => 224,
+        1..=3 => (style + 643) as u16,
+        4 => 920,
+        5..=8 => (1465 + style) as u16,
+        9..=12 => (1710 + style) as u16,
+        13..=18 => (2066 + style - 13) as u16,
+        19 => 2139,
+        20 => 2140,
+        21 => 2231,
+        22 => 2520,
+        23 => 2538,
+        24 => 2553,
+        25 => 2568,
+        26 => 2669,
+        27 => 2811,
+        28 => 3162,
+        29 => 3164,
+        30 => 3163,
+        31 => 3897,
+        32 => 3932,
+        33 => 3959,
+        34 => 4146,
+        35 => 4167,
+        36 => 4188,
+        37 => 4209,
+        38 => 4299,
+        39 => 4567,
+        40 => 5149,
+        41 => 5170,
+        42 => 5191,
+        43 => 5549,
+        44 => 5602,
+        45 => 5690,
+        46 => 5713,
+        47 => 5740,
+        48 => 5757,
+        49 => 5778,
+        50 => 5799,
+        51 => 5820,
+        52 => 5841,
+        53 => 5859,
+        54 => 5880,
+        55 => 5899,
+        56 => 5933,
+        57 => 5956,
+        58 => 5976,
+        59 => 5999,
+        60 => 6022,
+        61 => 6045,
+        62 => 6068,
+        63 => 6091,
+        64 => 6112,
+        _ => 224,
+    }
+}
+
+/// `WorldGen.GetItemDrop_Candles` (`WorldGen.cs:39724-39903`), verbatim:
+/// default 105; 1/2/3 → 1405/1406/1407, 4-13 → `2045 + style - 4`,
+/// 14-16 → `2153 + style - 14`, then the per-style tail (17..63).
+pub(crate) fn item_drop_candles(style: i32) -> u16 {
+    match style {
+        1 => 1405,
+        2 => 1406,
+        3 => 1407,
+        4..=13 => (2045 + style - 4) as u16,
+        14..=16 => (2153 + style - 14) as u16,
+        17 => 2236,
+        18 => 2523,
+        19 => 2542,
+        20 => 2556,
+        21 => 2571,
+        22 => 2648,
+        23 => 2649,
+        24 => 2650,
+        25 => 2651,
+        26 => 2818,
+        27 => 3171,
+        28 => 3173,
+        29 => 3172,
+        30 => 3890,
+        31 => 3936,
+        32 => 3962,
+        33 => 4150,
+        34 => 4171,
+        35 => 4192,
+        36 => 4213,
+        37 => 4303,
+        38 => 4571,
+        39 => 5153,
+        40 => 5174,
+        41 => 5195,
+        42 => 5553,
+        43 => 5606,
+        44 => 5694,
+        45 => 5717,
+        46 => 5743,
+        47 => 5760,
+        48 => 5781,
+        49 => 5802,
+        50 => 5823,
+        51 => 5844,
+        52 => 5862,
+        53 => 5883,
+        54 => 5902,
+        55 => 5936,
+        56 => 5959,
+        57 => 5979,
+        58 => 6002,
+        59 => 6025,
+        60 => 6048,
+        61 => 6071,
+        62 => 6094,
+        63 => 6115,
+        _ => 105,
+    }
+}
+
+/// `WorldGen.GetItemDrop_Chests` (`WorldGen.cs:41554-41839`), verbatim:
+/// the chest style's item. `second_type` = the Chest2 family (tile 467,
+/// base 3884, styles 0..37); else the base family (tile 21, base 48,
+/// styles 0..51). Out-of-range keeps the family base (the C# `num` init).
+pub(crate) fn item_drop_chests(style: i32, second_type: bool) -> u16 {
+    if second_type {
+        match style {
+            1 => 3885,
+            2 => 3939,
+            3 => 3965,
+            4 => 3988,
+            5 => 4153,
+            6 => 4174,
+            7 => 4195,
+            8 => 4216,
+            9 => 4265,
+            10 => 4267,
+            11 => 4574,
+            12 | 13 => 4712,
+            14 => 5156,
+            15 => 5177,
+            16 => 5198,
+            17 => 5556,
+            18 => 5609,
+            19 => 5697,
+            20 => 5720,
+            21 => 5745,
+            22 => 5763,
+            23 => 5784,
+            24 => 5805,
+            25 => 5826,
+            26 => 5846,
+            27 => 5865,
+            28 => 5886,
+            29 => 5905,
+            30 => 5939,
+            31 => 5962,
+            32 => 5982,
+            33 => 6005,
+            34 => 6028,
+            35 => 6051,
+            36 => 6074,
+            37 => 6118,
+            _ => 3884,
+        }
+    } else {
+        match style {
+            1 | 2 => 306,
+            3 | 4 => 328,
+            5 => 343,
+            6 => 348,
+            7 => 625,
+            8 => 626,
+            9 => 627,
+            10 => 680,
+            11 => 681,
+            12 => 831,
+            13 => 838,
+            14 => 914,
+            15 => 952,
+            16 => 1142,
+            17 => 1298,
+            18 | 23 => 1528,
+            19 | 24 => 1529,
+            20 | 25 => 1530,
+            21 | 26 => 1531,
+            22 | 27 => 1532,
+            28 => 2230,
+            29 => 2249,
+            30 => 2250,
+            31 => 2526,
+            32 => 2544,
+            33 => 2559,
+            34 => 2574,
+            35 | 36 => 2612,
+            37 | 38 => 2613,
+            39 | 40 => 2614,
+            41 => 2615,
+            42 => 2616,
+            43 => 2617,
+            44 => 2618,
+            45 => 2619,
+            46 => 2620,
+            47 => 2748,
+            48 => 2814,
+            49 => 3180,
+            50 => 3125,
+            51 => 3181,
+            _ => 48,
+        }
+    }
+}
+
+/// `WorldGen.GetChestIcon` (`WorldGen.cs:57989-58004`) + the
+/// `Chest.Initialize` overrides (`Chest.cs:229-257`): the hover icon for
+/// a chest style. The bounds are the icon-array lengths (52 / 38,
+/// `Chest.cs:3675-3676`), NOT the drop table's style space; out-of-range
+/// returns 0 (the C# `result` init). The overrides: base 2→327, 4→329,
+/// 23..27→1533..1537, 36/38/40→327; second-type 13→4714.
+pub(crate) fn chest_icon(style: i32, containers2: bool) -> u16 {
+    if containers2 {
+        if !(0..38).contains(&style) {
+            return 0;
+        }
+        if style == 13 {
+            return 4714; // `Chest.cs:251`
+        }
+        item_drop_chests(style, true)
+    } else {
+        if !(0..52).contains(&style) {
+            return 0;
+        }
+        match style {
+            2 | 36 | 38 | 40 => 327, // `Chest.cs:236/:243-245`
+            4 => 329,                // `:237`
+            23..=27 => (1533 + style - 23) as u16, // `:238-242`
+            _ => item_drop_chests(style, false),
+        }
+    }
+}
+
+/// `Player.IsHoveringOverABottomSideOfABed` (`Player.cs:33327-33337`),
+/// verbatim: `frameX / 72 == 1` flips the `frameX % 72 < 36` test — the
+/// bed's right half mirrors which side is the "bottom" (the foot).
+pub(crate) fn bed_bottom_side(frame_x: i16) -> bool {
+    let fx = frame_x as i32;
+    let mut flag2 = fx % 72 < 36;
+    if fx / 72 == 1 {
+        flag2 = !flag2;
+    }
+    flag2
+}
+
+/// `Player.IsWithinSnappngRangeToTile` (`Player.cs:17365-17372`),
+/// verbatim: the tile centre `(x*16+8, y*16+8)` within
+/// `distanceInPixels` of `(Center.X, Bottom.Y - 16)`. The port's
+/// `Player::center`/`bottom` are the same `Entity` maths.
+pub(crate) fn within_snapping_range(p: &crate::player::Player, x: i32, y: i32, dist_px: f32) -> bool {
+    let (cx, _) = p.center();
+    let (_, by) = p.bottom();
+    let dx = (x * 16 + 8) as f32 - cx;
+    let dy = (y * 16 + 8) as f32 - (by - 16.0);
+    (dx * dx + dy * dy).sqrt() <= dist_px
+}
+
+/// The tile-hover arms 1-6 + 9-10 (§5 rows 1-6/9-10,
+/// `Player.cs:33593-33682`/`:33691-33732`): the constant/style decode
+/// arms that write `noThrow = 2` + `enabled = true` + an ID. Returns
+/// `(id, arm_writes)` — `id == 0` means the arm fired `noThrow = 2` but
+/// left enabled/ID untouched (the fake chests' icon-0 refusal,
+/// `:33706`/`:33727`); `arm_writes == false` means the arm wrote NOTHING
+/// (the bed's out-of-snap top side, `:33597`'s gate fails). `None` = the
+/// kind has no arm here (the caller falls through).
+///
+/// * 79 bed (`:33593-33610`): the bottom side draws
+///   `GetItemDrop_Beds(frameY/36)`; the top side draws the Sleeping Icon
+///   5013 ONLY within the 96-px snap range.
+/// * 597 pylon (`:33611-33658`): `GetPylonItemTypeFromTileStyle(frameX/54)`
+///   then the style 1-10 overrides — the SAME ids the base switch returns
+///   (`TETeleportationPylon.cs:115-131`), so the override chain is a no-op
+///   kept for the citation; the port reuses `PylonType::item_id`
+///   (`tr-core/pylons.rs:78`, style 0/out-of-range → 4876).
+/// * 621 → 3750, 464 → 3814, 699 → 5482 (the constant arms).
+/// * 33 candles (`:33677-33682`): `GetItemDrop_Candles(frameY/22)`.
+/// * 441/468 fake chests (`:33691-33732`): `GetChestIcon(frameX/36,
+///   kind == 468)`; icon 0 → enabled/ID stay (noThrow still 2). The C#'s
+///   `num/num2` origin decode is dead for the icon (the style is the
+///   hovered cell's own `frameX/36`).
+pub(crate) fn hover_icon_simple(
+    kind: u16,
+    frame_x: i16,
+    frame_y: i16,
+    p: &crate::player::Player,
+    x: i32,
+    y: i32,
+) -> Option<(u16, bool)> {
+    let fx = frame_x as i32;
+    let fy = frame_y as i32;
+    match kind {
+        79 => {
+            if bed_bottom_side(frame_x) {
+                Some((item_drop_beds(fy / 36), true))
+            } else if within_snapping_range(p, x, y, 96.0) {
+                Some((5013, true))
+            } else {
+                Some((0, false)) // the C# writes nothing (`:33597` fails)
+            }
+        }
+        597 => {
+            // `PylonType::from_tile_style` + `item_id` — the style IS the
+            // type (`TETeleportationPylon.cs:175-178`); an out-of-range
+            // style falls to SurfacePurity's 4876 (the `_ => 4876` arm).
+            let id = tr_core::pylons::PylonType::from_tile_style(fx / 54)
+                .unwrap_or(tr_core::pylons::PylonType::SurfacePurity)
+                .item_id();
+            Some((id, true))
+        }
+        621 => Some((3750, true)),
+        464 => Some((3814, true)),
+        699 => Some((5482, true)),
+        33 => Some((item_drop_candles(fy / 22), true)),
+        441 | 468 => {
+            let icon = chest_icon(fx / 36, kind == 468);
+            if icon != 0 {
+                Some((icon, true))
+            } else {
+                // `:33706`/`:33727` — icon 0: noThrow = 2 fired at
+                // `:33693`/`:33714`, but enabled/ID stay untouched.
+                Some((0, true))
+            }
+        }
+        _ => None,
+    }
+}
+
+/// `Player.TileInteractionsMouseOver_Containers` (`Player.cs:34755-34813`)
+/// — the chest hover TEXT arm (tiles 21/467). Returns the writes the
+/// caller applies: `(id, text, enabled, hovered_chest)`. `id` is the
+/// `-1` sentinel unless the style-name collapse finds an icon; `text` is
+/// the chest's name (or the style default); `hovered_chest` is the
+/// `Chest.FindChest` index (`Player.hoveredChestIndex`, `:34812` — the
+/// port has no field yet, returned for the caller's future use).
+///
+/// The C# order: the 2x2 origin decode (`frameX%36`/`frameY%36`), the
+/// `FindChest`, `ID = -1`, then: no chest → `text = array[0]`, enabled;
+/// named chest → `text = name`, enabled; else in-range style →
+/// `text = array[style]`, enabled. The collapse: when the text EQUALS
+/// the style default, `GetChestIcon(style, kind == 467)` replaces it
+/// (`text = ""`); `noThrow = 2`; icon > 0 → the 3988→306 remap
+/// (`:34805-34807`, the Dead Man's Chest draws the plain Chest icon) +
+/// `ID = icon`, enabled.
+///
+/// `array` = `Lang.chestType` (54 entries, 52.. aliases 0, `Lang.cs:499-506`)
+/// for 21, `Lang.chestType2` (38) for 467. The port reads the live
+/// localization through `chest::default_chest_name`'s chain (the
+/// resource-less fallback names the style's placing item — the same
+/// string the C# table carries).
+pub(crate) fn container_hover(
+    kind: u16,
+    frame_x: i16,
+    frame_y: i16,
+    x: i32,
+    y: i32,
+    chests: &[crate::chest::WorldChest],
+) -> (i32, String, bool, Option<usize>) {
+    let fx = frame_x as i32;
+    let fy = frame_y as i32;
+    // `:34763-34772` — the 2x2 origin.
+    let ox = if fx % 36 != 0 { x - 1 } else { x };
+    let oy = if fy % 36 != 0 { y - 1 } else { y };
+    let found = crate::chest::find_chest(chests, ox, oy);
+    let style = fx / 36;
+    // `:34775-34778` — the style-name range gate (the array lengths).
+    let len = if kind == 467 { 38 } else { 54 };
+    let in_range = (0..len).contains(&style);
+    // The style default name (`Lang.chestType[style]` / `chestType2`):
+    // the port's `default_chest_name` reads the live table + the
+    // resource-less fallback; tile 21's 52.. alias folds to style 0
+    // inside it (`Lang.cs:503-506`).
+    let style_name = crate::chest::default_chest_name(kind, frame_x);
+    let mut id: i32 = -1; // `:34774`
+    let mut text = String::new();
+    let mut enabled = false;
+    match found {
+        None => {
+            // `:34779-34783` — array[0].
+            text = crate::chest::default_chest_name(kind, 0);
+            enabled = true;
+        }
+        Some(ci) => {
+            let name = &chests[ci].name;
+            if !name.is_empty() {
+                // `:34786-34790` — the stored name.
+                text = name.clone();
+                enabled = true;
+            } else if in_range {
+                // `:34791-34795` — the style default.
+                text = style_name.clone();
+                enabled = true;
+            }
+            // `:34796-34800` — the collapse: text == the style default →
+            // num5 = GetChestIcon + text = "" (EVEN when the icon is 0 —
+            // the C# clears the text before the `num5 > 0` gate).
+            let mut num5: i32 = 0;
+            if in_range && text == style_name {
+                num5 = i32::from(chest_icon(style, kind == 467));
+                text.clear();
+            }
+            // `:34803-34811` — the 3988→306 remap + the ID write; the
+            // icon-0 case keeps the -1 sentinel + the enabled the name
+            // arms set (the C# `if (num5 > 0)` skips both writes).
+            if num5 > 0 {
+                id = if num5 == 3988 { 306 } else { num5 };
+                enabled = true;
+            }
+        }
+    }
+    // `:34802` — noThrow = 2 (the caller writes it).
+    (id, text, enabled, found)
 }
 
 #[cfg(test)]
@@ -323,5 +761,210 @@ mod tests {
         );
         // A plain held item (Iron Pickaxe 1) has no head arm.
         assert_eq!(item_check_head_icon(slot(1, 1), &g2, &coins2, &empty_ammo, false), None);
+    }
+
+    // ---- Batch 3 (§5 arms 1-10) -------------------------------------------
+    // WRITTEN NOT RUN (code-only lane). Zero RNG — every arm is integer/
+    // string maths.
+
+    /// `GetItemDrop_Beds` (`WorldGen.cs:39905-40087`): the range arms +
+    /// the per-style tail + the out-of-range 224 default.
+    #[test]
+    fn w4_g86_the_bed_drop_table_matches_the_csharp() {
+        assert_eq!(item_drop_beds(0), 224);
+        assert_eq!(item_drop_beds(1), 644); // 1 + 643
+        assert_eq!(item_drop_beds(3), 646);
+        assert_eq!(item_drop_beds(4), 920);
+        assert_eq!(item_drop_beds(5), 1470); // 1465 + 5
+        assert_eq!(item_drop_beds(8), 1473);
+        assert_eq!(item_drop_beds(9), 1719); // 1710 + 9
+        assert_eq!(item_drop_beds(12), 1722);
+        assert_eq!(item_drop_beds(13), 2066); // 2066 + 13 - 13
+        assert_eq!(item_drop_beds(18), 2071);
+        assert_eq!(item_drop_beds(19), 2139);
+        assert_eq!(item_drop_beds(27), 2811);
+        assert_eq!(item_drop_beds(40), 5149);
+        assert_eq!(item_drop_beds(64), 6112);
+        assert_eq!(item_drop_beds(65), 224, "out of range keeps the default");
+        assert_eq!(item_drop_beds(-1), 224);
+    }
+
+    /// `GetItemDrop_Candles` (`WorldGen.cs:39724-39903`): the range arms +
+    /// the tail + the 105 default.
+    #[test]
+    fn w4_g86_the_candle_drop_table_matches_the_csharp() {
+        assert_eq!(item_drop_candles(0), 105);
+        assert_eq!(item_drop_candles(1), 1405);
+        assert_eq!(item_drop_candles(3), 1407);
+        assert_eq!(item_drop_candles(4), 2045); // 2045 + 4 - 4
+        assert_eq!(item_drop_candles(13), 2054);
+        assert_eq!(item_drop_candles(14), 2153); // 2153 + 14 - 14
+        assert_eq!(item_drop_candles(16), 2155);
+        assert_eq!(item_drop_candles(17), 2236);
+        assert_eq!(item_drop_candles(29), 3172); // the 27/28/29 swap
+        assert_eq!(item_drop_candles(63), 6115);
+        assert_eq!(item_drop_candles(64), 105, "out of range keeps the default");
+    }
+
+    /// `GetItemDrop_Chests` (`WorldGen.cs:41554-41839`) + `GetChestIcon`
+    /// (`:57989-58004`) + the `Chest.Initialize` overrides
+    /// (`Chest.cs:236-251`): the base/second families, the bounds (52/38)
+    /// and the override rows.
+    #[test]
+    fn w4_g86_the_chest_icon_table_and_overrides() {
+        // The base family (tile 21).
+        assert_eq!(chest_icon(0, false), 48);
+        assert_eq!(chest_icon(1, false), 306);
+        assert_eq!(chest_icon(2, false), 327, "the :236 override (306 → 327)");
+        assert_eq!(chest_icon(4, false), 329, "the :237 override (328 → 329)");
+        assert_eq!(chest_icon(23, false), 1533, "the :238 override");
+        assert_eq!(chest_icon(27, false), 1537, "the :242 override");
+        assert_eq!(chest_icon(36, false), 327, "the :243 override (2612 → 327)");
+        assert_eq!(chest_icon(38, false), 327);
+        assert_eq!(chest_icon(40, false), 327);
+        assert_eq!(chest_icon(51, false), 3181);
+        assert_eq!(chest_icon(52, false), 0, "the 52 bound (:57999)");
+        assert_eq!(chest_icon(-1, false), 0);
+        // The second family (tile 467).
+        assert_eq!(chest_icon(0, true), 3884);
+        assert_eq!(chest_icon(4, true), 3988);
+        assert_eq!(chest_icon(13, true), 4714, "the :251 override (4712 → 4714)");
+        assert_eq!(chest_icon(12, true), 4712);
+        assert_eq!(chest_icon(37, true), 6118);
+        assert_eq!(chest_icon(38, true), 0, "the 38 bound (:57994)");
+    }
+
+    /// `IsHoveringOverABottomSideOfABed` (`Player.cs:33327-33337`): the
+    /// `frameX/72 == 1` flip. Left half (0..71): <36 is the bottom; right
+    /// half (72..143): the test INVERTS (>=36 within the half is bottom).
+    #[test]
+    fn w4_g86_the_bed_bottom_side_flips_on_the_right_half() {
+        assert!(bed_bottom_side(0)); // 0 % 72 = 0 < 36, no flip
+        assert!(bed_bottom_side(18));
+        assert!(!bed_bottom_side(36)); // 36 !< 36
+        assert!(!bed_bottom_side(54));
+        assert!(!bed_bottom_side(72)); // 72 % 72 = 0 < 36, FLIPPED → false
+        assert!(!bed_bottom_side(90));
+        assert!(bed_bottom_side(108)); // 108 % 72 = 36 !< 36, FLIPPED → true
+        assert!(bed_bottom_side(126));
+    }
+
+    /// The bed hover arm (`Player.cs:33593-33610`): the bottom side draws
+    /// the style's bed item; the top side draws the Sleeping Icon 5013
+    /// ONLY within the 96-px snap; out of snap writes NOTHING.
+    #[test]
+    fn w4_g86_the_bed_hover_arm_splits_bottom_top_and_snap() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut p = crate::player::Player::spawn(&app.world);
+        // Park the player so tile (10, 10)'s centre is within 96 px of
+        // (Center.X, Bottom.Y - 16): stand the player ON the tile.
+        p.x = 10.0 * 16.0;
+        p.y = 10.0 * 16.0 - p.height;
+        app.player = Some(p);
+        let p = app.player.as_ref().unwrap();
+        // Bottom side (frameX 0), style 1 (frameY 36) → 644.
+        assert_eq!(
+            hover_icon_simple(79, 0, 36, p, 10, 10),
+            Some((644, true))
+        );
+        // Top side (frameX 36), in snap → 5013.
+        assert_eq!(hover_icon_simple(79, 36, 0, p, 10, 10), Some((5013, true)));
+        // Top side, OUT of snap (a far tile) → nothing written.
+        assert_eq!(hover_icon_simple(79, 36, 0, p, 60, 60), Some((0, false)));
+    }
+
+    /// The pylon hover arm (`Player.cs:33611-33658`): the style IS the
+    /// type (`frameX/54`); the override chain returns the SAME ids the
+    /// base switch does, so `PylonType::item_id` is the whole decode.
+    #[test]
+    fn w4_g86_the_pylon_hover_arm_decodes_the_style() {
+        let app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let p = crate::player::Player::spawn(&app.world);
+        // Style 0 (frameX 0) → SurfacePurity 4876.
+        assert_eq!(hover_icon_simple(597, 0, 0, &p, 0, 0), Some((4876, true)));
+        // Style 1 (frameX 54) → Jungle 4875 (the :33620 override).
+        assert_eq!(hover_icon_simple(597, 54, 0, &p, 0, 0), Some((4875, true)));
+        // Style 10 (frameX 540) → Shimmer 5653 (the :33656 override).
+        assert_eq!(hover_icon_simple(597, 540, 0, &p, 0, 0), Some((5653, true)));
+        // Out-of-range style → the `_ => 4876` default.
+        assert_eq!(hover_icon_simple(597, 594, 0, &p, 0, 0), Some((4876, true)));
+    }
+
+    /// The constant + candle arms (`Player.cs:33659-33682`) + the
+    /// fake-chest icon arms (`:33691-33732`).
+    #[test]
+    fn w4_g86_the_constant_candle_and_fake_chest_arms() {
+        let app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let p = crate::player::Player::spawn(&app.world);
+        assert_eq!(hover_icon_simple(621, 0, 0, &p, 0, 0), Some((3750, true)));
+        assert_eq!(hover_icon_simple(464, 0, 0, &p, 0, 0), Some((3814, true)));
+        assert_eq!(hover_icon_simple(699, 0, 0, &p, 0, 0), Some((5482, true)));
+        // Candles: frameY 22 → style 1 → 1405.
+        assert_eq!(hover_icon_simple(33, 0, 22, &p, 0, 0), Some((1405, true)));
+        // Fake chest 441: frameX 36 → style 1 → 306.
+        assert_eq!(hover_icon_simple(441, 36, 0, &p, 0, 0), Some((306, true)));
+        // Fake chest 468: frameX 144 → style 4 → 3988.
+        assert_eq!(hover_icon_simple(468, 144, 0, &p, 0, 0), Some((3988, true)));
+        // Fake chest out-of-range style → icon 0 → noThrow fires, ID stays.
+        assert_eq!(hover_icon_simple(441, 1872, 0, &p, 0, 0), Some((0, true)));
+        // A kind with no arm here.
+        assert_eq!(hover_icon_simple(1, 0, 0, &p, 0, 0), None);
+    }
+
+    /// `TileInteractionsMouseOver_Containers` (`Player.cs:34755-34813`):
+    /// the no-chest default text, the named-chest text, the style-name
+    /// collapse → the icon (the 3988→306 remap), the -1 sentinel. The
+    /// lang lock + English init pin the style-name strings (the
+    /// `default_chest_name_matches_the_chestui_chain` precedent).
+    #[test]
+    fn w4_g86_the_container_hover_text_and_icon_collapse() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        // No chest at the origin → array[0] text, enabled, ID -1.
+        let (id, text, enabled, found) = container_hover(21, 0, 0, 10, 10, &[]);
+        assert_eq!(id, -1);
+        assert_eq!(text, "Chest", "the style-0 default name");
+        assert!(enabled);
+        assert_eq!(found, None);
+        // An UNNAMED chest at the origin, style 1 (frameX 36): the text
+        // collapses to the Gold Chest icon 306 (the style default == the
+        // text), ID 306, text "".
+        let chests = vec![crate::chest::WorldChest {
+            tile: (10, 10),
+            ..Default::default()
+        }];
+        let (id, text, enabled, found) = container_hover(21, 36, 0, 10, 10, &chests);
+        assert_eq!(id, 306, "the style-1 icon collapse");
+        assert!(text.is_empty(), "the collapse clears the text");
+        assert!(enabled);
+        assert_eq!(found, Some(0));
+        // A NAMED chest keeps its name (no collapse — the name differs
+        // from the style default), ID stays -1.
+        let named = vec![crate::chest::WorldChest {
+            tile: (10, 10),
+            name: "My Stash".into(),
+            ..Default::default()
+        }];
+        let (id, text, enabled, _) = container_hover(21, 36, 0, 10, 10, &named);
+        assert_eq!(id, -1);
+        assert_eq!(text, "My Stash");
+        assert!(enabled);
+        // The 3988→306 remap: tile 467 style 4 (frameX 144) unnamed →
+        // the Dead Man's Chest icon 3988 remaps to the plain Chest 306.
+        let dead = vec![crate::chest::WorldChest {
+            tile: (10, 10),
+            ..Default::default()
+        }];
+        let (id, text, _, _) = container_hover(467, 144, 0, 10, 10, &dead);
+        assert_eq!(id, 306, "the :34805-34807 remap");
+        assert!(text.is_empty());
+        // The 2x2 origin decode: a hovered right-half cell (frameX 18)
+        // resolves the chest at x-1.
+        let off = vec![crate::chest::WorldChest {
+            tile: (9, 10),
+            ..Default::default()
+        }];
+        let (_, _, _, found) = container_hover(21, 18, 0, 10, 10, &off);
+        assert_eq!(found, Some(0), "frameX%36 != 0 → x-1");
     }
 }
