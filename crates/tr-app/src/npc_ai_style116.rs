@@ -120,7 +120,7 @@ pub fn style116_step(npc: &mut Npc, env: &mut Style116Env<'_>) {
     let (w, h) = npc.size();
     let center = Vec2::new(npc.x + w / 2.0, npc.y + h / 2.0);
     let mut on_surface = false; // flag
-    // `:47521-47545` — the water line.
+                                // `:47521-47545` — the water line.
     let tx = center.x as i32 >> 4;
     let ty = center.y as i32 >> 4;
     if let Some(water_line) = get_water_line(env.world, tx, ty) {
@@ -273,7 +273,10 @@ mod tests {
         let mut n = strider(100.0, 100.0);
         n.ai[0] = 1.0;
         n.wet = true;
-        let mut env = Style116Env { world: &w, rng: &mut rng };
+        let mut env = Style116Env {
+            world: &w,
+            rng: &mut rng,
+        };
         style116_step(&mut n, &mut env);
         assert_eq!(n.vy, -0.3, "the wet lift ran");
         assert_eq!(n.ai[1], 0.0, "no counter tick");
@@ -290,7 +293,10 @@ mod tests {
         let mut oracle = UnifiedRandom::new(116);
         let mut n = strider(100.0, 100.0);
         n.vy = 0.0; // grounded, dry
-        let mut env = Style116Env { world: &w, rng: &mut rng };
+        let mut env = Style116Env {
+            world: &w,
+            rng: &mut rng,
+        };
         style116_step(&mut n, &mut env);
         oracle.next_range(120, 241);
         oracle.next_range(60, 241);
@@ -301,7 +307,10 @@ mod tests {
         let mut oracle = UnifiedRandom::new(116);
         let mut n = strider(100.0, 100.0);
         n.wet = true;
-        let mut env = Style116Env { world: &w, rng: &mut rng };
+        let mut env = Style116Env {
+            world: &w,
+            rng: &mut rng,
+        };
         style116_step(&mut n, &mut env);
         oracle.next_range(120, 241);
         assert_eq!(rng.peek(), oracle.peek(), "the wet single roll");
@@ -318,7 +327,10 @@ mod tests {
         let mut n = strider(100.0, 100.0);
         n.vy = 0.0;
         n.ai[1] = 300.0; // past any threshold
-        let mut env = Style116Env { world: &w, rng: &mut rng };
+        let mut env = Style116Env {
+            world: &w,
+            rng: &mut rng,
+        };
         style116_step(&mut n, &mut env);
         oracle.next_range(120, 241);
         oracle.next_range(60, 241);
@@ -333,7 +345,10 @@ mod tests {
         let mut n = strider(100.0, 100.0);
         n.wet = true;
         n.ai[1] = 300.0;
-        let mut env = Style116Env { world: &w, rng: &mut rng };
+        let mut env = Style116Env {
+            world: &w,
+            rng: &mut rng,
+        };
         style116_step(&mut n, &mut env);
         assert_eq!(n.ai[1], 0.0);
         // The wet lift ran first (-0.3), the hop keeps it.
@@ -354,11 +369,18 @@ mod tests {
         let mut rng = UnifiedRandom::new(116);
         let mut n = strider(100.0, 112.0); // centre y 117 > the line
         let line = get_water_line(&w, 6, 7).expect("the water line");
-        let mut env = Style116Env { world: &w, rng: &mut rng };
+        let mut env = Style116Env {
+            world: &w,
+            rng: &mut rng,
+        };
         style116_step(&mut n, &mut env);
         // The lift: vy = -0.8, then the overshoot clamp if it crosses.
         let bottom_minus_1 = 112.0 + 10.0 - 1.0;
-        let want = if bottom_minus_1 - 0.8 < line { line - bottom_minus_1 } else { -0.8 };
+        let want = if bottom_minus_1 - 0.8 < line {
+            line - bottom_minus_1
+        } else {
+            -0.8
+        };
         assert_eq!(n.vy, want);
     }
 
@@ -381,7 +403,11 @@ mod tests {
         let mut rng = UnifiedRandom::new(116);
         let (row, counter) = strider_find_frame(2, 5.0, 2.0, 0.0, 0.0, &mut rng);
         assert_eq!((row, counter), (4, 0.0));
-        assert_eq!(rng.peek(), UnifiedRandom::new(116).peek(), "no idle draw off row 0");
+        assert_eq!(
+            rng.peek(),
+            UnifiedRandom::new(116).peek(),
+            "no idle draw off row 0"
+        );
         // The ai[1]==1 snap.
         let mut rng = UnifiedRandom::new(116);
         let (row, _) = strider_find_frame(2, 5.0, 0.0, 0.0, 1.0, &mut rng);
@@ -397,9 +423,15 @@ mod tests {
         let mut rng_a = UnifiedRandom::new(612);
         let mut rng_b = UnifiedRandom::new(612);
         for tick in 0..300 {
-            let mut env_a = Style116Env { world: &w, rng: &mut rng_a };
+            let mut env_a = Style116Env {
+                world: &w,
+                rng: &mut rng_a,
+            };
             style116_step(&mut a, &mut env_a);
-            let mut env_b = Style116Env { world: &w, rng: &mut rng_b };
+            let mut env_b = Style116Env {
+                world: &w,
+                rng: &mut rng_b,
+            };
             style116_step(&mut b, &mut env_b);
             assert_eq!(rng_a.peek(), rng_b.peek(), "stream @{tick}");
             assert_eq!(a.vx.to_bits(), b.vx.to_bits(), "vx @{tick}");
