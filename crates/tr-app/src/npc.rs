@@ -5031,10 +5031,21 @@ impl Npc {
     /// `oldPos.Length - 1` down to 1 (`:90866`), the RESIZED length
     /// (`NPC.cs:8453-8462`), NOT the 60-slot storage: 402 shifts 36
     /// slots, a default-10 kind shifts 10 exactly like before.
+    /// GATE WIDENING (the outside-sites census): the DD2 Kobold Flyers
+    /// 574/575 ARE rowed + wired (`update_diving_flyer`) and map mode 7
+    /// (`NPCID.cs:10430`) — the C# shifts their rings every tick, so
+    /// the port does too (default-10 rings; their FindFrame spark
+    /// `:67939` reads `oldPos[3]`, the DD2 FindFrame lane's arm — the
+    /// shift fills the anchor it will need; NO reader today, zero
+    /// draw/stream change). The Chaos Elemental 120 is NOT rowed on
+    /// this base (the g8 ≤230 wiring lane's; mode 4, default-10 ring).
     pub fn update_trails(&mut self) {
-        // `NPCID.Sets.TrailingMode[402] == 7` — the `case 7` arm
-        // (`NPC.cs:90863-90872`).
-        if self.kind != NpcKind::StardustWormHead {
+        // `NPCID.Sets.TrailingMode` == 7 — the `case 7` arm
+        // (`NPC.cs:90863-90872`): 402, 574, 575 today (`NPCID.cs:10430`).
+        if !matches!(
+            self.kind,
+            NpcKind::StardustWormHead | NpcKind::DD2KoboldFlyerT2 | NpcKind::DD2KoboldFlyerT3
+        ) {
             return;
         }
         for i in (1..self.trail_len).rev() {
@@ -20633,6 +20644,34 @@ mod tests {
         assert_eq!(n.trail_len, 36);
         assert_eq!(n.old_pos, [Vec2::ZERO; 60], "the resize zero loop");
         assert_eq!(n.old_rot, [0.0; 60]);
+    }
+
+    /// W4-g62 outside-sites arm — the DD2 Kobold Flyers 574/575 are
+    /// rowed + wired (`update_diving_flyer`) and map TrailingMode 7
+    /// (`NPCID.cs:10430`): the C# shifts their default-10 rings every
+    /// tick (`NPC.cs:90863-90872`), so the widened gate does too. The
+    /// FindFrame spark (`:67939` reads `oldPos[3]`) is the DD2
+    /// FindFrame lane's arm — this witness pins the SHIFT only: slot 3
+    /// carries the 4-ticks-ago position the spark will anchor on, and
+    /// no draw/stream rides the shift (pure state, zero RNG).
+    #[test]
+    fn w4_g62_the_kobold_flyers_shift_the_mode_7_ring() {
+        for kind in [NpcKind::DD2KoboldFlyerT2, NpcKind::DD2KoboldFlyerT3] {
+            let mut n = bare(kind);
+            assert_eq!(n.trail_len, 10, "574/575 keep the default row");
+            n.rotation = 0.125;
+            for tick in 0..4 {
+                n.x = 100.0 + tick as f32;
+                n.update_trails();
+            }
+            // After 4 shifts slot 3 holds the FIRST stamp (100,100) —
+            // the spark's `oldPos[3] - position` aim anchor (`:67939`).
+            assert_eq!(n.old_pos[0], Vec2::new(103.0, 100.0));
+            assert_eq!(n.old_pos[3], Vec2::new(100.0, 100.0));
+            assert_eq!(n.old_rot[3], 0.125, "the rotation twin rides");
+            assert_eq!(n.old_pos[4], Vec2::ZERO, "the 10-ring's tail");
+            assert_eq!(n.old_pos[10], Vec2::ZERO, "storage past 10");
+        }
     }
 
     pub(super) fn bare(kind: NpcKind) -> Npc {
