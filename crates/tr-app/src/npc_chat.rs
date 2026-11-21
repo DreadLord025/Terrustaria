@@ -260,8 +260,68 @@ pub fn get_chat(npc: &Npc, ctx: &mut ChatContext) -> String {
             37 => old_man(ctx),
             229 => pirate(ctx),
             453 => skeleton_merchant(ctx),
+            // W4-d120 final census: the LAST unported GetChat arms — the
+            // town pets (d43 kinds) and the town slimes (the f43 spawn
+            // lane), keyed on the vanilla type like the three above.
+            // `:94804-94815` — the event text, else the dot-less
+            // `<Pet>Chatter.Chatter` category (`Lang.cs:360-373`).
+            637 => pet_chat(ctx, "Cat"),
+            638 => pet_chat(ctx, "Dog"),
+            656 => pet_chat(ctx, "Bunny"),
+            // `:94816-94819` — `NPCID.Sets.IsTownSlime` (`NPCID.cs:10119`).
+            ty if crate::npc_ai_town::is_town_slime(ty as i32) => {
+                match special_event_text(ctx, "Slime", ty) {
+                    Some(text) => text,
+                    None => {
+                        // `Lang.SlimeChat` (`Lang.cs:408-411`): the
+                        // colour-named category. The kinds ride d43's
+                        // `SlimeVariant` plan — no port kind reaches this
+                        // arm yet, so the colour is the recorded Blue
+                        // default (`Lang.GetSlimeType`'s own default).
+                        let prefix = format!("Slime{}Chatter.Chatter", slime_chat_colour(ty));
+                        let count = crate::lang::dialog_count(&prefix);
+                        let index = ctx.next(count as i32);
+                        crate::lang::select_dialog(&prefix, index)
+                    }
+                }
+            }
             _ => String::new(),
         },
+    }
+}
+
+/// `Lang.CatChat`/`DogChat`/`BunnyChat` (`Lang.cs:360-373`) behind the
+/// pet arms (`NPC.cs:94804-94815`): the event text first, else ONE
+/// `SelectRandom` draw over the DOT-LESS `<Pet>Chatter.Chatter` filter
+/// (the rows are `Chatter_1/2/...` — the same no-trailing-dot shape the
+/// Angler's `BloodMoonFishing` filter uses).
+fn pet_chat(ctx: &mut ChatContext, pet: &str) -> String {
+    let ty = match pet {
+        "Cat" => 637,
+        "Dog" => 638,
+        _ => 656,
+    };
+    if let Some(text) = special_event_text(ctx, pet, ty) {
+        return text;
+    }
+    let prefix = format!("{pet}Chatter.Chatter");
+    let count = crate::lang::dialog_count(&prefix);
+    let index = ctx.next(count as i32);
+    crate::lang::select_dialog(&prefix, index)
+}
+
+/// `Lang.GetSlimeType` (`Lang.cs:375-406`): the town-slime type → the
+/// chatter category's colour word. The default (and 670) is "Blue".
+fn slime_chat_colour(ty: u16) -> &'static str {
+    match ty {
+        678 => "Green",
+        679 => "Old",
+        680 => "Purple",
+        681 => "Rainbow",
+        682 => "Red",
+        683 => "Yellow",
+        684 => "Copper",
+        _ => "Blue", // 670 and the switch's default
     }
 }
 
@@ -2150,5 +2210,74 @@ mod tests {
             crate::lang::text("BartenderSpecialText.FirstMeeting")
         );
         assert!(log.is_empty(), "the arm draws nothing");
+    }
+
+    // ---- W4-d120 final census: the LAST GetChat arms (pets/slime) ------
+
+    /// `NPC.cs:94804-94815` + `Lang.cs:360-373` — the pet arms: the event
+    /// text first, else ONE reverse pick over the DOT-LESS
+    /// `<Pet>Chatter.Chatter` filter (`Chatter_1/2/...`). The kinds ride
+    /// d43 — the arm is driven directly until they merge.
+    #[test]
+    fn the_pet_arms_pick_the_dotless_chatter_category() {
+        init_lang();
+        let guide = npc(NpcKind::Guide); // any live shell — the arm is type-keyed
+        let npcs = [guide];
+        for (pet, ty) in [("Cat", 637u16), ("Dog", 638), ("Bunny", 656)] {
+            let prefix = format!("{pet}Chatter.Chatter");
+            let count = crate::lang::dialog_count(&prefix) as i32;
+            assert!(count >= 1, "{pet} chatter rows ship");
+            let mut log = Vec::new();
+            let mut rng = census_vec(vec![0], &mut log);
+            let mut ctx = context(&npcs, &mut rng);
+            assert_eq!(
+                pet_chat(&mut ctx, pet),
+                crate::lang::select_dialog(&prefix, 0),
+                "{pet}: reverse index 0 = the LAST row"
+            );
+            assert_eq!(log, vec![count], "{pet}: one Next(count), no events");
+            // A passed event roll short-circuits the chatter draw.
+            let mut log = Vec::new();
+            let mut rng = census_vec(vec![0, 0], &mut log);
+            let mut ctx = context(&npcs, &mut rng);
+            ctx.party_is_up = true;
+            let text = pet_chat(&mut ctx, pet);
+            let event_prefix = format!("{pet}SpecialText.Party");
+            if crate::lang::dialog_count(&event_prefix) > 0 {
+                assert_eq!(text, crate::lang::select_dialog(&event_prefix, 0));
+                assert_eq!(log, vec![3, crate::lang::dialog_count(&event_prefix) as i32]);
+            } else {
+                // An empty event category still pays Next(0), then declines.
+                assert_eq!(log, vec![3, 0, count]);
+            }
+            let _ = ty; // the dispatch keys ride get_chat's `ty` match
+        }
+    }
+
+    /// `Lang.GetSlimeType` (`Lang.cs:375-406`) — the town-slime colour
+    /// words: 670 Blue (the default), 678 Green, 679 Old, 680 Purple,
+    /// 681 Rainbow, 682 Red, 683 Yellow, 684 Copper. The GetChat arm
+    /// (`NPC.cs:94816-94819`) is type-keyed on `NPCID.Sets.IsTownSlime`
+    /// (`NPCID.cs:10119`); no port kind reaches it until d43/f43 merge.
+    #[test]
+    fn the_town_slime_colour_words_match_the_switch() {
+        assert_eq!(slime_chat_colour(670), "Blue");
+        assert_eq!(slime_chat_colour(678), "Green");
+        assert_eq!(slime_chat_colour(679), "Old");
+        assert_eq!(slime_chat_colour(680), "Purple");
+        assert_eq!(slime_chat_colour(681), "Rainbow");
+        assert_eq!(slime_chat_colour(682), "Red");
+        assert_eq!(slime_chat_colour(683), "Yellow");
+        assert_eq!(slime_chat_colour(684), "Copper");
+        assert_eq!(slime_chat_colour(1), "Blue", "the switch's default");
+        // The set membership the dispatch guard reads.
+        for ty in [670, 678, 679, 680, 681, 682, 683, 684] {
+            assert!(crate::npc_ai_town::is_town_slime(ty), "{ty}");
+        }
+        assert!(!crate::npc_ai_town::is_town_slime(1), "the wild blue slime");
+        // The category names the arm composes (Lang.SlimeChat, :408-411).
+        init_lang();
+        let count = crate::lang::dialog_count("SlimeBlueChatter.Chatter");
+        assert!(count >= 1, "the blue town slime's rows ship");
     }
 }
