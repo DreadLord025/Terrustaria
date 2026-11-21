@@ -1,4 +1,4 @@
-# 143 — The NPCID 578-630 roster sheets: real-dims inventory + pack verdict (W4-d42)
+# 238 - The NPCID 578-630 roster sheets: real-dims inventory + pack verdict (W4-d42)
 
 Status: DONE (measurement + inventory; code-only mode — the packers run under
 node, no cargo/tests). Branch `task/W4-d42-npc-kinds-561-630`, base commit

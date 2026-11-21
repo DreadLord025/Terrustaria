@@ -532,7 +532,7 @@ pub(crate) fn npc_rotation_allowed(kind: NpcKind) -> bool {
             // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
             | NpcKind::BlazingWheel
             | NpcKind::DungeonSpirit
-            // W4-d42 rotation census (research/143 §7) — ONLY the kinds
+            // W4-d42 rotation census (research/238 §7) — ONLY the kinds
             // whose PORTED machines write rotation join. IN: the 578
             // bug's vx*0.1 (`NPC.cs:67876`, FindFrame), the fairies'
             // vx*0.1 (`:69838`), the 593 walker's air tilt
@@ -3703,7 +3703,7 @@ pub(crate) fn draw_npcs(
 mod anchor_tests {
     use super::*;
 
-    /// W4-d42 rotation census (research/143 §7) — the draw gate CONSUMES
+    /// W4-d42 rotation census (research/238 §7) — the draw gate CONSUMES
     /// the writers: the ten IN kinds' ported machines write `rotation`
     /// (the FindFrame arms / the BloodSquid's hover Aim preset), and
     /// `npc_rotation_allowed` admits exactly those ten. The 33 OUT

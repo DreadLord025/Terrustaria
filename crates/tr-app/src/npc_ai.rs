@@ -1327,7 +1327,7 @@ mod tests {
         );
     }
 
-    /// W4-d42 rotation census (research/143 §7) — the BloodSquid's (619)
+    /// W4-d42 rotation census (research/238 §7) — the BloodSquid's (619)
     /// hover step WRITES the Aim tilt (`HoverParams::BLOOD_SQUID`,
     /// `NPC.cs:50643-50646`: `rotation = atan2(num5, num4) - 1.57f`), the
     /// writer `render::entities::npc_rotation_allowed` admits. The aim is
