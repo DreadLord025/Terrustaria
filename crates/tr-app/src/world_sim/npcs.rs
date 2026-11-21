@@ -4060,13 +4060,36 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         .npcs
         .iter()
         .any(|n| n.kind == NpcKind::TaxCollector && n.hp > 0);
-    // `Player.CollectTaxes`'s housed-town count (`Player.cs:24142-24149`):
-    // the alive, housed town NPCs (the C# counts every non-pet with a
-    // head index — the port's town roster).
+    // `Player.CollectTaxes`'s payer count (`Player.cs:24142-24149`): the
+    // C# counts `active && !homeless && !NPCID.Sets.IsTownPet[type] &&
+    // NPC.TypeToDefaultHeadIndex(type) > 0` — NOT the town-flag roster:
+    // the Travelling Merchant (368, head 21) and the DD2 Bartender (550,
+    // head 24) PAY when housed (the old `is_town_resident` filter dropped
+    // the Bartender), while the Old Man (37) and the Skeleton Merchant
+    // (453) have no head row (`NPC.cs:7510-7553`) and never pay. The
+    // bound/rescue forms ride freed-row `net_id`s (bestiary fold), so the
+    // head table alone would hand them a payer slot — the six are
+    // excluded by kind (the `ui/housing.rs:100-116` bound-trio rejection
+    // extended to the webbed/sleeping pair). `home.is_some()` is the
+    // port's `!homeless` stand-in.
     app.world.tax_payers = app
         .npcs
         .iter()
-        .filter(|n| n.kind.is_town_resident() && n.hp > 0 && n.home.is_some())
+        .filter(|n| {
+            n.hp > 0
+                && n.home.is_some()
+                && !matches!(
+                    n.kind,
+                    NpcKind::BoundGoblin
+                        | NpcKind::BoundWizard
+                        | NpcKind::BoundMechanic
+                        | NpcKind::WebbedStylist
+                        | NpcKind::SleepingAngler
+                        | NpcKind::SleepingGolfer
+                )
+                && !crate::npc_ai_town::is_town_pet(n.kind.net_id())
+                && crate::ui::housing::type_to_head_index(n.kind.net_id()) > 0
+        })
         .count() as i32;
     // `Main.cs:64995-65003`'s pump.
     let rate = app.world.day_rate();
@@ -7528,6 +7551,39 @@ mod tests {
         let capped = world.tax_money;
         crate::world_sim::clock::collect_taxes(&mut world);
         assert_eq!(world.tax_money, capped, "no collection past the cap");
+    }
+
+    /// W4-f37 doc-sweep — the payer filter (`Player.cs:24145`):
+    /// `!homeless && !IsTownPet && TypeToDefaultHeadIndex > 0`, NOT the
+    /// town-flag roster. The housed DD2 Bartender (550, head 24) PAYS
+    /// (the old `is_town_resident` filter dropped him); the bound forms
+    /// ride freed-row `net_id`s and must NOT pay even with a home; a
+    /// homeless NPC never pays; a dead NPC never pays.
+    #[test]
+    fn the_tax_payer_filter_counts_heads_not_town_flags() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let housed = |kind: NpcKind| {
+            let mut n = Npc::new(kind, 32.0, 100.0, 1, 0.0);
+            n.hp = n.max_hp;
+            n.home = Some((2, 6));
+            n
+        };
+        // The Guide (22, head 1) + the housed Bartender (550, head 24).
+        app.npcs.push(housed(NpcKind::Guide));
+        app.npcs.push(housed(NpcKind::DD2Bartender));
+        // A homeless Merchant: `!homeless` refuses him.
+        let mut homeless = Npc::new(NpcKind::Merchant, 64.0, 100.0, 1, 0.0);
+        homeless.hp = homeless.max_hp;
+        app.npcs.push(homeless);
+        // A housed bound Goblin: his `net_id` folds onto the Tinkerer's
+        // row (head 8), but the C#'s type 105 has no head row — excluded.
+        app.npcs.push(housed(NpcKind::BoundGoblin));
+        // A dead Golfer: `active` refuses him.
+        let mut dead = housed(NpcKind::Golfer);
+        dead.hp = 0;
+        app.npcs.push(dead);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.world.tax_payers, 2, "Guide + Bartender only");
     }
 
     #[test]
