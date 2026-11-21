@@ -177,7 +177,7 @@ research/66). No cargo/tests invoked this round.
 | - | ---- | ------- | ------ |
 | 1 | **g73e — the g75 post-fold falls sweep** | g73 (or the family merger) | `git log e30ad7ba..origin/task/W4-g75-honeyfall-draw` = `d118f7ba` + `f4e3071f` + `2b9ed81f`. The disco colour-source fix is SEMANTIC: g73's mod.rs still carries the manager-local `update_disco_rgb` cycle (out of phase with the app's `advance_disco`, init 0 vs Main.Initialize's DiscoR=255 :66780) — replace with g75's `set_disco_rgb` latch fed from params.disco beside `set_show_invisible` (frame/draw.rs). The 717 spawn arm is already in g73; only the 2 witnesses + the 3 disco witnesses + the sweep docs fold. The g73 contract's own cross-note demands this check at merge time. |
 | 2 | **g11c — the snowing details F1-F7** | d130 (the canonical branch) or the weather merger | research/83's g11 addendum (`d892d8d4`) lists 7 exact folds onto d130's snow.rs: F1 g11's body + the `global` stream (retire the Snow splitmix + App.snow field), F2 MAX_SCREEN_W 4096 HiDef (re-derive every budget expectation), F3 restore the in-body gamePaused gate, F4 counter budget once-per-call (d130's shape — g11's per-attempt live_type census retires; this SUPERSEDES research/66 §6's "g11b hoist" note: the hoist target is d130's counter param, not g11's loop), F5 int attempt-loop shape, F6 env re-point (g11's scene_scan SnowingEnv block → SnowInputs + game_paused), F7 the 4 g11 snow witnesses re-pinned. VERIFIED at d130 tip `ec1d73c7`: snow.rs still pins 1920/splitmix/no pause gate — NONE of F1-F7 applied yet. |
-| 3 | **f6 double-atan2 drill fix** | the mount-resolve merger (step 7) | f6 tip still computes `d.y.atan2(d.x)` in F32; take e4's caller-passes-aim shape (double atan2, orchestrator_dust.rs:76-78 precedent). |
+| 3 | **f6 double-atan2 drill fix** | the mount-resolve merger (step 7) | f6 tip still computes `d.y.atan2(d.x)` in F32; take e4's caller-passes-aim shape (double atan2, orchestrator_dust.rs:76-78 precedent). **EXACT 2-hunk patch published §7.1 (final-audit round)** — minimal in-place `(d.y as f64).atan2(d.x as f64) as f32` at mount_dust.rs:85 + the :1598 witness mirror; signature keeps (target, player_center), no RNG-order change. |
 | 4 | **research/116's 6 wiring gaps** | the main-lane merger (step 4) | 10/11/13 fall-through on reachable callers (Queen-Slime hook, Shellphone), other_position on the reqs/queue, style-9 pylon extraInfo2, style-5 waterStyle param, Player.Teleport head/tail arms, the double-grant cleanup. |
 | 5 | **e3's 3 keep-one contracts** | the proj-lane mergers (step 9) | 152 drop-in vs d16 `e122a6b2`, 1051 burst vs d1 `e271b5bc`, cloak-five vs f48 `bba610bb` + the g64 unwired twins. |
 | 6 | **prefix.rs RainbowRodHit fold** | the wiring wave (step 7) | count-only drains → e4's full emitter, never both. |
@@ -201,6 +201,81 @@ name the landed `collision::tile_dust_amount` +
 1-3/7 are EXECUTED on this branch; 4-5 are cross-doc (the decisions
 stand, the code lives on the other lanes); 6 is the merge-verify
 wave's. No unclaimed checklist item remains on d54-owned files.
+
+## 7. FINAL AUDIT ADDENDUM (final-audit round, 2026-11-21)
+
+### 7.1 f6 drill-atan2 — the EXACT patch hunk (owed fold §5 row 3)
+
+Re-verified at the fetched f6 tip `5daa1d70`:
+`crates/tr-app/src/mount_dust.rs::drill_beam_dust` (fn at :75) still
+computes the aim in F32 at :85. The C# is
+`Mount.cs:3107` `float num = (vector - mountedPlayer.Center).ToRotation();`
+and `Utils.ToRotation` is **`Utils.cs:1655-1658`**:
+
+```csharp
+public static float ToRotation(this Vector2 v)
+{
+    return (float)Math.Atan2(v.Y, v.X);
+}
+```
+
+`Math.Atan2(double, double)` — the floats are WIDENED, atan2 runs in
+DOUBLE, the result is cast back to f32. `f32::atan2` is a different
+libm path and can differ in the last ulp; the cos/sin at :93-95 then
+amplify the angle delta into the velocity bytes. e4's port already
+has the correct shape — `orchestrator_dust.rs:74-78` at e4 tip
+`2a79551a`:
+
+```rust
+/// `Utils.ToRotation` (`Utils.cs:1655-1658`): `Math.Atan2(Y, X)` in
+/// double of the widened floats, cast back.
+pub(crate) fn to_rotation(v: Vec2) -> f32 {
+    (v.y as f64).atan2(v.x as f64) as f32
+}
+```
+
+**Hunk 1 — the body fix** (`mount_dust.rs:83-85` at f6 `5daa1d70`),
+old:
+
+```rust
+    // `:3107` — `(vector - mountedPlayer.Center).ToRotation()` (atan2).
+    let d = target - player_center;
+    let num = d.y.atan2(d.x);
+```
+
+new:
+
+```rust
+    // `:3107` — `(vector - mountedPlayer.Center).ToRotation()`:
+    // Utils.cs:1655-1658 `(float)Math.Atan2(v.Y, v.X)` — Math.Atan2 is
+    // DOUBLE of the widened floats, cast back (e4 to_rotation precedent,
+    // orchestrator_dust.rs:76-78).
+    let d = target - player_center;
+    let num = (d.y as f64).atan2(d.x as f64) as f32;
+```
+
+**Hunk 2 — the witness re-pin** (the mirror inside
+`w4_f6_drill_beam_spawns_two_and_mirrors_the_draw_order`,
+`mount_dust.rs:1598`), old:
+
+```rust
+        let num = d.y.atan2(d.x);
+```
+
+new:
+
+```rust
+        let num = (d.y as f64).atan2(d.x as f64) as f32;
+```
+
+Two one-line edits (+ the citation comment). The signature KEEPS
+`(target, player_center)` — f6's file is the keep-one survivor (§2
+Mount lane), so the minimal in-place fix beats reshaping to e4's
+caller-passes-aim `drill_sparks(tile_centre, aim, …)`; the second
+call-shape witness `w4_f6_culled_spawn_writes_the_sentinel` (:1965)
+passes positions only and needs NO edit. No RNG draw order changes
+(the atan2 is draw-free); the streams stay aligned. Owner: f6-owner
+or the mount-resolve merger (merge-order step 7).
 
 ## Verification
 
