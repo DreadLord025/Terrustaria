@@ -2533,22 +2533,23 @@ impl Wiring {
             // The open door (11 → `WorldGen.CloseDoor(i, j, forced: true)`,
             // `Wiring.cs:1461-1468`): the forced close skips the entity
             // occupancy gate (`WorldGen.cs:31858-31867`); the hinge column's
-            // SkipWire ×3 (`:31895-31900`, `Wiring.running`-gated) joins the
-            // flood's skip set. The `PlaySound(9)` cue (`:31906`) queues on
-            // success; the `SendData(19)` echo is Stage-2.
+            // SkipWire ×3 (`:31895-31899`, `Wiring.running`-gated) joins the
+            // flood's skip set through the f11 §1 Option seam (the gate
+            // lives at the call site). The `PlaySound(9)` cue (`:31908`)
+            // queues on success; the `SendData(19)` echo is Stage-2.
             11 => {
                 let mut drops = Vec::new();
                 let mut skips = Vec::new();
                 // tr-core carries no entity store — `forced: true` skips
                 // the gate entirely, so the closure is never consulted.
-                if crate::edit::close_door_wired(
+                if crate::edit::close_door(
                     world,
                     i,
                     j,
                     true,
                     &|_, _| false,
                     &mut drops,
-                    &mut skips,
+                    if self.running { Some(&mut skips) } else { None },
                 ) {
                     self.actuation_drops.extend(drops);
                     for cell in skips {
@@ -2574,12 +2575,26 @@ impl Wiring {
                 }
                 let mut drops = Vec::new();
                 let mut skips = Vec::new();
-                let opened =
-                    crate::edit::open_door_wired(world, i, j, num67, &mut drops, &mut skips);
+                // The f11 §1 Option seam: `Some` only while the flood runs.
+                let opened = crate::edit::open_door(
+                    world,
+                    i,
+                    j,
+                    num67,
+                    &mut drops,
+                    if self.running { Some(&mut skips) } else { None },
+                );
                 // The retry is unconditional (`:1476-1478`) — the first
                 // attempt's validate-kills may have cleared the cell.
                 let opened = opened
-                    || crate::edit::open_door_wired(world, i, j, -num67, &mut drops, &mut skips);
+                    || crate::edit::open_door(
+                        world,
+                        i,
+                        j,
+                        -num67,
+                        &mut drops,
+                        if self.running { Some(&mut skips) } else { None },
+                    );
                 self.actuation_drops.extend(drops);
                 if opened {
                     for cell in skips {
@@ -6400,6 +6415,25 @@ mod w4_c42_batch2_tests {
         for row in 0..3i32 {
             put(w, 10, 17 + row, 10, 0, (row * 18) as i16);
         }
+    }
+
+    /// The f11-unique deterministic-draw pin (research/95 §1 witness union:
+    /// `w4_f11_the_door_direction_draw_is_deterministic`, kept verbatim —
+    /// the lean-column observable, distinct from the c42 stream-join pin).
+    #[test]
+    fn w4_f11_the_door_direction_draw_is_deterministic() {
+        let run = |seed: u64| {
+            let mut w = world();
+            closed_door(&mut w);
+            let mut wiring = Wiring::new();
+            wiring.seed_rand(seed);
+            wiring.hit_wire_single(&mut w, 10, 18);
+            // The lean column: 11 (right) or 9 (left).
+            let right = w.tile(11, 17).is_some_and(|t| t.active() && t.kind == 11);
+            let left = w.tile(9, 17).is_some_and(|t| t.active() && t.kind == 11);
+            (right, left)
+        };
+        assert_eq!(run(7), run(7), "the same seed opens the same way");
     }
 
     #[test]

@@ -456,13 +456,13 @@ pub fn interact_at(
                 // retry with the opposite direction. After a validate-kill
                 // the cell no longer has kind 10 (`KillTile` resets `type`,
                 // `WorldGen.cs:63915`), so the cleanup path skips the retry.
-                if open_door(world, i, j, direction, &mut drops) {
+                if open_door(world, i, j, direction, &mut drops, None) {
                     return TileInteraction::DoorOpened {
                         object_drops: drops,
                     };
                 }
                 if world.tile(i, j).is_some_and(|t| t.kind == 10)
-                    && open_door(world, i, j, -direction, &mut drops)
+                    && open_door(world, i, j, -direction, &mut drops, None)
                 {
                     return TileInteraction::DoorOpened {
                         object_drops: drops,
@@ -471,7 +471,7 @@ pub fn interact_at(
                 TileInteraction::DoorBlocked {
                     object_drops: drops,
                 }
-            } else if close_door(world, i, j, false, cell_blocked, &mut drops) {
+            } else if close_door(world, i, j, false, cell_blocked, &mut drops, None) {
                 // The open-door branch (`Player.cs:32857-32864`).
                 TileInteraction::DoorClosed {
                     object_drops: drops,
@@ -705,41 +705,20 @@ fn dial_interaction(world: &mut World, sundial: bool) -> TileInteraction {
 /// validate-cleanup helper and the cut/drip sweep in the opening column.
 /// `drops` collects the object destructions of those kills (vanilla's
 /// `Item.NewItem` side effects). `false` = refused, door cells untouched.
+/// `wire_skips` collects the `Wiring.SkipWire` cells of the `:37717-37725`
+/// block (the caller passes `Some` only while `Wiring.running`, the C#
+/// `Main.netMode != 1 && Wiring.running` gate; the interaction/NPC callers
+/// pass `None`). The wired caller inserts them into its skip set after the
+/// call (order-identical: the C# skips precede the writes and the trailing
+/// reframe reads no skip state). The Option shape is f11's §1 seam, adopted
+/// by the research/95 union-exec (W4-c42).
 pub fn open_door(
     world: &mut World,
     i: i32,
     j: i32,
     direction: i32,
     drops: &mut Vec<ObjectDrop>,
-) -> bool {
-    open_door_inner(world, i, j, direction, drops, false, &mut Vec::new())
-}
-
-/// The wired caller's seam (W4-c42, `Wiring.cs:1469-1488`): the same body,
-/// but the `Wiring.SkipWire` ×6 (`WorldGen.cs:37717-37725`, gated on
-/// `Main.netMode != 1 && Wiring.running`) is collected into `skips` — the
-/// caller (the wiring flood, `running == true`) inserts them into its skip
-/// set after the call (order-identical: the C# skips precede the writes and
-/// the trailing reframe reads no skip state).
-pub fn open_door_wired(
-    world: &mut World,
-    i: i32,
-    j: i32,
-    direction: i32,
-    drops: &mut Vec<ObjectDrop>,
-    skips: &mut Vec<(i32, i32)>,
-) -> bool {
-    open_door_inner(world, i, j, direction, drops, true, skips)
-}
-
-fn open_door_inner(
-    world: &mut World,
-    i: i32,
-    j: i32,
-    direction: i32,
-    drops: &mut Vec<ObjectDrop>,
-    collect_skips: bool,
-    skips: &mut Vec<(i32, i32)>,
+    wire_skips: Option<&mut Vec<(i32, i32)>>,
 ) -> bool {
     // The per-cell null-init guards (:37634-37644) are managed-Tile engine
     // noise; the port reads through `World::tile`'s `Option` instead.
@@ -820,14 +799,13 @@ fn open_door_inner(
             }
         }
     }
-    // `Wiring.SkipWire` ×6 (:37721-37729) — the opened 2×3 block, gated on
-    // `Main.netMode != 1 && Wiring.running`; the wired caller collects them
-    // (`open_door_wired`), the interaction path has no running flood.
-    if collect_skips {
+    // `Wiring.SkipWire` ×6 (:37717-37725) — the `Wiring.running`-gated block;
+    // the wired caller collects them through `wire_skips` (the §1 Option
+    // seam), the interaction path has no running flood.
+    if let Some(skips) = wire_skips {
         for dy in 0..3 {
-            for dx in 0..2 {
-                skips.push((num6 + dx, num + dy));
-            }
+            skips.push((num6, num + dy));
+            skips.push((num6 + 1, num + dy));
         }
     }
     let num8 = num4 % 36 * 54; // :37731 — the open door's style row
@@ -861,10 +839,15 @@ fn open_door_inner(
 /// `WorldGen.CloseDoor` (`WorldGen.cs:31805-31907`): turns the open door
 /// (tile 11) covering `(i, j)` back into the closed door (tile 10) at the
 /// hinge column the open frames encode. `forced` skips the `Collision.
-/// EmptyTile` occupancy gate (the wired caller, `Wiring.cs:1463`); the port
-/// has no wiring so the interaction path always sends `false`. `cell_blocked`
-/// is the player/NPC overlap check of `EmptyTile` (`Collision.cs:1359` —
-/// with `ignoreTiles: true` the tile check is skipped, entities are not).
+/// EmptyTile` occupancy gate (the wired caller, `Wiring.cs:1463`); the
+/// interaction path sends `false`. `cell_blocked` is the player/NPC overlap
+/// check of `EmptyTile` (`Collision.cs:1359` — with `ignoreTiles: true` the
+/// tile check is skipped, entities are not). `wire_skips` collects the
+/// `Wiring.SkipWire` cells of the `:31895-31899` block (the caller passes
+/// `Some` only while `Wiring.running`; the f11 §1 Option seam, adopted by
+/// the research/95 union-exec — the C# skips precede the trailing reframe,
+/// which reads no skip state, so collecting them out and inserting after
+/// the call is order-identical).
 pub fn close_door(
     world: &mut World,
     i: i32,
@@ -872,38 +855,7 @@ pub fn close_door(
     forced: bool,
     cell_blocked: &dyn Fn(i32, i32) -> bool,
     drops: &mut Vec<ObjectDrop>,
-) -> bool {
-    close_door_inner(world, i, j, forced, cell_blocked, drops, false, &mut Vec::new())
-}
-
-/// The wired caller's seam (W4-c42, `Wiring.cs:1461-1468`): the same body,
-/// but the `Wiring.SkipWire` ×3 (`WorldGen.cs:31895-31900`, gated on
-/// `Main.netMode != 1 && Wiring.running`) is collected into `skips` — the
-/// caller (the wiring flood, `running == true`) inserts them into its skip
-/// set. The C# skips happen before the trailing reframe, which reads no
-/// skip state, so collecting them out and inserting after the call is
-/// order-identical.
-pub fn close_door_wired(
-    world: &mut World,
-    i: i32,
-    j: i32,
-    forced: bool,
-    cell_blocked: &dyn Fn(i32, i32) -> bool,
-    drops: &mut Vec<ObjectDrop>,
-    skips: &mut Vec<(i32, i32)>,
-) -> bool {
-    close_door_inner(world, i, j, forced, cell_blocked, drops, true, skips)
-}
-
-fn close_door_inner(
-    world: &mut World,
-    i: i32,
-    j: i32,
-    forced: bool,
-    cell_blocked: &dyn Fn(i32, i32) -> bool,
-    drops: &mut Vec<ObjectDrop>,
-    collect_skips: bool,
-    skips: &mut Vec<(i32, i32)>,
+    wire_skips: Option<&mut Vec<(i32, i32)>>,
 ) -> bool {
     let Some(tile) = world.tile(i, j) else {
         return false;
@@ -990,12 +942,12 @@ fn close_door_inner(
             }
         }
     }
-    // `Wiring.SkipWire` ×3 (:31893-31898) — the hinge column, gated on
-    // `Main.netMode != 1 && Wiring.running`; the wired caller collects them
-    // (`close_door_wired`), the interaction path has no running flood.
-    if collect_skips {
-        for k in num3..num3 + 3 {
-            skips.push((num2, k));
+    // `Wiring.SkipWire` ×3 (:31895-31899) — the `Wiring.running`-gated block;
+    // the wired caller collects them through `wire_skips` (the §1 Option
+    // seam), the interaction path has no running flood.
+    if let Some(skips) = wire_skips {
+        for dy in 0..3i32 {
+            skips.push((num2, num3 + dy));
         }
     }
     // The trailing `WorldGen.TileFrame` 3x4 loop (:31900-31905).
@@ -1557,7 +1509,7 @@ mod tests {
         w.tile_mut(10, 17).unwrap().set_paint(3);
         w.tile_mut(10, 18).unwrap().set_paint(5);
         let mut drops = Vec::new();
-        assert!(open_door(&mut w, 10, 18, 1, &mut drops));
+        assert!(open_door(&mut w, 10, 18, 1, &mut drops, None));
         assert!(drops.is_empty());
         let row_paint = [3u8, 5, 0]; // cache rows (:37676-37690)
         for (k, y, fy) in [(0usize, 17i32, 0i16), (1, 18, 18), (2, 19, 36)] {
@@ -1584,7 +1536,7 @@ mod tests {
         let mut w = closed_door_world();
         w.tile_mut(10, 17).unwrap().set_paint(3);
         let mut drops = Vec::new();
-        assert!(open_door(&mut w, 10, 18, -1, &mut drops));
+        assert!(open_door(&mut w, 10, 18, -1, &mut drops, None));
         for (y, fy) in [(17i32, 0i16), (18, 18), (19, 36)] {
             let hinge = w.tile(9, y).unwrap();
             assert!(hinge.active() && hinge.kind == 11, "hinge row {y}");
@@ -1617,7 +1569,8 @@ mod tests {
                 click.1,
                 false,
                 &no_blocker,
-                &mut drops
+                &mut drops,
+                None
             ));
             assert!(drops.is_empty());
             let written: Vec<_> = (0..3)
@@ -1642,7 +1595,7 @@ mod tests {
         let mut w = doorway_world();
         open_the_door(&mut w, true);
         let mut drops = Vec::new();
-        assert!(close_door(&mut w, 10, 18, false, &no_blocker, &mut drops));
+        assert!(close_door(&mut w, 10, 18, false, &no_blocker, &mut drops, None));
         for dy in 0..3i32 {
             let hinge = w.tile(10, 17 + dy).unwrap();
             assert!(hinge.active() && hinge.kind == 10, "left hinge row {dy}");
@@ -1694,7 +1647,7 @@ mod tests {
             set_active(&mut w, 11, y, 1);
         }
         let mut drops = Vec::new();
-        assert!(!open_door(&mut w, 10, 18, 1, &mut drops));
+        assert!(!open_door(&mut w, 10, 18, 1, &mut drops, None));
         assert!(drops.is_empty());
         for y in 17..=19 {
             let t = w.tile(10, y).unwrap();
@@ -1707,7 +1660,7 @@ mod tests {
         }
         // The opposite direction's column is free — the open succeeds there
         // (the dispatcher-level retry is DW-4.1's test).
-        assert!(open_door(&mut w, 10, 18, -1, &mut drops));
+        assert!(open_door(&mut w, 10, 18, -1, &mut drops, None));
     }
 
     #[test]
@@ -1717,7 +1670,7 @@ mod tests {
         let mut w = closed_door_world();
         set_active(&mut w, 11, 18, 3); // kind 3 ∈ Main.tileCut
         let mut drops = Vec::new();
-        assert!(open_door(&mut w, 10, 18, 1, &mut drops));
+        assert!(open_door(&mut w, 10, 18, 1, &mut drops, None));
         assert!(drops.is_empty()); // a cut plant carries no object drop
         let t = w.tile(11, 18).unwrap();
         assert!(t.active() && t.kind == 11);
@@ -1732,9 +1685,9 @@ mod tests {
         open_the_door(&mut w, false);
         let blocked = |x: i32, y: i32| x == 10 && y == 18;
         let mut drops = Vec::new();
-        assert!(!close_door(&mut w, 10, 18, false, &blocked, &mut drops));
+        assert!(!close_door(&mut w, 10, 18, false, &blocked, &mut drops, None));
         assert!(w.tile(10, 18).unwrap().kind == 11, "door stays open");
-        assert!(close_door(&mut w, 10, 18, true, &blocked, &mut drops));
+        assert!(close_door(&mut w, 10, 18, true, &blocked, &mut drops, None));
         assert!(w.tile(10, 18).unwrap().kind == 10, "forced closes");
     }
 
@@ -1743,11 +1696,11 @@ mod tests {
         // Cross-kind calls refuse without touching the world (:37645/:31818).
         let mut w = closed_door_world();
         let mut drops = Vec::new();
-        assert!(!open_door(&mut w, 40, 40, 1, &mut drops)); // out of bounds
-        assert!(!close_door(&mut w, 10, 18, false, &no_blocker, &mut drops));
+        assert!(!open_door(&mut w, 40, 40, 1, &mut drops, None)); // out of bounds
+        assert!(!close_door(&mut w, 10, 18, false, &no_blocker, &mut drops, None));
         let mut w2 = doorway_world();
         open_the_door(&mut w2, false);
-        assert!(!open_door(&mut w2, 10, 18, 1, &mut drops));
+        assert!(!open_door(&mut w2, 10, 18, 1, &mut drops, None));
     }
 
     #[test]
@@ -1759,7 +1712,7 @@ mod tests {
             set_object_cell(&mut w, 10, 17 + dy, 10, 0, fy);
         }
         let mut drops = Vec::new();
-        assert!(open_door(&mut w, 10, 17, 1, &mut drops));
+        assert!(open_door(&mut w, 10, 17, 1, &mut drops, None));
         for dy in 0..3i32 {
             let t = w.tile(10, 17 + dy).unwrap();
             assert_eq!(t.frame_y, 54 + dy as i16 * 18, "style row {dy}");
@@ -1778,7 +1731,7 @@ mod tests {
         let broken = w.index(10, 19);
         w.tiles[broken] = crate::tile::Tile::default();
         let mut drops = Vec::new();
-        assert!(!open_door(&mut w, 10, 18, 1, &mut drops));
+        assert!(!open_door(&mut w, 10, 18, 1, &mut drops, None));
         for y in 17..=19 {
             assert!(!w.tile(10, y).unwrap().active(), "row {y} cleaned up");
         }
@@ -1945,7 +1898,7 @@ mod tests {
             t.wall = 0; // no wall behind the door anywhere
         }
         let mut drops = Vec::new();
-        assert!(open_door(&mut w, 10, 18, 1, &mut drops));
+        assert!(open_door(&mut w, 10, 18, 1, &mut drops, None));
         assert!(w.tile(10, 17).unwrap().kind == 11);
     }
 
