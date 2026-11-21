@@ -14744,6 +14744,15 @@ pub struct ProjectilePool {
     /// into the chat monitor (the golf `CupScored` chat precedent — the
     /// pool cannot borrow the App).
     pending_ball_chats: Vec<String>,
+    /// W4-d4 — the Mechanical Piranha's per-tick `SetDummyItemTime(5)` flag
+    /// (`Projectile.cs:27528`): the C# calls it once per active piranha per
+    /// sub-step (idempotent — the last write wins). The world sim applies
+    /// ONE dummy-item-time(5) when the flag is set (the golf `PlayerWrites`
+    /// precedent — `SetDummyItemTime` writes the App-level item timers, not
+    /// Player fields, so it cannot ride the arm's `&mut Player`). The
+    /// piranha's `ChangeDir`/`itemRotation` writes ARE Player fields and go
+    /// straight through the arm's `&mut Player` (no lag).
+    pending_piranha_dummy: bool,
     /// S1-P-i55 — the golf family's per-tick context
     /// (`Main.LocalGolfState` + `Main.MouseWorld` + the mouse-right pair +
     /// the player snapshot the aiStyle-150 arm reads). The world-sim pass
@@ -15144,6 +15153,7 @@ impl ProjectilePool {
             pending_splashes: Vec::new(),
             pending_catches: Vec::new(),
             pending_ball_chats: Vec::new(),
+            pending_piranha_dummy: false,
             golf_ctx: None,
             golf_effects: Vec::new(),
         }
@@ -15247,6 +15257,15 @@ impl ProjectilePool {
     /// precedent).
     pub fn drain_ball_chats(&mut self) -> Vec<String> {
         std::mem::take(&mut self.pending_ball_chats)
+    }
+
+    /// W4-d4 — the Mechanical Piranha's `SetDummyItemTime(5)` drain
+    /// (`Projectile.cs:27528`): the world sim applies one dummy-item-time(5)
+    /// when the flag is set (the App-level item timers; the golf
+    /// `PlayerWrites` precedent). The `ChangeDir`/`itemRotation` writes ride
+    /// the arm's `&mut Player` directly.
+    pub fn drain_piranha_dummy(&mut self) -> bool {
+        std::mem::take(&mut self.pending_piranha_dummy)
     }
 
     /// S1-P-i35 — `Player.RemoveAllFishingBobbers` (`Player.cs:33576-33585`):
@@ -17784,6 +17803,21 @@ impl ProjectilePool {
                         // 1000-slot array (the dragon_step shape). The
                         // >10-bounce chat rides `pending_ball_chats`.
                         32 => self.beach_ball_step(i, world, &npcs[..], player.as_deref()),
+                        // W4-d4 — `AI()`'s `else if (this.aiStyle == 39)`
+                        // (`Projectile.cs:27513-27779`): the Mechanical
+                        // Piranha (190). A POOL-side step — the sibling
+                        // separation scan reads the slot array; the player
+                        // writes ride `&mut Player` + the dummy intent.
+                        // `selected_shoot` is the held item's shoot id (the
+                        // flail-inputs seam) for the item-rotation gate.
+                        39 => self.piranha_step(
+                            i,
+                            world,
+                            &npcs[..],
+                            player.as_deref_mut(),
+                            local_owner,
+                            flail_inputs.selected_shoot,
+                        ),
                         // S1-P-i16 — the aiStyle-77 Electrosphere sphere
                         // (`AI()` `:30671-30761`): the fade/pulse/frame
                         // machine + the dust draws; the arm owns its
@@ -21704,6 +21738,30 @@ impl ProjectilePool {
         // writes the flags AFTER the AI; the port reads last tick's state).
         let was_wet = self.slots[i].wet;
         crate::projectile_bobber::probe_wet(&mut self.slots[i], world);
+        // `:26963-27000` — the 1000-projectile scan's snapshot (skips self),
+        // taken BEFORE the mutable slot borrow (the C# reads the LIVE array
+        // while mutating this slot; the scan never reads the mutating slot's
+        // own entry — the `whoAmI` skip — so the snapshot is byte-identical
+        // for every read, the golf club-helper precedent).
+        let others: Vec<(i32, f32, f32, tr_core::whip::Rect)> = self
+            .slots
+            .iter()
+            .enumerate()
+            .filter(|(j, q)| *j != i && q.active)
+            .map(|(_, q)| {
+                (
+                    q.direction,
+                    q.vel.x,
+                    q.vel.y,
+                    tr_core::whip::Rect::new(
+                        q.pos.x as i32,
+                        q.pos.y as i32,
+                        q.w as i32,
+                        q.h as i32,
+                    ),
+                )
+            })
+            .collect();
         let p = &mut self.slots[i];
         // `:26889-26890` — the life pin + the counter.
         p.time_left = 10;
@@ -21772,33 +21830,8 @@ impl ProjectilePool {
                     kick(p, n.facing, n.vx, n.vy);
                 }
             }
-            // `:26963-27000` — the 1000-projectile scan (skips self). The
-            // C# reads the LIVE array while mutating this slot; the port
-            // snapshots the (dir, vel, box) triples first — the scan never
-            // reads the mutating slot's own entry (the `whoAmI` skip), so
-            // the snapshot is byte-identical for every read (the golf
-            // club-helper precedent).
-            let others: Vec<(usize, i32, f32, f32, tr_core::whip::Rect)> = self
-                .slots
-                .iter()
-                .enumerate()
-                .filter(|(j, q)| *j != i && q.active)
-                .map(|(j, q)| {
-                    (
-                        j,
-                        q.direction,
-                        q.vel.x,
-                        q.vel.y,
-                        tr_core::whip::Rect::new(
-                            q.pos.x as i32,
-                            q.pos.y as i32,
-                            q.w as i32,
-                            q.h as i32,
-                        ),
-                    )
-                })
-                .collect();
-            for (_j, dir, vx, vy, qrect) in others {
+            // `:26963-27000` — the 1000-projectile scan over the snapshot.
+            for (dir, vx, vy, qrect) in others {
                 if rect.intersects(qrect) {
                     kick(p, dir, vx, vy);
                 }
@@ -21849,6 +21882,7 @@ impl ProjectilePool {
         // adjusted velocity (the C# `UpdatePosition` adds `base.velocity`
         // AFTER HandleMovement rewrote it).
         let mut moved_vel = p.vel;
+        let mut bounce_chat: Option<String> = None;
         if p.tile_collide && p.active {
             let last = p.vel;
             let tc = crate::collision::tile_collision(
@@ -21878,14 +21912,14 @@ impl ProjectilePool {
             p.vel = after_sc;
             moved_vel = after_sc;
             if blocked {
-                // `:18605-18608` — the >10-bounce broadcast.
+                // `:18605-18608` — the >10-bounce broadcast (queued; the
+                // pool intent drains after the slot borrow ends).
                 if p.ai[1] > 10.0 {
                     let name = crate::lang::projectile_name(p.kind as i32);
-                    let text = crate::lang::text_args(
+                    bounce_chat = Some(crate::lang::text_args(
                         "Game.BallBounceResult",
                         &[name, (p.ai[1] as i32).to_string()],
-                    );
-                    self.pending_ball_chats.push(text);
+                    ));
                 }
                 // `:18609-18617` — the reset + the ×−0.6 axis bounces.
                 p.ai[1] = 0.0;
@@ -21908,6 +21942,307 @@ impl ProjectilePool {
         // list; the dead slot moves too (the C# shape). The velocity is
         // the post-bounce one.
         p.pos += moved_vel;
+        // The chat intent drains after the slot borrow ends (the pool
+        // field is a disjoint place, but the push reads `p`'s computed text).
+        if let Some(text) = bounce_chat {
+            self.pending_ball_chats.push(text);
+        }
+    }
+
+    /// `AI()`'s aiStyle-39 arm (`Projectile.cs:27513-27779`) — the Mechanical
+    /// Piranha (190, the style's only row, `:2779-2790`). W4-d4. A POOL-side
+    /// step (the `dragon_step` shape): the 190 separation push (`:27626-27647`)
+    /// scans the 1000-slot array for same-owner siblings, and the player
+    /// writes (`SetDummyItemTime`, `ChangeDir`, the item-rotation face) ride
+    /// the `&mut Player` + the dummy-item-time intent.
+    ///
+    /// The head fades alpha −50 and kills on owner-inactive/dead/2000-px
+    /// (`:27515-27524`). The `flag18` block (`:27525-27548`) pins the dummy
+    /// item time and flips the owner's facing when the piranha is ≥64 px to
+    /// the owner's velocity-lead side. The state machine: channel-release
+    /// arms the return (`ai[0]=1, ai[1]=-1`, `:27557-27561`); the 1500-px
+    /// leash drops a stale lock (`:27562-27566`); `ai[1]>0` chases the locked
+    /// NPC (the 16-px snap + the 190 zero-velocity latch + the sibling push,
+    /// `:27567-27658`) or re-acquires (`:27659-27707`); `ai[0]==0` flies
+    /// outbound (`:27709-27726`); `ai[0]==1` returns to the owner at speed 20
+    /// and kills inside 70 px (`:27727-27764`). The 4-tick frame cycle and
+    /// the `flag18` item-rotation face close the arm (`:27765-27778`).
+    ///
+    /// `selected_shoot` is the held item's `shoot` id (the flail-inputs seam)
+    /// — the item-rotation face gates on `HeldItem.shoot == this.type`
+    /// (`:22525`). Movement: the row keeps `tileCollide = true` (`:775` stock,
+    /// the arm flips it false in the chase/return states); aiStyle 39 is not
+    /// on `UpdatePosition`'s skip list, so the free integrate runs.
+    fn piranha_step(
+        &mut self,
+        i: usize,
+        world: &World,
+        npcs: &[Npc],
+        mut player: Option<&mut crate::player::Player>,
+        local_owner: u8,
+        selected_shoot: Option<u16>,
+    ) {
+        // `:27626-27647` — the sibling separation snapshot (same-owner 190s,
+        // skips self), taken BEFORE the mutable slot borrow (the C# reads
+        // the LIVE array; the scan never reads the mutating slot — the
+        // whoAmI skip — so the snapshot is byte-identical, the golf
+        // club-helper precedent). `(center, position)` per sibling.
+        let owner = self.slots[i].owner;
+        let siblings: Vec<(Vec2, Vec2)> = self
+            .slots
+            .iter()
+            .enumerate()
+            .filter(|(j, q)| *j != i && q.active && q.owner == owner && q.kind == 190)
+            .map(|(_, q)| (Vec2::from(q.center()), q.pos))
+            .collect();
+        let p = &mut self.slots[i];
+        // `:27515-27519` — the alpha fade-in.
+        p.alpha -= 50;
+        if p.alpha < 0 {
+            p.alpha = 0;
+        }
+        // `:27520-27524` — the owner kill gate. The port's single player
+        // stands in for `Main.player[owner]`; a `None` link reads inactive.
+        let owner_center = player.as_ref().map(|pl| Vec2::from(pl.center()));
+        let owner_dead = player.as_ref().is_none_or(|pl| pl.dead);
+        let center = Vec2::from(p.center());
+        let too_far = owner_center.is_none_or(|oc| oc.distance(center) > 2000.0);
+        if !p.active || owner_center.is_none() || owner_dead || too_far {
+            p.kill();
+            return;
+        }
+        let oc = owner_center.unwrap();
+        let (ovx, ovy) = player.as_ref().map(|pl| (pl.vx, pl.vy)).unwrap_or((0.0, 0.0));
+        // `:27525-27548` — the flag18 block (the slot is active here).
+        let mut flag18 = true;
+        {
+            // `:27528` — SetDummyItemTime(5): the App-level timers ride the
+            // pool intent (the golf PlayerWrites precedent).
+            self.pending_piranha_dummy = true;
+            // `:27529-27536` — the facing-side test.
+            let mut num288 = if p.vel.x < 0.0 { -1 } else { 1 };
+            if p.ai[0] == 1.0 {
+                num288 *= -1;
+            }
+            let num289 = oc.x + ovx - center.x;
+            let num290 = if num289 < 0.0 { 1 } else { -1 };
+            flag18 = num289.abs() >= 64.0 && num288 == num290;
+            // `:27537-27547` — the ChangeDir write.
+            if flag18 {
+                if let Some(pl) = player.as_deref_mut() {
+                    if center.x > oc.x + ovx {
+                        pl.change_dir(1);
+                    } else {
+                        pl.change_dir(-1);
+                    }
+                }
+            }
+        }
+        // `:27549-27556` — the owner-relative delta + distance.
+        let mut dx = oc.x - center.x;
+        let mut dy = oc.y - center.y;
+        let mut dist = (dx * dx + dy * dy).sqrt();
+        if dist == 0.0 {
+            dist = 0.001;
+        }
+        // `:27557-27561` — the channel-release return arm.
+        let channel = player.as_ref().is_some_and(|pl| pl.channel);
+        if !channel && p.active && p.alpha == 0 {
+            p.ai[0] = 1.0;
+            p.ai[1] = -1.0;
+        }
+        // `:27562-27566` — the 1500-px leash drops a stale lock.
+        if p.ai[1] > 0.0 && dist > 1500.0 {
+            p.ai[1] = 0.0;
+            p.ai[0] = 1.0;
+        }
+        // `:27567-27708` — the chase / re-acquire state.
+        if p.ai[1] > 0.0 {
+            p.tile_collide = false;
+            let idx = p.ai[1] as usize - 1;
+            let target = npcs.get(idx).filter(|n| n.hp > 0);
+            if let Some(n) = target {
+                // `:27573-27622` — the 16-px snap / normalize.
+                let num295 = 16.0f32;
+                let nc = npc_center(n);
+                let c = Vec2::from(p.center());
+                let mut tdx = nc.x - c.x;
+                let mut tdy = nc.y - c.y;
+                let mut tdist = (tdx * tdx + tdy * tdy).sqrt();
+                if tdist < num295 {
+                    p.vel.x = tdx;
+                    p.vel.y = tdy;
+                    if tdist > num295 / 3.0 {
+                        if p.vel.x < 0.0 {
+                            p.sprite_direction = -1;
+                            p.rot = (-p.vel.y).atan2(-p.vel.x);
+                        } else {
+                            p.sprite_direction = 1;
+                            p.rot = p.vel.y.atan2(p.vel.x);
+                        }
+                        // `:27594-27598` — the 190 zero-velocity latch.
+                        p.vel.x = 0.0;
+                        p.vel.y = 0.0;
+                    }
+                } else {
+                    if tdist == 0.0 {
+                        tdist = 0.0001;
+                    }
+                    let scale = num295 / tdist;
+                    tdx *= scale;
+                    tdy *= scale;
+                    p.vel.x = tdx;
+                    p.vel.y = tdy;
+                    if p.vel.x < 0.0 {
+                        p.sprite_direction = -1;
+                        p.rot = (-p.vel.y).atan2(-p.vel.x);
+                    } else {
+                        p.sprite_direction = 1;
+                        p.rot = p.vel.y.atan2(p.vel.x);
+                    }
+                }
+                // `:27623-27648` — the 190 NPC-velocity carry + the sibling
+                // separation push (the 8-px band, ±4 per axis) over the
+                // head-of-tick snapshot.
+                p.pos += Vec2::new(n.vx, n.vy);
+                let c = Vec2::from(p.center());
+                for (sc, sp) in &siblings {
+                    if c.distance(*sc) < 8.0 {
+                        if p.pos.x < sp.x {
+                            p.vel.x -= 4.0;
+                        } else {
+                            p.vel.x += 4.0;
+                        }
+                        if p.pos.y < sp.y {
+                            p.vel.y -= 4.0;
+                        } else {
+                            p.vel.y += 4.0;
+                        }
+                    }
+                }
+                // `:27649-27657` — the local-owner ai[0]=1 latch.
+                if p.owner == local_owner {
+                    let old = p.ai[0];
+                    p.ai[0] = 1.0;
+                    if old != p.ai[0] {
+                        p.net_update = true;
+                    }
+                }
+            } else if p.owner == local_owner {
+                // `:27659-27707` — the re-acquire scan.
+                let old = p.ai[1];
+                p.ai[1] = 0.0;
+                if old != p.ai[1] {
+                    p.net_update = true;
+                }
+                let mut best_x = p.pos.x;
+                let mut best_y = p.pos.y;
+                let mut best_dist = 3000.0f32;
+                let mut best_idx: i32 = -1;
+                let c = Vec2::from(p.center());
+                for (j, n) in npcs.iter().enumerate() {
+                    if !chaseable(n) {
+                        continue;
+                    }
+                    let nc = npc_center(n);
+                    let manhattan = (c.x - nc.x).abs() + (c.y - nc.y).abs();
+                    let (nw, nh) = n.size();
+                    if manhattan < best_dist
+                        && can_hit(world, p.pos.x, p.pos.y, p.w, p.h, n.x, n.y, nw, nh)
+                    {
+                        best_dist = manhattan;
+                        best_x = nc.x;
+                        best_y = nc.y;
+                        best_idx = j as i32;
+                    }
+                }
+                if best_idx >= 0 {
+                    let num305 = 16.0f32;
+                    let c = Vec2::from(p.center());
+                    let mut tdx = best_x - c.x;
+                    let mut tdy = best_y - c.y;
+                    let mut tdist = (tdx * tdx + tdy * tdy).sqrt();
+                    if tdist == 0.0 {
+                        tdist = 0.0001;
+                    }
+                    let scale = num305 / tdist;
+                    tdx *= scale;
+                    tdy *= scale;
+                    p.vel.x = tdx;
+                    p.vel.y = tdy;
+                    p.ai[0] = 0.0;
+                    p.ai[1] = (best_idx + 1) as f32;
+                    p.net_update = true;
+                }
+            }
+        } else if p.ai[0] == 0.0 {
+            // `:27709-27726` — the outbound flight.
+            if p.owner == local_owner && dist > 700.0 {
+                p.ai[0] = 1.0;
+                p.net_update = true;
+            }
+            if p.vel.x < 0.0 {
+                p.sprite_direction = -1;
+                p.rot = (-p.vel.y).atan2(-p.vel.x);
+            } else {
+                p.sprite_direction = 1;
+                p.rot = p.vel.y.atan2(p.vel.x);
+            }
+        } else if p.ai[0] == 1.0 {
+            // `:27727-27764` — the return to the owner.
+            p.tile_collide = false;
+            // `:27730-27749` — the C# writes the facing pair TWICE (the
+            // first block's spriteDirection is overwritten by the second);
+            // the net effect is the second block alone — ported verbatim as
+            // the single effective write (the dead first block is a source
+            // quirk, recorded).
+            if p.vel.x < 0.0 {
+                p.sprite_direction = -1;
+                p.rot = (-p.vel.y).atan2(-p.vel.x);
+            } else {
+                p.sprite_direction = 1;
+                p.rot = p.vel.y.atan2(p.vel.x);
+            }
+            let num306 = 20.0f32;
+            if p.owner == local_owner && dist < 70.0 {
+                p.kill();
+            }
+            let scale = num306 / dist;
+            dx *= scale;
+            dy *= scale;
+            p.vel.x = dx;
+            p.vel.y = dy;
+            // `:27760-27763` — the 190 owner-velocity carry.
+            p.pos += Vec2::new(ovx, ovy);
+        }
+        // `:27765-27774` — the 4-tick frame cycle.
+        p.frame_counter += 1;
+        if p.frame_counter >= 4 {
+            p.frame_counter = 0;
+            p.frame += 1;
+        }
+        if p.frame >= 4 {
+            p.frame = 0;
+        }
+        // `:27775-27778` — the flag18 item-rotation face
+        // (`AI_AdjustPlayerItemRotationToFaceProjectile(-1, 0f,
+        // ignoreAlphaCheck: true)`, `:22518-22543`). The held-item gate
+        // reads `HeldItem.shoot == this.type` (the selected_shoot seam);
+        // minSpeed 0 never refuses; ignoreAlphaCheck skips the alpha gate.
+        if flag18 && selected_shoot == Some(190) {
+            if let Some(pl) = player.as_deref_mut() {
+                let (mcx, mcy) = pl.mounted_center();
+                let c = Vec2::from(p.center());
+                let x = mcx - c.x;
+                let y = mcy + pl.gfx_off_y - c.y;
+                let num = if c.x < mcx { 1.0 } else { -1.0 };
+                pl.item_rotation = (y * num).atan2(x * num);
+            }
+        }
+        // `UpdatePosition`'s free integrate (`:20445`) — 39 is not on the
+        // skip list; the dead slot moves too (the C# shape).
+        let v = p.vel;
+        p.pos += v;
     }
 
     /// `AI_121_StardustDragon` (`Projectile.cs:42824-43080`, the dispatch
@@ -26688,6 +27023,123 @@ mod arrow_tests {
             true,
         );
         assert!(!pool.slots()[ball].active, "the zero-velocity kill (`:27004`)");
+    }
+
+    /// W4-d4 — the aiStyle-39 Mechanical Piranha (`Projectile.cs:27513-27779`):
+    /// the row, the alpha fade-in, the owner kill gate and the return state.
+    #[test]
+    fn the_piranha_row_and_alpha_fade() {
+        let d = proj_data(MECHANICAL_PIRANHA).expect("the 190 row");
+        assert_eq!((d.w, d.h), (22.0, 22.0), "`:2781-2782`");
+        assert_eq!(d.ai_style, 39, "`:2783`");
+        assert_eq!(d.penetrate, -1, "`:2785`");
+        assert_eq!(d.alpha, 255, "`:2786`");
+        assert!(d.ranged, "`:2787`");
+        assert!(d.uses_local_immunity, "`:2788`");
+        assert_eq!(d.local_hit_cooldown, 14, "`:2789`");
+        assert_eq!(crate::projectile::proj_frames(190), 4, "Main.cs:8592");
+        // The alpha fade: 255 → 205 → 155 → ... → 0 over six ticks
+        // (`:27515-27519`), with a live owner nearby.
+        let mut pool = ProjectilePool::new();
+        let mut w = World::new("t".into(), 300, 200);
+        w.spawn_x = 100;
+        w.spawn_y = 30;
+        let mut player = crate::player::Player::spawn(&w);
+        // The piranha at the player's centre-ish (within 2000 px).
+        let (pcx, pcy) = player.center();
+        let pir = pool
+            .spawn_with_data(MECHANICAL_PIRANHA, pcx + 100.0, pcy, 4.0, 0.0, 30, 2.0)
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut alphas = Vec::new();
+        for _ in 0..6 {
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                Some(&mut player),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
+            alphas.push(pool.slots()[pir].alpha);
+        }
+        assert_eq!(alphas, vec![205, 155, 105, 55, 5, 0], "the −50 fade (`:27515`)");
+        assert!(pool.slots()[pir].active, "the live owner keeps it alive");
+    }
+
+    /// The owner kill gate (`:27520-27524`): a dead owner kills the piranha
+    /// on its next tick; the channel-release return arm (`:27557-27561`)
+    /// sets ai[0]=1/ai[1]=-1 once the fade completes and the channel drops.
+    #[test]
+    fn the_piranha_dies_with_its_owner_and_returns_on_release() {
+        let mut pool = ProjectilePool::new();
+        let mut w = World::new("t".into(), 300, 200);
+        w.spawn_x = 100;
+        w.spawn_y = 30;
+        let mut player = crate::player::Player::spawn(&w);
+        let (pcx, pcy) = player.center();
+        // Spawn 300 px out: after the six fade ticks (≈24 px of flight)
+        // the distance is still > 70, so the release tick's return arm
+        // does NOT immediately hit the 70-px kill (`:27751-27753`).
+        let pir = pool
+            .spawn_with_data(MECHANICAL_PIRANHA, pcx + 300.0, pcy, 4.0, 0.0, 30, 2.0)
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        // Fade to alpha 0 with the channel held (no return arm yet).
+        player.channel = true;
+        for _ in 0..6 {
+            pool.update(
+                &mut w,
+                &mut npcs,
+                None,
+                None,
+                Some(&mut player),
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
+        }
+        assert_eq!(pool.slots()[pir].alpha, 0);
+        assert_eq!(pool.slots()[pir].ai[0], 0.0, "the channel holds the outbound state");
+        // Release the channel: the return arm fires (`:27557-27561`).
+        player.channel = false;
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        assert_eq!(pool.slots()[pir].ai[0], 1.0, "the return state (`:27559`)");
+        assert_eq!(pool.slots()[pir].ai[1], -1.0, "the lock drop (`:27560`)");
+        assert!(!pool.slots()[pir].tile_collide, "the return flips tileCollide (`:27729`)");
+        assert!(pool.slots()[pir].active, "still outside the 70-px return kill");
+        // Kill the owner: the piranha dies next tick (`:27520-27524`).
+        player.dead = true;
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        assert!(!pool.slots()[pir].active, "the owner-dead kill (`:27522`)");
     }
 }
 

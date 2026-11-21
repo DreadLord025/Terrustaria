@@ -565,6 +565,18 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     for text in app.projectiles.drain_ball_chats() {
         app.chat.new_text(text, crate::chat::COLOR_SERVER_MESSAGE);
     }
+    // W4-d4 — the Mechanical Piranha's `SetDummyItemTime(5)`
+    // (`Projectile.cs:27528`): the C# calls it per active piranha per
+    // sub-step (idempotent); the port applies ONE dummy-item-time(5) when
+    // the pool flagged it. `SetDummyItemTime` (`Player.cs:4432-4441`):
+    // itemAnimation = itemTime = frames, itemTimeMax = frames + 1 — the
+    // port's swing is the animation, item_time the action cadence (the
+    // golf `PlayerWrites` dummy arm, `world_sim/projectiles.rs`).
+    if app.projectiles.drain_piranha_dummy() {
+        app.swing = 5.0 / 60.0;
+        app.swing_max = app.swing;
+        app.item_time = 5.0 / 60.0;
+    }
     // S1-P-i35 — the bobber death hook's catch drain (`Projectile.cs:71986-
     // 71994` → `GiveItemToPlayer` → `QuickSpawnItem` → `GetOrDropItem`): the
     // item fills the owner's inventory first (`Player.GetItem`'s slot walk),

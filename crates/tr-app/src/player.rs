@@ -4687,6 +4687,24 @@ impl Player {
         self.center()
     }
 
+    /// `Player.ChangeDir(dir)` (`Player.cs:42091-42116`): the facing flip
+    /// plus the draw-state mirrors it carries — the composite-arm rotations
+    /// and `itemRotation` negate, `itemLocation.X` mirrors about the mounted
+    /// centre. The port keeps the facing + the two arm rotations +
+    /// itemRotation (the fields it carries); the pulley snap (`:42097-42110`,
+    /// no pulley state) and the `itemLocation` mirror (a per-frame draw value,
+    /// not a Player field here) are documented skips. W4-d4 — the Mechanical
+    /// Piranha's `flag18` facing write (`Projectile.cs:27537-27547`) calls it.
+    pub fn change_dir(&mut self, dir: i32) {
+        if dir == self.facing {
+            return;
+        }
+        self.facing = dir;
+        self.composite_back.rotation *= -1.0;
+        self.composite_front.rotation *= -1.0;
+        self.item_rotation *= -1.0;
+    }
+
     /// `Player.MountedTop` (`Player.cs:3349-3360`):
     /// `(position.X + width/2, position.Y + HeightOffsetHitboxCenter)`, or
     /// `Bottom.Y - HeightOffsetHitboxCenter` under reversed gravity. The port

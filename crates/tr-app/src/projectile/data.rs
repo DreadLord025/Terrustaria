@@ -611,6 +611,14 @@ pub const WEB_ROPE_COIL: u16 = 506;
 /// movement arm (`:18603-18618`) bounces ×−0.6 and broadcasts the
 /// `Game.BallBounceResult` chat above 10 bounces. W4-d4.
 pub const BEACH_BALL: u16 = 155;
+/// The Mechanical Piranha (`ProjectileID.MechanicalPiranha = 190`,
+/// `Projectile.cs:2779-2790`: aiStyle 39, 22×22, friendly, `penetrate = -1`,
+/// `alpha = 255`, ranged, `usesLocalNPCImmunity` with
+/// `localNPCHitCooldown = 14`). The Piranha Gun's shot — the chase/return
+/// state machine (`:27513-27779`). Its death never cancels the channel
+/// (`DontCancelChannelOnKill`, `ProjectileID.cs:524` — the port's
+/// `try_cancel_channel` already exempts 190). W4-d4.
+pub const MECHANICAL_PIRANHA: u16 = 190;
 /// The Venom Dart Trap's projectile (the C# `VenomDartTrap = 980`,
 /// `Projectile.cs:9330-9339`; the WIRE-1 legacy named it TRAP_SPIKY).
 pub const TRAP_VENOM_DART: u16 = 980;
@@ -2336,6 +2344,23 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // penetrate 1 / tileCollide true / timeLeft 3600 (the AI pins
             // timeLeft = 10 every tick, `:26889`).
             BEACH_BALL => (44.0, 44.0, 32, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `:2779-2790` — the Mechanical Piranha (190): 22x22, aiStyle
+            // **39**, friendly, penetrate -1, alpha 255, ranged (the
+            // overlay below), the LOCAL-immunity 14 pair (`:2788-2789`);
+            // the stock tileCollide true / timeLeft 3600 (the arm flips
+            // tileCollide false in the chase/return states).
+            MECHANICAL_PIRANHA => (
+                22.0,
+                22.0,
+                39,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (true, 14, false, -1, 255, 1.0),
+            ),
             // The wiring.device arms (M7-WIRE-2): the explosives 141's
             // explosion (`Projectile.cs:1953-1965` — aiStyle 16, 260×260,
             // `timeLeft` 2, `tileCollide = false`, trap), the land mine's
@@ -4349,6 +4374,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // C# writes ranged on them too; the owner-255 gate keeps the
             // flags moot, the census stays verbatim.
                 | SNOW_BALL_HOSTILE | BULLET_SNOWMAN
+            // W4-d4 — `Projectile.cs:2787`: the Mechanical Piranha (190)
+            // sets `ranged = true`.
+                | MECHANICAL_PIRANHA
         ),
         magic: matches!(
             kind,
@@ -4665,6 +4693,9 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN => 15,
         // The Vampire Frog's 24-frame sheet (`Main.cs:8631`).
         VAMPIRE_FROG => 24,
+        // W4-d4 — the Mechanical Piranha's 4-frame sheet (`Main.cs:8592`)
+        // — the aiStyle-39 arm's 4-tick cycle wraps at 4 (`:27765-27774`).
+        MECHANICAL_PIRANHA => 4,
         // The Stardust Guardian's 19-frame sheet (`Main.cs:8497`) —
         // AI_120's idle machine wraps at 8 (`Projectile.cs:44693`), the
         // rest-hover at projFrames − 4 = 15 (`:44830`) and the dash at
