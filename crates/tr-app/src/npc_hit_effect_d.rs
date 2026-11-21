@@ -3245,8 +3245,9 @@ fn wolf_death(
 /// position, scale 1f. The 163/238 Black Recluse → dust-18 + 205/206x4
 /// (`:87767-87771`, sites 465-469); the 164/165 Wall Creeper → dust-18 +
 /// 207/208x4 (`:87787-87791`, sites 470-474); the 239/240 Blood Crawler
-/// → dust-5 + 351/352x2/353x2 and the 236/237 Crimera-adjacent → dust-18
-/// + 332/333/334/335x2 land in later batches.
+/// → dust-5 + 351/352x2/353x2 (`:87807-87811`, sites 475-479); the
+/// 236/237 Jungle Creeper → dust-18 + 332/333/334/335x2
+/// (`:87827-87831`, sites 480-484).
 fn spider_death(
     npc: &Npc,
     npc_type: i32,
@@ -3257,21 +3258,27 @@ fn spider_death(
     world: &World,
     hit_direction: f32,
 ) {
-    // `:87763-87766`/`:87783-87786` — the 50x dust-18 burst at the wider
-    // velocity (both live rows puff 18).
+    // `:87763-87766`/`:87783-87786`/`:87803-87806`/`:87823-87826` — the
+    // 50x burst at the wider velocity; the 239/240 row puffs dust-5, the
+    // rest dust-18.
+    let dust_type = if npc_type == 239 || npc_type == 240 { 5 } else { 18 };
     let (w, h) = npc.size();
     let pos = Vec2::new(npc.x, npc.y);
     for _ in 0..50 {
         dust.new_dust(
-            rng, dust_ctx, world, pos, w as i32, h as i32, 18, 2.5 * hit_direction, -2.5, 0,
-            Color::default(), 1.0,
+            rng, dust_ctx, world, pos, w as i32, h as i32, dust_type, 2.5 * hit_direction, -2.5,
+            0, Color::default(), 1.0,
         );
     }
     let vel = Vec2::new(npc.vx, npc.vy);
     let types: [i32; 5] = if npc_type == 163 || npc_type == 238 {
         [205, 206, 206, 206, 206] // :87767-87771
-    } else {
+    } else if npc_type == 164 || npc_type == 165 {
         [207, 208, 208, 208, 208] // :87787-87791
+    } else if npc_type == 239 || npc_type == 240 {
+        [351, 352, 352, 353, 353] // :87807-87811
+    } else {
+        [332, 333, 334, 335, 335] // :87827-87831
     };
     for t in types {
         gore.new_gore(rng, world, pos, vel, t, 1.0);
@@ -3658,9 +3665,10 @@ pub fn hit_effect_d(
     else if npc_type == 155 {
         wolf_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:87753-87792` — the 163/238 Black Recluse + 164/165 Wall Creeper
-    // arms (sites 465-474).
-    else if matches!(npc_type, 163 | 238 | 164 | 165) {
+    // `:87753-87832` — the spider arms COMPLETE: 163/238 Black Recluse,
+    // 164/165 Wall Creeper, 239/240 Blood Crawler, 236/237 Jungle
+    // Creeper (sites 465-484).
+    else if matches!(npc_type, 163 | 238 | 164 | 165 | 239 | 240 | 236 | 237) {
         spider_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
@@ -6437,6 +6445,39 @@ mod tests {
             let puff = dust.slots().iter().find(|d| d.active).unwrap();
             assert_eq!(puff.dust_type, 18);
             let mut twin = UnifiedRandom::new(499);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 22);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "spider {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87807-87831` — the Blood Crawler five 351/352x2/353x2
+    /// (dust-5, NOT 18) and the Jungle Creeper five 332/333/334/335x2
+    /// (dust-18).
+    #[test]
+    fn w4_f5d_the_crawler_and_jungle_spider_fives() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 22.0);
+        for (kind, want, dt) in [
+            (239, vec![351, 352, 352, 353, 353], 5),
+            (240, vec![351, 352, 352, 353, 353], 5),
+            (236, vec![332, 333, 334, 335, 335], 18),
+            (237, vec![332, 333, 334, 335, 335], 18),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(503);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "spider {kind}");
+            let puff = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(puff.dust_type, dt, "spider {kind} dust");
+            let mut twin = UnifiedRandom::new(503);
             for _ in 0..50 {
                 twin_dust(&mut twin, 30, 22);
             }
