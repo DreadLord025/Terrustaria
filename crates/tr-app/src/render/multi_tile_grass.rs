@@ -17,14 +17,15 @@
 //! through the normal `resolve_tile_frame` path; this module adds the wind
 //! transform that was missing.
 //!
-//! Scope: the MultiTileGrass 2×2 / 3×2 family — the bulb family 236/238/702
-//! (the shared `TileDrawing.cs:606-613` / `:8760-8764` arms), the 2×2
-//! default-arm tiles 485/490/652, the frozen dragonfly jars 521-527
-//! (`:8940-8949`) and the 3×2 oasis/echo plants 530/651/705 (`:8769-8774`).
-//! Only 238 animates a row and carries `tileTop = 2` among the bulb family;
-//! 236/702 have no `GetTileDrawData` case (`tileTop = 0`). The remaining
-//! roster (27 sunflower — landed per-cell; 233 detritus, 489 pinwheel, 493
-//! golf flag, 519 cattail) is the general-pass follow-up.
+//! Scope: the MultiTileGrass 2×2 / 3×2 / 2×3 / 1×2 family — the bulb family
+//! 236/238/702 (the shared `TileDrawing.cs:606-613` / `:8760-8764` arms), the
+//! 2×2 default-arm tiles 485/490/652, the frozen dragonfly jars 521-527
+//! (`:8940-8949`), the 3×2 oasis/echo plants 530/651/705 (`:8769-8774`), the
+//! 2×3 pinwheel 489 (`:8788-8791`) and the 1×2 golf flag 493 with its
+//! wind-sign flip + ∓6 px shift (`:8792-8795`, `:8983-8997`). Only 238
+//! animates a row among the bulb family; 236/702 have no `GetTileDrawData`
+//! case (`tileTop = 0`). The remaining roster (27 sunflower — landed
+//! per-cell; 233 detritus, 519 cattail) is the general-pass follow-up.
 //!
 //! Deviations (ANALYSIS "The Plantera bulb wind draw (W4-g84)"):
 //! - the deferred special-point ordering is approximated inline (the
@@ -176,6 +177,98 @@ pub(crate) fn grass_sway_3x2(
             (top_left_y * 16 + 16 * SIZE - ty * 16 - tile_top as i32) as f32,
         ],
     }
+}
+
+/// The 489 pinwheel's 2×3 MultiTileGrass transform
+/// (`TileDrawing.cs:8788-8791`: `sizeX = 2, sizeY = 3`). The frame grid is
+/// `Style2xX` (`frameX = 36*style + 18*col`, `frameY = 18*row`); the
+/// bottom-centre anchor is `(topLeftX*16 + 16, topLeftY*16 + 48)`. The
+/// default 0.15 factor applies; the spin animation rides the landed
+/// `drawdata_cases_b` case 489 (`InAPlaceWithWind` + counter, `:4731-4741`).
+pub(crate) fn grass_sway_2x3(
+    wind: &Wind,
+    world: &World,
+    tx: i32,
+    ty: i32,
+    frame_x: i16,
+    frame_y: i16,
+    tile_top: i16,
+    sunflower_wind_counter: f32,
+) -> BulbSway {
+    let col = (frame_x.rem_euclid(36) / 18) as i32;
+    let row = (frame_y / 18) as i32;
+    let top_left_x = tx - col;
+    let top_left_y = ty - row;
+    let cycle = wind.cycle(top_left_x, top_left_y, sunflower_wind_counter);
+    let in_wind = wind.in_a_place_with_wind(world, top_left_x, top_left_y, SIZE, 3);
+    let mut num3 = 1.0 - (row + 1) as f32 / 3.0;
+    if num3 == 0.0 {
+        num3 = 0.1;
+    }
+    if !in_wind {
+        num3 = 0.0;
+    }
+    BulbSway {
+        dy: cycle.abs() * 2.0 * num3,
+        rot: cycle * 0.15 * num3,
+        pivot: [
+            (top_left_x * 16 + SIZE * 8 - tx * 16) as f32,
+            (top_left_y * 16 + 16 * 3 - ty * 16 - tile_top as i32) as f32,
+        ],
+    }
+}
+
+/// The 493 golf flag's wind transform PLUS its sprite flip / horizontal
+/// shift (`TileDrawing.cs:8983-8997`). The 1×2 object (`:8792-8795`) sways
+/// like the default family, but on frame row 0 the flag flips horizontally
+/// when the wind blows right (`Main.WindForVisuals >= 0`) and shifts ∓6 px
+/// so the pole stays put. Returns `(sway, flip_xor, dx)`: `flip_xor` toggles
+/// the cell's `dd.flip`, `dx` shifts the draw X. Only frame row 0 carries
+/// the flip/shift; the bottom row keeps the plain transform.
+pub(crate) fn golf_flag_sway(
+    wind: &Wind,
+    world: &World,
+    tx: i32,
+    ty: i32,
+    frame_x: i16,
+    frame_y: i16,
+    tile_top: i16,
+    sunflower_wind_counter: f32,
+    base_flip: bool,
+) -> (BulbSway, bool, f32) {
+    let col = (frame_x.rem_euclid(18) / 18) as i32; // 1-wide: col always 0
+    let row = (frame_y / 18) as i32;
+    let top_left_x = tx - col;
+    let top_left_y = ty - row;
+    let cycle = wind.cycle(top_left_x, top_left_y, sunflower_wind_counter);
+    let in_wind = wind.in_a_place_with_wind(world, top_left_x, top_left_y, 1, SIZE);
+    let mut num3 = 1.0 - (row + 1) as f32 / SIZE as f32;
+    if num3 == 0.0 {
+        num3 = 0.1;
+    }
+    if !in_wind {
+        num3 = 0.0;
+    }
+    let sway = BulbSway {
+        dy: cycle.abs() * 2.0 * num3,
+        rot: cycle * 0.15 * num3,
+        pivot: [
+            (top_left_x * 16 + 8 - tx * 16) as f32,
+            (top_left_y * 16 + 16 * SIZE - ty * 16 - tile_top as i32) as f32,
+        ],
+    };
+    // `if (tile.type == 493 && tile.frameY == 0)` (`:8983`).
+    if frame_y != 0 {
+        return (sway, false, 0.0);
+    }
+    // `tileSpriteEffect ^= FlipHorizontally` when `WindForVisuals >= 0`
+    // (`:8985-8988`); the shift keys off the RESULTING flip (`:8989-8996`).
+    let mut flip = base_flip;
+    if wind.speed_current >= 0.0 {
+        flip = !flip;
+    }
+    let dx = if !flip { -6.0 } else { 6.0 };
+    (sway, flip != base_flip, dx)
 }
 
 #[cfg(test)]
@@ -420,5 +513,69 @@ mod tests {
         // A style-1 plant (frameX 54/72/90) still reconstructs the top-left.
         let a = grass_sway_3x2(&wind, &w, 10, 20, 54, 0, 2, 0.0);
         assert_eq!(a.pivot, [24.0, 30.0]);
+    }
+
+    // W4-g84 follow-up witness 9 — the 489 pinwheel's 2×3 anchor: the
+    // bottom-centre is `(tlx*16+16, tly*16+48)` (sizeY 3, `:8788-8791`), the
+    // num3 ladder is 2/3, 1/3, 0.1 across the three rows, and the 0.15
+    // factor matches the default family.
+    #[test]
+    fn w4_g84_pinwheel_two_by_three_anchor() {
+        let wind = windy();
+        let mut w = empty_world();
+        for row in 0..3 {
+            for col in 0..2 {
+                let i = w.index(10 + col, 20 + row);
+                w.tiles[i].kind = 489;
+                w.tiles[i].flags = FLAG_ACTIVE;
+                w.tiles[i].frame_x = (18 * col) as i16;
+                w.tiles[i].frame_y = (18 * row) as i16;
+            }
+        }
+        w.compute_chunks();
+        let cycle = wind.cycle(10, 20, 0.0);
+        assert!(cycle != 0.0);
+        let top = grass_sway_2x3(&wind, &w, 10, 20, 0, 0, 2, 0.0);
+        let mid = grass_sway_2x3(&wind, &w, 10, 21, 0, 18, 2, 0.0);
+        let bot = grass_sway_2x3(&wind, &w, 10, 22, 0, 36, 2, 0.0);
+        assert_eq!(top.pivot, [16.0, 46.0]);
+        assert_eq!(mid.pivot, [16.0, 30.0]);
+        assert_eq!(bot.pivot, [16.0, 14.0]);
+        assert_eq!(top.rot, cycle * 0.15 * (2.0 / 3.0));
+        assert_eq!(mid.rot, cycle * 0.15 * (1.0 / 3.0));
+        assert_eq!(bot.rot, cycle * 0.15 * 0.1);
+    }
+
+    // W4-g84 follow-up witness 10 — the 493 golf flag's wind-sign flip +
+    // ∓6 px shift (`:8983-8997`): on frame row 0 a right-blowing wind
+    // (speed >= 0) flips the sprite and shifts +6; a left wind keeps the
+    // base flip and shifts -6. The bottom row (frameY 18) never flips or
+    // shifts. The 1×2 anchor is `(tlx*16+8, tly*16+32)`.
+    #[test]
+    fn w4_g84_golf_flag_flip_and_shift() {
+        let mut w = empty_world();
+        for row in 0..2 {
+            let i = w.index(10, 20 + row);
+            w.tiles[i].kind = 493;
+            w.tiles[i].flags = FLAG_ACTIVE;
+            w.tiles[i].frame_x = 0;
+            w.tiles[i].frame_y = (18 * row) as i16;
+        }
+        w.compute_chunks();
+        let mut right = windy();
+        right.speed_current = 0.5;
+        let (sw, xor, dx) = golf_flag_sway(&right, &w, 10, 20, 0, 0, 2, 0.0, false);
+        assert_eq!(sw.pivot, [8.0, 30.0]);
+        assert!(xor, "right wind flips the flag");
+        assert_eq!(dx, 6.0);
+        let mut left = windy();
+        left.speed_current = -0.5;
+        let (_, xor_l, dx_l) = golf_flag_sway(&left, &w, 10, 20, 0, 0, 2, 0.0, false);
+        assert!(!xor_l, "left wind keeps the base flip");
+        assert_eq!(dx_l, -6.0);
+        // The bottom row never flips/shifts regardless of wind.
+        let (_, xor_b, dx_b) = golf_flag_sway(&right, &w, 10, 21, 0, 18, 2, 0.0, false);
+        assert!(!xor_b);
+        assert_eq!(dx_b, 0.0);
     }
 }
