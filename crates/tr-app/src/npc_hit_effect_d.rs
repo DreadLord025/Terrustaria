@@ -5297,6 +5297,62 @@ fn fire_imp_death(
     gore.new_gore(rng, world, pos + Vec2::new(0.0, 34.0), vel, 47, 1.0); // :89524
 }
 
+/// The 26/27/28/29/73/111 goblin family death (`NPC.cs:89550-89606`,
+/// sites 820-825): the 50x dust-5 burst at (2.5·hd, −2.5), then the
+/// head/torso×2/legs×2 ladder at +0/+20/+20/+34/+34 Y, `this.scale`
+/// carried. The gore triple is per-type (the 29 Goblin Sorcerer keeps
+/// the default 48/49/50); the 111 Goblin Archer inserts a FOURTH gore
+/// 131 at Y+34 BEFORE its legs pair.
+fn goblin_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89560-89563` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    // `:89564-89596` — the per-type gore triple (the 29 keeps 48/49/50).
+    let (head, mid, legs) = match npc_type {
+        111 => (623, 624, 625), // :89567-89572
+        26 => (626, 627, 628),  // :89573-89578
+        73 => (629, 630, 631),  // :89579-89584
+        27 => (632, 633, 634),  // :89585-89590
+        28 => (635, 636, 637),  // :89591-89596
+        _ => (48, 49, 50),      // :89564-89566 — the 29 Goblin Sorcerer
+    };
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, head, s); // :89597
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, s); // :89598
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, s); // :89599
+    if npc_type == 111 {
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 131, s); // :89602
+    }
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, s); // :89604
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, s); // :89605
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -5944,6 +6000,11 @@ pub fn hit_effect_d(
     // lanes'; recorded, not ported).
     // `:89538-89549` — the 33 Water Sphere arm: NO gore sites (the ungated
     // 20x paired dust-172 census + the Item10 cue; recorded, not ported).
+    // `:89550-89606` — the 26/27/28/29/73/111 goblin family arm (sites
+    // 820-825).
+    else if matches!(npc_type, 26 | 27 | 28 | 29 | 73 | 111) {
+        goblin_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
     outcome
 }
 
@@ -10331,5 +10392,53 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the fire imp mirrors the C# draws");
+    }
+
+    /// `NPC.cs:89597-89605` — the goblin family ladder: the per-type triple
+    /// at +0/+20/+20/+34/+34 Y, this.scale carried; the 111 inserts the 131
+    /// BEFORE its legs pair (six gores), the 29 keeps the default 48/49/50.
+    #[test]
+    fn w4_f5d_the_goblin_family_ladder_and_the_archer_extra() {
+        for (kind, want) in [
+            (26, vec![626, 627, 627, 628, 628]),
+            (27, vec![632, 633, 633, 634, 634]),
+            (28, vec![635, 636, 636, 637, 637]),
+            (29, vec![48, 49, 49, 50, 50]),
+            (73, vec![629, 630, 630, 631, 631]),
+            (111, vec![623, 624, 624, 131, 625, 625]),
+        ] {
+            let w = air();
+            let mut n = mob(100.0, 100.0, 30.0, 44.0);
+            n.scale = 1.25;
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(829);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "goblin {kind}");
+            let offsets: Vec<f32> = if kind == 111 {
+                vec![0.0, 20.0, 20.0, 34.0, 34.0, 34.0]
+            } else {
+                vec![0.0, 20.0, 20.0, 34.0, 34.0]
+            };
+            for (i, dy) in offsets.iter().enumerate() {
+                assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0 + dy), "goblin {kind} gore {i}");
+                assert_eq!(gore.slot(i).scale, 1.25, "goblin {kind} gore {i} scale");
+            }
+            let mut twin = UnifiedRandom::new(829);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "goblin {kind} mirrors the C# draws");
+        }
     }
 }
