@@ -13,7 +13,9 @@
 //!   quad;
 //! * classify: g30 `classify_tile` + `apply_cell_class` into a
 //!   shadow-owned `SpecialPoints` registry (the vine crawls are pure
-//!   world reads; `LiquidDrops` cells recorded for d60); the 717 glowmask
+//!   world reads; `LiquidDrops` cells recorded for d60 AND planned in
+//!   `drip_plan` row-major — the §8.5 direct-bind call order for g68's
+//!   `emit_liquid_drops`, research/136 C5); the 717 glowmask
 //!   table-pass colour is PLANNED per drawn cell (`lava_glows`,
 //!   research/136 §3 — mask 362, the `Color(v,v,v,v/2)` truncation of
 //!   `tile_ctor::lava_light_a`);
@@ -127,6 +129,16 @@ pub(crate) struct ShadowSeams<'a> {
     /// `Color(v, v, v, v/2)` truncation of `tile_ctor::lava_light_a`.
     /// PLAN-ONLY like every other shadow output (no pushes).
     pub lava_glows: Vec<(i32, i32, [u8; 4])>,
+    /// The LiquidDrops-arm plan (research/136 C5 / contract §8.5): one
+    /// entry per classified drip cell `(x, y, kind)` in row-major order —
+    /// the exact call order the pixel bind feeds g68's
+    /// `foliage::emit_liquid_drops(world, y, x, kind, water_style,
+    /// zone_corrupt, zone_crimson, zone_hallow, &mut rand, &mut main_rand,
+    /// &mut gore)` DIRECTLY per cell (the body is UNWIRED on this branch;
+    /// the C# emits inside the Draw switch :688-694 BEFORE the `continue`,
+    /// so draining the recorded cells later would re-order the ONE
+    /// `_rand` — the plan preserves the row-major gate order).
+    pub drip_plan: Vec<(i32, i32, u16)>,
 }
 
 /// The `PortedBodyDrain` shadow: the five ported bodies need the
@@ -185,6 +197,7 @@ impl<'a> ShadowSeams<'a> {
             log: Vec::new(),
             strips: Vec::new(),
             lava_glows: Vec::new(),
+            drip_plan: Vec::new(),
         }
     }
 
@@ -291,6 +304,17 @@ impl TilePassSeams for ShadowSeams<'_> {
                 self.lava_glows.push((x, y, [b, b, b, a]));
             }
         }
+        // The LiquidDrops arm (research/136 C5, contract §8.5): the C#
+        // emits INSIDE the Draw switch (:688-694, kinds 373/374/375/461/
+        // 709) BEFORE the `continue`, so the `Next(num*2)` gate draws on
+        // the ONE `_rand` in row-major cell order. g68's
+        // `foliage::emit_liquid_drops` is UNWIRED on this branch — the
+        // shadow plans the direct-bind call order (`drip_plan`); the
+        // recorded `liquid_drop_cells` stay the census input. Draining
+        // the recorded cells later would re-order the stream (C5).
+        if class == special_points::CellClass::LiquidDrops {
+            self.drip_plan.push((x, y, tile.kind));
+        }
     }
     fn draw_black_strip(&mut self, strip: BlackStrip) {
         self.strips.push(strip);
@@ -374,7 +398,7 @@ impl ShadowSeams<'_> {
         let buckets: usize = self.reg.buckets.iter().map(Vec::len).sum();
         format!(
             "cells={} buckets={} sprites={} jars={} rising={} jar_items={} flames={} \
-             ported(t/v/l/p/tr)={}/{}/{}/{}/{} strips={} steps={} legacy={} martian={} lava={} tiers={:?}",
+             ported(t/v/l/p/tr)={}/{}/{}/{}/{} strips={} steps={} legacy={} martian={} lava={} drips={} tiers={:?}",
             self.reg.single_tiles,
             buckets,
             self.sprites.len(),
@@ -392,6 +416,7 @@ impl ShadowSeams<'_> {
             self.caches.legacy_points.len(),
             self.martian_glow[0],
             self.lava_glows.len(),
+            self.drip_plan.len(),
             self.tiers.map(|t| (t.high, t.medium)),
         )
     }
@@ -557,6 +582,38 @@ mod tests {
         }
         // The A/B summary carries the lava count.
         assert!(s.summary().contains("lava=2"));
+    }
+
+    /// The drip seam (contract §8.5 / research/136 C5): every classified
+    /// LiquidDrops cell lands in `drip_plan` in ROW-MAJOR order (the C#
+    /// emits inside the Draw switch :688-694 BEFORE the `continue` — the
+    /// direct-bind order g68's `emit_liquid_drops` must be called in), and
+    /// the registry's `liquid_drop_cells` holds the SAME cells (the
+    /// census input stays). No RNG moves in the shadow: the plan is the
+    /// order pin, the gate rolls bind at the pixel merge.
+    #[test]
+    fn w4_g31_attach_drip_plan_preserves_the_switch_arm_order() {
+        let mut w = world(128, 128);
+        // Deliberately out of row-major insertion order; two drip kinds.
+        put(&mut w, 40, 30, 374, 0, 0); // lava stalactite
+        put(&mut w, 30, 30, 373, 0, 0); // vine tip
+        put(&mut w, 35, 31, 709, 0, 0); // water candle
+        put(&mut w, 36, 31, 461, 0, 0); // shimmer candle
+        let wind = Wind::new(7);
+        let light = LightMap::default();
+        let inp = inputs();
+        let s = run_shadow(&w, &wind, &light, &inp);
+        assert_eq!(
+            s.drip_plan,
+            vec![(30, 30, 373), (40, 30, 374), (35, 31, 709), (36, 31, 461)],
+            "row-major (y outer, x inner), the Draw-switch emission order"
+        );
+        // The registry census holds the same cells (recorded, not drained).
+        assert_eq!(s.reg.liquid_drop_cells, s.drip_plan);
+        // The drip cells never reach DrawSingleTile (the `continue`):
+        // the world has ONLY drip cells active, so zero singles counted.
+        assert_eq!(s.reg.single_tiles, 0);
+        assert!(s.summary().contains("drips=4"));
     }
 
     /// The tiles.rs attach site: exactly one gated call, AFTER the
