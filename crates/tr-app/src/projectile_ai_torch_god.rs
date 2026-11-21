@@ -270,6 +270,10 @@ mod tests {
         assert_eq!(p.ai[1], 4.0);
         ai_184_bad_torch_luck(&mut p, None, 0, &mut rng);
         assert_eq!(p.ai[1], -4.0, "the overshoot is kept");
+        // The `else` arm fires on the NEXT tick (the C# if/else — the
+        // drain tick itself does not arm the collide).
+        assert!(!p.tile_collide);
+        ai_184_bad_torch_luck(&mut p, None, 0, &mut rng);
         assert!(p.tile_collide, "the budget ran out");
         // Once armed it stays armed; the budget no longer drains.
         ai_184_bad_torch_luck(&mut p, None, 0, &mut rng);
