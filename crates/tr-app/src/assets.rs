@@ -1256,6 +1256,13 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_515",
         "NPC_516",
         "NPC_519",
+        // W4-d41 — the ancient orbs + the desert ghouls
+        // (ANCIENT_GHOUL_SHEETS).
+        "NPC_522",
+        "NPC_523",
+        "NPC_524",
+        "NPC_525",
+        "NPC_526",
         // The Pumpkin Moon wave family's sheets (`S1-F-13b` Phase 2): one per
         // kind — the Scarecrows (305-314) and the five named kinds
         // (315/325/326/327/329/330) — keyed by the vanilla net id in

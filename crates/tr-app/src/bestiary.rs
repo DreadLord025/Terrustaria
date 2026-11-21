@@ -710,7 +710,35 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     // W4-d41 — the solar fragments (516/519) have NO bestiary entries:
     // their draw modifiers hide them (the leinfors dictionary's
     // `Hide = true`) and `entry_for_npc` keeps them entry-less (the
-    // `has_entry` filter skips them in the frame sweep).
+    // `has_entry` filter skips them in the frame sweep). The ancient
+    // orbs (522/523) are Hide=true too — no entries.
+    // W4-d41 — the desert ghouls (`BestiaryEntry.Enemy`, the automated
+    // populator; the UndergroundDesert/CorruptUndergroundDesert/
+    // CrimsonUndergroundDesert tags `:1420-1422`).
+    BestiaryEntryDef {
+        credit_id: "DesertGhoul",
+        net_id: 524,
+        kind: NpcKind::DesertGhoul,
+        variant: None,
+        quick_unlock: false,
+        name: "Ghoul",
+    },
+    BestiaryEntryDef {
+        credit_id: "DesertGhoulCorruption",
+        net_id: 525,
+        kind: NpcKind::DesertGhoulCorruption,
+        variant: None,
+        quick_unlock: false,
+        name: "Vile Ghoul",
+    },
+    BestiaryEntryDef {
+        credit_id: "DesertGhoulCrimson",
+        net_id: 526,
+        kind: NpcKind::DesertGhoulCrimson,
+        variant: None,
+        quick_unlock: false,
+        name: "Tainted Ghoul",
+    },
     // The spheres: the Chaos Ball entry also covers Tim's ChaosBallTim
     // clone 665 (the port folds it — identical stats and name).
     BestiaryEntryDef {

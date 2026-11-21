@@ -518,6 +518,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(CAVERN_SHEETS)
             .chain(DESERT_SHEETS)
             .chain(TOMB_SOLAR_SHEETS)
+            .chain(ANCIENT_GHOUL_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1299,6 +1300,11 @@ pub(crate) const DESERT_SHEETS: &[u32] = &[508, 509, 510, 511, 512];
 /// (the vanilla's `TextureAssets.Npc[type]`), keyed by the vanilla net id
 /// in `NpcAssets::npc_sheets` exactly like `DESERT_SHEETS`.
 pub(crate) const TOMB_SOLAR_SHEETS: &[u32] = &[513, 514, 515, 516, 519];
+
+/// W4-d41 — the ancient orbs' + the desert ghouls' own sheets (the
+/// vanilla's `TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `TOMB_SOLAR_SHEETS`.
+pub(crate) const ANCIENT_GHOUL_SHEETS: &[u32] = &[522, 523, 524, 525, 526];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3273,6 +3279,18 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // W4-d41 — the ancient orbs + the desert ghouls draw their
+            // OWN sheets (`ANCIENT_GHOUL_SHEETS`) at
+            // `Main.npcFrameCount` rows (`Main.cs:67082`: 522 one, 523
+            // five, 524-526 eight) with the generic centred anchor.
+            NpcKind::AncientLight
+            | NpcKind::AncientDoom
+            | NpcKind::DesertGhoul
+            | NpcKind::DesertGhoulCorruption
+            | NpcKind::DesertGhoulCrimson => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3391,6 +3409,12 @@ pub(crate) fn draw_npcs(
                     | NpcKind::TombCrawlerTail
                     | NpcKind::SolarFlare
                     | NpcKind::SolarGoop
+                    // W4-d41 — the Ancient Light's velocity aim
+                    // (`NPC.cs:40012`, `ToRotation - π/2`) and the
+                    // Ancient Doom's scale/alpha ramp (the rotation
+                    // stays 0 — the orb pulses, it does not spin).
+                    | NpcKind::AncientLight
+                    | NpcKind::AncientDoom
                     // The saucer family (`Main.cs:24586-24612`) rotates
                     // about its CENTRE (the `origin = halfSize` draw point
                     // — the quad the anchors computed sits at that centre,

@@ -149,6 +149,8 @@ const SFX_CUES: &[(&str, u32)] = &[
     // swarmer's NPCHit32 (`:14850`).
     ("NPC_Hit_31", 3),
     ("NPC_Hit_32", 3),
+    // W4-d41 — the desert ghouls' NPCHit37 (`NPC.cs:14890`).
+    ("NPC_Hit_37", 3),
     ("NPC_Killed_1", 4),
     ("NPC_Killed_2", 4),
     ("NPC_Killed_3", 4),
@@ -201,6 +203,8 @@ const SFX_CUES: &[(&str, u32)] = &[
     // swarmer's NPCDeath35 (`:14851`).
     ("NPC_Killed_34", 4),
     ("NPC_Killed_35", 4),
+    // W4-d41 — the desert ghouls' NPCDeath40 (`NPC.cs:14891`).
+    ("NPC_Killed_40", 4),
     // The NPC death family (the sound id 4, `LegacySoundPlayer.cs:676`): the
     // per-kind death cues (`NPC.DeathSound`, `NPC.cs:6477`).
     ("Double_Jump", 16),

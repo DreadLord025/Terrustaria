@@ -3620,6 +3620,20 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-d41 — the ancient orbs (aiStyle 100/101, noGravity/
+        // noTileCollide): the flyers ride the hover ctor.
+        crate::npc::NpcKind::AncientLight | crate::npc::NpcKind::AncientDoom => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d41 — the desert ghouls (aiStyle 3): the ground walkers
+        // plant their feet (`NPC.cs:14882-14919` writes no
+        // noGravity/noTileCollide).
+        crate::npc::NpcKind::DesertGhoul
+        | crate::npc::NpcKind::DesertGhoulCorruption
+        | crate::npc::NpcKind::DesertGhoulCrimson => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
     })
 }
 

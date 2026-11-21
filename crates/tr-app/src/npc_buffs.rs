@@ -523,6 +523,13 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::TombCrawlerTail
         | NpcKind::SolarFlare
         | NpcKind::SolarGoop => &[31],
+        // W4-d41 — the ancient orbs: `{ 522, [31] }` / `{ 523, [31] }`
+        // (`NPCID.cs:9050-9063`); the desert ghouls: `{ 524..527, null }`
+        // (`:9064-9067`) — no immunity rows.
+        NpcKind::AncientLight | NpcKind::AncientDoom => &[31],
+        NpcKind::DesertGhoul
+        | NpcKind::DesertGhoulCorruption
+        | NpcKind::DesertGhoulCrimson => &[],
     }
 }
 

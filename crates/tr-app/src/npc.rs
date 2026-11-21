@@ -1222,6 +1222,36 @@ pub enum NpcKind {
     /// the 0.2 gravity to the 12 cap, the ground-strike 5-tick
     /// HitEffect death. W4-d41.
     SolarGoop,
+    /// `NPCID.AncientLight` (522, `NPCID.cs:11721`) — the cultist's
+    /// light orb (`aiStyle 100`, `NPC.cs:15780-15794`): 26x26, dmg 120,
+    /// def 0, 400 HP, kb 0, noGravity/noTileCollide, null sounds,
+    /// alpha 0. The aiStyle-100 arm (`NPC.cs:39991-40066`): the
+    /// ground-strike latch, the ai[2]/ai[3] launch velocity, the
+    /// 60-tick rotation + the 120-tick decay. W4-d41.
+    AncientLight,
+    /// `NPCID.AncientDoom` (523, `NPCID.cs:11723`) — the cultist's doom
+    /// orb (`aiStyle 101`, `NPC.cs:15795-15812`): 42x42, dmg 30, def 0,
+    /// 500 HP, kb 0, noGravity/noTileCollide, alpha 255, chaseable
+    /// false, canGhostHeal false, NPCHit1/NPCDeath6. The aiStyle-101
+    /// arm (`NPC.cs:40067-40146`): the 120-tick scale/alpha ramp, the
+    /// 420-tick 4-spoke 593 burst, the boss-link orphan death. W4-d41.
+    AncientDoom,
+    /// `NPCID.DesertGhoul` (524, `NPCID.cs:11725`) — the desert ghoul
+    /// (`aiStyle 3`, `NPC.cs:14882-14919`): 24x44, dmg 50, def 26,
+    /// 180 HP, kb 0.6, value 500, npcSlots 0.5, NPCHit37/NPCDeath40.
+    /// The `AI_003_Fighters` cap-2 group (`NPC.cs:57554-57579`).
+    /// W4-d41.
+    DesertGhoul,
+    /// `NPCID.DesertGhoulCorruption` (525, `NPCID.cs:11727`) — the
+    /// corrupt ghoul (`NPC.cs:14897-14903`): the 524 row +70 HP, +4 def,
+    /// +10 dmg, −0.1 kb, +150 value (250 HP, 30 def, 60 dmg, kb 0.5,
+    /// value 650). W4-d41.
+    DesertGhoulCorruption,
+    /// `NPCID.DesertGhoulCrimson` (526, `NPCID.cs:11729`) — the crimson
+    /// ghoul (`NPC.cs:14904-14910`): the 524 row +40 HP, +6 def, +14 dmg,
+    /// −0.1 kb, +150 value (220 HP, 32 def, 64 dmg, kb 0.5, value 650).
+    /// W4-d41.
+    DesertGhoulCrimson,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3195,7 +3225,9 @@ impl Npc {
             // case-345 family), `immortal`'s stock false, `friendly` the town
             // residents' `friendly = true` write (`NPC.cs:8983+`) plus the
             // Sleeping Angler's own arm (`:13798`).
-            chaseable: true,
+            // W4-d41 — the Ancient Doom's `chaseable = false` row
+            // (`NPC.cs:15809`).
+            chaseable: kind != NpcKind::AncientDoom,
             immortal: false,
             friendly: kind.is_town_resident()
                 || kind == NpcKind::SleepingAngler
@@ -3283,6 +3315,10 @@ impl Npc {
                             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                                 255
                             }
+                            // W4-d41 — the Ancient Doom's `alpha = 255`
+                            // row (`NPC.cs:15810` — the second write
+                            // overrides the `:15807` 0).
+                            NpcKind::AncientDoom => 255,
                             _ => 0,
                         }
                     }),
@@ -3715,6 +3751,12 @@ impl Npc {
             | NpcKind::TombCrawlerBody
             | NpcKind::TombCrawlerTail => 0.0,
             NpcKind::SolarFlare | NpcKind::SolarGoop => 0.0,
+            // W4-d41 — the ancient orbs' kb 0 (`NPC.cs:15793`/`:15808`);
+            // the desert ghouls' 0.6/0.5/0.5 (`:14892` − the
+            // `:14901`/`:14908` 0.1 subtracts).
+            NpcKind::AncientLight | NpcKind::AncientDoom => 0.0,
+            NpcKind::DesertGhoul => 0.6,
+            NpcKind::DesertGhoulCorruption | NpcKind::DesertGhoulCrimson => 0.5,
             _ => 0.4,
         }
     }
@@ -4124,6 +4166,13 @@ impl Npc {
             NpcKind::TombCrawlerBody => 12,
             NpcKind::TombCrawlerTail => 14,
             NpcKind::SolarFlare | NpcKind::SolarGoop => 0,
+            // W4-d41 — the ancient orbs' defense 0 (`NPC.cs:15786`/
+            // `:15801`); the desert ghouls' 26/30/32 (`:14888` + the
+            // `:14899`/`:14906` adds).
+            NpcKind::AncientLight | NpcKind::AncientDoom => 0,
+            NpcKind::DesertGhoul => 26,
+            NpcKind::DesertGhoulCorruption => 30,
+            NpcKind::DesertGhoulCrimson => 32,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4525,6 +4574,12 @@ impl Npc {
             | NpcKind::TombCrawlerBody
             | NpcKind::TombCrawlerTail => 130.0,
             NpcKind::SolarFlare | NpcKind::SolarGoop => 0.0,
+            // W4-d41 — the ancient orbs write no value row (the head's
+            // 0, `NPC.cs:8544`); the desert ghouls' 500/650/650
+            // (`:14893` + the `:14902`/`:14909` adds).
+            NpcKind::AncientLight | NpcKind::AncientDoom => 0.0,
+            NpcKind::DesertGhoul => 500.0,
+            NpcKind::DesertGhoulCorruption | NpcKind::DesertGhoulCrimson => 650.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6144,6 +6199,23 @@ impl Npc {
             // fragment's gravity + ground-strike death
             // (`NPC.cs:39927-39990`).
             NpcKind::SolarGoop => self.update_solar_goop(world, player),
+            // W4-d41 — the Ancient Light (522, aiStyle 100): the
+            // ground-strike latch + the ai[2]/ai[3] launch + the
+            // 60-tick rotation / 120-tick decay (`NPC.cs:39991-40066`).
+            NpcKind::AncientLight => self.update_ancient_light(world, player),
+            // W4-d41 — the Ancient Doom (523, aiStyle 101): the
+            // 120-tick scale/alpha ramp + the 420-tick 4-spoke 593
+            // burst + the boss-link orphan death (`NPC.cs:40067-40146`).
+            // The boss-link reads the pool — the sim's pooled path owns
+            // it (the solo path runs the orphan arm).
+            NpcKind::AncientDoom => self.update_ancient_doom(world, player, rng),
+            // W4-d41 — the desert ghouls (524-526, aiStyle 3): the
+            // walker family; the `AI_003_Fighters` cap-2 group
+            // (`NPC.cs:57554-57579`, the 524-527 range) rides
+            // `npc_ai3_speeds::apply_ladder` through `run_ai3_ladder`.
+            NpcKind::DesertGhoul
+            | NpcKind::DesertGhoulCorruption
+            | NpcKind::DesertGhoulCrimson => self.update_skeleton(world, player, dt),
             // W4-d41 — the salamanders (498-506, aiStyle 3): the
             // `AI_003_Fighters` SHOOTER block (`NPC.cs:59069-59801`, the
             // 498-506 terms) — the 70-tick cadence, the 7-speed spit 572
@@ -7768,6 +7840,57 @@ impl Npc {
             | NpcKind::TombCrawlerBody
             | NpcKind::TombCrawlerTail => {
                 self.frame = 0;
+            }
+            // W4-d41 — `case 523` (`NPC.cs:72127-72137`): the Ancient
+            // Doom's 6-tick counter over the 5-row strip.
+            NpcKind::AncientDoom => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                    if self.frame >= 5 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d41 — the Ancient Light has NO `FindFrame` case
+            // (`Main.npcFrameCount[522]` = 1) — the single frame never
+            // advances.
+            NpcKind::AncientLight => {
+                self.frame = 0;
+            }
+            // W4-d41 — `case 524..527` (`NPC.cs:69908-69945`): the
+            // desert ghouls' grounded walk climbs from row 2 at the
+            // `|vx| + 1` accumulator's >9 step, wrapping at the 8-row
+            // strip back to 2; the idle row 0, the air row 1.
+            NpcKind::DesertGhoul
+            | NpcKind::DesertGhoulCorruption
+            | NpcKind::DesertGhoulCrimson => {
+                if self.vy == 0.0 {
+                    if self.facing != 0 {
+                        self.sprite_dir = self.facing;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                        return;
+                    }
+                    if self.frame <= 1 {
+                        self.frame = 2;
+                    }
+                    self.frame_counter += self.vx.abs();
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 9.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 8 {
+                        self.frame = 2;
+                    }
+                } else {
+                    self.frame = 1;
+                    self.frame_counter = 0.0;
+                }
             }
             // W4-d41 — `case 494 : case 495` (`NPC.cs:69657-69733`): the
             // crawdads' charge bands (ai[2] 1..7/7..14/14..20 → rows
@@ -12451,6 +12574,112 @@ impl Npc {
         } else {
             self.y = ny;
         }
+    }
+
+    /// W4-d41 — `NPC.AI()`'s aiStyle-100 block (`NPC.cs:39991-40066`)
+    /// for the AncientLight (522): the ground-strike latch (ai[0] 0 →
+    /// -1 on the first vy==0 tick), the 5-tick HitEffect death, the
+    /// ai[2]/ai[3] launch velocity on the first flight tick, the
+    /// velocity-aim rotation, the 60-tick rotation by ai[1] + the
+    /// 120-tick 0.98 decay + the 0.2-length zero. The dust arms
+    /// (`:40017-40049`) are the documented skip. The
+    /// `noTileCollide = true` row means the orb flies through tiles —
+    /// the integration is the raw step.
+    fn update_ancient_light(&mut self, world: &World, _player: &Player) {
+        // `:39993-39999` — the ground-strike latch.
+        if self.vy == 0.0 && self.ai[0] >= 0.0 {
+            self.ai[0] = -1.0;
+            self.ai[1] = 0.0;
+            self.net_update = true;
+            return;
+        }
+        // `:40000-40011` — the strike: freeze, rewind, the 5-tick death.
+        if self.ai[0] == -1.0 {
+            self.vx = 0.0;
+            self.vy = 0.0;
+            self.x = self.old_x;
+            self.y = self.old_y;
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 5.0 {
+                self.hp = 0;
+            }
+            return;
+        }
+        // `:40012` — the velocity-aim rotation.
+        self.rotation = self.vy.atan2(self.vx) - std::f32::consts::FRAC_PI_2;
+        // `:40017-40029` — the first flight tick: the ai[2]/ai[3] launch
+        // velocity + the 13-dust burst (the documented skip).
+        if self.local_ai[0] == 0.0 {
+            self.local_ai[0] = 1.0;
+            self.vx = self.ai[2];
+            self.vy = self.ai[3];
+        }
+        // `:40050-40065` — the 60-tick rotation + the 120-tick decay.
+        if self.ai[0] >= 0.0 {
+            self.ai[0] += 1.0;
+            if self.ai[0] > 60.0 {
+                let (vx, vy) = (self.vx, self.vy);
+                let c = self.ai[1].cos();
+                let s = self.ai[1].sin();
+                self.vx = vx * c - vy * s;
+                self.vy = vx * s + vy * c;
+            }
+            if self.ai[0] > 120.0 {
+                self.vx *= 0.98;
+                self.vy *= 0.98;
+            }
+            if (self.vx * self.vx + self.vy * self.vy).sqrt() < 0.2 {
+                self.vx = 0.0;
+                self.vy = 0.0;
+            }
+        }
+        // The raw integration (noTileCollide).
+        self.old_x = self.x;
+        self.old_y = self.y;
+        self.x += self.vx;
+        self.y += self.vy;
+        let _ = world;
+    }
+
+    /// W4-d41 — `NPC.AI()`'s aiStyle-101 block (`NPC.cs:40067-40146`)
+    /// for the AncientDoom (523): the 120-tick scale/alpha ramp (the
+    /// boss-link's life thirds/quarters drive the 1/2/3 tick rate), the
+    /// 420-tick 4-spoke 593 burst (4 damage = this.damage), the
+    /// boss-link orphan death. The boss-link reads `Main.npc[ai[0]]` —
+    /// the solo path runs the orphan arm (no boss); the sim's pooled
+    /// path feeds the boss's life. The dust arms (`:40097-40126`) are
+    /// the documented skip.
+    fn update_ancient_doom(&mut self, _world: &World, _player: &Player, _rng: &mut UnifiedRandom) {
+        // `:40075-40090` — the boss-link gate. The solo path has no
+        // boss pool: flag109 = true (the orphan arm). The sim's pooled
+        // path overrides this with the boss's life thirds/quarters.
+        let mut tick_rate = 1.0f32;
+        let mut orphan = true;
+        // `:40091-40096` — the ramp.
+        self.ai[1] += tick_rate;
+        let t = (self.ai[1] / 120.0).clamp(0.0, 1.0);
+        self.scale = t;
+        self.alpha = (255.0 - t * 255.0) as u8;
+        // `:40127-40128` — the localAI pulse counters.
+        self.local_ai[0] += std::f32::consts::PI / 60.0;
+        self.local_ai[1] = 0.25 + (self.ai[1] * std::f32::consts::TAU / 60.0).sin() * 0.25;
+        // `:40129-40140` — the 420-tick burst: the 4-spoke 593 at the
+        // centre, 4 speed, this.damage.
+        if self.ai[1] >= 420.0 {
+            orphan = true;
+            let (cx, cy) = self.center();
+            for k in 0..4 {
+                let ang = std::f32::consts::FRAC_PI_2 * k as f32;
+                let vx = -4.0 * ang.sin();
+                let vy = -4.0 * ang.cos();
+                self.wants_hostile_shot.push((593u16, cx, cy, vx, vy, self.kind.contact_damage()));
+            }
+        }
+        // `:40141-40145` — the orphan death.
+        if orphan {
+            self.hp = 0;
+        }
+        let _ = tick_rate;
     }
 
     // `update_scutlix_rider` RETIRED (S1-D-3-wire-saucer): the 390 arm is
@@ -19576,6 +19805,14 @@ impl Npc {
             NpcKind::TombCrawlerTail => 515,
             NpcKind::SolarFlare => 516,
             NpcKind::SolarGoop => 519,
+            // W4-d41 — the ancient orbs + the desert ghouls' vanilla
+            // type ids (the same values `to_u16` rides) — unused by every
+            // arm above, so the G6 key stays injective.
+            NpcKind::AncientLight => 522,
+            NpcKind::AncientDoom => 523,
+            NpcKind::DesertGhoul => 524,
+            NpcKind::DesertGhoulCorruption => 525,
+            NpcKind::DesertGhoulCrimson => 526,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -24644,7 +24881,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 293] = [
+    pub(super) const ALL_KINDS: [NpcKind; 298] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24950,6 +25187,12 @@ mod tests {
         NpcKind::TombCrawlerTail,
         NpcKind::SolarFlare,
         NpcKind::SolarGoop,
+        // W4-d41 — the ancient orbs + the desert ghouls.
+        NpcKind::AncientLight,
+        NpcKind::AncientDoom,
+        NpcKind::DesertGhoul,
+        NpcKind::DesertGhoulCorruption,
+        NpcKind::DesertGhoulCrimson,
     ];
 
     #[test]
@@ -25694,6 +25937,159 @@ mod tests {
             }
         }
         assert!(g.hp <= 0, "the goop dies on the ground strike");
+    }
+
+    /// The ancient orbs' + the desert ghouls' `SetDefaults` rows
+    /// (`NPC.cs:15780-15812` for 522/523, `:14882-14919` for 524-526).
+    #[test]
+    fn w4_d41_the_ancient_ghoul_setdefaults_rows() {
+        // (kind, vanilla, w, h, ai, hp, dmg, def, value, kb)
+        let table = [
+            (NpcKind::AncientLight, 522u16, 26.0, 26.0, 100u8, 400, 120, 0, 0.0, 0.0f32),
+            (NpcKind::AncientDoom, 523, 42.0, 42.0, 101, 500, 30, 0, 0.0, 0.0),
+            (NpcKind::DesertGhoul, 524, 24.0, 44.0, 3, 180, 50, 26, 500.0, 0.6),
+            (NpcKind::DesertGhoulCorruption, 525, 24.0, 44.0, 3, 250, 60, 30, 650.0, 0.5),
+            (NpcKind::DesertGhoulCrimson, 526, 24.0, 44.0, 3, 220, 64, 32, 650.0, 0.5),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb) in table {
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+        }
+        // The orbs are gravity-free; the ghouls are grounded walkers.
+        assert!(NpcKind::AncientLight.no_gravity());
+        assert!(NpcKind::AncientDoom.no_gravity());
+        assert!(!NpcKind::DesertGhoul.no_gravity());
+        // The Ancient Doom's chaseable=false + alpha=255 rows.
+        let doom = bare(NpcKind::AncientDoom);
+        assert!(!doom.chaseable, "the doom is untargetable");
+        assert_eq!(doom.alpha, 255, "the doom's alpha row");
+        // The sound rows.
+        assert_eq!(NpcKind::AncientLight.hit_sound(), None);
+        assert_eq!(NpcKind::AncientLight.death_sound(), None);
+        assert_eq!(NpcKind::AncientDoom.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::AncientDoom.death_sound(), Some("NPC_Killed_6"));
+        for kind in [NpcKind::DesertGhoul, NpcKind::DesertGhoulCorruption, NpcKind::DesertGhoulCrimson] {
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_37"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_40"), "{kind:?} death");
+        }
+        // The immunity rows: the orbs Confused [31] (`NPCID.cs:9050-9063`),
+        // the ghouls null (`:9064-9067`).
+        for kind in [NpcKind::AncientLight, NpcKind::AncientDoom] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[31], "{kind:?} Confused-immune");
+        }
+        for kind in [NpcKind::DesertGhoul, NpcKind::DesertGhoulCorruption, NpcKind::DesertGhoulCrimson] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(!b.buff_immune.iter().any(|x| *x), "{kind:?} null immunity");
+        }
+    }
+
+    /// The bestiary rows: the ghouls carry their own entries; the orbs
+    /// are entry-less (Hide=true). The draw sheets + row counts.
+    #[test]
+    fn w4_d41_the_ancient_ghoul_bestiary_and_sheets() {
+        for (kind, net, credit, name) in [
+            (NpcKind::DesertGhoul, 524, "DesertGhoul", "Ghoul"),
+            (NpcKind::DesertGhoulCorruption, 525, "DesertGhoulCorruption", "Vile Ghoul"),
+            (NpcKind::DesertGhoulCrimson, 526, "DesertGhoulCrimson", "Tainted Ghoul"),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net, "{kind:?} net id");
+            assert_eq!(e.credit_id, credit, "{kind:?} credit");
+            assert_eq!(e.name, name, "{kind:?} name");
+        }
+        assert!(!crate::bestiary::has_entry(NpcKind::AncientLight, SlimeVariant::Blue));
+        assert!(!crate::bestiary::has_entry(NpcKind::AncientDoom, SlimeVariant::Blue));
+        // The DRAW sheets + row counts (`Main.npcFrameCount`,
+        // `Main.cs:67082`: 522 one, 523 five, 524-526 eight).
+        for (kind, net, rows) in [
+            (NpcKind::AncientLight, 522u16, 1u32),
+            (NpcKind::AncientDoom, 523, 5),
+            (NpcKind::DesertGhoul, 524, 8),
+            (NpcKind::DesertGhoulCorruption, 525, 8),
+            (NpcKind::DesertGhoulCrimson, 526, 8),
+        ] {
+            assert_eq!(crate::render::entities::texture_net_id(kind), net);
+            assert_eq!(crate::render::entities::npc_rows(net), rows, "{kind:?} rows");
+        }
+    }
+
+    /// The desert ghouls' `FindFrame` case (`NPC.cs:69908-69945`): the
+    /// grounded walk climbs from row 2 at the `|vx| + 1` >9 step, the
+    /// idle row 0, the air row 1. The Ancient Doom's case
+    /// (`:72127-72137`): the 6-tick counter over the 5-row strip.
+    #[test]
+    fn w4_d41_the_ghoul_doom_find_frame_bands() {
+        let mut g = bare(NpcKind::DesertGhoul);
+        g.vx = 0.0;
+        g.vy = 0.0;
+        g.frame = 3;
+        g.find_frame();
+        assert_eq!(g.frame, 0, "the idle row");
+        g.vy = 1.0;
+        g.find_frame();
+        assert_eq!(g.frame, 1, "the air row");
+        g.vy = 0.0;
+        // The walk: 4 px/tick → 5/tick, a row every 2 ticks (>9).
+        g.vx = 4.0;
+        g.facing = 1;
+        g.frame = 0;
+        g.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..14 {
+            g.find_frame();
+            rows.push(g.frame);
+        }
+        assert_eq!(&rows[..], &[2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 2, 2], "the 2..7 cycle");
+        // The doom: the 6-tick counter.
+        let mut d = bare(NpcKind::AncientDoom);
+        d.frame = 0;
+        d.frame_counter = 0.0;
+        for _ in 0..5 {
+            d.find_frame();
+        }
+        assert_eq!(d.frame, 0, "the stride holds for 5 ticks");
+        d.find_frame();
+        assert_eq!(d.frame, 1, "the sixth tick advances");
+        d.frame = 4;
+        d.frame_counter = 5.5;
+        d.find_frame();
+        assert_eq!(d.frame, 0, "the wrap at 5");
+    }
+
+    /// The ancient orbs' + the ghouls' AI routing: each kind steps
+    /// without panicking, stays inside its own strip, and keeps its
+    /// `SetDefaults` HP.
+    #[test]
+    fn w4_d41_the_ancient_ghoul_kinds_step_their_machines() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for kind in [
+            NpcKind::AncientLight,
+            NpcKind::AncientDoom,
+            NpcKind::DesertGhoul,
+            NpcKind::DesertGhoulCorruption,
+            NpcKind::DesertGhoulCrimson,
+        ] {
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            let hp = n.hp;
+            let rows = crate::render::entities::npc_rows(
+                crate::render::entities::texture_net_id(kind),
+            );
+            for _ in 0..120 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+                assert!(n.frame < rows, "{kind:?} row {} of {rows}", n.frame);
+                assert!(n.hp <= hp, "{kind:?} hp grew");
+            }
+        }
     }
 
     /// The small-kinds wiring wave (S1-D-3-wire-smallkinds): the four wired
@@ -29259,8 +29655,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            293,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d41's cavern crawdads/shellies four + the nine salamanders + the antlions/Dune Splicer five + the Tomb Crawler/solar fragments five)"
+            298,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d41's cavern crawdads/shellies four + the nine salamanders + the antlions/Dune Splicer five + the Tomb Crawler/solar fragments five + the ancient orbs/ghouls five)"
         );
         assert!(
             covered > 43,

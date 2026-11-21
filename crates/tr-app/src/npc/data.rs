@@ -620,6 +620,14 @@ impl NpcKind {
             NpcKind::TombCrawlerTail => 515,
             NpcKind::SolarFlare => 516,
             NpcKind::SolarGoop => 519,
+            // W4-d41 — the ancient orbs + the desert ghouls keep their
+            // vanilla ids (522-526 free in the wire space).
+            // `NPCID.cs:11721-11729`.
+            NpcKind::AncientLight => 522,
+            NpcKind::AncientDoom => 523,
+            NpcKind::DesertGhoul => 524,
+            NpcKind::DesertGhoulCorruption => 525,
+            NpcKind::DesertGhoulCrimson => 526,
         }
     }
 
@@ -977,6 +985,12 @@ impl NpcKind {
             515 => NpcKind::TombCrawlerTail,
             516 => NpcKind::SolarFlare,
             519 => NpcKind::SolarGoop,
+            // W4-d41 — the ancient orbs + the desert ghouls.
+            522 => NpcKind::AncientLight,
+            523 => NpcKind::AncientDoom,
+            524 => NpcKind::DesertGhoul,
+            525 => NpcKind::DesertGhoulCorruption,
+            526 => NpcKind::DesertGhoulCrimson,
             _ => return None,
         })
     }
@@ -1944,6 +1958,14 @@ impl NpcKind {
             | NpcKind::TombCrawlerTail => "NPC_Hit_1",
             // W4-d41 — the solar fragments write `HitSound = null`
             // (`NPC.cs:15402`/`:15417`) — no hit sound (the null guard).
+            // W4-d41 — the Ancient Light's `HitSound = null`
+            // (`NPC.cs:15788`); the Ancient Doom's `NPCHit1` (`:15803`).
+            NpcKind::AncientDoom => "NPC_Hit_1",
+            // W4-d41 — the desert ghouls' `SoundID.NPCHit37`
+            // (`NPC.cs:14890`).
+            NpcKind::DesertGhoul
+            | NpcKind::DesertGhoulCorruption
+            | NpcKind::DesertGhoulCrimson => "NPC_Hit_37",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2279,6 +2301,14 @@ impl NpcKind {
             | NpcKind::TombCrawlerTail => "NPC_Killed_1",
             // W4-d41 — the solar fragments write `DeathSound = null`
             // (`NPC.cs:15403`/`:15418`) — no death sound (the null guard).
+            // W4-d41 — the Ancient Light's `DeathSound = null`
+            // (`NPC.cs:15789`); the Ancient Doom's `NPCDeath6` (`:15804`).
+            NpcKind::AncientDoom => "NPC_Killed_6",
+            // W4-d41 — the desert ghouls' `SoundID.NPCDeath40`
+            // (`NPC.cs:14891`).
+            NpcKind::DesertGhoul
+            | NpcKind::DesertGhoulCorruption
+            | NpcKind::DesertGhoulCrimson => "NPC_Killed_40",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2368,6 +2398,9 @@ impl NpcKind {
             | NpcKind::TombCrawlerTail
             | NpcKind::SolarFlare
             | NpcKind::SolarGoop => true,
+            // W4-d41 — the ancient orbs (522/523,
+            // `NPC.cs:15790`/`:15805`; kb 0).
+            NpcKind::AncientLight | NpcKind::AncientDoom => true,
             // The Hungry (115, `NPC.cs:10388`) — knockBackResist 1.1, so its
             // noGravity matters to the knockback (the leeches are resist 0).
             NpcKind::Hungry => true,
@@ -2685,6 +2718,14 @@ impl NpcKind {
             NpcKind::SolarFlare => 9,
             // W4-d41 — aiStyle 99, the Solar Goop (`NPC.cs:15413`).
             NpcKind::SolarGoop => 99,
+            // W4-d41 — aiStyle 100, the Ancient Light (`NPC.cs:15784`).
+            NpcKind::AncientLight => 100,
+            // W4-d41 — aiStyle 101, the Ancient Doom (`NPC.cs:15799`).
+            NpcKind::AncientDoom => 101,
+            // W4-d41 — aiStyle 3, the desert ghouls (`NPC.cs:14886`).
+            NpcKind::DesertGhoul
+            | NpcKind::DesertGhoulCorruption
+            | NpcKind::DesertGhoulCrimson => 3,
             // W4-d41 — aiStyle 39, the shelly pair (`NPC.cs:14682`).
             NpcKind::GiantShelly | NpcKind::GiantShelly2 => 39,
         }
@@ -2805,6 +2846,11 @@ impl NpcKind {
             // ride the ladder's own arm; this row feeds the walker
             // fallback + the pin).
             NpcKind::GiantWalkingAntlion => 2.5,
+            // W4-d41 — the desert ghouls' cap-2 group
+            // (`NPC.cs:57554-57579`: the 524-527 range).
+            NpcKind::DesertGhoul
+            | NpcKind::DesertGhoulCorruption
+            | NpcKind::DesertGhoulCrimson => 2.0,
             NpcKind::Salamander
             | NpcKind::Salamander2
             | NpcKind::Salamander3
@@ -3266,6 +3312,15 @@ impl NpcKind {
             | NpcKind::TombCrawlerBody
             | NpcKind::TombCrawlerTail => (22.0, 22.0),
             NpcKind::SolarFlare | NpcKind::SolarGoop => (26.0, 26.0),
+            // W4-d41 — the Ancient Light's 26x26 box
+            // (`NPC.cs:15782-15783`), the Ancient Doom's 42x42
+            // (`:15797-15798`), the desert ghouls' 24x44
+            // (`:14884-14885`).
+            NpcKind::AncientLight => (26.0, 26.0),
+            NpcKind::AncientDoom => (42.0, 42.0),
+            NpcKind::DesertGhoul
+            | NpcKind::DesertGhoulCorruption
+            | NpcKind::DesertGhoulCrimson => (24.0, 44.0),
         }
     }
 
@@ -3382,6 +3437,15 @@ impl NpcKind {
             NpcKind::TombCrawlerHead => 513,
             NpcKind::SolarFlare => 516,
             NpcKind::SolarGoop => 519,
+            // W4-d41 — the ancient orbs + the desert ghouls keep their
+            // vanilla types (`NPCID.cs:11721-11729`). The orbs are
+            // Hide=true (no bestiary entry), so the hand rows keep the
+            // C# type gates readable; the ghouls carry their own entries.
+            NpcKind::AncientLight => 522,
+            NpcKind::AncientDoom => 523,
+            NpcKind::DesertGhoul => 524,
+            NpcKind::DesertGhoulCorruption => 525,
+            NpcKind::DesertGhoulCrimson => 526,
             NpcKind::Goldfish => 55,
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
@@ -3987,6 +4051,14 @@ impl NpcKind {
             | NpcKind::TombCrawlerBody
             | NpcKind::TombCrawlerTail => 60,
             NpcKind::SolarFlare | NpcKind::SolarGoop => 1,
+            // W4-d41 — the Ancient Light's lifeMax 400 (`NPC.cs:15787`),
+            // the Ancient Doom's 500 (`:15802`); the desert ghouls'
+            // 180/250/220 (`:14889` + the `:14898`/`:14905` adds).
+            NpcKind::AncientLight => 400,
+            NpcKind::AncientDoom => 500,
+            NpcKind::DesertGhoul => 180,
+            NpcKind::DesertGhoulCorruption => 250,
+            NpcKind::DesertGhoulCrimson => 220,
         }
     }
 
@@ -4381,6 +4453,14 @@ impl NpcKind {
             NpcKind::TombCrawlerBody | NpcKind::TombCrawlerTail => 7,
             NpcKind::SolarFlare => 100,
             NpcKind::SolarGoop => 120,
+            // W4-d41 — the Ancient Light's damage 120 (`NPC.cs:15785`),
+            // the Ancient Doom's 30 (`:15800`); the desert ghouls'
+            // 50/60/64 (`:14887` + the `:14900`/`:14907` adds).
+            NpcKind::AncientLight => 120,
+            NpcKind::AncientDoom => 30,
+            NpcKind::DesertGhoul => 50,
+            NpcKind::DesertGhoulCorruption => 60,
+            NpcKind::DesertGhoulCrimson => 64,
         }
     }
 }

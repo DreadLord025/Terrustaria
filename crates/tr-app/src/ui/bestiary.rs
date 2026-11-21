@@ -1674,6 +1674,21 @@ fn portrait_data(
         (NpcKind::SolarFlare, _) | (NpcKind::SolarGoop, _) => {
             (sheet_i, 26.0, 26.0, 26.0, white)
         }
+        // W4-d41 — the ancient orbs have no bestiary entries (the
+        // catalog never shows them); the arms exist for the match's
+        // exhaustiveness — the SetDefaults box.
+        (NpcKind::AncientLight, _) => (sheet_i, 26.0, 26.0, 26.0, white),
+        (NpcKind::AncientDoom, _) => (sheet_i, 42.0, 42.0, 42.0, white),
+        // W4-d41 — the desert ghouls' portraits: the 8-row strips over
+        // the 24x44 frames, the frame width the sheet's own.
+        (NpcKind::DesertGhoul, _)
+        | (NpcKind::DesertGhoulCorruption, _)
+        | (NpcKind::DesertGhoulCrimson, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 24.0, h, white)
+        }
     }
 }
 
