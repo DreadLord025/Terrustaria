@@ -2103,38 +2103,28 @@ impl App {
         }
     }
 
-    /// `Main.GetNurseHealCost` (`Main.cs:40054-40100`): the missing life
+    /// `Main.GetNurseHealCost` (`Main.cs:40053-40101`): the missing life
     /// plus the removable debuffs x100 — a slot counts when
     /// `Main.debuff[b] && buffTime > 60 && !NurseCannotRemoveDebuff[b]` —
     /// then the boss-progression ladder, the discount and the happiness
-    /// adjustment. The expert x2 stays constants-off (the difficulty
-    /// plumbing rides R-03-6).
-    pub(crate) fn nurse_heal_cost(&self, nurse_idx: usize) -> i32 {
+    /// adjustment. The adjustment reads the LATCHED `currentShoppingSettings.
+    /// PriceAdjustment` (`:40100`) — the talk-open latch (`Player.SetTalkNPC`,
+    /// `Player.cs:4389`, the `Main.cs:42939`→`:43081` chain), NOT a fresh
+    /// mood pass: mood changes between the talk and the heal do not change
+    /// the price. Draw-free — the Princess head drew at the LATCH site on
+    /// `NamedRngs::global()` (and the Nurse is never the Princess). The
+    /// expert x2 stays constants-off (the difficulty plumbing rides R-03-6).
+    pub(crate) fn nurse_heal_cost(&self) -> i32 {
         let Some(player) = self.player.as_ref() else {
             return 0;
         };
         let missing = player.max_hp - player.hp;
         let debuffs = player.remountable_debuff_count();
-        let npc = &self.npcs[nurse_idx];
-        // The Nurse is never the Princess, so the random three-loves head
-        // never draws here — the closure is a no-draw stand-in (the C#
-        // `GetNurseHealCost` reads the LATCHED `currentShoppingSettings.
-        // PriceAdjustment`, `Main.cs:40100`; the port's recompute is the
-        // pre-existing nurse-lane deviation, unchanged by W4-g58).
-        let mut no_roll = |_n: i32| 0;
-        let mood = crate::happiness::process_mood(
-            &self.world,
-            &self.npcs,
-            npc,
-            player.center(),
-            false,
-            &mut no_roll,
-        );
         let w = &self.world;
         nurse_heal_cost_for(
             missing,
             debuffs,
-            mood.multiplier,
+            self.shopping_settings.price_adjustment,
             &NurseCostFlags {
                 downed_golem: w.downed_golem,
                 downed_plant_boss: w.downed_plant_boss,
@@ -2150,9 +2140,11 @@ impl App {
 
     /// `Main.NPCChatText_DoNurseHeal` (`Main.cs:40103+`): `BuyItem(healCost)`
     /// → the life to full + the removable debuffs cleared. Returns false
-    /// when the purse is short or there is nothing to heal.
-    pub(crate) fn nurse_heal(&mut self, nurse_idx: usize) -> bool {
-        let cost = self.nurse_heal_cost(nurse_idx);
+    /// when the purse is short or there is nothing to heal. The C# takes no
+    /// NPC index — the cost rides the latched settings of whoever is talked
+    /// to (`NurseHeal.Interact`, `NPCInteractions.cs:258-261`).
+    pub(crate) fn nurse_heal(&mut self) -> bool {
+        let cost = self.nurse_heal_cost();
         if cost <= 0 || self.coins < cost as u64 {
             return false;
         }
@@ -5667,22 +5659,21 @@ mod s1_e_18_tests {
         let mut player = crate::player::Player::spawn(&app.world);
         player.hp = player.max_hp / 2;
         app.player = Some(player);
-        app.npcs.push(crate::npc::Npc::new(
-            crate::npc::NpcKind::Nurse,
-            32.0,
-            100.0,
-            1,
-            0.0,
-        ));
-        let cost = app.nurse_heal_cost(0);
+        let mut nurse = crate::npc::Npc::new(crate::npc::NpcKind::Nurse, 32.0, 100.0, 1, 0.0);
+        nurse.hp = nurse.max_hp;
+        app.npcs.push(nurse);
+        // The heal reads the TALK-OPEN latch (`Player.cs:4389`) — the
+        // vanilla opens the dialog before the Heal button exists.
+        app.set_talk_npc(Some(0));
+        let cost = app.nurse_heal_cost();
         assert!(cost > 0, "half life is a heal");
         // Shy of the price: the C# returns before `HandleNurseService`.
         app.coins = cost as u64 - 1;
-        assert!(!app.nurse_heal(0));
+        assert!(!app.nurse_heal());
         assert_eq!(pay(&app), 0);
         // The paid heal credits the exact copper and tops the life up.
         app.coins = cost as u64;
-        assert!(app.nurse_heal(0));
+        assert!(app.nurse_heal());
         assert_eq!(pay(&app), cost);
         assert_eq!(
             app.player.as_ref().unwrap().hp,
@@ -5699,6 +5690,45 @@ mod s1_e_18_tests {
             .find(|a| a.name == "FREQUENT_FLYER")
             .and_then(|a| a.tracker_values())
             .map_or(0, |(v, _)| v)
+    }
+
+    /// W4-g58 nurse-latch fix: `GetNurseHealCost` (`Main.cs:40100`) reads the
+    /// LATCHED `currentShoppingSettings.PriceAdjustment` — the talk-open
+    /// write (`Player.SetTalkNPC`, `Player.cs:4389`, the `Main.cs:42939`
+    /// HoverOverNPCs → `:43081` chain). Mood changes BETWEEN the talk and
+    /// the heal do not change the cost; only a fresh `SetTalkNPC` re-latch
+    /// picks the new mood up.
+    #[test]
+    fn the_nurse_cost_reads_the_talk_latch_not_a_fresh_mood() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.hp = player.max_hp / 2;
+        app.player = Some(player);
+        // A HOMELESS Nurse: the NoHome sentinel (`ShopHelper.cs:107-110`)
+        // rides the 1.5 clamp ceiling — position-independent.
+        let mut nurse = crate::npc::Npc::new(crate::npc::NpcKind::Nurse, 32.0, 100.0, 1, 0.0);
+        nurse.hp = nurse.max_hp;
+        nurse.home = None;
+        app.npcs.push(nurse);
+        app.set_talk_npc(Some(0)); // the latch (`Player.cs:4389`)
+        assert_eq!(app.shopping_settings.price_adjustment, 1.5);
+        let cost = app.nurse_heal_cost();
+        assert!(cost > 0);
+        // House her AFTER the talk: a fresh ProcessMood would drop the
+        // sentinel (LoveSpace ×0.95 → 0.95), but the C# cost reads the
+        // latch — unchanged.
+        app.npcs[0].home = Some((2, 6));
+        assert_eq!(
+            app.nurse_heal_cost(),
+            cost,
+            "mood changes between talk and heal do not change the price"
+        );
+        // A fresh latch (re-opening the talk) picks the new mood up.
+        app.set_talk_npc(Some(0));
+        assert!(
+            app.nurse_heal_cost() < cost,
+            "the re-latch reads the housed mood"
+        );
     }
 }
 

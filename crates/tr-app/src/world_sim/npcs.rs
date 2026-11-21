@@ -403,8 +403,12 @@ pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         return tax_collector_payout(app, i);
     }
     // The town dispatch: the Nurse heals (the vanilla's dialog-button pair
-    // — the port collapses them onto the right-click).
-    let Some(nurse_idx) = app.npcs.iter().position(|n| {
+    // — the port collapses them onto the right-click). The cost reads the
+    // TALK-OPEN LATCH (`App.shopping_settings`, `Player.cs:4389`) — the
+    // first press latched through `talk_to_npc`; the same-NPC re-click
+    // falls through here WITHOUT re-latching, exactly the C# button reading
+    // `currentShoppingSettings` (`Main.GetNurseHealCost`, `Main.cs:40100`).
+    let Some(_nurse_idx) = app.npcs.iter().position(|n| {
         n.hp > 0 && n.kind == NpcKind::Nurse && {
             let (w, h) = n.size();
             world_pos.x >= n.x
@@ -415,7 +419,7 @@ pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     }) else {
         return try_open_town_shop_at_cursor(app, world_pos);
     };
-    app.nurse_heal(nurse_idx)
+    app.nurse_heal()
 }
 
 /// `Main.CanStartInvasion` (`Main.cs:64414-64432`): `invasionType != 0`
