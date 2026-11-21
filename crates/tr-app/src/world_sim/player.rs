@@ -161,9 +161,11 @@ pub(crate) fn grant_ammo_mastery(
 /// grants `autoActuator` (`:12817-12820`). The Wire Kite's ruler-line/grid
 /// halves (`:12805-12812`) and the auto-paint family are out of this wiring
 /// wave. The `autoActuator` placement consumer
-/// (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594`) is a recorded
-/// follow-up — the flag is granted and read by the visibility gate, but the
-/// auto-place-on-build pass is not ported (ANALYSIS "The wiring tools").
+/// (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594-40669`) is
+/// PORTED as the actuator half (`world_sim/editing/auto_actuator.rs`, wired
+/// at the `place_tile` tail); the autoPaint half (`:40632-40635`) and the
+/// block-swap consumer (`:39892/:39909`) stay with the unported auto-paint /
+/// BlockSwap mechanics.
 pub(crate) fn grant_mechanical_accs(
     p: &mut Player,
     inventory: &[ItemSlot],

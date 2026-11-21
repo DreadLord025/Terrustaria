@@ -19,6 +19,7 @@ use super::items::spawn_item_drop;
 
 mod wiring;
 pub(crate) use wiring::use_wiring_tool;
+mod auto_actuator;
 mod doors;
 use doors::interact_tile;
 pub(crate) use doors::{bed_spawn_valid, check_bed_spawn};
@@ -7524,6 +7525,15 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
             }
         }
     }
+    // `PlaceThing_Tiles_GetAutoAccessoryCache` (`Player.cs:40115` →
+    // `:40460-40488`): the pre-placement 11×11 snapshot, taken BEFORE the
+    // dispatcher write. The C# allocates only when autoPaint || autoActuator;
+    // only autoActuator is ported (the auto-paint family is unported).
+    let auto_cache = app
+        .player
+        .as_ref()
+        .filter(|p| p.auto_actuator)
+        .map(|_| auto_actuator::auto_accessory_cache(&app.world, tx, ty));
     if !place_item_and_consume(
         &mut app.world,
         &mut app.inventory[app.selected],
@@ -7559,6 +7569,14 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
         app.rngs.stream(crate::app::RngKey::UpdatePlayers),
     );
     app.request_edit(tx, ty, 1, kind);
+    // `PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate` (`Player.cs:40163`) —
+    // the tail pass, after the placement's own net 17/1 (`:40152`). The
+    // actuator half is ported (`auto_actuator.rs`); the autoPaint half
+    // (`:40632-40635`) stays with the unported auto-paint family. The pass
+    // burns actuators from the inventory, so the world key invalidates.
+    if let Some(cache) = auto_cache {
+        auto_actuator::auto_actuate_after_place(app, tx, ty, kind, &cache);
+    }
     app.world_key = None;
     true
 }
