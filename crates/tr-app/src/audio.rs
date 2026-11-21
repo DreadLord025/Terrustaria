@@ -2457,7 +2457,14 @@ pub struct MusicEnv {
     pub meteor: bool,
     /// `SceneMetrics.ZoneGraveyard` (`:12746`).
     pub graveyard: bool,
-    /// `SceneMetrics.ZoneDesert` (`:12750`).
+    /// `SceneMetrics.ZoneUndergroundDesert` (`Main.cs:12748-12751`) — the
+    /// S1-L-1 wall zone (the desert zone below the surface over a
+    /// sandstone/hardened-sand wall, no house wall). W4-c33: the 61 arm was
+    /// constants-off ("the sandstone wall sets the port does not carry
+    /// yet") — `scene.rs::calculate_wall_zones` carries them since S1-L-1,
+    /// so the arm joins ahead of the surface-desert 21.
+    pub underground_desert: bool,
+    /// `SceneMetrics.ZoneDesert` (`Main.cs:12752-12755`).
     pub desert: bool,
     /// `SceneMetrics.ZoneJungle` (`:12752`).
     pub jungle: bool,
@@ -2778,8 +2785,13 @@ impl MusicSystem {
             self.new_music = 53;
             return;
         }
-        // `:12750` (the UG-desert arm sits constants-off — the sandstone
-        // wall sets the port does not carry yet); `:12751`: the desert.
+        // `Main.cs:12748-12755`: the underground desert (61) ahead of the
+        // surface desert (21). W4-c33: the zone is live since S1-L-1
+        // (`scene.rs::calculate_wall_zones`), so the 61 arm joins.
+        if env.underground_desert {
+            self.new_music = 61;
+            return;
+        }
         if env.desert {
             self.new_music = 21;
             return;
@@ -3334,6 +3346,7 @@ mod tests {
             blood_leads_evil: false,
             meteor: false,
             graveyard: false,
+            underground_desert: false,
             desert: false,
             jungle: false,
             snow: false,
@@ -3509,6 +3522,21 @@ mod tests {
         e.desert = true;
         m.decide_new_music(e);
         assert_eq!(m.new_music, 21);
+        // W4-c33: the UG-desert arm (`Main.cs:12748-12751`) — 61 ahead of
+        // the surface-desert 21 wherever both zones read true, and the
+        // graveyard 53 still outranks it.
+        let mut m = system();
+        let mut e = env(true);
+        e.underground_desert = true;
+        e.desert = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 61);
+        let mut m = system();
+        let mut e = env(true);
+        e.graveyard = true;
+        e.underground_desert = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 53);
         // The jungle surface day is 7, the deep band 54; the snow splits
         // 14 surface / 20 underground.
         let mut m = system();
