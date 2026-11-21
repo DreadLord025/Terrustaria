@@ -711,6 +711,20 @@ pub const CANNON_BUNNY: u16 = 281;
 /// `ProjectileID.ShadowFlame` (496, `ProjectileID.cs:1546`) — the
 /// Shadowflame Hex Doll's aiStyle-91 flame (`Projectile.cs:5692-5704`).
 pub const SHADOW_FLAME: u16 = 496;
+/// The Toxic Flasks' cloud trio (511-513, `ProjectileID.cs:1576-1580`) —
+/// aiStyle 92 (`Projectile.cs:5805-5840`), the `UseGroupStaticImmunity(511)`
+/// shared identity. W4-d10.
+pub const TOXIC_CLOUD: u16 = 511;
+pub const TOXIC_CLOUD_2: u16 = 512;
+pub const TOXIC_CLOUD_3: u16 = 513;
+/// `ProjectileID.GasTrap` (1007, `ProjectileID.cs:2568`) — the dart trap's
+/// poison gas, aiStyle 92 (`Projectile.cs:9558-9569`), hostile AND friendly
+/// AND trap. W4-d10.
+pub const GAS_TRAP: u16 = 1007;
+/// `ProjectileID.ChlorophyteClaymoreSporeCloud` (1128,
+/// `ProjectileID.cs:2810`) — the claymore's spore orb, aiStyle 92
+/// (`Projectile.cs:10565-10579`), the idStatic-30 pair. W4-d10.
+pub const SPORE_CLOUD: u16 = 1128;
 /// `ProjectileID.LeafBlower` (`Projectile.cs:2937-2945`): the Leaf Blower's
 /// 14x14 petal, aiStyle 40 (`AI_040_LeafBlower` `:38003-38082`).
 pub const LEAF_BLOWER: u16 = 206;
@@ -1638,6 +1652,38 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 false,
                 (true, -1, false, -1, 255, 1.0),
+            ),
+            // W4-d10 — the Toxic Cloud trio (`Projectile.cs:5805-5840`):
+            // 32×32 / 40×38 / 30×28, aiStyle 92, penetrate −1, scale 1.1,
+            // magic, alpha 255, `UseGroupStaticImmunity(511)` (the shared
+            // identity below). The stock tileCollide stands at spawn — the
+            // AI clears it every tick (`:32567`).
+            TOXIC_CLOUD => (
+                32.0, 32.0, 92, -1, TIME_LEFT_DEFAULT, 0, true, false, false,
+                (false, -2, true, 10, 255, 1.1),
+            ),
+            TOXIC_CLOUD_2 => (
+                40.0, 38.0, 92, -1, TIME_LEFT_DEFAULT, 0, true, false, false,
+                (false, -2, true, 10, 255, 1.1),
+            ),
+            TOXIC_CLOUD_3 => (
+                30.0, 28.0, 92, -1, TIME_LEFT_DEFAULT, 0, true, false, false,
+                (false, -2, true, 10, 255, 1.1),
+            ),
+            // W4-d10 — the Gas Trap's poison gas (`Projectile.cs:9558-9569`):
+            // 50×50, aiStyle 92, hostile AND friendly, penetrate −1, scale
+            // 1.1, trap, hide (no port field — the draw layer).
+            GAS_TRAP => (
+                50.0, 50.0, 92, -1, TIME_LEFT_DEFAULT, 0, true, false, true,
+                (false, -2, false, -1, 0, 1.1),
+            ),
+            // W4-d10 — the Chlorophyte Claymore's spore cloud
+            // (`Projectile.cs:10565-10579`): 30×30, aiStyle 92, melee,
+            // penetrate −1, scale 1.1, tileCollide false, the idStatic-30
+            // pair (the double noEnchantmentVisuals write is one flag).
+            SPORE_CLOUD => (
+                30.0, 30.0, 92, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (false, -2, true, 30, 0, 1.1),
             ),
             // `Projectile.cs:1310-1316` — the throwing knife (48): 12x12, aiStyle
             // 2, `penetrate = 2`.
@@ -4099,9 +4145,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         },
         // `UseGroupStaticImmunity(181)` (`Projectile.cs:10676-10681`) — the
         // Bee Gun's bee 181 and giant bee 566 share the identity 181, so the
-        // id-static table keys both under one cooldown. Every other row keeps
-        // 0 = "use the kind" (the `:782` reset `immunityIdentity = type`).
-        immunity_identity: if matches!(kind, BEE | GIANT_BEE) { BEE } else { 0 },
+        // id-static table keys both under one cooldown. W4-d10: the Toxic
+        // Cloud trio shares 511 the same way (`:5814`/`:5826`/`:5838`).
+        // Every other row keeps 0 = "use the kind" (the `:782` reset
+        // `immunityIdentity = type`).
+        immunity_identity: if matches!(kind, BEE | GIANT_BEE) {
+            BEE
+        } else if matches!(kind, TOXIC_CLOUD | TOXIC_CLOUD_2 | TOXIC_CLOUD_3) {
+            TOXIC_CLOUD
+        } else {
+            0
+        },
         alpha,
         // the yoyo family's per-kind scale ladder (`DefaultToYoyo`); every
         // other row carries its own scale in the state group.
@@ -4267,6 +4321,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                // W4-d10 — the Chlorophyte Claymore's spore cloud (1128,
+                // `:10572`).
+                    | SPORE_CLOUD
             ),
         ranged: matches!(
             kind,
@@ -4329,8 +4386,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | NEBULA_ARCANUM | NEBULA_ARCANUM_SUBSHOT
                 | LAST_PRISM_LASER | LAST_PRISM | NEBULA_BLAZE_1 | NEBULA_BLAZE_2
                 | POISON_DART | SPIRIT_FLAME | SKY_FRACTURE | BOOK_OF_SKULLS | SPARK
-            // W4-d10 — the Shadowflame Hex Doll's flame (496, `:5699`).
-                | SHADOW_FLAME
+            // W4-d10 — the Shadowflame Hex Doll's flame (496, `:5699`) and
+            // the Toxic Cloud trio (511-513, `:5813`/`:5825`/`:5837`).
+                | SHADOW_FLAME | TOXIC_CLOUD | TOXIC_CLOUD_2 | TOXIC_CLOUD_3
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
@@ -4575,6 +4633,12 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         456 => 4,
         462 => 5,
         519 => 4,
+        // W4-d10 — the aiStyle-92/94/100 sheets: the Coin Portal's 4-frame
+        // spin (`Main.cs:8486`), the Medusa Head's 12-frame charge
+        // (`:8548`), the spore cloud's 5-frame first-tick roll (`:8726`).
+        518 => 4,
+        535 => 12,
+        1128 => 5,
         574 => 2,
         601 => 2,
         645 => 7,

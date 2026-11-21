@@ -81,9 +81,346 @@ use tr_core::World;
 use tr_core::loot::DropRng;
 
 use crate::npc::Npc;
+// The later styles' scans share these helpers (93/99/100); the wave lands
+// one style per commit, so the early commits carry the unused seams.
+#[allow(unused_imports)]
 use crate::projectile::{
-    Projectile, can_hit, chaseable, npc_center, safe_normalize,
+    Projectile, can_hit, chaseable, npc_center, proj_frames, remap, safe_normalize,
 };
+
+/// `Collision.IsWorldPointSolid(pos, treatPlatformsAsNonSolid)`
+/// (`Collision.cs:1434-1491`) — the aiStyle-92 clouds' forward probe. The
+/// tile must be in-world (fluff 1), active, not actuated and solid; the
+/// platform exclusion reads `TileID.Sets.Platforms` + the 380; the
+/// `blockType()` ladder (`Tile.cs:202-214`: halfBrick → 1, slope>0 →
+/// slope+1) tests the point against the tile's shape. The case-2..5 head
+/// guard (`pos.X < left && pos.X > right && …`, `:1470`) is the C#'s own
+/// always-false conjunction — kept verbatim (it never fires; the inner
+/// slope switch decides).
+fn world_point_solid(world: &World, pos: Vec2, platforms_non_solid: bool) -> bool {
+    let tx = (pos.x / 16.0) as i32;
+    let ty = (pos.y / 16.0) as i32;
+    // `WorldGen.InWorld(x, y, 1)`.
+    if tx < 1 || tx >= world.width - 1 || ty < 1 || ty >= world.height - 1 {
+        return false;
+    }
+    let Some(t) = world.tile(tx, ty) else { return false };
+    if !t.active() || t.inactive() || !tr_core::tiledata::TILE_SOLID.has(t.kind) {
+        return false;
+    }
+    if platforms_non_solid
+        && t.kind > 0
+        && (tr_core::tiledata::SET_PLATFORMS.has(t.kind) || t.kind == 380)
+    {
+        return false;
+    }
+    let (l, t_) = (tx as f32 * 16.0, ty as f32 * 16.0);
+    let block = if t.half_brick() {
+        1
+    } else if t.slope() > 0 {
+        t.slope() + 1
+    } else {
+        0
+    };
+    match block {
+        0 => pos.x >= l && pos.x <= l + 16.0 && pos.y >= t_ && pos.y <= t_ + 16.0,
+        1 => pos.x >= l && pos.x <= l + 16.0 && pos.y >= t_ + 8.0 && pos.y <= t_ + 16.0,
+        2..=5 => {
+            // `:1470` — the always-false head guard, verbatim.
+            if pos.x < l && pos.x > l + 16.0 && pos.y < t_ && pos.y > t_ + 16.0 {
+                return false;
+            }
+            let num2 = pos.x % 16.0;
+            let num3 = pos.y % 16.0;
+            match block {
+                3 => num2 + num3 >= 16.0,
+                2 => num3 >= num2,
+                5 => num3 <= num2,
+                4 => num2 + num3 <= 16.0,
+                _ => false,
+            }
+        }
+        _ => false,
+    }
+}
+
+/// `Projectile.Opacity`'s setter (`Projectile.cs:546-549`):
+/// `alpha = (int)MathHelper.Clamp((1f - value) * 255f, 0f, 255f)`.
+fn set_opacity(p: &mut Projectile, value: f32) {
+    p.alpha = ((1.0 - value) * 255.0).clamp(0.0, 255.0) as i32;
+}
+
+/// `AI()`'s aiStyle-92 arm (`Projectile.cs:32558-32820`) — the Toxic Cloud
+/// trio 511-513 (`flag45`), the Gas Trap 1007 (`flag44`) and the
+/// Chlorophyte Claymore's spore cloud 1128 (`flag46`). Pool-side: the
+/// separation scans write the SIBLING slots' velocities (`:32641-32704`),
+/// the gas tail buffs the local player + the NPC vec (`:32800-32819`).
+///
+/// RNG: the 1128 first-tick `Next(projFrames[type])` frame roll (`:32565`)
+/// is the arm's only AI draw. The GasTrap particle broadcast
+/// (`:32574-32578`) rides the UNPORTED particle pool — its
+/// `Spawn_GasTrap` body (`ParticleOrchestrator.cs:2911-2953`, the 12+10
+/// particles' NextFloat/RotatedByRandom/Next draws) is the particle-layer
+/// skip (the dust-body convention); its `SoundID.Item16` cue queues
+/// through `wants_sound` (the S1-E-21h seam).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn ai_clouds(
+    slots: &mut [Projectile],
+    i: usize,
+    world: &World,
+    npcs: &mut [Npc],
+    mut player: Option<&mut crate::player::Player>,
+    local_owner: u8,
+    rng: &mut dyn DropRng,
+) {
+    let kind = slots[i].kind;
+    let flag44 = kind == 1007;
+    let flag45 = (511..=513).contains(&kind);
+    let flag46 = kind == 1128;
+    // `:32563-32566` — the spore cloud's first-tick frame roll.
+    if flag46 && slots[i].ai[0] == 0.0 {
+        slots[i].frame = rng.next_range(0, proj_frames(kind) as i32);
+    }
+    // `:32567` — the whole family flies through tiles.
+    slots[i].tile_collide = false;
+    // `:32568-32579` — the gas trap's one-shot particle broadcast (the
+    // `netMode != 1` arm folds open in single-player). The direction fix
+    // stays; the broadcast is the particle-layer skip, its Item16 cue
+    // queues (module doc).
+    if flag44 && slots[i].local_ai[0] == 0.0 {
+        if slots[i].direction == 0 {
+            slots[i].direction = 1;
+        }
+        // `PositionInWorld = base.Center` — the cue rides the centre (the
+        // SoundEngine vector overload, `ParticleOrchestrator.cs:2913`).
+        let (cx, cy) = slots[i].center();
+        slots[i].wants_sound = Some((2, 16, cx, cy, 0.0));
+    }
+    // `:32580-32584` — the age counter (the hit-counter `ai[1] >= 1`
+    // doubles the aging — `Damage_PVE_Inner` `:13218-13221` bumps it).
+    slots[i].ai[0] += 1.0;
+    if slots[i].ai[1] >= 1.0 {
+        slots[i].ai[0] += 2.0;
+    }
+    // `:32585-32593` — the per-kind lifetime.
+    let mut num763 = 260.0f32;
+    if flag44 {
+        num763 = 80.0;
+    }
+    if flag46 {
+        num763 = if slots[i].ai[1] == 0.0 { 220.0 } else { slots[i].ai[1] };
+    }
+    // `:32594-32599` — the kill (the ai[0] pin lands AFTER, verbatim).
+    if slots[i].ai[0] > num763 {
+        slots[i].kill_time_left = slots[i].time_left;
+        slots[i].active = false;
+        slots[i].time_left = 0;
+        slots[i].ai[0] = num763;
+        return;
+    }
+    let from_value = slots[i].ai[0] / num763;
+    // `:32601-32623` — the per-kind scale/box/opacity ramps.
+    if flag44 {
+        slots[i].scale = remap(from_value, 0.0, 0.95, 1.0, 6.0);
+        let center = Vec2::from(slots[i].center());
+        slots[i].w = (50.0 * slots[i].scale) as i32 as f32;
+        slots[i].h = (50.0 * slots[i].scale) as i32 as f32;
+        // `base.Center = center17` — the Entity.Center SETTER (`Entity.cs:
+        // 56-59`): float halves, no int truncation.
+        slots[i].pos = center - Vec2::new(slots[i].w / 2.0, slots[i].h / 2.0);
+        let o = (remap(from_value, 0.0, 0.25, 0.0, 1.0)
+            * remap(from_value, 0.75, 1.0, 1.0, 0.0))
+        .clamp(0.0, 1.0)
+            * 0.85;
+        set_opacity(&mut slots[i], o);
+    } else if flag46 {
+        slots[i].scale = remap(from_value, 0.0, 0.1, 0.25, 1.1);
+        let center = Vec2::from(slots[i].center());
+        slots[i].w = (30.0 * slots[i].scale / 1.1) as i32 as f32;
+        slots[i].h = slots[i].w;
+        slots[i].pos = center - Vec2::new(slots[i].w / 2.0, slots[i].h / 2.0);
+        let o = remap(from_value, 0.0, 0.25, 0.0, 1.0)
+            * remap(from_value, 0.5, 1.0, 1.0, 0.0)
+            * 0.75;
+        set_opacity(&mut slots[i], o);
+        slots[i].vel.y -= 0.01;
+    } else {
+        let o = remap(from_value, 0.0, 0.3, 0.0, 1.0)
+            * remap(from_value, 0.3, 1.0, 1.0, 0.0)
+            * 0.7;
+        set_opacity(&mut slots[i], o);
+    }
+    // `:32624-32625` — the spin accumulator + the whoAmI-seeded rotation.
+    slots[i].local_ai[0] += slots[i].direction as f32;
+    slots[i].rot = i as f32 * 0.4002029
+        + slots[i].local_ai[0] * (std::f32::consts::PI * 2.0) / 480.0;
+    // `:32626-32637` — the per-kind velocity decay.
+    if flag44 {
+        slots[i].vel = Vec2::ZERO;
+    } else if flag46 {
+        slots[i].vel *= 0.97;
+    } else {
+        slots[i].vel *= 0.96;
+    }
+    // `:32638-32670` — the toxic clouds' same-family separation: the
+    // truncated-box intersect scan, the zero-delta index tie-break, the
+    // 0.005 SafeNormalize(UnitX) push and the 0.6 Lerp on BOTH slots.
+    if flag45 {
+        let (px, py, pw, ph) = {
+            let p = &slots[i];
+            (p.pos.x as i32, p.pos.y as i32, p.w as i32, p.h as i32)
+        };
+        let center = Vec2::from(slots[i].center());
+        for j in 0..slots.len() {
+            if j == i {
+                continue;
+            }
+            let o = &slots[j];
+            if !o.active || !(511..=513).contains(&o.kind) {
+                continue;
+            }
+            let (ox, oy, ow, oh) = (o.pos.x as i32, o.pos.y as i32, o.w as i32, o.h as i32);
+            if !(px < ox + ow && px + pw > ox && py < oy + oh && py + ph > oy) {
+                continue;
+            }
+            let mut v = Vec2::from(o.center()) - center;
+            if v == Vec2::ZERO {
+                v = if j < i { Vec2::new(-1.0, 1.0) } else { Vec2::new(1.0, -1.0) };
+            }
+            let push = crate::projectile::safe_normalize_or(v, Vec2::X) * 0.005;
+            let vel = slots[i].vel;
+            slots[i].vel = vel.lerp(vel - push, 0.6);
+            let ov = slots[j].vel;
+            slots[j].vel = ov.lerp(ov + push, 0.6);
+        }
+    }
+    // `:32671-32705` — the spore clouds' same-type separation: the
+    // width-falloff push (`max(width - dist, 0) / width * 0.005`), the
+    // plain Normalize (the zero case is the tie-break above).
+    if flag46 {
+        let (px, py, pw, ph) = {
+            let p = &slots[i];
+            (p.pos.x as i32, p.pos.y as i32, p.w as i32, p.h as i32)
+        };
+        let center = Vec2::from(slots[i].center());
+        let width = slots[i].w;
+        for j in 0..slots.len() {
+            if j == i {
+                continue;
+            }
+            let o = &slots[j];
+            if !o.active || o.kind != 1128 {
+                continue;
+            }
+            let (ox, oy, ow, oh) = (o.pos.x as i32, o.pos.y as i32, o.w as i32, o.h as i32);
+            if !(px < ox + ow && px + pw > ox && py < oy + oh && py + ph > oy) {
+                continue;
+            }
+            let mut v = Vec2::from(o.center()) - center;
+            if v == Vec2::ZERO {
+                v = if j < i { Vec2::new(-1.0, 1.0) } else { Vec2::new(1.0, -1.0) };
+            }
+            let dist = v.length();
+            v = v.normalize();
+            let push = v * ((width - dist).max(0.0) / width) * 0.005;
+            slots[i].vel -= push;
+            slots[j].vel += push;
+        }
+    }
+    // `:32706-32783` — the forward solid probe (16 px along the velocity
+    // direction); the gas trap never probes. The spore cloud runs the
+    // reflection ladder, the toxic clouds the plain 0.5 Lerp brake.
+    let dir = safe_normalize(slots[i].vel);
+    let probe = Vec2::from(slots[i].center()) + dir * 16.0;
+    if !flag44 && world_point_solid(world, probe, true) {
+        if flag46 {
+            let mut flag47 = false;
+            let speed = slots[i].vel.length();
+            let center = Vec2::from(slots[i].center());
+            if dir.x.abs() > dir.y.abs() {
+                let mut v110 = Vec2::new(dir.x, -dir.y);
+                if !world_point_solid(world, center + v110 * 16.0, true) {
+                    slots[i].vel = v110 * speed;
+                    flag47 = true;
+                } else if !world_point_solid(world, probe - Vec2::new(0.0, 16.0), true) {
+                    v110 = probe - Vec2::new(0.0, 16.0) - center;
+                    slots[i].vel = v110.normalize() * speed;
+                    flag47 = true;
+                } else if !world_point_solid(world, probe + Vec2::new(0.0, 16.0), true) {
+                    v110 = probe + Vec2::new(0.0, 16.0) - center;
+                    slots[i].vel = v110.normalize() * speed;
+                    flag47 = true;
+                } else if !world_point_solid(world, probe - Vec2::new(0.0, 32.0), true) {
+                    v110 = probe - Vec2::new(0.0, 32.0) - center;
+                    slots[i].vel = v110.normalize() * speed;
+                    flag47 = true;
+                } else if !world_point_solid(world, probe + Vec2::new(0.0, 32.0), true) {
+                    v110 = probe + Vec2::new(0.0, 32.0) - center;
+                    slots[i].vel = v110.normalize() * speed;
+                    flag47 = true;
+                }
+            }
+            if !flag47 {
+                let mut v110 = Vec2::new(-dir.x, dir.y);
+                let probe2 = center + v110 * 16.0;
+                if !world_point_solid(world, probe2, true) {
+                    slots[i].vel = v110 * speed;
+                    flag47 = true;
+                } else if !world_point_solid(world, probe2 - Vec2::new(16.0, 0.0), true) {
+                    v110 = probe2 - Vec2::new(16.0, 0.0) - center;
+                    slots[i].vel = v110.normalize() * speed;
+                    flag47 = true;
+                } else if !world_point_solid(world, probe2 + Vec2::new(16.0, 0.0), true) {
+                    v110 = probe2 + Vec2::new(16.0, 0.0) - center;
+                    slots[i].vel = v110.normalize() * speed;
+                    flag47 = true;
+                }
+                if !flag47 {
+                    let vel = slots[i].vel;
+                    slots[i].vel = vel.lerp(vel - dir * 1.0, 0.5);
+                }
+            }
+        } else {
+            let vel = slots[i].vel;
+            slots[i].vel = vel.lerp(vel - dir * 1.0, 0.5);
+        }
+    }
+    // `:32784-32787` — only the gas trap runs the buff tail.
+    if !flag44 {
+        return;
+    }
+    // `:32788-32799` — the Poisoned (20) cloud: the 180-px radius ramp,
+    // the 15-tick cadence (`localAI[1]`).
+    let num769 = remap(from_value, 0.0, 0.2, 0.0, 1.0).clamp(0.0, 1.0) * 180.0;
+    if slots[i].local_ai[1] > 0.0 {
+        slots[i].local_ai[1] -= 1.0;
+    }
+    if slots[i].local_ai[1] > 0.0 {
+        return;
+    }
+    slots[i].local_ai[1] = 15.0;
+    let center = Vec2::from(slots[i].center());
+    // `:32800-32807` — the local player's buff (`netMode != 2` folds
+    // open). `ApplyBuffTo` (`:12391-12398`): the trap's deadMansSweater
+    // halving is an unported accessory — the time stays 2940.
+    if slots[i].owner == local_owner {
+        if let Some(pl) = player.as_deref_mut() {
+            if !pl.dead && Vec2::from(pl.center()).distance(center) <= num769 {
+                pl.buffs.add_buff(20, 2940);
+            }
+        }
+    }
+    // `:32808-32811` — the `netMode == 1` client bail folds out (SP).
+    // `:32812-32819` — the NPC buff scan.
+    for n in npcs.iter_mut() {
+        if n.hp > 0 && !n.buffs.buff_immune[20] {
+            if Vec2::from(n.center()).distance(center) <= num769 {
+                n.buffs.add_buff(20, 2940);
+            }
+        }
+    }
+}
+
 
 /// `AI()`'s aiStyle-91 arm (`Projectile.cs:32515-32557`) — the Shadowflame
 /// Hex Doll's flame (496). The center-preserving scale shrink (the box is
@@ -301,5 +638,138 @@ mod tests {
         q.vel = Vec2::new(4.0, 0.0);
         shadowflame_move(&mut q, &w2);
         assert!(!q.active, "the hard block kills (`:18720`)");
+    }
+
+    /// The style-92 rows (`Projectile.cs:5805-5840`, `:9558-9569`,
+    /// `:10565-10579`): the boxes, the shared 511 identity, the gas trap's
+    /// trap flag, the spore cloud's idStatic-30 + melee + tileCollide false.
+    #[test]
+    fn w4_d10_s92_the_five_rows_are_verbatim() {
+        for (kind, w, h) in [(511u16, 32.0f32, 32.0f32), (512, 40.0, 38.0), (513, 30.0, 28.0)] {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.w, d.h), (w, h), "kind {kind}");
+            assert_eq!(d.ai_style, 92);
+            assert_eq!(d.penetrate, -1);
+            assert_eq!(d.scale, 1.1);
+            assert_eq!(d.alpha, 255);
+            assert!(d.magic);
+            assert!(d.uses_id_static_immunity);
+            assert_eq!(d.id_static_hit_cooldown, 10);
+            assert_eq!(d.immunity_identity, 511, "UseGroupStaticImmunity(511)");
+        }
+        let g = proj_data(1007).unwrap();
+        assert_eq!((g.w, g.h), (50.0, 50.0));
+        assert_eq!(g.ai_style, 92);
+        assert!(g.trap);
+        assert_eq!(g.scale, 1.1);
+        let s = proj_data(1128).unwrap();
+        assert_eq!((s.w, s.h), (30.0, 30.0));
+        assert!(!s.tile_collide);
+        assert!(s.melee);
+        assert!(s.uses_id_static_immunity);
+        assert_eq!(s.id_static_hit_cooldown, 30);
+        assert_eq!(crate::projectile::proj_frames(1128), 5, "Main.cs:8726");
+    }
+
+    /// The toxic cloud's age/opacity/decay (`:32580-32637`): tick 1 age 1,
+    /// the opacity ramp, the 0.96 decay, the whoAmI-seeded rotation. The
+    /// hit counter doubles the aging. ZERO draws.
+    #[test]
+    fn w4_d10_s92_the_cloud_ages_and_fades() {
+        let w = World::new("t".into(), 300, 200);
+        let mut slots = vec![Projectile::default(); 4];
+        slots[2] = proj(511);
+        slots[2].vel = Vec2::new(2.0, 0.0);
+        let mut rng = CensusRng::default();
+        ai_clouds(&mut slots, 2, &w, &mut [], None, 0, &mut rng);
+        let p = &slots[2];
+        assert_eq!(p.ai[0], 1.0);
+        assert!(!p.tile_collide, ":32567");
+        assert!((p.vel.x - 2.0 * 0.96).abs() < 1e-6, "the 0.96 decay");
+        // Opacity = remap(1/260, 0, .3, 0, 1) * remap(1/260, .3, 1, 1, 0)
+        // * 0.7 ≈ 0.00897 → alpha = (int)((1-o)*255) = 252.
+        assert_eq!(p.alpha, 252);
+        assert!((p.rot - (2.0 * 0.4002029 + 1.0 * std::f32::consts::PI * 2.0 / 480.0)).abs() < 1e-5);
+        assert!(rng.ranges.is_empty() && rng.floats == 0, "the clouds draw nothing");
+        // The hit-armed cloud ages 3 per tick (`:32581-32584`).
+        slots[2].ai[1] = 1.0;
+        ai_clouds(&mut slots, 2, &w, &mut [], None, 0, &mut rng);
+        assert_eq!(slots[2].ai[0], 4.0);
+    }
+
+    /// The gas trap (`:32585-32609`, `:32788-32819`): the 80-tick life, the
+    /// 1→6 scale ramp with the center latch, the zero velocity, the Item16
+    /// cue on the first tick, the 15-tick Poisoned cloud. The kill pins
+    /// ai[0] AFTER the death (`:32596-32597`).
+    #[test]
+    fn w4_d10_s92_the_gas_trap_grows_and_poisons() {
+        let w = World::new("t".into(), 300, 200);
+        let mut slots = vec![Projectile::default(); 1];
+        slots[0] = proj(1007);
+        let c0 = Vec2::from(slots[0].center());
+        let mut rng = CensusRng::default();
+        let mut npcs = [crate::npc::Npc::new(crate::npc::NpcKind::Zombie, c0.x + 10.0, c0.y, 1, 0.0)];
+        npcs[0].hp = 40;
+        npcs[0].max_hp = 40;
+        ai_clouds(&mut slots, 0, &w, &mut npcs, None, 0, &mut rng);
+        let p = &slots[0];
+        assert_eq!(p.wants_sound, Some((2, 16, c0.x, c0.y, 0.0)), "the broadcast cue");
+        assert_eq!(p.vel, Vec2::ZERO);
+        assert!(p.scale > 1.0, "the 1→6 ramp");
+        assert_eq!(p.local_ai[1], 15.0, "the cadence re-arm");
+        assert!(npcs[0].buffs.buff_type.contains(&20), "the Poisoned cloud");
+        // The 80-tick kill: ai[0] 81 > 80 → dead, ai[0] pinned to 80.
+        slots[0].ai[0] = 80.0;
+        slots[0].local_ai[1] = 5.0;
+        ai_clouds(&mut slots, 0, &w, &mut npcs, None, 0, &mut rng);
+        assert!(!slots[0].active);
+        assert_eq!(slots[0].ai[0], 80.0);
+    }
+
+    /// The spore cloud's first-tick frame roll (`:32563-32566`) draws ONE
+    /// Next(5); later ticks draw nothing. The 220/ai[1] lifetime split.
+    #[test]
+    fn w4_d10_s92_the_spore_cloud_rolls_its_frame_once() {
+        let w = World::new("t".into(), 300, 200);
+        let mut slots = vec![Projectile::default(); 1];
+        slots[0] = proj(1128);
+        let mut rng = CensusRng::default();
+        ai_clouds(&mut slots, 0, &w, &mut [], None, 0, &mut rng);
+        assert_eq!(rng.ranges, vec![(0, 5)], "Next(projFrames[1128])");
+        assert_eq!(slots[0].frame, 0, "CensusRng returns min");
+        // tick 1: fromValue 1/220 = 0.004545 < 0.1 → the ramp clamps at
+        // 0.25 (`:32612`), the box (int)(30*0.25/1.1) = 6.
+        assert!((slots[0].scale - 0.25).abs() < 1e-6, "the ramp's clamped start");
+        assert_eq!(slots[0].w, 6.0);
+        // The hit-armed lifetime reads ai[1] (`:32592`).
+        slots[0].ai[1] = 100.0;
+        slots[0].ai[0] = 99.0;
+        ai_clouds(&mut slots, 0, &w, &mut [], None, 0, &mut rng);
+        // age 100 + 2 = 102 > 100 → the kill.
+        assert!(!slots[0].active);
+        assert_eq!(slots[0].ai[0], 100.0);
+        assert_eq!(rng.ranges.len(), 1, "no second frame roll");
+    }
+
+    /// The separation scans (`:32638-32705`): two overlapping toxic clouds
+    /// push apart symmetrically (the 0.6 Lerp on both); the zero-delta
+    /// tie-break reads the index order.
+    #[test]
+    fn w4_d10_s92_the_clouds_separate() {
+        let w = World::new("t".into(), 300, 200);
+        let mut slots = vec![Projectile::default(); 2];
+        slots[0] = proj(511);
+        slots[1] = proj(511);
+        slots[1].pos = slots[0].pos + Vec2::new(8.0, 0.0);
+        let mut rng = CensusRng::default();
+        ai_clouds(&mut slots, 0, &w, &mut [], None, 0, &mut rng);
+        assert!(slots[0].vel.x < 0.0, "the left cloud pushes left");
+        assert!(slots[1].vel.x > 0.0, "the sibling got the opposite push");
+        // Exact overlap: the index tie-break (`:32653-32665`).
+        slots[1].pos = slots[0].pos;
+        slots[0].vel = Vec2::ZERO;
+        slots[1].vel = Vec2::ZERO;
+        ai_clouds(&mut slots, 0, &w, &mut [], None, 0, &mut rng);
+        assert!(slots[0].vel.x > 0.0 && slots[0].vel.y < 0.0, "j>i → (1,-1)");
     }
 }

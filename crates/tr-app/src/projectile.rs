@@ -18012,6 +18012,28 @@ impl ProjectilePool {
                             crate::projectile_ai_91_100::ai_shadowflame(&mut self.slots[i]);
                             crate::projectile_ai_91_100::shadowflame_move(&mut self.slots[i], world);
                         }
+                        // W4-d10 — `AI()`'s `else if (this.aiStyle == 92)`
+                        // (`Projectile.cs:32558-32820`): the Toxic Cloud
+                        // trio 511-513, the Gas Trap 1007 and the spore
+                        // cloud 1128 — the age/opacity ramps, the sibling
+                        // separation scans (pool-side: they write the
+                        // other slots), the solid-probe reflections and
+                        // the gas trap's Poisoned cloud. The family flies
+                        // `tileCollide = false` (`:32567`) — the free
+                        // integrate, no kill_step.
+                        92 => {
+                            crate::projectile_ai_91_100::ai_clouds(
+                                &mut self.slots,
+                                i,
+                                world,
+                                npcs,
+                                player.as_deref_mut(),
+                                local_owner,
+                                rng,
+                            );
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                        }
                         165 => {
                             // `AI_165_Whip` (`:47667-48270`): the swing
                             // machine. The Moon Lord whip's extra arms are
@@ -22634,6 +22656,16 @@ impl ProjectilePool {
             if !self.target_allowed(slot, p, idx as u16) {
                 continue;
             }
+            // W4-d10 — `Damage_CanDealDamage` (`Projectile.cs:12448`): the
+            // hit-armed clouds (511-513 / 1128 with `ai[1] >= 1`) and the
+            // Gas Trap 1007 deal NO direct damage — the gas rides the AI's
+            // buff cloud, the clouds' damage window is the pre-hit state.
+            if (matches!(p.kind, TOXIC_CLOUD | TOXIC_CLOUD_2 | TOXIC_CLOUD_3 | SPORE_CLOUD)
+                && p.ai[1] >= 1.0)
+                || p.kind == GAS_TRAP
+            {
+                continue;
+            }
             // `Damage_PVE_Inner`'s friendly refusal (`:12601-12611`): the
             // `!this.friendly` early return. The port's pass historically
             // ran every slot regardless of the flag (the hostile shots'
@@ -22815,6 +22847,14 @@ impl ProjectilePool {
             }
             // Projectile.cs:12938 — pre-defense variance on the hit damage.
             dmg = tr_core::damage::damage_var(rng, dmg as f32, luck);
+            // W4-d10 — `Damage_PVE_Inner`'s Toxic Cloud arm
+            // (`Projectile.cs:13218-13221`): every landed 511-513 hit bumps
+            // `ai[1]` (the AI's aging accelerator + the damage refusal) and
+            // dirties the net flag. Post-DamageVar, pre-strike, verbatim.
+            if matches!(self.slots[slot].kind, TOXIC_CLOUD | TOXIC_CLOUD_2 | TOXIC_CLOUD_3) {
+                self.slots[slot].ai[1] += 1.0;
+                self.slots[slot].net_update = true;
+            }
             // S1-P-i28 — `Damage_PVE_Inner`'s aiStyle-113 stick pin
             // (`Projectile.cs:13210-13217`): on the first hit (`ai[0] < 2`)
             // the bone javelin pins to this NPC — `ai[0]=1`, `ai[1]=victim`,
