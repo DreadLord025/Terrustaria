@@ -182,43 +182,78 @@ f33's fn — the belt assertion holds for both) and d19's 949 row (equal
 values; one copy). The contract-note in ANALYSIS is updated to record
 the verified compose + this adjudication.
 
-## §4 — merge instructions (dispatch-arm ONE, row-dedupe)
+## §4 — FINAL drop-hunks (published for merger/d10b; keep-ours = d19)
+
+**Re-pinned to the d10 LATEST tip `732d3480b`** (the doc-sweep `732d3480b`
++ crosschecks `dc7acb5e8` + yoyo-string grants `c6fd3bc03` + mouse-delta
+un-park `29a73a1d6` landed AFTER the `1f0b60e96` probe and shifted every
+line below; the `1f0b60e96` pins in the earlier round are SUPERSEDED).
+Every range was re-read whole at `732d3480b`. **Keep-ours verdict
+unchanged: d19's `projectile_ai_clouds.rs` is the canonical aiStyle-92
+machine (§1); the shared `collision::is_world_point_solid` survives
+(§2).** The consts question is now RESOLVED by census: a full-tree grep
+of `TOXIC_CLOUD|GAS_TRAP|SPORE_CLOUD` at `732d3480b` shows EVERY consumer
+sits inside the drop/edit hunks below — no surviving d10 arm references
+the consts, so **keep d19's literals wholesale and retire d10's consts**
+(supersedes the earlier "prefer d10's consts" hedge).
 
 At the d10×d19 merge (the gate's job — this branch never merges):
 
-1. **Dispatch:** keep d19's `92 => cloud_family_step(...) + kill_step`
-   arm (`projectile.rs:17384`); DELETE d10's `92 => ai_clouds(...)`
-   arm. The census pin (exactly one 24-space `92 =>` arm) must hold.
-   d19's `kill_step` with `tileCollide=false` is the same free
-   integrate as d10's `pos += vel`.
-2. **Module:** delete d10's `ai_clouds` + `set_opacity` +
-   `world_point_solid` from `projectile_ai_91_100.rs` (its styles
-   91/93-100 stay); the folded d19 module carries every d10 hunk
-   (Item16 cue, the numeric witness pins) except the WRONG 0.25-scale
-   assertion (§1.4 — do not carry).
-3. **Rows:** five value-identical row sets — keep ONE (d10's consts or
-   d19's literals; if d10's other arms reference `TOXIC_CLOUD` etc.,
-   keep the consts and repoint d19's literals). The 511-group identity
-   overlay: one copy. `proj_frames`: union (1128=5 both; 518=4/535=12
-   d10-only, keep). The melee/magic overlays: one copy each.
-4. **Damage walk:** the `:12448` cloud refusal + the `:13218-13222`
-   toxic counter exist on BOTH branches at slightly different walk
-   positions — keep ONE of each. C# order: the refusal is inside
-   `Damage_CanDealDamage` (pre-walk), the counter sits between the
-   113-stick arm and the 659 arm (`:13210-13223`) — d19's placement
-   (post-hellfire-clamp, pre-strike, above the 99 arm) is the closer
-   match; d10's counter is post-DamageVar (later than C#). Keep d19's.
-5. **Witnesses:** d19's module now covers every d10 assertion worth
-   keeping (rows superset, age/fade numeric pins, gas cue + cadence +
-   one-shot, frame roll with the CORRECTED scale, toxic separation +
-   tie-break, spore √2 tie-break, caps-all-kinds, wall mirror + brake,
-   drain). Delete d10's five s92 tests with its arm; keep its s91/s93-
-   s100 tests untouched.
-6. **anchors.txt:** d10's `ai_clouds` canary row repoints to
-   `projectile_ai_clouds.rs|pub(crate) fn cloud_family_step` (d19's
-   existing row) — never delete a row to silence the canary.
-7. **collision.rs:** d19's shared probe survives (§2); d10's private
-   twin dies with its arm. The new probe witness stays.
+### 4.1 `crates/tr-app/src/projectile_ai_91_100.rs` @ `732d3480b`
+
+| drop | lines | content |
+|---|---|---|
+| D1 | **109–442** | the contiguous cloud block: `world_point_solid` doc+fn (109–163), `set_opacity` doc+fn (165–169), `ai_clouds` doc+`#[allow]`+fn (171–440), the trailing double blank (441–442). Line 443 (`ai_shadowflame`'s doc) is the keep boundary. |
+| D2 | **106** (edit) | remove `remap` from the `use crate::projectile::{…}` list — its ONLY module call-sites (242/249/250/255/260/261/266/267/412) die with D1. `proj_frames` STAYS (the 94 portal reads it, :712); `can_hit/chaseable/npc_center/safe_normalize` STAY (99/100); `Npc` STAYS (93). The `#[allow(unused_imports)]` (:104) makes this cosmetic, not load-bearing. |
+| D3 | **1849–1981** | the five s92 witnesses with their docs: `w4_d10_s92_the_five_rows_are_verbatim` (1849–1878), `…the_cloud_ages_and_fades` (1880–1904), `…the_gas_trap_grows_and_poisons` (1906–1933), `…the_spore_cloud_rolls_its_frame_once` (1935–1958, the WRONG 0.25-scale assertion — §1.4, do NOT carry), `…the_clouds_separate` (1960–1980, the WRONG tie-break sign — §1.7), blank 1981. Line 1982 (the 514-row doc) is the keep boundary. The s91/s93–s100 tests stay untouched. |
+
+The folded d19 module already carries every d10 hunk worth keeping
+(Item16 cue, the numeric witness pins with the two re-derived
+corrections). The module-doc census row `| 92 | … |` (:12) and the RNG
+contract's `- 92:` bullet (:42–46) should gain a one-line "the 92 arm
+retired onto d19's `projectile_ai_clouds` (research/26g §4)" note —
+documentation, not behaviour.
+
+### 4.2 `crates/tr-app/src/projectile.rs` @ `732d3480b`
+
+| drop | lines | content |
+|---|---|---|
+| D4 | **18198–18219** | the `92 =>` dispatch arm with its W4-d10 comment (18198–18206 comment, 18207–18219 arm incl. the `pos += vel` free integrate). Keep d19's arm (`projectile.rs:17385–17398` at d19 tip `a3481f7c9`): `cloud_family_step` + `kill_step` — the same free integrate, and the census pin (exactly one 24-space `92 =>` arm) holds. |
+| D5 | **23027–23039** (edit, NOT whole-drop) | the combined `:12448` refusal. The cloud terms (23033–23035: `TOXIC_CLOUD…SPORE_CLOUD && ai[1] >= 1` + `GAS_TRAP`) DROP — d19's refusal survives (`projectile.rs:22790–22800`, literals). The **`MEDUSA_HEAD` term (23036) MUST SURVIVE** (d10's style-100 marker, no d19 twin): reshape to `if p.kind == MEDUSA_HEAD { continue; }` and trim the comment (23027–23032) to the Medusa sentence. |
+| D6 | **23230–23237** | the toxic hit-counter (comment 23230–23233 + the `TOXIC_CLOUD…` if 23234–23237). Keep d19's (`projectile.rs:22980–22989`): post-hellfire-clamp, pre-strike — the closer C# match (`:13210–13223` sits between the 113-stick and 659 arms; d10's post-DamageVar placement is later than C#). The adjacent 524 ichor arm (23238–23244) STAYS (d10 style 96). |
+
+### 4.3 `crates/tr-app/src/projectile/data.rs` @ `732d3480b`
+
+| drop | lines | content |
+|---|---|---|
+| D7 | **714–727** | the five consts with their docs: `TOXIC_CLOUD/_2/_3` (714–719), `GAS_TRAP` (720–723), `SPORE_CLOUD` (724–727). No surviving consumer (the census above). `SHADOW_FLAME` (:713) and `NAIL_FRIENDLY` (:728+) stay. |
+| D8 | **1721–1752** | the five rows with their comments: toxic trio (1721–1737), gas (1738–1744), spore (1745–1752). Value-identical to d19's (`data.rs:3748–3762` at d19 tip) — keep d19's literal-keyed set. |
+| D9 | **4287–4288** (edit) | the `immunity_identity` else-if branch (`TOXIC_CLOUD… → TOXIC_CLOUD`). Keep d19's (`data.rs:4243–4244`, `511|512|513 → 511`). Trim the comment's "W4-d10: the Toxic Cloud trio…" sentence (4281–4282). |
+| D10 | **4465–4467** (edit) | the melee overlay: drop `SPORE_CLOUD | ` from 4467, KEEP `| ICHOR_SPLASH` (d10 style 96); reword the comment (4465–4466) to the ichor-only sentence. d19's `| 1128` (:4432) survives. |
+| D11 | **4533–4537** (edit) | the magic overlay: drop the `TOXIC_CLOUD | TOXIC_CLOUD_2 | TOXIC_CLOUD_3` terms from 4536, KEEP `SHADOW_FLAME` + `MEDUSA_HEAD` (4536–4537); reword the comment (4533–4535). d19's `| 511 | 512 | 513` (:4500) survives. |
+| D12 | **4789** (edit) | `1128 => 5` in `proj_frames` — d19 has it (`data.rs:4851`). KEEP `518 => 4 / 525 => 5 / 535 => 12` (4786–4788, d10-only styles); trim the spore sentence from the comment (4782–4785). |
+
+### 4.4 `anchors.txt` @ `732d3480b`
+
+| edit | line | content |
+|---|---|---|
+| D13 | **900** | the `projectile_ai_91_100.rs|pub(crate) fn ai_clouds` canary row REPOINTS to `crates/tr-app/src/projectile_ai_clouds.rs|pub(crate) fn cloud_family_step` (d19's existing row, anchors.txt:900 at d19 tip) — merge the two descriptions into ONE row; never delete a row to silence the canary. The d19 collision-probe row (anchors.txt:901) stays. |
+
+### 4.5 unchanged adjudications
+
+- **collision.rs:** d19's shared probe survives (§2, `collision.rs:825`
+  at d19 tip); d10's private twin dies inside D1. The probe witness
+  (`the_world_point_solid_probe_is_verbatim`, `collision.rs:2565`) stays.
+- **Witnesses:** d19's nine cloud tests + the collision probe cover
+  every d10 assertion worth keeping (D3's two defects re-derived and
+  corrected in the folds — §1.4/§1.7).
+- **Post-drop compile surface:** D1+D3 remove every `ai_clouds` /
+  `world_point_solid` / `set_opacity` reference in the module; D4–D6
+  remove every `projectile.rs` reference; D7–D12 remove every const
+  consumer. No other d10 file names the cloud symbols (the full-tree
+  grep). The `remap` helper stays `pub(crate)` on d19 (`projectile.rs:
+  14146`) — d10's own `remap` import dies with D2, the pool's copy is
+  untouched.
 
 ## §5 — the 1129/d21 merge-contract (re-verified at d21 tip `9fa9e9ba0`)
 
