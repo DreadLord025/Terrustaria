@@ -244,6 +244,7 @@
 //! | 1244-1249 | `:88571-88576` | the 201/450 HeadacheSkeleton death (6 gores, type-26 dust) |
 //! | 1250-1259 | `:88581-88594` | the 202/451 MisassembledSkeleton + 203/452 PantlessSkeleton death (5 gores each) |
 //! | 1260-1268 | `:88599-88611` | the 322 SkeletonTopHat (5 gores) + 323 SkeletonAstonaut (4 gores) death |
+//! | 1269-1273 | `:88616-88620` | the 324 SkeletonAlien death (5 gores 466/467/467/468/468) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -7365,6 +7366,38 @@ fn skeleton_astonaut_death(
     gore.new_gore(rng, world, low, vel, 464, s); // :88611
 }
 
+/// The 324 SkeletonAlien death (`NPC.cs:88614-88620`, sites 1269-1273):
+/// the 20-dust type-26 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then
+/// the 5-gore ladder at `this.scale` — 466 head, 467/467 at +20, 468/468 at
+/// +34.
+fn skeleton_alien_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    gore.new_gore(rng, world, pos, vel, 466, s); // :88616
+    gore.new_gore(rng, world, mid, vel, 467, s); // :88617
+    gore.new_gore(rng, world, mid, vel, 467, s); // :88618
+    gore.new_gore(rng, world, low, vel, 468, s); // :88619
+    gore.new_gore(rng, world, low, vel, 468, s); // :88620
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -8261,6 +8294,10 @@ pub fn hit_effect_c(
     // `:88606-88612` — the 323 SkeletonAstonaut arm (sites 1265-1268).
     if npc_type == 323 && npc.hp <= 0 {
         skeleton_astonaut_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88614-88621` — the 324 SkeletonAlien arm (sites 1269-1273).
+    if npc_type == 324 && npc.hp <= 0 {
+        skeleton_alien_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -12967,6 +13004,20 @@ mod tests {
         assert_eq!(types, vec![463, 465, 464, 464]);
         assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
         assert_eq!(gore.slot(2).position, Vec2::new(100.0, 134.0));
+    }
+
+    /// `NPC.cs:88616-88620` — the SkeletonAlien death: the 5-gore ladder
+    /// 466/467/467/468/468.
+    #[test]
+    fn w4_f10_the_skeleton_alien_death_spawns_the_ladder() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1301);
+        skeleton_alien_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![466, 467, 467, 468, 468]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
