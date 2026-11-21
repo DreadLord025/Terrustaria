@@ -1258,7 +1258,8 @@ pub struct WaterWetState {
 /// attenuation gate and the playing guard, on the `UpdateNPCs` stream.
 /// The dust bursts (`:93096-93118` etc.) are the documented visual skip
 /// (the dust lanes' territory, the E21f player-splash precedent); the
-/// type-620 exit jump (`:93181-93184`) is a movement seam, not ported.
+/// type-620 exit jump (`:93181-93184`) is staged as [`water_exit_jump`]
+/// (the reconcile doc-sweep, research/94 §8a — the 620 kind is unported).
 ///
 /// `wet_now`/`honey_now`/`shimmer_now` are THIS tick's
 /// `Collision.WetCollision` results (`npc_ai_slime::wet_collision`);
@@ -1397,8 +1398,9 @@ pub fn water_collision_sounds(
         state.wet = true; // `:93175`
     } else if state.wet {
         // `:93177-93272` — the exit edge. The velocity halving
-        // (`:93179`) and the type-620 jump (`:93181-93184`) are movement
-        // seams (not ported here); the splash gate stands alone.
+        // (`:93179`) is the movement lane's; the type-620 jump
+        // (`:93181-93184`) is staged as [`water_exit_jump`] (the 620 kind
+        // is unported — research/94 §8a); the splash gate stands alone.
         state.wet = false; // `:93180`
         if state.wet_count == 0 {
             state.wet_count = 10;
@@ -1422,6 +1424,29 @@ pub fn water_collision_sounds(
                 play(1); // `:93269`
             }
         }
+    }
+}
+
+/// W4-f2 doc-sweep (research/94 §8a) — the type-620 water-exit jump
+/// (`NPC.cs:93181-93184`, inside `Collision_WaterCollision`'s exit edge
+/// AFTER the velocity.X halving + wet clear, BEFORE the wetCount check):
+/// `if (type == 620 && GetTargetData().Center.Y < base.Center.Y)
+/// velocity.Y -= 8f` — the GoblinShark leaps when its target sits ABOVE
+/// it. Census: type 620 ONLY (`NPCID.GoblinShark`, `NPCID.cs:11917`;
+/// SetDefaults `NPC.cs:16950-16968`, the aiStyle-107 improved walker).
+/// Returns the velocity.Y delta (−8 or 0); the caller adds it at the
+/// exit edge. STAGED: the 620 kind is unported, and 620 is in
+/// `NPCID.Sets.UsesNewTargeting` (`NPCID.cs:10434`) — its `GetTargetData`
+/// (`NPC.cs:6901-6912`) can return an NPC target, an axis the port lacks;
+/// the caller passes the RESOLVED target centre when the kind lands
+/// (the default-invalid centre is (0,0), `NPCAimedTarget.cs:20-22`).
+/// The strict `<` is verbatim — equal centres do NOT jump. RNG-free.
+#[allow(dead_code)] // the GoblinShark 620 kind's wiring consumes the leap
+pub fn water_exit_jump(npc_type: i32, target_center_y: f32, center_y: f32) -> f32 {
+    if npc_type == 620 && target_center_y < center_y {
+        -8.0 // `:93183`
+    } else {
+        0.0
     }
 }
 
@@ -2648,5 +2673,28 @@ mod tests {
         let mut plays: Vec<i32> = Vec::new();
         water_collision_sounds(147, 0, 0.0, false, &mut st, false, false, false, false, &mut |s| plays.push(s));
         assert_eq!(plays, vec![0], "the exit water gate drops the 147 term");
+    }
+
+    /// W4-f2 doc-sweep (research/94 §8a) — `NPC.cs:93181-93184`: the
+    /// type-620 exit jump fires ONLY for 620 with the target centre
+    /// STRICTLY above the body's centre (the −8 velocity.Y delta); any
+    /// other type, an equal centre or a below-target draws the zero.
+    #[test]
+    fn w4_f2_the_goblin_shark_exit_jump_is_type_and_height_gated() {
+        // 620, target above (smaller Y): the −8 leap.
+        assert_eq!(water_exit_jump(620, 100.0, 200.0), -8.0);
+        // Equal centres: the strict `<` refuses.
+        assert_eq!(water_exit_jump(620, 200.0, 200.0), 0.0);
+        // Target below: no leap.
+        assert_eq!(water_exit_jump(620, 300.0, 200.0), 0.0);
+        // Any other type: nothing, whatever the heights (the census is
+        // the single 620 row — the BloodEel 621 / BloodSquid 619
+        // neighbours do NOT jump).
+        assert_eq!(water_exit_jump(619, 100.0, 200.0), 0.0);
+        assert_eq!(water_exit_jump(621, 100.0, 200.0), 0.0);
+        assert_eq!(water_exit_jump(3, 100.0, 200.0), 0.0);
+        // The default-invalid target centre (0,0) is ABOVE any positive
+        // body centre — the C# reads it raw (the empress precedent).
+        assert_eq!(water_exit_jump(620, 0.0, 200.0), -8.0);
     }
 }

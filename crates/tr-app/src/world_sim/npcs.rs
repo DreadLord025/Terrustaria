@@ -4590,33 +4590,69 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // state never updates here (the SetDefaults census).
                     // The pass draws nothing itself; the case-19 pitch
                     // rides inside `play_splash_sound` after the gate.
-                    if !n.kind.no_tile_collide() {
-                        let (nw, nh) = n.size();
-                        let lava = crate::player::lava_collision(world, n.x, n.y, nw, nh)
-                            && n.kind.cs_id() != 441; // `:93318-93321`
+                    // The block reads/writes `npcs[i]` (NOT the `n`
+                    // alias) — the doc-sweep's lava strike re-borrows the
+                    // whole pool (research/94 §8b); `n` re-binds after.
+                    if !npcs[i].kind.no_tile_collide() {
+                        let (nw, nh) = npcs[i].size();
+                        let lava = crate::player::lava_collision(world, npcs[i].x, npcs[i].y, nw, nh)
+                            && npcs[i].kind.cs_id() != 441; // `:93318-93321`
                         let (wet_now, honey_now, shimmer_now) =
                             crate::npc_ai_slime::wet_collision(
-                                world, n.x, n.y, nw as i32, nh as i32,
+                                world, npcs[i].x, npcs[i].y, nw as i32, nh as i32,
                             );
                         let mut wstate = crate::ambient_sound::WaterWetState {
-                            wet: n.wet,
-                            wet_count: n.wet_count,
-                            lava_wet: n.lava_wet,
-                            honey_wet: n.honey_wet,
-                            shimmer_wet: n.shimmer_wet,
+                            wet: npcs[i].wet,
+                            wet_count: npcs[i].wet_count,
+                            lava_wet: npcs[i].lava_wet,
+                            honey_wet: npcs[i].honey_wet,
+                            shimmer_wet: npcs[i].shimmer_wet,
                         };
                         // `Collision_LavaCollision` latches lavaWet on a
                         // lava overlap (`:93322-93324`), BEFORE the water
                         // pass reads it for the entry/exit arms.
                         if lava {
                             wstate.lava_wet = true;
+                            // W4-f2 doc-sweep (research/94 §8b) — the
+                            // strike/buff half (`:93325-93337`) runs HERE,
+                            // inside Collision_LavaCollision (the `:92526`
+                            // argument-evaluation order — it precedes the
+                            // water pass). The remix flag rides the world's
+                            // seed set (the wind module's precedent).
+                            let remix = world
+                                .seeds
+                                .contains(tr_core::seeds::SeedFlags::REMIX);
+                            if npcs[i].lava_collision_combat(remix) {
+                                // `StrikeNPCNoInteraction(50, 0f, 0)`
+                                // (`:93335` → `:81184-81187`): the owner-255
+                                // strike through the pooled seam, the
+                                // defense fold the port's strike callers
+                                // apply (`strike_npc_damage`, `:81239`),
+                                // knockback 0 (the zero-impulse no-op). The
+                                // strike's HitSound tail is c13's StrikeNPC
+                                // lane (the port's strike fns are soundless).
+                                let dmg = tr_core::damage::strike_npc_damage(
+                                    50,
+                                    npcs[i].defense(),
+                                    false,
+                                );
+                                let sx = npcs[i].x;
+                                let _ = Npc::strike_projectile(
+                                    npcs, i, dmg, sx, 0.0, false, Some(255), false,
+                                );
+                                // `:90516` — the C# clears `justHit` at
+                                // the UpdateNPC tail AFTER UpdateCollision,
+                                // so the lava strike's flag never reaches
+                                // a machine; the port's clear ran pre-pass.
+                                npcs[i].just_hit = false;
+                            }
                         }
-                        let (nx, ny) = (n.x, n.y);
+                        let (nx, ny) = (npcs[i].x, npcs[i].y);
                         crate::ambient_sound::water_collision_sounds(
-                            n.kind.cs_id() as i32,
-                            n.kind.ai_style() as i32,
-                            n.ai[0],
-                            n.kind.no_gravity(),
+                            npcs[i].kind.cs_id() as i32,
+                            npcs[i].kind.ai_style() as i32,
+                            npcs[i].ai[0],
+                            npcs[i].kind.no_gravity(),
                             &mut wstate,
                             wet_now,
                             honey_now,
@@ -4627,12 +4663,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                             },
                         );
                         crate::ambient_sound::water_collision_tail(&mut wstate);
-                        n.wet = wstate.wet;
-                        n.wet_count = wstate.wet_count;
-                        n.lava_wet = wstate.lava_wet;
-                        n.honey_wet = wstate.honey_wet;
-                        n.shimmer_wet = wstate.shimmer_wet;
+                        npcs[i].wet = wstate.wet;
+                        npcs[i].wet_count = wstate.wet_count;
+                        npcs[i].lava_wet = wstate.lava_wet;
+                        npcs[i].honey_wet = wstate.honey_wet;
+                        npcs[i].shimmer_wet = wstate.shimmer_wet;
                     }
+                    let n = &mut npcs[i];
                     black_slime_darkness_touch(n, player, npcs_rng);
                     // `NPC.UpdateNPC`'s tail (`NPC.cs:90324-90327`): the
                     // look-for-home timer decays one per tick.
@@ -17535,6 +17572,62 @@ mod dw3_tests {
             u64::from(hit),
             "the cry plays exactly when the gate hits"
         );
+    }
+
+    /// W4-f2 doc-sweep (research/94 §8b) — the lava strike/buff wiring
+    /// (`NPC.cs:93325-93337` at the `:92526` Collision_LavaCollision
+    /// position): a zombie standing in a lava pool takes the 420-tick
+    /// OnFire + the defense-folded 50 strike (`strike_npc_damage(50, 6,
+    /// false)` = 47) + `immune[255] = 30`; a LavaSlime beside it takes
+    /// NOTHING (the census gate). The lavaWet latch rides both. The
+    /// buff/immune decays run in the PRE-machine preamble, so the fresh
+    /// arm's values stand undecayed at the tick's end.
+    #[test]
+    fn w4_f2_the_lava_overlap_burns_and_strikes_the_non_immune() {
+        use tr_core::tile::{LiquidKind, Tile, FLAG_ACTIVE};
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut world = crate::test_world_helpers::ground();
+        // A lava pool at rows 118-119, columns 90-110 (above the ground
+        // at 120 — inside the probes' maxTilesY-40 band).
+        for x in 90..110 {
+            for y in 118..120 {
+                let i = world.index(x, y);
+                world.tiles[i] = Tile { ..Default::default() };
+                world.tiles[i].flags |= FLAG_ACTIVE;
+                world.tiles[i].liquid = 255;
+                world.tiles[i].set_liquid_kind(LiquidKind::Lava);
+            }
+        }
+        app.world = world;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 110.0 * TILE_PX;
+        app.player = Some(player);
+        // The zombie in the pool (the 18x40 box overlaps rows 118-119).
+        let mut z = Npc::new(NpcKind::Zombie, 95.0 * TILE_PX, 117.5 * TILE_PX, 1, 0.0);
+        z.hp = z.max_hp;
+        let hp0 = z.hp;
+        app.npcs.push(z);
+        // The LavaSlime beside it — lava-immune, untouched.
+        let mut ls = Npc::new(NpcKind::LavaSlime, 100.0 * TILE_PX, 117.5 * TILE_PX, 1, 0.0);
+        ls.hp = ls.max_hp;
+        let ls_hp0 = ls.hp;
+        app.npcs.push(ls);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let z = &app.npcs[0];
+        assert!(z.lava_wet, "the lavaWet latch (:93324)");
+        assert_eq!(z.immune[255], 30, "the 30-tick arm (the decay ran pre-AI)");
+        let slot = z.buffs.find_buff_index(24).expect("the OnFire burn");
+        assert_eq!(z.buffs.buff_time[slot], 420, "the buff tick ran pre-AI");
+        // The strike: 50 raw − 6 defense/2 = 47. The fresh burn's DoT
+        // lands NEXT tick (the buff block precedes the collision pass).
+        assert_eq!(z.hp, hp0 - 47, "the defense-folded 50 strike");
+        assert!(!z.just_hit, "the :90516 tail clear after the lava strike");
+        let ls = &app.npcs[1];
+        assert!(ls.lava_wet, "the latch rides the immune body too");
+        assert_eq!(ls.immune[255], 0, "the immune body arms nothing");
+        assert!(ls.buffs.find_buff_index(24).is_none());
+        assert_eq!(ls.hp, ls_hp0, "no strike on the LavaSlime");
     }
 
     /// S1-E-21g — the drain's stream contract in isolation (the machines'

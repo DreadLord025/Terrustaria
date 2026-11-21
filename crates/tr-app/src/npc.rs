@@ -4604,6 +4604,47 @@ impl Npc {
         true
     }
 
+    /// W4-f2 doc-sweep (research/94 §8b) — `Collision_LavaCollision`'s
+    /// strike/buff half (`NPC.cs:93325-93337`), run by the caller AFTER
+    /// the overlap probe (the type-441 refusal `:93318-93321` applied)
+    /// and the `lavaWet = true` latch (`:93324`): on
+    /// `!lavaImmune && !dontTakeDamage && Main.netMode != 1 &&
+    /// immune[255] == 0` the body arms `immune[255] = 30`, then the
+    /// remix-world arm (`Main.remixWorld && !friendly`) adds ONLY
+    /// `AddBuff(24, 180)`; the vanilla arm adds `AddBuff(24, 420)` and
+    /// fires `StrikeNPCNoInteraction(50, 0f, 0)`. Returns whether the
+    /// 50-damage strike fires — the caller runs the strike seam
+    /// (`strike_projectile` with owner 255, the NoInteraction shape
+    /// `NPC.cs:81184-81187`, knockback 0, the defense fold
+    /// `strike_npc_damage`, `:81239`). `Main.netMode != 1` folds to the
+    /// port's host/single-player constant (the established convention).
+    /// The buff rides `NpcBuffs::add_buff` (the `buffImmune[24]` rows —
+    /// e.g. LavaSlime's `[20, 24, 323]` — refuse it there, the C#'s
+    /// `AddBuff` head `:89928-89931`); the OnFire DoT is the landed
+    /// `npc_buffs` engine's. RNG-free.
+    pub fn lava_collision_combat(&mut self, remix_world: bool) -> bool {
+        // `:93325` — the four-term gate.
+        if self.kind.lava_immune()
+            || self.dont_take_damage
+            || self.immune[255] != 0
+        {
+            return false;
+        }
+        // `:93327` — the 30-tick self-i-frame (the immune[255] slot the
+        // `:90452-90458` decay ticks down).
+        self.immune[255] = 30;
+        if remix_world && !self.friendly {
+            // `:93328-93331` — the remix arm: the short burn, NO strike.
+            self.buffs.add_buff(24, 180);
+            false
+        } else {
+            // `:93332-93336` — the vanilla arm: the long burn + the
+            // 50-damage NoInteraction strike (the caller's seam).
+            self.buffs.add_buff(24, 420);
+            true
+        }
+    }
+
     pub fn update(&mut self, world: &World, player: &mut Player, dt: f32) {
         // The deterministic scratch stream — the tests and every
         // non-caster kind never consume it (only the caster teleport
@@ -33572,5 +33613,69 @@ mod s1_f_13d_tests {
             assert_eq!(n.vy, 0.0);
             assert!(n.wants_hostile_shot.is_empty(), "{kind:?} fires nothing");
         }
+    }
+}
+#[cfg(test)]
+mod w4_f2_lava_combat_tests {
+    use super::*;
+
+    /// W4-f2 doc-sweep (research/94 §8b) — `Collision_LavaCollision`'s
+    /// strike/buff half (`NPC.cs:93325-93337`): the four-term gate, the
+    /// `immune[255] = 30` arm, the remix short-burn-no-strike arm vs the
+    /// vanilla long-burn + strike arm, and the longer-time-wins refresh
+    /// riding `NpcBuffs::add_buff`.
+    #[test]
+    fn w4_f2_the_lava_combat_gate_arms_the_burn_and_the_strike() {
+        // The vanilla arm: a zombie takes the 420-tick OnFire + the
+        // strike request + the 30-tick self-i-frame.
+        let mut n = Npc::new(NpcKind::Zombie, 100.0, 200.0, 1, 0.0);
+        assert!(n.lava_collision_combat(false), "the vanilla strike fires");
+        assert_eq!(n.immune[255], 30);
+        let slot = n.buffs.find_buff_index(24).expect("the OnFire buff");
+        // add_buff stores the C#'s time (the tick decrements later).
+        assert_eq!(n.buffs.buff_time[slot], 420);
+        // The i-frame gate: the second overlap inside the window is a
+        // no-op (no refresh, no second strike).
+        assert!(!n.lava_collision_combat(false));
+        assert_eq!(n.buffs.buff_time[slot], 420);
+        // The window spends: at immune[255] == 0 the arm re-fires (the
+        // longer existing time wins inside add_buff — no refresh).
+        n.immune[255] = 0;
+        assert!(n.lava_collision_combat(false));
+        assert_eq!(n.buffs.buff_time[slot], 420, "the longer time wins");
+        // The remix arm: the 180-tick burn, NO strike.
+        let mut r = Npc::new(NpcKind::Zombie, 100.0, 200.0, 1, 0.0);
+        assert!(!r.lava_collision_combat(true), "the remix arm never strikes");
+        assert_eq!(r.immune[255], 30);
+        let slot = r.buffs.find_buff_index(24).expect("the remix burn");
+        assert_eq!(r.buffs.buff_time[slot], 180);
+        // The remix gate's friendly term: a friendly body takes the
+        // VANILLA arm even on remix (`remixWorld && !friendly` fails).
+        let mut f = Npc::new(NpcKind::Zombie, 100.0, 200.0, 1, 0.0);
+        f.friendly = true;
+        assert!(f.lava_collision_combat(true));
+        let slot = f.buffs.find_buff_index(24).unwrap();
+        assert_eq!(f.buffs.buff_time[slot], 420);
+        // The lavaImmune census gate: the LavaSlime/Hellbat/FireImp/
+        // VoodooDemon + the DD2 kinds take NOTHING.
+        for kind in [
+            NpcKind::LavaSlime,
+            NpcKind::Hellbat,
+            NpcKind::FireImp,
+            NpcKind::VoodooDemon,
+            NpcKind::DD2GoblinT1,
+            NpcKind::DD2Betsy,
+            NpcKind::DD2EterniaCrystal,
+        ] {
+            let mut m = Npc::new(kind, 100.0, 200.0, 1, 0.0);
+            assert!(!m.lava_collision_combat(false), "{kind:?} is lava-immune");
+            assert_eq!(m.immune[255], 0, "{kind:?}: no i-frame arm");
+            assert!(m.buffs.find_buff_index(24).is_none(), "{kind:?}: no burn");
+        }
+        // The dontTakeDamage gate.
+        let mut d = Npc::new(NpcKind::Zombie, 100.0, 200.0, 1, 0.0);
+        d.dont_take_damage = true;
+        assert!(!d.lava_collision_combat(false));
+        assert_eq!(d.immune[255], 0);
     }
 }
