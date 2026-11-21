@@ -135,3 +135,19 @@ original WorldGen/Main census, so the orchestrator lane starts at batch 5)
 
 WRITTEN NOT RUN (code-only mode): draw-mirror witnesses per batch, owed a
 compile window before merge.
+
+## Landing record (2026-11-21)
+
+- Batch 5 (sites 1-10): `399fbb61` — `orch_dust.rs`, 7 witnesses.
+- Batch 6 (sites 11-20): `6b0b5dee` + `dc299f83` (mod registration) —
+  `orch_dust_lightning.rs`, 3 witnesses.
+- Batch 7 (sites 21-30): `965e9612` — `orch_dust_boulder.rs`, 5 witnesses.
+- Batch 8 (sites 31-40): `5fe70387` — `orch_dust_town.rs`, 6 witnesses.
+
+All 40 reserved sites landed; 21 draw-mirror witnesses WRITTEN NOT RUN.
+The emitters are LATENT bodies (the port has no orchestrator dispatch
+yet — `netmodules.rs:447` drops the Particles module); the wiring wave
+folds them into `SpawnParticlesDirect`'s port. The StormLightning bolt
+(`EndPosition`, camera punch, `NewLightning` thunder draws) and the
+per-tick bolt dust (`StormLightningParticle.cs:180-221`) are the
+documented renderer seams — caller inputs / the particle-renderer lane.

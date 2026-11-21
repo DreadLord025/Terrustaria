@@ -39249,3 +39249,40 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-d54 orchestrator dust lane (2026-11-21, batches 5-8)
+
+The e4-reserved ParticleOrchestrator first-40 lane (research/67) landed as
+four latent-emitter modules: `orch_dust.rs` (sites 1-10),
+`orch_dust_lightning.rs` (11-20), `orch_dust_boulder.rs` (21-30),
+`orch_dust_town.rs` (31-40). Deliberate deviations, all cited in the
+module docs:
+
+1. **Renderer skip, draws kept.** The Fading/PrettySparkle/RandomizedFrame
+   particle requests have no port (research/15); their ARGUMENT draws are
+   consumed in C# order (the dead first-write draws in RainbowBoulder1/3
+   included) so the pass stream stays 1:1. The visual writes are dropped.
+2. **StormLightning seam.** The bolt generation
+   (`StormLightningParticle.Prepare` + `LightningGenerator`) is
+   unported: `end_position` is a caller input, the camera-punch
+   NextFloat and `Main.NewLightning`'s thunder draws are the caller's
+   ordered draws, and the per-tick bolt dust
+   (`StormLightningParticle.cs:180-221`) rides the particle-renderer
+   lane.
+3. **Gore siblings** (PaladinsHammerShockwave :871, StormLightning :1102,
+   DeadCellsFlint :1850, DownDash :2190, Digestion :2341, ElderSlime
+   :2565) are g16/g17's; their argument draws are consumed here in order.
+4. **Tile sweeps delegate** to this branch's `world_dust_tile::
+   make_tile_dust` (the same function g14 landed in tr-core as
+   `worldgen_dust_tile`); the merger keeps one copy and re-points the
+   call. The DownDash scan keeps its OWN gate variant (solidTop skips
+   only when frameY != 0; frameImportant skips unless solidTop,
+   `ParticleOrchestrator.cs:2159`) - distinct from the Flint gate.
+5. **Overlap reconciliation (merger).** d54 batches 1-4 ported the
+   original WorldGen/Main census while g14 landed all 29 WorldGen sites
+   in tr-core and g11-g13 claimed all 23 Main sites; g14/g11/g12's
+   verbatim bodies win where both exist, d54's editing.rs live seams
+   stay. The orchestrator lane itself is unclaimed-by-others (e4's
+   reservation) - no overlap.
+
+21 draw-mirror witnesses WRITTEN NOT RUN (code-only mode).
