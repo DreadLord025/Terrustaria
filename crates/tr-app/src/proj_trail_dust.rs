@@ -1,5 +1,6 @@
 //! W4-g64 — the Projectile.cs per-kind TRAIL dust lane 2 (kinds ≥ 401).
 //! Batch 1: 406 / 419 / 420 / 421 / 422 / 447 / 450 / 455 / 461 / 465.
+//! Batch 2: 466 / 497 / 503 / 504 / 509 / 533 / 537 / 538 / 539 / 573.
 //!
 //! Scope (docs/research/66-proj-trail-dust-claims.md): the REPEATING in-flight
 //! dust sites inside `AI()`'s per-kind arms — the dust a kind sheds while it
@@ -640,6 +641,482 @@ pub fn trail_465(
     d.no_gravity = true; // `:32043`
 }
 
+/// Kind 466 — the Phantasmal Bolt's stationary sparkle (`AI()` aiStyle 88,
+/// `Projectile.cs:32069-32087`), inside the `velocity == Zero` branch behind
+/// the `Next(extraUpdates) == 0` gate (the caller's stationary wait; the
+/// `frameCounter`/oldPos kill above it is the machine's state). Two type-226
+/// sparks spun off `this.rotation` (NOT the velocity — the bolt is stopped),
+/// then the `Next(5)` type-31 puff. The puff's offset reads the ZERO velocity
+/// verbatim (the offset collapses to `-One*4`; the draw is kept).
+pub fn trail_466(
+    center: Vec2,
+    vel: Vec2,
+    w: i32,
+    rotation: f32,
+    extra_updates: i32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    if rng.next_max(extra_updates) != 0 {
+        return; // `:32069` — the gate draws even when it fails.
+    }
+    for _ in 0..2 {
+        // `:32073` — rotation ± (float)π/2 off Next(2).
+        let side = if rng.next_max(2) == 1 { -1.0 } else { 1.0 };
+        let num726 = rotation + side * (std::f32::consts::PI / 2.0);
+        let num727 = rng.next_double() as f32 * 0.8 + 1.0; // `:32074`
+        let vector94 = Vec2::new(
+            (num726 as f64).cos() as f32 * num727,
+            (num726 as f64).sin() as f32 * num727,
+        );
+        let idx = dust.new_dust(rng, ctx, world, center, 0, 0, 226, vector94.x, vector94.y, 0, Color::default(), 1.0);
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:32077`
+        d.scale = 1.2; // `:32078`
+    }
+    if rng.next_max(5) == 0 {
+        // `:32080-32086`
+        let vector95 = rotated_by(vel, 1.5707963705062866)
+            * (rng.next_double() as f32 - 0.5)
+            * w as f32;
+        let idx = dust.new_dust(
+            rng,
+            ctx,
+            world,
+            center + vector95 - Vec2::ONE * 4.0,
+            8,
+            8,
+            31,
+            0.0,
+            0.0,
+            100,
+            Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 0.5;
+        d.velocity.y = -d.velocity.y.abs();
+    }
+}
+
+/// Kind 497 — the Dutchman's cannonball smoke (`AI()` aiStyle 2,
+/// `Projectile.cs:23411-23417`): ONE type-27 dust per tick, speeds = the
+/// slot velocity, alpha 100, scale 1.2; the position halves toward the
+/// centre, then the ×0.3 damp and the −vel×0.1 drift. ZERO explicit draws —
+/// only the pool internals roll. The `ai[0]` age/gravity tail (`:23418+`)
+/// is the caller's state (already in `ai_style2`).
+pub fn trail_497(
+    pos: Vec2,
+    w: i32,
+    h: i32,
+    vel: Vec2,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let center = pos + Vec2::new(w as f32 / 2.0, h as f32 / 2.0);
+    let idx = dust.new_dust(rng, ctx, world, pos, w, h, 27, vel.x, vel.y, 100, Color::default(), 1.2);
+    let d = dust.slot_mut(idx);
+    d.position = (d.position + center) / 2.0; // `:23414`
+    d.no_gravity = true; // `:23415`
+    d.velocity *= 0.3; // `:23416`
+    d.velocity -= vel * 0.1; // `:23417`
+}
+
+/// Kind 503 — the Star Wrath's star spark (`AI()` aiStyle 5,
+/// `Projectile.cs:23954-23962`): the `Next(16) == 0` gate draws EVERY tick;
+/// on a pass, `Vector2.UnitX.RotatedByRandom(π/2)` consumes TWO `NextDouble`
+/// draws (left operand first, `Utils.cs:1697-1700`), spun again by the
+/// velocity's rotation, then ONE type-58 dust (speeds vel×0.5, alpha 150,
+/// scale 1.2) whose velocity/position are overwritten from the spin vector.
+/// The `:23963` `Next(48)` GORE gate + body are d55/g16's — the wiring wave
+/// interleaves that draw AFTER this fn (it is the arm's next statement).
+pub fn trail_503(
+    pos: Vec2,
+    w: i32,
+    h: i32,
+    vel: Vec2,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    if rng.next_max(16) != 0 {
+        return; // `:23956`
+    }
+    // `:23958` — RotatedByRandom: NextDouble*max - NextDouble*max.
+    let max = 1.5707963705062866f64;
+    let ang = rng.next_double() * max - rng.next_double() * max;
+    let vector3 = rotated_by(rotated_by(Vec2::UNIT_X, ang), to_rotation(vel) as f64);
+    let center = pos + Vec2::new(w as f32 / 2.0, h as f32 / 2.0);
+    let idx = dust.new_dust(rng, ctx, world, pos, w, h, 58, vel.x * 0.5, vel.y * 0.5, 150, Color::default(), 1.2);
+    let d = dust.slot_mut(idx);
+    d.velocity = vector3 * 0.66; // `:23960`
+    d.position = center + vector3 * 12.0; // `:23961`
+}
+
+/// Kind 504 — the Jester's arrow spark window (`AI()` aiStyle 2,
+/// `Projectile.cs:23520-23550`; the 954/979 riders share the arm — 979 spawns
+/// type 135 instead of 6). `ai0` is the POST-increment counter (the caller
+/// runs `:23523`'s `ai[0]++` first). The `num19` probability ladder
+/// (`:23526-23540`) and the `Next(100) < num19` gate draw every tick past
+/// `ai0 > 3`; the `:23534` Kill is the caller's state (already in
+/// `ai_style2`) — the C# still spawns on the kill tick, kept. The dust's
+/// position halves toward the centre, ×2 velocity, ×1.6 scale, +vel.
+pub fn trail_504(
+    kind: u16,
+    pos: Vec2,
+    w: i32,
+    h: i32,
+    vel: Vec2,
+    ai0: f32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    if ai0 <= 3.0 {
+        return; // `:23524` — no draw inside the window.
+    }
+    let mut num19 = 100; // `:23526`
+    if ai0 > 20.0 {
+        let num21 = ai0 - 20.0;
+        num19 = (100.0f32 * (1.0 - num21 / 40.0)) as i32; // `:23531`
+    }
+    if ai0 <= 10.0 {
+        num19 = ai0 as i32 * 10; // `:23539`
+    }
+    if rng.next_max(100) < num19 {
+        // `:23541-23549`
+        let center = pos + Vec2::new(w as f32 / 2.0, h as f32 / 2.0);
+        let dust_type = if kind != 979 { 6 } else { 135 }; // `:23543`
+        let idx = dust.new_dust(rng, ctx, world, pos, w, h, dust_type, 0.0, 0.0, 150, Color::default(), 1.0);
+        let d = dust.slot_mut(idx);
+        d.position = (d.position + center) / 2.0; // `:23544`
+        d.no_gravity = true; // `:23545`
+        d.velocity *= 2.0; // `:23546`
+        d.scale *= 1.6; // `:23547`
+        d.velocity += vel; // `:23548`
+    }
+}
+
+/// Kind 509 — the drill's chip dust (`AI()` aiStyle 20,
+/// `Projectile.cs:25575-25583`), at the END of the arm (after the hand pin
+/// and the rotation writes). The `:25575` velocity-X jitter
+/// (`*= 1 + Next(-3,4)*0.01`) is BEHAVIOUR-FEEDING and always drawn — the
+/// port's `ai_drill` skipped it with the dust layer; the wiring wave replaces
+/// that skip with this fn's head (the draw order is the arm's tail). Then the
+/// `Next(6) == 0` gate: the spawn position's `Next(6,10)` argument draw rides
+/// the JITTERED velocity; the post-write `velocity.Y` draws `Next(7,13)`.
+pub fn trail_509(
+    pos: Vec2,
+    w: i32,
+    h: i32,
+    vel: &mut Vec2,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    // `:25575` — the always-drawn jitter (behaviour-feeding, kept).
+    vel.x *= 1.0 + rng.next_range(-3, 4) as f32 * 0.01;
+    if rng.next_max(6) == 0 {
+        // `:25576-25583`
+        let lead = rng.next_range(6, 10) as f32 * 0.1; // argument draw
+        let idx = dust.new_dust(
+            rng,
+            ctx,
+            world,
+            pos + *vel * lead,
+            w,
+            h,
+            31,
+            0.0,
+            0.0,
+            80,
+            Color::default(),
+            1.4,
+        );
+        let d = dust.slot_mut(idx);
+        d.position.x -= 4.0; // `:25579`
+        d.no_gravity = true; // `:25580`
+        d.velocity *= 0.2; // `:25581`
+        d.velocity.y = -(rng.next_range(7, 13) as f32) * 0.15; // `:25582`
+    }
+}
+
+/// Kind 533 — the Deadly Sphere's DASH ring (`AI()` aiStyle 65,
+/// `Projectile.cs:29800-29812`), when the dash ladder's `ai[0] == 8` (the
+/// caller's gate — the ladder itself is `ai_deadly_sphere`'s state). Four
+/// dusts: the type is `SelectRandom(226, 228, 75)` — ONE `Next(3)` argument
+/// draw BEFORE the internals (the named `Type:` argument is written first);
+/// the offset is `One.RotatedBy(i*π/2).RotatedBy(rotation)`; the scale's
+/// `NextFloat` draws AFTER the spawn.
+pub fn trail_533_dash_ring(
+    center: Vec2,
+    rotation: f32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for num519 in 0..4 {
+        let dust_type = [226, 228, 75][rng.next_max(3) as usize]; // `:29804`
+        let idx = dust.new_dust(rng, ctx, world, center, 0, 0, dust_type, 0.0, 0.0, 0, Color::default(), 1.0);
+        let d = dust.slot_mut(idx);
+        // `:29806` — the double spin chain.
+        let vector39 = rotated_by(
+            rotated_by(Vec2::ONE, (num519 as f32 * (std::f32::consts::PI / 2.0)) as f64),
+            rotation as f64,
+        );
+        d.position = center + vector39 * 10.0; // `:29807`
+        d.velocity = vector39; // `:29808` (×1f)
+        d.scale = 0.6 + rng.next_float() * 0.5; // `:29809`
+        d.no_gravity = true; // `:29810`
+    }
+}
+
+/// Kind 533 — the Deadly Sphere's SPIN ring (`Projectile.cs:30049-30066`),
+/// when the frame-table block's `ai[0] == 2` (the caller's gate). The outer
+/// `Next(2) == 0` draws once; each of the four iterations draws its OWN
+/// `Next(2) != 0` gate (a fail skips that dust's draws entirely). The taken
+/// dusts match the dash ring but at scale `0.3 + NextFloat*0.5` and with
+/// `noLight = true`; `customData = this` (`:30062`) is the pool's dropped
+/// field.
+pub fn trail_533_spin_ring(
+    center: Vec2,
+    rotation: f32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    if rng.next_max(2) != 0 {
+        return; // `:30049`
+    }
+    for num532 in 0..4 {
+        if rng.next_max(2) == 0 {
+            continue; // `:30053` — the per-dust gate.
+        }
+        let dust_type = [226, 228, 75][rng.next_max(3) as usize]; // `:30055`
+        let idx = dust.new_dust(rng, ctx, world, center, 0, 0, dust_type, 0.0, 0.0, 0, Color::default(), 1.0);
+        let d = dust.slot_mut(idx);
+        let vector43 = rotated_by(
+            rotated_by(Vec2::ONE, (num532 as f32 * (std::f32::consts::PI / 2.0)) as f64),
+            rotation as f64,
+        );
+        d.position = center + vector43 * 10.0; // `:30058`
+        d.velocity = vector43; // `:30059`
+        d.scale = 0.3 + rng.next_float() * 0.5; // `:30060`
+        d.no_gravity = true; // `:30061`
+        // `:30062` customData = this — dropped field (particles.rs).
+        d.no_light = true; // `:30063`
+    }
+}
+
+/// Kind 537 — the Nebula Blaze EX's laser tip (`AI()` aiStyle 84,
+/// `Projectile.cs:31682-31707`): the 461 shape with the age-scaled spark
+/// count. `num691 = Clamp(Lerp(0,1,localAI[0]/30),0,1)` (Lerp(0,1,t) = t);
+/// `num692 = (int)(2*num691)` — 0/1/2 sparks; the puff gate widens as the
+/// beam ages: `Next(5 + (int)((1-num691)*5))`.
+pub fn trail_537(
+    center: Vec2,
+    vel: Vec2,
+    w: i32,
+    local_ai0: f32,
+    local_ai1: f32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    // `:31684` — MathHelper.Lerp(0,1,t) = 0 + (1-0)*t = t, then Clamp.
+    let num691 = (local_ai0 / 30.0).clamp(0.0, 1.0);
+    let vector83 = center + vel * (local_ai1 - 8.0); // `:31685`
+    let num692 = (2.0f32 * num691) as i32; // `:31686`
+    if num692 > 0 {
+        for _ in 0..num692 {
+            let side = if rng.next_max(2) == 1 { -1.0 } else { 1.0 }; // `:31691`
+            let num694 = to_rotation(vel) + side * (std::f32::consts::PI / 2.0);
+            let num695 = rng.next_double() as f32 * 0.8 + 1.0; // `:31692`
+            let vector84 = Vec2::new(
+                (num694 as f64).cos() as f32 * num695,
+                (num694 as f64).sin() as f32 * num695,
+            );
+            let idx = dust.new_dust(rng, ctx, world, vector83, 0, 0, 226, vector84.x, vector84.y, 0, Color::default(), 1.0);
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true; // `:31695`
+            d.scale = 1.2; // `:31696`
+        }
+    }
+    // `:31699` — the widening gate.
+    if rng.next_max(5 + ((1.0 - num691) * 5.0) as i32) == 0 {
+        let off = rotated_by(vel, 1.5707963705062866)
+            * (rng.next_double() as f32 - 0.5)
+            * w as f32;
+        let idx = dust.new_dust(
+            rng,
+            ctx,
+            world,
+            vector83 + off - Vec2::ONE * 4.0,
+            8,
+            8,
+            31,
+            0.0,
+            0.0,
+            100,
+            Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 0.5;
+        d.velocity.y = -d.velocity.y.abs();
+    }
+}
+
+/// Kind 538 — the Rainbow Gun's rising paint drip (`AI()` aiStyle 14,
+/// `Projectile.cs:25161-25187`), behind the `velocity.Y < 0 && ai[0] < 60`
+/// gate (checked here — the `localAI[1]` sound latch above it is d76's).
+/// Two independent gates draw EVERY eligible tick: `Next(4)` → type 180 at
+/// the centre with the `Next(50)` scale bump and −2 Y; `Next(6)` → type 176
+/// with the +0.3 bump and the ×0.1 damp.
+pub fn trail_538(
+    pos: Vec2,
+    w: i32,
+    h: i32,
+    vel: Vec2,
+    ai0: f32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    if !(vel.y < 0.0 && ai0 < 60.0) {
+        return; // `:25168` — no draws outside the window.
+    }
+    let center = pos + Vec2::new(w as f32 / 2.0, h as f32 / 2.0);
+    if rng.next_max(4) == 0 {
+        // `:25170-25177`
+        let idx = dust.new_dust(rng, ctx, world, pos, w, h, 180, 0.0, 0.0, 100, Color::default(), 1.0);
+        let d = dust.slot_mut(idx);
+        d.position = center;
+        d.scale += rng.next_max(50) as f32 * 0.01;
+        d.no_gravity = true;
+        d.velocity.y -= 2.0;
+    }
+    if rng.next_max(6) == 0 {
+        // `:25178-25185`
+        let idx = dust.new_dust(rng, ctx, world, pos, w, h, 176, 0.0, 0.0, 100, Color::default(), 1.0);
+        let d = dust.slot_mut(idx);
+        d.position = center;
+        d.scale += 0.3 + rng.next_max(50) as f32 * 0.01;
+        d.no_gravity = true;
+        d.velocity *= 0.1;
+    }
+}
+
+/// Kind 539 — the Tempest minion's HOST-phase sparkle (`AI()` aiStyle 102,
+/// `Projectile.cs:33301-33309`), while `ai[0] < 210` (the caller's window —
+/// the host-drag/homing above it is `ai_nebula_eye`'s shape). `Next(12)` →
+/// one type-180 dust pinned to the centre, ×0.2 velocity.
+pub fn trail_539_host(
+    center: Vec2,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    if rng.next_max(12) == 0 {
+        // `:33303-33309`
+        let idx = dust.new_dust(rng, ctx, world, center, 8, 8, 180, 0.0, 0.0, 0, Color::default(), 1.0);
+        let d = dust.slot_mut(idx);
+        d.position = center;
+        d.velocity *= 0.2;
+        d.no_gravity = true;
+    }
+}
+
+/// Kind 539 — the Tempest shot's FLIGHT-phase paint drip (`Projectile.cs:
+/// 33408-33434`), once `ai[0] >= 210` (the caller's window; the frame cycle
+/// above is state). Two gates: `Next(2)` → type 180, `Next(3)` → type 176;
+/// both take the `Next(50)` scale bump, the ×0.1 damp and the
+/// `NextFloat*1.5` fadeIn (the fadeIn draw is LAST).
+pub fn trail_539_flight(
+    pos: Vec2,
+    w: i32,
+    h: i32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    if rng.next_max(2) == 0 {
+        // `:33418-33425`
+        let idx = dust.new_dust(rng, ctx, world, pos, w, h, 180, 0.0, 0.0, 100, Color::default(), 1.0);
+        let d = dust.slot_mut(idx);
+        d.scale += rng.next_max(50) as f32 * 0.01;
+        d.no_gravity = true;
+        d.velocity *= 0.1;
+        d.fade_in = rng.next_float() * 1.5;
+    }
+    if rng.next_max(3) == 0 {
+        // `:33426-33433`
+        let idx = dust.new_dust(rng, ctx, world, pos, w, h, 176, 0.0, 0.0, 100, Color::default(), 1.0);
+        let d = dust.slot_mut(idx);
+        d.scale += 0.3 + rng.next_max(50) as f32 * 0.01;
+        d.no_gravity = true;
+        d.velocity *= 0.1;
+        d.fade_in = rng.next_float() * 1.5;
+    }
+}
+
+/// Kind 573 — the Nebula minion's HOST-phase flame (`AI()` aiStyle 102,
+/// `Projectile.cs:33320-33331`), while `ai[0] < 90` (the caller's window).
+/// `Next(2)` → one type-242 dust pinned to the centre carrying the slot
+/// velocity, scale 1.5. The `alpha = 255` pin (`:33330`) is caller state.
+pub fn trail_573_host(
+    center: Vec2,
+    vel: Vec2,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    if rng.next_max(2) == 0 {
+        // `:33322-33329`
+        let idx = dust.new_dust(rng, ctx, world, center, 8, 8, 242, 0.0, 0.0, 0, Color::default(), 1.0);
+        let d = dust.slot_mut(idx);
+        d.position = center;
+        d.velocity = vel;
+        d.no_gravity = true;
+        d.scale = 1.5;
+    }
+}
+
+/// Kind 573 — the Nebula shot's FLIGHT-phase flame (`Projectile.cs:33435-
+/// 33446`), once `ai[0] >= 90`. `Next(4)` → one type-242 dust at the centre,
+/// ×0.2 velocity, scale 1.5. The `alpha = 0` pin is caller state.
+pub fn trail_573_flight(
+    center: Vec2,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    if rng.next_max(4) == 0 {
+        // `:33437-33444`
+        let idx = dust.new_dust(rng, ctx, world, center, 8, 8, 242, 0.0, 0.0, 0, Color::default(), 1.0);
+        let d = dust.slot_mut(idx);
+        d.position = center;
+        d.velocity *= 0.2;
+        d.no_gravity = true;
+        d.scale = 1.5;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -979,5 +1456,307 @@ mod tests {
         for _ in 0..8 {
             assert_eq!(rng.next_max(1000), mirror.next_max(1000));
         }
+    }
+
+    /// W4-g64 — kind 466: the Next(extraUpdates) gate draws even on failure;
+    /// a pass spawns the rotation-spun pair (the velocity is ZERO — the puff
+    /// offset collapses but its NextDouble is kept).
+    #[test]
+    fn w4_g64_466_stationary_gate_and_pair() {
+        let w = world();
+        let c = ctx();
+        let center = Vec2::new(1500.0, 900.0);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(53);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(53);
+        trail_466(center, Vec2::ZERO, 20, 0.7, 3, &mut rng, &mut pool, &c, &w);
+        if mirror.next_max(3) == 0 {
+            for _ in 0..2 {
+                let side = if mirror.next_max(2) == 1 { -1.0 } else { 1.0 };
+                let ang = 0.7f32 + side * (std::f32::consts::PI / 2.0);
+                let spd = mirror.next_double() as f32 * 0.8 + 1.0;
+                let v = Vec2::new((ang as f64).cos() as f32 * spd, (ang as f64).sin() as f32 * spd);
+                let idx = mpool.new_dust(&mut mirror, &c, &w, center, 0, 0, 226, v.x, v.y, 0, Color::default(), 1.0);
+                let d = mpool.slot_mut(idx);
+                d.no_gravity = true;
+                d.scale = 1.2;
+            }
+            if mirror.next_max(5) == 0 {
+                let off = rotated_by(Vec2::ZERO, 1.5707963705062866) * (mirror.next_double() as f32 - 0.5) * 20.0;
+                let idx = mpool.new_dust(&mut mirror, &c, &w, center + off - Vec2::ONE * 4.0, 8, 8, 31, 0.0, 0.0, 100, Color::default(), 1.5);
+                let d = mpool.slot_mut(idx);
+                d.velocity *= 0.5;
+                d.velocity.y = -d.velocity.y.abs();
+            }
+        }
+        assert_eq!(active(&pool), active(&mpool));
+        for i in active(&pool) {
+            assert_eq!(pool.slot(i), mpool.slot(i), "slot {i}");
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+        }
+    }
+
+    /// W4-g64 — kind 497: one dust, zero explicit draws; the position halves
+    /// toward the centre and the velocity chain is ×0.3 then −vel×0.1.
+    #[test]
+    fn w4_g64_497_single_smoke_chain() {
+        let w = world();
+        let c = ctx();
+        let pos = Vec2::new(1000.0, 800.0);
+        let vel = Vec2::new(4.0, 1.0);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(59);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(59);
+        trail_497(pos, 20, 20, vel, &mut rng, &mut pool, &c, &w);
+        let idx = mpool.new_dust(&mut mirror, &c, &w, pos, 20, 20, 27, 4.0, 1.0, 100, Color::default(), 1.2);
+        let d = mpool.slot_mut(idx);
+        d.position = (d.position + Vec2::new(1010.0, 810.0)) / 2.0;
+        d.no_gravity = true;
+        d.velocity *= 0.3;
+        d.velocity -= vel * 0.1;
+        assert_eq!(active(&pool).len(), 1);
+        assert_eq!(pool.slot(0), mpool.slot(0));
+        for _ in 0..8 {
+            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+        }
+    }
+
+    /// W4-g64 — kind 503: the Next(16) gate draws every tick; a pass takes
+    /// TWO NextDouble (RotatedByRandom) then the internals; the spawn's
+    /// velocity/position are the spin-vector overwrites.
+    #[test]
+    fn w4_g64_503_rotated_by_random_two_draws() {
+        let w = world();
+        let c = ctx();
+        let pos = Vec2::new(900.0, 300.0);
+        let vel = Vec2::new(0.0, 8.0);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(61);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(61);
+        for _ in 0..40 {
+            trail_503(pos, 16, 16, vel, &mut rng, &mut pool, &c, &w);
+        }
+        for _ in 0..40 {
+            if mirror.next_max(16) == 0 {
+                let max = 1.5707963705062866f64;
+                let ang = mirror.next_double() * max - mirror.next_double() * max;
+                let v3 = rotated_by(rotated_by(Vec2::UNIT_X, ang), to_rotation(vel) as f64);
+                let idx = mpool.new_dust(&mut mirror, &c, &w, pos, 16, 16, 58, 0.0, 4.0, 150, Color::default(), 1.2);
+                let d = mpool.slot_mut(idx);
+                d.velocity = v3 * 0.66;
+                d.position = Vec2::new(908.0, 308.0) + v3 * 12.0;
+            }
+        }
+        assert_eq!(active(&pool), active(&mpool));
+        for i in active(&pool) {
+            assert_eq!(pool.slot(i), mpool.slot(i), "slot {i}");
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+        }
+    }
+
+    /// W4-g64 — kind 504: no draws inside ai0 <= 3; the ladder probability
+    /// gates the Next(100); the type flips to 135 for the 979 rider.
+    #[test]
+    fn w4_g64_504_window_ladder_and_type_flip() {
+        let w = world();
+        let c = ctx();
+        let pos = Vec2::new(700.0, 500.0);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(67);
+        let mut mirror = UnifiedRandom::new(67);
+        trail_504(504, pos, 10, 10, Vec2::new(9.0, 0.0), 2.0, &mut rng, &mut pool, &c, &w);
+        assert!(active(&pool).is_empty(), "no dust before the window");
+        assert_eq!(rng.next_max(1000), mirror.next_max(1000), "no draw before the window");
+        for ai0 in [5.0f32, 15.0, 25.0, 45.0] {
+            trail_504(979, pos, 10, 10, Vec2::new(9.0, 0.0), ai0, &mut rng, &mut pool, &c, &w);
+        }
+        for i in active(&pool) {
+            assert_eq!(pool.slot(i).dust_type, 135, "979 spawns 135");
+            assert!(pool.slot(i).no_gravity);
+        }
+    }
+
+    /// W4-g64 — kind 509: the jitter draw ALWAYS runs (behaviour-feeding);
+    /// the gate + argument draws follow in order.
+    #[test]
+    fn w4_g64_509_jitter_always_draws() {
+        let w = world();
+        let c = ctx();
+        let mut vel = Vec2::new(10.0, 0.0);
+        let mut rng = UnifiedRandom::new(71);
+        let mut mirror = UnifiedRandom::new(71);
+        let mut pool = DustPool::new();
+        trail_509(Vec2::new(600.0, 600.0), 20, 20, &mut vel, &mut rng, &mut pool, &c, &w);
+        let jitter = mirror.next_range(-3, 4);
+        assert_eq!(vel.x, 10.0 * (1.0 + jitter as f32 * 0.01));
+        // Mirror the gate + the taken branch so the streams stay in lockstep.
+        if mirror.next_max(6) == 0 {
+            let lead = mirror.next_range(6, 10) as f32 * 0.1;
+            let mut mpool = DustPool::new();
+            let idx = mpool.new_dust(&mut mirror, &c, &w, Vec2::new(600.0, 600.0) + vel * lead, 20, 20, 31, 0.0, 0.0, 80, Color::default(), 1.4);
+            let d = mpool.slot_mut(idx);
+            d.position.x -= 4.0;
+            d.no_gravity = true;
+            d.velocity *= 0.2;
+            d.velocity.y = -(mirror.next_range(7, 13) as f32) * 0.15;
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+        }
+    }
+
+    /// W4-g64 — kind 533 dash ring: four dusts, the SelectRandom Next(3)
+    /// argument draw precedes each spawn; the scale NextFloat follows.
+    #[test]
+    fn w4_g64_533_dash_ring_mirror() {
+        let w = world();
+        let c = ctx();
+        let center = Vec2::new(1100.0, 700.0);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(73);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(73);
+        trail_533_dash_ring(center, 0.4, &mut rng, &mut pool, &c, &w);
+        for i in 0..4 {
+            let t = [226, 228, 75][mirror.next_max(3) as usize];
+            let idx = mpool.new_dust(&mut mirror, &c, &w, center, 0, 0, t, 0.0, 0.0, 0, Color::default(), 1.0);
+            let d = mpool.slot_mut(idx);
+            let v = rotated_by(rotated_by(Vec2::ONE, (i as f32 * (std::f32::consts::PI / 2.0)) as f64), 0.4);
+            d.position = center + v * 10.0;
+            d.velocity = v;
+            d.scale = 0.6 + mirror.next_float() * 0.5;
+            d.no_gravity = true;
+        }
+        assert_eq!(active(&pool).len(), 4);
+        for i in 0..4 {
+            assert_eq!(pool.slot(i), mpool.slot(i), "slot {i}");
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+        }
+    }
+
+    /// W4-g64 — kind 533 spin ring: the outer Next(2) and the four per-dust
+    /// Next(2) gates all draw; the taken dusts carry noLight.
+    #[test]
+    fn w4_g64_533_spin_ring_gates_and_nolight() {
+        let w = world();
+        let c = ctx();
+        let center = Vec2::new(1100.0, 700.0);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(79);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(79);
+        trail_533_spin_ring(center, 1.1, &mut rng, &mut pool, &c, &w);
+        if mirror.next_max(2) == 0 {
+            for i in 0..4 {
+                if mirror.next_max(2) == 0 {
+                    continue;
+                }
+                let t = [226, 228, 75][mirror.next_max(3) as usize];
+                let idx = mpool.new_dust(&mut mirror, &c, &w, center, 0, 0, t, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = mpool.slot_mut(idx);
+                let v = rotated_by(rotated_by(Vec2::ONE, (i as f32 * (std::f32::consts::PI / 2.0)) as f64), 1.1);
+                d.position = center + v * 10.0;
+                d.velocity = v;
+                d.scale = 0.3 + mirror.next_float() * 0.5;
+                d.no_gravity = true;
+                d.no_light = true;
+            }
+        }
+        assert_eq!(active(&pool), active(&mpool));
+        for i in active(&pool) {
+            assert_eq!(pool.slot(i), mpool.slot(i), "slot {i}");
+            assert!(pool.slot(i).no_light);
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+        }
+    }
+
+    /// W4-g64 — kind 537: the spark count is (int)(2*clamp(age/30)) — 0 at
+    /// age 0, 1 at 15..29, 2 at >=30; the puff gate widens 10 → 5.
+    #[test]
+    fn w4_g64_537_age_scaled_count_and_gate() {
+        let w = world();
+        let c = ctx();
+        let center = Vec2::new(1200.0, 600.0);
+        let vel = Vec2::new(1.0, 0.0);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(83);
+        // age 0: only the widened Next(10) puff gate can fire.
+        trail_537(center, vel, 20, 0.0, 40.0, &mut rng, &mut pool, &c, &w);
+        for i in active(&pool) {
+            assert_eq!(pool.slot(i).dust_type, 31, "no sparks at age 0");
+        }
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(83);
+        trail_537(center, vel, 20, 45.0, 40.0, &mut rng, &mut pool, &c, &w);
+        let sparks = active(&pool).iter().filter(|&&i| pool.slot(i).dust_type == 226).count();
+        assert_eq!(sparks, 2, "two sparks past age 30");
+    }
+
+    /// W4-g64 — kind 538: the rising-window gate draws nothing outside it;
+    /// inside, both gates draw every tick.
+    #[test]
+    fn w4_g64_538_window_and_gates() {
+        let w = world();
+        let c = ctx();
+        let pos = Vec2::new(800.0, 900.0);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(89);
+        let mut mirror = UnifiedRandom::new(89);
+        // Falling (vy > 0) or old (ai0 >= 60): no draws.
+        trail_538(pos, 12, 12, Vec2::new(0.0, 2.0), 10.0, &mut rng, &mut pool, &c, &w);
+        trail_538(pos, 12, 12, Vec2::new(0.0, -2.0), 60.0, &mut rng, &mut pool, &c, &w);
+        assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+        assert!(active(&pool).is_empty());
+        for _ in 0..30 {
+            trail_538(pos, 12, 12, Vec2::new(0.0, -2.0), 10.0, &mut rng, &mut pool, &c, &w);
+        }
+        for i in active(&pool) {
+            let d = pool.slot(i);
+            assert!(d.dust_type == 180 || d.dust_type == 176);
+            assert_eq!(d.position, Vec2::new(806.0, 906.0), "pinned to centre");
+            assert!(d.no_gravity);
+        }
+    }
+
+    /// W4-g64 — kinds 539/573: the host/flight gate pairs pin the centre and
+    /// carry the documented damp/scale chains.
+    #[test]
+    fn w4_g64_539_573_host_flight_shapes() {
+        let w = world();
+        let c = ctx();
+        let center = Vec2::new(1000.0, 1000.0);
+        let vel = Vec2::new(2.0, -1.0);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(97);
+        for _ in 0..60 {
+            trail_539_host(center, &mut rng, &mut pool, &c, &w);
+            trail_539_flight(Vec2::new(1000.0, 1000.0), 14, 14, &mut rng, &mut pool, &c, &w);
+            trail_573_host(center, vel, &mut rng, &mut pool, &c, &w);
+            trail_573_flight(center, &mut rng, &mut pool, &c, &w);
+        }
+        for i in active(&pool) {
+            let d = pool.slot(i);
+            match d.dust_type {
+                180 | 176 => assert!(d.no_gravity),
+                242 => {
+                    assert!(d.no_gravity);
+                    assert_eq!(d.scale, 1.5);
+                    assert_eq!(d.position, center);
+                }
+                t => panic!("unexpected type {t}"),
+            }
+        }
+        assert!(!active(&pool).is_empty(), "60 ticks of gates spawn something");
     }
 }
