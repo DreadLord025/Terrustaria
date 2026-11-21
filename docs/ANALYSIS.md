@@ -39359,3 +39359,31 @@ merged black rectangle before the cap site (the standing dark-cell
 merge — the cap tint there is zero, pixel-identical). 2 witnesses
 WRITTEN NOT RUN (the frame-equality arms; the draw-order/anchor/rect/
 raw-light source scan).
+
+## The martianLight bounce (W4-g12 doc-sweep)
+
+The port fed `apply_cases_a`/`glow_switch` a constant `martian_light =
+0.0` under the claim "`Main.martianLight` is 0 outside the (unported)
+Martian Madness event" (`tiles.rs:723`, `drawdata_cases_a.rs:53`). That
+reading was WRONG: `Main.DoUpdate_AnimateTileGlows` (`Main.cs:18238-
+18262`) ticks `martianLight += martianLightDir * 0.015f` with the 1/0
+clamps + dir flips EVERY frame — the call site (`Main.cs:17145`) has no
+event gate, and `Main.Initialize` seeds (1, +1) (`:66831-66832`). The
+value oscillates in [0, 1] from the first frame of every world; only
+the glow CONSUMERS (the martian-conduit/furniture glow records) are
+event-content, not the oscillator.
+
+Ported: `App.martian_light`/`martian_light_dir` (both ctors seed 1/1),
+the bounce beside the demon-torch tick in the draw pass
+(`frame/draw.rs::tick_martian_light`, the same two-independent-ifs
+shape), threaded through `draw_tiles`' new `martian_light` parameter
+into `apply_cases_a` (replacing the constant 0). `_martianGlow`'s byte
+(`TileDrawing.cs:498`, `100 + 150*light` truncated) now spans 100..250
+instead of pinning at 100. The glow record itself still rides unused
+until the glow bind (TILE-DRAW-2 / W4-f15's lane — keep-one at merge);
+the stale "0 outside the event" comments in `tiles.rs` and
+`drawdata_cases_a.rs` are corrected. The G6 key is untouched: the glow
+records are not drawn yet, so the value cannot change any cached pixel
+(the f15 bind must add it to the key or the glow pass when it lands).
+3 witnesses WRITTEN NOT RUN (the first-tick clamp/flip, the bottom
+clamp, the 100..250 byte span over a full bounce).

@@ -50,8 +50,10 @@
 //!   `drawdata.rs`'s 564 arm — this pass must not apply it twice.
 //! - `Main.mouseTextColor` (cases 656/701/564) is the UI text pulse; the
 //!   port passes 255 (the steady full-bright value) until the pulse rides in.
-//! - `Main.martianLight` is 0 outside the Martian Madness event (not
-//!   ported) — [`martian_glow`] takes the value so the event can feed it.
+//! - `Main.martianLight` is the LIVE ±0.015 bounce (W4-g12 doc-sweep:
+//!   `DoUpdate_AnimateTileGlows` ticks it unconditionally,
+//!   `Main.cs:17145`/`:18251-18261` — the old "0 outside the event"
+//!   reading was wrong); [`martian_glow`] takes the threaded value.
 
 use tr_core::drawdata::TileDrawData;
 use tr_core::tile::Tile;
@@ -102,8 +104,8 @@ impl DrawDataCasesA {
 
 /// `TileDrawing._martianGlow` (`TileDrawing.cs:498-499`):
 /// `b = (byte)(100f + 150f * Main.martianLight)`, `Color(b, b, b, 0)`.
-/// The byte cast truncates the float product. `martian_light` is 0 outside
-/// the event (the port's current state).
+/// The byte cast truncates the float product. `martian_light` is the live
+/// per-frame bounce (`Main.cs:18251-18261`, W4-g12 doc-sweep).
 pub fn martian_glow(martian_light: f32) -> [u8; 4] {
     let b = (100.0 + 150.0 * martian_light) as u8;
     [b, b, b, 0]
@@ -269,7 +271,7 @@ pub fn sea_oats_add_fr_y(world: &World, x: i32, y: i32, fy: i32, beach_distance:
 /// post-switch locals), the final `width`/`height`/`half_brick_height` and
 /// the shaded cell colour (`color`, cases 637/638 lerp against it).
 /// `mouse_text_color` is `Main.mouseTextColor` (255 steady) and
-/// `martian_light` is `Main.martianLight` (0 outside the event).
+/// `martian_light` is `Main.martianLight` (the live bounce, W4-g12).
 ///
 /// `case 564`'s `addFrY = 0` (`:6112`) is intentionally NOT returned — the
 /// first switch's port already folds it (`drawdata.rs` case 564).

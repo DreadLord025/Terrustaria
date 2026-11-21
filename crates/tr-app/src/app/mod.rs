@@ -836,6 +836,13 @@ pub(crate) struct App {
     /// `Main.demonTorch` / `Main.demonTorchDir` (`DoUpdate_AnimateTileGlows`).
     pub(crate) demon_torch: f32,
     pub(crate) demon_torch_dir: f32,
+    /// `Main.martianLight` / `Main.martianLightDir` (`Main.cs:1231-1233`,
+    /// the same `DoUpdate_AnimateTileGlows`, `:18251-18261`): the 0.015
+    /// bounce that feeds `TileDrawing._martianGlow` (`:498-499`). It ticks
+    /// EVERY frame in C# — no event gate (`Main.cs:17145` is unconditional);
+    /// the "0 outside the event" reading was wrong (W4-g12 doc-sweep).
+    pub(crate) martian_light: f32,
+    pub(crate) martian_light_dir: f32,
     /// `Main.DiscoR/G/B` and the `Main.DiscoStyle` cycle (`DoUpdate_AnimateDiscoRGB`).
     pub(crate) disco: [u8; 3],
     pub(crate) disco_style: u8,
@@ -3975,6 +3982,10 @@ impl App {
             // `Main.demonTorch = 1f; Main.demonTorchDir = 1` (Main.Initialize).
             demon_torch: 1.0,
             demon_torch_dir: 1.0,
+            // `Main.martianLight = 1f; Main.martianLightDir = 1`
+            // (`Main.cs:66831-66832`).
+            martian_light: 1.0,
+            martian_light_dir: 1.0,
             // `Main.DiscoR = 255` (Main.Initialize); G/B and the style start at 0.
             disco: [255, 0, 0],
             disco_style: 0,

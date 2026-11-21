@@ -2404,6 +2404,9 @@ pub(crate) mod front_flow_tests {
             mouse_text_color_dir: 1,
             demon_torch: 1.0,
             demon_torch_dir: 1.0,
+            // `Main.cs:66831-66832`: martianLight 1, dir 1.
+            martian_light: 1.0,
+            martian_light_dir: 1.0,
             disco: [255, 0, 0],
             disco_style: 0,
             light_rng_seed: 1,

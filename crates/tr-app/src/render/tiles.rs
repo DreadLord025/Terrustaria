@@ -344,6 +344,12 @@ pub(crate) fn draw_tiles(
     // weather-vane bob (`Main.cs:2237`). Ticked once per client update by
     // `App::animate_tiles_phase` (`Main.cs:17150`).
     tile_anim: &tr_core::drawdata_anim::TileAnimator,
+    // W4-g12 doc-sweep: `Main.martianLight` (`Main.cs:1231`, the
+    // `DoUpdate_AnimateTileGlows` ±0.015 bounce `:18251-18261`) — the
+    // `_martianGlow` feed (`TileDrawing.cs:498-499`). Ticks EVERY frame in
+    // C#, no event gate; the glow record rides unused until the glow pass
+    // binds it (TILE-DRAW-2), but the value is now the live one.
+    martian_light: f32,
 ) -> TileDrawStats {
     let t_total = Instant::now();
     // `TileDrawing._rand` (`TileDrawing.cs:191`): the leaf-roll stream, pinned
@@ -737,9 +743,11 @@ pub(crate) fn draw_tiles(
                     // switch like the C#. The glow record rides unused
                     // until the glow pass binds it (TILE-DRAW-2); the
                     // cell light converts to XNA bytes (alpha 255, the
-                    // `Lighting.GetColor` colour has no alpha), the UI
-                    // text pulse is steady 255 and martianLight 0 outside
-                    // the (unported) event — documented deviations.
+                    // `Lighting.GetColor` colour has no alpha) and the UI
+                    // text pulse is steady 255 — documented deviations.
+                    // martianLight is the LIVE bounce (W4-g12 doc-sweep:
+                    // `Main.cs:17145` ticks it unconditionally; the old
+                    // "0 outside the event" reading was wrong).
                     let cell = raw_l;
                     let cell_bytes = [
                         (cell[0] * 255.0).min(255.0) as u8,
@@ -748,7 +756,7 @@ pub(crate) fn draw_tiles(
                         255,
                     ];
                     let _glow = crate::drawdata_cases_a::apply_cases_a(
-                        &mut dd, world, tile, tx, ty, cell_bytes, 255, 0.0,
+                        &mut dd, world, tile, tx, ty, cell_bytes, 255, martian_light,
                     );
                     dd
                 } else {
