@@ -4,6 +4,12 @@ Status: MERGE CONTRACT — exact drop-lines, no code changes on d40's
 branch from here. Author lane: W4-c4 (`task/W4-c4-style44-flying-fish`,
 the keep-c4 verdict's executor), parent `91293a3d2`.
 
+Number-collision check (retire phase, 2026-11-21): **KEPT at 143** —
+first-pushed-wins. `origin/task/W4-g87-demon-heart-use` tip `dfbcaf94b`
+carries no research/143 and no 143 INDEX row; no `g87b` ref exists; the
+all-refs sweep (357 tips) finds c4's `90fd242d9` as the only 143 claim.
+The lead's conditional rename target 146 stays unassigned. See INDEX.
+
 The dup-check verdict (ANALYSIS "The style-16 dup-check: keep-one
 verdicts" §CrimsonGoldfish 465, commit `318e28709`): d40's 421-490 band
 ports CrimsonGoldfish at protocol **465** — the SAME id c4 uses — with
@@ -127,10 +133,11 @@ tip before the merge (the arms are stable across its batch commits).
   keep-one verdicts" §CrimsonGoldfish 465 (c4 `318e28709`).
 - The sibling retire contracts: BloodFeeder 241→373 + FlyingFish
   354→359 (same ANALYSIS section; the FlyingFish renumber EXECUTED on
-  c4 `91293a3d2`), the d42 dup-kind findings (GoldGoldfish 366 / Pupfish
-  381 / Dolphin 389 / FlyingAntlion 357 / EyeballFlyingFish 363 —
-  keep-d42-ids, retire-c4-rows at merge, ANALYSIS "The proto-renumber
-  EXECUTION").
+  c4 `91293a3d2`). The d42 dup-kind findings (GoldGoldfish / Pupfish /
+  Dolphin / FlyingAntlion / EyeballFlyingFish) are SUPERSEDED: d42's
+  reconcile `49346dba6` dropped those five kinds and ceded them to c4 —
+  see the claims-table addendum `145-d42-keep-d42-verdicts-addendum.md`
+  (the keep-d42-ids retire-c4-rows verdicts no longer apply).
 - The band freeze: research/108 §3 (d40's 430-488 untouched).
 
 Code-only: every line number read from the pushed tip via git-show;

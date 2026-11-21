@@ -76,6 +76,22 @@ per `docs/superpowers` agreements).
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 
+## Wave 4 - fish lane contracts (W4-c4, retire phase)
+| # | Module | File | Status |
+| --- | --- | --- | --- |
+| 143 | d40 CrimsonGoldfish-465 retire hunk (exact drop-lines for merger/d40b; keep-c4 kb-1.0 + vanilla_type fix) | `143-d40-crimsongoldfish-retire-hunk.md` | MERGE CONTRACT |
+| 144 | Orca NPC_692 census-input for d35e (dims-row + corrected FINAL rank #16 + the lazy-NPC-page admission form) | `144-orca-npc692-census-input.md` | CENSUS INPUT |
+
+Number-collision verdict (2026-11-21 retire phase, first-pushed-wins):
+143/144 KEPT - no rename. Evidence: all 357 pushed refs swept
+(`git ls-tree <ref> docs/research/`); `origin/task/W4-g87-demon-heart-use`
+tip `dfbcaf94b` carries NO research/143 file and NO 143/144 INDEX row;
+`origin/task/W4-f47-liquid-shimmer-2` tip `a2561d6d9` carries only 121
+(its own INDEX row) and NO 144 claim; no `g87b`/`f47c` refs exist on
+origin (`git ls-remote`). c4's 143 (`90fd242d9`) / 144 (`479d70ad2`) are
+the only pushed claims. The lead's fallback numbers 146/147 stay
+UNASSIGNED (reserved); this lane's new retire-phase docs take 145/148.
+
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
   counts question is ticketed.

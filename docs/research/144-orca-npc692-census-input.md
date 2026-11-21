@@ -5,6 +5,13 @@ request for the repack lane. Author lane: W4-c4
 (`task/W4-c4-style44-flying-fish`, parent `9156d83a7`). No Rust
 touched; the measurement re-run on the current HEAD.
 
+Number-collision check (retire phase, 2026-11-21): **KEPT at 144** —
+first-pushed-wins. `origin/task/W4-f47-liquid-shimmer-2` tip `a2561d6d9`
+carries only research/121 (its own INDEX row), no 144 file or row; no
+`f47c` ref exists; the all-refs sweep (357 tips) finds c4's `479d70ad2`
+as the only 144 claim. The lead's conditional rename target 147 stays
+unassigned. See INDEX.
+
 ## The dims-row (the deliverable)
 
 | sheet | w×h | padded w×h | padded kpx | frames | owner | admission |
