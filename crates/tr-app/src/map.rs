@@ -431,6 +431,13 @@ pub struct WorldMap {
     /// `Main.mapTimeMax` (`Main.cs:801`) — the refresh budget the countdown
     /// re-arms from; the gfx-quality loop writes it (`Main.cs:16995-17000`).
     pub map_time_max: i32,
+    /// `Main.mapDelay` (`Main.cs:229`, static ctor `= 2` at `:66504`,
+    /// re-armed on world load `WorldGen.cs:6947`) — the modern engine's
+    /// first-frames skip (`LightingEngine.cs:82-89`): while > 0 the
+    /// `MinimapUpdate` state decrements it instead of exporting. The legacy
+    /// engine owns its own copy (`LegacyLighting.map_delay`, S1-E-19 wave B);
+    /// this one gates the Color path's [`Self::update`].
+    map_delay: i32,
     /// Tiles revealed/changed since the last `take_dirty` (Task 6 uploads these).
     dirty: Vec<(i32, i32)>,
     /// The world-sized map texture exists (`ensure_map_texture` has run).
@@ -512,6 +519,7 @@ impl WorldMap {
             minimap_alpha: 1.0, // `Main.cs:66753`
             map_time: 0,
             map_time_max: 0,
+            map_delay: 2, // `Main.cs:66504` (static ctor), `WorldGen.cs:6947`
             dirty: Vec::new(),
             uploaded: false,
             needs_full_upload: false,
@@ -570,6 +578,15 @@ impl WorldMap {
         dt: f32,
     ) {
         let _ = dt;
+        // `LightingEngine.cs:82-89`: the `MinimapUpdate` state's first-frames
+        // skip — while `mapDelay > 0` the engine decrements it INSTEAD of
+        // exporting (the static ctor arms 2, `Main.cs:66504`; the world-load
+        // reset re-arms it, `WorldGen.cs:6947`). The port's `update` is the
+        // Color path's export cadence, so the countdown rides its head.
+        if self.map_delay > 0 {
+            self.map_delay -= 1;
+            return;
+        }
         // `Main.cs:61818-61821` — the C# decrements `mapTime` once per frame;
         // `ExportToMiniMap` (`LightingEngine.cs:246-270`) is what the legacy
         // engine runs when `mapTime == 0` (`LegacyLighting.cs:349`), re-arming
@@ -788,6 +805,19 @@ impl WorldMap {
     /// `Main.mapTime` (`Main.cs:803`).
     pub fn map_time(&self) -> i32 {
         self.map_time
+    }
+
+    /// `Main.mapDelay` (`Main.cs:229`).
+    pub fn map_delay(&self) -> i32 {
+        self.map_delay
+    }
+
+    /// `Main.mapDelay = 2` on world entry (`WorldGen.cs:6947`, the static
+    /// ctor `Main.cs:66504`) — the Color path's twin of
+    /// `LegacyLighting::reset_map_delay`. The fresh `WorldMap` a world load
+    /// builds already arms 2; this is the in-place re-arm seam.
+    pub fn reset_map_delay(&mut self) {
+        self.map_delay = 2;
     }
 
     /// `Main.cs:61818-61821`: the per-frame `mapTime` countdown. The legacy
@@ -1479,7 +1509,11 @@ mod tests {
         );
         // The C# starts `mapTime == 0` (`Main.cs:803`), so the first frame
         // exports and re-arms from the budget (`LegacyLighting.cs:349-373`).
+        // The `mapDelay` first-frames skip (`LightingEngine.cs:82-89`, W4-e18
+        // final sweep) is a separate gate — this witness pins `mapTime`, so
+        // the delay starts drained (its own witness below pins the skip).
         m.map_time_max = 3;
+        m.map_delay = 0;
         m.update(&world, Some(&p), &light, true, 0.016);
         assert!(m.tiles.iter().any(|t| t.light > 0), "the first frame exports");
         let _ = m.take_dirty();
@@ -1729,6 +1763,7 @@ mod tests {
             &LightParams::default(),
         );
         let mut m = WorldMap::new(&world);
+        m.map_delay = 0; // the mapTime witness, not the mapDelay one
         m.update(&world, Some(&p), &light, true, 0.3);
         assert!(m.tiles[world.index(px, py)].light > 0);
     }
@@ -1763,6 +1798,7 @@ mod tests {
         );
         let mut m = WorldMap::new(&world);
         m.map_time_max = 2;
+        m.map_delay = 0; // the mapEnabled witness, not the mapDelay one
         m.update(&world, Some(&p), &light, false, 0.016);
         assert!(m.tiles.iter().all(|t| t.light == 0), "the gate refuses");
         assert!(m.take_dirty().is_empty());
@@ -1772,6 +1808,51 @@ mod tests {
         m.update(&world, Some(&p), &light, false, 0.016);
         m.update(&world, Some(&p), &light, true, 0.016);
         assert!(m.tiles.iter().any(|t| t.light > 0), "enabled exports");
+    }
+
+    /// W4-e18 final sweep (written, not run - code-only): the modern
+    /// engine's first-frames skip (`LightingEngine.cs:82-89`) — while
+    /// `Main.mapDelay > 0` the `MinimapUpdate` state decrements it INSTEAD
+    /// of exporting; the static ctor arms 2 (`Main.cs:66504`) and the
+    /// world-load reset re-arms it (`WorldGen.cs:6947`). The port's
+    /// `WorldMap::update` gates on the same counter.
+    #[test]
+    fn w4_e18_the_map_delay_skips_the_first_two_exports() {
+        let world = ground_world();
+        let mut p = Player::spawn(&world);
+        p.x = 100.0 * TILE_PX;
+        let px = (p.x / TILE_PX) as i32;
+        let py = (p.y / TILE_PX) as i32;
+        let light = LightMap::compute(
+            &world,
+            px - 40,
+            py - 30,
+            px + 40,
+            py + 30,
+            &LightParams::default(),
+        );
+        let mut m = WorldMap::new(&world);
+        assert_eq!(m.map_delay(), 2, "the Main.cs:66504 ctor value");
+        // The first two updates only count the delay down — no export, no
+        // updateMap arming, the mapTime countdown untouched.
+        m.update(&world, Some(&p), &light, true, 0.016);
+        assert_eq!(m.map_delay(), 1);
+        assert!(m.tiles.iter().all(|t| t.light == 0), "skip 1");
+        assert!(m.update_map.is_none(), "no slot arming during the skip");
+        m.update(&world, Some(&p), &light, true, 0.016);
+        assert_eq!(m.map_delay(), 0);
+        assert!(m.tiles.iter().all(|t| t.light == 0), "skip 2");
+        // The third update exports.
+        m.update(&world, Some(&p), &light, true, 0.016);
+        assert!(m.tiles[world.index(px, py)].light > 0, "the export runs");
+        assert!(m.update_map.is_some(), "the slot arms");
+        // The world-load re-arm (`WorldGen.cs:6947`) skips two again.
+        m.reset_map_delay();
+        m.map_time = 0;
+        m.update_map = None;
+        m.update(&world, Some(&p), &light, true, 0.016);
+        assert!(m.update_map.is_none(), "the re-armed delay skips");
+        assert_eq!(m.map_delay(), 1);
     }
 
     /// W4-e18 witness (written, not run — code-only): the scene box is
@@ -1791,6 +1872,7 @@ mod tests {
         // A light rect wider than the scene box on every side.
         let light = LightMap::compute(&world, 0, 0, 199, 127, &LightParams::default());
         let mut m = WorldMap::new(&world);
+        m.map_delay = 0; // the scene-box witness, not the mapDelay one
         m.update(&world, Some(&p), &light, true, 0.016);
         // Scene box: cx=100, cy=41 → x [16, 185), y [-21, 103); the world
         // inset 40 trims to x [40, 160), y [40, 88). The processed-area
@@ -1863,6 +1945,7 @@ mod tests {
             &LightParams::default(),
         );
         let mut m = WorldMap::new(&world);
+        m.map_delay = 0; // the updateMap witness, not the mapDelay one
         assert!(m.update_map.is_none(), "Main.cs:799 starts null");
         m.update(&world, Some(&p), &light, true, 0.016);
         let rect = m.update_map.expect("`LightingEngine.cs:269` arms the slot");

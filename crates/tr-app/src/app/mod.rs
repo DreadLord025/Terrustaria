@@ -2446,10 +2446,15 @@ impl App {
         self.tile_anim.reset();
         self.tile_anim_step = FixedStepper::new(1.0 / 60.0, 8);
         // `Main.mapDelay = 2` (`WorldGen.cs:6947`, the world-load reset):
-        // the legacy engine owns the counter in the port (S1-E-19 wave B,
-        // `LegacyLighting.cs:345-348`).
+        // the legacy engine owns its counter in the port (S1-E-19 wave B,
+        // `LegacyLighting.cs:345-348`); the Color path's export cadence
+        // (`WorldMap::update`) gates on the map's own copy
+        // (`LightingEngine.cs:82-89`, W4-e18 final sweep).
         if let Some(engine) = self.legacy_light.as_mut() {
             engine.reset_map_delay();
+        }
+        if let Some(m) = self.map.as_mut() {
+            m.reset_map_delay();
         }
     }
 
