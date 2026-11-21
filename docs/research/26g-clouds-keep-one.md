@@ -367,6 +367,45 @@ merge-order, not coverage:
    rows + arm are correct; the missing piece is the item-use spawner,
    a different lane.
 
+### §6a — RETIRE receipt: the 978 keep-d12c verdict re-read at the LATEST tips
+
+The d12c commit `9e668d0f0` rides `task/W4-d12-proj-ai-111-120` (d12d
+ACTIVE, tip **`4ba56e660`**; ancestry exit 0). The d18 row commit
+`18916087b` rides `task/W4-d18-proj-ai-171-180`, whose tip MOVED since
+§6's census (`18916087b` → **`8248a54be`**, +3 commits: spray rows
+`78ffe8e11`, the damage-gate census `5e51c66e3`, the FINAL band table
+`8248a54be`; ancestry exit 0). Re-read at both LATEST tips:
+
+- **The rows are STILL value-identical.** d12c `data.rs:2984–2995`
+  (comment :2977–2983): `(160.0, 160.0, 189, 3, 30, 0, false, false,
+  false, (true, -1, false, -1, 255, 1.0))`. d18 `data.rs:3970–3973`
+  (comment :3964–3969, shifted from §6's :3948 by the spray rows):
+  the SAME tuple. Both against `Projectile.cs:9253–9269` re-read
+  verbatim this pass — the `:9268` second `timeLeft = 30` wins,
+  `ownerHitCheck` is the no-port-field deviation both record.
+- **The frames superset STILL stands — keep-d12c.** d12c alone adds
+  `proj_frames` `VOLCANO => 5` (`data.rs:4882`, comment :4879–4881,
+  `Main.cs:8493` re-read verbatim: `Main.projFrames[978] = 5;`). d18's
+  `proj_frames` (:4780) has NO 978 entry at `8248a54be` — without it
+  the 189 arm's 2-tick frame machine (`Projectile.cs:42282–42289`)
+  wraps at the stock 1.
+- **The exact d18 978-copy drop-hunks at `8248a54be`** (for the merger;
+  d12c's set survives whole):
+
+| drop | file:lines at d18 `8248a54be` | content |
+|---|---|---|
+| V1 | `data.rs:825–828` | the `VOLCANO` const + doc (d12c's :780–788 carries the fuller spawn-site doc — keep it) |
+| V2 | `data.rs:3964–3973` | the 978 row + comment (tuples identical; keep d12c's :2977–2995) |
+| V3 | `data.rs:4409–4411` (edit) | the ignoreWater term: drop `\| VOLCANO` from :4411, KEEP `INSANITY_SHADOW_FRIENDLY` (964 — d18-only); reword the comment :4409–4410. d12c's `kind == VOLCANO` term (:4375) survives |
+| V4 | `data.rs:4482–4484` (edit) | the melee term: drop the comment :4482–4483 + `\| VOLCANO` :4484 (the match tail closes). d12c's :4453–4455 survives |
+| V5 | `projectile.rs:40702–40709` (edit) | the row witness's 978 block inside `w4_d18_the_residual_rows_carry_the_csharp_set_defaults` (fn :40693): the `let d = proj_data(VOLCANO)…` + 8 asserts. d12c's census witness (`data.rs:5113–5119`) covers every field AND the frames pin — REPOINT the doc sentence (:40688), keep the 964/1106 blocks |
+
+The 964 (`INSANITY_SHADOW_FRIENDLY`, d18 `data.rs:3960`) and 1106 rows
+are d18-ONLY — they survive untouched. No `VOLCANO` consumer exists
+outside V1–V5 on d18 (full-tree grep: the `ai_volcano` arm/dispatch are
+main's, kind-agnostic). **Keep-d12c CONFIRMED at the latest tips; the
+d18 copy drops per V1–V5, no frames-row loss (d18 never had one).**
+
 ## §7 — the 190 terra-chain compose-contract (PROJ-181 phase 3; d20c-T5 receipt)
 
 **The chain.** NightsEdge 273 → TrueNightsEdge 675 → TrueExcalibur 674 →
