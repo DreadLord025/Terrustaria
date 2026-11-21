@@ -10,10 +10,11 @@
 //! Wiring census (W4-f23 wiring pass): DEBUG-DEFERRED with its element half —
 //! the only consumer is `UIWorldGenDebug.GenPassElement` (d86 scope-out, no
 //! driver: the F5 arm is parked at `app/flow.rs`, the F3 workbench has no
-//! pass-list tab). The port's worldgen step names (`EXECUTED_PIPELINE`'s
-//! lowercase display names, `tr_core::worldgen::progress`) are NOT the
-//! `GenPassNameID` string keys, so even the loading screen cannot look up
-//! this table without a name-mapping port — deferred with the screen.
+//! pass-list tab). The name-mapping half IS ported (W4-f23 deviation fix):
+//! [`get_step_icon`] maps the port's executed step display names
+//! (`EXECUTED_PIPELINE`'s `name`) through `Step::vanilla` — the
+//! `GenPassNameID` string keys — so the loading screen can look the table
+//! up; the screen itself stays deferred.
 #![allow(dead_code)] // dev-only screen (d86 scope-out); table parked for it
 
 /// The three `PassIconEntry` factories as data (`UIWorldGenDebug.cs:184-232`).
@@ -160,6 +161,22 @@ pub fn get_pass_icon(pass_name: &str) -> IconSpec {
     IconSpec::Bestiary(64) // `:426`
 }
 
+/// The executed-step lookup — W4-f23 deviation fix: the port's worldgen
+/// progress feed carries `EXECUTED_PIPELINE`'s display names
+/// (`GenProgressHook::begin_step`, `tr_core::worldgen::pipeline`), NOT the
+/// `GenPassNameID` strings this table keys on. `pipeline::pass_name_id`
+/// maps display name → `Step::vanilla` (the `GenPassNameID` value,
+/// `GenPassNameID.cs:223-330`); the icon then rides [`get_pass_icon`].
+/// A step with no vanilla pass (the span planner, the world tail…) or an
+/// unknown name takes the bestiary-64 fallback — the same arm an unmapped
+/// `GenPass.Name` takes in the C# (`:426`).
+pub fn get_step_icon(step: &str) -> IconSpec {
+    match tr_core::worldgen::pipeline::pass_name_id(step) {
+        Some(pass) => get_pass_icon(pass),
+        None => IconSpec::Bestiary(64),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::worldgen_debug_elements::PassIconEntry;
@@ -204,5 +221,70 @@ mod tests {
         // The fallback frames to row 4, col 0 of the 16×5 sheet.
         let e = PassIconEntry::from_bestiary_icon(64, [416, 130]);
         assert_eq!(e.region, [0, 104, 26, 26]);
+    }
+
+    /// W4-f23 deviation fix: the executed-step lookup maps the port's
+    /// display names through `Step::vanilla` (the `GenPassNameID` keys).
+    /// Every executed step with a vanilla pass must resolve to a REAL
+    /// table row (never the fallback) — the mapping is total over the
+    /// pipeline's named passes.
+    #[test]
+    fn the_step_lookup_maps_display_names_to_pass_keys() {
+        // The display names are NOT the keys (`EXECUTED_PIPELINE`).
+        assert_eq!(get_step_icon("terrain fill"), IconSpec::Bestiary(1));
+        assert_eq!(get_step_icon("cave fields"), IconSpec::Item(4501), "Tunnels");
+        assert_eq!(get_step_icon("ores and gems"), IconSpec::Item(19), "Shinies");
+        assert_eq!(get_step_icon("evil"), IconSpec::Bestiary(7), "Corruption");
+        assert_eq!(get_step_icon("liquids"), IconSpec::Bestiary(28), "Lakes");
+        assert_eq!(
+            get_step_icon("granite and marble"),
+            IconSpec::Bestiary(29),
+            "the Marble slot (:330) — the step's vanilla key"
+        );
+        assert_eq!(get_step_icon("slopes"), IconSpec::Bestiary(1), "Smooth World");
+        assert_eq!(get_step_icon("trees"), IconSpec::Bestiary(0), "Planting Trees");
+        assert_eq!(
+            get_step_icon("surface flora"),
+            IconSpec::ImageFrame("Images/Tiles_3", 5, 45, 1),
+            "Weeds (:396)"
+        );
+        assert_eq!(get_step_icon("moss"), IconSpec::Item(4496));
+        assert_eq!(get_step_icon("micro grass"), get_pass_icon("Grass"));
+        // A step with NO vanilla pass ("" — the span planner, the world
+        // tail, the seed finish) takes the bestiary-64 fallback, as does
+        // an unknown name (`GetPassIcon` `:426`).
+        assert_eq!(get_step_icon("plan biome spans"), IconSpec::Bestiary(64));
+        assert_eq!(get_step_icon("world tail"), IconSpec::Bestiary(64));
+        assert_eq!(get_step_icon("seed finish"), IconSpec::Bestiary(64));
+        assert_eq!(get_step_icon("not a step"), IconSpec::Bestiary(64));
+        // Totality: every named vanilla pass of the executed pipeline
+        // resolves to a real PASS_ICONS row — no named step falls back.
+        for step in [
+            "terrain height map", "terrain fill", "dunes", "ocean sand",
+            "micro grass", "jungle", "mud caves to grass", "full desert",
+            "mushroom patches", "cave fields", "granite and marble",
+            "stone-in-dirt blobs", "dirt-in-stone blobs", "surface caves",
+            "wavy caves", "dirt to mud", "ash blobs", "ores and gems",
+            "evil", "liquids", "dungeon", "beaches", "gravitating sand",
+            "ocean caves", "fragile ice", "underground jungle trees",
+            "exposed gems", "jungle shrines", "chests", "spider caves",
+            "gem caves", "moss", "altars", "wet jungle", "pyramids",
+            "pots", "beehives", "lihzahrd temple", "temple part 2",
+            "cave houses", "thin ice", "campsites", "spike pits",
+            "sword shrines", "mining explosives", "mahogany trees",
+            "webs and honey", "mushroom and jungle plants", "jungle plants",
+            "vines", "muds walls in jungle", "floating islands",
+            "remove water", "shell piles", "slopes", "living trees",
+            "trees", "surface flora", "cacti", "lihzahrd altar",
+            "water plants",
+        ] {
+            let pass = tr_core::worldgen::pipeline::pass_name_id(step)
+                .unwrap_or_else(|| panic!("'{step}' is a named step"));
+            assert!(
+                PASS_ICONS.iter().any(|(k, _)| *k == pass),
+                "'{step}' -> '{pass}' has no icon row"
+            );
+            assert_eq!(get_step_icon(step), get_pass_icon(pass), "{step}");
+        }
     }
 }
