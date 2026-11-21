@@ -9,13 +9,13 @@
 //! Hellbat 60, VoodooDemon 66 (`npc/data.rs::ai_style`). This module ports
 //! the whole arm's STRUCTURE with the branches those four types take; the
 //! unported types' own branches (226's velocity-sign facing `:22876-22894`,
-//! 158's surface flee + 7-cap approach `:22899-22970` + Transform(159)
-//! `:23346-23355` + double `ai[1]++` `:23357-23360`, 226's 4/2.5 approach
-//! `:22971-23037`, 660's 0.35/0.3/6/5 approach `:23038-23115`) are cited
-//! skips — they land with their kinds.
-//! 48's wet arm `:23333-23345` + feather shot `:23416-23436` and 156's
-//! trident shot `:23458-23484` landed with the W4-g8 machine round (the
-//! Harpy/RedDevil wirings).
+//! 226's 4/2.5 approach `:22971-23037`, 660's 0.35/0.3/6/5 approach
+//! `:23038-23115`) are cited skips — they land with their kinds.
+//! 48's wet arm `:23333-23345` + feather shot `:23416-23436`, 156's
+//! trident shot `:23458-23484`, and 158's surface flee + 7-cap approach
+//! `:22899-22970` + Transform(159) `:23346-23355` + double `ai[1]++`
+//! `:23357-23360` landed with the W4-g8 machine round (the
+//! Harpy/RedDevil/VampireBat wirings).
 //!
 //! WIRED (the S1-D-3 bat/fish reconcile, `task/S1-D-3-reconcile-batfish`):
 //! `npc.rs::update_cave_bat` routes the four kinds through [`bat_ai`],
@@ -107,9 +107,14 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
     // not hittable (unported kind); every other type runs `TargetClosest`
     // (`:22897`), faceTarget default true, aiStyle 14.
     target_closest(npc, env.world, env.players, true, 14, env.ticker);
-    // `:22899-23182` — the per-type approach arms: 158/226/660 unported;
+    // `:22899-23182` — the per-type approach arms. 158's surface flee +
+    // 7-cap approach landed with W4-g8 (the VampireBat); 226/660 unported;
     // the else arm (`:23116-23182`) is the shared 0.1/4 X + 0.04/1.5 Y.
-    generic_approach(npc);
+    if net_id == 158 {
+        vampire_bat_approach(npc, env);
+    } else {
+        generic_approach(npc);
+    }
     // `:23183-23332` — the water group. NOTE the C# structure: the wet
     // lift is gated on `base.wet`, but the SECOND approach pass below is
     // not — types 49/51/66 run the generic approach twice per tick, and
@@ -148,7 +153,29 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
         }
         target_closest(npc, env.world, env.players, true, 14, env.ticker);
     }
-    // `:23346-23355` — type 158's Transform(159) (VampireBat unported).
+    // `:23346-23355` — type 158's Transform(159) (W4-g8: the VampireBat
+    // landed). The host-path gate: the target's centre within 200 px,
+    // the NPC's bottom above the player's bottom, and a clear sight line
+    // — then the bat becomes the Vampire. The request rides the NPC's
+    // `wants_transform` seam (the vanilla type 159); the sim's drain
+    // applies `transform_to_kind` after the tick (the aiStyle-75
+    // precedent). The C# transforms IN-TICK; the port's one-tick-later
+    // drain is the established request-seam granularity (ANALYSIS).
+    if net_id == 158 && env.net_mode != 1 {
+        let p = &env.players[npc.target as usize];
+        let (cx, cy) = npc.center();
+        let num229 = p.x + p.width as f32 * 0.5 - cx;
+        let num230 = p.y + p.height as f32 * 0.5 - cy;
+        let (w, h) = npc.size();
+        if (num229 * num229 + num230 * num230).sqrt() < 200.0
+            && npc.y + h < p.y + p.height as f32
+            && crate::projectile::can_hit(
+                env.world, npc.x, npc.y, w, h, p.x, p.y, p.width as f32, p.height as f32,
+            )
+        {
+            npc.wants_transform = Some(159);
+        }
+    }
     // `:23356-23409` — the drift cycle (`ai[1]`/`ai[2]`).
     drift(npc, env);
     // `:23410-23413` — the client stops here.
@@ -348,6 +375,66 @@ pub fn generic_approach(npc: &mut Npc) {
     }
 }
 
+/// The VampireBat's approach (`NPC.cs:22899-22970`, W4-g8): the
+/// surface-flee gate (above `worldSurface`, daytime, no eclipse →
+/// directionY −1 + the X facing flip, `:22901-22905`), then the 7-cap
+/// X/Y approach (0.2 accel, the opposite-side 0.1 double-add, the 0.05
+/// near-zero brake — the generic arm's shape at ±7 instead of ±4/±1.5).
+fn vampire_bat_approach(npc: &mut Npc, env: &Style14Env<'_>) {
+    // `:22901-22905` — `(double)position.Y < worldSurface * 16.0 &&
+    // Main.IsItDay() && !Main.eclipse`. The port's `IsItDay` stand-in is
+    // `world.day_time` (the remix half is unported, the npc_ai
+    // convention).
+    if (npc.y as f64) < env.world.world_surface * 16.0 && env.world.day_time && !env.world.eclipse {
+        npc.direction_y = -1;
+        npc.facing *= -1;
+    }
+    // `:22906-22937` — the X approach, cap ±7.
+    if npc.facing == -1 && npc.vx > -7.0 {
+        npc.vx -= 0.2;
+        if npc.vx > 4.0 {
+            npc.vx -= 0.1;
+        } else if npc.vx > 0.0 {
+            npc.vx += 0.05;
+        }
+        if npc.vx < -7.0 {
+            npc.vx = -7.0;
+        }
+    } else if npc.facing == 1 && npc.vx < 7.0 {
+        npc.vx += 0.2;
+        if npc.vx < -4.0 {
+            npc.vx += 0.1;
+        } else if npc.vx < 0.0 {
+            npc.vx -= 0.05;
+        }
+        if npc.vx > 7.0 {
+            npc.vx = 7.0;
+        }
+    }
+    // `:22938-22969` — the Y approach, cap ±7.
+    if npc.direction_y == -1 && npc.vy > -7.0 {
+        npc.vy -= 0.2;
+        if npc.vy > 4.0 {
+            npc.vy -= 0.1;
+        } else if npc.vy > 0.0 {
+            npc.vy += 0.05;
+        }
+        if npc.vy < -7.0 {
+            npc.vy = -7.0;
+        }
+    } else if npc.direction_y == 1 && npc.vy < 7.0 {
+        npc.vy += 0.2;
+        if npc.vy < -4.0 {
+            npc.vy += 0.1;
+        } else if npc.vy < 0.0 {
+            npc.vy -= 0.05;
+        }
+        if npc.vy > 7.0 {
+            npc.vy = 7.0;
+        }
+    }
+}
+
 /// The Hellbat's second pass (`NPC.cs:23200-23263`): the same X shape as
 /// the generic arm but a 0.07 double-add / 0.03 brake, and the slower Y
 /// (0.04 / 0.03 double-add / 0.02 brake, cap ±1.5).
@@ -399,13 +486,18 @@ pub fn hellbat_approach(npc: &mut Npc) {
 }
 
 /// The drift cycle (`NPC.cs:23356-23409`): `ai[1]++` (158's second
-/// increment is its own unported branch), the >200 gate with the
+/// increment landed with W4-g8), the >200 gate with the
 /// dry-target + line-of-sight reset, the per-type accel/cap rows
 /// (48/62/66: 0.12/0.07/3/1.25; else 0.2/0.1/4/1.5), the >1000 wrap, the
 /// `ai[2]` vertical/horizontal shove and the ±300 wrap.
 fn drift(npc: &mut Npc, env: &Style14Env<'_>) {
     let net_id = npc.kind.net_id();
     npc.ai[1] += 1.0; // `:23356`.
+    // `:23357-23360` — type 158's SECOND increment (W4-g8: the
+    // VampireBat's drift counter climbs twice per tick).
+    if net_id == 158 {
+        npc.ai[1] += 1.0;
+    }
     if npc.ai[1] > 200.0 {
         // `:23361-23409`.
         let p = &env.players[npc.target as usize];
@@ -1053,5 +1145,117 @@ mod tests {
         assert!(shot.is_none(), "no line of sight, no trident");
         assert_eq!(n.ai[0], 20.0);
         assert_eq!(rng.peek(), before, "the shot set skips the reset roll");
+    }
+
+    /// W4-g8 machine round — `NPC.cs:22906-22969`: the VampireBat's 7-cap
+    /// approach (0.2 accel, NOT the generic 0.1/0.04). Underground (the
+    /// air world's surface is row 30 = 480 px, the bat at 1000 is below)
+    /// the flee gate stays shut: facing 1 → vx 0.2, directionY −1 →
+    /// vy −0.2 in ONE pass (158 is outside WATER_GROUP).
+    #[test]
+    fn w4_g8_s14_the_vampire_bat_approaches_at_the_seven_cap() {
+        let w = air();
+        let players = [cand(900.0, 900.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::VampireBat, 1000.0, 1000.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(1);
+        assert!(bat_ai(&mut n, &env(&w, &players, &wet), &mut rng).is_none());
+        // Player left + above → facing −1, directionY −1.
+        assert!(near(n.vx, -0.2), "the 0.2 X accel: {}", n.vx);
+        assert!(near(n.vy, -0.2), "the 0.2 Y accel: {}", n.vy);
+        // The cap: vx −6.9 → −7.1 → clamp −7.
+        let mut n2 = Npc::new(NpcKind::VampireBat, 1000.0, 1000.0, -1, 0.0);
+        n2.vx = -6.9;
+        n2.vy = -7.0; // at the cap, the Y arm is a no-op.
+        bat_ai(&mut n2, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n2.vx, -7.0, "the −7 X cap (:22917-22920)");
+    }
+
+    /// `NPC.cs:22901-22905` — the surface flee: above worldSurface on a
+    /// non-eclipse day, directionY flips to −1 and the X facing INVERTS
+    /// (the bat flees the player horizontally while climbing).
+    #[test]
+    fn w4_g8_s14_the_vampire_bat_flees_the_daylight_surface() {
+        let mut w = air();
+        w.world_surface = 200.0; // 3200 px — the bat at 1000 is above.
+        w.day_time = true;
+        w.eclipse = false;
+        // Player right + below → TargetClosest facing 1, directionY 1;
+        // the flee gate flips facing to −1 and directionY to −1.
+        let players = [cand(1100.0, 1100.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::VampireBat, 1000.0, 1000.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(1);
+        bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n.facing, -1, "the flee inverts the X facing (:22904)");
+        assert_eq!(n.direction_y, -1, "the flee climbs (:22903)");
+        assert!(near(n.vx, -0.2), "the approach follows the flipped facing");
+        assert!(near(n.vy, -0.2), "and the flipped directionY");
+        // An eclipse keeps the bat hunting (no flee).
+        w.eclipse = true;
+        let mut n2 = Npc::new(NpcKind::VampireBat, 1000.0, 1000.0, 1, 0.0);
+        bat_ai(&mut n2, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n2.facing, 1, "the eclipse gates the flee (:22901)");
+        assert_eq!(n2.direction_y, 1);
+    }
+
+    /// `NPC.cs:23346-23355` — the Transform(159) gate: the target's centre
+    /// within 200 px, the bat's bottom above the player's bottom, and a
+    /// clear sight line → `wants_transform = Some(159)`.
+    #[test]
+    fn w4_g8_s14_the_vampire_bat_transforms_within_200px() {
+        let w = air();
+        // Player centre (1110, 1021); bat centre (1011, 1011): dist ~100
+        // < 200; bat bottom 1022 < player bottom 1042. Clear air.
+        let players = [cand(1100.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::VampireBat, 1000.0, 1000.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(1);
+        bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n.wants_transform, Some(159), "the bat becomes the vampire (:23353)");
+        // Beyond 200 px: no transform.
+        let far = [cand(1400.0, 1000.0)];
+        let mut n2 = Npc::new(NpcKind::VampireBat, 1000.0, 1000.0, 1, 0.0);
+        bat_ai(&mut n2, &env(&w, &far, &wet), &mut rng);
+        assert_eq!(n2.wants_transform, None, "the 200px gate (:23351)");
+        // A wall blocks the sight line: no transform.
+        let ww = walled();
+        let blocked = [cand(1300.0, 979.0)];
+        let mut n3 = Npc::new(NpcKind::VampireBat, 1000.0, 1000.0, 1, 0.0);
+        bat_ai(&mut n3, &env(&ww, &blocked, &wet), &mut rng);
+        assert_eq!(n3.wants_transform, None, "the CanHit gate (:23351)");
+    }
+
+    /// `NPC.cs:23357-23360` — the VampireBat's drift counter climbs TWICE
+    /// per tick (the second `ai[1]++`).
+    #[test]
+    fn w4_g8_s14_the_vampire_bat_drift_counts_twice() {
+        let w = air();
+        let players = [cand(1100.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::VampireBat, 1000.0, 1000.0, 1, 0.0);
+        n.ai[1] = 0.0;
+        let mut rng = UnifiedRandom::new(1);
+        bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n.ai[1], 2.0, "the double increment (:23356 + :23359)");
+        // A plain bat counts once.
+        let mut bat = Npc::new(NpcKind::CaveBat, 1000.0, 1000.0, 1, 0.0);
+        bat_ai(&mut bat, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(bat.ai[1], 1.0, "the single increment for the other types");
+    }
+
+    /// `NPC.cs:23410-23413` — the client (netMode 1) never transforms:
+    /// the `:23346` gate reads `Main.netMode != 1`.
+    #[test]
+    fn w4_g8_s14_the_vampire_bat_client_never_transforms() {
+        let w = air();
+        let players = [cand(1100.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::VampireBat, 1000.0, 1000.0, 1, 0.0);
+        let mut e = env(&w, &players, &wet);
+        e.net_mode = 1;
+        let mut rng = UnifiedRandom::new(1);
+        bat_ai(&mut n, &e, &mut rng);
+        assert_eq!(n.wants_transform, None, "the client keeps the bat form");
     }
 }

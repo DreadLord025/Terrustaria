@@ -1318,6 +1318,8 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_221",
         "NPC_48",
         "NPC_156",
+        // W4-g8 machine round 3 — the Vampire 159's own sheet.
+        "NPC_159",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1903,7 +1905,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 215] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 216] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1947,6 +1949,8 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 215] = [
         34, 62, 93, 121, 137, 150, 151, 152, 158, 226,
         // W4-g8 lane 1 batch 4 — appended last (same reason).
         221, 48, 156,
+        // W4-g8 machine round 3 — the Vampire 159 (appended last).
+        159,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2751,6 +2755,8 @@ impl Lookups {
                 atlas.sheet("NPC_221").copied(),
                 atlas.sheet("NPC_48").copied(),
                 atlas.sheet("NPC_156").copied(),
+                // W4-g8 machine round 3 — the Vampire 159's strip.
+                atlas.sheet("NPC_159").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

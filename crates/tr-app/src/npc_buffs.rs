@@ -519,6 +519,9 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // `[31]`, 156 `[24, 31, 153, 323]`.
         NpcKind::Harpy | NpcKind::Squid => &[31],
         NpcKind::RedDevil => &[24, 31, 153, 323],
+        // W4-g8 machine round 3 — 159 has a null row (`NPCID.cs:7057`
+        // `{ 159, null }`, the else-branch: no immunity).
+        NpcKind::Vampire => &[],
     }
 }
 

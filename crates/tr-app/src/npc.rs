@@ -1242,8 +1242,9 @@ pub enum NpcKind {
     GiantFlyingFox,
     /// `NPCID.VampireBat` (158, `NPCID.cs:10993`) — the eclipse bat
     /// (`NPC.cs:15466-15479`): 22x22, aiStyle 14, dmg 60, def 32, 750 HP,
-    /// kb 0.75, NPCHit1/NPCDeath6, value 5000, npcSlots 2. The
-    /// Transform(159) + the surface-flee approach are cited machine skips.
+    /// kb 0.75, NPCHit1/NPCDeath6, value 5000, npcSlots 2. WIRED: the
+    /// axis' 14 arm rides `bat_ai` — the surface flee + Transform(159)
+    /// landed with the W4-g8 machine round (the Vampire census row).
     VampireBat,
     /// `NPCID.FlyingSnake` (226, `NPCID.cs:11129`) — the temple snake
     /// (`NPC.cs:11911-11924`): 34x50, aiStyle 14, dmg 85, def 28, 260 HP,
@@ -1271,6 +1272,18 @@ pub enum NpcKind {
     /// WIRED: the axis' 14 arm rides `bat_ai` — the trident shot landed
     /// with the W4-g8 machine round.
     RedDevil,
+    // ---- W4-g8 machine round 3: the VampireBat's Transform(159) target
+    // — the Vampire 159 census row (unrowed until the machine round).
+    // Protocol id 388 (the vanilla 159 slot is the BoundMechanic's).
+    /// `NPCID.Vampire` (159, `NPCID.cs:10995`) — the eclipse vampire, the
+    /// VampireBat 158's transform form (`NPC.cs:15480-15493`): 18x40,
+    /// aiStyle 3, dmg 80, def 24, 750 HP, kb 0.4, NPCHit1/NPCDeath6,
+    /// value 5000, npcSlots 2. The `AI_003_Fighters` type-159 branches:
+    /// the cap-6 spin ladder (`npc_ai3_speeds.rs:162-171`, already
+    /// ported), the 500-roll moan (`ambient_sound::fighter_ambient_moans`,
+    /// already ported) and the >300px Transform(158) return
+    /// (`NPC.cs:58843-58852`, the machine round).
+    Vampire,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3815,6 +3828,9 @@ impl Npc {
             NpcKind::Squid => 1.0,
             NpcKind::Harpy => 0.6,
             NpcKind::RedDevil => 0.5,
+            // W4-g8 machine round 3 — the Vampire 159's 0.4
+            // (`NPC.cs:15491`).
+            NpcKind::Vampire => 0.4,
             _ => 0.4,
         }
     }
@@ -4244,6 +4260,9 @@ impl Npc {
             NpcKind::Squid => 2,
             NpcKind::Harpy => 8,
             NpcKind::RedDevil => 40,
+            // W4-g8 machine round 3 — the Vampire 159's 24
+            // (`NPC.cs:15487`).
+            NpcKind::Vampire => 24,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4666,6 +4685,9 @@ impl Npc {
             NpcKind::Squid => 100.0,
             NpcKind::Harpy => 300.0,
             NpcKind::RedDevil => 1200.0,
+            // W4-g8 machine round 3 — the Vampire 159's 5000
+            // (`NPC.cs:15492`).
+            NpcKind::Vampire => 5000.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -5280,10 +5302,11 @@ impl Npc {
             // 226 (`SetDefaults` rows cited at the enum). The faithful
             // `npc_ai_style14::bat_ai` claims the axis (the four landed
             // bats' machine, the S1-D-3 reconcile): the tile bounces, the
-            // generic approach, the water-group second pass, the drift, the
-            // Demon/VoodooDemon sickle shot. The 158/226 type-specific
-            // branches are cited machine skips (they land with the machine
-            // round). noGravity — the flyer integration tail.
+            // approach arms, the water-group second pass, the drift, the
+            // Demon/VoodooDemon sickle shot. The 158 surface-flee +
+            // Transform(159) landed with W4-g8 (the Vampire census row);
+            // the 226 type-specific branches are cited machine skips.
+            // noGravity — the flyer integration tail.
             14 => {
                 self.update_cave_bat(world, player, rng);
             }
@@ -7211,6 +7234,13 @@ impl Npc {
             }
             NpcKind::WallCreeper | NpcKind::Nymph => {
                 self.update_skeleton(world, player, dt)
+            }
+            // W4-g8 machine round 3 — the Vampire 159 rides the aiStyle-3
+            // fighter ladder (the cap-6 spin group, `npc_ai3_speeds.rs`'s
+            // 159 row) + the >300px Transform(158) return
+            // (`NPC.cs:58843-58852`, queued for the sim's transform drain).
+            NpcKind::Vampire => {
+                self.update_vampire(world, player, dt);
             }
             // W4-d24 axis census: the fish trio (aiStyle 16) rides the
             // style axis above (`16 => update_swimmer`) — this arm is
@@ -10493,6 +10523,19 @@ impl Npc {
             NpcKind::Nymph => {
                 self.humanoid_town_frame();
             }
+            // W4-g8 machine round 3 — `case 159` (`NPC.cs:68569`, the
+            // humanoid-group arm): the Vampire's walk — the shared town
+            // body over the 15-frame strip. The airborne branch
+            // (`NPC.cs:69642-69650`) zeroes the counter and pins row 0
+            // (159 is in the `:69647` type list, overriding the row-1
+            // air default).
+            NpcKind::Vampire => {
+                self.humanoid_town_frame();
+                if self.vy != 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                }
+            }
             // W4-g8 lane 1 batch 3 — the d22-d33 kinds' `FindFrame` cases.
             // `case 34` (`NPC.cs:77055-77066`): the CursedSkull's spin —
             // the 4-tick counter over the 3-row strip.
@@ -11726,6 +11769,29 @@ impl Npc {
         if self.frame_counter >= 8.0 {
             self.frame_counter = 0.0;
             self.frame = (self.frame + 1) % 15;
+        }
+    }
+
+    /// W4-g8 machine round 3 — the Vampire 159 (the VampireBat 158's
+    /// Transform target): the aiStyle-3 fighter core (`update_skeleton`'s
+    /// walker — the cap-6 spin ladder, `NPC.cs:57403-57440`, already in
+    /// `npc_ai3_speeds.rs`) plus `AI_003_Fighters`' type-159 tail
+    /// (`NPC.cs:58843-58852`): when the target's centre is more than
+    /// 300 px from the NPC's centre, `Transform(158)` back into the bat.
+    /// The transform queues on `wants_transform` (the vanilla type 158);
+    /// the sim's drain applies `transform_to_kind` after the tick. The
+    /// 500-roll moan (`NPC.cs:57352-57355`) rides the sim's
+    /// `fighter_walker_kind` pass (`ambient_sound::fighter_ambient_moans`,
+    /// already ported) — not here.
+    fn update_vampire(&mut self, world: &World, player: &mut Player, dt: f32) {
+        self.update_skeleton(world, player, dt);
+        // `:58843-58851` — the host-path (>300px) Transform(158) return.
+        let (cx, cy) = self.center();
+        let (pcx, pcy) = player.center();
+        let dx = pcx - cx;
+        let dy = pcy - cy;
+        if (dx * dx + dy * dy).sqrt() > 300.0 {
+            self.wants_transform = Some(158);
         }
     }
 
@@ -20241,6 +20307,8 @@ impl Npc {
             NpcKind::Squid => 385,
             NpcKind::Harpy => 386,
             NpcKind::RedDevil => 387,
+            // W4-g8 machine round 3 — the Vampire 159 census row.
+            NpcKind::Vampire => 388,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -25657,6 +25725,8 @@ mod tests {
         NpcKind::Squid,
         NpcKind::Harpy,
         NpcKind::RedDevil,
+        // W4-g8 machine round 3 — the Vampire 159 census row.
+        NpcKind::Vampire,
     ];
 
     #[test]
@@ -36826,5 +36896,84 @@ mod w4_g8_kind_wire_1_tests {
         assert_eq!(trident.ai_style, 27);
         assert_eq!(trident.penetrate, -1);
         assert_eq!((trident.w, trident.h), (16.0, 16.0));
+    }
+
+    /// W4-g8 machine round 3 — the Vampire 159 census row's `SetDefaults`
+    /// pin (`NPC.cs:15480-15493`): 18x40, aiStyle 3, dmg 80, def 24,
+    /// 750 HP, kb 0.4, value 5000; the protocol id 388 round-trips and the
+    /// cap-6 walk row + the 15-frame humanoid strip resolve.
+    #[test]
+    fn w4_g8_machine_the_vampire_defaults_match_the_csharp_row() {
+        let kind = NpcKind::Vampire;
+        let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        assert_eq!(kind.cs_id(), 159, "the vanilla type");
+        assert_eq!(kind.ai_style(), 3, "the AI_003 fighter");
+        assert_eq!(kind.size(), (18.0, 40.0));
+        assert_eq!(kind.contact_damage(), 80);
+        assert_eq!(shell.defense(), 24);
+        assert_eq!(kind.max_hp(), 750);
+        assert_eq!(shell.knock_back_resist(), 0.4);
+        assert_eq!(shell.value(), 5000.0);
+        assert_eq!(kind.to_u16(), 388, "the port-local protocol id");
+        assert_eq!(NpcKind::from_u16(388), Some(kind), "the round-trip");
+        assert_eq!(kind.ai3_walk_speed(), Some(6.0), "the cap-6 spin group");
+        assert_eq!(kind.humanoid_frame_count(), 15, "the 15-frame strip");
+        assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(kind.death_sound(), Some("NPC_Killed_6"));
+        // The bestiary entry resolves (the Vampire's own credit).
+        let entry = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+        assert_eq!(entry.net_id, 159);
+        assert_eq!(entry.credit_id, "Vampire");
+    }
+
+    /// W4-g8 machine round 3 — the VampireBat's Transform(159) wiring pin
+    /// (WRITTEN NOT RUN): `update_cave_bat` queues `wants_transform =
+    /// Some(159)` when the player is within 200 px with a clear sight line
+    /// (`NPC.cs:23346-23355`), and `transform_to_kind` carries the bat into
+    /// the Vampire (the bottom-anchored reposition + the life share).
+    #[test]
+    fn w4_g8_machine_the_vampire_bat_transforms_into_the_vampire() {
+        let w = World::new("t".into(), 200, 120);
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 1100.0;
+        player.y = 1000.0;
+        player.dead = false;
+        let mut bat = Npc::new(NpcKind::VampireBat, 1000.0, 1000.0, 1, 0.0);
+        bat.hp = 375; // half life — the share keeps it.
+        let mut rng = UnifiedRandom::new(1);
+        bat.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(bat.wants_transform, Some(159), "the transform queued (:23353)");
+        // The sim's drain: transform_to_kind swaps the kind + rescales.
+        let bottom = bat.y + bat.size().1;
+        bat.transform_to_kind(&w, &player, NpcKind::Vampire);
+        assert_eq!(bat.kind, NpcKind::Vampire);
+        assert_eq!(bat.max_hp, 750);
+        assert_eq!(bat.hp, 375, "375 * 750 / 750 — the integer life share");
+        assert_eq!(bat.y + bat.size().1, bottom, "the bottom edge held (:81092-81100)");
+        assert_eq!(bat.wants_transform, None, "the request consumed");
+        assert_eq!(bat.ai, [0.0; 4], "the ai zero loop");
+    }
+
+    /// W4-g8 machine round 3 — the Vampire's >300px Transform(158) return
+    /// (`NPC.cs:58843-58852`): `update_vampire` queues the bat form when
+    /// the target's centre is beyond 300 px; within 300 px it keeps walking.
+    #[test]
+    fn w4_g8_machine_the_vampire_returns_to_the_bat_beyond_300px() {
+        let w = World::new("t".into(), 200, 120);
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 1500.0; // ~500 px from the vampire — beyond 300.
+        player.y = 1000.0;
+        player.dead = false;
+        let mut vamp = Npc::new(NpcKind::Vampire, 1000.0, 1000.0, 1, 0.0);
+        vamp.update_vampire(&w, &mut player, 1.0 / 60.0);
+        assert_eq!(vamp.wants_transform, Some(158), "the return queued (:58850)");
+        // Within 300 px: no return.
+        let mut near_player = crate::player::Player::spawn(&w);
+        near_player.x = 1100.0;
+        near_player.y = 1000.0;
+        near_player.dead = false;
+        let mut vamp2 = Npc::new(NpcKind::Vampire, 1000.0, 1000.0, 1, 0.0);
+        vamp2.update_vampire(&w, &mut near_player, 1.0 / 60.0);
+        assert_eq!(vamp2.wants_transform, None, "the 300px gate (:58848)");
     }
 }

@@ -1719,6 +1719,12 @@ fn portrait_data(
             let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 5.0).unwrap_or(100.0);
             (sheet_i, h, 104.0, h, white)
         }
+        // W4-g8 machine round 3 — the Vampire 159's portrait (the
+        // 15-frame humanoid strip, `Main.npcFrameCount[159]` = 15).
+        (NpcKind::Vampire, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 15.0).unwrap_or(56.0);
+            (sheet_i, h, 38.0, h, white)
+        }
     }
 }
 

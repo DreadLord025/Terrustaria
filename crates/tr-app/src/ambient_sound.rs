@@ -638,6 +638,12 @@ pub fn fighter_walker_kind(kind: crate::npc::NpcKind) -> bool {
             | GoblinPeon
             | PirateDeckhand
             | PirateCaptainsMate
+            // W4-g8 machine round 3 — the Vampire 159 rides the plain
+            // aiStyle-3 walker (`update_vampire` → `update_skeleton`); its
+            // `ai[3]` is free for the idle counter and its moan is the
+            // type-159 `Next(500)` arm (`NPC.cs:57352-57355`, case 29
+            // style 7 — `fighter_ambient_moans` below).
+            | Vampire
             | Scarecrow1
             | Scarecrow2
             | Scarecrow3

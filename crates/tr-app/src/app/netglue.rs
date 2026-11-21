@@ -3633,6 +3633,11 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-g8 machine round 3 — the Vampire 159 (the aiStyle-3 fighter)
+        // plants its feet on the column surface (the cave-walker ctor).
+        crate::npc::NpcKind::Vampire => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
     })
 }
 

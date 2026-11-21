@@ -628,6 +628,10 @@ impl NpcKind {
             NpcKind::Squid => 385,
             NpcKind::Harpy => 386,
             NpcKind::RedDevil => 387,
+            // W4-g8 machine round 3 — the Vampire 159 census row (the
+            // VampireBat's Transform target; the vanilla 159 slot is the
+            // BoundMechanic's protocol id, so the next-free 388).
+            NpcKind::Vampire => 388,
         }
     }
 
@@ -997,6 +1001,8 @@ impl NpcKind {
             385 => NpcKind::Squid,
             386 => NpcKind::Harpy,
             387 => NpcKind::RedDevil,
+            // W4-g8 machine round 3 — the Vampire 159 census row.
+            388 => NpcKind::Vampire,
             _ => return None,
         })
     }
@@ -1914,6 +1920,9 @@ impl NpcKind {
             // (`NPC.cs:11849`/`:9368`), 156 NPCHit21 (`:10983`).
             NpcKind::Squid | NpcKind::Harpy => "NPC_Hit_1",
             NpcKind::RedDevil => "NPC_Hit_21",
+            // W4-g8 machine round 3 — the Vampire 159's NPCHit1
+            // (`NPC.cs:15489`).
+            NpcKind::Vampire => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2257,6 +2266,9 @@ impl NpcKind {
             // NPCDeath1 (`NPC.cs:11850`/`:9370`), 156 NPCDeath24 (`:10985`).
             NpcKind::Squid | NpcKind::Harpy => "NPC_Killed_1",
             NpcKind::RedDevil => "NPC_Killed_24",
+            // W4-g8 machine round 3 — the Vampire 159's NPCDeath6
+            // (`NPC.cs:15490`).
+            NpcKind::Vampire => "NPC_Killed_6",
             _ => return None,
         })
     }
@@ -2645,6 +2657,9 @@ impl NpcKind {
             // (`NPC.cs:11845`), 48/156 14 (`:9364`/`:10979`).
             NpcKind::Squid => 18,
             NpcKind::Harpy | NpcKind::RedDevil => 14,
+            // W4-g8 machine round 3 — the Vampire 159's aiStyle 3
+            // (`NPC.cs:15485`, the AI_003 fighter).
+            NpcKind::Vampire => 3,
         }
     }
 
@@ -2756,6 +2771,10 @@ impl NpcKind {
             // W4-g8 lane 1 batch 2 — the Nymph 196 + the WallCreeper 164
             // ride the cap-2 group (`NPC.cs:57554-57578`, ±2f, accel 0.07).
             NpcKind::Nymph | NpcKind::WallCreeper => 2.0,
+            // W4-g8 machine round 3 — the Vampire 159 rides the cap-6
+            // spin arm (`NPC.cs:57403-57440`, ±6f, accel 0.07, the 0.95
+            // turn brake — `npc_ai3_speeds.rs`'s 159 row).
+            NpcKind::Vampire => 6.0,
             _ => return None,
         })
     }
@@ -3225,6 +3244,9 @@ impl NpcKind {
             NpcKind::Squid => (26.0, 26.0),
             NpcKind::Harpy => (24.0, 34.0),
             NpcKind::RedDevil => (28.0, 48.0),
+            // W4-g8 machine round 3 — the Vampire 159's 18x40 box
+            // (`NPC.cs:15483-15484`).
+            NpcKind::Vampire => (18.0, 40.0),
         }
     }
 
@@ -3373,6 +3395,8 @@ impl NpcKind {
             NpcKind::Squid => 221,
             NpcKind::Harpy => 48,
             NpcKind::RedDevil => 156,
+            // W4-g8 machine round 3 — the Vampire 159 (`NPCID.cs:10995`).
+            NpcKind::Vampire => 159,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3429,6 +3453,10 @@ impl NpcKind {
             // case list (`NPC.cs:68576`) on its 14-frame strip
             // (`Main.npcFrameCount[196]` = 14).
             NpcKind::Nymph => 14,
+            // W4-g8 machine round 3 — the Vampire 159 rides the
+            // humanoid-group case list (`NPC.cs:68569`) on its 15-frame
+            // strip (`Main.npcFrameCount[159]` = 15, `Main.cs:67100`).
+            NpcKind::Vampire => 15,
             _ => 1,
         }
     }
@@ -3969,6 +3997,9 @@ impl NpcKind {
             NpcKind::Squid => 30,
             NpcKind::Harpy => 100,
             NpcKind::RedDevil => 600,
+            // W4-g8 machine round 3 — the Vampire 159's 750
+            // (`NPC.cs:15488`).
+            NpcKind::Vampire => 750,
         }
     }
 
@@ -4383,6 +4414,9 @@ impl NpcKind {
             NpcKind::Squid => 20,
             NpcKind::Harpy => 25,
             NpcKind::RedDevil => 50,
+            // W4-g8 machine round 3 — the Vampire 159's 80
+            // (`NPC.cs:15486`).
+            NpcKind::Vampire => 80,
         }
     }
 }

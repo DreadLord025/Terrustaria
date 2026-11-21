@@ -6190,10 +6190,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         app.next_npc_uid = next;
         app.npcs.extend(new_bubbles);
     }
-    // The aiStyle-75 carrier-gone Transform requests (`NPC.cs:36056-36063`:
-    // 390 → 382 RayGunner, 416 → 518 SolarSpearman): `NPC.Transform`
-    // (`:81084-81114`) in place — the bottom-anchored reposition, the
-    // SetDefaults swap, TargetClosest and the integer life rescale.
+    // The Transform requests drained in place — `NPC.Transform`
+    // (`:81084-81114`): the bottom-anchored reposition, the SetDefaults
+    // swap, TargetClosest and the integer life rescale. The aiStyle-75
+    // carrier-gone fallbacks (`NPC.cs:36056-36063`: 390 → 382 RayGunner,
+    // 416 → 518 SolarSpearman) and the W4-g8 VampireBat 158 ↔ Vampire 159
+    // eclipse pair (`NPC.cs:23353` / `:58850`).
     {
         let player_ref = app.player.as_ref();
         let world_ref = &app.world;
@@ -6204,6 +6206,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     let new_kind = match ty {
                         382 => NpcKind::RayGunner,
                         518 => NpcKind::SolarSpearman,
+                        // W4-g8 machine round 3 — the VampireBat 158 ↔
+                        // Vampire 159 eclipse pair (`NPC.cs:23353` /
+                        // `:58850`): the bat becomes the vampire within
+                        // 200 px, the vampire returns to the bat beyond
+                        // 300 px.
+                        159 => NpcKind::Vampire,
+                        158 => NpcKind::VampireBat,
                         _ => continue,
                     };
                     npcs[i].transform_to_kind(world_ref, player, new_kind);

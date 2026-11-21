@@ -519,6 +519,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(KIND_WIRE_2_SHEETS)
             .chain(KIND_WIRE_3_SHEETS)
             .chain(KIND_WIRE_4_SHEETS)
+            .chain(VAMPIRE_SHEET)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1308,6 +1309,11 @@ pub(crate) const KIND_WIRE_4_SHEETS: &[u32] = &[
     48,  // the Harpy
     156, // the Red Devil
 ];
+
+/// W4-g8 machine round 3 — the Vampire 159's own sheet (the VampireBat
+/// 158's Transform target), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `KIND_WIRE_4_SHEETS`.
+pub(crate) const VAMPIRE_SHEET: &[u32] = &[159];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3292,6 +3298,12 @@ pub(crate) fn draw_npcs(
             // W4-g8 lane 1 batch 4 — the last three kinds draw their OWN
             // sheets (`KIND_WIRE_4_SHEETS`) at the generic centred anchor.
             NpcKind::Squid | NpcKind::Harpy | NpcKind::RedDevil => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-g8 machine round 3 — the Vampire draws its OWN sheet
+            // (`VAMPIRE_SHEET`) at the generic centred anchor.
+            NpcKind::Vampire => {
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }

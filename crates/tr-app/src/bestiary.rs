@@ -2457,6 +2457,17 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Red Devil",
     },
+    // W4-g8 machine round 3 — the VampireBat's Transform(159) target
+    // (`BestiaryDatabaseNPCsPopulator.cs:1465` gives 159 its own Eclipse
+    // info row; the legacy name "Vampire" maps to 158, `NPCID.cs:12301`).
+    BestiaryEntryDef {
+        credit_id: "Vampire",
+        net_id: 159,
+        kind: NpcKind::Vampire,
+        variant: None,
+        quick_unlock: false,
+        name: "Vampire",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
