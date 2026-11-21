@@ -1510,7 +1510,18 @@ pub fn apply_player_template(
 /// `Images/Item_*` sheets), so the assignments land here as the pure census
 /// and the cue answers 12 for every button. `(head, body, leg)` per gender;
 /// the Formal/Swimming pairs differ per gender, the other five share one
-/// assignment (`_femaleArmor = (_maleArmor = ...)`).
+/// assignment (`_femaleArmor = (_maleArmor = ...)`). The Swimming female
+/// also carries `Accessory1Item = 208` (`:611`) — see
+/// [`armor_assignment_accessory`].
+///
+/// MENU-FINAL census correction: `button` here is the HANDLER census order
+/// (0 None, 1 Gold, 2 Silver, 3 Funeral, 4 Hallowed, 5 Formal, 6 Swimming),
+/// NOT the layout order. Only FIVE handlers are subscribed in 1.4.5.8
+/// (`:355/:362/:369/:376/:383`): the layout's `armor_buttons`
+/// `[HAlign 0/.5/.25/.75/1]` map to `[None, Hallowed, Silver, Formal,
+/// Swimming]` = census ids `[0, 4, 2, 5, 6]`; `EquipArmorGold` (`:536`) and
+/// `EquipArmorFuneral` (`:558`) are declared but never subscribed — dead
+/// handlers, kept in the census for completeness.
 #[allow(dead_code)] // census-only - the armor preview state is unported
 pub fn armor_assignment(button: usize, male: bool) -> (i32, i32, i32) {
     match button {
@@ -1526,6 +1537,19 @@ pub fn armor_assignment(button: usize, male: bool) -> (i32, i32, i32) {
         _ => (0, 0, 0),
     }
 }
+
+/// The Swimming female's `Accessory1Item = 208` (`:611`) — the only
+/// accessory any `EquipArmor*` assigns (the flipper). Every other
+/// handler/gender leaves the accessory slots at 0.
+#[allow(dead_code)] // census-only - the armor preview state is unported
+pub fn armor_assignment_accessory(button: usize, male: bool) -> i32 {
+    if button == 6 && !male { 208 } else { 0 }
+}
+
+/// MENU-FINAL — the five LIVE armor buttons' handler ids, in the layout's
+/// `armor_buttons` order (`[HAlign 0/.5/.25/.75/1]`, `:348-384`): None,
+/// Hallowed, Silver, Formal, Swimming. Gold/Funeral are dead handlers.
+pub const ARMOR_LAYOUT_HANDLERS: [usize; 5] = [0, 4, 2, 5, 6];
 
 /// The armor row's cue — every `EquipArmor*` plays 12 (`:532-599`); the
 /// census answers it for all seven buttons (the state half is
@@ -3017,6 +3041,17 @@ mod tests {
         assert_eq!(armor_assignment(5, false), (3478, 3479, 0));
         assert_eq!(armor_assignment(6, true), (237, 3785, 5649));
         assert_eq!(armor_assignment(6, false), (237, 5646, 5647));
+        // MENU-FINAL census correction: only five handlers are subscribed
+        // (`:355/:362/:369/:376/:383`); the layout order maps to census ids
+        // [None, Hallowed, Silver, Formal, Swimming]. Gold (1) / Funeral (3)
+        // are dead handlers. The Swimming female alone carries the flipper.
+        assert_eq!(ARMOR_LAYOUT_HANDLERS, [0, 4, 2, 5, 6]);
+        for b in 0..7 {
+            for male in [true, false] {
+                let want = if b == 6 && !male { 208 } else { 0 };
+                assert_eq!(armor_assignment_accessory(b, male), want, "{b}/{male}");
+            }
+        }
         assert_eq!(voice_pitch_click_cue(), 12);
         assert_eq!(back_button_usage_cue(0), 11, "CharInfo falls to GoBack");
         for c in 1..=9 {

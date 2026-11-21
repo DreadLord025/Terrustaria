@@ -18,8 +18,8 @@ Every `SoundEngine.PlaySound` site in the two UI files is now accounted for:
 
 | C# site | Handler | Cue | Port |
 | --- | --- | --- | --- |
-| `:532/:538/:549/:560/:571/:582/:599` | the seven `EquipArmor*` | 12 | CENSUS-ONLY — `char_creation::armor_assignment` + `armor_click_cue` (the armor preview state is unported; the Formal/Swimming gender split kept) |
-| `:1042` | `Click_VoicePitch` | 12 | CENSUS-ONLY — `voice_pitch_click_cue` (voice state unported) |
+| `:532/:538/:549/:560/:571/:582/:599` | the seven `EquipArmor*` | 12 | CENSUS-ONLY — `char_creation::armor_assignment` + `armor_click_cue` (the armor preview state is unported; the Formal/Swimming gender split kept). MENU-FINAL correction: only FIVE are subscribed (`:355/:362/:369/:376/:383`) — layout order `[None, Hallowed, Silver, Formal, Swimming]` = `ARMOR_LAYOUT_HANDLERS [0,4,2,5,6]`; Gold/Funeral are dead handlers; Swimming female carries `Accessory1Item 208` (`:611`, `armor_assignment_accessory`) |
+| `:1042` | `Click_VoicePitch` | 12 | CENSUS-ONLY here — SUPERSEDED: the voice state landed on `task/W4-e10-player-sounds-wave` (`b3a82c9d`), whose flow.rs `Click::VoicePitch` arm already plays `Menu_Tick` at the C# site; `voice_pitch_click_cue` stays as this lane's census row |
 | `:1212` | `GoBack` | 11 | WIRED — `click_cue(Click::Back)`, played before the dirty-check/mode-40 park |
 | `:1226` | `FadedMouseOver` (Back/Create) | 12 | WIRED — `hover_element` ids 10/11 through `front_hit` + the loop's Bug-17 edge |
 | `:1239/:1252/:1261/:1270` | `Click_ColorPicker`/`ClothStyles`/`HairStyles`/`CharInfo` | 12 | WIRED — `click_cue(Click::Category(_))` |
@@ -146,9 +146,38 @@ through the existing Bug-17 edge (`app/loop.rs`) fed by `App::front_hit`:
 `app/clicks.rs`: `doc_sweep_cancel_connect_drops_the_role_and_returns_main`,
 `doc_sweep_load_backup_probe_moves_and_plays`.
 
+## MENU-FINAL — the armor handlers' activation contract (co-lane read)
+
+Read `origin/task/W4-d85-ui-screens-2` (`aeadb43a`) and local
+`task/W4-e10-player-sounds-wave` (`b3a82c9d`, unpushed): d85 draws the
+armor row (`Layout::armor_buttons`, the five rects) but keeps NO equip
+state — the draft has no `miscEquips`; e10 landed the VOICE half
+(`draft.voice_variant/voice_pitch_offset`, `Click::VoicePitch` plays 12
+in its flow.rs arm, the preview seam `play_voice_preview`) and its
+`Click::ClothStyle` arm documents "the armor guard is out of scope (no
+armor preview)". **Equip state has not landed on any lane** — the seven
+handlers stay census-only. The contract for whoever ports the preview:
+
+1. Hit-test the five live rects in `Layout::armor_buttons` order; map
+   through `ARMOR_LAYOUT_HANDLERS` (`[0,4,2,5,6]`) — never index the
+   census by layout position directly (Gold/Funeral are dead).
+2. Play `armor_click_cue(handler)` = 12 BEFORE the state write (the C#
+   plays first in every handler).
+3. Write BOTH genders from `armor_assignment(handler, male)` plus
+   `armor_assignment_accessory` — the five shared handlers assign
+   `_femaleArmor = _maleArmor`; Formal/Swimming split; Swimming female
+   adds accessory 208.
+4. `Click_CharClothStyle`'s guard (`:1279-1283`): if the male assignment
+   is non-zero, re-enter through `EquipArmorNone` (its OWN 12, `:532`)
+   and RETURN — the variant does NOT land and the handler's `:1288` 12
+   does NOT play (one cue total, not two).
+5. `Click_RandomizePlayer`'s tail resets the armor (`:1653-1656`, the
+   e10 `randomize_player_voice_tail` doc comment) — wire the reset there.
+
 ## Deviations recorded
 
-- The armor/voice/gamepad 888 sites are census-only helpers (state unported).
+- The armor/gamepad 888 sites are census-only helpers (state unported);
+  the voice-pitch census row is superseded by e10's live wiring.
 - The 200/201 entry runs after ONE load attempt (the C# retries twice).
 - The seed-icon click degrades to the plain seed keyboard (Advanced tab
   unported) but keeps the button's own 12.
