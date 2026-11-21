@@ -229,6 +229,7 @@
 //! | 1109-1114 | `:88016-88021` | the 633 BestiaryGirl death (6 gores, altTexture/shimmer head variants) |
 //! | 1115-1124 | `:88039-88097` | the 368 TravellingMerchant + 227 Painter death (5 gores each, shimmer) |
 //! | 1125-1129 | `:88113-88117` | the 228 WitchDoctor death (5 gores, shimmer) |
+//! | 1130-1139 | `:88146-88174` | the 229 Pirate (shimmer dust-only branch) + 142 SantaClaus death (5 gores each) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -6544,6 +6545,90 @@ fn witch_doctor_death(
     gore.new_gore(rng, world, low, vel, if shimmer { 1371 } else { 327 }, 1.0); // :88117
 }
 
+/// The 229 Pirate death (`NPC.cs:88129-88151`, sites 1130-1134): the
+/// shimmer variant spawns ONLY a 50-dust type-180 burst (velocity ×2,
+/// noGravity, scale 1.4) and returns — NO gores. The normal path: the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// head 328 gated on `altTexture == 0` (the stand-in), then 329/329 at +20
+/// and 330/330 at +34. Scale defaults to 1.
+fn pirate_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    let shimmer = npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(229);
+    // `:88129-88138` — the shimmer dust-only branch.
+    if shimmer {
+        for _ in 0..50 {
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 180, npc.vx, npc.vy, 0,
+                Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.velocity *= 2.0;
+            d.no_gravity = true;
+            d.scale = 1.4;
+        }
+        return;
+    }
+    // `:88140-88143` — the normal 50-dust type-5 burst.
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    // `:88144-88146` — the head gated on altTexture == 0 (the stand-in).
+    gore.new_gore(rng, world, pos, vel, 328, 1.0);
+    gore.new_gore(rng, world, mid, vel, 329, 1.0); // :88148
+    gore.new_gore(rng, world, mid, vel, 329, 1.0); // :88149
+    gore.new_gore(rng, world, low, vel, 330, 1.0); // :88150
+    gore.new_gore(rng, world, low, vel, 330, 1.0); // :88151
+}
+
+/// The 142 SantaClaus death (`NPC.cs:88163-88174`, sites 1135-1139): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 5-gore ladder with shimmer variants — the head 157 (1338 shimmer) gated
+/// on `altTexture == 0` (the stand-in), then 158/158 (1340) at +20 and
+/// 159/159 (1341) at +34. Scale defaults to 1.
+fn santa_claus_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer = npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(142);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    // `:88167-88169` — the head gated on altTexture == 0 (the stand-in).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1338 } else { 157 }, 1.0);
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1340 } else { 158 }, 1.0);
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1340 } else { 158 }, 1.0);
+    gore.new_gore(rng, world, low, vel, if shimmer { 1341 } else { 159 }, 1.0);
+    gore.new_gore(rng, world, low, vel, if shimmer { 1341 } else { 159 }, 1.0);
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -7342,6 +7427,14 @@ pub fn hit_effect_c(
     // `:88099-88118` — the 228 WitchDoctor arm (sites 1125-1129).
     if npc_type == 228 && npc.hp <= 0 {
         witch_doctor_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88119-88152` — the 229 Pirate arm (sites 1130-1134).
+    if npc_type == 229 && npc.hp <= 0 {
+        pirate_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88153-88175` — the 142 SantaClaus arm (sites 1135-1139).
+    if npc_type == 142 && npc.hp <= 0 {
+        santa_claus_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -11568,6 +11661,53 @@ mod tests {
         witch_doctor_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
         let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
         assert_eq!(types2, vec![1369, 1370, 1372, 1371, 1371]);
+    }
+
+    /// `NPC.cs:88146-88151` — the Pirate death: the normal path spawns
+    /// 328/329/329/330/330; the shimmer variant spawns NO gores (dust only).
+    #[test]
+    fn w4_f10_the_pirate_death_shimmer_is_dust_only() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.variation_index = 0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1123);
+        pirate_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![328, 329, 329, 330, 330]);
+        // The shimmer variant: no gores.
+        let mut n2 = boss(100.0, 100.0, 40.0, 56.0);
+        n2.variation_index = 1;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(1123);
+        pirate_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        assert_eq!(gore2.slots().iter().filter(|g| g.active).count(), 0);
+        assert!(dust2.slots().iter().filter(|d| d.active).count() > 0);
+    }
+
+    /// `NPC.cs:88169-88174` — the SantaClaus death: the 5-gore ladder
+    /// 157/158/159 (normal) or 1338/1340/1341 (shimmer).
+    #[test]
+    fn w4_f10_the_santa_claus_death_uses_the_shimmer_variants() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.variation_index = 0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1129);
+        santa_claus_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![157, 158, 158, 159, 159]);
+        let mut n2 = boss(100.0, 100.0, 40.0, 56.0);
+        n2.variation_index = 1;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(1129);
+        santa_claus_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![1338, 1340, 1340, 1341, 1341]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
