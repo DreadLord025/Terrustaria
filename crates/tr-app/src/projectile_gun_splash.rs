@@ -16,7 +16,7 @@
 //! (`projectile_death_dust.rs:2786-2794`, fn `:4834-4885`, witness
 //! `:6616-6634`). **KEEP-ONE = THIS MODULE (d6 first-claim + the
 //! faithful velocity base)** — the exact g65 drop-hunks are published in
-//! `docs/research/247-projectile-ai-51-60-band-bible.md` §4 for the
+//! `docs/research/330-projectile-ai-51-60-band-bible.md` §4 for the
 //! g65 lane/merger (this lane cannot touch other branches). The g65
 //! copy reads `DeathSnapshot::of`'s `old_vel: p.vel` STAND-IN (its own
 //! doc defers "the true last-sub-step velocity"), so its burst base is

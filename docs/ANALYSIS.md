@@ -39668,14 +39668,15 @@ refuse AddBuff, the unlisted accept, the 422/550 gaps stay false, the
 zombie takes 353/100, the immune ForceBubble refuses but still kills
 the blob, the 1042 has no player loop). WRITTEN NOT RUN (code-only).
 
-## W4-d6 RETIRE — the band-51-60 seal (research/247)
+## W4-d6 RETIRE — the band-51-60 seal (research/330, chain 247→330)
 
 The retire round closes the band: **10/10 styles armed, 16/16 kinds
 rowed** (+ the 344 aiStyle-1 spawn rider), boundaries closed both ends
 (the 50 tail `Projectile.cs:28401` / the 61 head `:29310`). The full
 census table, the spawn-source ledger and the witness register live in
-`docs/research/247-projectile-ai-51-60-band-bible.md` (the registry-150
-free number: the all-tips scan's max claimed bare key is 246). Four
+`docs/research/330-projectile-ai-51-60-band-bible.md` (registry-150 §9
+UNIFIED FINAL assignment, §9.2 row 330 — chain 247→330; the 247 self-pick
+superseded, d10's EXECUTED 247 reservation wins). Four
 adjudications land with the seal:
 
 1. **The 601 row-shape fix** (`388530671`, the d18 `dd7b1b0a` finding
@@ -39692,7 +39693,7 @@ adjudications land with the seal:
    `GameContent/PortalHelper.cs:216`) is a ~600-line SUBSYSTEM (the
    placement line-scans, the per-owner 2-portal statics, the traversal
    teleport physics, the 600/602 rows + arms, the MP messages) —
-   **TASK-SEEDed** (research/247 §6), not ported here.
+   **TASK-SEEDed** (research/330 §6), not ported here.
 2. **The gun-splash keep-one: KEEP d6, DROP the g65 late dup.** The
    residual-8 claim read above ("unclaimed by the g65 batch-6 kind
    list") was correct at its census tip `7f0dc8649` but is SUPERSEDED:
@@ -39705,7 +39706,7 @@ adjudications land with the seal:
    scale death — while the d6 hook reads the kicked value through the
    `scale <= 0` marker. The exact g65 drop-hunks (D1 `:2786-2794` arms,
    D2 `:4834-4885` fn, D3 `:6616-6634` witness, at `f6e07bb90`) are
-   published in research/247 §4 for the g65 lane/merger; the merger
+   published in research/330 §4 for the g65 lane/merger; the merger
    MUST execute the drop (a double 50-dust burst is a visible + stream
    regression). The `projectile_gun_splash.rs` module doc carries the
    adjudication.
@@ -39715,7 +39716,7 @@ adjudications land with the seal:
    — zero `ShimmerImmunity` hits in its tree. The d6 residual-9
    `for_kind` write IS the missing writer; the two halves are different
    functions of the same file, a clean union. Keep both sides whole
-   (research/247 §5).
+   (research/330 §5).
 4. **The two residual keep-one notes stand** (the light-toggle family:
    d6 free-fn canonical superset, the base methods + e20 witnesses stay
    for the wire lane, c42 dedupes at merge; the style-56 dup: the c6

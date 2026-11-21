@@ -1,13 +1,26 @@
-# 247 — Projectile aiStyles 51–60: the band bible + the RETIRE seal (W4-d6, code-only)
+# 330 — Projectile aiStyles 51–60: the band bible + the RETIRE seal (W4-d6, code-only)
 
 Scan date: **2026-11-21** (worktree TR-W4-d6, branch `task/W4-d6-proj-ai-51-60`).
-Number assignment: **247** — the fresh all-tips `git ls-tree docs/research/`
-scan (every `origin/task/W4-*` tip, leading-number keys ≥ 150) finds the max
-claimed bare number **246** (`246-projectile-ai-91-100-final.md`, W4-d10 tip
-`e1519df75`); 247 is the first free number per registry-150's "237+ stay FREE"
-rule (150 = `38bfd1d22`, W4-d54). The known 237–244 collisions belong to their
-owners (registry-150 §1 + the g58 243 seal-verification); this doc claims
-exactly one free key, no letter suffix.
+
+> **REGISTRY-RENAME 247 → 330 (this round).** The seal commit `174c0d541`
+> (16:14:05) self-picked 247 from a tips-only sweep ("max claimed 246") —
+> but 247 was **d10's published reservation, EXECUTED** (`72431e61f`
+> 16:05:28, `247-projectile-ai-91-100-final.md`, ~9 min BEFORE our add).
+> Registry-150 §9 UNIFIED FINAL (W4-d54 tip `b243c7086`, THE SINGLE
+> AUTHORITY — "Where any earlier section disagrees with §9, §9 wins.
+> NO SELF-PICKS.") assigns §9.2 row **330 = d6 =
+> 247-projectile-ai-51-60-band-bible** (the four 247 losers by claim-time
+> order: d16-bible→327, g68→328, c3→329 — d6 predates c3 by 29 s —
+> **d6→330**). §9.3: chain-banners must cite §9; the merger dedupes
+> filenames by the §9.2 table. This rename executes that row. Chain:
+> 247→**330**. All on-branch refs updated (INDEX, ANALYSIS, PORT_MAP,
+> anchors, the `projectile_gun_splash.rs` module doc); `git grep`
+> zero-stale outside chain-history at the pushed tip.
+
+Number assignment: **330** — the registry-150 §9 UNIFIED FINAL assignment
+(§9.2 row 330; 150 = the collision registry, W4-d54 tip `b243c7086`). The
+original 247 self-pick is superseded; this doc claims exactly one key, no
+letter suffix.
 
 **Code-only mode: no cargo/rustc/rustfmt/tests/graphify invoked. Every
 witness on the branch is WRITTEN NOT RUN; verification is deferred to the
