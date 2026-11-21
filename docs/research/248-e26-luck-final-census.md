@@ -138,7 +138,10 @@ ANALYSIS deviation bullet is updated to point at f33 (this retire phase).
 
 The dispatch's "Frog361/Duck362 DEDUPE (d39r/f18/c10-also-361/362 — d37d-E8
 keep-one; publish claims-table)" resolves to the **d37-E8 work order, executed
-on this branch** (`04dbdb0d2`). The claimants, verified at each pushed tip:
+on this branch** (`04dbdb0d2`). **Census correction**: the dispatch's "c4-rows"
+premise over-counts — c4 rows NEITHER Frog nor Duck (the fish family, §3 c4
+bullet); the actual code claimants are e26/c10/f18, d39 census-only. The
+claimants, verified at each pushed tip:
 
 | kind | cs/net | claimant lanes (tip) | pushed wire id | E8/SEAL verdict | e26 action (EXECUTED) |
 |---|---|---|---|---|---|
@@ -174,6 +177,20 @@ on this branch** (`04dbdb0d2`). The claimants, verified at each pushed tip:
   `Transform` landing target) stays as the shared seam (c10's 1080-module
   supersedes both d20/d76 per its SEAL §2.6 — the e26 style68 module is the
   unwired base, c10 wires it).
+- **c4** (`origin/task/W4-c4-style44-flying-fish` tip `0df6964be`, research/148
+  FISH-FAMILY declaration): **CENSUS CORRECTION — c4 rows NEITHER Frog nor Duck.**
+  The dispatch's "your Frog/Duck vs c4/c10-rows" premise over-counts c4: c4 is the
+  fish family (Goldfish 55 base, CorruptGoldfish 57→d34@277, CrimsonGoldfish 465,
+  GoldGoldfish 592, Arapaima 406, FlyingFish 359, BloodFeeder 241→d37, the
+  style-44/16 kinds — research/148's table). `git grep NpcKind::Frog/NpcKind::Duck`
+  on the c4 tip returns **zero** rows; its research/148 has no Frog/Duck/361/362
+  claim. c4's ONLY Frog relationship is the **GoldFrog 445 gold-peer**: 445 is
+  d40's kind (`npc.rs:1233`, the gold band 442-448), and the c8 `GOLD_PEER_TABLE`
+  row `(445, &["Frog"])` (`bestiary.rs:2338`) links GoldFrog's sight-unlock to the
+  Frog 361 entry — which e26 owns. So c4 is **not a Frog/Duck keep-one claimant**;
+  the gold-peer chain (d40 GoldFrog 445 → e26 Frog 361, c8 table) composes at merge
+  with zero e26 action (the same auto-cover contract as §1). The actual Frog/Duck
+  code claimants are **e26 / c10 / f18** (the table above); d39 is census-only.
 
 **The execution receipts (scripted, code-only — no cargo):**
 - `to_u16`/`from_u16` bijection: **273/273 arms, zero duplicate ids, to-id-set ==
@@ -260,9 +277,13 @@ stay live terms, the M2-BUFF-6 pattern). **No further e26 commits planned.**
 - The claimant tips read via `git show <ref>:<path>` / `git grep <ref>` (direct
   paths, no junction recursion): c8 `7c2de9c06`, c10 `5fcc68ae6`, f18
   `a832d38ea`, d39 `a0d49dc1d`, d42 `bac408be0`, f33 `bffee350f`, g67
-  `8b9a1ff46`, d130 `b8f655708`, d37 `2ea22ce3e` (the f33/d37/d130 tips advanced
-  mid-retire; the census facts re-verified at the new tips — the d130 ladybug
-  seam, the f33 torch-god trigger, the d37 E8 e26 receipt all unchanged).
+  `8b9a1ff46`, d130 `b8f655708`, d37 `2ea22ce3e`, c4 `0df6964be`, d40
+  `8fe1d6d31` (the f33/d37/d130 tips advanced mid-retire; the census facts
+  re-verified at the new tips — the d130 ladybug seam, the f33 torch-god trigger,
+  the d37 E8 e26 receipt all unchanged). The c4 Frog/Duck absence verified by
+  `git grep NpcKind::Frog/NpcKind::Duck` on the c4 tip (zero rows) + research/148's
+  fish-family table; the GoldFrog 445 peer verified at d40 `npc.rs:1233` + c8
+  `bestiary.rs:2338`.
 - The E8 keep-one execution scripted pins (§3): bijection 273/273, ALL_KINDS 273,
   sheet tables 184/184, ENTRIES 252, Duck arms 0, Frog 744/744, max 744 i16-safe.
 - The C# anchors re-read: `Player.cs:17731-18088` (torch scan), `:29137-29164`

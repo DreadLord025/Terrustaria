@@ -7579,6 +7579,10 @@ routes through f33's `torch_scan_step_event`).
 duplicate (proto 243) drops at merge; Duck 362 — c10 keeps (wire 731), e26 + f18
 (proto 244) drop; LadyBug/GoldLadyBug 604/605 — e26 keeps (the d42 flip). d39 is
 census-only for 361/362 (research/125 defers to e26/c10, rows neither in code).
+**c4 rows NEITHER Frog nor Duck** (census correction — c4 is the fish family,
+research/148; its only Frog link is the GoldFrog 445 gold-peer, d40's kind, the c8
+`GOLD_PEER_TABLE` 445→{Frog} row pointing at e26's Frog 361 entry — zero e26
+action). The actual Frog/Duck code claimants are e26/c10/f18.
 **LUCK-FAMILY COMPLETE** (research/248 §4): the full `RecalculateLuck` formula
 runs in C# order, every term live or neutral-default; residual work is merge-time
 only (the c8 UI `unlock_state_world` fold, the d130 rain union, the f33 torch-scan
