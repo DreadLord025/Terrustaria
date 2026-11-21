@@ -39315,3 +39315,65 @@ the chain at that wave (their bodies are already the chain's 213/268 arms).
 Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked**
 (user directive). The 38 witnesses are owed a compile window before merge.
 
+## The projectile dust sites, third batch (W4-f5, task/W4-f5-dust-proj-3, 2026-11-21, code-only mode)
+
+The `Projectile.cs` `Dust.NewDust*` census is 1220 sites. The co-lane split:
+W4-d53 owns sites 1-40 (unpushed), W4-e3 owns sites 41-82 (`:22230-24336`, the
+aiStyle-2/4/5/6/8/152 chains, in-flight in its worktree) AND the
+`ProjectilePool::update` -> `update_dust` plumbing + the `particles.rs`
+generic-RNG widening. **This lane takes sites 83-125 (`:24406-26501`), 43
+sites** — the aiStyle-11/12/14/18/20/21/22/23/24/25/27 set, disjoint from e3's
+2/4/5/6/8/152. The g63/g64/g65 trail/death lanes are reserved (no pushed
+claims) and untouched.
+
+`crates/tr-app/src/projectile_dust3.rs` ports the 30 LIVE sites (rowed kind +
+host arm) as emitters over a `ProjDust3` bundle (the live `DustPool` + the
+frame's `SpawnCtx` + the pass's `UpdateProjectiles` stream, the e3 `ProjDust`
+shape). The 13 LATENT sites (unrowed kinds: 18/72/86/87 fairy-orb, 196 Smoke
+Bomb, 261 Boulder Staff, 538 Twinkle, 1092 Librarian Book, 288 hostile Golden
+Shower, 1048/1053 boulders, 1114 Daybloom Staff) are recorded at their arm and
+stay dormant until the kind row lands (the d51 ungrantered-arm precedent).
+
+**The plumbing is reproduced byte-compatibly with e3** (the `update` scratch
+entry + the `update_dust` live entry + the `world_sim/projectiles.rs`
+`dust_spawn_ctx` capture + the `particles.rs` `new_dust_direct<R: DustRng>`
+widening) so the merge is a keep-one, not a conflict (the d51/e2 co-lane
+precedent). Only the disjoint dispatch arms are wired here.
+
+**RNG.** Every roll (the gates, the `NewDust` internals, the post-arms) rides
+the pass's `UpdateProjectiles` stream in the C#'s order (`Main.cs:17775-17777`'s
+`SwapRandom` wraps the walk, dust included). Argument draws evaluate BEFORE
+the `NewDust` call; the post-arms read the returned slot (the sentinel
+included). The `NewDust` default block is 6 draws (pos.x, pos.y, vel.x, vel.y,
+frame, scale); the per-type tweak chain adds a 7th for types 6/75/228/64
+(velocity.y override, x0.3 vel.x, x0.7 scale) — the emitters' post-arms run
+AFTER `NewDust` returns, so the tweak is already applied. The aiStyle-27 sites
+read `base.oldVelocity` (the sub-step start velocity, threaded from the
+`old_velocity` latch at `projectile.rs:16868`).
+
+**Deliberate deviations / drops (each cited at its arm):**
+
+* **Kill falls through.** The C# `Kill()` sets `active = false` (`:77262`) but
+  does NOT return from `AI()` — the dust trails still run on the dying
+  sub-step. The Golden Shower (`:24511-24514`), the fire overlay's wet kill
+  (`:25273-25276`) and the Ice Rod standing probe (`:25660`) keep their draws
+  on the death tick; the port marks the slot dead and falls through (the
+  pre-existing `ai_aqua_scepter` convention).
+* **Gore siblings.** The `Gore.NewGore` calls interleaved with these dust
+  blocks (the Aqua Scepter lava bounce `:24581-24587`) stay the d55/e5 lane's
+  skip — their gate + type rolls (`Next(3)`, `Next(61,64)`) stay on the stream
+  (the gore-type-roll convention), the bodies unported.
+* **Lights / shader.** The `Lighting.AddLight` arms (the light lane c19/e6)
+  and the `shader` write (`:24408`, dropped field) are not ported.
+* **The 445 Laser Drill** (aiStyle 75) reuses `ai_drill` as a channel stand-in
+  but its C# `AI_075` arm (`:66244-66358`) has no dust/jitter — the aiStyle-20
+  tail is gated to `proj_data(kind).ai_style == 20` so the 445 keeps its
+  no-draw behaviour.
+* **The 450/326-328 per-type heads** (Saucer Scrap frame machine, Greek Fire
+  wet kill + sound latch) are ported alongside their dust at the dispatch,
+  ahead of the shared `ai_spear` tail (the C# runs them after the generic
+  gravity/rotation, before the tile-kill scan).
+
+Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify
+invoked** (user directive). The 21 draw-mirror witnesses are owed a compile
+window before merge.
