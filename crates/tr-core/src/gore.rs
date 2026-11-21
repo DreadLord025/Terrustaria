@@ -1828,4 +1828,233 @@ mod tests {
         assert_eq!(pool.slot(0).time_left, 0);
         assert!(!pool.slot(0).active, "an empty timeLeft deactivates the cloud");
     }
+
+    // ---- W4-g68: Gore_UpdateLeaf, the leaf physics the foliage shed now
+    // rides (WRITTEN NOT RUN — code-only mode). ----
+
+    /// A pass-through collision seam: both probes return their inputs, so
+    /// the leaf's own velocity math is observable without tile interference.
+    struct FreeCollision;
+    impl GoreCollision for FreeCollision {
+        fn tile_collision(
+            &self,
+            _world: &World,
+            _position: Vec2,
+            velocity: Vec2,
+            _width: f32,
+            _height: f32,
+        ) -> Vec2 {
+            velocity
+        }
+        fn wet_collision(&self, _world: &World, _position: Vec2, _w: f32, _h: f32) -> bool {
+            false
+        }
+        fn slope_collision(
+            &self,
+            _world: &World,
+            position: Vec2,
+            velocity: Vec2,
+            _w: f32,
+            _h: f32,
+            _gravity: f32,
+            _fall: bool,
+        ) -> (Vec2, Vec2) {
+            (position, velocity)
+        }
+    }
+
+    /// A seam whose `TileCollision` brakes X to 0 (a wall) — the
+    /// `vector4 != vector5` rest switch (`Gore.cs:1176-1179`).
+    struct WallCollision;
+    impl GoreCollision for WallCollision {
+        fn tile_collision(
+            &self,
+            _world: &World,
+            _position: Vec2,
+            velocity: Vec2,
+            _width: f32,
+            _height: f32,
+        ) -> Vec2 {
+            Vec2::new(0.0, velocity.y)
+        }
+        fn wet_collision(&self, _world: &World, _position: Vec2, _w: f32, _h: f32) -> bool {
+            false
+        }
+        fn slope_collision(
+            &self,
+            _world: &World,
+            position: Vec2,
+            velocity: Vec2,
+            _w: f32,
+            _h: f32,
+            _gravity: f32,
+            _fall: bool,
+        ) -> (Vec2, Vec2) {
+            (position, velocity)
+        }
+    }
+
+    /// A 64x64 world whose surface sits BELOW every test position, so the
+    /// `position.Y < worldSurface * 16` wind term applies.
+    fn leaf_physics_world() -> World {
+        let mut w = World::new("leafphys".into(), 64, 64);
+        w.world_surface = 1000.0;
+        w
+    }
+
+    fn spawn_leaf(pool: &mut GorePool, world: &World, pos: Vec2) {
+        let mut rng = VecRng::new(vec![10, 20, 50, 60, 3, 4]);
+        let idx = pool.new_gore(&mut rng, world, pos, Vec2::ZERO, 910, 1.0);
+        assert_eq!(idx, 0);
+        // Pin the sway angle to 0 so the rotated unit vector is (0, 1).
+        pool.slot_mut(0).velocity = Vec2::new(0.0, 0.0);
+    }
+
+    /// The falling half (`Gore.cs:1161-1167`): the angle grows π/180 per
+    /// tick, the velocity is `(-sin θ, |cos θ|)`, and above the surface the
+    /// wind adds `WindForVisuals * 4` to X. The position moves by the
+    /// resolved velocity (`:1199`), the rotation is `atan2 + π/2` (`:1200`).
+    #[test]
+    fn w4_g68_the_leaf_fall_sways_and_rides_the_wind() {
+        let world = leaf_physics_world();
+        let mut pool = GorePool::new();
+        spawn_leaf(&mut pool, &world, Vec2::new(500.0, 300.0));
+        let wind = 0.5_f32;
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, wind);
+        let g = pool.slot(0);
+        let theta = std::f32::consts::PI / 180.0;
+        assert_eq!(g.velocity.y, theta, "the angle grows one degree per tick");
+        let want_x = -theta.sin() + wind * 4.0;
+        let want_y = theta.cos().abs();
+        assert!((g.position.x - (500.0 + want_x)).abs() < 1e-4);
+        assert!((g.position.y - (300.0 + want_y)).abs() < 1e-4);
+        assert!(
+            (g.rotation - (want_y.atan2(want_x) + std::f32::consts::FRAC_PI_2)).abs() < 1e-4
+        );
+        assert_eq!(g.time_left, GORE_TIME_DEFAULT - 1, "one life point per tick");
+    }
+
+    /// Below the surface the wind term is dropped (`Gore.cs:1164-1167`).
+    #[test]
+    fn w4_g68_underground_leaves_get_no_wind_push() {
+        let mut world = leaf_physics_world();
+        world.world_surface = 0.0; // every position is underground
+        let mut pool = GorePool::new();
+        spawn_leaf(&mut pool, &world, Vec2::new(500.0, 300.0));
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.5);
+        let g = pool.slot(0);
+        let theta = std::f32::consts::PI / 180.0;
+        assert!((g.position.x - (500.0 - theta.sin())).abs() < 1e-4);
+    }
+
+    /// A collision that changes the velocity flips the leaf to the rest
+    /// phase: `velocity.Y = -1` (`Gore.cs:1176-1179`).
+    #[test]
+    fn w4_g68_a_blocked_fall_switches_to_rest() {
+        let world = leaf_physics_world();
+        let mut pool = GorePool::new();
+        spawn_leaf(&mut pool, &world, Vec2::new(500.0, 300.0));
+        pool.update(&mut VecRng::new(vec![]), &world, &WallCollision, 0.5);
+        assert_eq!(pool.slot(0).velocity.y, -1.0, "the rest-phase sentinel");
+    }
+
+    /// The rest phase in WATER (`Gore.cs:1124-1131`): X becomes the wind,
+    /// the collision passes it through, then ×0.94; the leaf drifts by the
+    /// result and the rotation follows the velocity. Underground the wind
+    /// is zeroed first (`:1128-1131`).
+    #[test]
+    fn w4_g68_the_rest_phase_drifts_on_water_with_the_wind() {
+        let mut world = leaf_physics_world();
+        // The rest probe: vector = pos + (4, 0); point = (vector + 1.5) >> 4.
+        // pos (160, 160) → vector (164, 160) → point (10, 10).
+        let i = world.index(10, 10);
+        world.tiles[i].liquid = 255;
+        let mut pool = GorePool::new();
+        spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
+        pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
+        let wind = 0.5_f32;
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, wind);
+        let g = pool.slot(0);
+        assert!((g.velocity.x - wind * 0.94).abs() < 1e-5, "the 0.94 decay");
+        assert!((g.position.x - (160.0 + wind * 0.94)).abs() < 1e-4);
+        assert_eq!(g.position.y, 160.0, "the rest phase only moves X");
+        // Underground: the wind zeroes, then the |x| < 0.01 cut zeroes X.
+        world.world_surface = 0.0;
+        pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
+        pool.slot_mut(0).position = Vec2::new(160.0, 160.0);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, wind);
+        assert_eq!(pool.slot(0).velocity.x, 0.0);
+    }
+
+    /// HONEY freezes the rest drift (`Gore.cs:1112-1115`): X = 0 regardless
+    /// of the wind.
+    #[test]
+    fn w4_g68_honey_freezes_the_rest_drift() {
+        let mut world = leaf_physics_world();
+        let i = world.index(10, 10);
+        world.tiles[i].liquid = 255;
+        world.tiles[i].flags |= crate::tile::FLAG_LIQUID_HONEY;
+        let mut pool = GorePool::new();
+        spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
+        pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.5);
+        assert_eq!(pool.slot(0).velocity.x, 0.0);
+        assert_eq!(pool.slot(0).position.x, 160.0);
+    }
+
+    /// LAVA burns the leaf up (`Gore.cs:1116-1123`): the slot deactivates.
+    /// The five-dust puff (`:1119-1122`) is the recorded dust-seam drop.
+    #[test]
+    fn w4_g68_lava_burns_the_leaf() {
+        let mut world = leaf_physics_world();
+        let i = world.index(10, 10);
+        world.tiles[i].liquid = 255;
+        world.tiles[i].flags |= crate::tile::FLAG_LIQUID_LAVA;
+        let mut pool = GorePool::new();
+        spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
+        pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.5);
+        assert!(!pool.slot(0).active, "the lava arm deactivates at once");
+    }
+
+    /// The ground freeing up under a resting leaf resumes the fall
+    /// (`Gore.cs:1133-1138`): `velocity.Y = 0.1`, `timeLeft = 0`,
+    /// `alpha += 20`.
+    #[test]
+    fn w4_g68_open_ground_resumes_the_fall_and_starts_the_fade() {
+        let world = leaf_physics_world(); // no solid under the probe
+        let mut pool = GorePool::new();
+        spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
+        pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
+        pool.slot_mut(0).alpha = 0;
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0);
+        let g = pool.slot(0);
+        assert_eq!(g.velocity.y, 0.1);
+        assert_eq!(g.time_left, 0);
+        assert_eq!(g.alpha, 20);
+    }
+
+    /// The fade tail (`Gore.cs:1201-1208` + `:1055-1058`): one
+    /// `DisappearSpeed` point per tick while `timeLeft > 0`, then one alpha
+    /// point per tick; `alpha >= 255` deactivates.
+    #[test]
+    fn w4_g68_the_leaf_fade_counts_down_then_dies() {
+        let world = leaf_physics_world();
+        let mut pool = GorePool::new();
+        spawn_leaf(&mut pool, &world, Vec2::new(500.0, 300.0));
+        pool.slot_mut(0).time_left = 1;
+        // Keep the leaf falling in open air; the FreeCollision seam never
+        // brakes, so the rest switch never fires.
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0);
+        assert_eq!(pool.slot(0).time_left, 0);
+        assert_eq!(pool.slot(0).alpha, 0);
+        for tick in 1..=255 {
+            pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0);
+            if tick < 255 {
+                assert!(pool.slot(0).active);
+                assert_eq!(pool.slot(0).alpha, tick);
+            }
+        }
+        assert!(!pool.slot(0).active, "alpha 255 kills the leaf");
+    }
 }
