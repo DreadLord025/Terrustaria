@@ -18479,6 +18479,46 @@ update (`:1009-1020`). New witnesses (written, NOT run):
 (the 1→2 budget growth over two cycles + the swap-remove head order),
 `...::the_promotion_delbuffers_even_when_addwater_refuses_the_cell`.
 
+**The f25 gen-pass split contract** (R-12-5 census of `0ed1f3cf` on
+`task/W4-f25`, claims read in `docs/research/12g-f25-settle-liquids.md`):
+f25 owns the GEN side — `worldgen/settle_liquids.rs` (the ocean retype
+sweep `:16137-16146`, the `QuickWater(3)` pre-settle, the 10-round budget
+loop, `ClearPendingLiquid`, `LiquidInteractionsCleanup` with the `:23755`
+up-shimmer quirk) + the pipeline step; g47 owns the RUNTIME side (the
+skipCount pump above, the load drain, the panic/stuck/buffer machinery).
+The shared `Liquid.UpdateLiquid` engine is ONE body — f25's gen-local
+copies dedupe onto the g47 surfaces at the g46c graft (research/70 step 6).
+Carried onto the g47 machinery here (the export surface f25's module
+drives): `tiles_ignore_water`, `world_gen_tiles_ignore_water` (the
+`gen_ignore_water` field + the `kind_solid` fold — the C# pokes the RAW
+`Main.tileSolid` table, so the lift rides the shared read), `set_bubble_solid`,
+`num_liquid_total`, `clear_pending_liquid` (`WorldGen.cs:80496-80513` —
+drops both lists + their checking bits, leaves the skip bits), 
+`liquid_reaction_check`, and the NEW shared driver `gen_settle_loop`
+(`WorldGen.cs:16158-16206` verbatim: WaterCheck → quickSettle up → 10
+rounds × `num3 * 5` budget with the live-count re-raise → WaterCheck
+between rounds → ClearPendingLiquid → quickSettle down; the Part-2 twin
+`:21265-21305` is classic-identical — its only deltas are the
+`getGoodWorldGen` tileSolid[56] poke `:21250-21253`, the absent
+extraLiquid round bump, and the progress fractions). f25's
+`set_generating(remix)` maps onto `set_gen_settle_context` (which arms
+the STRICT `generating_world` too — the fuller C# context; f25's flag
+only armed `generating` + `remix`, so its dungeon/shimmer arms were dead
+by flag as well as by un-armed context — same classic result). The
+context arming stays the GEN DRIVER's job (research/70 step 7:
+`set_gen_settle_context(water_line, lava_line, remix)` +
+`set_gen_shimmer_position(gv.shimmer_position)` + the f24/c30
+`GenDungeonContext`; `edit_kills` drained/discarded at the pass tail —
+records must not leak across the per-pass instance). f25's claimed
+"no RNG draws in the whole pass" holds only for ITS discard-only
+`end_pass`; on the g47 machinery the DelWater grass-ring/lily kills fire
+during gen and ride `edit_kills` (the world-hash RE-DERIVE obligation,
+research/70's witness table — unchanged by this carry). Witnesses
+(written, NOT run): `liquid_gen_driver::world_gen_tiles_ignore_water_lifts_the_door_family`,
+`...::clear_pending_liquid_drops_both_lists_and_their_checking_bits`,
+`...::the_gen_settle_loop_drains_the_lists_and_drops_quick_settle`,
+`...::the_gen_settle_loop_on_a_diffusing_film_still_clears_the_tail`.
+
 ### The DelWater keep-one (W4-g47 vs W4-g45, for the merger)
 
 Both branches ported `Liquid.DelWater` (`:1470-1599`) independently. **g47's
