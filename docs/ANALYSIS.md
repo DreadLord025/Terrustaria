@@ -39371,3 +39371,69 @@ gap (g6 dispatched it to g7, g7 never landed it) and the f26 slice-5
   witnesses in `npc.rs::w4_d44_wire_tests` + the modules' own 22 are
   WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/graphify invoked**
   (code-only mode).
+
+## W4-d44 FindFrame census refresh 2 + the extra-6 wire round (2026-11-21, code-only mode)
+
+**The census refresh.** research/68 rebuilt as the MASTER per-kind
+table (1-697, mechanically derived — a Python scan of the C# two-tab
+`case` labels joined against every pushed tip's `find_frame` arms +
+module mappers, mapped through each lane's cs_id hand rows + bestiary
+net-id fallback + credit folds). The arithmetic: **602** C# top-level
+case ids = **273** INLINE-ARM (main + the pushed roster lanes d34/d35/
+d37/d38/d40 + the wave-A/B rosters) + **199** module-claimed (deduped;
+**139** WIRED + **60** MODULE-LANDED-unwired) + **130** UNCLAIMED; 95
+ids have no case label. The f26 slice-7c addendum's 127 differs by
+exactly **435/436/591** — the d49 armed-zombie case-group tail the d49
+ANALYSIS defers ("ride the next wave") and the mapper does not list;
+they are UNCLAIMED here. New since refresh 1: f26 landed `extra6`
+(278-295), `extra7b` (473-488), `extra7c` (494-509); f27 landed `extra8`
+(443-462) + the 439 stub-fix; the roster lanes d34/d35/d37/d38/d40
+landed their inline arms (d35's 73-140 are row-0 stubs, d38's 287/295/
+322-324 + d40's 453/460/462 the `humanoid_town_frame` stand-in, d40's
+443-448/473-477/479/483-488 row-0 stubs). The keep-one verdicts ride
+research/68 §3 (the f26 7c addendum's 480/481/482 inline-keep + the
+f27 s8 d40-merger notes).
+
+**The extra-6 wire round (the next ascending landed-unwired gap).**
+`npc_findframe_extra6.rs` landed VERBATIM from `a2e47596` (blob
+`38ee6c0f`, `git hash-object` == the pushed tip's blob — the 15
+machines + the in-module lookup + 11 frame witnesses unchanged). The
+wave-B `humanoid_fighter_frame` `pub(crate)` lift (the f26/f27 keep-one
+delegate precedent). The hook `find_frame_kind_extra6_claimed` = the
+in-module lookup verbatim (all 15 ids 278-287/290-293/295); the bridge
+`find_frame_wave_extra6` copies row/counter/sprite_dir both ways and
+feeds vx/vy/facing/ai[4] — no slice-6 arm reads wet/aiAction or writes
+rotation (the f26 wave-6 census), so no world read; the hook rides the
+world-free `find_frame` directly after the extra5 hook. Batches:
+`9d6baa89` (module + lift + registration), `21628a0d` (the first 11:
+278-287+290), `59b798dc` (the last 4: 291/292/293/295 — the claim-set
+witness widened + 4 frame witnesses added).
+
+Per-machine pins (the seam witness, all re-derived from the module
+arms): the Hell Armored Bones 278-280 the |vx|*2+1 walk (row<2 lift to
+2, >6 step, full-count wrap to 2) + the idle row-0 snap + the air row-0
+pin; the casters 281-286 the row-0-EVERY-tick + air-2/windup-1 with the
+counter NEVER touched; the BoneLee 287 the fighter delegate (full-16
+wrap, air row 1 — NOT in the :69647 pin list); the Paladin 290 the
+ai[2] hammer ladder rows 11/10/9 off ai[1] <10/<20 (the counter
+untouched, the BREAK) + the |vx|*1 NO-+1 walk + the STRICT >8 wrap;
+the Sniper/Tactical 291/292 the (int)ai[2]-1 draw pose + the
+UNCONDITIONAL direction copy + the |vx|*3.3 walk lifting to 7 wrapping
+at the full 21 rows + air row 6; the Commando 293 the wave-B
+SkeletonArcher keep-one delegate (shot pose row (int)ai[2] NO -1, walk
+rows 6..19 at |vx|*3, air row 0); the AngryBonesBigMuscle 295 the
+fighter delegate with the :69647 air-pin-0.
+
+Stream-inert: no current kind's cs_id lands in 278-287/290-293/295
+(the ALL_KINDS sweep over the hand rows + bestiary net ids), no arm
+draws RNG (the f26 mechanical grep over all eight cited ranges =
+ZERO). 3 seam witnesses (the inertness sweep, the full 15-id claim set
+with the 288/289/294/296 port-covered exclusions, the bridge copy-backs
+with the per-machine pins) + the module's 11 frame witnesses ride
+verbatim. WRITTEN NOT RUN — **no cargo/rustc/rustfmt/tests/graphify
+invoked** (code-only mode).
+
+**Remaining work** (research/68 §8): 130 UNCLAIMED kinds → **9 port
+slices** at the 15-kind cadence; 60 MODULE-LANDED-unwired ids
+(extra7/extra7b/extra7c/extra8) → the next wire rounds (extra7b/extra8
+need the `find_frame_world` slope/frame_x36 extension first).
