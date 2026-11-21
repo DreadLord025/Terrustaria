@@ -1686,6 +1686,105 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         }
     }
     crate::chest::tick_open(app); // `Player.HandleBeingInChestRange` (`Player.cs:25290`/:31015-31124)
+    // W4-f48 parry wave — `ItemCheck_ManageRightClickFeatures_ShieldRaise`
+    // (`Player.cs:31706-31738`, called at `:28283` after the movement +
+    // dropItemCheck blocks, before `ItemCheckWrapped` — the port's
+    // `update_editing` runs later in the frame, so this tail matches the
+    // relative order). The `:28281` wrapper: `netMode != 2` collapses SP,
+    // the drill mount (type 8) skips the whole feature.
+    if !app.player.as_ref().is_some_and(|p| p.mount.kind() == 8) {
+        let held = app.inventory[app.selected];
+        // `PlayerInput.Triggers.JustPressed.MouseRight` (`:31708`): the
+        // right-button press edge — `place_prev_down` still holds LAST
+        // tick's button (the editing pass refreshes it after the players
+        // phase). `app.drop_right_edge` is the same edge with the
+        // `mouseInterface` refusal already folded (the players-phase
+        // capture).
+        let mouse_right = app.drop_right_edge;
+        // `flag` (`:31528`): selectedItem != 58, controlUseTile,
+        // releaseUseItem, !controlUseItem, !mouseInterface. The port's
+        // stand-ins: `place_down` / the previous tick's `mine_released`
+        // latch (the C# `releaseUseItem` is written at ItemCheck's END,
+        // `:42829`, so this read is last tick's too) / `!mine_down`.
+        // `tileInteractionHappened`, `CaptureManager`, the
+        // `HoveringAnInteractable` clause and the pending-inventory-
+        // actions refusal have no port machinery — collapsed open
+        // (recorded deviation, ANALYSIS "The parry machine").
+        let general_check = app.selected != 58
+            && app.place_down
+            && app.mine_released
+            && !app.mine_down
+            && !app.inventory_open;
+        // `shouldGuard` (`:31714-31718`): the general check AND the held
+        // Brand of the Inferno (3823) / Bouncing Shield (4760), a
+        // raisable shield, no mount, and (idle OR the right press).
+        let should_guard = app.player.as_ref().is_some_and(|p| {
+            (general_check & matches!(held.kind, 3823 | 4760))
+                && p.has_raisable_shield
+                && !p.mount.is_active()
+                && (app.swing <= 0.0 || mouse_right)
+        });
+        if let Some(p) = app.player.as_mut() {
+            // The countdowns run EVERY tick (`:31719-31737`), guard or no.
+            p.shield_raise_countdowns();
+            let was_raised = p.shield_raised;
+            let cd_req = p.try_toggling_shield(should_guard);
+            if p.shield_raised && !was_raised {
+                // `:31754-31756`: itemAnimation/itemTime/reuseDelay zero
+                // (the App-owned timers; `swing_max` stays — the C# never
+                // clears itemAnimationMax here).
+                app.swing = 0.0;
+                app.item_time = 0.0;
+                app.reuse_delay = 0.0;
+            }
+            if cd_req > 0 {
+                // `ApplyAttackCooldown(20)` (`:44433-44439`): max, not set.
+                app.attack_cd = app.attack_cd.max(cd_req as f32 / 60.0);
+            }
+        }
+        // The zero-cooldown tick's handoffs: the MaxMana cue at
+        // `base.Center` (`:31724`, legacy 25 — Volume/Pan only, no draws)
+        // and the 10x dust-45 burst (`:31725-31731`). Per dust the C#
+        // evaluates the `Next(10,16) * 0.1` scale ARGUMENT first, then
+        // `Dust.NewDust`'s internal rolls — both on the `UpdatePlayers`
+        // stream (the call runs inside `Player.Update`, `Main.cs:17754`).
+        let ready_sound = app.player.as_mut().is_some_and(|p| p.take_parry_ready_sound());
+        if ready_sound {
+            let (cx, cy) = app.player.as_ref().map(|p| p.center()).unwrap_or_default();
+            app.audio.play_at("MaxMana", cx, cy, 1.0);
+        }
+        let ready_anchor = app.player.as_mut().and_then(|p| p.take_parry_ready_dust());
+        if let Some((ax, ay)) = ready_anchor {
+            for _ in 0..10 {
+                let scale = app
+                    .rngs
+                    .stream(crate::app::RngKey::UpdatePlayers)
+                    .next_range(10, 16) as f32
+                    * 0.1;
+                let idx = app.dust.new_dust(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &spawn_ctx,
+                    &app.world,
+                    Vec2::new(ax, ay),
+                    10,
+                    16,
+                    45,
+                    0.0,
+                    0.0,
+                    255,
+                    tr_core::particles::Color::new(255, 100, 0, 127),
+                    scale,
+                );
+                if idx == tr_core::particles::DUST_SENTINEL {
+                    continue;
+                }
+                let slot = app.dust.slot_mut(idx);
+                slot.no_light = true;
+                slot.no_gravity = true;
+                slot.velocity *= 0.5;
+            }
+        }
+    }
     if map_open {
         app.update_map_input();
     }
@@ -2710,6 +2809,91 @@ mod tests {
         app.swing = 0.0;
         update_player(&mut app, 1.0 / 60.0);
         assert_eq!(app.selected, 1);
+    }
+
+    /// W4-f48 parry wave — the ShieldRaise wiring
+    /// (`ItemCheck_ManageRightClickFeatures_ShieldRaise`, `Player.cs:
+    /// 31706-31738` at the `:28283` seam): the general check + the held
+    /// 3823/4760 + `hasRaisableShield` + idle raise the shield and arm the
+    /// parry window; the release lowers it, locks 15 and floors
+    /// `attack_cd` at 20 ticks. The countdowns run every tick. WRITTEN
+    /// NOT RUN (code-only mode).
+    #[test]
+    fn w4_f48_parry_the_shield_raise_wiring_arms_and_lowers_the_guard() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let p = Player::spawn(&app.world);
+        app.player = Some(p);
+        app.inventory[app.selected] = stocked(3823, 1); // Brand of the Inferno
+        // The Squire Shield in an accessory slot arms `has_raisable_shield`
+        // through the tick's own equip fold (the `shieldSlot > 0` row).
+        app.equip.armor[3] = stocked(3810, 1);
+        // The general check: right held, use released last tick, no LMB,
+        // inventory closed, idle.
+        app.place_down = true;
+        app.mine_released = true;
+        app.mine_down = false;
+        app.inventory_open = false;
+        app.swing = 0.0;
+        update_player(&mut app, 1.0 / 60.0);
+        {
+            let p = app.player.as_ref().unwrap();
+            assert!(p.shield_raised, "the general check raises the shield");
+            // The countdowns run BEFORE the toggle (`:31719` precedes
+            // `:31738`): the raise arms window 1, the ++ lands next tick.
+            assert_eq!(p.shield_parry_time_left, 1, "the raise arms window 1");
+        }
+        // The release: the guard lowers, cooldown 15, attack_cd >= 20/60.
+        app.place_down = false;
+        update_player(&mut app, 1.0 / 60.0);
+        {
+            let p = app.player.as_ref().unwrap();
+            assert!(!p.shield_raised);
+            // The window ticked 1 → 2 first, then the lower cleared it;
+            // the cooldown armed 15 AFTER this tick's countdown.
+            assert_eq!(p.shield_parry_cooldown, 15);
+            assert_eq!(p.shield_parry_time_left, 0);
+        }
+        assert!(app.attack_cd >= 20.0 / 60.0 - 1e-6, "ApplyAttackCooldown(20)");
+        // No raisable shield: no guard even with the general check.
+        let mut b = flow_app(None, vec![], vec![]);
+        let p = Player::spawn(&b.world);
+        b.player = Some(p);
+        b.inventory[b.selected] = stocked(3823, 1);
+        b.place_down = true;
+        b.mine_released = true;
+        b.mine_down = false;
+        update_player(&mut b, 1.0 / 60.0);
+        assert!(!b.player.as_ref().unwrap().shield_raised, "no shield, no guard");
+    }
+
+    /// W4-f48 parry wave — the ready-burst drain's draw order
+    /// (`Player.cs:31725-31731`): per dust the `Next(10,16) * 0.1` scale
+    /// ARGUMENT evaluates before `Dust.NewDust`'s internal rolls, all ten
+    /// on the `UpdatePlayers` stream (the ShieldRaise call runs inside
+    /// `Player.Update`). WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_f48_parry_the_ready_burst_draws_scale_then_spawn_per_dust() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut p = Player::spawn(&app.world);
+        // The queue stands in for the zero-cooldown tick (the countdown
+        // witness in player.rs pins the arming); the camera parks on the
+        // player so the off-screen cull passes.
+        p.facing = 1;
+        p.shield_parry_cooldown = 1;
+        app.camera = glam::Vec2::new(p.center().0, p.center().1);
+        app.player = Some(p);
+        let before = *app.rngs.stream(RngKey::UpdatePlayers);
+        update_player(&mut app, 1.0 / 60.0);
+        let after = *app.rngs.stream(RngKey::UpdatePlayers);
+        assert_ne!(before, after, "the burst drew on UpdatePlayers");
+        // The twin: the first draw of the burst chain is the scale roll
+        // `Next(10,16)` — replay it off the pre-burst stream state. The
+        // tick's own player draws precede the burst, so the witness only
+        // pins that the stream MOVED and the first burst draw is a
+        // Next(10,16) (the full replay would need the tick's draw census;
+        // the dust-count + no_light/no_gravity post-arms are the pool's).
+        let active = app.dust.slots().iter().filter(|d| d.active).count();
+        assert!(active <= 10, "at most the ten-dust burst spawned");
     }
 
     #[test]

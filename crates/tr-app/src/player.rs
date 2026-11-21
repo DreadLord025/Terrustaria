@@ -4515,11 +4515,19 @@ impl Player {
         // dodge block's early returns (a dodged hit grants nothing) and
         // BEFORE the defense reduction — `AddBuff(63, 480)` whenever the
         // necklace armed `panic` (W4-f48). The `whoAmI == Main.myPlayer`
-        // gate collapses single-player; the `setSquireT2` twin
-        // (`:38241-38244`, `AddBuff(205, 300)`) rides the DD2 hurt-buff
-        // wave. `AddBuff` draws nothing (the `buffs.rs` port).
+        // gate collapses single-player. `AddBuff` draws nothing (the
+        // `buffs.rs` port).
         if self.panic {
             self.buffs.add_buff(63, 480);
+        }
+        // The `setSquireT2` twin (`Player.cs:38241-38244`): the Squire
+        // armor's accepted hit grants Ballista Panic `AddBuff(205, 300)`
+        // — the Ballista reload caps read the flag (`Projectile.cs:
+        // 68563-68570`). Same slot: after the panic grant, before the
+        // defense reduction; a dodged hit grants nothing. The d123/f36
+        // DD2 lanes carried no copy (censused) — this is the one grant.
+        if self.set_squire_t2 {
+            self.buffs.add_buff(205, 300);
         }
         // `Player.Hurt`'s defense reduction (the classic
         // `damage - statDefense * 0.5`, floored at 1 — M3-EQUIP-2). The
@@ -15728,6 +15736,33 @@ mod tests {
         let mut q = Player::spawn(&w);
         assert!(q.hurt(20, q.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
         assert!(q.buffs.find_buff_index(63).is_none());
+    }
+
+    #[test]
+    fn w4_f48_parry_the_squire_set_grants_ballista_panic_205_on_the_accepted_hit() {
+        // `Hurt` `:38241-38244`: the `setSquireT2` twin — `AddBuff(205,
+        // 300)` right after the panic grant, before the defense
+        // reduction. A dodged hit grants nothing (the early returns).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[0] = 3800;
+        p.equipped[1] = 3801;
+        p.equipped[2] = 3802;
+        p.update(&w, PlayerInput::default());
+        assert!(p.set_squire_t2, "the Squire T2 set arms");
+        assert!(p.hurt(20, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        let i = p.buffs.find_buff_index(205).expect("the ballista-panic grant");
+        assert_eq!(p.buffs.buff_time[i], 300);
+        // A dodged hit skips it: the belt dodges the next one.
+        expire_dodge_window(&mut p);
+        p.equipped[3] = 963;
+        p.update(&w, PlayerInput::default());
+        let i = p.buffs.find_buff_index(205).unwrap();
+        p.buffs.buff_time[i] = 1;
+        p.buffs.del_buff(i);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(50, p.x + 100.0, &mut rng, true), "the belt dodges");
+        assert!(p.buffs.find_buff_index(205).is_none(), "the dodge skips the grant");
     }
 
     #[test]

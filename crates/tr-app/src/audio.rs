@@ -216,6 +216,11 @@ const SFX_CUES: &[(&str, u32)] = &[
     // (`Main.cs:43083`); `SoundID.Chat = 24` (`SoundID.cs:70`), the
     // `Sounds/Chat` cue (`LegacySoundPlayer.cs:202`, case 24 `:957-962`).
     ("Chat", 24),
+    // W4-f48 parry wave — `SoundEngine.PlaySound(25, base.Center)` on the
+    // shield-parry cooldown's zero tick (`Player.cs:31724`); legacy id 25
+    // is the MaxMana cue (`SoundID.MaxMana = 25`, `LegacySoundPlayer.cs`
+    // case 25 — `SoundInstanceMaxMana`, Volume/Pan only, no draws).
+    ("MaxMana", 25),
     // `SoundEngine.PlaySound(40)` — the capture camera's shutter
     // (`CaptureInterface.cs:1592`); `SoundID.Camera = 40` (`SoundID.cs:102`),
     // the `Sounds/Camera` cue (`LegacySoundPlayer.cs:210`, case 40 `:1359`).
