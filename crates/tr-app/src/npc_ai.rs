@@ -91,6 +91,15 @@ pub fn walker_step(
     let aggro = dx.abs() < params.aggro_x && dy.abs() < params.aggro_y;
     if aggro {
         npc.facing = if dx >= 0.0 { 1 } else { -1 };
+        // W4-g4 lane 15 (the W4-d22 reconcile fold) — the Confused debuff
+        // (31) reverses the walk direction (`NPC.cs:77772-77775`, the
+        // SetTargetTrackingValues tail the fighter core's TargetClosest
+        // runs; the generic archetype's ad-hoc facing carries the same
+        // flip — the P3 buff-31 latch convention:
+        // `buffs.find_buff_index(31)`).
+        if npc.buffs.find_buff_index(31).is_some() {
+            npc.facing *= -1;
+        }
         // `NPC.spriteDirection` is the renderer's flip source
         // (`Main.cs:23124-23128`) and `AI_000_Fighters`' head keeps it in
         // lockstep with the movement direction (`NPC.cs:19867`,
@@ -178,6 +187,11 @@ pub fn walker_step_ladder(
     let aggro = dx.abs() < params.aggro_x && dy.abs() < params.aggro_y;
     if aggro {
         npc.facing = if dx >= 0.0 { 1 } else { -1 };
+        // W4-g4 lane 15 — the Confused (31) walk-direction reversal
+        // (`NPC.cs:77772-77775`), as `walker_step`'s aggro arm.
+        if npc.buffs.find_buff_index(31).is_some() {
+            npc.facing *= -1;
+        }
         // BUG-07's lockstep write, as `walker_step` (`NPC.cs:19867`).
         npc.sprite_dir = npc.facing;
         if !run_ai3_ladder(npc, world, target_x, target_y, gravity, target_dead) {
@@ -270,14 +284,17 @@ pub fn run_ai3_ladder(
 /// true — every fighter chases.
 ///
 /// Stock stand-ins (documented, ANALYSIS "The shared target selection"):
-/// `Main.player[target].ZoneGraveyard` and `Main.dontStarveWorld` have no
-/// port fields — both read false, so their chain terms pass; the
-/// `Main.remixWorld` half of `IsItDay` (`Main.cs:62825-62832`) is unported
-/// (`world.day_time` stands in).
+/// `Main.dontStarveWorld` has no port field — it reads false, so its chain
+/// term passes; the `Main.remixWorld` half of `IsItDay`
+/// (`Main.cs:62825-62832`) is unported (`world.day_time` stands in).
+/// `Main.player[target].ZoneGraveyard` rides the sim's pre-stamp
+/// (`Npc::target_zone_graveyard` ← `scene_metrics.zone_graveyard`, W4-g4
+/// lane 15, the W4-d22 reconcile fold — the d120 biome pass); false
+/// outside the sim (the solo/test convention).
 pub fn fighters_not_discouraged(npc: &Npc, world: &World) -> bool {
     let id = npc.kind.cs_id();
-    // `Main.player[npcInstance.target].ZoneGraveyard` — unported, false.
-    let zone_graveyard = false;
+    // `Main.player[npcInstance.target].ZoneGraveyard` — the pre-stamp.
+    let zone_graveyard = npc.target_zone_graveyard;
     let chain = !world.eclipse
         && world.day_time // `Main.IsItDay()` (`Main.cs:62825-62832`)
         && !npc.spawned_from_statue
@@ -1351,6 +1368,84 @@ mod tests {
         sk.y = 1880.0;
         w.eclipse = true;
         assert!(fighters_not_discouraged(&sk, &w));
+    }
+
+    /// W4-g4 lane 15 (the W4-d22 reconcile fold) — the graveyard term of
+    /// the chain (`NPC.cs:60302`'s `!Main.player[target].ZoneGraveyard`):
+    /// a day-discouraged skeleton above the surface chases again when the
+    /// target's zone pre-stamp is set (the sim feeds
+    /// `scene_metrics.zone_graveyard`).
+    #[test]
+    fn w4_g4_the_graveyard_stamp_cancels_the_day_discouragement() {
+        let mut w = ground(); // day
+        w.world_surface = 130.0;
+        let mut sk = Npc::new(NpcKind::Skeleton, 1600.0, 1880.0, 1, 0.0);
+        assert!(!fighters_not_discouraged(&sk, &w), "the day gate holds");
+        sk.target_zone_graveyard = true;
+        assert!(
+            fighters_not_discouraged(&sk, &w),
+            "the graveyard zone breaks the chain (:60302)"
+        );
+    }
+
+    /// W4-g4 lane 15 — the confused walk-direction reversal in the
+    /// GENERIC walker arms (`NPC.cs:77772-77775`, the
+    /// SetTargetTrackingValues tail): the ad-hoc dx-sign facing flips
+    /// under Confused (31) BEFORE the sprite lockstep and the velocity
+    /// write, so the walker accelerates AWAY from the player. Both
+    /// archetypes carry it — `walker_step` (the direct write) and
+    /// `walker_step_ladder` (the aiStyle-3 ladder reads the flipped
+    /// `direction`). The buff-31 latch convention (P3).
+    #[test]
+    fn w4_g4_the_confused_generic_walkers_reverse_the_walk() {
+        let w = night_ground();
+        // The player parked LEFT of the walker: the calm facing is -1.
+        let player = parked_player(&w, 60.0 * 16.0, 118.0 * 16.0 - 42.0);
+        let (pcx, pcy) = player.center();
+        let params = WalkerParams {
+            speed: 1.0,
+            jump: -6.2,
+            aggro_x: 80.0 * 16.0,
+            aggro_y: 40.0 * 16.0,
+        };
+        // walker_step (the direct write — the archer/shooter stand-ins).
+        let mut calm = Npc::new(NpcKind::GoblinArcher, 90.0 * 16.0, 118.0 * 16.0 - 38.0, 1, 0.0);
+        calm.on_ground = true;
+        let mut conf = calm.clone();
+        conf.buffs.add_buff(31, 600);
+        walker_step(&mut calm, &w, pcx, pcy, params, 0.4, 8.0);
+        walker_step(&mut conf, &w, pcx, pcy, params, 0.4, 8.0);
+        assert_eq!(calm.facing, -1, "the calm walker faces the player");
+        assert_eq!(conf.facing, 1, "the confused flip (:77774)");
+        assert_eq!(conf.sprite_dir, 1, "the lockstep rides the flip");
+        assert_eq!(conf.vx.to_bits(), 1.0f32.to_bits(), "the walk reverses");
+        assert_eq!(calm.vx.to_bits(), (-1.0f32).to_bits());
+        // walker_step_ladder (the aiStyle-3 ladder — the VortexSoldier
+        // stand-in): the ladder's accel reads the flipped direction.
+        // W4-g4 P9 (the W4-d22 reconcile fold): the kind is the Soldier
+        // 429 (null immunity row, `NPCID.cs:8561`), NOT the Headcrab 428
+        // — the headcrab is Confused-immune (`NPCID.cs:8555-8559`), so
+        // its buff-31 add is rejected and the flip never fires for it in
+        // the C#.
+        let mut calm3 = Npc::new(NpcKind::VortexSoldier, 90.0 * 16.0, 118.0 * 16.0 - 56.0, 1, 0.0);
+        calm3.on_ground = true;
+        let mut conf3 = calm3.clone();
+        conf3.buffs.add_buff(31, 600);
+        walker_step_ladder(&mut calm3, &w, pcx, pcy, params, 0.4, 8.0, false);
+        walker_step_ladder(&mut conf3, &w, pcx, pcy, params, 0.4, 8.0, false);
+        assert_eq!(calm3.facing, -1);
+        assert_eq!(conf3.facing, 1, "the ladder arm flips too");
+        assert!(calm3.vx < 0.0, "the calm ladder accelerates left");
+        assert!(conf3.vx > 0.0, "the confused ladder accelerates right");
+        // The fighter core keeps ONE flip (its TargetClosest already
+        // carries :77772 — the generic arms must not double it): the
+        // confused skeleton chases away, not back toward the player.
+        let mut sk = Npc::new(NpcKind::Skeleton, 90.0 * 16.0, 118.0 * 16.0 - 40.0, 1, 0.0);
+        sk.on_ground = true;
+        sk.buffs.add_buff(31, 600);
+        walker_step_fighter(&mut sk, &w, &player, params, 0.4, 8.0);
+        assert_eq!(sk.facing, 1, "one flip only — the core's selection owns it");
+        assert!(sk.vx > 0.0, "the confused fighter walks away");
     }
 
     #[test]

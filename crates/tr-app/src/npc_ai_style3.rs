@@ -19,9 +19,15 @@
 //! `fighter_walker_kind` (S1-E-21e — `old_x` holds the prior-tick stamp
 //! there; `update_preamble` overwrites it before this core runs). The
 //! ambient moans (`:57338-57367`) likewise ride the sim's post-AI emitter
-//! on the `UpdateNPCs` stream — this core draws ZERO rand for every
-//! claimed kind (the moan type lists name none of them; the bash's
-//! `Next(60)` short-circuits on the unported graveyard zone).
+//! on the `UpdateNPCs` stream. RNG census (the W4-d22/g4 reconcile): the
+//! core draws ZERO rand for every claimed kind OUTSIDE a graveyard (the
+//! moan type lists name none of them; the ladder/scan are draw-free); the
+//! ONE possible draw is the bash's graveyard gate `Next(60)`
+//! (`NPC.cs:59997`, W4-g4 lane 15) — the sim pre-stamps
+//! `Npc::target_zone_graveyard` and the core threads the caller's
+//! `UpdateNPCs` stream into the scan (the signature union). In a
+//! graveyard the bash draw precedes the sim-tail moan draw (the S1-E-21e
+//! moan-position remainder, extended by one conditional draw).
 //!
 //! Deferred per-type HEAD machines (documented, they sit BEFORE the core
 //! in the C# and are out of this lane's scope): the GigaZapper 389's
@@ -78,8 +84,16 @@ pub(crate) fn claims(kind: NpcKind) -> bool {
 
 /// One `AI_003_Fighters` tick for a claimed plain walker: the phases in
 /// the C#'s order, then the port's gravity + collision integration.
-/// Draws ZERO rand (the module header's census).
-pub(crate) fn fighter_core_step(npc: &mut Npc, world: &World, player: &crate::player::Player) {
+/// `rng` is the caller's `UpdateNPCs` stream (the W4-g4 lane-15 union):
+/// the only possible draw is the graveyard bash gate's `Next(60)`
+/// (`NPC.cs:59997`); outside a graveyard the core is draw-free (the
+/// module header's census).
+pub(crate) fn fighter_core_step(
+    npc: &mut Npc,
+    world: &World,
+    player: &crate::player::Player,
+    rng: &mut tr_core::UnifiedRandom,
+) {
     let t = npc.kind.cs_id();
     let (w, h) = npc.size();
     // `:55858-55861` — the head: the player's bottom edge exactly level
@@ -151,6 +165,7 @@ pub(crate) fn fighter_core_step(npc: &mut Npc, world: &World, player: &crate::pl
     crate::npc_ai_fighter_scan::fighter_obstacle_scan_g(
         npc,
         world,
+        rng,
         flag8,
         hop_flag,
         num57,
@@ -382,11 +397,11 @@ mod tests {
         p.x = 30.0 * TILE_PX;
         p.y = 440.0 - crate::player::HEIGHT;
         p.dead = false;
-        fighter_core_step(&mut n, &w, &p);
+        fighter_core_step(&mut n, &w, &p, &mut tr_core::UnifiedRandom::new(0));
         assert_eq!(n.facing, 1, "the player is to the right");
         assert!((n.vx - 0.07).abs() < 1e-6, "one 0.07 accel step: {}", n.vx);
         for _ in 0..100 {
-            fighter_core_step(&mut n, &w, &p);
+            fighter_core_step(&mut n, &w, &p, &mut tr_core::UnifiedRandom::new(0));
         }
         assert!(n.vx <= 1.5 + 1e-6, "the num83 cap: {}", n.vx);
     }
@@ -408,7 +423,7 @@ mod tests {
         let mut p = crate::player::Player::spawn(&w);
         p.x = 30.0 * TILE_PX;
         p.y = 440.0 - crate::player::HEIGHT;
-        fighter_core_step(&mut n, &w, &p);
+        fighter_core_step(&mut n, &w, &p, &mut tr_core::UnifiedRandom::new(0));
         assert!(n.despawn_timer >= 0, "EncourageDespawn(10) armed");
         assert_eq!(n.ai[0], 1.0, "the idle counter advances (parked)");
         assert_eq!(n.facing, 1, "no flip yet");
@@ -416,19 +431,18 @@ mod tests {
         // and step again — ai[0] reaches 2, the direction flips + resets.
         n.vx = 0.0;
         n.vy = 0.0;
-        fighter_core_step(&mut n, &w, &p);
+        fighter_core_step(&mut n, &w, &p, &mut tr_core::UnifiedRandom::new(0));
         assert_eq!(n.facing, -1, "the 2-tick flip");
         assert_eq!(n.ai[0], 0.0, "the counter resets");
     }
 
-    /// The core draws ZERO rand for the claimed set: the moan lists name
-    /// none of the ids, the bash's Next(60) short-circuits (graveyard
-    /// unported), the ladder/scan are draw-free.
+    /// The core draws ZERO rand for the claimed set OUTSIDE a graveyard:
+    /// the moan lists name none of the ids, the bash's Next(60)
+    /// short-circuits on the false pre-stamp (the W4-g4 lane-15 wiring),
+    /// the ladder/scan are draw-free. The stream-clone pin replays the
+    /// untouched-stream contract through the union signature.
     #[test]
     fn the_core_is_draw_free_for_the_claimed_set() {
-        // The witness is structural: fighter_core_step takes no rng at
-        // all — the signature IS the census pin. The sim's moan emitter
-        // owns the only rolls (the S1-E-21e wiring).
         let mut w = ground();
         w.day_time = false;
         let mut n = skeleton_at(&w, 20);
@@ -436,8 +450,46 @@ mod tests {
         p.x = 30.0 * TILE_PX;
         p.y = 440.0 - crate::player::HEIGHT;
         let before = (n.x, n.y, n.vx, n.vy, n.ai);
-        fighter_core_step(&mut n, &w, &p);
+        let mut rng = tr_core::UnifiedRandom::new(3);
+        let pristine = rng.clone();
+        fighter_core_step(&mut n, &w, &p, &mut rng);
         assert_ne!((n.x, n.vx), (before.0, before.2), "the machine moved");
+        assert_eq!(rng, pristine, "outside a graveyard: zero draws (the census)");
+    }
+
+    /// W4-d22 reconcile — the graveyard gate rides the axis core too: a
+    /// Skeleton (21, in flag24) bashing a door INSIDE the zone spends
+    /// exactly one Next(60) on the caller stream (the W4-g4 lane-15
+    /// contract through `fighter_core_step`). The fixture parks the
+    /// skeleton at the door probe cell with the bash counter at 59.
+    #[test]
+    fn w4_d22_the_core_threads_the_graveyard_bash_draw() {
+        let mut w = ground();
+        w.day_time = false;
+        // The door at the skeleton's ahead-probe cell: the skeleton is
+        // 18x40 (kind.size), x = 319 → centre 328 + 15 = 343 → col 21;
+        // the probe row (440 + 40 - 15)/16 = 29, the door at 28.
+        let i = w.index(21, 28);
+        w.tiles[i] = tr_core::tile::Tile { kind: 10, frame_x: 0, frame_y: 0, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.blood_moon = true;
+        let mut n = skeleton_at(&w, 20);
+        n.x = 319.0;
+        n.vx = 1.0;
+        n.ai[2] = 59.0;
+        n.target_zone_graveyard = true;
+        let mut p = crate::player::Player::spawn(&w);
+        p.x = 30.0 * TILE_PX;
+        p.y = 440.0 - crate::player::HEIGHT;
+        // The live target: TargetClosest faces +1 (the player is right),
+        // the num83 ladder accelerates vx 1.0 → 1.07 (under the 1.5 cap),
+        // so the ahead probe stays on the door column and the bash fires.
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        let mut mirror = rng.clone();
+        let _ = mirror.next_max(60); // the ONE cited draw (:59997)
+        fighter_core_step(&mut n, &w, &p, &mut rng);
+        assert!(n.wants_door_bash.is_some(), "the bash fired");
+        assert_eq!(rng, mirror, "exactly one Next(60) through the core");
     }
 
     /// `CanBeBusyWithAction` (`NPC.cs:60332-60339`): the listed types

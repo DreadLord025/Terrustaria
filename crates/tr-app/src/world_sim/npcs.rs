@@ -4378,6 +4378,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
+    // W4-g4 lane 15 (the W4-d22 reconcile fold) —
+    // `Main.player[target].ZoneGraveyard` pre-stamp (the wind pre-pass
+    // convention above): the fighter bash gate (`NPC.cs:59997`) and the
+    // despawn-discouragement chain (`:60302`) read the TARGET player's
+    // zone; the port is single-player, so the session player's
+    // `scene_metrics.zone_graveyard` (the d120 biome pass, captured above
+    // for the moan gate) stands in. Stamped on every slot — any kind's
+    // `TargetClosest` may pick the session player.
+    {
+        for n in app.npcs.iter_mut() {
+            n.target_zone_graveyard = zone_graveyard;
+        }
+    }
     // The Twins' shared-despawn seam (S1-D-3-wire-retinazer,
     // `NPC.cs:26468-26474` — the aiStyle-30 arm's `num400 != whoAmI`
     // scan over the other ACTIVE type-125/126 slots, feeding
@@ -4833,9 +4846,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // then, when `ai[1] >= 10` (`flag28`), `WorldGen.OpenDoor`
     // (`:60061`) + the `Door_Opened` cue (`WorldGen.cs:37732`'s
     // `PlaySound(8)`); a refusal sets `ai[3] = num57` (`:60064`). The
-    // tall gate (388) `ShiftTallGate` is unported — the bash still
-    // counted its +2 and plays the thud, the gate never shifts
-    // (ANALYSIS "The zombie fighter audit").
+    // tall gate (388) `ShiftTallGate` (W4-g4 P4, the W4-d22 reconcile
+    // fold) shifts the gate to its open kind (389) on the same stream; a
+    // refusal sets `ai[3] = num57` (`:60077`).
     for i in 0..app.npcs.len() {
         let Some((tx, ty, dir, open)) = app.npcs[i].wants_door_bash.take() else {
             continue;
@@ -4932,8 +4945,72 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 }
             }
         }
-        // `:60072-60084` — the tall gate (388) `ShiftTallGate`: unported
-        // (the module docs' stand-in) — no shift, no refusal.
+        // `:60072-60084` — the tall gate (388) `ShiftTallGate` (W4-g4 P4,
+        // the W4-d22 reconcile fold: the S1-D-3z stand-in retired). The
+        // gate shifts to its open kind (389); a refusal sets
+        // `ai[3] = num57` like the door's. The occupancy gate is
+        // `Collision.EmptyTile(ignoreTiles: true)` — the player/NPC box
+        // overlap (the `close_door` convention).
+        if kind == Some(388) {
+            let mut drops = Vec::new();
+            let player = app.player.as_ref();
+            let npcs = &app.npcs;
+            let cell_blocked = |cx: i32, cy: i32| -> bool {
+                let (x0, y0) = (cx as f32 * TILE_PX, cy as f32 * TILE_PX);
+                let (x1, y1) = (x0 + TILE_PX, y0 + TILE_PX);
+                if let Some(p) = player {
+                    if x0 < p.x + crate::player::WIDTH
+                        && x1 > p.x
+                        && y0 < p.y + crate::player::HEIGHT
+                        && y1 > p.y
+                    {
+                        return true;
+                    }
+                }
+                npcs.iter().any(|n| {
+                    let (w, h) = n.kind.size();
+                    x0 < n.x + w && x1 > n.x && y0 < n.y + h && y1 > n.y
+                })
+            };
+            let shifted = tr_core::edit::shift_tall_gate(
+                &mut app.world,
+                tx,
+                ty,
+                false,
+                false,
+                &cell_blocked,
+                &mut drops,
+            );
+            if !shifted {
+                // `:60075-60079` — the refusal: the idle counter jumps to
+                // num57 (60 for the zombie family).
+                app.npcs[i].ai[3] = 60.0;
+                app.npcs[i].net_update = true;
+            } else {
+                // `WorldGen.cs:51762` — `SoundEngine.PlaySound(8)`: the
+                // gate cue rides the UpdateNPCs stream (the door
+                // convention).
+                app.audio.play_door_sound(
+                    true,
+                    tx as f32 * TILE_PX,
+                    ty as f32 * TILE_PX,
+                    app.rngs.stream(RngKey::UpdateNpcs),
+                );
+                app.world_key = None;
+            }
+            for d in drops {
+                if let Some(item) = registry::tile_drop(d.tile_kind, 0) {
+                    crate::world_sim::items::spawn_item_drop(
+                        &mut app.items,
+                        app.rngs.stream(RngKey::UpdateNpcs),
+                        item,
+                        1,
+                        d.x,
+                        d.y,
+                    );
+                }
+            }
+        }
     }
     // S1-C-7 wave B — the contact lane's hurt modifiers (`Player.Hurt`
     // `:38396-38517`): the accepted contact hit queued its retaliate request
@@ -6030,17 +6107,24 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     let mut ai_shots = Vec::new();
     let mut gallop_dust = Vec::new();
     for (i, n) in app.npcs.iter_mut().enumerate() {
+        // `FindBannerToAssociateTo` (`Projectile.cs:11104-11117`): the
+        // hostile shot spawned from an NPC (`EntitySource_Parent`) carries
+        // the spawner's `BannerSystem.NPCtoBanner(nPC.BannerID())` — the
+        // banner its `Damage_EVP` strength reads (`:14832`). Captured per
+        // requester before the drains (the `wants_hostile_shot` owner
+        // slot). W4-g4 P1 (the W4-d22 reconcile fold).
+        let banner = tr_core::bestiary::npc_to_banner(n.kind.cs_id() as i32);
         for shot in n.wants_hostile_shot.drain(..) {
-            shots.push((i, shot));
+            shots.push((i, banner, shot));
         }
         for shot in n.wants_hostile_shot_ai.drain(..) {
-            ai_shots.push(shot);
+            ai_shots.push((banner, shot));
         }
         for d in n.wants_gallop_dust.drain(..) {
             gallop_dust.push(d);
         }
     }
-    for (owner_slot, (kind, sx, sy, svx, svy, dmg)) in shots {
+    for (owner_slot, banner, (kind, sx, sy, svx, svy, dmg)) in shots {
         #[cfg(test)]
         eprintln!(
             "[spawn-dbg] pool slots active: {}",
@@ -6085,7 +6169,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         } else {
             0.0
         };
-        if time_left > 0 {
+        let spawned = if time_left > 0 {
             app.projectiles.spawn_hostile_timed(
                 kind,
                 Vec2::new(sx, sy),
@@ -6094,10 +6178,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 0.0,
                 time_left,
                 ai0,
-            );
+            )
         } else {
             app.projectiles
-                .spawn_hostile(kind, Vec2::new(sx, sy), Vec2::new(svx, svy), dmg, 0.0);
+                .spawn_hostile(kind, Vec2::new(sx, sy), Vec2::new(svx, svy), dmg, 0.0)
+        };
+        // `FindBannerToAssociateTo` (`Projectile.cs:11114`): stamp the
+        // spawner's banner onto the fresh slot (the `set_scale`
+        // precedent). W4-g4 P1.
+        if let Some(slot) = spawned {
+            app.projectiles.slots_mut()[slot].banner_id_to_respond_to = banner;
         }
         #[cfg(test)]
         eprintln!(
@@ -6110,7 +6200,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // trailing arguments, `Projectile.cs:10862-10863`): the deathray's owner
     // slot + 1, the missile's 20-tick arming delay, the Deerclops' ice
     // spike's scale factor and the Insanity Shadow's variation age + angle.
-    for shot in ai_shots {
+    for (banner, shot) in ai_shots {
         let slot = app.projectiles.spawn_hostile_ai(
             shot.kind,
             Vec2::new(shot.x, shot.y),
@@ -6125,6 +6215,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // (`unicorn_step`'s fourth draw); apply it to the spawned slot.
         if let (Some(slot), Some(scale)) = (slot, shot.scale) {
             app.projectiles.set_scale(slot, scale);
+        }
+        // `FindBannerToAssociateTo` (`Projectile.cs:11114`): the spawner's
+        // banner rides the ai-payload shots too (the deathray/missile).
+        // W4-g4 P1.
+        if let Some(slot) = slot {
+            app.projectiles.slots_mut()[slot].banner_id_to_respond_to = banner;
         }
     }
     // The Horseman's gallop dust (`NPC.cs:62431-62437`, S1-D-4 W-10):
@@ -17773,9 +17869,10 @@ mod dw3_tests {
     /// `KillTile(fail: true)` thud and opens nothing; with `open = true`
     /// on a closed door it calls `edit::open_door` (the cell turns to the
     /// open door, tile 11) and plays the `Door_Opened` cue. The request
-    /// drains either way. (The scan itself draws nothing — the bash's
-    /// `Next(60)` short-circuits on the unported graveyard zone; the door
-    /// cue's one pitch draw rides `UpdateNPCs`, `WorldGen.cs:37732`.)
+    /// drains either way. (W4-g4 lane 15, the W4-d22 reconcile fold: the
+    /// scan's only draw is the graveyard bash gate's `Next(60)` — outside
+    /// a graveyard the zone guard short-circuits it; the door cue's one
+    /// pitch draw rides `UpdateNPCs`, `WorldGen.cs:37732`.)
     #[test]
     fn s1_d_3z_the_door_bash_drain_opens_the_door() {
         use tr_core::tile::{Tile, FLAG_ACTIVE};
@@ -17828,6 +17925,123 @@ mod dw3_tests {
             Some(11),
             "the door opened (tile 11)"
         );
+    }
+
+    /// W4-g4 P4 (the W4-d22 reconcile fold) — the door-bash drain's
+    /// tall-gate arm (`NPC.cs:60072-60084`, `WorldGen.ShiftTallGate`): a
+    /// queued bash with `open = true` on a closed tall gate (388) shifts
+    /// it to the open kind (389); the request drains. The S1-D-3z
+    /// stand-in (no shift) is retired. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_g4_the_door_bash_drain_shifts_the_tall_gate() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut world = crate::test_world_helpers::ground();
+        world.compute_column_surface();
+        world.day_time = false;
+        app.world = world;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 150.0 * 16.0;
+        player.y = 110.0 * 16.0;
+        app.player = Some(player);
+        // A closed tall gate (388) at column 30, rows 115-119 (the 1×5
+        // style-0 object, frameY the coordinate-heights prefix).
+        for (k, y) in (115..=119).enumerate() {
+            let i = app.world.index(30, y);
+            let fy = [0i16, 18, 34, 50, 66][k];
+            app.world.tiles[i] = Tile { kind: 388, frame_x: 0, frame_y: fy, ..Default::default() };
+            app.world.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut zombie = Npc::new(NpcKind::Zombie, 28.0 * 16.0, 116.0 * 16.0, 1, 0.0);
+        zombie.hp = zombie.max_hp;
+        zombie.wants_door_bash = Some((30, 118, 1, true));
+        app.npcs.push(zombie);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.npcs[0].wants_door_bash.is_none(), "the request drained");
+        assert_eq!(
+            app.world.tile(30, 118).map(|t| t.kind),
+            Some(389),
+            "the tall gate shifted to its open kind (389)"
+        );
+    }
+
+    /// W4-g4 lane 15 (the W4-d22 reconcile fold) — the graveyard bash
+    /// wiring end to end: the sim pre-stamps `target_zone_graveyard` from
+    /// `scene_metrics.zone_graveyard` (the d120 biome pass), and a 60-tick
+    /// bash inside the zone spends exactly one `Next(60)` on the
+    /// `UpdateNPCs` stream (`NPC.cs:59997`). The twin replays the scan
+    /// draw + the sim-tail moan roll (the S1-E-21e position convention);
+    /// outside the zone the same fixture is draw-free apart from the moan
+    /// (the legacy census). WRITTEN NOT RUN.
+    #[test]
+    fn w4_g4_the_graveyard_bash_draws_on_the_update_npcs_stream() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        let build = |graveyard: bool| {
+            let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+            let mut world = crate::test_world_helpers::ground();
+            world.compute_column_surface();
+            world.day_time = false;
+            world.blood_moon = true; // flag27 false either way
+            app.world = world;
+            let mut player = crate::player::Player::spawn(&app.world);
+            player.x = 150.0 * 16.0;
+            player.y = 110.0 * 16.0;
+            app.player = Some(player);
+            app.scene_metrics.zone_graveyard = graveyard;
+            // A closed door (10) at the zombie's probe cell (21, 118):
+            // the zombie at x = 319 (centre 328 + 15 → col 21), feet on
+            // row 120's top (y = 1880), probe row (1880+40-15)/16 = 119,
+            // the door at 119 - 1 = 118 (the 1x3 door rows 117-119).
+            for (dy, frame_y) in [(117i32, 0i16), (118, 18), (119, 36)] {
+                let i = app.world.index(21, dy);
+                app.world.tiles[i] =
+                    Tile { kind: 10, frame_x: 0, frame_y, ..Default::default() };
+                app.world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+            let mut zombie = Npc::new(NpcKind::Zombie, 319.0, 1880.0, 1, 0.0);
+            zombie.hp = zombie.max_hp;
+            zombie.vx = 1.0;
+            zombie.sprite_dir = 1;
+            zombie.ai[2] = 59.0; // the next scan hits 60 → the bash fires
+            app.npcs.push(zombie);
+            app.rngs = crate::app::rng::NamedRngs::new(app.world.seed as i32);
+            app
+        };
+        // Inside the graveyard: one Next(60) ahead of the moan roll.
+        let mut a = build(true);
+        update_npcs(&mut a, 1.0 / 60.0);
+        assert!(a.npcs[0].target_zone_graveyard, "the pre-stamp landed");
+        assert!(a.npcs[0].wants_door_bash.is_none(), "the bash drained");
+        let after = a.rngs.stream(RngKey::UpdateNpcs).clone();
+        let mut twin_rng = UnifiedRandom::new(a.world.seed as i32);
+        let _bash = twin_rng.next_max(60); // the scan's ONE draw (:59997)
+        // The sim-tail moan (the DW-3.1 replay shape): the night gate
+        // passes, the type-3 arm spends its Next(1000).
+        crate::ambient_sound::fighter_ambient_moans(
+            3,
+            a.npcs[0].ai[3],
+            true,
+            a.npcs[0].shimmer_transparency,
+            &mut twin_rng,
+            &mut |_, _, _| {},
+        );
+        assert_eq!(after, twin_rng, "bash Next(60) + moan Next(1000), in order");
+        // Outside the graveyard: the zone guard short-circuits — the
+        // stream carries ONLY the moan roll (the legacy zero-draw bash).
+        let mut b = build(false);
+        update_npcs(&mut b, 1.0 / 60.0);
+        assert!(!b.npcs[0].target_zone_graveyard);
+        let after_b = b.rngs.stream(RngKey::UpdateNpcs).clone();
+        let mut twin_b = UnifiedRandom::new(b.world.seed as i32);
+        crate::ambient_sound::fighter_ambient_moans(
+            3,
+            b.npcs[0].ai[3],
+            true,
+            b.npcs[0].shimmer_transparency,
+            &mut twin_b,
+            &mut |_, _, _| {},
+        );
+        assert_eq!(after_b, twin_b, "no bash draw outside the graveyard");
     }
 }
 
