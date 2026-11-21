@@ -192,6 +192,16 @@ pub(crate) struct ArrivalContext<'a> {
     /// `num40` — the live town-resident total, the `>= 8` / `>= 20` terms the
     /// C# reads inline (`Main.cs:65929`, `:65785`).
     pub(crate) residents: i32,
+    /// `WorldGen.GetWorldUpdateRate()` (`WorldGen.cs:72020-72030`): the
+    /// check interval is `7200 / rate` and a zero rate skips the whole
+    /// function (`Main.cs:65544-65552`, W4-d119 phase 2b).
+    pub(crate) world_update_rate: i32,
+    /// `Main.GetBestiaryProgressReport().CompletionPercent`
+    /// (`Main.cs:65770`, the Zoologist's `>= 0.1f` gate `:65896-65899` /
+    /// `:66062-66065`, W4-d119 phase 2b). The vampire-seed lead term
+    /// (`vampireSeed && !infectedSeed`) stays constants-off — the
+    /// special-seed lane's claim (f43 census).
+    pub(crate) bestiary_completion: f32,
 }
 
 /// The `flag`/`flag2`… set of `Main.cs:65763-65799`, keyed by kind.
@@ -219,7 +229,12 @@ pub(crate) fn condition_holds(kind: NpcKind, ctx: &ArrivalContext<'_>) -> bool {
         NpcKind::Stylist => w.saved_stylist,
         NpcKind::TaxCollector => w.saved_tax_collector,
         NpcKind::Golfer => w.saved_golfer,
-        NpcKind::DyeTrader => spawn_allowed_dye_trader(ctx.inventory, ctx.equipped_dyes),
+        NpcKind::DyeTrader => {
+            // `flag4 && num16 < 1 && num40 >= 4` (`Main.cs:65860-65863`) —
+            // the four-resident term the landed core dropped (W4-d119
+            // phase 2b, the f43 census's "known LANDED gap").
+            spawn_allowed_dye_trader(ctx.inventory, ctx.equipped_dyes) && ctx.residents >= 4
+        }
         // `num40 >= 8` residents (`:65929`).
         NpcKind::Painter => ctx.residents >= 8,
         // `flag7 = (rand.Next(40) == 0) && num40 >= 20`, with
@@ -227,7 +242,10 @@ pub(crate) fn condition_holds(kind: NpcKind, ctx: &ArrivalContext<'_>) -> bool {
         NpcKind::PartyGirl => {
             (ctx.party_roll && ctx.residents >= 20) || w.unlocked_party_girl
         }
-        NpcKind::Zoologist => false,
+        // `((vampireSeed && !infectedSeed) || bestiary >= 0.1f) && num27 < 1`
+        // (`Main.cs:65896-65899`) — the bestiary term wired (W4-d119 phase
+        // 2b); the vampire-seed lead stays constants-off (special-seed lane).
+        NpcKind::Zoologist => ctx.bestiary_completion >= 0.1,
         // `flag9`: every other town type resident (`:65944-65955`); the port
         // ships the unlock flag, the roster term needs the full type set.
         NpcKind::Princess => w.unlocked_princess,
@@ -253,10 +271,15 @@ pub(crate) fn update_time_spawn_town_npcs(
     npcs: &[Npc],
     rooms_ready: &dyn Fn(NpcKind) -> bool,
 ) -> Option<NpcKind> {
-    // `:65544-65555` — the client early return and the tick gate. The port's
-    // world update rate is 1 (60 Hz ticks), so the interval is the plain 7200.
+    // `:65544-65555` — the client early return (the caller gates it), the
+    // rate-0 skip and the tick gate: `checkForSpawns < 7200 /
+    // worldUpdateRate` (W4-d119 phase 2b — the landed core folded the rate
+    // to 1; the journey time-rate slider / all-asleep x5 now divide it).
+    if ctx.world_update_rate <= 0 {
+        return None;
+    }
     state.check_for_spawns += 1;
-    if state.check_for_spawns < 7200 {
+    if state.check_for_spawns < 7200 / ctx.world_update_rate {
         return None;
     }
     state.check_for_spawns = 0;
@@ -274,9 +297,10 @@ pub(crate) fn update_time_spawn_town_npcs(
     // The two gates that also require another resident (`:65810`, `:65818`).
     state.can_spawn[LADDER_POS_NURSE] &= count(NpcKind::Merchant) > 0;
     state.can_spawn[LADDER_POS_DEMOLITIONIST] &= count(NpcKind::Merchant) > 0;
-    // `:65927-65933` — the Zoologist opens at 10% bestiary completion, and the
-    // Princess at one of every other town type. Both need data the port does
-    // not model yet; they stay closed rather than guessing.
+    // `:65927-65933` — the Princess at one of every other town type; the
+    // full flag9 roster is the f43 lane's pushed claim
+    // (`town_arrival_pets::princess_flag9`, UNWIRED); the unlock-only stub
+    // stays until that splice. The Zoologist's bestiary term is wired above.
 
     // `:65957-66116` — the priority ladder: the first eligible kind wins.
     for (i, kind) in LADDER.iter().enumerate() {
@@ -313,6 +337,8 @@ mod tests {
             max_hp: 100,
             party_roll: false,
             residents: 1,
+            world_update_rate: 1,
+            bestiary_completion: 0.0,
         }
     }
 
@@ -430,6 +456,8 @@ mod tests {
             max_hp: 200,
             party_roll: false,
             residents: 1,
+            world_update_rate: 1,
+            bestiary_completion: 0.0,
         };
         state.check_for_spawns = 7199;
         update_time_spawn_town_npcs(&mut state, &c, &npcs, &|_| false);
@@ -460,5 +488,58 @@ mod tests {
         state.check_for_spawns = 7199;
         update_time_spawn_town_npcs(&mut state, &ctx(&world, &inv), &roster, &|_| false);
         assert!(!state.can_spawn(NpcKind::Merchant));
+    }
+
+    /// W4-d119 phase 2b — `Main.cs:65544-65552`: the interval is
+    /// `7200 / GetWorldUpdateRate()`; at rate 5 (all-asleep) the check fires
+    /// on tick 1440, and at rate 0 (FreezeTime) the counter never advances.
+    #[test]
+    fn the_check_interval_divides_by_the_world_update_rate() {
+        let world = World::new("t".into(), 50, 50);
+        let inv = [slot(71, 5000)];
+        let npcs = Vec::new();
+        let mut state = ArrivalState::new();
+        let mut c = ctx(&world, &inv);
+        c.world_update_rate = 5;
+        let mut checks = 0;
+        for _ in 0..1440 {
+            update_time_spawn_town_npcs(&mut state, &c, &npcs, &|_| false);
+            if state.check_for_spawns == 0 {
+                checks += 1;
+            }
+        }
+        assert_eq!(checks, 1, "one check per 7200/5 = 1440 ticks");
+        // Rate 0: the whole function skips before the counter increment.
+        let mut state = ArrivalState::new();
+        c.world_update_rate = 0;
+        for _ in 0..7200 {
+            assert!(update_time_spawn_town_npcs(&mut state, &c, &npcs, &|_| false).is_none());
+        }
+        assert_eq!(state.check_for_spawns, 0, "the frozen clock never counts");
+    }
+
+    /// W4-d119 phase 2b — `Main.cs:65860-65863`: the DyeTrader's gate needs
+    /// `num40 >= 4` residents on top of the dye; `:65896-65899`: the
+    /// Zoologist opens at `CompletionPercent >= 0.1f`.
+    #[test]
+    fn the_dye_trader_wants_four_residents_and_the_zoologist_the_bestiary() {
+        let world = World::new("t".into(), 50, 50);
+        let inv = [slot(1109, 1)];
+        let mut state = ArrivalState::new();
+        let mut c = ctx(&world, &inv);
+        c.residents = 3;
+        state.check_for_spawns = 7199;
+        update_time_spawn_town_npcs(&mut state, &c, &[], &|_| false);
+        assert!(!state.can_spawn(NpcKind::DyeTrader), "three residents wait");
+        c.residents = 4;
+        state.check_for_spawns = 7199;
+        update_time_spawn_town_npcs(&mut state, &c, &[], &|_| false);
+        assert!(state.can_spawn(NpcKind::DyeTrader), "the fourth opens it");
+        // The Zoologist: below 10% closed, at 10% open (the f32 compare).
+        assert!(!state.can_spawn(NpcKind::Zoologist));
+        c.bestiary_completion = 0.1;
+        state.check_for_spawns = 7199;
+        update_time_spawn_town_npcs(&mut state, &c, &[], &|_| false);
+        assert!(state.can_spawn(NpcKind::Zoologist), "10% bestiary opens her");
     }
 }
