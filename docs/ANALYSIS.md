@@ -39462,9 +39462,18 @@ POST-write snapshots ride the state structs.
   team-dye state (`Player.hairDye` unported — the dye cache's recorded
   deviation).
 * The `MessageBuffer.cs:3828` net arm drops (single-player port).
-* The `ShakeTree` loot ladder (`WorldGen.cs:63163-63403`, the genRand
-  item/NPC/projectile arms) stays the loot lane's — the FX tail's
-  position is independent of it (no RNG before it).
+* The `ShakeTree` loot ladder (`WorldGen.cs:63163-63403`) is WIRED (wiring
+  wave 2, `world_sim/editing/shake_loot.rs`): the axe fail tick resolves the
+  shake site once (`tree::shake_tree_resolve`), runs the full genRand else-if
+  chain (the per-shake `FastRandom` stand-in seeded by ONE `UpdatePlayers`
+  throw, the `Main.rand` item/NPC/projectile rolls on the same stream), then
+  the FX tail (`tree::shake_tree_fx_at`). The i30 axe-chop lane owns the
+  chop/damage book + the per-cell BREAK drops; this is the per-shake loot.
+  Stand-ins: `Item.NewItem`'s `prefix: 0` natural-roll deviation
+  (`items.rs:767`), `Main.halloween`/`xMas` constants-off (the gates draw,
+  fall through), unported NPC kinds consume their rolls then spawn nothing
+  (`kind_from_net_id`), the `npcProj`/`CanBeReplacedByOtherNPCs` flags
+  unported. The `MessageBuffer.cs:3828` net arm is g50's (see below).
 * The `ItemCheck_EmitUseVisuals` dust-only item arms
   (989/2880/44-46/273/723/190/213/…) and the other meleeEnchant rows
   stay the dust lane's; the other use styles' rect resolutions park
@@ -39483,3 +39492,65 @@ stream-parity ledgers (the pot drain's all-37-styles replay, the
 player/growth/ItemCheck idle draw-neutrality twins, the confetti
 gate's classic-seed twin). The witness rigs put the camera on the
 player (the `Dust.NewDust` cull reads `SpawnCtx.screen_position`).
+
+## The gore wiring wave 2 (W4-g17, the unwired remainders)
+
+The wiring wave's documented remainders, censused against the co-lane
+branch tips and resolved:
+
+**1. The ShakeTree loot ladder — WIRED** (`world_sim/editing/shake_loot.rs`,
+`WorldGen.cs:63163-63403`). The i30 axe-chop lane (merged `0c888e891`) owns
+the chop/damage book and the per-cell BREAK drops (`KillTile_GetItemDrops`
+via `break_tile`); the per-shake loot ladder was UNCLAIMED. The port splits
+`tree.rs`'s `shake_tree_fx` into `shake_tree_resolve` (the dedupe/walk,
+`:63133-63162`, returns a `ShakeTreeSite`) and `shake_tree_fx_at` (the FX
+tail, `:63404-63417`); the axe fail tick runs resolve → loot → FX in the C#
+order. The ladder is the full genRand else-if chain: the tenth+notTheBees
+honey grenade (1130), the getGood bomb projectile (28/75, `npcProj`), the
+forest/jungle rare items (832/933/3360/3361/5517/4366), the 5629 + acorn 27,
+the mushroom 194, the halloween pumpkin 1809 (constants-off), the per-cell
+`KillTile_GetItemDrops` wood (the `:63219` arm discards `dropItemStack`/
+`secondaryItem` — the resolver's rolls draw, the spawn always uses
+`genRand.Next(1,4)`), the coin arm (71/73/72), the bird/squirrel critter
+(the `goldCritterChance` 400 `RollLuck`), the hallowed night fairy, the
+forest night owl, the jungle day macaw, the 5-bird/5-bee bursts, the palm
+seagull, the crimson Crimera (-22→173) / corrupt Eater (-11→6), the jungle
+night bat + hive projectile (655), the butterfly, the ash underworld
+critter, the remix obsidian 965, and the per-biome fruit/seed band. The
+genRand stand-in is ONE `UpdatePlayers` throw per shake (the
+`spawn_things_from_pot` convention); `Main.rand` rides the same stream.
+`is_palm_oasis_tree` (`WorldGen.cs:27205-27212`, `beachDistance` 380) gates
+the palm arms. Stand-ins: the `Item.NewItem` `prefix: 0` natural-roll
+deviation, `Main.halloween`/`xMas` false (the gates draw then fall through),
+unported NPC kinds consume their rolls then spawn nothing
+(`kind_from_net_id`), `NPC.NewNPC`'s getGood `Next(3)` draw kept, the
+`Bottom` anchor → top-left `(X-w/2, Y-h)`, `timeLeft` 937 → `despawn_timer`,
+the `npcProj`/`CanBeReplacedByOtherNPCs` flags unported. 3 witnesses
+(the 400-seed ladder replay, the acorn-arm pin, the re-pinned axe-shake
+8-gore witness — the ladder spawns no gores, so the FX count is seed-robust).
+
+**2. The sandstorm hold — CONTRACT (f42's).** `Player.DoubleJumpVisuals`'
+sandstorm arm (`Player.cs:21905-21926`) is fully wired on
+`origin/task/W4-f42-sandstorm-2` (`4bf7b2e88`: `pending_sandstorm_jump` +
+the `world_sim/player.rs` drain, the 3 type-124 dusts + the %3 220-222 gore
+on `UpdatePlayers`). c40 (`bdd039802`) deferred the visuals to f42 with the
+RNG slot recorded. This lane's `player_gore_b::sandstorm_jump_gore` is the
+UNWIRED twin — keep-one at merge: f42's live drain survives, this module's
+arm retires (the `npc_ai_style73` unwired-module precedent). No double-feed.
+
+**3. The hair-dye arm — WIRED** (see "The hair-dye wiring" below).
+
+**4. The MessageBuffer net arm — CONTRACT (g50's).** `MessageBuffer.cs:3828`
+is msg **112 SpecialFX** kind 1 (`WorldGen.TreeGrowFX`, the shake variant on
+`b6 == 1`). `origin/task/W4-g50-net-apply-arms-3` owns the apply arm
+(`netglue.rs:3000` `S2c::SpecialFx` → `tree_grow_fx` + `tree_grow_fx_ash_shake`
++ kind 2 `fairy_effects`, the bare-`Main.rand` message-time replay). g51 is
+ids 121-163 (112 out of range). This lane's `world_gore_a::tree_grow_fx` is
+the single-player twin — keep-one at merge: g50's net apply + this lane's
+growth/axe dispatches share the one burst fn. The `ShakeTree` `netMode == 2`
+`SendData(112)` (`:63410-63413`) is the server send (single-player port
+drops it, the pool convention).
+
+**5. The dust-only ItemCheck arms — WIRED** (see "The ItemCheck dust-only
+arms" below). g66/e3/d51/e1/f3/g15 do NOT claim them (only the `bug_net.rs`
+zero-draw comment + `buff_effects_accessory.rs`'s "not ported yet" note).

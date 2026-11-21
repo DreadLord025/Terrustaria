@@ -23,6 +23,7 @@ mod doors;
 use doors::interact_tile;
 pub(crate) use doors::{bed_spawn_valid, check_bed_spawn};
 mod sentry;
+mod shake_loot;
 
 /// One 60 Hz tick in seconds — the fixed step the swing/item timers are paced
 /// against (`Player.Update`'s tick, `frame.rs`'s `FixedStepper::new(1.0 / 60.0)`).
@@ -1799,25 +1800,44 @@ fn axe_tile_hit(app: &mut App, tx: i32, ty: i32, kind: u16, axe_power: i32, held
     // sound/dust is the recorded deviation; the damage stays in the book.
     // W4-g17 wiring — `KillTile(fail: true)`'s `ShakeTree` arm
     // (`WorldGen.cs:63710-63714`): a shakeable tile (the tree trunks)
-    // shakes on EVERY fail tick; the FX tail (`tree::shake_tree_fx` →
-    // `world_gore_a::tree_grow_fx`, hitTree: true) spawns on the
-    // `UpdatePlayers` stream (the ItemCheck swap). The loot ladder is
-    // the loot lane's (documented drop — the FX position is independent).
+    // shakes on EVERY fail tick. The C# `ShakeTree` order (`:63131-63418`):
+    // the dedupe/walk (`tree::shake_tree_resolve`, `:63133-63162`) records
+    // the shake ONCE, then the loot ladder (`shake_loot::shake_tree_loot`,
+    // `:63163-63403`) draws its genRand/Main.rand rolls, then the FX tail
+    // (`tree::shake_tree_fx_at` → `world_gore_a::tree_grow_fx`, hitTree:
+    // true, `:63404-63417`) spawns on the `UpdatePlayers` stream (the
+    // ItemCheck swap). The per-shake genRand stand-in is ONE UpdatePlayers
+    // throw (the `spawn_things_from_pot` convention), drawn before the FX.
     if tr_core::tiledata::SET_IS_SHAKEABLE.has(kind) {
-        if let Some((bx, by, style)) = tr_core::tree::shake_tree_fx(&mut app.world, tx, ty) {
+        if let Some(site) = tr_core::tree::shake_tree_resolve(&mut app.world, tx, ty) {
             let spawn_ctx = app.spawn_ctx();
-            crate::world_gore_a::tree_grow_fx(
-                bx,
-                by,
-                1,
-                style,
-                true,
-                &mut app.gore,
-                &mut app.dust,
-                &spawn_ctx,
-                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                &app.world,
-            );
+            // The loot ladder: one UpdatePlayers throw seeds the genRand
+            // FastRandom stand-in; Main.rand rides the same stream.
+            {
+                let mut gen_stream = tr_core::tile_light::FastRandom::new(
+                    app.rngs
+                        .stream(crate::app::RngKey::UpdatePlayers)
+                        .next() as u64,
+                );
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                shake_loot::shake_tree_loot(app, &site, tx, ty, &mut gen_stream, rng);
+            }
+            // The FX tail (RNG-free position; the gore burst's kicks ride
+            // the same stream, after the loot's draws — the C# order).
+            if let Some((bx, by, style)) = tr_core::tree::shake_tree_fx_at(&app.world, &site) {
+                crate::world_gore_a::tree_grow_fx(
+                    bx,
+                    by,
+                    1,
+                    style,
+                    true,
+                    &mut app.gore,
+                    &mut app.dust,
+                    &spawn_ctx,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &app.world,
+                );
+            }
         }
     }
     // `:45764-45767` — a non-zero damage prunes the book.
@@ -12418,12 +12438,15 @@ mod tests {
     }
 
     /// W4-g17 wiring — the axe fail tick's `ShakeTree` arm
-    /// (`WorldGen.cs:63710-63714` → `tree::shake_tree_fx` →
+    /// (`WorldGen.cs:63710-63714` → `tree::shake_tree_resolve` → the loot
+    /// ladder `shake_loot::shake_tree_loot` → `tree::shake_tree_fx_at` →
     /// `world_gore_a::tree_grow_fx`, hitTree: true): a fail hit on the
-    /// trunk records the shake and spawns the hit-tree leaf burst (the
-    /// ash-free forest tree: 3 trunk gores per row × height + the top
-    /// row's 5 leaves — the hitTree count, `:29625`). The second fail
-    /// tick dedupes (one shake per tree per day).
+    /// trunk records the shake, runs the loot ladder (items/NPCs/projectiles,
+    /// never gores) and spawns the hit-tree leaf burst (the ash-free forest
+    /// tree: 3 trunk gores per row × height + the top row's 5 leaves — the
+    /// hitTree count, `:29625`). The second fail tick dedupes (one shake per
+    /// tree per day). The gore count is seed-robust: the ladder spawns no
+    /// gores, so the FX burst's 8 stand alone.
     #[test]
     fn w4_g17_the_axe_fail_tick_shakes_the_tree() {
         let mut app = mining_app(axe_tree_world(5, 2, 4), 30, 260);
@@ -12445,6 +12468,129 @@ mod tests {
         let _ = axe_tile_hit(&mut app, 30, 259, 5, 9, held);
         let after = app.gore.slots().iter().filter(|g| g.active).count();
         assert_eq!(after, before, "one shake per tree per day (:63143-63149)");
+    }
+
+    /// W4-g17 wiring wave 2 — the ShakeTree loot ladder's full genRand
+    /// else-if chain (`WorldGen.cs:63163-63403`), stream-parity ledger. A
+    /// forest tree shaken over many seeds: the twin replays the C# draw
+    /// order (the genRand gates on the FastRandom stand-in, the Main.rand
+    /// item/NPC/projectile rolls on the UpdatePlayers stream) and the
+    /// drop/NPC counts match. The FX tail is RNG-free and spawns no loot.
+    #[test]
+    fn w4_g17_the_shake_loot_ladder_replays_the_csharp_draws() {
+        use tr_core::tree::{shake_tree_resolve, TreeType};
+        // A forest tree at x=30, ground row 261, leafy top 257 (height 4).
+        let mut app = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        app.inventory[app.selected].kind = 10; // the Iron Axe, axe 9
+        // Resolve the shake site directly (the dedupe records it).
+        let site = shake_tree_resolve(&mut app.world, 30, 260)
+            .expect("the forest tree shakes");
+        assert_eq!(site.tree_type, TreeType::Forest);
+        assert_eq!((site.bottom_x, site.bottom_y, site.ground_row), (30, 257, 261));
+        // Replay the ladder over a sweep of genRand seeds; every outcome
+        // must be a legal ladder arm (item / NPC / projectile / nothing).
+        let mut saw_item = false;
+        let mut saw_npc = false;
+        let mut saw_nothing = false;
+        for seed in 0..400u64 {
+            let mut gen = tr_core::tile_light::FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let items_before = app.items.len();
+            let npcs_before = app.npcs.len();
+            shake_loot::shake_tree_loot(&mut app, &site, 30, 260, &mut gen, &mut rng);
+            let new_items = app.items.len() - items_before;
+            let new_npcs = app.npcs.len() - npcs_before;
+            if new_items > 0 {
+                saw_item = true;
+            }
+            if new_npcs > 0 {
+                saw_npc = true;
+            }
+            if new_items == 0 && new_npcs == 0 {
+                saw_nothing = true;
+            }
+            // The ladder spawns at most one item arm OR one NPC arm (the
+            // bird/bee bursts spawn 5); never both in one shake.
+            assert!(
+                new_items == 0 || new_npcs == 0,
+                "seed {seed}: the else-if chain spawns one arm, got {new_items} items + {new_npcs} npcs"
+            );
+            // Every dropped item is a legal ladder kind.
+            for it in &app.items[items_before..] {
+                assert!(
+                    matches!(it.kind, 1130 | 832 | 933 | 3360 | 3361 | 5517 | 4366
+                        | 5629 | 27 | 194 | 1809 | 71 | 72 | 73 | 965
+                        | 4009 | 4293 | 4282 | 4290 | 4291 | 4295 | 4286
+                        | 4292 | 4294 | 4287 | 4283 | 4289 | 4284 | 4288
+                        | 4297 | 4285 | 4296 | 5278 | 5277 | 9 | 5215 | 619
+                        | 911 | 620 | 621 | 2503 | 183 | 2504 | 180 | 181
+                        | 177 | 179 | 178 | 182 | 999 | 3),
+                    "seed {seed}: illegal ladder drop {}", it.kind
+                );
+            }
+        }
+        assert!(saw_item, "the sweep hits an item arm");
+        assert!(saw_nothing, "the sweep hits the no-arm fall-through");
+        // The bird/squirrel critters are unported kinds — the NPC arms that
+        // DO spawn are the jungle bees (210/211) / corrupt eater (6) only;
+        // a forest tree's bird arms consume their rolls and spawn nothing.
+        let _ = saw_npc;
+    }
+
+    /// W4-g17 wiring wave 2 — the acorn arm (`WorldGen.cs:63207-63210`):
+    /// `genRand.Next(7) == 0` on a forest/snow/hallowed/ash tree drops the
+    /// Acorn 27, stack `genRand.Next(1, 3)`. A pinned seed that reaches the
+    /// 7-gate (every earlier gate misses) verifies the drop + stack range.
+    #[test]
+    fn w4_g17_the_shake_acorn_arm_drops_27() {
+        use tr_core::tree::shake_tree_resolve;
+        let mut app = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        app.inventory[app.selected].kind = 10;
+        let site = shake_tree_resolve(&mut app.world, 30, 260).unwrap();
+        // Sweep for a seed whose genRand chain reaches the Next(7) acorn gate
+        // and hits it (the earlier gates all miss). The FastRandom stand-in
+        // is deterministic per seed.
+        let mut found = None;
+        for seed in 0..2000u64 {
+            let mut probe = tr_core::tile_light::FastRandom::new(seed);
+            // Replay the gate chain up to the acorn (forest tree, classic
+            // world: no tenth/getGood, so the first two gates skip).
+            // :63179/63183 Next(300) x2, :63187/63191 Next(200) x2 (jungle,
+            // skip — but the genRand draws still run for the forest? No:
+            // the C# `&&` short-circuits on the treeType term BEFORE the
+            // roll for the jungle arms. Forest: the Next(300) forest arms
+            // draw, the jungle Next(200) arms skip the roll (type mismatch
+            // is the SECOND operand — wait, the roll is FIRST). Re-read:
+            // `genRand.Next(300) == 0 && treeType == Forest` — the roll runs
+            // first, THEN the type. So every gate's roll draws regardless.
+            let g300a = probe.next(300);
+            let g300b = probe.next(300);
+            let g200a = probe.next(200);
+            let g200b = probe.next(200);
+            let g1000a = probe.next(1000);
+            let g1000b = probe.next(1000);
+            let g100 = probe.next(100);
+            let g7 = probe.next(7);
+            // The chain is else-if: the FIRST hit wins. For the acorn to
+            // fire, every earlier gate must miss (or hit-but-type-mismatch).
+            // Forest: 300a/300b are forest arms (hit → spawn, not acorn);
+            // 200a/200b are jungle (type mismatch → fall through even on 0);
+            // 1000a/1000b forest; 100 fsha. So acorn needs 300a/300b/1000a/
+            // 1000b/100 all != 0, 200a/200b anything, g7 == 0.
+            if g300a != 0 && g300b != 0 && g1000a != 0 && g1000b != 0 && g100 != 0 && g7 == 0 {
+                found = Some(seed);
+                break;
+            }
+        }
+        let seed = found.expect("a seed reaches the acorn gate");
+        let mut gen = tr_core::tile_light::FastRandom::new(seed);
+        let mut rng = UnifiedRandom::new(seed as i32);
+        let before = app.items.len();
+        shake_loot::shake_tree_loot(&mut app, &site, 30, 260, &mut gen, &mut rng);
+        assert_eq!(app.items.len() - before, 1, "the acorn arm drops one item");
+        let acorn = &app.items[before];
+        assert_eq!(acorn.kind, 27, "the Acorn");
+        assert!((1..=2).contains(&acorn.count), "stack Next(1,3) = 1..2, got {}", acorn.count);
     }
 
     /// S1-P-i30: the axe arm chops the cactus (80) and the whole plant

@@ -639,18 +639,28 @@ pub fn solid_tiles(world: &World, start_x: i32, end_x: i32, start_y: i32, end_y:
     false
 }
 
-/// `WorldGen.ShakeTree` (`WorldGen.cs:63131-63418`)'s FX slice: the
-/// shake dedupe bookkeeping (`numTreeShakes`/`treeShakeX/Y`, the 500 cap,
-/// the dawn reset), the `GetTreeTypeAndTreeBottom` family probe, the
-/// `IsShakeable` trunk walk up to the leafy top, the
-/// `IsTileALeafyTreeTop` + `SolidTiles` refusal, then the
-/// `GetTreeLeaf` → `TreeGrowFX(bottomX, bottomY, 1, passStyle,
-/// hitTree: true)` tail (`:63404-63417`). Returns the FX request
-/// `Some((bottom_x, bottom_y, pass_style))` — the app runs the gore
-/// burst on its stream. The loot ladder (`:63160-63403`, the genRand
-/// item/NPC/projectile arms) is the loot lane's — documented drop; the
-/// FX tail's position is independent of it (no RNG before it).
-pub fn shake_tree_fx(world: &mut World, i: i32, j: i32) -> Option<(i32, i32, i32)> {
+/// `WorldGen.ShakeTree`'s resolved shake site (`WorldGen.cs:63137-63162`):
+/// the family, the trunk column's ground cell (`bottom_x`), the walked
+/// leafy-top row (`bottom_y`) and the ORIGINAL ground row (`ground_row`,
+/// the C# `num` of `:63138`). The loot ladder (`:63163-63403`) and the FX
+/// tail (`:63404-63417`) both read this site — the dedupe/walk runs ONCE.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ShakeTreeSite {
+    pub tree_type: TreeType,
+    pub bottom_x: i32,
+    /// The walked leafy-top row (the C# `bottomY` after `:63153-63158`).
+    pub bottom_y: i32,
+    /// The original ground row (the C# `num`, `:63138`).
+    pub ground_row: i32,
+}
+
+/// `WorldGen.ShakeTree`'s dedupe/walk slice (`WorldGen.cs:63133-63162`):
+/// the 500-shake cap, the `GetTreeTypeAndTreeBottom` family probe, the
+/// per-day dedupe + record, the `IsShakeable` trunk walk up to the leafy
+/// top, then the `IsTileALeafyTreeTop` + `SolidTiles` refusal. Returns the
+/// resolved [`ShakeTreeSite`] (the loot ladder + FX tail share it), or
+/// `None` on any refusal. RNG-free.
+pub fn shake_tree_resolve(world: &mut World, i: i32, j: i32) -> Option<ShakeTreeSite> {
     // `:63133-63136` — the 500-shake cap (`maxTreeShakes`, `:86960`).
     if world.tree_shakes.len() >= 500 {
         return None;
@@ -659,7 +669,7 @@ pub fn shake_tree_fx(world: &mut World, i: i32, j: i32) -> Option<(i32, i32, i32
     // ORIGINAL ground row (`:63138`) — the FX tail's GetTreeLeaf reads
     // it as the ground tile (`:63406`).
     let (tree_type, bottom_x, mut bottom_y) = tree_type_and_bottom(world, i, j);
-    let num = bottom_y;
+    let ground_row = bottom_y;
     if tree_type == TreeType::None {
         return None;
     }
@@ -685,34 +695,59 @@ pub fn shake_tree_fx(world: &mut World, i: i32, j: i32) -> Option<(i32, i32, i32
     {
         return None;
     }
-    // `:63404-63417` — the GetTreeLeaf probe: the TOP tile is the walked
-    // leafy cell (`bottomY`), the GROUND tile is `Main.tile[bottomX, num]`
-    // — the ORIGINAL ground row. The loot ladder between
-    // (`:63163-63403`) is the loot lane's — it draws genRand/Main.rand
-    // but never moves the FX position.
-    let Some(top) = world.tile(bottom_x, bottom_y).copied() else {
+    Some(ShakeTreeSite { tree_type, bottom_x, bottom_y, ground_row })
+}
+
+/// `WorldGen.ShakeTree`'s FX tail (`WorldGen.cs:63404-63417`): the
+/// `GetTreeLeaf` probe (the TOP tile is the walked leafy cell, the GROUND
+/// tile is the original ground row) → `TreeGrowFX(bottomX, bottomY, 1,
+/// passStyle, hitTree: true)`. Returns the FX request
+/// `Some((bottom_x, bottom_y, pass_style))` — the app runs the gore burst
+/// on its stream. RNG-free (the loot ladder's draws never move it).
+pub fn shake_tree_fx_at(world: &World, site: &ShakeTreeSite) -> Option<(i32, i32, i32)> {
+    let Some(top) = world.tile(site.bottom_x, site.bottom_y).copied() else {
         return None;
     };
-    let Some(ground) = world.tile(bottom_x, num).copied() else {
+    let Some(ground) = world.tile(site.bottom_x, site.ground_row).copied() else {
         return None;
     };
-    let mut tree_height = 0;
-    let (_, pass_style, height_add) = tree_leaf(
+    let (_, pass_style, _height_add) = tree_leaf(
         world,
-        bottom_x,
+        site.bottom_x,
         top.kind,
         top.frame_x,
         top.frame_y,
         ground.kind,
     );
-    tree_height += height_add;
-    let _ = tree_height;
     // `:63407` — `passStyle != -1` fires the FX (the C# height arg is 1).
     if pass_style != -1 {
-        Some((bottom_x, bottom_y, pass_style))
+        Some((site.bottom_x, site.bottom_y, pass_style))
     } else {
         None
     }
+}
+
+/// `WorldGen.ShakeTree` (`WorldGen.cs:63131-63418`)'s FX slice: the
+/// dedupe/walk ([`shake_tree_resolve`]) then the FX tail
+/// ([`shake_tree_fx_at`]). The loot ladder (`:63163-63403`) runs BETWEEN
+/// them in the C# — the app's axe fail tick resolves the site once, runs
+/// the loot ladder (`world_sim::editing::shake_loot`), then this FX tail.
+/// This combined entry keeps the FX-only callers/tests whole.
+pub fn shake_tree_fx(world: &mut World, i: i32, j: i32) -> Option<(i32, i32, i32)> {
+    let site = shake_tree_resolve(world, i, j)?;
+    shake_tree_fx_at(world, &site)
+}
+
+/// `WorldGen.IsPalmOasisTree` (`WorldGen.cs:27205-27212`): a palm column
+/// inside the beach margins (`beachDistance` = 380, `:86914`) is an oasis
+/// tree — the shake's palm critter/acorn arms refuse it.
+pub fn is_palm_oasis_tree(x: i32, max_tiles_x: i32) -> bool {
+    // `WorldGen.beachDistance` (`WorldGen.cs:86914`).
+    const BEACH_DISTANCE: i32 = 380;
+    if x >= BEACH_DISTANCE {
+        return x <= max_tiles_x - BEACH_DISTANCE;
+    }
+    false
 }
 
 #[cfg(test)]
