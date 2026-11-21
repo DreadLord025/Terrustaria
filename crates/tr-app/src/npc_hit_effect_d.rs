@@ -1758,6 +1758,16 @@ fn shark_death(
         gore.new_gore(rng, world, pos14, vel, 949, 1.0); // :86768
         gore.new_gore(rng, world, pos14, vel, 950, 1.0); // :86769
         gore.new_gore(rng, world, pos14, vel, 951, 1.0); // :86770
+    } else if npc_type == 544 {
+        gore.new_gore(rng, world, pos, vel, 952, 1.0); // :86774
+        gore.new_gore(rng, world, pos14, vel, 953, 1.0); // :86775
+        gore.new_gore(rng, world, pos14, vel, 954, 1.0); // :86776
+        gore.new_gore(rng, world, pos14, vel, 955, 1.0); // :86777
+    } else if npc_type == 545 {
+        gore.new_gore(rng, world, pos, vel, 956, 1.0); // :86781
+        gore.new_gore(rng, world, pos14, vel, 957, 1.0); // :86782
+        gore.new_gore(rng, world, pos14, vel, 958, 1.0); // :86783
+        gore.new_gore(rng, world, pos14, vel, 959, 1.0); // :86784
     }
 }
 
@@ -1973,8 +1983,7 @@ pub fn hit_effect_d(
     else if npc_type == 490 {
         drippler_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:86730-86786` — the shark arm (65/692/542-545); the 65/692/542/543
-    // quads are live (sites 228-243), the 544/545 tails land next batch.
+    // `:86730-86786` — the shark arm, COMPLETE (sites 228-251).
     else if matches!(npc_type, 65 | 692 | 542 | 543 | 544 | 545) {
         shark_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
@@ -3488,6 +3497,32 @@ mod tests {
             assert_eq!(types, want, "sand shark {kind}");
             assert!(!gore.slot(4).active, "exactly four gores");
             let mut twin = UnifiedRandom::new(233);
+            for _ in 0..75 {
+                twin_dust(&mut twin, 50, 30);
+            }
+            for _ in 0..4 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "sand shark {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86774-86784` — the sand shark tails: 544 Crimson →
+    /// 952-955, 545 Hallow → 956-959.
+    #[test]
+    fn w4_f5d_the_sand_shark_tails_spawn_the_ladder() {
+        let w = air();
+        let n = mob(100.0, 100.0, 50.0, 30.0);
+        for (kind, want) in [(544, vec![952, 953, 954, 955]), (545, vec![956, 957, 958, 959])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(239);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "sand shark {kind}");
+            assert!(!gore.slot(4).active, "exactly four gores");
+            let mut twin = UnifiedRandom::new(239);
             for _ in 0..75 {
                 twin_dust(&mut twin, 50, 30);
             }
