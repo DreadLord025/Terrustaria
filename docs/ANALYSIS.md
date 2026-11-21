@@ -32909,6 +32909,9 @@ duplicate row.** c4 is correct on both counts (kb 1.0; the `vanilla_type`
 row that makes the swimmer arm reachable). d40's 465 is inside its frozen
 430-488 vanilla-free band, so the id stays 465; the merge drops d40's
 kind + its kb-0.4 arm + its inline FindFrame (dedupe onto c4's helper).
+**The exact drop-lines are PUBLISHED**: `docs/research/143-d40-crimsongoldfish-retire-hunk.md`
+(the merger/d40b contract — every line read from d40's tip `8fe1d6d31`,
+the group-alternant edits spelled out, the post-drop invariants listed).
 
 ### 592/607/615/688/692 — c4 × d42/d43 (UNCLAIMED; c4 stands)
 
