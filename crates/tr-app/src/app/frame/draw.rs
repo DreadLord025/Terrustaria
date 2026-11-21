@@ -802,6 +802,44 @@ impl App {
                             }
                         }
                         engine.present_into(light);
+                        // `Main.DrawLiquid`'s retro branch (`Main.cs:57519-
+                        // 57522`): `!Lighting.NotRetro` (Retro/Trippy,
+                        // `Lighting.cs:63-73`) routes the liquid draw to
+                        // `oldDrawWater`, whose lava arm writes the
+                        // `Main.ambientLava*` triple (`:57615-57634` scan,
+                        // `:57932-57936` store). The port keeps the
+                        // LiquidRenderer draw in every mode but ports the
+                        // scan (W4-g73 closeout): the foreground
+                        // `DrawWaters` (`:62300`) resets `drewLava` false
+                        // (`:57472`) and its FIRST `DrawLiquid` pass stores
+                        // the triple (later passes are gated by the
+                        // `:57938` true-store); the background call's
+                        // (`:62192`) store is overwritten by it — so one
+                        // `bg = false, drew_lava = false` scan IS the final
+                        // Main state. Non-retro modes never write (the
+                        // triple keeps its last value, exactly like the
+                        // original — the load reset until a retro frame).
+                        if matches!(
+                            *light_mode,
+                            tr_core::lighting::LightMode::Retro
+                                | tr_core::lighting::LightMode::Trippy
+                        ) {
+                            let scan = tr_core::retro_water::ambient_lava_scan(
+                                world,
+                                light,
+                                tr_core::waterfall::ScreenInfo {
+                                    position: [
+                                        draw_cam.x - screen.x * 0.5,
+                                        draw_cam.y - screen.y * 0.5,
+                                    ],
+                                    width: screen.x,
+                                    height: screen.y,
+                                },
+                                false,
+                                false,
+                            );
+                            self.ambient_lava = (scan.strength, scan.x, scan.y);
+                        }
                     }
 
                     // `TileDrawing.Update` (`TileDrawing.cs:367-375`): the wind WALK

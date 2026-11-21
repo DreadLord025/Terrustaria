@@ -901,11 +901,12 @@ pub(crate) struct App {
     pub(crate) ambient_lavafall: (f32, f32, f32),
     /// `Main.ambientLavaX/Y/Strength` (`Main.cs:2213-2217`, stored by
     /// `oldDrawWater`'s `Main.cs:57932-57936` retro-only scan): the pooled
-    /// lava's (strength, x, y) — the lavafall loop's position pick and
-    /// strength sum read it (`Main.Ambience`, `Main.cs:13488-13497`). The
-    /// port's liquid passes are the `LiquidRenderer` path, which never
-    /// scans it, so the triple stays at the `Main.cs:67235-67236` load
-    /// reset (-1, -1, 0) — the retro `oldDrawWater` scan is unported.
+    /// lava's (strength, x, y) - the lavafall loop's position pick and
+    /// strength sum read it (`Main.Ambience`, `Main.cs:13488-13497`).
+    /// `tr_core::retro_water::ambient_lava_scan` ports the scan and the
+    /// frame's legacy-light tail runs it in Retro/Trippy (W4-g73 closeout);
+    /// non-retro modes never write, so the triple keeps the
+    /// `Main.cs:67235-67236` load reset (-1, -1, 0) until a retro frame.
     pub(crate) ambient_lava: (f32, f32, f32),
     /// `Main.ambientCounter` — the ¼ s gate of `Main.Ambience`
     /// (`Main.cs:13469-13476`).
@@ -3422,7 +3423,8 @@ impl App {
         let ambient_waterfall = (0.0, -1.0, -1.0);
         let ambient_lavafall = (0.0, -1.0, -1.0);
         // `Main.cs:67235-67236` load reset; the retro-only `oldDrawWater`
-        // scan (`:57932-57936`) never runs in the port's LiquidRenderer path.
+        // scan (`:57932-57936`) writes it on Retro/Trippy frames
+        // (`tr_core::retro_water`, W4-g73 closeout).
         let ambient_lava = (0.0, -1.0, -1.0);
         let ambient_counter = 0.0f32;
         // `Main.atmo` starts at its surface value; recomputed per draw below.
