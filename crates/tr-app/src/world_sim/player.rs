@@ -1104,6 +1104,16 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // App's swing/reuse timers (fed before the tick, the
             // `frame_inputs` convention).
             p.mana_regen_item_in_use = app.swing > 0.0 || app.reuse_delay > 0.0;
+            // M2-MOUNT-4 — the Scutlix/Santank auto-fire scan
+            // (`Mount.UpdateEffects` case 9/46, `Mount.cs:4879-4947`, called
+            // `Player.cs:25658` BEFORE the movement block + the `:26664`
+            // AbilityRecovery). The port runs it here — ahead of
+            // `update_with_grapple` (whose `update_mount` tail ticks
+            // `ability_recovery`) — so the fire reads the pre-recovery
+            // cooldown, the C#'s order. The fire's `RotatedByRandom` draws
+            // ride the `UpdatePlayers` stream inline; the two Santank cues
+            // queue for the pass-tail drain (the cart-cue batch convention).
+            p.update_mount_ability(&app.world, &app.npcs, &mut app.projectiles, rng);
             p.update_with_grapple(
                 &app.world,
                 input,
@@ -1388,6 +1398,22 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 } else {
                     app.audio.play_at(cue.cue, cue.x, cue.y, 1.0);
                 }
+            }
+            // M2-MOUNT-4 — the Santank ability cues (`Mount.cs:3300` Item89
+            // gift / `:3311` Item11 missile, volumeScale 0.2): the int
+            // overload (`SoundEngine.cs:102`) — NO GetRandomPitch draw, the
+            // ONE case-2 `Next(-6, 7)` pitch roll rides the `UpdatePlayers`
+            // stream after the attenuation gate (the fire runs inside
+            // `Player.Update`, `Main.cs:17754`). The C# plays inline at the
+            // spawn; the port drains at the pass tail (the cart-cue batch
+            // convention, ANALYSIS). The facade truncates the positions.
+            for (style, x, y) in p.take_ability_sounds() {
+                app.audio.play_mount_ability_sound(
+                    style,
+                    x,
+                    y,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
             }
             // `Player.StickyMovement`'s handoffs: the cobweb the drag broke
             // (`Player.cs:22949` `WorldGen.KillTile`) and the type-153 web puffs

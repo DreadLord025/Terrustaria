@@ -1965,6 +1965,12 @@ pub struct Player {
     /// The tick's queued minecart cues (Item53/55/56), drained into
     /// `App::audio::play_at` (`DelegateMethods.cs:248-256`, `Player.cs:19870`).
     pending_cart_sounds: Vec<crate::minecart::CartCue>,
+    /// M2-MOUNT-4 — the tick's queued Santank ability cues (style 89 gift /
+    /// 11 missile, `Mount.cs:3300`/`:3311`), drained into
+    /// `App::audio::play_mount_ability_sound` on the `UpdatePlayers` stream
+    /// (the `pending_cart_sounds` convention). `(style, x, y)` — the raw
+    /// float positions; the facade truncates like the C#'s int args.
+    pending_ability_sounds: Vec<(i32, f32, f32)>,
     /// The tick's queued sticky dust: the `Collision.StickyTiles` type-30 web
     /// puff (`Collision.cs:3401`) and `StickyMovement`'s type-153 honey puffs
     /// (`:23036-23080`). The C# calls `Dust.NewDust` inline; the port queues the
@@ -2905,6 +2911,7 @@ impl Player {
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
+            pending_ability_sounds: Vec::new(),
             pending_sticky_dust: Vec::new(),
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
@@ -9786,6 +9793,238 @@ impl Player {
         // M2-MOUNT-4) have no rows in this table yet; the ability counters
         // still tick (`:26663`).
         self.mount.ability_recovery();
+    }
+
+    /// M2-MOUNT-4 (W4-c14) — the Scutlix (9) / Santank (46) auto-fire ability:
+    /// `Mount.UpdateEffects` case 9/46 (`Mount.cs:4879-4947`), the per-tick
+    /// target scan + aim + fire. The C# runs it at `Player.cs:25658` (inside
+    /// `UpdateEquips`, BEFORE the movement block); the port's `update_mount`
+    /// folds the UpdateEffects head + the `:26623` stat block into one call
+    /// (the standing order deviation), so this scan rides the world-sim
+    /// player pass right after `update_with_grapple` — the same
+    /// `UpdatePlayers` stream, the fire draws ride it (`Main.cs:17754`).
+    ///
+    /// The scan: the nearest chaseable NPC within 850 px inside the facing
+    /// cone (±60°) with a clear `CanHitLine`; on a hit the cooldown gate
+    /// (9: `== 0`; 46: `% 10 == 0`) fires `AimAbility` + (at cooldown 0)
+    /// `StopAbilityCharge` + `UseAbility`; else it aims + charges. No target
+    /// clears the charge + resets the head. The Santank jump flag
+    /// (`:4882-4884`) is already armed by `update_mount` (keep-one).
+    ///
+    /// `UseAbility` (`Mount.cs:3254-3338`) cases 9/46 spawn through the pool
+    /// (the top-left convention — `NewProjectile` centres, `Projectile.cs:
+    /// 10876-10877`); the Santank's two cues queue on the tick's ability-cue
+    /// list (the `pending_cart_sounds` convention) — the drain plays them on
+    /// the same stream. The Scutlix spawns no cue. The aiStyle-1 spawn
+    /// velocity clamp (`:10895-10902`) never fires for these speeds (14/12).
+    pub fn update_mount_ability(
+        &mut self,
+        world: &World,
+        npcs: &[Npc],
+        pool: &mut ProjectilePool,
+        rng: &mut tr_core::UnifiedRandom,
+    ) {
+        if !self.mount.is_active() || !matches!(self.mount.kind(), 9 | 46) {
+            return;
+        }
+        let center = Vec2::new(self.center().0, self.center().1);
+        // `:4886-4919` — the nearest-target scan.
+        let mut target = center;
+        let mut found = false;
+        let mut best = 1500.0f32;
+        for n in npcs {
+            if !n.can_be_chased_by() {
+                continue;
+            }
+            let nc = crate::projectile::npc_center(n);
+            let v = nc - center;
+            let dist = v.length();
+            // `:4900` — inside 850 AND (closer than the held target OR none
+            // held yet). The `(vector - center).Length() > num3` term is the
+            // held target's distance; `best` tracks it (the C# re-measures
+            // `vector` each pass — identical while `vector` is the last
+            // accepted centre).
+            if dist < 850.0 && ((target - center).length() > dist && dist < best || !found) {
+                // `:4902-4911` — the facing cone: |angle| <= 60° facing
+                // right, >= 120° facing left (the C#'s radian thresholds).
+                let mut in_cone = true;
+                let ang = v.to_angle().abs();
+                if self.facing == 1 && (ang as f64) > 1.047197594907988 {
+                    in_cone = false;
+                } else if self.facing == -1 && (ang as f64) < 2.0943951461045853 {
+                    in_cone = false;
+                }
+                let (nw, nh) = n.size();
+                // `:4912` — `CanHitLine(center, 0, 0, npc.position, w, h) &
+                // flag3` (the bitwise & evaluates both; the port short-
+                // circuits the line test only when the cone already failed
+                // — no draws either way).
+                if in_cone
+                    && crate::projectile::can_hit_line(
+                        world, center.x, center.y, 0.0, 0.0, n.x, n.y, nw, nh,
+                    )
+                {
+                    best = dist;
+                    target = nc;
+                    found = true;
+                }
+            }
+        }
+        if found {
+            // `:4922-4926` — the fire cadence gate.
+            let mut fire = self.mount.ability_cooldown() == 0;
+            if self.mount.kind() == 46 {
+                fire = self.mount.ability_cooldown() % 10 == 0;
+            }
+            if fire {
+                // `:4929-4934` — aim, stop-charge (only at cooldown 0), fire.
+                let (_, facing) =
+                    self.mount
+                        .aim_ability(center, target, self.facing, self.vx);
+                self.facing = facing;
+                if self.mount.ability_cooldown() == 0 {
+                    self.mount.stop_ability_charge();
+                }
+                self.mount_use_ability(target, pool, rng);
+            } else {
+                // `:4938-4939` — aim + charge.
+                let (_, facing) =
+                    self.mount
+                        .aim_ability(center, target, self.facing, self.vx);
+                self.facing = facing;
+                self.mount.set_ability_charging(true);
+            }
+        } else {
+            // `:4944-4945` — no target: drop the charge, reset the head.
+            self.mount.set_ability_charging(false);
+            self.mount.reset_head_position();
+        }
+    }
+
+    /// `Mount.UseAbility` (`Mount.cs:3254-3338`) cases 9/46 — the fire. The
+    /// `Main.myPlayer == whoAmI` gates (`:3260`/`:3292`) always hold in the
+    /// single-player port. `target` is the scan's locked NPC centre (the
+    /// C#'s `mousePosition` argument), NOT the cursor.
+    fn mount_use_ability(
+        &mut self,
+        target: Vec2,
+        pool: &mut ProjectilePool,
+        rng: &mut tr_core::UnifiedRandom,
+    ) {
+        let center = Vec2::new(self.center().0, self.center().1);
+        match self.mount.kind() {
+            9 => {
+                // `:3264-3288` — the Scutlix laser pair.
+                let target = self.mount.clamp_to_dead_zone(center, target);
+                // `:3266-3268` — the bottom-centre anchor.
+                let anchor = Vec2::new(self.x + self.width * 0.5, self.y + self.height);
+                let row = crate::mount::mount_data(9).expect("the Scutlix row");
+                let idx = ((self.mount.frame_extra() - 6) * 2) as usize;
+                for i in 0..2 {
+                    let eye = crate::mount::SCUTLIX_EYE_POSITIONS[idx + i];
+                    // `:3273-3281` — the eye position: Y adds the row's
+                    // yOffset, X mirrors by facing and adds xOffset.
+                    let mut pos = Vec2::new(0.0, anchor.y + eye.y + row.y_offset as f32);
+                    if self.facing == -1 {
+                        pos.x = anchor.x - eye.x - row.x_offset as f32;
+                    } else {
+                        pos.x = anchor.x + eye.x + row.x_offset as f32;
+                    }
+                    // `:3282-3284` — Normalize (NOT SafeNormalize) × 14.
+                    let vel = (target - pos).normalize_or_zero() * 14.0;
+                    // `:3286-3287` — the spawn rides one velocity step ahead.
+                    pos += vel;
+                    // `NewProjectile` centres (`Projectile.cs:10876-10877`):
+                    // the 606's 5×5 half-box subtracts.
+                    let _ = pool.spawn_with_data_ai_owned(
+                        crate::projectile::SCUTLIX_LASER,
+                        0,
+                        pos.x - 2.5,
+                        pos.y - 2.5,
+                        vel.x,
+                        vel.y,
+                        150,
+                        0.0,
+                        0.0,
+                        0.0,
+                    );
+                }
+            }
+            46 => {
+                // `:3294-3301` — the gift box, only inside the cooldown-10
+                // window. The driver fires every 10 ticks (40/30/20/10/0);
+                // the cooldown-0 fire runs StopAbilityCharge FIRST (back to
+                // 40), so the gift rides the cooldown-10 fire — one gift
+                // per 40-tick cycle, the C#'s order.
+                if self.mount.ability_cooldown() <= 10 {
+                    // `:3297` — Centre + (width * -direction, 26).
+                    let gift = center
+                        + Vec2::new(self.width * -self.facing as f32, 26.0);
+                    // `:3298` — (0, -4).RotatedByRandom(0.1): TWO NextDouble
+                    // draws, left first.
+                    let vel = crate::bow_launch::rotated_by_random(
+                        Vec2::new(0.0, -4.0),
+                        0.10000000149011612,
+                        rng,
+                    );
+                    // The 930's 14×14 half-box subtracts.
+                    let _ = pool.spawn_with_data_ai_owned(
+                        crate::projectile::SANTANK_MOUNT_ROCKET,
+                        0,
+                        gift.x - 7.0,
+                        gift.y - 7.0,
+                        vel.x,
+                        vel.y,
+                        120,
+                        0.0,
+                        0.0,
+                        0.0,
+                    );
+                    // `:3300` — Item89 at the gift position, volumeScale 0.2
+                    // (the int overload — no GetRandomPitch draw).
+                    self.pending_ability_sounds.push((89, gift.x, gift.y));
+                }
+                // `:3302-3311` — the missile barrage, every fire.
+                let target = self.mount.clamp_to_dead_zone(center, target);
+                // `:3305-3308` — the muzzle: bottom-centre + width*direction
+                // in X, -12 in Y.
+                let anchor = Vec2::new(self.x + self.width * 0.5, self.y + self.height);
+                let muzzle = Vec2::new(
+                    anchor.x + self.width * self.facing as f32,
+                    anchor.y - 12.0,
+                );
+                // `:3309` — SafeNormalize(Zero) × 12 THEN RotatedByRandom(0.2)
+                // (TWO more NextDouble draws).
+                let vel = crate::bow_launch::rotated_by_random(
+                    crate::bow_launch::safe_normalize(target - muzzle, Vec2::ZERO) * 12.0,
+                    0.20000000298023224,
+                    rng,
+                );
+                // The 14's 4×4 half-box subtracts.
+                let _ = pool.spawn_with_data_ai_owned(
+                    crate::projectile::MUSKET_BALL,
+                    0,
+                    muzzle.x - 2.0,
+                    muzzle.y - 2.0,
+                    vel.x,
+                    vel.y,
+                    100,
+                    0.0,
+                    0.0,
+                    0.0,
+                );
+                // `:3311` — Item11 at the muzzle, volumeScale 0.2.
+                self.pending_ability_sounds.push((11, muzzle.x, muzzle.y));
+            }
+            _ => {}
+        }
+    }
+
+    /// Takes the tick's queued mount-ability cues (the Santank Item89/Item11
+    /// style plays, `Mount.cs:3300`/`:3311`) — the caller owns the audio
+    /// device (the `take_cart_sounds` convention).
+    pub(crate) fn take_ability_sounds(&mut self) -> Vec<(i32, f32, f32)> {
+        std::mem::take(&mut self.pending_ability_sounds)
     }
 
     /// The flight section (`Player.cs:26745-27359`): the budget zeroing,
@@ -20817,6 +21056,153 @@ mod summon_tests {
         let mut q = Player::spawn(&w);
         assert!(q.set_mount(10, false));
         assert!(q.mount.allow_direction_change());
+    }
+
+    // --- M2-MOUNT-4 witnesses (WRITTEN NOT RUN — code-only lane) ------------
+
+    /// A chaseable Zombie centred at (cx, cy) — the scan's target stand-in
+    /// (the `npc_centered` convention, projectile.rs).
+    fn ability_npc(cx: f32, cy: f32) -> Npc {
+        let mut n = Npc::new(crate::npc::NpcKind::Zombie, 0.0, 0.0, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        let (nw, nh) = n.size();
+        n.x = cx - nw * 0.5;
+        n.y = cy - nh * 0.5;
+        n
+    }
+
+    /// `Mount.UpdateEffects` case 46 (`Mount.cs:4879-4947`): the Santank
+    /// fires the missile every 10 cooldown ticks and the gift only inside
+    /// the cooldown-10 window (one gift per 40-tick cycle); each fire draws
+    /// FOUR NextDoubles (gift 2 + missile 2) or TWO (missile only), and
+    /// queues the Item11 cue every fire + the Item89 cue on the gift fire.
+    #[test]
+    fn m4_the_santank_scan_fires_the_missile_every_ten_and_the_gift_every_forty() {
+        let w = World::new("t".into(), 200, 200); // open air — CanHitLine clear
+        let mut p = Player::spawn(&w);
+        p.x = 1600.0;
+        p.y = 800.0;
+        p.facing = 1;
+        assert!(p.set_mount(46, false));
+        let npcs = [ability_npc(1900.0, 810.0)]; // 300 px right, inside the cone
+        let mut pool = ProjectilePool::new();
+        let mut rng = tr_core::UnifiedRandom::new(5);
+        // The fresh mount floors the cooldown at 40 (`set_mount`): the first
+        // scan fires (40 % 10 == 0), missile only (40 > 10), then re-arms?
+        // No — StopAbilityCharge only at cooldown 0, so the cooldown stays
+        // 40 until ability_recovery ticks it. Drive the recovery between
+        // scans (the fixed-step order: scan → … → recovery).
+        let mut missiles = 0;
+        let mut gifts = 0;
+        for tick in 0..80 {
+            let before = pool.slots().iter().filter(|s| s.active).count();
+            p.update_mount_ability(&w, &npcs, &mut pool, &mut rng);
+            let spawned: Vec<_> = pool
+                .slots()
+                .iter()
+                .filter(|s| s.active)
+                .skip(before)
+                .map(|s| s.kind)
+                .collect();
+            // The fire ticks are cooldown 40/30/20/10/0 → every 10th tick.
+            if tick % 10 == 0 {
+                assert!(spawned.contains(&14), "tick {tick}: the missile fires");
+                missiles += 1;
+                if tick % 40 == 30 {
+                    // cooldown 10 at tick 30/70 — the gift window.
+                    assert!(spawned.contains(&930), "tick {tick}: the gift fires");
+                    gifts += 1;
+                }
+            } else {
+                assert!(spawned.is_empty(), "tick {tick}: no fire between");
+            }
+            p.mount.ability_recovery();
+        }
+        assert_eq!(missiles, 8, "80 ticks / 10");
+        assert_eq!(gifts, 2, "one gift per 40-tick cycle");
+        // The cues: one Item11 per fire + one Item89 per gift.
+        let cues = p.take_ability_sounds();
+        assert_eq!(cues.iter().filter(|c| c.0 == 11).count(), 8);
+        assert_eq!(cues.iter().filter(|c| c.0 == 89).count(), 2);
+    }
+
+    /// `Mount.UseAbility` case 9 (`Mount.cs:3264-3288`): the Scutlix fires
+    /// TWO 606 lasers per fire (cooldown 0 only — the 20-tick cycle), from
+    /// the eye pair keyed by frameExtra, each one velocity step ahead of
+    /// its eye; NO cue. The aim band rides the target direction.
+    #[test]
+    fn m4_the_scutlix_scan_fires_two_lasers_per_twenty_tick_cycle() {
+        let w = World::new("t".into(), 200, 200);
+        let mut p = Player::spawn(&w);
+        p.x = 1600.0;
+        p.y = 800.0;
+        p.facing = 1;
+        assert!(p.set_mount(9, false));
+        let npcs = [ability_npc(1900.0, 800.0)]; // straight right → band 8
+        let mut pool = ProjectilePool::new();
+        let mut rng = tr_core::UnifiedRandom::new(5);
+        let mut fires = 0;
+        for tick in 0..40 {
+            let before = pool.slots().iter().filter(|s| s.active).count();
+            p.update_mount_ability(&w, &npcs, &mut pool, &mut rng);
+            let spawned: Vec<_> = pool
+                .slots()
+                .iter()
+                .filter(|s| s.active)
+                .skip(before)
+                .map(|s| s.kind)
+                .collect();
+            if tick % 20 == 0 {
+                assert_eq!(
+                    spawned.iter().filter(|&&k| k == 606).count(),
+                    2,
+                    "tick {tick}: the eye pair"
+                );
+                fires += 1;
+            } else {
+                assert!(spawned.is_empty(), "tick {tick}: the cooldown gates");
+            }
+            p.mount.ability_recovery();
+        }
+        assert_eq!(fires, 2, "40 ticks / 20");
+        assert!(p.take_ability_sounds().is_empty(), "the Scutlix plays no cue");
+        // The lasers fly at speed 14 toward the target (the band-8 eyes).
+        let laser = pool.slots().iter().find(|s| s.active && s.kind == 606).unwrap();
+        assert!((laser.vel.length() - 14.0).abs() < 0.001, "speed 14");
+        assert!(laser.vel.x > 0.0, "aimed right at the target");
+    }
+
+    /// `Mount.UpdateEffects` case 9/46's no-target arm (`Mount.cs:4942-4946`):
+    /// an empty scan clears the charge and resets the head; a target outside
+    /// the facing cone never locks.
+    #[test]
+    fn m4_the_scan_resets_the_head_without_a_target() {
+        let w = World::new("t".into(), 200, 200);
+        let mut p = Player::spawn(&w);
+        p.x = 1600.0;
+        p.y = 800.0;
+        p.facing = 1;
+        assert!(p.set_mount(9, false));
+        let mut pool = ProjectilePool::new();
+        let mut rng = tr_core::UnifiedRandom::new(5);
+        // A target BEHIND the facing (left, outside the ±60° cone): no lock.
+        let behind = [ability_npc(1300.0, 800.0)];
+        p.mount.set_ability_charging(true);
+        p.update_mount_ability(&w, &behind, &mut pool, &mut rng);
+        assert!(!p.mount.ability_charging(), "the no-target arm clears the charge");
+        assert!(pool.slots().iter().all(|s| !s.active), "no fire");
+        // A target beyond 850 px: no lock either.
+        let far = [ability_npc(2600.0, 800.0)];
+        p.mount.set_ability_charging(true);
+        p.update_mount_ability(&w, &far, &mut pool, &mut rng);
+        assert!(!p.mount.ability_charging());
+        // An in-cone target locks + aims (the charging else-arm at a non-zero
+        // cooldown): the aim arms, the charge stays.
+        let near = [ability_npc(1900.0, 800.0)];
+        p.update_mount_ability(&w, &near, &mut pool, &mut rng);
+        assert!(p.mount.ability_charging(), "the cooldown-20 else-arm charges");
+        assert_eq!(p.mount.frame_extra(), 8, "the straight-right band");
     }
 }
 

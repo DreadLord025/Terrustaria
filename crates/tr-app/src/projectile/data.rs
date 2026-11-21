@@ -275,6 +275,14 @@ pub const SAUCER_DEATHRAY: u16 = 447;
 pub const SAUCER_MISSILE: u16 = 448;
 /// `ProjectileID.SaucerLaser` (449) — the turret's rays.
 pub const SAUCER_LASER: u16 = 449;
+/// `ProjectileID.ScutlixLaser` (606) — the Scutlix mount's eye lasers
+/// (`Projectile.cs:6530-6541`: 5×5, aiStyle 1, friendly, alpha 255,
+/// extraUpdates 2, timeLeft 600, ignoreWater). M2-MOUNT-4.
+pub const SCUTLIX_LASER: u16 = 606;
+/// `ProjectileID.SantankMountRocket` (930) — the Santank mount's gift-box
+/// rocket (`Projectile.cs:8817-8825`: 14×14, aiStyle 16, friendly,
+/// penetrate -1, ranged). M2-MOUNT-4.
+pub const SANTANK_MOUNT_ROCKET: u16 = 930;
 /// `ProjectileID.SaucerScrap` (450) — the shell's missiles.
 pub const SAUCER_SCRAP: u16 = 450;
 /// `ProjectileID.BrainScramblerShot` (436) — the martian ground shooter's
@@ -1972,6 +1980,38 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:1826-1837` — the laser: 5x5, aiStyle 1,
             // extraUpdates 1, timeLeft 600.
             SAUCER_LASER => (5.0, 5.0, 1, 1, 600, 1, true, false, false, RESET_STATE),
+            // M2-MOUNT-4 — `Projectile.cs:6530-6541` — the Scutlix mount's
+            // laser (606): 5x5, aiStyle 1, friendly, alpha 255,
+            // extraUpdates 2, timeLeft 600, ignoreWater; the stock
+            // penetrate 1 (`:774`) / tileCollide (`:775`) stand.
+            SCUTLIX_LASER => (
+                5.0,
+                5.0,
+                1,
+                1,
+                600,
+                2,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // M2-MOUNT-4 — `Projectile.cs:8817-8825` — the Santank mount's
+            // gift-box rocket (930): 14x14, aiStyle 16, friendly,
+            // penetrate -1, ranged; the stock tileCollide (`:775`) /
+            // timeLeft 3600 (`:787`) stand.
+            SANTANK_MOUNT_ROCKET => (
+                14.0,
+                14.0,
+                16,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
             // `Projectile.cs:1839-1848` — the scrap: 14x14, aiStyle 14,
             // penetrate -1, timeLeft 360.
             SAUCER_SCRAP => (14.0, 14.0, 14, -1, 360, 0, true, false, false, RESET_STATE),
@@ -4211,7 +4251,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == HIGH_VELOCITY_BULLET
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
-            || kind == GOLF_CLUB_HELPER,
+            || kind == GOLF_CLUB_HELPER
+            // M2-MOUNT-4 — `Projectile.cs:6540`: the Scutlix laser (606)
+            // sets `ignoreWater = true`.
+            || kind == SCUTLIX_LASER,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4271,6 +4314,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | 42 | 65 | 68 | 354 | 85 | 117 | 469 | 485 | 495 | 819
                 | 133..=144 | 338..=341 | 615 | 630 | 705 | 714 | 715..=718 | 932
                 | 776..=801 | 803..=810
+            // M2-MOUNT-4 — the Santank gift-box rocket (930,
+            // `Projectile.cs:8824` sets ranged).
+                | SANTANK_MOUNT_ROCKET
             // The hostile snowmen's shots (109/110, `:1976`/`:1989`) — the
             // C# writes ranged on them too; the owner-255 gate keeps the
             // flags moot, the census stays verbatim.
