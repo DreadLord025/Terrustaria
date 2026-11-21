@@ -44,6 +44,32 @@ c39 `rain.rs:1878`). **g67 folds: NONE of the c39 hunks** — they are c39's
 fold-source, listed here so the d130f work-list is complete in one place.
 The g67-unique folds are exactly R5/R6/R7 + A2 (hash-list below).
 
+## SEAL — the YOUR-unique fold-source FINAL hash-list (for d130f / the merger)
+
+The EXACT commits carrying g67's still-unique content, full hashes, verified
+against the branch (`git log --format=%H`) and the live file bodies at the
+seal state. This is the COMPLETE list — everything else g67 ever landed is
+either already folded by d130 (receipts above) or drops wholesale.
+
+| # | FULL commit hash | what crosses the boundary | live g67 anchors (seal-state lines) |
+| --- | --- | --- | --- |
+| R5 | `f8c4b659c30dcd6378c8ca5f4a1caff9e84639c4` | skyblock low-tiles census + the snow-threshold arm: `World.skyblock_low_tiles` + `World::scan_skyblock_low_tiles` (`tr-core/src/world.rs`), `scene::snow_tile_threshold`/`desert_tile_threshold` (`tr-core/src/scene.rs`), the `new_rain` threshold read (`rain.rs:1148` `snow_tile_threshold(world.skyblock_low_tiles).max(1)`), scene_scan/worldgen/load fills (`world_sim/scene_scan.rs`, `worldgen/mod.rs`, `app/mod.rs:4350`) | witnesses `w4_g67_skyblock_low_tiles_census` (world.rs:1502), `w4_g67_skyblock_thresholds_pick_300_over_1500` (scene.rs:2629), `w4_g67_skyblock_low_tiles_lowers_the_snow_threshold` (rain.rs:3270) |
+| R6 | `356a1ac0ef42848a8e5ee0a58abd6c197cc5b38c` | Eyebrella caller + `eyebrellaCloud`: `Player.eyebrella_cloud` (player.rs:1043), `pending_eyebrella_rain` (:1974) + take (:3497), `do_eyebrella_rain_effect` (:3511), the UpdateEquips 5101 arm (:6876-6877), ResetEffects clear (:6055), the `new_rain_forced` drain (`world_sim/player.rs:1404`, live `wind*3, 9`); folds onto d130's landed R4 seam (`rain.rs:1132`) | witnesses `w4_g67_eyebrella_drip_cadence_and_window` (player.rs:21804), `w4_g67_eyebrella_drip_refuses_solid_and_wet_tiles` (:21855), `w4_g67_eyebrella_cloud_arms_from_head_or_vanity_slot` (:21901) |
+| R7 | `01ba6c7a9494fb7f348cc4fc2cb393e1e0c005c8` | umbrella (946/4707) holdStyle-2 arm: `umbrella_hold_slow_fall` (player.rs:7762, called at the ItemCheck position :7732 after BordersMovement) + the `hold_item_placement` overhead override (`render/player_layers.rs`, `width/2 - 16*dir, 22`, rotation 0) | witnesses `w4_g67_umbrella_hold_caps_the_fall_at_2` (player.rs:21927), `w4_g67_umbrella_hold_places_the_item_overhead` (player_layers.rs:1707) |
+| A2 | `7aaf66f00e00e5e2ca2ffd3c1349e3888c098181` | ONLY the light-tile geometry witness `w4_g67_draw_rain_light_tile_is_pos_plus_four_shifted` (rain.rs:3309) — re-pin onto d130's `light_tile` closure (`rain.rs:1250-1256`). The rest of this commit (the `rain_light_tile`/`rain_drop_tint` helpers, the draw.rs census wiring) DROPS — d130 `ea4863d9` already carries the semantics; A1: this commit's tint witness (:3328 region) is KNOWN-WRONG (alpha-255) — do NOT port | witness body: the 12..15-px-band crossing, the 63.9 edge, the negative-coordinate truncation arms |
+
+Supporting (already folded — d130f does NOT re-take these): `40128e5d894dde0d5dacd2bd2ecbecf986934675`
+(splash lane, folded `88cfbf38`), `d2dd89890143201d8c73bce5072e3f69afd8ca60` (kill-arms, folded
+`16a792d5`), `5c9398ea25168993a950a1ed012faa472729c0b4` (MakeRain/NewRain/R1/R2/R4, folded),
+`2c452eddbe4cf67c46637dccf52251e72c17295b` (cull rect R3, folded `16a792d5`),
+`112d1b2035680396b60837098ec090fef9f28736` (docs-only). Fold-source TIP for cherry-pick context:
+`e777b3e2c2fab2a917fe645df3a4a469b99fad8f` (the code tip — everything after it is docs/banners/seal).
+The `anchors.txt` rows added by R5/R6/R7 travel with their folds (one row each).
+
+**Fold order (unchanged):** R5 (coordinate f24 — the runtime flag lives on `World`) → R6 (seam
+waiting) → R7 (independent) + A2 (pure witness addition). All witnesses WRITTEN NOT RUN
+(code-only) — re-pin to d130's `RainInputs`/fixed-slot shape on fold.
+
 ## Fold-monitor re-check (g67 retire phase, 2026-11-21, tip `97ed44f5`)
 
 The previous re-check (below, against `560a02eac`) is **STALE**: d130's
