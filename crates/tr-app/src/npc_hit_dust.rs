@@ -176,6 +176,22 @@
 //! - 88082 — Painter 227 (`:88076-88084`).
 //! - 88105 — Witch Doctor 228 (`:88099-88107`).
 //! - 87928 — Guide 22 (`:87922-87930`).
+//! Batch 13 (the mimic/skeleton-variant/golem live arms):
+//! - 88417 — Princess 663 (`:88411-88419`): ×100 dust 5 (her own arm —
+//!   the `:88046` town-pet 663 is unreachable).
+//! - 88667 — Santa 453 (`:88661-88669`): ×50 dust 26.
+//! - 88690 — the pirate group 269-276/281-286 (`:88684-88692`): ×50
+//!   dust 26.
+//! - 88730 — the DD2 skeleton group 277-280 (`:88724-88733`): ×100
+//!   dust 174, post-spawn scale 1.1 + noGravity.
+//! - 88751 — 341 (`:88744-88753`): ×50 dust 196 at (0,0).
+//! - 88781 — the Mimics 85/629 (`:88766-88783`): ×50, the ai[3]
+//!   selector (2 → 10, 3 → 37, else 7), (0,0).
+//! - 88803 — 473-476 (`:88796-88805`): ×50 dust 31 at (0,0).
+//! - 88824 — 169 (`:88818-88827`): ×50 dust 92, (0,0), scale 1.5,
+//!   velocity ×1.5 + noGravity.
+//! - 88844 — 170/180 (`:88838-88847`): ×50 dust 54, same shape.
+//! - 88868 — 171 (`:88862-88871`): ×50 dust 16, same shape.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -217,6 +233,9 @@ pub struct HitDustSnapshot {
     pub color: Color,
     pub scale: f32,
     pub wet: bool,
+    /// `this.ai[3]` — the Mimic's chest-type selector (`NPC.cs:88769-
+    /// 88776`: 2 → dust 10, 3 → dust 37, else 7).
+    pub ai3: f32,
 }
 
 impl HitDustSnapshot {
@@ -243,6 +262,7 @@ impl HitDustSnapshot {
             color: hit_color(n),
             scale: n.scale,
             wet: n.wet,
+            ai3: n.ai[3],
         }
     }
 }
@@ -884,6 +904,70 @@ pub fn replay_hit_dust(
                 live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
             }
         }
+        // `:88411-88419` — the Princess's own arm (×100 dust 5).
+        663 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:88661-88692` — Santa + the pirate group: ×50 dust 26.
+        453 | 269..=276 | 281..=286 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                live_dust(s, 26, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:88724-88733` — the DD2 skeletons: ×100 dust 174, post-spawn
+        // scale 1.1 + noGravity (the death half's 1.5·dir/-0.5 ×2/1.4 is
+        // g60's).
+        277..=280 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                let idx = live_dust(s, 174, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                let d = dust.slot_mut(idx);
+                d.scale = 1.1; // `:88731`
+                d.no_gravity = true; // `:88732`
+            }
+        }
+        // `:88744-88753` — 341: ×50 dust 196 at (0,0).
+        341 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                live_dust(s, 196, 0.0, 0.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:88766-88783` — the Mimics: ×50, the ai[3] chest-type selector
+        // (`:88768-88776`), (0,0).
+        85 | 629 => {
+            let mut t = 7;
+            if s.ai3 == 2.0 {
+                t = 10;
+            }
+            if s.ai3 == 3.0 {
+                t = 37;
+            }
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                live_dust(s, t, 0.0, 0.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:88796-88805` — the 473-476 group: ×50 dust 31 at (0,0).
+        473..=476 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                live_dust(s, 31, 0.0, 0.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:88818-88871` — the golem-part trio: ×50 at (0,0), scale 1.5,
+        // velocity ×1.5 + noGravity (169 → 92, 170/180 → 54, 171 → 16).
+        169 | 170 | 180 | 171 => {
+            let t = match s.npc_type {
+                169 => 92,
+                170 | 180 => 54,
+                _ => 16,
+            };
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                let idx = live_dust(s, t, 0.0, 0.0, 0, Color::default(), 1.5, rng, dust, ctx, world);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 1.5;
+                d.no_gravity = true;
+            }
+        }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
         // ABOVE the life gate (the every-strike arms); this match never
         // sees 25/33/30/665.
@@ -932,6 +1016,7 @@ mod tests {
             color: Color::default(),
             scale: 1.0,
             wet: false,
+            ai3: 0.0,
         }
     }
 
@@ -1885,6 +1970,43 @@ mod tests {
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len(), 10, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == 5), "type {t}");
+        }
+    }
+
+    /// W4-g62 batch 13 — the Mimic's ai[3] selector (`NPC.cs:88768-
+    /// 88776`): 2 → dust 10, 3 → dust 37, else 7; the DD2 skeletons'
+    /// scale-1.1 post-write; the golem trio's ×1.5 velocity.
+    #[test]
+    fn w4_g62_the_mimic_selector_and_the_batch13_rows() {
+        let world = air();
+        let ctx = ctx();
+        for (ai3, want) in [(0.0f32, 7), (2.0, 10), (3.0, 37), (1.0, 7)] {
+            let mut s = snap(85, 500, 500, 20.0); // ×50 → 2
+            s.ai3 = ai3;
+            let mut r = UnifiedRandom::new(131);
+            let mut p = DustPool::new();
+            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 2, "ai3 {ai3}");
+            assert!(live.iter().all(|d| d.dust_type == want), "ai3 {ai3}");
+        }
+        // The DD2 skeleton: scale pinned 1.1, noGravity.
+        let sk = snap(277, 100, 100, 10.0); // ×100 → 10
+        let mut r = UnifiedRandom::new(131);
+        let mut p = DustPool::new();
+        replay_hit_dust(&sk, &mut r, &mut p, &ctx, &world);
+        let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 10);
+        assert!(live.iter().all(|d| d.dust_type == 174 && d.scale == 1.1 && d.no_gravity));
+        // The golem trio: (type, dust) rows, ×50, scale 1.5 spawn.
+        for (t, dt) in [(169, 92), (170, 54), (180, 54), (171, 16)] {
+            let s = snap(t, 100, 100, 10.0); // ×50 → 5
+            let mut r2 = UnifiedRandom::new(131);
+            let mut p2 = DustPool::new();
+            replay_hit_dust(&s, &mut r2, &mut p2, &ctx, &world);
+            let live2: Vec<_> = p2.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live2.len(), 5, "type {t}");
+            assert!(live2.iter().all(|d| d.dust_type == dt && d.no_gravity), "type {t}");
         }
     }
 }
