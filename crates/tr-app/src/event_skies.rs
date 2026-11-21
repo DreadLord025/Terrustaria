@@ -11,11 +11,13 @@
 //! the visual scatter is reproducible, the stream shape is the exact C# one).
 //!
 //! The draw is a depth-sandwich member (`SkyManager.DrawToDepth`): lanterns
-//! span depths 1.6..6.0 (far first), balloons 1.6..3.35. The port draws them
-//! in the sky pass's `DrawRemainingDepth` slot (after the surface layers,
-//! before the underground backdrop) — a recorded layering deviation (the
-//! per-depth boundary interleave with the mountain/tree rows is the ambience
-//! pass's own machinery; these two skies draw as one batch at the flush).
+//! span depths 1.6..6.0 (far first), balloons 1.6..3.35. The BALLOONS ride
+//! the sky pass's per-depth boundaries (`draw_balloons_band`, threaded
+//! through `draw_sky`/`AmbiencePass` — the f40 `lantern_sky` shape, W4-c39
+//! exec per research/114 §1e). The LANTERNS still draw as one batch in the
+//! `DrawRemainingDepth` flush slot — a recorded layering deviation; f40's
+//! `render/lantern_sky.rs` depth-band module is the surviving LanternSky at
+//! the merge (research/114 §1b), so the lantern half here is interim.
 
 use glam::Vec2;
 use tr_core::UnifiedRandom;
@@ -346,12 +348,41 @@ pub(crate) struct SkyCtx {
     pub world_surface: f64,
 }
 
+/// The lantern body tint (`LanternSky.cs:224` + `DrawLantern` `:250`):
+/// the `(250,120,60,120)` base × the depth tier, each channel truncated
+/// to a BYTE (`(int)(color.R * num3)`), then × `_opacity` ONCE. W4-c39
+/// exec (research/114 §1b): the earlier form applied the tier to rgb
+/// twice plus an extra 120/255 factor — a colour bug; f40's
+/// byte-truncation form is canonical.
+fn lantern_body_tint(tier: f32, opacity: f32) -> [f32; 4] {
+    [
+        (250.0 * tier) as u8 as f32 / 255.0 * opacity,
+        (120.0 * tier) as u8 as f32 / 255.0 * opacity,
+        (60.0 * tier) as u8 as f32 / 255.0 * opacity,
+        (120.0 * tier) as u8 as f32 / 255.0 * opacity,
+    ]
+}
+
+/// The lantern glow tint (`DrawLantern`, `LanternSky.cs:243`):
+/// `Color(255,255,255,0) * _opacity * num3 * (y*0.2+0.8) * 0.4` — the
+/// alpha-0 byte multiply lands the amount in rgb with alpha 0; the port's
+/// premultiplied-source convention carries it as `[a,a,a,0]` (the
+/// tile-flame note, `sprite.wgsl` — AlphaBlend's rgb factor One adds it).
+fn lantern_glow_tint(opacity: f32, tier: f32, y: f32) -> [f32; 4] {
+    let a = opacity * tier * (y * 0.2 + 0.8) * 0.4;
+    [a, a, a, 0.0]
+}
+
 /// `LanternSky.Draw` + `DrawLantern` (`LanternSky.cs:154-251`): the
-/// depth-parallax lanterns with the 3-copy additive glow and the body. The
-/// port draws them in the sky pass's flush slot (the depth-sandwich interleave
-/// is the ambience pass's machinery — a recorded layering deviation). The
-/// glow copies ride the additive blend (`push_ui_sprite_blend`'s mode), the
-/// body the plain alpha; both in screen space about the view centre.
+/// depth-parallax lanterns with the 3-copy glow and the body. The port
+/// draws them in the sky pass's flush slot (the depth-sandwich interleave
+/// is the ambience pass's machinery — a recorded layering deviation; f40's
+/// `render/lantern_sky.rs` depth-band draw is the surviving form at the
+/// merge, research/114 §1b). The tint is the C# `:224` byte-truncation
+/// ladder × `_opacity` ONCE (the earlier double-tier rgb apply was a
+/// colour bug — fixed per research/114); the glow copies ride the
+/// premultiplied-source convention (`[a,a,a,0]` under AlphaBlend, the
+/// tile-flame note), the body the plain alpha; both about the view centre.
 pub(crate) fn draw_lanterns(
     r: &mut tr_render::SpriteRenderer,
     skies: &EventSkies,
@@ -398,13 +429,7 @@ pub(crate) fn draw_lanterns(
         } else {
             1.0
         };
-        let body_a = 120.0 / 255.0 * tier * skies.lantern_opacity;
-        let body = [
-            250.0 / 255.0 * tier * body_a,
-            120.0 / 255.0 * tier * body_a,
-            60.0 / 255.0 * tier * body_a,
-            body_a,
-        ];
+        let body = lantern_body_tint(tier, skies.lantern_opacity);
         // `vector2 = (1/Depth, 0.9/Depth) * 1.2`.
         let par = Vec2::new(1.0 / l.depth, 0.9 / l.depth) * 1.2;
         let draw_pos = centre + (l.position - centre) * par;
@@ -437,14 +462,22 @@ pub(crate) fn draw_lanterns(
         let origin = [size[0] * 0.5, size[1] * 0.5];
         let anchor_world = top_left + pos / zoom;
         // The glow: 3 additive copies offset by `(0,2).RotatedBy(2π·n + rot)·y`
-        // (`:246-249`), colour white·opacity·tier·(y·0.2+0.8)·0.4.
-        let glow_a = skies.lantern_opacity * tier * (y * 0.2 + 0.8) * 0.4;
-        let glow = [1.0, 1.0, 1.0, glow_a];
+        // (`:246-249`). The C# colour is `Color(255,255,255,0) * opacity *
+        // num3 * (y*0.2+0.8) * 0.4` — the alpha-0 byte multiply lands the
+        // amount in rgb with alpha 0; the port's premultiplied-source
+        // convention (the tile-flame note, `sprite.wgsl`) carries the same
+        // product as `[a,a,a,0]` under AlphaBlend (rgb factor One — a pure
+        // add). f40's form is canonical (research/114 §1b).
+        let glow = lantern_glow_tint(skies.lantern_opacity, tier, y);
         for n in 0..3u32 {
             let ang = std::f32::consts::TAU * (n as f32 / 3.0) + l.rotation;
             let off = crate::bow_launch::rotated_by(Vec2::new(0.0, 2.0), ang as f64) * y;
             let gp = anchor_world + off;
             let tl = [gp[0] - origin[0], gp[1] - origin[1]];
+            // AlphaBlend, NOT Additive: the premultiplied-source glow
+            // carries its amount in rgb with alpha 0, and AlphaBlend's rgb
+            // factor One adds it (the tile-flame convention). Additive's
+            // SourceAlpha factor would zero it (alpha 0).
             r.push_back_sprite_origin_rot_blend(
                 tl,
                 size,
@@ -452,7 +485,7 @@ pub(crate) fn draw_lanterns(
                 glow,
                 l.rotation,
                 origin,
-                tr_render::BlendMode::Additive,
+                tr_render::BlendMode::AlphaBlend,
             );
         }
         // The body (`:250`): plain alpha, `opacity * _opacity`.
@@ -461,9 +494,42 @@ pub(crate) fn draw_lanterns(
     }
 }
 
+/// `PartySky.Draw`'s depth-band index walk (`PartySky.cs:185-198`): the
+/// balloons are sorted near-first (depth ascending). `num` = the first
+/// index with `depth < maxDepth`; `num2` = the last index with
+/// `depth > minDepth` (the loop breaks at the first `depth <= minDepth`).
+/// The draw iterates `num..num2` (the C# `for (k = num; k < num2; k++)`).
+/// `None` when no balloon is shallower than `maxDepth` (`num == -1`).
+fn balloon_band_indices(balloons: &[Balloon], min_depth: f32, max_depth: f32) -> Option<(i32, i32)> {
+    let mut num: i32 = -1;
+    let mut num2: i32 = 0;
+    for (j, b) in balloons.iter().enumerate() {
+        if num == -1 && b.depth < max_depth {
+            num = j as i32;
+        }
+        if b.depth <= min_depth {
+            break;
+        }
+        num2 = j as i32;
+    }
+    if num == -1 {
+        None
+    } else {
+        Some((num, num2))
+    }
+}
+
 /// `PartySky.Draw` (`PartySky.cs:171-245`): the depth-parallax balloons, the
-/// sky-colour tint and the 3x3 animated grid.
-pub(crate) fn draw_balloons(
+/// sky-colour tint and the 3x3 animated grid, drawn as ONE `DrawToDepth`
+/// band `[min_depth, max_depth)`. W4-c39 exec (research/114 §1e follow-up
+/// 1): the balloons ride the SAME `SkyManager` depth tracker as the
+/// ambience (the f40 `lantern_sky` shape) — the `num`/`num2` index walk
+/// (`:185-198`) culls to the band, so the near balloons draw in front of
+/// the near trees instead of one flush batch over everything. The view
+/// maths move to the unscaled `screenPosition` convention + the integer
+/// halves + the zoom-scaled screen push + the `>=` cull edges
+/// (`Rectangle.Contains`, `:234`), matching the bg/ambience pass.
+pub(crate) fn draw_balloons_band(
     r: &mut tr_render::SpriteRenderer,
     skies: &EventSkies,
     lookups: &crate::assets::Lookups,
@@ -472,14 +538,27 @@ pub(crate) fn draw_balloons(
     screen: Vec2,
     sky_color: [f32; 3],
     surface_px: f32,
+    min_depth: f32,
+    max_depth: f32,
 ) {
-    if !skies.party_draw_visible(camera.y - screen.y * 0.5 / zoom, surface_px) {
+    // `:182`: the underground / menu / opacity gate. `Main.screenPosition.Y`
+    // is the unscaled view top-left (`camera.y - screen.y*0.5`).
+    if !skies.party_draw_visible(camera.y - screen.y * 0.5, surface_px) {
         return;
     }
+    // `:185-198`: the depth-band index walk (the balloons are sorted
+    // near-first, depth ascending).
+    let Some((num, num2)) = balloon_band_indices(&skies.balloons, min_depth, max_depth) else {
+        return;
+    };
     let (aw, ah) = (lookups.atlas_size.0 as f32, lookups.atlas_size.1 as f32);
-    let centre = camera;
-    let top_left = camera - screen * 0.5 / zoom;
-    for b in skies.balloons.iter() {
+    // `:202`: `vector = screenPosition + (screenWidth>>1, screenHeight>>1)`
+    // — the integer halves, the unscaled view top-left.
+    let screen_position = camera - screen * 0.5;
+    let vector = screen_position
+        + Vec2::new((screen.x as i32 >> 1) as f32, (screen.y as i32 >> 1) as f32);
+    for k in num..num2 {
+        let b = &skies.balloons[k as usize];
         if !b.active {
             continue;
         }
@@ -507,18 +586,23 @@ pub(crate) fn draw_balloons(
         ];
         let a = base[3] * tier * skies.party_opacity;
         let color = [base[0] * tier * a, base[1] * tier * a, base[2] * tier * a, a];
+        // `:231-233`: the parallax about the view centre + the X wrap, in
+        // screen pixels relative to the view top-left.
         let par = Vec2::new(1.0 / b.depth, 0.9 / b.depth);
-        let draw_pos = centre + (b.position - centre) * par;
-        let mut pos = (draw_pos - top_left) * zoom;
+        let mut pos = (b.position - vector) * par + vector - screen_position;
         pos.x = (pos.x + 500.0) % 4000.0;
         if pos.x < 0.0 {
             pos.x += 4000.0;
         }
         pos.x -= 500.0;
-        if pos.x < -1000.0
-            || pos.x > screen.x + 1000.0
-            || pos.y < -1000.0
-            || pos.y > screen.y + 1000.0
+        // `:234`: `Rectangle.Contains((int)X, (int)Y)` — the int-truncated
+        // point against (-1000, -1000, screen+1000, screen+1000); the right
+        // / bottom edges are exclusive (`>=`).
+        let (px, py) = (pos.x as i32, pos.y as i32);
+        if px < -1000
+            || py < -1000
+            || px >= (screen.x as i32) + 1000
+            || py >= (screen.y as i32) + 1000
         {
             continue;
         }
@@ -531,20 +615,11 @@ pub(crate) fn draw_balloons(
             (rect.x + (col + 1) * frame_w) as f32 / aw,
             (rect.y + (row + 1) * frame_h) as f32 / ah,
         ];
-        // `scale: vector2.X * 2`, `origin: Vector2.Zero` (top-left anchor).
-        // The back range carries the world transform (no zoom in the size).
+        // `scale: vector2.X * 2`, `origin: Vector2.Zero` (top-left anchor) —
+        // the zoom-scaled screen push (`push_screen`, the bg convention).
         let scale = par.x * 2.0;
-        let size = [frame_w as f32 * scale, frame_h as f32 * scale];
-        let anchor_world = top_left + pos / zoom;
-        r.push_back_sprite_origin_rot_blend(
-            anchor_world.to_array(),
-            size,
-            uv,
-            color,
-            0.0,
-            [0.0, 0.0],
-            tr_render::BlendMode::AlphaBlend,
-        );
+        let size = [frame_w as f32 * scale * zoom, frame_h as f32 * scale * zoom];
+        crate::render::bg::push_screen(r, camera, zoom, screen, [pos.x, pos.y], size, uv, color);
     }
 }
 
@@ -563,44 +638,35 @@ mod tests {
         }
     }
 
-    /// W4-c39 — `LanternSky.ResetLantern`'s depth ladder (`:105`): slot 0 is
-    /// the farthest (6.0), the last the nearest (1.6); the float timer is
-    /// `(2000 + Next(1200)) * 2` (4000..6398).
-    #[test]
-    fn w4_c39_the_lantern_depth_ladder_runs_far_to_near() {
-        let mut skies = EventSkies::new(42);
-        skies.activate_lanterns(&ctx());
-        let n = skies.lanterns.len();
-        assert_eq!(n, 300, "maxTilesY / 4 = 1200 / 4");
-        assert!((skies.lanterns[0].depth - 6.0).abs() < 1e-4);
-        assert!((skies.lanterns[n - 1].depth - 1.6).abs() < 0.02);
-        for l in skies.lanterns.iter() {
-            assert!(l.active);
-            assert!(l.speed <= -1.5 && l.speed >= -4.0, "speed {}", l.speed);
-            assert!(l.variant < 3);
-            assert!(
-                l.time_until_float >= 4000 && l.time_until_float < 6400,
-                "timer {}",
-                l.time_until_float
-            );
-            assert_eq!(l.time_until_float, l.time_until_float_max);
-        }
-    }
+    // W4-c39 exec (research/114 §1b): the lantern depth-ladder and
+    // opacity-ramp witnesses DROPPED — f40's `render/lantern_sky.rs`
+    // witnesses are the supersets (same asserts, the depth-band rig), and
+    // f40's module is the surviving LanternSky at the merge. The lantern
+    // STATE fns stay here until that merge folds them; the party half
+    // below is c39-UNIQUE and keeps its three witnesses.
 
-    /// W4-c39 — the lantern opacity ramp (`:119`): +0.01/tick while up,
-    /// −0.01 while down, clamped 0..1.
+    /// W4-c39 exec (research/114 §1b) — the colour-bug fix: the body tint
+    /// is the C# `:224` BYTE-truncation ladder × opacity ONCE, not the
+    /// earlier tier²·(120/255) rgb apply. Tier 1 at full opacity answers
+    /// the raw (250,120,60,120) bytes; tier 0.5 truncates 125/60/30/60.
     #[test]
-    fn w4_c39_the_lantern_opacity_ramps_with_the_event() {
-        let mut skies = EventSkies::new(1);
-        skies.activate_lanterns(&ctx());
-        for _ in 0..150 {
-            skies.update_lanterns(true, 0.0, &ctx());
+    fn w4_c39_the_lantern_tint_truncates_the_byte_ladder_once() {
+        let full = lantern_body_tint(1.0, 1.0);
+        assert_eq!(full, [250.0 / 255.0, 120.0 / 255.0, 60.0 / 255.0, 120.0 / 255.0]);
+        let half = lantern_body_tint(0.5, 1.0);
+        assert_eq!(half, [125.0 / 255.0, 60.0 / 255.0, 30.0 / 255.0, 60.0 / 255.0]);
+        // The opacity scales all four channels once (the `:250` multiply).
+        let faded = lantern_body_tint(1.0, 0.5);
+        for i in 0..4 {
+            assert!((faded[i] - full[i] * 0.5).abs() < 1e-6, "channel {i}");
         }
-        assert!((skies.lantern_opacity - 1.0).abs() < 1e-4, "ramps to 1");
-        for _ in 0..150 {
-            skies.update_lanterns(false, 0.0, &ctx());
-        }
-        assert!(skies.lantern_opacity <= 0.0 + 1e-4, "ramps back to 0");
+        // The glow is the premultiplied-source form: rgb = the amount,
+        // alpha 0 (the tile-flame convention), NOT white-with-alpha.
+        let glow = lantern_glow_tint(1.0, 1.0, 0.0);
+        assert!((glow[0] - 0.32).abs() < 1e-6, "0.8 * 0.4 at y=0");
+        assert_eq!(glow[3], 0.0, "alpha 0 — the rgb carries the add");
+        assert_eq!(glow[0], glow[1]);
+        assert_eq!(glow[1], glow[2]);
     }
 
     /// W4-c39 — `PartySky.ResetBalloon`'s depth ladder (`:115`): slot 0 the
@@ -624,6 +690,41 @@ mod tests {
         }
         // The 1/30 roll over 300 balloons lands a handful of rare sheets.
         assert!(rare > 0, "the 1/30 rare sheet fires");
+    }
+
+    /// W4-c39 exec (research/114 §1e) — the depth-band index walk
+    /// (`PartySky.cs:185-198`): the near-first balloons split into the
+    /// `[minDepth, maxDepth)` strata the `DrawToDepth` boundaries draw.
+    #[test]
+    fn w4_c39_the_balloon_band_walk_splits_the_depth_strata() {
+        let mk = |depth: f32| Balloon {
+            active: true,
+            position: Vec2::ZERO,
+            depth,
+            speed: -2.0,
+            texture: 0,
+            variant: 0,
+            frame_counter: 0,
+        };
+        // Near-first: 1.6, 2.0, 2.5, 3.0, 3.35.
+        let bs = vec![mk(1.6), mk(2.0), mk(2.5), mk(3.0), mk(3.35)];
+        // The full range: every balloon (num 0, num2 4 → 0..4 draws 0..3,
+        // the C# `k < num2` excludes the last index — the deepest balloon
+        // at exactly the boundary is the flush's, matching the C# walk).
+        let full = balloon_band_indices(&bs, f32::NEG_INFINITY, f32::INFINITY).unwrap();
+        assert_eq!(full, (0, 4));
+        // A mid band [2.0, 3.0): num = first depth < 3.0 (index 0), num2 =
+        // last depth > 2.0 before the break at depth <= 2.0 (index 1, the
+        // 2.0 balloon breaks) → 0..1 draws only the 1.6 balloon... the C#
+        // walk's `depth <= minDepth` break lands on the 2.0 slot.
+        let mid = balloon_band_indices(&bs, 2.0, 3.0).unwrap();
+        assert_eq!(mid, (0, 1), "the break at depth <= minDepth (the 2.0 slot)");
+        // A band deeper than every balloon: num == -1 → None.
+        assert!(balloon_band_indices(&bs, 4.0, 5.0).is_none());
+        // The shallow flush band (-inf, 1.6]: num = first depth < 1.6 →
+        // none (1.6 is not < 1.6) → None; the nearest balloon rides the
+        // boundary above it.
+        assert!(balloon_band_indices(&bs, f32::NEG_INFINITY, 1.6).is_none());
     }
 
     /// W4-c39 — the balloon frame counter wraps at 42 (`:59`), the source row

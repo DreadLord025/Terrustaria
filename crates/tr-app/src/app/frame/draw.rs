@@ -1106,15 +1106,21 @@ impl App {
                         self.atmo,
                         self.game_update_count,
                         self.mouse_text_color,
+                        // W4-c39 exec: the PartySky balloons ride the sky
+                        // pass's depth boundaries (research/114 §1e).
+                        &self.event_skies,
                     );
                     // `Main.cs:62217`: `ScreenDarkness.DrawBack` sits right after
                     // `Overlays.Scene.Draw(Background)`.
                     crate::render::screen_fx::draw_darkness_back(renderer, screen, scene_state);
-                    // W4-c39 — the event skies (`LanternSky`/`PartySky`) draw
-                    // in the `SkyManager.DrawRemainingDepth` slot (after the
-                    // surface layers, before the underground backdrop — the
+                    // W4-c39 — the LanternSky draws in the
+                    // `SkyManager.DrawRemainingDepth` slot (after the surface
+                    // layers, before the underground backdrop — the
                     // depth-sandwich interleave is the ambience pass's own
-                    // machinery, a recorded layering deviation).
+                    // machinery, a recorded layering deviation; f40's
+                    // depth-band module is the surviving form at the merge,
+                    // research/114 §1b). The PartySky balloons moved INTO
+                    // draw_sky's depth boundaries (research/114 §1e).
                     crate::event_skies::draw_lanterns(
                         renderer,
                         &self.event_skies,
@@ -1123,16 +1129,6 @@ impl App {
                         world_zoom,
                         screen,
                         anim_time % 3600.0,
-                        surface_px,
-                    );
-                    crate::event_skies::draw_balloons(
-                        renderer,
-                        &self.event_skies,
-                        lookups,
-                        draw_cam,
-                        world_zoom,
-                        screen,
-                        sky_tint,
                         surface_px,
                     );
                     draw_phase("world");
