@@ -39614,15 +39614,25 @@ upstream publish, the g52c-139 receipt and the research/17 tail SEAL
   scan + reservation fields (`WorldItem.cs:188-285`) that no tip rows;
   g49/g50/g51 grep-empty, the item lane owns it. The table counts
   mechanically: 30 WIRED / 4 N/A / 4 DEAD / 2 PARKED = 40/40.
-- **The f11 fail-tile tail-fix publish (research/237).** The f11 tip
-  `84ed6342b` STILL carries the killing `kill_tile(world, i, j, true)`
-  in `frame_track`'s `(pound & flag4) && !mute` tail — inert for f11's
-  mute:true callers, live for the net reader's default mute:false. The
-  g48 no-op fix hunk is published verbatim for f11e/the merger, with a
-  new core witness
-  (`w4_g48_the_pound_fail_tail_never_removes_the_track` — the mask-18
-  isolated-rail pound cycle survives the fail tail). Number 237 per
-  the research/150 registry's free block (139 reserved for g52c).
+- **The f11 fail-tile tail-fix publish (research/239, renamed from 237).**
+  The f11 tip `84ed6342b` STILL carries the killing
+  `kill_tile(world, i, j, true)` in `frame_track`'s
+  `(pound & flag4) && !mute` tail — inert for f11's mute:true callers,
+  live for the net reader's default mute:false. The g48 no-op fix hunk
+  is published verbatim for f11f-seal/the merger, with a new core
+  witness (`w4_g48_the_pound_fail_tail_never_removes_the_track` — the
+  mask-18 isolated-rail pound cycle survives the fail tail). Number
+  initially 237 per the research/150 registry's free block (139
+  reserved for g52c); **RENAMED 237→239 in the correction phase** — the
+  237 pick triple-collided (e23 bestiary-final first-add 10:53:03 wins
+  237 per the first-pushed rule; g61 spawn-final 12:12:59 → 238; this
+  doc 12:15:09 → 239; full 358-tip scan, no other 237+ claim). The
+  correction-phase consumption receipt: the f11e-retire wave
+  (tip `14ca0a8d5`) did NOT consume the hunk — minecart.rs blob
+  `5efef353` unchanged, the defect still at tip lines 360-362; the e20
+  union-survivor fail slice is already the correct no-op shape
+  (condition-return + app-side 314 slice, no kill), so the hunk matters
+  for any f11-body-survives merge path (research/239).
 - **The g52c-139-master receipt.** The pushed g52 tip `590b93565`
   (`task/W4-g52-net-relay-host`) carries NO research/139 master-final
   table — the g52c sub-round is unpushed (the research/150 registry
@@ -39642,3 +39652,47 @@ The lane-tip probes ran over `git grep`/`git show` at the pinned hashes;
 the C# windows re-read (`MessageBuffer.cs:2232-2255`,
 `WorldItem.cs:188-285`, `WorldGen.cs:63700-63737`). 1 new core witness
 WRITTEN NOT RUN (the fail-tail pin); the lane total is 17 g48 witnesses.
+
+### NET-APPLY-1 correction phase (W4-g48, 2026-11-21, code-only)
+
+The post-SEAL correction round (re-probe citations only — the seal
+stands, the receipt lives in research/17 after the declaration):
+
+- **The 237 triple-collision rename.** The research/150 registry's
+  first-pushed rule adjudicates the three 237 claims: e23
+  bestiary-final (`7a7779690`, 10:53:03) keeps 237; g61 spawn-final
+  (`fd406ecba`, 12:12:59) → 238; this lane's f11-tail-fix
+  (`34029437a`, 12:15:09) → **239**. Full 358-tip scan: exactly these
+  three 237 claims; 238/239 unclaimed (g58's 240–243 family is the only
+  other 237+ claim at scan time; the new publishes took 244/245).
+  Rename + all refs executed.
+- **The f11e-retire consumption receipt.** The f11 tip advanced
+  `84ed6342b` → `14ca0a8d5` (the retire phases 1/2/3+4/1b — the
+  233/234/235 registry renames + the c42e fold-lists) but the
+  minecart.rs blob `5efef353` is UNCHANGED: the killing
+  `kill_tile(world, i, j, true)` tail is still live at tip lines
+  360-362. The exact no-op hunk is re-published in research/239 for
+  the f11f-seal/merger. The e20 union-survivor fail slice re-probed
+  already correct (tip `46fdcfd8e`: the condition-return + the
+  app-side no-kill 314 slice) — the hunk binds only on any
+  f11-body-survives merge path; the g48 net-17 kind-15 reader keeps
+  the landed no-op form.
+- **The c28 send-switch correction (research/244).** The C# has ZERO
+  `SendData(18)` sites (c28's own census json has no 18 key) — the
+  live clock sync rides `7 WorldData` (the event edges + the
+  3600-tick `UpdateServer` heartbeat, `Main.cs:64560`). The
+  "205→18" framing is corrected to "internal 205 → the id-7
+  cadence"; the exact 5-step switch is published for the c28 lane
+  (the c27 18 reader stays wire-compat). The internal-205 deviation
+  (research/17 row 13) stays admitted until that switch lands.
+- **The 39 item-lane task-seed (research/245).** The lane
+  adjudication: not g49/g50/g51 (grep-empty re-verified), not the
+  landed M6-NET-5 ATLAS row (the 27/28/29 sync) — the ROADMAP
+  S1-I-4a "stay M6-NET-5" note is a forward-reference to the
+  milestone remainder; the ITEM lane (the d98 21/22/39/151 region)
+  owns the FindOwner/ReserveFor `WorldItem.cs:188-285` window + the
+  unrowed reservation fields + the peer-inventory dependency.
+
+Verification: code-only — no cargo/rustc/tests/rustfmt/graphify
+invoked; all probes at the re-fetched tip hashes (the receipt in
+research/17 lists them); no code change this round.
