@@ -1723,6 +1723,16 @@ mod tests {
         player.max_hp = 200;
         player.stat_defense = 10; // fight-ready
         app.player = Some(player);
+        // A resident Travelling Merchant silences the visit roll (step 7)
+        // — the tick's only OTHER UpdateTime consumer here — so the fire
+        // draw below is the slime roll's own first draw.
+        app.npcs.push(crate::npc::Npc::new(
+            crate::npc::NpcKind::TravellingMerchant,
+            4.0 * 16.0,
+            2.0 * 16.0,
+            1,
+            0.0,
+        ));
         *app.rngs.stream(crate::app::RngKey::UpdateTime) = UnifiedRandom::new(fire);
         // The rain expires THIS tick: rainTime 1 → 0 → StopRain.
         app.rain = Rain::with_forced(9, None, false);
@@ -1736,6 +1746,10 @@ mod tests {
         // The stream is untouched by the roll (the expiry's StopRain draws
         // nothing on UpdateTime; the strength roll never ran).
         // NEXT tick: not raining at entry, the same stream fires the roll.
+        // A calm rig silences the rain START arms deterministically (the
+        // `with_forced` test hook — the witness pins the UpdateTime gate,
+        // not the rain scheduler's own rolls).
+        app.rain = Rain::with_forced(9, None, true);
         update_world_tick(&mut app, STEP);
         assert!(app.world.slime_rain, "the next tick's roll fires");
         assert!(app.world.slime_rain_time > 0.0, "the duration armed");

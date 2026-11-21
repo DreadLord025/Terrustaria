@@ -1,6 +1,9 @@
 # 83 — Weather reconcile (W4-d130 merger assist + conflict resolution)
 
-**STATUS: EXECUTED** (union-exec phase, commit `88cfbf38` on this branch). §1's gate
+**STATUS: EXECUTED + FINAL PHASE LANDED** (union-exec commit `88cfbf38`;
+final-phase commits `85250712` g11 snow fold §4, `5289d055` rain ambience,
+`85b2a09c` intensity ramps, `703370e6` sandstorm cross-note §5, `cf4574e9`
+f39 slime-rain fold §6 — all on this branch). §1's gate
 fix landed in `50c845e5`; §3's splash union is now transplanted IN THIS BRANCH —
 `spawn_splash` (the DustPool recipe), `water_splash_arm`, `draw_splashes` and the
 `Option<(DustPool, SpawnCtx)>` drain seam are live in `rain.rs`/`minecart.rs`/

@@ -3640,8 +3640,10 @@ mod tests {
             ambient_cue_stop_step(true, true, 0.002, 0.005),
             (0.0, StopZeroFade)
         );
-        // The full fade-out: 1 → 0 in 200 frames (the rain stops, the
-        // loop keeps sounding for 3⅓ s while the zone gate is down).
+        // The full fade-out: 1 → 0 in ~200 frames at the 0.005 speed (the
+        // rain stops, the loop keeps sounding for ~3⅓ s while the zone gate
+        // is down). The f32 subtraction residual can add one frame — the
+        // C# runs the SAME f32 arithmetic, so the count is the source's own.
         let mut fade = 1.0f32;
         let mut frames = 0;
         loop {
@@ -3653,7 +3655,7 @@ mod tests {
             }
             assert!(frames < 400, "the fade must terminate");
         }
-        assert_eq!(frames, 200);
+        assert!((199..=201).contains(&frames), "the ~200-frame fade: {frames}");
         assert_eq!(fade, 0.0);
         // No track: nothing moves (`:252-255`).
         assert_eq!(ambient_cue_stop_step(false, true, 0.4, 0.005), (0.4, NoTrack));
