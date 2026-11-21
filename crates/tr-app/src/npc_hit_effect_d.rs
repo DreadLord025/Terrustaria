@@ -614,10 +614,10 @@ fn gem_squirrel_death(
 /// 102 Angler Fish → 116 (`:86054`), 224 Flying Fish → 312/313
 /// (`:86058-86059`), 587 Eyeball Flying Fish → extra 50x dust-5 at
 /// (2.5·hd, −2.5) then 1104/1105 (`:86061-86069`), 616 Turtle →
-/// 1166/1167/1168/1168 (`:86070-86076`). The remaining
-/// sub-branches land in later batches; an unported kind in the arm spawns
-/// the dust burst only (the census note — the gores follow in source
-/// order).
+/// 1166/1167/1168/1168 (`:86070-86076`), 617 Jungle Turtle →
+/// 1169/1170/1171/1171 (`:86077-86083`), 625 Sea Turtle →
+/// 1194/1195/1196/1196 (`:86084-86090`). The arm's remaining kinds
+/// (614/627 — no gore sub-branch in the C#) spawn the dust burst only.
 fn critter_arm_death(
     npc: &Npc,
     npc_type: i32,
@@ -754,6 +754,59 @@ fn critter_arm_death(
         gore.new_gore(rng, world, pos, vel, 1167, 1.0); // :86073
         gore.new_gore(rng, world, pos, vel, 1168, 1.0); // :86074
         gore.new_gore(rng, world, pos, vel, 1168, 1.0); // :86075
+    } else if npc_type == 617 {
+        gore.new_gore(rng, world, pos, vel, 1169, 1.0); // :86079
+        gore.new_gore(rng, world, pos, vel, 1170, 1.0); // :86080
+        gore.new_gore(rng, world, pos, vel, 1171, 1.0); // :86081
+        gore.new_gore(rng, world, pos, vel, 1171, 1.0); // :86082
+    } else if npc_type == 625 {
+        gore.new_gore(rng, world, pos, vel, 1194, 1.0); // :86086
+        gore.new_gore(rng, world, pos, vel, 1195, 1.0); // :86087
+        gore.new_gore(rng, world, pos, vel, 1196, 1.0); // :86088
+        gore.new_gore(rng, world, pos, vel, 1196, 1.0); // :86089
+    }
+}
+
+/// The 148/149/168/470 penguin/frog arm (`NPC.cs:86092-86127`): the 10x
+/// dust-5 burst, then the per-kind pair/triple at position, scale 1f.
+/// The 148 Penguin → 160/161 (`:86108-86109`), the 149 Frog → 162/163
+/// (`:86113-86114`), the 168 Frog (corrupt) → 215/216 (`:86118-86119`);
+/// the 470 triple lands next batch.
+fn penguin_frog_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86102-86105` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if npc_type == 148 {
+        gore.new_gore(rng, world, pos, vel, 160, 1.0); // :86108
+        gore.new_gore(rng, world, pos, vel, 161, 1.0); // :86109
+    } else if npc_type == 149 {
+        gore.new_gore(rng, world, pos, vel, 162, 1.0); // :86113
+        gore.new_gore(rng, world, pos, vel, 163, 1.0); // :86114
+    } else if npc_type == 168 {
+        gore.new_gore(rng, world, pos, vel, 215, 1.0); // :86118
+        gore.new_gore(rng, world, pos, vel, 216, 1.0); // :86119
     }
 }
 
@@ -828,10 +881,9 @@ pub fn hit_effect_d(
     else if (639..=645).contains(&npc_type) {
         gem_squirrel_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:85942-86091` — the 29-type critter arm; the 46/303/337/540, 67,
-    // 55/230, 615, 74, 297, 298, 671-675, 299, 538, 300, 610, 626, 102,
-    // 224, 587, 616 sub-branches are live (sites 42-85), the rest land
-    // later.
+    // `:85942-86091` — the 29-type critter arm, COMPLETE (sites 42-93):
+    // every gore sub-branch landed; the 614/627 kinds have no gore
+    // sub-branch in the C# (dust burst only).
     else if matches!(
         npc_type,
         46 | 55
@@ -864,6 +916,12 @@ pub fn hit_effect_d(
             | 675
     ) {
         critter_arm_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86092-86127` — the 148/149/168/470 penguin/frog arm; the
+    // 148/149/168 pairs are live (sites 94-99), the 470 triple lands next
+    // batch.
+    else if matches!(npc_type, 148 | 149 | 168 | 470) {
+        penguin_frog_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -1575,5 +1633,67 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the eyeball fish mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86079-86089` — the turtle quartets: 617 Jungle Turtle
+    /// 1169/1170/1171/1171, 625 Sea Turtle 1194/1195/1196/1196; the 614/627
+    /// kinds have NO gore sub-branch (dust burst only).
+    #[test]
+    fn w4_f5d_the_turtle_quartets_and_the_goreless_kinds() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 24.0);
+        for (kind, want) in [
+            (617, vec![1169, 1170, 1171, 1171]),
+            (625, vec![1194, 1195, 1196, 1196]),
+            (614, vec![]),
+            (627, vec![]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(101);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "turtle {kind}");
+            let mut twin = UnifiedRandom::new(101);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 30, 24);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "turtle {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86108-86119` — the penguin/frog pairs: 148→160/161,
+    /// 149→162/163, 168→215/216, after the 10x dust-5 burst.
+    #[test]
+    fn w4_f5d_the_penguin_frog_pairs_spawn_the_kind_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 24.0, 26.0);
+        for (kind, want) in [(148, vec![160, 161]), (149, vec![162, 163]), (168, vec![215, 216])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(103);
+            let _ = hit_effect_d(&n, kind, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "penguin/frog {kind}");
+            assert!(!gore.slot(2).active, "exactly two gores");
+            let mut twin = UnifiedRandom::new(103);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 24, 26);
+            }
+            for _ in 0..2 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "penguin/frog {kind} mirrors the C# draws");
+        }
     }
 }
