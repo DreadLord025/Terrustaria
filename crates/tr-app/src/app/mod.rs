@@ -921,6 +921,14 @@ pub(crate) struct App {
     /// [`Self::rngs`]`::global()` — the bare-`Main.rand` stand-in
     /// (`Main.cs:17214-17216`), shared with chat commands and menu rolls.
     pub(crate) ambience: crate::ambience::Ambience,
+    /// W4-f39 closeout: the Slime Rain sky (`SlimeSky : CustomSky`,
+    /// `GameContent/Skies/SlimeSky.cs`) — the falling-slime background the
+    /// event's own start/stop edges activate/drain (`Main.cs:64773`/
+    /// `:64813`). Its private stream is world-seed-pinned (the c39
+    /// `event_skies` deviation); the update rides the same pause-gated
+    /// ambience phase as the `AmbientSky` manager (`SkyManager.Update`,
+    /// `Main.cs:17139`).
+    pub(crate) slime_sky: crate::slime_sky::SlimeSky,
     pub(crate) tree_wind_counter: f32,
     pub(crate) grass_wind_counter: f32,
     /// `TileDrawing._sunflowerWindCounter` (`TileDrawing.cs:374`): the sunflower's
@@ -4035,6 +4043,9 @@ impl App {
                 }
                 ambience
             },
+            // W4-f39: the SlimeSky's private stream pins to the world seed
+            // (the C# ctor is clock-seeded; the c39 event_skies deviation).
+            slime_sky: crate::slime_sky::SlimeSky::new(world_seed),
 
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,

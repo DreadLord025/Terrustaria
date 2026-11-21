@@ -512,6 +512,29 @@ impl App {
     };
     ambience.update(dt, &ctx, ambience_rng);
                     }
+    // W4-f39 closeout: `SkyManager.Update` (`Main.cs:17139`) also walks
+    // the SlimeSky — the event's activation edges ride `World.slime_rain`
+    // (the port's stand-in for the `Activate`/`Deactivate` calls inside
+    // `StartSlimeRain`/`StopSlimeRain`), the update ×`max(1, dayRate)`.
+    // `Main.screenPosition.Y` is the unscaled view top (`camera.y -
+    // screenHeight/2`, the sky pass's convention).
+    {
+        let (sw, sh) = self.screen_size();
+        let sky_ctx = crate::slime_sky::SlimeSkyCtx {
+            screen_position_y: self.camera.y - sh * 0.5,
+            screen_height: sh,
+            max_tiles_x: self.world.width,
+            max_tiles_y: self.world.height,
+            world_surface: self.world.world_surface,
+        };
+        let _ = sw;
+        self.slime_sky.update(
+            dt,
+            self.world.slime_rain,
+            self.world.day_rate(),
+            &sky_ctx,
+        );
+    }
     }
 
     /// S1-B-3 (batch review fix 1): the tile-edit and net halves ride the

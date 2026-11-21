@@ -1087,6 +1087,9 @@ impl App {
                         hell_black_box_bottom,
                         &self.ambience.entities,
                         lookups,
+                        // W4-f39: the SlimeSky draws only while active
+                        // (the SkyManager's active list).
+                        self.slime_sky.is_active().then_some(&self.slime_sky),
                         sky_tint,
                         self.atmo,
                         self.game_update_count,

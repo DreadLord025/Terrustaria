@@ -405,6 +405,9 @@ pub(crate) struct SkyAssets {
     /// the sheet, `Main.moonPhase` the row.
     pub(crate) moon: [Option<BgTex>; 9],
     pub(crate) stars: Vec<Option<BgTex>>,
+    /// W4-f39: `Images/Misc/Sky_Slime_1..4` — the SlimeSky's falling-slime
+    /// sheets (`SlimeSky.cs:79-83`), each a 4-row animation strip.
+    pub(crate) slime_sky: [Option<BgTex>; 4],
 }
 
 /// One star from `Star.SpawnStars` (`Star.cs:86-158`). Positions live in the
@@ -493,6 +496,7 @@ pub(crate) fn make_sky_assets(atlas: &Atlas, world: &World) -> SkyAssets {
         stars: (0..4)
             .map(|i| sky_tex(atlas, &format!("Star_{i}"), None))
             .collect(),
+        slime_sky: std::array::from_fn(|i| sky_tex(atlas, &format!("Misc/Sky_Slime_{}", i + 1), None)),
     }
 }
 
@@ -641,6 +645,10 @@ pub(crate) fn draw_sky(
     // `DrawToDepth` boundaries — see the `DRAW_TO_DEPTH` table below.
     ambience: &[crate::ambience::SkyEntity],
     lookups: &crate::assets::Lookups,
+    // W4-f39: the SlimeSky (`SlimeSky : CustomSky`) — the event's own
+    // falling-slime background, drawn at the same depth boundaries as the
+    // ambient entities (the c39 balloon-band shape). `None` draws nothing.
+    slime_sky: Option<&crate::slime_sky::SlimeSky>,
     // `Main.ColorOfTheSkies` (the rain-dimmed sky tint, `Main.cs:63209`) and
     // `Main.atmo` — the entity colour chain (`AmbientSky.cs:63`).
     sky_color: [f32; 3],
@@ -1013,6 +1021,11 @@ pub(crate) fn draw_sky(
     // Step1's first act is `DrawToDepth(1f/0.15)` (`Main.cs:59812`): the
     // closest entities (EOC slices above depth 6.667) draw behind the
     // mountains.
+    // W4-f39: the SlimeSky's slimes ride the same boundary (the C#
+    // `SkyManager.DrawDepthRange` walks every active sky; the band is
+    // (min, last] BEFORE the tracker moves — the activation order draws
+    // Ambience first, Slime second).
+    let band_max = amb_last;
     crate::ambience::draw_range_min(
         r,
         ambience,
@@ -1021,6 +1034,19 @@ pub(crate) fn draw_sky(
         1.0 / 0.15,
         &mut amb_last,
     );
+    if let Some(ss) = slime_sky {
+        ss.draw_band(
+            r,
+            &sky.slime_sky,
+            camera,
+            zoom,
+            screen,
+            origin,
+            sky_color,
+            1.0 / 0.15,
+            band_max,
+        );
+    }
     if show_bg {
         if far_forest > 0.0 {
             if let Some(far) = sky.far {
@@ -1083,7 +1109,21 @@ pub(crate) fn draw_sky(
     // Step1's closing `DrawToDepth(5f)` (`Main.cs:59878`) runs before this
     // pass: the mid-depth entities draw between the mountain rows and the
     // closer clouds.
+    let band_max = amb_last;
     crate::ambience::draw_range_min(r, ambience, lookups, &amb_ctx, 5.0, &mut amb_last);
+    if let Some(ss) = slime_sky {
+        ss.draw_band(
+            r,
+            &sky.slime_sky,
+            camera,
+            zoom,
+            screen,
+            origin,
+            sky_color,
+            5.0,
+            band_max,
+        );
+    }
     if bg_block {
         let closer_top = if background_enabled {
             magic * 1300.0 + 1090.0 + sc_adj + 30.0 + 150.0
@@ -1212,6 +1252,7 @@ pub(crate) fn draw_sky(
         lookups,
         ctx: &amb_ctx,
         last: &mut amb_last,
+        slime_sky,
     });
     if show_bg {
         // `pushBGTopHack` for the front loop is `30 - 180` (`Main.cs:59302`,
@@ -1525,7 +1566,24 @@ pub(crate) fn draw_sky(
     // `Main.cs:59626` `DrawRemainingDepth`: the shallowest entities (below the
     // last front-row boundary) draw after every surface layer, before the
     // underground backdrop.
+    let band_max = amb_last;
     crate::ambience::draw_range_remaining(r, ambience, lookups, &amb_ctx, &mut amb_last);
+    // W4-f39: the SlimeSky's remaining strata flush with the ambience's
+    // (the near slimes draw in front of the near trees — the c39 balloon
+    // band's layering).
+    if let Some(ss) = slime_sky {
+        ss.draw_band(
+            r,
+            &sky.slime_sky,
+            camera,
+            zoom,
+            screen,
+            origin,
+            sky_color,
+            f32::NEG_INFINITY,
+            band_max,
+        );
+    }
     // `Main.DrawBackground_SurfaceTransitionBackground`,
     // `Main.DrawBackground_DirtBackground`, `DrawBackground_DrawUnderworldBlackBox`,
     // `DrawBackground_DrawRockLayer` and `DrawBackground_DrawMagmaLayer`: the textured
