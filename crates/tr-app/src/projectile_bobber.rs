@@ -442,7 +442,9 @@ pub(crate) fn kill_hook(p: &mut Projectile, level: i32, rng: &mut dyn DropRng) -
 /// `Collision.WetCollision` (`Collision.cs:1572-1651`) + `LavaCollision`
 /// (`:1653-1684`) folded into one probe: the inset rectangle for wet/honey/
 /// shimmer, the FULL box for lava. Writes the slot's four flags.
-fn probe_wet(p: &mut Projectile, world: &World) {
+/// `pub(crate)`: the aiStyle-25 boulder arm probes at its head the same way
+/// (the bobber's tick-head probe convention, W4-d3).
+pub(crate) fn probe_wet(p: &mut Projectile, world: &World) {
     let (x, y, w, h) = (p.pos.x, p.pos.y, p.w, p.h);
     let wi = w as i32;
     let hi = h as i32;
