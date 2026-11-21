@@ -33048,6 +33048,26 @@ snails — the two shimmer lanes compose without double-transform.
 Witness `w4_c9_shimmer_immunity_write_keys_the_cs_type` WRITTEN NOT
 RUN.
 
+**FINAL seal (2026-11-21, research/281).** The adjacent-critter-kinds
+half is complete: the five gold critters 442/443/445/446/447 all landed
+(wave 1 `c830aec3d`, wave 2 `49d4cfb61` — the GoldBunny/GoldFrog kinds,
+the critter_ai dispatch, the case-443/445 find_frame arms re-read
+verbatim from `NPC.cs:76851-76904`/`:76618-76685`, sheets/portraits/
+bestiary/net seeds). The scripted census: enum 279 == ALL_KINDS 279 ==
+from_u16 arms 279, sets identical, zero dups; ENTRIES 258;
+BESTIARY_NPC_SHEET_IDS 190 == the Lookups vec. d37's
+`_d37_c9_allkinds_fix.patch` was EXECUTE-verified (scratch-index
+`git apply --check` exit 0 against `2042d77f1`, post-apply census
+274/274/pin-274) and is superseded by the in-lane fix — the merger
+drops it as already-satisfied. The c8 GENERIC sight gate
+(`counts_as_a_critter`: max_hp<=5 && contact_damage==0, minus 594/686)
+auto-covers all nine c9 kinds with zero provider wiring; f26-7j's 655
+MagmaSnail find_frame arm DELEGATES to `npc_ai_style67::snail_find_frame`
+(one machine, the 180-combo equality grid). The E8 renumber order
+(Snail 359→740, GlowingSnail 360→741, the Shimmerfly row drops to c7)
+is receipted as merge-wave work, NOT executed on this lane. The full
+bible + receipts: `docs/research/281-snail-family-final.md`.
+
 ## The Martian Drone / Solar Corite machine (S1-D-3 aiStyle-74, code-only)
 
 `crates/tr-app/src/npc_ai_style74.rs` ports `NPC.AI()`'s
