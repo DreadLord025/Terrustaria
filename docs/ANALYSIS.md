@@ -36114,16 +36114,51 @@ and the d56 conventions branch (5d80b38a):
 
 Deliberate deviations:
 
-* **UNWIRED, code-only** (the d56 convention): `projectile.rs`'s
-  dispatch, `projectile/data.rs`, `assets.rs`'s sheet list and
-  `main.rs`'s mod decl are ALL contested by in-flight siblings (the
-  d1..d20 proj-ai lanes, g35/g48/g65, c6/c11, d93, g5/g52). The intended
-  call sites are documented in the module header; the item rows already
-  exist (itemdata 985/3005/3079/3080).
+* **WIRED (2026-11-21, the wiring phase - 5 seam commits)**: the
+  `35 =>` one-line dispatch arm (ahead of 36, the C# body order, the
+  per-arm mutable world reborrow - the ai_ice_block/ai_dungeon_debris
+  precedent), the four rows appended in `projectile/data.rs` before the
+  None arm (the 24-space convention, append-safe), the `main.rs` mod
+  decl, the chain draw in `draw_with_hand` ahead of the sprite emit (the
+  c6 pumpking-chain precedent) + the 7 chain sheets in `assets.rs`
+  (`STATIC_SHEET_NAMES` tail + `Lookups::coil_chains`/`coil_chain_uv`,
+  the glow_sheets keyed-name precedent), the refund + cue at the death
+  hook (`coil_kill` beside `thrown_consumable_death`, the d77
+  kill_tail_cue pattern), the usability gate in `use_tile_item` (the
+  walked target shadows ty for every downstream gate - the C#
+  tileTargetY static write). The item rows already existed (itemdata
+  985/3005/3079/3080).
+* **The cut-tile TileKill records are DISCARDED at the dispatch** (the
+  `let _ = kill_tile` precedent, projectile.rs :7598/:12766): the
+  KillTile cascade runs (support checks, object drops recorded), but
+  the per-cell item drops of the cleared plants stay unspawned - the
+  same recorded deviation the ice-block/debris tile writes carry. The
+  module keeps returning the records for a future drain.
+* **The refund is a world DROP, not an inventory fill**: the C#
+  `Item.RequestNewItem` = `Item.NewItem` (Item.cs:49639-49646) at
+  `base.Center`; the port queues `(item, stack, cx, cy)` and the world
+  sim spawns via `spawn_item_drop_px` on the `UpdateProjectiles` stream
+  (the velocity-triplet-then-prefix order deviation stands). The
+  enclosing gates are kept: the `:77267` owner refusal + the `:77367`
+  `!noDropItem` head gate the refund; the ai1==0 cue is UNGATED by both
+  (it sits in Kill()'s dust chain ahead of `active = false`).
+* **The coil census correction**: the ai1==0 Dig cue + the dust walks
+  (`Projectile.cs:74615-74731`) live INSIDE `Kill()` (the enclosing
+  body re-read: no function boundary between :70642 and :74615), NOT
+  in `UpdateProjectiles` - so the cue rides the death hook, not
+  `wants_sound` (whose forward runs before the hook). The cue position
+  is the int-overload truncation (`(int)position.X/Y`).
+* **The friendly pin + the PVP exemption**: the C# SetDefaults reset
+  leaves `friendly = false` (`:788`) and neither coil arm sets it; the
+  port Default carries true, so `coil_step` pins false every tick (the
+  debris precedent) and the player-contact pass exempts the coils (the
+  debris/slime list - `hostile` false `:764`, `Damage_EVP` refuses
+  `:14775`). The generic `AutomaticallyChangesDirection` write covers
+  style 35 (`:17283` does not exclude it).
 * The dust walks sharing the chain geometry (`Projectile.cs:74615-74731`,
   4 dust per segment past ai1, types 3/30/239/129) are SKIPPED with the
-  dust layer — zero state (the ai_style2 precedent). The ai1==0 sound cue
-  rides `wants_sound` at the wiring step.
+  dust layer - zero state (the ai_style2 precedent). The ai1==0 sound
+  cue is WIRED at `coil_kill` (above).
 * `NetMessage.SendData(17/159)` skipped (single-player);
   `WorldGen.IsTileLoaded` always true.
 * **The 0/0 NaN quirk is kept**: a chain link whose adjusted step hits
@@ -36138,11 +36173,20 @@ Deliberate deviations:
   degeneration.
 
 Verification: code-only, every arm re-read against the cited windows;
-17 witnesses WRITTEN, NOT RUN (6 framing + 11 coil: the rows/kinds, the
-flight/gravity/spin, the owner gate, the placement walk's solid stop /
-platform pass-through / 10-link cap, the chain's reverse order + ramps +
-sheet parity, the refund ladder, the usability walk + platform cap +
-lava gate). **No cargo/rustc/tests/graphify invoked.**
+17 phase-1..3 witnesses + 10 wiring witnesses WRITTEN, NOT RUN (6
+framing + 11 coil from the port phases; wiring: 4 framing_rope core
+witnesses, 3 dispatch witnesses (rows live/spawnable, the landing
+places + kills, the free flight spins), 1 four-arm death-hook witness
+(cue + refund ladder + owner gate), 1 end-to-end usability witness
+(the retarget through use_tile_item), 1 chain-sheet packing witness).
+The wiring re-read the enclosing C# bodies (Kill()'s :70642-77628
+gate chain, the :39726 PlaceThing_Tiles chain, the DrawProjDirect
+arm-vs-emit order) and verified every port seam by read/grep (the
+collision API, the edit/place/kill exports, the LightMap fields, the
+sprite origin-rot math, the 7 retail chain files). **No
+cargo/rustc/tests/graphify invoked** (the Lead's code-only
+constraint); the deferred gate is the merge pass's
+`cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids`.
 
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
