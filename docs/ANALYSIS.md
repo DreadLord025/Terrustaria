@@ -39610,3 +39610,62 @@ The 4 `w4_d31_axis_census_tests` witnesses (WRITTEN NOT RUN) pin the
 kind→style rows (including the no-83-kind gap), the frozen-behaviour
 A/B + stream parity for all seven migrated kinds, the 76/80/82
 zero-draw censuses, and the kind-arm retirement guard.
+
+### W4-g8 E8 SEAL: the kind-wire lane consumes the d37 roster orders (research/281 FINAL)
+
+The d37 ROSTER SEAL flagged g8 as a LAGGARD ("zero movement, stale
+ALL_KINDS"). This SEAL executes the E8 g8 move-table: the **17 owned
+kinds renumber to the port-local 745-761 band** (PinkJellyfish 745 /
+Antlion 746 / SpikeBall 747 / WallCreeper 748 / WallCreeperWall 749 /
+IceElemental 750 / Herpling 751 / Derpling 752 / CrimsonAxe 753 /
+FloatyGross 754 / LostGirl 755 / Nymph 756 / IceBat 757 / Lavabat 758 /
+GiantFlyingFox 759 / VampireBat 760 / RedDevil 761) in
+`to_u16`/`from_u16`/`render_key`; the old ids decode None again (the
+354-387 corridor returns to d37/d42). The **17 duplicate kinds stay
+DROP-PENDING** at their pushed ids — the merge keep-one drops the g8
+rows (d34/d35/d37 own them; Harpy keeps d34@275 per g44e SS6); the drops
+cannot execute on this branch because the canonical rows live on other
+lanes and the axis claims reference the live variants. The **34 axis
+wirings + the 4 machine-round ports ALL stay** (the machine-wiring
+lane's whole point — they wire the style axis, not the kind row).
+
+**Recorded deviations / fixes:**
+- **The Vampire 388→762 collision fix** (new finding): d37's corridor
+  owns 388 (RustyArmoredBonesAxe, verified at the d37 tip). The Vampire
+  (machine round 3, landed after the E8 broadcast) takes 762 — the free
+  hole in d36's old 762-789 band (d37 SEAL fbb948172 lines 1408-1411:
+  763-766 are d120's towns, 781-787 d39's pushed seven, **788-790 are
+  RESERVED for d39's 3 unclaimed kinds**; only 762 + 788-789 were free,
+  and 762 is the one not reserved). cs_id stays 159.
+- **The stale ALL_KINDS decl 270→305** (d37 R0 said 304; the measured
+  array carries the Vampire too — 270 base + 34 lane-1 + 1). The s1_f_3
+  literal pin lands with it. Scripted census: to/from 305 arms each, id
+  sets identical, zero duplicates, max 762.
+- **The stale s1_f_13d pins re-derived**: from_u16(384) was asserted None
+  but batch 3 seated FlyingSnake there (broken since batch 3); now
+  Some(FlyingSnake) drop-pending, from_u16(387) None again (RedDevil
+  moved). The martian-pair intent holds.
+- **The render_key duplicate-group census**: the E8 moves REMOVED 4
+  pre-existing dup groups (370/371/372/373 — the g8 keys collided with
+  the fishron family's vanilla-type keys). 19 groups remain, ALL
+  pre-existing at base eb715aafc (18) + the batch-3 FlyingSnake-384/
+  ForceBubble-384 pair (drop-pending, the merge keep-one clears it) — a
+  base deviation NOT introduced here, flagged for the G6-key lane.
+- **The feather-shot NOT-active claim SUPERSEDED**: g44e's 300-branch
+  sweep (11:08) predated machine round 1 (a6c4f5ae9, 12:05). At this tip
+  the Harpy feather is ACTIVE and C#-spec-exact (30/60/90 ticks, speed
+  6f, type 38, dmg 15, timeLeft 300, X-then-Y Next(-100,101), the
+  400+Next(400) reset behind flag24).
+- **The 158-flip-callers GATED note CLOSED**: g61 research/273 read g8
+  at e1d9578a4 (round 2); round 3 (5767ca7c7) landed BOTH flip callers
+  (the bat→vampire :23353 gate + the vampire→bat :58850 return) + the
+  sim drain pair. The "still skips" note is stale at this tip.
+
+The E8 receipt witness
+(`w4_g8_e8_the_owned_kinds_ride_745_761_and_the_cs_ids_stay`) + the
+re-pinned machine witnesses are WRITTEN NOT RUN (code-only). The
+kind-wire-family bible + the full receipts live in research/281 (the
+registry first-free above the all-origin-tip max 280; the lane's earlier
+108 claims-table number collides with d37's roster-master 108 — the
+merger keeps d37's, 281 is the g8 FINAL). Co-lane dirty-12 ALIVE
+(d12's docs modified seconds before the first probe) — untouched.

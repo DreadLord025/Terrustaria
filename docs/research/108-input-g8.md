@@ -1,5 +1,21 @@
 # 108 — W4-g8 proto-band claims table (354–387) for the d37c/d37d matrix
 
+> **E8 EXECUTED (SEAL receipt, 2026-11-21):** the d37 research/108 g8
+> move-table landed on this branch — the **17 owned kinds now encode on
+> 745–761** (the table below's proto column is the PUSHED history; the
+> live ids are the E8 new-id column in §"E8 execution" at the tail), the
+> **17 duplicate kinds stay DROP-PENDING** at their pushed ids until the
+> merge keep-one (d34/d35/d37 own them), and the **Vampire moved 388→762**
+> (388 is d37's RustyArmoredBonesAxe — a collision the E8 table predates;
+> 762 is the first free id above the S4 CORE max 766 — the d37 SEAL
+> `fbb948172` line 1408 reserves 788–790 for d39's 3 unclaimed kinds).
+> The stale
+> ALL_KINDS decl 270→**305** (R0 said 304; the measured array carries the
+> Vampire too). The FINAL seal + the kind-wire-family bible live in
+> **research/281** (registry first-free; this 108 number COLLIDES with
+> d37's 108-roster-master-reconcile — the merger keeps d37's, this file
+> folds into 281's receipt). Code-only: witnesses written not run.
+
 > W4-g8 lane 1 (the d22–d33 UNWIRED-machine kinds ≤230) · published 2026-11-21 ·
 > sources: `crates/tr-app/src/npc.rs` + `npc/data.rs` (the roster/stat tables),
 > `decompiled/Terraria/NPC.cs` (the `SetDefaults` rows), `anchors.txt` rows 917–920.
@@ -160,3 +176,44 @@ the only aiStyle-14 type branch still unported (660 is not a ≤230 d22–d33 ki
   17/18/19/20/22/23/25/40/41/42 (batches 1–2), 10/14 (batches 3–4). The kind arms for
   the axis-claimed styles are `unreachable!` markers; the aiStyle-3 kinds
   (WallCreeper/Nymph/Vampire) ride the fighter ladder, not a style-axis arm.
+
+## E8 execution (the SEAL receipt — the live id map)
+
+The d37 E8 g8 table executed in `npc/data.rs` (`to_u16`/`from_u16`) +
+`npc.rs` (`render_key` + the witness pins). **17 moves:**
+
+| kind | old | new | cs_id | | kind | old | new | cs_id |
+|---|---|---|---|---|---|---|---|---|
+| PinkJellyfish | 356 | **745** | 64 | | LostGirl | 373 | **755** | 195 |
+| Antlion | 357 | **746** | 69 | | Nymph | 374 | **756** | 196 |
+| SpikeBall | 358 | **747** | 70 | | IceBat | 380 | **757** | 150 |
+| WallCreeper | 366 | **748** | 164 | | Lavabat | 381 | **758** | 151 |
+| WallCreeperWall | 367 | **749** | 165 | | GiantFlyingFox | 382 | **759** | 152 |
+| IceElemental | 368 | **750** | 169 | | VampireBat | 383 | **760** | 158 |
+| Herpling | 369 | **751** | 174 | | RedDevil | 387 | **761** | 156 |
+| Derpling | 370 | **752** | 177 | | CrimsonAxe | 371 | **753** | 179 |
+| FloatyGross | 372 | **754** | 182 | | | | | |
+
+**17 DROP-PENDING dups** (keep the pushed id on this branch; the merge
+keep-one drops the g8 row + wiring stays on the canonical owner's kind):
+Vulture 354→d34@278, BlueJellyfish 355→d34@280, Pixie 359→d35@700,
+Wraith 360→d35@705, CursedHammer 361→d35@706, EnchantedSword 362→d35@707,
+Mimic 363→d35@708, GreenJellyfish 364→d35@720, Gastropod 365→d35@728,
+CursedSkull 375→d34@267, Demon 376→d34@279, GiantBat 377→d35@710,
+Slimer 378→d35@727, IlluminantBat 379→d35@729, FlyingSnake 384→d37@360,
+Squid 385→d37@358, **Harpy 386→d34@275** (the g44e SS6 keep-ONE).
+
+**Vampire 388→762** (E8 collision fix, resume-amended): d37's corridor
+owns 388 (RustyArmoredBonesAxe). The in-flight SEAL draft took 788 —
+WRONG: the d37 SEAL (`fbb948172`, research/108 line 1408) reserves
+**788–790 for d39's 3 unclaimed kinds**. 762 is the first free id above
+the S4 CORE max 766 (763–766 = d120's towns per R6; 767–780 + 791–804 =
+d36's re-pin; 781–787 = d39's pushed seven; `_d37_seal_final.json`
+carries no 762). The cs_id stays 159.
+
+**Count pins:** ALL_KINDS 305 (decl fixed 270→305; R0's 304 missed the
+Vampire), s1_f_3 literal 270→305, the round-trip bijection holds (the
+`w4_g8_e8_the_owned_kinds_ride_745_761_and_the_cs_ids_stay` witness pins
+every move + the freed old ids + the drop-pending rows; WRITTEN NOT RUN).
+The stale `s1_f_13d` pins re-derived: `from_u16(384)` is the drop-pending
+FlyingSnake (not None), `from_u16(387)` is None again (RedDevil moved).

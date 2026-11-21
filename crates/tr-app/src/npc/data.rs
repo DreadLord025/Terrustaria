@@ -587,51 +587,59 @@ impl NpcKind {
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
             // W4-g8 lane 1 batch 1 — the d22-d33 UNWIRED machines' kinds.
-            // Every vanilla slot below 354 is taken by a landed kind
-            // (`to_u16`'s bijection guard), so the ten take the next-free
-            // port-local band 354-363; the vanilla `NPC.type` rides
-            // `cs_id`/the bestiary `net_id` (the BlazingWheel precedent).
-            NpcKind::Vulture => 354,
-            NpcKind::BlueJellyfish => 355,
-            NpcKind::PinkJellyfish => 356,
-            NpcKind::Antlion => 357,
-            NpcKind::SpikeBall => 358,
-            NpcKind::Pixie => 359,
-            NpcKind::Wraith => 360,
-            NpcKind::CursedHammer => 361,
-            NpcKind::EnchantedSword => 362,
-            NpcKind::Mimic => 363,
-            // W4-g8 lane 1 batch 2 — the next-free port-local band 364-374.
-            NpcKind::GreenJellyfish => 364,
-            NpcKind::Gastropod => 365,
-            NpcKind::WallCreeper => 366,
-            NpcKind::WallCreeperWall => 367,
-            NpcKind::IceElemental => 368,
-            NpcKind::Herpling => 369,
-            NpcKind::Derpling => 370,
-            NpcKind::CrimsonAxe => 371,
-            NpcKind::FloatyGross => 372,
-            NpcKind::LostGirl => 373,
-            NpcKind::Nymph => 374,
-            // W4-g8 lane 1 batch 3 — the next-free port-local band 375-384.
-            NpcKind::CursedSkull => 375,
-            NpcKind::Demon => 376,
-            NpcKind::GiantBat => 377,
-            NpcKind::Slimer => 378,
-            NpcKind::IlluminantBat => 379,
-            NpcKind::IceBat => 380,
-            NpcKind::Lavabat => 381,
-            NpcKind::GiantFlyingFox => 382,
-            NpcKind::VampireBat => 383,
-            NpcKind::FlyingSnake => 384,
-            // W4-g8 lane 1 batch 4 — the next-free port-local band 385-387.
-            NpcKind::Squid => 385,
-            NpcKind::Harpy => 386,
-            NpcKind::RedDevil => 387,
+            // E8 EXECUTED (d37 research/108 S0-S4, the g8 move-table): the
+            // 17 OWNED kinds renumber to the port-local 745-761 band (the
+            // 354-387 corridor is d37/d42's — g8 was the squatter); the 17
+            // DUPLICATE kinds keep their pushed ids as DROP-PENDING rows
+            // (the canonical owners d34/d35/d37 land via their lanes; the
+            // keep-one drops the g8 row at merge — the axis wirings ALL
+            // stay, the machine-wiring lane's whole point). The vanilla
+            // `NPC.type` rides `cs_id`/the bestiary `net_id` unchanged.
+            NpcKind::Vulture => 354, // DROP-PENDING: keep d34@278
+            NpcKind::BlueJellyfish => 355, // DROP-PENDING: keep d34@280
+            NpcKind::PinkJellyfish => 745, // E8: 356 -> 745 (cs 64)
+            NpcKind::Antlion => 746, // E8: 357 -> 746 (cs 69)
+            NpcKind::SpikeBall => 747, // E8: 358 -> 747 (cs 70)
+            NpcKind::Pixie => 359, // DROP-PENDING: keep d35@700
+            NpcKind::Wraith => 360, // DROP-PENDING: keep d35@705
+            NpcKind::CursedHammer => 361, // DROP-PENDING: keep d35@706
+            NpcKind::EnchantedSword => 362, // DROP-PENDING: keep d35@707
+            NpcKind::Mimic => 363, // DROP-PENDING: keep d35@708
+            // W4-g8 lane 1 batch 2 — E8: the owned kinds move to 748-756.
+            NpcKind::GreenJellyfish => 364, // DROP-PENDING: keep d35@720
+            NpcKind::Gastropod => 365, // DROP-PENDING: keep d35@728
+            NpcKind::WallCreeper => 748, // E8: 366 -> 748 (cs 164)
+            NpcKind::WallCreeperWall => 749, // E8: 367 -> 749 (cs 165)
+            NpcKind::IceElemental => 750, // E8: 368 -> 750 (cs 169)
+            NpcKind::Herpling => 751, // E8: 369 -> 751 (cs 174)
+            NpcKind::Derpling => 752, // E8: 370 -> 752 (cs 177)
+            NpcKind::CrimsonAxe => 753, // E8: 371 -> 753 (cs 179)
+            NpcKind::FloatyGross => 754, // E8: 372 -> 754 (cs 182)
+            NpcKind::LostGirl => 755, // E8: 373 -> 755 (cs 195)
+            NpcKind::Nymph => 756, // E8: 374 -> 756 (cs 196)
+            // W4-g8 lane 1 batch 3 — E8: the owned bats move to 757-760.
+            NpcKind::CursedSkull => 375, // DROP-PENDING: keep d34@267
+            NpcKind::Demon => 376, // DROP-PENDING: keep d34@279
+            NpcKind::GiantBat => 377, // DROP-PENDING: keep d35@710
+            NpcKind::Slimer => 378, // DROP-PENDING: keep d35@727
+            NpcKind::IlluminantBat => 379, // DROP-PENDING: keep d35@729
+            NpcKind::IceBat => 757, // E8: 380 -> 757 (cs 150)
+            NpcKind::Lavabat => 758, // E8: 381 -> 758 (cs 151)
+            NpcKind::GiantFlyingFox => 759, // E8: 382 -> 759 (cs 152)
+            NpcKind::VampireBat => 760, // E8: 383 -> 760 (cs 158)
+            NpcKind::FlyingSnake => 384, // DROP-PENDING: keep d37@360
+            // W4-g8 lane 1 batch 4 — E8: RedDevil moves to 761.
+            NpcKind::Squid => 385, // DROP-PENDING: keep d37@358
+            NpcKind::Harpy => 386, // DROP-PENDING: keep d34@275 (the g44e SS6 keep-ONE)
+            NpcKind::RedDevil => 761, // E8: 387 -> 761 (cs 156)
             // W4-g8 machine round 3 — the Vampire 159 census row (the
-            // VampireBat's Transform target; the vanilla 159 slot is the
-            // BoundMechanic's protocol id, so the next-free 388).
-            NpcKind::Vampire => 388,
+            // VampireBat's Transform target). E8 COLLISION FIX: the pushed
+            // 388 is d37's RustyArmoredBonesAxe (the 354-399 corridor); the
+            // Vampire takes 762, the first free id above the S4 CORE max
+            // 766 (d37 SEAL fbb948172 line 1408-1411: only 762 + 788-789
+            // were free in d36's old band; 788-790 are RESERVED for d39's
+            // 3 unclaimed kinds — `_d37_seal_final.json` carries no 762).
+            NpcKind::Vampire => 762,
         }
     }
 
@@ -962,47 +970,50 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
-            // W4-g8 lane 1 batch 1 — the port-local 354-363 band
-            // (`to_u16` above; the vanilla slots are all taken).
-            354 => NpcKind::Vulture,
-            355 => NpcKind::BlueJellyfish,
-            356 => NpcKind::PinkJellyfish,
-            357 => NpcKind::Antlion,
-            358 => NpcKind::SpikeBall,
-            359 => NpcKind::Pixie,
-            360 => NpcKind::Wraith,
-            361 => NpcKind::CursedHammer,
-            362 => NpcKind::EnchantedSword,
-            363 => NpcKind::Mimic,
-            // W4-g8 lane 1 batch 2 — the port-local 364-374 band.
-            364 => NpcKind::GreenJellyfish,
-            365 => NpcKind::Gastropod,
-            366 => NpcKind::WallCreeper,
-            367 => NpcKind::WallCreeperWall,
-            368 => NpcKind::IceElemental,
-            369 => NpcKind::Herpling,
-            370 => NpcKind::Derpling,
-            371 => NpcKind::CrimsonAxe,
-            372 => NpcKind::FloatyGross,
-            373 => NpcKind::LostGirl,
-            374 => NpcKind::Nymph,
-            // W4-g8 lane 1 batch 3 — the port-local 375-384 band.
-            375 => NpcKind::CursedSkull,
-            376 => NpcKind::Demon,
-            377 => NpcKind::GiantBat,
-            378 => NpcKind::Slimer,
-            379 => NpcKind::IlluminantBat,
-            380 => NpcKind::IceBat,
-            381 => NpcKind::Lavabat,
-            382 => NpcKind::GiantFlyingFox,
-            383 => NpcKind::VampireBat,
-            384 => NpcKind::FlyingSnake,
-            // W4-g8 lane 1 batch 4 — the port-local 385-387 band.
-            385 => NpcKind::Squid,
-            386 => NpcKind::Harpy,
-            387 => NpcKind::RedDevil,
-            // W4-g8 machine round 3 — the Vampire 159 census row.
-            388 => NpcKind::Vampire,
+            // W4-g8 lane 1 batch 1 — E8 EXECUTED: the owned kinds decode
+            // from 745-761; the DROP-PENDING dups keep their pushed ids
+            // until the merge keep-one (see `to_u16`'s E8 note).
+            354 => NpcKind::Vulture, // DROP-PENDING: keep d34@278
+            355 => NpcKind::BlueJellyfish, // DROP-PENDING: keep d34@280
+            745 => NpcKind::PinkJellyfish, // E8: 356 -> 745
+            746 => NpcKind::Antlion, // E8: 357 -> 746
+            747 => NpcKind::SpikeBall, // E8: 358 -> 747
+            359 => NpcKind::Pixie, // DROP-PENDING: keep d35@700
+            360 => NpcKind::Wraith, // DROP-PENDING: keep d35@705
+            361 => NpcKind::CursedHammer, // DROP-PENDING: keep d35@706
+            362 => NpcKind::EnchantedSword, // DROP-PENDING: keep d35@707
+            363 => NpcKind::Mimic, // DROP-PENDING: keep d35@708
+            // W4-g8 lane 1 batch 2 — E8: the owned kinds decode 748-756.
+            364 => NpcKind::GreenJellyfish, // DROP-PENDING: keep d35@720
+            365 => NpcKind::Gastropod, // DROP-PENDING: keep d35@728
+            748 => NpcKind::WallCreeper, // E8: 366 -> 748
+            749 => NpcKind::WallCreeperWall, // E8: 367 -> 749
+            750 => NpcKind::IceElemental, // E8: 368 -> 750
+            751 => NpcKind::Herpling, // E8: 369 -> 751
+            752 => NpcKind::Derpling, // E8: 370 -> 752
+            753 => NpcKind::CrimsonAxe, // E8: 371 -> 753
+            754 => NpcKind::FloatyGross, // E8: 372 -> 754
+            755 => NpcKind::LostGirl, // E8: 373 -> 755
+            756 => NpcKind::Nymph, // E8: 374 -> 756
+            // W4-g8 lane 1 batch 3 — E8: the owned bats decode 757-760.
+            375 => NpcKind::CursedSkull, // DROP-PENDING: keep d34@267
+            376 => NpcKind::Demon, // DROP-PENDING: keep d34@279
+            377 => NpcKind::GiantBat, // DROP-PENDING: keep d35@710
+            378 => NpcKind::Slimer, // DROP-PENDING: keep d35@727
+            379 => NpcKind::IlluminantBat, // DROP-PENDING: keep d35@729
+            757 => NpcKind::IceBat, // E8: 380 -> 757
+            758 => NpcKind::Lavabat, // E8: 381 -> 758
+            759 => NpcKind::GiantFlyingFox, // E8: 382 -> 759
+            760 => NpcKind::VampireBat, // E8: 383 -> 760
+            384 => NpcKind::FlyingSnake, // DROP-PENDING: keep d37@360
+            // W4-g8 lane 1 batch 4 — E8: RedDevil decodes from 761.
+            385 => NpcKind::Squid, // DROP-PENDING: keep d37@358
+            386 => NpcKind::Harpy, // DROP-PENDING: keep d34@275 (g44e SS6 keep-ONE)
+            761 => NpcKind::RedDevil, // E8: 387 -> 761
+            // W4-g8 machine round 3 — the Vampire 159 census row (E8
+            // COLLISION FIX: 388 is d37's RustyArmoredBonesAxe; 762 —
+            // 788-790 stay reserved for d39's 3 unclaimed kinds).
+            762 => NpcKind::Vampire,
             _ => return None,
         })
     }
@@ -3352,7 +3363,8 @@ impl NpcKind {
             // W4-g8 lane 1 batch 1 — the vanilla `NPC.type` ids the AI
             // machines' type gates read (`NPCID.cs:10799`/`:10803`/
             // `:10805`/`:10815`/`:10817`/`:10827`/`:10841`/`:10843`/
-            // `:10845`/`:10847`). The protocol ids are port-local 354-363.
+            // `:10845`/`:10847`). The protocol ids are port-local — E8
+            // moved the owned kinds to 745-761 (the dups stay drop-pending).
             NpcKind::Vulture => 61,
             NpcKind::BlueJellyfish => 63,
             NpcKind::PinkJellyfish => 64,

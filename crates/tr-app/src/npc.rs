@@ -1088,9 +1088,11 @@ pub enum NpcKind {
     DungeonSpirit,
     // ---- W4-g8 NPC-kind axis wiring, lane 1 (kinds 1-230): the d22-d33
     // UNWIRED machines' roster rows + the style-axis claims. Batch 1: the
-    // styles 17/18/19/20/22/23/25 members. The protocol ids are port-local
-    // 354-363 (every vanilla slot below 354 is taken — `to_u16`'s guard);
-    // the vanilla `NPC.type` rides `cs_id`/the bestiary `net_id`.
+    // styles 17/18/19/20/22/23/25 members. E8 EXECUTED: the owned kinds'
+    // protocol ids ride the port-local 745-761 band (the 354-387 corridor
+    // is d37/d42's); the dups stay drop-pending at their pushed ids until
+    // the merge keep-one. The vanilla `NPC.type` rides `cs_id`/the
+    // bestiary `net_id`.
     /// `NPCID.Vulture` (61, `NPCID.cs:10799`) — the desert perch-flyer
     /// (`NPC.cs:9554-9566`): 36x36, aiStyle 17, dmg 15, def 4, 40 HP,
     /// kb 0.8, NPCHit28/NPCDeath31, value 60. WIRED: the axis' 17 arm
@@ -1144,8 +1146,8 @@ pub enum NpcKind {
     /// arm rides `npc_ai_style25::ai_style25` (the disguise/hop machine).
     Mimic,
     // ---- W4-g8 lane 1 batch 2: the styles 18/22/23/40/41/42 members +
-    // the WallCreeper walk pair (the style-40 transform target). Protocol
-    // ids 364-374 (the next-free port-local band).
+    // the WallCreeper walk pair (the style-40 transform target). E8: the
+    // owned kinds' protocol ids ride 748-756 (the dups drop-pending).
     /// `NPCID.GreenJellyfish` (103, `NPCID.cs:10883`) — the hardmode jelly
     /// (`NPC.cs:10216-10229`): 26x26, aiStyle 18, dmg 80, def 30, 120 HP,
     /// kb 1 (no row), NPCHit25/NPCDeath28, value 800, alpha 20, noGravity.
@@ -1203,7 +1205,8 @@ pub enum NpcKind {
     /// transform target; the aiStyle-3 fighter ladder (the cap-2 group).
     Nymph,
     // ---- W4-g8 lane 1 batch 3: the CursedSkull (style 10) + the nine
-    // aiStyle-14 bat/flyer family members. Protocol ids 375-384.
+    // aiStyle-14 bat/flyer family members. E8: the owned bats' protocol
+    // ids ride 757-760 (the dups drop-pending).
     /// `NPCID.CursedSkull` (34, `NPCID.cs:10745`) — the dungeon skull
     /// (`NPC.cs:9150-9165`): 26x28, aiStyle 10, dmg 35, def 6, 40 HP,
     /// kb 0.2, NPCHit2/NPCDeath2, value 150, noGravity + noTileCollide,
@@ -1254,7 +1257,7 @@ pub enum NpcKind {
     FlyingSnake,
     // ---- W4-g8 lane 1 batch 4: the last three ≤230 d22-d33 machine
     // members — the Squid (style 18) + the Harpy/RedDevil (style 14).
-    // Protocol ids 385-387.
+    // E8: RedDevil rides 761; Squid/Harpy drop-pending (d37@358/d34@275).
     /// `NPCID.Squid` (221, `NPCID.cs:11119`) — the ocean squid
     /// (`NPC.cs:11840-11854`): 26x26, aiStyle 18, dmg 20, def 2, 30 HP,
     /// kb 1 (no row), NPCHit1/NPCDeath1, value 100, alpha 20, noGravity,
@@ -1275,7 +1278,10 @@ pub enum NpcKind {
     RedDevil,
     // ---- W4-g8 machine round 3: the VampireBat's Transform(159) target
     // — the Vampire 159 census row (unrowed until the machine round).
-    // Protocol id 388 (the vanilla 159 slot is the BoundMechanic's).
+    // Protocol id 762 (E8 collision fix: the pushed 388 is d37's
+    // RustyArmoredBonesAxe; 762 is the first free id above the S4 core
+    // max 766 — 788-790 stay reserved for d39; the vanilla 159 slot is
+    // the BoundMechanic's).
     /// `NPCID.Vampire` (159, `NPCID.cs:10995`) — the eclipse vampire, the
     /// VampireBat 158's transform form (`NPC.cs:15480-15493`): 18x40,
     /// aiStyle 3, dmg 80, def 24, 750 HP, kb 0.4, NPCHit1/NPCDeath6,
@@ -20269,47 +20275,50 @@ impl Npc {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
-            // W4-g8 lane 1 batch 1 — the port-local protocol ids (the
-            // vanilla slots are all taken; the G6 key stays injective).
+            // W4-g8 lane 1 batch 1 — E8 EXECUTED: the owned kinds' keys
+            // ride the renumbered 745-761 protocol band; the DROP-PENDING
+            // dups keep their pushed keys until the merge keep-one.
             NpcKind::Vulture => 354,
             NpcKind::BlueJellyfish => 355,
-            NpcKind::PinkJellyfish => 356,
-            NpcKind::Antlion => 357,
-            NpcKind::SpikeBall => 358,
+            NpcKind::PinkJellyfish => 745,
+            NpcKind::Antlion => 746,
+            NpcKind::SpikeBall => 747,
             NpcKind::Pixie => 359,
             NpcKind::Wraith => 360,
             NpcKind::CursedHammer => 361,
             NpcKind::EnchantedSword => 362,
             NpcKind::Mimic => 363,
-            // W4-g8 lane 1 batch 2 — the port-local 364-374 band.
+            // W4-g8 lane 1 batch 2 — E8: the owned kinds ride 748-756.
             NpcKind::GreenJellyfish => 364,
             NpcKind::Gastropod => 365,
-            NpcKind::WallCreeper => 366,
-            NpcKind::WallCreeperWall => 367,
-            NpcKind::IceElemental => 368,
-            NpcKind::Herpling => 369,
-            NpcKind::Derpling => 370,
-            NpcKind::CrimsonAxe => 371,
-            NpcKind::FloatyGross => 372,
-            NpcKind::LostGirl => 373,
-            NpcKind::Nymph => 374,
-            // W4-g8 lane 1 batch 3 — the port-local 375-384 band.
+            NpcKind::WallCreeper => 748,
+            NpcKind::WallCreeperWall => 749,
+            NpcKind::IceElemental => 750,
+            NpcKind::Herpling => 751,
+            NpcKind::Derpling => 752,
+            NpcKind::CrimsonAxe => 753,
+            NpcKind::FloatyGross => 754,
+            NpcKind::LostGirl => 755,
+            NpcKind::Nymph => 756,
+            // W4-g8 lane 1 batch 3 — E8: the owned bats ride 757-760.
             NpcKind::CursedSkull => 375,
             NpcKind::Demon => 376,
             NpcKind::GiantBat => 377,
             NpcKind::Slimer => 378,
             NpcKind::IlluminantBat => 379,
-            NpcKind::IceBat => 380,
-            NpcKind::Lavabat => 381,
-            NpcKind::GiantFlyingFox => 382,
-            NpcKind::VampireBat => 383,
+            NpcKind::IceBat => 757,
+            NpcKind::Lavabat => 758,
+            NpcKind::GiantFlyingFox => 759,
+            NpcKind::VampireBat => 760,
             NpcKind::FlyingSnake => 384,
-            // W4-g8 lane 1 batch 4 — the port-local 385-387 band.
+            // W4-g8 lane 1 batch 4 — E8: RedDevil rides 761.
             NpcKind::Squid => 385,
             NpcKind::Harpy => 386,
-            NpcKind::RedDevil => 387,
-            // W4-g8 machine round 3 — the Vampire 159 census row.
-            NpcKind::Vampire => 388,
+            NpcKind::RedDevil => 761,
+            // W4-g8 machine round 3 — the Vampire 159 census row (E8
+            // collision fix: 388 is d37's; the key rides 762 — 788-790
+            // stay reserved for d39's 3 unclaimed kinds).
+            NpcKind::Vampire => 762,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -25408,8 +25417,11 @@ mod tests {
     /// not kinds). The driver for
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
-    /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    /// the new arm), then this array's length. E8/R0 FIX: the stale 270
+    /// decl predated the W4-g8 batches — the array carries 305 rows (270
+    /// base + 34 lane-1 kinds + the Vampire); d37's R0 "270→304" missed
+    /// the Vampire, the measured count is 305.
+    pub(super) const ALL_KINDS: [NpcKind; 305] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -29339,8 +29351,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
+            305,
+            "every decodable kind resolves (the wire roster's size - 305 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate, + W4-g8 lane 1's 34 kinds + the Vampire, E8/R0 stale-decl fix)"
         );
         assert!(
             covered > 43,
@@ -35124,8 +35136,11 @@ mod s1_f_13d_tests {
         assert_eq!(NpcKind::MartianTurret.to_u16(), 214);
         assert_eq!(NpcKind::from_u16(213), Some(NpcKind::ForceBubble));
         assert_eq!(NpcKind::from_u16(214), Some(NpcKind::MartianTurret));
-        // The vanilla ids are NOT wire ids here (384/387 decode to nothing).
-        assert_eq!(NpcKind::from_u16(384), None);
+        // The vanilla ids are NOT ForceBubble/MartianTurret wire ids.
+        // E8 UPDATE: 384 decodes the DROP-PENDING FlyingSnake dup (W4-g8
+        // batch 3; keep d37@360 at merge), 387 is free again (RedDevil
+        // moved to 761) — neither is the martian pair.
+        assert_eq!(NpcKind::from_u16(384), Some(NpcKind::FlyingSnake));
         assert_eq!(NpcKind::from_u16(387), None);
         // GATE UPDATE (L-B): the branch's free holes 149/152-155 were taken
         // by the landed queenbee bees (149/152) + plantera minions
@@ -36471,6 +36486,7 @@ mod w4_d33_axis_census_tests {
 #[cfg(test)]
 mod w4_g8_kind_wire_1_tests {
     use super::*;
+    use super::tests::ALL_KINDS;
 
     /// The ten kinds' `SetDefaults` rows pin against the C# through the
     /// port's tables — the small-kinds pin's shape
@@ -36523,9 +36539,14 @@ mod w4_g8_kind_wire_1_tests {
         let spike = Npc::new(NpcKind::SpikeBall, 0.0, 0.0, 1, 0.0);
         assert!(spike.dont_take_damage, "the Spike Ball is a trap — untouchable");
         assert_eq!(spike.scale, 1.5, "the Spike Ball's scale row");
-        // The port-local protocol band 354-363 (the vanilla slots are taken).
-        assert_eq!(NpcKind::Vulture.to_u16(), 354);
-        assert_eq!(NpcKind::Mimic.to_u16(), 363);
+        // E8 EXECUTED: the owned kinds ride 745-747 (PinkJellyfish/Antlion/
+        // SpikeBall); the dups stay drop-pending (Vulture d34@278, Mimic
+        // d35@708 — the merge keep-one drops these g8 rows).
+        assert_eq!(NpcKind::Vulture.to_u16(), 354); // DROP-PENDING
+        assert_eq!(NpcKind::Mimic.to_u16(), 363); // DROP-PENDING
+        assert_eq!(NpcKind::PinkJellyfish.to_u16(), 745);
+        assert_eq!(NpcKind::Antlion.to_u16(), 746);
+        assert_eq!(NpcKind::SpikeBall.to_u16(), 747);
     }
 
     /// The style axis claims 17/18/19/20/22/23/25 for the ten kinds, so
@@ -36646,9 +36667,10 @@ mod w4_g8_kind_wire_1_tests {
         // the FloatyGross's alpha 100 (`:11328`).
         assert_eq!(Npc::new(NpcKind::GreenJellyfish, 0.0, 0.0, 1, 0.0).alpha, 20);
         assert_eq!(Npc::new(NpcKind::FloatyGross, 0.0, 0.0, 1, 0.0).alpha, 100);
-        // The port-local protocol band 364-374.
-        assert_eq!(NpcKind::GreenJellyfish.to_u16(), 364);
-        assert_eq!(NpcKind::Nymph.to_u16(), 374);
+        // E8 EXECUTED: Nymph rides 756; GreenJellyfish stays drop-pending
+        // (d35@720 — the merge keep-one drops the g8 row).
+        assert_eq!(NpcKind::GreenJellyfish.to_u16(), 364); // DROP-PENDING
+        assert_eq!(NpcKind::Nymph.to_u16(), 756);
         // The Nymph + WallCreeper ride the cap-2 walk group (2f).
         assert_eq!(NpcKind::Nymph.ai3_walk_speed(), Some(2.0));
         assert_eq!(NpcKind::WallCreeper.ai3_walk_speed(), Some(2.0));
@@ -36748,9 +36770,12 @@ mod w4_g8_kind_wire_1_tests {
         assert_eq!(slimer.alpha, 55);
         assert_eq!(slimer.scale, 1.1);
         assert_eq!(Npc::new(NpcKind::Lavabat, 0.0, 0.0, 1, 0.0).scale, 1.15);
-        // The port-local protocol band 375-384.
-        assert_eq!(NpcKind::CursedSkull.to_u16(), 375);
-        assert_eq!(NpcKind::FlyingSnake.to_u16(), 384);
+        // E8 EXECUTED: the owned bats ride 757-760; CursedSkull/FlyingSnake
+        // stay drop-pending (d34@267 / d37@360).
+        assert_eq!(NpcKind::CursedSkull.to_u16(), 375); // DROP-PENDING
+        assert_eq!(NpcKind::FlyingSnake.to_u16(), 384); // DROP-PENDING
+        assert_eq!(NpcKind::IceBat.to_u16(), 757);
+        assert_eq!(NpcKind::VampireBat.to_u16(), 760);
     }
 
     /// The style axis claims 10/14 for the batch-3 kinds; the four landed
@@ -36811,10 +36836,11 @@ mod w4_g8_kind_wire_1_tests {
         }
         // The Squid's alpha 20 (`NPC.cs:11852`).
         assert_eq!(Npc::new(NpcKind::Squid, 0.0, 0.0, 1, 0.0).alpha, 20);
-        // The port-local protocol band 385-387.
-        assert_eq!(NpcKind::Squid.to_u16(), 385);
-        assert_eq!(NpcKind::Harpy.to_u16(), 386);
-        assert_eq!(NpcKind::RedDevil.to_u16(), 387);
+        // E8 EXECUTED: RedDevil rides 761; Squid/Harpy stay drop-pending
+        // (d37@358 / d34@275 — the g44e SS6 keep-ONE Harpy row).
+        assert_eq!(NpcKind::Squid.to_u16(), 385); // DROP-PENDING
+        assert_eq!(NpcKind::Harpy.to_u16(), 386); // DROP-PENDING
+        assert_eq!(NpcKind::RedDevil.to_u16(), 761);
         // The 18/14 axis claims route them (the kind arms are unreachable).
         let src = include_str!("npc.rs");
         assert!(src.contains("NpcKind::Squid => {\n                unreachable!(\"aiStyle 18 rides the style axis (W4-g8)\")"));
@@ -36901,8 +36927,10 @@ mod w4_g8_kind_wire_1_tests {
 
     /// W4-g8 machine round 3 — the Vampire 159 census row's `SetDefaults`
     /// pin (`NPC.cs:15480-15493`): 18x40, aiStyle 3, dmg 80, def 24,
-    /// 750 HP, kb 0.4, value 5000; the protocol id 388 round-trips and the
-    /// cap-6 walk row + the 15-frame humanoid strip resolve.
+    /// 750 HP, kb 0.4, value 5000; the protocol id 762 round-trips (E8
+    /// collision fix: 388 is d37's RustyArmoredBonesAxe; 788-790 stay
+    /// reserved for d39) and the cap-6 walk row + the 15-frame humanoid
+    /// strip resolve.
     #[test]
     fn w4_g8_machine_the_vampire_defaults_match_the_csharp_row() {
         let kind = NpcKind::Vampire;
@@ -36915,8 +36943,8 @@ mod w4_g8_kind_wire_1_tests {
         assert_eq!(kind.max_hp(), 750);
         assert_eq!(shell.knock_back_resist(), 0.4);
         assert_eq!(shell.value(), 5000.0);
-        assert_eq!(kind.to_u16(), 388, "the port-local protocol id");
-        assert_eq!(NpcKind::from_u16(388), Some(kind), "the round-trip");
+        assert_eq!(kind.to_u16(), 762, "the port-local protocol id (E8: 388 is d37's)");
+        assert_eq!(NpcKind::from_u16(762), Some(kind), "the round-trip");
         assert_eq!(kind.ai3_walk_speed(), Some(6.0), "the cap-6 spin group");
         assert_eq!(kind.humanoid_frame_count(), 15, "the 15-frame strip");
         assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"));
@@ -37011,5 +37039,78 @@ mod w4_g8_kind_wire_1_tests {
         assert_eq!(snake.direction_y, -1, "and above");
         assert_eq!(rng.peek(), before, "the snake's approach draws no Main.rand");
         assert!(snake.wants_hostile_shot.is_empty(), "the FlyingSnake never shoots");
+    }
+
+    /// W4-g8 E8 SEAL receipt (WRITTEN NOT RUN) — the d37 research/108 g8
+    /// move-table executed: the 17 owned kinds encode/decode on the
+    /// 745-761 band (the 354-387 corridor returns to d37/d42), the 17
+    /// drop-pending dups keep their pushed ids until the merge keep-one,
+    /// the Vampire rides 762 (the 388 collision fix — d37's
+    /// RustyArmoredBonesAxe owns 388; 788-790 stay reserved for d39's 3
+    /// unclaimed kinds), and every cs_id is UNCHANGED (only the protocol
+    /// space moved; the vanilla `NPC.type` gates ride cs_id).
+    #[test]
+    fn w4_g8_e8_the_owned_kinds_ride_745_761_and_the_cs_ids_stay() {
+        // (kind, old pushed id, new id, cs_id) — the E8 g8 table verbatim.
+        let moves = [
+            (NpcKind::PinkJellyfish, 356u16, 745u16, 64u16),
+            (NpcKind::Antlion, 357, 746, 69),
+            (NpcKind::SpikeBall, 358, 747, 70),
+            (NpcKind::WallCreeper, 366, 748, 164),
+            (NpcKind::WallCreeperWall, 367, 749, 165),
+            (NpcKind::IceElemental, 368, 750, 169),
+            (NpcKind::Herpling, 369, 751, 174),
+            (NpcKind::Derpling, 370, 752, 177),
+            (NpcKind::CrimsonAxe, 371, 753, 179),
+            (NpcKind::FloatyGross, 372, 754, 182),
+            (NpcKind::LostGirl, 373, 755, 195),
+            (NpcKind::Nymph, 374, 756, 196),
+            (NpcKind::IceBat, 380, 757, 150),
+            (NpcKind::Lavabat, 381, 758, 151),
+            (NpcKind::GiantFlyingFox, 382, 759, 152),
+            (NpcKind::VampireBat, 383, 760, 158),
+            (NpcKind::RedDevil, 387, 761, 156),
+        ];
+        for (kind, old, new, cs) in moves {
+            assert_eq!(kind.to_u16(), new, "{kind:?} moved off {old}");
+            assert_eq!(NpcKind::from_u16(new), Some(kind), "{kind:?} decode");
+            assert_eq!(NpcKind::from_u16(old), None, "{old} freed for d37/d42");
+            assert_eq!(kind.cs_id(), cs, "{kind:?} vanilla type unchanged");
+        }
+        // The Vampire's collision fix: 388 is d37's corridor; 762 is the
+        // first free id above the S4 CORE max 766 (d37 SEAL line
+        // 1408-1411: 788-790 are RESERVED for d39's 3 unclaimed kinds).
+        assert_eq!(NpcKind::Vampire.to_u16(), 762);
+        assert_eq!(NpcKind::from_u16(762), Some(NpcKind::Vampire));
+        assert_eq!(NpcKind::from_u16(388), None, "388 returns to d37");
+        assert_eq!(NpcKind::from_u16(788), None, "788-790 stay d39's");
+        assert_eq!(NpcKind::Vampire.cs_id(), 159, "the vanilla type stays");
+        // The drop-pending dups keep their pushed ids (the merge keep-one
+        // drops these g8 rows; the canonical owners land via their lanes).
+        let dups = [
+            (NpcKind::Vulture, 354u16),
+            (NpcKind::BlueJellyfish, 355),
+            (NpcKind::Pixie, 359),
+            (NpcKind::Wraith, 360),
+            (NpcKind::CursedHammer, 361),
+            (NpcKind::EnchantedSword, 362),
+            (NpcKind::Mimic, 363),
+            (NpcKind::GreenJellyfish, 364),
+            (NpcKind::Gastropod, 365),
+            (NpcKind::CursedSkull, 375),
+            (NpcKind::Demon, 376),
+            (NpcKind::GiantBat, 377),
+            (NpcKind::Slimer, 378),
+            (NpcKind::IlluminantBat, 379),
+            (NpcKind::FlyingSnake, 384),
+            (NpcKind::Squid, 385),
+            (NpcKind::Harpy, 386), // keep d34@275 (the g44e SS6 keep-ONE)
+        ];
+        for (kind, id) in dups {
+            assert_eq!(kind.to_u16(), id, "{kind:?} drop-pending at {id}");
+            assert_eq!(NpcKind::from_u16(id), Some(kind));
+        }
+        // The roster count pin: 305 rows (270 base + 34 lane-1 + Vampire).
+        assert_eq!(ALL_KINDS.len(), 305);
     }
 }
