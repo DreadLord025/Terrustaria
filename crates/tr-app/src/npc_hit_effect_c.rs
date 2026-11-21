@@ -102,6 +102,9 @@
 //! | 435-438 | `:84296-84299` | the 381 BrainScrambler death (4 gores 587/590/588/589, type-227 dust) |
 //! | 439-441 | `:84317-84319` | the 382/390 RayGunner/ScutlixRider death (3 gores 591/592/593) |
 //! | 442-444 | `:84337-84339` | the 383 MartianOfficer death (3 gores 594/595/596) |
+//! | 445-447 | `:84377-84379` | the 385 GrayGrunt death (3 gores 597/598/599, type-227 dust) |
+//! | 448-450 | `:84397-84399` | the 386 MartianEngineer death (3 gores 600/601/602) |
+//! | 451-453 | `:84420-84422` | the 387 MartianTurret death (3 gores 603/603/604, type-226 scale-0.5 dust) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -2588,6 +2591,90 @@ fn martian_officer_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 596, s); // :84339
 }
 
+/// The 385 GrayGrunt death (`NPC.cs:84373-84379`, sites 445-447): the
+/// 30-dust type-227 burst, then the 3 gores 597/598/599 at the +0/+20/+34 Y
+/// ladder. Same shape as the RayGunner.
+fn gray_grunt_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..30 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 227, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 597, s); // :84377
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 598, s); // :84378
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 599, s); // :84379
+}
+
+/// The 386 MartianEngineer death (`NPC.cs:84393-84399`, sites 448-450): the
+/// 30-dust type-227 burst, then the 3 gores 600/601/602 at the +0/+20/+34 Y
+/// ladder.
+fn martian_engineer_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..30 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 227, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 600, s); // :84397
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 601, s); // :84398
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 602, s); // :84399
+}
+
+/// The 387 MartianTurret death (`NPC.cs:84415-84422`, sites 451-453): the
+/// 30-dust type-226 burst (SpeedX `-1.5*hitDirection`, SpeedY -1.5, scale
+/// 0.5 post-write), then the 3 gores 603/603/604 at the +0/+20/+34 Y ladder
+/// (the 603 repeats at +0 and +20).
+fn martian_turret_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:84415-84419` — the 30-dust type-226 burst (scale 0.5).
+    for _ in 0..30 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 226, -1.5 * hit_direction, -1.5, 0,
+            Color::default(), 1.0,
+        );
+        dust.slot_mut(idx).scale = 0.5;
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 603, s); // :84420
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 603, s); // :84421
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 604, s); // :84422
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -2883,6 +2970,18 @@ pub fn hit_effect_c(
     // `:84322-84341` — the 383 MartianOfficer arm (sites 442-444).
     if npc_type == 383 && npc.hp <= 0 {
         martian_officer_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84362-84381` — the 385 GrayGrunt arm (sites 445-447).
+    if npc_type == 385 && npc.hp <= 0 {
+        gray_grunt_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84382-84401` — the 386 MartianEngineer arm (sites 448-450).
+    if npc_type == 386 && npc.hp <= 0 {
+        martian_engineer_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84402-84424` — the 387 MartianTurret arm (sites 451-453).
+    if npc_type == 387 && npc.hp <= 0 {
+        martian_turret_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -4623,6 +4722,47 @@ mod tests {
             assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
             assert_eq!(gore.slot(2).position, Vec2::new(100.0, 134.0));
         }
+    }
+
+    /// `NPC.cs:84377-84379` / `:84397-84399` — the GrayGrunt /
+    /// MartianEngineer deaths: the 3-gore +0/+20/+34 ladder with types
+    /// 597/598/599 and 600/601/602 respectively.
+    #[test]
+    fn w4_f10_the_gray_grunt_and_engineer_deaths_spawn_the_ladders() {
+        let w = air();
+        for (f, gores) in [
+            (gray_grunt_death as fn(&Npc, &mut DustPool, &SpawnCtx, &mut GorePool, &mut UnifiedRandom, &World, f32), [597, 598, 599]),
+            (martian_engineer_death, [600, 601, 602]),
+        ] {
+            let n = boss(100.0, 100.0, 44.0, 50.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(347);
+            f(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores);
+        }
+    }
+
+    /// `NPC.cs:84420-84422` — the MartianTurret death: the 3 gores
+    /// 603/603/604 (603 repeats at +0 and +20), after the 30-dust type-226
+    /// scale-0.5 burst.
+    #[test]
+    fn w4_f10_the_martian_turret_death_repeats_the_603() {
+        let w = air();
+        let n = boss(100.0, 100.0, 44.0, 50.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(349);
+        martian_turret_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![603, 603, 604]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(2).position, Vec2::new(100.0, 134.0));
+        // The dust carries scale 0.5.
+        let d = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(d.scale, 0.5);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
