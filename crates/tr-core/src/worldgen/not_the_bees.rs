@@ -1208,3 +1208,312 @@ pub(crate) fn finish_not_the_bees(world: &mut World, gv: &GenVars, streams: &mut
         over_grown_dungeon(world, &mut rng, &mut tree_rng);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tile::LiquidKind;
+
+    /// A small all-air test world with the surface/rock lines pinned.
+    fn air(width: i32, height: i32, surface: f64, rock: f64) -> World {
+        let mut world = World::new("ntb".into(), width, height);
+        world.world_surface = surface;
+        world.rock_layer = rock;
+        world
+    }
+
+    fn put(world: &mut World, x: i32, y: i32, kind: u16) {
+        let i = world.index(x, y);
+        world.tiles[i].kind = kind;
+        world.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    fn wall(world: &mut World, x: i32, y: i32, wall: u16) {
+        let i = world.index(x, y);
+        world.tiles[i].wall = wall;
+    }
+
+    fn opts(flags: u16) -> GenOptions {
+        GenOptions {
+            flags: SeedFlags::from(flags),
+            ..Default::default()
+        }
+    }
+
+    fn gv(lava_line: i32) -> GenVars {
+        GenVars {
+            lava_line,
+            ..Default::default()
+        }
+    }
+
+    /// The seed gate: a classic world never enters either function — the
+    /// tiles are byte-identical and no stream draw lands.
+    #[test]
+    fn classic_world_is_untouched() {
+        let mut w = air(200, 160, 60.0, 90.0);
+        put(&mut w, 100, 70, TILE_JUNGLE_GRASS);
+        wall(&mut w, 100, 70, WALL_MUD);
+        let before = w.tiles.clone();
+        let o = opts(0);
+        let s = &mut Streams::new(7);
+        not_the_bees(&mut w, &gv(100), s, &o);
+        finish_not_the_bees(&mut w, &gv(100), s, &o);
+        assert_eq!(w.tiles, before, "a classic world reads no NTB flag");
+    }
+
+    /// The skyblock gate: both functions return before any draw.
+    #[test]
+    fn skyblock_skips_the_host() {
+        let mut w = air(200, 160, 60.0, 90.0);
+        put(&mut w, 100, 70, TILE_JUNGLE_GRASS);
+        let before = w.tiles.clone();
+        let o = opts(SeedFlags::NOT_THE_BEES | SeedFlags::SKYBLOCK);
+        let s = &mut Streams::new(7);
+        not_the_bees(&mut w, &gv(100), s, &o);
+        finish_not_the_bees(&mut w, &gv(100), s, &o);
+        assert_eq!(w.tiles, before, "skyblock skips the conversion");
+    }
+
+    /// The vines → hive conversion (`:25187-25190`): a vine 52 / vine-flower
+    /// 382 cell becomes jungle vine 62 regardless of solidity.
+    #[test]
+    fn vines_convert_to_hive() {
+        let mut w = air(900, 400, 100.0, 180.0);
+        put(&mut w, 450, 120, TILE_VINES);
+        put(&mut w, 451, 120, TILE_VINE_FLOWERS);
+        let o = opts(SeedFlags::NOT_THE_BEES);
+        not_the_bees(&mut w, &gv(300), &mut Streams::new(3), &o);
+        assert_eq!(w.tiles[w.index(450, 120)].kind, TILE_JUNGLE_VINES);
+        assert_eq!(w.tiles[w.index(451, 120)].kind, TILE_JUNGLE_VINES);
+    }
+
+    /// The slush → honey-block arm (`:25213-25218`): a solid slush 224 cell
+    /// converts on a plain NTB world (!dst).
+    #[test]
+    fn slush_converts_to_honey_block() {
+        let mut w = air(900, 400, 100.0, 180.0);
+        put(&mut w, 450, 120, TILE_SLUSH);
+        let o = opts(SeedFlags::NOT_THE_BEES);
+        not_the_bees(&mut w, &gv(300), &mut Streams::new(3), &o);
+        assert_eq!(w.tiles[w.index(450, 120)].kind, TILE_HONEY_BLOCK);
+    }
+
+    /// The dirt → mud arm (`:25246-25249`): a solid dirt cell inland converts
+    /// to mud 59.
+    #[test]
+    fn dirt_converts_to_mud() {
+        let mut w = air(900, 400, 100.0, 180.0);
+        put(&mut w, 450, 120, TILE_DIRT);
+        let o = opts(SeedFlags::NOT_THE_BEES);
+        not_the_bees(&mut w, &gv(300), &mut Streams::new(3), &o);
+        assert_eq!(w.tiles[w.index(450, 120)].kind, TILE_MUD);
+    }
+
+    /// The grass → jungle/mushroom band (`:25235-25245`): a grass cell above
+    /// the lava line becomes jungle grass 60, below becomes mushroom 70.
+    #[test]
+    fn grass_converts_by_the_lava_line() {
+        let mut w = air(900, 400, 100.0, 180.0);
+        put(&mut w, 450, 120, TILE_GRASS); // above lava line 300
+        put(&mut w, 450, 350, TILE_GRASS); // below lava line 300
+        let o = opts(SeedFlags::NOT_THE_BEES);
+        not_the_bees(&mut w, &gv(300), &mut Streams::new(3), &o);
+        assert_eq!(w.tiles[w.index(450, 120)].kind, TILE_JUNGLE_GRASS);
+        assert_eq!(w.tiles[w.index(450, 350)].kind, 70);
+    }
+
+    /// The wall conversion (`:25329-25336`): a grass wall 63 becomes jungle
+    /// wall 64; a plain stone wall 1 below the deep-hive line becomes hive 86.
+    #[test]
+    fn walls_convert_to_jungle_and_hive() {
+        let mut w = air(900, 400, 100.0, 180.0);
+        wall(&mut w, 450, 120, WALL_GRASS);
+        wall(&mut w, 450, 130, 1); // stone wall, above num2 = (300+400-180)/2 = 260
+        let o = opts(SeedFlags::NOT_THE_BEES);
+        not_the_bees(&mut w, &gv(300), &mut Streams::new(3), &o);
+        assert_eq!(w.tiles[w.index(450, 120)].wall, WALL_JUNGLE);
+        assert_eq!(w.tiles[w.index(450, 130)].wall, WALL_HIVE);
+    }
+
+    /// The liquid honey arm (`:25339-25357`): an inland water cell above the
+    /// lava line turns to honey; the centre strip keeps water.
+    #[test]
+    fn liquid_turns_to_honey_inland() {
+        let mut w = air(900, 400, 100.0, 180.0);
+        let i = w.index(700, 120);
+        w.tiles[i].liquid = 100; // inland (x > 0.6*900 = 540), above lava line
+        let c = w.index(450, 120);
+        w.tiles[c].liquid = 100; // centre strip (0.4*900 < 450 < 0.6*900)
+        let o = opts(SeedFlags::NOT_THE_BEES);
+        not_the_bees(&mut w, &gv(300), &mut Streams::new(3), &o);
+        assert_eq!(w.tiles[i].liquid_kind(), LiquidKind::Honey);
+        assert_eq!(w.tiles[c].liquid_kind(), LiquidKind::Water);
+    }
+
+    /// The FTW altar → crispy-honey arm (`:25445-25448`) and the DST/noTraps
+    /// spikes → wooden-spikes arm (`:25455-25458`) of the main sweep.
+    #[test]
+    fn finish_altar_and_spikes_arms() {
+        let mut w = air(900, 400, 100.0, 180.0);
+        put(&mut w, 450, 120, TILE_HELLSTONE_BRICK);
+        put(&mut w, 450, 130, TILE_SPIKES);
+        let o = opts(SeedFlags::NOT_THE_BEES | SeedFlags::FOR_THE_WORTHY | SeedFlags::NO_TRAPS);
+        finish_not_the_bees(&mut w, &gv(300), &mut Streams::new(3), &o);
+        assert_eq!(w.tiles[w.index(450, 120)].kind, TILE_CRISPY_HONEY);
+        assert_eq!(w.tiles[w.index(450, 130)].kind, TILE_WOODEN_SPIKES);
+    }
+
+    /// The deep ore demotion (`:25586-25607`): an iron cell deep below the
+    /// `(lavaLine + rockLayer*2)/3` line becomes dirt.
+    #[test]
+    fn deep_ore_demotes_to_dirt() {
+        let mut w = air(900, 400, 100.0, 180.0);
+        // lava_line 300, rock 180: the iron line is (300+360)/3 = 220; a cell
+        // at y=350 is well below it (the ±2 jitter cannot reach).
+        put(&mut w, 450, 350, TILE_IRON);
+        let o = opts(SeedFlags::NOT_THE_BEES);
+        finish_not_the_bees(&mut w, &gv(300), &mut Streams::new(3), &o);
+        assert_eq!(w.tiles[w.index(450, 350)].kind, TILE_DIRT);
+    }
+
+    /// The FTW+NTB spider-wall remover wiring (`:25407-25435`): a spider-wall
+    /// block in the mid band is eroded by the search loops + the remover. The
+    /// host is deterministic for a seed (a == b).
+    #[test]
+    fn the_host_wires_the_spider_wall_remover() {
+        let build = |seed: u64| {
+            let mut w = air(900, 400, 100.0, 180.0);
+            // A spider-wall block in the mid band (worldSurface 100 ..
+            // UnderworldLayer-30 = 170): the search rolls land inside it.
+            for px in 300..600 {
+                for py in 110..160 {
+                    let i = w.index(px, py);
+                    w.tiles[i].wall = WALL_SPIDER;
+                }
+            }
+            let o = opts(SeedFlags::NOT_THE_BEES | SeedFlags::FOR_THE_WORTHY);
+            finish_not_the_bees(&mut w, &gv(300), &mut Streams::new(seed), &o);
+            w
+        };
+        let a = build(0xBEE);
+        let b = build(0xBEE);
+        assert_eq!(a.tiles, b.tiles, "the host is deterministic for a seed");
+        let spider_left = a.tiles.iter().filter(|t| t.wall == WALL_SPIDER).count();
+        assert!(spider_left < 300 * 50, "the remover cleared some spider wall ({spider_left})");
+    }
+
+    /// The FTW gate: without FOR_THE_WORTHY the search loops never run, so a
+    /// spider-wall block survives the host (the main sweep does not touch
+    /// wall 62).
+    #[test]
+    fn the_remover_search_needs_for_the_worthy() {
+        let mut w = air(900, 400, 100.0, 180.0);
+        for px in 300..600 {
+            for py in 110..160 {
+                let i = w.index(px, py);
+                w.tiles[i].wall = WALL_SPIDER;
+            }
+        }
+        let o = opts(SeedFlags::NOT_THE_BEES);
+        finish_not_the_bees(&mut w, &gv(300), &mut Streams::new(0xBEE), &o);
+        let spider_left = w.tiles.iter().filter(|t| t.wall == WALL_SPIDER).count();
+        assert_eq!(spider_left, 300 * 50, "no FTW flag, no remover search");
+    }
+
+    /// `Spread.Wall2` (`:3416-3524`): the wall-62 flood stops at air (the
+    /// `WallSpreadStopsAtAir` set) and converts walled non-solid cells; a
+    /// solid cell takes the wall without spreading past it.
+    #[test]
+    fn spread_wall2_floods_walled_cells_and_stops_at_air() {
+        let mut w = air(120, 120, 40.0, 60.0);
+        // A walled corridor (wall 1) surrounded by air (wall 0).
+        for px in 40..80 {
+            wall(&mut w, px, 60, 1);
+        }
+        spread_wall2(&mut w, 50, 60, WALL_SPIDER);
+        assert_eq!(w.tiles[w.index(50, 60)].wall, WALL_SPIDER);
+        assert_eq!(w.tiles[w.index(79, 60)].wall, WALL_SPIDER);
+        // The air beyond the corridor stays wall 0 (the flood stops at air).
+        assert_eq!(w.tiles[w.index(85, 60)].wall, 0);
+        assert_eq!(w.tiles[w.index(50, 55)].wall, 0);
+    }
+
+    /// `Spread.Wall2`'s solid-cell arm (`:3518-3521`): a solid cell takes the
+    /// wall but does not spread — the cell beyond it keeps its own wall.
+    #[test]
+    fn spread_wall2_solid_cell_takes_the_wall_without_spreading() {
+        let mut w = air(120, 120, 40.0, 60.0);
+        wall(&mut w, 50, 60, 1);
+        put(&mut w, 51, 60, TILE_STONE); // solid blocker
+        wall(&mut w, 51, 60, 1);
+        wall(&mut w, 52, 60, 1);
+        spread_wall2(&mut w, 50, 60, WALL_SPIDER);
+        assert_eq!(w.tiles[w.index(50, 60)].wall, WALL_SPIDER);
+        assert_eq!(w.tiles[w.index(51, 60)].wall, WALL_SPIDER, "the solid cell takes the wall");
+        assert_eq!(w.tiles[w.index(52, 60)].wall, 1, "the flood does not spread past the solid");
+    }
+
+    /// The larva `Place3x3` (`:53534-53634`): a 3×3 larva lands on a solid
+    /// floor with the two rows above clear; an occupied roof refuses it.
+    #[test]
+    fn place_larva_needs_a_clear_roof_and_solid_floor() {
+        let mut w = air(120, 120, 40.0, 60.0);
+        for px in 49..52 {
+            put(&mut w, px, 63, TILE_STONE); // the floor at y+1
+        }
+        place_larva(&mut w, 50, 62);
+        assert_eq!(w.tiles[w.index(50, 62)].kind, TILE_LARVA);
+        assert_eq!(w.tiles[w.index(49, 60)].kind, TILE_LARVA);
+        // An occupied roof cell refuses the placement.
+        let mut blocked = air(120, 120, 40.0, 60.0);
+        for px in 49..52 {
+            put(&mut blocked, px, 63, TILE_STONE);
+        }
+        put(&mut blocked, 50, 61, TILE_STONE); // roof blocker
+        place_larva(&mut blocked, 50, 62);
+        assert_ne!(blocked.tiles[blocked.index(50, 62)].kind, TILE_LARVA);
+    }
+
+    /// The `no_spider_caves_actually` veto (`:270-278`): a short secret-seed
+    /// list with noSpiderCaves reads true; a long list (≥4) reads false.
+    #[test]
+    fn the_no_spider_caves_veto_reads_the_secret_count() {
+        let micro = MicroSeedFlags::from(MicroSeedFlags::NO_SPIDER_CAVES);
+        assert!(no_spider_caves_actually(micro, SeedFlags::none()));
+        let long = MicroSeedFlags::from(
+            MicroSeedFlags::NO_SPIDER_CAVES
+                | MicroSeedFlags::PAINT_EVERYTHING_GRAY
+                | MicroSeedFlags::PAINT_EVERYTHING_NEGATIVE
+                | MicroSeedFlags::COAT_EVERYTHING_ECHO,
+        );
+        assert!(!no_spider_caves_actually(long, SeedFlags::none()));
+        assert!(!no_spider_caves_actually(MicroSeedFlags::from(0), SeedFlags::none()));
+    }
+
+    /// The full-pipeline a == b determinism witness: an NTB+FTW world generates
+    /// byte-identically across two runs (the host's draws are deterministic),
+    /// and differs from a classic world (the conversion actually runs). Written
+    /// NOT run (code-only).
+    #[test]
+    fn the_ntb_world_is_reproducible_and_distinct_from_classic() {
+        let ntb = GenOptions {
+            width: 512,
+            height: 512,
+            seed: 42,
+            flags: SeedFlags::from(SeedFlags::NOT_THE_BEES | SeedFlags::FOR_THE_WORTHY),
+            ..Default::default()
+        };
+        let a = crate::worldgen::generate(&ntb);
+        let b = crate::worldgen::generate(&ntb);
+        assert_eq!(a.tiles, b.tiles, "the NTB+FTW world is deterministic");
+        let classic = GenOptions {
+            width: 512,
+            height: 512,
+            seed: 42,
+            ..Default::default()
+        };
+        let c = crate::worldgen::generate(&classic);
+        assert_ne!(a.tiles, c.tiles, "the NTB conversion changes the world");
+    }
+}
