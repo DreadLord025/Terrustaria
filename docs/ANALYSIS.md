@@ -1391,6 +1391,22 @@ to `[u8;13]`, `world_info` emits the live rolls + treeX/treeStyle + g72's cave r
 `client_install_world` applies via `setBG` wire order 0,10,11,12,1..9
 (`MessageBuffer.cs:493-505`). Remaining gaps are merge-scoped sheet supply (d35) +
 g72's two draw modules + the forest style-0 pin — not logic (research/92 §5).
+**BG-SEAL RECEIPT phase (doc-only, over `8224c94f1`):** the four compose receipts
+closed in research/92 §1-SEAL.3/.4/.5 — the f45-flags compose re-verified hunk-exact
+at both heads (f45 has not published a read; the standing input is seated), the
+WorldInfo `[u8;13]` census keep-one (ten net-lane tips + main + f45 + g72 carry
+the inherited `f6b736a4c` `[u8;11]` block untouched; ONE other editor found — g52
+`856edb86c`'s five-style partial fill on the old width, a strict subset of g71's
+thirteen: g71's width+full emit+BG_SLOTS apply WIN, g52 keeps only its WorldInfo
+re-push cadence scope calling the merged `world_info`; f45's live
+game_mode/cloud/extra-spawn emits compose field-disjoint), and the cross-receipt
+at the dependents' current
+tips: 64b `aa1645481` (D5-RE-PIN + the g71f mutual receipt CLOSED by the re-pin),
+138 `9a4acd729` + 135 `43fee29a4` already on D3/A3, only f44's 132 `d35876af9`
+still owes its one-move underworld re-pin — FOUR of five L3 dependents publish the
+identical strict-C#-row middle; the persist-order dispute is RESOLVED on the
+published record. Registry tips refreshed (e19 `c7a38bea`, d125 `7a048230`, g90
+`43fee29a` — every claimant `save.rs` byte-unchanged, diff-verified).
 
 **Deliberate deviation — the atlas budget guard.** A rolled non-default surface style
 can overflow the 8192 px atlas (style-0 baseline 7847 px; non-default styles add

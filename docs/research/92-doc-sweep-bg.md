@@ -41,6 +41,26 @@ crimson [50] + identity [63..107] unchanged); the registry/census/dedups +
 mutual receipt of 103's A4 92-row. The `[u8;13]` WorldInfo net fix + setBG
 hunks (`d2fcf9f2`) are UNAFFECTED (draw-chain/wire order, not byte layout).
 
+**BG-SEAL RECEIPT phase (this branch, doc-only, over `8224c94f1`):** the
+arbiter ruling CONSUMED and the four compose receipts closed —
+§1-SEAL.3 the f45-flags compose receipt (exact supersession hunks
+re-read at both heads; f45 has NOT published a read — the standing
+input is seated, receipt OWED to f45), §1-SEAL.4 the WorldInfo
+`[u8;13]` net-fix census keep-one (ten net-lane tips + main + f45 +
+g72 carry the inherited `f6b736a4c` `[u8;11]` block untouched; ONE
+other editor found — g52 `856edb86c`'s five-style partial fill on the
+old width, a strict subset: g71's width+full seam WINS, g52 keeps
+only its re-push cadence scope; the f45 field-ownership compose is
+field-disjoint), §1-SEAL.5 the merger-bible cross-receipt at the
+dependents' CURRENT tips (103 `d09d7e10a` A3 / 132 `d35876af9` owes
+its one-move re-pin / 64b `aa1645481` D5-RE-PIN + the g71f mutual
+receipt CLOSED / 138 `9a4acd729` D5-RE-PIN agrees / 135 `43fee29a4`
+§10g agrees) + the registry tip refresh (e19 `c7a38bea5`, d125
+`7a0482302`, g90 `43fee29a4` — every claimant `save.rs` byte-unchanged,
+diff-verified). FOUR of five L3 dependents now publish the identical
+strict-C#-row middle — the persist-order dispute is RESOLVED on the
+published record.
+
 ---
 
 ## 1-FULL. The TRWLD v18 UNION — FINAL claimant registry + single layout (13 branches)
@@ -78,16 +98,16 @@ hunks (`d2fcf9f2`) are UNAFFECTED (draw-chain/wire order, not byte layout).
 | # | Lane | Branch tip | Block | Size | C# anchor (write) | Pre-v18 default |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | **g70** forest-set | `75265591` (`bbe47378` claim) | `tree_x[0..3]` 3×i32 LE + `forest_bg_styles[0..4]` 4×u8 (treeBG1..4) | **16 B** | `WorldFile.cs:1253-1255` (treeX), `:1318` (treeBG1), `:1377-1379` (treeBG2-4) | `tree_x=[width;3]`, styles `[0;4]` |
-| 2 | **g72** cave-bg | `b069439e` (retire; `715c6096` claim, block unchanged since `4a75715e`) | `cave_back_x[0..3]` 3×i32 LE + `cave_back_style[0..4]` 4×i32 LE + ice/jungle/hell 3×u8 | **31 B** | `:1260-1266` (i32 verbatim), `:1267-1269` (C# i32, compressed u8) | `World::new` zeros (NOT Reset band defaults — boot dead store) |
+| 2 | **g72** cave-bg | `aa164548` (D5-RE-PIN; retire `b069439e`, `715c6096` claim, block unchanged since `4a75715e` — `save.rs` diff EMPTY) | `cave_back_x[0..3]` 3×i32 LE + `cave_back_style[0..4]` 4×i32 LE + ice/jungle/hell 3×u8 | **31 B** | `:1260-1266` (i32 verbatim), `:1267-1269` (C# i32, compressed u8) | `World::new` zeros (NOT Reset band defaults — boot dead store) |
 | 3 | **g69** crimson | `20d0380f` (`9717c0bb` claim) | `WorldGen.crimson` u8 bool | **1 B** | `:1281`; `:3507` corruption fallback | `false` |
-| 4 | **e19** crimson DUP | `e7e466d4` | same `crimson` byte (inherited g69 code, comment cites W4-g69) | 1 B (dup of #3) | same | same |
+| 4 | **e19** crimson DUP | `c7a38bea` (148-FINAL; `e7e466d4` at the seal — `save.rs` diff EMPTY) | same `crimson` byte (inherited g69 code, comment cites W4-g69) | 1 B (dup of #3) | same | same |
 | 5 | **g71** surface | this branch | `snow/desert/ocean_bg_style` 3×u8 | **3 B** | `:1321`/`:1324-1325` | all 0 |
 | 6 | **g71** underworld seat | this branch (rolled + `.wld`-persisted since the wiring phase) | `underworld_bg_style` u8 (setBG 9) | **1 B** | `:1376` | 0 |
 | 7 | **c39** moon bosses | `7dd785dc` (retire; `8ecb288a` claim) | `downed_halloween_king/tree`, `downed_christmas_ice_queen/santank/tree` 5×u8 bool | **5 B** | `:1347-1351`; `NPC.cs:79210-79238` death arms | all `false` |
 | 8 | **f39** moon bosses DUP | `bd5a5a24` | byte-identical five flags (inherited c39 code) | 5 B (dup of #7) | same | same |
 | 9 | **g87** pet licenses | `e3f81d0b` (closeout 3; `dfbcaf94` claim) | `bought_cat/dog/bunny` 3×u8 bool | **3 B** | `:1392-1394`; items 4829/4830/4910 | all `false` |
-| 10 | **d125** empress | `d8047a10` | `downed_empress_of_light` u8 bool | **1 B** | `:1395`; `NPC.cs:6393`, case-636 `:79351-79353` | `false` |
-| 11 | **g90** books | `5b79ebce` (retire; `94d33f2c` claim) | `combat_book_volume_two_was_used` + `peddlers_satchel_was_used` 2×u8 bool | **2 B** | `:1407-1408`; `.wld` gates v259/v260 (`:2404-2405` read) | both `false` |
+| 10 | **d125** empress | `7a048230` (BossNoCheese; `d8047a10` at the seal — `save.rs` diff EMPTY) | `downed_empress_of_light` u8 bool | **1 B** | `:1395`; `NPC.cs:6393`, case-636 `:79351-79353` | `false` |
+| 11 | **g90** books | `43fee29a` (BOOSTER SEAL §10g; retire `5b79ebce`, `94d33f2c` claim — `save.rs` comment-only D3 re-pin, bytes unchanged) | `combat_book_volume_two_was_used` + `peddlers_satchel_was_used` 2×u8 bool | **2 B** | `:1407-1408`; `.wld` gates v259/v260 (`:2404-2405` read) | both `false` |
 | 12 | **c43/f45** identity | `07697080` / `6352d384` (byte-identical blocks) | `generator_version` u64 + `unique_id` [u8;16] + `world_id` i32 + `creation_time` i64 + `last_played` i64 | **44 B** | `SaveWorldHeader:1225-1227` + `SaveWorldFlags:1250-1251` | `World::new` zeros |
 | 13 | **d109** dense variants | `81894095` | `World::variants` dense `width*height`×u8, row-major | **W×H B** | port-only (`Tile.bTileHeader2` bits 4-7, `Tile.cs:464-482`; never in the `.wld` tile stream) | zeros, `variants_from_save=false` |
 
@@ -409,6 +429,139 @@ on top, dedup the five shared live styles + g69's crimson read onto f45's
 write. f45's unpushed gate-census (`2e13cfafc`: the >326 reject, the
 flags_tail legacy-u32 window 299..312, FixEndlessRainWorlds) rides its file at
 merge — load-gate fixes, no bg-byte interaction.
+
+### 1-SEAL.3 The f45-flags compose RECEIPT (BG-SEAL RECEIPT phase)
+
+Re-probed at f45's CURRENT pushed tip `6352d3840` (unchanged since the
+§1-SEAL.2 audit; its worktree `2e13cfafc` gate-census re-verified STILL
+unpushed — `git merge-base --is-ancestor` exit 1). The §1-SEAL.2 table
+stands verbatim; this receipt closes the two outstanding questions:
+
+1. **Exact supersession hunks (this head, re-read):** the eight-slot live
+   writer `flags.rs:101-108` (setBG 0..7 — slot 0 `forest_bg_styles[0]`,
+   3 snow, 6 desert, 7 ocean included) + live reader `:461-468`; the
+   tail live writer `:185-189` (mushroom / underworld / treeBG2..4) +
+   gated reads `:574` (v>194 mushroom) / `:577` (v≥215 underworld) /
+   `:580-582` (v>195 treeBG2..4). Against f45's zero stand-ins
+   `:103/:106/:109/:110` + skip-reads `:494/:497/:500` and tail zeros
+   `:203-206` + skip-reads `:659/:662`. Wire widths byte-identical on
+   both sides (u8 per slot, C# `(byte)` casts `WorldFile.cs:1318-1325`
+   /`:1375-1379`); ownership-only compose, ZERO offset moves — the
+   `.wld` stream never moves under the `.trwld` order arbitration
+   (103 §L3-ARBITER A3 is a `.trwld`-tail contract; f45's `.wld`
+   positions are the C# `SaveWorldFlags` rows themselves).
+2. **f45-lane read status — NO read published, receipt OWED to f45.**
+   `git grep -i "g71|research/92|1-SEAL"` over f45's entire `docs/` at
+   `6352d3840` returns only the base-trunk ROADMAP pointer to
+   `92-roadmap-reverification.md` (the OTHER 92 — the collision-registry
+   key, research/150 renames this doc 92→218). f45 has NOT yet receipted
+   the §1-SEAL.2 compose. This section is the standing INPUT for that
+   read: f45 keeps its file as the base and drops its four+four bg
+   stand-ins in favour of this head's live hunks; nothing in f45's own
+   scope (GameMode/cloud/wind/angler/lantern/pets/books/slimes/
+   extra-spawn/starfall/afterParty/dd2) conflicts. The arbiter's 103 D4
+   re-affirms the same `.wld` verdicts ("g71's underworld/mushroom/
+   treeBG2-4 flips + g72's cave arrays ride f45's superset — keep one
+   codec half, g72's arrays must survive it").
+
+### 1-SEAL.4 WorldInfo `[u8;13]` net-fix compose — the census keep-one
+
+The `d2fcf9f2` net fix (`WorldInfo.backgrounds` `[u8;11]`→`[u8;13]`,
+`net.rs:1062`, writer loop `:1119-1121`, reader `:1178-1180`; host emit
+`netglue.rs:2091-2105`; client apply `:1986-1992` via
+`BG_SLOTS = [0,10,11,12,1,2,3,4,5,6,7,8,9]`) re-verified against the C#
+directly this pass: `NetMessage.cs:245-257` writes exactly 13
+`(byte)`-cast style singles in the order treeBG1, treeBG2, treeBG3,
+treeBG4, corrupt, jungle, snow, hallow, crimson, desert, ocean,
+mushroom, underworld; `MessageBuffer.cs:494-506` applies them
+`setBG(0),(10),(11),(12),(1),(2),…,(9)` — the port's BG_SLOTS is that
+sequence verbatim (the code comment's `:493-505` cite is off by one —
+`:493` is the moonType read, the 13 setBG calls run `:494-506`; the
+witness pins the ORDER, which is exact).
+
+**Census — who else touches `WorldInfo.backgrounds`?** Every net-lane
+tip probed (`git grep "pub backgrounds"` + `git log -Sbackgrounds` on
+`net.rs`/`netglue.rs`, tips re-fetched this pass): g48 `9460c85d9`,
+g49 `af1f172f5`, g50 `714f1f736`, g51 `fcfb92f26`, d89 `afc9d7ee5`,
+d90 `5db08c04a`, c27 `412b6bc0d`, c28 `1ac5929f3`, f21 `5230cb99b`,
+d100 `3a3288960` AND origin/main all carry the SAME inherited
+`f6b736a4c` (M6-NET-1) `[u8; 11]` declaration + `[0; 11]` emit —
+**zero lane-specific edits** (their only `-Sbackgrounds` hit is that
+one base commit). The non-net claimants f45 `6352d3840` and g72
+`aa1645481` also carry the inherited `[0; 11]` emit
+(`netglue.rs:2062` / `:2072` there) with no width change.
+
+**ONE other editor found: g52 `856edb86c`** (final-audit WIP
+checkpoint, `task/W4-g52-net-relay-host`). It keeps the `[u8; 11]`
+width but fills FIVE owned styles into the emit
+(`netglue.rs:2691-2696` there: slots 4/5/7/8/10 = corrupt/jungle/
+hallow/crimson/mushroom) and adds a partial client apply
+(`:2380-2384`: `set_surface_bg_style(1/2/4/5/8)` reading
+`backgrounds[4/5/7/8/10]`) + a `num_clouds: 100` static stand-in, as
+part of its in-world `7 WorldInfo` re-push machinery (heartbeat +
+dawn/dusk/invasion-end/maxRaining-change re-push sites). **Keep-one
+adjudication: g71's `[u8;13]` + full 13-slot emit + full BG_SLOTS
+client apply WIN** — g52's five styles are a strict SUBSET of g71's
+thirteen (same fields, same values), its slot indices are the same
+C# wire positions, and its 11-width is the wire-width BUG this seal
+fixed (2-byte shift of every post-style header field against a
+vanilla peer). g52's partial-apply + five-slot-fill hunks DROP; its
+re-push SITES and heartbeat machinery are NEW scope g71 does not
+carry — they survive and call the MERGED `world_info` (which then
+re-pushes the full 13 bytes + tree/cave tables on every re-push,
+strictly better than the five-style subset). Its `num_clouds: 100`
+stand-in loses to f45's live `w.num_clouds` emit (below). Net verdict:
+**TWO editors (g71 width+full seam, g52 partial fill on the old
+width), ONE keeper (g71); g52 keeps only its re-push cadence scope.**
+Every other lane's `[u8;11]` declaration + `[0; 11]` fixture hunks
+drop at merge (mechanical `[0; 13]` re-pin).
+
+**Compose with f45's WorldInfo field-ownership (the adjacent hunks):**
+f45's `world_info` (`netglue.rs:2036-2093` there) emits live
+`game_mode`/`num_clouds`/`wind_speed_target`/`tree_x`/`tree_style`/
+`cave_back_x`/`cave_back_style`/`extra_spawn_points`/`dungeon_x/y`;
+this head emits the bg block + tree/cave/ice/jungle/hell live but
+still zeros `game_mode:2079`/`wind:2109`/`num_clouds:2110`/
+`extra_spawn_points:2136`/`dungeon:2137`. Field-disjoint OWNERSHIP
+compose: take f45's live hunks for its fields + g71's `[u8;13]` +
+bg/tree/cave hunks (the tree/cave emits are byte-identical on both
+sides — dedup keep-one). f45's `client_install_world` installs NO
+header bg/tree/cave fields (its install reads only spawn/time/moon/
+surface/rock) — g71's install hunks supersede with zero conflict.
+The g50/g48 lanes' WorldInfo fixtures (`[0; 11]` literals in their
+test constructors) re-pin to `[0; 13]` mechanically at merge — the
+`world_info_round_trip` (`net.rs:3886`, distinct per-slot values) +
+`the_world_info_header_carries_the_bg_rolls` (`netglue.rs:5279`)
+witnesses here are the width/order pins (WRITTEN NOT RUN, code-only).
+
+### 1-SEAL.5 The BG/V18 cross-receipt — 103 / 132 / 64b / 138 / 135
+
+The §5.4 merger-bible FINAL (re-pinned to 103 A3) cross-receipted
+against every dependent's CURRENT pushed tip (this receipt phase):
+
+| Doc | Tip read | Its L3 order state | Verdict |
+| --- | --- | --- | --- |
+| **103** g88 §L3-ARBITER FINAL | `d09d7e10a` (over SEAL `fc5cf11ae`) | A3 = D3 strict-C#-row middle; A4's 92-row names this branch `b706737a1` with the exact move list | **THE byte-order authority — CONSUMED** (§1-FULL.2 corrected, §1-SEAL.1 re-receipt; the A4 92-row CLOSED both ways) |
+| **132** f44 RETIRE §3-L3 | `d35876af9` (unchanged) | underworld [50] before crimson [51] — its one-move delta to A3 still OPEN on its branch | Its L1/L2 + §8 merger-bible authority STANDS; its layout table owes the D3 one-move re-pin (103 A4's 132-row) — not this lane's to land |
+| **64b** g72 D5-RE-PIN | `aa1645481` (over retire `b069439eb`) | **ALREADY on D3**: underworld [58]→[56], books→[61..63], "64a-stable-prefix is NOT C# write order"; its §5 published the g71f mutual receipt demanding THIS re-pin | **CONSUMED — the g72-side half CLOSED by `8224c94f1` + this receipt**: 92's re-pin landed matching D3/A3 exactly, so per 64b §5's own rule "both notes agree and the merger has one order" |
+| **138** a6 §12 D5-RE-PIN | `9a4acd729` (over SEAL `8fad5555d`) | **ALREADY on D3**: pets **57-59**, books **61/62**, crimson 50 / moon 51-55 / underworld 56, identity 63..107 (its seal-era 59-61/51/52 superseded) | AGREES with the corrected §1-FULL.2 field-for-field — no action either side |
+| **135** g90 §10g BOOSTER SEAL | `43fee29a4` | **ALREADY on D3/A3**: pair [61]/[62], constants +107 (103 A4's 135-row: "CONFIRMED, no action"); its `save.rs` seat comments re-pinned (code-byte diff vs `5b79ebce`: comments only) | AGREES — no action |
+
+**Registry tip refresh (this pass):** e19 now `c7a38bea5` (148-FINAL;
+`save.rs` diff vs `e7e466d46` EMPTY), d125 now `7a0482302` (BossNoCheese;
+`save.rs` diff vs `d8047a109` EMPTY), g90 now `43fee29a4` (`save.rs`
+comment-only re-pin) — every claimant block byte-unchanged; g70/g69/
+c39/f39/g87/c43/f45/d109/g72 `save.rs` diffs vs their registry tips all
+EMPTY (verified `git diff --stat`). The §1-FULL.1 registry stands as
+the census of record.
+
+**One-order verdict:** after `8224c94f1` (92→A3) + g72 `aa1645481`
+(64b→D3) + a6 `9a4acd729` (138→D3) + g90 `43fee29a4` (135→D3), FOUR of
+the five L3 dependents publish the identical strict-C#-row middle;
+only f44's 132 retains its superseded underworld-before-crimson table
+(its own RETIRE text already defers byte order to the consolidators).
+The persist-order dispute is RESOLVED on the published record: the
+merger seats 103 A3 (= corrected §1-FULL.2) VERBATIM.
 
 ---
 
@@ -934,6 +1087,18 @@ OVERRULE-CORRECTION phase (this branch, doc-only — the arbiter re-pin):
   103 §L3-ARBITER A3 (registry/site-table/net-seam claims unchanged).
 - NO code touched: the `d2fcf9f2` net fix + setBG hunks are draw-chain/wire
   order, not `.trwld` byte layout — UNAFFECTED by the arbitration.
+
+BG-SEAL RECEIPT phase (this branch, doc-only — the four compose receipts):
+- `docs/research/92-doc-sweep-bg.md` — §1-SEAL.3 (f45-flags compose receipt:
+  exact hunks at both heads, f45-read status OWED), §1-SEAL.4 (WorldInfo
+  `[u8;13]` census keep-one: 14 tips probed — g71 + g52 the only editors,
+  g71 wins, g52 keeps its re-push cadence scope; the f45 field-disjoint
+  compose), §1-SEAL.5 (the 103/132/64b/138/135 cross-receipt at current
+  tips + the registry tip refresh); the phase banner + registry rows
+  2/4/10/11 tip refresh.
+- `docs/research/INDEX.md` — row 92 gains the receipt-phase pointer.
+- NO code touched — all four receipts are compose/census evidence; the
+  net fix `d2fcf9f2` + the arbiter re-pin `8224c94f1` stand as landed.
 
 **Verification:** code-only mode — no cargo/tests/rustfmt/graphify run. The roll +
 boot + guard witnesses are WRITTEN NOT RUN; their expectations come from independent
