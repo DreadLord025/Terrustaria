@@ -639,6 +639,17 @@ pub(crate) struct App {
     /// hover sites are unported, so nothing arms it today — the field keeps
     /// the check's shape.
     pub(crate) no_throw: i32,
+    /// W4-g56 — `Player.lastMouseInterface` (`Player.cs:1454`, latched at
+    /// `Main.cs:61811-61812`: last frame's `mouseInterface`): the
+    /// void-lens interaction gate reads it (`Main.cs:37688`). The port
+    /// recomputes it at the interface-draw tail from the same hover
+    /// surfaces that set `mouseInterface` (the slot/panel hit tests).
+    pub(crate) last_mouse_interface: bool,
+    /// W4-g56 — the per-slot `TryInteractingWithVoidLens` answers
+    /// (`Main.cs:27924`), computed once per draw at the draw head
+    /// (`void_lens::update_selection`) and read by the projectile draw
+    /// loop's type-734 arm. Indexed by projectile slot; 0 for non-lenses.
+    pub(crate) void_lens_selection: Vec<u8>,
     /// `Main.mouseRightRelease` as the vanilla recomputes it at the END of
     /// every interface draw (`Main.cs:62458-62465`: `!Main.mouseRight`) —
     /// the buff bar's cancel reads `mouseRight && mouseRightRelease`
@@ -3884,6 +3895,8 @@ impl App {
             control_throw: false,
             drop_right_edge: false,
             no_throw: 0,
+            last_mouse_interface: false,
+            void_lens_selection: Vec::new(),
             ui_right_release_latch: true,
             ui_left_release: false,
             buff_alpha: [0.4; crate::buffs::MAX_BUFFS],

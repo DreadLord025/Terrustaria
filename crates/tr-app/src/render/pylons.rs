@@ -360,7 +360,64 @@ pub(crate) fn void_lens_sprites(
     // `Y -= 2`, frame `(int)(((float)tileFrameCounter[491] + X + Y) % 40f) / 5`.
     let center = to_world(x, y, 8.0, 8.0 - 2.0);
     let frame = (((env.lens_counter as f32 + center[0] + center[1]) % 40.0) as i32) / 5;
-    let (fw, fh) = (sizes.lens[0], sizes.lens[1]);
+    void_lens_sprites_at(
+        light_at,
+        style,
+        anim_time,
+        env.global_time,
+        sizes.lens,
+        center,
+        frame,
+        1.0,
+        selection_mode,
+    )
+}
+
+/// W4-g56 — the projectile-side `VoidLensHelper(Projectile)` ctor
+/// (`VoidLensHelper.cs:19-24`): position = `proj.Center`, opacity =
+/// `proj.Opacity`, frame = `proj.frame` (AI_154's 5-tick machine), drawn by
+/// `Main.DrawProjDirect`'s type-734 arm (`Main.cs:27920-27931`). Shares the
+/// tile lens's `DrawToDrawData` body 1:1 — only the ctor inputs differ.
+pub(crate) fn void_lens_projectile_sprites(
+    light_at: impl Fn(i32, i32) -> [f32; 3],
+    style: &LightStyle,
+    anim_time: f32,
+    global_time: f32,
+    lens_frame_size: [f32; 2],
+    center: [f32; 2],
+    frame: i32,
+    opacity: f32,
+    selection_mode: u8,
+) -> Vec<SpecialSprite> {
+    void_lens_sprites_at(
+        light_at,
+        style,
+        anim_time,
+        global_time,
+        lens_frame_size,
+        center,
+        frame,
+        opacity,
+        selection_mode,
+    )
+}
+
+/// The shared `DrawToDrawData` body (`VoidLensHelper.cs:77-104`) both ctors
+/// feed: the base sprite, the 3-copy purple ring at the 0.34f cadence and
+/// the `Extra_93` selection glow.
+#[allow(clippy::too_many_arguments)]
+fn void_lens_sprites_at(
+    light_at: impl Fn(i32, i32) -> [f32; 3],
+    style: &LightStyle,
+    anim_time: f32,
+    global_time: f32,
+    lens_frame_size: [f32; 2],
+    center: [f32; 2],
+    frame: i32,
+    opacity: f32,
+    selection_mode: u8,
+) -> Vec<SpecialSprite> {
+    let (fw, fh) = (lens_frame_size[0], lens_frame_size[1]);
     let src = [0.0, frame as f32 * fh, fw, (frame as f32 + 1.0) * fh];
     // `:82-83`: `Lerp(GetColor(position.ToTileCoordinates()), White, 0.5)`,
     // `*= opacity`. `ToTileCoordinates` is `(int)v >> 4` (`Utils.cs`).
@@ -371,7 +428,7 @@ pub(crate) fn void_lens_sprites(
             let l = lerp_bytes(c, [255, 255, 255], 0.5);
             [l[0], l[1], l[2], 255]
         },
-        1.0,
+        opacity,
     );
     let mut out = Vec::with_capacity(5);
     out.push(SpecialSprite {
@@ -387,11 +444,11 @@ pub(crate) fn void_lens_sprites(
     // `(127, 50, 127, 0) * opacity * (x*0.1 + 0.3)` where
     // `x = cos(GlobalTimeWrappedHourly / 5 * 2π)`; the offset vector rotates
     // at `(t/5 + num) * 2π` with radius `x + 2`.
-    let x = (env.global_time / 5.0 * (std::f32::consts::PI * 2.0)).cos();
+    let x = (global_time / 5.0 * (std::f32::consts::PI * 2.0)).cos();
     let mut num = 0.0f32;
     while num < 1.0 {
-        let ring = scale_bytes(scale_bytes([127, 50, 127, 0], 1.0), x * 0.1 + 0.3);
-        let rv = rotation_vector((env.global_time / 5.0 + num) * (std::f32::consts::PI * 2.0));
+        let ring = scale_bytes(scale_bytes([127, 50, 127, 0], opacity), x * 0.1 + 0.3);
+        let rv = rotation_vector((global_time / 5.0 + num) * (std::f32::consts::PI * 2.0));
         let r = x * 1.0 + 2.0;
         let (sw, sh) = (fw * 1.1, fh * 1.1);
         out.push(SpecialSprite {
@@ -422,6 +479,74 @@ pub(crate) fn void_lens_sprites(
         }
     }
     out
+}
+
+/// W4-g56 — the projectile-side `VoidLensHelper(Projectile)` ctor
+/// (`VoidLensHelper.cs:19-24`): position = `proj.Center`, opacity =
+/// `proj.Opacity`, frame = `proj.frame` (AI_154's 5-tick machine), drawn by
+/// `Main.DrawProjDirect`'s type-734 arm (`Main.cs:27920-27931`). Shares the
+/// tile lens's `DrawToDrawData` body 1:1 — only the ctor inputs differ.
+/// The pass runs inside the projectile draw loop (the C# draws the lens
+/// with the projectiles, `Main.cs:62251`), pushing the same world-effect
+/// quads the tile pass uses. Returns the quad count.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn draw_void_lens_projectile(
+    r: &mut SpriteRenderer,
+    light: &tr_core::lighting::LightMap,
+    style: &LightStyle,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+    anim_time: f32,
+    global_time: f32,
+    center: [f32; 2],
+    frame: i32,
+    opacity: f32,
+    selection_mode: u8,
+) -> u32 {
+    // `Utils.Frame`'s integer divide off the packed sheet (the tile pass's
+    // `sheet_px` shape).
+    let Some(uv) = r.sheets.get("Projectile_734").copied() else {
+        return 0;
+    };
+    let sheet_w = ((uv[2] - uv[0]) * r.atlas_size.0 as f32).round();
+    let sheet_h = ((uv[3] - uv[1]) * r.atlas_size.1 as f32).round();
+    let lens = [sheet_w, (sheet_h as u32 / 8) as f32];
+    let sprites = void_lens_projectile_sprites(
+        |lx, ly| light.get(lx, ly),
+        style,
+        anim_time,
+        global_time,
+        lens,
+        center,
+        frame,
+        opacity,
+        selection_mode,
+    );
+    let mut quads = 0u32;
+    for s in sprites {
+        let Some(uv) = r.uv(
+            s.sheet,
+            s.src[0],
+            s.src[1],
+            s.src[2] - s.src[0],
+            s.src[3] - s.src[1],
+        ) else {
+            continue;
+        };
+        r.push_fx_sprite_rot(
+            [
+                (s.pos[0] - camera.x) * zoom + screen.x * 0.5,
+                (s.pos[1] - camera.y) * zoom + screen.y * 0.5,
+            ],
+            [s.size[0] * zoom, s.size[1] * zoom],
+            uv,
+            s.color,
+            0.0,
+        );
+        quads += 1;
+    }
+    quads
 }
 
 /// The `VoidLensHelper.Update` light half (`VoidLensHelper.cs:34-38`):

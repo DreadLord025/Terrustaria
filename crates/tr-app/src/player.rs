@@ -1099,6 +1099,11 @@ pub struct Player {
     /// `Player.IsVoidVaultEnabled` (`Player.cs:24550-24553` —
     /// `HasItem(4131)`): refreshed per tick beside the other scans.
     pub void_vault_enabled: bool,
+    /// `Player.voidLensChest` (`Player.cs:2874`) — the tracked Void Lens
+    /// projectile the chest −5 open latches (`Main.cs:37727`); the
+    /// per-tick range/death close reads it (`Player.cs:31051-31073`,
+    /// W4-g56 `void_lens.rs`).
+    pub void_lens_chest: crate::void_lens::LensTracker,
     /// `Player.ateArtisanBread` (`Player.cs:2048`): the artisan loaf's
     /// +4-tile crafting reach (`Player.AdjTiles`, `:35671`). The item that
     /// sets it (5326, `Player.cs:45218-45221`) has no ported use effect yet,
@@ -2697,6 +2702,7 @@ impl Player {
             edited_chest_name: false,
             prev_synced_chest: crate::bank::CHEST_CLOSED,
             void_vault_enabled: false,
+            void_lens_chest: crate::void_lens::LensTracker::default(),
             ate_artisan_bread: false,
             unlocked_biome_torches: false,
             pinned_jumps: [false; 9],
@@ -3809,6 +3815,10 @@ impl Player {
         // the open container SILENTLY (no sound — the range close's 11 never
         // fires; S1-P-i43). `chestX/Y` stay, exactly like the C#.
         self.chest = crate::bank::CHEST_CLOSED;
+        // W4-g56 — the tracker clears with the close: the next alive tick's
+        // `HandleBeingInChestRange` else-arm (`Player.cs:31095`) writes it;
+        // the port clears here so a dead tick never leaves a stale latch.
+        self.void_lens_chest.clear();
         let jump_edge = jump && !self.prev_jump_input;
         self.prev_jump_input = jump;
         let can_skip = self.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);

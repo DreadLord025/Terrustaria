@@ -14,6 +14,7 @@ mod achievements_data;
 mod accessory_combat;
 mod audio;
 mod bank;
+mod void_lens;
 mod banners;
 mod bestiary;
 mod biome;

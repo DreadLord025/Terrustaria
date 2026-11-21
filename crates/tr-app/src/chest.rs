@@ -1259,15 +1259,31 @@ pub(crate) fn try_open_dresser_at_cursor(app: &mut App, world_pos: Vec2) -> bool
 /// close for every open container (the unified `Player.chest` covers the
 /// world chests and the banks): out of the container's multi-tile-hitbox
 /// interaction range or a dead origin tile force-closes with sound 11
-/// (`:31078-31090`). The bank-projectile arms (`:31019-31076`) are the
-/// remote opens — out of scope. Runs for alive players only (the C# call
-/// site sits after the dead branch's return, `:24752`/:25290) — the
-/// `update_player` hook inherits that gating.
+/// (`:31078-31090`). The void-lens tracker arm (`:31051-31073`, W4-g56
+/// `void_lens::tick_tracker`) runs first and its `flag` return
+/// (`:31074-31077`) skips the tile probe while the lens open is live; the
+/// piggy-trough arm (`:31028-31050`) stays out (no remote piggy open).
+/// Runs for alive players only (the C# call site sits after the dead
+/// branch's return, `:24752`/:25290) — the `update_player` hook inherits
+/// that gating.
 pub(crate) fn tick_open(app: &mut App) {
     let Some(p) = app.player.as_ref() else {
         return;
     };
-    if p.chest != -1 {
+    // W4-g56 — `HandleBeingInChestRange`'s void-lens arm
+    // (`Player.cs:31051-31073`): the tracked lens's death/range close runs
+    // AHEAD of the tile-range close below (the C# `flag` return at
+    // `:31074-31077` skips the multi-tile-hitbox probe while a bank
+    // projectile tracker is live). The Item130 cue plays here.
+    let lens_sound = crate::void_lens::tick_tracker(app);
+    if lens_sound != 0 {
+        app.audio.play("Item_130"); // `:31056`/`:31068` — `SoundID.Item130`
+    }
+    let tracked_open = app
+        .player
+        .as_ref()
+        .is_some_and(|p| p.chest == -5 && p.void_lens_chest != crate::void_lens::LensTracker::default());
+    if p.chest != -1 && !tracked_open {
         let (chest_x, chest_y) = (p.chest_x, p.chest_y);
         // Both probes read the world only; the close below mutates the
         // player after the borrow ends.

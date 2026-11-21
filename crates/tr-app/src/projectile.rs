@@ -10274,6 +10274,18 @@ impl Projectile {
             self.draw_yoyo(r, lookups, light, camera, zoom, screen, owner_hand);
             return;
         }
+        // W4-g56 — `Main.DrawProjDirect`'s type-734 early return
+        // (`Main.cs:27920-27931`): the Void Lens draws through
+        // `VoidLensHelper.DrawToDrawData` (the projectile ctor,
+        // `VoidLensHelper.cs:19-24` — Center / Opacity / frame off the slot),
+        // never the generic sprite emit. The port's lens pass needs the
+        // frame's `LightStyle` (the tile-lens collector's shade), so the
+        // draw rides `frame/draw.rs`'s projectile loop
+        // (`pylons::draw_void_lens_projectile`) ahead of this call; this
+        // arm keeps the generic emit from double-drawing the slot.
+        if self.kind == VOID_LENS {
+            return;
+        }
         // `Main.DrawProj`'s per-type switch routes 974 to its own drawer
         // ahead of the generic emit (`Main.cs:28143-28144` →
         // `DrawProj_LightsBane`, `:27455-27495`) — the only projectile the
@@ -19486,6 +19498,74 @@ impl ProjectilePool {
                             let vel = self.slots[i].vel;
                             self.slots[i].pos += vel;
                         }
+                        // W4-g56 — `AI()`'s `case 154` → `AI_154_VoidLens`
+                        // (`Projectile.cs:36581`, `:52154-52196`): the
+                        // same-owner/same-type sibling cull (the local-owner
+                        // arm — the lower-timeLeft slot dies), the ×0.94
+                        // velocity decay, direction 1, the 5-tick frame
+                        // machine over `projFrames[734] = 8` and the 0.03/tick
+                        // Opacity fade-in (alpha 255 → 0, the `(int)Clamp`
+                        // truncation of the Opacity setter, `:540-550`).
+                        // `VoidLensHelper.Update`'s AddLight half feeds
+                        // `frame/draw.rs` (the tile-lens precedent); its dust
+                        // rolls stay skipped (the S1-G-1 wave-D RNG-order
+                        // rule). `HandleMovement` (`:17476`'s !tileCollide
+                        // gate) is the free integrate.
+                        154 => {
+                            if self.slots[i].owner == local_owner {
+                                let (me_time, owner, kind) = {
+                                    let p = &self.slots[i];
+                                    (p.time_left, p.owner, p.kind)
+                                };
+                                for j in 0..MAX_PROJECTILES {
+                                    if j == i {
+                                        continue;
+                                    }
+                                    let q = &self.slots[j];
+                                    if q.active && q.owner == owner && q.kind == kind {
+                                        if me_time < q.time_left {
+                                            // `:52170` — `this.Kill(); return;`
+                                            // (the AI body ends; Update's
+                                            // HandleMovement still runs).
+                                            self.kill(i);
+                                            break;
+                                        }
+                                        // `:52173` — the older sibling dies.
+                                        self.kill(j);
+                                    }
+                                }
+                            }
+                            if self.slots[i].active {
+                                let p = &mut self.slots[i];
+                                p.vel *= 0.94; // `:52177`
+                                p.direction = 1; // `:52178`
+                                p.frame_counter += 1; // `:52179-52186`
+                                if p.frame_counter >= 5 {
+                                    p.frame_counter = 0;
+                                    p.frame += 1;
+                                    if p.frame >= proj_frames(p.kind) as i32 {
+                                        p.frame = 0;
+                                    }
+                                }
+                                // `:52187-52194` — the Opacity fade-in through
+                                // the setter (`alpha = (int)Clamp((1 - v) * 255,
+                                // 0, 255)`).
+                                let opacity = 1.0 - p.alpha as f32 / 255.0;
+                                if opacity < 1.0 {
+                                    let mut next = opacity + 0.03;
+                                    if next > 1.0 {
+                                        next = 1.0;
+                                    }
+                                    p.alpha = ((1.0 - next) * 255.0).clamp(0.0, 255.0) as i32;
+                                }
+                            }
+                            // `HandleMovement`'s free move (`tileCollide =
+                            // false`, `:17476`) — runs after AI even when the
+                            // sibling cull killed this slot (`:17015` precedes
+                            // the `!active` return at `:17027`).
+                            let vel = self.slots[i].vel;
+                            self.slots[i].pos += vel;
+                        }
                         // S1-D-5: the duplicate `99 => { ai_yoyo ... }` arm
                         // that sat here was unreachable behind the live one
                         // above (byte-identical pair, verified by line-range
@@ -19853,6 +19933,13 @@ impl ProjectilePool {
                     && !self.slots[i].friendly
                     && !DUNGEON_DEBRIS.contains(&self.slots[i].kind)
                     && self.slots[i].kind != SLIME_MINION
+                    // W4-g56 — the Void Lens (734) keeps the stock
+                    // `friendly = false` / `hostile = false`
+                    // (`Projectile.cs:7726-7735` writes neither): the C#
+                    // `Damage_EVP` refuses on `!hostile` (`:14775`), the
+                    // port's `!friendly` proxy would hurt the owner — the
+                    // dungeon-debris exemption's shape.
+                    && self.slots[i].kind != VOID_LENS
                 {
                     self.damage_player(i, player.as_deref_mut(), rng);
                 }

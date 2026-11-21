@@ -1174,6 +1174,12 @@ pub const GOLF_BALL: u16 = 721;
 /// false, ignoreWater, penetrate -1, hide (`Projectile.cs:7636-7645`).
 /// S1-P-i55.
 pub const GOLF_CLUB_HELPER: u16 = 722;
+/// `ProjectileID.VoidLens` (734) — aiStyle 154, 30x24, tileCollide false,
+/// `timeLeft = 10800`, `alpha = 255`, drawLayer 3 (`Projectile.cs:7726-7735`).
+/// The Void Bag 4131 / Closed Void Bag 5325's shoot (`Item.cs:35875-35888`);
+/// `IsInteractable` (`Projectile.cs:78828-78846`) and
+/// `TryGetContainerIndex` → chest −5 (`:78820-78824`). W4-g56.
+pub const VOID_LENS: u16 = 734;
 
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
@@ -3969,6 +3975,24 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             GOLF_CLUB_HELPER => {
                 (2.0, 2.0, 150, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
             }
+            // W4-g56 — `Projectile.cs:7726-7735`: the Void Lens (734):
+            // 30x24, aiStyle 154, tileCollide false, `timeLeft = 10800`,
+            // `alpha = 255` (Opacity 0 — AI_154 fades it in at 0.03/tick,
+            // `:52187-52194`). The stock penetrate 1 / friendly false stand
+            // (the type arm writes neither); drawLayer 3 is a draw-order
+            // flag with no port field (the projectile pass draws it).
+            VOID_LENS => (
+                30.0,
+                24.0,
+                154,
+                1,
+                10800,
+                0,
+                false,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -4557,6 +4581,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         645 => 7,
         652 => 6,
         659 => 4,
+        // W4-g56 — the Void Lens's 8-frame sheet (`Main.cs:8504`) —
+        // AI_154's 5-tick frame machine wraps at it (`Projectile.cs:52179-
+        // 52186`), `VoidLensHelper.DrawToDrawData` slices `Frame(1, 8, ..)`.
+        VOID_LENS => 8,
         837 => 3,
         1130 => 6,
         // The Flamelash's 6-frame sheet (`Main.cs:8454`). Its AI's

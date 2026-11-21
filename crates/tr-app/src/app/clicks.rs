@@ -413,6 +413,52 @@ impl App {
         ui::inventory::shop_slot_at(self.mouse_pos, cell)
     }
 
+    /// W4-g56 — `Player.mouseInterface`'s hover surfaces (`Main.cs:61811-
+    /// 61812` latches it into `lastMouseInterface` at the update tail; the
+    /// void-lens gate reads the LAST frame's value, `Main.cs:37688`). The
+    /// port recomputes the same set at the interface-draw tail: the open
+    /// inventory's grid/coin/ammo/trash/equipment cells, the shop grid,
+    /// the chest panel's rect and the bank panel's cells. The reforge
+    /// inline block and the minimap-frame hover ride their own flags
+    /// (`minimap_hover`); the crafting panel's `mouseInterface` is the
+    /// covering gate the chest draw already reads.
+    pub(crate) fn mouse_interface_now(&self) -> bool {
+        if self.minimap_hover.is_some() {
+            return true;
+        }
+        if !self.inventory_open {
+            return self.slot_at_mouse().is_some();
+        }
+        if self.slot_at_mouse().is_some()
+            || self.coin_ammo_at_mouse().is_some()
+            || self.shop_slot_at_mouse().is_some()
+        {
+            return true;
+        }
+        let m_h = (self.screen_size().1 as f32 - 600.0) / 2.0;
+        let chest_or_shop = self.open_container() >= 0 || self.shop_npc.is_some();
+        if ui::inventory::trash_slot_at(self.mouse_pos, chest_or_shop) {
+            return true;
+        }
+        if let Some(bi) = crate::bank::bank_for_chest(self.open_container()) {
+            let _ = bi;
+            if ui::inventory::bank_slot_at(self.mouse_pos, m_h).is_some()
+                || ui::inventory::bank_button_at(self.mouse_pos, m_h).is_some()
+            {
+                return true;
+            }
+        }
+        // `ChestUI.cs:364-367` — the whole 10×4 panel rect sets
+        // `mouseInterface` (not only the cells).
+        if ui::chest::panel_visible(self.open_container(), self.crafting_open) {
+            let r = [73.0, 258.0, (10.0 * 56.0 * 0.755) as f32, (4.0 * 56.0 * 0.755) as f32];
+            if crate::ui::in_rect(self.mouse_pos, r) {
+                return true;
+            }
+        }
+        false
+    }
+
     /// The coin (ctx 1) or ammo (ctx 2) cell under the cursor —
     /// `Main.DrawInventory`'s rows (`Main.cs:41752-41782`) through the shared
     /// `ui::inventory::coin_ammo_hit` geometry. Closed inventory: nothing.
