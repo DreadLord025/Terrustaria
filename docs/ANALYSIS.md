@@ -39414,3 +39414,53 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+
+## DOC-SWEEP lane 40: the gem/moss break-drop slice (W4-c29 sweep, 2026-11-21, code-only)
+
+Branch `task/W4-c29-deadmans-chest-biome` (sweep phase, stacked on the
+gem-moss fidelity DONE `bf90f6e7`). The five-item gem/moss residual
+census lives in `docs/research/130-doc-sweep-gem-moss.md`; four items
+resolved as claimed-and-faithful (d60 gemsparkle dust, f25 C8 moss
+colour + its WIRED case-184 consumer, the extractinator gems arm, the
+growth-tick moss conversion + d103's underground twin) or refuted
+premises (no gem AddLight anywhere; no `addTile(627)` — moss is a solid
+block). The ONE real gap, unclaimed on all 354 pushed W4 branches: the
+gem/moss per-cell arms of `WorldGen.KillTile_GetItemDrops`.
+
+**The fix (`55555fb9b`).** `registry::tile_drop` gains four arms: the
+gem-stone blocks 63-68 drop the GEM (`type - 63 + 177`,
+`WorldGen.cs:64945-64952`), the amber stone block 566 drops Amber 999
+(`:64953-64955`), the eleven moss tiles drop Stone Block 3
+(`:63999-64011`), the eleven moss bricks drop Gray Brick 129
+(`:64012-64024`). Pre-fix, the `by_tile` fallback leaked the placing
+items (the gem-stone BLOCKS 4640-4646, the moss items 4349-5128) and
+dropped NOTHING for the moss bricks (no item places them —
+conversion-only). The exposed-gems tile 178 drops the gem of its style
+column (`frameX / 18` → 181/180/177/179/178/182/999, `:65493-65518`):
+the per-cell `cell_drops` arm reads the hit cell's `frame_x` (the C#
+`tileCache`, captured pre-kill); `tile_drop(178)` refuses — the
+frame_y-only accessor cannot read the column, and the style-0
+cascade/record paths drop nothing rather than the wrong gem (the C#
+`dropItem > 0` gate `:63953` for an unset column). The moss-block items
+687-692 → 5439-5444 (`:64219-64236`) were already correct through
+`by_tile` — verified, no arm needed.
+
+**RNG**: every arm is a pure table lookup — zero draws, no stream
+order change, no world-hash pin movement (runtime-only), `a == b`
+halves untouched.
+
+**Deferred-with-owner (NOT this lane)**: the `Main.tileGlowMask` TABLE
+pass (`TileDrawing.cs:1178-1342`, incl. the moss glow colours
+`:1210-1239` and the 627 disco) — g31 research/136 row 14 pins it as the
+table-pass lane's bind contract (f15's `d5d550c6` out-of-scope note);
+the d60 particle-battery wiring (the `DrawSingleTile` `:965-968` entry
+gate, g85's orb-family precedent); the growth-tick 184-spray bare-write
+approximation (d103's commit note, the growth-wiring wave).
+
+Verification: code-only — NO cargo/rustc/rustfmt/tests/dotnet/graphify
+invoked. 6 witnesses WRITTEN NOT RUN (`registry.rs::test_w4_c29_*` ×4,
+`editing.rs::test_w4_c29_*` ×2), each pinning the C# line it restores
+and the `by_tile` fallback it displaces; the existing drop suites
+(`test_DW_3_1_tile_drop_map`, `test_DW_3_2_*`) untouched — the new arms
+only displace fallback rows no existing test pins.

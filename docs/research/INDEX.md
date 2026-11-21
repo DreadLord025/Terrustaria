@@ -76,6 +76,7 @@ per `docs/superpowers` agreements).
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 95 | Gem-moss biome gen census + fidelity port (W4-c29: Spread.Gem duplicate-visit redraw / the 178 PlaceTile anchor gate / neonMossBiome clamps / moss arm A ledger + arm F live sweep vs WorldGen.cs; g41 co-lane claim check; code-only) | `95-gem-moss-census.md` | 🟡 |
+| 130 | DOC-SWEEP lane 40 gem/moss residuals (W4-c29 sweep: gemsparkle DRAW d60-claimed / moss PAINT f25-C8-wired / extraction faithful / neon CONVERT d103 / 627 no-def refuted; the REAL gap = the gem/moss per-cell break-drop slice ported 55555fb9b; code-only) | `130-doc-sweep-gem-moss.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
