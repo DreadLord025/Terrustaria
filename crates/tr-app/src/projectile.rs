@@ -10274,6 +10274,26 @@ impl Projectile {
             self.draw_yoyo(r, lookups, light, camera, zoom, screen, owner_hand);
             return;
         }
+        // W4-g82 — the rope coils' trailing-chain placement preview
+        // (`Main.DrawProjDirect`'s type-171/475/505/506 arms,
+        // `Main.cs:28499-28669`): the coil items have NO `createTile`, so
+        // the chain of rope links IS the placement preview — it draws
+        // ahead of the coil's own sprite (the C# chain arms run before
+        // the generic emit at `:30136`, the c6 pumpking-chain precedent).
+        // Each link carries its own `Lighting.GetColor` at the LINK's
+        // position + the 0.8 scale + half-sheet origin; the coil's own
+        // sprite keeps the generic path below unchanged.
+        if crate::projectile_rope_coil::is_coil(self.kind) {
+            crate::projectile_rope_coil::draw_coil_chain(
+                self,
+                r,
+                light,
+                camera,
+                zoom,
+                screen,
+                |name| lookups.coil_chain_uv(name),
+            );
+        }
         // `Main.DrawProj`'s per-type switch routes 974 to its own drawer
         // ahead of the generic emit (`Main.cs:28143-28144` →
         // `DrawProj_LightsBane`, `:27455-27495`) — the only projectile the

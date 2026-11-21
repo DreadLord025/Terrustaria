@@ -1275,6 +1275,18 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_72",
         "NPC_250",
         "NPC_288",
+        // W4-g82 — the rope coils' trailing-chain sheets
+        // (`Main.DrawProjDirect`, `Main.cs:28546`/`:28601-28605`/
+        // `:28660-28666`): Chain16 for 171, Chain38/39 for 475,
+        // Chains_4/5 for 505, Chains_6/7 for 506 (`TextureAssets.Chains`
+        // loads `Images/Chains_<i>`, `AssetInitializer.cs:579-581`).
+        "Chain16",
+        "Chain38",
+        "Chain39",
+        "Chains_4",
+        "Chains_5",
+        "Chains_6",
+        "Chains_7",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1937,6 +1949,10 @@ pub struct Lookups {
     /// M4-PROJ-4c: `FishingLine.png` — the 12-px-wide string slice
     /// (`Main.DrawProjDirect`, `Main.cs:28044`).
     pub fishing_line: Option<tr_render::SheetRect>,
+    /// W4-g82: the rope coils' trailing-chain sheets, keyed by the C#
+    /// texture name (`Chain16`/`Chain38`/`Chain39`/`Chains_4..7`,
+    /// `Main.cs:28546`/`:28601-28605`/`:28660-28666`).
+    pub coil_chains: HashMap<&'static str, tr_render::SheetRect>,
     /// M4-PROJ-4c: the yoyo and counterweight sprite sheets, keyed by the
     /// projectile id (`Projectile_<id>` naming, the `AssetInitializer.cs:124`
     /// convention the `item_icons` scan uses).
@@ -2312,6 +2328,13 @@ impl Lookups {
             dust: atlas.sheet("Dust").copied(),
             shuriken: atlas.sheet("Projectile_3").copied(),
             fishing_line: atlas.sheet("FishingLine").copied(),
+            // W4-g82 — the coil chain sheets (the `glow_sheets` keyed-name
+            // precedent); a missing file leaves the link undrawn, like
+            // the C#'s lazy load never resolving.
+            coil_chains: ["Chain16", "Chain38", "Chain39", "Chains_4", "Chains_5", "Chains_6", "Chains_7"]
+                .iter()
+                .filter_map(|n| atlas.sheet(n).map(|r| (*n, *r)))
+                .collect(),
             // The same prefix scan as `item_icons` — an id whose texture
             // file never made the atlas simply stays absent.
             yoyo_sprites: atlas
@@ -3092,6 +3115,19 @@ impl Lookups {
         ))
     }
 
+    /// W4-g82 — UV of a whole coil-chain sheet plus its pixel size (the
+    /// `DrawProjDirect` chain links draw the FULL sheet,
+    /// `Main.cs:28546`'s `Rectangle(0, 0, W, H)` — the `glow_frame_uv`
+    /// shape over [`Self::coil_chains`]).
+    pub fn coil_chain_uv(&self, name: &str) -> Option<([f32; 4], f32, f32)> {
+        let rect = self.coil_chains.get(name)?;
+        Some((
+            uv_rect(rect, self.atlas_size, 0, 0, rect.width, rect.height),
+            rect.width as f32,
+            rect.height as f32,
+        ))
+    }
+
     /// UV of a partial `Liquid_*` strip (16 px tall, 18 px frame stride).
     pub fn liquid_part_uv(
         &self,
@@ -3716,6 +3752,28 @@ mod tests {
                 "id {id} uv {uv:?}"
             );
             assert!(w > 0.0 && h > 0.0);
+        }
+    }
+
+    /// W4-g82 — the coil chain sheets the draw arm asks `coil_chain_uv`
+    /// for must be packed AND resolve (the `every_sheet_a_draw_arm_asks_
+    /// for_is_packed` audit's coil half — the M4-NPC-3v silent-nothing
+    /// bug class). The retail content carries all seven files.
+    #[test]
+    fn w4_g82_the_coil_chain_sheets_pack_and_resolve() {
+        let (_, lookups) = content_lookups();
+        for kind in [171u16, 475, 505, 506] {
+            for name in crate::projectile_rope_coil::coil_chain_sheets(kind) {
+                assert!(
+                    STATIC_SHEET_NAMES.contains(name),
+                    "{name} is asked for by the coil {kind} chain but never packed"
+                );
+                let (uv, w, h) = lookups
+                    .coil_chain_uv(name)
+                    .unwrap_or_else(|| panic!("{name} must resolve from the atlas"));
+                assert!(uv.iter().all(|c| (0.0..=1.0).contains(c)), "{name} uv {uv:?}");
+                assert!(w > 0.0 && h > 0.0, "{name} has a size");
+            }
         }
     }
 

@@ -19,32 +19,38 @@
 //! 475→353 VineRope, 505→365 SilkRope, 506→366 WebRope. The chain item
 //! (214) is NOT a coil — it places by hand (`Item.cs` case 85).
 //!
-//! **UNWIRED module (code-only, W4-g82, the d56 convention).** The
-//! `projectile.rs` dispatch, `projectile/data.rs` rows, `assets.rs` sheet
-//! list and `main.rs` mod decl are ALL contested by in-flight siblings
-//! (the W4-d1..d20 proj-ai lanes, g35/g48/g65, c6/c11, d93, g5/g52 on
-//! data.rs; the sheet-list lanes on assets.rs). Intended call sites:
-//! * [`coil_proj_row`] — the four `proj_data` rows (`projectile/data.rs`),
-//!   verbatim `SetDefaults` tuples; the item rows already exist
-//!   (`itemdata.rs` 985/3005/3079/3080 → projectile 171/475/505/506).
+//! **WIRED (2026-11-21, the wiring phase).** The call sites, all live:
+//! * [`coil_proj_row`] — the four rows landed verbatim in
+//!   `projectile/data.rs` (`171 | 505 | 506` + `475`, appended before the
+//!   None arm); this fn stays the witness-pinned reference. The item
+//!   rows already existed (`itemdata.rs` 985/3005/3079/3080 → projectile
+//!   171/475/505/506).
 //! * [`coil_step`] — the `35 =>` arm of `ProjectilePool::update`'s
-//!   `match data.ai_style` (`projectile.rs:16731`), taking
-//!   `world: &mut World` via the per-arm mutable reborrow (the
-//!   `ai_ice_block`/`ai_dungeon_debris` precedent, `projectile.rs:16706-
-//!   16710`). The returned `TileKill` records drain through the
-//!   `editing.rs` drop resolver (the `TreeDropEvent` convention).
+//!   `match data.ai_style` (`projectile.rs`, ahead of the 36 arm — the
+//!   C# body order), `world: &mut World` via the per-arm mutable
+//!   reborrow (the `ai_ice_block`/`ai_dungeon_debris` precedent). The
+//!   returned `TileKill` records are DISCARDED at the dispatch (the
+//!   `let _ = kill_tile` precedent — the cascade runs, the per-cell
+//!   drops stay unspawned, recorded in ANALYSIS). The arm also pins
+//!   `friendly = false` (the `:788` reset) and the PVP pass exempts the
+//!   coils (the debris/slime list); the generic
+//!   `AutomaticallyChangesDirection` write covers style 35.
 //! * [`coil_chain_segments`] + [`draw_coil_chain`] — `Projectile::draw_with_hand`
-//!   (`projectile.rs:10262`), ahead of the sprite emit, gated on
-//!   [`is_coil`] (the `Main.cs:28499`/`:28549`/`:28610` arms draw the chain
-//!   INSTEAD of the generic sprite path's light tint — each link carries
-//!   its own `Lighting.GetColor`). The `Chain16`/`Chain38`/`Chain39`/
-//!   `Chains_4..7` sheets join the `assets.rs` static list (the
-//!   `FishingLine` precedent, `assets.rs:709`).
-//! * [`coil_death_drop`] — the `Kill()` hook drain beside
-//!   `thrown_consumable_death` (`projectile.rs:20051`).
-//! * [`check_rope_usability`] — the `PlaceThing_Tiles` gate chain
-//!   (`Player.cs:39726`), after `CheckWandUsability`, before
-//!   `CheckFlexibleWand`.
+//!   (`projectile.rs`), ahead of the sprite emit, gated on [`is_coil`]
+//!   (the c6 pumpking-chain precedent — the C# chain arms run before the
+//!   generic emit, each link carries its own `Lighting.GetColor`). The
+//!   `Chain16`/`Chain38`/`Chain39`/`Chains_4..7` sheets ride
+//!   `assets.rs`'s `STATIC_SHEET_NAMES` + `Lookups::coil_chains` /
+//!   `coil_chain_uv` (the `glow_sheets` keyed-name precedent).
+//! * [`coil_death_drop`] — `ProjectilePool::coil_kill` at the `!active`
+//!   death hook beside `thrown_consumable_death` (the d77 kill_tail_cue
+//!   pattern — the refund AND the ai1==0 cue both live inside `Kill()`);
+//!   the drops drain through `world_sim/projectiles.rs` on the
+//!   `UpdateProjectiles` stream (`RequestNewItem` = a world drop).
+//! * [`check_rope_usability`] — `use_tile_item` (`world_sim/editing.rs`),
+//!   right after the registry resolve (the `Player.cs:39726` gate-chain
+//!   position); the walked target shadows `ty` for every downstream
+//!   gate (the C#'s `Player.tileTargetY` static write).
 //!
 //! Deviations (recorded in docs/ANALYSIS.md "The rope-coil lane (W4-g82)"):
 //! * The dust walks that share the chain geometry (`Projectile.cs:74615-
@@ -52,7 +58,8 @@
 //!   past `ai[1]`, types 3/30/239/129) are SKIPPED with the dust layer;
 //!   they draw ZERO state (the `ai_style2` precedent). The `ai[1] == 0`
 //!   sound cue (`:74617-74620`/`:74681-74684`, SoundID.Item1 = the port's
-//!   cue 0) rides `wants_sound` at the wiring step.
+//!   cue 0) is WIRED at `coil_kill` (the death hook — both sites live
+//!   inside `Kill()`, ahead of `active = false`).
 //! * `NetMessage.SendData(17, …)` after each KillTile/PlaceTile
 //!   (`:27269`/`:27277`) is the net layer's seam — skipped (single-player).
 //! * `WorldGen.IsTileLoaded` (`Player.cs:41530-41537`) is always true in
@@ -163,10 +170,12 @@ fn is_rope_cell(world: &World, x: i32, y: i32) -> bool {
 /// on contact the C# adds the COLLISION-ADJUSTED velocity (`:27242`) and
 /// runs the placement walk, then `Kill()` (`:27290`). Returns the
 /// `KillTile` records the cut-tile clears produced (`:27268`) — the
-/// caller drains their drops (the `editing.rs` resolver convention).
+/// wired dispatch DISCARDS them (the `ai_ice_block`/`ai_dungeon_debris`
+/// `let _ = kill_tile` precedent: the cascade runs, the per-cell drops
+/// stay unspawned — recorded in ANALYSIS).
 ///
 /// RNG: the arm draws ZERO `Main.rand` — the dust loops that share the
-/// geometry live in `UpdateProjectiles` (`:74615+`), not the AI.
+/// geometry live in `Kill()` (`:74615+`/`:74679+`), not the AI.
 pub(crate) fn coil_step(p: &mut Projectile, world: &mut World, local_owner: u8) -> Vec<TileKill> {
     let mut kills = Vec::new();
     // The `SetDefaults` reset's `friendly = false` (`:788` — neither coil
