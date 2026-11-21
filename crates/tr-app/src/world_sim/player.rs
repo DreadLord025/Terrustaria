@@ -1214,6 +1214,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 &app.equip.armor,
                 app.inventory[app.selected].kind,
             );
+            // W4-f50 — `UpdateEquips`' Football scan (`Player.cs:12906-12918`):
+            // the Football (4743) in any of the 58 inventory slots (or the
+            // mouse slot 58) arms `hasFootball`. The hurt arm (`:38255`) reads
+            // it; `ResetEffects` clears it (`:18345`) and this re-derives per
+            // tick. The port's inventory is the 50-slot hotbar+inventory (the
+            // mouse slot is `app.mouse_item`).
+            p.has_football = app.inventory.iter().any(|s| s.count > 0 && s.kind == 4743)
+                || (app.mouse_item.count > 0 && app.mouse_item.kind == 4743);
             // The `UpdateEquips` summon-cap rows (`Player.cs:13254-13948`,
             // `:15324-15329`) — the armor/held half beside the ammo flags.
             grant_summon_caps(p, &app.equip.armor, &app.equip.misc_equips, &app.world);
@@ -1452,6 +1460,35 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     rng,
                 );
             }
+            // W4-f50 — the player hurt combat text (`Player.cs:38382`): the
+            // C# draws it BEFORE the retaliate block (`:38401`), so the drain
+            // spawns it ahead of the retaliate rolls on the `UpdatePlayers`
+            // stream (the mana text above, `:38291`, already drew first).
+            if let Some((amount, crit)) = p.take_hurt_text() {
+                let text = amount.to_string();
+                let size = match app.lookups.combat_text_font.as_ref() {
+                    Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+                    None => [text.chars().count() as f32 * 8.0, 10.0],
+                };
+                let location = crate::combat_text::Rect {
+                    x: p.x,
+                    y: p.y,
+                    width: p.width,
+                    height: p.height,
+                };
+                let color = crate::combat_text::damage_text_color(crit, true, false);
+                crate::combat_text::spawn_amount(
+                    &mut app.combat_texts,
+                    location,
+                    color,
+                    amount,
+                    crit,
+                    false,
+                    size,
+                    1.0,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
             if let Some(req) = p.take_retaliate() {
                 // S1-C-7 wave B — the fall/petrify lane's retaliate block
                 // (`Player.cs:38401-38517`): those hits run inside
@@ -1488,6 +1525,32 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     luck,
                 );
             }
+            // W4-f50 — the hit-dust loop + football + golf-club hurt drains
+            // (`Player.cs:38527-38553` / `:38255-38280`): the fall/petrify
+            // lane's accepted hit queued them; the drain rides the
+            // `UpdatePlayers` stream (the S1-E-21c batch convention). The
+            // hit-dust draws follow the hurt sound's (`:38525` < `:38527`).
+            crate::hurt_modifiers::drain_hurt_dust(
+                p,
+                &mut app.dust,
+                &spawn_ctx,
+                &app.world,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+            crate::hurt_modifiers::drain_football(
+                p,
+                &mut app.projectiles,
+                &mut app.inventory,
+                &mut app.mouse_item,
+                app.local_id as u8,
+            );
+            let held = app.inventory[app.selected].kind;
+            crate::hurt_modifiers::drain_golf_club_kill(
+                p,
+                &mut app.projectiles,
+                held,
+                app.local_id as u8,
+            );
             // `Player.PlayHurtSound` (`Player.cs:38525`): the hurt cue plays
             // at the `Hurt` TAIL — after the cuffs' mana text (`:38291`) and
             // the retaliate block (`:38401-38517`), so its draw follows

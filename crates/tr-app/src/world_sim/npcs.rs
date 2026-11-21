@@ -4782,6 +4782,36 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     if let Some(p) = app.player.as_mut() {
         crate::hurt_modifiers::drain_dismount(p, &app.world);
     }
+    // W4-f50 — the player hurt combat text (`Player.cs:38382`): the C# draws
+    // it BEFORE the retaliate block (`:38401`), so the drain spawns it ahead
+    // of the retaliate rolls on the `UpdateNPCs` stream. The text size reads
+    // the combat font (the `pending_mana_effect` drain convention).
+    if let Some((amount, crit)) = app.player.as_mut().and_then(|p| p.take_hurt_text()) {
+        let text = amount.to_string();
+        let size = match app.lookups.combat_text_font.as_ref() {
+            Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+            None => [text.chars().count() as f32 * 8.0, 10.0],
+        };
+        let p = app.player.as_mut().unwrap();
+        let location = crate::combat_text::Rect {
+            x: p.x,
+            y: p.y,
+            width: p.width,
+            height: p.height,
+        };
+        let color = crate::combat_text::damage_text_color(crit, true, false);
+        crate::combat_text::spawn_amount(
+            &mut app.combat_texts,
+            location,
+            color,
+            amount,
+            crit,
+            false,
+            size,
+            1.0,
+            app.rngs.stream(RngKey::UpdateNpcs),
+        );
+    }
     if let Some(req) = app.player.as_mut().and_then(|p| p.take_retaliate()) {
         let expert = app.player.as_ref().is_some_and(|p| p.buffs.expert_mode);
         crate::hurt_modifiers::drain_retaliate(
@@ -4811,6 +4841,38 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             dolls,
             app.rngs.stream(RngKey::UpdateNpcs),
             luck,
+        );
+    }
+    // W4-f50 — the hit-dust loop + football + golf-club hurt drains
+    // (`Player.cs:38527-38553` / `:38255-38280`): the accepted contact hit
+    // queued them; the C# runs them inline under the `UpdateNPCs` swap, the
+    // port drains at the pass tail on the same stream (the S1-E-21c batch
+    // convention). The dust pool + inventory + held item live on the App.
+    if let Some(p) = app.player.as_mut() {
+        crate::hurt_modifiers::drain_hurt_dust(
+            p,
+            &mut app.dust,
+            &dust_spawn_ctx,
+            &app.world,
+            app.rngs.stream(RngKey::UpdateNpcs),
+        );
+    }
+    if let Some(p) = app.player.as_mut() {
+        crate::hurt_modifiers::drain_football(
+            p,
+            &mut app.projectiles,
+            &mut app.inventory,
+            &mut app.mouse_item,
+            app.local_id as u8,
+        );
+    }
+    if let Some(p) = app.player.as_mut() {
+        let held = app.inventory[app.selected].kind;
+        crate::hurt_modifiers::drain_golf_club_kill(
+            p,
+            &mut app.projectiles,
+            held,
+            app.local_id as u8,
         );
     }
     // `NPC.cs:77986-77996`: `this.timeLeft--` once per NPC update, and

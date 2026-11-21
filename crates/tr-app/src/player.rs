@@ -1509,6 +1509,11 @@ pub struct Player {
     pub beetle_counter: f32,
     pub beetle_countdown: i32,
     pub beetle_buff: bool,
+    /// `Player.hasFootball` (`Player.cs:12906-12918`): the Football (4743)
+    /// in the inventory arms it; `ResetEffects` clears it (`:18345`). The
+    /// hurt arm (`:38255-38269`) spawns the 861 return + clears the slot.
+    /// W4-f50.
+    pub has_football: bool,
     /// `Player.shadowDodgeTimer` (`Player.cs:1184`): the Hallowed set-bonus
     /// cooldown — set 1800 by a shadow dodge (`:38043`), decayed one per tick
     /// in `Player.Update` (`:25461-25464`).
@@ -1951,6 +1956,30 @@ pub struct Player {
     /// on the App, so the set-bonus machine queues the flag and the
     /// world-sim drain spawns them (the `pending_sticky_dust` convention).
     pending_solar_grant_dust: bool,
+    /// W4-f50 — the player hurt combat-text request (`Player.cs:38382`):
+    /// `(amount, crit)` — `CombatText.NewText(playerRect, DamagedFriendly[ Crit],
+    /// num2, Crit)`. The C# draws it BEFORE the retaliate block (`:38401`),
+    /// so the drain spawns it ahead of the retaliate rolls on the hit lane's
+    /// stream. The caller owns `Main.combatText` (the `pending_mana_effect`
+    /// convention). `None` when no hit landed.
+    pending_hurt_text: Option<(i32, bool)>,
+    /// W4-f50 — the hit-dust loop request (`Player.cs:38527-38553`):
+    /// `(hit_direction, num2)` — the `statLife > 0` dust burst, `num2 /
+    /// statLifeMax2 * 100` particles keyed to the armor set (stoned 1 /
+    /// frost 135 / bone 26 / default 5). The dust pool lives on the App, so
+    /// the tick queues it and the world-sim drain spawns them (the
+    /// `pending_sticky_dust` convention). `None` when the hit killed.
+    pending_hurt_dust: Option<(i32, i32)>,
+    /// W4-f50 — the football hurt request (`Player.cs:38255-38269`): the
+    /// `hasFootball` flag — the drain scans the inventory for the Football
+    /// (4743) and spawns the 861 return at the player's center with
+    /// `(-hitDirection * 4, -6)`, damage 0, ai1 = 1, ai2 = stack, then
+    /// clears the slot. The projectile pool + inventory live on the App.
+    pending_football: Option<i32>,
+    /// W4-f50 — the golf-club hurt request (`Player.cs:38271-38280`): the
+    /// held item is a jousting lance (4788/4789/4790) — the drain kills
+    /// every owned 877/878/879 projectile. The pool lives on the App.
+    pending_golf_club_kill: bool,
     /// S1-C-7 wave B: the dismount-on-hit request (`Player.cs:38396-38400`) —
     /// the damage source was a projectile of `ProjectileID.Sets.
     /// DismountsPlayersOnHit` (`ProjectileID.cs:546`, {877, 878, 879}) and a
@@ -2812,6 +2841,7 @@ impl Player {
             beetle_counter: 0.0,
             beetle_countdown: 0,
             beetle_buff: false,
+            has_football: false,
             shadow_dodge_timer: 0,
             brain_of_confusion_dodge_animation_counter: 0,
             breath: BREATH_MAX,
@@ -2928,6 +2958,10 @@ impl Player {
             pending_retaliate: None,
             pending_solar_blast: None,
             pending_solar_grant_dust: false,
+            pending_hurt_text: None,
+            pending_hurt_dust: None,
+            pending_football: None,
+            pending_golf_club_kill: false,
             pending_dismount: false,
             pending_chillet_sound: None,
             pending_no_space_sound: None,
@@ -3509,6 +3543,30 @@ impl Player {
         std::mem::take(&mut self.pending_solar_grant_dust)
     }
 
+    /// W4-f50 — takes the player hurt combat-text request (`Player.cs:38382`):
+    /// `(amount, crit)`. The caller owns `Main.combatText`.
+    pub(crate) fn take_hurt_text(&mut self) -> Option<(i32, bool)> {
+        self.pending_hurt_text.take()
+    }
+
+    /// W4-f50 — takes the hit-dust loop request (`Player.cs:38527-38553`):
+    /// `(hit_direction, num2)`. The caller owns the dust pool.
+    pub(crate) fn take_hurt_dust(&mut self) -> Option<(i32, i32)> {
+        self.pending_hurt_dust.take()
+    }
+
+    /// W4-f50 — takes the football hurt request (`Player.cs:38255-38269`):
+    /// the hit direction. The caller owns the projectile pool + inventory.
+    pub(crate) fn take_football(&mut self) -> Option<i32> {
+        self.pending_football.take()
+    }
+
+    /// W4-f50 — takes the golf-club hurt request (`Player.cs:38271-38280`).
+    /// The caller owns the projectile pool.
+    pub(crate) fn take_golf_club_kill(&mut self) -> bool {
+        std::mem::take(&mut self.pending_golf_club_kill)
+    }
+
     /// S1-C-7 wave B: takes the dismount-on-hit request (`Player.cs:38396-
     /// 38400`) — the caller owns `&World` (`try_dismount`).
     pub(crate) fn take_dismount_request(&mut self) -> bool {
@@ -3713,6 +3771,10 @@ impl Player {
         self.pending_retaliate = None;
         self.pending_solar_blast = None;
         self.pending_solar_grant_dust = false;
+        self.pending_hurt_text = None;
+        self.pending_hurt_dust = None;
+        self.pending_football = None;
+        self.pending_golf_club_kill = false;
         self.pending_double_jump_sound = None;
         self.pending_fart_sound = None;
         self.pending_splash_sound = None;
@@ -4726,13 +4788,27 @@ impl Player {
         let raw = amount;
         let amount = tr_core::armor_sets::reduce_damage(amount, self.stat_defense);
         let raw = if crit { raw * 2 } else { raw };
+        // W4-f50 — the football hurt arm (`Player.cs:38255-38269`): with
+        // `hasFootball` armed, the drain scans the inventory for the Football
+        // (4743) and spawns the 861 return at the player's center with
+        // `(-hitDirection * 4, -6)`, damage 0, ai1 = 1, ai2 = stack, then
+        // clears the slot. The projectile pool + inventory live on the App,
+        // so the tick queues the hit direction (the `pending_retaliate`
+        // convention). The hit direction is the knockback dir.
+        if self.has_football {
+            let hit_dir = if self.x + self.width * 0.5 >= from_x { 1 } else { -1 };
+            self.pending_football = Some(hit_dir);
+        }
+        // W4-f50 — the golf-club hurt arm (`Player.cs:38271-38280`): the held
+        // item is a jousting lance (4788/4789/4790) — the drain kills every
+        // owned 877/878/879 projectile. The held item + pool live on the App,
+        // so the tick queues the flag and the drain checks the held kind.
+        self.pending_golf_club_kill = true;
         // W4-f50 — the invis strip (`Player.cs:38281-38290`): a hurt clears
         // the Invisibility buff (10) from every slot. The C# loops `DelBuff(k)`
         // with NO rescan; `clear_buff` matches that shape (the compacted-in
         // slot is skipped, the same quirk). Runs BEFORE the cuffs arm
-        // (`:38291`). The football/golf-club arms (`:38255-38280`) need the
-        // projectile pool + inventory, so they queue for the world-sim drain
-        // (Phase 3, the `pending_retaliate` convention).
+        // (`:38291`).
         if self.invis {
             self.buffs.clear_buff(10);
         }
@@ -4786,6 +4862,13 @@ impl Player {
         // also selects the 20-tick immunity window below, not 40).
         let amount = amount.max(1);
         self.hp = (self.hp - amount).max(0);
+        // W4-f50 — the player hurt combat text (`Player.cs:38382`):
+        // `CombatText.NewText(playerRect, Crit ? DamagedFriendlyCrit :
+        // DamagedFriendly, num2, Crit)`. The C# draws it BEFORE the retaliate
+        // block (`:38401`), so the drain spawns it ahead of the retaliate
+        // rolls on the hit lane's stream. The caller owns `Main.combatText`
+        // (the `pending_mana_effect` convention).
+        self.pending_hurt_text = Some((amount, crit));
         // `Player.Hurt`'s immunity window (`Player.cs:38382-38385`):
         // `int num7 = (pvp ? 8 : ((num2 != 1.0) ? (this.longInvince ? 80 : 40)
         // : (this.longInvince ? 40 : 20)));` then, on the General lane,
@@ -4868,6 +4951,22 @@ impl Player {
             self.vy = -3.5;
             self.fall_start = (self.y / TILE_PX) as i32;
             self.on_ground = false;
+        }
+        // W4-f50 — the hit-dust loop (`Player.cs:38527-38553`): on a surviving
+        // hit (`statLife > 0`), `num2 / statLifeMax2 * 100` particles burst
+        // from the player's box, keyed to the armor set (stoned 1 / frost 135
+        // / bone 26 / default 5). The dust pool lives on the App, so the tick
+        // queues `(hitDirection, num2)` and the world-sim drain spawns them
+        // (the `pending_sticky_dust` convention). The hit direction is the
+        // knockback dir (0 when the pop was suppressed — the C# `hitDirection`
+        // argument, which the fall/petrify lanes pass 0).
+        if self.hp > 0 {
+            let hit_dir = if knock_back {
+                if self.x + self.width * 0.5 >= from_x { 1 } else { -1 }
+            } else {
+                0
+            };
+            self.pending_hurt_dust = Some((hit_dir, amount));
         }
         true
     }
@@ -6486,6 +6585,10 @@ impl Player {
         self.beetle_orbs = 0;
         self.beetle_buff = false;
         self.solar_shields = 0;
+        // W4-f50 — `ResetEffects`' `hasFootball = false` (`Player.cs:18345`):
+        // the `UpdateEquips` inventory scan (`:12906-12918`) re-arms it from
+        // the live Football (4743) slots.
+        self.has_football = false;
         self.well_fed = false;
         self.pick_speed_bonus = 0.0;
         self.melee_speed_bonus = 0.0;
@@ -16108,6 +16211,57 @@ mod tests {
             (s.melee_damage - (md + 0.3)).abs() < 1e-4,
             "the 98-100 melee row adds 0.1 * orbs (:10431)"
         );
+    }
+
+    #[test]
+    fn w4_f50_the_hurt_queues_the_combat_text_and_hit_dust() {
+        // `Player.Hurt`'s combat text (`Player.cs:38382`) + hit-dust loop
+        // (`:38527-38553`): an accepted surviving hit queues `(num2, crit)`
+        // for the text and `(hitDirection, num2)` for the dust. A killing
+        // hit queues the text but no dust (`statLife > 0` gate).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(p.take_hurt_text(), Some((10, false)), "the text queues num2");
+        let (hit_dir, num2) = p.take_hurt_dust().expect("the dust queues");
+        assert_eq!(num2, 10);
+        // The player's center < from_x (p.x + 100) → hit_dir = -1.
+        assert_eq!(hit_dir, -1);
+        assert!(p.take_hurt_text().is_none(), "the text is a one-shot");
+        assert!(p.take_hurt_dust().is_none(), "the dust is a one-shot");
+        // A killing hit queues the text but no dust.
+        let mut q = Player::spawn(&w);
+        q.hp = 5;
+        q.hurt_cd = 0.0;
+        q.immune = false;
+        assert!(q.hurt(10, q.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(q.hp, 0);
+        assert!(q.take_hurt_text().is_some(), "the killing hit still queues the text");
+        assert!(q.take_hurt_dust().is_none(), "no dust on a killing hit");
+    }
+
+    #[test]
+    fn w4_f50_the_football_and_golf_club_hurt_arms_queue() {
+        // `Player.Hurt`'s football arm (`Player.cs:38255-38269`) queues the
+        // hit direction when `hasFootball` is armed; the golf-club arm
+        // (`:38271-38280`) always queues (the drain checks the held kind).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.has_football = true;
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert!(p.take_football().is_some(), "the football queues");
+        assert!(p.take_golf_club_kill(), "the golf-club flag queues");
+        // Without the football flag, no football request.
+        let mut q = Player::spawn(&w);
+        q.has_football = false;
+        q.hurt_cd = 0.0;
+        q.immune = false;
+        assert!(q.hurt(10, q.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert!(q.take_football().is_none(), "no football flag, no request");
     }
 
     #[test]
