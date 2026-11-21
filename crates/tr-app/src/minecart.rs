@@ -1304,6 +1304,30 @@ pub(crate) fn minecart_bumper_sound(
     });
 }
 
+/// W4-c14 - `DelegateMethods.Minecart.BumperSoundFart`
+/// (`DelegateMethods.cs:321-326`, `Mount.cs:1100`/`:1108`): Item16 THEN
+/// Item56 - two plays in the C# order, both at the centre rule; the fart
+/// cloud (the `useDelay` default true) is the visual seam.
+pub(crate) fn minecart_bumper_sound_fart(
+    sounds: &mut Vec<CartCue>,
+    position: Vec2,
+    width: i32,
+    height: i32,
+) {
+    let x = (position.x as i32 + width / 2) as f32;
+    let y = (position.y as i32 + height / 2) as f32;
+    sounds.push(CartCue {
+        cue: "Item_16",
+        x,
+        y,
+    });
+    sounds.push(CartCue {
+        cue: "Item_56",
+        x,
+        y,
+    });
+}
+
 /// W4-c14 - `Mount.MeowcartLandingSound` (`Mount.cs:659-662`, the Meowmere
 /// cart 33's delegate `:1014`): legacy id 37 style 5 at the centre rule.
 /// The cue name routes the drain to `Audio::play_meowcart_sound` (the
@@ -3203,9 +3227,10 @@ mod tests {
         assert_eq!((sounds[1].x, sounds[1].y), (10.0, 26.0));
     }
 
-    /// W4-c14 - the fart carts' delegates (`DelegateMethods.cs:308-319`):
-    /// the jump plays ONE Item16; the landing plays Item16 THEN Item53 in
-    /// the C# order, both at the same truncated centre.
+    /// W4-c14 - the fart carts' delegates (`DelegateMethods.cs:308-326`):
+    /// the jump plays ONE Item16; the landing plays Item16 THEN Item53 and
+    /// the bumper Item16 THEN Item56, in the C# order, all at the same
+    /// truncated centre.
     #[test]
     fn w4_c14_the_fart_delegates_play_their_cue_pairs_in_order() {
         let mut sounds = Vec::new();
@@ -3223,6 +3248,13 @@ mod tests {
         assert_eq!(sounds.len(), 2);
         assert_eq!(sounds[0].cue, "Item_16", "the fart first (`:316`)");
         assert_eq!(sounds[1].cue, "Item_53", "then the landing (`:317`)");
+        assert_eq!((sounds[0].x, sounds[0].y), (110.0, 234.0));
+        assert_eq!((sounds[1].x, sounds[1].y), (110.0, 234.0));
+        sounds.clear();
+        minecart_bumper_sound_fart(&mut sounds, Vec2::new(100.7, 208.9), 20, 52);
+        assert_eq!(sounds.len(), 2);
+        assert_eq!(sounds[0].cue, "Item_16", "the fart first (`:323`)");
+        assert_eq!(sounds[1].cue, "Item_56", "then the bumper (`:324`)");
         assert_eq!((sounds[0].x, sounds[0].y), (110.0, 234.0));
         assert_eq!((sounds[1].x, sounds[1].y), (110.0, 234.0));
     }

@@ -7527,9 +7527,18 @@ impl Player {
                 // `:28140`: `MinecartBumperSound` → Item56, at the
                 // post-TrackCollision position (`base.position`, pre-integration).
                 // W4-c14: the Meowmere cart (33) plays the case-37 style-3
-                // cue instead (`Mount.MeowcartBumperSound`, `Mount.cs:664-667`).
+                // cue instead (`Mount.MeowcartBumperSound`, `Mount.cs:664-667`);
+                // the fart carts play Item16 THEN Item56 (`BumperSoundFart`,
+                // `DelegateMethods.cs:321-326`).
                 if self.cart_mount == 33 {
                     minecart::meowcart_bumper_sound(
+                        &mut self.pending_cart_sounds,
+                        pos,
+                        WIDTH as i32,
+                        body_h,
+                    );
+                } else if matches!(self.cart_mount, 51 | 53) {
+                    minecart::minecart_bumper_sound_fart(
                         &mut self.pending_cart_sounds,
                         pos,
                         WIDTH as i32,
