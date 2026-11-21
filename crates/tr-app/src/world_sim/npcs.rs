@@ -2418,21 +2418,36 @@ pub(crate) fn update_invasion_state(app: &mut App) {
         // `SetEventFlagCleared(ref NPC.downedX, n)` + the matching
         // `AchievementsHelper.NotifyProgressionEvent` (`Main.cs:64335-64354`):
         // goblins 10, frost 12, pirates 11, martians 13.
+        // W4-f40 DOC-SWEEP: `SetEventFlagCleared` (`NPC.cs:78759-78766`)
+        // calls `OnGameEventClearedForTheFirstTime(gameEventId)` on the
+        // flag's false→true edge — the invasion ids are goblins 0 / frost 1
+        // / pirates 2 / martians 3 (`Main.cs:64336`/`:64341`/`:64346`/
+        // `:64351`), all the DEFAULT arm (`NPC.cs:78773-78775`), so the
+        // first invasion clear arms the next lantern night. The `first`
+        // edge keeps repeat clears inert (the boss-death precedent).
         match app.world.invasion_type {
             2 => {
+                let first = !app.world.downed_frost;
                 app.world.downed_frost = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 1, first);
                 let _ = app.notify_progression_net(12);
             }
             3 => {
+                let first = !app.world.downed_pirates;
                 app.world.downed_pirates = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 2, first);
                 let _ = app.notify_progression_net(11);
             }
             4 => {
+                let first = !app.world.downed_martians;
                 app.world.downed_martians = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 3, first);
                 let _ = app.notify_progression_net(13);
             }
             _ => {
+                let first = !app.world.downed_goblins;
                 app.world.downed_goblins = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 0, first);
                 let _ = app.notify_progression_net(10);
             }
         }
@@ -8611,6 +8626,39 @@ mod invasion_tests {
         app.world.invasion_size = 5;
         report_invasion_kill(&mut app, NpcKind::Zombie);
         assert_eq!(app.world.invasion_size, 5);
+    }
+
+    /// W4-f40 DOC-SWEEP — the FIRST invasion clear arms the next lantern
+    /// night (`Main.cs:64335-64354` → `SetEventFlagCleared(ref downedX, id)`
+    /// → `OnGameEventClearedForTheFirstTime`, `NPC.cs:78759-78775`): the
+    /// invasion ids (goblins 0 / frost 1 / pirates 2 / martians 3) all take
+    /// the DEFAULT arm, so each first clear sets `NextNightIsLanternNight`.
+    /// The flag's false→true edge keeps a repeat clear inert.
+    #[test]
+    fn w4_f40_the_first_invasion_clear_arms_the_lantern_night() {
+        for (ty, id) in [(1i32, 0i32), (2, 1), (3, 2), (4, 3)] {
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = surface_world();
+            app.world.invasion_type = ty;
+            app.world.invasion_size = 0;
+            app.world.invasion_size_start = 120;
+            assert!(!app.world_events.next_night_is_lantern_night);
+            update_invasion_state(&mut app);
+            assert!(
+                app.world_events.next_night_is_lantern_night,
+                "invasion {ty} (event {id}) first clear arms the night"
+            );
+            // A repeat clear of the SAME invasion (flag already true) is a
+            // no-op: re-arm a fresh invasion, clear again, the edge holds.
+            app.world_events.next_night_is_lantern_night = false;
+            app.world.invasion_type = ty;
+            app.world.invasion_size = 0;
+            update_invasion_state(&mut app);
+            assert!(
+                !app.world_events.next_night_is_lantern_night,
+                "invasion {ty} repeat clear is inert (the was-down edge)"
+            );
+        }
     }
 
     #[test]
