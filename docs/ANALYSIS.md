@@ -39492,3 +39492,47 @@ survival + stone-ground break, the detritus 3×2 no-drop) +
 `world_sim/editing.rs::tests` (3: the one-1291 harvest, the bulb summon
 once + the living-Plantera refusal, the far-bulb no-summon) +
 `spawner.rs::tests` (2: the ground scan determinism, the boss-spawn stamp).
+
+### The Plantera bulb glow census (W4-g84 final phase 3, 2026-11-21, code-only)
+
+The brief's phase-3 ask ("the bulb's pink glow / pulse — port it if
+unclaimed") resolves to ALREADY-LANDED: the census found no unported
+`AddLight`/`DrawGlow` path for tile 238 anywhere in the vanilla, so there is
+nothing new to port. The glow has exactly three pieces, all on this branch:
+
+* **The pink floor** — `TileLightScanner.ApplyTileLight` case 238
+  (`TileLightScanner.cs:1000-1009`): the ACCUMULATED colour's X (R) and Z (B)
+  are floored at 0.5, Y (G) untouched — a magenta cast, not an emitted RGB
+  lamp colour (unlike e.g. case 270 `R=0.73, G=1, B=0.41` `:917-921`). No
+  fx/fy gate: every active 238 cell gets the floor (`Main.tileLighted[238]`
+  is in the generated `TILE_LIGHTED` set). Ported term-for-term at
+  `tile_light/scanner.rs:945-953` (the same accumulated-colour write, inside
+  the dispatch chain `apply_tile_light` `:36`); the seed feeds both engines
+  (`lighting/mod.rs::seed` `:531` modern Color, `lighting/legacy.rs:1260`
+  White/Retro/Trippy). Witness `w4_g84_plantera_bulb_pink_glow_floor`
+  (`scanner.rs:1262` — dark accumulator lifts R/B to 0.5, brighter channels
+  keep their value, G never moves, frame-independent).
+* **The pulse** — the 4-frame animator `Main.cs:18709-18718` (`tileFrame[238]`
+  advances every 20 ticks, wraps at 4) ported as
+  `drawdata_anim.rs:303` (`step_gt_ge(238, 20, 4)`), and the frame→row metric
+  `TileDrawing.cs:5441-5444` (top 2, `addFrY = tileFrame*36`) ported as
+  `drawdata.rs:744-747`. The family draw arm (`render/tiles.rs`, W4-g84)
+  reads those rows, so the visible brightness pulse is the sprite's own
+  animation rows — there is no light-map pulsation in the vanilla. Witnesses
+  `w4_g84_plantera_bulb_period_and_wrap` (`drawdata_anim.rs:640`) +
+  `w4_g84_plantera_bulb_animation_rows` (`drawdata.rs:1655`).
+* **The spore sparkle** — `TileDrawing.cs:6956-6961`: a `_rand.Next(10) == 0`
+  roll spawns Dust 168 (`noGravity`, alpha 200) above the bulb. That is a
+  d60-lane dust draw (the `DrawTiles` dust rolls), owned by g31's battery —
+  recorded as its lane in research/137, NOT ported here.
+
+Claims checked so nothing is double-ported: e8/g18's light claims are the
+`Main.cs:29016-29028` (tile 332 hook) and `:29186` (tile 488 hook) `AddLight`
+sites only — g18's research/366 bible confirms no ambient-tile `AddLight`
+exists for 238; the only other 238 consumers are the map icon
+(`MapHelper.cs:518`, landed) and the CheckJunglePlant summon (phase 2 above).
+Verdict row: research/09 row 11's glow note + PORT_MAP's phase-3 row; the
+glow-floor arm gains its `anchors.txt` canary row
+(`tile_light/scanner.rs | 238 =>`). Doc-only commit — no behaviour change,
+no new code; the three pre-existing witnesses stand as the phase-3
+verification (WRITTEN, NOT RUN, code-only mode).
