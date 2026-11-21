@@ -39512,7 +39512,9 @@ draw-mirror witnesses WRITTEN NOT RUN.
 * **The named-machines 87+36 future wave** is ASSIGNED in research/125's
   per-machine table (d12/d14/d15/d16/d17/d18/d19/d20/d21 own their bands'
   machines; the main-ported machines' dust is a dust-lane follow-up; the
-  two `_Old` legacy machines are the only unassigned residue).
+  two `_Old` legacy machines are the only unassigned residue — RESOLVED
+  by the RETIRE pass below: the spears `_Old` cite-dropped DEAD, the
+  magic-missiles `_Old` task-seeded LIVE).
 
 ### The RETIRE pass (same day — research/125 SEALED, the AI-inline family declared DONE)
 
@@ -39547,4 +39549,17 @@ censuses), d14 `eaa05ae9e` (`ai_elder_wins` now at projectile.rs:10720, the
 * **The g64 keep-one CONFIRMED**: `git diff` of `particles.rs` between
   this HEAD and g64's tip shows the `clone_dust` bodies IDENTICAL — the
   only delta is g64's three doc-comment lines. Take either body at merge;
-  prefer g64's doc-comments. No reconciliation edit owed.
+  prefer g64's doc-comments. No reconciliation edit owed. (The moved g64
+  tip `9d9d89ac1`'s own RETIRE adjudication (1) independently confirms the
+  same verdict — a comment-stripped span diff, byte-identical code.)
+* **The Orch-61 residue lane-censused** (research/125 RETIRE §5): the 61
+  `ParticleOrchestrator.cs` sites are the world-dust pair's — d54 owns
+  1-40 (`orch_dust*.rs`, batches 5-8), e4 owns 41-61
+  (`orchestrator_dust.rs`), ALL landed as latent emitters; no port-small
+  owed. The e3-side residue is the CALL-SITE wiring: 57 Projectile.cs
+  call sites + 3 Main.cs reforge sites attributed per enclosing method,
+  TASK-SEEDED to the orchestrator wiring wave (the `SpawnParticlesDirect`
+  port + the `prefix.rs` count-only fold); the dust-free spawners' draw
+  contracts censused (GasTrap 110, SilverBulletSparkle 5, NightsEdge 0,
+  the lightning family's per-iteration bodies) so the wave keeps the
+  stream exact.

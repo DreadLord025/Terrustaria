@@ -2,8 +2,10 @@
 
 Status: **SEALED** (the RETIRE phase, below — the 34-STAGED activation
 contracts re-verified against the moved d-lane tips, the `_Old` residue
-resolved LIVE/DEAD, the g63 doc-66 receipt published, the g64 `clone_dust`
-keep-one confirmed; no new sites claimed after this seal). CENSUS + two
+resolved LIVE/DEAD, the Orch-61 residue lane-censused (d54/e4 own all 61,
+the call-site wiring task-seeded), the g63 doc-66 receipt published, the
+g64 `clone_dust` keep-one confirmed BOTH ways; no new sites claimed after
+this seal). CENSUS + two
 window claims (the `:78227-78508` Kill_Bombs tail,
 DONE; the AI-INLINE-40 + AI_001-edges-2 window, DONE this refresh — see the
 round-2 sections at the bottom). Code-only mode — no cargo/rustc/tests/
@@ -36,7 +38,7 @@ conservative floor — nothing in it is claimed by any pushed tip.
 | W4-f10 `gore-sites-3` | `b5d2cba1` | NPC.HitEffect gore wave C | NPC.cs `:82206-85559` — the dust bursts inside those arms ride f10's strike-stream census, NOT Projectile.cs sites |
 | W4-g16 `gore-projectile-sites` | `f1c60ffe` | Projectile.cs GORE census (165 sites, waves A-O COMPLETE) | gore only — every `Kill_Bombs` dust loop is explicitly "the dust lane's" in its module headers |
 | W4-g63 `proj-trail-dust-1` | `2ea3e711` (refresh) | per-kind TRAIL, kinds ≤400 | AI() rowed inline kinds (batches 1-4) + AI_001 slice kinds (batch 5) + 17 unrowed emitters UNWIRED (batch 6) + the 6 owed AI_001 emitters (batch 7: 55/174/176/299/374/376) + research/67 activation checklist; doc 66 |
-| W4-g64 `proj-trail-dust-2` | `625c449e` (refresh) | per-kind TRAIL, kinds ≥401 | 41 kinds / 5 batches + the wiring wave + remainders 1-4: the style-124 machine dust-wired (**claims `:35231/35295/35601/35681`**), the 813 four-phase bodies (**claims `:34020`** + the `:33951-33983` dissolve), the 596 row, the e3/g63 keep-one refresh; doc 66 |
+| W4-g64 `proj-trail-dust-2` | `9d9d89ac1` (retire) | per-kind TRAIL, kinds ≥401 | 41 kinds / 5 batches + the wiring wave + remainders 1-4: the style-124 machine dust-wired (**claims `:35231/35295/35601/35681`**), the 813 four-phase bodies (**claims `:34020`** + the `:33951-33983` dissolve), the 596 row, the e3/g63 keep-one refresh; FINAL 1/2 (the d13 dup adjudication + `trail_503` ACTIVATED via the e3 row) + its own RETIRE; doc renumbered 66 → **196** (the d54 collision registry) |
 | W4-g65 `proj-death-dust` | `7f0dc864` | Kill() death dust | `:70642-77262` ONLY (module header pins the span); 10 batches ≈147 sites; the i17/i18 special-arrow/bullet deaths stay main's |
 | W4-d75/76/77 `proj-sounds` | `0e700d9a`/`ede24bb4`/`d61e6362` | SOUND sites 1-120 / 121-240 / 241-437 | `:16851-41968` / `:41978-70958` / `:71112-78599` — sounds only; the dust siblings are cited skips |
 | W4-f48 `dodge-2` | `69d499c6` | the cloak-five rows | 723/724/725/726/1133 ROWED (`:7646-7658` shared row + `ai_cloak_star`) |
@@ -182,7 +184,11 @@ and g64's unwired `trail_503` twin. Cross-notes:
   503/1037/1049 halves keep the e3 arm (ANALYSIS "the W4-e3 window census").
 - **g64 keep-one**: `trail_503` (unwired at g64's tip, now wireable via this
   row) duplicates `style5_spark_503` draw-for-draw — keep ONE at the wiring
-  wave; the e3 arm is the rowed survivor on this branch.
+  wave; the e3 arm is the rowed survivor on this branch. (RETIRE receipt:
+  g64 FINAL 2 `2e8ea03fa` executed exactly this — its 503 row is the e3
+  `80d47a568` constants-copy and its keep-one names the e3
+  `ai_falling_star_family` as the fuller survivor; the g64 503 half retires
+  into it at merge.)
 - **d75 sound owed**: with 503 rowed, the `:23881-23885` hum (`20 + Next(40)`,
   the `type != 1037 && type != 1049` gate) now applies to the 503 too — d75's
   re-arm covers the 9/955 only; the 503 extension is the sound lane's merge
@@ -409,8 +415,9 @@ censuses re-read at their CURRENT tips (2026-11-21 retire fetch):
   the `localAI[0]` latch; the emitter fires INSIDE it). ZERO explicit
   draws — the add-shape again. The g64 deferred-ledger latch-burst
   remainder is thereby owned by d12's machine + this emitter.
-- **981 SilverBullet — STILL unrowed** (the full 345-branch remote scan:
-  no `SILVER_BULLET`/`981 =>` row in any pushed tip's `projectile/data.rs`).
+- **981 SilverBullet - STILL unrowed** (the full 345-branch remote scan;
+  re-verified at the seal's 358-tip fetch - zero `SILVER_BULLET`/`981 =>`
+  hits in any pushed tip's `projectile/data.rs`).
   `ai001_silver_bullet_drip_981` stays STAGED for the bullet-row wave; its
   fade-chain slot citation (`:56746` between `:56728` and `:56753`) stands.
 - 227 CrystalLeafShot — still unrowed even on d5 (its module's own
@@ -432,7 +439,9 @@ Projectile.cs — the private methods cannot be called cross-file anyway):
   One caller: `AI_009_MagicMissiles`'s head (`:43197-43200`): `if (type ==
   491) { AI_009_MagicMissiles_Old(); return; }`. The 491 FlyingKnife
   (`ProjectileID.cs:1536`) is UNROWED on every pushed tip (the 345-branch
-  scan: only the 16 MagicMissile row exists). **Disposition: task seed,
+  scan: only the 16 MagicMissile row exists; re-verified at the seal's
+  358-tip fetch — zero `FLYING_KNIFE`/`= 491` hits in any pushed tip's
+  `projectile/data.rs`). **Disposition: task seed,
   owner lane d1** (the aiStyle-6/9 band remainder): the 491 row +
   `AI_009_MagicMissiles`'s type-491 head + the `_Old` body ride one wave;
   its 5 dust sites activate by the e3 emitter pattern in that wave's
@@ -488,13 +497,98 @@ doc-comment additions** (the W4-g64 attribution lines on
 take EITHER body verbatim; prefer g64's doc-comments** (they document the
 seam for both lanes' callers). The sentinel guard, the field-copy list
 and the dropped `shader`/`customData` are identical on both sides. No
-reconciliation edit owed by either lane.
+reconciliation edit owed by either lane. **RETIRE receipt (g64 moved
+`625c449e` → `9d9d89ac1` mid-seal): g64's own RETIRE `9d9d89ac1` adjudication
+(1) independently CONFIRMS this keep-one** — its comment-stripped span diff
+of `DustRng`/`new_dust_perfect`/`new_dust_direct`/`clone_dust` is
+byte-identical CODE, doc-comment wording only (the d54 bible s8.3 step-2
+verdict). Both lanes' receipts agree; the f50 `BlastRng` adapter is per-lane
+glue, no adapter keep-one owed. The re-verified `git diff HEAD
+origin/task/W4-g64-proj-trail-dust-2 -- crates/tr-core/src/particles.rs` at
+the moved tip still shows the three doc-comment hunks ONLY.
 
-### (5) The sealing state
+### (5) The Orch-61 particle-orchestrator residue — lane census + disposition
+
+The d54 bible s8.2's fresh C# spawn census lists **Orch 61** beside the
+Projectile 1195. Those 61 are `GameContent/Drawing/ParticleOrchestrator.cs`
+sites (16 NewDust + 37 NewDustPerfect + 8 NewDustDirect, 8 CloneDust
+siblings riding their parents) — a DIFFERENT file from this doc's
+Projectile.cs census. **Which lane owns: the world-dust pair, d54 + e4 —
+all 61 already landed as LATENT emitters.**
+
+- **d54 `38bfd1d22`** (research/67 at its tip): orch sites **1-40**
+  (`:423-2582`, ArmletOfRuinRecharge → CopperSlimeEffect), batches 5-8
+  `399fbb61`/`6b0b5dee`+`dc299f83`/`965e9612`/`5fe70387` —
+  `orch_dust.rs`/`orch_dust_lightning.rs`/`orch_dust_boulder.rs`/
+  `orch_dust_town.rs`, 21 witnesses.
+- **e4 `2a79551ab`** (research/66 at its tip): orch sites **41-61**
+  (`:2653-3920`) `fc2f64a22`+`e0d6d870c` — `orchestrator_dust.rs`, 9
+  witnesses — plus Mount 1-19 (lane complete 40/40).
+- The re-derived site scan at this seal (69 family hits = 61 sites + 8
+  CloneDust) matches both claim docs line-for-line. NO site unclaimed;
+  **no port-small owed by any lane**.
+
+**The e3-side residue is the CALL-SITE wiring, not the bodies.** A fresh
+`ParticleOrchestrator.` scan of Projectile.cs finds **57 call sites**;
+Main.cs adds **3** (`ReforgeItemInReforgeSlot` `:41911/41916/41923`).
+Attributed per enclosing method:
+
+| enclosing method | sites | lines | dust-bearing orchestra types → owner |
+| ---------------- | ----- | ----- | ------------------------------------ |
+| `Damage_PVE_Inner` | 11 | 12970-14266 | FormatC/NightsEdge/TrueNightsEdge/TerraBlade/Excalibur/TrueExcalibur/MoonLordWhipHit×2 (dust: e4/d54); RainbowRodHit + StardustPunch×2 (e4) |
+| `TryMakingSnappingStoneStrike` | 2 | 14355/14363 | SnappingStoneMelee/Summon (d54) |
+| `SpawnHitVisuals` | 3 | 14407-14424 | `SpawnLightningExplosionDust` direct call :14407 (d54) + BlueLightningSmallLong + CattivaHit (dust-free) |
+| `SpawnMoonLordWhipProc` / `EmitBlackLightningParticles` | 2 | 14928/15122 | dust-free (MoonLordWhipEye / BlackLightningHit) |
+| `HandleMovement` | 3 | 18893/19250/19539 | Shadowbeam pair :18893 + PooFly :19250 dust-free; PaladinsHammerShockwave :19539 (d54) |
+| rainbow-boulder / fake-fish helpers | 8 | 20181-20853 | RainbowBoulder1/4 (d54); LakeSparkle/FakeFish/FakeFishJump dust-free; the :20850-20853 Ping/Push/Magnet trio are state fns, no spawns |
+| `AI()` inline | 5 | 26111-34631 | ShimmerBlock :26111 + GasTrap :32574 + MushroomBoiExplosion :34631 + LeafCrystalShot :27884 dust-free; BarnacleShotFiring :26665 (d54) |
+| named machines | 12 | 39789-57819 | StormlightningWindup×2 :39789/39799, PrincessWeapon×3 :42757-42778 (e4), BlackLightningSmall :47840, ShimmerBlock :49746, RainbowBoulderPetBounce :49813 (d54 `rainbow_boulder4(pet)`), MushroomBoiTargetFound :51223, CattivaHit :51284, DeadCellsFlint :52322 (d54), HarpyCharm/PhoenixQuiver/SeraphNecklace :57819 — all except PrincessWeapon/RainbowBoulderPetBounce/DeadCellsFlint dust-free |
+| `Kill()` | 10 | 70739-76875 | the 433/255/260/290/294 beam-kind switch :70739 dust-free; SilverBulletSparkle :70764/76044 + ArcSurge :70781 + StormLightning :70807 (d54) + RainbowRodHit :71244/71316 (e4) + StellarTune :71620 + ShimmerArrow :76060 (e4) + DeadCellsBarrelExplosion :76875 (d54) |
+| `SpawnLightningLiquidElectrificationParticles` | 1 | 78551 | StormlightningWindup, dust-free — inside the e3 Kill-tail window's tail method, cited skip |
+
+**Disposition: TASK SEED — the orchestrator wiring wave** (the d54/e4
+world-dust lanes' own follow-up, the d54 landing record's "the wiring wave
+folds them into `SpawnParticlesDirect`'s port"). The port today: the net
+relay round-trips and drops (`app/netmodules.rs` `module_id::PARTICLES`,
+both tips), d60's `tile_draw_particles.rs` queues `ParticleRequest` bytes,
+`prefix.rs` S1-P-i45 drains the reforge tails count-only (272 + 16). The
+wave ports `SpawnParticlesDirect` (`:162-416`) + the request/broadcast
+front (`:52-90`), routes every call site above to the landed emitters, and
+folds the prefix count-only drains into e4's real `rainbow_rod_hit` (the
+e4 doc's own merge note). NOT e3's lane: zero of the 61 sites are
+Projectile.cs sites, and the e3 windows never claimed a call-site wire.
+
+**The dust-FREE spawners still consume stream draws** — the wiring wave
+must keep them as ordered `next_*` drains even where no dust spawns (the
+`prefix.rs` convention). The Projectile.cs-reachable ones, censused here
+as the seed's draw contracts (visuals dropped, `ParticlePool` requests
+RNG-free):
+
+| spawner | lines | draw contract |
+| ------- | ----- | ------------- |
+| `Spawn_GasTrap` | 2911-2953 | the Item16 cue first (sound lane); 12×[NextFloat + RotatedByRandom 2×NextDouble + Next(20) + NextFloat] then 10×[NextFloat + 2×NextDouble + Next(30) + NextFloat] — 12×5 + 10×5 = 110 |
+| `Spawn_NightsEdge` | 3205-3260 | ZERO draws (two 3-sparkle loops, constants only) |
+| `Spawn_SilverBulletSparkle` | 3262-3284 | **5**: the DISCARDED angle NextFloat :3264 + scale NextFloat :3266 + DISCARDED NextFloat :3267 + Circular(4,4) 2 :3269 (the `new Vector2(f)` uniform is ONE draw, both components) |
+| `Spawn_LeafCrystalPassive`/`Shot` | 3089-3137 | Passive: 1 head NextFloat :3092 (3-sparkle loop draw-free); Shot: ZERO draws (:3120 hsl uses UniqueInfoPiece) + the AddLight :3135 (light lane) |
+| `Spawn_BlackLightningSmall` | 3494-3533 | 2 head (NextFloat + Next(1,3)) then num2∈{1,2} iterations × [NextFloatDirection + NextFloat + Circular(12,12) 2 + 2 colour NextFloats + Next(4) + 1 gated NextFloat] = 8+g per iteration |
+| `Spawn_BlackLightningHit` | 3535-3574 | 1 head NextFloat, 7 iterations × the same 8+g body |
+| `Spawn_BlueLightningSmallLong` | 3576-3597 | ZERO own draws; delegates ⌈len/25⌉ `Spawn_LightningSmall` calls when len ≥ 40 |
+| `Spawn_StellarTune` | 3655-3681 | 1 head NextFloat + 5 × [NextFloatDirection + Circular(12,12) 2 + NextFloat + Next(2) + gated NextFloat + NextFloat scale] |
+| `Spawn_CattivaHit` | 3745-3776 | 1 head NextFloat + 6 × [NextFloatDirection + Circular(6,6) 2 + NextFloat + Next(2) + gated NextFloat + NextFloat scale] |
+| `Spawn_StormLightningWindup` | 974-1024 | 2 head (NextFloat + Next(1,3)) then num2 × [Next(7,11) + NextFloatDirection + NextFloat + Circular(6,6) 2 + Next(3) gate] = 7 per iteration, the twin particle copies draw-free |
+| `Spawn_BestReforge` | 3069-3087 | 8 × Circular(3,4) = 16 (the `prefix.rs:678` drain already ports this verbatim) |
+
+(`Spawn_RainbowRodHit`'s 272-draw contract stays `prefix.rs:640`'s + e4's
+emitter; the HarpyCharm/LakeSparkle/FakeFish/PooFly/ShimmerBlock/ArcLightning
+dust-free spawners are d54's research/67 dust-free list — their argument
+draws ride the same wave.)
+
+### (6) The sealing state
 
 - 1195-site census: windows 1 (g65 remainder), 4 (the per-machine table,
   now 79+36 uncited after the cite-drop) stay assigned; windows 2/3/5 are
-  e3-DONE; the Kill-tail 15 are e3-DONE.
+  e3-DONE; the Kill-tail 15 are e3-DONE. The Orch-61 (a DIFFERENT file) is
+  d54/e4-DONE bodies + a task-seeded wiring wave (section 5).
 - The e3 branch `task/W4-e3-dust-sites-proj-2` retires here: no further
   commits beyond the receipts. The merge order is the activation order —
   each d-lane merge activates its cited emitters per the contracts above.
