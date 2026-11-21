@@ -4700,8 +4700,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // then, when `ai[1] >= 10` (`flag28`), `WorldGen.OpenDoor`
     // (`:60061`) + the `Door_Opened` cue (`WorldGen.cs:37732`'s
     // `PlaySound(8)`); a refusal sets `ai[3] = num57` (`:60064`). The
-    // tall gate (388) `ShiftTallGate` is unported — the bash still
-    // counted its +2 and plays the thud, the gate never shifts
+    // tall gate (388) `ShiftTallGate` is PORTED (W4-g24) — the drain
+    // shifts it + the pitched-8 cue on the same stream, refusal `ai[3]`
     // (ANALYSIS "The zombie fighter audit").
     for i in 0..app.npcs.len() {
         let Some((tx, ty, dir, open)) = app.npcs[i].wants_door_bash.take() else {
@@ -4768,8 +4768,49 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 }
             }
         }
-        // `:60072-60084` — the tall gate (388) `ShiftTallGate`: unported
-        // (the module docs' stand-in) — no shift, no refusal.
+        // `:60072-60084` — the tall gate (388) `ShiftTallGate(closing:
+        // false)`: W4-g24 ports it. A refusal sets `ai[3] = num57` (the
+        // door arm's shape); the success plays the pitched 8 on the
+        // UpdateNPCs stream (the C# plays inside `NPC.UpdateNPC`,
+        // `Main.cs:17767`). The entity gate reads the live player/NPCs.
+        if app.world.tile(tx, ty).is_some_and(|t| t.kind == 388) {
+            let (player, npcs) = (&app.player, &app.npcs);
+            let blocked = |x: i32, y: i32| {
+                crate::world_sim::editing::doors::cell_blocked_by_entity_pub(
+                    player.as_ref(),
+                    npcs,
+                    x,
+                    y,
+                )
+            };
+            let (res, cue) =
+                tr_core::edit::shift_tall_gate(&mut app.world, tx, ty, false, false, &blocked);
+            if !res.shifted {
+                app.npcs[i].ai[3] = 60.0;
+                app.npcs[i].net_update = true;
+            }
+            if let Some((cx, cy)) = cue {
+                app.audio.play_door_sound(
+                    true,
+                    cx as f32,
+                    cy as f32,
+                    app.rngs.stream(RngKey::UpdateNpcs),
+                );
+                app.world_key = None;
+            }
+            for d in res.object_drops {
+                if let Some(item) = registry::tile_drop(d.tile_kind, 0) {
+                    crate::world_sim::items::spawn_item_drop(
+                        &mut app.items,
+                        app.rngs.stream(RngKey::UpdateNpcs),
+                        item,
+                        1,
+                        d.x,
+                        d.y,
+                    );
+                }
+            }
+        }
     }
     // S1-C-7 wave B — the contact lane's hurt modifiers (`Player.Hurt`
     // `:38396-38517`): the accepted contact hit queued its retaliate request

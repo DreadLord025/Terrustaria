@@ -728,6 +728,325 @@ pub fn unlock_door(world: &mut World, i: i32, j: i32) -> Option<i32> {
     Some(num)
 }
 
+/// `WorldGen.GetTopLeftAndStyles` (`WorldGen.cs:51777-51790`): the object's
+/// top-left snap + the style point. `frameXinc`/`frameYinc` are the sheet
+/// strides (18/18 for the trapdoors); a zero stride skips that axis' snap
+/// (the C# guard). Returns `(style_x, style_y)` and mutates `(x, y)` to the
+/// top-left, exactly like the C# `ref` parameters.
+fn get_top_left_and_styles(
+    world: &World,
+    x: &mut i32,
+    y: &mut i32,
+    w: i32,
+    h: i32,
+    frame_xinc: i32,
+    frame_yinc: i32,
+) -> (i32, i32) {
+    let t = world.tile(*x, *y).copied().unwrap_or_default();
+    let (fx, fy) = (i32::from(t.frame_x), i32::from(t.frame_y));
+    let result = (fx / (w * frame_xinc), fy / (h * frame_yinc));
+    if frame_xinc != 0 {
+        *x -= fx / frame_xinc % w;
+    }
+    if frame_yinc != 0 {
+        *y -= fy / frame_yinc % h;
+    }
+    result
+}
+
+/// A `TileFrame` rectangle walk (`WorldGen.TileFrame(x+m, y+n)` over the
+/// given inclusive offsets) — the trapdoor/gate tails frame a NON-square
+/// region, so `reframe_area`'s square radius cannot stand in. Each cell runs
+/// the port's `TileFrame` stand-in (the 1-cell reframe); the frame-important
+/// kinds keep their stored frames (`reframe_area`'s gate).
+fn tile_frame_rect(world: &mut World, x: i32, y: i32, mx: std::ops::RangeInclusive<i32>, my: std::ops::RangeInclusive<i32>) {
+    for m in mx {
+        for n in my.clone() {
+            framing::reframe_area(world, x + m, y + n, 1, false);
+        }
+    }
+}
+
+/// One trapdoor/gate toggle's result: the success flag, the object drops the
+/// refusal/cut kills produced (the `open_door`/`close_door` convention — the
+/// app spawns them on its stage's stream), and the refuse-cue position.
+/// `refuse_cue` is `Some` only on `ShiftTrapdoor`'s fall-through (`:51594`,
+/// the 9 at the clicked cell) — the in-arm `return false` refusals and the
+/// tall gate's refusals play NOTHING and leave it `None`.
+#[derive(Default)]
+pub struct ShiftResult {
+    pub shifted: bool,
+    pub object_drops: Vec<ObjectDrop>,
+    pub refuse_cue: Option<(i32, i32)>,
+}
+
+/// `WorldGen.ShiftTrapdoor` (`WorldGen.cs:51447-51596`): the 2x2 open
+/// trapdoor (386) flips to the 2x1 closed one (387) and back. `player_above`
+/// picks the closing side (`ToDirectionInt`: true → +1, the door closes
+/// BELOW the player's row; false → -1, above). `only_close_or_open`: 1
+/// refuses the 386→387 arm, 0 refuses the 387→386 arm, -1 (the interaction
+/// default) allows both. The three success arms play the pitched door cue
+/// (`PlaySound(8, ...)` `:51470`/:51512/:51563` — app-side, at the returned
+/// `cue_pos`); the fall-through refuse plays 9 (`:51594`) at the SNAPPED
+/// `(x, y)` — the refuse position is the caller's clicked cell for the
+/// wrong-kind fall-through (the snap only runs inside the arms). The
+/// `Wiring.SkipWire` quads (`:51459-51464` etc.) are the standing no-wiring
+/// skip; `cell_blocked` is the `Collision.EmptyTile(ignoreTiles: true)`
+/// entity half.
+pub fn shift_trapdoor(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    player_above: bool,
+    only_close_or_open: i32,
+    cell_blocked: &dyn Fn(i32, i32) -> bool,
+) -> (ShiftResult, Option<(i32, i32)>) {
+    let mut out = ShiftResult::default();
+    let Some(tile) = world.tile(x, y).copied() else {
+        return (out, None);
+    };
+    let (mut sx, mut sy) = (x, y);
+    if tile.kind == 386 && only_close_or_open != 1 {
+        // `:51452` — the 2x2 top-left snap, styles (frameX/36, frameY/36).
+        let styles = get_top_left_and_styles(world, &mut sx, &mut sy, 2, 2, 18, 18);
+        if styles.0 == 0 {
+            // `:51455-51469` — the square must be intact; the two cells
+            // BELOW the bottom row must be entity-free.
+            if !validate_tile_square(world, sx, sy, 2, 2, 386, &mut out.object_drops) {
+                return (out, None);
+            }
+            if cell_blocked(sx, sy + 1) || cell_blocked(sx + 1, sy + 1) {
+                return (out, None);
+            }
+            // `:51470` — the cue at (x*16+16, y*16+16): the 2x2's centre.
+            let cue = (sx * 16 + 16, sy * 16 + 16);
+            // `:51471-51478` — the TOP row's 386 cells clear (`ClearTile`:
+            // active off, slope/halfbrick off — the kind stays until the
+            // re-frame, the C# shape).
+            for i in 0..2 {
+                if let Some(t) = world.tile_mut(sx + i, sy) {
+                    if t.active() && t.kind == 386 {
+                        t.flags &= !crate::tile::FLAG_ACTIVE & !crate::tile::FLAG_INACTIVE;
+                        t.set_slope(0);
+                        t.flags &= !crate::tile::FLAG_HALF_BRICK;
+                        touch(world, sx + i, sy);
+                    }
+                }
+            }
+            // `:51479-51485` — the BOTTOM row becomes the closed 2x1.
+            for j in 0..2 {
+                if let Some(t) = world.tile_mut(sx + j, sy + 1) {
+                    t.kind = 387;
+                    t.frame_x = (j * 18) as i16;
+                    t.frame_y = (styles.1 * 18) as i16;
+                    touch(world, sx + j, sy + 1);
+                }
+            }
+            ensure_frame_important(world, 387);
+            // `:51486-51492` — the 4x3 TileFrame ring (m -1..=2, l -1..=2).
+            tile_frame_rect(world, sx, sy, -1..=2, -1..=2);
+            out.shifted = true;
+            return (out, Some(cue));
+        }
+        if styles.0 == 1 {
+            // `:51495-51531` — the mirrored arm: the BOTTOM row clears, the
+            // TOP row becomes the closed 2x1; the entity gate reads the TOP
+            // row (`:51508`), the cue sits at (x*16+16, y*16) (`:51512`).
+            if !validate_tile_square(world, sx, sy, 2, 2, 386, &mut out.object_drops) {
+                return (out, None);
+            }
+            if cell_blocked(sx, sy) || cell_blocked(sx + 1, sy) {
+                return (out, None);
+            }
+            let cue = (sx * 16 + 16, sy * 16);
+            // `:51513-51516` — the BOTTOM row clears UNCONDITIONALLY (the
+            // C#'s `Framing.GetTileSafely(x + m, y + 1).ClearTile()` — no
+            // active/kind guard, unlike the X==0 arm).
+            for m in 0..2 {
+                if let Some(t) = world.tile_mut(sx + m, sy + 1) {
+                    t.flags &= !crate::tile::FLAG_ACTIVE & !crate::tile::FLAG_INACTIVE;
+                    t.set_slope(0);
+                    t.flags &= !crate::tile::FLAG_HALF_BRICK;
+                    touch(world, sx + m, sy + 1);
+                }
+            }
+            for n in 0..2 {
+                if let Some(t) = world.tile_mut(sx + n, sy) {
+                    t.kind = 387;
+                    t.frame_x = (n * 18) as i16;
+                    t.frame_y = (styles.1 * 18) as i16;
+                    touch(world, sx + n, sy);
+                }
+            }
+            ensure_frame_important(world, 387);
+            // `:51524-51530` — the ring: m -1..=2, num2 -1..=1 (one row
+            // SHORTER than the X==0 arm — the C# asymmetry, kept).
+            tile_frame_rect(world, sx, sy, -1..=2, -1..=1);
+            out.shifted = true;
+            return (out, Some(cue));
+        }
+    }
+    if tile.kind == 387 && only_close_or_open != 0 {
+        // `:51536` — the 2x1 snap (styles (frameX/36, frameY/18)).
+        let styles = get_top_left_and_styles(world, &mut sx, &mut sy, 2, 1, 18, 18);
+        // `:51539-51542` — either closed cell unbreakable refuses.
+        let holds = |_, _| false;
+        if (world.tile(sx, sy).is_some_and(|t| t.active() && t.kind == 387)
+            && !can_kill_tile(world, sx, sy, holds))
+            || (world.tile(sx + 1, sy).is_some_and(|t| t.active() && t.kind == 387)
+                && !can_kill_tile(world, sx + 1, sy, holds))
+        {
+            return (out, None);
+        }
+        if !validate_tile_square(world, sx, sy, 2, 1, 387, &mut out.object_drops) {
+            return (out, None);
+        }
+        // `:51547-51555` — the closing side's row must hold no real blocker
+        // (cut/drip tiles pass — they die below).
+        let num3 = if player_above { 1 } else { -1 };
+        for num4 in 0..2 {
+            if let Some(t) = world.tile(sx + num4, sy + num3) {
+                if t.active()
+                    && !crate::tileobject::tile_cut(t.kind)
+                    && !crate::tileobject::is_drip_tile(t.kind)
+                {
+                    return (out, None);
+                }
+            }
+        }
+            // `:51563` — the cue at (x*16+16, y*16).
+            let cue = (sx * 16 + 16, sy * 16);
+            // `:51564-51571` — the cut/drip tiles in the closing row die.
+            for num5 in 0..2 {
+                let cut = world.tile(sx + num5, sy + num3).is_some_and(|t| {
+                    t.active()
+                        && (crate::tileobject::tile_cut(t.kind)
+                            || crate::tileobject::is_drip_tile(t.kind))
+                });
+                if cut {
+                    if let Some(kill) = kill_tile(world, sx + num5, sy + num3, false) {
+                        out.object_drops.extend(kill.object_drops);
+                    }
+                }
+            }
+            // `:51572-51584` — the 2x2 open trapdoor writes, each column taking
+            // its closed cell's paint/coating cache (`BlockColorAndCoating` →
+            // `UseBlockColors`). `frameX = col*18 + playerAbove*36` (the sheet's
+            // above/below halves), `frameY = row*18`; the row offset shifts by
+            // `(!playerAbove).ToInt()` — the door grows AWAY from the player.
+            let above = i32::from(player_above);
+            let row_shift = i32::from(!player_above);
+            for num6 in 0..2 {
+                let paint = world.tile(sx + num6, sy).map_or(0, |t| t.paint());
+                let fullbright = world
+                    .tile(sx + num6, sy)
+                    .is_some_and(|t| t.fullbright_block());
+                let invisible = world.invisible_block(sx + num6, sy);
+                for num7 in 0..2 {
+                    let (cx, cy) = (sx + num6, sy + num7 - row_shift);
+                    if let Some(t) = world.tile_mut(cx, cy) {
+                        t.kind = 386;
+                        t.frame_x = (num6 * 18 + above * 36) as i16;
+                        t.frame_y = (num7 * 18) as i16;
+                        t.set_paint(paint);
+                        if fullbright {
+                            t.flags |= crate::tile::FLAG_FULLBRIGHT;
+                        } else {
+                            t.flags &= !crate::tile::FLAG_FULLBRIGHT;
+                        }
+                        t.flags |= crate::tile::FLAG_ACTIVE;
+                    }
+                    world.set_invisible_block(cx, cy, invisible);
+                    touch(world, cx, cy);
+                }
+            }
+            ensure_frame_important(world, 386);
+            // `:51585-51591` — the 4x4 ring: num8 -1..=2, num9 -1..=2 with
+            // the row offset ×2 (`y + num9 - (!playerAbove)*2`).
+            tile_frame_rect(world, sx, sy - row_shift * 2, -1..=2, -1..=2);
+            out.shifted = true;
+            return (out, Some(cue));
+        }
+        // `:51594` — the refuse plays 9 at `(x * 16, y * 16)`. The C# `x`/`y`
+        // are `ref` params: `GetTopLeftAndStyles` already snapped them when
+        // the 386 arm ran (the X∉{0,1} fall-through), so the cue rides the
+        // SNAPPED `sx`/`sy` (equal to the clicked cell when no snap ran).
+        out.refuse_cue = Some((sx * 16, sy * 16));
+        (out, None)
+    }
+
+/// `WorldGen.ShiftTallGate` (`WorldGen.cs:51723-51775`): the 1x5 tall gate
+/// flips 388 (closed) ↔ 389 (open). `closing` picks the target kind;
+/// `forced` skips the per-row `Collision.EmptyTile` gate (the wired caller;
+/// the interaction path sends false). The success plays the pitched 8 at
+/// `(x*16+16, y*16+16)` (`:51762`, app-side via the returned cue position).
+/// The gate's `CoordinateHeights` are {18,16,16,16,18} (the registry def,
+/// `TileObjectData.cs:2300`), full height 94 — the row walk finds the clicked
+/// cell's row inside the style block.
+pub fn shift_tall_gate(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    closing: bool,
+    forced: bool,
+    cell_blocked: &dyn Fn(i32, i32) -> bool,
+) -> (ShiftResult, Option<(i32, i32)>) {
+    let mut out = ShiftResult::default();
+    let target: u16 = if closing { 388 } else { 389 };
+    let source: u16 = if closing { 389 } else { 388 };
+    let Some(tile) = world.tile(x, y).copied() else {
+        return (out, None);
+    };
+    if tile.kind != source {
+        return (out, None); // `:51728-51731`
+    }
+    // `:51732-51743` — the style column (frameX/18) and the row decode: the
+    // style block is 94 px tall, the clicked row walks the CoordinateHeights.
+    let style_x = i32::from(tile.frame_x) / 18;
+    let Some(data) = crate::tileobject::def_for_tile(388) else {
+        return (out, None);
+    };
+    let full_h = data.coordinate_full_height();
+    let mut row = 0usize;
+    let mut num2 = i32::from(tile.frame_y) % full_h;
+    while row < data.coordinate_heights.len()
+        && num2 - data.coordinate_heights[row] >= 0
+    {
+        num2 -= data.coordinate_heights[row];
+        row += 1;
+    }
+    let gy = y - row as i32;
+    let height = data.height;
+    let width = data.width;
+    // `:51744-51747` — the 1x5 square must be intact.
+    if !validate_tile_square(world, x, gy, width, height, source, &mut out.object_drops) {
+        return (out, None);
+    }
+    // `:51755-51761` — every row entity-free unless forced.
+    if !forced {
+        for k in 0..height {
+            if cell_blocked(x, gy + k) {
+                return (out, None);
+            }
+        }
+    }
+    // `:51762` — the cue at the gate's second-row centre.
+    let cue = (x * 16 + 16, gy * 16 + 16);
+    // `:51763-51766` — the column flips kind, frames kept.
+    for l in 0..height {
+        if let Some(t) = world.tile_mut(x, gy + l) {
+            t.kind = target;
+            touch(world, x, gy + l);
+        }
+    }
+    ensure_frame_important(world, target);
+    // `:51767-51773` — the 3x(height+2) TileFrame ring (m -1..=1,
+    // n -1..=height).
+    tile_frame_rect(world, x, gy, -1..=1, -1..=height);
+    out.shifted = true;
+    (out, Some(cue))
+}
+
 /// `WorldGen.OpenDoor` (`WorldGen.cs:37630-37784`): turns the closed door
 /// (tile 10) covering `(i, j)` into the open door (tile 11) leaning to
 /// `direction` (+1 right, -1 left). No `KillTile` on the door cells — the
@@ -1130,6 +1449,94 @@ mod tests {
         assert_eq!(w2.tile(10, 19).unwrap().frame_y, 36);
         // An empty cell answers None (`:37602-37605`).
         assert_eq!(unlock_door(&mut w2, 20, 10), None);
+    }
+
+    /// W4-g24 — `WorldGen.ShiftTrapdoor` (`WorldGen.cs:51447-51596`): the
+    /// 2x2 open (386) flips to the 2x1 closed (387) on the X==0 arm (the
+    /// bottom row becomes the closed pair, the top row clears), the cue at
+    /// the 2x2 centre; the reverse flip writes the 2x2 with the above/below
+    /// sheet halves and carries the closed cells' paint.
+    #[test]
+    fn w4_g24_trapdoor_flips_both_ways_with_the_arm_cues() {
+        let mut w = object_world();
+        // The open 2x2 at (10, 18)-(11, 19), style 0 (frameX 0/18, frameY
+        // 0/18 — the X==0 arm: frameX/36 == 0).
+        for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            set_object_cell(&mut w, 10 + dx, 18 + dy, 386, (dx * 18) as i16, (dy * 18) as i16);
+        }
+        let free = |_: i32, _: i32| false;
+        // Close (player_above = true → the door closes below): the bottom
+        // row (y 19) becomes 387, the top row (y 18) clears.
+        let (res, cue) = shift_trapdoor(&mut w, 10, 18, true, -1, &free);
+        assert!(res.shifted);
+        assert_eq!(cue, Some((10 * 16 + 16, 18 * 16 + 16)), "the 2x2 centre");
+        assert_eq!(w.tile(10, 19).unwrap().kind, 387);
+        assert_eq!(w.tile(11, 19).unwrap().kind, 387);
+        assert!(!w.tile(10, 18).unwrap().active(), "the top row cleared");
+        // Re-open from the closed pair (player_above = true → the 2x2 grows
+        // DOWN, rows 19-20; frameX carries the +36 above-half).
+        let (res, cue) = shift_trapdoor(&mut w, 10, 19, true, -1, &free);
+        assert!(res.shifted);
+        assert_eq!(cue, Some((10 * 16 + 16, 19 * 16)));
+        assert_eq!(w.tile(10, 19).unwrap().kind, 386);
+        assert_eq!(w.tile(10, 19).unwrap().frame_x, 36, "the above half");
+        assert_eq!(w.tile(10, 20).unwrap().kind, 386);
+        assert_eq!(w.tile(11, 20).unwrap().frame_x, 36 + 18);
+        // The wrong-kind fall-through refuses with the 9 cue at the cell.
+        let mut w2 = object_world();
+        set_active(&mut w2, 10, 18, 1);
+        let (res, cue) = shift_trapdoor(&mut w2, 10, 18, true, -1, &free);
+        assert!(!res.shifted);
+        assert!(cue.is_none());
+        assert_eq!(res.refuse_cue, Some((10 * 16, 18 * 16)));
+        // An entity in the closing row refuses the close (no cue — the
+        // in-arm return, not the fall-through).
+        let mut w3 = object_world();
+        for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            set_object_cell(&mut w3, 10 + dx, 18 + dy, 386, (dx * 18) as i16, (dy * 18) as i16);
+        }
+        let blocked = |x: i32, y: i32| (x, y) == (10, 19);
+        let (res, cue) = shift_trapdoor(&mut w3, 10, 18, true, -1, &blocked);
+        assert!(!res.shifted);
+        assert!(cue.is_none());
+        assert!(res.refuse_cue.is_none(), "the in-arm refuse is silent");
+        assert_eq!(w3.tile(10, 19).unwrap().kind, 386, "nothing shifted");
+    }
+
+    /// W4-g24 — `WorldGen.ShiftTallGate` (`WorldGen.cs:51723-51775`): the
+    /// 1x5 column flips 388↔389 from ANY member row (the CoordinateHeights
+    /// row walk), frames kept; the cue at the second-row centre; an entity
+    /// in any row refuses unless forced.
+    #[test]
+    fn w4_g24_tall_gate_flips_from_any_row_and_gates_on_entities() {
+        let mut w = object_world();
+        // The closed gate at column 10, rows 14-18 (the 5 CoordinateHeights
+        // {18,16,16,16,18} → frameY 0/18/34/50/66 within the style block).
+        let fys = [0i16, 18, 34, 50, 66];
+        for (row, fy) in fys.iter().enumerate() {
+            set_object_cell(&mut w, 10, 14 + row as i32, 388, 0, *fy);
+        }
+        let free = |_: i32, _: i32| false;
+        // A click on the MIDDLE row (16, frameY 34) walks up two rows.
+        let (res, cue) = shift_tall_gate(&mut w, 10, 16, false, false, &free);
+        assert!(res.shifted);
+        assert_eq!(cue, Some((10 * 16 + 16, 14 * 16 + 16)));
+        for row in 0..5 {
+            let t = w.tile(10, 14 + row).unwrap();
+            assert_eq!(t.kind, 389, "row {row} flipped");
+            assert_eq!(t.frame_y, fys[row as usize], "the frame kept");
+        }
+        // The reverse (closing) flips back.
+        let (res, _) = shift_tall_gate(&mut w, 10, 14, true, false, &free);
+        assert!(res.shifted);
+        assert_eq!(w.tile(10, 18).unwrap().kind, 388);
+        // An entity in the top row refuses; forced skips the gate.
+        let blocked = |x: i32, y: i32| (x, y) == (10, 14);
+        let (res, cue) = shift_tall_gate(&mut w, 10, 16, false, false, &blocked);
+        assert!(!res.shifted);
+        assert!(cue.is_none());
+        let (res, _) = shift_tall_gate(&mut w, 10, 16, false, true, &blocked);
+        assert!(res.shifted, "forced skips the entity gate");
     }
 
     #[test]

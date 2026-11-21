@@ -39335,3 +39335,38 @@ clicks.rs host start, audio.rs style, editing.rs PlaceObject coverage,
 mod.rs swap cue вЂ” 11 total). The `insert_test_cue`/`tracked_count_for`
 headless seams are test-only.
 
+
+### W4-g24 batch 2 (2026-11-21) вЂ” ShiftTrapdoor + ShiftTallGate (5 sites)
+
+Landed sites: `ShiftTrapdoor`'s three success cues `WorldGen.cs:51470`
+(X==0 close, the 2x2 centre), `:51512` (X==1 close, the top-row centre) and
+`:51563` (the 387в†’386 re-open) + the fall-through refuse `:51594` (the
+pitched 9 at the SNAPPED cell вЂ” `GetTopLeftAndStyles` mutates x/y by ref
+before the fall-through), and `ShiftTallGate`'s `:51762` (the pitched 8 at
+the gate's second-row centre, both directions). The core ports
+(`edit::shift_trapdoor`/`edit::shift_tall_gate`, the `ShiftResult` channel
+with `refuse_cue` distinguishing the fall-through 9 from the silent in-arm
+refusals) carry the full bodies: the 2x2/2x1 snaps, the
+`ValidateTileSquareIsActiveAndOfType` cleanup kills (drops collected), the
+`Collision.EmptyTile(ignoreTiles:true)` entity gates (the app's
+`cell_blocked_by_entity`), the X==1 arm's UNCONDITIONAL bottom-row
+`ClearTile` (the C# asymmetry vs the X==0 guarded clear), the closing row's
+cut/drip kills, the `BlockColorAndCoating`в†’`UseBlockColors` paint carry on
+the re-open, the above/below sheet halves (`frameX = col*18 +
+playerAbove*36`), the `CoordinateHeights` {18,16,16,16,18} row walk (full
+height 94) and the exact `TileFrame` rectangles (`tile_frame_rect` вЂ” the
+non-square rings the square `reframe_area` cannot stand in: the X==1 arm's
+one-row-shorter ring kept). The `Wiring.SkipWire` quads are the standing
+no-wiring skip. Callers: the player interact arm
+(`Player.cs:32290-32312` вЂ” the trapdoor's mirror re-attempt on refuse with
+the per-call fall-through 9s, the tall gate's `closing = kind==389`), the
+zombie bash drain (`NPC.cs:60072-60084` вЂ” the gate shift + refusal
+`ai[3]=num57` + the pitched 8 on UpdateNPCs; the `cell_blocked_by_entity_pub`
+re-export). The town-NPC `TownDoorOps::shift_tall_gate` seam stays a fake
+(the module is unwired) вЂ” its doc now points at the landed core function.
+RNG: cases 8/9 draw one `Next(-20,21)*0.01` each AFTER the attenuation gate
+(`play_door_sound`, the S1-E-21i path), on UpdatePlayers (the interact) /
+UpdateNPCs (the bash). 3 witnesses WRITTEN NOT RUN (the core flip/gate
+walks + the app interact arms). The double-refuse plays two Door_Closed
+(the C# plays the 9 inside each refused call).
+

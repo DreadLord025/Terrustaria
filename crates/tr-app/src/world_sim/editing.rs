@@ -19,7 +19,7 @@ use super::items::spawn_item_drop;
 
 mod wiring;
 pub(crate) use wiring::use_wiring_tool;
-mod doors;
+pub(crate) mod doors;
 use doors::interact_tile;
 pub(crate) use doors::{bed_spawn_valid, check_bed_spawn};
 mod sentry;

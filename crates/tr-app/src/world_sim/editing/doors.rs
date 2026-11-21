@@ -270,6 +270,99 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
         unlock_golden_door(app, tx, ty);
         return true;
     }
+    // W4-g24 — the trapdoor/tall-gate arms (`TileInteractionsUse`'s
+    // 386/387 branch `Player.cs:32290-32303` and the 388/389 branch
+    // `:32304-32312`): both consume the click (`flag2 = true`) before the
+    // shift attempt. The trapdoor tries the player's side first, then the
+    // mirror on a refuse (`:32294-32298`); the tall gate's `closing` is the
+    // OPEN kind (389 → close). The cues ride the UpdatePlayers stream (the
+    // tile use runs in `Player.ItemCheck`, `Main.cs:17754`); the pitched
+    // case-8/9 draws happen only after the attenuation gate.
+    let door_kind = app.world.tile(tx, ty).filter(|t| t.active()).map(|t| t.kind);
+    if matches!(door_kind, Some(386 | 387)) {
+        let (player, npcs) = (&app.player, &app.npcs);
+        let blocked = |x: i32, y: i32| cell_blocked_by_entity(player.as_ref(), npcs, x, y);
+        let above = app
+            .player
+            .as_ref()
+            .is_some_and(|p| (ty as f32 * TILE_PX) > p.center().1);
+        let (res1, cue1) =
+            edit::shift_trapdoor(&mut app.world, tx, ty, above, -1, &blocked);
+        let (res, cue) = if res1.shifted {
+            (res1, cue1)
+        } else {
+            // `:32295-32298` — the mirror attempt with the flipped side.
+            // The C# passes `myX, myY` (the ORIGINAL click) to both calls;
+            // each `GetTopLeftAndStyles` re-snaps from there.
+            let (res2, cue2) =
+                edit::shift_trapdoor(&mut app.world, tx, ty, !above, -1, &blocked);
+            if res2.shifted {
+                // The first call refused (its fall-through 9 already played
+                // below); the second shifted — its 8 plays instead.
+                if let Some((cx, cy)) = res1.refuse_cue {
+                    app.audio.play_door_sound(
+                        false,
+                        cx as f32,
+                        cy as f32,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
+                }
+                (res2, cue2)
+            } else {
+                // Both refused: the C# plays the fall-through 9 inside EACH
+                // call (`:51594`) — two Door_Closed plays, in call order.
+                if let Some((cx, cy)) = res1.refuse_cue {
+                    app.audio.play_door_sound(
+                        false,
+                        cx as f32,
+                        cy as f32,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
+                }
+                (res2, cue2)
+            }
+        };
+        if let Some((cx, cy)) = cue {
+            // `:51470`/:51512/:51563 — the pitched 8 at the arm's position.
+            app.audio.play_door_sound(
+                true,
+                cx as f32,
+                cy as f32,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+        } else if let Some((cx, cy)) = res.refuse_cue {
+            // `:51594` — the (second) fall-through refuse plays the pitched 9.
+            app.audio.play_door_sound(
+                false,
+                cx as f32,
+                cy as f32,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+        }
+        spawn_shift_drops(app, &res.object_drops);
+        app.world_key = None;
+        return true;
+    }
+    if matches!(door_kind, Some(388 | 389)) {
+        let closing = door_kind == Some(389); // `:32307` — flag4
+        let (player, npcs) = (&app.player, &app.npcs);
+        let blocked = |x: i32, y: i32| cell_blocked_by_entity(player.as_ref(), npcs, x, y);
+        let (res, cue) =
+            edit::shift_tall_gate(&mut app.world, tx, ty, closing, false, &blocked);
+        if let Some((cx, cy)) = cue {
+            // `:51762` — the pitched 8 (both directions play the OPEN cue,
+            // the C# has one play site).
+            app.audio.play_door_sound(
+                true,
+                cx as f32,
+                cy as f32,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+        }
+        spawn_shift_drops(app, &res.object_drops);
+        app.world_key = None;
+        return true;
+    }
     // The entity half of `Collision.EmptyTile` (`Collision.cs:1359`): the
     // closing column must be free of the player and NPCs. Disjoint field
     // borrows — the world write happens inside `interact_at`.
@@ -475,6 +568,18 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
     true
 }
 
+/// The shift arms' cleanup drops (`validate_tile_square`'s refusal kills,
+/// the closing row's cut/drip kills) — the `interaction_events` shape: the
+/// registry tile_drop at the record cell, the UpdatePlayers stream.
+fn spawn_shift_drops(app: &mut App, drops: &[edit::ObjectDrop]) {
+    for d in drops {
+        if let Some(item) = registry::tile_drop(d.tile_kind, 0) {
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            spawn_item_drop(&mut app.items, rng, item, 1, d.x, d.y);
+        }
+    }
+}
+
 /// `Player.IsWithinSnappngRangeToTile` (`Player.cs:17365-17372`): the tile
 /// centre to `(Center.X, Bottom.Y - 16)` distance — the sit (40 px) and
 /// sleep (96 px) snap gates.
@@ -650,6 +755,18 @@ fn cell_blocked_by_entity(player: Option<&Player>, npcs: &[Npc], x: i32, y: i32)
     })
 }
 
+/// The shared entity gate for the NPC-side callers (the zombie bash's tall
+/// gate, W4-g24) — the same `Collision.EmptyTile` half the interaction path
+/// uses, re-exported so `world_sim/npcs.rs` need not duplicate the rect math.
+pub(crate) fn cell_blocked_by_entity_pub(
+    player: Option<&Player>,
+    npcs: &[Npc],
+    x: i32,
+    y: i32,
+) -> bool {
+    cell_blocked_by_entity(player, npcs, x, y)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -749,6 +866,63 @@ mod tests {
         assert!(interact_tile(&mut app, 10, 19), "the click is consumed");
         assert_eq!(app.world.tile(10, 17).unwrap().frame_y, 594, "no shift");
         assert_eq!(app.audio.played_count(), before, "no cue");
+    }
+
+    /// W4-g24 — the trapdoor interact arm (`Player.cs:32290-32303`): the
+    /// click on the open 2x2 closes it (the pitched 8 plays), the click is
+    /// consumed; the mirror re-click re-opens it. The tall gate (388/389)
+    /// flips through its own arm (`:32304-32312`).
+    #[test]
+    fn w4_g24_the_trapdoor_and_tall_gate_interact_arms() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        app.player = Some(Player::spawn(&app.world));
+        // The open trapdoor 2x2 at (10, 18)-(11, 19), style 0.
+        for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            let i = app.world.index(10 + dx, 18 + dy);
+            app.world.tiles[i] = Tile {
+                kind: 386,
+                frame_x: (dx * 18) as i16,
+                frame_y: (dy * 18) as i16,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        app.world.frame_important[386] = true;
+        app.world.frame_important[387] = true;
+        // Park the player well clear (left of the door, same height) so the
+        // entity gate passes; `player_above` reads false (centre below the
+        // clicked row), the X==0 arm closes the door upward.
+        let p = app.player.as_mut().unwrap();
+        p.x = 4.0 * 16.0;
+        p.y = 18.0 * 16.0;
+        let before = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 18), "the click is consumed");
+        // The door closed (one of the rows became 387).
+        let closed = (0..2).any(|dx| {
+            app.world.tile(10 + dx, 18).is_some_and(|t| t.kind == 387)
+                || app.world.tile(10 + dx, 19).is_some_and(|t| t.kind == 387)
+        });
+        assert!(closed, "the trapdoor shifted");
+        assert!(app.audio.played_count() > before, "the pitched cue played");
+        // The tall gate: a closed 388 column at (15, 14-18).
+        let fys = [0i16, 18, 34, 50, 66];
+        for (row, fy) in fys.iter().enumerate() {
+            let i = app.world.index(15, 14 + row as i32);
+            app.world.tiles[i] = Tile {
+                kind: 388,
+                frame_x: 0,
+                frame_y: *fy,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        app.world.frame_important[388] = true;
+        app.world.frame_important[389] = true;
+        let before = app.audio.played_count();
+        assert!(interact_tile(&mut app, 15, 16), "the gate click consumed");
+        assert_eq!(app.world.tile(15, 14).unwrap().kind, 389, "the gate opened");
+        assert!(app.audio.played_count() > before, "the gate cue played");
     }
 
     #[test]
