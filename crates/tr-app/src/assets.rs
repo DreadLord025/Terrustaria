@@ -813,6 +813,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_305",
         "UI/Cursor_0",
         "UI/Cursor_1",
+        // `TextureAssets.Cursors[11]` — the thick-cursor border ring
+        // (`Main.DrawThickCursor`, `Main.cs:48087,48129`;
+        // `AssetInitializer.cs:498-500`).
+        "UI/Cursor_11",
         "Mana",
         "Inventory_Back13",
         // P2 inventory panels: coins/ammo/misc/trash backgrounds, page tabs and
@@ -2023,6 +2027,9 @@ pub struct Lookups {
     /// `Images/UI/Cursor_0` / `Cursor_1`: the vanilla mouse cursor
     /// (`Main.DrawCursor`; `[0]` normal, `[1]` smart).
     pub cursor: [Option<tr_render::SheetRect>; 2],
+    /// `Images/UI/Cursor_11` (`TextureAssets.Cursors[11]`): the thick-cursor
+    /// border ring (`Main.DrawThickCursor`, `Main.cs:48087,48129`).
+    pub cursor_thick: Option<tr_render::SheetRect>,
     /// `Images/Mana`: the mana stars (`ClassicPlayerResourcesDisplaySet.DrawMana`).
     pub ui_mana: Option<tr_render::SheetRect>,
     /// `Inventory_Back13`: the tooltip panel 9-slice (`Utils.DrawInvBG`).
@@ -2412,6 +2419,7 @@ impl Lookups {
             ui_boss_bar: atlas.sheet("UI/UI_BossBar").copied(),
             ui_boss_head: atlas.sheet("NPC_Head_Boss_7").copied(),
             cursor: [0, 1].map(|i| atlas.sheet(&format!("UI/Cursor_{i}")).copied()),
+            cursor_thick: atlas.sheet("UI/Cursor_11").copied(),
             ui_mana: atlas.sheet("Mana").copied(),
             ui_inv_bg13: atlas.sheet("Inventory_Back13").copied(),
             ui_back3: atlas.sheet("Inventory_Back3").copied(),

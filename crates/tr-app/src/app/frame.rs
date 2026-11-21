@@ -253,12 +253,14 @@ impl App {
 
         // `FocusHelper.cs:160-163`: while the focused window draws the game's own
         // cursor the OS pointer is hidden (`Main.instance.IsMouseVisible = false`).
-        // We only draw the vanilla cursor together with the in-world HUD so far, so
-        // the OS pointer stays in menus and on the fullscreen map.
+        // The vanilla cursor draws with the in-world HUD AND over the fullscreen
+        // map (`Main.cs:56037-56040`, W4-e18 first-half) — the same
+        // `map_enabled && map.open` gate the draw branch reads; the OS pointer
+        // stays visible in the menus and the front screens only.
         let vanilla_cursor = self.menu.is_none()
             && self.front.is_none()
             && !crate::env::no_hud()
-            && !(self.settings.map_enabled && self.map.as_ref().is_some_and(|m| m.open));
+            && (!self.map.as_ref().is_some_and(|m| m.open) || self.settings.map_enabled);
         if self.os_cursor_hidden != Some(vanilla_cursor) {
             if let Some(w) = &self.window {
                 w.set_cursor_visible(!vanilla_cursor);
