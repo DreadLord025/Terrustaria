@@ -2950,6 +2950,118 @@ fn death_bursts(
                 d.no_gravity = true;
             }
         }
+        // `:74970-74982` — the 1005: 10× dust-1 defaults, a Next(2) gate →
+        // scale×1.1; the per-dust base.velocity×1.6 is a dead-corpse
+        // mutation (recorded, the 99-family note).
+        1005 => {
+            for _ in 0..10 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 1, 0.0, 0.0, 0, Color::default(), 1.0);
+                if rng.next_max(2) == 0 {
+                    dust.slot_mut(idx).scale *= 1.1;
+                }
+            }
+        }
+        // `:75037-75066` — the 772 geode: 6× dust-1 defaults (the dead
+        // base.velocity×1.9 mutation); then 20 + 7 dust-NextFromList(86,
+        // 87,88,89,90) Direct alpha 0 scale 0.7 noGravity vel×2.9 Y×0.8
+        // fadeIn 1.1 (the last 7 also noLight). The owner-gated
+        // DropGeodeGems loot (`:78561-78572`) draws FOUR (the two item
+        // picks Next(7)/Next(6) + the two stacks Next(3,7)) — consumed
+        // here as the loot census (the bodies are the loot lane's).
+        772 => {
+            for _ in 0..6 {
+                dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 1, 0.0, 0.0, 0, Color::default(), 1.0);
+            }
+            for i in 0..27 {
+                let dust_type = rng.next_from_slice(&[86, 87, 88, 89, 90]);
+                let idx = dust.new_dust_direct(rng, ctx, world, s.pos, s.w, s.h, dust_type, 0.0, 0.0, 0, Color::default(), 0.7);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 2.9;
+                d.velocity.y *= 0.8;
+                d.fade_in = 1.1;
+                if i >= 20 {
+                    d.no_light = true;
+                }
+            }
+            let _ = rng.next_max(7); // the first gem pick
+            let _ = rng.next_range(3, 7); // the first stack
+            let _ = rng.next_max(6); // the second gem pick (one removed)
+            let _ = rng.next_range(3, 7); // the second stack
+        }
+        // `:75067-75079` — the 763: 4× dust-40 defaults, a Next(2) gate →
+        // scale×0.8, noGravity; the dead base.velocity×1.9 mutation.
+        763 => {
+            for _ in 0..4 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 40, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                if rng.next_max(2) == 0 {
+                    d.scale *= 0.8;
+                }
+                d.no_gravity = true;
+            }
+        }
+        // `:75159-75178` — the 723: 10× dust-88 Direct speed vel×0.1 alpha
+        // 150 scale 1.2 noGravity X×2; 3 gore-Direct rows (the
+        // SelectRandom(16,17,17) type + the kicks, vel×2 body skipped);
+        // the owner-gated ai[2]==1 item request draws nothing.
+        723 => {
+            for _ in 0..10 {
+                let idx = dust.new_dust_direct(rng, ctx, world, s.pos, s.w, s.h, 88, s.vel.x * 0.1, s.vel.y * 0.1, 150, Color::default(), 1.2);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity.x *= 2.0;
+            }
+            for _ in 0..3 {
+                let _ = rng.next_from_slice(&[16, 17, 17]);
+                let _ = rng.next_range(10, 31);
+                let _ = rng.next_range(-20, 21);
+            }
+        }
+        // `:75179-75210` — the 724/725/726/907/1133: 10× dust-58 (1133 →
+        // 57) speed vel×0.1 alpha 150 scale 1.2 (907 → vel×0.75); 3 gore
+        // rows Next(16,18) type + the kicks (907 → vel×0.5 body skipped).
+        724 | 725 | 726 | 907 | 1133 => {
+            let dust_type = if s.kind == 1133 { 57 } else { 58 };
+            for _ in 0..10 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, dust_type, s.vel.x * 0.1, s.vel.y * 0.1, 150, Color::default(), 1.2);
+                if s.kind == 907 {
+                    dust.slot_mut(idx).velocity *= 0.75;
+                }
+            }
+            for _ in 0..3 {
+                let _ = rng.next_range(16, 18);
+                let _ = rng.next_range(10, 31);
+                let _ = rng.next_range(-20, 21);
+            }
+        }
+        // `:74877-74920` — the 1053 lava boulder: resize 64×64 centred;
+        // 25× dust-31 alpha 100 scale 2 vel×1.4 (gravity ON); 40 PAIRS
+        // dust-6 alpha 100 (scale 3 noGravity vel×5, then scale 2 vel×3
+        // GRAVITY ON); 4 gores at Center−(24,24) (the Next(61,64) type +
+        // the kicks, the ±1.5 nudges are body writes); the 31-resize +
+        // LavaBoulderExplosion (PlaceLiquid, no draws) stay unported.
+        1053 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let pos = center - Vec2::splat(32.0);
+            for _ in 0..25 {
+                let idx = dust.new_dust(rng, ctx, world, pos, 64, 64, 31, 0.0, 0.0, 100, Color::default(), 2.0);
+                dust.slot_mut(idx).velocity *= 1.4;
+            }
+            for _ in 0..40 {
+                let idx = dust.new_dust(rng, ctx, world, pos, 64, 64, 6, 0.0, 0.0, 100, Color::default(), 3.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 5.0;
+                let idx = dust.new_dust(rng, ctx, world, pos, 64, 64, 6, 0.0, 0.0, 100, Color::default(), 2.0);
+                dust.slot_mut(idx).velocity *= 3.0;
+            }
+            for _ in 0..4 {
+                let _ = rng.next_range(61, 64);
+                let _ = rng.next_range(10, 31);
+                let _ = rng.next_range(-20, 21);
+            }
+        }
         _ => {}
     }
 }
@@ -5232,5 +5344,79 @@ mod tests {
         let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(active.len(), 50);
         assert!(active.iter().all(|d| d.dust_type == 192 && d.no_gravity && d.color == Color::new(100, 100, 100, 100)));
+    }
+
+    /// The 1005/763: 10 dust-1 / 4 dust-40 (noGravity); the scale gates
+    /// ride the randomized base (range checks).
+    #[test]
+    fn w4_g65_the_1005_763_bursts() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(1005)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 10);
+        assert!(active.iter().all(|d| d.dust_type == 1));
+        let mut dust = DustPool::new();
+        drain(&[snap(763)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 4);
+        assert!(active.iter().all(|d| d.dust_type == 40 && d.no_gravity));
+    }
+
+    /// The 772 geode: 6 dust-1 + 27 dust-86..90 (noGravity fadeIn 1.1, the
+    /// last 7 noLight); the 4 loot census draws ride the stream
+    /// (determinism).
+    #[test]
+    fn w4_g65_the_772_geode() {
+        let w = world();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(7);
+        drain(&[snap(772)], &mut dust, &mut rng, &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 33);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 1).count(), 6);
+        let gems: Vec<_> = active.iter().filter(|d| (86..=90).contains(&d.dust_type)).collect();
+        assert_eq!(gems.len(), 27);
+        assert!(gems.iter().all(|d| d.no_gravity && d.fade_in == 1.1));
+        assert_eq!(gems.iter().filter(|d| d.no_light).count(), 7);
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(7);
+        drain(&[snap(772)], &mut dust2, &mut rng2, &ctx(), &w);
+        assert_eq!(dust.slots(), dust2.slots());
+        assert_eq!(rng, rng2);
+    }
+
+    /// The 723/724-family: 10 dust each (88 / 58 / 57), the gore census
+    /// draws ride the stream (determinism).
+    #[test]
+    fn w4_g65_the_723_family() {
+        let w = world();
+        for (kind, dust_type) in [(723u16, 88), (724, 58), (725, 58), (726, 58), (907, 58), (1133, 57)] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(7);
+            drain(&[snap(kind)], &mut dust, &mut rng, &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 10, "kind {kind}");
+            assert!(active.iter().all(|d| d.dust_type == dust_type), "kind {kind}");
+            let mut dust2 = DustPool::new();
+            let mut rng2 = UnifiedRandom::new(7);
+            drain(&[snap(kind)], &mut dust2, &mut rng2, &ctx(), &w);
+            assert_eq!(dust.slots(), dust2.slots());
+            assert_eq!(rng, rng2);
+        }
+    }
+
+    /// The 1053 lava boulder: 25 dust-31 (gravity) + 80 dust-6 = 105; the
+    /// pair-seconds keep gravity (40 of the 80).
+    #[test]
+    fn w4_g65_the_1053_lava_boulder() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(1053)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 105);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 31).count(), 25);
+        assert!(active[..25].iter().all(|d| !d.no_gravity));
+        assert_eq!(active[25..].iter().filter(|d| d.no_gravity).count(), 40);
     }
 }

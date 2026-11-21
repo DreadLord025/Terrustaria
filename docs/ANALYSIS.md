@@ -39745,6 +39745,27 @@ Witnesses: the 117/166 counts, the 99-family type switch + scale range
 (the spawn's default scale is randomized, so a range not an equality),
 the 1054/1055 counts/colour — WRITTEN NOT RUN.
 
+### Batch 21 (10 kinds, the geode/boulder/star bursts `:74877-75210`)
+
+1005 (10× dust-1, Next(2) scale×1.1 gate, the dead base.velocity×1.6
+mutation), 772 (the geode: 6× dust-1 + 20+7 dust-NextFromList(86-90)
+Direct scale 0.7 noGravity vel×2.9 Y×0.8 fadeIn 1.1, last 7 noLight; the
+owner-gated DropGeodeGems loot `:78561-78572` draws FOUR — Next(7)/
+Next(3,7)/Next(6)/Next(3,7) — consumed as the loot census, bodies the
+loot lane's), 763 (4× dust-40, Next(2) scale×0.8 gate, noGravity), 723
+(10× dust-88 Direct alpha 150 scale 1.2 noGravity X×2 + 3 gore-Direct
+SelectRandom(16,17,17) census rows; the ai[2]==1 item request draws
+nothing), 724/725/726/907/1133 (10× dust-58/57 alpha 150 scale 1.2, 907
+vel×0.75; 3 gore Next(16,18) census rows, 907 vel×0.5 body skipped),
+1053 (the lava boulder: resize 64×64 centred; 25× dust-31 alpha 100
+scale 2 vel×1.4 gravity + 40 pairs dust-6 (scale 3 noGravity vel×5 /
+scale 2 vel×3 GRAVITY) + 4 gores at Center−(24,24) census; the 31-resize
++ LavaBoulderExplosion PlaceLiquid-only unported). The 655/91/92 arms
+stay DEFERRED (state-bearing NPC-spawn / falling-star draws). Witnesses:
+the 1005/763 counts, the 772 33-count + gem split + loot determinism, the
+723-family counts + gore determinism, the 1053 105-count/gravity split —
+WRITTEN NOT RUN.
+
 ### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
 
 A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,
