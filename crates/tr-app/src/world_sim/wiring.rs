@@ -358,8 +358,9 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
     }
     // The trap emissions spawn after the fixed step (`NewProjectile` with
     // the knockback 2f, `Wiring.cs:1990-1992`). The flame jet 187 (aiStyle 38)
-    // requests drop until M4-PROJ ports that AI; the trap darts, the spiky
-    // ball 185 and the spear 186 (aiStyle 14) spawn through the pool. The
+    // requests drop until its W4-d4 commit lands that AI; the trap darts, the
+    // spiky ball 185 and the spear 186 (aiStyle 37 since W4-d4/f19 F3) spawn
+    // through the pool. The
     // ceiling −7 arm emits one identical `Spear` request twice: the C#
     // evaluates its cap ONCE before both spawns, so identical requests share
     // one cap decision (and therefore one pool scan).
