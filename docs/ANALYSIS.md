@@ -39393,3 +39393,52 @@ NOT RUN (the two-draw replay pin + the cutter's stream advance). The net
 message 17 stays the local-state truth; the five dust 50 stay the visual
 seam.
 
+## The WorldGen.cs sound deferrals — DOC-SWEEP lane 26 (W4-g24, 2026-11-21, code-only)
+
+The five wave deferrals closed; full evidence in `docs/research/106-doc-sweep-wg-sounds.md`.
+
+**§1 StopWaterfallAmbienceAudio (PORTED)** — `WorldGen.cs:6689-6699` plays the
+34/35 sentinel pair `(-1,-1,0)`: the `x == -1 || y == -1` STOP arms
+(`LegacySoundPlayer.cs:1257-1262`/:1287-1292`), draw-free, no fade.
+`Audio::stop_waterfall_ambience` stops both `liquid_loops` sinks immediately;
+wired into `save_and_quit` at the `:6704` position + `stop_tracked_sounds`
+(`SoundPlayer.StopAll`, `SoundPlayer.cs:79-86`) at `:6715`. The g75
+`sound::liquid_ambience` consumer is the per-tick RE-VOLUME path; this is the
+immediate QUIT stop — complementary, not a dup. The prior "the frame's menu-mode
+flip covers it" note was a quarter-second-late approximation; the immediate seam
+is now faithful.
+
+**§2 JustQuit (PORTED)** — `WorldGen.cs:6627-6662`. Census: the ONLY vanilla
+caller is the `/quit` debug chat command (`ToolkitDebugCommands.cs:232-237`,
+`CommandRequirement.Client`); the F3 debug panel is the dispatcher stand-in
+(S1-E-29), so a real consumer exists. `saveglue::just_quit` ports the body (the
+inline sentinel pair, the invasion reset, the netMode-0 drop, the tracked drain,
+the fast-forward clears, single-player `GoToWorldSelect` + player-origin reset
+`:6655-6656` vs the client's main-menu arm `:6660`). F3 World tab row 15 "Quit
+(no save)" drives it (`row_count` 15→16).
+
+**§3 serverLoad retry ladder (DOC-SKIP)** — `WorldGen.cs:6873-6924` has ZERO
+`PlaySound` sites in the ladder; the only cue is the `:6921` success tail (already
+landed on `start_hosting`). `serverLoadWorld()` is called ONLY from
+`Main.DedServ()` (`Main.cs:5671`), where every `PlaySound` is null
+(`SoundEngine.cs:104`). MP/dedServ-only + no audible cue → skip, documented.
+
+**§4 TownDoorOps (PORTED, the b3 phase-2 seam)** — `AppTownDoors`
+(`world_sim/editing/doors.rs`) implements the trait over
+`edit::{open_door, close_door, shift_tall_gate}` with the pitched 8/9 cues
+(`WorldGen.cs:37727`/:31908/:51762`) on `UpdateNpcs` + the cleanup drops. b3's
+`NoOpTownDoors` (`96a5d88f`, branch-local) is replaced by this sound-complete
+adapter when the town lane adopts it; b3's "ShiftTallGate UNPORTED" note is stale
+(g24 batch 2 landed it). Wrong-kind refusals silent/draw-free.
+
+**§5 c14 dup cue-order (KEEP-ONE + fix)** — c14's `TileKill::check_sounds` and
+g24's `TileKill::check_cues` both port the `Check*` break tails. The C# plays them
+AFTER the check's kill loop (`Check2x1` `:47235`/:47255 follow `:47108-47116`;
+`CheckOrb` `:54335-54342` follows `:54214-54223`), so c14's after-loop position is
+faithful and g24's before-loop was early. **Fix**: `check_cues.extend(plan.cues)`
+moved after `kill_plan_cells` (`kill.rs:528`). **Keep-one for the merger**: keep
+ONE channel — g24's `check_cues` (now after-loop) + its unique case-103 bowl arm,
+DROP c14's `check_sounds` (functionally identical once the order matches; the bowl
+arm is the only behavioural delta). Never keep both (a double play of every
+piggy/orb tail). 5 witnesses WRITTEN NOT RUN.
+
