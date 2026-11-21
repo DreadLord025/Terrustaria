@@ -1258,6 +1258,57 @@ mod chest_save_tests {
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
+    /// W4-e24: the claimable pool's save → load round-trip through the App
+    /// path — `BannerSystem.Save`'s `claimableBanners` half
+    /// (`BannerSystem.cs:180-185`) rides the v18 section, and the loaded side
+    /// seeds the pool (`BannerSystem.Load`'s `version >= 289` arm `:203-211`).
+    /// The pool is seeded through `load_claimable_pairs` (the Load path
+    /// itself), so no milestone fires and the lang singleton stays untouched.
+    #[test]
+    fn w4_e24_a_saved_claimable_pool_round_trips_through_the_app() {
+        let world = chest_rig();
+        let dir = scratch("w4-e24-claimable-roundtrip");
+        let path = dir.join("world.trwld");
+
+        let mut app = app_for(
+            world,
+            WorldSections::native(save::WorldSide::default()),
+            path.clone(),
+        );
+        // Two banners in the pool (the Slime 69 and the Pinky 151), one
+        // fully claimed (0 stays in the map — the sparse-record contract).
+        app.banners.load_claimable_pairs([(69, 2), (151, 0)]);
+        app.player = None;
+        app.settings.map_enabled = false;
+        app.save_world();
+
+        let (world, sections) = crate::app::load_world(&path).expect("the saved world reloads");
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            sections.native.banner_claimable.len(),
+            2,
+            "one record per pooled banner — the zeroed entry rides too"
+        );
+        let back = app_for(world, sections, path);
+        let pairs: Vec<(i32, u16)> = back.banners.claimable_pairs().collect();
+        assert_eq!(pairs, vec![(69, 2), (151, 0)], "the pool rides the store");
+        assert_eq!(back.banners.claimable(69), 2);
+        // The Load does NOT arm the new-banner shine (the C# `Load` only
+        // fills claimableBanners; newBanner stays cleared).
+        assert!(!back.banners.is_new_banner(69));
+        assert!(!back.banners.any_new_claimable);
+
+        // The control: a fresh App over the same world starts with no pool.
+        let world2 = chest_rig();
+        let control = app_for(
+            world2,
+            WorldSections::native(save::WorldSide::default()),
+            PathBuf::new(),
+        );
+        assert_eq!(control.banners.claimable_pairs().count(), 0);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
     /// DW-2.4: the bestiary tally's save → load round-trip through the App
     /// path — the `NPCKillsTracker.Save` counts the kill pass accumulates ride
     /// the world file now (the vanilla's section-10 home; the port had them on

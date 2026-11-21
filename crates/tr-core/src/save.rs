@@ -1869,6 +1869,136 @@ mod tests {
     }
 
     #[test]
+    fn w4_e24_the_banner_claimable_counts_round_trip_in_v18() {
+        // W4-e24: the v18 tail carries `BannerSystem.Save`'s claimable half
+        // (`ushort` per banner id, `BannerSystem.cs:180-185`) as the port's
+        // sparse records — including a zeroed banner (a fully claimed pool
+        // entry survives, the `BannerKill` zero precedent) and the 9999 cap
+        // (`Item.CommonMaxStack`, `Item.cs:49966`).
+        let w = World::new("Test".into(), 32, 32);
+        let side = WorldSide {
+            chests: Vec::new(),
+            banners: vec![BannerKill {
+                banner: 69,
+                kills: 150,
+            }],
+            banner_claimable: vec![
+                BannerClaimable {
+                    banner: 69,
+                    count: 3,
+                },
+                BannerClaimable {
+                    banner: 151,
+                    count: 0,
+                },
+                BannerClaimable {
+                    banner: 119,
+                    count: 9999,
+                },
+            ],
+            bestiary: Vec::new(),
+            npcs: Vec::new(),
+            ore_tiers: None,
+            ..Default::default()
+        };
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &side).unwrap();
+        assert_eq!(&buf[8..12], &[18, 0, 0, 0], "the writer emits v18");
+        let (_, back_side) = parse(&buf).unwrap();
+        assert_eq!(back_side.banner_claimable, side.banner_claimable);
+        assert_eq!(back_side.banners, side.banners, "the kill counts still ride");
+    }
+
+    #[test]
+    fn w4_e24_a_pre_v18_payload_loads_no_claimable_banners() {
+        // W4-e24: a v17 payload (the version field patched — the v18 tail
+        // sits unread) parses with the kill counts intact and no claimable
+        // pool: the C# `Load`'s pre-289 reset (`BannerSystem.cs:203-211`
+        // guards the claimable half on the version).
+        let w = World::new("Test".into(), 32, 32);
+        let side = WorldSide {
+            chests: Vec::new(),
+            banners: vec![BannerKill {
+                banner: 69,
+                kills: 50,
+            }],
+            banner_claimable: vec![BannerClaimable {
+                banner: 69,
+                count: 1,
+            }],
+            bestiary: Vec::new(),
+            npcs: Vec::new(),
+            ore_tiers: None,
+            ..Default::default()
+        };
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &side).unwrap();
+        buf[8..12].copy_from_slice(&17u32.to_le_bytes());
+        let (_, back_side) = parse(&buf).unwrap();
+        assert_eq!(back_side.banners, side.banners, "the v8 kills still load");
+        assert!(
+            back_side.banner_claimable.is_empty(),
+            "no claimable pool below v18"
+        );
+    }
+
+    #[test]
+    fn w4_e24_a_truncated_claimable_section_bails() {
+        // W4-e24 (dirty): the claimable section is self-delimiting; a payload
+        // cut mid-record is a structural error. The tail is the u32 count +
+        // one (i32, u16) record; -2 cuts into the record's u16 count.
+        let w = World::new("Test".into(), 32, 32);
+        let side = WorldSide {
+            chests: Vec::new(),
+            banners: Vec::new(),
+            banner_claimable: vec![BannerClaimable {
+                banner: 69,
+                count: 1,
+            }],
+            bestiary: Vec::new(),
+            npcs: Vec::new(),
+            ore_tiers: None,
+            ..Default::default()
+        };
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &side).unwrap();
+        buf.truncate(buf.len() - 2); // inside the claimable record's u16
+        assert!(parse(&buf).is_err());
+    }
+
+    #[test]
+    fn w4_e24_the_claimable_section_is_deterministic() {
+        // W4-e24: the same records written twice are byte-equal.
+        let w = World::new("Test".into(), 32, 32);
+        let side = WorldSide {
+            chests: Vec::new(),
+            banners: Vec::new(),
+            banner_claimable: vec![
+                BannerClaimable {
+                    banner: 69,
+                    count: 2,
+                },
+                BannerClaimable {
+                    banner: 151,
+                    count: 7,
+                },
+            ],
+            bestiary: Vec::new(),
+            npcs: Vec::new(),
+            ore_tiers: None,
+            ..Default::default()
+        };
+        let mut a = Vec::new();
+        let mut b = Vec::new();
+        write_world(&mut a, &w, &side).unwrap();
+        write_world(&mut b, &w, &side).unwrap();
+        assert_eq!(a, b);
+        let (_, back) = parse(&a).unwrap();
+        assert_eq!(back.banner_claimable.len(), 2);
+        assert_eq!(back.banner_claimable[0].banner, 69);
+    }
+
+    #[test]
     fn dw_2_4_the_bestiary_counts_round_trip_in_v9() {
         // DW-2.4: the v9 tail carries `NPCKillsTracker.Save`'s counts
         // (the credit-id string + int32, `NPCKillsTracker.cs:59-70`) — the

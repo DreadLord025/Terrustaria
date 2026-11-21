@@ -806,5 +806,26 @@ mod tests {
             .find(|d| d.kind == 1683)
             .expect("the overflow drops the banner");
         assert_eq!(drop.count, 1);
+        // The overflow's scatter rides the `UpdatePlayers` stream (the
+        // player-inventory action's swap, the extractinator cursor-drop
+        // precedent): the banner 1683 is non-prefixable, so the drop pays
+        // exactly the three velocity draws and nothing else.
+        use crate::app::RngKey;
+        let mut witness = app.rngs.stream(RngKey::UpdatePlayers).clone();
+        let _r1 = witness.next_float();
+        let _r2 = witness.next_float();
+        let _r3 = witness.next_float();
+        let mut twin = app.rngs.stream(RngKey::UpdatePlayers).clone();
+        crate::world_sim::items::spawn_item_drop_px(
+            &mut Vec::new(),
+            &mut twin,
+            1683,
+            1,
+            glam::Vec2::new(0.0, 0.0),
+        );
+        assert_eq!(
+            twin, witness,
+            "the overflow paid exactly the three velocity draws on UpdatePlayers"
+        );
     }
 }

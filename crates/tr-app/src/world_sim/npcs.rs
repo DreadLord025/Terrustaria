@@ -5264,12 +5264,36 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // chain draws NO RNG (the C# `AddNPCKillBy`/`AddKill`/
         // `AddClaimableBanner` are pure state writes).
         if crate::banners::get_were_there_any_interactions(npc, app.local_id as usize) {
-            let banner_id = crate::banners::banner_id(entry.net_id, npc.kind.cs_id() as i32);
-            if !crate::banners::excluded_from_death_tally(entry.net_id) {
+            // The gate chain reads the NPC's OWN id, not the bestiary
+            // entry's folded one: `ExcludedFromDeathTally` reads `this.netID`
+            // (`NPC.cs:79795-79805`, `netID = type` at `:17817`) — the Force
+            // Bubble (384) is excluded while its folded credit entry (the
+            // Officer, 383) is not. The slime family's own net id is the
+            // variant-aware entry id (-1..-10; `cs_id`'s fallback hardcodes
+            // Blue); every other kind's `cs_id` is its own vanilla type (the
+            // folded families keep no hand row — the s1_f_3 invariant), so
+            // the two agree except the Force Bubble's hand row.
+            let own_id = if npc.kind == NpcKind::Slime {
+                entry.net_id
+            } else {
+                npc.kind.cs_id() as i32
+            };
+            if !crate::banners::excluded_from_death_tally(own_id) {
+                let banner_id = crate::banners::banner_id(own_id, own_id);
                 let plr = banner_kill_plr(app, npc);
-                if let Some(text) =
-                    app.banners.add_npc_kill_by(banner_id, plr, &app.player_name)
-                {
+                // `AddNPCKillBy`'s announcement reads `Main.player[plr].name`
+                // (`BannerSystem.cs:254`) — the picked slot's name, not the
+                // local player's: a `FindClosestPlayer` fallback onto a remote
+                // peer announces the PEER's name. An absent slot (-1) takes
+                // the unnamed form, so the name is unused.
+                let name = if plr == app.local_id as i32 {
+                    app.player_name.clone()
+                } else if let Some(peer) = app.remote_players.get(&(plr as u32)) {
+                    peer.name.clone()
+                } else {
+                    String::new()
+                };
+                if let Some(text) = app.banners.add_npc_kill_by(banner_id, plr, &name) {
                     crate::chat::broadcast_death_text(
                         &mut app.chat,
                         &text,
@@ -18343,5 +18367,277 @@ mod king_slime_audit_tests {
             "the finder picks the witnessed candidate"
         );
         assert_eq!(rng2, witness, "the pick consumes exactly one Next(0, size) draw");
+    }
+}
+
+/// W4-e24 — the NPC banner drop-rule chain's wiring witnesses (WRITTEN, NOT
+/// RUN — code-only mode). These exercise the death-path banner arm end to end
+/// through `update_npcs`: the interaction gate, the exclusion gate (the NPC's
+/// OWN net id, not the folded bestiary entry), the claimable-not-world-drop
+/// milestone, the `lastInteraction`/`FindClosestPlayer` plr pick + the
+/// picked-slot announcement name, and the chain's RNG neutrality. The claim
+/// loopback itself (`request_banner_claim`/`claim_banner`) is pinned in
+/// `banners.rs`; the v18 save round-trip in `save.rs`/`saveglue.rs`.
+#[cfg(test)]
+mod w4_e24_banner_wiring_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::RngKey;
+    use crate::net::PlayerNet;
+    use crate::player::Player;
+
+    /// The announcement keys resolve through the shipped en-US resources; the
+    /// tests hold the lang lock for the whole read (the `lang::test_lock`
+    /// convention — a parallel culture switch would race the singleton).
+    fn lang_guard() -> std::sync::MutexGuard<'static, ()> {
+        let g = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        g
+    }
+
+    /// A ground-world App with a live session player at slot 0 and the ambient
+    /// spawner held off (`npc_timer` high, the DW-3.3 precedent) so the death
+    /// pass is the only NPC activity.
+    fn rig() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut world = crate::test_world_helpers::ground();
+        world.compute_column_surface();
+        app.world = world;
+        app.player = Some(Player::spawn(&app.world));
+        app.npc_timer = 10.0;
+        app
+    }
+
+    /// Push a Blue Slime at tile 30 and strike it dead as player 0 — the
+    /// `ApplyInteraction_Inner` port latches `player_interaction[0]` +
+    /// `last_interaction = 0` (`npc.rs`'s `strike_pooled`). Returns the pool
+    /// index it occupied (the death retain compacts it away this tick).
+    fn struck_slime(app: &mut App) -> usize {
+        let slime = Npc::spawn_slime_variant(&app.world, 30, SlimeVariant::Blue).unwrap();
+        app.npcs.push(slime);
+        let idx = app.npcs.len() - 1;
+        assert!(Npc::strike_melee(
+            &mut app.npcs,
+            idx,
+            9999,
+            0.0,
+            0.0,
+            false,
+            Some(0),
+            false
+        ));
+        assert!(app.npcs[idx].hp <= 0, "the strike killed the slime");
+        assert!(app.npcs[idx].player_interaction[0], "the interaction latched");
+        assert_eq!(app.npcs[idx].last_interaction, 0, "lastInteraction latched");
+        idx
+    }
+
+    /// The interaction gate (`NPC.GetWereThereAnyInteractions`,
+    /// `NPC.cs:78840`): a STRUCK death tallies; a dead-on-arrival death (no
+    /// interaction — the despawn / self-strike shape) refuses.
+    #[test]
+    fn w4_e24_the_interaction_gate_separates_struck_from_dead_on_arrival() {
+        let _g = lang_guard();
+        // Struck: the banner tally climbs.
+        let mut a = rig();
+        struck_slime(&mut a);
+        update_npcs(&mut a, 1.0 / 60.0);
+        assert_eq!(a.banners.kills(69), 1, "the struck slime tallied");
+        assert!(a.npcs.is_empty(), "the dead slime was retained out");
+        // Dead-on-arrival: no interaction → the gate refuses, no tally.
+        let mut b = rig();
+        let mut slime = Npc::spawn_slime_variant(&b.world, 30, SlimeVariant::Blue).unwrap();
+        slime.hp = 0; // no strike — the interaction array stays empty
+        b.npcs.push(slime);
+        update_npcs(&mut b, 1.0 / 60.0);
+        assert_eq!(b.banners.kills(69), 0, "the un-interacted death refuses");
+        assert_eq!(b.banners.claimable(69), 0);
+    }
+
+    /// The milestone makes the banner CLAIMABLE, not a world drop
+    /// (`BannerSystem.AddClaimableBanner`, `BannerSystem.cs:260-269`): 50
+    /// struck Blue Slime kills → `claimable[69] == 1`, the announcement fires
+    /// in the Command color, and NO banner item (1683) lands in `app.items`.
+    /// The claim loopback then delivers it to the mouse item.
+    #[test]
+    fn w4_e24_fifty_struck_slimes_make_the_banner_claimable_not_a_world_drop() {
+        let _g = lang_guard();
+        let mut app = rig();
+        app.player_name = "Belsin".into();
+        for _ in 0..50 {
+            struck_slime(&mut app);
+            app.npc_timer = 10.0; // hold the spawner off every tick
+            update_npcs(&mut app, 1.0 / 60.0);
+        }
+        assert_eq!(app.banners.kills(69), 50);
+        assert_eq!(app.banners.claimable(69), 1, "the 50th kill made it claimable");
+        assert!(app.banners.is_new_banner(69));
+        assert!(app.banners.any_new_claimable);
+        // The announcement: the named form, Command color (250, 250, 0).
+        let line = app
+            .chat
+            .messages
+            .iter()
+            .find(|m| m.color == crate::chat::COLOR_COMMAND)
+            .expect("the milestone announced");
+        assert_eq!(line.text, "Belsin has defeated the 50th Blue Slime!", "{}", line.text);
+        // NO world drop of the banner item — the pre-e24 death-spot drop is gone.
+        assert!(
+            !app.items.iter().any(|d| d.kind == 1683),
+            "the milestone does NOT drop the banner item"
+        );
+        // The claim loopback delivers it to the mouse item (inventory open).
+        app.inventory_open = true;
+        crate::banners::request_banner_claim(&mut app, 69, 1);
+        assert_eq!(app.banners.claimable(69), 0, "the claim drained the pool");
+        assert_eq!((app.mouse_item.kind, app.mouse_item.count), (1683, 1));
+        assert_eq!(app.fake_cursor.item_type(), 0, "the loopback cleared the overlay");
+        assert!(!app.items.iter().any(|d| d.kind == 1683), "no overflow — the cursor took it");
+    }
+
+    /// The exclusion gate reads the NPC's OWN net id, not the folded bestiary
+    /// entry (`NPC.ExcludedFromDeathTally`, `NPC.cs:79793-79808`): the Force
+    /// Bubble (384) is in `PositiveNPCTypesExcludedFromDeathTally` while its
+    /// folded credit entry (the Officer, 383) is NOT — so a struck bubble
+    /// death never tallies, but a struck Zombie (3 → banner 87) does.
+    #[test]
+    fn w4_e24_excluded_kinds_never_tally_but_the_folded_entry_would() {
+        let _g = lang_guard();
+        // The fold: the bubble's bestiary credit rides the Officer (383).
+        let folded = crate::bestiary::entry_for_npc(NpcKind::ForceBubble, SlimeVariant::Blue);
+        assert_eq!(folded.net_id, 383, "the bubble folds onto the Officer");
+        assert!(!crate::banners::excluded_from_death_tally(383), "the Officer is not excluded");
+        assert!(crate::banners::excluded_from_death_tally(384), "the bubble IS excluded");
+        // A struck Force Bubble death: the gate reads 384 → excluded → no tally.
+        let mut a = rig();
+        let bubble = Npc::new(NpcKind::ForceBubble, 30.0 * TILE_PX, 110.0 * TILE_PX, 1, 0.0);
+        a.npcs.push(bubble);
+        let idx = a.npcs.len() - 1;
+        Npc::strike_melee(&mut a.npcs, idx, 99999, 0.0, 0.0, false, Some(0), false);
+        update_npcs(&mut a, 1.0 / 60.0);
+        assert_eq!(a.banners.kills(141), 0, "the excluded bubble never tallies");
+        assert_eq!(a.banners.pairs().count(), 0, "no banner tally at all");
+        // The control: a struck Zombie (own id 3, not excluded) tallies 87.
+        let mut b = rig();
+        let zombie = Npc::new(NpcKind::Zombie, 30.0 * TILE_PX, 110.0 * TILE_PX, 1, 0.0);
+        b.npcs.push(zombie);
+        let idx = b.npcs.len() - 1;
+        Npc::strike_melee(&mut b.npcs, idx, 99999, 0.0, 0.0, false, Some(0), false);
+        update_npcs(&mut b, 1.0 / 60.0);
+        assert_eq!(b.banners.kills(87), 1, "the non-excluded zombie tallied");
+    }
+
+    /// The plr pick (`NPC.CountKillForBannersAndDropThem`,
+    /// `NPC.cs:79814-79818`): `lastInteraction` stands while that slot is
+    /// active + alive; a dead local slot falls back to `FindClosestPlayer`
+    /// (the living remote peer wins); no player at all → -1.
+    #[test]
+    fn w4_e24_the_plr_pick_falls_back_to_the_closest_living_player() {
+        let mut app = rig();
+        // The local player is dead; a living peer sits beside the NPC.
+        if let Some(p) = app.player.as_mut() {
+            p.dead = true;
+            p.x = 0.0;
+            p.y = 110.0 * TILE_PX;
+        }
+        app.remote_players.insert(
+            5,
+            PlayerNet {
+                id: 5,
+                name: "Peer".into(),
+                x: 100.0 * TILE_PX,
+                y: 110.0 * TILE_PX,
+                hp: 100,
+                max_hp: 100,
+                ..Default::default()
+            },
+        );
+        let mut npc = Npc::new(NpcKind::Slime, 100.0 * TILE_PX, 110.0 * TILE_PX, 1, 0.0);
+        // lastInteraction = 0 (the dead local slot) → FindClosestPlayer → peer 5.
+        npc.last_interaction = 0;
+        assert_eq!(banner_kill_plr(&app, &npc), 5, "the dead local slot falls back to the peer");
+        // A living local slot stands as lastInteraction.
+        if let Some(p) = app.player.as_mut() {
+            p.dead = false;
+        }
+        assert_eq!(banner_kill_plr(&app, &npc), 0, "the living local slot stands");
+        // No player at all + the unset sentinel → -1.
+        app.player = None;
+        app.remote_players.clear();
+        npc.last_interaction = 255;
+        assert_eq!(banner_kill_plr(&app, &npc), -1, "no active player → -1");
+    }
+
+    /// The announcement names the PICKED slot (`BannerSystem.cs:254` reads
+    /// `Main.player[plr].name`): a dead local slot + a living peer → the 50th
+    /// kill announces the PEER's name, not the local player's.
+    #[test]
+    fn w4_e24_the_announcement_names_the_picked_slot() {
+        let _g = lang_guard();
+        let mut app = rig();
+        app.player_name = "Local".into();
+        if let Some(p) = app.player.as_mut() {
+            p.dead = true;
+            p.x = 0.0;
+            p.y = 110.0 * TILE_PX;
+        }
+        app.remote_players.insert(
+            5,
+            PlayerNet {
+                id: 5,
+                name: "Peer".into(),
+                x: 30.0 * TILE_PX,
+                y: 110.0 * TILE_PX,
+                hp: 100,
+                max_hp: 100,
+                ..Default::default()
+            },
+        );
+        // 49 kills already tallied; the 50th lands the milestone.
+        app.banners.load_pairs([(69, 49)]);
+        struck_slime(&mut app);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.banners.kills(69), 50);
+        let line = app
+            .chat
+            .messages
+            .iter()
+            .find(|m| m.color == crate::chat::COLOR_COMMAND)
+            .expect("the milestone announced");
+        assert_eq!(line.text, "Peer has defeated the 50th Blue Slime!", "{}", line.text);
+    }
+
+    /// The banner chain draws NO RNG: two identical struck-slime deaths, one
+    /// with the interaction latched (the tally runs) and one with it cleared
+    /// (the gate refuses) — every named stream is byte-equal afterwards. The
+    /// C# `AddNPCKillBy`/`AddKill`/`AddClaimableBanner` are pure state writes;
+    /// the removed death-spot drop's velocity/prefix draws are gone.
+    #[test]
+    fn w4_e24_the_banner_chain_draws_no_rng() {
+        let _g = lang_guard();
+        let mut a = rig();
+        struck_slime(&mut a);
+        update_npcs(&mut a, 1.0 / 60.0);
+        assert_eq!(a.banners.kills(69), 1, "the tally ran");
+
+        let mut b = rig();
+        struck_slime(&mut b);
+        // Clear ONLY the interaction (the gate input) — the physical state
+        // (hp, knockback, hurt_cd) stays identical, so any stream divergence
+        // would be the banner chain's own draws.
+        let idx = b.npcs.len() - 1;
+        b.npcs[idx].player_interaction = [false; 256];
+        b.npcs[idx].last_interaction = 255;
+        update_npcs(&mut b, 1.0 / 60.0);
+        assert_eq!(b.banners.kills(69), 0, "the gate refused");
+
+        for key in RngKey::ALL {
+            assert_eq!(
+                a.rngs.stream(key),
+                b.rngs.stream(key),
+                "{} byte-equal — the banner chain drew nothing",
+                key.name()
+            );
+        }
     }
 }

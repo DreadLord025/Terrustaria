@@ -15695,8 +15695,9 @@ the kill count: the C# `BannerSystem.Save` shape (`int32` per banner id,
   (`BannerSystem.cs:188-212`) replaces the tally wholesale вЂ” the port's
   `load_pairs` inserts the recorded entries, and a recorded **0 stays in the
   map** so a zeroed banner round-trips (the C# keeps only the entries its
-  count array carries). `claimableBanners` (the ushort array `:172-186`) is
-  not modelled in the port and stays out.
+  count array carries). `claimableBanners` (the ushort array `:180-185`) was
+  not modelled here; **W4-e24 lands it** as the v18 `banner_claimable` section
+  (see "The NPC banner drop-rule chain + claimable counts (W4-e24)" below).
 - **The app wiring.** `save_world` collects `banners.pairs()` (ascending
   banner-id order) beside the chests; `App::new` restores the tally through
   `BannerSystem::load_pairs` at construction, so the placed banners' strength
@@ -39244,3 +39245,117 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+## The NPC banner drop-rule chain + claimable counts (W4-e24, code-only mode)
+
+**Scope.** The C# `NPC.NPCLoot` banner arms (`NPC.cs:78830-78848`) and
+`BannerSystem`'s kill/claim chain, ported faithfully into `banners.rs` +
+the death path. The pre-e24 port spawned the banner ITEM at the death spot on
+the milestone — unfaithful: the C# makes the banner CLAIMABLE
+(`AddClaimableBanner`) and the player claims it through the BannerClaimingUI.
+The f31 index-space reconciliation (`1365403e`, the `NPCtoBanner` keying)
+is untouched — the tally still keys `npc_to_banner`.
+
+### The drop-rule gate chain (`NPC.cs`)
+
+- `GetWereThereAnyInteractions` (`:78823-78831`) → `AnyInteractions`
+  (`:78722-78742`): the `realLife >= 0` arm reads the CARRIER's flags.
+  The port reads the dead clone's own `player_interaction` array:
+  `strike_pooled` (`npc.rs`, the `ApplyInteraction_Inner` port) writes
+  the interaction onto the CARRIER for a linked segment, so the segment's own
+  array stays empty and the gate refuses it; the head is its own carrier
+  (`realLife = whoAmI`), so its own array carries the strike. A
+  no-interaction death (the Golem parts' 9999 self-strike, the despawn kills)
+  leaves the array empty and the gate refuses. Single-player reads the local
+  slot (`Main.myPlayer`); the death pass never runs on a client
+  (`npcs_phase` gates `!is_client`).
+- `ExcludedFromDeathTally` (`:79793-79808`): the negative-net-id arms
+  (`-5` and `-1` excluded), `NPCID.Sets.ProjectileNPC`
+  (`NPCID.cs:10448`: 25, 30, 665, 33, 112, 666, 261, 265, 371, 516, 519)
+  and `PositiveNPCTypesExcludedFromDeathTally` (`:10480`: 121, 384, 478,
+  479, 410, 472, 378). **The gate reads the NPC's OWN `netID`** (`netID =
+  type`, `:17817`), NOT the bestiary entry's folded id: the Force Bubble
+  (384) is excluded while its folded credit entry (the Officer, 383) is
+  not, so the death arm resolves `own_id` from the kind's `cs_id` (the
+  slime family rides the variant-aware entry id — `cs_id`'s fallback
+  hardcodes Blue). `BannerID` (`:7644-7651`) reads the same own id.
+- `CountKillForBannersAndDropThem` (`:79810-79821`): the `plr` is
+  `lastInteraction` (`NPC.cs:6087`, default 255), falling back to
+  `FindClosestPlayer` (`:77456-77492`, the living-pass + the dead/ghost
+  fallback) when that slot is inactive/dead. `Npc.last_interaction` is
+  written by `strike_pooled`'s `ApplyInteraction_Inner`
+  (`:80057-80066`, the `player < 255` gate). `banner_kill_plr`
+  (`world_sim/npcs.rs`) scans the session player + the remote peers
+  (deterministic slot order). `BannerID` (`:7644-7651`): the net id when
+  `netID >= -10`, else the type (no ported kind reaches the deeper arm).
+- `IsNPCValidForBestiaryKillCredit` (`:78901-78914`): the Slimer (121)
+  never credits; the EoW segments (13/14/15) credit only their boss head.
+  Ported as a pure predicate; the bestiary credit itself keeps its documented
+  constants-on interaction stand-in (the EoW boss flag rides the unported
+  `DropEoWLoot`, `NPC.cs:78414-78428` — the last-segment-only `boss =
+  true` write).
+
+### The claimable pool (`BannerSystem.cs`)
+
+- `AddNPCKillBy` (`:231-258`): `AddKill` (`:271-278`) increments
+  `killCount`; on the `KillsToBanner[BannerToItem(banner)]` milestone
+  (`ItemID.cs:1303-1304`, default 50) `AddClaimableBanner`
+  (`:260-269`) increments `claimableBanners` (capped at
+  `Item.CommonMaxStack` 9999, `Item.cs:49966`), arms `newBanner` on the
+  FIRST claimable (`|= claimable == 0`) and ORs `AnyNewClaimableBanners`.
+  The announcement is a `NetworkText` — `Game.EnemiesDefeatedByAnnouncement`
+  (`{0} has defeated the {1}th {2}!`) when `0 <= plr < 255`, else
+  `Game.EnemiesDefeatedAnnouncement` (`The {0}th {1} has been defeated!`);
+  the port resolves the same keys through `lang::text_args` with
+  `Lang.GetNPCName(BannerToNPC(banner))`. **The `{0}` name is the PICKED
+  slot's** (`Main.player[plr].name`, `:254`), not the local player's: the
+  death arm names the local player when `plr == local_id`, else the remote
+  peer's stored name (a `FindClosestPlayer` fallback onto a peer announces
+  the PEER). The caller broadcasts in the Command color (250, 250, 0).
+  **The milestone draws NO RNG** — the C#
+  `AddNPCKillBy`/`AddKill`/`AddClaimableBanner` are pure state writes;
+  the removed death-spot drop's velocity/prefix draws are gone, re-pinning
+  the `UpdateNPCs` stream.
+- `HandleBannerClaimRequest` (`:295-324`): `amount < 1` clamps to 1;
+  `num = min(amount, claimable)` is granted (the count decrements, the
+  new-banner flag clears at zero + `RefreshAnyNewClaimableBanners`), the
+  remainder refused. `Clear`/`SetNewBanner`/`ClearNewBanner` ported.
+- The claim lifecycle: `FakeCursorItem` (`GameContent/FakeCursorItem.cs`)
+  `Add`/`Remove`/`Reset`; `RequestBannerClaim` (`:280-284`) arms the
+  fake cursor then sends the request. The single-player loopback
+  (`claim_banner`) applies `HandleBannerClaimRequest` +
+  `HandleBannerClaimResponse` (`:326-339`) back to back: the grant fills
+  `Main.mouseItem.TryAddStack` (`Item.cs:49543-49570`, ported as
+  `ItemSlot::try_add_stack`) only while the inventory is open + the player
+  alive, the overflow `QuickSpawnItem`s at the player centre
+  (`GetItemSource_InventoryOverflow`) on the `UpdatePlayers` stream (the
+  extractinator cursor-drop precedent). The refused units only clear the fake
+  cursor.
+
+### The save (`.trwld` v18)
+
+`WorldSide.banner_claimable` (`BannerClaimable` records: banner id + u16
+count) carries `BannerSystem.Save`'s `claimableBanners` half
+(`:180-185`); the load is the `version >= 289` arm (`:203-211`). A
+pre-v18 file loads none (the pool starts empty, the C#'s pre-289 reset). The
+`newBanner` shine is runtime-only (the C# `Load` does not restore it). The
+back-compat truncation fixtures shift +4 (the empty claimable count).
+
+### Verification
+
+Code-only: every arm re-read against the cited C# windows; the seam call
+sites checked against the actual signatures by read/grep (`App` fields,
+`Npc` fields, `lang::text_args`/`npc_name`, `registry::max_stack`,
+`spawn_item_drop_px`, `ItemSlot`). The witnesses (`banners.rs`: the
+milestone/claimable/cap/claim-request/new-banner/exclusion/credit-gate/
+BannerID/FindClosestPlayer/FakeCursorItem/clear/claimable-round-trip/
+claim-loopback/claim-overflow tests; `item.rs`: `try_add_stack`;
+`world_sim/npcs.rs` `w4_e24_banner_wiring_tests`: the interaction gate
+(struck vs dead-on-arrival), the claimable-not-world-drop milestone
+(50 struck slimes → claimable[69]=1, no item 1683, the claim loopback
+delivers), the exclusion gate (the Force Bubble's OWN 384 vs the folded
+Officer 383), the plr fallback (dead local slot → FindClosestPlayer peer),
+the picked-slot announcement name, and the chain's RNG neutrality (every
+named stream byte-equal with the tally on vs off); `save.rs`: the v18
+round-trip / pre-v18-empty / truncated-bails / deterministic;
+`saveglue.rs`: the app-level claimable round-trip) are WRITTEN, NOT RUN —
+**no cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
