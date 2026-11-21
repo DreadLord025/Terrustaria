@@ -53,6 +53,38 @@ pub fn minimap_alpha_step(alpha: f32, up: bool) -> f32 {
     if up { alpha + 0.015 } else { alpha - 0.015 }
 }
 
+/// `Player.cs:24921-24928` / `:24940-24947`: MapAlphaUp/Down step the map
+/// alpha ±0.015 per update while held (style 1 → `mapMinimapAlpha`,
+/// style 2 → `mapOverlayAlpha`). Unclamped here — the C# clamps on the
+/// draw side (`map_alpha_clamp`). W4-g53 `a9774d2a` / W4-e18 `249a0c1b`.
+pub fn map_key_alpha(alpha: f32, up: bool) -> f32 {
+    if up { alpha + 0.015 } else { alpha - 0.015 }
+}
+
+/// `Main.cs:55523-55530` / `:55559-55566`: both map alphas clamp to
+/// `[0.01, 1]` at draw.
+pub fn map_alpha_clamp(alpha: f32) -> f32 {
+    alpha.clamp(0.01, 1.0)
+}
+
+/// `Main.cs:55550-55558`: the overlay scale clamps to
+/// `[screen_w / world_w, 16 * RenderZoom]`. `RenderZoom` is
+/// `GameViewMatrix.ZoomMatrix.M11` (`SpriteViewMatrix.cs:98`/`:149-154`,
+/// the zoom rounded to 1/128 steps) — `ForcedMinimumZoom * Clamp(
+/// GameZoomTarget, 1, 2)` (`Main.cs:61999`); the caller passes the port's
+/// `forced_minimum_zoom(screen) * zoom` product, not the bare settings
+/// zoom (the g53 arm's simplification, corrected here — W4-f46 dup pass).
+/// `world_w <= 0` cannot occur for a loaded world; the guard keeps the
+/// headless 0-width fixtures from dividing by zero. The two ifs run in
+/// the C# order (floor first, cap second — the cap wins if they invert;
+/// `f32::clamp` would panic there).
+pub fn overlay_scale_clamp(screen_w: f32, world_w: i32, render_zoom: f32, proposed: f32) -> f32 {
+    let floor = if world_w > 0 { screen_w / world_w as f32 } else { 0.0 };
+    let s = if proposed < floor { floor } else { proposed }; // `:55551-55554`
+    let cap = 16.0 * render_zoom;
+    if s > cap { cap } else { s } // `:55555-55558`
+}
+
 /// `Main.cs:55398-55413`: X into `10..=maxTilesX-10`, Y into `10..=maxTilesY-19`.
 pub fn map_clamp_pos(pos: [f32; 2], world: &World) -> [f32; 2] {
     [
@@ -106,6 +138,33 @@ pub fn head_icon_pos(center_px: [f32; 2], pos: [f32; 2], scale: f32, screen: Vec
 /// drawn tile window is `[10, 10] ..= [maxTilesX-11, maxTilesY-20]`.
 pub fn map_full_quad(pos: [f32; 2], scale: f32, screen: Vec2, world: &World) -> MapQuad {
     let origin = map_origin(pos, scale, screen);
+    let x0 = 10.0;
+    let y0 = 10.0;
+    let x1 = (world.width - 11) as f32;
+    let y1 = (world.height - 20) as f32;
+    MapQuad {
+        dest: [origin[0], origin[1], (x1 - x0) * scale, (y1 - y0) * scale],
+        uv: [
+            x0 / world.width as f32,
+            y0 / world.height as f32,
+            x1 / world.width as f32,
+            y1 / world.height as f32,
+        ],
+    }
+}
+
+/// `Main.DrawMap`'s style-2 overlay geometry (`Main.cs:55567-55578` +
+/// `:55591-55607`): screen-centred on the view centre (no int truncation —
+/// `num34/35` stay fractional, unlike the minimap's `(int)num31`), the same
+/// `[10,10] ..= [maxTilesX-11, maxTilesY-20]` tile window as the fullscreen
+/// map (`num12/num13` stay 0: the `:55593-55608` window shifts only move on
+/// the style-1 branch). `scale` is `Main.mapOverlayScale` (`:55567`), already
+/// clamped by [`WorldMap::clamp_overlay_axes`]. No `MapScale` batch transform:
+/// `transformMatrix = Matrix.Identity` for `mapStyle != 1` (`:55318-55321`).
+pub fn map_overlay_quad(center_tile: [f32; 2], scale: f32, screen: Vec2, world: &World) -> MapQuad {
+    // `:55571-55576`: `num = -(viewCentre.x * scale) + screenWidth/2` (+ the
+    // `num6 * num5` 10-tile inset at `:55577-55578`) — `map_origin`'s shape.
+    let origin = map_origin(center_tile, scale, screen);
     let x0 = 10.0;
     let y0 = 10.0;
     let x1 = (world.width - 11) as f32;
@@ -425,6 +484,17 @@ pub struct WorldMap {
     /// backdrop (`MinimapFrame.cs:182`); the frame foreground stays
     /// `Color.White` (`:187`).
     pub minimap_alpha: f32,
+    /// `Main.mapOverlayScale` (`Main.cs:66754`, default 2.5): the overlay's
+    /// zoom axis — keys ×1.05/×0.95 (`Player.cs:24932-24939`), clamped
+    /// `screen_w/world_w .. 16*RenderZoom` (`Main.cs:55550-55558`) by
+    /// [`WorldMap::clamp_overlay_axes`] on the draw half. The style-2
+    /// overlay draw consumes it (`WorldMap::draw_overlay`).
+    pub overlay_scale: f32,
+    /// `Main.mapOverlayAlpha` (`Main.cs:66755`, default 0.35): keys ±0.015
+    /// (`Player.cs:24940-24947`), clamped 0.01..1 (`Main.cs:55559-55566`).
+    /// `b = (byte)(255 * alpha)` (`:55568`) tints the overlay tile pass and
+    /// the icon block (`:55625`).
+    pub overlay_alpha: f32,
     /// `Main.mapTime` (`Main.cs:803`) — the countdown that gates the
     /// lighting → map export (`LegacyLighting.cs:349`).
     map_time: i32,
@@ -517,6 +587,8 @@ impl WorldMap {
             pos: [0.0, 0.0],
             minimap_scale: 1.05,
             minimap_alpha: 1.0, // `Main.cs:66753`
+            overlay_scale: 2.5, // `Main.cs:66754`
+            overlay_alpha: 0.35, // `Main.cs:66755`
             map_time: 0,
             map_time_max: 0,
             map_delay: 2, // `Main.cs:66504` (static ctor), `WorldGen.cs:6947`
@@ -556,6 +628,22 @@ impl WorldMap {
     pub fn clamp_minimap_axes(&mut self) {
         self.minimap_scale = crate::ui::minimap::clamp_minimap_scale(self.minimap_scale);
         self.minimap_alpha = self.minimap_alpha.clamp(0.01, 1.0);
+    }
+
+    /// `Main.cs:55550-55566`: the style-2 overlay's draw-side clamps —
+    /// scale `screenWidth/maxTilesX .. 16*RenderZoom` (`:55550-55558`,
+    /// [`overlay_scale_clamp`]'s two ifs in C# order), alpha `0.01..1`
+    /// (`:55559-55566`). `render_zoom` is the caller's
+    /// `forced_minimum_zoom(screen) * zoom` product (`Main.cs:61999`).
+    /// Called on the draw half beside `prepare` (the same site as
+    /// `clamp_minimap_axes` runs inside it) — the C# clamps inside the
+    /// style-2 draw branch; the port's every-in-world-frame placement is
+    /// the same idempotent projection (research/84 §10.7 row 7's
+    /// equivalence argument).
+    pub fn clamp_overlay_axes(&mut self, screen_w: f32, world_w: i32, render_zoom: f32) {
+        self.overlay_scale =
+            overlay_scale_clamp(screen_w, world_w, render_zoom, self.overlay_scale);
+        self.overlay_alpha = map_alpha_clamp(self.overlay_alpha);
     }
 
     /// Reveals from `light` on the `mapTime` cadence — the
@@ -1031,6 +1119,47 @@ impl WorldMap {
             q.uv,
             [a; 4],
         );
+    }
+
+    /// `Main.DrawMap` style-2 branch (`Main.cs:55548-55578` + the shared
+    /// `MapRenderer.DrawMap` blit `:55609`): the screen-centred overlay tile
+    /// pass. The clamps ran on the draw half ([`Self::clamp_overlay_axes`],
+    /// called beside `prepare`);
+    /// `b = (byte)(255f * mapOverlayAlpha)` (`:55568`) tints the tile pass
+    /// (`MapRenderer.cs:438` `Color(b,b,b,b)`). Returns the icon block's
+    /// context (`Main.cs:55625`): the map offset `num - 10*num5` and the
+    /// truncated byte alpha `b/255` the `:55615-55694` icon draws consume.
+    pub fn draw_overlay(
+        &self,
+        r: &mut SpriteRenderer,
+        world: &World,
+        screen: Vec2,
+        center_tile: [f32; 2],
+    ) -> ([f32; 2], f32, f32) {
+        let q = map_overlay_quad(center_tile, self.overlay_scale, screen, world);
+        // `:55568`: the `(byte)` cast truncates — the port's `as u32`
+        // matches (post-clamp `0.01..1` keeps the product inside `2..255`).
+        let b = (255.0 * self.overlay_alpha) as u32;
+        let a = b as f32 / 255.0;
+        r.push_map_sprite(
+            [q.dest[0], q.dest[1]],
+            [q.dest[2], q.dest[3]],
+            q.uv,
+            [a; 4],
+        );
+        // `:55625`: `new Vector2(num - 10f * num5, num2 - 10f * num5)` with
+        // `mapPosition = Vector2.Zero`. `num` carries the `+num6*num5`
+        // 10-tile inset (`:55577`, inside `map_origin`), so the icon offset
+        // is the inset-free map origin: subtract the inset ONCE.
+        let origin = map_origin(center_tile, self.overlay_scale, screen);
+        (
+            [
+                origin[0] - 10.0 * self.overlay_scale,
+                origin[1] - 10.0 * self.overlay_scale,
+            ],
+            self.overlay_scale,
+            a,
+        )
     }
 
     /// `Main.DrawMap` fullscreen branch (`Main.cs:55425-55609`): the `Images/Map`
@@ -2167,6 +2296,73 @@ mod tests {
         m.minimap_scale = 0.1;
         m.clamp_minimap_axes();
         assert_eq!(m.minimap_scale, 0.2);
+    }
+
+    /// W4-e18 D18 draw arm (written, not run - code-only): the style-2
+    /// overlay's draw-side clamps (`Main.cs:55550-55566`) — scale floor
+    /// `screenWidth/maxTilesX` (`:55550-55554`), cap `16*RenderZoom`
+    /// (`:55555-55558`, the cap wins on an inverted range), alpha `0.01..1`
+    /// (`:55559-55566`); the state seeds are 2.5/0.35 (`Main.cs:66754-66755`).
+    #[test]
+    fn w4_e18_the_overlay_clamps_match_the_draw_side() {
+        let w = test_world();
+        let mut m = WorldMap::new(&w);
+        assert_eq!(m.overlay_scale, 2.5, "the Main.cs:66754 default");
+        assert_eq!(m.overlay_alpha, 0.35, "the Main.cs:66755 default");
+        // 1600/4200 floor ~ 0.381, cap 16*1.0; 2.5 rides between them.
+        m.clamp_overlay_axes(1600.0, 4200, 1.0);
+        assert_eq!(m.overlay_scale, 2.5);
+        assert_eq!(m.overlay_alpha, 0.35);
+        m.overlay_scale = 0.1;
+        m.clamp_overlay_axes(1600.0, 4200, 1.0);
+        assert_eq!(m.overlay_scale, 1600.0 / 4200.0, "the :55551 floor");
+        m.overlay_scale = 100.0;
+        m.clamp_overlay_axes(1600.0, 4200, 1.0);
+        assert_eq!(m.overlay_scale, 16.0, "the :55555 cap");
+        // Inverted range (tiny zoom): floor first, cap LAST (`:55555`).
+        m.overlay_scale = 2.5;
+        m.clamp_overlay_axes(1600.0, 4200, 0.01);
+        assert_eq!(m.overlay_scale, 16.0 * 0.01, "the cap wins the inversion");
+        // The alpha clamps ride the same pass (`:55559-55566`).
+        m.overlay_alpha = 0.0;
+        m.clamp_overlay_axes(1600.0, 4200, 1.0);
+        assert_eq!(m.overlay_alpha, 0.01);
+        m.overlay_alpha = 2.0;
+        m.clamp_overlay_axes(1600.0, 4200, 1.0);
+        assert_eq!(m.overlay_alpha, 1.0);
+        // The key helpers the input rows use (`Player.cs:24932-24947`).
+        assert_eq!(map_key_scale(2.5, true), 2.5 * 1.05);
+        assert_eq!(map_key_scale(2.5, false), 2.5 * 0.95);
+        assert_eq!(map_key_alpha(0.35, true), 0.35 + 0.015);
+        assert_eq!(map_key_alpha(0.35, false), 0.35 - 0.015);
+        assert_eq!(map_alpha_clamp(0.005), 0.01);
+        assert_eq!(map_alpha_clamp(1.5), 1.0);
+    }
+
+    /// W4-e18 D18 draw arm (written, not run - code-only): the overlay quad
+    /// is SCREEN-centred on the fractional view centre (`Main.cs:55571-55576`
+    /// — no `(int)` truncation, unlike the minimap's `:55543-55544`) with the
+    /// `+10*scale` inset (`:55577-55578`), and the tile window is the
+    /// fullscreen's `[10,10]..=[w-11,h-20]` (`num12/num13` stay 0 — the
+    /// `:55593-55608` shifts are style-1 only). No `MapScale` transform
+    /// (`transformMatrix = Identity`, `:55318-55321`).
+    #[test]
+    fn w4_e18_the_overlay_quad_is_screen_centred_and_unscaled() {
+        let w = test_world(); // 40x40
+        let screen = Vec2::new(1600.0, 900.0);
+        let q = map_overlay_quad([20.5, 10.25], 4.0, screen, &w);
+        // num = -(20.5*4) + 800 + 10*4 = 758; num2 = -(10.25*4) + 450 + 40 = 449.
+        assert_eq!(q.dest[0], 758.0);
+        assert_eq!(q.dest[1], 449.0);
+        // Window [10,10]..=[29,20]: 19x10 tiles at 4 px.
+        assert_eq!(q.dest[2], 19.0 * 4.0);
+        assert_eq!(q.dest[3], 10.0 * 4.0);
+        assert_eq!(q.uv, [10.0 / 40.0, 10.0 / 40.0, 29.0 / 40.0, 20.0 / 40.0]);
+        // The fractional centre shifts sub-pixel — no floor on num34/35
+        // (a larger centre tile moves the origin LEFT/UP).
+        let q2 = map_overlay_quad([20.0, 10.0], 4.0, screen, &w);
+        assert_eq!(q2.dest[0] - q.dest[0], 2.0, "0.5 tile * 4 px");
+        assert_eq!(q2.dest[1] - q.dest[1], 1.0, "0.25 tile * 4 px");
     }
 
     #[test]

@@ -19203,6 +19203,36 @@ in §10.7 with this arm's C#-fidelity notes. The dup-halves
 `unlock_map`'s bulk ceil-loop) carry DEPRECATED-BY-UNION comment banners —
 nothing deleted; the unique post-base pieces stay live until folded.
 
+### The style-2 overlay draw arm (W4-e18 MAP-FINAL, 2026-11-21, code-only)
+
+D18's seeded remainder's DRAW half landed (research/14 "W4-e18 MAP-FINAL
+phase"): `Main.cs:55548-55578` + `:55609` + `:55615-55625` + the shared
+`MouseText` tail. `WorldMap` gains `overlay_scale`/`overlay_alpha`
+(`Main.cs:66754-66755`, seeds 2.5/0.35) + `clamp_overlay_axes` +
+`draw_overlay`; `map_overlay_quad` is screen-centred on the FRACTIONAL view
+centre (no `(int)`, no `MapScale` transform — the `Identity` batch
+`:55318-55321`). Deliberate choices, recorded:
+
+- **The g53c helpers are copied byte-identical from the f46 union's
+  `a352b16e` fold** (`map_key_alpha`/`map_alpha_clamp`/`overlay_scale_clamp`,
+  the `RenderZoom = forced_minimum_zoom * zoom` correction included) so the
+  eventual union fold sees ONE copy, not a conflict.
+- **Clamps stay draw-side** (`clamp_overlay_axes` beside `prepare`, fed the
+  frame's `world_zoom`) — the e18-arm convention (research/84 §10.7 row 7's
+  idempotent-projection equivalence), not g53's input-side placement. The
+  style-2 key rows in `update_minimap_keys` step unclamped, like style 1.
+- **The overlay draws under the HUD**: the C# call site is the in-world
+  pass (`:62231`), not interface 16; the port's map batches sit under the
+  UI batch, which reproduces that order. The menu/front/no_hud guards
+  mirror the minimap branch (the in-world path does not run there).
+- **The `:55626-55694` icon block is NOT ported here** — revenge/misc/NPC
+  heads/the 255-player head+death loop are the f29/e17 overlay keep-one's
+  nine pieces at the overlay transform; porting them here would double
+  them at merge time. The shared `MapIcons.Draw` walk (`:55625`) IS ported
+  (it is this branch's own S1-L-4 `map_layers_draw`, a third call site).
+
+3 witnesses written not run; 1 anchor row (`map.rs::draw_overlay`).
+
 ## The crafting focus + quantity (S1-H-7, 2026-11-13)
 
 `Main.HoverOverCraftingItemButton` (`Main.cs:42252-42305`) is ported into

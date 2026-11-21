@@ -133,7 +133,7 @@ full-screen zoom/pan view — with the colour of each tile derived from the orig
 | Minimap alpha (`mapMinimapAlpha`) | PORTED | `map.rs::WorldMap::minimap_alpha` + `minimap_alpha_step` + `clamp_minimap_axes`, `app/mod.rs::update_minimap_keys`, `frame/draw.rs` (backdrop + tile + layer alpha) | `Main.cs:55523-55532` (the clamp + `b` byte), `Player.cs:24921-24928` (the ±0.015 keys); W4-e18 final sweep — D17 closed. |
 | Minimap frame chrome + zoom buttons | PORTED | `ui/minimap.rs` (whole file) | Nine styles, hitboxes, hover sheets, `DEFAULT_ZOOM 1.05`, ×1.025/×0.975, clamp 0.2..3 (`MinimapFrame.cs:59-63`, `:107-136`, `:138-208`). |
 | Frame-style selection UI | PORTED | `menu/pages.rs:268-284`, `menu/actions.rs:332-333`, `settings.rs:113-115` | `MinimapFrame` config key + `CycleSelection` order. |
-| Map style switcher (`mapStyle` 0/1/2) | PARTIAL | `map_style == 1` only | `mapStyle == 2`'s screen-overlay map (`Main.cs:55548-55578` + the `:55615-55694` icon block, `mapOverlayScale`) is absent; `mapStyle == 0` correctly draws NOTHING — the callers gate on style 1/2 (`Main.cs:45778`/`:62231`), no style-0 arm exists in `DrawMap`'s chain (retire census: the old "retro HUD" wording was a phantom). The Tab key cycle (`Player.cs:24949-24965`) landed W4-e18 final sweep (`update_minimap_keys`); the style-icon clicks (`Main.cs:41106-41120`) play `PlaySound(12)`. |
+| Map style switcher (`mapStyle` 0/1/2) | PORTED | styles 0/1/2 all draw | `mapStyle == 2`'s screen-overlay DRAW landed the MAP-FINAL phase (`map.rs::draw_overlay`/`map_overlay_quad`/`clamp_overlay_axes` + the `overlay_scale`/`overlay_alpha` state + the style-2 key rows in `update_minimap_keys` + the `:55625` layer walk at `num37`); the `:55626-55694` icon block rides the f29/e17 overlay keep-one. `mapStyle == 0` correctly draws NOTHING — the callers gate on style 1/2 (`Main.cs:45778`/`:62231`), no style-0 arm exists in `DrawMap`'s chain (retire census: the old "retro HUD" wording was a phantom). The Tab key cycle (`Player.cs:24949-24965`) landed W4-e18 final sweep (`update_minimap_keys`); the style-icon clicks (`Main.cs:41106-41120`) play `PlaySound(12)`. |
 | Player head icon | PORTED | `map.rs::head_icon_pos` (76) + `render/entities.rs::draw_player_map_icon` | Position ported (`Main.cs:55937-55954`); the 84×84 `MapHeadRenderer` render target is replaced by a hand-drawn head (ANALYSIS.md:1584-1593). |
 | Other players' head icons | PARTIAL | same draw path | `Main.cs:55931-55954` loops all 255 players; single-player only here. |
 | NPC / chest / pylon / ping / boss-bag icons | PORTED (f29) | `map_layers.rs` (S1-L-4) + `map_overlay.rs`/`map_pylons.rs` (W4-f29) | The six `Map/*Layer*.cs` layers landed S1-L-4; the nine `Main.DrawMap` overlay pieces (pylon lines/click/pan, boss/town heads, death markers, revenge coins, misc portals+golf, minimap heads, hover names) landed W4-f29 (`e1ffdefc` census, `09f71b61`/`9320326c`/`1de1ad19`/`a920b704`/`a0516edf` ports). The ping detector (`Main.cs:55486-55495`) is `clicks.rs::handle_fullmap_ping` (S1-L-4). |
@@ -318,6 +318,11 @@ Structural (already admitted in `docs/ANALYSIS.md` or the Rust "ruling" comments
   transform). g53's `a9774d2a` already carries the style-2 STATE half
   (`overlay_scale` 2.5 / `overlay_alpha` 0.35, the `:24930-24947` keys + the
   `:55550-55566` clamps) — salvage it with the draw half (research/84 §10.7 row 10).
+  **UPDATE (MAP-FINAL phase): the draw arm + state half LANDED on this branch** —
+  `draw_overlay`/`map_overlay_quad`/`clamp_overlay_axes`, the g53c state/keys/helpers
+  salvaged inline (helpers byte-identical to the f46 union's `a352b16e` fold), the
+  `:55625` layer walk at `num37` + the shared `MouseText` tail. Only the
+  `:55626-55694` icon block remains, with the f29/e17 overlay pick.
 - **D19 — map icon overlays entirely missing.** behavioural · **closed (S1-L-4 + W4-f29)**.
   The six `Map/*Layer*.cs` layers landed S1-L-4 (`map_layers.rs`); the nine `Main.DrawMap`
   overlay pieces (pylon lines/click/pan, boss/town heads, death markers, revenge coins,
@@ -407,13 +412,20 @@ style-2 overlay draw + the f29/e17 overlay keep-one are the seeded remainders.
   holds the state/keys/clamps half, salvage per research/84 §10.7; the style-0 half is a phantom,
   no such arm exists).
 - **M — The style-2 overlay draw** (seeded by the W4-e18 retire census, D18's remainder):
-  `Main.cs:55548-55578` (the clamps + `num34-36` screen-centred geometry, `b = (byte)(255 *
+  ~~`Main.cs:55548-55578` (the clamps + `num34-36` screen-centred geometry, `b = (byte)(255 *
   mapOverlayAlpha)`), the shared `MapRenderer.DrawMap` blit (`:55609`) and the `:55615-55694`
   overlay icon block (`num37 = min((scale*0.2*2+1)/3, 1) * UIScale`, the revenge/misc/NPC-head/
-  255-player/death passes at that scale). Rides the f29/e17 overlay keep-one's seam — the icon
-  block is the siblings' nine pieces at a different transform, port it with the overlay pick,
-  not twice. State half: g53c's `overlay_scale`/`overlay_alpha` + keys + clamps (research/84
-  §10.7 row 10). Depends on the overlay keep-one decision (f46's merger checklist step 3).
+  255-player/death passes at that scale).~~ **DRAW ARM LANDED (W4-e18 MAP-FINAL phase)** —
+  `WorldMap::draw_overlay` + `map_overlay_quad` + `clamp_overlay_axes` + the
+  `overlay_scale`/`overlay_alpha` state (seeds 2.5/0.35) + the style-2 key rows
+  (`Player.cs:24930-24947`) in `update_minimap_keys` + the layer walk at `num37`
+  (the shared `MapIcons.Draw`, `:55625`) + the shared `MouseText` hover tail; the g53c
+  state half is salvaged inline (the `map_key_alpha`/`map_alpha_clamp`/`overlay_scale_clamp`
+  helpers copied byte-identical from the f46 union's `a352b16e` fold — they merge as
+  one copy). REMAINDER: the `:55626-55694` icon block (revenge/misc/NPC heads/255-player
+  loop/death markers) — the siblings' nine pieces at the overlay transform, ported with
+  the f29/e17 overlay pick, not twice. Depends on the overlay keep-one decision (f46's
+  merger checklist step 3).
 - **L — Replace the four substituted `GetTileBaseOption` cases**: `461` needs `SceneMetrics`
   ZoneCorrupt/Crimson/Hallow (blocks on row 16), `80` needs `WorldGen.GetCactusType`, `529`/`530`
   need `WorldGen.GetBiomeInfluence` (blocks on row 12, worldgen). Fixes D21.
@@ -676,9 +688,57 @@ fold-source `75289a2d`, merger-keep = the f46 union).
 | Remaining half | Verdict | Evidence |
 | --- | --- | --- |
 | D18 — `mapStyle == 0`'s "retro layout" draw | **PHANTOM** (the claim was wrong) | `DrawMap`'s branch chain has NO style-0 arm: `mapFullscreen` (`Main.cs:55340`), `else if mapStyle == 1` (`:55503`), `else if mapStyle == 2` (`:55548`). Both callers gate on style 1/2 BEFORE calling: `DrawInterface_16_MapOrMinimap` (`:45774-45783`, `!mapFullscreen && mapStyle == 1`) and the overlay pass (`:62231-62235`, `!mapFullscreen && mapStyle == 2`). Style 0 draws nothing in vanilla; the port's `map_style == 1`-only gate is the same behaviour. Nothing to port. |
-| D18 — `mapStyle == 2`'s screen-overlay draw | **SEEDED M remainder** (not ported — overlay keep-one territory) | `Main.cs:55548-55578` (the `screenWidth/maxTilesX .. 16*RenderZoom` scale clamp, the `0.01..1` alpha clamp, `b = (byte)(255*mapOverlayAlpha)`, the screen-centred `num34-36` geometry), the shared `MapRenderer.DrawMap` blit (`:55609`), the `:55615-55694` overlay icon block at `num37` scale. The icon block is the f29/e17 siblings' nine pieces at a different transform — port with the overlay pick, never twice. The STATE half (keys `:24930-24947` + `overlay_scale`/`overlay_alpha` `Main.cs:66754-66755` + clamps) is already ported on g53 (`a9774d2a`) — the salvage note is research/84 §10.7 row 10. New task seed above. |
+| D18 — `mapStyle == 2`'s screen-overlay draw | **DRAW ARM LANDED (MAP-FINAL phase — see below)**; the `:55626-55694` icon block stays with the overlay keep-one | `Main.cs:55548-55578` (the `screenWidth/maxTilesX .. 16*RenderZoom` scale clamp, the `0.01..1` alpha clamp, `b = (byte)(255*mapOverlayAlpha)`, the screen-centred `num34-36` geometry), the shared `MapRenderer.DrawMap` blit (`:55609`), the `:55615-55694` overlay icon block at `num37` scale. The icon block is the f29/e17 siblings' nine pieces at a different transform — port with the overlay pick, never twice. The STATE half (keys `:24930-24947` + `overlay_scale`/`overlay_alpha` `Main.cs:66754-66755` + clamps) is already ported on g53 (`a9774d2a`) — the salvage note is research/84 §10.7 row 10. New task seed above. |
 | D22 — `CheckMapTargets`' content-lost refresh (`MapRenderer.cs:357-378`) | **CLOSED as recorded deviation** (structural no-op in wgpu) | The C# arm latches `mapWasContentLost[i,j]` per render target and arms `refreshMap + clearMap` on the rising edge (`:365-370`). wgpu has no `IsContentLost` — a texture never silently loses content within a live session; a lost device ends the session (the port has no recovery path: `Gpu::new` once at boot `loop.rs:54`, surface-acquire failure skips the frame `frame/draw.rs:2195-2201`). The `targets.rs:451-455` `EnsureRenderTargetContent` note is the same precedent. The map texture's absence/size-change recreation (`sprite.rs:654-656`) pairs with `needs_full_upload`'s full sweep in `prepare` — the creation-time equivalent. No per-target grid, no latch to model. |
 
 D18/D22 row updates + the risk summary above carry the closes. No code changed, no new
 witnesses (both closes are census rulings, not ports). The 3-way zoom keep-one facts are
 research/84 §10.7; the exact re-fold list for the merger is §10.6.
+
+## W4-e18 MAP-FINAL phase (2026-11-21, code-only) — D18's draw arm landed
+
+The seeded M remainder's DRAW half is ported on this branch (the row above is
+superseded): `Main.cs:55548-55578` + `:55609` + `:55615-55625` + the shared
+`MouseText` tail (`:56046-56049`).
+
+- **State + helpers (the g53c salvage, research/84 §10.7 row 10):**
+  `WorldMap.overlay_scale`/`overlay_alpha` (seeds 2.5/0.35, `Main.cs:66754-66755`);
+  `map_key_alpha`/`map_alpha_clamp`/`overlay_scale_clamp` copied BYTE-IDENTICAL
+  from the f46 union's `a352b16e` fold (same names, same bodies, the
+  `RenderZoom = forced_minimum_zoom(screen) * zoom` correction and the two-ifs
+  C# order included) — at merge time they collapse to ONE copy, no conflict.
+- **Clamps:** `WorldMap::clamp_overlay_axes(screen_w, world_w, render_zoom)`
+  called from the draw half beside `prepare` (`frame/draw.rs`, `world_zoom` is
+  the `:61999` product already computed there). Draw-side placement — the
+  e18-arm convention (§10.7 row 7's idempotent-projection equivalence), NOT
+  g53's input-side clamp.
+- **Geometry:** `map_overlay_quad` — screen-centred on the FRACTIONAL view
+  centre (`:55571-55576`, no `(int)` unlike the minimap), `+10*scale` inset
+  (`:55577-55578`), the fullscreen tile window `[10,10]..=[w-11,h-20]`
+  (`num12/num13` stay 0), NO `MapScale` transform (`Identity` batch,
+  `:55318-55321`).
+- **Draw:** `WorldMap::draw_overlay` tints `(byte)(255*mapOverlayAlpha)`
+  (`:55568`, the `as u32` truncation = the byte cast) and returns the
+  `:55625` icon context (`num - 10*num5` offset, `num5`, `b/255`); the
+  caller runs the shared `map_layers_draw` walk at
+  `num37 = ((num5*0.2*2+1)/3).min(1) * applied_ui_scale` (`:55619-55624`)
+  with `mapPosition = Zero`, no clip, `b` opacity, then the hover line.
+- **Keys:** `update_minimap_keys` gains the style-2 else-arm
+  (`Player.cs:24930-24947`): `map_key_scale` ×1.05/×0.95 + `map_key_alpha`
+  ±0.015, unclamped at input; no `mapEnabled` gate (`:24930` style-only).
+  The e18 input fn stays the branch keeper — the union's §10.1 keep-one
+  ruling (`update_minimap_zoom_keys`) still owns the merged state; these
+  rows fold per §10.6 row 1's resolution (drop-wholesale if the union fn
+  wins — the union already carries the identical arms).
+- **Gate:** the style-2 branch draws under the HUD (the port's map batches
+  sit under the UI batch = the C#'s in-world call site `:62231`), gated on
+  `mapEnabled && mapReady && !fullscreen && style == 2` + the port's
+  menu/front/no_hud guards; the pylon scan gate widens to style 2.
+- **Remainder (unchanged):** the `:55626-55694` icon block (revenge marker,
+  misc portals/golf, NPC heads, the 255-player head/death loop) — the
+  f29/e17 nine pieces at the overlay transform, ported with that pick.
+- **Witnesses (written, not run — code-only):**
+  `map::tests::w4_e18_the_overlay_clamps_match_the_draw_side`,
+  `map::tests::w4_e18_the_overlay_quad_is_screen_centred_and_unscaled`,
+  `app::w4_e18_minimap_key_tests::w4_e18_the_style_two_keys_step_the_overlay_axes`;
+  1 anchor row (`map.rs::draw_overlay`).

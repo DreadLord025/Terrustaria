@@ -1474,8 +1474,10 @@ impl App {
     /// clamps are the draw side's (`Main.cs:55515-55530`, `WorldMap::prepare`).
     /// Runs per update like the fullscreen twin above — the vanilla block
     /// sits in `Player.Update`'s per-frame input pass, not the fixed step.
-    /// `mapStyle == 2`'s overlay rows (`:24930-24947`) stay unported with the
-    /// overlay map itself (D18).
+    /// `mapStyle == 2`'s overlay rows (`:24930-24947`) step the overlay axes
+    /// ×1.05/×0.95 + ±0.015 (the g53 `a9774d2a` state half, salvaged for
+    /// D18's draw arm — research/84 §10.7 row 10); the draw-side clamps ride
+    /// `WorldMap::clamp_overlay_axes` on the draw half.
     pub(crate) fn update_minimap_keys(&mut self) {
         // `Player.cs:24768`: the whole block sits behind the chat/sign/chest
         // editors; the port's chat overlay eats keys the same way.
@@ -1513,6 +1515,34 @@ impl App {
                 }
                 if adown {
                     m.minimap_alpha = map::minimap_alpha_step(m.minimap_alpha, false);
+                }
+            }
+        } else if self.map_style == 2 {
+            // `:24930-24947`: the overlay's rows — the zoom pair is the
+            // fullscreen's ×1.05/×0.95 (`map_key_scale`), the alpha pair the
+            // same ±0.015. No `mapEnabled` gate (`:24930` checks style only).
+            // Unclamped here — the draw side owns it (`Main.cs:55550-55566`,
+            // `WorldMap::clamp_overlay_axes`), like the style-1 rows above.
+            let (zin, zout) = (
+                held(crate::input_map::MapAction::ZoomIn),
+                held(crate::input_map::MapAction::ZoomOut),
+            );
+            let (aup, adown) = (
+                held(crate::input_map::MapAction::AlphaUp),
+                held(crate::input_map::MapAction::AlphaDown),
+            );
+            if let Some(m) = self.map.as_mut() {
+                if zin {
+                    m.overlay_scale = map::map_key_scale(m.overlay_scale, true);
+                }
+                if zout {
+                    m.overlay_scale = map::map_key_scale(m.overlay_scale, false);
+                }
+                if aup {
+                    m.overlay_alpha = map::map_key_alpha(m.overlay_alpha, true);
+                }
+                if adown {
+                    m.overlay_alpha = map::map_key_alpha(m.overlay_alpha, false);
                 }
             }
         }
@@ -6104,6 +6134,49 @@ mod w4_e18_minimap_key_tests {
         app.map_style = 0;
         app.update_minimap_keys();
         assert_eq!(app.map.as_ref().unwrap().minimap_scale, before);
+    }
+
+    /// W4-e18 D18 draw arm (written, not run - code-only): the style-2
+    /// overlay key rows (`Player.cs:24930-24947`) — the SAME binds step
+    /// `mapOverlayScale` ×1.05/×0.95 + `mapOverlayAlpha` ±0.015 while held,
+    /// unclamped at input (the draw side owns `clamp_overlay_axes`); the
+    /// style-1 axes stay put and style 0 steps neither pair.
+    #[test]
+    fn w4_e18_the_style_two_keys_step_the_overlay_axes() {
+        let mut app = minimap_app();
+        app.map_style = 2;
+        let (s0, a0, mm0) = {
+            let m = app.map.as_ref().unwrap();
+            (m.overlay_scale, m.overlay_alpha, m.minimap_scale)
+        };
+        app.keys.insert(KeyCode::NumpadAdd);
+        app.keys.insert(KeyCode::PageUp);
+        app.update_minimap_keys();
+        let m = app.map.as_ref().unwrap();
+        assert_eq!(m.overlay_scale, s0 * 1.05);
+        assert_eq!(m.overlay_alpha, a0 + 0.015);
+        assert_eq!(m.minimap_scale, mm0, "style 2 leaves the minimap axis");
+        // Held: steps again (the rows are `Current`, not `JustPressed`).
+        app.update_minimap_keys();
+        let m = app.map.as_ref().unwrap();
+        assert_eq!(m.overlay_scale, s0 * 1.05 * 1.05);
+        app.keys.clear();
+        app.keys.insert(KeyCode::NumpadSubtract);
+        app.keys.insert(KeyCode::PageDown);
+        app.update_minimap_keys();
+        let m = app.map.as_ref().unwrap();
+        assert_eq!(m.overlay_scale, s0 * 1.05 * 1.05 * 0.95);
+        assert_eq!(m.overlay_alpha, a0 + 0.015 + 0.015 - 0.015);
+        // The fullscreen map eats the block (`:24909`'s else).
+        app.map.as_mut().unwrap().open = true;
+        let held_scale = app.map.as_ref().unwrap().overlay_scale;
+        app.update_minimap_keys();
+        assert_eq!(app.map.as_ref().unwrap().overlay_scale, held_scale);
+        // Style 0: neither pair moves (`:24911`/`:24930` are style-gated).
+        app.map.as_mut().unwrap().open = false;
+        app.map_style = 0;
+        app.update_minimap_keys();
+        assert_eq!(app.map.as_ref().unwrap().overlay_scale, held_scale);
     }
 
     /// W4-e18 final sweep (written, not run - code-only): the `MapStyle` key
