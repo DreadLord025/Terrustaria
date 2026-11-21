@@ -3066,6 +3066,86 @@ fn digger_death(
     gore.new_gore(rng, world, pos, vel, npc_type - 95 + 111, 1.0); // :87620
 }
 
+/// The 13/14/15 Eater of Worlds death (`NPC.cs:87622-87651`, sites
+/// 440-445): the 50x dust-18 dye burst (alpha/color/scale carried, 1×
+/// hd), then the per-segment pair — 13 Head → 24/25 (`:87638-87639`),
+/// 14 Body → 26/27 (`:87643-87644`), 15 Tail → 28/29 (`:87648-87649`),
+/// scale 1f.
+fn eater_of_worlds_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87632-87635` — the 50x dust-18 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        18,
+        hit_direction / 2.0,
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        npc.scale,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let (a, b) = match npc_type {
+        13 => (24, 25), // :87638-87639
+        14 => (26, 27), // :87643-87644
+        _ => (28, 29),  // :87648-87649
+    };
+    gore.new_gore(rng, world, pos, vel, a, 1.0);
+    gore.new_gore(rng, world, pos, vel, b, 1.0);
+}
+
+/// The 17 Guide death (`NPC.cs:87652-87674`, sites 446-450): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then the shimmer ladder — the head
+/// 30 (shimmer 1320) gated on `altTexture == 0` (the port's Npc has no
+/// altTexture field; the default-0 stand-in keeps the head — documented
+/// drop), then 31x2 (1322) at +20 Y + 32x2 (1323) at +34 Y, scale 1f.
+/// `IsShimmerVariant` rides `variation_index == 1 && ShimmerTownTransform`
+/// (`NPC.cs:6713-6723`, the d55 `is_shimmer_variant` precedent).
+fn guide_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87662-87665` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:87666-87669` — the head, altTexture==0 stand-in (always taken).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1320 } else { 30 }, 1.0); // :87668
+    // `:87670-87673` — the shimmer ladder.
+    let mid = if shimmer { 1322 } else { 31 };
+    let legs = if shimmer { 1323 } else { 32 };
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :87670
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :87671
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87672
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87673
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -3423,6 +3503,15 @@ pub fn hit_effect_d(
     // `:87606-87621` — the 95/96/97 Digger arm (site 439).
     else if matches!(npc_type, 95 | 96 | 97) {
         digger_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87622-87651` — the 13/14/15 Eater of Worlds arm (sites 440-445).
+    else if matches!(npc_type, 13 | 14 | 15) {
+        eater_of_worlds_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87652-87674` — the 17 Guide arm (sites 446-450, the shimmer
+    // ladder).
+    else if npc_type == 17 {
+        guide_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -6042,6 +6131,64 @@ mod tests {
             let _ky = twin.next_range(10, 31);
             let _kx = twin.next_range(-20, 21);
             assert_eq!(rng.peek(), twin.peek(), "worm {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87638-87649` — the EoW segment pairs: 13→24/25, 14→26/27,
+    /// 15→28/29, scale 1f, after the 50x dust-18 dye census.
+    #[test]
+    fn w4_f5d_the_eater_of_worlds_segment_pairs() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 30.0);
+        for (kind, want) in [(13, vec![24, 25]), (14, vec![26, 27]), (15, vec![28, 29])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(467);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "eow {kind}");
+            let mut twin = UnifiedRandom::new(467);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 30);
+            }
+            for _ in 0..2 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "eow {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87668-87673` — the Guide ladder: normal 30/31x2/32x2,
+    /// shimmer 1320/1322x2/1323x2 (variation_index==1 + the town
+    /// transform set); the head's altTexture gate is the default-0
+    /// stand-in (always taken).
+    #[test]
+    fn w4_f5d_the_guide_ladder_splits_on_the_shimmer_variant() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (shimmer, want) in [
+            (false, vec![30, 31, 31, 32, 32]),
+            (true, vec![1320, 1322, 1322, 1323, 1323]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(479);
+            let _ = hit_effect_d(&n, 17, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "guide shimmer={shimmer}");
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+            let mut twin = UnifiedRandom::new(479);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "guide shimmer={shimmer} mirrors the C# draws");
         }
     }
 }
