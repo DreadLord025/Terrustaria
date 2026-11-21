@@ -39429,3 +39429,20 @@ reverse-order walk + ramps, the draw-index sheet parity, the NaN pin
 (module); the placement-kill/expiry/full-budget queue arms + the ball return
 (`projectile.rs`); the drain's world-drop shape + the two-draw `UpdateItems`
 contract with every other stream pristine (`world_sim/projectiles.rs`).
+
+**The usability walk — WIRED (union item 2).** `check_rope_usability`
+(`world_sim/editing.rs`, ported verbatim from g82's `67c9a740`): the
+rope-on-rope down-column walk — through ropes / track 314 / platforms /
+planters 380, at most 5 consecutive non-rope cells (reset by every rope),
+the chain 214's lava exemption, the header-bit lava test on the cell BELOW
+(`Tile.lava()` = `(bTileHeader & 0x60) == 32`, NO liquid-amount term — a
+lava-flagged liquid-0 cell still gates, witness-pinned), the target moves
+only onto a free/cut/breakable landing cell. Wired at the `use_tile_item`
+head (`Player.cs:39726` — the C# runs it BEFORE the `:39727` tile re-read
+and the `:39743` lava gate, so the port's retarget precedes both).
+Deviation: `WorldGen.IsTileLoaded` (`:41530-41537`) is always true in the
+port's single-player world — the SendData(159) request arm and its
+`return false` skip with it, so `can_use` passes through unchanged.
+Witnesses: the column descent + the non-rope gates, the 6-platform cap +
+both lava arms + the bit-only pin, the 965 Rope item-use extension through
+the app route (one item consumed, the clicked column stands).

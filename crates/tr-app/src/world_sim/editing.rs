@@ -7190,6 +7190,80 @@ fn is_blocked_by_lava(create_tile: u16, place_style: i32, target: &tr_core::tile
     false
 }
 
+/// `Player.PlaceThing_Tiles_CheckRopeUsability` (`Player.cs:41506-41545`),
+/// verbatim (the g82-extras union per research/26e, ported from g82's
+/// `check_rope_usability`, `67c9a740`): when the held item places a rope
+/// AND the target is already a rope, walk DOWN the column (through ropes,
+/// track 314, platforms and planters 380) to find the first free cell —
+/// at most 5 consecutive non-rope cells (the `num2 > num` break,
+/// `:41520-41523`), reset by every rope cell. The chain (214) ignores lava
+/// (`flag`, `:41514`); every other rope stops above a lava cell (`:41515`
+/// — `Tile.lava()` is the header-bit test alone, NO liquid-amount check).
+/// The target moves only when the landing cell is free or cut/breakable
+/// (`:41540`). Returns `(can_use, new_target_y)`; `IsTileLoaded`
+/// (`:41530-41537`) is always true in the port's single-player world —
+/// the SendData(159) request arm skips with it, so `can_use` passes
+/// through unchanged (the C#'s only `return false` sits in that arm).
+fn check_rope_usability(
+    world: &World,
+    create_tile: u16,
+    can_use: bool,
+    target_x: i32,
+    target_y: i32,
+) -> (bool, i32) {
+    let mut y = target_y;
+    let gate = can_use
+        && td::TILE_ROPE.has(create_tile)
+        && world
+            .tile(target_x, target_y)
+            .is_some_and(|t| t.active() && td::TILE_ROPE.has(t.kind));
+    if !gate {
+        return (can_use, y);
+    }
+    let max_non_rope = 5;
+    let mut non_rope = 0;
+    let ignores_lava = create_tile == 214;
+    loop {
+        let Some(t) = world.tile(target_x, y) else { break };
+        let passable = t.active()
+            && (td::TILE_ROPE.has(t.kind)
+                || t.kind == 314
+                || td::SET_PLATFORMS.has(t.kind)
+                || t.kind == 380);
+        if !passable || y >= world.height - 5 {
+            break;
+        }
+        // :41515 — the lava gate reads the cell BELOW.
+        if !ignores_lava
+            && world
+                .tile(target_x, y + 1)
+                .is_some_and(|b| b.liquid_kind() == tr_core::tile::LiquidKind::Lava)
+        {
+            break;
+        }
+        if t.kind == 314 || td::SET_PLATFORMS.has(t.kind) || t.kind == 380 {
+            non_rope += 1;
+            if non_rope > max_non_rope {
+                break;
+            }
+        } else {
+            non_rope = 0;
+        }
+        y += 1;
+    }
+    // :41539-41543 — the landing cell must be free or cut/breakable.
+    let landing_ok = world.tile(target_x, y).is_some_and(|t| {
+        !t.active()
+            || tr_core::tileobject::tile_cut(t.kind)
+            || tr_core::tileobject::breakable_when_placing(t.kind)
+    });
+    if landing_ok {
+        (can_use, y)
+    } else {
+        (can_use, target_y)
+    }
+}
+
 /// The routing decision of `use_tile_item`: the legacy neighbour/overlap
 /// pre-checks (`can_place`) gate only kinds that do NOT ride the
 /// `TileObject.CanPlace` route — those are judged by the anchors inside the
@@ -7253,6 +7327,14 @@ fn use_tile_item(app: &mut App, tx: i32, ty: i32) -> bool {
     let Some(kind) = registry::place_tile(held.kind) else {
         return false;
     };
+    // W4-d4 union — `PlaceThing_Tiles_CheckRopeUsability`
+    // (`Player.cs:39726` → `:41506-41545`): the rope-on-rope down-column
+    // walk retargets `Player.tileTargetY` BEFORE the lava gate / the
+    // assorted cut rule / the placement read it (`:39727`'s `tile` re-read
+    // and `:39743`'s gate both see the moved target). The g82-extras union
+    // per research/26e; `can_use` is the port's true (the C#'s only false
+    // return rides the unported `IsTileLoaded` arm).
+    let (_, ty) = check_rope_usability(&app.world, kind, true, tx, ty);
     // `Item.placeStyle` — the `CustomPlace(type, placeStyle)` gate reads it
     // (`Player.cs:39771`); the style-resolved sub-tile flag decides the route.
     let style = registry::place_style(held.kind);
@@ -8203,6 +8285,95 @@ fn thrust_stab_tick(
 mod tests {
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// W4-d4 union item 2 — `PlaceThing_Tiles_CheckRopeUsability`
+    /// (`Player.cs:41506-41545`, the g82-extras union per research/26e):
+    /// the rope-on-rope down-column walk. Written NOT run (code-only).
+    #[test]
+    fn w4_d4_union_the_usability_walk_descends_the_rope_column() {
+        let mut w = World::new("coil".into(), 64, 200);
+        set_tile(&mut w, 20, 20, 213);
+        set_tile(&mut w, 20, 21, 213);
+        // Free cell at 22 → the target moves there.
+        let (ok, y) = check_rope_usability(&w, 213, true, 20, 20);
+        assert!(ok);
+        assert_eq!(y, 22);
+        // A non-rope held tile never walks.
+        assert_eq!(check_rope_usability(&w, 1, true, 20, 20), (true, 20));
+        // A non-rope target never walks.
+        let mut w2 = World::new("coil".into(), 64, 200);
+        set_tile(&mut w2, 20, 20, 1);
+        assert_eq!(check_rope_usability(&w2, 213, true, 20, 20), (true, 20));
+        // can_use false passes straight through (`:41509`'s gate).
+        assert_eq!(check_rope_usability(&w, 213, false, 20, 20), (false, 20));
+    }
+
+    /// The 5-platform cap (`:41517-41523`) + the lava gate (`:41514-41515`):
+    /// six consecutive platforms trip `num2 > 5` and the walk stops AT the
+    /// sixth (not free/cut → target unchanged); lava below the next cell
+    /// holds a rope walk but the chain (214) ignores it. The lava test is
+    /// the header-bit alone — a lava-flagged cell with liquid 0 still gates.
+    #[test]
+    fn w4_d4_union_the_platform_cap_and_the_lava_gate() {
+        let mut w = World::new("coil".into(), 64, 200);
+        set_tile(&mut w, 20, 20, 213);
+        for y in 21..=26 {
+            set_tile(&mut w, 20, y, 19); // six platforms
+        }
+        // The 6th platform trips num2 > 5 → the walk stops AT it; the
+        // landing cell (a platform) is not free/cut → target unchanged.
+        let (_, y) = check_rope_usability(&w, 213, true, 20, 20);
+        assert_eq!(y, 20, "the capped walk never retargets onto a platform");
+        // Lava below the next cell stops a rope walk…
+        let mut w = World::new("coil".into(), 64, 200);
+        set_tile(&mut w, 20, 20, 213);
+        {
+            let t = w.tile_mut(20, 21).unwrap();
+            t.liquid = 255;
+            t.set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        }
+        let (_, y) = check_rope_usability(&w, 213, true, 20, 20);
+        assert_eq!(y, 20, "the lava gate holds the target");
+        // …but the chain (214) ignores lava and walks through to the free
+        // cell at 21 (the lava cell itself is inactive → landing ok).
+        let (_, y) = check_rope_usability(&w, 214, true, 20, 20);
+        assert_eq!(y, 21);
+        // The header-bit-only test: liquid 0 + the lava flag still gates
+        // (`Tile.lava()` reads `(bTileHeader & 0x60) == 32`, no amount).
+        let mut w = World::new("coil".into(), 64, 200);
+        set_tile(&mut w, 20, 20, 213);
+        w.tile_mut(20, 21)
+            .unwrap()
+            .set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        let (_, y) = check_rope_usability(&w, 213, true, 20, 20);
+        assert_eq!(y, 20, "the bit alone gates, no liquid-amount term");
+    }
+
+    /// The `use_tile_item` wire (`Player.cs:39726` — the walk runs BEFORE
+    /// the lava gate / cut rule / placement): holding Rope (965 → tile 213)
+    /// over an existing rope column extends the column at the first free
+    /// cell below, consuming one item; a plain-block target never walks.
+    #[test]
+    fn w4_d4_union_the_rope_item_use_extends_the_column_below() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("coil".into(), 64, 200);
+        set_tile(&mut app.world, 10, 10, 213);
+        set_tile(&mut app.world, 10, 11, 213);
+        app.inventory[app.selected] = slot(965, 5);
+        assert!(use_tile_item(&mut app, 10, 10), "the extension places");
+        let t = *app.world.tile(10, 12).unwrap();
+        assert!(t.active() && t.kind == 213, "the rope landed at the first free cell");
+        assert!(app.world.tile(10, 10).unwrap().active(), "the clicked rope stands");
+        assert_eq!(app.inventory[app.selected].count, 4, "one rope consumed");
+        // A non-rope target: the walk never fires, the legacy pre-check
+        // refuses the occupied cell (the pre-union behaviour stands).
+        let mut app2 = flow_app(None, vec![], vec![]);
+        app2.world = World::new("coil".into(), 64, 200);
+        set_tile(&mut app2.world, 10, 10, 1);
+        app2.inventory[app2.selected] = slot(965, 5);
+        assert!(!use_tile_item(&mut app2, 10, 10), "the occupied dirt refuses");
+        assert_eq!(app2.inventory[app2.selected].count, 5, "the item is kept");
+    }
 
     /// S1-E-21 wave B: the placement-sound switch (`WorldGen.cs:60263-60282`)
     /// — the per-type cue selection the play path
