@@ -292,7 +292,7 @@ impl App {
             && matches!(self.net, crate::app::NetRole::Off);
         self.audio.update_tracked(pause_sounds);
 
-        // `Main.Ambience` (`Main.cs:13466-13515`): every 15 ticks (¼ s) the
+        // `Main.Ambience` (`Main.cs:13466-13509`): every 15 ticks (¼ s) the
         // waterfall/lavafall loops re-volume from the strength scans; the
         // volume math is the LegacySoundPlayer case 34/35 (the distance
         // attenuation + strength/50 + the 0.2/0.65 multipliers). The strength

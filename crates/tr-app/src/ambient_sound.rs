@@ -1035,6 +1035,11 @@ pub struct LiquidLoopUpdate {
 /// `ambientLavafallStrength + ambientLavaStrength` (`:13497`). The play
 /// gate is the LAVAFALL strength alone (`:13498`), so pooled lava with no
 /// lavafall takes the stop arm.
+///
+/// The per-channel volume walk delegates to the shared pure
+/// [`crate::sound::liquid_ambience`] (the W4-g75 residuals census) — this
+/// decision half owns the `Main.Ambience` arms above it and the slot/pitch
+/// bookkeeping below it.
 pub fn liquid_loop_update(
     channel: usize,
     triple: (f32, f32, f32),
@@ -1078,39 +1083,27 @@ pub fn liquid_loop_update(
     if triple.0 <= 0.0 {
         return stop;
     }
-    // `LegacySoundPlayer.cs:376-397`: the -1 sentinel plays 2D (atten 1,
-    // pan 0); a real position must sit inside SoundAttenuationDistance or
-    // the whole `if (flag)` block is skipped — the live loop keeps its
-    // last volume (`:415`), it does NOT stop.
-    let (atten, pan) = if xi == -1 || yi == -1 {
-        (1.0f32, 0.0f32)
-    } else {
-        let dx = xi as f32 - camera_center.0;
-        let dy = yi as f32 - camera_center.1;
-        let dist = (dx * dx + dy * dy).sqrt();
-        if dist < crate::sound::SOUND_ATTENUATION_DISTANCE {
-            (
-                1.0 - dist / crate::sound::SOUND_ATTENUATION_DISTANCE,
-                // `:395`: MaxWorldViewSize.X * 0.5 = 960, NOT the live
-                // screen width.
-                (dx / (crate::sound::MAX_WORLD_VIEW_WIDTH * 0.5)).clamp(-1.0, 1.0),
-            )
-        } else {
-            return LiquidLoopUpdate { playing, x: xi, y: yi, strength: si, volume_pan: None, pitch: None };
-        }
-    };
-    // `:417-423`: the ambient-volume scale (cases 34/35 are in
-    // `DoesSoundScaleWithAmbientVolume`'s list, `:1448-1449`); the menu
-    // zeroes it.
-    let ambient = if game_menu { 0.0 } else { ambient_volume };
-    // Cases 34/35 (`:1251-1256`/`:1281-1286`): strength/50 clamped to 1,
-    // times the 0.2/0.65 family multiplier times (1 - shimmerAlpha).
+    // The shared pure volume half (`sound::liquid_ambience`, the W4-g75
+    // residuals census): the `LegacySoundPlayer.cs:376-397` walk (-1
+    // sentinel → 2D atten 1/pan 0; the FIXED `MaxWorldViewSize.X * 0.5` =
+    // 960 pan denominator, `:395`), the `:419-422` slider/quiet/menu scale
+    // and the case-34/35 `strength/50 × mult × (1 - shimmerAlpha)` math
+    // (`:1251-1256`/`:1281-1286`). `None` = out of attenuation range:
+    // `flag` stays false, the whole `if (flag)` block (`:415`) is skipped
+    // and the live loop keeps its last volume — it does NOT stop.
     let mult = if channel == 0 { 0.2 } else { 0.65 };
-    let volume = atten
-        * (si as f32 / 50.0).min(1.0)
-        * mult
-        * (1.0 - shimmer_alpha)
-        * ambient;
+    let Some((volume, pan)) = crate::sound::liquid_ambience(
+        strength,
+        x,
+        y,
+        mult,
+        camera_center,
+        ambient_volume,
+        game_menu,
+        shimmer_alpha,
+    ) else {
+        return LiquidLoopUpdate { playing, x: xi, y: yi, strength: si, volume_pan: None, pitch: None };
+    };
     if volume <= 0.0 || xi == -1 || yi == -1 {
         // `:1257-1262`/`:1287-1292`: the zero-volume OR sentinel-position
         // stop (a -1 position with positive strength cannot arise from the

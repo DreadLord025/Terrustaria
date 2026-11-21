@@ -405,6 +405,115 @@ pub(crate) fn water_mask_rects(draws: &[tr_core::liquid_draw::LiquidDraw]) -> Ve
         .collect()
 }
 
+/// `WaterfallManager.DrawWaterfall(int waterfallType, ...)`'s type-25 arm
+/// (`WaterfallManager.cs:969-985`): a shimmer FALL quad draws twice — the base
+/// with `SetShimmerVertexColors` (`LiquidRenderer.cs:738-752`: white × opacity
+/// × `GetShimmerBaseColor` per corner — the `GetCornerColors` result is
+/// DISCARDED, so the fall is self-luminous like the liquid surface) and the
+/// sparkle at `sourceRect.Y += 42` with `SetShimmerVertexColors_Sparkle(top:
+/// true)` (`:725-736`): `GetShimmerGlitterColor` per corner × opacity, and
+/// `top: true` pins the glitter opacity at 0.5 (`:768-770`). The glitter
+/// colour carries alpha 0 (additive); the premultiplied encoding matches
+/// [`draw_shimmer`]'s documented deviation. Distinct from the g76 liquid-
+/// surface lane — the falls sample the wave at the walked CELL, not the
+/// liquid record.
+pub(crate) fn draw_shimmer_fall(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    anim_time: f32,
+    d: &tr_core::waterfall::WaterfallDraw,
+) -> u32 {
+    // `Main.timeForVisualEffects` — the same wrapped tick clock the liquid
+    // shimmer pass reads.
+    let tve = (anim_time * 60.0) % 216000.0;
+    let [x, y] = d.cell;
+    let corners: [[i32; 2]; 4] = [[x, y], [x + 1, y], [x, y + 1], [x + 1, y + 1]];
+    let Some(uv) = lookups.waterfall_uv(d.texture as usize, d.source) else {
+        return 0;
+    };
+    // The base corners: `Color.White * opacity` then `* GetShimmerBaseColor`.
+    let base: [[f32; 3]; 4] = corners.map(|[cx, cy]| {
+        let b = tr_core::tile_light::shimmer_base_color(cx, cy, tve);
+        [b[0] * d.opacity, b[1] * d.opacity, b[2] * d.opacity]
+    });
+    let mut quads = push_waterfall_split(r, uv, d, &base, d.opacity);
+    // The sparkle strip: `sourceRect.Y += 42` (`WaterfallManager.cs:977`).
+    let mut spark_src = d.source;
+    spark_src[1] += 42;
+    let Some(suv) = lookups.waterfall_uv(d.texture as usize, spark_src) else {
+        return quads;
+    };
+    // `GetShimmerGlitterColor(top: true, cx, cy)` × opacity: the hue rides the
+    // same diagonal as the liquid surface, the glitter opacity is the flat
+    // 0.5 of the `top` arm.
+    let glitter: [[f32; 3]; 4] = corners.map(|[cx, cy]| {
+        let g = tr_core::tile_light::hsl_to_rgb(
+            (((cx as f32 + cy as f32 / 6.0) + tve / 30.0) / 6.0) % 1.0,
+            1.0,
+            0.5,
+        );
+        let o = 0.5 * d.opacity;
+        [g[0] * o, g[1] * o, g[2] * o]
+    });
+    // The additive encoding of `push_split_premultiplied`: rgb/max per corner,
+    // one quad alpha = the brightest corner.
+    let max = |c: [f32; 3]| c[0].max(c[1]).max(c[2]);
+    let alpha = glitter.iter().map(|c| max(*c)).fold(0.0f32, f32::max);
+    let encoded: [[f32; 3]; 4] = glitter.map(|c| {
+        let m = max(c);
+        if m <= 0.0 {
+            [0.0; 3]
+        } else {
+            [c[0] / m, c[1] / m, c[2] / m]
+        }
+    });
+    quads += push_waterfall_split(r, suv, d, &encoded, alpha);
+    quads
+}
+
+/// [`push_split`] for a waterfall quad: the 3x3 bilinear split over the
+/// walk's world-pixel `pos`/`source` instead of a liquid record. A flipped
+/// quad mirrors the SOURCE columns (the tint stays on its destination
+/// corner), matching `flip_uv` over the whole quad.
+fn push_waterfall_split(
+    r: &mut SpriteRenderer,
+    uv: [f32; 4],
+    d: &tr_core::waterfall::WaterfallDraw,
+    corners: &[[f32; 3]; 4],
+    alpha: f32,
+) -> u32 {
+    let (sw, sh) = (d.source[2] as f32, d.source[3] as f32);
+    let xs = [0.0, sw / 3.0, sw * 2.0 / 3.0, sw];
+    let ys = [0.0, sh / 3.0, sh * 2.0 / 3.0, sh];
+    let mut quads = 0;
+    for i in 0..3 {
+        for j in 0..3 {
+            let cw = xs[i + 1] - xs[i];
+            let ch = ys[j + 1] - ys[j];
+            if cw <= 0.0 || ch <= 0.0 {
+                continue;
+            }
+            let u = (xs[i] + xs[i + 1]) * 0.5 / sw;
+            let v = (ys[j] + ys[j + 1]) * 0.5 / sh;
+            let tint = bilerp_corners(*corners, u, v);
+            // The flipped quad samples the mirrored source column.
+            let si = if d.flip { 2 - i } else { i };
+            let mut sub = sub_uv_frac(uv, xs[si], ys[j], cw, ch, sw, sh);
+            if d.flip {
+                sub = [sub[2], sub[1], sub[0], sub[3]];
+            }
+            r.push_sprite(
+                [d.pos[0] + xs[i], d.pos[1] + ys[j]],
+                [cw, ch],
+                sub,
+                [tint[0], tint[1], tint[2], alpha],
+            );
+            quads += 1;
+        }
+    }
+    quads
+}
+
 /// `TileDrawing.DrawTile_LiquidBehindTile`: a block that stands in liquid gets the
 /// liquid drawn *behind* it, so the transparent parts of edge and slope frames show
 /// water instead of the parallax background.

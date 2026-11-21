@@ -656,6 +656,16 @@ impl App {
                             width: screen.x,
                             height: screen.y,
                         };
+                        // `Main.drewLava` at the `DoDraw_Waterfalls` site
+                        // (`Main.cs:63281`): the port's liquid passes do not
+                        // port `oldDrawWater`'s true-store (`:57938`), so the
+                        // flag rides false; `WaterfallManager.Draw` clears it
+                        // at `:1125` either way.
+                        // `WaterfallManager.Draw`'s head (`WaterfallManager.cs:1120`):
+                        // the `_shouldShowInvisibleBlocksAndWalls` latch GetAlpha's
+                        // default arm reads (`:1037`) — the same value the light
+                        // params carry (`Main.cs:58023-58030`).
+                        waterfall.set_show_invisible(params.draw_invisible_walls);
                         let (lights, waterfall_scan, lavafall_scan) = waterfall.draw(
                             world,
                             light,
@@ -665,17 +675,6 @@ impl App {
                             params.mouse_text_color,
                             (*frame_count as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ world.seed,
                             screen_info,
-                            // `Main.ShouldShowInvisibleBlocksAndWalls`
-                            // (`Main.cs:58023`), sampled once per `Draw`
-                            // (`WaterfallManager.cs:1120`): false until the
-                            // EchoMonolith / 4409-accessory systems land;
-                            // `TR_SHOW_INVISIBLE=1` pins it on for A/B shots.
-                            crate::env::show_invisible(),
-                            // `Main.drewLava` at the `DoDraw_Waterfalls` site
-                            // (`Main.cs:63281`): the port's liquid passes do not
-                            // port `oldDrawWater`'s true-store (`:57938`), so the
-                            // flag rides false; `WaterfallManager.Draw` clears it
-                            // at `:1125` either way.
                             false,
                         );
                         scratch.waterfall_quads = waterfall.take_quads();

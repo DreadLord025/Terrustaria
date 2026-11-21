@@ -931,7 +931,89 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
   sparkle beside the stream (velocity zeroed). The sparkles ride the rain module's dust
   drawing (`Dust` frame 43, scale 0.5) and fade with the generic dust decay
   (`alpha -= 25` per tick) вЂ” the type's own AI is not ported.
-- Ambience scans (W4-g73/g74/g75 union, code-only): `DrawWaterfall` accumulates BOTH
+- Honeyfall lane + the water-style ambience scan (W4-g75, code-only): the second
+  `DrawWaterfall` ambience arm (`WaterfallManager.cs:708-729`, locals `:328-332`,
+  store `:960-962`) now rides a second `AmbientScan` out of `WaterfallManager::draw`
+  into `App::ambient_waterfall` вЂ” the waterfall loop's volume/pan input
+  (`Main.Ambience`, `Main.cs:13475-13486`); the field was dead 0 after g74 removed
+  the quad-based approximation. The arm's exclusion list is verbatim
+  (`num12 != 1 && != 14 && != 25 && != 11 && != 12 && != 22`): the honey fall
+  (type 14, `FindWaterfalls` `:186-188`) feeds NEITHER ambience triple, emits no
+  `AddLight` (no case 14 in `:1067-1116`), animates on the shared typed-fall slow
+  cadence (`32 * slowFrame`, the 7-tick counter, `:352-358`) and rides `GetAlpha`'s
+  flat 0.8 (`:1035`) вЂ” no wall/surface 0.6 damp, no pass-alpha multiply, no
+  `StylizeColor` case 14, so an unlit honey fall stays black (no lava-style 190
+  self-glow floor); the last-10-steps fade (`:1039-1042`) still scales the 0.8.
+  The Y-distance arm keeps the original's verbatim quirk at `:725-728` (tests
+  `num39`, stores `num38` into `num3`), so on a straight drop `ambientWaterfallY`
+  freezes at the head row. The g74 witness fixtures were re-derived against the
+  C# direction chain (written-not-run, never executed): the half-brick spout head
+  cannot fall straight (`:609`'s `!tile3.halfBrick()` gate) and the liquid-filled
+  right neighbour bends it LEFT (`:625-634`) вЂ” cells (10,10), (9,10), (9,11..59),
+  51 not 50; the head quad rides the `16 + num21` source, the column-9 quads ride
+  `num21`. Witnesses: `honey_spout_uses_type_fourteen`,
+  `honey_frames_ride_the_slow_counter`,
+  `honey_alpha_is_flat_point_eight_without_a_glow_floor`,
+  `honey_falls_emit_no_light_and_feed_neither_ambience_scan`,
+  `waterfall_scan_sums_strength_and_tracks_the_nearest_cell`,
+  `waterfall_scan_y_arm_keeps_the_num3_equals_num38_quirk` (written, not run вЂ”
+  code-only).
+- FALLS RESIDUALS census (W4-g75 residuals, code-only): the full-file
+  `WaterfallManager.cs` census against the branch found and ported the
+  remaining arms. The `DrawWaterfall(int, ...)` overload's TYPE-25 arm
+  (`WaterfallManager.cs:969-985`) was missing: every quad now carries the
+  walked cell `(num13, num14)` and `GetAlpha`'s opacity (the overload's
+  `(x, y, opacity)` arguments), and `render/liquids.rs::draw_shimmer_fall`
+  draws the shimmer fall twice вЂ” the base with `SetShimmerVertexColors`
+  (`LiquidRenderer.cs:738-752`: white Г— opacity Г— `GetShimmerBaseColor` per
+  corner; the `GetCornerColors` result is DISCARDED, so the fall is
+  self-luminous like the liquid surface) and the sparkle at `sourceRect.Y +=
+  42` with `SetShimmerVertexColors_Sparkle(top: true)` (`:725-736`, the flat
+  0.5 glitter opacity of the `top` arm `:768-770`), through the same 3Г—3
+  bilinear split and premultiplied-glitter encoding as the liquid pass. This
+  is DISTINCT from the g76 liquid-surface lane (`fb7a8df1`, not in this
+  branch): the falls sample the wave at the walked cell, not the liquid
+  record. `GetAlpha`'s default arm regains the verbatim `:1037`
+  `invisibleWall()`/wall-318 test plus the `:1120`
+  `_shouldShowInvisibleBlocksAndWalls` latch (`set_show_invisible`, fed from
+  `LightParams::draw_invisible_walls`); `solid_tile` regains `nactive()`
+  (`WorldGen.cs:69965` вЂ” an actuated tile is not solid, both in the spout
+  scan and the walk's solid-break); the `:749` `color5 = Color.White`
+  mutation now sticks for the rest of the step (it feeds the later arms and
+  `color4`). The `App::Ambience` loop's triple consumers ride the pure
+  `sound::liquid_ambience`: the `(int)` casts of `Main.cs:13477`/`:13500`,
+  the zero-strength camera-centre stop arm (`:13484`/`:13506`), the FIXED
+  `MaxWorldViewSize.X * 0.5 = 960` pan denominator (`Main.cs:66714`, was the
+  window width), and the out-of-range arm that leaves the live loop at its
+  last volume (`LegacySoundPlayer.cs:392-397` вЂ” the old port stopped it);
+  `audio.rs` re-pitches the waterfall loop at `2^-0.2` (`:1268`). In the
+  FINAL falls fold on g73 the consumer stack is two-tier: the decision half
+  `ambient_sound::liquid_loop_update` (the ambientLava Manhattan pick +
+  strength sum, the play gate, the slot/pitch bookkeeping — see the
+  ambience-consumers bullet below) delegates its volume walk to this pure
+  `sound::liquid_ambience`. Census
+  negatives: `FindWaterfalls` has NO entry/exit foam code (the file's only
+  spawn arms are the half-brick spout and the 196/460/717 fountains), and
+  the sand/rain arms (11/12/22/26, `:364-525`) plus the `:708` exclusion
+  list were already verbatim. Witnesses:
+  `shimmer_spout_uses_type_twenty_five_and_honey_outranks_it`,
+  `shimmer_frames_ride_the_slow_counter`,
+  `shimmer_alpha_is_flat_point_seven_five`,
+  `shimmer_quads_carry_the_walked_cell_and_opacity`,
+  `shimmer_falls_emit_light_but_feed_neither_ambience_scan`,
+  `sand_fountain_tile_460_drops_below`,
+  `sand_fall_draws_one_sheet_with_the_even_column_lead_and_fade`,
+  `echo_and_glass_walls_skip_the_get_alpha_damp_until_the_latch`,
+  `an_actuated_dry_side_still_admits_the_spout`,
+  `an_actuated_stone_in_the_column_does_not_stop_the_walk`,
+  `liquid_ambience_plays_the_triple_with_int_truncation`,
+  `liquid_ambience_pan_rides_the_fixed_1920_view`,
+  `liquid_ambience_zero_strength_stops_at_the_camera`,
+  `liquid_ambience_out_of_range_leaves_the_loop_untouched`,
+  `liquid_ambience_scales_with_the_slider_menu_and_shimmer` (written, not
+  run вЂ” code-only).
+- Ambience scans (W4-g73/g74/g75 FINAL union on `task/W4-g73-waterfall-draw`,
+  code-only): `DrawWaterfall` accumulates BOTH
   triples in one walk. The lavafall arm (`WaterfallManager.cs:685-707`, locals
   `:333-337`) sums kind-1 segments; the water-style arm (`:708-729` — every kind except
   1/14/25/11/12/22, so the disco, gemspark and fountain falls count, honey excluded)
@@ -947,28 +1029,38 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
   `:960-965`, last active pass wins; no active pass leaves the `Main.cs:67230-67234`
   load reset (-1, -1, 0) on both) into `App::ambient_waterfall`/`ambient_lavafall` —
   the waterfall/lavafall loops' volume/pan inputs (`Main.Ambience`,
-  `Main.cs:13466-13515`). The quad-based lavafall approximation is gone. `ScreenInfo`
+  `Main.cs:13466-13509`). The quad-based lavafall approximation is gone. The
+  lavafall witnesses (`lavafall_scan_sums_strength_and_tracks_the_nearest_cell`,
+  `water_falls_leave_the_lavafall_triple_at_the_reset`,
+  `the_last_active_pass_overwrites_the_lavafall_triple`,
+  `lava_frames_ride_the_slow_counter`, `lava_quads_carry_the_190_self_glow_floor`
+  on the 140-row glow fixture, `lava_glow_flickers_with_mouse_text_color`) ride
+  the fixed 51-cell left-bend walk. `ScreenInfo`
   carries the raw `Main.screenPosition`/`Width`/`Height`; `centre()` truncates the int
   halving before the float add. See `docs/UNION-CONTRACT-waterfalls.md` for the
-  g73/g74/g75 family-merge contract.
+  g73/g74/g75 family-merge contract — the canonical branch is
+  `task/W4-g73-waterfall-draw` (the FINAL falls fold: the g75 union `e30ad7ba`
+  + this branch's falls-adjacent superset).
 - Ambience consumers (W4-g73 falls-adjacent census, code-only): the ¼ s
   `Main.Ambience` tick (`Main.cs:13466-13509`) now runs the verbatim
   decision half `ambient_sound::liquid_loop_update` — the `(int)`
   truncations of the `PlaySound(34/35, x, y, strength)` arguments
   (`:13477`/`:13500`), the lavafall arm's `ambientLava` Manhattan-distance
   position pick and strength SUM (`:13488-13497`, the play gate stays the
-  lavafall strength alone, `:13498`), the `LegacySoundPlayer.cs:390-396`
-  attenuation (pan divides by `MaxWorldViewSize.X * 0.5` = 960, NOT the
-  live screen width) and the out-of-range KEEP-LAST-VOLUME arm (`flag`
-  false skips the whole `if (flag)` block at `:415` — the first port pass
-  wrongly stopped the loop). The case-34 re-volume arm's `Pitch = -0.2f`
-  (`:1268`, XNA octaves → sink speed `2^-0.2`) and case 35's `-0f`
-  (`:1298`) are applied; the fresh-create arms set no pitch. The pan now
-  reaches the PLAYING source through shared atomic gains
-  (`audio.rs::LiquidPanGains`/`PannedShared` — the baked-at-creation
-  deviation is retired). `App::ambient_lava` carries the
-  `Main.ambientLava*` triple at the `Main.cs:67235-67236` load reset: its
-  only writer is the RETRO `oldDrawWater` scan (`:57615-57634`/
+  lavafall strength alone, `:13498`). Its per-channel volume walk delegates
+  to the shared pure `sound::liquid_ambience` (the g75 residuals census):
+  the `LegacySoundPlayer.cs:390-396` attenuation (pan divides by
+  `MaxWorldViewSize.X * 0.5` = 960, NOT the live screen width) and the
+  out-of-range KEEP-LAST-VOLUME arm (`flag` false skips the whole
+  `if (flag)` block at `:415` — the first port pass wrongly stopped the
+  loop). The case-34 re-volume arm's `Pitch = -0.2f` (`:1268`, XNA octaves
+  → sink speed `2^-0.2`) and case 35's `-0f` (`:1298`) are applied; the
+  fresh-create arms set no pitch (supersedes the g75 fold's
+  pinned-both-branches deviation). The pan now reaches the PLAYING source
+  through shared atomic gains (`audio.rs::LiquidPanGains`/`PannedShared` —
+  the baked-at-creation deviation is retired). `App::ambient_lava` carries
+  the `Main.ambientLava*` triple at the `Main.cs:67235-67236` load reset:
+  its only writer is the RETRO `oldDrawWater` scan (`:57615-57634`/
   `:57932-57936`, `!Lighting.NotRetro` only), which the port's
   `LiquidRenderer` path never runs — so the pooled-lava contribution is
   structurally zero, exactly like a non-retro original. All three App
@@ -982,9 +1074,12 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
 - `GetAlpha`'s wall gate (`WaterfallManager.cs:1037`) is ported in full:
   `wall != 0 && (showInvisible || (wall != 318 && !tile.invisibleWall()))` — any wall
   dims while invisible sight is on; wall 318 and Echo-coated walls never dim
-  otherwise. `show_invisible` is `Main.ShouldShowInvisibleBlocksAndWalls()`
-  (`Main.cs:58023`) sampled once per `Draw` (`:1120`); the app feeds
-  `TR_SHOW_INVISIBLE` (false until the EchoMonolith / 4409-accessory systems land).
+  otherwise. The latch is `WaterfallManager::set_show_invisible` — the `:1120`
+  `_shouldShowInvisibleBlocksAndWalls = Main.ShouldShowInvisibleBlocksAndWalls()`
+  head refresh (`Main.cs:58023-58030`), fed from `LightParams::draw_invisible_walls`
+  (`TR_SHOW_INVISIBLE`, false until the EchoMonolith / 4409-accessory systems land)
+  by the app before every `waterfall.draw` call. This supersedes the g73 union's
+  `show_invisible` draw parameter with the verbatim C# static-latch shape.
   The `:555` walk break and `WorldGen.SolidTile` (`WorldGen.cs:69957-69974`) read
   `nactive()` (`Tile.cs:240-247`) — active AND not actuated-off — so an actuated tile
   never stops a fall or a spout.
@@ -1012,7 +1107,22 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
   `honey_alpha_is_flat_point_eight_without_a_glow_floor`,
   `honey_falls_emit_no_light_and_feed_neither_ambience_scan`,
   `waterfall_scan_y_arm_keeps_the_num3_equals_num38_quirk`
-  (written, not run — code-only).
+  (written, not run — code-only). The g75 residuals census adds 15 more
+  (10 waterfall + 5 `liquid_ambience`, listed in the residuals bullet above):
+  `shimmer_spout_uses_type_twenty_five_and_honey_outranks_it`,
+  `shimmer_frames_ride_the_slow_counter`, `shimmer_alpha_is_flat_point_seven_five`,
+  `shimmer_quads_carry_the_walked_cell_and_opacity`,
+  `shimmer_falls_emit_light_but_feed_neither_ambience_scan`,
+  `sand_fountain_tile_460_drops_below`,
+  `sand_fall_draws_one_sheet_with_the_even_column_lead_and_fade`,
+  `echo_and_glass_walls_skip_the_get_alpha_damp_until_the_latch`,
+  `an_actuated_dry_side_still_admits_the_spout`,
+  `an_actuated_stone_in_the_column_does_not_stop_the_walk` — 34 lane witnesses
+  from the g73/g74/g75 union + residuals; the W4-g73 falls-adjacent census adds
+  9 more (3 source-detection in `waterfall/mod.rs`, 5 decision-half in
+  `ambient_sound.rs`, 1 live-pan in `audio.rs` — listed in the
+  source-detection-residuals and ambience-consumers bullets above) — 43 lane
+  witnesses in total, all written, not run (code-only).
 - `LiquidRenderer.DrawShimmer` (`LiquidRenderer.cs:675-723`): shimmer liquid never
   takes the normal liquid path вЂ” every type-3 cell draws twice, the base quad with
   per-corner `GetShimmerBaseColor` wave colours (self-luminous: the light map is

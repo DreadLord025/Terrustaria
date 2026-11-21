@@ -492,6 +492,14 @@ pub(crate) fn draw_tiles(
     // collects their `AddLight` list for the light map — keeping the walk out of
     // the G6-cached path makes the light feed deterministic per frame index.
     for d in std::mem::take(&mut scratch.waterfall_quads) {
+        // `WaterfallManager.DrawWaterfall(int, ...)`'s type-25 arm
+        // (`WaterfallManager.cs:972-980`): the shimmer fall replaces the tint
+        // with the self-luminous base + sparkle pair.
+        if d.texture == 25 {
+            stats.waterfalls +=
+                crate::render::liquids::draw_shimmer_fall(r, lookups, anim_time, &d);
+            continue;
+        }
         let Some(uv) = lookups.waterfall_uv(d.texture as usize, d.source) else {
             continue;
         };

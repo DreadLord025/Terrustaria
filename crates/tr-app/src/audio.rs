@@ -2125,7 +2125,7 @@ impl Audio {
 
     /// `LegacySoundPlayer`'s case 34/35 (`LegacySoundPlayer.cs:1249-1307`): the
     /// two persistent liquid loops whose Volume/Pan update in place every ¼ s
-    /// tick (`Main.Ambience`, `Main.cs:13466-13515`). `volume <= 0` stops the
+    /// tick (`Main.Ambience`, `Main.cs:13466-13509`). `volume <= 0` stops the
     /// channel outright (the vanilla stops the instance; no fade). The pan
     /// rides shared per-loop gains (`liquid_pans`) so the live instance
     /// re-pans exactly like XNA's `SoundInstanceLiquid[n].Pan = num3`

@@ -32,7 +32,6 @@ impl WaterfallManager {
         mouse_text: u8,
         sparkle_rng: &mut FastRandom,
         screen: ScreenInfo,
-        show_invisible: bool,
         drew_lava: bool,
         out: &mut Vec<WaterfallDraw>,
         lights: &mut Vec<DynamicLight>,
@@ -209,7 +208,8 @@ impl WaterfallManager {
                 let tile3 = world.tile(num13, num14).copied().unwrap_or_default();
                 // `tile3.nactive()` (`WaterfallManager.cs:555`): the break
                 // needs active AND not actuated-off; `solid_tile_draw` already
-                // carries the same `nactive` half.
+                // carries the same `nactive` half (the explicit gate mirrors
+                // the C# call shape).
                 if tile3.active()
                     && !tile3.inactive()
                     && solid_tile_draw(&tile3)
@@ -328,7 +328,7 @@ impl WaterfallManager {
                     &tile3,
                     world,
                     num13,
-                    show_invisible,
+                    self.show_invisible_blocks_and_walls,
                 );
                 let mut color5 = stylize_color(
                     alpha,
@@ -374,16 +374,16 @@ impl WaterfallManager {
                     // `Main.ambientWaterfall*` scan (`WaterfallManager.cs:708-729`):
                     // the same near-screen strength sum for every fall type
                     // EXCEPT the lava (1), honey (14), shimmer (25) and the
-                    // rain arms (11/12/22) — 26 (the fountain) IS included, the
-                    // exclusion list only names 1/14/25/11/12/22. The Y arm
-                    // keeps the original's verbatim quirk (`:725-728`): it
-                    // tests num39 but stores num38 (the X distance) into num3.
+                    // rain arms (11/12/22) — the honey fall contributes to
+                    // neither ambience triple. The Y arm keeps the original's
+                    // verbatim quirk (`:725-728`): it tests num39 but stores
+                    // num38 (the X distance) into num3.
                     let centre = screen.centre();
                     let num38 = ((num13 * 16 + 8) as f32 - centre[0]).abs();
                     let num39 = ((num14 * 16 + 8) as f32 - centre[1]).abs();
                     if num38 < screen.width * 2.0 && num39 < screen.height * 2.0 {
-                        let num40 =
-                            1.0 - (num38 * num38 + num39 * num39).sqrt() / (screen.width * 0.75);
+                        let num40 = 1.0
+                            - (num38 * num38 + num39 * num39).sqrt() / (screen.width * 0.75);
                         if num40 > 0.0 {
                             num += num40;
                         }
@@ -399,6 +399,13 @@ impl WaterfallManager {
                 }
 
                 let num41 = tile3.liquid as i32 / 16;
+                // Every quad the geometry arms push this step belongs to the
+                // walked cell `(num13, num14)` at `GetAlpha`'s opacity — the
+                // `DrawWaterfall(int, ...)` overload's `(x, y, opacity)`
+                // arguments (`WaterfallManager.cs:969`), which the shimmer
+                // consumer needs for its vertex colours. Filled below,
+                // before the cell advances.
+                let quad_mark = out.len();
                 if flag2 && num17 != num31 {
                     let num42 = 2;
                     let src = [num21, 24, 32, 16 - num41 - num42];
@@ -431,11 +438,10 @@ impl WaterfallManager {
                 if num15 == 0 && num30 != 0 && num16 == 1 && num17 != num18 {
                     num30 = 0;
                     num17 = num18;
-                    // `color5 = Color.White` (`WaterfallManager.cs:749`): the
-                    // slope-entry foam flashes white AND the reset propagates
-                    // — the cap draw below (`:821-850`) and the next cell's
-                    // `color4 = color5` (`:945`) read the white. Both C#
-                    // branches (`:750-757`) draw the same rect flipped.
+                    // `WaterfallManager.cs:749`: `color5 = Color.White` — the
+                    // MUTATION sticks for the rest of the step (the later
+                    // arms draw white and `color4 = color5` carries it into
+                    // the next step), not just this quad.
                     color5 = [1.0, 1.0, 1.0, 1.0];
                     let src = [num21, 24, 32, 16 - num41];
                     push(
@@ -719,6 +725,12 @@ impl WaterfallManager {
                 if tile3.liquid > 0 && !tile3.half_brick() {
                     k = 1000;
                 }
+                // The overload arguments for this step's quads (see
+                // `quad_mark` above) — captured before the cell advances.
+                for q in &mut out[quad_mark..] {
+                    q.cell = [num13, num14];
+                    q.opacity = alpha;
+                }
                 num16 = num33;
                 num18 = num17;
                 num15 = num32;
@@ -851,11 +863,7 @@ fn stylize_color(
     ]
 }
 
-/// `WaterfallManager.GetAlpha` (`WaterfallManager.cs:1030-1044`). The wall gate
-/// (`:1037`) is `wall != 0 && (_shouldShowInvisibleBlocksAndWalls ||
-/// (wall != 318 && !tile.invisibleWall()))`: any wall counts while invisible
-/// sight is on; otherwise wall 318 (the Echo "fake wall") and Echo-coated walls
-/// never dim the fall.
+/// `WaterfallManager.GetAlpha` (`WaterfallManager.cs:1030-1044`).
 #[allow(clippy::too_many_arguments)]
 fn get_alpha(
     alpha: f32,
@@ -872,11 +880,15 @@ fn get_alpha(
         1 => 1.0,
         14 => 0.8,
         25 => 0.75,
+        // `:1037`: `(wall != 0 && (showInvisible || (wall != 318 &&
+        // !invisibleWall()))) || !(y < worldSurface)` — the Echo-coated wall
+        // (or the glass wall 318) skips the damp unless the invisible-view
+        // latch is on.
         _ => {
-            let wall_dims = tile.wall != 0
-                && (show_invisible
-                    || (tile.wall != 318 && !world.invisible_wall(x, y)));
-            if wall_dims || !((y as f64) < world.world_surface) {
+            if (tile.wall != 0
+                && (show_invisible || (tile.wall != 318 && !world.invisible_wall(x, y))))
+                || (y as f64) >= world.world_surface
+            {
                 0.6 * alpha
             } else {
                 alpha
@@ -956,9 +968,9 @@ fn try_sparkling(
     }
 }
 
-/// `WorldGen.SolidTile` (`WorldGen.cs:69957-69974`): `nactive()` (active and
-/// not actuated-off, `Tile.cs:240-247`), solid, not a solid top, not a half
-/// brick or slope. An actuated-inactive tile never stops a fall or a spout.
+/// `WorldGen.SolidTile` (`WorldGen.cs:69957-69974`): nactive (active AND not
+/// actuated-inactive, `Tile.cs:240-247`), solid, not a solid top, not a half
+/// brick or slope.
 pub(super) fn solid_tile(t: &Tile) -> bool {
     t.active()
         && !t.inactive()
@@ -1000,6 +1012,11 @@ fn push(
         source,
         flip,
         color,
+        // The walk fills these per step before the cell advances (the
+        // `DrawWaterfall` overload's `(x, y, opacity)`); the rain arm never
+        // reads them (no vertex-colour path).
+        cell: [0, 0],
+        opacity: 1.0,
     });
 }
 
@@ -1010,7 +1027,8 @@ mod tests {
 
     /// `WorldGen.SolidTile` (`WorldGen.cs:69957-69974`) reads `nactive()`
     /// (`Tile.cs:240-247`: active AND not actuated-off), so an actuated tile
-    /// never stops a fall or a spout.
+    /// never stops a fall or a spout. (g73's union witness, kept alongside
+    /// the mod.rs spout/column replays.)
     #[test]
     fn an_actuated_tile_is_not_solid() {
         let mut t = Tile::default();
@@ -1024,6 +1042,8 @@ mod tests {
     /// `WaterfallManager.GetAlpha`'s wall gate (`WaterfallManager.cs:1037`):
     /// `wall != 0 && (showInvisible || (wall != 318 && !invisibleWall()))`,
     /// OR'd with the below-`worldSurface` dim — both dim to `0.6 * Alpha`.
+    /// (g73's union witness; the latch form feeds `show_invisible` from
+    /// `WaterfallManager::set_show_invisible`, the `:1120` head latch.)
     #[test]
     fn get_alpha_wall_gate_matches_the_csharp() {
         let mut w = World::new("test".into(), 40, 40);

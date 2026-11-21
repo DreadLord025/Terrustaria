@@ -45,8 +45,20 @@ pub struct WaterfallDraw {
     pub source: [i32; 4],
     /// `SpriteEffects.FlipHorizontally`.
     pub flip: bool,
-    /// Premultiplied-by-opacity tint, matching `Color * alpha`.
+    /// Premultiplied-by-opacity tint, matching `Color * alpha`. The shimmer
+    /// fall (type 25) DISCARDS it: `WaterfallManager.DrawWaterfall(int, ...)`
+    /// (`WaterfallManager.cs:972-980`) replaces the colour with the
+    /// `SetShimmerVertexColors` base/sparkle pair — the consumer rebuilds it
+    /// from [`Self::cell`] + [`Self::opacity`].
     pub color: [f32; 4],
+    /// The walked cell `(num13, num14)` the `DrawWaterfall` overload receives
+    /// (`WaterfallManager.cs:969`): the shimmer vertex colours sample
+    /// `GetCornerColors(x, y)` and the per-corner wave functions here.
+    pub cell: [i32; 2],
+    /// The overload's `opacity` argument — `GetAlpha`'s result, NOT the
+    /// stylized tint. `SetShimmerVertexColors` / `_Sparkle` scale the base and
+    /// sparkle colours by it (`WaterfallManager.cs:975`/`:978`).
+    pub opacity: f32,
 }
 
 /// A `WaterfallManager.TrySparkling` spawn: the `Dust.NewDust` position in world
@@ -142,6 +154,11 @@ pub struct WaterfallManager {
     /// frame in the fixed pre-draw phase (deterministically, whether or not the
     /// G6 world range rebuilds); the tile pass consumes the buffered quads.
     pending_quads: Vec<WaterfallDraw>,
+
+    /// `WaterfallManager._shouldShowInvisibleBlocksAndWalls` (`:74`): the
+    /// static latch `Draw()` refreshes per frame (`:1120`) and `GetAlpha`
+    /// reads (`:1037`). False until the app latches it.
+    show_invisible_blocks_and_walls: bool,
 }
 
 impl Default for WaterfallManager {
@@ -179,6 +196,7 @@ impl WaterfallManager {
             disco_style: 0,
             pending_sparkles: Vec::new(),
             pending_quads: Vec::new(),
+            show_invisible_blocks_and_walls: false,
         }
     }
 
@@ -464,6 +482,15 @@ impl WaterfallManager {
         }
     }
 
+    /// `WaterfallManager.Draw`'s head latch (`WaterfallManager.cs:1120`):
+    /// `_shouldShowInvisibleBlocksAndWalls = Main.ShouldShowInvisibleBlocksAndWalls()`
+    /// — read by `GetAlpha`'s default arm (`:1037`) so the Echo coating /
+    /// monolith view keeps the wall damp. The app passes its
+    /// `LightParams::draw_invisible_walls` (`Main.cs:58023-58030`).
+    pub fn set_show_invisible(&mut self, show: bool) {
+        self.show_invisible_blocks_and_walls = show;
+    }
+
     /// `WaterfallManager.Draw` (`WaterfallManager.cs:1118-1174`): resets
     /// `stopAtStep` and runs one `DrawWaterfall(style, liquidAlpha[i])` pass per
     /// water style with a non-zero alpha. The water-style index maps to the
@@ -478,9 +505,6 @@ impl WaterfallManager {
     /// `Main.screenWidth`/`Height` in pixels, used by the rain-branch cull
     /// (`:381`) and both ambience scans (`:687-691` / `:710-714`); the caller
     /// derives them from the camera exactly as the original's unscaled screen.
-    ///
-    /// `show_invisible` is `Main.ShouldShowInvisibleBlocksAndWalls()` sampled
-    /// once per `Draw` (`:1120`) and read by `GetAlpha`'s wall gate (`:1037`).
     ///
     /// `drew_lava` is `Main.drewLava` at entry (`Main.cs:1101`): the reset at
     /// the top of this method (`WaterfallManager.cs:1125`) leaves it false
@@ -507,7 +531,6 @@ impl WaterfallManager {
         mouse_text: u8,
         sparkle_seed: u64,
         screen: ScreenInfo,
-        show_invisible: bool,
         drew_lava: bool,
     ) -> (Vec<DynamicLight>, AmbientScan, AmbientScan) {
         for w in &mut self.waterfalls[..self.current_max] {
@@ -559,7 +582,6 @@ impl WaterfallManager {
                     mouse_text,
                     &mut sparkle_rng,
                     screen,
-                    show_invisible,
                     drew_lava,
                     &mut quads,
                     &mut lights,
@@ -627,7 +649,10 @@ fn any_liquid_kind(kind: LiquidKind, tiles: &[&Tile; 3]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tile::{FLAG_ACTIVE, FLAG_HALF_BRICK, FLAG_LIQUID_HONEY, FLAG_LIQUID_LAVA};
+    use crate::tile::{
+        FLAG_ACTIVE, FLAG_HALF_BRICK, FLAG_INACTIVE, FLAG_LIQUID_HONEY, FLAG_LIQUID_LAVA,
+        FLAG_LIQUID_SHIMMER,
+    };
 
     fn world_with_air() -> World {
         let mut w = World::new("test".into(), 80, 60);
@@ -802,8 +827,9 @@ mod tests {
             a
         };
         let (lights, _, _) = mgr.draw(
-            &w, &light, &style, 0.0, &alpha, 190, 0, ScreenInfo { position: [0.0, 0.0], width: 640.0, height: 640.0 },
-            false, false,
+            &w, &light, &style, 0.0, &alpha, 190, 0,
+            ScreenInfo { position: [0.0, 0.0], width: 640.0, height: 640.0 },
+            false,
         );
         let out: Vec<WaterfallDraw> = mgr.take_quads();
         assert!(!out.is_empty());
@@ -857,12 +883,10 @@ mod tests {
                 width: 640.0,
                 height: 640.0,
             };
-            let (lights_a, wamb_a, lamb_a) = a.draw(
-                &wa, &la, &style, frame as f32 / 60.0, &alpha, 190, seed, screen, false, false,
-            );
-            let (lights_b, wamb_b, lamb_b) = b.draw(
-                &wb, &lb, &style, frame as f32 / 60.0, &alpha, 190, seed, screen, false, false,
-            );
+            let (lights_a, wamb_a, lamb_a) =
+                a.draw(&wa, &la, &style, frame as f32 / 60.0, &alpha, 190, seed, screen, false);
+            let (lights_b, wamb_b, lamb_b) =
+                b.draw(&wb, &lb, &style, frame as f32 / 60.0, &alpha, 190, seed, screen, false);
             assert_eq!(lights_a, lights_b);
             assert_eq!(wamb_a, wamb_b);
             assert_eq!(lamb_a, lamb_b);
@@ -895,8 +919,9 @@ mod tests {
             a
         };
         let (lights, _, _) = mgr.draw(
-            &w, &light, &style, 0.0, &alpha, 255, 0, ScreenInfo { position: [0.0, 0.0], width: 640.0, height: 640.0 },
-            false, false,
+            &w, &light, &style, 0.0, &alpha, 255, 0,
+            ScreenInfo { position: [0.0, 0.0], width: 640.0, height: 640.0 },
+            false,
         );
         let out: Vec<WaterfallDraw> = mgr.take_quads();
         assert!(out.iter().any(|d| d.texture == 1));
@@ -910,8 +935,9 @@ mod tests {
         alpha2[0] = 0.5;
         alpha2[2] = 0.5;
         mgr.draw(
-            &w, &light, &style, 0.0, &alpha2, 255, 0, ScreenInfo { position: [0.0, 0.0], width: 640.0, height: 640.0 },
-            false, false,
+            &w, &light, &style, 0.0, &alpha2, 255, 0,
+            ScreenInfo { position: [0.0, 0.0], width: 640.0, height: 640.0 },
+            false,
         );
         let out2: Vec<WaterfallDraw> = mgr.take_quads();
         let lava_quads = out2.iter().filter(|d| d.texture == 1).count();
@@ -939,251 +965,6 @@ mod tests {
         w
     }
 
-    fn active_alpha() -> [f32; 15] {
-        let mut a = [0.0f32; 15];
-        a[0] = 1.0;
-        a
-    }
-
-    fn screen_at(x: f32, y: f32) -> ScreenInfo {
-        ScreenInfo {
-            position: [x, y],
-            width: 640.0,
-            height: 640.0,
-        }
-    }
-
-    /// `WaterfallManager.cs:708-729` + `:960-962`: the water triple is the
-    /// summed near-screen strength of the walked water segments and the
-    /// nearest segment's cell-centre world pixels — the arm the honey fall
-    /// is excluded from. The walk geometry replays the C# direction chain:
-    /// the half-brick head cannot fall straight (`:609`'s `!tile3.halfBrick()`
-    /// gate), and the liquid-filled right neighbour bends it left (`:625-634`),
-    /// so the 51 visited cells are (10,10), (9,10), then (9,11..59) until the
-    /// world edge. Also pins the verbatim `:725-728` quirk: the Y sentinel
-    /// stores the X distance (`num3 = num38`), which is 0 at the head, so the
-    /// stored Y never updates again. (g75's re-derivation of the g74 fixture
-    /// walk — same cell set as the original g73 replay.)
-    #[test]
-    fn waterfall_scan_sums_strength_and_tracks_the_nearest_cell() {
-        let w = water_spout_world();
-        let mut mgr = WaterfallManager::new();
-        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
-        mgr.update_tick();
-        let light = LightMap::new();
-        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
-        // Screen centred on the spout head (168, 168): every walked segment is
-        // inside the 2x box, so each contributes `1 - dist/(640*0.75)`.
-        let screen = screen_at(168.0 - 320.0, 168.0 - 320.0);
-        let (_, scan, lava) = mgr.draw(
-            &w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false, false,
-        );
-        // The head is nearest on both axes (dx = dy = 0); the bent column 9
-        // never beats it (the Y arm's num3 = num38 quirk pins 0 at the head).
-        assert_eq!(scan.x, 10.0 * 16.0 + 8.0);
-        assert_eq!(scan.y, 10.0 * 16.0 + 8.0);
-        assert_eq!(lava, AmbientScan::default());
-        // Hand-summed C# replay over the walked cells:
-        let mut cells = vec![(10, 10), (9, 10)];
-        cells.extend((11..60).map(|y| (9, y)));
-        let mut expected = 0.0f32;
-        for (cx, cy) in cells {
-            let dx = (cx as f32 * 16.0 + 8.0 - 168.0).abs();
-            let dy = (cy as f32 * 16.0 + 8.0 - 168.0).abs();
-            if dx < 640.0 * 2.0 && dy < 640.0 * 2.0 {
-                let s = 1.0 - (dx * dx + dy * dy).sqrt() / (640.0 * 0.75);
-                if s > 0.0 {
-                    expected += s;
-                }
-            }
-        }
-        assert!((scan.strength - expected).abs() < 1e-3, "{} vs {}", scan.strength, expected);
-        assert!(scan.strength > 0.0);
-    }
-
-    /// A world without falls runs one active pass over an empty list: the
-    /// locals reset (`WaterfallManager.cs:328-337`) is stored verbatim
-    /// (`:960-965`) — (-1, -1, 0) on BOTH triples, the `Main.cs:67230-67234`
-    /// load reset.
-    #[test]
-    fn an_empty_pass_stores_the_load_reset_triple() {
-        let w = world_with_air();
-        let mut mgr = WaterfallManager::new();
-        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
-        let light = LightMap::new();
-        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
-        let (_, scan, lava) = mgr.draw(
-            &w, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false, false,
-        );
-        assert_eq!(scan, AmbientScan::default());
-        assert_eq!(lava, AmbientScan::default());
-    }
-
-    /// `WaterfallManager.cs:960-962`: each `DrawWaterfall` pass overwrites the
-    /// triple. With two active water styles both passes re-draw the water fall
-    /// (only the rain arm zeroes stopAtStep, `:524`), so the last pass's scan
-    /// equals the first's segment-for-segment — the store is the last pass's.
-    #[test]
-    fn the_last_active_pass_overwrites_the_waterfall_triple() {
-        let w = water_spout_world();
-        let mut mgr = WaterfallManager::new();
-        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
-        mgr.update_tick();
-        let light = LightMap::new();
-        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
-        let mut alpha = [0.0f32; 15];
-        alpha[0] = 1.0;
-        alpha[2] = 1.0;
-        let near = screen_at(168.0 - 320.0, 168.0 - 320.0);
-        let (_, scan_single, _) = mgr.draw(
-            &w, &light, &style, 0.0, &active_alpha(), 190, 0, near, false, false,
-        );
-        assert!(scan_single.strength > 0.0);
-        let (_, scan_both, _) = mgr.draw(
-            &w, &light, &style, 0.0, &alpha, 190, 0, near, false, false,
-        );
-        assert_eq!(scan_both, scan_single);
-    }
-
-    /// The scan runs per visited CELL, not per quad: a fall boxed in on both
-    /// sides with liquid in the cell takes the `num29++` else (`:640-645`)
-    /// and the case-0 arm skips the body quad (`liquid > 0 && !halfBrick`,
-    /// `:926-930`) — but the scan block (`:708-730`) already ran for it, so
-    /// the cell contributes its full strength 1.0. Also pins the verbatim
-    /// `:725-728` quirk: the Y sentinel stores the X distance (`num3 =
-    /// num38`), so the stored Y stays the FIRST cell's row (10) even though
-    /// the screen centre sits on row 12 — only the X minimum keeps updating.
-    #[test]
-    fn the_scan_visits_cells_the_quad_list_skips() {
-        let mut w = water_spout_world();
-        // The spout steps away from its source liquid (`:625-634`), so the
-        // fall drops down column 9. Box the last cell in: stone sides at
-        // row 12, floor at 13, water pooled in (9, 12).
-        put(&mut w, 8, 12, stone(1));
-        put(&mut w, 10, 12, stone(1));
-        put(&mut w, 9, 13, stone(1));
-        put_liquid(&mut w, 9, 12, 200);
-        let mut mgr = WaterfallManager::new();
-        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
-        mgr.update_tick();
-        let light = LightMap::new();
-        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
-        // Screen centred on the head's column at the boxed-in row (168, 200):
-        // the head's X distance is 0, so BOTH sentinels freeze at the head —
-        // the verbatim quirk (`num3 = num38`) keeps Y at the head's row.
-        let screen = screen_at(168.0 - 320.0, 200.0 - 320.0);
-        let (_, scan, _) = mgr.draw(
-            &w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false, false,
-        );
-        let out = mgr.take_quads();
-        // The boxed-in cell emits no row-0 body quad (the row-24 cap of
-        // `:777-798` may still draw); every body quad sits above it.
-        assert!(out.iter().filter(|d| d.source[1] == 0).all(|d| d.pos[1] < 12.0 * 16.0));
-        // Visited cells: the head (10,10), then (9,10), (9,11), (9,12).
-        let cells = [(10, 10), (9, 10), (9, 11), (9, 12)];
-        let mut expected = 0.0f32;
-        for (cx, cy) in cells {
-            let dx = (cx as f32 * 16.0 + 8.0 - 168.0).abs();
-            let dy = (cy as f32 * 16.0 + 8.0 - 200.0).abs();
-            let s = 1.0 - (dx * dx + dy * dy).sqrt() / (640.0 * 0.75);
-            if s > 0.0 {
-                expected += s;
-            }
-        }
-        assert!((scan.strength - expected).abs() < 1e-3, "{} vs {}", scan.strength, expected);
-        assert!(scan.strength > 3.5); // includes the body-quad-less cell's ~0.95
-        // Both minima freeze at the head (its X distance is 0).
-        assert_eq!(scan.x, 10.0 * 16.0 + 8.0);
-        assert_eq!(scan.y, 10.0 * 16.0 + 8.0);
-    }
-
-    /// The waterfall-specific slope transitions (`WaterfallManager.cs`):
-    /// the spout head steps left onto column 9, falls two cells, then meets
-    /// a slope-1 top at (9,12). Hand-walked C# replay of the entry cell
-    /// (9,11) — arm 1 (`:590-607`) sets num30/num32/num17 = 1, num31 = -1:
-    /// * the flag2 direction-change cap (`:733-743`): 32x14 at row 24,
-    ///   `(x*16, y*16+14)`, unflipped (num31 != 1);
-    /// * the num30 entry sheet (`:799-819`): 32x16 at row 24, `(x*16,
-    ///   y*16)`, unflipped;
-    /// * the 8-slice slope fan (`:860-873`): 2x8 strips, source X descending
-    ///   30..16, the first two strips pinned to num48 = 4;
-    /// then the run over the flat floor at (10,12) (`:886`, flipped, num11
-    /// = 8) and the exit back to vertical at (11,12)/(11,13) (`:840` row-0
-    /// with the num11 = 8 offset, `:844` row-24 exit sheet at x-16).
-    #[test]
-    fn slope_entry_and_exit_draw_the_transition_sheets() {
-        let mut w = water_spout_world();
-        let mut slope = stone(1);
-        slope.set_slope(1);
-        put(&mut w, 9, 12, slope);
-        put(&mut w, 10, 13, stone(1));
-        let mut mgr = WaterfallManager::new();
-        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
-        mgr.update_tick(); // regular_frame stays 0 → num21 = 0
-        let light = LightMap::new();
-        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
-        mgr.draw(
-            &w, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false, false,
-        );
-        let out = mgr.take_quads();
-        let has = |pos: [f32; 2], src: [i32; 4], flip: bool| {
-            out.iter()
-                .any(|d| d.texture == 0 && d.pos == pos && d.source == src && d.flip == flip)
-        };
-        // The flag2 direction-change cap: 16 - num41 - 2 = 14 tall.
-        assert!(has([144.0, 190.0], [0, 24, 32, 14], false));
-        // The num30 entry sheet.
-        assert!(has([144.0, 176.0], [0, 24, 32, 16], false));
-        // The 8-slice fan: y = 176 + 8 + num48, num48 = 4 for m < 2 (and
-        // m = 2 coincides), then 2m; source X = 16 + (14 - 2m).
-        for m in 0..8i32 {
-            let num48 = if m < 2 { 4 } else { m * 2 };
-            assert!(
-                has(
-                    [144.0 + (m * 2) as f32, 184.0 + num48 as f32],
-                    [30 - m * 2, 0, 2, 8],
-                    true,
-                ),
-                "slice {m}"
-            );
-        }
-        // The horizontal run over the floor: num11 = 8 lift, flipped.
-        assert!(has([160.0, 200.0], [16, 0, 16, 16], true));
-        // The exit to vertical keeps the num11 = 8 offset for one cell.
-        assert!(has([176.0, 200.0], [0, 0, 16, 16], true));
-        // The row-24 exit sheet at x - 16, flipped.
-        assert!(has([160.0, 208.0], [0, 24, 32, 16], true));
-        // Every quad carries GetAlpha's below-surface 0.6 dim on alpha
-        // (world_surface = 10, every visited row >= 10): (int)(255*0.6)=153.
-        assert!(out.iter().all(|d| (d.color[3] - 153.0 / 255.0).abs() < 1e-6));
-    }
-
-    /// `WaterfallManager.cs:381`: the rain arm culls against the raw
-    /// `Main.screenPosition`/`screenWidth` — a fountain (tile 196 → kind 11)
-    /// at column 12 draws when the screen covers it and vanishes when the
-    /// screen sits 40 tiles below (num14 + num22 = 34 < 40) or 100 tiles
-    /// right (12 < 100 - 20).
-    #[test]
-    fn the_rain_arm_culls_against_the_raw_screen() {
-        let mut w = world_with_air();
-        put(&mut w, 12, 8, stone(196));
-        let mut mgr = WaterfallManager::new();
-        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
-        mgr.update_tick();
-        let light = LightMap::new();
-        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
-        let rain_quads = |mgr: &mut WaterfallManager, screen: ScreenInfo| -> usize {
-            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false, false);
-            mgr.take_quads()
-                .iter()
-                .filter(|d| d.texture == 11 || d.texture == 12)
-                .count()
-        };
-        assert!(rain_quads(&mut mgr, screen_at(0.0, 0.0)) > 0);
-        assert_eq!(rain_quads(&mut mgr, screen_at(0.0, 640.0)), 0);
-        assert_eq!(rain_quads(&mut mgr, screen_at(1600.0, 0.0)), 0);
-    }
-
     /// Lava-spout fixture (the g74 lane, fixed 51-cell left-bend walk): half
     /// brick at (10, 10), lava on the right — the fall bends LEFT off the
     /// head (`WaterfallManager.cs:625-634`): cells (10,10), (9,10), then
@@ -1199,6 +980,20 @@ mod tests {
         put(&mut w, 11, 9, lava);
         put(&mut w, 11, 10, lava);
         w
+    }
+
+    fn active_alpha() -> [f32; 15] {
+        let mut a = [0.0f32; 15];
+        a[0] = 1.0;
+        a
+    }
+
+    fn screen_at(x: f32, y: f32) -> ScreenInfo {
+        ScreenInfo {
+            position: [x, y],
+            width: 640.0,
+            height: 640.0,
+        }
     }
 
     /// `WaterfallManager.cs:685-707` + `:963-965`: the lavafall triple is the
@@ -1217,8 +1012,7 @@ mod tests {
         // segment is inside the 2x box, so each contributes
         // `1 - dist/(640*0.75)`; the nearest cell is the spout head itself.
         let screen = screen_at(168.0 - 320.0, 168.0 - 320.0);
-        let (_, _, scan) =
-            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false, false);
+        let (_, _, scan) = mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
         assert_eq!(scan.x, 10.0 * 16.0 + 8.0);
         assert_eq!(scan.y, 10.0 * 16.0 + 8.0);
         // The head bends LEFT off the half-brick spout (the lava-filled right
@@ -1253,7 +1047,7 @@ mod tests {
         let light = LightMap::new();
         let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
         let (_, _, scan) = mgr.draw(
-            &w, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false, false,
+            &w, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false,
         );
         assert_eq!(scan, AmbientScan::default());
     }
@@ -1274,11 +1068,11 @@ mod tests {
         alpha[0] = 1.0;
         alpha[2] = 1.0;
         let near = screen_at(168.0 - 320.0, 168.0 - 320.0);
-        let (_, _, scan_single) =
-            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, near, false, false);
+        let mut single = [0.0f32; 15];
+        single[0] = 1.0;
+        let (_, _, scan_single) = mgr.draw(&w, &light, &style, 0.0, &single, 190, 0, near, false);
         assert!(scan_single.strength > 0.0);
-        let (_, _, scan_both) =
-            mgr.draw(&w, &light, &style, 0.0, &alpha, 190, 0, near, false, false);
+        let (_, _, scan_both) = mgr.draw(&w, &light, &style, 0.0, &alpha, 190, 0, near, false);
         assert_eq!(scan_both, scan_single);
     }
 
@@ -1293,11 +1087,11 @@ mod tests {
         let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
         let screen = screen_at(0.0, 0.0);
         let lava_x = |mgr: &mut WaterfallManager| -> i32 {
-            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false, false);
+            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
             mgr.take_quads()
                 .iter()
                 // The head cell bends LEFT off the half-brick spout
-                // (`WaterfallManager.cs:625-634`, the lava-filled right
+                // (`WaterfallManager.cs:625-634`, the honey-filled right
                 // neighbour), so the straight drop runs down column 9; its
                 // quads take the `[num21, 0, ...]` source (`:851-861`).
                 .find(|d| d.texture == 1 && d.pos[0] == 9.0 * 16.0)
@@ -1343,7 +1137,7 @@ mod tests {
         let light = LightMap::new(); // unlit: GetColor returns black
         let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
         mgr.draw(
-            &w, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false, false,
+            &w, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false,
         );
         let out = mgr.take_quads();
         let lava: Vec<&WaterfallDraw> = out.iter().filter(|d| d.texture == 1).collect();
@@ -1369,10 +1163,9 @@ mod tests {
         let light = LightMap::new();
         let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
         let screen = screen_at(0.0, 0.0);
-        let (dim, _, _) =
-            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false, false);
+        let (dim, _, _) = mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
         let (bright, _, _) =
-            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 255, 0, screen, false, false);
+            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 255, 0, screen, false);
         assert_eq!(dim.len(), bright.len());
         assert!(!dim.is_empty());
         let n_dim = (0.55 + (270.0 - 190.0) / 900.0) * 0.4;
@@ -1434,7 +1227,7 @@ mod tests {
         let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
         let screen = screen_at(0.0, 0.0);
         let honey_x = |mgr: &mut WaterfallManager| -> i32 {
-            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false, false);
+            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
             mgr.take_quads()
                 .iter()
                 .find(|d| d.texture == 14)
@@ -1493,7 +1286,7 @@ mod tests {
         // Pass alpha 0.5 must NOT scale the typed-fall 0.8 (`:1032-1038`).
         let mut alpha = [0.0f32; 15];
         alpha[0] = 0.5;
-        mgr.draw(&w, &light, &style, 0.0, &alpha, 190, 0, screen_at(0.0, 0.0), false, false);
+        mgr.draw(&w, &light, &style, 0.0, &alpha, 190, 0, screen_at(0.0, 0.0), false);
         let out = mgr.take_quads();
         let honey_quads: Vec<&WaterfallDraw> =
             out.iter().filter(|d| d.texture == 14).collect();
@@ -1516,7 +1309,7 @@ mod tests {
         };
         let lit = crate::lighting::LightMap::compute(&w, 0, 0, 40, 40, &params);
         assert!(lit.get(10, 10)[0] > 0.0, "the torch must light the head");
-        mgr.draw(&w, &lit, &style, 0.0, &alpha, 190, 0, screen_at(0.0, 0.0), false, false);
+        mgr.draw(&w, &lit, &style, 0.0, &alpha, 190, 0, screen_at(0.0, 0.0), false);
         let out = mgr.take_quads();
         let head = out
             .iter()
@@ -1550,11 +1343,56 @@ mod tests {
         // were not excluded.
         let screen = screen_at(168.0 - 320.0, 168.0 - 320.0);
         let (lights, water_scan, lava_scan) =
-            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 255, 0, screen, false, false);
+            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 255, 0, screen, false);
         assert!(lights.is_empty());
         assert_eq!(water_scan, AmbientScan::default());
         assert_eq!(lava_scan, AmbientScan::default());
         assert!(mgr.take_quads().iter().any(|d| d.texture == 14));
+    }
+
+    /// `WaterfallManager.cs:708-729` + `:960-962`: the water triple is the
+    /// summed near-screen strength of the walked water segments and the
+    /// nearest segment's cell-centre world pixels — the arm the honey fall
+    /// is excluded from. The walk geometry replays the C# direction chain:
+    /// the half-brick head cannot fall straight (`:609`'s `!tile3.halfBrick()`
+    /// gate), and the liquid-filled right neighbour bends it left (`:625-634`),
+    /// so the 51 visited cells are (10,10), (9,10), then (9,11..59) until the
+    /// world edge. Also pins the verbatim `:725-728` quirk: the Y sentinel
+    /// stores the X distance (`num3 = num38`), which is 0 at the head, so the
+    /// stored Y never updates again. (g75's re-derivation of the g74 fixture
+    /// walk — same cell set as the original g73 replay.)
+    #[test]
+    fn waterfall_scan_sums_strength_and_tracks_the_nearest_cell() {
+        let w = water_spout_world();
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        mgr.update_tick();
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        let screen = screen_at(168.0 - 320.0, 168.0 - 320.0);
+        let (_, scan, lava) =
+            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
+        // The head is nearest on both axes (dx = dy = 0); the bent column 9
+        // never beats it (the Y arm's num3 = num38 quirk pins 0 at the head).
+        assert_eq!(scan.x, 10.0 * 16.0 + 8.0);
+        assert_eq!(scan.y, 10.0 * 16.0 + 8.0);
+        assert_eq!(lava, AmbientScan::default());
+        // Hand-summed C# replay over the walked cells:
+        let mut cells = vec![(10, 10), (9, 10)];
+        cells.extend((11..60).map(|y| (9, y)));
+        let mut expected = 0.0f32;
+        for (cx, cy) in cells {
+            let dx = (cx as f32 * 16.0 + 8.0 - 168.0).abs();
+            let dy = (cy as f32 * 16.0 + 8.0 - 168.0).abs();
+            if dx < 640.0 * 2.0 && dy < 640.0 * 2.0 {
+                let s = 1.0 - (dx * dx + dy * dy).sqrt() / (640.0 * 0.75);
+                if s > 0.0 {
+                    expected += s;
+                }
+            }
+        }
+        assert!((scan.strength - expected).abs() < 1e-3, "{} vs {}", scan.strength, expected);
+        assert!(scan.strength > 0.0);
     }
 
     /// `WaterfallManager.cs:725-728` verbatim quirk: the Y-distance arm tests
@@ -1577,8 +1415,539 @@ mod tests {
         // nearest row (11) never wins. The corrected arm would report y = 184.
         let screen = screen_at(168.0 - 320.0, 184.0 - 320.0);
         let (_, scan, _) =
-            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false, false);
+            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
         assert_eq!(scan.x, 10.0 * 16.0 + 8.0);
         assert_eq!(scan.y, 10.0 * 16.0 + 8.0, "the quirk freezes Y at the head");
+    }
+
+    // ---- g73 union witnesses folded back (written, not run — code-only) ----
+
+    /// A world without falls runs one active pass over an empty list: the
+    /// locals reset (`WaterfallManager.cs:328-337`) is stored verbatim
+    /// (`:960-965`) — (-1, -1, 0) on BOTH triples, the `Main.cs:67230-67234`
+    /// load reset.
+    #[test]
+    fn an_empty_pass_stores_the_load_reset_triple() {
+        let w = world_with_air();
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        let (_, scan, lava) = mgr.draw(
+            &w, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false,
+        );
+        assert_eq!(scan, AmbientScan::default());
+        assert_eq!(lava, AmbientScan::default());
+    }
+
+    /// `WaterfallManager.cs:960-962`: each `DrawWaterfall` pass overwrites the
+    /// triple. With two active water styles both passes re-draw the water fall
+    /// (only the rain arm zeroes stopAtStep, `:524`), so the last pass's scan
+    /// equals the first's segment-for-segment — the store is the last pass's.
+    #[test]
+    fn the_last_active_pass_overwrites_the_waterfall_triple() {
+        let w = water_spout_world();
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        mgr.update_tick();
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        let mut alpha = [0.0f32; 15];
+        alpha[0] = 1.0;
+        alpha[2] = 1.0;
+        let near = screen_at(168.0 - 320.0, 168.0 - 320.0);
+        let (_, scan_single, _) = mgr.draw(
+            &w, &light, &style, 0.0, &active_alpha(), 190, 0, near, false,
+        );
+        assert!(scan_single.strength > 0.0);
+        let (_, scan_both, _) = mgr.draw(
+            &w, &light, &style, 0.0, &alpha, 190, 0, near, false,
+        );
+        assert_eq!(scan_both, scan_single);
+    }
+
+    /// The scan runs per visited CELL, not per quad: a fall boxed in on both
+    /// sides with liquid in the cell takes the `num29++` else (`:640-645`)
+    /// and the case-0 arm skips the body quad (`liquid > 0 && !halfBrick`,
+    /// `:926-930`) — but the scan block (`:708-730`) already ran for it, so
+    /// the cell contributes its full strength 1.0. Also pins the verbatim
+    /// `:725-728` quirk: the Y sentinel stores the X distance (`num3 =
+    /// num38`), so the stored Y stays the FIRST cell's row (10) even though
+    /// the screen centre sits on row 12 — only the X minimum keeps updating.
+    #[test]
+    fn the_scan_visits_cells_the_quad_list_skips() {
+        let mut w = water_spout_world();
+        // The spout steps away from its source liquid (`:625-634`), so the
+        // fall drops down column 9. Box the last cell in: stone sides at
+        // row 12, floor at 13, water pooled in (9, 12).
+        put(&mut w, 8, 12, stone(1));
+        put(&mut w, 10, 12, stone(1));
+        put(&mut w, 9, 13, stone(1));
+        put_liquid(&mut w, 9, 12, 200);
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        mgr.update_tick();
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        // Screen centred on the head's column at the boxed-in row (168, 200):
+        // the head's X distance is 0, so BOTH sentinels freeze at the head —
+        // the verbatim quirk (`num3 = num38`) keeps Y at the head's row.
+        let screen = screen_at(168.0 - 320.0, 200.0 - 320.0);
+        let (_, scan, _) = mgr.draw(
+            &w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false,
+        );
+        let out = mgr.take_quads();
+        // The boxed-in cell emits no row-0 body quad (the row-24 cap of
+        // `:777-798` may still draw); every body quad sits above it.
+        assert!(out.iter().filter(|d| d.source[1] == 0).all(|d| d.pos[1] < 12.0 * 16.0));
+        // Visited cells: the head (10,10), then (9,10), (9,11), (9,12).
+        let cells = [(10, 10), (9, 10), (9, 11), (9, 12)];
+        let mut expected = 0.0f32;
+        for (cx, cy) in cells {
+            let dx = (cx as f32 * 16.0 + 8.0 - 168.0).abs();
+            let dy = (cy as f32 * 16.0 + 8.0 - 200.0).abs();
+            let s = 1.0 - (dx * dx + dy * dy).sqrt() / (640.0 * 0.75);
+            if s > 0.0 {
+                expected += s;
+            }
+        }
+        assert!((scan.strength - expected).abs() < 1e-3, "{} vs {}", scan.strength, expected);
+        assert!(scan.strength > 3.5); // includes the body-quad-less cell's ~0.95
+        // Both minima freeze at the head (its X distance is 0).
+        assert_eq!(scan.x, 10.0 * 16.0 + 8.0);
+        assert_eq!(scan.y, 10.0 * 16.0 + 8.0);
+    }
+
+    /// The waterfall-specific slope transitions (`WaterfallManager.cs`):
+    /// the spout head steps left onto column 9, falls two cells, then meets
+    /// a slope-1 top at (9,12). Hand-walked C# replay of the entry cell
+    /// (9,11) — arm 1 (`:590-607`) sets num30/num32/num17 = 1, num31 = -1:
+    /// * the flag2 direction-change cap (`:733-743`): 32x14 at row 24,
+    ///   `(x*16, y*16+14)`, unflipped (num31 != 1);
+    /// * the num30 entry sheet (`:799-819`): 32x16 at row 24, `(x*16,
+    ///   y*16)`, unflipped;
+    /// * the 8-slice slope fan (`:860-873`): 2x8 strips, source X descending
+    ///   30..16, the first two strips pinned to num48 = 4;
+    /// then the run over the flat floor at (10,12) (`:886`, flipped, num11
+    /// = 8) and the exit back to vertical at (11,12)/(11,13) (`:840` row-0
+    /// with the num11 = 8 offset, `:844` row-24 exit sheet at x-16).
+    #[test]
+    fn slope_entry_and_exit_draw_the_transition_sheets() {
+        let mut w = water_spout_world();
+        let mut slope = stone(1);
+        slope.set_slope(1);
+        put(&mut w, 9, 12, slope);
+        put(&mut w, 10, 13, stone(1));
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        mgr.update_tick(); // regular_frame stays 0 → num21 = 0
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        mgr.draw(
+            &w, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false,
+        );
+        let out = mgr.take_quads();
+        let has = |pos: [f32; 2], src: [i32; 4], flip: bool| {
+            out.iter()
+                .any(|d| d.texture == 0 && d.pos == pos && d.source == src && d.flip == flip)
+        };
+        // The flag2 direction-change cap: 16 - num41 - 2 = 14 tall.
+        assert!(has([144.0, 190.0], [0, 24, 32, 14], false));
+        // The num30 entry sheet.
+        assert!(has([144.0, 176.0], [0, 24, 32, 16], false));
+        // The 8-slice fan: y = 176 + 8 + num48, num48 = 4 for m < 2 (and
+        // m = 2 coincides), then 2m; source X = 16 + (14 - 2m).
+        for m in 0..8i32 {
+            let num48 = if m < 2 { 4 } else { m * 2 };
+            assert!(
+                has(
+                    [144.0 + (m * 2) as f32, 184.0 + num48 as f32],
+                    [30 - m * 2, 0, 2, 8],
+                    true,
+                ),
+                "slice {m}"
+            );
+        }
+        // The horizontal run over the floor: num11 = 8 lift, flipped.
+        assert!(has([160.0, 200.0], [16, 0, 16, 16], true));
+        // The exit to vertical keeps the num11 = 8 offset for one cell.
+        assert!(has([176.0, 200.0], [0, 0, 16, 16], true));
+        // The row-24 exit sheet at x - 16, flipped.
+        assert!(has([160.0, 208.0], [0, 24, 32, 16], true));
+        // Every quad carries GetAlpha's below-surface 0.6 dim on alpha
+        // (world_surface = 10, every visited row >= 10): (int)(255*0.6)=153.
+        assert!(out.iter().all(|d| (d.color[3] - 153.0 / 255.0).abs() < 1e-6));
+    }
+
+    /// `WaterfallManager.cs:381`: the rain arm culls against the raw
+    /// `Main.screenPosition`/`screenWidth` — a fountain (tile 196 → kind 11)
+    /// at column 12 draws when the screen covers it and vanishes when the
+    /// screen sits 40 tiles below (num14 + num22 = 34 < 40) or 100 tiles
+    /// right (12 < 100 - 20).
+    #[test]
+    fn the_rain_arm_culls_against_the_raw_screen() {
+        let mut w = world_with_air();
+        put(&mut w, 12, 8, stone(196));
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        mgr.update_tick();
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        let rain_quads = |mgr: &mut WaterfallManager, screen: ScreenInfo| -> usize {
+            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
+            mgr.take_quads()
+                .iter()
+                .filter(|d| d.texture == 11 || d.texture == 12)
+                .count()
+        };
+        assert!(rain_quads(&mut mgr, screen_at(0.0, 0.0)) > 0);
+        assert_eq!(rain_quads(&mut mgr, screen_at(0.0, 640.0)), 0);
+        assert_eq!(rain_quads(&mut mgr, screen_at(1600.0, 0.0)), 0);
+    }
+
+    // ---- FALLS RESIDUALS census witnesses (written, not run — code-only) ----
+
+    fn shimmer_spout_world() -> World {
+        let mut w = world_with_air();
+        let mut brick = stone(2);
+        brick.flags |= FLAG_HALF_BRICK;
+        put(&mut w, 10, 10, brick);
+        let mut shimmer = Tile::default();
+        shimmer.liquid = 255;
+        shimmer.flags |= FLAG_LIQUID_SHIMMER;
+        put(&mut w, 11, 9, shimmer);
+        put(&mut w, 11, 10, shimmer);
+        w
+    }
+
+    /// `WaterfallManager.cs:190-192`: the shimmer spout takes waterfall type
+    /// 25 — after the lava (1) and honey (14) checks, before the water 0
+    /// default. A honey cell anywhere around the spout outranks the shimmer.
+    #[test]
+    fn shimmer_spout_uses_type_twenty_five_and_honey_outranks_it() {
+        let w = shimmer_spout_world();
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        assert_eq!(mgr.entries(), vec![(10, 10, 25)]);
+        // The `else if` chain (`:182-197`): honey above the spout wins even
+        // with shimmer on the side. The above-liquid must stay < 16 for the
+        // `:165` gate; the kind probes are pure header-bit tests
+        // (`Tile.cs:362-365` — no liquid-amount check at all, the W4-g73
+        // falls-adjacent residual).
+        let mut w2 = shimmer_spout_world();
+        let mut honey = Tile::default();
+        honey.liquid = 10;
+        honey.flags |= FLAG_LIQUID_HONEY;
+        put(&mut w2, 10, 9, honey);
+        let mut mgr2 = WaterfallManager::new();
+        mgr2.find_waterfalls(&w2, [5, 5, 20, 20], true);
+        assert_eq!(mgr2.entries(), vec![(10, 10, 14)]);
+    }
+
+    /// `WaterfallManager.cs:352-358`: the shimmer fall shares the typed-fall
+    /// arm with lava/honey — `num21 = 32 * slowFrame` on the 7-tick counter.
+    /// The half-brick head bends LEFT (`:625-634`), so the head quad rides
+    /// the `16 + num21` source like the honey witness.
+    #[test]
+    fn shimmer_frames_ride_the_slow_counter() {
+        let w = shimmer_spout_world();
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        let screen = screen_at(0.0, 0.0);
+        let shimmer_x = |mgr: &mut WaterfallManager| -> i32 {
+            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen, false);
+            mgr.take_quads()
+                .iter()
+                .find(|d| d.texture == 25)
+                .expect("the shimmer fall draws")
+                .source[0]
+        };
+        assert_eq!(shimmer_x(&mut mgr), 16);
+        for _ in 0..7 {
+            mgr.update_tick();
+        }
+        assert_eq!(shimmer_x(&mut mgr), 16 + 32);
+        for _ in 0..7 {
+            mgr.update_tick();
+        }
+        assert_eq!(shimmer_x(&mut mgr), 16 + 64);
+    }
+
+    /// `WaterfallManager.GetAlpha` (`WaterfallManager.cs:1036`): shimmer rides
+    /// a flat 0.75 — no wall/surface damp, no pass-alpha multiply; no
+    /// `StylizeColor` case 25, so unlit RGB stays 0 and alpha is
+    /// `(int)(255 * 0.75) = 191`. The `:1039-1042` tail fade still scales it.
+    #[test]
+    fn shimmer_alpha_is_flat_point_seven_five() {
+        let mut w = World::new("test".into(), 80, 300);
+        w.world_surface = 5.0;
+        let mut brick = stone(2);
+        brick.flags |= FLAG_HALF_BRICK;
+        put(&mut w, 10, 10, brick);
+        let mut shimmer = Tile::default();
+        shimmer.liquid = 255;
+        shimmer.flags |= FLAG_LIQUID_SHIMMER;
+        put(&mut w, 11, 9, shimmer);
+        put(&mut w, 11, 10, shimmer);
+        // A wall behind the column: the type-25 arm never takes the 0.6 damp.
+        for y in 9..115 {
+            let i = w.index(9, y);
+            w.tiles[i].wall = 1;
+            let i = w.index(10, y);
+            w.tiles[i].wall = 1;
+        }
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        mgr.update_tick();
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        let mut alpha = [0.0f32; 15];
+        alpha[0] = 0.5; // must NOT scale the typed-fall 0.75
+        mgr.draw(&w, &light, &style, 0.0, &alpha, 190, 0, screen_at(0.0, 0.0), false);
+        let out = mgr.take_quads();
+        let quads: Vec<&WaterfallDraw> = out.iter().filter(|d| d.texture == 25).collect();
+        assert!(!quads.is_empty());
+        assert_eq!(quads[0].color, [0.0, 0.0, 0.0, 191.0 / 255.0]);
+        // k = 99: 0.75 * (100-99)/10 = 0.075 → (int)(255*0.075) = 19.
+        let last = quads.last().unwrap();
+        assert!((last.color[3] - 19.0 / 255.0).abs() < 1e-6);
+    }
+
+    /// `WaterfallManager.cs:969-985`: the `DrawWaterfall(int, ...)` overload
+    /// receives the walked cell `(num13, num14)` and `GetAlpha`'s opacity —
+    /// the shimmer consumer's `GetCornerColors(x, y)` /
+    /// `SetShimmerVertexColors(..., opacity, x, y)` inputs. Every quad of a
+    /// step carries that step's cell, captured before the cell advances.
+    #[test]
+    fn shimmer_quads_carry_the_walked_cell_and_opacity() {
+        // A tall world so the fall walks the full 100 steps (the k > 90 fade).
+        let mut w = World::new("test".into(), 80, 300);
+        w.world_surface = 5.0;
+        let mut brick = stone(2);
+        brick.flags |= FLAG_HALF_BRICK;
+        put(&mut w, 10, 10, brick);
+        let mut shimmer = Tile::default();
+        shimmer.liquid = 255;
+        shimmer.flags |= FLAG_LIQUID_SHIMMER;
+        put(&mut w, 11, 9, shimmer);
+        put(&mut w, 11, 10, shimmer);
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false);
+        let out = mgr.take_quads();
+        let quads: Vec<&WaterfallDraw> = out.iter().filter(|d| d.texture == 25).collect();
+        assert!(!quads.is_empty());
+        // The head step walks (10,10); the bend step (9,10); the column
+        // steps (9,11..59) — the g75 fixture geometry.
+        assert_eq!(quads[0].cell, [10, 10]);
+        assert_eq!(quads[0].opacity, 0.75);
+        // k = 99: 0.75 * (100-99)/10 = 0.075 — the overload's opacity is the
+        // FADED GetAlpha result, captured per step.
+        assert!((quads.last().unwrap().opacity - 0.075).abs() < 1e-6);
+        let col9: Vec<&WaterfallDraw> = quads.iter().copied().filter(|q| q.cell[0] == 9).collect();
+        assert!(!col9.is_empty());
+        assert!(col9.iter().all(|q| q.cell[1] >= 10));
+    }
+
+    /// `WaterfallManager.AddLight` case 25 (`WaterfallManager.cs:1107-1113`):
+    /// the shimmer fall DOES emit light — `num = 0.7 + (270-mouseTextColor)/900`,
+    /// green `(0.7 + (270-mtc)/125) * 0.25` — while both ambience scans still
+    /// exclude it (`:685` kind-1 arm, `:708`'s verbatim `num12 != 25`).
+    #[test]
+    fn shimmer_falls_emit_light_but_feed_neither_ambience_scan() {
+        let w = shimmer_spout_world();
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        mgr.update_tick();
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        let screen = screen_at(168.0 - 320.0, 168.0 - 320.0);
+        let (lights, water_scan, lava_scan) =
+            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 255, 0, screen, false);
+        assert!(!lights.is_empty(), "case 25 lights every walked cell");
+        // mouseTextColor 255: num = 0.7 + 15/900, num2 = 0.7 + 15/125.
+        let n = 0.7f32 + 15.0 / 900.0;
+        let n2 = 0.7f32 + 15.0 / 125.0;
+        let expected = [n * 0.6, n2 * 0.25, n * 0.9];
+        for (a, b) in lights[0].rgb.iter().zip(expected.iter()) {
+            assert!((a - b).abs() < 1e-6, "{} vs {}", a, b);
+        }
+        assert_eq!(water_scan, AmbientScan::default());
+        assert_eq!(lava_scan, AmbientScan::default());
+    }
+
+    /// `WaterfallManager.cs:220-235`: the sand fountain (tile 460) spawns a
+    /// type-22 fall one row below when the cell underneath is open — the
+    /// third member of the `:708` exclusion list (11/12/22).
+    #[test]
+    fn sand_fountain_tile_460_drops_below() {
+        let mut w = world_with_air();
+        put(&mut w, 10, 10, stone(460));
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        assert_eq!(mgr.entries(), vec![(10, 11, 22)]);
+        // A solid cell underneath blocks the spawn (`:228`).
+        let mut w2 = world_with_air();
+        put(&mut w2, 10, 10, stone(460));
+        put(&mut w2, 10, 11, stone(1));
+        let mut mgr2 = WaterfallManager::new();
+        mgr2.find_waterfalls(&w2, [5, 5, 20, 20], true);
+        assert!(mgr2.entries().is_empty());
+    }
+
+    /// The sand-fall draw arm (`WaterfallManager.cs:364-525`): type 22 draws
+    /// ONE sheet (texture 22, no background — `:478-480`), even columns lead
+    /// the snow frame by 3 (`:391-397`), odd columns ride it raw (`:428-430`),
+    /// the last 8 steps fade (`:468-473`), and the walk zeroes `stopAtStep`
+    /// (`:524`) so the next pass's `:381` cull skips the fall.
+    #[test]
+    fn sand_fall_draws_one_sheet_with_the_even_column_lead_and_fade() {
+        // A tall world so the sand walk reaches its full num22 = 100/2 = 50
+        // steps (the 60-row fixture stops at the world edge after 49). The
+        // head row 11 stays ABOVE worldSurface 30 so GetAlpha's default arm
+        // rides the undamped 1.0 (a wall-free cell).
+        let mut w = World::new("test".into(), 80, 200);
+        w.world_surface = 30.0;
+        put(&mut w, 10, 10, stone(460));
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        // 4 ticks: snowFrameCounter > 3 once → snowFrameForeground = 1.
+        for _ in 0..4 {
+            mgr.update_tick();
+        }
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false);
+        let out = mgr.take_quads();
+        let sand: Vec<&WaterfallDraw> = out.iter().filter(|d| d.texture == 22).collect();
+        assert!(!sand.is_empty());
+        // No background sheet for the sand fall (the 26/11 arms draw two).
+        assert!(out.iter().all(|d| d.texture == 22));
+        // Even column 10: num23 = snowFrameForeground + 3 = 4 → x = 4*18.
+        assert_eq!(sand[0].source, [4 * 18, 0, 16, 16]);
+        // Head colour: unlit RGB 0, alpha 255 (row 11 is above worldSurface,
+        // no wall → GetAlpha's undamped 1.0); the fade tail (j > 42, below
+        // the surface) is dimmer — both the 0.6 damp and the num27 fade.
+        assert_eq!(sand[0].color[3], 1.0);
+        assert!(sand.last().unwrap().color[3] < sand[0].color[3]);
+        // `:524` stopAtStep = 0 → the `:381` cull skips the fall in the NEXT
+        // PASS of the same Draw() (Draw()'s `:1121-1124` entry reset restores
+        // it next frame). Two active water-style passes must draw the sand
+        // fall ONCE, not twice.
+        let mut two = [0.0f32; 15];
+        two[0] = 1.0;
+        two[2] = 1.0;
+        mgr.draw(&w, &light, &style, 0.0, &two, 190, 0, screen_at(0.0, 0.0), false);
+        let twice = mgr.take_quads();
+        assert_eq!(twice.len(), out.len(), "the second pass skips the rain arm");
+        // Odd column 11: num23 = snowFrameForeground raw = 1 → x = 18.
+        let mut w2 = world_with_air();
+        put(&mut w2, 11, 10, stone(460));
+        let mut mgr2 = WaterfallManager::new();
+        mgr2.find_waterfalls(&w2, [5, 5, 20, 20], true);
+        for _ in 0..4 {
+            mgr2.update_tick();
+        }
+        mgr2.draw(&w2, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false);
+        let out2 = mgr2.take_quads();
+        assert_eq!(out2[0].source, [18, 0, 16, 16]);
+    }
+
+    /// `WaterfallManager.GetAlpha`'s default arm (`WaterfallManager.cs:1037`):
+    /// an Echo-coated wall (`invisibleWall()`) or the glass wall 318 skips the
+    /// 0.6 damp above `worldSurface` — unless the `_shouldShowInvisible...`
+    /// latch (`:1120`, `Main.ShouldShowInvisibleBlocksAndWalls`) is on.
+    #[test]
+    fn echo_and_glass_walls_skip_the_get_alpha_damp_until_the_latch() {
+        let build = |wall: u16, echo: bool| {
+            let mut w = world_with_air();
+            w.world_surface = 30.0; // the head row 10 is ABOVE the surface
+            let mut brick = stone(2);
+            brick.flags |= FLAG_HALF_BRICK;
+            put(&mut w, 10, 10, brick);
+            put_liquid(&mut w, 11, 9, 255);
+            put_liquid(&mut w, 11, 10, 255);
+            let i = w.index(10, 10);
+            w.tiles[i].wall = wall;
+            if echo {
+                w.set_invisible_wall(10, 10, true);
+            }
+            w
+        };
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        let head_alpha = |w: &World, latch: bool| -> f32 {
+            let mut mgr = WaterfallManager::new();
+            mgr.find_waterfalls(w, [5, 5, 20, 20], true);
+            mgr.set_show_invisible(latch);
+            mgr.draw(w, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false);
+            mgr.take_quads()
+                .iter()
+                .find(|d| d.texture == 0 && d.pos == [160.0, 160.0])
+                .expect("the head quad draws")
+                .color[3]
+        };
+        // Plain wall: the 0.6 damp → (int)(255*0.6) = 153.
+        assert!((head_alpha(&build(1, false), false) - 153.0 / 255.0).abs() < 1e-6);
+        // Echo-coated wall: no damp → alpha 1.0.
+        assert_eq!(head_alpha(&build(1, true), false), 1.0);
+        // Glass wall 318: no damp either.
+        assert_eq!(head_alpha(&build(318, false), false), 1.0);
+        // The latch restores the damp for both.
+        assert!((head_alpha(&build(1, true), true) - 153.0 / 255.0).abs() < 1e-6);
+        assert!((head_alpha(&build(318, false), true) - 153.0 / 255.0).abs() < 1e-6);
+    }
+
+    /// `WorldGen.SolidTile` reads `nactive()` (`WorldGen.cs:69965`,
+    /// `Tile.cs:240-247`): an actuated (framed-off) stone on the dry side of
+    /// the spout is NOT solid, so `FindWaterfalls`' `:179` dry-side test
+    /// passes and the spout is found. (The old port's `active()`-only check
+    /// treated the actuated stone as solid and dropped the fall.)
+    #[test]
+    fn an_actuated_dry_side_still_admits_the_spout() {
+        let mut w = world_with_air();
+        let mut brick = stone(2);
+        brick.flags |= FLAG_HALF_BRICK;
+        put(&mut w, 10, 10, brick);
+        put_liquid(&mut w, 11, 9, 255);
+        put_liquid(&mut w, 11, 10, 255);
+        let mut ghost = stone(1);
+        ghost.flags |= FLAG_INACTIVE;
+        put(&mut w, 9, 10, ghost);
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        assert_eq!(mgr.entries(), vec![(10, 10, 0)]);
+    }
+
+    /// The walk's solid-break (`WaterfallManager.cs:555`) reads `nactive()`
+    /// too: an actuated stone in the fall's column does not stop the walk —
+    /// the quads continue below it.
+    #[test]
+    fn an_actuated_stone_in_the_column_does_not_stop_the_walk() {
+        let mut w = world_with_air();
+        let mut brick = stone(2);
+        brick.flags |= FLAG_HALF_BRICK;
+        put(&mut w, 10, 10, brick);
+        put_liquid(&mut w, 11, 9, 255);
+        put_liquid(&mut w, 11, 10, 255);
+        // The bent column is x = 9 (the g75 fixture); actuate (9, 20).
+        let mut ghost = stone(1);
+        ghost.flags |= FLAG_INACTIVE;
+        put(&mut w, 9, 20, ghost);
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false);
+        let out = mgr.take_quads();
+        // Quads below row 20 prove the walk passed the actuated stone.
+        assert!(
+            out.iter().any(|d| d.cell == [9, 25]),
+            "the walk continues past the actuated stone"
+        );
     }
 }
