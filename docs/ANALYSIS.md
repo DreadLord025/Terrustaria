@@ -39468,3 +39468,58 @@ resize/penetration pairs, the draw orders, the float/double precision, the
 gates checked kind-disjoint from A/B/C/riders/frost/moonlord/special-arrows.
 The 10 `w4_d78_b2c_*` witness tests are WRITTEN, NOT RUN — **no cargo/
 rustc/rustfmt/tests/graphify invoked** (the Lead's constraint).
+
+## The projectile Kill death-effect wave, FINAL adjudication (W4-d78, 2026-11-21, code-only mode)
+
+**The merger-facing dedupe publish** (`docs/research/26f-d78-final-kill-dedupe.md`
+— the full tables, every claim re-probed at the LATEST pushed tips). Four
+adjudications close the lane:
+
+1. **g1-dup (452/454/448): d78 KEEPS.** g1's port is LOCAL-ONLY in
+   TR-W4-g1 (untracked `projectile_kill_hooks_a.rs` + uncommitted pool
+   diffs; the pushed tip `5bd68ce2` is the 26d census doc alone). Its EVP
+   hit rides `hurt_with_source` with RAW damage — no DamageVar, no
+   hostileDamageScaling, no ×2, no BossNoCheese cooldown (its own
+   "standing deviation" note) — and its General-lane immune gate would
+   refuse the 452/454 boss blasts through spawn i-frames, which the C#
+   `:14799` lands. d78's `damage_evp_boxed` ports `:14773-14900` verbatim.
+   g1 drops its three hostile hooks + censuses (g65's LOCAL bodies carry
+   the same draws), keeps its UNIQUE 459/521/522/80.
+2. **g3 keep-g3 (79/16/34/634/635/661): CONFIRMED — d78's batch-1
+   `magic_death_blast` DROPS at merge.** g3's `aimed_spell_kill` +
+   `nebula_spirit_onyx_kill` are strict supersets (same resize/pen/Damage/
+   restore state + the Item10/14 cues + the trail-death draw censuses);
+   the 659 arm is g3-unique. Exact drop-hunks pinned in research/26f §2
+   (fn :21513-21586, call :20102-20114 keeping the `luck` let, tests
+   :26004-26201, anchors :899). Two merger notes published: the g3 blaze
+   cue plays post-recentre where the C# `:72015` plays PRE-snap — keep-one
+   the cues onto d77's `kill_tail_cue` (all six positions correct there);
+   the g3 census calls drop per-kind as g65's dust bodies push.
+3. **The 620-fans d77 co-claim: d77 WINS the 617 whole arm.** d77's
+   Kill-host wave (`0573b70f`, pushed 12:01 — AFTER d78 2c) ports the SAME
+   C# site (`:72278-72373`) as d78's `child_spawn_kill` 617 arm, plus the
+   Item14 cue, the dust/gore census, the swept-618 INLINE Kill (the C#
+   `:72333` runs immediately — d78's `pool.kill` deferred it) and the
+   620 row/AI (byte-identical row, pinned by the new
+   `w4_d78_final_the_shard_row_matches_the_d77_co_claim` witness). d78
+   drops its 617 arm (:21832-21941), its 620 row/const/AI/dispatch and the
+   three 617/620 witnesses; `child_spawn_kill` KEEPS the 246/249/117 arms
+   — d78-UNIQUE, no other tip ports them. The owner-gate deviation is
+   recorded: d77 (and the C#) gate only the child block at `:72327`, d78
+   had folded the gate ahead of the resize — d77's C#-faithful shape
+   survives.
+4. **The batch-1 census question: keep-g3 does NOT drop 2b/2c.** The g3
+   verdict covers only the batch-1 kinds; 2b's 246/249/1124 rows + 2c's
+   246/249/117 arms + the child AI (`ai_stynger`/`ai_bone_shard`) + the
+   1124 Colliding gate + the 246/249 7-tick immunity ladder arms are
+   d78-UNIQUE and KEEP (d77's boxed ladder has no 246/249 arm — verified
+   at its tip). Only the 620 row/AI overlaps (adjudication 3). The full
+   per-hunk drop-vs-keep table is research/26f §4.
+
+**Verification.** Code-only: the g1/g65 worktrees probed READ-ONLY
+(`git status`/`git diff`/direct file reads — no writes, no junction
+recursion); every branch tip re-fetched at adjudication time (the d77
+12:01 push caught by the final re-probe); the C# arms re-read whole in
+≤100-line windows. 1 new witness
+(`w4_d78_final_the_shard_row_matches_the_d77_co_claim`) WRITTEN, NOT RUN —
+**no cargo/rustc/rustfmt/tests/graphify invoked** (the Lead's constraint).

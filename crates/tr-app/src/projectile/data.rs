@@ -4917,4 +4917,31 @@ mod tests {
             assert!(spawnable_kinds().contains(&k), "kind {k} packs its sheet");
         }
     }
+
+    /// W4-d78 FINAL — the 620-row co-claim equivalence pin (WRITTEN, NOT RUN
+    /// — code-only mode). d77's Kill-host wave (`0573b70f`, tip `5f10560b`)
+    /// rows the SAME kind as `NEBULA_ARCANUM_SHARD` (its data.rs:1058/:2833):
+    /// `(8, 8, 29, 1, TIME_LEFT_DEFAULT, 0, true, false, false,
+    /// (false, -2, false, -1, 255, 1.0))` — field-for-field THIS row. The
+    /// merge keeps ONE row/const (research/26f §3); this witness pins the
+    /// values both sides carry so either survivor passes it verbatim.
+    #[test]
+    fn w4_d78_final_the_shard_row_matches_the_d77_co_claim() {
+        let d = proj_data(NEBULA_ARCANUM_EXPLOSION_SHOT_SHARD).expect("the 620 row");
+        // d77's tuple, term by term (its data.rs:2833).
+        assert_eq!((d.w, d.h), (8.0, 8.0));
+        assert_eq!(d.ai_style, 29);
+        assert_eq!(d.penetrate, 1);
+        assert_eq!(d.time_left, TIME_LEFT_DEFAULT);
+        assert_eq!(d.extra_updates, 0);
+        assert!(d.tile_collide);
+        assert!(!d.melee && !d.ranged && d.magic);
+        assert_eq!(d.alpha, 255);
+        assert_eq!(d.scale, 1.0);
+        // The stock immunity tuple both rows carry (no local pair, no
+        // id-static, alpha 255 — the AI_029 fuse kills at 40 ticks).
+        assert!(!d.uses_local_immunity);
+        assert_eq!(d.local_hit_cooldown, -2);
+        assert!(!d.uses_id_static_immunity);
+    }
 }
