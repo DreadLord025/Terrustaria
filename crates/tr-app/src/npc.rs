@@ -6754,6 +6754,64 @@ impl Npc {
         self.rotation = s.rotation;
     }
 
+    /// W4-d44 wire (f26 slice 7b) — the bridge into
+    /// `npc_findframe_extra7b`'s pure machines: copy the five
+    /// `FindFrame` fields out, run one tick, copy them back (the
+    /// `find_frame_wave_c` precedent). `direction` is `facing` (the
+    /// C#'s `Entity.direction`); the inputs are vx/vy/direction + the
+    /// four `ai` slots (the mimic `ai[0]` state / `ai[1]` windup,
+    /// `NPC.cs:71167-71202`) + the two RESOLVED world reads: `slope`
+    /// (the crawler/grub tile probe, `:72807-72826`/`:72862-72881` —
+    /// the SAME two-tile fall-through as the worm's) and `frame_x36`
+    /// (the Target Dummy's weapon-rack tile, `:70850`). The
+    /// world-free lane passes slope 0 / frame_x36 false (the
+    /// `find_frame_wave_c` convention); `find_frame_world` resolves
+    /// both. The `localAI[0]`/`[1]` pair copies both ways (the
+    /// crawler/grub slope latch + the dummy's recoil clock).
+    fn find_frame_wave_extra7b(
+        &mut self,
+        kind: crate::npc_findframe_extra7b::FindFrameExtra7bKind,
+        slope: i32,
+        frame_x36: bool,
+    ) {
+        let mut s = crate::npc_findframe_extra7b::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+            local_ai: [self.local_ai[0], self.local_ai[1]],
+        };
+        let i = crate::npc_findframe_extra7b::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            ai: self.ai,
+            slope,
+            frame_x36,
+        };
+        crate::npc_findframe_extra7b::find_frame_extra7b(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+        self.local_ai[0] = s.local_ai[0];
+        self.local_ai[1] = s.local_ai[1];
+    }
+
+    /// W4-d44 wire (f26 slice 7b) — the Target Dummy's weapon-rack
+    /// tile probe, CALLER-RESOLVED (`NPC.cs:70850`):
+    /// `Framing.GetTileSafely((int)ai[0], (int)ai[1]).frameX >= 36`.
+    /// `GetTileSafely` never returns null (out of world / null slot →
+    /// `new Tile()`, frameX 0, `Framing.cs:426-439` + `Tile.cs:101`),
+    /// so the out-of-bounds read is false — the `world.tile` None
+    /// arm. The int casts truncate toward zero, like the C#'s `(int)`
+    /// on the ai floats.
+    fn find_frame_dummy_frame_x36(&self, world: &World) -> bool {
+        let tx = self.ai[0] as i32;
+        let ty = self.ai[1] as i32;
+        world.tile(tx, ty).is_some_and(|t| t.frame_x >= 36)
+    }
+
     /// W4-d44 wire — the extra-6 claim set: the FULL slice-6 band
     /// 278-287 + 290-293 + 295, all 15 kinds (the in-module lookup
     /// verbatim). The first batch claimed 278-287 + 290 (the ≤11-kind
@@ -6779,6 +6837,40 @@ impl Npc {
         crate::npc_findframe_extra7::find_frame_kind_extra7(cs_id as i16)
     }
 
+    /// W4-d44 wire — the extra-7b claim set: the module mapper MINUS
+    /// the THREE d40-inline-faithful kinds 480 Medusa / 481
+    /// GreekSkeleton / 482 GraniteGolem (the f26e arm-by-arm verdict:
+    /// FAITHFUL on BOTH sides, the d40 INLINE arms win at merge and
+    /// the module arms drop to parity references — census research/68
+    /// §3.5). The remaining TWELVE ids are the d40 row-0 stubs the
+    /// module supersedes; this batch claims the FIRST ELEVEN
+    /// 473/474/475/476/477/479/483/484/485/486/487 (the ≤11-kind cap),
+    /// 488 TargetDummy rides the next batch.
+    fn find_frame_kind_extra7b_claimed(
+        cs_id: u16,
+    ) -> Option<crate::npc_findframe_extra7b::FindFrameExtra7bKind> {
+        use crate::npc_findframe_extra7b::FindFrameExtra7bKind as K;
+        match crate::npc_findframe_extra7b::find_frame_kind_extra7b(cs_id as i16) {
+            // The f26e keep-inline verdict — NEVER claimed.
+            Some(K::Medusa | K::GreekSkeleton | K::GraniteGolem) => None,
+            // The batch band (488 excluded until the next batch).
+            Some(
+                k @ (K::BigMimicCorruption
+                | K::BigMimicCrimson
+                | K::BigMimicHallow
+                | K::BigMimicJungle
+                | K::Mothron
+                | K::MothronSpawn
+                | K::GraniteFlyer
+                | K::EnchantedNightcrawler
+                | K::Grubby
+                | K::Sluggy
+                | K::Buggy),
+            ) => Some(k),
+            _ => None,
+        }
+    }
+
     /// W4-d44 wire — the extra-5 claim set: the FULL slice-5 band
     /// 254-258 + 268-277, all 15 kinds (the in-module lookup verbatim).
     fn find_frame_kind_extra5_claimed(
@@ -6787,16 +6879,51 @@ impl Npc {
         crate::npc_findframe_extra5::find_frame_kind_extra5(cs_id as i16)
     }
 
-    /// W4-d44 wire (d48 wave C) — the WORLD-READ entry: the claimed
-    /// wave-C kinds ride the world-read arm (the worm resolves its
-    /// slope probe against the live world); every other kind falls
-    /// through to the world-free `find_frame` hook unchanged.
+    /// W4-d44 wire (d48 wave C + f26 slice 7b) — the WORLD-READ
+    /// entry: the claimed wave-C kinds ride the world-read arm (the
+    /// worm resolves its slope probe against the live world) and the
+    /// claimed extra-7b kinds resolve their slope/frame_x36 probes;
+    /// every other kind falls through to the world-free `find_frame`
+    /// hook unchanged.
     pub(crate) fn find_frame_world(&mut self, world: &World) {
         if let Some(kind) = Self::find_frame_kind_c_claimed(self.kind.cs_id()) {
             self.find_frame_c_world(kind, world);
             return;
         }
+        if let Some(kind) = Self::find_frame_kind_extra7b_claimed(self.kind.cs_id()) {
+            self.find_frame_extra7b_world(kind, world);
+            return;
+        }
         self.find_frame();
+    }
+
+    /// W4-d44 wire — the extra-7b world-read arm: the crawler/grub
+    /// kinds (484/485/486/487) resolve the SAME two-tile slope probe
+    /// as the worm (`NPC.cs:72807-72815`/`:72862-72869` — the shared
+    /// `find_frame_worm_slope` helper), the Target Dummy (488)
+    /// resolves its weapon-rack frameX probe (`:70850`); every other
+    /// claimed kind ignores both fields, so the probes are skipped
+    /// (RNG-free either way). Split out of `find_frame_world` so the
+    /// seam witness can drive it with an explicit kind (no current
+    /// `NpcKind` maps to the band yet).
+    fn find_frame_extra7b_world(
+        &mut self,
+        kind: crate::npc_findframe_extra7b::FindFrameExtra7bKind,
+        world: &World,
+    ) {
+        use crate::npc_findframe_extra7b::FindFrameExtra7bKind as K;
+        let slope = match kind {
+            K::EnchantedNightcrawler | K::Grubby | K::Sluggy | K::Buggy => {
+                self.find_frame_worm_slope(world)
+            }
+            _ => 0,
+        };
+        let frame_x36 = if kind == K::TargetDummy {
+            self.find_frame_dummy_frame_x36(world)
+        } else {
+            false
+        };
+        self.find_frame_wave_extra7b(kind, slope, frame_x36);
     }
 
     /// W4-d44 wire — the wave-C world-read arm: the worm kind (357)
@@ -6889,6 +7016,25 @@ impl Npc {
         // none reads the world. The extra6 hook precedent.
         if let Some(kind) = Self::find_frame_kind_extra7_claimed(self.kind.cs_id()) {
             self.find_frame_wave_extra7(kind);
+            return;
+        }
+        // W4-d44 wire (f26 slice 7b) — the `cs_id`-keyed hook into the
+        // extra-wave-7b pure machines (`npc_findframe_extra7b.rs`) via
+        // `find_frame_kind_extra7b_claimed`: the TWELVE d40-stub kinds
+        // 473-477/479/483-488 (the four Big Mimics, Mothron + spawn,
+        // the Granite Flyer, the Enchanted Nightcrawler, the
+        // Grubby/Sluggy/Buggy trio, the Target Dummy); 480/481/482
+        // NEVER (the f26e keep-inline verdict — the d40 Medusa/Greek
+        // Skeleton/Granite Golem arms are FAITHFUL, census research/68
+        // §3.5). NO current kind's `cs_id` lands in the set (verified
+        // over the hand rows + the bestiary net ids), so this is
+        // stream-inert today; no arm draws RNG (the f26 7b census).
+        // The world-free lane passes slope 0 / frame_x36 false — the
+        // world-read entry `find_frame_world` resolves the
+        // crawler/grub slope probe + the dummy frameX probe. The
+        // wave-C hook precedent.
+        if let Some(kind) = Self::find_frame_kind_extra7b_claimed(self.kind.cs_id()) {
+            self.find_frame_wave_extra7b(kind, 0, false);
             return;
         }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
@@ -34042,6 +34188,54 @@ mod w4_d44_wire_tests {
         }
     }
 
+    /// The extra-7b hook fires for NO current kind — the inertness
+    /// proof (473-477/479/483-487 skip the hand rows + net ids).
+    #[test]
+    fn w4_d44_the_extra7b_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                Npc::find_frame_kind_extra7b_claimed(kind.cs_id()),
+                None,
+                "{kind:?} cs_id {} must not ride the extra-7b hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The extra-7b claim set is the FIRST ELEVEN of the twelve
+    /// d40-stub kinds 473/474/475/476/477/479/483/484/485/486/487;
+    /// 488 rides the next batch, 480/481/482 are NEVER claimed (the
+    /// f26e keep-inline verdict), the no-case 478 + the band edges
+    /// stay outside.
+    #[test]
+    fn w4_d44_the_extra7b_claim_set_matches_the_batch_band() {
+        use crate::npc_findframe_extra7b::FindFrameExtra7bKind as K;
+        let table = [
+            (473u16, K::BigMimicCorruption),
+            (474, K::BigMimicCrimson),
+            (475, K::BigMimicHallow),
+            (476, K::BigMimicJungle),
+            (477, K::Mothron),
+            (479, K::MothronSpawn),
+            (483, K::GraniteFlyer),
+            (484, K::EnchantedNightcrawler),
+            (485, K::Grubby),
+            (486, K::Sluggy),
+            (487, K::Buggy),
+        ];
+        for (id, k) in table {
+            assert_eq!(Npc::find_frame_kind_extra7b_claimed(id), Some(k), "{id}");
+        }
+        // The f26e keep-inline trio — NEVER claimed on ANY batch.
+        assert_eq!(Npc::find_frame_kind_extra7b_claimed(480), None, "Medusa keeps d40");
+        assert_eq!(Npc::find_frame_kind_extra7b_claimed(481), None, "GreekSkeleton keeps d40");
+        assert_eq!(Npc::find_frame_kind_extra7b_claimed(482), None, "GraniteGolem keeps d40");
+        // The next-batch id + the no-case 478 + the band edges.
+        for id in [472, 478, 488, 489] {
+            assert_eq!(Npc::find_frame_kind_extra7b_claimed(id), None, "{id}");
+        }
+    }
+
     /// The extra-6 bridge copies the three fields both ways and feeds
     /// vx/vy/facing/ai through — pinned on the Hell Armored Bones walk
     /// (the |vx|*2+1 accumulator, `NPC.cs:75861-75875`), the caster
@@ -34329,6 +34523,92 @@ mod w4_d44_wire_tests {
         assert_eq!(n.rotation, 0.1);
     }
 
+    /// The extra-7b bridge copies the five fields + the local_ai pair
+    /// both ways and feeds vx/vy/facing/ai/slope/frame_x36 through —
+    /// pinned on the Big Mimic state machine (`NPC.cs:71163-71212`),
+    /// the Mothron length stepper (`:71331-71341`), the Mothron Spawn
+    /// reset-tick row-hold (`:71345-71366`), the Granite Flyer two
+    /// tilt modes (`:75169-75200`) and the Grubby slope latch
+    /// (`:72833-72881`).
+    #[test]
+    fn w4_d44_the_extra7b_bridge_copies_the_fields_both_ways() {
+        use crate::npc_findframe_extra7b::FindFrameExtra7bKind as K;
+        let mut n = bare(NpcKind::Piranha);
+        // Big Mimic state 0: the row-0 snap + the rotation/counter
+        // zero + the UNCONDITIONAL grounded direction copy (0 too).
+        n.frame = 9;
+        n.frame_counter = 5.0;
+        n.rotation = 0.4;
+        n.sprite_dir = 1;
+        n.facing = 0;
+        n.vx = 3.0;
+        n.vy = 0.0;
+        n.ai = [0.0; 4];
+        n.find_frame_wave_extra7b(K::BigMimicCorruption, 0, false);
+        assert_eq!((n.frame, n.frame_counter, n.rotation, n.sprite_dir), (0, 0.0, 0.0, 0));
+        // State 1: the ai[1] windup ladder — ai[1] 12 lands row 3.
+        n.ai = [1.0, 12.0, 0.0, 0.0];
+        n.find_frame_wave_extra7b(K::BigMimicCrimson, 0, false);
+        assert_eq!((n.frame, n.frame_counter), (3, 0.0));
+        // A dead state (9) BREAKS with no write.
+        n.frame = 4;
+        n.frame_counter = 3.0;
+        n.ai = [9.0, 0.0, 0.0, 0.0];
+        n.find_frame_wave_extra7b(K::BigMimicHallow, 0, false);
+        assert_eq!((n.frame, n.frame_counter), (4, 3.0));
+        // Mothron: the length-fed stepper — vx 3 → +1.75/tick,
+        // counter 5 → 6.75 >= 6 steps row 0 → 1.
+        n.frame = 0;
+        n.frame_counter = 5.0;
+        n.vx = 3.0;
+        n.vy = 0.0;
+        n.find_frame_wave_extra7b(K::Mothron, 0, false);
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0));
+        // Mothron Spawn: the >= 15 reset tick HOLDS the row.
+        n.frame = 2;
+        n.frame_counter = 14.0;
+        n.find_frame_wave_extra7b(K::MothronSpawn, 0, false);
+        assert_eq!((n.frame, n.frame_counter), (2, 0.0));
+        // Granite Flyer normal: the tilt SNAPS vx*0.1; charged
+        // (ai[0] == -1): the tilt ACCUMULATES vx*0.2 + the 13-clamp.
+        n.frame = 3;
+        n.rotation = 9.0;
+        n.vx = 2.0;
+        n.ai = [0.0; 4];
+        n.find_frame_wave_extra7b(K::GraniteFlyer, 0, false);
+        assert_eq!(n.rotation, 0.2);
+        n.ai = [-1.0, 0.0, 0.0, 0.0];
+        n.vx = 1.0;
+        n.frame = 2;
+        n.rotation = 0.5;
+        n.find_frame_wave_extra7b(K::GraniteFlyer, 0, false);
+        assert_eq!((n.frame, n.rotation), (13, 0.7));
+        // Grubby: the UNCONDITIONAL direction copy + the |vx*5|
+        // accumulator (vx 3 → +15 > 10 steps EVERY tick) + the slope
+        // probe's ±0.785 snap and the localAI[0] re-latch.
+        n.ai = [0.0; 4];
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.vx = 3.0;
+        n.vy = 0.0;
+        n.facing = -1;
+        n.local_ai = [3.0, 0.0, 0.0, 0.0];
+        n.find_frame_wave_extra7b(K::Grubby, 1, false);
+        assert_eq!((n.frame, n.sprite_dir, n.rotation), (1, -1, 0.785));
+        assert_eq!(n.local_ai[0], 0.0, "the slope re-latch");
+        n.find_frame_wave_extra7b(K::Sluggy, 2, false);
+        assert_eq!((n.frame, n.rotation), (2, -0.785));
+        // The nightcrawler: the localAI[0] = -2 latch every tick, the
+        // air tilt ACCUMULATE + row 1 with the counter HELD.
+        n.vx = 0.0;
+        n.vy = -2.0;
+        n.frame_counter = 7.0;
+        n.rotation = 0.0;
+        n.find_frame_wave_extra7b(K::EnchantedNightcrawler, 0, false);
+        assert_eq!((n.frame, n.frame_counter, n.local_ai[0]), (1, 7.0, -2.0));
+        assert!((n.rotation - -0.1).abs() < 1e-6, "the air tilt accumulates");
+    }
+
     /// The wave-C bridge copies the five fields both ways and feeds
     /// vx/vy/facing/wet/ai2/local_ai2/slope through — pinned on the
     /// firefly (the glow bank, `NPC.cs:72705-72708`), the worm (the
@@ -34509,6 +34789,76 @@ mod w4_d44_wire_tests {
         t.vy = 0.0;
         t.find_frame();
         assert_eq!((s.frame, s.frame_counter), (t.frame, t.frame_counter));
+    }
+
+    /// The dummy frameX probe reads `(int)ai[0], (int)ai[1]` and
+    /// compares `frameX >= 36` (`NPC.cs:70850`); out-of-world reads
+    /// are frameX 0 (`Framing.GetTileSafely`'s `new Tile()`,
+    /// `Framing.cs:426-439` + `Tile.cs:101`) → false.
+    #[test]
+    fn w4_d44_the_dummy_frame_x36_probe_reads_the_world() {
+        let mut w = ground();
+        let mut n = bare(NpcKind::Piranha);
+        n.ai = [6.0, 30.0, 0.0, 0.0];
+        assert!(!n.find_frame_dummy_frame_x36(&w), "the ground tile frameX 0");
+        let j = w.index(6, 30);
+        w.tiles[j].frame_x = 36;
+        assert!(n.find_frame_dummy_frame_x36(&w), "frameX 36 flips the sign");
+        w.tiles[j].frame_x = 35;
+        assert!(!n.find_frame_dummy_frame_x36(&w), "frameX 35 stays");
+        // The ai floats truncate toward zero: ai 6.9 → tx 6.
+        n.ai = [6.9, 30.9, 0.0, 0.0];
+        w.tiles[j].frame_x = 54;
+        assert!(n.find_frame_dummy_frame_x36(&w), "the int casts truncate");
+        // Out of world: frameX 0 → false.
+        n.ai = [-500.0, -500.0, 0.0, 0.0];
+        assert!(!n.find_frame_dummy_frame_x36(&w), "out of world");
+    }
+
+    /// The world-read entry runs the extra-7b bridge with the
+    /// resolved slope (the crawler/grub kinds share the worm probe)
+    /// and the resolved frame_x36 (the dummy) — driven through
+    /// `find_frame_extra7b_world` with explicit kinds (no current
+    /// `NpcKind` maps to the band yet).
+    #[test]
+    fn w4_d44_the_world_entry_resolves_the_extra7b_probes() {
+        use crate::npc_findframe_extra7b::FindFrameExtra7bKind as K;
+        let mut w = ground();
+        let mut n = bare(NpcKind::Piranha);
+        // Centre.x = 100 + nw/2 → tx 6; y = 480 → ty 30 (the ground).
+        n.x = 100.0;
+        n.y = 480.0;
+        let j = w.index(6, 30);
+        w.tiles[j].set_slope(2);
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.vx = 2.0;
+        n.vy = 0.0;
+        n.local_ai[0] = 5.0;
+        n.find_frame_extra7b_world(K::Buggy, &w);
+        assert_eq!(n.rotation, -0.785, "the slope-2 override");
+        assert_eq!(n.local_ai[0], 0.0, "the re-latch");
+        // A non-crawler kind ignores the slope (the probe is skipped):
+        // the Mothron ticks with rotation untouched.
+        n.rotation = 0.5;
+        n.frame = 0;
+        n.frame_counter = 5.0;
+        n.vx = 3.0;
+        n.find_frame_extra7b_world(K::Mothron, &w);
+        assert_eq!((n.frame, n.rotation), (1, 0.5), "no slope read");
+        // The dummy resolves frame_x36 off ai[0]/ai[1]: the rack tile
+        // at (6, 30) reads frameX 54 → the +1 hit dir flips to the
+        // 4-row bank (ceil(23/4) = 6, no +5).
+        w.tiles[j].frame_x = 54;
+        n.ai = [6.0, 30.0, 0.0, 0.0];
+        n.local_ai = [24.0, 1.0, 0.0, 0.0];
+        n.find_frame_extra7b_world(K::TargetDummy, &w);
+        assert_eq!((n.frame, n.local_ai[0]), (6, 23.0), "the probe flips the bank");
+        // frameX 0 → the unflipped +1 bank: ceil(23/6) = 4, +5 = 9.
+        w.tiles[j].frame_x = 0;
+        n.local_ai = [24.0, 1.0, 0.0, 0.0];
+        n.find_frame_extra7b_world(K::TargetDummy, &w);
+        assert_eq!((n.frame, n.local_ai[0]), (9, 23.0));
     }
 
     /// The extra-5 bridge copies the three fields both ways and feeds
