@@ -392,7 +392,8 @@ pub fn draw_screen(
     );
 
     // The seed plate (`UICharacterNameButton`, DistanceFromTitleToOption
-    // 29) — the base screen's plate draw.
+    // 29) — the base screen's plate draw. `UpdateContents` runs
+    // `FillSeedContent` (`:69`), whose trim padding is 40 (`:746`).
     super::world_creation::draw_plate(
         r,
         lookups,
@@ -401,6 +402,7 @@ pub fn draw_screen(
         &draft.seed,
         &lang::text("UI.WorldCreationSeedEmpty"),
         29.0,
+        super::world_creation::MAX_USER_SEED_TEXT_LENGTH as f32,
         mouse,
     );
 

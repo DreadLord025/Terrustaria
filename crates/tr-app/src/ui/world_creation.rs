@@ -33,8 +33,8 @@ use crate::assets;
 
 /// `UIWorldCreation.MAX_NAME_LENGTH` (`UIWorldCreation.cs:81`) — the naming
 /// keyboard's cap (`Click_SetName`'s 27, `:693`) and the display trim
-/// (`TrimDisplayIfOverElementDimensions(27)`, `:737` — not ported, see
-/// `draw_plate`).
+/// (`TrimDisplayIfOverElementDimensions(27)`, `:737` — ported in
+/// `draw_plate`'s [`trim_plate_display`]).
 pub const MAX_NAME_LENGTH: usize = 27;
 
 /// `Main.ActiveWorldFileData`'s creation defaults (`SetDefaultOptions`,
@@ -1022,16 +1022,69 @@ fn seed_title() -> String { crate::lang::text("UI.WorldCreationSeed") }
 fn name_empty() -> String { crate::lang::text("UI.WorldCreationNameEmpty") }
 fn seed_empty() -> String { crate::lang::text("UI.WorldCreationSeedEmpty") }
 
+/// `WorldFileData.MAX_USER_SEED_TEXT_LENGTH` (`WorldFileData.cs:19/:481`) —
+/// the seed plate's trim padding (`FillSeedContent`, `UIWorldCreation.cs:746`).
+pub const MAX_USER_SEED_TEXT_LENGTH: usize = 40;
+
+/// `Utils.TrimLastCharacter` (`Utils.cs:2852-2855`) → `TrimUserString(s,
+/// s.Length - 1)` (`:2839-2850`): drop the last UTF-16 code unit, and one
+/// more when the new tail is a high surrogate (the C# never splits a pair).
+fn trim_last_character(s: &str) -> String {
+    let units: Vec<u16> = s.encode_utf16().collect();
+    let mut len = units.len().saturating_sub(1);
+    if len > 0 && (0xD800..=0xDBFF).contains(&units[len - 1]) {
+        len -= 1;
+    }
+    String::from_utf16_lossy(&units[..len])
+}
+
+/// `UICharacterNameButton.TrimDisplayIfOverElementDimensions(padding)`
+/// (`UICharacterNameButton.cs:106-131`): while the value text's right edge
+/// passes the plate's right edge minus `padding`, drop one character
+/// (`Utils.TrimLastCharacter`); if anything was dropped, drop ONE MORE and
+/// append "…" (`:127-130`). The C# compares int-truncated rectangle edges;
+/// the value's left is `plate.x + 10 + titleWidth + distance` (`SetContents`
+/// `:98`) and its width the Mouse-font measure at scale 1. `measure` is the
+/// caller's font-width fn (the draw's `hud_text_width`, the tests' oracle).
+pub(crate) fn trim_plate_display(
+    value: &str,
+    plate: [f32; 4],
+    title_w: f32,
+    distance: f32,
+    padding: f32,
+    measure: impl Fn(&str) -> f32,
+) -> String {
+    // The C# compares int-truncated rectangle edges (`:109-115`):
+    // `right = (int)text.X + (int)text.Width`, the plate's right likewise.
+    let text_left = (plate[0] + 10.0 + title_w + distance) as i32;
+    let limit = (plate[0] as i32 + plate[2] as i32) - padding as i32;
+    let mut text = value.to_string();
+    let mut trimmed = false;
+    while text_left + measure(&text) as i32 > limit {
+        text = trim_last_character(&text);
+        trimmed = true;
+        if text.is_empty() {
+            break; // the C# loop would spin on "" — unreachable for a real plate
+        }
+    }
+    if trimmed {
+        text = trim_last_character(&text);
+        text.push('…');
+    }
+    text
+}
+
 /// `UICharacterNameButton.DrawSelf` (`UICharacterNameButton.cs:63-83`) plus
 /// the title/value text (`:44-59`, `SetContents` `:85-99`): the spliced
 /// `CategoryPanel` at `White * 0.5`, the hovered `CategoryPanelBorder` white,
 /// the title at `Left 10` and the value at `titleWidth +
 /// DistanceFromTitleToOption` (`:98`; 20 default `:32`, 29 for the seed,
 /// `:270`). An empty value shows the empty text in Gray (`:88-91`).
-/// The displayed value: vanilla trims it to fit with
-/// `TrimDisplayIfOverElementDimensions` — 27 for the name, 40 for the seed
-/// (`UIWorldCreation.cs:737, 746`) — which the port does not port; it draws
-/// the raw strings (documented deviation).
+/// The displayed value trims to fit through
+/// [`trim_plate_display`] — `TrimDisplayIfOverElementDimensions(27)` for
+/// the name (`UIWorldCreation.cs:737`), `(40)` for the seed (`:746`);
+/// `padding` is the caller's per-plate constant.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_plate(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -1040,6 +1093,7 @@ pub(crate) fn draw_plate(
     value: &str,
     empty_text: &str,
     distance: f32,
+    padding: f32,
     mouse: Vec2,
 ) {
     let hovered = in_rect(mouse, rect);
@@ -1072,9 +1126,14 @@ pub(crate) fn draw_plate(
     // The title `UIText`: `HAlign 0, VAlign 0.5, Left 10` (`:44-49`).
     border_string(r, lookups, rect[0] + 10.0, cy - 7.0, [1.0; 4], title);
     let (text, tint) = if value.is_empty() {
-        (empty_text, color::tint([128, 128, 128, 255])) // `Color.Gray` (`:90`)
+        (empty_text.to_string(), color::tint([128, 128, 128, 255])) // `Color.Gray` (`:90`)
     } else {
-        (value, [1.0; 4]) // `Color.White` (`:95`)
+        // `UpdateInputFields`/`FillSeedContent` run the trim after
+        // `SetContents` (`UIWorldCreation.cs:735-747`).
+        let trimmed = trim_plate_display(value, rect, title_w, distance, padding, |s| {
+            mouse_text_width(r, lookups, s)
+        });
+        (trimmed, [1.0; 4]) // `Color.White` (`:95`)
     };
     border_string(
         r,
@@ -1082,7 +1141,7 @@ pub(crate) fn draw_plate(
         rect[0] + 10.0 + title_w + distance,
         cy - 7.0,
         tint,
-        text,
+        &text,
     );
 }
 
@@ -1331,6 +1390,7 @@ pub fn draw(
         &draft.name,
         &name_empty(),
         20.0, // `DistanceFromTitleToOption` default (`UICharacterNameButton.cs:32`)
+        MAX_NAME_LENGTH as f32, // `TrimDisplayIfOverElementDimensions(27)` (`:737`)
         mouse,
     );
     draw_icon_button(r, lookups, l.seed_button, lookups.wc_icons[1], in_rect(mouse, l.seed_button));
@@ -1342,6 +1402,7 @@ pub fn draw(
         &draft.seed,
         &seed_empty(),
         29.0, // `DistanceFromTitleToOption = 29f` (`UIWorldCreation.cs:270`)
+        MAX_USER_SEED_TEXT_LENGTH as f32, // `FillSeedContent`'s trim (`:746`)
         mouse,
     );
     draw_preview(r, lookups, &l, draft);
@@ -1459,6 +1520,50 @@ mod tests {
     // Expected values hand-derived from the C# (`UIWorldCreation.cs:163-663`,
     // `UIWorldCreationPreview.cs:44-132`, `GroupOptionButton.cs:118-260`,
     // `UICharacterNameButton.cs:34-99`) — never from this code.
+
+    /// `TrimDisplayIfOverElementDimensions` (`UICharacterNameButton.cs:
+    /// 106-131`): a fitting value passes through untouched; an overflowing
+    /// one drops characters until it fits, then ONE MORE plus "…"
+    /// (`:127-130`). The oracle measures 8 px per char (the bitmap
+    /// fallback): plate [0,0,200,40], title 40, distance 20 → text left
+    /// 70, limit 200-27 = 173 → 12 chars (96 px) fit at 166; 13 chars
+    /// (104) overflow at 174.
+    #[test]
+    fn the_plate_trim_drops_to_fit_then_one_more_plus_ellipsis() {
+        let plate = [0.0, 0.0, 200.0, 40.0];
+        let measure = |s: &str| s.chars().count() as f32 * 8.0;
+        // 12 chars fit — untouched.
+        assert_eq!(
+            trim_plate_display("abcdefghijkl", plate, 40.0, 20.0, 27.0, measure),
+            "abcdefghijkl"
+        );
+        // 20 chars overflow: the loop drops to 12, then one more + "…".
+        assert_eq!(
+            trim_plate_display("abcdefghijklmnopqrst", plate, 40.0, 20.0, 27.0, measure),
+            "abcdefghijk…"
+        );
+        // The seed plate's padding is 40 (`FillSeedContent`): limit 160,
+        // 11 chars (88) fit at 158, 12 overflow → drop to 11, one more + "…".
+        assert_eq!(
+            trim_plate_display("abcdefghijklmnopqrst", plate, 40.0, 20.0, 40.0, measure),
+            "abcdefghij…"
+        );
+        // An empty value never reaches the trim (the draw's empty arm).
+        assert_eq!(trim_plate_display("", plate, 40.0, 20.0, 27.0, measure), "");
+    }
+
+    /// `Utils.TrimLastCharacter` (`Utils.cs:2852-2855`) never splits a
+    /// surrogate pair (`TrimUserString`'s high-surrogate guard, `:2845`).
+    #[test]
+    fn the_trim_keeps_surrogate_pairs_whole() {
+        assert_eq!(trim_last_character("abc"), "ab");
+        assert_eq!(trim_last_character("a"), "");
+        assert_eq!(trim_last_character(""), "");
+        // "a😀" = [a, D83D, DE00]: dropping the low surrogate leaves a high
+        // surrogate tail, so the pair drops together.
+        assert_eq!(trim_last_character("a\u{1F600}"), "a");
+        assert_eq!(trim_last_character("\u{1F600}\u{1F600}"), "\u{1F600}");
+    }
 
     /// W4-d85 — the option cascades (`AWorldGenerationOption.Enabled`'s
     /// setter + the Normal/Everything subscribers): enabling any option

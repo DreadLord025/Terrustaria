@@ -399,9 +399,11 @@ written in ROADMAP/ANALYSIS/PORT_MAP.
     order stands in (`save_list.rs:391-424`), and the filename tie-break
     compares the path component. Severity: behavioural. Admitted in code.
 14. **Name/rename caps and the display trims**: the keyboards cap at 20/27
-    (`char_creation.rs:1200`, `world_creation.rs:37`) and
-    `TrimDisplayIfOverElementDimensions` is not ported, so a 27-char world
-    name overflows its plate. Severity: pixel. Admitted (ANALYSIS `:2142-2143`).
+    (`char_creation.rs:1200`, `world_creation.rs:37`). The creation plates'
+    `TrimDisplayIfOverElementDimensions` **landed 2026-11-21** (W4-d85
+    doc-sweep: `trim_plate_display`, padding 27/40 on both creation
+    screens); the keyboard's own textbox trim stays unported. Severity:
+    pixel. Admitted (ANALYSIS `:2142-2143`).
 15. **Keyboard: desktop layer only, plus the two font-metric trims.**
     `ShowGamepadHints` is pinned false (`keyboard.rs:1-31`; `TR_VK_GRID=1`
     restores the grid), the textbox/label `MinWidth` growth and the `HAlign`
@@ -459,9 +461,17 @@ S — small (single file / one table)
   session/selected player's difficulty into `enter_front`'s `sort_worlds`
   (`mod.rs:1368`), matching `UIWorldSelect.cs:177-180`. Blocked by S6 (needs
   GameMode metadata) for observable effect; the plumbing itself is local.
-- **S4. The rename display trims** — port
-  `TrimDisplayIfOverElementDimensions(27)`/`(20)` for the world/character
-  rename labels (`UIWorldListItem.cs:418`, `UICharacterListItem.cs:199`).
+- ~~**S4. The rename display trims**~~ — **DONE 2026-11-21 (W4-d85
+  doc-sweep lane 30)** for the creation plates:
+  `world_creation::trim_plate_display` ports
+  `TrimDisplayIfOverElementDimensions` (`UICharacterNameButton.cs:106-131`)
+  with the int-edge comparison + the drop-one-more-plus-"…" tail, wired
+  into `draw_plate` at padding 27 (name, `UIWorldCreation.cs:737`) / 40
+  (seed, `:746`) on both the base screen and the Advanced tab. The select
+  cards' rename labels (`UIWorldListItem.cs:418`,
+  `UICharacterListItem.cs:199`) never call the trim in the C# — those two
+  citations were misattributed; the only other call site is
+  `UISearchBar.cs:83` (padding 0), which stays with the search-bar port.
 
 M — medium
 
