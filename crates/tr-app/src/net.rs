@@ -264,6 +264,11 @@ pub mod id {
     /// `MessageBuffer.cs:3261-3266`); the host's answer is the blocked-chest
     /// list (`NetMessage.cs:1213`, `MessageBuffer.cs:3267-3270`).
     pub const QUICK_STACK_CHESTS: u8 = 85;
+    /// `94 DevCommands` (W4-g50, S1-I-4): `string` command + `(int)` number +
+    /// `(float)` number2 + `(float)` number3 (`MessageID.cs:202`,
+    /// `NetMessage.cs:1327-1332`, `MessageBuffer.cs:3463-3518`). Both
+    /// directions — the debug-command sync (`DebugOptions.SyncToJoiningPlayer`).
+    pub const DEV_COMMANDS: u8 = 94;
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
@@ -2634,6 +2639,22 @@ pub struct QuickStackBlocked {
     pub chests: Vec<u16>,
 }
 
+/// `msg 94 DevCommands`'s body (`NetMessage.cs:1327-1332`): the command
+/// `string` (`text.ToString()`), `(int)number`, `(float)number2`,
+/// `(float)number3`. The reader consumes all four fields, then gates on
+/// `DebugOptions.enableDebugCommands` (`MessageBuffer.cs:3465-3472`) before
+/// the `/showdebug` / `/randomizeprojslots` / `/setserverping` /
+/// `/quickload-*` switch (`:3473-3516`). Both directions — the host's
+/// `DebugOptions.SyncToJoiningPlayer` push (`DebugOptions.cs:64-72`) and the
+/// quickload probe/response relay.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DevCommands {
+    pub command: String,
+    pub number: i32,
+    pub number2: f32,
+    pub number3: f32,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2813,6 +2834,11 @@ pub enum C2s {
     /// (`QuickStacking.SendQuickStackToNearbyChests`, `QuickStacking.cs:287-297`);
     /// the host runs the transfer (`MessageBuffer.cs:3261-3266`; W4-g50).
     QuickStackRequest(QuickStackRequest),
+    /// `94 DevCommands` — a debug-command sync / quickload probe
+    /// (`DebugOptions.SyncToJoiningPlayer`, `DebugOptions.cs:64-72`);
+    /// the reader gates on `enableDebugCommands` (`MessageBuffer.cs:3463-3518`;
+    /// W4-g50).
+    DevCommands(DevCommands),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -3029,6 +3055,10 @@ pub enum S2c {
     /// (`QuickStacking.WriteBlockedChestList`, `QuickStacking.cs:323-330`;
     /// `MessageBuffer.cs:3267-3270`; W4-g50).
     QuickStackBlocked(QuickStackBlocked),
+    /// `94 DevCommands` — a debug-command sync / quickload response
+    /// (`DebugOptions.SyncToJoiningPlayer`, `DebugOptions.cs:64-72`;
+    /// `MessageBuffer.cs:3463-3518`; W4-g50).
+    DevCommands(DevCommands),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -3134,6 +3164,7 @@ impl C2s {
             Self::PlayerDeathV2(_) => id::PLAYER_DEATH_V2,
             Self::Emoji(_) => id::EMOJI,
             Self::QuickStackRequest(_) => id::QUICK_STACK_CHESTS,
+            Self::DevCommands(_) => id::DEV_COMMANDS,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -3261,6 +3292,9 @@ impl C2s {
                 }
                 w.bool(q.smart_stack)
             }
+            // `NetMessage.cs:1327-1332`: string command, int number, float
+            // number2, float number3.
+            Self::DevCommands(d) => w.str(&d.command).i32(d.number).f32(d.number2).f32(d.number3),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -3492,6 +3526,14 @@ impl C2s {
                 let smart_stack = r.bool()?;
                 Self::QuickStackRequest(QuickStackRequest { slots, smart_stack })
             }
+            // `MessageBuffer.cs:3465-3468`: string command, int number, float
+            // number2, float number3 (the reader consumes all four).
+            id::DEV_COMMANDS => Self::DevCommands(DevCommands {
+                command: r.str()?,
+                number: r.i32()?,
+                number2: r.f32()?,
+                number3: r.f32()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -3680,6 +3722,7 @@ impl S2c {
             Self::Unused83 => id::UNUSED_83,
             Self::Unused93 => id::UNUSED_93,
             Self::QuickStackBlocked(_) => id::QUICK_STACK_CHESTS,
+            Self::DevCommands(_) => id::DEV_COMMANDS,
         }
     }
 
@@ -3954,6 +3997,9 @@ impl S2c {
                 }
                 w
             }
+            // `NetMessage.cs:1327-1332`: string command, int number, float
+            // number2, float number3.
+            Self::DevCommands(d) => w.str(&d.command).i32(d.number).f32(d.number2).f32(d.number3),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -4354,6 +4400,14 @@ impl S2c {
                 }
                 Self::QuickStackBlocked(QuickStackBlocked { chests })
             }
+            // `MessageBuffer.cs:3465-3468`: string command, int number, float
+            // number2, float number3 (the reader consumes all four).
+            id::DEV_COMMANDS => Self::DevCommands(DevCommands {
+                command: r.str()?,
+                number: r.i32()?,
+                number2: r.f32()?,
+                number3: r.f32()?,
+            }),
             _ => return None,
         })
     }
@@ -7577,6 +7631,40 @@ mod tests {
         match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
             S2c::QuickStackBlocked(d) => assert_eq!(d, empty),
             other => panic!("expected 85, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `94 DevCommands` (`NetMessage.cs:1327-1332`): string command, int
+    /// number, float number2, float number3. Both directions — the reader
+    /// consumes all four fields before the enableDebugCommands gate
+    /// (`MessageBuffer.cs:3465-3472`).
+    #[test]
+    fn w4_g50_dev_commands_round_trips() {
+        let d = DevCommands {
+            command: "/setserverping".into(),
+            number: 0,
+            number2: 120.0,
+            number3: 0.0,
+        };
+        let c = C2s::DevCommands(d.clone()).encode();
+        assert_eq!(c[2], 94);
+        let mut body = Vec::new();
+        body.push(14); // the 7-bit length of "/setserverping"
+        body.extend_from_slice(b"/setserverping");
+        body.extend_from_slice(&0i32.to_le_bytes());
+        body.extend_from_slice(&120.0f32.to_le_bytes());
+        body.extend_from_slice(&0.0f32.to_le_bytes());
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::DevCommands(back) => assert_eq!(back, d),
+            other => panic!("expected 94, got {:?}", other.msg_id()),
+        }
+        let f = S2c::DevCommands(d.clone()).encode();
+        assert_eq!(f[2], 94);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::DevCommands(back) => assert_eq!(back, d),
+            other => panic!("expected 94, got {:?}", other.msg_id()),
         }
     }
 }

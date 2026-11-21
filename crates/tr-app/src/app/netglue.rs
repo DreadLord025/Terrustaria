@@ -1237,6 +1237,16 @@ impl App {
             // `QuickStacking` nearby-chest transfer (`QuickStacking.cs:256-266`),
             // so the apply is parked; the codec is byte-verbatim (`net.rs`).
             C2s::QuickStackRequest(_) => {}
+            // `case 94` — the debug-command sync (W4-g50,
+            // `MessageBuffer.cs:3463-3518`): the reader consumes the four
+            // fields, then gates on `DebugOptions.enableDebugCommands`
+            // (`:3469`) before the `/showdebug` / `/randomizeprojslots` /
+            // `/setserverping` / `/quickload-*` switch. The `DebugOptions`
+            // shared-state + `QuickLoad` test harness are unported (the port's
+            // debug panel is the `debug`-feature cheat sheet, not the C#
+            // `DebugOptions` statics), so the apply is parked; the codec is
+            // byte-verbatim (`net.rs`).
+            C2s::DevCommands(_) => {}
         }
     }
 
@@ -3075,6 +3085,12 @@ impl App {
             // `Chest.cs:3582-3601`). The particle pulse system is unported, so
             // the apply is parked; the codec is byte-verbatim (`net.rs`).
             S2c::QuickStackBlocked(_) => {}
+            // `case 94` — the debug-command sync (W4-g50,
+            // `MessageBuffer.cs:3463-3518`): the same `enableDebugCommands`
+            // gate + command switch as the host leg. The `DebugOptions`
+            // shared-state + `QuickLoad` test harness are unported, so the
+            // apply is parked; the codec is byte-verbatim (`net.rs`).
+            S2c::DevCommands(_) => {}
             // `151` — the slot is gone.
             S2c::ItemDead { slot } => {
                 self.net_items.remove(&slot);
