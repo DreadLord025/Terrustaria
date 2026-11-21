@@ -39463,3 +39463,52 @@ rows/host wave):
 `w4_e3_cov_confetti_bomb_dust_type_rolls_and_gates`,
 `w4_e3_cov_acorn_bomb_dust_old_vel_and_scale_bump`) WRITTEN NOT RUN. The
 window is now 15-of-15 ported (6 wired + 9 staged), zero missed.
+
+## The AI-INLINE-40 window + the AI_001 edges (W4-e3 round 2, 2026-11-21, code-only mode)
+
+The coverage census's windows 3+5 (`docs/research/125`, the refreshed
+round-2 ledger + the per-machine assignment table) port on this branch:
+**37 of the 40 AI()-inline sites** (34 STAGED + 3 WIRED) + **both AI_001
+edges** (the 1006 WIRED, the 981 STAGED). The 3 unported are g64-claimed
+at its `625c449e` tip (`:35601/:35681` the 650 sparkles, `:34020` the 813
+opacity tail). Seven commits `977b112d..c9206e75`, ≤10 sites each; 17
+draw-mirror witnesses WRITTEN NOT RUN.
+
+* **The wired three.** The 578/579 dissolve twin switch
+  (`vortex_dissolve_twin_578_579`, `:33993/34005`) lands in the new
+  `ai_vortex_ritual_dust` (the scratch `ai_vortex_ritual` wrapper keeps the
+  witnesses' signature; the dispatch threads the live pool). g64
+  remainder 2's comment pins `:33984-34016` as "the co-lane's unmodelled
+  skip" — this is that port; the dissolve `Kill()`'s early return is
+  DROPPED per the C# (the twin rolls on the death tick — the g64
+  `be58df9e` shape; the machine's `ai[0]==90` payload cannot fire past
+  120, so the state is byte-identical). The 813's twin + opacity tail stay
+  g64's (kind-disjoint). The 1006 ShimmerArrow sparkle (`:56049`) lands in
+  `special_arrows::step_dust` (the g63 batch-1 seam; at the g63 merge the
+  two `step_dust` variants UNION — the 1006 call after the flight counter,
+  g63's 41 Hellfire call in the gravity arm).
+* **The pool change.** `clone_dust` goes generic over `DustRng` — the
+  SAME change g64's `853039bf` carries (keep-one at merge, identical
+  signatures; the concrete callers unchanged).
+* **The census correction.** g63's doc-66 row "60 | 358
+  (`:29167/.../29245/29284`)" mis-attributes the last two sites: the C#'s
+  `type != 1042` return at `:29234` precedes them — they are the 1042
+  ShimmerGunStream's (d6's row). The e3
+  `style60_shimmer_gun_trail_1042` takes them; g63's actual emitter cites
+  `:29158-29196` only, so no port collision.
+* **The staged contracts.** Each STAGED emitter cites its activating
+  merge (the round-2 ledger): d5 style43 (its 8 kept NextFloat draws
+  superseded), d6 guns, d9 styles 81/86/87/89/90, d10 styles 91/94/96/98,
+  d12 explosions (the kept-draws census REPLACED), d13 geyser + sandnado
+  mark (their per-tick RNG censuses are the stream-parity contract), d14
+  elder-wins. The 321 FlamingJack, 836 DandelionSeed and 981 SilverBullet
+  have NO row on any pushed tip — the row waves activate them. The
+  UNGUARDED XNA `Vector2.Normalize` is kept where the C# uses it (the 490
+  ring, the 624 ring, the 126 pull — a zero pick propagates NaN verbatim,
+  the `npc_ai_empress` divergence note inverted: here the C# behaviour IS
+  the port). `Color.White * 0.1` = (25,25,25,25) — the XNA byte multiply
+  including alpha (the `lights_bane_batches` precedent).
+* **The named-machines 87+36 future wave** is ASSIGNED in research/125's
+  per-machine table (d12/d14/d15/d16/d17/d18/d19/d20/d21 own their bands'
+  machines; the main-ported machines' dust is a dust-lane follow-up; the
+  two `_Old` legacy machines are the only unassigned residue).
