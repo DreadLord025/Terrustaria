@@ -11723,14 +11723,58 @@ decompiled sets (316/114/6/1/6/4 entries — `ItemID.cs:353-356`/`:1318`,
   ports (the centre-shrunk probe, the `(256-liquid)/32*2` surface offset, the
   sloped-tile-under-liquid arm) — the old naive full-box overlap had none.
 
-Still deferred (W4-e19): the shimmered-item repulsion scan (`:790-847`), the
-`ItemNoGravity` float (`:774-786`), the `wetVelocity` blend
-(`:379-396`/`:1046-1066`), the entry/exit splash dust (`:888-992`), the
-honey/water gravity arms (no per-drop `honeyWet`/`wet` flag yet), the
-crimson/corruption decraft variant (the generator tags). The ramp-tick witness
-re-pinned to a 90..=93 band: the faithful surface offset starts the resting
-drop's ramp one tick later than the old naive probe (the 91-tick ramp arithmetic
-is unchanged).
+The deferred list landed (W4-e19 round 2, commits `6d498224`→`41b8e5aa`,
+code-only — witnesses WRITTEN NOT RUN):
+
+- **The shimmered-item repulsion scan** (`:790-847`): the slice-level
+  `ItemDrop::repel_shimmered` (`item.rs`) — the 50-neighbour budget, the
+  centre-span gate on both axes, `span/distance` capped at 10, the ±3 bounds
+  (±3·span on the equal-X tie-break, lower slot only), the neighbours' live
+  velocities nudged in list order. The items pass runs it before the drop's
+  update (the C# runs it inside `MoveInWorld` before the gravity add); the
+  `flag` rides `ItemDrop::repulsed` into the ×0.8 tail (`:859-862`, after the
+  friction/snap). The span is the port's 14 px box (C# `WorldItem.width = 16`,
+  `:138` — the standing box-size deviation).
+- **The `ItemNoGravity` float** (`:774-786`): the 16-row `ItemID.cs:1320` set
+  (`item_no_gravity`), the `!shimmered` gate, both-axis ×0.95 + the 0.1 snap,
+  no gravity add — the whole else arm skipped.
+- **The `wetVelocity` blend** (`:379-396`/`:1046-1084`): the head resolves the
+  factor with the gravity pair (air 0.5 / shimmer 0.375 / honey 0.25);
+  `move_in_world` runs the collision at FULL velocity, refreshes `wet_vel` on
+  the axes the collision changed (`:1052-1059`), and `ApplyMovement`
+  integrates a wet drop at `wetVelocity` (`:1076-1079`). The wet blocked-Y arm
+  keeps the flush residual as velocity (the drop steps flush in one tick);
+  the DRY arm keeps the standing flush-rest deviation (snap + zero — the
+  resting witnesses pin vel 0). The wet re-probe moved into `MoveInWorld`'s
+  `:865-878` slot (after the conveyor, before the collision).
+- **The honey/water gravity arms + per-drop wet flags** (`:386-396`):
+  `ItemDrop` carries `wet`/`honey_wet`/`lava_wet`/`wet_count`; the probes
+  LATCH the kind flags (`:868`/`:873`/`:877`), `wet` follows the entry/exit
+  edges, the `!wet` tail clears the three (`:1036-1041`), the grabbed arm
+  clears all + the cooldown (`:427-431`). The ELSE-IF head: honey 0.05/3/0.25,
+  water 0.08/5 (the 0.5 air wet_step). The shimmer tail + `SpawnShimmeredItem`
+  set `wet` (`:1844`/`:635`).
+- **The entry/exit splash dust** (`:881-1045`): the `wetCount = 20` cooldown
+  gates both edges; the drop queues an `ItemSplash` and the items pass drains
+  it into the shared `DustPool` on the `UpdateItems` stream (the g67
+  rain-splash contract) — lava 35 ×5, shimmer 308 ×10 with the `Next(6)`
+  four-colour switch, honey 152 ×5, water `dustWater()` ×10 (scale ×0.8
+  MULTIPLY vs the shimmer's 0.8 SET; the water EXIT anchor drops the `- 8`,
+  `:1011`); the case-19 play rides style 4/5 for the shimmer entry/exit, the
+  default 1 otherwise, AFTER the dust loop.
+- **The crimson/corruption decraft variant** (`ShimmerTransforms.cs:15-31`):
+  `gen_recipes.py` extracts the 30 world-evil tags (15 crimson/corruption
+  pairs — the census: 273/287/300/556/3266/3267/3268/4076/4131/4745/5092/
+  5107/5120/5322/5457), `craft::Recipe` carries `crimson`/`corruption`, and
+  `decrafting_recipe_index` runs the `IsCraftedCrimson`/`IsCraftedCorruption`
+  LAST-tag-wins preference (the evil sets have NO `notDecraftable` gate,
+  `Recipe.cs:15249-15256`). `WorldGen.crimson` rides the `world_crimson`
+  thread-local (default false — the port persists no world-evil type, the
+  `shop.rs`/`loot.rs` standing gap; `set_world_crimson` is the wiring hook).
+
+The ramp-tick witness re-pinned to a 90..=93 band: the faithful surface offset
+starts the resting drop's ramp one tick later than the old naive probe (the
+91-tick ramp arithmetic is unchanged).
 ## Ocean passes fidelity (M5-OCEAN)
 
 The full ocean family landed 2026-11-08 (branch `M5-OCEAN`, commits
