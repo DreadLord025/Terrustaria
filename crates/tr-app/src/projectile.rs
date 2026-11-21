@@ -20261,6 +20261,31 @@ impl ProjectilePool {
             // `:76180` — the Sand Ball (gun)'s Dig thud (the unrowed 31
             // falling sibling stays out).
             42 => Some((0, 0, pos.x, pos.y)),
+            // `:76207` — the hostile Snowball's Dig thud.
+            109 => Some((0, 0, pos.x, pos.y)),
+            // `:76283` — the Water Bolt's Item10.
+            27 => Some((2, 10, pos.x, pos.y)),
+            // `:76300` — the Demon Sickle / Scythe's Item10.
+            44 | 45 => Some((2, 10, pos.x, pos.y)),
+            // `:76310` — the Hellfire Arrow's Item14 BEFORE the 64×64
+            // blast resize (`special_arrow_kill` runs below the hook).
+            41 => Some((2, 14, pos.x, pos.y)),
+            // `:76433` — the Beenade's Item14 (the bee burst rides
+            // `thrown_consumable_death`).
+            183 => Some((2, 14, pos.x, pos.y)),
+            // `:76470` — the aiStyle-34 fireworks' Item14 (the ported
+            // kinds 167-170; the dust census rides
+            // `dart_electro_firework_kill`).
+            167..=170 => Some((2, 14, pos.x, pos.y)),
+            // `:77018`/`:77033`/`:77048` — the holy/unholy/blood water
+            // bottles' Shatter (the splash conversion rides
+            // `thrown_consumable_death`, after the cue).
+            69 | 70 | 621 => Some((13, 0, pos.x, pos.y)),
+            // `:77063`/`:77077`/`:77094`/`:77107`/`:77124`/`:77138` — the
+            // Unholy Trident (hostile 115 / friendly 114), Sword Beam 116,
+            // Enchanted Beam 173, Terra Beam 132 and Light Beam 156's
+            // Item10 (the dust trails are the visual skip).
+            115 | 114 | 116 | 173 | 132 | 156 => Some((2, 10, pos.x, pos.y)),
             _ => None,
         };
         if let Some((id, style, x, y)) = cue {
@@ -24187,6 +24212,53 @@ mod s1_e_21h_sound_tests {
         let queued = pool.drain_proj_sounds();
         assert_eq!(queued.len(), 1);
         assert_eq!((queued[0].0, queued[0].1), (2, 10));
+    }
+
+    /// S1-E-21h d77 — the cue map batch 5 (sites `:76207`-`:77138`): the
+    /// snowball/water-bolt/sickle arms, the Hellfire cue-before-blast, the
+    /// beenade/fireworks Item14, the water bottles' Shatter and the
+    /// trident/beam Item10 family. WRITTEN NOT RUN.
+    #[test]
+    fn s1_e_21h_d77_the_kill_tail_cue_map_batch5() {
+        let mut pool = ProjectilePool::new();
+        let cases: [(u16, (u16, i32)); 15] = [
+            (109, (0, 0)),
+            (27, (2, 10)),
+            (44, (2, 10)),
+            (45, (2, 10)),
+            (41, (2, 14)),
+            (183, (2, 14)),
+            (167, (2, 14)),
+            (168, (2, 14)),
+            (169, (2, 14)),
+            (170, (2, 14)),
+            (69, (13, 0)),
+            (70, (13, 0)),
+            (621, (13, 0)),
+            (115, (2, 10)),
+            (132, (2, 10)),
+        ];
+        for (kind, want) in cases {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .expect("the row spawns");
+            pool.kill_tail_cue(slot);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one cue");
+            assert_eq!((queued[0].0, queued[0].1), want, "kind {kind}'s payload");
+            pool.kill(slot);
+        }
+        // The trident/beam siblings share the Item10 arms.
+        for kind in [114u16, 116, 173, 156] {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .expect("the beam row spawns");
+            pool.kill_tail_cue(slot);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one cue");
+            assert_eq!((queued[0].0, queued[0].1), (2, 10), "kind {kind}'s Item10");
+            pool.kill(slot);
+        }
     }
 }
 
