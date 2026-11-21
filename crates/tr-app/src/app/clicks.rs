@@ -1567,8 +1567,8 @@ impl App {
         // inventory is open (their home is `DrawInventory`, `:41055`) and the
         // map system is enabled (`:41056`'s `Main.mapEnabled` wraps the row).
         // A hit consumes the press and returns before the slot handling.
-        // `PlaySound(10)/(12)` (`:41100,41109-41119`) is not ported — no UI cue
-        // is loaded (`audio.rs:22-31`).
+        // `PlaySound(10)/(12)` (`:41100,41109-41119`) — the cues ARE loaded
+        // (`audio.rs`'s Menu_Open/Menu_Tick, `SoundID.cs` 10/12).
         if left && self.inventory_open && self.settings.map_enabled {
             let (sw, sh) = self.screen_size();
             let screen = Vec2::new(sw, sh);
@@ -1581,20 +1581,18 @@ impl App {
                     && self.mouse_pos.y <= y + ui::chrome::MAP_ICON_HIT[1]
                 {
                     if k == 0 {
-                        // `Main.cs:41095-41104`: close the inventory, open the
-                        // fullscreen map. `set_open(true)` already resets the
-                        // scale to `2.5` and arms the recentre (`Main.cs:41101,
-                        // 41104`, `crates/tr-app/src/map.rs:451-457`);
-                        // `SetTalkNPC(-1)` / `npcChatCornerItem = 0` have no
-                        // port counterpart.
-                        self.inventory_open = false;
-                        if let Some(m) = self.map.as_mut() {
-                            m.set_open(true);
-                        }
+                        // `Main.cs:41095-41104`: the same open block as
+                        // `TryOpeningFullscreenMap` (`Player.cs:29103-29119`)
+                        // minus `buffString`/`releaseInventory` — close the
+                        // inventory (`:41097`, the helper's `:29107` write),
+                        // `SetTalkNPC(-1)`, `PlaySound(10)`, scale 2.5 +
+                        // recentre (both ride `set_open(true)`).
+                        self.try_open_fullscreen_map();
                     } else {
                         // `Main.cs:41106-41120`: `k == 1/2/3` ->
-                        // `Main.mapStyle = 0/1/2`.
+                        // `Main.mapStyle = 0/1/2` + `PlaySound(12)`.
                         self.map_style = k as i32 - 1;
+                        self.audio.play("Menu_Tick"); // `:41109/41114/41119`
                     }
                     return;
                 }
@@ -6074,5 +6072,46 @@ mod w4_e18_fullmap_close_tests {
         app.mouse_pos = Vec2::new(26.0, 875.0);
         app.handle_fullmap_close();
         assert!(!app.map.as_ref().unwrap().open);
+    }
+}
+
+#[cfg(test)]
+mod w4_e18_map_icon_row_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::map::WorldMap;
+
+    /// W4-e18 final sweep (written, not run - code-only): the inventory's
+    /// map-icon row (`Main.cs:41087-41120`) — icon 0 opens the fullscreen map
+    /// through the shared `TryOpeningFullscreenMap` block (close inventory,
+    /// `SetTalkNPC(-1)`, scale 2.5), icons 1/2/3 set `mapStyle` 0/1/2. At the
+    /// 1600x900 headless frame icon k sits at `(1160 + k*32, 40)`; the hit
+    /// box is the inclusive 32x30 (`:41087`).
+    #[test]
+    fn w4_e18_the_map_icon_row_opens_the_map_and_sets_the_style() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("icons".into(), 260, 200);
+        app.map = Some(WorldMap::new(&app.world));
+        app.inventory_open = true;
+        app.talk_npc = Some(0);
+        // Icon 2 (the minimap style, k == 2 -> mapStyle 1).
+        app.ui_left_press = true;
+        app.mouse_pos = Vec2::new(1160.0 + 2.0 * 32.0 + 4.0, 44.0);
+        app.handle_inventory_clicks();
+        assert_eq!(app.map_style, 1, "k == 2 sets mapStyle 1");
+        assert!(app.inventory_open, "a style icon keeps the inventory open");
+        // Icon 0 opens the fullscreen map + closes the inventory + clears
+        // the dialog (`Main.cs:41095-41104` = `Player.cs:29103-29119`).
+        app.ui_left_press = true;
+        app.mouse_pos = Vec2::new(1164.0, 44.0);
+        app.handle_inventory_clicks();
+        assert!(app.map.as_ref().unwrap().open, "icon 0 opens the map");
+        assert!(!app.inventory_open, "and closes the inventory");
+        assert_eq!(app.talk_npc, None, "SetTalkNPC(-1)");
+        assert_eq!(
+            app.map.as_ref().unwrap().scale,
+            crate::map::MAP_FULLSCREEN_SCALE_DEFAULT,
+            "scale 2.5 (`:41101`)"
+        );
     }
 }
