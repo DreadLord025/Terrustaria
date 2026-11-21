@@ -6257,6 +6257,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     }
     for crew in spawned_crew {
         app.npcs.extend(crew);
+    // W4-c10 sweep (the W4-b3 co-lane seam): the waterfowl takeoff
+    // (`NPC.cs:53180-53184`, the town arm's `TownOutputs::waterfowl_takeoff`
+    // → `wants_transform`) joins the drain — 362→363 / 364→365 /
+    // 602→603 / 608→609. The b3 adapter's drain wiring queues the
+    // request; until it lands the walkers ride `waterfowl_walker_step`'s
+    // in-place gate (both paths run the same `transform_to_kind`).
     }
     // The Moon Lord's spawn-in (`AI_077`'s `:41209-41232`): the two hands
     // (`ai[2]` 0/1) at the core's centre + seat*800 - 400 / -100 and the
@@ -6267,6 +6273,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         app.npcs[i].wants_moon_parts = false;
         let (cw, ch) = app.npcs[i].size();
+                        // W4-c10 sweep — the waterfowl takeoff targets.
+                        363 => NpcKind::Duck2,
+                        365 => NpcKind::DuckWhite2,
+                        603 => NpcKind::Seagull2,
+                        609 => NpcKind::Grebe2,
         let ccx = app.npcs[i].x + cw * 0.5;
         let ccy = app.npcs[i].y + ch * 0.5;
         // The core's own id (`NPC.whoAmI`) — the link the parts carry in

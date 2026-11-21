@@ -37,12 +37,15 @@
 //! * the SHIMMER state 25 (`:53187-53277`) + the shimmer teleport scan
 //!   (`:55563-55641`, `ShimmerHelper.FindSpotWithoutShimmer`): the state
 //!   is a cited skip (returns, draws shimmer dust — the dust task's);
-//! * the Old Man 37 / Clothier 54 / Santa 142 / the bound-NPC Transform
-//!   rows 362/364/602/608 (`:53158-53184`), the Mechanic's owned-proj
+//! * the Old Man 37 / Clothier 54 / Santa 142 (`:53158-53161` +
+//!   the type arms), the Mechanic's owned-proj
 //!   latch (`:53166-53179`) and the Angler's wet edge rescue
 //!   (`:53375-53391`): the kinds are ported but those arms ride systems
-//!   the port has not landed (dungeon home, transforms, owned proj
-//!   search); the Angler arm IS ported ([`TownEnv`] carries the inputs);
+//!   the port has not landed (dungeon home, owned proj
+//!   search); the Angler arm IS ported ([`TownEnv`] carries the inputs).
+//!   The waterfowl takeoff rows 362/364/602/608 (`:53180-53184`) ARE
+//!   ported (W4-c10 sweep): the gate emits [`TownOutputs::waterfowl_takeoff`]
+//!   and returns; the caller runs the `Transform(type + 1)` core;
 //! * the ATTACK bodies 10/12/14 (`:54329-54994`): the trigger ladder
 //!   (`:55443-55545`) enters the states and arms the timers; the shot
 //!   bodies port the per-type preset tables + the aim maths + the RNG
@@ -712,6 +715,17 @@ pub struct TownOutputs {
     /// `NPC.cs:53419-53422`) — applied through `NpcBuffs` by the caller
     /// (the arm cannot borrow the buff engine mutably twice).
     pub repeated_stink_buff: bool,
+    /// W4-c10 sweep (the W4-b3 co-lane seam) — the waterfowl takeoff
+    /// (`NPC.cs:53180-53184`): the walker 362/364/602/608 falling fast
+    /// (`velocity.Y > 4 || < -4`) or wet transforms into its swimming
+    /// form (`Transform(this.type + 1)`, the default ai0..3 = 0) and
+    /// the arm RETURNS. The arm cannot run `Transform` itself (the
+    /// player seam + the kind table live on the caller), so the NEW
+    /// vanilla type rides here (the `wants_transform` pattern); the
+    /// caller drains it through `Npc::transform_to_kind`. `Transform`
+    /// draws nothing and `TransformVisuals` is silent for the
+    /// waterfowl pairs (the `npc_transform_visuals.rs` census).
+    pub waterfowl_takeoff: Option<i32>,
 }
 
 /// `AI_007_TownEntities_UpdateSavedStates` (`NPC.cs:52934-52963`).
@@ -1593,7 +1607,24 @@ pub fn town_npc_ai(
     }
     // `:53166-53179` — the Mechanic's owned-projectile latch: the
     // lazyNPCOwnedProjectileSearchArray seam is unported; cited skip.
-    // `:53180-53184` — the bound-NPC Transform rows: cited skip.
+    // `:53180-53184` — the waterfowl takeoff (W4-c10 sweep, the W4-b3
+    // co-lane seam; b3's phase 1 left this a cited skip): the walker
+    // 362/364/602/608 falling fast or wet transforms into the swimming
+    // form and the arm RETURNS. The `Transform(type + 1)` core needs
+    // the caller's player seam + kind table, so the new type rides
+    // `out.waterfowl_takeoff` (the `wants_transform` pattern) and the
+    // caller runs `Npc::transform_to_kind`. RNG-free: Transform draws
+    // nothing; TransformVisuals is silent for the waterfowl pairs
+    // (`npc_transform_visuals.rs`). The C# reads `base.wet` latched by
+    // the previous tick's UpdateCollision — the port's pre-AI `wet`
+    // (the b3 adapter's `is_wet` pass) is the same value.
+    if matches!(net_id, 362 | 364 | 602 | 608)
+        && env.net_mode != 1
+        && (npc.vy > 4.0 || npc.vy < -4.0 || npc.wet)
+    {
+        out.waterfowl_takeoff = Some(net_id + 1);
+        return;
+    }
 
     // `:53185` — UpdateSavedStates.
     out.saved_state = match net_id {
@@ -4185,6 +4216,75 @@ mod tests {
         assert_eq!(n2.local_ai[3], 60.0);
         let mut witness2 = UnifiedRandom::new(6);
         assert_eq!(n2.ai[1], 200.0 + witness2.next_max(200) as f32);
+    }
+
+    /// W4-c10 sweep (the W4-b3 co-lane seam) — `NPC.cs:53180-53184`:
+    /// the waterfowl walker falling fast (`vy > 4 || vy < -4`) or wet
+    /// emits the `Transform(type + 1)` request and the arm RETURNS
+    /// (zero draws, no state write — the caller runs the Transform
+    /// core). A dry slow walker keeps walking; the client (netMode 1)
+    /// never transforms; the swimmers 363/365/603/609 are not in the
+    /// gate's type set.
+    #[test]
+    fn w4_c10_the_waterfowl_takeoff_gate_emits_the_transform() {
+        let w = ground();
+        let players = vec![player(60.0 * 16.0, 120.0 * 16.0 - 42.0)];
+        let npcs: Vec<(usize, TownNpcView)> = Vec::new();
+        let e = env(&w, &players, &npcs);
+        let walkers = [
+            (NpcKind::Duck, 362),
+            (NpcKind::DuckWhite, 364),
+            (NpcKind::Seagull, 602),
+            (NpcKind::Grebe, 608),
+        ];
+        for (kind, ty) in walkers {
+            // The wet takeoff: the request fires, the stream untouched.
+            let mut n = Npc::new(kind, 40.0 * 16.0, 120.0 * 16.0 - 26.0, 1, 0.0);
+            n.wet = true;
+            let mut door = TownDoorLatch::default();
+            let mut doors = FakeDoors { attempts: Vec::new(), succeed: false };
+            let mut out = TownOutputs::default();
+            let mut rng = UnifiedRandom::new(11);
+            let before = rng.clone();
+            town_npc_ai(&mut n, &e, stats(), &mut door, &mut doors, 0, &mut rng, &mut out);
+            assert_eq!(out.waterfowl_takeoff, Some(ty + 1), "{kind:?} wet takeoff");
+            assert_eq!(rng, before, "{kind:?}: the gate draws nothing");
+            assert_eq!(n.ai, [0.0; 4], "{kind:?}: the arm returned pre-state");
+            // The fast fall (vy > 4) and the fast rise (vy < -4).
+            for vy in [4.5f32, -4.5] {
+                let mut n2 = Npc::new(kind, 40.0 * 16.0, 120.0 * 16.0 - 26.0, 1, 0.0);
+                n2.vy = vy;
+                let mut out2 = TownOutputs::default();
+                let mut rng2 = UnifiedRandom::new(12);
+                let before2 = rng2.clone();
+                town_npc_ai(&mut n2, &e, stats(), &mut door, &mut doors, 0, &mut rng2, &mut out2);
+                assert_eq!(out2.waterfowl_takeoff, Some(ty + 1), "{kind:?} vy {vy}");
+                assert_eq!(rng2, before2);
+            }
+            // The dry slow walker: NO request (the walk arm runs).
+            let mut n3 = Npc::new(kind, 40.0 * 16.0, 120.0 * 16.0 - 26.0, 1, 0.0);
+            n3.vy = 1.0;
+            let mut out3 = TownOutputs::default();
+            town_npc_ai(&mut n3, &e, stats(), &mut door, &mut doors, 0, &mut UnifiedRandom::new(13), &mut out3);
+            assert_eq!(out3.waterfowl_takeoff, None, "{kind:?} dry slow keeps walking");
+            // The client: the netMode gate refuses even when wet.
+            let mut e_client = env(&w, &players, &npcs);
+            e_client.net_mode = 1;
+            let mut n4 = Npc::new(kind, 40.0 * 16.0, 120.0 * 16.0 - 26.0, 1, 0.0);
+            n4.wet = true;
+            let mut out4 = TownOutputs::default();
+            town_npc_ai(&mut n4, &e_client, stats(), &mut door, &mut doors, 0, &mut UnifiedRandom::new(14), &mut out4);
+            assert_eq!(out4.waterfowl_takeoff, None, "{kind:?} the client never transforms");
+        }
+        // The strict thresholds: vy exactly ±4 does NOT fire (the C#'s
+        // `> 4f || < -4f`), the wet flag alone does.
+        let mut n5 = Npc::new(NpcKind::Duck, 40.0 * 16.0, 120.0 * 16.0 - 26.0, 1, 0.0);
+        n5.vy = 4.0;
+        let mut door = TownDoorLatch::default();
+        let mut doors = FakeDoors { attempts: Vec::new(), succeed: false };
+        let mut out5 = TownOutputs::default();
+        town_npc_ai(&mut n5, &e, stats(), &mut door, &mut doors, 0, &mut UnifiedRandom::new(15), &mut out5);
+        assert_eq!(out5.waterfowl_takeoff, None, "vy == 4 is not > 4");
     }
 
     /// `NPC.cs:53946-53949` — the negative-branch clamp quirk: the C#

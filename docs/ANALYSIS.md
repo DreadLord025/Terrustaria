@@ -36199,6 +36199,49 @@ contract) and the quack/cry voice draw orders (case 30 plain /
 re-target / guard-blocked, case 44). No behaviour change — the rows
 were already live; this item pins them and fixes the attribution.
 
+### AI_007 town migration (item 5 — the b3 co-lane seam, LANDED)
+
+**The claim read:** `origin/task/W4-b3-npc-ai-town-wire` tip `96a5d88f`
+("Wire aiStyle 7 to npc_ai_town::town_npc_ai (W4-b3 phase 1)") claims
+the style axis' `7 =>` arm for ALL aiStyle-7 kinds through
+`Npc::ai_007_town_family` → the faithful `npc_ai_town::town_npc_ai`
+(`AI_007_TownEntities`, `NPC.cs:52965-55561`), retires `update_guide`,
+adds the `town_door_close/x/y` latch fields + the
+`integrate_town_collision` tail, and leaves the waterfowl takeoff
+(`:53180-53184`) a **cited skip** in the module (`npc_ai_town.rs:1596`
+on their tip). Their phase 2 owes the `TownOutputs` drain.
+
+**The seam found + wired:** the takeoff gate lives INSIDE the town arm
+(the C# runs it at `:53180`, after the stat ladder, before
+UpdateSavedStates — the port's gate sits at the same position). This
+sweep lands it there: `town_npc_ai` gains the gate
+(`matches!(net_id, 362|364|602|608) && env.net_mode != 1 && (vy > 4 ||
+vy < -4 || wet)`) emitting the NEW vanilla type on the new
+`TownOutputs::waterfowl_takeoff: Option<i32>` request and RETURNING
+(the C#'s `Transform(this.type + 1); return;`). The arm cannot run the
+Transform core itself (the player seam + kind table live on the
+caller), so the request rides the `wants_transform` pattern. The sim's
+transform drain (`world_sim/npcs.rs`'s aiStyle-75 resolve block) gains
+the four swimmer targets 363/365/603/609 → Duck2/DuckWhite2/Seagull2/
+Grebe2 — the same `transform_to_kind` core the in-place gate uses.
+RNG-free by construction (Transform draws nothing; TransformVisuals
+is silent for the pairs — item 3).
+
+**The merge contract (cross-note to b3):** when b3's axis claim lands,
+the walkers route through `ai_007_town_family`; its `let _ = out`
+discard (phase 1) must become the drain —
+`if let Some(ty) = out.waterfowl_takeoff { self.wants_transform =
+Some(ty); }` (one line, the `wants_transform` seam already exists) —
+and `waterfowl_walker_step`'s in-place gate retires (the town arm owns
+it; the kind arm becomes the b3 adapter or an `unreachable!` marker).
+Until then the walkers keep the phase-2 stand-in walk + the in-place
+gate — BOTH paths run the identical `transform_to_kind`, so the merge
+is behaviour-preserving either way. The gate's witness pins: the wet
+takeoff, the ±4.5 falls/rises, the strict ±4 thresholds (vy == 4 does
+NOT fire), the dry-slow no-request, the client refusal, the zero-draw
+stream, and the pre-state return (the stat ladder's defense write
+still ran — the C#'s order). 1 witness (8 sub-arms × 4 walkers).
+
 ## The mana machinery (S1-P-i19)
 
 **Headline finding — `DebugOptions.ManaV2` is the SHIPPED mana machine.** The
