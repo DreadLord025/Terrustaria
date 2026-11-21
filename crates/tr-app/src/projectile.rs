@@ -19854,6 +19854,39 @@ impl ProjectilePool {
                     let vel = self.slots[i].vel;
                     self.slots[i].pos += vel;
                 }
+                // W4-f20 F6 — the magicQuiver Update-tail bump
+                // (`Projectile.cs:17032-17035`): `!npcProj && friendly &&
+                // Main.player[owner].magicQuiver && extraUpdates < 1 &&
+                // arrow` → `extraUpdates = 1`. The C# runs it AFTER
+                // `HandleMovement` + the `!active` return (`:17027-17030`)
+                // and `ProjLight` (`:17031`, the light layer's own seam),
+                // BEFORE the per-type dust tail (`:17036-17077`, the dust
+                // lane) and `Damage()` (`:17078` — the `damage_pve` call
+                // below); the port's movement rides inside the AI arms, so
+                // this seam is the same post-move/pre-Damage slot. The C#
+                // reads `numUpdates` from `extraUpdates` ONCE at the loop
+                // head (`:16675`), so the bump takes effect on the NEXT
+                // update: this sub-step's remaining tail runs unchanged and
+                // the lifetime block still spends one timeLeft — the
+                // arrow's sub-step count doubles from the following tick
+                // (the ×1.1 shoot-speed fuse is the ammo.rs half, landed
+                // f28/e16; this is the flight-side half, census 26f F6).
+                // `!npcProj`: the port's hostile shots ride `friendly =
+                // false` (the `owned_by_someone` fold), so `friendly` alone
+                // carries the gate. The owner read is the LOCAL player's
+                // flag for the locally-simulated owner-0 slot; a remote
+                // owner has no port flag (the `owner == local_owner` gate).
+                // The bump draws nothing — the `UpdateProjectiles` stream
+                // is untouched by construction.
+                if self.slots[i].active
+                    && self.slots[i].friendly
+                    && self.slots[i].arrow
+                    && self.slots[i].extra_updates < 1
+                    && self.slots[i].owner == local_owner
+                    && player.as_ref().is_some_and(|pl| pl.magic_quiver)
+                {
+                    self.slots[i].extra_updates = 1;
+                }
                 // `Projectile.cs:17078` — `this.Damage()` runs per sub-step
                 // inside `Update` (it calls `Damage_PVP` internally,
                 // `:12509`), between the AI and the lifetime block: the hit
@@ -44409,5 +44442,132 @@ mod s1_p_i25_dragon_tests {
         let cy = d.pos.y + d.h * 0.5;
         assert!((cx - 412.0).abs() < 0.01, "the centre kept: {cx}");
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
+    }
+}
+
+#[cfg(test)]
+mod w4_f20_f6_quiver_tests {
+    //! W4-f20 F6 — the magicQuiver Update-tail bump
+    //! (`Projectile.cs:17032-17035`): the friendly arrow-flag kinds gain
+    //! `extraUpdates = 1` while the owner wears a quiver. WRITTEN NOT RUN
+    //! (code-only contract); every value hand-derived from the cited C#.
+    use super::*;
+
+    fn world() -> World {
+        World::new("t".into(), 128, 128)
+    }
+
+    fn quiver_player(w: &World) -> crate::player::Player {
+        let mut p = crate::player::Player::spawn(w);
+        p.x = 200.0;
+        p.y = 200.0;
+        p.magic_quiver = true;
+        p
+    }
+
+    fn step_with(
+        pool: &mut ProjectilePool,
+        w: &mut World,
+        player: Option<&mut crate::player::Player>,
+    ) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w,
+            &mut npcs,
+            None,
+            None,
+            player,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+    }
+
+    /// The bump fires on the FIRST update and takes effect on the SECOND:
+    /// the C# reads `numUpdates` once at `:16675`, so tick 1 spends ONE
+    /// timeLeft (1200 → 1199) and tick 2 spends TWO (1199 → 1197).
+    #[test]
+    fn w4_f20_f6_the_quiver_bumps_the_arrows_extra_updates_from_the_next_tick() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(WOODEN_ARROW, 300.0, 300.0, 6.0, 0.0, 10, 2.0)
+            .unwrap();
+        assert_eq!(pool.slots()[slot].extra_updates, 0, "the row's stock 0");
+        let mut p = quiver_player(&w);
+        step_with(&mut pool, &mut w, Some(&mut p));
+        assert_eq!(pool.slots()[slot].extra_updates, 1, ":17034 — the bump");
+        assert_eq!(pool.slots()[slot].time_left, 1199, "tick 1: one sub-step");
+        step_with(&mut pool, &mut w, Some(&mut p));
+        assert_eq!(pool.slots()[slot].time_left, 1197, "tick 2: two sub-steps");
+        assert_eq!(pool.slots()[slot].extra_updates, 1, "the < 1 gate holds it at 1");
+    }
+
+    /// No quiver → no bump: the plain arrow keeps the row's sub-step count
+    /// and spends one timeLeft per tick.
+    #[test]
+    fn w4_f20_f6_without_the_quiver_the_arrow_keeps_one_sub_step() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(WOODEN_ARROW, 300.0, 300.0, 6.0, 0.0, 10, 2.0)
+            .unwrap();
+        let mut p = crate::player::Player::spawn(&w);
+        p.x = 200.0;
+        p.y = 200.0;
+        step_with(&mut pool, &mut w, Some(&mut p));
+        step_with(&mut pool, &mut w, Some(&mut p));
+        assert_eq!(pool.slots()[slot].extra_updates, 0, "no quiver, no bump");
+        assert_eq!(pool.slots()[slot].time_left, 1198, "one per tick");
+    }
+
+    /// The `arrow` flag gate (`:17032`): the musket ball (14, arrow=false)
+    /// keeps its stock count even with the quiver on.
+    #[test]
+    fn w4_f20_f6_the_bump_is_arrow_flag_gated() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(MUSKET_BALL, 300.0, 300.0, 6.0, 0.0, 10, 2.0)
+            .unwrap();
+        let mut p = quiver_player(&w);
+        step_with(&mut pool, &mut w, Some(&mut p));
+        assert_eq!(pool.slots()[slot].extra_updates, 0, "the bullet is not an arrow");
+    }
+
+    /// The `extraUpdates < 1` gate: the Frost Arrow (120, row extraUpdates
+    /// 1) is already sub-stepped — the bump never rewrites it.
+    #[test]
+    fn w4_f20_f6_the_bump_skips_already_substepped_arrows() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(FROST_ARROW, 300.0, 300.0, 6.0, 0.0, 10, 2.0)
+            .unwrap();
+        assert_eq!(pool.slots()[slot].extra_updates, 1, "the row's 1");
+        let mut p = quiver_player(&w);
+        step_with(&mut pool, &mut w, Some(&mut p));
+        assert_eq!(pool.slots()[slot].extra_updates, 1, "the < 1 gate");
+        assert_eq!(pool.slots()[slot].time_left, 1198, "two sub-steps from tick 1");
+    }
+
+    /// The owner gate (`Main.player[this.owner]`): a remote-owned arrow
+    /// reads no local quiver flag — the bump stays off (the port has one
+    /// player; the `owner == local_owner` gate folds the C# read).
+    #[test]
+    fn w4_f20_f6_a_remote_owned_arrow_takes_no_local_quiver_bump() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_owned(WOODEN_ARROW, 1, 300.0, 300.0, 6.0, 0.0, 10, 2.0, 0.0, 0.0)
+            .unwrap();
+        let mut p = quiver_player(&w);
+        step_with(&mut pool, &mut w, Some(&mut p));
+        // The remote slot is not locally simulated (owner 1 != local 0),
+        // so it does not even tick — the C# `:17210` netMode gate.
+        assert_eq!(pool.slots()[slot].extra_updates, 0);
+        assert_eq!(pool.slots()[slot].time_left, 1200, "untouched");
     }
 }

@@ -119,7 +119,7 @@ the C# tail, matched against the port:
 | wet kill (betsy nested) | `:55409-55412` | 710 | UNREACHABLE — the row sets ignoreWater (`:7529`), base.wet stays false (`:16790`); slice D documented skip |
 | wet clear | `:16786-16789` (`242/302/638 → wet = false`) | 242, 302 (unrowed), 638 | NOT ported pool-wide (the wet probe is per-arm, the 16-style bomb stand-in `:17276`); the 242/638 arms read no wet state, so inert — recorded |
 | shimmer lift | `:22361-22530` (`Shimmer()`, the `:17009-17011` gate) | the aiStyle-1/16/40 family `:22403` + the arrow list `:22380` | NOT ported pool-wide — the projectile shimmer layer is a separate system (ANALYSIS `:27666`, the g2 `26d` recorded gap "the Shimmer() family"); the 1006 flag4 inversion is the AI_001-internal half, ported. The `Shimmer()` bounce/lift is the f47/e19 item-side lane's sibling, deferred for projectiles |
-| magicQuiver extraUpdates | `:17032-17035` (`extraUpdates < 1 → 1`) | the arrow-flag kinds | NOT ported in the pool (the `magic_quiver` flag lives in `ammo.rs` for the shoot-speed fuse; the Update-tail extraUpdates bump is unported) — recorded, the arrow kinds' sub-step count stays at the row value |
+| magicQuiver extraUpdates | `:17032-17035` (`extraUpdates < 1 → 1`) | the arrow-flag kinds | PORTED (this round, F6): the pool's per-sub-step tail between the movement and `damage_pve` — `friendly && arrow && extra_updates < 1 && owner == local_owner && player.magic_quiver` → `extra_updates = 1`; the `numUpdates` read-once (`:16675`) means the bump lands from the NEXT update. The ×1.1 shoot-speed fuse stays the `ammo.rs` half (f28/e16) |
 | Harpy-charm tail | `:57769-57793` + `ApplyHarpyCharm` `:57796-57824` + `AI_001_Features` `:239-289` | the arrow kinds (ai[2] bits) | NOT ported — no charm feature in the port (the slice-B doc `:48` records the skip); the `accHarpyCharm`/`accSeraphNecklace`/`hasPhoenixQuiver` player flags + `HarpyCharmEffect` (`Player.cs:28447-28490`) are unported. The ai[2] bits stay 0, so the tail's `!HarpyCharmed` early-return (`:57769`) makes it inert — recorded, deferred with the accessory lane |
 | PhoenixQuivered dust | `:54005-54011` | the charmed arrows | dust-only + the ai[2] bit gate (inert, no charm) — skipped |
 
@@ -173,12 +173,20 @@ the alias, this round's resolves it).
   `:27666`, the g2 `26d` recorded gap). The rowed arrow kinds that ride
   the `:22380`/`:22403` shimmer arms take no shimmer interaction until
   that layer lands.
-- **F6 (the magicQuiver Update-tail bump is unported).** `:17032-17035`
-  bumps `extraUpdates` to 1 for the friendly arrow-flag kinds when the
-  owner has magicQuiver. The `magic_quiver` flag is ported in `ammo.rs`
-  (the shoot-speed fuse) but the Update-tail sub-step bump is not — the
-  arrow kinds' sub-step count stays at the row value. Recorded, deferred
-  with the accessory lane.
+- **F6 (the magicQuiver Update-tail bump — PORTED this round).**
+  `:17032-17035` bumps `extraUpdates` to 1 for the friendly arrow-flag
+  kinds when the owner has magicQuiver. The `magic_quiver` flag was
+  already ported (`player.rs:2008`, the `grant_ammo_mastery` seam; the
+  `ammo.rs` ×1.1 shoot-speed fuse, f28/e16) — the missing half was the
+  Update-tail sub-step bump, now landed in the pool's per-sub-step tail
+  (`projectile.rs`, between the AI/movement and `damage_pve`, the C#'s
+  `:17031`-after / `:17078`-before slot). The C# reads `numUpdates` once
+  at `:16675`, so the bump takes effect from the NEXT update — the
+  witness pins tick 1 = one timeLeft, tick 2 = two. The `!npcProj` half
+  folds into `friendly` (the port's hostile proxy); the owner read folds
+  to `owner == local_owner` + the local player's flag. RNG-free (the
+  bump draws nothing). 5 witnesses in `w4_f20_f6_quiver_tests`, WRITTEN
+  NOT RUN.
 - **F7 (the Harpy-charm tail is inert-unported).** The `:57769-57793`
   tail + `ApplyHarpyCharm` + `AI_001_Features` (ai[2] bits) are unported
   (no charm feature, the slice-B doc skip). The ai[2] bits stay 0, so the
