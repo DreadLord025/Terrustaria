@@ -754,6 +754,38 @@ pub(crate) struct RocketFlameDust {
     pub(crate) social_shadow: bool,
 }
 
+/// W4-g66 — one queued `PlayerFrame` walking-effect snapshot
+/// (`Player.cs:35996-36136`): the armor-set trail rolls (the Red's sparkle,
+/// the Shadow/Ninja/Molten walking fires, the Chlorophyte/Necro/Wizard/
+/// Hallowed auras). The tick derives the effective armor trio + the walking
+/// gate; the drain replays each arm's rolls on `UpdatePlayers` in source
+/// order.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct WalkEffectDust {
+    pub(crate) head: i32,
+    pub(crate) body: i32,
+    pub(crate) legs: i32,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) cx: f32,
+    pub(crate) cy: f32,
+    pub(crate) gfx_off_y: f32,
+    /// `CanSpawnWalkingEffects()` (`:35750-35753`): `|vx| + |vy| > 1`.
+    pub(crate) walking: bool,
+    /// `rocketFrame` — the Molten/Ninja fire arms skip on a thrust tick.
+    pub(crate) rocket_frame: bool,
+    /// `miscCounter` — the Red's sparkle %15 and the Frost %2 cadences.
+    pub(crate) misc_counter: u32,
+    /// The wings-27 stealth glow (`:36023-36027`): `wings == 27 &&
+    /// wingsLogic == wings` feeds `0.4 * stealth` centre light (no draws).
+    pub(crate) wings: i32,
+    pub(crate) stealth: f32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -2183,6 +2215,9 @@ pub struct Player {
     /// flame into type 27 (`:29363-29367`). `PlayerFrame` clears + re-grants
     /// it per tick (`:35933`/`:36030`/`:36039`/`:36043`).
     social_shadow_rocket_boots: bool,
+    /// W4-g66 — the tick's queued `PlayerFrame` walking-effect snapshot
+    /// (`Player.cs:35996-36136`).
+    pending_walk_effect_dust: Option<WalkEffectDust>,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -3130,6 +3165,7 @@ impl Player {
             pending_rocket_flame_dust: None,
             rocket_frame: false,
             social_shadow_rocket_boots: false,
+            pending_walk_effect_dust: None,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -3772,6 +3808,13 @@ impl Player {
         self.pending_rocket_flame_dust.take()
     }
 
+    /// W4-g66 — takes the `PlayerFrame` walking-effect snapshot
+    /// (`Player.cs:35996-36136`); drained on `UpdatePlayers`
+    /// (`player_boot_dust::drain_walk_effects`).
+    pub(crate) fn take_walk_effect_dust(&mut self) -> Option<WalkEffectDust> {
+        self.pending_walk_effect_dust.take()
+    }
+
     /// W4-d51 — queues the dash dust snapshot at the C# read moment (the
     /// velocity writes above each site have already landed).
     fn queue_dash_dust(&mut self, active: bool) {
@@ -3965,6 +4008,7 @@ impl Player {
         self.pending_wing_air_dust = None;
         self.pending_wing_glide_dust = None;
         self.pending_rocket_flame_dust = None;
+        self.pending_walk_effect_dust = None;
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
@@ -8180,6 +8224,65 @@ impl Player {
             if !self.wet {
                 self.swim_time = 0;
             }
+        }
+        // W4-g66 — `:35933`: `socialShadowRocketBoots = false` clears before
+        // the walking-effect grants (`:36030`/`:36039`/`:36043` re-arm it on
+        // the full Shadow sets). The rocket-flame snapshot read it earlier
+        // this tick (`:26918` precedes `PlayerFrame` `:28286`) — one tick
+        // stale, exactly as the source.
+        self.social_shadow_rocket_boots = false;
+        // W4-g66 — `:35992-35994`: CCed (or a paused game) skips the whole
+        // walking-effect block. The port's single player has no pause here.
+        if !self.cced() {
+            // `:35765-35767`: the effective armor trio — the social slots
+            // (10..12) override the functional ones when worn. The port's
+            // item rows carry the texture ids (`head/body/leg_slot`).
+            let slot_id = |slot: usize, f: fn(&crate::itemdata::ItemDef) -> i16| {
+                crate::registry::get(self.equipped[slot]).map_or(-1i32, |d| f(d) as i32)
+            };
+            let mut head = slot_id(0, |d| d.head_slot);
+            let mut body = slot_id(1, |d| d.body_slot);
+            let mut legs = slot_id(2, |d| d.leg_slot);
+            let social_head = slot_id(10, |d| d.head_slot);
+            let social_body = slot_id(11, |d| d.body_slot);
+            let social_legs = slot_id(12, |d| d.leg_slot);
+            if social_head >= 0 {
+                head = social_head;
+            }
+            if social_body >= 0 {
+                body = social_body;
+            }
+            if social_legs >= 0 {
+                legs = social_legs;
+            }
+            // `:36028-36043`: the full Shadow sets (5/5/5, 76/49/45,
+            // 74/48/44) turn the tier-1 rocket flame dark.
+            if (head == 5 && body == 5 && legs == 5)
+                || (head == 76 && body == 49 && legs == 45)
+                || (head == 74 && body == 48 && legs == 44)
+            {
+                self.social_shadow_rocket_boots = true;
+            }
+            let (cx, cy) = self.center();
+            self.pending_walk_effect_dust = Some(WalkEffectDust {
+                head,
+                body,
+                legs,
+                x: self.x,
+                y: self.y,
+                width: self.width,
+                height: self.height,
+                vx: self.vx,
+                vy: self.vy,
+                cx,
+                cy,
+                gfx_off_y: self.gfx_off_y,
+                walking: self.vx.abs() + self.vy.abs() > 1.0,
+                rocket_frame: self.rocket_frame,
+                misc_counter: self.misc_counter,
+                wings: self.wings_logic,
+                stealth: self.stealth,
+            });
         }
         // `:36148-36240`: `flag7` — the mount owns the leg frames unless it is
         // one of the 57-60 roller-skate mounts

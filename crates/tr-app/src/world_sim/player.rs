@@ -1554,6 +1554,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if let Some(burst) = p.take_floor_dust() {
                 crate::player_trail_dust::drain_floor_dust(app, burst);
             }
+            // W4-g66 — `PlayerFrame`'s walking-effect rolls
+            // (`Player.cs:35996-36136`): inside `PlayerFrame` (`:28286`),
+            // after the floor dust, in source order.
+            if let Some(burst) = p.take_walk_effect_dust() {
+                crate::player_boot_dust::drain_walk_effects(app, burst);
+            }
             // S1-E-21f — the liquid entry/exit splash: case 19's playing
             // guard refuses BEFORE the one pitch draw
             // (`LegacySoundPlayer.cs:872-888`); the style picks the slot and
