@@ -7013,7 +7013,10 @@ against `crates/tr-app/src/npc_chat.rs` + the pushed f38/f41/g58 diffs):
   render, but the Shop/Happiness/Home rows (g58/f38's buttons) push
   the count past 4: the merger must make the line count DYNAMIC
   (`ceil(labels.len()/4)`) and add the y-step. Recorded for the
-  panel-merge lane; no d120 edit (f22 owns the file half).
+  panel-merge lane; no d120 edit (f22 owns the file half). The exact
+  2-hunk patch against f22's tip `be73b87b5` is PUBLISHED in the retire
+  note (research/143 §1 — the dynamic `interaction_lines` fn +
+  `panel_rect`'s live-count parameter, and `interaction_rects`' y-step).
 - The caret (`DrawText :236-262`): f22 gates `edit_sign &&
   !lines.is_empty()`, measures the last line at scale 1, advances the
   20-frame `TextBlinker` (the `ChestUI.cs:175-179` shape = the panel's
@@ -7113,6 +7116,46 @@ the holes sacred, d120's band renumbers to the 731+ port-local
 corridor AHEAD of d36's block (the d35 renumber precedent — five
 `to_u16`/`from_u16` arms + the witness pins, cs_id/net_id unchanged);
 either way the KINDS stay d120's, only the protocol ids move.
+
+### W4-d120 RETIRE (2026-11-21, code-only mode) — GetChat-40 COMPLETE + the lane hand-offs
+
+The retire pass (research/143, the lane tips re-read from origin):
+
+- **GetChat COMPLETE — all 40 arms accounted** (36 type cases + arms D's
+  pets 637/638/656 + the `IsTownSlime` set arm). The declaration + the
+  per-arm roster: research/143 §4. The happiness/homeless lines are
+  BUTTONS (g58), the shop is the OpenShop button (d120's registry rows
+  landed) — no ladder gaps remain. The selection ladder needs NO
+  further ports; the remaining chatter scope is other lanes' (the
+  panel buttons f22c/g58/f38, the 579 spawn arm, the d43/f43 kinds).
+- **The f22c dynamic-gap patch published** (research/143 §1): the exact
+  2-hunk diff against f22 tip `be73b87b5` — `INTERACTION_LINES` →
+  `interaction_lines(count) = count.div_ceil(4)` (`NPCChatPanel.cs:174`),
+  `panel_rect` takes the live count (`chat_box_height` already carries
+  the `:68` growth), `interaction_rects` adds the `num/4*22` y-step
+  (`:106`). Count ≤ 4 keeps today's pixels exactly. No d120 code edit —
+  f22 owns the sign-aware file (d120's copy is the pre-sign text-only
+  version, unchanged).
+- **The d43 slime colour words are ALREADY wired** (research/143 §2):
+  d43's tip is 0 ahead of main (claim-only, no SlimeVariant town kinds);
+  d120's arm keys on the vanilla type (`is_town_slime(ty)` +
+  `slime_chat_colour`'s full `Lang.GetSlimeType` switch, all eight words
+  witness-pinned) — the moment f43's license arms spawn a kind with
+  cs_id 670/678-684 the correct `Slime<Colour>Chatter` answers with ZERO
+  d120 edits. The port's wild-slime `SlimeVariant` enum
+  (`npc/data.rs:14-24`) is NOT the town vehicle (no Old/Rainbow/Copper).
+- **The 579 spawn contract published** (research/143 §3, for d42b / the
+  spawn lane): the full arm (`NPC.cs:1656-1659` — tab-depth, the
+  short-circuit gate order, the bare `Next(80)`, the Bottom-anchored
+  34×8 placement), the 579→550 talk transform
+  (`AI_000_TransformBoundNPC` → `UpdateSavedStates` case 550 raises
+  `savedBartender`, the bottom-anchored hp-ratio Transform + homeless
+  home), the port's rescue-fn/cadence precedents, and the NEW collision:
+  d42 batch 1 (`3836a2d1a` 06:46) re-lands the 579 kind AFTER d120's
+  claim-first push (`e4e400629` 06:28) — the d37c matrix keeps d120's
+  row (protocol 245), d42's 579 hunks drop at the merge (its other
+  578/580-582 kinds untouched). d41 stays claim-only 491-560 (579
+  outside); the spawn arm is unclaimed on every pushed tip.
 
 ## Town chatter UI (S1-E-10b, 2026-11-18, code-only mode)
 
