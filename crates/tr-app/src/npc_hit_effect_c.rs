@@ -78,6 +78,7 @@
 //! | 303-312 | `:83699` | the 491 Flying Dutchman death: the 861/862 scatter burst, gores 0-9 |
 //! | 313-322 | `:83699` | the 491 Flying Dutchman death: the 861/862 scatter burst, gores 10-19 |
 //! | 323-332 | `:83699` | the 491 Flying Dutchman death: the 861/862 scatter burst, gores 20-29 |
+//! | 333-342 | `:83734` | the 492 Flying Dutchman (cannon) death: 7-dust type-31 burst + 10-gore Next(61,64) scatter |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -1817,6 +1818,45 @@ fn dutchman_death_tail(
     outcome.dutchman_death_shots = Some((c.x, c.y));
 }
 
+/// The 492 Flying Dutchman cannon death (`NPC.cs:83727-83737`, sites
+/// 333-342): the 7-dust type-31 burst (alpha 100, scale 1.5, velocity ×1.4
+/// — the post-write draws nothing), then 10 gores of type `Next(61,64)` at
+/// position with velocity Zero, then per-gore post-writes: `alpha = 100`,
+/// velocity = `Vector2.Transform((1,0), rotZ(NextDouble*2π))` =
+/// `(cosθ, sinθ)` (ONE NextDouble). The per-gore draw order: the type
+/// `Next(61,64)` FIRST, then the NewGore kicks (pool), then the post-write
+/// NextDouble. The 61/62/63 types hit the pool's sticky=false arm
+/// (`Gore.cs:1341`), no SpecialAI roll.
+fn dutchman_cannon_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:83727-83731` — the 7-dust type-31 burst.
+    for _ in 0..7 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 31, 0.0, 0.0, 100,
+            Color::default(), 1.5,
+        );
+        dust.slot_mut(idx).velocity *= 1.4;
+    }
+    // `:83732-83737` — the 10-gore scatter.
+    for _ in 0..10 {
+        let ty = rng.next_range(61, 64);
+        let idx = gore.new_gore(rng, world, pos, Vec2::ZERO, ty, 1.0);
+        let g = gore.slot_mut(idx);
+        g.alpha = 100;
+        let theta = rng.next_double() * 6.2831854820251465;
+        let (s, c) = (theta as f32).sin_cos();
+        gore.slot_mut(idx).velocity = Vec2::new(c, s);
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -2013,6 +2053,10 @@ pub fn hit_effect_c(
         dutchman_death_854(npc, gore, rng, world);
         dutchman_death_scatter(npc, gore, rng, world);
         dutchman_death_tail(npc, dust, dust_ctx, rng, world, &mut outcome);
+    }
+    // `:83723-83739` — the 492 Flying Dutchman cannon arm (sites 333-342).
+    if npc_type == 492 && npc.hp <= 0 {
+        dutchman_cannon_death(npc, dust, dust_ctx, gore, rng, world);
     }
     outcome
 }
@@ -3242,6 +3286,46 @@ mod tests {
             let _tweak = twin.next_range(-10, 6); // type-6 tweak
         }
         assert_eq!(rng.peek(), twin.peek(), "the tail mirrors the C# dust draws");
+    }
+
+    /// `NPC.cs:83734-83736` — the Dutchman cannon death: 10 gores of type
+    /// Next(61,64), alpha 100, velocity (cosθ,sinθ) from one NextDouble,
+    /// after the 7-dust type-31 burst. The twin replay pins the per-gore
+    /// order: type Next(61,64) + 2 kicks + NextDouble.
+    #[test]
+    fn w4_f10_the_dutchman_cannon_death_scatters_the_ten_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(223);
+        dutchman_cannon_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w);
+        let active = gore.slots()[..10].iter().filter(|g| g.active).count();
+        assert_eq!(active, 10);
+        for g in &gore.slots()[..10] {
+            assert!(matches!(g.gore_type, 61 | 62 | 63), "cannon type {}", g.gore_type);
+            assert_eq!(g.alpha, 100);
+            assert!((g.velocity.length() - 1.0).abs() < 0.01);
+            assert!(!g.sticky); // 61/62/63 sticky=false
+        }
+        // The twin: 7 type-31 dusts (6-draw census, no tweak), then per gore
+        // Next(61,64) + 2 kicks + NextDouble.
+        let mut twin = UnifiedRandom::new(223);
+        for _ in 0..7 {
+            let _px = twin.next_max(26);
+            let _py = twin.next_max(26);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        for _ in 0..10 {
+            let _ty = twin.next_range(61, 64);
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+            let _theta = twin.next_double();
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the cannon death mirrors the C# draw order");
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
