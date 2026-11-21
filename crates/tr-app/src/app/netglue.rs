@@ -3568,6 +3568,10 @@ fn npc_seed(
         }
         // W4-d42 - the roster's ground/stand kinds plant on the column
         // surface (the wave-A walker precedent).
+        crate::npc::NpcKind::BloodMummy
+        => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-d42 - the roster's ground/stand kinds plant on the column
+        // surface (the wave-A walker precedent).
         crate::npc::NpcKind::SeaTurtle
         => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
         // W4-d42 - the roster's flyers seed in the open air (the net

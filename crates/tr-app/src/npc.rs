@@ -1299,6 +1299,10 @@ pub enum NpcKind {
     /// 24x24, aiStyle 25, dmg 80, def 30,
     /// 500 HP, kb 0.3, value 100000.
     IceMimic,
+    /// `NPCID.BloodMummy` (630) - `NPC.cs:17107-17119`:
+    /// 18x40, aiStyle 3, dmg 60, def 18,
+    /// 180 HP, kb 0.5, value 700.
+    BloodMummy,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3816,6 +3820,8 @@ impl Npc {
             NpcKind::GoldSeahorse => 1.0,
             NpcKind::Dandelion => 0.0,
             NpcKind::IceMimic => 0.3,
+            // W4-d42 - the NPCID 630-630 SetDefaults rows.
+            NpcKind::BloodMummy => 0.5,
             _ => 0.4,
         }
     }
@@ -4256,6 +4262,8 @@ impl Npc {
             NpcKind::GoldSeahorse => 0,
             NpcKind::Dandelion => 0,
             NpcKind::IceMimic => 30,
+            // W4-d42 - the NPCID 630-630 SetDefaults rows.
+            NpcKind::BloodMummy => 18,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4688,6 +4696,8 @@ impl Npc {
             NpcKind::GoldSeahorse => 0.0,
             NpcKind::Dandelion => 50.0,
             NpcKind::IceMimic => 100000.0,
+            // W4-d42 - the NPCID 630-630 SetDefaults rows.
+            NpcKind::BloodMummy => 700.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6702,6 +6712,13 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // ---- W4-d42 batch 11: the NPCID 630-630 roster
+            // (data-only join). Unwired styles idle in place (the
+            // wyvern precedent); walkers ride the aiStyle-3 family,
+            // swimmers the aiStyle-16 family.
+            // `NPC.cs:17107-17119` - the aiStyle-3 walk rides the C#
+            // ladder's own per-type arm (`npc_ai3_speeds.rs`).
+            NpcKind::BloodMummy => self.update_zombie(world, player, dt),
             // ---- W4-d42 batch 10: the NPCID 625-629 roster
             // (data-only join). Unwired styles idle in place (the
             // wyvern precedent); walkers ride the aiStyle-3 family,
@@ -10593,6 +10610,11 @@ impl Npc {
                 } else if self.ai[3] == 3.0 {
                     self.frame += 12;
                 }
+            }
+            // W4-d42 - `FindFrame`'s humanoid-group case list (630 `NPC.cs:17107-17119`);
+            // the 16-row strip rides `humanoid_frame_count`.
+            NpcKind::BloodMummy => {
+                self.humanoid_town_frame();
             }
         }
     }
@@ -20215,6 +20237,8 @@ impl Npc {
             NpcKind::GoldSeahorse => 627,
             NpcKind::Dandelion => 628,
             NpcKind::IceMimic => 629,
+            // W4-d42 - the vanilla ids 630-630 are free render keys.
+            NpcKind::BloodMummy => 630,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -25283,7 +25307,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 320] = [
+    pub(super) const ALL_KINDS: [NpcKind; 321] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -25622,6 +25646,8 @@ mod tests {
         NpcKind::GoldSeahorse,
         NpcKind::Dandelion,
         NpcKind::IceMimic,
+        // W4-d42 - the NPCID 630-630 roster.
+        NpcKind::BloodMummy,
     ];
 
     #[test]
@@ -26076,6 +26102,34 @@ mod tests {
         assert_eq!(NpcKind::Dandelion.to_u16(), 402u16);
         assert_eq!(NpcKind::IceMimic.to_u16(), 403u16);
         assert_eq!(ALL_KINDS.len(), 320);
+    }
+
+    /// W4-d42 batch 11 - the NPCID 630-630 `SetDefaults` rows pin
+    /// against the C# (NPC.cs:17107-17119), through the port's
+    /// tables - the smallkinds witness shape. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_b11_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::BloodMummy, 630u16, 3u8, 18.0, 40.0, 60, 18, 180, 0.5f32, 700.0f32),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The port-local wire band (the vanilla types ride cs_id/net_id).
+        assert_eq!(NpcKind::BloodMummy.to_u16(), 404u16);
+        assert_eq!(ALL_KINDS.len(), 321);
     }
 
     /// The small-kinds wiring wave: the style axis claims 21/49/56/72, so
@@ -29593,7 +29647,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            320,
+            321,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(

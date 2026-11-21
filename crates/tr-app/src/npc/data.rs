@@ -641,6 +641,7 @@ impl NpcKind {
             NpcKind::GoldSeahorse => 401,
             NpcKind::Dandelion => 402,
             NpcKind::IceMimic => 403,
+            NpcKind::BloodMummy => 404,
         }
     }
 
@@ -1023,6 +1024,7 @@ impl NpcKind {
             401 => NpcKind::GoldSeahorse,
             402 => NpcKind::Dandelion,
             403 => NpcKind::IceMimic,
+            404 => NpcKind::BloodMummy,
             _ => return None,
         })
     }
@@ -1962,6 +1964,8 @@ impl NpcKind {
             NpcKind::GoldSeahorse => "NPC_Hit_1",
             NpcKind::Dandelion => "NPC_Hit_1",
             NpcKind::IceMimic => "NPC_Hit_4",
+            // W4-d42 - the roster's HitSound rows.
+            NpcKind::BloodMummy => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2335,6 +2339,9 @@ impl NpcKind {
             NpcKind::GoldSeahorse => "NPC_Killed_1",
             NpcKind::Dandelion => "NPC_Killed_1",
             NpcKind::IceMimic => "NPC_Killed_6",
+            // W4-d42 - the roster's DeathSound rows (614's null row
+            // rides the None fall-through).
+            NpcKind::BloodMummy => "NPC_Killed_6",
             _ => return None,
         })
     }
@@ -2784,6 +2791,8 @@ impl NpcKind {
             NpcKind::GoldSeahorse => 118,
             NpcKind::Dandelion => 119,
             NpcKind::IceMimic => 25,
+            // W4-d42 - the NPCID 630-630 SetDefaults rows.
+            NpcKind::BloodMummy => 3,
         }
     }
 
@@ -2892,6 +2901,9 @@ impl NpcKind {
             NpcKind::Nutcracker | NpcKind::Krampus => 2.0,
             NpcKind::NutcrackerSpinning => 6.0,
             NpcKind::ElfArcher => 1.0,
+            // W4-d42 - the ladder's per-type caps (`npc_ai3_speeds.rs`;
+            // 586's row is the full-life base of the life-scaled cap).
+            NpcKind::BloodMummy => 1.5,
             // W4-d42 - the ladder's per-type caps (`npc_ai3_speeds.rs`;
             // 586's row is the full-life base of the life-scaled cap).
             NpcKind::Gnome => 2.5,
@@ -3388,6 +3400,8 @@ impl NpcKind {
             NpcKind::GoldSeahorse => (16.0, 20.0),
             NpcKind::Dandelion => (22.0, 40.0),
             NpcKind::IceMimic => (24.0, 24.0),
+            // W4-d42 - the NPCID 630-630 SetDefaults rows.
+            NpcKind::BloodMummy => (18.0, 40.0),
         }
     }
 
@@ -3570,6 +3584,10 @@ impl NpcKind {
             NpcKind::GoldSeahorse => 627,
             NpcKind::Dandelion => 628,
             NpcKind::IceMimic => 629,
+            // W4-d42 - the roster's TRUE vanilla types (the folded kinds
+            // keep their own - the AI arms read cs_id; the bestiary
+            // folds in entry_for_npc only).
+            NpcKind::BloodMummy => 630,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3622,6 +3640,9 @@ impl NpcKind {
             // case list carries 338-340 (`NPC.cs:68603-68605`) on their
             // 15-frame strips (`Main.npcFrameCount[338..340]`, `Main.cs`).
             NpcKind::ZombieElf | NpcKind::ZombieElfBeard | NpcKind::ZombieElfGirl => 15,
+            // W4-d42 - the humanoid-group case list carries 630
+            // (`NPC.cs:68618`), 16 rows (`Main.npcFrameCount[630]`).
+            NpcKind::BloodMummy => 16,
             _ => 1,
         }
     }
@@ -4173,6 +4194,8 @@ impl NpcKind {
             NpcKind::GoldSeahorse => 5,
             NpcKind::Dandelion => 50,
             NpcKind::IceMimic => 500,
+            // W4-d42 - the NPCID 630-630 SetDefaults rows.
+            NpcKind::BloodMummy => 180,
         }
     }
 
@@ -4597,6 +4620,8 @@ impl NpcKind {
             NpcKind::GoldSeahorse => 0,
             NpcKind::Dandelion => 15,
             NpcKind::IceMimic => 80,
+            // W4-d42 - the NPCID 630-630 SetDefaults rows.
+            NpcKind::BloodMummy => 60,
         }
     }
 }

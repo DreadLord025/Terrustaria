@@ -553,6 +553,11 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::GoldSeahorse
         | NpcKind::Dandelion => &[31],
         NpcKind::IceMimic => &[20, 24, 31, 44, 323, 324],
+        // W4-d42 - the NPCID 630-630 immunity rows (`NPCID.cs:9395+`).
+        // The null rows + the fairies' ImmuneToAllBuffsThatAreNotWhips
+        // (the mask loop is unmodelled - the documented gap; the
+        // fairies' ImmuneToWhips rides `whip_immune`).
+        NpcKind::BloodMummy => &[],
     }
 }
 

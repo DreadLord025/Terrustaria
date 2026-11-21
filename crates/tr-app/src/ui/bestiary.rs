@@ -1663,6 +1663,10 @@ fn portrait_data(
         (NpcKind::GoldSeahorse, _) => (sheet_i, 20.0, 16.0, 20.0, white),
         (NpcKind::Dandelion, _) => (sheet_i, 40.0, 22.0, 40.0, white),
         (NpcKind::IceMimic, _) => (sheet_i, 24.0, 24.0, 24.0, white),
+        // W4-d42 - the roster's portraits rest the kinds' SetDefaults
+        // boxes on their own sheets (the WyvernHead literal-size
+        // precedent - the sheets are deferred, the index folds to 0).
+        (NpcKind::BloodMummy, _) => (sheet_i, 40.0, 18.0, 40.0, white),
     }
 }
 
