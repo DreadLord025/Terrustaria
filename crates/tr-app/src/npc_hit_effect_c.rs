@@ -97,6 +97,8 @@
 //! | 412-418+ | `:84153-84159` | the 439 Cultist Boss death (Next(1,4) bone loop + 4 fixed gores 902/903/901/901) |
 //! | 419-421+ | `:84175` | the 440 Cultist Boss Clone death (10-dust type-16 burst + Next(1,4) bone loop) |
 //! | 422-424+ | `:84202` | the 454-459 Cultist Dragon death (10-dust type-16 burst + Next(1,4) bone loop) |
+//! | 425-428 | `:84223-84226` | the 372/373 Sharkron death (4 gores at Center, vel x0.8/x0.8/x0.9/x1) |
+//! | 429-434 | `:84273-84278` | the 370 Duke Fishron death (6 gores, direction-spread anchors) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -2432,6 +2434,73 @@ fn cultist_dragon_death(
     cultist_bone_spatter(npc, gore, rng, world, hit_direction);
 }
 
+/// The 372/373 Sharkron death (`NPC.cs:84218-84226`, sites 425-428): the
+/// 75-dust type-5 burst at `Center - (25,25)` with a 50x50 box (SpeedX
+/// `2*hitDirection`, SpeedY -2, velocity ÷2 post-write), then the 4 gores
+/// 583/577/578/579 at Center with velocity ×0.8/×0.8/×0.9/×1. Scale
+/// defaults to 1.
+fn sharkron_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:84218-84222` — the 75-dust burst at Center-(25,25), 50x50 box.
+    let dust_pos = center(npc) - Vec2::new(25.0, 25.0);
+    for _ in 0..75 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, dust_pos, 50, 50, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+        dust.slot_mut(idx).velocity /= 2.0;
+    }
+    let c = center(npc);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, c, vel * 0.8, 583, 1.0); // :84223
+    gore.new_gore(rng, world, c, vel * 0.8, 577, 1.0); // :84224
+    gore.new_gore(rng, world, c, vel * 0.9, 578, 1.0); // :84225
+    gore.new_gore(rng, world, c, vel, 579, 1.0); // :84226
+}
+
+/// The 370 Duke Fishron death (`NPC.cs:84269-84278`, sites 429-434): the
+/// 150-dust type-5 burst (SpeedX `2*hitDirection`, SpeedY -2), then the 6
+/// gores at the direction-spread anchors: 576 at `Center - UnitX*20*dir`,
+/// 574 at `Center - UnitY*30`, 575 at Center, 573 at `Center + UnitX*20*dir`,
+/// then 574/575 again at `Center - UnitY*30` / Center. `base.direction`
+/// rides the port's `facing` (the direction/facing fold, npc.rs).
+fn duke_fishron_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:84269-84272` — the 150-dust type-5 burst.
+    for _ in 0..150 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let c = center(npc);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let dir = npc.facing as f32;
+    gore.new_gore(rng, world, c - Vec2::new(20.0 * dir, 0.0), vel, 576, s); // :84273
+    gore.new_gore(rng, world, c - Vec2::new(0.0, 30.0), vel, 574, s); // :84274
+    gore.new_gore(rng, world, c, vel, 575, s); // :84275
+    gore.new_gore(rng, world, c + Vec2::new(20.0 * dir, 0.0), vel, 573, s); // :84276
+    gore.new_gore(rng, world, c - Vec2::new(0.0, 30.0), vel, 574, s); // :84277
+    gore.new_gore(rng, world, c, vel, 575, s); // :84278
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -2706,6 +2775,14 @@ pub fn hit_effect_c(
     // `:84180-84206` — the 454-459 Cultist Dragon arm (sites 422-424+).
     if (454..=459).contains(&npc_type) && npc.hp <= 0 {
         cultist_dragon_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84207-84228` — the 372/373 Sharkron arm (sites 425-428).
+    if (npc_type == 372 || npc_type == 373) && npc.hp <= 0 {
+        sharkron_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84258-84280` — the 370 Duke Fishron arm (sites 429-434).
+    if npc_type == 370 && npc.hp <= 0 {
+        duke_fishron_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -4357,6 +4434,54 @@ mod tests {
                 assert!(matches!(g.gore_type, 11 | 12 | 13));
             }
         }
+    }
+
+    /// `NPC.cs:84223-84226` — the Sharkron death: the 4 gores
+    /// 583/577/578/579 at Center, velocity x0.8/x0.8/x0.9/x1, after the
+    /// 75-dust type-5 burst at Center-(25,25).
+    #[test]
+    fn w4_f10_the_sharkron_death_spawns_the_four_gores() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 50.0, 50.0);
+        n.vx = 4.0;
+        n.vy = 2.0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(313);
+        sharkron_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![583, 577, 578, 579]);
+        // Center = (125,125).
+        for i in 0..4 {
+            assert_eq!(gore.slot(i).position, Vec2::new(125.0, 125.0));
+        }
+        // The velocity scales: 4*0.8=3.2, 4*0.9=3.6, 4*1=4 (+/- kicks).
+        assert!((gore.slot(0).velocity.x - 3.2).abs() <= 2.0);
+        assert!((gore.slot(2).velocity.x - 3.6).abs() <= 2.0);
+        assert!((gore.slot(3).velocity.x - 4.0).abs() <= 2.0);
+    }
+
+    /// `NPC.cs:84273-84278` — the Duke Fishron death: the 6 gores at the
+    /// direction-spread anchors (576/573 at Center±UnitX*20*dir, 574 at
+    /// Center-UnitY*30, 575 at Center, then 574/575 again).
+    #[test]
+    fn w4_f10_the_duke_fishron_death_spreads_the_six_gores() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 100.0, 100.0);
+        n.facing = 1;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(317);
+        duke_fishron_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![576, 574, 575, 573, 574, 575]);
+        // Center = (150,150); dir=1.
+        assert_eq!(gore.slot(0).position, Vec2::new(130.0, 150.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(150.0, 120.0));
+        assert_eq!(gore.slot(2).position, Vec2::new(150.0, 150.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(170.0, 150.0));
+        assert_eq!(gore.slot(4).position, Vec2::new(150.0, 120.0));
+        assert_eq!(gore.slot(5).position, Vec2::new(150.0, 150.0));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
