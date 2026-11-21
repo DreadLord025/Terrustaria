@@ -235,11 +235,82 @@ Witnesses: `reports.rs::the_general_reporter_appends_and_merges`,
   call site is `UISearchBar.cs:83` (padding 0), left with the search-bar
   port. Deviation 14 updated; S4 closed.
 
-Not taken (claimed/oversized): 19's M1 rename read-modify-write (f44's
-save lane), M4 random world-name composition (needs the localization
-tables + RNG-order proof), L1 UIWorldLoad (already landed S1-E-17 —
-the row is stale), L2 `.trwld` metadata (c43/f45's lanes), 18's margins
-(d87), list scissor (d88), layer stack (L, unclaimed but not small).
+Not taken (claimed/oversized): 19's M1 rename read-modify-write (**REFRESH
+2026-11-21: landed on f22 `0da19e92a`, NOT f44 — the original attribution
+was wrong; f44's lane is the persist envelope**), M4 random world-name
+composition (needs the localization tables + RNG-order proof — still
+open), L1 UIWorldLoad (already landed S1-E-17 — the row is stale),
+L2 `.trwld` metadata (c43/f45's lanes — the `.wld` GameMode landed f45,
+the `.trwld` header half still open), 18's margins (d87 — landed
+`75009f973`), list scissor (d88 — landed `d2279e811`), layer stack
+(d87 — PARTIAL `164cb7090`).
+
+## 5. FINAL UIState-family coverage table (W4-d85 FINAL, 2026-11-21)
+
+The independent re-verification of the family census: a script-diff of
+the C# `UIState` descendants (`grep ':\s*UIState\b'` over ALL of
+`decompiled/`, not just `States/`, plus the `AWorkshopPublishInfoState`
+subclasses) against the port's `ui/` modules + the pushed lane tips.
+**28 descendants** (f22's 18d count confirmed): 24 concrete files in
+`States/`, the abstract `AWorkshopPublishInfoState<T>` + its two closed
+subclasses, and `NewCraftingUI` outside `States/`. Line counts are RAW
+file lines (`(Get-Content).Count`), superseding research/18's
+declaration-line column.
+
+**Verdict: ZERO unported UIState subclasses without a recorded owner.**
+26 ported (10 on base + 16 across the d84/d85/d86/c24 waves), 2 standing
+scope-outs (dev/test-only, d86-recorded). f22's research/144 declares
+the family COMPLETE; this table is the d85-side independent verify.
+
+| # | C# state (file) | Raw ln | Rust counterpart | Lane / tip | Verdict |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `UICharacterSelect` | 311 | `ui/char_select.rs` + `FrontScreen::CharSelect` | base | PORTED |
+| 2 | `UICharacterCreation` | 2381 | `ui/char_creation.rs` + `CharCreation(CreationState)` | base (+S1-H-11 randomize/copy/paste) | PORTED |
+| 3 | `UIWorldSelect` | 347 | `ui/world_select.rs` + `WorldSelect` | base (+S1-H-10 gates, S1-H-12 sort) | PORTED |
+| 4 | `UIWorldCreation` | 1382 | `ui/world_creation.rs` + `WorldCreation(NewWorldDraft)` | base (+d85 Advanced-tab hop, plate trims) | PORTED |
+| 5 | `UIVirtualKeyboard` | 1087 | `ui/keyboard.rs` + `Keyboard(KeyboardSession)` | base + c25 `e5daa96f7` (text-entry bindings) + f22 `8c1b40a46` (ctx-1 sign editor) | PORTED (keep-both compose verified, f22 144 §1.4) |
+| 6 | `UIWorldLoad` | 137 | `ui/world_load.rs` + `WorldLoad(WorldLoadState)` | base S1-E-17; d86 `19641e25f` re-verified | PORTED (the research/18 PARTIAL row was stale) |
+| 7 | `UIAchievementsMenu` | 223 | `ui/achievements.rs` (overlay) | base M6-ACH-2 (+d88 scissor) | PORTED |
+| 8 | `UIEmotesMenu` | 656 | `ui/emotes.rs` (wheel) | base | PORTED |
+| 9 | `UIBestiaryTest` | 856 | `ui/bestiary.rs` (the live bestiary despite the name) | base (+c37/e23 residuals) | PORTED |
+| 10 | `NewCraftingUI` (outside `States/`) | 996 | `ui/crafting.rs` | base (+f23 refocus/scroll/right-click) | PORTED |
+| 11 | `UIWorkshopHub` | 374 | `ui/workshop_hub.rs` | d84 `ba7e8f94a` | PORTED (no-Steam view) |
+| 12 | `UIWorkshopSelectResourcePackToPublish` | 235 | `ui/workshop_publish.rs` | d84 `5db83131e` | PORTED |
+| 13 | `UIWorkshopSelectWorldToPublish` | 233 | `ui/workshop_publish.rs` | d84 `05d2fe8d8` | PORTED |
+| 14 | `UIWorkshopWorldImport` | 251 | `ui/workshop_publish.rs` | d84 `0607f5f8f` | PORTED |
+| 15 | `UIResourcePackSelectionMenu` | 591 | `ui/resource_packs.rs` + `resource_pack.rs` | d84 `856a1c74d`/`2d178bcb4` | PORTED (data layer landed) |
+| 16 | `UIResourcePackInfoMenu` | 210 | `ui/resource_pack_info.rs` | d84 `ff68eb9d9` | PORTED |
+| 17 | `UIDebugCommandsList` | 165 | `ui/debug_commands.rs` | d85 (row 7) | PORTED |
+| 18 | `UIDebugLoadoutsList` | 146 | `ui/debug_loadouts.rs` + `loadout.rs` | d85 (row 8 + doc-sweep respawn + FINAL grow fix) | PORTED |
+| 19 | `UIReportsPage` | 248 | `ui/reports.rs` (+`IssueIndicator` FINAL) | d85 (row 10 + `ecbde4c4` + `389dd8134`) | PORTED |
+| 20 | `UIWorldCreationAdvanced` | 532 | `ui/world_creation_advanced.rs` | d85 (row 11 + glitch icon) | PORTED |
+| 21 | `UIWorldCreationAdvancedSecretSeedsList` | 459 | `ui/secret_seeds_list.rs` | d85 (row 12) | PORTED |
+| 22 | `UIManageControls` | 1061 | `ui/manage_controls.rs` + `input_profiles.rs` | d86 `21fab7274` | PORTED (rows cite d83 `keybinding_rows.rs`) |
+| 23 | `AWorkshopPublishInfoState<T>` (abstract) | 822 | `ui/workshop_publish_info.rs` (data/state half) | d86 `661761026` | PORTED (Steam I/O excluded with `Social/**`) |
+| 24 | `WorkshopPublishInfoStateForResourcePack` | 46 | same module | d86 `661761026` | PORTED |
+| 25 | `WorkshopPublishInfoStateForWorld` | 46 | same module | d86 `661761026` | PORTED |
+| 26 | `UICreativePowersMenu` | 597 | `ui/journey.rs` | c24 `ff99f1486` | PORTED |
+| 27 | `UIWorldGenDebug` | 1702 | none | d86 scope-out (`19641e25f` in `world_load.rs` + ANALYSIS) | SCOPE-OUT (dev-only; the `UIWorldLoad.cs:50-52` F5 arm; `Testing/**` exclusion) |
+| 28 | `UITextWrappingTest` | 336 | none | d86 scope-out (18c) | SCOPE-OUT (test-only harness; research/38 recorded) |
+
+Non-screen files in `States/` (NOT gap rows): `UIGamepadHelper.cs` (367,
+a `[StructLayout]` struct — the Stage-1 gamepad exclusion) and
+`UISortableElement.cs` (22, a `UIElement` subclass — d83's
+`ui/sortable.rs` ports it). The `UIDebugCommandItem`/`UIDebugLoadoutItem`
+row elements are `UIPanel` subclasses inside d85's row-9 claim (ported).
+
+The 18d claim conflicts are all resolved by the landed code (f22 144
+§2's ruling table re-verified): Advanced seeds → d85; UIManageControls →
+d86; reports/debug lists → d85 (d86 withdrew); ResourcePack screens →
+d84 (data layer landed, the dependency fallback moot); the
+AWorkshopPublishInfoState pair → d86's data/state half; the UIWorldLoad
+F5 scope-out record → d86 in code.
+
+**Family-adjacent members** (not UIState descendants, in the family per
+f22 144): the card renames (f22 `0da19e92a`/`6916265d5`), the sign
+editor + hover/break surfaces (f22 `8cb88f4f5`..`be73b87b5`), the void
+vault (g56 `3ab631923`), the c25 text-entry bindings (`e5daa96f7`), the
+d120→f22 dynamic interaction lines (`2408233da`→`f35111e43`).
 
 ## Commits
 
@@ -250,6 +321,9 @@ the row is stale), L2 `.trwld` metadata (c43/f45's lanes), 18's margins
 | `9b8cd40d` | creation plate display trims (19 S4) |
 | `ef9c8954` | GoBack dead-code verification (18 seed) |
 | `ecbde4c4` | reports reporter data layer + SUBMIT census |
+| `d3f720cf1` | FINAL item 1: respawn cap/buff-order census + the dragon grow-arm fix |
+| `389dd8134` | FINAL item 2: reporter consumer census + IssueReportsIndicator wire |
+| `23fe0d4e5` | FINAL item 3: Workshop 1000-ring Steam-only doc-final |
 
 Verification: code-only lane — no cargo/tests/graphify run; all witness
-tests written, not run. Anchors rows added for the three code mechanics.
+tests written, not run. Anchors rows added for the code mechanics.
