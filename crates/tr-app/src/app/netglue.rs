@@ -3568,6 +3568,15 @@ fn npc_seed(
         }
         // W4-d43: the grounded kinds plant their feet on the column surface
         // (the walker ctor; the family machine takes over on the first tick).
+        crate::npc::NpcKind::GemBunnyTopaz
+        | crate::npc::NpcKind::GemBunnySapphire
+        | crate::npc::NpcKind::GemBunnyEmerald
+        | crate::npc::NpcKind::GemBunnyRuby
+        | crate::npc::NpcKind::GemBunnyDiamond => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d43: the grounded kinds plant their feet on the column surface
+        // (the walker ctor; the family machine takes over on the first tick).
         crate::npc::NpcKind::GemSquirrelEmerald
         | crate::npc::NpcKind::GemSquirrelRuby
         | crate::npc::NpcKind::GemSquirrelDiamond

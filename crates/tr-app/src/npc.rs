@@ -1086,6 +1086,26 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.GemBunnyTopaz` (647) — Topaz Bunny (`aiStyle 7`):
+    /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
+    /// value 0.0 (`NPC.cs:17238-17249`). W4-d43.
+    GemBunnyTopaz,
+    /// `NPCID.GemBunnySapphire` (648) — Sapphire Bunny (`aiStyle 7`):
+    /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
+    /// value 0.0 (`NPC.cs:17238-17249`). W4-d43.
+    GemBunnySapphire,
+    /// `NPCID.GemBunnyEmerald` (649) — Emerald Bunny (`aiStyle 7`):
+    /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
+    /// value 0.0 (`NPC.cs:17238-17249`). W4-d43.
+    GemBunnyEmerald,
+    /// `NPCID.GemBunnyRuby` (650) — Ruby Bunny (`aiStyle 7`):
+    /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
+    /// value 0.0 (`NPC.cs:17238-17249`). W4-d43.
+    GemBunnyRuby,
+    /// `NPCID.GemBunnyDiamond` (651) — Diamond Bunny (`aiStyle 7`):
+    /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
+    /// value 0.0 (`NPC.cs:17238-17249`). W4-d43.
+    GemBunnyDiamond,
     /// `NPCID.GemSquirrelEmerald` (642) — Emerald Squirrel (`aiStyle 7`):
     /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0 (`NPC.cs:17226-17237`). W4-d43.
@@ -3592,6 +3612,11 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            NpcKind::GemBunnyTopaz => 1.0,
+            NpcKind::GemBunnySapphire => 1.0,
+            NpcKind::GemBunnyEmerald => 1.0,
+            NpcKind::GemBunnyRuby => 1.0,
+            NpcKind::GemBunnyDiamond => 1.0,
             NpcKind::GemSquirrelEmerald => 1.0,
             NpcKind::GemSquirrelRuby => 1.0,
             NpcKind::GemSquirrelDiamond => 1.0,
@@ -3987,6 +4012,11 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            NpcKind::GemBunnyTopaz => 0,
+            NpcKind::GemBunnySapphire => 0,
+            NpcKind::GemBunnyEmerald => 0,
+            NpcKind::GemBunnyRuby => 0,
+            NpcKind::GemBunnyDiamond => 0,
             NpcKind::GemSquirrelEmerald => 0,
             NpcKind::GemSquirrelRuby => 0,
             NpcKind::GemSquirrelDiamond => 0,
@@ -4374,6 +4404,11 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            NpcKind::GemBunnyTopaz => 0.0,
+            NpcKind::GemBunnySapphire => 0.0,
+            NpcKind::GemBunnyEmerald => 0.0,
+            NpcKind::GemBunnyRuby => 0.0,
+            NpcKind::GemBunnyDiamond => 0.0,
             NpcKind::GemSquirrelEmerald => 0.0,
             NpcKind::GemSquirrelRuby => 0.0,
             NpcKind::GemSquirrelDiamond => 0.0,
@@ -6395,6 +6430,11 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            NpcKind::GemBunnyTopaz => self.update_guide(world, dt),
+            NpcKind::GemBunnySapphire => self.update_guide(world, dt),
+            NpcKind::GemBunnyEmerald => self.update_guide(world, dt),
+            NpcKind::GemBunnyRuby => self.update_guide(world, dt),
+            NpcKind::GemBunnyDiamond => self.update_guide(world, dt),
             NpcKind::GemSquirrelEmerald => self.update_guide(world, dt),
             NpcKind::GemSquirrelRuby => self.update_guide(world, dt),
             NpcKind::GemSquirrelDiamond => self.update_guide(world, dt),
@@ -9490,6 +9530,171 @@ impl Npc {
                 }
             }
             NpcKind::GemBunnyAmethyst => {
+                // `case 646 : .. : case 652` (`NPC.cs:76859-76903`): the gem
+                // bunny — grounded the sprite follows the facing, the idle
+                // row 0, the `|vx| + 1` accumulator >6 advances and wraps at
+                // the strip to row 0; rising holds row 4, falling row 6.
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs() + 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() {
+                            self.frame = 0;
+                        }
+                    }
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 6;
+                }
+            }
+            NpcKind::GemBunnyTopaz => {
+                // `case 646 : .. : case 652` (`NPC.cs:76859-76903`): the gem
+                // bunny — grounded the sprite follows the facing, the idle
+                // row 0, the `|vx| + 1` accumulator >6 advances and wraps at
+                // the strip to row 0; rising holds row 4, falling row 6.
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs() + 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() {
+                            self.frame = 0;
+                        }
+                    }
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 6;
+                }
+            }
+            NpcKind::GemBunnySapphire => {
+                // `case 646 : .. : case 652` (`NPC.cs:76859-76903`): the gem
+                // bunny — grounded the sprite follows the facing, the idle
+                // row 0, the `|vx| + 1` accumulator >6 advances and wraps at
+                // the strip to row 0; rising holds row 4, falling row 6.
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs() + 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() {
+                            self.frame = 0;
+                        }
+                    }
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 6;
+                }
+            }
+            NpcKind::GemBunnyEmerald => {
+                // `case 646 : .. : case 652` (`NPC.cs:76859-76903`): the gem
+                // bunny — grounded the sprite follows the facing, the idle
+                // row 0, the `|vx| + 1` accumulator >6 advances and wraps at
+                // the strip to row 0; rising holds row 4, falling row 6.
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs() + 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() {
+                            self.frame = 0;
+                        }
+                    }
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 6;
+                }
+            }
+            NpcKind::GemBunnyRuby => {
+                // `case 646 : .. : case 652` (`NPC.cs:76859-76903`): the gem
+                // bunny — grounded the sprite follows the facing, the idle
+                // row 0, the `|vx| + 1` accumulator >6 advances and wraps at
+                // the strip to row 0; rising holds row 4, falling row 6.
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs() + 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() {
+                            self.frame = 0;
+                        }
+                    }
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 6;
+                }
+            }
+            NpcKind::GemBunnyDiamond => {
                 // `case 646 : .. : case 652` (`NPC.cs:76859-76903`): the gem
                 // bunny — grounded the sprite follows the facing, the idle
                 // row 0, the `|vx| + 1` accumulator >6 advances and wraps at
@@ -19123,6 +19328,11 @@ impl Npc {
             NpcKind::GemSquirrelDiamond => 644,
             NpcKind::GemSquirrelAmber => 645,
             NpcKind::GemBunnyAmethyst => 646,
+            NpcKind::GemBunnyTopaz => 647,
+            NpcKind::GemBunnySapphire => 648,
+            NpcKind::GemBunnyEmerald => 649,
+            NpcKind::GemBunnyRuby => 650,
+            NpcKind::GemBunnyDiamond => 651,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -24192,7 +24402,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 285] = [
+    pub(super) const ALL_KINDS: [NpcKind; 290] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24485,6 +24695,11 @@ mod tests {
         NpcKind::GemSquirrelDiamond,
         NpcKind::GemSquirrelAmber,
         NpcKind::GemBunnyAmethyst,
+        NpcKind::GemBunnyTopaz,
+        NpcKind::GemBunnySapphire,
+        NpcKind::GemBunnyEmerald,
+        NpcKind::GemBunnyRuby,
+        NpcKind::GemBunnyDiamond,
         NpcKind::WyvernTail,
     ];
 
@@ -24610,6 +24825,37 @@ mod tests {
             (NpcKind::GemSquirrelDiamond, 644, 7u8, 18.0, 20.0, 0, 0, 5, 1.0, 0.0),
             (NpcKind::GemSquirrelAmber, 645, 7u8, 18.0, 20.0, 0, 0, 5, 1.0, 0.0),
             (NpcKind::GemBunnyAmethyst, 646, 7u8, 18.0, 20.0, 0, 0, 5, 1.0, 0.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(kind.to_u16(), ty, "{kind:?} protocol id = vanilla id");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+    }
+
+    /// W4-d43 batch 4 — the new kinds' `SetDefaults` rows pin against the
+    /// C# (`NPC.cs` SetDefaults arms), through the port's tables — the
+    /// `s1_d_3_wire_smallkinds_the_defaults_match_the_csharp_rows` shape.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d43_batch4_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::GemBunnyTopaz, 647, 7u8, 18.0, 20.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::GemBunnySapphire, 648, 7u8, 18.0, 20.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::GemBunnyEmerald, 649, 7u8, 18.0, 20.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::GemBunnyRuby, 650, 7u8, 18.0, 20.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::GemBunnyDiamond, 651, 7u8, 18.0, 20.0, 0, 0, 5, 1.0, 0.0),
         ];
         for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
             let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
@@ -28190,7 +28436,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            285,
+            290,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(

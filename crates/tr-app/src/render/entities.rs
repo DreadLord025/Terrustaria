@@ -3294,6 +3294,21 @@ pub(crate) fn draw_npcs(
             NpcKind::GemBunnyAmethyst => {
                 pumpkin_moon_draw(assets.npc_sheet(646), npc_rows(646), n, w, h)
             }
+            NpcKind::GemBunnyTopaz => {
+                pumpkin_moon_draw(assets.npc_sheet(647), npc_rows(647), n, w, h)
+            }
+            NpcKind::GemBunnySapphire => {
+                pumpkin_moon_draw(assets.npc_sheet(648), npc_rows(648), n, w, h)
+            }
+            NpcKind::GemBunnyEmerald => {
+                pumpkin_moon_draw(assets.npc_sheet(649), npc_rows(649), n, w, h)
+            }
+            NpcKind::GemBunnyRuby => {
+                pumpkin_moon_draw(assets.npc_sheet(650), npc_rows(650), n, w, h)
+            }
+            NpcKind::GemBunnyDiamond => {
+                pumpkin_moon_draw(assets.npc_sheet(651), npc_rows(651), n, w, h)
+            }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
