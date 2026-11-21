@@ -91,6 +91,21 @@ pub enum FindFrameExtra7bKind {
     /// `NPCID.Mothron` = 477 (`NPCID.cs:11627`) — `case 477`
     /// (`NPC.cs:71330-71342`).
     Mothron,
+    /// `NPCID.MothronSpawn` = 479 (`NPCID.cs:11631`) — `case 479`
+    /// (`NPC.cs:71343-71368`). 478 MothronEgg has NO case label.
+    MothronSpawn,
+    /// `NPCID.Medusa` = 480 (`NPCID.cs:11633`) — `case 480`
+    /// (`NPC.cs:75103-75167`).
+    Medusa,
+    /// `NPCID.GreekSkeleton` = 481 (`NPCID.cs:11635`) — `case 481`
+    /// (`NPC.cs:71454-71515`).
+    GreekSkeleton,
+    /// `NPCID.GraniteGolem` = 482 (`NPCID.cs:11637`) — `case 482`
+    /// (`NPC.cs:75202-75258`).
+    GraniteGolem,
+    /// `NPCID.GraniteFlyer` = 483 (`NPCID.cs:11639`) — `case 483`
+    /// (`NPC.cs:75168-75201`).
+    GraniteFlyer,
 }
 
 impl FindFrameExtra7bKind {
@@ -102,6 +117,11 @@ impl FindFrameExtra7bKind {
             Self::BigMimicHallow => 475,
             Self::BigMimicJungle => 476,
             Self::Mothron => 477,
+            Self::MothronSpawn => 479,
+            Self::Medusa => 480,
+            Self::GreekSkeleton => 481,
+            Self::GraniteGolem => 482,
+            Self::GraniteFlyer => 483,
         }
     }
 
@@ -117,6 +137,13 @@ impl FindFrameExtra7bKind {
             Self::BigMimicJungle => 14,
             // Main.cs:67131 (entry 477): 6.
             Self::Mothron => 6,
+            // Main.cs:67131 (entry 479): 3.
+            Self::MothronSpawn => 3,
+            // Main.cs:67132 (entries 480..483): 25, 19, 20, 22.
+            Self::Medusa => 25,
+            Self::GreekSkeleton => 19,
+            Self::GraniteGolem => 20,
+            Self::GraniteFlyer => 22,
         }
     }
 }
@@ -130,6 +157,11 @@ pub fn find_frame_kind_extra7b(vanilla_type: i16) -> Option<FindFrameExtra7bKind
         475 => FindFrameExtra7bKind::BigMimicHallow,
         476 => FindFrameExtra7bKind::BigMimicJungle,
         477 => FindFrameExtra7bKind::Mothron,
+        479 => FindFrameExtra7bKind::MothronSpawn,
+        480 => FindFrameExtra7bKind::Medusa,
+        481 => FindFrameExtra7bKind::GreekSkeleton,
+        482 => FindFrameExtra7bKind::GraniteGolem,
+        483 => FindFrameExtra7bKind::GraniteFlyer,
         _ => return None,
     })
 }
@@ -358,6 +390,243 @@ pub fn find_frame_extra7b(kind: FindFrameExtra7bKind, s: &mut FrameState, i: &Fr
                 s.row = 0;
             }
         }
+        // `case 479` (`NPC.cs:71343-71368`): the Mothron Spawn's
+        // 4-tick flutter. The counter ticks FIRST (`:71345`), then
+        // the < 4 / < 8 / < 12 bands pin rows 0/1/2 (`:71347-71358`),
+        // the < 15 band pin row 1 AGAIN (`:71359-71362` — the fourth
+        // band's upper edge is 4*4-1 = 15, NOT 16), and the >= 15
+        // else zeroes the counter WITHOUT a row write (`:71363-
+        // 71366` — the reset tick HOLDS row 1, the Moth 251
+        // reset-tick row-hold quirk). No sprite/rotation write.
+        FindFrameExtra7bKind::MothronSpawn => {
+            // `:71345`.
+            s.counter += 1.0;
+            // `:71347-71366`.
+            if s.counter < 4.0 {
+                s.row = 0;
+            } else if s.counter < 8.0 {
+                s.row = 1;
+            } else if s.counter < 12.0 {
+                s.row = 2;
+            } else if s.counter < 15.0 {
+                s.row = 1;
+            } else {
+                s.counter = 0.0;
+            }
+        }
+        // `case 480` (`NPC.cs:75103-75167`): Medusa. The grounded ±1
+        // flip (`:75106-75113`); the `ai[2] < 0` gaze strip
+        // (`:75114-75130`) ticks the counter with the > 3 step and
+        // BOTH clamps snap row 21 (>= the 25-row count OR < 21 —
+        // rows 21..24 are the gaze strip); the idle (`:75131-75143`)
+        // ticks with the > 4 step over rows 0..7 with the STRICT
+        // > 7 wrap; the walk (`:75144-75160`) accumulates 1 + |vx|
+        // (NO 0.5), the > 6 counter steps a row, and BOTH clamps
+        // snap row 10 (>= count-4 = 21 OR < 10 — rows 10..20 are the
+        // walk strip); the air zeroes the counter and pins row 8
+        // (`:75162-75166`). No rotation write.
+        FindFrameExtra7bKind::Medusa => {
+            if i.vy == 0.0 {
+                // `:75106-75113`.
+                if i.direction == 1 {
+                    s.sprite_dir = 1;
+                }
+                if i.direction == -1 {
+                    s.sprite_dir = -1;
+                }
+                if i.ai[2] < 0.0 {
+                    // `:75114-75130`.
+                    s.counter += 1.0;
+                    if s.counter > 3.0 {
+                        s.row += 1;
+                        s.counter = 0.0;
+                    }
+                    if s.row >= kind.frame_count() {
+                        s.row = 21;
+                    } else if s.row < 21 {
+                        s.row = 21;
+                    }
+                } else if i.vx == 0.0 {
+                    // `:75131-75143`.
+                    s.counter += 1.0;
+                    if s.counter > 4.0 {
+                        s.row += 1;
+                        s.counter = 0.0;
+                    }
+                    if s.row > 7 {
+                        s.row = 0;
+                    }
+                } else {
+                    // `:75144-75160`.
+                    s.counter += 1.0 + i.vx.abs();
+                    if s.counter > 6.0 {
+                        s.row += 1;
+                        s.counter = 0.0;
+                    }
+                    if s.row >= kind.frame_count() - 4 {
+                        s.row = 10;
+                    } else if s.row < 10 {
+                        s.row = 10;
+                    }
+                }
+            } else {
+                // `:75162-75166`.
+                s.counter = 0.0;
+                s.row = 8;
+            }
+        }
+        // `case 481` (`NPC.cs:71454-71515`): the Greek Skeleton. The
+        // grounded ±1 flip (`:71457-71464`); the `ai[2] > 0` attack
+        // pose (`:71465-71487`) copies `direction` UNCONDITIONALLY
+        // and pins row 15 + num28 off the ai[1] bands: < 22 → -14
+        // (row 1), < 28 → 3 (row 18), < 34 → 2 (row 17), < 40 → 1
+        // (row 16), else 0 (row 15) — the counter ZEROED (no break;
+        // the else-if chain falls through to the end of the grounded
+        // arm). The idle (`:71488-71491`) pins row 1 and does NOT
+        // touch the counter; the walk (`:71492-71508`) lifts any
+        // row < 2 to 2, accumulates `|vx| * 2` — NO +1 — the > 6
+        // counter steps a row, wrapping at row >= 15 back to 2
+        // (rows 15..18 are the attack poses). The air zeroes the
+        // counter and pins row 0 (`:71510-71514`). No rotation write.
+        FindFrameExtra7bKind::GreekSkeleton => {
+            if i.vy == 0.0 {
+                // `:71457-71464`.
+                if i.direction == 1 {
+                    s.sprite_dir = 1;
+                }
+                if i.direction == -1 {
+                    s.sprite_dir = -1;
+                }
+                if i.ai[2] > 0.0 {
+                    // `:71465-71487`.
+                    s.sprite_dir = i.direction;
+                    let num28 = if i.ai[1] < 22.0 {
+                        -14
+                    } else if i.ai[1] < 28.0 {
+                        3
+                    } else if i.ai[1] < 34.0 {
+                        2
+                    } else if i.ai[1] < 40.0 {
+                        1
+                    } else {
+                        0
+                    };
+                    s.row = (15 + num28) as u32;
+                    s.counter = 0.0;
+                } else if i.vx == 0.0 {
+                    // `:71488-71491` — the counter is NOT touched.
+                    s.row = 1;
+                } else {
+                    // `:71492-71508`.
+                    if s.row < 2 {
+                        s.row = 2;
+                    }
+                    s.counter += i.vx.abs() * 2.0;
+                    if s.counter > 6.0 {
+                        s.row += 1;
+                        s.counter = 0.0;
+                    }
+                    if s.row >= 15 {
+                        s.row = 2;
+                    }
+                }
+            } else {
+                // `:71510-71514`.
+                s.counter = 0.0;
+                s.row = 0;
+            }
+        }
+        // `case 482` (`NPC.cs:75202-75258`): the Granite Golem. The
+        // grounded ±1 flip (`:75205-75212`); the `ai[2] < 0` gaze
+        // strip (`:75213-75229`) ticks with the > 3 step and BOTH
+        // clamps snap row 11 (>= the 20-row count OR < 11 — rows
+        // 11..19 are the gaze strip); the idle (`:75230-75234`)
+        // TICKS the counter but snaps row 0 EVERY tick (no wrap —
+        // the counter free-runs); the walk (`:75235-75251`)
+        // accumulates 0.2 + |vx| (the 0.2 drift, NOT the +1), the
+        // > 8 counter steps a row, and BOTH clamps snap row 2
+        // (>= count-10 = 10 OR < 2 — rows 2..9 are the walk strip);
+        // the air zeroes the counter and pins row 1 (`:75253-75257`).
+        // No rotation write.
+        FindFrameExtra7bKind::GraniteGolem => {
+            if i.vy == 0.0 {
+                // `:75205-75212`.
+                if i.direction == 1 {
+                    s.sprite_dir = 1;
+                }
+                if i.direction == -1 {
+                    s.sprite_dir = -1;
+                }
+                if i.ai[2] < 0.0 {
+                    // `:75213-75229`.
+                    s.counter += 1.0;
+                    if s.counter > 3.0 {
+                        s.row += 1;
+                        s.counter = 0.0;
+                    }
+                    if s.row >= kind.frame_count() {
+                        s.row = 11;
+                    } else if s.row < 11 {
+                        s.row = 11;
+                    }
+                } else if i.vx == 0.0 {
+                    // `:75230-75234` — the counter ticks, row 0 snaps.
+                    s.counter += 1.0;
+                    s.row = 0;
+                } else {
+                    // `:75235-75251`.
+                    s.counter += 0.2 + i.vx.abs();
+                    if s.counter > 8.0 {
+                        s.row += 1;
+                        s.counter = 0.0;
+                    }
+                    if s.row >= kind.frame_count() - 10 {
+                        s.row = 2;
+                    } else if s.row < 2 {
+                        s.row = 2;
+                    }
+                }
+            } else {
+                // `:75253-75257`.
+                s.counter = 0.0;
+                s.row = 1;
+            }
+        }
+        // `case 483` (`NPC.cs:75168-75201`): the Granite Flyer's two
+        // strips. The `ai[0] == -1` charged state (`:75169-75186`)
+        // ticks with the > 4 step over rows 13..21 with BOTH clamps
+        // (> 21 snaps 21, < 13 snaps 13) and ACCUMULATES the tilt
+        // `rotation += vx * 0.2`; the normal state (`:75187-75200`)
+        // ticks with the > 4 step over rows 0..11 with the STRICT
+        // > 11 wrap to 0 and SNAPS `rotation = vx * 0.1`. No sprite
+        // write.
+        FindFrameExtra7bKind::GraniteFlyer => {
+            if i.ai[0] == -1.0 {
+                // `:75169-75186`.
+                s.counter += 1.0;
+                if s.counter > 4.0 {
+                    s.row += 1;
+                    s.counter = 0.0;
+                }
+                if s.row > 21 {
+                    s.row = 21;
+                } else if s.row < 13 {
+                    s.row = 13;
+                }
+                s.rotation += i.vx * 0.2;
+            } else {
+                // `:75187-75200`.
+                s.counter += 1.0;
+                if s.counter > 4.0 {
+                    s.row += 1;
+                    s.counter = 0.0;
+                }
+                if s.row > 11 {
+                    s.row = 0;
+                }
+                s.rotation = i.vx * 0.1;
+            }
+        }
     }
 }
 
@@ -390,6 +659,11 @@ mod tests {
             FindFrameExtra7bKind::BigMimicHallow,
             FindFrameExtra7bKind::BigMimicJungle,
             FindFrameExtra7bKind::Mothron,
+            FindFrameExtra7bKind::MothronSpawn,
+            FindFrameExtra7bKind::Medusa,
+            FindFrameExtra7bKind::GreekSkeleton,
+            FindFrameExtra7bKind::GraniteGolem,
+            FindFrameExtra7bKind::GraniteFlyer,
         ] {
             assert_eq!(
                 k.frame_count(),
@@ -545,5 +819,144 @@ mod tests {
         assert_eq!(rows_over(k, input(0.0, 4.0), 6), vec![0, 0, 1, 1, 1, 2]);
         // The stationary moth still ticks (+1/tick): a 6-tick step.
         assert_eq!(rows_over(k, input(0.0, 0.0), 6), vec![0, 0, 0, 0, 0, 1]);
+    }
+
+    /// The Mothron Spawn's 4-tick flutter (`NPC.cs:71345-71366`):
+    /// the bands 0/1/2/1 over counters 1..14 and the >= 15 reset
+    /// tick HOLDS row 1 (the fourth band's edge is 4*4-1 = 15, NOT
+    /// 16 — the reset tick writes no row; replay-derived 15 ticks).
+    #[test]
+    fn f26s7b_the_mothron_spawn_flutter_holds_the_reset_tick() {
+        let k = FindFrameExtra7bKind::MothronSpawn;
+        assert_eq!(
+            rows_over(k, input(2.0, -1.0), 15),
+            vec![0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1]
+        );
+        let mut s = FrameState { row: 2, counter: 14.0, ..Default::default() };
+        find_frame_extra7b(k, &mut s, &input(0.0, 0.0));
+        assert_eq!((s.row, s.counter), (2, 0.0), "the reset tick holds the row");
+    }
+
+    /// Medusa's three grounded strips (`NPC.cs:75114-75160`): the
+    /// ai[2] < 0 gaze strip pins rows 21..24 (both clamps snap 21,
+    /// the > 3 step wraps 25 → 21); the idle walks rows 0..7 with
+    /// the > 4 step and the strict > 7 wrap; the walk lifts to 10
+    /// and strides rows 10..20 at 1+|vx| with the > 6 step (both
+    /// clamps snap 10); the air pins row 8.
+    #[test]
+    fn f26s7b_the_medusa_gaze_idle_walk_strips() {
+        let k = FindFrameExtra7bKind::Medusa;
+        // The gaze strip from row 0: the < 21 clamp snaps 21, then
+        // the > 3 step walks 22/23/24 and wraps 25 → 21 (replay).
+        let mut gaze = input(3.0, 0.0);
+        gaze.ai[2] = -1.0;
+        assert_eq!(rows_over(k, gaze, 17), vec![21, 21, 21, 22, 22, 22, 22, 23, 23, 23, 23, 24, 24, 24, 24, 21, 21]);
+        // The idle: the > 4 step over rows 0..7, the 40th tick wraps.
+        assert_eq!(
+            rows_over(k, input(0.0, 0.0), 41),
+            vec![0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 0, 0]
+        );
+        // The walk at vx 3: +4/tick, the > 6 step fires every 2nd
+        // tick; the < 10 clamp lifts to 10 first (replay).
+        assert_eq!(rows_over(k, input(3.0, 0.0), 25), vec![10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15, 16, 16, 17, 17, 18, 18, 19, 19, 20, 20, 10, 10, 11, 11]);
+        let mut s = FrameState { row: 15, counter: 2.0, sprite_dir: 1, ..Default::default() };
+        let mut air = input(1.0, 2.0);
+        air.direction = -1;
+        find_frame_extra7b(k, &mut s, &air);
+        assert_eq!((s.row, s.counter, s.sprite_dir), (8, 0.0, 1), "air row 8, no flip");
+    }
+
+    /// The Greek Skeleton's attack ladder (`NPC.cs:71465-71487`):
+    /// ai[2] > 0 pins row 15 + {-14, 3, 2, 1, 0} off the ai[1]
+    /// < 22 / < 28 / < 34 / < 40 bands with the UNCONDITIONAL
+    /// direction copy; the idle pins row 1 WITHOUT touching the
+    /// counter; the walk lifts to 2 at |vx|*2 (NO +1) and wraps at
+    /// 15 → 2; the air pins row 0.
+    #[test]
+    fn f26s7b_the_greek_skeleton_ladder_and_idle_counter_hold() {
+        let k = FindFrameExtra7bKind::GreekSkeleton;
+        let mut s = FrameState { row: 5, counter: 4.0, sprite_dir: 1, ..Default::default() };
+        let mut atk = input(3.0, 0.0);
+        atk.ai[2] = 1.0;
+        atk.direction = 0;
+        for (a1, row) in [(0.0, 1), (22.0, 18), (28.0, 17), (34.0, 16), (40.0, 15), (99.0, 15)] {
+            atk.ai[1] = a1;
+            find_frame_extra7b(k, &mut s, &atk);
+            assert_eq!((s.row, s.counter, s.sprite_dir), (row, 0.0, 0), "ai[1] {a1}");
+        }
+        // The idle keeps the counter (the C# writes only frame.Y).
+        let mut s = FrameState { row: 9, counter: 5.0, ..Default::default() };
+        find_frame_extra7b(k, &mut s, &input(0.0, 0.0));
+        assert_eq!((s.row, s.counter), (1, 5.0), "idle row 1, counter held");
+        // vx 3 → +6/tick: the first step fires on tick 2 (6+6 = 12
+        // > 6; the single +6 never exceeds), then every 2nd tick.
+        assert_eq!(rows_over(k, input(3.0, 0.0), 3), vec![2, 3, 3]);
+        // vx 4 → +8/tick steps every tick: rows 3..14 then 15 → 2.
+        assert_eq!(
+            rows_over(k, input(4.0, 0.0), 13),
+            vec![3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 2]
+        );
+        let mut s = FrameState { row: 12, counter: 3.0, ..Default::default() };
+        find_frame_extra7b(k, &mut s, &input(0.0, -1.0));
+        assert_eq!((s.row, s.counter), (0, 0.0), "air row 0");
+    }
+
+    /// The Granite Golem (`NPC.cs:75213-75257`): the gaze strip
+    /// rows 11..19 (both clamps snap 11, the > 3 step wraps 20 →
+    /// 11); the idle TICKS the counter but snaps row 0 every tick
+    /// (the free-running counter); the walk accumulates 0.2+|vx|
+    /// with the > 8 step over rows 2..9 (both clamps snap 2); the
+    /// air pins row 1.
+    #[test]
+    fn f26s7b_the_granite_golem_strips_and_free_running_idle() {
+        let k = FindFrameExtra7bKind::GraniteGolem;
+        let mut gaze = input(2.0, 0.0);
+        gaze.ai[2] = -0.5;
+        assert_eq!(rows_over(k, gaze, 13), vec![11, 11, 11, 12, 12, 12, 12, 13, 13, 13, 13, 14, 14]);
+        // The idle: row 0 every tick, the counter free-runs.
+        let mut s = FrameState::default();
+        for _ in 0..30 {
+            find_frame_extra7b(k, &mut s, &input(0.0, 0.0));
+            assert_eq!(s.row, 0);
+        }
+        assert_eq!(s.counter, 30.0, "the idle counter never resets");
+        // vx 3 → +3.2/tick: the > 8 step fires on ticks 3/6/9...
+        // (9.6 > 8, zeroed); the < 2 clamp lifts to 2 (replay).
+        assert_eq!(rows_over(k, input(3.0, 0.0), 10), vec![2, 2, 3, 3, 3, 4, 4, 4, 5, 5]);
+        // vx 9 → +9.2/tick steps every tick: the < 2 clamp lifts to
+        // 2 first, rows 3..9 then the >= count-10 = 10 clamp wraps.
+        assert_eq!(rows_over(k, input(9.0, 0.0), 9), vec![2, 3, 4, 5, 6, 7, 8, 9, 2]);
+        let mut s = FrameState { row: 7, counter: 6.0, ..Default::default() };
+        find_frame_extra7b(k, &mut s, &input(0.0, 1.0));
+        assert_eq!((s.row, s.counter), (1, 0.0), "air row 1");
+    }
+
+    /// The Granite Flyer's two strips (`NPC.cs:75169-75200`): the
+    /// normal > 4 step over rows 0..11 with the strict > 11 wrap
+    /// and the vx*0.1 tilt SNAP; the ai[0] == -1 charged strip
+    /// clamps rows 13..21 and ACCUMULATES the vx*0.2 tilt.
+    #[test]
+    fn f26s7b_the_granite_flyer_two_strips_and_tilt_modes() {
+        let k = FindFrameExtra7bKind::GraniteFlyer;
+        // Normal: the > 4 step fires every 5th tick, 60 ticks wrap
+        // 12 → 0 on the 60th (replay).
+        let rows = rows_over(k, input(2.0, 0.0), 61);
+        assert_eq!(rows[4], 1, "the 5th tick steps");
+        assert_eq!(rows[54], 11, "the 55th tick reaches 11");
+        assert_eq!(rows[59], 0, "the 60th tick wraps 12 -> 0");
+        let mut s = FrameState { row: 3, rotation: 9.0, ..Default::default() };
+        find_frame_extra7b(k, &mut s, &input(2.0, 0.0));
+        assert_eq!(s.rotation, 0.2, "the normal tilt SNAPS vx*0.1");
+        // Charged: the < 13 clamp lifts to 13, the > 21 clamp holds
+        // 21; the tilt ACCUMULATES vx*0.2.
+        let mut charged = input(1.0, 0.0);
+        charged.ai[0] = -1.0;
+        let mut s = FrameState { row: 2, rotation: 0.5, ..Default::default() };
+        find_frame_extra7b(k, &mut s, &charged);
+        assert_eq!((s.row, s.rotation), (13, 0.7), "clamp to 13, tilt += 0.2");
+        let mut s = FrameState { row: 21, counter: 4.0, rotation: 0.0, ..Default::default() };
+        find_frame_extra7b(k, &mut s, &charged);
+        assert_eq!(s.row, 21, "the > 21 clamp holds 21");
+        assert_eq!(s.counter, 0.0, "the step zeroed the counter");
     }
 }
