@@ -39325,11 +39325,16 @@ zero. `w4_g67_the_splash_draws_ride_rains_stream_in_kill_order` pins
   The production frame still gates the weather cluster out of menus, so the
   menu arm only fires for a residual drop handed a menu tick — exactly the
   C# `DrawRain`-calls-`Update` shape.
-* The `DrawDust` 4×4 on-screen cull rect (`Main.cs:38847`, the
-  ±1000/±1050 slack box) is not modelled in `draw_splashes`: the spawn
-  cull already dropped off-screen dust and the shared loop kills
-  below-view slots; the widening only matters for dust dragged far
-  off-screen by velocity within one tick.
+* The `DrawDust` 4×4 on-screen cull rect (`Main.cs:38832`/`:38847`) IS
+  modelled (W4-g67 residuals — the earlier "documented widening" was wrong):
+  the live rect is the ±1000/±1050 slack box (`:38832` overwrites `:38831`'s
+  ±500/±50 box; the trail types' `:38845` restore copies the same wide rect),
+  and a dust whose 4×4 box misses it is DEACTIVATED by the `:39020-39022`
+  else arm — not merely skipped. `splash_cull_rect`/`dust_in_cull_rect` carry
+  the geometry (world px, no zoom term; the port maps `Main.screenPosition`
+  through the camera-centred view's top-left), and `draw_splashes` applies
+  the kill before the draw. The spawn cull (`Dust.cs:97-101`) and the shared
+  loop's below-view kill (`:2343`) still run first, exactly like the C#.
 * The water-surface ripple wording of the task row maps to the splash
   dust itself: the C# `QueueRipple` family (`WaterShaderData.cs:445-467`)
   has NO rain caller — its callers are Gore.cs:967 (drips), the

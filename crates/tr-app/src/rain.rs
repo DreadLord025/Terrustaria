@@ -1430,9 +1430,15 @@ pub(crate) fn water_splash_arm(d: &mut tr_core::particles::Dust, world: &World) 
 /// The pool's `maxDustToDraw` scan bound is the update loop's own kill
 /// (`Dust.cs:2393-2395`); this entry walks the live family slots.
 ///
-/// The 4×4 on-screen cull rect (`:38847`, the ±1000/±1050 slack box) is not
-/// modelled — the spawn cull already dropped off-screen dust and the shared
-/// loop kills below-view slots; a documented widening (ANALYSIS).
+/// The 4×4 on-screen cull rect (`:38832`/`:38847`) is ported verbatim
+/// (W4-g67 residuals): `Main.DrawDust`'s live rect is the ±1000/±1050 slack
+/// box (`screenPosition + (-1000, -1050, screenWidth+2000, screenHeight+2100)`
+/// — `:38832` overwrites `:38831`'s ±500/±50 box; the trail types'
+/// `rectangle = rectangle2` restore at `:38845` is a no-op because both hold
+/// the same wide rect). A dust whose 4×4 box misses it is DEACTIVATED
+/// (`:39020-39022`'s else arm), not merely skipped — the old "documented
+/// widening" dropped that kill. The rect is world-px (no zoom term), the
+/// port maps it through the camera-centred view's top-left.
 pub(crate) fn draw_splashes(
     pool: &mut tr_core::particles::DustPool,
     r: &mut SpriteRenderer,
@@ -1442,11 +1448,19 @@ pub(crate) fn draw_splashes(
     zoom: f32,
     screen: Vec2,
 ) {
+    // `:38832`: the cull rect off `Main.screenPosition` (the view's top-left).
+    let screen_pos = camera - screen * 0.5 / zoom;
+    let cull = splash_cull_rect(screen_pos, screen);
     for i in 0..tr_core::particles::DUST_SENTINEL {
         if !pool.slot(i).active || !is_splash_type(pool.slot(i).dust_type) {
             continue;
         }
         let d = *pool.slot(i);
+        // `:38847` + `:39020-39022`: outside the rect → deactivate, no draw.
+        if !dust_in_cull_rect(d.position, cull) {
+            pool.slot_mut(i).active = false;
+            continue;
+        }
         // `:38968`: `Lighting.GetColor((int)((double)pos.X + 4.0) / 16, …)`
         // as XNA bytes (the gore-pass convention, `render/gore.rs`).
         let c = light_at(light, d.position + Vec2::splat(4.0));
@@ -1515,6 +1529,31 @@ pub(crate) fn draw_splashes(
             pool.slot_mut(i).active = false;
         }
     }
+}
+
+/// `Main.DrawDust`'s on-screen cull rect (`Main.cs:38832`): the ±1000/±1050
+/// slack box off `Main.screenPosition` — `(screenX-1000, screenY-1050,
+/// screenWidth+2000, screenHeight+2100)`. `:38831`'s ±500/±50 box is
+/// overwritten before the loop; the trail types' `:38845` restore copies the
+/// SAME wide rect back, so one rect covers the whole family. World px, no
+/// zoom term. Returns `(x, y, w, h)`.
+pub(crate) fn splash_cull_rect(screen_pos: Vec2, screen: Vec2) -> (i32, i32, i32, i32) {
+    (
+        screen_pos.x as i32 - 1000,
+        screen_pos.y as i32 - 1050,
+        screen.x as i32 + 2000,
+        screen.y as i32 + 2100,
+    )
+}
+
+/// `Main.cs:38847`: `new Rectangle((int)pos.X, (int)pos.Y, 4, 4).Intersects(rect)`
+/// — XNA's strict-`<` intersection on both axes (the `Dust.cs:98` spawn-cull
+/// convention). A miss means the `:39020-39022` else arm deactivates the dust.
+pub(crate) fn dust_in_cull_rect(position: Vec2, rect: (i32, i32, i32, i32)) -> bool {
+    let (rx, ry, rw, rh) = rect;
+    let sx = position.x as i32;
+    let sy = position.y as i32;
+    rx < sx + 4 && sx < rx + rw && ry < sy + 4 && sy < ry + rh
 }
 
 /// `Lighting.GetColor` for a world-space point, clamped to the computed light rect.
@@ -3040,5 +3079,34 @@ mod tests {
         let mut open = Rain::with_forced(42, None, false);
         open.update_time(60, &w, true, false, 0.0, true);
         assert_ne!(open.rng, state, "the open gate rolls the start arms");
+    }
+
+    /// W4-g67 residual witness — the `DrawDust` cull rect (`Main.cs:38832` /
+    /// `:38847` / `:39020-39022`): the ±1000/±1050 slack box off
+    /// `screenPosition`, the 4×4 strict-`<` intersection, and the else-arm
+    /// DEACTIVATION (the old widening dropped the kill). Pure geometry — the
+    /// draw loop applies exactly this test before drawing each family slot.
+    #[test]
+    fn w4_g67_drawdust_cull_rect_is_the_wide_box_with_an_else_kill() {
+        // screenPosition (0,0), screen 1600×900 → rect (-1000,-1050,3600,3000).
+        let rect = splash_cull_rect(Vec2::ZERO, Vec2::new(1600.0, 900.0));
+        assert_eq!(rect, (-1000, -1050, 3600, 3000), ":38832's wide box");
+        // Inside: a splash near the view centre.
+        assert!(dust_in_cull_rect(Vec2::new(800.0, 450.0), rect));
+        // The slack margins: just inside the left/top edges still draw.
+        assert!(dust_in_cull_rect(Vec2::new(-999.0, -1049.0), rect));
+        // Outside → the else arm kills. Past the right edge (x ≥ 2600).
+        assert!(!dust_in_cull_rect(Vec2::new(2600.0, 450.0), rect));
+        // Past the bottom edge (y ≥ 1950).
+        assert!(!dust_in_cull_rect(Vec2::new(800.0, 1950.0), rect));
+        // Far left (x + 4 ≤ -1000 → x ≤ -1004).
+        assert!(!dust_in_cull_rect(Vec2::new(-1004.0, 450.0), rect));
+        // The 4×4 box: a dust at x = -1003 still intersects (−1003+4 > −1000).
+        assert!(dust_in_cull_rect(Vec2::new(-1003.0, 450.0), rect));
+        // Non-zero screenPosition shifts the box (the camera-centred mapping).
+        let shifted = splash_cull_rect(Vec2::new(5000.0, 3000.0), Vec2::new(1600.0, 900.0));
+        assert_eq!(shifted, (4000, 1950, 3600, 3000));
+        assert!(dust_in_cull_rect(Vec2::new(5000.0, 3000.0), shifted));
+        assert!(!dust_in_cull_rect(Vec2::new(800.0, 450.0), shifted), "the old view is now outside");
     }
 }
