@@ -30,6 +30,46 @@ const CANT_TAKE_LUNCH_MONEY: &[u16] = &[
     101,
 ];
 
+/// `NPCID.Sets.CanConvertIntoCopperSlimeTownNPC` (`NPCID.cs:10120`):
+/// `CreateBoolSet(1, 302, 335, 336, 333, 334)` — the Blue Slime (1) and the
+/// five zombie/skeleton family rows a dropped Copper Shortsword (89) /
+/// Chain Knife (3507) converts into the Copper Town Slime
+/// (`WorldItem.GetPickedUpByMonsters_Special`, `WorldItem.cs:1105`).
+const CAN_CONVERT_COPPER_SLIME: &[u16] = &[1, 302, 335, 336, 333, 334];
+
+/// `WorldItem.GetPickedUpByMonsters_Special` (`WorldItem.cs:1086-1116`,
+/// W4-g15 lane 5): the first convertible hostile NPC whose hitbox intersects
+/// the drop's consumes it and raises `unlockedSlimeCopperSpawn`. The C#
+/// `break`s on the first match (`:1109`); the `NPC.TransformCopperSlime`
+/// (`NPC.cs:19160-19182`) target (684 TownSlimeCopper) has no NpcKind row
+/// (the town-slime family is unported), so the port raises the flag and
+/// leaves the NPC — the documented roster-gap shape (the
+/// `spawn_shimmer_release` precedent: the accounting runs, the spawn waits
+/// for the roster). The `TownSlimeTransform` particle broadcast is the
+/// orchestrator lane's. Returns true when the drop was consumed
+/// (`TurnToAirAndSync`, `:1114`). RNG-free.
+fn copper_slime_pickup(app: &mut App, drop: &ItemDrop) -> bool {
+    let (dx0, dy0) = (drop.pos.x as i32, drop.pos.y as i32);
+    let dsz = crate::item::SIZE as i32;
+    // `:1102-1110` — the first intersecting convertible NPC wins.
+    let hit = app.npcs.iter().any(|n| {
+        let (nw, nh) = n.size();
+        n.hp > 0
+            && CAN_CONVERT_COPPER_SLIME.contains(&n.kind.cs_id())
+            && dx0 < (n.x as i32) + nw as i32
+            && dx0 + dsz > n.x as i32
+            && dy0 < (n.y as i32) + nh as i32
+            && dy0 + dsz > n.y as i32
+    });
+    if !hit {
+        return false;
+    }
+    // `NPC.TransformCopperSlime` (`NPC.cs:19171`): the flag raises. The
+    // `Transform(684)` is the roster gap (no 684 NpcKind row).
+    app.world.unlocked_slime_copper_spawn = true;
+    true
+}
+
 pub(crate) fn update_items(app: &mut App, dt: f32) {
     if app.is_client() {
         // The host owns the drops: ask it to collect whatever lies in our
@@ -731,6 +771,27 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                     remix_world,
                     day_rate,
                 );
+            }
+            // W4-g15 lane 5 — `GetPickedUpByMonsters_Special`
+            // (`WorldItem.cs:405-407`, `:1086-1116`): a dropped Copper
+            // Shortsword (89) / Chain Knife (3507) touching a convertible
+            // hostile NPC while the Copper Town Slime is locked is consumed
+            // and raises the unlock flag. The C# gate (`:405`) is
+            // `enemyGrabDelayTime == 0 && playerIndexTheItemIsReservedFor ==
+            // Main.myPlayer`; the port's enemy-grab delay has no writer
+            // (always 0) and the reservation is `reserved_elsewhere`. The
+            // NPC-side `TransformCopperSlime` (684) is the roster gap — the
+            // flag is the observable half (the `spawn_shimmer_release`
+            // precedent). The C# runs it BEFORE MoveInWorld.
+            if !was_grabbed
+                && (drop.kind == 89 || drop.kind == 3507)
+                && !reserved_elsewhere
+                && !app.world.unlocked_slime_copper_spawn
+            {
+                if copper_slime_pickup(app, &drop) {
+                    items.swap_remove(i);
+                    continue;
+                }
             }
             // W4-g15 — `WorldItem.UpdateShimmer`'s shimmered sparkle
             // (`WorldItem.cs:459-481`) draws `Main.rand` INSIDE UpdateShimmer
@@ -2449,6 +2510,57 @@ mod fill_bucket_tests {
         let want = witness.next_max(1000);
         let got = app.rngs.stream(crate::app::RngKey::UpdateItems).next_max(1000);
         assert_eq!(got, want, "a refused gate draws nothing");
+    }
+}
+
+#[cfg(test)]
+mod copper_slime_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::item::ItemDrop;
+    use crate::npc::{Npc, NpcKind};
+
+    /// A world with a Blue Slime (the convertible kind 1) at (50, 50); the
+    /// player stands far away so the grab pass never touches the drop.
+    fn slime_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = tr_core::world::World::new("slime".into(), 100, 100);
+        w.compute_column_surface();
+        app.world = w;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 2.0 * TILE_PX;
+        player.y = 2.0 * TILE_PX;
+        app.player = Some(player);
+        let mut n = Npc::new(NpcKind::Slime, 50.0 * TILE_PX, 50.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        app.npcs.push(n);
+        app
+    }
+
+    /// `GetPickedUpByMonsters_Special` (`WorldItem.cs:1086-1116`): a Copper
+    /// Shortsword (89) overlapping the Blue Slime consumes the drop and
+    /// raises the unlock flag; the NPC stays (the 684 transform is the
+    /// roster gap). A second drop does NOT re-grant (the flag gates).
+    #[test]
+    fn w4_g15_a_copper_shortsword_on_a_blue_slime_raises_the_unlock() {
+        let mut app = slime_app();
+        // The drop's box overlaps the slime's (both at tile 50).
+        let d = ItemDrop::new(89, 1, 0, 50.0 * TILE_PX, 50.0 * TILE_PX, 0.0, 0.0, 0.0);
+        assert!(!app.world.unlocked_slime_copper_spawn);
+        assert!(copper_slime_pickup(&mut app, &d), "the convertible slime consumed it");
+        assert!(app.world.unlocked_slime_copper_spawn, "the flag raised");
+        assert_eq!(app.npcs.len(), 1, "the NPC stays (the 684 roster gap)");
+        // The Chain Knife (3507) is the other kind; a non-convertible NPC
+        // (a Zombie, kind 3) refuses.
+        let mut app = slime_app();
+        app.npcs[0].kind = NpcKind::Zombie;
+        let d = ItemDrop::new(3507, 1, 0, 50.0 * TILE_PX, 50.0 * TILE_PX, 0.0, 0.0, 0.0);
+        assert!(!copper_slime_pickup(&mut app, &d), "a zombie is not convertible");
+        assert!(!app.world.unlocked_slime_copper_spawn);
+        // A drop far from the slime refuses (no hitbox overlap).
+        let mut app = slime_app();
+        let d = ItemDrop::new(89, 1, 0, 80.0 * TILE_PX, 50.0 * TILE_PX, 0.0, 0.0, 0.0);
+        assert!(!copper_slime_pickup(&mut app, &d), "no overlap refuses");
     }
 }
 
