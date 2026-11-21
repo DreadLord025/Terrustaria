@@ -8927,15 +8927,35 @@ RNG census; the deliberate deviations:
   borrow). The hoik loop's per-step scans fold to the parked requests in
   step order. The plate scan reads LAST sub-step's `oldPosition` latch (the
   one-tick-lag convention).
-- **The dust/gore/particle BODIES skip** but every explicit `Main.rand`
-  gate/settings draw stays in C# order (the G3 census): the 1053 ember gates,
-  the 1054 cobweb `Next(7)`, the 1047 `Next(4)`/`Next(180)` smart-bounce
-  gates + the ShimmerBlock settings float, the kill-arm `Next(2)` scale
-  gates, the gore type picks + `NewGore` kicks, the bee count/velocity rolls.
-  The sounds park on `wants_sound` (the AI cues) / push straight into
-  `pending_proj_sounds` (the death cues — the hook runs after the sub-step
-  loop's forward); the id-3/4/42 styles the `play_proj_sound` façade does not
-  serve drop at the drain (the sound-layer census).
+- **The dust/gore BODIES now spawn** (the W4-d3 bodies wave, the g64/g16
+  seams replicated): the 1053 ember trail (`:26031-26049`) + the 1048 flight
+  speck (`:26395-26399`), the two movement sites this task owns — the 1053
+  bounce 10×2 burst (`:18947-18956`) and the 1048 bounce 10-dust ring
+  (`:19242-19246`) — and the Kill-arm bodies (the family dust loop
+  `:74938`/`:74973`/`:75083` with the per-kind num599 type, the 1053 lava
+  25+80 dust + 4-gore `:74877-74913`, the 1054 20-dust `:74921`, the 1055
+  50-dust `:74928`, the 1047 rainbow ring + 14 hue dust `:71192-71255`, the
+  763 spike latch `:55518-55529` + kill `:75067-75078`). Every explicit
+  `Main.rand` gate/settings draw stays in C# order; the `NewDust`/`CloneDust`/
+  `NewGore` internal rolls now land at their C# positions inside the verbatim
+  `DustPool`/`GorePool` calls on the SAME `UpdateProjectiles` stream (the
+  `DustDraw` adapter + `GoreRng for dyn DropRng`). The wiring:
+  `ProjectilePool::update` is the scratch wrapper over `update_dust`; the
+  world-sim pass threads `app.dust` + `spawn_ctx` + the gore pool
+  (`set/take_gore_pool`). **GORE CENSUS:** the 1047 Kill arm spawns ZERO
+  `Gore.NewGore` — the "rainbow shards" are dust 267/66 + RainbowRodHit
+  particles; the family's only gore is the 1053 lava four (`:74898-74913`).
+  The `ParticleOrchestrator.RequestParticleSpawn` BODIES still skip (the
+  shadowbeam precedent — the port has no particle orchestration); their
+  settings draws stay. `Collision.HitTiles` (effect-only dust),
+  `Lighting.AddLight`/`CastLightOpen` and the sounds stay their layers (the
+  AI cues park on `wants_sound`, the death cues push straight into
+  `pending_proj_sounds`; the id-3/4/42 styles the `play_proj_sound` façade
+  does not serve drop at the drain). The dust-free callers (the witnesses,
+  the `update` scratch entry) keep the census behaviour: the bodies do not
+  spawn and their internals do not draw — only the explicit gate draws ride
+  the stream; the gore census path (type pick + kicks) stands when
+  `gore_pool` is `None`.
 - **Verbatim quirks kept**: the 1054 `localAI[0]` never ages (the `:26022`
   arm names only 1013/1048); the rainbow enemy pick keeps the FARTHEST
   chaseable NPC (`num <= num3`); `JumpToPlayer` passes `player.position` as

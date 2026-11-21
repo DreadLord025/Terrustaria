@@ -13,18 +13,21 @@
 //! Ported here, in the C#'s own order:
 //! * the AI arm ([`boulder_step`]'s head half, `:26015-26415`): the
 //!   `localAI[2]` tick, the 1013/1048 age, the 1014 `Main.tileFrame[665]`
-//!   frame pin, the 1053/1048 dust gates (drawn, bodies skipped), the 1054
-//!   cobweb trail (`WorldGen.PlaceTile(51)`), the 1047 frame machine +
-//!   `tileCollide` pin + smart-bounce gates, the 1055 rotation wrap +
-//!   player-chase flight, the wall-nudge ladder (`:26248-26331`), the
-//!   rotation/gravity/accel tail and the wet kills (`:26400-26414`);
+//!   frame pin, the 1053 ember trail + the 1048 flight speck (the dust
+//!   BODIES, the g64 seam), the 1054 cobweb trail (`WorldGen.PlaceTile(51)`),
+//!   the 1047 frame machine + `tileCollide` pin + smart-bounce gates, the
+//!   1055 rotation wrap + player-chase flight, the wall-nudge ladder
+//!   (`:26248-26331`), the rotation/gravity/accel tail and the wet kills
+//!   (`:26400-26414`);
 //! * the Shimmer anti-gravity arm (`Shimmer()` `:22504-22515`, called from
 //!   `Update` `:17009-17012` — the style-25/17 exemption at `:22363` means
 //!   even the hostile boulders float);
 //! * `HandleMovement`'s collision + per-kind bounce ladder
 //!   (`:18941-19277`) with the slope pass (`:17656-17698`/`:17744-17845`/
 //!   `:17850-17892`) and the blocked-move tile-cut prologue
-//!   (`:17910-17984`, the 484 cut + the `Next(3)` cracked-brick cut);
+//!   (`:17910-17984`, the 484 cut + the `Next(3)` cracked-brick cut). The
+//!   two movement-dust sites THIS task owns: the 1053 bounce 10×2 burst
+//!   (`:18947-18956`) and the 1048 bounce 10-dust ring (`:19242-19246`);
 //! * the RainbowBoulder smart-bounce machine (`:20024-20315`):
 //!   PreventSpam (the pool precomputes the sibling count — the
 //!   `snowflake_sibling_push` pattern), HighlightNearbyTreasure, the
@@ -34,22 +37,34 @@
 //!   BoulderExplosion (`:70563-70575`), the 1047 rainbow burst
 //!   (`:71192-71255`), the family arm (`:74841-74968`, the item drops, the
 //!   Poulder poop pyramid and the LavaBoulderExplosion), the 1005 arm
-//!   (`:74970-74981`) and the 655 bee/honey arm (`:75080-75123`).
+//!   (`:74970-74981`), the 763 spike arm (`:75067-75078`) and the 655
+//!   bee/honey arm (`:75080-75123`). The dust/gore BODIES spawn through the
+//!   verbatim `DustPool`/`GorePool` (the g64/g16 seams);
+//! * the 763 spike's `AI_001` spawn-latch 5-dust burst (`:55518-55529`,
+//!   wired kind-gated in the style-1 dispatch ahead of the generic flight).
 //!
 //! RNG (the `UpdateProjectiles` stream): every EXPLICIT `Main.rand` call in
 //! the ported C# blocks stays, in order — the dust gates, the spike-burst
 //! count/seed, the smart-bounce `Next(4)`/`Next(180)` gates, the particle
 //! settings' `NextVector2*` draws, the kill-arm `Next(2)` scale gates, the
-//! gore type picks + `NewGore` kicks (the G3 census, `Gore.cs:1327-1328`),
-//! the bee count/velocity rolls. SKIPPED with their layers: the
-//! `Dust.NewDust`/`CloneDust` internal rolls (the
-//! `rainbow_crystal_explosion_draws` precedent), the
+//! gore type picks, the bee count/velocity rolls. The dust/gore BODIES now
+//! spawn through the verbatim pools on the SAME stream (the g64 `DustDraw`
+//! seam + the g16 `GoreRng for dyn DropRng`): the `NewDust`/`CloneDust`/
+//! `NewGore` internal rolls land at their C# positions inside the pool
+//! calls. SKIPPED with their layers: the
 //! `ParticleOrchestrator.RequestParticleSpawn` bodies (the shadowbeam
 //! precedent `projectile.rs:8543` — the port has no particle orchestration,
-//! `app/netmodules.rs:448`), `Collision.HitTiles` (effect-only dust,
-//! `Collision.cs:3103`), `Lighting.AddLight`/`CastLightOpen` and the sounds
-//! (parked on `wants_sound`; the id-3/4/42 cues the port's `play_proj_sound`
-//! façade does not serve drop at the drain — the sound-layer census).
+//! `app/netmodules.rs:448`; their SETTINGS draws stay), `Collision.HitTiles`
+//! (effect-only dust, `Collision.cs:3103`), `Lighting.AddLight`/`CastLightOpen`
+//! and the sounds (parked on `wants_sound`; the id-3/4/42 cues the port's
+//! `play_proj_sound` façade does not serve drop at the drain — the
+//! sound-layer census).
+//!
+//! GORE CENSUS (the directive's "rainbow-boulder gore"): the 1047 Kill arm
+//! (`:71192-71255`) spawns **zero** `Gore.NewGore` — the "rainbow shards"
+//! are dust 267/66 + RainbowRodHit particles, NOT gore. The boulder
+//! family's ONLY gore is the 1053 lava death's four gibs (`:74898-74913`,
+//! type `Next(61, 64)`, [`lava_death_gore`]).
 //!
 //! Documented deviations (ANALYSIS "The boulder family (W4-d3)"):
 //! * the wet flags probe at the arm head (the bobber tick-head convention,
