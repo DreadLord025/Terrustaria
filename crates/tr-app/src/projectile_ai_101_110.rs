@@ -354,6 +354,47 @@ pub(crate) fn ai_tower_orb(
     let _ = local_owner;
 }
 
+/// `AI()`'s aiStyle-104 block (`Projectile.cs:33478-33511`) — the 565
+/// BrainOfConfusion's confusion burst: the grow/fade-in leg
+/// (`scale *= 1.01`, `alpha -= 7`) until alpha crosses 0, then the
+/// shrink/fade-out leg (`scale *= 0.995`, `alpha += 3`) to the 250 kill;
+/// the 7-tick 4-frame cycle and the upward drift (`velocity.Y -= 0.03`,
+/// `velocity.X *= 0.97`). ZERO `Main.rand` draws by construction.
+///
+/// Movement: 104 is not on `UpdatePosition`'s skip list (`:20435`), so
+/// the dispatch's `kill_step` integrates the drifted velocity.
+pub(crate) fn ai_brain_of_confusion(p: &mut Projectile) {
+    // `:33480-33498` — the two legs.
+    if p.ai[0] == 1.0 {
+        p.scale *= 0.995;
+        p.alpha += 3;
+        if p.alpha >= 250 {
+            kill(p);
+            // The C# does NOT return here — the frame + drift tail
+            // still runs on the kill tick (`:33499-33510`).
+        }
+    } else {
+        p.scale *= 1.01;
+        p.alpha -= 7;
+        if p.alpha < 0 {
+            p.alpha = 0;
+            p.ai[0] = 1.0;
+        }
+    }
+    // `:33499-33508` — the 7-tick frame cycle (4 rows, `Main.cs:8478`).
+    p.frame_counter += 1;
+    if p.frame_counter > 6 {
+        p.frame_counter = 0;
+        p.frame += 1;
+        if p.frame > 3 {
+            p.frame = 0;
+        }
+    }
+    // `:33509-33510` — the drift.
+    p.vel.y -= 0.03;
+    p.vel.x *= 0.97;
+}
+
 // ---------------------------------------------------------------------------
 // Witnesses (W4-d11 code-only round — WRITTEN NOT RUN).
 
@@ -648,5 +689,75 @@ mod tests {
         // the 539 — it keeps flying).
         assert_eq!(p.ai[0], 210.0);
         assert!(p.net_update, "the release fired");
+    }
+
+    /// The 565 row (`Projectile.cs:6161-6171`) + the 4-frame sheet
+    /// (`Main.cs:8478`).
+    #[test]
+    fn w4_d11_104_the_brain_row_carries_its_style() {
+        let d = proj_data(565).unwrap();
+        assert_eq!(d.ai_style, 104);
+        assert_eq!((d.w, d.h, d.penetrate), (28.0, 28.0, -1));
+        assert!(!d.tile_collide, ":6167");
+        assert_eq!((d.alpha, d.scale), (255, 0.8), ":6169-6170");
+        assert_eq!(crate::projectile::proj_frames(565), 4);
+    }
+
+    /// `:33491-33497` — the fade-in leg: scale *= 1.01, alpha -= 7; at
+    /// alpha < 0 the clamp arms ai[0] = 1. From 255: 37 ticks reach -4
+    /// -> 0 (255 - 36*7 = 3 still positive; tick 37 crosses).
+    #[test]
+    fn w4_d11_104_the_fade_in_arms_the_shrink_leg() {
+        let mut p = proj(565);
+        for _ in 0..36 {
+            ai_brain_of_confusion(&mut p);
+        }
+        assert_eq!(p.alpha, 3, "255 - 36*7");
+        assert_eq!(p.ai[0], 0.0, "still fading in");
+        let s36 = 0.8f32 * 1.01f32.powi(36);
+        assert!((p.scale - s36).abs() < 1e-4, "the 1.01 growth");
+        ai_brain_of_confusion(&mut p);
+        assert_eq!(p.alpha, 0, "the clamp");
+        assert_eq!(p.ai[0], 1.0, ":33496");
+        // The drift ran every tick: vy = -0.03 * 37.
+        assert!((p.vel.y + 0.03 * 37.0).abs() < 1e-4, ":33509");
+    }
+
+    /// `:33482-33487` — the shrink leg: scale *= 0.995, alpha += 3; the
+    /// kill at alpha >= 250 (84 ticks from 0: 83*3 = 249, tick 84 = 252).
+    /// The frame + drift tail runs on the kill tick too.
+    #[test]
+    fn w4_d11_104_the_shrink_leg_kills_at_250() {
+        let mut p = proj(565);
+        p.ai[0] = 1.0;
+        p.alpha = 0;
+        for _ in 0..83 {
+            ai_brain_of_confusion(&mut p);
+        }
+        assert_eq!(p.alpha, 249);
+        assert!(p.active);
+        ai_brain_of_confusion(&mut p);
+        assert_eq!(p.alpha, 252);
+        assert!(!p.active, "alpha >= 250 -> Kill");
+        // The tail ran on the kill tick: the drift accumulated 84 ticks.
+        assert!((p.vel.y + 0.03 * 84.0).abs() < 1e-4);
+    }
+
+    /// `:33499-33508` — the frame cycle: frameCounter > 6 advances the
+    /// frame, wrapping 3 -> 0 (the 7-tick cadence, NOT >= 6).
+    #[test]
+    fn w4_d11_104_the_frame_cycle_wraps_at_three() {
+        let mut p = proj(565);
+        for _ in 0..6 {
+            ai_brain_of_confusion(&mut p);
+        }
+        assert_eq!(p.frame, 0, "six ticks: counter 6, no advance");
+        ai_brain_of_confusion(&mut p);
+        assert_eq!(p.frame, 1, "tick 7: counter 7 > 6 -> frame 1");
+        assert_eq!(p.frame_counter, 0);
+        for _ in 0..21 {
+            ai_brain_of_confusion(&mut p);
+        }
+        assert_eq!(p.frame, 0, "three more cycles wrap 3 -> 0");
     }
 }

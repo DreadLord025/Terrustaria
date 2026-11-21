@@ -17924,6 +17924,17 @@ impl ProjectilePool {
                             let npcs = &npcs[..];
                             self.slots[i].ai_stardust_mark(&*world, npcs)
                         }
+                        // W4-d11 — aiStyle 104 (`AI()` `:33478-33511`):
+                        // the 565 BrainOfConfusion burst — the grow/fade
+                        // legs, the 7-tick frame cycle, the upward drift.
+                        // 104 is not on the `UpdatePosition` skip list, so
+                        // `kill_step` integrates the drifted velocity.
+                        104 => {
+                            crate::projectile_ai_101_110::ai_brain_of_confusion(
+                                &mut self.slots[i],
+                            );
+                            self.slots[i].kill_step(world);
+                        }
                         122 => {
                             // `:34927-34929`'s homing run, then the contact's
                             // shield spend — `Projectile.Kill()`'s type-629

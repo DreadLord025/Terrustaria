@@ -316,6 +316,11 @@ pub const NEBULA_BOLT: u16 = 573;
 /// aiStyle 1 (`Projectile.cs:6258-6269`: 4x4, hostile, penetrate -1,
 /// alpha 255, extraUpdates 2, scale 1.2, timeLeft 600). W4-d11.
 pub const NEBULA_LASER: u16 = 576;
+/// `ProjectileID.BrainOfConfusion` (565) — the Brain of Confusion's
+/// confusion burst, aiStyle 104 (`Projectile.cs:6161-6171`: 28x28,
+/// penetrate -1, tileCollide false, ignoreWater, alpha 255, scale 0.8).
+/// W4-d11.
+pub const BRAIN_OF_CONFUSION: u16 = 565;
 pub const VORTEX_LIGHTNING: u16 = 578;
 pub const VORTEX_PORTAL: u16 = 579;
 pub const VORTEX_RITUAL_BOLT: u16 = 580;
@@ -2477,6 +2482,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             NEBULA_LASER => {
                 (4.0, 4.0, 1, -1, 600, 2, true, false, false, (false, -2, false, -1, 255, 1.2))
             }
+            // W4-d11 — `Projectile.cs:6161-6171` (565, the
+            // BrainOfConfusion): 28x28, aiStyle 104, penetrate -1,
+            // tileCollide false, alpha 255, scale 0.8. The stock
+            // friendly/hostile false — the burst is a visual marker.
+            BRAIN_OF_CONFUSION => {
+                (28.0, 28.0, 104, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 0.8))
+            }
             // W4-d11 — `Projectile.cs:6107-6119` (536, the MedusaHeadRay):
             // 10x10, aiStyle 101, penetrate -1, tileCollide false;
             // drawLayer 7 / usesOwnerLight are render-side (dropped).
@@ -4261,6 +4273,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d11 — the aiStyle-101 rays set `ignoreWater`
             // (`Projectile.cs:6118` the 536, `:6407` the 591).
             || matches!(kind, MEDUSA_HEAD_RAY | MINECART_MECH_LASER)
+            // W4-d11 — the 565 BrainOfConfusion sets `ignoreWater`
+            // (`Projectile.cs:6168`).
+            || kind == BRAIN_OF_CONFUSION
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
             || kind == GOLF_CLUB_HELPER,
@@ -4765,6 +4780,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // `Projectile.cs:33310-33317`/`:33352`/`:33410-33417`).
         STARDUST_JELLYFISH_SMALL => 4,
         NEBULA_EYE => 2,
+        // W4-d11 — the 565's 4-frame sheet (`Main.cs:8478`) — the
+        // aiStyle-104 7-tick cycle wraps at it (`Projectile.cs:33499-
+        // 33508`).
+        BRAIN_OF_CONFUSION => 4,
         _ => 1,
     }
 }
