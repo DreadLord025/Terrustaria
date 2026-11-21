@@ -45391,10 +45391,12 @@ mod w4_d14_elder_wins_tests {
                 .collect::<Vec<_>>(),
             "per gore: SelectRandom's Next(4) then the two kicks"
         );
-        for _ in 0..14 {
+        // The advance fires on the call that ENTERS at age 120 — the
+        // 121st call (106 so far, so 15 more).
+        for _ in 0..15 {
             p.ai_elder_wins(&w, &mut rng);
         }
-        // The 120th tick: the advance zeroes the age and bumps the state.
+        // The 121st tick: the advance zeroes the age and bumps the state.
         assert_eq!(p.local_ai[1], 1.0, ":36359-36363");
         assert_eq!(p.local_ai[0], 1.0, "the age restarted and ticked once");
     }
@@ -45408,26 +45410,28 @@ mod w4_d14_elder_wins_tests {
         let mut p = marker();
         p.local_ai[1] = 1.0;
         let mut rng = R { ranges: Vec::new(), floats: 0 };
-        for _ in 0..300 {
+        // The advance fires on the call that ENTERS at age 300 — the 301st.
+        for _ in 0..301 {
             p.ai_elder_wins(&w, &mut rng);
         }
         assert_eq!(p.local_ai[1], 2.0, "the 300-tick advance (:36385)");
         assert_eq!(p.vel.y, 0.0, "state 1 writes no velocity (dedServ)");
-        // State 2: 60 ticks of -1/tick. The trail's gate count grows with
-        // the fall: tick k enters with vy = -(k-1), so 1+(k-1) gates.
+        // State 2: the advance fires on the call that ENTERS at age 60 —
+        // the 61st state-2 call. Each call decrements vy first, so the
+        // trail's gate count is 1 + (int)(-vy) = the call index.
         let y0 = p.pos.y;
-        for _ in 0..60 {
+        for _ in 0..61 {
             p.ai_elder_wins(&w, &mut rng);
         }
         assert_eq!(p.local_ai[1], 3.0, "the 60-tick advance (:36399)");
-        assert_eq!(p.vel.y, -60.0, ":36398 — one per tick");
-        // kill_step integrates the velocity each tick: sum 1..60 = 1830.
-        assert!((p.pos.y - (y0 + 1830.0)).abs() < 1e-3);
-        // The trail gates: state 1's 300 ticks × 1 + state 2's sum 1..60.
-        assert_eq!(rng.ranges.len(), 300 + 1830, "one Next(2) per iteration");
+        assert_eq!(p.vel.y, -61.0, ":36398 — one per tick");
+        // kill_step integrates the velocity each tick: sum 1..61 = 1891.
+        assert!((p.pos.y - (y0 + 1891.0)).abs() < 1e-3);
+        // The trail gates: state 1's 301 ticks × 1 + state 2's sum 1..61.
+        assert_eq!(rng.ranges.len(), 301 + 1891, "one Next(2) per iteration");
         assert!(rng.ranges.iter().all(|&(a, b)| (a, b) == (0, 2)));
         // The taken branches (CensusRng returns min = 0): 5 floats each.
-        assert_eq!(rng.floats, (300 + 1830) * 5);
+        assert_eq!(rng.floats, (301 + 1891) * 5);
         // State 3 kills on the next tick.
         p.ai_elder_wins(&w, &mut rng);
         assert!(!p.active, ":36412");
