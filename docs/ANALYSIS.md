@@ -39396,3 +39396,39 @@ wet/ai1/aiAction variants, 40 ticks each, rows stay inside their
 sheets) and the seam's exact-set pin. The strip/band expectation
 tables were re-derived by mechanical replay of the ported machines
 (a Python transcription of the C# order), not by hand alone.
+
+## W4-f27 FindFrame extra wave 7 (slice 7 claim, 2026-11-21, code-only mode)
+
+**BAND CLAIM (early, before the batches):** the f27 lane continues on
+the SAME branch after extra-4 (ad79bbb7). The census re-derived
+mechanically against this branch's tree: every C# top-level case label
+of the switch on this.type (NPC.cs:66705, two-tab indent - the nested
+switches excluded) = 602 ids; the port's npc.rs::find_frame arms mapped
+through the cs_id hand rows (npc/data.rs:2992) + the bestiary net ids +
+the wave-A/B rosters + the extra-4 seam + the folded segments
+(135/246/249/371/373, their own find_frame arms) cover 263; the d44-d49
+claims subtract 75 more (disjoint from the covered set) = 264 e13-base
+(the f26 wave-5 header's 248/279 counted a narrower arm map - the
+recount here is the mechanical one); minus the e13/e14-declared 30 +
+f26 extra-3's 15 + f26 extra-5's 15 + f27 extra-4's 15 (the overlaps
+dedupe) = **219 unclaimed** (the f26 census number, re-confirmed).
+
+The 306..350 window: 44 case labels; 33 already port-covered (the
+Scarecrow/MourningWood/Pumpking walker group npc.rs:8592-8604, the
+holiday zombies via wave-A npc_findframe_a.rs:157-161, the ZombieElf
+trio npc.rs:8648, the Frost Moon bosses/flyers npc.rs:8664-8926); the
+11 unclaimed are **316/317/318/322/323/324/333/334/335/336/337**.
+f26c owns the 278-305 band (23 ids: 278..287/290..293/295/297/298/
+299/300/301/302/303/304). **This wave (f27 slice 7) claims the FIRST 15
+unclaimed of the 306+ band: 316/317/318/322/323/324/333/334/335/336/
+337/437/438/440/442** - the window's 11 plus the next 4 ascending
+(437 CultistTablet, 438 CultistDevote, 440 CultistBossClone, 442
+GoldBird). f26c stays below 306.
+
+Shape (the extra-4 precedent): pure machines over FrameState/
+FrameInput in crates/tr-app/src/npc_findframe_extra7.rs, the
+find_frame_kind_extra7 vanilla-id seam, no npc.rs hook this wave.
+5 kinds per commit, 3 batches. Zero RNG (the floater group's only
+Main.rand draw :74844 is 634-gated; the eye group's :74007 dust is
+23-gated - neither is 316/317/318). Frame counts vs Main.cs:67082
+entry-by-entry AND render/entities.rs NPC_FRAME_COUNT.
