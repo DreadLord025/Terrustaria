@@ -17493,9 +17493,14 @@ impl ProjectilePool {
                         // precedent — the X-block arm kills BEFORE the
                         // burst, so `GetNextSlot` must skip the dying slot).
                         25 => {
-                            let spam = crate::projectile_ai_boulder::rainbow_spam_survives(
-                                &self.slots, i,
-                            );
+                            // The PreventSpam precompute rides the 1047 alone
+                            // (the sibling-scan pattern — only the rainbow
+                            // arms read it; the other kinds pass the unused
+                            // `true`, no 1000-slot scan).
+                            let spam = self.slots[i].kind != RAINBOW_BOULDER
+                                || crate::projectile_ai_boulder::rainbow_spam_survives(
+                                    &self.slots, i,
+                                );
                             let spikes = crate::projectile_ai_boulder::boulder_step(
                                 &mut self.slots[i],
                                 world,
