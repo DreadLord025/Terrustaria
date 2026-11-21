@@ -44697,16 +44697,18 @@ mod w4_g2_rowless_tests {
         // Teleport past the target: the dot flips <= 0 -> zero + kill.
         pool.slots_mut()[slot].pos.x = 400.0;
         tick(&mut pool, &mut w);
-        let p = &pool.slots()[slot];
-        assert!(!p.active, "the arrival kill (:28338)");
-        assert_eq!(p.vel, Vec2::ZERO, ":28335");
-        // The death hook spawned the 292 blast with the FULL damage.
+        // The death hook spawned the 292 blast with the FULL damage. The
+        // spawn takes the first free slot — the just-freed bolt's own (the
+        // `spawn_inferno_blast` doc's FindOldestProjectile note), so the
+        // blast is found BY KIND, not by the bolt's old index.
         let blast = pool.slots().iter().find(|p| p.active && p.kind == INFERNO_HOSTILE_BLAST);
         let blast = blast.expect("the 291->292 Kill spawn (:74334-74340)");
         assert_eq!(blast.damage, 60, "FULL damage — no 0.75 (:74338)");
         assert_eq!((blast.w, blast.h), (130.0, 130.0), "the 292 box (:3817-3818)");
         assert!(!blast.friendly, "the hostile blast");
         assert_eq!(blast.owner, 0, "the bolt's owner preserved");
+        assert!(!pool.slots().iter().any(|p| p.active && p.kind == INFERNO_HOSTILE_BOLT),
+            "the bolt is gone");
     }
 
     /// `Projectile.cs:28332-28333` — the zero-target guard: an unaimed
