@@ -39244,3 +39244,64 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The net-id tail census (S1-I-1 W4-f21, 2026-11-21)
+
+The f21 lane re-censused `MessageID` 1-162 against `net.rs` (54 base
+ids) plus every pushed/in-flight codec lane (c27/d89-d100; the in-flight
+probe read each lane's diff, g48 was mid-merge with UU conflicts and was
+left untouched) and found **44 missing ids**. The branch ports **43**
+bodies + codecs verbatim into `net.rs` (the per-id table lives in
+`docs/research/17-netcode.md`'s f21 census section); the dispatcher
+apply/relay arms are parked for the g48-g52 apply-wiring lanes / S1-I-4.
+
+Deliberate verdicts (no behaviour change, code-only):
+
+- **132 PlayLegacySound — dead, skipped per the task.** Zero
+  `PlayNetSound(` call-sites tree-wide (only the definition,
+  `NetMessage.cs:2615-2619`); the writer/reader arms exist but nothing
+  sends. No constant, no variant.
+- **24 UnusedMeleeStrike / 145 / 148 — census constants only.** 24's
+  reader is `Invariant.Assert(false)` and reads NOTHING
+  (`MessageBuffer.cs:1706-1708`); 145/148 have neither arm. No variant
+  is invented for a frame with no live reader (the writer bytes are
+  documented at the constants).
+- **25/26/44/67/83/93 — the reader ignore group**
+  (`MessageBuffer.cs:4483-4490`): bare S2c frames, the d89 id-15
+  precedent. 93 alone is accept-gate-whitelisted (`:165`).
+- **111/129/138/144 — bodyless frames**: no writer case (111/129/144) or
+  no reader case either (138, the default-arm drop). Bare frames pinned.
+- **85 QuickStackChests — the netMode-split writer kept as TWO variants**
+  (`C2s::QuickStackRequest` int+shorts+smart-byte vs
+  `S2c::QuickStackBlockedChests` int+ushorts): one ambiguous body would
+  be unfaithful to `NetMessage.cs:1205-1215`.
+- **104 ShopOverride — the writer/reader stack-width MISMATCH kept
+  verbatim**: the writer sends a 4-byte float stack
+  (`NetMessage.cs:1390`, negative `(short)` clamp to 0f), the reader
+  reads a 2-byte short (`MessageBuffer.cs:3721`) and misaligns the
+  rest. Zero `SendData(104)` sites — dead vanilla code; encode keeps
+  the writer shape, decode the reader shape, the witness pins the exact
+  misaligned read.
+- **86 TileEntitySharing — the full 11-kind networkSend serializer**
+  (`TileEntitiesManager.cs:26-39` registration order = the type byte):
+  the doll's 3-BitsByte+pose form with the bits3[1]/[2] slot-8 fold
+  (gameVersion 326: >=307/>=308 live, ==311 quirk dead), the hat rack's
+  1-flag-byte form, the logic sensor's NOTHING (`!networkSend` gate),
+  the pylon's base no-op, the anchors' short itemType. `IsAir` =
+  `type <= 0 || stack <= 0` (`Item.cs:385-394`).
+- **121/124 — the doll/hat-rack slot order is STACK-BEFORE-PREFIX**
+  (`WriteItem`: ushort type + ushort stack + byte prefix), DISTINCT
+  from the extra-data triple's prefix-before-stack; both helpers live on
+  `TeItem`. The dummy fallbacks are byte-width-identical to the real
+  shapes, so they decode as Pose(0)/air slots exactly as the C#
+  `ReadDummySync` consumes them. 124's dye +2 fold rides the wire slot
+  verbatim (`is_dye`/`slot_index` helpers mirror the reader unfold).
+- **90 SpawnInstancedItem shares the case-21 ItemState body** — d98's
+  wave-I bit-3 enemyGrabDelay extension of that struct merges with the
+  new variant; f21 did not touch the contested fields.
+
+Witnesses: `net.rs::tests::w4_f21_*` — byte-pinned round trips per
+id/shape family, the 104 misalignment pin, the 90-vs-21 and
+TryPlacing-quadruplet (89/123/133/149) byte-equality pins, and the 43-id
+census witness. WRITTEN NOT RUN — no cargo/rustc/rustfmt/tests/graphify
+invoked (code-only lane).
