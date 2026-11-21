@@ -664,11 +664,15 @@ pub(crate) fn carry_slots_mut<'a>(
 // sweep changes slot placement. Every fill site now calls [`do_coins`] on
 // the slot it just filled, over the [`carry_slots_mut`] view.
 
-/// `WorldItem.UpdateItem`'s air constants (`WorldItem.cs:363-364`):
+/// `WorldItem.UpdateItem`'s air constants (`WorldItem.cs:364-365`):
 /// `float gravity = 0.1f; float maxFallSpeed = 7f;` — the wet/shimmer/honey
 /// arms override them (`:380-396`), the air case is this pair.
 const GRAVITY: f32 = 0.1;
 const MAX_FALL: f32 = 7.0;
+/// `WorldItem.UpdateItem`'s shimmer-wet arm (`WorldItem.cs:380-385`):
+/// `gravity = 0.065f; maxFallSpeed = 4f; wetVelocity = velocity * 0.375f`.
+const SHIMMER_GRAVITY: f32 = 0.065;
+const SHIMMER_MAX_FALL: f32 = 4.0;
 /// `WorldItem.MoveInWorld` (`WorldItem.cs:854-860`): the horizontal friction
 /// `base.velocity.X *= 0.95f` and the snap to rest below `0.1`.
 const FRICTION_X: f32 = 0.95;
@@ -934,45 +938,50 @@ impl ItemDrop {
         self.pos + Vec2::splat(SIZE * 0.5)
     }
 
-    /// `WorldItem.CanShimmerAtPosition` (`WorldItem.cs:756-768`): the tile
-    /// above the drop's center (the C# reads `Center.X / 16` and
-    /// `position.Y / 16 - 1`) is shimmer liquid.
+    /// `WorldItem.CanShimmerAtPosition` (`WorldItem.cs:756-770`): the RAMP
+    /// gate's tile probe — `(int)(Center.X / 16)`, `(int)(position.Y / 16 -
+    /// 1f)` (the tile above the drop's top-left), `liquid != 0 && shimmer()`.
+    /// Distinct from the shimmered-float rise scan ([`Self::rise_over_shimmer`],
+    /// `:493-504`'s two-row centre probe).
     pub fn over_shimmer(&self, world: &World) -> bool {
         let tx = (self.center().x / tr_core::TILE_PX) as i32;
-        let ty = (self.pos.y / tr_core::TILE_PX) as i32 - 1;
+        let ty = (self.pos.y / tr_core::TILE_PX - 1.0) as i32;
         world.tile(tx, ty)
             .is_some_and(|t| tr_core::shimmer::tile_is_shimmer(t))
     }
 
-    /// The drop's 14x14 box overlapping shimmer liquid this tick — the port's
-    /// stand-in for the C#'s `Collision.shimmer` flag that
-    /// `WorldItem.Update`'s wet half sets (`WorldItem.cs:868-877`).
+    /// `WorldItem.UpdateShimmer`'s shimmered-float rise scan
+    /// (`WorldItem.cs:493-504`): when NOT `shimmerWet`, the two rows at the
+    /// CENTRE (`(int)(Center.X/16)`, `(int)(Center.Y/16)` and `+1`) — any
+    /// shimmer liquid cell rises the drop. The old port reused the ramp's
+    /// single above-top-left tile (a different probe).
+    fn rise_over_shimmer(&self, world: &World) -> bool {
+        let tx = (self.center().x / tr_core::TILE_PX) as i32;
+        let ty = (self.center().y / tr_core::TILE_PX) as i32;
+        (ty..ty + 2).any(|y| {
+            world.tile(tx, y)
+                .is_some_and(|t| tr_core::shimmer::tile_is_shimmer(t))
+        })
+    }
+
+    /// `Collision.WetCollision(position, width, height)`'s `Collision.shimmer`
+    /// flag (`WorldItem.cs:870-878`): the faithful centre-shrunk probe with
+    /// the liquid-surface offset and the sloped-tile-under-liquid arm — the
+    /// `npc_ai_slime::wet_collision` port (`Collision.cs:1572-1651`), reused
+    /// UNMODIFIED. The old `box_in_shimmer` was a naive full-box overlap (no
+    /// surface offset, no slope arm, no centre shrink).
     fn box_in_shimmer(&self, world: &World) -> bool {
-        self.box_in_liquid(world, |t| tr_core::shimmer::tile_is_shimmer(t))
+        let (_, _, shimmer) =
+            crate::npc_ai_slime::wet_collision(world, self.pos.x, self.pos.y, SIZE as i32, SIZE as i32);
+        shimmer
     }
 
     /// `Collision.WetCollision(position, width, height)` (`WorldItem.cs:870`):
     /// the drop's box overlaps any non-empty liquid cell. This is `base.wet`,
-    /// the gate on most `UpdateItem_VisualEffects` light arms.
+    /// the gate on most `UpdateItem_VisualEffects` light arms. The faithful
+    /// probe (the `player::wet_collision` port, `Collision.cs:1572-1651`).
     pub fn box_is_wet(&self, world: &World) -> bool {
-        self.box_in_liquid(world, |t| t.liquid > 0)
-    }
-
-    fn box_in_liquid(&self, world: &World, hit: impl Fn(&tr_core::tile::Tile) -> bool) -> bool {
-        let x0 = (self.pos.x / tr_core::TILE_PX) as i32;
-        let x1 = ((self.pos.x + SIZE) / tr_core::TILE_PX) as i32;
-        let y0 = (self.pos.y / tr_core::TILE_PX) as i32;
-        let y1 = ((self.pos.y + SIZE) / tr_core::TILE_PX) as i32;
-        for ty in y0..=y1 {
-            for tx in x0..=x1 {
-                if let Some(t) = world.tile(tx, ty) {
-                    if hit(t) {
-                        return true;
-                    }
-                }
-            }
-        }
-        false
+        crate::player::wet_collision(world, self.pos.x, self.pos.y, SIZE, SIZE)
     }
 
     /// Whether the last [`Self::update`]'s `UpdateShimmer` armed the transform
@@ -985,15 +994,26 @@ impl ItemDrop {
 
     /// `WorldItem.UpdateShimmer` (`WorldItem.cs:455-546`): the shimmered
     /// physics (no gravity, the 0.05 rise over shimmer), the ramp ±0.01 and the
-    /// 0.9 trigger check. The dust/light arms are render-layer notes.
-    fn update_shimmer(&mut self, world: &World, dt: f32) {
+    /// 0.9 trigger check. Returns the gravity override (`Some(0)` for a
+    /// shimmered drop — `:483` `gravity = 0f`; `None` keeps the caller's
+    /// wet/air pair). The dust/light arms (`:459-482`) are render-layer notes.
+    fn update_shimmer(&mut self, world: &World) -> Option<f32> {
+        let mut gravity_override = None;
         if self.shimmered {
-            // `:457-508` — gravity is zero for the transformed item; the rise
-            // applies over shimmer liquid (or already shimmerWet), floor -4.
-            let over = self.shimmer_wet || self.over_shimmer(world);
-            if over && self.vel.y > -4.0 {
-                self.vel.y -= 0.05;
-            } else if !over {
+            // `:457-516` — gravity is zero for the transformed item (`:483`).
+            gravity_override = Some(0.0);
+            // The rise: `shimmerWet` directly (`:484-490`), else the two-row
+            // centre scan (`:493-504`); floor -4, else the ×0.9 dry damp.
+            let over = if self.shimmer_wet {
+                true
+            } else {
+                self.rise_over_shimmer(world)
+            };
+            if over {
+                if self.vel.y > -4.0 {
+                    self.vel.y -= 0.05;
+                }
+            } else {
                 self.vel.y *= 0.9;
             }
         }
@@ -1010,6 +1030,7 @@ impl ItemDrop {
             self.shimmer_pending = false;
             self.shimmer_time = (self.shimmer_time - 0.01).max(0.0);
         }
+        gravity_override
     }
 
     /// `WorldItem.TryCombiningIntoNearbyItems` (`WorldItem.cs:157-186`,
@@ -1081,16 +1102,30 @@ impl ItemDrop {
             self.on_conveyor = false;
             self.pos += self.vel;
         } else {
-            self.shimmer_wet = self.box_in_shimmer(world);
-            self.update_shimmer(world, dt);
-            if self.shimmered {
-                // `WorldItem.cs:457-508` — the transformed item does not
-                // fall; its shimmerTime decays via `update_shimmer`
-                // (`:538-545`), it is not pinned at 1.
-                self.pos += self.vel;
-            } else {
-                self.move_in_world(world);
+            // `UpdateItem`'s gravity head (`:364-396`): the air pair, then the
+            // shimmer-wet override (`:380-385`, 0.065 / 4) read from the
+            // PREVIOUS tick's `shimmerWet` (the flag `MoveInWorld` re-probes at
+            // `:875`, AFTER this head). The honey/water arms (`:386-396`) need
+            // the honeyWet/wet flags the port does not carry per-drop yet — the
+            // air pair stands in for them (ANALYSIS).
+            let (mut gravity, mut max_fall) = (GRAVITY, MAX_FALL);
+            if self.shimmer_wet {
+                gravity = SHIMMER_GRAVITY;
+                max_fall = SHIMMER_MAX_FALL;
             }
+            // `UpdateShimmer` (`:403`) runs BEFORE `MoveInWorld` (`:413`); a
+            // shimmered drop overrides gravity to 0 (`:483`).
+            if let Some(g) = self.update_shimmer(world) {
+                gravity = g;
+            }
+            // `MoveInWorld`'s wet re-probe (`:870-878`): `Collision.shimmer`
+            // sets `shimmerWet` for the NEXT tick's gravity head.
+            self.shimmer_wet = self.box_in_shimmer(world);
+            // `MoveInWorld` (`:413`) runs for EVERY non-grabbed drop — the
+            // shimmered one too (gravity 0, but the friction/conveyor/collision
+            // tail still applies; the old port skipped it with a bare
+            // `pos += vel`).
+            self.move_in_world(world, gravity, max_fall);
         }
         // `WorldItem.cs:441-444` — the grab delay ticks down every update,
         // grabbed or not.
@@ -1100,10 +1135,13 @@ impl ItemDrop {
     }
 
     /// The non-grabbed movement half: `MoveInWorld`'s gravity/friction head
-    /// (`WorldItem.cs:849-864`) and the tile-collision pass.
-    fn move_in_world(&mut self, world: &World) {
-        // `WorldItem.cs:363-364` — the air gravity and the fall cap.
-        self.vel.y = (self.vel.y + GRAVITY).min(MAX_FALL);
+    /// (`WorldItem.cs:849-864`) and the tile-collision pass. `gravity`/
+    /// `max_fall` are the caller's resolved pair (the shimmer-wet override or
+    /// the shimmered 0). The shimmered-item repulsion scan (`:790-847`) and
+    /// the `ItemNoGravity` float (`:774-786`) are deferred (ANALYSIS W4-e19).
+    fn move_in_world(&mut self, world: &World, gravity: f32, max_fall: f32) {
+        // `WorldItem.cs:849-853` — the gravity add and the fall cap.
+        self.vel.y = (self.vel.y + gravity).min(max_fall);
         // `WorldItem.cs:854-860` — the friction and the `0.1` rest snap, both
         // applied BEFORE the collision pass (`MoveInWorld`'s order).
         self.vel.x *= FRICTION_X;
@@ -2002,5 +2040,94 @@ mod s1_p_i47_tests {
         star.being_grabbed = true;
         pull_item_pickup(star.center(), &mut star.vel, pc, 12.0, 5);
         assert!((star.vel.x - -2.4).abs() < 1e-4, "12/5 blend: {}", star.vel.x);
+    }
+
+    // ---- W4-e19 — the shimmer liquid-interaction physics census ----------
+
+    /// A 32x32 world with a stone floor at y = 20 and a shimmer pool filling
+    /// rows 18-19 (the drop rests in the liquid).
+    fn shimmer_pool() -> World {
+        let mut w = ground();
+        for x in 0..32 {
+            for y in 18..=19 {
+                let j = w.index(x, y);
+                w.tiles[j] = Tile::default();
+                w.tiles[j].set_liquid_kind(tr_core::tile::LiquidKind::Shimmer);
+                w.tiles[j].liquid = 255;
+            }
+        }
+        w
+    }
+
+    #[test]
+    fn w4_e19_the_shimmer_wet_gravity_is_0065_cap_4() {
+        // `WorldItem.cs:380-385` — a shimmerWet drop falls at 0.065 / cap 4,
+        // not the air 0.1 / 7. The flag is read from the PREVIOUS tick.
+        let w = shimmer_pool();
+        let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 0.0);
+        d.shimmer_wet = true; // the previous tick's probe
+        d.update(&w, 1.0 / 60.0);
+        // gravity 0.065 applied (the drop is above the pool, dry this tick,
+        // but the head read the carried shimmerWet).
+        assert!((d.vel.y - 0.065).abs() < 1e-6, "shimmer gravity: {}", d.vel.y);
+        // The cap: a fast fall clamps at 4, not 7.
+        let mut fast = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 6.0, 0.0);
+        fast.shimmer_wet = true;
+        fast.update(&w, 1.0 / 60.0);
+        assert!((fast.vel.y - 4.0).abs() < 1e-6, "shimmer cap 4: {}", fast.vel.y);
+    }
+
+    #[test]
+    fn w4_e19_the_shimmered_drop_rises_over_the_two_row_centre_scan() {
+        // `WorldItem.cs:493-504` — a shimmered drop NOT shimmerWet rises when
+        // either of the two centre rows is shimmer. The probe is at
+        // (int)(Center.X/16), (int)(Center.Y/16) and +1 — NOT the ramp's
+        // above-top-left tile.
+        let w = shimmer_pool();
+        // Centre in row 18 (the pool's top row): pos.y = 18*16 + 1 → centre
+        // y = 18*16 + 8 → row 18. shimmerWet false (the box probe is forced
+        // off by parking the drop so only the centre row hits).
+        let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 18.0 * TILE_PX + 1.0, 0.0, 0.0, 0.0);
+        d.shimmered = true;
+        d.shimmer_wet = false;
+        d.vel = Vec2::new(0.0, 0.0);
+        // The rise scan finds row 18 shimmer → vel.y -= 0.05.
+        d.update(&w, 1.0 / 60.0);
+        assert!(d.vel.y < 0.0, "the shimmered drop rises: {}", d.vel.y);
+    }
+
+    #[test]
+    fn w4_e19_the_shimmered_drop_damps_dry_with_09() {
+        // `WorldItem.cs:512-515` — a shimmered drop with NO shimmer under the
+        // centre scan damps vel.y *= 0.9 (not the rise).
+        let w = ground(); // dry world, no shimmer
+        let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 2.0, 0.0);
+        d.shimmered = true;
+        d.shimmer_wet = false;
+        d.update(&w, 1.0 / 60.0);
+        // vel.y 2.0 * 0.9 = 1.8, then gravity 0 (shimmered) → 1.8.
+        assert!((d.vel.y - 1.8).abs() < 1e-5, "the dry damp: {}", d.vel.y);
+    }
+
+    #[test]
+    fn w4_e19_the_wet_probe_uses_the_liquid_surface_offset() {
+        // `Collision.cs:1610-1612` — the surface drops by (256-liquid)/32*2.
+        // A half-full shimmer cell (liquid 128) has its surface 8 px down; a
+        // drop whose centre-shrunk box sits in the top 8 px is NOT wet. The
+        // old naive full-box overlap reported wet there.
+        let mut w = ground();
+        let j = w.index(10, 19);
+        w.tiles[j] = Tile::default();
+        w.tiles[j].set_liquid_kind(tr_core::tile::LiquidKind::Shimmer);
+        w.tiles[j].liquid = 128; // half-full: surface at 19*16 + 8
+        // The drop's box top at 19*16 (the cell top), 14 tall → the centre-
+        // shrunk probe (7 tall, centred) spans 19*16+3.5 .. +10.5; the liquid
+        // starts at +8, so it DOES overlap. Park it higher: top at 19*16-7 →
+        // probe spans -3.5 .. +3.5 relative to the cell → above the +8 surface.
+        let d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 19.0 * TILE_PX - 7.0, 0.0, 0.0, 0.0);
+        assert!(!d.box_is_wet(&w), "above the half-full surface is dry");
+        // A full cell (liquid 255, surface at +0.06) IS wet at the same spot.
+        w.tiles[j].liquid = 255;
+        assert!(d.box_is_wet(&w), "the full cell wets the box");
     }
 }
