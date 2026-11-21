@@ -350,6 +350,65 @@ pub fn resolve(arg: &str) -> Option<i32> {
         .map(|(id, _)| *id)
 }
 
+/// `UIEmotesMenu.GetEmotesBosses`' seasonal tail (`UIEmotesMenu.cs:250-
+/// 269`): the five event-boss emotes gated by the seasonal downed flags
+/// — `downedHalloweenTree` → 54 (MourningWood), `downedHalloweenKing` →
+/// 55 (Pumpking), `downedChristmasTree` → 56 (Everscream),
+/// `downedChristmasIceQueen` → 57 (IceQueen), `downedChristmasSantank` →
+/// 58 (SantaNK1). W4-f39 Phase B landed the five flags on `World`
+/// (`world.rs:249-253`, persisted `.trwld` v18 + the C# `.wld` flags
+/// 1347-1351/1386-1387); this is the gate table the wheel reads.
+///
+/// CO-LANE HAND-OFF (W4-g54): this branch's wheel is still the FLAT
+/// `EMOTE_COUNT` roster (no groups, no gates); the gated wheel lives on
+/// `task/W4-g54-ui-emote-wheel`, whose `EmoteGates::from_world` pins
+/// these five `false` ("unowned in the port's world"). At the merge,
+/// g54's `from_world` must read `w.downed_halloween_tree` /
+/// `w.downed_halloween_king` / `w.downed_christmas_tree` /
+/// `w.downed_christmas_ice_queen` / `w.downed_christmas_santank` instead
+/// (the `EmoteGates` field names are identical). The table here is the
+/// 1:1 reference for that swap — do NOT port a second wheel.
+pub fn seasonal_boss_emote_gates(w: &tr_core::World) -> [(i32, bool); 5] {
+    [
+        (54, w.downed_halloween_tree),
+        (55, w.downed_halloween_king),
+        (56, w.downed_christmas_tree),
+        (57, w.downed_christmas_ice_queen),
+        (58, w.downed_christmas_santank),
+    ]
+}
+
+/// The Guide's seasonal help-text gates (`Main.cs:39752`/`:39757`, the
+/// `GetGuideHelpText` chain): `helpText == 1155 && hardMode &&
+/// downedGolemBoss && !downedHalloweenTree && !downedHalloweenKing`
+/// answers `GuideHelpTextSpecific.Help_1155` (the Pumpkin Medallion
+/// hint); `1156` with the three Christmas flags down answers
+/// `Help_1156` (the Naughty Present hint). The port has NO helpText
+/// machine yet (the Guide's help cycle is unported) — these are the
+/// pure gates the future machine reads, kept 1:1 with the source so the
+/// five Phase-B flags have their second consumer cited. The keys live
+/// in the Town resource group (`en-US.Town.json:1352`).
+pub fn seasonal_help_text_gate(w: &tr_core::World, help_text: i32) -> Option<&'static str> {
+    if help_text == 1155
+        && w.hard_mode
+        && w.downed_golem
+        && !w.downed_halloween_tree
+        && !w.downed_halloween_king
+    {
+        return Some("GuideHelpTextSpecific.Help_1155");
+    }
+    if help_text == 1156
+        && w.hard_mode
+        && w.downed_golem
+        && !w.downed_christmas_ice_queen
+        && !w.downed_christmas_tree
+        && !w.downed_christmas_santank
+    {
+        return Some("GuideHelpTextSpecific.Help_1156");
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -565,5 +624,77 @@ mod tests {
         // `EMOTE_SHEET_EMOTES_PER_ROW = 4` (`EmoteBubble.cs:40`): four
         // emotes per row, two columns each — 8 columns total (`:38`).
         assert_eq!(4 * 2, 8);
+    }
+
+    // — W4-f39 closeout witness (written-not-run, code-only lane): the
+    // seasonal boss-emote gate table (`UIEmotesMenu.cs:250-269`) reads
+    // the five Phase-B downed flags. The wheel wiring itself is the
+    // W4-g54 co-lane hand-off (see `seasonal_boss_emote_gates`). —
+
+    #[test]
+    fn w4_f39_the_seasonal_emotes_follow_the_five_downed_flags() {
+        let mut w = tr_core::World::new("t".into(), 8, 8);
+        // A fresh world: all five gated out.
+        assert_eq!(
+            seasonal_boss_emote_gates(&w),
+            [(54, false), (55, false), (56, false), (57, false), (58, false)]
+        );
+        // Each flag opens exactly its emote (the C# ifs are independent).
+        w.downed_halloween_tree = true;
+        assert_eq!(seasonal_boss_emote_gates(&w)[0], (54, true));
+        assert_eq!(seasonal_boss_emote_gates(&w)[1], (55, false));
+        w.downed_halloween_king = true;
+        w.downed_christmas_tree = true;
+        w.downed_christmas_ice_queen = true;
+        w.downed_christmas_santank = true;
+        assert_eq!(
+            seasonal_boss_emote_gates(&w),
+            [(54, true), (55, true), (56, true), (57, true), (58, true)]
+        );
+        // The ids match the roster names (the EmoteID const table).
+        for (id, _) in seasonal_boss_emote_gates(&w) {
+            let name = EMOTE_NAMES.iter().find(|(i, _)| *i == id).unwrap().1;
+            assert!(name.starts_with("Boss"), "{id} is a boss emote");
+        }
+    }
+
+    #[test]
+    fn w4_f39_the_seasonal_help_text_gates_match_the_source() {
+        // `Main.cs:39752`/`:39757`: hardMode + downedGolem + NONE of the
+        // season's bosses downed → the hint; any downed flag closes it.
+        let mut w = tr_core::World::new("t".into(), 8, 8);
+        assert_eq!(seasonal_help_text_gate(&w, 1155), None, "pre-hardmode");
+        w.hard_mode = true;
+        assert_eq!(seasonal_help_text_gate(&w, 1155), None, "pre-golem");
+        w.downed_golem = true;
+        assert_eq!(
+            seasonal_help_text_gate(&w, 1155),
+            Some("GuideHelpTextSpecific.Help_1155")
+        );
+        assert_eq!(
+            seasonal_help_text_gate(&w, 1156),
+            Some("GuideHelpTextSpecific.Help_1156")
+        );
+        // One halloween boss downed closes 1155 but not 1156.
+        w.downed_halloween_king = true;
+        assert_eq!(seasonal_help_text_gate(&w, 1155), None);
+        assert_eq!(
+            seasonal_help_text_gate(&w, 1156),
+            Some("GuideHelpTextSpecific.Help_1156")
+        );
+        // The tree alone closes it too (both flags gate).
+        w.downed_halloween_king = false;
+        w.downed_halloween_tree = true;
+        assert_eq!(seasonal_help_text_gate(&w, 1155), None);
+        // Each christmas flag closes 1156 independently.
+        w.downed_christmas_santank = true;
+        assert_eq!(seasonal_help_text_gate(&w, 1156), None);
+        w.downed_christmas_santank = false;
+        w.downed_christmas_ice_queen = true;
+        assert_eq!(seasonal_help_text_gate(&w, 1156), None);
+        // Other help ids never answer.
+        w.downed_christmas_ice_queen = false;
+        assert_eq!(seasonal_help_text_gate(&w, 1154), None);
+        assert_eq!(seasonal_help_text_gate(&w, 1157), None);
     }
 }
