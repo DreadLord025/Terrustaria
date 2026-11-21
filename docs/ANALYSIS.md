@@ -39376,9 +39376,11 @@ site stays deferred with its host (no cue is invented):
   DyeTraderRarePlant, `:40035` GuideReverseCrafting, `:40047`
   PartyGirlSwapMusic, `:40268` DryadText — the chat-button interaction
   handlers are unported (only Nurse/Angler/TaxCollector/shop collapse).
-- 41-50 `:40502`-`:40665` `DrawNPCChatButtons` hover pairs — the legacy
-  chat interaction buttons are deferred (`app/clicks.rs:1073-1074`; the
-  ported Close-button hover is `NPCChatPanel.cs:157-160`, a different site).
+- 41-50 `:40502`-`:40665` `DrawNPCChatButtons` hover pairs — **DEAD-ARM
+  (batch-5 verify)**: the function has zero callers in the decompile; the
+  live `NPCChatPanel.cs:159` hover tick is already ported
+  (`handle_npc_chat_clicks`); see "The chat-button census correction"
+  below.
 - 52 `:40696` `SubmitSignText` — no sign editor (`app/mod.rs:2279`).
 - 53 `:40828` `DrawNPCHousesInWorld` kickOut — **WIRED batch 4 (`31e5595a`)**:
   `house_banners.rs` ports the banner draw + the right-click kick-out

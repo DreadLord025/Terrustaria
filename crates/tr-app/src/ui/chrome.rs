@@ -709,6 +709,15 @@ pub fn draw_hotbar_lock(
         r.push_ui_sprite([0.0, y], [hl.w * 0.9, hl.h * 0.9], hl.uv, FAVORITE);
     }
     // `DoStatefulTickSound(ref hotbarLockMouseOver, flag)` (`:42515` → `:3244`).
+    stateful_tick(hover, hovered)
+}
+
+/// `Main.DoStatefulTickSound(ref bool flag, bool state)`
+/// (`Main.cs:3237-3247`): the latch updates on every change; the tick
+/// (`PlaySound(12)`, `:3244`) fires on the ENTER edge only — `if (flag)`
+/// gates the play, so the exit edge is silent. Pure so the edge is testable
+/// without a GPU renderer. W4-g21 batch 5.
+pub fn stateful_tick(hover: &mut bool, hovered: bool) -> bool {
     let tick = *hover != hovered && hovered;
     *hover = hovered;
     tick
@@ -1269,6 +1278,101 @@ mod tests {
         // `num = 21 + pivotTopLeftY` (0), or `pivotTopLeftY` when pushed up.
         assert_eq!(hotbar_lock_y(false), 21.0);
         assert_eq!(hotbar_lock_y(true), 0.0);
+    }
+
+    // W4-g21 batch 5 (hosts 71/72/73) — WRITTEN NOT RUN (code-only mode).
+    // The icon sheets stand in at synthetic sizes; the geometry is the C#'s
+    // `Frame(...)` cell × 0.9 at the literal y, strict on all edges.
+
+    /// A lookups rig with the three batch-5 icon sheets at round sizes:
+    /// Lock 20x22 (Frame(2) → 10x22), BlockReplace 36x26 (Frame(3) → 12x26),
+    /// Extra_211 52x28 (Frame(4) → 13x28).
+    fn icon_lookups() -> assets::Lookups {
+        let rect = |w, h| {
+            Some(tr_render::SheetRect {
+                x: 0,
+                y: 0,
+                width: w,
+                height: h,
+                plain_frame: (0, 0),
+            })
+        };
+        let mut lk = assets::Lookups::default();
+        lk.atlas_size = (8192, 8192);
+        lk.hb_lock = [rect(20, 22), rect(20, 22)];
+        lk.block_replace = rect(36, 26);
+        lk.torch_biome = rect(52, 28);
+        lk
+    }
+
+    /// `Main.cs:42491`/`:42536`/`:42576` — the three hover boxes at the
+    /// literal ys (21/44/68 idle, 0/23/47 pushed up), cell size × 0.9,
+    /// strict on all four edges (the C#'s `>` / `<`, not `>=` / `<=`).
+    #[test]
+    fn batch5_icon_hit_boxes_match_the_frame_cells() {
+        let lk = icon_lookups();
+        // Hotbar lock: cell 10x22 → box (0,21)..(9,40.8) idle.
+        assert!(hotbar_lock_hit(&lk, false, Vec2::new(4.0, 30.0)));
+        assert!(!hotbar_lock_hit(&lk, false, Vec2::new(0.0, 30.0)), "x strict");
+        assert!(!hotbar_lock_hit(&lk, false, Vec2::new(9.0, 30.0)), "right strict");
+        assert!(!hotbar_lock_hit(&lk, false, Vec2::new(4.0, 21.0)), "top strict");
+        assert!(!hotbar_lock_hit(&lk, false, Vec2::new(4.0, 40.8)), "bottom strict");
+        // Pushed up: y = 0 (`:42485`).
+        assert!(hotbar_lock_hit(&lk, true, Vec2::new(4.0, 5.0)));
+        assert!(!hotbar_lock_hit(&lk, true, Vec2::new(4.0, 30.0)));
+        // Block replace: cell 12x26 → box (0,44)..(10.8,67.4) idle,
+        // (0,23)..(10.8,46.4) pushed up (`:42524-42528`).
+        assert!(block_replace_hit(&lk, false, Vec2::new(5.0, 50.0)));
+        assert!(!block_replace_hit(&lk, false, Vec2::new(10.8, 50.0)));
+        assert!(block_replace_hit(&lk, true, Vec2::new(5.0, 30.0)));
+        assert!(!block_replace_hit(&lk, true, Vec2::new(5.0, 50.0)));
+        // Torch biome: cell 13x28 → box (0,68)..(11.7,93.2) idle,
+        // (0,47)..(11.7,72.2) pushed up (`:42564-42568`).
+        assert!(torch_biome_hit(&lk, false, Vec2::new(5.0, 75.0)));
+        assert!(!torch_biome_hit(&lk, false, Vec2::new(11.7, 75.0)));
+        assert!(torch_biome_hit(&lk, true, Vec2::new(5.0, 50.0)));
+        assert!(!torch_biome_hit(&lk, true, Vec2::new(5.0, 75.0)));
+        // A missing sheet never hits (the C# would draw nothing).
+        let empty = assets::Lookups::default();
+        assert!(!hotbar_lock_hit(&empty, false, Vec2::new(4.0, 30.0)));
+        assert!(!block_replace_hit(&empty, false, Vec2::new(5.0, 50.0)));
+        assert!(!torch_biome_hit(&empty, false, Vec2::new(5.0, 75.0)));
+    }
+
+    /// `Main.GetBuilderAccsCountToShow` (`Main.cs:47592-47597`): the
+    /// block-replacement icon always counts 1, the torch-god icon 1 while
+    /// unlocked; wires add 6, the actuator 1; the ruler/paint flags fold to
+    /// false. The `>= 10` push-up gate (`:41043`/`:47370`) needs wires +
+    /// actuator + both icons (6+1+1+1 = 9 stays down; +torch = 10 pushes).
+    #[test]
+    fn batch5_builder_accs_count_and_push_gate() {
+        // The default player: block-replace only.
+        assert_eq!(builder_accs_count_to_show(false, false, false), 1);
+        assert_eq!(builder_accs_count_to_show(false, false, true), 2);
+        assert_eq!(builder_accs_count_to_show(true, false, false), 7);
+        assert_eq!(builder_accs_count_to_show(true, true, false), 8);
+        // 9 < 10: no push-up; 10 >= 10: pushed up.
+        assert!(builder_accs_count_to_show(true, true, false) < 10);
+        assert!(builder_accs_count_to_show(true, true, true) >= 10);
+    }
+
+    /// `DoStatefulTickSound(ref bool, bool)` (`Main.cs:3237-3247`) — the
+    /// helper `draw_hotbar_lock` returns through: the tick fires on the
+    /// ENTER edge only — a held hover and the exit edge are silent, a
+    /// re-enter ticks again (`hotbarLockMouseOver`, `:42515`).
+    #[test]
+    fn batch5_hotbar_lock_hover_ticks_on_the_enter_edge_only() {
+        let mut hover = false;
+        // Enter: false -> true ticks.
+        assert!(stateful_tick(&mut hover, true));
+        assert!(hover);
+        // Held hover: no tick.
+        assert!(!stateful_tick(&mut hover, true));
+        // Exit: true -> false is silent (`if (flag)` gates the play).
+        assert!(!stateful_tick(&mut hover, false));
+        assert!(!hover);
+        // Re-enter ticks again.
+        assert!(stateful_tick(&mut hover, true));
     }
 
     #[test]

@@ -6551,4 +6551,124 @@ mod w4_g21_sound_site_tests {
         assert_eq!(app.audio.played_count(), before + 1, "the `:42458` tick");
         assert!(!app.ui_left_press, "the press was consumed");
     }
+
+    // ---- W4-g21 batch 5 (hosts 71/72/73) — WRITTEN NOT RUN (code-only) ----
+
+    /// The three icon sheets at synthetic round sizes (the geometry rides
+    /// the `Frame` cell math, not the retail pixels): Lock 20x22 → cell
+    /// 10x22, BlockReplace 36x26 → cell 12x26, Extra_211 52x28 → cell 13x28.
+    fn batch5_icons(app: &mut App) {
+        let rect = |w, h| {
+            Some(tr_render::SheetRect {
+                x: 0,
+                y: 0,
+                width: w,
+                height: h,
+                plain_frame: (0, 0),
+            })
+        };
+        app.lookups.atlas_size = (8192, 8192);
+        app.lookups.hb_lock = [rect(20, 22), rect(20, 22)];
+        app.lookups.block_replace = rect(36, 26);
+        app.lookups.torch_biome = rect(52, 28);
+    }
+
+    /// `Main.cs:42504-42508`: the hotbar-lock icon's left press plays sound
+    /// 22 (`SoundID.Unlock`) and flips `hbLocked` (`:42507`); the locked
+    /// hotbar then refuses the closed-hotbar pointer select (`:43616`),
+    /// and a second press unlocks it again.
+    #[test]
+    fn batch5_hotbar_lock_click_flips_and_gates_the_closed_hotbar() {
+        let mut app = inv_app();
+        batch5_icons(&mut app);
+        // Inside the idle box (0,21)..(9,40.8).
+        app.mouse_pos = Vec2::new(4.0, 30.0);
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(app.player.as_ref().unwrap().hb_locked, "locked (`:42507`)");
+        assert_eq!(app.audio.played_count(), before + 1, "one Unlock cue (`:42506`)");
+        // The closed-hotbar hover/click gate (`:43616`/`:43620`) refuses the
+        // locked hotbar: no buffered select.
+        app.inventory_open = false;
+        app.inventory[3] = crate::item::ItemSlot {
+            kind: 9,
+            name: registry::name(9),
+            count: 6,
+            prefix: 0,
+        };
+        app.mouse_pos = Vec2::new(160.0, 40.0); // closed-hotbar slot 3
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.selection.buffered, -1, "the locked hotbar refuses");
+        // Unlock through the icon again, then the select buffers.
+        app.inventory_open = true;
+        app.mouse_pos = Vec2::new(4.0, 30.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(!app.player.as_ref().unwrap().hb_locked, "unlocked");
+        app.inventory_open = false;
+        app.mouse_pos = Vec2::new(160.0, 40.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.selection.buffered, 3, "the unlocked hotbar selects");
+    }
+
+    /// `Main.cs:42542-42546`: the block-replacement icon's left press plays
+    /// sound 22 and flips `builderAccStatus[10]` (`enabled ? 1 : 0`) — the
+    /// `TileReplacementEnabled` getter (`Player.cs:3373`) follows.
+    #[test]
+    fn batch5_block_replace_click_flips_the_builder_status() {
+        let mut app = inv_app();
+        batch5_icons(&mut app);
+        // Inside the idle box (0,44)..(10.8,67.4).
+        app.mouse_pos = Vec2::new(5.0, 50.0);
+        assert!(app.player.as_ref().unwrap().tile_replacement_enabled());
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.player.as_ref().unwrap().builder_acc_status[10], 1);
+        assert!(!app.player.as_ref().unwrap().tile_replacement_enabled());
+        assert_eq!(app.audio.played_count(), before + 1, "one Unlock cue (`:42544`)");
+        // A second press turns it back on.
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(app.player.as_ref().unwrap().tile_replacement_enabled());
+        // The closed inventory never flips (the icons gate on
+        // `playerInventory`, `:42520`).
+        app.inventory_open = false;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert!(app.player.as_ref().unwrap().tile_replacement_enabled());
+    }
+
+    /// `Main.cs:42582-42586` + `:47580`: the torch-biome icon draws/clicks
+    /// only while `unlockedBiomeTorches`; the press plays sound 22 and flips
+    /// `builderAccStatus[11]` — `UsingBiomeTorches` (`Player.cs:3950-3964`)
+    /// gates on BOTH the unlock and the toggle.
+    #[test]
+    fn batch5_torch_biome_click_needs_the_unlock_and_flips_the_toggle() {
+        let mut app = inv_app();
+        batch5_icons(&mut app);
+        // Inside the idle box (0,68)..(11.7,93.2).
+        app.mouse_pos = Vec2::new(5.0, 75.0);
+        // Without the unlock the icon never draws (`:47580`) — no flip.
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.player.as_ref().unwrap().builder_acc_status[11], 0);
+        assert_eq!(app.audio.played_count(), before, "no cue without the unlock");
+        // Unlocked: the press flips the toggle OFF (`enabled ? 1 : 0`).
+        app.player.as_mut().unwrap().unlocked_biome_torches = true;
+        assert!(app.player.as_ref().unwrap().using_biome_torches());
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.player.as_ref().unwrap().builder_acc_status[11], 1);
+        assert!(!app.player.as_ref().unwrap().using_biome_torches());
+        assert_eq!(app.audio.played_count(), before + 1, "one Unlock cue (`:42584`)");
+        // The setter writes ONLY builderAccStatus[11] (`Player.cs:3960-3963`).
+        app.player.as_mut().unwrap().set_using_biome_torches(true);
+        assert_eq!(app.player.as_ref().unwrap().builder_acc_status[11], 0);
+        assert!(app.player.as_ref().unwrap().using_biome_torches());
+    }
 }

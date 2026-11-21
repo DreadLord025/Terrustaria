@@ -17834,6 +17834,42 @@ mod item_mechanics {
         assert_eq!(app.inventory[app.selected].kind, 8, "the stack stays torch");
     }
 
+    /// W4-g21 batch 5 host 73 — `PlaceThing_Tiles_PlaceIt`'s biome-torch
+    /// conversion (`Player.cs:40129-40132`) gates on `UsingBiomeTorches`
+    /// (`:3950-3958`: the unlock AND `builderAccStatus[11] == 0`): with the
+    /// `DrawTorchBiomeSwapIcon` toggle OFF (`Main.cs:42585`) the placed torch
+    /// stays plain (style 0 → `frameY = 22*0`); with it ON in a snow zone the
+    /// style becomes 9 (`BiomeTorchPlaceStyle`, `:40272-40275` →
+    /// `frameY = 22*9`). The world is 240 tall so the underworld arm
+    /// (`:40252`, `(height-200)*16 = 640`) stays below the player — the
+    /// 40-tall `flat_world` would invert it. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn batch5_the_biome_swap_toggle_gates_the_placed_torch_style() {
+        let mut app = flat_app();
+        // A taller copy of the flat rig: floor row 20, underworld line 640.
+        let mut w = World::new("biome-torch".into(), 40, 240);
+        for x in 0..40 {
+            let i = w.index(x, 20);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        app.world = w;
+        app.inventory[app.selected] = slot(8, 5);
+        let p = app.player.as_mut().unwrap();
+        p.unlocked_biome_torches = true;
+        p.zones.snow = true;
+        // Toggle OFF (`builderAccStatus[11] = 1`): the torch stays plain.
+        p.builder_acc_status[11] = 1;
+        assert!(use_tile_item(&mut app, 15, 19), "the placement succeeds");
+        assert_eq!(app.world.tile(15, 19).unwrap().frame_y, 0, "plain style 0");
+        // Toggle ON: the snow biome's style 9 (`frameY = 22*9 = 198`).
+        app.player.as_mut().unwrap().builder_acc_status[11] = 0;
+        assert!(use_tile_item(&mut app, 16, 19), "the second placement succeeds");
+        assert_eq!(app.world.tile(16, 19).unwrap().frame_y, 198, "ice style 9");
+    }
+
     /// t4 — `WorldItem.UpdateItem`'s air constants (`WorldItem.cs:363-364`:
     /// `gravity = 0.1f`, `maxFallSpeed = 7f`), the horizontal friction of
     /// `MoveInWorld` (`WorldItem.cs:854-860`: `velocity.X *= 0.95f`, then the
@@ -18668,6 +18704,35 @@ mod wall_placement_tests {
         assert_eq!(app.world.tile(10, 10).unwrap().wall, 4);
         assert_eq!(app.world.tile(11, 10).unwrap().wall, 0, "no fill on the last item");
         assert_eq!(app.inventory[app.selected].count, 0);
+    }
+
+    /// W4-g21 batch 5 host 72 — `TileReplacementEnabled`
+    /// (`Player.cs:3373`, `builderAccStatus[10] == 0`) gates
+    /// `PlaceThing_TryReplacingWalls` (`:39612-39615`): with the toggle OFF
+    /// (the `DrawBlockReplacementIcon` click, `Main.cs:42545`) the occupied
+    /// cell refuses the placement — no conversion, no item consumed; the
+    /// default ON converts exactly like the i33 witness above. WRITTEN NOT
+    /// RUN (code-only).
+    #[test]
+    fn batch5_the_replacement_toggle_gates_the_wall_conversion() {
+        let mut w = empty_world();
+        set_wall(&mut w, 9, 10, 4); // support neighbour
+        set_wall(&mut w, 10, 10, 2); // unsafe dirt wall
+        let mut app = wall_app(w, 10, 10);
+        hold_wall(&mut app, 93, 5); // Wood Wall → 4
+        // Toggle OFF: `builderAccStatus[10] = 1` (`Main.cs:42545`).
+        app.player.as_mut().unwrap().builder_acc_status[10] = 1;
+        app.place_down = true;
+        app.place_prev_down = false;
+        update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 2, "no conversion while OFF");
+        assert_eq!(app.inventory[app.selected].count, 5, "no item consumed");
+        // Toggle back ON: the conversion lands (the i33 route).
+        app.player.as_mut().unwrap().builder_acc_status[10] = 0;
+        app.place_prev_down = false;
+        update_editing(&mut app, 1.0 / 60.0, SCREEN);
+        assert_eq!(app.world.tile(10, 10).unwrap().wall, 4, "converted while ON");
+        assert_eq!(app.inventory[app.selected].count, 4, "one item consumed");
     }
 
     /// `Player.CanPlayerSmashWall` (`Player.cs:45917-45940`) gates the hammer:

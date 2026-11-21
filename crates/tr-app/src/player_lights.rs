@@ -71,9 +71,10 @@
 //! * `happyFunTorchTime` (the Torch God's favor burn) has no port field
 //!   — it folds to false. `Player.UsingBiomeTorches`
 //!   (`Player.cs:3950-3959`) is `unlockedBiomeTorches &&
-//!   builderAccStatus[11] == 0`; the port carries
-//!   `p.unlocked_biome_torches` and reads it, while the builder toggle
-//!   folds to 0 (on) — documented deviation.
+//!   builderAccStatus[11] == 0`; the port reads
+//!   `p.using_biome_torches()` — both halves wired, the builder toggle
+//!   flips on the `DrawTorchBiomeSwapIcon` click (W4-g21 batch 5 host 73,
+//!   `Main.cs:42585`; the old "toggle folds to 0" deviation retired).
 
 use glam::Vec2;
 use tr_core::lighting::LightParams;
