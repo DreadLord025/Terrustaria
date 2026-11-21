@@ -595,8 +595,13 @@ fn convert_cleanse_cell(world: &mut World, x: i32, y: i32) {
 /// (`WorldGen.cs:54802-54899`): the tree trunk (or palm 323) directly above
 /// the converted cell dies when the new floor no longer fits its ground
 /// test. The gem/vanity/ash profiles (`GrowTreeSettings.Profiles.
-/// TryGetFromTreeId`, `:3890-3928`) override the vanilla test; the
-/// `ConvertTreeAndGround` cross-conversion half is the documented skip.
+/// TryGetFromTreeId`, `:3890-3928`) override the vanilla test. W4-f25
+/// wiring: the `!fits` switch now carries the C7 `ConvertTreeAndGround`
+/// cross-conversion arms (`:54855-54896`) — the 596/616 vanity trees
+/// re-ground to 5 (grass side) or 323 (sand), the forest 5 → 323 (sand),
+/// the palm 323 → 5 (grass side); every other case keeps the KillTile.
+/// The frame rolls ride the port's `frame_rng` runtime genRand stand-in
+/// (the C# `genRand == Main.rand`), taken/restored around the call.
 fn try_kill_invalid_tree_above(world: &mut World, x: i32, y: i32, new_floor: u16) {
     if !in_world(world, x, y, 2) {
         return;
@@ -616,10 +621,11 @@ fn try_kill_invalid_tree_above(world: &mut World, x: i32, y: i32, new_floor: u16
         || CONV_JUNGLE_GRASS.contains(&new_floor)
         || CONV_SNOW.contains(&new_floor)
         || CONV_MUSHROOM_GRASS.contains(&new_floor);
+    let sand_side = crate::tiledata::SET_CONVERSION_SAND.has(new_floor);
     let mut fits = true;
     match tree {
         5 => fits = grass_side,
-        323 => fits = crate::tiledata::SET_CONVERSION_SAND.has(new_floor),
+        323 => fits = sand_side,
         _ => {}
     }
     // The profile override (`:54840-54843`): gem trees 583-589 take
@@ -635,7 +641,48 @@ fn try_kill_invalid_tree_above(world: &mut World, x: i32, y: i32, new_floor: u16
         fits = new_floor == 633;
     }
     if !fits {
-        let _ = crate::edit::kill_tile(world, x, y - 1, false);
+        // The `!flag` switch (`:54844-54898`): the cross-conversion arms
+        // run `ConvertTreeAndGround(i, j-1, newFloorType, type, newType)`
+        // on the caller's genRand; the default arm kills.
+        let new_tree: Option<u16> = match tree {
+            // `case 596: case 616:` (`:54855-54872`).
+            596 | 616 => {
+                if grass_side {
+                    Some(5)
+                } else if sand_side {
+                    Some(323)
+                } else {
+                    None
+                }
+            }
+            // `case 5:` (`:54873-54884`).
+            5 => {
+                if sand_side {
+                    Some(323)
+                } else {
+                    None
+                }
+            }
+            // `case 323:` (`:54885-54896`).
+            323 => {
+                if grass_side {
+                    Some(5)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        if let Some(new_tree) = new_tree {
+            // The C7 frame rolls draw the runtime genRand (`frame_rng`);
+            // take it out so the helper can borrow `world` mutably, then
+            // restore the advanced stream (the d54 snapshot precedent).
+            let mut rng = std::mem::take(&mut world.frame_rng);
+            crate::tree::convert_tree_and_ground(world, &mut rng, x, y - 1, new_floor, tree, new_tree);
+            world.frame_rng = rng;
+        } else {
+            let _ = crate::edit::kill_tile(world, x, y - 1, false);
+        }
     }
 }
 
@@ -2019,5 +2066,55 @@ mod tests {
                 "{kind} dies"
             );
         }
+    }
+
+    // W4-f25 wiring (tree family) — the C7 ConvertTreeAndGround arms of
+    // `try_kill_invalid_tree_above` (`WorldGen.cs:54855-54896`), reached
+    // through the cleanse Convert. WRITTEN NOT RUN (code-only round).
+
+    #[test]
+    fn w4_f25_wiring_the_forest_tree_over_sand_converts_to_palm() {
+        // A forest tree 5 standing on grass 2; the cleanse turns the grass
+        // to sand 53 — the `case 5` sand arm re-grounds the tree to a palm
+        // 323 (`:54873-54878`) instead of killing it.
+        let mut w = World::new("t".into(), 60, 60);
+        put(&mut w, 30, 20, 5); // the trunk base
+        put(&mut w, 30, 21, 2); // the grass ground
+        w.seed_frame_rng();
+        convert_cleanse_cell(&mut w, 30, 21);
+        assert_eq!(w.tile(30, 21).unwrap().kind, 53, "the grass → sand");
+        let base = w.tile(30, 20).unwrap();
+        assert_eq!(base.kind, 323, "the forest tree re-grounds to a palm");
+        assert_eq!((base.frame_x, base.frame_y), (66, 0), "the palm base frame");
+    }
+
+    #[test]
+    fn w4_f25_wiring_the_vanity_tree_over_sand_converts_to_palm() {
+        // A sakura 596 on grass 2; the cleanse sands the ground — the
+        // `case 596` sand arm (`:54862-54866`) converts to 323.
+        let mut w = World::new("t".into(), 60, 60);
+        put(&mut w, 30, 20, 596);
+        put(&mut w, 30, 21, 2);
+        w.seed_frame_rng();
+        convert_cleanse_cell(&mut w, 30, 21);
+        assert_eq!(w.tile(30, 21).unwrap().kind, 53);
+        assert_eq!(w.tile(30, 20).unwrap().kind, 323, "the vanity → palm");
+    }
+
+    #[test]
+    fn w4_f25_wiring_the_palm_over_hallow_grass_converts_to_forest() {
+        // A palm 323 on sand 53; the hallow Convert turns the sand to 116
+        // (NOT a grass side) — the palm dies. On a grass-side floor it would
+        // convert to 5; here the sand→116 keeps the kill arm (`:54885-54896`).
+        let mut w = World::new("t".into(), 60, 60);
+        put(&mut w, 30, 20, 323);
+        put(&mut w, 30, 21, 53);
+        w.seed_frame_rng();
+        convert_hallow_cell(&mut w, 30, 21);
+        assert_eq!(w.tile(30, 21).unwrap().kind, 116, "the sand → hallow sand");
+        assert!(
+            !w.tile(30, 20).unwrap().active(),
+            "the palm over non-grass dies (the default kill arm)"
+        );
     }
 }

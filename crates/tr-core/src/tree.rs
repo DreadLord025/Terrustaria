@@ -470,8 +470,10 @@ fn convert_tree_and_ground_branches(world: &mut World, x: i32, y: i32, new_type:
 /// `TryConvertingOrKillingTreesAboveIfTheyWouldBecomeInvalid`
 /// `:54855-54896`). `rng` is the caller's `WorldGen.genRand` stream (the
 /// g39 explicit-stream precedent) — the frame rolls draw in C# order.
-/// UNWIRED (the port's kill-only tree copies stay until their consumer
-/// lands). The `NetMessage.SendTileSquare` tail (`:55051`) is MP-only.
+/// WIRED: `spread::try_kill_invalid_tree_above` (the Convert/clentaminator
+/// path) calls it on the runtime `frame_rng` stand-in; the growth-tick copy
+/// (`growth/trees.rs::kill_invalid_tree_above`) stays kill-only (g17's lane).
+/// The `NetMessage.SendTileSquare` tail (`:55051`) is MP-only.
 pub fn convert_tree_and_ground(
     world: &mut World,
     rng: &mut crate::UnifiedRandom,
@@ -641,8 +643,9 @@ pub fn convert_tree_and_ground(
 /// frameY 198/220/242 or frameX 66 at frameY 0/22/44 reads offset +1 (the
 /// trunk sits one column right); frameX 66 at frameY 198/220/242 or frameX
 /// 88 at frameY 66/88/110 reads offset -1. `None` = not a branch (the C#'s
-/// false + offset 0). UNWIRED (ConvertTreeAndGround C7 +
-/// ConsideredSolidTileForAnchor :53903 are its consumers).
+/// false + offset 0). WIRED through C7 `convert_tree_and_ground` (the
+/// trunk-height walk + the side-marker arms); ConsideredSolidTileForAnchor
+/// `:53903` (unported) is the other C# caller.
 pub fn is_tile_a_tree_branch(world: &World, x: i32, y: i32) -> Option<i32> {
     // `:29720-29723` — InWorld(2).
     if x < 2 || y < 2 || x >= world.width - 2 || y >= world.height - 2 {
