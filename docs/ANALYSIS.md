@@ -39332,3 +39332,36 @@ g60-consumed stream position). Five sweep witnesses added (written not
 run): every one of the 66 kinds now carries a per-kind draw-count row
 (`w4_g60_gore_tail_*` - the f5/f10/no-gore sweeps + the Plantera trio +
 the Angler pair); the g60 witness count is 27.
+
+FINAL STATUS (research/110 §12, the death-family final-status phase): the
+lane tips re-probed at g59 `dd336ef8` (88 kinds / 90 cs_ids / 42 witnesses,
+the 24 d35 row-gated activations landed; g59c activating), f10 `f7a9dd78`
+(batch 92), f5 `d908a4fd` (batch 85), g62 `53fdbf07`, c12 `5778e596`. Two
+NEW overlaps the playbook phase did not have: (1) **f10 OVERRAN its
+`:85560` claim boundary** - batches 62-92 (sites 562-816, `NPC.cs:85684-
+86784`) double-port f5's classic-mob chain (~38 same-arm fns, both live-
+dispatched; f10's header shows no f5 awareness). Resolution: f5 claimed
+first (03:43 vs f10's 05:28 overrun) and both headers agree f10 stops at
+`:85559` - the merge keeps f5's `npc_hit_effect_d.rs` and DELETES f10's
+overrun surface wholesale (fns + gates + witnesses), not a dust-strip.
+(2) **g59∩f5 = 57 pushed kinds** (all ≤230 - f5 re-draws the g59-owned
+death dust, e.g. `demon_eye_variant_death` cites g59's exact `:86459-
+86462` kind-2 burst) + 18 conditional in f5's remaining window; plus
+g59∩f10 = {225} (`umbrella_slime_death` re-draws g59's 50×4 burst).
+Strip-row total: 110 (g60 baseline) + 57 + 1 = 168 actionable, 186
+eventual. f5 is ALIVE (advanced b33→b85, `:86986`→`:88816`, during the
+probe); its remaining window `:88817-89835` (~1019 lines, ~120 sites) is
+censused in §12.1 as the f5-followup hand-off artifact - only 250/315/471
+of the 32 f5-owned g60 kinds remain unpushed. The three shared-surface
+contracts are FINAL: the `npc_death_dust.rs` union (§12.5 - the ONE
+semantic collision is the test `air()` world height, g59 200×200 vs g60
+200×120, keep both renamed); the `last_hit_dir` ONE-declaration (§12.6 -
+c12/g60/g59 field+ctor+3 strike records byte-identical, dedupe to one;
+KEEP BOTH fuse resets, g59's `ai_070_bubble` + c12's
+`ai_074_hover_charge` - different sites); the `update_trails` ONE-fn
+(§12.7 - g62b `2370316ce` adopted g60's ring VERBATIM, verified
+byte-identical; keep g62's pooled-path tail call + `HitDustSnapshot.
+old_pos`; the 402 HIT `:83579` (g62) vs DEATH `:83611` (g60) sites are
+disjoint; the TrailCacheLength under-carry 402→36/519→20 vs the 10-slot
+shape is the recorded deviation - ONE widening at merge). Code-only: no
+cargo/tests/rustfmt/graphify invoked.
