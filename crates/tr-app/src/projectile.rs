@@ -21452,6 +21452,80 @@ impl ProjectilePool {
             LIGHT_BEAM => Some((2, 10, x, y, 0.0)),
             // `:77153` — the Night Beam's Item10.
             NIGHT_BEAM => Some((2, 10, x, y, 0.0)),
+            // S1-E-21h f1 owed-arm phase — the NONE-site kinds whose
+            // `proj_data` rows landed on the PUSHED sibling branches (the
+            // part-5 re-census vs the current tips). The rows stay on their
+            // own branches (NOT re-ported here); these arms activate when
+            // the merge lands them — until then the kinds cannot spawn
+            // (`spawn_with_data`'s row guard) and the arms are inert.
+            // `:70978` — the Torch God fireball 949's Item10 at
+            // `base.Center` (the arm plays ahead of its 20-dust census;
+            // the row rides d19's pushed tip a4185f89, `Projectile.cs:
+            // 8948-8955`: 4x4, aiStyle 184).
+            949 => Some((2, 10, x + p.w * 0.5, y + p.h * 0.5, 0.0)),
+            // `:72921` — the Bubble Gun's bubble 410's Item54 pop at
+            // `base.position` (the play precedes the 10-dust ring; the row
+            // rides d8's pushed tip e66b41b0, `Projectile.cs:4917-4932`:
+            // 14x14, aiStyle 72).
+            410 => Some((2, 54, x, y, 0.0)),
+            // `:72616` — the Truffle spore 590's Dig thud; the int
+            // overload's Style 27 is unused by case 0
+            // (`LegacySoundPlayer.cs:440-452`), kept on the payload for the
+            // census mapping (the skull 270/837 convention). The play
+            // precedes the dust/gore census; the row rides d12's pushed tip
+            // 9152b259, `Projectile.cs:6385-6396`: 14x14, aiStyle 112.
+            590 => Some((0, 27, x, y, 0.0)),
+            // `:72571` — the Stardust jellyfish 539's NPCDeath style-7 play
+            // (`PlaySound(4, pos, 7)`, the int overload). The C# arm
+            // RECENTRES first (`:72567-72569`: position = Center, 80x80,
+            // Center = position), so the play point is the OLD centre minus
+            // the 80-box's half — computed here from the pre-hook box (the
+            // rocket_kill_census play-point precedent; the resize/Damage/
+            // dust state halves stay deferred — d11 ports the AI machine
+            // only). The row rides d11's pushed tip e0395afc,
+            // `Projectile.cs:6142-6150`: 18x30, aiStyle 102.
+            539 => Some((
+                4,
+                7,
+                x + p.w * 0.5 - 40.0,
+                y + p.h * 0.5 - 40.0,
+                0.0,
+            )),
+            // `:74619`/`:74683` — the rope coils' Dig thud (171/475/505/506),
+            // gated `ai[1] == 0f` (`:74617`/`:74681` — a coil that already
+            // placed rope dies silent). The rows ride d4's pushed tip
+            // 7e3bdea6, `Projectile.cs:2570-2578`/`:5496-5504`: 14x14,
+            // aiStyle 35.
+            171 | 475 | 505 | 506 => {
+                if p.ai[1] == 0.0 {
+                    Some((0, 0, x, y, 0.0))
+                } else {
+                    None
+                }
+            }
+            // `:75127`/`:75151` — the Super Star 728 / its slash 729's
+            // Item10 at `base.position` (the plays precede the dust/gore
+            // censuses; the rows ride d16's pushed tip e122a6b2,
+            // `Projectile.cs:7659-7671`/`:7672-7687`).
+            728 | 729 => Some((2, 10, x, y, 0.0)),
+            // `:75376` — the Forbidden sign's shot 1120's Dig thud at the
+            // PRE-resize `base.position` (the play precedes the
+            // `Resize(112, 112)` burst `:75409` — a9's gem_bolt_aoe branch
+            // resizes AFTER this hook, the gem-bolt order). The row rides
+            // a9's pushed tip 8c4fded8, `Projectile.cs:10479-10490`: 10x10,
+            // aiStyle 29.
+            1120 => Some((0, 0, x, y, 0.0)),
+            // `:75502` — the Glacier Fang shot 1115's Item27 (the play
+            // precedes the ai[0]-remapped dust count; the row rides d21's
+            // pushed tip 9fa9e9ba, `Projectile.cs:10401-10412`: 10x10,
+            // aiStyle 208).
+            1115 => Some((2, 27, x, y, 0.0)),
+            // `:76038` — the common-bullet arm's NebulaLaser 576 sibling
+            // (the 24-kind list's one newly-rowed member; d77's pushed
+            // subset covers the other 19 — keep-one d77 there). The row
+            // rides d11's pushed tip e0395afc, `Projectile.cs:6258-6269`:
+            // 4x4, aiStyle 1.
+            576 => Some((2, 10, x, y, 0.0)),
             _ => None,
         };
         if let Some(req) = cue {
@@ -24247,6 +24321,114 @@ mod s1_e_21h_sound_tests {
         pool.rocket_kill_census(slot, &mut rng, 0);
         let queued = pool.drain_proj_sounds();
         assert_eq!(queued, vec![(2, 14, 100.0, 100.0, 0.0)], ":78096 the 134 else-branch");
+    }
+
+    /// S1-E-21h f1 owed-arm phase — the NONE-site kinds whose `proj_data`
+    /// rows landed on the PUSHED sibling tips queue their death cues from
+    /// `kill_sound_cue`. The slots are CONSTRUCTED directly (the base table
+    /// has no rows for these kinds — `spawn_with_data*` declines until the
+    /// merge lands the siblings' rows; the arms are inert until then), with
+    /// the sibling rows' boxes cited verbatim. The 949 plays at
+    /// `base.Center`, the 539 at the old centre − 40 (the C# `:72567-72569`
+    /// recentres to 80×80 BEFORE its `:72571` play), the rest at the
+    /// pre-resize `base.position`. Written, NOT run — code-only mode.
+    #[test]
+    fn s1_e_21h_f1_owed_the_landed_sibling_cues_queue_their_payloads() {
+        let mut pool = ProjectilePool::new();
+        // (kind, w, h, id, style, position-mode) — mode 0 = top-left,
+        // 1 = Centre, 2 = old centre − 40 (the jellyfish recentre). Boxes
+        // from the pushed rows: 949 `Projectile.cs:8948-8955` (d19
+        // a4185f89), 410 `:4917-4932` (d8 e66b41b0), 590 `:6385-6396` (d12
+        // 9152b259), 539 `:6142-6150` / 576 `:6258-6269` (d11 e0395afc),
+        // 728 `:7659-7671` / 729 `:7672-7687` (d16 e122a6b2), 1115
+        // `:10401-10412` (d21 9fa9e9ba), 1120 `:10479-10490` (a9 8c4fded8).
+        let cases: [(u16, f32, f32, u16, i32, u8); 9] = [
+            (949, 4.0, 4.0, 2, 10, 1),
+            (410, 14.0, 14.0, 2, 54, 0),
+            (590, 14.0, 14.0, 0, 27, 0),
+            (539, 18.0, 30.0, 4, 7, 2),
+            (728, 24.0, 24.0, 2, 10, 0),
+            (729, 20.0, 20.0, 2, 10, 0),
+            (1115, 10.0, 10.0, 2, 27, 0),
+            (1120, 10.0, 10.0, 0, 0, 0),
+            (576, 4.0, 4.0, 2, 10, 0),
+        ];
+        for (kind, w, h, id, style, mode) in cases {
+            pool.slots_mut()[0] = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(64.0, 64.0),
+                w,
+                h,
+                ..Default::default()
+            };
+            pool.kill_sound_cue(0);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one owed death cue");
+            let (qx, qy) = match mode {
+                1 => (64.0 + w * 0.5, 64.0 + h * 0.5),
+                2 => (64.0 + w * 0.5 - 40.0, 64.0 + h * 0.5 - 40.0),
+                _ => (64.0, 64.0),
+            };
+            assert_eq!(queued[0], (id, style, qx, qy, 0.0), "kind {kind}'s payload");
+            assert!(pool.drain_proj_sounds().is_empty(), "the drain empties");
+        }
+    }
+
+    /// S1-E-21h f1 owed-arm phase — the rope coils' `ai[1] == 0f` gate
+    /// (`Projectile.cs:74617`/:74681): a coil that already placed rope dies
+    /// silent; the fresh coil queues the Dig thud. Rows ride d4's pushed
+    /// tip 7e3bdea6 (`Projectile.cs:2570-2578`/:5496-5504: 14×14, aiStyle
+    /// 35). Written, NOT run — code-only mode.
+    #[test]
+    fn s1_e_21h_f1_owed_the_rope_coils_gate_on_ai1() {
+        let mut pool = ProjectilePool::new();
+        for kind in [171u16, 475, 505, 506] {
+            pool.slots_mut()[0] = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(64.0, 64.0),
+                w: 14.0,
+                h: 14.0,
+                ..Default::default()
+            };
+            // The placed-rope coil (`ai[1] != 0f`) rides cue-less.
+            pool.slots_mut()[0].ai[1] = 1.0;
+            pool.kill_sound_cue(0);
+            assert!(pool.drain_proj_sounds().is_empty(), "kind {kind}: placed rope is silent");
+            // The fresh coil (`ai[1] == 0f`) queues the Dig thud.
+            pool.slots_mut()[0].ai[1] = 0.0;
+            pool.kill_sound_cue(0);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued, vec![(0, 0, 64.0, 64.0, 0.0)], "kind {kind}'s Dig thud");
+        }
+    }
+
+    /// S1-E-21h f1 owed-arm phase — the keep-one census: the kinds that
+    /// SELF-ARM on their pushed sibling branches queue NOTHING from f1's
+    /// `kill_sound_cue` (229 g2 `chlorophyte_orb_kill`, 596 g5
+    /// `djinn_curse_kill`, 608 d12 `solar_counter_kill_resize`, 1024 d12
+    /// sticker `wants_sound`, 761/762 d16 paper-airplane arm — ANALYSIS
+    /// part 6's keep-one table cites each play position). Written, NOT run.
+    #[test]
+    fn s1_e_21h_f1_owed_the_self_arming_siblings_stay_unarmed_here() {
+        let mut pool = ProjectilePool::new();
+        for kind in [229u16, 596, 608, 1024, 761, 762] {
+            pool.slots_mut()[0] = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(64.0, 64.0),
+                ..Default::default()
+            };
+            pool.kill_sound_cue(0);
+            assert!(
+                pool.drain_proj_sounds().is_empty(),
+                "kind {kind} self-arms on its sibling — f1 keeps one"
+            );
+        }
     }
 }
 

@@ -145,6 +145,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_4", 4),
     ("NPC_Killed_5", 4),
     ("NPC_Killed_6", 4),
+    // S1-E-21h f1 owed-arm phase — the Stardust jellyfish 539's death cry
+    // (`Projectile.cs:72571`, `SoundID.NPCDeath7`; the `Sounds/
+    // NPC_Killed_7.xnb` asset verified on disk).
+    ("NPC_Killed_7", 4),
     // The Wyvern's death cue (`NPC.cs:9951`'s `NPCDeath8`, S1-D-3 wyvern)
     // — the `Sounds/NPC_Killed_8.xnb` asset ships with the content.
     ("NPC_Killed_8", 4),
@@ -1392,6 +1396,10 @@ impl Audio {
         let (x, y) = (x.trunc(), y.trunc());
         let cue = match style_num {
             6 => "NPC_Killed_6",
+            // S1-E-21h f1 owed-arm phase — the Stardust jellyfish 539's
+            // death cry (`Projectile.cs:72571`, `PlaySound(4, pos, 7)`); the
+            // row landed on d11's pushed tip, the cue arms here.
+            7 => "NPC_Killed_7",
             22 => "NPC_Killed_22",
             _ => return None,
         };
@@ -3903,6 +3911,37 @@ mod tests {
         let peek = rng.peek();
         assert_eq!(audio.play_proj_sound((2, 62), 0.0, 0.0, 0.0, &mut rng), None);
         assert_eq!(rng.peek(), peek, "the muted Item62 play is draw-free");
+    }
+
+    /// S1-E-21h f1 owed-arm phase — the Stardust jellyfish 539's NPCDeath
+    /// style-7 play (`Projectile.cs:72571`, `PlaySound(4, pos, 7)` — the
+    /// int overload, NO `GetRandomPitch` draw) routes to the new
+    /// `NPC_Killed_7` bank row and plays case 4's ONE `Next(-10, 11)` pitch
+    /// draw after the gate (`sound.rs` `npc_killed_case4`, the style-6
+    /// precedent). Written, NOT run — code-only mode.
+    #[test]
+    fn s1_e_21h_f1_owed_the_jellyfish_npcdeath7_routes_and_draws() {
+        use tr_core::unified_random::UnifiedRandom;
+        // The bank row exists: name → id 4 (the NPC_Killed family).
+        assert!(
+            SFX_CUES.contains(&("NPC_Killed_7", 4)),
+            "the NPC_Killed_7 bank row (the Sounds/NPC_Killed_7.xnb asset ships)"
+        );
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        let cue = audio.play_proj_sound((4, 7), 0.0, 0.0, 0.0, &mut rng);
+        assert_eq!(cue, Some("NPC_Killed_7"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one case-4 pitch draw, no NextFloat");
+        // Muted: the gate refuses before the case-4 draw.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_proj_sound((4, 7), 0.0, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted NPCDeath7 play is draw-free");
     }
 
     /// S1-E-21 wave C — the NPC death play's RNG contract
