@@ -1,4 +1,10 @@
-# 238 — W4-c8 crawler FINAL census: the cross-lane provider contract, the gold set, the d22 compose, the sheets union
+# 262 — W4-c8 crawler FINAL census: the cross-lane provider contract, the gold set, the d22 compose, the sheets union
+
+> **RENUMBER-CHAIN 143 → 238 → 262** (registry-150 §6.3, d54 round-2
+> refresh `72226e500`): 238 belongs to W4-d42's earlier rename
+> (`238-d42-roster-sheets.md`, `9eadc3043` 12:15:55 — the FIRST 238 at
+> any tip; c8's interim 238 landed 12:24:19 `2a0b5c701` and LOSES).
+> This doc now carries key **262**.
 
 Branch: `task/W4-c8-style66-crawling-critters` (final phase, 2026-11-21,
 code-only — no cargo/tests/rustfmt run; every witness WRITTEN NOT RUN).
@@ -6,7 +12,18 @@ Base: `3705670d3` (the sweep docs commit). Final-phase commits:
 `af2a06880` (item 1+2), `72e05facf` (item 3), `b7fd55a43` (item 4),
 this doc (item 5).
 
-**RENUMBERED 143 → 238 (retire phase, registry-150).** The W4-d54
+**RENUMBERED 143 → 238 → 262 (retire phase, registry-150; §6.3 round 2).**
+The first rename (below, historical) took 238 — but the round-2 full
+358-tip sweep (`origin/task/W4-d54-dust-sites-world` `72226e500`,
+registry §6.3 rows 143/238 + the self-rename reconciliation table)
+adjudicates 238 to W4-d42 (`9eadc3043` 12:15:55, before c8's
+`2a0b5c701` 12:24:19) and assigns c8 **262**; this second rename
+executes that assignment (chain 143→238→262). Refs updated on this
+branch: `docs/research/INDEX.md` (row 262), `docs/ANALYSIS.md` (×6),
+`docs/PORT_MAP.md` (×1), `docs/ROADMAP.md` (×2). The 143/238-numbered
+mentions in commit messages are historical.
+
+**Historical first-rename record (143 → 238, superseded):** The W4-d54
 COLLISION REGISTRY (`origin/task/W4-d54-dust-sites-world` tip `38bfd1d22`,
 `docs/research/150-research-number-registry.md` §2) assigns key 143 to
 W4-c4 (`143-d40-crimsongoldfish-retire-hunk.md`, first-add

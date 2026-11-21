@@ -31087,7 +31087,7 @@ portraits and the netglue bare seed. The wiring:
   integration pins and the digger worm-pass pin
   (`world_sim/npcs.rs::w4_c8_*`).
 
-### W4-c8 FINAL phase (2026-11-21, code-only — research/238, renumbered from 143 per registry-150)
+### W4-c8 FINAL phase (2026-11-21, code-only — research/262, renumber-chain 143→238→262 per registry-150 §6.3)
 
 - **The SIGHT-provider CROSS-LANE contract**: `is_critter_entry`
   generalized from the nine-kind list to the GENERIC
@@ -31130,19 +31130,19 @@ portraits and the netglue bare seed. The wiring:
   forecast); real dims measured via the pinned LZX harness (17,424
   padded px total, every height divides by its `npcFrameCount` row).
   The d35 `_d35_npc_census.json` predates the c8 landing — re-run the
-  extraction on the merged base (research/238 §4 cross-note).
+  extraction on the merged base (research/262 §4 cross-note).
 - Witnesses WRITTEN NOT RUN: `w4_c8_final_*` (bestiary.rs ×2,
   world_sim/npcs.rs ×1, render/entities.rs ×1), `w4_c8_compose_*` ×2
   (the d22 carries), the re-pinned digger flee witness. Full register +
-  merge notes: `docs/research/238-c8-crawler-final-census.md`.
+  merge notes: `docs/research/262-c8-crawler-final-census.md`.
 
-### W4-c8 RETIRE phase (2026-11-21, code-only — research/238 §7)
+### W4-c8 RETIRE phase (2026-11-21, code-only — research/262 §7)
 
 **CRAWLER-FAMILY COMPLETE on the branch** — the nine aiStyle-66 kinds
 fully rowed + wired (gait/flicker/dig/Transform, the d22-composed
 fleeing worm-head, sparkle dust, hostile-shot flag, catch chain, the
 GENERIC sight provider + the 13-row gold peer table). The retire
-receipts (research/238): §3a the d22 saturation cross-warn — d22 tip
+receipts (research/262): §3a the d22 saturation cross-warn — d22 tip
 `bcd42ddd1` re-read, the 150-tick `ground_air` loop UNFIXED
 (`npc.rs:21889`), the merger keeps c8's 110-tick pin; §1a the
 Goldfish-55 freeze-lift — 55 is a BASE kind on main (`a725acb04`), the
@@ -31152,9 +31152,10 @@ critter-lanes auto-cover — c7 `c2cc6ec61` / c9 `2042d77f1` / c10
 `5fcc68ae6` / e26 `048cca6cf` / c4 `0df6964be` tips verified: every
 lane's kinds carry the 5-HP/0-dmg rows the generic gate reads, the
 605/592 gold rows are pre-tabled — zero per-lane provider wiring at
-merge. The research number renamed 143→238 per the d54 registry-150
-(143 belongs to c4; 237 double-claimed e23/g61; 238 first-free at all
-356 tips).
+merge. The research number renamed 143→238→262 per the d54 registry-150
+(§6.3 round 2, `72226e500`: 143 belongs to c4; the interim 238 lost to
+d42's earlier `9eadc3043` 12:15:55 rename vs c8's `2a0b5c701` 12:24:19 —
+c8 assigned 262).
 
 ## The aiStyle-9 sphere family (S1-D-3 aiStyle-9, 2026-11-18, code-only mode)
 
