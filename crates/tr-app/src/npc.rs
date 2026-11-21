@@ -33782,7 +33782,7 @@ mod w4_d32_style93_census_tests {
     }
 }
 
-/// W4-d32 RETIRE/SEAL (research/284, code-only): the band 85-93 FINAL
+/// W4-d32 RETIRE/SEAL (research/348, code-only): the band 85-93 FINAL
 /// census pins. The band is CLAIM-COMPLETE — 85/93 axis-claimed here
 /// (machines frozen verify-only, the verbatim audits open), 86-92
 /// ported UNWIRED (`npc_ai_style86..92.rs`, zero call sites), the
@@ -33799,7 +33799,7 @@ mod w4_d32_seal_tests {
     use super::*;
     use super::tests::ALL_KINDS;
 
-    /// SEAL (research/284 §2a/§4): the band's axis census is exact at
+    /// SEAL (research/348 §2a/§4): the band's axis census is exact at
     /// this tip — 85 carries exactly the two PARTIAL stand-in kinds,
     /// 93 exactly the ship, the cannons ride 75, and NO kind carries
     /// 86-92 (the d40 rows are the roster wave's, the modules UNWIRED).
@@ -33822,7 +33822,7 @@ mod w4_d32_seal_tests {
         }
     }
 
-    /// SEAL (research/284 §3c): the g65 "Kill-309" is projectile 309
+    /// SEAL (research/348 §3c): the g65 "Kill-309" is projectile 309
     /// FrostBlastFriendly (`Projectile.cs:75347-75361`, the drain arm
     /// `projectile_death_dust.rs:1100`), NPC 309 is Scarecrow5 (aiStyle
     /// 3) — three id spaces, zero overlap with the band. The band's
@@ -33843,7 +33843,7 @@ mod w4_d32_seal_tests {
         assert_eq!(NpcKind::FlyingDutchmanCannon.ai_style(), 75);
     }
 
-    /// SEAL (research/284 §2b/G2/G4): the unwired band kinds stay
+    /// SEAL (research/348 §2b/G2/G4): the unwired band kinds stay
     /// unrowed HERE — d40's 467/472-479/483/488 rows and the 521
     /// roster gap are the merge-time census. The G2 hazard is pinned
     /// by absence: no kind reaches the 85 arm's `unreachable!` at

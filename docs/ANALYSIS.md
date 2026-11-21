@@ -39248,9 +39248,10 @@ click buffers; the player tick applies).
 ## The RETIRE/SEAL round (W4-d32 band 85-93, 2026-11-21, code-only)
 
 `task/W4-d32-npc-ai-styles-85-93` tip `ac1d38e70` + this seal round:
-**research/284** (registry number per research/150 §4-REFRESH "281+
-FREE" — the retire-tip scan finds 281 claimed by eight lanes, 282 by
-three, 283/298 taken; 284 first free) publishes the band's FINAL
+**research/348** (registry number per research/150 §8.7 AMENDMENT-3's
+FROZEN table — RENUMBERED 284→348: g52's 284 first-add `0224fff80`
+16:19:37 predates this seal `4165e7dd9` 16:49:06, g52 KEEPS 284;
+d32→348) publishes the band's FINAL
 census + declaration. The band is **CLAIM-COMPLETE**: 85/93
 axis-claimed here (the S1-D-2 migration step — the PARTIAL
 StardustCellBig/BrainSuckler stand-ins + the FlyingDutchman machine
@@ -39260,7 +39261,7 @@ sites), the cannons 492 keep the base aiStyle-75 claim. The kinds are
 rowed on d40 `8fe1d6d31` (467/472-479/483/488) + base (405/421/491/
 492); 521 AncientCultistSquidhead is the one unrowed census member.
 
-The merge fix-list (research/284 §2c): **G1** the wiring wave's 86-92
+The merge fix-list (research/348 §2c): **G1** the wiring wave's 86-92
 axis arms (86/90 pool-shaped — the style75 sim pre-pass precedent;
 87/88/89/91/92 solo adapters) + the brood-cap/Transform/Deactivate
 drains; **G2 the PANIC HAZARD** — d40 rows DeadlySphere 467 onto
@@ -39270,7 +39271,7 @@ faithful target is the C# 467 branch of `NPC.cs:36930-37220`, the
 row-85 audit's third member; an empty `{}` arm with the stand-in note
 keeps the match exhaustive until then).
 
-Cross-lane receipts (research/284 §3): the **d30 mutual DISJOINT**
+Cross-lane receipts (research/348 §3): the **d30 mutual DISJOINT**
 (its research/281 §3a pins this tip; the reciprocal holds — no
 style-65 copy, no butterfly kinds here); **d31 adjacent keep-both**
 (the main.rs mod-decl insert, the axis arms after `75 =>`, the EOF

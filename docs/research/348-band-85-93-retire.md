@@ -1,4 +1,15 @@
-# 284 — W4-d32 RETIRE/SEAL: the NPC aiStyle band 85-93 FINAL census + declaration
+# 348 — W4-d32 RETIRE/SEAL: the NPC aiStyle band 85-93 FINAL census + declaration
+
+**RENUMBERED 284→348** (registry-150 §8.7 AMENDMENT-3 FROZEN table,
+d54 `9dddb32b4`, 2026-11-21): g52's `284-g52c-relay-host-arms-census.md`
+first-add `0224fff80` 16:19:37 predates this doc's `4165e7dd9` 16:49:06 —
+**g52 KEEPS 284** (executed pre-§8 authority); the §8.7 batch assigns
+**d32 → 348**. Self-picks are INVALID outside the frozen table. Old
+registry key 284 (this doc's former number); chain 284→348. All
+cross-references (INDEX row,
+ANALYSIS "The RETIRE/SEAL round", PORT_MAP ×2, ROADMAP W4-d32, the
+anchors.txt seal canary, the npc.rs seal-test doc comments) re-pointed to
+research/348 in the same commit.
 
 Status: **SEALED** (W4-d32 retire round, 2026-11-21, worktree TR-W4-d32,
 branch `task/W4-d32-npc-ai-styles-85-93`, tip `ac1d38e70`). Code-only —
@@ -7,15 +18,18 @@ no cargo/rustc/tests/rustfmt/graphify invoked. C# cites are
 windows, direct paths only (no junction recursion). Rust cites pin THIS
 tip unless a lane tip is named.
 
-**Registry number 284** per research/150 §4-REFRESH ("Numbers 281+ are
-FREE", `38bfd1d22`+): the retire-tip scan (2026-11-21 ~16:25 +02:00, all
-361 remote refs + local heads, `git ls-tree docs/research/` per tip)
-finds **281 claimed by EIGHT lanes** (d30 `ec89521fb` 15:42:58 first-add
-wins the key; c25/c9/d106/d125/d9/f39/g48 later), **282 by three**
+**Registry number 348** per research/150 §8.7 AMENDMENT-3 (FROZEN:
+d32-284→348; g52 KEEPS 284). History: the ORIGINAL pick was 284 per
+§4-REFRESH ("Numbers 281+ are FREE", `38bfd1d22`+): the retire-tip scan
+(2026-11-21 ~16:25 +02:00, all 361 remote refs + local heads,
+`git ls-tree docs/research/` per tip) found **281 claimed by EIGHT lanes**
+(d30 `ec89521fb` 15:42:58 first-add wins the key;
+c25/c9/d106/d125/d9/f39/g48 later), **282 by three**
 (d125/g48 15:44:38/15:50:24, f39 16:06:54), **283 by f4** (15:57:34),
-**298 by g63** (16:08:43). **284 is the first free** — this doc takes it.
-The 281/282 collisions are the registry's next-round business (the d54
-lane's), not this lane's; no rename owed here.
+**298 by g63** (16:08:43) — 284 first free at that scan, but it MISSED
+g52's pre-§8 284 (`0224fff80` 16:19:37). §8.7 settles it: this doc takes
+**348**; the 281/282 collisions were the registry's business (d54's), and
+the §8/§8.7 frozen table is now the only authority.
 
 ## 1. The git-log census — what landed on the band (11 commits)
 
