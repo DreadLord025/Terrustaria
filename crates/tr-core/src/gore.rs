@@ -28,12 +28,14 @@
 //! Documented drops (each at its site below): the `Main.rand == null` re-seed
 //! (`Gore.cs:1300-1303`; streams are caller-owned and never null), the
 //! `Main.netMode == 2` server guard (`:1288-1291`; single-player port), and
-//! the texture-dependent arms — the port has no texture tracking in `tr-core`,
-//! so every `TextureAssets.Gore[...].IsLoaded` test is `false` (the geometry
-//! fallbacks are exact, the position-adjust arms are no-ops until the asset
-//! seam lands). The `GoreID.Sets` tables (`GoreID.cs:20-23`) are ported in
-//! [`crate::gore_id`], so the arms gated on them (`:1355-1360`, `:1390-1456`)
-//! run.
+//! the texture-dependent arms — W4-g68 wired the `Width`/`Height` asset seam
+//! ([`GorePool::set_texture_sizes`]: an id in the map is the C#'s
+//! `IsLoaded == true` branch, an absent id keeps the `1f` fallback), but the
+//! spawn-time position-adjust arms (`:1384-1388`, `:1407-1420`, `:1433-1440`)
+//! still read the unloaded branch — they shift spawn geometry AND roll extra
+//! randoms, so their wiring is a separate A/B'd step. The `GoreID.Sets`
+//! tables (`GoreID.cs:20-23`) are ported in [`crate::gore_id`], so the arms
+//! gated on them (`:1355-1360`, `:1390-1456`) run.
 
 use crate::unified_random::UnifiedRandom;
 use crate::world::World;
@@ -214,6 +216,21 @@ impl SpriteFrame {
             row_count: rows,
         }
     }
+
+    /// `SpriteFrame.GetSourceRectangle`'s size half (`SpriteFrame.cs:72-77`):
+    /// the cell is `texture / count` (integer division), minus the 2 px
+    /// padding on an axis with more than one cell. The `max(1)` guards only
+    /// fire on a zero-count frame the pool never produces (`Gore.Frame`
+    /// starts at `new SpriteFrame(1, 1)`, `Gore.cs:42`). The draw pass keeps
+    /// its own copy with the cursor offsets (`render/gore.rs::source_rect`).
+    pub fn source_size(&self, tex_w: u32, tex_h: u32) -> (i32, i32) {
+        let num = (tex_w / self.column_count.max(1) as u32) as i32;
+        let num2 = (tex_h / self.row_count.max(1) as u32) as i32;
+        (
+            num - if self.column_count != 1 { 2 } else { 0 },
+            num2 - if self.row_count != 1 { 2 } else { 0 },
+        )
+    }
 }
 
 /// One gore record — `Gore.cs:14-42` with the static `goreTime` carried by the
@@ -246,6 +263,12 @@ pub struct Gore {
     pub frame_counter: u8,
     /// `Gore.Frame` (`Gore.cs:42`) — `new SpriteFrame(1, 1)` by default.
     pub frame: SpriteFrame,
+    /// The port-side `TextureAssets.Gore[type]` size (W4-g68): `Some` when
+    /// the sheet is packed (the `IsLoaded == true` branch of
+    /// `Width`/`Height`/`AABBRectangle`), `None` = unloaded, the C#'s `1f`
+    /// fallback. The pool refreshes it from its injected size map at spawn
+    /// and per update tick (the type can re-type inside `NewGore`).
+    pub texture_size: Option<(u32, u32)>,
 }
 
 impl Gore {
@@ -262,22 +285,42 @@ impl Gore {
     }
 
     /// `Gore.Width` (`Gore.cs:44-54`): with the texture unloaded the C#
-    /// returns `1f` — and the port has no texture tracking yet, so the
-    /// fallback is the only path until the asset seam lands (see the module
-    /// drops).
+    /// returns `1f`; a loaded sheet gives `scale * source-rect width`.
+    /// W4-g68: the App injects the packed sheet sizes
+    /// ([`GorePool::set_texture_sizes`]) — an id absent from the map is the
+    /// unloaded fallback, exactly the C#'s `IsLoaded` test.
     pub fn width(&self) -> f32 {
-        1.0
+        match self.texture_size {
+            Some((w, h)) => self.scale * self.frame.source_size(w, h).0 as f32,
+            None => 1.0,
+        }
     }
 
-    /// `Gore.Height` (`Gore.cs:56-66`): the `1f` fallback, as [`Gore::width`].
+    /// `Gore.Height` (`Gore.cs:56-66`): as [`Gore::width`].
     pub fn height(&self) -> f32 {
-        1.0
+        match self.texture_size {
+            Some((w, h)) => self.scale * self.frame.source_size(w, h).1 as f32,
+            None => 1.0,
+        }
     }
 
-    /// `Gore.AABBRectangle` (`Gore.cs:68-79`): the texture-unloaded fallback
-    /// `new Rectangle(0, 0, 1, 1)` — see [`Gore::width`].
+    /// `Gore.AABBRectangle` (`Gore.cs:68-79`): with the sheet packed (the
+    /// W4-g68 seam) `(int)position` plus the `(int)(sourceRect * scale)`
+    /// size — note the size casts truncate the PRODUCT, unlike
+    /// `Width`/`Height`'s float getters. Unloaded: `(0, 0, 1, 1)`.
     pub fn aabb_rectangle(&self) -> (i32, i32, i32, i32) {
-        (0, 0, 1, 1)
+        match self.texture_size {
+            Some((w, h)) => {
+                let (sw, sh) = self.frame.source_size(w, h);
+                (
+                    self.position.x as i32,
+                    self.position.y as i32,
+                    (sw as f32 * self.scale) as i32,
+                    (sh as f32 * self.scale) as i32,
+                )
+            }
+            None => (0, 0, 1, 1),
+        }
     }
 }
 
@@ -290,6 +333,11 @@ pub struct GorePool {
     pub gore_time: i32,
     /// The blood gate; `disabled` defaults `true` (`ChildSafety.cs:33`).
     pub child_safety: ChildSafety,
+    /// The `TextureAssets.Gore[type]` sizes (W4-g68 asset seam): the App
+    /// injects its packed `Gore_<id>` sheet sizes once; an absent id is the
+    /// C#'s unloaded-texture branch (`Width`/`Height` → `1f`). Empty by
+    /// default, so pool-only consumers keep the recorded fallback.
+    texture_sizes: std::collections::HashMap<i32, (u32, u32)>,
 }
 
 impl Default for GorePool {
@@ -311,7 +359,28 @@ impl GorePool {
             slots,
             gore_time,
             child_safety: ChildSafety::default(),
+            texture_sizes: std::collections::HashMap::new(),
         }
+    }
+
+    /// The W4-g68 asset seam: inject the packed `Gore_<id>` sheet sizes (the
+    /// App's `Lookups::gore_sheets`). Ids present here answer the C#'s
+    /// `TextureAssets.Gore[type].IsLoaded == true` branch; absent ids keep
+    /// the `1f` fallback. Refreshes every live slot's cached size at once.
+    pub fn set_texture_sizes(&mut self, sizes: std::collections::HashMap<i32, (u32, u32)>) {
+        self.texture_sizes = sizes;
+        for num in 0..=GORE_SENTINEL {
+            self.refresh_texture_size(num);
+        }
+    }
+
+    /// Re-read the slot's `texture_size` from the injected map (the type may
+    /// have re-typed inside `NewGore`'s ChildSafety or 411-430 arms).
+    fn refresh_texture_size(&mut self, num: usize) {
+        self.slots[num].texture_size = self
+            .texture_sizes
+            .get(&self.slots[num].gore_type)
+            .copied();
     }
 
     /// The whole slot array, sentinel included (`Main.gore`).
@@ -567,6 +636,9 @@ impl GorePool {
         if self.deactivate_if_outside_of_world(num, world) {
             return GORE_SENTINEL;
         }
+        // The W4-g68 asset seam: the final type (post ChildSafety re-type)
+        // picks the texture size the `Width`/`Height` getters read.
+        self.refresh_texture_size(num);
         num
     }
 
@@ -670,6 +742,11 @@ impl GorePool {
     ) {
         // `Gore.cs:314-325`: the sticky clamp — the world check first, then
         // the speed cap.
+        // W4-g68: re-read the texture size each tick — callers may re-type a
+        // slot through `slot_mut` (the drip rows' paint swaps etc.), and the
+        // C#'s `Width`/`Height` getters re-evaluate `TextureAssets.Gore[type]`
+        // on every read.
+        self.refresh_texture_size(num);
         if self.slots[num].sticky {
             if self.deactivate_if_outside_of_world(num, world) {
                 return;
@@ -1524,7 +1601,9 @@ impl GorePool {
         if vector4 != vector5 {
             self.slots[num].velocity.y = -1.0;
         }
-        // `:1180` — `(Width, Height) * 0.5f + position`, the 1x1 fallback.
+        // `:1180` — `(Width, Height) * 0.5f + position`: the source-rect
+        // half-size when the sheet is packed (the W4-g68 asset seam), the
+        // C#'s `1f` fallback otherwise.
         let point2 = to_tile_coordinates(
             Vec2::new(self.slots[num].width(), self.slots[num].height()) * 0.5
                 + self.slots[num].position,
@@ -2135,6 +2214,72 @@ mod tests {
             assert!((d.scale - 1.1).abs() < 1e-5);
             assert_eq!(d.alpha, 0);
         }
+    }
+
+    /// The W4-g68 asset seam (`Gore.cs:44-66` + `SpriteFrame.cs:72-77`):
+    /// a packed 32-column × 8-row leaf sheet gives the source-rect size
+    /// `(w/32 − 2, h/8 − 2)`; `Width`/`Height` scale it, `AABBRectangle`
+    /// truncates the scaled product and anchors at `(int)position`. An
+    /// absent id keeps the `1f` / `(0,0,1,1)` unloaded fallbacks.
+    #[test]
+    fn w4_g68_width_height_read_the_packed_sheet_cell() {
+        let world = leaf_physics_world();
+        let mut pool = GorePool::new();
+        // Gore_910's retail sheet is 448x112: cell 14x14 − 2 padding = 12x12.
+        pool.set_texture_sizes(std::collections::HashMap::from([(910, (448, 112))]));
+        spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
+        let g = pool.slot(0);
+        assert_eq!(g.texture_size, Some((448, 112)));
+        assert_eq!(g.width(), 12.0, "scale 1 × (448/32 − 2)");
+        assert_eq!(g.height(), 12.0, "scale 1 × (112/8 − 2)");
+        assert_eq!(g.aabb_rectangle(), (160, 160, 12, 12));
+        pool.slot_mut(0).scale = 0.5;
+        assert_eq!(pool.slot(0).width(), 6.0);
+        assert_eq!(pool.slot(0).aabb_rectangle(), (160, 160, 6, 6));
+        // A type with no sheet keeps the C#'s unloaded fallbacks.
+        let n = pool.new_gore(
+            &mut VecRng::new(vec![10, 20]),
+            &world,
+            Vec2::new(200.0, 200.0),
+            Vec2::ZERO,
+            1,
+            1.0,
+        );
+        assert_eq!(pool.slot(n).texture_size, None);
+        assert_eq!(pool.slot(n).width(), 1.0);
+        assert_eq!(pool.slot(n).height(), 1.0);
+        assert_eq!(pool.slot(n).aabb_rectangle(), (0, 0, 1, 1));
+    }
+
+    /// The falling-leaf liquid probe (`Gore.cs:1180`) centres on
+    /// `(Width, Height) * 0.5 + position`: with the 12×12 cell the probe
+    /// tile is `((int)(x + 6)) >> 4`, one cell right of the 1f-fallback
+    /// probe when the leaf sits near a tile's right edge. The liquid in
+    /// THAT cell flips `velocity.Y` to −1 (the rest sentinel).
+    #[test]
+    fn w4_g68_the_fall_probe_uses_the_sheet_half_size() {
+        let mut world = leaf_physics_world();
+        // pos.x 170: +0.5 (fallback) → tile 10; +6 (12px cell) → tile 11.
+        // The probe box is `(vector.x, vector.y + 6, 4, 4)` with
+        // vector = pos + (4, −4) → (174, 302..306); tile 11 spans x
+        // 176..192 (overlap) and the liquid rect must reach y < 306:
+        // liquid 16 → top 304 + 1 = 305 (the fd9415f3 fixture lesson).
+        let i = world.index(11, 19);
+        world.tiles[i].liquid = 16;
+        let mut pool = GorePool::new();
+        pool.set_texture_sizes(std::collections::HashMap::from([(910, (448, 112))]));
+        spawn_leaf(&mut pool, &world, Vec2::new(170.0, 300.0));
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, None);
+        assert_eq!(
+            pool.slot(0).velocity.y,
+            -1.0,
+            "the sheet-sized probe found the liquid at tile 11"
+        );
+        // Without the seam the probe reads tile 10 (dry) and keeps falling.
+        let mut bare = GorePool::new();
+        spawn_leaf(&mut bare, &world, Vec2::new(170.0, 300.0));
+        bare.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, None);
+        assert!(bare.slot(0).velocity.y > 0.0);
     }
 
     /// The ground freeing up under a resting leaf resumes the fall

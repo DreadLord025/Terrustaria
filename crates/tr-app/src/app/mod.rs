@@ -4019,8 +4019,22 @@ impl App {
             vine_wind_counter: 0.0,
             // `Main.gore = new Gore[601]` (`Main.cs:66990`) — the 600 live
             // slots plus the refuse sentinel; `goreTime` seeds its 600
-            // (`Gore.cs:1507-1510`).
-            gore: tr_core::gore::GorePool::new(),
+            // (`Gore.cs:1507-1510`). W4-g68: the packed `Gore_<id>` sheet
+            // sizes answer the `TextureAssets.Gore[type].IsLoaded` getters
+            // (`Width`/`Height`, `Gore.cs:44-66`) — the falling-leaf liquid
+            // probe centres on the source-rect half-size, not the 1f
+            // fallback.
+            gore: {
+                let mut gore = tr_core::gore::GorePool::new();
+                gore.set_texture_sizes(
+                    lookups
+                        .gore_sheets
+                        .iter()
+                        .map(|(&id, r)| (id as i32, (r.width, r.height)))
+                        .collect(),
+                );
+                gore
+            },
             entity_lights: crate::entity_lights::EntityLights::default(),
             // `Main.cs:66673-66674` — `essScale = 1f; essDir = -1;`.
             ess_scale: 1.0,
