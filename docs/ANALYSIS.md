@@ -39302,3 +39302,54 @@ mirrored plain spawn, shine dark-return/roll-before-miss/colours/
 665-dead, break draw census, burst counts + stream-order mirror, glow
 stage flip + per-tile jitter bands) — WRITTEN, NOT RUN (no
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked).
+
+### The wiring round (same branch, 2026-11-21)
+
+Three seams landed (census `docs/research/W4-g85-orb-draw.md` §6):
+
+1. **The emit slot WIRED.** `emit_entry_gate` ports the `:965-968`
+   quarter-roll; the ambient/shine block runs in `render/tiles.rs` at
+   the C# position — BEFORE the dark-cell merge (the C# battery runs on
+   dark cells). Deviations: (a) the `_rand` gates ride the per-rebuild
+   `leaf_rng` FastRandom stand-in (vanilla's `_rand` is one session-lived
+   UnifiedRandom — the port pins it per world-range rebuild, the S1-G-1
+   leaf convention); (b) the NewDust internals ride the `frame_rng`
+   clone snapshot written back after the pass (the d54 convention);
+   (c) `Lighting.UpdateEveryFrame` folds to Retro/Trippy — the port's
+   frame path never binds the render-target family (S1-G-13
+   allocation-only), so `RenderTargetsRequired` stands false even at
+   zoom > 1. Contract notes: the pre-entry spelunker `:930 Next(60)`
+   draw (12/639 ARE `tileSpelunker`) is a constants-off potion seam —
+   when the potion draw arms land they draw BEFORE this block; the
+   block is family-gated (zero draws for other kinds) so d60's
+   whole-battery keep-one replaces it wholesale.
+2. **The hammer fail-tick dust WIRED** (`orb_hammer_fail_dust` in
+   `hammer_tile_hit`'s sub-100 arm): the `KillTile(fail)` dust loop runs
+   before the `:63736` return — 3 stage dusts per hit on the
+   `UpdatePlayers` stream. The 10-dust BREAK burst stays d54's
+   `tile_break_burst` seam (d54/g14 both carry the `:68966` arm
+   verbatim-identical to `orb_break_dust_type` — keep-one); the fail
+   SOUND stays c14's `play_kill_fail_cue`. The break progression is the
+   i31 HitTile book (no orb-specific accumulation): a 40-power hammer
+   needs 3 hits — puff-puff-break.
+3. **The CheckOrb loot census FIX** (unclaimed lane): the drop switch is
+   FOUR cases (`WorldGen.cs:54226-54333`) — 696 → 5469/5470 (the
+   dispatch arm was missing), 12 → the Life Crystal 29 (tile 12 is the
+   Heart OBJECT; the crimson heart is 31's `fx>=36` half — the pre-fix
+   port rolled the 5-way table for 12, wrong), 639 → 109; only case 31
+   rolls and raises the smash flags (`:54292-54293` is INSIDE case 31 —
+   the pre-fix port counted every kind, wrong). The `Next(5)` draws even
+   on the forced first smash. The case-0 Musket Ball 97×100 pair resolves
+   app-side in `break_drop_events` (one dead-range `Next(100,101)` draw
+   kept, `UpdatePlayers`). Trigger census: CheckOrb sets NO
+   `spawnMeteor` — the meteorite triggers (boss deaths `NPC.cs:79455`,
+   nightly `Next(50)` `Main.cs:65230`) and the dawn goblin invasion roll
+   (`Main.cs:65448-65461`) were already landed; the Goblin Scout spawn
+   gate (`NPC.cs:4478`, `!downedGoblins && shadowOrbSmashed &&
+   Next(7)==0` after the `Next(15)`) rides the UNPORTED day-surface
+   ladder — UNWIRED contract note (6 lanes contest spawner.rs).
+
+6 new witnesses (entry-gate arms + quarter-roll recipe/band/seed
+advance, fail-3 stage census + stream mirror, 3-hit progression,
+four-case switch + flag census, gun-pair + dead-range draw) — WRITTEN
+NOT RUN; 18 total on the branch.

@@ -108,3 +108,119 @@ Code-only: every ported line re-read against the cited C# windows
 `WorldGen.cs:32095-32132`/`:63699-63703`/`:66601-66606`/`:68966-68969`/
 `:69166`, `Main.cs:7518`/`:9652`/`:18578-18588`). 12 witness tests
 WRITTEN NOT RUN — no cargo/rustc/rustfmt/tests/dotnet/graphify invoked.
+
+## 6. The wiring round (2026-11-21, same branch, code-only)
+
+Three seams, one commit each:
+
+### Seam 1 — the emit entry gate + the ambient/shine call site (`3be55964`)
+
+* `orb_draw::emit_entry_gate` ports `TileDrawing.cs:965-968` verbatim:
+  `_isActiveAndNotPaused && (!Lighting.UpdateEveryFrame ||
+  FastRandom(TileFrameSeed).WithModifier(x,y).Next(4) == 0)`. The
+  quarter-roll is a FRESH per-tile derivation (`with_modifier` XORs into
+  a copy — no stream advance, a miss costs nothing). `UpdateEveryFrame`
+  (`Lighting.cs:77-87`) = `!RenderTargetsRequired && !NotRetro`: true
+  only in Retro/Trippy at zoom 1; the port's frame path never binds the
+  target family (S1-G-13 allocation-only), so `RenderTargetsRequired`
+  stands false — recorded deviation (the zoom > 1 capture path is
+  unported).
+* The call site is a family-kind-gated block in `render/tiles.rs` at the
+  C# slot — BEFORE the dark-cell merge (`:975-991` comes after the
+  battery in C#; a dark orb cell still emits, the shine dark-return is
+  inside the body). Gates ride `leaf_rng` (the pinned per-rebuild `_rand`
+  stand-in) through the `GateRand` adapter; the `NewDust` internals ride
+  the `frame_rng` clone snapshot written back after the pass (the d54
+  break-seam convention).
+* **Chain-position census (stream-exactness).** Every battery arm before
+  `:7335` fails its TYPE/SET test for 31/696/12/639 before any `_rand`
+  draw: 718/244/565/215/592/406/452/192/384/666/712/711, the
+  `SpawnsNatureFlies` set (3,20,24,27,73,201,80,110,529,530,595,615,637),
+  the `MakesRubbleDust` set, 238/139/463/497/165/42, the torch/lamp arms
+  4/93/100/98/49/372/646/34/83, then 22/23/24/32/25/112/26/695/71/72/
+  17/77/133/405/37/58/76/684/61/703. The family reaches its arm with
+  ZERO prior draws. The pre-entry `DrawSingleTile` arms are the potion
+  seams: dangerSense `:911 Next(30)` (the family is not dangerous —
+  `IsTileDangerous`'s sets exclude it), spelunker `:930 Next(60)`
+  (**12/639 ARE `tileSpelunker`** — `Main.cs:9424`/`:9651` — so a
+  findTreasure buff WOULD draw before the entry; the port has not wired
+  the spelunker draw arm, constants-off, zero draws today), biomeSight
+  `:955 Next(480)` (the family is in no BiomeSight set). When the potion
+  draw arms land they must draw BEFORE this block — contract note.
+* **Contested seam.** `render/tiles.rs` + `app/frame/draw.rs` are touched
+  by ~12 in-flight draw lanes (d58/d59/d69/g33/g34/g68/g75/g78/g84/f14/
+  f15/c39/d127); the block is family-gated (zero draws for every other
+  kind) so d60's whole-battery keep-one replaces it wholesale at merge.
+
+### Seam 2 — the hammer FAIL-tick dust + the d54/g14 keep-one census (`2fcc9439`)
+
+* **d54/g14 table census.** BOTH pushed lanes carry the `:68966` arm:
+  d54 `world_dust_tile.rs:1595-1605` and g14
+  `worldgen_dust_tile.rs:1381-1391` — verbatim-identical to
+  `orb_break_dust_type` (the `25|31|696` gate, the `(31|696) && fx>=36`
+  short-circuit 5 with NO roll, else `Next(2)!=0?1:14`). Keep ONE at
+  merge; the witnesses here pin the contract either way. d54's
+  `break_tile` wiring (`tile_break_burst` between the sounds and the
+  drops, the `frame_rng` snapshot for the type chain + `UpdatePlayers`
+  for the spawns) owns the 10-dust BREAK seam — NOT duplicated here.
+* **The unclaimed half: the fail tick.** `hammer_tile_hit`'s sub-100 arm
+  is `KillTile(fail: true)` (`Player.cs:45692`); the C# dust loop
+  (`WorldGen.cs:63699-63703`) runs BEFORE the fail return (`:63736`), so
+  every sub-100 hammer hit puffs 3 stage dusts. `orb_hammer_fail_dust`
+  wires exactly that (the `CanKillTile` refusal + vanished-cell guards
+  precede the draws; `UpdatePlayers` stream — `genRand` IS `Main.rand`,
+  `:4445`). The fail SOUND stays c14's `play_kill_fail_cue` lane (its
+  call lands at the same site — keep-one comment).
+* **Hammer-break stage progression census.** `Main.tileHammer[31]/[696]`
+  (`Main.cs:7206-7207`) route the orb to the hammer arm; neither is
+  `tileNoFail`. There is NO orb-specific damage accumulation in
+  `KillTile` — the progression is the i31 `HitTile` book: an Iron Hammer
+  (40) needs 3 hits (40+40+20 ≥ 100), i.e. puff-puff-break. The witness
+  pins it.
+
+### Seam 3 — the CheckOrb loot census fix (`200674ec`)
+
+* **The drop switch is FOUR cases, not one table** (`WorldGen.cs:
+  :54226-54333`): 696 → the replica item 5469/5470 by the `fx>=36` bit
+  (the dispatch arm `:85251` was missing 696 — added); 12 is the
+  Heart/Life Crystal OBJECT → 29 (the pre-fix port wrongly rolled the
+  5-way table for it — the crimson heart is 31's `fx>=36` half, NOT tile
+  12); 639 → 109. All three: NO roll, NO flags. ONLY case 31 rolls the
+  5-way tables and raises `shadowOrbSmashed`/`shadowOrbCount`
+  (`:54292-54293` sits INSIDE case 31). The `Next(5)` draws even on the
+  forced first smash (`:54240`/`:54267` draw-then-override).
+* **The case-0 Musket Ball pair** (the documented ObjectDrop follow-up,
+  unclaimed): the gun (96/800) spawns WITH a 97 stack of
+  `genRand.Next(100, 101)` ≡ 100 — one dead-range draw kept. Resolved
+  app-side in `break_drop_events` (gun id + `tile_kind == 31` gate),
+  `UpdatePlayers` stream.
+* **Meteorite spawn trigger census.** `CheckOrb` sets NO `spawnMeteor`.
+  The triggers: the orb-boss deaths (`NPC.cs:79453-79456` — guaranteed
+  first / `Next(2)` after; landed `npcs.rs:5174` via
+  `meteor::boss_death_roll`) and the nightly `Next(50)` after downedBoss2
+  (`Main.cs:65230`; landed `weather.rs:367` via `meteor::night_roll`);
+  the 16200-tick resolution landed `meteor.rs:244`. NOTHING to wire.
+* **Goblin-army unlock census.** `shadowOrbSmashed` arms (a) the dawn
+  invasion roll (`Main.cs:65448-65461` — 1/3 pre-defeat, 1/30 classic /
+  1/60 hardmode after; landed `world.rs:970 roll_morning_invasion` +
+  the `npcs.rs:4052` arm resolve) and (b) the Goblin Scout spawn gate
+  (`NPC.cs:4478` — `!downedGoblins && shadowOrbSmashed && Next(7)==0`,
+  the second-chance arm after the `Next(15)`). (b) rides the UNPORTED
+  day-surface ladder (`spawner.rs`'s day arm falls through to the basic
+  slime; 6 lanes contest spawner.rs) — UNWIRED contract note: when the
+  day ladder lands, the scout arm draws `Next(15)` then (on miss, flag
+  gates) `Next(7)`, in that order, on the SpawnNPC stream.
+* The break-tick sound tail stays c14/g24 (both carry the `CheckOrb`
+  `:54335-54342` tail — their own keep-one); the third-break summon
+  stays the landed sim edge (`npcs.rs:5699`).
+
+### Wiring-round verification
+
+Code-only: every ported line re-read against the cited C# windows
+(`TileDrawing.cs:864-968`/`:6688-7432`, `Lighting.cs:63-87`,
+`Main.cs:2585-2595`/`:7206-7207`/`:9424`/`:9651`, `WorldGen.cs:
+:54169-54344`/`:63537-63736`/`:66597-66606`/`:68966-68969`,
+`Player.cs:45646-45782`, `NPC.cs:4478`/`:79443-79458`). 6 new witness
+tests WRITTEN NOT RUN (2 entry-gate, 2 fail-tick/progression, 2
+loot-switch/gun-pair) — no cargo/rustc/rustfmt/tests/dotnet/graphify
+invoked. 18 witnesses total on the branch.
