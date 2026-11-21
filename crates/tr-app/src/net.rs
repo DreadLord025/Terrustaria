@@ -380,6 +380,19 @@ pub mod id {
     /// arm's `DoesPlayerSlotCountAsAHost` push (`MessageBuffer.cs:934`).
     /// S2c-only.
     pub const COUNTS_AS_HOST: u8 = 139;
+    /// `144 RequestQuestEffect` (`MessageID.cs:302`) — NO writer case:
+    /// `SendData(144)` (`Main.cs:40287`, the Stardew dryad bit,
+    /// `netMode == 1`) writes a bare frame. The reader is host-only
+    /// `NPC.HaveDryadDoStardewAnimation()` (`MessageBuffer.cs:4304-4309`).
+    /// C2s-only, bodyless.
+    pub const REQUEST_QUEST_EFFECT: u8 = 144;
+    /// `145 SyncItemsWithShimmerDeprecated` (`MessageID.cs:304`) — DEAD:
+    /// no writer case, no reader case (the default arm drops it,
+    /// `MessageBuffer.cs:4477-4482`), zero send sites tree-wide. The
+    /// shimmer item sync became `146 ShimmerActions`. Constant + census
+    /// doc only — no variant is invented for a frame with neither arm
+    /// (the 24 precedent).
+    pub const SHIMMER_ITEMS_DEPRECATED: u8 = 145;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -2559,6 +2572,10 @@ pub enum C2s {
     /// notice, bodyless (`Main.cs:17700`); NO reader case — the default
     /// arm drops it (`MessageBuffer.cs:4477-4482`). C2s-only.
     ClientSyncedInventory,
+    /// `144 RequestQuestEffect` — the client's Stardew-dryad ask,
+    /// bodyless (`Main.cs:40287`; host `HaveDryadDoStardewAnimation`,
+    /// `MessageBuffer.cs:4304-4309`). C2s-only.
+    RequestQuestEffect,
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2881,6 +2898,7 @@ impl C2s {
             Self::HatRackItemSync(_) => id::TE_HAT_RACK_ITEM_SYNC,
             Self::FoodPlatterTryPlacing(_) => id::FOOD_PLATTER_TRY_PLACING,
             Self::ClientSyncedInventory => id::CLIENT_SYNCED_INVENTORY,
+            Self::RequestQuestEffect => id::REQUEST_QUEST_EFFECT,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -3014,6 +3032,8 @@ impl C2s {
             }
             // No writer case for 138 — `SendData(138)` writes a bare frame.
             Self::ClientSyncedInventory => w,
+            // No writer case for 144 — `SendData(144)` writes a bare frame.
+            Self::RequestQuestEffect => w,
             // `NetMessage.cs:1489-1508`: (byte)player + int id + the
             // already-folded wire slot + WriteItem (or the air fallback,
             // which is the same 5 bytes as an air TeItem slot).
@@ -3256,6 +3276,8 @@ impl C2s {
             // 138 has NO reader case — the default arm reads nothing
             // (`MessageBuffer.cs:4477-4482`); a bare frame decodes.
             id::CLIENT_SYNCED_INVENTORY => Self::ClientSyncedInventory,
+            // `MessageBuffer.cs:4304-4309`: the host reads NOTHING.
+            id::REQUEST_QUEST_EFFECT => Self::RequestQuestEffect,
             // `MessageBuffer.cs:3997-4016`: byte + int + byte slot; the
             // dye unfold + the >= 2 refusal are the apply arm's — the
             // codec keeps the wire slot verbatim and reads the 5-byte
@@ -7507,6 +7529,34 @@ mod tests {
         assert!(C2s::decode(139, &mut NetReader::new(&[3, 1])).is_none());
         // A truncated bool must not decode.
         assert!(S2c::decode(139, &mut NetReader::new(&[3])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_request_quest_effect_is_a_bodyless_client_ask() {
+        // `144` has NO writer case — `SendData(144)` (Main.cs:40287, the
+        // Stardew dryad bit) writes only the header; the host reader reads
+        // nothing (`MessageBuffer.cs:4304-4309`).
+        let f = C2s::RequestQuestEffect.encode();
+        assert_eq!(f[2], 144);
+        assert_eq!(f.len(), 3);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::RequestQuestEffect => {}
+            other => panic!("expected 144, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // C2s-only.
+        assert!(S2c::decode(144, &mut NetReader::new(&[])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_shimmer_items_deprecated_is_censused_dead() {
+        // `145` — no writer case, no reader case, zero send sites; the
+        // shimmer item sync became 146. Constant + census doc only (the
+        // 24 precedent: no variant for a frame with neither arm).
+        assert_eq!(id::SHIMMER_ITEMS_DEPRECATED, 145);
+        assert!(C2s::decode(145, &mut NetReader::new(&[])).is_none());
+        assert!(S2c::decode(145, &mut NetReader::new(&[])).is_none());
     }
 
     #[test]

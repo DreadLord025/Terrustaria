@@ -876,6 +876,10 @@ impl App {
             // (`MessageBuffer.cs:4477-4482`) drops it; the codec's
             // bare-frame read IS the whole arm.
             C2s::ClientSyncedInventory => {}
+            // S1-I-1 W4-f21: `144`'s host NPC.HaveDryadDoStardewAnimation
+            // (`MessageBuffer.cs:4304-4309`) lands with the apply-wiring
+            // lanes (g48-g52) / S1-I-4.
+            C2s::RequestQuestEffect => {}
         }
     }
 
