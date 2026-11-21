@@ -1290,10 +1290,10 @@ impl App {
                     // world-effect range as the rain (`Main.DrawRain`'s draw call
                     // site — world content, under the map batches and the UI).
                     crate::sand::draw(dust, renderer, lookups, light, draw_cam, world_zoom, screen);
-                    // The type-213 wheel sparks — `Main.DrawDust`'s generic
-                    // 213-draw (self-lit gray, `Dust.cs:2498-2501`), the same
-                    // world-content range as the rain/sand dust.
-                    crate::minecart::draw(dust, renderer, lookups, draw_cam, world_zoom, screen);
+                    // The cart wheel sparks (213/260/211/107) — `Main.DrawDust`'s
+                    // self-lit 213|260 gray + the light-tinted 211/107 generic
+                    // path, the same world-content range as the rain/sand dust.
+                    crate::minecart::draw(dust, renderer, lookups, light, draw_cam, world_zoom, screen);
                     crate::render::foliage::draw_leaves(
                         renderer, lookups, light, draw_cam, world_zoom, screen, leaves,
                     );

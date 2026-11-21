@@ -2598,6 +2598,7 @@ mod tests {
                 glam::Vec2::new(vel_x, 0.0),
                 13.0,
                 0.0,
+                crate::minecart::SparkVariant::Sparks,
             );
             if sparks.len() == want {
                 return s;

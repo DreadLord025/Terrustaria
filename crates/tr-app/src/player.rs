@@ -7485,6 +7485,7 @@ impl Player {
                     body_h,
                     10,
                     pre_rotation,
+                    minecart::spark_variant_of(self.mount.kind()),
                 );
             }
             if flags.bouncy_bumper() {
@@ -10424,6 +10425,7 @@ impl Player {
             height as i32,
             25,
             self.full_rotation,
+            minecart::spark_variant_of(self.mount.kind()),
         );
         true
     }
@@ -10669,6 +10671,7 @@ impl Player {
                     vel,
                     max_run,
                     rotation,
+                    minecart::spark_variant_of(self.mount.kind()),
                 );
             }
         } else if self.control_right && self.vx < self.max_run_speed {
@@ -10710,6 +10713,7 @@ impl Player {
                     vel,
                     max_run,
                     rotation,
+                    minecart::spark_variant_of(self.mount.kind()),
                 );
             }
         } else if self.control_left && self.vx > -self.acc_run_speed && self.dash_delay >= 0 {
@@ -18106,6 +18110,7 @@ mod tests {
                 Vec2::new(vel_x, 0.0),
                 13.0,
                 0.0,
+                crate::minecart::SparkVariant::Sparks,
             );
             if sparks.len() == want {
                 return s;

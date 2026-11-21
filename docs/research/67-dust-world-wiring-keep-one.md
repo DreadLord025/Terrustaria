@@ -171,6 +171,62 @@ whichever lane lands the mining machine (M2-MOUNT-4 or a wiring wave):**
   carries `ability_active` (`mount.rs:2110`) — at merge keep ONE field
   (d8's accessors + f6's declaration are the same C# `_abilityActive`).
 
+## The minecart-track dust — the unclaimed delegate variants PORTED
+
+Census (f6's Mount.cs lane, final phase): the track-side sparks are NOT
+Mount.cs `NewDust` sites — they ride the `MountDelegatesData.MinecartDust`
+delegate (`Mount.cs:104`), invoked by `Minecart.WheelSparks`
+(`Minecart.cs:1623-1630`) from the three Player.cs sites (the rolling arms
+`:19877-19959`, the landing burst `Minecart.cs:812` via
+`Player.cs:28110`, the track-hook burst `:22688`). The base `Sparks`
+(type 213) was already ported + wired (`minecart.rs`, S1-E-1 phase 2).
+The FOUR variant delegates were unclaimed port-wide (checked d54/e4/f11/
+e20/c14/d55/d50 tips — f11/e20 are Wiring.cs device lanes, c14 ported the
+fart/meow SOUND halves only and explicitly left "the fart cloud … the
+visual seam"):
+
+| Delegate | C# | Row | Body |
+| -------- | -- | --- | ---- |
+| `SparksFart` | `DelegateMethods.cs:328-346` | 51 (`Mount.cs:1099`) | dust 211, alpha 50, scale 0.8, two 50% +25 bumps, noLight, Next(3)==0 gravity, NO fadeIn |
+| `SparksTerraFart` | `:348-371` | 53 (`:1107`) | 50% SparksFart branch (rolled FIRST), else dust 107 alpha 100 scale 0.8 green-lerp colour, noLightEmittance |
+| `SparksMech` | `:373-392` | 11 (`:1487`) | dust 260, the 213 body with +0.5 fadeIn |
+| `SparksMeow` | `:394-414` | 33 (`:1013`) | the 213 body + the 2870 shader (the documented `Dust.shader` drop) |
+
+**Ported this branch** (`minecart.rs`): `SparkVariant` + `spark_variant_of`
+(the row map), the `SparkSpawn.body` resolved at QUEUE time (the TerraFart
+branch pick precedes the side/speed rolls — the C# `:350` order), the four
+drain bodies (`spawn_spark` dispatch), the tick arms (260 = the 213 body;
+211 = fall + accumulate-rotation + generic −0.01 fade + the `:729`
+noLight-solid-kill; 107 = the `velocity *= 0.9` gravity arm `:1821-1824`),
+and the draw (213/260 self-lit gray via `dust_table::get_alpha`, 211/107
+the light-tinted generic path + GetColor overlay + the full-dark kill;
+`minecart::draw` now takes the LightMap, the `sand::draw` convention).
+The four live call sites pass `spark_variant_of(self.mount.kind())`; the
+base-213 stream is byte-identical (the variant adds no rolls for Sparks).
+
+**`SpawnFartCloud` (`DelegateMethods.cs:258-306`) STAGED**
+(`minecart.rs::spawn_fart_cloud`): the 3-gore 435-437 cloud (the
+`(Width/2−18, Height−16)` anchor, the 0/−10/+10 X offsets, the −4 lift,
+the ×0.2/+carry/Y×0.75 post-writes, the 20-tick `fartKartCloudDelay` gate)
++ the 53-only 15-dust 107 tail. Activation seam: c14's
+`JumpingSoundFart`/`LandingSoundFart` (useDelay false) / `BumperSoundFart`
+(useDelay true) delegates call it inline on the `UpdatePlayers` stream;
+the delay decrements per track-rider tick (`Player.cs:28098`). The
+`Player.fartKartCloudDelay` field + the decrement are the wiring lane's
+(c14 owns the delegates; the port has no field yet). The Fart-in-a-Jar
+accessory's OWN jump cloud (`Player.cs:20855-20863`, 3 gores + the 188
+dusts) is the d51 player-dust lane's, NOT this delegate.
+
+Witnesses (WRITTEN NOT RUN): `w4_f6_spark_variant_of_maps_the_cart_rows`,
+`w4_f6_mech_spark_is_dust_260_with_the_half_fade_band`,
+`w4_f6_fart_spark_is_dust_211_with_the_alpha_bumps`,
+`w4_f6_terra_spark_green_arm_is_dust_107_with_the_lerp_colour`,
+`w4_f6_terra_fart_branch_rolls_before_the_side_and_speeds`,
+`w4_f6_variant_ticks_follow_the_c_sharp_arms`,
+`w4_f6_fart_spark_dies_over_solid_when_no_light`,
+`w4_f6_fart_cloud_spawns_three_gores_and_gates_on_the_delay`,
+`w4_f6_terra_fart_cloud_adds_the_fifteen_green_dusts` (9 new).
+
 ## New player state (the wiring's fields)
 
 - `Player.basilisk_charge` (`Player.cs:842`) — PLAYER state, survives the
