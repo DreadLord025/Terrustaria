@@ -39330,3 +39330,36 @@ the 900/14x14 row pins) are re-derived to the 37 semantics. Follow-ups
 recorded: the beach-ball chat's MP broadcast (single-player prints locally),
 the piranha's itemLocation mirror (no field), the rope-coil placement's
 `NetMessage.SendData(17)` pairs (MP relay).
+
+### DOC-SWEEP round (2026-11-21, same branch, code-only)
+
+The proj 31-40 residuals sweep (Lane 27), five items:
+
+1. **Rope-coil dup vs W4-g82 (`de797f45`)** — the arm-by-arm keep-one
+   comparison + union recommendation: `docs/research/26e-rope-coil-keep-one.md`.
+   d4's wired `ai_rope_coil` keeps the machine; g82's chain preview / Kill
+   refund ladder / usability walk / framing arm are the keep-extras. The one
+   behavioural gap: the coil `Kill()` refund (`Projectile.cs:77572-77615`)
+   is unported here — g82's `coil_death_drop` is the ladder to wire.
+2. **BeachBall item use** — item **859** (`ItemID.cs:3401`; 3060 is Bone
+   Rattle), shoot 155, no channel, no per-item `ItemCheck_Shoot` arm — the
+   generic non-ammo throw tail already serves it (witness added).
+3. **Piranha Gun item use** — item **1156** (`ItemID.cs:3995`; 3061 is
+   Architect Gizmo Pack), channel/shoot 190. PORTED: the `ItemCheck_Shoot`
+   trio arm (`Player.cs:48365-48381`, `3−num` recount + `Next(-40,41)*0.05`
+   spread) in `fire_non_ammo_shot`, and the channel-refill `flag4` override
+   (`:43545-43558`, `num<3` forces the shot independent of the
+   animation/ItemTimeIsZero gate — the `SetDummyItemTime(5)` hold keeps the
+   generic volley shut) as a dedicated block in `update_editing`.
+4. **188 flame child** — the row EXISTS and is faithful; PORTED the missing
+   `Damage_CanDealDamage` term (`type==188 && localAI[0]<5`, `:12448`) into
+   `damage_pve`/`damage_pve_boxed`/`damage_player` — the launch ramp the
+   `ai_eye_fire` counter feeds now refuses damage.
+5. **ChangeDir folds** — both stand (census in `26d`): the pulley snap's only
+   C# writers are the unported rope-climb machine (`:19690-19746`), so the
+   arm is unreachable (dead code if ported now); `itemLocation` is
+   draw-recomputed from `facing`, so the mirror folds into the flip. The
+   `change_dir` doc cites the census; a witness pins the flip + negates.
+
+All new witnesses WRITTEN, NOT RUN (code-only). The item-use ports (3) and
+the flame damage gate (4) are the behavioural changes; 1/2/5 are census/doc.
