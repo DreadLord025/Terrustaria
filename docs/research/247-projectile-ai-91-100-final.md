@@ -1,11 +1,16 @@
-# 246 — W4-d10 FINAL: the projectile aiStyles 91-100 band table
+# 247 — W4-d10 FINAL: the projectile aiStyles 91-100 band table
 
-> Numbered 246 per the research-number collision registry
-> (`150-research-number-registry.md`, W4-d54): the doc was first written
-> as 26d (a colliding key — d12 owns 26d); 237-245 are consumed by
-> post-registry lanes (e23/g48 237, c8/d42/g61 238, d42/f21/g56 239,
-> c42/d53/g58 240, g58 241-243, c28 244, 39-lane 245), so this FINAL
-> takes the first free number, 246.
+> Numbered 247 per the research-number collision registry ROUND 3
+> (`150-research-number-registry.md` §7, W4-d54 `51a28d09e`): the doc
+> was first written as 26d (a colliding key — d12 owns 26d); round 2
+> reserved 247, but this lane self-renamed 26d → 246 (`d89380ca1`,
+> 14:52:30) AFTER round 2's publish (14:47:50) — the POST-publish take
+> LOSES to e23's published 246 reservation (the 18b fork), so §7.3
+> RE-ISSUES the row with the current old name
+> `246-projectile-ai-91-100-final.md` → **247** (the round-2 number).
+> The 165/166 renames are EXECUTED — CONFIRMED (§7.2), unchanged.
+> g43 read-check: §7 carries NO g43 row — g43's only assignment is
+> round-1's `101-doc-sweep-temple.md` → 227 (§1/§3), NOT re-issued.
 >
 > Branch `task/W4-d10-proj-ai-91-100`, base `a725acb0` (wave-3 complete),
 > 2026-11-21. CODE-ONLY round: every witness is WRITTEN NOT RUN. This is
@@ -134,10 +139,17 @@ no-row decline).
    `w4_d10_s98_the_tablet_payload_composes` (:2622) pins both shapes.
 4. **Registry renumber EXECUTED** (`150-research-number-registry.md`,
    W4-d54): crosschecks 26d → **165**, docsweep 26d → **166** (the §3
-   assignments); this FINAL takes **246** (237-245 consumed by
-   post-registry lanes). Refs updated: this doc's header block +
-   satellite rows, the module doc :36/:102, the s98 witness comment
-   :2611; 165's g2 citation now names g2's own rename target (163).
+   assignments; round 3 §7.2 CONFIRMS both); this FINAL first took
+   **246** post-publish (the round-2 first-free pick) — round 3 §7
+   REVOKES it (246 = e23's published reservation) and RE-ISSUES
+   **247** (the round-2 number, chain 26d → 246 → 247; the §7.3 row
+   executed here, old name `246-projectile-ai-91-100-final.md`).
+   Refs updated: this doc's header block + satellite rows, the module
+   doc :36/:102, the s98 witness comment :2611; 165's g2 citation now
+   names g2's own rename target (163). Zero-stale sweep at the round-3
+   execution: INDEX/ANALYSIS/PORT_MAP/ROADMAP carry no FINAL-doc ref
+   (§7.3: "none outside self at tip"); the module doc's wrapped
+   `26d-…-docsweep.md` citation (:22-23) re-pinned to 166.
 
 ## Verification
 

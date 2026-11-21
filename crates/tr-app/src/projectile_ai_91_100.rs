@@ -19,7 +19,7 @@
 //! | 99 | `AI_099_1_Counterweights` `:67380-67731` (gate `:33153-33156`) + `AI_099_2_Yoyos` `:67733+` (gate `:33157-33160`) | yoyos 534/541-555/562-564/603/999; counterweights 556-561/1079 (`:6084-6093`) | yoyo half LANDED (`projectile.rs::ai_yoyo`); counterweight sub-arm MISSING (f19 F1) → this module |
 //! | 100 | `AI_100_Medusa` `:44476-44632` (gate `:33161-33164`) | MedusaHead 535 (`:6094-6106`) | MISSING → this module |
 //!
-//! Spawn-source censuses (the DOC-SWEEP, `docs/research/26d-projectile-ai-
+//! Spawn-source censuses (the DOC-SWEEP, `docs/research/166-projectile-ai-
 //! 91-100-docsweep.md`): the 94 CoinPortal 518 spawns from the POT break
 //! (`WorldGen.SpawnThingsFromPot` `:57176-57182`, the luck-0 arm — NOT the
 //! Coin Gun 905, which fires the coin shot 158); the 97 FlyingPiggyBank 525
