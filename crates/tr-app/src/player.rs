@@ -6792,17 +6792,26 @@ impl Player {
                     self.mana_max += 20;
                     self.mana_cost -= 0.02;
                 }
+                // `:11911-11917` — Weak (33): meleeDamage −0.051, meleeSpeed
+                // −0.051 (W4-f12 sweep gap 5 — the speed half was missing),
+                // statDefense −4, moveSpeed −0.1, per Weak slot.
                 33 => {
                     self.weak_stacks += 1; // `BuffID.Weak`
-                    self.melee_damage -= 0.051;
-                    self.move_speed -= 0.1;
-                    // `:11915`: `statDefense -= 4` per Weak slot.
-                    self.stat_defense -= 4;
+                    self.melee_damage -= 0.051; // `:11913`
+                    self.melee_speed_bonus -= 0.051; // `:11914`
+                    self.stat_defense -= 4; // `:11915`
+                    self.move_speed -= 0.1; // `:11916`
                 }
                 // `:9962` — `BuffID.Ironskin`: `statDefense += 8`.
                 5 => self.stat_defense += 8,
-                // `:10064` — `BuffID.Ichor`: `statDefense -= 15`.
-                69 => self.stat_defense -= 15,
+                // `:10061-10065` — `BuffID.Ichor`: `ichor = true` (W4-f12
+                // sweep — the flag half was missing; the wave-B module's
+                // copy is not dispatched, 69 is inline-owned) +
+                // `statDefense -= 15`.
+                69 => {
+                    self.ichor = true; // `:10063`
+                    self.stat_defense -= 15; // `:10064`
+                }
                 // `:10108` — buff 215 (`BuffID.Warmth`'s neighbour row in the
                 // C#: `statDefense += 5`).
                 215 => self.stat_defense += 5,
@@ -6818,11 +6827,14 @@ impl Player {
                 // one snowflake/spark; the buff re-affirms the flag per tick.
                 312 => self.cool_whip_buff = true,
                 365 => self.cob_whip_buff = true,
-                // `:10306-10312` — `BuffID.DryadsWard`: `statDefense += 8`,
-                // `lifeRegen += 6` (the regen half has no consumer yet) and
-                // `thorns += 0.5` while under 1.
+                // `:10303-10312` — `BuffID.DryadsWard`: `lifeRegen += 6`
+                // (the regen half rides the accessory-regen lane's 165 arm
+                // below), `statDefense += 8`, `dryadWard = true` (W4-f12
+                // sweep gap 3 — the flag half was missing) and `thorns +=
+                // 0.5` while under 1.
                 165 => {
                     self.stat_defense += 8;
+                    self.dryad_ward = true; // `:10307`
                     if self.thorns < 1.0 {
                         self.thorns += 0.5;
                     }
@@ -6858,10 +6870,13 @@ impl Player {
                 308 => self.summoner_weapon_speed_bonus += 0.25,
                 314 => self.summoner_weapon_speed_bonus += 0.12,
                 // `:10158-10163` — the Builder Potion (107): tileSpeed /
-                // wallSpeed += 0.25 (the blockRange half rides the reach).
+                // wallSpeed += 0.25 + `blockRange++` (W4-f12 sweep gap 4 —
+                // the reach half was missing; the field feeds the placement
+                // reach, `ResetEffects` zeroes it `:18689`).
                 107 => {
                     self.tile_speed_bonus += 0.25;
                     self.wall_speed_bonus += 0.25;
+                    self.block_range += 1; // `:10162`
                 }
 
                 // S1-P-i35 — `UpdateBuffs`' fishing potions
@@ -6875,6 +6890,11 @@ impl Player {
                 // `accFlipper`/`cursed` too; the i35 duplicates folded in.)
                 46 => self.chilled = true, // `BuffID.Chilled`
                 47 => self.frozen = true,  // `BuffID.Frozen`
+                // W4-f12 sweep gap 9 — `:10029-10032` Bleeding (30):
+                // `bleed = true`. The id had NO owner in any pass; the flag
+                // feeds `UpdateLifeRegen`'s ramp-time reset (`:19178-19181`,
+                // `derive_dot_inputs`' `holding(30)` twin reads the slot).
+                30 => self.bleed = true,
                 // `:11001-11004`: the Sunflower buff's movement tier —
                 // `moveSpeed += 0.1f; moveSpeed *= 1.1f` per slot.
                 146 => {
@@ -6887,9 +6907,11 @@ impl Player {
                 // above through `potions::apply_mana_sickness_arm` — the i37
                 // canonical fn; the i19 inline copy was identical maths
                 // (`0.25 * buffTime / 300`) and dropped, an unreachable arm.)
-                // The WellFed tiers (`:11931-11969`): the per-slot stat adds —
-                // the defense rows (26 +2, 206 +3, 207 +4) since M3-EQUIP-5;
-                // the minion halves wait for M4-MINION.
+                // The WellFed tiers (`:11931-11978`): the per-slot stat adds.
+                // W4-f12 sweep gaps 6-8 — the minion halves (minionDamage +
+                // minionKB per tier) were missing ("waits for M4-MINION" —
+                // the fields are live now); the C# order is melee, magic,
+                // ranged, minion, move, pick.
                 26 => {
                     self.well_fed = true;
                     // `:11934`: `statDefense += 2`.
@@ -6901,6 +6923,8 @@ impl Player {
                     self.ranged_damage += 0.05;
                     self.magic_crit += 2;
                     self.magic_damage += 0.05;
+                    self.minion_damage += 0.05; // `:11942`
+                    self.minion_kb += 0.5; // `:11943`
                     self.move_speed += 0.2;
                     self.pick_speed_bonus += 0.05;
                 }
@@ -6915,6 +6939,8 @@ impl Player {
                     self.ranged_damage += 0.075;
                     self.magic_crit += 3;
                     self.magic_damage += 0.075;
+                    self.minion_damage += 0.075; // `:11958`
+                    self.minion_kb += 0.75; // `:11959`
                     self.move_speed += 0.3;
                     self.pick_speed_bonus += 0.1;
                 }
@@ -6929,6 +6955,8 @@ impl Player {
                     self.ranged_damage += 0.1;
                     self.magic_crit += 4;
                     self.magic_damage += 0.1;
+                    self.minion_damage += 0.1; // `:11974`
+                    self.minion_kb += 1.0; // `:11975` `minionKB++`
                     self.move_speed += 0.4;
                     self.pick_speed_bonus += 0.15;
                 }
@@ -6961,14 +6989,24 @@ impl Player {
                         };
                     }
                 }
-                // `:9920-9924`: buff 383 (Kite) — the tier is
-                // `buffTime / 10800` clamped 0..3, assigned only while the
-                // buff is active: the C# never zeroes the field, so it stays
-                // stale after expiry (no `kiteLuckLevel = 0` exists).
+                // `:9914-9926`: buff 383 (Kite) — W4-f12 sweep gap 10: the
+                // stat block (moveSpeed +0.15, pickSpeed −0.1, tileSpeed /
+                // wallSpeed +0.15, `:9916-9919`) was missing. The tier is
+                // `buffTime / 10800` clamped 0..3, assigned only ON CHANGE
+                // with `luckNeedsSync = true` (`:9920-9925`); the C# never
+                // zeroes the field, so it stays stale after expiry (no
+                // `kiteLuckLevel = 0` exists).
                 383 => {
+                    self.move_speed += 0.15; // `:9916`
+                    self.pick_speed_bonus += 0.1; // `:9917` (−pickSpeed)
+                    self.tile_speed_bonus += 0.15; // `:9918`
+                    self.wall_speed_bonus += 0.15; // `:9919`
                     if let Some(i) = self.buffs.find_buff_index(383) {
-                        self.luck_state.kite_luck_level =
-                            (self.buffs.buff_time[i] / 10_800).clamp(0, 3) as u8;
+                        let b = (self.buffs.buff_time[i] / 10_800).clamp(0, 3) as u8;
+                        if b != self.luck_state.kite_luck_level {
+                            self.luck_state.kite_luck_level = b; // `:9923`
+                            self.luck_needs_sync = true; // `:9924`
+                        }
                     }
                 }
                 // S1-P-i41 — `UpdateBuffs`' mount sub-arms (`Player.cs:9885-
@@ -13394,6 +13432,116 @@ mod tests {
         assert!(!p.tipsy, "the wiring skips 25 (inline-owned)");
         assert_eq!(p.stat_defense, 0, "no second −4");
         assert_eq!(p.melee_crit, 4, "no second +2");
+    }
+
+    /// W4-f12 sweep gap 9 — Bleeding (30) had NO owner: the inline arm now
+    /// sets `bleed` (`Player.cs:10029-10032`), the flag the regen ramp-time
+    /// reset reads (`:19178-19181`).
+    #[test]
+    fn w4_f12_sweep_bleeding_arms_the_flag_inline() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(30, 600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.bleed, "`:10031`");
+        // The wiring skips 30 (INLINE_OWNED) — no second grant lane.
+        p.buffs.clear_buff(30);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.bleed, "the per-tick reset drops it");
+    }
+
+    /// W4-f12 sweep gap 4 — the Builder Potion (107) completes its
+    /// `blockRange++` half (`Player.cs:10162`).
+    #[test]
+    fn w4_f12_sweep_builder_potion_adds_block_range() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(107, 600);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.block_range, 1, "`:10162`");
+        assert!((p.tile_speed_bonus - 0.25).abs() < 1e-6, "`:10160`");
+        assert!((p.wall_speed_bonus - 0.25).abs() < 1e-6, "`:10161`");
+    }
+
+    /// W4-f12 sweep gap 3 — the Dryad's Ward (165) flag half
+    /// (`Player.cs:10307`) joins the inline defense/thorns arm; the +6
+    /// regen stays in the accessory-regen lane (one grant each).
+    #[test]
+    fn w4_f12_sweep_dryads_ward_arms_the_flag() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(165, 600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.dryad_ward, "`:10307`");
+        assert_eq!(p.stat_defense, 8, "`:10306`");
+        assert_eq!(p.accessory_life_regen_value(), 6, "`:10305` ONE lane");
+    }
+
+    /// W4-f12 sweep gap 5 — Weak (33) completes its meleeSpeed −0.051 half
+    /// (`Player.cs:11914`).
+    #[test]
+    fn w4_f12_sweep_weak_subtracts_melee_speed() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(33, 600);
+        p.update(&w, PlayerInput::default());
+        assert!((p.melee_speed_bonus + 0.051).abs() < 1e-6, "`:11914`");
+        assert!((p.melee_damage - (1.0 - 0.051)).abs() < 1e-6, "`:11913`");
+        assert_eq!(p.weak_stacks, 1);
+    }
+
+    /// W4-f12 sweep gap 10 — Ichor (69) completes its flag half
+    /// (`Player.cs:10063`): the −15 defense was inline but `Player.ichor`
+    /// had NO live writer (the wave-B module's copy is not dispatched —
+    /// 69 is inline-owned). ONE grant: the wiring skips 69.
+    #[test]
+    fn w4_f12_sweep_ichor_arms_the_flag_inline() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(69, 600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.ichor, "`:10063`");
+        assert_eq!(p.stat_defense, 0, "−15 floors at 0 (`:25927`)");
+        p.buffs.clear_buff(69);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.ichor, "the per-tick reset drops it");
+    }
+
+    /// W4-f12 sweep gaps 6-8 — the WellFed tiers' minion halves
+    /// (`Player.cs:11942-11943`/`:11958-11959`/`:11974-11975`).
+    #[test]
+    fn w4_f12_sweep_fed_tiers_grant_the_minion_halves() {
+        let w = World::new("t".into(), 64, 800);
+        for (id, dmg, kb) in [(26, 0.05f32, 0.5f32), (206, 0.075, 0.75), (207, 0.1, 1.0)] {
+            let mut p = Player::spawn(&w);
+            p.buffs.add_buff(id, 600);
+            p.update(&w, PlayerInput::default());
+            assert!(p.well_fed);
+            assert!((p.minion_damage - (1.0 + dmg)).abs() < 1e-6, "tier {id} damage");
+            assert!((p.minion_kb - kb).abs() < 1e-6, "tier {id} knockback");
+        }
+    }
+
+    /// W4-f12 sweep gap 10 — Kite (383) completes its stat block
+    /// (`Player.cs:9916-9919`) and the tier now fires `luckNeedsSync` only
+    /// ON CHANGE (`:9921-9925`), not on every scan tick.
+    #[test]
+    fn w4_f12_sweep_kite_stats_and_change_gated_sync() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(383, 32_402);
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - 1.15).abs() < 1e-4, "`:9916`");
+        assert!((p.pick_speed_bonus - 0.1).abs() < 1e-6, "`:9917`");
+        assert!((p.tile_speed_bonus - 0.15).abs() < 1e-6, "`:9918`");
+        assert!((p.wall_speed_bonus - 0.15).abs() < 1e-6, "`:9919`");
+        assert_eq!(p.luck_state.kite_luck_level, 3, "32401/10800");
+        assert!(p.luck_needs_sync, "the tier CHANGED 0 -> 3 (`:9924`)");
+        // Steady state: the same tier does not re-arm the sync flag
+        // (32400/10800 is still 3 — the boundary is not crossed).
+        p.update(&w, PlayerInput::default());
+        assert!(!p.luck_needs_sync, "no change -> no sync (the reset ran)");
+        assert_eq!(p.luck_state.kite_luck_level, 3);
     }
 
     #[test]

@@ -68,9 +68,9 @@ pub struct BuffFrameInputs<'a> {
 /// effect is applied twice). Verbatim from the `player.rs` effect match.
 const INLINE_OWNED: &[i32] = &[
     1, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 17, 18, 21, 22, 23, 25, 26, 29,
-    31, 32, 33, 35, 46, 47, 59, 69, 94, 104, 105, 107, 114, 120, 121, 122, 123,
-    131, 146, 149, 158, 159, 160, 165, 168, 205, 206, 207, 215, 257, 265, 279,
-    305, 308, 311, 312, 314, 343, 365, 383,
+    30, 31, 32, 33, 35, 46, 47, 59, 69, 94, 104, 105, 107, 114, 120, 121, 122,
+    123, 131, 146, 149, 158, 159, 160, 165, 168, 205, 206, 207, 215, 257, 265,
+    279, 305, 308, 311, 312, 314, 343, 365, 383,
 ];
 
 /// The ids the live accessory pass owns (`buff_effects_accessory.rs`).
@@ -103,12 +103,16 @@ const MISC_DISPATCH: &[i32] = &[
 
 /// The wave-B debuff ids this pass dispatches (the block minus the ids the
 /// inline match owns and the 110/150/348 cap rows the summon pass owns).
+/// W4-f12 sweep gap 2: Stoned 156 (`:10057-10060`) was in NO dispatch set --
+/// the module's arm existed but never fired; it joins here (the flag feeds
+/// the `CCed`/control-lock readers through `Player.stoned`).
 /// 165 (Dryad's Ward) is NOT here: the inline match owns its defense/thorns
 /// halves and the equip pass owns its +6 regen (`accessory_life_regen`), so
-/// the debuff module's copy is not dispatched (no double grant).
+/// the debuff module's copy is not dispatched (no double grant); the sweep
+/// completes its missing `dryadWard` flag half INLINE (`:10307`).
 const DEBUFF_DISPATCH: &[i32] = &[
     36, 48, 58, 63, 88, 93, 106, 108, 109, 111, 112, 113, 115, 116, 117, 119,
-    124, 144, 306, 366, 398, 399, 400,
+    124, 144, 156, 306, 366, 398, 399, 400,
 ];
 
 /// One tick of the `UpdateBuffs` frame + arm chain, in the C# statement order.
@@ -700,6 +704,20 @@ mod tests {
         assert_eq!(p.melee_crit, 4 + 10);
         assert_eq!(p.ranged_crit, 4 + 10);
         assert_eq!(p.magic_crit, 4 + 10);
+    }
+
+    /// W4-f12 sweep gap 2 — Stoned (156, `:10057-10060`) joins
+    /// DEBUFF_DISPATCH: the module's arm existed but no dispatch set carried
+    /// the id, so `Player.stoned` never armed (the `CCed` readers only saw
+    /// the raw slot). One grant: the inline match has no 156 arm.
+    #[test]
+    fn w4_f12_sweep_stoned_dispatches_through_the_debuff_lane() {
+        let mut p = player();
+        let mut pool = ProjectilePool::default();
+        p.buffs.add_buff(156, 600);
+        run(&mut p, &mut pool);
+        assert!(p.stoned, "the flag arms through the wave-B fold");
+        assert!(p.buffs.find_buff_index(156).is_some(), "the buff stays");
     }
 
     // ---- the status block -------------------------------------------------
