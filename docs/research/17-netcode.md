@@ -262,7 +262,7 @@ reader/writer (the f21 census verdicts); **N/A** = the id is not a
 | 15 | Unknown15 | :4483-4490 | DEAD — the reader ignore group (d89) |
 | 16 | PlayerLifeMana | :1095-1117 | WIRED g48 — hp store + dead derivation + relay (`e50c2919`) |
 | 17 | TileManipulation | :1119-1288 | WIRED g48 — the full kind dispatch (`e50c2919`); kind 15 FrameTrack (`3a310ccc`) + kind 21 ReplaceTile (`cafd7f2f`) closed the last two cited kinds; kinds 18/19 SetCurrentUser attribution stays the M7-WIRE-2 gap |
-| 18 | SetTime | :1289-1297 | PARKED — the port's clock rides internal 205 (ANALYSIS); no 18 reader arm |
+| 18 | SetTime | :1289-1297 | PARKED on this tip — FINAL re-probe: the reader/codec LANDED on the clock lane's c27 tip `412b6bc0d` (batch 1 `6fb7bcb25`: `id::SET_TIME = 18` + `SetTime` body `NetMessage.cs:531-536` + client apply arm + `w4_c27_set_time_applies_the_hosts_clock`; sunModY/moonModY parked, no port field). The g48 tip still rides internal 205 (the 10 Hz host broadcast); the 205→18 send switch is c28's cadence lane — c28 tip `6379f881b` is census-only (tool + tables, no switch; its `net_player_sync.rs:24-25` explicitly assigns the 18 body/apply to c27) |
 | 19 | ToggleDoorState | :1299-1334 | WIRED g48 — doors 0/1 (`0e6fd9c2`) + trapdoors 2/3 / tall gates 4/5 via the c42 canonical `edit/shift.rs` (`a714f106`; the wiring-lane SendData(19) echoes stay research/95 §8.2) |
 | 20 | SectionRange | :1335-1443 | WIRED — `apply_section_range` (pre-g48); the g52 latch filter is that lane's |
 | 21 | ItemDrop | :1445-1535 | WIRED — the item store (pre-g48, d98 grab-delay tail) |
@@ -283,13 +283,35 @@ reader/writer (the f21 census verdicts); **N/A** = the id is not a
 | 36 | SyncPlayerZone | :2178-2201 | WIRED g48 — six-byte store + relay (`9e037b7c`) + the faeling edge → `spawner::spawn_faelings` (`9c7646e0`; the Shimmerfly 677 spawn roster-gated, the scan draws verbatim) |
 | 37 | PasswordRequest | :2203-2216 | N/A — the join FSM (pre-g48) |
 | 38 | Password | :2218-2231 | N/A — the join FSM (pre-g48) |
-| 39 | ReleaseItemOwnership | :2232-2255 | PARKED — f21 codec (`e1d90bcd`), the FindOwner/22 re-announce arm is the item lane's (M6-NET-5) |
+| 39 | ReleaseItemOwnership | :2232-2255 | PARKED — FINALIZED (close-or-finalize verdict): f21 codec `RELEASE_ITEM_OWNERSHIP = 39` (`e1d90bcd`, tip `5274a097` — slot i16 + forceAssignToServer bool, `NetMessage.cs:948-951`), the dispatcher arm stays the item lane's. Scope pin (`MessageBuffer.cs:2232-2255`): host leg = reservation-is-mine gate → `FindOwner(forceAssignToServer: true)`; client leg = clear reservation (255, timer 0) → `FindOwner(force)` → if still 255 re-announce via `22`. `WorldItem.FindOwner` (`WorldItem.cs:188-271`) needs the `CanPullItem`/`ItemSpace`/magnet/hopper peer scan + `timeToKeepReservation` + `instanced` — none rowed on this tip (`ItemDrop` carries no reservation fields; `net_reserved` is the client-side 22 store). No apply-arm lane g49/g50/g51 took it (grep empty at all three tips); M6-NET-5's ATLAS row is the 27/28/29 sync, so the 39 arm is the ITEM lane's remaining scope — parked with citation, not a g48 gap |
 | 40 | SyncTalkNPC | :2256-2270 | WIRED g48 — SetTalkNPC store + bestiary chat registration + relay (`9e037b7c`) |
 
 The g48 witnesses: `netglue::g48_apply_tests::g48_*` — one loopback pair
 per wired family (`in_world_pair`), WRITTEN NOT RUN (code-only mode). The
-remaining PARKED rows' owners: 18 (the clock lane), 39 (M6-NET-5); the
-1-40 region has no other missing apply arm on this tip.
+remaining PARKED rows' owners: 18 (the clock lane — c27 body/apply landed,
+c28 cadence switch pending), 39 (the item lane — finalized scope above);
+the 1-40 region has no other missing apply arm on this tip.
+
+### FINAL census verdict (NET-APPLY-1, 2026-11-21, re-probe at the lane tips)
+
+The ids 1-40 table above is FINAL for the g48 lane. Re-probe evidence:
+
+- **18 SetTime / internal 205:** c27 tip `412b6bc0d` carries the landed
+  reader (`net.rs` `id::SET_TIME`/`SetTime` + `netglue.rs` `S2c::SetTime`
+  client apply, sunModY/moonModY parked); c28 tip `6379f881b` is the
+  SendData-trigger census ONLY (918 sites, tool + md/json — the 10 Hz
+  internal-205 broadcast is NOT yet switched to 18 there). g48 keeps its
+  205 broadcast untouched (the c28 lane owns the send switch); row 13 of
+  the deviations table stays admitted until that switch lands.
+- **39 ReleaseItemOwnership:** finalized PARKED with the full scope pin
+  (the table row) — no lane g49/g50/g51 carries an apply arm; the item
+  lane owns FindOwner + the 22 re-announce. Not closable on g48.
+- Every other 1-40 id: WIRED (30 — ids 2/4-14/16/17/19-23/27-36/40),
+  N/A join-FSM (4: 1/3/37/38), DEAD (4: 15/24/25/26), PARKED-with-owner
+  (2: 18/39). Counted 40/40 mechanically off the table's status column.
+- The witness census: 16 `g48_*` loopback tests in
+  `netglue.rs::g48_apply_tests` + 1 `w4_g48_the_pound_fail_tail_never_removes_the_track`
+  core pin (research/237) = 17 lane witnesses, ALL WRITTEN NOT RUN.
 
 ## SendData call-site census (subsystems calling the writer)
 
@@ -450,7 +472,9 @@ Vanilla keeps the local player fully authoritative on the client and interpolate
 - **M — Chest/sign/wiring round trip**: `31-33`, `69`, `19`, `20`, `59`, `85` from the
   census (ItemSlot 22 + ChestUI 14 + Wiring 24 sites). Depends on: id mapping (S task 1).
 - **M — `18 SetTime` 1:1 clock sync** (drop the internal `205`). Depends on: the world
-  flags being carried in `7 WorldInfo`.
+  flags being carried in `7 WorldInfo`. (NET-APPLY-1 re-probe: the reader
+  half LANDED on c27 `412b6bc0d`; the remaining scope is c28's send-switch
+  cadence — see the FINAL census verdict above.)
 - **M — Remote-player smoothing parity**: document or port the C#/ReLogic interpolation
   so `net_interp_tick`'s constants are not arbitrary. Depends on: nothing (research).
 - **L — The per-system passes** ROADMAP.md:1067-1071 parks: peer inventories, creative
