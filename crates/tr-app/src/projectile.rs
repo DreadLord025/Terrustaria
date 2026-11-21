@@ -14190,7 +14190,7 @@ pub(crate) fn safe_normalize(v: Vec2) -> Vec2 {
 /// non-actuated, solid, non-solidTop tile for a strict box overlap (the
 /// halfBrick shrinks the tile's top by 8). The falling star's `ai[1]` latch
 /// reads it (`Projectile.cs:23871`).
-fn solid_collision(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
+pub(crate) fn solid_collision(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
     let x0 = ((pos.x / 16.0) as i32 - 1).clamp(0, world.width - 1);
     let x1 = (((pos.x + w) / 16.0) as i32 + 2).clamp(0, world.width - 1);
     let y0 = ((pos.y / 16.0) as i32 - 1).clamp(0, (world.height - 40).max(0));
@@ -17943,6 +17943,28 @@ impl ProjectilePool {
                             crate::projectile_ai_101_110::ai_spore_gas(
                                 &mut self.slots[i],
                                 local_owner,
+                            );
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d11 — aiStyle 107 (`AI()` `:33553-33678`):
+                        // the 575 NebulaSphere + the 596 DesertDjinnCurse
+                        // — the player-index homing (ai[0] = the target;
+                        // the single-player fold reads the local player),
+                        // the orphan cap, the per-kind visual legs + the
+                        // 596's dust-gate census (the C# RETURNS on the
+                        // first non-zero Next(3)). `kill_step` integrates.
+                        107 => {
+                            let target_active = player.as_deref().is_some_and(|pl| !pl.dead);
+                            let target_center = player.as_deref().map(|pl| pl.center());
+                            let expert =
+                                player.as_deref().is_some_and(|pl| pl.buffs.expert_mode);
+                            crate::projectile_ai_101_110::ai_nebula_sphere(
+                                &mut self.slots[i],
+                                world,
+                                target_center,
+                                target_active,
+                                expert,
+                                rng,
                             );
                             self.slots[i].kill_step(world);
                         }

@@ -335,6 +335,14 @@ pub const SPORE_TRAP_2: u16 = 568;
 pub const SPORE_GAS: u16 = 569;
 pub const SPORE_GAS_2: u16 = 570;
 pub const SPORE_GAS_3: u16 = 571;
+/// `ProjectileID.NebulaSphere` (575) — the nebula pillar's seeking
+/// sphere, aiStyle 107 (`Projectile.cs:6219-6229`: 24x24, hostile,
+/// penetrate -1, tileCollide false, timeLeft 420, alpha 255). W4-d11.
+pub const NEBULA_SPHERE: u16 = 575;
+/// `ProjectileID.DesertDjinnCurse` (596) — the djinn's curse flame,
+/// aiStyle 107 (`Projectile.cs:6450-6460`: 8x8, hostile, alpha 255,
+/// ignoreWater, timeLeft 180, tileCollide false). W4-d11.
+pub const DESERT_DJINN_CURSE: u16 = 596;
 pub const VORTEX_LIGHTNING: u16 = 578;
 pub const VORTEX_PORTAL: u16 = 579;
 pub const VORTEX_RITUAL_BOLT: u16 = 580;
@@ -2521,6 +2529,18 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             SPORE_GAS | SPORE_GAS_2 | SPORE_GAS_3 => {
                 (32.0, 32.0, 106, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, true, 10, 255, 1.0))
             }
+            // W4-d11 — `Projectile.cs:6219-6229` (575, the NebulaSphere):
+            // 24x24, aiStyle 107, penetrate -1, tileCollide false,
+            // timeLeft 420, alpha 255.
+            NEBULA_SPHERE => {
+                (24.0, 24.0, 107, -1, 420, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // W4-d11 — `Projectile.cs:6450-6460` (596, the
+            // DesertDjinnCurse): 8x8, aiStyle 107, alpha 255, timeLeft
+            // 180, tileCollide false; the stock penetrate 1 (`:774`).
+            DESERT_DJINN_CURSE => {
+                (8.0, 8.0, 107, 1, 180, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
             // W4-d11 — `Projectile.cs:6107-6119` (536, the MedusaHeadRay):
             // 10x10, aiStyle 101, penetrate -1, tileCollide false;
             // drawLayer 7 / usesOwnerLight are render-side (dropped).
@@ -4324,6 +4344,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d11 — the SporeGas clouds set `ignoreWater`
             // (`Projectile.cs:6216`).
             || matches!(kind, SPORE_GAS | SPORE_GAS_2 | SPORE_GAS_3)
+            // W4-d11 — the 596 DesertDjinnCurse sets `ignoreWater`
+            // (`Projectile.cs:6457`); the 575 sphere does NOT
+            // (`:6219-6229` has no such line).
+            || kind == DESERT_DJINN_CURSE
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
             || kind == GOLF_CLUB_HELPER,
@@ -4828,6 +4852,11 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // `Projectile.cs:33310-33317`/`:33352`/`:33410-33417`).
         STARDUST_JELLYFISH_SMALL => 4,
         NEBULA_EYE => 2,
+        // W4-d11 — the 575 sphere + the 596 curse flame's 4-frame sheets
+        // (`Main.cs:8550`/`:8491`) — the aiStyle-107 5-tick cycles wrap
+        // at them (`Projectile.cs:33572-33579`/`:33598-33605`).
+        NEBULA_SPHERE => 4,
+        DESERT_DJINN_CURSE => 4,
         // W4-d11 — the 565's 4-frame sheet (`Main.cs:8478`) — the
         // aiStyle-104 7-tick cycle wraps at it (`Projectile.cs:33499-
         // 33508`).

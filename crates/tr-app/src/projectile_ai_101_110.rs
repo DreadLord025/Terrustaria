@@ -577,6 +577,140 @@ pub(crate) fn ai_spore_gas(p: &mut Projectile, local_owner: u8) {
     }
 }
 
+/// `AI()`'s aiStyle-107 block (`Projectile.cs:33553-33678`) — the 575
+/// NebulaSphere (the nebula pillar's seeking sphere) and the 596
+/// DesertDjinnCurse (the djinn's curse flame): the player-index homing
+/// (`ai[0]` = the target player; the (v*(num-1) + dir*accel)/num blend
+/// past the 40-px radius), the orphan cap (timeLeft 30 + ai[0] = -1 +
+/// netUpdate), and the per-kind visual legs.
+///
+/// RNG census (the dust bodies skip, the gate rolls stay):
+/// - 596: three `Next(3)` gates per tick (`:33619` — the C# RETURNS on
+///   the first non-zero, so the later gates do not roll); at timeLeft < 4
+///   ten `SelectRandom(27, 6)` picks = ten `Next(2)` (`:33644`,
+///   `Utils.cs:2459-2462`).
+/// - 575: ZERO draws (the AddLight feeds the render layer only).
+///
+/// `player` is the local player (the single-player fold of
+/// `Main.player[ai[0]]`); `target_active` gates the homing leg.
+pub(crate) fn ai_nebula_sphere(
+    p: &mut Projectile,
+    world: &World,
+    player: Option<(f32, f32)>,
+    target_active: bool,
+    expert: bool,
+    rng: &mut dyn DropRng,
+) {
+    // `:33555-33557` — the homing parameters.
+    let mut num801 = 10.0f32;
+    let mut num802 = 5.0f32;
+    let num803 = 40.0f32;
+    let center = || Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+    match p.kind {
+        575 => {
+            // `:33558-33581` — the sphere's fade + frame + light.
+            if p.time_left > 30 && p.alpha > 0 {
+                p.alpha -= 25;
+            }
+            if p.time_left > 30
+                && p.alpha < 128
+                && crate::projectile::solid_collision(world, p.pos, p.w, p.h)
+            {
+                p.alpha = 128;
+            }
+            if p.alpha < 0 {
+                p.alpha = 0;
+            }
+            p.frame_counter += 1;
+            if p.frame_counter > 4 {
+                p.frame_counter = 0;
+                p.frame += 1;
+                if p.frame >= 4 {
+                    p.frame = 0;
+                }
+            }
+            // `:33580` — Lighting.AddLight(0.5, 0.1, 0.3): render-only.
+        }
+        596 => {
+            // `:33582-33652` — the curse flame.
+            num801 = 10.0;
+            num802 = 7.5;
+            if p.time_left > 30 && p.alpha > 0 {
+                p.alpha -= 25;
+            }
+            if p.time_left > 30
+                && p.alpha < 128
+                && crate::projectile::solid_collision(world, p.pos, p.w, p.h)
+            {
+                p.alpha = 128;
+            }
+            if p.alpha < 0 {
+                p.alpha = 0;
+            }
+            p.frame_counter += 1;
+            if p.frame_counter > 4 {
+                p.frame_counter = 0;
+                p.frame += 1;
+                if p.frame >= 4 {
+                    p.frame = 0;
+                }
+            }
+            // `:33606-33614` — the dust scale ladder (the dust bodies
+            // skip; the scale feeds only them).
+            p.ai[1] += 1.0;
+            // `:33616` — num805 = ai[1]/180 * 2pi: dust-only, skipped.
+            // `:33617-33630` — the three dust gates; the C# RETURNS from
+            // the whole AI on the first non-zero roll (the homing tail
+            // below does not run that tick).
+            for _ in 0..3 {
+                if rng.next_range(0, 3) != 0 {
+                    return;
+                }
+                // The 27 dust + its ring placement — body skipped.
+            }
+            // `:33631-33651` — the final flash: the box grows to 60x60
+            // around the centre, the damage re-arms (30 / expert 22),
+            // ten dust kicks (the SelectRandom picks stay on the stream).
+            if p.time_left < 4 {
+                let num807 = if expert { 22 } else { 30 };
+                let c = center();
+                p.pos = c;
+                p.w = 60.0;
+                p.h = 60.0;
+                p.pos = c - Vec2::new(p.w * 0.5, p.h * 0.5);
+                p.damage = num807;
+                for _ in 0..10 {
+                    let _ = rng.next_range(0, 2); // SelectRandom(27, 6)
+                }
+            }
+        }
+        _ => {}
+    }
+    // `:33653-33677` — the player-index homing / the orphan cap.
+    let num809 = p.ai[0] as i32;
+    if num809 >= 0 && target_active {
+        if let Some((px, py)) = player {
+            let c = center();
+            let target = Vec2::new(px, py);
+            if (c - target).length() > num803 {
+                let mut vector114 = safe_normalize(target - c);
+                if vector114.is_nan() || vector114 == Vec2::ZERO {
+                    vector114 = Vec2::Y;
+                }
+                p.vel = (p.vel * (num801 - 1.0) + vector114 * num802) / num801;
+            }
+        }
+    } else {
+        if p.time_left > 30 {
+            p.time_left = 30;
+        }
+        if p.ai[0] != -1.0 {
+            p.ai[0] = -1.0;
+            p.net_update = true;
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Witnesses (W4-d11 code-only round — WRITTEN NOT RUN).
 
@@ -1129,5 +1263,120 @@ mod tests {
         p.alpha = 255;
         ai_spore_gas(&mut p, 0);
         assert!(p.active, ":33539's owner gate");
+    }
+
+    /// The 575/596 rows (`Projectile.cs:6219-6229`, `:6450-6460`) + the
+    /// 4-frame sheets (`Main.cs:8550`/`:8491`).
+    #[test]
+    fn w4_d11_107_the_sphere_rows_carry_their_styles() {
+        let d = proj_data(575).unwrap();
+        assert_eq!((d.ai_style, d.w, d.h, d.penetrate, d.time_left), (107, 24.0, 24.0, -1, 420));
+        assert_eq!(d.alpha, 255, ":6228");
+        assert!(!d.tile_collide, ":6226");
+        let d = proj_data(596).unwrap();
+        assert_eq!((d.ai_style, d.w, d.h, d.penetrate, d.time_left), (107, 8.0, 8.0, 1, 180));
+        assert_eq!(d.alpha, 255, ":6456");
+        assert_eq!(crate::projectile::proj_frames(575), 4);
+        assert_eq!(crate::projectile::proj_frames(596), 4);
+    }
+
+    /// `:33653-33664` — the homing blend: past the 40-px radius the
+    /// velocity lerps (v*9 + dir*5)/10 toward the player; inside the
+    /// radius it holds.
+    #[test]
+    fn w4_d11_107_the_sphere_homes_past_forty_pixels() {
+        let w = world();
+        let mut rng = census();
+        let mut p = proj(575);
+        p.pos = Vec2::new(1000.0, 1000.0);
+        p.ai[0] = 0.0; // the local player's index
+        p.vel = Vec2::ZERO;
+        ai_nebula_sphere(&mut p, &w, Some((1200.0, 1000.0)), true, false, &mut rng);
+        // dir = (1, 0); vel = (0*9 + (1,0)*5)/10 = (0.5, 0).
+        assert!((p.vel - Vec2::new(0.5, 0.0)).length() < 1e-5);
+        assert!(rng.ranges.is_empty(), "the 575 draws nothing");
+        // Inside the radius: no blend.
+        let mut p = proj(575);
+        p.pos = Vec2::new(1000.0, 1000.0);
+        p.ai[0] = 0.0;
+        p.vel = Vec2::new(3.0, 0.0);
+        ai_nebula_sphere(&mut p, &w, Some((1020.0, 1000.0)), true, false, &mut rng);
+        assert_eq!(p.vel, Vec2::new(3.0, 0.0), "inside 40 px: no steer");
+    }
+
+    /// `:33666-33676` — the orphan cap: a dead/absent target caps
+    /// timeLeft at 30 and latches ai[0] = -1 + netUpdate (once).
+    #[test]
+    fn w4_d11_107_the_orphan_caps_and_latches() {
+        let w = world();
+        let mut rng = census();
+        let mut p = proj(575);
+        p.time_left = 420;
+        p.ai[0] = 0.0;
+        ai_nebula_sphere(&mut p, &w, None, false, false, &mut rng);
+        assert_eq!(p.time_left, 30, ":33670");
+        assert_eq!(p.ai[0], -1.0, ":33674");
+        assert!(p.net_update, ":33675");
+        p.net_update = false;
+        ai_nebula_sphere(&mut p, &w, None, false, false, &mut rng);
+        assert!(!p.net_update, "the latch holds (ai[0] already -1)");
+        assert_eq!(p.time_left, 30, "the cap does not re-raise");
+    }
+
+    /// `:33617-33630` — the 596's three Next(3) dust gates: the C#
+    /// RETURNS on the first non-zero roll (the homing tail skips that
+    /// tick). CensusRng returns min (0) so all three pass.
+    #[test]
+    fn w4_d11_107_the_curse_dust_gates_census() {
+        let w = world();
+        let mut rng = census();
+        let mut p = proj(596);
+        p.ai[0] = 0.0;
+        ai_nebula_sphere(&mut p, &w, Some((1200.0, 1000.0)), true, false, &mut rng);
+        assert_eq!(rng.ranges, vec![(0, 3), (0, 3), (0, 3)], "the three gates");
+        assert_eq!(p.ai[1], 1.0, ":33615");
+        // A non-zero first gate returns early: no homing, no later gates.
+        struct FirstNonZero;
+        impl DropRng for FirstNonZero {
+            fn next_range(&mut self, _min: i32, _max: i32) -> i32 {
+                1
+            }
+            fn next_float(&mut self) -> f32 {
+                0.0
+            }
+        }
+        let mut p = proj(596);
+        p.pos = Vec2::new(1000.0, 1000.0);
+        p.ai[0] = 0.0;
+        p.vel = Vec2::ZERO;
+        ai_nebula_sphere(&mut p, &w, Some((1200.0, 1000.0)), true, false, &mut FirstNonZero);
+        assert_eq!(p.vel, Vec2::ZERO, "the early return skips the homing");
+    }
+
+    /// `:33631-33651` — the final flash at timeLeft < 4: the box grows
+    /// to 60x60 around the centre, the damage re-arms (30 / expert 22),
+    /// ten SelectRandom(27,6) = Next(2) picks stay on the stream.
+    #[test]
+    fn w4_d11_107_the_curse_flashes_at_the_end() {
+        let w = world();
+        let mut rng = census();
+        let mut p = proj(596);
+        p.pos = Vec2::new(1000.0, 1000.0);
+        p.time_left = 3;
+        p.ai[0] = -1.0; // orphan: no homing interference
+        ai_nebula_sphere(&mut p, &w, None, false, false, &mut rng);
+        assert_eq!((p.w, p.h), (60.0, 60.0), ":33639");
+        // The centre is preserved: (1004, 1004) -> pos (974, 974).
+        assert_eq!(p.pos, Vec2::new(974.0, 974.0));
+        assert_eq!(p.damage, 30, ":33641 (non-expert)");
+        // Three gates + ten SelectRandom picks.
+        assert_eq!(rng.ranges.len(), 13);
+        assert_eq!(rng.ranges[3..], [(0, 2); 10], "the ten Next(2) picks");
+        let mut rng = census();
+        let mut p = proj(596);
+        p.time_left = 3;
+        p.ai[0] = -1.0;
+        ai_nebula_sphere(&mut p, &w, None, false, true, &mut rng);
+        assert_eq!(p.damage, 22, ":33636 (expert)");
     }
 }
