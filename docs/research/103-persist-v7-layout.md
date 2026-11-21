@@ -1,10 +1,13 @@
 # 103 — The `.trplayer` sidecar FINAL layout (the v7-collision superset, writer v11)
 
-**Status: SEALED + ARBITRATED — THE MERGER CONTRACT (L2) + §L3-DEFINITIVE (the
+**Status: SEALED + ARBITRATED + SEAL-VERIFY receipt (§A5 — all five A4
+dependents verified aligned at their fetched tips, all five rows CLOSED) —
+THE MERGER CONTRACT (L2) + §L3-DEFINITIVE (the
 107-byte `.trwld` v18 union, C#-order re-derived) + §L3-ARBITER FINAL (the
 107-byte-order arbitration: D5 CONFIRMED against g71 92 §1-FULL's
 books-in-prefix order, quoted C# Write() evidence) + the persist-family
-merger-bible (the SEAL paragraph at the end).** Any merge of W4-g88 / W4-g89 /
+merger-bible FINAL (the SEAL paragraph at the end, re-seated at the f44
+SEAL tip: dh DEFAULT-DROP, hydration condition (a) MET).** Any merge of W4-g88 / W4-g89 /
 W4-g89b / W4-g89c / W4-g90 / W4-g90b / W4-a6 / W4-g55 / W4-f33 (and the
 future booster lanes) keeps the writer and reader described here —
 `crates/tr-app/src/persist.rs` on `task/W4-g88-life-fruit-use`. This doc
@@ -278,15 +281,16 @@ against the pushed tips:
   v12 writer exists on any pushed tip (census: g88 v11 is the highest
   `.trplayer` writer; d124 writes no sidecar at all).
 
-**SEAL-pass version-seat update (132-RETIRE §2e, `d35876af9`):** f44's
-RETIRE proposes folding g87's `dh` sentinel line as line 17 at **v12**
-(the newer input over 138-FINAL §10.4's DROP — §L3-DEFINITIVE D5's
-receipt). IF the merger takes that fold, token 7's activation bump
-moves to **v13** (the 7-token back-read reads a v12 6-token line);
-every "v12" in this §2a is then read as "the next free version after
-the dh fold". If the merger keeps the DROP, v12 stands as written.
-Either way token 7 is UNCLAIMED and this branch's v11 writer is
-unchanged — the seat is a merge-time decision, both options published.
+**SEAL-pass version-seat update (132-RETIRE §2e, `d35876af9`; RESOLVED
+by 132 §2f at the f44 SEAL tip `0d1ee2045` — A5 receipt 1):** f44's
+RETIRE proposed folding g87's `dh` sentinel line as line 17 at **v12**;
+its own SEAL adjudicated **the DROP as the merger DEFAULT** — so
+**token 7's activation bump is v12 as written above**, the v11 writer
+stands, and the v13 re-seat is VOID under the default. §2e's fold
+survives ONLY as the conditional seat (in-session carriers needed
+before the exit-save lands): taken, every "v12" in this §2a reads as
+"the next free version after the dh fold" (v13). Either way token 7 is
+UNCLAIMED and this branch's v11 writer is unchanged.
 
 ### 2b. The f33 torch pair — line 16, NOT token 7/8 (the fold adjudication)
 
@@ -328,12 +332,14 @@ conditional drop-recommendation.**
    drop it (writer back to the v11 layout minus line 16, reader keeps
    the line-16 arm as a back-read):
    - **(a)** the character-load path hydrates a live `Player` from the
-     `.plr` G7 fields (today it feeds only the card list,
-     `save_list.rs:294` — 132 §2c), AND
+     `.plr` G7 fields — **MET: f44's SEAL port `5c8bbb160` landed it**
+     (`Player::hydrate_from_file` + the CharPlay park + the `App::new`
+     precedence, 132 §2c/§4; at fold time it fed only the card list,
+     `save_list.rs:294` — A5 receipt 1), AND
    - **(b)** the in-session `.plr` re-save lands (the vanilla
      `Player.SavePlayer` per world-exit — 132 §1's recorded
      remainder; today the `.plr` is written ONLY at character
-     creation).
+     creation — **the one open condition**, 132 §2f item 4).
    Until then the line is NOT redundant: a mid-world Torch God's
    Favor use (5043, `:45226-45243`) mutates the live Player, the
    sidecar is the only carrier that survives a world reload, and
@@ -563,9 +569,10 @@ by item:
   D3 — ahead of g90's book pair, vanilla write order
   `WorldFile.cs:1392-1394` < `:1407-1408`; 138's old 19-21 seats and
   this doc's old 52-54 reconciliation are superseded). The SEAL pass
-  adds 132-RETIRE §2e's newer counter-proposal (the `dh` fold as line
-  17 at v12 — §2a's version-seat update + §L3-DEFINITIVE D5); the
-  DROP below is the 138-era record, the merger picks per D5.
+  added 132-RETIRE §2e's counter-proposal (the `dh` fold as line
+  17 at v12); **f44's own SEAL (132 §2f, `0d1ee2045`) RESOLVED it:
+  the DROP is the merger DEFAULT, §2e the conditional seat only**
+  (A5 receipt 1) — the DROP below is the operative verdict.
   **This branch's v11 reader tolerates a g87 `dh` file
   without corruption** — verified in code this pass: `dh 0 0` is a
   3-token line, the shape walk's `_ => {}` arm (`persist.rs:565`)
@@ -779,11 +786,13 @@ L3 world. This doc owns L2; 132 owns the cross-layer ownership rules.
    v12 (§6 rule 4) — the §2a census confirms NO pushed lane claims it
    (d124 owns the WORLD tier latches, not the player token; the C#
    field is a derived mirror, `:24450-24453`). g87's `dh` sentinel
-   line DROPS (138-FINAL §10.4); its fields, if ever wanted live, ride
+   line DROPS (138-FINAL §10.4; **the merger DEFAULT per 132 §2f
+   `0d1ee2045`**, §2e's fold the conditional seat only — A5 receipt 1);
+   its fields, if ever wanted live, ride
    v12+ as new tokens/lines, never a parallel v7. The torch line's
-   conditional drop-recommendation is §2b rule 3 — revisit ONLY when
-   the character-load hydration AND the exit-save both land (132 §2c's
-   precedence: sidecar wins as the newer state).
+   conditional drop-recommendation is §2b rule 3 — condition (a)
+   hydration MET (f44 `5c8bbb160`), revisit when the exit-save (b)
+   lands (132 §2c's precedence: sidecar wins as the newer state).
 
 **L3 — world (132 §3-L3; NOT this branch's files):**
 10. `.trwld`: the v18 union — **§L3-DEFINITIVE below is THE layout:
@@ -1060,9 +1069,10 @@ superseding 138-FINAL §10.4's DROP verdict this doc's §5a recorded.
 That is a MERGE-time L2 fold (this branch's v11 writer stands as
 landed — no code change this pass); the version-seat consequence is
 recorded in §2a: token 7's activation bump moves v12→**v13** IF the
-merger takes the dh fold. Both options are published; the merger
-picks one (132-RETIRE's fold is the newer input and keeps g87's two
-unlocks lossless — recommended).
+merger takes the dh fold. Both options were published at the SEAL;
+**RESOLVED since: f44's own SEAL (132 §2f, `0d1ee2045`) adjudicated
+the DROP as the merger DEFAULT — the fold is the conditional seat
+only, v12 stands (A5 receipt 1).**
 
 ## L3-ARBITER FINAL — the 107-byte-order arbitration (2026-11-21, post-SEAL)
 
@@ -1194,13 +1204,86 @@ The merger seats A3's table VERBATIM. If any lane lands a later
 revision first, the C# rows (A1) remain the tie-breaker per this
 arbitration's brief — not publication timestamp, not designation.
 
-## SEAL — the persist-family merger-bible (one paragraph, three layers)
+### A5. SEAL-VERIFY receipt — all five dependents ALIGNED (2026-11-21, post-ARBITER)
 
-**The whole persist merge in one paragraph:** merge **L1 → L2 → L3**.
+The verify pass re-fetched every A4 lane (`git ls-remote` + doc reads at
+the fetched tips) and re-read the C# rows directly (≤100-line windows:
+`WorldFile.cs:1218-1262` / `:1276-1285` / `:1344-1413` / `:1413-1432`).
+**Every disputed A1 row CONFIRMED verbatim**: identity `:1225-1227`,
+timestamps `:1250-1251`, crimson `:1281`, moon quintet `:1347-1351`
+(king/tree/icequeen/santank/xmastree save-row order), underworld `:1376`,
+pets `:1392-1394`, empress `:1395` (AFTER pets), books `:1407-1408`;
+interstitials re-pinned — first book `:1380` (`.wld`-owned, this repo's
+`flags.rs:191` write / `:572` read verified present), force-today
+`:1386-1387`, ore tiers `:1388-1391`, queenSlime/deerclops/unlocked-spawns
+`:1396-1406`. One precision note: "books LAST" means LAST of the seven
+CLAIMED flag groups — non-claimant writes continue `:1409-1429` (slime
+spawns, force-forever pair, seed bools, `Manifest.Serialize()` `:1429`,
+function ends `:1430`); none is a `.trwld` claimant, the adjudication is
+unaffected.
+
+**The five A4 rows — ALL CLOSED at the fetched tips:**
+
+| Lane | Tip verified | Alignment evidence (read at the tip) |
+| --- | --- | --- |
+| **92** g71 | `b27474a44` (BG-SEAL RECEIPT over `8224c94f1` OVERRULE-CORRECTION over `b706737a1`) | 1-FULL.2 re-pinned to A3: OVERRULED banner (`92:68-77`), crimson [50] `:182`, underworld [56] `:188`, empress [60] `:194`, writer snippet "D5 strict-C#-row middle" `:219/:226`; its 1-SEAL.5 publishes the mutual receipt over THIS arbitration `d09d7e10a` + an independent `:1221-1430` re-read. **CLOSED — on A3** |
+| **132** f44 | `0d1ee2045` (SEAL 4 — 132 SEALED, the persist-family bible FINAL, over `5c8bbb160` hydration port) | The one-move owed re-pin LANDED: §3-L3 rule 1's reconciled FINAL-SEAL table (`132:691-713`) matches A3 FIELD-FOR-FIELD — crimson [50] `:698`, moon [51..56] `:699`, underworld [56] `:702` ("AFTER moon-boss per C# order"), pets [57..60] `:704`, empress [60] `:705`, books [61..63] `:706`, identity [63..107] `:707`, dense LAST `:710`, sum 107 `:715`; the RETIRE-era offsets survive only as the `:654-663` delta audit-trail. **CLOSED — on A3** |
+| **64b** g72 | `aa1645481` (D5-RE-PIN over `b069439eb`) | 64b banner re-pinned: underworld **[56]**, strict middle crimson [50]/moon [51..56]/pets [57..60]/empress [60]/books [61..63] (`64b:10-20`); the 64a 53-byte-prefix pin RETIRED, cave prefix [0..50) verified unaffected. Its authority cite reads D3 @ `fc5cf11ae` (pre-ARBITER) — byte-identical to A3 (zero moves), so ALIGNED; the D5→A3 cite refresh is cosmetic, its lane's scope. **CLOSED — on A3 (=D3)** |
+| **138** a6 | `0766c8df9` (ARBITER receipt over `9a4acd729` D5-RE-PIN over `8fad5555d`) | §12 re-pinned to THIS arbitration: header cites `d09d7e10a` §L3-ARBITER FINAL A3 as THE union authority (`138:3-5`), pets **57-59** (`:99`), book2 **61** (`:96`), satchel **62** (`:98`), all seal-era seats marked superseded; its own ≤100-line C# spot-checks agree. **CLOSED — on A3** |
+| **135** g90 | `43fee29a4` (BOOSTER SEAL — tip UNCHANGED) | ALREADY on A3 per A4: books [61]/[62], six truncation sites +107, journey/bread = L1/L2. **CONFIRMED, no action** |
+
+**The dispute is RESOLVED on the published record: FIVE of five L3
+dependents seat the identical strict-C#-row middle** (g71's 1-SEAL.5
+counted four-of-five while 132's move was still owed; f44's SEAL
+`0d1ee2045` closed the fifth).
+
+**Two adjacent receipts seated this pass:**
+
+1. **f44's SEAL closes the two L2 open decisions** (132 §2f, read FULL
+   at `0d1ee2045`): the g87 `dh` line is **DEFAULT-DROP** (the v11
+   writer stands, DD2 keeps its **v12 token-7 reservation**, §2e's
+   line-17-at-v12 fold is the CONDITIONAL seat only, its v13 re-seat
+   VOID under the default); the character-load **hydration is LIVE**
+   (`5c8bbb160` — `Player::hydrate_from_file` + the CharPlay park +
+   `App::new` precedence character-first/sidecar-second), so §2b's
+   torch-line drop condition **(a) is MET**; **(b) the exit-save remains
+   the one open shared remainder** — the torch line stays until it
+   lands. §2a/§5a/§2b + the SEAL bible below re-seated accordingly.
+2. **f45 published its FINAL audit** (`d2a8276a2`,
+   research/137-wld-final-audit.md — the complete flags ownership
+   table): g71's 1-SEAL.3 "receipt OWED to f45 / no read published"
+   note is now stale in the other direction — f45 HAS published, but
+   its §2.2 (`137:211-212`) still cites the OVERRULED 92 order (books
+   **[51..53]**). Per A3 the books ride **[61..63]**; identity
+   [63..107] + the §1-FULL.4 truncation moves are order-agnostic and
+   stand. **One cosmetic re-pin owed to f45's lane** (its `.wld` codec
+   and ownership verdicts are unaffected — zero `.wld` bytes move
+   under this arbitration). Notified here; f45's lane applies it.
+
+**The v11 code STANDS (`a9f1c29d8`)** — re-verified this pass:
+`git diff a9f1c29d8..HEAD --stat -- crates/` EMPTY (the SEAL +
+ARBITRATION + this receipt are doc-only). Direct code re-read: writer
+`format!("11\n…")` `persist.rs:230`, the six-token unlock line
+`:260-268`, the loadout block `:277-289`, the torch pair the LAST
+post-dye line `:300-304` (the §2b "line 16" seat; the reader is
+positional, not literal-line-count); the v7 six-line rule `:463-465`
++ positional reads `:470-481` (witness `g90bs_six_line_v7_loads_positionally`
+`:1198`), the lone-torch-pair rule `:466-469` + `:482-489` (witness
+`f33s_torch_only_v7_loads_positionally` `:1233`), the v11 last-post-set
+torch arm `:500-513`/`:522-525`, the tolerant `_ => {}` arm `:565`;
+token 7 DD2-RESERVED comments `:255`/`:297-299`/`:388`/`:436-437` —
+the DD2 bump is **v12** under the default-DROP (A5 receipt 1).
+
+## SEAL — the persist-family merger-bible FINAL (one paragraph, three layers)
+
+**The whole persist merge in one paragraph (FINAL — re-seated at the
+f44 SEAL tip `0d1ee2045`, A5 receipt 1):** merge **L1 → L2 → L3**.
 **L1** (`.plr`, `player_file.rs`) takes **f44's complete walk** as the
-base (research/132-RETIRE `d35876af9` §3-L1 / research/99's 71-row
+base (research/132 SEALED `0d1ee2045` §3-L1 / research/99's 71-row
 table — the slot-11 `UsingBiomeTorches` PROPERTY fix `63204f85` and
-the `d331ea7c` timestamp fix included, e10's voice transport stays
+the `d331ea7c` timestamp fix included, **the character-load hydration
+port `5c8bbb160` taken WHOLE** (`hydrate_from_file` + the CharPlay
+park + the `App::new` precedence), e10's voice transport stays
 f44's `u8` with e10's picker/threading folding via an as-cast); every
 g-lane's named bools dedup onto the array fields (`used_upgrades[6]`
 indices crystal 0 / fruit 1 / arcane 2 / pearl 3 / worm 4 / ambrosia 5
@@ -1210,26 +1293,33 @@ identical `LoadoutData` transport. **L2** (`.trplayer`, `persist.rs`)
 takes **THIS branch's v11 superset** (`a9f1c29d8`, research/103 §2/§3
 — the tolerant v7-v11 reader with the value-range life-pair guard,
 the six-line positional rule and the lone-torch-pair rule; unlock
-tokens 1-6 LIVE fruit-first, token 7 DD2 RESERVED; the torch pair is
-line 16, NOT tokens) — g89/g89b/g89c/g90/g90b/f33's sidecar writers
-and SavedPlayer fields all dedup onto it; use arms per §5a (g88 keeps
-29/109/1291, the shimmer six take a6's `use_shimmer_permanent`, ONE
-`use_combat_book`, 5326 g90, 5043 a6+f33+c36); g87's `dh` line either
-DROPS (138-FINAL) or folds as line 17 at v12 (132-RETIRE §2e,
-recommended — DD2's bump then moves v13); dual-carrier fields keep
-both carriers until character-load hydration AND the exit-save land,
-restore order character-first/sidecar-second (132 §2c). **L3**
-(`.trwld` + `.wld`) takes **§L3-DEFINITIVE D3's 107-byte head + W×H
-dense LAST** (13 branches → 11 blocks after the e19≡g69 / f39≡c39 /
-f45≡c43 dedups; forest 16 + cave 31 + surface 3, then the STRICT-C#-row
-flag middle crimson/moon-quintet/underworld/pets/empress/books = 13,
-identity 44 closes the head; every truncation constant re-pins to
-107, `v18_tail_len` = 107+W×H, VERSION 18 forward-only); the `.wld`
-flags file is **f45's superset** with the D4 dedups (books/satchel/
-pets/moon-quintet keep f45's writer, the force-today pair f39 ONLY,
-g72's cave arrays survive, d124's DD2 trio independent); the cave/
-surface roll keep-one is g72's `cave_bg.rs` + g71's surface rolls
-(92 §2.1-FINAL). World globals never ride L2; one writer per file per
-save; every witness in the family is WRITTEN NOT RUN (all lanes
-code-only) — the merger runs the catalog test command once, after
-the three layers land.
+tokens 1-6 LIVE fruit-first, token 7 DD2 RESERVED **at v12** under
+the default-DROP; the torch pair is line 16, NOT tokens) — g89/g89b/
+g89c/g90/g90b/f33's sidecar writers and SavedPlayer fields all dedup
+onto it; use arms per §5a (g88 keeps 29/109/1291, the shimmer six take
+a6's `use_shimmer_permanent`, ONE `use_combat_book`, 5326 g90, 5043
+a6+f33+c36); g87's `dh` line **DROPS — the merger DEFAULT** (132 §2f
+`0d1ee2045` adjudicated over §2e; the v11 reader tolerates it
+lossy-not-corrupt; §2e's line-17-at-v12 fold survives ONLY as the
+conditional seat — taken, DD2's bump would move v13); dual-carrier
+fields keep both carriers until the exit-save lands (**condition (a)
+character-load hydration MET at `5c8bbb160`; (b) the in-session
+`.plr` re-save is the one open shared remainder**), restore order
+character-first/sidecar-second LIVE in `App::new` (132 §2c/§4). **L3**
+(`.trwld` + `.wld`) takes **§L3-ARBITER A3's 107-byte head + W×H
+dense LAST** (= D3 verbatim; 13 branches → 11 blocks after the
+e19≡g69 / f39≡c39 / f45≡c43 dedups; forest 16 + cave 31 + surface 3,
+then the STRICT-C#-row flag middle crimson/moon-quintet/underworld/
+pets/empress/books = 13, identity 44 closes the head; every truncation
+constant re-pins to 107, `v18_tail_len` = 107+W×H, VERSION 18
+forward-only; **all five A4 dependents verified aligned — A5**); the
+`.wld` flags file is **f45's superset** (`d2a8276a2`, research/137's
+complete ownership table) with the D4 dedups (books/satchel/pets/
+moon-quintet keep f45's writer, the force-today pair f39 ONLY, g72's
+cave arrays survive, d124's DD2 trio independent; f45's 137 §2.2
+books-[51..53] cite is the one cosmetic A3 re-pin owed — A5 receipt
+2); the cave/surface roll keep-one is g72's `cave_bg.rs` + g71's
+surface rolls (92 §2.1-FINAL). World globals never ride L2; one
+writer per file per save; every witness in the family is WRITTEN NOT
+RUN (all lanes code-only) — the merger runs the catalog test command
+once, after the three layers land.

@@ -39540,7 +39540,26 @@ click buffers; the player tick applies).
   old step-10 100-byte arithmetic superseded — it missed the quintet
   + underworld and inherited f44-FINAL's 97-vs-98 slip; the
   persist-family merger-bible paragraph seals L1/L2/L3 in one
-  place). g89d's
+  place). **SEAL-VERIFY (103 §A5): the arbitration's five A4
+  dependents ALL verified aligned at their fetched tips** — 92 g71
+  `b27474a44` (1-FULL.2 re-pinned to A3 + the mutual receipt), 132
+  f44 `0d1ee2045` (SEALED; the one-move underworld re-pin landed,
+  its FINAL-SEAL table = A3 field-for-field), 64b g72 `aa1645481`
+  (D5-RE-PIN = A3, zero byte moves), 138 a6 `0766c8df9` (ARBITER
+  receipt, pets 57-59 / books 61/62), 135 g90 `43fee29a4`
+  (CONFIRMED no action) — the persist-order dispute RESOLVED on
+  the published record, five of five on the strict-C#-row middle.
+  Two adjacent receipts seated: f44's SEAL adjudicated the g87
+  `dh` line **DEFAULT-DROP** (132 §2f — DD2 keeps its v12 token-7
+  reservation, §2e's fold conditional only) and landed the
+  character-load hydration `5c8bbb160` (§2b's torch-drop condition
+  (a) MET; (b) the exit-save is the one open shared remainder);
+  f45 published research/137 `d2a8276a2` (the complete `.wld`
+  ownership table) whose §2.2 books-[51..53] cite carries the one
+  cosmetic A3 re-pin owed (books [61..63]; zero `.wld` bytes
+  move). The v11 code stands `a9f1c29d8` —
+  `git diff a9f1c29d8..HEAD -- crates/` empty, writer/reader
+  anchors re-read directly (103 §A5's census). g89d's
   `docs/research/122-persist-v9-addendum.md` (`4344bd50`, carried onto
   this branch with §6 + §7 fold receipts + the v11 post-receipt note)
   is the g89-lane view of the same
