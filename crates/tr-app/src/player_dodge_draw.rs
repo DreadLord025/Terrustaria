@@ -179,6 +179,91 @@ pub fn shield_parry_ghost(parry_time_left: i32) -> Option<(f32, f32, f32)> {
     Some((num5, 1.0 + num5, 1.0 - num4))
 }
 
+/// `Player.UpdateVisibleAccessories` (`Player.cs:36770-36777`) — the
+/// raised-shield slot pick: while `shieldRaised` and no shield is
+/// drawn yet (`shield == -1`), the FIRST accessory (slots 3..10 in
+/// order) with a `shieldSlot != -1` becomes the drawn shield. The
+/// `eocDash > 0` twin (`:36762-36769`) shares the arm; the port folds
+/// both gates into one predicate (the caller ORs them). Returns the
+/// slot id to draw, `None` keeps the current one.
+///
+/// W4-d115 lane 19 census: the Cross Necklace 554 itself draws NO
+/// shield — its `neckSlot = 2` (`Item.cs:7992`) rides the Acc_Neck
+/// layer (the whole visible-accessory layer family is unported, no
+/// `Acc_*` sheets in `assets.rs`); the necklace's only combat write is
+/// `longInvince` (`:15587-15590`, landed 41323c7c on the f48 branch).
+/// The "shield-raise sprite" is the SQUIRE/BRAND shield the parry
+/// machine raises (`hasRaisableShield`, the eleven `shieldSlot` rows
+/// `:13123-13126` + held 4760 — W4-f48-owned); this fn is its draw-side
+/// slot selection.
+pub fn raised_shield_slot(
+    current_shield: i32,
+    raise_or_eoc_dash: bool,
+    accessory_shield_slots: &[i32],
+) -> Option<i32> {
+    if !raise_or_eoc_dash || current_shield != -1 {
+        return None;
+    }
+    accessory_shield_slots
+        .iter()
+        .find(|&&s| s != -1)
+        .copied()
+}
+
+/// `PlayerDrawLayers.cs:2965-2976` — the shield layer's frame/origin
+/// adjust: the body frame's WIDTH swaps to the Acc_Shield texture's
+/// width (the row/height stay the player's), and on a horizontal flip
+/// the origin X mirrors inside the new width. Returns
+/// `(frame_width, origin_x)`.
+///
+/// The decompiled `bodyVect.X += bodyFrame.Width - tex.Width`
+/// (`:2971`) runs AFTER the width assignment, so the add is always
+/// zero — a decompilation artifact of the original's old-width
+/// capture; the port keeps the effective semantics (the swap + the
+/// flip mirror) and records the artifact here.
+pub fn shield_layer_frame(
+    body_frame_width: i32,
+    tex_width: i32,
+    origin_x: f32,
+    flip_horizontally: bool,
+) -> (i32, f32) {
+    if body_frame_width == tex_width {
+        return (body_frame_width, origin_x);
+    }
+    let width = tex_width;
+    let mut ox = origin_x + (width - tex_width) as f32; // the += 0 artifact
+    if flip_horizontally {
+        ox = width as f32 - ox;
+    }
+    (width, ox)
+}
+
+/// `PlayerDrawLayers.cs:2992` — the shield layer's draw anchor (the
+/// pre-`zero`/pulse base every copy shares): the integer-truncated
+/// `(Position.X − screenX − frameWidth/2 + playerWidth/2, Position.Y −
+/// screenY + playerHeight − bodyFrameHeight + 4)` plus `bodyPosition`
+/// plus the frame centre `(frameWidth/2, bodyFrameHeight/2)`. The
+/// port's layers anchor on the 40×56 composite box, so the caller
+/// feeds the box origin as `position` and the live body-frame height.
+pub fn shield_layer_anchor(
+    position: Vec2,
+    screen_position: Vec2,
+    player_width: i32,
+    player_height: i32,
+    frame_width: i32,
+    body_frame_height: i32,
+    body_position: Vec2,
+) -> Vec2 {
+    Vec2::new(
+        (position.x - screen_position.x - (frame_width / 2) as f32
+            + (player_width / 2) as f32) as i32 as f32,
+        (position.y - screen_position.y + player_height as f32
+            - body_frame_height as f32
+            + 4.0) as i32 as f32,
+    ) + body_position
+        + Vec2::new((frame_width / 2) as f32, (body_frame_height / 2) as f32)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -290,5 +375,64 @@ mod tests {
         assert!((push - 0.75).abs() < 1e-6);
         assert!((scale - 1.75).abs() < 1e-6);
         assert!((color - 0.5).abs() < 1e-6);
+    }
+
+    /// `Player.cs:36770-36777` — the first shieldSlot accessory wins,
+    /// only while raised (or eoc-dashing) and nothing drawn yet. The
+    /// Cross Necklace's neckSlot never feeds this arm.
+    #[test]
+    fn w4_d115_lane19_the_raised_shield_picks_the_first_shield_slot() {
+        // No raise: nothing picked.
+        assert_eq!(raised_shield_slot(-1, false, &[6, 2]), None);
+        // Already drawn: the pick never re-fires.
+        assert_eq!(raised_shield_slot(6, true, &[6, 2]), None);
+        // Raised, slots in order: the first non-(-1) wins.
+        assert_eq!(raised_shield_slot(-1, true, &[-1, -1, 6, 2]), Some(6));
+        // No shield accessory: nothing to draw.
+        assert_eq!(raised_shield_slot(-1, true, &[-1, -1]), None);
+        assert_eq!(raised_shield_slot(-1, true, &[]), None);
+    }
+
+    /// `PlayerDrawLayers.cs:2965-2976` — the width swap + the flip
+    /// mirror (the += 0 decompilation artifact keeps the origin on the
+    /// no-flip path).
+    #[test]
+    fn w4_d115_lane19_the_shield_frame_swaps_width_and_mirrors_on_flip() {
+        // Equal widths: untouched.
+        assert_eq!(shield_layer_frame(40, 40, 20.0, false), (40, 20.0));
+        assert_eq!(shield_layer_frame(40, 40, 20.0, true), (40, 20.0));
+        // The swap: width becomes the texture's, origin rides (+= 0).
+        assert_eq!(shield_layer_frame(40, 44, 20.0, false), (44, 20.0));
+        // The flip mirrors inside the NEW width.
+        assert_eq!(shield_layer_frame(40, 44, 20.0, true), (44, 24.0));
+    }
+
+    /// `PlayerDrawLayers.cs:2992` — the anchor's integer truncation +
+    /// the frame-centre add.
+    #[test]
+    fn w4_d115_lane19_the_shield_anchor_truncates_then_centres() {
+        let a = shield_layer_anchor(
+            Vec2::new(100.7, 200.9),
+            Vec2::new(10.0, 20.0),
+            20,
+            42,
+            40,
+            56,
+            Vec2::ZERO,
+        );
+        // x: (int)(100.7 − 10 − 20 + 10) = 80, + 20 = 100.
+        // y: (int)(200.9 − 20 + 42 − 56 + 4) = 170, + 28 = 198.
+        assert_eq!(a, Vec2::new(100.0, 198.0));
+        // bodyPosition rides the whole anchor.
+        let b = shield_layer_anchor(
+            Vec2::new(100.7, 200.9),
+            Vec2::new(10.0, 20.0),
+            20,
+            42,
+            40,
+            56,
+            Vec2::new(1.0, 2.0),
+        );
+        assert_eq!(b, a + Vec2::new(1.0, 2.0));
     }
 }
