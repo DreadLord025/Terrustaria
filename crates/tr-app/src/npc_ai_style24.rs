@@ -1006,6 +1006,50 @@ mod tests {
         assert_eq!(out2.transform, None);
     }
 
+    /// W4-d127 FINAL item 4 — the owl-mimic Transform TARGET-KIND census:
+    /// the 689 reveal targets **317 DemonEyeOwl** (aiStyle 2, the eye
+    /// family), NOT 473 BigMimicCorruption. `NPCID.cs:11311` DemonEyeOwl
+    /// = 317, `:11619` BigMimicCorruption = 473 — distinct kinds. The
+    /// C#'s ONLY 689 Transform is `Transform(317)` (`NPC.cs:25333`); 473
+    /// appears solely as a corrupt-biome SPAWN (`:3738`, the big-mimic
+    /// ladder), never a transform target of the owl. The chain is ROWED
+    /// on the pushed co-lane tips: d38 (6f9dd02db) carries the 317 row
+    /// (data.rs:590/:969 cs_id both ways, ai_style 2 :2645, 30×32 :3231,
+    /// 75 HP :3924, bestiary net_id 317, `DemonEyeOwl => update_eye`);
+    /// b2 (6f275c133) claims the `2 => ai_002_eye_family` axis (npc.rs:
+    /// 4665, the faithful npc_ai_eye re-port). This lane's completion
+    /// drain (`world_sim/npcs.rs`, the 317 COMPLETION-ONLY kind swap)
+    /// closes the chain at the merge. WRITTEN NOT RUN.
+    #[test]
+    fn the_mimic_transform_target_is_317_not_473() {
+        // The target-kind constants (NPCID.cs).
+        let demon_eye_owl: i32 = 317; // :11311
+        let big_mimic_corruption: i32 = 473; // :11619
+        assert_ne!(demon_eye_owl, big_mimic_corruption, "distinct kinds");
+        // The reveal's request is 317, the eye-family kind (aiStyle 2).
+        let w = air();
+        let players = [player(1000.0, 1000.0, 0.0, false)];
+        let mut c = ctx(&players, &[]);
+        c.day_time = false;
+        let mut n = bird(689, 1000.0, 1000.0);
+        n.ai[0] = 1.0;
+        n.local_ai[0] = 1.0;
+        let out = ai_style_24(&mut n, 689, &w, &c, &mut UnifiedRandom::new(1));
+        assert_eq!(out.transform, Some(demon_eye_owl), "the target is 317");
+        assert_ne!(out.transform, Some(big_mimic_corruption), "NOT the 473 mimic");
+        // The transform_core's observable row IS the 317 DemonEyeOwl
+        // SetDefaults (NPC.cs:13007-13019): 30×32, aiStyle 2, 75 HP —
+        // the eye family's stats, not a big mimic's (473 is 28×44,
+        // aiStyle 87, 3500 HP, the chest-mimic machine, :14508-14520).
+        assert_eq!(n.size(), (30.0, 32.0), "the 317 box, not a 473 box");
+        assert_eq!(n.max_hp, 75, "the 317 lifeMax (:13014)");
+        // Neither 689 nor 317 is catchable — the reveal is combat-only
+        // (the 473 big mimic is a chest, also not npcCatchable, but it
+        // is NOT this chain's target).
+        assert!(!crate::bug_net::npc_catchable(317));
+        assert!(!crate::bug_net::npc_catchable(689));
+    }
+
     /// W4-d127 census — the family is EXACTLY the 11 `SetDefaults aiStyle = 24`
     /// types (9 assignment sites: 74/297/298 share `NPC.cs:9751`), and the
     /// poop set's four extra members are the aiStyle-68 WATERFOWL, not birds
