@@ -36563,6 +36563,41 @@ disjoint module `crates/tr-app/src/buff_frame_wiring.rs::update_buff_frame`
 - Code-only: the phase-2 16 `w4_f12_*` witnesses + the gap pass's 14
   (2 Tipsy + 7 Inferno + 5 Moon Charm) WRITTEN, NOT RUN — no
   cargo/rustc/rustfmt/tests/graphify invoked.
+- **The SWEEP pass (2026-11-21, after 6351c615):** the FULL 270-id census
+  (`docs/research/W4-f12-sweep-census.md`) script-diffed the C# case-list
+  (256 `==` heads + 6 range heads + the MountType set head) against every
+  ownership set and found exactly **10 gaps** — 2 whole ids with NO owner
+  (Bleeding 30 `:10029-10032` inline + INLINE_OWNED; Stoned 156
+  `:10057-10060` joins DEBUFF_DISPATCH — the module arm existed but no
+  dispatch carried it) and 8 partial arms completed INLINE (the Tipsy
+  pattern): Builder 107's `blockRange++` (`:10162`), Dryad's Ward 165's
+  flag (`:10307`), Weak 33's meleeSpeed −0.051 (`:11914`), the three
+  WellFed tiers' minion halves (26/206/207, `:11942-11943`/`:11958-11959`/
+  `:11974-11975` — the fields are live, the "waits for M4-MINION" note
+  retired), Kite 383's whole stat block (`:9916-9919`) + the tier's
+  ON-CHANGE `luckNeedsSync` gate (`:9921-9925`, was firing every tick),
+  and Ichor 69's flag (`:10063` — the −15 defense was inline but
+  `Player.ichor` had no live writer; 69 is inline-owned so the wave-B
+  copy never dispatches). After the sweep the set-diff is EMPTY: one
+  live grant path per id. 8 `w4_f12_sweep_*` witnesses written not run.
+- **The nebula twin contract (sweep, f49 co-check):** f49b (5fbbc430)
+  landed the `:12070-12079` tier writer on the d117 `Player.
+  nebula_level_mana` field and published the one-writer recipe
+  (research/85 on ITS branch). The two writers are semantically
+  identical (assign-derivation + time-2 step-down, both post-tick-head);
+  the f12-side contract is published in the sweep census doc: keep the
+  canonical g27 `apply_orb_arm` as the ONE dispatch, bind the regen read
+  side to `orb_scan.nebula_level_mana` OR retarget the g27 write onto the
+  d117 field at the merge — never both dispatches. The Life/Damage
+  consumers stay f12's (verified live in `apply_orb_arm`).
+- **The buff-321 keep-one (sweep, d115 co-check):** d115b (7c4fcb75)
+  landed an inline 321 arm; THIS branch's d73 booster lane already owns
+  321 at the C# chain position. Both cite `Player.cs:9940-9947`
+  (re-verified: +10 crit ×3 + 0.10 minionDamage) and the values are
+  identical. Merger ruling recorded in the census doc: the d73/wiring
+  arm is canonical (it IS the frame pass); d115's inline copy folds out
+  at the merge (its dodge grant + retaliate census stay d115's) — or 321
+  moves to INLINE_OWNED and out of the booster match; never both.
 
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
