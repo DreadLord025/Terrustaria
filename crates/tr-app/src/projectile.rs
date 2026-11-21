@@ -13691,11 +13691,11 @@ const AI_STYLE_1_RIDERS: [u16; 5] = [
 /// `Projectile.ShouldUseWindPhysics`'s style list (`Projectile.cs:22110-22132`).
 /// The styles whose arms this port has are 2 (the thrown family, whose own
 /// branch head applies the same term), 8/24/28 (Phase 3), 29 (Phase 4a's gem
-/// bolts) and the styles that already had ported arms (1 the arrows, 16 the
-/// bombs) keep their pre-existing no-wind behaviour; the rest (10/14/…) port
-/// in a later phase or not at all.
+/// bolts), 35 (W4-g82's rope coils, `:22126`) and the styles that already had
+/// ported arms (1 the arrows, 16 the bombs) keep their pre-existing no-wind
+/// behaviour; the rest (10/14/…) port in a later phase or not at all.
 fn uses_wind_physics(ai_style: u8) -> bool {
-    matches!(ai_style, 2 | 8 | 24 | 28 | 29)
+    matches!(ai_style, 2 | 8 | 24 | 28 | 29 | 35)
 }
 
 /// `Terraria.Utilities.LCG32Random` (`Utilities/LCG32Random.cs:5-44`) — the
