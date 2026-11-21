@@ -39244,3 +39244,50 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## Dungeon room-content RETIRE (W4-f24, code-only)
+
+The f24 room-content lane is CLOSED (research/243, the FINAL + the
+room-content-family declaration). The dispatch's "skyblock room-content"
+scope is adjudicated NONE: `Skyblock.denyAllGeneration =>
+WorldGen.skyblockWorldGen` (`WorldGen.cs:3131`) gates every dungeon
+registration (`:14753/:14759`), and `GenerateSkyBlockWorld` ends with
+`dungeonX/Y = -1` (`:22792-22793`, ported `skyblock.rs:1483`) — no
+skyblock-specific dungeon content exists to port.
+
+Two genuinely unclaimed drunk variants landed this round, both
+flag-gated (a classic world burns the identical ledger; both classic
+hash pins stay):
+
+- **R3 (9ee1477b)** — the drunk/noSurface spike scan-row arms
+  (`DungeonGlobalSpikes.cs:41-44` floor vs `:138-141` ceiling). The C#
+  pair is ASYMMETRIC: the floor redraws under `drunk || noSurface`, the
+  ceiling under `noSurface` ONLY — kept verbatim. Both redraws consume a
+  SECOND `Next` (the double-draw quirk); `gen_pos_y` is the start-row
+  proxy for `genVars.generatingDungeonPositionY` (the `:399-400`
+  topmost-room move needs the room list — cited skip).
+- **R3b (7e02e61e)** — the legacy-path drunk wall re-roll
+  (`DungeonCrawler.cs:94-108`): one extra `Next(3)` after the colour
+  switch overrides ONLY `brickWallType` to 7/8/9. B5 landed the twin in
+  the dual producer (`dungeon_genvars::roll_dungeon_color`); this is the
+  legacy `generate_dungeon` copy. The drunk shell-pin witness is
+  re-derived structurally (the exact drunk pin rides the merge gate).
+
+Deliberate deviations / cited skips (the wiring round's seams): the
+entrance-object arms (`LegacyDungeonEntrance.cs:67-70/:584-614` direction
+flip + drunk shell rewrite, `DungeonCrawler.cs:411-414`
+`createdDungeonEntranceOnSurface`) and the room-list arms (Doors/
+Platforms/BiomeChests/BasicChests/Early/Late + the GroundFurniture
+placement tail `:555-857`) need the `DungeonRoom`/`DungeonHall` object
+lists the port's shape-level crawler does not build. The
+`LegacyEntranceDungeonHall.cs:84-88` drunk flip is DEAD on the port's
+precalculated path (the `base.calculated` arm `:89-96` overwrites it).
+
+Keep-one receipts: the g43 temple lane is DISJOINT (the jungle temple
+`makeTemple` vs the dual-dungeon Temple STYLE — keep both); the c30
+dither-snake lane (8f5f10861, 00:45:18) duplicates f24's B1–B6 (claimed
+00:09:38, wired 00:42:59) — f24 is the keep-one survivor, c30 the
+fold-source (its `roll_dungeon_location` the one unique helper, superseded
+by the span planner's dungeon anchor); the merger must NOT double-register
+the `:14755` slot. Witnesses WRITTEN NOT RUN; no cargo/tests/rustfmt/
+graphify invoked.
