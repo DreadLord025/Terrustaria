@@ -424,3 +424,121 @@ Code-only, as tasked: no cargo, no tests, no graphify. Evidence:
 254f309b/249a0c1b/4ad0f041` read in full; the copied blob's
 `git hash-object` equals f46's `317ff706`. All witnesses cited are
 written-not-run (code-only mode).
+
+### 10.5 Re-fold status (2026-11-21, e18 RETIRE phase — f46 latest re-read)
+
+**f46 tip at this read: `c50e1b00`** (closeout item 4; chain past the fold:
+`af1bc80c` docs → `cc17880a` e18 re-fetch → `08b749bd` closeout census +
+zoom/Tab ports → `8bb34f71` overlay cross-note → `c50e1b00` §10 FINAL).
+Read in full from git objects: f46's research/84 (352 ln) + research/14
+(625 ln) + `git show 08b749bd` (the closeout code).
+
+**f46's active gaps at this read (what the re-fold must bring):**
+
+1. **The e18-tip re-fetch claim is STALE.** `cc17880a` records "still
+   `670c948d`, zero post-fold commits" — the e18 tip is now **`75289a2d`**,
+   **10 commits past `670c948d`** (the final sweep P1–P6 + three doc
+   commits). f46's own merger-checklist step 2 (re-fetch at merge time,
+   fold each new commit per the research/14 recipe) therefore FIRES. The
+   exact fold-list is §10.6.
+2. **D17 (minimap alpha) is still open on the union.** f46's closeout
+   explicitly left the alpha keys with D17/D18 ("porting the keys without
+   the alpha state would be a no-op"); e18's `249a0c1b` carries the state
+   + keys + draw-side clamps + tint + backdrop/layer alpha. The fold
+   closes D17 on the union.
+3. **The five non-key residuals are absent on the union:**
+   `TryOpeningFullscreenMap` (`4ad0f041`), the `Load` catch arm
+   (`029154fe`), `mapDelay` (`2fa072d0`), the draw-head dialog close
+   (`8ec77f0f` + `2e1f97c8`), the draw-tail chat (`0d99d968`). None of
+   f46's closeout touches those seams — pure additions at fold time.
+4. **The zoom/Tab keys are now a THREE-way duplicate.** f46's `08b749bd`
+   ported `apply_key_zoom` + `update_minimap_zoom_keys` + the `world_key`
+   `MapAction::Style` arm; e18's `249a0c1b` ported `update_minimap_keys`
+   (zoom + alpha + Tab latch); **g53's `a9774d2a`**
+   (`origin/task/W4-g53-ui-achievement-screen`, read via `git show`)
+   ported `update_map_style_keys` (zoom + alpha + the style-2 overlay
+   state/keys + Tab latch). f46's docs do not mention g53 — the 3-way
+   adjudication is unpublished on the union side; the e18-arm fidelity
+   notes are §10.7. The merger keeps ONE input implementation.
+5. **Unchanged, not e18's to close:** the f29/e17 overlay keep-one
+   (f46 §10 step 3) and its two shared C# gaps (the movement-key pan
+   cancel `Player.cs:24776-24791`, f29's missing `resetMapFull` pan clear
+   `Main.cs:55418`).
+
+### 10.6 Exact fold-list — the 10 e18 commits past `670c948d`
+
+Fold-source tip **`75289a2d`** (the retire-phase commits that follow are
+docs/comments-only and carry no fold obligation beyond their notes).
+Recipe per f46's research/14 "fold status": fetch the e18 tip →
+cherry-pick each commit below IN ORDER → resolve per-hunk onto the union
+seams (the `map_reveal_draw` field-borrow driver on the DoDraw half, the
+`map.rs` statics/queues skeleton, `handle_fullmap_close` after the ping,
+the close/cursor tail inside the fullscreen draw branch). Per-commit:
+
+| # | Commit | Files | Fold notes |
+| --- | --- | --- | --- |
+| 1 | `249a0c1b` minimap keys + alpha (P1) | `app/mod.rs` (+161: `update_minimap_keys`, `map_style_prev`, ctor, 2 witnesses), `map.rs` (+98: `minimap_key_scale`/`minimap_alpha_step`/`minimap_alpha`/`clamp_minimap_axes`/tint, 2 witnesses), `app/frame.rs` (+5: the `frame_head` call), `app/flow.rs` (+1 fixture), `frame/draw.rs` (backdrop + layer alpha), `anchors.txt` (+1), ANALYSIS/PORT_MAP | **The 3-way conflict.** `map.rs`/`frame/draw.rs`/`flow.rs`/anchors hunks apply cleanly (the union has no `minimap_alpha`, no clamps in `prepare`, no backdrop alpha). `app/mod.rs` + the tick site + the Tab cycle collide with f46's `08b749bd` (`update_minimap_zoom_keys` in `world_sim/player.rs`'s else-arm, `apply_key_zoom` in `ui/minimap.rs`, the `world_key` Style arm) and g53's `a9774d2a` (`update_map_style_keys`). Resolve per §10.7 — keep ONE input fn; the alpha state/clamps/tint/backdrop/layer-alpha hunks are e18-unique and keep wholesale. If the e18 input fn wins, DROP f46's `apply_key_zoom`/`update_minimap_zoom_keys`/`world_key` Style arm + their 5 witnesses + 2 anchor rows as dups (never delete e18 rows); if f46's wins, extend it with the alpha rows + the latch fix (§10.7 row 6) and re-home the clamps draw-side. |
+| 2 | `4ad0f041` TryOpeningFullscreenMap (P2) | `app/loop.rs` (+73: `try_open_fullscreen_map`, the M-key arm, the close arms' sound 11), `app/clicks.rs` (+65: the icon-row helper routing + style-icon sound 12), `anchors.txt` (+1) | Pure addition — f46 touches neither fn. The only `loop.rs` neighbour is f46's `world_key` Style arm (row 1's resolution decides whether it stays); the hunks are disjoint. |
+| 3 | `0bd346e78` research/84 cross-note copy | `docs/research/84-map-reconcile.md` (+426) | **DROP the blob-copy hunk** — f46 owns this file and has evolved past the copied `317ff706` blob (`af1bc80c`/`c50e1b00`). The §10.1–10.4 facts are already covered: the two first-half pieces are folded (`c06bc2fe`/`6dea2b66`/`0fc306bc`), the final-sweep pieces are this fold-list. Keep this §10.5–10.8 retire record (append, no conflict). |
+| 4 | `029154fe` Load catch arm (P3) | `map.rs` (+44: the `load` `Ok(false)` split on `path.exists()` + 1 witness), `anchors.txt` (+1) | Clean apply — the union's `load` is the e18 base's (full `WorldMap.cs:211-214` arms); the hunk lands inside the same `if !load_map_file(...)` head. |
+| 5 | `2fa072d0` mapDelay (P4) | `map.rs` (+83: `map_delay` field/ctor/gate/`reset_map_delay` + 1 witness + 5 witness re-pins), `app/mod.rs` (+9: the `enter_loaded_world` re-arm), `anchors.txt` (+1) | Clean apply — the union's `update` head + ctor are the e18 base's; the `mod.rs` re-arm site is disjoint from f46's zoom fns. The 5 re-pins (`map_delay = 0`) target witnesses the union kept verbatim. |
+| 6 | `8ec77f0f` draw-head dialog close (P5) | `frame/draw.rs` (+71: `close_dialog_behind_fullmap` + 1 witness), `anchors.txt` (+1) | The fn + witness apply cleanly; the call-site hunk lands at `draw_region`'s head — the union's driver call sits AHEAD of `prepare` in the same region, a different site. Keep the C# order: the close runs before `DrawMap` (`Main.cs:62150-62153` < `:62155`). |
+| 7 | `2e1f97c8` P5 fix | `frame/draw.rs` (+5/-4) | Moves the row-6 call ahead of the pylon scan; applies after row 6. |
+| 8 | `0d99d968` draw-tail chat (P6) | `frame/draw.rs` (+10: the `ui::draw_chat` call), `ui/mod.rs` (+4/-1: `draw_chat` pub), `anchors.txt` (+1) | Place the chat call AFTER the union's close/cursor/head-icon tail — `Main.cs:62160` runs after the whole `DrawMap` (whose internal tail is the close button `:56014` + cursor `:56037`), so chat-after-tail is the C# order. `draw_chat` pub-ification is disjoint from f46. |
+| 9 | `0002fa1f` research/14 doc-sweep | `docs/research/14-map-minimap.md` (+125/-27) | Append-conflict resolution: keep BOTH sides' sections (f46's fold-status/closeout-census/composition notes + e18's remaining-census/final-sweep sections describe different passes). The port-status rows + D17/D18/D19/D22 rows collide: rewrite to the union names per f46's §8 rule, with D17 CLOSED once row 1 folds, D18's switcher half landed (f46 closeout), D22's mapDelay half closed (row 5). The retire-phase census close (§10.8's D18/D22 rulings) supersedes the stale "style-0 retro layout" wording. |
+| 10 | `75289a2d` ANALYSIS + PORT_MAP rows | `docs/ANALYSIS.md` (+56), `docs/PORT_MAP.md` (+3) | Append keeping both (the ANALYSIS union note + the e18 final-sweep notes are different paragraphs). PORT_MAP rows citing `update_minimap_keys`/`map_reveal_driver` re-home to whichever names row 1's resolution + the union driver keep. |
+
+Anchor accounting after the fold: the union's 8 rows (f46 §10 step 4) +
+e18's `try_open_fullscreen_map`, the corrupt-`.map` witness row, the
+`map_delay` witness row, `close_dialog_behind_fullmap`, `draw_chat` =
+**13 rows**, plus row 1's winner (`update_minimap_keys` XOR
+`apply_key_zoom` — already counted in the 8). Never delete rows to
+silence the canary; the dropped dup's rows go only with a §10.7 ruling.
+
+### 10.7 The 3-way zoom adjudication — e18-arm C#-fidelity notes
+
+Ground truth re-read for this note: `Player.cs:24768-24989` (the input
+block + its gates), `Main.cs:55515-55532` (the style-1 draw clamps +
+tint), `Main.cs:55548-55566` (the style-2 clamps), `MapRenderer.cs:438`
+(the tile tint). Arms: **e18** `249a0c1b` (`update_minimap_keys`,
+`frame_head` per-update), **f46e** `08b749bd` (`update_minimap_zoom_keys`,
+`world_sim/player.rs` else-arm + `world_key` Style), **g53c** `a9774d2a`
+(`update_map_style_keys`, `world_sim/player.rs` else-arm).
+
+| Row | C# | e18 (this arm) | f46e | g53c |
+| --- | --- | --- | --- | --- |
+| 1. Held keys | `:24770` `Triggers.Current.CopyInto` — the zoom/alpha rows are HELD, per `Player.Update` | held (`self.keys`) per update in `frame_head` beside `update_view_zoom_keys` ✓ | held per `update_player` tick ✓ | held per `update_player` tick ✓ |
+| 2. Tick site | `Player.Update`'s input region (`:24768`) | `frame_head` (per-frame, outside the sim step) — placement deviation, same 60 Hz lockstep cadence | `update_player` tail — the C#-shaped site ✓ | same ✓ |
+| 3. Block gates | `:24768` `!drawingPlayerChat && !editSign && !editChest && !blockInput`; `:24898` not-fullscreen; `:24911` `mapStyle == 1` — **NO `mapEnabled` check** | chat/menu/front gates + `!map.open` + style 1 ✓ (menu/front = the port's `blockInput` analog) | style 1 in-fn; not-fullscreen via the call-site else; chat/menu/front eaten upstream ✓; no `mapEnabled` gate ✓ (witnessed) | **adds `!self.settings.map_enabled` — a gate the C# does not have** (f46's witness pins the scale moving with the map dark); sign/chest editors unmodelled (all three arms) |
+| 4. Zoom constants | `:24915/:24919` ×1.025/×0.975 | `minimap_key_scale` literals ✓ | `apply_key_zoom` via `ZOOM_IN/OUT_MULTIPLIER` ✓ | `minimap_key_scale` via the same constants ✓ |
+| 5. Alpha ±0.015 | `:24923/:24927` `mapMinimapAlpha ±= 0.015f`, unclamped in the input | `minimap_alpha_step` ±0.015 unclamped ✓ + `WorldMap::minimap_alpha` (default 1, `Main.cs:66753`) ✓ | **absent** (left with D17) | `map_key_alpha` ±0.015 ✓ + the same field/default ✓ |
+| 6. Tab cycle | `:24949-24965` fires in EVERY non-fullscreen style; `releaseMapStyle` latch — held frames never re-fire, the release frame re-arms | `map_style_prev` press-edge latch, every style ✓; held Tab does NOT re-cycle (witnessed) | `world_key` press edge — **winit delivers OS auto-repeat as separate `Pressed` events (`loop.rs:648-651`), so a HELD Tab re-cycles at the OS repeat rate**; the C# latch fires once per physical press. Fidelity miss | `release_map_style` latch — the verbatim C# structure (`if bound { if release {cycle} release=false } else {release=true}`) ✓ |
+| 7. Clamp placement | the clamps are DRAW-side only (`Main.cs:55515-55530`, inside the style-1 branch; scale 0.2..3, alpha 0.01..1) | `clamp_minimap_axes` in `prepare` (draw half) ✓ — runs every in-world frame rather than only style-1 draws; idempotent projection, behaviourally equal (the value only leaves range during style-1 held frames, and both clamp the same frame) | `apply_key_zoom` clamps INPUT-side (deviation, same equivalence argument); no alpha clamp (no alpha) | clamps INPUT-side right after the steps (same deviation); also ports the style-2 clamps (`overlay_scale_clamp` `Main.cs:55550-55558`, `map_alpha_clamp` `:55559-55566`) ✓ |
+| 8. Tile tint | `:55532` `b = (byte)(255*alpha)` → `MapRenderer.cs:438` `Color(b,b,b,b)` | `(255.0*a) as u32 as f32/255` ✓ (truncation = the byte cast; post-clamp range) | **absent** (tint stays 1.0) | `as u8` ✓ (saturating vs C# unchecked wrap — unreachable post-clamp) |
+| 9. Backdrop + layer alpha | `MinimapFrame.DrawTo`'s backdrop reads `b`; the `:55703` layer walk takes `b` | backdrop ✓ AND the layer walk ✓ (`draw.rs:1504`/`:1558`) | absent | backdrop ✓; **the layer-walk alpha hunk is absent** (its `draw.rs` diff is the backdrop only) |
+| 10. Style-2 rows | `:24930-24947` overlay zoom ×1.05/×0.95 + alpha ±0.015; state `Main.cs:66754-66755` (2.5/0.35) | absent (D18) | absent | **ported** — `overlay_scale`/`overlay_alpha` state + keys + clamps (the draw half stays absent everywhere) |
+
+**e18-arm summary for the merger:** this arm is the only one with the
+alpha state + keys + DRAW-side clamps + tile tint + backdrop AND
+layer-walk alpha + a held-Tab-safe latch — it closes D17 outright. Its
+two recorded deviations: the `frame_head` tick site (row 2) and the
+every-frame `prepare` clamp (row 7, benign). **f46e** is the narrowest
+(zoom + Tab only) and carries the auto-repeat Tab deviation (row 6).
+**g53c** is the superset on style-2 state (row 10, salvage it when D18's
+draw half lands) but adds the non-C# `mapEnabled` gate (row 3), clamps
+input-side (row 7) and misses the layer alpha (row 9). Recommended
+union: e18's `update_minimap_keys` as the keeper (re-home the call to
+`update_player`'s else-arm if the C#-shaped site is preferred — the fn
+body is site-agnostic), drop f46e's three pieces as dups, hold g53c's
+overlay-state hunk as the D18 salvage. The ruling is the merger's; these
+are the facts.
+
+### 10.8 Verification (this retire note)
+
+Code-only, as tasked: no cargo, no tests, no graphify. Evidence:
+`git fetch origin task/W4-f46-minimap-reveal-2` + `git ls-remote` (tip
+`c50e1b00`), f46's research/84 + research/14 read in full from git
+objects, `git show 08b749bd`/`a9774d2a`/`249a0c1b` read in full,
+`git log 670c948d..75289a2d` (the 10-commit list), and the C# windows
+cited in §10.7 re-read directly. All witnesses cited are
+written-not-run (code-only mode).
