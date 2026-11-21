@@ -34639,6 +34639,14 @@ mod magic_ai_tests {
         assert_eq!(d.extra_updates, 0);
     }
 
+    /// W4-d6 — one pool update with the hostile lane simulated (the
+    /// owner-255 shots — `spawn_hostile_ai`'s seam).
+    fn step_hostile(pool: &mut ProjectilePool, w: &mut World) {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(w, &mut npcs, None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, true);
+    }
+
     #[test]
     fn test_w4_d6_style_56_the_scythe_latches_the_blade_pose_then_spins_at_0p025() {
         // `:28847-28852`: localAI[0]'s one-shot latch copies ai[0] →
@@ -34657,7 +34665,7 @@ mod magic_ai_tests {
                 -1.0,
             )
             .unwrap();
-        step(&mut pool, &mut w);
+        step_hostile(&mut pool, &mut w);
         let p = &pool.slots()[slot];
         assert_eq!(p.local_ai[0], 1.0, "the latch fires once");
         assert_eq!(p.sprite_direction, 1, "-(ai[1] = -1)");
@@ -34670,14 +34678,14 @@ mod magic_ai_tests {
         pool.slots_mut()[slot].ai[0] = 9.0;
         let rot_before = pool.slots()[slot].rot;
         let vx = pool.slots()[slot].vel.x;
-        step(&mut pool, &mut w);
+        step_hostile(&mut pool, &mut w);
         let p = &pool.slots()[slot];
         let expected_rot = rot_before + (vx * 1.05) * 0.025;
         assert!((p.rot - expected_rot).abs() < 1e-4, "no re-latch, spin only");
         // The -X flight spins negative.
         pool.slots_mut()[slot].vel = Vec2::new(-4.0, 0.0);
         let rot_before = pool.slots()[slot].rot;
-        step(&mut pool, &mut w);
+        step_hostile(&mut pool, &mut w);
         let p = &pool.slots()[slot];
         assert_eq!(p.direction, -1);
         assert!((p.rot - (rot_before - 4.2 * 0.025)).abs() < 1e-5, "the negative spin");
@@ -34700,7 +34708,7 @@ mod magic_ai_tests {
                 1.0,
             )
             .unwrap();
-        step(&mut pool, &mut w);
+        step_hostile(&mut pool, &mut w);
         let p = &pool.slots()[slot];
         assert_eq!(p.vel, Vec2::new(10.0, 6.0), "16 is not < 16");
         assert!((p.rot - 16.0 * 0.025).abs() < 1e-6, "the spin reads the speed");
