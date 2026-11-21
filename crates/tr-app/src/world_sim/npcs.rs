@@ -7823,7 +7823,7 @@ mod tests {
         for (k, s) in RngKey::ALL.iter().zip(streams.iter()) {
             // GetChat draws on the BARE global stream (the Main.rand
             // stand-in) — every NAMED stage stream stays pristine.
-            assert_eq!(app.rngs.stream(*k), s, "{} untouched", k.name());
+            assert_eq!(*app.rngs.stream(*k), *s, "{} untouched", k.name());
         }
         // The same-NPC re-click declines (`:43077`) — no second play.
         let played = app.audio.played_count();

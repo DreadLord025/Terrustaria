@@ -2298,11 +2298,13 @@ impl Audio {
     /// research/32 D1/D4 — the draw-free single-voice cues: the menu clicks
     /// (cases 10/11/12, `LegacySoundPlayer.cs:750-782`), the unlock (case
     /// 22, `:937-946`), the coin-pile Coins (case 18, `:865-870`), the chat
-    /// open (case 24, `:957-962`) and the camera shutter (case 40,
+    /// open (case 24, `:957-962`), the full-mana chime (case 25,
+    /// `:963-968` — W4-d79) and the camera shutter (case 40,
     /// `:1359-1368`). The int overload (`SoundEngine.cs:102-108`) draws NO
     /// `GetRandomPitch` and the cases draw NO `Main.rand` — the play is
     /// stream-neutral; the only decision is the attenuation gate and the
-    /// slot's Stop-then-recreate (Coins/Chat overwrite without a Stop).
+    /// slot's Stop-then-recreate (Coins/Chat/MaxMana overwrite without a
+    /// Stop).
     /// Case 12's `FocusHelper.AllowInputProcessing` gate (`:771`) folds to
     /// true — the port always claims focus (the standing D12 deviation).
     /// Returns the cue played; `None` when the gate refused or the name is
