@@ -318,6 +318,18 @@ pub fn item_tooltip_lines(
     d: &crate::itemdata::ItemDef,
     ctx: TooltipContext<'_>,
 ) -> Vec<(String, [f32; 4])> {
+    item_tooltip_rows(kind, d, ctx).0
+}
+
+/// [`item_tooltip_lines`] plus the yoyo-logo row index
+/// (`Main.MouseText_DrawItemTooltip_GetLinesInfo`'s `ref yoyoLogo`,
+/// `Main.cs:20631`/`:21019`): the draw pass paints the OneDropLogo over
+/// that row instead of its " " placeholder text (`:20408-20439`).
+pub fn item_tooltip_rows(
+    kind: u16,
+    d: &crate::itemdata::ItemDef,
+    ctx: TooltipContext<'_>,
+) -> (Vec<(String, [f32; 4])>, Option<usize>) {
     // The hovered instance's stats: the prefix applied over the CALLER's
     // row (`Item.Prefix`, `Item.cs:576-586`, through `prefixed_stats_of` —
     // the e16 caller seam, research/128 §3): the C#'s HoverItem IS the
@@ -610,7 +622,7 @@ pub fn item_tooltip_lines(
     // rows, the per-item text (with the cursed-by-Plantera swap), the seed
     // rows, the DD2/well-fed/duration rows, the yoyo placeholder, the
     // Expert/Master rows, the prefix comparison rows and the set-bonus row.
-    tooltip_lines2::append_second_half(
+    let yoyo_logo = tooltip_lines2::append_second_half(
         kind,
         d,
         ctx.prefix,
@@ -643,7 +655,7 @@ pub fn item_tooltip_lines(
         kind == 0,
         &mut lines,
     );
-    lines
+    (lines, yoyo_logo)
 }
 
 /// `Main.MouseText_DrawItemTooltip` (`Main.cs:20322-20446`): the generic tooltip box
@@ -680,7 +692,7 @@ pub fn draw_item_tooltip(
         stack: item.count,
         ..ctx
     };
-    let lines = item_tooltip_lines(item.kind, d, ctx);
+    let (lines, yoyo_logo) = item_tooltip_rows(item.kind, d, ctx);
 
     // `Main.cs:20367-20377`: the widest line and the summed line heights, `num3 = 0`.
     let lh = line_height(lookups);
@@ -701,7 +713,35 @@ pub fn draw_item_tooltip(
     // row's 190, `:21275`) does not survive; every line draws at the tint.
     let tint = pulse.text;
     let mut line_y = 0.0;
-    for (text, color) in &lines {
+    for (i, (text, color)) in lines.iter().enumerate() {
+        // `Main.cs:20408-20439` — the yoyo-logo row draws the OneDropLogo
+        // texture INSTEAD of its " " placeholder text: four black copies
+        // at the ±1 px offsets (m 0-3), then the tinted copy (m 4,
+        // `(num10, num10, num10, num10)` with `num10 = mouseTextColor`).
+        // The row's HEIGHT still advances by the placeholder's measured
+        // line (`:20444` runs for every row, the logo included).
+        if Some(i) == yoyo_logo {
+            if let Some(sheet) = lookups.one_drop_logo.as_ref() {
+                if let Some(uv) = lookups.hud_uv(Some(sheet)) {
+                    let size = [sheet.width as f32, sheet.height as f32];
+                    for (m, (dx, dy)) in [
+                        (-1.0f32, 0.0f32),
+                        (1.0, 0.0),
+                        (0.0, -1.0),
+                        (0.0, 1.0),
+                        (0.0, 0.0),
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
+                        let c = if m == 4 { [tint; 4] } else { [0.0, 0.0, 0.0, 1.0] };
+                        r.push_ui_sprite([tx + dx, ty + line_y + dy], size, uv, c);
+                    }
+                }
+            }
+            line_y += lh;
+            continue;
+        }
         let line = [
             (color[0] * 255.0 * tint) as u8 as f32 / 255.0,
             (color[1] * 255.0 * tint) as u8 as f32 / 255.0,
