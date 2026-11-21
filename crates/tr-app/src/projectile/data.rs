@@ -4943,7 +4943,7 @@ mod tests {
     }
 
     /// W4-g2 reconciliation — the four sibling rows the first census missed
-    /// (`26d-projectile-rowless-kinds-w4-g2.md` "Recorded gaps"): the melee
+    /// (`163-projectile-rowless-kinds-w4-g2.md` "Recorded gaps"): the melee
     /// 228/732 (`Projectile.cs:3144`/`:7713`) and the magic 239/294
     /// (`:3214`/`:3844`). WRITTEN NOT RUN (code-only mode).
     #[test]

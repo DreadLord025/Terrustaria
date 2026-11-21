@@ -1,4 +1,9 @@
-# 26d — Projectile aiStyles 106-210 COVERAGE census + the 211+ void (W4-g2)
+# 157 — Projectile aiStyles 106-210 COVERAGE census + the 211+ void (W4-g2)
+
+> RENUMBERED per registry `150-research-number-registry.md` §1/§3 (round 1):
+> chain 26d→157 — 26d belongs to W4-d12's `26d-projectile-ai-111-120-census.md`
+> (first add 11-21T00:06:06 `64a296c68`); this doc's first add 00:27:07 lost the
+> key. Old name: `26d-projectile-ai-106-210-census.md`.
 
 > Researched 2026-11-21 against `a725acb0` (wave-3 complete), lane b of the
 > proj-ai-missing pool. C# cites are `decompiled/Terraria/Projectile.cs`

@@ -39248,7 +39248,7 @@ click buffers; the player tick applies).
 ## The W4-g2 reconciliation round (2026-11-21, code-only mode)
 
 Branch `task/W4-g2-proj-ai-missing-b` (continuation of the rowless-nine
-round, `docs/research/26d-projectile-rowless-kinds-w4-g2.md`). The four
+round, `docs/research/163-projectile-rowless-kinds-w4-g2.md`). The four
 recorded gaps closed or dispositioned:
 
 - **The sibling class flags** (`d5cdd23e`): the 228/732 melee writes

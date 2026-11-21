@@ -1,4 +1,9 @@
-# 26d — the rowless proj kinds of d5's F1-F6 (W4-g2 lane b, coding round)
+# 163 — the rowless proj kinds of d5's F1-F6 (W4-g2 lane b, coding round)
+
+> RENUMBERED per registry `150-research-number-registry.md` §1/§3 (round 1):
+> chain 26d→163 — 26d belongs to W4-d12's `26d-projectile-ai-111-120-census.md`
+> (first add 11-21T00:06:06 `64a296c68`); this doc's first add 04:01:40 lost the
+> key. Old name: `26d-projectile-rowless-kinds-w4-g2.md`.
 
 > Coded 2026-11-21 on `task/W4-g2-proj-ai-missing-b` (census `d0708e3b`),
 > against the d5 census doc (`26d-projectile-ai-41-50-census.md`,
