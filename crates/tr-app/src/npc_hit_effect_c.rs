@@ -60,6 +60,7 @@
 //! | 210-214 | `:82987-82991` | the 418 Solar Corite death (5 gores at Center, vel x0.8/x0.9) |
 //! | 215-217 | `:83072-83074` | the 426 Nebula Floater death (3 gores, SelectRandom dust + NPC-428 spawn seam) |
 //! | 218-221 | `:83119-83122` | the 427 Nebula Soldier death (4 gores at Center, vel x0.8/x0.9) |
+//! | 222-226 | `:83156-83160` | the 429 Nebula Predictor death (5 gores, projectile-578 spawn seam) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -142,6 +143,13 @@ pub struct HitEffectOutcomeC {
     /// the caller resolves the count gate + the spawns; the per-spawn
     /// RotatedByRandom/Next draws ride the wiring wave's roster pass.
     pub nebula_brain_spawn: Option<(f32, f32)>,
+    /// The 429 Nebula Predictor's projectile-spawn seam (`NPC.cs:83161-83204`):
+    /// a tile-scan loop (up to 100 tries, two `Next` draws per try) around
+    /// the target player's tile that spawns ONE projectile-578 at a valid
+    /// cell. `Some((cx,cy))` = the NPC Center the scan anchors on; the
+    /// target-player read, the tile probes and the per-try draws are the
+    /// wiring wave's (the roster/projectile seams).
+    pub nebula_predictor_shot: Option<(f32, f32)>,
 }
 
 /// `Utils.RotatedBy` (`Utils.cs:1675-1684`), centre default (0,0): the
@@ -1190,6 +1198,56 @@ fn nebula_soldier_death(
     gore.new_gore(rng, world, c, vel * 0.8, 805, 1.0); // :83122
 }
 
+/// The 429 Nebula Predictor death (`NPC.cs:83144-83204`, sites 222-226):
+/// the 20-iteration burst (type-241 dust + `Next(3) == 0`-gated type-229
+/// dust, noGravity, scale 1.5, fadeIn 1, velocity ×3), then the 5 gores
+/// 808/809/809/810/810 at the +0/+20/+20/+34/+34 Y ladder. The
+/// projectile-578 tile-scan spawn seam (`:83161-83204`) is RETURNED
+/// ([`HitEffectOutcomeC::nebula_predictor_shot`]) — the target-player read,
+/// the tile probes and the per-try `Next` draws are the wiring wave's.
+fn nebula_predictor_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+    outcome: &mut HitEffectOutcomeC,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:83144-83155` — 20 iterations: type-241 + the Next(3)-gated type-229.
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 241, hit_direction, -1.0, 0,
+            Color::default(), 1.0,
+        );
+        if rng.next_max(3) == 0 {
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 229, 0.0, 0.0, 0,
+                Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.scale = 1.5;
+            d.fade_in = 1.0;
+            d.velocity *= 3.0;
+        }
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 808, s); // :83156
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 809, s); // :83157
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 809, s); // :83158
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 810, s); // :83159
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 810, s); // :83160
+    // `:83161-83204` — the projectile-spawn seam (netMode != 1, single-player
+    // runs); the scan + the spawn are the caller's.
+    let c = center(npc);
+    outcome.nebula_predictor_shot = Some((c.x, c.y));
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -1334,6 +1392,10 @@ pub fn hit_effect_c(
     // `:83086-83124` — the 427 Nebula Soldier arm (sites 218-221).
     if npc_type == 427 && npc.hp <= 0 {
         nebula_soldier_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:83125-83206` — the 429 Nebula Predictor arm (sites 222-226).
+    if npc_type == 429 && npc.hp <= 0 {
+        nebula_predictor_death(npc, dust, dust_ctx, gore, rng, world, hit_direction, &mut outcome);
     }
     outcome
 }
@@ -2135,6 +2197,27 @@ mod tests {
         for i in 0..4 {
             assert_eq!(gore.slot(i).position, Vec2::new(120.0, 126.0));
         }
+    }
+
+    /// `NPC.cs:83156-83160` — the Nebula Predictor death: the 5 gores
+    /// 808/809/809/810/810 at +0/+20/+34 Y, after the 20x(type-241 +
+    /// Next(3)-gated type-229) burst; the projectile-spawn seam is returned.
+    #[test]
+    fn w4_f10_the_nebula_predictor_death_returns_the_shot_seam() {
+        let w = air();
+        let n = boss(100.0, 100.0, 48.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(131);
+        let mut out = HitEffectOutcomeC::default();
+        nebula_predictor_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0, &mut out);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![808, 809, 809, 810, 810]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        // The shot seam carries the Center = (124,130).
+        assert_eq!(out.nebula_predictor_shot, Some((124.0, 130.0)));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
