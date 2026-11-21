@@ -9,8 +9,8 @@
 > no cargo/rustc/tests/rustfmt/graphify invoked). This is the lane's
 > single family ledger: what the lane claimed, what landed, what the
 > cross-lane adjudications moved, and the exact merge instructions.
-> Companion docs: `26d-projectile-kill-hooks-census.md` (the census,
-> SEALED), d78's `26f-d78-final-kill-dedupe.md` (the adjudication,
+> Companion docs: `160-projectile-kill-hooks-census.md` (the census,
+> SEALED — renumbered 26d → 160-round-1 per registry §10.4), d78's `26f-d78-final-kill-dedupe.md` (the adjudication,
 > tip `fd59c51a`), f20's `26f-projectile-ai001-overlays-round2.md` F3
 > (the 709 half, tip `01e0b1083`), g65's `26i-g65-kill-keep-one.md`
 > (the dust-body keep-one, tip `b0842907c`).

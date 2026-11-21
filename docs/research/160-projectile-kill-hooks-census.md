@@ -1,4 +1,10 @@
-# 26d — Projectile `Kill()` / on-hit / tile-collide hook census (W4-g1, lane a) — SEALED
+# 160 — Projectile `Kill()` / on-hit / tile-collide hook census (W4-g1, lane a) — SEALED
+
+> **Renumbered 26d → 160-round-1 per research-number-registry §10.4** (d54 tip
+> `08d21666e`): 26d belongs to W4-d12's round-1 winner; g1's kill-hooks-census
+> (first add 11-21T01:02:53) takes its round-1 assignment **160**, slug kept.
+> The lane's OTHER 26d file (the family bible) already renumbered 26d-g1 → 373
+> per §10.2 — untouched by this rename.
 
 > **SEALED 2026-11-21 (the d78-fold round).** The lane's final ownership:
 > **g1 KEEPS 459/521/522/80** (the shared 459|709 burst, the 521 split, the

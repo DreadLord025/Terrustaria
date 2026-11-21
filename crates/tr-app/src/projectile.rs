@@ -20125,7 +20125,7 @@ impl ProjectilePool {
                     }
                 }
                 // W4-g1 lane a — the functional Kill() hooks g1 owns after
-                // the d78 FINAL dedupe (research/26d + 26f §1: the hostile
+                // the d78 FINAL dedupe (research/160 + 26f §1: the hostile
                 // trio 452/454/448 is d78's), kind-disjoint from every arm
                 // above, in the C# body order (:73271 < :73292 < :73338
                 // < :75533). The dust/gore censuses + resizes ride the
@@ -20679,7 +20679,7 @@ impl ProjectilePool {
 
     /// W4-g1 lane a — the functional `Kill()` hooks this lane owns after
     /// the d78 FINAL dedupe (census
-    /// `docs/research/26d-projectile-kill-hooks-census.md`, adjudication
+    /// `docs/research/160-projectile-kill-hooks-census.md`, adjudication
     /// `26f-d78-final-kill-dedupe.md` §1 @ `fd59c51a`: the hostile EVP trio
     /// 452/454/448 is d78's `hostile_death_blast`/`damage_evp_boxed` —
     /// DROPPED here; g1 KEEPS 459/521/522/80), run from the pool's death

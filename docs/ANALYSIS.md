@@ -39249,7 +39249,8 @@ click buffers; the player tick applies).
 
 **The family ledger**: `docs/research/373-g1-proj-missing-a-family-bible.md`
 (renumbered 26d-g1 → 373 per research-number-registry §10)
-(census `26d-projectile-kill-hooks-census.md`, SEALED). g1's FINAL kept
+(census `160-projectile-kill-hooks-census.md`, renumbered 26d → 160-round-1
+per registry §10.4, SEALED). g1's FINAL kept
 set: the **459/709 shared burst** (`Projectile.cs:73338-73371` — scale≥1
 Resize-144 → `Damage()` → dust/gore rings, the `:73351` order preserved
 by the resize+flag / draw-census split with the pool's `damage_pve_boxed`

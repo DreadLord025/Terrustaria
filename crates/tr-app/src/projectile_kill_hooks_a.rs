@@ -1,5 +1,5 @@
 //! W4-g1 lane a — the FUNCTIONAL `Kill()` hooks this lane OWNS after the
-//! d78 FINAL dedupe (census `docs/research/26d-projectile-kill-hooks-census.md`,
+//! d78 FINAL dedupe (census `docs/research/160-projectile-kill-hooks-census.md`,
 //! adjudication `26f-d78-final-kill-dedupe.md` §1, commit `fd59c51a` on
 //! `task/W4-d78-ui-sounds-menus`): **459/521/522/80 KEEP; the hostile EVP
 //! trio 452/454/448 DROPPED** — d78's `hostile_death_blast` +
