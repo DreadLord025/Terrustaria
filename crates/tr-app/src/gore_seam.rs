@@ -17,10 +17,34 @@
 //!   returns the same pair as struct fields. The port's `gravity` parameter is
 //!   not carried (the C# `Gore.cs` passes `0f` at `:1037` and `1f` at `:1170`,
 //!   where it only scales the slope push-down — see the note below).
+//!
+//! W4-d79 PITCH SEAL — the case-39 Drip SOUND seam
+//! (`tr_core::gore::GoreSound`) rides the same injection: [`AppGoreSound`]
+//! borrows the App's [`crate::audio::Audio`] for the walk and forwards
+//! `play_drip` onto [`crate::audio::Audio::play_drip`] (the pool draws the
+//! `Next(2)` style argument itself; the pitch closure rides the walk's
+//! `UpdateGores` stream).
 
 use glam::Vec2;
-use tr_core::gore::GoreCollision;
+use tr_core::gore::{GoreCollision, GoreSound};
 use tr_core::world::World;
+
+/// W4-d79 PITCH SEAL — the App-side drip-sound seam: one `PlaySound(39)`
+/// per drip collision (`Gore.cs:953`/`:965`), forwarded to the case-39
+/// façade at the C# statement position (mid-walk).
+pub(crate) struct AppGoreSound<'a>(pub &'a mut crate::audio::Audio);
+
+impl GoreSound for AppGoreSound<'_> {
+    fn play_drip(
+        &mut self,
+        x: i32,
+        y: i32,
+        style: i32,
+        pitch_rng: &mut dyn FnMut(i32, i32) -> i32,
+    ) {
+        self.0.play_drip(x as f32, y as f32, style, pitch_rng);
+    }
+}
 
 /// The App-side implementation handed to [`tr_core::gore::GorePool::update`].
 pub(crate) struct AppGoreCollision;

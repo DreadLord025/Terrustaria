@@ -248,6 +248,14 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_53", 2),
     ("Item_55", 2),
     ("Item_56", 2),
+    // W4-d79 PITCH SEAL — case 39 Drip (`SoundID.Drip = 39`,
+    // `SoundID.cs:100`; `Sounds/Drip_0..2.xnb`, the 3-slot
+    // `SoundInstanceDrip` array `LegacySoundPlayer.cs:14`/`:215-217`).
+    // The gore pool's drip collision plays them (`Gore.cs:953` style
+    // Next(2), `:965` fixed style 2) — `Audio::play_drip`.
+    ("Drip_0", 39),
+    ("Drip_1", 39),
+    ("Drip_2", 39),
     // S1-E-21 wave A — the item-use family: every `Sounds/Item_<style>.xnb`
     // an `Item.UseSound` row names (`itemdata.rs::use_sound` →
     // `soundid.rs::SOUND_STYLES`, `SoundID.cs:1384-1582`'s
@@ -704,6 +712,13 @@ pub struct Audio {
     /// picked variation's old instance then re-creates it (`:443-447`) —
     /// one voice per Dig slot, research/32 D4 closure.
     dig_slots: [Option<rodio::Sink>; 3],
+    /// W4-d79 PITCH SEAL — `SoundInstanceDrip[3]`
+    /// (`LegacySoundPlayer.cs:14`/`:1353`): case 39 OVERWRITES the style's
+    /// slot WITHOUT a Stop (the Coins/Chat/MaxMana no-Stop family — the
+    /// old drip plays out, detach), at `num2 * 0.5` volume (`:1354`) and
+    /// ONE `Next(-30, 31) * 0.01` pitch (`:1356`). The gore pool's drip
+    /// collision is the caller (`Gore.cs:953`/`:965`).
+    drip_slots: [Option<rodio::Sink>; 3],
     /// `SoundInstanceItem[]` (`LegacySoundPlayer.cs`'s item array,
     /// `SoundID.ItemCount` long): case 2's per-style slot — the 53/55/159
     /// playing guards (`:559-562`/`:583-586`) read it, the default arm
@@ -867,6 +882,7 @@ impl Audio {
             pixie_slot: None,
             moonlord_cry_slot: None,
             dig_slots: [None, None, None],
+            drip_slots: [None, None, None],
             item_slots: HashMap::new(),
             tink_slots: [None, None, None],
             player_hit_slots: [None, None, None],
@@ -1753,6 +1769,51 @@ impl Audio {
         }
         self.moonlord_cry_slot = sink;
         Some("Moonlord_Cry")
+    }
+
+    /// W4-d79 PITCH SEAL — one case-39 Drip play
+    /// (`LegacySoundPlayer.cs:1351-1358`, `SoundID.Drip = 39`
+    /// `SoundID.cs:100`). The int overload draws no `GetRandomPitch`
+    /// NextFloat. The caller (the gore pool's drip collision,
+    /// `Gore.cs:953`/`:965`) has ALREADY drawn the style pick — the tile
+    /// arm's `Next(2)` is the C# call argument, spent before this gate;
+    /// the wet arm passes 2 draw-free. The attenuation gate
+    /// (`:369-436`) runs first — case 39 is ambient-scaled
+    /// (`DoesSoundScaleWithAmbientVolume`, `:1516`) and EXEMPT from the
+    /// POST-SCALE zero-volume refusal (`:433`'s `type != 39` arm — a
+    /// quiet-ambient/menu-muted drip still draws its pitch at volume 0;
+    /// the TOP `soundVolume == 0` gate `:369` still refuses it draw-free).
+    /// Past the gate ONE `Main.rand.Next(-30, 31) * 0.01` pitch draw
+    /// (`:1356`) rides the caller's `UpdateGores` stream; the slot
+    /// overwrites WITHOUT a Stop (`:1353` — the no-Stop family) at
+    /// `num2 * 0.5` volume (`:1354`, the gate's `volume_scale`).
+    /// Returns the cue; `None` when the gate refused (no pitch draw).
+    pub fn play_drip(
+        &mut self,
+        x: f32,
+        y: f32,
+        style: i32,
+        rng: &mut dyn FnMut(i32, i32) -> i32,
+    ) -> Option<&'static str> {
+        let cue = match style {
+            0 => "Drip_0",
+            1 => "Drip_1",
+            _ => "Drip_2",
+        };
+        let playback = sound::play_sound(39, x, y, self.listener, 0.5)?;
+        // `:1356` — the one pitch draw, only past the gate.
+        let pitch = (rng(-30, 31) as f32 * 0.01).clamp(-1.0, 1.0);
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // `:1354` — the 0.5 factor rode the gate's `volume_scale` (the
+        // C# `num2 * 0.5f` on the post-gate volume); emit at it directly.
+        let sink = self.emit_custom_volume(cue, playback.volume, playback.pan, pitch);
+        // `:1353` — the slot overwrites WITHOUT a Stop (detach the old).
+        let slot = (style.clamp(0, 2)) as usize;
+        if let Some(old) = self.drip_slots[slot].take() {
+            old.detach();
+        }
+        self.drip_slots[slot] = sink;
+        Some(cue)
     }
 
     /// The custom-volume emit tail (the case-41 cry's player-distance
@@ -3732,6 +3793,75 @@ mod tests {
         assert_eq!(rng.peek(), peek, "the muted cry is draw-free");
     }
 
+    /// W4-d79 PITCH SEAL — the gore drip (case 39,
+    /// `LegacySoundPlayer.cs:1351-1358`): the caller supplies the style
+    /// (the pool's `Next(2)` argument draw, `Gore.cs:953` — NOT this
+    /// façade's), ONE `Next(-30, 31)` pitch draw past the gate, the
+    /// no-Stop `SoundInstanceDrip[style]` overwrite. The `:433` `type != 39`
+    /// exemption: a menu-muted (gameMenu, volume forced 0) drip STILL
+    /// draws its pitch; the TOP `soundVolume == 0` gate (`:369`) refuses
+    /// draw-free.
+    #[test]
+    fn w4_d79_the_drip_draws_one_pitch_past_the_gate_and_overwrites_without_stop() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // The three bank rows pin the case id 39.
+        assert_eq!(sound_type("Drip_0"), 39);
+        assert_eq!(sound_type("Drip_1"), 39);
+        assert_eq!(sound_type("Drip_2"), 39);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-30, 31); // `:1356`
+        assert_eq!(
+            audio.play_drip(0.0, 0.0, 1, &mut |lo, hi| rng.next_range(lo, hi)),
+            Some("Drip_1")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "exactly one pitch draw");
+        // A second play overwrites the style slot (no Stop — detach).
+        let mut rng = UnifiedRandom::new(9);
+        let mut witness = UnifiedRandom::new(9);
+        let _ = witness.next_range(-30, 31);
+        assert_eq!(
+            audio.play_drip(0.0, 0.0, 1, &mut |lo, hi| rng.next_range(lo, hi)),
+            Some("Drip_1")
+        );
+        assert_eq!(rng.peek(), witness.peek());
+        // Out of attenuation range: refused BEFORE the pitch draw.
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_drip(5000.0, 0.0, 0, &mut |lo, hi| rng.next_range(lo, hi)),
+            None
+        );
+        assert_eq!(rng.peek(), peek, "the inaudible drip is draw-free");
+        // The `:433` exemption — gameMenu forces the ambient volume to 0,
+        // but case 39 passes the post-scale refusal and DRAWS its pitch.
+        let mut l = audio.listener;
+        l.game_menu = true;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-30, 31);
+        assert_eq!(
+            audio.play_drip(0.0, 0.0, 2, &mut |lo, hi| rng.next_range(lo, hi)),
+            Some("Drip_2"),
+            "the :433 type != 39 exemption keeps the muted drip alive"
+        );
+        assert_eq!(rng.peek(), witness.peek(), "the pitch is drawn at volume 0");
+        // The TOP gate (`:369` soundVolume == 0) refuses draw-free.
+        let mut l = audio.listener;
+        l.game_menu = false;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_drip(0.0, 0.0, 0, &mut |lo, hi| rng.next_range(lo, hi)),
+            None
+        );
+        assert_eq!(rng.peek(), peek, "the soundVolume-0 drip is draw-free");
+    }
+
     /// S1-P-i41 — the QuickMount no-space tink (`Player.cs:6057`): the int
     /// overload (`SoundEngine.cs:102-108`) draws NO `GetRandomPitch`
     /// NextFloat; case 0 (`LegacySoundPlayer.cs:440-452`) draws `Next(3)`
@@ -4394,7 +4524,7 @@ mod tests {
     /// case 0-42 resolves a bank row under its legacy id (the script-diff
     /// of `LegacySoundPlayer.cs`'s switch surface vs the port façades).
     /// Cases 20/37 are the e10/g23 sibling lanes' (NOT on this tree);
-    /// case 39 is the documented gore-pool drop. The 17-row
+    /// case 39 landed at the PITCH SEAL (the GoreSound seam). The 17-row
     /// SINGLE_SLOT_CUES table keeps its Stop flags (18/24/25 no-Stop) and
     /// the two drawing cases (27/41) stay OUT of the draw-free pool.
     #[test]
@@ -4440,6 +4570,7 @@ mod tests {
             ("Zombie_126", 68),
             ("Zombie_129", 69),
             ("Coin_0", 38),
+            ("Drip_0", 39), // W4-d79 PITCH SEAL — the gore-pool drip ported
             ("Camera", 40),
             ("Moonlord_Cry", 41),
             ("trash_item_0", 42), // the trackable family resolves via the
@@ -4475,10 +4606,12 @@ mod tests {
         assert_eq!(audio.play_single_voice("Moonlord_Cry", -1.0, -1.0), None);
         // The sibling-lane cases are NOT on this tree (the merge brings
         // e10's Female_Hit_0 (20) and g23's Item_57 (37)); the gore drip
-        // (39) has no bank row — the documented drop.
+        // (39) is PORTED at the PITCH SEAL (the GoreSound seam).
         assert_eq!(sound_type("Female_Hit_0"), 0, "case 20 is e10's lane");
         assert_eq!(sound_type("Item_57"), 0, "case 37 is g23's lane");
-        assert_eq!(sound_type("Drip_0"), 0, "case 39 is the gore-pool drop");
+        assert_eq!(sound_type("Drip_0"), 39, "case 39 landed at the seal");
+        assert_eq!(sound_type("Drip_1"), 39);
+        assert_eq!(sound_type("Drip_2"), 39);
     }
 
     /// W4-d79 — the TrashItem trackable (`SoundID.cs:1738`,
