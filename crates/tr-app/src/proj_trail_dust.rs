@@ -21,14 +21,17 @@
 //! `Dust dustN = Main.dust[idx]` aliases below are pool-slot writes, ported
 //! as `slot_mut` chains in the same order.
 //!
-//! UNWIRED pure port (the d50 / `npc_ai_*` code-only precedent): the wiring
-//! wave threads `app.dust` + the frame's `spawn_ctx()` into the
-//! `UpdateProjectiles` pass (`world_sim/projectiles.rs`) and calls each fn at
-//! its cited site, passing the slot snapshot at the C# read moment. Lights
-//! (`Lighting.AddLight` / `Utils.PlotTileLine`) stay the e6/f7 addlight-proj
-//! lanes; gore bodies AND their gate draws stay d55/g16 (each skipped gate is
-//! cited at its site); sounds stay d76. `customData` is the pool's documented
-//! dropped field (`particles.rs`'s `Dust` record).
+//! WIRING (this wave): the rowed kinds' arms call their fns at the cited
+//! C# sites through `ProjectilePool::update_dust` — the live sim threads
+//! `app.dust` + the frame's `spawn_ctx()` (`world_sim/projectiles.rs`), the
+//! dust-free `update` entry runs a scratch pool (the W4-g63 batch-1 seam).
+//! The machines' `&mut dyn DropRng` stream adapts through [`DustDraw`];
+//! kinds with NO ported `proj_data` row stay UNWIRED (the S1-F-9b gate —
+//! the row is the wiring gate; their emitters land cited + witnessed).
+//! Lights (`Lighting.AddLight` / `Utils.PlotTileLine`) stay the e6/f7
+//! addlight-proj lanes; gore bodies AND their gate draws stay d55/g16 (each
+//! skipped gate is cited at its site); sounds stay d76. `customData` is the
+//! pool's documented dropped field (`particles.rs`'s `Dust` record).
 //!
 //! Numeric conventions: `Utils.RotatedBy` (`Utils.cs:1675-1684`) is the
 //! double-angle float-cos/sin spin — the shared `bow_launch::rotated_by`.
@@ -42,8 +45,30 @@
 //! merge-verify wave, not executed here.
 
 use glam::Vec2;
-use tr_core::particles::{Color, DustPool, SpawnCtx};
-use tr_core::{UnifiedRandom, World};
+use tr_core::loot::DropRng;
+use tr_core::particles::{Color, DustPool, DustRng, SpawnCtx};
+use tr_core::World;
+
+/// The machines' `DropRng` stream seen as the pool's [`DustRng`] seam (the
+/// W4-g63 `DustDraw` shape): `Next(max)` delegates to `Next(0, max)` — both
+/// are one `Sample()` draw (`UnifiedRandom.cs:120-141`), so the interleaving
+/// with the machine's own behaviour rolls stays byte-identical. The wiring
+/// wave threads the machines' `&mut dyn DropRng` straight through; the
+/// witnesses keep their concrete `UnifiedRandom` streams (the inherent
+/// methods shadow the trait's, `next_double` included).
+pub(crate) struct DustDraw<'a>(pub &'a mut dyn DropRng);
+
+impl DustRng for DustDraw<'_> {
+    fn next_max(&mut self, max: i32) -> i32 {
+        self.0.next_range(0, max)
+    }
+    fn next_range(&mut self, min: i32, max: i32) -> i32 {
+        self.0.next_range(min, max)
+    }
+    fn next_float(&mut self) -> f32 {
+        self.0.next_float()
+    }
+}
 
 use crate::bow_launch::rotated_by;
 
@@ -82,7 +107,7 @@ pub fn trail_406(
     w: i32,
     h: i32,
     vel: Vec2,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -95,7 +120,7 @@ pub fn trail_406(
         let vector36 = vel * num471 as f32 / 6.0;
         let num472 = 6;
         let idx = dust.new_dust(
-            rng,
+            &mut DustDraw(rng),
             ctx,
             world,
             pos + Vec2::ONE * 6.0,
@@ -110,13 +135,13 @@ pub fn trail_406(
         );
         let d = dust.slot_mut(idx);
         // `:29206-29217` — three separate Next(2) gates, +25 alpha each.
-        if rng.next_max(2) == 0 {
+        if rng.next_range(0, 2) == 0 {
             d.alpha += 25;
         }
-        if rng.next_max(2) == 0 {
+        if rng.next_range(0, 2) == 0 {
             d.alpha += 25;
         }
-        if rng.next_max(2) == 0 {
+        if rng.next_range(0, 2) == 0 {
             d.alpha += 25;
         }
         d.no_gravity = true; // `:29218`
@@ -128,10 +153,10 @@ pub fn trail_406(
         d.velocity *= 0.2; // `:29224`
     }
     // `:29226-29232` — the seventh dust on a Next(4).
-    if rng.next_max(4) == 0 {
+    if rng.next_range(0, 4) == 0 {
         let num474 = 6;
         let idx = dust.new_dust(
-            rng,
+            &mut DustDraw(rng),
             ctx,
             world,
             pos + Vec2::ONE * 6.0,
@@ -173,7 +198,7 @@ pub fn trail_419(
     w: i32,
     h: i32,
     time_left: i32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -185,7 +210,7 @@ pub fn trail_419(
         let mag = 0.85 + rng.next_double() as f32 * 0.2;
         let ang = (rng.next_double() - 0.5) * 1.5707963705062866;
         let vector55 = rotated_by(Vec2::new(0.0, -num569) * mag, ang);
-        let idx = dust.new_dust(rng, ctx, world, pos, w, h, 222, 0.0, 0.0, 100, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos, w, h, 222, 0.0, 0.0, 100, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.scale = 1.0 + rng.next_double() as f32 * 0.3; // `:30503` (dead write)
         d.velocity *= 0.5; // `:30504`
@@ -210,7 +235,7 @@ pub fn trail_420(
     w: i32,
     h: i32,
     time_left: i32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -221,10 +246,10 @@ pub fn trail_420(
         let ang = (rng.next_double() - 0.5) * 1.5707963705062866;
         let vector56 = rotated_by(Vec2::new(0.0, -num569) * mag, ang);
         let mut num574 = 219; // `:30521`
-        if rng.next_max(5) == 0 {
+        if rng.next_range(0, 5) == 0 {
             num574 = 222; // `:30522-30525`
         }
-        let idx = dust.new_dust(rng, ctx, world, pos, w, h, num574, 0.0, 0.0, 100, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos, w, h, num574, 0.0, 0.0, 100, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.scale = 1.0 + rng.next_double() as f32 * 0.3; // `:30528` (dead write)
         d.velocity *= 0.5; // `:30529`
@@ -252,7 +277,7 @@ pub fn trail_421(
     w: i32,
     h: i32,
     time_left: i32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -262,7 +287,7 @@ pub fn trail_421(
         let mag = 0.85 + rng.next_double() as f32 * 0.2; // `:30546`
         let ang = (rng.next_double() - 0.5) * 0.7853981852531433;
         let vector57 = rotated_by(Vec2::new(0.0, -num569) * mag, ang);
-        let idx = dust.new_dust(rng, ctx, world, pos, w, h, 221, 0.0, 0.0, 100, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos, w, h, 221, 0.0, 0.0, 100, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.scale = 1.0 + rng.next_double() as f32 * 0.3; // `:30549` (dead write)
         d.velocity *= 0.1; // `:30550`
@@ -283,7 +308,7 @@ pub fn trail_421(
             // `:30566` — ((i-4)/5f, -lift*num578); the (i-4) casts to float
             // BEFORE the divide.
             let vector58 = Vec2::new((num579 - 4) as f32 / 5.0, -num569 * num578);
-            let idx = dust.new_dust(rng, ctx, world, pos, w, h, 222, 0.0, 0.0, 100, Color::default(), 1.0);
+            let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos, w, h, 222, 0.0, 0.0, 100, Color::default(), 1.0);
             let d = dust.slot_mut(idx);
             d.scale = 0.7 + rng.next_double() as f32 * 0.3; // `:30569` (dead)
             d.velocity *= 0.0; // `:30570`
@@ -308,7 +333,7 @@ pub fn trail_422(
     w: i32,
     h: i32,
     time_left: i32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -318,8 +343,8 @@ pub fn trail_422(
         let mag = 0.85 + rng.next_double() as f32 * 0.2; // `:30589`
         let ang = (rng.next_double() - 0.5) * 1.5707963705062866;
         let vector59 = rotated_by(Vec2::new(0.0, -num569) * mag, ang);
-        let dust_type = 219 + rng.next_max(5); // `:30590`
-        let idx = dust.new_dust(rng, ctx, world, pos, w, h, dust_type, 0.0, 0.0, 100, Color::default(), 1.0);
+        let dust_type = 219 + rng.next_range(0, 5); // `:30590`
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos, w, h, dust_type, 0.0, 0.0, 100, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.scale = 1.0 + rng.next_double() as f32 * 0.3; // `:30592` (dead write)
         d.velocity *= 0.5; // `:30593`
@@ -347,7 +372,7 @@ pub fn trail_447(
     w: i32,
     h: i32,
     npc_vx: f32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -355,7 +380,7 @@ pub fn trail_447(
     for num602 in 0..2 {
         // `:30888` — box (width, 16) at (x, y + height - 16), type 228.
         let idx = dust.new_dust(
-            rng,
+            &mut DustDraw(rng),
             ctx,
             world,
             Vec2::new(pos.x, pos.y + h as f32 - 16.0),
@@ -375,11 +400,11 @@ pub fn trail_447(
         d.velocity.x -= num602 as f32 - npc_vx * 2.0 / 3.0;
         d.scale = 2.8; // `:30892`
     }
-    if rng.next_max(5) == 0 {
+    if rng.next_range(0, 5) == 0 {
         // `:30894-30900` — the side puff at the column's upwind edge.
         let px = pos.x + (w / 2) as f32 - ((w / 2) * sign_f(npc_vx)) as f32 - 4.0;
         let idx = dust.new_dust(
-            rng,
+            &mut DustDraw(rng),
             ctx,
             world,
             Vec2::new(px, pos.y + h as f32 - 16.0),
@@ -408,28 +433,28 @@ pub fn trail_450(
     pos: Vec2,
     w: i32,
     h: i32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
-    if rng.next_max(2) == 0 {
+    if rng.next_range(0, 2) == 0 {
         // `:25195-25203`
-        let idx = dust.new_dust(rng, ctx, world, pos, w, h, 228, 0.0, 0.0, 100, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos, w, h, 228, 0.0, 0.0, 100, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.position.x -= 2.0;
         d.position.y += 2.0;
-        d.scale += rng.next_max(50) as f32 * 0.01;
+        d.scale += rng.next_range(0, 50) as f32 * 0.01;
         d.no_gravity = true;
         d.velocity.y -= 2.0;
     }
-    if rng.next_max(4) == 0 {
+    if rng.next_range(0, 4) == 0 {
         // `:25204-25212`
-        let idx = dust.new_dust(rng, ctx, world, pos, w, h, 228, 0.0, 0.0, 100, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos, w, h, 228, 0.0, 0.0, 100, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.position.x -= 2.0;
         d.position.y += 2.0;
-        d.scale += 0.3 + rng.next_max(50) as f32 * 0.01;
+        d.scale += 0.3 + rng.next_range(0, 50) as f32 * 0.01;
         d.no_gravity = true;
         d.velocity *= 0.1;
     }
@@ -447,7 +472,7 @@ fn laser_tip_229(
     w: i32,
     local_ai1: f32,
     lead: f32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -455,7 +480,7 @@ fn laser_tip_229(
     let vector77 = center + vel * (local_ai1 - lead);
     for _ in 0..2 {
         // `:31624` — ToRotation() ± (float)π/2, the sign off Next(2).
-        let side = if rng.next_max(2) == 1 { -1.0 } else { 1.0 };
+        let side = if rng.next_range(0, 2) == 1 { -1.0 } else { 1.0 };
         let num677 = to_rotation(vel) + side * (std::f32::consts::PI / 2.0);
         // `:31625-31626` — speed NextDouble*2+2; Math.Cos/Sin of the widened
         // float (double), cast back.
@@ -464,19 +489,19 @@ fn laser_tip_229(
             (num677 as f64).cos() as f32 * num678,
             (num677 as f64).sin() as f32 * num678,
         );
-        let idx = dust.new_dust(rng, ctx, world, vector77, 0, 0, 229, vector78.x, vector78.y, 0, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, vector77, 0, 0, 229, vector78.x, vector78.y, 0, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.no_gravity = true; // `:31628`
         d.scale = 1.7; // `:31629`
     }
-    if rng.next_max(5) == 0 {
+    if rng.next_range(0, 5) == 0 {
         // `:31631-31636` — the puff: the perpendicular offset is
         // vel.RotatedBy(π/2) * (NextDouble - 0.5) * width, minus One*4.
         let off = rotated_by(vel, 1.5707963705062866)
             * (rng.next_double() as f32 - 0.5)
             * w as f32;
         let idx = dust.new_dust(
-            rng,
+            &mut DustDraw(rng),
             ctx,
             world,
             vector77 + off - Vec2::ONE * 4.0,
@@ -502,7 +527,7 @@ pub fn trail_455(
     vel: Vec2,
     w: i32,
     local_ai1: f32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -518,32 +543,32 @@ pub fn trail_461(
     vel: Vec2,
     w: i32,
     local_ai1: f32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
     let vector81 = center + vel * (local_ai1 - 8.0); // `:31663`
     for _ in 0..2 {
-        let side = if rng.next_max(2) == 1 { -1.0 } else { 1.0 }; // `:31666`
+        let side = if rng.next_range(0, 2) == 1 { -1.0 } else { 1.0 }; // `:31666`
         let num687 = to_rotation(vel) + side * (std::f32::consts::PI / 2.0);
         let num688 = rng.next_double() as f32 * 0.8 + 1.0; // `:31667`
         let vector82 = Vec2::new(
             (num687 as f64).cos() as f32 * num688,
             (num687 as f64).sin() as f32 * num688,
         );
-        let idx = dust.new_dust(rng, ctx, world, vector81, 0, 0, 226, vector82.x, vector82.y, 0, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, vector81, 0, 0, 226, vector82.x, vector82.y, 0, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.no_gravity = true; // `:31670`
         d.scale = 1.2; // `:31671`
     }
-    if rng.next_max(5) == 0 {
+    if rng.next_range(0, 5) == 0 {
         // `:31673-31678`
         let off = rotated_by(vel, 1.5707963705062866)
             * (rng.next_double() as f32 - 0.5)
             * w as f32;
         let idx = dust.new_dust(
-            rng,
+            &mut DustDraw(rng),
             ctx,
             world,
             vector81 + off - Vec2::ONE * 4.0,
@@ -575,7 +600,7 @@ pub fn trail_465(
     vel: Vec2,
     w: i32,
     scale: f32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -657,35 +682,35 @@ pub fn trail_466(
     w: i32,
     rotation: f32,
     extra_updates: i32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
-    if rng.next_max(extra_updates) != 0 {
+    if rng.next_range(0, extra_updates) != 0 {
         return; // `:32069` — the gate draws even when it fails.
     }
     for _ in 0..2 {
         // `:32073` — rotation ± (float)π/2 off Next(2).
-        let side = if rng.next_max(2) == 1 { -1.0 } else { 1.0 };
+        let side = if rng.next_range(0, 2) == 1 { -1.0 } else { 1.0 };
         let num726 = rotation + side * (std::f32::consts::PI / 2.0);
         let num727 = rng.next_double() as f32 * 0.8 + 1.0; // `:32074`
         let vector94 = Vec2::new(
             (num726 as f64).cos() as f32 * num727,
             (num726 as f64).sin() as f32 * num727,
         );
-        let idx = dust.new_dust(rng, ctx, world, center, 0, 0, 226, vector94.x, vector94.y, 0, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center, 0, 0, 226, vector94.x, vector94.y, 0, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.no_gravity = true; // `:32077`
         d.scale = 1.2; // `:32078`
     }
-    if rng.next_max(5) == 0 {
+    if rng.next_range(0, 5) == 0 {
         // `:32080-32086`
         let vector95 = rotated_by(vel, 1.5707963705062866)
             * (rng.next_double() as f32 - 0.5)
             * w as f32;
         let idx = dust.new_dust(
-            rng,
+            &mut DustDraw(rng),
             ctx,
             world,
             center + vector95 - Vec2::ONE * 4.0,
@@ -715,13 +740,13 @@ pub fn trail_497(
     w: i32,
     h: i32,
     vel: Vec2,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
     let center = pos + Vec2::new(w as f32 / 2.0, h as f32 / 2.0);
-    let idx = dust.new_dust(rng, ctx, world, pos, w, h, 27, vel.x, vel.y, 100, Color::default(), 1.2);
+    let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos, w, h, 27, vel.x, vel.y, 100, Color::default(), 1.2);
     let d = dust.slot_mut(idx);
     d.position = (d.position + center) / 2.0; // `:23414`
     d.no_gravity = true; // `:23415`
@@ -742,12 +767,12 @@ pub fn trail_503(
     w: i32,
     h: i32,
     vel: Vec2,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
-    if rng.next_max(16) != 0 {
+    if rng.next_range(0, 16) != 0 {
         return; // `:23956`
     }
     // `:23958` — RotatedByRandom: NextDouble*max - NextDouble*max.
@@ -755,7 +780,7 @@ pub fn trail_503(
     let ang = rng.next_double() * max - rng.next_double() * max;
     let vector3 = rotated_by(rotated_by(Vec2::UNIT_X, ang), to_rotation(vel) as f64);
     let center = pos + Vec2::new(w as f32 / 2.0, h as f32 / 2.0);
-    let idx = dust.new_dust(rng, ctx, world, pos, w, h, 58, vel.x * 0.5, vel.y * 0.5, 150, Color::default(), 1.2);
+    let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos, w, h, 58, vel.x * 0.5, vel.y * 0.5, 150, Color::default(), 1.2);
     let d = dust.slot_mut(idx);
     d.velocity = vector3 * 0.66; // `:23960`
     d.position = center + vector3 * 12.0; // `:23961`
@@ -776,7 +801,7 @@ pub fn trail_504(
     h: i32,
     vel: Vec2,
     ai0: f32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -792,11 +817,11 @@ pub fn trail_504(
     if ai0 <= 10.0 {
         num19 = ai0 as i32 * 10; // `:23539`
     }
-    if rng.next_max(100) < num19 {
+    if rng.next_range(0, 100) < num19 {
         // `:23541-23549`
         let center = pos + Vec2::new(w as f32 / 2.0, h as f32 / 2.0);
         let dust_type = if kind != 979 { 6 } else { 135 }; // `:23543`
-        let idx = dust.new_dust(rng, ctx, world, pos, w, h, dust_type, 0.0, 0.0, 150, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos, w, h, dust_type, 0.0, 0.0, 150, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.position = (d.position + center) / 2.0; // `:23544`
         d.no_gravity = true; // `:23545`
@@ -819,18 +844,18 @@ pub fn trail_509(
     w: i32,
     h: i32,
     vel: &mut Vec2,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
     // `:25575` — the always-drawn jitter (behaviour-feeding, kept).
     vel.x *= 1.0 + rng.next_range(-3, 4) as f32 * 0.01;
-    if rng.next_max(6) == 0 {
+    if rng.next_range(0, 6) == 0 {
         // `:25576-25583`
         let lead = rng.next_range(6, 10) as f32 * 0.1; // argument draw
         let idx = dust.new_dust(
-            rng,
+            &mut DustDraw(rng),
             ctx,
             world,
             pos + *vel * lead,
@@ -861,14 +886,14 @@ pub fn trail_509(
 pub fn trail_533_dash_ring(
     center: Vec2,
     rotation: f32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
     for num519 in 0..4 {
-        let dust_type = [226, 228, 75][rng.next_max(3) as usize]; // `:29804`
-        let idx = dust.new_dust(rng, ctx, world, center, 0, 0, dust_type, 0.0, 0.0, 0, Color::default(), 1.0);
+        let dust_type = [226, 228, 75][rng.next_range(0, 3) as usize]; // `:29804`
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center, 0, 0, dust_type, 0.0, 0.0, 0, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         // `:29806` — the double spin chain.
         let vector39 = rotated_by(
@@ -892,20 +917,20 @@ pub fn trail_533_dash_ring(
 pub fn trail_533_spin_ring(
     center: Vec2,
     rotation: f32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
-    if rng.next_max(2) != 0 {
+    if rng.next_range(0, 2) != 0 {
         return; // `:30049`
     }
     for num532 in 0..4 {
-        if rng.next_max(2) == 0 {
+        if rng.next_range(0, 2) == 0 {
             continue; // `:30053` — the per-dust gate.
         }
-        let dust_type = [226, 228, 75][rng.next_max(3) as usize]; // `:30055`
-        let idx = dust.new_dust(rng, ctx, world, center, 0, 0, dust_type, 0.0, 0.0, 0, Color::default(), 1.0);
+        let dust_type = [226, 228, 75][rng.next_range(0, 3) as usize]; // `:30055`
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center, 0, 0, dust_type, 0.0, 0.0, 0, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         let vector43 = rotated_by(
             rotated_by(Vec2::ONE, (num532 as f32 * (std::f32::consts::PI / 2.0)) as f64),
@@ -931,7 +956,7 @@ pub fn trail_537(
     w: i32,
     local_ai0: f32,
     local_ai1: f32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -942,26 +967,26 @@ pub fn trail_537(
     let num692 = (2.0f32 * num691) as i32; // `:31686`
     if num692 > 0 {
         for _ in 0..num692 {
-            let side = if rng.next_max(2) == 1 { -1.0 } else { 1.0 }; // `:31691`
+            let side = if rng.next_range(0, 2) == 1 { -1.0 } else { 1.0 }; // `:31691`
             let num694 = to_rotation(vel) + side * (std::f32::consts::PI / 2.0);
             let num695 = rng.next_double() as f32 * 0.8 + 1.0; // `:31692`
             let vector84 = Vec2::new(
                 (num694 as f64).cos() as f32 * num695,
                 (num694 as f64).sin() as f32 * num695,
             );
-            let idx = dust.new_dust(rng, ctx, world, vector83, 0, 0, 226, vector84.x, vector84.y, 0, Color::default(), 1.0);
+            let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, vector83, 0, 0, 226, vector84.x, vector84.y, 0, Color::default(), 1.0);
             let d = dust.slot_mut(idx);
             d.no_gravity = true; // `:31695`
             d.scale = 1.2; // `:31696`
         }
     }
     // `:31699` — the widening gate.
-    if rng.next_max(5 + ((1.0 - num691) * 5.0) as i32) == 0 {
+    if rng.next_range(0, 5 + ((1.0 - num691) * 5.0) as i32) == 0 {
         let off = rotated_by(vel, 1.5707963705062866)
             * (rng.next_double() as f32 - 0.5)
             * w as f32;
         let idx = dust.new_dust(
-            rng,
+            &mut DustDraw(rng),
             ctx,
             world,
             vector83 + off - Vec2::ONE * 4.0,
@@ -992,7 +1017,7 @@ pub fn trail_538(
     h: i32,
     vel: Vec2,
     ai0: f32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -1001,21 +1026,21 @@ pub fn trail_538(
         return; // `:25168` — no draws outside the window.
     }
     let center = pos + Vec2::new(w as f32 / 2.0, h as f32 / 2.0);
-    if rng.next_max(4) == 0 {
+    if rng.next_range(0, 4) == 0 {
         // `:25170-25177`
-        let idx = dust.new_dust(rng, ctx, world, pos, w, h, 180, 0.0, 0.0, 100, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos, w, h, 180, 0.0, 0.0, 100, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.position = center;
-        d.scale += rng.next_max(50) as f32 * 0.01;
+        d.scale += rng.next_range(0, 50) as f32 * 0.01;
         d.no_gravity = true;
         d.velocity.y -= 2.0;
     }
-    if rng.next_max(6) == 0 {
+    if rng.next_range(0, 6) == 0 {
         // `:25178-25185`
-        let idx = dust.new_dust(rng, ctx, world, pos, w, h, 176, 0.0, 0.0, 100, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos, w, h, 176, 0.0, 0.0, 100, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.position = center;
-        d.scale += 0.3 + rng.next_max(50) as f32 * 0.01;
+        d.scale += 0.3 + rng.next_range(0, 50) as f32 * 0.01;
         d.no_gravity = true;
         d.velocity *= 0.1;
     }
@@ -1027,14 +1052,14 @@ pub fn trail_538(
 /// one type-180 dust pinned to the centre, ×0.2 velocity.
 pub fn trail_539_host(
     center: Vec2,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
-    if rng.next_max(12) == 0 {
+    if rng.next_range(0, 12) == 0 {
         // `:33303-33309`
-        let idx = dust.new_dust(rng, ctx, world, center, 8, 8, 180, 0.0, 0.0, 0, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center, 8, 8, 180, 0.0, 0.0, 0, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.position = center;
         d.velocity *= 0.2;
@@ -1051,25 +1076,25 @@ pub fn trail_539_flight(
     pos: Vec2,
     w: i32,
     h: i32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
-    if rng.next_max(2) == 0 {
+    if rng.next_range(0, 2) == 0 {
         // `:33418-33425`
-        let idx = dust.new_dust(rng, ctx, world, pos, w, h, 180, 0.0, 0.0, 100, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos, w, h, 180, 0.0, 0.0, 100, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
-        d.scale += rng.next_max(50) as f32 * 0.01;
+        d.scale += rng.next_range(0, 50) as f32 * 0.01;
         d.no_gravity = true;
         d.velocity *= 0.1;
         d.fade_in = rng.next_float() * 1.5;
     }
-    if rng.next_max(3) == 0 {
+    if rng.next_range(0, 3) == 0 {
         // `:33426-33433`
-        let idx = dust.new_dust(rng, ctx, world, pos, w, h, 176, 0.0, 0.0, 100, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos, w, h, 176, 0.0, 0.0, 100, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
-        d.scale += 0.3 + rng.next_max(50) as f32 * 0.01;
+        d.scale += 0.3 + rng.next_range(0, 50) as f32 * 0.01;
         d.no_gravity = true;
         d.velocity *= 0.1;
         d.fade_in = rng.next_float() * 1.5;
@@ -1083,14 +1108,14 @@ pub fn trail_539_flight(
 pub fn trail_573_host(
     center: Vec2,
     vel: Vec2,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
-    if rng.next_max(2) == 0 {
+    if rng.next_range(0, 2) == 0 {
         // `:33322-33329`
-        let idx = dust.new_dust(rng, ctx, world, center, 8, 8, 242, 0.0, 0.0, 0, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center, 8, 8, 242, 0.0, 0.0, 0, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.position = center;
         d.velocity = vel;
@@ -1104,14 +1129,14 @@ pub fn trail_573_host(
 /// ×0.2 velocity, scale 1.5. The `alpha = 0` pin is caller state.
 pub fn trail_573_flight(
     center: Vec2,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
-    if rng.next_max(4) == 0 {
+    if rng.next_range(0, 4) == 0 {
         // `:33437-33444`
-        let idx = dust.new_dust(rng, ctx, world, center, 8, 8, 242, 0.0, 0.0, 0, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center, 8, 8, 242, 0.0, 0.0, 0, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.position = center;
         d.velocity *= 0.2;
@@ -1128,14 +1153,14 @@ pub fn trail_573_flight(
 pub fn trail_574_host(
     center: Vec2,
     vel: Vec2,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
-    if rng.next_max(10) == 0 {
+    if rng.next_range(0, 10) == 0 {
         // `:33334-33341`
-        let idx = dust.new_dust(rng, ctx, world, center, 8, 8, 242, 0.0, 0.0, 0, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center, 8, 8, 242, 0.0, 0.0, 0, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.position = center;
         d.velocity = vel;
@@ -1153,17 +1178,17 @@ pub fn trail_574_host(
 /// take `scale = 0.5 + NextFloat` and `fadeIn = 0.5`.
 pub fn trail_579(
     center: Vec2,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
-    if rng.next_max(4) == 0 {
+    if rng.next_range(0, 4) == 0 {
         // `:33718-33727` — the 229 ring.
         let max = 6.2831854820251465f64;
         let ang = rng.next_double() * max - rng.next_double() * max;
         let vector116 = rotated_by(Vec2::UNIT_Y, ang);
-        let idx = dust.new_dust(rng, ctx, world, center - vector116 * 30.0, 0, 0, 229, 0.0, 0.0, 0, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center - vector116 * 30.0, 0, 0, 229, 0.0, 0.0, 0, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.no_gravity = true;
         d.position = center - vector116 * rng.next_range(10, 21) as f32; // `:33723`
@@ -1171,12 +1196,12 @@ pub fn trail_579(
         d.scale = 0.5 + rng.next_float(); // `:33725`
         d.fade_in = 0.5; // `:33726`
     }
-    if rng.next_max(4) == 0 {
+    if rng.next_range(0, 4) == 0 {
         // `:33728-33737` — the 240 ring.
         let max = 6.2831854820251465f64;
         let ang = rng.next_double() * max - rng.next_double() * max;
         let vector117 = rotated_by(Vec2::UNIT_Y, ang);
-        let idx = dust.new_dust(rng, ctx, world, center - vector117 * 30.0, 0, 0, 240, 0.0, 0.0, 0, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center - vector117 * 30.0, 0, 0, 240, 0.0, 0.0, 0, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.no_gravity = true;
         d.position = center - vector117 * 30.0; // `:33733`
@@ -1198,23 +1223,23 @@ pub fn trail_579(
 pub fn trail_578(
     center: Vec2,
     aim: f32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
-    if rng.next_max(2) != 0 {
+    if rng.next_range(0, 2) != 0 {
         return; // `:33739`
     }
     // `:33741` — ToRotationVector2: double cos/sin of the widened float.
     let vector118 = Vec2::new((aim as f64).cos() as f32, (aim as f64).sin() as f32);
     // `:33742` — the perpendicular offset: RotatedBy(π/2) * dirInt * Next(10,21).
-    let dir = if rng.next_max(2) == 0 { 1.0 } else { -1.0 };
+    let dir = if rng.next_range(0, 2) == 0 { 1.0 } else { -1.0 };
     let mag = rng.next_range(10, 21) as f32;
     let vector119 = rotated_by(vector118, 1.5707963705062866) * dir * mag;
     // `:33743-33744` — (aim*Next(-80,81) - offset) / 10.
     let mut vector120 = (vector118 * rng.next_range(-80, 81) as f32 - vector119) / 10.0;
-    let idx = dust.new_dust(rng, ctx, world, center, 0, 0, 229, 0.0, 0.0, 0, Color::default(), 1.0);
+    let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center, 0, 0, 229, 0.0, 0.0, 0, Color::default(), 1.0);
     let d = dust.slot_mut(idx);
     d.no_gravity = true; // `:33747`
     d.position = center + vector119; // `:33748`
@@ -1223,7 +1248,7 @@ pub fn trail_578(
     d.fade_in = 0.5; // `:33751`
     // `:33752-33758` — the second dust: (aim*Next(40,121) - offset/2) / 10.
     vector120 = (vector118 * rng.next_range(40, 121) as f32 - vector119 / 2.0) / 10.0;
-    let idx = dust.new_dust(rng, ctx, world, center, 0, 0, 229, 0.0, 0.0, 0, Color::default(), 1.0);
+    let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center, 0, 0, 229, 0.0, 0.0, 0, Color::default(), 1.0);
     let d = dust.slot_mut(idx);
     d.no_gravity = true;
     d.position = center + vector119 / 2.0; // `:33756`
@@ -1245,7 +1270,7 @@ pub fn trail_596(
     center: Vec2,
     ai1: f32,
     time_left: i32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -1258,10 +1283,10 @@ pub fn trail_596(
         num804 = 1.6; // `:33611-33614`
     }
     for num806 in 0..3 {
-        if rng.next_max(3) != 0 {
+        if rng.next_range(0, 3) != 0 {
             return false; // `:33619-33622` — the AI() early return.
         }
-        let idx = dust.new_dust(rng, ctx, world, center, 0, 0, 27, 0.0, -2.0, 0, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center, 0, 0, 27, 0.0, -2.0, 0, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         // `:33624` — (i * (float)(π*2)) / 3 + ai[1], the f32 chain.
         let ang = num806 as f32 * ((std::f64::consts::PI * 2.0) as f32) / 3.0 + ai1;
@@ -1283,14 +1308,14 @@ pub fn trail_596(
 pub fn trail_618(
     center: Vec2,
     vel: Vec2,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
-    if rng.next_max(2) == 0 {
+    if rng.next_range(0, 2) == 0 {
         // `:34869-34880`
-        let idx = dust.new_dust(rng, ctx, world, center, 8, 8, 86, 0.0, 0.0, 0, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center, 8, 8, 86, 0.0, 0.0, 0, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.position = center;
         d.velocity = vel;
@@ -1308,7 +1333,7 @@ pub fn trail_642(
     vel: Vec2,
     w: i32,
     local_ai1: f32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -1327,7 +1352,7 @@ pub fn trail_642(
 pub fn trail_656(
     vector158: Vec2,
     vector159: Vec2,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -1342,7 +1367,7 @@ pub fn trail_656(
     vector160.x *= -1.0;
     let vector161 = Vec2::new(6.0, 10.0); // `:36072`
     let vector162 = vector158 + vector159 * vector160 * 0.5 + vector161; // `:36073`
-    let idx = dust.new_dust(rng, ctx, world, vector162, 0, 0, 269, 0.0, 0.0, 0, Color::default(), 1.0);
+    let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, vector162, 0, 0, 269, 0.0, 0.0, 0, Color::default(), 1.0);
     let d = dust.slot_mut(idx);
     d.position = vector162; // `:36075`
     // `:36076` customData = vector158 + vector161 — dropped field.
@@ -1370,7 +1395,7 @@ pub fn trail_659(
     center: Vec2,
     ai1: f32,
     time_left: i32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -1383,10 +1408,10 @@ pub fn trail_659(
         num973 = 1.6; // `:36258-36261`
     }
     for num975 in 0..3 {
-        if rng.next_max(3) != 0 {
+        if rng.next_range(0, 3) != 0 {
             continue; // `:36266` — the per-iteration gate.
         }
-        let idx = dust.new_dust(rng, ctx, world, center, 0, 0, 27, 0.0, -2.0, 0, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center, 0, 0, 27, 0.0, -2.0, 0, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         let ang = num975 as f32 * ((std::f64::consts::PI * 2.0) as f32) / 3.0 + ai1; // `:36269`
         d.position = center + rotated_by(Vec2::UNIT_Y, ang as f64) * 10.0;
@@ -1410,7 +1435,7 @@ pub fn trail_669(
     center: Vec2,
     rotation: f32,
     direction: i32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -1422,7 +1447,7 @@ pub fn trail_669(
             rotation as f64,
         );
         let idx = dust.new_dust(
-            rng,
+            &mut DustDraw(rng),
             ctx,
             world,
             center + vector47 - Vec2::ONE * 5.0,
@@ -1442,7 +1467,7 @@ pub fn trail_669(
         // `:30217` — spun by -(float)π/2 * direction.
         d.velocity = rotated_by(d.velocity, (-(std::f32::consts::PI / 2.0) * direction as f32) as f64);
         // `:30218` — SelectRandom<Color>: one Next(2), LAST.
-        d.color = if rng.next_max(2) == 0 {
+        d.color = if rng.next_range(0, 2) == 0 {
             Color::new(255, 255, 255, 110)
         } else {
             Color::new(245, 200, 30, 110)
@@ -1463,7 +1488,7 @@ pub fn trail_723(
     rotation: f32,
     scale: f32,
     vel: Vec2,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -1475,12 +1500,12 @@ pub fn trail_723(
         let vector7 = center + rotated_by(Vec2::new(0.0, 12.0 * scale), ang as f64) - vel * 0.5;
         let v = vel * 0.2 * num49 as f32;
         // `:24023-24025` — the Blue dust (scale 1 default).
-        let idx = dust.new_dust_perfect(rng, ctx, world, vector7, 267, Some(v), 0, Color::new(0, 0, 255, 255), 1.0);
+        let idx = dust.new_dust_perfect(&mut DustDraw(rng), ctx, world, vector7, 267, Some(v), 0, Color::new(0, 0, 255, 255), 1.0);
         let d = dust.slot_mut(idx);
         d.no_light = true;
         d.no_gravity = true;
         // `:24026-24028` — the White dust at scale 0.4.
-        let idx = dust.new_dust_perfect(rng, ctx, world, vector7, 267, Some(v), 0, Color::WHITE, 0.4);
+        let idx = dust.new_dust_perfect(&mut DustDraw(rng), ctx, world, vector7, 267, Some(v), 0, Color::WHITE, 0.4);
         let d = dust.slot_mut(idx);
         d.no_light = true;
         d.no_gravity = true;
@@ -1491,14 +1516,14 @@ pub fn trail_723(
 /// angle is FLOAT arithmetic (`0 + (float)π*2 * NextFloat()`), then
 /// `ToRotationVector2` (`Utils.cs:1665-1668`) cos/sin in double of the
 /// widened float, cast back to f32 (the empress module's form).
-fn next_vector2_unit(rng: &mut UnifiedRandom) -> Vec2 {
+fn next_vector2_unit(rng: &mut dyn DropRng) -> Vec2 {
     let angle = (std::f64::consts::PI * 2.0) as f32 * rng.next_float();
     Vec2::new((angle as f64).cos() as f32, (angle as f64).sin() as f32)
 }
 
 /// `Utils.NextVector2Circular` (`Utils.cs:1266-1269`) — the unit draw THEN
 /// a second `NextFloat` radius scale: `unit * (halfW, halfH) * r`.
-fn next_vector2_circular(rng: &mut UnifiedRandom, half_w: f32, half_h: f32) -> Vec2 {
+fn next_vector2_circular(rng: &mut dyn DropRng, half_w: f32, half_h: f32) -> Vec2 {
     let unit = next_vector2_unit(rng);
     let r = rng.next_float();
     Vec2::new(unit.x * half_w * r, unit.y * half_h * r)
@@ -1513,14 +1538,14 @@ pub fn trail_732(
     pos: Vec2,
     w: i32,
     h: i32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
-    if rng.next_max(5) == 0 {
+    if rng.next_range(0, 5) == 0 {
         // `:27913-27918`
-        let idx = dust.new_dust_direct(rng, ctx, world, pos, w, h, 226, 0.0, 0.0, 150, Color::default(), 0.8);
+        let idx = dust.new_dust_direct(&mut DustDraw(rng), ctx, world, pos, w, h, 226, 0.0, 0.0, 150, Color::default(), 0.8);
         let d = dust.slot_mut(idx);
         d.no_gravity = true;
         d.velocity *= 1.2;
@@ -1538,14 +1563,14 @@ pub fn trail_895(
     w: i32,
     h: i32,
     frame_reset: bool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
     if frame_reset {
         // `:35229-35233`
-        let idx = dust.new_dust(rng, ctx, world, pos, w, h, 242, 0.0, 0.0, 50, Color::default(), 2.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos, w, h, 242, 0.0, 0.0, 50, Color::default(), 2.0);
         dust.slot_mut(idx).no_gravity = true;
     }
 }
@@ -1558,14 +1583,14 @@ pub fn trail_898(
     w: i32,
     h: i32,
     frame_reset: bool,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
     if frame_reset {
         // `:35293-35297`
-        let idx = dust.new_dust(rng, ctx, world, pos, w, h, 80, 0.0, 0.0, 50, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos, w, h, 80, 0.0, 0.0, 50, Color::default(), 1.0);
         dust.slot_mut(idx).no_gravity = true;
     }
 }
@@ -1580,16 +1605,16 @@ pub fn trail_907(
     w: i32,
     h: i32,
     vel: Vec2,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
     let modulus = (8 - vel.length() as i32).max(4); // `:26686`
-    if rng.next_max(modulus) == 0 {
+    if rng.next_range(0, modulus) == 0 {
         let num237 = 5;
         let idx = dust.new_dust(
-            rng,
+            &mut DustDraw(rng),
             ctx,
             world,
             pos + Vec2::new(num237 as f32, num237 as f32),
@@ -1621,7 +1646,7 @@ pub fn trail_967(
     vel: Vec2,
     local_ai0: f32,
     time_left: i32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -1630,7 +1655,7 @@ pub fn trail_967(
         return; // `:26585` — no draws outside the cadence.
     }
     let scale = 0.35 + rng.next_range(-5, 5) as f32 * 0.01; // `:26588` argument
-    let idx = dust.new_dust(rng, ctx, world, pos, w, h, 219, vel.x, vel.y, 0, Color::default(), scale);
+    let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos, w, h, 219, vel.x, vel.y, 0, Color::default(), scale);
     let d = dust.slot_mut(idx);
     d.no_gravity = true; // `:26589`
     d.velocity = vel * 1.5; // `:26590`
@@ -1650,7 +1675,7 @@ pub fn trail_1026(
     vel: Vec2,
     local_ai0: f32,
     time_left: i32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -1660,7 +1685,7 @@ pub fn trail_1026(
     }
     let scale = 0.7 + rng.next_range(-5, 5) as f32 * 0.01; // `:26563` argument
     let lead = crate::bow_launch::safe_normalize(vel, Vec2::ZERO) * 5.0;
-    let idx = dust.new_dust(rng, ctx, world, pos - lead, w, h, 2, vel.x, vel.y, 0, Color::default(), scale);
+    let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos - lead, w, h, 2, vel.x, vel.y, 0, Color::default(), scale);
     let d = dust.slot_mut(idx);
     d.alpha = 50; // `:26564`
     d.fade_in = 0.5; // `:26565`
@@ -1680,7 +1705,7 @@ pub fn trail_1048(
     w: i32,
     h: i32,
     vel: Vec2,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
@@ -1718,15 +1743,15 @@ pub fn trail_1053(
     pos: Vec2,
     w: i32,
     h: i32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
-    if rng.next_max(3) == 0 {
+    if rng.next_range(0, 3) == 0 {
         // `:26033-26038`
         let idx = dust.new_dust(
-            rng,
+            &mut DustDraw(rng),
             ctx,
             world,
             pos + Vec2::new(6.0, 6.0),
@@ -1743,10 +1768,10 @@ pub fn trail_1053(
         d.velocity *= 0.3;
         d.velocity.y -= 2.0;
     }
-    if rng.next_max(3) == 0 {
+    if rng.next_range(0, 3) == 0 {
         // `:26039-26043`
         let idx = dust.new_dust(
-            rng,
+            &mut DustDraw(rng),
             ctx,
             world,
             pos + Vec2::new(4.0, 4.0),
@@ -1761,9 +1786,9 @@ pub fn trail_1053(
         );
         dust.slot_mut(idx).no_gravity = true;
     }
-    if rng.next_max(3) == 0 {
+    if rng.next_range(0, 3) == 0 {
         // `:26044-26048`
-        let idx = dust.new_dust(rng, ctx, world, pos, w, h, 6, 0.0, 0.0, 100, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos, w, h, 6, 0.0, 0.0, 100, Color::default(), 1.0);
         dust.slot_mut(idx).velocity.y -= 1.0;
     }
 }
@@ -1779,15 +1804,15 @@ pub fn trail_1092(
     w: i32,
     h: i32,
     vel: Vec2,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
-    if rng.next_max(15) == 0 {
+    if rng.next_range(0, 15) == 0 {
         // `:25447-25455`
         let left = Vec2::new(pos.x, pos.y + h as f32 / 2.0); // Entity.Left
-        let idx = dust.new_dust_direct(rng, ctx, world, left, w, 4, 269, 0.0, 0.0, 0, Color::WHITE, 1.2);
+        let idx = dust.new_dust_direct(&mut DustDraw(rng), ctx, world, left, w, 4, 269, 0.0, 0.0, 0, Color::WHITE, 1.2);
         let d = dust.slot_mut(idx);
         d.velocity.x = 0.0; // `:25450`
         d.velocity.y = 0.5; // `:25451`
@@ -1805,14 +1830,14 @@ pub fn trail_1114(
     pos: Vec2,
     w: i32,
     h: i32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
-    if rng.next_max(4) == 0 {
+    if rng.next_range(0, 4) == 0 {
         // `:25983-25991`
-        let idx = dust.new_dust(rng, ctx, world, pos, w, h, 57, 0.0, 0.0, 0, Color::default(), 1.0);
+        let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos, w, h, 57, 0.0, 0.0, 0, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.no_gravity = true;
         d.velocity *= 0.5;
@@ -1835,30 +1860,140 @@ pub fn trail_1133(
     pos: Vec2,
     w: i32,
     h: i32,
-    rng: &mut UnifiedRandom,
+    rng: &mut dyn DropRng,
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
-    if rng.next_max(6) == 0 {
+    if rng.next_range(0, 6) == 0 {
         // `:24001-24004` — the type-89 puff.
-        let idx = dust.new_dust_direct(rng, ctx, world, pos, w, h, 89, 0.0, 0.0, 127, Color::default(), 1.0);
+        let idx = dust.new_dust_direct(&mut DustDraw(rng), ctx, world, pos, w, h, 89, 0.0, 0.0, 127, Color::default(), 1.0);
         dust.slot_mut(idx).no_gravity = true;
     }
     // `:23997-24000` — num48 = 86 default, 87 for 1133.
     let num48 = 87;
-    if rng.next_max(3) == 0 {
+    if rng.next_range(0, 3) == 0 {
         // `:24006-24011`
-        let idx = dust.new_dust_direct(rng, ctx, world, pos, w, h, num48, 0.0, 0.0, 127, Color::default(), 1.0);
+        let idx = dust.new_dust_direct(&mut DustDraw(rng), ctx, world, pos, w, h, num48, 0.0, 0.0, 127, Color::default(), 1.0);
         let d = dust.slot_mut(idx);
         d.velocity *= 0.5;
         d.no_gravity = true;
     }
 }
 
+/// Kind 644 — the Rainbow Crystal shard's prism-hue orbit (`AI()` aiStyle
+/// 112, `Projectile.cs:34267-34332`). DEFERRED at port time ("the prism-hue
+/// orbit"), UNBLOCKED at the wiring wave: the hue is the byte-quantised
+/// `Main.hslToRgb(ai[0], 1, 0.5)` (`Main.cs:47890`, the palette port), the
+/// `Opacity` is `1 - alpha/255` (the machine's `opacity_of`), and the
+/// sparkle's `CloneDust` rides the pool's verbatim `clone_dust`
+/// (`Dust.cs:263-286`). Two 2-iteration Next(10) gates (the second ring's
+/// spin omits the rotation — the C# `:34284`), then the Next(10) sparkle:
+/// three NextFloats, the RandomVector2 pair (TWO NextDouble-cast draws,
+/// `Utils.cs:2431-2434`), the radius NextFloat, the InWorld+SolidTile gate,
+/// the velocity NextFloat (only on the taken branch), the clone's internal
+/// NewDust rolls, then the ×0.65 scale/fadeIn + the white colour. The
+/// `PlotTileLine`/`AddLight` casts stay the e6/f7 lanes.
+pub fn trail_644(
+    center: Vec2,
+    hue: f32,
+    rotation: f32,
+    opacity: f32,
+    scale_roll: f32,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    // `:34239` — the hue colour (alpha 255, the 3-arg hslToRgb default).
+    let rgb = tr_core::tile_light::hsl_to_rgb(hue, 1.0, 0.5);
+    let new_color3 = Color::new(
+        (rgb[0] * 255.0) as u8,
+        (rgb[1] * 255.0) as u8,
+        (rgb[2] * 255.0) as u8,
+        255,
+    );
+    // `:34267-34279` — the first orbit pair (the spin carries the rotation).
+    for num836 in 0..2 {
+        if rng.next_range(0, 10) == 0 {
+            let vector139 = rotated_by(
+                rotated_by(Vec2::UNIT_Y, (num836 as f32 * std::f32::consts::PI) as f64),
+                rotation as f64,
+            );
+            let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center, 0, 0, 267, 0.0, 0.0, 225, new_color3, 1.5);
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true; // `:34273`
+            d.no_light = true; // `:34274`
+            d.scale = opacity * scale_roll; // `:34275`
+            d.position = center; // `:34276`
+            d.velocity = vector139 * 2.5; // `:34277`
+        }
+    }
+    // `:34280-34292` — the second orbit pair (NO rotation on the spin).
+    for num837 in 0..2 {
+        if rng.next_range(0, 10) == 0 {
+            let vector140 =
+                rotated_by(Vec2::UNIT_Y, (num837 as f32 * std::f32::consts::PI) as f64);
+            let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, center, 0, 0, 267, 0.0, 0.0, 225, new_color3, 1.5);
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true; // `:34286`
+            d.no_light = true; // `:34287`
+            d.scale = opacity * scale_roll; // `:34288`
+            d.position = center; // `:34289`
+            d.velocity = vector140 * 2.5; // `:34290`
+        }
+    }
+    // `:34293-34332` — the sparkle gate.
+    if rng.next_range(0, 10) == 0 {
+        let num838 = 1.0 + rng.next_float() * 2.0; // `:34295`
+        let fade_in = 1.0 + rng.next_float(); // `:34296`
+        let num839 = 1.0 + rng.next_float(); // `:34297`
+        // `Utils.RandomVector2(-1, 1)` (`Utils.cs:2431-2434`) — TWO draws,
+        // `(max-min)*(float)NextDouble()+min`, X first.
+        let vx = 2.0 * rng.next_double() as f32 - 1.0;
+        let vy = 2.0 * rng.next_double() as f32 - 1.0;
+        let mut vector141 = Vec2::new(vx, vy);
+        if vector141 != Vec2::ZERO {
+            vector141 = xna_normalize(vector141); // `:34301`
+        }
+        vector141 *= 20.0 + rng.next_float() * 100.0; // `:34303`
+        let vec = center + vector141;
+        // `:34305-34314` — ToTileCoordinates truncates; InWorld + SolidTile
+        // gate the spawn (and its velocity draw).
+        let (tx, ty) = (vec.x as i32 / 16, vec.y as i32 / 16);
+        let in_world = tx >= 0 && ty >= 0 && tx < world.width && ty < world.height;
+        let solid = in_world
+            && world
+                .tile(tx, ty)
+                .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
+        if in_world && !solid {
+            let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, vec, 0, 0, 267, 0.0, 0.0, 127, new_color3, 1.0);
+            {
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true; // `:34318`
+                d.position = vec; // `:34319`
+                d.velocity = -Vec2::UNIT_Y * num838 * (rng.next_float() * 0.9 + 1.6); // `:34320`
+                d.fade_in = fade_in; // `:34321`
+                d.scale = num839; // `:34322`
+                d.no_light = true; // `:34323`
+            }
+            // `:34324-34330` — the clone (the sentinel guard rides inside
+            // `clone_dust`), then the ×0.65 pair and the white colour.
+            if dust.slot(idx).dust_index != 6000 {
+                let cidx = dust.clone_dust(&mut DustDraw(rng), ctx, world, idx);
+                let c = dust.slot_mut(cidx);
+                c.scale *= 0.65;
+                c.fade_in *= 0.65;
+                c.color = Color::new(255, 255, 255, 255);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tr_core::UnifiedRandom;
 
     fn world() -> World {
         World::new("g64".into(), 200, 200)
@@ -1922,7 +2057,7 @@ mod tests {
             assert_eq!(pool.slot(i), mpool.slot(i), "slot {i}");
         }
         for _ in 0..16 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000), "stream tail");
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000), "stream tail");
         }
     }
 
@@ -1964,7 +2099,7 @@ mod tests {
             assert_eq!(pool.slot(i).fade_in, 0.8);
         }
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -2059,7 +2194,7 @@ mod tests {
             assert_eq!(pool.slot(i), mpool.slot(i), "slot {i}");
         }
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -2126,7 +2261,7 @@ mod tests {
             assert_eq!(pool.slot(i), mpool.slot(i), "slot {i}");
         }
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -2193,7 +2328,7 @@ mod tests {
         assert_eq!(pool.slot(0).velocity.length(), 2.0);
         assert_eq!(pool.slot(1).velocity, Vec2::ZERO);
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -2234,7 +2369,7 @@ mod tests {
             assert_eq!(pool.slot(i), mpool.slot(i), "slot {i}");
         }
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -2260,7 +2395,7 @@ mod tests {
         assert_eq!(active(&pool).len(), 1);
         assert_eq!(pool.slot(0), mpool.slot(0));
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -2296,7 +2431,7 @@ mod tests {
             assert_eq!(pool.slot(i), mpool.slot(i), "slot {i}");
         }
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -2312,7 +2447,7 @@ mod tests {
         let mut mirror = UnifiedRandom::new(67);
         trail_504(504, pos, 10, 10, Vec2::new(9.0, 0.0), 2.0, &mut rng, &mut pool, &c, &w);
         assert!(active(&pool).is_empty(), "no dust before the window");
-        assert_eq!(rng.next_max(1000), mirror.next_max(1000), "no draw before the window");
+        assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000), "no draw before the window");
         for ai0 in [5.0f32, 15.0, 25.0, 45.0] {
             trail_504(979, pos, 10, 10, Vec2::new(9.0, 0.0), ai0, &mut rng, &mut pool, &c, &w);
         }
@@ -2347,7 +2482,7 @@ mod tests {
             d.velocity.y = -(mirror.next_range(7, 13) as f32) * 0.15;
         }
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -2378,7 +2513,7 @@ mod tests {
             assert_eq!(pool.slot(i), mpool.slot(i), "slot {i}");
         }
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -2416,7 +2551,7 @@ mod tests {
             assert!(pool.slot(i).no_light);
         }
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -2455,7 +2590,7 @@ mod tests {
         // Falling (vy > 0) or old (ai0 >= 60): no draws.
         trail_538(pos, 12, 12, Vec2::new(0.0, 2.0), 10.0, &mut rng, &mut pool, &c, &w);
         trail_538(pos, 12, 12, Vec2::new(0.0, -2.0), 60.0, &mut rng, &mut pool, &c, &w);
-        assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+        assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         assert!(active(&pool).is_empty());
         for _ in 0..30 {
             trail_538(pos, 12, 12, Vec2::new(0.0, -2.0), 10.0, &mut rng, &mut pool, &c, &w);
@@ -2564,7 +2699,7 @@ mod tests {
             assert_eq!(pool.slot(i), mpool.slot(i), "slot {i}");
         }
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -2611,7 +2746,7 @@ mod tests {
             assert_eq!(pool.slot(taken[1]).fade_in, 0.0, "second dust keeps fadeIn 0");
         }
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -2725,7 +2860,7 @@ mod tests {
             assert_eq!(pool.slot(i), mpool.slot(i), "slot {i}");
         }
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -2760,7 +2895,7 @@ mod tests {
             assert_eq!(pool.slot(i), mpool.slot(i), "slot {i}");
         }
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -2791,7 +2926,7 @@ mod tests {
             assert_eq!(pool.slot(i), mpool.slot(i), "slot {i}");
         }
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -2828,7 +2963,7 @@ mod tests {
             assert!(pool.slot(i).no_light && pool.slot(i).no_gravity);
         }
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -2866,7 +3001,7 @@ mod tests {
         trail_895(pos, 20, 20, false, &mut rng, &mut pool, &c, &w);
         trail_898(pos, 20, 20, false, &mut rng, &mut pool, &c, &w);
         assert!(active(&pool).is_empty());
-        assert_eq!(rng.next_max(1000), mirror.next_max(1000), "no draws off-reset");
+        assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000), "no draws off-reset");
         trail_895(pos, 20, 20, true, &mut rng, &mut pool, &c, &w);
         trail_898(pos, 20, 20, true, &mut rng, &mut pool, &c, &w);
         assert_eq!(active(&pool).len(), 2);
@@ -2903,7 +3038,7 @@ mod tests {
             assert_eq!(pool.slot(i).velocity, vel * 0.75);
         }
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -2921,7 +3056,7 @@ mod tests {
         trail_967(pos, 14, 14, vel, 3.0, 90, &mut rng, &mut pool, &c, &w);
         trail_967(pos, 14, 14, vel, 5.0, 91, &mut rng, &mut pool, &c, &w);
         assert!(active(&pool).is_empty());
-        assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+        assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         let mut mpool = DustPool::new();
         trail_967(pos, 14, 14, vel, 5.0, 90, &mut rng, &mut pool, &c, &w);
         let scale = 0.35 + mirror.next_range(-5, 5) as f32 * 0.01;
@@ -2932,7 +3067,7 @@ mod tests {
         assert_eq!(active(&pool).len(), 1);
         assert_eq!(pool.slot(0), mpool.slot(0));
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -2960,7 +3095,7 @@ mod tests {
         assert_eq!(active(&pool).len(), 1);
         assert_eq!(pool.slot(0), mpool.slot(0));
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -2976,7 +3111,7 @@ mod tests {
         let mut mirror = UnifiedRandom::new(173);
         trail_1048(center, 20, 20, Vec2::new(0.5, 0.0), &mut rng, &mut pool, &c, &w);
         assert!(active(&pool).is_empty());
-        assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+        assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         let vel = Vec2::new(4.0, 3.0);
         let mut mpool = DustPool::new();
         trail_1048(center, 20, 20, vel, &mut rng, &mut pool, &c, &w);
@@ -2987,7 +3122,7 @@ mod tests {
         assert_eq!(active(&pool).len(), 1);
         assert_eq!(pool.slot(0), mpool.slot(0));
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -3022,7 +3157,7 @@ mod tests {
             assert_eq!(pool.slot(i), mpool.slot(i), "slot {i}");
         }
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -3058,7 +3193,7 @@ mod tests {
             assert!(pool.slot(i).no_light);
         }
         for _ in 0..8 {
-            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
         }
     }
 
@@ -3117,7 +3252,216 @@ mod tests {
             assert!(pool.slot(i).no_gravity);
         }
         for _ in 0..8 {
+            assert_eq!(rng.next_range(0, 1000), mirror.next_max(1000));
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // W4-g64 wiring wave — the stream-parity witnesses: the machines'
+    // `DropRng` seam (`DustDraw`) against the concrete `UnifiedRandom`
+    // path, the 644 deferred-kind port, and the 596 bool seam's contract.
+    // WRITTEN NOT RUN (code-only mode).
+    // ------------------------------------------------------------------
+
+    /// The wiring seam's draw parity: a `UnifiedRandom` driven through the
+    /// `&mut dyn DropRng` + `DustDraw` path (the machines' shape) lands the
+    /// SAME pool records and the SAME stream tail as the concrete path the
+    /// emitters' own witnesses use — `Next(max)` = `Next(0, max)` is one
+    /// `Sample()` step (`UnifiedRandom.cs:120-141`).
+    #[test]
+    fn w4_g64_wire_drop_rng_seam_matches_the_concrete_stream() {
+        let w = world();
+        let c = ctx();
+        let pos = Vec2::new(900.0, 700.0);
+        let vel = Vec2::new(5.0, -3.0);
+        let mut concrete_pool = DustPool::new();
+        let mut concrete = UnifiedRandom::new(211);
+        trail_503(pos, 16, 16, vel, &mut concrete, &mut concrete_pool, &c, &w);
+        let mut wire_pool = DustPool::new();
+        let mut wire = UnifiedRandom::new(211);
+        {
+            let dyn_rng: &mut dyn DropRng = &mut wire;
+            trail_503(pos, 16, 16, vel, dyn_rng, &mut wire_pool, &c, &w);
+        }
+        assert_eq!(active(&concrete_pool), active(&wire_pool));
+        for i in active(&concrete_pool) {
+            assert_eq!(concrete_pool.slot(i), wire_pool.slot(i), "slot {i}");
+        }
+        for _ in 0..16 {
+            assert_eq!(concrete.next_max(1000), wire.next_max(1000), "stream tail");
+        }
+    }
+
+    /// Kind 509 — the behaviour-feeding jitter REPLACES the ai_drill skip:
+    /// the velocity-X draw runs EVERY tick (the gate outcome cannot skip
+    /// it), the chip gate + argument draws follow in order, and the
+    /// jittered velocity feeds the spawn position's lead.
+    #[test]
+    fn w4_g64_wire_509_jitter_always_draws_and_feeds_the_lead() {
+        let w = world();
+        let c = ctx();
+        let pos = Vec2::new(600.0, 600.0);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(223);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(223);
+        let mut vel = Vec2::new(9.0, 0.0);
+        let mut mvel = vel;
+        for _ in 0..60 {
+            trail_509(pos, 22, 22, &mut vel, &mut rng, &mut pool, &c, &w);
+            // The C# order: the jitter first (always), then the gate.
+            mvel.x *= 1.0 + mirror.next_range(-3, 4) as f32 * 0.01;
+            if mirror.next_max(6) == 0 {
+                let lead = mirror.next_range(6, 10) as f32 * 0.1;
+                let idx = mpool.new_dust(&mut mirror, &c, &w, pos + mvel * lead, 22, 22, 31, 0.0, 0.0, 80, Color::default(), 1.4);
+                let d = mpool.slot_mut(idx);
+                d.position.x -= 4.0;
+                d.no_gravity = true;
+                d.velocity *= 0.2;
+                d.velocity.y = -(mirror.next_range(7, 13) as f32) * 0.15;
+            }
+            assert_eq!(vel, mvel, "the jitter is behaviour-feeding, kept");
+        }
+        assert_eq!(active(&pool), active(&mpool));
+        for i in active(&pool) {
+            assert_eq!(pool.slot(i), mpool.slot(i), "slot {i}");
+        }
+        for _ in 0..8 {
             assert_eq!(rng.next_max(1000), mirror.next_max(1000));
         }
+    }
+
+    /// Kind 644 — the deferred prism-hue orbit, UNBLOCKED: the two orbit
+    /// gates + the sparkle gate draw in the C# order; the taken sparkle
+    /// lands the dust + its CloneDust (the ×0.65 pair, the white colour),
+    /// the hue colour byte-quantised through `hsl_to_rgb`.
+    #[test]
+    fn w4_g64_wire_644_orbit_sparkle_and_clone() {
+        let w = world();
+        let c = ctx();
+        let center = Vec2::new(1000.0, 1000.0);
+        let hue = 0.37f32;
+        let rotation = 0.9f32;
+        let opacity = 0.75f32;
+        let scale_roll = 1.2f32;
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(227);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(227);
+        trail_644(center, hue, rotation, opacity, scale_roll, &mut rng, &mut pool, &c, &w);
+        let rgb = tr_core::tile_light::hsl_to_rgb(hue, 1.0, 0.5);
+        let col = Color::new((rgb[0] * 255.0) as u8, (rgb[1] * 255.0) as u8, (rgb[2] * 255.0) as u8, 255);
+        for num836 in 0..2 {
+            if mirror.next_max(10) == 0 {
+                let v = rotated_by(rotated_by(Vec2::UNIT_Y, (num836 as f32 * std::f32::consts::PI) as f64), rotation as f64);
+                let idx = mpool.new_dust(&mut mirror, &c, &w, center, 0, 0, 267, 0.0, 0.0, 225, col, 1.5);
+                let d = mpool.slot_mut(idx);
+                d.no_gravity = true;
+                d.no_light = true;
+                d.scale = opacity * scale_roll;
+                d.position = center;
+                d.velocity = v * 2.5;
+            }
+        }
+        for num837 in 0..2 {
+            if mirror.next_max(10) == 0 {
+                let v = rotated_by(Vec2::UNIT_Y, (num837 as f32 * std::f32::consts::PI) as f64);
+                let idx = mpool.new_dust(&mut mirror, &c, &w, center, 0, 0, 267, 0.0, 0.0, 225, col, 1.5);
+                let d = mpool.slot_mut(idx);
+                d.no_gravity = true;
+                d.no_light = true;
+                d.scale = opacity * scale_roll;
+                d.position = center;
+                d.velocity = v * 2.5;
+            }
+        }
+        if mirror.next_max(10) == 0 {
+            let num838 = 1.0 + mirror.next_float() * 2.0;
+            let fade_in = 1.0 + mirror.next_float();
+            let num839 = 1.0 + mirror.next_float();
+            let vx = 2.0 * mirror.next_double() as f32 - 1.0;
+            let vy = 2.0 * mirror.next_double() as f32 - 1.0;
+            let mut v141 = Vec2::new(vx, vy);
+            if v141 != Vec2::ZERO {
+                v141 = xna_normalize(v141);
+            }
+            v141 *= 20.0 + mirror.next_float() * 100.0;
+            let vec = center + v141;
+            let (tx, ty) = (vec.x as i32 / 16, vec.y as i32 / 16);
+            let in_world = tx >= 0 && ty >= 0 && tx < w.width && ty < w.height;
+            let solid = in_world && w.tile(tx, ty).is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
+            if in_world && !solid {
+                let idx = mpool.new_dust(&mut mirror, &c, &w, vec, 0, 0, 267, 0.0, 0.0, 127, col, 1.0);
+                {
+                    let d = mpool.slot_mut(idx);
+                    d.no_gravity = true;
+                    d.position = vec;
+                    d.velocity = -Vec2::UNIT_Y * num838 * (mirror.next_float() * 0.9 + 1.6);
+                    d.fade_in = fade_in;
+                    d.scale = num839;
+                    d.no_light = true;
+                }
+                if mpool.slot(idx).dust_index != 6000 {
+                    let cidx = mpool.clone_dust(&mut mirror, &c, &w, idx);
+                    let cc = mpool.slot_mut(cidx);
+                    cc.scale *= 0.65;
+                    cc.fade_in *= 0.65;
+                    cc.color = Color::new(255, 255, 255, 255);
+                }
+            }
+        }
+        assert_eq!(active(&pool), active(&mpool));
+        for i in active(&pool) {
+            assert_eq!(pool.slot(i), mpool.slot(i), "slot {i}");
+        }
+        for _ in 0..16 {
+            assert_eq!(rng.next_max(1000), mirror.next_max(1000), "stream tail");
+        }
+    }
+
+    /// Kind 596 — the bool seam's wiring contract: the fn's `false` is the
+    /// C# `return` FROM AI() (`:33619-33622`) — the caller must abort the
+    /// machine's continuation (the orbit's remaining dusts AND the
+    /// `timeLeft < 4` death burst below it, g65's); `true` ran the whole
+    /// three-dust ring. The 659 twin CONTINUES instead (its own witness).
+    /// The 596 kind is UNWIRED (no row) — this pins the seam for the wave
+    /// that lands the row.
+    #[test]
+    fn w4_g64_wire_596_bool_seam_gates_the_ai_continuation() {
+        let w = world();
+        let c = ctx();
+        let center = Vec2::new(1400.0, 900.0);
+        // The bail path: a scripted stream whose first Next(3) fails →
+        // the fn returns false after ONE draw and spawns nothing.
+        struct FirstFail(std::collections::VecDeque<i32>);
+        impl DropRng for FirstFail {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                assert_eq!((min, max), (0, 3), "the gate's bounds");
+                self.0.pop_front().expect("a gate draw")
+            }
+            fn next_float(&mut self) -> f32 {
+                panic!("no float draw on the bail path");
+            }
+        }
+        let mut pool = DustPool::new();
+        let mut rng = FirstFail([1].into_iter().collect());
+        let ok = trail_596(center, 3.0, 200, &mut rng, &mut pool, &c, &w);
+        assert!(!ok, "Next(3) != 0 → the AI() early return");
+        assert!(active(&pool).is_empty(), "the bail spawns nothing");
+        assert!(rng.0.is_empty(), "exactly one gate draw on the bail");
+        // The pass path: scan seeds through the fn itself until one runs
+        // the whole ring (the pool's internals draw between the gates, so
+        // the gate values are seed-dependent) — true + three dusts.
+        let mut found = false;
+        for seed in 0..400i32 {
+            let mut pool = DustPool::new();
+            let mut rng = UnifiedRandom::new(seed);
+            if trail_596(center, 3.0, 200, &mut rng, &mut pool, &c, &w) {
+                assert_eq!(active(&pool).len(), 3, "the full ring (seed {seed})");
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "a three-pass seed exists in 0..400");
     }
 }
