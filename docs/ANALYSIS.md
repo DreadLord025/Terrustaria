@@ -39801,3 +39801,15 @@ pure decoders in `world_sim/cursor_item_icon.rs`:
 8 witnesses WRITTEN NOT RUN (7 decode + 1 wiring), zero RNG. The dresser
 witness pins the lang lock + English init. The remaining ~80 hover arms
 stay the §4.3 ≤10/commit seed.
+
+**The remaining-sites handover**: research/244 §5.1 categorizes every open
+site (the ~80 hover arms + the §4.4 feeds) by owning lane — chests/storage,
+crafting stations, furniture/snap-range, torch/campfire, wiring, minecart,
+extractinator/golf/misc, TileEntity reads, signs, statues, NPC/proj/mount
+hover, the §4.4 latches, the text-hover clears — with the prerequisite
+each lane owns. This lane keeps the pure-decode + wiring contract (the
+B3/B4 shape: a `cursor_item_icon.rs` decoder wired at the tile-hover head,
+the `noThrow=2 + enabled BEFORE the ID` order + the per-update clear are
+the landed phase-1 surface); the owning lane supplies the prerequisite and
+the merge re-homes a decoder if it lands its own copy. The g53c cross-note
+(the flagging lane's handover) is research/244 §6.1.

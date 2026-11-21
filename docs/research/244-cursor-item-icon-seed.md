@@ -434,6 +434,39 @@ at the cited line — the port reads them verbatim; the list pins the SITE,
 the decode is a one-line read. The §5 table is the claim ledger: an owner
 marks a row done per commit.)
 
+### 5.1 The remaining sites — the owning-lane handover table
+
+The ~80 hover arms still open after B1-B4 (rows 22-59/61-78/80-101) plus
+the §4.4 feeds, categorized by the lane that owns the prerequisite
+system. **This lane (W4-g86 cursor-item-icon) keeps the pure-decode +
+wiring contract**: every arm is a `cursor_item_icon.rs` decoder wired at
+the `update_editing` tile-hover head (the B3/B4 shape); the owning lane
+supplies the prerequisite (the styled table, the TE read, the sim flag)
+and the merge re-homes the decoder if it lands its own copy. The
+`noThrow=2 + enabled BEFORE the ID` write order + the per-update clear
+are this lane's landed surface (phase 1) — every arm rides them.
+
+| Lane | Sites (kind → §5 row) | Prerequisite the lane owns |
+| --- | --- | --- |
+| **chests / storage** (M3-CHEST, g34 break-drop) | 29→48, 97→49 (the Piggy/Safe banks), 463→36, 491→37 (the void vault), 470→69, 475→70 (the mannequin/hat racks) | the bank open path (`editing.rs` BankOpen) + the `GetItemDrop_*` styled tables; the container TEXT shape is B3's `container_hover` |
+| **crafting stations** (g34 break-drop / the recipe lane) | 16 anvil→76, 17 furnace→77, 18 workbench→78, 77 forge→80, 86→81, 94→82, 96→83, 101→84, 106→85, 114→86, 133→87, 134→88, 217→89, 218→90, 220→91, 228→92, 243→93, 247→94, 283→95, 412→97, 499→98, 622→99, 334→75 | the `GetItemDrop_Workbenches/Tables/…` styled tables (the kill cascade's `ObjectDrop.item: None` deferral); most are constant-ID arms (a one-line read) |
+| **furniture / snap-range** (the chair/bench lane) | 15 chair→22, 102→23, 89 bench→24, 487 picnic→25, 497 toilet→26, 13 bottles→47, 172 sinks→100 | the `within_snapping_range` helper (B3 landed) + `GetItemDrop_Chair/Benches/PicnicTables/Toilet/Bottles/Sinks`; the chair/toilet Reversed (`frameX/18<1`) |
+| **torch / campfire / light** (the i34 light lane) | 4 torch→46, 215 campfire→45 | the `frameY/22` / `frameX/54` style switches (the torch-biome family); `BiomeTorchHoldStyle` precedent (`player_lights.rs`) |
+| **wiring / mechanisms** (g81 wire-draw) | 509→29, 510→50, 511→51, 411→39, 338→40, 455→41, 212→43, 174→55, 50→56, 372→53, 646→54, 49→52 | the wiring-tool item ids + the 510/511 arrow-sign Reversed decode; g81 owns the radial stand-in |
+| **minecart / track** (the minecart lane) | 314 track→44 + the nearby-area scan (`:31996-32000`) | the `gravDir==1` gate + `botherWithUnaimedMinecartTracks`; the 2343 Minecart icon |
+| **extractinator / golf / misc** | 219/642→42 (the `CanBeExtractinated` held gate + `extractinateHover`), 440 golf cups→68 (the `HasItem` gate), 410→27, 480→28, 657→30, 658→31, 720→32, 721→33, 725→34, 733→35, 494→38, 139 music boxes→57, 207 fountains→58, 355→101 | the per-system sim flags (`extractinateHover`, the golf `HasItem`); the music-box/fountain styled tables |
+| **TileEntity reads** (the TE lane) | 520 food platter→71, 395 item frame→72, 698 dead-cells jar→73, 471 weapons rack→74 | `world.tile_entities.get_at` → `TeData::Item` (the origin decodes + the item.type read) |
+| **signs** (f22 sign lane) | tileSign→59 + the long-distance sign arm (`:32098-32114`) | `signHover/signBubble/signX/signY` (the MouseOversClear pair, phase-1 deferred) + `Sign.ReadSign` |
+| **statues** (the statue/wiring lane) | 300-308→96 (the 9 statue arms) | the per-kind statue item ids (a one-line read each) |
+| **NPC / projectile / mount hover** (g53 world-hover / the proj lane) | the `HoverOverNPCs` 685 elder-slime icon-327 (PARKED — no NpcKind 685), the `DrawProjDirect` interaction icons (Main.cs:37673-37981), the `Mount.TryPettingMount` (Mount.cs:6095-6108) | the NPC-hover bubble pick (g53's `world_hover.rs`), the projectile draw pass, the mount-pet sim |
+| **the §4.4 latches** (this lane, the g81 shape) | the long-distance chest/dresser/sign pass (`:32044-32116`), the bucket/makeNPC/PlaceThing/cannon latches (`:46324`/`:43616`/`:39725`/`:39606`/`:41919`/`:41901`/`:41877`/`:41828`/`:42040`), the potion-return hover (`PotionOfReturnGateInteractionChecker.cs:18-20`) | the g81 in-reach latch shape (B2's `item_check_head_icon` precedent); the potion provider's `potion_of_return` flag (g86 landed the VOTE) |
+| **the text-hover clears** (g53 / the tooltip lane) | `DrawMouseOver` :42897/:42923, `HoverOverNPCs` :43089, `GUIHotbarDrawInner` :43619, `DrawInterface_33_MouseText` :45416, `CommonResourceBarMethods` :10/:22 | the `enabled=false` when a text hover wins (the port's tooltip/resources passes) |
+
+**PARKED (no port system)**: the gamepad tail (`:34738-34742`) + every
+`GamepadDisableCursorItemIcon` gate (false); the elder-slime 685 arm (no
+`NpcKind` row). The `UsingBiomeTorches`/`TryGetAmmo`/painted-held/
+`GetItemLight` draw halves stay deferred at the layer-40 block (phase 1).
+
 ## 6. This lane's landings (the self-contained batches)
 
 * **Batch 1** (`835e89a65`): `cursor_item_icon.rs::altar_hover_icon` — arms
