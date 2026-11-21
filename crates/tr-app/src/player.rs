@@ -1007,9 +1007,17 @@ pub struct Player {
     /// in `ResetEffects` (`:18534`), re-granted by
     /// `RefreshMechanicalAccsFromItemType` (`:12817-12820`) and the held-item
     /// arm (`:15295-15298`). The placement consumer
-    /// (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594`) is a
-    /// recorded follow-up (ANALYSIS "The wiring tools (S1-P-i34)").
+    /// (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594`) is ported
+    /// (`world_sim/editing/auto_actuator.rs`, ANALYSIS "The autoActuator
+    /// build pass").
     pub auto_actuator: bool,
+    /// `Player.autoPaint` (`Player.cs:2472`): the Paint Sprayer (2216) /
+    /// Architect Gizmo Pack (3061) / Hand Of Creation (5126) auto-paint
+    /// newly placed tiles/walls. Cleared in `ResetEffects` (`:18533`),
+    /// re-granted by `RefreshMechanicalAccsFromItemType` (`:12813-12816`)
+    /// and the held-item arms (`:15271-15294`). The consumer is the paint
+    /// half of the same pass (`world_sim/editing/auto_paint.rs`).
+    pub auto_paint: bool,
     /// `Player.builderAccStatus` (`Player.cs:814`, `BuilderAccToggleIDs.Count
     /// = 12` at `:77`): the info-accessory toggle states. Slots 4/5/6/7 are
     /// the red/blue/green/yellow wire visibility, 9 the actuator visibility
@@ -2629,6 +2637,7 @@ impl Player {
             actuation_rod_lock_setting: false,
             info_acc_mech_show_wires: false,
             auto_actuator: false,
+            auto_paint: false,
             // `Player.cs:814`'s all-zero field init + the reset's `[0] = 1`
             // (`:56092`): the ruler-line toggle starts off, the rest on.
             builder_acc_status: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -5936,6 +5945,8 @@ impl Player {
         // (`RefreshMechanicalAccsFromItemType`, `:12799-12820`).
         self.info_acc_mech_show_wires = false;
         self.auto_actuator = false;
+        // `Player.cs:18533` — autoPaint clears with the rest.
+        self.auto_paint = false;
         // `Mount.CheckMountBuff` via `ResetEffects` (`Player.cs:18832` ->
         // `Mount.cs:5275-5281`): the buff gone means dismount.
         if self.mount.is_active()
