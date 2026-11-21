@@ -398,6 +398,19 @@ fn stock_band(
         Band::Mid => {
             // `:36503` — the `flag*`-gated extras, the deep weapon, the
             // accessory row.
+            // `flag5` `:36515-36525` (W4-c33): the water chest's (style 17)
+            // two 1/2 rows right after the main item — the Water Chests
+            // callers always pre-set a main, so the arm always fires on
+            // the style. The port rolls the band rows before the main
+            // insertion (`stock_chest`), so the arm leads the band.
+            if chest_style == 17 && chest_kind == 21 {
+                if next(rng, 2) == 0 {
+                    out.push(Row::plain(4425));
+                }
+                if next(rng, 2) == 0 {
+                    out.push(Row::plain(4460));
+                }
+            }
             if ctx.mahogany && next(rng, 2) == 0 {
                 if next(rng, 2) == 0 {
                     out.push(Row::plain(4425));
@@ -503,6 +516,17 @@ fn stock_band(
                     out.push(Row::plain(4426));
                 } else {
                     out.push(Row::plain(5525));
+                }
+            }
+            // `flag5` `:36845-36855` (W4-c33): the deep band's water-chest
+            // pair — the vanilla slot is after the flag4 jungle rows (the
+            // port's `stock_chest` inserts the main ahead of the band).
+            if chest_style == 17 && chest_kind == 21 {
+                if next(rng, 2) == 0 {
+                    out.push(Row::plain(4425));
+                }
+                if next(rng, 2) == 0 {
+                    out.push(Row::plain(4460));
                 }
             }
             out.push(deep_weapon(rng, false));
@@ -831,6 +855,14 @@ fn stock_chest(
             // mask's slot 0.
             rows.insert(1, Row::plain(PHARAOHS_ROBE));
         }
+    } else if chest_style == 17 && ev.main_item != 0 {
+        // The Water Chests (W4-c33, `:17252`/`:17287-17316`): the caller
+        // pre-sets the main (the NextFromList pick or the scatter cycle),
+        // so the `num10 > 0` arms insert it verbatim — the flag5 pair
+        // rides `stock_band`'s style-17 rows.
+        let mut row = Row::plain(ev.main_item);
+        roll_prefix_on(rng, &mut row);
+        rows.insert(0, row);
     } else if ctx.desert {
         // `flag3`'s underground-desert arm (`:36023-36047`): the shallow
         // four or the deep three by `flag20`'s hive-depth test.

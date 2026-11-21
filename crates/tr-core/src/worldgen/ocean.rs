@@ -442,8 +442,9 @@ pub(crate) fn gravitating_sand(world: &mut World, world_surface: f64) {
 // --- Create Ocean Caves (the faithful walker) ---------------------------------
 
 /// `WorldGen.beachDistance` (`WorldGen.cs:86914`, decl `:4154`) — the
-/// dungeon-side ocean caves only run in the outer band.
-const BEACH_DISTANCE: i32 = 380;
+/// dungeon-side ocean caves only run in the outer band. Shared with the
+/// Water Chests scatter's trySlope beach test (W4-c33).
+pub(crate) const BEACH_DISTANCE: i32 = 380;
 /// `GenVars.maxOceanCaveTreasure` (`GenVars.cs:440`, readonly 2).
 const MAX_OCEAN_CAVE_TREASURE: i32 = 2;
 /// The carve sentinel — `num = 264` (`WorldGen.cs:76471`): an inert type id

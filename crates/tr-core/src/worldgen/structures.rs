@@ -918,6 +918,176 @@ fn solid_tile_window(world: &World, x: i32, y: i32, ice_solid: bool, spike_solid
         && (t.flags & crate::tile::FLAG_INACTIVE) == 0
 }
 
+/// `UnderwaterChests` / "Water Chests" (`WorldGen.cs:17245-17355`): the
+/// `numOceanCaveTreasure` loop (the `NextFromList` {863,186,277,187,4404}
+/// main, the 2.0→50.0 +0.1 widening jitter box, the `liquid > 250` gate,
+/// `AddBuriedChest(..., 17, trySlope: true)`), then the `9 · width/4200`
+/// scatter (the `Next(10)` 863 override + the num4 1→186 / 2→4404 / 3→277
+/// / else 187 cycle, two water hunts per iteration — `Next(1,
+/// UnderworldLayer)` then `Next(worldSurface, UnderworldLayer)` — each
+/// with the 10000-attempt cap, `trySlope` = the beach-band test). The
+/// extraLiquid/notTheBees/remix/tenthAnniversary arms stay with the seed
+/// lanes (d107); `Main.UnderworldLayer` is `maxTilesY - 200`
+/// (`Main.cs:2790`), `beachDistance` 380 (`:86914`). The pass's window:
+/// 162 non-solid (after `Ice` `:16694`), 232 solid (until the temple
+/// `:17708`).
+pub(crate) fn pass_underwater_chests(
+    world: &mut World,
+    num_ocean_cave_treasure: i32,
+    ocean_cave_treasure: &[(i32, i32); 2],
+    rng: &mut super::Rng,
+    mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
+) -> u32 {
+    let mut placed = 0u32;
+    let underworld_layer = world.height - 200;
+    // `:17250-17270`: the ocean-cave treasure anchors.
+    for i in 0..num_ocean_cave_treasure as usize {
+        // `:17252`: `NextFromList` — `objs[Next(len)]` (`Utils.cs:1213`).
+        const MAINS: [u16; 5] = [863, 186, 277, 187, 4404];
+        let main = MAINS[rng.range(0, MAINS.len() as i32) as usize];
+        let mut found = false;
+        let mut num = 2.0f64;
+        while !found && num < 50.0 {
+            num += 0.1;
+            let (ax, ay) = ocean_cave_treasure[i];
+            // `:17262-17264`: the jitter box + the x-fold (the truncating
+            // casts ride the C#'s `(int)` semantics).
+            let mut num2 = rng.range(ax - num as i32, ax + num as i32 + 1);
+            let num3 = rng.range(ay - num as i32 / 2, ay + num as i32 / 2 + 1);
+            num2 = if num2 >= world.width {
+                (num2 as f64 + num / 2.0) as i32
+            } else {
+                (num2 as f64 - num / 2.0) as i32
+            };
+            // `:17265`: the water gate (`liquidType() == 0` — the classic
+            // world's only liquid arm).
+            if super::temple::in_world(world, num2, num3, 0)
+                && world.tile(num2, num3).is_some_and(|t| {
+                    t.liquid > 250 && t.liquid_kind() == crate::tile::LiquidKind::Water
+                })
+            {
+                // `:17267`: style 17, trySlope true.
+                found = add_buried_chest(
+                    world,
+                    num2,
+                    num3,
+                    main,
+                    false,
+                    17,
+                    true,
+                    false,
+                    true,
+                    stock.as_deref_mut(),
+                    rng,
+                );
+                if found {
+                    placed += 1;
+                }
+            }
+        }
+    }
+    // `:17271-17353`: the scatter.
+    let mut num4 = 0;
+    let num5 = world.width as f64 / 4200.0;
+    let mut j = 0;
+    while (j as f64) < 9.0 * num5 {
+        let mut num6: u16 = 0;
+        num4 += 1;
+        // `:17287-17316`: the 863 override + the item cycle.
+        if rng.range(0, 10) == 0 {
+            num6 = 863;
+        } else {
+            match num4 {
+                1 => num6 = 186,
+                2 => num6 = 4404,
+                3 => num6 = 277,
+                _ => {
+                    num6 = 187;
+                    num4 = 0;
+                }
+            }
+        }
+        // `:17317-17334`: the first water hunt (the full-depth band).
+        let mut found = false;
+        let mut num7 = 0;
+        while !found {
+            let mut num8 = rng.range(50, world.width - 50);
+            let mut num9 = rng.range(1, underworld_layer);
+            // `:17323-17327`: the re-draw loop — the retry's y-band starts
+            // at 50 (the C#'s own asymmetry with the first draw's 1).
+            while !water_at(world, num8, num9) {
+                num8 = rng.range(50, world.width - 50);
+                num9 = rng.range(50, underworld_layer);
+            }
+            let try_slope = num8 < super::ocean::BEACH_DISTANCE
+                || num8 > world.width - super::ocean::BEACH_DISTANCE;
+            found = add_buried_chest(
+                world,
+                num8,
+                num9,
+                num6,
+                false,
+                17,
+                try_slope,
+                false,
+                true,
+                stock.as_deref_mut(),
+                rng,
+            );
+            if found {
+                placed += 1;
+            }
+            num7 += 1;
+            if num7 > 10000 {
+                break;
+            }
+        }
+        // `:17335-17352`: the second water hunt (the surface-down band).
+        found = false;
+        num7 = 0;
+        while !found {
+            let mut num10 = rng.range(50, world.width - 50);
+            let mut num11 = rng.range(world.world_surface as i32, underworld_layer);
+            while !water_at(world, num10, num11) {
+                num10 = rng.range(50, world.width - 50);
+                num11 = rng.range(world.world_surface as i32, underworld_layer);
+            }
+            let try_slope = num10 < super::ocean::BEACH_DISTANCE
+                || num10 > world.width - super::ocean::BEACH_DISTANCE;
+            found = add_buried_chest(
+                world,
+                num10,
+                num11,
+                num6,
+                false,
+                17,
+                try_slope,
+                false,
+                true,
+                stock.as_deref_mut(),
+                rng,
+            );
+            if found {
+                placed += 1;
+            }
+            num7 += 1;
+            if num7 > 10000 {
+                break;
+            }
+        }
+        j += 1;
+    }
+    placed
+}
+
+/// The scatter's water probe (`:17323`/`:17341`): `liquid >= 250` and
+/// water (`liquidType() == 0` on the classic path).
+fn water_at(world: &World, x: i32, y: i32) -> bool {
+    world
+        .tile(x, y)
+        .is_some_and(|t| t.liquid >= 250 && t.liquid_kind() == crate::tile::LiquidKind::Water)
+}
+
 /// The pots arm of `PotsGraveyardsAndBoulderPiles` (`WorldGen.cs:17996+`):
 /// the pot 28 scattered on the cave floors across the underground.
 pub(crate) fn pass_pots(world: &mut World, rng: &mut super::Rng) -> u32 {
@@ -1280,5 +1450,54 @@ mod tests {
             .find(|t| t.active() && t.kind == TILE_CHEST && t.frame_y == 0)
             .unwrap();
         assert_eq!(chest.frame_x % 36, 18, "the style-1 frame column");
+    }
+
+    /// W4-c33: the Water Chests pass — a water-filled basin over a sand
+    /// floor takes style-17 chests (the frame base column 18·17 = 306)
+    /// from both the treasure anchors and the scatter; the deterministic
+    /// replay (a == b) pins the draw order.
+    #[test]
+    fn the_water_chests_pass_stocks_the_basin() {
+        let basin = || {
+            let mut world = World::new("wc".into(), 1200, 600);
+            world.world_surface = 100.0;
+            world.rock_layer = 300.0;
+            for x in 0..1200 {
+                for y in 140..600 {
+                    let i = world.index(x, y);
+                    world.tiles[i].kind = super::super::TILE_SAND;
+                    world.tiles[i].flags |= FLAG_ACTIVE;
+                }
+                for y in 100..140 {
+                    let i = world.index(x, y);
+                    world.tiles[i].liquid = 255;
+                }
+            }
+            world
+        };
+        let run = || {
+            let mut world = basin();
+            let mut rng = super::super::Rng(0x0CEA);
+            let placed =
+                pass_underwater_chests(&mut world, 2, &[(300, 120), (900, 120)], &mut rng, None);
+            (world, placed)
+        };
+        let (a, pa) = run();
+        let (b, pb) = run();
+        assert_eq!(pa, pb);
+        assert!(pa > 0, "the basin takes water chests ({pa})");
+        for (ta, tb) in a.tiles.iter().zip(&b.tiles) {
+            assert_eq!(ta, tb, "the a == b determinism half");
+        }
+        // Every placed chest is the style-17 water chest (frame base 306).
+        let chests: Vec<_> = a
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == TILE_CHEST && t.frame_y == 0)
+            .collect();
+        assert!(!chests.is_empty());
+        for c in chests {
+            assert_eq!(c.frame_x, 306, "the style-17 frame column");
+        }
     }
 }

@@ -57,6 +57,6 @@ Pass 1 is this claim + census doc.
 | pass | commit | status |
 | --- | --- | --- |
 | census + claim (this doc) | 512c4cff | claimed |
-| Pyramids faithful rewrite | (this commit) | landed (code-only; pins deferred) |
-| Water Chests (UnderwaterChests) | — | pending |
+| Pyramids faithful rewrite | 524d94a7 | landed (code-only; pins deferred) |
+| Water Chests (UnderwaterChests) | (this commit) | landed (code-only; pins deferred) |
 | lily/cattail/bamboo arms | — | pending |

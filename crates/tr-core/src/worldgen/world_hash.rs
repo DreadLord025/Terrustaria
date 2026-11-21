@@ -244,6 +244,12 @@ mod tests {
     // pots, beehives, cave houses — shift), and the 151 hull replaces the
     // shape-level 480 wherever an anchor passes the sand-column gate.
     // Stale-by-design; the gate re-pins it (a == b stays).
+    // W4-c33 pass 3 (code-only): the `Water Chests` step joins between
+    // `chests` and `spider caves` — its own stream draws nothing from the
+    // shared ledgers, but the placed style-17 chests retype water cells
+    // (and the trySlope flatten touches the floor slopes), so this pin
+    // moves by design wherever the scatter finds water. Stale-by-design;
+    // the gate re-pins it (a == b stays).
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -300,6 +306,17 @@ mod tests {
     // tile-dependent passes re-roll around the new hulls. Stale-by-
     // design; the re-pin is DEFERRED to the merge gate (no compiler on
     // this branch). The a == b determinism halves stay untouched.
+    // W4-c33 pass 3 (2026-11-21, code-only): `UnderwaterChests` / "Water
+    // Chests" (`WorldGen.cs:17245-17355`) lands — the ocean-cave treasure
+    // loop (the NextFromList main, the widening jitter box, the liquid>250
+    // gate) + the 9·width/4200 scatter (the Next(10) 863 override, the
+    // 186/4404/277/187 cycle, the two 10000-cap water hunts, the beach-band
+    // trySlope) through the shared `AddBuriedChest` half (style 17), on its
+    // own `pass_rng("Water Chests")` stream at the vanilla slot after
+    // `chests`. The style-17 chests + the flattened floor slopes move the
+    // water cells directly; the flag5 loot pair (4425/4460) joins the
+    // stocking hook. Stale-by-design; the re-pin is DEFERRED to the merge
+    // gate. The a == b halves stay untouched.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

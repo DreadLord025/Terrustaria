@@ -34,8 +34,10 @@ pub struct ChestCtx {
     /// `flag6` — the living-tree family (wall 244 at the anchor,
     /// `:36135-36144`).
     pub living_tree: bool,
-    /// The pyramid probe (wall 187 — the C#'s own wall probe for the
-    /// structure's chest).
+    /// The pyramid probe (walls 187/34 — the shape-level port's sandstone
+    /// 187 and the faithful `Pyramid` chamber's sandstone-brick wall 34,
+    /// W4-c33; the C#'s own `flag11` is the 848/857/934 main-item test
+    /// `:36172-36175`, which the pre-set main carries).
     pub pyramid: bool,
     /// `flag3`'s hardened-sand half (wall 216 — the C#'s
     /// `IsUndergroundDesert` probe's second wall).
@@ -130,7 +132,7 @@ pub fn context_at(world: &World, x: i32, y: i32) -> ChestCtx {
     ChestCtx {
         jungle: near(60),
         living_tree: wall_near(244),
-        pyramid: wall_near(187),
+        pyramid: wall_near(187) || wall_near(34),
         desert: wall_near(216),
         mahogany: wall_near(63),
         ice: near(147) || near(161) || near(162) || near(197),

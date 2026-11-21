@@ -1303,9 +1303,12 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("exposed gems", "Gems In Ice Biome", step_exposed_gems),
     step!("jungle shrines", "Jungle Chests", step_jungle_shrines),
     step!("chests", "Jungle Chests Placement", step_chests),
+    // The vanilla Water Chests slot (`WorldGen.cs:17245`): after Jungle
+    // Chests Placement (`:17211`) and before Spider Caves (`:17356`) — the
+    // W4-c33 insertion (the UnderwaterChests pass, g37's B3 defers here).
+    step!("water chests", "Water Chests", step_water_chests),
     // The vanilla slots (`WorldGen.cs:17356`, `:17428`, `:17472`): after the
-    // chest family (the `UnderwaterChests` environs `:17245`, which the port's
-    // "chests" step covers) and before the temple (`:17701`) — the M5-STRUCT-5
+    // chest family and before the temple (`:17701`) — the M5-STRUCT-5
     // insertion. Everything these three passes key on (the cave pockets of
     // `Tunnels`, the gem veins of `Shinies`, the hive walls) already exists.
     step!("spider caves", "Spider Caves", step_spider_caves),
@@ -2103,6 +2106,28 @@ fn step_altars(
     _pass_config: &ConfigSection,
 ) {
     structures::pass_altars(world, opts.crimson, &mut streams.srng);
+}
+
+/// `UnderwaterChests` / "Water Chests" (`WorldGen.cs:17245-17355`) — the
+/// W4-c33 port: the ocean-cave treasure anchors + the water scatter, on
+/// its own `pass_rng("Water Chests")` stream. Consumes
+/// `GenVars.numOceanCaveTreasure`/`oceanCaveTreasure` (the ocean-cave
+/// walker publishes them).
+fn step_water_chests(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    structures::pass_underwater_chests(
+        world,
+        gv.num_ocean_cave_treasure,
+        &gv.ocean_cave_treasure,
+        &mut streams.pass_rng("Water Chests"),
+        streams.chest_stock.as_deref_mut(),
+    );
 }
 
 /// `Pyramids` (`WorldGen.cs:15360-15460`) — the faithful anchor-loop port
@@ -3156,7 +3181,9 @@ mod tests {
         // `WorldGen.cs:21066`) between `sword shrines` and `mahogany trees`.
         // S1-K-2 wave C: + `thin ice` (vanilla "Micro Biomes",
         // `WorldGen.cs:20941`) before `campsites`.
-        assert_eq!(names.len(), 66);
+        // W4-c33: + `water chests` (vanilla "Water Chests",
+        // `WorldGen.cs:17245`) between `chests` and `spider caves`.
+        assert_eq!(names.len(), 67);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3223,6 +3250,10 @@ mod tests {
                 "exposed gems",
                 "jungle shrines",
                 "chests",
+                // W4-c33: the UnderwaterChests port takes its vanilla slot
+                // (`WorldGen.cs:17245`, between Jungle Chests Placement
+                // `:17211` and Spider Caves `:17356`).
+                "water chests",
                 "spider caves",
                 "gem caves",
                 "moss",
@@ -3399,18 +3430,20 @@ mod tests {
     }
 
     /// DW-5.6: the four M5-STRUCT-5 cave-decor steps sit in their vanilla
-    /// positions — `spider caves` + `gem caves` + `moss` between `chests` and
-    /// `altars` (vanilla Underwater Chests `:17245` → Spider Caves `:17356`
-    /// → Gem Caves `:17428` → Moss `:17472` → Jungle Temple `:17701`, with
-    /// the port's `lihzahrd temple` standing in for the temple), and
-    /// `webs and honey` immediately before `mushroom and jungle plants`
-    /// (vanilla Webs And Honey `:19995` → Glowing Mushrooms and Jungle
-    /// Plants `:20122`).
+    /// positions — `spider caves` + `gem caves` + `moss` between the chest
+    /// family and `altars` (vanilla Underwater Chests `:17245` → Spider
+    /// Caves `:17356` → Gem Caves `:17428` → Moss `:17472` → Jungle Temple
+    /// `:17701`, with the port's `lihzahrd temple` standing in for the
+    /// temple; W4-c33's `water chests` now fills the `:17245` slot between
+    /// `chests` and `spider caves`), and `webs and honey` immediately
+    /// before `mushroom and jungle plants` (vanilla Webs And Honey
+    /// `:19995` → Glowing Mushrooms and Jungle Plants `:20122`).
     #[test]
     fn test_DW_5_6_cave_decor_steps_sit_in_their_vanilla_positions() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("spider caves"), pos("chests") + 1);
+        assert_eq!(pos("water chests"), pos("chests") + 1);
+        assert_eq!(pos("spider caves"), pos("water chests") + 1);
         assert_eq!(pos("gem caves"), pos("spider caves") + 1);
         assert_eq!(pos("moss"), pos("gem caves") + 1);
         assert_eq!(names[pos("moss") + 1], "altars");
