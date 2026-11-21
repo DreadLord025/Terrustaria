@@ -47,6 +47,32 @@ impl App {
         gate
     }
 
+    /// `Main.cs:62150-62153`: the fullscreen map's draw head —
+    /// `talkNPC >= 0 || sign >= 0 || (playerInventory &&
+    /// !CaptureManager.Instance.Active)` → `Player.ToggleInv()`. The port's
+    /// open paths already clear the dialog/inventory
+    /// (`try_open_fullscreen_map`), but a dialog or inventory opened WHILE
+    /// the map is up must close on the next drawn frame — the C# runs this
+    /// every draw, ahead of `DrawMap`. With the map already open the call
+    /// falls through `ToggleInv`'s first arm (`Player.cs:4972-4978`, the
+    /// map-close, reached only when the map is SHUT) to the talkNPC arm
+    /// (`:5005-5016`: `SetTalkNPC(-1)` + text clear + `playerInventory =
+    /// false`) or the inventory-close arm (`:5033-5056`) — both leave the
+    /// map open. The capture gate's `!Active` arm keeps the inventory while
+    /// a capture renders the interface; the sign editor has no port state.
+    pub(crate) fn close_dialog_behind_fullmap(&mut self) {
+        if !self.settings.map_enabled || !self.map.as_ref().is_some_and(|m| m.open) {
+            return;
+        }
+        let dialog_open = self.talk_npc.is_some();
+        let inv_open = self.inventory_open && !self.capture.interface.active;
+        if dialog_open || inv_open {
+            self.talk_npc = None; // `SetTalkNPC(-1)` (`:5007`)
+            self.npc_chat_text.clear(); // `:5009`
+            self.inventory_open = false; // `:5015`/`:5035`
+        }
+    }
+
     /// The draw region, verbatim from the pre-snapshot locals through the
     /// present: one borrow region as landed (the 55-field destructure and
     /// the gpu/renderer gate move with it unchanged). Returns the frame's
@@ -131,6 +157,11 @@ impl App {
                 .world
                 .micro_seeds
                 .contains(tr_core::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS);
+            // `Main.cs:62150-62153`: the fullscreen map's draw head closes
+            // the inventory / NPC dialog / sign via `ToggleInv` when any is
+            // open — every drawn frame, BEFORE `DrawMap` (`:62155`), so the
+            // pylon scan below reads the post-close state like the C#.
+            self.close_dialog_behind_fullmap();
             // `Main.PylonSystem.Pylons` (`TeleportPylonsMapLayer.cs:32`): the map
             // layers read the live network. The scan walks the TE book, so it stays
             // off the per-frame path unless the map or the minimap is drawing.
@@ -2336,5 +2367,46 @@ mod s1_p_i53_tests {
         // The next press fires again.
         app.place_down = true;
         assert!(app.buff_cancel_gate());
+    }
+}
+
+#[cfg(test)]
+mod w4_e18_fullmap_draw_head_tests {
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    /// W4-e18 final sweep (written, not run - code-only): the fullscreen
+    /// map's draw head (`Main.cs:62150-62153`) closes a dialog/inventory
+    /// opened while the map is up — `talkNPC >= 0 || (playerInventory &&
+    /// !CaptureManager.Active)` → `ToggleInv`'s talk/inventory arms
+    /// (`Player.cs:5005-5016`/`:5033-5056`), leaving the map open. The
+    /// capture-active arm keeps the inventory.
+    #[test]
+    fn w4_e18_the_fullmap_draw_head_closes_the_dialog_and_inventory() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("drawhead".into(), 260, 200);
+        app.map = Some(crate::map::WorldMap::new(&app.world));
+        app.map.as_mut().unwrap().set_open(true);
+        // A dialog + inventory opened while the map is up.
+        app.talk_npc = Some(0);
+        app.npc_chat_text = "hi".into();
+        app.inventory_open = true;
+        app.close_dialog_behind_fullmap();
+        assert!(app.map.as_ref().unwrap().open, "the map stays open");
+        assert_eq!(app.talk_npc, None, "SetTalkNPC(-1)");
+        assert!(app.npc_chat_text.is_empty(), "the text clears");
+        assert!(!app.inventory_open, "the inventory closes");
+        // Capture active: the inventory arm is gated off (`!Active`), and
+        // with no dialog the whole block is a no-op.
+        app.inventory_open = true;
+        app.capture.interface.active = true;
+        app.close_dialog_behind_fullmap();
+        assert!(app.inventory_open, "the capture gate keeps the inventory");
+        // The map shut: nothing closes.
+        app.capture.interface.active = false;
+        app.map.as_mut().unwrap().set_open(false);
+        app.talk_npc = Some(0);
+        app.close_dialog_behind_fullmap();
+        assert_eq!(app.talk_npc, Some(0), "the map-shut head is a no-op");
+        assert!(app.inventory_open);
     }
 }
