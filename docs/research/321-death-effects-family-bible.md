@@ -1,4 +1,9 @@
-# 283 — Death-effects-family bible FINAL + the W4-g59 SEAL (research FINAL)
+# 321 — Death-effects-family bible FINAL + the W4-g59 SEAL (research FINAL)
+
+> **Renumber banner:** 283→321 per registry-150 §9.2 (d54 tip `b243c7086`):
+> **f26's §7.3 reservation KEEPS 283** (`68-findframe-census-addendum-7j`);
+> g59 → **321**. The round-2 fresh-sweep pick of 283 below is the original
+> assignment record (chain history); 321 is this doc's number now.
 
 **Status:** ✅ SEALED (code-only; no cargo/tests/rustfmt/graphify invoked).
 **Lane:** W4-g59 (`task/W4-g59-npc-death-effects-1`, tip `d277f782b` — the
@@ -19,7 +24,8 @@ docs/research/` per tip) found the post-sweep racing wave already ate
 `empress-sheets-ledger` d125 15:44:38 / `c28-18-send-switch` g48
 15:50:24) and **282 two-way** (`d125-retire-final` / `39-item-ownership-seed`).
 **283–289 verified FREE at all 360 tips; this doc takes 283**, the next
-free ≥281. (The 281/282 collisions self-adjudicate per the 150 rules or
+free ≥281 (original round-2 pick — superseded by the renumber banner above:
+§9.2 f26-reservation KEEPS 283, g59 → **321**). (The 281/282 collisions self-adjudicate per the 150 rules or
 a round-3 refresh — not this lane's to fix. Side-flag for the registry:
 g62's `240-g62-hit-dust-final.md` sits on 240 = g58's round-2 winner;
 g62's "first-free" pick was stale — g62 owes a ≥283 rename after its
@@ -366,7 +372,7 @@ the 360-tip registry sweep (283 free). The 97 untracked `g59_*` probe
 artifacts in the worktree are this lane's own scratch (latest mtime
 10:32, pre-seal) — left untouched, explicit adds only.
 
-**283 SEALED. The death-effects family's census, activations, strip
+**321 SEALED. The death-effects family's census, activations, strip
 queue, union plan and witness union are FINAL at the pinned tips; the
 only moving parts are f10/g62's doc tails (both already past their
 scheduled work) and the wiring wave that executes the 221 strips.**

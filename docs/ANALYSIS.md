@@ -39704,12 +39704,12 @@ head-wiring sweep + the unwired-134 zero-draw pin (batch 16, 2).
 cargo/rustc/tests invoked): 56 through batch 13, 10 across batches
 14-16.**
 
-### W4-g59 SEAL (research/283): the death-effects-family bible FINAL
+### W4-g59 SEAL (research/321): the death-effects-family bible FINAL
 
-The lane is SEALED at `d277f782b` — `docs/research/283-death-effects-
-family-bible.md` (number per the registry-150 round-2 ≥281 fresh-sweep
-rule; 281/282 already raced by d30/d125/g48, 283 verified free at 360
-tips). The five seal receipts: (1) ACTIVATIONS-2 landed — 17
+The lane is SEALED at `d277f782b` — `docs/research/321-death-effects-
+family-bible.md` (renumber 283→321 per registry-150 §9.2: f26's §7.3
+reservation KEEPS 283; original round-2 pick was 283, verified free at
+360 tips). The five seal receipts: (1) ACTIVATIONS-2 landed — 17
 newly-rowed + the 15-base-fold check (105 activated, 139→134 f5's
 keep-one), 129 wired match types / 130 census kinds, 43 row-gated
 remainder; (2) the g60f death-bible compose (g60 `30fea0fe1` §12.8)
