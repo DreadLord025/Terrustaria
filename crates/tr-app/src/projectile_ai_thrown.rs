@@ -1380,6 +1380,50 @@ mod tests {
         assert!(!p2.active);
     }
 
+    /// W4-d12 FINAL item 4 — the 614 chase reads `ai[1]`, NOT `ai[0]`
+    /// (`Projectile.cs:40594` `int num2 = (int)this.ai[1]`). The DOC-SWEEP
+    /// item-1 fix seats the Cell fire's target in ai1 (`:66088` ai0=0/
+    /// ai1=num13); this witness pins the CONSEQUENCE at the chase machine:
+    /// with the target at index 1 (to the −X side) and a dead NPC at index
+    /// 0 (to the +X side), a correctly-seated shot (ai1=1) chases −X toward
+    /// the live target — the OLD mis-seating (ai0=target, ai1=0) would read
+    /// NPC 0 and either chase +X or kill on the dead target. The a9-side
+    /// compose-contract: the cell→614 spawn passes the scan's NPC index as
+    /// the target (the `MinionShot.target` field), the dispatch seats it in
+    /// ai1 for the 614 only — a9's four machines (156/164/169/206) spawn
+    /// their OWN shots (755/946/831/970/864/1119/1120) with ai0=features/
+    /// ai1=0 and never touch the 62-arm/614, so the seating composes.
+    #[test]
+    fn w4_d12_final_the_614_chase_reads_ai1_not_ai0() {
+        let w = empty_world();
+        let mut rng = census();
+        // Index 0: a DEAD NPC to the +X side (the old ai0=target mis-read).
+        let mut dead = Npc::new(crate::npc::NpcKind::Zombie, 700.0, 500.0, 0, 0.0);
+        dead.hp = 0;
+        dead.max_hp = 100;
+        // Index 1: the LIVE target to the −X side.
+        let mut live = Npc::new(crate::npc::NpcKind::Zombie, 300.0, 500.0, 0, 0.0);
+        live.hp = 100;
+        live.max_hp = 100;
+        let npcs = vec![dead, live];
+        let mut p = proj(crate::projectile::STARDUST_CELL_MINION_SHOT);
+        p.active = true;
+        p.pos = Vec2::new(500.0, 500.0);
+        p.ai[0] = 0.0; // the fire passes ai0 = 0 (:66088)
+        p.ai[1] = 1.0; // the target index rides ai1 (:66088)
+        target_sticker_step(&mut p, &w, &npcs, &mut rng, None);
+        assert!(p.active, "the live target at ai1=1 keeps the shot alive");
+        assert!(p.vel.x < 0.0, "the chase aims at NPC 1 (−X), not NPC 0 (+X)");
+        // The mis-seating contrast: ai1=0 reads the DEAD NPC 0 → kill.
+        let mut mis = proj(crate::projectile::STARDUST_CELL_MINION_SHOT);
+        mis.active = true;
+        mis.pos = Vec2::new(500.0, 500.0);
+        mis.ai[0] = 1.0; // the OLD wrong seating (target in ai0)
+        mis.ai[1] = 0.0;
+        target_sticker_step(&mut mis, &w, &npcs, &mut rng, None);
+        assert!(!mis.active, "the old ai0=target seating chased the dead NPC 0");
+    }
+
     /// The stick lifetimes (`:40673-40689`): the Daybreak 5·MaxUpdates = 10 s
     /// (600 ticks), the Tentacle Spike / Blood Butcherer 9·MaxUpdates = 540.
     #[test]
