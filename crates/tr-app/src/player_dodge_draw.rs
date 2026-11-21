@@ -37,6 +37,19 @@
 //! (`LegacyPlayerRenderer.cs:132`, fed to `BoringSetup` `:142` →
 //! `GetImmuneAlphaPure`-family tinting) — the port's layer alpha.
 //!
+//! ## Wiring (the W4-d115 wiring round)
+//!
+//! The fns are LIVE: `render::entities::draw_dodge_afterimages` draws the
+//! ghost copies before the main player copy (`render::tiles`' player
+//! pass), and `Player::step_shadow_dodge_draw_counter` runs the
+//! `:433-448` step once per rendered frame in `App::draw_region` (the
+//! C# mutates the live Player inside the renderer — the port steps the
+//! live field before the render clone). Writer census: `Player.cs:1166`
+//! is the field's ONLY Player.cs mention — no dodge proc sets the count
+//! (Holy Protection/Titanium arm the buff-59 flag `:6938-6941`/`:10076`,
+//! the brain arms the animation counter `:38049`); the renderer is the
+//! sole writer.
+//!
 //! ## The shield layer (`PlayerDrawLayers.cs:2954-3024`)
 //!
 //! The Cross Necklace's parry visual rides the Squire/Brand shield
@@ -59,8 +72,11 @@
 //!   `1 + num5`, colour `*= 1 − num4`.
 //!
 //! No draws in any of the three shield arms (pure `sin` of the global
-//! clock); the RNG contract lives only in the shadow ghosts.
-#![allow(dead_code)] // wiring deferred (code-only mode) — the entities.rs draw claims are the follow-up round
+//! clock); the RNG contract lives only in the shadow ghosts. The shield
+//! layer's own draw wiring stays with the f48 parry machine's follow-up
+//! (the Acc_Shield sheets are unported); the afterimage fns above are
+//! wired (the W4-d115 wiring round).
+#![allow(dead_code)] // the shield-layer fns await the f48 draw follow-up; the afterimage fns are wired
 
 use glam::Vec2;
 use tr_core::unified_random::UnifiedRandom;

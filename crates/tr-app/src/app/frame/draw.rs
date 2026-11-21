@@ -99,10 +99,36 @@ impl App {
             // draw offset (`draw_player`'s `gfx_off_y`), not baked into `y`.
             // The dead player renders nothing until the respawn (vanilla draws
             // no corpse; the ghost is master-mode only).
+            // W4-d115 wiring round — `LegacyPlayerRenderer.cs:433-448`:
+            // `shadowDodgeCount` steps ±1 per DRAW frame (cap 30/floor 0,
+            // keyed on the buff-scan `shadowDodge` flag). The C# mutates
+            // the live Player inside the renderer; the port steps the
+            // live field here, before the render clone below, so the
+            // clone, the G6 key and the ghost draw all read the stepped
+            // value. Dead players render nothing (the ghost branch is
+            // master-mode only), so their counter holds — the sim tick
+            // and the respawn never touch it (writer census: the
+            // renderer is the field's ONLY writer).
+            if let Some(p) = self.player.as_mut().filter(|p| !p.dead) {
+                p.step_shadow_dodge_draw_counter();
+            }
             let render_player = self.player.as_ref().filter(|p| !p.dead).cloned();
             // The body rows — the item-use rows included — are all computed by
             // `Player::update_frames` (`PlayerFrame()`) inside the fixed step.
-            let player_key = render_player.as_ref().map_or(0, |p| p.render_key());
+            let player_key = render_player.as_ref().map_or(0, |p| {
+                let mut k = p.render_key();
+                // W4-d115 wiring round: while the shadow-dodge ghosts
+                // draw, their two `Next(-10,11)` alpha rolls are pinned
+                // per frame (the sparkle-seed convention), so the frame
+                // count changes the cached range's pixels — it rides the
+                // key only while the counter is live (the vine-grid gate
+                // convention: a ghost-free frame keeps the pre-wiring
+                // key bit-for-bit).
+                if p.shadow_dodge_count > 0.0 {
+                    k ^= (*frame_count as u32).wrapping_mul(0x2545_F491);
+                }
+                k
+            });
             let npc_key = npc::render_key(&self.npcs);
             let mut stats = tr_render::sprite::RenderStats::default();
             let mut tile_stats = self.tile_stats;

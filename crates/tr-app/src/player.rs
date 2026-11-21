@@ -1498,17 +1498,24 @@ pub struct Player {
     /// in `Player.Update` (`:25461-25464`).
     pub shadow_dodge_timer: i32,
     /// `Player.shadowDodgeCount` (`Player.cs:1166`): the shadow-dodge
-    /// afterimage spread — DRAW-owned (`LegacyPlayerRenderer.cs:433-448`
-    /// steps it ±1/frame, cap 30 / floor 0; `ResetEffects` never touches
-    /// it). The ghosts' maths live in `player_dodge_draw` (W4-d115 lane
-    /// 19); the draw wiring is the follow-up round.
+    /// afterimage spread — DRAW-owned. Full-tree writer census (W4-d115
+    /// wiring round): the field declaration `Player.cs:1166` is the ONLY
+    /// `shadowDodgeCount` mention in Player.cs — no dodge proc sets it
+    /// (Holy Protection/Titanium ride the buff-59 grant `:6938-6941`, the
+    /// brain rides the animation counter `:38049`); the sole writer is
+    /// `LegacyPlayerRenderer.cs:433-448` (±1 per DRAW frame, cap 30 /
+    /// floor 0, keyed on the buff-scan `shadowDodge` flag `:10076`;
+    /// `ResetEffects` never touches it). The port's writer is
+    /// `App::step_dodge_draw_counters` at the draw seam (`app/frame/
+    /// draw.rs`), stepping through `player_dodge_draw::
+    /// step_shadow_dodge_count` — the sim tick never steps it.
     pub shadow_dodge_count: f32,
     /// `Player.brainOfConfusionDodgeAnimationCounter` (`Player.cs:1158`): the
     /// 300-tick animation window a brain dodge opens (`:38049`); decayed in
     /// `ResetEffects` (`:18794-18797`), zeroed on death (`UpdateDead`,
     /// `:16932`). The ghost-ring maths are ported in `player_dodge_draw`
-    /// (`LegacyPlayerRenderer.cs:455-467`, W4-d115 lane 19); the draw
-    /// wiring is the follow-up round.
+    /// (`LegacyPlayerRenderer.cs:455-467`, W4-d115 lane 19); the draw pass
+    /// consumes it through `draw_dodge_afterimages` (the wiring round).
     pub brain_of_confusion_dodge_animation_counter: i32,
     /// `Player.creativeGodMode` (`Player.cs:1896`): refreshed every tick from
     /// the journey `GodmodePower` (`:25493-25497`; `ResetEffects` clears it at
@@ -4329,6 +4336,23 @@ impl Player {
         if kind == 5 {
             self.do_mystic_sash_dodge(); // `:2901`
         }
+    }
+
+    /// `LegacyPlayerRenderer.DrawPlayerFull`'s counter step
+    /// (`LegacyPlayerRenderer.cs:433-448`) — the DRAW-owned writer of
+    /// `shadowDodgeCount`: +1 while the buff-scan `shadowDodge` flag is
+    /// armed (cap 30), −1 otherwise (floor 0), once per rendered frame.
+    /// Writer census (W4-d115 wiring round): the C# field has NO sim
+    /// writer — `Player.cs:1166` is the only Player.cs mention; the dodge
+    /// procs arm the FLAG (`:10076` buff 59) or the brain counter
+    /// (`:38049`), never the count. The port calls this from the draw
+    /// orchestrator (`App::draw_region`, before the render clone), NOT
+    /// from the fixed step — `update`/`respawn` never touch the field.
+    pub fn step_shadow_dodge_draw_counter(&mut self) {
+        self.shadow_dodge_count = crate::player_dodge_draw::step_shadow_dodge_count(
+            self.shadow_dodge_count,
+            self.shadow_dodge,
+        );
     }
 
     /// `Player.UpdateImmunity` (`Player.cs:18856-18869`): the i-frame
@@ -19648,6 +19672,75 @@ mod tests {
             crate::player_dodge_draw::step_shadow_dodge_count(p.shadow_dodge_count, true),
             18.0
         );
+    }
+
+    /// W4-d115 wiring round — the writer census as a witness: NO dodge
+    /// proc writes `shadowDodgeCount` (`Player.cs:1166` is the field's
+    /// only Player.cs mention). All four handlers (the Hurt arms and the
+    /// 62 net-apply) plus the Holy Protection strike-grant leave a
+    /// pre-set count untouched; only the draw step moves it.
+    #[test]
+    fn w4_d115_wiring_no_dodge_proc_writes_the_shadow_count() {
+        // The four Hurt dodge arms: sash 5 / belt 1 / brain 4 / shadow 2.
+        for (kind, item) in [(5u8, 6189u16), (1, 963), (4, 3223)] {
+            let mut p = dodge_player_with(&[item]);
+            p.shadow_dodge_count = 9.0;
+            let mut rng = DodgeRng::with_rolls(&[0, 0, 0, 0]);
+            assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "kind {kind} dodges");
+            assert_eq!(p.shadow_dodge_count, 9.0, "kind {kind}: the proc never writes it");
+            // The 62 reader shares the handler — same census.
+            p.apply_net_dodge(kind);
+            assert_eq!(p.shadow_dodge_count, 9.0, "kind {kind}: the net-apply neither");
+        }
+        // The shadow arm (buff 59) and the Holy Protection strike-grant.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(59, 600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.shadow_dodge, "buff 59 arms the FLAG (:10076)");
+        p.shadow_dodge_count = 9.0;
+        let mut rng = DodgeRng::with_rolls(&[]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the shadow dodge fires");
+        assert_eq!(p.shadow_dodge_count, 9.0, "ShadowDodge never writes the count");
+        let mut p = dodge_player_with(&[]);
+        p.on_hit_dodge = true;
+        p.shadow_dodge_count = 9.0;
+        p.on_hit_dodge_grant(); // the :6938-6941 buff-59 grant
+        p.update(&w, PlayerInput::default());
+        assert!(p.shadow_dodge);
+        assert_eq!(p.shadow_dodge_count, 9.0, "the grant arms the flag, not the count");
+        // The DRAW step is the only writer: +1 armed, −1 disarmed.
+        p.step_shadow_dodge_draw_counter();
+        assert_eq!(p.shadow_dodge_count, 10.0);
+        p.shadow_dodge = false;
+        p.step_shadow_dodge_draw_counter();
+        assert_eq!(p.shadow_dodge_count, 9.0);
+    }
+
+    /// W4-d115 wiring round — source census: outside the test module the
+    /// ONLY `self.shadow_dodge_count =` write in player.rs is the draw
+    /// step method (the renderer's `:433-448` port); the sim tick and the
+    /// respawn carry no write, matching the C#'s single-writer field.
+    /// (The needle is split so this witness's own literals do not count.)
+    #[test]
+    fn w4_d115_wiring_the_draw_step_is_the_fields_only_sim_side_writer() {
+        let src = include_str!("player.rs");
+        let body = &src[..src.find("#[cfg(test)]").unwrap()];
+        let needle = concat!("self.shadow_dodge_count", " =");
+        let writes: Vec<_> = body.match_indices(needle).collect();
+        assert_eq!(writes.len(), 1, "exactly one write site outside the tests");
+        let tail = &body[writes[0].0..];
+        assert!(
+            tail.starts_with(concat!(
+                "self.shadow_dodge_count",
+                " = crate::player_dodge_draw::step_shadow_dodge_count("
+            )),
+            "the write is the draw step (LegacyPlayerRenderer.cs:433-448)"
+        );
+        // The step method lives OUTSIDE `update`/`respawn` — it is called
+        // from the draw orchestrator (witnessed in tiles.rs's scan).
+        let method = body.find("pub fn step_shadow_dodge_draw_counter").unwrap();
+        assert!(method < writes[0].0, "the write sits inside the step method");
     }
 
     // -- S1-P-i41: mount item use + data witnesses ---------------------------
