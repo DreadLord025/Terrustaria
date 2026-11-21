@@ -55,14 +55,47 @@ noItem gate, no separate variant exists in the C#); the g39 H-family.
 
 | # | C# helper | anchor | port seam | consumers | commit |
 | --- | --- | --- | --- | --- | --- |
-| C1 | `TileIsExposedToAir` | `WorldGen.cs:54782-54800` | `spread::tile_is_exposed_to_air` | Convert 7/15/18/19 (C4/C5), the c32 biome-dungeon rooms | (pending) |
-| C2 | `BlockBelowMakesSandConvertIntoHardenedSand` | `:86562-86583` | `spread::block_below_makes_sand_convert_into_hardened_sand` | Convert 5/16 (C4), BiomeDungeonRoom | (pending) |
-| C3 | `Convert` type 2 (hallow cell) | `:55176-55260` | `spread::convert_hallow_cell` + `convert_sized_hallow` | SpreadGrass :75218, DoHallowOnSurface :1967-2011, ConvertSkyIslands :24701, initializeHardMode :31630-31651, the 146 spray / ChlorophyteBolt :77635 | (pending) |
-| C4 | `Convert` types 5/6/7 (desert/snow/purify spray cells) | `:55363-55408` / `:55409-55445` / `:55446-55526` | `spread::convert_spray_cell` + `convert_sized_spray` | the aiStyle-31 Clentaminator 1015/1016/1017 (`Projectile.cs:26813-26823`, d4's dispatch) | (pending) |
-| C5 | `Convert` types 8/9/10 (chlorophyte/jungle-mud cells) | `:55665-55670` / `:55671-55720` / `:55721-55763` | `spread::convert_chlorophyte_cell` | hardUpdateWorld :69658/:69686/:69697 (the ported `convert_cell` approximation stays — unwired), ChlorophyteDefense :69460 (remix) | (pending) |
-| C6 | `IsTileATreeBranch` / `IsTileATreeRoot` | `:29717-29740` / `:29742-29765` | `tree::is_tile_a_tree_branch` / `is_tile_a_tree_root` | C7, ConsideredSolidTileForAnchor :53903 | (pending) |
-| C7 | `ConvertTreeAndGround` (+ `_Branches`) | `:54902-55052` (+ `:55054-55065`) | `tree::convert_tree_and_ground` | the 596/616/5/323 arms of TryConvertingOrKillingTreesAbove :54855-54896 (the port's kill-only copies stay — unwired) | (pending) |
-| C8 | `GetTileMossColor` | `:81215-81255` | `framing::get_tile_moss_color` | TileFrame case 184 (:85176-85202, the loose-moss colour pick) | (pending) |
+| C1 | `TileIsExposedToAir` | `WorldGen.cs:54782-54800` | `spread::tile_is_exposed_to_air` | Convert 7/15/18/19 (C4), the c32 biome-dungeon rooms | **landed 59fb188b** |
+| C2 | `BlockBelowMakesSandConvertIntoHardenedSand` | `:86562-86583` | `spread::block_below_makes_sand_convert_into_hardened_sand` | Convert 5/16 (C4), BiomeDungeonRoom | **landed 8e3eb894** |
+| C3 | `Convert` type 2 (hallow cell) | `:55176-55260` | `spread::convert_hallow_cell` + `convert_sized_hallow` | SpreadGrass :75218, DoHallowOnSurface :1967-2011, ConvertSkyIslands :24701, initializeHardMode :31630-31651, the 146 spray / ChlorophyteBolt :77635 | **landed 6c5dcea1** |
+| C4 | `Convert` types 5/6/7 (desert/snow/purify spray cells) | `:55363-55408` / `:55409-55445` / `:55446-55526` | `spread::convert_spray_cell` + `convert_sized_spray` (+ the two `:55465` union seams in `growth/grass.rs`) | the aiStyle-31 Clentaminator 1015/1016/1017 (`Projectile.cs:26813-26823`, d4's dispatch) | **landed 0e6bee9e** |
+| C5 | `Convert` types 8/9/10 (chlorophyte/jungle-mud cells) | `:55665-55670` / `:55671-55720` / `:55721-55763` | `spread::convert_chlorophyte_cell` + `convert_sized_chlorophyte` | hardUpdateWorld :69658/:69686/:69697 (the ported `convert_cell` approximation stays — unwired), ChlorophyteDefense :69460 (remix) | **landed a6b21b72** |
+| C6 | `IsTileATreeBranch` / `IsTileATreeRoot` | `:29717-29740` / `:29742-29765` | `tree::is_tile_a_tree_branch` / `is_tile_a_tree_root` (`Option<i32>` = the C# `out offsetToTrunk`) | C7, ConsideredSolidTileForAnchor :53903 | **landed b53ebbc0** |
+| C7 | `ConvertTreeAndGround` (+ `_Branches`) | `:54902-55052` (+ `:55054-55065`) | `tree::convert_tree_and_ground` (explicit `&mut UnifiedRandom` = the caller's genRand) | the 596/616/5/323 arms of TryConvertingOrKillingTreesAbove :54855-54896 (the port's kill-only copies stay — unwired) | **landed f9c3dba7** |
+| C8 | `GetTileMossColor` | `:81215-81255` | `framing::get_tile_moss_color` | TileFrame case 184 (:85176-85202, the loose-moss colour pick) | **landed 6e9ae957** |
+
+Claim commit: 057d9ce1. **C1-C8 fully landed — the round is closed.**
+
+## Landing notes / deliberate deviations
+
+- **The wall halves** ride the shared `growth::convert_wall_by_case`
+  (types 2/5/6/7 verbatim). Type 7's `:55465` dirt arm there carries only
+  the Dirt set — C4 pre-gates the HardenedSand/Snow union half through two
+  `pub(crate)` membership seams (`conversion_hardened_sand_walls_contains` /
+  `conversion_snow_walls_contains`), order-equivalent: both unions are
+  disjoint from the natural Stone/Ice/Sandstone arm, the 262/274 switch and
+  the NewWall sets, so the pre-gate cannot reorder a conversion.
+- **genRand**: the wall ladders take `None` (the `convert_cleanse_cell` / d1
+  precedent — no runtime genRand stream; types 2/5/6/8/9/10 draw nothing
+  anyway; type 7's ladder has no roll). C7 takes the explicit caller stream
+  (the g39 H-family precedent) and draws in C# order — the base/top/middle
+  frame rolls, the `Next(2)`-then-`Next(2)` branch lottery.
+- **The C7 trunk-walk quirk kept**: the loop's branch test reads the FIXED
+  `y - 1` cell (`:54924`), not `y - 1 - num2` — verbatim.
+- **The re-frame** is the port's `reframe_area` superset (the
+  `convert_cleanse_cell` documented deviation); the
+  `RainbowSandAndBlackSandWalls` paint arms and the `NetMessage` tails are
+  the d1-documented skips (a mode the port does not generate / MP-only).
+- **The thorn kills** call `edit::kill_tile(world, x, y, false)` — the C#
+  `KillTile(i2, j2)` default arm (fail/effectOnly/noItem all false).
+- **The type-2 mud arm** (`:55256-55259`) reads the SNAPSHOT type 59 against
+  the LIVE 109 4-neighbours, independent of the else-if ladder — kept.
+- **Unwired**: no executed step calls any C1-C8 fn; both world-hash pins
+  unchanged by this round (the comment-only `world_hash.rs` note), the
+  `a == b` determinism halves untouched. 19 witnesses WRITTEN NOT RUN
+  (code-only; no cargo/rustc/rustfmt/tests/dotnet/graphify invoked).
+  Verified by re-reading the cited C# blocks in ≤100-line windows and hand
+  arithmetic against the ladders.
 
 Not claimed (owner lanes / no worldgen consumer): `Convert` types 12-21
 (the paint-spray/evil-II family — zero call sites in the whole decompile
