@@ -247,6 +247,8 @@
 //! | 1269-1273 | `:88616-88620` | the 324 SkeletonAlien death (5 gores 466/467/467/468/468) |
 //! | 1274-1281 | `:88623-88639` | the skeleton fall-through (head 42 + 77/110 extras + shared 43/43/44/44) |
 //! | 1282-1289 | `:88654-88657` | the 694 WaterBoltMimic death (5x1008 + 3x1007 random-Center gores) |
+//! | 1290-1293 | `:88058-88070` | the town-pet block (25-dust type-31 burst + 4 random 61-63 gores, velocity post-writes) |
+//! | 1294-1298 | `:88677-88682` | the 453 SkeletonMerchant death (5 gores, distinct pairs, shimmer) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -7480,6 +7482,89 @@ fn water_bolt_mimic_death(
     }
 }
 
+/// The town-pet block death (`NPC.cs:88046-88075`, sites 1290-1293): the
+/// gate is `369 Angler || 376 SleepingAngler || 663 Princess || IsTownPet ||
+/// 695/696 Palworld distressed` (`IsTownPet` = `ID/NPCID.cs:10118`, the
+/// `is_town_pet` port stand-in). On death: the 25-dust type-31 burst at
+/// position (Speed 0,0, Alpha 100, scale 2), each dust velocity ×1.4,
+/// noLight + noGravity; then FOUR gores at `position + (width/2 - 24,
+/// height/2 - 24)` (the C# integer halves), velocity `default` (Zero),
+/// type `Next(61, 64)` drawn per gore, scale forced to 1, with the quadrant
+/// velocity post-writes (+X/+Y, −X/+Y, +X/−Y, −X/−Y) applied AFTER each
+/// spawn's kicks.
+fn town_pet_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:88050-88056` — the 25-dust type-31 burst.
+    for _ in 0..25 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 31, 0.0, 0.0, 100,
+            Color::default(), 2.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 1.4;
+        d.no_light = true;
+        d.no_gravity = true;
+    }
+    // `:88058-88073` — the four quadrant gores at Center-(24,24).
+    let anchor = Vec2::new(
+        pos.x + (w as i32 / 2) as f32 - 24.0,
+        pos.y + (h as i32 / 2) as f32 - 24.0,
+    );
+    let quadrants: [(f32, f32); 4] = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
+    for (dx, dy) in quadrants {
+        let ty = rng.next_range(61, 64);
+        let idx = gore.new_gore(rng, world, anchor, Vec2::ZERO, ty, 1.0);
+        let g = gore.slot_mut(idx);
+        g.scale = 1.0;
+        g.velocity.x += dx;
+        g.velocity.y += dy;
+    }
+}
+
+/// The 453 SkeletonMerchant death (`NPC.cs:88671-88682`, sites 1294-1298):
+/// the 20-dust type-26 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then
+/// the 5-gore ladder with shimmer variants at `this.scale` — the head 638
+/// (1342 shimmer) gated on `altTexture == 0` (the stand-in), then the
+/// DISTINCT +20 pair 639 (1346) / 640 (1345) and the DISTINCT +34 pair 641
+/// (1344) / 642 (1347).
+fn skeleton_merchant_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer = npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(453);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    // `:88675-88677` — the head gated on altTexture == 0 (the stand-in).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1342 } else { 638 }, s);
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1346 } else { 639 }, s); // :88679
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1345 } else { 640 }, s); // :88680
+    gore.new_gore(rng, world, low, vel, if shimmer { 1344 } else { 641 }, s); // :88681
+    gore.new_gore(rng, world, low, vel, if shimmer { 1347 } else { 642 }, s); // :88682
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -8271,6 +8356,15 @@ pub fn hit_effect_c(
     if npc_type == 368 && npc.hp <= 0 {
         travelling_merchant_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
+    // `:88046-88075` — the town-pet block arm (sites 1290-1293): 369/376/663/
+    // IsTownPet/695/696. Ported late (batch 151) — the sites are numbered in
+    // commit order, not C# order.
+    if (npc_type == 369 || npc_type == 376 || npc_type == 663
+        || crate::npc_ai_town::is_town_pet(npc_type) || npc_type == 695 || npc_type == 696)
+        && npc.hp <= 0
+    {
+        town_pet_death(npc, dust, dust_ctx, gore, rng, world);
+    }
     // `:88076-88098` — the 227 Painter arm (sites 1120-1124).
     if npc_type == 227 && npc.hp <= 0 {
         painter_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
@@ -8395,6 +8489,10 @@ pub fn hit_effect_c(
     // `:88641-88660` — the 694 WaterBoltMimic arm (sites 1282-1289).
     if npc_type == 694 && npc.hp <= 0 {
         water_bolt_mimic_death(npc, gore, rng, world);
+    }
+    // `:88661-88683` — the 453 SkeletonMerchant arm (sites 1294-1298).
+    if npc_type == 453 && npc.hp <= 0 {
+        skeleton_merchant_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -13167,6 +13265,77 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the mimic mirrors the C# draws");
+    }
+
+    /// `NPC.cs:88050-88073` — the town-pet death: the 25-dust type-31 burst
+    /// then FOUR gores at Center-(24,24) with the quadrant velocity
+    /// post-writes. The twin replay pins the draw order: 25 dusts × 6
+    /// default-block draws (type 31 hits no tweak), then per gore the
+    /// Next(61,64) type draw BEFORE the two kicks.
+    #[test]
+    fn w4_f10_the_town_pet_death_spawns_the_quadrant_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1319);
+        town_pet_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w);
+        // The anchor: position + (40/2 - 24, 56/2 - 24) = (96, 104).
+        for i in 0..4 {
+            assert_eq!(gore.slot(i).position, Vec2::new(96.0, 104.0));
+            assert_eq!(gore.slot(i).scale, 1.0);
+            let t = gore.slot(i).gore_type;
+            assert!((61..64).contains(&t), "gore {i} type {t}");
+        }
+        // The quadrant post-writes relative to the raw kicks: (+1,+1),
+        // (-1,+1), (+1,-1), (-1,-1).
+        let mut twin = UnifiedRandom::new(1319);
+        for _ in 0..25 {
+            let _px = twin.next_max(40 - 4);
+            let _py = twin.next_max(56 - 4);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        let quadrants: [(f32, f32); 4] = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
+        for (i, (dx, dy)) in quadrants.iter().enumerate() {
+            let ty = twin.next_range(61, 64);
+            assert_eq!(gore.slot(i).gore_type, ty);
+            let ky = twin.next_range(10, 31) as f32 * 0.1;
+            let kx = twin.next_range(-20, 21) as f32 * 0.1;
+            assert_eq!(gore.slot(i).velocity.x, kx + dx);
+            assert_eq!(gore.slot(i).velocity.y, -ky + dy);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the town-pet death mirrors the C# draws");
+        // The dust post-writes: velocity ×1.4, noLight, noGravity.
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert!(active.len() >= 20);
+        assert!(active.iter().all(|d| d.no_light && d.no_gravity));
+    }
+
+    /// `NPC.cs:88677-88682` — the SkeletonMerchant death: the 5-gore ladder
+    /// 638/639/640/641/642 (normal, both pairs DISTINCT) or
+    /// 1342/1346/1345/1344/1347 (shimmer).
+    #[test]
+    fn w4_f10_the_skeleton_merchant_death_uses_the_shimmer_variants() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.variation_index = 0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1321);
+        skeleton_merchant_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![638, 639, 640, 641, 642]);
+        let mut n2 = boss(100.0, 100.0, 40.0, 56.0);
+        n2.variation_index = 1;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(1321);
+        skeleton_merchant_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![1342, 1346, 1345, 1344, 1347]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
