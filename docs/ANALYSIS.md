@@ -39342,3 +39342,82 @@ independent of the actuator bit; the gate's other :3858 terms — !active,
 solidTop 19, non-solid 4, BlocksWater 54 unsloped-only). Set memberships
 verified mechanically against the generated bitsets (TILE_SOLID/
 TILE_SOLID_TOP/SET_DONT_DRAW_TILE_SLICED word decode).
+
+## The actuation/inactive DOC-SWEEP + the 83 herb-maturity sheet (W4-g80 lane 21, 2026-11-21)
+
+The actuation BEHAVIOUR census (Collision/WorldGen/wiring/place-side), the
+visual-transition and inactive-wall verdicts, and the next parked
+positional-switch arm. Full evidence: `docs/research/100-doc-sweep-actuation.md`.
+
+**Census verdicts (no code change):** the actuated-tile behaviour is ported
+across the collision family (`tr-app/collision.rs` + the per-consumer
+`solid_tile` twins), the wiring toggle (`tr-core/wiring.rs::actuate`/
+`actuate_forced`/`de_active`/`re_active` with the `NotReallySolid` /
+{314,379,386-389,476} / `PreventsActuationUnder` sets verbatim), the
+actuator item's place/cut/rod arms (`world_sim/editing/wiring.rs`, S1-P-i34)
+and the .wld persistence (`wld/sections/tiles.rs`). The actuation visual is
+INSTANT in C# (no fade/timer anywhere — `Wiring.DeActive`/`ReActive` flip the
+bit and reframe; the draw reads it the same frame) and the port matches.
+Walls have NO actuation (`WallDrawing.cs` has zero `inActive`/`actColor`
+references; `Tile.inActive` is a block-only flag) — the port matches.
+
+**Gaps found, parked to their owning lanes (NOT fixed here):**
+- `housing.rs::solid_tiles_in_box` cites `Collision.cs:1862-1878` — a stale
+  citation (the real `Collision.SolidTiles` is `:3455-3488`) — and drops the
+  `!inActive()` term plus the `!tileSolidTop` term; the `ScoreRoom` home-spot
+  probes (`housing.rs:289/:299/:313`) drop `nactive()` too. An actuated floor
+  scores as a home spot in the port but not in C#. OWNED by the in-flight
+  W4-d118/d119 housing lanes — recorded, not touched.
+- The snowfall projectiles 411-414's second collision pass
+  (`Collision.AnyCollisionWithSpecificTiles(..., TileID.Sets.Falling,
+  evenActuated: true)`, `Projectile.cs:17601`) — the port's falling-tile
+  flight (`projectile.rs:19824-19829`) integrates gravity + position with no
+  tile collision at all (a wider AI_010 gap, not actuation-specific). The
+  `evenActuated` parameter has no port counterpart; its ONLY C# caller is
+  this snow arm. Recorded for the projectile lane.
+- The `autoActuator` placement consumer
+  (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `Player.cs:40594-40669`)
+  stays the recorded follow-up (`world_sim/player.rs:163-166`): the flag is
+  granted (3624) and read by the visibility gate, the auto-place-on-build
+  pass is not ported. It needs the `tileDataCaches` pre-placement snapshot.
+
+**PORTED — the 83 herb-maturity sheet swap (the parked positional-switch
+arm, `TileDrawing.cs:1149-1151` → `GetTileDrawTexture` `:1450-1455`).**
+`DrawSingleTile` case 83 re-picks the draw texture through
+`GetTileDrawTexture(tile, x, y)`, whose case-83 arm swaps `key.TileType` to
+84 while `WorldGen.IsAlchemyPlantHarvestable(tile.frameX / 18, tileY)` holds
+— the mature (blooming) herb sprite, the FRAME untouched. The port had it
+parked ("the texture override (83) stays parked — it needs the per-tile
+sheet override"). Ported: `TileDrawData.sheet_kind_override: Option<u16>`
+(the re-pick), the case-83 arm in `apply_world_corrections` (now takes a
+`&WeatherCtx` — the live rain/clouds; the predicate's day/night/moon/time
+inputs read `world.*` internally), and the `resolve_tile_frame` call
+consumes `dd.sheet_kind_override.unwrap_or(kind)`. The predicate itself
+(`growth::is_alchemy_plant_harvestable`, `WorldGen.cs:66148-66175`) was
+already ported for the harvest arm — reused, not duplicated. The clouds
+ride `draw_tiles`' new `rain_cloud_alpha: f32` param (`Main.cloudAlpha`),
+fed from `rain.visual_alpha()`; the per-cell `herb_wx` WeatherCtx combines
+it with `params.raining`. `remixWorld` stays the M5-SEED-2 stand-in
+(`false`), matching the smart-cursor arm.
+
+**G6 key coverage (the swap's non-light inputs):** the harvest predicate
+reads `cloudAlpha > 0` (waterleaf), `blood_moon || moonPhase == 0` (deathweed)
+and `time > 40500` (fireblossom) — none of which the light key carries
+(`day_time`/`raining`/`time` already ride `light_params`). A new
+`WorldFrameKey.herb_weather: u32` carries the three-gate bitmask, gated on an
+herb 83 active in the view rect (the vine-grid key's convention) so herb-free
+worlds keep the pre-wiring cache behaviour bit-for-bit.
+
+**RNG:** the draw pass draws no random numbers; the harvest predicate is
+pure world/weather state — no stream touched.
+
+**Verification: code-only mode — no cargo/rustc/rustfmt/tests/graphify
+invoked.** 3 witnesses WRITTEN, NOT RUN: `drawdata.rs`
+`w4_g80_the_harvestable_herb_swaps_to_the_mature_sheet` (the five-style
+harvest matrix → sheet 84 / own sheet, the frame/metrics untouched, 82/84
+negative), `render/tiles.rs`
+`w4_g80_the_harvestable_herb_draws_the_mature_sheet` (the UV samples
+Tiles_84 at the same frame by day / Tiles_83 by night + the dispatch-source
+pin that the resolve call consumes the override and the corrections receive
+the weather), `app/mod.rs` `herb_weather_gates_change_the_frame_key` (each
+of the three gates flips the key; unchanged gates do not).

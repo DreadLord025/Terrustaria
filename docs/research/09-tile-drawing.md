@@ -115,8 +115,15 @@ render-target cache.
 | Glow textures (`glowTexture`/`glowSourceRect`/`glowColor` out params) | per-case in `GetTileDrawData` :6049+ | `draw_tile_flames` :1409 | PARTIAL — the `Main.tileGlowMask` table arm is the only consumer; the per-case glow rects are gone. |
 
 **Parked inside the otherwise-ported positional switch** (ROADMAP TILE-DRAW-6, `done`):
-tile 83's texture override, 323's frond-column
-`return` (no palm canopy pass — deviation, `drawdata.rs` deviation comment).
+323's frond-column `return` (no palm canopy pass — deviation, `drawdata.rs`
+deviation comment). Tile 83's texture override LANDED (W4-g80 DOC-SWEEP,
+2026-11-21): the `GetTileDrawTexture` re-pick (`TileDrawing.cs:1149-1151` →
+`:1450-1455`) swaps a harvestable herb to the mature sheet 84 via
+`TileDrawData.sheet_kind_override` + the `resolve_tile_frame` consumption;
+`apply_world_corrections` now takes a `&WeatherCtx` (the live rain/clouds)
+for the `IsAlchemyPlantHarvestable` probe, whose day/night/moon/time inputs
+read `world.*` internally. Evidence:
+`docs/research/100-doc-sweep-actuation.md` §4.
 **W4-g80 (2026-11-21)**: the disco arms 160/692 (`Main.DiscoR/G/B`) landed —
 `TileDrawData.disco_override` + `render/tiles.rs::disco_final_color` (the
 `finalColor` replacement with `Tile.actColor`'s double-0.4 byte truncation
