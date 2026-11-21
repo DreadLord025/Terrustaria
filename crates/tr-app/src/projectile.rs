@@ -22513,6 +22513,14 @@ impl ProjectilePool {
             // iterations, drift included) one `NextFloat` radius scale +
             // the spawn + one `Next(30)` timeLeft decrement.
             resize(&mut self.slots[slot], 22.0);
+            // S1-E-21h d77 — `:78025`/`:78029`: the cluster II pair
+            // (777/781) plays Item62, the rest Item14 — at the POST-resize
+            // `base.position`, before the gores and the owner-gated ring.
+            {
+                let style = if matches!(kind, 777 | 781) { 62 } else { 14 };
+                let p = &self.slots[slot];
+                self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0));
+            }
             for _ in 0..4 {
                 gore(rng);
             }
@@ -22568,6 +22576,16 @@ impl ProjectilePool {
             // `:78088-78141` — the plain rockets: the 22×22 recentre, the
             // 30+20×2 dust (no explicit draws), 8 gores (`:78117-78140`'s
             // 2×4 loop).
+            // S1-E-21h d77 — `:78092`/`:78096`: 133/136 play Item62, the
+            // rest Item14 — at `base.position` BEFORE the 22×22 recentre
+            // (the C# plays ahead of `:78098`'s centre-snap; the inner
+            // `type == 30` test `:78090` is dead code — 30 never reaches
+            // this arm, its cue rides the :78331 bomb family).
+            {
+                let style = if matches!(kind, 133 | 136) { 62 } else { 14 };
+                let p = &self.slots[slot];
+                self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0));
+            }
             resize(&mut self.slots[slot], 22.0);
             for _ in 0..8 {
                 gore(rng);
@@ -22577,6 +22595,13 @@ impl ProjectilePool {
             // smoke dust with a `Next(2)` gate (one `Next(10)` fadeIn when
             // taken) each (`:78162-78166`), the 70×2 dust (no draws), 12
             // gores (`:78176-78203`'s 3×4 loop), the 10×10 recentre.
+            // S1-E-21h d77 — `:78146`/`:78150`: 139 plays Item62, the rest
+            // Item14 — at `base.position` BEFORE the 80×80 recentre.
+            {
+                let style = if kind == 139 { 62 } else { 14 };
+                let p = &self.slots[slot];
+                self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0));
+            }
             resize(&mut self.slots[slot], 80.0);
             for _ in 0..40 {
                 if rng.next_range(0, 2) == 0 {
@@ -24390,6 +24415,66 @@ mod s1_e_21h_sound_tests {
                     "rocket {kind} at the post-resize position"
                 );
             }
+            pool.kill(slot);
+        }
+    }
+
+    /// S1-E-21h d77 — batch 7 (sites `:78025`-`:78150`): the cluster II /
+    /// plain / Rocket III-IV census cues — the cluster pair plays
+    /// POST-resize, the plain and III/IV families play PRE-recentre (the
+    /// C# sound precedes the centre-snap). WRITTEN NOT RUN.
+    #[test]
+    fn s1_e_21h_d77_the_cluster_plain_and_rocket34_census_cues() {
+        let mut pool = ProjectilePool::new();
+        // (kind, style, pre-position capture: the cue reads the position
+        // at the C# play point — post-resize for the cluster, pre for the
+        // plain/III-IV arms.)
+        let cases: [(u16, i32, bool); 8] = [
+            (777, 62, false),
+            (781, 62, false),
+            (776, 14, false),
+            (804, 14, false),
+            (133, 62, true),
+            (136, 62, true),
+            (134, 14, true),
+            (139, 62, true),
+        ];
+        for (kind, style, pre) in cases {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .expect("the rocket row spawns");
+            let pre_pos = (pool.slots()[slot].pos.x, pool.slots()[slot].pos.y);
+            pool.rocket_kill_census(slot, &mut tr_core::tile_light::FastRandom::new(7), 0);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "rocket {kind}: one census cue");
+            assert_eq!((queued[0].0, queued[0].1), (2, style), "rocket {kind}'s style");
+            if pre {
+                assert_eq!(
+                    (queued[0].2, queued[0].3),
+                    pre_pos,
+                    "rocket {kind} plays BEFORE the recentre"
+                );
+            } else {
+                let p = &pool.slots()[slot];
+                assert_eq!(
+                    (queued[0].2, queued[0].3),
+                    (p.pos.x, p.pos.y),
+                    "rocket {kind} plays at the post-resize position"
+                );
+            }
+            pool.kill(slot);
+        }
+        // The Rocket III/IV non-139 members play Item14 pre-recentre.
+        for kind in [140u16, 144, 340, 341] {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .expect("the rocket row spawns");
+            let pre_pos = (pool.slots()[slot].pos.x, pool.slots()[slot].pos.y);
+            pool.rocket_kill_census(slot, &mut tr_core::tile_light::FastRandom::new(7), 0);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "rocket {kind}: one census cue");
+            assert_eq!((queued[0].0, queued[0].1), (2, 14));
+            assert_eq!((queued[0].2, queued[0].3), pre_pos);
             pool.kill(slot);
         }
     }
