@@ -1795,10 +1795,13 @@ impl App {
                                     .as_ref()
                                     .map_or(false, |p| p.buffs.expert_mode),
                                 downed_plant_boss: world.downed_plant_boss,
-                                // The .plr flag is unported (the save writes
-                                // false, player_file.rs:877); the world's
-                                // dd2_won latch is the port's stand-in.
-                                downed_dd2_any: world.dd2_won,
+                                // `DD2Event.DownedInvasionAnyDifficulty`
+                                // (`DD2Event.cs:89-99`) = T1 ‖ T2 ‖ T3 —
+                                // `Player.cs:24450-24453` latches it into
+                                // the .plr flag; NOT the `dd2_won` sentinel
+                                // (research/128 §4.2: a T1 win already
+                                // satisfies the getter).
+                                downed_dd2_any: world.downed_dd2_any(),
                                 tenth_anniversary: world
                                     .seeds
                                     .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),

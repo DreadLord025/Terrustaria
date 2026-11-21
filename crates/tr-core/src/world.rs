@@ -1053,6 +1053,17 @@ impl World {
         self.downed_mech_boss1 || self.downed_mech_boss2 || self.downed_mech_boss3
     }
 
+    /// `DD2Event.DownedInvasionAnyDifficulty` (`DD2Event.cs:89-99`):
+    /// T1 ‖ T2 ‖ T3 — the getter returns true when either of the first two
+    /// tiers is down, else the T3 latch. `Player.cs:24450-24453` copies it
+    /// into the .plr `downedDD2EventAnyDifficulty` flag the crystal-gear
+    /// tooltip reads (`Main.cs:21000`); the win sentinel `dd2_won` is the
+    /// WRONG granularity (research/128 §4.2 — a T1 win already satisfies
+    /// the getter while `dd2_won` only latches the current invasion).
+    pub fn downed_dd2_any(&self) -> bool {
+        self.dd2_downed_t1 || self.dd2_downed_t2 || self.dd2_downed_t3
+    }
+
     /// `Main.Sundialing` (`Main.cs:6169-6181`), single-player branch: arm the
     /// fast-forward to dawn and start the 8-day cooldown. The `netMode == 1`
     /// message branch is not ported.
@@ -1458,6 +1469,28 @@ impl World {
 
 #[cfg(test)]
 mod tests {
+    /// W4-f28 salvage (research/128 §4.2): `DD2Event.DownedInvasionAnyDifficulty`
+    /// (`DD2Event.cs:89-99`) is T1 ‖ T2 ‖ T3 — each single tier satisfies it,
+    /// and the `dd2_won` sentinel (the CURRENT invasion's win) never feeds it.
+    #[test]
+    fn w4_f28_the_dd2_any_getter_is_the_three_tier_disjunction() {
+        let mut w = World::new("t".into(), 40, 40);
+        assert!(!w.downed_dd2_any());
+        for tier in 0..3 {
+            let mut w = World::new("t".into(), 40, 40);
+            match tier {
+                0 => w.dd2_downed_t1 = true,
+                1 => w.dd2_downed_t2 = true,
+                _ => w.dd2_downed_t3 = true,
+            }
+            assert!(w.downed_dd2_any(), "tier {tier} alone satisfies the getter");
+        }
+        // A won CURRENT invasion with no tier latch is NOT the getter's
+        // input (`dd2_won` latches at DD2Event.cs:483 and resets on start).
+        w.dd2_won = true;
+        assert!(!w.downed_dd2_any());
+    }
+
     #[test]
     fn surface_bg_style_tables_match_set_bg() {
         // Spot rows from `WorldGen.setBG`, including the `default:` rows and

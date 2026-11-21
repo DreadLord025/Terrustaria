@@ -36,8 +36,9 @@ pub struct TooltipWorld {
     /// `NPC.downedPlantBoss` — the cursed-by-Plantera swap (`:20961`).
     pub downed_plant_boss: bool,
     /// `Player.downedDD2EventAnyDifficulty` — the crystal-gear warning
-    /// (`:21000`). The port's stand-in is the world's `dd2_won` latch
-    /// (the .plr save writes the flag false, `player_file.rs:877`).
+    /// (`:21000`). Derived from `DD2Event.DownedInvasionAnyDifficulty`
+    /// (`DD2Event.cs:89-99`, T1 ‖ T2 ‖ T3 — `world.downed_dd2_any()`),
+    /// the getter `Player.cs:24450-24453` latches into the .plr flag.
     pub downed_dd2_any: bool,
     /// `Main.tenthAnniversaryWorld` (`:20973`).
     pub tenth_anniversary: bool,
