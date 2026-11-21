@@ -36055,6 +36055,70 @@ Mana Sickness (buff 94) — **not for weapons**:
   `DebugOptions.ManaPotionDelay` halves (`:10320-10323`, `:51939-51943`) are
   false in the shipped statics (`DebugOptions.cs:86`) — folded out.
 
+## The HitWireSingle remainder arms (W4-f11, code-only)
+
+The fourth wiring-arms lane (c42/e20/e21 own the first three). c42 pushed one
+fix-round commit (de176ccd: 144/421/422 SquareTileFrame wakes + actuator guard,
+235/226 downedPlantBoss guards, 506 onto the shared validator) on the
+ALREADY-PORTED arms; e20/e21 pushed nothing. This lane ports the MISSING set —
+the arms `hit_wire_single` lacked vs the C# `HitWireSingle` switch
+(`Wiring.cs:996-2554`):
+
+- **Batch 1 (8773057a)**: torch 4 (`ToggleTorch` `:2903-2918`, frameX ±66),
+  campfire 215 (`ToggleCampFire` `:3000-3042`, the 3×2 anchor + the shared
+  `validate_tile_square` + the anchor-frameY ±36 flip), the 130/131 stone-slab
+  pair (`:1423-1439`; the 130 gate's `CanKillTile` conjunct is OUTSIDE the
+  above-active disjunction — unlike DeActive's fold — and a null above tile
+  refuses), switch track 314 (`:1744-1749`, `CheckMech(5)` +
+  `Minecart.FlipSwitchTrack`). New `tr-core/src/minecart.rs` ports the
+  `Initialize` connection tables (`Minecart.cs:125-427`, hand-transcribed
+  from the sequential `num++` rows), `GetNearbyTilesSetLookupIndex`
+  (`:1170-1198`), `FrameTrack` (`:943-1168`) and `FlipSwitchTrack`
+  (`:1296-1319`) — the `edit/hammer.rs` `Consumed` seam's other half.
+- **Batch 2 (fac8362e)**: doors 10/11 (`:1461-1488`; `OpenDoor`'s one
+  `Next(2)` direction draw + the opposite retry, `CloseDoor(forced: true)`),
+  trapdoors 386/387 (`:1440-1453` → `ShiftTrapdoor` `WorldGen.cs:51447-51596`,
+  playerAbove-true-then-false), tall gates 388/389 (`:1454-1460` →
+  `ShiftTallGate` `:51723-51775`, closing = type==389). `open_door`/
+  `close_door` gain the `Wiring.running`-gated `wire_skips` seam
+  (`:37717-37725`/`:31895-31899`; all callers updated, the interaction/NPC
+  paths pass `None`). The case-8/9 door cues queue as `door_sounds` and
+  drain on the `UpdateWorldGen` stream (the `switch_clicks` precedent).
+- **Batch 3 (e0d1f245)**: hoppers 21/467 (`:1986-1989` → `Hopper`
+  `:2638-2678`) + extractinators 219/642 (`:1990-1993` → `Extractinator`
+  `:2554-2584`). The engine resolves the 2×2/3×3 anchor + `CheckMech(60)`
+  and queues `hopper_requests`/`extractinator_requests`; the app half
+  (`world_sim/wiring_devices.rs`) runs the chest-store lookup, the locked/
+  in-use gates, the 192×192 grab walk (`TryToPutItemInChest`/`TryAddingToStack`/
+  `TryAddingToEmptySlot`/`TryMoveCoinsInChest` `:2680-2798`,
+  `Utils.CoinsSplit`/`CoinsCount`) and `TryFindChestForExtractinator`
+  (`:2586-2608`) + the reverse slot roll.
+
+**Deliberate deviations (code-only mode — no cargo/rustc/tests invoked):**
+- The door/trapdoor/tall-gate `SoundEngine.PlaySound(8/9)` sites fold into one
+  cue per attempt outcome (a successful shift plays case 8 at the anchor, the
+  all-refused trapdoor path plays case 9 at the hit cell); the C#'s per-branch
+  positions (`ShiftTrapdoor` `:51470`/`:51512`/`:51563`/`:51594`) are cited but
+  the port queues the anchor/hit-cell position. The pitch draw rides the
+  caller's `UpdateWorldGen` stream, never the wiring stand-in.
+- The hopper's `playerIndexTheItemIsReservedFor == Main.myPlayer` gate folds
+  to "all drops" (the port's single-player i51 model — `WorldItem.cs:139`
+  netMode 0 → myPlayer); the `SyncItem`/`VisualizeChestTransfer` particle
+  tails are unported seams (the particles task).
+- The extractinator roll + `Item.NewItem` spawn ride the wiring stand-in
+  stream (the S1-L-6c contract, the `actuation_drops` precedent); the C# truth
+  is `Main.rand` at the `HitWireSingle` site under the `UpdateWorldGen` swap.
+- The `FrameTrack` pound branch's `array[num4]` read carries a `.max(0)`
+  defensive clamp for the degenerate front-not-in-options state (the C# would
+  throw IndexOutOfRange, `Minecart.cs:1085`).
+- The trapdoor/tall-gate `TileFrame` walks use the port's superset
+  `reframe_area` wake (the `open_door` precedent), not the C#'s exact
+  per-cell loop bounds.
+
+23 witness tests WRITTEN NOT RUN (10 batch-1 + 6 batch-2 + 4 batch-3 engine +
+3 batch-3 app). The `validate_tile_square` helper went `pub(crate)` (the
+c42 fix-round precedent, shared with the campfire/tall-gate/trapdoor validators).
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the
