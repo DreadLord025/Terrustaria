@@ -4243,10 +4243,12 @@ impl Player {
         self.shadow_dodge_timer = 1800;
     }
 
-    /// `Player.BrainOfConfusionDodge` (`Player.cs:38046-38055`) minus the
-    /// NetMessage: the 120/80 immunity, the 300-tick animation window and the
-    /// brain's own cooldown buff 321 (240 ticks — the roll's
-    /// `FindBuffIndex(321)` gate).
+    /// `Player.BrainOfConfusionDodge` (`Player.cs:38046-38055`): the 120/80
+    /// immunity, the 300-tick animation window and the brain's own cooldown
+    /// buff 321 (240 ticks — the roll's `FindBuffIndex(321)` gate). The
+    /// `SendData(62, .., 4f)` tail (`:38053`) queues at the `Hurt` caller
+    /// (`hurt_inner`'s brain arm) — the 62 reader shares this handler and
+    /// never re-sends (W4-c27/W4-d115).
     fn brain_of_confusion_dodge(&mut self) {
         self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
         self.brain_of_confusion_dodge_animation_counter = 300;
@@ -4392,6 +4394,12 @@ impl Player {
                 && self.buffs.find_buff_index(321).is_none()
             {
                 self.brain_of_confusion_dodge();
+                // `Player.BrainOfConfusionDodge`'s `whoAmI == Main.myPlayer`
+                // tail (`Player.cs:38050-38054`): the buff-321 add rides in
+                // the handler, the `SendData(62, .., 4f)` (`:38053`) queues
+                // here — the 62 reader shares the handler and never re-sends
+                // (W4-c27/W4-d115, the belt arm's convention).
+                self.pending_dodge_sends.push(4);
                 return false;
             }
             if self.shadow_dodge {
@@ -19188,6 +19196,32 @@ mod tests {
         let i = p.buffs.find_buff_index(321).unwrap();
         assert_eq!(p.buffs.buff_time[i], 240);
         assert!((p.hurt_cd - 80.0 / 60.0).abs() < 1e-4);
+    }
+
+    /// W4-d115 — the Brain of Confusion dodge queues the `62 SyncDodge`
+    /// kind-4 send (`Player.cs:38053`); the buff-321 gate still draws the
+    /// `Next(6)` but a gated dodge queues nothing, and the reader never
+    /// re-sends.
+    #[test]
+    fn w4_d115_brain_dodge_queues_the_kind_4_send_only_on_a_dodge() {
+        let mut p = dodge_player_with(&[3223]);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the brain dodges");
+        assert_eq!(rng.draws, vec![(0, 6)]);
+        assert_eq!(p.take_dodge_sends(), vec![4], "kind 4 = BrainOfConfusion (:38053)");
+        // Buff 321 now active: the roll is still drawn (C# && order) but the
+        // dodge is gated, the hit lands and nothing queues.
+        expire_dodge_window(&mut p);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(p.hurt(20, p.x + 100.0, &mut rng, true), "buff 321 gates the dodge");
+        assert_eq!(rng.draws, vec![(0, 6)], "the draw happened anyway");
+        assert!(p.take_dodge_sends().is_empty(), "no dodge, no send");
+        // The reader's kind-4 apply runs the handler, queues no send.
+        expire_dodge_window(&mut p);
+        p.buffs.clear_buff(321);
+        p.apply_net_dodge(4);
+        assert!(p.immune);
+        assert!(p.take_dodge_sends().is_empty(), "the net-apply never re-sends");
     }
 
     #[test]
