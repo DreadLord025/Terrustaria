@@ -2074,10 +2074,23 @@ pub struct Player {
     pub catalyst_band: bool,
     /// `Player.vampireBurningInSunlight` (`Player.cs:28709`): the vampire
     /// seed's sun-scorch flag — the gate on the Molten set's
-    /// `buffImmune[24]` (`ArmorSetBonuses.cs:285-288`). The granter
-    /// (`VampireSeedSunlightExposure`, `:28672-28719`) is unported, so the
-    /// flag stays false in play; `ResetEffects` clears it (`:18730`).
+    /// `buffImmune[24]` (`ArmorSetBonuses.cs:285-288`). The granter is
+    /// `sun_scorch.rs::update_sun_scorch` (`VampireSeedSunlightExposure`,
+    /// `:28672-28719`, W4-f30); `ResetEffects` clears it (`:18730`).
     pub vampire_burning_in_sunlight: bool,
+    /// `Player.sunScorchCounter` (`Player.cs:2356`): the vampire seed's
+    /// sun-exposure ramp — +1 per burning tick, −6 (−2 dead) otherwise,
+    /// clamped to [0, 300] (`UpdateSunScorchValues`, `:28580-28604`). The
+    /// 120 crossing arms the burn debuffs and the FEAR_THE_SUN check
+    /// (`sun_scorch.rs`, W4-f30).
+    pub sun_scorch_counter: i32,
+    /// W4-f30 order seam: `buffImmune[24]` captured BEFORE the Molten set
+    /// fold (`armor_sets::apply_armor_set_bonuses`). The C# grants Molten's
+    /// fire immunity AFTER `UpdateSunScorch` (`Player.cs:25634` < `:25685`),
+    /// gated on `!vampireBurningInSunlight`; the port's fold runs first, so
+    /// the sun-scorch call site restores this value on a warm-up burn tick
+    /// (flag set, counter < 120 — the `:28653` `Array.Clear` has not run).
+    pub(crate) fire_immune_pre_molten: bool,
     /// `Player.hasMoltenQuiver` (`Player.cs:1974`): 4002/6181 (`:14467`,
     /// `:14596`) — converts the wooden arrow to the FireArrow and adds 2 ammo
     /// damage (`:53537-53541`).
@@ -2916,6 +2929,8 @@ impl Player {
             magma_stone: false,
             catalyst_band: false,
             vampire_burning_in_sunlight: false,
+            sun_scorch_counter: 0,
+            fire_immune_pre_molten: false,
             has_molten_quiver: false,
             acc_sharp_barb: false,
             // S1-P-i35 — the fishing family's spawn defaults.
@@ -6876,6 +6891,13 @@ impl Player {
         // per-tick clear runs after this update). The C# call sits after
         // `UpdateEquips` (`:25633`) and the equipment-flag clears
         // (`ResetEffects` `:25491`), matching this position.
+        // W4-f30 — the Molten `buffImmune[24]` gate reads the sun-scorch
+        // flag, which the port's `UpdateSunScorch` seam arms AFTER this
+        // fold (the world_sim call site, `Player.cs:25634` precedes
+        // `:25685` in the C# but the port's equipment phase is one call).
+        // Capture the pre-Molten immunity so the seam can restore it on a
+        // warm-up burn tick (flag set, counter < 120 — no `Array.Clear`).
+        self.fire_immune_pre_molten = self.buffs.buff_immune[24];
         crate::armor_sets::apply_armor_set_bonuses(self);
         // `Player.cs:25900-25911` — the Mana Sickness damage cut: after every
         // `magicDamage` grant (the buff scan, the equip/set rows), the recalc
@@ -8626,9 +8648,11 @@ impl Player {
             DotDeath::Burned
         };
         // The generic lane's kill reason — `:19361-19384`. The C# tests
-        // `vampireBurningInSunlight` (22) first; nothing grants it in the
-        // port, so the chain starts at poisoned/venom (9).
-        let death_generic = if self.holding(20) || self.holding(70) {
+        // `vampireBurningInSunlight` (22) first (W4-f30: the sun-scorch
+        // granter landed, `sun_scorch.rs`), then poisoned/venom (9).
+        let death_generic = if self.vampire_burning_in_sunlight {
+            DotDeath::VampireSunlight
+        } else if self.holding(20) || self.holding(70) {
             DotDeath::Poison
         } else if self.holding(144) {
             DotDeath::Electrified

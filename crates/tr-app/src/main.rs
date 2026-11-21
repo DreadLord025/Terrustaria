@@ -258,6 +258,7 @@ mod shimmer;
 mod signs;
 mod sound;
 mod soundid;
+mod sun_scorch;
 mod test_world_helpers;
 mod town;
 mod town_arrival;

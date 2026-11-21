@@ -342,9 +342,10 @@ pub fn apply_armor_set_bonuses(p: &mut Player) {
             // `:284` — Benefits.Molten's fireWalk.
             SetFlag::FireWalk => p.fire_walk = true,
             // `:285-288` — Benefits.Molten's gated buffImmune[24]. The
-            // vampire sun-scorch system is unported (the flag has no
-            // writer yet, `Player.cs:28709`), so the gate currently
-            // always passes — it stands ready for the vampire port.
+            // vampire sun-scorch granter landed with W4-f30
+            // (`sun_scorch.rs::update_sun_scorch`, `Player.cs:28709`): the
+            // burn's `Array.Clear` (`:28653`) strips this immunity on the
+            // burning ticks, so the gate holds while the flag stands.
             SetFlag::MoltenFireImmune => {
                 if !p.vampire_burning_in_sunlight {
                     if let Some(slot) = p.buffs.buff_immune.get_mut(24) {

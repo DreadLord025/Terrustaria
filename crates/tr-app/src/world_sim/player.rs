@@ -668,6 +668,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 );
                 respawn_now = p.update_dead(input.jump, boss_near, danger_near, moon_event_live)
                     || respawn_now;
+                // `Player.UpdateDead`'s tail (`Player.cs:17079`): the dead
+                // tick still ramps the sun-scorch counter down (−2/tick,
+                // `UpdateSunScorchValues` `:28583-28587` — the dead branch
+                // clears the burn flag first). W4-f30.
+                crate::sun_scorch::update_sun_scorch_values(p);
                 p.reset_projectile_caches();
                 p.update_projectile_caches(&app.projectiles);
             });
@@ -1217,6 +1222,49 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // The `UpdateEquips` summon-cap rows (`Player.cs:13254-13948`,
             // `:15324-15329`) — the armor/held half beside the ammo flags.
             grant_summon_caps(p, &app.equip.armor, &app.equip.misc_equips, &app.world);
+            // W4-f30 — `Player.UpdateSunScorch` (`Player.cs:25634`): the
+            // vampire seed's sun-exposure scan + the 120-crossing burn, in
+            // the C#'s `UpdateEquips` → `UpdateSunScorch` → `UpdateArmorSets`
+            // slot (the armor-set fold above already ran inside
+            // `update_equips`; the Molten `buffImmune[24]` gate reads the
+            // flag this scan arms — the burn's `Array.Clear` at `:28653`
+            // strips it again on the burning ticks, matching the C# order
+            // where the clear follows the set grant). The 33 notify fires
+            // on the crossing tick with the vampire vanity set worn.
+            {
+                let zones = app.scene_metrics.zones();
+                // `Main.ShouldShowInvisibleBlocksAndWalls` (`Main.cs:58023`):
+                // the EchoMonolith / Spectre-Goggles `CanSeeInvisibleBlocks`
+                // granters are unported (the draw seam's precedent,
+                // `frame/draw.rs:393`); the `TR_SHOW_INVISIBLE` pin stands in.
+                let show_invisible = crate::env::show_invisible();
+                let vampire_seed = app
+                    .world
+                    .micro_seeds
+                    .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM);
+                if crate::sun_scorch::update_sun_scorch(
+                    p,
+                    &app.world,
+                    &app.npcs,
+                    vampire_seed,
+                    app.world.day_time,
+                    app.rain.is_raining(),
+                    app.world.eclipse,
+                    app.scene_metrics.zone_graveyard,
+                    zones.glowshroom,
+                    show_invisible,
+                ) {
+                    let _ = app.notify_progression_net(33);
+                }
+                // Order seam: on a warm-up burn tick (flag set, counter
+                // < 120) the C#'s Molten grant (`:25685`, AFTER the scorch)
+                // still applies — restore the pre-fold immunity the port's
+                // early fold withheld. At >= 120 the `:28653` Array.Clear
+                // stripped everything, so nothing is restored.
+                if p.vampire_burning_in_sunlight && p.sun_scorch_counter < 120 {
+                    p.buffs.buff_immune[24] = p.fire_immune_pre_molten;
+                }
+            }
             // `Player.cs:25709-25712` — a `maxTurrets` change drives the
             // `UpdateMaxTurrets` sweep (the lowest-`timeLeft` wipable sentry
             // dies while the budget holds); Phase 5's pool method runs it.
