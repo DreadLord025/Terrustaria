@@ -23104,6 +23104,90 @@ colours, the laser/hook arm colours, the negative-coordinate truncation and the
 even-side anchor invariant; `projectile.rs`'s `proj_light_spawn_tests` pin the
 spawn copy, the crystal-storm scale-driven rewrite across the fade gate, the
 dark WaterBolt and the stream-neutrality witness.
+### The projectile AI-arm lights, first wave (S1-E-5, W4-c19, 2026-11-21, code-only mode)
+
+`crates/tr-app/src/proj_lights_a.rs::proj_lights_a` ports the **first 67** of
+`Projectile.cs`'s 107 `Lighting.AddLight` call sites (sites 1-67 in line order,
+`:16655`…`:54071`) — the AI-arm lights OUTSIDE `ProjLight`, the slice the W4-f7
+census freeze (`crates/tr-app/tests/proj_addlight_census.rs`, `67110ccf`) pins
+verbatim. Sites 68-107 are W4-e6's landed second wave (`proj_ai_lights.rs`);
+**67 + 40 = 107 — the Projectile.cs AddLight family is now CLOSED**. The feed is
+ONE loop in `app/frame/draw.rs` beside the `proj_light` feed, after the step, in
+`Main.projectile` slot order, into the **same** `EntityLights` pair. Like the
+`ProjLight` chain and the e6 wave, an arm whose kind has no `proj_data` row is
+absent wholesale (no slot can carry it), a light gated on a `Main.rand` draw is
+absent wholesale (the e6 RNG rule), and no ported arm draws `Main.rand` — the
+feed is pure, so its placement cannot move any stream.
+
+**Accounting: 23 ported sites / 32 lights, 2 audit-landed, 42 absent.**
+
+* Sites 1-2 (`:16655`/`:16659`) are the `ProjLight` chain tail, already live in
+  `proj_lights.rs` (the 870 centre `AddLight` rides the common tail; the
+  `FloodFillTile` spread is the documented skip). RE-AUDITED against the census,
+  no new code.
+* **Ported (23 sites):** 346 OrnamentHostile's frame pair (`:24877`/`:24881`,
+  `frame = (int)ai[1]`); 732 ThunderSpearShot (`:27920`, (0.3, 0.6, 0.8)); 533
+  DeadlySphere's `(int)ai[0] % 3` warm/cool pair (`:29674`/`:29678`); 580
+  VortexLightning (`:32155`, (0.3, 0.45, 0.5)); 644 RainbowCrystalExplosion's
+  `hslToRgb(ai[0],1,0.5)·0.5` at `alpha == 0` (`:34265`); 604 TerrarianBeam
+  (`:34416`, (0.075, 0.3, 0.15)); 617 NebulaArcanum's `alpha < 150` gate
+  (`:34802`); 641 MoonlordTurret's `Opacity` scale (`:37070`); the gem bolts'
+  per-kind switch tail (`:38000` — 121 (0.9,0,0.9), 122 (0.9,0.9,0), 123
+  (0,0.1,1.3), 124 (0,1,0.1), 125 (1,0.1,0.1), 126 (1.3,1.3,1.3), 597 amber
+  (0.9,0.6,0.2), the `num24 = type−120` switch with amber remapped to 262); 623
+  StardustGuardian (`:44662`); 342 NorthPole (`:46037`); 856 SparkleGuitar's
+  `HotPink·0.3` (`:46588`); the Storm Tigers 833/834/835 (`:49283`/`:49287`/
+  `:49291`, gated `ai[0] != 4`); 500 CrimsonHeart (`:49464`); 446 AntiGravityHook's
+  mounted-centre light (`:52606`); the lunar hooks 646-649's mounted+centre pair
+  (`:52641`/`:52642`); the Celebration rockets 715-718's `GetCeleb2Color` palette
+  (`:52890`); 601 PortalGunBolt's `Center + velocity·3` lead anchor in the
+  `GetPortalColor` hue (`:54071`).
+* **Absent (42 sites), exactly:** the unrowed kinds — 502 Meowmere (`:24307`),
+  1092 book (`:25394`), 451 InfluxWaver (`:31212`), 464/465/466 cultist orbs
+  (`:31864`/`:31893`/`:31998`/`:32049`), 490 ritual (`:32384`), 492 lantern
+  (`:32410`), 518 coin portal (`:32962`), 575 nebula sphere (`:33580`), 590
+  truffle spore (`:34226`), 602 portal gate (`:34402`), the 612/953/978 trio
+  (`:34487`), 658 sandnado mark (`:36150`), 1115 glacier fang (`:37022`), 731
+  thunder staff (`:37821`), 1105 RC car (`:38458`), 1098 digtoise (`:38707`), the
+  phaseblades (`:39020`/`:39021`), 1091/1117 storm lightning (`:39783`), 1078
+  meteor ore (`:40038`), 567/568 spore traps (`:40046`), the AI_196 petals
+  (`:40507` — the rowed 248 is aiStyle 1 and never reaches AI_196; 1038/1116
+  unrowed), 1116 petalstorm (`:40513`), 614 cell shot (`:40892`), 636 daybreak
+  (`:40896`), 1020 drone (`:41031`), 973/972/984 sword beams (`:41775`/`:42181`/
+  `:42206`), 933/1100 fractals (`:43172`/`:43173`), 535 medusa head (`:44612`),
+  855 release lantern (`:47569`), 1127 saber stab (`:47649`), 756 sharp tears
+  (`:51492`); the mount light (`:17343`, the Chillet mounts 62-65 have no
+  `mount.rs` row); and the rand-gated 409 Typhoon (`:30378`, inside `Next(3)==0`),
+  849 ScytheWhip (`:47846`) and 912 CoolWhip (`:48011`).
+
+**The two state-driven deviations (recorded).** The Storm Tigers 833-835 and the
+601 PortalGunBolt are ported but read their spawn `ai[0]`: the tiger AI arm is
+deferred (the dispatch gates 833-835 out of `ai_freaking_pirates`) and the portal
+teleport AI is unported, so `ai[0]` keeps its spawn value. A default tiger spawn
+reads 0 (≠ 4) and the light is live; a spawn into the attack state reads 4 and
+stays dark. The 601 reads the `netMode == 0` portal hue by `ai[0] != 0`
+(`PortalHelper.cs:381-384`). Both are the e6 LaserDrill ported-but-dark precedent
+— the colour/gate are faithful to the slot state and land fully when their AI
+arms do. The hooks' `PlotTileLine` rope spread (`:52613`/`:52644`) is the
+light-map write with no port — skipped, the 870 `FloodFillTile` precedent.
+
+**The anchor vocabulary.** The `AddLight(Vector2, …)` overload
+(`Lighting.cs:140-143`) truncates the QUOTIENT (`(int)(v/16f)`,
+`XAnchor::Center`); the raw-vector anchors (the hooks' `mountedCenter`, the 601
+`Center + velocity·3` lead) use the same quotient truncation on the computed
+vector. The `(int)Center/16` form (the absent 409/451 arms) truncates first —
+kept distinct in the register, but the two agree for every real coordinate (the
+e6 anchor-agreement invariant). The 835 tiger's `Color.Lerp(OurFavoriteColor
+(255,231,69), White, 0.8)` uses XNA's per-byte truncation (`(byte)MathHelper.Lerp`
+→ (255,250,217)), the `color.rs::mul` precedent.
+
+Tests (written, **not run** — code-only mode): 18 witnesses in `proj_lights_a.rs`
+— the per-arm colours/anchors/gates (the ornament frame pair, the DeadlySphere
+`ai[0]%3`, the 644 hsl + alpha gate, the 617 alpha gate, the 641 Opacity scale,
+the gem per-kind tints, the tiger tiers + `ai[0]!=4` gate, the hooks'
+mounted-centre-only / mounted+centre pair order, the celeb2 palette, the 601 lead
+anchor + portal hue), the every-ported-kind-has-a-row invariant (32 kinds) and
+the every-unrowed-kind-contributes-nothing sweep (44 kinds).
 ### The Player family (S1-E-5, 2026-11-18, code-only mode)
 
 `crates/tr-app/src/player_lights.rs::player_lights` ports **32 of Player.cs's

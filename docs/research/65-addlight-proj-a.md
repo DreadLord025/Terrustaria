@@ -1,7 +1,19 @@
-# 65 — Projectile.cs AddLight first wave (sites 1-67, W4-c19) — CLAIM
+# 65 — Projectile.cs AddLight first wave (sites 1-67, W4-c19) — LANDED
 
 Branch `task/W4-c19-addlight-projectiles`, base `a725acb0` (main tip at claim
 time). Code-only round: witnesses WRITTEN NOT RUN, no compiler invoked.
+
+## Outcome (2026-11-21)
+
+`crates/tr-app/src/proj_lights_a.rs::proj_lights_a` ports sites 1-67 in seven
+~10-site commits. **23 ported sites / 32 light contributions, 2 audit-landed
+(the ProjLight tail), 42 absent** (unrowed kinds + the rand-gated 409/849/912).
+18 witness tests written not run. With W4-e6's sites 68-107, **67 + 40 = 107 —
+the Projectile.cs AddLight family is CLOSED**. ANALYSIS "The projectile AI-arm
+lights, first wave (S1-E-5, W4-c19)" carries the full register + the two
+state-driven deviations (the Storm Tigers / 601 portal read their spawn `ai[0]`)
+and the hooks' PlotTileLine light-map skip. anchors.txt + ROADMAP S1-E-5 +
+PORT_MAP rows landed at slice close.
 
 ## Claim
 
