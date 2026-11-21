@@ -26995,9 +26995,12 @@ mod arrow_tests {
         assert_eq!(p.ai[0], 0.0, "the hit resets the counter (`:26934`)");
         assert_eq!(p.ai[1], 1.0, "the bounce count (`:26960`)");
         assert!(p.net_update, "the netUpdate flag (`:26959`)");
-        // vy = −4.5 + 0.5 = −4.0; vx = (0 + 1·1.75)/2 + 3·1 = 0.875 + 3 = 3.875.
-        assert!((p.vel.y - (-4.0)).abs() < 1e-5, "the −4.5 kick + the NPC's vy");
-        assert!((p.vel.x - 3.875).abs() < 1e-5, "the dir blend + 3× the NPC's vx");
+        // The kick (`:26934-26960`): vy = −4.5 + 0.5 = −4.0;
+        // vx = (0 + 1·1.75)/2 + 3·1 = 0.875 + 3 = 3.875. THEN the tail
+        // (`:27006-27047`): the dry 0.995 X drag (vy ≠ 0) → 3.875·0.995,
+        // the +0.1 gravity → −4.0 + 0.1 = −3.9. Open air: no tile bounce.
+        assert!((p.vel.y - (-3.9)).abs() < 1e-5, "the −4.5 kick + NPC vy + 0.1 gravity");
+        assert!((p.vel.x - 3.875 * 0.995).abs() < 1e-5, "the dir blend + 3×NPC vx, then the 0.995 drag");
     }
 
     /// The zero-velocity kill (`:27002-27005`): a stopped ball dies on its
