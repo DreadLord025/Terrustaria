@@ -6716,6 +6716,39 @@ impl Npc {
         self.sprite_dir = s.sprite_dir;
     }
 
+    /// W4-d44 wire (wave-B residual) — the bridge into
+    /// `npc_findframe_b`'s pure machines: copy the four `FindFrame`
+    /// fields out, run one tick, copy them back (the
+    /// `find_frame_wave_a` precedent). `direction` is `facing`; the
+    /// inputs are vx/vy/direction/wet + the four `ai` slots (the
+    /// fighter delegate reads vx/vy/direction only — the town `ai[0]`
+    /// pose zones are the module header's documented skip, no
+    /// `ai_action`). Wave-B's `FrameState` carries rotation — the
+    /// 75/82/122 arms write it, so the copy-back includes it even
+    /// though the fighter delegate never touches it. No wave-B
+    /// fighter arm draws RNG or reads the world, so the bridge rides
+    /// the world-free `find_frame` hook directly (research/125 §14).
+    fn find_frame_wave_b(&mut self, kind: crate::npc_findframe_b::FindFrameKind) {
+        let mut s = crate::npc_findframe_b::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+        };
+        let i = crate::npc_findframe_b::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            wet: self.wet,
+            ai: self.ai,
+        };
+        crate::npc_findframe_b::find_frame_b(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+    }
+
     /// W4-d44 wire (f27 slice 7) — the bridge into
     /// `npc_findframe_extra7`'s pure machines: copy the four
     /// `FindFrame` fields out, run one tick, copy them back (the
@@ -6969,6 +7002,15 @@ impl Npc {
         crate::npc_findframe_extra8::find_frame_kind_extra8(cs_id as i16)
     }
 
+    /// W4-d44 wire — the wave-B claim set: the d38 residual pair
+    /// 294/296 ONLY (research/125 §14; 289 EXCLUDED — the E3 dedupe
+    /// keeps the d38 inline arm). The band edges stay outside.
+    fn find_frame_kind_b_claimed(
+        cs_id: u16,
+    ) -> Option<crate::npc_findframe_b::FindFrameKind> {
+        crate::npc_findframe_b::find_frame_kind_b(cs_id as i16)
+    }
+
     /// W4-d44 wire — the extra-5 claim set: the FULL slice-5 band
     /// 254-258 + 268-277, all 15 kinds (the in-module lookup verbatim).
     fn find_frame_kind_extra5_claimed(
@@ -7190,6 +7232,22 @@ impl Npc {
         // wave-C hook precedent.
         if let Some(kind) = Self::find_frame_kind_extra8_claimed(self.kind.cs_id()) {
             self.find_frame_wave_extra8(kind, 0);
+            return;
+        }
+        // W4-d44 wire (wave-B residual) — the `cs_id`-keyed hook into the
+        // wave-B pure machines (`npc_findframe_b.rs`) via
+        // `find_frame_kind_b_claimed`: the d38 residual pair 294/296 (the
+        // Angry Bones Big / Big Helmet fighter group, air pin 0 —
+        // `NPC.cs:68591/:68593` + the `:69647` pin list). 289 NEVER (the
+        // E3 dedupe — the d38 inline arm wins). NO current kind's `cs_id`
+        // lands in the set on THIS branch (the d38 kinds merge later,
+        // their S1-F-3 bestiary fallback resolves 294/296 — no cs_id hand
+        // rows needed, research/125 §14), so this is stream-inert today;
+        // the arms draw no RNG and none reads the world (the fighter
+        // delegate reads vx/vy/direction only). The extra8 hook
+        // precedent; research/125 §14.
+        if let Some(kind) = Self::find_frame_kind_b_claimed(self.kind.cs_id()) {
+            self.find_frame_wave_b(kind);
             return;
         }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
@@ -34873,6 +34931,68 @@ mod w4_d44_wire_tests {
         n.vy = 1.0;
         n.find_frame_wave_extra8(K::Fritz, 0);
         assert_eq!(n.frame, 2);
+    }
+
+    /// W4-d44 wire (wave-B residual) — the {294,296} claim set + the
+    /// four-field bridge: the fighter delegate's grounded flip + the
+    /// |vx|*2+1 >6 walk lifting to row 2, the FULL-count wraps (16 for
+    /// 294 / 15 for 296, `Main.cs:67113`), the air pin 0 (BOTH in the
+    /// `:69647` list) and the rotation copy-back untouched (the
+    /// delegate never writes it). The d38 stand-in had NO flip and NO
+    /// air tail — this pins the gap closed (research/125 §14).
+    #[test]
+    fn w4_d44_the_wave_b_residual_pair_bridge() {
+        use crate::npc_findframe_b::FindFrameKind as K;
+        // The claim set: exactly {294,296}; 289 NEVER (the E3 dedupe),
+        // the band edges + the extra6-owned 293/295 stay outside.
+        assert_eq!(Npc::find_frame_kind_b_claimed(294), Some(K::AngryBonesBig));
+        assert_eq!(Npc::find_frame_kind_b_claimed(296), Some(K::AngryBonesBigHelmet));
+        for id in [289u16, 293, 295, 297] {
+            assert_eq!(Npc::find_frame_kind_b_claimed(id), None, "{id}");
+        }
+        let mut n = bare(NpcKind::Piranha);
+        // Grounded walk + flip: vx 1, counter 4 → 4 + |1|*2 + 1 = 7 > 6
+        // steps row 2 → 3; facing -1 latches sprite_dir -1; the
+        // rotation rides through untouched.
+        n.frame = 2;
+        n.frame_counter = 4.0;
+        n.vx = 1.0;
+        n.vy = 0.0;
+        n.facing = -1;
+        n.sprite_dir = 1;
+        n.rotation = 0.25;
+        n.find_frame_wave_b(K::AngryBonesBig);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (3, 0.0, -1));
+        assert_eq!(n.rotation, 0.25, "the delegate never writes rotation");
+        // The FULL-16 wrap (294): row 15 + step → 16, >= 16 wraps to 2.
+        n.frame = 15;
+        n.frame_counter = 6.0;
+        n.find_frame_wave_b(K::AngryBonesBig);
+        assert_eq!((n.frame, n.frame_counter), (2, 0.0));
+        // The FULL-15 wrap (296): row 14 + step → 15, >= 15 wraps to 2.
+        n.frame = 14;
+        n.frame_counter = 6.0;
+        n.find_frame_wave_b(K::AngryBonesBigHelmet);
+        assert_eq!((n.frame, n.frame_counter), (2, 0.0));
+        // The air pin 0 for BOTH (the :69647 list) — the stand-in's
+        // missing tail.
+        n.vy = 1.0;
+        n.frame = 5;
+        n.frame_counter = 2.0;
+        n.find_frame_wave_b(K::AngryBonesBig);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        n.frame = 5;
+        n.find_frame_wave_b(K::AngryBonesBigHelmet);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        // The grounded idle: row 0 + counter 0 (NOT the 140 row-1
+        // quirk), the +1 flip.
+        n.vy = 0.0;
+        n.vx = 0.0;
+        n.facing = 1;
+        n.frame = 7;
+        n.frame_counter = 3.0;
+        n.find_frame_wave_b(K::AngryBonesBig);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (0, 0.0, 1));
     }
 
     /// The world-read entry runs the extra-8 bridge with the

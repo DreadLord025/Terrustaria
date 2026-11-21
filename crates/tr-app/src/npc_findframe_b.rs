@@ -595,6 +595,20 @@ pub fn find_frame_b(kind: FindFrameKind, s: &mut FrameState, i: &FrameInput) {
     }
 }
 
+/// W4-d44 wire — the wiring seam: the vanilla type → this module's
+/// kind (the `find_frame_kind_extra6` in-module-lookup precedent).
+/// The d38 residual pair ONLY (research/125 §14, the SEAL-RECEIPT
+/// re-probed at this tip): 289 GiantCursedSkull is EXCLUDED (the E3
+/// dedupe keeps the d38 inline arm — the dropped twin), the other
+/// wave-B kinds await their roster lanes. `None` outside.
+pub fn find_frame_kind_b(vanilla_type: i16) -> Option<FindFrameKind> {
+    Some(match vanilla_type {
+        294 => FindFrameKind::AngryBonesBig,
+        296 => FindFrameKind::AngryBonesBigHelmet,
+        _ => return None,
+    })
+}
+
 /// The humanoid-group fighter walk (`NPC.cs:68647-69655`) for the
 /// non-town members: the grounded flip (`:68649-68656` — only `direction`
 /// ±1 writes), the idle snap (`:69489-69519` — row 0, or row 1 for the
