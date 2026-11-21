@@ -3354,7 +3354,10 @@ pub(crate) fn draw_npcs(
         // per-type anchor off `n.Bottom`. The colour is the name/slot/moon
         // hash; the strip is Extra_72's 20-column row.
         if let Some((party_up, moon_phase, day_time, lookups)) = party {
-            if crate::party_hat::uses_party_hat(n, party_up) {
+            // W4-c39 exec (research/114 §0.3): the DRAW caller supplies the
+            // living half (`n.hp > 0`) — the C# `UpdateNPC`-drawn roster is
+            // implicitly alive; `UsesPartyHat` itself has no life gate.
+            if n.hp > 0 && crate::party_hat::uses_party_hat(n, party_up) {
                 let name = if n.given_name.is_empty() {
                     crate::lang::npc_name(n.kind.net_id())
                 } else {

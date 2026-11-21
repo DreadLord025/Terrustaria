@@ -5071,40 +5071,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             let rng = app.rngs.stream(crate::app::RngKey::UpdateNpcs);
             app.audio.play_npc_death_sound(cue, npc.x, npc.y, rng);
         }
-        // W4-c39 — `NPC.HitEffect`'s party-hat death arm (`NPC.cs:81660-81728`):
-        // a town NPC dying while `PartyIsUp` drops its head gore + the
-        // coloured hat gore. The colour hash reads the live moon phase/day
-        // flag; the gores spawn at `base.position`/`base.velocity`
-        // (`Gore.NewGore`, scale 1). The C# runs HitEffect inside StrikeNPC
-        // (the striking stage's stream); the port's death batching rides
-        // UpdateNPCs — the same recorded deviation as the death cue above.
-        if crate::party_hat::uses_party_hat(
-            npc,
-            crate::world_events::party_is_up(&app.world_events),
-        ) {
-            let name = if npc.given_name.is_empty() {
-                crate::lang::npc_name(npc.kind.net_id())
-            } else {
-                npc.given_name.clone()
-            };
-            let color = crate::party_hat::party_hat_color(
-                &name,
-                npc.slot as i32,
-                app.world.moon_phase,
-                app.world.day_time,
-            );
-            for gore_type in crate::party_hat::party_death_gores(npc, color) {
-                let rng = app.rngs.stream(crate::app::RngKey::UpdateNpcs);
-                app.gore.new_gore(
-                    rng,
-                    &app.world,
-                    Vec2::new(npc.x, npc.y),
-                    Vec2::new(npc.vx, npc.vy),
-                    gore_type,
-                    1.0,
-                );
-            }
-        }
+        // W4-c39 exec (research/114 §1g): the party-hat death-gore block
+        // DROPPED — d55's `npc_hit_effect_a.rs::party_hat_block` is the
+        // canonical survivor (caller-gated `town_npc && hp <= 0 &&
+        // uses_party_hat`, the strike-stream RNG contract, the full
+        // normal/shimmer table). c39's block called the predicate on dead
+        // clones with the old baked `hp > 0` gate, so it NEVER fired, and
+        // its UpdateNpcs stream was the wrong one (the C# runs HitEffect
+        // inside StrikeNPC). Wiring d55's `hit_effect` into the strike path
+        // is its lane's declared follow-up — not a "temporary" c39 wire.
         // S1-E-21g — `NPC.HitEffect`'s EoC death arm (`NPC.cs:87275-87297`):
         // the type-4 kill plays the case-15 roar TWICE — the play sits
         // inside the `num567 < 2` gore loop (`:87289-87298`), after the

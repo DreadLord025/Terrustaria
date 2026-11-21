@@ -1,12 +1,17 @@
 //! The birthday-party town-NPC hats (`NPC.UsesPartyHat` / `GetPartyHatColor`,
 //! `NPC.cs:66611-66659`) and their draw (`Main.DrawNPCExtras`'s
-//! `!beforeDraw && n.UsesPartyHat()` block, `Main.cs:26914-27188`) + the
-//! death gore (`NPC.HitEffect`, `NPC.cs:81660-81728`).
+//! `!beforeDraw && n.UsesPartyHat()` block, `Main.cs:26914-27188`).
 //!
 //! While `BirthdayParty.PartyIsUp` every town NPC (bar the bound forms, the
 //! Tax Collector and the Zoologist) wears a coloured party hat; the colour
 //! is a deterministic hash of the NPC's name, slot and the moon phase, so it
-//! is stable for a given world-day. On death the hat drops as a gore.
+//! is stable for a given world-day.
+//!
+//! W4-c39 exec (research/114 §1g): the death-gore half DROPPED — d55's
+//! `npc_hit_effect_a.rs::party_hat_block` is the canonical survivor (the
+//! full normal/shimmer table, caller-gated, the strike-stream contract).
+//! `UsesPartyHat` here is life-agnostic (the C# property has no life gate;
+//! the DRAW caller adds `hp > 0`, the HitEffect caller gates `hp <= 0`).
 //!
 //! Deviations (recorded): the shimmer-variant per-type offsets
 //! (`Main.cs:27029-27060`) and the town-slime / pet special cases
@@ -34,8 +39,17 @@ pub(crate) enum PartyHatColor {
 /// `NPC.UsesPartyHat` (`NPC.cs:66611-66634`): the bound old man (37), the
 /// skeleton merchant (453) and the Zoologist (633) never wear one; the
 /// Dryad's (20) variation 1 (the shimmer form) skips it; `ForcePartyHatOn`
-/// forces it (unported — no writer); otherwise a living town NPC with a
-/// non-empty frame wears one iff `BirthdayParty.PartyIsUp`.
+/// forces it (unported — no writer); otherwise a town NPC with a non-empty
+/// frame wears one iff `BirthdayParty.PartyIsUp`.
+///
+/// W4-c39 exec (research/114 §0.3): the C# property has NO life gate — the
+/// `life <= 0` term lives in the CALLERS (`HitEffect` `:81660` gates
+/// `townNPC && life <= 0 && UsesPartyHat()`; the `UpdateNPC`-drawn roster
+/// supplies the living half implicitly). The earlier `hp > 0` baked in
+/// here made the predicate always false on a corpse, so the death-gore
+/// seam could never fire. The predicate is life-agnostic now; the DRAW
+/// caller adds `n.hp > 0` (the living roster), the HitEffect caller gates
+/// `hp <= 0` itself (d55's `npc_hit_effect_a.rs` shape).
 ///
 /// The port's `is_town_npc_like` is the `townNPC` flag set; the bound forms
 /// (37/453) have no ported kind, so the explicit exclusions are the Tax
@@ -51,8 +65,8 @@ pub(crate) fn uses_party_hat(n: &Npc, party_is_up: bool) -> bool {
     }
     // `ForcePartyHatOn` (no ported writer) and the bestiary/portrait-dummy
     // gates fold to false; the `frame.Height > 0 && townNPC` half is the
-    // town-flag set.
-    n.hp > 0 && n.kind.is_town_npc_like() && party_is_up
+    // town-flag set. NO life term (the C# property has none — see above).
+    n.kind.is_town_npc_like() && party_is_up
 }
 
 /// `NPC.GetPartyHatColor` (`NPC.cs:66636-66659`): the name-hash colour.
@@ -262,45 +276,16 @@ pub(crate) fn hat_draw(
     }
 }
 
-/// `NPC.HitEffect`'s party-hat death gore (`NPC.cs:81660-81728`): a town NPC
-/// dying while hatted drops its head gore (the per-type row) plus the coloured
-/// hat gore. Returns the gore ids in the C#'s spawn order (the head first,
-/// then the hat). The shimmer-variant head rows (`IsShimmerVariant`) are
-/// unported (no shimmer town forms), so the base rows stand.
-pub(crate) fn party_death_gores(n: &Npc, color: PartyHatColor) -> Vec<i32> {
-    let mut gores = Vec::new();
-    let ty = n.kind.net_id();
-    // The per-type head gore (`:81664-81708`); kinds without a row drop none.
-    let head = match ty {
-        38 => Some(927),
-        207 => Some(928),
-        17 => Some(929),
-        18 => Some(930),
-        227 => Some(931),
-        229 => Some(932),
-        142 => Some(933),
-        453 => Some(934),
-        178 => Some(935),
-        353 => Some(936),
-        368 => Some(937),
-        108 => Some(938),
-        588 => Some(1112),
-        _ => None,
-    };
-    if let Some(g) = head {
-        gores.push(g);
-    }
-    // `flag` is always true (`:81663`); the hat gore (`:81711-81727`).
-    let hat = match color {
-        PartyHatColor::Cyan => 940,
-        PartyHatColor::Pink => 939,
-        PartyHatColor::Purple => 941,
-        PartyHatColor::White => 942,
-        _ => 926, // Blue / None → the base 926.
-    };
-    gores.push(hat);
-    gores
-}
+// W4-c39 exec (research/114 §1g): the death-gore table DROPPED — d55's
+// `npc_hit_effect_a.rs::party_hat_block` is the canonical survivor (the
+// full normal/shimmer pairs incl. 229's spawn-NOTHING shimmer arm, the
+// strike-stream RNG contract, caller-gated `town_npc && hp <= 0 &&
+// uses_party_hat`). c39's base-rows-only `party_death_gores` + its
+// `update_npcs` death-site block were the wrong shape (the baked hp>0
+// gate made them never fire, and the stream was UpdateNpcs not the
+// strike's). Wiring d55's `hit_effect` into the strike path is its lane's
+// declared follow-up — the merge must NOT keep c39's block as a
+// "temporary" wire.
 
 #[cfg(test)]
 mod tests {
@@ -357,20 +342,28 @@ mod tests {
         assert_eq!(hat_frame_column(PartyHatColor::White), 19);
     }
 
-    /// W4-c39 — the death gore's hat colour rows (`NPC.cs:81711-81727`):
-    /// Blue 926, Pink 939, Cyan 940, Purple 941, White 942; the Merchant's
-    /// head gore 929 precedes the hat.
+    // W4-c39 exec (research/114 §1g): the death-gore-rows witness DROPPED
+    // with `party_death_gores` — d55's 7 gore witnesses cover the table
+    // (incl. the shimmer variants) in the surviving `npc_hit_effect_a.rs`.
+
+    /// W4-c39 exec (research/114 §0.3) — `UsesPartyHat` has NO life gate:
+    /// the predicate answers the same on a corpse as on a living NPC (the
+    /// `life <= 0` term is the CALLER's, `HitEffect` `:81660`). The earlier
+    /// baked `hp > 0` made it always false on a corpse.
     #[test]
-    fn w4_c39_the_death_gore_rows_match_the_colour() {
+    fn w4_c39_uses_party_hat_is_life_agnostic() {
         let mut n = Npc::new(NpcKind::Merchant, 0.0, 0.0, 1, 0.0);
+        n.hp = n.max_hp;
+        assert!(uses_party_hat(&n, true), "a living town NPC hats up");
         n.hp = 0;
-        assert_eq!(party_death_gores(&n, PartyHatColor::Blue), vec![929, 926]);
-        assert_eq!(party_death_gores(&n, PartyHatColor::Pink), vec![929, 939]);
-        assert_eq!(party_death_gores(&n, PartyHatColor::Cyan), vec![929, 940]);
-        assert_eq!(party_death_gores(&n, PartyHatColor::Purple), vec![929, 941]);
-        assert_eq!(party_death_gores(&n, PartyHatColor::White), vec![929, 942]);
-        // The Guide (22) has no head-gore row — only the hat drops.
-        let g = Npc::new(NpcKind::Guide, 0.0, 0.0, 1, 0.0);
-        assert_eq!(party_death_gores(&g, PartyHatColor::Cyan), vec![940]);
+        assert!(
+            uses_party_hat(&n, true),
+            "the predicate has no life gate — the corpse still answers true"
+        );
+        assert!(!uses_party_hat(&n, false), "no party, no hat");
+        // The exclusions still hold on a corpse.
+        let mut tax = Npc::new(NpcKind::TaxCollector, 0.0, 0.0, 1, 0.0);
+        tax.hp = 0;
+        assert!(!uses_party_hat(&tax, true), "the Tax Collector never hats");
     }
 }
