@@ -1618,6 +1618,10 @@ pub struct Player {
     rocket_time_max: i32,
     pub rocket_delay: i32,
     rocket_delay2: i32,
+    /// W4-c14 - `Player.rocketSoundDelay` (`Player.cs:2752`): the rocket
+    /// cue's own cadence (`:26884-26896` arms it 30/15 per vanity tier,
+    /// `:26903-26905` ticks it down once per flight tick).
+    rocket_sound_delay: i32,
     /// `Player.rocketBoots` (`Player.cs:2756`): the boots tier
     /// (`TR_BOOTS=<1..5>` pins it).
     pub rocket_boots: i32,
@@ -2794,6 +2798,7 @@ impl Player {
             rocket_time_max: 7,
             rocket_delay: 0,
             rocket_delay2: 0,
+            rocket_sound_delay: 0,
             rocket_boots: 0,
             can_rocket: false,
             rocket_release: false,
@@ -9752,7 +9757,44 @@ impl Player {
         if flag19 {
             self.wing_movement();
         }
-        // S1-E-21f — `WingFrame(flag19)` (`Player.cs:26820`, `:29468-30527`).
+        // S1-E-21f - `WingFrame(flag19)` (`Player.cs:26820`, `:29468-30527`).
+        // W4-c14 - the wings-4 (jetpack) sound arm (`:29471-29480`): while
+        // flapping or mid-jump the rocketDelay2 cadence plays Item13 every
+        // 60 ticks (the frame table + the dust are visual seams). The C#
+        // decrements INSIDE the arm; the `:26907` per-tick decrement runs
+        // again below - both, verbatim.
+        if self.wings_logic == 4 && (flag19 || self.jump > 0) {
+            self.rocket_delay2 -= 1;
+            if self.rocket_delay2 <= 0 {
+                self.pending_cart_sounds.push(crate::minecart::CartCue {
+                    cue: "Item_13",
+                    x: self.x,
+                    y: self.y,
+                });
+                self.rocket_delay2 = 60;
+            }
+        }
+        // W4-c14 - the wings-45 (Celestial Starboard) sound arm
+        // (`:30165-30174`): `ShouldDrawWingsThatAreAlwaysAnimated`
+        // (`:30737-30748`: airborne, ungrappled, not water-floating, the
+        // mount allows wings) + budget left: Item24 every 30 ticks.
+        if self.wings_logic == 45
+            && self.vy != 0.0
+            && !self.grappling_active
+            && (!self.wet || !self.should_float_in_water())
+            && self.mount.can_use_wings()
+            && self.wing_time > 0.0
+        {
+            self.rocket_delay2 -= 1;
+            if self.rocket_delay2 <= 0 {
+                self.pending_cart_sounds.push(crate::minecart::CartCue {
+                    cue: "Item_24",
+                    x: self.x,
+                    y: self.y,
+                });
+                self.rocket_delay2 = 30;
+            }
+        }
         // The port runs the DEFAULT arm's frame machine (`:30448-30526`:
         // num35 = 4, num36 = 4, num37 = 0, num38 = 0, num39 = 1 — the
         // wings-43/48/32 constants and the hover wings' own tables are visual
@@ -9838,12 +9880,38 @@ impl Player {
                     // `:26875-26882`: tier 1 cadence 30, tiers 2/3/4/5 15.
                     self.rocket_delay2 = if self.rocket_boots == 1 { 30 } else { 15 };
                 }
-                // `:26884-26896`: the rocketSoundDelay cue (Item13/Item24 per
-                // vanity tier) is an audio seam — the port's rocket sound
-                // rides the S1-E-21 family, not this block.
+                // W4-c14 - `:26884-26896`: the rocketSoundDelay cue - the
+                // VANITY tier picks the cue (1/5 Item13 cadence 30,
+                // 2/3/4/6 Item24 cadence 15). The port has no vanity-rocket
+                // producer (the `vanityRocketBoots` equip rows are
+                // unported), so the gameplay tier stands in for the vanity
+                // one (the equip rows set both equal, `Player.cs:14420`/
+                // `:15023`/`:15222`/`:15380-15400`); tier 6 (the Bee
+                // costume, `:13090`) awaits its producer. The play queues
+                // on the movement-cue drain (the Item55 convention).
+                if self.rocket_sound_delay <= 0 {
+                    let cue = match self.rocket_boots {
+                        1 | 5 => Some(("Item_13", 30)),
+                        2 | 3 | 4 => Some(("Item_24", 15)),
+                        _ => None,
+                    };
+                    if let Some((cue, delay)) = cue {
+                        self.rocket_sound_delay = delay;
+                        self.pending_cart_sounds.push(crate::minecart::CartCue {
+                            cue,
+                            x: self.x,
+                            y: self.y,
+                        });
+                    }
+                }
             } else {
                 self.can_rocket = false;
             }
+        }
+        // W4-c14 - `:26903-26905`: the rocket cue cadence ticks once per
+        // flight tick, before the flame cadence below.
+        if self.rocket_sound_delay > 0 {
+            self.rocket_sound_delay -= 1;
         }
         // `:26907-26910`: the flame cadence delay ticks every tick.
         if self.rocket_delay2 > 0 {
@@ -9960,6 +10028,21 @@ impl Player {
                 && !self.is_performing_down_dash()
             {
                 self.fall_start = (self.y / TILE_PX) as i32;
+                // W4-c14 - the wings-4 glide sound (`Player.cs:27149-27156`,
+                // inside the `velocity.Y > 0` dust block): the rocketDelay2
+                // cadence plays Item13 every 60 ticks while gliding (the
+                // per-wing dust rolls stay visual seams).
+                if self.wings_logic == 4 {
+                    self.rocket_delay2 -= 1;
+                    if self.rocket_delay2 <= 0 {
+                        self.pending_cart_sounds.push(crate::minecart::CartCue {
+                            cue: "Item_13",
+                            x: self.x,
+                            y: self.y,
+                        });
+                        self.rocket_delay2 = 60;
+                    }
+                }
                 self.vy += gravity / 3.0;
                 if self.vy > fall_cap / 3.0 && !self.trying_to_hover_down() {
                     self.vy = fall_cap / 3.0;
@@ -17891,6 +17974,75 @@ mod tests {
             }
         }
         unreachable!()
+    }
+
+    /// W4-c14 - the rocket cadence cue (`Player.cs:26884-26896` +
+    /// `:26903-26905`): the first fuel tick queues the tier's Item cue at
+    /// the top-left and arms rocketSoundDelay (30 tier 1 / 15 tiers 2-4,
+    /// the same tick's decrement brings it to 29/14); the held thrust
+    /// stays silent until the cadence expires. The vanity-tier producer
+    /// is unported - the gameplay tier stands in (the equip rows set both
+    /// equal).
+    #[test]
+    fn w4_c14_the_rocket_cue_rides_its_own_cadence() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        // Arm the midair trigger state: fuel, the release latch, canRocket.
+        p.rocket_boots = 1;
+        p.rocket_time = 7;
+        p.rocket_time_max = 7;
+        p.can_rocket = true;
+        p.rocket_release = true;
+        p.vy = 2.0; // airborne
+        p.on_ground = false;
+        p.update(
+            &w,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+        );
+        let cues = p.take_cart_sounds();
+        assert_eq!(cues.len(), 1, "the first fuel tick plays");
+        assert_eq!(cues[0].cue, "Item_13", "tier 1 -> Item13");
+        assert_eq!(p.rocket_sound_delay, 29, "30 armed, one tick spent");
+        // The held thrust: the cadence blocks replays.
+        for _ in 0..10 {
+            p.update(
+                &w,
+                PlayerInput {
+                    jump: true,
+                    ..Default::default()
+                },
+            );
+            assert!(p.take_cart_sounds().is_empty(), "the cadence blocks");
+        }
+        // Tier 2 arms 15 (14 after the same tick's decrement).
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.rocket_boots = 2;
+        p.rocket_time = 7;
+        p.rocket_time_max = 7;
+        p.can_rocket = true;
+        p.rocket_release = true;
+        p.vy = 2.0;
+        p.on_ground = false;
+        p.update(
+            &w,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+        );
+        let cues = p.take_cart_sounds();
+        assert_eq!(cues.len(), 1);
+        assert_eq!(cues[0].cue, "Item_24", "tier 2 -> Item24");
+        assert_eq!(p.rocket_sound_delay, 14);
     }
 
     /// W4-c14 - the Pogo Stick's (mount 43) hop cue (`Player.cs:19782-19793`):
