@@ -449,5 +449,50 @@ Verified against the actual C# line content (function boundaries:
   (shield-drop placement, `math_sign` body, `HostileShotAi ai0`); R34
   catalogue: `git show origin/task/S1-D-3-aistyle75:docs/ANALYSIS.md`
   ("The mount machine" section) + `:36052-36070` orphan arms read.
-- **No compiler invoked** — no cargo/rustc/rustfmt/tests/dotnet/graphify.
+- **No compiler invoked** - no cargo/rustc/rustfmt/tests/dotnet/graphify.
   All verdicts are reads + hand-arithmetic against the C#.
+
+## 6. W4-g35 verify-round receipt - the Glow_24 residual (BrainScrambler 381)
+
+ANALYSIS: the dead dispatch's +1 `GLOW_SHEET_NAMES` row (`assets.rs:1761`,
+`"Glow_24"`) is the BrainScrambler 381 rider-frame glow of this doc's
+verdict-10 shooter family - COHERENT, kept (not reverted).
+
+What was verified (reads only, base `b3ebd4d07`):
+
+- **C# arm read whole** (`Main.cs:25780-25856`, the type-381 rider block):
+  the 32x42 `value59` rect, the 9-frame offset switch, the
+  `ai[2]>0 -> num263 = ai[2]-1` / `velocity.Y != 0 -> 3` row pick
+  (`value59.Y += 44 * num263`, origins (10,18)/(8,20)/(8,20)/(8,20)/(6,18),
+  flip mirrors X against the 32-wide rect), then `Extra[0]` at `npcColor`
+  followed by `TextureAssets.GlowMask[24]` at `Color(255,255,255,0)` with
+  the SAME position/rect/rotation/origin/scale/effects - the exact twin
+  the row's comment claims ("the Extra[0] twin"). The `:25855` cite and
+  the alpha-0 colour match `npc_glow.rs:117-119` (record npc 381,
+  masks [24], line 25855) verbatim.
+- **Asset present**: `assets/Content/Images/Glow_24.xnb` exists;
+  `"Glow_24"` occurs exactly ONCE in `assets.rs` (no duplicate bind).
+- **Disjointness**: 24 is NOT in f15's TILE-DRAW-2 45 (51-69/88/112-125/
+  127/202/243/267-270/289/315/329/330, ANALYSIS f15 reconciliation) nor
+  in the flame set; no other consumer binds 24 (grep across crates:
+  only the new row).
+- **Consumer status**: the NPC glow-draw pass is still unported
+  (`render/entities.rs:2369-2377` - the scrambler draws only the NPC_381
+  strip; `NPC_GLOW_RECORDS` has no draw consumer yet), so the bind is
+  census-completion residual - it pre-stages the sheet for the entity
+  render task, matching the sibling `Glow_11` (MartianOfficer 383,
+  `:25772`) row already committed in `012bdcc66`. Binding now is
+  harmless: the atlas loads sheets by name, unused sheets draw nothing.
+- **Placement nit (non-blocking)**: the row sits between `Glow_11` and
+  `Glow_20`, breaking the block's numeric order (24 > 20-23). Kept
+  verbatim - a cosmetic reorder is out of this round's scope; the
+  comment carries the full citation either way.
+
+Verdict: **COHERENT - commit the line**. No witnesses written this round
+(the row is data; the lane's existing `npc_glow.rs` witnesses - WRITTEN,
+NOT RUN - pin the census count/range/dual arms; record 381 rides the
+completeness pins, not a per-row assert). Mask 24 has no other family
+claiming it: absent from the projectile `set_defaults_glow_mask` slice
+(16 masks) and the item `glow_mask` column - the NPC census is its sole
+consumer. **No compiler invoked** - no cargo/rustc/rustfmt/tests/
+dotnet/graphify; reads + git only.

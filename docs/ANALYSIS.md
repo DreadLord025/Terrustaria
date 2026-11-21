@@ -39337,3 +39337,8 @@ W4-f15's TILE-DRAW-2 binding added **45** `Glow_{id}` sheets to
   per-type colour switch, the slope/half-brick draw ladder) remains
   UNPORTED on both branches; f15's task doc names it "a separate wide
   task, explicitly out of scope". Its 35 sheets are still unbound.
+- **Glow_24 residual (verify round)**: the interrupted dispatch's +1
+  `GLOW_SHEET_NAMES` row binds the BrainScrambler 381 rider-frame glow
+  (`Main.cs:25855`, census `npc_glow.rs:119` masks [24]) — re-verified
+  COHERENT (C# arm read whole, `.xnb` present, unique, disjoint from the
+  flame set + f15's 45) and kept; receipt in `research/52` §6.

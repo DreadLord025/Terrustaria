@@ -1758,6 +1758,7 @@ const GLOW_SHEET_NAMES: &[&str] = &[
     "Glow_8",   // NebulaDrill 430 (:5009)
     "Glow_10",  // NebulaPickaxe item 2781
     "Glow_11",  // MartianOfficer 383 (Main.cs:25772)
+    "Glow_24",  // BrainScrambler 381 rider frame (Main.cs:25855 — the Extra[0] twin, residual)
     "Glow_20",  // VortexChainsaw item 2773 (Item.cs:26504)
     "Glow_21",  // VortexDrill item 2774
     "Glow_22",  // VortexHamaxe item 2778 (:26574)
