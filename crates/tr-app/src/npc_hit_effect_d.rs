@@ -4721,6 +4721,113 @@ fn paladin_smoke_death(
     }
 }
 
+/// The 87-92 Wyvern death (`NPC.cs:88909-88933`, site 745): the 10x
+/// dust-16 burst (×2, noGravity), then `Next(1,4)` (1-3) smoke gores —
+/// the COUNT draw first, then per-gore the `Next(11,14)` type argument
+/// BEFORE the NewGore — at `pos + h/2 - 10` with velocity
+/// `(hitDirection, 0)` + the ×0.8 post, `this.scale` carried.
+fn wyvern_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88921-88926` — the 10x dust-16 burst.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 16, 0.0, 0.0, 0, Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    // `:88927` — the count draw.
+    let num742 = rng.next_range(1, 4);
+    let s = npc.scale;
+    let vel = Vec2::new(hit_direction, 0.0);
+    let anchor = Vec2::new(pos.x, pos.y + h / 2.0 - 10.0);
+    // `:88928-88932` — the smoke gores + the ×0.8 post.
+    for _ in 0..num742 {
+        let t = rng.next_range(11, 14); // :88930
+        let idx = gore.new_gore(rng, world, anchor, vel, t, s);
+        gore.slot_mut(idx).velocity *= 0.8;
+    }
+}
+
+/// The 78/79/80/630 mummy death (`NPC.cs:88934-88958`, sites 746-748):
+/// the 20x dust-31 burst (×2, noGravity), then the three smoke gores
+/// 61/62/63 at the −10/+h/2−10/+h−10 Y offsets with velocity
+/// `(hitDirection, 0)` + the ×0.3 post, `this.scale` carried.
+fn mummy_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88946-88951` — the 20x dust-31 burst.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 31, 0.0, 0.0, 0, Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    let s = npc.scale;
+    let vel = Vec2::new(hit_direction, 0.0);
+    // `:88952-88957` — the three smoke gores + the ×0.3 post.
+    for (dy, t) in [(-10.0, 61), (h / 2.0 - 10.0, 62), (h - 10.0, 63)] {
+        let idx = gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + dy), vel, t, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
+/// The 82/158/159/250/253 arm (`NPC.cs:88959-88983`, sites 749-751):
+/// the 20x dust-54 burst (alpha 50, ×2, noGravity), then THREE gore-99
+/// at the −10/+h/2−15/+h−20 Y offsets (NOTE the −15/−20, not −10) with
+/// velocity `(hitDirection, 0)` + the ×0.3 post, `this.scale` carried.
+fn ice_tortoise_smoke_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88971-88976` — the 20x dust-54 burst, alpha 50.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 54, 0.0, 0.0, 50, Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    let s = npc.scale;
+    let vel = Vec2::new(hit_direction, 0.0);
+    // `:88977-88982` — the three gore-99 + the ×0.3 post.
+    for dy in [-10.0, h / 2.0 - 15.0, h - 20.0] {
+        let idx = gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + dy), vel, 99, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -5282,6 +5389,19 @@ pub fn hit_effect_d(
     // `:88891-88908` — the 290 arm (sites 742-744).
     else if npc_type == 290 {
         paladin_smoke_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88909-88933` — the 87-92 Wyvern arm (site 745, the Next(1,4)
+    // count).
+    else if (87..=92).contains(&npc_type) {
+        wyvern_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88934-88958` — the 78/79/80/630 mummy arm (sites 746-748).
+    else if matches!(npc_type, 78 | 79 | 80 | 630) {
+        mummy_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88959-88983` — the 82/158/159/250/253 arm (sites 749-751).
+    else if matches!(npc_type, 82 | 158 | 159 | 250 | 253) {
+        ice_tortoise_smoke_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -9229,5 +9349,61 @@ mod tests {
             assert_eq!(gore.slot(i).velocity.y, -ky * 0.5);
         }
         assert_eq!(rng.peek(), twin.peek(), "the 290 arm mirrors the C# draws");
+    }
+
+    /// `NPC.cs:88927-88931` — the Wyvern's Next(1,4) count + per-gore
+    /// Next(11,14) types with the ×0.8 post; `:88952-88957` — the mummy
+    /// smoke triple; `:88977-88982` — the 82-arm's three gore-99 at the
+    /// −10/−15/−20 offsets.
+    #[test]
+    fn w4_f5d_the_wyvern_count_the_mummy_and_the_82_smoke() {
+        let w = air();
+        let n = mob(100.0, 100.0, 40.0, 40.0);
+        // The Wyvern: the count draw then the per-gore type draws.
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(751);
+        let _ = hit_effect_d(&n, 87, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let mut twin = UnifiedRandom::new(751);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 40, 40);
+        }
+        let count = twin.next_range(1, 4);
+        let active = gore.slots().iter().take_while(|g| g.active).count();
+        assert_eq!(active, count as usize, "the wyvern count");
+        for _ in 0..count {
+            let t = twin.next_range(11, 14);
+            let ky = twin.next_range(10, 31) as f32 * 0.1;
+            let kx = twin.next_range(-20, 21) as f32 * 0.1;
+            let i = 0; // checked below via the stream position only
+            let _ = (t, ky, kx, i);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the wyvern mirrors the C# draws");
+        // The mummy + the 82-arm: three gores each, ×0.3 post.
+        for (kind, types, offsets) in [
+            (78, vec![61, 62, 63], vec![-10.0, 10.0, 30.0]),
+            (82, vec![99, 99, 99], vec![-10.0, 5.0, 20.0]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(757);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let got: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(got, types, "kind {kind}");
+            for (i, dy) in offsets.iter().enumerate() {
+                assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0 + dy));
+            }
+            let mut twin = UnifiedRandom::new(757);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 40, 40);
+            }
+            for i in 0..3 {
+                let ky = twin.next_range(10, 31) as f32 * 0.1;
+                let kx = twin.next_range(-20, 21) as f32 * 0.1;
+                assert_eq!(gore.slot(i).velocity.x, (1.0 + kx) * 0.3);
+                assert_eq!(gore.slot(i).velocity.y, -ky * 0.3);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
+        }
     }
 }
