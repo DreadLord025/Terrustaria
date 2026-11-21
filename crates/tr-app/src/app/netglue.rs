@@ -1360,6 +1360,87 @@ impl App {
                 // (the C# ignores `PlaceObject`'s return).
                 server.broadcast_except(&S2c::PlaceObject(p), id);
             }
+            // `case 48` — a single-tile liquid change
+            // (`MessageBuffer.cs:2407-2446`): the host spam window
+            // (`:2413-2427`, ±10 tiles around the sender's centre) is
+            // dormant (`Netplay.SpamCheck` defaults false, `Netplay.cs:867`);
+            // the liquid byte + type apply (`:2434-2435`), the host re-frames
+            // (`SquareTileFrame` `:2438`) and a drained tile re-pushes as
+            // `48` to the others (`:2439-2442`). W4-g49.
+            C2s::LiquidUpdate(l) => {
+                let (x, y) = (l.x as i32, l.y as i32);
+                if let Some(t) = self.world.tile_mut(x, y) {
+                    t.liquid = l.liquid; // `:2434`
+                    // `:2435` — `Tile.liquidType(int)` (`Tile.cs:216-233`):
+                    // 0 clears the kind bits, 1/2/3 set lava/honey/shimmer;
+                    // any other value is a no-op (the switch has no default).
+                    match l.liquid_type {
+                        0 => t.clear_liquid_kind(),
+                        1 => t.set_liquid_kind(tr_core::tile::LiquidKind::Lava),
+                        2 => t.set_liquid_kind(tr_core::tile::LiquidKind::Honey),
+                        3 => t.set_liquid_kind(tr_core::tile::LiquidKind::Shimmer),
+                        _ => {}
+                    }
+                    // `:2438` — `WorldGen.SquareTileFrame(x, y)` (reset true).
+                    tr_core::framing::reframe_area(&mut self.world, x, y, 2, true);
+                    self.world_key = None;
+                    if l.liquid == 0 {
+                        // `:2441` — the drained-tile re-push (the writer
+                        // reads the tile's own liquid/type back out).
+                        let drained = net::LiquidUpdate {
+                            x: l.x,
+                            y: l.y,
+                            liquid: 0,
+                            liquid_type: l.liquid_type,
+                        };
+                        server.broadcast_except(&S2c::LiquidUpdate(drained), id);
+                    }
+                }
+            }
+            // `case 52` — a chest/door unlock or lock
+            // (`MessageBuffer.cs:2531-2564`): kind 1 `Chest.Unlock`
+            // (`:2538`), 2 `WorldGen.UnlockDoor` (`:2547`), 3 `Chest.Lock`
+            // (`:2556`); each relays as `52` + a 2×2 `SendTileSquare`
+            // (`:2541-2542`/`:2550-2551`/`:2559-2560`). Any other kind is a
+            // silent no-op. W4-g49.
+            C2s::LockAndUnlock(l) => {
+                let (x, y) = (l.x as i32, l.y as i32);
+                let plant_boss = self.world.downed_plant_boss;
+                match l.action {
+                    1 => {
+                        crate::chest::unlock_chest(&mut self.world, x, y, plant_boss);
+                    }
+                    2 => {
+                        if let Some(top) = unlock_door(&mut self.world, x, y) {
+                            unlock_door_effects(self, x, top);
+                        }
+                    }
+                    3 => {
+                        crate::chest::lock_chest(&mut self.world, x, y, plant_boss);
+                    }
+                    _ => return, // any other kind: no apply, no relay
+                }
+                self.world_key = None;
+                // The relay fires on the action KIND, not the result — the
+                // C# ignores `Chest.Unlock`/`Lock`'s bool (`:2538-2542`).
+                server.broadcast_except(&S2c::LockAndUnlock(l), id); // `:2541`
+                // `SendTileSquare(-1, x, y, 2)` (`NetMessage.cs:2632-2636`):
+                // the 2×2 centred square is (x, y)..(x+1, y+1).
+                let mut records = Vec::with_capacity(4);
+                for dy in 0..2 {
+                    for dx in 0..2 {
+                        records.push(self.tile_record_at(x + dx, y + dy));
+                    }
+                }
+                server.broadcast(&S2c::SectionRange(Box::new(net::SectionRange {
+                    x: l.x,
+                    y: l.y,
+                    w: 2,
+                    h: 2,
+                    change_type: 0,
+                    records,
+                })));
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:4282-4297`, `:4328-4343`) land
@@ -2647,6 +2728,50 @@ impl App {
                 }
                 self.world_key = None;
             }
+            // `case 48` — the host's liquid fan-out / drained re-push
+            // (`MessageBuffer.cs:2407-2446`): the client applies the liquid
+            // byte + type (`:2434-2435`); the spam window and the host
+            // re-frame/re-push (`:2413-2443`) are host-only. W4-g49.
+            S2c::LiquidUpdate(l) => {
+                if let Some(t) = self.world.tile_mut(l.x as i32, l.y as i32) {
+                    t.liquid = l.liquid; // `:2434`
+                    match l.liquid_type {
+                        0 => t.clear_liquid_kind(),
+                        1 => t.set_liquid_kind(tr_core::tile::LiquidKind::Lava),
+                        2 => t.set_liquid_kind(tr_core::tile::LiquidKind::Honey),
+                        3 => t.set_liquid_kind(tr_core::tile::LiquidKind::Shimmer),
+                        _ => {} // `Tile.cs:216-233` — no default arm
+                    }
+                    self.world_key = None;
+                }
+            }
+            // `case 52` — the host's unlock/lock relay
+            // (`MessageBuffer.cs:2531-2564`): the client runs the same
+            // `Chest.Unlock`/`WorldGen.UnlockDoor`/`Chest.Lock`; the relay +
+            // `SendTileSquare` halves (`:2539-2543` etc.) are host-only (the
+            // 2×2 `SectionRange` arrives separately). W4-g49.
+            S2c::LockAndUnlock(l) => {
+                let (x, y) = (l.x as i32, l.y as i32);
+                let plant_boss = self.world.downed_plant_boss;
+                match l.action {
+                    1 => {
+                        crate::chest::unlock_chest(&mut self.world, x, y, plant_boss);
+                    }
+                    2 => {
+                        if let Some(top) = unlock_door(&mut self.world, x, y) {
+                            unlock_door_effects(self, x, top);
+                        }
+                    }
+                    3 => {
+                        crate::chest::lock_chest(&mut self.world, x, y, plant_boss);
+                    }
+                    _ => {}
+                }
+                self.world_key = None;
+            }
+            // `case 44/67` — the reader ignore group
+            // (`MessageBuffer.cs:4483-4490`): accepted and dropped. W4-g49.
+            S2c::Unknown44 | S2c::Unknown67 => {}
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
             // (`MessageBuffer.cs:1851-1867`, `:2695-2739`, `:4043-4048`,
@@ -4548,6 +4673,76 @@ fn paint_coat_wall(world: &mut World, x: i32, y: i32, coat: u8) {
         }
         _ => {} // `:44192-44193` default: return false
     }
+}
+
+/// `WorldGen.UnlockDoor` (`WorldGen.cs:37599-37628`) for the `52` reader's
+/// kind 2 (`MessageBuffer.cs:2547`): walk UP from (x, y) to the locked
+/// door's top leaf (`frameY == 594`); a `frameY < 594` or the world's top
+/// edge refuses. The three leaves shift `frameY += 54` (the unlocked
+/// column, `:37621`). Returns the top leaf's y on success so the caller can
+/// run the app-scope effects — the Unlock cue (22, `:37614`), the 4 type-11
+/// dusts per leaf (`:37622-37625`) and progression 22 (`:37627`). W4-g49.
+fn unlock_door(world: &mut World, x: i32, y: i32) -> Option<i32> {
+    // `:37602-37605` — a null tile refuses (out of bounds in the port).
+    if world.tile(x, y).is_none() {
+        return None;
+    }
+    let mut top = y;
+    // `:37606-37613` — the upward walk to the 594 leaf.
+    loop {
+        let Some(t) = world.tile(x, top) else {
+            return None;
+        };
+        if t.frame_y == 594 {
+            break;
+        }
+        top -= 1;
+        let Some(t) = world.tile(x, top) else {
+            return None;
+        };
+        if t.frame_y < 594 || top <= 0 {
+            return None;
+        }
+    }
+    // `:37615-37626` — the three leaves shift to the unlocked column.
+    for k in top..=top + 2 {
+        if let Some(t) = world.tile_mut(x, k) {
+            t.frame_y += 54; // `:37621`
+        }
+    }
+    Some(top)
+}
+
+/// The app-scope effects of [`unlock_door`] (`WorldGen.cs:37614`/:37622-37627):
+/// the Unlock cue at (x*16, top*16+16), the 4 type-11 dusts per leaf and
+/// progression 22. The dust draws ride the bare-`Main.rand` stand-in (the
+/// message handler runs outside every swap, `Main.cs:16895`). W4-g49.
+fn unlock_door_effects(app: &mut App, x: i32, top: i32) {
+    // `:37614` — `SoundEngine.PlaySound(22, i*16, num*16+16)`.
+    app.audio
+        .play_at("Unlock", x as f32 * TILE_PX, top as f32 * TILE_PX + 16.0, 1.0);
+    // `:37622-37625` — 4 dusts per leaf, type 11.
+    let ctx = app.spawn_ctx();
+    for k in top..=top + 2 {
+        for _ in 0..4 {
+            app.dust.new_dust(
+                app.rngs.global(),
+                &ctx,
+                &app.world,
+                Vec2::new(x as f32 * TILE_PX, k as f32 * TILE_PX),
+                16,
+                16,
+                11,
+                0.0,
+                0.0,
+                0,
+                tr_core::particles::Color::default(),
+                1.0,
+            );
+        }
+    }
+    // `:37627` — `AchievementsHelper.NotifyProgressionEvent(22)`.
+    let _ = app.notify_progression_net(22);
 }
 
 /// `CombatText.NewText(playerRect, color, amount)` for the `66`/`43` readers
@@ -6843,5 +7038,127 @@ mod message_family_tests {
             let t = app.world.tile(2, 4).expect("cell");
             assert!(!t.active(), "the border placement was refused (`:3204`)");
         }
+    }
+
+    /// W4-g49 `48 LiquidUpdate` (`MessageBuffer.cs:2407-2446`): the host
+    /// applies the liquid byte + type (`:2434-2435`); a drained tile
+    /// (`liquid == 0`) re-pushes as `48` to the others (`:2441`), which the
+    /// client applies. A non-zero liquid is NOT relayed by the reader arm
+    /// (the fan-out is `sendWater`'s, the send path's).
+    #[test]
+    fn w4_g49_liquid_update_drained_replicates() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // Seed water on both sides so the drain is observable.
+        for app in [&mut host_app, &mut client_app] {
+            let i = app.world.index(5, 4);
+            app.world.tiles[i].liquid = 200;
+        }
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::LiquidUpdate(net::LiquidUpdate {
+                x: 5,
+                y: 4,
+                liquid: 0, // drained (`:2439`)
+                liquid_type: 0,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert_eq!(host_app.world.tile(5, 4).unwrap().liquid, 0, "the host drained (`:2434`)");
+        assert_eq!(client_app.world.tile(5, 4).unwrap().liquid, 0, "the drained re-push reached the client (`:2441`)");
+    }
+
+    /// W4-g49 `48`'s type half (`MessageBuffer.cs:2435`, `Tile.cs:216-233`):
+    /// a lava-type update sets the lava kind bits on the host.
+    #[test]
+    fn w4_g49_liquid_update_sets_the_kind() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::LiquidUpdate(net::LiquidUpdate {
+                x: 5,
+                y: 4,
+                liquid: 128,
+                liquid_type: 1, // lava
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        let t = host_app.world.tile(5, 4).unwrap();
+        assert_eq!(t.liquid, 128, "the liquid byte applied (`:2434`)");
+        assert_eq!(t.liquid_kind(), tr_core::tile::LiquidKind::Lava, "the lava kind applied (`:2435`)");
+    }
+
+    /// W4-g49 `52 LockAndUnlock` (`MessageBuffer.cs:2531-2564`): a kind-1
+    /// chest unlock shifts the locked 2×2 frames off on the host
+    /// (`Chest.Unlock` `:2538`) and relays (`:2541`); the client's copy takes
+    /// the same shift. The golden chest (style 2, frameX 72) unlocks to 36.
+    #[test]
+    fn w4_g49_lock_and_unlock_chest_shifts_and_relays() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // A locked golden chest (kind 21, style 2 → frameX 72) at (5,4) on
+        // both sides (the 2×2 footprint).
+        for app in [&mut host_app, &mut client_app] {
+            for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                let i = app.world.index(5 + dx, 4 + dy);
+                app.world.tiles[i].kind = 21;
+                app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+                app.world.tiles[i].frame_x = 72 + if dx == 1 { 18 } else { 0 };
+                app.world.tiles[i].frame_y = if dy == 1 { 18 } else { 0 };
+            }
+        }
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::LockAndUnlock(net::LockAndUnlock {
+                action: 1, // chest unlock (`:2536-2543`)
+                x: 5,
+                y: 4,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        for app in [&host_app, &client_app] {
+            assert_eq!(app.world.tile(5, 4).unwrap().frame_x, 36, "the unlock shifted −36 (`Chest.cs:362`)");
+            assert_eq!(app.world.tile(6, 4).unwrap().frame_x, 54, "the right column shifted too");
+        }
+    }
+
+    /// W4-g49 `52`'s door half (`MessageBuffer.cs:2547`,
+    /// `WorldGen.cs:37599-37628`): a kind-2 door unlock walks up to the 594
+    /// leaf and shifts the three leaves +54 on the host; the relay carries
+    /// it to the client.
+    #[test]
+    fn w4_g49_lock_and_unlock_door_shifts_the_leaves() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // A locked golden door (kind 10) at x=5, leaves y=2..4 with frameY
+        // 594/612/630 on both sides.
+        for app in [&mut host_app, &mut client_app] {
+            for (k, fy) in [(2, 594i16), (3, 612), (4, 630)] {
+                let i = app.world.index(5, k);
+                app.world.tiles[i].kind = 10;
+                app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+                app.world.tiles[i].frame_y = fy;
+            }
+        }
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::LockAndUnlock(net::LockAndUnlock {
+                action: 2, // door unlock (`:2545-2552`)
+                x: 5,
+                y: 4, // the bottom leaf — the walk finds the 594 top
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        for app in [&host_app, &client_app] {
+            assert_eq!(app.world.tile(5, 2).unwrap().frame_y, 648, "the top leaf shifted +54 (`WorldGen.cs:37621`)");
+            assert_eq!(app.world.tile(5, 3).unwrap().frame_y, 666, "the middle leaf shifted");
+            assert_eq!(app.world.tile(5, 4).unwrap().frame_y, 684, "the bottom leaf shifted");
+        }
+    }
+
+    /// W4-g49 `44/67` (`MessageBuffer.cs:4483-4490`): the ignore group is
+    /// accepted and dropped — no world change, no kick.
+    #[test]
+    fn w4_g49_ignore_group_is_dropped() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Host(server) = &host_app.net {
+            server.send(client_app.local_id, &S2c::Unknown44);
+            server.send(client_app.local_id, &S2c::Unknown67);
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(matches!(client_app.net, NetRole::Client(_)), "the ignore group did not kick the client");
     }
 }

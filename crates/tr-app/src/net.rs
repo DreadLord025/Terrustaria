@@ -219,6 +219,33 @@ pub mod id {
     /// ways: client placement asks (`Player.cs:40147`/`:45819`,
     /// `Projectile.cs:25356`) and the host's placement relay.
     pub const PLACE_OBJECT: u8 = 79;
+    /// `44 Unknown44` (`MessageID.cs:99-100`, `[Old("Deprecated.")]`) — no
+    /// writer arm, no body; the same reader ignore group
+    /// (`MessageBuffer.cs:4483-4490`). d96's census row confirms it dead.
+    pub const UNKNOWN_44: u8 = 44;
+    /// `48 LiquidUpdate` (`MessageID.cs:108-109`, `[Old("Deprecated. Use
+    /// NetLiquidModule instead.")]`) — the per-tile liquid send still
+    /// exists: writer `NetMessage.cs:987-995`, reader
+    /// `MessageBuffer.cs:2407-2446` (host `SquareTileFrame` + a `48` re-push
+    /// when the liquid drained to 0, `:2441`); `NetMessage.sendWater`
+    /// (`:2778-2797`) is the send site. The port's liquid lane uses module
+    /// 82; this is the verbatim legacy body.
+    pub const LIQUID_UPDATE: u8 = 48;
+    /// `52 LockAndUnlock` (`MessageID.cs:117`) — writer
+    /// `NetMessage.cs:1014-1018` (`(byte)action + (short)x + (short)y`,
+    /// the player id `number` is NOT written); reader
+    /// `MessageBuffer.cs:2531-2564` runs on BOTH sides (the `netMode == 2`
+    /// relay halves are host-only): kind 1 `Chest.Unlock`, 2
+    /// `WorldGen.UnlockDoor`, 3 `Chest.Lock`, each host-relayed as `52` +
+    /// `SendTileSquare(…, 2)`. All send sites are `netMode == 1`
+    /// (`Player.cs:32813`/`:32832`/`:33197`/`:33218`/`:41660`); the host
+    /// relay (`:2541`/`:2550`/`:2559`) gives the client an S2c read too.
+    pub const LOCK_AND_UNLOCK: u8 = 52;
+    /// `67 Unknown67` (`MessageID.cs:147`) — no writer arm, no body; the
+    /// reader ignore group (`MessageBuffer.cs:4483-4490`). Note the accept
+    /// gate (`:165`) does NOT whitelist it pre-spawn (93 is whitelisted
+    /// there but still ignored by the reader group).
+    pub const UNKNOWN_67: u8 = 67;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -1675,6 +1702,34 @@ pub struct InvasionProgress {
 // ---- W4-g49 F21-TAIL: the transplanted bodies (byte-verbatim from
 // origin/task/W4-f21-net-ids-verify-tail 5274a097) ----
 
+/// `msg 48 LiquidUpdate`'s body (`NetMessage.cs:987-995`): the tile as two
+/// `(short)`s, `tile.liquid` byte and `tile.liquidType()` byte. The reader
+/// (`MessageBuffer.cs:2407-2446`) applies both, runs the host spam check
+/// (`:2413-2427`, the ±10-tile window around the sender's centre) and
+/// re-frames; a drained tile (`b2 == 0`) is re-pushed as `48` (`:2441`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LiquidUpdate {
+    pub x: i16,
+    pub y: i16,
+    pub liquid: u8,
+    /// `Tile.liquidType()` (`Tile.cs:235`): 0 water, 1 lava, 2 honey,
+    /// 3 shimmer.
+    pub liquid_type: u8,
+}
+
+/// `msg 52 LockAndUnlock`'s body (`NetMessage.cs:1014-1018`): the action
+/// byte (`number2`), the tile as two `(short)`s (`number3`/`number4`). The
+/// reader (`MessageBuffer.cs:2531-2564`) maps 1 chest-unlock, 2 door-unlock,
+/// 3 chest-lock; any other kind is a silent no-op. The host relays with
+/// `number = 0` (`:2541`/`:2550`/`:2559`) — the player id never rides.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LockAndUnlock {
+    /// 1 = `Chest.Unlock`, 2 = `WorldGen.UnlockDoor`, 3 = `Chest.Lock`.
+    pub action: u8,
+    pub x: i16,
+    pub y: i16,
+}
+
 /// `msg 57 Unknown57`'s body (`NetMessage.cs:1054-1058`): the three
 /// world-evil bytes `WorldGen.tGood`, `tEvil`, `tBlood` in that order
 /// (writer order good→evil→blood; the reader assigns the same order,
@@ -1963,6 +2018,17 @@ pub enum C2s {
     /// `SendObjectPlacement`; host gate + relay
     /// `MessageBuffer.cs:3192-3215`).
     PlaceObject(PlaceObject),
+    /// `48 LiquidUpdate` — a client's single-tile liquid change
+    /// (`NetMessage.sendWater`'s `netMode == 1` arm, `NetMessage.cs:2782`;
+    /// reader `MessageBuffer.cs:2407-2446`). Deprecated in favour of module
+    /// 82's liquid stream, but the arm is live.
+    LiquidUpdate(LiquidUpdate),
+    /// `52 LockAndUnlock` — a client unlocked/locked a chest or door
+    /// (`Player.cs:32813`/`:33197`/`:41660`; host apply + relay
+    /// `MessageBuffer.cs:2531-2564`). The send sites are all `netMode == 1`;
+    /// the host relay (`:2541`/`:2550`/`:2559`) carries it back to the
+    /// clients as S2c (the reader applies on both sides).
+    LockAndUnlock(LockAndUnlock),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2117,6 +2183,20 @@ pub enum S2c {
     /// (`SendObjectPlacement`'s `netMode == 2` half,
     /// `NetMessage.cs:2577-2581` + `MessageBuffer.cs:3212`).
     PlaceObject(PlaceObject),
+    /// `44 Unknown44` — deprecated (`MessageID.cs:99-100`), no body; the
+    /// reader ignore group (`MessageBuffer.cs:4483-4490`).
+    Unknown44,
+    /// `67 Unknown67` — no body; the same reader ignore group
+    /// (`MessageBuffer.cs:4483-4490`).
+    Unknown67,
+    /// `48 LiquidUpdate` — one tile's liquid, host fan-out
+    /// (`NetMessage.sendWater`'s per-section loop, `NetMessage.cs:2785-2796`;
+    /// the drained-tile re-push `MessageBuffer.cs:2441`).
+    LiquidUpdate(LiquidUpdate),
+    /// `52 LockAndUnlock` — the host's unlock/lock relay
+    /// (`MessageBuffer.cs:2541`/`:2550`/`:2559`); the reader applies the
+    /// same `Chest.Unlock`/`WorldGen.UnlockDoor`/`Chest.Lock` on the client.
+    LockAndUnlock(LockAndUnlock),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2217,6 +2297,8 @@ impl C2s {
             Self::InstrumentSound(_) => id::INSTRUMENT_SOUND,
             Self::QuestsCountSync(_) => id::QUESTS_COUNT_SYNC,
             Self::PlaceObject(_) => id::PLACE_OBJECT,
+            Self::LiquidUpdate(_) => id::LIQUID_UPDATE,
+            Self::LockAndUnlock(_) => id::LOCK_AND_UNLOCK,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2340,6 +2422,11 @@ impl C2s {
                 .u8(p.alternative)
                 .i8(p.random)
                 .bool(p.direction),
+            // `NetMessage.cs:987-995`: two (short)s + liquid + liquidType().
+            Self::LiquidUpdate(l) => w.i16(l.x).i16(l.y).u8(l.liquid).u8(l.liquid_type),
+            // `NetMessage.cs:1014-1018`: (byte)action + two (short)s; the
+            // player id is NOT written.
+            Self::LockAndUnlock(l) => w.u8(l.action).i16(l.x).i16(l.y),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2525,6 +2612,19 @@ impl C2s {
                 alternative: r.u8()?,
                 random: r.i8()?,
                 direction: r.bool()?,
+            }),
+            // `MessageBuffer.cs:2409-2412`: two ReadInt16 + two ReadByte.
+            id::LIQUID_UPDATE => Self::LiquidUpdate(LiquidUpdate {
+                x: r.i16()?,
+                y: r.i16()?,
+                liquid: r.u8()?,
+                liquid_type: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2533-2535`: ReadByte + two ReadInt16.
+            id::LOCK_AND_UNLOCK => Self::LockAndUnlock(LockAndUnlock {
+                action: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -2726,6 +2826,10 @@ impl S2c {
             Self::InstrumentSound(_) => id::INSTRUMENT_SOUND,
             Self::QuestsCountSync(_) => id::QUESTS_COUNT_SYNC,
             Self::PlaceObject(_) => id::PLACE_OBJECT,
+            Self::Unknown44 => id::UNKNOWN_44,
+            Self::Unknown67 => id::UNKNOWN_67,
+            Self::LiquidUpdate(_) => id::LIQUID_UPDATE,
+            Self::LockAndUnlock(_) => id::LOCK_AND_UNLOCK,
         }
     }
 
@@ -2930,6 +3034,14 @@ impl S2c {
                 .u8(p.alternative)
                 .i8(p.random)
                 .bool(p.direction),
+            // `44/67` have no writer arm; bare frames mirror the reader's
+            // ignore group (`MessageBuffer.cs:4483-4490`).
+            Self::Unknown44 | Self::Unknown67 => w,
+            // `NetMessage.cs:987-995` — the same liquid body as C2s.
+            Self::LiquidUpdate(l) => w.i16(l.x).i16(l.y).u8(l.liquid).u8(l.liquid_type),
+            // `NetMessage.cs:1014-1018` — the same lock body as C2s (the
+            // host relay re-sends `number = 0`, never on the wire).
+            Self::LockAndUnlock(l) => w.u8(l.action).i16(l.x).i16(l.y),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -3201,6 +3313,22 @@ impl S2c {
                 alternative: r.u8()?,
                 random: r.i8()?,
                 direction: r.bool()?,
+            }),
+            // `MessageBuffer.cs:4483-4490` — the ignore group: bare frames.
+            id::UNKNOWN_44 => Self::Unknown44,
+            id::UNKNOWN_67 => Self::Unknown67,
+            // `MessageBuffer.cs:2409-2412` — the shared liquid read.
+            id::LIQUID_UPDATE => Self::LiquidUpdate(LiquidUpdate {
+                x: r.i16()?,
+                y: r.i16()?,
+                liquid: r.u8()?,
+                liquid_type: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2533-2535` — the shared lock read.
+            id::LOCK_AND_UNLOCK => Self::LockAndUnlock(LockAndUnlock {
+                action: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
             }),
             _ => return None,
         })
@@ -5669,6 +5797,113 @@ mod tests {
         assert_eq!(*f.last().unwrap(), 0);
         // A truncated direction byte must not decode.
         assert!(C2s::decode(79, &mut NetReader::new(&body[..11])).is_none());
+    }
+
+    /// W4-g49 F21-TAIL `48 LiquidUpdate` — byte-pin transplanted verbatim
+    /// from W4-f21 batch 3 (`w4_f21_liquid_update_round_trips_both_directions`).
+    #[test]
+    fn w4_g49_liquid_update_round_trips_both_directions() {
+        // `NetMessage.cs:987-995`: (short)x + (short)y + tile.liquid byte +
+        // tile.liquidType() byte (`Tile.cs:235-238`: (bTileHeader & 0x60)
+        // >> 5 — 0 water / 1 lava / 2 honey / 3 shimmer).
+        let b = LiquidUpdate {
+            x: -12,
+            y: 340,
+            liquid: 255,
+            liquid_type: 3, // shimmer
+        };
+        let mut body = (-12i16).to_le_bytes().to_vec();
+        body.extend_from_slice(&340i16.to_le_bytes());
+        body.push(255);
+        body.push(3);
+        let f = C2s::LiquidUpdate(b).encode();
+        assert_eq!(f[2], 48);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::LiquidUpdate(d) => assert_eq!(d, b),
+            other => panic!("expected 48, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::LiquidUpdate(b).encode();
+        assert_eq!(f[2], 48);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(48, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::LiquidUpdate(d) => assert_eq!(d, b),
+            other => panic!("expected 48, got {:?}", other.msg_id()),
+        }
+        // The drained-tile shape (`MessageBuffer.cs:2439-2442` re-pushes it).
+        let drained = LiquidUpdate {
+            x: 5,
+            y: 6,
+            liquid: 0,
+            liquid_type: 0,
+        };
+        let f = S2c::LiquidUpdate(drained).encode();
+        assert_eq!(&f[3..], &[5, 0, 6, 0, 0, 0]);
+        // A truncated liquidType byte must not decode.
+        assert!(S2c::decode(48, &mut NetReader::new(&body[..5])).is_none());
+    }
+
+    /// W4-g49 F21-TAIL `52 LockAndUnlock` — byte-pin transplanted from
+    /// W4-f21 batch 3 (`w4_f21_lock_and_unlock_round_trips`), extended with
+    /// the S2c direction the host relay (`MessageBuffer.cs:2541`) needs.
+    #[test]
+    fn w4_g49_lock_and_unlock_round_trips_both_directions() {
+        // `NetMessage.cs:1014-1018`: (byte)number2 + (short)number3 +
+        // (short)number4 — the player id `number` is NOT on the wire (the
+        // host relay re-sends it as 0, `MessageBuffer.cs:2541`).
+        for action in [1u8, 2, 3, 0, 255] {
+            let b = LockAndUnlock {
+                action,
+                x: -5,
+                y: 1200,
+            };
+            let mut body = vec![action];
+            body.extend_from_slice(&(-5i16).to_le_bytes());
+            body.extend_from_slice(&1200i16.to_le_bytes());
+            let f = C2s::LockAndUnlock(b).encode();
+            assert_eq!(f[2], 52);
+            assert_eq!(f.len(), 3 + 5);
+            assert_eq!(&f[3..], &body);
+            let mut r = NetReader::new(&f[3..]);
+            match C2s::decode(f[2], &mut r).expect("decode") {
+                C2s::LockAndUnlock(d) => assert_eq!(d, b),
+                other => panic!("expected 52, got {:?}", other.msg_id()),
+            }
+            assert_eq!(r.remaining(), 0);
+            // The host relay carries the same body back to the clients.
+            let f = S2c::LockAndUnlock(b).encode();
+            assert_eq!(f[2], 52);
+            assert_eq!(&f[3..], &body);
+            match S2c::decode(52, &mut NetReader::new(&f[3..])).expect("decode") {
+                S2c::LockAndUnlock(d) => assert_eq!(d, b),
+                other => panic!("expected 52, got {:?}", other.msg_id()),
+            }
+        }
+        // A truncated y must not decode.
+        assert!(C2s::decode(52, &mut NetReader::new(&[1, 0, 0, 0])).is_none());
+    }
+
+    /// W4-g49 F21-TAIL `44 Unknown44` / `67 Unknown67` — the reader ignore
+    /// group (`MessageBuffer.cs:4483-4490`): no writer arm, no body, bare
+    /// frames accepted and dropped. Transplanted from W4-f21's
+    /// `w4_f21_deprecated_ignore_group_26_44_67_83_are_bare_frames` (the
+    /// 26/83 twins are g48/g50's, keep-one at union).
+    #[test]
+    fn w4_g49_ignore_group_44_67_are_bare_frames() {
+        for (msg, expect_id) in [(S2c::Unknown44, 44u8), (S2c::Unknown67, 67u8)] {
+            let f = msg.encode();
+            assert_eq!(f[2], expect_id);
+            assert_eq!(f.len(), 3);
+            let mut r = NetReader::new(&f[3..]);
+            let d = S2c::decode(f[2], &mut r).expect("decode");
+            assert_eq!(d.msg_id(), expect_id);
+            assert_eq!(r.remaining(), 0);
+        }
+        // No C2s variant — the ids have no writer arm (client send sites).
+        assert!(C2s::decode(44, &mut NetReader::new(&[])).is_none());
+        assert!(C2s::decode(67, &mut NetReader::new(&[])).is_none());
     }
 
     #[test]
