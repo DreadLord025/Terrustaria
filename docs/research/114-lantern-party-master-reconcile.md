@@ -425,3 +425,158 @@ FreeCake gift chain (research/70 §3's recipe); f38's naming layer +
 broadcast-before-achievement order. The PartySky §1e follow-up-2 (the
 world-load reset seam extended to the party sky) rides f40's reset at the
 merge.
+
+---
+
+## 8. The TRWLD v18 UNION — c39's moon-boss block, byte layout in C# order (the 9-way contract)
+
+c39's exec (`b5ab90db`, §7 row 1) bumped `save.rs` `VERSION` 17→**18** with
+its OWN 5-byte tail: the moon-event boss first-kill flags, written in the
+vanilla's own `SaveWorldFlags` order —
+`downedHalloweenKing` / `downedHalloweenTree` / `downedChristmasIceQueen` /
+`downedChristmasSantank` / `downedChristmasTree`
+(`WorldFile.cs:1347-1351`, re-read; the writer `save.rs:437-446`, the reader
+arm `:829-837`). **IceQueen precedes Santank precedes Tree** — the C# row
+order, NOT the `NPC.cs:79210-79238` death-arm order (the death arms run
+King/Tree/**Tree(21)/IceQueen/Santank**; the save block does not). The
+`.wld` flags half carries the same five at the same positions
+(`wld/sections/flags.rs:147-151` write, `:506-510` read).
+
+g71's research/92 §1 (`origin/task/W4-g71-bg-layers-2`, tip `f08e8d41e`)
+already contracts a **five-branch** union: g70 forest (16 B) → g71 surface
+(3 B) → g69 crimson (1 B) → d125 empress (1 B) → d109 dense variants LAST
+(`21 + width*height` total). The full v18 claimant set is **nine**:
+
+| # | Lane | Tip | Block | Size | C# citation |
+| --- | --- | --- | --- | --- | --- |
+| 1 | g70 | `75265591` | `tree_x[0..3]` 3×i32 + `forest_bg_styles[0..4]` 4×u8 | 16 B | `WorldFile.cs:1253-1259`/`:1318`/`:1376-1379` |
+| 2 | g71 | `f08e8d41` | `snow/desert/ocean_bg_style` 3×u8 | 3 B | `:1321`/`:1324-1325` |
+| 3 | g69 | `20d0380f` | `crimson` 1×u8 bool | 1 B | `:1281` |
+| 4 | g72 | `4a75715e` | `cave_back_x[0..3]` 3×i32 + `cave_back_style[0..4]` 4×**i32** + `ice/jungle/hell_back_style` 3×u8 | **31 B** | `:1260-1269` (the styles are i32 in the C# and in g72's `World` — NOT u8) |
+| 5 | **c39** | `b5ab90db` | the five moon-boss bools, C# row order above | **5 B** | `:1347-1351` |
+| 6 | g87 | `dfbcaf94` | `bought_cat/dog/bunny` 3×u8 bool | 3 B | `:1392-1394` |
+| 7 | g90 | `94d33f2c` | `combat_book_volume_two_was_used` + `peddlers_satchel_was_used` 2×u8 bool | 2 B | `:1407-1408` |
+| 8 | c43≡f45 | `07697080` / `6352d384` | world identity: `generator_version` u64 + `unique_id` 16×u8 + `world_id` i32 + `creation_time` u64 + `last_played` u64 (both branches carry the IDENTICAL block — keep ONE) | **44 B** | `:1225-1227` + `:1250-1251` |
+| 9 | d125 | `d8047a10` | `downed_empress_of_light` 1×u8 bool | 1 B | `NPC.cs:6393`, case-636 `:79351-79353` |
+| — | d109 | `81894095` | dense `World::variants`, `width*height`×u8, port-only | W×H B | `Tile.cs:464-482`; never in the C# `.wld` (`WorldFile.cs:1432-1604`) |
+
+### The 9-way fixed head (106 bytes) + dense LAST
+
+Order rule: **C# `.wld` field order** for the eight C#-backed blocks (the
+g71 §1 "least-surprising" rule extended — identity rides FIRST because
+`SaveWorldHeader` writes `:1225-1227` before `SaveWorldFlags` even starts,
+and `CreationTime`/`LastPlayed` at `:1250-1251` precede every flags row;
+c43/f45's own block already keeps the two groups in that order), then
+**d109's dense variants LAST** (variable-length, port-only — the fixed head
+stays at a known offset, g71 §1's rule):
+
+```
+… v17 downedFishron byte (1)
+v18 UNION tail — fixed head (106 bytes) + dense variants (W×H bytes):
+  offsets relative to the start of the v18 block:
+  [0..8]    generator_version   u64 LE   ┐ c43/f45 identity (44 B)
+  [8..24]   unique_id           16×u8    │  (WorldFile.cs:1225-1227)
+  [24..28]  world_id            i32 LE   │
+  [28..36]  creation_time       u64 LE   │  (:1250, DateTime.ToBinary)
+  [36..44]  last_played         u64 LE   ┘  (:1251)
+  [44..56]  tree_x[0..3]        3×i32 LE ┐ g70 forest (16 B, :1253-1259)
+  [56..60]  forest_bg_styles    4×u8     ┘  (:1318/:1376-1379)
+  [60..72]  cave_back_x[0..3]   3×i32 LE ┐ g72 cave (31 B, :1260-1269)
+  [72..88]  cave_back_style     4×i32 LE │  (i32, NOT u8)
+  [88]      ice_back_style      u8       │
+  [89]      jungle_back_style   u8       │
+  [90]      hell_back_style     u8       ┘
+  [91]      crimson             u8 bool    g69 (:1281)
+  [92]      snow_bg_style       u8       ┐ g71 surface (3 B, :1321/:1324-1325)
+  [93]      desert_bg_style     u8       │
+  [94]      ocean_bg_style      u8       ┘
+  [95]      downed_halloween_king        u8 bool ┐ c39 moon quintet (5 B,
+  [96]      downed_halloween_tree        u8 bool │  :1347-1351, the C# ROW
+  [97]      downed_christmas_ice_queen   u8 bool │  order — IceQueen before
+  [98]      downed_christmas_santank     u8 bool │  Santank before Tree)
+  [99]      downed_christmas_tree        u8 bool ┘
+  [100]     downed_empress_of_light      u8 bool   d125 (NPC.cs:6393)
+  [101]     bought_cat            u8 bool ┐ g87 licenses (3 B, :1392-1394)
+  [102]     bought_dog            u8 bool │
+  [103]     bought_bunny          u8 bool ┘
+  [104]     combat_book_volume_two_was_used u8 bool ┐ g90 (2 B, :1407-1408)
+  [105]     peddlers_satchel_was_used     u8 bool ┘
+  [106..106+W*H]  variants        W*H × u8   d109 dense, LAST
+```
+
+**Fixed head = 106 bytes: 44 + 16 + 31 + 1 + 3 + 5 + 1 + 3 + 2.**
+**Total tail = 106 + width*height bytes.**
+
+Note the one departure from strict C# order INSIDE the style bytes: g71's
+snow/desert/ocean trio sits after crimson (`:1281`) although the C# writes
+setBG3/6/7 at `:1321-1325` — g71 §1 already fixed the trio as a unit after
+the g70 block; the 9-way keeps g70→g71 adjacency (the two bg-style groups
+stay contiguous, the crimson byte rides with them as the group's tail) and
+places g72's cave block at its C# position between forest and crimson.
+The moon quintet + empress + licenses + boosters follow in strict row order.
+
+**Writer** (one `if`-free tail after the v17 fishron write; d109's dense
+block is the LAST thing `write_world` emits):
+```rust
+// v18 UNION fixed head, C# field order: identity, forest, cave, crimson,
+// surface, moon quintet, empress, licenses, boosters.
+w.write_all(&world.generator_version.to_le_bytes())?;   // [0..8]
+w.write_all(&world.unique_id)?;                          // [8..24]
+w.write_all(&world.world_id.to_le_bytes())?;             // [24..28]
+w.write_all(&world.creation_time.to_le_bytes())?;        // [28..36]
+w.write_all(&world.last_played.to_le_bytes())?;          // [36..44]
+for x in world.tree_x { w.write_all(&x.to_le_bytes())?; }        // [44..56]
+w.write_all(&world.forest_bg_styles)?;                           // [56..60]
+for i in 0..3 { w.write_all(&world.cave_back_x[i].to_le_bytes())?; } // [60..72]
+for &s in &world.cave_back_style { w.write_all(&s.to_le_bytes())?; } // [72..88] i32!
+w.write_all(&[world.ice_back_style, world.jungle_back_style, world.hell_back_style])?;
+w.write_all(&[u8::from(world.crimson)])?;                // [91]
+w.write_all(&[world.snow_bg_style, world.desert_bg_style, world.ocean_bg_style])?;
+w.write_all(&[                                            // [95..100] c39
+    u8::from(world.downed_halloween_king),
+    u8::from(world.downed_halloween_tree),
+    u8::from(world.downed_christmas_ice_queen),
+    u8::from(world.downed_christmas_santank),
+    u8::from(world.downed_christmas_tree),
+])?;
+w.write_all(&[u8::from(world.downed_empress_of_light)])?; // [100]
+w.write_all(&[u8::from(world.bought_cat), u8::from(world.bought_dog),
+              u8::from(world.bought_bunny)])?;             // [101..104]
+w.write_all(&[u8::from(world.combat_book_volume_two_was_used),
+              u8::from(world.peddlers_satchel_was_used)])?; // [104..106]
+// … then, at the very end of write_world (d109):
+w.write_all(&world.variants)?;                            // dense [106..]
+```
+
+**Reader** (`if version >= 18`, the exact inverse; d109 sizes the dense
+block from `world.tiles.len()` and sets `variants_from_save = true`).
+
+### Back-compat + merge arithmetic
+
+- **Pre-v18** (version ≤ 17): the whole tail unread; every field keeps its
+  `World::new`/Reset default (each lane's own pre-v18 arm already does this;
+  c39's five flags stay down — the `:1549-1556` witness shape).
+- **Any single-lane v18 file** mis-parses under the union loader. No such
+  file ships: all nine branches are unmerged task work off wave-3
+  `a725acb0` (`origin/main` is still `VERSION = 17`); the union is the
+  FIRST v18 on main — forward-only, nothing to grandfather.
+- **Truncation constants** (g71 §1.5's table, extended): every fixed-head
+  fixture moves to **106**; every end-relative fixture peels
+  `v18_tail_len(buf)` which returns **`106 + width*height`**. c39's own six
+  mechanically re-derived fixtures (`save.rs:1197`/`:1309`/`:1338`/
+  `:1527`/`:1552`/`:1574`, the `+5`/`-5` shapes) become `+106`/`-106`
+  (+ dense where end-relative); c43/f45's identity fixtures, g87/g90's
+  1/2/3-byte peels and g72's 31-byte peel fold into the same 106.
+- **c43≡f45 keep-one:** both branches' identity blocks are byte-identical
+  (same five fields, same order, same citations — read off both tips); the
+  merger takes ONE writer/reader, not two stacked blocks. The c43 .plr
+  envelope half (`07697080`) is orthogonal (PlayerFile, not save.rs).
+- **VERSION stays 18** — one bump, nine payloads; the gate pins 18
+  (`dw_1_4_version_above_4_rejected`'s shape, c39 `save.rs:1108-1118`).
+
+This section is the c39 input to g71's research/92 union contract — the
+merger of the nine lanes takes THIS head layout (or g71's §1 extended with
+the four rows it has not seen: g72, c39, g87, g90, c43/f45 — whichever
+note lands last must reconcile to one 106-byte head; the ORDER here is the
+C#-field-order rule both notes already use, so the extension is
+mechanical).
