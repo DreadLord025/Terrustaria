@@ -2014,7 +2014,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let is_summon = matches!(
             held.kind,
             43 | 361 | 602 | 1844 | 1958 | 3601 | 1315 | 70 | 560 | 1133 | 1331 | 544 | 556 | 557
-                | 4271 | 2767 | 29 | 109 | 1291
+                | 4271 | 2767 | 29 | 109 | 1291 | 5043
         );
         if is_summon && held.count > 0 {
             if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && app.mine_released {
@@ -2083,6 +2083,13 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // `ItemTimeIsZero && itemAnimation > 0` gate, the stat grant + the
         // HealEffect/ManaEffect text + the HandleSpecialEvent hook.
         if matches!(held.kind, 29 | 109 | 1291) && held.count > 0 && use_permanent_powerup(app) {
+            return;
+        }
+        // W4-c36 — the Torch God's Favor (`ItemCheck_UseTorchGodsFavor`,
+        // `Player.cs:45226-45242`): the 5043 use while locked unlocks the
+        // biome torches and fires HandleSpecialEvent(24) →
+        // GAIN_TORCH_GODS_FAVOR ("Use").
+        if held.kind == 5043 && held.count > 0 && use_torch_gods_favor(app) {
             return;
         }
         // `ItemCheck_UseBossSpawners`' Celestial Sigil arm (`Player.cs`:
@@ -16309,6 +16316,36 @@ pub(crate) fn use_solar_tablet(app: &mut App) -> bool {
     true
 }
 
+/// W4-c36 — the Torch God's Favor 5043 (`Player.ItemCheck_UseTorchGodsFavor`,
+/// `Player.cs:45226-45242`): `!unlockedBiomeTorches` — the use unlocks the
+/// biome torches (`UsingBiomeTorches` rides the same flag in the port),
+/// fires HandleSpecialEvent(24) → GAIN_TORCH_GODS_FAVOR ("Use"), and pays
+/// the stack. The bestiary TorchGod 664 kill credit (`:45236-45238`) and
+/// the `4`/`51` net sends are MP/bestiary seams — the kill credit rides the
+/// bestiary tracker directly.
+pub(crate) fn use_torch_gods_favor(app: &mut App) -> bool {
+    let Some(p) = app.player.as_mut() else {
+        return false;
+    };
+    if p.unlocked_biome_torches {
+        return false;
+    }
+    p.unlocked_biome_torches = true;
+    let _ = app.achievements.complete_condition("GAIN_TORCH_GODS_FAVOR", "Use");
+    // `:45236-45238`: the single-player bestiary kill credit for the
+    // TorchGod (664) — the event's completion counts as the kill.
+    app.bestiary.kills.register_kill("TorchGod");
+    // The stack pay + `ApplyItemTime` re-arm (`:45229-45230`).
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    app.item_time = crate::item::use_time_secs(5043);
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    true
+}
+
 /// W4-c36 — the permanent power-ups, in the C#'s call order:
 /// `ItemCheck_UseManaCrystal` (`Player.cs:45274-45288`, the 109 at
 /// `statManaMax < 200`), `ItemCheck_UseLifeFruit` (`:45290-45304`, the 1291
@@ -16486,6 +16523,33 @@ mod loot_summon_tests {
             kind: 109, name: "Mana Crystal".into(), count: 1, prefix: 0,
         };
         assert!(!use_permanent_powerup(&mut app));
+    }
+
+    /// W4-c36 — the Torch God's Favor (`Player.cs:45226-45242`): the unlock,
+    /// the GAIN_TORCH_GODS_FAVOR row, the bestiary credit and the stack pay;
+    /// a second use refuses.
+    #[test]
+    fn w4_c36_the_torch_gods_favor_unlocks_and_completes() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        app.inventory[app.selected] = ItemSlot {
+            kind: 5043, name: "Torch Gods Favor".into(), count: 1, prefix: 0,
+        };
+        assert!(use_torch_gods_favor(&mut app));
+        assert!(app.player.as_ref().unwrap().unlocked_biome_torches);
+        assert!(app.achievements.list.iter().any(|a| a.name == "GAIN_TORCH_GODS_FAVOR" && a.completed));
+        assert_eq!(app.inventory[app.selected].count, 0);
+        // The bestiary credit landed.
+        assert!(app.bestiary.kills.pairs().any(|(id, n)| id == "TorchGod" && n >= 1));
+        // A second use refuses free.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 5043, name: "Torch Gods Favor".into(), count: 1, prefix: 0,
+        };
+        assert!(!use_torch_gods_favor(&mut app));
+        assert_eq!(app.inventory[app.selected].count, 1);
     }
 
     /// W4-c36 — the Blood Moon Starter / Solar Tablet

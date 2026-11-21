@@ -232,20 +232,77 @@ and one persistent store per world (the `.wld` section 10 triple).
 
 ## Lane claim — W4-c36 (achievement notify + save), 2026-11-20
 
-**IN FLIGHT** on `task/W4-c36-achievement-notify-save`: wire the ~30 missing
-`AchievementsHelper.Notify*`/`Handle*` sites per the C# call-site census, plus
-the `AchievementManager.Save` wire audit (`Player.InternalSavePlayer`'s first
-statement, `Player.cs:54700` — already wired via `save_world`; this lane pins
-the remaining routes). **Co-lane reservation for W4-f30 (achievement-notify-2,
-second batch):** f30 owns the *tail* sites — progression 33-41/43-46 (research,
-golf, fishing milestones, shimmer/void bag, nurse 46, dryad 27 special-event),
+**LANDED 2026-11-21** on `task/W4-c36-achievement-notify-save`: the first
+batch of missing `AchievementsHelper.Notify*`/`Handle*` sites wired per the
+C# call-site census, plus the `AchievementManager.Save` wire audit.
+**Co-lane reservation for W4-f30 (achievement-notify-2, second batch):** f30
+owns the *tail* sites — progression 33-41/43-46 (research, golf, fishing
+milestones, shimmer/void bag, nurse 46, dryad 27 special-event),
 `MechaMayhem_*` (progression 21) and the `CheckResearchAchievement` family;
-c36 takes the first batch — `OnPlayerEnteredWorld`/`HandleOnEquip` equip+use
-flags, `HandleSpecialEvent` reach/hit/use rows with ported owning systems,
-natural blood-moon/invasion progressions 2/4, and the save-route audit. Sites
-neither lane's systems own stay unwired and cited. Condition-table work is
-W4-e22's (its branch pins the 180-condition table) — c36/f30 touch **notify
-sites only**, never `achievements_data.rs`.
+c36 took the first batch. Sites neither lane's systems own stay unwired and
+cited below. Condition-table work is W4-e22's (its branch pins the
+180-condition table) — c36/f30 touch **notify sites only**, never
+`achievements_data.rs`.
+
+### W4-c36 landed sites (C# → Rust)
+
+| C# site | Rust seam | Row(s) |
+| --- | --- | --- |
+| `GetCondition(row, cond).Complete()` (`AchievementManager.cs:220-227`, `AchievementCondition.cs:37-47`) | `achievements.rs::complete_condition` — the row-targeted primitive; save + event on the last condition | all |
+| Drowned-sip `HandleSpecialEvent(25)` (`Player.cs:5545`/`:42873`) | `potions.rs` both drink paths re-pointed off the lossy `notify_custom("Use")` broadcast | DRINK_BOTTLED_WATER_WHILE_DROWNING |
+| Shadow-chest `HandleSpecialEvent(16)` (`Player.cs:33245`) | `chest.rs::toggle_open` re-pointed | I_AM_LOOT |
+| `HandleAnglerService` (`Main.cs:40260`, `AchievementsHelper.cs:411-418`) | `world_sim/npcs.rs` — the flag completes by name, the four `Finish` counters keep the shared dispatch | SERVANT_IN_TRAINING + the four counters |
+| Natural blood moon / eclipse (`Main.cs:65352`/`:65425`) | `world_sim/clock.rs::advance_time_with_events` — progressions 4/2 (no shipped row listens; faithful no-op wires) | — |
+| `HandleOnEquip` (`AchievementsHelper.cs:239-280`) | `app/achievement_hooks.rs::handle_on_equip` at `equip_slot_click`/`vanity_swap`/`swap_equip_click` (`ItemSlot.cs:955-975`/`:1880-1897`/`:3297-3355`) | HOLD_ON_TIGHT, THE_CAVALRY, HEAD_IN_THE_CLOUDS, MATCHING_ATTIRE, FASHION_STATEMENT, DYE_HARD |
+| `OnPlayerEnteredWorld` (`AchievementsHelper.cs:94-198`) | `app/achievement_hooks.rs::on_player_entered_world` at `enter_loaded_world` — the pickup fan-out + the stat/equip flags | STAR_POWER, TOPPED_OFF, the equip rows, GAIN_TORCH_GODS_FAVOR, the pickup rows |
+| Blood Moon Starter 4271 / Solar Tablet 2767 (`Player.cs:44009-44027`/`:43988-44008`) | `world_sim/editing.rs::use_blood_moon_starter`/`use_solar_tablet` | progression 4 (no-op wire) |
+| Mana Crystal / Life Fruit / Life Crystal (`Player.cs:45274-45320`) | `world_sim/editing.rs::use_permanent_powerup` | STAR_POWER, GET_A_LIFE, TOPPED_OFF |
+| Torch God's Favor 5043 (`Player.cs:45226-45242`) | `world_sim/editing.rs::use_torch_gods_favor` + the bestiary TorchGod credit | GAIN_TORCH_GODS_FAVOR |
+| Yoyo/kite shoot tail (`Player.cs:49454-49461`) | `world_sim/editing.rs::fire_non_ammo_shot` tail — aiStyle 99 / 160+windy | THROWING_LINES, FLY_A_KITE_ON_A_WINDY_DAY |
+| `FreeUpPetsAndMinions` 9-slot test (`Player.cs:51826-51829`) | `projectile.rs::free_up_pets_and_minions` returns the test; the use-start caller fires | YOU_AND_WHAT_ARMY |
+| `UpdateBiomes` reach tail (`Player.cs:16732-16776`) + `BordersMovement` (`:24099`/`:24125`) | `app/achievement_hooks.rs::reach_check` at the player pass — walls 86/62, special seed, underworld/glowshroom/graveyard ladder + the funkytown cooldown, the border reads | WHERES_MY_HONEY, JEEPERS_CREEPERS, PLAY_ON_A_SPECIAL_SEED, ITS_GETTING_HOT_IN_HERE, FUNKYTOWN, FOUND_GRAVEYARD, INTO_ORBIT, ROCK_BOTTOM |
+| `KillMe` trap + rigged-chest hooks (`Player.cs:38822-38828`) | `death.rs::on_player_death` head; the 600-tick window arms at `chest.rs` (`:33114`/`:33257`), decays in the player tick (`:24617-24620`); the trap flag arms at `projectile.rs::damage_player` (`Projectile.cs:14872-14879`) and clears in the buff tail (`Player.cs:25569-25572`) | WATCH_YOUR_STEP, DIE_TO_DEAD_MANS_CHEST |
+| Fall-damage LUCKY_BREAK (`Player.cs:25354-25357`/`:25371-25374`) | `player.rs` fall block queues `pending_lucky_break`; the player pass drains | LUCKY_BREAK |
+| Moon wave 15 (`NPC.cs:78569-78572`/`:78703-78706`) | `world.rs::moon_event_kill_walk` returns the wave-15 advance; the death pass notifies 14/15 | ICE_SCREAM, BALEFUL_HARVEST |
+| Bee set + Bee Gun (`ArmorSetBonuses.cs:23-30`) | the player pass reads the completed set + the swinging 1121 | NOT_THE_BEES |
+| Unicorn mount + Rainbow Gun (`Mount.cs:4955-4958`) | the player pass reads mount 10 + the swinging 1260 | RAINBOWS_AND_UNICORNS |
+| Lava fishing (`Projectile.cs:20798-20801`) | `fishing.rs::set_fishing_check_results` reports the condition; the bobber queues, the projectile pass drains | GO_LAVA_FISHING |
+| Max-happiness talk (`Player.cs:4391-4394`) | `world_sim/npcs.rs::try_open_town_shop_at_cursor` — housed + `PriceAdjustment <= 0.82` | TALK_TO_NPC_AT_MAX_HAPPINESS |
+| Orb/heart smash (`WorldGen.cs:54331`) | `edit/kill.rs::check_orb` sets `World::orb_smash_notify_pending`; `break_tile` drains → progression 7 | SMASHING_POPPET |
+
+### Save-wire audit (W4-c36)
+
+The C#'s ONLY external `Main.Achievements.Save()` call site is
+`Player.InternalSavePlayer`'s first statement (`Player.cs:54700`); the other
+`Save()` calls are the manager's own (`AchievementCompleted`
+`AchievementManager.cs:180-187`, `Clear`/`ClearAll` `:152-178` — no retail
+caller, the debug menu's). The port's wires match: `save_world`'s head
+(`saveglue.rs`, every exit route funnels through it — autosave/F9/close/quit),
+the per-completion save in `notify_with` AND the new `complete_condition`,
+the bootstrap/world-swap path bind (`bind_achievements_save_path`), and the
+`App::new` load. `Clear`/`ClearAll` have no retail caller — unported, cited.
+Witnesses: `save_world_writes_the_achievement_condition_state`,
+`completing_an_achievement_writes_the_file_immediately`,
+`w4_c36_the_row_targeted_completion_writes_the_file`,
+`w4_c36_save_and_quit_writes_the_achievement_state`.
+
+### Sites left unwired (owning systems absent — f30 or later lanes)
+
+- Progression 17/26 (`WorldGen.CheckAchievement_RealEstateAndTownSlimes`,
+  `WorldGen.cs:5659-5677`): the full 25-NPC roster / 8 town slimes — the
+  port's town roster is partial.
+- Progression 18 (Truffle arrival, `WorldGen.cs:5580`): no Truffle NpcKind.
+- Progression 22 (`WorldGen.UnlockDoor`, `WorldGen.cs:37627` — the Lihzahrd
+  door): no temple-key use path; the fairy NPC sight (`NPC.cs:48647`) has no
+  fairy kind.
+- Progression 24 gnome-to-statue (`NPC.cs:55896`): no gnome AI.
+- `HandleSpecialEvent(9)` minecart kill (`Player.cs:27602`): no minecart
+  NPC-damage path; `(21)` pet-the-pet (`Player.cs:33350`/`:33397`): no
+  petting system.
+- Progressions 33-46 (f30's reserved tail): golf/fishing/research/shimmer
+  milestones, nurse 46, dryad 27, MechaMayhem 21.
+- `DoClassicTitleScreenAchievement` (`AchievementsHelper.cs:382-385`): the
+  title-screen menu path is unported.
 
 ## Task seeds
 

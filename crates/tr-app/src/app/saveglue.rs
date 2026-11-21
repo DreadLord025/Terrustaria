@@ -1744,4 +1744,59 @@ mod chest_save_tests {
         );
         crate::test_world_helpers::remove_scratch(&dir);
     }
+
+    /// W4-c36 — the row-targeted `complete_condition` saves on completion
+    /// too (`AchievementManager.cs:180-187` — the `AchievementCompleted`
+    /// event fires from `Achievement.OnConditionComplete` regardless of
+    /// which hook closed the last condition).
+    #[test]
+    fn w4_c36_the_row_targeted_completion_writes_the_file() {
+        use crate::achievements::{self, AchievementManager};
+        let dir = ach_scratch("achievements-row-targeted");
+        let ach_path = dir.join("achievements.trdat");
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.achievements.save_path = Some(ach_path.clone());
+        assert_eq!(
+            app.achievements.complete_condition("I_AM_LOOT", "Peek"),
+            Some("I_AM_LOOT")
+        );
+        assert!(ach_path.exists(), "the completion hook wrote the file");
+        let mut fresh = AchievementManager::registry();
+        achievements::load(&ach_path, &mut fresh);
+        assert!(
+            fresh.list.iter().any(|a| a.name == "I_AM_LOOT" && a.completed),
+            "the completed row is on disk"
+        );
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-c36 — the save-route audit: `Player.InternalSavePlayer`'s first
+    /// statement (`Player.cs:54700`) is the ONLY external `Save()` call site
+    /// in the C# (the others are the manager's own completion/Clear paths).
+    /// The port's `save_and_quit` funnels through `save_world`
+    /// (`WorldGen.cs:6669-6677`'s `Player.SavePlayer` + `WorldFile.SaveWorld`
+    /// pair), so the quit route writes the achievements file too.
+    #[test]
+    fn w4_c36_save_and_quit_writes_the_achievement_state() {
+        use crate::achievements::{self, AchievementManager, CondKind};
+        let dir = ach_scratch("achievements-quit");
+        let path = dir.join("world.trwld");
+        let ach_path = dir.join("achievements.trdat");
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world_path = path.clone();
+        app.player = None;
+        app.settings.map_enabled = false;
+        app.achievements.save_path = Some(ach_path.clone());
+        // Partial progress only — no completion event fires.
+        app.achievements.notify(CondKind::ItemPickup(9));
+        app.save_and_quit();
+        assert!(ach_path.exists(), "the quit route wrote the achievements file");
+        let mut fresh = AchievementManager::registry();
+        achievements::load(&ach_path, &mut fresh);
+        assert!(
+            fresh.list.iter().any(|a| a.name == "TIMBER" && a.completed),
+            "the pickup rode the quit save"
+        );
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
 }

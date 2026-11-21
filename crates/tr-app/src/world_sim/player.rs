@@ -1650,6 +1650,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         if app.player.as_mut().is_some_and(|p| std::mem::take(&mut p.pending_lucky_break)) {
             let _ = app.achievements.complete_condition("LUCKY_BREAK", "Hit");
         }
+        // W4-c36 — `Mount.UpdateEffects` case 10 (`Mount.cs:4955-4958`): the
+        // Unicorn mount swinging the Rainbow Gun 1260 fires
+        // HandleSpecialEvent(5) → RAINBOWS_AND_UNICORNS ("Use").
+        let unicorn_rainbow = app.player.as_ref().is_some_and(|p| {
+            p.mount.is_active() && p.mount.kind() == 10
+        });
+        if unicorn_rainbow && app.swing > 0.0 && app.inventory[app.selected].kind == 1260 {
+            let _ = app.achievements.complete_condition("RAINBOWS_AND_UNICORNS", "Use");
+        }
         // W4-c36 — `ArmorSetBonuses.Benefits.Bee` (`ArmorSetBonuses.cs:23-30`):
         // the completed Bee set (2361/2362/2363) fires HandleSpecialEvent(3)
         // → NOT_THE_BEES ("Use") while the Bee Gun 1121 swings

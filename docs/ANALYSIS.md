@@ -14547,6 +14547,39 @@ powers/research вЂ” each needs its own scope.
   (locked-chest unlock path), and most other progression/CustomFlag rows lack
   owning systems. `tile_drop` returns `None` for altar 26 (C# empty drop group)
   to avoid leaking the Journey altar item.
+- **Notify sites, first batch (W4-c36, 2026-11-21).** The row-targeted
+  `AchievementManager::complete_condition(row, cond)` primitive ports
+  `GetCondition(row, conditionName).Complete()` (`AchievementManager.cs:220-227`,
+  `AchievementCondition.cs:37-47`) — the C# hooks NEVER broadcast a flag; the
+  four lossy `notify_custom` broadcasts (drowned-sip "Use" ×2, shadow-chest
+  "Peek", angler "Finish") are re-pointed onto their named rows. New sites:
+  `HandleOnEquip`/`OnPlayerEnteredWorld` (`app/achievement_hooks.rs` — the
+  equip contexts at the ItemSlot call sites, the enter-world pickup fan-out +
+  stat flags), the Blood Moon Starter/Solar Tablet event items, the permanent
+  power-ups (Life Crystal/Mana Crystal/Life Fruit + the Torch God's Favor with
+  its bestiary credit), the yoyo/kite shoot-tail hooks, the 9-minion
+  YOU_AND_WHAT_ARMY test, the `UpdateBiomes` reach ladder (hive/spider walls,
+  special seed, underworld/glowshroom/graveyard + the funkytown cooldown) and
+  the `BordersMovement` reads, the `KillMe` trap/rigged-chest death hooks (the
+  600-tick window + the trap-debuff flag's arm/clear), the fall-damage
+  LUCKY_BREAK, the moon wave-15 progressions 14/15, the Bee-set/Unicorn-mount
+  weapon hooks, lava fishing, the max-happiness talk and the orb-smash
+  progression 7. The natural blood-moon/eclipse progressions 4/2 are faithful
+  no-op wires (no shipped row listens — `AchievementInitializer` never calls
+  `Create(2)`/`Create(4)`). **Deviations:** the enter-world `Loadouts` walk
+  (`AchievementsHelper.cs:134-146`) has no loadout system; the Bee/Unicorn
+  hooks read the post-tick state at the player-pass drain (the C# runs them
+  inside `UpdateArmorSets`/`Mount.UpdateEffects` mid-tick — same tick, same
+  inputs); the kite aiStyle-160 arm stands ready (no ported kite `proj_data`
+  rows yet); the minecart-kill (9) and pet-the-pet (21) hooks stay unwired (no
+  owning systems). The full site table + the unwired list live in
+  `docs/research/30-achievements-bestiary.md` "Lane claim — W4-c36".
+- **Save-wire audit (W4-c36).** The C#'s only external `Main.Achievements.Save()`
+  call site is `Player.InternalSavePlayer`'s first statement (`Player.cs:54700`);
+  the port's `save_world` head covers every exit route (autosave/F9/close/quit),
+  and both `notify_with` and `complete_condition` save per completing row.
+  `Clear`/`ClearAll` (`AchievementManager.cs:152-178`) have no retail caller —
+  unported. Witnesses pin the quit route and the row-targeted completion write.
 - **The menu's `largeForOtherLanguages` flag is always `true`** (`flag = true` in
   `InitializePage`), which is what fixes the row height at `66 + 16 + 20 = 102`
   and the `MinWidth`/`MaxWidth` at 700/900. The in-game arm (`OnActivate`'s
