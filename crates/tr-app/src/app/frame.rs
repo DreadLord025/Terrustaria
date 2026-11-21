@@ -441,6 +441,17 @@ impl App {
         // S1-B-8 — the in-world branch (`DoUpdateInWorld`'s port): one fn
         // per phase, in the C#'s order — see `frame/world.rs`.
         if !focus_paused && self.menu.is_none() && self.front.is_none() {
+            // `IngameFancyUI.OpenUIState` → `UIBestiaryTest.OnOpenPage`
+            // (`:63-66`): the env-driven open (`TR_BESTIARY`) builds its
+            // working set on the first open frame; the click-open already
+            // ran `on_open`. Closing re-arms the latch.
+            if self.bestiary_open {
+                if !self.bestiary_ui.opened {
+                    self.bestiary_ui.on_open(&self.bestiary, screen);
+                }
+            } else {
+                self.bestiary_ui.opened = false;
+            }
             // S1-E-17: `DoUpdate`'s capture gate (`Main.cs:16886-16890`):
             // `if (CaptureManager.Instance.IsCapturing) { FocusHelper.UpdateFocus;
             // return; }` — while a capture renders the ENTIRE game update

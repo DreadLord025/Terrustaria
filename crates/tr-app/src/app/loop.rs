@@ -242,6 +242,29 @@ impl ApplicationHandler for App {
                             }
                             return;
                         }
+                        // The bestiary search bar's input latch
+                        // (`UISearchBar.DrawSelf:145-167`): while writing,
+                        // Enter/Escape end the input (NOT the screen),
+                        // Backspace trims and printable text appends —
+                        // `PlayerInput.WritingText` gates the chat-open
+                        // and the world keys the same way.
+                        if self.bestiary_open && self.bestiary_ui.search.bar.is_writing_text {
+                            match code {
+                                KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::Escape => {
+                                    self.bestiary_search_end_input();
+                                }
+                                KeyCode::Backspace => self.bestiary_search_backspace(),
+                                _ => {}
+                            }
+                            if let Some(text) = event.text.as_ref() {
+                                for ch in text.chars() {
+                                    if !ch.is_control() {
+                                        self.bestiary_search_character(ch);
+                                    }
+                                }
+                            }
+                            return;
+                        }
                         // `Main.chatRelease && !drawingPlayerChat` →
                         // `OpenPlayerChat` (`Main.cs:18268-18287`): Enter
                         // opens the chat.
@@ -316,6 +339,14 @@ impl ApplicationHandler for App {
                 if tr_debug::in_rect(self.mouse_pos, self.debug_panel.layout(Vec2::ZERO).panel)
                     && crate::debug_panel::handle_scroll(self, d)
                 {
+                    return;
+                }
+                // `UIBestiaryTest.ScrollWheel` (`:846-850`): the wheel goes
+                // to the info page's scrollbar while the screen is open
+                // (`_infoSpace.UpdateScrollbar`), never the hotbar. The
+                // port's info page has no scroll yet (the rows fit the
+                // documented stand-in) — the notch is consumed either way.
+                if self.bestiary_open {
                     return;
                 }
                 // `UIAchievementsMenu`'s list scroll (M6-ACH-2): the wheel

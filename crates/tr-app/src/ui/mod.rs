@@ -5,6 +5,8 @@ pub mod achievements;
 pub mod bars;
 pub(crate) mod bestiary;
 pub(crate) mod bestiary_draw_offsets;
+pub(crate) mod bestiary_screen;
+pub(crate) mod bestiary_screen_draw;
 pub mod buttons;
 pub(crate) mod emotes;
 pub mod framework;
@@ -698,6 +700,7 @@ pub fn draw_hud(
     map_style: i32,
     bestiary_open: bool,
     bestiary_selected: Option<usize>,
+    bestiary_ui: &bestiary_screen::BestiaryUi,
     kill_tracker: &tr_core::bestiary::WorldBestiary,
     chat_state: &mut crate::chat::ChatMonitor,
     emotes_state: &crate::emotes::EmoteSystem,
@@ -840,7 +843,7 @@ pub fn draw_hud(
     // bestiary covers the interface while open (the state's draw replaces
     // the HUD behind it).
     if bestiary_open {
-        bestiary::draw_screen(r, lookups, screen, kill_tracker, bestiary_selected, mouse_pos);
+        bestiary::draw_screen(r, lookups, screen, kill_tracker, bestiary_ui, bestiary_selected, mouse_pos);
         // The bestiary is a fancy-UI state: `DrawInterface_12_IngameFancyUI`
         // (`Main.cs:46148-46158`) returns false for it, stopping the layer loop
         // before layer 36's cursor. `IngameFancyUI.Draw` draws the cursor itself

@@ -2142,6 +2142,7 @@ pub(crate) mod front_flow_tests {
             shimmered_npcs: crate::town::ShimmeredTownNpcs::new(),
             bestiary_open: false,
             bestiary_selected: None,
+            bestiary_ui: crate::ui::bestiary_screen::BestiaryUi::default(),
             chat: crate::chat::ChatMonitor::default(),
             achievements: crate::achievements::AchievementManager::registry(),
             achievements_open: crate::env::achievements_open(),

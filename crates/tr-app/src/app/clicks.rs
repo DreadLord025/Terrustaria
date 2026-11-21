@@ -1103,32 +1103,144 @@ impl App {
 
     /// The bestiary screen's clicks: the inventory button that opens it
     /// (`Main.cs:42455-42462` — `SetTalkNPC(-1)`/`npcChatCornerItem = 0` have
-    /// no port counterpart), then the grid cards and the Back panel while it
-    /// is open. Consumes the press on every hit.
+    /// no port counterpart), then the screen's controls while it is open —
+    /// the Back panel, the page buttons, the sort/filter toggles + their
+    /// option grids, the search bar and the grid cards
+    /// (`UIBestiaryTest.cs:381-495`). Consumes the press on every hit.
     pub(crate) fn handle_bestiary_clicks(&mut self) {
         let left = self.ui_left_press;
-        if !left {
+        let right = self.ui_right_press;
+        if !left && !right {
             return;
         }
         if self.bestiary_open {
             let (sw, sh) = self.screen_size();
             let screen = Vec2::new(sw, sh);
+            let mouse = self.mouse_pos;
+            // The search box's right-click (`SearchBox_OnRightClick:230-237`):
+            // clear (forced) + start taking input.
+            let bar = ui::bestiary_screen::search_bar_rect(screen);
+            let (button, box_rect, cancel) = ui::bestiary_screen::search_pieces(bar);
+            if right && crate::ui::in_rect(mouse, box_rect) {
+                self.bestiary_ui.search.right_click();
+                self.bestiary_ui.on_search_changed("", &self.bestiary, screen);
+                self.bestiary_selected = None;
+                self.ui_right_press = false;
+            }
+            // `Update`'s outside-click close (`:239-246`): a left/right
+            // press with no bar child hovered ends the input latch.
+            let any_child = crate::ui::in_rect(mouse, button)
+                || crate::ui::in_rect(mouse, box_rect)
+                || crate::ui::in_rect(mouse, cancel);
+            self.bestiary_ui
+                .search
+                .update_outside_click(left, right, any_child);
+            if !left {
+                return;
+            }
             // The Back panel closes the screen (`MakeExitButton` ->
-            // `Click_GoBack`); the inventory stays closed, like the source's
-            // `IngameFancyUI` return.
-            if ui::bestiary::back_hit(screen, self.mouse_pos) {
+            // `Click_GoBack:381-392`, sound 11); the inventory stays closed,
+            // like the source's `IngameFancyUI` return.
+            if ui::bestiary::back_hit(screen, mouse) {
+                self.audio.play("Menu_Close"); // `SoundEngine.PlaySound(11)`
                 self.bestiary_open = false;
                 self.bestiary_selected = None;
                 self.ui_left_press = false;
                 return;
             }
-            // A card opens its info page (`Click_SelectEntryButton`).
-            if let Some(idx) = ui::bestiary::card_at(screen, self.mouse_pos) {
+            // The option grid overlays the space: its buttons take the
+            // click first; a click on the panel itself closes it
+            // (`Click_CloseSortingGrid`/`Click_CloseFilteringGrid:418-452`).
+            match self.bestiary_ui.options {
+                ui::bestiary_screen::OptionsGrid::Sorting => {
+                    if let Some(step) = ui::bestiary_screen::sort_step_at(screen, mouse) {
+                        self.audio.play("Menu_Tick"); // `GroupOptionButton.LeftMouseDown:255`
+                        self.bestiary_ui.click_sort_option(step as i32, &self.bestiary, screen);
+                        self.bestiary_selected = None; // `UpdateBestiaryContents` deselects
+                        self.ui_left_press = false;
+                        return;
+                    }
+                    if ui::bestiary_screen::options_panel_hit(screen, mouse, self.bestiary_ui.options) {
+                        self.bestiary_ui.close_options_on_panel_click(&self.bestiary, screen);
+                        self.bestiary_selected = None;
+                        self.ui_left_press = false;
+                        return;
+                    }
+                }
+                ui::bestiary_screen::OptionsGrid::Filtering => {
+                    if let Some(i) = ui::bestiary_screen::filter_at_cursor(screen, mouse, &self.bestiary) {
+                        self.audio.play("Menu_Tick");
+                        self.bestiary_ui.click_filter_option(i, &self.bestiary, screen);
+                        self.bestiary_selected = None;
+                        self.ui_left_press = false;
+                        return;
+                    }
+                    if ui::bestiary_screen::options_panel_hit(screen, mouse, self.bestiary_ui.options) {
+                        self.bestiary_ui.close_options_on_panel_click(&self.bestiary, screen);
+                        self.bestiary_selected = None;
+                        self.ui_left_press = false;
+                        return;
+                    }
+                }
+                ui::bestiary_screen::OptionsGrid::None => {}
+            }
+            // The top strip's controls (`AddBackAndForwardButtons` /
+            // `AddSortAndFilterButtons`).
+            let (back, forward) = ui::bestiary_screen::page_buttons_rects(screen);
+            if crate::ui::in_rect(mouse, back) {
+                self.bestiary_ui.page(-1, screen);
+                self.ui_left_press = false;
+                return;
+            }
+            if crate::ui::in_rect(mouse, forward) {
+                self.bestiary_ui.page(1, screen);
+                self.ui_left_press = false;
+                return;
+            }
+            let (sort_btn, filter_btn) = ui::bestiary_screen::sort_filter_buttons_rects(screen);
+            if crate::ui::in_rect(mouse, sort_btn) {
+                self.bestiary_ui.toggle_sorting(&self.bestiary, screen);
+                self.ui_left_press = false;
+                return;
+            }
+            if crate::ui::in_rect(mouse, filter_btn) {
+                self.bestiary_ui.toggle_filtering(&self.bestiary, screen);
+                self.ui_left_press = false;
+                return;
+            }
+            // The wrapped search bar (`UIWrappedSearchBar.cs:106`/`:135-136`/
+            // `:149`): the magnifier/box toggle the input latch, the cancel
+            // clears (sound 11) or ticks (sound 12). The pieces were
+            // resolved above (the right-click arm).
+            if crate::ui::in_rect(mouse, cancel) {
+                let sound = self.bestiary_ui.search.cancel_click();
+                self.audio.play(if sound == 11 { "Menu_Close" } else { "Menu_Tick" });
+                let contents = self.bestiary_ui.search.search_string.clone();
+                self.bestiary_ui.on_search_changed(&contents, &self.bestiary, screen);
+                self.bestiary_selected = None;
+                self.ui_left_press = false;
+                return;
+            }
+            if crate::ui::in_rect(mouse, button) || crate::ui::in_rect(mouse, box_rect) {
+                // `Click_SearchArea:222-228`: the target's parent is the box
+                // for the cancel button (handled above) — the magnifier and
+                // the panel itself toggle.
+                self.bestiary_ui.search.search_area_click(false);
+                self.ui_left_press = false;
+                return;
+            }
+            // A card opens its info page (`Click_SelectEntryButton:473-490`).
+            if let Some(idx) = ui::bestiary::grid_slot_at(screen, mouse)
+                .and_then(|slot| self.bestiary_ui.entry_at_slot(slot))
+            {
                 self.bestiary_selected = Some(idx);
                 self.ui_left_press = false;
                 return;
             }
             return;
+        }
+        if !left {
+            return; // the closed-screen arms below are left-click only
         }
         // The inventory button (`DrawBestiaryIcon`'s click arm): open the
         // bestiary, close the inventory (`IngameFancyUI.OpenUIState`).
@@ -1136,6 +1248,10 @@ impl App {
             self.inventory_open = false;
             self.bestiary_open = true;
             self.bestiary_selected = None;
+            // `OnOpenPage` (`UIBestiaryTest.cs:63-66`): the open rebuilds
+            // the working set.
+            let (sw, sh) = self.screen_size();
+            self.bestiary_ui.on_open(&self.bestiary, Vec2::new(sw, sh));
             self.ui_left_press = false;
             return;
         }

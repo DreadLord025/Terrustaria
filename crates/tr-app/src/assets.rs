@@ -892,6 +892,21 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/Bestiary/Icon_Locked",
         "UI/Bestiary/Portrait_Front",
         "UI/Bestiary/Button_Back",
+        // W4-e23: the bestiary screen's paging/filter/sort buttons + the
+        // option-grid icon sheets (`UIBestiaryTest.cs:222-299`,
+        // `UIBestiaryFilteringOptionsGrid.cs:134-143`,
+        // `NPCPortraitInfoElement.cs:118-142`). Measured atlas cost:
+        // 8119 -> 8142 px (tools/atlas_sim.js skyline, under the 8192 bound).
+        "UI/Bestiary/Button_Forward",
+        "UI/Bestiary/Button_Border",
+        "UI/Bestiary/Button_Filtering",
+        "UI/Bestiary/Button_Sorting",
+        "UI/Bestiary/Button_Wide_Border",
+        "UI/Bestiary/Icon_Tags_Shadow",
+        "UI/Bestiary/Icon_Rank_Light",
+        "UI/Bestiary/Icon_Rank_Dim",
+        "UI/Bestiary/Stat_Panel",
+        "UI/Bestiary/Button_Search",
         "UI/Bestiary/Stat_HP",
         "UI/Bestiary/Stat_Attack",
         "UI/Bestiary/Stat_Defense",
@@ -2100,6 +2115,31 @@ pub struct Lookups {
     pub ui_bestiary_slot_overlay: Option<tr_render::SheetRect>,
     pub ui_bestiary_slot_front: Option<tr_render::SheetRect>,
     pub ui_bestiary_locked: Option<tr_render::SheetRect>,
+    /// W4-e23: the bestiary screen's paging buttons — the 28x28
+    /// `Button_Back`/`Button_Forward` pair + the shared `Button_Border`
+    /// hover frame (`UIBestiaryTest.AddBackAndForwardButtons`, `:220-255`).
+    pub ui_bestiary_page_back: Option<tr_render::SheetRect>,
+    pub ui_bestiary_page_forward: Option<tr_render::SheetRect>,
+    pub ui_bestiary_page_border: Option<tr_render::SheetRect>,
+    /// W4-e23: the 114x28 filter/sort toggle buttons + their shared wide
+    /// hover border (`AddSortAndFilterButtons`, `:257-300`).
+    pub ui_bestiary_filter_button: Option<tr_render::SheetRect>,
+    pub ui_bestiary_sort_button: Option<tr_render::SheetRect>,
+    pub ui_bestiary_wide_border: Option<tr_render::SheetRect>,
+    /// W4-e23: the 480x150 16x5 tag-icon sheet
+    /// (`FilterProviderInfoElement.GetFilterImage`, `:31-39`), the 14x14
+    /// rarity stars (`NPCPortraitInfoElement.CreateStarsContainer`,
+    /// `:129-142`) and the 31x31 stat/tag panel splice
+    /// (`FilterProviderInfoElement.ProvideUIElement`, `:65`).
+    pub ui_bestiary_tag_icons: Option<tr_render::SheetRect>,
+    pub ui_bestiary_star_light: Option<tr_render::SheetRect>,
+    pub ui_bestiary_star_dim: Option<tr_render::SheetRect>,
+    pub ui_bestiary_stat_panel: Option<tr_render::SheetRect>,
+    /// W4-e23: the Blue-theme search magnifier
+    /// (`UIWrappedSearchBar.AddSearchBar`, `:97-101` — the bestiary keeps
+    /// the default Blue theme; the crafting bar's Red one rides
+    /// `ui_search_icon`).
+    pub ui_search_icon_blue: Option<tr_render::SheetRect>,
     /// `UI/Bestiary/Portrait_Front`: the info page's portrait backdrop.
     pub ui_bestiary_portrait: Option<tr_render::SheetRect>,
     /// The dedicated single-frame portraits — the `CustomTexturePath` rows
@@ -2447,6 +2487,17 @@ impl Lookups {
             ui_bestiary_slot_overlay: atlas.sheet("UI/Bestiary/Slot_Overlay").copied(),
             ui_bestiary_slot_front: atlas.sheet("UI/Bestiary/Slot_Front").copied(),
             ui_bestiary_locked: atlas.sheet("UI/Bestiary/Icon_Locked").copied(),
+            ui_bestiary_page_back: atlas.sheet("UI/Bestiary/Button_Back").copied(),
+            ui_bestiary_page_forward: atlas.sheet("UI/Bestiary/Button_Forward").copied(),
+            ui_bestiary_page_border: atlas.sheet("UI/Bestiary/Button_Border").copied(),
+            ui_bestiary_filter_button: atlas.sheet("UI/Bestiary/Button_Filtering").copied(),
+            ui_bestiary_sort_button: atlas.sheet("UI/Bestiary/Button_Sorting").copied(),
+            ui_bestiary_wide_border: atlas.sheet("UI/Bestiary/Button_Wide_Border").copied(),
+            ui_bestiary_tag_icons: atlas.sheet("UI/Bestiary/Icon_Tags_Shadow").copied(),
+            ui_bestiary_star_light: atlas.sheet("UI/Bestiary/Icon_Rank_Light").copied(),
+            ui_bestiary_star_dim: atlas.sheet("UI/Bestiary/Icon_Rank_Dim").copied(),
+            ui_bestiary_stat_panel: atlas.sheet("UI/Bestiary/Stat_Panel").copied(),
+            ui_search_icon_blue: atlas.sheet("UI/Bestiary/Button_Search").copied(),
             ui_bestiary_portrait: atlas.sheet("UI/Bestiary/Portrait_Front").copied(),
             // `UnlockableNPCEntryIcon.cs:74-81`: the `CustomTexturePath`
             // assets, one single-frame portrait per id (the 25 rows the

@@ -568,16 +568,26 @@ mod tests {
 
     #[test]
     fn the_wrapped_tags_do_not_count_for_filter_membership() {
-        // 175's UndergroundJungle tag is removed (:1798) and re-added only
-        // as a preference wrap (:618) — Info.Contains(the singleton) is
-        // false, so the UndergroundJungle filter (tag 21) does not fit.
+        // 175: the automated pass adds UndergroundJungle (:1338), the
+        // manual pass removes it (:1798) then re-adds Jungle +
+        // UndergroundJungle plainly (:1799-1803); ModifyEntriesThatNeedIt
+        // wraps a SECOND UndergroundJungle (:618). The plain row survives,
+        // so the filter still fits — but the wrap itself never matches.
         let tags175 = tags::entry_tags(175);
         assert!(tags175.iter().any(|t| t.tag == 21 && t.preferred));
-        assert!(!tags::has_tag(175, 21));
-        // 52 keeps its plain Jungle tag (:620) alongside the wrap.
+        assert!(tags175.iter().any(|t| t.tag == 21 && !t.preferred));
+        assert!(tags::has_tag(175, 21)); // the plain row carries membership
+        // 52 keeps its plain Jungle tag (:620) alongside the wrap (:620's
+        // preference row) — both present, membership via the plain one.
         assert!(tags::has_tag(52, 20));
-        // The sorting-id biome index skips wraps too.
-        assert_eq!(tags::lowest_biome_group_index(175), 20); // Jungle plain
+        assert!(tags::entry_tags(52).iter().any(|t| t.tag == 20 && t.preferred));
+        // The sorting-id biome index reads the plain rows: 175's highest
+        // common-filter tag is UndergroundJungle (21), not the wrap.
+        assert_eq!(tags::lowest_biome_group_index(175), 21);
+        // A tag the entry carries ONLY as a wrap would not fit — the
+        // helper's `!preferred` gate is the reference-equality rule
+        // (`Filters.ByInfoElement.FitsFilter`, Filters.cs:161-164).
+        assert!(!tags::entry_tags(175).iter().any(|t| t.preferred && t.tag == 20));
     }
 
     #[test]
@@ -639,20 +649,29 @@ mod tests {
 
     #[test]
     fn the_search_matches_names_aliases_and_known_tags_only() {
+        let _guard = crate::lang::test_lock().lock().unwrap();
         let eoc = entry(4);
         // Unknown entries match nothing (every provider gates on tier).
         assert!(!search_fits(eoc, UnlockState::NotKnownAtAll, "eye"));
         assert!(!search_fits(eoc, UnlockState::NotKnownAtAll, "eoc"));
         let known = UnlockState::CanShowDropsWithDropRates;
-        // The alias row (:731).
+        // The alias row (:731) is a RAW string — no localization needed.
         assert!(search_fits(eoc, known, "eoc"));
         assert!(search_fits(eoc, known, "EOC")); // case-insensitive
-        // The boss marker's display text.
-        assert!(search_fits(eoc, known, "boss"));
-        // A tag's display text — the EoC carries no biome tags, but the
-        // Zombie 3 carries NightTime (:981).
-        assert!(search_fits(entry(3), known, "night"));
-        assert!(!search_fits(entry(3), known, "zzzznope"));
+        assert!(!search_fits(eoc, known, "zzzznope"));
+        // The localized providers (name / boss marker / tag text) need the
+        // resource files; without them the manager returns the key itself,
+        // so pin the gate against `lang::text` like the flavor-text test.
+        let boss_text = crate::lang::text("BestiaryInfo.IsBoss");
+        assert_eq!(
+            search_fits(eoc, known, &boss_text.to_lowercase()),
+            true,
+            "the boss marker's own display text always matches"
+        );
+        // The Zombie 3 carries NightTime (:981); its tag text matches when
+        // the resources are loaded (else the key string is the haystack).
+        let night = crate::lang::text("Bestiary_Times.NightTime");
+        assert!(search_fits(entry(3), known, &night.to_lowercase()));
     }
 
     #[test]
