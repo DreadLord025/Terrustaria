@@ -971,3 +971,231 @@ no fused-loop pixel path moved (`tiles.rs` untouched this phase); the
 G6 key untouched; the shadow stays PLAN-ONLY default-OFF. The
 research/136 fold script (F0-F4) is unchanged — this phase executed
 only the items whose files live on THIS branch.
+
+---
+
+## 10. MERGER-ACCEPTANCE CHECKLIST — FINAL (RETIRE phase)
+
+The single acceptance gate for the TILE-PASS family merge. Every
+item below is a CHECK the merger runs, in order; the cited sections
+are the prescriptions. Code-only lane: none of these commands were
+run on this branch — they are the merger's runbook.
+
+### 10.1 Gate command (the ONE pass/fail line)
+
+```
+cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids
+```
+
+Judge ONLY by the `test result: ok` lines (cargo may exit 1 on
+success in this project — AGENTS.md). The permanent skip is the one
+known-broken persist test. Per-module slices for triage (§6): the
+nine `cargo test -p …` lines there, plus
+`cargo test -p tr-app --lib render::tile_ctor`,
+`cargo test -p tr-app --lib render::tile_attach` (until dropped,
+§10.4) and `cargo test -p tr-render tile_visibility`. Generated-data
+checks (`gen_recipes --check` etc.) are NOT triggered by this family
+(no item/recipe surface touched). Visual gate: §10.3.
+
+### 10.2 The 85-witness list (PINNED — actual `#[test]` census, retire tip)
+
+The §9.2 counts re-verified at the retire tip (grep census, all
+names below). **Union g-family 70 + ctor 6 + attach 6 + visibility 3
+= 85.** After the pixel merge the attach 6 REBIND (§10.4) — the
+post-merge floor is 79 + the d-lane/g84-folded witnesses, never fewer
+per file than listed:
+
+* **`tile_pass.rs` 18:** `w4_g29_layer_constants_and_legacy_cap`,
+  `w4_g29_screen_area_pads_and_offset`,
+  `w4_g29_screen_area_clamps_at_the_four_cell_border`,
+  `w4_g32_the_area_cast_truncates_toward_zero` (REBIND),
+  `w4_g29_draw_loop_bounds_are_plus4_minus2`,
+  `w4_g29_martian_glow_byte_truncates_and_wraps`,
+  `w4_g32_the_black_strip_offset_and_row_break` (REBIND),
+  `w4_g29_black_helper_coalesces_and_flushes`,
+  `w4_g29_legacy_clear_order`, `w4_g29_layer_cache_clear_split`,
+  `w4_g29_legacy_points_append_and_cap` (REBIND → `LegacyCaches`),
+  `w4_g29_post_draw_orders`, `w4_g29_preview_gate_and_kite_fade`,
+  `w4_g29_frame_order_and_detect_creature_flip`,
+  `w4_g29_draw_layer_prologue_epilogue_order`,
+  `w4_g29_cell_gate_and_solid_liquid_front_step`,
+  `w4_g29_liquid_behind_tiles_has_no_active_gate`,
+  `w4_g29_preview_tail_fires_through_the_gate`.
+* **`special_points.rs` 14:**
+  `w4_g30_the_counter_discriminants_are_the_bucket_indices`,
+  `w4_g30_add_special_point_appends_and_caps_at_9000`,
+  `w4_g30_clear_skips_the_biome_grass_bucket`,
+  `w4_g30_the_solid_layer_override_beats_tile_solid`,
+  `w4_g30_sway_gate_is_settings_set_and_227_only`,
+  `w4_g30_vine_threads_crawl_and_549_reverses`,
+  `w4_g30_multi_tile_vine_anchors_and_off_grid_skips`,
+  `w4_g30_multi_tile_grass_anchors`,
+  `w4_g30_oasis_and_sea_oats_split_at_the_frame_cut`,
+  `w4_g30_break_arms_register_and_draw_drips_record`,
+  `w4_g30_the_default_arm_defers_sway_candidates`,
+  `w4_g30_the_tree_tail_registers_canopy_cells`,
+  `w4_g30_the_reverse_crawl_roots_above_the_attachment`,
+  `w4_g30_the_driver_walks_layers_and_collects_in_order` (the
+  standalone driver stays the witness fixture, §1.2).
+* **`tile_drains.rs` 22:** `w4_g31_climb_cat_tail_counts_to_the_flame_top`,
+  `w4_g31_climb_cat_tail_stops_at_row_ten`,
+  `w4_g31_multi_tile_vine_size_table`,
+  `w4_g31_multi_tile_grass_size_table`, `w4_g31_planter_style_table`,
+  `w4_g31_bottle_style_table_and_dead_write`,
+  `w4_g31_drain_grass_calm_anchor_and_origin`,
+  `w4_g31_drain_grass_wall_blocks_wind`,
+  `w4_g31_drain_grass_gates_skip_before_the_roll`,
+  `w4_g31_any_directional_grass_four_directions`,
+  `w4_g31_rising_vine_strip_walks_up`,
+  `w4_g31_rising_vine_strip_breaks_on_non_thread`,
+  `w4_g31_multi_tile_grass_sunflower_glow_and_shard_freeze`,
+  `w4_g31_multi_tile_grass_golf_flag_wind_flip`,
+  `w4_g31_multi_tile_vine_platform_lift`,
+  `w4_g31_multi_tile_vine_fairy_jar_bottom_glow`,
+  `w4_g31_multi_tile_vine_shared_flame_seed`,
+  `w4_g31_post_draw_drain_order_and_buckets`,
+  `w4_g31_driver_walks_ported_bodies_in_order`,
+  `w4_g31_rand_stream_shared_across_drains_in_order` (the ONE-stream
+  byte-equality TEMPLATE, §10.5),
+  `w4_g31_jar_rarity_color_table`, `w4_g31_rgb_to_hsl_red_and_grey`.
+* **`tile_draw_pass.rs` 10:**
+  `w4_g32_the_wind_grid_sizes_to_the_unpadded_extents`,
+  `w4_g32_the_single_tile_layer_pick`, `w4_g32_the_cell_layer_sequence`,
+  `w4_g32_the_legacy_points_append_and_cap_at_1000` (REBIND),
+  `w4_g32_the_clear_split_between_legacy_and_solid`,
+  `w4_g32_the_non_solid_clear_chains_the_registry`,
+  `w4_g32_the_non_solid_draw_step_order`,
+  `w4_g32_the_solid_draw_step_order`,
+  `w4_g32_the_preview_gate_truth_table`,
+  `w4_g32_the_frame_tile_phase_orders`.
+* **`tr-render/quality_light.rs` 6:**
+  `tier_bytes_at_quality_zero_half_one`,
+  `gb_factors_use_the_untruncated_double_product`,
+  `the_dev_cheat_pins_both_tiers_to_255`,
+  `light_bytes_truncate_and_clamp`,
+  `the_arm_pick_is_a_strict_per_channel_or`,
+  `higher_quality_lowers_the_requirements`.
+* **`tile_ctor.rs` 6:** `w4_g31_ctor_noise_table_matches_the_seed0_stream`,
+  `w4_g31_linear_noise_floors_and_wraps`, `w4_g31_hash_mixers_wrap_u32`,
+  `w4_g31_wandering_circle_centres_on_the_grid_cell`,
+  `w4_g31_smooth_step_is_the_cubic_hermite`,
+  `w4_g31_lava_light_bands_follow_the_solid_above_arm`.
+* **`tile_attach.rs` 6 (REBIND at §10.4, not deleted-with):**
+  `w4_g31_attach_shadow_runs_the_four_call_frame_order`,
+  `w4_g31_attach_shadow_classifies_and_drains_over_the_registry`,
+  `w4_g31_attach_shadow_plans_are_frame_deterministic`,
+  `w4_g31_attach_717_glow_plan_is_the_lava_light_truncation`,
+  `w4_g31_attach_drip_plan_preserves_the_switch_arm_order`,
+  `w4_g31_attach_site_is_gated_and_after_the_fused_walk`.
+* **`tr-render/tile_visibility.rs` 3:**
+  `w4_g31_is_visible_echo_bit_rides_the_sight_flag`,
+  `w4_g31_is_visible_platform_row48_only`,
+  `w4_g31_is_visible_wiring_tiles_always_gated`.
+
+d-lane floors at their tips (§5/§8.1 re-verified): d56 24, d57 44,
+d58 10, d59 6, d60 22 (−1 leaf witness folds into g68 per C2),
+f15/g68 per their lanes. g84's 19 fold per §8.6 — none lost.
+
+### 10.3 `TR_TILEPASS` A/B expectations
+
+1. **Pre-split (shadow, today's shape):** `TR_TILEPASS` unset ⇒ ZERO
+   union code runs (the `tiles.rs:1197` gate). Set ⇒ the
+   `TILEPASS shadow:` log line prints the plan counts
+   (`summary()`: classified/drained/sprites/lava/drips); pixels and
+   streams UNCHANGED vs unset — deterministic screenshots
+   (`TR_SHOT`, zoom 1.0/1.5/2.0, `TR_CAM`/`TR_DAY`/`TR_NOPLAYER`
+   pinned) must be SHA256-equal across the two arms AND across two
+   runs of each arm. Any pixel delta pre-split = the shadow leaked
+   state — STOP.
+2. **Post-split (pixel path):** `TR_TILEPASS=1` drives the split
+   (`draw_layer(false)` → `post_draw_tiles(false)` →
+   `draw_layer(true)` → `post_draw_tiles(true)`); unset keeps the
+   fused loop until proven. Expected deltas vs the fused arm are
+   ONLY the intended restorations: the deferred z-order (objects
+   draw AFTER the layer, not inline — g84/sunflower approximation
+   retired), the drain dust/vision chain (d56/d60 rolls now
+   consumed), the 717 glow + drip emissions. Each delta must be
+   C#-cited; anything else is a bug. Two runs of each arm
+   SHA256-equal (determinism is the hard invariant).
+3. **The g84 A/B trap:** with g84 on main, its inline arms MUST be
+   deleted in the same commit as the split (§8.6) — an A/B with
+   both alive double-draws every roster object and double-consumes
+   nothing (g84 rolls nothing), so the pixel diff shows doubled
+   sway sprites, not a stream break. Recognize the signature.
+4. **G6:** the cached-range key is UNTOUCHED by the split (§8.3
+   step 1). The 717 clock keying (§9.3) and d58's `chest_frames`
+   key are the ONLY sanctioned key changes — each with its own
+   A/B. Never widen silently.
+
+### 10.4 Scaffolding-drop steps (after the pixel path is proven)
+
+In ONE commit, in this order:
+
+1. Delete `crates/tr-app/src/render/tile_attach.rs` (the whole
+   shadow module) + its `render/mod.rs` declaration (:38).
+2. Delete the `tiles.rs` shadow block (:1187-1217 — the comment +
+   the `if crate::env::tilepass_shadow()` arm) — by then the split
+   has replaced the fused walk; the block is dead scaffolding.
+3. Delete the `env.rs` named accessor `tilepass_shadow` /
+   `"TR_TILEPASS"` (:1070-1081) + its env pin row.
+4. REBIND the 6 attach witnesses (§10.2) onto the real seams impl:
+   the frame-order/dispatch/determinism trio scan the impl's
+   `classify_and_draw_cell`/`post_draw_pass` bodies; the 717 +
+   drip-order pair re-pin to the real glow push / the
+   `emit_liquid_drops` call site (§8.5's 2-line hunk); the
+   attach-site witness's `leaf_rng`-separation assertion INVERTS —
+   the separation is RETIRED, the ONE `_rand` is asserted (§10.5).
+5. Keep `tile_ctor.rs` (the pure maths the 717 bind consumes) and
+   `tile_visibility.rs` (the keep-one survivor) — NOT scaffolding.
+6. Re-run §10.1 + the anchors canary
+   (`cargo test -p tr-app --test main_anchors`); repoint the
+   `tile_attach` anchors row to the real impl's marker (never
+   delete the row).
+
+### 10.5 The ONE-`_rand` invariant (the hard stream rule)
+
+ONE `UnifiedRandom` (C# `TileDrawing._rand`, `:191` — persistent
+for the renderer's lifetime, world-seeded; g68's `App.tile_draw_rand`
+is the landed stand-in that becomes it) flows in EXACT call order:
+
+1. per-layer classify walk, row-major: the CAD step-2 vision dust
+   gates `Next(30)/Next(60)/Next(480)` (d56; the spelunker `&` arm
+   still rolls), then the LiquidDrops switch-arm `Next(num*2)`
+   (g68 body, BEFORE the `continue` — §8.5/C5);
+2. the ten nature drains in `POST_DRAW_NON_SOLID` order over the
+   g30 buckets: per-cell `Next(4)` dust flags (`:8346` grass,
+   `:8403` directional, `:8974` multigrass, `:9485` multivine) —
+   flags PASSED to `DrainCellLight`/d60, NEVER re-rolled;
+3. the leaf rolls (g68 foliage) fold into the SAME stream at their
+   C# positions — the shadow's separate-stream separation is
+   RETIRED at the merge (§10.4 step 4).
+
+NOT in the stream (three other streams, never folded): the CAD
+step-3 quarter-roll is a THROWAWAY `FastRandom(TileFrameSeed)`
+5-draw cycle; d60/g68 spawn internals draw `Main.rand`; the flame
+tails draw the per-object latched `flameSeed` LCG (§8.6 D5 — jar
+kinds latch 0). Proof obligation: byte-equality of the drain plans
+against `w4_g31_rand_stream_shared_across_drains_in_order` (the
+template) extended over the classify rolls; the g68 rescan call
+DROPS at the bind or the gate double-rolls (§8.5).
+
+### 10.6 Keep-one symbol list — the g28/g29/g30/g32 branch-drop
+
+After the family merge, the four sibling branches are DELETED
+(local + remote + prune, AGENTS.md lifecycle — only after
+`git log main..<branch>` is empty). Their payloads survive ONLY as
+the keep-one set below; anything not listed was already folded on
+THIS branch (§7 phases A-D) and must not be re-merged:
+
+| Branch | KEEP (canonical home) | DROP (already folded / superseded) |
+|---|---|---|
+| g28 `task/W4-g28-tile-draw-pass-1` (`3f1a40cf`) | `tr-render/quality_light.rs` whole (6 witnesses) + `lib.rs` mod line; `torch.rs` pub lift (shared with g30, §1.5) | its whole `tile_pass.rs` (721 ln stand-in: `TileCounterType`/`SpecialPoints`/`screen_draw_area`/`draw_area_loop_bounds`/`is_tile_draw_layer_solid`/`should_sway_in_wind`/`draw_layer_skips`/`LAYER_*`/`POST_DRAW_ORDER`/`collect_*_vine_root`/`clear_cached_tile_draws`/`DrawPass`/`begin_draw_pass` + 14 witnesses → §3 survivor map) |
+| g29 `task/W4-g29-tile-draw-pass-2` (`9bb92d0b`) | `tile_pass.rs` as landed+folded HERE (the driver: `draw_layer`, `TilePassSeams`, `get_screen_draw_area`/`ScreenDrawArea` (+g32 framing flags), `draw_loop_bounds`, `DrawBlackHelper`/`BlackStrip`, `martian_glow_byte`, `LEGACY_CLEAR_ORDER`/`layer_cache_clears`, `POST_DRAW_NON_SOLID`/`POST_DRAW_SOLID`/`post_draw_tiles`, `walls_tiles_npcs_order`, `PlacementPreviewGate`, `draw_liquid_behind_tiles`; 18 witnesses) | its raw tip's `LegacySpecialPoints` (→ g32 `LegacyCaches`), `render_target_layer_order` (→ g32 `render_target_tile_order`) — both already dropped HERE |
+| g30 `task/W4-g30-tile-draw-pass-3` (`cd7f7d31`) | `special_points.rs` whole (14 witnesses; `classify_tile`/`CellClass`/`apply_cell_class`/`SpecialPoints`/`cache_tree_point`/`clear_special_block_counts`/`is_tile_draw_layer_solid`/`should_sway_in_wind`/`collect_reverse_vine_root`); `torch.rs` pub + g30 doc | its `collect_special_points` driver loop folds into g29's walk at wiring (the fn STAYS as the witness fixture, §1.2) |
+| g32 `task/W4-g32-tile-draw-pass-5` (`8b4fe36c`) | `tile_draw_pass.rs` REDUCED as landed HERE (10 witnesses: `ensure_wind_grid_size`, `single_tile_layer`/`cell_batch_layers`, `LegacyCaches` + per-step clear bindings, `DrawStep`/`draw_steps`, `placement_preview_draws`, `legacy_restarts_batch`, `FrameTileStep`/`frame_tile_draw_order`/`render_target_tile_order`) | its `LAYER_*`/`MAX_SPECIALS_LEGACY`, `ScreenDrawArea`/`get_screen_draw_area`/`draw_loop_bounds`, `martian_glow`, `DrawBlackHelper`, `draw_liquid_behind_tiles_cells`, `PostPass`/`post_draw_tiles_passes`/`post_pass_bucket` + 8 dup witnesses (§1.3/§3; anchors marker already repointed to `draw_steps`) |
+
+The g31 branch (THIS one) carries the union + attach + ctor +
+visibility + the contract; it merges LAST of the five (or first —
+the folds are self-contained), and its own drop-list is §10.4.
+Branch deletion order is free; the anchors canary after EACH merge
+is not optional (the lossy-merge history, AGENTS.md).
