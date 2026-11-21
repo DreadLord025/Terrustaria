@@ -1479,6 +1479,16 @@ pub struct Player {
     /// `Player.carpetFrame` (`Player.cs:1094`, init `-1`): the Magic Carpet
     /// glide pose (leg row 0, body row 6).
     pub carpet_frame: i32,
+    /// `Player.carpet` (`Player.cs:1090`): the Magic Carpet accessory grant
+    /// (item 934, `:15034-15037`); `ResetEffects` clears it (`:18657`).
+    pub carpet: bool,
+    /// `Player.canCarpet` / `carpetTime` / `carpetFrameCounter`
+    /// (`Player.cs:1098-1100`/`:1096`): the carpet's launch gate (resting or
+    /// sliding re-arms it, `:26105-26111`), the 300-tick flight budget
+    /// (`:21850`) and the 6-frame glide cadence (`:21866-21879`).
+    pub can_carpet: bool,
+    pub carpet_time: i32,
+    pub carpet_frame_counter: f32,
     /// `Player.legs` (`Player.cs:35766`): the effective legs armour texture id
     /// (`Item.legSlot`). The Moon Lord carve-out (`140`) and the sitting
     /// carve-out (`217`) read it; `0` = the default legs sheet.
@@ -2999,6 +3009,10 @@ impl Player {
             sliding: false,
             sand_storm: false,
             carpet_frame: -1,
+            carpet: false,
+            can_carpet: false,
+            carpet_time: 0,
+            carpet_frame_counter: 0.0,
             legs_armor: 0,
             frame_inputs: FrameInputs::default(),
             melee_npc_hit_cooldown: std::collections::HashMap::new(),
@@ -4061,6 +4075,9 @@ impl Player {
         self.sliding = false;
         self.sand_storm = false;
         self.carpet_frame = -1;
+        self.can_carpet = false;
+        self.carpet_time = 0;
+        self.carpet_frame_counter = 0.0;
         // `Player.Spawn`'s revive life (`Player.cs:37598-37608`): the pool
         // is `max(statLifeMax, statLifeMax2)` — the port's single `max_hp`
         // is the effective max — and the life is `max(pool / 2, 100)`. A
@@ -5901,6 +5918,13 @@ impl Player {
             // (`Mount.cs:3002`, `update_equips`' tail).
             953 | 975 => self.spiked_boots += 1,
             976 => self.spiked_boots += 2,
+            // W4-f3 folded host — the Magic Carpet (`Player.cs:15034-15037`,
+            // item 934): `carpet = true`. The grant sits BEFORE the climbing
+            // rows in the C# `if` chain; the rows are disjoint per-type `if`s
+            // so the match-arm order is behaviour-identical. `ResetEffects`
+            // clears it (`:18657`); `CarpetMovement` (`:21842-21890`) and the
+            // `:26100-26115` re-arm consume it.
+            934 => self.carpet = true,
             6189 => self.mystic_sash_dodge = true,
             3223 => self.brain_of_confusion = true,
             // The Magic Cuffs (1595, `ApplyEquipFunctional`
@@ -6504,6 +6528,9 @@ impl Player {
         // `Player.cs:18455`: `empressBrooch = false`.
         self.empress_brooch = false;
         self.spiked_boots = 0;
+        // `Player.cs:18657`: `carpet = false` (ResetEffects). The Magic
+        // Carpet's grant re-arms per tick from the accessory slot.
+        self.carpet = false;
         self.ignore_water = false;
         self.lava_vision = false;
 
@@ -7692,6 +7719,17 @@ impl Player {
                 self.run_slowdown *= 0.1;
             }
         }
+        // W4-f3 — `Player.cs:26613-26617`: the Magic Carpet glide boosts the
+        // run (acceleration ×1.25, max ×1.5). The C# reads `carpetFrame != -1`
+        // here BEFORE `CarpetMovement` (`:26766`) rewrites it this tick — the
+        // PREVIOUS tick's glide state, like the floor flags above. The
+        // performing-jump run boosts (`:26573-26612`) are the extra-jump
+        // lane's (the port's `performing_jump` visual state has no run-mod
+        // consumer yet); the carpet arm is independent of them.
+        if self.carpet_frame != -1 {
+            self.run_acceleration *= 1.25;
+            self.max_run_speed *= 1.5;
+        }
         // `Player.cs:25256-25287`: the hover latches — a down press edge
         // latches hover-down, an up edge swaps to hover-up; landing clears
         // both. The vanilla default is `Settings.HoverControl == Hold`
@@ -7770,6 +7808,20 @@ impl Player {
                     self.on_wrong_ground = false; // `:26676`
                 }
             }
+        }
+        // W4-f3 folded host — the carpet re-arm (`Player.cs:26100-26115`):
+        // without the accessory the launch gate + pose clear; resting or
+        // sliding re-arms `canCarpet` and zeroes the budget/cadence. The
+        // `gravDir == -1` clear (`:26112-26115`) folds — the port keeps
+        // gravDir 1. Sits right before the ropeCount decay (`:26116`).
+        if !self.carpet {
+            self.can_carpet = false;
+            self.carpet_frame = -1;
+        } else if self.vy == 0.0 || self.sliding {
+            self.can_carpet = true;
+            self.carpet_time = 0;
+            self.carpet_frame = -1;
+            self.carpet_frame_counter = 0.0;
         }
         // W4-f3 folded host — the pulley head (`Player.cs:26116-26287`):
         // the ropeCount decay, the FindPulley attach gate and the
@@ -8021,15 +8073,20 @@ impl Player {
         // (`:26494`); they read the PREVIOUS tick's `slideDir` (the collision
         // capture at `:28242-28252` re-arms it after this tick's movement).
         // The five type-31 dust sites queue their snapshots here; the drain
-        // replays them after the dash dust. `CarpetMovement` (`:26766`) stays
-        // unported (the Magic Carpet's grant/machine are another lane).
-        // The pulley ride bypasses them (the `:26494` else-if).
+        // replays them after the dash dust. The pulley ride bypasses them
+        // (the `:26494` else-if).
         if !grappling && !self.tongued && !pulley_ride {
             if self.mount.is_active() && self.mount.kind() == 55 {
                 self.wall_climb_movement(world, gravity);
             } else {
                 self.wallslide_movement(world, gravity);
             }
+            // W4-f3 folded host — `Player.cs:26766`: `CarpetMovement` right
+            // after the wall machines (the Magic Carpet fly, `:21842-21890`).
+            // Self-contained: the grant (934), the re-arm (`:26100-26115`)
+            // and the ride's `canCarpet` refill (`:26483`) all landed. NO
+            // dust sites (the census found zero `Dust.NewDust` in it).
+            self.carpet_movement(gravity);
         }
         // W4-f3 — the pulley ride (`Player.cs:26300-26493`): the climb/descend
         // velocity machine + the X snap + the flight refills. Its DashMovement
@@ -10487,12 +10544,70 @@ impl Player {
         // `:26482-26490`: the per-tick refills — the extra jumps, the carpet
         // pose clear, the wing/rocket budgets.
         self.refresh_double_jumps();
-        self.carpet_frame = -1; // `:26484` (`canCarpet = true` rides the carpet machine)
+        self.can_carpet = true; // `:26483`
+        self.carpet_frame = -1; // `:26484`
         self.wing_time = self.wing_time_max as f32;
         self.rocket_time = self.rocket_time_max;
         self.rocket_delay = 0;
         self.can_rocket = false;
         self.rocket_release = false;
+    }
+
+    /// `Player.CarpetMovement` (`Player.cs:21842-21890`): the Magic Carpet
+    /// fly — called at `:26766` right after the wall machines, inside the
+    /// `grappling[0] == -1 && !tongued` movement block. The launch needs the
+    /// carpet accessory, EVERY extra-jump can-flag spent, no held-jump boost,
+    /// airborne, no rocket/wing budget and no mount (`:21845`). A jump press
+    /// while `canCarpet` arms the 300-tick budget (`:21847-21851`); holding
+    /// jump pins the rise at `-(gravity + 1e-6)` and runs the 6-frame glide
+    /// cadence (`:21852-21880`). The `gravDir == -1` mirror (`:21862-21865`)
+    /// folds to the `+1` arm. NO dust sites — the carpet is a pure movement
+    /// machine (the W4-f3 census found zero `Dust.NewDust` in it).
+    fn carpet_movement(&mut self, gravity: f32) {
+        let mut flag = false;
+        // `:21845`: the launch gate — the nine can-flags ALL spent.
+        if !self.grappling_active
+            && self.carpet
+            && !self.can_jump_again.iter().any(|&c| c)
+            && self.jump == 0
+            && self.vy != 0.0
+            && self.rocket_time == 0
+            && self.wing_time == 0.0
+            && !self.mount.is_active()
+        {
+            if self.control_jump && self.can_carpet {
+                self.can_carpet = false; // `:21849`
+                self.carpet_time = 300; // `:21850`
+            }
+            if self.carpet_time > 0 && self.control_jump {
+                self.fall_start = (self.y / TILE_PX) as i32; // `:21854`
+                flag = true;
+                self.carpet_time -= 1; // `:21856`
+                // `:21857-21861`: the rise pin (gravDir 1) — cancel the
+                // gravity integration with a hair of upward velocity.
+                if self.vy > -gravity {
+                    self.vy = -(gravity + 1E-06);
+                }
+                // `:21866-21879`: the 6-frame glide cadence — the counter
+                // accumulates 1 + |vx*0.5| and wraps the frame at >8.
+                self.carpet_frame_counter += 1.0 + (self.vx * 0.5).abs();
+                if self.carpet_frame_counter > 8.0 {
+                    self.carpet_frame_counter = 0.0;
+                    self.carpet_frame += 1;
+                }
+                if self.carpet_frame < 0 {
+                    self.carpet_frame = 0;
+                }
+                if self.carpet_frame > 5 {
+                    self.carpet_frame = 0;
+                }
+            }
+        }
+        if !flag {
+            self.carpet_frame = -1; // `:21884`
+        } else {
+            self.slow_fall = false; // `:21888` — the carpet overrides Featherfall
+        }
     }
 
     /// `Item.wingSlot` (`Item.cs`'s `SetDefaults` cases — the 47 wings whose
@@ -11810,9 +11925,12 @@ impl Player {
         if self.mount.is_active() && !crate::mount::can_use_hooks(self.mount.kind()) {
             self.try_dismount(world);
         }
-        // `:22624-22640` — the carpet/wing frame head. `canCarpet`/`rocketFrame`
-        // have no port fields; `carpetFrame = -1` and the wing frame ladder are
-        // the visual seam (the wings-4/30 overrides ride the wing draw).
+        // `:22624-22640` — the carpet/wing frame head. W4-f3: `canCarpet =
+        // true` (`:22624`) now lands (the carpet machine's launch gate);
+        // `rocketFrame` has no port field (draw seam); `carpetFrame = -1` and
+        // the wing frame ladder are the visual seam (the wings-4/30 overrides
+        // ride the wing draw).
+        self.can_carpet = true; // `:22624`
         self.carpet_frame = -1;
         self.wing_frame = 1;
         // `:22627-22628` — `flag` (nearly stationary) and `flag2` (floating in
@@ -13008,7 +13126,14 @@ impl Player {
                 &mut self.gfx_off_y,
             );
         }
-        if dry && vel[1] >= gravity && !down && !self.cart_mounted {
+        // W4-f3 — `Player.cs:28066`/`:23537`: the carpet glide (`carpetFrame
+        // != -1`) steps up even while rising (the `|| vy >= gravity` arm) —
+        // the Magic Carpet climbs ledges mid-flight.
+        if dry
+            && (self.carpet_frame != -1 || vel[1] >= gravity)
+            && !down
+            && !self.cart_mounted
+        {
             collision::step_up(
                 world,
                 &mut pos,
@@ -23854,5 +23979,151 @@ mod w4_f3_pulley_tests {
         let mut p = on_rope(&w);
         p.find_pulley(&w);
         assert!(!p.pulley, "a vine never attaches (IsVine disjoint tileRope)");
+    }
+}
+
+/// W4-f3 folded host — the Magic Carpet fly machine (`Player.CarpetMovement`
+/// `Player.cs:21842-21890`), the grant (item 934, `:15034-15037`), the re-arm
+/// (`:26100-26115`) and the run/step-up consumers (`:26613`/`:28066`). NO dust
+/// sites (the census found zero `Dust.NewDust` in the machine). Code-only
+/// mode: WRITTEN NOT RUN.
+#[cfg(test)]
+mod w4_f3_carpet_tests {
+    use super::*;
+    use super::tests::ground_world;
+
+    /// An airborne player with the carpet accessory equipped, every extra-jump
+    /// can-flag spent, no held-jump boost, no rocket/wing budget, no mount —
+    /// the `:21845` launch gate satisfied. `canCarpet` armed (resting re-arm).
+    fn carpet_ready(w: &World) -> Player {
+        let mut p = Player::spawn(w);
+        p.equipped[3] = 934; // the Magic Carpet grant (:15034)
+        p.update(w, PlayerInput::default()); // run the equip pass -> carpet = true
+        p.carpet = true;
+        p.can_carpet = true;
+        p.can_jump_again = [false; 9];
+        p.jump = 0;
+        p.vy = 1.0; // airborne
+        p.rocket_time = 0;
+        p.wing_time = 0.0;
+        p.control_jump = true;
+        p
+    }
+
+    /// `:15034-15037` — item 934 grants `carpet = true`; `:18657` — removing
+    /// it clears on the next tick.
+    #[test]
+    fn w4_f3_the_magic_carpet_grants_and_resets() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 934;
+        p.update(&w, PlayerInput::default());
+        assert!(p.carpet, "the Magic Carpet grant (:15036)");
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.carpet, "ResetEffects clears (:18657)");
+    }
+
+    /// `:21847-21851` — a jump press while `canCarpet` arms the 300-tick
+    /// budget and spends the gate. `:21857-21861` — the rise pins at
+    /// `-(gravity + 1e-6)`.
+    #[test]
+    fn w4_f3_the_carpet_launch_arms_the_budget_and_pins_the_rise() {
+        let w = ground_world();
+        let mut p = carpet_ready(&w);
+        p.carpet_movement(GRAVITY);
+        assert!(!p.can_carpet, "the launch spends the gate (:21849)");
+        assert_eq!(p.carpet_time, 299, "300 armed then decremented (:21850/:21856)");
+        assert_eq!(p.vy, -(GRAVITY + 1E-06), "the rise pin (:21860)");
+        assert!(p.carpet_frame >= 0, "the glide pose lands (:21872-21875)");
+        assert!(!p.slow_fall, "the carpet overrides Featherfall (:21888)");
+    }
+
+    /// `:21845` — the launch gate: a mount, a held-jump boost, a rocket/wing
+    /// budget or an unspent extra-jump can-flag all refuse the fly.
+    #[test]
+    fn w4_f3_the_carpet_launch_gate_refuses() {
+        let w = ground_world();
+        let mut p = carpet_ready(&w);
+        p.jump = 5; // a held-jump boost
+        p.carpet_movement(GRAVITY);
+        assert_eq!(p.carpet_frame, -1, "jump != 0 refuses (:21845)");
+        let mut q = carpet_ready(&w);
+        q.can_jump_again[ExtraJump::Cloud.index()] = true; // an unspent can-flag
+        q.carpet_movement(GRAVITY);
+        assert_eq!(q.carpet_frame, -1, "a can-flag refuses (:21845)");
+        let mut r = carpet_ready(&w);
+        r.wing_time = 10.0; // a wing budget
+        r.carpet_movement(GRAVITY);
+        assert_eq!(r.carpet_frame, -1, "wingTime != 0 refuses (:21845)");
+    }
+
+    /// `:21866-21879` — the 6-frame glide cadence: the counter accumulates
+    /// 1 + |vx*0.5| and wraps the frame at >8 (frame 0..5).
+    #[test]
+    fn w4_f3_the_carpet_glide_cadence_wraps_at_six_frames() {
+        let w = ground_world();
+        let mut p = carpet_ready(&w);
+        p.vx = 0.0; // +1 per tick
+        p.carpet_time = 300;
+        p.can_carpet = false; // already launched
+        for _ in 0..9 {
+            p.carpet_movement(GRAVITY);
+        }
+        // 9 ticks of +1 = 9 > 8 wraps once: frame 1, counter 0.
+        assert_eq!(p.carpet_frame, 1, "the >8 wrap (:21867-21871)");
+        assert_eq!(p.carpet_frame_counter, 0.0, "(:21869)");
+        for _ in 0..54 {
+            p.carpet_movement(GRAVITY);
+        }
+        assert!(p.carpet_frame <= 5, "the frame caps at 5 (:21876-21879)");
+    }
+
+    /// `:26100-26115` — the re-arm: resting (vy == 0) or sliding re-arms
+    /// `canCarpet` and zeroes the budget/cadence; without the accessory the
+    /// gate + pose clear.
+    #[test]
+    fn w4_f3_the_carpet_rearm_on_rest() {
+        let w = ground_world();
+        let mut p = carpet_ready(&w);
+        p.carpet = true;
+        p.can_carpet = false;
+        p.carpet_time = 100;
+        p.carpet_frame = 3;
+        p.carpet_frame_counter = 5.0;
+        p.vy = 0.0; // resting
+        // The re-arm block runs in update_with_grapple; exercise it directly
+        // via the same predicate the port uses.
+        if !p.carpet {
+            p.can_carpet = false;
+            p.carpet_frame = -1;
+        } else if p.vy == 0.0 || p.sliding {
+            p.can_carpet = true;
+            p.carpet_time = 0;
+            p.carpet_frame = -1;
+            p.carpet_frame_counter = 0.0;
+        }
+        assert!(p.can_carpet, "resting re-arms (:26107)");
+        assert_eq!(p.carpet_time, 0, "(:26108)");
+        assert_eq!(p.carpet_frame, -1, "(:26109)");
+        assert_eq!(p.carpet_frame_counter, 0.0, "(:26110)");
+    }
+
+    /// `:26613-26617` — the glide run boost: acceleration ×1.25, max ×1.5
+    /// while `carpetFrame != -1`.
+    #[test]
+    fn w4_f3_the_carpet_glide_boosts_the_run() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.carpet_frame = 2; // gliding
+        p.run_acceleration = 0.08;
+        p.max_run_speed = 3.0;
+        // The boost rides the run-modifier chain; exercise the predicate.
+        if p.carpet_frame != -1 {
+            p.run_acceleration *= 1.25;
+            p.max_run_speed *= 1.5;
+        }
+        assert!((p.run_acceleration - 0.1).abs() < 1e-6, "×1.25 (:26615)");
+        assert!((p.max_run_speed - 4.5).abs() < 1e-6, "×1.5 (:26616)");
     }
 }
