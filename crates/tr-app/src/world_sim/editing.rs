@@ -7968,18 +7968,29 @@ fn resolve_melee_strike(
                         dmg = (dmg as f32 * crate::melee_on_hit::nano_flask_damage_boost()) as i32;
                     }
                 }
-                // `:44383`: `num2 += nPC.checkArmorPenetration(
+                // `:44400`: `num2 += nPC.checkArmorPenetration(
                 // this.GetArmorPenetration(sItem.melee), armorPenetrationPercent)`
                 // — the player's own penetration sum (the Shark Tooth
                 // Necklace 3212, the Honey Comb 4007, the Sharpened buff 159's
-                // melee-only +12) joins the Flymeal's full percent.
+                // melee-only +12 via `get_armor_penetration(true)`,
+                // `Player.cs:9927-9930`) joins the Flymeal's full percent.
+                // W4-f13: the victim's debuff bonuses (ichor 69 +15 / broken
+                // armor 36 +20 / Betsy's curse 203 +40, `NPC.cs:81149-81160`,
+                // the defense/2 cap `:81166-81169`) read the LIVE buff table
+                // (`has_buff` — the `FindBuffIndex` gate); the C# latches
+                // `this.ichor`/`brokenArmor`/`betsysCurse` in
+                // `UpdateNPC_BuffSetFlags` (`:92021-92028`, `:92101-92104`),
+                // the port derives them fresh at the read (the a3
+                // projectile-side precedent, `projectile.rs`). The read sits
+                // AFTER StatusToNPC (`:44391`) like the C# — a flask-inflicted
+                // debuff counts on the same hit.
                 dmg += tr_core::damage::check_armor_penetration(
                     melee_pen,
                     pen_percent,
                     n_defense,
-                    false,
-                    false,
-                    false,
+                    app.npcs[idx].buffs.has_buff(69),
+                    app.npcs[idx].buffs.has_buff(36),
+                    app.npcs[idx].buffs.has_buff(203),
                 );
                 let dmg = tr_core::damage::strike_npc_damage(dmg, n_defense, crit);
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
@@ -8636,6 +8647,75 @@ mod tests {
             b.player.as_ref().map(|p| p.equipped[3]),
             b.player.as_ref().map_or(0, |p| p.get_armor_penetration(true))
         );
+    }
+
+    /// W4-f13 — the melee HIT rig for the victim-debuff pen fold: the
+    /// BUG-09 wooden sword over the `melee_app` slime, defense pinned to
+    /// 24 and the derived melee multiplier poked to 10.0 (the
+    /// `m3_equip_20` direct-set precedent) so the rolled damage (70 ±15 %)
+    /// never rides `CalculateDamageNPCsTake`'s floor of 1 — the pen lift
+    /// then shows through as an EXACT hp difference. The victim's live
+    /// debuffs go on via `NpcBuffs.add_buff` (the `NPC.AddBuff` guard);
+    /// the fixed world-seed stream spends the same draws in every variant
+    /// (the buff add draws nothing, the pen add sits after the crit/
+    /// DamageVar rolls), so the difference isolates the fold.
+    fn w4_f13_melee_hit(npc_debuffs: &[i32], sharpened: bool) -> i32 {
+        let mut app = melee_app();
+        app.inventory[app.selected].kind = 24;
+        app.inventory[app.selected].count = 1;
+        app.npcs[0].defense_override = Some(24);
+        app.npcs[0].hp = 500;
+        app.npcs[0].max_hp = 500;
+        for &id in npc_debuffs {
+            app.npcs[0].buffs.add_buff(id, 600);
+            assert!(app.npcs[0].buffs.has_buff(id), "the slime takes debuff {id}");
+        }
+        if let Some(p) = app.player.as_mut() {
+            p.melee_damage = 10.0;
+            p.melee_crit = 0;
+            // Sharpened 159's derived field (`Player.cs:9927-9930`, the
+            // `player.rs` buff arm) — set directly like `m3_equip_20`'s
+            // necklace penetration.
+            p.melee_armor_penetration = if sharpened { 12 } else { 0 };
+        }
+        let hp0 = app.npcs[0].hp;
+        mine_frames(&mut app, 1);
+        hp0 - app.npcs[0].hp
+    }
+
+    /// W4-f13 — the melee HIT's `checkArmorPenetration` reads the victim's
+    /// ichor (69) +15 and broken armor (36) +20 (`NPC.cs:81149-81156`,
+    /// called from `Player.cs:44400`): on the defense-24 dummy ichor folds
+    /// as 15/2 = 7, broken armor as 20/2 = 10. BOTH together sum to 35 >
+    /// 24, so the `:81166-81169` cap fires: the lift is defense/2 = 12,
+    /// NOT (15+20)/2 = 17 — the cap compares the SUM against the defense
+    /// before halving. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_f13_ichor_and_broken_armor_pen_join_the_melee_hit() {
+        let plain = w4_f13_melee_hit(&[], false);
+        let ichor = w4_f13_melee_hit(&[69], false);
+        assert_eq!(ichor - plain, 7, "ichor +15 folds as 15/2 = 7");
+        let broken = w4_f13_melee_hit(&[36], false);
+        assert_eq!(broken - plain, 10, "broken armor +20 folds as 20/2 = 10");
+        let both = w4_f13_melee_hit(&[69, 36], false);
+        assert_eq!(both - plain, 12, "15+20 = 35 > 24 caps at 24/2 = 12");
+    }
+
+    /// W4-f13 — Betsy's curse (203) adds +40 (`NPC.cs:81157-81160`), over
+    /// the defense-24 dummy so the lift caps at 12; Sharpened 159's
+    /// melee-only +12 (`Player.cs:9927-9930`) folds through the existing
+    /// `get_armor_penetration(true)` read as 12/2 = 6, and stacked with
+    /// the curse (52 total) the cap holds at 12 — +6 over the sharpened
+    /// plain hit. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_f13_betsys_curse_and_sharpened_pen_on_the_melee_hit() {
+        let plain = w4_f13_melee_hit(&[], false);
+        let curse = w4_f13_melee_hit(&[203], false);
+        assert_eq!(curse - plain, 12, "+40 > defense 24 caps at 24/2 = 12");
+        let sharp = w4_f13_melee_hit(&[], true);
+        assert_eq!(sharp - plain, 6, "Sharpened's melee +12 folds as 12/2 = 6");
+        let sharp_curse = w4_f13_melee_hit(&[203], true);
+        assert_eq!(sharp_curse - sharp, 6, "12+40 = 52 > 24: cap 12, +6 more");
     }
 
     /// S1-P-i10 — the Bee Keeper's Confused lands unconditionally
