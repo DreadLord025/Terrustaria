@@ -146,10 +146,10 @@ mod npc_ai_bat;
 mod npc_ai_eye;
 mod npc_ai_golem;
 mod npc_ai_slime;
-// S1-D-3 cultist: UNWIRED Lunatic Cultist machine (AI_084, 439/440) -
-// the live npc.rs::update_lunatic_cultist stub stays byte-identical
-// until the wiring round (the npc_ai_fishron precedent; states 4/7/8
-// deferred, see the module doc).
+// S1-D-3 cultist / W4-c1: WIRED Lunatic Cultist machine (AI_084, 439) -
+// the aiStyle-84 axis arm (npc.rs::ai_084_cultist) claims the dispatch;
+// the old update_lunatic_cultist stub is retired. The 440 clone has no
+// port kind (solo path); states 4/7/8 deferred, see the module doc.
 mod npc_ai_cultist;
 // S1-D-3 (B-6a): UNWIRED pillar machine (aiStyle 94) - the dispatch swap
 // + the checkDead intercept are the wiring wave; R72 wires the 629
