@@ -305,6 +305,22 @@ The port (S1-A-3) follows the same mechanism вЂ” no position hash anywhere:
 - **Wall 21 quirk** (`Framing.cs:390-394`): the reset roll draws `Next(0, 3)` then
   `Next(2)` and forces variant 2 half the time вЂ” the extra draw is consumed only for
   wall 21 (the RNG-order contract).
+- **Save persistence (W4-d109, the save half of S1-A-3)** — *deliberate port-only
+  extension*. The C# `.wld` never serializes the runtime `bTileHeader2` bits 4-7
+  (`SaveWorldTiles` `WorldFile.cs:1432-1604`), so a vanilla load resets and re-rolls
+  them. The port's own `.trwld` **v18** tail persists `World::variants` as a dense
+  `width*height` row-major byte block; a v18 load restores it and sets
+  `World::variants_from_save`, and the full-world passes (`frame_world`/`frame_walls`)
+  then **reuse** the stored values (`TileFrame`/`WallFrame` with `resetFrame: false`,
+  `WorldGen.cs:81713` / `Framing.cs:399`) instead of re-rolling — a load-after-quit
+  keeps the rolled `frameNumber`/`wallFrameNumber`. Generated worlds, retail `.wld`
+  loads and pre-v18 `.trwld` files keep `variants_from_save = false` and re-roll (the
+  C#'s own reset semantics). **Old → new:** before W4-d109 a `.trwld` load dropped the
+  variants and re-rolled every tile/wall; now a v18 save/load round-trips them
+  byte-for-byte (witness `w4_d109_the_framing_variants_round_trip_in_v18`). The
+  world-hash pins are **UNCHANGED**: `generate()` runs only the pipeline steps and
+  never frames (framing is the app-side post-pipeline seam, `app/mod.rs`), and
+  `variants` is not a hashed `Tile` field — the pins hash un-framed worlds.
 
 Ported pieces (`tr-core/src/framing.rs`):
 

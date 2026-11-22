@@ -50,6 +50,16 @@ pub struct World {
     /// framing event resets (`WorldGen.cs:81705-81729`, `Framing.cs:318-321`,
     /// `Framing.cs:390-396`) and reused from storage otherwise.
     pub variants: Vec<u8>,
+    /// The `.trwld` v18 load restored [`World::variants`] from the save
+    /// (W4-d109, the save half of S1-A-3): the full-world framing passes
+    /// reuse the stored values (`TileFrame`/`WallFrame` with
+    /// `resetFrame: false`, `WorldGen.cs:81713`, `Framing.cs:399`) instead
+    /// of re-rolling. A generated world, a retail `.wld` load and a pre-v18
+    /// `.trwld` keep it false — the C#'s own reset semantics (the runtime
+    /// bits are not serialized by `SaveWorldTiles`, `WorldFile.cs:1432-1604`,
+    /// so they reset and re-roll on those paths). Port-only: the C# `.wld`
+    /// has no such persistence (ANALYSIS "Autotiling").
+    pub variants_from_save: bool,
     /// The runtime reset-roll stream of the framing variants — the port's
     /// `WorldGen.genRand` stand-in for `SquareTileFrame`'s centre re-roll
     /// (`WorldGen.cs:81705-81709`, `Framing.cs:389-395`), the same shape as
@@ -609,6 +619,7 @@ impl World {
             height,
             tiles: vec![Tile::default(); (width as usize) * (height as usize)],
             variants: vec![0; (width as usize) * (height as usize)],
+            variants_from_save: false,
             frame_rng: crate::unified_random::UnifiedRandom::new(0),
             place_rng: crate::unified_random::UnifiedRandom::new(0),
             tile_object_random_cache: None,
