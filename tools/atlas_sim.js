@@ -369,12 +369,34 @@ const STATIC_NAMES = constStringList(assetsSrc, 'STATIC_SHEET_NAMES');
 const GLOW_NAMES = constStringList(assetsSrc, 'GLOW_SHEET_NAMES');
 
 // The L-8b branch's STATIC_SHEET_NAMES (renamed minecart rows + 25 additions).
+// The branch was deleted in the wave-2 purge; when the ref is gone, fall back
+// to the pinned 25-name additions list — the SAME list the assets.rs witness
+// `the_full_gore_and_mount_sheet_set_fits_the_strict_gpu_bound` simulates.
+// The renamed-away rows had no file on main, so the loader skipped them and
+// the rename is pixel-neutral (L8B_REMOVED stays empty in the fallback).
 const { execSync } = require('child_process');
-const l8bSrc = execSync('git show origin/task/S1-L-8b-mount-data:crates/tr-app/src/assets.rs',
-  { cwd: path.join(__dirname, '..'), maxBuffer: 64 * 1024 * 1024 }).toString();
-const L8B_STATIC = constStringList(l8bSrc, 'STATIC_SHEET_NAMES');
-const L8B_ADDITIONS = L8B_STATIC.filter(n => !STATIC_NAMES.includes(n));
-const L8B_REMOVED = STATIC_NAMES.filter(n => !L8B_STATIC.includes(n));
+const L8B_PINNED_ADDITIONS = [
+  'Mount_Glow_DrillRing', 'Mount_Glow_DrillSeat', 'Mount_Glow_DrillDiode',
+  'Glow_283', 'Glow_284', 'Glow_285', 'Glow_370',
+  'Mount_MinecartMech', 'Mount_MinecartMechGlow', 'Mount_MinecartWood',
+  'Mount_MinecartMineCarp', 'Mount_MinecartDesert', 'Mount_Turtle',
+  'Extra_96', 'Extra_97', 'Extra_149', 'Extra_167', 'Extra_168',
+  'Extra_253', 'Extra_254', 'Extra_271', 'Extra_272', 'Extra_273',
+  'Extra_301', 'Extra_302',
+];
+let L8B_STATIC, L8B_ADDITIONS, L8B_REMOVED;
+try {
+  const l8bSrc = execSync('git show origin/task/S1-L-8b-mount-data:crates/tr-app/src/assets.rs',
+    { cwd: path.join(__dirname, '..'), maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+  L8B_STATIC = constStringList(l8bSrc, 'STATIC_SHEET_NAMES');
+  L8B_ADDITIONS = L8B_STATIC.filter(n => !STATIC_NAMES.includes(n));
+  L8B_REMOVED = STATIC_NAMES.filter(n => !L8B_STATIC.includes(n));
+} catch (e) {
+  console.log('note: origin/task/S1-L-8b-mount-data is gone (wave-2 purge) — using the pinned 25-name additions list');
+  L8B_ADDITIONS = L8B_PINNED_ADDITIONS.filter(n => !STATIC_NAMES.includes(n));
+  L8B_REMOVED = [];
+  L8B_STATIC = STATIC_NAMES.concat(L8B_ADDITIONS);
+}
 
 // Projectile kinds: proj_data's match arms over the module's u16 consts.
 const projDir = path.join(__dirname, '..', 'crates', 'tr-app', 'src', 'projectile');
@@ -435,7 +457,7 @@ function enumIds(prefix, exclude = []) {
 // default (style 0) surface backgrounds, the Tiles_0 fallback.
 const WORLD_BG_DEFAULT = [12, 13, 14, 15, 16, 17, 29, 30, 31, 43, 44, 45, 46, 47, 48];
 
-function buildSheetList({ gores = false, mountAdditions = false, font = false, staticNames = STATIC_NAMES, dedup = true } = {}) {
+function buildSheetList({ gores = true, mountAdditions = false, font = false, staticNames = STATIC_NAMES, dedup = true } = {}) {
   const sheets = []; // {name, w, h} in loader order
   const seen = new Set(); // name dedup: a duplicate decode packs twice but the
   // sheets HashMap keeps one rect — the later copy's pixels are dead weight.
@@ -454,6 +476,10 @@ function buildSheetList({ gores = false, mountAdditions = false, font = false, s
   for (const kind of [...PROJ_KINDS].sort((a, b) => a - b)) add('Projectile_' + kind);
   for (const id of enumIds('Item_')) add('Item_' + id);
   for (const id of enumIds('Buff_')) add('Buff_' + id);
+  // E-4b landed on main: load_static_sheets now ALWAYS enumerates the gore
+  // set (assets.rs:1353, enumerate_gore_sheet_ids — 910/911 excluded, they
+  // ride STATIC_SHEET_NAMES). The `gores` flag is kept for the historical
+  // pre-E-4b scenarios but defaults on.
   if (gores) for (const id of enumIds('Gore_', [910, 911])) add('Gore_' + id);
   for (let style = 0; style < 32; style++)
     for (const prefix of ['Tree_Tops_', 'Tree_Branches_']) add(prefix + style);
@@ -661,13 +687,14 @@ function verify(sheets, result) {
 // ---------------------------------------------------------------------------
 function main() {
   const scenarios = {
-    'main (test world)': buildSheetList({}),
+    // E-4b landed: main's enumeration now includes the gore set by default.
+    'main (test world, E-4b gore landed)': buildSheetList({}),
     'main + boot font': buildSheetList({ font: true }),
-    'main + gore (E-4b)': buildSheetList({ gores: true }),
-    'main + gore + mount (E-4b + L-8b)': buildSheetList({ gores: true, mountAdditions: true }),
-    'main + gore + mount + font (E-4b + L-8b)': buildSheetList({ gores: true, mountAdditions: true, font: true }),
+    'main pre-E-4b (no gore, historical)': buildSheetList({ gores: false }),
+    'main + mount (L-8b additions)': buildSheetList({ mountAdditions: true }),
+    'main + mount + font (L-8b)': buildSheetList({ mountAdditions: true, font: true }),
     'full: L-8b static list + gore + font': buildSheetList({ gores: true, font: true, staticNames: L8B_STATIC }),
-    'main WITHOUT dedup (fidelity check vs the 8121 baseline)': buildSheetList({ dedup: false }),
+    'main WITHOUT dedup (fidelity check vs the 8121 baseline)': buildSheetList({ gores: false, dedup: false }),
   };
   console.log('L-8b additions (' + L8B_ADDITIONS.length + '):', L8B_ADDITIONS.join(', '));
   console.log('L-8b removed (renamed, no file on main):', L8B_REMOVED.join(', '));

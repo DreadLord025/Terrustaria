@@ -6483,6 +6483,11 @@ live arm folds it into `ChaosBall` вЂ” the wiring decides); the wiring
 round must also supply `player_velocities` (the telefrag union) and the
 `any_skeletron`/`any_npcs_113`/`get_good_world` flags. The live
 `caster_cycle` keeps running byte-identical until then.
+**(Superseded 2026-11-20, W4-d128: the live arm is now
+`npc_ai_bat::ai_style_8_step` — `caster_cycle` is retired — and the
+module swap is EXCLUDED as a determinism break; see "The caster
+aiStyle-8 reference census (W4-d128, docs-only)" for the per-kind
+divergence table + the draw-parity plan.)**
 
 ### The eye aiStyle-2 re-port (S1-D-3, code-only mode)
 
@@ -32015,6 +32020,47 @@ screenshot SHA256s change by construction and must be re-taken when a build
 is next allowed (no pixel-behaviour change вЂ” the same texels, new addresses).
 The E-4b and L-8b branches can now un-skip: their sheet sets fit.
 
+**W4-b4 re-verify + re-pin procedure (2026-11-20, code-only).** The packer
+landed intact (`548fc335` via merge `4791ae7f`; the scout's "unmerged branch"
+note was stale — the branch was merged, then deleted in the wave-2 purge).
+E-4b's gore enumeration landed on main afterwards (`b45c70fc`), so the
+`the_full_gore_and_mount_sheet_set_fits_the_strict_gpu_bound` witness's
+"simulated E-4b additions" now double-enumerate the gore set — the name dedup
+makes the second copy a no-op (first wins, identical pixels), the test stays
+correct. The `skyline_backfills_the_tall_sheets_tail` witness was re-verified
+by hand-trace (bin 98: Tall(42,82)@(0,0), Wide(56,22)@(42,0), Small(32,12)
+backfills at (42,22) — y=22 beats y=82; height 82+2=84). UV-pin audit: no
+absolute atlas-coordinate expectations exist outside the packer's own
+witnesses (all draw UVs ride `SheetRect` at draw time). `tools/atlas_sim.js`
+was repaired for the purge: the L-8b branch ref is gone, so the sim falls
+back to the pinned 25-name additions list (the same list the assets.rs
+witness simulates) and its census now includes the landed gore enumeration.
+The golden re-pin procedure (which goldens, the harness commands, twin-run +
+pixel-diff gates) lives in **`docs/GOLDEN_REPIN.md`** — owed, executed in the
+next build-allowed window. Unblocks: N16 wyvern sheets, S1-L-8b mounts, gore
+draw refinements (each lane re-takes the goldens it touches at its merge).
+
+**Fresh measurement (2026-11-20, `node tools/atlas_sim.js`, real `.xnb` dims,
+no compiler).** The sheet set GREW since the 2026-11-19 measurement (E-4b's
+1402 gore sheets landed on main plus the wave-3 sheet additions): the full
+set is now **9498 sheets / 64.3 Mpx padded area** (was 9254). Heights:
+
+| sheet set (2026-11-20 census) | best-fit shelves | skyline waste | skyline span | maxrects BAF |
+| --- | --- | --- | --- | --- |
+| main (E-4b gore landed, 9497 sheets) | 9012 OVERFLOW | **8115** | 8140 | 7956 |
+| full: L-8b static list + gore + font (9498) | 9012 OVERFLOW | **8119** | 8142 | 7956 |
+| main pre-E-4b (historical, 8095 sheets) | 8628 OVERFLOW | **7711** | 7743 | 7946 |
+
+The 7932 px figure above is the 2026-11-19 census; today's full set packs in
+**8119 px ≤ 8192 — 73 px headroom** (was 260). The fit proof still holds
+(deterministic double run, no overlaps incl. padding, in-bounds — the sim
+verifies all three), but the headroom is nearly eaten: the N16 wyvern sheets
+(~6 more) and any further sheet wave must re-measure, and **maxrects BAF
+(7956 px, 236 px headroom) is now the recommended next packer step** rather
+than a distant fallback. The L-8b additions are already on main (the sim's
+fallback list resolves to 0 new names — the mount/glow/minecart rows landed
+with the mount waves), so the "full" scenario equals main + font today.
+
 ## The vines keep their background walls (fix/vines-destroy-walls)
 
 **User report.** Spawned vines destroy background-wall tiles: in mini-caves
@@ -40113,3 +40159,233 @@ this phase's (the solo pack stays under the bound on HEAD alone).
    DD2KoboldWalker num46=14 / DD2WitherBeastT3 num46=2 are the type==477 /
    483 / 484 overrides, but the DD2 kinds have dedicated draw arms): left
    untouched (out of scope); the correct d40 rows are added alongside.
+## The caster aiStyle-8 reference census (W4-d128, docs-only)
+
+**Verdict: `npc_ai_caster.rs` is EXCLUDED from wiring — permanently, as a
+drop-in swap.** The live `npc.rs::update_caster` (`:10716-10725`) already
+delegates to the faithful `npc_ai_bat::ai_style_8_step` (the WIRED-DELEGATE
+arm, the bat/fish reconcile's census-confirmed verdict, ROADMAP "S1-D-3
+bat/fish reconcile"). This round (2026-11-20, `task/W4-d128-caster-reference-doc`,
+docs-only, no compiler invoked) re-read the whole C# arm
+(`NPC.cs:20817-21376`), the teleport search (`:18937-19007`), both Rust
+modules and the dispatch (`npc.rs:6113-6115`) and records (a) why swapping
+the reference in breaks determinism, (b) the per-kind divergence census,
+(c) the reference's residual defects, and (d) the draw-parity plan a
+FUTURE determinism-safe port must follow.
+
+### Why the swap is a determinism break
+
+The live arm and the reference implement the SAME state machine, but the
+live arm carries the documented S1-E-2/S1-E-5 draw skips while the
+reference CONSUMES those draws (its header enumerates them, `npc_ai_caster.rs:44-68`).
+Swapping the reference in ADDS draws to the shared `UpdateNPCs` stream:
+
+| Draw site (C#) | Live `ai_style_8_step` | Reference `caster_ai` |
+| --- | --- | --- |
+| Arrival bursts `:20867`/`:20936` — 29/45 `Next(1,3)` ×50 ×2 bursts | skipped (`npc_ai_bat.rs:294-300`) | consumed, exactly 100/arrival tick (`teleport_burst_draws` `:285-291`) |
+| Ambient gate `:21282` — 29/45 `Next(5)` every tick | skipped (`:476-478`) | consumed (`:506-507`) |
+| Ambient gate `:21292` — 32 `Next(3)` every tick | skipped | consumed (`:508-509`) |
+| Ambient gate `:21366` — else group (24) `Next(6)` every tick | skipped | consumed (`:512-514`) |
+| Djinn volley `:21140-21141` — 2 draws/iteration, ≤50 iterations, on the 5 windup ticks ai[1] = 120/90/60/30/0 | skipped wholesale — the Djinn never fires (the S1-E-5 skip, `anchors.txt` Djinn row) | consumed + the 596 curse request (`:419-462`) |
+| Teleport search `:18952-18953` — 2 draws/attempt | consumed (both modules) | consumed |
+
+Every added draw shifts the stream position for ALL downstream consumers
+in the same tick (other NPCs, items, projectiles) — the AGENTS.md hard
+invariant ("RNG streams ... must not change"). The reconcile verdict
+stands: **keep the wired arm, do NOT double-port, do NOT swap.** The
+reference's value is as the DRAW-CENSUS SPEC for the parity wave below,
+not as a drop-in replacement.
+
+### The family census (13 SetDefaults rows, 5 ported kinds)
+
+The whole-tree `aiStyle = 8;` census over `NPC.cs` finds exactly 13 rows:
+24 FireImp (`:9083`), 32 DarkCaster (`:9125`), 29 GoblinSorcerer
+(`:9326`), 45 Tim (`:11158`), 281/282 RaggedCaster (`:12644`/`:12658`),
+283/284 Necromancer (`:12672`/`:12686`), 285/286 Diabolist
+(`:12700`/`:12714`), 533 DesertDjinn (`:14978`), 693 LibrarianSkeleton
+(`:15690`), 172 RuneWizard (`:17727`). The port models five
+(24/29/32/45/533); the other eight are cited skips in BOTH modules (the
+172 alpha ramp `:20844-20854` + six-tick trigger `:21023-21030` + jittered
+shadow beam `:21264-21274`; 281-286's trigger ladders
+`:21011-21022`/`:21039-21050`, the 450/540 wraps and the aimed skeleton
+shots `:21177-21227`; 693's localAI clock + book teleport
+`:19009-19085` + book shot `:62308-62364`).
+
+Per-kind behavior, live delegation vs the C# (the reference's deltas in
+the last column):
+
+| Kind | Live `ai_style_8_step` vs C# | Reference delta |
+| --- | --- | --- |
+| 24 FireImp | structure faithful (the ftw+WoF stall `:21053-21060` rides `world.wof_present`; the sphere 25 at ai[1]==10 `:21164-21173` wired); **defect L1**: the search radius is `num88 = 5` (`npc_ai_bat.rs:381-392`) but the C# call `:21097` passes only `(destination, num86, num87)` — `rangeFromTargetTile` takes its DEFAULT **20** for EVERY type (`:18937`); `num88` is only the post-teleport windup (`:21101`). Ambient `Next(6)` skipped | radius 20 correct (`:395-403`); ambient consumed |
+| 29 GoblinSorcerer | faithful (flag5 forced true `:21007-21010`; ChaosBall 30 `:21238`); arrival bursts + ambient `Next(5)` skipped | 100 burst draws + ambient consumed |
+| 32 DarkCaster | faithful (the red-hat latch `:20820-20828` via `world.skeletron_red_hat`, the flag4 double-step `:21061-21068`, the dungeon-wall gate `:18960-18966`, WaterSphere 33 with `ai3 = flag4` `:21246`); ambient `Next(3)` skipped | ambient consumed |
+| 45 Tim | faithful except the documented fold: type 665 ChaosBallTim spawns as `ChaosBall` (`npc_ai_bat.rs:457-461`, identical stats); bursts + ambient skipped | keeps `npc_type: 665` distinct (`CasterShot::Sphere`); bursts + ambient consumed |
+| 533 DesertDjinn | trigger 180 → windup 181 (`:21031-21038`) + the 360 wrap (`:21079-21082`) faithful; **the volley is skipped wholesale — the Djinn never fires** (S1-E-5); ambient draws NOTHING in either (light only `:21358-21361`) — the one kind whose ambient stream already matches | the full volley: the `%30` window, the >2000 gate, ≤50 iterations × 2 draws, the ±2/±6 box exclusions, lava + SolidTiles(±2) gates, the 596 curse at the tile centre (`CasterShot::Curse`) |
+
+Shared machinery both modules carry faithfully: the deferred
+`ai[2]/ai[3]` arrival with the INTEGER `(float)(width/2)` halving
+(`:20924-20925`), the >2000-px Manhattan bail (ZERO draws, `:18944`), the
+column-abort `break` (`:19003` — the first floor+body candidate ends the
+attempt even when telefrag rejects it), the dungeon-wall/lava ELSE-IF
+quirk (`:18960-18970`), the telefrag velocity union (`:18982-18997`),
+`AI_GlobalFiringDistanceCheck`'s 1920×1200 Point-centred −50 rect
+(`:55835-55841`), `Collision.SolidTiles`' bounds-as-solid +
+`!tileSolidTop` semantics (`Collision.cs:3455-3488`).
+
+### Residuals found this census (neither module is swap-ready)
+
+* **L1 (LIVE, fidelity defect)** — the FireImp radius misuse above. Not a
+  draw-COUNT break (2 draws/attempt either way) but the draw BOUNDS
+  differ → different spots → different attempt counts/termination →
+  the stream diverges anyway. The fix changes the shared stream and must
+  ride the parity wave, never a hotfix.
+* **R1 (REFERENCE)** — the search's floor gate (`npc_ai_caster.rs:217`)
+  and the volley's tile gate (`:441`) test `t.active()` where the C#
+  tests `nactive()` = active AND NOT actuated (`Tile.cs:240-247`,
+  `sTileHeader & 0x60 == 32`). The live arm has it right
+  (`npc_ai_bat.rs:152-154`). As written the reference would accept
+  actuated tiles as teleport floors / curse spots.
+* **R2 (REFERENCE)** — the Item8 sounds are skipped as "the sound task's
+  skip" (`:329-330`) but the live arm ALREADY wires them (S1-E-21g: the
+  departure puff BEFORE the move, the arrival AFTER, the cast puffs
+  `:21168`/`:21230-21233`). A swap would silently drop wired sound.
+* **R3 (REFERENCE)** — the reference never integrates (correct: the C#
+  arm RETURNS at `:21375`, the generic `UpdateNPC` tail is the caller's);
+  the live arm applies gravity/collision inline at its tail (the
+  documented ordering deviation). The wiring must keep the live tail or
+  supply the generic one — the reference alone leaves casters floating.
+* **R4 (decision)** — Tim's 665 identity: the live fold vs the
+  reference's distinct type. The parity wave decides once (the re-port
+  section's "the wiring decides" note).
+
+### The draw-parity plan (a FUTURE determinism-safe port)
+
+Per the no-parallel-implementations rule the end state is ONE module:
+the fixes land in `npc_ai_bat.rs` and `npc_ai_caster.rs` retires as the
+cited reference. Order:
+
+1. **Prerequisite** — the dust wave (S1-E-1's `DustRng` seam) or an
+   explicit draw-only stub policy: the arm-level draws can be consumed
+   without visuals (the `teleport_burst_draws` pattern), but the
+   `NewDust` INTERNAL draws stay the dust task's until it lands. The
+   parity commit must state which policy it uses.
+2. **One coordinated parity commit** (never piecemeal): add the skipped
+   arm-level draws to the LIVE arm at their exact C# positions — the
+   100-draw arrival bursts (29/45, the scale ARGUMENT consumed even when
+   `NewDust` culls), the per-tick ambient gates (29/45 `Next(5)`, 32
+   `Next(3)`, 24 `Next(6)`; 533 none), the Djinn volley search (2/iteration,
+   ≤50, the 5 window ticks, the >2000 gate and netMode 1 drawing nothing)
+   + the 596 curse drain. Fix L1 (radius 20 for every type) in the SAME
+   commit. This is a deliberate one-time stream shift: re-bless the
+   affected golden outputs and replay the witnesses against a mirrored
+   oracle stream (the five-probe stream-position method the reference's
+   13 written-not-run witnesses already pin).
+3. **Reference residuals first** — if any reference code is adopted,
+   fix R1 (`nactive()`), R2 (the S1-E-21g sound order), R3 (integration
+   tail ownership) and decide R4 before it touches the dispatch.
+4. **Witnesses** — per-kind stream-position pins (arrival tick, ambient
+   tick, volley window tick, teleport attempt), the zero-draw paths
+   (>2000 bail, netMode 1, Djinn ambient), the attempt-count parity
+   under the radius-20 bounds, and the Djinn curse spawn parity.
+
+**Non-goal, recorded so no future round misreads the 🟡 status**: the
+S1-D-3-aistyle7 row's "the wiring ... is the follow-up" is SUPERSEDED by
+the reconcile verdict — there is no wiring follow-up for
+`npc_ai_caster.rs` as a module swap; the follow-up is the draw-parity
+wave above, scoped to the live arm.
+
+### Verification
+
+Docs-only: every claim re-read against the cited C# windows
+(`NPC.cs:20817-21376` in five ≤120-line reads, `:18937-19007`,
+`Tile.cs:240-247`) and the actual Rust (`npc.rs:6113-6115`/`:10716-10725`,
+`npc_ai_bat.rs` whole, `npc_ai_caster.rs` whole). No code touched, no
+cargo/rustc/tests invoked.
+## The Main.cs AddLight census (W4-f9, third tile batch, 2026-11-20, code-only)
+
+**Verdict: the Main.cs tile/ambient `Lighting.AddLight` remainder is EMPTY.**
+The third tile batch (`task/W4-f9-addlight-tiles-3`) was dispatched to take
+whatever the first (W4-c20), second (W4-e8) and Main batches (W4-g18/g19)
+left unclaimed. A full-file census of the current decompilation
+(`decompiled/Terraria/Main.cs`, 65 265 lines) finds **exactly five**
+`Lighting.AddLight` call sites — case-insensitive `AddLight` grep and a
+`.AddLight|_activeEngine|LightingEngine` cross-check return the same five
+lines, no other light-write form exists in the file:
+
+| # | Site | Arm | Colour | Anchor |
+| - | ---- | --- | ------ | ------ |
+| 1 | `Main.cs:29016` | `DrawProj` type-332 Christmas-hook chain, `num112 == 0` | `(0, 0.2, 0.2)` | `(int)vector19.X / 16` (`:29012-29013`) |
+| 2 | `Main.cs:29020` | same walk, `num112 == 1` | `(0.1, 0.2, 0)` | same |
+| 3 | `Main.cs:29024` | same walk, `num112 == 2` | `(0.2, 0.1, 0)` | same |
+| 4 | `Main.cs:29028` | same walk, `num112 == 3` | `(0.2, 0, 0.2)` | same |
+| 5 | `Main.cs:29186` | `DrawProj` type-488 Illuminant-hook chain, per stepped link | `(0.2, 0, 0.175)` | `AddLight(Vector2, …)` quotient `(int)(v/16f)` (`Lighting.cs:140-143`) |
+
+**Negative census (the "ambient" half):** Main.cs has NO update-side or
+ambient `AddLight` — tile ambience (torches/lava/glowing blocks) is
+scanner-seeded (`TileLightScanner`, already ported in `tr-core/tile_light`),
+not entity-list fed. Main.cs also has zero `Utils.PlotTileLine` /
+`DelegateMethods.CastLight*` call sites (grep count 0) — the laser/hook
+tile-cast delegates live in `DelegateMethods.cs`/`Utils.cs` and are claimed
+by the same W4-e8 module. The mushroom-tree flicker
+(`TileDrawing.cs:8127/8132/8172/8177/8220/8225`) is TileDrawing's, not
+Main.cs's, and is likewise in the W4-e8 scope.
+
+**Claim map (probed before work, 2026-11-20):**
+* W4-c20 (first mixed NPC/tile batch): worktree clean at `a725acb0`, nothing
+  pushed, no in-flight files.
+* W4-e8 (second tile batch): in-flight untracked
+  `crates/tr-app/src/tile_lights.rs` whose header explicitly claims
+  `Main.cs:29016-29028`, `:29186` plus the TileDrawing flicker and the five
+  `CastLight*`/`SpreadLight` delegates. **All five Main.cs sites are
+  claimed here.**
+* W4-g18 / W4-g19 (Main batches 1/2): worktrees clean at `a725acb0`, nothing
+  pushed, no in-flight files.
+* Siblings W4-f7/f8 (proj/npc third batches), W4-c19, W4-e7: no Main.cs
+  tile claims (e7's in-flight file is `npc_lights_b.rs`; g20's in-flight
+  edits are the item family).
+
+**Verbatim audit of the W4-e8 port of the five sites** (read against the
+C# windows `Main.cs:28990-29189` + `Lighting.cs:135-163`; the file is
+in-flight/uncommitted, audited as-is):
+* `christmas_hook_chain_lights` — init at `proj.Center` (`:28994`), the
+  `< 30f` exit (`:29002-29006`) and NaN exit (`:29007-29011`) BEFORE the
+  light, the truncate-then-divide anchor (`:29012-29013`, NOT the quotient
+  form), the four colour rows in source order, the `16f / num115` step +
+  mounted-centre re-aim (`:29030-29036`), the `num112` wrap after 3
+  (`:29039-29043`), light sampled at the PRE-step position. **Faithful.**
+  The C# `flag21 = false; continue` exits map to `break` exactly.
+* `illuminant_hook_chain_lights` — `num116 = value11.Height` with
+  `Chains[488-486] = Chains[2]` (`:29071-29074`, `:29088`), NO `num117`
+  offset (the switch `:29097-29111` lists 383/446/489/487 only) and NO
+  383-style bend (`:29153-29172` is 383-gated), the NaN double-gates
+  (`:29123-29130`, AND within each pair / OR across pairs), the
+  `Length() < num116 + 1f` exit checked BEFORE the step (`:29146-29150`),
+  normalize → step → re-aim (`:29151-29174`), the light at the STEPPED
+  `center2` via the Vector2 quotient overload (`:29186`).
+  `normalize_or_zero` matches XNA `Normalize`'s zero-vector behaviour (a
+  zero aim cannot reach the step: the length gate exits first).
+  **Faithful.**
+* Witness arithmetic hand-checked (written-not-run, e8's tests): the
+  332 walk (160,160)→(160,320) lights 9 links y=160..288 (tiles 10..18,
+  colours wrap 0..3,0..3,0; exit at remaining 16 < 30); the 488 walk with
+  height 24 lights 6 stepped links y=184..304 (tiles 11,13,14,16,17,19;
+  exit at remaining 16 < 25). Both match the port's loop order.
+
+**Result:** no new module, no code change — the remainder is empty, so
+this round is the census + distrust-verbatim audit (the
+S1-D-3-aistyle61 docs-only precedent). The five sites land with W4-e8's
+merge; the merger should keep `tile_lights.rs`'s two Main.cs chain
+functions as the single copy.
+
+**Citation-drift note for the proj family (not fixed here, out of scope):**
+the yoyo section above cites "the beam's `Lighting.AddLight` (`:34416`)"
+as a Main.cs render skip; in the current decompilation `Main.cs:34416` is
+the proj-1025 draw arm (no AddLight) while `Projectile.cs:34416` is the
+aiStyle-115 `AddLight(base.Center, (0.075, 0.3, 0.15))` — the citation
+belongs to the Projectile.cs family register, not Main.cs.
+
+### Verification
+
+Code-only: the census is two independent greps over the full Main.cs;
+the audit re-read the cited C# windows line by line and hand-replayed
+both walks. **No cargo/rustc/rustfmt/tests/dotnet/graphify invoked.**
