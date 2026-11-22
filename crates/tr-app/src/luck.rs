@@ -6,10 +6,14 @@
 //! (`Player.cs:17731-18088`).
 //!
 //! Everything the port cannot drive yet is a *neutral-default input* in
-//! [`LuckState`]: `usedGalaxyPearl` (no player-file writer), the lantern-night
-//! flag (M4-EVENT-4), the garden-gnome flag (tile 567, M4 content) and the
-//! equipment bonus (M3-EQUIP). The formula already applies them in the original
-//! order, so those tasks only fill the inputs — the M2-BUFF-2 pattern.
+//! [`LuckState`]: `usedGalaxyPearl` (no player-file writer). The W4-e26
+//! census wired the rest: the lantern-night flag copies
+//! `world_events::lanterns_up` per tick, the garden-gnome flag copies the
+//! SceneMetrics tile-567 marker, the equipment bonus accumulates the
+//! clover/horseshoe/lucky-coin tail (`Player.cs:13050-13069`), and the
+//! ladybug kill/nearby/town-death setters ride the fishing-bait, NPC and
+//! death passes. The formula applies them in the original order — the
+//! M2-BUFF-2 pattern.
 //!
 //! The value is **never clamped** — the −0.7/1.0 caps are UI-only
 //! (`NormalizedLuck`, `Player.cs:4107-4122`); only `torchLuck` floors at 0
@@ -69,17 +73,18 @@ pub struct LuckState {
     pub broken_mirror_bad_luck_time: i32,
     /// `Player.equipmentBasedLuckBonus` (`Player.cs:2774`) — ResetEffects
     /// zeroes it (`:18812`), `UpdateEquips` accumulates the clover/horseshoe/
-    /// lucky-coin adds (`:13050-13069`); no accessory layer yet, so it stays 0.
+    /// lucky-coin adds in the C# order (`:13050-13069`, W4-e26).
     pub equipment_based_luck_bonus: f32,
     /// `Player.usedGalaxyPearl` (`Player.cs:858`) — the C# persists it to the
     /// player file (`:54784/:55258`); the port has no player-file writer, so
     /// it stays the default (deviation recorded in ANALYSIS).
     pub used_galaxy_pearl: bool,
-    /// `LanternNight.LanternsUp` (`LanternNight.cs:17-27`) — no lantern-night
-    /// system in the port (M4-EVENT-4); the all-false gate, like `rain.rs`.
+    /// `LanternNight.LanternsUp` (`LanternNight.cs:17-27`) — copied per
+    /// tick from the S1-F-14 scheduler (`world_sim/player.rs`, W4-e26).
     pub lantern_night: bool,
     /// `Player.HasGardenGnomeNearby` (`Player.cs:2076`) — copied from the
-    /// SceneMetrics tile-567 count (`SceneMetrics.cs:591`); M4 content.
+    /// SceneMetrics tile-567 count (`SceneMetrics.cs:591`,
+    /// `Player.cs:16726-16730`; W4-e26).
     pub has_garden_gnome_nearby: bool,
     // — the torch-luck scan state (`Player.cs:3054-3064`) —
     /// `Player.luckyTorchCounter` (`:3058`): the window's row cursor — one

@@ -7352,25 +7352,29 @@ melee `DamageVar` passes the raw value (`Player.cs:44342`), and
 (`Main.cs:64668`).
 
 Deviations, all deliberate:
-- **Absent writers are neutral-default inputs, terms stay live**: lantern
-  night (`LanternNight.LanternsUp` вЂ” M4-EVENT-4), the garden gnome
-  (tile-567 SceneMetrics count, M4), `usedGalaxyPearl` (item 5340), the
-  broken-mirror writer (projectile 1085 / item 5577), the accessory bonus
-  (clover 5574-5576 / horseshoe 158 / lucky coin 855 вЂ” M3-EQUIP) and the
-  kite items (`IsAKite`) all default to 0/false; `RecalculateLuck` applies
-  every term in the original order so those tasks only fill the inputs.
+- **Absent writers are neutral-default inputs, terms stay live**:
+  `usedGalaxyPearl` (item 5340), the broken-mirror writer (projectile 1085 /
+  item 5577) and the kite items (`IsAKite`) all default to 0/false;
+  `RecalculateLuck` applies every term in the original order so those tasks
+  only fill the inputs. (W4-e26 wired the lantern-night, gnome, equipment
+  and ladybug/town inputs — see "The W4-e26 factor census" below.)
 - **`usedGalaxyPearl` is not persisted** вЂ” the C# writes it to the player
   file (`Player.cs:54784/:55258`); the port has no player-file writer yet.
-- **The ladybug/coin writers have no live caller** вЂ” the ladybug NPC
-  (604/605) and gold critters are the M4 critter row, the town NPCs the M6
-  row; the setters (`on_lady_bug_killed/nearby`, `on_town_npc_death`,
-  `add_coin_luck`) are unit-tested callables. `on_lady_bug_killed` returns
-  the raw `ladyBugRainTime` add for the future `rain.rs` writer instead of
+- **The ladybug/coin writers** вЂ” W4-e26 wired the town-death arm
+  (`checkDead`) and the 604/605 nearby window (`CheckActive`, inert until
+  the M4 critter kinds land); the fishing-bait kill writer rides S1-P-i35.
+  `add_coin_luck` stays a unit-tested callable (the coin-shimmer chain is
+  unported). `on_lady_bug_killed` returns
+  the raw `ladyBugRainTime` add for the `rain.rs` writer instead of
   touching `Main.ladyBugRainBoost` (the C# applies the 18000 cap at the
   add site, `NPC.cs:81568-81572`).
-- **The Torch God event is out** вЂ” the `happyFunTorchTime` /
+- **The Torch God event rides f33 at merge** вЂ” the `happyFunTorchTime` /
   `torchGodCooldown` head of the scan and the `:18066-18086` trigger tail
-  are not ported; the `nearbyTorches` counter still runs.
+  are ported by W4-f33's `torch_scan_step_event` seam (`torch_god.rs`, the
+  5043 favor `:45226-45243` gates the trigger on `!unlockedBiomeTorches`);
+  the e26 `torch_scan_step` stays the no-event test entry, the
+  `nearbyTorches` counter still runs. (Was "not ported" pre-f33 вЂ” see
+  research/357 §2; the f33 merge composes the event entry.)
 - **The temple zone is unmodelled** вЂ” the skip gate
   `ZoneDungeon || ZoneLihzhardTemple` (`:17923`) runs on dungeon only.
 - **`ZoneLihzhardTemple`-free torch inputs** вЂ” the zones ride a per-tick
@@ -7390,6 +7394,210 @@ Deviations, all deliberate:
 - **C# float widening quirks preserved** вЂ” the coin tier compare
   `(double)coinLuck > 2.49` returns 0.075 at `coinLuck = 2.49f` (the
   widened float exceeds the f64 literal), pinned in the tier-matrix test.
+
+### The W4-e26 factor census (luck inputs wired)
+
+The remaining neutral-default inputs are now driven (code-only mode, no
+compiler invoked — witnesses written, not run):
+- **Equipment luck** (`Player.cs:13050-13069`): the four `hasLuck_*` flags
+  (`:2652-2658`) plus the lucky coin accumulate in the C# tail order —
+  clover +0.03, wilted clover −0.1, raven feather −0.1, horseshoe +0.05,
+  coin +0.05 — each ONCE per family (bool ORs). The nine horseshoe carriers
+  (158/396/1250/1251/1252/3250/3251/3252/5331) arm the flag beside their
+  `noFallDmg` rows; the balloon arms were split from the shared
+  fall-immunity row so first-match-wins cannot eat either half.
+  `ResetEffects` clears all four (`:18763-18766`).
+- **The carried clover family** (`RefreshInfoAccsFromItemType`
+  `:12723-12734` via `UpdateEquips`' first loop `:12900-12914`): 5574/5575/
+  5576 are NOT accessories — the per-tick `carried_kinds` snapshot (grid +
+  coin/ammo rows, the port's halves of inventory[0..58]) arms the flags.
+  The void-bag re-scan (`:12931-12941`) only admits `WorksInVoidBag` kinds
+  ({4346, 5095}, `ItemID.cs:350`) — no luck kind, so the vault never arms
+  the family (the pass is a no-op here, recorded).
+- **Lantern night**: `LuckState.lantern_night` copies
+  `world_events::lanterns_up` per tick (the S1-F-14 scheduler already
+  lands; only the luck copy was missing).
+- **Garden gnome**: `LuckState.has_garden_gnome_nearby` copies the
+  SceneMetrics tile-567 marker (phase 1, `Player.cs:16726-16730`).
+- **Ladybug/town writers**: `checkDead`'s town-NPC arm (`NPC.cs:78138-
+  78143`) runs `on_town_npc_death` in the death pass (host path skips like
+  the C# `netMode != 2`); the `CheckActive` 604/605 window (`:77930-77938`)
+  runs `on_lady_bug_nearby` over the screen-size rect intersect — LIVE
+  since the roster wiring landed (see "The W4-e26 luck-critter roster
+  wiring" below). The fishing-bait kill writer (S1-P-i35) already feeds
+  `rain.rs`.
+- **Potion factor**: the 4477/4478/4479 drink rows (buff 257 at
+  18000/36000/54000) ride the i37 `use_potion_item` seam unchanged; the
+  tier boundaries (>36000 → 3, >18000 → 2, else 1) are witnessed after the
+  timer head's decrement, expiry clears via `ResetEffects` (`:18814`).
+- Still neutral-default: `usedGalaxyPearl` (no player-file writer), the
+  broken-mirror writer (projectile 1085), the kite items.
+- RNG: every added path is draw-free (bool flags, f32 adds, i32 timers) —
+  no stream moves, no world-hash change. The f32 accumulation order is
+  pinned bit-for-bit by `w4_e26_the_luck_tail_accumulates_in_the_csharp_order`.
+
+### The W4-e26 luck-critter roster wiring (the ladybug seams go live)
+
+The phase-2 ladybug seams were roster-gated inert: the port had no
+`NpcKind` for 604/605, so `kind_from_net_id` resolved nothing and the
+`CheckActive`/`checkDead` windows never fired. This phase lands the four
+critter rows the census named (361/362 + 604/605) and wires the luck
+seams to them. Code-only mode (no compiler invoked; witnesses written,
+not run).
+
+**Census correction.** The task brief labelled 361/362 "LadyBug/
+GoldLadyBug"; the decompile says otherwise — `NPCID.Frog = 361`
+(`NPCID.cs:11399`), `NPCID.Duck = 362` (`:11401`), `NPCID.LadyBug = 604`
+(`:11885`), `NPCID.GoldLadyBug = 605` (`:11887`). The luck critters are
+604/605; 361/362 are the waterfowl neighbours the same census band
+covers. All four were missing on main (no kind, no `SetDefaults` row, no
+bestiary entry).
+
+**Claim boundaries (pushed branches read first).** c8/c9/c10/d39 are all
+0 commits ahead of `origin/main` (local-only). c9's local phase-1 claims
+the snail family 359/360/655 + Shimmerfly 677; d35's local batch A claims
+73/74/75/77/78; c10's `npc_ai_style68.rs` is UNWIRED and names Duck 362
+only as a `Transform(type-1)` landing target (its swim-forms 363/365/
+603/609 are its territory). aiStyle 115 (`AI_115_LadyBugs`) was unclaimed
+— d33's local census flagged it MISSING but never wrote the module. This
+phase takes 361/362/604/605 + aiStyle 115, clear of every in-flight lane.
+
+**The rows (verbatim `SetDefaults`).** Frog 361 (`NPC.cs:13601-13612`):
+12×10, aiStyle 7, dmg 0, def 0, 5 HP, catchItem 2121. Duck 362
+(`:13613-13624`): 22×26, aiStyle 7, the same stats, catchItem 2122. The
+ladybug pair 604/605 (`:16763-16780`): 10×10, aiStyle 115, dmg 0, def 0,
+5 HP, npcSlots 0.25, noGravity, catchItem `type-604+4361` (4361/4362);
+605 adds rarity 3. All four: kb 1 / value 0 / scale 1 / alpha 0 (the
+`SetDefaults` head defaults, `:8533`/`:8544` — the rows write none),
+NPCHit1/NPCDeath1, no `DebuffImmunitySets` entry (the null-row
+else-branch, `:17822-17828`).
+
+**Protocol-id separation.** The vanilla ids 361/362/604/605 are free
+slots in the port-local `to_u16` space (no arm rode them), so the kinds
+keep their vanilla ids — the AngryNimbus/DungeonSpirit + W4-c9 snail
+precedent. `cs_id`/`net_id`/`render_key` all ride the vanilla id; the
+bestiary entries (credit ids `Frog`/`Duck`/`LadyBug`/`GoldLadyBug`, the
+`NPCID.Search.GetName` field names via `IdDictionary.Create`'s
+reflection) make `kind_from_net_id` resolve, so the catch/release chain
+(`bug_net.rs`'s `catch_item`/`release_plan` + the items' `make_npc`
+2121→361 / 2122→362 / 4361→604 / 4362→605) closes end to end.
+
+**The aiStyle-115 machine.** `npc_ai_style115.rs` ports `AI_115_LadyBugs`
+(`NPC.cs:47580-47714`) verbatim: the rearm block (the one-time scale
+latch `NextFloat()*0.2+0.7`, the `Next(60,181)` timer, the `Next(5)`
+perch toggle whose perch→fly roll is OVERWRITTEN by the unconditional
+tail roll — the C# draws both), the wind-drifted 1/80 flight blend
+(`value.X += windSpeedTarget*0.8`), the 4-tile fall / 30-tile rise scans
+(solid OR liquid), the `collideX` bounce (`ai[0] = -ai[0]+π`, `vx*=-0.2`),
+the perch water-launch (liquid in the direction-offset down-scan →
+`vy=-1`, `ai[2]=0`, the π/4−π/2 roll, RETURN before the direction tail),
+and the `direction = (vx>0)?1:-1` tail. The wind reads `App.wind.
+speed_target` through a per-tick stamp (`Npc::ladybug_wind`, the WoF
+write-through convention — the `update_rng` signature cannot carry it).
+The ladybugs are noGravity but tile-collide, so the integration tail is
+`integrate_flyer_collision` (the Goldfish/bat convention). The axis' 115
+arm claims the style; the kind arms route direct callers to the same
+machine (the fishron precedent).
+
+**The luck seams go live.** `checkDead`'s ladybug kill arm
+(`NPC.cs:78056-78059` → `LadyBugKilled` `:81566-81598`) now fires in the
+death pass: a 604/605 death grants the bad-luck window (radius 400,
+linear weight, gold ×2, keep the most negative) AND feeds
+`ladyBugRainBoost` (+1800, capped by `rain.rs`, before the dead-player
+bail). The `CheckActive` 604/605 window (`:77930-77938` → `LadyBugLuck`
+`:81600-81626`) grants the good-luck window for a WILD ladybug near the
+player (radius 800, weight (1−d/800)^6, gold ×2, keep the largest, never
+over bad luck; the `releaseOwner != 255` gate excludes released ones).
+
+**Frog/Duck are DATA-ONLY.** The aiStyle-7 town machine (~2600 lines,
+research/25 row 7 APPROXIMATE) is its own wave; the kinds + stats +
+FindFrame cases (361 `:76618-76685`, 362 `:73747-73771`) land so the
+catch/release chain resolves and the c10 swim-form `Transform(type-1)`
+landing has its walker target. The kind arms are no-ops until the town
+machine lands (the W4-d35 data-wave precedent).
+
+**Garden gnome (tile 567).** The census finding: the placement is
+ALREADY generic — item 4609 (`tile: Some(567)`, `place_style: 0`) routes
+through `place_item_tile` → `TileObject.CanPlace`/`Place` because the
+registry's `D_567` def carries `uses_custom_can_place: true` (1×2,
+bottom anchor, `coordinate_heights [18,18]`, `coordinate_width 26`). No
+missing gate; `w4_e26_gnome_placement_tests` pins the end-to-end item
+use (the 1×2 object writes both cells, consumes one item, mirrors
+`frame_important[567]`) + the mid-air refusal. The luck sensor
+(`SceneMetrics.HasGardenGnome`, phase 1) reads the placed tile.
+
+**Deviations.** The sheets NPC_361/362/604/605 are packed
+(`LUCK_CRITTER_SHEETS` + `STATIC_SHEET_NAMES` + the bestiary sheet
+table, appended last so the earlier slots keep their indexes); the
+atlas stands at the 8192 strict-GPU bound, so the packing rides the
+atlas-repack wave if it overflows (the wyvern/d35 deferral precedent —
+`npc_sheet` returns None and the draw skips, no panic). The Frog/Duck
+AI is the documented data-only deferral. RNG: the aiStyle-115 rearm
+draws ride the caller's `UpdateNPCs` stream in C# order (the witnesses
+mirror the cited `Next`/`NextFloat` calls on a cloned `UnifiedRandom`);
+the luck setters stay draw-free.
+
+### The W4-e26 RETIRE — the E8 keep-one execution + the FINAL census (research/357)
+
+The retire phase (`04dbdb0d2` + research/357) executes the d37-E8 keep-one work
+order on the roster and publishes the luck-family declaration. **The Duck 362
+variant DROPS to c10** (the waterfowl family's canonical owner, research/108
+E8/SEAL S1 — c10 lands its Duck@731 + the style-68 swim/Transform chain at
+merge); the drop runs through every exhaustive `NpcKind` match (enum / kb /
+defense / value / `update_kind_ai` / `find_frame` / `render_key` / `ALL_KINDS`
+274→273; `data.rs` `to_u16`/`from_u16`/`ai_style`/`size`/`max_hp`/
+`contact_damage`/hit+death sound/`cs_id`/`no_gravity`; `npc_buffs` null-rows;
+bestiary `ENTRIES` 252; netglue `npc_seed`; entities draw + `LUCK_CRITTER_SHEETS`;
+ui/bestiary portraits; assets `STATIC_SHEET_NAMES` + `BESTIARY_NPC_SHEET_IDS`
+185→184 + the `bestiary_npc_sheets` vec). **The Frog 361 wire id MOVES 361→744**
+(d37's Pirate owns proto 361, the E8 small-lane band; `cs_id`/`net_id` stay 361
+so the catch/release chain + bestiary resolve unchanged — branch-only id, no
+landed save wrote it, the S1-F-1 gate). **The ladybug pair 604/605 STAYS e26's**
+(the d42 ownership flip — d42 dropped its rows at `49346dba6`, SEAL S1 accepts;
+E8's original "drop e26@604/605 → keep d42" is RETIRED). Scripted pins
+re-verified (code-only, no cargo): `to_u16`/`from_u16` bijection 273/273 zero
+dups max 744 i16-safe, `ALL_KINDS` 273 rows, sheet tables 184/184, `ENTRIES` 252,
+Duck arms 0, Frog 744/744; the re-pinned protocol witness asserts
+`from_u16(362/731/361) == None` (the dropped/moved slots).
+
+**The sweep scope (research/357 §1)**: the c8 generic critter provider
+(`counts_as_a_critter`, the live `max_hp <= 5 && contact_damage() == 0` gate,
+research/238 §1/§7a verified at e26 tip) auto-covers the Frog + ladybug pair with
+**zero per-lane sight/provider wiring**; the GoldLadyBug 605→{604} row is
+pre-tabled in `GOLD_PEER_TABLE`. The Frog's wire-id move does not break the
+contract (the gate reads `cs_id`/`max_hp`/`contact_damage`, all unchanged). The
+ladybug-rain-boost seam: **g67 drops rain.rs wholesale, d130 is canonical**
+(research/146 SEAL) — d130's `rain.rs` already carries the field/setter/drain/
+gate (`add_lady_bug_rain_boost` clamped at `crate::luck::LADYBUG_RAIN_CAP`); the
+e26 kill/bait **callers** (`world_sim/npcs.rs:5083`, `editing.rs:2911`) compose
+onto d130's setter unchanged at merge. No e26 rain.rs edit owed.
+
+**The factor activation (research/357 §2)**: f33's torch-god event ports the
+torch-luck scan's **head/tail** (`torch_scan_step_event`, the `happyFunTorchTime`/
+`torchGodCooldown` head `Player.cs:17733-17742` + the `:18066-18086` trigger gated
+on `!unlockedBiomeTorches`, the 5043 favor `:45226-45243` setting it permanent) —
+it does **NOT** activate the three remaining-neutral factors (`usedGalaxyPearl`
+5340 `:45405-45410`, the broken-mirror writer projectile 1085
+`Projectile.cs:70919-70922`, the kite items `IsAKite`/buff 383 `:9920-9924`);
+those stay neutral until their own writers land. The garden-gnome `+0.2` term is
+**already live** (e26 phase 1, independent of f33). The "Torch God event is out"
+deviation bullet above is SUPERSEDED at merge by f33's event-carrying scan entry
+(the e26 `torch_scan_step` stays the no-event test entry; `player.rs::update_luck`
+routes through f33's `torch_scan_step_event`).
+
+**The claims-table (research/357 §3)**: Frog 361 — e26 keeps (wire 744), f18's
+duplicate (proto 243) drops at merge; Duck 362 — c10 keeps (wire 731), e26 + f18
+(proto 244) drop; LadyBug/GoldLadyBug 604/605 — e26 keeps (the d42 flip). d39 is
+census-only for 361/362 (research/125 defers to e26/c10, rows neither in code).
+**c4 rows NEITHER Frog nor Duck** (census correction — c4 is the fish family,
+research/148; its only Frog link is the GoldFrog 445 gold-peer, d40's kind, the c8
+`GOLD_PEER_TABLE` 445→{Frog} row pointing at e26's Frog 361 entry — zero e26
+action). The actual Frog/Duck code claimants are e26/c10/f18.
+**LUCK-FAMILY COMPLETE** (research/357 §4): the full `RecalculateLuck` formula
+runs in C# order, every term live or neutral-default; residual work is merge-time
+only (the c8 UI `unlock_state_world` fold, the d130 rain union, the f33 torch-scan
+compose, the c10 Duck@731 + style68 wiring, the d37 bijection re-pin). No further
+e26 commits planned.
 
 ## Mounts framework (M2-MOUNT-1)
 

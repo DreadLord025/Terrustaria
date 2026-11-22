@@ -107,6 +107,11 @@ pub struct SceneMetrics {
     /// `HasSunflower` — any tile 27 in the window, cancelled by a graveyard
     /// above `GraveyardTileMin` (`AggregateTileCounts`, `:617-624`).
     pub has_sunflower: bool,
+    /// `HasGardenGnome` — any tile 567 in the window
+    /// (`AggregateTileCounts`, `SceneMetrics.cs:590-593`); the
+    /// `Player.HasGardenGnomeNearby` copy feeds the +0.2 luck term
+    /// (`Player.cs:16726-16730`, `:29150-29153`).
+    pub has_garden_gnome: bool,
     // — the M2-BUFF-8 banner fields (`SceneMetrics.cs:442-445`) —
     /// `NPCBannerBuff[]`: the banner ids present in the scan window.
     pub npc_banner_buff: Vec<bool>,
@@ -371,6 +376,7 @@ impl SceneMetrics {
             has_heart_lantern: false,
             has_star_in_bottle: false,
             has_sunflower: false,
+            has_garden_gnome: false,
             npc_banner_buff: vec![false; 320],
             has_banner: false,
             meteor_tile_count: 0,
@@ -495,9 +501,8 @@ impl SceneMetrics {
         self.mushroom_tile_count >= thresholds::MUSHROOM_TILE
     }
 
-    /// `SceneMetrics.AggregateTileCounts` (`SceneMetrics.cs:573-660`), M1
-    /// subset. Mushroom/Meteor/Dungeon/Shimmer counts and the `HasSunflower`/
-    /// `HasGardenGnome` markers have no M1 reader and stay unported; the
+    /// `SceneMetrics.AggregateTileCounts` (`SceneMetrics.cs:573-660`).
+    /// The `HasGardenGnome` marker landed with W4-e26 (the luck input); the
     /// `infectedSeed ×3` sunflower scaling (`:576-579`) and the remixWorld
     /// count branch (`:604-609`) belong to seeds the port does not generate.
     pub fn aggregate_tile_counts(&mut self) {
@@ -587,6 +592,10 @@ impl SceneMetrics {
         if self.graveyard_tile_count > thresholds::GRAVEYARD_TILE_MIN {
             self.has_sunflower = false;
         }
+        // `SceneMetrics.cs:590-593`: any garden gnome (tile 567) in the
+        // window raises the marker — no graveyard cancel (that is the
+        // sunflower's rule only). W4-e26: the luck +0.2 input.
+        self.has_garden_gnome = self.count(567) > 0;
         // `SceneMetrics.cs:629-639`: clamp each sum at zero before the
         // cross-subtraction.
         self.holy_tile_count = self.holy_tile_count.max(0);
@@ -2554,6 +2563,24 @@ mod tests {
         let mut m = metrics_with_counts(&[(85, 0), (27, 20)]);
         m.aggregate_tile_counts();
         assert_eq!(m.graveyard_tile_count, 0); // -10 -> 0
+    }
+
+    #[test]
+    fn garden_gnome_marker_rides_tile_567_with_no_graveyard_cancel() {
+        // W4-e26 — `SceneMetrics.cs:590-593`: any tile 567 raises
+        // `HasGardenGnome`; unlike the sunflower it has NO graveyard cancel.
+        let mut m = metrics_with_counts(&[(567, 1)]);
+        m.aggregate_tile_counts();
+        assert!(m.has_garden_gnome);
+
+        let mut m = metrics_with_counts(&[(567, 1), (85, 40)]);
+        m.aggregate_tile_counts();
+        assert!(m.has_garden_gnome, "a graveyard does not cancel the gnome");
+        assert!(!m.has_sunflower, "the sunflower's cancel is its own rule");
+
+        let mut m = metrics_with_counts(&[(27, 1)]);
+        m.aggregate_tile_counts();
+        assert!(!m.has_garden_gnome, "no 567 → no marker");
     }
 
     #[test]

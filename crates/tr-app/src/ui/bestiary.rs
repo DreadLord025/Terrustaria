@@ -1577,6 +1577,22 @@ fn portrait_data(
                 .unwrap_or(26.0);
             (sheet_i, h, 26.0, h, white)
         }
+        // W4-e26 — the luck critter portraits (E8 keep-one): the sheet's
+        // own row height over `Main.npcFrameCount[type]` (361 thirteen,
+        // 604/605 eight — `Main.cs:67082`), the frame width the sheet's
+        // own — the small-kinds rows' shape. The Duck dropped to c10.
+        (NpcKind::Frog, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 13.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 12.0, h, white)
+        }
+        (NpcKind::LadyBug | NpcKind::GoldLadyBug, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 10.0, h, white)
+        }
         (NpcKind::ForceBubble, _) => {
             let h = entry_sheet(lookups, entry)
                 .map(|s| s.height as f32)
