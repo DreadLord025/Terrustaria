@@ -548,6 +548,66 @@ impl GemStaffFeatures {
     }
 }
 
+/// W4-d80 — one queued tracked-sound intent for a projectile slot (the
+/// bomb fuse, research/64 sites 20/21): the ensure-play / stop the C#
+/// runs inline (`Projectile.cs:46917-46921` / `:70673-70677`). The sim
+/// drain applies it against the tracked pool and writes the `SlotId`
+/// float back into `Projectile.local_ai[2]` (the C# `localAI[2]` dance).
+/// ZERO gameplay draws — the variation/pitch picks ride the two
+/// audio-only statics (the census' RNG contract).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ProjTrackedCue {
+    /// `PlayTrackedLoopedSound(BombFuse, Center, tracker)` — the ensure
+    /// (`Projectile.cs:46917-46919`): `GetActiveSound == null && timeLeft
+    /// > 1 && IsABombWithFuse[type]`. The `ProjectileAudioTracker`
+    /// condition folds to the explicit death stop (the census fold 4 —
+    /// the pool cannot hand a live projectile reference to a `Send`
+    /// closure). The trailing `GetActiveSound` read (`:46920`) is dead.
+    BombFuseEnsure,
+    /// `GetActiveSound(localAI[2])?.Stop()` + `localAI[2] = 0` — the
+    /// aiStyle-16 `Kill()` tail (`Projectile.cs:70673-70677`, the
+    /// `netMode != 2` stop gate folds with the single-player port).
+    BombFuseStop,
+    /// `PlayTrackedSound(style, Center)` — a one-shot tracked play, the
+    /// handle DISCARDED (the C# does not store it): Betsy's fireball shot
+    /// (`Projectile.cs:56509`), the Ballista tower shot (`:68615`), the
+    /// Lightning Aura zap (`:68905`), the Dark Mage attack (`:56466`), the
+    /// Dark Mage summon marker (`:36441`). The `&'static str` is the
+    /// `SoundID` field name (`TrackedStyle::by_name`). ZERO gameplay draws.
+    OneShot(&'static str),
+    /// `PlayTrackedSound(style, Center).ToFloat()` into `local_ai[idx]`
+    /// (only when `play`), then the per-tick `GetActiveSound` follow: null →
+    /// `SlotId.Invalid`, else `Position = Center` — the Flameburst tower
+    /// shot (`Projectile.cs:68465-68475`, idx 1) and the Phantom Phoenix
+    /// shot (`:55776-55798`, idx 0). The arm owns the one-shot latch and
+    /// sets `play` on the latch tick only; the follow runs every tick.
+    /// ZERO gameplay draws.
+    HandlePlayFollow { style: &'static str, idx: usize, play: bool },
+    /// `PlayTrackedSound(style, Center)` at the `Kill()` tail — Betsy's
+    /// fireball impact (`Projectile.cs:71637`). The handle is discarded.
+    /// ZERO gameplay draws.
+    KillOneShot(&'static str),
+    /// `PlayTrackedSound(style)` — the GLOBAL one-shot overload (no
+    /// position, `SoundEngine.cs:142-149`): the Explosive Trap's explode
+    /// (`Projectile.cs:69362`). The handle is discarded. ZERO gameplay draws.
+    GlobalOneShot(&'static str),
+    /// The RC-car / Jim's-drone engine loop (`Projectile.cs:38253-38267` /
+    /// `:38285-38299` / `:40983-40997`): the ensure-play
+    /// (`GetActiveSound(localAI[2]) == null && vol != 0` →
+    /// `PlayTrackedLoopedSound(style, Center, tracker)` into `localAI[2]`)
+    /// then the per-tick follow (`Volume = vol`, `Position = Center`,
+    /// `Pitch = pitch`). The arm computes the volume/pitch envelope from
+    /// the `localAI[0]`/`[1]` engine-speed state and queues this every tick.
+    /// The `ProjectileAudioTracker` condition folds to the shared atomic
+    /// (the census fold 4, the bomb-fuse precedent). ZERO gameplay draws.
+    EngineLoop { style: &'static str, vol: f32, pitch: f32 },
+    /// `GetActiveSound(localAI[2])?.Stop()` — the Jim's-drone `Kill()` tail
+    /// (`Projectile.cs:70863`): the explicit stop + the condition atomic
+    /// flip. The RC car (1105) has NO explicit stop — its loop dies via the
+    /// condition atomic alone (the death-hook flip). ZERO gameplay draws.
+    EngineLoopStop,
+}
+
 /// One pool slot (`Projectile.cs:296-470`, the engine-relevant subset).
 #[derive(Clone, Debug)]
 pub struct Projectile {
@@ -796,6 +856,20 @@ pub struct Projectile {
     /// tick — the `wants_mark_spawn` intent pattern. `None` for every slot
     /// that played nothing this sub-step.
     pub(crate) wants_sound: Option<(u16, i32, f32, f32, f32)>,
+    /// W4-d80 — one slot's queued tracked-sound intent (the bomb fuse,
+    /// `Projectile.cs:46917-46921`): the ensure-play / stop the C# runs
+    /// inline. The slot arms cannot see the pool's queue, so they park the
+    /// request here and the dispatch forwards it into
+    /// `pending_proj_tracked` on the same tick (the `wants_sound` intent
+    /// pattern). `None` for every slot that queued nothing this sub-step.
+    pub(crate) wants_tracked: Option<ProjTrackedCue>,
+    /// W4-d80 — the bomb-fuse loop's live flag (the `ProjectileAudioTracker`
+    /// condition fold, research/64): `Some(Arc<AtomicBool>)` while the fuse
+    /// loop plays, `None` otherwise. The tracked play's `LoopedPlayCondition`
+    /// reads it; the slot's death/detonation flips it false (the pool cannot
+    /// hand a live projectile reference to a `Send` closure, so the closure
+    /// reads this shared atomic — the census fold 4). Reset on spawn.
+    pub(crate) fuse_alive: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     /// `Projectile.melee`/`ranged`/`magic` (`:434-438`, reset false
     /// `:751-753`) — the damage-class flags the per-hit crit block reads
     /// (`Damage_PVE_Inner`, `Projectile.cs:12890-12898`). The data-carrying
@@ -924,6 +998,8 @@ impl Default for Projectile {
             gfx_off_y: 0.0,
             sound_delay: 0,
             wants_sound: None,
+            wants_tracked: None,
+            fuse_alive: None,
             melee: false,
             ranged: false,
             magic: false,
@@ -949,6 +1025,19 @@ impl Default for Projectile {
 /// take the per-family flight arms instead of the thrown-bomb arc.
 pub(crate) fn is_launcher_rocket(kind: u16) -> bool {
     matches!(kind, 133..=144 | 338..=341 | 776..=801 | 803..=810 | 862 | 863)
+}
+
+/// W4-d80 — `ProjectileID.Sets.IsABombWithFuse` (`ProjectileID.cs:424`):
+/// the bomb-fuse loop's membership gate (`Projectile.cs:46917`). The
+/// verbatim set — the thrown bombs/dynamite/scarab/dry-bomb/cluster-bomb
+/// family plus the Skeletron bomb (102), the DD2 goblin bomb (681) and
+/// the boulder (75). Every member is aiStyle 16.
+pub(crate) fn is_bomb_with_fuse(kind: u16) -> bool {
+    matches!(
+        kind,
+        28 | 37 | 516 | 519 | 910 | 911 | 1086 | 1087 | 906 | 905 | 904 | 903
+            | 773 | 1077 | 75 | 102 | 681 | 470 | 29 | 637
+    )
 }
 
 /// The straight-flight rocket set — the Rocket Launcher's 134/137/140/143,
@@ -5166,6 +5255,25 @@ impl Projectile {
             self.time_left = 0;
             return;
         };
+        // W4-d80 — the held-tool loop cue (`Projectile.cs:25510-25522`):
+        // on `soundDelay <= 0` the drill (the owner's held item has
+        // `pick > 0`) plays `SoundID.Item190` and re-arms 15; the chainsaw
+        // plays `SoundID.Item189` and re-arms 20 — BEFORE the channel gate
+        // (the release tick still cues). The held item is the channel item
+        // while the tool lives (the `drill_channel_start` latch); the cue
+        // rides the pool's `wants_sound` queue (one case-2 pitch draw at
+        // the pass tail, `UpdateProjectiles`, attenuation-gated).
+        if self.sound_delay <= 0 {
+            let pick_held = crate::registry::item(p.channel_item)
+                .is_some_and(|it| it.pick > 0);
+            if pick_held {
+                self.wants_sound = Some((2, 190, self.pos.x, self.pos.y, 0.0));
+                self.sound_delay = 15;
+            } else {
+                self.wants_sound = Some((2, 189, self.pos.x, self.pos.y, 0.0));
+                self.sound_delay = 20;
+            }
+        }
         // `:25524-25550` — the local-owner channel gate: while the channel
         // holds, aim at the mouse; otherwise `Kill()`.
         if self.owner == 0 {
@@ -6428,6 +6536,18 @@ impl Projectile {
         if is_launcher_rocket(self.kind) {
             self.ai_rocket(world, npcs, rng, local_owner);
             return;
+        }
+        // W4-d80 — `Projectile.cs:46917-46921`: the bomb-fuse loop ensure.
+        // `GetActiveSound(localAI[2]) == null && timeLeft > 1 &&
+        // IsABombWithFuse[type]` → `PlayTrackedLoopedSound(BombFuse,
+        // Center, tracker)` into `localAI[2]`. The queue fires while no
+        // handle stands; the drain owns the authoritative null test AND
+        // the playing state (a stopped-but-not-reaped slot must not
+        // re-play — the C# `GetActiveSound` returns stopped slots too, the
+        // census fold 4). The trailing `GetActiveSound` read (`:46920`)
+        // is dead — dropped. ZERO gameplay draws.
+        if self.time_left > 1 && is_bomb_with_fuse(self.kind) {
+            self.wants_tracked = Some(ProjTrackedCue::BombFuseEnsure);
         }
         self.ai[0] += 1.0;
         if STICKY_BOMBS.contains(&self.kind) {
@@ -10682,13 +10802,15 @@ impl Projectile {
     ///
     /// The port's kind set carries the 673 only (the 674 has no `proj_data`
     /// row), so the arm ports the marker's ramp: the summon cue at the 70th
-    /// tick (SKIPPED — no tracked-sound layer), the counter, the opacity
-    /// curve and the kill past 80.
+    /// tick, the counter, the opacity curve and the kill past 80.
     fn ai_dark_mage_raise(&mut self, world: &World) {
         if self.kind == DARK_MAGE_MARKER {
-            // `:36438-36440` — the summon cue at `ai[0] == 70` (SKIPPED: no
-            // tracked-sound layer in the pool).
-            // `:36441` — the counter.
+            // `:36439-36442` — the summon cue (`DD2_SkeletonSummoned`) at
+            // `ai[0] == 70`, BEFORE the counter increment. W4-d80.
+            if self.ai[0] == 70.0 {
+                self.wants_tracked = Some(ProjTrackedCue::OneShot("DD2_SkeletonSummoned"));
+            }
+            // `:36443` — the counter.
             self.ai[0] += 1.0;
             // `:36442-36452` — the opacity ramp: 0 → 1 over the first 20
             // ticks, 1 until the 60th, then back to 0 by the 80th; the kill
@@ -10725,14 +10847,22 @@ impl Projectile {
     /// helper (`:42592-42634`) — the Insanity shadow (964 friendly / 965
     /// hostile).
     ///
-    /// The tracked sound (`:42507-42515`: the cue on the first tick of each
-    /// variation and the per-tick position update of the playing sound) is
-    /// SKIPPED — the pool has no tracked-sound layer (S1-E-23). The alpha
-    /// ramp, the four variation choreographies and the kill are ported.
+    /// The tracked sound (`:42506-42518`: the cue on the first tick of each
+    /// variation into `localAI[1]` and the per-tick position follow) rides
+    /// the `HandlePlayFollow` cue (W4-d80). The alpha ramp, the four
+    /// variation choreographies and the kill are ported.
     fn ai_insanity_shadow(&mut self, world: &World) {
         // `:42593-42633` — the variation pick.
         let (variation, fake_counter, counter_max) = shadow_hand_variation(self.ai[0]);
         let from_value = fake_counter / counter_max;
+        // `:42506-42518` — the tracked cue (`DD2_GhastlyGlaiveImpactGhost`)
+        // on the first tick of each variation (`fakeCounter == 0`), then the
+        // per-tick follow (null → Invalid, else Position = Center). W4-d80.
+        self.wants_tracked = Some(ProjTrackedCue::HandlePlayFollow {
+            style: "DD2_GhastlyGlaiveImpactGhost",
+            idx: 1,
+            play: fake_counter == 0.0,
+        });
         // `:42516-42527` — the alpha ramp: +25/tick over the last 15 ticks of
         // the variation, −25/tick before that, floored at 50 and capped at
         // 255.
@@ -13310,7 +13440,7 @@ fn alpha_of(opacity: f32) -> i32 {
 
 /// `Vector2.ToRotationVector2()` (XNA): the unit vector at the angle —
 /// `(cos, sin)`.
-fn rotation_vector(angle: f32) -> Vec2 {
+pub(crate) fn rotation_vector(angle: f32) -> Vec2 {
     let (s, c) = angle.sin_cos();
     Vec2::new(c, s)
 }
@@ -14322,7 +14452,7 @@ pub(crate) fn get_lerp_value(from: f32, to: f32, t: f32) -> f32 {
 /// — `MathHelper.Lerp(toMin, toMax, GetLerpValue(fromMin, fromMax, fromValue,
 /// clamped: true))`, XNA's `a + (b - a) * amount`. The gem bolt's steering
 /// uses it for the turn rate and the close-range pull.
-fn remap(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+pub(crate) fn remap(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
     to_min + (to_max - to_min) * get_lerp_value(from_min, from_max, from_value)
 }
 
@@ -14685,6 +14815,13 @@ pub struct ProjectilePool {
     /// (`Main.cs:17775` wraps the whole walk) — the E21i deferral closed on
     /// the E21h queue→drain convention (the C# draws mid-walk).
     pending_wall_break_sounds: Vec<(tr_core::edit::SoundCue, f32, f32)>,
+    /// W4-d80 — the tracked-sound intents the AI arms and the bomb kill
+    /// path queued this tick: `(slot, cue, x, y)` — the ensure-play / stop
+    /// the C# runs inline (`Projectile.cs:46917-46921` / `:70673-70677`).
+    /// The world-sim pass drains them against the tracked pool and writes
+    /// the `SlotId` floats back into the slots' `local_ai[2]` (the
+    /// `pending_proj_sounds` queue→drain convention). ZERO gameplay draws.
+    pending_proj_tracked: Vec<(usize, ProjTrackedCue, f32, f32)>,
     /// `NewProjectile`'s `TryUpdateChannel` intents (`Projectile.cs:11097-
     /// 11100`): `(kind, slot)` per local-owner spawn this tick, drained by
     /// the world-sim pass onto the player's `_channelShotCache` — the LAST
@@ -15112,6 +15249,7 @@ impl ProjectilePool {
             pending_npc_hit_sounds: Vec::new(),
             pending_proj_sounds: Vec::new(),
             pending_wall_break_sounds: Vec::new(),
+            pending_proj_tracked: Vec::new(),
             pending_channel_tracks: Vec::new(),
             spear_owner: None,
             pending_spear_hold: None,
@@ -15648,6 +15786,42 @@ impl ProjectilePool {
             self.slots[slot].active = false;
             self.slots[slot].time_left = 0;
         }
+    }
+
+    /// W4-d80 — the RC car's `HandleMovement` (the aiStyle-205 dispatch
+    /// move): the tile collision + the slope collision (the
+    /// `correctSlopeCollision` row, `Projectile.cs:10301`), then the
+    /// direction follows `velocity.X`'s sign (`AutomaticallyChangesDirection`,
+    /// the aiStyle-205 exclusion list does not carry it). The d21 census
+    /// port (`rc_car_move`).
+    pub(crate) fn rc_car_move(&mut self, slot: usize, world: &World) {
+        let p = &mut self.slots[slot];
+        if p.tile_collide {
+            let tc = crate::collision::tile_collision(
+                world,
+                [p.pos.x, p.pos.y],
+                [p.vel.x, p.vel.y],
+                p.w,
+                p.h,
+                false,
+                false,
+            );
+            p.vel = Vec2::new(tc.vel[0], tc.vel[1]);
+        }
+        p.pos += p.vel;
+        if p.tile_collide {
+            let sc = crate::collision::slope_collision(
+                world,
+                [p.pos.x, p.pos.y],
+                [p.vel.x, p.vel.y],
+                p.w,
+                p.h,
+                false,
+            );
+            p.pos = Vec2::new(sc.pos[0], sc.pos[1]);
+            p.vel = Vec2::new(sc.vel[0], sc.vel[1]);
+        }
+        p.direction = if p.vel.x < 0.0 { -1 } else { 1 };
     }
 
     /// S1-P-i16 — the aiStyle-16 `Kill()` latch for an EXTERNAL kill (the
@@ -16352,6 +16526,16 @@ impl ProjectilePool {
         std::mem::take(&mut self.pending_wall_break_sounds)
     }
 
+    /// W4-d80 — the tracked-sound intents the AI arms and the bomb kill
+    /// path queued: `(slot, cue, x, y)`. The world sim drains them against
+    /// the tracked pool (`apply_proj_tracked_cue`) and writes the `SlotId`
+    /// floats back into the slots' `local_ai[2]` — the bomb fuse's
+    /// ensure/stop dance (`Projectile.cs:46917-46921` / `:70673-70677`).
+    /// ZERO gameplay draws (the census' RNG contract).
+    pub fn drain_proj_tracked(&mut self) -> Vec<(usize, ProjTrackedCue, f32, f32)> {
+        std::mem::take(&mut self.pending_proj_tracked)
+    }
+
     /// `NewProjectile`'s `TryUpdateChannel` intents (`Projectile.cs:11097-
     /// 11100`): `(kind, slot)` per local-owner spawn this tick. The world sim
     /// drains them onto the player's `_channelShotCache` — the last spawn of
@@ -17009,6 +17193,13 @@ impl ProjectilePool {
                                     sub_steps as i32 - 2 - sub as i32,
                                 )
                             }
+                            // W4-d80 — the DD2 aiStyle-1 tracked-shot riders
+                            // (706 Phantom Phoenix / 709 Sky Dragon's Fury,
+                            // `Projectile.cs:55767-55863`/`:54696-54725`):
+                            // kind-disjoint from A/B/C, gated after them.
+                            kind if crate::projectile_ai_dd2_shots::covers(kind) => {
+                                crate::projectile_ai_dd2_shots::step(&mut self.slots[i], world)
+                            }
                             // S1-D-4 — the Frost Moon family's four
                             // aiStyle-1 kinds (345/348/349/350,
                             // `projectile_ai_frostmoon`): kind-disjoint
@@ -17554,6 +17745,39 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d80 — aiStyle 195, Jim's drone
+                        // (`AI_195_JimsDrone` `:40923-41067`): the input-bit
+                        // pack, the altitude/held-item kill gates, the
+                        // tilt/thrust physics, the engine-loop sound, the
+                        // timeLeft=2 keep-alive and the ground-probe dust.
+                        // The blocked-move arm (`:18057-18067`) reverses the
+                        // blocked axis ×0.25 when |last| > 1.
+                        195 => {
+                            crate::projectile_ai_rc_drone::ai_jims_drone(
+                                &mut self.slots[i],
+                                world,
+                                player.as_deref(),
+                                local_owner,
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            crate::projectile_ai_rc_drone::drone_move(&mut self.slots[i], world);
+                        }
+                        // W4-d80 — aiStyle 205, the RC car
+                        // (`AI_205_RemoteControlCar` `:38076-38461`): the
+                        // input-bit pack, the wall-flight / ground drive, the
+                        // engine-loop sound, the timeLeft=2 keep-alive. The
+                        // AI moves the position itself (WalkDownSlope); the
+                        // dispatch move runs the slope collision.
+                        205 => {
+                            crate::projectile_ai_rc_drone::ai_remote_control_car(
+                                &mut self.slots[i],
+                                world,
+                                player.as_deref(),
+                                rng,
+                            );
+                            self.rc_car_move(i, world);
+                        }
                         // S1-P-i56 — `AI()`'s `else if (this.aiStyle == 120)`
                         // (`Projectile.cs:34888-34891`) ->
                         // `AI_120_StardustGuardian` (`:44634-44963`): the
@@ -18052,6 +18276,17 @@ impl ProjectilePool {
                             // beam light — is a follow-up); the release kills
                             // it (`:66280-66283`).
                             } else if self.slots[i].kind == LASER_DRILL {
+                                // W4-d80 — the 445 arm's own loop cue
+                                // (`Projectile.cs:66246-66250`): on
+                                // `soundDelay <= 0` play `SoundID.Item132`
+                                // and re-arm 23 (the case-2 132 pitch arm,
+                                // `Next(-20, 21) * 0.001`).
+                                if self.slots[i].sound_delay <= 0 {
+                                    let pos = self.slots[i].pos;
+                                    self.slots[i].wants_sound =
+                                        Some((2, 132, pos.x, pos.y, 0.0));
+                                    self.slots[i].sound_delay = 23;
+                                }
                                 self.slots[i].ai_drill(owner, inputs.aim, player.as_deref());
                             } else {
                                 let spawn =
@@ -19009,12 +19244,21 @@ impl ProjectilePool {
                             // `:68458-68461` — the kind guard (the port's
                             // aiStyle-131 rows are exactly these three).
                             if matches!(projectile.kind, FLAME_BURST_SHOT_1 | FLAME_BURST_SHOT_2 | FLAME_BURST_SHOT_3) {
-                                // `:68462-68475` — the one-shot latch; the
-                                // tracked sound slot (`localAI[1]`) and its
-                                // position follow are skipped.
-                                if projectile.local_ai[0] == 0.0 {
+                                // `:68462-68475` — the one-shot latch + the
+                                // tracked sound (`DD2_FlameburstTowerShot`,
+                                // `:68465`) into `localAI[1]`, then the
+                                // per-tick follow (null → Invalid, else
+                                // Position = Center). W4-d80: the play fires
+                                // on the latch tick; the follow every tick.
+                                let play = projectile.local_ai[0] == 0.0;
+                                if play {
                                     projectile.local_ai[0] = 1.0;
                                 }
+                                projectile.wants_tracked = Some(ProjTrackedCue::HandlePlayFollow {
+                                    style: "DD2_FlameburstTowerShot",
+                                    idx: 1,
+                                    play,
+                                });
                                 // `:68476-68483` — the alpha fade.
                                 if projectile.alpha > 0 {
                                     projectile.alpha -= 25;
@@ -19269,8 +19513,10 @@ impl ProjectilePool {
                                         // `:68610-68642` — the fire state.
                                         projectile.frame = num4 + (projectile.ai[1] / num6 as f32) as i32;
                                         if projectile.ai[1] == num6 as f32 {
-                                            // The tracked shot sound (`:68615`)
-                                            // is skipped — no sound layer.
+                                            // `:68615` — the tracked shot sound
+                                            // (`DD2_BallistaTowerShot`), the
+                                            // handle discarded. W4-d80.
+                                            projectile.wants_tracked = Some(ProjTrackedCue::OneShot("DD2_BallistaTowerShot"));
                                             let mut vector = Vec2::new(projectile.direction as f32, 0.0);
                                             let num8 = projectile.ai_134_ballista_find_target(world, npcs, shot_range, dead_bottom_angle, center, p_minion_target);
                                             if num8 != -1 {
@@ -19395,11 +19641,66 @@ impl ProjectilePool {
                                     // `:68886-68907` — the zap-period counter.
                                     // The `ai[0] == 0` arm scans for a chaseable
                                     // NPC in the box to gate the zap SOUND
-                                    // (`:68905`, skipped — no sound layer); the
-                                    // counter wrap is the state the port keeps.
+                                    // (`DD2_LightningAuraZap`, `:68905`). W4-d80.
                                     projectile.ai[0] += 1.0;
                                     if projectile.ai[0] >= num3 as f32 {
                                         projectile.ai[0] = 0.0;
+                                    }
+                                    if projectile.ai[0] == 0.0 {
+                                        // `:68893-68902` — the zap scan: a
+                                        // chaseable NPC whose hitbox is within
+                                        // width/2 of the centre AND collides
+                                        // (the aiStyle-137 `Colliding` arm,
+                                        // `:15800-15813`).
+                                        let (cx, cy) = projectile.center();
+                                        let center = Vec2::new(cx, cy);
+                                        let my_rect = tr_core::whip::Rect::new(
+                                            projectile.pos.x as i32,
+                                            projectile.pos.y as i32,
+                                            projectile.w as i32,
+                                            projectile.h as i32,
+                                        );
+                                        let half_w = projectile.w as i32 / 2;
+                                        let half_h = projectile.h as i32 / 2;
+                                        let mut zap = false;
+                                        for n in npcs.iter() {
+                                            if !chaseable(n) {
+                                                continue;
+                                            }
+                                            let (nw, nh) = n.size();
+                                            let target = tr_core::whip::Rect::new(
+                                                n.x as i32, n.y as i32, nw as i32, nh as i32,
+                                            );
+                                            if target.distance(cx, cy) >= half_w as f32 {
+                                                continue;
+                                            }
+                                            // `Colliding`'s 137 arm: the box
+                                            // overlap + the target's distance
+                                            // to the centre < height/2 - 20 +
+                                            // the CanHit arc (centre or top).
+                                            if !my_rect.intersects(target)
+                                                || target.distance(cx, cy) >= (half_h - 20) as f32
+                                            {
+                                                continue;
+                                            }
+                                            let tc = Vec2::new(
+                                                target.left() as f32 + target.w as f32 / 2.0,
+                                                target.top() as f32 + target.h as f32 / 2.0,
+                                            );
+                                            let top = Vec2::new(
+                                                target.left() as f32 + target.w as f32 / 2.0,
+                                                target.top() as f32,
+                                            );
+                                            if projectile.ai_137_lightning_aura_can_hit(world, tc)
+                                                || projectile.ai_137_lightning_aura_can_hit(world, top)
+                                            {
+                                                zap = true;
+                                                break;
+                                            }
+                                        }
+                                        if zap {
+                                            projectile.wants_tracked = Some(ProjTrackedCue::OneShot("DD2_LightningAuraZap"));
+                                        }
                                     }
                                     // `:68908-68947` — the one-shot ground scan
                                     // and resize.
@@ -19608,8 +19909,11 @@ impl ProjectilePool {
                                             ))
                                         });
                                         if found {
-                                            // The tracked sound (`:69362`) is
-                                            // skipped — no sound layer.
+                                            // `:69362` — the tracked explode
+                                            // sound (`DD2_ExplosiveTrapExplode`),
+                                            // the GLOBAL overload (no position).
+                                            // W4-d80.
+                                            projectile.wants_tracked = Some(ProjTrackedCue::GlobalOneShot("DD2_ExplosiveTrapExplode"));
                                             projectile.local_ai[0] = cooldown;
                                             // `:69364` — the blast spawns at
                                             // `Center + (0, -num2)` with zero
@@ -20147,6 +20451,17 @@ impl ProjectilePool {
                     if let Some(req) = self.slots[i].wants_sound.take() {
                         self.pending_proj_sounds.push(req);
                     }
+                    // W4-d80 — forward the arm's queued tracked-sound intent
+                    // (the bomb fuse ensure, the DD2 one-shots / handle
+                    // follows) into the pool's tracked queue (the same
+                    // `wants_sound` pattern): the sim drain applies it
+                    // against the pool and writes the handle back.
+                    if let Some(cue) = self.slots[i].wants_tracked.take() {
+                        let pos = self.slots[i].pos;
+                        let (w, h) = (self.slots[i].w, self.slots[i].h);
+                        self.pending_proj_tracked
+                            .push((i, cue, pos.x + w * 0.5, pos.y + h * 0.5));
+                    }
                     // S1-P-i55 — `base.oldPosition = base.position`
                     // (`Projectile.cs:17013`) latches between the AI and
                     // `HandleMovement` for the golf kinds: the ball's pad
@@ -20317,6 +20632,61 @@ impl ProjectilePool {
                 if !died_out_of_world {
                     if let Some(p) = player.as_deref_mut() {
                         self.try_cancel_channel(i, p);
+                    }
+                }
+                // W4-d80 — `Kill()`'s aiStyle-16 fuse stop
+                // (`Projectile.cs:70673-70677`): the slot died this pass —
+                // stop the bomb-fuse loop and zero `localAI[2]`. The C#
+                // gates the stop on `netMode != 2` (the port is single-
+                // player, always true) and runs it for EVERY aiStyle-16
+                // death (the `flag3` ai[0]==1000 guard only gates the
+                // explosion, not the stop). The drain applies the stop +
+                // the zero write-back.
+                if proj_data(self.slots[i].kind).is_some_and(|d| d.ai_style == 16) {
+                    let pos = self.slots[i].pos;
+                    let (w, h) = (self.slots[i].w, self.slots[i].h);
+                    self.pending_proj_tracked.push((
+                        i,
+                        ProjTrackedCue::BombFuseStop,
+                        pos.x + w * 0.5,
+                        pos.y + h * 0.5,
+                    ));
+                }
+                // W4-d80 — `Kill()`'s type-686 arm (`Projectile.cs:71635-
+                // 71638`): Betsy's fireball impact (`DD2_BetsyFireballImpact`),
+                // the tracked one-shot at the death hook. The 711 Betsy's
+                // Wrath impact (`:71641`) has no ported row — deferred.
+                if self.slots[i].kind == BETSY_FIREBALL {
+                    let pos = self.slots[i].pos;
+                    let (w, h) = (self.slots[i].w, self.slots[i].h);
+                    self.pending_proj_tracked.push((
+                        i,
+                        ProjTrackedCue::KillOneShot("DD2_BetsyFireballImpact"),
+                        pos.x + w * 0.5,
+                        pos.y + h * 0.5,
+                    ));
+                }
+                // W4-d80 — the engine-loop condition fold (the census fold
+                // 4): the RC car (1105) / Jim's drone (1020) loop's
+                // `ProjectileAudioTracker` reads `active && type == expected`
+                // — the slot's death flips the shared atomic false so the
+                // loop stops. The drone ALSO has an explicit `Kill()` stop
+                // (`:70863`); the RC car does not (`:70855-70864` — only the
+                // 1020 arm stops). The atomic flip covers both; the drone's
+                // explicit stop rides `EngineLoopStop`.
+                if matches!(self.slots[i].kind, REMOTE_CONTROL_CAR | JIMS_DRONE) {
+                    if let Some(alive) = self.slots[i].fuse_alive.take() {
+                        alive.store(false, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    if self.slots[i].kind == JIMS_DRONE {
+                        let pos = self.slots[i].pos;
+                        let (w, h) = (self.slots[i].w, self.slots[i].h);
+                        self.pending_proj_tracked.push((
+                            i,
+                            ProjTrackedCue::EngineLoopStop,
+                            pos.x + w * 0.5,
+                            pos.y + h * 0.5,
+                        ));
                     }
                 }
                 self.spawn_inferno_blast(i);
@@ -32209,6 +32579,8 @@ mod phasmal_projectile_tests {
             gfx_off_y: 0.0,
             sound_delay: 0,
             wants_sound: None,
+            wants_tracked: None,
+            fuse_alive: None,
             melee: false,
             ranged: false,
             magic: false,
@@ -32618,6 +32990,8 @@ mod ritual_projectile_tests {
             gfx_off_y: 0.0,
             sound_delay: 0,
             wants_sound: None,
+            wants_tracked: None,
+            fuse_alive: None,
             melee: false,
             ranged: false,
             magic: false,
@@ -47188,5 +47562,107 @@ mod w4_a4_hit_time_tests {
         hit(&mut pool, 0, &mut npc);
         assert_eq!(pool.slots()[0].damage, 9, "(int)(12f·0.8f) = 9");
         assert_eq!(10_000 - npc.hp, 27, "15 then 12");
+    }
+}
+/// W4-d80 — the drill/chainsaw held-tool loop cues (`Projectile.cs:25510-
+/// 25522`) + the Laser Drill 445's own cue (`:66246-66250`). WRITTEN NOT
+/// RUN (code-only mode). The census: research/64.
+#[cfg(test)]
+mod w4_d80_drill_loop_tests {
+    use super::*;
+
+    fn air() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    fn tool(kind: u16) -> Projectile {
+        Projectile {
+            active: true,
+            kind,
+            owner: 0,
+            pos: Vec2::new(64.0, 64.0),
+            vel: Vec2::new(8.0, 0.0),
+            tile_collide: false,
+            ..Default::default()
+        }
+    }
+
+    /// The drill (`pick > 0` held): Item190 at `base.position`, re-arm 15;
+    /// the chainsaw: Item189, re-arm 20 (`:25514-25520`). The cue fires on
+    /// `soundDelay <= 0` and the cooldown holds it while positive.
+    #[test]
+    fn w4_d80_the_drill_and_chainsaw_cue_on_their_cadences() {
+        let w = air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.channel = true;
+        // Cobalt Drill 385 (pick 110) / Cobalt Chainsaw 383 (axe 14).
+        for (held, style, delay) in [(385u16, 190i32, 15i32), (383, 189, 20)] {
+            player.channel_item = held;
+            let mut p = tool(if held == 385 { DRILL_COBALT } else { CHAINSAW_COBALT });
+            p.ai_drill(None, None, Some(&player));
+            assert_eq!(
+                p.wants_sound,
+                Some((2, style, 64.0, 64.0, 0.0)),
+                "held {held}'s loop cue"
+            );
+            assert_eq!(p.sound_delay, delay, "held {held}'s re-arm");
+            // The pool decrements ahead of the AI (`:16768-16771`); while
+            // the cooldown is positive the arm queues nothing new.
+            for _ in 0..(delay - 1) {
+                p.sound_delay -= 1;
+                p.wants_sound = None;
+                p.ai_drill(None, None, Some(&player));
+                assert_eq!(p.wants_sound, None, "the cooldown holds the cue");
+            }
+            assert_eq!(p.sound_delay, 1);
+            p.sound_delay -= 1;
+            p.ai_drill(None, None, Some(&player));
+            assert_eq!(p.wants_sound.map(|r| (r.0, r.1)), Some((2, style)));
+            assert_eq!(p.sound_delay, delay, "the cadence wraps");
+        }
+    }
+
+    /// The cue sits BEFORE the channel gate (`:25510` precedes `:25526`):
+    /// the release tick still cues, then the slot dies (`:25549`).
+    #[test]
+    fn w4_d80_the_release_tick_still_cues_then_kills() {
+        let w = air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.channel = false;
+        player.channel_item = 385;
+        let mut p = tool(DRILL_COBALT);
+        p.ai_drill(None, None, Some(&player));
+        assert_eq!(p.wants_sound.map(|r| (r.0, r.1)), Some((2, 190)));
+        assert!(!p.active, "the release kills (`:25549`)");
+        assert_eq!(p.time_left, 0);
+    }
+
+    /// The negative-latch semantics: `soundDelay <= 0` includes the -1
+    /// latch (`:25510` is `<=`, not `==`) — a latched slot re-cues and
+    /// re-arms (the drill family never latches -1 itself, but the guard
+    /// shape is the C#'s).
+    #[test]
+    fn w4_d80_the_cue_guard_is_le_zero() {
+        let w = air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.channel = true;
+        player.channel_item = 383;
+        let mut p = tool(CHAINSAW_COBALT);
+        p.sound_delay = -1;
+        p.ai_drill(None, None, Some(&player));
+        assert_eq!(p.wants_sound.map(|r| (r.0, r.1)), Some((2, 189)));
+        assert_eq!(p.sound_delay, 20);
+    }
+
+    /// The bank rows: the three loop cues resolve in the SFX bank (the
+    /// `play_proj_sound` façade's name lookup cannot silently miss them).
+    #[test]
+    fn w4_d80_the_loop_cues_are_registered() {
+        for cue in ["Item_189", "Item_190", "Item_132"] {
+            assert!(
+                crate::audio::sfx_cue_registered(cue),
+                "{cue} must be in the bank"
+            );
+        }
     }
 }

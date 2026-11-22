@@ -280,6 +280,33 @@ impl Rect {
             && other.top() < self.bottom()
             && self.top() < other.bottom()
     }
+
+    /// `Utils.Distance(this Rectangle r, Vector2 point)` (`Utils.cs:1507-
+    /// 1542`): 0 when the point is inside (the inclusive `FloatIntersect`
+    /// test, `:982-989`), the axis gap when it sits in the rect's X or Y
+    /// band, else the distance to the nearest corner. W4-d80 — the DD2
+    /// Lightning Aura's zap-scan gate (`Projectile.cs:68897`/`:15802`).
+    pub fn distance(self, px: f32, py: f32) -> f32 {
+        let (l, t, r, b) = (
+            self.left() as f32,
+            self.top() as f32,
+            self.right() as f32,
+            self.bottom() as f32,
+        );
+        // `FloatIntersect(r, point-as-zero-size-rect)` — inclusive overlap.
+        if !(l > px || t > py || r < px || b < py) {
+            return 0.0;
+        }
+        if px >= l && px <= r {
+            return if py < t { t - py } else { py - b };
+        }
+        if py >= t && py <= b {
+            return if px < l { l - px } else { px - r };
+        }
+        // The nearest corner.
+        let (cx, cy) = (if px < l { l } else { r }, if py < t { t } else { b });
+        ((px - cx) * (px - cx) + (py - cy) * (py - cy)).sqrt()
+    }
 }
 
 /// `Collision.CanHitLine`-free sweep: `Projectile.Colliding`'s whip arm
@@ -657,6 +684,28 @@ mod tests {
         assert!(!is_whip(3));
         assert!(!is_whip(213));
         assert!(!is_whip(0));
+    }
+
+    /// W4-d80 — `Utils.Distance(Rectangle, Vector2)` (`Utils.cs:1507-1542`):
+    /// 0 inside, the axis gap in the X/Y bands, the corner distance outside.
+    #[test]
+    fn w4_d80_the_rect_distance_matches_utils() {
+        let r = Rect::new(10, 20, 30, 40); // left 10, top 20, right 40, bottom 60
+        // Inside (inclusive).
+        assert_eq!(r.distance(25.0, 40.0), 0.0);
+        assert_eq!(r.distance(10.0, 20.0), 0.0, "the top-left corner is inside");
+        assert_eq!(r.distance(40.0, 60.0), 0.0, "the bottom-right corner is inside");
+        // The X band (px in [10,40]): the Y gap.
+        assert_eq!(r.distance(25.0, 10.0), 10.0, "above: top - py");
+        assert_eq!(r.distance(25.0, 70.0), 10.0, "below: py - bottom");
+        // The Y band (py in [20,60]): the X gap.
+        assert_eq!(r.distance(5.0, 40.0), 5.0, "left: left - px");
+        assert_eq!(r.distance(50.0, 40.0), 10.0, "right: px - right");
+        // The corners: the Euclidean distance.
+        assert_eq!(r.distance(7.0, 16.0), 5.0, "top-left: (3,4) → 5");
+        assert_eq!(r.distance(43.0, 64.0), 5.0, "bottom-right: (3,4) → 5");
+        assert_eq!(r.distance(7.0, 64.0), 5.0, "bottom-left: (3,4) → 5");
+        assert_eq!(r.distance(43.0, 16.0), 5.0, "top-right: (3,4) → 5");
     }
 
     #[test]

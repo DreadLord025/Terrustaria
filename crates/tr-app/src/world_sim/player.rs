@@ -391,6 +391,60 @@ fn update_golf_state(
     golf_state.update(held as i32, held_shoot, local_id, live_ball.as_ref());
 }
 
+/// W4-d80 — `Player.UpdateSunScorchValues`' play/follow half
+/// (`Player.cs:28590-28603`): the vampire sizzle loop's ensure + volume +
+/// position-follow against the tracked pool. Runs on BOTH the live and
+/// dead paths (the counter ticks in `Player::tick_sun_scorch`; the C#
+/// calls `UpdateSunScorchValues` from `UpdateSunScorch` `:25634` AND
+/// `UpdateDead` `:17079`). The `VampireSizzleTracker` condition
+/// (`VampireSizzleTracker.cs:12-19`: `!gameMenu && vampireSeed &&
+/// sunScorchCounter > 0`) folds to a shared atomic the sim refreshes per
+/// tick (the pool cannot hand a live player reference to a `Send`
+/// closure). ZERO gameplay draws — the variation/pitch picks ride the two
+/// audio-only statics (the census' RNG contract, research/64 sites 22/23).
+fn update_sizzle_audio(app: &mut App) {
+    let Some(p) = app.player.as_mut() else {
+        return;
+    };
+    let vampire_seed = app
+        .world
+        .micro_seeds
+        .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM);
+    let lerp = p.sun_scorch_lerp();
+    let (cx, cy) = p.center();
+    // The condition mirror: `!gameMenu && vampireSeed && counter > 0`.
+    // The `gameMenu` term folds with the focus/pause gate that freezes
+    // the pool (the census fold); the seed + counter terms ride here.
+    let condition_live = vampire_seed && p.sun_scorch_counter > 0;
+    let handle = p.sizzle_audio_handle;
+    let active = app.audio.get_active_sound(handle).is_some();
+    if !active && lerp != 0.0 {
+        // The ensure-play (`:28591-28597`): the volume override is the
+        // lerp; the condition reads the shared atomic.
+        if let Some(style) = crate::tracked_sound::TrackedStyle::by_name("VampireSizzle") {
+            let alive = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(condition_live));
+            p.sizzle_alive = Some(alive.clone());
+            let id = app.audio.play_tracked_looped(
+                style,
+                cx,
+                cy,
+                Box::new(move || alive.load(std::sync::atomic::Ordering::Relaxed)),
+                crate::tracked_sound::SoundPlayOverrides { volume: Some(lerp) },
+            );
+            p.sizzle_audio_handle = id;
+        }
+    }
+    // The follow (`:28599-28603`): every tick the live handle's volume +
+    // position ride the player. The condition mirror refreshes too.
+    if let Some(alive) = &p.sizzle_alive {
+        alive.store(condition_live, std::sync::atomic::Ordering::Relaxed);
+    }
+    if let Some(s) = app.audio.get_active_sound_mut(p.sizzle_audio_handle) {
+        s.volume = lerp;
+        s.position = (cx, cy);
+    }
+}
+
 pub(crate) fn update_player(app: &mut App, dt: f32) {
     // Deterministic held input for screenshots (`TR_HOLD=right,jump`).
     let (hold_right, hold_jump) = crate::env::hold_input();
@@ -749,6 +803,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // player pass no longer moves it (the C#'s update half reads the
             // previous frame's position), so the old lerp-follow is gone and
             // the draw-time snap owns every frame's camera.
+            // W4-d80 — `Player.cs:17079`: the dead path's sizzle play/follow
+            // (the counter ticked in `update_dead`'s tail).
+            update_sizzle_audio(app);
             return;
         }
         // `AllowsRespawnTimerSkip` is a death-screen gate: alive again, the
@@ -1763,6 +1820,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         }
     }
     crate::chest::tick_open(app); // `Player.HandleBeingInChestRange` (`Player.cs:25290`/:31015-31124)
+    // W4-d80 — `Player.cs:25634`: the live path's sizzle play/follow (the
+    // counter ticked in `update_with_grapple`'s `UpdateSunScorch` position).
+    update_sizzle_audio(app);
     if map_open {
         app.update_map_input();
     }
@@ -3560,3 +3620,157 @@ mod tests {
             .is_some());
     }
 }
+
+/// W4-d80 — the vampire sun-scorch sizzle (research/64 sites 22-24): the
+/// counter ramp, the lerp volume, the ensure/follow dance through the
+/// drain, the shared-atomic condition fold and the RNG contract (zero
+/// gameplay draws). WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d80_vampire_sizzle_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use tr_core::slot::SlotId;
+
+    /// The counter ramp (`Player.cs:28582-28589`): burning +1, alive −6,
+    /// dead −2 (the dead tick clears the burning flag), clamped 0..300.
+    #[test]
+    fn w4_d80_the_scorch_counter_ramps_and_clamps() {
+        let w = World::new("t".into(), 64, 64);
+        let mut p = Player::spawn(&w);
+        // Alive, not burning: −6 per tick, floored at 0.
+        p.sun_scorch_counter = 10;
+        p.tick_sun_scorch();
+        assert_eq!(p.sun_scorch_counter, 4);
+        p.tick_sun_scorch();
+        assert_eq!(p.sun_scorch_counter, 0, "the floor holds");
+        // Burning: +1 per tick, capped at 300.
+        p.vampire_burning_in_sunlight = true;
+        p.sun_scorch_counter = 299;
+        p.tick_sun_scorch();
+        assert_eq!(p.sun_scorch_counter, 300);
+        p.tick_sun_scorch();
+        assert_eq!(p.sun_scorch_counter, 300, "the cap holds");
+        // Dead: the burning flag clears, −2 per tick.
+        p.dead = true;
+        p.tick_sun_scorch();
+        assert!(!p.vampire_burning_in_sunlight, "the dead tick clears the flag");
+        assert_eq!(p.sun_scorch_counter, 298);
+    }
+
+    /// The lerp (`Player.cs:28589`): `GetLerpValue(0, 120, counter,
+    /// clamped)` — 0 at 0, 0.5 at 60, 1 at 120+.
+    #[test]
+    fn w4_d80_the_scorch_lerp_matches_get_lerp_value() {
+        let w = World::new("t".into(), 64, 64);
+        let mut p = Player::spawn(&w);
+        for (counter, want) in [(0i32, 0.0f32), (60, 0.5), (120, 1.0), (300, 1.0)] {
+            p.sun_scorch_counter = counter;
+            assert!(
+                (p.sun_scorch_lerp() - want).abs() < 1e-6,
+                "counter {counter}: {}",
+                p.sun_scorch_lerp()
+            );
+        }
+    }
+
+    /// The headless rig: the sizzle cue seeded silent, the vampire seed
+    /// armed, the player's counter mid-ramp.
+    fn rig() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.audio.test_seed_tracked_cue("sizzle");
+        app.world
+            .micro_seeds
+            .insert(tr_core::seeds::MicroSeedFlags::VAMPIRISM);
+        let mut p = Player::spawn(&app.world);
+        p.sun_scorch_counter = 60; // lerp 0.5
+        app.player = Some(p);
+        app
+    }
+
+    /// The ensure plays once into the handle with the lerp volume; the
+    /// follow re-points the live loop; a zero lerp never ensures
+    /// (`Player.cs:28590-28603`).
+    #[test]
+    fn w4_d80_the_sizzle_ensures_follows_and_gates_on_lerp() {
+        let mut app = rig();
+        update_sizzle_audio(&mut app);
+        let id = app.player.as_ref().unwrap().sizzle_audio_handle;
+        assert!(id.is_active(), "the ensure stored a live handle");
+        app.audio.test_keep_tracked_alive(id);
+        assert!(
+            (app.audio.get_active_sound(id).unwrap().volume - 0.5).abs() < 1e-6,
+            "the lerp volume override"
+        );
+        // The follow re-points the live loop (no re-play).
+        if let Some(p) = app.player.as_mut() {
+            p.x += 100.0;
+            p.sun_scorch_counter = 120; // lerp 1.0
+        }
+        update_sizzle_audio(&mut app);
+        let id2 = app.player.as_ref().unwrap().sizzle_audio_handle;
+        assert_eq!(id2, id, "no re-play while live");
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        assert_eq!(app.audio.get_active_sound(id).unwrap().position, (cx, cy));
+        assert!((app.audio.get_active_sound(id).unwrap().volume - 1.0).abs() < 1e-6);
+        // A zero lerp with no live handle never ensures.
+        let mut app2 = rig();
+        app2.player.as_mut().unwrap().sun_scorch_counter = 0;
+        update_sizzle_audio(&mut app2);
+        assert_eq!(
+            app2.player.as_ref().unwrap().sizzle_audio_handle,
+            SlotId::INVALID,
+            "the zero lerp gates the ensure"
+        );
+    }
+
+    /// The condition mirror: the shared atomic tracks `vampireSeed &&
+    /// counter > 0` — the seed off OR the counter zero flips it false.
+    #[test]
+    fn w4_d80_the_sizzle_condition_mirrors_the_tracker() {
+        let mut app = rig();
+        update_sizzle_audio(&mut app);
+        let alive = app.player.as_ref().unwrap().sizzle_alive.clone().unwrap();
+        assert!(alive.load(std::sync::atomic::Ordering::Relaxed), "seed + counter live");
+        // The counter drains to zero: the condition flips false.
+        app.player.as_mut().unwrap().sun_scorch_counter = 0;
+        update_sizzle_audio(&mut app);
+        assert!(!alive.load(std::sync::atomic::Ordering::Relaxed), "the zero counter flips it");
+        // The seed off flips it false too.
+        app.player.as_mut().unwrap().sun_scorch_counter = 60;
+        app.world.micro_seeds = tr_core::seeds::MicroSeedFlags::none();
+        update_sizzle_audio(&mut app);
+        assert!(!alive.load(std::sync::atomic::Ordering::Relaxed), "the seed off flips it");
+    }
+
+    /// The RNG contract: the sizzle ensure + follow leave the gameplay
+    /// stream pristine; the pitch roll moves (one variation: no pick).
+    #[test]
+    fn w4_d80_the_sizzle_drain_is_gameplay_draw_free() {
+        let mut app = rig();
+        let before = app.rngs.stream(RngKey::UpdatePlayers).clone();
+        let (style_before, pitch_before) = app.audio.test_audio_streams();
+        update_sizzle_audio(&mut app);
+        update_sizzle_audio(&mut app);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            before,
+            "zero Main.rand draws on the sizzle path"
+        );
+        let (style_after, pitch_after) = app.audio.test_audio_streams();
+        assert_eq!(style_after, style_before, "one variation: no variation pick");
+        assert_ne!(pitch_after, pitch_before, "the pitch roll moved");
+    }
+
+    /// The style row: `VampireSizzle` resolves with volume 1, one
+    /// variation, uncapped (`SoundID.cs:1708`'s
+    /// `CreateTrackable("sizzle").WithVolume(1f)`).
+    #[test]
+    fn w4_d80_the_sizzle_style_resolves() {
+        let style = crate::tracked_sound::TrackedStyle::by_name("VampireSizzle").expect("VampireSizzle");
+        assert_eq!(style.cue, "sizzle");
+        assert_eq!(style.variations, 1);
+        assert!((style.volume - 1.0).abs() < 1e-6);
+        assert_eq!(style.max_tracked_instances, 0);
+    }
+}
+

@@ -24,7 +24,7 @@ const MAX_WALKER_DISTANCE: i32 = 1920 / 16;
 /// `edit::solid_tile` is the strict `SolidTile`, NOT this one).
 /// `InWorld(i, j, 1)` (`:9688-9695`) refuses the 1-tile border; the null
 /// tile arm maps to the port's out-of-bounds `None`.
-fn solid_tile3(world: &World, x: i32, y: i32) -> bool {
+pub fn solid_tile3(world: &World, x: i32, y: i32) -> bool {
     if x < 1 || x >= world.width - 1 || y < 1 || y >= world.height - 1 {
         return false;
     }

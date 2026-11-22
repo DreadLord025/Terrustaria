@@ -325,6 +325,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_117", 2),
     ("Item_128", 2),
     ("Item_130", 2),
+    // W4-d80 — the Laser Drill 445's loop cue (`SoundID.Item132`,
+    // `Projectile.cs:66248`; `Sounds/Item_132.xnb`).
+    ("Item_132", 2),
     ("Item_151", 2),
     ("Item_152", 2),
     ("Item_156", 2),
@@ -338,6 +341,11 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_186", 2),
     ("Item_187", 2),
     ("Item_188", 2),
+    // W4-d80 — the drill/chainsaw held-tool loop cues (`SoundID.Item189`/
+    // `Item190`, `Projectile.cs:25514`/`:25519`; the aiStyle-20 machine's
+    // 20/15-tick `soundDelay` cadence).
+    ("Item_189", 2),
+    ("Item_190", 2),
     ("Item_196", 2),
     ("Item_210", 2),
     // `SoundID.Roar` = 15 (`SoundID.cs`) — the boss-summon roar
@@ -509,6 +517,137 @@ const TRACKED_CUES: &[&str] = &[
     // `SoundID.AchievementComplete` (`SoundID.cs:1597`) — the unlock toast's
     // cue (`AchievementInitializer.cs:731-734`, S1-E-26 wave A).
     "achievement_complete",
+    // W4-d80 — the DD2 tracked-sound entity loops (research/64): Betsy's
+    // wind attack (`SoundID.cs:1616`, 3 variations) + flame breath
+    // (`:1611`), the lane portal's open/idle (`:1668-1669`), the kobold's
+    // explode (`:1639`, 3) / ignite / ignite-loop / scream-charge-loop
+    // (`:1641-1643`) and the wither beast's aura pulse (`:1659`, 2). The
+    // variation assets ride the tracked plays' `random_sound` pick.
+    "dd2_betsy_wind_attack_0",
+    "dd2_betsy_wind_attack_1",
+    "dd2_betsy_wind_attack_2",
+    "dd2_betsy_flame_breath",
+    "dd2_etherian_portal_open",
+    "dd2_etherian_portal_idle_loop",
+    "dd2_kobold_explosion_0",
+    "dd2_kobold_explosion_1",
+    "dd2_kobold_explosion_2",
+    "dd2_kobold_ignite",
+    "dd2_kobold_ignite_loop",
+    "dd2_kobold_scream_charge_loop",
+    "dd2_wither_beast_aura_pulse_0",
+    "dd2_wither_beast_aura_pulse_1",
+    // W4-d80 — the bomb fuse (`SoundID.cs:1764`, vol 0.2; the aiStyle-16
+    // loop, `Projectile.cs:46917-46921`).
+    "fuse",
+    // W4-d80 — the vampire sun-scorch sizzle (`SoundID.cs:1708`, vol 1;
+    // `Player.cs:28590-28603`).
+    "sizzle",
+    // W4-d80 — the RC-car / Jim's-drone engine loops (`SoundID.cs` style
+    // 272 `RCCar` vol 0.015 / style 271 `JimsDrone` vol 0.1, one variation
+    // each): the aiStyle-205 (`Projectile.cs:38253-38267`/`:38285-38299`)
+    // and aiStyle-195 (`:40983-40997`) volume/pitch trackers.
+    "rccar",
+    "Drone",
+    // W4-d80 — the DD2 projectile one-shots (research/64 deferred): the
+    // tower shots (`SoundID.cs:1604`/`:1607`/`:1610`), the trap explode
+    // (`:1605`), the summon marker (`:1663`), the ghastly glaive ghost
+    // (`:1652`), Betsy's fireball shot/impact (`:1613`/`:1614`), the
+    // Phantom Phoenix shot (`:1656`), the Sky Dragon's Fury shot (`:1657`)
+    // and the Dark Mage attack (`:1617`). The variation assets ride the
+    // tracked plays' `random_sound` pick.
+    "dd2_flameburst_tower_shot_0",
+    "dd2_flameburst_tower_shot_1",
+    "dd2_flameburst_tower_shot_2",
+    "dd2_ballista_tower_shot_0",
+    "dd2_ballista_tower_shot_1",
+    "dd2_ballista_tower_shot_2",
+    "dd2_lightning_aura_zap_0",
+    "dd2_lightning_aura_zap_1",
+    "dd2_lightning_aura_zap_2",
+    "dd2_lightning_aura_zap_3",
+    "dd2_explosive_trap_explode_0",
+    "dd2_explosive_trap_explode_1",
+    "dd2_explosive_trap_explode_2",
+    "dd2_skeleton_summoned",
+    "dd2_ghastly_glaive_impact_ghost_0",
+    "dd2_ghastly_glaive_impact_ghost_1",
+    "dd2_ghastly_glaive_impact_ghost_2",
+    "dd2_betsy_fireball_shot_1",
+    "dd2_betsy_fireball_shot_2",
+    "dd2_betsy_fireball_impact_0",
+    "dd2_betsy_fireball_impact_1",
+    "dd2_betsy_fireball_impact_2",
+    "dd2_phantom_phoenix_shot_0",
+    "dd2_phantom_phoenix_shot_1",
+    "dd2_phantom_phoenix_shot_2",
+    "dd2_sky_dragons_fury_shot_0",
+    "dd2_sky_dragons_fury_shot_1",
+    "dd2_sky_dragons_fury_shot_2",
+    "dd2_dark_mage_attack_0",
+    "dd2_dark_mage_attack_1",
+    "dd2_dark_mage_attack_2",
+    // W4-d80 final — the DD2 riders census round (research/64 final):
+    // Betsy's circle-attack / dash-scream one-shots (`NPC.cs:62109`/
+    // `:62136`), the ogre's attack/pound/spit (`:63082`/`:63100`/`:63114`),
+    // the drakin's shot/breath-in (`:63183`/`:63187`), the javelin
+    // thrower's attack (`:63441`), the goblin bomber's throw (`:63535`),
+    // the portal materialize cue (`:63765` and the `AI_108`/`AI_109`
+    // peers), the wyvern's dive-down + the 1-in-5 scream
+    // (`:65610`/`:65613`), the kobold glider's charge scream
+    // (`:65618`), the Dark Mage's summon/heal-cast windows
+    // (`:65842`/`:65860`) and the crystal's win scene (`:40764`).
+    "dd2_betsy_flying_circle_attack",
+    "dd2_betsy_scream",
+    "dd2_ogre_attack_0",
+    "dd2_ogre_attack_1",
+    "dd2_ogre_attack_2",
+    "dd2_ogre_ground_pound",
+    "dd2_ogre_spit",
+    "dd2_drakin_shot_0",
+    "dd2_drakin_shot_1",
+    "dd2_drakin_shot_2",
+    "dd2_drakin_breath_in_0",
+    "dd2_drakin_breath_in_1",
+    "dd2_drakin_breath_in_2",
+    "dd2_javelin_throwers_attack_0",
+    "dd2_javelin_throwers_attack_1",
+    "dd2_javelin_throwers_attack_2",
+    "dd2_goblin_bomber_throw_0",
+    "dd2_goblin_bomber_throw_1",
+    "dd2_goblin_bomber_throw_2",
+    "dd2_etherian_portal_spawn_enemy_0",
+    "dd2_etherian_portal_spawn_enemy_1",
+    "dd2_etherian_portal_spawn_enemy_2",
+    "dd2_wyvern_dive_down_0",
+    "dd2_wyvern_dive_down_1",
+    "dd2_wyvern_dive_down_2",
+    "dd2_wyvern_scream_0",
+    "dd2_wyvern_scream_1",
+    "dd2_wyvern_scream_2",
+    "dd2_kobold_flyer_charge_scream_0",
+    "dd2_kobold_flyer_charge_scream_1",
+    "dd2_kobold_flyer_charge_scream_2",
+    "dd2_dark_mage_summon_skeleton_0",
+    "dd2_dark_mage_summon_skeleton_1",
+    "dd2_dark_mage_summon_skeleton_2",
+    "dd2_dark_mage_cast_heal_0",
+    "dd2_dark_mage_cast_heal_1",
+    "dd2_dark_mage_cast_heal_2",
+    "dd2_win_scene",
+    // W4-d80 final — the 711 Betsy's Wrath impact (`Projectile.cs:71641`,
+    // `SoundID.DD2_BetsysWrathImpact = DD2_BetsyFireballImpact.WithVolume
+    // (0.4f)`, `SoundID.cs:1675`): the SAME three assets as the 686 impact,
+    // already banked above — only the style row differs (vol 0.4).
+    // W4-d80 final — the ParticleOrchestrator tracked plays
+    // (`ParticleOrchestrator.cs:1888`/`:2123`/`:2427`, research/64 final):
+    // the Monk Staff ground impact (3 variations) rides BOTH the flint
+    // spike burst and the down-dash explosion; the mushroom-boi explosion
+    // is a one-variation 0.15-volume cue behind the `Next(2)` coin gate.
+    "dd2_monk_staff_ground_impact_0",
+    "dd2_monk_staff_ground_impact_1",
+    "dd2_monk_staff_ground_impact_2",
+    "deadcells_mushroom_explode",
 ];
 
 /// The `Sounds/Custom/` trackables the item-use wave names
@@ -2414,6 +2553,37 @@ impl Audio {
         style: &crate::tracked_sound::TrackedStyle,
     ) -> Option<&crate::tracked_sound::ActiveSound> {
         self.tracked.find_active_sound(style)
+    }
+
+    /// The test seam: seed a silent decoded cue so the headless tracked
+    /// plays (`Audio::new(None)` loads no assets) resolve their asset and
+    /// add a slot — the W4-d80 ensure/follow witnesses exercise the pool
+    /// dance without an output device.
+    #[cfg(test)]
+    pub(crate) fn test_seed_tracked_cue(&mut self, cue: &'static str) {
+        self.cues.insert(cue, (1, 22050, vec![0i16; 2205]));
+    }
+
+    /// The test seam: keep the headless tracked slot addressable across
+    /// `update_tracked` (no sink — the pool would reap it otherwise).
+    #[cfg(test)]
+    pub(crate) fn test_keep_tracked_alive(&mut self, id: tr_core::slot::SlotId) {
+        if let Some(sound) = self.tracked.get_active_sound_mut(id) {
+            sound.set_test_keep_alive(true);
+        }
+    }
+
+    /// The test seam: the two audio-only static streams' state (the
+    /// W4-d80 RNG-contract witnesses assert the gameplay stream stays
+    /// pristine while these move).
+    #[cfg(test)]
+    pub(crate) fn test_audio_streams(
+        &self,
+    ) -> (
+        tr_core::unified_random::UnifiedRandom,
+        tr_core::unified_random::UnifiedRandom,
+    ) {
+        (self.style_random.clone(), self.sound_style_random.clone())
     }
 }
 

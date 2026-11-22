@@ -2770,6 +2770,151 @@ Deviations (deliberate):
 * The blizzard emitter's menu behaviour is the C#'s: `SceneState.Update` does not run in
   the menu, so the loops hold their last volume (the vanilla instance also keeps playing).
 
+### The tracked-sound entity loops (W4-d80)
+
+The per-entity tracked-sound call sites the S1-E-23 layer left unwired now ride
+it (the census: `docs/research/64-tracked-sound-census.md`). Five families,
+plus the deferred-item round (phases 7-10):
+
+* **The drill/chainsaw held-tool loops** (`Projectile.cs:25510-25522`) + the
+  Laser Drill 445's own cue (`:66246-66250`): legacy case-2 item plays on a
+  `soundDelay` cadence (Item190/15, Item189/20, Item132/23), queued through
+  `Projectile::wants_sound` BEFORE the channel gate. Their one `Main.rand`
+  pitch draw rides the `UpdateProjectiles` stream after the attenuation gate.
+* **The DD2 NPC loops** — Betsy's wind attack / flame breath
+  (`NPC.cs:61980-62305`), the lane portal's open / idle / fade / stop
+  (`:40979-41044`), the kobold's ignite / loops / explode (`:63198-63274`),
+  the wither beast's aura pulse (`:63362-63388`): the AI machines queue
+  `NpcSoundCue` tracked arms (the `wants_sound` convention); the sim drain
+  (`world_sim/npcs.rs::apply_npc_tracked_cue`) applies them against the pool
+  and writes the `SlotId` floats back into `Npc.local_ai` (the C# `localAI`
+  dance). `TrackedStyle::by_name` resolves the styles through the generated
+  `soundid.rs` table.
+* **The bomb fuse** (`Projectile.cs:46917-46921` ensure + `:70673-70677` Kill
+  stop): `ProjTrackedCue` queue → `world_sim/projectiles.rs::apply_proj_tracked_cue`,
+  the handle in `Projectile.local_ai[2]`.
+* **The vampire sizzle** (`Player.cs:28580-28604`): the `sun_scorch_counter`
+  ramp ticks on BOTH the live (`UpdateSunScorch` `:25634`) and dead
+  (`UpdateDead` `:17079`) paths; the play/follow rides
+  `world_sim/player.rs::update_sizzle_audio`, the handle in
+  `Player.sizzle_audio_handle`.
+* **The vampire burning flag's granter** (`VampireSeedSunlightExposure`,
+  `Player.cs:28672-28719`, phase 7): `Player::vampire_seed_sunlight_exposure`
+  wired before `tick_sun_scorch` (the `UpdateSunScorch` `:28632` order) — the
+  seed/surface/day/dry/eclipse/graveyard/glowshroom gate chain, the any-liquid
+  wet refusal, the umbrella/bat-mount refusals and the 15-tile upward wall
+  scan. `Zones.graveyard` added (`SceneMetrics.cs:679`).
+* **The DD2 projectile one-shots** (phase 8): `ProjTrackedCue` gained
+  `OneShot`/`KillOneShot`/`GlobalOneShot`/`HandlePlayFollow`; the drain applies
+  the fire-and-forget plays and the handle-store-and-follow dance
+  (`GetActiveSound == null` → `SlotId.Invalid`). The NEW 706 Phantom Phoenix /
+  709 Sky Dragon's Fury aiStyle-1 arms (`projectile_ai_dd2_shots.rs`) rest
+  their flight counter (`flag3 = false`) and fly straight; the 706's wet kill
+  reads the centre-cell liquid stand-in (the `flail_in_liquid` idiom).
+* **The RC-car / Jim's-drone engine loops** (phases 9-10,
+  `projectile_ai_rc_drone.rs`): the full aiStyle-205/195 machines ported
+  verbatim from the W4-d21/W4-d20 census waves; the shared volume/pitch
+  envelope (`Projectile.cs:38254-38266`/`:38286-38298`/`:40984-40996`) queues
+  `ProjTrackedCue::EngineLoop` every tick — the ensure plays the loop into
+  `localAI[2]`, the follow re-points `Volume`/`Position`/`Pitch`. The drone's
+  `Kill()` also queues `EngineLoopStop` (`:70863`); the RC car's does not
+  (`:70855-70864`).
+
+**RNG contract (the census' core claim):** NO tracked play draws `Main.rand`.
+Every `PlayTrackedSound`/`PlayTrackedLoopedSound` consumes exactly two
+AUDIO-ONLY static streams — the variation pick (`LegacySoundStyle.Random`,
+drawn only when `Variations != 1`) and the always-drawn `GetRandomPitch`
+NextFloat (`SoundStyle._random`). The port's stand-ins are
+`Audio::style_random` / `Audio::sound_style_random` (both seeded 1, S1-E-23).
+The witnesses pin that a tracked play leaves every gameplay `RngKey` stream
+pristine.
+
+Deliberate deviations (the census folds):
+
+* **The looped-play conditions fold to shared atomics.** The C#'s
+  `ProjectileAudioTracker` (`ProjectileAudioTracker.cs:15-27`: `!gameMenu &&
+  active && type == expectedType`) and `VampireSizzleTracker`
+  (`VampireSizzleTracker.cs:12-19`: `!gameMenu && vampireSeed &&
+  sunScorchCounter > 0`) read live entity state; the pool cannot hand a live
+  projectile/player reference to a `Send` closure, so each loop's condition
+  reads a shared `Arc<AtomicBool>` the owning system refreshes per tick (the
+  bomb's death/detonation flips it false; the sizzle's mirror tracks the
+  seed + counter). The `gameMenu` term folds with the focus/pause gate that
+  freezes the pool. The bomb fuse's trailing `GetActiveSound` read
+  (`:46920`) is dead — dropped.
+* **The DD2 "loops" are plain tracked plays** of loop-named assets in the C#
+  — NOT `PlayTrackedLoopedSound`; they play out once and the ensure-arm
+  re-plays them when the slot died. The port keeps that exactly (no
+  `IsLooped`, no condition). The bomb fuse and the sizzle ARE
+  `PlayTrackedLoopedSound` (the shared-atomic conditions above).
+* **The wither-beast aura ensure-or-follow** fires on every aura-active tick
+  in the port (the `ai[0] != 0` branch) instead of the C#'s single `ai[0]==1`
+  charge tick — the ensure gate makes the overlap identical while the pulse
+  lives; the re-play cadence after it dies is the fold.
+* **The kobold `ai[0]==0 && ai[1]==1` ensure-or-follow state is unreachable**
+  in the port's folded walker (the `ai[0]==1 → ai[1]=2` latch is immediate,
+  S1-D-3) — the block is ported verbatim and stays inert. The kobold's
+  `localAI[3]` spawn-in counter (`caster_counter`) now ramps 0 → 60
+  (`NPC.cs:63769`) so the `== 0` handle-reset fires once; the alpha fade +
+  the `Next(maxValue3)` dust draws stay the standing dust deviation.
+* **The drill cadence reads the owner's held item through the port's
+  `channel_item` snapshot** (the C# reads
+  `Main.player[owner].inventory[selectedItem].pick`, `Projectile.cs:25512`);
+  the held tool IS the channel item while the drill lives.
+* **The vampire burning flag's granter** (`VampireSeedSunlightExposure`,
+  `Player.cs:28672-28719`) landed in phase 7 with three gate folds:
+  `MoonLordSkyIntensity` is unported → the moon-lord gate is vacuous;
+  `ShouldShowInvisibleBlocksAndWalls` folds false (the framing.rs precedent —
+  the echo-invisible wall check never opens); `base.wet` reads the any-liquid
+  union (`WetCollision` `:27749`/`:27850`) and `Main.raining` reads the live
+  `Rain::is_raining()` (`world.raining` is the SAVE-ONLY mirror). The
+  post-120-counter scorch combat effects (the `:28720+` burn damage) stay
+  deferred. The `sun_scorch_counter` field now exists (the `filters.rs`
+  `SUN_SCORCH_COUNTER` const stays 0 — the heat-distortion branch's read is a
+  separate seam).
+* **The engine-loop condition fold** (phases 9-10): the RC-car / drone loops'
+  `ProjectileAudioTracker` reads `active && type == expectedType` — the slot's
+  death flips the shared atomic false (the bomb-fuse `fuse_alive` field is
+  reused; a slot is a bomb OR an engine, never both). The drone ALSO has the
+  explicit `Kill()` stop (`:70863`, no `localAI[2]` zero write — contrast the
+  bomb fuse's `:70677`); the RC car's loop dies via the atomic alone. The
+  ensure's null test is the pool lookup PLUS the playing state (a
+  stopped-but-not-reaped slot re-plays, matching `GetActiveSound`'s C#
+  semantics for the engine sites' `== null` gate).
+* **The DD2 one-shot arms' dust/light skips** (phase 8): the 706's three dust
+  bursts (`:55778-55788`/`:55801-55835`/`:55849-55858`), the `PlotTileLine`
+  and both kinds' `Lighting.AddLight` are skipped (no dust/light layers in
+  the pool — the slice-B/C precedent); the 706's rotation tail uses the
+  velocity-sign stand-in for `base.direction` (the generic aiStyle-1 flight
+  keeps the spawn direction).
+* **The FINAL riders round's folds** (phase 12, the remaining
+  AI_107/108/109/110 one-shots + handle plays — Betsy circle/dash, the
+  ogre/drakin/javelin/bomber ticks, the portal materialize, the wyvern
+  pair, the glider charge + ignite loop, the Dark Mage windows, the
+  crystal win scene): the wyvern's `Next(5)` scream roll is a GAMEPLAY
+  draw in the C# (`NPC.cs:65611`, `Main.rand`) — it rides the machine's
+  stream at the C#'s position (before the dive jitter) and travels as the
+  `WyvernDiveDown { scream }` payload; the drain only plays, so the play
+  order stays the C#'s and the drain itself stays draw-free. The drakin's
+  `ai[0] > 0` posture gate (the 1-5 octant, `:64092-64103`) is unported —
+  it folds to the burst window (`ai[1] > 0`; the posture only lives inside
+  a burst), and the port's engage+decrement ride the SAME tick (the
+  existing cadence stand-in), so the cues fire one tick earlier than the
+  C#'s next-tick switch read — the same one-tick fold the fire cadence
+  already carries. The flyer's materialize cue reads `caster_counter ==
+  31` (the alpha-gated ramp increments first — the same tick as the C#'s
+  `localAI[0] == 30` pre-increment read, `:65480-65483`; the standing
+  flyer alpha deviation, 22/tick not 5). The goblin/bomber/javelin arms'
+  flag29 materialize cue (`:63765`) folds away with their unported
+  `localAI[3]` ramp (the wave-ramp stand-in reads a counter the App owns);
+  the kobold-walker/skeleton/mage ramps ARE machine-local and carry the
+  cue. The 620 GoblinShark's drakin peers (`:63648`/`:63652`) have no
+  ported kind — deferred with it. The 711 Betsy's Wrath impact
+  (`Projectile.cs:71641`) and the ParticleOrchestrator plays
+  (`ParticleOrchestrator.cs:1888`/`:2123`/`:2427`) stay producer-deferred;
+  their cue assets are banked (the 711 shares the 686 impact's family at
+  volume 0.4, `SoundID.cs:1675`).
+
 ### The item-use sound wave (S1-E-21-itemuse)
 
 `Player.ItemCheck_StartActualUse` (`Player.cs:51681-51698`) plays `sItem.UseSound`
