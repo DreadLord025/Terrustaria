@@ -42027,7 +42027,7 @@ The kinds are NOT in `NpcKind` yet — the machines land as pure functions
 over `FrameState`/`FrameInput` (the S1-D-3 waves A/B and W4-d47 precedent),
 and the `find_frame` bridge is the wiring round. No arm draws `Main.rand`
 (the floater group's dust is types 60/634's), so the wiring cannot move a
-stream.
+stream. The kinds are not in `NpcKind` yet (roster wave `task/W4-d39-npc-kinds-351-420`);
 Per-case notes (all verbatim, row-index convention — `num` cancels):
 * **37 OldMan** (`NPC.cs:68553` in the humanoid town case list,
   `:68634-69655`, 21 rows): town-like (`townNPC = true`, `:9199`), so
@@ -42709,3 +42709,63 @@ trapper's chomp + the exact-reset quirk, the Moss Hornet's 5-tick buzz, the
 Steampunker's 2..13 band + idle/air rows, the Crimson Axe's spin/bonk, and
 the M4-NPC-3t strip sweep (every arm over a 5x3x3x2x2x4 input grid, 40 ticks
 each, asserting the row never leaves its own sheet).
+
+## W4-d49 FindFrame high-band slice 2
+**Scope** (code-only mode 2026-11-20, `task/W4-d49-findframe-high-2`): the SECOND 12 missing
+`NPC.FindFrame` case ids in the 350-697 band, after wave C (`task/W4-d48-findframe-high-1`,
+in flight — 355-366). Census: every `case` label of `NPC.cs:66684-77370` extracted and
+diffed against the port's `npc.rs::find_frame` match (270 kinds, mapped through
+`cs_id`/`texture_net_id`): 350-352 frost arms, 353 humanoid town group, 355-366 wave C,
+368/369 town group, 370-373 fishron, 376 SleepingAngler — the second gap is exactly
+**367, 374, 375, 377, 378, 379, 380, 430, 431, 432, 433, 434**. Landed 6 kinds per commit
+(`aa9e259c` the first 6, `90884424` 380 + the armed-zombie five) as pure machines in
+`crates/tr-app/src/npc_findframe_high2.rs` (`find_frame_high2` over `FrameState`/
+`FrameInput`), the wave-B/C precedent. 13 frame witnesses WRITTEN NOT RUN (no compiler
+invoked). No arm draws `Main.rand` — RNG-free by construction, the wiring cannot move a
+the vanilla-type seam `find_frame_kind_high2` is the wiring key.
+**Per-case notes** (verbatim reads, the quirks the witnesses pin):
+- **367 Scorpion** (`NPC.cs:76820-76850`, the `case 366/367` group): the sprite flip rides
+  the GROUND only, through two one-sided `direction == 1 / == -1` ifs (direction 0 or
+  airborne keeps the old sprite); the idle snaps row 0 + counter 0; the walk accumulator is
+  `|vx| * 1f` then `++` (i.e. `|vx| + 1` per tick), stepping at `> 6` and wrapping
+  `frame.Y / num >= npcFrameCount` (4) to row 0. This is the SAME machine as wave C's 366
+  arm — the sibling branch was in flight, so the verbatim twin landed here to keep this
+  branch self-contained; **the merger dedupes to one shared arm** (the keep-one pattern).
+- **374 TruffleWorm** (`:71121-71155`): `localAI[0] = -2f` EVERY tick (`:71122`); grounded
+  the rotation zeroes (`:71125`), idle snaps row 0 + counter 0, the walk steps at `> 6` and
+  wraps `>= num*4` back to **row 1** (rows cycle 1/2/3 — NOT the 357 worm's 1/0 alternate,
+  the two arms differ); airborne `rotation += direction * 0.1f` accumulates per tick and
+  the stride is `> 3`. 448 GoldWorm rides the 357 arm instead (`:72774`), not this one —
+  the aiStyle-66 family splits across two FindFrame arms.
+- **375 TruffleWormDigger** (`:71109-71120`): the unconditional `> 4`-tick stride over
+  rows 0..3, wrap at `num*4` to 0. No sprite/rotation writes.
+- **377 Grasshopper** (`:70958-70982`, the `case 377/446` group): airborne row 1, grounded
+  row 0, `spriteDirection = direction` unconditional; neither branch touches the counter.
+  The `IsABestiaryIconDummy` 2-row blink (`:70960-70972`) is skipped — the port has no
+  bestiary dummy (the wave-C precedent). `npcFrameCount[377]` = 2 (`Main.cs:67121` slot 7)
+  even though the live arm only ever shows rows 0/1.
+- **378 ChatteringTeethBomb** (`:70983-71006`): two 2-row banks. The airborne shift is
+  `+2` ONCE (`frame.Y < num*2` gate); the landing shift is `-2` gated on `> num*2` — so a
+  landing on exactly row 2 LINGERS in the upper bank until the `>= 6`-tick stride wraps it
+  (`>= num*2` → 0). The air stride wraps `>= num*4` → 2. Both wrap checks run inside the
+  stride tick, after the `+= num`.
+- **379/380 CultistArchers** (`:71578-71622`): grounded, the two one-sided direction ifs
+  flip the sprite; then `ai[2] > 0` pins row `(int)ai[2] - 1 + 2` (the bow-draw rows 2..6),
+  re-copies `spriteDirection = direction` PLAIN (fires even at direction 0) and zeroes the
+  counter; the idle snaps row 0 **without** zeroing the counter (`:71597-71601` — no
+  counter write in that branch); the walk floor is row 7, the `|vx| * 2f` accumulator steps
+  at `> 6`, wrapping at `npcFrameCount` (12) back to 7. Air pins row 1 + counter 0.
+- **430-434 ArmedZombies** (`:70879-70951`, the `case 430..436/591` group; 435/436/591 ride
+  the next wave): the `ai[2] > 0` swing ladder (`< 5/10/15` → rows 3/4/5/6) breaks BEFORE
+  any sprite flip; then the grounded one-sided flips; then the air OR counter-motion pin
+  (`direction == -1 && vx > 0` / `== 1 && vx < 0`) → row 2 + counter 0; then the idle row 0;
+  then the wave-A zombie stride: the `|vx|` accumulator walks the 8/16/24/32 bands over rows
+  0/1/2/1 and at `>= 32` only ZEROES the counter — the row HOLDS for the reset tick
+  (`:70947-70950`, the same quirk `npc_findframe_a::zombie_walk_frame` pins).
+**Frame counts** (`Main.cs:67082` initializer, entry `type` on line `67084 + type/10`,
+slot `type % 10`): 367 = 4 (`:67120`), 374/375 = 4, 377 = 2, 378 = 4, 379 = 12 (`:67121`),
+380 = 12 (`:67122`), 430-434 = 7 (`:67127`) — cross-checked against the port's verbatim
+`NPC_FRAME_COUNT` in the count witness.
+**Remainders**: the `NpcKind` roster rows + the `npc.rs::find_frame` bridge (the wiring
+round, gated on `task/W4-d39`..`d43`); the case-group siblings 446/435/436/591 (next
+waves); the scorpion keep-one dedupe at the d48/d49 merge.
