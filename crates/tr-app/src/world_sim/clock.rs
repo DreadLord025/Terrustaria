@@ -142,6 +142,11 @@ pub(crate) fn advance_time_with_events(
     if was_day && !app.world.day_time {
         // StartNight: the eclipse row cleared above, then the world clear.
         app.world.eclipse = false;
+        // `Main.cs:65222` — `NPC.freeCake = false` on EVERY dusk (W4-d120):
+        // the cake gift only lives for the party day it was earned on; the
+        // FreeCakeDialogue's talk arm (`world_sim/npcs.rs`) consumes it
+        // before then, else the latch dies here.
+        app.world_events.free_cake = false;
         // `UpdateTime_StartNight`'s event pair (`Main.cs:65225-65226`):
         // `BirthdayParty.CheckNight()` then `LanternNight.CheckNight()` —
         // S1-F-14.
@@ -651,7 +656,7 @@ mod tests {
         assert!(!w.day_time, "midnight is the middle of the night");
     }
 
-    /// W4-f37 doc-sweep — `Player.CollectTaxes`'s anniversary pair
+    /// W4-f37 doc-sweep - `Player.CollectTaxes`'s anniversary pair
     /// (`Player.cs:24133-24137`): on `Main.tenthAnniversaryWorld` BOTH the
     /// 50-copper rate and the 25-gold cap double (`num2 *= 2; num *= 2;`).
     /// The `>= cap` early return (`:24138`) and the strict `>` clamp
@@ -688,5 +693,28 @@ mod tests {
         w.tax_payers = 100;
         collect_taxes(&mut w);
         assert_eq!(w.tax_money, crate::world_sim::npcs::TAX_CAP);
+    }
+
+    /// W4-d120 - `Main.cs:65222`: every dusk clears `NPC.freeCake`, so the
+    /// Party Girl's cake gift only lives for the party day it was earned on
+    /// (`BirthdayParty.cs:106` sets it at dawn). The dawn boundary must NOT
+    /// clear it — the morning party sets it on that same tick.
+    #[test]
+    fn dusk_clears_the_free_cake_latch() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world.day_time = true;
+        app.world.time = 53999.0;
+        app.world_events.free_cake = true;
+        advance_time_with_events(&mut app, 5.0, false);
+        assert!(!app.world.day_time, "dusk ran");
+        assert!(!app.world_events.free_cake, "`Main.cs:65222` clears the latch");
+        // The dawn side leaves it alone (the morning party may set it).
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world.day_time = false;
+        app.world.time = 32399.0;
+        app.world_events.free_cake = true;
+        advance_time_with_events(&mut app, 5.0, false);
+        assert!(app.world.day_time, "dawn ran");
+        assert!(app.world_events.free_cake, "StartDay keeps the latch");
     }
 }

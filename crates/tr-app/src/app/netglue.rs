@@ -3253,8 +3253,13 @@ fn npc_seed(
         | crate::npc::NpcKind::Princess
         | crate::npc::NpcKind::DyeTrader
         | crate::npc::NpcKind::PartyGirl
-        | crate::npc::NpcKind::GoblinTinkerer => crate::npc::Npc::spawn_guide(world, tx)?,
-        // W4-g10 lane 3 — the town pets seed on the column surface like the
+        | crate::npc::NpcKind::GoblinTinkerer
+        // W4-d120 - the four town kinds seed like the town roster.
+        | crate::npc::NpcKind::SantaClaus
+        | crate::npc::NpcKind::Truffle
+        | crate::npc::NpcKind::Steampunker
+        | crate::npc::NpcKind::Cyborg => crate::npc::Npc::spawn_guide(world, tx)?,
+        // W4-g10 lane 3 - the town pets seed on the column surface like the
         // town residents (the generic ground ctor; the pet-aware aiStyle-7
         // machine takes over on the first tick).
         crate::npc::NpcKind::TownCat
@@ -3312,7 +3317,9 @@ fn npc_seed(
         | crate::npc::NpcKind::BoundWizard
         | crate::npc::NpcKind::BoundMechanic
         | crate::npc::NpcKind::WebbedStylist
-        | crate::npc::NpcKind::SleepingGolfer => {
+        | crate::npc::NpcKind::SleepingGolfer
+        // W4-d120 — the bound Tavernkeep seeds like the bound forms.
+        | crate::npc::NpcKind::BartenderUnconscious => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
         crate::npc::NpcKind::EaterOfSouls

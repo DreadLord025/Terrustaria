@@ -246,21 +246,56 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
     if app.talk_npc == Some(i) {
         return None; // `:43077` — the same NPC re-clicked falls through
     }
-    // `:43081` — `player.SetTalkNPC(i)`: the seam runs the f37 mood capture
-    // + the g58 report/settings latch in ONE pass (research/68 §4 — the
+    // `:43081` - `player.SetTalkNPC(i)`: the seam runs the f37 mood capture
+    // + the g58 report/settings latch in ONE pass (research/68 §4 - the
     // Princess head draws once per talk change on `NamedRngs::global()`);
     // f37's inline capture here folded into the seam.
     app.set_talk_npc(Some(i));
-    // W4-d79 — the orphaned Chat emitter (`Main.cs:43083`,
-    // `SoundEngine.PlaySound(24)` — UNPOSITIONED): case 24
+    // W4-d79 - the orphaned Chat emitter (`Main.cs:43083`,
+    // `SoundEngine.PlaySound(24)` - UNPOSITIONED): case 24
     // (`LegacySoundPlayer.cs:957-962`) is Volume/Pan only, NO draws, the
     // slot overwrites WITHOUT a Stop. Draw-free, so the GetChat rolls
     // below keep their stream positions.
     app.audio.play_single_voice("Chat", -1.0, -1.0);
+    // `NPC.GetChat`'s nextDialogue arm (`NPC.cs:93768-93771`): the Party
+    // Girl's FreeCakeDialogue (`ConditionalDialogue.cs:50-64`) - the only
+    // registered conditional. The 10-tick CheckDialogue refresh
+    // (`NPC.cs:90519-90532`) collapses to the talk: the condition is the
+    // `NPC.freeCake` latch a natural party sets (`BirthdayParty.cs:106`).
+    // The gift rides `QuickSpawnItem` → `GetOrDropItem` (`Player.cs:7186-
+    // 7197`): the inventory slot walk first, the overflow drop at the
+    // player centre (the bobber-catch shape); the text's `Next(1, 4)`
+    // draw fires AFTER the gift (`:60-63`).
+    if app.npcs[i].kind == NpcKind::PartyGirl && app.world_events.free_cake {
+        app.world_events.free_cake = false;
+        // The cake (3750) stacks to `Item.CommonMaxStack` = 9999 (case 3750
+        // writes no maxStack, `Item.cs:33214-33226` → `:49017`) and carries
+        // no prefix (the Item-variant QuickSpawnItem - no `Prefix(-1)`
+        // roll); the overflow drop's `RequestNewItem` keeps prefix 0.
+        let slot = crate::item::slot_for_pickup(&mut app.inventory, 3750, 0);
+        match slot {
+            Some(s) => app.inventory[s].count += 1,
+            None => {
+                if let Some(p) = app.player.as_ref() {
+                    let (cx, cy) = p.center();
+                    crate::world_sim::items::spawn_item_drop_px(
+                        &mut app.items,
+                        app.rngs.global(),
+                        3750,
+                        1,
+                        Vec2::new(cx, cy),
+                    );
+                }
+            }
+        }
+        let n = app.rngs.global().next_range(1, 4);
+        let text = crate::lang::text(&format!("PartyGirlSpecialText.Cake{n}"));
+        app.npc_chat_text = text.clone(); // `:43082`
+        return Some(text);
+    }
     // The context off the live state. The world flags the port does not
-    // carry yet (the storm clock, the happy-windy-day, `BirthdayParty`,
-    // `LanternNight`, the remix world, `WorldGen.crimson`, the Moon Lord)
-    // default off — each noted at its field.
+    // carry yet (`Main.remixWorld`, `WorldGen.crimson`) default off —
+    // each noted at its field.
     let day_time = app.world.day_time;
     let time = app.world.time;
     let blood_moon = app.world.blood_moon;
@@ -268,26 +303,69 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
     let slime_rain = app.world.slime_rain;
     let hard_mode = app.world.hard_mode;
     let moon_phase = app.world.moon_phase;
-    let raining = app.world.raining;
-    let (life, life_max, deaths) = app
+    // `Main.raining` — the LIVE rain latch (`Rain.is_raining`, the
+    // `Main.cs:64649/:64725` writers); `world.raining` only mirrors it at
+    // save (`saveglue.rs:99`), so the talk reads the event state.
+    let raining = app.rain.is_raining();
+    let (life, life_max, deaths, defense, head) = app
         .player
         .as_ref()
-        .map(|p| (p.hp, p.max_hp, p.deaths_pve as i32))
-        .unwrap_or((0, 0, 0));
+        .map(|p| {
+            // `Player.head` (`Player.cs:35765`): the vanity head's slot when
+            // one is worn, else the armor head's — `GetEffectiveArmor(10/0)
+            // .headSlot`, -1 for air (`Item.cs:48998`'s SetDefaults row).
+            // The port has no loadouts, so the slot itself is the source.
+            let vanity = crate::registry::get(app.equip.armor[10].kind)
+                .map_or(-1, |d| d.head_slot);
+            let head = if vanity >= 0 {
+                vanity
+            } else {
+                crate::registry::get(p.equipped[0]).map_or(-1, |d| d.head_slot)
+            };
+            (p.hp, p.max_hp, p.deaths_pve as i32, p.stat_defense, head)
+        })
+        .unwrap_or((0, 0, 0, 0, -1));
+    // `Player.NormalizedLuck` (`Player.cs:4107-4122`) — the clamped ±cap
+    // ratio the wizard's luck-band gate reads.
+    let luck = app
+        .player
+        .as_ref()
+        .map_or(0.0, |p| crate::npc_chat::normalized_luck(p.luck()));
+    // `Player.Male` (`Player.cs:3405-3409` — `PlayerVariantID.Sets.Male`):
+    // the session draft's cloth style decides; a fresh spawn is variant 0
+    // (male), the same default the render pass documents.
+    let male = app
+        .session_draft
+        .as_ref()
+        .map_or(true, |d| crate::ui::char_creation::is_male(d.skin_variant));
     let angler_quests = app
         .player
         .as_ref()
         .map(|p| p.angler_quests_finished)
         .unwrap_or(0);
     let golfer_score = app.player.as_ref().map(|p| p.golfer_score).unwrap_or(0);
-    // `Player.HasItem(5275)` — the cola the Dryad's line asks about; the
-    // port scans the inventory slots (no equipment scans yet).
-    let has_cola = app.inventory.iter().any(|s| s.kind == 5275);
+    // `Player.HasItem(5275)` (`Player.cs:55894-55904`): the inventory
+    // 0..58 walk with `stack > 0` — the port's grid + trash (the cola is
+    // neither coin nor ammo, so those slots can never hold it).
+    let has_cola = app
+        .inventory
+        .iter()
+        .chain(std::iter::once(&app.equip.trash))
+        .any(|s| s.kind == 5275 && s.count > 0);
     // `DD2Event.DownedInvasionT1/2` — the persisted tier-victory latches
     // (S1-E-12c), NOT the per-run wave-boss death latches.
     let dd2_t1 = app.world.dd2_downed_t1;
     let dd2_t2 = app.world.dd2_downed_t2;
+    let dd2_t3 = app.world.dd2_downed_t3;
     let dd2_ongoing = app.world.dd2_event_ongoing;
+    // The event-text gates (`NPC.cs:94860-94884`): the graveyard zone,
+    // `BirthdayParty.PartyIsUp`, the rain (not storm), the happy windy day
+    // and the storm clock — all live App state now.
+    let zone_graveyard = app.scene_metrics.zone_graveyard;
+    let party_is_up = crate::world_events::party_is_up(&app.world_events);
+    let windy_day = app.wind.happy_windy_day;
+    let storming = app.wind.storming;
+    let lanterns_up = crate::world_events::lanterns_up(&app.world_events);
     let rng = app.rngs.global();
     let mut draw = |n: i32| rng.next_max(n);
     let mut ctx = crate::npc_chat::ChatContext {
@@ -302,29 +380,30 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         moon_phase,
         remix_world: false,    // `Main.remixWorld` — no remix flag in the port
         raining,
-        storming: false,       // `Main.cloudAlpha`'s storm — no storm clock yet
-        windy_day: false,      // `Main.IsItAHappyWindyDay` — no wind-day state
-        zone_graveyard: false, // `Player.ZoneGraveyard` — the zone rides the biome pass
-        party_is_up: false,    // `BirthdayParty.PartyIsUp` — unported
+        storming,              // `Main.IsItStorming` — the wind storm latch
+        windy_day,             // `Main.IsItAHappyWindyDay` — the wind day latch
+        zone_graveyard,        // `Player.ZoneGraveyard` — the scene metrics
+        party_is_up,           // `BirthdayParty.PartyIsUp` (S1-F-14)
         crimson: false,        // `WorldGen.crimson` — the world-evil flag
         downed_boss1: app.world.downed_eoc, // `NPC.downedBoss1`
         downed_boss2: app.world.downed_eow, // `NPC.downedBoss2`
         downed_boss3: app.world.downed_skeletron, // `NPC.downedBoss3`
-        downed_moonlord: false, // `NPC.downedMoonlord` — unported
+        downed_moonlord: app.world.downed_moon_lord, // `NPC.downedMoonlord`
         dd2_downed_t1: dd2_t1,
         dd2_downed_t2: dd2_t2,
+        dd2_downed_t3: dd2_t3,
         dd2_ongoing,
-        lanterns_up: false, // `LanternNight.LanternsUp` — unported
+        lanterns_up, // `LanternNight.LanternsUp` (S1-F-14)
         player_life: life,
         player_life_max: life_max,
         player_base_life_max: life_max, // `Player.statLifeMax` — the port keeps one max
-        player_defense: 0,   // `Player.statDefense` — no defense field yet
-        player_male: true,   // `Player.Male` — the spawn default
-        player_head: 0,      // `Player.head` — no armor slots yet
+        player_defense: defense, // `Player.statDefense` (M3-EQUIP-2)
+        player_male: male,       // `Player.Male` — the session draft's cloth style
+        player_head: head,       // `Player.head` — the vanity/armor head slot
         player_deaths_pve: deaths,
-        player_luck: 0.0,    // `Player.NormalizedLuck` — no luck feed yet
+        player_luck: luck,       // `Player.NormalizedLuck` — the clamped ±cap ratio
         player_has_cola: has_cola,
-        angler_quest_finished: false, // `Main.anglerQuestFinished` — unported
+        angler_quest_finished: app.world.angler_quest_finished, // `Main.anglerQuestFinished`
         angler_quests_finished: angler_quests,
         golfer_score,
     };
@@ -597,9 +676,17 @@ pub(crate) fn start_invasion_in(
     true
 }
 
-/// The kind → the shop number (`NPCInteractions.cs:488-498`'s registry:
-/// `Shop(17, 1)`, `Shop(19, 2)` … `Shop(107, 6)` — the port keeps the
-/// vanilla indices). `None` = no shop (the Guide).
+/// The kind → the shop number (`NPCInteractions.Initialize`,
+/// `NPCInteractions.cs:488-512` — the FULL 25-row registry census,
+/// W4-d120 final: `Shop(17, 1)` … `Shop(663, 24)` plus the Painter's
+/// SECOND row `Shop(227, 25, "GameUI.PainterDecor")` `:512`; the port
+/// keeps the vanilla indices). `None` = no shop — the census's no-shop
+/// set is exactly Nurse 18 / OldMan 37 / Guide 22 / TaxCollector 441 /
+/// Angler 369 / the bound forms (105/106/123/354/376/579/589) / the
+/// SkeletonMerchant 453 HAS shop 20 / the pets+slimes have none.
+/// The Painter's decor row answers index 15 (the first matching
+/// `OpenShop.Condition`, `:59-62`); 25 needs its own button row — the
+/// panel task's, recorded in docs/ANALYSIS.md.
 pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
     Some(match kind {
         NpcKind::Merchant => 1,
@@ -619,7 +706,25 @@ pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
         NpcKind::Princess => 24,
         NpcKind::DyeTrader => 12,
         NpcKind::PartyGirl => 13,
-        _ => return None,
+        // W4-d120 final census: the claimed kinds' registry rows —
+        // `Shop(142, 9)`/`Shop(160, 10)`/`Shop(178, 11)`/`Shop(209, 14)`
+        // (`:496-501`). The STOCK for 9/10/11/14 is d122's lane (its
+        // shop.rs already carries the four cases, `Chest.cs:2091-2135`/
+        // `:2360`); until it merges these indices resolve empty stock.
+        NpcKind::SantaClaus => 9,
+        NpcKind::Truffle => 10,
+        NpcKind::Steampunker => 11,
+        NpcKind::Cyborg => 14,
+        // The sibling lanes' kinds (type-keyed arms' shop twins):
+        // `Shop(229, 17)` (`:504`, d37's Pirate), `Shop(453, 20)`
+        // (`:507`, d40's SkeletonMerchant). `Shop(550, 21)` (`:508`)
+        // is d122's row (its shop-currency lane lands the Tavernkeep
+        // mapping WITH the medal stock) — not duplicated here.
+        _ => match kind.cs_id() {
+            229 => 17,
+            453 => 20,
+            _ => return None,
+        },
     })
 }
 

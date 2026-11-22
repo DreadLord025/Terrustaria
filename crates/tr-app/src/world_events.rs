@@ -10,10 +10,11 @@
 //!
 //! Deviations: the party's `OrderBy(Main.rand.Next())` celebrating-NPC pick
 //! indexes the port's compacted `Vec<Npc>` (the C# indexes the stable
-//! `Main.npc` slots — recorded); `NPC.freeCake = true`'s companion consumer
-//! (the party girl's cake NPC) is unported; the party's `BroadcastText`
-//! rides the port's death-text broadcast with the C# colour
-//! (`new Color(255, 0, 160)`).
+//! `Main.npc` slots — recorded); the party's `BroadcastText` rides the
+//! port's death-text broadcast with the C# colour
+//! (`new Color(255, 0, 160)`). `NPC.freeCake` (the party girl's cake
+//! latch, `BirthdayParty.cs:106`) rides `WorldEvents.free_cake`; its
+//! consumer is the talk's FreeCakeDialogue arm (`world_sim/npcs.rs`).
 
 use crate::chat::{self, ChatMonitor};
 use crate::npc::{Npc, NpcKind};
@@ -38,6 +39,11 @@ pub(crate) struct WorldEvents {
     pub manual_party: bool,
     /// `BirthdayParty.GenuineParty`.
     pub genuine_party: bool,
+    /// `NPC.freeCake` (`BirthdayParty.cs:106`) — the Party Girl's cake
+    /// gift latch: a natural party sets it, the FreeCakeDialogue's
+    /// `GetChatAndClearCondition` consumes it (`talk_to_npc`), and EVERY
+    /// dusk clears it (`Main.cs:65222`, `world_sim/clock.rs`).
+    pub free_cake: bool,
     /// `BirthdayParty.PartyDaysOnCooldown`.
     pub party_days_on_cooldown: i32,
     /// `BirthdayParty.CelebratingNPCs` — the compacted vec's indices (the
@@ -215,6 +221,8 @@ pub(crate) fn check_morning_party(
         return false;
     }
     ev.genuine_party = true;
+    // `BirthdayParty.cs:106` — `NPC.freeCake = true` on the fresh party.
+    ev.free_cake = true;
     ev.party_days_on_cooldown = rng(5, 11);
     ev.celebrating_npcs.clear();
     // `Main.rand.Next(5) == 0 && list.Count > 12` → 3 celebrants, else the
@@ -313,6 +321,8 @@ pub(crate) fn world_clear(ev: &mut WorldEvents) {
     ev.party_days_on_cooldown = 0;
     ev.celebrating_npcs.clear();
     ev.was_celebrating = false;
+    // `NPC.freeCake = false` (`WorldGen.cs:6945`, the clearWorld family).
+    ev.free_cake = false;
     // The ritual's `delay`/`recheck` are NOT in the WorldClear family — they
     // ride the world-file load (`WorldFile.cs:163`'s `_tempCultistDelay`
     // restore), so this fn leaves them alone (the C#'s own scope).
@@ -424,6 +434,7 @@ mod tests {
             was_lantern_night: true,
             manual_party: true,
             genuine_party: true,
+            free_cake: true,
             party_days_on_cooldown: 5,
             celebrating_npcs: vec![1, 2, 3],
             was_celebrating: true,
@@ -434,6 +445,7 @@ mod tests {
         assert!(!ev.manual_lanterns && !ev.genuine_lanterns);
         assert_eq!(ev.lantern_nights_on_cooldown, 0);
         assert!(!ev.manual_party && !ev.genuine_party);
+        assert!(!ev.free_cake, "`WorldGen.cs:6945`");
         assert!(ev.celebrating_npcs.is_empty());
         // The ritual's delay survives the clear (the world-file restore owns
         // it — `WorldFile.cs:163`).

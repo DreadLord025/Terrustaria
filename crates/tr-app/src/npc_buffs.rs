@@ -484,8 +484,8 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
-        // W4-g10 lane 3 — the town pets: `NPCID.cs`'s DebuffImmunitySets has
-        // no row for 637/638/656/670/678-684 — the null-row else-branch, no
+        // W4-g10 lane 3 - the town pets: `NPCID.cs`'s DebuffImmunitySets has
+        // no row for 637/638/656/670/678-684 - the null-row else-branch, no
         // immunity (`NPC.cs:17826-17832`), same as the town residents.
         NpcKind::TownCat
         | NpcKind::TownDog
@@ -498,6 +498,14 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::TownSlimeRed
         | NpcKind::TownSlimeYellow
         | NpcKind::TownSlimeCopper => &[],
+        // W4-d120 - all five carry `SpecificallyImmuneTo {31}` (the
+        // Confused debuff; `NPCID.cs`'s DebuffImmunitySets rows for
+        // 142/160/178/209/579).
+        NpcKind::SantaClaus
+        | NpcKind::Truffle
+        | NpcKind::Steampunker
+        | NpcKind::Cyborg
+        | NpcKind::BartenderUnconscious => &[31],
     }
 }
 
