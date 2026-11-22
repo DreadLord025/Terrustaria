@@ -6765,6 +6765,11 @@ live arm folds it into `ChaosBall` вЂ” the wiring decides); the wiring
 round must also supply `player_velocities` (the telefrag union) and the
 `any_skeletron`/`any_npcs_113`/`get_good_world` flags. The live
 `caster_cycle` keeps running byte-identical until then.
+**(Superseded 2026-11-20, W4-d128: the live arm is now
+`npc_ai_bat::ai_style_8_step` — `caster_cycle` is retired — and the
+module swap is EXCLUDED as a determinism break; see "The caster
+aiStyle-8 reference census (W4-d128, docs-only)" for the per-kind
+divergence table + the draw-parity plan.)**
 
 ### The eye aiStyle-2 re-port (S1-D-3, code-only mode)
 
@@ -41692,3 +41697,125 @@ small-set long tail stays research/34's open list.
 **Verification.** No cargo/rustc/tests invoked (code-only mode). The
 parse-and-diff script's per-table ALL OK output is the evidence; the new
 witness tests are WRITTEN NOT RUN.
+
+## The caster aiStyle-8 reference census (W4-d128, docs-only)
+**Verdict: `npc_ai_caster.rs` is EXCLUDED from wiring — permanently, as a
+drop-in swap.** The live `npc.rs::update_caster` (`:10716-10725`) already
+delegates to the faithful `npc_ai_bat::ai_style_8_step` (the WIRED-DELEGATE
+arm, the bat/fish reconcile's census-confirmed verdict, ROADMAP "S1-D-3
+bat/fish reconcile"). This round (2026-11-20, `task/W4-d128-caster-reference-doc`,
+docs-only, no compiler invoked) re-read the whole C# arm
+(`NPC.cs:20817-21376`), the teleport search (`:18937-19007`), both Rust
+modules and the dispatch (`npc.rs:6113-6115`) and records (a) why swapping
+the reference in breaks determinism, (b) the per-kind divergence census,
+(c) the reference's residual defects, and (d) the draw-parity plan a
+FUTURE determinism-safe port must follow.
+### Why the swap is a determinism break
+The live arm and the reference implement the SAME state machine, but the
+live arm carries the documented S1-E-2/S1-E-5 draw skips while the
+reference CONSUMES those draws (its header enumerates them, `npc_ai_caster.rs:44-68`).
+Swapping the reference in ADDS draws to the shared `UpdateNPCs` stream:
+| Draw site (C#) | Live `ai_style_8_step` | Reference `caster_ai` |
+| Arrival bursts `:20867`/`:20936` — 29/45 `Next(1,3)` ×50 ×2 bursts | skipped (`npc_ai_bat.rs:294-300`) | consumed, exactly 100/arrival tick (`teleport_burst_draws` `:285-291`) |
+| Ambient gate `:21282` — 29/45 `Next(5)` every tick | skipped (`:476-478`) | consumed (`:506-507`) |
+| Ambient gate `:21292` — 32 `Next(3)` every tick | skipped | consumed (`:508-509`) |
+| Ambient gate `:21366` — else group (24) `Next(6)` every tick | skipped | consumed (`:512-514`) |
+| Djinn volley `:21140-21141` — 2 draws/iteration, ≤50 iterations, on the 5 windup ticks ai[1] = 120/90/60/30/0 | skipped wholesale — the Djinn never fires (the S1-E-5 skip, `anchors.txt` Djinn row) | consumed + the 596 curse request (`:419-462`) |
+| Teleport search `:18952-18953` — 2 draws/attempt | consumed (both modules) | consumed |
+Every added draw shifts the stream position for ALL downstream consumers
+in the same tick (other NPCs, items, projectiles) — the AGENTS.md hard
+invariant ("RNG streams ... must not change"). The reconcile verdict
+stands: **keep the wired arm, do NOT double-port, do NOT swap.** The
+reference's value is as the DRAW-CENSUS SPEC for the parity wave below,
+not as a drop-in replacement.
+### The family census (13 SetDefaults rows, 5 ported kinds)
+The whole-tree `aiStyle = 8;` census over `NPC.cs` finds exactly 13 rows:
+24 FireImp (`:9083`), 32 DarkCaster (`:9125`), 29 GoblinSorcerer
+(`:9326`), 45 Tim (`:11158`), 281/282 RaggedCaster (`:12644`/`:12658`),
+283/284 Necromancer (`:12672`/`:12686`), 285/286 Diabolist
+(`:12700`/`:12714`), 533 DesertDjinn (`:14978`), 693 LibrarianSkeleton
+(`:15690`), 172 RuneWizard (`:17727`). The port models five
+(24/29/32/45/533); the other eight are cited skips in BOTH modules (the
+172 alpha ramp `:20844-20854` + six-tick trigger `:21023-21030` + jittered
+shadow beam `:21264-21274`; 281-286's trigger ladders
+`:21011-21022`/`:21039-21050`, the 450/540 wraps and the aimed skeleton
+shots `:21177-21227`; 693's localAI clock + book teleport
+`:19009-19085` + book shot `:62308-62364`).
+Per-kind behavior, live delegation vs the C# (the reference's deltas in
+the last column):
+| Kind | Live `ai_style_8_step` vs C# | Reference delta |
+| 24 FireImp | structure faithful (the ftw+WoF stall `:21053-21060` rides `world.wof_present`; the sphere 25 at ai[1]==10 `:21164-21173` wired); **defect L1**: the search radius is `num88 = 5` (`npc_ai_bat.rs:381-392`) but the C# call `:21097` passes only `(destination, num86, num87)` — `rangeFromTargetTile` takes its DEFAULT **20** for EVERY type (`:18937`); `num88` is only the post-teleport windup (`:21101`). Ambient `Next(6)` skipped | radius 20 correct (`:395-403`); ambient consumed |
+| 29 GoblinSorcerer | faithful (flag5 forced true `:21007-21010`; ChaosBall 30 `:21238`); arrival bursts + ambient `Next(5)` skipped | 100 burst draws + ambient consumed |
+| 32 DarkCaster | faithful (the red-hat latch `:20820-20828` via `world.skeletron_red_hat`, the flag4 double-step `:21061-21068`, the dungeon-wall gate `:18960-18966`, WaterSphere 33 with `ai3 = flag4` `:21246`); ambient `Next(3)` skipped | ambient consumed |
+| 45 Tim | faithful except the documented fold: type 665 ChaosBallTim spawns as `ChaosBall` (`npc_ai_bat.rs:457-461`, identical stats); bursts + ambient skipped | keeps `npc_type: 665` distinct (`CasterShot::Sphere`); bursts + ambient consumed |
+| 533 DesertDjinn | trigger 180 → windup 181 (`:21031-21038`) + the 360 wrap (`:21079-21082`) faithful; **the volley is skipped wholesale — the Djinn never fires** (S1-E-5); ambient draws NOTHING in either (light only `:21358-21361`) — the one kind whose ambient stream already matches | the full volley: the `%30` window, the >2000 gate, ≤50 iterations × 2 draws, the ±2/±6 box exclusions, lava + SolidTiles(±2) gates, the 596 curse at the tile centre (`CasterShot::Curse`) |
+Shared machinery both modules carry faithfully: the deferred
+`ai[2]/ai[3]` arrival with the INTEGER `(float)(width/2)` halving
+(`:20924-20925`), the >2000-px Manhattan bail (ZERO draws, `:18944`), the
+column-abort `break` (`:19003` — the first floor+body candidate ends the
+attempt even when telefrag rejects it), the dungeon-wall/lava ELSE-IF
+quirk (`:18960-18970`), the telefrag velocity union (`:18982-18997`),
+`AI_GlobalFiringDistanceCheck`'s 1920×1200 Point-centred −50 rect
+(`:55835-55841`), `Collision.SolidTiles`' bounds-as-solid +
+`!tileSolidTop` semantics (`Collision.cs:3455-3488`).
+### Residuals found this census (neither module is swap-ready)
+* **L1 (LIVE, fidelity defect)** — the FireImp radius misuse above. Not a
+  draw-COUNT break (2 draws/attempt either way) but the draw BOUNDS
+  differ → different spots → different attempt counts/termination →
+  the stream diverges anyway. The fix changes the shared stream and must
+  ride the parity wave, never a hotfix.
+* **R1 (REFERENCE)** — the search's floor gate (`npc_ai_caster.rs:217`)
+  and the volley's tile gate (`:441`) test `t.active()` where the C#
+  tests `nactive()` = active AND NOT actuated (`Tile.cs:240-247`,
+  `sTileHeader & 0x60 == 32`). The live arm has it right
+  (`npc_ai_bat.rs:152-154`). As written the reference would accept
+  actuated tiles as teleport floors / curse spots.
+* **R2 (REFERENCE)** — the Item8 sounds are skipped as "the sound task's
+  skip" (`:329-330`) but the live arm ALREADY wires them (S1-E-21g: the
+  departure puff BEFORE the move, the arrival AFTER, the cast puffs
+  `:21168`/`:21230-21233`). A swap would silently drop wired sound.
+* **R3 (REFERENCE)** — the reference never integrates (correct: the C#
+  arm RETURNS at `:21375`, the generic `UpdateNPC` tail is the caller's);
+  the live arm applies gravity/collision inline at its tail (the
+  documented ordering deviation). The wiring must keep the live tail or
+  supply the generic one — the reference alone leaves casters floating.
+* **R4 (decision)** — Tim's 665 identity: the live fold vs the
+  reference's distinct type. The parity wave decides once (the re-port
+  section's "the wiring decides" note).
+### The draw-parity plan (a FUTURE determinism-safe port)
+Per the no-parallel-implementations rule the end state is ONE module:
+the fixes land in `npc_ai_bat.rs` and `npc_ai_caster.rs` retires as the
+cited reference. Order:
+1. **Prerequisite** — the dust wave (S1-E-1's `DustRng` seam) or an
+   explicit draw-only stub policy: the arm-level draws can be consumed
+   without visuals (the `teleport_burst_draws` pattern), but the
+   `NewDust` INTERNAL draws stay the dust task's until it lands. The
+   parity commit must state which policy it uses.
+2. **One coordinated parity commit** (never piecemeal): add the skipped
+   arm-level draws to the LIVE arm at their exact C# positions — the
+   100-draw arrival bursts (29/45, the scale ARGUMENT consumed even when
+   `NewDust` culls), the per-tick ambient gates (29/45 `Next(5)`, 32
+   `Next(3)`, 24 `Next(6)`; 533 none), the Djinn volley search (2/iteration,
+   ≤50, the 5 window ticks, the >2000 gate and netMode 1 drawing nothing)
+   + the 596 curse drain. Fix L1 (radius 20 for every type) in the SAME
+   commit. This is a deliberate one-time stream shift: re-bless the
+   affected golden outputs and replay the witnesses against a mirrored
+   oracle stream (the five-probe stream-position method the reference's
+   13 written-not-run witnesses already pin).
+3. **Reference residuals first** — if any reference code is adopted,
+   fix R1 (`nactive()`), R2 (the S1-E-21g sound order), R3 (integration
+   tail ownership) and decide R4 before it touches the dispatch.
+4. **Witnesses** — per-kind stream-position pins (arrival tick, ambient
+   tick, volley window tick, teleport attempt), the zero-draw paths
+   (>2000 bail, netMode 1, Djinn ambient), the attempt-count parity
+   under the radius-20 bounds, and the Djinn curse spawn parity.
+**Non-goal, recorded so no future round misreads the 🟡 status**: the
+S1-D-3-aistyle7 row's "the wiring ... is the follow-up" is SUPERSEDED by
+the reconcile verdict — there is no wiring follow-up for
+`npc_ai_caster.rs` as a module swap; the follow-up is the draw-parity
+wave above, scoped to the live arm.
+Docs-only: every claim re-read against the cited C# windows
+(`NPC.cs:20817-21376` in five ≤120-line reads, `:18937-19007`,
+`Tile.cs:240-247`) and the actual Rust (`npc.rs:6113-6115`/`:10716-10725`,
+`npc_ai_bat.rs` whole, `npc_ai_caster.rs` whole). No code touched, no
+cargo/rustc/tests invoked.
