@@ -24,6 +24,7 @@ pub mod creative_display;
 pub mod creative_items;
 pub mod cursor;
 pub mod debug_items;
+pub mod elements;
 pub mod ingame_options;
 pub mod housing;
 pub mod images;

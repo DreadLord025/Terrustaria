@@ -152,6 +152,511 @@ pub fn fix_grid_range(at: usize, offset: i64, capacity: usize, total: usize) -> 
     (at as i64 + offset).clamp(0, max as i64) as usize
 }
 
+// --- The element classes' missing pure halves (W4-d81 census rows 7-9) ---------
+//
+// The grid draw/hit/range/clamp are pre-landed above; the card draw
+// (`draw_card`) covers the ctor's layer stack. These port the remaining
+// stateless pieces the screens adopt later (the 18b convention).
+
+/// `UIBestiaryEntryGrid.OffsetLibraryByPages` (`UIBestiaryEntryGrid.cs:103-107`):
+/// the page buttons pass `howManyPages * maxEntriesToHave` to `OffsetLibrary`
+/// (`:109-114`), which clamps through `FixBestiaryRange` and refills.
+#[allow(dead_code)] // paging lands with the filters/sort (the draw pins at 0)
+pub fn offset_library_by_pages(at: usize, pages: i64, capacity: usize, total: usize) -> usize {
+    fix_grid_range(at, pages * capacity as i64, capacity, total)
+}
+
+/// `FillBestiarySpaceWithEntries`' cell placement
+/// (`UIBestiaryEntryGrid.cs:50-66`): the button is 72x72, `HAlign/VAlign 0.5`,
+/// `Left (0, k/cols - 0.5 + 0.5/cols)`, `Top (0, j/rows - 0.5 + 0.5/rows)` —
+/// the fractional offsets centre the lattice inside the grid rect even when
+/// the space is not a whole multiple of 72. The port's draw/hit use the raw
+/// CELL lattice (the documented simplification, exact when the space divides).
+#[allow(dead_code)] // the draw keeps the raw lattice; the exact form is pinned
+pub fn grid_cell_rect(
+    rect: &[f32; 4],
+    cols: usize,
+    rows: usize,
+    col: usize,
+    row: usize,
+) -> [f32; 4] {
+    let num3 = 0.5 / cols as f32; // `:51`
+    let num4 = 0.5 / rows as f32; // `:52`
+    let left_pct = col as f32 / cols as f32 - 0.5 + num3; // `:65`
+    let top_pct = row as f32 / rows as f32 - 0.5 + num4; // `:66`
+    [
+        rect[0] + (rect[2] - CELL) * 0.5 + left_pct * rect[2],
+        rect[1] + (rect[3] - CELL) * 0.5 + top_pct * rect[3],
+        CELL,
+        CELL,
+    ]
+}
+
+/// `UIBestiaryEntryButton`'s border layer order (`MouseOver`/`MouseOut`,
+/// `UIBestiaryEntryButton.cs:150-169`): hovered draws `Slot_Front` then
+/// `Slot_Selection` (the overlay is removed, `:153-157`); idle draws
+/// `Slot_Overlay` then `Slot_Front` (no glow, `:163-167`). Returns
+/// `(draw_overlay, draw_glow)`. The pretty-portrait ctor removes the overlay
+/// outright (`:93-96`). The current `draw_card` keeps the overlay under the
+/// hover stack — a documented deviation until the adoption.
+#[allow(dead_code)] // draw_card keeps its always-overlay stack for now
+pub fn entry_button_border_layers(hovered: bool, pretty_portrait: bool) -> (bool, bool) {
+    if pretty_portrait {
+        return (false, false); // `:93-96` — the overlay never draws
+    }
+    if hovered {
+        (false, true) // `:153-157`
+    } else {
+        (true, false) // `:163-167`
+    }
+}
+
+/// `TryGettingBackgroundImageProvider` (`UIBestiaryEntryButton.cs:104-129`):
+/// the first preference-matched provider with a non-null background image
+/// wins (`:112-119`); failing that, the first provider with one in entry
+/// order (`:120-127`). The port models each provider as
+/// `(matches_a_preference, has_image)`; the bestiary entries carry no
+/// background providers yet (the pretty-portrait backgrounds defer).
+#[allow(dead_code)] // no background providers on the port's entries yet
+pub fn pick_background_provider(providers: &[(bool, bool)]) -> Option<usize> {
+    for (i, &(matched, has_image)) in providers.iter().enumerate() {
+        if matched && has_image {
+            return Some(i); // `:112-119`
+        }
+    }
+    for (i, &(_, has_image)) in providers.iter().enumerate() {
+        if has_image {
+            return Some(i); // `:120-127`
+        }
+    }
+    None // `:128`
+}
+
+/// `TryGettingDisplayIndex` (`UIBestiaryEntryButton.cs:131-140`): the first
+/// `IBestiaryEntryDisplayIndex` in `entry.Info` supplies the corner number
+/// (`None` = no number drawn, `:61-70`). The port's entries print their
+/// roster position instead (`draw_card`); this is the source's lookup shape.
+#[allow(dead_code)] // the draw prints idx + 1; the info-element lookup is ready
+pub fn first_display_index(info_display_indices: &[Option<i32>]) -> Option<i32> {
+    info_display_indices.iter().find_map(|x| *x) // `FirstOrDefault` (`:134`)
+}
+
+/// `UIBestiaryEntryIcon`'s hover gate (`UIBestiaryEntryIcon.cs:38`, `:52`):
+/// `IsMouseHovering || ForceHover` — the button's `MouseOver` sets
+/// `ForceHover` on its icon (`UIBestiaryEntryButton.cs:158`/`:168`) because
+/// the icon itself ignores mouse interaction (`:24`).
+#[allow(dead_code)] // the draw derives hover from card_at directly
+pub fn icon_is_hovered(is_mouse_hovering: bool, force_hover: bool) -> bool {
+    is_mouse_hovering || force_hover
+}
+
+/// The icon's walk gate (`UnlockableNPCEntryIcon.cs:100-109`): without a
+/// `Frame` override, a portrait OR hovered icon runs
+/// `velocity.X = direction * Velocity` + `FindFrame` (the walk cycle); with
+/// one, the frame pins to `frame.Height * num` (`:105-109`). The port's
+/// immediate draw rests on frame 0 (no NPC cache to simulate — the documented
+/// deviation); this pins the gate for the animation's landing.
+#[allow(dead_code)] // the walk-cycle simulation lands with the NPC cache
+pub fn icon_walks(frame_override: Option<i32>, is_portrait: bool, is_hovered: bool) -> bool {
+    frame_override.is_none() && (is_portrait || is_hovered) // `:100`
+}
+
+// --- UIBestiaryEntryInfoPage (W4-d81 census row 10) ------------------------------
+//
+// The port's info page draws its rows directly (`draw_info_page`); these port
+// the C# page's list-building state machine for the adoption.
+
+/// The ctor's panel colours (`UIBestiaryEntryInfoPage.cs:33-34`): border
+/// `(89, 116, 213)`, background `(73, 94, 171)` — no opacity multiply (the
+/// power strip's 0.9 pair is a different panel).
+#[allow(dead_code)] // draw_info_page draws the rows without the panel chrome
+pub fn info_page_colors() -> ([u8; 4], [u8; 4]) {
+    ([89, 116, 213, 255], [73, 94, 171, 255])
+}
+
+/// The ctor's list insets (`UIBestiaryEntryInfoPage.cs:40-45`):
+/// `SetPadding(2)` with `PaddingTop/Bottom 4`, `ListPadding 4`. Returns
+/// `(left, top, right, bottom, list_padding)`.
+#[allow(dead_code)] // the immediate draw keeps its own row pitch
+pub const INFO_PAGE_LIST_PADDING: [f32; 5] = [2.0, 4.0, 2.0, 4.0, 4.0];
+
+/// The scrollbar's box (`UIBestiaryEntryInfoPage.cs:47-52`): `Height (-20, 1)`,
+/// `HAlign 1`, `VAlign 0.5`, `Left (-6, 0)` inside the 230 px page — 20 px
+/// shorter than the page, centred vertically, 6 px in from the right edge.
+#[allow(dead_code)] // the info page has no scroll yet (the rows fit)
+pub fn info_page_scrollbar_rect(page: [f32; 4], scrollbar_w: f32) -> [f32; 4] {
+    let h = page[3] - 20.0;
+    [
+        page[0] + page[2] - scrollbar_w - 6.0,
+        page[1] + (page[3] - h) * 0.5,
+        scrollbar_w,
+        h,
+    ]
+}
+
+/// `UpdateScrollbar` (`UIBestiaryEntryInfoPage.cs:59-65`):
+/// `ViewPosition -= scrollWheelValue`.
+#[allow(dead_code)] // the info page has no scroll yet
+pub fn info_page_scroll(view_position: f32, wheel: f32) -> f32 {
+    view_position - wheel
+}
+
+/// `CheckScrollBar` (`UIBestiaryEntryInfoPage.cs:90-109`): the attach/detach
+/// state machine — attached + !canScroll detaches (list width back to
+/// `(0, 1)`), detached + canScroll attaches (list width `(-20, 1)`). Note the
+/// C# forces `canScroll = true` (`:95`), so the detach arm is dead in the
+/// source; the port keeps the machine faithful with the real flag. Returns
+/// `(attached, list_width_px_offset)`.
+#[allow(dead_code)] // the info page has no scroll yet
+pub fn info_page_check_scrollbar(attached: bool, can_scroll: bool) -> (bool, f32) {
+    if attached && !can_scroll {
+        (false, 0.0) // `:96-101`
+    } else if !attached && can_scroll {
+        (true, -20.0) // `:102-107`
+    } else {
+        (attached, if attached { -20.0 } else { 0.0 })
+    }
+}
+
+/// `BestiaryInfoCategory` (`UIBestiaryEntryInfoPage.cs:11-20`) — the group
+/// order `AddInfoToList` sorts by (`orderby x.Key`, `:131-133`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[allow(dead_code)] // the immediate draw pins its own row order
+pub enum BestiaryInfoCategory {
+    Nameplate,
+    Portrait,
+    FlavorText,
+    Stats,
+    ItemsFromCatchingNpc,
+    ItemsFromDrops,
+    Misc,
+}
+
+/// `GetBestiaryInfoCategory` (`UIBestiaryEntryInfoPage.cs:174-201`): the
+/// element-type dispatch, in C# if-order. The port models the element kinds
+/// as this enum's input tags (the info-element trait system is not ported).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(dead_code)] // the immediate draw pins its own row order
+pub enum BestiaryInfoElementKind {
+    NpcPortrait,
+    FlavorText,
+    NamePlate,
+    ItemFromCatchingNpc,
+    ItemDrop,
+    NpcStatsReport,
+    NpcKillCounter,
+    Other,
+}
+
+/// The category dispatch (`:174-201`).
+#[allow(dead_code)] // the immediate draw pins its own row order
+pub fn bestiary_info_category(kind: BestiaryInfoElementKind) -> BestiaryInfoCategory {
+    use BestiaryInfoCategory as C;
+    use BestiaryInfoElementKind as K;
+    match kind {
+        K::NpcPortrait => C::Portrait,                     // `:176-179`
+        K::FlavorText => C::FlavorText,                    // `:180-183`
+        K::NamePlate => C::Nameplate,                      // `:184-187`
+        K::ItemFromCatchingNpc => C::ItemsFromCatchingNpc, // `:188-191`
+        K::ItemDrop => C::ItemsFromDrops,                  // `:192-195`
+        K::NpcStatsReport | K::NpcKillCounter => C::Stats, // `:196-199`
+        K::Other => C::Misc,                               // `:200`
+    }
+}
+
+/// `AddInfoToList`'s ordering (`UIBestiaryEntryInfoPage.cs:128-163`): group by
+/// category (ascending), within a group order by `OrderPriority` DESCENDING
+/// (`GetIndividualElementPriority`, `:165-172` — 0 for non-prioritized
+/// elements; `OrderByDescending` is stable, so ties keep entry order). A
+/// separator follows every non-empty group (`:151-160`) except the last
+/// (`_list.Remove(item)`, `:162`). Input: `(kind, priority, produced_a_row)`
+/// per info element in entry order; output: the row indices in draw order
+/// plus the separator positions (as insert-after indices into that order).
+#[allow(dead_code)] // the immediate draw pins its own row order
+pub fn info_page_row_order(
+    elements: &[(BestiaryInfoElementKind, f32, bool)],
+) -> (Vec<usize>, Vec<usize>) {
+    let mut groups: Vec<(BestiaryInfoCategory, Vec<usize>)> = Vec::new();
+    for (i, &(kind, _, produced)) in elements.iter().enumerate() {
+        if !produced {
+            continue; // `ProvideUIElement` returned null (`:144-149`)
+        }
+        let cat = bestiary_info_category(kind);
+        match groups.iter_mut().find(|(c, _)| *c == cat) {
+            Some((_, rows)) => rows.push(i),
+            None => groups.push((cat, vec![i])),
+        }
+    }
+    groups.sort_by_key(|(c, _)| *c); // `orderby x.Key` (`:132`)
+    let mut order = Vec::new();
+    let mut separators = Vec::new();
+    let n_groups = groups.len();
+    for (g, (_, rows)) in groups.into_iter().enumerate() {
+        // Stable descending priority (`:142`).
+        let mut rows = rows;
+        rows.sort_by(|&a, &b| elements[b].1.partial_cmp(&elements[a].1).unwrap());
+        order.extend(rows);
+        if g + 1 < n_groups {
+            separators.push(order.len()); // the separator after this group
+        }
+    }
+    (order, separators)
+}
+
+// --- UIBestiaryFilteringOptionsGrid (W4-d81 census row 11) -----------------------
+
+/// `GetDisplaySettings` (`UIBestiaryFilteringOptionsGrid.cs:159-173`): the
+/// 32x32 buttons on a 34 px pitch (`num = 2`), `perRow` hard-overwritten to
+/// 12 (`:167` — the sqrt walk is dead), `howManyRows = ceil(count / 12)`,
+/// the offsets hard-overwritten to 6 (`:171-172` — the centring walk dead).
+/// Returns `(per_row, rows, offset_left, offset_top)`.
+#[allow(dead_code)] // the filter UI lands with the filters/sort work
+pub fn filter_grid_display_settings(count: usize) -> (usize, usize, f32, f32) {
+    let per_row = 12usize; // `:167`
+    let rows = count.div_ceil(per_row); // `:168`
+    (per_row, rows, 6.0, 6.0) // `:171-172`
+}
+
+/// `BuildContainer`'s panel size (`UIBestiaryFilteringOptionsGrid.cs:46-56`):
+/// `Width = perRow * 34 + 10`, `Height = rows * 34 + 10`, `HAlign 1`,
+/// border/background the power-strip pair `(89,116,213)*0.9` /
+/// `(73,94,171)*0.9`. Returns `(width, height)`.
+#[allow(dead_code)] // the filter UI lands with the filters/sort work
+pub fn filter_grid_container_size(count: usize) -> [f32; 2] {
+    let (per_row, rows, _, _) = filter_grid_display_settings(count);
+    [per_row as f32 * 34.0 + 10.0, rows as f32 * 34.0 + 10.0]
+}
+
+/// Filter button `i`'s top-left inside the container
+/// (`UIBestiaryFilteringOptionsGrid.cs:90-102`):
+/// `Top = 6 + (i / 12) * 34`, `Left = 6 + (i % 12) * 34`.
+#[allow(dead_code)] // the filter UI lands with the filters/sort work
+pub fn filter_button_top_left(i: usize) -> [f32; 2] {
+    let (_, _, left, top) = filter_grid_display_settings(0);
+    [left + (i % 12) as f32 * 34.0, top + (i / 12) as f32 * 34.0]
+}
+
+/// `UpdateButtonSelections` (`UIBestiaryFilteringOptionsGrid.cs:175-190`):
+/// active filters take `(152, 175, 235)` at opacity 1, inactive the
+/// `InventoryDefaultColor` at 0.7; `SetCurrentOption(active ? i : -1)` drives
+/// `IsSelected`. Returns `(color, opacity, current_option)`.
+#[allow(dead_code)] // the filter UI lands with the filters/sort work
+pub fn filter_button_selection(active: bool, option: i32) -> ([u8; 4], f32, i32) {
+    if active {
+        ([152, 175, 235, 255], 1.0, option) // `:181-184`
+    } else {
+        (uistate::INVENTORY_DEFAULT_COLOR, 0.7, -1) // `:185-188`
+    }
+}
+
+/// `GetIsFilterAvailableForEntries` (`UIBestiaryFilteringOptionsGrid.cs:192-207`):
+/// `ForcedDisplay` wins when set (`:194-198`); else any entry that fits the
+/// filter AND is known past tier 0 (`:199-205`). The port models the test
+/// list as `(fits, unlock_state_above_zero)` pairs.
+#[allow(dead_code)] // the filter UI lands with the filters/sort work
+pub fn filter_is_available(forced: Option<bool>, tests: &[(bool, bool)]) -> bool {
+    if let Some(f) = forced {
+        return f; // `:194-198`
+    }
+    tests.iter().any(|&(fits, known)| fits && known) // `:199-206`
+}
+
+/// The unavailable button's state (`UIBestiaryFilteringOptionsGrid.cs:118-146`):
+/// option `-2`, `FadeFromBlack = 0.5`, the `Icon_Tags_Shadow` frame
+/// `(16, 5, col 0, row 4)` at `White * 0.2`; the filter is removed from
+/// `ActiveFilters` (`:120`). Returns `(option, fade_from_black, icon_tint)`.
+#[allow(dead_code)] // the filter UI lands with the filters/sort work
+pub fn unavailable_filter_button() -> (i32, f32, [u8; 4]) {
+    (-2, 0.5, super::color::mul([255, 255, 255, 255], 0.2))
+}
+
+// --- UIBestiaryInfoItemLine (W4-d81 census row 12) -------------------------------
+//
+// `drop_rate_text` above ports `GetDropInfo`'s rate column; these are the
+// line's remaining halves.
+
+/// The ctor's geometry (`UIBestiaryInfoItemLine.cs:26-31`): `Width (-14, 1)`,
+/// `Height 32`, `Left 5`, `PaddingLeft/Right 10`, `SetPadding(0)` first.
+/// Returns the line rect inside the list's content box.
+#[allow(dead_code)] // the immediate draw keeps its own drop-row pitch
+pub fn info_item_line_rect(content: [f32; 4]) -> [f32; 4] {
+    [content[0] + 5.0, content[1], content[2] - 14.0, 32.0]
+}
+
+/// The locked line's icon (`UIBestiaryInfoItemLine.cs:36-55`): below tier 3
+/// the whole line is the `Icon_Locked` texture at `ImageScale 0.55`, centred
+/// (`HAlign/VAlign 0.5` in a full-size container). Returns the drawn rect for
+/// a texture of `tex_size` centred in `line`.
+#[allow(dead_code)] // the immediate draw keeps its own locked-row treatment
+pub fn info_item_locked_icon_rect(line: [f32; 4], tex_size: [f32; 2]) -> [f32; 4] {
+    let (w, h) = (tex_size[0] * 0.55, tex_size[1] * 0.55);
+    [
+        line[0] + (line[2] - w) * 0.5,
+        line[1] + (line[3] - h) * 0.5,
+        w,
+        h,
+    ]
+}
+
+/// The border colour pair (`UIBestiaryInfoItemLine.cs:34`, `MouseOver`/
+/// `MouseOut` `:158-167`): idle `(89, 116, 213)`, hovered
+/// `Colors.FancyUIFatButtonMouseOver`. The hover also fires sound 12
+/// (`:160` — the shared `elements.rs::hover_sound_tick` latch).
+#[allow(dead_code)] // the immediate draw keeps its own drop-row chrome
+pub fn info_item_line_border(hovered: bool) -> [u8; 4] {
+    if hovered {
+        uistate::FANCY_UI_FAT_BUTTON_MOUSE_OVER // `:161`
+    } else {
+        [89, 116, 213, 255] // `:34`/`:166`
+    }
+}
+
+/// `SetBestiaryNotesOnItemCache` (`UIBestiaryInfoItemLine.cs:137-156`): the
+/// non-null, non-whitespace condition descriptions joined with `"\n"`; a
+/// null condition list leaves the notes untouched (the port returns the
+/// empty string — the item cache has no notes field yet).
+#[allow(dead_code)] // the item tooltip's bestiary notes land with the tooltip work
+pub fn bestiary_notes(conditions: &[Option<&str>]) -> String {
+    let mut list = Vec::new();
+    for c in conditions {
+        if let Some(desc) = c {
+            if !desc.trim().is_empty() {
+                list.push(*desc); // `:148-152`
+            }
+        }
+    }
+    list.join("\n") // `:155`
+}
+
+/// `DrawSelf`'s hover gate (`UIBestiaryInfoItemLine.cs:112-119`): the item
+/// tooltip (`Main.HoverItem`, `:121-126`) shows only while hovered AND the
+/// line is not the locked variant (`_hideMouseOver`, `:38`).
+#[allow(dead_code)] // the drop-row hover tooltip lands with the tooltip work
+pub fn info_item_shows_tooltip(hovered: bool, hide_mouse_over: bool) -> bool {
+    hovered && !hide_mouse_over
+}
+
+// --- UIBestiaryInfoLine (W4-d81 census row 13) -----------------------------------
+//
+// `compare_manual_order` (elements.rs, batch 1) ports `CompareTo` (`:92-99`).
+
+/// `SetText` (`UIBestiaryInfoLine.cs:73-81`): the measured size is
+/// `(MouseText.MeasureString(text).X, 16) * textScale`; the element's
+/// `MinWidth/MinHeight` are the size plus the padding pair. Returns
+/// `(text_size, min_width, min_height)` for a measured text width and the
+/// four paddings.
+#[allow(dead_code)] // the immediate stat rows keep their own pitch
+pub fn info_line_text_size(
+    measured_w: f32,
+    text_scale: f32,
+    padding: [f32; 4],
+) -> ([f32; 2], f32, f32) {
+    let size = [measured_w * text_scale, 16.0 * text_scale]; // `:75`
+    (
+        size,
+        size[0] + padding[0] + padding[2], // `MinWidth` (`:79`)
+        size[1] + padding[1] + padding[3], // `MinHeight` (`:80`)
+    )
+}
+
+/// `DrawSelf`'s text position (`UIBestiaryInfoLine.cs:83-90`):
+/// `pos = inner.Position()`, `Y -= 2 * textScale`, `X += (inner.Width -
+/// textSize.X) * 0.5` — the line centres its text horizontally and rides
+/// 2 px up per scale unit.
+#[allow(dead_code)] // the immediate stat rows keep their own placement
+pub fn info_line_text_pos(inner: [f32; 4], text_size: [f32; 2], text_scale: f32) -> [f32; 2] {
+    [
+        inner[0] + (inner[2] - text_size[0]) * 0.5, // `:88`
+        inner[1] - 2.0 * text_scale,                // `:87`
+    ]
+}
+
+// --- UIBestiaryNPCEntryPortrait (W4-d81 census row 14) ---------------------------
+//
+// The port's info-page portrait card (`draw_info_page`) draws the 216 px
+// stand-in; these pin the C# element's own geometry for the adoption.
+
+/// The ctor's size (`UIBestiaryNPCEntryPortrait.cs:17-18`): 193x112,
+/// `SetPadding(0)`.
+#[allow(dead_code)] // the info page draws its 216 px stand-in card
+pub const NPC_PORTRAIT_SIZE: [f32; 2] = [193.0, 112.0];
+
+/// The inner container (`UIBestiaryNPCEntryPortrait.cs:20-28`):
+/// `Width/Height (-4, 1)`, centred, `OverflowHidden` — the same 2 px inset
+/// box the entry button uses, over the 193x112 card.
+#[allow(dead_code)] // the info page draws its 216 px stand-in card
+pub fn npc_portrait_inner(card: [f32; 4]) -> [f32; 4] {
+    [card[0] + 2.0, card[1] + 2.0, card[2] - 4.0, card[3] - 4.0]
+}
+
+/// The overlay tint fallback (`UIBestiaryNPCEntryPortrait.cs:53`): an
+/// overlay without its own colour takes `Color.Lerp(Color.White,
+/// portraitColor, 0.5)`.
+#[allow(dead_code)] // the port's entries carry no background overlays yet
+pub fn npc_portrait_overlay_color(
+    overlay_color: Option<[u8; 4]>,
+    portrait_color: [u8; 4],
+) -> [u8; 4] {
+    overlay_color.unwrap_or_else(|| {
+        super::char_creation::lerp_rgb([255, 255, 255, 255], portrait_color, 0.5)
+    })
+}
+
+// --- UIBestiarySortingOptionsGrid (W4-d81 census row 15) -------------------------
+
+/// `BuildGrid`'s container (`UIBestiarySortingOptionsGrid.cs:37-61`):
+/// `num = 2`, `num2 = 28` pitch; the panel is `Width 126`,
+/// `Height = visible_count * 28 + 5 + 3`, `HAlign 1`, `Left -118`. Only
+/// steps with `!HiddenFromSortOptions` count (`:42-48`). Returns
+/// `(width, height)`.
+#[allow(dead_code)] // the sort UI lands with the filters/sort work
+pub fn sort_grid_container_size(visible_count: usize) -> [f32; 2] {
+    [126.0, visible_count as f32 * 28.0 + 5.0 + 3.0] // `:51-52`
+}
+
+/// Sort button `n`'s rect inside the container
+/// (`UIBestiarySortingOptionsGrid.cs:68-74`): `Width 114`, `Height 26`
+/// (`num2 - num`), `HAlign 0.5`, `Top = 5 + 28 * n`.
+#[allow(dead_code)] // the sort UI lands with the filters/sort work
+pub fn sort_button_rect(container: [f32; 4], n: usize) -> [f32; 4] {
+    [
+        container[0] + (container[2] - 114.0) * 0.5,
+        container[1] + 5.0 + 28.0 * n as f32,
+        114.0,
+        26.0,
+    ]
+}
+
+/// `ClickOption` (`UIBestiarySortingOptionsGrid.cs:89-115`): clicking the
+/// already-selected step falls back to `_defaultStepIndex` (`:92-95`);
+/// the clicked step takes `(152, 175, 235)` at opacity 1, the rest the
+/// `InventoryDefaultColor` at 0.7 (`:96-108` — the same pair the filtering
+/// grid's `UpdateButtonSelections` uses). Returns the new selected index.
+#[allow(dead_code)] // the sort UI lands with the filters/sort work
+pub fn sort_click_option(clicked: i32, current_selected: i32, default_step: i32) -> i32 {
+    if clicked == current_selected {
+        default_step // `:92-95`
+    } else {
+        clicked
+    }
+}
+
+/// The sort button's colour pair (`UIBestiarySortingOptionsGrid.cs:100-107`)
+/// — the C# duplicates the filtering grid's `UpdateButtonSelections` walk
+/// per class; the port shares the one helper (house style).
+#[allow(dead_code)] // the sort UI lands with the filters/sort work
+pub fn sort_button_colors(selected: bool) -> ([u8; 4], f32) {
+    let (color, opacity, _) = filter_button_selection(selected, 0);
+    (color, opacity)
+}
+
+/// `GetEntriesToShow` (`UIBestiarySortingOptionsGrid.cs:117-122`): one
+/// column, one row per visible button.
+#[allow(dead_code)] // the sort UI lands with the filters/sort work
+pub fn sort_grid_entries_to_show(visible_count: usize) -> (usize, usize, usize) {
+    (1, visible_count, visible_count)
+}
+
 /// The completion bar's rect — `FillProgressBottomBar`
 /// (`UIBestiaryTest.cs:158-179`): the `UIColoredSliderSimple` fills the
 /// bottom strip (`Width (0, 1)`, `Height 15`, `VAlign 1`, `:168-171`); the
@@ -1953,6 +2458,251 @@ fn draw_sheet_frame(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_page_offset_multiplies_the_capacity() {
+        // `OffsetLibraryByPages` (`UIBestiaryEntryGrid.cs:103-107`) +
+        // `FixBestiaryRange` (`:116-123`): 2 pages of 20 over 55 entries
+        // clamps to 35 (55 - 20), never past the last full page.
+        assert_eq!(offset_library_by_pages(0, 2, 20, 55), 35);
+        assert_eq!(offset_library_by_pages(10, -1, 20, 55), 0);
+        // A roster smaller than a page pins to 0.
+        assert_eq!(offset_library_by_pages(0, 3, 20, 5), 0);
+    }
+
+    #[test]
+    fn the_fractional_cell_placement_centres_the_lattice() {
+        // `FillBestiarySpaceWithEntries` (`:50-66`): a 200x150 rect fits
+        // 2x2 cells; the fractional offsets centre the 144x144 lattice —
+        // cell (0,0) at (28, 3), cell (1,1) at (100, 75).
+        let rect = [0.0, 0.0, 200.0, 150.0];
+        assert_eq!(grid_cell_rect(&rect, 2, 2, 0, 0), [28.0, 3.0, 72.0, 72.0]);
+        assert_eq!(grid_cell_rect(&rect, 2, 2, 1, 1), [100.0, 75.0, 72.0, 72.0]);
+        // An exact-multiple rect matches the raw CELL lattice the draw uses.
+        let rect = [10.0, 20.0, 144.0, 144.0];
+        assert_eq!(grid_cell_rect(&rect, 2, 2, 1, 0), [82.0, 20.0, 72.0, 72.0]);
+    }
+
+    #[test]
+    fn the_border_layers_swap_on_hover_and_drop_for_portraits() {
+        // `MouseOver`/`MouseOut` (`UIBestiaryEntryButton.cs:150-169`).
+        assert_eq!(entry_button_border_layers(false, false), (true, false));
+        assert_eq!(entry_button_border_layers(true, false), (false, true));
+        // The pretty-portrait ctor removes the overlay (`:93-96`).
+        assert_eq!(entry_button_border_layers(false, true), (false, false));
+        assert_eq!(entry_button_border_layers(true, true), (false, false));
+    }
+
+    #[test]
+    fn the_background_pick_prefers_matched_providers() {
+        // `TryGettingBackgroundImageProvider` (`:104-129`): the matched
+        // provider with an image wins over an earlier unmatched one.
+        let providers = [(false, true), (true, false), (true, true)];
+        assert_eq!(pick_background_provider(&providers), Some(2));
+        // No matched image: the first image in entry order (`:120-127`).
+        assert_eq!(
+            pick_background_provider(&[(false, false), (false, true)]),
+            Some(1)
+        );
+        assert_eq!(
+            pick_background_provider(&[(true, false), (false, false)]),
+            None
+        );
+        assert_eq!(pick_background_provider(&[]), None);
+    }
+
+    #[test]
+    fn the_display_index_is_the_first_info_element() {
+        // `TryGettingDisplayIndex` (`:131-140`): FirstOrDefault over Info.
+        assert_eq!(first_display_index(&[None, Some(7), Some(9)]), Some(7));
+        assert_eq!(first_display_index(&[None, None]), None);
+        assert_eq!(first_display_index(&[]), None);
+    }
+
+    #[test]
+    fn the_icon_hover_and_walk_gates_follow_the_source() {
+        // `UIBestiaryEntryIcon.cs:38`/`:52`: IsMouseHovering || ForceHover.
+        assert!(icon_is_hovered(false, true));
+        assert!(icon_is_hovered(true, false));
+        assert!(!icon_is_hovered(false, false));
+        // `UnlockableNPCEntryIcon.cs:100-109`: no Frame override + (portrait
+        // or hovered) walks; a Frame override pins instead.
+        assert!(icon_walks(None, false, true));
+        assert!(icon_walks(None, true, false));
+        assert!(!icon_walks(None, false, false));
+        assert!(!icon_walks(Some(2), true, true));
+    }
+
+    #[test]
+    fn the_info_page_scrollbar_box_and_attach_machine() {
+        // `UIBestiaryEntryInfoPage.cs:47-52`: Height -20, VAlign 0.5,
+        // HAlign 1, Left -6 inside the 230 px page.
+        let page = [100.0, 50.0, 230.0, 400.0];
+        assert_eq!(
+            info_page_scrollbar_rect(page, 20.0),
+            [304.0, 60.0, 20.0, 380.0]
+        );
+        // `UpdateScrollbar` (`:59-65`): ViewPosition -= wheel.
+        assert_eq!(info_page_scroll(100.0, 120.0), -20.0);
+        // `CheckScrollBar` (`:90-109`): attach shrinks the list by 20.
+        assert_eq!(info_page_check_scrollbar(false, true), (true, -20.0));
+        assert_eq!(info_page_check_scrollbar(true, false), (false, 0.0));
+        assert_eq!(info_page_check_scrollbar(true, true), (true, -20.0));
+        assert_eq!(info_page_check_scrollbar(false, false), (false, 0.0));
+        // The ctor colours (`:33-34`) carry no opacity multiply.
+        assert_eq!(
+            info_page_colors(),
+            ([89, 116, 213, 255], [73, 94, 171, 255])
+        );
+    }
+
+    #[test]
+    fn the_info_row_order_groups_by_category_then_priority() {
+        // `AddInfoToList` (`:128-163`): categories ascending, priorities
+        // descending within a group, separators between groups only.
+        use BestiaryInfoElementKind as K;
+        let elements = [
+            (K::ItemDrop, 0.0, true),       // 0: ItemsFromDrops
+            (K::NpcPortrait, 0.0, true),    // 1: Portrait
+            (K::NpcStatsReport, 5.0, true), // 2: Stats, high priority
+            (K::NpcKillCounter, 0.0, true), // 3: Stats, low priority
+            (K::FlavorText, 0.0, false),    // 4: produced nothing - skipped
+            (K::NamePlate, 0.0, true),      // 5: Nameplate
+        ];
+        let (order, separators) = info_page_row_order(&elements);
+        // Nameplate(0) < Portrait(1) < Stats(3) < ItemsFromDrops(5).
+        assert_eq!(order, vec![5, 1, 2, 3, 0]);
+        // Separators after the first three groups, none after the last.
+        assert_eq!(separators, vec![1, 2, 4]);
+        // Ties keep entry order (stable OrderByDescending).
+        let elements = [(K::ItemDrop, 1.0, true), (K::ItemDrop, 1.0, true)];
+        assert_eq!(info_page_row_order(&elements).0, vec![0, 1]);
+        // The category dispatch (`:174-201`).
+        assert_eq!(
+            bestiary_info_category(K::NpcKillCounter),
+            BestiaryInfoCategory::Stats
+        );
+        assert_eq!(bestiary_info_category(K::Other), BestiaryInfoCategory::Misc);
+    }
+
+    #[test]
+    fn the_filter_grid_pins_the_hard_overwritten_settings() {
+        // `GetDisplaySettings` (`UIBestiaryFilteringOptionsGrid.cs:159-173`):
+        // perRow 12 (the sqrt walk dead), offsets 6 (the centring dead).
+        assert_eq!(filter_grid_display_settings(25), (12, 3, 6.0, 6.0));
+        assert_eq!(filter_grid_display_settings(0), (12, 0, 6.0, 6.0));
+        // `BuildContainer` (`:46-49`): 12*34+10 = 418 wide, rows*34+10.
+        assert_eq!(filter_grid_container_size(25), [418.0, 112.0]);
+        // Button 13 sits on row 1 (`:90-102`).
+        assert_eq!(filter_button_top_left(0), [6.0, 6.0]);
+        assert_eq!(filter_button_top_left(13), [40.0, 40.0]);
+        // `UpdateButtonSelections` (`:175-190`).
+        assert_eq!(
+            filter_button_selection(true, 4),
+            ([152, 175, 235, 255], 1.0, 4)
+        );
+        assert_eq!(
+            filter_button_selection(false, 4),
+            (uistate::INVENTORY_DEFAULT_COLOR, 0.7, -1)
+        );
+        // `GetIsFilterAvailableForEntries` (`:192-207`).
+        assert!(filter_is_available(Some(true), &[]));
+        assert!(!filter_is_available(Some(false), &[(true, true)]));
+        assert!(filter_is_available(None, &[(false, true), (true, true)]));
+        assert!(!filter_is_available(None, &[(true, false)]));
+        // The unavailable button (`:118-146`): option -2, fade 0.5, the
+        // shadow icon at White * 0.2 = (51, 51, 51, 51).
+        assert_eq!(unavailable_filter_button(), (-2, 0.5, [51, 51, 51, 51]));
+    }
+
+    #[test]
+    fn the_info_item_line_geometry_and_hover_pair() {
+        // The ctor (`UIBestiaryInfoItemLine.cs:26-31`): Width -14, Left 5,
+        // Height 32.
+        let content = [100.0, 50.0, 200.0, 32.0];
+        assert_eq!(info_item_line_rect(content), [105.0, 50.0, 186.0, 32.0]);
+        // The locked icon at 0.55 scale, centred (`:36-55`): a 40x40 texture
+        // draws 22x22 at the line's centre.
+        let line = [105.0, 50.0, 186.0, 32.0];
+        assert_eq!(
+            info_item_locked_icon_rect(line, [40.0, 40.0]),
+            [187.0, 55.0, 22.0, 22.0]
+        );
+        // The border pair (`:34`, `:158-167`).
+        assert_eq!(info_item_line_border(false), [89, 116, 213, 255]);
+        assert_eq!(
+            info_item_line_border(true),
+            uistate::FANCY_UI_FAT_BUTTON_MOUSE_OVER
+        );
+        // The tooltip gate (`:112-119`): locked lines never show it.
+        assert!(info_item_shows_tooltip(true, false));
+        assert!(!info_item_shows_tooltip(true, true));
+        assert!(!info_item_shows_tooltip(false, false));
+    }
+
+    #[test]
+    fn the_bestiary_notes_join_the_non_empty_conditions() {
+        // `SetBestiaryNotesOnItemCache` (`:137-156`): null and whitespace
+        // descriptions drop, the rest join with "\n".
+        assert_eq!(
+            bestiary_notes(&[Some("Expert only"), None, Some("  "), Some("Master only")]),
+            "Expert only\nMaster only"
+        );
+        assert_eq!(bestiary_notes(&[]), "");
+        assert_eq!(bestiary_notes(&[None, Some("")]), "");
+    }
+
+    #[test]
+    fn the_info_line_measures_and_centres_its_text() {
+        // `SetText` (`UIBestiaryInfoLine.cs:73-81`): (measured, 16) * scale,
+        // MinWidth/Height add the padding pair.
+        let (size, min_w, min_h) = info_line_text_size(100.0, 0.8, [2.0, 4.0, 2.0, 4.0]);
+        assert_eq!(size, [80.0, 12.8]);
+        assert_eq!(min_w, 84.0);
+        assert_eq!(min_h, 20.8);
+        // `DrawSelf` (`:83-90`): centred X, Y rides 2*scale up.
+        let pos = info_line_text_pos([100.0, 50.0, 200.0, 20.0], [80.0, 12.8], 0.8);
+        assert_eq!(pos, [160.0, 48.4]);
+    }
+
+    #[test]
+    fn the_npc_portrait_card_pins_the_ctor_geometry() {
+        // `UIBestiaryNPCEntryPortrait.cs:17-28`: 193x112, the 2 px inset box.
+        assert_eq!(NPC_PORTRAIT_SIZE, [193.0, 112.0]);
+        let card = [0.0, 0.0, 193.0, 112.0];
+        assert_eq!(npc_portrait_inner(card), [2.0, 2.0, 189.0, 108.0]);
+        // The overlay fallback (`:53`): Lerp(White, portraitColor, 0.5).
+        let portrait = [63, 65, 151, 255];
+        assert_eq!(
+            npc_portrait_overlay_color(Some([1, 2, 3, 4]), portrait),
+            [1, 2, 3, 4]
+        );
+        assert_eq!(
+            npc_portrait_overlay_color(None, portrait),
+            super::super::char_creation::lerp_rgb([255, 255, 255, 255], portrait, 0.5)
+        );
+    }
+
+    #[test]
+    fn the_sort_grid_lays_out_the_visible_steps() {
+        // `BuildGrid` (`UIBestiarySortingOptionsGrid.cs:37-74`): 126 wide,
+        // count*28+8 tall, buttons 114x26 at Top 5+28n, HAlign 0.5.
+        assert_eq!(sort_grid_container_size(4), [126.0, 120.0]);
+        let container = [100.0, 50.0, 126.0, 120.0];
+        assert_eq!(sort_button_rect(container, 0), [106.0, 55.0, 114.0, 26.0]);
+        assert_eq!(sort_button_rect(container, 2), [106.0, 111.0, 114.0, 26.0]);
+        // `ClickOption` (`:89-115`): re-click falls back to the default.
+        assert_eq!(sort_click_option(3, 3, 0), 0);
+        assert_eq!(sort_click_option(2, 3, 0), 2);
+        // The colour pair is the filtering grid's shared walk (`:100-107`).
+        assert_eq!(sort_button_colors(true), ([152, 175, 235, 255], 1.0));
+        assert_eq!(
+            sort_button_colors(false),
+            (uistate::INVENTORY_DEFAULT_COLOR, 0.7)
+        );
+        // `GetEntriesToShow` (`:117-122`): one column.
+        assert_eq!(sort_grid_entries_to_show(4), (1, 4, 4));
+    }
 
     #[test]
     fn dw_3_1_panel_rect_is_the_c_sharp_container() {
