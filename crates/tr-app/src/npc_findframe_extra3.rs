@@ -55,9 +55,8 @@
 //!   Cyborg (209) is the town member whose poses the town machine
 //!   owns.
 
-// W4-g6 wired the `cs_id` hook at the `find_frame` head (stream-inert
-// until the roster wave adds the kinds) — the allow stays for the
-// not-yet-rostered arms (the `npc_findframe_low1.rs` precedent).
+// The wiring is a later round (the kinds are not in `NpcKind` yet) —
+// the `npc_findframe_a.rs`/`npc_findframe_b.rs` precedent.
 #![allow(dead_code)]
 
 /// The extra-wave-3 kinds, keyed by their VANILLA `NPC.type`
@@ -155,10 +154,6 @@ impl FindFrameExtra3Kind {
 
 /// The wiring seam: the vanilla type → this module's kind (the
 /// `find_frame_kind_high2` precedent). `None` outside the slice.
-/// W4-g6: the `npc.rs::find_frame` hook reads this through
-/// `self.kind.cs_id() as i16` — inert for all current kinds (no `cs_id`
-/// in the set; verified over the `npc/data.rs` hand rows AND the
-/// bestiary `net_id` fallback) until the roster wave adds them.
 pub fn find_frame_kind_extra3(vanilla_type: i16) -> Option<FindFrameExtra3Kind> {
     Some(match vanilla_type {
         182 => FindFrameExtra3Kind::FloatyGross,

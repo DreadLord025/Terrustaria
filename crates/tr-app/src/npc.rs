@@ -10855,6 +10855,66 @@ impl Npc {
         self.rotation = s.rotation;
     }
 
+
+    /// W4-g7 wire-2 (f27 extra-4) — the bridge into
+    /// `npc_findframe_extra4`'s pure machines: copy the four
+    /// `FindFrame` fields out, run one tick, copy them back (the
+    /// `find_frame_wave_a` precedent). `direction` is `facing` (the
+    /// C#'s `Entity.direction`); `wet` rides the NPC's own field (the
+    /// BloodFeeder's swim/flop split, `NPC.cs:74191`), `ai` the
+    /// BloodJelly's `ai[1]` pulse gate (`:73921`), `ai_action` the
+    /// RainbowSlime's `num2` motion class (`:66696-66704`).
+    fn find_frame_wave_extra4(&mut self, kind: crate::npc_findframe_extra4::FindFrameExtra4Kind) {
+        let mut s = crate::npc_findframe_extra4::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+        };
+        let i = crate::npc_findframe_extra4::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            wet: self.wet,
+            ai: self.ai,
+            ai_action: self.ai_action,
+        };
+        crate::npc_findframe_extra4::find_frame_extra4(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+    }
+
+    /// W4-g7 wire-2 (d49 wave D) — the bridge into
+    /// `npc_findframe_high2`'s pure machines: copy the five `FindFrame`
+    /// fields out, run one tick, copy them back (the
+    /// `find_frame_wave_a` precedent). `direction` is `facing` (the
+    /// C#'s `Entity.direction`); `ai[2]` rides the NPC's own field (the
+    /// cultist archers' bow-draw frame / the armed zombies' swing band,
+    /// `NPC.cs:71590-71596`/`:70887-70905`); `local_ai[0]` the truffle
+    /// worm's `-2f` pin (`:71122`).
+    fn find_frame_wave_high2(&mut self, kind: crate::npc_findframe_high2::FindFrameKind) {
+        let mut s = crate::npc_findframe_high2::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+            local_ai0: self.local_ai[0],
+        };
+        let i = crate::npc_findframe_high2::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            ai2: self.ai[2],
+        };
+        crate::npc_findframe_high2::find_frame_high2(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+        self.local_ai[0] = s.local_ai0;
+    }
     pub(crate) fn find_frame(&mut self) {
         // W4-d44 wire (d48 wave C) — the `cs_id`-keyed hook into the
         // wave-C pure machines (`npc_findframe_c.rs`) via
@@ -11064,6 +11124,34 @@ impl Npc {
             crate::npc_findframe_extra3::find_frame_kind_extra3(self.kind.cs_id() as i16)
         {
             self.find_frame_wave_extra3(kind);
+            return;
+        }
+        // W4-g7 wire-2 (f27 extra-4) — the `cs_id`-keyed hook into the
+        // extra wave's pure machines (`npc_findframe_extra4.rs`), all
+        // 15 ids: 233/234/235/236/237/238/239/240/241/242/243/244/
+        // 251/252/253. NO current kind's `cs_id` lands in the set
+        // (verified over the hand rows + all 249 bestiary net ids), so
+        // this is stream-inert today; the arms themselves draw no RNG
+        // (the floater group's only draw is 634-gated, `NPC.cs:74844`).
+        // The d45/e13 hook precedent.
+        if let Some(kind) =
+            crate::npc_findframe_extra4::find_frame_kind_extra4(self.kind.cs_id() as i16)
+        {
+            self.find_frame_wave_extra4(kind);
+            return;
+        }
+        // W4-g7 wire-2 (d49 wave D) — the `cs_id`-keyed hook into the
+        // high-band wave's pure machines (`npc_findframe_high2.rs`),
+        // all 12 kinds / 13 ids: 366/367 (the keep-one scorpion pair —
+        // the d48 ScorpionBlack delegates here), 374/375/377/378/379/
+        // 380/430/431/432/433/434. NO current kind's `cs_id` lands in
+        // the set (verified over the hand rows + all 249 bestiary net
+        // ids), so this is stream-inert today; the arms themselves
+        // draw no RNG. The d45/e13 hook precedent.
+        if let Some(kind) =
+            crate::npc_findframe_high2::find_frame_kind_high2(self.kind.cs_id() as i16)
+        {
+            self.find_frame_wave_high2(kind);
             return;
         }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
@@ -47557,5 +47645,400 @@ mod w4_d23_style14_wiring_tests {
                 assert_eq!(rng_a, rng_b, "{kind:?} tick {tick} RNG stream parity");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod w4_g7_wire2_extra2_tests {
+    use super::tests::{bare, ALL_KINDS};
+    use super::*;
+
+    // ---- W4-g7 wire-2 (e14 extra-2) — the `find_frame` hook into
+    // `npc_findframe_extra2` ---- The pure machines carry their own 15
+    // pinned witnesses in `npc_findframe_extra2.rs`; these pin the
+    // NPC-side seam: the hook is inert for every current kind, and the
+    // bridge copies the five fields both ways (the penguin bank rides
+    // BOTH `FrameState::local_ai0` and `FrameInput::local_ai0`).
+    // WRITTEN NOT RUN (code-only mode — no compiler invoked on this
+    // branch).
+
+    /// The `cs_id` hook fires for NO current kind — the inertness proof
+    /// (the roster waves have not added the 7 extra-2 ids; verified
+    /// over the hand `cs_id` rows + all 249 bestiary net ids).
+    #[test]
+    fn w4_g7_the_extra2_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                crate::npc_findframe_extra2::find_frame_kind_for_cs_id(kind.cs_id()),
+                None,
+                "{kind:?} cs_id {} must not ride the extra-2 hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The lookup claims exactly the 7 ids the g6 d45 low-2 hook does
+    /// not carry — the keep-one split (84/93/94/101/102/103/116/120
+    /// ride low2; the arms are verbatim twins, verified arm-by-arm).
+    #[test]
+    fn w4_g7_the_extra2_lookup_maps_only_the_seven_unclaimed_ids() {
+        for id in 0u16..=697 {
+            let mapped = crate::npc_findframe_extra2::find_frame_kind_for_cs_id(id);
+            let in_set = matches!(id, 121 | 137 | 141 | 142 | 148 | 149 | 181);
+            assert_eq!(mapped.is_some(), in_set, "cs_id {id}");
+        }
+    }
+
+    /// The bridge copies row/counter/sprite_dir/rotation/local_ai[0]
+    /// both ways and feeds vx/vy/facing/ai/wet through — pinned on the
+    /// Slimer latch (`NPC.cs:74014-74018`), the ToxicSludge air pin
+    /// (`:72979-72983`) and the penguin bank (`:76397-76410`).
+    #[test]
+    fn w4_g7_the_extra2_bridge_copies_the_five_fields_both_ways() {
+        let mut n = bare(NpcKind::Slime);
+        // The Slimer latch: local_ai[0] 0 → 1, row pinned 2, the flip +
+        // tilt ride vx (not facing).
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.sprite_dir = -1;
+        n.facing = -1;
+        n.vx = 2.0;
+        n.vy = 0.0;
+        n.rotation = 0.0;
+        n.local_ai[0] = 0.0;
+        n.find_frame_wave_extra2(crate::npc_findframe_extra2::FindFrameExtra2Kind::Slimer);
+        assert_eq!((n.frame, n.frame_counter), (2, 1.0), "the latch pin");
+        assert_eq!(n.local_ai[0], 1.0, "the latch flag copies back");
+        assert_eq!(n.sprite_dir, 1, "the velocity-sign flip");
+        assert_eq!(n.rotation, 0.2, "the vx * 0.1 tilt");
+        // The ToxicSludge copies facing UNCONDITIONALLY (0 included)
+        // and the air pins row 2 with the counter held.
+        n.frame_counter = 5.0;
+        n.facing = 0;
+        n.vy = -3.0;
+        n.find_frame_wave_extra2(crate::npc_findframe_extra2::FindFrameExtra2Kind::ToxicSludge);
+        assert_eq!(n.frame, 2, "the air row-2 pin");
+        assert_eq!(n.frame_counter, 5.0, "the air counter hold");
+        assert_eq!(n.sprite_dir, 0, "the unconditional direction copy");
+        // The penguin bank reads local_ai[0] = 3 → +6 on every write
+        // (through the FrameInput feed) and copies the flag back.
+        n.local_ai[0] = 3.0;
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.facing = 1;
+        n.find_frame_wave_extra2(crate::npc_findframe_extra2::FindFrameExtra2Kind::Penguin);
+        assert_eq!(n.frame, 6, "the bank-3 idle row");
+        assert_eq!(n.frame_counter, 0.0, "the idle counter zero");
+        assert_eq!(n.local_ai[0], 3.0, "the bank flag copies back unchanged");
+    }
+}
+
+#[cfg(test)]
+mod w4_g7_wire2_extra3_tests {
+    use super::tests::{bare, ALL_KINDS};
+    use super::*;
+
+    // ---- W4-g7 wire-2 (f26 extra-3) — the `find_frame` hook into
+    // `npc_findframe_extra3` ---- The pure machines carry their own 12
+    // pinned witnesses in `npc_findframe_extra3.rs`; these pin the
+    // NPC-side seam. WRITTEN NOT RUN (code-only mode — no compiler
+    // invoked on this branch).
+
+    /// The `cs_id` hook fires for NO current kind — the inertness proof
+    /// (the roster waves have not added the extra-3 kinds; verified
+    /// over the hand `cs_id` rows + all 249 bestiary net ids).
+    #[test]
+    fn w4_g7_the_extra3_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                crate::npc_findframe_extra3::find_frame_kind_extra3(kind.cs_id() as i16),
+                None,
+                "{kind:?} cs_id {} must not ride the extra-3 hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The bridge copies row/counter/sprite_dir/rotation both ways and
+    /// feeds vx/vy/facing/ai/ai_action through — pinned on the
+    /// FloatyGross floater (`NPC.cs:74850-74883`) and the LostGirl
+    /// ladder (`:73146-73171`).
+    #[test]
+    fn w4_g7_the_extra3_bridge_copies_the_four_fields_both_ways() {
+        let mut n = bare(NpcKind::Slime);
+        // The floater: vx-sign flip (not facing), vx * 0.1 tilt, the
+        // 6-tick counter walks the FULL 5 rows.
+        n.frame = 4;
+        n.frame_counter = 5.0;
+        n.sprite_dir = -1;
+        n.facing = -1;
+        n.vx = 2.0;
+        n.vy = 0.0;
+        n.rotation = 0.0;
+        n.find_frame_wave_extra3(crate::npc_findframe_extra3::FindFrameExtra3Kind::FloatyGross);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0), "row 4 + step wraps");
+        assert_eq!(n.sprite_dir, 1, "the velocity-sign flip");
+        assert_eq!(n.rotation, 0.2, "the vx * 0.1 tilt");
+        // The LostGirl ladder reads ai[0] and never touches the rest.
+        n.ai[0] = 12.0;
+        n.sprite_dir = -1;
+        n.rotation = 0.5;
+        n.find_frame_wave_extra3(crate::npc_findframe_extra3::FindFrameExtra3Kind::LostGirl);
+        assert_eq!(n.frame, 4, "ai[0] 12 → row 4");
+        assert_eq!(n.frame_counter, 0.0, "the ladder holds the counter");
+        assert_eq!(n.sprite_dir, -1, "no sprite write");
+        assert_eq!(n.rotation, 0.5, "no rotation write");
+        // The 201/202 air pin-0 pair rides the wave-B fighter helper
+        // (`NPC.cs:69647`) — the air snaps row 0, not the group's 1.
+        n.vy = -2.0;
+        n.find_frame_wave_extra3(
+            crate::npc_findframe_extra3::FindFrameExtra3Kind::HeadacheSkeleton,
+        );
+        assert_eq!(n.frame, 0, "the :69647 air pin-0");
+        // …while the SnowFlinx (185, NOT in the pin list) holds row 1.
+        n.find_frame_wave_extra3(crate::npc_findframe_extra3::FindFrameExtra3Kind::SnowFlinx);
+        assert_eq!(n.frame, 1, "the group's air row 1");
+    }
+
+    /// The half-B batch: the SpikedJungleSlime's `num2` motion class
+    /// rides `ai_action` through the bridge (`NPC.cs:66696-66704` +
+    /// `:70828-70845` — idle +1, moving/air +2, attack +3 per tick over
+    /// the 8-tick stride) and the beetle group's UNCONDITIONAL flip
+    /// (`:74571-74589`, 0 included) copies facing verbatim.
+    #[test]
+    fn w4_g7_the_extra3_bridge_feeds_ai_action_and_the_beetle_flip() {
+        let mut n = bare(NpcKind::Slime);
+        // Idle: +1 a tick — 8 ticks to step row 0 → 1.
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.ai_action = 0;
+        for _ in 0..8 {
+            n.find_frame_wave_extra3(
+                crate::npc_findframe_extra3::FindFrameExtra3Kind::SpikedJungleSlime,
+            );
+        }
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0), "the idle 8-tick stride");
+        // Attack (ai_action 1 → num2 = 4): +3 a tick — the 3rd tick
+        // hits 9 ≥ 8, steps the row and zeroes the counter.
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.ai_action = 1;
+        for _ in 0..3 {
+            n.find_frame_wave_extra3(
+                crate::npc_findframe_extra3::FindFrameExtra3Kind::SpikedJungleSlime,
+            );
+        }
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0), "the attack x3 stride");
+        // The CochinealBeetle snaps spriteDirection = facing even at 0
+        // (the crab group's unconditional copy, not the ±1 gate).
+        n.ai_action = 0;
+        n.facing = 0;
+        n.sprite_dir = -1;
+        n.vx = 1.0;
+        n.vy = 0.0;
+        n.find_frame_wave_extra3(crate::npc_findframe_extra3::FindFrameExtra3Kind::CochinealBeetle);
+        assert_eq!(n.sprite_dir, 0, "the unconditional beetle flip");
+    }
+}
+
+#[cfg(test)]
+mod w4_g7_wire2_extra4_tests {
+    use super::tests::{bare, ALL_KINDS};
+    use super::*;
+
+    // ---- W4-g7 wire-2 (f27 extra-4) — the `find_frame` hook into
+    // `npc_findframe_extra4` ---- The pure machines carry their own 14
+    // pinned witnesses in `npc_findframe_extra4.rs`; these pin the
+    // NPC-side seam. WRITTEN NOT RUN (code-only mode — no compiler
+    // invoked on this branch).
+
+    /// The `cs_id` hook fires for NO current kind — the inertness proof
+    /// (the roster waves have not added the extra-4 kinds; verified
+    /// over the hand `cs_id` rows + all 249 bestiary net ids).
+    #[test]
+    fn w4_g7_the_extra4_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                crate::npc_findframe_extra4::find_frame_kind_extra4(kind.cs_id() as i16),
+                None,
+                "{kind:?} cs_id {} must not ride the extra-4 hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The bridge copies row/counter/sprite_dir/rotation both ways and
+    /// feeds vx/vy/facing/wet/ai/ai_action through — pinned on the
+    /// hornet band cycle's reset-tick row-HOLD (`NPC.cs:74930-74933`)
+    /// and the creeper group's air pin + unconditional flip
+    /// (`:73087-73100`).
+    #[test]
+    fn w4_g7_the_extra4_bridge_copies_the_four_fields_both_ways() {
+        let mut n = bare(NpcKind::Slime);
+        // The hornet cycle: 8 ticks walk 0/1/1/2/2/1/1/1 — the 8th
+        // tick resets the counter and HOLDS row 1 (no frame write,
+        // the module witness' mechanical-replay table).
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..8 {
+            n.find_frame_wave_extra4(crate::npc_findframe_extra4::FindFrameExtra4Kind::HornetLeafy);
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![0, 1, 1, 2, 2, 1, 1, 1], "the reset-tick row-hold");
+        assert_eq!(n.frame_counter, 0.0, "the 8th tick zeroes the counter");
+        // The creeper air pin: rising vy < 0 → row 4, counter 0; the
+        // ground tick copies facing UNCONDITIONALLY (0 included).
+        n.vy = -2.0;
+        n.find_frame_wave_extra4(crate::npc_findframe_extra4::FindFrameExtra4Kind::JungleCreeper);
+        assert_eq!((n.frame, n.frame_counter), (4, 0.0), "the air row-4 pin");
+        n.vy = 0.0;
+        n.vx = 0.0;
+        n.facing = 0;
+        n.sprite_dir = -1;
+        n.find_frame_wave_extra4(crate::npc_findframe_extra4::FindFrameExtra4Kind::JungleCreeper);
+        assert_eq!(n.sprite_dir, 0, "the unconditional direction copy");
+    }
+
+    /// The half-B batch: the BloodFeeder's wet/dry split rides `wet`
+    /// through the bridge (`NPC.cs:74191-74225`), the BloodJelly's
+    /// pulse gate reads `ai[1]` (`:73921`) and the RainbowSlime's
+    /// attack stride reads `ai_action` (`:66696-66704` + `:72633-72650`).
+    #[test]
+    fn w4_g7_the_extra4_bridge_feeds_wet_ai_and_ai_action() {
+        let mut n = bare(NpcKind::Slime);
+        // The fish dry band: <6 → row 4, <12 → row 5 (the flop rows).
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.wet = false;
+        n.find_frame_wave_extra4(crate::npc_findframe_extra4::FindFrameExtra4Kind::BloodFeeder);
+        assert_eq!(n.frame, 4, "the dry <6 band");
+        // Wet flips to the swim band: counter 2 < 6 → row 0.
+        n.wet = true;
+        n.find_frame_wave_extra4(crate::npc_findframe_extra4::FindFrameExtra4Kind::BloodFeeder);
+        assert_eq!(n.frame, 0, "the wet <6 band");
+        // The jelly pulse: ai[1] == 1 lifts ANY row into the 4..6 band
+        // on the first pulse tick (the <4 clamp).
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.ai[1] = 1.0;
+        n.find_frame_wave_extra4(crate::npc_findframe_extra4::FindFrameExtra4Kind::BloodJelly);
+        assert_eq!(n.frame, 4, "the pulse lift clamp");
+        // The RainbowSlime attack: ai_action 1 → num2 4 → +3 a tick,
+        // the 3rd tick hits 9 ≥ 8 → row 1, counter 0.
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.ai_action = 1;
+        for _ in 0..3 {
+            n.find_frame_wave_extra4(crate::npc_findframe_extra4::FindFrameExtra4Kind::RainbowSlime);
+        }
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0), "the attack x3 stride");
+    }
+}
+
+#[cfg(test)]
+mod w4_g7_wire2_high2_tests {
+    use super::tests::{bare, ALL_KINDS};
+    use super::*;
+
+    // ---- W4-g7 wire-2 (d49 wave D) — the `find_frame` hook into
+    // `npc_findframe_high2` ---- The pure machines carry their own 13
+    // pinned witnesses in `npc_findframe_high2.rs`; these pin the
+    // NPC-side seam. WRITTEN NOT RUN (code-only mode — no compiler
+    // invoked on this branch).
+
+    /// The `cs_id` hook fires for NO current kind — the inertness proof
+    /// (the roster waves have not added the wave-D kinds; verified
+    /// over the hand `cs_id` rows + all 249 bestiary net ids).
+    #[test]
+    fn w4_g7_the_high2_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                crate::npc_findframe_high2::find_frame_kind_high2(kind.cs_id() as i16),
+                None,
+                "{kind:?} cs_id {} must not ride the wave-D hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The keep-one scorpion pair: BOTH 366 (the d48 ScorpionBlack)
+    /// and 367 map onto the ONE Scorpion machine (the C# groups
+    /// `case 366 : case 367`, `NPC.cs:76820-76850`).
+    #[test]
+    fn w4_g7_the_high2_lookup_folds_the_scorpion_pair() {
+        use crate::npc_findframe_high2::{find_frame_kind_high2, FindFrameKind};
+        assert_eq!(find_frame_kind_high2(366), Some(FindFrameKind::Scorpion));
+        assert_eq!(find_frame_kind_high2(367), Some(FindFrameKind::Scorpion));
+        assert_eq!(find_frame_kind_high2(365), None, "the band edge stays out");
+    }
+
+    /// The bridge copies row/counter/sprite_dir/rotation/local_ai[0]
+    /// both ways and feeds vx/vy/facing/ai[2] through — pinned on the
+    /// truffle worm's `-2f` pin + spin (`NPC.cs:71122-71144`) and the
+    /// cultist archer's bow-draw row (`:71590-71596`).
+    #[test]
+    fn w4_g7_the_high2_bridge_copies_the_five_fields_both_ways() {
+        let mut n = bare(NpcKind::Slime);
+        // The truffle worm pins local_ai[0] = -2 EVERY tick; the air
+        // accumulates the direction * 0.1 spin.
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.local_ai[0] = 0.0;
+        n.rotation = 0.0;
+        n.facing = 1;
+        n.vx = 0.0;
+        n.vy = -1.0;
+        n.find_frame_wave_high2(crate::npc_findframe_high2::FindFrameKind::TruffleWorm);
+        assert_eq!(n.local_ai[0], -2.0, "the -2f pin copies back");
+        assert_eq!(n.rotation, 0.1, "the direction * 0.1 air spin");
+        assert_eq!(n.frame_counter, 1.0, "the air counter tick");
+        // The archer's ai[2] > 0 pins the bow-draw row (int)ai[2]+1
+        // and re-copies facing UNCONDITIONALLY (0 included).
+        n.vy = 0.0;
+        n.ai[2] = 3.0;
+        n.facing = 0;
+        n.sprite_dir = -1;
+        n.find_frame_wave_high2(crate::npc_findframe_high2::FindFrameKind::CultistArcherBlue);
+        assert_eq!(n.frame, 4, "the ai[2]=3 draw row (3-1+2)");
+        assert_eq!(n.frame_counter, 0.0, "the draw zeroes the counter");
+        assert_eq!(n.sprite_dir, 0, "the unconditional draw re-flip");
+    }
+
+    /// The half-B batch: the armed zombies' `ai[2]` swing ladder
+    /// (rows 3/4/5/6 at the <5/<10/<15 bands, breaking BEFORE any
+    /// flip — `NPC.cs:70887-70905`) rides `ai[2]` through the bridge,
+    /// and the reset-tick row-HOLD quirk (`:70947-70950`) keeps the
+    /// row while zeroing the counter at >= 32.
+    #[test]
+    fn w4_g7_the_high2_bridge_feeds_the_armed_zombie_swing_band() {
+        let mut n = bare(NpcKind::Slime);
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.sprite_dir = -1;
+        n.facing = 1;
+        n.vx = 2.0;
+        n.vy = -1.0; // airborne — the swing band must still win first
+        n.ai[2] = 7.0;
+        n.find_frame_wave_high2(crate::npc_findframe_high2::FindFrameKind::ArmedZombieEskimo);
+        assert_eq!(n.frame, 4, "the <10 swing band");
+        assert_eq!(n.sprite_dir, -1, "the swing breaks BEFORE the flip");
+        // The ground stride: |vx| = 8 a tick — the 4th tick hits 32,
+        // zeroes the counter and HOLDS the row (the reset-tick quirk).
+        n.ai[2] = 0.0;
+        n.vy = 0.0;
+        n.vx = 8.0;
+        n.facing = 1;
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..4 {
+            n.find_frame_wave_high2(crate::npc_findframe_high2::FindFrameKind::ArmedZombie);
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![1, 2, 1, 1], "the 8/16/24/32 bands + row-hold");
+        assert_eq!(n.frame_counter, 0.0, "the >=32 tail zeroes the counter");
     }
 }

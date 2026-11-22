@@ -59,9 +59,8 @@
 //! * the cursed-hammer group's 83/179 siblings (`:74622-74624`) — the
 //!   Enchanted Sword 84 shares the spin/bonk arm (179 rides d47).
 
-// W4-g6 wired the `cs_id` hook at the `find_frame` head (stream-inert
-// until the roster wave adds the kinds) — the allow stays for the
-// not-yet-rostered arms (the `npc_findframe_low1.rs` precedent).
+// The wiring is a later round (the kinds are not in `NpcKind` yet) —
+// the `npc_findframe_a.rs`/`npc_findframe_b.rs` precedent.
 #![allow(dead_code)]
 
 /// The 15 extra-wave-2 kinds, keyed by their VANILLA `NPC.type`
@@ -187,23 +186,17 @@ impl FindFrameExtra2Kind {
     }
 }
 
-/// W4-g6 wiring — the `cs_id` → [`FindFrameExtra2Kind`] mapping the
-/// `npc.rs::find_frame` hook reads (the `npc_findframe_low1.rs`
-/// `find_frame_kind_for_cs_id` precedent). Returns `None` for every id
-/// outside this wave's set — so the hook is inert for all current kinds
-/// (none has a `cs_id` in the set; verified over the `npc/data.rs` hand
-/// rows AND the bestiary `net_id` fallback) and fires only once the
-/// roster wave adds them.
+/// The wiring seam: the vanilla `NPC.type` → extra-wave-2 kind map
+/// (the `npc_findframe_low2::find_frame_kind_for_cs_id` shape, keyed
+/// on the vanilla id because the `NpcKind` rows do not exist yet).
+/// W4-g7 wire-2 — added by the wiring lane (the module itself landed
+/// machine-only). Keep-one: the 84/93/94/101/102/103/116/120 twins
+/// ride the d45 `npc_findframe_low2` hook (the g6 wire-1 half — the
+/// machines are verbatim identical, verified arm-by-arm); this lookup
+/// claims only the 7 ids the low band does not carry. The dropped
+/// arms stay as the parity references their module witnesses pin.
 pub fn find_frame_kind_for_cs_id(cs_id: u16) -> Option<FindFrameExtra2Kind> {
     Some(match cs_id {
-        84 => FindFrameExtra2Kind::EnchantedSword,
-        93 => FindFrameExtra2Kind::GiantBat,
-        94 => FindFrameExtra2Kind::Corruptor,
-        101 => FindFrameExtra2Kind::Clinger,
-        102 => FindFrameExtra2Kind::AnglerFish,
-        103 => FindFrameExtra2Kind::GreenJellyfish,
-        116 => FindFrameExtra2Kind::TheHungryII,
-        120 => FindFrameExtra2Kind::ChaosElemental,
         121 => FindFrameExtra2Kind::Slimer,
         137 => FindFrameExtra2Kind::IlluminantBat,
         141 => FindFrameExtra2Kind::ToxicSludge,
@@ -218,7 +211,9 @@ pub fn find_frame_kind_for_cs_id(cs_id: u16) -> Option<FindFrameExtra2Kind> {
 /// The `NPC` fields `FindFrame` reads/writes for these arms:
 /// `frame.Y / num` (the row), `frameCounter`, `spriteDirection`,
 /// `rotation`, and `localAI[0]` (the Slimer's one-shot init writes it,
-/// `NPC.cs:74014-74018`; the penguin group reads it as the colour bank).
+/// `NPC.cs:74014-74018`; the penguin group reads it as the colour bank —
+/// W4-g7 wire-2 routes the bank through `FrameInput::local_ai0` AND
+/// copies the state field both ways, so either feed resolves).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct FrameState {
     /// `frame.Y / num` — the sheet row.
