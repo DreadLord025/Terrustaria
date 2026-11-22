@@ -78,6 +78,7 @@ per `docs/superpowers` agreements).
 | 341 | NPC.cs dust-site window coverage (W4-e2 SEALED; renumbered 64→285→341 per registry-150 §8.7 — d64 wins key 64, the interim 284 pick lost to g52's executed push, the post-§8 285 self-pick re-issued to 341 by the FROZEN table; the AI/HitEffect/spawn lane table + the f4 keep-one overlap register, mutual seal receipt) | `341-npc-dust-window-coverage.md` | ✅ |
 | 342 | NPC dust family bible (W4-e2 seal; renumbered 286→342 per registry-150 §8.7: the 927+5 census re-count, the per-window ownership map d52/e2/f4/g61/g62/g59/g60, the keep-one symbol list, the staged-emitter wiring obligations) | `342-npc-dust-family-bible.md` | ✅ |
 | 231 | PROJ-DUST master coverage census (W4-e3: the 1195-site Projectile.cs scan, the Kill-tail 15 + the AI-INLINE-40 + the AI_001 edges ported, the FINAL activation-order table + the three-disjoint-KEEP family bible; was 125 — the registry-150 rename, d125 wins the 125 key) | `231-proj-dust-coverage.md` | ✅ SEALED |
+| 66 | World dust sites SECOND batch (W4-e4: orch 41-61 + mount 1-19, 40 sites; wiring wave + RainbowRodHit keep-one + orch-family bible; code-only) | `66-dust-world-sites-2-claims.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

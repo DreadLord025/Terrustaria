@@ -248,6 +248,11 @@ mod recall_teleport;
 mod regen;
 mod research;
 mod sand;
+// W4-e4: the world dust sites' SECOND batch — ParticleOrchestrator sites
+// 41-61 + Mount sites 1-19 (research/66's claim; d54's first-40 orch lane
+// reserved, WorldGen/Main stay g14/g11-g13). UNWIRED code-only emitters.
+mod orchestrator_dust;
+mod mount_dust;
 mod ambience;
 mod ambient_sound;
 mod capture;

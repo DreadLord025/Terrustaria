@@ -39732,3 +39732,38 @@ The 955 fix is the round's only behaviour edit (2 draws where 1 — the
 C#-faithful form); its witness is WRITTEN NOT RUN. The full-file brace
 walk re-pins depth 0 with all 44 test fns at mod-depth 2. No
 cargo/rustc/tests/rustfmt/graphify invoked.
+## The world dust sites' second batch SEAL (W4-e4, code-only mode, 2026-11-21)
+
+The second world dust lane (ParticleOrchestrator sites 41-61 + Mount.cs
+sites 1-19, 40 sites, research/66) is **SEALED** at `eacaeb456`: the
+emitters (`orchestrator_dust.rs`, `mount_dust.rs`), the `spawn_orchestra`
+dispatch (15 lane-owned bytes), the wiring wave (orchestra queue→drain on
+UpdateProjectiles, the `damage_pve` owned-hit switch, the post-strike
+chain, the kill arms, the whip tag effects, ClassyCane inline in
+`resolve_melee_strike`, FlameWaders + the mount lane's `MountDustRequest`
+drain on UpdatePlayers), and the **orch-family bible** (research/66's
+SEAL section — the per-family emitter/call-site/stream ownership table,
+zero unowned, zero invented call sites).
+
+**The RainbowRodHit/BestReforge keep-one (resolves the S1-P-i45 overlap
+note above).** The full `orchestrator_dust.rs::rainbow_rod_hit` owns every
+IN-WORLD site (the 79 projectile hit `Projectile.cs:14234` + death
+`:71314-71321`, the Kaleidoscope tag); the reforge tail KEEPS
+`prefix.rs::reforge_rainbow_rod_hit_draws` count-only as its ONE draw
+path. Disjoint by call site — no double-draw. The 272 contract is exact
+under the empty-pool / on-screen assumption (the reforge anchors
+on-screen at `MountedCenter`; `Dust.cs:97-152` cull + pressure bands draw
+nothing then); a pool-aware fold would make the reforge stream
+occupancy-dependent and re-pin the frozen 602 witness, so it stays
+count-only. The `:71244` RainbowRodHit loop belongs to the 1047
+RainbowBoulder arm, NOT the 79 — deferred with the boulder machine.
+
+**Deferrals (task seeds, documented not invented)**: AI_186 PrincessWeapon
+(kind 950 unrowed/unarmed), the useStyle-5 hold arm (item 5065), the NPC
+buff-VFX + draw-pass LightningSmall callers, Shimmerfly 677's NPC death
+(kind unrowed), UseDrill's mining sparks (M2-MOUNT-4), the 1047 boulder.
+**DEAD in C# (never wired)**: `ParticleOrchestraType.PaladinsHammer` and
+`Mount.EmitGolfCartSmoke` have ZERO callers in the decompile; their
+emitters stay reachable via `spawn_orchestra`/the module, no call site
+invented. Witnesses WRITTEN NOT RUN — **no cargo/rustc/rustfmt/tests/
+graphify invoked**; the merge-verify wave compiles and runs them.

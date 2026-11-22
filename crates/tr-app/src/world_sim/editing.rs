@@ -7791,6 +7791,70 @@ fn resolve_melee_strike(
                 // The kind's hit cue (`NPC.HitSound`) — read before the app
                 // borrows below.
                 let hit_cue = n.kind.hit_sound();
+                // W4-e4 — the Classy Cane gate's NPC reads, captured before
+                // the app borrows below (the `n` borrow ends here).
+                let cane_gate = held.kind == 3351 && n.kind.to_u16() != 488 && n.max_hp > 5;
+                let (cane_ncx, cane_ncy) = n.center();
+                // W4-e4 — the Classy Cane's (3351) coin shower
+                // (`Player.cs:44367-44375`): `nPC.type != 488 && lifeMax > 5`.
+                // The C# runs it AFTER DamageVar (`:44342`) and BEFORE
+                // StatusToNPC (`:44391`). The coin's ARGUMENT draws ride the
+                // `UpdatePlayers` stream in C# initializer order: velocity
+                // X `NextFloat` then Y `NextFloat` (`:44369`), position
+                // `Next(nPC.width)` then `Next(nPC.height)` (`:44370`), then
+                // the stack `1 + RollBadLuck(25)` (`:44370`, the luck roll
+                // BEFORE the spawn). The ClassyCane orchestra body queues
+                // after (its own argument draws roll at the inline call —
+                // editing has direct app access, no pool borrow problem).
+                // Type 488 (the Town Slime's transformed form) has no port
+                // NpcKind row; the gate reads the raw kind id.
+                if cane_gate {
+                    let dir = app.player.as_ref().map_or(1, |p| p.facing);
+                    let luck = app.player.as_ref().map_or(0.0, |p| p.luck());
+                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    // `:44369` — velocity = ((2 + NextFloat×2)×dir, −2 − NextFloat×2).
+                    let cvx = (2.0 + rng.next_float() * 2.0) * dir as f32;
+                    let cvy = -2.0 - rng.next_float() * 2.0;
+                    // `:44370` — center = nPC.position + (Next(width), Next(height)).
+                    let cx = nx + rng.next_max(bw as i32) as f32;
+                    let cy = ny + rng.next_max(bh as i32) as f32;
+                    // `:44370` — stack = 1 + RollBadLuck(25) (the luck roll).
+                    let stack = 1 + tr_core::loot::roll_bad_luck(rng, luck, 25);
+                    // `Item.RequestNewItem` → `WorldItem.Center = center`
+                    // (`Item.cs:49736`): the 14×14 coin box centred on the
+                    // rolled point. `GrabDelayForAllPlayers` →
+                    // `apply_grab_delay(255)` (`WorldItem.cs:310-313`).
+                    let mut coin = crate::item::ItemDrop::new(
+                        71,
+                        stack.max(1) as u32,
+                        0,
+                        cx - crate::item::SIZE * 0.5,
+                        cy - crate::item::SIZE * 0.5,
+                        cvx,
+                        cvy,
+                        0.0,
+                    );
+                    coin.apply_grab_delay(255);
+                    app.items.push(coin);
+                    // `:44371-44374` — ClassyCane at nPC.Center, movement
+                    // zero, invoker = this player. The emitter runs inline
+                    // (the gore sibling's argument draws + the 7-dust loop
+                    // roll on the same stream, C# order).
+                    let settings = crate::orchestrator_dust::OrchestraSettings {
+                        position: Vec2::new(cane_ncx, cane_ncy),
+                        movement: Vec2::ZERO,
+                        info: 0,
+                        invoker: app.local_id as u8,
+                    };
+                    let ctx = app.spawn_ctx();
+                    crate::orchestrator_dust::classy_cane(
+                        &settings,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        &mut app.dust,
+                        &ctx,
+                        &app.world,
+                    );
+                }
                 // `this.StatusToNPC(sItem.type, npcIndex)`
                 // (`Player.cs:44391`, the block `:6502-6617`) — the melee
                 // on-hit debuff infliction runs AFTER the crit/DamageVar

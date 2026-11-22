@@ -19,6 +19,8 @@
 //! per-type abilities (`UpdateDrill`/`UseAbility` — M2-MOUNT-4), the net sync
 //! (msg 13 — no multiplayer), and the draw path (Phase 5 of the plan).
 
+use glam::Vec2;
+
 /// `Mount.MountData` frame-set triple (`Mount.cs:207-249`): start/count/delay
 /// (+ `idleFrameLoop` :237). A `count` of 0 means the set is unused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2089,6 +2091,112 @@ pub(crate) struct Equip {
     pub size_override: Option<(f32, f32)>,
 }
 
+/// W4-e4 — one queued mount dust/orchestra request (`Mount.UpdateFrame`'s
+/// per-type extras, `Mount.cs:3843-4141`). The state machines run inline in
+/// [`MountState::update_frame`]; the emitter bodies defer to the player-tick
+/// drain (the App owns the dust pool + the `UpdatePlayers` stream). Each
+/// variant carries the tick-moment snapshot the C# emitter reads (the d51
+/// `JumpDust`/`DashDust` convention). `Orchestra` carries a fully-built
+/// settings (the WoF goat's tile-gated flames — no argument draw).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum MountDustRequest {
+    /// The unicorn (10) / WoF goat (47) dash ring (`Mount.cs:3866-3892`).
+    UnicornRing {
+        mount_type: i32,
+        centre: Vec2,
+        width: f32,
+        direction: i32,
+        vx: f32,
+        run_speed: f32,
+        frame_extra: i32,
+    },
+    /// The unicorn's (10) body puff (`Mount.cs:3894-3902`).
+    UnicornBody { position: Vec2, width: i32, height: i32 },
+    /// The wolf's (44) dash ring (`Mount.cs:3931-3957`).
+    WolfRing {
+        centre: Vec2,
+        width: f32,
+        direction: i32,
+        vx: f32,
+        speed_len: f32,
+        run_speed: f32,
+    },
+    /// The wolf's (44) gated ground puff (`Mount.cs:3958-3977`).
+    WolfPuff { bottom: Vec2, width: i32, vx: f32, run_speed: f32 },
+    /// The witch's (45) dash ring (`Mount.cs:3992-4018`).
+    WitchRing {
+        centre: Vec2,
+        width: f32,
+        direction: i32,
+        vx: f32,
+        speed_len: f32,
+        run_speed: f32,
+    },
+    /// The witch's (45) gated puff (`Mount.cs:4019-4041`).
+    WitchPuff { centre: Vec2, pvx: f32, pvy: f32 },
+    /// The basilisk's (14) charge puffs (`Mount.cs:4099-4109`).
+    BasiliskPuffs { bottom_left: Vec2, width: i32, vx: f32 },
+    /// The basilisk's (14) charge trail (`Mount.cs:4117-4139`).
+    BasiliskTrail {
+        bottom_left: Vec2,
+        centre: Vec2,
+        width: i32,
+        sign: f32,
+        pvx: f32,
+        pvy: f32,
+        charge: f32,
+        run_speed: f32,
+    },
+    /// The WoF goat's tile-gated flames (`Mount.cs:3903-3914`): the drain
+    /// probes `tile[tx, ty]` (active && liquid == 0 &&
+    /// SolidTileAllowBottomSlope) and only then spawns the orchestra at
+    /// `position` (= `(tx*16+8, (ty-1)*16+16)`). The probe needs `&World`
+    /// (the animator owns none), so it defers with the request.
+    WofGoatFlames {
+        tx: i32,
+        ty: i32,
+        position: Vec2,
+    },
+    /// `UpdateEffects` case 23's witch-broom trinket (`Mount.cs:4815-4856`):
+    /// the drain computes the origin from the player snapshot + the wind
+    /// probe, then runs the sparkle + trail emitter.
+    WitchBroom { wind_speed: f32, in_wind: bool },
+    /// `UpdateEffects` cases 25-31's gem minecart effect
+    /// (`Mount.cs:4858-4877`): `dust_type` = the gem row (86/87/88/89/90/91/262).
+    GemMinecart { dust_type: i32 },
+    /// `UpdateEffects` case 36's steam minecart effect (`Mount.cs:5124-5125`).
+    SteamMinecart { dust_type: i32 },
+    /// `UpdateEffects` case 32's exhaust minecart effect (`Mount.cs:5127-5128`).
+    ExhaustMinecart { dust_type: i32 },
+    /// `UpdateEffects` case 34's confetti minecart effect (`Mount.cs:5130-5131`).
+    ConfettiMinecart,
+    /// `UpdateEffects` case 11's drill-mount lerp trail (`Mount.cs:5050-5077`):
+    /// the drain computes the two anchors from the player's fullRotation fold
+    /// (`:5035-5051`) and runs the lerp emitter.
+    DrillTrail,
+}
+
+/// W4-e4 — the player snapshot `Mount.UpdateFrame`'s per-type extras read
+/// (`Mount.cs:3843-4141`). The C# reads `mountedPlayer` live; the port hands
+/// the tick-moment values in (the d51 `JumpDust`/`DashDust` convention — the
+/// mount animator owns no player borrow). `centre`/`bottom`/`bottom_left`
+/// are the C# `Center`/`Bottom`/`BottomLeft` (the port's `width`-based
+/// forms); `direction` is `player.direction`; `c_mount` gates the
+/// basilisk's `FloorVisuals` sandwich (`:4110`).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct MountFrameContext {
+    pub centre: Vec2,
+    pub position: Vec2,
+    pub bottom: Vec2,
+    pub bottom_left: Vec2,
+    pub width: f32,
+    pub height: f32,
+    pub direction: i32,
+    pub pvx: f32,
+    pub pvy: f32,
+    pub c_mount: u32,
+}
+
 /// The mount instance state — `Mount` (`Mount.cs:325-383`). Plain data so the
 /// per-tick `Player` clone (the draw's raw fixed-step copy) stays cheap; the
 /// per-type payload
@@ -2125,6 +2233,22 @@ pub(crate) struct MountState {
     /// The other `_mountSpecificData` payloads (Drill 8, ExtraFrame 35 —
     /// `SetMount` `:6287-6294`) are M2-MOUNT-4 state and not carried yet.
     selective_allowed_to_fly: bool,
+    /// W4-e4 — the wolf (44) / witch (45) dash-ring latch
+    /// (`Mount._mountSpecificData` as a bool, `Mount.cs:3922-3933` /
+    /// `:3983-3994`): the rising edge of the speed gate fires the 20-dust
+    /// ring once; the latch holds while the gate stays true and clears when
+    /// it drops. `SetMount` news a fresh payload (false) per mount.
+    dash_ring_latch: bool,
+    /// W4-e4 — the per-type `UpdateFrame` extras' queued dust/orchestra
+    /// requests (`Mount.cs:3843-4141`): the unicorn dash ring/body, the
+    /// wolf/witch rings + puffs, the basilisk charge puffs/trail and the
+    /// WoF goat's tile-gated flames. The mount animator cannot borrow the
+    /// App's dust pool / `UnifiedRandom`, so the requests ride out to the
+    /// player-tick drain on the `UpdatePlayers` stream (the
+    /// `pending_sticky_dust` convention). The state machines (frameExtra,
+    /// the latches, the basiliskCharge ramp) run inline in `update_frame`;
+    /// only the emitter bodies defer.
+    pending_mount_dust: Vec<MountDustRequest>,
     #[cfg(test)]
     test_can_use_wings: Option<bool>,
     #[cfg(test)]
@@ -2164,6 +2288,8 @@ impl Default for MountState {
             should_super_cart: false,
             walking_grace_time_left: 0,
             selective_allowed_to_fly: false,
+            dash_ring_latch: false,
+            pending_mount_dust: Vec::new(),
             #[cfg(test)]
             test_can_use_wings: None,
             #[cfg(test)]
@@ -2221,6 +2347,12 @@ impl MountState {
         // (`Mount.cs:6295-6298` → `:76-80`, `allowedToFly = false`); the
         // reset mirrors the fresh-payload default.
         self.selective_allowed_to_fly = false;
+        // `SetMount` news a fresh `_mountSpecificData` bool payload for the
+        // wolf/witch dash latch (`Mount.cs:3922-3925`/`:3983-3986` default
+        // false); the reset mirrors it. The pending dust queue clears with
+        // the mount (a dismount drops the tick's unspawned requests).
+        self.dash_ring_latch = false;
+        self.pending_mount_dust.clear();
     }
 
     pub(crate) fn is_active(&self) -> bool {
@@ -2459,10 +2591,235 @@ impl MountState {
                     self.frame = row.swim.start;
                 }
             }
-            _ => {
-                // `:4476-4505` (dashing) waits for the dash mounts.
+            FRAME_DASHING => {
+                // W4-e4 — `:4476-4505`: the dash loop. `num25` = |vx| for
+                // every mount but the Scutlix (9), whose flipDraw reverses
+                // the sign; the counter paces on it, the frame wraps the
+                // dashing set (the negative branch is the Scutlix-only
+                // reverse — no ported row reaches it with num25 < 0).
+                let num25 = if self.kind != 9 {
+                    vx.abs()
+                } else if !self.flip_draw {
+                    vx.abs()
+                } else {
+                    0.0 - vx.abs()
+                };
+                self.frame_counter += num25;
+                if num25 >= 0.0 {
+                    if self.frame_counter > row.dashing.delay as f32 {
+                        self.frame_counter -= row.dashing.delay as f32;
+                        self.frame += 1;
+                    }
+                    if self.frame < row.dashing.start
+                        || self.frame >= row.dashing.start + row.dashing.count
+                    {
+                        self.frame = row.dashing.start;
+                    }
+                } else {
+                    if self.frame_counter < 0.0 {
+                        self.frame_counter += row.dashing.delay as f32;
+                        self.frame -= 1;
+                    }
+                    if self.frame < row.dashing.start
+                        || self.frame >= row.dashing.start + row.dashing.count
+                    {
+                        self.frame = row.dashing.start + row.dashing.count - 1;
+                    }
+                }
             }
+            _ => {}
         }
+    }
+
+    /// W4-e4 — `Mount.UpdateFrame`'s per-type extras (`Mount.cs:3637-4141`),
+    /// the dust/orchestra lane. Runs AFTER the frame-state head + the state
+    /// switch (the C# `switch (this._type)` sits between them, `:3637`; the
+    /// extras read the POST-switch `frame_state`/`frame_extra`). The state
+    /// machines (the unicorn frameExtra ramp, the wolf/witch latch, the
+    /// basilisk charge) run inline; the emitter bodies queue to
+    /// [`Self::take_mount_dust`] for the player-tick drain. Returns the
+    /// basilisk's `FloorVisuals` sandwich request (`:4110-4115`, cMount == 0)
+    /// — the caller (d51's player-dust lane) runs it BETWEEN the charge
+    /// puffs and the trail; the port queues the puffs + trail split and
+    /// hands the sandwich position back so the drain interleaves it.
+    /// `basilisk_charge` is the player's live ramp (the caller owns it).
+    pub(crate) fn update_frame_extras(
+        &mut self,
+        state: i32,
+        vx: f32,
+        vy: f32,
+        ctx: &MountFrameContext,
+        basilisk_charge: &mut f32,
+    ) -> Option<Vec2> {
+        let Some(row) = self.data() else { return None };
+        let run_speed = row.run_speed;
+        let dash_speed = row.dash_speed;
+        let mut floor_visuals = None;
+        match self.kind {
+            // `:3843-3916` — the unicorn (10) / horses (40/41/42) / WoF
+            // goat (47) dash block.
+            10 | 40 | 41 | 42 | 47 => {
+                let flag7 = vx.abs() > dash_speed - run_speed / 2.0;
+                if state == FRAME_RUNNING {
+                    let mut flag8 = false;
+                    if flag7 {
+                        // `:3855` — the local state flips to dashing (the
+                        // frame switch below reads it; the port's
+                        // frame_state already ran, so the dash frame lands
+                        // next tick — the C# `state` local feeds the SAME
+                        // tick's second switch, recorded deviation: the
+                        // port's update_frame ran its state switch on the
+                        // pre-flip state. The ring/puff draws are
+                        // unaffected — they read frameExtra, not state).
+                        if self.frame_extra < 6 {
+                            flag8 = true;
+                        }
+                        self.frame_extra += 1;
+                    } else {
+                        self.frame_extra = 0;
+                    }
+                    if (self.kind == 10 || self.kind == 47) && flag8 {
+                        self.pending_mount_dust.push(MountDustRequest::UnicornRing {
+                            mount_type: self.kind,
+                            centre: ctx.centre,
+                            width: ctx.width,
+                            direction: ctx.direction,
+                            vx,
+                            run_speed,
+                            frame_extra: self.frame_extra,
+                        });
+                    }
+                }
+                if self.kind == 10 && flag7 {
+                    self.pending_mount_dust.push(MountDustRequest::UnicornBody {
+                        position: ctx.position,
+                        width: ctx.width as i32,
+                        height: ctx.height as i32,
+                    });
+                }
+                // `:3903-3914` — the WoF goat's tile-gated flames. The tile
+                // probe needs `&World` (the caller owns it); the queue
+                // carries the candidate position and the drain re-probes
+                // (the `try_flame_waders_tile` convention). The gate:
+                // (type 47) & flag7 && vy == 0.
+                if self.kind == 47 && flag7 && vy == 0.0 {
+                    let num23 = ctx.centre.x as i32 / 16;
+                    let num24 = (ctx.position.y + ctx.height - 1.0) as i32 / 16;
+                    // The drain probes `tile[num23, num24+1]` and spawns at
+                    // `(num23*16+8, num24*16+16)` on a pass (the probe needs
+                    // `&World`, the animator owns none).
+                    self.pending_mount_dust.push(MountDustRequest::WofGoatFlames {
+                        tx: num23,
+                        ty: num24 + 1,
+                        position: Vec2::new(
+                            num23 as f32 * 16.0 + 8.0,
+                            num24 as f32 * 16.0 + 16.0,
+                        ),
+                    });
+                }
+            }
+            // `:3918-3978` — the wolf (44).
+            44 => {
+                let flag3 = vx.abs() > dash_speed - run_speed / 4.0;
+                let flag4 = self.dash_ring_latch;
+                if flag4 && !flag3 {
+                    self.dash_ring_latch = false;
+                } else if !flag4 && flag3 {
+                    self.dash_ring_latch = true;
+                    self.pending_mount_dust.push(MountDustRequest::WolfRing {
+                        centre: ctx.centre,
+                        width: ctx.width,
+                        direction: ctx.direction,
+                        vx,
+                        speed_len: Vec2::new(vx, vy).length(),
+                        run_speed,
+                    });
+                }
+                self.pending_mount_dust.push(MountDustRequest::WolfPuff {
+                    bottom: ctx.bottom,
+                    width: ctx.width as i32,
+                    vx,
+                    run_speed,
+                });
+            }
+            // `:3980-4042` — the witch (45).
+            45 => {
+                let flag5 = vx.abs() > dash_speed * 0.9;
+                let flag6 = self.dash_ring_latch;
+                if flag6 && !flag5 {
+                    self.dash_ring_latch = false;
+                } else if !flag6 && flag5 {
+                    self.dash_ring_latch = true;
+                    self.pending_mount_dust.push(MountDustRequest::WitchRing {
+                        centre: ctx.centre,
+                        width: ctx.width,
+                        direction: ctx.direction,
+                        vx,
+                        speed_len: Vec2::new(vx, vy).length(),
+                        run_speed,
+                    });
+                }
+                if flag5 {
+                    self.pending_mount_dust.push(MountDustRequest::WitchPuff {
+                        centre: ctx.centre,
+                        pvx: ctx.pvx,
+                        pvy: ctx.pvy,
+                    });
+                }
+            }
+            // `:4081-4140` — the basilisk (14).
+            14 => {
+                let flag2 = vx.abs() > run_speed / 2.0;
+                let num = crate::mount_dust::math_sign(ctx.pvx) as f32;
+                if !flag2 {
+                    *basilisk_charge = 0.0;
+                } else {
+                    *basilisk_charge = (*basilisk_charge + 1.0 / 180.0).clamp(0.0, 1.0);
+                }
+                if flag2 && vy == 0.0 {
+                    self.pending_mount_dust.push(MountDustRequest::BasiliskPuffs {
+                        bottom_left: ctx.bottom_left,
+                        width: ctx.width as i32,
+                        vx,
+                    });
+                    if ctx.c_mount == 0 {
+                        // `:4110-4115` — the FloorVisuals sandwich: the
+                        // caller shifts the player ±24 along `num`, runs
+                        // FloorVisuals, shifts back. The port hands the
+                        // shift vector back; the drain interleaves it
+                        // between the puffs and the trail (d51's lane).
+                        floor_visuals = Some(Vec2::new(num * 24.0, 0.0));
+                    }
+                }
+                if num == ctx.direction as f32 {
+                    self.pending_mount_dust.push(MountDustRequest::BasiliskTrail {
+                        bottom_left: ctx.bottom_left,
+                        centre: ctx.centre,
+                        width: ctx.width as i32,
+                        sign: num,
+                        pvx: ctx.pvx,
+                        pvy: ctx.pvy,
+                        charge: *basilisk_charge,
+                        run_speed,
+                    });
+                }
+            }
+            _ => {}
+        }
+        floor_visuals
+    }
+
+    /// W4-e4 — takes the tick's queued mount dust/orchestra requests (the
+    /// player-tick drain owns the dust pool + the `UpdatePlayers` stream).
+    pub(crate) fn take_mount_dust(&mut self) -> Vec<MountDustRequest> {
+        std::mem::take(&mut self.pending_mount_dust)
+    }
+
+    /// W4-e4 — queues one `UpdateEffects` dust request (the caller's
+    /// `Player.update_mount` owns the per-type switch; the animator owns the
+    /// queue the player-tick drain reads).
+    pub(crate) fn queue_mount_effect(&mut self, req: MountDustRequest) {
+        self.pending_mount_dust.push(req);
     }
 
     pub(crate) fn fly_time(&self) -> i32 {
@@ -3936,5 +4293,149 @@ mod tests {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod w4_e4_mount_extras_tests {
+    //! W4-e4 — the mount per-type extras' state-machine witnesses. WRITTEN
+    //! NOT RUN (code-only mode). Each pins one `Mount.UpdateFrame` extra's
+    //! gate/latch/ramp contract (`Mount.cs:3843-4141`): the unicorn frameExtra
+    //! ramp + ring gate, the wolf/witch rising-edge latch, the basilisk charge
+    //! ramp + trail count, and the WoF goat's tile-gated flame request. The
+    //! emitter bodies' draw counts ride `mount_dust.rs`'s own witnesses.
+    use super::*;
+
+    fn ctx() -> MountFrameContext {
+        MountFrameContext {
+            centre: Vec2::new(900.0, 900.0),
+            position: Vec2::new(890.0, 880.0),
+            bottom: Vec2::new(900.0, 922.0),
+            bottom_left: Vec2::new(890.0, 922.0),
+            width: 20.0,
+            height: 42.0,
+            direction: 1,
+            pvx: 10.0,
+            pvy: 0.0,
+            c_mount: 0,
+        }
+    }
+
+    /// `Mount.cs:3849-3892` — the unicorn's dash ring fires only while
+    /// frameExtra < 6 (the pre-increment gate); the ramp increments per
+    /// dash tick and resets below the speed gate. The ring request carries
+    /// the POST-increment frameExtra.
+    #[test]
+    fn w4_e4_the_unicorn_ring_gates_on_frame_extra_under_six() {
+        let mut m = MountState::default();
+        assert!(m.set_mount(10, false).is_some());
+        let c = ctx();
+        let mut charge = 0.0;
+        // The unicorn's dash gate: |vx| > 12 − 4/2 = 10. vx = 11 passes.
+        let mut rings = 0;
+        for _ in 0..8 {
+            m.update_frame_extras(FRAME_RUNNING, 11.0, 0.0, &c, &mut charge);
+            rings += m.take_mount_dust().iter().filter(|r| matches!(r, MountDustRequest::UnicornRing { .. })).count();
+        }
+        // frameExtra ramps 1..6 then the gate (pre-increment < 6) closes:
+        // rings fire on the first 6 ticks (frameExtra 0..5 pre-increment).
+        assert_eq!(rings, 6, "the ring fires while frameExtra < 6");
+        // Below the gate the ramp resets.
+        m.update_frame_extras(FRAME_RUNNING, 5.0, 0.0, &c, &mut charge);
+        assert_eq!(m.frame_extra, 0, "the sub-gate tick resets frameExtra");
+    }
+
+    /// `Mount.cs:3922-3957` — the wolf's dash ring is a RISING-EDGE latch:
+    /// it fires once when the speed gate flips true, holds while true, and
+    /// re-arms only after a drop. The ground puff queues every tick.
+    #[test]
+    fn w4_e4_the_wolf_ring_is_a_rising_edge_latch() {
+        let mut m = MountState::default();
+        assert!(m.set_mount(44, false).is_some());
+        let c = ctx();
+        let mut charge = 0.0;
+        // The wolf's gate: |vx| > dash − run/4. Drive above it.
+        let dash = m.dash_speed();
+        let run = m.run_speed();
+        let fast = dash - run / 4.0 + 1.0;
+        let slow = dash - run / 4.0 - 1.0;
+        let count_rings = |m: &mut MountState| {
+            m.take_mount_dust().iter().filter(|r| matches!(r, MountDustRequest::WolfRing { .. })).count()
+        };
+        m.update_frame_extras(FRAME_RUNNING, fast, 0.0, &c, &mut charge);
+        assert_eq!(count_rings(&mut m), 1, "the rising edge fires once");
+        m.update_frame_extras(FRAME_RUNNING, fast, 0.0, &c, &mut charge);
+        assert_eq!(count_rings(&mut m), 0, "the held gate does not re-fire");
+        m.update_frame_extras(FRAME_RUNNING, slow, 0.0, &c, &mut charge);
+        let _ = count_rings(&mut m);
+        m.update_frame_extras(FRAME_RUNNING, fast, 0.0, &c, &mut charge);
+        assert_eq!(count_rings(&mut m), 1, "the drop + re-rise re-arms");
+    }
+
+    /// `Mount.cs:4087-4139` — the basilisk charge ramps +1/180 per dash tick
+    /// (clamped 0..1), zeroes below the gate; the trail's iteration count is
+    /// (int)(3×charge) and fires only when Sign(vx) == direction.
+    #[test]
+    fn w4_e4_the_basilisk_charge_ramps_and_gates_the_trail() {
+        let mut m = MountState::default();
+        assert!(m.set_mount(14, false).is_some());
+        let mut c = ctx();
+        let run = m.run_speed();
+        let fast = run / 2.0 + 1.0;
+        c.pvx = fast;
+        c.direction = 1;
+        let mut charge = 0.0;
+        // 180 ticks at the gate ramps the charge to 1.0 (clamped).
+        for _ in 0..180 {
+            m.update_frame_extras(FRAME_RUNNING, fast, 0.0, &c, &mut charge);
+            let _ = m.take_mount_dust();
+        }
+        assert!((charge - 1.0).abs() < 1e-4, "the charge clamps at 1: {charge}");
+        // The trail request carries the charge; at 1.0 the count is 3.
+        m.update_frame_extras(FRAME_RUNNING, fast, 0.0, &c, &mut charge);
+        let trail = m.take_mount_dust().into_iter().find_map(|r| match r {
+            MountDustRequest::BasiliskTrail { charge, .. } => Some(charge),
+            _ => None,
+        });
+        assert_eq!(trail, Some(1.0), "the trail reads the full charge");
+        // Below the gate the charge zeroes.
+        m.update_frame_extras(FRAME_RUNNING, 0.0, 0.0, &c, &mut charge);
+        assert_eq!(charge, 0.0, "the sub-gate tick zeroes the charge");
+        // Sign(vx) != direction skips the trail.
+        c.pvx = -fast;
+        c.direction = 1;
+        charge = 1.0;
+        m.update_frame_extras(FRAME_RUNNING, -fast, 0.0, &c, &mut charge);
+        let has_trail = m.take_mount_dust().iter().any(|r| matches!(r, MountDustRequest::BasiliskTrail { .. }));
+        assert!(!has_trail, "the sign mismatch skips the trail");
+    }
+
+    /// `Mount.cs:3903-3914` — the WoF goat's flames queue only while
+    /// (type 47) & flag7 && vy == 0; the request carries the tile probe
+    /// coords + the tile-derived position.
+    #[test]
+    fn w4_e4_the_wof_goat_flames_queue_on_the_dash_gate() {
+        let mut m = MountState::default();
+        assert!(m.set_mount(47, false).is_some());
+        let c = ctx();
+        let mut charge = 0.0;
+        let dash = m.dash_speed();
+        let run = m.run_speed();
+        let fast = dash - run / 2.0 + 1.0;
+        // vy == 0 + the dash gate → one flame request.
+        m.update_frame_extras(FRAME_RUNNING, fast, 0.0, &c, &mut charge);
+        let flames: Vec<_> = m.take_mount_dust().into_iter().filter_map(|r| match r {
+            MountDustRequest::WofGoatFlames { tx, ty, position } => Some((tx, ty, position)),
+            _ => None,
+        }).collect();
+        assert_eq!(flames.len(), 1, "the gated dash queues one flame probe");
+        let (tx, ty, pos) = flames[0];
+        assert_eq!(tx, c.centre.x as i32 / 16);
+        assert_eq!(ty, (c.position.y + c.height - 1.0) as i32 / 16 + 1);
+        assert_eq!(pos, Vec2::new(tx as f32 * 16.0 + 8.0, (ty - 1) as f32 * 16.0 + 16.0));
+        // Airborne (vy != 0) skips the flames.
+        m.update_frame_extras(FRAME_RUNNING, fast, 1.0, &c, &mut charge);
+        let airborne = m.take_mount_dust().iter().any(|r| matches!(r, MountDustRequest::WofGoatFlames { .. }));
+        assert!(!airborne, "the airborne tick skips the flames");
     }
 }

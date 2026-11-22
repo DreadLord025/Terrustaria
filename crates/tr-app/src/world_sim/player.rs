@@ -1392,6 +1392,28 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 slot.velocity *= 0.1;
                 slot.no_gravity = true;
             }
+            // W4-e4 — the Flame Waker Boots' / Hellfire Treads' walking
+            // flames (`Player.DoBootsEffect_PlaceFlamesOnTile`,
+            // `Player.cs:14094-14097`): the equip pass queued the gated tile
+            // positions; the FlameWaders orchestra emitter rolls here on the
+            // SAME `UpdatePlayers` stream (the `pending_sticky_dust`
+            // convention — the player tick cannot borrow the App's dust
+            // pool). Movement zero, invoker = the local player.
+            for (fx, fy) in p.take_flame_waders() {
+                let settings = crate::orchestrator_dust::OrchestraSettings {
+                    position: Vec2::new(fx, fy),
+                    movement: Vec2::ZERO,
+                    info: 0,
+                    invoker: app.local_id as u8,
+                };
+                crate::orchestrator_dust::flame_waders(
+                    &settings,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                );
+            }
             // W4-e1 — the Player.cs dust sites' SECOND batch (the ledger
             // docs/research/64-dust-sites-player-2.md, the 3-way reconcile
             // docs/research/141-player-dust-reconcile.md). Each snapshot was
@@ -1515,6 +1537,24 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     &spawn_ctx,
                     &app.world,
                     &b,
+                );
+            }
+            // W4-e4 — the mount dust drain (`Mount.UpdateFrame`'s per-type
+            // extras + `UpdateEffects`' cases): the unicorn/wolf/witch/
+            // basilisk dash dust, the WoF goat's tile-gated flames and the
+            // minecart/trinket/drill effects. The state machines ran inline
+            // in the player tick; the emitter bodies roll here on the SAME
+            // `UpdatePlayers` stream (the `pending_sticky_dust` convention).
+            // The `&Player` snapshot is the tick-moment one the minecart
+            // anchors read; the requests keep the C# queue order.
+            for req in p.mount.take_mount_dust() {
+                crate::mount_dust::drain_mount_request(
+                    req,
+                    p,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
                 );
             }
             // `Player.ManaEffect` (`Player.cs:4531-4538`): the cuffs' restore

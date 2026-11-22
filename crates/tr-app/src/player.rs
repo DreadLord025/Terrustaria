@@ -1114,6 +1114,12 @@ pub struct Player {
     pub c_minecart: u32,
     pub c_mount: u32,
     pub c_grapple: u32,
+    /// `Player.basiliskCharge` (`Player.cs:2990`): the Basilisk mount's
+    /// charge ramp (`Mount.UpdateFrame` case 14, `Mount.cs:4087-4094`) —
+    /// +1/180 per tick while |vx| > RunSpeed/2, clamped 0..1, zeroed below
+    /// the gate. The charge trail's iteration count + velocity scale read
+    /// it (`:4121`/`:4133`).
+    pub basilisk_charge: f32,
     /// The equipped items' rolled prefixes, slot-parallel to `equipped` —
     /// `GrantPrefixBenefits` (`Player.cs:13953-14044`) reads them in the
     /// accessory grant pass below.
@@ -2086,6 +2092,15 @@ pub struct Player {
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
+    /// W4-e4 — the Flame Waker Boots' / Hellfire Treads' walking-flame
+    /// requests (`Player.DoBootsEffect_PlaceFlamesOnTile`,
+    /// `Player.cs:14087-14099`, reached from `ApplyEquipFunctional`
+    /// `:14229-14232`/`:15174-15177`): `(X*16+8, Y*16+16)` per gated tile.
+    /// The C# spawns the FlameWaders orchestra inline; the port queues the
+    /// position and the world-sim drain rolls the emitter on the
+    /// `UpdatePlayers` stream (the `pending_sticky_dust` convention — the
+    /// player tick cannot borrow the App's dust pool).
+    pending_flame_waders: Vec<(f32, f32)>,
     /// `Player.channel` (`Player.cs:52958-52968`): a `channel` item is held
     /// and aiming — set by `StartChanneling`, cleared by `TryCancelChannel`
     /// (`:52975-52981`) and on the release. The aiStyle-9 magic spells (Magic
@@ -2813,6 +2828,7 @@ impl Player {
             c_light: 0,
             c_minecart: 0,
             c_mount: 0,
+            basilisk_charge: 0.0,
             c_grapple: 0,
             release_hook: true,
             release_throw: true,
@@ -3043,6 +3059,7 @@ impl Player {
             pending_liquid_splash_dust: None,
             hair_dye: -1,
             pending_sticky_kill: None,
+            pending_flame_waders: Vec::new(),
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
             channel: false,
@@ -3689,6 +3706,45 @@ impl Player {
     }
     pub(crate) fn take_liquid_splash_dust(&mut self) -> Option<crate::player_dust2::LiquidSplashDust> {
         self.pending_liquid_splash_dust.take()
+    }
+
+    /// W4-e4 — takes the tick's queued FlameWaders flame positions
+    /// (`Player.cs:14094-14097`) — the caller owns `Main.dust` and rolls the
+    /// emitter on the `UpdatePlayers` stream.
+    pub(crate) fn take_flame_waders(&mut self) -> Vec<(f32, f32)> {
+        std::mem::take(&mut self.pending_flame_waders)
+    }
+
+    /// `Player.DoBootsEffect` (`Player.cs:14079-14085`): the walking-effect
+    /// gate — `miscCounter % 2 == 0 && velocity.Y == 0 && grappling[0] == -1
+    /// && CanSpawnWalkingEffects()` (`:35750-35753`: |vx| + |vy| > 1). The
+    /// FlameWaders arm (`:14229-14232`/`:15174-15177`) passes
+    /// `DoBootsEffect_PlaceFlamesOnTile`; the tile probe + the orchestra
+    /// spawn queue ride [`Self::try_flame_waders_tile`].
+    fn do_boots_effect_gate(&self) -> bool {
+        self.misc_counter % 2 == 0
+            && self.vy == 0.0
+            && !self.grappling_active
+            && self.vx.abs() + self.vy.abs() > 1.0
+    }
+
+    /// `Player.DoBootsEffect_PlaceFlamesOnTile` (`Player.cs:14087-14099`):
+    /// the tile BELOW the feet (`Main.tile[X, Y+1]`) must be active, dry
+    /// (`liquid == 0`) and `SolidTileAllowBottomSlope`; a pass queues the
+    /// FlameWaders orchestra at `(X*16+8, Y*16+16)`. Returns whether it
+    /// fired (the C# returns the bool the `TileActionAttempt` chain reads).
+    fn try_flame_waders_tile(&mut self, world: &World, x: i32, y: i32) -> bool {
+        let Some(t) = world.tile(x, y + 1) else {
+            return false;
+        };
+        if !t.active() || t.liquid > 0
+            || !crate::projectile_ai026_c::solid_tile_allow_bottom_slope(world, x, y + 1)
+        {
+            return false;
+        }
+        self.pending_flame_waders
+            .push((x as f32 * 16.0 + 8.0, y as f32 * 16.0 + 16.0));
+        true
     }
 
     /// `PlayerSittingHelper.UpdateSitting` (`PlayerSittingHelper.cs:50-87`):
@@ -5117,7 +5173,7 @@ impl Player {
     /// (`:12924-12927`). The `expertOnly` gate (`:14370-14373`) is unmodelled:
     /// `ItemDef` carries no `expert_only` and every ported grant kind is
     /// classic (deviation, docs/ANALYSIS.md "The UpdateEquip seam").
-    fn update_equips(&mut self) {
+    fn update_equips(&mut self, world: &World) {
         for m in 3..10 {
             if !self.is_item_slot_unlocked_and_usable(m) {
                 continue;
@@ -5130,7 +5186,7 @@ impl Player {
                 continue;
             }
             crate::prefix::grant_prefix_benefits(self.equipped_prefix[m], self);
-            self.apply_equip_functional(m, kind);
+            self.apply_equip_functional(m, kind, world);
         }
         // `UpdateEquips`' luck tail (`Player.cs:13066-13069`): ONE +0.05
         // `equipmentBasedLuckBonus` add when `hasLuck_LuckyCoin` — the flag
@@ -5190,7 +5246,7 @@ impl Player {
     /// voice, `:14378-14390`) and the `hideVisibleAccessory` gate are draw
     /// seams, out of scope. `_item_slot` is the C# `itemSlot` (the visibility
     /// lookups only).
-    fn apply_equip_functional(&mut self, _item_slot: usize, kind: u16) {
+    fn apply_equip_functional(&mut self, item_slot: usize, kind: u16, world: &World) {
         // S1-C-12 wave E — the combat/damage family has ONE grant path:
         // `accessory_combat::apply_combat_accessory` claims its kinds here
         // and the former inline arms (489/490/491/2998/935/897/936/1343/
@@ -5375,6 +5431,9 @@ impl Player {
             4874 => {
                 self.acc_run_speed = 6.0;
                 self.rocket_boots = 5;
+                // W4-e4 — the walking flames (`Player.cs:15174-15177`), the
+                // same `DoBootsEffect` gate the Flame Waker Boots carry.
+                self.try_flame_waders(item_slot, world);
             }
             _ if Self::wing_slot(kind as i32) > 0 => {
                 // `:15593-15602`: the accessory's `wingSlot` is both the
@@ -5739,7 +5798,33 @@ impl Player {
             // `Item.lifeRegen = 2`, `Item.cs:1974` -> `Player.cs:13122`).
             // (The `Item.lifeRegen` rows are generic now — the loop after
             // the accessory match adds every worn item's value.)
+            // W4-e4 — the Flame Waker Boots (4822) walking flames
+            // (`Player.cs:15174-15177`): `(!mount.Active || mount.Type != 47)
+            // && !hideVisibleAccessory[itemSlot]` gates
+            // `DoBootsEffect(DoBootsEffect_PlaceFlamesOnTile)`. The boots
+            // gate (`miscCounter % 2 == 0 && vy == 0 && !grappling &&
+            // CanSpawnWalkingEffects`) + the tile-below probe queue the
+            // FlameWaders orchestra position; the world-sim drain rolls the
+            // emitter on the `UpdatePlayers` stream. (The `:14229-14232`
+            // `UpdateItemDye` caller is the same effect on the dye path —
+            // the port's single functional-equip seam carries it once. The
+            // Hellfire Treads 4874 share the helper in their boot arm above.)
+            4822 => self.try_flame_waders(item_slot, world),
             _ => {}
+        }
+    }
+
+    /// W4-e4 — the FlameWaders `DoBootsEffect` gate + tile probe
+    /// (`Player.cs:15174-15177` → `:14079-14099`), shared by the Flame Waker
+    /// Boots (4822) and the Hellfire Treads (4874). The mount-47 exemption +
+    /// the per-slot visibility flag gate the boots effect; the tile-below
+    /// probe queues the orchestra position for the player-tick drain.
+    fn try_flame_waders(&mut self, item_slot: usize, world: &World) {
+        let mount_ok = !self.mount.is_active() || self.mount.kind() != 47;
+        if mount_ok && !self.hide_visible_accessory[item_slot] && self.do_boots_effect_gate() {
+            let x = (self.x + self.width * 0.5) as i32 / 16;
+            let y = (self.y + self.height - 1.0) as i32 / 16;
+            self.try_flame_waders_tile(world, x, y);
         }
     }
 
@@ -7151,7 +7236,7 @@ impl Player {
         self.accessory_life_regen = 0;
         // `UpdateEquips`' second loop (`Player.cs:12946-12952`): the functional
         // accessory pass over the slots 3..10, gated per slot - the seam below.
-        self.update_equips();
+        self.update_equips(world);
         // `UpdateEquips`' whip-accessory tail (`Player.cs:12970-12984`): the
         // Silver Bracer adds `tagEffectDuration += 2f` and `maxTagEffects++`
         // (`minionDamage += 0f` is a no-op), the Mobius Strip adds
@@ -8190,6 +8275,9 @@ impl Player {
         // (`MountID.Sets.DoesNotOverrideLegFrames`, `MountID.cs:39`). Every
         // mount still runs its own animator, so this block does not return.
         let mut mount_owns_legs = false;
+        // W4-e4 — the intended frame state the mount animator ran this tick
+        // (the per-type extras read it; `None` when no mount is active).
+        let mut mount_frame_state: Option<i32> = None;
         if self.mount.is_active() {
             let kind = self.mount.kind();
             if !crate::mount::does_not_override_leg_frames(kind) {
@@ -8210,6 +8298,7 @@ impl Player {
                     // `:36199-36200`: `TryBeginningFlight` only fires for
                     // hover mounts (`Mount.cs:4537` — none in this table);
                     // the Rudolph dust trail is a visual seam.
+                    mount_frame_state = Some(crate::mount::FRAME_FLYING);
                     self.mount.update_frame(
                         crate::mount::FRAME_FLYING,
                         self.vx,
@@ -8224,6 +8313,7 @@ impl Player {
                 } else if self.wet {
                     // `:36203-36206`: the swim state (the ground mounts'
                     // swim sets reuse their in-air frames).
+                    mount_frame_state = Some(crate::mount::FRAME_SWIMMING);
                     self.mount.update_frame(
                         crate::mount::FRAME_SWIMMING,
                         self.vx,
@@ -8236,6 +8326,7 @@ impl Player {
                     );
                 } else {
                     // `:36207-36212`: plain air.
+                    mount_frame_state = Some(crate::mount::FRAME_IN_AIR);
                     self.mount.update_frame(
                         crate::mount::FRAME_IN_AIR,
                         self.vx,
@@ -8259,6 +8350,7 @@ impl Player {
                 } else {
                     crate::mount::FRAME_RUNNING
                 };
+                mount_frame_state = Some(state);
                 self.mount.update_frame(
                     state,
                     self.vx,
@@ -8269,6 +8361,45 @@ impl Player {
                     self.dash,
                     self.dash_delay,
                 );
+            }
+            // W4-e4 — `Mount.UpdateFrame`'s per-type dust extras
+            // (`Mount.cs:3637-4141`): the unicorn/wolf/witch/basilisk state
+            // machines + the WoF goat's tile-gated flames. The emitter
+            // bodies queue to the player-tick drain (`take_mount_dust`);
+            // the basilisk's FloorVisuals sandwich (d51's lane) runs here
+            // between the queued puffs and trail (the ±24 shift, cMount 0).
+            if let Some(state) = mount_frame_state {
+                let (cx, cy) = self.center();
+                let ctx = crate::mount::MountFrameContext {
+                    centre: Vec2::new(cx, cy),
+                    position: Vec2::new(self.x, self.y),
+                    bottom: Vec2::new(self.x + self.width * 0.5, self.y + self.height),
+                    bottom_left: Vec2::new(self.x, self.y + self.height),
+                    width: self.width,
+                    height: self.height,
+                    direction: self.facing,
+                    pvx: self.vx,
+                    pvy: self.vy,
+                    c_mount: self.c_mount,
+                };
+                let sandwich = self.mount.update_frame_extras(
+                    state,
+                    self.vx,
+                    self.vy,
+                    &ctx,
+                    &mut self.basilisk_charge,
+                );
+                if let Some(shift) = sandwich {
+                    // `Mount.cs:4110-4115` — the FloorVisuals sandwich: shift
+                    // ±24, sample the floor, shift back. The port's
+                    // `floor_visuals` is the d51 player-dust seam (the tile
+                    // flags only — the MakeFloorDust visuals are its lane).
+                    self.x += shift.x;
+                    self.y += shift.y;
+                    self.floor_visuals(world);
+                    self.x -= shift.x;
+                    self.y -= shift.y;
+                }
             }
         }
 
@@ -10655,6 +10786,42 @@ impl Player {
         // M2-MOUNT-4) have no rows in this table yet; the ability counters
         // still tick (`:26663`).
         self.mount.ability_recovery();
+        // W4-e4 — `Mount.UpdateEffects`' per-type dust cases
+        // (`Mount.cs:4815-5131`): the witch-broom trinket (23), the gem
+        // minecarts (25-31), the steam (36) / exhaust (32) / confetti (34)
+        // minecarts and the drill-mount trail (11). The emitter bodies queue
+        // to the player-tick drain (`take_mount_dust`) on the `UpdatePlayers`
+        // stream — the player tick cannot borrow the App's dust pool. The
+        // gate draws (the gem Next(10), the steam draw-free speed gate, the
+        // exhaust/confetti short-circuit gates) ride the emitters at the
+        // drain (the C# draws them inside the effect call). The witch-broom
+        // wind probe (`GetWitchBroomTrinketRotation`, `:3562-3574`) reads the
+        // centre tile's wind here (the snapshot the emitter needs).
+        match self.mount.kind() {
+            23 => {
+                let (cx, cy) = self.center();
+                let tx = (cx / TILE_PX) as i32;
+                let ty = (cy / TILE_PX) as i32;
+                let in_wind = wind.is_some_and(|w| w.in_a_place_with_wind(world, tx, ty, 1, 1));
+                let wind_speed = wind.map_or(0.0, |w| w.speed_current);
+                self.mount.queue_mount_effect(crate::mount::MountDustRequest::WitchBroom {
+                    wind_speed,
+                    in_wind,
+                });
+            }
+            25 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::GemMinecart { dust_type: 86 }),
+            26 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::GemMinecart { dust_type: 87 }),
+            27 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::GemMinecart { dust_type: 88 }),
+            28 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::GemMinecart { dust_type: 89 }),
+            29 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::GemMinecart { dust_type: 90 }),
+            30 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::GemMinecart { dust_type: 91 }),
+            31 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::GemMinecart { dust_type: 262 }),
+            36 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::SteamMinecart { dust_type: 303 }),
+            32 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::ExhaustMinecart { dust_type: 31 }),
+            34 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::ConfettiMinecart),
+            11 => self.mount.queue_mount_effect(crate::mount::MountDustRequest::DrillTrail),
+            _ => {}
+        }
     }
 
     /// The flight section (`Player.cs:26745-27359`): the budget zeroing,
@@ -20823,12 +20990,12 @@ mod tests {
         // worn wings (1866, slot 22) re-derive the budget from the slot.
         assert!(p.set_mount(54, false));
         p.equipped[4] = 1866;
-        p.update_equips();
+        p.update_equips(&w);
         let budget = p.wing_time_max;
         assert!(budget > 0, "the worn wings set the budget");
         p.mount.reset_flight_time(0.0, budget);
         p.mount.flight();
-        p.update_equips();
+        p.update_equips(&w);
         assert_eq!(p.mount.fly_time(), budget, "the brooch refills the raptor");
         // Unequipped: the flag clears and the refill stops (the wing slot
         // still holds the budget; only the brooch flag went away). The tail
@@ -20838,7 +21005,7 @@ mod tests {
         assert!(!p.empress_brooch);
         p.mount.reset_flight_time(0.0, p.wing_time_max);
         p.mount.flight();
-        p.update_equips();
+        p.update_equips(&w);
         assert_eq!(
             p.mount.fly_time(),
             p.wing_time_max - 1,
