@@ -95,6 +95,8 @@ with f26's §7.3-assigned block and the UNIFIED FINAL (research/150
 renumber; the correction receipt appended AFTER
 the seal in research/17 (re-probe citations only, the seal stands).
 | 359 | W4-g51 SEAL: the net TE-family FINAL verification (the 8 BIG apply arms + 139 + 145/148; the g50 TE-store superset keep-one + the f21 byte-equal codec re-pin + the f30 dryad compose/995-row-dup; the net-121-family bible; registry §9.2 assignment 309→359, d125-KEEPS-309) | `359-g51-net-te-family-seal.md` | ✅ SEALED (code-only, witnesses WRITTEN NOT RUN) |
+| 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base - no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 284 | g52c net final-audit: the relay-host arms census (SEND side; the g48 FINAL-table feed, the 34 destroy keep-one, the 34/162 codec census; 139 stays RESERVED for g52c-net-master) | `284-g52c-relay-host-arms-census.md` | ✅ code-only |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
