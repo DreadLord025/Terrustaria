@@ -1306,6 +1306,10 @@ pub struct Npc {
     pub max_hp: i32,
     pub on_ground: bool,
     pub facing: i32,
+    /// The retired `update_slime` stand-in's sin-timer cadence — carried
+    /// as spawn data only since W4-b1 (the faithful aiStyle-1 machine
+    /// reads `ai[0]`, `npc_ai_slime`).
+    #[allow(dead_code)] // W4-b1: no reader left after the stand-in retirement
     pub hop_timer: f32,
     pub anim: f32,
     pub hurt_cd: f32,
@@ -1583,7 +1587,10 @@ pub struct Npc {
     /// point — the 4th slot carries `NPC.NewNPC`'s `ai3` argument
     /// (`NPC.cs:21246`'s `flag4 ? 1 : 0`; every other caller passes 0).
     pub wants_sphere: Vec<(NpcKind, f32, f32, f32)>,
-    /// `ai[3]`: x position while descending through water, for the bounce flip.
+    /// `ai[3]`: x position while descending through water, for the bounce
+    /// flip — the retired `update_slime` stand-in's private mirror; the
+    /// faithful machine writes `ai[3]` directly (W4-b1).
+    #[allow(dead_code)] // W4-b1: no reader left after the stand-in retirement
     wet_x: f32,
     /// `NPC.ai[0..4]` — the EoC phase machine's state
     /// (`ai[0]` the phase, `ai[1]` the sub-state, `ai[2]` the timer,
@@ -4899,6 +4906,14 @@ impl Npc {
         // attribute is stable here).
         #[deny(unreachable_patterns)]
         match self.kind.ai_style() {
+            // `if (this.aiStyle == 1) { this.AI_001_Slimes(); return; }`
+            // (`NPC.cs:19945-19949`; the machine `:60341-61723`). W4-b1
+            // slime wiring: the ten wave-A kinds ride the faithful pure
+            // core (`npc_ai_slime::ai_001_slimes`, the A1-4 re-port); the
+            // sin-timer `update_slime` stand-in is retired (audit 54 §1).
+            // The arm's draws (81/147/184 gates + the 184 shooter jitters,
+            // the module header census) ride the caller's UpdateNPCs stream.
+            1 => self.ai_001_slime_family(world, player, rng),
             // `if (this.aiStyle == 5) { this.AI_005_EaterOfSouls(); return; }`
             // (`NPC.cs:20802-20806`).
             5 => self.ai_005_hover_family(world, player),
@@ -6174,6 +6189,79 @@ impl Npc {
         }
     }
 
+    /// W4-b1 wiring — the aiStyle-1 adapter (the `ai_069_fishron` shape):
+    /// the live `Npc` rides the faithful pure core
+    /// (`npc_ai_slime::ai_001_slimes`, `AI_001_Slimes`, `NPC.cs:60341-61723`)
+    /// which writes its fields directly; this seam owns ONLY what the pure
+    /// arm cannot: the ctx feed (the session player as slot 0, expert off
+    /// the player buff — the style31 convention — netMode 0, ticker 0, the
+    /// `EverLastingTicker` zombie stand-in), the fresh `WetCollision` probe
+    /// (the module header: the wiring feeds the carried Entity flags OR
+    /// probes at the site), the `SlimeEffects` drain (the -999 freeze's
+    /// `frameCounter = 0` + the 184 spike shots on the `wants_hostile_shot`
+    /// seam) and the generic `UpdateNPC` tail the C# runs AFTER `AI()`:
+    /// `slime_gravity` = `UpdateNPC_UpdateGravity`'s slime rows
+    /// (`NPC.cs:90878-90955`, the honey/shimmer merges), the `vy += gravity`
+    /// + cap (`:90465-90472`), the ±0.005 vx snap (`:90473-90476`) and the
+    /// `UpdateCollision` stand-in (`integrate_flyer_collision` — the
+    /// oldVelocity capture + collideX/Y latches the NEXT tick's machine
+    /// reads, `:92538-92540`). RNG: every arm draw (the 81/147/184 gates +
+    /// the 184 shooter jitters, the module census) rides the caller's
+    /// stream inside the core.
+    fn ai_001_slime_family(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let cand = crate::npc_target::session_candidate(player);
+        let (w, h) = self.size();
+        // `Collision.WetCollision` (`Collision.cs:1572-1651`) — the probe
+        // the C#'s `UpdateCollision` ran last tick (`NPC.cs:93063-93075`);
+        // the module header sanctions the at-site probe.
+        let (wet, honey_wet, shimmer_wet) =
+            crate::npc_ai_slime::wet_collision(world, self.x, self.y, w as i32, h as i32);
+        // The carried Entity flag the integration's wet halving reads
+        // (the `update_cave_bat` convention).
+        self.wet = wet;
+        let ctx = crate::npc_ai_slime::SlimeCtx {
+            players: &[cand],
+            expert_mode: player.buffs.expert_mode,
+            net_mode: 0,
+            ticker: 0,
+            wet,
+            honey_wet,
+            shimmer_wet,
+        };
+        let fx = crate::npc_ai_slime::ai_001_slimes(self, world, &ctx, rng);
+        // The -999 balloon freeze's frameCounter reset (`:61049`).
+        if fx.reset_frame_counter {
+            self.frame_counter = 0.0;
+        }
+        // The 184 spike volleys (`:61188`/`:61207`, type 174, dmg 9, kb 0)
+        // on the established hostile-shot drain.
+        for s in fx.shots {
+            self.wants_hostile_shot
+                .push((s.kind as u16, s.x, s.y, s.vx, s.vy, s.damage));
+        }
+        // The port's spriteDirection sync (the AI_001 arm writes only
+        // `direction`; the draw mirrors it — the wave-A find_frame arm
+        // snaps spriteDirection only for the unported 302/304 kinds).
+        self.sprite_dir = self.facing;
+        // `NPC.cs:90465-90472` — the gravity apply + cap AFTER the AI.
+        let (gravity, max_fall) = crate::npc_ai_slime::slime_gravity(
+            self.y,
+            world.width,
+            world.world_surface,
+            wet,
+            honey_wet,
+            shimmer_wet,
+        );
+        self.vy = (self.vy + gravity).min(max_fall);
+        // `:90473-90476` — the dead-band X snap (double compare).
+        if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
+            self.vx = 0.0;
+        }
+        // `:90490-90492` — UpdateCollision (the blocked-axis stand-in with
+        // the oldVelocity capture + the collideX/Y latches).
+        self.integrate_flyer_collision(world);
+    }
+
     /// S1-D-3 W-9 wiring — the aiStyle-70 adapter: the Detonating Bubble's
     /// faithful arm (`npc_ai_style70::ai_style70`, `NPC.cs:34884-34957`).
     /// RNG census (the module's, preserved): the `target == 255` init draws
@@ -6474,12 +6562,13 @@ impl Npc {
     #[deny(unreachable_patterns)]
     fn update_kind_ai(&mut self, world: &World, player: &mut Player, dt: f32, rng: &mut UnifiedRandom) {
         match self.kind {
-            // S1-D-3ff wave A: the nine LOW-id slimes ride the same
-            // aiStyle-1 hop machine (the C#'s `AI_001_Slimes` is one arm
-            // for every slime type — the per-type rows are stats only),
-            // the five demon-eye variants the aiStyle-2 chase, and the
-            // ten zombie variants the aiStyle-3 walker (the documented
-            // stand-in routing, the pumpkin wave's precedent).
+            // W4-b1: the ten wave-A slimes ride the aiStyle-1 axis above
+            // (`ai_001_slime_family` → the faithful `npc_ai_slime` core);
+            // `ai_style()` maps these kinds unconditionally, so the
+            // fallthrough never reaches them (the aiStyle-27/28/29 marker
+            // precedent). The five demon-eye variants ride the aiStyle-2
+            // chase and the ten zombie variants the aiStyle-3 walker (the
+            // documented stand-in routing, the pumpkin wave's precedent).
             NpcKind::Slime
             | NpcKind::MotherSlime
             | NpcKind::LavaSlime
@@ -6489,7 +6578,9 @@ impl Npc {
             | NpcKind::IceSlime
             | NpcKind::Crimslime
             | NpcKind::SpikedIceSlime
-            | NpcKind::UmbrellaSlime => self.update_slime(world, player, dt),
+            | NpcKind::UmbrellaSlime => {
+                unreachable!("aiStyle 1 rides the style axis (W4-b1 slime wiring)")
+            }
             NpcKind::DemonEye
             | NpcKind::WanderingEye
             | NpcKind::CataractEye
@@ -10002,97 +10093,22 @@ impl Npc {
         }
     }
 
-    fn update_slime(&mut self, world: &World, player: &mut Player, _dt: f32) {
-        // W4-d33 wiring — `AI_001_Slimes`' balloon-slave leash
-        // (`NPC.cs:61046-61052`): `ai[0] == -999` pins frame 0, zeroes
-        // the counter + rotation and RETURNS — the leashed slime never
-        // hops (the balloon's ride pass owns its position/velocity).
-        // The release (`:81806`'s ai[0] = 0) frees it.
-        if self.ai[0] == -999.0 {
-            self.frame = 0;
-            self.frame_counter = 0.0;
-            self.rotation = 0.0;
-            return;
-        }
-        // S1-D-3ff: the wave-A slimes ride this machine on their OWN
-        // `SetDefaults` boxes (the C# arm reads `base.width/height`).
-        // `kind.size()` — NOT `self.size()` — keeps the base Slime's
-        // unscaled 24x18 box (the variant scale rides the draw only).
-        let (w, h) = self.kind.size();
-        let (pcx, _) = player.center();
-        let (cx, _) = self.center();
-        self.hop_timer -= 1.0 / 60.0;
-        let near = (pcx - cx).abs() < 60.0 * TILE_PX;
-        if self.on_ground && self.hop_timer <= 0.0 && near {
-            self.facing = if pcx >= cx { 1 } else { -1 };
-            self.sprite_dir = self.facing;
-            self.vx = self.facing as f32 * 1.4;
-            self.vy = -4.2;
-            self.on_ground = false;
-            self.hop_timer = 1.0 + (self.anim * 7.0).sin().abs() * 0.5;
-        }
-        // `NPC.UpdateNPC_Gravity`: water lowers gravity and the fall cap.
-        let wet = is_wet(world, self.x, self.y, w, h);
-        if wet {
-            self.vy = (self.vy + 0.2).min(7.0);
-        } else {
-            self.vy = (self.vy + GRAVITY).min(MAX_FALL);
-        }
-
-        let nx = self.x + self.vx;
-        if !collides_rect(world, nx, self.y, w, h) {
-            self.x = nx;
-        } else {
-            self.vx = -self.vx * 0.4;
-        }
-        let ny = self.y + self.vy;
-        let mut collide_y = false;
-        if !collides_rect(world, self.x, ny, w, h) {
-            self.y = ny;
-            self.on_ground = false;
-        } else if self.vy > 0.0 {
-            let ty = ((ny + h) / TILE_PX).floor() as i32;
-            self.y = ty as f32 * TILE_PX - h;
-            self.vy = 0.0;
-            self.on_ground = true;
-            self.vx *= 0.6;
-            collide_y = true;
-        } else if self.vy < 0.0 {
-            let ty = (ny / TILE_PX).floor() as i32;
-            self.y = (ty + 1) as f32 * TILE_PX;
-            self.vy = 0.0;
-            collide_y = true;
-        }
-        // `AI_001_Slimes` water tail: pushed up every tick, with a small bounce when
-        // it touches the floor or the surface, so slimes bob at the water line.
-        if wet {
-            if collide_y {
-                self.vy = -2.0;
-            }
-            if self.vy < 0.0 && self.wet_x == self.x {
-                self.facing = -self.facing;
-                self.sprite_dir = self.facing;
-                self.hop_timer = 200.0 / 60.0;
-            }
-            if self.vy > 0.0 {
-                self.wet_x = self.x;
-            }
-            if self.vy > 2.0 {
-                self.vy *= 0.9;
-            }
-            self.vy -= 0.5;
-            if self.vy < -4.0 {
-                self.vy = -4.0;
-            }
-        }
-        if self.vx != 0.0 {
-            self.facing = if self.vx > 0.0 { 1 } else { -1 };
-            self.sprite_dir = self.facing;
-        }
-        if self.y > world.height as f32 * TILE_PX + 200.0 {
-            self.hp = 0;
-        }
-    }
+    // W4-b1: `update_slime` (the S1-D-3ff sin-timer hop stand-in) is
+    // RETIRED — the aiStyle-1 axis claims the ten wave-A kinds above and
+    // delegates to the faithful `npc_ai_slime::ai_001_slimes`
+    // (`ai_001_slime_family`). The defect catalogue (the invented
+    // `hop_timer` cadence, the 1.4/-4.2 hop pair, the 60-tile aggro gate,
+    // the 0.4/8 gravity pair, the -vx*0.4 wall bounce and the *0.6 landing
+    // brake — NONE of it in the C# arm) lives in the module header +
+    // audit 54 §1 (`docs/research/54-audit-slime-eye.md`). The
+    // `update_wof`/`update_hungry` retirement precedent (S1-D-3 W-1).
+    // Batch-E merge note: W4-d33's balloon-slave -999 leash lived in
+    // the retired stand-in's head; it is NOT lost — the faithful
+    // `npc_ai_slime::ai_001_slimes` carries the verbatim freeze
+    // (`NPC.cs:61046-61052`: frame 0 + frameCounter 0 + rotation 0 +
+    // RETURN, the `SlimeEffects::reset_frame_counter` drain), and
+    // the sim's style-113 ride pass owns the leashed slime's
+    // position/velocity (the d33 wiring).
 
     fn update_eye(&mut self, world: &World, player: &mut Player, _dt: f32) {
         // S1-D-3ff: the five eye variants share the 30x32 box, but read
