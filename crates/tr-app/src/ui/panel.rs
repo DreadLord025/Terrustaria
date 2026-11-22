@@ -274,6 +274,25 @@ pub fn draw_scrollbar(
     pos: f32,
     auto_hide: bool,
 ) {
+    // `Color.White * 0.85f` when not dragging/hovering (`UIScrollbar.cs:122`).
+    draw_scrollbar_handle_alpha(r, lookups, rect, view, max_view, pos, auto_hide, 0.85);
+}
+
+/// [`draw_scrollbar`] with the handle's live alpha — `Color.White *
+/// ((_isDragging || _isHoveringOverHandle) ? 1f : 0.85f)`
+/// (`UIScrollbar.cs:122`). The crafting grid's bar tracks the hover latch
+/// (`App.craft_scroll_hover`); the select screens keep the resting 0.85.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_scrollbar_handle_alpha(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    rect: [f32; 4],
+    view: f32,
+    max_view: f32,
+    pos: f32,
+    auto_hide: bool,
+    handle_alpha: f32,
+) {
     if auto_hide && !scrollbar_can_scroll(view, max_view) {
         return;
     }
@@ -282,8 +301,7 @@ pub fn draw_scrollbar(
         draw_scrollbar_bar(r, lookups, &sheet, bar, [1.0; 4]);
     }
     if let Some(sheet) = lookups.ui_scrollbar_inner {
-        // `Color.White * 0.85f` when not dragging/hovering (`UIScrollbar.cs:122`).
-        let c = color::tint(color::mul([255, 255, 255, 255], 0.85));
+        let c = color::tint(color::mul([255, 255, 255, 255], handle_alpha));
         draw_scrollbar_bar(r, lookups, &sheet, handle, c);
     }
 }

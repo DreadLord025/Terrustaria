@@ -886,6 +886,36 @@ pub(crate) fn available_with_gates(
         .collect()
 }
 
+/// `Recipe.TryRefocusingRecipe` (`Recipe.cs:477-495`): after the available
+/// list is rebuilt, the focus follows the RECIPE it pointed at, not the
+/// position. `oldRecipe` is `Main.availableRecipe[Main.focusRecipe]` captured
+/// BEFORE `ClearAvailableRecipes` (`UpdateRecipeList` `:232-233`); the walk
+/// finds its new position (`:479-486`), and the two clamps (`:487-494`) pin
+/// a stale focus to the last row, or to 0 when the list emptied. The C#
+/// array is zero-filled past `numAvailableRecipes` (`ClearAvailableRecipes`
+/// `:468-475`), so an out-of-range old focus reads recipe 0 — which never
+/// enters the available list (`:248-251` breaks on `createItem.type == 0`)
+/// and falls through to the clamps; the caller passes 0 for that case.
+pub(crate) fn try_refocusing_recipe(available: &[usize], old_recipe: usize, focus: i32) -> i32 {
+    let mut focus = focus;
+    // `:479-486` — the first position whose recipe IS the old one.
+    for (i, &r) in available.iter().enumerate() {
+        if old_recipe == r {
+            focus = i as i32;
+            break;
+        }
+    }
+    // `:487-490` — a focus past the new end rides the last row.
+    if focus >= available.len() as i32 {
+        focus = available.len() as i32 - 1;
+    }
+    // `:491-494` — an empty list pins 0.
+    if focus < 0 {
+        focus = 0;
+    }
+    focus
+}
+
 /// `Recipe.CollectGuideRecipes` (`Recipe.cs:262-284`): every recipe with a
 /// requirement matching the guide item — the groups match their members
 /// (`RequiredItemEntry.Matches`).
@@ -1175,6 +1205,39 @@ pub(crate) static RECIPES: &[Recipe] = include!("recipes_gen.rs");
 mod tests {
     use super::*;
     use crate::item::slot_for_pickup;
+
+    /// W4-f23 doc-sweep: `TryRefocusingRecipe` (`Recipe.cs:477-495`) — the
+    /// focus follows the RECIPE across the rebuild, and the two clamps pin
+    /// a vanished recipe to the last row / 0.
+    #[test]
+    fn refocus_follows_the_recipe_not_the_position() {
+        // The old recipe 30 sat at position 2; after the rebuild it sits
+        // at position 0 — the focus moves with it (`:479-486`).
+        assert_eq!(try_refocusing_recipe(&[30, 7, 9], 30, 2), 0);
+        // A recipe still in the list keeps following itself even when the
+        // incoming focus is stale.
+        assert_eq!(try_refocusing_recipe(&[7, 30, 9], 30, 99), 1);
+    }
+
+    #[test]
+    fn refocus_clamps_a_vanished_recipe_to_the_last_row() {
+        // `:487-490`: the old recipe left the list (the last craft consumed
+        // its ingredients) and the focus was past the new end — pin to the
+        // last row.
+        assert_eq!(try_refocusing_recipe(&[7, 9], 30, 2), 1);
+        // A focus INSIDE the new range survives the first clamp even
+        // though its recipe changed (`:487` only fires past the end).
+        assert_eq!(try_refocusing_recipe(&[7, 9, 11], 30, 1), 1);
+    }
+
+    #[test]
+    fn refocus_pins_zero_when_the_list_empties() {
+        // `:487-494`: len 0 drives focus to -1, then the second clamp
+        // pins 0 — the C#'s empty-list arm.
+        assert_eq!(try_refocusing_recipe(&[], 30, 5), 0);
+        // A negative incoming focus (the port's -1 sentinel) also pins 0.
+        assert_eq!(try_refocusing_recipe(&[7], 30, -1), 0);
+    }
 
     #[test]
     fn the_craft_rolls_come_from_the_unified_random_stream() {

@@ -23,12 +23,14 @@ pub mod crafting;
 pub mod creative_powers;
 pub mod creative_display;
 pub mod creative_items;
+pub mod crafting_grid;
 pub mod cursor;
 pub mod debug_items;
 pub mod elements;
 pub mod ingame_options;
 pub mod housing;
 pub mod images;
+pub mod inv_pulse;
 pub mod inventory;
 pub mod item_collection;
 pub mod keybinding_rows;
@@ -54,10 +56,12 @@ pub mod slot;
 pub mod sortable;
 pub mod snap;
 pub mod state_stack;
+pub mod state_root;
 pub mod text;
 pub(crate) mod text_wrap;
 pub mod text_box;
 pub mod text_panels;
+pub mod text_wrapping_test;
 pub mod tooltip;
 pub mod uistate;
 pub mod workshop_rows;
@@ -67,6 +71,9 @@ pub(crate) mod workshop_publish;
 pub mod world_creation;
 pub(crate) mod world_load;
 pub mod world_select;
+pub mod worldgen_debug;
+pub mod worldgen_debug_elements;
+pub mod worldgen_pass_icons;
 
 use glam::Vec2;
 use tr_render::{SheetRect, SpriteRenderer};
@@ -720,7 +727,25 @@ pub fn draw_hud(
     mouse_item: &ItemSlot,
     mouse_pos: Vec2,
     cursor_state: &cursor::CursorState,
-    craft: &[usize],
+    // The RAW `Main.availableRecipe` list (`Recipe.UpdateRecipeList`) and
+    // its `_filteredRecipes` narrowing (`NewCraftingUI.UpdateContents`
+    // `:596-611`); with no filter tab the two are equal.
+    craft_raw: &[usize],
+    craft_shown: &[usize],
+    // `NewCraftingUI._selectedRecipeIndex` (`:196`): the raw recipe index the
+    // grid's selection overlay marks (`OnActivate` `:904` derives it from
+    // `Main.availableRecipe[Main.focusRecipe]`; W4-f23 wiring).
+    craft_selected: Option<usize>,
+    // `Main.inventoryBack` — the overlay's tint (`ItemSlot.cs:2373`).
+    inventory_back: [f32; 4],
+    // The craft grid's live `UIScrollbar.ViewPosition` (`UIList.cs:181`)
+    // and the `_isDragging || _isHoveringOverHandle` latch
+    // (`UIScrollbar.cs:122`).
+    craft_scroll: f32,
+    craft_scroll_hover: bool,
+    // `Player.Settings.CraftFromNearbyChests` (`Player.cs:360`) — the
+    // nearby-chests toggle's live frame pick (`CraftingUI.cs:340`).
+    craft_from_nearby_chests: bool,
     pulse: UiPulse,
     m_h: f32,
     map_style: i32,
@@ -1053,11 +1078,17 @@ pub fn draw_hud(
                 lookups,
                 screen,
                 mouse_pos,
-                craft,
+                craft_raw,
+                craft_shown,
                 false,
                 false,
                 craft_filter_flags,
                 pulse,
+                craft_selected,
+                inventory_back,
+                craft_scroll,
+                craft_scroll_hover,
+                craft_from_nearby_chests,
             );
             // The hovered filter tab's label — `ShowButtonName`
             // (`UICreativeItemsInfiniteFilteringOptions.cs:125-132`):
@@ -1076,7 +1107,7 @@ pub fn draw_hud(
             }
             // Hovering a recipe shows the crafted item's tooltip
             // (`Main.HoverOverCraftingItemButton`, `Main.cs:42250`).
-            if let Some(idx) = crafting::hit_test(screen, lookups, mouse_pos, craft) {
+            if let Some(idx) = crafting::hit_test(screen, lookups, mouse_pos, craft_shown, craft_scroll) {
                 let (kind, count) = crate::craft::RECIPES[idx].create;
                 let hover = crate::item::ItemSlot {
                     kind,

@@ -400,11 +400,36 @@ source's child order:
 * the right-aligned search bar, its width inset by the title's measured width
   (`:424`): the 22 px magnifier (`Button_Search_2`), the 24 px `Name:` text field
   and the 24 px cancel button (`UIWrappedSearchBar.cs`);
-* the 4 px `UIHorizontalSeparator`, then the recipe grid
+* the 4 px `UIHorizontalSeparator`, then the recipe grid with its auto-hidden
   (`UIDynamicItemCollection`, 40×40 cells on a 44 px pitch centred in the
   `UIList`; the list is `OverflowHidden` so rows past its bottom are scissored
   mid-cell, `UIList.cs:59` / `UIElement.cs:222-237` — W4-d67) with its
   auto-hidden scrollbar;
+
+  scrollbar — 44×44 cells centred on the `UIList` rect
+  (`GetGridParameters`/`GetItemSlotHitbox`, `UIDynamicItemCollection.cs:75-97`),
+  each drawing the context-41 `Inventory_Back18` background at
+  `inventoryScale = 3465/4095` (52 px × 11/13 = exactly 44) and running the
+  nested `ItemGrid.DrawSlot` machine (`ui/crafting_grid.rs`, W4-f23 wiring):
+  the base walk's hover gate (`UIDynamicItemCollection.cs:52`, int-truncated
+  mouse, exclusive edges), the `Available ? White : DisabledSlotColor(160,160,160,255)`
+  tint (`NewCraftingUI.cs:74`) and the selected-recipe `Inventory_Back24`
+  overlay in `Main.inventoryBack` (`ItemSlot.cs:2371-2374`; the selection
+  derives from `Main.focusRecipe` via `availableRecipe[focusRecipe]`,
+  `OnActivate` `:904` — `focusRecipe` and `availableIndex` are RAW
+  available-list positions, `:610`/`:510`, so a filter tab diverges the
+  shown grid from the focus index space). `Main.inventoryBack` is the live
+  `invAlpha` pulse (`ui/inv_pulse.rs`, `Main.cs:45697-45708`: 180..240 by
+  0.2/tick, byte-truncated). The grid **scrolls** (W4-f23 doc-sweep): the
+  wheel spends 120 px/notch on `UIScrollbar.ViewPosition`
+  (`UIList.ScrollWheel` `:107-114`), the Cyan bar grabs/drags/track-jumps
+  (`UIScrollbar.cs:109-143`, handle alpha 1 vs 0.85 `:122`, hover-enter
+  sound 12 `:119`), the cells ride the `-ViewPosition` lift
+  (`UIList.cs:181`) inside the list's `OverflowHidden` scissor, and
+  `GetGridParameters`' culling window (`:87-96`, content height =
+  `UpdateSize`'s `44·ceil(n/cols)` MinHeight `:160-165`) bounds the draw
+  and the hover/click walk — a row lifted above the list top draws clipped
+  but is not hoverable;
 * the 11-tab filter strip (40×46 tabs cut from the 84×192 `Infinite_Tabs_B_2`
   sheet, 28×30 icons from the 330×30 `Infinite_Icons` sheet; strip at
   `(45, 316)`, above the panel body) with the non-sequential `ItemFilters.GetImage`
@@ -412,10 +437,24 @@ source's child order:
 * the detail area — craft slot (`Inventory_Back18` context 42) plus the
   `Images/UI/Craft` arrow at 0.8 scale — and the grid/nearby-chests toggles at
   `(42, 285)` / `(82, 285)` with the `DrawSelectedCraftingBarIndicator` bars.
+  The nearby-chests toggle's frame reads the LIVE setting (W4-f23 closeout):
+  `num = 2 − CraftFromNearbyChests·2 + hover` (`CraftingUI.cs:340`) — ON draws
+  the open chest (`ChestCraft_0/1`), OFF the closed chest (`ChestCraft_2/3`);
+  the LEFT click flips the setting + plays sound 12 + `Main.SaveSettings`
+  (`:346-351`), and the hover-enter cue rides `DoStatefulTickSound` (`:354`).
 
-Deviations: draw-only chrome (no filter/search/scrollbar interaction), the detail
-area renders without a selected recipe, the cancel button never hides — the full
-list is in `docs/ANALYSIS.md` → "Crafting panel".
+Deviations: no search interaction (the filter strip IS live, S1-H-7; the grid
+scroll IS live, W4-f23 doc-sweep), the detail area renders without a selected
+recipe, the cancel button never hides. Clicking a recipe cell crafts it with
+EITHER mouse button (select edge `HandleCraftSlot` `:505`, craft gate
+`Main.cs:42254-42255` — no craft-max exists; bulk is Shift ×10), and after a
+craft the focus follows the recipe across the rebuild
+(`Recipe.TryRefocusingRecipe` `:477-495`, W4-f23 doc-sweep). The rebuild runs
+whenever the inventory is open (W4-f23 closeout — the classic pip-list arm
+`Main.cs:41712` collapses onto the one grid), and the craft cue is
+`CraftingEffects.OnCraft`'s unconditional `PlaySound(7)`
+(`CraftingRequests.cs:119`, even on a no-op attempt) — the full list is
+in `docs/ANALYSIS.md` → "Crafting panel".
 
 ### Chest panel (`ui/chest.rs`, `Terraria/UI/ChestUI.cs`)
 

@@ -47,6 +47,14 @@ pub(crate) struct ProgressSnapshot {
     pub total_progress: f64,
     pub value: f64,
     pub message: String,
+    /// The running step's display name (`Controller.CurrentPass.Name`,
+    /// `UIWorldGenDebug.cs:245`) — "" between steps / before the first.
+    /// The `UIWorldGenDebug` driver's `PassState.running` reads it
+    /// (W4-f23 closeout item 1).
+    pub current_step: String,
+    /// The completed-step count (`WorldGen.Manifest.GenPassResults.Count`,
+    /// `UIWorldGenDebug.cs:247`) — `PassState.completed` is `count > index`.
+    pub completed_steps: usize,
 }
 
 /// The live generation job — the App's `WorldGenerator.CurrentController`
@@ -72,6 +80,14 @@ pub(crate) struct WorldGenJob {
     /// (`UIGenProgressBar.cs:61-62`).
     pub crimson: bool,
     pub random_evil: bool,
+    /// `Controller.CurrentPass.Name` (`UIWorldGenDebug.cs:245`) — the debug
+    /// driver's running-step marker (W4-f23 closeout item 1).
+    current_step: Arc<Mutex<String>>,
+    /// `WorldGen.Manifest.GenPassResults.Count` (`UIWorldGenDebug.cs:247`).
+    completed_steps: Arc<std::sync::atomic::AtomicUsize>,
+    /// The draft's micro-seed flags — the debug driver's pass-list enable
+    /// gate (`pass_disabled_by_special_seeds`, `WorldGen.cs:22493-22509`).
+    pub micro_flags: tr_core::seeds::MicroSeedFlags,
 }
 
 /// The worker-side hook: `RunPass`'s `Start`/`End` bookends
@@ -81,6 +97,12 @@ pub(crate) struct WorldGenJob {
 struct WorkerHook {
     progress: Arc<Mutex<GenerationProgress>>,
     queued_abort: Arc<AtomicBool>,
+    /// `Controller.CurrentPass.Name` (`UIWorldGenDebug.cs:245`) — the running
+    /// step's display name, "" between steps. The debug driver reads it.
+    current_step: Arc<Mutex<String>>,
+    /// `WorldGen.Manifest.GenPassResults.Count` (`UIWorldGenDebug.cs:247`) —
+    /// the completed-step count, bumped by `end_step`.
+    completed_steps: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl GenProgressHook for WorkerHook {
@@ -97,9 +119,16 @@ impl GenProgressHook for WorkerHook {
             // process-global mutex, safe from the worker thread.
             p.set_message(&msg.resolve(&crate::lang::text));
         }
+        // `Controller.CurrentPass = pass` (`WorldGenerator.cs:498`'s RunPass
+        // head) — the debug driver's running-row marker.
+        *self.current_step.lock().unwrap() = name.to_string();
     }
     fn end_step(&mut self) {
         self.progress.lock().unwrap().end();
+        // `Controller.CurrentPass = null` + the GenPassResult append
+        // (`WorldGenerator.cs:507`'s RunPass tail) — the row completes.
+        self.current_step.lock().unwrap().clear();
+        self.completed_steps.fetch_add(1, Ordering::Relaxed);
     }
     fn should_abort(&self) -> bool {
         self.queued_abort.load(Ordering::Relaxed)
@@ -179,6 +208,9 @@ impl WorldGenJob {
         let progress = Arc::new(Mutex::new(GenerationProgress::new()));
         let queued_abort = Arc::new(AtomicBool::new(pre_abort));
         let result = Arc::new(Mutex::new(None));
+        let current_step = Arc::new(Mutex::new(String::new()));
+        let completed_steps = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let micro_flags = opts.micro_flags;
         let job = WorldGenJob {
             progress: progress.clone(),
             queued_abort: queued_abort.clone(),
@@ -186,13 +218,21 @@ impl WorldGenJob {
             flags,
             crimson,
             random_evil,
+            current_step: current_step.clone(),
+            completed_steps: completed_steps.clone(),
+            micro_flags,
         };
         let remix = opts.flags.contains(tr_core::seeds::SeedFlags::REMIX);
         let seed = opts.seed;
         std::thread::spawn(move || {
             // `worldGenCallback` (`WorldGen.cs:6591-6605`): GenerateWorld,
             // then SaveNewWorld on the completed arm only (`:6595-6598`).
-            let mut hook = WorkerHook { progress, queued_abort };
+            let mut hook = WorkerHook {
+                progress,
+                queued_abort,
+                current_step,
+                completed_steps,
+            };
             let mut chest_stock = crate::chest_gen::chest_stock_hook(seed, remix);
             let (mut world, outcome) = tr_core::worldgen::generate_with_progress(
                 &opts,
@@ -236,6 +276,8 @@ impl WorldGenJob {
             total_progress: p.total_progress(),
             value: p.value(),
             message: p.message(),
+            current_step: self.current_step.lock().unwrap().clone(),
+            completed_steps: self.completed_steps.load(Ordering::Relaxed),
         }
     }
 
@@ -278,6 +320,7 @@ mod tests {
             ..Default::default()
         };
         let path = dir.join("job.trwld");
+        let micro_flags = opts.micro_flags;
         let job = WorldGenJob::spawn(
             opts,
             path.clone(),
@@ -298,6 +341,14 @@ mod tests {
         // The message is the last pass's label (the world tail's
         // `Lang.gen[87]`, WorldGen.cs:22489) — resolved or the raw key.
         assert!(!snap.message.is_empty());
+        // W4-f23 closeout item 1: the debug driver's per-step feed — every
+        // executed step completed, none running after the task lands.
+        assert_eq!(
+            snap.completed_steps,
+            tr_core::worldgen::pipeline::executed_steps(micro_flags).len(),
+            "every executed step appended a GenPassResult"
+        );
+        assert!(snap.current_step.is_empty(), "no pass runs after completion");
         // The saved world loads.
         let (world, _) = tr_core::save::load(&path).unwrap();
         assert_eq!(world.width, 512);

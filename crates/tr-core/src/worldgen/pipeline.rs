@@ -1705,6 +1705,58 @@ pub(crate) fn executed_pass_names() -> Vec<&'static str> {
     EXECUTED_PIPELINE.iter().map(|s| s.name).collect()
 }
 
+/// The executed step's `GenPassNameID` key — the `Step::vanilla` mapping
+/// (`GenPassNameID.cs:223-330`'s string values) for a display name
+/// (`EXECUTED_PIPELINE`'s `name`, what `GenProgressHook::begin_step` and
+/// `progress::step_message` carry). `None` for a step that executes no
+/// vanilla pass (`vanilla == ""` — the span planner, the lava layer, the
+/// hell forts, the world tail, the seed finish) or an unknown name.
+/// W4-f23: this is the loading-screen icon lookup's name-mapping half —
+/// `UIWorldGenDebug.GenPassElement.passIcons` keys on the `GenPassNameID`
+/// strings (`UIWorldGenDebug.cs:306-416`), not the port's display names.
+pub fn pass_name_id(step: &str) -> Option<&'static str> {
+    EXECUTED_PIPELINE
+        .iter()
+        .find(|s| s.name == step)
+        .map(|s| s.vanilla)
+        .filter(|v| !v.is_empty())
+}
+
+/// One executed step's public descriptor — the `UIWorldGenDebug` driver's
+/// pass-list row input (W4-f23 closeout item 1). `name` is the display name
+/// (`EXECUTED_PIPELINE`'s `name`, what `GenProgressHook::begin_step` carries),
+/// `vanilla` the `GenPassNameID` key (`Step::vanilla`, "" for a port-only
+/// step), `weight` the vanilla slot's `PassLegacy._weightMap` entry (1.0
+/// where the map has none — the same value `apply_step` hands `begin_step`),
+/// `enabled` the special-seed disable gate (`pass_disabled_by_special_seeds`,
+/// `WorldGen.cs:22493-22509` — a disabled pass applies no tiles).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ExecutedStep {
+    pub name: &'static str,
+    pub vanilla: &'static str,
+    pub weight: f64,
+    pub enabled: bool,
+}
+
+/// The executed pipeline as public descriptors, in execution order — the
+/// `UIWorldGenDebug.GenPassList`'s rows (`UIWorldGenDebug.cs:1059-1069` walks
+/// `Controller.Passes`). The driver feeds these to `PassState` per step; the
+/// icon lookup rides [`pass_name_id`] + `ui::worldgen_pass_icons::get_step_icon`.
+pub fn executed_steps(micro_flags: crate::seeds::MicroSeedFlags) -> Vec<ExecutedStep> {
+    EXECUTED_PIPELINE
+        .iter()
+        .map(|s| ExecutedStep {
+            name: s.name,
+            vanilla: s.vanilla,
+            weight: VANILLA_CHAIN
+                .iter()
+                .find(|p| p.name == s.vanilla)
+                .map_or(1.0, |p| p.weight),
+            enabled: !pass_disabled_by_special_seeds(s.vanilla, micro_flags),
+        })
+        .collect()
+}
+
 // --- the step adapters (the generate() call sites, verbatim) ----------------
 
 /// The vanilla Wavy Caves slot (`WorldGen.cs:12271`): the Don't Starve
@@ -4117,6 +4169,46 @@ mod tests {
         assert_eq!(classic[0].anchor, "WorldGen.cs:11504");
         assert_eq!(classic[106 - 1].name, "Final Cleanup");
         assert_eq!(classic[106 - 1].anchor, "WorldGen.cs:22141");
+    }
+
+    /// W4-f23: the display-name → `GenPassNameID` mapping the loading
+    /// screen's icon lookup needs (`Step::vanilla`,
+    /// `GenPassNameID.cs:223-330`'s string values).
+    #[test]
+    fn pass_name_id_maps_display_names_to_the_genpassnameid_keys() {
+        assert_eq!(pass_name_id("terrain fill"), Some("Terrain"));
+        assert_eq!(pass_name_id("cave fields"), Some("Tunnels"));
+        assert_eq!(pass_name_id("ores and gems"), Some("Shinies"));
+        assert_eq!(pass_name_id("evil"), Some("Corruption"));
+        assert_eq!(pass_name_id("granite and marble"), Some("Marble"));
+        assert_eq!(pass_name_id("slopes"), Some("Smooth World"));
+        assert_eq!(pass_name_id("trees"), Some("Planting Trees"));
+        assert_eq!(pass_name_id("surface flora"), Some("Weeds"));
+        assert_eq!(pass_name_id("cacti"), Some("Cactus, Palm Trees, & Coral"));
+        // Multi-step passes share the key (Terrain ×2, Micro Biomes ×5,
+        // Shell Piles ×2 — the C# sets the pass name once).
+        assert_eq!(pass_name_id("terrain height map"), Some("Terrain"));
+        assert_eq!(pass_name_id("thin ice"), Some("Micro Biomes"));
+        assert_eq!(pass_name_id("spike pits"), Some("Shell Piles"));
+        assert_eq!(pass_name_id("shell piles"), Some("Shell Piles"));
+        // The port-only steps (`vanilla == ""`) and unknown names: None.
+        assert_eq!(pass_name_id("plan biome spans"), None);
+        assert_eq!(pass_name_id("constant lava layer"), None);
+        assert_eq!(pass_name_id("hell forts"), None);
+        assert_eq!(pass_name_id("world tail"), None);
+        assert_eq!(pass_name_id("seed finish"), None);
+        assert_eq!(pass_name_id("not a step"), None);
+        // Every mapped key is a real VANILLA_CHAIN pass name (the C#
+        // dictionary keys come from the same GenPassNameID vocabulary).
+        for s in EXECUTED_PIPELINE {
+            if let Some(key) = pass_name_id(s.name) {
+                assert!(
+                    VANILLA_CHAIN.iter().any(|p| p.name == key),
+                    "'{key}' (step '{}') is not a chain pass",
+                    s.name
+                );
+            }
+        }
     }
 
     #[test]

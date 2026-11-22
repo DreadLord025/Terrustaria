@@ -1012,6 +1012,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // slot, the cyan panel 9-slice, the separator, the scrollbar, the craft
         // icon/toggles and the filter strip's icons.
         "Inventory_Back18",
+        // W4-f23 wiring: `Inventory_Back24` — the selected-recipe grid overlay
+        // (`ItemSlot.cs:2371-2374`, context 41 + DrawSelectionHighlightForGridSlot).
+        "Inventory_Back24",
         "UI/PanelBackground",
         "UI/PanelBorder",
         "UI/CharCreation/Separator1",
@@ -1209,6 +1212,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/WorldGen/Outer_Crimson",
         "UI/WorldGen/Outer_Random",
         "UI/WorldGen/Outer_Lower",
+        // W4-f23 closeout item 1: the worldgen-debug pass-list icons —
+        // `GenPassElement.PassIconEntry.FromBestiaryIcon` frames this 16×5
+        // sheet (`UIWorldGenDebug.cs:184-196`, `Icon_Tags_Shadow`).
+        "UI/Bestiary/Icon_Tags_Shadow",
         "UI/CharCreation/CategoryPanel",
         "UI/CharCreation/CategoryPanelBorder",
         "UI/CharCreation/CategoryPanelHighlight",
@@ -2603,6 +2610,8 @@ pub struct Lookups {
     pub ui_tick_off: Option<tr_render::SheetRect>,
     /// `Inventory_Back18`: the crafting-recipe slot frame (`ItemSlot.cs:2272`).
     pub ui_back18: Option<tr_render::SheetRect>,
+    /// `Inventory_Back24`: the selected-recipe grid overlay (`ItemSlot.cs:2371-2374`).
+    pub ui_back24: Option<tr_render::SheetRect>,
     /// `UI/PanelBackground`: the panel background 9-slice (`UIPanel.cs:30`).
     pub ui_panel_bg: Option<tr_render::SheetRect>,
     /// `UI/PanelBorder`: the panel border 9-slice (`UIPanel.cs:26`).
@@ -2749,6 +2758,10 @@ pub struct Lookups {
     /// requests `Images/UI/WorldGen/Outer_{Corrupt,Crimson,Random,Lower}`.
     /// Index order: 0 Corrupt, 1 Crimson, 2 Random, 3 Lower.
     pub worldgen_outer: [Option<tr_render::SheetRect>; 4],
+    /// `UI/Bestiary/Icon_Tags_Shadow` 416×130 (16×5 cells of 26 px) — the
+    /// worldgen-debug pass-list icons (`UIWorldGenDebug.cs:184-196`,
+    /// `GenPassElement.PassIconEntry.FromBestiaryIcon`). W4-f23 closeout 1.
+    pub ui_bestiary_tags_shadow: Option<tr_render::SheetRect>,
     /// `UI/CharCreation/CategoryPanel` 44x44 (`UIColoredImageButton.cs:41`).
     pub cc_panel: Option<tr_render::SheetRect>,
     /// `UI/CharCreation/CategoryPanelBorder` 44x44 (`UIColoredImageButton.cs:52`).
@@ -3012,6 +3025,7 @@ impl Lookups {
             ui_tick_on: atlas.sheet("Inventory_Tick_On").copied(),
             ui_tick_off: atlas.sheet("Inventory_Tick_Off").copied(),
             ui_back18: atlas.sheet("Inventory_Back18").copied(),
+            ui_back24: atlas.sheet("Inventory_Back24").copied(),
             ui_panel_bg: atlas.sheet("UI/PanelBackground").copied(),
             ui_panel_border: atlas.sheet("UI/PanelBorder").copied(),
             ui_separator: atlas.sheet("UI/CharCreation/Separator1").copied(),
@@ -3368,6 +3382,7 @@ impl Lookups {
                 atlas.sheet("UI/WorldGen/Outer_Random").copied(),
                 atlas.sheet("UI/WorldGen/Outer_Lower").copied(),
             ],
+            ui_bestiary_tags_shadow: atlas.sheet("UI/Bestiary/Icon_Tags_Shadow").copied(),
             cc_panel: atlas.sheet("UI/CharCreation/CategoryPanel").copied(),
             cc_panel_border: atlas.sheet("UI/CharCreation/CategoryPanelBorder").copied(),
             cc_panel_highlight: atlas

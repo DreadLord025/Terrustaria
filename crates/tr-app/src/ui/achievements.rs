@@ -218,7 +218,7 @@ pub fn panel_rect(screen: Vec2, game_menu: bool) -> [f32; 4] {
         (120.0, Style::new(-120.0, 1.0))
     };
     uistate::resolve(
-        [0.0, 0.0, screen.x, screen.y], // the `UIState` root
+        super::state_root::root_rect([0.0, 0.0, screen.x, screen.y]), // the `UIState` root
         Style::px(0.0),                // `Left` unset
         Style::px(top),                // `Top`
         Style::new(0.0, 0.8),          // `Width.Set(0f, 0.8f)`

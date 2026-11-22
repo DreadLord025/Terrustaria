@@ -721,9 +721,35 @@ pub(crate) struct App {
     /// The buff bar's right-click removal requests — the C# removes in the
     /// draw pass (`Main.cs:43348`); the port drains them in the tick.
     pub(crate) buff_removals: Vec<usize>,
-    /// `Main.focusRecipe` (`Main.cs:1729`): the selected recipe row's index
-    /// into the available list — the first click focuses, the next crafts.
+    /// `Main.focusRecipe` (`Main.cs:1729`): the selected recipe's position
+    /// in the RAW `Main.availableRecipe` list (`HandleCraftSlot`
+    /// `NewCraftingUI.cs:510`, `UpdateContents` `:610`/`:622`) — the first
+    /// click focuses, the next crafts. NOT a recipe-table index and NOT a
+    /// shown-grid position (the W4-f23 index-space fix).
     pub(crate) focus_recipe: i32,
+    /// The previous frame's RAW available list — `Main.availableRecipe`'s
+    /// state across `Recipe.UpdateRecipeList`'s clear+rebuild: the refocus
+    /// tail (`Recipe.cs:232-233`) captures `availableRecipe[focusRecipe]`
+    /// from THIS list before the rebuild (`TryRefocusingRecipe` `:477-495`,
+    /// wired in `frame/draw.rs`). Empty until the panel first draws.
+    pub(crate) craft_last_available: Vec<usize>,
+    /// The craft grid's `UIScrollbar.ViewPosition` (`UIScrollbar.cs:37-47`):
+    /// the wheel (`UIList.ScrollWheel` `:107-114`) and the bar's press/drag
+    /// (`:126-143`, `:109-112`) write it; `SetView` clamps it to
+    /// `contentHeight - listHeight` every rebuild.
+    pub(crate) craft_scroll: f32,
+    /// The bar's `_isDragging` grab offset (`UIScrollbar.cs:134-135`) —
+    /// `Some` while the handle is held, `None` after `LeftMouseUp` (`:148`).
+    pub(crate) craft_scroll_drag: Option<f32>,
+    /// `_isHoveringOverHandle` (`UIScrollbar.cs:115-120`): re-derived every
+    /// draw frame; the enter edge plays sound 12 (`:119`).
+    pub(crate) craft_scroll_hover: bool,
+    /// `Main.nearbyCraftingMouseOver` (`Main.cs:1309`): the nearby-chests
+    /// toggle's hover latch (`CraftingUI.cs:354`'s
+    /// `DoStatefulTickSound`), re-derived every draw frame the panel draws;
+    /// the enter edge plays sound 12 (`Main.cs:3244`). Cleared by
+    /// `Main.ResetInventoryState` (`:3225`) on the inventory open/close.
+    pub(crate) nearby_crafting_mouse_over: bool,
     /// `Main._currentRecipeBeingCrafted` (`Main.cs:2352`): the held-repeat's
     /// recipe lock — a different recipe or a maxStack-1 product resets it.
     pub(crate) current_recipe_being_crafted: i32,
@@ -827,6 +853,13 @@ pub(crate) struct App {
     /// The debug *window* (the typed always-present overlay, top-left). Its own
     /// toggle (F4) so it can be up while the large `TR_DEBUG` overlay is off.
     pub(crate) debug_overlay: bool,
+    /// `UIWorldGenDebug.IsActive` (`UIWorldGenDebug.cs:794`) — the F5 debug
+    /// pass-list overlay over the loading screen (`UIWorldLoad.cs:50-53`'s
+    /// `DebugOptions.enableDebugCommands && F5` arm, the port's `TR_DEBUG`
+    /// stand-in). W4-f23 closeout item 1: the driver lands as an overlay,
+    /// not a new FrontScreen variant (the d85 dev-screens co-lane owns the
+    /// full screen; this wires the parked element halves to the live job).
+    pub(crate) worldgen_debug_open: bool,
     pub(crate) keys: HashSet<KeyCode>,
     /// `Main.cUp`..`Main.cMount` (`Main.cs:67163-67176`): the live gameplay
     /// bind table, mirrored from `settings.keybinds` so a rebind in the
@@ -911,6 +944,12 @@ pub(crate) struct App {
     /// crystal-wall flicker (`DoUpdate_AnimateCursorColors` in Main.cs).
     pub(crate) mouse_text_color: u8,
     pub(crate) mouse_text_color_dir: i8,
+    /// `Main.invAlpha` / `Main.invDir` (`Main.cs:1287-1289`): the Interface
+    /// Logic 2 pulse (`DrawInterface_24_InterfaceLogic2`, `:45695-45711`) —
+    /// the crafting grid's selection-overlay tint `Main.inventoryBack`
+    /// (`ItemSlot.cs:2373`). W4-f23 deviation fix: was the midpoint-210
+    /// constant.
+    pub(crate) inv_pulse: crate::ui::inv_pulse::InvPulse,
     /// `Main.demonTorch` / `Main.demonTorchDir` (`DoUpdate_AnimateTileGlows`).
     pub(crate) demon_torch: f32,
     pub(crate) demon_torch_dir: f32,
@@ -4551,6 +4590,11 @@ impl App {
             buff_alpha: [0.4; crate::buffs::MAX_BUFFS],
             buff_removals: Vec::new(),
             focus_recipe: 0,
+            craft_last_available: Vec::new(),
+            craft_scroll: 0.0,
+            craft_scroll_drag: None,
+            craft_scroll_hover: false,
+            nearby_crafting_mouse_over: false,
             current_recipe_being_crafted: -1,
             prevent_craft_click: false,
             pointer: ui::pointer::PointerState::default(),
@@ -4594,6 +4638,7 @@ impl App {
             zoom_pinned: crate::env::zoom_pinned(),
             debug: crate::env::debug(),
             debug_overlay: false,
+            worldgen_debug_open: false,
             keys: HashSet::new(),
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),
@@ -4636,6 +4681,8 @@ impl App {
             // `Main.mouseTextColor` starts at 225 and drifts toward 255.
             mouse_text_color: 225,
             mouse_text_color_dir: 1,
+            // `Main.invAlpha = 1f; Main.invDir = 1f` (`Main.cs:66846-66847`).
+            inv_pulse: crate::ui::inv_pulse::InvPulse::default(),
             // `Main.demonTorch = 1f; Main.demonTorchDir = 1` (Main.Initialize).
             demon_torch: 1.0,
             demon_torch_dir: 1.0,

@@ -205,6 +205,23 @@ impl App {
             // 90-109`): resolved during the map draw, drained after the gpu
             // block releases the field borrows (the popup_goto convention).
             let mut pylon_click: Option<crate::map_layers::PylonClick> = None;
+            // The craft RAW-list rebuild (`Recipe.UpdateRecipeList`) and the
+            // worldgen-debug feed — computed BEFORE the field destructure
+            // below: both read many `self` fields disjointly, and a whole-`self`
+            // method call inside the destructure block would conflict with the
+            // live `&mut` field bindings (E0502). The owned results are used
+            // inside the block (W4-f23 closeout).
+            let craft_raw_pre = if self.inventory_open
+                && self.menu.is_none()
+                && self.front.is_none()
+                && !crate::env::no_hud()
+                && !(self.settings.map_enabled && self.map.as_ref().is_some_and(|m| m.open))
+            {
+                self.craft_raw_list()
+            } else {
+                Vec::new()
+            };
+            let worldgen_debug_pre = self.worldgen_debug_feed();
 
             {
                 let App {
@@ -355,6 +372,11 @@ impl App {
                     if self.mouse_text_color <= 190 {
                         self.mouse_text_color_dir = 1;
                     }
+                    // `Main.DrawInterface_24_InterfaceLogic2`
+                    // (`Main.cs:45697-45708`): the invAlpha pulse runs once
+                    // per draw-interface pass — the crafting selection
+                    // overlay's `Main.inventoryBack` tint.
+                    self.inv_pulse.tick();
                     // `Main.mouseColor = Main.selColor` runs every frame the colour
                     // screen is open (`Main.cs:50324`), and `CursorColor`
                     // (`Main.cs:52490`) reads that static, so the tint follows the
@@ -2264,6 +2286,8 @@ impl App {
                             scroll: self.front_scroll,
                             vk_grid: self.vk_grid,
                             frame_count: *frame_count,
+                            worldgen_debug: worldgen_debug_pre.clone(),
+                            worldgen_debug_open: self.worldgen_debug_open,
                         };
                         front.draw(&mut d);
                         // The port's not-ported notice for the front screens
@@ -2281,82 +2305,44 @@ impl App {
                             );
                         }
                     } else if menu.is_none() && !crate::env::no_hud() && !fullscreen_map {
-                        let craft_available = if self.crafting_open {
-                            // `Recipe.UpdateRecipeList` (`Recipe.cs:230-259`): the
-                            // owned counts fold the inventory and the in-range
-                            // chests; the environment reads the adjacency scan
-                            // and the zone flags.
-                            // The reach (`Player.tileRangeX/Y` +
-                            // `TileReachCheckSettings.Simple`): the Extendo Grip /
-                            // the Architect's Gizmo Pack, the held Toolbox, the
-                            // Journey mode's Far Placement Range power and the
-                            // artisan loaf.
-                            let reach = player.as_ref().map_or((5, 3), |p| {
-                                craft::tile_reach(
-                                    p.equipped[..10].contains(&2215)
-                                        || p.equipped[..10].contains(&3061),
-                                    self.mouse_item.kind == 1923,
-                                    self.creative_powers.far_placement_range(),
-                                    p.ate_artisan_bread,
-                                )
-                            });
-                            let (adj, in_range) = player
-                                .as_ref()
-                                .map(|p| {
-                                    (
-                                        craft::scan_adjacent(world, p, reach),
-                                        craft::chests_in_range(
-                                            world,
-                                            p,
-                                            &self.world_chests,
-                                            settings.craft_from_nearby_chests,
-                                        ),
-                                    )
-                                })
-                                .unwrap_or_else(|| {
-                                    (
-                                        craft::Adjacent {
-                                            tiles: Vec::new(),
-                                            water: false,
-                                            honey: false,
-                                            lava: false,
-                                            alchemy_table: false,
-                                        },
-                                        Vec::new(),
-                                    )
-                                });
-                            let zones = craft::Zones {
-                                snow: self.scene_metrics.zone_snow,
-                                graveyard: self.scene_metrics.zone_graveyard,
-                            };
-                            // `Recipe.CanCraft`'s two gates (`Recipe.cs:349-356`).
-                            let gates = craft::Gates {
-                                unlocked_biome_torches: player
-                                    .as_ref()
-                                    .map_or(false, |p| p.unlocked_biome_torches),
-                                // `SpecialSeedFeatures.Mechdusa`
-                                // (`SpecialSeedFeatures.cs:119-127`).
-                                mechdusa: world.seeds.contains(tr_core::seeds::SeedFlags::REMIX)
-                                    && world
-                                        .seeds
-                                        .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
-                            };
-                            // `NewCraftingUI.cs:596-611`: the grid shows only the
-                            // recipes whose product passes the filterer.
-                            self.craft_filters.shown(craft::available_with_gates(
-                                inventory,
-                                &self.equip,
-                                &self.world_chests,
-                                &in_range,
-                                &adj,
-                                &zones,
-                                self.craft_filter.as_ref(),
-                                None,
-                                &gates,
-                            ))
-                        } else {
-                            Vec::new()
-                        };
+                        // `Recipe.UpdateRecipeList` (`Recipe.cs:230-259`) +
+                        // its refocus tail (`:232-233`, `:257`,
+                        // `TryRefocusingRecipe` `:477-495`): the RAW
+                        // availableRecipe list rebuilds and the focus
+                        // follows the recipe it pointed at. The C# runs it
+                        // from TWO draw sites — the modern grid
+                        // (`NewCraftingUI.Draw` → `UpdateContents` `:585`,
+                        // while `NewCraftingUI.Visible`) AND the classic
+                        // pip-list arm (`Main.cs:41712`, while the inventory
+                        // is open and the grid is NOT visible). The port
+                        // collapses both onto the one grid, so the rebuild
+                        // runs whenever the inventory is open — the
+                        // closed-panel deviation is retired: the snapshot
+                        // now tracks every inventory change while the panel
+                        // is closed-but-inventory-open, exactly the C#'s
+                        // `:41712` arm (research/126 closeout). The classic
+                        // pip-list DRAW (`CraftingUI.DrawRecipesList`,
+                        // `Main.cs:41715`) stays unported — the modern grid
+                        // replaces it (ANALYSIS "Crafting panel").
+                        let craft_available = craft_raw_pre;
+                        if self.inventory_open {
+                            let old_recipe = self
+                                .craft_last_available
+                                .get(self.focus_recipe.max(0) as usize)
+                                .copied()
+                                .unwrap_or(0);
+                            self.focus_recipe = craft::try_refocusing_recipe(
+                                &craft_available,
+                                old_recipe,
+                                self.focus_recipe,
+                            );
+                            self.craft_last_available = craft_available.clone();
+                        }
+                        // `NewCraftingUI.UpdateContents` (`:596-611`): the
+                        // grid shows only the recipes whose product passes
+                        // the filterer (`_filteredRecipes`); the raw list
+                        // above stays the focus/available index space.
+                        let craft_shown = self.craft_filters.shown(craft_available.clone());
                         // The unified open-container state (`Player.chest`,
                         // `Player.cs:2876`/`:2878`/:2880) — the panel reads the
                         // player's fields now that one field covers every kind.
@@ -2365,6 +2351,93 @@ impl App {
                             .map_or(crate::bank::CHEST_CLOSED, |p| p.chest);
                         let (panel_chest_x, panel_chest_y) =
                             player.as_ref().map_or((0, 0), |p| (p.chest_x, p.chest_y));
+                        // `NewCraftingUI.OnActivate` (`:904`):
+                        // `_selectedRecipeIndex = Main.numAvailableRecipes < 0
+                        // ? null : Main.availableRecipe[Main.focusRecipe]` —
+                        // the raw recipe index the grid's selection overlay
+                        // marks (`UpdateContents` `:612-622` clears it once
+                        // the focused recipe leaves the available list).
+                        // `focus_recipe` is a RAW availableRecipe position
+                        // (W4-f23 deviation fix — the click path stores the
+                        // position, `HandleCraftSlot` `:510`).
+                        let craft_selected = (self.focus_recipe >= 0)
+                            .then(|| craft_available.get(self.focus_recipe as usize).copied())
+                            .flatten();
+                        // The craft grid's scrollbar frame, in
+                        // `UIScrollbar.DrawSelf`'s order (`:103-124`):
+                        // `SetView`'s clamp rides every rebuild
+                        // (`UIList.UpdateScrollbar` `:130-137`), the drag
+                        // arm re-derives the position from the pointer
+                        // (`:109-112`), then the handle hover latch with
+                        // its enter-edge sound 12 (`:115-120`). The latch
+                        // and the drag only run while the bar can scroll
+                        // (`AutoHide`'s `CanScroll` gate, `:105`).
+                        if self.crafting_open {
+                            let cl = ui::crafting::layout(
+                                screen,
+                                ui::crafting::title_width_for(lookups),
+                                false,
+                            );
+                            let content_h =
+                                ui::crafting::grid_content_height(&cl, craft_shown.len());
+                            self.craft_scroll = ui::char_select::clamp_scroll(
+                                self.craft_scroll,
+                                cl.list[3],
+                                content_h,
+                            );
+                            if ui::char_select::scrollbar_attaches(cl.list[3], content_h) {
+                                if let Some(offset) = self.craft_scroll_drag {
+                                    self.craft_scroll = ui::crafting::scrollbar_drag(
+                                        &cl,
+                                        craft_shown.len(),
+                                        offset,
+                                        self.mouse_pos.y,
+                                    );
+                                }
+                                let handle = ui::panel::scrollbar_handle_at(
+                                    cl.scrollbar,
+                                    cl.list[3],
+                                    content_h,
+                                    self.craft_scroll,
+                                );
+                                let hovering = ui::in_rect(self.mouse_pos, handle);
+                                if hovering && !self.craft_scroll_hover {
+                                    self.audio.play("Menu_Tick"); // `:119`
+                                }
+                                self.craft_scroll_hover = hovering || self.craft_scroll_drag.is_some();
+                            } else {
+                                self.craft_scroll_hover = false;
+                            }
+                        }
+                        // The nearby-chests toggle's hover cue
+                        // (`CraftingUI.DrawCraftFromNearbyChestsToggle`,
+                        // `:354`'s `DoStatefulTickSound(ref
+                        // Main.nearbyCraftingMouseOver, flag)`): the latch
+                        // follows the ±15 px hover square, the enter edge
+                        // plays sound 12 (`Main.cs:3244`). Runs only while
+                        // the panel draws — the C# runs it inside the toggle
+                        // draw; with the panel closed the latch holds its
+                        // last value until `Main.ResetInventoryState`
+                        // (`:3225`) clears it on the inventory open/close
+                        // (the port clears it in the draw's else arm below,
+                        // the same net effect: no stale enter-edge cue on
+                        // reopen). The toggle is hidden in the guide menu
+                        // (`NewCraftingUI.cs:492-494`), which the port never
+                        // enters (`guide_mode` stays false).
+                        if self.crafting_open {
+                            let nearby_hover = ui::crafting::nearby_toggle_hit(
+                                screen,
+                                self.mouse_pos,
+                            );
+                            if ui::crafting::stateful_tick_sound(
+                                &mut self.nearby_crafting_mouse_over,
+                                nearby_hover,
+                            ) {
+                                self.audio.play("Menu_Tick");
+                            }
+                        } else {
+                            self.nearby_crafting_mouse_over = false;
+                        }
                         ui::draw_hud(
                             renderer,
                             *camera,
@@ -2391,6 +2464,17 @@ impl App {
                             self.mouse_pos,
                             &self.cursor,
                             &craft_available,
+                            &craft_shown,
+                            craft_selected,
+                            // `Main.inventoryBack` when the crafting grid
+                            // draws: Interface Logic 2 pulses `invAlpha`
+                            // 180..240 by 0.2/tick (`Main.cs:45697-45708`,
+                            // ticked in the per-frame animation block above)
+                            // — the byte colour, no more midpoint stand-in.
+                            self.inv_pulse.inventory_back(),
+                            self.craft_scroll,
+                            self.craft_scroll_hover,
+                            settings.craft_from_nearby_chests,
                             ui::UiPulse {
                                 // `Main.mouseTextColor / 255` (`Main.cs:20355`).
                                 text: self.mouse_text_color as f32 / 255.0,
@@ -3310,6 +3394,96 @@ impl App {
         }
         Some((stats, tile_stats))
     }
+
+    /// `Recipe.UpdateRecipeList`'s raw availableRecipe list
+    /// (`Recipe.cs:230-259`): the owned counts fold the inventory and the
+    /// in-range chests; the environment reads the adjacency scan and the
+    /// zone flags. `Main.focusRecipe` indexes THIS list
+    /// (`NewCraftingUI.cs:610`, `:622`, `:904`), not the filter-narrowed
+    /// grid. Extracted from the draw region (W4-f23 closeout item 2) so the
+    /// rebuild reads the same inputs from either C# draw site — the modern
+    /// grid (`:585`) and the classic pip-list arm (`Main.cs:41712`).
+    /// The `UIWorldGenDebug` driver's per-frame feed (W4-f23 closeout item 1):
+    /// the live job's per-step snapshot + the executed pipeline's descriptors.
+    /// `None` when no generation job runs (the `TR_UI=worldload` preset parks a
+    /// fixed snapshot with no worker — the debug overlay has nothing to feed).
+    pub(crate) fn worldgen_debug_feed(&self) -> Option<ui::worldgen_debug::DebugFeed> {
+        let job = self.world_gen_job.as_ref()?;
+        let snap = job.snapshot();
+        Some(ui::worldgen_debug::DebugFeed {
+            steps: tr_core::worldgen::pipeline::executed_steps(job.micro_flags),
+            current_step: snap.current_step,
+            completed_steps: snap.completed_steps,
+        })
+    }
+
+    pub(super) fn craft_raw_list(&self) -> Vec<usize> {
+        // The reach (`Player.tileRangeX/Y` + `TileReachCheckSettings.Simple`):
+        // the Extendo Grip / the Architect's Gizmo Pack, the held Toolbox,
+        // the Journey mode's Far Placement Range power and the artisan loaf.
+        let reach = self.player.as_ref().map_or((5, 3), |p| {
+            craft::tile_reach(
+                p.equipped[..10].contains(&2215) || p.equipped[..10].contains(&3061),
+                self.mouse_item.kind == 1923,
+                self.creative_powers.far_placement_range(),
+                p.ate_artisan_bread,
+            )
+        });
+        let (adj, in_range) = self
+            .player
+            .as_ref()
+            .map(|p| {
+                (
+                    craft::scan_adjacent(&self.world, p, reach),
+                    craft::chests_in_range(
+                        &self.world,
+                        p,
+                        &self.world_chests,
+                        self.settings.craft_from_nearby_chests,
+                    ),
+                )
+            })
+            .unwrap_or_else(|| {
+                (
+                    craft::Adjacent {
+                        tiles: Vec::new(),
+                        water: false,
+                        honey: false,
+                        lava: false,
+                        alchemy_table: false,
+                    },
+                    Vec::new(),
+                )
+            });
+        let zones = craft::Zones {
+            snow: self.scene_metrics.zone_snow,
+            graveyard: self.scene_metrics.zone_graveyard,
+        };
+        // `Recipe.CanCraft`'s two gates (`Recipe.cs:349-356`).
+        let gates = craft::Gates {
+            unlocked_biome_torches: self
+                .player
+                .as_ref()
+                .map_or(false, |p| p.unlocked_biome_torches),
+            // `SpecialSeedFeatures.Mechdusa` (`SpecialSeedFeatures.cs:119-127`).
+            mechdusa: self.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX)
+                && self
+                    .world
+                    .seeds
+                    .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+        };
+        craft::available_with_gates(
+            &self.inventory,
+            &self.equip,
+            &self.world_chests,
+            &in_range,
+            &adj,
+            &zones,
+            self.craft_filter.as_ref(),
+            None,
+            &gates,
+        )
+    }
 }
 
 /// `Main.DoUpdate_AnimateTileGlows`' martianLight half (`Main.cs:18251-
@@ -3410,5 +3584,75 @@ mod s1_p_i53_tests {
         // The next press fires again.
         app.place_down = true;
         assert!(app.buff_cancel_gate());
+    }
+}
+
+#[cfg(test)]
+mod w4_f23_closeout_craft_list_tests {
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::craft;
+
+    /// W4-f23 closeout item 2 — the classic pip-list arm's
+    /// `Recipe.UpdateRecipeList` (`Main.cs:41712`) runs while the inventory
+    /// is open and the modern grid is NOT visible. The port collapses both
+    /// C# draw sites onto the one grid, so `craft_raw_list` (the extracted
+    /// rebuild) must answer the SAME raw availableRecipe list whether the
+    /// panel is open or closed-but-inventory-open: the closed-panel
+    /// deviation is retired — the snapshot tracks every inventory change.
+    #[test]
+    fn the_raw_list_rebuilds_while_the_panel_is_closed_but_inventory_open() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        // Stock the torch ingredients (1 wood + 1 gel per craft, row 0).
+        app.inventory[0] = crate::item::ItemSlot { kind: 9, name: "Wood", count: 30, prefix: 0 };
+        app.inventory[1] = crate::item::ItemSlot { kind: 23, name: "Gel", count: 30, prefix: 0 };
+        app.inventory_open = true;
+        // The panel CLOSED (the classic pip-list arm's gate, `:41710`'s
+        // `else if (!NewCraftingUI.Visible ...)`): the rebuild still runs.
+        app.crafting_open = false;
+        let closed = app.craft_raw_list();
+        assert!(
+            closed.iter().any(|&r| craft::RECIPES[r].create.0 == 8),
+            "the torch recipe is available with the panel closed"
+        );
+        // The panel OPEN (the modern grid's `UpdateContents` `:585` site):
+        // the same inputs, the same list.
+        app.crafting_open = true;
+        let open = app.craft_raw_list();
+        assert_eq!(closed, open, "both C# draw sites rebuild the same raw list");
+    }
+
+    /// The refocus tail (`Recipe.cs:232-233`, `:257`) follows the recipe
+    /// across the rebuild even while the panel is closed: after the
+    /// ingredients drain, the focused recipe leaves the list and the focus
+    /// pins to the last row — the `:41712` arm keeps `Main.focusRecipe`
+    /// live, not frozen at the last open frame.
+    #[test]
+    fn the_focus_follows_the_recipe_across_a_closed_panel_rebuild() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.inventory[0] = crate::item::ItemSlot { kind: 9, name: "Wood", count: 30, prefix: 0 };
+        app.inventory[1] = crate::item::ItemSlot { kind: 23, name: "Gel", count: 30, prefix: 0 };
+        app.inventory_open = true;
+        app.crafting_open = false;
+        // First rebuild: the torch is row 0; focus it.
+        let first = app.craft_raw_list();
+        let torch_pos = first.iter().position(|&r| craft::RECIPES[r].create.0 == 8).unwrap();
+        app.focus_recipe = torch_pos as i32;
+        app.craft_last_available = first.clone();
+        // Drain the gel — the torch leaves the available list.
+        app.inventory[1].count = 0;
+        let second = app.craft_raw_list();
+        assert!(
+            !second.iter().any(|&r| craft::RECIPES[r].create.0 == 8),
+            "no gel, no torch"
+        );
+        // The refocus tail the draw region runs on the rebuilt list.
+        let old_recipe = app.craft_last_available[torch_pos];
+        let new_focus = craft::try_refocusing_recipe(&second, old_recipe, app.focus_recipe);
+        assert!(
+            (new_focus as usize) < second.len().max(1),
+            "the focus pins into the rebuilt list, not the stale position"
+        );
     }
 }

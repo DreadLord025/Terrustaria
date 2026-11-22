@@ -1017,13 +1017,18 @@ impl App {
             return false;
         }
         // `:42301-42305`: the buttons releasing reset the focus click's
-        // lock and the held-repeat's recipe pin.
-        if !self.mine_down {
+        // lock and the held-repeat's recipe pin — `flag2 = Main.mouseLeft
+        // || Main.mouseRight` (`:42255`), so EITHER held button keeps them.
+        let held = self.mine_down || self.place_down;
+        if !held {
             self.prevent_craft_click = false;
             self.current_recipe_being_crafted = -1;
             return false;
         }
-        if !self.ui_left_press && self.stack_split > 1 {
+        // `flag = (mouseLeftRelease && mouseLeft) || (mouseRightRelease &&
+        // mouseRight)` (`:42254`): either button's press edge selects.
+        let press_edge = self.ui_left_press || self.ui_right_press;
+        if !press_edge && self.stack_split > 1 {
             return true; // the held frame between repeats
         }
         let (sw, sh) = self.screen_size();
@@ -1043,9 +1048,16 @@ impl App {
         }
         // The toggles before the grid: the nearby-chests toggle flips the
         // setting (`CraftingUI.cs:336-355`), and a consumed press does not
-        // reach the recipe cells.
-        if ui::crafting::nearby_toggle_hit(screen, self.mouse_pos) {
+        // reach the recipe cells. The toggle reads `Main.mouseLeft &&
+        // Main.mouseLeftRelease` (`:346`) — LEFT only, unlike the recipe
+        // cells' either-button arms.
+        if self.mine_down && ui::crafting::nearby_toggle_hit(screen, self.mouse_pos) {
             self.settings.craft_from_nearby_chests = !self.settings.craft_from_nearby_chests;
+            // `NewCraftingUI.RefreshGrid()` (`CraftingUI.cs:349`): the shown
+            // list re-derives every frame in the port, so the refresh is a
+            // no-op here (the draw rebuilds `craft_raw_list`).
+            self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:350`)
+            let _ = self.settings.save(); // `Main.SaveSettings()` (`:351`)
             self.ui_left_press = false;
             return true;
         }
@@ -1088,7 +1100,7 @@ impl App {
         );
         // `:42250`'s `Main.availableRecipe[recipeIndex]` indexes the RAW list, so
         // the grid narrows only what is shown (`NewCraftingUI.cs:596-611`).
-        let available = self.craft_filters.shown(craft::available_with_gates(
+        let raw_available = craft::available_with_gates(
             &self.inventory,
             &self.equip,
             &self.world_chests,
@@ -1098,23 +1110,42 @@ impl App {
             self.craft_filter.as_ref(),
             None,
             &gates,
-        ));
-        let Some(idx) = ui::crafting::hit_test(screen, &self.lookups, self.mouse_pos, &available)
+        );
+        let available = self.craft_filters.shown(raw_available.clone());
+        let Some(idx) = ui::crafting::hit_test(
+            screen,
+            &self.lookups,
+            self.mouse_pos,
+            &available,
+            self.craft_scroll,
+        )
         else {
             return false;
         };
         let recipe = &craft::RECIPES[idx];
+        // `HandleCraftSlot` (`NewCraftingUI.cs:499-528`): the click on an
+        // unfocused cell selects it — `_selectedRecipeIndex = entry.index`
+        // (`:507`) and `Main.focusRecipe = entry.availableIndex` (`:510`),
+        // the RAW `availableRecipe` position (`UpdateContents` `:610`), NOT
+        // the recipe-table index (the W4-f23 index-space fix: with a filter
+        // active the shown position and the raw position diverge).
+        let available_index =
+            ui::crafting_grid::available_position(&raw_available, idx);
         // `Main.cs:42256-42262` + `:42295-42299`: the first click on an
-        // unfocused row selects it (`focusRecipe = recipeIndex`,
-        // `stackSplit = 15`, the click-consumed lock, the MenuTick sound);
-        // the craft runs only on the focused row.
-        if self.focus_recipe != idx as i32 {
-            if self.ui_left_press {
-                self.focus_recipe = idx as i32;
+        // unfocused row selects it (`stackSplit = 15`, the click-consumed
+        // lock, the MenuTick sound); the craft runs only on the focused row.
+        // `HandleCraftSlot`'s select arm takes EITHER button
+        // (`NewCraftingUI.cs:505`: `(mouseLeft && mouseLeftRelease) ||
+        // (mouseRight && mouseRightRelease)`), and so does
+        // `HoverOverCraftingItemButton`'s (`:42254`'s `flag`).
+        if self.focus_recipe != available_index {
+            if press_edge {
+                self.focus_recipe = available_index;
                 self.stack_split = 15;
                 self.prevent_craft_click = true;
                 self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
                 self.ui_left_press = false;
+                self.ui_right_press = false;
             }
             return true;
         }
@@ -1166,6 +1197,18 @@ impl App {
             self.rngs.global(),
             num,
         );
+        // `CraftingRequests.CraftItem`'s tail (`CraftingRequests.cs:119`):
+        // `CraftingEffects.OnCraft(recipe, quickCraft)` runs AFTER the craft
+        // loop, UNCONDITIONALLY — even when the loop crafted nothing (the
+        // `i <= 0` first-iteration arm, `:102`, always runs once). `OnCraft`
+        // → `SpawnEffects_BeforeGrantingItem` → `SoundEngine.PlaySound(7)`
+        // (`CraftingEffects.cs:16-24`, `:49-52`): the craft-attempt cue, NOT
+        // a per-item grant sound. The port played it only inside
+        // `!crafted.is_empty()` (the grant), dropping the cue on a
+        // focused-row attempt the ingredients no longer allow — the
+        // g23c-menu-union co-lane census found the gap (W4-f23 closeout 3).
+        // The cue is button-agnostic (`:42276`'s `flag2` feeds both arms).
+        self.audio.play("Grab"); // `SoundEngine.PlaySound(7)` (`CraftingEffects.cs:51`)
         if !crafted.is_empty() {
             // The C# hands the result to the cursor (`Main.CraftItem_GrantItem`,
             // `Main.cs:42607-42612`); the port grants it into the inventory
@@ -1180,9 +1223,6 @@ impl App {
                         (self.inventory[i].count + made.count).min(crate::registry::max_stack(made.kind));
                 }
             }
-            // `SoundEngine.PlaySound(7)` — the grant sound
-            // (`CraftingEffects.SpawnEffects_BeforeGrantingItem`, `CraftingEffects.cs:51`).
-            self.audio.play("Grab");
             // `AchievementsHelper.NotifyItemCraft(Recipe)` (`:73-79`) — the
             // crafted item's id rides the event, so `BENCHED`'s workbench set
             // matches the crafted item and not any craft.
@@ -1199,7 +1239,113 @@ impl App {
             };
         }
         self.ui_left_press = false;
+        // The right press edge is consumed by the craft the same way
+        // (`:42254`'s `flag` feeds both arms); the HELD right button keeps
+        // crafting through `flag2` (`:42255`) like the held left.
+        self.ui_right_press = false;
         true
+    }
+
+    /// The craft grid's live shown list — the same inputs
+    /// `handle_crafting_clicks` and the draw path feed
+    /// (`Recipe.UpdateRecipeList` + `NewCraftingUI.UpdateContents`).
+    fn craft_shown_list(&self) -> Vec<usize> {
+        let Some(player) = self.player.as_ref() else {
+            return Vec::new();
+        };
+        let reach = craft::tile_reach(
+            player.equipped[..10].contains(&2215) || player.equipped[..10].contains(&3061),
+            self.mouse_item.kind == 1923,
+            self.creative_powers.far_placement_range(),
+            player.ate_artisan_bread,
+        );
+        let adj = craft::scan_adjacent(&self.world, player, reach);
+        let zones = craft::Zones {
+            snow: self.scene_metrics.zone_snow,
+            graveyard: self.scene_metrics.zone_graveyard,
+        };
+        let gates = craft::Gates {
+            unlocked_biome_torches: player.unlocked_biome_torches,
+            mechdusa: self.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX)
+                && self
+                    .world
+                    .seeds
+                    .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+        };
+        let in_range = craft::chests_in_range(
+            &self.world,
+            player,
+            &self.world_chests,
+            self.settings.craft_from_nearby_chests,
+        );
+        let raw = craft::available_with_gates(
+            &self.inventory,
+            &self.equip,
+            &self.world_chests,
+            &in_range,
+            &adj,
+            &zones,
+            self.craft_filter.as_ref(),
+            None,
+            &gates,
+        );
+        self.craft_filters.shown(raw)
+    }
+
+    /// `UIList.ScrollWheel` (`UIList.cs:107-114`) for the craft grid:
+    /// `UserInterface.Update` hands the notch to the element under the
+    /// pointer (`:219-221`) — the list rect or the attached bar — and
+    /// zeroes the accumulator whatever the hit (`Main.cs:17453-17456`:
+    /// `NewCraftingUI.Visible` sets `flag = false`, so the classic list's
+    /// scroll never also runs). Returns whether the panel consumed the
+    /// notch (the hotbar arm must not see it).
+    pub(crate) fn craft_wheel(&mut self, delta: i32) -> bool {
+        if !self.crafting_open {
+            return false;
+        }
+        let (sw, sh) = self.screen_size();
+        let l = ui::crafting::layout(
+            Vec2::new(sw, sh),
+            ui::crafting::title_width_for(&self.lookups),
+            false,
+        );
+        let n = self.craft_shown_list().len();
+        if ui::crafting::wheel_target(&l, n, self.mouse_pos) {
+            self.craft_scroll = ui::crafting::scroll_wheel(self.craft_scroll, delta, &l, n);
+        }
+        true
+    }
+
+    /// `UIScrollbar.LeftMouseDown` (`UIScrollbar.cs:126-143`) for the craft
+    /// grid's bar: the handle grab latches `_dragYOffset`, a track press
+    /// jumps the view. Returns whether the bar took the press — the same
+    /// press must not reach the recipe cells (`evt.Target == this`).
+    pub(crate) fn craft_scrollbar_press(&mut self) -> bool {
+        if !self.crafting_open || !self.ui_left_press {
+            return false;
+        }
+        let (sw, sh) = self.screen_size();
+        let l = ui::crafting::layout(
+            Vec2::new(sw, sh),
+            ui::crafting::title_width_for(&self.lookups),
+            false,
+        );
+        let n = self.craft_shown_list().len();
+        let Some((scroll, drag)) =
+            ui::crafting::scrollbar_press(&l, n, self.craft_scroll, self.mouse_pos)
+        else {
+            return false;
+        };
+        self.craft_scroll = scroll;
+        self.craft_scroll_drag = drag;
+        self.ui_left_press = false;
+        true
+    }
+
+    /// `UIScrollbar.LeftMouseUp` (`UIScrollbar.cs:145-149`): the drag latch
+    /// clears on the release.
+    pub(crate) fn craft_scrollbar_release(&mut self) {
+        self.craft_scroll_drag = None;
     }
 
     /// The town-chatter panel's clicks (`NPCChatPanel.DrawButtons`,
@@ -5560,8 +5706,8 @@ mod s1_h_7_tests {
             .position(|&r| craft::RECIPES[r].create.0 == 8)
             .expect("the torch recipe is available");
         let l = ui::crafting::layout(screen, 0.0, false);
-        let [x, y, _, _] = ui::crafting::recipe_cell(&l, pos);
-        Vec2::new(x + 20.0, y + 20.0)
+        let [x, y, _, _] = ui::crafting::recipe_cell(&l, pos, 0.0);
+        Vec2::new(x + 22.0, y + 22.0)
     }
 
     #[test]
@@ -5680,6 +5826,81 @@ mod s1_h_7_tests {
         assert_eq!(torches.count, 9, "only 3 wood -> 3 crafts of 3");
     }
 
+    /// W4-f23 doc-sweep: the RIGHT button crafts exactly like the left —
+    /// `HandleCraftSlot`'s select arm (`NewCraftingUI.cs:505`) and
+    /// `HoverOverCraftingItemButton` (`Main.cs:42254-42255`) OR both
+    /// buttons. There is no craft-max: the bulk arm is Shift x10 only
+    /// (`:42272-42274`).
+    #[test]
+    fn the_right_button_selects_and_crafts_like_the_left() {
+        let mut app = craft_app();
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 30,
+            prefix: 0,
+        };
+        app.inventory[1] = crate::item::ItemSlot {
+            kind: 23,
+            name: "Gel",
+            count: 30,
+            prefix: 0,
+        };
+        app.mouse_pos = torch_mouse(&app);
+        app.focus_recipe = 1; // park the focus off the torch row
+        // The right press edge selects (`:505`'s right arm).
+        app.ui_right_press = true;
+        app.place_down = true;
+        assert!(app.handle_crafting_clicks());
+        assert_eq!(app.focus_recipe, 0, "the right click focused the torch");
+        assert!(app.prevent_craft_click);
+        assert_eq!(app.stack_split, 15);
+        assert!(!app.ui_right_press, "the edge is consumed");
+        assert!(
+            !app.inventory.iter().any(|s| s.kind == 8),
+            "the select step crafts nothing"
+        );
+        // Release + re-press: the focused right click crafts ONE recipe
+        // (num = superFastStack + 1 = 1 — no craft-max).
+        app.place_down = false;
+        app.handle_crafting_clicks();
+        assert!(!app.prevent_craft_click, "both buttons released reset the lock");
+        app.stack_split = 0;
+        app.place_down = true;
+        app.ui_right_press = true;
+        assert!(app.handle_crafting_clicks());
+        let torches = app
+            .inventory
+            .iter()
+            .find(|s| s.kind == 8)
+            .expect("the right click crafted");
+        assert_eq!(torches.count, 3, "one craft = three torches, not the max");
+    }
+
+    /// W4-f23 doc-sweep: the HELD right button keeps the held-repeat alive
+    /// (`flag2 = mouseLeft || mouseRight`, `Main.cs:42255`) — the lock and
+    /// the recipe pin survive while either button is down (`:42301-42305`).
+    #[test]
+    fn a_held_right_button_keeps_the_craft_locks() {
+        let mut app = craft_app();
+        app.prevent_craft_click = true;
+        app.current_recipe_being_crafted = 5;
+        app.place_down = true; // right held, left up
+        app.mine_down = false;
+        app.stack_split = 0;
+        // No press edge and no pacing: the handler walks to the grid and
+        // returns without resetting the locks (the `!flag2` arm never runs).
+        app.mouse_pos = Vec2::new(-100.0, -100.0); // off every cell
+        app.handle_crafting_clicks();
+        assert!(app.prevent_craft_click, "the held right keeps the lock");
+        assert_eq!(app.current_recipe_being_crafted, 5);
+        // Both up: the reset arm fires.
+        app.place_down = false;
+        app.handle_crafting_clicks();
+        assert!(!app.prevent_craft_click);
+        assert_eq!(app.current_recipe_being_crafted, -1);
+    }
+
     /// The mouse over the filter tab `i` — `ui::crafting::filter_button_rect`'s
     /// square (`UICreativeItemsInfiniteFilteringOptions.cs:56-57`).
     fn filter_mouse(app: &App, i: usize) -> Vec2 {
@@ -5687,6 +5908,85 @@ mod s1_h_7_tests {
         let l = ui::crafting::layout(Vec2::new(sw, sh), 0.0, false);
         let b = ui::crafting::filter_button_rect(l.filter_strip, i);
         Vec2::new(b[0] + 20.0, b[1] + 20.0)
+    }
+
+    /// W4-f23 doc-sweep: the refocus-on-craft wiring — after a craft drains
+    /// the ingredients, the draw-path rebuild (`frame/draw.rs`'s
+    /// `try_refocusing_recipe` call, `Recipe.cs:232-233`/`:257`) moves the
+    /// focus off the vanished recipe onto the last row. The witness runs
+    /// the same capture + refocus sequence the draw path runs.
+    #[test]
+    fn crafting_the_last_ingredients_refocuses_to_the_last_row() {
+        let mut app = craft_app();
+        // Exactly one torch craft's worth: 1 wood + 1 gel.
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 1,
+            prefix: 0,
+        };
+        app.inventory[1] = crate::item::ItemSlot {
+            kind: 23,
+            name: "Gel",
+            count: 1,
+            prefix: 0,
+        };
+        let adj = craft::scan_adjacent(&app.world, app.player.as_ref().unwrap(), (5, 3));
+        let zones = craft::Zones::default();
+        let in_range = craft::chests_in_range(
+            &app.world,
+            app.player.as_ref().unwrap(),
+            &app.world_chests,
+            false,
+        );
+        let before = craft::available(
+            &app.inventory,
+            &app.equip,
+            &app.world_chests,
+            &in_range,
+            &adj,
+            &zones,
+            None,
+            None,
+        );
+        let torch_pos = before
+            .iter()
+            .position(|&r| craft::RECIPES[r].create.0 == 8)
+            .expect("the torch recipe is available");
+        // The draw path's snapshot + focus before the craft.
+        app.craft_last_available = before.clone();
+        app.focus_recipe = torch_pos as i32;
+        // Craft the torch (the focused click).
+        app.mouse_pos = torch_mouse(&app);
+        app.ui_left_press = true;
+        app.mine_down = true;
+        assert!(app.handle_crafting_clicks());
+        assert!(app.inventory.iter().any(|s| s.kind == 8), "the craft ran");
+        // The next frame's rebuild: the torch left the list (no gel/wood
+        // left), the refocus tail captures the OLD recipe from the
+        // snapshot and pins the focus to the new last row.
+        let after = craft::available(
+            &app.inventory,
+            &app.equip,
+            &app.world_chests,
+            &in_range,
+            &adj,
+            &zones,
+            None,
+            None,
+        );
+        assert!(
+            !after.contains(&before[torch_pos]),
+            "the torch recipe vanished with its ingredients"
+        );
+        let old_recipe = app.craft_last_available[app.focus_recipe as usize];
+        app.focus_recipe =
+            craft::try_refocusing_recipe(&after, old_recipe, app.focus_recipe);
+        assert_eq!(
+            app.focus_recipe,
+            (after.len() as i32 - 1).max(0),
+            "the focus rides the last row (`Recipe.cs:487-494`)"
+        );
     }
 
     /// The shown grid — the same call `handle_crafting_clicks` makes.
@@ -5785,6 +6085,69 @@ mod s1_h_7_tests {
         assert_eq!(app.focus_recipe, 0, "the focus index space is preserved");
     }
 
+    /// W4-f23 deviation fix: with a filter active the shown position and
+    /// the RAW available position diverge (`NewCraftingUI.cs:596-611`) —
+    /// the focus click stores `entry.availableIndex` (`:510`), the raw
+    /// position, NOT the recipe-table index nor the grid position.
+    #[test]
+    fn a_filtered_focus_click_stores_the_raw_available_position() {
+        let mut app = craft_app();
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 30,
+            prefix: 0,
+        };
+        app.inventory[1] = crate::item::ItemSlot {
+            kind: 23,
+            name: "Gel",
+            count: 30,
+            prefix: 0,
+        };
+        // The BuildingBlock tab hides the torch (a Consumable), so the raw
+        // and shown lists differ from row 0 on. A work bench beside the
+        // player opens the wooden-furniture rows too.
+        let p = app.player.as_ref().unwrap();
+        let (bx, by) = ((p.x / 16.0) as i32 + 2, (p.y / 16.0) as i32);
+        let ti = app.world.index(bx, by);
+        app.world.tiles[ti].kind = 18;
+        app.world.tiles[ti].flags |= tr_core::tile::FLAG_ACTIVE;
+        app.craft_filters.click(3);
+        let adj = craft::scan_adjacent(&app.world, app.player.as_ref().unwrap(), (5, 3));
+        let raw = craft::available(
+            &app.inventory,
+            &app.equip,
+            &app.world_chests,
+            &[],
+            &adj,
+            &craft::Zones::default(),
+            None,
+            None,
+        );
+        let grid = shown(&app);
+        assert!(!grid.is_empty(), "some blocks are craftable from wood");
+        assert!(grid.len() < raw.len(), "the torch rows are filtered out");
+        assert_ne!(grid[0], raw[0], "the shown list starts past the torch");
+        // Click the FIRST SHOWN cell: the focus must land on its RAW
+        // position, not 0 (the grid position) nor the recipe-table index.
+        let (sw, sh) = app.screen_size();
+        let l = ui::crafting::layout(Vec2::new(sw, sh), 0.0, false);
+        let [x, y, _, _] = ui::crafting::recipe_cell(&l, 0, 0.0);
+        app.mouse_pos = Vec2::new(x + 22.0, y + 22.0);
+        app.focus_recipe = -1; // nothing focused
+        app.ui_left_press = true;
+        app.mine_down = true;
+        assert!(app.handle_crafting_clicks(), "the focus click is consumed");
+        let expected = raw.iter().position(|&r| r == grid[0]).unwrap() as i32;
+        assert_eq!(app.focus_recipe, expected, "the RAW available position");
+        assert_ne!(app.focus_recipe, grid[0] as i32, "not the recipe index");
+        assert_eq!(app.stack_split, 15);
+        assert!(app.prevent_craft_click);
+        // The draw-side derivation agrees: available[focus] is the clicked
+        // recipe (`OnActivate` `:904`'s index space).
+        assert_eq!(raw[app.focus_recipe as usize], grid[0]);
+    }
+
     /// The mouse over a recipe's cell (the grid origin + the 44 px pitch —
     /// `ui::crafting::hit_test`'s geometry) for the given created item.
     fn recipe_mouse(app: &App, create: u16) -> Vec2 {
@@ -5813,8 +6176,8 @@ mod s1_h_7_tests {
             .position(|&r| craft::RECIPES[r].create.0 == create)
             .expect("the recipe is available");
         let l = ui::crafting::layout(screen, 0.0, false);
-        let [x, y, _, _] = ui::crafting::recipe_cell(&l, pos);
-        Vec2::new(x + 20.0, y + 20.0)
+        let [x, y, _, _] = ui::crafting::recipe_cell(&l, pos, 0.0);
+        Vec2::new(x + 22.0, y + 22.0)
     }
 
     #[test]
@@ -5876,6 +6239,109 @@ mod s1_h_7_tests {
         assert_eq!(
             pick.prefix, expected,
             "the crafted item keeps the rolled prefix"
+        );
+    }
+
+    /// W4-f23 closeout item 4 — the nearby-chests toggle's full click
+    /// semantics (`CraftingUI.DrawCraftFromNearbyChestsToggle`,
+    /// `CraftingUI.cs:346-352`): the LEFT press flips
+    /// `Player.Settings.CraftFromNearbyChests`, plays sound 12 (`:350`) and
+    /// persists (`Main.SaveSettings`, `:351`). The toggle is LEFT-only
+    /// (`:346` reads `mouseLeft && mouseLeftRelease`), unlike the recipe
+    /// cells' either-button arms.
+    #[test]
+    fn the_nearby_toggle_flips_the_setting_and_plays_the_tick() {
+        let mut app = craft_app();
+        app.settings.craft_from_nearby_chests = true;
+        let (sw, sh) = app.screen_size();
+        let l = ui::crafting::layout(Vec2::new(sw, sh), 0.0, false);
+        app.mouse_pos = Vec2::new(l.nearby_toggle[0], l.nearby_toggle[1]);
+        let before = app.audio.played_count();
+        app.ui_left_press = true;
+        app.mine_down = true;
+        assert!(app.handle_crafting_clicks(), "the toggle click is consumed");
+        assert!(!app.settings.craft_from_nearby_chests, "the setting flipped");
+        assert!(!app.ui_left_press, "the press was consumed");
+        assert_eq!(app.audio.played_count(), before + 1, "sound 12 (`:350`)");
+        // A second click flips it back.
+        app.mine_down = false;
+        app.handle_crafting_clicks();
+        app.ui_left_press = true;
+        app.mine_down = true;
+        assert!(app.handle_crafting_clicks());
+        assert!(app.settings.craft_from_nearby_chests, "flipped back on");
+    }
+
+    /// The toggle is LEFT-only: a held RIGHT button over the toggle does
+    /// NOT flip the setting (`CraftingUI.cs:346` reads `mouseLeft` only —
+    /// the W4-f23 doc-sweep 4b parity must not let a held right flip it).
+    #[test]
+    fn a_held_right_does_not_flip_the_nearby_toggle() {
+        let mut app = craft_app();
+        app.settings.craft_from_nearby_chests = true;
+        let (sw, sh) = app.screen_size();
+        let l = ui::crafting::layout(Vec2::new(sw, sh), 0.0, false);
+        app.mouse_pos = Vec2::new(l.nearby_toggle[0], l.nearby_toggle[1]);
+        app.place_down = true; // right held, left NOT down
+        app.ui_right_press = true;
+        app.handle_crafting_clicks();
+        assert!(
+            app.settings.craft_from_nearby_chests,
+            "the right button never flips the LEFT-only toggle"
+        );
+    }
+
+    /// W4-f23 closeout item 3 — the craft cue is `CraftingEffects.OnCraft`'s
+    /// `SoundEngine.PlaySound(7)` (`CraftingEffects.cs:51`), run
+    /// UNCONDITIONALLY after `CraftingRequests.CraftItem`'s loop
+    /// (`CraftingRequests.cs:119`) — the C# plays it even when the loop
+    /// crafted nothing (a stale available list at request time). The port's
+    /// click path rebuilds the list live, so an empty `crafted` at the cue
+    /// site is unreachable today; the parity is structural — the cue must
+    /// sit OUTSIDE the `!crafted.is_empty()` grant gate. This pin keeps a
+    /// regression from re-gating it (the pre-closeout shape).
+    #[test]
+    fn the_craft_cue_sits_outside_the_grant_gate() {
+        let src = include_str!("clicks.rs");
+        let cue = src
+            .find("self.audio.play(\"Grab\"); // `SoundEngine.PlaySound(7)` (`CraftingEffects.cs:51`)")
+            .expect("the craft-attempt cue site exists");
+        let gate = src
+            .find("if !crafted.is_empty() {")
+            .expect("the grant gate exists");
+        assert!(
+            cue < gate,
+            "the OnCraft cue runs BEFORE (outside) the grant gate — \
+             CraftingRequests.cs:119 is unconditional"
+        );
+    }
+
+    /// A focused-row craft plays exactly ONE Grab (the attempt cue) — the
+    /// closeout moved the cue out of the grant gate without doubling it.
+    #[test]
+    fn a_focused_craft_plays_exactly_one_grab() {
+        let mut app = craft_app();
+        app.inventory[0] = crate::item::ItemSlot { kind: 9, name: "Wood", count: 30, prefix: 0 };
+        app.inventory[1] = crate::item::ItemSlot { kind: 23, name: "Gel", count: 30, prefix: 0 };
+        let mouse = torch_mouse(&app);
+        app.mouse_pos = mouse;
+        app.focus_recipe = 1;
+        // The select click (Menu_Tick), then the release reset.
+        app.ui_left_press = true;
+        app.mine_down = true;
+        app.handle_crafting_clicks();
+        app.mine_down = false;
+        app.handle_crafting_clicks();
+        // The craft click: exactly one cue (the Grab), one craft.
+        app.stack_split = 0;
+        app.mine_down = true;
+        app.ui_left_press = true;
+        let before = app.audio.played_count();
+        assert!(app.handle_crafting_clicks());
+        assert_eq!(app.audio.played_count(), before + 1, "one Grab, not two");
+        assert!(
+            app.inventory.iter().any(|s| s.kind == 8),
+            "the torch crafted"
         );
     }
 }
