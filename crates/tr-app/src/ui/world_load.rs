@@ -6,6 +6,16 @@
 //! (`app/worldgen_job.rs`) feeds the progress through the `GenProgressHook`
 //! seam; the sprite draw below paints the bar + header. The
 //! `CaptureManager` GPU chunk render is the S1-G-13 render-target seam.
+//!
+//! W4-d86 re-verification (research/18c, f22 conflict 5): the PARTIAL row
+//! in research/18 was STALE — this is a first-class screen, nothing was
+//! folded into `world_select`/`save_list`; verdict PORTED with recorded
+//! deferrals. Scope-outs recorded here: the F5 `UIWorldGenDebug.Open()`
+//! arm (`UIWorldLoad.cs:50-52`) is debug-only (`DebugOptions.
+//! enableDebugCommands`; `UIWorldGenDebug` is excluded with `Testing/**`,
+//! research/18c); `OnActivate`'s `ChangePoint(3000)` (`:37-44`) and
+//! `UpdateGamepadSquiggle` (`:122-127`) are the Stage-1 gamepad exclusion;
+//! `Main.gameTips` (`:117-118`) is research/19 M3.
 
 use tr_core::scene::get_lerp_value;
 
