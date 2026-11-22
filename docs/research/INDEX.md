@@ -102,6 +102,24 @@ per `docs/superpowers` agreements).
 | 145 | RoD teleport_style(1) ⨉ TeleportEffect-union composition (W4-g89h, RENAMED from 139 at g89j — g52c-net-master owns 139; the rod call COMPOSES with g11's executed union — style-1 Entry/Exit dust now-live via the queue; NEW gap 7: the editing-phase caller drains a tick late so the chaos Next(2) swaps ahead of the dust draws on UpdatePlayers [determinism break] — the g89j §2a EXACT drain-move hunks re-pinned at g11 FINAL 98283df08 [drain INSIDE run_rod_arm between the teleport and the chaos tax]; the gap-5 camera dedup; merger actions WRITTEN NOT APPLIED — seam unreachable on g89's base) | `145-rod-teleport-union-composition.md` | cross-note for the g11/g89 merger |
 | 122 | .trplayer v9 addendum + the FINAL-FINAL receipts (W4-g89d/j: the v9 lineage contract, §6 the g89i v10 token-4 receipt, §7 the g88g-v10-token-4 SAME-slot double-writer check [same line/token/flag — g88 v11 superset keep, g89 v10 writer/reader DROP; the pre-merge "11"-reject incompatibility recorded] + the aegis-family declaration 5338/5341/5342/5337 ALL LANDED, merger per 138/103 §9) | `122-persist-v9-addendum.md` | FINAL — the live layout authority is g88's 103 |
 
+## Wave 4 - fish lane contracts (W4-c4, retire phase)
+| # | Module | File | Status |
+| --- | --- | --- | --- |
+| 143 | d40 CrimsonGoldfish-465 retire hunk (exact drop-lines for merger/d40b; keep-c4 kb-1.0 + vanilla_type fix) | `143-d40-crimsongoldfish-retire-hunk.md` | MERGE CONTRACT |
+| 144 | Orca NPC_692 census-input for d35e (dims-row + corrected FINAL rank #16 + the lazy-NPC-page admission form) | `144-orca-npc692-census-input.md` | CENSUS INPUT |
+| 145 | Claims-table addendum for d37d-E3: the five keep-d42 verdicts SUPERSEDED (d42 `49346dba6` dropped the kinds, ceded to c4) + the CorruptGoldfish d34@277 dup flag + the CrimsonGoldfish implementation-conflict note | `145-d42-keep-d42-verdicts-addendum.md` | MERGE-CONTRACT ADDENDUM |
+| 148 | FISH-FAMILY declaration: style-44 (4 kinds) + style-16 (13 kinds) ALL LANDED - the lane-close merger contract per 108-E7 + research/143/144/145; the d43-band 688/692 conditional retire note | `148-fish-family-declaration.md` | LANE CLOSE |
+
+Number-collision verdict (2026-11-21 retire phase, first-pushed-wins):
+143/144 KEPT - no rename. Evidence: all 357 pushed refs swept
+(`git ls-tree <ref> docs/research/`); `origin/task/W4-g87-demon-heart-use`
+tip `dfbcaf94b` carries NO research/143 file and NO 143/144 INDEX row;
+`origin/task/W4-f47-liquid-shimmer-2` tip `a2561d6d9` carries only 121
+(its own INDEX row) and NO 144 claim; no `g87b`/`f47c` refs exist on
+origin (`git ls-remote`). c4's 143 (`90fd242d9`) / 144 (`479d70ad2`) are
+the only pushed claims. The lead's fallback numbers 146/147 stay
+UNASSIGNED (reserved); this lane's new retire-phase docs take 145/148.
+
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
   counts question is ticketed.

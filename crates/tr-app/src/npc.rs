@@ -1208,6 +1208,101 @@ pub enum NpcKind {
     /// (`aiStyle 66`, the range row): catchItem 3194, the 0.4 walk speed
     /// (`NPC.cs:34281-34284`). Fishing bait 40 (Item 3194).
     Buggy,
+    /// `NPCID.FlyingFish` (224, `NPCID.cs:11125`) — the rain swimmer
+    /// (`aiStyle 44`): 32x18, dmg 9, def 4, 20 HP, kb 0.8,
+    /// NPCHit1/NPCDeath1, value 300 (`NPC.cs:11885-11897`). WIRED
+    /// (W4-c4): the axis' 44 arm owns the flyer integration tail; the
+    /// steering machine runs in the world-sim pre-pass
+    /// (`npc_ai_style44::style44_step`, the style-56 seam). The protocol
+    /// id is 359 — d37's frozen-band FlyingFish row ADOPTED (the original
+    /// port-local 354 collided d37's CochinealBeetle; the vanilla 224
+    /// slot is the WyvernLegs' port-local band, `to_u16`'s guard).
+    FlyingFish,
+    /// `NPCID.GiantFlyingAntlion` (509, `NPCID.cs:11695`) — the
+    /// hardmode desert swarm's big flap (`aiStyle 44`): 40x31, dmg 34,
+    /// def 12, 90 HP, kb 0.3, NPCHit32/NPCDeath35, value 195
+    /// (`NPC.cs:14841-14853`). WIRED (W4-c4), the 224 seam.
+    GiantFlyingAntlion,
+    /// `NPCID.FlyingAntlion` (581, `NPCID.cs:11839`) — the desert
+    /// swarm's small flap (`aiStyle 44`): 30x22, dmg 29, def 8, 60 HP,
+    /// kb 0.5, NPCHit32/NPCDeath35, value 90, npcSlots 0.8
+    /// (`NPC.cs:14868-14880`). WIRED (W4-c4), the 224 seam; the draw's
+    /// `num46 = -6` anchor row (`Main.cs:23011-23013`) rides
+    /// `npc_anchor_nudge`.
+    FlyingAntlion,
+    /// `NPCID.EyeballFlyingFish` (587, `NPCID.cs:11851`) — the blood
+    /// moon's materializing fish (`aiStyle 44`): 32x18, dmg 35, def 18,
+    /// 300 HP, kb 0, NPCHit1/NPCDeath1, value 1000, alpha 255, rarity 1
+    /// (`NPC.cs:16623-16637`). WIRED (W4-c4), the 224 seam; the
+    /// materialize burst is the family's only RNG consumer (the
+    /// module's cited pool order on the `UpdateNPCs` stream).
+    EyeballFlyingFish,
+    /// `NPCID.CorruptGoldfish` (57, `NPCID.cs:10791`) — the corruption's
+    /// goldfish (`aiStyle 16`): 18x20, dmg 30, def 6, 100 HP, kb 1 (the
+    /// `SetDefaults` head's reset, `NPC.cs:8533` — no row), NPCHit1/
+    /// NPCDeath1, value 500 (`NPC.cs:9489-9501`). WIRED (W4-c4): the
+    /// `update_swimmer` family arm (`npc_ai_style16::ai_016_step`, the
+    /// style-44-adjacent `integrate_flyer_collision` + `is_wet` seam).
+    /// The protocol id is port-local 405 — the free-port band (the
+    /// original 229 squatted the Pirate's reserved cs hole; the vanilla
+    /// 57 slot is the GoblinThief's, `to_u16`'s bijection guard).
+    CorruptGoldfish,
+    /// `NPCID.Arapaima` (157, `NPCID.cs:10991`) — the jungle's big fish
+    /// (`aiStyle 16`): 74x20, dmg 75, def 30, 200 HP, kb 1 (no row),
+    /// NPCHit1/NPCDeath1, value 500, npcSlots 0.5 (`NPC.cs:10989-11002`).
+    /// WIRED (W4-c4), the 57 seam; the module's 157 branches (the
+    /// asymmetric chase caps `:23774-23802`, the own bob `:23853-23902`,
+    /// the ±0.4 damp exemption `:23957`) ride the vanilla type. The
+    /// protocol id is port-local 406 — the free-port band (the original
+    /// 237 squatted JungleCreeperWall's reserved cs hole; the vanilla
+    /// 157 slot is the BoundWizard's).
+    Arapaima,
+    /// `NPCID.BloodFeeder` (241, `NPCID.cs:11159`) — the crimson's fish
+    /// (`aiStyle 16`): 18x20, dmg 50, def 20, 150 HP, kb 1 (no row),
+    /// NPCHit13/NPCDeath19, value 500, npcSlots 0.5 (`NPC.cs:12105-12118`).
+    /// WIRED (W4-c4), the 57 seam. The protocol id keeps the vanilla 241
+    /// (free).
+    BloodFeeder,
+    /// `NPCID.CrimsonGoldfish` (465, `NPCID.cs:11603`) — the crimson's
+    /// goldfish (`aiStyle 16`): 18x20, dmg 31, def 7, 110 HP, kb 1 (no
+    /// row), NPCHit1/NPCDeath1, value 500 (`NPC.cs:14483-14495`). The
+    /// bestiary display name is "Vicious Goldfish" (`en-US NPCs.json`).
+    /// WIRED (W4-c4), the 57 seam. The protocol id keeps the vanilla 465
+    /// (free).
+    CrimsonGoldfish,
+    /// `NPCID.GoldGoldfish` (592, `NPCID.cs:11861`) — the golden critter
+    /// (`aiStyle 16`): 20x18, dmg 0, def 0, 5 HP, kb 0.5, NPCHit1/
+    /// NPCDeath1, catchItem 4274, rarity 3 (`NPC.cs:16679-16693`). WIRED
+    /// (W4-c4), the 57 seam; the `:23701` critter exclusion keeps it from
+    /// chasing. The protocol id keeps the vanilla 592 (free).
+    GoldGoldfish,
+    /// `NPCID.Pupfish` (607, `NPCID.cs:11891`) — the desert oasis critter
+    /// (`aiStyle 16`): 20x18, dmg 0, def 0, 5 HP, kb 0.5, NPCHit1/
+    /// NPCDeath1, catchItem 4373 (`NPC.cs:16795-16808`). WIRED (W4-c4),
+    /// the 57 seam; the `:23701` critter exclusion. The protocol id keeps
+    /// the vanilla 607 (free).
+    Pupfish,
+    /// `NPCID.Dolphin` (615, `NPCID.cs:11907`) — the ocean's leaper
+    /// (`aiStyle 16`): 20x18, dmg 0, def 0, 5 HP, kb 0.5, NPCHit1/
+    /// NPCDeath1 (`NPC.cs:16892-16904`). WIRED (W4-c4), the 57 seam; the
+    /// module's 615 idle-timer/leap/float machine (`:23572-23697`) is the
+    /// family's only RNG consumer besides the dry flop. The protocol id
+    /// keeps the vanilla 615 (free).
+    Dolphin,
+    /// `NPCID.Pufferfish` (688, `NPCID.cs:12053`) — the ocean's puffer
+    /// (`aiStyle 16`): 32x16, dmg 0, def 0, 5 HP, kb 0.5, NPCHit1/
+    /// NPCDeath1, catchItem 5511 (`NPC.cs:17653-17666`). WIRED (W4-c4),
+    /// the 57 seam; the module's 688 puff latch (`:23498-23571`) reads
+    /// `justHit`. The protocol id keeps the vanilla 688 (free).
+    Pufferfish,
+    /// `NPCID.Orca` (692, `NPCID.cs:12061`) — the ocean's apex swimmer
+    /// (`aiStyle 16`): 120x34, dmg 50, def 20, 400 HP, kb 0.7, NPCHit1/
+    /// NPCDeath1, value 10000 (`NPC.cs:17709-17722`). WIRED (W4-c4), the
+    /// 57 seam; the module's 692 aim rotation (`:23990-24007`) + the
+    /// Shark-group chase caps (`:23803`). The protocol id keeps the
+    /// vanilla 692 (free). The DRAW sheet is atlas-deferred (the 136x992
+    /// strip overflows the 8192 bound — the wyvern precedent, ANALYSIS).
+    Orca,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3539,6 +3634,11 @@ impl Npc {
                             NpcKind::EaterOfWorldsHead
                             | NpcKind::EaterOfWorldsBody
                             | NpcKind::EaterOfWorldsTail => 255,
+                            // W4-c4: the eyeball fish's `alpha = 255` row
+                            // (`NPC.cs:16635`) — the 17-tick materialize
+                            // fade starts at the ctor (the style-44 arm's
+                            // −15/tick block).
+                            NpcKind::EyeballFlyingFish => 255,
                             _ => 0,
                         }
                     }),
@@ -3771,6 +3871,13 @@ impl Npc {
             NpcKind::Goldfish => 0.5,
             NpcKind::Piranha => 1.0,
             NpcKind::Shark => 0.7,
+            // W4-c4 (the style-16 swimmers): 57/157/241/465 no kb row —
+            // the `SetDefaults` head's 1f reset (`NPC.cs:8533`); 592/607/
+            // 615/688 0.5 (`:16690`/`:16806`/`:16903`/`:17664`), 692 0.7
+            // (`:17721`).
+            NpcKind::CorruptGoldfish | NpcKind::Arapaima | NpcKind::BloodFeeder | NpcKind::CrimsonGoldfish => 1.0,
+            NpcKind::GoldGoldfish | NpcKind::Pupfish | NpcKind::Dolphin | NpcKind::Pufferfish => 0.5,
+            NpcKind::Orca => 0.7,
             // The worms: knockBackResist 0 (`:8763` family-wide).
             NpcKind::DevourerHead
             | NpcKind::DevourerBody
@@ -3967,6 +4074,12 @@ impl Npc {
             | NpcKind::Grubby
             | NpcKind::Sluggy
             | NpcKind::Buggy => 1.0,
+            // W4-c4 (the style-44 swimmers): 224 0.8 (`NPC.cs:11894`),
+            // 509 0.3 (`:14849`), 581 0.5 (`:14876`), 587 0 (`:16632`).
+            NpcKind::FlyingFish => 0.8,
+            NpcKind::GiantFlyingAntlion => 0.3,
+            NpcKind::FlyingAntlion => 0.5,
+            NpcKind::EyeballFlyingFish => 0.0,
             _ => 0.4,
         }
     }
@@ -4167,6 +4280,16 @@ impl Npc {
             NpcKind::Goldfish => 0,
             NpcKind::Piranha => 2,
             NpcKind::Shark => 2,
+            // W4-c4 (the style-16 swimmers): 57 6 (`NPC.cs:9496`), 157 30
+            // (`:10997`), 241 20 (`:12113`), 465 7 (`:14490`), 692 20
+            // (`:17716`); the critters 592/607/615/688 defense 0
+            // (`:16686`/`:16801`/`:16899`/`:17660`).
+            NpcKind::CorruptGoldfish => 6,
+            NpcKind::Arapaima => 30,
+            NpcKind::BloodFeeder => 20,
+            NpcKind::CrimsonGoldfish => 7,
+            NpcKind::GoldGoldfish | NpcKind::Pupfish | NpcKind::Dolphin | NpcKind::Pufferfish => 0,
+            NpcKind::Orca => 20,
             // The worms: the head 2/0/2, the body 6/4/4, the tail 10/6/8.
             NpcKind::DevourerHead => 2,
             NpcKind::DevourerBody => 6,
@@ -4373,6 +4496,12 @@ impl Npc {
             | NpcKind::Grubby
             | NpcKind::Sluggy
             | NpcKind::Buggy => 0,
+            // W4-c4 (the style-44 swimmers): 224 4 (`NPC.cs:11891`),
+            // 509 12 (`:14847`), 581 8 (`:14874`), 587 18 (`:16629`).
+            NpcKind::FlyingFish => 4,
+            NpcKind::GiantFlyingAntlion => 12,
+            NpcKind::FlyingAntlion => 8,
+            NpcKind::EyeballFlyingFish => 18,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4581,6 +4710,14 @@ impl Npc {
             NpcKind::Goldfish => 0.0,
             NpcKind::Piranha => 50.0,
             NpcKind::Shark => 400.0,
+            // W4-c4 (the style-16 swimmers): 57/157/241/465 value 500
+            // (`NPC.cs:9500`/`:11001`/`:12117`/`:14494`), 692 10000
+            // (`:17720`); the critters 592/607/615/688 no value row (the
+            // head's 0, `:8544` — the catch items ride the critter-catch
+            // work).
+            NpcKind::CorruptGoldfish | NpcKind::Arapaima | NpcKind::BloodFeeder | NpcKind::CrimsonGoldfish => 500.0,
+            NpcKind::GoldGoldfish | NpcKind::Pupfish | NpcKind::Dolphin | NpcKind::Pufferfish => 0.0,
+            NpcKind::Orca => 10000.0,
             // The worms: the per-segment coin value (`:8763`'s 140, `:8850`'s
             // 40, `:8903`'s 800 — the body/tail rows carry the same value).
             NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail => 140.0,
@@ -4770,6 +4907,13 @@ impl Npc {
             | NpcKind::Grubby
             | NpcKind::Sluggy
             | NpcKind::Buggy => 0.0,
+            // W4-c4 (the style-44 swimmers): 224 300 (`NPC.cs:11896`),
+            // 509 195 (`:14852`), 581 90 (`:14879`), 587 1000
+            // (`:16634`).
+            NpcKind::FlyingFish => 300.0,
+            NpcKind::GiantFlyingAntlion => 195.0,
+            NpcKind::FlyingAntlion => 90.0,
+            NpcKind::EyeballFlyingFish => 1000.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -5561,48 +5705,22 @@ impl Npc {
                 },
                 rng,
             ),
-            // `else if (this.aiStyle == 44)` (`NPC.cs:30861-31124`) — the
+                        // `else if (this.aiStyle == 44)` (`NPC.cs:30861-31124`) — the
             // flying-fish / flying-antlion swimmers (224/509/581/587).
-            // The faithful `npc_ai_style44::style44_step` claims the axis
-            // (the bat-wrapper shape, `update_cave_bat`): the wet stamp,
-            // the session-player candidate + wet flag, the shared dust
-            // pool on the caller's stream, then the no-gravity
-            // `UpdateCollision` integration (`noGravity = true`,
-            // `:30863` — the module latches `wants_no_gravity`, consumed
-            // here). SOLO path: a one-slot sibling pool (the style-75
-            // solo precedent) — the separation loop skips `whoAmI`, so
-            // the scan reads absent until the sim threads the roster.
-            // No `NpcKind` carries ai_style 44 yet — the arm is dormant
-            // until the kind rows land.
+            // W4-c4: the steering machine (`npc_ai_style44::style44_step`)
+            // runs in the world-sim pre-pass at the NPC's own slot turn
+            // (the 587 materialize's dust rolls ride the `UpdateNPCs`
+            // stream through the shared `DustPool`, and the separation
+            // loop reads the sibling slots — the style-56 seam); this arm
+            // owns only the post-`AI()` movement: the family is noGravity
+            // (the `:30863` every-tick write) but NOT noTileCollide, so
+            // `UpdateNPC` runs `UpdateCollision` (`:90490-90492`) — the
+            // bat/fish flyer stand-in (`integrate_flyer_collision`, the
+            // `update_cave_bat` shape; the wet re-probe is
+            // `Collision_WaterCollision`'s, `:92526`).
             44 => {
                 let (w, h) = self.size();
                 self.wet = is_wet(world, self.x, self.y, w, h);
-                let npc_type = self.kind.to_u16();
-                let cand = crate::npc_target::session_candidate(player);
-                let players = [cand];
-                let players_wet = [player.wet];
-                let siblings = [crate::npc_ai_style44::Style44Sibling {
-                    active: true,
-                    npc_type,
-                    x: self.x,
-                    y: self.y,
-                }];
-                let mut env = crate::npc_ai_style44::Style44Env {
-                    npc_type,
-                    self_index: 0,
-                    siblings: &siblings,
-                    world,
-                    players: &players,
-                    player_wet: &players_wet,
-                    // The ticker stand-in (0 — the `update_cave_bat`
-                    // convention).
-                    ticker: 0,
-                    dust,
-                    dust_ctx,
-                    rng,
-                    wants_no_gravity: false,
-                };
-                crate::npc_ai_style44::style44_step(self, &mut env);
                 self.integrate_flyer_collision(world);
             }
             // `else if (this.aiStyle == 47) { this.AI_047_GolemFist(); }`
@@ -7680,8 +7798,38 @@ impl Npc {
             // W4-d24 axis census: the fish trio (aiStyle 16) rides the
             // style axis above (`16 => update_swimmer`) — this arm is
             // unreachable through `update_rng` (the S1-D-2 axis precedent).
+            // W4-c4: the style-44 swimmers ride the style axis (the
+            // steering machine runs in the world-sim pre-pass at the
+            // NPC's slot turn — the sibling scan + the 587 dust rolls;
+            // the axis' 44 arm owns the UpdateCollision tail). These
+            // arms are unreachable through `update_rng` (the axis claims
+            // style 44 first — the DungeonSpirit precedent).
+            NpcKind::FlyingFish
+            | NpcKind::GiantFlyingAntlion
+            | NpcKind::FlyingAntlion
+            | NpcKind::EyeballFlyingFish => {
+                unreachable!("aiStyle 44 rides the style axis (W4-c4)")
+            }
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
                 unreachable!("aiStyle 16 rides the style axis (W4-d24)")
+            }
+            // W4-c4 (the style-16 swimmers): the nine kinds ride the SAME
+            // `update_swimmer` family arm — the faithful
+            // `npc_ai_style16::ai_016_step` machine keyed on the vanilla
+            // type (`cs_id`), the style-44-adjacent `integrate_flyer_collision`
+            // + `is_wet` seam. No world-sim pre-pass: the arm has no sibling
+            // scan and no dust (the module's RNG census — the Dolphin timer
+            // + the dry flop are the only draws, both on the caller's stream).
+            NpcKind::CorruptGoldfish
+            | NpcKind::Arapaima
+            | NpcKind::BloodFeeder
+            | NpcKind::CrimsonGoldfish
+            | NpcKind::GoldGoldfish
+            | NpcKind::Pupfish
+            | NpcKind::Dolphin
+            | NpcKind::Pufferfish
+            | NpcKind::Orca => {
+                self.update_swimmer(world, player, rng)
             }
             // The worms: the movement runs in the world sim's worm pass
             // (the chain needs the sibling segments; `AI_006` reads
@@ -9061,6 +9209,31 @@ impl Npc {
                 if self.frame >= 3 {
                     self.frame = 0;
                 }
+            }
+            // W4-c4: the style-44 swimmers' type cases — `case 509/581`
+            // (`NPC.cs:70104-70119`: the agree-gated sprite flip + the
+            // 3-tick flap over `npcFrameCount` 9) and `case 224/587`
+            // (`:74763-74785`: the velocity-sign flip + the ±vy·0.2
+            // tilt + the 6-tick flap over the literal 4-row wrap).
+            // `style44_find_frame` reads the vanilla type (`cs_id` —
+            // the FlyingFish's protocol id is the port-local 359) and
+            // the sheet's row count (`rows()` rides `texture_net_id` →
+            // the vanilla net ids 224/509/581/587).
+            NpcKind::FlyingFish
+            | NpcKind::GiantFlyingAntlion
+            | NpcKind::FlyingAntlion
+            | NpcKind::EyeballFlyingFish => {
+                crate::npc_ai_style44::style44_find_frame(
+                    self.kind.cs_id(),
+                    self.vx,
+                    self.vy,
+                    self.facing,
+                    self.rows(),
+                    &mut self.frame,
+                    &mut self.frame_counter,
+                    &mut self.sprite_dir,
+                    &mut self.rotation,
+                );
             }
             // The ForceBubble has NO `FindFrame` case (`NPC.cs:66684-
             // 77370` has no `case 384`; the post-switch tail is aiStyle-39
@@ -10743,6 +10916,36 @@ impl Npc {
                         self.frame_counter = 0.0;
                     }
                 }
+            }
+            // W4-c4 (the style-16 swimmers): the nine kinds' type cases ride
+            // `style16_find_frame` via cs_id + rows() — the 57/241/465/592/
+            // 607 six-row flap (`NPC.cs:74181-74226`), the 157 Arapaima
+            // 8-band cycle (`:74134-74180`), the 615 Dolphin 7-tick strip
+            // (`:74227-74243`), the 688 Pufferfish puff/flop/flap
+            // (`:74244-74290`) and the 692 Orca two-half glide
+            // (`:74693-74762`). The existing Goldfish/Piranha/Shark arm
+            // above is untouched (behaviour frozen).
+            NpcKind::CorruptGoldfish
+            | NpcKind::Arapaima
+            | NpcKind::BloodFeeder
+            | NpcKind::CrimsonGoldfish
+            | NpcKind::GoldGoldfish
+            | NpcKind::Pupfish
+            | NpcKind::Dolphin
+            | NpcKind::Pufferfish
+            | NpcKind::Orca => {
+                crate::npc_ai_style16::style16_find_frame(
+                    self.kind.cs_id() as i32,
+                    self.wet,
+                    self.vy,
+                    self.facing,
+                    self.ai[0],
+                    self.ai[2],
+                    self.rows(),
+                    &mut self.frame,
+                    &mut self.frame_counter,
+                    &mut self.sprite_dir,
+                );
             }
             // The worms: `Main.npcFrameCount` 7..15 = 1 (`Main.cs:67082`).
             NpcKind::DevourerHead
@@ -21385,9 +21588,12 @@ impl Npc {
     /// avoid `ai[0]` writes, inline integration inside the AI). The
     /// wrapper owns the seams: this tick's `Entity.wet` (the `is_wet`
     /// pass), the session-player candidate slice + `player_wet`
-    /// (`Ai16Ctx`), the `justHit` flag (the port's established
-    /// `hurt_cd > 0` stand-in — only the unported Pufferfish 688 reads
-    /// it), and the no-gravity `UpdateCollision` integration
+    /// (`Ai16Ctx`), the `justHit` flag (the ONE-TICK `self.just_hit`
+    /// strike flag — `NPC.cs:81274`, cleared at the update tail `:90516`;
+    /// the retired `hurt_cd > 0` cooldown stand-in re-puffed the
+    /// Pufferfish through the whole cooldown tail, the W95 defect class
+    /// — only the Pufferfish 688 reads it), and the no-gravity
+    /// `UpdateCollision` integration
     /// (`integrate_flyer_collision`; `noGravity = true`,
     /// `SetDefaults` `:9462`/`:9505`/`:9611`). The bob phase now rides the
     /// C#'s own `ai[0]` (the `swim_phase` mirror is retired for the fish;
@@ -21404,11 +21610,16 @@ impl Npc {
         let ctx = crate::npc_ai_style16::Ai16Ctx {
             players: &players,
             player_wet: player.wet,
-            // `NPC.justHit` (`:23502`/`:23518`) — the port's strike path
-            // has no one-tick flag; `hurt_cd > 0` is the established
-            // stand-in (`world_sim/npcs.rs`'s fighter-idle wiring). Only
-            // the unported Pufferfish (688) reads it.
-            just_hit: self.hurt_cd > 0.0,
+            // `NPC.justHit` (`:23502`/`:23518`) — the ONE-TICK strike flag
+            // (`StrikeNPC_Inner`, `NPC.cs:81274`; cleared at the update
+            // tail `:90516`), NOT the `hurt_cd > 0` cooldown stand-in the
+            // S1-D-3 reconcile shipped. The cooldown (~11 ticks) would
+            // re-puff the Pufferfish on the deflate boundary
+            // (`:23518-23521`) for the whole cooldown tail — the W95
+            // Creeper defect class. The flag now exists (the
+            // Hungry/Creeper wiring); the Pufferfish (688, W4-c4) is the
+            // only aiStyle-16 kind that reads it.
+            just_hit: self.just_hit,
             // The ticker is not plumbed (0 — the `npc_ai_bat` convention).
             ticker: 0,
         };
@@ -21906,6 +22117,31 @@ impl Npc {
             NpcKind::Grubby => 485,
             NpcKind::Sluggy => 486,
             NpcKind::Buggy => 487,
+            // W4-c4 (the style-44 swimmers): the FlyingFish's vanilla 224
+            // is the WyvernLegs' key above, so its hash rides the
+            // port-local 359 row (d37's frozen-band id adopted — the
+            // wyvern renumber's precedent, injective either way);
+            // 509/581/587 are unused by every arm above, so the G6 key
+            // stays injective.
+            NpcKind::FlyingFish => 359,
+            NpcKind::GiantFlyingAntlion => 509,
+            NpcKind::FlyingAntlion => 581,
+            NpcKind::EyeballFlyingFish => 587,
+            // W4-c4 (the style-16 swimmers): the CorruptGoldfish's vanilla
+            // 57 and the Arapaima's 157 are the GoblinThief's/BoundWizard's
+            // keys above, so their hashes ride the port-local 405/406
+            // free-port band (the FlyingFish 359 precedent — injective
+            // either way); 241/465/592/607/615/688/692 are unused by
+            // every arm above.
+            NpcKind::CorruptGoldfish => 405,
+            NpcKind::Arapaima => 406,
+            NpcKind::BloodFeeder => 241,
+            NpcKind::CrimsonGoldfish => 465,
+            NpcKind::GoldGoldfish => 592,
+            NpcKind::Pupfish => 607,
+            NpcKind::Dolphin => 615,
+            NpcKind::Pufferfish => 688,
+            NpcKind::Orca => 692,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -27472,7 +27708,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 290] = [
+    pub(super) const ALL_KINDS: [NpcKind; 303] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -27773,6 +28009,21 @@ mod tests {
         NpcKind::Grubby,
         NpcKind::Sluggy,
         NpcKind::Buggy,
+        // W4-c4 — the style-44 swimmers.
+        NpcKind::FlyingFish,
+        NpcKind::GiantFlyingAntlion,
+        NpcKind::FlyingAntlion,
+        NpcKind::EyeballFlyingFish,
+        // W4-c4 — the style-16 swimmers.
+        NpcKind::CorruptGoldfish,
+        NpcKind::Arapaima,
+        NpcKind::BloodFeeder,
+        NpcKind::CrimsonGoldfish,
+        NpcKind::GoldGoldfish,
+        NpcKind::Pupfish,
+        NpcKind::Dolphin,
+        NpcKind::Pufferfish,
+        NpcKind::Orca,
     ];
 
     #[test]
@@ -28479,6 +28730,255 @@ mod tests {
             m.find_frame();
         }
         assert_eq!(m.frame, 0, "the blink wraps");
+    }
+
+    /// W4-c4: the style-44 swimmers ride the style axis — the axis' 44
+    /// arm owns the post-`AI()` flyer integration (the steering machine
+    /// runs in the world-sim pre-pass; the solo `update` path skips it,
+    /// the DungeonSpirit precedent) and `find_frame` rides
+    /// `style44_find_frame` through the port's vanilla-type + row-count
+    /// tables. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c4_the_axis_claims_style_44_and_the_frames_walk_their_strips() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        // (kind, vanilla type, sheet rows, flap stride) — `Main.cs:67082`
+        // (224/587 four frames, 509/581 nine) + the FindFrame cases'
+        // strides (`NPC.cs:70110` the antlions' 3, `:74776` the fish 6).
+        for (kind, ty, rows, stride) in [
+            (NpcKind::FlyingFish, 224u16, 4u32, 6u32),
+            (NpcKind::GiantFlyingAntlion, 509, 9, 3),
+            (NpcKind::FlyingAntlion, 581, 9, 3),
+            (NpcKind::EyeballFlyingFish, 587, 4, 6),
+        ] {
+            assert_eq!(kind.ai_style(), 44, "{kind:?} aiStyle");
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            // The renumber pin (the dup-check verdict): FlyingFish rides
+            // d37's frozen-band 359 (the original 354 collided d37's
+            // CochinealBeetle); the antlion/eye trio keep vanilla ids.
+            assert_eq!(
+                kind.to_u16(),
+                if ty == 224 { 359 } else { ty },
+                "{kind:?} protocol id"
+            );
+            assert_eq!(
+                crate::render::entities::texture_net_id(kind),
+                ty,
+                "{kind:?} draws its own vanilla sheet"
+            );
+            assert_eq!(
+                crate::render::entities::npc_rows(ty),
+                rows,
+                "{kind:?} sheet rows"
+            );
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            // The full update tick must not panic (the axis arm runs;
+            // the kind-match stand-in is unreachable) and the frame
+            // stays inside the kind's own strip.
+            for _ in 0..60 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+                assert!(n.frame < rows, "{kind:?} row {} of {rows}", n.frame);
+            }
+            // The flap cadence through `find_frame` itself: a steady
+            // rightward velocity (the fish's tilt writes ride it), the
+            // row advances exactly every `stride` ticks and wraps.
+            let mut n2 = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            n2.vx = 1.0;
+            n2.facing = 1;
+            for t in 1..=(stride * rows) {
+                n2.find_frame();
+                assert_eq!(
+                    n2.frame,
+                    (t / stride) % rows,
+                    "{kind:?} tick {t}: row (t/{stride}) % {rows}"
+                );
+            }
+        }
+        // The fish pair's FindFrame tilt (`NPC.cs:74768`/`:74773`): the
+        // sprite flips with the velocity sign, rotation = ±vy·0.2.
+        let mut fish = Npc::new(NpcKind::FlyingFish, 100.0, 100.0, 1, 0.0);
+        fish.vx = 2.0;
+        fish.vy = 1.5;
+        fish.find_frame();
+        assert_eq!(fish.sprite_dir, 1);
+        assert_eq!(fish.rotation, 1.5 * 0.2);
+        fish.vx = -2.0;
+        fish.find_frame();
+        assert_eq!(fish.sprite_dir, -1);
+        assert_eq!(fish.rotation, -1.5 * 0.2);
+        // The antlion pair keeps the AI's vx·0.1 tilt (FindFrame writes
+        // no rotation — `:70104-70119` has none).
+        let mut ant = Npc::new(NpcKind::FlyingAntlion, 100.0, 100.0, 1, 0.0);
+        ant.vx = 1.0;
+        ant.rotation = 0.1;
+        ant.find_frame();
+        assert_eq!(ant.rotation, 0.1, "the antlion's FindFrame leaves the tilt");
+    }
+
+    /// W4-c4 (the style-16 swimmers): the nine kinds' `SetDefaults` rows
+    /// pin against the C# through the port's tables — the same shape as the
+    /// style-44 pin. (kind, cs_id, protocol id, w, h, dmg, def, hp, kb,
+    /// value, sheet rows). WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c4_the_style16_defaults_match_the_csharp_rows() {
+        // `NPC.cs:9489-9501` (57), `:10989-11002` (157), `:12105-12118`
+        // (241), `:14483-14495` (465), `:16679-16693` (592), `:16795-16808`
+        // (607), `:16892-16904` (615), `:17653-17666` (688), `:17709-17722`
+        // (692). The kb rows: 57/157/241/465 no row (the head's 1f reset,
+        // `:8533`); 592/607/615/688 0.5; 692 0.7.
+        for (kind, cs, proto, w, h, dmg, def, hp, kb, value, rows) in [
+            (NpcKind::CorruptGoldfish, 57u16, 405u16, 18.0, 20.0, 30, 6, 100, 1.0, 500.0, 6u32),
+            (NpcKind::Arapaima, 157, 406, 74.0, 20.0, 75, 30, 200, 1.0, 500.0, 6),
+            (NpcKind::BloodFeeder, 241, 241, 18.0, 20.0, 50, 20, 150, 1.0, 500.0, 6),
+            (NpcKind::CrimsonGoldfish, 465, 465, 18.0, 20.0, 31, 7, 110, 1.0, 500.0, 6),
+            (NpcKind::GoldGoldfish, 592, 592, 20.0, 18.0, 0, 0, 5, 0.5, 0.0, 6),
+            (NpcKind::Pupfish, 607, 607, 20.0, 18.0, 0, 0, 5, 0.5, 0.0, 6),
+            (NpcKind::Dolphin, 615, 615, 20.0, 18.0, 0, 0, 5, 0.5, 0.0, 5),
+            (NpcKind::Pufferfish, 688, 688, 32.0, 16.0, 0, 0, 5, 0.5, 0.0, 6),
+            (NpcKind::Orca, 692, 692, 120.0, 34.0, 50, 20, 400, 0.7, 10000.0, 16),
+        ] {
+            assert_eq!(kind.ai_style(), 16, "{kind:?} aiStyle");
+            assert_eq!(kind.cs_id(), cs, "{kind:?} vanilla type");
+            assert_eq!(kind.to_u16(), proto, "{kind:?} protocol id");
+            assert_eq!(kind.size(), (w, h), "{kind:?} box");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert!(kind.no_gravity(), "{kind:?} noGravity");
+            let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(
+                crate::render::entities::texture_net_id(kind),
+                cs,
+                "{kind:?} draws its own vanilla sheet"
+            );
+            assert_eq!(
+                crate::render::entities::npc_rows(cs),
+                rows,
+                "{kind:?} sheet rows"
+            );
+        }
+        // The sound rows: the BloodFeeder's NPCHit13/NPCDeath19, the rest
+        // NPCHit1/NPCDeath1 (`NPC.cs:12115-12116` vs the family's 1/1).
+        assert_eq!(NpcKind::BloodFeeder.hit_sound(), Some("NPC_Hit_13"));
+        assert_eq!(NpcKind::BloodFeeder.death_sound(), Some("NPC_Killed_19"));
+        assert_eq!(NpcKind::Orca.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::Orca.death_sound(), Some("NPC_Killed_1"));
+        // The debuff immunity: 57/157/241/465/592/607/615 the {31} row,
+        // 688/692 null (`NPCID.cs:6075+`).
+        assert!(crate::npc_buffs::NpcBuffs::for_kind(NpcKind::CorruptGoldfish).buff_immune[31]);
+        assert!(!crate::npc_buffs::NpcBuffs::for_kind(NpcKind::Pufferfish).buff_immune[31]);
+        assert!(!crate::npc_buffs::NpcBuffs::for_kind(NpcKind::Orca).buff_immune[31]);
+    }
+
+    /// W4-c4 (the style-16 swimmers): the nine kinds ride the
+    /// `update_swimmer` family arm (the style-44-adjacent
+    /// `integrate_flyer_collision` + `is_wet` seam) and `find_frame` rides
+    /// `style16_find_frame` through cs_id + rows(). A full `update` tick
+    /// steps each kind without panicking and keeps it inside its own frame
+    /// strip; the six-row fish walk the wet flap at the 6-tick bands.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c4_the_style16_swimmers_step_and_walk_their_strips() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for kind in [
+            NpcKind::CorruptGoldfish,
+            NpcKind::Arapaima,
+            NpcKind::BloodFeeder,
+            NpcKind::CrimsonGoldfish,
+            NpcKind::GoldGoldfish,
+            NpcKind::Pupfish,
+            NpcKind::Dolphin,
+            NpcKind::Pufferfish,
+            NpcKind::Orca,
+        ] {
+            let rows = crate::render::entities::npc_rows(
+                crate::render::entities::texture_net_id(kind),
+            );
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            for _ in 0..60 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+                assert!(n.frame < rows, "{kind:?} row {} of {rows}", n.frame);
+            }
+        }
+        // The six-row fish's wet flap (`NPC.cs:74181-74226`): rows 0..3 at
+        // the 6-tick bands, the counter resets at 24. The CorruptGoldfish
+        // stands in for the 57/241/465/592/607 group.
+        let mut fish = Npc::new(NpcKind::CorruptGoldfish, 100.0, 100.0, 1, 0.0);
+        fish.wet = true;
+        fish.facing = 1;
+        for t in 1..=24u32 {
+            fish.find_frame();
+            let want = if t < 6 {
+                0
+            } else if t < 12 {
+                1
+            } else if t < 18 {
+                2
+            } else if t < 24 {
+                3
+            } else {
+                3 // the 24th tick resets the counter, the row holds
+            };
+            assert_eq!(fish.frame, want, "wet flap tick {t}");
+            assert_eq!(fish.sprite_dir, 1, "the sprite faces the direction");
+        }
+        assert_eq!(fish.frame_counter, 0.0, "the 24-tick lap resets");
+        // The dry flop rows 4/5 (`:74214-74225`).
+        let mut dry = Npc::new(NpcKind::GoldGoldfish, 100.0, 100.0, 1, 0.0);
+        dry.wet = false;
+        for _ in 0..6 {
+            dry.find_frame();
+        }
+        assert_eq!(dry.frame, 4, "the dry flop's first band");
+        for _ in 0..6 {
+            dry.find_frame();
+        }
+        assert_eq!(dry.frame, 5, "the dry flop's second band");
+    }
+
+    /// W4-c4 follow-up (the puff-flag fix): `update_swimmer` feeds the
+    /// ONE-TICK `self.just_hit` strike flag (`NPC.cs:81274`, cleared at
+    /// the update tail `:90516`) into `Ai16Ctx`, NOT the retired
+    /// `hurt_cd > 0` cooldown stand-in. The strike tick puffs
+    /// (`:23502-23507`: ai[2] = 1, localAI[0] = 180); at the deflate
+    /// boundary (`:23508-23524`) a still-running cooldown must NOT
+    /// re-puff (`:23518-23521` reads justHit, which the tail cleared) —
+    /// the W95 Creeper defect class. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c4_the_pufferfish_puff_reads_the_one_tick_flag_not_the_cooldown() {
+        let w = ground();
+        // The player parked far away (in-bounds — the 64×64 fixture) so
+        // the folded-in contact pass and the head TargetClosest cannot
+        // interfere; the pufferfish is a dry critter (the `:23701`
+        // exclusion — no chase, no ai[2] write outside the puff block).
+        let mut player = Player::spawn(&w);
+        player.x = 60.0 * TILE_PX;
+        player.y = 10.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::Pufferfish, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+        let mut rng = UnifiedRandom::new(7);
+        // The strike arms BOTH the cooldown and the one-tick flag
+        // (`hurt` → `NPC.cs:81274`; the pufferfish's 5 HP survives 1).
+        assert!(n.hurt(1, n.x - 5.0, 5.0, false, false));
+        assert!(n.just_hit, "the strike arms the one-tick flag");
+        assert!(n.hurt_cd > 0.0, "the strike arms the cooldown");
+        // The strike tick's AI reads the flag: the puff latch.
+        n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[2], 1.0, "the puff latch (:23503)");
+        assert_eq!(n.local_ai[0], 180.0, "the puff timer (:23504)");
+        assert!(!n.just_hit, "the update tail clears the flag (:90516)");
+        assert!(n.hurt_cd > 0.0, "the cooldown is still running");
+        // The deflate boundary: localAI[0] = 1 ticks to 0 → the puff
+        // deflates. The cooldown is STILL positive — the retired
+        // `hurt_cd > 0` stand-in would re-puff here (:23518-23521); the
+        // one-tick flag is false, so ai[2] stays 0.
+        n.local_ai[0] = 1.0;
+        n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[2], 0.0, "the deflate holds — no cooldown re-puff (:23514-23521)");
+        assert_eq!(n.local_ai[0], 120.0, "the re-arm (:23513)");
+        assert!(n.hurt_cd > 0.0, "the cooldown outlives the flag (the defect's window)");
     }
 
     /// The small-kinds wiring wave: the style axis claims 21/49/56/72, so
@@ -32878,8 +33378,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
+            283,
+            "every decodable kind resolves (the wire roster's size - 283 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-c4's four style-44 swimmers + W4-c4's nine style-16 swimmers)"
         );
         assert!(
             covered > 43,
@@ -36807,6 +37307,18 @@ mod s1_d_2_tests {
         (NpcKind::Goldfish, 16),
         (NpcKind::Piranha, 16),
         (NpcKind::Shark, 16),
+        // W4-c4 (the style-16 swimmers): the nine kinds' aiStyle rows
+        // (`NPC.cs:9494`/`:10995`/`:12111`/`:14488`/`:16684`/`:16800`/
+        // `:16897`/`:17658`/`:17714`).
+        (NpcKind::CorruptGoldfish, 16),
+        (NpcKind::Arapaima, 16),
+        (NpcKind::BloodFeeder, 16),
+        (NpcKind::CrimsonGoldfish, 16),
+        (NpcKind::GoldGoldfish, 16),
+        (NpcKind::Pupfish, 16),
+        (NpcKind::Dolphin, 16),
+        (NpcKind::Pufferfish, 16),
+        (NpcKind::Orca, 16),
         (NpcKind::BoundGoblin, 0),
         (NpcKind::BoundWizard, 0),
         (NpcKind::BoundMechanic, 0),

@@ -242,6 +242,18 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => &[],
         // The swimmers: no debuff-immunity rows.
         NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => &[],
+        // W4-c4 (the style-16 swimmers): `Sets.DebuffImmunitySets` rows
+        // 57/157/241/465/592/607/615 are `{ SpecificallyImmuneTo: [31] }`
+        // (`NPCID.cs:6075+` — On Fire! immunity, the wyvern precedent);
+        // 688/692 have NO row (the null else-branch, `NPC.cs:17822-17828`).
+        NpcKind::CorruptGoldfish
+        | NpcKind::Arapaima
+        | NpcKind::BloodFeeder
+        | NpcKind::CrimsonGoldfish
+        | NpcKind::GoldGoldfish
+        | NpcKind::Pupfish
+        | NpcKind::Dolphin => &[31],
+        NpcKind::Pufferfish | NpcKind::Orca => &[],
         // The worms: no debuff-immunity rows.
         NpcKind::DevourerHead
         | NpcKind::DevourerBody
@@ -544,6 +556,13 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::Grubby
         | NpcKind::Sluggy
         | NpcKind::Buggy => &[31],
+        // W4-c4 (the style-44 swimmers): none of 224/509/581/587 has a
+        // `DebuffImmunitySets` row (`NPCID.cs:6075+`'s dictionary carries
+        // no such keys) — the null-row else-branch, no immunity.
+        NpcKind::FlyingFish
+        | NpcKind::GiantFlyingAntlion
+        | NpcKind::FlyingAntlion
+        | NpcKind::EyeballFlyingFish => &[],
     }
 }
 

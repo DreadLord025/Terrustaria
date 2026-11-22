@@ -473,6 +473,11 @@ function buildSheetList({ gores = true, mountAdditions = false, font = false, st
   for (const id of WORLD_BG_DEFAULT) add('Background_' + id);
   add('Tiles_0');
   for (const name of staticNames) add(name);
+  // W4-c4: candidate sheets under measurement BEFORE they are committed to
+  // STATIC_SHEET_NAMES — `EXTRA_SHEETS=NPC_57,NPC_157,... node tools/atlas_sim.js`
+  // appends them exactly where the static list packs, so the reported height is
+  // the real post-add skyline height (the headroom gate).
+  for (const name of (process.env.EXTRA_SHEETS || '').split(',').map(s => s.trim()).filter(Boolean)) add(name);
   for (const kind of [...PROJ_KINDS].sort((a, b) => a - b)) add('Projectile_' + kind);
   for (const id of enumIds('Item_')) add('Item_' + id);
   for (const id of enumIds('Buff_')) add('Buff_' + id);

@@ -5188,6 +5188,54 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         };
                         crate::npc_ai_style56::style56_step(&mut npcs[i], &mut env);
                     }
+                    // W4-c4: the style-44 swimmers' arm (`NPC.AI()`'s
+                    // aiStyle-44 block, `NPC.cs:30861-31124`) runs at the
+                    // NPC's own slot turn like the spirit's above — the
+                    // separation loop reads the sibling slots live, and
+                    // the 587 materialize's dust rolls ride the shared
+                    // pool on the `UpdateNPCs` stream. `Style44Sibling`
+                    // is the C#'s `Main.npc[0..200]` view: slot order,
+                    // `active` = the slot holds a live NPC, `type` the
+                    // VANILLA id (`cs_id`, NOT the protocol id — the
+                    // FlyingFish's 359 would never match the arm's 224).
+                    // The axis' 44 arm (`npc.rs`) owns the post-`AI()`
+                    // `UpdateCollision` tail (`:90490-90492`).
+                    if npcs[i].kind.ai_style() == 44 && npcs[i].hp > 0 {
+                        let cand = crate::npc_target::session_candidate(player);
+                        // `Main.player[j].wet` (`:30932`) — the session
+                        // player's live flag, slot 0 (the binding keeps
+                        // the slice alive across the step call).
+                        let player_wet = [player.wet];
+                        let siblings: Vec<crate::npc_ai_style44::Style44Sibling> = npcs
+                            .iter()
+                            .map(|m| crate::npc_ai_style44::Style44Sibling {
+                                active: m.hp > 0,
+                                npc_type: m.kind.cs_id(),
+                                x: m.x,
+                                y: m.y,
+                            })
+                            .collect();
+                        let mut env = crate::npc_ai_style44::Style44Env {
+                            npc_type: npcs[i].kind.cs_id(),
+                            self_index: i,
+                            siblings: &siblings,
+                            world,
+                            players: &[cand],
+                            player_wet: &player_wet,
+                            // The `EverLastingTicker` stand-in (the
+                            // zombie convention): 0 until the migration.
+                            ticker: 0,
+                            dust: &mut *dust,
+                            dust_ctx: &dust_ctx,
+                            rng: npcs_rng,
+                            // `noGravity = true` (`:30863`) — the port's
+                            // flyer integration is kind-driven
+                            // (`NpcKind::no_gravity` carries the four),
+                            // so the latch is consumed as a no-op here.
+                            wants_no_gravity: false,
+                        };
+                        crate::npc_ai_style44::style44_step(&mut npcs[i], &mut env);
+                    }
                     // S1-D-3-wire-saucer: the aiStyle-75 mount family is a
                     // POOL step (the host/crew slot links read `App::npcs`
                     // live) — it runs here, in slot order, on the
@@ -8156,6 +8204,79 @@ mod tests {
                     "seed {seed} slot {i} crew_cannons"
                 );
             }
+        }
+    }
+
+    /// W4-c4: the style-44 pre-pass runs at each swimmer's own slot turn
+    /// on the `UpdateNPCs` stream — the antlion separation reads the
+    /// sibling slots through the VANILLA `cs_id` (the FlyingFish's
+    /// protocol id is the port-local 359; a protocol-keyed sibling scan
+    /// would never match the arm's 224/509/581/587), and the 587
+    /// materialize's dust rolls land in the SHARED `app.dust` pool (the
+    /// style-56 seam). WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c4_the_style44_pre_pass_separates_the_swarm_and_materializes_the_eye() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let world = crate::test_world_helpers::ground();
+        let mut player = crate::player::Player::spawn(&world);
+        // The player far right of the swarm (the X approach's dead band
+        // is 40 px for the giant antlion — the pair sits ~200 px left).
+        player.x = 60.0 * TILE_PX;
+        player.y = 20.0 * TILE_PX;
+        app.player = Some(player);
+        app.world = world;
+        // Two giant antlions 10 px apart (Manhattan 10 < the 40-px width
+        // gate, `NPC.cs:30964-30985`) + one small antlion inside the same
+        // radius (the type-equality gate must skip it) + the eyeball
+        // fish at alpha 255 (the ctor's `SetDefaults` row).
+        let mut big_a = Npc::new(NpcKind::GiantFlyingAntlion, 20.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        let mut big_b = Npc::new(NpcKind::GiantFlyingAntlion, 20.0 * TILE_PX + 10.0, 20.0 * TILE_PX, 1, 0.0);
+        let mut small = Npc::new(NpcKind::FlyingAntlion, 20.0 * TILE_PX + 5.0, 20.0 * TILE_PX, 1, 0.0);
+        let mut eye = Npc::new(NpcKind::EyeballFlyingFish, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        assert_eq!(eye.alpha, 255, "the 587 alpha row spawns the fade");
+        for n in [&mut big_a, &mut big_b, &mut small, &mut eye] {
+            n.hp = n.max_hp;
+        }
+        app.npcs.push(big_a);
+        app.npcs.push(big_b);
+        app.npcs.push(small);
+        app.npcs.push(eye);
+        app.rngs = crate::app::rng::NamedRngs::new(app.world.seed as i32);
+        // The camera on the swarm so the 587 burst's dusts pass the
+        // `Dust.cs:97-101` screen cull (the pool spawns them for real).
+        app.camera = Vec2::new(25.0 * TILE_PX, 20.0 * TILE_PX);
+        update_npcs(&mut app, 1.0 / 60.0);
+        // The separation fired: slot 0 sits LEFT of slot 1 (Manhattan
+        // 10 < the 40-px width gate), so its vx took the −0.05 push
+        // (`:30968-30975`) BEFORE the steering's own first step. The
+        // small antlion at +5 px is the other type: skipped. The lone
+        // flyer's first step is ±0.08 (num665) from rest; the pushed
+        // slot lands on −0.05 + 0.08 = 0.03 (facing +1, the player far
+        // right) — strictly below the lone accel either way. (The
+        // ambient spawner may append its own kinds — read by kind.)
+        let a = app.npcs.iter().find(|n| n.kind == NpcKind::GiantFlyingAntlion).unwrap();
+        assert!(
+            a.vx < 0.08 - 1e-6,
+            "the swarm push rode the pre-pass: vx {} (a lone flyer steps ±0.08)",
+            a.vx
+        );
+        // The tilt reads the PRE-separation velocity (`:30963` runs
+        // before the loop): vx was 0 at entry, so rotation is 0 — not
+        // the post-push 0.03 · 0.1.
+        assert_eq!(a.rotation, 0.0, "the tilt latches the entry vx (:30963)");
+        // The eyeball fish materialized: alpha 255 − 15 = 240 and the
+        // 15-dust burst + the 2-dust trail landed in the shared pool
+        // (>= 17 active slots; the 1-in-3 sparkle may add one).
+        let e = app.npcs.iter().find(|n| n.kind == NpcKind::EyeballFlyingFish).unwrap();
+        assert_eq!(e.alpha, 240, "the −15 fade ticked (:30904)");
+        let active = (0..tr_core::particles::DUST_SENTINEL)
+            .filter(|&i| app.dust.slot(i).active)
+            .count();
+        assert!(active >= 17, "the burst + trail rode app.dust, got {active}");
+        // The sight gate pinned ai[0] = 90 on every swimmer (the open-air
+        // `CanHit` leg, `:30932-30935`) — the arm ran, not the kind match.
+        for n in app.npcs.iter().filter(|n| n.kind.ai_style() == 44) {
+            assert_eq!(n.ai[0], 90.0, "{:?}: the style-44 sight gate ran", n.kind);
         }
     }
 

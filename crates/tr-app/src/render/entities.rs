@@ -517,6 +517,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(SMALL_KIND_SHEETS)
             .chain(WATERFOWL_SHEETS)
             .chain(CRITTER_TAIL_SHEETS)
+            .chain(STYLE44_SHEETS)
+            .chain(STYLE16_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -961,11 +963,31 @@ fn npc_anchor_nudge(n: &Npc) -> f32 {
         // NOT in the `:23214` support group's overwrite list, so the -6
         // stands alone.
         DD2JavelinT2 => num46 = -6.0,
+        // W4-c4 — the SAME `:23011-23013` row for the vanilla type 581
+        // (`NPCID.FlyingAntlion`, the Antlion Swarmer): the C# keys the
+        // nudge on the type id, and the port now carries a kind at 581
+        // (the javelin T2's row above is the historical mis-mapping —
+        // its real net id is 562; left untouched, the two kinds ride the
+        // same literal exactly like the C#'s single 581 arm). 581 is not
+        // in the `:23166` afterglow group's overwrite list either (the
+        // group draws its own arm — the cited draw-side skip), so the
+        // -6 stands alone here too.
+        FlyingAntlion => num46 = -6.0,
         // `:23038` — 612/613's `num46 -= 2` (the DD2 goblin T3 riders); the
         // port's T1/T2 pair is its stand-in.
         DD2GoblinT1 | DD2GoblinT2 => num46 = -2.0,
         // `:23106` — 688's `num46 += 10`.
         DD2GoblinT1 => num46 += 10.0,
+        // W4-c4 — the SAME `:23115-23117` row for the vanilla type 688
+        // (`NPCID.Pufferfish`): the C# keys the nudge on the type id, and
+        // the port now carries a kind at 688 (the goblin T1's row above is
+        // the historical mis-mapping — left untouched, the two kinds ride
+        // the same literal exactly like the C#'s single 688 arm, the
+        // FlyingAntlion 581 precedent).
+        Pufferfish => num46 += 10.0,
+        // W4-c4 — `:23072-23074`: the Orca's (692) wet-dependent anchor
+        // `num46 = wet ? 6 : 10` (an absolute, not an add).
+        Orca => num46 = if n.wet { 6.0 } else { 10.0 },
         // `:23077-23091` — the `num47` adds of the same switch.
         Plantera => num47 += 26.0,
         BrainOfCthulhu => num47 += 50.0 * n.scale,
@@ -1272,6 +1294,49 @@ pub(crate) const WATERFOWL_SHEETS: &[u32] = &[362, 363, 364, 365, 602, 603, 608,
 /// 445→13, 446→2, 447→6, 448→2, 484→2, 485/486/487→4.
 pub(crate) const CRITTER_TAIL_SHEETS: &[u32] =
     &[357, 442, 443, 444, 445, 446, 447, 448, 484, 485, 486, 487];
+
+/// W4-c4: the style-44 swimmers' own sheets (`TextureAssets.Npc[type]`),
+/// keyed by the vanilla net id in `NpcAssets::npc_sheets` exactly like
+/// `SMALL_KIND_SHEETS`. The FlyingFish's protocol id is the port-local
+/// 359 (d37's frozen-band row adopted; the original 354 retired — it
+/// collided d37's CochinealBeetle), but its DRAW sheet is the
+/// vanilla NPC_224 — `texture_net_id` rides `net_id()` (the bestiary row),
+/// which already carries 224, so no override arm is needed. Measured
+/// headroom (tools/atlas_sim.js's skyline packer over the real content
+/// dims): the four sheets (40×128, 138×522, 100×378, 40×128) lift the
+/// main set 7711 → 7757 px and the full gore+font set 8119 → 8143 px —
+/// both under the 8192 strict-GPU bound.
+pub(crate) const STYLE44_SHEETS: &[u32] = &[
+    224, // the Flying Fish
+    509, // the Giant Antlion Swarmer
+    581, // the Antlion Swarmer
+    587, // the Wandering Eye Fish
+];
+
+/// W4-c4: the style-16 swimmers' own sheets (`TextureAssets.Npc[type]`),
+/// keyed by the vanilla net id in `NpcAssets::npc_sheets` exactly like
+/// `STYLE44_SHEETS`. The CorruptGoldfish/Arapaima protocol ids are the
+/// port-local 405/406 (the free-port band; the original 229/237 squatted
+/// the reserved cs-owned holes), but
+/// their DRAW sheets are the vanilla NPC_57/NPC_157 — `texture_net_id`
+/// rides `net_id()` (the bestiary row), which carries 57/157, so no
+/// override arm is needed. Measured headroom (tools/_w4c4_headroom.js's
+/// skyline packer over the real content dims): the eight sheets lift the
+/// main set 7757 → 7762 px and the full gore+font set 8143 → 8150 px —
+/// both under the 8192 strict-GPU bound. The Orca's NPC_692 (136×992)
+/// OVERFLOWS the full set (8226) — its sheet is atlas-deferred (the
+/// wyvern precedent, ANALYSIS "The style-16 swimmers"); its AI + stats
+/// are fully wired and the draw arm skips until the repack.
+pub(crate) const STYLE16_SHEETS: &[u32] = &[
+    57,  // the Corrupt Goldfish
+    157, // the Arapaima
+    241, // the Blood Feeder
+    465, // the Vicious Goldfish
+    592, // the Gold Goldfish
+    607, // the Pupfish
+    615, // the Dolphin
+    688, // the Pufferfish
+];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3262,6 +3327,43 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // W4-c4: the style-44 swimmers draw their own sheets
+            // (`STYLE44_SHEETS`) at `SetFrameSize`'s integer-division row
+            // height over `Main.npcFrameCount[type]` (`Main.cs:67082`:
+            // 224/587 four frames, 509/581 nine) with the generic centred
+            // anchor — the small-kinds arm's shape. All four rotate (the
+            // whitelist below): the antlions' AI tilt (`NPC.cs:30963`/
+            // `:30996`) and the fish's FindFrame tilt (`:74768`/`:74773`).
+            NpcKind::FlyingFish
+            | NpcKind::GiantFlyingAntlion
+            | NpcKind::FlyingAntlion
+            | NpcKind::EyeballFlyingFish => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-c4: the style-16 swimmers draw their own sheets
+            // (`STYLE16_SHEETS`) at `SetFrameSize`'s integer-division row
+            // height over `Main.npcFrameCount[type]` (`Main.cs:67082`:
+            // 57/157/241/465/592/607/688 six frames, 615 five, 692 sixteen)
+            // with the generic centred anchor — the style-44 arm's shape.
+            // All nine rotate (the whitelist below): the AI's
+            // `vy * direction * 0.1` tilt (`NPC.cs:24008-24019`), the
+            // Dolphin's leap tilt (`:23607-23615`) and the Orca's aim
+            // (`:23990-24007`). The Orca's sheet is atlas-deferred —
+            // `npc_sheet(692)` returns None and the draw skips (the wyvern
+            // precedent).
+            NpcKind::CorruptGoldfish
+            | NpcKind::Arapaima
+            | NpcKind::BloodFeeder
+            | NpcKind::CrimsonGoldfish
+            | NpcKind::GoldGoldfish
+            | NpcKind::Pupfish
+            | NpcKind::Dolphin
+            | NpcKind::Pufferfish
+            | NpcKind::Orca => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3432,6 +3534,28 @@ pub(crate) fn draw_npcs(
                     | NpcKind::Grubby
                     | NpcKind::Sluggy
                     | NpcKind::Buggy
+                    // W4-c4: the swimmers' velocity tilts — the antlions'
+                    // `velocity.X * 0.1` AI write (`NPC.cs:30963`/`:30996`)
+                    // and the fish's ±`velocity.Y * 0.2` FindFrame write
+                    // (`:74768`/`:74773`).
+                    | NpcKind::FlyingFish
+                    | NpcKind::GiantFlyingAntlion
+                    | NpcKind::FlyingAntlion
+                    | NpcKind::EyeballFlyingFish
+                    // W4-c4: the style-16 swimmers' velocity tilts — the
+                    // generic `vy * direction * 0.1` AI write
+                    // (`NPC.cs:24008-24019`), the Dolphin's leap tilt
+                    // (`:23607-23615`/`:23648-23656`) and the Orca's aim
+                    // (`:23990-24007`).
+                    | NpcKind::CorruptGoldfish
+                    | NpcKind::Arapaima
+                    | NpcKind::BloodFeeder
+                    | NpcKind::CrimsonGoldfish
+                    | NpcKind::GoldGoldfish
+                    | NpcKind::Pupfish
+                    | NpcKind::Dolphin
+                    | NpcKind::Pufferfish
+                    | NpcKind::Orca
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with
@@ -4151,6 +4275,27 @@ mod anchor_tests {
         // compute their own anchors).
         for kind in [NpcKind::Slime, NpcKind::MartianSaucer, NpcKind::Deerclops] {
             assert_eq!(npc_anchor_nudge(&bare(kind)), 0.0, "{kind:?}");
+        }
+        // W4-c4 (the style-16 swimmers): the Pufferfish's `num46 += 10`
+        // (`Main.cs:23115-23117`) and the Orca's wet-dependent
+        // `num46 = wet ? 6 : 10` (`:23072-23074`). The other seven fish
+        // have no anchor row (the default 0).
+        assert_eq!(npc_anchor_nudge(&bare(NpcKind::Pufferfish)), 10.0);
+        let mut orca = bare(NpcKind::Orca);
+        orca.wet = false;
+        assert_eq!(npc_anchor_nudge(&orca), 10.0, "the dry Orca");
+        orca.wet = true;
+        assert_eq!(npc_anchor_nudge(&orca), 6.0, "the wet Orca");
+        for kind in [
+            NpcKind::CorruptGoldfish,
+            NpcKind::Arapaima,
+            NpcKind::BloodFeeder,
+            NpcKind::CrimsonGoldfish,
+            NpcKind::GoldGoldfish,
+            NpcKind::Pupfish,
+            NpcKind::Dolphin,
+        ] {
+            assert_eq!(npc_anchor_nudge(&bare(kind)), 0.0, "{kind:?} no anchor row");
         }
     }
 

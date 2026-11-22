@@ -3629,7 +3629,19 @@ fn npc_seed(
         // the net state overwrites the position below.
         crate::npc::NpcKind::Goldfish
         | crate::npc::NpcKind::Piranha
-        | crate::npc::NpcKind::Shark => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        | crate::npc::NpcKind::Shark
+        // W4-c4 (the style-16 swimmers): the nine kinds ride the same
+        // surface seed (the box comes from `kind.size()`; the swimmer
+        // machine takes over on the first tick).
+        | crate::npc::NpcKind::CorruptGoldfish
+        | crate::npc::NpcKind::Arapaima
+        | crate::npc::NpcKind::BloodFeeder
+        | crate::npc::NpcKind::CrimsonGoldfish
+        | crate::npc::NpcKind::GoldGoldfish
+        | crate::npc::NpcKind::Pupfish
+        | crate::npc::NpcKind::Dolphin
+        | crate::npc::NpcKind::Pufferfish
+        | crate::npc::NpcKind::Orca => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
         // The worm segments: the net spawns each link standalone (the chain
         // links rebuild through the init — the head; a lone body/tail dies
         // finding no leader — the net-chain sync lands with the netglue
@@ -3757,7 +3769,14 @@ fn npc_seed(
         | crate::npc::NpcKind::BlazingWheel
         | crate::npc::NpcKind::AngryNimbus
         | crate::npc::NpcKind::DungeonSpirit
-        | crate::npc::NpcKind::ForceBubble => {
+        | crate::npc::NpcKind::ForceBubble
+        // W4-c4: the style-44 swimmers' relay seeds ride the same hover
+        // placement (the box comes from `kind.size()`; the steering
+        // machine takes over on the first tick).
+        | crate::npc::NpcKind::FlyingFish
+        | crate::npc::NpcKind::GiantFlyingAntlion
+        | crate::npc::NpcKind::FlyingAntlion
+        | crate::npc::NpcKind::EyeballFlyingFish => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
