@@ -5036,6 +5036,30 @@ impl Npc {
             // `if (this.aiStyle == 5) { this.AI_005_EaterOfSouls(); return; }`
             // (`NPC.cs:20802-20806`).
             5 => self.ai_005_hover_family(world, player),
+            // `if (this.aiStyle == 15) { this.AI_015_KingSlime(); return; }`
+            // (`NPC.cs:23487-23491`) — the King Slime (50), the style's only
+            // user (`SetDefaults` `:9387-9403`). W4-d24 verify-only census:
+            // the landed K-1..K-4 machine (`update_king_slime`,
+            // `NPC.cs:43121-43414`) is faithful — the despawn state gate,
+            // the teleport cache (50-candidate cap, `Next(0, size)`), the
+            // hp-ladder hop timer, the strict 5% batch cross with the ONE
+            // `Next(1, 4)` count draw (the per-minion 5-draw burst rides the
+            // sim's `king_slime_minion_batch` drain). The axis claims the
+            // style now (the S1-D-2 convention); the kind arm becomes the
+            // unreachable marker, the machine unchanged.
+            15 => self.update_king_slime(world, player, rng),
+            // `if (this.aiStyle == 16)` (`NPC.cs:23492-24021`) — the
+            // fish/swimmer family. The port's roster carries three of the
+            // thirteen vanilla members (Goldfish 55 / Piranha 58 / Shark
+            // 65, `npc/data.rs`'s aiStyle-16 row). W4-d24 verify-only
+            // census: the S1-D-3 reconcile's machine
+            // (`npc_ai_style16::ai_016_step` via `update_swimmer`) is
+            // faithful — the Pufferfish puff + water-line hover, the
+            // Dolphin leap/float draw order, the wet chase/bob arms, the
+            // dry flop rand triple (`:23977-23979`), the Shark/Orca flop
+            // exemption. The axis claims the style now; the kind arm
+            // becomes the unreachable marker, the machine unchanged.
+            16 => self.update_swimmer(world, player, rng),
             // `else if (this.aiStyle == 21)` (`NPC.cs:24615-24665`) — the
             // BlazingWheel (72), the style's only user. The small-kinds
             // wiring wave: the ricochet machine rides `npc_ai_style21`
@@ -5043,6 +5067,8 @@ impl Npc {
             // The returned light is the draw-side feed's
             // (`npc_lights::npc_light` reads `App.mouse_text_color`); the
             // tile move is the wheel's own 12x12 `noSlopeCollision` box.
+            // W4-d24 verify-only census: the machine is unchanged (the
+            // S1-D-3-wire-smallkinds landing already faithful).
             21 => {
                 // The session player as slot 0 (the shared S1-D-3p
                 // candidate, `npc_target::session_candidate`).
@@ -5056,6 +5082,22 @@ impl Npc {
                 let _ = crate::npc_ai_style21::ai_style21(self, world, &[cand], 0, 255);
                 crate::npc_ai_style21::collision_move_blazing_wheel(self, world);
             }
+            // `else if (this.aiStyle == 22)` (`NPC.cs:24666-25234`) — the
+            // ghost/hover family (TEN vanilla members). W4-d24 census:
+            // the TWO ported kinds ride their landed machines here
+            // (verify-only — the S1-F-13b2 slice C / S1-D-3z machines
+            // are unchanged); the EIGHT unported members' verbatim arm
+            // lives in `npc_ai_style22.rs` (UNWIRED until their kinds
+            // land). The kind arms below become unreachable markers.
+            22 => match self.kind {
+                NpcKind::Poltergeist => {
+                    crate::npc_ai_poltergeist::poltergeist_ai(self, world, player, rng)
+                }
+                NpcKind::Drippler => {
+                    crate::npc_ai_drippler::drippler_ai(self, world, player, rng)
+                }
+                _ => unreachable!("only the ported aiStyle-22 kinds reach the axis arm"),
+            },
             // `if (this.aiStyle == 9) { ... }` (`NPC.cs:21377-21571`) -
             // S1-D-3: the caster-sphere family (25/30+665/33) rides the
             // new module's arm; the unported 112/666/516 branches wait
@@ -6488,7 +6530,12 @@ impl Npc {
             NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {
                 unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
             }
-            NpcKind::KingSlime => self.update_king_slime(world, player, rng),
+            // W4-d24 axis census: the King Slime (aiStyle 15) rides the
+            // style axis above (`15 => update_king_slime`) — this arm is
+            // unreachable through `update_rng` (the S1-D-2 axis precedent).
+            NpcKind::KingSlime => {
+                unreachable!("aiStyle 15 rides the style axis (W4-d24)")
+            }
             NpcKind::EyeOfCthulhu => self.update_eye_of_cthulhu(world, player),
             NpcKind::ServantOfCthulhu => {
                 unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
@@ -6516,8 +6563,11 @@ impl Npc {
             NpcKind::DungeonSpirit => {
                 unreachable!("aiStyle 56 rides the style axis (S1-D-3-wire-smallkinds)")
             }
+            // W4-d24 axis census: the fish trio (aiStyle 16) rides the
+            // style axis above (`16 => update_swimmer`) — this arm is
+            // unreachable through `update_rng` (the S1-D-2 axis precedent).
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
-                self.update_swimmer(world, player, rng)
+                unreachable!("aiStyle 16 rides the style axis (W4-d24)")
             }
             // The worms: the movement runs in the world sim's worm pass
             // (the chain needs the sibling segments; `AI_006` reads
@@ -6575,17 +6625,20 @@ impl Npc {
             // The Poltergeist (330): aiStyle 22's ghost dwell/dash/flee
             // machine (`NPC.cs:24666-25234`, the 330 branches) — S1-F-13b2
             // slice C. In 1.4.5.8 the 330 path carries no shot; its offence
-            // is the 90-damage contact body.
+            // is the 90-damage contact body. W4-d24 axis census: the style
+            // axis claims 22 above — this arm is unreachable through
+            // `update_rng` (the machine unchanged, verify-only).
             NpcKind::Poltergeist => {
-                crate::npc_ai_poltergeist::poltergeist_ai(self, world, player, rng)
+                unreachable!("aiStyle 22 rides the style axis (W4-d24)")
             }
             // The Drippler (490): aiStyle 22's 490 branches (S1-D-3z,
             // `NPC.cs:24666-25234` — the day flee, the distance-scaled
             // floor probe, the 0.03/0.75 gravity, the 1.5/1 caps). The
             // Poltergeist machine stays byte-identical; 490 has tile
             // collision (no `noTileCollide`), so its integration differs.
+            // W4-d24 axis census: unreachable through `update_rng`.
             NpcKind::Drippler => {
-                crate::npc_ai_drippler::drippler_ai(self, world, player, rng)
+                unreachable!("aiStyle 22 rides the style axis (W4-d24)")
             }
             // The Mourning Wood (325, aiStyle 57) and the Pumpking (327,
             // aiStyle 58): S1-F-13b2 slice B landed their named machines
@@ -36193,5 +36246,293 @@ mod s1_f_13d_tests {
         blade.find_frame();
         assert_eq!(blade.frame, 0);
         assert_eq!(blade.frame_counter, 0.0);
+    }
+}
+
+// =====================================================================
+// W4-d24 — the aiStyles 15-22 axis census witnesses (style 15 slice).
+// WRITTEN, NOT RUN (code-only mode: no cargo/rustc). Census verdict at
+// a725acb0: 15 KingSlime LANDED (kind-arm routed, K-1..K-4 fixes) ->
+// verify-only axis claim here; the machine is unchanged.
+// =====================================================================
+#[cfg(test)]
+mod w4_d24_style15_census_tests {
+    use super::*;
+
+    /// The axis claims style 15 exactly once, and the KingSlime kind arm
+    /// is the unreachable marker (the S1-D-2 convention, the W4-d28
+    /// source-scan witness shape).
+    #[test]
+    fn w4_d24_the_axis_claims_style_15_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "15" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 15 claimed once");
+        assert!(src.contains("aiStyle 15 rides the style axis (W4-d24)"));
+    }
+
+    /// The 15 claim is LIVE and RNG-census-faithful: one full-HP tick
+    /// through `update_rng` runs the landed machine — the one-shot init
+    /// (`ai[3] = lifeMax`, `king_slime_local[3] = 1`, `ai[0] = -100`),
+    /// the +2 hop-timer beat at full life, the flag-driven recentre to
+    /// the 122x115 truncated box — and draws NOTHING (the batch arm's
+    /// strict 5% cross `NPC.cs:43388` has not fired; the teleport's
+    /// `Next(0, size)` `:43099`/`:43108` needs `ai[2] >= 300`).
+    #[test]
+    fn w4_d24_the_king_slime_rides_the_15_axis_draw_free_at_full_hp() {
+        let mut w = World::new("t".into(), 200, 400);
+        w.world_surface = 100.0;
+        let mut p = Player::spawn(&w);
+        p.x = 120.0 * TILE_PX;
+        p.y = 150.0 * TILE_PX;
+        let mut k = Npc::new(NpcKind::KingSlime, 100.0 * TILE_PX, 150.0 * TILE_PX, 1, 0.0);
+        k.hp = k.max_hp;
+        let mut rng = UnifiedRandom::new(7);
+        k.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(k.ai[3], k.max_hp as f32, "the hp latch (:43134-43137)");
+        assert_eq!(k.king_slime_local[3], 1.0, "the one-shot init");
+        assert_eq!(k.ai[0], -98.0, "-100 init + the full-life +2 beat");
+        assert!((k.scale - 1.25).abs() < 0.001, "the full-hp scale");
+        assert_eq!(k.size_override, Some((122.0, 115.0)), "the int box");
+        assert!(!k.wants_minion, "no batch at the full hp");
+        assert_eq!(rng, UnifiedRandom::new(7), "the quiet tick draws nothing");
+    }
+}
+
+// =====================================================================
+// W4-d24 — the aiStyles 15-22 axis census witnesses (style 16 slice).
+// WRITTEN, NOT RUN (code-only mode). 16 fish family LANDED + WIRED
+// (S1-D-3 reconcile, `update_swimmer`) -> verify-only axis claim; the
+// module's own RNG witnesses stay the draw-order pins.
+// =====================================================================
+#[cfg(test)]
+mod w4_d24_style16_census_tests {
+    use super::*;
+
+    /// The axis claims style 16 exactly once; the fish trio's kind arm is
+    /// the unreachable marker.
+    #[test]
+    fn w4_d24_the_axis_claims_style_16_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "16" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 16 claimed once");
+        assert!(src.contains("aiStyle 16 rides the style axis (W4-d24)"));
+    }
+
+    /// The 16 claim is LIVE: a beached Goldfish tick through `update_rng`
+    /// runs the flop arm — exactly the cited rand triple
+    /// `Next(-50,-20)`, `Next(-20,20)`, `Next(2)` (`NPC.cs:23977-23979`),
+    /// then the 0.3 gravity and `ai[0] = 1` (`:23983-23988`). The stream
+    /// mirror pins the order byte-for-byte.
+    #[test]
+    fn w4_d24_the_fish_ride_the_16_axis_flop_triple() {
+        let w = World::new("t".into(), 200, 120);
+        let mut p = Player::spawn(&w);
+        p.x = 80.0 * TILE_PX;
+        p.y = 50.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::Goldfish, 100.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        // Dry + grounded (vy == 0): the flop arm fires on the first tick.
+        n.wet = false;
+        n.vx = 0.0;
+        n.vy = 0.0;
+        let mut rng = UnifiedRandom::new(11);
+        let mut mirror = UnifiedRandom::new(11);
+        let want_vy = mirror.next_range(-50, -20) as f32 * 0.1;
+        let want_vx = mirror.next_range(-20, 20) as f32 * 0.1;
+        let want_dir = if mirror.next_max(2) == 0 { 1 } else { -1 };
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.facing, want_dir, "the flop direction draw");
+        assert_eq!(n.ai[0], 1.0, "the dry arm sets the bob latch");
+        // The 0.3 gravity lands on the drawn vy BEFORE integration.
+        assert!((n.vy - (want_vy + 0.3)).abs() < 1e-4 || n.collide_y,
+            "the flop vy + gravity ({})", n.vy);
+        let _ = want_vx; // consumed by the same triple (order pinned below)
+        assert_eq!(rng, mirror, "exactly the flop triple, in C# order");
+    }
+}
+
+// =====================================================================
+// W4-d24 — the aiStyles 15-22 axis census witnesses (style 21 slice).
+// WRITTEN, NOT RUN (code-only mode). 21 BlazingWheel LANDED + WIRED
+// (S1-D-3-wire-smallkinds, the axis claim + the light feed) ->
+// verify-only; the module's own witnesses stay the machine pins.
+// =====================================================================
+#[cfg(test)]
+mod w4_d24_style21_census_tests {
+    use super::*;
+
+    /// The axis claims style 21 exactly once (the small-kinds landing);
+    /// the BlazingWheel kind arm is the unreachable marker.
+    #[test]
+    fn w4_d24_the_axis_claims_style_21_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "21" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 21 claimed once");
+        assert!(src.contains("aiStyle 21 rides the style axis (S1-D-3-wire-smallkinds)"));
+    }
+
+    /// The 21 claim is LIVE and draw-free: a full `update_rng` tick on
+    /// the wheel runs the ricochet machine + the 12×12 noSlopeCollision
+    /// move — the init TargetClosest, the ±0.13 spin, the ±6 velocity —
+    /// and consumes NO rand (the module's RNG-free-by-construction
+    /// census, `NPC.cs:24615-24665` + `:92775-92783`).
+    #[test]
+    fn w4_d24_the_wheel_rides_the_21_axis_draw_free() {
+        let w = World::new("t".into(), 200, 120);
+        let mut p = Player::spawn(&w);
+        p.x = 110.0 * TILE_PX;
+        p.y = 60.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::BlazingWheel, 100.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        let mut rng = UnifiedRandom::new(21);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[0], 1.0, "the init armed (:24617-24622)");
+        assert_eq!(n.direction_y, 1, "the directionY pin (:24620)");
+        assert!((n.rotation - 0.13).abs() < 1e-5, "the first spin (:24626)");
+        assert_eq!(rng, witness, "the wheel tick draws nothing");
+    }
+}
+
+// =====================================================================
+// W4-d24 — the aiStyles 15-22 axis census witnesses (style 22 slice).
+// WRITTEN, NOT RUN (code-only mode). 22 ghost family: the TWO ported
+// kinds (Poltergeist 330 / Drippler 490) LANDED -> verify-only axis
+// claim routing to their unchanged machines; the EIGHT unported
+// members' verbatim arm is npc_ai_style22.rs (UNWIRED).
+// =====================================================================
+#[cfg(test)]
+mod w4_d24_style22_census_tests {
+    use super::*;
+
+    /// The axis claims style 22 exactly once; both ported kind arms are
+    /// the unreachable markers.
+    #[test]
+    fn w4_d24_the_axis_claims_style_22_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "22" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 22 claimed once");
+        let markers = src.matches("aiStyle 22 rides the style axis (W4-d24)").count();
+        assert_eq!(markers, 2, "the Poltergeist + Drippler kind-arm markers");
+    }
+
+    /// The 22 claim is LIVE for the Poltergeist: a pumpkin-moon night
+    /// tick through `update_rng` runs the landed dwell machine — the
+    /// anchor latch (ai[0..1] = position, ai[2] = 0 → the window count)
+    /// — and draws NOTHING (the flee drift's Next(-1,2) is gated on
+    /// !pumpkinMoon, `NPC.cs:24670-24673`/`:24716-24720`).
+    #[test]
+    fn w4_d24_the_poltergeist_rides_the_22_axis_draw_free() {
+        let mut w = World::new("t".into(), 200, 400);
+        w.world_surface = 100.0;
+        w.pumpkin_moon = true;
+        let mut p = Player::spawn(&w);
+        p.x = 110.0 * TILE_PX;
+        p.y = 150.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::Poltergeist, 100.0 * TILE_PX, 150.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        let mut rng = UnifiedRandom::new(22);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[0], 100.0 * TILE_PX, "the anchor latched (:24758)");
+        assert_eq!(rng, witness, "the pumpkin-moon dwell draws nothing");
+    }
+
+    /// The 22 claim is LIVE for the Drippler: a NIGHT tick (no day flee)
+    /// runs the landed 490 machine draw-free; the DAY flee with a parked
+    /// body consumes exactly the one Next(-1,2) (`NPC.cs:24678-24681` +
+    /// `:24716-24720`).
+    #[test]
+    fn w4_d24_the_drippler_rides_the_22_axis_flee_census() {
+        let mut w = World::new("t".into(), 200, 400);
+        w.world_surface = 100.0;
+        w.day_time = false;
+        let mut p = Player::spawn(&w);
+        p.x = 110.0 * TILE_PX;
+        p.y = 150.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::Drippler, 100.0 * TILE_PX, 140.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        let mut rng = UnifiedRandom::new(22);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, witness, "the night dwell draws nothing");
+        // The day flee: a parked body draws the one drift roll.
+        w.day_time = true;
+        let mut m = Npc::new(NpcKind::Drippler, 100.0 * TILE_PX, 140.0 * TILE_PX, 1, 0.0);
+        m.hp = m.max_hp;
+        m.vx = 0.0;
+        let mut rng2 = UnifiedRandom::new(22);
+        let mut mirror = UnifiedRandom::new(22);
+        let _want = mirror.next_range(-1, 2) as f32 * 1.5;
+        m.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng2);
+        assert_eq!(rng2, mirror, "exactly the one flee drift draw");
     }
 }
