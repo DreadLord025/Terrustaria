@@ -1,4 +1,8 @@
-# 133-fold-receipt — the f11 unique folds EXECUTED on the c42 union
+# 232-fold-receipt — the f11 unique folds EXECUTED on the c42 union
+
+> **RENUMBERED 133-fold-receipt → 232-fold-receipt (batch-H merge, registry
+> research/150 §3 round-1: f11's `133-f11-unique-folds.md` keeps 133, this
+> receipt → 232; slug kept, all refs repointed).**
 
 > Fold receipt · 2026-11-21 · code-only (no cargo/tests/rustfmt/graphify
 > run) · branch `task/W4-c42-wiring-device-arms`, base `fadaa4bd` (the

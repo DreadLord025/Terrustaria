@@ -2024,7 +2024,7 @@ mod tests {
     /// W4-g34 union tick-order witness (WRITTEN NOT RUN — f14's
     /// `w4_f14_the_cage_tick_rides_the_animate_tiles_tail` retargeted to
     /// frame/world.rs + the `animate(bool, rand)` parameter form,
-    /// research/67 §5): `AnimateTiles_CritterCages()` rides `AnimateTiles`'
+    /// research/197 §5): `AnimateTiles_CritterCages()` rides `AnimateTiles`'
     /// TAIL (`Main.cs:19303`) — the cage tick runs AFTER `animate_tiles`
     /// inside the SAME `tile_anim_step` closure on the SAME
     /// `rngs.global()` stream.
@@ -2052,7 +2052,7 @@ mod tests {
 
     /// W4-g34 union key-gate witness (WRITTEN NOT RUN — f14's
     /// `w4_f14_the_cage_key_is_view_gated_and_the_draw_takes_the_animator`
-    /// retargeted to frame/draw.rs's `tile_anim` FNV-mix form, research/67
+    /// retargeted to frame/draw.rs's `tile_anim` FNV-mix form, research/197
     /// §2.4/§5): the cage contribution is `anim_key()` gated on ANY active
     /// cage kind in the view rect (`is_cage_kind`, all 92 — a lane-2-only
     /// gate would stale the g33-half cages), cage-free views keep the

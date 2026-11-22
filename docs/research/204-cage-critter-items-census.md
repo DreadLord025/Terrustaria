@@ -1,4 +1,8 @@
-# 68 — Cage critter items: place / release / light census (W4-g34-drawdata-wire-2)
+# 204 — Cage critter items: place / release / light census (W4-g34-drawdata-wire-2)
+
+> **RENUMBERED 68 → 204 (batch-H merge, registry research/150 §3 round-1:
+> f37's `68-mood-reconcile.md` keeps 68, this doc → 204; slug kept, all
+> refs repointed).**
 
 > **STATUS: SEALED (2026-11-21).** The place/release/light census (§0-§5),
 > the 92-kind break-drop cascade (§6), the seal verification + the Chillet
@@ -118,7 +122,7 @@ following reconciliation:
   (`scanner.rs::cage_lights` `:179-200`, reads `p.cage_mode`), but the app feed
   `app/frame/draw.rs:390` **hardcoded `cage_mode` to all-zeros** with a stale
   "`Main.AnimateTiles` is not ported" comment. The cage animator IS now wired
-  (W4-g34 union, research/67) and exposes `jellyfish_mode: [[u8;25];3]`
+  (W4-g34 union, research/197) and exposes `jellyfish_mode: [[u8;25];3]`
   (`critter_cage_anim.rs:111`). **Fix:** feed `self.cage_anim.jellyfish_mode`
   into `LightParams.cage_mode` so the pulse tracks the draw frames. The
   `LightKey` already carries `cage_mode` (`lighting/params.rs:244/283`), so the
@@ -205,7 +209,7 @@ The break-drop cascade landed across `9c46ad94a` (Check6x3) → `69aa9a22d`
 
 ### 7.2 The g34f cage-retire — verified EXECUTED
 
-The research/67 §3 DROP list (the cage-animator union's retire half) was
+The research/197 §3 DROP list (the cage-animator union's retire half) was
 re-censused at the seal tip; every g34-owned DROP item is landed:
 
 | DROP item | State at the seal tip |
@@ -219,7 +223,7 @@ re-censused at the seal tip; every g34-owned DROP item is landed:
 | `is_lane2_cage_kind` | KEPT deliberately (the census-split documentation predicate + its split witness, anchors row 900) — NOT a retire target |
 
 The f14/g33-side DROPs (their modules, dispatcher slot, key field) belong to
-those branches' merges — the merger drops them wholesale per research/67 §6;
+those branches' merges — the merger drops them wholesale per research/197 §6;
 nothing on THIS branch owes them.
 
 ### 7.3 The d105 Chillet-egg task seed — PORTED
@@ -288,7 +292,7 @@ ONCE at the seam, not per-check:
 ## 8. The cage-family bible (merger assist)
 
 One table per cage subsystem — the C# anchor, the port site, the owner, the
-ruling. The merger keeps THIS branch's cage wiring wholesale (research/67
+ruling. The merger keeps THIS branch's cage wiring wholesale (research/197
 §6); the f14/g33 duplicates drop at their merges.
 
 | Subsystem | C# anchor | Port (this branch) | Owner / ruling |
@@ -303,7 +307,7 @@ ruling. The merger keeps THIS branch's cage wiring wholesale (research/67
 | Break-drop: furniture/echo/log | `Check3x2` `:49432-49706` | `check_3x2` furniture/echo arms | THIS branch; fairy-spawn event unported (deviation) |
 | Break-drop: Palworld eggs 751/752 | `Check2x2` `:48573-48578` | `check_2x2` egg arm (§7.3) | THIS branch (the d105 seed) |
 | Drop spawn geometry | `Item.NewItem` centre `Item.cs:49649-49651` | `ObjectDrop::spawn_center_px` (§7.4) | THIS branch (the g78 FIX-ONCE); the g78 monolith lane composes — its `check_monolith` records ride the same seam |
-| Animator (34 tables) | `AnimateTiles_CritterCages` `Main.cs:13511-16596` + owl/dragonfly helpers | `critter_cage_anim.rs` (whole port) | THIS branch keeps; f14/g33 `drawdata_cages.rs` DROP at their merges (research/67) |
+| Animator (34 tables) | `AnimateTiles_CritterCages` `Main.cs:13511-16596` + owl/dragonfly helpers | `critter_cage_anim.rs` (whole port) | THIS branch keeps; f14/g33 `drawdata_cages.rs` DROP at their merges (research/197) |
 | Draw rewrite (92 ids) | FIRST `GetTileDrawData` switch tail `TileDrawing.cs:5629-5907` | `cage_draw_data` at the slice-B/A composite position (`render/tiles.rs:750`) | THIS branch; f14 order folded in |
 | Warm-up | `Initialize_TileAndNPCData2` `Main.cs:6802-6807` | `App::new`/`flow_app` fresh world-seed clone (`app/mod.rs:4191`) | THIS branch (f14 semantics); g33 live-stream form DROP |
 | Lifetime | static ctor `Main.cs:66502`/`:66901-66972` | PROCESS state — no world-entry reset | THIS branch; the old reset DROPped |

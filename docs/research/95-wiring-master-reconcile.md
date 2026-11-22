@@ -384,7 +384,7 @@ union tree before landing (no `clear_all` on `Wiring`, no `mechs.pop`, no
 `mass_wire_operation*`, no gate-pass teleport clear, no
 `wire_tool_mode`/`wire_operations_cooldown`/3625 arm); applied per-hunk
 from `ad80daaa`/`24fa39f1`, adapted to the union shapes. Receipt:
-`docs/research/133-fold-receipt.md` (this branch). One commit per
+`docs/research/232-fold-receipt.md` (this branch). One commit per
 fix-family:
 
 | Fold | Commit | What landed (union adaptation) |

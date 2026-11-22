@@ -24,7 +24,7 @@
 //! `tileFrame[]`, gated on the `Main.critterCage` proximity flag. It ticks
 //! beside this animator in `App::animate_tiles_phase` on the same
 //! `Main.rand` stream; the cage draw seam (`render/tiles.rs`) reads its
-//! tables. Recorded in docs/ANALYSIS.md + research/66.
+//! tables. Recorded in docs/ANALYSIS.md + research/193.
 
 use crate::tiledata::TILE_COUNT;
 use crate::unified_random::UnifiedRandom;

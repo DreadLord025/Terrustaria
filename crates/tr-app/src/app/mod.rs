@@ -902,7 +902,7 @@ pub(crate) struct App {
     /// for ALL 92 cage ids; the G6 `WorldFrameKey::tile_anim` covers it via
     /// the `is_cage_kind`-gated FNV mix. PROCESS state — warmed up once at
     /// construction on a fresh world-seed clone (`Initialize_TileAndNPCData2`,
-    /// `Main.cs:6800-6807`), NEVER reset on world entry (research/67).
+    /// `Main.cs:6800-6807`), NEVER reset on world entry (research/197).
     pub(crate) cage_anim: tr_core::critter_cage_anim::CritterCageAnimator,
     /// `Main.critterCage` (`Main.cs:1445`): set by the tile draw when a cage
     /// cell is drawn (`TileDrawing.cs:5672` etc.), cleared at the non-solid
@@ -1249,7 +1249,7 @@ mod frame_key {
     /// W4-g34 union key-coverage witness (WRITTEN NOT RUN — f14's
     /// `cage_animator_state_changes_the_frame_key` adapted from the
     /// dedicated `cage_anim` slot to the `tile_anim` FNV-mix form,
-    /// research/67 §2.4/§5): the cage animator's tables ride the cached
+    /// research/197 §2.4/§5): the cage animator's tables ride the cached
     /// world range (`draw_tiles` feeds `frame_of` into the cage arms'
     /// addFrY rewrites), so two frames that differ only in cage state must
     /// not share a cached range; the closed gate keeps the key (the
@@ -1279,7 +1279,7 @@ mod frame_key {
 
     /// W4-g34 union warm-up wiring witness (WRITTEN NOT RUN — f14's
     /// `w4_f14_the_warmup_replays_on_a_clone_not_the_live_stream`
-    /// semantics pinned at the App seam, research/67 §2.6/§4/§5): both
+    /// semantics pinned at the App seam, research/197 §2.6/§4/§5): both
     /// constructors warm up on a FRESH world-seeded clone (NOT g33's live
     /// `rngs.global()` form), and world entry never resets or re-warms
     /// the cage tables (PROCESS state).
@@ -2435,7 +2435,7 @@ impl App {
         // `weatherVaneBobframe = 0` at `:67242`).
         self.tile_anim.reset();
         self.tile_anim_step = FixedStepper::new(1.0 / 60.0, 8);
-        // W4-g34 union (research/67 §2.5/§3): the cage tables are PROCESS
+        // W4-g34 union (research/197 §2.5/§3): the cage tables are PROCESS
         // state — NO world-entry reset. The `:8387-8395` zero loop above
         // covers `tileFrame`/`tileFrameCounter` ONLY; the cage arrays are
         // allocated zeroed once in the STATIC ctor `static Main()`
@@ -4221,7 +4221,7 @@ impl App {
         // The wiring RNG (`Main.rand` in the C#, `Wiring.cs:811-812`) seeds
         // from the world; vanilla seeds it from the clock (`Main.cs:6461-6463`).
         app.wiring.seed_rand(world_seed | 1);
-        // W4-g34 union (research/67 §2.6/§4): the cage warm-up —
+        // W4-g34 union (research/197 §2.6/§4): the cage warm-up —
         // `Initialize_TileAndNPCData2`'s 3600 forced ticks
         // (`Main.cs:6802-6807`, the FIRST statement of the ctor-called
         // `:6610` init, between `RandomizeBackgrounds` `:6594-6601` and
@@ -4233,7 +4233,7 @@ impl App {
         // documented `rng.rs` stand-in); the clone keeps the port's live
         // interleave bit-for-bit with the pre-wiring baseline, at the cost
         // of the post-warm-up tables not matching an exact-stream replay
-        // (the recorded approximation, research/67 §4 residual). Runs
+        // (the recorded approximation, research/197 §4 residual). Runs
         // ONCE per App, before any world-load or ambience draw.
         app.cage_anim.warm_up(&mut tr_core::UnifiedRandom::new(world_seed as i32));
         // `SetOngoingToTemps:169-172`: the sandstorm snapshot the load read out

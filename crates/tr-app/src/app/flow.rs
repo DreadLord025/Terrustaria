@@ -2492,7 +2492,7 @@ pub(crate) mod front_flow_tests {
             world_key: None,
             hell_black_box_bottom: 0.0,
         };
-        // W4-g34 union (research/67 §4): the ctor warm-up twin — the same
+        // W4-g34 union (research/197 §4): the ctor warm-up twin — the same
         // fresh-clone form as `App::new` (seed 1, this harness's stand-in
         // seed; the live `rngs` stream stays untouched).
         app.cage_anim.warm_up(&mut tr_core::UnifiedRandom::new(1));

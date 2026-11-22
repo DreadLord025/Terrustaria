@@ -41026,7 +41026,7 @@ critter-cage ids (faithful `drawdata_furniture::cage_table` arms, no live
 caller, frozen at row 0) split into two wiring lanes: g33 wires the 42
 first-half ids (41 big cages + snail 285), **g34 wires the 50 second-half
 ids** (d64 batch 2 small-animal tail 21 + batch 3 water/jellyfish 29).
-Full census + per-id table: `docs/research/66-drawdata-unwired-second-half.md`.
+Full census + per-id table: `docs/research/193-drawdata-unwired-second-half.md`.
 
 ### The animator is ported WHOLE (shared RNG stream)
 
@@ -41092,7 +41092,7 @@ owl `:16623` `(counter+1)%40==39` reseed, the snail/snail2 double
 ### Deliberate residual deviations
 
 - ~~**Cage warm-up unwired**~~ RESOLVED by the union record below: the
-  init RNG-order census landed (research/67 §4) and `warm_up` is wired on
+  init RNG-order census landed (research/197 §4) and `warm_up` is wired on
   a fresh clone; the exact-stream replay stays the recorded approximation.
 - **Glow bind / 711 / 637 / 184 / 185-186 / martianLight / mouseTextColor /
   temporary-animation registry**: unchanged, other lanes (TILE-DRAW-2/g35,
@@ -41108,9 +41108,9 @@ the seam call sites checked against the actual signatures by read/grep. The
 `render/tiles.rs` 1 + `drawdata_cases_a.rs` 1) plus the updated
 `drawdata.rs`/`drawdata_cases_b.rs` assertions are WRITTEN, NOT RUN.
 
-## The cage-animator union execution (W4-g34, research/67 contract, code-only, 2026-11-21)
+## The cage-animator union execution (W4-g34, research/197 contract, code-only, 2026-11-21)
 
-The triple-dup reconcile (research/67: f14 50046fe1 / g33 97704d01 / g34
+The triple-dup reconcile (research/197: f14 50046fe1 / g33 97704d01 / g34
 16f88fb7 all ported `AnimateTiles_CritterCages` independently) is EXECUTED
 on this branch - the KEEP recommendation landed here so the merger keeps
 this branch's wiring and drops the f14/g33 wiring wholesale. Per-phase
@@ -41146,13 +41146,13 @@ commits: `f4da0697` (order), `d9b6219b` (lifetime), `a5ba9493` (gates),
    need the ctor draws before `:6610` (`Next(6)` `:6467` +
    `RandomizeBackgrounds` `:6594-6601`) and would shift
    `moonType`/`wind`/`numClouds` (`:10873-10876`) - a whole-init
-   determinism project (research/67 §4), not a cage-lane change.
+   determinism project (research/197 §4), not a cage-lane change.
 5. **Witness union**: 42 supplement witnesses ported into
    `critter_cage_anim.rs` (54 total) + 7 new app-side wiring witnesses
    (tiles.rs order/t0-parity, frame.rs tick-order/key-gate, mod.rs
    key-coverage/warm-up-lifetime) + the renamed/updated tiles.rs feed
    witness, all WRITTEN NOT RUN. Keep-one folds per
-   research/67 §5. Two g33
+   research/197 §5. Two g33
    written-not-run assertions re-derived against the C# during the port:
    the butterfly forward +8 hop reads the POST-increment frame (g33's
    6->15 pin unreachable; now 3->4->12 + the 7->0 wrap), the pufferfish
@@ -41160,7 +41160,7 @@ commits: `f4da0697` (order), `d9b6219b` (lifetime), `a5ba9493` (gates),
 
 Verification: code-only, no cargo/tests/graphify; call sites checked
 against the actual signatures by read/grep; the 92-id union verified
-against g33's `cage_table` map + gate list. The research/67 §5 acceptance
+against g33's `cage_table` map + gate list. The research/197 §5 acceptance
 checklist (cargo green, t0 parity, screenshots, cage-free determinism) is
 owed to the verify wave.
 
@@ -41170,7 +41170,7 @@ The seal round on `task/W4-g34-drawdata-wire-2` (base cf85a1cf): the
 92-kind cage union break-drop verified landed, the g34f cage-retire DROP
 list verified executed, the d105 Chillet-egg task seed ported, and the g78
 ObjectDrop centre-drop gap fixed once. Full receipts + the cage-family
-bible: research/68 §7/§8.
+bible: research/204 §7/§8.
 
 1. **The Chillet egg (752 → 6142) + the Digtoise sibling (751 → 5667)**:
    `check_2x2` gains the two fixed-item arms (`WorldGen.cs:48573-48578`)
@@ -41200,7 +41200,7 @@ bible: research/68 §7/§8.
    lane (the g78 contract scoped the ObjectDrop seam). 1 rect-census
    witness + the re-pinned DW-3.2/DW-4.1 coordinate assertions, WRITTEN
    NOT RUN.
-3. **The g34f cage-retire**: research/67 §3's g34-owned DROP items
+3. **The g34f cage-retire**: research/197 §3's g34-owned DROP items
    re-censused at the seal tip — all landed (drawdata_cages.rs absent,
    no world-entry cage reset, the draw/G6 gates widened to is_cage_kind,
    the fresh-clone warm-up); `is_lane2_cage_kind` stays as the documented

@@ -745,7 +745,7 @@ pub(crate) fn draw_tiles(
                     ) {
                         dd = cased;
                     }
-                    // W4-g34 union (research/67 §2.2/§2.3): the critter-cage
+                    // W4-g34 union (research/197 §2.2/§2.3): the critter-cage
                     // rewrite — the C# FIRST GetTileDrawData switch's four
                     // cage case groups (TileDrawing.cs:5629-5907, ALL 92
                     // ids: g34's 50 + g33's 42), at the FIRST switch's
@@ -2060,13 +2060,13 @@ mod tests {
             "a shown echo wall is never dark coverage"
         );
     /// W4-g34 union draw-feed witness (WRITTEN NOT RUN — code-only mode):
-    /// the cage rewrite covers ALL 92 ids (`is_cage_kind`, research/67
+    /// the cage rewrite covers ALL 92 ids (`is_cage_kind`, research/197
     /// §2.2 — the g33 42 + g34 50 union) and reads the wired cage animator
     /// through `cage_draw_data`'s `frame_of` (the C# `GetTileDrawData` cage
     /// arms, `TileDrawing.cs:5629-5907`); the `Main.critterCage` flag is
     /// cleared at the pass head (`:474`) and raised for every cage cell
     /// (`:5672` etc.). The old `cage > glow` assertion is INVERTED by the
-    /// order witness below (research/67 §2.3 — f14's slice-B/A order).
+    /// order witness below (research/197 §2.3 — f14's slice-B/A order).
     #[test]
     fn the_cage_rewrite_feeds_from_the_cage_animator() {
         let src = include_str!("tiles.rs");
@@ -2105,7 +2105,7 @@ mod tests {
 
     /// W4-g34 composite-order witness (WRITTEN NOT RUN — f14's
     /// `w4_f14_the_cage_post_pass_rides_the_first_switch_tail` adapted to
-    /// the direct `cage_draw_data` call, research/67 §2.3/§5): the cage
+    /// the direct `cage_draw_data` call, research/197 §2.3/§5): the cage
     /// rewrite sits at the C# FIRST `GetTileDrawData` switch's tail
     /// (TileDrawing.cs:5629-5907) — AFTER `draw_data` + slice B's
     /// delegated first-switch cases and BEFORE slice A's SECOND switch,
@@ -2144,7 +2144,7 @@ mod tests {
 
     /// W4-g34 union acceptance pin (WRITTEN NOT RUN — g33's
     /// `wired_cage_rewrite_matches_the_static_arms_at_t0` retargeted to
-    /// `CritterCageAnimator`, research/67 §5): with the vanilla t=0 tables
+    /// `CritterCageAnimator`, research/197 §5): with the vanilla t=0 tables
     /// the wired cage rewrite is byte-equal to the static arms for EVERY
     /// one of the 92 cage ids — the union wiring changes no pixel until
     /// the animator moves the tables.

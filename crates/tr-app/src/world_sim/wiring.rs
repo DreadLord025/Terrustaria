@@ -459,7 +459,7 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
             // The position is the C# `Item.NewItem` rect CENTRE (the g78
             // FIX-ONCE, `ObjectDrop::spawn_center_px`).
             let rng = app.wiring.rand_mut();
-            // W4-g78 FIX-ONCE (research/375 §2) × g34 (research/68 §7.4, the
+            // W4-g78 FIX-ONCE (research/375 §2) × g34 (research/204 §7.4, the
             // batch-H keep-one): the actuation cascade's `Check*` drops spawn
             // at the C# rect CENTRE (the obsolete `Item.NewItem` overload's
             // `X + Width/2`, `Item.cs:49651`). The rect census is g34's

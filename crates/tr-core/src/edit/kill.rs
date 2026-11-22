@@ -47,7 +47,7 @@ impl ObjectDrop {
     /// 48x32 for the two wide echo arms (`case 705` the oasis echo
     /// `:49454`, `case 391-394` the worm cages `:49481`).
     ///
-    /// Batch-H keep-one (g78 research/375 §2 × g34 research/68 §7.4): the
+    /// Batch-H keep-one (g78 research/375 §2 × g34 research/204 §7.4): the
     /// g34 superset is the ONE fn — it carries the g78 rect census PLUS the
     /// 48×32 wide arms; the g78 `spawn_center_px` twin dropped, its callers
     /// re-pointed here. The C# `WorldItem` box is 16×16 (`WorldItem.cs:138`);
@@ -680,7 +680,7 @@ struct CheckPlan {
 /// M7-EXTRACT-1 extractinators; tile 34's is the ceiling arm, the `else` at
 /// `:53129-53139`).
 ///
-/// W4-g34 (the cage break-drop cascade, research/68 §2): `Check3x2` (:49187)
+/// W4-g34 (the cage break-drop cascade, research/204 §2): `Check3x2` (:49187)
 /// now covers all 53 kinds — the table family 14/87/88/186/187, the 23 small
 /// cages, the 17 furniture kinds and the echo piles / fallen log / sandcastle;
 /// `Check6x3` (:50242) covers the 41 big cages; `Check1x2Top` (:46706) covers
@@ -2457,7 +2457,7 @@ fn check_3x2_furniture_drop(kind: u16, style: i32, frame_x: i32) -> i32 {
 
 /// The `Check6x3` cage-item drop table (`WorldGen.cs:50291-50454`): every
 /// 6x3 kind drops its cage item at the trigger cell (32x32). The census
-/// (research/68 §2) confirms all 41 `Check6x3` kinds are cages and the drop
+/// (research/204 §2) confirms all 41 `Check6x3` kinds are cages and the drop
 /// is the plain cage item — there is NO critter release on break (the
 /// critter stays inside the dropped cage item; releasing it is the LMB
 /// item-use `ItemCheck_ReleaseCritter`, already ported in `bug_net.rs`).
@@ -5656,7 +5656,7 @@ mod tests {
         assert_eq!(w.shadow_orb_count, 2, "both breaks counted");
     }
 
-    // ---- W4-g34: the Check6x3 cage break-drop cascade (research/68 §2) ----
+    // ---- W4-g34: the Check6x3 cage break-drop cascade (research/204 §2) ----
 
     /// A placed 6x3 cage over the stone floor: origin (8, 17), cells
     /// x 8..=13, y 17..=19, frames `(dx*18, dy*18)`.
@@ -5759,7 +5759,7 @@ mod tests {
         assert!(w.tile(10, 18).is_some_and(|t| t.active() && t.kind == 275));
     }
 
-    // ---- W4-g34: the Check3x2 small-cage break-drop (research/68 §2) ----
+    // ---- W4-g34: the Check3x2 small-cage break-drop (research/204 §2) ----
 
     /// A placed 3x2 small cage over the stone floor: origin (9, 18), cells
     /// x 9..=11, y 18..=19, frames `(dx*18, dy*18)` (style 0).
@@ -5816,7 +5816,7 @@ mod tests {
         assert!(w.tile(10, 18).is_some_and(|t| t.active() && t.kind == 285));
     }
 
-    // ---- W4-g34: the Check3x2 furniture break-drop (research/68 §2) ----
+    // ---- W4-g34: the Check3x2 furniture break-drop (research/204 §2) ----
 
     #[test]
     fn w4_g34_furniture_3x2_fixed_drops_sweep_and_record() {
@@ -5977,7 +5977,7 @@ mod tests {
         assert!(kill.pile_events.is_empty());
     }
 
-    // ---- W4-g34: the Check1x2Top bottle break-drop (research/68 §2) ----
+    // ---- W4-g34: the Check1x2Top bottle break-drop (research/204 §2) ----
 
     /// A hanging 1x2 bottle under a stone ceiling: ceiling (10, 16), bottle
     /// cells (10, 17)/(10, 18) with frames 0/18 (style 0).
@@ -6044,7 +6044,7 @@ mod tests {
         assert_eq!((kill.object_drops[0].x, kill.object_drops[0].y), (10, 17));
     }
 
-    // ---- W4-g34: the Check2x2 water-cage break-drop (research/68 §2) ----
+    // ---- W4-g34: the Check2x2 water-cage break-drop (research/204 §2) ----
 
     /// A placed 2x2 water cage over the stone floor: origin (10, 18), cells
     /// x 10..=11, y 18..=19, frames `(dx*18, dy*18)` (style 0).
@@ -6085,7 +6085,7 @@ mod tests {
 
     #[test]
     fn w4_g34_jellyfish_bowl_2x2_break_drops_the_jar() {
-        // The jellyfish bowls 316-318 (the animated-light cages, research/68
+        // The jellyfish bowls 316-318 (the animated-light cages, research/204
         // §3) drop their jar item on break — the placing items 2439/2440/2441
         // (pinned by the itemdata census); the record carries `item: None`
         // and the app resolves it via `by_tile`.

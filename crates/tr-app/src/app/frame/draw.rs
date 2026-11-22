@@ -1035,7 +1035,7 @@ impl App {
                             } else {
                                 0
                             };
-                            // W4-g34 union (research/67 §2.4): ALL 92
+                            // W4-g34 union (research/197 §2.4): ALL 92
                             // critter-cage ids animate through the SEPARATE
                             // cage tables (`AnimateTiles_CritterCages`), not
                             // `tileFrame`, and none is in `is_animated_kind`'s

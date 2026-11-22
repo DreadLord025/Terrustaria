@@ -9,7 +9,7 @@
 > branch (`b46556b2d`).
 >
 > **FINAL-FINAL (retire phase, 2026-11-21)**: §1-2 EXECUTED on c42
-> (`e5569c2a`…`e6169bd1`, receipt `133-fold-receipt.md` on
+> (`e5569c2a`…`e6169bd1`, receipt `232-fold-receipt.md` on
 > `task/W4-c42-wiring-device-arms` tip `79b81ae77` = c42e-final);
 > §3 KEEP-shapes verified present; §4 DEPRECATED inventory stands;
 > §5 cross-note honoured (the c42 fix round untouched by the fold).
@@ -401,7 +401,7 @@ per 95, but these uniques must survive the dedupe).
 
 | f11 item (this doc) | Superseded by (c42e-final) | Receipt |
 | --- | --- | --- |
-| §1a-1h + §2a-2e (the 8 lifecycle fixes + mass-wire core/app + 3625 + fields) | fold-133 EXECUTED `e5569c2a`/`90c4fb12`/`2458b596`/`4e23f31e`/`b048c1b5`/`05ae5cc6` — per-hunk, adapted (the app mass-wire half MOVED to `world_sim/wiring.rs:991-1103`, the canary row re-pointed) | `133-fold-receipt.md` §1/§5 |
+| §1a-1h + §2a-2e (the 8 lifecycle fixes + mass-wire core/app + 3625 + fields) | fold-133 EXECUTED `e5569c2a`/`90c4fb12`/`2458b596`/`4e23f31e`/`b048c1b5`/`05ae5cc6` — per-hunk, adapted (the app mass-wire half MOVED to `world_sim/wiring.rs:991-1103`, the canary row re-pointed) | `232-fold-receipt.md` §1/§5 |
 | §3 doors Option seam | union-exec item 1 `f982f1d4` (wrappers dropped, all callers `None`) | 95 §10 |
 | §3 `only_close_or_open` | item 2 `ed88ec3d` (c42 body + the param) | 95 §10 |
 | §3 anchor helper | item 6 finish `a4b8a602` (`pub(crate) top_left_and_styles` + `.max(1)` in `edit/shift.rs:33`) | receipt §1 |

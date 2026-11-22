@@ -1,4 +1,8 @@
-# 67 — Cage-animator triple-dup reconcile (merger assist)
+# 197 — Cage-animator triple-dup reconcile (merger assist)
+
+> **RENUMBERED 67 → 197 (batch-H merge, registry research/150 §3 round-1:
+> d54's `67-dust-orch-sites-claims.md` keeps 67, this doc → 197; slug kept,
+> all refs repointed).**
 
 > Wave 4 · 2026-11-21 · branch `task/W4-g34-drawdata-wire-2` @ 16f88fb7 ·
 > code-only (no cargo/tests/graphify; witnesses WRITTEN NOT RUN everywhere) ·
@@ -101,7 +105,7 @@ module, union the 92-id draw wiring, and take f14's slice-order fix.**
    `critter_cage_anim.rs|pub fn animate`); (b) the whole-port argument is
    load-bearing — the 34 machines share ONE `Main.rand` stream, g33-half
    tables draw before g34-half tables, so a halved animator desynchronises
-   every downstream draw (research/66 §1); (c) the per-table `for i in
+   every downstream draw (research/193 §1); (c) the per-table `for i in
    0..N` loop shape matches the C# driver most directly and the
    `(critter_cage, rand)` parameter form keeps the gate flag in App state
    where the fused-layer draw can raise it for all 92 kinds. All six
@@ -179,7 +183,7 @@ true of the merged result.
 
 ## 4. Warm-up init RNG-order census (g34 residual → exact C# position)
 
-g34 exposes `warm_up()` but does not wire it (research/66 residual:
+g34 exposes `warm_up()` but does not wire it (research/193 residual:
 "needs the whole init's RNG-order census"). The census, from the
 decompiled source:
 
@@ -370,7 +374,7 @@ RUN), one commit per phase:
 | 3 — 92-id union gates (§2.2/§2.4) | `a5ba9493` | the tiles.rs draw gate + the G6 `tile_anim` cage contribution widened from `is_lane2_cage_kind` (50) to `is_cage_kind` (92; g33's 42 verified against 97704d01's id list + `cage_table` map — byte-identical arms). `is_lane2_cage_kind` kept as the census-split documentation predicate + its split witness. Feed witness renamed `the_cage_rewrite_feeds_from_the_cage_animator`; f14's tick-order + key-gate app-side witnesses retargeted to `frame/world.rs`/`frame/draw.rs`. |
 | 4 — warm-up (§2.6/§4) | `da5c8176` | `warm_up` wired at BOTH constructors (`App::new` world-seed, `flow_app` seed-1 twin) on a FRESH `UnifiedRandom` clone — NOT g33's live `rngs.global()` form; the live `Main.rand` interleave stays bit-for-bit. The §4 exact-stream residual (ctor draws `:6467`/`:6594-6601` before `:6610`) stays recorded. f14 key-coverage witness adapted to the `tile_anim` FNV-mix + a warm-up/lifetime seam witness. |
 | 5 — witness union (§5) | `23054bfb` (+ seam-witness self-match fix `3412f999`) | 42 supplement witnesses ported into `critter_cage_anim.rs` (54 total), retargeted to the per-table loop bodies + `animate(bool, rand)`; keep-one folds applied (g33 slug/fairy-jar/full-animate, f14 gate/frame_of/fairy-jar dropped as equivalents exist). Two g33 written-not-run assertions RE-DERIVED against the C#: the butterfly forward hop reads the POST-increment frame (6→7 never hops; pinned 3→4→12 + the 7→0 wrap instead of g33's unreachable 6→15), the pufferfish inflate cycle pinned to num25 = 183 (g33's 175 comment shipped the same code). The all-92 t0 acceptance pin `wired_cage_rewrite_matches_the_static_arms_at_t0` landed in tiles.rs (phase 1 commit). App-side union: 7 NEW wiring witnesses — tiles.rs order + t0 pins (phase 1), frame.rs tick-order + key-gate (phase 3), mod.rs key-coverage + warm-up/lifetime (phase 4; the negative assertions use runtime-built needles / statement forms so they cannot match their own source — `3412f999`), plus the renamed/updated tiles.rs feed witness (phase 3). |
-| 6 — docs | `43ff6e93` | this status + record; research/66 residual + wiring notes repointed; ANALYSIS union section; PORT_MAP cage rows; anchors rows updated per phase. |
+| 6 — docs | `43ff6e93` | this status + record; research/193 residual + wiring notes repointed; ANALYSIS union section; PORT_MAP cage rows; anchors rows updated per phase. |
 
 Merger instruction (supersedes the §2/§3 future tense): take THIS branch's
 `render/tiles.rs`, `app/mod.rs`, `app/flow.rs`, `app/frame.rs`,
@@ -385,6 +389,6 @@ cage-free determinism.
 ## Sources
 
 * `git show origin/task/W4-f14-cage-furniture-wire:crates/tr-core/src/drawdata_cages.rs` (50046fe1 tree), `docs/ANALYSIS.md` "W4-f14 cage furniture wiring", `docs/research/09-tile-drawing.md` update.
-* `git show origin/task/W4-g33-drawdata-wire-1:crates/tr-core/src/drawdata_cages.rs` (97704d01 tree), `docs/research/65-drawdata-wiring-lane1.md`.
-* This branch @ 16f88fb7: `crates/tr-core/src/critter_cage_anim.rs`, `docs/research/66-drawdata-unwired-second-half.md`, `crates/tr-app/src/render/tiles.rs`, `app/mod.rs`, `app/frame/{world,draw}.rs`.
+* `git show origin/task/W4-g33-drawdata-wire-1:crates/tr-core/src/drawdata_cages.rs` (97704d01 tree), `docs/research/185-drawdata-wiring-lane1.md` (renumbered 65→185 at the batch-H merge).
+* This branch @ 16f88fb7: `crates/tr-core/src/critter_cage_anim.rs`, `docs/research/193-drawdata-unwired-second-half.md`, `crates/tr-app/src/render/tiles.rs`, `app/mod.rs`, `app/frame/{world,draw}.rs`.
 * C#: `decompiled/Terraria/Main.cs` `:6348/:6461-6467/:6594-6611/:6732-6798/:6800-6807/:8387-8395/:66502/:66901-66972/:10864-10876/:13511-16727/:19303`; `decompiled/Terraria/GameContent/Drawing/TileDrawing.cs` `:474/:5629-5907/:6085-6104/:6528-6547`; `decompiled/Terraria/WorldGen.cs` `:7947/:8192`.

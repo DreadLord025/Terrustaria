@@ -3,7 +3,7 @@
 > **RENUMBERED 65 → 185 (batch-H merge, registry research/150 §3 round-1:
 > f17's `65-kinds-coverage-1.md` keeps 65, g33's fork → 185; slug kept).**
 > **Batch-H merge note:** the g33 `drawdata_cages.rs` animator + its
-> live-stream warm-up + draw wiring DROPPED at this merge per research/67
+> live-stream warm-up + draw wiring DROPPED at this merge per research/197
 > §3/§6 — the g34 union (`critter_cage_anim.rs`, the 92-id `cage_draw_data`
 > wiring, the fresh-clone warm-up, the 40 per-machine witnesses ported +
 > the all-92 t0 parity pin) is the keep-one. This doc survives as the

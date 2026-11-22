@@ -219,7 +219,7 @@ pub fn is_cage_kind(kind: u16) -> bool {
 /// cages (d64 batch 3, `:5833-5907`). The big-cage ids + snail 285 (the d63
 /// quarter list) are g33's half. The 50 ids here are exactly the second
 /// half of the census's PORTED-UNWIRED list. Since the union wiring
-/// (research/67) the LIVE draw + G6 gates use [`is_cage_kind`] (all 92);
+/// (research/197) the LIVE draw + G6 gates use [`is_cage_kind`] (all 92);
 /// this predicate stays as documentation of the census split, pinned by
 /// `lane2_cage_split_is_disjoint_and_exhaustive`.
 pub fn is_lane2_cage_kind(kind: u16) -> bool {

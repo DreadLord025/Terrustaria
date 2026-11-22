@@ -18,7 +18,7 @@
 //! later machine's draws land on the same stream position as vanilla. No
 //! other RNG is touched; tile framing (`framing.rs`) is untouched.
 //!
-//! Wiring (W4-g34 union, research/67): the DRAW seam covers ALL 92 cage
+//! Wiring (W4-g34 union, research/197): the DRAW seam covers ALL 92 cage
 //! ids (`drawdata_furniture::is_cage_kind` — the g33 42 + g34 50 union).
 //! The ANIMATOR is ported whole because the machines share one RNG
 //! stream; splitting it would desynchronise every downstream draw.
@@ -27,12 +27,12 @@
 //! draw sets it when a cage cell is drawn, `TileDrawing.cs:5672` etc.; the
 //! non-solid pass clears it at `:474`). The init warm-up
 //! (`Initialize_TileAndNPCData2`, `Main.cs:6800-6807`: 3600 forced ticks)
-//! is WIRED at App construction (research/67 §2.6/§4) via
+//! is WIRED at App construction (research/197 §2.6/§4) via
 //! [`CritterCageAnimator::warm_up`] on a FRESH world-seeded
 //! `UnifiedRandom` clone (f14 semantics) — the live `Main.rand` stand-in
 //! stream is untouched; the exact-stream replay of the ctor draws before
 //! `:6610` (`Next(6)` `:6467` + `RandomizeBackgrounds` `:6594-6601`) is
-//! the recorded residual (docs/ANALYSIS.md, research/67 §4). PROCESS
+//! the recorded residual (docs/ANALYSIS.md, research/197 §4). PROCESS
 //! state: no world-entry reset (the `:8387-8395` zero loop covers
 //! `tileFrame` only; the cage arrays live in `static Main()`).
 
@@ -117,7 +117,7 @@ impl CritterCageAnimator {
     }
 
     /// Back to the bare zero allocation (`Main.cs:66902-66972`). NOT a
-    /// world-load hook — the cage tables are PROCESS state (research/67
+    /// world-load hook — the cage tables are PROCESS state (research/197
     /// §2.5: the static-ctor allocation runs once per process; the C#
     /// world-load zero loop `:8387-8395` covers `tileFrame` only). Kept
     /// for tests that need the vanilla t=0 draw state.
@@ -234,7 +234,7 @@ impl CritterCageAnimator {
     /// `Initialize_TileAndNPCData2`'s warm-up (`Main.cs:6802-6807`): force
     /// `critterCage = true` and tick 3600 times so the cages start mid-cycle
     /// rather than all-zero. WIRED at App construction on a fresh
-    /// world-seeded clone (research/67 §2.6/§4 — see module docs).
+    /// world-seeded clone (research/197 §2.6/§4 — see module docs).
     pub fn warm_up(&mut self, rand: &mut UnifiedRandom) {
         for _ in 0..3600 {
             self.animate(true, rand);
@@ -2531,7 +2531,7 @@ mod tests {
         assert_eq!(ra.next(), rb.next(), "the streams stay aligned");
     }
 
-    // ---- research/67 §5 witness-supplement union (WRITTEN NOT RUN) ----
+    // ---- research/197 §5 witness-supplement union (WRITTEN NOT RUN) ----
     // Ported from the dropped g33/f14 drawdata_cages.rs modules, retargeted
     // to CritterCageAnimator's per-table loop bodies + the animate(bool,
     // rand) gate-parameter form. Keep-one folds: g33's slug/fairy-jar/lava
@@ -3304,7 +3304,7 @@ mod tests {
     }
 
     /// f14 port (w4_f14_anim_key_tracks_the_frame_tables, adapted to the
-    /// kept frames+counters+modes key — research/67 §2.4 keeps the
+    /// kept frames+counters+modes key — research/197 §2.4 keeps the
     /// superset): frame slots (1-D and 2-D) ride the key, and so do the
     /// counters/modes (over-keying is safe; a mode byte changes the next
     /// frame's cadence).
