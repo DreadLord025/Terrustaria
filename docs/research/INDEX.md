@@ -217,6 +217,11 @@ INVALID; execute the §9/§10 assignment or request a round-6 refresh.
    docs enter with their merges, renumbered per the registry. The merger
    dedupes INDEX rows by (number, filename) using the registry mapping.
 | 244 | PROJ-DUST RETIRE, SEALED (W4-d53: the wetVelocity 96-site movement-gap census + seed S1-P-i57/R-244-1, the g2 staged-copy drop-hunk + mutual receipt, the d53×e3 DISJOINT merge-note at moved tips, the insurance-patch SHA256 pins DELETE-AT-CLEANUP, the family bible FINAL; renumbered 240→244 — g58 won 240 first-pushed, 241-243 g58's, code-only) | `244-proj-dust-retire.md` | ✅ SEALED |
+| 187 | Main.cs dust-site batch 3 (W4-g13): census completion + witnesses (renumbered 65→187 per registry-150) | `187-dust-main-sites-3.md` | ✅ |
+| 202 | Main dust residual sweep (W4-g13): sibling re-probe, ZERO unclaimed spawn windows, the Dust.cs internals audit (3 d50 wiring flags), both lavaBubbles readers (renumbered 68→202 per registry-150) | `202-dust-main-residual-sweep.md` | ✅ |
+| 206 | The 52 second-chain dust lights (W4-g13): census + collector + wiring + the d50 strip-contract (s4) + decrement retire (s5) + the FINAL receipt (s6) (renumbered 69→206 per registry-150) | `206-dust-second-chain-lights.md` | ✅ FINAL |
+| 210 | Dust DRAW-tint census FINAL + the GetAlpha 157/327 drop closures (W4-g13; d54 s7.2 G3/G4): the dead-raise quirk, the draw-pass RNG placement contract (renumbered 70→210 per registry-150) | `210-dust-draw-tint-final.md` | ✅ |
+| 308 | DUST-MAIN-FAMILY BIBLE (W4-g13 SEAL): the git-log census, the d54×g13 dust_table keep-one (both-ported mid-flight, g13 retire blob wins), the 94/94 AddLight census, the d50 resume-EXECUTED receipt, the merger contract set | `308-dust-main-family-bible.md` | ✅ SEAL |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

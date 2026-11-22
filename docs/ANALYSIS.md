@@ -41528,3 +41528,296 @@ ShimmerGunStream's, e3's `style60_shimmer_gun_trail_1042`, NOT the 358
 last-prism's — the g63 fix owed on g63's branch, no code collision).
 The compose adds no d53 code: the AI-inline-40 is e3's ported window +
 the d-lane activation contracts, d53's seat is the boundary witness.
+## The Main.cs dust sites, batch 3 (W4-g13)
+
+The last third of the 23-site Main.cs `Dust.NewDust*` census (the split is
+`docs/research/64-dust-main-sites-claims.md`, W4-g12's claim; the batch
+report is `docs/research/187-dust-main-sites-3.md`): sites 17-23
+(`Main.cs:24756/27381/27384/38664/57766/57789/57793`) port into
+`crates/tr-app/src/main_dust.rs`. The pure emitters landed first (the d60
+code-only precedent); the draw-call wiring wave then landed the feeds
+(`moon_lord_tentacle_feed`, `tavernkeep_ale_feed`, `item_sparkle_feed`,
+`retro_liquid_dust_feed`) and wired them in `app/frame/draw.rs::draw_region`.
+
+- **Site 24756 is a DEAD ARM**: the Moon Lord core's tentacle-tip puff
+  sits behind `bool flag8 = false` (`:24703`, never set) - the whole
+  four-site cluster `:24736-24756` never fires. Ported verbatim behind the
+  dead flag parameter; the tip geometry (`:24732-24756`, the
+  `(220,-60)*side` shoulder, the half-length link, the double `Math.Acos`
+  bend, the `RotatedBy` tip) is split into `tentacle_tip_position` and
+  witnessed. The g12/g13 boundary splits the cluster by line order
+  (24752 g12's, 24756 g13's), each batch citing the shared arm.
+- **27381/27384** - the Tavernkeep's ale-toss sparkle: 30 iterations of
+  two type-4 `NewDustDirect` gold specks (0.7 `noGravity` + `velocity *=
+  1f` no-op kept / 0.6 `velocity *= 2f`), gated on the talked-to player
+  holding Ale (353), `direction == Math.Sign(...)` facing,
+  `Hitbox.Distance < 46` (the C# `&` is non-short-circuiting) and the
+  `localAI[3]` 0->1 edge (failed gate decays 1->2). 360 draws per burst.
+- **38664** - `DrawItem`'s coin/heart/mana sparkle: the focus/kind/`R > 60`
+  pre-gates short-circuit before the `Next(500)` draw; `R / 50` is INTEGER
+  division; coins take `default(Color)`/alpha 0/scale 1 + the type switch
+  71-74 -> 244-247; `velocity *= 0f` post.
+- **57766/57789/57793** - the RETRO `oldDrawWater` path (only reached when
+  `!Lighting.NotRetro` = Retro/Trippy, `:57519-57522`): the surface sparkle
+  (`max(R,G,B)/30` integer vs one `Next(20000)`, drawn even at budget 0;
+  white/honey alpha-255 tints) and the lava-bubble pair
+  (`Dust.lavaBubbles < 200` budget - the pool static, whose reset
+  `Dust.cs:427` + increment `:475` now ride `DustPool::update_dust`;
+  independent `Next(700)`/`Next(350)` gates; the surface bubble's
+  `*0.8`/`X*2`/`Next(1,7)*0.1`/1-in-10 `Next(2,5)` post chain after the
+  type-35 internals tweak). The port's liquid SPRITE draw stays on the
+  `LiquidRenderer` record path (`render/liquids.rs`); the retro feed walks
+  the same screen tile range and runs ONLY the dust gates, with the
+  `oldDrawWater` rect machinery (`retro_surface_rect`, `:57668-57746`)
+  computing the `value.Y`/`vector2.Y` the two gates read. The bg/fg passes
+  carry the `Main.drewLava` latch (`:57472` reset per `DrawWaters`, `:57938`
+  set at pass end) so lava/honey cells draw once per frame.
+
+**Wiring placement**: the feeds run in `draw_region` OUTSIDE the G6-cached
+world pass (the rain/sand/gore dust precedent - the spawns mutate the pool,
+so they cannot live inside the cached range), in the C# relative order:
+retro bg pass -> Moon Lord core arm -> Tavernkeep ale arm -> item sparkle ->
+retro fg pass. The C# runs them inside `DrawNPCDirect`/`DrawNPCExtras`/
+`DrawItem`/`oldDrawWater`, but the port fuses those into the cached
+`draw_tiles`, so the spawns are lifted to the per-frame world-effect range.
+The item dust box uses the C# 16 (`WorldItem.cs:138`), not the port's 14-px
+physics box. `light_color_bytes` applies `GlobalBrightness` (the light map
+stores the raw engine colour; `Lighting.GetColor` multiplies it,
+`Lighting.cs:216-242`).
+
+**Focus gate**: `FocusHelper.Allow*` is `!WorldUpdateStepper.DrawnThisUpdate`.
+The C# sets the mark at the END of Draw (`Main.cs:62478`); the port had it
+at the draw-half head (before `draw_region`), which pre-marked the draw and
+would have gated every emitter off. The wiring relocated the set to after
+`draw_region` returns (the C# position), so the mark reads clear through the
+draw on a stepping frame. The DW-2.3 end-state witness is unchanged (the
+headless `draw_region` returns `Some`, so the set still runs every frame).
+
+**RNG contract**: all seven sites run on the DRAW path, outside every
+`Main.SwapRandom` block - the C# bare `Main.rand`. The wiring passes
+`app.rngs.global()` (the port's bare-stream slot, the recorded world-seed
+deviation), the minecart `dust_phase` player-less precedent; no new
+stream, the 17 named simulation streams untouched. 14 lockstep-mirror
+witnesses (the d51 pattern) pin the per-site draw census, plus 4 wiring
+stream-parity witnesses (the item feed's per-drop walk, the dead Moon Lord
+arm, the ale edge latch, the retro rect machinery); WRITTEN, NOT RUN - no
+cargo/rustc/rustfmt/tests/graphify invoked (code-only mode).
+
+**Doc-sweep (lane 41, `docs/research/202-dust-main-residual-sweep.md`).**
+The post-push re-probe of g11 `13a1c48e` (+ docs-only tip `d892d8d4`) and
+g12 `665cd1e8` finds NO site collision with g13's 17-23 + feeds: g12's
+`main_dust_b.rs` stops at the flag8 trio (:24752), the Tavernkeep pair is
+g13-only, and both modules cite the boundary. The g11/g13 `main_dust.rs`
+filename collision stands (research/66 §2's union: g13 bodies + g11's
+budget-hoisted snowing; the hoist is still owed at g11's tip,
+`main_dust.rs:140` reads live_type inside the loop). The full Main.cs
+`Dust.` census closes the 23-site spawn window with ZERO unclaimed
+remainders; the one non-spawn residual, the `DrawCapture` snow cull
+(`Main.cs:56735-56744`), ports as `main_dust::capture_snow_cull`
+(`1af79847`): the four-negation strict-containment OR verbatim (integer
+`*16` products, the saved PRE-capture view), the full 6001-slot walk
+killing live type-76 only, RNG-free, staged behind the S1-G-13
+`CaptureRenderer` seam; 2 witnesses written not run. The Dust.cs
+internals audit finds d50's `dust_physics` (`2e243a2d`) carries EVERY
+physics type-arm of `UpdateDust` (:468-2334) - no missing arm - but flags
+three wiring-wave items: the 52 second-chain light arms (:1099-2312) are
+orphaned between `dust_lights` ("lands with S1-E-3") and d50 ("S1-E-5");
+d50's `pre_move` 35-increment would DOUBLE-COUNT `lava_bubbles` against
+g13's landed inline increment (`particles.rs:359`) - keep the inline,
+strip the pre_move arm (which keeps the 299-305 shrink/lift the skeleton
+lacks); and the dust_lights 206/174/230 local-decrement retire. The
+`lavaBubbles` consumer census finds both C# readers accounted: the retro
+`Main.cs:57785` (g13, wired) and the modern `LiquidRenderer.cs:556`
+(f6 batch-4 `world_dust.rs::lava_bubbles`, STAGED, private `_random`
+`:132` stream - a per-visible-lava-cell spawner, not an Underworld bg
+lake; wiring stays f6's). No unclaimed consumer remains.
+
+## The 52 second-chain dust lights (W4-g13, flag-a closure)
+
+research/202 §3 flag-a found the 52 second-chain `AddLight` arms
+(`Dust.cs:1061-2312`) ORPHANED between `dust_lights.rs` ("lands with
+S1-E-3") and d50's `dust_physics` ("S1-E-5"). This lane closes the circular
+deferral: `crates/tr-app/src/dust_lights_b.rs` OWNS the 52, ports them as a
+pure per-slot collector (`dust_chain_light`, the e6/c19 `EntityLights`
+pattern) and feeds them post-move (`feed_dust_chain_lights`, wired in
+`app/frame/draw.rs` immediately after the FIRST-ladder `feed_dust_lights`,
+`Main.dust` slot order). 42 + 52 = the dust family's 94 sites; the full
+per-arm census (type/colour/intensity/gate) is `docs/research/206`.
+
+- **The scale/position replays.** The C# computes each arm's colour MID-ARM
+  from the scale/position of that moment; the port's pool runs the skeleton
+  only, so `light_scale`/`light_position` replay the owning arm's pre-light
+  mutations on a LOCAL copy (the `dust_lights.rs` 206/174 compensation
+  precedent, extended): 66/267 (+0.02), 20/21/231 (+0.005), 41 (+0.007), 44
+  (+0.0085), 27/45 (the burn-down + noLight double −0.06 + the player push),
+  35 ng (+0.03, the y+1 anchor), 35 wet (the wet probe + the alpha kill),
+  and the second chain's fadeIn ramp (+0.03 / −0.01). Each cites its d50
+  `type_chain` arm; the replays retire arm-by-arm when d50 wires (the flag-c
+  generalisation, research/206 §5).
+- **Two fidelity subtleties** (witnessed): type 21 WITH `noLightEmittance`
+  falls through to the ELSE arm (the 20 colour, `:1632-1644`) — it does NOT
+  go dark; the 35 alpha kill is draw-dependent only at `alpha == 255`
+  (`alpha += Next(2)` then `> 255`), so the pure collector mirrors the
+  draw-independent kill (`alpha > 255`) and leaves the boundary to d50.
+- **The ambient sample.** 244-247/43 read `Lighting.GetColor(tileX, tileY)`
+  (`Lighting.cs:216-242`) via `main_dust::light_color_bytes` (the light map
+  stores the RAW engine colour; GetColor multiplies GlobalBrightness,
+  truncates, clamps). The feed binds it over `style.brightness` AFTER the
+  Darkness block, so the sample reads the adjusted brightness. The 27/45
+  player push and the 35 wet probe ride the same seams d50's
+  `DustPhysicsEnv` uses (`player::wet_collision`, the player's vx/vy/wet).
+- **Dark sharers / absent site.** 274/292 (the 15/57/58 arm), 134 (the
+  130-133 arm), 223 (the 219-222 arm) share an arm with NO AddLight branch —
+  dark. Site 50 (226's `customData is Color` second light, `:2275`) is
+  absent wholesale (the field is dropped).
+- **RNG contract.** No arm draws `Main.rand` (the chain's rand draws are
+  d50's physics column); the feed is pure over the pool, so its placement
+  leaves the fixed-step order and every stream exact (the
+  `dust_lights_b.rs` RNG witness pins it). 23 per-arm colour-pin witnesses
+  WRITTEN NOT RUN (code-only mode).
+
+**flag-b strip-contract (d50's wiring wave).** d50's `pre_move`
+(`dust_physics.rs:170-172`) increments `lava_bubbles` for type 35, AND g13's
+landed inline increment (`particles.rs:359-361`) does the same — wiring both
+would DOUBLE-COUNT, halving the `< 200` budget. The contract: KEEP the
+inline increment (canonical, landed + witnessed, at the C#'s `:473-476`
+position), STRIP the 35 arm from `pre_move` (which keeps the 299-305
+shrink/lift the skeleton lacks). g13 does not edit d50's staged module —
+the strip is d50's wiring wave (research/206 §4).
+
+**flag-c retire note.** Once d50's `type_chain` wires into the `type_arm`
+hook, the pool carries the POST-mutation scale, so `dust_lights.rs`'s
+compensating local decrements (206 `:381`, 174 `:419`, 230 `:309`, plus
+309/261) DOUBLE-COUNT and retire; the same retire applies to this module's
+replays arm-by-arm (research/206 §5).
+
+**FINAL-phase receipt (research/206 §6).** The d50 tip re-probed at the
+final phase is STILL `2e243a2d` — `pre_move`'s type-35 arm present, no
+strip landed; the strip-contract and the retire note stand verbatim for
+the merger.
+
+## The dust DRAW-tint census + the 157/327 GetAlpha closures (W4-g13 final)
+
+research/210 — the final-phase census of every `Dust.GetColor`/`GetAlpha`
+draw consumer (`Main.DrawDust` `Main.cs:38828-39027`, the full 8-hit
+grep) finds the SPRITE-tint column table-complete port-wide: every
+per-type arm lives in `dust_table.rs` (S1-E-2), the generic base+overlay
+and black-death are ported for the live types (`minecart::draw` 213,
+`sand::draw` 268), and the cull rect + else-kill is g67's `2c452edd`
+(ancestor of tip `30b39fceb`; the d130 fold is research/134 R3). The
+trail walks (130-134/278/219-223/264/226-272/331) are the dust DRAW
+lane's remainder — no tint gap. The two S1-E-2 documented drops (d54
+research/131 §7.2 G3/G4, UNCLAIMED — no `task/W4-d54g` branch exists)
+close here on main's `dust_table.rs` (empty diff on every sibling):
+
+- **G3, type 157** (`Dust.cs:2627-2651`): `get_alpha_mouse_text(d,
+  new_color, mouse_text_color)` — the pulse byte is a parameter (the
+  caller binds `App.mouse_text_color`, the ported
+  `DoUpdate_AnimateCursorColors`). The f32 truncation boundaries are
+  pinned: pulse 190 → channel 126 / alpha **29** (f32 1.9−1.6 < 0.3);
+  pulse 255 → cap-255 channels / alpha **94** (f32 2.55−1.6 < 0.95).
+- **G4, type 327** (`Dust.cs:2658-2676`): `get_alpha_disco(d, new_color,
+  day_time, disco, rng)` — the night gate, THREE `NextFloat` draws R/G/B
+  on the caller's `Main.rand` slot, `App.disco` bytes. **The dead-raise
+  quirk:** `(int)(f) * 255` truncates BEFORE the multiply and f ∈ [0.1,
+  0.45875) < 1 always — every raise is 0, the arm NEVER changes the
+  colour; its only effect is the three draws per night draw of a live
+  327. Kept verbatim, witnessed (`FloatLog` counts 3/0/0/0 draws across
+  night/day/non-327/fullBright).
+- **Wiring contract:** the seams are STAGED (no live caller — zero
+  behavioural delta); the DRAW lane routes live 157/327 slots at the
+  generic tint site `:38973` (327 has no trail arm — one GetAlpha call
+  per slot per draw), between the gore draw `:62282` and the
+  end-of-Draw `DrawnThisUpdate` set `:62478`. The stream is
+  `rngs.global()`; relative order vs the item sparkle (`:38664`) and
+  the retro liquid pair (`:57789`) is fixed by the C# call chain.
+- 3 witnesses WRITTEN NOT RUN (code-only mode): the 157 pulse pins, the
+  327 draw-count + dead-raise pins, the census composition pins (the
+  6/15/59-64 WHITE override, the packed-0 overlay gate, the 264
+  base×0.3→GetColor chain, the 331 GetColor(GetAlpha(WHITE)) trail tint).
+
+**The Main.cs dust-family FINAL declaration (research/202 §5, for the
+d54f-131 master).** Re-probed at the final sibling tips (g11 `9a9ac1fd`
+union-EXECUTED — its snowing body DEPRECATED for d130's `snow.rs`, the
+budget-hoist residual superseded; g12 `f24dd76a` — no dust-site change,
+the `:24756` boundary holds): the 23-site spawn census has ZERO
+unclaimed windows, the non-spawn machinery is closed (the DrawCapture
+cull `1af79847`, the DrawDust cull+else-kill g67 `2c452edd`), the light
+family is 94/94 (research/206 §7), the tint column table-complete
+(research/210). Everything remaining is WIRING — d50's strip/retire
+contracts (research/206 §4-6, tip UNCHANGED), the DRAW lane's generic
+walk, the three-way `main_dust.rs` union — not porting.
+
+## LIGHTS RETIRE (W4-g13 retire phase, 2026-11-21)
+
+The final-phase seams above are RETIRED into the d54-canonical shape and
+the wiring contracts published as exact hunks (research/210 §6-8):
+
+- **G3/G4 keep-one (the SAME-FILE collision).** After the FINAL
+  declaration d54's own gap-closure landed the SAME two arms on ITS branch
+  (`1d16ef4e` tip) — both branches now edit `dust_table.rs`. d54's
+  single-seam shape (`DustDrawGlobals` + `get_alpha_with_globals`) is
+  canonical: this branch RETIRES `get_alpha_mouse_text`/`get_alpha_disco`
+  (`daf7b780`) and takes the d54 blob `58305d0a8` VERBATIM (verified
+  strict superset — the diff vs the d54 file has ZERO deletions; the only
+  adds are the module keep-one note, the `FloatLog` rig and the two g13
+  census witnesses). The 157/327 behaviour is unchanged (same maths, same
+  gates, same dead-raise quirk, same 190→a29 / 255→a94 boundaries — the
+  d54 witnesses pin them under new names). The per-fn dedupe table for the
+  d54i-bible merger is research/210 §6.
+- **DrawDust tint wiring-contract.** research/210 §7 publishes the exact
+  wire-hunks for the draw lane: g67's `draw_splashes` (`rain.rs:1463`, tip
+  `30b39fce`, cull+else-kill landed `2c452edd` ancestor-verified) swaps its
+  `:1494` `get_alpha` call for `get_alpha_with_globals` with a globals
+  struct sampled once per pass + `rngs.global()` threaded; the generic
+  all-type walk uses the same feed at the `:38973` position.
+- **d50-session probe.** `TR-W4-d50` read-only re-probe (research/206 §8):
+  HEAD `2e243a2d` == origin tip, status CLEAN, index/HEAD-reflog mtime
+  2026-11-20 21:10:02 — the session is dead-clean (>12h idle), NOT
+  dead-dirty; nothing to salvage. The pre_move-35 strip + the wiring are
+  still owed (research/206 §4-6 contracts stand verbatim for the resume).
+
+**FINAL-FINAL (2026-11-21, the three-doc closure set retired).** The
+retire phase's own commits: keep-one `8fd62bd7`, wire-hunks `44eb86de`,
+d50 probe `f9566e5b`. research/202 §6 (family), research/206 §9 (lights),
+research/210 §8 (tint) carry the FINAL-FINAL verdicts: **the Dust.cs /
+Main.cs dust family is COMPLETE and RETIRED — no open port gap, no
+unpublished wiring seam; every remainder is a mechanical apply of a
+published contract (the d50 resume §4-6+8, the draw lane research/210 §7,
+the d54i-bible dedupe table research/210 §6).**
+
+## SEAL (W4-g13, 2026-11-21 — research/308, the dust-main-family bible)
+
+The seal round re-verifies the FINAL-FINAL claims against live blobs/C#
+and executes the registry renames (research/308):
+
+- **Registry-150 renames EXECUTED on this branch**: 65→187, 68→202,
+  69→206, 70→210 (content-preserving `git mv` + header renumber; every
+  ref in ANALYSIS/PORT_MAP/ROADMAP/INDEX/anchors + the crate citations
+  re-pointed; the merger must NOT re-apply the registry §3 g13 rows).
+- **The git-log census**: 18 commits `dca09bed9`→`eef0202cc`; G1 CLOSED
+  (`a234107ac`/`441f6120f`), Main COMPLETE (`4444e1011`), FINAL-FINAL
+  (`eef0202cc`) — the three anchors hash+timestamp-verified.
+- **The AddLight census re-counted from C#**: 94 sites exactly (42
+  FIRST-ladder ≤`:1046` + 52 second-chain `:1061-2312`); new witness
+  `w4_g13_seal_the_52_line_census_covers_every_addlight_site` pins the
+  52-line register (WRITTEN NOT RUN). The `:2275` customData-Color light
+  is LIVE in C# (d54 G5 CORRECTED — ParticleOrchestrator.cs:1171/1184/
+  1199, no emittance gate) and stays a CITED port gap; the merger
+  reconstructs it as `num83 * d.color.rgb/255` gated
+  `!no_light_emittance` (customData == dust.color at every producer).
+- **The G3/G4 keep-one is third-party receipted**: d50's retire
+  (`7474ce3d9`, PUSHED — origin advanced past the dead-clean `2e243a2d`)
+  confirms the g13 blob `300c2647a` = d54 `58305d0a8` + 98 insertions /
+  0 deletions; the exact drop-hunks (`daf7b7804` :314-334/:336-382/
+  :743-776/:797-848) are published; d50's `dust_table.rs` is
+  merge-base-identical (uncontested).
+- **The d50 resume is EXECUTED**: flag-b strip `ea749c5ae` (pre_move-35
+  arm + param gone, 299-305 kept/wired, g13's inline increment
+  canonical), flag-c retire `807350de0` (206/174/230/309/261 arm-by-arm
+  re-read at the d50 HEAD), the G2 ONE-EDIT hunk applied; the lights_b
+  replay-retire keys re-pinned at d50's post-wiring line numbers
+  (research/308 §3) ride the g13×d50 merge.
+
+**SEAL verdict: the family needs no porting again; every remainder is a
+published mechanical contract (research/308 §6).**

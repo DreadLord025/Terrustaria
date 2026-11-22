@@ -32,6 +32,7 @@ mod death;
 mod drawdata_cases_a;
 mod drawdata_cases_b;
 mod dust_lights;
+mod dust_lights_b;
 mod dye;
 mod emotes;
 mod env;
@@ -278,6 +279,14 @@ mod craft_filter;
 mod registry;
 mod variants;
 mod render;
+// W4-g13: Main.cs dust-site batch 3 (sites 17-23 of the 23-site census,
+// docs/research/64-dust-main-sites-claims.md) - the Moon Lord core's dead
+// tentacle-tip puff, the Tavernkeep ale sparkle pair, the world-item coin
+// sparkle and the retro oldDrawWater surface/lava pair. WIRED: the feeds
+// run in app/frame/draw.rs::draw_region outside the G6 cache on
+// rngs.global() (see the module doc + docs/ANALYSIS.md "The Main.cs dust
+// sites, batch 3 (W4-g13)").
+mod main_dust;
 mod spawner;
 mod tag_effects;
 mod settings;

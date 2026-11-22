@@ -29,6 +29,17 @@
 //! `< 1`, so the colour never changes but the three `NextFloat` draws still
 //! ride the stream.
 //!
+//! KEEP-ONE (W4-g13 retire phase, research/210 §6): this file is edited on
+//! BOTH `task/W4-g13-dust-main-sites-3` and `task/W4-d54-dust-sites-world`;
+//! d54's single-seam shape (`DustDrawGlobals` + `get_alpha_with_globals`)
+//! is canonical and taken VERBATIM from d54 tip `1d16ef4e` (blob
+//! `58305d0a8`), retiring g13's two staged seams
+//! (`get_alpha_mouse_text`/`get_alpha_disco`, `daf7b780`). The merger
+//! resolves per-fn by the research/210 §6 dedupe table: every d54-canonical
+//! item is byte-identical here; the g13-only census witnesses
+//! (`w4_g13_globals_seam_gate_census`, `w4_g13_draw_tint_census_pins`) are
+//! additive keeps with no d54 counterpart.
+//!
 //! # Numeric conventions
 //!
 //! [`Color`] carries sRGB bytes, so every XNA `new Color(int, int, int, int)`
@@ -770,6 +781,28 @@ mod tests {
         assert_eq!(get_alpha_with_globals(&d, LIGHT, &g(225), &mut rng), Color::WHITE);
     }
 
+    /// A DustRng that counts NextFloat draws and replays fixed samples.
+    /// (W4-g13 retire keep-one: d54's canonical witnesses use
+    /// `UnifiedRandom::peek` instead; this rig stays for the g13 census
+    /// witness below — it pins the draw count without a stream peek.)
+    struct FloatLog {
+        samples: Vec<f32>,
+        draws: usize,
+    }
+    impl DustRng for FloatLog {
+        fn next_max(&mut self, _: i32) -> i32 {
+            panic!("the 327 arm draws NextFloat only");
+        }
+        fn next_range(&mut self, _: i32, _: i32) -> i32 {
+            panic!("the 327 arm draws NextFloat only");
+        }
+        fn next_float(&mut self) -> f32 {
+            let v = self.samples[self.draws.min(self.samples.len() - 1)];
+            self.draws += 1;
+            v
+        }
+    }
+
     /// W4-d54 G4 — the type-327 arm (`Dust.cs:2658-2676`): the night gate,
     /// THREE draw-pass NextFloat draws, and the verbatim `(int)(sum) * 255`
     /// quirk (the sum is always < 1, so the colour passes through unchanged
@@ -796,5 +829,70 @@ mod tests {
             get_alpha(&at(327), light)
         );
         assert_eq!(rng2.peek(), UnifiedRandom::new(9).peek());
+    }
+
+    /// W4-g13 census supplement (research/210 §6 keep-one) — the arms'
+    /// NON-drawing gates over the canonical seam: non-157 / non-327 /
+    /// fullBright delegate WITHOUT touching the stream, and zero disco
+    /// still draws three at night (the count is disco-independent).
+    #[test]
+    fn w4_g13_globals_seam_gate_census() {
+        let night = DustDrawGlobals { mouse_text_color: 225, day_time: false, disco_rgb: [255; 3] };
+        let mut rng = FloatLog { samples: vec![0.5], draws: 0 };
+        // Non-157 delegates to the pure table (the light passes at alpha 0).
+        assert_eq!(get_alpha_with_globals(&at(63), LIGHT, &night, &mut rng), LIGHT);
+        assert_eq!(rng.draws, 0, "non-327 at night draws nothing");
+        // fullBright precedes both arms — zero draws even at night.
+        let d = Dust { full_bright: true, ..at(327) };
+        assert_eq!(get_alpha_with_globals(&d, LIGHT, &night, &mut rng), Color::WHITE);
+        assert_eq!(rng.draws, 0);
+        // Zero disco still draws three; the raise stays dead.
+        let zero = DustDrawGlobals { disco_rgb: [0; 3], ..night };
+        let mut rng = FloatLog { samples: vec![0.0], draws: 0 };
+        assert_eq!(
+            get_alpha_with_globals(&at(327), Color::new(10, 20, 30, 40), &zero, &mut rng),
+            Color::new(10, 20, 30, 40)
+        );
+        assert_eq!(rng.draws, 3);
+    }
+
+    /// W4-g13 (research/210) — the draw-tint census pins: GetColor's 284
+    /// transparent arm and the packed-zero overlay gate (`Main.cs:39006-
+    /// 39013`) compose; the generic 6/15/59-64 white-light override
+    /// (`:38969-38972`) feeds GetAlpha WHITE, not the sampled light.
+    #[test]
+    fn w4_g13_draw_tint_census_pins() {
+        // `Main.cs:38969-38973` — the torch family reads WHITE: type 15's
+        // slow-fade list at alpha 127 over WHITE → (255*0.8754)=223, a=128.
+        let d = Dust {
+            alpha: 127,
+            ..at(15)
+        };
+        assert_eq!(get_alpha(&d, Color::WHITE), Color::new(223, 223, 223, 128));
+        // `:39006` — a default-black spawn colour (packed 0) never draws the
+        // overlay: GetColor(black-record, any light) stays packed 0.
+        let d = at(63); // color default (0,0,0,0)
+        assert_eq!(get_color(&d, Color::WHITE), Color::TRANSPARENT);
+        // `:38927` — the 264 trail's second pass is GetColor(GetAlpha(light)
+        // * 0.3): the alpha-scaled colour feeds the overlay's newColor.
+        let d = Dust {
+            color: Color::new(100, 50, 25, 80),
+            ..at(264)
+        };
+        let base = scale_color(get_alpha(&d, LIGHT), 0.3);
+        let overlay = get_color(&d, base);
+        // base = (88,88,76,5)*0.3 = (26,26,22,1) — the a channel is f32
+        // 5*0.3 = 1.4999999 → (int)1; overlay ch = 100−229<0→0, 50−229<0→0,
+        // 25−233<0→0, 80−254<0→0 → packed 0, no second sprite.
+        assert_eq!(base, Color::new(26, 26, 22, 1));
+        assert_eq!(overlay, Color::TRANSPARENT);
+        // `:38959` — the 331 trail tint is GetColor(GetAlpha(WHITE)) computed
+        // ONCE outside the trail loop: alpha 0 → GetAlpha(WHITE)=WHITE →
+        // GetColor(WHITE) = the record's own colour.
+        let d = Dust {
+            color: Color::new(120, 60, 30, 200),
+            ..at(331)
+        };
+        assert_eq!(get_color(&d, get_alpha(&d, Color::WHITE)), d.color);
     }
 }

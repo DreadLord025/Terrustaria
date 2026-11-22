@@ -604,6 +604,44 @@ impl App {
                     {
                         style.brightness = 1.0;
                     }
+                    // The Dust `UpdateDust` SECOND-chain lights (S1-E-5,
+                    // W4-g13 — the research/202 flag-a orphan closure): the 52
+                    // RNG-free AddLight arms `Dust.cs:1061-2312`
+                    // (`dust_lights_b.rs`), fed immediately after the FIRST
+                    // ladder in the same `Main.dust` slot order, reading the
+                    // POST-move pool (d50 owns the move). The 244-247/43
+                    // ambient sample is `Lighting.GetColor` (the light map ×
+                    // GlobalBrightness, `main_dust::light_color_bytes`); the
+                    // 27/45 player push and the 35 wet probe ride the same
+                    // seams d50's `DustPhysicsEnv` uses. No arm draws
+                    // `Main.rand` (the witness in `dust_lights_b.rs` pins the
+                    // stream), so the placement leaves the fixed-step order
+                    // exact. Placed after the brightness block so the ambient
+                    // sample reads the Darkness-adjusted GlobalBrightness.
+                    {
+                        let (pvx, pvy, pwet) = player
+                            .as_ref()
+                            .map_or((0.0, 0.0, false), |p| (p.vx, p.vy, p.wet));
+                        let brightness = style.brightness;
+                        let lc = |x: i32, y: i32| {
+                            crate::main_dust::light_color_bytes(light, brightness, x, y)
+                        };
+                        let wet = |pos: Vec2, w: f32, h: f32| {
+                            crate::player::wet_collision(world, pos.x, pos.y, w, h)
+                        };
+                        let chain_env = crate::dust_lights_b::ChainLightEnv {
+                            player_wet: pwet,
+                            player_velocity: Vec2::new(pvx, pvy),
+                            light_color: &lc,
+                            wet_collision: &wet,
+                        };
+                        crate::dust_lights_b::feed_dust_chain_lights(
+                            dust,
+                            &params,
+                            &chain_env,
+                            &mut self.entity_lights,
+                        );
+                    }
                     // `Main.ForcedMinimumZoom` (`Main.cs:61989-61994`, computed per
                     // draw) splits the two view matrices: the background chain
                     // zooms to the bare floor (`BackgroundViewMatrix.Zoom`,
@@ -1185,6 +1223,68 @@ impl App {
                             &self.tile_anim,
                         );
                         *world_key = Some(key);
+                    }
+
+                    // W4-g13 — the Main.cs dust-site draw-call feeds (batch 3,
+                    // sites 17-23). They roll the bare `Main.rand` slot
+                    // (`rngs.global()`) and spawn into the dust pool, so they
+                    // ride the per-frame world-effect range OUTSIDE the G6
+                    // cached world pass (the rain/sand/gore dust precedent) —
+                    // the C# runs them inside DrawNPCDirect / DrawNPCExtras /
+                    // DrawItem / oldDrawWater, but the port fuses those into
+                    // the cached `draw_tiles`, so the spawns are lifted here in
+                    // the C# relative order. `FocusHelper.Allow*` is
+                    // `!DrawnThisUpdate` (the mark now sets AFTER draw_region,
+                    // so it reads clear through the draw on a stepping frame).
+                    {
+                        let allow_effects = !self.stepper.drawn_this_update;
+                        let dust_ctx = crate::app::spawn_ctx_from(
+                            menu.is_some() || front.is_some(),
+                            self.game_paused,
+                            draw_cam,
+                            screen,
+                            world_zoom,
+                            self.gfx_quality.max_dust_to_draw,
+                        );
+                        let rng = self.rngs.global();
+                        // Sites 21-23 (bg pass) — `DrawWaters(isBackground:true)`
+                        // precedes the tile/NPC/item draws (`Main.cs:62192`).
+                        // Retro/Trippy only (`!Lighting.NotRetro`, `:57519`).
+                        let retro = matches!(
+                            *light_mode,
+                            tr_core::lighting::LightMode::Retro
+                                | tr_core::lighting::LightMode::Trippy
+                        );
+                        let mut drew_lava = false; // `Main.drewLava` reset per DrawWaters (`:57472`)
+                        if retro {
+                            crate::main_dust::retro_liquid_dust_feed(
+                                world, light, style.brightness, draw_cam, screen, world_zoom,
+                                true, allow_effects, &mut drew_lava, rng, dust, &dust_ctx,
+                            );
+                        }
+                        // Site 17 — the Moon Lord core tentacle-tip puff
+                        // (`DrawNPCDirect`'s type-398 arm, the dead flag8 latch).
+                        crate::main_dust::moon_lord_tentacle_feed(npcs, rng, dust, &dust_ctx, world);
+                        // Sites 18/19 — the Tavernkeep ale-toss sparkle
+                        // (`DrawNPCExtras`' 550 arm, `!beforeDraw`).
+                        crate::main_dust::tavernkeep_ale_feed(
+                            npcs, player.as_ref(), rng, dust, &dust_ctx, world,
+                        );
+                        // Site 20 — the world-item coin/heart sparkle
+                        // (`DrawItems` → `DrawItem`, `Main.cs:62278`).
+                        crate::main_dust::item_sparkle_feed(
+                            items, allow_effects, style.brightness, light, rng, dust, &dust_ctx,
+                            world,
+                        );
+                        // Sites 21-23 (fg pass) — `DrawWaters()` after the
+                        // entities (`Main.cs:62300`); a fresh drewLava reset.
+                        if retro {
+                            let mut drew_lava_fg = false;
+                            crate::main_dust::retro_liquid_dust_feed(
+                                world, light, style.brightness, draw_cam, screen, world_zoom,
+                                false, allow_effects, &mut drew_lava_fg, rng, dust, &dust_ctx,
+                            );
+                        }
                     }
 
                     // S1-G-1 wave C: the tile-crack overlay
