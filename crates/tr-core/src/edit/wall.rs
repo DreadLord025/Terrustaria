@@ -380,8 +380,10 @@ fn clear_wall_paint_and_coating(world: &mut World, x: i32, y: i32) {
 /// incl. the `for (num4 = 153; num4 < 167; num4++)` loop `:10367-10370`): the
 /// 279 "safe" walls a house may be enclosed by, and the walls the hammer /
 /// replacement / friendly-wall gates treat as player-made. This is the faithful
-/// wall-edit table; `housing::is_house_wall` is a narrower room-check subset
-/// (housing scope, untouched here). Unsafe worldgen walls (dirt 2, stone-unsafe
+/// wall-edit table; `housing::is_house_wall` now DELEGATES to this table
+/// (the W4-g44 full-table fix — `CheckRoom`'s ±2 scan reads `Main.wallHouse`
+/// directly, `WorldGen.cs:6204`/`:6212`; the old narrow subset refused the
+/// disc wall 82). Unsafe worldgen walls (dirt 2, stone-unsafe
 /// variants, dungeon 7/8/9/94-99, biome walls, …) are deliberately absent.
 pub fn wall_house(wall: u16) -> bool {
     matches!(

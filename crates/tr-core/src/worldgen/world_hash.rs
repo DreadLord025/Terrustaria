@@ -288,6 +288,17 @@ mod tests {
     // still move the downstream tiles. Stale-by-design; the gate re-pins.
     // The `a == b` determinism assertion stays green — the pass is a pure
     // function of (world, stream), no ambient state.
+    // W4-g44 (2026-11-21, code-only): the verbatim FloatingIslands +
+    // FloatingIslandHouses passes land (`worldgen/islands.rs` — the count
+    // `(int)(width * 0.0008)` + the skyLakes tail-lake cadence, the
+    // column-scan y-band, the sunplate-202/disc-wall-82 houses on their
+    // own `pass_rng` slots). On a 512-wide world the pass still runs
+    // (num = 0, skyLakes = 1 — one lake attempt; the column scan's
+    // sub-vanilla valve may skip it), and the shared `drng` loses the old
+    // islands' draws — but every remaining `drng` consumer runs EARLIER,
+    // so the 512 pin moves only if the lake disc places. Stale-by-design
+    // either way; the gate re-pins it. The `a == b` determinism asserts
+    // stay green (no new entropy source — the passes are seed-keyed).
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -386,6 +397,15 @@ mod tests {
     // the torches, the mud pillars, the roof rows) replace the shape-level
     // boxes, and the `srng` schedule shift re-rolls every downstream pass.
     // Stale-by-design; the gate re-pins. `a == b` stays green.
+    // W4-g44 (2026-11-21, code-only): the verbatim island passes move this
+    // pin BY DESIGN on every default-sized world — the discs relocate (the
+    // count 3+1 vs the old 4, the column-scan y-band + the surfaceLow
+    // clamp), the lakes re-cadence to the tail, and the houses retype
+    // planks-9 → sunplate-202 with the disc-wall-82 interiors, the door,
+    // the windows and the furniture. The re-pin is DEFERRED to the merge
+    // gate (no compiler on this branch); `a == b` stays green (the
+    // `pass_rng("Floating Islands")` / `("Floating Island Houses")` slots
+    // are seed-keyed, no new entropy).
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

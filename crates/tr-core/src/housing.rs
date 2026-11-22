@@ -15,15 +15,21 @@ pub const MAX_ROOM_SIZE: i32 = 100;
 /// `StartRoomCheck`'s small-room floor (`:6101-6105`).
 pub const MIN_ROOM_TILES: i32 = 60;
 
-/// `Main.wallHouse` (`Main.cs:10403-10470` + `:9741-9860`): the walls a
-/// house may be enclosed by.
+/// `Main.wallHouse` (`Main.cs:9741-9860` + `:10353-10577`, the FULL
+/// 279-entry table): the walls a house may be enclosed by. `CheckRoom`'s
+/// ±2 scan reads `Main.wallHouse` directly (`WorldGen.cs:6204`/`:6212`)
+/// — the SAME table the wall-edit gates read, so this delegates to
+/// [`crate::edit::wall_house`] (the S1-P-i33 faithful copy, verified
+/// member-for-member against the C# incl. the `153..167` loop). The old
+/// narrower subset (missing 1/4-6/…/75-78/**82**/129-169/…) refused the
+/// sky-island houses' disc wall 82 (`WallID.DiscWall`, `Main.cs:10384`
+/// sets it true) — the W4-g44 island-house housing fix: a generated
+/// IslandHouse interior is a valid NPC room exactly as vanilla. The
+/// d118/d119 housing lanes keep their own copies of the subset at their
+/// tips — the merge dedupes onto this full-table read (research/87
+/// closeout §3).
 pub fn is_house_wall(wall: u16) -> bool {
-    matches!(
-        wall,
-        23..=27 | 29..=39 | 41..=47 | 60 | 66..=68 | 72..=74 | 84 | 85 | 88..=93 | 100..=128
-            | 173 | 179 | 181 | 183 | 184 | 186 | 224..=227 | 231..=235 | 237..=241 | 245
-            | 312 | 313 | 315..=317 | 323..=346
-    )
+    crate::edit::wall_house(wall)
 }
 
 /// `TileID.Sets.HousingWalls` (`TileID.cs:603`): the tile kinds that count
@@ -994,5 +1000,82 @@ mod tests {
             }
         }
         assert!(check_special_town_npc_spawning_conditions(&tiny, &tiny_scan, 160, false));
+    }
+
+    /// W4-g44 biome-closeout (island-house NPC housing, WRITTEN NOT RUN):
+    /// the sky-island house's disc wall 82 (`WallID.DiscWall`) is a HOUSE
+    /// wall — `Main.wallHouse[82] = true` (`Main.cs:10384`), and
+    /// `CheckRoom`'s ±2 scan reads that FULL table (`WorldGen.cs:6204`/
+    /// `:6212`). The old narrow `is_house_wall` subset lacked 82, so a
+    /// disc-walled room failed `TooManyUnsafeWalls`; the full-table read
+    /// admits it. A sealed disc-wall room (the player closes the 5-wide
+    /// door carve's flanks — the generated house ships the carve open,
+    /// see the islands.rs census witness) scans, passes RoomNeeds with
+    /// the house's table/chairs/door + one torch, and scores a home spot.
+    #[test]
+    fn w4_g44_the_disc_wall_is_a_house_wall_and_the_sky_room_scores() {
+        assert!(is_house_wall(82), "WallID.DiscWall is a house wall");
+        assert!(is_house_wall(73), "WallID.Cloud too (the island flood)");
+        assert!(!is_house_wall(2), "the natural dirt wall stays unsafe");
+        assert!(!is_house_wall(3), "the unsafe stone wall stays unsafe");
+        // A disc-walled room in the SKY band (y < worldSurface): the
+        // housing checker carries no surface/sky gate — CheckRoom reads
+        // only the edge/solid/wall/furniture conditions, so altitude
+        // never refuses a room (the Truffle special-condition is the
+        // only surface read, `:4974`, and it is per-NPC-type).
+        let mut w = ground();
+        w.world_surface = 150.0;
+        // The room at rows 40-48 (above the surface line 150): the disc
+        // wall 82 interior, the sunplate-202 frame (solid, non-top).
+        for x in 50..62 {
+            for y in 40..49 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile::default();
+                w.tiles[i].wall = 82;
+            }
+        }
+        for x in 50..62 {
+            for y in [40, 48] {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 202, frame_x: -1, frame_y: -1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for y in 40..49 {
+            for x in [50, 61] {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 202, frame_x: -1, frame_y: -1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        // The house furniture on the floor row 47: the table 14, the two
+        // chairs 15, the closed door 10 (the IslandHouse placements,
+        // `:79438-79440` + the door `:79336`), plus one torch 4 — the
+        // generated house ships NO light source (the census), the player
+        // adds it; RoomNeeds then completes.
+        for (n, kind) in [14u16, 15, 15, 10, 4].iter().enumerate() {
+            let i = w.index(52 + n as i32, 47);
+            w.tiles[i] = Tile { kind: *kind, frame_x: 0, frame_y: 0, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let scan = check_room(&w, 55, 44).expect("the disc-wall sky room scans");
+        assert!(scan.num_tiles >= MIN_ROOM_TILES);
+        assert!(room_needs(&scan.house_tiles), "table/chairs/door/torch complete");
+        let (bx, by, score) = score_room(&w, &scan, None).expect("the sky room scores");
+        assert!(score > 0, "the sky-band room is a valid home: {score}");
+        assert!((51..61).contains(&bx) && (41..48).contains(&by));
+        // The same room with the wall stripped fails the ±2 scan — the
+        // disc wall is what closes it (the HoleInWallIsTooBig arm).
+        let mut bare = w.clone();
+        for x in 45..67 {
+            for y in 35..54 {
+                let i = bare.index(x, y);
+                bare.tiles[i].wall = 0;
+            }
+        }
+        assert!(matches!(
+            check_room(&bare, 55, 44),
+            Err(RoomFailure::HoleInWallIsTooBig)
+        ));
     }
 }

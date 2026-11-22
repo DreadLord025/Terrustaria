@@ -131,6 +131,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "floating islands" => PassMessage::Gen(12),
         // WorldGen.cs:16136 (Settle Liquids, W4-f25) — `Lang.gen[27]`.
         "settle liquids" => PassMessage::Gen(27),
+        // WorldGen.cs:17863 (the FloatingIslandHouses pass's message).
+        "floating island houses" => PassMessage::Key("WorldGeneration.FloatingIslandHouses"),
         // WorldGen.cs:16421.
         "slopes" => PassMessage::Gen(60),
         // WorldGen.cs:15480.
