@@ -308,7 +308,7 @@ impl App {
             // (`:409-412`), stores it in that client's copy of the
             // inventory and relays it to the other clients (`:454-457`,
             // `PlayerItemSlotID.CanRelay`).
-            C2s::Inventory { slot, item } => {
+            C2s::Inventory { slot, item, .. } => {
                 let peer = id as u8;
                 server.set_slot_inventory(id, slot as u8, item);
                 if player_item_slot::can_relay(slot) {
@@ -349,14 +349,47 @@ impl App {
                     self.host_stream_sections(server, id, sx, sy);
                 }
             }
-            // `case 12` — the player spawned in: the slot is complete and the
-            // join bundle goes out (`MessageBuffer.cs:925-929`,
-            // `SyncConnectedPlayer` `NetMessage.cs:2806-2822`).
+            // `case 12` — the player spawned in (`MessageBuffer.cs:901-950`).
+            // The reader stores the spawn fields on the sender's player copy
+            // (`:903-914`), latches `dead` when `respawnTimer > 0` (`:915-918`)
+            // and runs `Spawn(context)` (`:920` — the port's remote copy is a
+            // snapshot store; the position lands via `Spawn_SetPosition`,
+            // `Player.cs:37987-37991`). The first spawn (State 3) completes the
+            // slot and sends the join bundle (`:925-929`); every spawn relays
+            // `12` to the others (`:936` first / `:948` after).
             C2s::PlayerSpawn(s) => {
-                if server.state(id) == slot_state::SPAWN_REQUESTED {
+                let first = server.state(id) == slot_state::SPAWN_REQUESTED;
+                if first {
                     server.set_state(id, slot_state::IN_WORLD);
                     self.host_slot_join_complete(server, id, s);
                 }
+                // `:903-918` — the field writes (the host forces the id to the
+                // sender, `:904-907`).
+                let entry = self.remote_players.entry(id).or_default();
+                entry.id = id;
+                entry.spawn_x = s.x;
+                entry.spawn_y = s.y;
+                entry.respawn_timer = s.respawn_timer;
+                entry.deaths_pve = s.deaths_pve;
+                entry.deaths_pvp = s.deaths_pvp;
+                entry.team = s.team;
+                entry.dead = s.respawn_timer > 0;
+                if entry.name.is_empty() {
+                    entry.name = server.slot_name(id);
+                }
+                // `Spawn_SetPosition` (`Player.cs:37987-37991`): feet at the
+                // spawn cell, centred on it.
+                entry.x = s.x as f32 * TILE_PX + 8.0 - player::WIDTH * 0.5;
+                entry.y = s.y as f32 * TILE_PX - player::HEIGHT;
+                entry.vx = 0.0;
+                entry.vy = 0.0;
+                // `:37648` — `Spawn` clears the talk latch.
+                entry.talk_npc = None;
+                // `:936`/`:948` — the spawn relay carries the context byte.
+                server.broadcast_except(
+                    &S2c::PlayerSpawn(net::PlayerSpawn { player_id: id as u8, ..s }),
+                    id,
+                );
             }
             // `case 154` — the server echoes the probe straight back
             // (`MessageBuffer.cs:4419-4423`); the port's relay is the same
@@ -384,13 +417,12 @@ impl App {
                     server.broadcast_except(&S2c::Left { id }, id);
                 }
             }
-            // `case 16` — the health report; the server forces the subject to
-            // the sender (`MessageBuffer.cs:1100-1103`).
+            // `case 16` — the health report (`MessageBuffer.cs:1095-1117`):
+            // the server forces the subject to the sender (`:1100-1103`),
+            // derives `dead` (`:1111`) and relays (`:1114`) — W4-g48. The
+            // statLifeMax >= 20 floor is the decode's (`net.rs`'s 16 arm).
             C2s::PlayerHp { hp, max_hp, .. } => {
-                if let Some(p) = self.remote_players.get_mut(&id) {
-                    p.hp = hp as i32;
-                    p.max_hp = (max_hp as i32).max(20);
-                }
+                crate::app::net_apply::host_player_hp(self, server, id, hp, max_hp);
             }
             // `case 13` — the per-tick player state. The server forces the
             // subject to the sender (`MessageBuffer.cs:959`) and relays to
@@ -488,28 +520,15 @@ impl App {
                 server.broadcast_except(&S2c::NpcStrike(st), id);
                 if dead {
                     // The full `23` update on death (`MessageBuffer.cs:1808-1811`).
-                    let kind = self.npcs[slot].kind.to_u16() as i16;
                     let generation = self
                         .net_npc_gen
                         .get(&(slot as u32))
                         .map(|(_, g)| *g)
                         .unwrap_or(0);
                     let npc = &self.npcs[slot];
-                    server.broadcast(&S2c::NpcInfo(Box::new(net::NpcInfo {
-                        slot: st.npc,
-                        generation: generation as u8,
-                        spawn: false,
-                        kind,
-                        x: npc.x,
-                        y: npc.y,
-                        vx: npc.vx,
-                        vy: npc.vy,
-                        dir_right: npc.facing > 0,
-                        dir_y_down: npc.vy > 0.0,
-                        sprite_right: npc.facing > 0,
-                        life_full: false,
-                        hp: npc.hp,
-                    })));
+                    server.broadcast(&S2c::NpcInfo(Box::new(Self::npc_info_of(
+                        slot, npc, false, generation,
+                    ))));
                 }
             }
             // `case 70` — a client's bug net caught an NPC
@@ -540,27 +559,88 @@ impl App {
                     id as u8,
                 );
             }
-            // `case 27` — a peer's own projectile state. The host applies it
-            // into its pool (rendering; the owner-side damage arrives as
-            // `28`) and relays it to the others
-            // (`MessageBuffer.cs:1760-1763`).
+            // `case 27` — a peer's own projectile state. The host refuses a
+            // hostile-kind shot or a key whose spawner is not the sender
+            // (`MessageBuffer.cs:1725-1728`: `Main.projHostile[type] ||
+            // key.Spawner != whoAmI` — the break skips BOTH the apply and
+            // the relay), then applies it into its pool (rendering; the
+            // owner-side damage arrives as `28`) and relays it to the
+            // others (`MessageBuffer.cs:1760-1763`).
             C2s::Projectile(ps) => {
+                let (spawner, _, _) = net::projectile_key_parts(ps.key);
+                if crate::projectile::data::proj_hostile(ps.kind.max(0) as u16)
+                    || spawner != id as u8
+                {
+                    return; // `:1727` — the whole arm is skipped
+                }
                 self.projectiles.upsert_remote(&ps);
                 server.broadcast_except(&S2c::Projectile(ps.clone()), id);
             }
-            // `case 29` — a peer's projectile is gone; the host drops the slot
-            // and relays (`MessageBuffer.cs:1844-1847`).
-            C2s::ProjectileDead { key } => {
+            // `case 29` — a peer's projectile is gone. The host gates on the
+            // key's owner (`MessageBuffer.cs:1831-1834`: only the owner may
+            // kill it), applies the despawn (a finite position moves the
+            // slot before `Kill`, NaN/Inf deactivates silently,
+            // `:1835-1843`) and relays the RECEIVED position to the others
+            // (`:1845-1848` — the relay is skipped when the owner gate
+            // refused). The g48 reconciliation keeps d93's owner gate over
+            // d91's ungated arm and folds the inline position move into
+            // d91's `kill_remote_at` seam (its occupant-match check is the
+            // same `live` test, so the behaviour is identical).
+            C2s::ProjectileDead { key, x, y } => {
                 let (owner, slot, generation) = net::projectile_key_parts(key);
-                self.projectiles.kill_remote(slot, owner, generation);
-                server.broadcast_except(
-                    &S2c::ProjectileDead {
+                // `:1829` — the gate + position move only run when the key
+                // resolves to the slot's ACTIVE occupant; a stale key falls
+                // through to the relay (`:1845-1848` is outside the block).
+                let live = self
+                    .projectiles
+                    .slots()
+                    .get(slot)
+                    .map_or(false, |p| {
+                        p.active && p.owner == owner && p.generation == generation
+                    });
+                if live && owner != id as u8 {
+                    return; // `:1831-1834` — not this client's projectile
+                }
+                self.projectiles
+                    .kill_remote_at(slot, owner, generation, x, y);
+                server.broadcast_except(&S2c::ProjectileDead { key, x, y }, id);
+            }
+            // `case 95` — MurderSomeoneElsesPortal (`MessageBuffer.cs:3519-
+            // 3537`, host-only): the client's new portal intersected a
+            // peer's portal projectile. Kill the FIRST active type-602
+            // whose owner + ai[1] form match, then broadcast one `29` for
+            // it (`:3532` passes the key only — number2/3 default to 0).
+            C2s::MurderPortal { owner, form } => {
+                // `:3527-3534` — the first active type-602 whose owner and
+                // ai[1] form match; snapshot before the mutable kill.
+                let mut hit = None;
+                for (slot, p) in self.projectiles.slots().iter().enumerate() {
+                    if p.owner as u16 == owner
+                        && p.active
+                        && p.kind == 602
+                        && p.ai[1] == form as f32
+                    {
+                        hit = Some((slot, p.owner, p.generation));
+                        break; // `:3533` — the first match only
+                    }
+                }
+                if let Some((slot, p_owner, generation)) = hit {
+                    let key = self.projectiles.key_of(slot);
+                    self.projectiles.kill_remote(slot, p_owner, generation);
+                    server.broadcast(&S2c::ProjectileDead {
                         key,
-                        x: f32::NAN,
-                        y: f32::NAN,
-                    },
-                    id,
-                );
+                        x: 0.0,
+                        y: 0.0,
+                    });
+                }
+            }
+            // `case 128` — a client's golf ball landed in a cup. The host
+            // only relays: `SendData(128, -1, num157, …)` with
+            // `ignoreClient = owner` (`MessageBuffer.cs:4065-4068`) — the
+            // owner already ran the cup effects locally before sending
+            // (`GolfHelper.cs:103`). No host-side apply exists.
+            C2s::GolfBallInCup(g) => {
+                server.broadcast_except(&S2c::GolfBallInCup(g), g.owner as u32);
             }
             C2s::Pickup { drop } => {
                 // The client's pickup request (the port's stand-in for the
@@ -611,11 +691,15 @@ impl App {
                     return; // `num254 > -1` (`:1877`)
                 };
                 // `Chest.UsingChest(num254) == -1` (`:1877`): nobody else is
-                // browsing it. The port's other players are the remote slots.
+                // browsing it. The C# scans ALL active players (`Chest.cs:
+                // 502-508`) — the host's own local player (slot 0) included;
+                // the port checks the remote slots AND the host's open chest
+                // (S1-I-1 wave I — the local-player half was missing).
                 if self
                     .remote_players
                     .values()
                     .any(|p| p.chest == Some(chest_idx as i16))
+                    || self.player.as_ref().is_some_and(|p| p.chest == chest_idx as i32)
                 {
                     return;
                 }
@@ -677,6 +761,12 @@ impl App {
                 };
                 crate::chest::set_chest_slot(&mut self.world_chests, idx as usize, slot, value);
                 server.broadcast_except(&S2c::ChestItem(ci), id); // `:1915`
+            }
+            // `case 34` — a client's chest/dresser place or destroy
+            // (`MessageBuffer.cs:1984-2158`): the host's PlaceChest/KillTile
+            // pass + the index/refusal relays — W4-g48 (`net_apply`).
+            C2s::ChestUpdates(u) => {
+                crate::app::net_apply::host_chest_updates(self, server, id, u);
             }
             // `case 33` — the open chest / its rename (`MessageBuffer.cs:1920-1982`).
             C2s::PlayerChest(pc) => {
@@ -807,15 +897,76 @@ impl App {
                     })); // `:2573`
                 }
             }
-            // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
-            // codecs (`net.rs`); the host apply/relay arms
-            // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
-            // `:4282-4297`, `:4328-4343`) land with the send-path pass (S1-I-4).
-            C2s::TogglePvp(_)
-            | C2s::PlayerMana(_)
+            // `case 30` — a client flipped its PvP flag
+            // (`MessageBuffer.cs:1851-1867`): the store + relay + the
+            // team-coloured chat fan-out — W4-g48 (`net_apply`).
+            C2s::TogglePvp(t) => {
+                crate::app::net_apply::host_toggle_pvp(self, server, id, t.hostile);
+            }
+            // S1-I-1 wave A: the join bundle's remaining client-sent ids have
+            // bodies + codecs (`net.rs`); the host apply/relay arms
+            // (`MessageBuffer.cs:2290-2306`, `:2325-2364`, `:4282-4297`,
+            // `:4328-4343`) land with the send-path pass (S1-I-4).
+            C2s::PlayerMana(_)
             | C2s::TeamChange(_)
             | C2s::ProjectileTrackers(_)
             | C2s::SyncLoadout(_) => {}
+            // `case 17` — a client's single-tile edit
+            // (`MessageBuffer.cs:1119-1288`): the full kind dispatch + the
+            // survive/falling relay rules — W4-g48 (`net_apply`).
+            C2s::TileEdit(e) => {
+                crate::app::net_apply::host_tile_edit(self, server, id, e);
+            }
+            // `case 19` — a client's door/trapdoor/gate toggle
+            // (`MessageBuffer.cs:1299-1334`): the action dispatch + the
+            // normalised-direction relay — W4-g48 (`net_apply`).
+            C2s::DoorToggle(d) => {
+                crate::app::net_apply::host_door_toggle(self, server, id, d);
+            }
+            // S1-I-1 wave B: the world-sync region's remaining client-sent
+            // ids have bodies + codecs (`net.rs`); the host apply/relay arms
+            // (`MessageBuffer.cs:2909-2948`, `:4023-4042`, `:2355-2363`,
+            // `:4457-4462`) land with the send-path pass (S1-I-4).
+            C2s::TilePaint(_)
+            | C2s::WallPaint(_)
+            | C2s::TilePicking(_)
+            | C2s::TeamChangeUi(_)
+            | C2s::SectionRequest { .. } => {}
+
+            // `case 109` — the host runs `Wiring.MassWireOperation` under a
+            // temporary ToolMode swap for the SENDER (`MessageBuffer.cs:
+            // 3774-3788`, `Wiring.cs:419-453`) and bills it with two `110`s
+            // (`Wiring.cs:441-442`). The port's mass operation is unported
+            // (the Multicolor Wrench / Grand Design are outside the wiring
+            // tool set, `world_sim/editing/wiring.rs:27-29`), so the arm is
+            // parked for S1-I-4.
+            C2s::MassWireOperation(_) => {}
+
+            // `case 35` — a client's heal effect (`MessageBuffer.cs:2160-
+            // 2177`): the peer's HealEffect text + the relay — W4-g48.
+            C2s::PlayerHeal(h) => {
+                crate::app::net_apply::host_player_heal(self, server, id, h.amount);
+            }
+            // `case 36` — a client's zone words (`MessageBuffer.cs:2178-
+            // 2201`): the store + the faeling-edge latch + the relay —
+            // W4-g48 (`net_apply`).
+            C2s::PlayerZone(z) => {
+                crate::app::net_apply::host_player_zone(self, server, id, z);
+            }
+            // `case 40` — a client's talk NPC (`MessageBuffer.cs:2256-2270`):
+            // SetTalkNPC + the bestiary chat registration + the relay —
+            // W4-g48 (`net_apply`).
+            C2s::TalkNpc(t) => {
+                crate::app::net_apply::host_talk_npc(self, server, id, t.npc);
+            }
+            // W4-d96 (S1-I-1 player-family first half): the remaining bodies +
+            // codecs in `net.rs`; the host apply/relay arms
+            // (`MessageBuffer.cs:2271-2289`, `:2307-2324`) land with the
+            // send-path pass (S1-I-4).
+            C2s::ItemAnim(_)
+            | C2s::ManaEffect(_) => {}
+            // (d98's 35/36 parked pair is folded into the d96 list above —
+            // keep-one dedupe at the g48 merge.)
         }
     }
 
@@ -901,7 +1052,7 @@ impl App {
 
     /// Extracts one tile's sync record — the C#'s compressor fields
     /// (`NetMessage.cs:1952-2168`) read out of the port's storage.
-    fn tile_record_at(&self, x: i32, y: i32) -> net::TileRecord {
+    pub(crate) fn tile_record_at(&self, x: i32, y: i32) -> net::TileRecord {
         let Some(t) = self.world.tile(x, y) else {
             return net::TileRecord {
                 active: false,
@@ -1289,6 +1440,7 @@ impl App {
                         let (sx, sy) = (self.world.spawn_x as i16, self.world.spawn_y as i16);
                         self.net_state = net::client_state::IN_WORLD;
                         client.send(&C2s::PlayerSpawn(net::PlayerSpawn {
+                            player_id: self.local_id as u8,
                             x: sx,
                             y: sy,
                             respawn_timer: 0,
@@ -1343,10 +1495,10 @@ impl App {
                 hp,
                 max_hp,
             } => {
-                if let Some(p) = self.remote_players.get_mut(&(player_id as u32)) {
-                    p.hp = hp as i32;
-                    p.max_hp = (max_hp as i32).max(20);
-                }
+                // `case 16` client half (`MessageBuffer.cs:1104-1111`): the
+                // peer's health + the `dead` derivation — W4-g48. The
+                // statLifeMax >= 20 floor is the decode's (`net.rs`).
+                crate::app::net_apply::client_player_hp(self, player_id, hp, max_hp);
             }
             S2c::PlayerActive { player_id, active } => {
                 if active && player_id as u32 != self.local_id {
@@ -1462,12 +1614,18 @@ impl App {
             S2c::Projectile(ps) => {
                 self.projectiles.upsert_remote(&ps);
             }
-            // `case 29` — the projectile is gone; a finite position means the
-            // slot dies there, NaN deactivates it silently
-            // (`MessageBuffer.cs:1825-1850`).
-            S2c::ProjectileDead { key, .. } => {
+            // `case 29` — the projectile is gone (`MessageBuffer.cs:1825-
+            // 1850`): when the key resolves to an ACTIVE occupant, a finite
+            // position moves the slot to it before `Kill` (`:1835-1838`),
+            // NaN/Inf deactivates silently (`:1840-1843`); a stale key is a
+            // no-op. The g48 keep-one folds d91/d93's identical logic into
+            // the `kill_remote_at` seam — the port's silent-despawn stand-in
+            // for `Kill`'s death effects (the effects belong to the
+            // projectile AI pass, not the net reader).
+            S2c::ProjectileDead { key, x, y } => {
                 let (owner, slot, generation) = net::projectile_key_parts(key);
-                self.projectiles.kill_remote(slot, owner, generation);
+                self.projectiles
+                    .kill_remote_at(slot, owner, generation, x, y);
             }
             // `case 28` — a peer's strike: the local flash (the C# applies the
             // full `StrikeNPC_Inner` on every client — the port keeps the
@@ -1562,6 +1720,24 @@ impl App {
                 npc.vx = info.vx;
                 npc.vy = info.vy;
                 npc.facing = if info.dir_right { 1 } else { -1 };
+                // `MessageBuffer.cs:1654-1656`: directionY/spriteDirection
+                // ride flags1 b1/b6; the target the ushort (`:1649-1653`).
+                npc.direction_y = if info.dir_y_down { 1 } else { -1 };
+                npc.sprite_dir = if info.sprite_right { 1 } else { -1 };
+                npc.target = info.target as i32;
+                // `MessageBuffer.cs:1672-1675`: the ai[] copy (the port keeps
+                // the pending-damage merge for I-4 — the wire values land).
+                npc.ai = info.ai;
+                // `MessageBuffer.cs:1683-1691`: the statue flag zeroes the
+                // coin value, the shimmer flag sets full transparency.
+                npc.spawned_from_statue = info.spawned_from_statue;
+                if info.spawned_from_statue {
+                    npc.extra_value = 0;
+                }
+                if info.shimmer {
+                    npc.shimmer_transparency = 1.0;
+                }
+                npc.release_owner = info.release_owner;
                 if !info.life_full && info.hp >= 0 {
                     npc.hp = info.hp;
                 }
@@ -1593,6 +1769,9 @@ impl App {
                 }
                 drop.shimmered = d.shimmered;
                 drop.shimmer_time = d.shimmer_time;
+                // `:1487` — the client writes the enemy-grab lock too
+                // (bit 3's tail byte, S1-I-1 wave I).
+                drop.enemy_grab_delay_time = d.enemy_grab_delay as i32;
                 drop.age = 60.0;
                 self.net_items.insert(d.slot as i16, drop);
                 self.net_items_dirty = true;
@@ -1841,14 +2020,88 @@ impl App {
                     }
                 }
             }
-            // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
-            // codecs (`net.rs`); the client read sites
-            // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
-            // `:2695-2739`, `:3118-3126`, `:3147-3153`, `:4043-4048`,
-            // `:4195-4203`, `:4238-4249`, `:4282-4297`, `:4328-4343`) land
-            // with the send-path pass (S1-I-4) — nothing sends them yet.
-            S2c::TogglePvp(_)
-            | S2c::PlayerMana(_)
+            // `case 11` — the deprecated re-frame request
+            // (`MessageBuffer.cs:895-899`): the client runs
+            // `WorldGen.SectionTileFrame` over the section rectangle
+            // (`WorldGen.cs:80343-80366`). No C# site sends it any more
+            // (`MessageID.cs:29-30`), the reader arm is 1:1 (W4-g48).
+            S2c::TileFrameSection(t) => {
+                // `:80345` — the map-time burst; `:80347` — the widened
+                // rectangle queues for the map refresh.
+                if let Some(m) = self.map.as_mut() {
+                    m.arm_map_time_burst();
+                    let (x0, y0, x1, y1) = (
+                        (t.start_x as i32 * 200).clamp(1, self.world.width - 2),
+                        (t.start_y as i32 * 150).clamp(1, self.world.height - 2),
+                        ((t.end_x as i32 + 1) * 200).min(self.world.width - 2),
+                        ((t.end_y as i32 + 1) * 150).min(self.world.height - 2),
+                    );
+                    self.map_queue
+                        .add_area(m, x0 - 2, y0 - 2, x1 - x0 + 4, y1 - y0 + 4);
+                }
+                tr_core::framing::section_tile_frame(
+                    &mut self.world,
+                    t.start_x as i32,
+                    t.start_y as i32,
+                    t.end_x as i32,
+                    t.end_y as i32,
+                );
+                self.world.revision = self.world.revision.wrapping_add(1);
+                self.world_key = None;
+            }
+            // `15 Unknown15` is the reader's ignore group
+            // (`MessageBuffer.cs:4483-4490`): accepted, nothing to do.
+            S2c::Unknown15 => {}
+            // `case 81` — a peer's heal number (S1-I-1 wave I,
+            // `MessageBuffer.cs:3227-3233`): the floats truncate to the
+            // Rectangle's ints (width/height 0), the RGB bytes gain alpha
+            // 255 (`Color(byte,byte,byte)`, `Utils.cs:1387-1390`), and
+            // `CombatText.NewText` spawns with the default
+            // dramatic/dot = false. The draws ride `Main.rand` — the bare
+            // global stream, like the message-time cue replays (S1-E-21i).
+            S2c::CombatTextInt(t) => {
+                let text = t.amount.to_string();
+                let size = match self.lookups.combat_text_font.as_ref() {
+                    Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+                    None => [text.chars().count() as f32 * 8.0, 10.0],
+                };
+                let location = crate::combat_text::Rect {
+                    x: t.x as i32 as f32,
+                    y: t.y as i32 as f32,
+                    width: 0.0,
+                    height: 0.0,
+                };
+                crate::combat_text::spawn_amount(
+                    &mut self.combat_texts,
+                    location,
+                    [t.color.0, t.color.1, t.color.2, 255],
+                    t.amount,
+                    false,
+                    false,
+                    size,
+                    1.0, // the port keeps gravDir = 1 (`player.rs:4693`)
+                    self.rngs.global(),
+                );
+            }
+            // `case 34` on a client — the host's chest place/destroy relay
+            // (`MessageBuffer.cs:2124-2157`): the PlaceChestDirect/
+            // DestroyChestDirect pass — W4-g48 (`net_apply`).
+            S2c::ChestUpdates(u) => {
+                crate::app::net_apply::client_chest_updates(self, u);
+            }
+            // `case 30` on a client — a peer's PvP flag
+            // (`MessageBuffer.cs:1858-1859`): the snapshot store; the chat
+            // line arrives as the `82` module — W4-g48 (`net_apply`).
+            S2c::TogglePvp(t) => {
+                crate::app::net_apply::client_toggle_pvp(self, t.player_id, t.hostile);
+            }
+            // S1-I-1 wave A: the join bundle's remaining server-sent ids have
+            // bodies + codecs (`net.rs`); the client read sites
+            // (`MessageBuffer.cs:2290-2306`, `:2325-2364`, `:2695-2739`,
+            // `:3118-3126`, `:3147-3153`, `:4043-4048`, `:4195-4203`,
+            // `:4238-4249`, `:4282-4297`, `:4328-4343`) land with the
+            // send-path pass (S1-I-4) — nothing sends them yet.
+            S2c::PlayerMana(_)
             | S2c::TeamChange(_)
             | S2c::NpcHouse(_)
             | S2c::TravelShop(_)
@@ -1858,6 +2111,101 @@ impl App {
             | S2c::MiscEventValue(_)
             | S2c::ProjectileTrackers(_)
             | S2c::SyncLoadout(_) => {}
+            // `case 17` on a client — the host's edit relay
+            // (`MessageBuffer.cs:1157-1275`, the `netMode == 1` path): the
+            // same kind dispatch, no spam/section gates, no relay; kind 0
+            // clears the crack book (`:1160-1163`) — W4-g48 (`net_apply`).
+            S2c::TileEdit(e) => {
+                crate::app::net_apply::client_tile_edit(self, e);
+            }
+            // `case 19` on a client — the host's door relay
+            // (`MessageBuffer.cs:1307-1327`): the same action dispatch, no
+            // relay — W4-g48 (`net_apply`).
+            S2c::DoorToggle(d) => {
+                crate::app::net_apply::client_door_toggle(self, d);
+            }
+            // S1-I-1 wave B: the world-sync region's remaining server-sent
+            // ids have bodies + codecs (`net.rs`); the client read sites
+            // (`MessageBuffer.cs:2909-2948`, `:4023-4042`, `:4450-4456`) land
+            // with the send-path pass (S1-I-4) — nothing sends them yet. The
+            // `11` arm is the d89 one above (keep-one dedupe at the g48
+            // merge).
+            S2c::TilePaint(_)
+            | S2c::WallPaint(_)
+            | S2c::TilePicking(_)
+            | S2c::ExtraSpawnLoaded { .. }
+            // `case 128`'s client half (`MessageBuffer.cs:4070-4072`):
+            // `PutBallInCup_TextAndEffects` — the cup dust/sound/chat FX
+            // (`GolfHelper.cs:115-123`) ride the golf system (M4-GOLF-1);
+            // the relay lands here until then (S1-I-4).
+            | S2c::GolfBallInCup(_) => {}
+            // `case 110`'s client half (`MessageBuffer.cs:3789-3807`): when
+            // the bill is the local player's, consume `count` of `item_type`
+            // and clear `wireOperationsCooldown`. Parked with the 109 host
+            // arm (the mass operation is unported) for S1-I-4.
+            S2c::MassWireOperationPay(_) => {}
+
+            // `case 12` on a client — a peer spawned (`MessageBuffer.cs:901-
+            // 950`): the same field writes as the host arm (`:908-918`), then
+            // `Spawn(context)` repositions the peer (`Player.cs:37621-37641`:
+            // `Spawn_SetPosition`, velocity/netOffset zeroed). The local echo
+            // never arrives (the host relays with `ignoreClient = sender`).
+            S2c::PlayerSpawn(s) => {
+                let peer = s.player_id as u32;
+                if peer == self.local_id {
+                    return;
+                }
+                let (px, py) = self.net_peer_spawn_pos();
+                let entry = self
+                    .remote_players
+                    .entry(peer)
+                    .or_insert_with(|| net::PlayerNet {
+                        id: peer,
+                        name: format!("Player {}", s.player_id),
+                        x: px,
+                        y: py,
+                        ..Default::default()
+                    });
+                entry.spawn_x = s.x;
+                entry.spawn_y = s.y;
+                entry.respawn_timer = s.respawn_timer;
+                entry.deaths_pve = s.deaths_pve;
+                entry.deaths_pvp = s.deaths_pvp;
+                entry.team = s.team;
+                entry.dead = s.respawn_timer > 0; // `:915-918`
+                // `Spawn_SetPosition` (`Player.cs:37987-37991`) + the
+                // `netOffset`/velocity resets (`:37638-37641`).
+                entry.x = s.x as f32 * TILE_PX + 8.0 - player::WIDTH * 0.5;
+                entry.y = s.y as f32 * TILE_PX - player::HEIGHT;
+                entry.vx = 0.0;
+                entry.vy = 0.0;
+                entry.off_x = 0.0;
+                entry.off_y = 0.0;
+                entry.talk_npc = None; // `:37648` — `SetTalkNPC(-1)`
+            }
+            // `case 35` on a client — a peer's heal text
+            // (`MessageBuffer.cs:2168-2171`, `Player.HealEffect`) — W4-g48.
+            S2c::PlayerHeal(h) => {
+                crate::app::net_apply::client_player_heal(self, h.player_id, h.amount);
+            }
+            // `case 36` on a client — a peer's zone words
+            // (`MessageBuffer.cs:2187-2192`) — W4-g48 (`net_apply`).
+            S2c::PlayerZone(z) => {
+                crate::app::net_apply::client_player_zone(self, z);
+            }
+            // `case 40` on a client — a peer's talk index
+            // (`MessageBuffer.cs:2264`) — W4-g48 (`net_apply`).
+            S2c::TalkNpc(t) => {
+                crate::app::net_apply::client_talk_npc(self, t.player_id, t.npc);
+            }
+            // W4-d96 (S1-I-1 player-family first half): the remaining bodies +
+            // codecs in `net.rs`; the client read sites
+            // (`MessageBuffer.cs:2271-2289`, `:2307-2324`) land with the
+            // send-path pass (S1-I-4) — nothing sends them yet.
+            S2c::ItemAnim(_)
+            | S2c::ManaEffect(_) => {}
+            // (d98's 35/36 parked pair is folded into the d96 list above —
+            // keep-one dedupe at the g48 merge.)
         }
     }
 
@@ -1885,6 +2233,7 @@ impl App {
         // The 59 grid slots, in `PlayerItemSlotID.Inventory0..58` order.
         for (i, slot) in self.inventory.iter().enumerate() {
             client.send(&C2s::Inventory {
+                player_id: me,
                 slot: i as i16,
                 item: self.net_item(slot, self.favorite_slots.contains(&i)),
             });
@@ -1894,6 +2243,7 @@ impl App {
         if let Some(p) = self.player.as_ref() {
             for i in 0..p.equipped.len() {
                 client.send(&C2s::Inventory {
+                    player_id: me,
                     slot: player_item_slot::ARMOR_0 + i as i16,
                     item: net::NetItem {
                         kind: p.equipped[i] as i16,
@@ -1905,6 +2255,7 @@ impl App {
             }
             for i in 0..p.dye_slots.len() {
                 client.send(&C2s::Inventory {
+                    player_id: me,
                     slot: player_item_slot::DYE_0 + i as i16,
                     item: net::NetItem {
                         kind: p.dye_slots[i] as i16,
@@ -1916,6 +2267,7 @@ impl App {
             }
             for i in 0..p.misc_dye_slots.len() {
                 client.send(&C2s::Inventory {
+                    player_id: me,
                     slot: player_item_slot::MISC_DYE_0 + i as i16,
                     item: net::NetItem {
                         kind: p.misc_dye_slots[i] as i16,
@@ -1928,6 +2280,7 @@ impl App {
             for (b, vault) in p.banks.iter().enumerate() {
                 for (i, slot) in vault.iter().enumerate() {
                     client.send(&C2s::Inventory {
+                        player_id: me,
                         slot: player_item_slot::bank_1_0(b) + i as i16,
                         item: self.net_item(slot, false),
                     });
@@ -1937,12 +2290,14 @@ impl App {
         // The misc equips (`PlayerItemSlotID.Misc0..`) ride `App.equip`.
         for (i, slot) in self.equip.misc_equips.iter().enumerate() {
             client.send(&C2s::Inventory {
+                player_id: me,
                 slot: player_item_slot::MISC_0 + i as i16,
                 item: self.net_item(slot, false),
             });
         }
         // The trash slot (`PlayerItemSlotID.TrashItem`).
         client.send(&C2s::Inventory {
+            player_id: me,
             slot: player_item_slot::TRASH,
             item: self.net_item(&self.equip.trash, false),
         });
@@ -2128,11 +2483,20 @@ impl App {
             y: npc.y,
             vx: npc.vx,
             vy: npc.vy,
+            target: npc.target as u16,
             dir_right: npc.facing > 0,
-            dir_y_down: npc.vy > 0.0,
-            sprite_right: npc.facing > 0,
+            dir_y_down: npc.direction_y > 0,
+            sprite_right: npc.sprite_dir > 0,
             life_full: npc.hp >= npc.max_hp,
             hp: npc.hp,
+            life_max: npc.max_hp,
+            ai: npc.ai,
+            spawned_from_statue: npc.spawned_from_statue,
+            // The port has no per-NPC difficulty override / player-count
+            // scaling yet — the C# defaults keep both flag bits clear.
+            difficulty: 1.0,
+            shimmer: npc.shimmer_transparency > 0.0,
+            release_owner: npc.release_owner,
         }
     }
 
@@ -2558,7 +2922,11 @@ impl App {
                         ProjSend::SyncTo { state, .. } => {
                             client.send(&C2s::Projectile(Box::new(state)))
                         }
-                        ProjSend::Kill { key, .. } => client.send(&C2s::ProjectileDead { key }),
+                        ProjSend::Kill { key, x, y } => {
+                            // `NetMessage.cs:852-855` — the entry position
+                            // rides verbatim (`Projectile.cs:77256`).
+                            client.send(&C2s::ProjectileDead { key, x, y })
+                        }
                     }
                 }
             }
@@ -2865,8 +3233,11 @@ impl App {
         (sx, sy)
     }
 
-    /// Builds the `21 ItemDrop` body for one live drop (`NetMessage.cs:646-669`
-    /// minus the ownership/enemy-delay bits the port does not carry yet).
+    /// Builds the `21 ItemDrop` body for one live drop
+    /// (`NetMessage.cs:646-669`); the ownership bits 0/1 ride the C#'s
+    /// `number2` ownership argument only on the spawn send (unported —
+    /// the port's diff cadence sends 0). Bit 3 carries the enemy-grab lock
+    /// clamped to a byte (`:667`, S1-I-1 wave I).
     fn item_state_of(slot: i16, it: &item::ItemDrop) -> net::ItemState {
         net::ItemState {
             slot,
@@ -2879,6 +3250,7 @@ impl App {
             kind: it.kind as i16,
             shimmered: it.shimmered,
             shimmer_time: it.shimmer_time,
+            enemy_grab_delay: it.enemy_grab_delay_time.clamp(0, 255) as u8,
         }
     }
 
@@ -2900,6 +3272,12 @@ impl App {
             y: p.y,
             vx: p.vx,
             vy: p.vy,
+            // No mount/potion/camera sim: the gate bits stay clear so the
+            // C# bodies (`NetMessage.cs:496-508`) stay off the wire.
+            mount_type: 0,
+            potion_use: (0.0, 0.0),
+            potion_home: (0.0, 0.0),
+            camera_target: (0.0, 0.0),
             on_ground: p.on_ground,
             leg_frame: p.leg_frame,
             body_frame: p.body_frame,
@@ -3586,6 +3964,18 @@ fn npc_from_net(world: &World, n: &net::NpcInfo) -> Option<crate::npc::Npc> {
         npc.hp = n.hp;
     }
     npc.facing = if n.dir_right { 1 } else { -1 };
+    npc.direction_y = if n.dir_y_down { 1 } else { -1 };
+    npc.sprite_dir = if n.sprite_right { 1 } else { -1 };
+    npc.target = n.target as i32;
+    npc.ai = n.ai;
+    npc.spawned_from_statue = n.spawned_from_statue;
+    if n.spawned_from_statue {
+        npc.extra_value = 0;
+    }
+    if n.shimmer {
+        npc.shimmer_transparency = 1.0;
+    }
+    npc.release_owner = n.release_owner;
     // `hurt_cd` rides `28 NPCStrike` in the C# (`MessageBuffer.cs:1766`);
     // until that message lands the client shows no hit flash on networked
     // NPCs — deviation in `docs/ANALYSIS.md`.
@@ -3602,7 +3992,7 @@ mod handshake_tests {
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::ui::save_list::{PlayerEntry, WorldEntry};
 
-    fn apps() -> (App, App) {
+    pub(super) fn apps() -> (App, App) {
         (
             flow_app(None, Vec::<PlayerEntry>::new(), Vec::<WorldEntry>::new()),
             flow_app(None, Vec::<PlayerEntry>::new(), Vec::<WorldEntry>::new()),
@@ -3614,7 +4004,7 @@ mod handshake_tests {
     /// between polls: without a yield the reader/writer threads never get
     /// scheduled on a loaded core, so the deadline — not a round count —
     /// makes the handshake tests load-independent.
-    fn drive_to(host: &mut App, client: &mut App, goal: i32) {
+    pub(super) fn drive_to(host: &mut App, client: &mut App, goal: i32) {
         // env-gated exit trace
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while client.net_state != goal
@@ -4613,6 +5003,237 @@ mod handshake_tests {
         );
     }
 
+    /// S1-I-1 W4-d93: the `29` body carries the entry position verbatim and
+    /// the host gates on the key's owner (`MessageBuffer.cs:1831-1834`).
+    #[test]
+    fn the_kill_wire_carries_the_position_and_the_owner_gate() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let owner = client_app.local_id as u8;
+        // The client's own shot, seeded into the host pool by key.
+        let key = net::projectile_key(owner, 3, 1);
+        let st = net::ProjectileState {
+            key,
+            x: 100.0,
+            y: 100.0,
+            vx: 4.0,
+            vy: 0.0,
+            kind: 1,
+            ai0: None,
+            ai1: None,
+            banner_id: 0,
+            damage: 10,
+            knock_back: 2.0,
+            original_damage: 0,
+            ai2: None,
+        };
+        host_app.projectiles.upsert_remote(&st);
+        client_app.projectiles.upsert_remote(&st);
+        // A peer's key (a different owner) cannot kill the slot
+        // (`:1831-1834`); the host keeps it.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ProjectileDead {
+                key: net::projectile_key(owner.wrapping_add(1), 3, 1),
+                x: 5.0,
+                y: 5.0,
+            });
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert!(
+            host_app.projectiles.slots()[3].active,
+            "a stale-owner key never kills (`:1831` gates before TryGet's slot)"
+        );
+        // The owner's kill lands and the position rides the wire
+        // (`NetMessage.cs:852-855`, `Projectile.cs:77256`).
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ProjectileDead {
+                key,
+                x: 12.5,
+                y: -8.0,
+            });
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert!(
+            !host_app.projectiles.slots()[3].active,
+            "the owner's 29 dropped the slot"
+        );
+        assert!(
+            !client_app.projectiles.slots()[3].active,
+            "the relayed 29 dropped the client's copy"
+        );
+    }
+
+    /// S1-I-1 W4-d93: `95 MurderSomeoneElsesPortal` kills the first matching
+    /// active type-602 and relays one `29` (`MessageBuffer.cs:3519-3537`).
+    #[test]
+    fn murder_portal_kills_the_matching_602_and_relays_29() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let owner = client_app.local_id as u8;
+        // A portal-gun projectile (602) owned by the client, form ai[1]=1.
+        let slot = host_app
+            .projectiles
+            .spawn_with_data_owned(602, owner, 100.0, 100.0, 0.0, 0.0, 0, 0.0, 0.0, 1.0)
+            .expect("spawn");
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(host_app.projectiles.slots()[slot].active);
+        // A wrong form matches nothing (`:3529` compares ai[1]).
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::MurderPortal {
+                owner: owner as u16,
+                form: 0,
+            });
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert!(
+            host_app.projectiles.slots()[slot].active,
+            "the form mismatch spared the portal"
+        );
+        // The right form kills it and the `29` relay reaches the client.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::MurderPortal {
+                owner: owner as u16,
+                form: 1,
+            });
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(
+            !host_app.projectiles.slots()[slot].active,
+            "the host killed the matching portal"
+        );
+        assert!(
+            !client_app.projectiles.slots()[slot].active,
+            "the 29 relay dropped the client's copy (`:3532`)"
+        );
+    }
+
+    /// S1-I-1 W4-d93: the `27` host read gate (`MessageBuffer.cs:1725-1728`)
+    /// refuses a hostile-kind shot or a key whose spawner is not the sender —
+    /// the break skips BOTH the apply and the relay.
+    #[test]
+    fn the_27_host_gate_refuses_hostile_kinds_and_foreign_spawners() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let me = client_app.local_id as u8;
+        let base = net::ProjectileState {
+            key: net::projectile_key(me, 7, 1),
+            x: 50.0,
+            y: 50.0,
+            vx: 1.0,
+            vy: 0.0,
+            kind: 1, // WoodenArrow — not in `Main.projHostile`
+            ai0: None,
+            ai1: None,
+            banner_id: 0,
+            damage: 5,
+            knock_back: 1.0,
+            original_damage: 0,
+            ai2: None,
+        };
+        // A hostile kind (31, EyeSpring — `Projectile.cs:1138`) is refused.
+        let hostile = net::ProjectileState { kind: 31, ..base };
+        // A foreign spawner (the host's slot 0) is refused even when friendly.
+        let foreign = net::ProjectileState {
+            key: net::projectile_key(0, 8, 1),
+            ..base
+        };
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::Projectile(Box::new(hostile)));
+            client.send(&C2s::Projectile(Box::new(foreign)));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(
+            !host_app.projectiles.slots()[7].active && !host_app.projectiles.slots()[8].active,
+            "the `:1727` break skipped the apply for both refused shots"
+        );
+        assert!(
+            !client_app.projectiles.slots()[7].active && !client_app.projectiles.slots()[8].active,
+            "the break skipped the relay too (`:1760` is after the gate)"
+        );
+        // The own friendly shot lands and relays (`:1729-1763`).
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::Projectile(Box::new(base)));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(
+            host_app.projectiles.slots()[7].active,
+            "the owner's friendly kind passed the gate"
+        );
+        assert!(
+            client_app.projectiles.slots()[7].active,
+            "the accepted shot relayed back (`:1760-1763`)"
+        );
+    }
+
+    /// S1-I-1 W4-d93: `128 LandGolfBallInCup` — the host only relays, with
+    /// `ignoreClient = owner` (`MessageBuffer.cs:4065-4068`): the owner
+    /// already ran the cup effects locally (`GolfHelper.cs:103`). The client
+    /// apply is parked (M4-GOLF-1), so the witness pins the end-to-end wire:
+    /// an undecodable relay would be a `BadFrame` → disconnect
+    /// (`netglue.rs`'s client reader), so a surviving IN_WORLD peer proves
+    /// the 128 reached it and decoded. Step 2 keys the ignore on the BODY's
+    /// owner (not the sender): the sender itself receives that relay.
+    #[test]
+    fn the_golf_cup_relay_routes_by_the_body_owner() {
+        let (mut host_app, mut client_app) = apps();
+        let server = net::Server::start(0, String::new()).unwrap();
+        let addr = server.addr().to_string();
+        host_app.net = NetRole::Host(server);
+        host_app.player_name = "host".into();
+        client_app.player_name = "client".into();
+        client_app.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        client_app.join_target = Some((addr.clone(), String::new()));
+        let mut second = flow_app(None, Vec::<PlayerEntry>::new(), Vec::<WorldEntry>::new());
+        second.player_name = "second".into();
+        second.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        second.join_target = Some((addr, String::new()));
+        drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
+        drive_to(&mut host_app, &mut second, net::client_state::IN_WORLD);
+        let me = client_app.local_id;
+        let peer = second.local_id;
+        // Step 1 — the owner's own cup: ignoreClient = owner, so the relay
+        // goes to the second client only; it decodes (parked arm) and lives.
+        let g = net::GolfBallInCup {
+            owner: me as u8,
+            x: 40,
+            y: 12,
+            hits: 3,
+            ball_type: 520,
+        };
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::GolfBallInCup(g));
+        }
+        // Step 2 — a cup credited to the SECOND player: the ignore now skips
+        // the second, and the FIRST client (the sender, not the owner)
+        // receives the relay — it must decode and survive too.
+        let g2 = net::GolfBallInCup {
+            owner: peer as u8,
+            x: 41,
+            y: 13,
+            hits: 1,
+            ball_type: 521,
+        };
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::GolfBallInCup(g2));
+        }
+        for _ in 0..40 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            second.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            second.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(
+            client_app.net_state,
+            net::client_state::IN_WORLD,
+            "the sender received the peer-owner relay and decoded it (step 2)"
+        );
+        assert_eq!(
+            second.net_state,
+            net::client_state::IN_WORLD,
+            "the peer received the owner-skip relay and decoded it (step 1)"
+        );
+    }
+
     /// The `28` strike: a client's hit is validated and relayed by the host,
     /// which also pushes the full `23` on death.
     #[test]
@@ -4823,11 +5444,18 @@ mod npc_kind_wire_tests {
             y: 8.0 * 16.0,
             vx: 0.0,
             vy: 0.0,
+            target: 255,
             dir_right: true,
             dir_y_down: false,
             sprite_right: true,
             life_full: true,
             hp: 100,
+            life_max: 100,
+            ai: [0.0; 4],
+            spawned_from_statue: false,
+            difficulty: 1.0,
+            shimmer: false,
+            release_owner: 255,
         };
         let world = tr_core::World::new("wire".into(), 64, 64);
         npc_from_net(&world, &info)
@@ -4953,6 +5581,97 @@ mod message_family_tests {
         // `80` told the other players the asker's chest index; here the
         // host's own record (`:1886`).
         assert_eq!(host_app.remote_players.get(&1).map(|p| p.chest), Some(Some(0)));
+    }
+
+    /// S1-I-1 wave I — `Chest.UsingChest` scans ALL active players
+    /// (`Chest.cs:502-508`), the host's own local player included: while the
+    /// host browses chest 0, a client's `31` open request is refused
+    /// (`MessageBuffer.cs:1877`) — no `155`/`33` burst, the client's
+    /// `Player.chest` stays closed.
+    #[test]
+    fn a_chest_open_request_is_refused_while_the_host_browses_it() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        let mut chest = crate::chest::WorldChest {
+            tile: (3, 5),
+            max_items: crate::chest::DEFAULT_MAX_ITEMS as usize,
+            ..Default::default()
+        };
+        chest.slots.resize(crate::chest::DEFAULT_MAX_ITEMS as usize, crate::item::EMPTY_SLOT);
+        host_app.world_chests.push(chest);
+        // The HOST (slot 0) has the chest open — the pre-wave-I check only
+        // scanned the remote slots and let this request through.
+        host_app.player.as_mut().unwrap().chest = 0;
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ChestOpenRequest(net::ChestOpenRequest { x: 3, y: 5 }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert_eq!(
+            client_app.player.as_ref().unwrap().chest,
+            crate::bank::CHEST_CLOSED,
+            "the UsingChest refusal — the host's own open chest counts"
+        );
+        assert!(client_app.world_chests.is_empty(), "no 155/32 burst arrived");
+        assert_eq!(
+            host_app.remote_players.get(&1).and_then(|p| p.chest),
+            None,
+            "no 80 relay either"
+        );
+        // The host closes it; the same request now succeeds.
+        host_app.player.as_mut().unwrap().chest = crate::bank::CHEST_CLOSED;
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ChestOpenRequest(net::ChestOpenRequest { x: 3, y: 5 }));
+        }
+        let mut opened = false;
+        for _ in 0..60 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            opened = client_app.player.as_ref().is_some_and(|p| p.chest == 0);
+            if opened {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(opened, "the freed chest opens on the retry");
+    }
+
+    /// S1-I-1 wave I — `case 81` (`MessageBuffer.cs:3227-3233`): the host's
+    /// `CombatTextInt` spawns a heal number in the client's pool at the
+    /// truncated wire coords with the HealLife colour.
+    #[test]
+    fn a_combat_text_int_spawns_the_clients_heal_number() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::CombatTextInt(net::CombatTextInt {
+                x: 1234.5,
+                y: -678.25,
+                color: net::Rgb(100, 255, 100),
+                amount: 42,
+            }));
+        }
+        let mut spawned = false;
+        for _ in 0..60 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            spawned = client_app.combat_texts.iter().any(|t| t.active);
+            if spawned {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(spawned, "the 81 arm spawned a combat text");
+        let t = client_app.combat_texts.iter().find(|t| t.active).unwrap();
+        assert_eq!(t.text, "42");
+        assert_eq!(t.color, [100, 255, 100, 255], "RGB + alpha 255");
+        // The zero-size Rectangle centres the text on the truncated point
+        // (`CombatText.cs:86-87` with width/height 0), ±0 jitter draws.
+        let size_x = t.position[0] - (1234.0 - 0.0);
+        assert!(size_x.abs() <= 20.0, "anchored at the truncated x: {}", t.position[0]);
+        assert!(!t.crit && !t.dot, "the NewText defaults");
     }
 
     /// S1-P-i43 — the `editedChestName` chain (`ChestUI.cs:855-859` →
@@ -5204,5 +5923,833 @@ mod message_family_tests {
             count,
             "the join snapshot's module-4 body applies"
         );
+    }
+}
+
+/// W4-g48 (S1-I-4 apply arms, lane 1 — MessageBuffer ids 1-40): the parked
+/// wave-A/B/I dispatcher arms wired in the C# `GetData` case order. Each
+/// witness drives the real loopback pair (`in_world_pair`) and pins the
+/// applied state against the C# reader (`MessageBuffer.cs`).
+#[cfg(test)]
+mod g48_apply_tests {
+    use super::*;
+    use crate::app::netglue::handshake_tests::{apps, drive_to, in_world_pair};
+
+    /// A joined pair over a 64x64 world (the `big_world_pair` shape): the
+    /// 8x8 flow world's fluff-3 handler box (`in_world(x, y, 3)` → 3..5)
+    /// and the kill cascade's 5-tile edge guard leave no room for the
+    /// multi-tile fixtures, so the round-2 witnesses build their own.
+    fn roomy_pair() -> (App, App) {
+        let (mut host_app, mut client_app) = apps();
+        let server = net::Server::start(0, String::new()).unwrap();
+        let addr = server.addr().to_string();
+        host_app.net = NetRole::Host(server);
+        host_app.player_name = "host".into();
+        client_app.player_name = "client".into();
+        client_app.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        client_app.join_target = Some((addr, String::new()));
+        host_app.world = tr_core::World::new("flow".into(), 64, 64);
+        host_app.world.column_surface = vec![64; 64];
+        for x in 0..64 {
+            let i = host_app.world.index(x, 20);
+            host_app.world.tiles[i] = tr_core::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            host_app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            host_app.world.column_surface[x as usize] = 20;
+        }
+        drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
+        assert_eq!(client_app.net_state, net::client_state::IN_WORLD);
+        host_app.player = Some(player::Player::spawn(&host_app.world));
+        (host_app, client_app)
+    }
+
+    /// `case 11` (`MessageBuffer.cs:895-899`): the client runs
+    /// `WorldGen.SectionTileFrame` — the section's tiles re-roll their frame
+    /// variants (`WorldGen.cs:80348-80358`, reset EVERY cell) and the world
+    /// revision bumps so the render caches invalidate.
+    #[test]
+    fn g48_11_tile_frame_section_reframes_the_clients_section() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // A dirt patch inside section (0, 0): the join stream framed it with
+        // stored variants; the 11 re-roll must produce valid frames again.
+        for x in 2..8 {
+            for y in 2..4 {
+                let i = client_app.world.index(x, y);
+                client_app.world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                client_app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let rev = client_app.world.revision;
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::TileFrameSection(net::TileFrameSection {
+                start_x: 0,
+                start_y: 0,
+                end_x: 0,
+                end_y: 0,
+            }));
+        }
+        let mut applied = false;
+        for _ in 0..60 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            applied = client_app.world.revision != rev;
+            if applied {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(applied, "the 11 arm re-framed and bumped the revision");
+        // Every dirt cell in the patch carries a framed sprite (the merge
+        // rectangle resolves) and a stored 0..=2 variant.
+        for x in 2..8 {
+            for y in 2..4 {
+                let idx = client_app.world.index(x, y);
+                let t = client_app.world.tiles[idx];
+                assert!(t.frame_x >= 0 && t.frame_y >= 0, "framed ({x},{y})");
+                assert!(client_app.world.frame_number(idx) <= 2);
+            }
+        }
+    }
+
+    /// `case 12` (`MessageBuffer.cs:901-950`): a client's respawn stores the
+    /// spawn fields on the host's peer copy (`:908-918`), latches `dead` from
+    /// `respawnTimer > 0` and relays the body to the other peers (`:948`);
+    /// the receiving client repositions the peer via `Spawn_SetPosition`
+    /// (`Player.cs:37987-37991`).
+    #[test]
+    fn g48_12_player_spawn_stores_fields_and_relays_the_respawn() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // A second peer so the relay has a receiver besides the host.
+        let mut second = crate::app::flow::front_flow_tests::flow_app(
+            None,
+            Vec::<crate::ui::save_list::PlayerEntry>::new(),
+            Vec::<crate::ui::save_list::WorldEntry>::new(),
+        );
+        second.player_name = "second".into();
+        let addr = match &host_app.net {
+            NetRole::Host(server) => server.addr().to_string(),
+            _ => unreachable!(),
+        };
+        second.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        second.join_target = Some((addr, String::new()));
+        drive_to(&mut host_app, &mut second, net::client_state::IN_WORLD);
+        // The first client respawns at (30, 3) with a live respawn timer.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlayerSpawn(net::PlayerSpawn {
+                player_id: client_app.local_id as u8,
+                x: 30,
+                y: 3,
+                respawn_timer: 120,
+                deaths_pve: 2,
+                deaths_pvp: 1,
+                team: 3,
+                spawn_context: 2, // ReviveFromDeath
+            }));
+        }
+        let mut landed = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            second.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            second.poll_net();
+            landed = second
+                .remote_players
+                .get(&(client_app.local_id))
+                .is_some_and(|p| p.respawn_timer == 120);
+            if landed {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(landed, "the 12 relay reached the second peer");
+        let peer_id = client_app.local_id;
+        let host_peer = &host_app.remote_players[&peer_id];
+        assert_eq!((host_peer.spawn_x, host_peer.spawn_y), (30, 3));
+        assert_eq!((host_peer.deaths_pve, host_peer.deaths_pvp), (2, 1));
+        assert_eq!(host_peer.team, 3);
+        assert!(host_peer.dead, "respawnTimer > 0 latches dead (:915-918)");
+        let second_peer = &second.remote_players[&peer_id];
+        assert_eq!((second_peer.spawn_x, second_peer.spawn_y), (30, 3));
+        assert!(second_peer.dead);
+        // `Spawn_SetPosition`: centred on the cell, feet at its top.
+        let want_x = 30.0 * TILE_PX + 8.0 - player::WIDTH * 0.5;
+        let want_y = 3.0 * TILE_PX - player::HEIGHT;
+        assert!((second_peer.x - want_x).abs() < 0.01);
+        assert!((second_peer.y - want_y).abs() < 0.01);
+        assert_eq!(second_peer.off_x, 0.0, "Spawn zeroes netOffset (:37638)");
+    }
+
+    /// `case 16` (`MessageBuffer.cs:1095-1117`): a client's health report
+    /// stores hp/max on the host's peer copy, derives `dead` from
+    /// `statLife <= 0` (`:1111`) and relays to the other peers (`:1114`).
+    #[test]
+    fn g48_16_player_hp_relays_and_derives_dead() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlayerHp {
+                player_id: 255, // the host forces the sender (`:1100-1103`)
+                hp: 0,
+                max_hp: 100,
+            });
+        }
+        let mut landed = false;
+        for _ in 0..60 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            landed = host_app
+                .remote_players
+                .get(&client_app.local_id)
+                .is_some_and(|p| p.hp == 0 && p.dead);
+            if landed {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(landed, "the 16 arm stored hp and derived dead");
+        let peer = &host_app.remote_players[&client_app.local_id];
+        assert_eq!(peer.max_hp, 100);
+    }
+
+    /// `case 17` kind 0 (`MessageBuffer.cs:1157-1163`): a client's KillTile
+    /// edit breaks the host's tile (the cascade + drops) and relays the edit
+    /// to the other peers (`:1285`); the receiving client breaks its own
+    /// copy without spawning local drops (the `netMode != 1` gate).
+    #[test]
+    fn g48_17_kill_tile_edit_breaks_and_relays() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // A stone block at (6, 3) on both sides (above the dirt row).
+        for app in [&mut host_app, &mut client_app] {
+            let i = app.world.index(6, 3);
+            app.world.tiles[i] = tr_core::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TileEdit(net::TileEdit {
+                kind: 0,
+                x: 6,
+                y: 3,
+                value: 0,
+                style: 0,
+            }));
+        }
+        let mut broken = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            broken = !host_app.world.tile_active(6, 3) && !client_app.world.tile_active(6, 3);
+            if broken {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(broken, "the 17 kill broke both copies");
+        // The host spawned the stone drop (item 3); the client did not spawn
+        // a local one (its copy arrives through the 21 cadence).
+        assert!(host_app.items.iter().any(|d| d.kind == 3), "the host's loot");
+    }
+
+    /// `case 17` kind 5/6 (`MessageBuffer.cs:1187-1194`): the wire place/kill
+    /// edits flip the host's wire side-table and relay; the kill drops the
+    /// 530 wire item host-side (`WorldGen.cs:58130`).
+    #[test]
+    fn g48_17_wire_place_and_kill_edit_replicates() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TileEdit(net::TileEdit {
+                kind: 5, // PlaceWire (red)
+                x: 7,
+                y: 3,
+                value: 0,
+                style: 0,
+            }));
+        }
+        let mut wired = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            wired = host_app.world.wires.get(7, 3, tr_core::wiring::WireColor::Red)
+                && client_app.world.wires.get(7, 3, tr_core::wiring::WireColor::Red);
+            if wired {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(wired, "the red wire landed on both sides");
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TileEdit(net::TileEdit {
+                kind: 6, // KillWire (red)
+                x: 7,
+                y: 3,
+                value: 0,
+                style: 0,
+            }));
+        }
+        let mut cut = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            cut = !host_app.world.wires.get(7, 3, tr_core::wiring::WireColor::Red)
+                && !client_app.world.wires.get(7, 3, tr_core::wiring::WireColor::Red);
+            if cut {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(cut, "the wire came off both sides");
+        assert!(host_app.items.iter().any(|d| d.kind == 530), "the 530 drop");
+    }
+
+    /// `case 17` kind 15 (`MessageBuffer.cs:1227-1230`): a client's track
+    /// pound runs `Minecart.FrameTrack(x, y, pound: true)` (the C# default
+    /// `mute: false`) on the host and relays; the receiving client frames
+    /// its own copy. A level straight (front frame 1, both connections 1)
+    /// between two rails switches to the up-slope frame 5 (left 1 / right
+    /// 2 — the first two-sided option of mask 18 after the current front,
+    /// `Minecart.cs:1040-1108`); the C# fail-tile tail never removes the
+    /// track (the W4-g48 no-op fix over f11's kill). WRITTEN NOT RUN.
+    #[test]
+    fn g48_17_track_pound_edit_frames_and_replicates() {
+        let (mut host_app, mut client_app) = roomy_pair();
+        // Three rails in a row at y=10: (9,10) front 1, (10,10) front 1
+        // back −1 (the hit), (11,10) front 1 — the mask is 2|16 = 18.
+        for app in [&mut host_app, &mut client_app] {
+            for x in 9..=11i32 {
+                let i = app.world.index(x, 10);
+                app.world.tiles[i] = tr_core::Tile {
+                    kind: 314,
+                    frame_x: 1,
+                    frame_y: -1,
+                    ..Default::default()
+                };
+                app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TileEdit(net::TileEdit {
+                kind: 15,
+                x: 10,
+                y: 10,
+                value: 0,
+                style: 0,
+            }));
+        }
+        let mut framed = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            framed = host_app.world.tile_frame_x(10, 10) == 5
+                && client_app.world.tile_frame_x(10, 10) == 5;
+            if framed {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(framed, "the track switched to the up-slope frame on both sides");
+        for app in [&host_app, &client_app] {
+            // The fail-tile tail (`flag4` true, mute false) did NOT kill
+            // the track (`WorldGen.cs:63709-63737` — no removal).
+            let t = app.world.tile(10, 10).unwrap();
+            assert!(t.active() && t.kind == 314, "the track survives the fail tick");
+            assert_eq!(t.frame_y, -1, "no back connection on the mask");
+        }
+    }
+
+    /// `case 19` action 0 (`MessageBuffer.cs:1309-1311`): a client's door-open
+    /// toggle runs `WorldGen.OpenDoor` on the host and relays the normalised
+    /// direction to the other peers; the receiving client opens its copy.
+    #[test]
+    fn g48_19_door_open_toggle_replicates() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // A closed door (tile 10, 1x3) at (8, 1..3) above the dirt row (y 4),
+        // on both sides. `place_item_tile`'s y is the bottom row.
+        for app in [&mut host_app, &mut client_app] {
+            assert!(tr_core::edit::place_item_tile(&mut app.world, 8, 3, 10, 0, 1));
+        }
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::DoorToggle(net::DoorToggle {
+                action: 0,
+                x: 8,
+                y: 2,
+                direction: 1,
+            }));
+        }
+        let mut opened = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            // The open door is tile 11 (the closed 10 became the open pair).
+            opened = host_app.world.tile(8, 2).is_some_and(|t| t.kind == 11)
+                && client_app.world.tile(8, 2).is_some_and(|t| t.kind == 11);
+            if opened {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(opened, "the door opened on both sides");
+    }
+
+    /// `case 30` (`MessageBuffer.cs:1851-1867`): a client's PvP flip stores
+    /// `hostile` on the host's peer copy, relays to the others and broadcasts
+    /// the team-coloured chat line (`Lang.mp[11]`, `Main.teamColor[team]`).
+    #[test]
+    fn g48_30_pvp_toggle_stores_relays_and_chats() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The peer is on team 1 (red) — the 12 spawn carried it; here the
+        // fixture sets it directly (the join default is 0).
+        host_app
+            .remote_players
+            .entry(client_app.local_id)
+            .or_default()
+            .team = 1;
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TogglePvp(net::TogglePvp {
+                player_id: 255, // the host forces the sender (`:1854-1857`)
+                hostile: true,
+            }));
+        }
+        let mut landed = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            landed = host_app
+                .remote_players
+                .get(&client_app.local_id)
+                .is_some_and(|p| p.hostile)
+                && !host_app.chat.messages.is_empty();
+            if landed {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(landed, "the 30 arm stored hostile and broadcast the chat");
+        // The chat line is the team-1 red (`Main.cs:6658`).
+        let line = &host_app.chat.messages[0];
+        assert_eq!(line.color, [218, 59, 59], "Main.teamColor[1]");
+        // The client received the relay (its own echo is skipped by the
+        // host's broadcast_except, so the flag lands via the module only if
+        // a second peer existed; here the host's store is the witness).
+    }
+
+    /// `case 34` action 0 (`MessageBuffer.cs:2001-2017`): a client's chest
+    /// placement runs the host's `PlaceChest` (the store slot + the 2x2
+    /// tiles) and relays the index; the receiving client writes the same
+    /// tiles + store slot via `PlaceChestDirect`.
+    #[test]
+    fn g48_34_chest_place_replicates_the_store_and_tiles() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The dirt row (y 4) supports a chest at (8, 3) — the 2x2 sits on it.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ChestUpdates(net::ChestUpdates {
+                action: 0,
+                x: 8,
+                y: 3,
+                style: 0,
+                chest: 0, // the client writes 0; the host zeroes it (`:1993`)
+            }));
+        }
+        let mut placed = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            placed = crate::chest::find_chest(&host_app.world_chests, 8, 2).is_some()
+                && crate::chest::find_chest(&client_app.world_chests, 8, 2).is_some();
+            if placed {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(placed, "the chest store slot landed on both sides");
+        // The 2x2 tiles (the anchor is (8, 2): PlaceChest's objectData.yCoord).
+        for app in [&host_app, &client_app] {
+            for dx in 0..2 {
+                for dy in 0..2 {
+                    let t = app.world.tile(8 + dx, 2 + dy).unwrap();
+                    assert!(t.active() && t.kind == 21, "chest cell ({dx},{dy})");
+                }
+            }
+        }
+    }
+
+    /// `case 35` (`MessageBuffer.cs:2160-2177`): a client's heal raises the
+    /// HealLife combat text at the peer's position on the host and relays;
+    /// the receiving client spawns the same text.
+    #[test]
+    fn g48_35_player_heal_spawns_the_peer_text() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlayerHeal(net::PlayerHeal {
+                player_id: 255, // the host forces the sender (`:2163-2166`)
+                amount: 20,
+            }));
+        }
+        let mut spawned = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            spawned = host_app.combat_texts.iter().any(|t| t.active && t.text == "20");
+            if spawned {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(spawned, "the host spawned the peer's heal text");
+        let t = host_app.combat_texts.iter().find(|t| t.active).unwrap();
+        assert_eq!(t.color, crate::combat_text::HEAL_LIFE, "the HealLife colour");
+    }
+
+    /// `case 36` (`MessageBuffer.cs:2178-2201`): a client's zone words store
+    /// on the host's peer copy and relay; the receiving client stores them.
+    /// The faeling edge (`zone5[0]` rising) is detected (the spawner is
+    /// cited-unported).
+    #[test]
+    fn g48_36_player_zone_stores_and_relays() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let z = net::PlayerZone {
+            player_id: 255, // the host forces the sender (`:2180-2184`)
+            zone1: net::BitsByte(0b0000_0010), // jungle
+            zone2: net::BitsByte(0),
+            zone3: net::BitsByte(0),
+            zone4: net::BitsByte(0),
+            zone5: net::BitsByte(0b0000_0001), // the faeling edge bit
+            town_npcs: 3,
+        };
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlayerZone(z));
+        }
+        let mut landed = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            landed = host_app
+                .remote_players
+                .get(&client_app.local_id)
+                .is_some_and(|p| p.zones[0] == 0b10 && p.town_npcs == 3);
+            if landed {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(landed, "the 36 arm stored the zone words");
+        let peer = &host_app.remote_players[&client_app.local_id];
+        assert_eq!(peer.zones[4] & 1, 1, "the faeling edge bit stored");
+    }
+
+    /// `case 36` faeling edge (`MessageBuffer.cs:2195-2198`,
+    /// `NPC.cs:5957-5995`): the zone5[0] rising edge runs
+    /// `spawner::spawn_faelings` on the host — the scan draws consume the
+    /// bare global stream verbatim (the RNG census) while the Shimmerfly
+    /// 677 spawn stays roster-gated (`kind_from_net_id(677)` → None until
+    /// the M4-NPC row lands). The witness pins: the edge stores + the scan
+    /// leaves no NPC (the roster gap), and a SECOND zone message with the
+    /// bit still set applies without re-firing the edge (the was_faeling
+    /// latch). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn g48_36_faeling_edge_fires_once_and_roster_gates() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // Park the peer far from any shimmer (the 8x8 flow world has none)
+        // so every candidate fails the liquid probe — the draws still run.
+        let z = net::PlayerZone {
+            player_id: 255,
+            zone1: net::BitsByte(0),
+            zone2: net::BitsByte(0),
+            zone3: net::BitsByte(0),
+            zone4: net::BitsByte(0),
+            zone5: net::BitsByte(1), // the faeling edge bit
+            town_npcs: 0,
+        };
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlayerZone(z));
+        }
+        let mut landed = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            landed = host_app
+                .remote_players
+                .get(&client_app.local_id)
+                .is_some_and(|p| p.zones[4] & 1 == 1);
+            if landed {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(landed, "the edge bit stored");
+        // The roster gap: the scan ran (its draws consumed) but no
+        // Shimmerfly spawned — kind_from_net_id(677) is None.
+        assert!(
+            host_app.npcs.iter().all(|n| n.kind.cs_id() != 677),
+            "the Shimmerfly spawn stays roster-gated"
+        );
+        // The second message keeps the bit set: no rising edge, the store
+        // still applies (town_npcs changes) and no NPC appears.
+        let again = net::PlayerZone { town_npcs: 2, ..z };
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlayerZone(again));
+        }
+        let mut relanded = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            relanded = host_app
+                .remote_players
+                .get(&client_app.local_id)
+                .is_some_and(|p| p.town_npcs == 2);
+            if relanded {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(relanded, "the second zone message applied");
+        assert!(
+            host_app.npcs.iter().all(|n| n.kind.cs_id() != 677),
+            "no re-fire: the bit was already set (no rising edge)"
+        );
+    }
+
+    /// `case 40` (`MessageBuffer.cs:2256-2270`): a client's talk-NPC index
+    /// stores on the host's peer copy, registers the bestiary chat start
+    /// (`Player.cs:4379-4382`) and relays.
+    #[test]
+    fn g48_40_talk_npc_stores_and_registers_the_chat() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // A Guide (town NPC) in slot 0 — the bestiary credit "Guide".
+        let guide = crate::npc::Npc::new(crate::npc::NpcKind::Guide, 100.0, 100.0, 1, 0.0);
+        host_app.npcs.clear();
+        host_app.npcs.push(guide);
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TalkNpc(net::TalkNpc {
+                player_id: 255, // the host forces the sender (`:2258-2262`)
+                npc: 0,
+            }));
+        }
+        let mut landed = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            landed = host_app
+                .remote_players
+                .get(&client_app.local_id)
+                .is_some_and(|p| p.talk_npc == Some(0));
+            if landed {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(landed, "the 40 arm stored the talk index");
+        assert!(
+            host_app.bestiary.was_chat_with("Guide"),
+            "the bestiary chat start registered (Player.cs:4381)"
+        );
+    }
+
+    /// `case 17` kind 21 (`MessageBuffer.cs:1263-1265`): a client's
+    /// ReplaceTile edit swaps the host's stone block (1) for a dirt block
+    /// (0 is refused — Conversion.Grass; use wood 30 → stone 1) and relays;
+    /// the receiving client swaps its own copy. The host drops the OLD
+    /// block's item (`KillTile_DropItems`, stone → 3); the client spawns no
+    /// local drop (the `netMode == 1` gate). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn g48_17_replace_tile_edit_swaps_and_replicates() {
+        let (mut host_app, mut client_app) = roomy_pair();
+        // A stone block at (10, 10) on both sides (in the air above the
+        // dirt row 20 — no neighbours to reframe into it).
+        for app in [&mut host_app, &mut client_app] {
+            let i = app.world.index(10, 10);
+            app.world.tiles[i] = tr_core::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TileEdit(net::TileEdit {
+                kind: 21, // ReplaceTile
+                x: 10,
+                y: 10,
+                value: 30, // wood — a valid solid target
+                style: 0,
+            }));
+        }
+        let mut swapped = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            swapped = host_app.world.tile(10, 10).is_some_and(|t| t.active() && t.kind == 30)
+                && client_app.world.tile(10, 10).is_some_and(|t| t.active() && t.kind == 30);
+            if swapped {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(swapped, "the stone became wood on both sides");
+        // The host dropped the old stone's item 3 (`tile_drop(1)`); the
+        // client spawned nothing local (its loot arrives as `21`).
+        assert!(host_app.items.iter().any(|d| d.kind == 3), "the host's stone drop");
+        assert!(
+            !client_app.items.iter().any(|d| d.kind == 3),
+            "the client's netMode==1 drop gate"
+        );
+    }
+
+    /// `case 19` action 3 (`MessageBuffer.cs:1318-1320`): a client's
+    /// trapdoor-OPEN toggle (`ShiftTrapdoor(x, y, dir==1, 0)` — the 0 is
+    /// OPEN-only, the `:51534` close branch gates `!= 0`) runs the canonical
+    /// W4-c42 `edit::shift_trapdoor` on the host and relays; the receiving
+    /// client shifts its own copy. The closed 2x2 (386, styleX 0) opens
+    /// DOWNWARD: the top row clears, the bottom row becomes 387
+    /// (`WorldGen.cs:51471-51485`). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn g48_19_trapdoor_open_toggle_replicates() {
+        let (mut host_app, mut client_app) = roomy_pair();
+        // The closed trapdoor 2x2 at (10,10)..(11,11), in the air above the
+        // dirt row 20 — the c42 closed_trapdoor fixture shape.
+        for app in [&mut host_app, &mut client_app] {
+            for col in 0..2i32 {
+                for row in 0..2i32 {
+                    let i = app.world.index(10 + col, 10 + row);
+                    app.world.tiles[i] = tr_core::Tile {
+                        kind: 386,
+                        frame_x: (col * 18) as i16,
+                        frame_y: (row * 18) as i16,
+                        ..Default::default()
+                    };
+                    app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+                }
+            }
+        }
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::DoorToggle(net::DoorToggle {
+                action: 3, // ShiftTrapdoor(..., onlyCloseOrOpen: 0) — open
+                x: 10,
+                y: 10,
+                direction: 1,
+            }));
+        }
+        let mut opened = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            opened = host_app.world.tile(10, 11).is_some_and(|t| t.kind == 387)
+                && client_app.world.tile(10, 11).is_some_and(|t| t.kind == 387);
+            if opened {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(opened, "the trapdoor opened on both sides");
+        for app in [&host_app, &client_app] {
+            // The top row cleared (`Tile.ClearTile`, :51471-51478).
+            assert!(!app.world.tile_active(10, 10), "top-left cleared");
+            assert!(!app.world.tile_active(11, 10), "top-right cleared");
+            // The bottom row is the open trapdoor (:51479-51485).
+            for col in 0..2i32 {
+                let t = app.world.tile(10 + col, 11).unwrap();
+                assert_eq!(t.kind, 387);
+                assert_eq!((t.frame_x, t.frame_y), ((col * 18) as i16, 0));
+            }
+        }
+    }
+
+    /// `case 19` action 4 (`MessageBuffer.cs:1321-1323`): a client's
+    /// tall-gate-OPEN toggle (`ShiftTallGate(x, y, closing: false, forced:
+    /// true)`) runs the canonical W4-c42 `edit::shift_tall_gate` (alternate-0
+    /// def decode of kind 388, the padding-free row walk) on the host and
+    /// relays; the receiving client shifts its own copy. The 5-tall column
+    /// 388 → 389, the frames survive (`WorldGen.cs:51763-51766`); the hit
+    /// cell is mid-column so the row walk's anchor adjustment is exercised.
+    /// The gate rows sit at y 10..14 in the roomy 64x64 world — inside the
+    /// handler's fluff-3 box AND past the kill cascade's 5-tile edge guard
+    /// (`kill.rs`'s `square_tile_frame`, the C# `TileFrame` `:81330`
+    /// margin), so the validate's reframes cannot pop the column mid-test.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn g48_19_tall_gate_open_toggle_replicates() {
+        let (mut host_app, mut client_app) = roomy_pair();
+        // The closed gate column x=10, rows 10..14 — the real placement grid
+        // (D_388 coordinate_heights [18,16,16,16,18] + 2px padding → frameY
+        // 0/20/38/56/74, the c42 23411fa7 fixture derivation).
+        for app in [&mut host_app, &mut client_app] {
+            for (row, fy) in [(0i32, 0i16), (1, 20), (2, 38), (3, 56), (4, 74)] {
+                let i = app.world.index(10, 10 + row);
+                app.world.tiles[i] = tr_core::Tile {
+                    kind: 388,
+                    frame_x: 0,
+                    frame_y: fy,
+                    ..Default::default()
+                };
+                app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::DoorToggle(net::DoorToggle {
+                action: 4, // ShiftTallGate(closing: false, forced: true)
+                x: 10,
+                y: 11, // mid-column: frameY 20 → the walk steps one row up
+                direction: 0,
+            }));
+        }
+        let mut opened = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            opened = host_app.world.tile(10, 10).is_some_and(|t| t.kind == 389)
+                && client_app.world.tile(10, 10).is_some_and(|t| t.kind == 389);
+            if opened {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(opened, "the tall gate opened on both sides");
+        for app in [&host_app, &client_app] {
+            for (row, fy) in [(0i32, 0i16), (1, 20), (2, 38), (3, 56), (4, 74)] {
+                let t = app.world.tile(10, 10 + row).unwrap();
+                assert_eq!(t.kind, 389, "row {row} opened");
+                assert_eq!((t.frame_x, t.frame_y), (0, fy), "frames survive");
+            }
+        }
     }
 }

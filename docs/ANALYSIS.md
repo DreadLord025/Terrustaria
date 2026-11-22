@@ -11968,6 +11968,32 @@ The entity messages and the smoothing are 1:1 ports; the deviations:
   `on_ground`, `leg_frame`, `body_frame`, `hp`, `max_hp` after the C# fields
   (two-client compatibility only). The control BitsBytes ride as flags with
   no port-side replay: each peer's input is local.
+- **`23 NPCInfo` now rides the verbatim C# body** (S1-I-1 d91, 2026-11-20):
+  slot byte, generation byte, `position + Size * SyncAnchor` (the only
+  non-zero anchor row is vanilla 50 King Slime `(0.5, 1)`, `NPCID.cs:10457`;
+  the port uses the kind's base `size()`, not the hp-scaled live `Size`),
+  velocity, `(ushort)target`, the two flag bytes, the flag-gated `ai[0..4]`
+  floats BEFORE the `(short)netID`, the optional difficulty float, the
+  lifeMax-keyed width-switched life and the catchable-kind `releaseOwner`
+  byte (`NetMessage.cs:686-763`, `MessageBuffer.cs:1563-1704`). The wire
+  `kind` stays the port-local protocol id, so the catchable/anchor predicates
+  map through `cs_id`. Two fields keep their defaults: the player-count
+  scaling byte (flags2 b0 — consumed on decode, never written) and
+  `difficulty` (1.0 until the world-mode state is persisted). The
+  `generation` byte bumps on a kind change so the client re-creates the slot
+  — the C#'s `existing.generation != generation` spawn test. `hurt_cd` stays
+  0 on clients until the `28 NPCStrike` apply arm lands (S1-I-4).
+
+  no port-side replay: each peer's input is local. **W4-d96 batch 6**: the
+  C# conditional tails are now VERBATIM — `(ushort)mount.Type` (flags_b bit
+  7), the potion-of-return use+home Vector2 pair (flags_c bit 6) and the
+  camera-target Vector2 (flags_d bit 5) encode/decode in the C# gate order
+  (`NetMessage.cs:492-508`, reader `MessageBuffer.cs:993-997`/`:1021-1038`/
+  `:1051`) ahead of the render extension. The remaining deviation narrows to
+  SIMULATION: the port stores the values but runs no mount/potion/camera
+  machinery (`SetMount`/`Dismount`, the potion null-out, the camera apply
+  are S1-I-4), and `player_state_of` keeps the gate bits clear so nothing
+  sends them yet.
 - **`23 NPCInfo` is the C# body minus the fields the port lacks**: `ai[]`
   (the Rust NPC keeps `anim`/`frame` instead), `difficulty`,
   `statsAreScaledForThisManyPlayers`, `releaseOwner`, `target` (u16 0) and
@@ -26511,7 +26537,7 @@ dependency tier of `SyncConnectedPlayer` (`NetMessage.cs:2806-2822`) /
 
 - `30 TogglePVP` вЂ” `(byte)plr + hostile` (`NetMessage.cs:856-859`).
 - `42 Unknown42` вЂ” the mana sync, `(byte)plr + (short)statMana + (short)statManaMax` (`:961-965`). Named `PLAYER_MANA` for readability; the C# name is `Unknown42` (`MessageID.cs:95`).
-- `45 TeamChange` вЂ” `(byte)plr + (byte)team` (`:970-974`). `157 TeamChangeFromUI` shares the writer arm but its read side adds the team-based-spawn tail (`MessageBuffer.cs:2355-2363`); 157 is not a join-bundle id and stays unported.
+- `45 TeamChange` вЂ” `(byte)plr + (byte)team` (`:970-974`). `157 TeamChangeFromUI` shares the writer arm but its read side adds the team-based-spawn tail (`MessageBuffer.cs:2355-2363`); 157 is not a join-bundle id вЂ” its id + codec landed with wave B below.
 - `60 Unknown60` вЂ” the NPC household banner, `(short)npc + (short)homeX + (short)homeY + (byte)status` (`:1067-1072`); the status is `WorldGen.TownManager.GetHouseholdStatus` (`:2845`). Named `NPC_HOUSE`.
 - `72 TravelMerchantItems` вЂ” exactly `Main.TravelShopMaxSlots = 40` (`Main.cs:67029`) `(short)` item types, no count prefix (`:1134-1141`, reader `MessageBuffer.cs:3121-3124`).
 - `74 AnglerQuest` вЂ” `(byte)Main.anglerQuest + anglerWhoFinishedToday.Contains(recipient name)` (`:1145-1148`); the wire's bool is per-recipient, the client stores it as `anglerQuestFinished` (`MessageBuffer.cs:3147-3153`).
@@ -26530,6 +26556,259 @@ the send-path pass (S1-I-4), so the live net message order is unchanged. The
 per-id round-trip tests `net::tests::s1_i_1_*` (11) pin the frame's id byte,
 the exact C# body bytes and the decode round trip; the travel shop test also
 pins the fixed 40-slot length (a 39-slot body fails to decode).
+
+## The join/lobby 1-16 region census (S1-I-1 wave B, W4-d89, 2026-11-20)
+
+Wave B re-censuses the `MessageID.cs:9-41` region (ids 1..=16) against
+`net.rs::id` and closes the two gaps wave A's join-bundle tier left:
+
+- `11 TileFrameSection` — four `(short)`s: `startX, startY, endXInclusive,
+  endYInclusive` (`NetMessage.cs:427-432`); the client feeds them to
+  `WorldGen.SectionTileFrame` (`MessageBuffer.cs:895-899`,
+  `WorldGen.cs:80343`). **research/17's map row said "no SendData arm" —
+  wrong**: the writer arm exists; what is absent is any `SendData(11)` call
+  site (the id is `[Old]`, `MessageID.cs:29-30` — framing happens after
+  TileSection). `id::TILE_FRAME_SECTION` + `S2c::TileFrameSection` carry the
+  verbatim body; the netglue arm is parked (the port's framing pass is not
+  net-wired, and no C# site sends it).
+- `15 Unknown15` — `[Old("Deprecated.")]` (`MessageID.cs:38-39`), no writer
+  arm, no body; the reader's ignore group (`MessageBuffer.cs:4483-4490`,
+  shared with 25/26/44/67/83/93) accepts and drops it. `id::UNKNOWN_15` +
+  `S2c::Unknown15` mirror that exactly (a bare 3-byte frame).
+
+The InitialSpawn semantics fix needs no new code: `49` already carries the
+C# meaning (`State 6 → 10` + `12 PlayerSpawn` with `SpawningIntoWorld`,
+S1-E-28, research/17 deviation 3). Wave B only purges the last stale
+`49 WorldComplete` doc comment (`net.rs` `client_state::IN_WORLD`) so the
+wrong reading cannot resurface. Tests `net::tests::s1_i_1b_*` (3) pin the
+11-body bytes + truncation failure, the 15 bare frame, and the full 1..=16
+constant census. Code-only wave: tests written, NOT run (no cargo).
+
+## The world-sync message ids (S1-I-1 wave B, 2026-11-20)
+
+Wave B of the message-id remap censuses the **section-send / tile-square /
+spawn-tile region** of the `MessageID` enum against `net.rs` and ports the
+missing ids as wire bodies + `C2s`/`S2c` codecs (the wave-A convention).
+Already ported in the region: `8 SpawnRequest` (`NetMessage.cs:414-418`),
+`10 TileSection` (the deflate codec), `12 PlayerSpawn` (`:433-444`),
+`20 AreaTileChange`/`SendTileSquare` (the uncompressed per-tile codec,
+`:543-644`), `49 InitialSpawn`, `9 Status`. The nine new ids:
+
+- `11 TileFrameSection` вЂ” four `(short)`s (`NetMessage.cs:427-432`), read at
+  `netMode == 1` into `WorldGen.SectionTileFrame(startX, startY,
+  endXInclusive, endYInclusive)` (`MessageBuffer.cs:895-900`,
+  `WorldGen.cs:80343`). Deprecated (`MessageID.cs:29-30`) and **never sent**
+  (`SendData(11` = 0 sites across `decompiled/`); the body exists so the
+  reader arm is 1:1. S2c only.
+- `17 TileManipulation` вЂ” `(byte)kind + (short)x + (short)y + (short)value +
+  (byte)style` (`NetMessage.cs:524-530`). **Census correction:** research/17
+  called 17 "superseded by 20" вЂ” wrong: both are live. 17 has ~30 direct
+  send sites (`Player.cs:39626`, `DelegateMethods.cs:515`, `Liquid.cs:1204`,
+  `Collision.cs:3353`, вЂ¦) and the host relays client edits as 17
+  (`MessageBuffer.cs:1285`), falling back to `SendTileSquare(-1, x, y, 5)`
+  only when a placement survives (`:1281`). The port's `INT_EDIT` (201)
+  stand-in is unchanged by this body вЂ” the swap is S1-I-4's.
+- `19 ToggleDoorState` вЂ” `(byte)action + (short)x + (short)y + (byte)dir`
+  (`NetMessage.cs:537-542`, the C# writes `number4 == 1f`). Actions 0/1
+  door open/close, 2/3 trapdoor, 4/5 tall gate; the reader normalises
+  `dir != 0` to 1 else -1 and relays (`MessageBuffer.cs:1299-1334`).
+- `63/64 SyncTilePaintOrCoating / SyncWallPaintOrCoating` вЂ” shared writer
+  case, `(short)x + (short)y + (byte)paint + (byte)coat`
+  (`NetMessage.cs:1081-1087`); `coat == 0` paints, else illuminant-coats
+  (`MessageBuffer.cs:2909-2948`), then the host relays.
+- `125 SyncTilePicking` вЂ” `(byte)plr + (short)x + (short)y + (byte)damage`
+  (`NetMessage.cs:1509-1514`); the host overrides the id to the sender and
+  relays to the others (`MessageBuffer.cs:4023-4042`,
+  `Player.GetOtherPlayersPickTile` `Player.cs:53751`).
+- `157 TeamChangeFromUI` вЂ” shares 45's writer case (`NetMessage.cs:970-971`),
+  so the same `TeamChange` body under a new id; the reader's team-spawn tail
+  (`MessageBuffer.cs:2355-2363`: `teamBasedSpawnsSeed` +
+  `ExtraSpawnPointManager.TryGetExtraSpawnPointForTeam` в†’ `CheckSection` +
+  `SendData(158)`) is dispatcher work. C2s only вЂ” the host relays as 45
+  (`:2342`). Sent from the team UI (`Main.cs:42766`).
+- `158 ExtraSpawnSectionLoaded` вЂ” `(byte)plr` (`NetMessage.cs:1659-1661`);
+  the client spawns with `PlayerSpawnContext.TeamSwap` = 3
+  (`MessageBuffer.cs:4450-4456`, `PlayerSpawnContext.cs:5-8`). S2c only.
+- `159 RequestSection` вЂ” the writer writes two `(short)`s
+  (`NetMessage.cs:1662-1665`), the reader reads two `ReadUInt16`
+  (`MessageBuffer.cs:4460` в†’ `SendSection`) вЂ” same bytes for non-negative
+  section indices; the codec carries `u16`. C2s only
+  (`Player.cs:41534`, `WorldItem.cs:375`). The port streams unrequested
+  (`host_stream_sections`); the on-request arm is S1-I-4's.
+
+Deliberate scope boundary (same as wave A): **bodies + codecs only**. The
+`netglue` dispatchers carry parked arms; the apply/relay sites
+(`MessageBuffer.cs:1119-1288` incl. the spam counters `:1141-1146` and the
+unsent-section fail-force `:1148-1151`, `:1299-1334`, `:2909-2948`,
+`:4023-4042`, `:2355-2363`, `:4450-4462`) and the send fan-out land with
+S1-I-4, so the live net message order is unchanged. The per-id round-trip
+tests `net::tests::s1_i_1b_*` (8) pin the id byte, the exact C# body bytes
+and the decode round trip; the tile-edit and section-request tests also pin
+truncated-body rejection, and the 157 test pins byte-identity with 45's body.
+
+## The NPC-family net ids, first half (S1-I-1 d91, 2026-11-20)
+
+The 23/24/27/28/29 region, censused against `MessageID.cs` and re-verified
+byte-for-byte against `NetMessage.cs`'s writer arms + `MessageBuffer.cs`'s
+readers (the second half is d92; 18/36/41/43/51/55/62/84 belong to c27):
+
+- **`23 NPCInfo` — the body is now verbatim** (`NetMessage.cs:686-763`):
+  the ai[0..4] flag-gated floats ride BEFORE the `(short)netID` (flags1
+  b2..b5), the `(ushort)target` is real (was a hard 0), the life width byte
+  keys on `lifeMax` (was keyed on the current life — wrong for a damaged
+  high-max NPC), flags2 carries `SpawnedFromStatue`/`difficulty != 1`/
+  `spawnNeedsSyncing`/the shimmer bit, the catchable kinds append the
+  `releaseOwner` byte, and King Slime's position rides the
+  `Size * SyncAnchor[50]` offset (`NPCID.cs:10457` — the only non-zero row).
+  The wire `kind` stays the port-local protocol id, so both per-type
+  predicates map through `cs_id` (the `NPCID.Count` bounds gate included).
+  Remaining defaults: the player-count scaling byte (flags2 b0) is consumed
+  on decode but never written (no multiplayer stat scaling yet), and
+  `difficulty` rides 1.0 until the world-mode state is persisted. The
+  SyncAnchor uses the kind's base `size()`, not King Slime's hp-scaled live
+  `Size` (the wire snapshot carries no scale). The client apply arm now
+  lands target/directionY/spriteDirection/ai/statue/shimmer/releaseOwner
+  (`MessageBuffer.cs:1649-1699`); the pending-damage merge (`GetPendingDamage`,
+  `:1668-1676`) stays an I-4 follow-up.
+- **`24 UnusedMeleeStrike` — dead, deliberately unported.** The writer arm
+  exists (`NetMessage.cs:765-768`: `(short)number + (byte)number2`) but no
+  `SendData(24)` call site exists anywhere in the decompilation, and the
+  reader is `Invariant.Assert(condition: false, "UnusedMeleeStrike")`
+  (`MessageBuffer.cs:1706-1708`). The census's "no body arm" claim was
+  wrong about the writer; the id is still dead on the wire.
+- **`27 SyncProjectile` — re-verified verbatim** (`NetMessage.cs:776-841`):
+  key, position, velocity, `(short)type`, flags1, the optional flags2 byte
+  (ai[2] present), then ai0/ai1/banner/damage/knockBack/originalDamage/ai2
+  in flag order. The existing codec already matched; a byte-pin test now
+  locks it. `bannerIdToRespondTo` still rides 0 from the pool (no banner
+  field yet, `net_proj_sync.rs::state_of`).
+- **`28 DamageNPC` — re-verified verbatim** (`NetMessage.cs:844-850`):
+  `(byte)slot`, generation, `(short)damage`, knockback float,
+  `(byte)(hitDirection + 1)`, `(byte)crit`. The `-1` direction sentinel
+  wraps through the byte and back (`MessageBuffer.cs:1776`). Byte-pin test.
+- **`29 KillProjectile` — the position now rides both directions**
+  (`NetMessage.cs:852-855`: `(int)key + Vector2`). The C2s body used to
+  hard-write NaN/NaN and drop the received position; now the client's
+  Kill-tail sends the ENTRY-position snapshot (`Projectile.cs:77256`, the
+  `ProjSend::Kill { key, x, y }` the decision layer already produced) and
+  the host relays the received position verbatim (`MessageBuffer.cs:1847`).
+  A finite position snaps the slot before the kill, NaN/Inf deactivates
+  silently (`:1835-1843`) — `projectile.rs::kill_remote_at`. The NaN
+  owner-lost despawn (`Projectile.cs:16697`) still rides NaN bit-exact.
+
+Six byte-pin tests `net::tests::s1_i_1_npc_info_*` /
+`s1_i_1_projectile_verbatim_body` / `s1_i_1_npc_strike_verbatim_body` /
+`s1_i_1_projectile_dead_verbatim_body` lock the id bytes + the exact C#
+body bytes + the round trips (written, not run — the lane is code-only).
+
+## The item/chest-family net ids (S1-I-1 wave I, 2026-11-20)
+
+Wave I censuses the 21/22/30/31/32/33/34/80/81 region against `net.rs`
+(code-only mode — no compiler invoked, tests WRITTEN NOT RUN):
+
+- **21 SyncItem — WRONG, fixed**: the body dropped bit 3
+  (`enemyGrabDelayTime > 0`, `NetMessage.cs:652`) and its conditional tail
+  byte (`(byte)MathHelper.Clamp(enemyGrabDelayTime, 0f, 255f)`, `:665-668`,
+  written AFTER the shimmer pair). `ItemState.enemy_grab_delay` + the
+  `ItemDrop.enemy_grab_delay_time` field (decay `WorldItem.cs:449-452`,
+  spawn `Item.cs:49757-49760` sets it for the reserve/grab-delay ownership
+  arms — the port's spawn sites keep 0, the monster-grab gate `:405` is
+  unported with no enemy item grab) landed; the client's `21` handler
+  writes it (`MessageBuffer.cs:1487`). The ownership bits 0/1 stay 0 on
+  the port's diff cadence — the C# sets them only on the spawn send's
+  `number2` ownership argument (`Item.cs:49768`), which the port's
+  event-driven stand-in does not carry (documented deviation).
+- **22 ItemOwner — FAITHFUL**: `(short)slot + (byte)reservedFor +
+  7bit hold + (byte)grabDelayPlayer + 7bit grabDelayTime + Vector2`
+  (`NetMessage.cs:675-685`) matches field-for-field; the client apply
+  carries the grab-delay pair (S1-P-i51).
+- **30 TogglePVP — FAITHFUL** (wave A body); dispatcher parked for S1-I-4.
+- **31 RequestChestOpen — i43/S1-E-27 arm verified, one gap fixed**:
+  `Chest.UsingChest` scans ALL active players (`Chest.cs:502-508`) — the
+  host's own local player (slot 0) included. The port only scanned the
+  remote slots, so a client could open a chest the HOST was browsing.
+  The check now includes `App.player.chest`. The rest of the arm
+  (FindChest → contents burst → 33 → 80 → rigged 59) is 1:1.
+- **32 SyncChestItem / 33 SyncPlayerChest — FAITHFUL** (S1-E-27 + the
+  i43 rename flush): the writer order `short stack, byte prefix,
+  short type` with the no-name zero (`NetMessage.cs:869-876`), the 33
+  length-byte gate (0/1..20/255, `MessageBuffer.cs:1927-1937`) and the
+  sender-tracked rename target all match.
+- **34 ChestUpdates — MISSING, ported**: `(byte)action + (short)x +
+  (short)y + (short)style + (short)chest` (`NetMessage.cs:913-927`).
+  The writer's fifth short is `number5` on the server, a literal 0 on
+  the client (`:918-927`) — the port's `C2s` encode writes 0 and its
+  decode zeroes the field (the host reader does, `MessageBuffer.cs:
+  1991-1994`); `S2c` keeps it. The host's PlaceChest/KillTile pass
+  (`:1995-2122`) and the client's PlaceChestDirect/DestroyChestDirect
+  apply (`:2124-2157`) are parked for S1-I-4 — the port's container
+  place/break already runs through the local `world_sim/editing.rs`
+  chain, and wiring the relay needs that chain's send seams.
+- **80 SyncPlayerChestIndex — FAITHFUL**: `(byte)plr + (short)chest`
+  (`NetMessage.cs:1175-1178`), the client's `-3..8000` gate
+  (`MessageBuffer.cs:3221`).
+- **81 CombatTextInt — MISSING, ported**: `(float)x + (float)y + RGB +
+  (int)amount` (`NetMessage.cs:1179-1186`, `WriteRGB` = R,G,B bytes,
+  `Utils.cs:1369-1374`). Host→client only (the reader gates
+  `netMode == 1`, `MessageBuffer.cs:3227-3233`); the one C# send site is
+  `NPC.HealEffect`'s broadcast (`NPC.cs:77440-77443`). The client apply
+  truncates the floats into `Rectangle(x, y, 0, 0)`, adds alpha 255 to
+  the RGB and spawns `CombatText.NewText` with the default
+  dramatic/dot = false — the jitter draws ride `Main.rand` (the port's
+  bare global stream, the message-time cue precedent S1-E-21i).
+
+Witnesses: `net::tests::s1_i_1_item_state_enemy_grab_bit_round_trips`,
+`s1_i_1_chest_updates_round_trips`, `s1_i_1_combat_text_int_round_trips`
++ the 34/81 entries in the frame round-trip families;
+`netglue::message_family_tests::a_chest_open_request_is_refused_while_the_host_browses_it`
+and `a_combat_text_int_spawns_the_clients_heal_number`.
+
+### The wave-I verify round (2026-11-20, code-only)
+
+The whole region was re-verified byte-for-byte against the C# writer AND
+reader arms: 21 (`NetMessage.cs:646-669` vs `MessageBuffer.cs:1445-1487`
+— the bit-3 tail byte rides AFTER the shimmer pair, the reader consumes
+it at `:1459`), 22 (`:675-685` vs `:1552-1562`, the two 7-bit varints),
+30/31/32/33/80 (`:856-911`/`:1175-1178` vs `:1851-1982`/`:3216-3227` —
+the 33 length-byte gate `0/1..20/255` and the 80 `-3..8000` gate), 34
+(`:913-927` vs `:1984-1994` — the C2s encode writes the literal 0 and
+the host decode zeroes the fifth short, S2c keeps `number5`), 81
+(`:1179-1186` vs `:3227-3233` — `WriteRGB` = R,G,B, `Utils.cs:1369-1374`;
+the send site `NPC.HealEffect` `NPC.cs:77440-77443`). All faithful.
+
+One census WRONG corrected: research/17's old row claimed **35 PlayerHeal
+and 36 SyncPlayerZone NOT-FOUND** — both have writer arms
+(`NetMessage.cs:929-932`/`:933-944`) AND reader arms
+(`MessageBuffer.cs:2160-2177`/`:2178-2202`). Ported as bodies + codecs
+(the wave-A pattern, dispatchers parked for S1-I-4):
+
+- **35 PlayerHeal**: `(byte)plr + (short)amount`. The host overrides the
+  id to the sender (`:2163-2166`), calls `Player.HealEffect` unless it is
+  the local player without `ServerSideCharacter` (`:2168-2171`), relays
+  (`:2174`). The client send site is `Player.cs:4527`.
+- **36 SyncPlayerZone**: `(byte)plr + zone1..zone5 + (byte)townNPCs` —
+  the five `BitsByte` words ride their implicit byte conversion
+  (`BitsByte.cs:101`). The host overrides the id, latches the OLD
+  `zone5[0]` before the reads and spawns faelings on the rising edge
+  (`MessageBuffer.cs:2186`/`:2195-2198`), relays (`:2199`).
+
+Witnesses: `net::tests::s1_i_1_player_heal_round_trips`,
+`s1_i_1_player_zone_round_trips` (both pin the exact body bytes in both
+directions) + the 35/36 entries in the frame round-trip families.
+
+The witness pass then closed the per-id byte-verbatim gaps the region's
+older S1-E-27 bodies had (they only rode the frame round-trip families):
+`s1_i_1_item_owner_round_trips` (22 — the two 7-bit varints pinned in both
+the one-byte and two-byte forms, `0xAC 0x02` = 300),
+`s1_i_1_chest_open_request_round_trips` (31 — the two shorts),
+`s1_i_1_chest_item_round_trips` (32 — the stack-BEFORE-prefix order),
+`s1_i_1_player_chest_round_trips` (33 — the 0/1..20/255 length-byte gate,
+the string's own 7-bit length byte, and the stray-length `num24 = 0`
+zeroing) and `s1_i_1_player_chest_index_round_trips` (80 — byte plr +
+short index across the `-3..7999` legal span). The 80 apply-side
+`-3..8000` gate itself is `netglue`'s `S2c::PlayerChestIndex` arm
+(`MessageBuffer.cs:3221`). All code-only — tests written, not run.
+
 ## The buff misc block (S1-E-7 wave D, 2026-11-18)
 
 `crates/tr-app/src/buff_effects_misc.rs` ports the `Player.UpdateBuffs`
@@ -39244,3 +39523,225 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The g48 cited-skip closures (W4-g48 round 2, 2026-11-21, code-only)
+
+The five cited skips the g48 lane-1 round-1 commits recorded are closed or
+re-scoped on this tip (the ids 1-40 apply-status table lives in
+`research/17-netcode.md` "The g48 net-apply-status table" — the task's
+`research/107` cross-note target does not exist on any pushed branch; f21's
+census is research/17's tail section, `5274a097`):
+
+- **id-19 actions 2-5 (trapdoor/tall gate).** The c42 canonical
+  `tr-core/src/edit/shift.rs` landed BYTE-IDENTICAL (blob `41a9056d`, the
+  research/95 union-exec tip `fadaa4bd` — `only_close_or_open` param, the
+  Option `wire_skips` seam, paint+fullbright coating, in-body per-site cues
+  incl. the double-thud, alternate-0 tall-gate decode, radius-4 reframe).
+  The net-19 reader calls it with the C# reader arguments
+  (`MessageBuffer.cs:1316-1325`): action 2/3 → `onlyCloseOrOpen` 1/0,
+  action 4/5 → `closing` false/true + `forced: true`; the entity half is
+  the REAL player/peer/NPC box overlap (the §8.1 seam, injected closure),
+  the close guard the FULL `CanKillTile` with the chest-store scan;
+  `wire_skips: None` (no flood on the message handler — the C#
+  `Main.netMode != 1 && Wiring.running` gate is false). The NPC-bash drain
+  re-point stays g4's merge work (the `npc_ai_town.rs` trait doc updated).
+  The wiring-lane `SendData(19)` echoes remain research/95 §8.2.
+- **id-17 kind 15 (Minecart.FrameTrack).** The f11 canonical
+  `tr-core/src/minecart.rs` landed (blob `5efef353`) with ONE fidelity fix:
+  the `(pound & flag4) && !mute` tail called `kill_tile(no_item: true)` —
+  a KILL — but the C# `KillTile(fail: true)` never removes the tile
+  (`WorldGen.cs:63709-63737`: grass/moss conversions + SquareTileFrame,
+  dust/sound only). f11's callers all pass `mute: true` so the branch never
+  fired there; the net-17 reader passes the DEFAULT `mute: false`, so the
+  port now no-ops the branch (the kind-0 fail-tick precedent). The
+  host/client arms call `frame_track(pound: true, mute: false)`.
+- **id-17 kind 21 (ReplaceTile).** Ported verbatim into
+  `tr-core/src/edit/replace.rs` (`WorldGen.cs:62558-62775`): the
+  five-validity AND chain + rope exceptions, the above-gates, the anchor
+  move, the natural-extras kills, the single/area replacement, the
+  rainbow/tenth sand paints (`GetRainbowPaintIDForPosition` verbatim incl.
+  the truncate-before-minus-5 cast). A prepare/commit split lets the app
+  run the C# tails in order: dust count (derived, not spawned — the visual
+  seam) → `kill_tile_sound` → large-object drops (the new
+  `chest::campfire_item_drop` ladder) → the fossil-404 genRand chain with
+  its `17` relays → the rigged-chest `HitSwitch` + `59` → the swap. The
+  `liquid.rs:709` cited skip is closed. Deliberate deviations: the
+  `SquareTileFrame`/`SquareWallFrame` walks ride `reframe_area` (the
+  documented radius superset); the fossil chain's `fossilBreak`
+  re-entrancy guard never binds (the port's `replicated_break` has no
+  fossil recursion).
+- **id-36 SpawnFaelings.** Census correction: the faeling is
+  `NPCID.Shimmerfly = 677` (`NPCID.cs:12031`), NOT 570 (`DD2DrakinT2`,
+  `:11817`). The kind is NOT rowed (`kind_from_net_id(677)` → None, no
+  bestiary entry — the M4-NPC roster). `NPC.Spawner.SpawnFaelings`
+  (`NPC.cs:5957-5995`) is ported VERBATIM as `spawner::spawn_faelings` and
+  the 36 host rising-edge calls it on the peer snapshot; the scan's draws
+  run exactly as the C# would (the RNG census stays whole) while only the
+  `NPC.NewNPC` spawn is roster-gated (the `spawn_shimmer_release`
+  precedent) — it activates with zero changes when the kind lands. The
+  degenerate-rect empty-range draw is the recorded stand-in (the
+  `try_spawn_an_npc` convention).
+- **The f21 cross-note.** research/17 gains the update-compatible ids 1-40
+  apply-status table (WIRED/PARKED/DEAD/N/A per id with the reader cite);
+  the remaining PARKED rows are 18 (the clock lane's internal-205) and 39
+  (M6-NET-5's FindOwner arm).
+
+Verification: code-only — no cargo/rustc/tests/rustfmt/graphify invoked.
+Every seam signature checked by read/grep against the actual branch code;
+the two landed modules hash-verified byte-identical to their source blobs
+(`git hash-object` == `git rev-parse <branch>:<path>`). 5 new loopback
+witnesses (`g48_19_trapdoor_open_toggle_replicates`,
+`g48_19_tall_gate_open_toggle_replicates`,
+`g48_17_track_pound_edit_frames_and_replicates`,
+`g48_17_replace_tile_edit_swaps_and_replicates`,
+`g48_36_faeling_edge_fires_once_and_roster_gates`) WRITTEN NOT RUN.
+
+## NET-APPLY-1 final phase (W4-g48, 2026-11-21, code-only)
+
+The lane's closing round: the ids 1-40 FINAL census, the f11 fail-tail
+upstream publish, the g52c-139 receipt and the research/17 tail SEAL
+(the declaration lives in research/17 "NET-APPLY-1 declaration").
+
+- **The FINAL census re-probe.** 18 SetTime: the clock lane's c27 tip
+  `412b6bc0d` LANDED the reader (`id::SET_TIME`/`SetTime` +
+  the client apply, `NetMessage.cs:531-536`/`MessageBuffer.cs:1290-1298`,
+  sunModY/moonModY parked — no port field); c28 tip `6379f881b` is the
+  SendData-trigger census ONLY (its `net_player_sync.rs:24-25` assigns
+  the 18 body/apply to c27), so the internal-205 → 18 send switch is
+  still c28's pending cadence work. 39 ReleaseItemOwnership: FINALIZED
+  PARKED — the f21 codec is landed (`5274a097`), the FindOwner/22
+  re-announce arm needs the peer `CanPullItem`/`ItemSpace`/magnet/hopper
+  scan + reservation fields (`WorldItem.cs:188-285`) that no tip rows;
+  g49/g50/g51 grep-empty, the item lane owns it. The table counts
+  mechanically: 30 WIRED / 4 N/A / 4 DEAD / 2 PARKED = 40/40.
+- **The f11 fail-tile tail-fix publish (research/272, chain 237→239→272).**
+  The f11 tip `84ed6342b` STILL carries the killing
+  `kill_tile(world, i, j, true)` in `frame_track`'s
+  `(pound & flag4) && !mute` tail — inert for f11's mute:true callers,
+  live for the net reader's default mute:false. The g48 no-op fix hunk
+  is published verbatim for f11f-seal/the merger, with a new core
+  witness (`w4_g48_the_pound_fail_tail_never_removes_the_track` — the
+  mask-18 isolated-rail pound cycle survives the fail tail). Number
+  initially 237 per the research/150 registry's free block (139
+  reserved for g52c); the correction phase self-renamed 237→239 (the
+  237 triple-collision: e23 bestiary-final first-add 10:53:03 wins 237;
+  g61 spawn-final 12:12:59; this doc 12:15:09); the research/150
+  round-2 refresh (§6.3, d54 `72226e500`) then assigned the final
+  **272** — 239 belongs to d42's earlier 12:55:30 push (g61's chain
+  →273). The
+  correction-phase consumption receipt: the f11e-retire wave
+  (tip `14ca0a8d5`) did NOT consume the hunk — minecart.rs blob
+  `5efef353` unchanged, the defect still at tip lines 360-362; the e20
+  union-survivor fail slice is already the correct no-op shape
+  (condition-return + app-side 314 slice, no kill), so the hunk matters
+  for any f11-body-survives merge path (research/272).
+- **The g52c-139-master receipt.** The pushed g52 tip `590b93565`
+  (`task/W4-g52-net-relay-host`) carries NO research/139 master-final
+  table — the g52c sub-round is unpushed (the research/150 registry
+  records the 139 reservation + g89's rename to 145, `41dabfbc8`). The
+  receipt records what the pushed tip DOES carry: the relay census
+  deferring the client applies to g48-g51, the 34 destroy-arm
+  refinement (`e2a5968a4`: the `can_kill_tile` + `chest_holds_items`
+  gate, the store removal + local close, the cascade object drop —
+  g48's `f086297b` destroy arm has none of these; the merger takes
+  g52's), and the byte-verbatim codec keep-one instruction (the g48
+  `34` codec == g52's copy, re-verified struct + both arms; the `162`
+  codec lives on g52 + g51, NOT g48 — the merger keeps g51's
+  pending-damage apply with either copy).
+
+Verification: code-only — no cargo/rustc/tests/rustfmt/graphify invoked.
+The lane-tip probes ran over `git grep`/`git show` at the pinned hashes;
+the C# windows re-read (`MessageBuffer.cs:2232-2255`,
+`WorldItem.cs:188-285`, `WorldGen.cs:63700-63737`). 1 new core witness
+WRITTEN NOT RUN (the fail-tail pin); the lane total is 17 g48 witnesses.
+
+### NET-APPLY-1 correction phase (W4-g48, 2026-11-21, code-only)
+
+The post-SEAL correction round (re-probe citations only — the seal
+stands, the receipt lives in research/17 after the declaration):
+
+- **The 237 triple-collision rename (final chain 237→239→272).** The
+  research/150 registry's first-pushed rule adjudicates the three 237
+  claims: e23 bestiary-final (`7a7779690`, 10:53:03) keeps 237; g61
+  spawn-final (`fd406ecba`, 12:12:59) and this lane's f11-tail-fix
+  (`34029437a`, 12:15:09) lose. This lane self-renamed to 239 at the
+  correction phase (then-unclaimed scan); the round-2 refresh (d54
+  `72226e500` §6.3) then showed 238 = d42 (12:15:55) and 239 = d42
+  (12:55:30) — g61's chain → 273, this lane's → **272**. Rename + all
+  refs executed (REGISTRY-RENAME round).
+- **The f11e-retire consumption receipt.** The f11 tip advanced
+  `84ed6342b` → `14ca0a8d5` (the retire phases 1/2/3+4/1b — the
+  233/234/235 registry renames + the c42e fold-lists) but the
+  minecart.rs blob `5efef353` is UNCHANGED: the killing
+  `kill_tile(world, i, j, true)` tail is still live at tip lines
+  360-362. The exact no-op hunk is re-published in research/272 for
+  the f11f-seal/merger. The e20 union-survivor fail slice re-probed
+  already correct (tip `46fdcfd8e`: the condition-return + the
+  app-side no-kill 314 slice) — the hunk binds only on any
+  f11-body-survives merge path; the g48 net-17 kind-15 reader keeps
+  the landed no-op form.
+- **The c28 send-switch correction (research/310, chain 244→281→310).** The C# has ZERO
+  `SendData(18)` sites (c28's own census json has no 18 key) — the
+  live clock sync rides `7 WorldData` (the event edges + the
+  3600-tick `UpdateServer` heartbeat, `Main.cs:64560`). The
+  "205→18" framing is corrected to "internal 205 → the id-7
+  cadence"; the exact 5-step switch is published for the c28 lane
+  (the c27 18 reader stays wire-compat). The internal-205 deviation
+  (research/17 row 13) stays admitted until that switch lands.
+- **The 39 item-lane task-seed (research/318, chain 245→282→318).** The lane
+  adjudication: not g49/g50/g51 (grep-empty re-verified), not the
+  landed M6-NET-5 ATLAS row (the 27/28/29 sync) — the ROADMAP
+  S1-I-4a "stay M6-NET-5" note is a forward-reference to the
+  milestone remainder; the ITEM lane (the d98 21/22/39/151 region)
+  owns the FindOwner/ReserveFor `WorldItem.cs:188-285` window + the
+  unrowed reservation fields + the peer-inventory dependency.
+
+Verification: code-only — no cargo/rustc/tests/rustfmt/graphify
+invoked; all probes at the re-fetched tip hashes (the receipt in
+research/17 lists them); no code change this round.
+
+### NET-APPLY-1 REGISTRY-RENAME round (W4-g48, 2026-11-21, code-only)
+
+The research/150 round-2 refresh (d54 tip `72226e500`, §6.3) landed
+AFTER this lane's correction push (`2b61530b4` 14:30:16 — outside the
+refresh's final sweep, per its cutoff note). Three renames executed on
+this branch per the registry + the post-sweep self-adjudication rule:
+
+- **239-f11-tail-fix → 272** (§6.3 g48 row assigns 272; chain
+  237→239→272 — 237 = e23 `7a7779690` 10:53:03, 239 = d42 `bac408be0`
+  12:55:30, both earlier than this lane's claims).
+- **244-c28-18-send-switch → 281** (chain later extended → **310**, see
+  the UNIFIED FINAL receipt below): 244 sits inside the refresh's
+  consumed 244–280 assignment block (= c31 jungle-residuals §6.3) and
+  was additionally claimed post-sweep by f39 (`8704691a3` 14:32:01)
+  and d53 (`a106d13e8` 14:56:57). Fresh 362-tip sweep: 281 unclaimed.
+- **245-39-item-ownership-seed → 282** (chain later extended → **318**,
+  see the UNIFIED FINAL receipt below): 245 = the d81/g53 18b-fork
+  assignment (§6.3), never free. Fresh 362-tip sweep: 282 unclaimed
+  (only 280+ doc anywhere: c42's assigned `280-c42-wiring-seal.md`).
+
+All refs re-pointed (INDEX rows + note, these ANALYSIS sections, the
+PORT_MAP minecart row, research/17 rows/receipt). Docs-only — no
+cargo/rustc/tests/rustfmt/graphify invoked.
+
+### NET-APPLY-1 UNIFIED FINAL registry rename (W4-g48, 2026-11-21, code-only)
+
+The research/150 UNIFIED FINAL (d54 tip `b243c7086`, §9.2 rows
+310/318) rules the round-2 self-renames 244→281 / 245→282 CONTESTED:
+281/282 are f26's §7.3 assignments (`68-findframe-census-addendum-7h/7i.md`),
+the 281–303 block was RESERVED at §7.3 publication, and a self-pick
+into it is NOT honored. Two renames executed on this branch per §9.2:
+
+- **281-c28-18-send-switch → 310** — chain **244→281→310** (§9.2 row
+  310). **g48's 244 KEY WIN stands** (§7.1/§7.4 pre-publish 14:30:16);
+  244 stays winner-consumed — only the doc filename renumbers.
+- **282-39-item-ownership-seed → 318** — chain **245→282→318** (§9.2
+  row 318). **g48's 245 KEY WIN stands** (§7.1 pre-publish); 245 stays
+  winner-consumed — only the doc filename renumbers.
+
+All refs re-pointed (INDEX rows 310/318 + the lane note, these ANALYSIS
+sections, research/17 rows/receipts + the new §9.2 receipt after the
+REGISTRY-RENAME receipt, research/272's sibling-chain note, the two
+docs' headers/chain-banners). The research/17 SEAL stands — renumber
+citations only, no scope re-open. Docs-only — no
+cargo/rustc/tests/rustfmt/graphify invoked.

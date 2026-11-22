@@ -75,6 +75,24 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 272 | The f11 minecart fail-tile tail-fix upstream hunk (W4-g48 NET-APPLY-1: the kill_tile no_item→KillTile(fail) no-op fix published for f11f-seal/the merger; RENAMED chain 237→239→272 per research/150 round 2 §6.3 — 237 belongs to e23's earlier push, 239 to d42's 12:55:30 push (g61's chain →273); the f11e-retire consumption receipt: tip 14ca0a8d5 still carries the defect, blob 5efef353 unchanged; the ids 1-40 FINAL census + the g52c-139 receipt + the tail SEAL live in research/17; code-only) | `272-f11-tail-fix.md` | ✅ |
+| 310 | The 18 SetTime send-switch instruction for the c28 lane (W4-g48 NET-APPLY-1 correction: the C# has ZERO SendData(18) sites — the clock rides 7 WorldData, event edges + the 3600-tick UpdateServer heartbeat; the exact 5-step internal-205→id-7 switch, the c27 18 reader kept wire-compat; RENAMED chain 244→281→310 per research/150 UNIFIED FINAL §9.2 (d54 `b243c7086`) — the 281 self-rename collided with f26's §7.3 assignment, §9.2 assigns 310; g48's 244 KEY WIN stands, only the doc filename renumbers; code-only) | `310-c28-18-send-switch.md` | ✅ |
+| 318 | The 39 ReleaseItemOwnership item-lane task-seed (W4-g48 NET-APPLY-1 correction: the lane adjudication — not g49/g50/g51, not the landed M6-NET-5 27/28/29 row, the ITEM lane/d98 region owns it; the WorldItem.cs:188-285 FindOwner/ReserveFor scope pin + the unrowed reservation-fields census + the peer-inventory dependency; RENAMED chain 245→282→318 per research/150 UNIFIED FINAL §9.2 (d54 `b243c7086`) — the 282 self-rename collided with f26's §7.3 assignment (7i), §9.2 assigns 318; g48's 245 KEY WIN stands, only the doc filename renumbers; code-only) | `318-39-item-ownership-seed.md` | ✅ |
+
+W4-g48 NET-APPLY-1 (2026-11-21): research/17's tail is SEALED — the ids
+1-40 apply-status table is FINAL (the declaration + the g52c-139 receipt
+live there); row 17 stays the netcode master file. CORRECTION phase:
+the lane's 237 doc self-renamed 239, then the REGISTRY-RENAME round
+(research/150 round 2, d54 `72226e500` §6.3) landed the final chain
+237→239→**272** (237 = e23, 239 = d42, both earlier pushes); the
+f11e-retire consumption receipt (the defect still live at f11 tip
+14ca0a8d5) + the c28 send-switch publish (chain 244→281→**310**) + the 39
+item-lane seed (chain 245→282→**318**) — the 244/245 pre-publish KEY
+WINS stand (§7.1/§7.4); the round-2 self-renames to 281/282 collided
+with f26's §7.3-assigned block and the UNIFIED FINAL (research/150
+§9.2, d54 `b243c7086`) re-assigns **310/318** — only the doc filenames
+renumber; the correction receipt appended AFTER
+the seal in research/17 (re-probe citations only, the seal stands).
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

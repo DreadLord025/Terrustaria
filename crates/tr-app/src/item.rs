@@ -880,6 +880,11 @@ pub struct ItemDrop {
     /// `WorldItem.grabDelayPlayer` (`WorldItem.cs:24`): the locked player
     /// index, 255 = all players (`GrabItems`' gate, `Player.cs:34911`).
     pub grab_delay_player: u8,
+    /// `WorldItem.enemyGrabDelayTime` (`WorldItem.cs:28`): the monster-grab
+    /// lock, decremented per update (`:449-452`). The monster-grab gate
+    /// itself (`:405`) is unported (no enemy item grab); the field rides the
+    /// `21` wire's bit 3 (`NetMessage.cs:652`/`:665-668`, S1-I-1 wave I).
+    pub enemy_grab_delay_time: i32,
     /// `WorldItem.beingGrabbed` (`WorldItem.cs:40`): the pull step sets it;
     /// the next update skips the ground physics and just applies the
     /// velocity (`UpdateItem`'s else arm, `:425-435` → `ApplyMovement`
@@ -915,6 +920,7 @@ impl ItemDrop {
             phase,
             grab_delay_time: 0,
             grab_delay_player: 255,
+            enemy_grab_delay_time: 0,
             being_grabbed: false,
             on_conveyor: false,
         }
@@ -1096,6 +1102,12 @@ impl ItemDrop {
         // grabbed or not.
         if self.grab_delay_time > 0 {
             self.grab_delay_time -= 1;
+        }
+        // `WorldItem.cs:449-452` — the enemy twin decays the same way
+        // (S1-I-1 wave I; the `timeToKeepReservation` middle arm `:445-448`
+        // rides the net reservation book, not this struct).
+        if self.enemy_grab_delay_time > 0 {
+            self.enemy_grab_delay_time -= 1;
         }
     }
 

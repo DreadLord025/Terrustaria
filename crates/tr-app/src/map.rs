@@ -615,6 +615,13 @@ impl WorldMap {
         }
     }
 
+    /// `WorldGen.SectionTileFrame`'s head (`WorldGen.cs:80345`):
+    /// `Main.mapTime = Main.mapTimeMax + 10` — the re-frame burst delays the
+    /// next minimap export by the quality budget plus 10 frames.
+    pub fn arm_map_time_burst(&mut self) {
+        self.map_time = self.map_time_max + 10;
+    }
+
     /// The `Main.Map` seam for the legacy engine's minimap light export
     /// (`TryUpdatingMapWithLight`, `LegacyLighting.cs:371-433`, S1-E-19 wave
     /// B): borrows the tile array and the `mapTime` counter so the engine can

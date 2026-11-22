@@ -14,6 +14,7 @@ pub(crate) mod flow;
 pub(crate) mod frame;
 mod r#loop;
 pub(crate) mod net_npc_sync;
+pub(crate) mod net_apply;
 pub(crate) mod netglue;
 pub(crate) mod netmodules;
 pub(crate) mod net_proj_sync;
