@@ -33888,7 +33888,9 @@ below the 50 % skip tier `Dust.cs:142-148`, on-screen, `ChildSafety.Disabled`):
   keeps the fall-through byte-identical.
 - **Damage-side slices** (the wiring/damage work owns them): the telegraph
   invuln (`Damage_CanDealDamage` `:12448` — 919/923 deal no damage while
-  `localAI[0] <= 60`), the BossNoCheese immunity group (`Damage_EVP`
+  `localAI[0] <= 60`) — **CLOSED by W4-d18's full-switch census**
+  (`projectile.rs::damage_kind_gate_refuses`, all three damage walks);
+  the BossNoCheese immunity group (`Damage_EVP`
   `:14788-14796`), 919's ±40-px line hitbox (`Colliding` `:15625-15641`),
   923's three-segment beam (`:15642-15668`), 872's every-2nd-of-50 oldPos
   hitbox (`:15675-15694` — needs the 120-entry `TrailCacheLength` ring,
@@ -40021,3 +40023,89 @@ already-ported liquids/cracks/special-tiles/pylons/vines/foliage passes.
   +4/-2 margins here are C#'s loop bounds, the wiring step keeps the
   `WorldFrameKey` intact. 15 witness tests WRITTEN NOT RUN - no
   cargo/rustc/rustfmt/tests/graphify invoked.
+
+## W4-d18 Damage_CanDealDamage — the full-switch census + the reachable ports (code-only)
+
+**Task.** The `Projectile.Damage_CanDealDamage` switch (`Projectile.cs:12446-12485`)
+audited term-by-term against this branch's rows; every REACHABLE small term ported
+into the three damage walks (`projectile.rs::damage_pve` / `damage_pve_boxed` /
+`damage_player` — the C# gate wraps `Damage()` whole, `:12497`, so PVE, PVP and
+EVP all refuse). **No compiler invoked**; the witnesses are WRITTEN, NOT RUN.
+
+**The census (every term, its status):**
+
+| C# term (`:12448-12480`) | status |
+|---|---|
+| types 18/72/86/87/226/650/439/535/651/600/602 (row-less) | ported arm-total in `damage_kind_gate_refuses` (never spawn) |
+| 378 SpiderEgg, 613 StardustCellMinion, 444 Xenopopper bubble, 500 CrimsonHeart, 1018 DirtiestBlock, 1056 BoulderPet, 460 ChargedBlasterCannon holder, 633 LastPrism holder, 601, 831 StormTigerGem, 970 AbigailCounter, 861 Football (row-less), 1007 GasTrap (row-less) | PORTED (the unconditional list, this round) |
+| 882/888/895/896/653/1090 (row-less light pets) | ported arm-total |
+| aiStyle 31 (sprays 145 + the seven W4-d18 solution rows) / 32 (row-less) | PORTED — the seven rows are a d18/f25 DUP (f25 `5e83d3ecb` vs d18 `78ffe8e11`, same match key = duplicate-arm compile error on keep-both); KEEP d18's superset row (alpha 255 + ignoreWater overlay), DROP f25's row + stats-only witness, KEEP f25's ammo/C3/C4 wiring — the exact keep-one publish: research/26h seal continuation §2 |
+| aiStyle 137 `ai[0] != 0` (the Lightning Auras 688-690 — zap only on the wrap tick, `:68886-68890`) | PORTED |
+| aiStyle 138 (the Explosive Traps 691-693 — the sentry never deals contact damage; the 139 blast is NOT gated) | PORTED |
+| 833/834/835 `ai[0] == 4` (the Storm Tigers' pounce) | PORTED |
+| 1022 `ai[2] > 0` (the Mushroom Boi's spore state) | PORTED |
+| 919/923 `localAI[0] <= 60` (the Empress telegraph — closes the S1-D-4 damage-side slice) | PORTED |
+| aiStyle 10 `localAI[1] == -1` (`:12456`) | PORTED arm-total — unreachable: the debris arm pins 0 (`:57952`), the sand tail never writes -1 (the pre-existing ANALYSIS note) |
+| 85/1106 `localAI[0] >= 54` (`:12460-12467` — the smoke tail of the 72-tick AI_193 life) | PORTED (`flames_faded`, this round, all three walks) |
+| 188 `localAI[0] < 5` (the launch ramp) | CLAIMED: W4-d4's DOC-SWEEP gate, tip 509b9943c (unmerged) — not re-ported |
+| aiStyle 113 family 598/636/614/971/975/1024 `ai[0] == 1` (the stuck stickers) | CLAIMED: W4-d12's census, tip 719ffb76c (unmerged; only the 598 row exists here) — not re-ported |
+| aiStyle 15 `ai[0] == 0 && localAI[1] <= 12` (the flail hold) | ALREADY PORTED: `flail_damage_adjust` |
+| 434 `localAI[0] != 0`, 451, 631 `localAI[1] == 0`, 537 `localAI[0] <= 30`, 261 speed < 1.5, 818 `ai[0] < 1`, 281 `ai[0] == -3`, 511-513/1128 `ai[1] >= 1`, 1092 `ai[0] <= 1`, 1091/1122 `localAI[0] <= 0` (`:12468-12475`) | PORTED ARM-TOTAL (PROJ-171 retire): all row-less on every pushed tip today; the kind-literal terms auto-activate when a d-lane lands the row (the activation contract — `damage_kind_gate_refuses`) |
+| aiStyle 25 `localAI[2] <= 7` with the 1021/1047/1005/1014 exceptions (`:12476`), aiStyle 93 `ai[0]` not 0/2 (`:12452`) | PORTED ARM-TOTAL (PROJ-171 retire): no style-25/93 row today; the `proj_data().ai_style` read auto-activates on the d-lane row |
+| the `Main.projPet` block (`:12480` — every pet/minion deals no contact damage EXCEPT the exception ladder: 266/407/317, 388 ai0==2, 390-395, 1093/1112/1118, 533 ai0 6..8, 625-628, 755/946 ai0!=0, 758/951/963/1022, 759 last-frame, 833-835, 864, 623 ai0==2) | PORTED (PROJ-171 retire): `proj_pet_contact_refuses` reads the `PROJ_PET` table (`data.rs`, `Main.cs:8728-8852`) + the decoded ladder. The rowed attack-minions (266/533/623/833-835/759/388/755/946/625-628/390-395/1093/1112/1118/758/951/963/1022/864) are ALL ladder exceptions → their attack windows keep biting; the inert pets + the row-less pygmies (191-194, no attack arm here) refuse, faithful to C#. The 759 polarity: refused only on the last/perch frame (`frame == projFrames-1`). No existing damage-walk test uses a non-exception projPet kind (the 373 recount tests assert counts only). |
+
+**Row deviation surfaced — 601 CANNON_EXPLOSIVE (PROJ-171 retire: cross-note
+d6-lane, NOT fixed here).** The `CANNON_EXPLOSIVE` const is 601 = C#
+`PortalGunBolt` (`ProjectileID.cs:1756`), but its row (`data.rs`, the
+M7-WIRE-2 "cannon ammo 178/601" block, `:2359`, blame `85e1d416e` — NOT this
+lane's) carries `penetrate = -1` / `alpha = 0` (RESET_STATE) where the true
+C# 601 (`Projectile.cs:6502-6510`) keeps the stock `penetrate = 1` (`:774`)
+and writes `alpha = 255` (`:6507`). The row's comment cites the 178
+cannonball block (`:2641-2649`) — but 178 is `ConfettiGun`
+(`ProjectileID.cs:910`), a DIFFERENT kind; the 601 row was mislabeled as
+cannon ammo. **The true C# 601 is aiStyle 1 (`:6506`), NOT aiStyle 0** — the
+earlier "portal-bolt-aiStyle-0?" guess is WRONG; it rides the arrow/bullet
+flight (`AI_001`, the slice-B 601 hook `projectile_ai001_b.rs:153` ports the
+alpha-fade-15 + 2-frame cycle). It is the damage-less portal bolt: this
+census's gate refuses it (`:12448`, faithful to the id), and its teleport
+payload — `PortalHelper.TryPlacingPortal` on the tile-crash
+(`Projectile.cs:18099`, `GameContent/PortalHelper.cs:216`) — is UNPORTED
+(the d6-601-teleport-AI gap). **The earlier "the cannonball's damage rides
+its death blast" claim is WITHDRAWN** — C# 601 has NO death blast (the
+`:72454` Kill block is 6 portal dust only; the `:74565` dust/gore burst is
+178's, not 601's). The gate is behaviour-neutral for the mislabeled row
+because 601 deals no contact damage in C# either. **Disposition: the row is
+M7-WIRE-2's, not W4-d18's — the row-shape fix (penetrate 1 / alpha 255) +
+the teleport-AI port are cross-noted to the d6 wiring/teleport lane, not
+done here** (renaming the const + re-porting the row is out of this retire
+task's scope; the gate already refuses 601 faithfully). **SEAL
+continuation:** the EXACT C# spec for BOTH halves (the row-shape target
+tuple + the `HandleMovement`/`PortalHelper.TryPlacingPortal` teleport
+chain, every helper window cited) is published as task seed **R-26-13**
+(90-consolidated §2(d); the full spec in research/26h "SEAL continuation
+— cross-lane publishes" §1) for the d6 lane (`7edfcd49` tip) to port
+without re-deriving the census.
+
+**Witnesses (WRITTEN, NOT RUN).** `w4_d18_the_flames_smoke_tail_deals_no_damage`
+(0/53 bite, 54/71 refuse, both kinds, all three walks, the refused contact
+keeps the shot) and `w4_d18_the_damage_kind_gate_census` (the unconditional
+list, the tiger/boi/empress/aura windows both sides, the sprays, the sand
+latch, the untouched-kind freeze check, a live 378 PVE refusal).
+
+**PROJ-171 RETIRE round (this branch, code-only).** The two remainders above
+are CLOSED: the row-less conditionals (434/451/631/537/261/818/281/511-513/
+1128/1092/1091/1122 + aiStyles 25/93) ported ARM-TOTAL into
+`damage_kind_gate_refuses`, and the `:12480` projPet block ported as
+`proj_pet_contact_refuses` (the `PROJ_PET` table + the decoded exception
+ladder). **Activation contract verified:** the gate reads `p.kind` literals
++ `proj_data(kind).ai_style`, so every row-less term auto-activates the
+moment a d-lane lands the kind's row — no re-port needed (the gate-shape is
+kind-literal, not row-coupled). The projPet ladder was decoded verbatim from
+the single C# `if` and cross-checked against `Main.projPet` (`Main.cs:8728-
+8852`); the rowed attack-minions are ALL exceptions (their attack windows
+keep biting), the inert pets / row-less pygmies refuse. Two witnesses
+WRITTEN NOT RUN: `w4_d18_the_rowless_conditionals_census` (every term both
+sides + the 451 integer-division window + the row-less activation pins) and
+`w4_d18_the_proj_pet_contact_ladder` (the unconditional exceptions, the
+388/623/533/755/946/759 conditional windows, the inert-pet refusals, a live
+266 PVE bite through the gate). **No compiler invoked.**
