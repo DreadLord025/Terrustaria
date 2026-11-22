@@ -1,4 +1,4 @@
-﻿# Research index вЂ” full C# Terraria audit
+# Research index вЂ” full C# Terraria audit
 
 Map of the research effort backing the new ROADMAP. One file per module,
 `docs/research/NN-slug.md`. Status: вњ… done В· рџ”„ in flight В· в¬њ planned.
@@ -46,6 +46,8 @@ per `docs/superpowers` agreements).
 | 25 | NPC AI families (aiStyle dispatch) | `25-npc-ai-audit.md` | в¬њ |
 | 26 | Projectile AI families (aiStyle dispatch) | `26-projectile-ai-audit.md` | в¬њ |
 | 372 | d78 FINAL Kill dedupe (g1-dup / g3 keep-one / the 620 d77 co-claim / the drop-vs-keep tables) — SEALED §6: g1-drop-hunks refreshed (602ln), the d77-617-drop mutual receipt, the g3-cue-position-fix hunks, the blasts-family bible (renumber 26f→372 per registry §10.2; 26f belongs to f20) | `372-d78-final-kill-dedupe.md` | sealed |
+| 160 | g1 Kill-hook census (SEALED — g1 keeps 459/521/522/80, the 452/454/448 EVP trio folded to d78 per 26f §1) — renumbered 26d → 160-round-1 per registry §10.4 | `160-projectile-kill-hooks-census.md` | done |
+| 373 | the proj-missing-a family bible (lane ledger + the g1×d78/f20/d15/g65/d77 merge instructions) — renumbered 26d-g1 → 373 per registry §10 | `373-g1-proj-missing-a-family-bible.md` | done |
 | 27 | Mounts / pets / minecart / grapple | `27-mounts-pets-vehicles.md` | в¬њ |
 | 28 | Buffs & debuffs (apply, UI, sync) | `28-buffs-debuffs.md` | в¬њ |
 | 29 | Town NPCs (housing/happiness/pylon) | `29-town-npc-housing.md` | в¬њ |

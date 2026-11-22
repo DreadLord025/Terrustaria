@@ -40980,3 +40980,45 @@ PRE-snap, re-verified by direct read; keep-d77 `kill_tail_cue` :20250 owns
 every cue); (6d) the blasts-family bible — the sealed per-family
 state/cue/census/body ownership table. d78's branch stays frozen; every
 DROP executes at merge or on the sibling's own branch.
+## The projectile Kill hook lane a, SEALED (W4-g1, 2026-11-21, code-only mode)
+
+**The family ledger**: `docs/research/373-g1-proj-missing-a-family-bible.md`
+(renumbered 26d-g1 → 373 per research-number-registry §10)
+(census `160-projectile-kill-hooks-census.md`, renumbered 26d → 160-round-1
+per registry §10.4, SEALED). g1's FINAL kept
+set: the **459/709 shared burst** (`Projectile.cs:73338-73371` — scale≥1
+Resize-144 → `Damage()` → dust/gore rings, the `:73351` order preserved
+by the resize+flag / draw-census split with the pool's `damage_pve_boxed`
+between; the pool gate WIDENED to `459 | 709`, row-gated inert until
+d15's 709 row), the **521 split** (`:73292-73327` — the 20-dust census +
+the owner-gated `Next(3,6)` 522 shard spawns, the state-bearing velocity
+draws inline, the `:17013` pre-move oldPosition latch), the **522
+CrystalPulse2** row/arm/bounce/Kill-census (`:5919-5928` / `:37742-37773`
+/ `:18796-18806` full ±1.0 reflection / `:73271-73290` 10 `Next(3)`
+gates; the `kill_time_left` capture + the `:17027-17030` kill-tick
+movement skip), and the **80 tile-127 break** (`:75533-75553`).
+
+**The d78 fold (26f §1 @ `fd59c51a`)**: the hostile EVP trio 452/454/448
+DROPPED from g1 — the first-round `death_burst_player_hit` rode
+`hurt_with_source` with RAW damage (the M4-HAZARD-1 standing-deviation
+shortcut) and its General immune gate would refuse the boss blasts the
+C# `:14799` lands; d78's `damage_evp_boxed` ports `Damage_EVP`
+(`:14773-14900`) verbatim (DamageVar / hostileDamageScaling / ×2 /
+BossNoCheese cooldown) and wins the keep-one. g65's pushed bodies own
+the trio's dust/gore draws. **No raw-damage EVP deviation remains.**
+
+**Deliberate remainders (g1's kept set)**: the 459 burst rides the boxed
+PVE seam (no player reference — class crits read 0, the standing boxed
+convention); the 522 bounce is the per-axis probe model of the C#
+reflection (same blocked-axis outcome); the dust/gore census stubs stay
+ONLY until the g1×g65 merge, where they drop per-kind (26i §3 — the
+pushed bodies carry the same draws; the 521 split's state-bearing
+velocity draws are NOT census and stay). The g1×f20 merge note: f20's
+`sky_dragons_fury_kill` (the 709-only tail `:73372-73388`) seats EARLIER
+in the pool chain than g1's tail-seated `kill_hooks_a` — at the merge
+the 709 path must run the SHARED burst first (the C# block order; the
+tail's `Next(2,6)` life draw must follow the ring draws).
+
+**Verification**: code-only — 12 witnesses WRITTEN NOT RUN (6 module +
+6 pool, incl. the new `w4_g1a_the_shared_burst_gate_widens_to_709`);
+**no cargo/rustc/tests/rustfmt/graphify invoked** (the Lead's constraint).
