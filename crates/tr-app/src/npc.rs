@@ -1167,8 +1167,9 @@ pub enum NpcSoundCue {
     NpcHit(i32),
     /// `PlaySound(4, pos, style)` — the int killed overload: the tower
     /// dissolve's 60-tick cry (`NPC.cs:39059`, style 22), the Moon
-    /// parts' laser wind-up (`:41838`/`:42338`/`:42611`, style 6);
-    /// case 4's one pitch draw, NO NextFloat.
+    /// parts' laser wind-up (`:41838`/`:42338`/`:42611`, style 6), the
+    /// Detonating Bubble's EVERY-strike HitEffect cue (`:84231`,
+    /// style 3, W4-c13); case 4's one pitch draw, NO NextFloat.
     NpcDeath(i32),
     /// `PlaySound(SoundID.NPCDeath61, Center)` — the Moon Lord core's
     /// crash cry (`NPC.cs:41432`, the style façade); case 4.
@@ -1180,6 +1181,23 @@ pub enum NpcSoundCue {
     /// (`NPC.cs:51990`, the trackable façade, case 42 — no gameplay
     /// draws, the pinned variation like wave A).
     EowDig,
+    /// W4-c13 — `PlaySound(SoundID.<Voice>Hurt, pos)` — the type-1 slime
+    /// voice-override hit (`NPC.cs:81490-81549`, the strike's switch on
+    /// `ai[1]`): the style façade + case 42's zero gameplay draws
+    /// (`BalloonHurt` etc., one-variation trackables). The payload is
+    /// the `SoundID` row name; the chicken rare/common roll is the
+    /// strike site's (it precedes the play).
+    VoiceHit(&'static str),
+    /// W4-c13 — `PlaySound(SoundID.Item10, pos)` — `NPC.HitEffect`'s
+    /// sphere arms (`NPC.cs:89528`/`:89540`/`:89692`, types 25/33/30+665,
+    /// EVERY strike, live or dead): the style façade + case 2's one
+    /// pitch draw on the strike's stream.
+    Item10,
+    /// W4-c13 — `PlaySound(this.HitSound, pos)` — the strike's own hit
+    /// cue (`NPC.cs:81546`/`:81553`, the wave-C case-3/42 path) carried
+    /// through the projectile strike-tail queue so the HitEffect cue
+    /// and the hit cue keep the C#'s per-strike order.
+    KindHit(&'static str),
 }
 
 /// One queued play: the cue plus the C# call site's world-pixel position
@@ -1190,6 +1208,21 @@ pub struct NpcSoundRequest {
     pub cue: NpcSoundCue,
     pub x: f32,
     pub y: f32,
+}
+
+/// W4-c13 — the landed strike's resolved hit cue ([`Npc::strike_hit_cue`],
+/// `NPC.StrikeNPC`'s sound section `NPC.cs:81490-81554`): the kind's own
+/// `HitSound` asset (the wave-C case-3 path) or a type-1 voice-override
+/// `SoundID` row (the `play_npc_voice_hit` façade). The chicken roll is
+/// already spent when this is returned.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum NpcHitCue {
+    /// `SoundEngine.PlaySound(this.HitSound, pos)` (`:81546`/`:81553`)
+    /// — the kind's `NPC_Hit_N`/trackable asset, case 3/42.
+    Kind(&'static str),
+    /// The voice switch's `SoundID.*Hurt` row name (`:81495-81541`) —
+    /// case 42 (BellHurt: the legacy id-2 style 35).
+    Voice(&'static str),
 }
 
 #[derive(Clone, Debug)]
@@ -4573,7 +4606,94 @@ impl Npc {
         if n.kind == NpcKind::DetonatingBubble && n.hp <= 0 {
             crate::npc_ai_style70::bubble_check_dead(n);
         }
+        // W4-c13 — `StrikeNPC_Inner`'s `HitEffect(hitDirection, num)`
+        // tail (`NPC.cs:81476-81489`) sound seams.
+        n.queue_hit_effect_sound();
         true
+    }
+
+    /// W4-c13 — `NPC.HitEffect`'s unconditional sound arms reached from
+    /// the strike (`NPC.cs:81488`): the bubble 371 arm plays the int
+    /// death cue on EVERY strike, live or dead (`:84229-84231`,
+    /// `PlaySound(4, pos, 3)` — the 113/114 pair loop `:81476-81484`
+    /// hits every live segment, the queue keeps the per-NPC order);
+    /// the sphere arms play `SoundID.Item10` (`:89528` type 25,
+    /// `:89540` type 33, `:89692` types 30+665 — ChaosBallTim folds
+    /// into `NpcKind::ChaosBall`). The plays queue on `wants_sound` —
+    /// the striking stage's drain resolves them on its own stream (the
+    /// melee `UpdatePlayers`, the projectile `UpdateProjectiles`, the
+    /// net replay the bare stream); the gore/dust arms stay the
+    /// documented skip. RNG-free (the queue push draws nothing).
+    pub fn queue_hit_effect_sound(&mut self) {
+        let (sx, sy) = (self.x, self.y);
+        match self.kind {
+            NpcKind::DetonatingBubble => self.wants_sound.push(NpcSoundRequest {
+                cue: NpcSoundCue::NpcDeath(3),
+                x: sx,
+                y: sy,
+            }),
+            NpcKind::BurningSphere | NpcKind::WaterSphere | NpcKind::ChaosBall => {
+                self.wants_sound.push(NpcSoundRequest {
+                    cue: NpcSoundCue::Item10,
+                    x: sx,
+                    y: sy,
+                })
+            }
+            _ => {}
+        }
+    }
+
+    /// W4-c13 — `NPC.StrikeNPC`'s type-1 voice-override switch
+    /// (`NPC.cs:81490-81549`): the slime's `ai[1]` names a
+    /// `PlayerVoice*` item (`ItemID.cs:12653-12751`) → the matching
+    /// `SoundID.*Hurt` play; any other value falls to `default:` — the
+    /// kind's own `HitSound` (`:81543-81548`). Returns the `SoundID`
+    /// row name the strike plays ([`crate::audio::Audio::play_npc_voice_hit`]),
+    /// or `None` for the default arm. PURE — the chicken arm's
+    /// `Main.rand.Next(5)` (`:81501`) is drawn by
+    /// [`Self::strike_hit_cue`] BEFORE the play (the roll happens even
+    /// when the attenuation gate refuses the sound).
+    fn slime_voice_style(ai1: f32) -> Option<&'static str> {
+        // The C# `switch ((int)this.ai[1])` — truncation toward zero.
+        Some(match ai1 as i32 {
+            5507 => "BalloonHurt",   // `:81494-81496`
+            5502 => "CatHurt",       // `:81497-81499`
+            5485 => "ChickenHurt",   // `:81500-81509` — the roll refines it
+            5484 => "BellHurt",      // `:81510-81512`
+            5506 => "CrowHurt",      // `:81513-81515`
+            5503 => "DogHurt",       // `:81516-81518`
+            5534 => "FairyHurt",     // `:81519-81521`
+            5499 => "FrogHurt",      // `:81522-81524`
+            5500 => "GoatHurt",      // `:81525-81527`
+            5505 => "GoblinHurt",    // `:81528-81530`
+            5501 => "RetroHurt",     // `:81531-81533`
+            5504 => "TurkeyHurt",    // `:81534-81536`
+            5508 => "UndeadHurt",    // `:81537-81539`
+            5509 => "VampireHurt",   // `:81540-81542`
+            _ => return None,        // `:81543` — default: this.HitSound
+        })
+    }
+
+    /// W4-c13 — the landed strike's hit-cue decision (`NPC.StrikeNPC`'s
+    /// sound section, `NPC.cs:81490-81554`): the type-1 voice switch,
+    /// else the kind's `HitSound`. The chicken arm draws its ONE
+    /// `Main.rand.Next(5)` here (`:81501`) — 0 → `ChickenHurtRare`,
+    /// else `ChickenHurt` — on the STRIKE's stream, BEFORE any
+    /// attenuation gate (the C# rolls before `SoundEngine.PlaySound`).
+    /// Every other arm is draw-free. The caller plays the returned cue
+    /// at `base.position`; `None` = the C#'s `HitSound == null` guard.
+    pub fn strike_hit_cue(&self, rng: &mut UnifiedRandom) -> Option<NpcHitCue> {
+        if self.kind == NpcKind::Slime {
+            if let Some(style) = Self::slime_voice_style(self.ai[1]) {
+                let style = if style == "ChickenHurt" && rng.next_max(5) == 0 {
+                    "ChickenHurtRare"
+                } else {
+                    style
+                };
+                return Some(NpcHitCue::Voice(style));
+            }
+        }
+        self.kind.hit_sound().map(NpcHitCue::Kind)
     }
 
     pub fn update(&mut self, world: &World, player: &mut Player, dt: f32) {
@@ -19108,6 +19228,154 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// W4-c13 — the type-1 voice switch table (`NPC.cs:81490-81549`):
+    /// every `PlayerVoice*` item id maps to its `SoundID` row name, any
+    /// other ai[1] falls to the default HitSound arm. PURE — no draws.
+    #[test]
+    fn w4_c13_the_slime_voice_switch_matches_the_c_table() {
+        // (ai[1] item id, SoundID row) — the C# switch's 14 arms in
+        // source order (`ItemID.cs:12653-12751`'s PlayerVoice items).
+        let table = [
+            (5507.0, "BalloonHurt"),
+            (5502.0, "CatHurt"),
+            (5485.0, "ChickenHurt"),
+            (5484.0, "BellHurt"),
+            (5506.0, "CrowHurt"),
+            (5503.0, "DogHurt"),
+            (5534.0, "FairyHurt"),
+            (5499.0, "FrogHurt"),
+            (5500.0, "GoatHurt"),
+            (5505.0, "GoblinHurt"),
+            (5501.0, "RetroHurt"),
+            (5504.0, "TurkeyHurt"),
+            (5508.0, "UndeadHurt"),
+            (5509.0, "VampireHurt"),
+        ];
+        for (ai1, name) in table {
+            assert_eq!(Npc::slime_voice_style(ai1), Some(name), "ai1 {ai1}");
+            // The C# `(int)` cast truncates toward zero.
+            assert_eq!(Npc::slime_voice_style(ai1 + 0.9), Some(name));
+        }
+        // The default arm: 0 (the stock slime), the ore contents, the
+        // -1 latch and every non-voice id.
+        for ai1 in [0.0, -1.0, 75.0, 174.0, 3609.0, 215.0, 5483.0, 5510.0] {
+            assert_eq!(Npc::slime_voice_style(ai1), None, "ai1 {ai1} defaults");
+        }
+    }
+
+    /// W4-c13 — the full-switch bank coverage: EVERY voice arm the
+    /// switch can return resolves through `Audio::play_npc_voice_hit`
+    /// to a registered cue (the 14 trackables + the Bell's legacy
+    /// `Item_35`, `SoundID.cs:1745-1761`) — no arm may silently drop
+    /// on a bank gap (the `s1_e_21c_every_kind_hit_and_death_cue_resolves`
+    /// precedent). The chicken arm's roll may refine to the rare cue —
+    /// both variants are covered whatever the seed rolls.
+    #[test]
+    fn w4_c13_every_voice_arm_resolves_through_the_play() {
+        let mut audio = crate::audio::Audio::new(None);
+        for ai1 in [
+            5507.0, 5502.0, 5485.0, 5484.0, 5506.0, 5503.0, 5534.0,
+            5499.0, 5500.0, 5505.0, 5501.0, 5504.0, 5508.0, 5509.0,
+        ] {
+            let mut slime = Npc::new(NpcKind::Slime, 100.0, 100.0, 1, 0.0);
+            slime.hp = slime.max_hp;
+            slime.ai[1] = ai1;
+            let mut rng = UnifiedRandom::new(7);
+            let cue = slime.strike_hit_cue(&mut rng).expect("a voice arm");
+            let NpcHitCue::Voice(style) = cue else {
+                panic!("ai1 {ai1} must resolve to a voice arm, got {cue:?}");
+            };
+            let played = audio.play_npc_voice_hit(style, 0.0, 0.0, &mut rng);
+            assert!(played.is_some(), "ai1 {ai1} arm {style} resolves in the bank");
+        }
+        // The Bell arm is the legacy style-35 asset, not a trackable.
+        let mut rng = UnifiedRandom::new(7);
+        assert_eq!(
+            audio.play_npc_voice_hit("BellHurt", 0.0, 0.0, &mut rng),
+            Some("Item_35")
+        );
+    }
+
+    /// W4-c13 — the chicken arm's roll contract (`NPC.cs:81500-81509`):
+    /// exactly ONE `Main.rand.Next(5)` on the strike's stream — 0 →
+    /// ChickenHurtRare, else ChickenHurt — and NO draw for any other
+    /// arm (the roll sits inside the case, before the play's gate).
+    #[test]
+    fn w4_c13_the_chicken_roll_rides_the_strike_stream_once() {
+        let mut slime = Npc::new(NpcKind::Slime, 100.0, 100.0, 1, 0.0);
+        slime.hp = slime.max_hp;
+        slime.ai[1] = 5485.0;
+        // Find a seed whose first Next(5) is 0 and one whose isn't.
+        let rare_seed = (1..200)
+            .find(|&s| UnifiedRandom::new(s).next_max(5) == 0)
+            .unwrap();
+        let common_seed = (1..200)
+            .find(|&s| UnifiedRandom::new(s).next_max(5) != 0)
+            .unwrap();
+        let mut rng = UnifiedRandom::new(rare_seed);
+        let mut witness = UnifiedRandom::new(rare_seed);
+        let _ = witness.next_max(5);
+        assert_eq!(
+            slime.strike_hit_cue(&mut rng),
+            Some(NpcHitCue::Voice("ChickenHurtRare"))
+        );
+        assert_eq!(rng, witness, "exactly one Next(5) for the rare arm");
+        let mut rng = UnifiedRandom::new(common_seed);
+        let mut witness = UnifiedRandom::new(common_seed);
+        let _ = witness.next_max(5);
+        assert_eq!(
+            slime.strike_hit_cue(&mut rng),
+            Some(NpcHitCue::Voice("ChickenHurt"))
+        );
+        assert_eq!(rng, witness, "exactly one Next(5) for the common arm");
+        // Every other voice arm and the default arm are draw-free.
+        for ai1 in [5507.0, 5484.0, 0.0] {
+            slime.ai[1] = ai1;
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            let _ = slime.strike_hit_cue(&mut rng);
+            assert_eq!(rng.peek(), peek, "ai1 {ai1} draws nothing");
+        }
+        // Non-slime kinds never roll, whatever ai[1] holds.
+        let mut zombie = Npc::new(NpcKind::Zombie, 100.0, 100.0, 1, 0.0);
+        zombie.hp = zombie.max_hp;
+        zombie.ai[1] = 5485.0;
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            zombie.strike_hit_cue(&mut rng),
+            Some(NpcHitCue::Kind("NPC_Hit_1"))
+        );
+        assert_eq!(rng.peek(), peek, "the voice switch is type-1 only");
+    }
+
+    /// W4-c13 — the HitEffect strike-tail queue (`NPC.cs:81488` →
+    /// `:84231`/`:89528`/`:89540`/`:89692`): the bubble queues the int
+    /// death style 3, the spheres Item10, at base.position — every
+    /// landed strike, live or dead; other kinds queue nothing. The
+    /// queue push itself is RNG-free.
+    #[test]
+    fn w4_c13_the_strike_queues_the_hit_effect_cues() {
+        for (kind, cue) in [
+            (NpcKind::DetonatingBubble, NpcSoundCue::NpcDeath(3)),
+            (NpcKind::BurningSphere, NpcSoundCue::Item10),
+            (NpcKind::WaterSphere, NpcSoundCue::Item10),
+            (NpcKind::ChaosBall, NpcSoundCue::Item10),
+        ] {
+            let mut npcs = vec![Npc::new(kind, 320.0, 480.0, 1, 0.0)];
+            npcs[0].hp = npcs[0].max_hp;
+            assert!(Npc::strike_melee(&mut npcs, 0, 1, 0.0, 0.0, false, None, false));
+            assert_eq!(npcs[0].wants_sound.len(), 1, "{kind:?} queues one cue");
+            assert_eq!(npcs[0].wants_sound[0].cue, cue);
+            assert_eq!((npcs[0].wants_sound[0].x, npcs[0].wants_sound[0].y), (320.0, 480.0));
+        }
+        // The zombie: no HitEffect sound arm — the queue stays empty.
+        let mut npcs = vec![Npc::new(NpcKind::Zombie, 320.0, 480.0, 1, 0.0)];
+        npcs[0].hp = npcs[0].max_hp;
+        assert!(Npc::strike_melee(&mut npcs, 0, 1, 0.0, 0.0, false, None, false));
+        assert!(npcs[0].wants_sound.is_empty());
     }
 
     #[test]

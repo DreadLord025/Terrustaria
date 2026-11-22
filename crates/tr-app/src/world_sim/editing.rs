@@ -7757,9 +7757,10 @@ fn resolve_melee_strike(
                 let n_defense = n.defense();
                 let (nx, ny) = (n.x, n.y);
                 let (bw, bh) = n.size();
-                // The kind's hit cue (`NPC.HitSound`) — read before the app
-                // borrows below.
-                let hit_cue = n.kind.hit_sound();
+                // W4-c13: the hit cue resolves AFTER the strike now —
+                // `strike_hit_cue` reads the type-1 voice switch (the
+                // chicken roll rides the strike's stream), so the
+                // pre-strike `hit_sound()` capture is retired.
                 // `this.StatusToNPC(sItem.type, npcIndex)`
                 // (`Player.cs:44391`, the block `:6502-6617`) — the melee
                 // on-hit debuff infliction runs AFTER the crit/DamageVar
@@ -7853,6 +7854,21 @@ fn resolve_melee_strike(
                 // roll rides the melee strike's stream (the `UpdatePlayers`
                 // swap the damage/crit rolls above already ride).
                 if landed {
+                    // W4-c13 — the same `HitEffect` tail's sound cues
+                    // (`strike_pooled` queued them): the bubble's int-4
+                    // style-3 (`NPC.cs:84231`) / the spheres' Item10
+                    // (`:89528`/`:89540`/`:89692`) play on the melee
+                    // strike's `UpdatePlayers` stream — the C# plays
+                    // inside `StrikeNPC` under the same swap, AHEAD of
+                    // the probe roll (the sound sits at HitEffect's
+                    // head, the probe gate at its tail `:89266`).
+                    let reqs: Vec<_> = app.npcs[idx].wants_sound.drain(..).collect();
+                    for req in reqs {
+                        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                        crate::world_sim::npcs::play_npc_sound_request(
+                            &mut app.audio, req, rng,
+                        );
+                    }
                     let probe_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                     if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(
                         &mut app.npcs[idx], probe_rng, false,
@@ -7904,16 +7920,29 @@ fn resolve_melee_strike(
                 // A joining client's strike goes to the host as `28`
                 // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
                 app.send_npc_strike(idx, dmg, kb, crit, pcx >= nx);
-                // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
-                // (`NPC.cs:81544-81553`) — the kind's own hit cue through
-                // the faithful case-3 path (S1-E-21 wave C): the volume
-                // arms + the `Main.rand.Next(-10, 11) * 0.01` pitch draw
-                // ride the `UpdatePlayers` stream (`Main.cs:17754`), only
-                // after the attenuation gate passed. The C#'s `null`
-                // guard: the kinds with no row play nothing.
-                if let Some(cue) = hit_cue {
+                // `NPC.StrikeNPC`'s sound section (`NPC.cs:81490-81554`,
+                // S1-E-21 wave C + W4-c13): the type-1 voice-override
+                // switch, else the kind's own `HitSound` at
+                // `base.position` — the faithful case-3/42 paths. The
+                // chicken arm's `Next(5)` (`:81501`) rides the
+                // `UpdatePlayers` stream HERE (before any gate — the C#
+                // rolls before the play); the pitch draws ride the same
+                // stream only after each attenuation gate passed. The
+                // C#'s `null` guard: the kinds with no row play nothing.
+                if landed {
                     let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                    app.audio.play_npc_hit_sound(cue, nx, ny, rng);
+                    let cue = app.npcs[idx].strike_hit_cue(rng);
+                    match cue {
+                        Some(crate::npc::NpcHitCue::Kind(c)) => {
+                            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                            app.audio.play_npc_hit_sound(c, nx, ny, rng);
+                        }
+                        Some(crate::npc::NpcHitCue::Voice(s)) => {
+                            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                            app.audio.play_npc_voice_hit(s, nx, ny, rng);
+                        }
+                        None => {}
+                    }
                 }
                 // S1-P-i50 — the Lucky Coin family's melee-hit coin proc
                 // (`ApplyNPCOnHitEffects`' tail, `Player.cs:44537-44549`,

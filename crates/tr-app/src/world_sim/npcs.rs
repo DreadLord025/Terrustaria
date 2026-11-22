@@ -1124,7 +1124,7 @@ pub(crate) struct WormHeadCtx {
 /// wave-G site, `Main.cs:17767`). The int overloads
 /// (`SoundEngine.cs:102-108`) draw NO `GetRandomPitch` NextFloat; the
 /// style façades (`:93-99`) consume it on the audio-only stream.
-fn play_npc_sound_request(
+pub(crate) fn play_npc_sound_request(
     audio: &mut crate::audio::Audio,
     req: crate::npc::NpcSoundRequest,
     rng: &mut UnifiedRandom,
@@ -1160,6 +1160,15 @@ fn play_npc_sound_request(
         }
         NpcSoundCue::EowDig => {
             audio.play_eow_dig(req.x, req.y);
+        }
+        NpcSoundCue::VoiceHit(style) => {
+            audio.play_npc_voice_hit(style, req.x, req.y, rng);
+        }
+        NpcSoundCue::Item10 => {
+            audio.play_npc_item_cue(10, req.x, req.y, rng);
+        }
+        NpcSoundCue::KindHit(cue) => {
+            audio.play_npc_hit_sound(cue, req.x, req.y, rng);
         }
     }
 }
