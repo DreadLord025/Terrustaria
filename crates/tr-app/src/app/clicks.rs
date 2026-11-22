@@ -2477,6 +2477,17 @@ impl App {
         // The cursor-9 shift-click — `OverrideLeftClick` (`ItemSlot.cs:813-850`)
         // → `ChestUI.TryPlacingInChest(justCheck: false)` (`:846`).
         if left && self.cursor_override == CURSOR_TO_CHEST {
+            // The Journey research arm (`ItemSlot.cs:815-820`): swap into
+            // the sacrifice slot, sound 7, sacrifice what fits.
+            if self.journey_research_shift_active() {
+                if let Some(slot) = self.slot_at_mouse() {
+                    if slot < crate::item::INV {
+                        self.journey_shift_sacrifice(slot);
+                    }
+                }
+                self.ui_left_press = false;
+                return true;
+            }
             // The reforge menu's cursor-9 arm (`ItemSlot.cs:821-836`): the
             // stack splits one item into the empty reforge slot, a single
             // item swaps (`Utils.Swap`, sound 7).
@@ -2636,6 +2647,20 @@ impl App {
         }
         let chest = self.open_container();
         if !shift_in_use(self) {
+            return;
+        }
+        // The Journey research menu's ctx-0 arm (`ItemSlot.cs:659-665`):
+        // while the research page shows, any non-air non-favorited grid slot
+        // lights the transfer cursor (9) — before the reforge/chest arms.
+        if self.journey_research_shift_active() {
+            if let Some(slot) = self.slot_at_mouse() {
+                if slot < crate::item::INV
+                    && self.inventory[slot].count > 0
+                    && !self.is_favorite(slot)
+                {
+                    self.cursor_override = CURSOR_TO_CHEST;
+                }
+            }
             return;
         }
         // `Main.InReforgeMenu`'s ctx-0 arm (`ItemSlot.cs:666-672`): a

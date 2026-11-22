@@ -39932,3 +39932,197 @@ table rows 11-12; the research/18 task seed "M — UIWorldCreationAdvanced
 - Code-only mode: the witness tests (`world_creation.rs` 2 cascade tests
   + `world_creation_advanced.rs` 7 + `secret_seeds_list.rs` 5 +
   `flow.rs` 2) are WRITTEN, NOT RUN.
+## The Journey powers menu (W4-c24, task/W4-c24-journey-ui, 2026-11-21, code-only mode)
+
+The `ui/journey.rs` + `app/journey_clicks.rs` port of `CreativeUI` /
+`UICreativePowersMenu` / `UICreativeInfiniteItemsDisplay` (the layout and
+behaviour map lives in `docs/UI.md`). **No compiler invoked; the witness
+tests are WRITTEN, NOT RUN.** Deliberate deviations:
+
+- **ByCreativeSortingId falls through** (`SortingSteps.cs:116-134`): the
+  middle sort step reads `ContentSamples.ItemCreativeSortingId`, a generated
+  group/order table the port does not carry. The grid sorts
+  newly-researched → fully-researched (`ByUnlockStatus`, `:84-113`) then
+  alphabetical (`:136-147`); the group step is inert until the table lands.
+- **The weather/spawn/difficulty sliders are LANDED** (2026-11-21 wiring
+  pass, same branch): the wind/rain sliders + freezes
+  (`ModifyWindDirectionAndStrength`/`ModifyRainPower`/`Freeze*`,
+  `CreativePowers.cs:1179-1539`), the enemy-spawn-rate slider
+  (`SpawnRateSliderPerPlayerPower`, `:1573-1737`) and the difficulty slider
+  (`DifficultySliderPower`, `:1002-1177`) ride `creative.rs`'s registry
+  (`PowerId::WindStrength/RainStrength/FreezeRain/FreezeWind/Difficulty/
+  SpawnRate`) with real consumers:
+  - **Wind** (`app/journey_clicks.rs` → `App.wind`): the slider sets
+    `windSpeedCurrent = windSpeedTarget = Lerp(-0.8, 0.8, cache)` at once
+    (`CreativePowers.cs:1190`); the read-back is the UNCLAMPED
+    `GetLerpValue(-0.8, 0.8, windSpeedTarget)` (`:1193-1196`), so the
+    target walk's ±0.85 draws (`Main.cs:58935`) read past the slider ends
+    exactly like the C#. `FreezeWind` gates the target walk
+    (`Main.cs:58854`) through `world_sim/weather.rs`'s tick copy.
+  - **Rain** (`rain.rs::set_rain_power`): cache 0 → `StopRain(instant:
+    true)`, else `StartRain(instant: true, strengthOverride: cache)`
+    (`CreativePowers.cs:1311-1439` → `Main.cs:64644-64740`); the slider
+    state reads the live `cloudAlpha` (`:1332-1335`). The full `rainTime`
+    ladder still rolls — the override skips the strength draws only.
+    `FreezeRain` gates the two `UpdateTime` arms (`Main.cs:64866`/
+    `:64893`).
+  - **Spawn rate** (`spawner.rs` + `world_sim/npcs.rs`): the remap
+    `<0.5 → [0,0.5]→[0.1,1], else [0.5,1]→[1,10]` with NO rounding
+    (`:1601-1608`); the exact-zero cache disables spawns
+    (`GetShouldDisableSpawnsFor`, `:1584-1595`) at
+    `CanSpawnEnemiesNear` (`NPC.cs:350-357`) — the gate wraps BOTH the
+    slime-rain pre-roll and the regular spawner. `GetSpawnRate`'s Journey
+    arm (`NPC.cs:762-770`) divides the rate / multiplies the max AFTER
+    the caps; the slime-rain denominator divides by the factor
+    (`:5906-5913`). The Journey-mode stand-in is
+    `active_player_difficulty() == 3` (the session draft, the
+    `journey_available` convention).
+  - **Difficulty** (`npc.rs::scale_stats_by_difficulty` +
+    `world_sim/npcs.rs`'s pre-pass): the two-segment remap + banker's
+    1/20 quantisation (`:1018-1028`) lives in the tr-core codec
+    (`creative_powers::difficulty_strength_from_cache`, pub; the app
+    delegates) so the wire and the UI derive the same strength; the
+    codec's id-12 inverse picks the canonical cache (strength 1.0 →
+    0.33, `Click_Normal`'s value). The strength feeds
+    `App.game_mode_difficulty_override`
+    (`Main.UpdateCreativeGameModeOverride`, `Main.cs:17294-17305`,
+    re-derived at the world-step head) → the NPC `ScaleStats` port
+    (`NPC.cs:18146-18181`, the `GameDifficultyData` curves `:83-86`, the
+    per-kind tweaks `:18183-18475` with the C#'s f64 num2/num3/num
+    products). The port's stats are kind-level constants, so the scale
+    lands ONCE per NPC at its first sim tick (the `difficulty_scaled`
+    latch — the C# scales inside `NewNPC`, `:80796`); the scaled life
+    writes `max_hp`/`hp`, the damage/knockback ride the
+    `difficulty_damage`/`difficulty_kb` Option seams (the AI's
+    `damage_override`/`kb_resist_override` writes still win). The
+    classic 1.0 strength skips the scale entirely (the determinism
+    invariant — a non-Journey world stays byte-identical). Documented
+    skips inside the scale: `ScaleStats_ForExpertHardmode`
+    (`:18151-18154`), the money-curve value scale (`:18176`), the
+    getGoodWorld tweaks arms (`:18188-18216`), the >= Expert
+    defense/scale arms (the bee defense ×0.8 Remap `:18222`, the EoW
+    +2/WoF +6 defense, the ×1.05/×1.2 draw scales);
+    `ScaleStats_ByPlayerCount` is the identity at the port's single
+    player (`GetStatScalingFactors`' loop never runs, `:18722-18739`).
+- **The research counts SAVE to the .plr** (the W4-f44 serialization
+  seam): `PlayerFile.research: Vec<(String, i32)>` +
+  `PlayerFileWrite.research` carry the persistent-id string map
+  (`ItemsSacrificedUnlocksTracker.Save`/`Load`, `:157-196` — the id is
+  the `ItemID` const name, the `itemdata::NAMES` row).
+  `research.rs::save_pairs`/`load_pairs` do the name↔id fold: an
+  unknown name DROPS (the C#'s `TryGetValue` miss), a negative count
+  clamps to 0 on load (the tracker's own cap-clamp convention).
+  `CreativePowersSave { godmode, far_placement, spawn_rate }` rides the
+  same tail (the per-player powers, `CreativePowerManager.cs:211-214`:
+  a non-Journey load RESETS them — Default (false, true, 0.5) vs the
+  written_fresh (false, false, 0.0) distinction). `app/flow.rs`'s
+  CharPlay hydrates research/favorites/powers/spawn-rate cache/session
+  difficulty from the file; `app/saveglue.rs::save_player_plr` refreshes
+  research/powers from the live state on every world save, preserving
+  the existing file's stat halves (the f44 branch owns those). The
+  teammate-credit half (`_unlockedByTeammate`/
+  `AnyNewUnlocksFromTeammates`, the toggle button's notification icon
+  `CreativeUI.cs:172-175`) is single-player inert and unported.
+- **The duplication search box is WIRED** (`ui/journey.rs` +
+  `app/loop.rs`): the text rides the port's chat-style `event.text`
+  seam, NOT the c25 keyboard bindings branch (pure bindings, unwired,
+  not on main). The 50-char cap (`UISearchBar.cs:63`), Enter/Escape
+  stop (`:156-164`), Backspace pop, the cancel/right-click/outside-stop
+  arms (`UIWrappedSearchBar.cs:153-164`/`:222-246`) and the `BySearch`
+  tooltip-line scan (`ItemFilters.cs:28-48` + `EntryFilterer.cs:30-35`/
+  `:85-94`, the 30-line cap) are ported. The IME/composition half of
+  `Main.GetInputText` is outside the port's event seam (the chat
+  precedent).
+- **The sacrifice slot's right-click pickup** drains the slot (context 30 is
+  not 29, `ItemSlot.cs:1739-1742`) at the port's press-edge pacing; the
+  held-frame `superFastStack` multiplier is not applied (the port's
+  stack-split machine drives the inventory arms only).
+- **The x24/x12/x1 labels keep the black shadow on hover** — the C# swaps
+  `UIText.ShadowColor` to OurFavoriteColor (`CreativePowers.cs:944-960`);
+  the port's bordered-string helper has no per-call shadow-colour seam.
+- **The difficulty stand-in**: `CreativeUI.Draw`'s `difficulty == 3` gate
+  reads `App::active_player_difficulty` (the session draft) — the port's
+  `Player` carries no difficulty field (the R-03-6 plumbing).
+- **RNG order**: the spark burst draws 15×(angle NextFloat, radius
+  NextFloat) on the bare-`Main.rand` stand-in at timeLeft 56
+  (`UICreativeInfiniteItemsDisplay.cs:351-364`, `Utils.cs:1261-1269`), then
+  the thunk's `Next(1, 4)` bank pick (`LegacySoundPlayer.cs:482`) — the
+  C#'s draw-then-play order kept. No existing stream reordered.
+
+### The c24c final pass (2026-11-21, same branch, code-only — witnesses WRITTEN NOT RUN)
+
+- **The Journey sacrifice tooltip row is WIRED** (`Main.cs:21318-21333`,
+  the f28 seam): `ui/tooltip.rs::item_tooltip_lines` appends
+  `CommonItemTooltip.CreativeSacrificeNeeded` ("{0} more needed") in
+  `Colors.JourneyMode` (= `CREATIVE_MODE_COLOR`, Lerp(HotPink, White, 0.1))
+  while the hovered kind is catalog-capped and partial, behind the C#'s
+  exact gates: the 17-context whitelist (0-7, 15, 22, 29, 32, 34, 35,
+  41-43) + `LocalPlayer.difficulty == 3` + `TryGetSacrificeNumbers`.
+  `TooltipContext` grows `slot_context`/`journey_difficulty`/`research`;
+  `ui/mod.rs::hover_context` maps the port's `HoverRef` panels to their
+  `ItemSlot.Draw` contexts (grid 0, coins 1, ammo 2, bank 4, trash 6,
+  armour 8/10, vanity 9/11, dye 12, misc 16-20/33, closed hotbar 13 —
+  outside the whitelist), the crafting hover rides 22
+  (`Main.cs:42258`), the journey grid's hover carries its own 29/34
+  (`journey::Hover.context`, `UICreativeItemGrid.cs:21`). The
+  teammate-credit arm (`:21327-21331`) stays unported (single-player
+  inert, the tracker's teammate half above); the bestiary-notes tail
+  (`:21334-21342`) rides the bestiary data port.
+- **The search scan keeps context -1**: `ItemFilters.BySearch` builds a
+  fresh `new Item()` whose `tooltipContext` stays -1 (`Item.cs:117`) —
+  the sacrifice row is OUTSIDE the whitelist there, so "more needed"
+  never matches a search (`search_fits` passes `slot_context: -1`; the
+  difficulty + tracker ride for the row set's other gates).
+- **TRASH_COMPACTOR is WIRED** (the c36-45 f30b seam,
+  `AchievementsHelper.CheckResearchAchievement`, `:387-399`):
+  `ResearchTracker` grows `LastEditId` (`MarkContentsDirty`,
+  `ItemsSacrificedUnlocksTracker.cs:222-225` — bumps on every successful
+  registration + `Reset`, NOT on `Load`/the refused arms) and
+  `count_fully_researched` (`:60-75`, the `ItemID.Count` walk over the
+  port's NAMES id space; the `CreativeResearchItemPersistentIdOverride`
+  alias remap is the documented unported table).
+  `AchievementManager::check_research` carries the `_lastResearchVersion`
+  gate (a static in the C#, an instance field here — one manager per App)
+  and fires progression 45 at `fully >= all / 2` (integer divide). The
+  callers: `enter_loaded_world` forced (`Player.cs:325`) + the player
+  tick's post-borrow drain (`Player.cs:25703`, the HandleRunning
+  precedent — the C# fires both inside `Player.Update`).
+- **FreezeTime/ModifyTimeRate now gate the growth loops**
+  (`WorldGen.GetWorldUpdateRate`, `:72020-72028` + `UpdateTimeRate`,
+  `Main.cs:6199-6226`): `world_sim/growth.rs` fed the hardcoded
+  `(1, false)` before; it now derives the desired rate from the powers
+  (the dial arm keeps the tiles at 1 `:6204`, the all-asleep ×5 `:6213`,
+  else the ModifyTimeRate target) and passes the FreezeTime toggle —
+  rate 0 returns before EVERY loop (`:71536-71540`), the port's
+  hardUpdateWorld surrogate picks ride the same gate. The default
+  registry (TimeRate 1.0, FreezeTime off) keeps the DW-1.4 draw-count
+  pins byte-identical.
+
+### The c24 JOURNEY-SEAL round (2026-11-21, same branch, code-only — witness WRITTEN NOT RUN)
+
+- **The swap carry**: `Main.ActivePlayerFileData` survives
+  `Main.LoadWorld` (`Main.cs:66208-66216` — `SelectPlayer` →
+  `data.SetAsActive` caches the hydrated Player; the world load never
+  re-opens the `.plr`). The port's `swap_world` rebuilt the App through
+  `App::new`, whose fresh defaults wiped the CharPlay-hydrated
+  per-character Journey state (the research tracker, the three
+  per-player power rows, the spawn-rate cache, the session draft +
+  name) — the character silently reverted to a fresh Classic session
+  on Play. `app/mod.rs::swap_world` now carries those halves across the
+  reset (the per-WORLD powers are NOT carried — `App::new` re-loads
+  them from the new world's section, `CreativePowerManager.cs:139-151`).
+  Witness `w4_c24_the_character_journey_state_rides_the_world_swap`
+  (the carry, the per-world FreezeTime re-load, the forced-check
+  non-fire on a 2-row tracker).
+- **The family FINAL**: `docs/research/344-journey-family-final.md`
+  (registry **344** per research/150 §8.7 FROZEN table — renumber chain
+  308→344; the original §7.4 "308+ FREE" self-pick + the all-object
+  sweep max 298 are superseded, g13 KEEPS 308) — the full C#→port→commit map, the four JOURNEY-SEAL
+  receipts (c24c landed `face9df72`; f30b TRASH_COMPACTOR inert→ACTIVE
+  through the sacrifice producer + the save/load + the version-gated
+  check; e10c/f44g hydration landed on the f44/e10 lanes `5c8bbb160`/
+  `0d1ee2045`/`01054aeb9` with the merge contract; every journey power's
+  UI writer + sim consumer verified live), the deviation ledger and
+  the merger keep-one table (f30's free-fn check + App latch DROP onto
+  c24c's manager-owned shape; f44's hydrate is the canonical
+  character-load, this branch keeps the Journey lines + the carry).

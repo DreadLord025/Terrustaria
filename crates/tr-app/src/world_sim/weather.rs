@@ -134,6 +134,10 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
     // 0.35 walk cap applies until some player crosses 120 max life (S1-L-2).
     let any_player_120 = app.player.as_ref().is_some_and(|p| p.max_hp >= 120);
     app.wind.any_player_120_life = any_player_120;
+    // `FreezeWindDirectionAndStrength.Enabled` (`Main.cs:58854`): the walk
+    // gate — the drift toward the target still runs while frozen
+    // (`Wind::update_rain`'s `frozen` early-return sits after the drift).
+    app.wind.frozen = app.creative_powers.freeze_wind();
     // The crossing samples: the Deerclops's midnight (`Main.cs:65121`'s
     // `num4 < 16200 && time >= 16200`) and the night bookend's dusk
     // (`Main.cs:65230`'s `UpdateTime_StartDay` at 32400).
@@ -150,6 +154,9 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         ..
     } = app;
     world_tick_step.tick(dt, |_| {
+        // `FreezeRainPower.Enabled` (`Main.cs:64866`/`:64893` read the manager
+        // live per arm; the port snapshots per step like the other inputs).
+        rain.set_freeze_rain(app.creative_powers.freeze_rain());
         // (1) `Main.cs:58739`: `currentDayRateIteration == 0` — thunder once.
         // M6-AUDIO-1: the strike returns its cue and position
         // (`Main.cs:58752-58761`), played here against the current listener.
@@ -794,7 +801,12 @@ mod tests {
         assert_eq!(app.rain.max_raining(), 0.8);
         app.wind.speed_current = 0.55;
         app.wind.speed_target = 0.8;
-        app.wind.frozen = true; // no windCounter walk: only the drift moves current
+        // No windCounter walk: only the drift moves current — the freeze
+        // POWER is the source now (the tick copies it into `wind.frozen`).
+        app.creative_powers.set(
+            crate::creative::PowerId::FreezeWind,
+            crate::creative::PowerState::Toggle(true),
+        );
         arm_sandstorm(&mut app, 10_000);
         update_world_tick(&mut app, STEP);
         assert!(
@@ -832,7 +844,10 @@ mod tests {
         );
         app.wind.speed_current = 0.55;
         app.wind.speed_target = 0.8;
-        app.wind.frozen = true;
+        app.creative_powers.set(
+            crate::creative::PowerId::FreezeWind,
+            crate::creative::PowerState::Toggle(true),
+        );
         arm_sandstorm(&mut app, 10_000);
         update_world_tick(&mut app, STEP);
         assert!(app.wind.speed_current < 0.6);
@@ -1261,7 +1276,11 @@ mod tests {
         // S1-L-2). The port folds the 255-player scan to its single player.
         let mut app = flow_app(None, vec![], vec![]);
         app.world.world_surface = 200.0;
-        app.wind.frozen = true; // observe the flag, not the walk
+        // Observe the flag, not the walk — the freeze power is the source.
+        app.creative_powers.set(
+            crate::creative::PowerId::FreezeWind,
+            crate::creative::PowerState::Toggle(true),
+        );
         app.wind.any_player_120_life = true;
         let mut low = crate::player::Player::spawn(&app.world);
         low.max_hp = 100;

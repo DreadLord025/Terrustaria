@@ -212,6 +212,15 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Menu_Open", 10),
     ("Menu_Close", 11),
     ("Menu_Tick", 12),
+    // W4-c24 — the Journey research cues (`SoundID.Research = 63` /
+    // `ResearchComplete = 64`, `SoundID.cs:148/:150`): the sacrifice thunk
+    // picks `SoundResearch[Next(1, 4)]` (`LegacySoundPlayer.cs:480-492`), the
+    // completion chime is `SoundResearch[0]` (`:493-502`); the bank loads
+    // `Sounds/Research_0..3` (`:188-191`).
+    ("Research_0", 64),
+    ("Research_1", 63),
+    ("Research_2", 63),
+    ("Research_3", 63),
     // `SoundEngine.PlaySound(24)` — the town-NPC talk open
     // (`Main.cs:43083`); `SoundID.Chat = 24` (`SoundID.cs:70`), the
     // `Sounds/Chat` cue (`LegacySoundPlayer.cs:202`, case 24 `:957-962`).

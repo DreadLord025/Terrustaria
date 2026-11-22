@@ -12,6 +12,7 @@ pub(crate) mod equip_swap;
 pub(crate) mod filters;
 pub(crate) mod flow;
 pub(crate) mod frame;
+pub(crate) mod journey_clicks;
 mod r#loop;
 pub(crate) mod net_npc_sync;
 pub(crate) mod netglue;
@@ -206,6 +207,23 @@ pub(crate) struct App {
     pub(crate) next_npc_uid: u32,
     /// The Journey powers (`GameContent/Creative/CreativePowers.cs`).
     pub(crate) creative_powers: crate::creative::CreativePowers,
+    /// `Main._gameModeDifficultyOverride` (`Main.cs:359`,
+    /// `UpdateCreativeGameModeOverride` `:17294-17305`): the Journey
+    /// difficulty slider's NPC strength multiplier, re-derived once per
+    /// game update (`DoUpdate`, `:16847`). `None` outside a Journey world —
+    /// `Main.Difficulty` then answers the world's own GameMode (the port is
+    /// single-difficulty classic, so 1.0).
+    pub(crate) game_mode_difficulty_override: Option<f32>,
+    /// `Main.LocalPlayerCreativeTracker.ItemSacrifices`
+    /// (`ItemsSacrificedUnlocksTracker.cs`) — the research counts (W4-c24).
+    /// The `.plr` `creativeTracker` block (`Player.cs:54911`/`:55696-55699`)
+    /// carries them through `research::save_pairs`/`load_pairs` (the W4-f44
+    /// serialization seam's `research: Vec<(String, i32)>` shape).
+    pub(crate) research: crate::research::ResearchTracker,
+    /// `Main.CreativeMenu` (`CreativeUI.cs`) + `UICreativePowersMenu`'s state
+    /// (W4-c24): the toggle, the open category, the sacrifice slot and the
+    /// research animation.
+    pub(crate) journey: ui::journey::JourneyMenu,
     /// The debug cheat-sheet panel (`debug_panel.rs` — the self-contained
     /// module; delete the field + the module + the call sites to remove).
     /// Compiled only with the `debug` feature (see `tr-app/Cargo.toml`).
@@ -2385,6 +2403,11 @@ impl App {
         if let Some(engine) = self.legacy_light.as_mut() {
             engine.reset_map_delay();
         }
+        // W4-c24c — `Player.OnEnterWorld`'s tail (`Player.cs:325`): the
+        // research-achievement recount runs forced on the world-enter, so a
+        // loaded tracker already past half the catalog grants TRASH_COMPACTOR
+        // without waiting for a new sacrifice.
+        let _ = self.achievements.check_research(&self.research, true);
     }
 
     pub(crate) fn is_client(&self) -> bool {
@@ -2949,6 +2972,26 @@ impl App {
         let post = self.post.take();
         let noise_tex = self.noise_tex.take();
         let water_mask = self.water_mask.take();
+        // W4-c24 seal — `Main.ActivePlayerFileData` survives `Main.LoadWorld`
+        // (`Main.cs:66208-66216`: `SelectPlayer` → `data.SetAsActive` caches
+        // the hydrated Player; the world load never re-opens the `.plr`).
+        // The Journey per-CHARACTER state rides the App reset: the research
+        // counts (`Player.creativeTracker`, `Player.cs:794` — the CharPlay
+        // hydration's `load_pairs`), the three per-player powers
+        // (`CreativePowerManager.LoadToPlayer`'s set, `:197-215` — Godmode 5
+        // / FarPlacement 11 / SpawnRate 14), the spawn-rate slider cache and
+        // the session difficulty stand-in + name. The per-WORLD powers are
+        // NOT carried — `App::new` re-loads them from the new world's
+        // section (`LoadFromWorld`, `CreativePowerManager.cs:139-151`).
+        let carried_research = std::mem::take(&mut self.research);
+        let carried_draft = self.session_draft.take();
+        let carried_name = self.player_name.clone();
+        let carried_spawn_cache = self.journey.spawn_rate_cache;
+        let carried_godmode = self.creative_powers.god_mode();
+        let carried_far = self.creative_powers.far_placement_range();
+        let carried_spawn = self
+            .creative_powers
+            .slider(crate::creative::PowerId::SpawnRate);
         // The fresh App carries the new world's state (clouds, sky, stars,
         // player, npcs, town rooms, chests, liquids, rain, wind, atmo,
         // bestiary, the loader pins) exactly as App::new built it at boot.
@@ -2961,6 +3004,26 @@ impl App {
             font_atlas,
             lookups,
             atlas_stats,
+        );
+        // W4-c24 seal — the carried per-character halves land back (the
+        // `ActivePlayerFileData` survival above). The per-player powers
+        // overwrite ONLY their three registry rows; every per-world row
+        // keeps the new world's loaded state.
+        self.research = carried_research;
+        self.session_draft = carried_draft;
+        self.player_name = carried_name;
+        self.journey.spawn_rate_cache = carried_spawn_cache;
+        self.creative_powers.set(
+            crate::creative::PowerId::Godmode,
+            crate::creative::PowerState::Toggle(carried_godmode),
+        );
+        self.creative_powers.set(
+            crate::creative::PowerId::FarPlacementRange,
+            crate::creative::PowerState::Toggle(carried_far),
+        );
+        self.creative_powers.set(
+            crate::creative::PowerId::SpawnRate,
+            crate::creative::PowerState::Slider(carried_spawn),
         );
         // The fresh manager loaded its conditions in `App::new`; re-bind its
         // `_savePath` (`AchievementManager.cs:41-55`) exactly as boot did.
@@ -3841,6 +3904,9 @@ impl App {
             discount_available: false,
             shop_closed_flag: false,
             creative_powers,
+            game_mode_difficulty_override: None,
+            research: crate::research::ResearchTracker::default(),
+            journey: ui::journey::JourneyMenu::default(),
             #[cfg(feature = "debug")]
             debug_panel: tr_debug::Panel::new(),
             favorite_slots: Vec::new(),
@@ -5405,6 +5471,99 @@ pub(crate) mod tr_hooks {
         assert!(app.menu.is_none() && app.front.is_none());
         assert!(app.static_sheets.is_some() && app.fonts_cache.is_some());
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// W4-c24 seal — `Main.ActivePlayerFileData` survives `Main.LoadWorld`
+    /// (`Main.cs:66208-66216`): the CharPlay-hydrated per-character Journey
+    /// state (the research counts, the three per-player powers, the
+    /// spawn-rate cache, the session difficulty + name) rides `swap_world`'s
+    /// `App::new` reset; the per-WORLD powers come from the new world's
+    /// section, not the old App. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_c24_the_character_journey_state_rides_the_world_swap() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(content) = find_content_dir() else {
+            eprintln!("no assets/Content junction: skipping the swap carry");
+            return;
+        };
+        assets::set_content_dir(content.clone());
+        let dir = std::env::temp_dir().join(format!("tr-c24-carry-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut paths = Vec::new();
+        for name in ["Alpha", "Beta"] {
+            let path = dir.join(format!("{name}.trwld"));
+            let mut w = World::new(name.into(), 64, 64);
+            w.compute_column_surface();
+            save::save(&path, &w, &save::WorldSide::default()).unwrap();
+            paths.push(path);
+        }
+        let (world, sections) = load_world(&paths[0]).unwrap();
+        let (atlas, font_atlas, lookups, stats) = build_atlas_reusing_static(
+            &world,
+            &content.join("Images"),
+            &mut None,
+            &mut None,
+        )
+        .expect("boot atlas");
+        let mut app = App::new(
+            settings::Settings::default(),
+            world,
+            sections,
+            paths[0].clone(),
+            atlas,
+            font_atlas,
+            lookups,
+            stats,
+        );
+        // The CharPlay hydration's landed state (app/flow.rs's read arm).
+        app.research.register_sacrifice(8, 100); // Torch, fully
+        app.research.register_sacrifice(2, 37); // Dirt, partial
+        app.session_draft = Some(ui::char_creation::NewPlayerDraft {
+            name: "Hydra".into(),
+            difficulty: 3,
+            ..Default::default()
+        });
+        app.player_name = "Hydra".into();
+        app.creative_powers.set(
+            crate::creative::PowerId::Godmode,
+            crate::creative::PowerState::Toggle(true),
+        );
+        app.creative_powers.set(
+            crate::creative::PowerId::FarPlacementRange,
+            crate::creative::PowerState::Toggle(true),
+        );
+        app.creative_powers.set(
+            crate::creative::PowerId::SpawnRate,
+            crate::creative::PowerState::Slider(0.75),
+        );
+        app.journey.spawn_rate_cache = 0.75;
+        // The old world's per-world FreezeTime ON — the new world's section
+        // carries none, so the swap must NOT carry it across.
+        app.creative_powers.set(
+            crate::creative::PowerId::FreezeTime,
+            crate::creative::PowerState::Toggle(true),
+        );
+        app.swap_world(&paths[1]).expect("the swap");
+        // The per-character halves survived (`ActivePlayerFileData`).
+        assert_eq!(app.research.sacrificed(8), 100);
+        assert_eq!(app.research.sacrificed(2), 37);
+        assert!(app.research.is_fully_researched(8));
+        assert_eq!(app.active_player_difficulty(), 3);
+        assert_eq!(app.player_name, "Hydra");
+        assert!(app.creative_powers.god_mode());
+        assert!(app.creative_powers.far_placement_range());
+        assert!((app.creative_powers.slider(crate::creative::PowerId::SpawnRate) - 0.75).abs() < 1e-6);
+        assert!((app.journey.spawn_rate_cache - 0.75).abs() < 1e-6);
+        // The per-world power re-loaded from the new world (off), not carried.
+        assert!(!app.creative_powers.toggle(crate::creative::PowerId::FreezeTime));
+        // The world-enter forced research check ran on the carried tracker
+        // (Player.cs:325) — a 2-row tracker stays far from the half threshold.
+        assert!(
+            !app.achievements.list.iter().any(|a| a.name == "TRASH_COMPACTOR" && a.completed),
+            "the carried tracker is far from half the catalog"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

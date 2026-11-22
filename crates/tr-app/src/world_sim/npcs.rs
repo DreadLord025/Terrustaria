@@ -4269,6 +4269,26 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     let player = &mut app.player;
+    // `NPC.ScaleStats` (`NPC.cs:18146-18169`) at spawn: the Journey
+    // difficulty slider's strength (`Main._gameModeDifficultyOverride`,
+    // `Main.cs:17294-17305`) scales the fresh NPC's life/damage/knockback
+    // through the `GameDifficultyData` curves. The port's NPC stats are
+    // kind-level constants read live (`max_hp`/`contact_damage`/
+    // `knock_back_resist`), so the scale lands once per NPC at its first
+    // tick — the `difficulty_scaled` latch keeps it from compounding.
+    // The classic 1.0 strength is the identity (the curves sample 1.0 at
+    // Classic), so the scale is skipped there — a non-Journey world stays
+    // byte-identical (the determinism invariant).
+    if let Some(strength) = app.game_mode_difficulty_override {
+        for n in app.npcs.iter_mut() {
+            if !n.difficulty_scaled {
+                if strength != 1.0 {
+                    n.scale_stats_by_difficulty(strength);
+                }
+                n.difficulty_scaled = true;
+            }
+        }
+    }
     // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the
     // DungeonSpirit's arm (`npc_ai_style56::style56_step`) needs the
     // shared `Main.dust` pool + its `SpawnCtx` — both App fields the
@@ -6500,6 +6520,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     let mut spawned = None;
     if app.npcs.len() < 200 && app.npc_timer <= 0.0 {
         let mut rng = app.rngs.stream(RngKey::SpawnNpc);
+        // `Spawner.CanSpawnEnemiesNear` (`NPC.cs:344-363`): the Journey
+        // spawn-rate power's exact-zero cache blocks the WHOLE spawn call
+        // — the slime-rain pre-roll included (`:294-304`'s gate wraps both).
+        // The port's one player; the dead gate rides the ctx below.
+        let journey_mode = app.active_player_difficulty() == 3;
+        let journey_spawns_disabled =
+            journey_mode && app.creative_powers.spawn_rate_disabled();
+        let journey_spawn_rate = app.creative_powers.spawn_rate_multiplier();
         // The Slime Rain sky spawns (`SlimeRainSpawns`, `NPC.cs:5892-5960`)
         // — the pre-roll before the regular spawner (`:296-302`'s call
         // order): the depth/crowd gates (the player below
@@ -6509,7 +6537,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // (the bounds, the y band `[worldSurface x 0.3, worldSurface]`,
         // the 7x8 solid-rect scan — the house-wall arm folds), the kind
         // table (Blue; `Next(10)==0` Yellow; `Next(5) < 2` Green).
-        if app.world.slime_rain {
+        if app.world.slime_rain && !journey_spawns_disabled {
             if let Some(player) = app.player.as_ref() {
                 let (pcx, pcy) = player.center();
                 let view_w = spawner::S_WIDTH as f32;
@@ -6526,7 +6554,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     && (pcy as f64) <= app.world.world_surface * 16.0 + (view_h * 0.5) as f64
                     && nearby <= 15.0
                 {
-                    let denom = 45.0 + 450.0 * (nearby / 15.0);
+                    let mut denom = 45.0 + 450.0 * (nearby / 15.0);
+                    // `Main.expertMode`'s ×0.85 (`NPC.cs:5902-5905`) is
+                    // constants-off (the port is single-difficulty classic).
+                    // `Main.IsJourneyMode` (`:5906-5913`): the spawn-rate
+                    // power divides the denominator by the remapped factor.
+                    if journey_mode {
+                        denom = (denom / journey_spawn_rate) as i32 as f32;
+                    }
                     // `Main.rand.Next(num2) != 0 → return` (`NPC.cs:5914`).
                     if rng.next_max(denom as i32) == 0 {
                         // `Next(num3, maxValue)` / `Next(minValue, maxValue2)`
@@ -6578,9 +6613,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 }
             }
         }
-        // `Spawner.CanSpawnEnemiesNear` (`NPC.cs:349-351`): a dead player
-        // blocks the attempt (the journey and Moon Lord gates have no
-        // sources yet).
+        // `Spawner.CanSpawnEnemiesNear` (`NPC.cs:344-363`): a dead player
+        // blocks the attempt, and the Journey exact-zero cache blocks it
+        // too (`:350-357`, the `journey_spawns_disabled` snapshot above).
+        // The Moon Lord gate has no source yet.
         // `NPC.CountNPCS(id)`'s scan source (`NPC.cs:7982-7995`): the active
         // roster's vanilla types — the moon ladders' per-kind cap gates
         // (`CountNPCS(id) < cap`) read it per arm.
@@ -6591,7 +6627,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             .map(|n| n.kind.to_u16())
             .collect();
         let ctx = app.player.as_ref().and_then(|player| {
-            if player.dead {
+            if player.dead || journey_spawns_disabled {
                 return None;
             }
             let (pcx, pcy) = player.center();
@@ -6642,6 +6678,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // moon override (`NPC.cs:771-774`): the events force
                     // `5·2.3` max spawns / rate 20 the moment they are up.
                     moon_event: app.world.pumpkin_moon || app.world.snow_moon,
+                    // The Journey spawn-rate power (`NPC.cs:762-770`): the
+                    // per-attempt snapshot the GetSpawnRate arm reads.
+                    journey_mode,
+                    journey_spawns_disabled,
+                    journey_spawn_rate,
                     ..spawner::SpawnFlags::default()
                 },
                 world: &app.world,

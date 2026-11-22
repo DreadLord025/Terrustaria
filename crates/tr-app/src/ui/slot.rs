@@ -44,6 +44,9 @@ fn context_texture_index(context: i32, index: i32) -> u8 {
         // `ItemSlot.cs:2264-2277` / `:2298-2302`: crafting contexts 41/42/43 end up
         // on `Inventory_Back18` (42/43 start on `_4` and are then overridden).
         41 | 42 | 43 => 7,
+        // `ItemSlot.cs:2253-2259`: the Journey duplication grid — 29 (fully
+        // researched) and 34 (partial) both ride `Inventory_Back18`.
+        29 | 34 => 7,
         // `ItemSlot.Draw`'s context-15 arm (`ItemSlot.cs:2250-2252`): the
         // shop cells ride `Inventory_Back6`.
         15 => 10,
@@ -430,7 +433,10 @@ fn draw_slot_flagged(
     // draw no background at all — the mouse item rides on them — but still centre
     // on `InventoryBack.Size()`.
     let cell = back.map(|b| b.width as f32).unwrap_or(52.0);
-    let no_background = matches!(context, 14 | 21 | 37);
+    // `ItemSlot.cs:2261-2263`: context 30 (the Journey sacrifice slot) sets
+    // `flag3 = !flag2` — with no gamepad highlight it draws no background at
+    // all, like the mouse-item contexts.
+    let no_background = matches!(context, 14 | 21 | 30 | 37);
     if !no_background {
         if let Some(uv) = lookups.hud_uv(back.as_ref()) {
             r.push_ui_sprite([x, y], [cell * scale, cell * scale], uv, tint);

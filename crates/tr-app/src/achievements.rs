@@ -306,6 +306,12 @@ pub struct AchievementManager {
     /// the queue into the notification tracker + the chat/sound subscriber
     /// (`App::drain_achievement_completions`).
     pub completed_events: Vec<&'static str>,
+    /// `AchievementsHelper._lastResearchVersion` (`AchievementsHelper.cs:24`):
+    /// the tracker `LastEditId` the last `CheckResearchAchievement` saw — the
+    /// half-research gate only re-counts when the tracker changed
+    /// (`:389-392`). A static in the C#, an instance field here (one manager
+    /// per App, the same lifetime).
+    last_research_version: u32,
 }
 
 impl AchievementManager {
@@ -321,6 +327,7 @@ impl AchievementManager {
                 .collect(),
             save_path: None,
             completed_events: Vec::new(),
+            last_research_version: 0,
         }
     }
 
@@ -418,6 +425,32 @@ impl AchievementManager {
         let pct = crate::bestiary::completion_percent(kills);
         if pct >= 1.0 {
             self.notify_progression(29)
+        } else {
+            None
+        }
+    }
+
+    /// `AchievementsHelper.CheckResearchAchievement` (`AchievementsHelper.cs:
+    /// 387-399`, W4-c24c): the version gate (`forced || _lastResearchVersion
+    /// != LastEditId`) re-counts the tracker; at half the catalog fully
+    /// researched (`fullyResearchedItems >= allItems / 2`, integer divide)
+    /// progression event 45 fires — `TRASH_COMPACTOR`
+    /// (`AchievementInitializer.cs:435-437`). The per-tick caller is
+    /// `Player.Update`'s local-player armor tail (`Player.cs:25703`); the
+    /// forced caller is the world-enter (`Player.cs:325`).
+    pub fn check_research(
+        &mut self,
+        tracker: &crate::research::ResearchTracker,
+        forced: bool,
+    ) -> Option<&'static str> {
+        let edit = tracker.last_edit_id();
+        if !forced && self.last_research_version == edit {
+            return None; // `:390` — nothing changed since the last count
+        }
+        self.last_research_version = edit; // `:392`
+        let (full, all) = tracker.count_fully_researched(); // `:393`
+        if full >= all / 2 {
+            self.notify_progression(45) // `:396`
         } else {
             None
         }
@@ -712,6 +745,47 @@ mod tests {
         // I_AM_LOOT rides the `Peek` CustomFlag (`:347`).
         assert_eq!(m.notify_custom("Peek"), Some("I_AM_LOOT"));
         assert_eq!(m.notify_custom("Nope"), None);
+    }
+
+    /// W4-c24c — `CheckResearchAchievement` (`AchievementsHelper.cs:387-399`):
+    /// the version gate skips the recount while the tracker is unchanged, the
+    /// half-catalog threshold fires progression 45 (`TRASH_COMPACTOR`), and
+    /// the completed row never re-fires.
+    #[test]
+    fn the_research_achievement_fires_at_half_the_catalog() {
+        let mut m = AchievementManager::registry();
+        let mut t = crate::research::ResearchTracker::default();
+        // A fresh tracker: the per-tick gate skips (version 0 == the initial
+        // `_lastResearchVersion` 0); the world-enter check is forced (`:325`).
+        assert_eq!(m.check_research(&t, false), None);
+        assert_eq!(m.check_research(&t, true), None, "forced counts, threshold far");
+        // One registered sacrifice bumps the version — the recount runs, the
+        // threshold is nowhere near.
+        t.register_sacrifice(8, 1);
+        assert_eq!(m.check_research(&t, false), None);
+        // Unchanged tracker: the gate skips even the forced=false recount.
+        assert_eq!(m.check_research(&t, false), None);
+        // Fill half the catalog (the integer-divide threshold, `:394`).
+        let (_, all) = t.count_fully_researched();
+        let need = all / 2;
+        let mut filled = 0u32;
+        for id in 0..crate::itemdata::NAMES.len() as u16 {
+            if filled >= need {
+                break;
+            }
+            if let Some(cap) = crate::research::sacrifice_cap(id) {
+                t.register_sacrifice(id, cap);
+                filled += 1;
+            }
+        }
+        assert_eq!(m.check_research(&t, false), Some("TRASH_COMPACTOR"));
+        assert!(m
+            .list
+            .iter()
+            .any(|a| a.name == "TRASH_COMPACTOR" && a.completed));
+        // The completed row never re-fires (`notify`'s completed skip); the
+        // forced recount runs but stays silent.
+        assert_eq!(m.check_research(&t, true), None);
     }
 
     /// `CustomIntCondition.Value` (`CustomIntCondition.cs:15-32`): the setter

@@ -38,6 +38,26 @@ pub enum PowerId {
     Godmode,
     FarPlacementRange,
     StopBiomeSpread,
+    /// `ModifyWindDirectionAndStrength` (`CreativePowers.cs:1179-1309`,
+    /// vanilla id 6): the slider state is the *derived* wind target
+    /// (`Lerp(-0.8, 0.8, cache)`, `:1190`) — not per-world content.
+    WindStrength,
+    /// `ModifyRainPower` (`:1311-1439`, vanilla id 7): the raw [0,1] cache
+    /// (`GetSliderValueInner` reads the live `Main.cloudAlpha`, `:1332-1335`,
+    /// so the cache itself is the state) — not per-world content.
+    RainStrength,
+    /// `FreezeRainPower` (`:1507-1538`, vanilla id 9).
+    FreezeRain,
+    /// `FreezeWindDirectionAndStrength` (`:1474-1505`, vanilla id 10).
+    FreezeWind,
+    /// `DifficultySliderPower` (`:1002-1177`, vanilla id 12): the derived
+    /// `StrengthMultiplierToGiveNPCs` (`UpdateInfoFromSliderValueCache`,
+    /// `:1018-1028`), consumed by `Main.UpdateCreativeGameModeOverride`
+    /// (`Main.cs:17294-17305`).
+    Difficulty,
+    /// `SpawnRateSliderPerPlayerPower` (`:1573-1737`, vanilla id 14): the
+    /// raw [0,1] cache, default 0.5 (`_sliderDefaultValue`, `:1580`).
+    SpawnRate,
 }
 
 /// One power's state (`ASharedTogglePower`'s value halves — the per-player
@@ -71,6 +91,20 @@ impl CreativePowers {
                 (PowerId::Godmode, PowerState::Toggle(false)),
                 (PowerId::FarPlacementRange, PowerState::Toggle(false)),
                 (PowerId::StopBiomeSpread, PowerState::Toggle(false)),
+                // The weather powers' fresh state: the wind target 0
+                // (`Main.windSpeedTarget` starts 0), the rain cache 0 (no
+                // event), the freezes off (`ASharedTogglePower.Reset`,
+                // `CreativePowers.cs:466-470`).
+                (PowerId::WindStrength, PowerState::Slider(0.0)),
+                (PowerId::RainStrength, PowerState::Slider(0.0)),
+                (PowerId::FreezeRain, PowerState::Toggle(false)),
+                (PowerId::FreezeWind, PowerState::Toggle(false)),
+                // `DifficultySliderPower.Reset` (`:1012-1016`): cache 0 →
+                // strength 0.5 (`UpdateInfoFromSliderValueCache`).
+                (PowerId::Difficulty, PowerState::Slider(0.5)),
+                // `_sliderDefaultValue = 0.5f` (`:1580`, `ResetForPlayer`
+                // `:360-368`).
+                (PowerId::SpawnRate, PowerState::Slider(0.5)),
             ],
         }
     }
@@ -157,6 +191,86 @@ impl CreativePowers {
             _ => None,
         }
     }
+
+    /// `FreezeRainPower.Enabled` (`CreativePowers.cs:1507-1538`) — the rain
+    /// event machine's gate (`Main.cs:64866`/`:64893`).
+    pub fn freeze_rain(&self) -> bool {
+        self.toggle(PowerId::FreezeRain)
+    }
+
+    /// `FreezeWindDirectionAndStrength.Enabled` (`:1474-1505`) — the wind
+    /// target-walk gate (`Main.cs:58854`).
+    pub fn freeze_wind(&self) -> bool {
+        self.toggle(PowerId::FreezeWind)
+    }
+
+    /// `DifficultySliderPower.StrengthMultiplierToGiveNPCs`
+    /// (`:1004`, `UpdateInfoFromSliderValueCache` `:1018-1028`): the derived
+    /// NPC strength multiplier, the `Main._gameModeDifficultyOverride`
+    /// source (`Main.cs:17294-17305`).
+    pub fn difficulty_strength(&self) -> f32 {
+        self.slider(PowerId::Difficulty)
+    }
+
+    /// `Main.UpdateCreativeGameModeOverride` (`Main.cs:17294-17305`):
+    /// `Main._gameModeDifficultyOverride` — `Some(strength)` while in a
+    /// Journey world with the (always-unlocked) difficulty power, else
+    /// `None` (the world's own `GameMode` answers `Main.Difficulty`).
+    pub fn game_mode_difficulty_override(&self, journey_mode: bool) -> Option<f32> {
+        journey_mode.then(|| self.difficulty_strength())
+    }
+
+    /// `SpawnRateSliderPerPlayerPower.GetShouldDisableSpawnsFor`
+    /// (`:1584-1595`): the local player's cache at exactly 0 disables
+    /// enemy spawns (`NPC.CanSpawnEnemiesNear`, `NPC.cs:350-357`).
+    pub fn spawn_rate_disabled(&self) -> bool {
+        self.slider(PowerId::SpawnRate) == 0.0
+    }
+
+    /// `SpawnRateSliderPerPlayerPower.GetRemappedSliderValueFor`
+    /// (`:222-231`) over [`spawn_rate_multiplier`]: the local player's
+    /// remapped x0.1..10 spawn-rate factor (`NPC.cs:762-770`).
+    pub fn spawn_rate_multiplier(&self) -> f32 {
+        spawn_rate_multiplier(self.slider(PowerId::SpawnRate))
+    }
+}
+
+/// `ModifyWindDirectionAndStrength.UpdateInfoFromSliderValueCache`
+/// (`CreativePowers.cs:1188-1191`):
+/// `windSpeedCurrent = windSpeedTarget = Lerp(-0.8, 0.8, cache)`.
+pub fn wind_target_from_cache(v: f32) -> f32 {
+    -0.8 + 1.6 * v
+}
+
+/// `ModifyWindDirectionAndStrength.GetSliderValueInner` (`:1193-1196`):
+/// `Utils.GetLerpValue(-0.8, 0.8, Main.windSpeedTarget)` — UNCLAMPED
+/// (`Utils.cs:315-343`'s default `clamped = false`): the target walk can
+/// push past ±0.8 (`Main.cs:58935`'s ±0.85 draws), and the slider reads
+/// the out-of-range lerp verbatim.
+pub fn wind_cache_from_target(target: f32) -> f32 {
+    (target + 0.8) / 1.6
+}
+
+/// `DifficultySliderPower.UpdateInfoFromSliderValueCache`
+/// (`CreativePowers.cs:1018-1028`): cache <= 0.33 remaps [0,0.33]→[0.5,1],
+/// else [0.33,1]→[1,3] (`Utils.Remap` clamps, `Utils.cs:345-348`); then
+/// `Math.Round(strength * 20f) / 20f` — banker's rounding to 1/20 steps.
+/// The codec owns the math (`wld::sections::creative_powers`) so the wire
+/// and the UI derive the same strength.
+pub fn difficulty_strength_from_cache(v: f32) -> f32 {
+    tr_core::wld::sections::creative_powers::difficulty_strength_from_cache(v)
+}
+
+/// `SpawnRateSliderPerPlayerPower.RemapSliderValueToPowerValue`
+/// (`CreativePowers.cs:1601-1608`): cache < 0.5 remaps [0,0.5]→[0.1,1],
+/// else [0.5,1]→[1,10]. NO rounding — the consumers divide/multiply the
+/// raw float (`NPC.cs:767-768`).
+pub fn spawn_rate_multiplier(v: f32) -> f32 {
+    if v < 0.5 {
+        0.1 + 0.9 * (v / 0.5).clamp(0.0, 1.0)
+    } else {
+        1.0 + 9.0 * ((v - 0.5) / 0.5).clamp(0.0, 1.0)
+    }
 }
 
 impl Default for CreativePowers {
@@ -206,22 +320,19 @@ pub const PERSISTENT_POWERS: &[PersistentPowerId] = &[
         vanilla_id: 9,
         class_name: "FreezeRainPower",
         config_name: "rain_setfrozen",
-        // The port has no rain system yet, so the power does not exist.
-        port: None,
+        port: Some(PowerId::FreezeRain),
     },
     PersistentPowerId {
         vanilla_id: 10,
         class_name: "FreezeWindDirectionAndStrength",
         config_name: "wind_setfrozen",
-        // Ditto the wind system.
-        port: None,
+        port: Some(PowerId::FreezeWind),
     },
     PersistentPowerId {
         vanilla_id: 12,
         class_name: "DifficultySliderPower",
         config_name: "setdifficulty",
-        // The journey difficulty flip is M6-CREATIVE-1's, not this seam's.
-        port: None,
+        port: Some(PowerId::Difficulty),
     },
     PersistentPowerId {
         vanilla_id: 13,
@@ -367,9 +478,14 @@ mod tests {
                     "time_setspeed",
                     Some(PowerId::TimeRate)
                 ),
-                (9, "FreezeRainPower", "rain_setfrozen", None),
-                (10, "FreezeWindDirectionAndStrength", "wind_setfrozen", None),
-                (12, "DifficultySliderPower", "setdifficulty", None),
+                (9, "FreezeRainPower", "rain_setfrozen", Some(PowerId::FreezeRain)),
+                (
+                    10,
+                    "FreezeWindDirectionAndStrength",
+                    "wind_setfrozen",
+                    Some(PowerId::FreezeWind)
+                ),
+                (12, "DifficultySliderPower", "setdifficulty", Some(PowerId::Difficulty)),
                 (
                     13,
                     "StopBiomeSpreadPower",
@@ -391,12 +507,17 @@ mod tests {
         // …and the two sliders that are not persistent either.
         assert!(!ids.contains(&6));
         assert!(!ids.contains(&7));
+        // The per-player spawn-rate slider (14) rides the .plr, not the .wld.
+        assert!(!ids.contains(&14));
     }
 
     #[test]
     fn test_DW_6_3_the_persistent_powers_seam_round_trips_the_ported_values() {
         // The ported persistent values: the freeze toggle, the time rate at
-        // its maximum, the biome-spread freeze off.
+        // its maximum, the biome-spread freeze off — plus the weather
+        // freezes and the difficulty strength at their fresh defaults
+        // (`FreezeRainPower.Reset` false, `DifficultySliderPower.Reset`
+        // cache 0 → strength 0.5).
         let mut powers = CreativePowers::new();
         powers.set(PowerId::FreezeTime, PowerState::Toggle(true));
         powers.set(PowerId::TimeRate, PowerState::Slider(24.0));
@@ -406,9 +527,12 @@ mod tests {
             vec![
                 (0, WldCreativeValue::Bool(true)),
                 (8, WldCreativeValue::F32(24.0)),
+                (9, WldCreativeValue::Bool(false)),
+                (10, WldCreativeValue::Bool(false)),
+                (12, WldCreativeValue::F32(0.5)),
                 (13, WldCreativeValue::Bool(false)),
             ],
-            "freeze, rate, biome spread — the ported three, ascending"
+            "all six per-world powers, ascending"
         );
         // …and the load seam lands them back on a fresh registry.
         let mut restored = CreativePowers::new();
@@ -425,30 +549,35 @@ mod tests {
 
     #[test]
     fn test_DW_6_3_the_unported_vanilla_ids_are_never_written() {
-        // Freeze rain (9), freeze wind (10) and the difficulty slider (12) are
-        // per-world content in vanilla, but the port carries no such power, so
-        // nothing fakes an id for them.
+        // The wind/rain *sliders* (6/7) and the per-player powers (5/11/14)
+        // are not per-world content — nothing fakes an id for them.
         let mut powers = CreativePowers::new();
         powers.set(PowerId::FreezeTime, PowerState::Toggle(true));
         let records = persistent_powers(&powers);
         let ids: Vec<u16> = records.records.iter().map(|(id, _)| *id).collect();
-        for absent in [9, 10, 12] {
+        for absent in [5, 6, 7, 11, 14] {
             assert!(!ids.contains(&absent), "id {absent} must not be invented");
         }
-        // A vanilla file that carries them still loads: the records are read by
-        // the codec and dropped by this seam, leaving the port's own powers
-        // untouched.
+        // A vanilla file that carries a non-persistent id still loads: the
+        // codec's unknown-id break drops the tail, and the records read so
+        // far land on the port's own powers.
         let vanilla = WldCreativePowers {
             records: vec![
                 (9, WldCreativeValue::Bool(true)),
                 (10, WldCreativeValue::Bool(true)),
-                (12, WldCreativeValue::F32(0.33)),
+                (12, WldCreativeValue::F32(1.0)),
                 (0, WldCreativeValue::Bool(true)),
             ],
         };
         let mut loaded = CreativePowers::new();
         apply_persistent(&mut loaded, &vanilla);
         assert!(loaded.toggle(PowerId::FreezeTime), "id 0 still lands");
+        assert!(loaded.freeze_rain(), "id 9 lands on the ported power");
+        assert!(loaded.freeze_wind(), "id 10 lands");
+        assert!(
+            (loaded.difficulty_strength() - 1.0).abs() < 1e-6,
+            "id 12 carries the derived strength (the codec owns the cache)"
+        );
         assert_eq!(
             loaded.states.len(),
             CreativePowers::new().states.len(),
@@ -517,9 +646,98 @@ mod tests {
             .into_iter()
             .collect::<Vec<_>>();
         assert_eq!(toggles[0], (0, WldCreativeValue::Bool(false)));
-        assert_eq!(toggles[2], (13, WldCreativeValue::Bool(false)));
+        assert_eq!(toggles[5], (13, WldCreativeValue::Bool(false)));
         assert_eq!(toggles[1].0, 8, "the rate rides the slider id");
         assert!(matches!(toggles[1].1, WldCreativeValue::F32(_)));
+    }
+
+    // ---- W4-c24 phase 4: the weather / spawn-rate / difficulty powers ------
+
+    /// `ModifyWindDirectionAndStrength` (`CreativePowers.cs:1188-1196`):
+    /// the cache ↔ target lerp pair, the UNCLAMPED read-back.
+    #[test]
+    fn the_wind_slider_lerps_the_target_both_ways() {
+        assert!((wind_target_from_cache(0.0) + 0.8).abs() < 1e-6);
+        assert!((wind_target_from_cache(0.5)).abs() < 1e-6);
+        assert!((wind_target_from_cache(1.0) - 0.8).abs() < 1e-6);
+        // `GetSliderValueInner`'s unclamped GetLerpValue: a walked target
+        // past ±0.8 reads past [0,1] verbatim (`Main.cs:58935`'s ±0.85).
+        assert!((wind_cache_from_target(0.8) - 1.0).abs() < 1e-6);
+        assert!(wind_cache_from_target(0.85) > 1.0);
+        assert!(wind_cache_from_target(-0.85) < 0.0);
+        // The registry carries the derived target, not the cache.
+        let mut p = CreativePowers::new();
+        p.set(PowerId::WindStrength, PowerState::Slider(wind_target_from_cache(0.25)));
+        assert!((p.slider(PowerId::WindStrength) + 0.4).abs() < 1e-6);
+    }
+
+    /// `DifficultySliderPower.UpdateInfoFromSliderValueCache`
+    /// (`CreativePowers.cs:1018-1028`): the two-segment remap + the
+    /// banker's-rounded 1/20 quantisation.
+    #[test]
+    fn the_difficulty_slider_remaps_and_quantises() {
+        // The endpoints and the segment seam.
+        assert_eq!(difficulty_strength_from_cache(0.0), 0.5);
+        assert_eq!(difficulty_strength_from_cache(0.33), 1.0);
+        assert_eq!(difficulty_strength_from_cache(1.0), 3.0);
+        // The label clicks' exact caches (`Click_Normal/Expert/Master`,
+        // `:1055-1070`): 0.66 → Remap(0.33,1,1,3) = 1.9850746 → *20 =
+        // 39.701 → round 40 → 2.0; 1.0 → 3.0.
+        assert_eq!(difficulty_strength_from_cache(0.66), 2.0);
+        // The quantisation: 0.5 → Remap = 1.5074627 → *20 = 30.149 → 30 →
+        // 1.5; a mid-segment cache lands on the nearest 1/20.
+        assert_eq!(difficulty_strength_from_cache(0.5), 1.5);
+        // Banker's rounding at an exact .5 tie: strength*20 = 10.5 rounds
+        // to 10 (even), not 11. Remap(0,0.33,0.5,1) hits 0.525 at
+        // v = 0.33*0.05 = 0.0165.
+        assert_eq!(difficulty_strength_from_cache(0.0165), 0.5);
+        // The override seam (`Main.cs:17294-17305`): Journey answers the
+        // strength, a Classic world answers None (the world's GameMode).
+        let p = CreativePowers::new();
+        assert_eq!(p.game_mode_difficulty_override(false), None);
+        assert_eq!(p.game_mode_difficulty_override(true), Some(0.5));
+    }
+
+    /// `SpawnRateSliderPerPlayerPower.RemapSliderValueToPowerValue`
+    /// (`CreativePowers.cs:1601-1608`) + `GetShouldDisableSpawnsFor`
+    /// (`:1584-1595`): the x0.1..10 remap and the exact-zero disable.
+    #[test]
+    fn the_spawn_rate_slider_remaps_and_disables_at_zero() {
+        assert!((spawn_rate_multiplier(0.0) - 0.1).abs() < 1e-6);
+        assert!((spawn_rate_multiplier(0.25) - 0.55).abs() < 1e-6);
+        assert!((spawn_rate_multiplier(0.5) - 1.0).abs() < 1e-6);
+        assert!((spawn_rate_multiplier(0.75) - 5.5).abs() < 1e-6);
+        assert!((spawn_rate_multiplier(1.0) - 10.0).abs() < 1e-6);
+        let mut p = CreativePowers::new();
+        // The fresh default 0.5 (`_sliderDefaultValue`, `:1580`) is x1.
+        assert!(!p.spawn_rate_disabled());
+        assert!((p.spawn_rate_multiplier() - 1.0).abs() < 1e-6);
+        // Exactly 0 disables (`GetShouldDisableSpawnsFor`, `:1592`).
+        p.set(PowerId::SpawnRate, PowerState::Slider(0.0));
+        assert!(p.spawn_rate_disabled());
+        // A near-zero cache does NOT disable — only the exact 0.
+        p.set(PowerId::SpawnRate, PowerState::Slider(0.001));
+        assert!(!p.spawn_rate_disabled());
+        assert!(p.spawn_rate_multiplier() > 0.1);
+    }
+
+    /// The freeze toggles ride the registry and the per-world seam
+    /// (`FreezeRainPower.Save:1524`, `FreezeWindDirectionAndStrength
+    /// .Save:1491`).
+    #[test]
+    fn the_weather_freezes_toggle_and_persist() {
+        let mut p = CreativePowers::new();
+        assert!(!p.freeze_rain());
+        assert!(!p.freeze_wind());
+        p.set(PowerId::FreezeRain, PowerState::Toggle(true));
+        p.set(PowerId::FreezeWind, PowerState::Toggle(true));
+        let records = persistent_powers(&p);
+        assert!(records.records.contains(&(9, WldCreativeValue::Bool(true))));
+        assert!(records.records.contains(&(10, WldCreativeValue::Bool(true))));
+        let mut back = CreativePowers::new();
+        apply_persistent(&mut back, &records);
+        assert!(back.freeze_rain());
+        assert!(back.freeze_wind());
     }
 
     /// The house rule's citation probe for this module's half of the section:

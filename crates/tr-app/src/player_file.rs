@@ -120,6 +120,49 @@ pub struct PlayerFile {
     pub inv_favorites: u64,
     pub is_favorite: bool,
     pub revision: u32,
+    /// `Player.creativeTracker.ItemSacrifices`' `(persistentId, count)` pairs
+    /// (`ItemsSacrificedUnlocksTracker.cs:157-169`), the Journey research the
+    /// `.plr` carries (`Player.cs:54911`/`:55696-55699`). The W4-f44 seam's
+    /// shape — the tracker hydrates through `research::load_pairs`.
+    pub research: Vec<(String, i32)>,
+    /// The Journey per-player creative powers (`CreativePowerManager
+    /// .LoadToPlayer`, `CreativePowerManager.cs:197-215`): Godmode (id 5),
+    /// FarPlacementRange (id 11), SpawnRate (id 14). The W4-f44 seam's
+    /// shape — the App hydrates them on Play.
+    pub powers: CreativePowersSave,
+}
+
+/// The Journey per-player creative powers (`CreativePowerManager
+/// .LoadToPlayer`, `CreativePowerManager.cs:197-215`): `GodmodePower` id 5
+/// (`CreativePowers.cs:692-728`), `FarPlacementRangePower` id 11
+/// (`:730-767`), `SpawnRateSliderPerPlayerPower` id 14 (`:1573-1737`).
+/// The W4-f44 seam's shape.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CreativePowersSave {
+    pub godmode: bool,
+    pub far_placement: bool,
+    /// The raw [0,1] `_sliderCurrentValueCache` (`:1719`).
+    pub spawn_rate: f32,
+}
+
+impl Default for CreativePowersSave {
+    /// The read-side reset state (`CreativePowerManager.cs:211-214` →
+    /// `ResetDataForNewPlayer`): Godmode false, FarPlacement true
+    /// (`CreativePowers.cs:736`), SpawnRate 0.5 (`:1580`'s
+    /// `_sliderDefaultValue`).
+    fn default() -> Self {
+        CreativePowersSave { godmode: false, far_placement: true, spawn_rate: 0.5 }
+    }
+}
+
+impl CreativePowersSave {
+    /// The *writer's* fresh default — the live manager state a Classic
+    /// session saves (`CreativePowers.cs:707`/`:746`/`:1719`'s
+    /// `_sliderCurrentValueCache` at its ctor 0, not the reset default).
+    /// The W4-f44 seam's `written_fresh`.
+    pub fn written_fresh() -> Self {
+        CreativePowersSave { godmode: false, far_placement: false, spawn_rate: 0.0 }
+    }
 }
 
 #[derive(Debug)]
@@ -296,6 +339,12 @@ fn read_player_fields(
     if version > 326 {
         return Err(PlayerFileError::LaterVersion(version));
     }
+    // The Journey research pairs (`Player.cs:55696-55699`'s creativeTracker
+    // block) — collected here, carried on the PlayerFile below.
+    let mut research: Vec<(String, i32)> = Vec::new();
+    // The per-player creative powers (`CreativePowerManager.LoadToPlayer`,
+    // `:55706-55709`) — the W4-f44 seam's `powers` field.
+    let mut powers = CreativePowersSave::default();
     let name = r.cs_string().ok_or(PlayerFileError::Truncated("name"))?;
     let difficulty = r.u8().ok_or(PlayerFileError::Truncated("difficulty"))?; // gate 17
     let _play_time = r.u64().ok_or(PlayerFileError::Truncated("playtime"))?; // gate 138
@@ -436,6 +485,8 @@ fn read_player_fields(
             inv_favorites,
             is_favorite,
             revision,
+            research,
+            powers,
         ));
     }
     // --- S1-J-5 increment 2: buffs through hideInfo (`:55578-55623`) ------
@@ -495,6 +546,8 @@ fn read_player_fields(
             inv_favorites,
             is_favorite,
             revision,
+            research,
+            powers,
         ));
     }
     // --- S1-J-5 increment 3: the Deserialize tail (`:55624-55762`) --------
@@ -543,14 +596,18 @@ fn read_player_fields(
         // creativeTracker.Load -> CreativeUnlocksTracker.Load
         // (`CreativeUnlocksTracker.cs:14-17`) -> ItemsSacrificedUnlocksTracker
         // .Load (`ItemsSacrificedUnlocksTracker.cs:171-186`): the >= 282 bool
-        // then the (string, i32) sacrifice pairs. Consumed and dropped.
+        // then the (string, i32) sacrifice pairs — the Journey research
+        // counts (`Player.cs:55696-55699`). The pairs ride the PlayerFile
+        // (the W4-f44 seam's `research` field); the tracker hydrates from
+        // them on Play (`research::load_pairs`).
         if version >= 282 {
             r.boolean().ok_or(PlayerFileError::Truncated("sacrFlag"))?;
         }
         let n = r.i32().ok_or(PlayerFileError::Truncated("sacrCount"))?;
         for _ in 0..n {
-            r.cs_string().ok_or(PlayerFileError::Truncated("sacrKey"))?;
-            r.i32().ok_or(PlayerFileError::Truncated("sacrVal"))?;
+            let key = r.cs_string().ok_or(PlayerFileError::Truncated("sacrKey"))?;
+            let val = r.i32().ok_or(PlayerFileError::Truncated("sacrVal"))?;
+            research.push((key, val));
         }
     }
     if version >= 214 {
@@ -570,6 +627,8 @@ fn read_player_fields(
         // (`CreativePowers.cs:705-707`/`:744-746` shape), SpawnRate (14) one
         // f32 (`:1717-1719` shape). An unknown id BREAKS the loop in the C#
         // (`:203-206`) — mirror that instead of guessing a payload size.
+        // The values ride the PlayerFile's `powers` field (the W4-f44 seam);
+        // the App hydrates them on Play.
         loop {
             let more = r.boolean().ok_or(PlayerFileError::Truncated("powerFlag"))?;
             if !more {
@@ -577,11 +636,16 @@ fn read_player_fields(
             }
             let id = r.u16().ok_or(PlayerFileError::Truncated("powerId"))?;
             match id {
-                5 | 11 => {
-                    r.boolean().ok_or(PlayerFileError::Truncated("powerBool"))?;
+                5 => {
+                    powers.godmode = r.boolean().ok_or(PlayerFileError::Truncated("powerBool"))?;
+                }
+                11 => {
+                    powers.far_placement =
+                        r.boolean().ok_or(PlayerFileError::Truncated("powerBool"))?;
                 }
                 14 => {
-                    r.f32().ok_or(PlayerFileError::Truncated("powerSlider"))?;
+                    powers.spawn_rate =
+                        r.f32().ok_or(PlayerFileError::Truncated("powerSlider"))?;
                 }
                 _ => break, // `CreativePowerManager.cs:203-206`
             }
@@ -647,6 +711,8 @@ fn read_player_fields(
         inv_favorites,
         is_favorite,
         revision,
+        research,
+        powers,
     ))
 }
 
@@ -667,8 +733,14 @@ fn finish_player_file(
     inv_favorites: u64,
     is_favorite: bool,
     revision: u32,
+    research: Vec<(String, i32)>,
+    powers: CreativePowersSave,
 ) -> PlayerFile {
     let skin_variant = (skin_variant as i32).clamp(0, PLAYER_VARIANT_COUNT - 1) as u8;
+    // `CreativePowerManager.LoadToPlayer` (`CreativePowerManager.cs:211-214`):
+    // after the load the C# RESETS the powers for non-Journey characters
+    // (`difficulty != 3` → `ResetDataForNewPlayer`, the ctor defaults).
+    let powers = if difficulty != 3 { CreativePowersSave::default() } else { powers };
     PlayerFile {
         name,
         difficulty,
@@ -689,6 +761,8 @@ fn finish_player_file(
         inv_favorites,
         is_favorite,
         revision,
+        research,
+        powers,
     }
 }
 
@@ -784,6 +858,10 @@ fn read_legacy_port_subset(
         inv_favorites,
         is_favorite,
         revision,
+        // The legacy subset stops before the creativeTracker block — no
+        // research pairs (the port-only shim, ANALYSIS).
+        research: Vec::new(),
+        powers: CreativePowersSave::default(),
     })
 }
 
@@ -816,6 +894,46 @@ pub struct PlayerFileWrite {
     /// the golden-fixture test pins the harness's `FixtureClock` value
     /// (2026-11-18T00:00:00Z, kind Utc → kind bits 01, no offset).
     pub last_saved_binary: i64,
+    /// The Journey research pairs (`:54911` -> `ItemsSacrificedUnlocksTracker
+    /// .Save`, `ItemsSacrificedUnlocksTracker.cs:157-169`): the
+    /// `(persistentId, count)` strings the creativeTracker block carries.
+    /// The W4-f44 seam's shape — a fresh character has none (the default).
+    pub research: Vec<(String, i32)>,
+    /// The Journey per-player creative powers (`:54913` ->
+    /// `CreativePowerManager.SaveToPlayer`, `CreativePowerManager.cs:183-195`).
+    /// Defaults to [`CreativePowersSave::written_fresh`] — the live manager
+    /// state a Classic session saves (the W4-f44 seam's writer default).
+    pub powers: CreativePowersSave,
+}
+
+impl Default for PlayerFileWrite {
+    /// The fresh-vanilla defaults (`Player` ctor + the field initializers) —
+    /// the W4-f44 seam's default split: the writer's fresh state carries no
+    /// research pairs.
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            difficulty: 0,
+            skin_variant: 0,
+            hair: 0,
+            life: 100,
+            life_max: 100,
+            mana: 20,
+            mana_max: 20,
+            hair_color: [0; 3],
+            skin_color: [0; 3],
+            eye_color: [0; 3],
+            shirt_color: [0; 3],
+            undershirt_color: [0; 3],
+            pants_color: [0; 3],
+            shoe_color: [0; 3],
+            inventory: [(0, 0, 0); 58],
+            inv_favorites: 0,
+            last_saved_binary: 0,
+            research: Vec::new(),
+            powers: CreativePowersSave::written_fresh(),
+        }
+    }
 }
 
 /// The `SavePlayer` mirror (`Player.cs:54736-54742`): release 326, the
@@ -987,10 +1105,15 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     w.i32(0); // `:54910` golferScoreAccumulated (`Player.cs:1912`, default 0)
               // `:54911` creativeTracker.Save -> CreativeUnlocksTracker.Save
               // (`CreativeUnlocksTracker.cs:9-12`) -> ItemsSacrificedUnlocksTracker.Save
-              // (`ItemsSacrificedUnlocksTracker.cs:157-169`): the literal `false` flag then the
-              // sacrifice-pair count — a fresh tracker has none.
+              // (`ItemsSacrificedUnlocksTracker.cs:157-169`): the literal `false` flag,
+              // the sacrifice-pair count, then the (persistentId, count) pairs — the
+              // Journey research the caller carries (a fresh tracker has none).
     w.boolean(false);
-    w.i32(0);
+    w.i32(file.research.len() as i32);
+    for (key, count) in &file.research {
+        w.cs_string(key);
+        w.i32(*count);
+    }
     // `:54912` SaveTemporaryItemSlotContents (`Player.cs:54935-54959`): one
     // BitsByte over mouseItem / CreativeMenu.GetItemByIndex(0) / guideItem /
     // reforgeItem IsAir — the port models none of the four global slots, so
@@ -1000,19 +1123,19 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     // (`CreativePowerManager.cs:183-195`): for each registered power that is
     // IPersistentPerPlayerContent, `true` + the u16 id + its Save. The
     // registration order (`Initialize`, `:86-105`) gives GodmodePower id 5
-    // (`IsEnabledForPlayer(Main.myPlayer)`, `CreativePowers.cs:705-707` —
-    // fresh false), FarPlacementRangePower id 11 (`:744-746` — fresh false),
-    // SpawnRateSliderPerPlayerPower id 14 (`_sliderCurrentValueCache`,
-    // `:1717-1719` — fresh 0f). Then the `false` terminator.
+    // (`IsEnabledForPlayer(Main.myPlayer)`, `CreativePowers.cs:705-707`),
+    // FarPlacementRangePower id 11 (`:744-746`), SpawnRateSliderPerPlayerPower
+    // id 14 (`_sliderCurrentValueCache`, `:1717-1719`). Then the `false`
+    // terminator. The values ride the caller's `powers` field.
     w.boolean(true);
     w.u16(5);
-    w.boolean(false);
+    w.boolean(file.powers.godmode);
     w.boolean(true);
     w.u16(11);
-    w.boolean(false);
+    w.boolean(file.powers.far_placement);
     w.boolean(true);
     w.u16(14);
-    w.f32(0.0);
+    w.f32(file.powers.spawn_rate);
     w.boolean(false);
     // `:54914-54918` the super-cart BitsByte: bit0 unlockedSuperCart
     // (`Player.cs:2052`, default false), bit1 enabledSuperCart
@@ -1196,6 +1319,8 @@ mod tests {
             inventory,
             inv_favorites: 1 << 0 | 1 << 2, // slots 0 and 2 starred
             last_saved_binary: 0,
+            research: Vec::new(),
+            powers: crate::player_file::CreativePowersSave::written_fresh(),
         }
     }
 
@@ -1578,6 +1703,8 @@ mod tests {
             // 2026-11-18T00:00:00Z, DateTimeKind.Utc → kind bits 01, no
             // offset: ticks 639305568000000000 | 0x4000000000000000.
             last_saved_binary: 0x48DF_4506_E391_C000,
+            research: Vec::new(),
+            powers: CreativePowersSave::written_fresh(),
         };
         let plain = serialize_plaintext(&file);
         let fixture_raw = include_bytes!("../../../assets/test/golden.plr");

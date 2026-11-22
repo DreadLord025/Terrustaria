@@ -652,6 +652,105 @@ settings toggle. Deviations: the shielded `DrawFancyBar` overload
 caller) — the full list is in `docs/ANALYSIS.md` →
 "Minimap frame and boss bar (P4)".
 
+### The Journey powers menu (W4-c24, `ui/journey.rs` + `app/journey_clicks.rs`)
+
+`CreativeUI` (`GameContent/Creative/CreativeUI.cs`) +
+`UICreativePowersMenu` (`UI/States/UICreativePowersMenu.cs`) +
+`UICreativeInfiniteItemsDisplay` (`UI/Elements/`). The toggle button
+(`Journey_Toggle`, at (28, 267), +52·inventoryScale on screens under 650 px
+while open, `CreativeUI.cs:104-111`) draws for every Journey player
+(difficulty 3, unblocked — talking/chest block, the visible crafting panel
+unblocks, `:47-65`); `C` toggles (`Player.ToggleCreativeMenu`,
+`Player.cs:5091-5105`). The window lives at Left 80 / Top 314, 480 wide
+(`UICreativePowersMenu.cs:151-158`); the main strip (Left 20, 48 wide, 44 px
+pitch, `PowerStripUIElement.cs:17-40`) carries the duplication/research/
+time/weather/personal category buttons + StopBiomeSpread + the
+difficulty slider.
+
+* **Research page** (`UICreativeInfiniteItemsDisplay.cs:207-287`): the
+  170×170 panel, the symmetric cog trio (speeds 2·num / 1.1428572·num /
+  −num, num = 0.05·(1+lerp²·2), `:330-340`), the `Research_Slots` plate +
+  9-frame piston strip (`:341-346`), 15 sparks at timeLeft 56
+  (`NextVector2Circular(4,3)`, sound 63) and the completion chime (64) at
+  40, the context-30 sacrifice slot (no background,
+  `ItemSlot.cs:2261-2263`), the `(have/needed)` / `???` / `X` progress text
+  (`:404-434`) and the Research confirm button. Shift-click on an inventory
+  slot swaps + sacrifices in one press (`ItemSlot.cs:815-820`).
+* **Duplication page** (`:165-205`): the Blue-theme search bar + filter
+  strip (`Infinite_Tabs_B`, the shared `craft_filter::FilterBoard`), the
+  grid of every kind with research progress (`ForEachItemWithResearchProgress`)
+  sorted newly-researched → fully-researched → alphabetical
+  (`SortingSteps.cs:84-147`), 44 px cells at scale 3465/4095
+  (`UIDynamicItemCollection.cs:40`), contexts 29 (fully, `(53,69,127)`) /
+  34 (partial, `(25,44,65,180)·0.9`) on `Inventory_Back18`
+  (`ItemSlot.cs:2253-2259`). Left click on a fully-researched cell fills
+  the cursor with a max stack (action 5, `ItemSlot.cs:1242-1251`); right
+  click picks one per paced frame without draining (`:1717-1746`).
+* **Power strips** (Phase 3): FreezeTime + the four clock buttons + the
+  time-rate slider (x1..x24, banker's-rounded remap,
+  `CreativePowers.cs:877-880`), Godmode + Far Placement Range, and the
+  weather strip's chrome. The counts/positions ride
+  `UICreativePowersMenu.cs:314-369`.
+* **Weather sliders** (wiring pass): the wind panel (132×180,
+  `CreativePowers.cs:1179-1309`) — the slider sets current+target at once
+  (`Lerp(-0.8, 0.8, cache)`), the read-back is the unclamped target lerp;
+  the West/None/East hover texts (`CreativePowers.WindWest/WindNone/
+  WindEast`) + the mph E/W labels (`GameUI.EastWind`/`WestWind`). The
+  rain panel (132×180, `:1311-1439`) reads the live `cloudAlpha`, sets
+  `StartRain`/`StopRain` instant with the strength override; the
+  Monsoon/Drizzle/ClearSky hover texts. FreezeRain/FreezeWind toggles
+  gate `UpdateTime`'s rain arms / the wind target walk.
+* **Spawn-rate slider** (77×180, `SpawnRateSliderPerPlayerPower`,
+  `:1573-1737`): the x0.1..10 remap (no rounding), the exact-zero
+  "Disabled" state (`NPCSpawnRateSliderEnemySpawnsDisabled`) gating both
+  spawn paths, the `GetSpawnRate` Journey arm after the caps.
+* **Difficulty slider** (82×180, `DifficultySliderPower`, `:1002-1177`):
+  the four indication icons (Master/Expert/Normal/Creative,
+  `wc_difficulty_icons`, clicks force caches 1/0.66/0.33/0 + sound 12),
+  the two-segment remap + banker's 1/20 steps → the NPC `ScaleStats`
+  one-shot scale at the first sim tick (`npc.rs`).
+* **Search bar** (`UISearchBar.cs`/`UIWrappedSearchBar.cs`): the
+  duplication page's text field is live — click writes (the chat-style
+  `event.text` seam, 50-char cap), Enter/Escape stop, Backspace pops,
+  right-click/outside-click cancel; the grid filters by the `BySearch`
+  tooltip-line scan.
+* **Tracker save**: the research counts + the per-player powers
+  (godmode/far-placement/spawn-rate) persist to the `.plr` through the
+  W4-f44 seam (`player_file.rs`'s research/powers tail,
+  `research.rs::save_pairs`/`load_pairs`, `app/saveglue.rs::
+  save_player_plr`); CharPlay hydrates them (`app/flow.rs`).
+* **Sacrifice tooltip row** (c24c, `Main.cs:21318-21333`): every
+  whitelisted slot hover (grid/coins/ammo/bank/trash/shop/crafting/
+  journey-grid, the 17-context set) on a difficulty-3 session appends
+  "Research {N} more to unlock duplication" in the Journey pink while
+  the kind is partial (`ui/tooltip.rs`, `TooltipContext.slot_context/
+  journey_difficulty/research`; `ui/mod.rs::hover_context`). The
+  duplication search scan keeps context -1, so the row never matches a
+  search.
+* **TRASH_COMPACTOR** (c24c, `AchievementsHelper.cs:387-399`): at half
+  the catalog fully researched, progression 45 fires — the tracker's
+  `LastEditId` version gate skips unchanged recounts; the world-enter
+  check is forced, the player tick re-checks every step
+  (`achievements.rs::check_research`).
+* **Growth freeze/rate** (c24c, `WorldGen.cs:72020-72028`): FreezeTime
+  stops the growth loops entirely (rate 0 returns before every pick);
+  ModifyTimeRate scales them (the dial keeps the tiles at 1, the
+  all-asleep ×5 rides the target).
+* **The swap carry** (c24 seal, `Main.cs:66208-66216` —
+  `ActivePlayerFileData` survives `LoadWorld`): the CharPlay-hydrated
+  per-character Journey state (research counts, the three per-player
+  powers, the spawn-rate cache, the session difficulty + name) rides
+  `swap_world`'s `App::new` reset (`app/mod.rs`); the per-world powers
+  re-load from the new world's section. The family FINAL + the
+  JOURNEY-SEAL receipts: `docs/research/344-journey-family-final.md`
+  (renumber chain 308→344 per registry-150 §8.7 FROZEN).
+
+Deviations (docs/ANALYSIS.md): the `ByCreativeSortingId` middle sort step
+falls through to alphabetical (no generated group table); the
+teammate-unlock notification is unported; the difficulty scale's
+expert-hardmode/money/getGood/defense arms are documented skips; the
+search text rides the event seam, not the c25 keyboard bindings.
+
 ## Deviations
 
 * The framework ports the **flat/event halves** of `UIElement`/`UserInterface`:

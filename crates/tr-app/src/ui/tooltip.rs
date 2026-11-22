@@ -206,6 +206,16 @@ pub struct TooltipContext<'a> {
     /// `Main.LocalPlayer.inventory[Main.LocalPlayer.selectedItem].crit` — the
     /// held item's own crit, which the crit row subtracts (`Main.cs:20701`).
     pub held_crit: i32,
+    /// `Item.tooltipContext` (`ItemSlot.MouseHover`, `ItemSlot.cs:3184`): the
+    /// slot context the hovered item rides — the Journey sacrifice row's
+    /// whitelist gate (`Main.cs:21318`). `-1` = no context (`Item.cs:117`).
+    pub slot_context: i32,
+    /// `Main.LocalPlayer.difficulty` (`Main.cs:21318`'s `== 3` gate) — the
+    /// session character's difficulty, the port's Journey stand-in.
+    pub journey_difficulty: u8,
+    /// `Main.LocalPlayerCreativeTracker.ItemSacrifices` (`Main.cs:21318`):
+    /// the research tracker the sacrifice row reads.
+    pub research: Option<&'a crate::research::ResearchTracker>,
 }
 
 impl Default for TooltipContext<'_> {
@@ -215,6 +225,9 @@ impl Default for TooltipContext<'_> {
             stack: 1,
             player: None,
             held_crit: 0,
+            slot_context: -1,
+            journey_difficulty: 0,
+            research: None,
         }
     }
 }
@@ -520,6 +533,32 @@ pub fn item_tooltip_lines(
     if let Some(text) = crate::lang::item_tooltip_text(kind) {
         for line in text.split('\n') {
             lines.push((line.to_string(), [1.0, 1.0, 1.0, 1.0]));
+        }
+    }
+    // `:21318-21333` (W4-c24c) — the Journey sacrifice row: the whitelisted
+    // slot contexts + a difficulty-3 player + a catalog-capped kind print
+    // "N more needed" in `Colors.JourneyMode` while the research is partial
+    // (`CommonItemTooltip.CreativeSacrificeNeeded`, `:21323`). The teammate-
+    // credit arm (`:21327-21331`, context 29 + `TryGetTeammateUnlockCredit`)
+    // is single-player inert and stays unported (the tracker's teammate
+    // half, ANALYSIS). The bestiary-notes tail (`:21334-21342`) rides the
+    // bestiary data port, not this row set.
+    if matches!(
+        ctx.slot_context,
+        0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 15 | 22 | 29 | 32 | 34 | 35 | 41 | 42 | 43
+    ) && ctx.journey_difficulty == 3
+    {
+        if let Some((have, cap)) = ctx.research.and_then(|t| t.sacrifice_numbers(kind)) {
+            if have < cap {
+                let c = super::uistate::CREATIVE_MODE_COLOR; // Lerp(HotPink, White, 0.1)
+                lines.push((
+                    crate::lang::common_item_tooltip_fmt(
+                        "CreativeSacrificeNeeded",
+                        (cap - have) as i32,
+                    ),
+                    [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0, c[3] as f32 / 255.0],
+                ));
+            }
         }
     }
     lines
@@ -1028,6 +1067,81 @@ mod tests {
     #[test]
     fn a_plain_block_has_no_stat_rows() {
         assert!(stat_lines(2).is_empty());
+    }
+
+    /// W4-c24c — the Journey sacrifice row (`Main.cs:21318-21333`): the
+    /// whitelisted context + difficulty 3 + a catalog-capped partial kind
+    /// appends "N more needed" in the Journey colour; the gates refuse it.
+    #[test]
+    fn w4_c24c_the_journey_sacrifice_row_follows_its_gates() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::test_register_source(
+            "Terraria.Localization.Content.en-US.Items.json",
+            r#"{
+                "ItemName": { "Torch": "Torch" },
+                "CommonItemTooltip": { "CreativeSacrificeNeeded": "Research {0} more to unlock duplication" }
+            }"#,
+        );
+        let torch = crate::registry::get(8).expect("the torch row");
+        let mut t = crate::research::ResearchTracker::default();
+        t.register_sacrifice(8, 90); // Torch cap 100 — 10 still needed
+        let journey = TooltipContext {
+            slot_context: 0,
+            journey_difficulty: 3,
+            research: Some(&t),
+            ..Default::default()
+        };
+        let rows = item_tooltip_lines(8, torch, journey);
+        let last = rows.last().expect("the name plus the sacrifice row");
+        assert_eq!(last.0, "Research 10 more to unlock duplication");
+        let c = crate::ui::uistate::CREATIVE_MODE_COLOR;
+        assert_eq!(
+            last.1,
+            [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0, 1.0],
+            "Colors.JourneyMode = Lerp(HotPink, White, 0.1)"
+        );
+        // A non-Journey difficulty refuses the row (`:21318`'s == 3).
+        let rows = item_tooltip_lines(
+            8,
+            torch,
+            TooltipContext { journey_difficulty: 0, ..journey },
+        );
+        assert!(!rows.iter().any(|(text, _)| text.contains("more to unlock")));
+        // A non-whitelisted context refuses (context 8 = armour, `:21318`).
+        let rows = item_tooltip_lines(
+            8,
+            torch,
+            TooltipContext { slot_context: 8, ..journey },
+        );
+        assert!(!rows.iter().any(|(text, _)| text.contains("more to unlock")));
+        // The duplication grid's partial cell (34) IS whitelisted.
+        let rows = item_tooltip_lines(
+            8,
+            torch,
+            TooltipContext { slot_context: 34, ..journey },
+        );
+        assert!(rows.iter().any(|(text, _)| text.contains("more to unlock")));
+        // A fully researched kind prints nothing (`have < cap` gate, `:21321`).
+        // The context is rebuilt — the old one's `&t` borrow ends here.
+        t.register_sacrifice(8, 10);
+        let full = TooltipContext {
+            slot_context: 0,
+            journey_difficulty: 3,
+            research: Some(&t),
+            ..Default::default()
+        };
+        let rows = item_tooltip_lines(8, torch, full);
+        assert!(!rows.iter().any(|(text, _)| text.contains("more to unlock")));
+        // A capless kind prints nothing (`TryGetSacrificeNumbers` false).
+        let rows = item_tooltip_lines(6196, torch, full);
+        assert!(!rows.iter().any(|(text, _)| text.contains("more to unlock")));
+        // No tracker: no row.
+        let rows = item_tooltip_lines(
+            8,
+            torch,
+            TooltipContext { research: None, ..full },
+        );
+        assert!(!rows.iter().any(|(text, _)| text.contains("more to unlock")));
     }
 
     // --- S1-E-20: the tooltip's missing rows ---------------------------------
