@@ -498,6 +498,10 @@ impl App {
                     // No arm draws `Main.rand` (the dust halves are skipped,
                     // `npc_lights.rs`), so the placement relative to the sim
                     // leaves the stream untouched.
+                    // W4-c20: the probe light's `FindClosestPlayer` gate
+                    // (`NPC.cs:36572-36576`) — no live player reads as
+                    // -1/dead in the C#'s single-player slot.
+                    let player_dead = player.as_ref().map_or(true, |p| p.dead);
                     for n in npcs.iter() {
                         if n.hp <= 0 {
                             continue;
@@ -511,6 +515,21 @@ impl App {
                             h,
                         ) {
                             self.entity_lights.add(x, y, rgb);
+                        }
+                        // W4-c20: the FIRST-half NPC AddLight sites
+                        // (`NPC.cs:21307-:48641`, `npc_lights_a.rs`).
+                        // The kind sets are disjoint from the aiStyle-8
+                        // tail above, so no site double-feeds. The
+                        // BurningSphere's else arm sits inside the C#'s
+                        // 2-iteration dust loop (`:21517`) — the count
+                        // is part of the port (the list pair's key
+                        // hashes every entry). No arm draws RNG.
+                        if let Some((x, y, rgb)) =
+                            crate::npc_lights_a::npc_light_a(n, world, player_dead)
+                        {
+                            for _ in 0..crate::npc_lights_a::npc_light_a_emits(n.kind) {
+                                self.entity_lights.add(x, y, rgb);
+                            }
                         }
                         // The NPC lights SECOND half (W4-e7, S1-E-5):
                         // `NPC.cs:49929-92412`'s 40 sites — the destroyer
