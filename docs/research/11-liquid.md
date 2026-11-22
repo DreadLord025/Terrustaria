@@ -91,12 +91,12 @@ still open items in ROADMAP §3.
 | Statics & constants (`maxLiquid`, `maxLiquidBuffer`, `cycles`) | PORTED | `liquid.rs:15-19` | 25000 / 50000 / 10 — matches `Liquid.cs:1671-1673` exactly |
 | `AddWater` queue + `checkingLiquid` dedupe | PARTIAL | `liquid.rs:93-109` | Dedupe + cap → buffer ported; the 5-tile border guard, `type != 546` carve-out and the `CheckWaterDeath/CheckLavaDeath` kill are gone (`Liquid.cs:1163`, `:1188-1206`) |
 | Pass driver (`UpdateLiquid`) | PARTIAL | `liquid.rs:123-178` | Fixed window `ceil(len/10)` per update vs the C# 2500-slot stride; no `tilesIgnoreWater`, no stuck detection, no panic/quick-settle, no net broadcast (`Liquid.cs:983-1158`) |
-| Per-cell update (`Liquid.Update`) | PARTIAL | `liquid.rs:181-325` | Fall + ±1/±2/±3 averaging ported 1:1 including banker's rounding; `kill` bookkeeping matches. Missing: `delay` gate, underworld evaporation, `liquidType` reactions, `genRand` nudge, extra wake calls |
-| `skipLiquid` skip flag | MISSING | — | Written at `Liquid.cs:586-587` and read as the per-entry gate at `:1096-1103`; no Rust equivalent (only `checkingLiquid` is ported) |
-| `delay` (lava 5 / honey 10 / quickFall 10) | MISSING | — | `Liquid.cs:51`, `:485-491`, `:516-522`, `:1083-1091`; `Entry` has only `x/y/kill` |
-| `quickSettle` / `quickFall` | MISSING | — | `Liquid.cs:35/33`, `:588-591`, `:944-948`, `:1063-1068` |
-| Liquid reactions (`Lava/Honey/ShimmerCheck` → `LiquidCheck` → merge tiles) | MISSING | — | grep for `liquid_check/LiquidCheck/quick_water/settle_water/AttemptToMove` over `crates/` returns nothing; obsidian 56 / honey block 229 / crisp honey 230 / shimmer 659 never form, no `num >= 24` pooling (`Liquid.cs:1225-1443`) |
-| Underworld water evaporation | MISSING | — | `Liquid.cs:466-474` (−2 per update below `UnderworldLayer`, water only); no Rust line matches |
+| Per-cell update (`Liquid.Update`) | PARTIAL | `liquid.rs::update_tile` | Fall + ±1/±2/±3 averaging ported 1:1 including banker's rounding; `kill` bookkeeping matches; R-11-5 landed the reaction block + `delay` gate; W4-c34 landed the underworld evaporation (`Liquid.cs:466-474`). Still missing: `genRand` 254→255 nudge (`:892-895`), the extra wake calls (`:748-771`/`:821-836`), `quickSettle` (`:588-591`/`:944-948`) |
+| `skipLiquid` skip flag | PORTED | `liquid.rs` (`skip` bitvec, `set_skip`/`is_skip`) | The two writes after a down-transfer (`Liquid.cs:586-587`) + the pass-loop gate (`:1096-1104`) + the quickFall clear (`:1089`); anchors.txt row `set_skip` |
+| `delay` (lava 5 / honey 10 / quickFall 10) | PORTED | `liquid.rs` (`Entry.delay`, the reaction block) | R-11-5: the gate throttles only the flow, reactions run every visit (`Liquid.cs:484-490`/`:513-522`); `quickFall` forces 10 in the pass loop (`:1086-1089`); W4-c34 pins the cadence (`liquid_merge_cadence` witnesses, written not run) |
+| `quickSettle` / `quickFall` | PARTIAL | `liquid.rs` (`quick_fall` field + the pass-loop arm) | `quickFall` ported (`Liquid.cs:1083-1090`); the `quickSettle` writers (`:35`, `:588-591`, `:944-948`, `:1063-1068`) ride the unported force-settle family (R-11-7) |
+| Liquid reactions (`Lava/Honey/ShimmerCheck` → `LiquidCheck` → merge tiles) | PORTED | `liquid.rs` (`lava_check`/`honey_check`/`shimmer_check`/`liquid_check`/`create_liquid_merge_tile`/`get_liquid_merge_types`/`liquid_overwrite_strip`) | R-11-5 (`Liquid.cs:1225-1468`): merge tiles 56/229/230/659 at `num >= 24`, the `tileCut` burns, the container override, the generation strip branch; W4-c34 adds the shimmer+lava/honey 659 and sub-24 down-arm drain witnesses (written not run). Deviations in ANALYSIS "The liquid reactions" |
+| Underworld water evaporation | PORTED | `liquid.rs::update_tile` (the `underworld_layer` block) | W4-c34: `Liquid.cs:466-474` — `min(2, liquid)` per visit below `UnderworldLayer` (`Main.cs:2790`, `maxTilesY - 200`), water only, before the zero kill (`:475`); the `underworld_layer >= 0` guard keeps sub-200 fixture worlds out of the band (ANALYSIS W4-c34 note); witnesses written not run |
 | Stuck detection + panic mode + `QuickWater` | MISSING | — | `Liquid.cs:966-1054`, `:1131-1149`, `:104-435`; also the post-load settle `WorldFile.cs:735-760` |
 | Kill threshold 8 / MP `10+players/3` | PARTIAL | `liquid.rs:21` | 8 hardcoded (correct for single player; MP variant absent) |
 | `.wld` liquid bytes | PORTED | `wld/sections/tiles.rs:85-100`, `:237-242` | Liquid amount then kind byte, per the cited `WorldFile.cs:1480-1491`; the liquid byte participates in the RLE key exactly as `bTileHeader` does in the writer |
@@ -117,28 +117,39 @@ still open items in ROADMAP §3.
   building; names not extracted in this pass).
 - `crates/tr-core/src/worldgen/liquids.rs` — `lake_keeps_grass_on_the_dry_banks` (`:193`),
   `lake_bowl_floor_is_solid_below_the_surface` (`:226`).
-- No tests exist for: lava/honey/shimmer kinds (no kind is ever set outside tests), the
-  `delay` cadence, evaporation, merge tiles, stuck/panic, kill thresholds, or a `.wld`
-  liquid-byte round-trip (`chest.rs:3393`'s DW-3.4 covers the whole-file cycle, not the
+- No tests exist for: stuck/panic, kill thresholds, or a `.wld` liquid-byte
+  round-trip (`chest.rs:3393`'s DW-3.4 covers the whole-file cycle, not the
   liquid bytes specifically).
+- `crates/tr-core/src/liquid.rs::liquid_merge_cadence` (W4-c34, written NOT
+  run — code-only mode): the lava 1-in-6 / honey 1-in-11 shaft cadences
+  (including the skipLiquid visit between falls), the `quickFall` bypass, the
+  merge-before-delay ordering, the underworld evaporation (−2/visit, the dry
+  retire, the layer-row exemption, the lava/honey/shimmer exemption), the
+  down-arm sub-24 drain + water re-type, the water-cell no-burn gate, and the
+  shimmer+lava/honey → 659 merges. The R-11-5 `tests` module already pins the
+  water+lava/honey/shimmer merges, the 24-unit gate, the down-arm merge, the
+  container override, the `tileCut` burn and the merge-type/change-type tables.
 
 ## Deviations & risks
 
-1. **Liquid type reactions absent (behavioural, high).** `LiquidUpdate` never calls
-   `LavaCheck/HoneyCheck/ShimmerCheck`, so water meeting lava never becomes obsidian
-   (`Liquid.cs:1261-1265`, tile 56), honey+water never becomes honey block/crisp honey
-   (229/230, `:1399-1420`), and nothing becomes 659. The port's `update_tile` only compares
-   kind codes and blocks cross-kind flow, so pools of different liquids simply refuse to
-   mix. Not admitted anywhere in ROADMAP §3 (which lists only the render leftovers).
-2. **`delay` cadence missing (behavioural, med-high).** Lava moves every 6th visit
-   (`delay < 5`) and honey every 11th (`delay < 10`) — C# `Liquid.cs:485-491/516-522`.
-   Without `delay`, lava/honey propagate ~6-11× faster than vanilla and settle differently.
-   Not admitted.
-3. **Underworld evaporation missing (behavioural, med).** `Liquid.cs:466-474` removes 2
-   units per update from water below `UnderworldLayer`; the port conserves mass there.
-   The existing mass-conservation assertions (`liquid.rs:445`) encode the *opposite*
-   invariant, so this needs a deliberate deviation note in ANALYSIS before changing.
-   Not admitted.
+1. **Liquid type reactions absent (behavioural, high).** — **FIXED (R-11-5,
+   re-verified W4-c34).** `liquid.rs::liquid_check` + `create_liquid_merge_tile`
+   port `Liquid.cs:1225-1468`; the merge tiles 56/229/230/659 form at `num >= 24`
+   and the `*Check` calls ride every `update_tile` visit. W4-c34 adds the
+   shimmer+lava/honey and sub-24 down-arm witnesses.
+2. **`delay` cadence missing (behavioural, med-high).** — **FIXED (R-11-5,
+   re-verified W4-c34).** `Entry.delay` gates the flow only (lava `delay < 5`,
+   honey `delay < 10`, `Liquid.cs:484-490`/`:513-522`); the reactions run every
+   visit; `quickFall` forces `delay = 10` in the pass loop (`:1086-1089`).
+   W4-c34 pins the 1-in-6 / 1-in-11 cadence with shaft witnesses.
+3. **Underworld evaporation missing (behavioural, med).** — **FIXED (W4-c34).**
+   `update_tile` removes `min(2, liquid)` per visit from water below
+   `UnderworldLayer` (`Liquid.cs:466-474`), before the zero kill (`:475`). The
+   existing mass-conservation witnesses run in sub-200 fixture worlds where the
+   port's `underworld_layer >= 0` guard keeps the band empty (the C# layer would
+   sit below row 0 there — vanilla worlds are ≥ 1200 tall, so the guard never
+   fires at runtime); the deviation is recorded in ANALYSIS "The liquid
+   reactions" (W4-c34 note).
 4. **Skip/window mechanics differ (determinism, med).** (a) `skipLiquid` is not ported at
    all, so tiles the original would skip a pass for are updated; (b) the C# window is a
    fixed 2500-slot stride with a clamp that *re-walks the entire active list every update

@@ -18329,6 +18329,46 @@ Documented deviations, none reachable from the ported runtime surface:
   (both `false` вЂ” the exact runtime state) and
   `createMergeTilesDuringGen` rides the `WorldGen.cs:22480` caller.
 
+### W4-c34 addendum (2026-11-20, code-only mode)
+
+The non-water surface re-verified against `Liquid.cs:449-597`/`:1225-1468`
+and completed:
+
+- **Underworld evaporation** (`Liquid.cs:466-474`) now rides `update_tile`
+  before the zero kill (`:475-479`): water below `Main.UnderworldLayer`
+  (`Main.cs:2790`, `maxTilesY - 200`) loses `min(2, liquid)` per visit;
+  lava/honey/shimmer are exempt (`liquidType() == 0`). The change-detection
+  tail compares against the pre-evaporation snapshot exactly like the C#'s
+  `byte liquid = tile5.liquid` (`:464`), so an evaporating cell resets `kill`
+  and wakes the cell above (`:956-957`) until it runs dry and retires.
+  **Deliberate deviation:** the band is guarded by `underworld_layer >= 0`.
+  In a sub-200-tall world the C# layer sits below row 0 and would evaporate
+  every water cell; vanilla worlds are >= 1200 tiles tall, so the guard never
+  fires at runtime - it only keeps the ported water-flow witnesses (which
+  use 11-120-tall fixture worlds) green. The evaporation write marks the
+  chunk + `dirty` like `set_level` so the render cache invalidates (the C#'s
+  own change consumer, `_netChangeSet`, is MP and unported).
+- **Determinism:** the merge surface stays RNG-free - `liquid_check`,
+  `create_liquid_merge_tile`, `get_liquid_merge_types`,
+  `liquid_overwrite_strip` and the evaporation consume no random draws.
+  The merge placement rides `edit::place_tile`'s legacy single-tile arm
+  (kinds 56/229/230/659 are plain blocks - no `place_rng` draw; the
+  `TileObjectData` registry route is not taken) and `edit::kill_tile`
+  (the drop rolls are `Main.rand`-shaped event records, not `genRand`).
+  The one C# RNG in `Liquid.Update` - the `num == 254 &&
+  WorldGen.genRand.Next(30) == 0` nudge (`:892-895`) - stays unported
+  (research/11 deviation 5, its own task seed); the port's 3-neighbour arm
+  never draws, so the settled-surface levels differ by 1 unit on ~1/30 of
+  cells vs vanilla, as recorded there.
+- **Witnesses** (`liquid.rs::liquid_merge_cadence`, written NOT run): the
+  lava 1-in-6 / honey 1-in-11 shaft cadences (the fall's `skipLiquid` flag
+  costs one visit between falls - `:586-587`/`:1096-1104`), the `quickFall`
+  bypass (`:1083-1090`), the merge-before-delay ordering (`:480-490`), the
+  evaporation pins (-2/visit, dry retire, layer-row exemption, non-water
+  exemption), the down-arm sub-24 drain + water re-type (`:1290-1298`), the
+  water-cell no-burn gate (`:1278`) and the shimmer+lava/honey -> 659 merges
+  (`:1395-1426`). The water-flow witnesses are untouched.
+
 ## The Frost Legion machine (R-25-1, 2026-11-13)
 
 `NPC.AI()`'s aiStyle-38 block (`NPC.cs:28995-29145`) is ported 1:1 as
