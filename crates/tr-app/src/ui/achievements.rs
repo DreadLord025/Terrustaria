@@ -354,20 +354,6 @@ pub fn max_scroll(rows: usize, list: &[f32; 4]) -> f32 {
     content - view
 }
 
-/// The `UIScrollbar` rect (`UIAchievementsMenu.cs:81-86`): `Width 20`
-/// (`UIScrollbar.cs:59`), `Height (-50, 1)`, `Top 50`, `HAlign 1` of the
-/// panel — the same vertical band as the list, in the 25 px gutter the
-/// list's `Width -25` leaves. Appended unconditionally (no attach branch;
-/// `AutoHide` is false, so it draws even when the list cannot scroll).
-pub fn scrollbar_rect(panel: &[f32; 4]) -> [f32; 4] {
-    let inner = inner_panel(panel);
-    [
-        inner[0] + inner[2] - 20.0,
-        inner[1] + 50.0,
-        20.0,
-        (inner[3] - 50.0).max(0.0),
-    ]
-}
 
 /// `UIList.ScrollWheel` (`UIList.cs:107-114`): `_scrollbar.ViewPosition -=
 /// evt.ScrollWheelValue` — the raw XNA counter, 120 units per detent
@@ -388,6 +374,36 @@ pub fn scroll_wheel(scroll: f32, notches: i32, rows: usize, list: &[f32; 4]) -> 
 /// not a list child, so a wheel over it bubbles past the list — no scroll.
 pub fn wheel_target(panel: &[f32; 4], mouse: Vec2) -> bool {
     super::in_rect(mouse, list_rect(panel))
+}
+
+/// What a press on the scrollbar does (`UIScrollbar.LeftMouseDown`,
+/// `UIScrollbar.cs:126-143`): `(new view position, drag latch)` тАФ the same
+/// shape `char_select::scrollbar_press` ports. `Some(offset)` is the
+/// `_dragYOffset = mouse.Y - handle.Y` grab (`:134-135`); `None` inside is
+/// the track jump (`:137-141`); `None` as a whole means the press missed
+/// the bar.
+pub fn scrollbar_press(
+    panel: &[f32; 4],
+    rows: usize,
+    scroll: f32,
+    mouse: Vec2,
+) -> Option<(f32, Option<f32>)> {
+    let bar = scrollbar_rect(panel);
+    let list = list_rect(panel);
+    let content = list_content_height(rows);
+    if !super::panel::scrollbar_can_scroll(list[3].min(content), content)
+        || !in_rect(bar, mouse)
+    {
+        return None;
+    }
+    let handle = super::panel::scrollbar_handle_at(bar, list[3], content, scroll);
+    if in_rect(handle, mouse) {
+        return Some((scroll, Some(mouse.y - handle[1])));
+    }
+    Some((
+        super::panel::scrollbar_jump_value(bar, list[3], content, handle[3], mouse.y),
+        None,
+    ))
 }
 
 /// The drag frame (`UIScrollbar.DrawSelf`, `UIScrollbar.cs:109-112`).

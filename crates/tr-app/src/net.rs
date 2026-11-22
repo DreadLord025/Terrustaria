@@ -2569,19 +2569,6 @@ pub struct TileEdit {
     pub style: u8,
 }
 
-/// `msg 11 TileFrameSection`'s body (`NetMessage.cs:427-432`): four `short`s
-/// naming the rectangle to re-frame (`MessageBuffer.cs:895-900` →
-/// `WorldGen.SectionTileFrame(startX, startY, endXInclusive, endYInclusive)`,
-/// `WorldGen.cs:80343`). Deprecated, never sent — the body exists so the
-/// reader arm is 1:1.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TileFrameSection {
-    pub start_x: i16,
-    pub start_y: i16,
-    pub end_x: i16,
-    pub end_y: i16,
-}
-
 /// `msg 19 ToggleDoorState`'s body (`NetMessage.cs:537-542`): the action
 /// byte, the tile and `number4 == 1f` → a direction byte (1 = right/down).
 /// The reader maps 0/1 open/close door, 2/3 trapdoor up/down, 4/5 tall gate
@@ -3709,9 +3696,6 @@ pub enum S2c {
     SectionRange(Box<SectionRange>),
     // ---- S1-I-1 wave B: the world-sync region (bodies + codecs; the
     // dispatcher arms are S1-I-4) ----
-    /// `11 TileFrameSection` — deprecated, never sent by the C# (0 sites),
-    /// but read at `netMode == 1` (`MessageBuffer.cs:895-900`).
-    TileFrameSection(TileFrameSection),
     /// `17 TileManipulation` — the host's relay of a client's edit
     /// (`MessageBuffer.cs:1285`).
     TileEdit(TileEdit),
@@ -4604,7 +4588,6 @@ impl S2c {
             Self::NpcStrikeAck => id::NPC_STRIKE_ACK,
             Self::UniqueTownNpcInfo(_) => id::UNIQUE_TOWN_NPC_INFO,
             Self::NpcExtraValue(_) => id::NPC_EXTRA_VALUE,
-            Self::TileFrameSection(_) => id::TILE_FRAME_SECTION,
             Self::TileEdit(_) => id::TILE_EDIT,
             Self::DoorToggle(_) => id::DOOR_TOGGLE,
             Self::TilePaint(_) => id::TILE_PAINT,
@@ -4836,8 +4819,6 @@ impl S2c {
             // — the host relay carries the accumulated extraValue.
             Self::NpcExtraValue(e) => w.i16(e.npc).i32(e.value).f32(e.x).f32(e.y),
             // ---- S1-I-1 wave B ----
-            // `NetMessage.cs:427-432`: four shorts.
-            Self::TileFrameSection(f) => w.i16(f.start_x).i16(f.start_y).i16(f.end_x).i16(f.end_y),
             // `NetMessage.cs:524-530`.
             Self::TileEdit(t) => w.u8(t.kind).i16(t.x).i16(t.y).i16(t.value).u8(t.style),
             // `NetMessage.cs:537-542`.
@@ -5359,22 +5340,6 @@ impl S2c {
                     })
                 }
             }
-// msg 10 TileBlock / msg 20 SectionRange — the tile codec
-// ===========================================================================
-
-/// The tile kinds the C# save-compression refuses to batch
-/// (`TileID.Sets.AllowsSaveCompressionBatching`, `ID/TileID.cs:484`).
-const NO_BATCH: [u16; 4] = [520, 423, 723, 724];
-
-/// One tile's synced state, flattened out of the port's `Tile` (12 packed
-/// bytes), the sparse `extras` byte and the wire side-table. The field set is
-/// the C# compressor's written fields (`NetMessage.cs:1952-2168`) mapped
-/// onto the port's storage; `frame_important` rides along so the codec can
-/// apply the `frameX/Y` gate, and `wall_frame` (the C#'s `bTileHeader2`) is
-/// the one added byte — the C# relies on `CopyFrom` inside a run, the port
-/// needs it on the wire. Both are documented in `docs/ANALYSIS.md`.
-#[derive(Clone, Copy, Debug, PartialEq)]
-=======
             // `MessageBuffer.cs:2162-2167`: (byte)id + (short)amount.
             id::PLAYER_HEAL => Self::PlayerHeal(PlayerHeal {
                 player_id: r.u8()?,

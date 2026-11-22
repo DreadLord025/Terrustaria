@@ -632,80 +632,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Desert Djinn",
     },
-    // W4-f42 — the sandstorm debris + desert family (the `NPC.cs:3949-4018`
-    // spawn arm's picks). The vanilla net ids are the bestiary credits.
-    BestiaryEntryDef {
-        credit_id: "Tumbleweed",
-        net_id: 546,
-        kind: NpcKind::Tumbleweed,
-        variant: None,
-        quick_unlock: false,
-        name: "Tumbleweed",
-    },
-    BestiaryEntryDef {
-        credit_id: "Vulture",
-        net_id: 61,
-        kind: NpcKind::Vulture,
-        variant: None,
-        quick_unlock: false,
-        name: "Vulture",
-    },
-    BestiaryEntryDef {
-        credit_id: "Antlion",
-        net_id: 69,
-        kind: NpcKind::Antlion,
-        variant: None,
-        quick_unlock: false,
-        name: "Antlion",
-    },
-    BestiaryEntryDef {
-        credit_id: "Mummy",
-        net_id: 78,
-        kind: NpcKind::Mummy,
-        variant: None,
-        quick_unlock: false,
-        name: "Mummy",
-    },
-    BestiaryEntryDef {
-        credit_id: "DarkMummy",
-        net_id: 79,
-        kind: NpcKind::DarkMummy,
-        variant: None,
-        quick_unlock: false,
-        name: "Dark Mummy",
-    },
-    BestiaryEntryDef {
-        credit_id: "BloodMummy",
-        net_id: 630,
-        kind: NpcKind::BloodMummy,
-        variant: None,
-        quick_unlock: false,
-        name: "Blood Mummy",
-    },
-    BestiaryEntryDef {
-        credit_id: "LightMummy",
-        net_id: 80,
-        kind: NpcKind::LightMummy,
-        variant: None,
-        quick_unlock: false,
-        name: "Light Mummy",
-    },
-    BestiaryEntryDef {
-        credit_id: "WalkingAntlion",
-        net_id: 580,
-        kind: NpcKind::WalkingAntlion,
-        variant: None,
-        quick_unlock: false,
-        name: "Walking Antlion",
-    },
-    BestiaryEntryDef {
-        credit_id: "FlyingAntlion",
-        net_id: 581,
-        kind: NpcKind::FlyingAntlion,
-        variant: None,
-        quick_unlock: false,
-        name: "Flying Antlion",
-    },
     // The spheres: the Chaos Ball entry also covers Tim's ChaosBallTim
     // clone 665 (the port folds it — identical stats and name).
     BestiaryEntryDef {
@@ -2857,6 +2783,75 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Zombie",
     },
+    // (W4-f42's nine-entry block moved to the roster tail at the merge —
+    // the c37 star census pins the base ENTRIES order; the FlyingAntlion
+    // row deduped into the W4-c4 style-44 entry above.)
+    // W4-f42 — the sandstorm debris + desert family (the `NPC.cs:3949-4018`
+    // spawn arm's picks). The vanilla net ids are the bestiary credits.
+    BestiaryEntryDef {
+        credit_id: "Tumbleweed",
+        net_id: 546,
+        kind: NpcKind::Tumbleweed,
+        variant: None,
+        quick_unlock: false,
+        name: "Tumbleweed",
+    },
+    BestiaryEntryDef {
+        credit_id: "Vulture",
+        net_id: 61,
+        kind: NpcKind::Vulture,
+        variant: None,
+        quick_unlock: false,
+        name: "Vulture",
+    },
+    BestiaryEntryDef {
+        credit_id: "Antlion",
+        net_id: 69,
+        kind: NpcKind::Antlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Antlion",
+    },
+    BestiaryEntryDef {
+        credit_id: "Mummy",
+        net_id: 78,
+        kind: NpcKind::Mummy,
+        variant: None,
+        quick_unlock: false,
+        name: "Mummy",
+    },
+    BestiaryEntryDef {
+        credit_id: "DarkMummy",
+        net_id: 79,
+        kind: NpcKind::DarkMummy,
+        variant: None,
+        quick_unlock: false,
+        name: "Dark Mummy",
+    },
+    BestiaryEntryDef {
+        credit_id: "BloodMummy",
+        net_id: 630,
+        kind: NpcKind::BloodMummy,
+        variant: None,
+        quick_unlock: false,
+        name: "Blood Mummy",
+    },
+    BestiaryEntryDef {
+        credit_id: "LightMummy",
+        net_id: 80,
+        kind: NpcKind::LightMummy,
+        variant: None,
+        quick_unlock: false,
+        name: "Light Mummy",
+    },
+    BestiaryEntryDef {
+        credit_id: "WalkingAntlion",
+        net_id: 580,
+        kind: NpcKind::WalkingAntlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Walking Antlion",
+    },
 ];
 
 /// The entry's current unlock tier — its `UIInfoProvider`'s
@@ -3499,49 +3494,49 @@ mod tests {
     /// override rows `ContentSamples.cs:1106-1242` first, else the
     /// `GetNPCBestiaryRarityStarsCount` formula over the Classic
     /// `SetDefaults` sample with the fresh-Main progression flags false).
-    /// 249 rows: 50x1 / 121x2 / 46x3 / 23x4 / 9x5.
+    /// 326 rows: 79x1 / 161x2 / 53x3 / 23x4 / 10x5 (the merge appended the W4 kinds' rows).
     #[test]
     fn w4_c37_the_star_census() {
         const EXPECTED: &[(i32, i32)] = &[
-            (1, 1),   // BlueSlime
-            (-3, 1),  // GreenSlime
-            (-4, 4),  // Pinky
-            (-5, 1),  // BabySlime
-            (-6, 1),  // BlackSlime
-            (-7, 1),  // PurpleSlime
-            (-8, 1),  // RedSlime
-            (-9, 3),  // YellowSlime
-            (2, 1),   // DemonEye
-            (3, 1),   // Zombie
-            (16, 2),  // MotherSlime
-            (50, 2),  // KingSlime
-            (4, 2),   // EyeofCthulhu
-            (52, 5),  // DoctorBones
-            (53, 5),  // TheGroom
-            (59, 1),  // LavaSlime
-            (71, 4),  // DungeonSlime
-            (81, 2),  // CorruptSlime
+            (1, 1), // BlueSlime
+            (-3, 1), // GreenSlime
+            (-4, 4), // Pinky
+            (-5, 1), // BabySlime
+            (-6, 1), // BlackSlime
+            (-7, 1), // PurpleSlime
+            (-8, 1), // RedSlime
+            (-9, 3), // YellowSlime
+            (2, 1), // DemonEye
+            (3, 1), // Zombie
+            (16, 2), // MotherSlime
+            (50, 2), // KingSlime
+            (4, 2), // EyeofCthulhu
+            (52, 5), // DoctorBones
+            (53, 5), // TheGroom
+            (59, 1), // LavaSlime
+            (71, 4), // DungeonSlime
+            (81, 2), // CorruptSlime
             (115, 2), // TheHungry
             (117, 1), // LeechHead
-            (5, 1),   // ServantofCthulhu
+            (5, 1), // ServantofCthulhu
             (132, 1), // BaldZombie
             (133, 2), // WanderingEye
-            (22, 1),  // Guide
-            (21, 1),  // Skeleton
-            (44, 3),  // UndeadMiner
-            (49, 1),  // CaveBat
-            (51, 1),  // JungleBat
-            (60, 2),  // Hellbat
-            (66, 3),  // VoodooDemon
-            (6, 1),   // EaterofSouls
-            (42, 1),  // Hornet
+            (22, 1), // Guide
+            (21, 1), // Skeleton
+            (44, 3), // UndeadMiner
+            (49, 1), // CaveBat
+            (51, 1), // JungleBat
+            (60, 2), // Hellbat
+            (66, 3), // VoodooDemon
+            (6, 1), // EaterofSouls
+            (42, 1), // Hornet
             (210, 1), // Bee
             (211, 1), // BeeSmall
-            (23, 2),  // MeteorHead
-            (29, 2),  // GoblinSorcerer
-            (45, 5),  // Tim
-            (32, 1),  // DarkCaster
-            (24, 2),  // FireImp
+            (23, 2), // MeteorHead
+            (29, 2), // GoblinSorcerer
+            (45, 5), // Tim
+            (32, 1), // DarkCaster
+            (24, 2), // FireImp
             (138, 2), // IlluminantSlime
             (147, 1), // IceSlime
             (161, 2), // ZombieEskimo
@@ -3567,23 +3562,23 @@ mod tests {
             (490, 2), // Drippler
             (225, 2), // UmbrellaSlime
             (533, 2), // DesertDjinn
-            (30, 1),  // ChaosBall
-            (25, 1),  // BurningSphere
-            (33, 1),  // WaterSphere
-            (55, 1),  // Goldfish
-            (58, 1),  // Piranha
-            (65, 2),  // Shark
-            (7, 2),   // DevourerHead
-            (10, 1),  // GiantWormHead
-            (87, 3),  // WyvernHead
-            (17, 1),  // Merchant
-            (20, 3),  // Dryad
-            (18, 1),  // Nurse
-            (19, 1),  // ArmsDealer
-            (38, 1),  // Demolitionist
+            (30, 1), // ChaosBall
+            (25, 1), // BurningSphere
+            (33, 1), // WaterSphere
+            (55, 1), // Goldfish
+            (58, 1), // Piranha
+            (65, 2), // Shark
+            (7, 2), // DevourerHead
+            (10, 1), // GiantWormHead
+            (87, 3), // WyvernHead
+            (17, 1), // Merchant
+            (20, 3), // Dryad
+            (18, 1), // Nurse
+            (19, 1), // ArmsDealer
+            (38, 1), // Demolitionist
             (227, 2), // Painter
             (228, 2), // WitchDoctor
-            (54, 2),  // Clothier
+            (54, 2), // Clothier
             (368, 3), // TravellingMerchant
             (369, 2), // Angler
             (108, 3), // Wizard
@@ -3596,7 +3591,7 @@ mod tests {
             (207, 2), // DyeTrader
             (208, 4), // PartyGirl
             (222, 3), // QueenBee
-            (35, 3),  // SkeletronHead
+            (35, 3), // SkeletronHead
             (113, 4), // WallofFlesh
             (134, 4), // TheDestroyer
             (127, 4), // SkeletronPrime
@@ -3640,10 +3635,10 @@ mod tests {
             (350, 2), // ElfArcher
             (351, 3), // Krampus
             (352, 2), // Flocko
-            (27, 1),  // GoblinThief
-            (28, 2),  // GoblinWarrior
+            (27, 1), // GoblinThief
+            (28, 2), // GoblinWarrior
             (111, 1), // GoblinArcher
-            (26, 1),  // GoblinPeon
+            (26, 1), // GoblinPeon
             (471, 4), // GoblinSummoner
             (143, 2), // SnowmanGangsta
             (144, 2), // MisterStabby
@@ -3744,14 +3739,91 @@ mod tests {
             (130, 3), // PrimeVice
             (131, 3), // PrimeLaser
             (114, 3), // WallofFleshEye
-            (36, 2),  // SkeletronHand
+            (36, 2), // SkeletronHand
             (668, 3), // Deerclops
             (107, 3), // GoblinTinkerer
-            (13, 3),  // EaterofWorldsHead
-            (72, 2),  // BlazingWheel
+            (13, 3), // EaterofWorldsHead
+            (72, 2), // BlazingWheel
             (250, 3), // AngryNimbus
             (288, 2), // DungeonSpirit
             (384, 2), // ForceBubble
+            (362, 2), // Duck
+            (363, 1), // Duck2
+            (364, 2), // DuckWhite
+            (365, 1), // DuckWhite2
+            (602, 1), // Seagull
+            (603, 1), // Seagull2
+            (608, 2), // Grebe
+            (609, 1), // Grebe2
+            (357, 1), // Worm
+            (442, 1), // GoldBird
+            (443, 1), // GoldBunny
+            (444, 1), // GoldButterfly
+            (445, 1), // GoldFrog
+            (446, 1), // GoldGrasshopper
+            (447, 1), // GoldMouse
+            (448, 1), // GoldWorm
+            (484, 5), // EnchantedNightcrawler
+            (485, 1), // Grubby
+            (486, 2), // Sluggy
+            (487, 3), // Buggy
+            (224, 2), // FlyingFish
+            (509, 2), // GiantFlyingAntlion
+            (581, 1), // FlyingAntlion
+            (587, 2), // EyeballFlyingFish
+            (57, 3), // CorruptGoldfish
+            (157, 2), // Arapaima
+            (241, 2), // BloodFeeder
+            (465, 3), // CrimsonGoldfish
+            (592, 1), // GoldGoldfish
+            (607, 2), // Pupfish
+            (615, 3), // Dolphin
+            (688, 1), // Pufferfish
+            (692, 2), // Orca
+            (43, 2), // ManEater
+            (56, 1), // Snatcher
+            (101, 2), // Clinger
+            (175, 2), // AngryTrapper
+            (259, 1), // FungiBulb
+            (260, 2), // GiantFungiBulb
+            (112, 2), // VileSpit
+            (666, 2), // VileSpitEaterOfWorlds
+            (516, 2), // SolarFlare
+            (48, 2), // Harpy
+            (62, 2), // Demon
+            (93, 2), // GiantBat
+            (121, 2), // Slimer
+            (137, 2), // IlluminantBat
+            (150, 1), // IceBat
+            (151, 2), // LavaBat
+            (152, 2), // GiantFlyingFox
+            (156, 2), // RedDevil
+            (158, 2), // VampireBat
+            (159, 2), // Vampire
+            (226, 2), // FlyingSnake
+            (634, 1), // SporeBat
+            (660, 2), // QueenSlimeMinionPurple
+            (355, 2), // Firefly
+            (356, 1), // Butterfly
+            (358, 3), // LightningBug
+            (359, 1), // Snail
+            (360, 3), // GlowingSnail
+            (361, 1), // Frog
+            (366, 2), // ScorpionBlack
+            (367, 1), // Scorpion
+            (374, 3), // TruffleWorm
+            (377, 1), // Grasshopper
+            (378, 2), // ChatteringTeethBomb
+            (379, 2), // CultistArcherBlue
+            (430, 1), // ArmedZombie
+            (546, 2), // Tumbleweed
+            (61, 1), // Vulture
+            (69, 1), // Antlion
+            (78, 2), // Mummy
+            (79, 2), // DarkMummy
+            (630, 2), // BloodMummy
+            (80, 2), // LightMummy
+            (580, 2), // WalkingAntlion
         ];
         assert_eq!(EXPECTED.len(), ENTRIES.len());
         for (e, &(net, stars)) in ENTRIES.iter().zip(EXPECTED) {

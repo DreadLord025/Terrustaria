@@ -192,7 +192,6 @@ mod npc_ai_style66;
 // W4-c10 roster tail — the d30 butterfly module (aiStyle 65, the
 // GoldButterfly 444 wiring) + the d38 TownCritter wander/hop subset
 // (the GoldBunny/GoldFrog/GoldMouse 443/445/447).
-mod npc_ai_style65;
 mod npc_ai_critter;
 mod npc_ai_style72;
 mod npc_ai_style73;
@@ -234,7 +233,6 @@ mod npc_buffs;
 mod npc_findframe_a;
 mod npc_findframe_b;
 mod npc_findframe_c;
-mod npc_findframe_c;
 mod npc_findframe_extra5;
 mod npc_findframe_extra6;
 mod npc_findframe_extra7;
@@ -248,8 +246,6 @@ mod npc_findframe_mid2;
 mod npc_findframe_high2;
 mod npc_findframe_extra1;
 mod npc_findframe_extra4;
-mod npc_findframe_extra7;
-mod npc_findframe_extra8;
 mod npc_findframe_extra9;
 mod npc_findframe_extra10;
 mod npc_findframe_extra11;
@@ -257,10 +253,6 @@ mod npc_findframe_extra12;
 mod npc_findframe_extra13;
 mod npc_findframe_extra2;
 mod npc_findframe_extra3;
-mod npc_findframe_extra5;
-mod npc_findframe_extra6;
-mod npc_findframe_extra7b;
-mod npc_findframe_extra7c;
 mod npc_findframe_extra7d;
 mod npc_findframe_extra7e;
 mod npc_findframe_extra7f;
@@ -269,17 +261,9 @@ mod npc_findframe_extra7h;
 mod npc_findframe_extra7i;
 mod npc_findframe_extra7j;
 mod npc_findframe_extra7k;
-mod npc_findframe_low1;
 // W4-g6 wiring lane 1 — the FIRST-half unwired findframe waves'
 // modules (the C#-slot order: extra2 84-181, mid2 166-180, extra3
 // 182-219; the SECOND half 233+ rides W4-g7).
-mod npc_findframe_extra2;
-mod npc_findframe_mid2;
-mod npc_findframe_extra3;
-mod npc_findframe_extra2;
-mod npc_findframe_extra3;
-mod npc_findframe_extra4;
-mod npc_findframe_high2;
 mod persist;
 mod grapple;
 mod gore_seam;

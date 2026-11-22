@@ -506,9 +506,6 @@ pub enum StockWhen {
     /// W4-d123: `Main.dayTime` (`Chest.cs:2285`'s Party Girl 1449 row) —
     /// the port's `night` is `!Main.dayTime`, so Day is its negation.
     Day,
-    /// W4-d123: `LanternNight.LanternsUp` (`Chest.cs:2309`'s Party Girl
-    /// 4702 row) — the world-events scheduler's genuine/manual lanterns.
-    LanternNight,
     /// W4-d123: `NPC.AnyNPCs(229)` (`Chest.cs:2318`'s Party Girl 3369 row)
     /// — the Pirate's presence; the port has no town Pirate kind yet, so
     /// the flag stays false (constants-off, recorded in ANALYSIS).
@@ -521,20 +518,6 @@ pub enum StockWhen {
     PartyIsUp,
     /// W4-d123: `Main.eclipse` (`Chest.cs:2373`'s Cyborg 774 row).
     Eclipse,
-    /// W4-d123: `!Main.dayTime || Main.eclipse` (`Chest.cs:2368`'s Cyborg
-    /// 773 row).
-    NightOrEclipse,
-    /// W4-d123: `NPC.downedMartians && (Main.bloodMoon || Main.eclipse)`
-    /// (`Chest.cs:2381`'s Cyborg 4446 row — the event tail INSIDE the
-    /// downedMartians arm).
-    MartiansAndEvent,
-    /// W4-d123: `NPC.downedMartians` PLAIN (`Chest.cs:2378`/`:2430`'s
-    /// Cyborg rows) — unlike [`StockWhen::DownedMartians`] (the Stylist's
-    /// `hardMode &&` form), no hardmode conjunct.
-    DownedMartiansPlain,
-    /// W4-d123: `HasItem(a) || HasItem(b)` (`Chest.cs:2435`'s Cyborg 3664
-    /// row — the two carried-portal-gun ids).
-    PlayerHasEither(u16, u16),
     /// W4-d123: `Main.hardMode && NPC.downedPlantBoss` (`Chest.cs:2630`'s
     /// Witch Doctor 1159/1160/1161/1339 block).
     HardModePlantBoss,
@@ -679,10 +662,6 @@ pub enum StockWhen {
     MoonPhaseEqRemix(u8),
     /// `(!dayTime || moonPhase == 0) && HasItem(930)` (`Chest.cs:2872-2880`).
     NightOrMoon0HasBoots,
-    /// `Main.hardMode && Main.bloodMoon` (`Chest.cs:2947-2951`).
-    HardModeBloodMoon,
-    /// The even moon phases (`Chest.cs:2857`).
-    MoonPhaseEven,
     /// The odd phases in hardmode (`Chest.cs:2867`).
     MoonPhaseOddHard,
     /// `!Main.dayTime || Main.moonPhase == 0` (`Chest.cs:2872`).
@@ -695,14 +674,8 @@ pub enum StockWhen {
     EarlyHours,
     /// The inverse of [`StockWhen::EarlyHours`] (`Chest.cs:2891-2894`).
     LateHours,
-    /// `moonPhase == 0 || 1 || 4 || 5` (`Chest.cs:2896`) — the
-    /// Glowstick/Flare pair's first half (3003 over 40).
-    MoonPhase0145,
     /// The inverse of [`StockWhen::MoonPhase0145`] (`Chest.cs:2900-2903`).
     MoonPhase2367,
-    /// `moonPhase % 4` picks one of four rows (`Chest.cs:2905-2920`'s
-    /// 3310/3313/3312/3311 quad — the parameter is the remainder).
-    MoonPhaseMod4(u8),
     /// `moonPhase == 1 || 2` / `3 || 5` / `6 || 7` (`Chest.cs:2921-2932`'s
     /// 5640/5641/5642 trio — the parameter names the row: 0/1/2).
     MoonPhaseTrio(u8),
@@ -722,22 +695,14 @@ pub enum StockWhen {
     /// `Main.hardMode || !Main.getGoodWorld` (`Chest.cs:2170`) — the
     /// Blend-O-Matic 995.
     HardModeOrNotGood,
-    /// `Main.eclipse` (`Chest.cs:2209`/`:2373`) — the bare event flag.
-    Eclipse,
-    /// `NPC.downedGolemBoss` (`Chest.cs:2151`) — the bare Golem flag.
-    DownedGolem,
     /// `NPC.downedBoss1 && NPC.downedBoss2 && NPC.downedBoss3`
     /// (`Chest.cs:2174`) — the Steampunk Boiler 2203.
     DownedAllPreHardBosses,
     /// `WorldGen.crimson` (`Chest.cs:2178`) — the Flesh Cloning Vaat 2193
     /// over the Lesion Station 4142 split.
     CrimsonWorld,
-    /// `Main.player[Main.myPlayer].ZoneGraveyard` (`Chest.cs:2186`).
-    ZoneGraveyard,
     /// `Main.player[Main.myPlayer].ZoneSkyHeight` (`Chest.cs:2203`).
     ZoneSkyHeight,
-    /// `Main.player[Main.myPlayer].ZoneHallow` (`Chest.cs:2220`).
-    ZoneHallow,
     /// `NPC.downedMoonlord` (`Chest.cs:2228`) — the bare Moon Lord flag
     /// (the solution trio 5392/5393/5394; NOT the hardmode conjunct).
     DownedMoonlord,
@@ -772,9 +737,6 @@ pub enum StockWhen {
     /// W4-d122 shop 1: `Main.dayTime && Main.IsItAHappyWindyDay`
     /// (`Chest.cs:1422`) — the Pin Wheel 4074.
     DayHappyWindyDay,
-    /// W4-d122 shop 1: `BirthdayParty.PartyIsUp` (`Chest.cs:1435`) —
-    /// the Party Bundle 5643.
-    PartyIsUp,
     /// W4-d122 shop 2: `WorldGen.SavedOreTiers.Silver == 168`
     /// (`Chest.cs:1489`) — the Tungsten Bullet 4915 over the Silver
     /// Bullet 278 split inside the blood-moon/hardmode gate.
@@ -830,9 +792,6 @@ pub enum StockWhen {
     /// ALONE (`Chest.cs:3436`) — the anniversary block's outer gate (the
     /// 1309/1859/1358 heads; the inner rows AND their own gates onto it).
     AnniversaryWorld,
-    /// W4-d122 remainder census, shop 24: `Main.player[Main.myPlayer].ZoneDesert`
-    /// (`Chest.cs:3441`) — the Magic Carpet 857 inside the anniversary block.
-    ZoneDesert,
 }
 
 /// `Chest.SetupShop`'s stock list for one shop index. The first half
@@ -923,43 +882,8 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(1737, StockWhen::Halloween),
             row(1738, StockWhen::Halloween),
         ],
-        // The Cyborg's shop (index 14, `Chest.cs:2360-2442`, W4-d123): the
-        // rocket family — the blood-moon/eclipse event rows, the
-        // downedMartians rows (PLAIN, no hardmode conjunct), the hardmode
-        // cluster, the graveyard pair and the carried-portal-gun restock.
-        // The halloween trio (1743/1744/1745, `:2421-2429`) sits
-        // constants-off (no season).
-        14 => vec![
-            row(771, StockWhen::Always),
-            // `:2363-2367` — `Main.bloodMoon`.
-            row(772, StockWhen::BloodMoon),
-            // `:2368-2372` — `!Main.dayTime || Main.eclipse`.
-            row(773, StockWhen::NightOrEclipse),
-            // `:2373-2377` — `Main.eclipse`.
-            row(774, StockWhen::Eclipse),
-            // `:2378-2385` — `NPC.downedMartians` (plain), then the
-            // blood-moon/eclipse tail inside it.
-            row(4445, StockWhen::DownedMartiansPlain),
-            row(4446, StockWhen::MartiansAndEvent),
-            // `:2386-2406` — the hardmode cluster.
-            row(4459, StockWhen::HardMode),
-            row(760, StockWhen::HardMode),
-            row(1346, StockWhen::HardMode),
-            row(5452, StockWhen::HardMode),
-            row(5451, StockWhen::HardMode),
-            row(5738, StockWhen::HardMode),
-            row(5598, StockWhen::Always),
-            row(5599, StockWhen::Always),
-            // `:2411-2420` — the two graveyard rows.
-            row(4409, StockWhen::ZoneGraveyard),
-            row(4392, StockWhen::ZoneGraveyard),
-            // `:2430-2434` — the second downedMartians pair (plain).
-            row(2862, StockWhen::DownedMartiansPlain),
-            row(3109, StockWhen::DownedMartiansPlain),
-            // `:2435-2439` — `HasItem(3384) || HasItem(3664)` restocks 3664.
-            row(3664, StockWhen::PlayerHasEither(3384, 3664)),
-            row(5928, StockWhen::Always),
-        ],
+            // (W4-d123 Cyborg shop deduped into the W4-d122 superset below —
+            // same rows/order plus the Halloween trio and the CYBORG_* combinators.)
         // The Goblin Tinkerer (`Chest.cs:1989-2003`): the 7 rows, no
         // gating — the Rocket Boots 128, the Ruler 486, the Tinkerer's
         // Workshop 398, the Grappling Hook 84, the Toolbelt 407, the
@@ -3106,14 +3030,12 @@ fn stock_gate(
             StockWhen::PartyIsUp => flags.party_is_up,
             // W4-d123: the Cyborg's event/martians gates (`Chest.cs:2363-2435`).
             StockWhen::Eclipse => flags.eclipse,
-            StockWhen::NightOrEclipse => flags.night || flags.eclipse,
-            StockWhen::MartiansAndEvent => {
-                flags.downed_martians && (flags.blood_moon || flags.eclipse)
-            }
-            StockWhen::DownedMartiansPlain => flags.downed_martians,
-            StockWhen::PlayerHasEither(a, b) => {
-                inventory_ids.contains(&a) || inventory_ids.contains(&b)
-            }
+            // (d123 NightOrEclipse arm deduped — the d122 Cyborg shop uses CYBORG_ROCKET_III.)
+            // (d123 MartiansAndEvent arm deduped — the d122 Cyborg shop uses
+            // the CYBORG_CLUSTER_II combinator instead.)
+            // (d123 DownedMartiansPlain arm deduped into DownedMartiansBare below — same bare flag.)
+            // (d123 PlayerHasEither arm deduped — the d122 Cyborg shop uses
+            // the CYBORG_PORTAL_STATION combinator instead.)
             // W4-d123: the Witch Doctor's / Painter's Plantera gates
             // (`Chest.cs:2630-2648` / `:2475`).
             StockWhen::HardModePlantBoss => flags.hard_mode && flags.downed_plant_boss,
@@ -3212,7 +3134,6 @@ fn stock_gate(
             StockWhen::MoonPhaseEq(n) => moon_phase == n as u32,
             StockWhen::MoonPhaseEqNotRemix(n) => moon_phase == n as u32 && !flags.remix_world,
             StockWhen::MoonPhaseEqRemix(n) => moon_phase == n as u32 && flags.remix_world,
-            StockWhen::MoonPhaseEven => moon_phase % 2 == 0,
             StockWhen::MoonPhaseOddHard => moon_phase % 2 == 1 && flags.hard_mode,
             StockWhen::NightOrMoon0 => flags.night || moon_phase == 0,
             StockWhen::NightOrMoon0HasBoots => {
@@ -3226,15 +3147,12 @@ fn stock_gate(
             // Torch — the odd vanilla cadence is kept as written.
             StockWhen::EarlyHours => (flags.time % 60.0) * 60.0 * 6.0 <= 10800.0,
             StockWhen::LateHours => !((flags.time % 60.0) * 60.0 * 6.0 <= 10800.0),
-            StockWhen::MoonPhase0145 => matches!(moon_phase, 0 | 1 | 4 | 5),
             StockWhen::MoonPhase2367 => !matches!(moon_phase, 0 | 1 | 4 | 5),
-            StockWhen::MoonPhaseMod4(n) => moon_phase % 4 == n as u32,
             StockWhen::MoonPhaseTrio(n) => match n {
                 0 => matches!(moon_phase, 1 | 2),
                 1 => matches!(moon_phase, 3 | 5),
                 _ => matches!(moon_phase, 6 | 7),
             },
-            StockWhen::HardModeBloodMoon => flags.hard_mode && flags.blood_moon,
             StockWhen::ArtisanLoafWindow => {
                 !flags.ate_artisan_bread && (3..=5).contains(&moon_phase)
             }
@@ -3247,16 +3165,12 @@ fn stock_gate(
             }
             // `Chest.cs:2170` verbatim.
             StockWhen::HardModeOrNotGood => flags.hard_mode || !flags.get_good_world,
-            StockWhen::Eclipse => flags.eclipse,
-            StockWhen::DownedGolem => flags.downed_golem,
             // `Chest.cs:2174` verbatim.
             StockWhen::DownedAllPreHardBosses => {
                 flags.downed_boss1 && flags.downed_boss2 && flags.downed_boss3
             }
             StockWhen::CrimsonWorld => flags.crimson_world,
-            StockWhen::ZoneGraveyard => flags.zone_graveyard,
             StockWhen::ZoneSkyHeight => flags.zone_sky_height,
-            StockWhen::ZoneHallow => flags.zone_hallow,
             StockWhen::DownedMoonlord => flags.downed_moon_lord,
             StockWhen::DownedMartiansBare => flags.downed_martians,
             // The season system is unported — the halloween rows stay
@@ -3272,7 +3186,6 @@ fn stock_gate(
             }
             // `Chest.cs:1422` verbatim (`Night` is `!dayTime` on the flags).
             StockWhen::DayHappyWindyDay => !flags.night && flags.happy_windy_day,
-            StockWhen::PartyIsUp => flags.party_is_up,
             // `Chest.cs:1489` verbatim — the rolled ore id comparison.
             StockWhen::SilverIsTungsten => flags.silver_ore_tier == 168,
             StockWhen::DownedBoss2 => flags.downed_boss2,
@@ -3298,7 +3211,6 @@ fn stock_gate(
             StockWhen::DownedTowerSolar => flags.downed_tower_solar,
             // W4-d122 remainder census, shop 24 (`Chest.cs:3436`/:3441).
             StockWhen::AnniversaryWorld => flags.anniversary_world,
-            StockWhen::ZoneDesert => flags.zone_desert,
             // The combinators + the num guard are handled above — unreachable.
             StockWhen::All(_)
             | StockWhen::Any(_)

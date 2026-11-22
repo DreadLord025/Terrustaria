@@ -2701,42 +2701,8 @@ fn spawn_basic_slime(
     Npc::spawn_slime_variant(ctx.world, x, variant)
 }
 
-/// W4-f42 — `Spawner.Spawning_SandstoneCheck` (`NPC.cs:5452-5491`): the
-/// 8-row × 9-column sand scan below the spawn tile — each row counts the
-/// centre tile plus up to 4 left + 4 right contiguous Conversion.Sand
-/// tiles; the total must reach 40 (the remix 10 is unported). The scan
-/// breaks a row's run at the first non-sand tile.
-fn spawning_sandstone_check(world: &tr_core::World, x: i32, y: i32) -> bool {
-    // `WorldGen.InWorld(x, y, 10)` — the 10-tile margin.
-    if x < 10 || y < 10 || x >= world.width - 10 || y >= world.height - 10 {
-        return false;
-    }
-    let is_sand = |tx: i32, ty: i32| {
-        world.tile(tx, ty).is_some_and(|t| {
-            t.active() && matches!(t.kind, 53 | 112 | 116 | 234)
-        })
-    };
-    let mut num = 0;
-    for i in 0..8 {
-        if !is_sand(x, y + i) {
-            break;
-        }
-        num += 1;
-        for j in 1..=4 {
-            if !is_sand(x + j, y + i) {
-                break;
-            }
-            num += 1;
-        }
-        for k in 1..=4 {
-            if !is_sand(x - k, y + i) {
-                break;
-            }
-            num += 1;
-        }
-    }
-    num >= 40
-}
+// (W4-f42's duplicate spawning_sandstone_check deduped into the W4-c40
+// definition above — the sand set {53,112,116,234} is SET_CONVERSION_SAND.)
 
 /// W4-f42 — the sandstorm arm's ground spawn (`SpawnNPC(spawnTileX * 16 + 8,
 /// spawnTileY * 16, kind)` → `NewNPC`'s `Bottom = (X, Y)`, `NPC.cs:80772`):

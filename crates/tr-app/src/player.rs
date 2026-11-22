@@ -8375,11 +8375,8 @@ impl Player {
                 // table `buff_effects_misc.rs:660` carries the same arm —
                 // this live loop is the wired path, keep-one.)
                 194 => self.wind_pushed = true,
-                // W4-f12 sweep gap 9 — `:10029-10032` Bleeding (30):
-                // `bleed = true`. The id had NO owner in any pass; the flag
-                // feeds `UpdateLifeRegen`'s ramp-time reset (`:19178-19181`,
-                // `derive_dot_inputs`' `holding(30)` twin reads the slot).
-                30 => self.bleed = true,
+                // (W4-f12's duplicate Bleeding (30) arm deduped into the
+                // W4-g26 arm above — same `:10029-10032` grant.)
                 // `:11001-11004`: the Sunflower buff's movement tier —
                 // `moveSpeed += 0.1f; moveSpeed *= 1.1f` per slot.
                 146 => {

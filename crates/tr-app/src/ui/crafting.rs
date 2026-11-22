@@ -410,29 +410,6 @@ pub fn grid_cull_range(l: &Layout, n: usize, scroll: f32) -> (usize, usize) {
     ((start.max(0) as usize).min(n), (end.max(0) as usize).min(n))
 }
 
-/// The `i`-th recipe cell's origin and 44x44 hover/click rect —
-/// `UIDynamicItemCollection.GetGridParameters` (`:81-97`) +
-/// `GetItemSlotHitbox` (`:75-79`): the grid element fills the `UIList`'s
-/// inner list (`UIList.cs:57` Width/Height fill, `:122-123` single item at
-/// Top 0) lifted by `-ViewPosition` (`UIList.cs:181`); `startX = Center.X -
-/// (int)(44 * _itemsPerLine * 0.5f)` (the rows are centred, int-truncated),
-/// each cell is `startX + num % cols * 44, startY + num / cols * 44` —
-/// **integer** division (toward zero, so rows above the cull start keep
-/// their hitboxes), 44x44 (`:78`). `scroll` is the live
-/// `UIScrollbar.ViewPosition`; the shared geometry for the draw pass and
-/// `hit_test`.
-pub fn recipe_cell(l: &Layout, i: usize, scroll: f32) -> [f32; 4] {
-    let (start_x, start_y, start) = grid_start(l, scroll);
-    let cols = grid_cols(l) as i32;
-    let num = i as i32 - start;
-    [
-        start_x + (num % cols) as f32 * 44.0,
-        (start_y + num / cols * 44) as f32,
-        44.0,
-        44.0,
-    ]
-}
-
 /// `UIDynamicItemCollection.DrawSelf` (`UIDynamicItemCollection.cs:40`):
 /// `Main.inventoryScale = 3465f / 4095f` — the grid's slot scale for the
 /// whole walk. 3465/4095 = 11/13 exactly, so the 52 px `Inventory_Back*`

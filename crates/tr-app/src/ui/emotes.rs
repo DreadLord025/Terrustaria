@@ -300,65 +300,11 @@ pub fn back_hit(panel: &[f32; 4], mouse: Vec2) -> bool {
 // (`:52-75`, `draw` below) and the click's emote+close (`:90-95`,
 // `app/clicks.rs:1170-1197`).
 
-/// `TITLE_HEIGHT = 20` / `SEPARATOR_HEIGHT = 10` (`EmotesGroupListItem.cs:11-13`)
-/// — declared but unused by the ctor, which lays out with 30/36 (`:35`, `:79`).
-#[allow(dead_code)] // the grouped wheel adopts these (W4-d81); the flat roster draws today
-pub const GROUP_TITLE_HEIGHT: f32 = 20.0;
-#[allow(dead_code)] // the grouped wheel adopts these (W4-d81); the flat roster draws today
-pub const GROUP_SEPARATOR_HEIGHT: f32 = 10.0;
-
-/// The ctor's row count (`EmotesGroupListItem.cs:30-34`):
-/// `emotes.Length / 14`, `+1` when the remainder is non-zero.
-#[allow(dead_code)] // the grouped wheel adopts these (W4-d81); the flat roster draws today
-pub fn group_row_count(emote_count: usize) -> usize {
-    let mut rows = emote_count / COLS;
-    if emote_count % COLS != 0 {
-        rows += 1;
-    }
-    rows
-}
-
-/// The group item's height (`EmotesGroupListItem.cs:35`):
-/// `Height.Set(30 + 36 * rows, 0f)` — the 30 px header band plus the rows.
-#[allow(dead_code)] // the grouped wheel adopts these (W4-d81); the flat roster draws today
-pub fn group_height(emote_count: usize) -> f32 {
-    30.0 + CELL * group_row_count(emote_count) as f32
-}
-
-/// The header container (`EmotesGroupListItem.cs:37-42`): `Height 30`,
-/// `Width (-20, 1)`, `HAlign 0.5` — 10 px in from each side of the group item.
-/// The separator (`VAlign 1`, `:45-51`) and the title (`VAlign 1`, `Top -6`,
-/// `:52-57`) hang off its bottom edge.
-#[allow(dead_code)] // the grouped wheel adopts these (W4-d81); the flat roster draws today
-pub fn group_header_rect(group: &[f32; 4]) -> [f32; 4] {
-    [group[0] + 10.0, group[1], group[2] - 20.0, 30.0]
-}
-
-/// The header separator's tint (`EmotesGroupListItem.cs:50`):
-/// `Color.Lerp(Color.White, new Color(63, 65, 151), 0.85f) * 0.9f`.
-#[allow(dead_code)] // the grouped wheel adopts these (W4-d81); the flat roster draws today
-pub fn group_separator_color() -> [u8; 4] {
-    let lerped = super::char_creation::lerp_rgb([255, 255, 255, 255], [63, 65, 151, 255], 0.85);
-    super::color::mul(lerped, 0.9)
-}
-
-/// Emote `i`'s button top-left inside the group item
-/// (`EmotesGroupListItem.cs:58-81`): `Top = 30 + row*36 + 6` (`num2 = 6f`,
-/// `:58`/`:79`), `Left = 36*col - num6` with `num6` hard-overwritten to `-16f`
-/// (`:74`) — the `num5` centring computation (`:64-73`) is dead code in the
-/// C#, every row starts 16 px in.
-#[allow(dead_code)] // the grouped wheel adopts these (W4-d81); the flat roster draws today
-pub fn group_button_top_left(i: usize) -> [f32; 2] {
-    let row = (i / COLS) as f32; // `num3` (`:62`)
-    let col = (i % COLS) as f32; // `num4` (`:63`)
-    [30.0 + row * CELL + 6.0, col * CELL + 16.0]
-}
-
-/// `CompareTo` (`EmotesGroupListItem.cs:87-94`): groups sort by `_groupIndex`.
-#[allow(dead_code)] // the grouped wheel adopts these (W4-d81); the flat roster draws today
-pub fn compare_group_order(a: i32, b: i32) -> std::cmp::Ordering {
-    a.cmp(&b)
-}
+// (W4-d81's census copy of the group geometry helpers — `GROUP_TITLE_HEIGHT`,
+// `GROUP_SEPARATOR_HEIGHT`, `group_row_count`, `group_height`,
+// `group_header_rect`, `group_separator_color`, `group_button_top_left`,
+// `compare_group_order` — deduped into the g54 definitions above; the bodies
+// were term-identical.)
 
 /// `EmoteBubble.GetPosition`'s entity arm (`EmoteBubble.cs:247-249`):
 /// `(entity.Top.X, VisualPosition.Y) + (-direction*width*0.75, 2)` in world

@@ -946,7 +946,7 @@ fn draw_button_frame(
 }
 
 #[cfg(test)]
-mod tests {
+mod selection_menu_tests {
     use super::*;
     use crate::resource_pack::PackVersion;
 

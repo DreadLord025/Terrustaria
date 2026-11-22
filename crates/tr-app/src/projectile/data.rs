@@ -426,7 +426,7 @@ pub const SLIME_WHIP: u16 = 1104;
 /// `ProjectileID.JimsDrone` (1020) — the Item62 blast (`:70865`).
 pub const JIMS_DRONE: u16 = 1020;
 /// `ProjectileID.BirdDroppings` (1080) — the Item177 splat (`:70936`).
-pub const BIRD_DROPPINGS: u16 = 1080;
+// (BIRD_DROPPINGS const deduped into the W4-c10 definition above — same id 1080.)
 /// `ProjectileID.TorchGodHelper` (1084) — the Item10 pop (`:70958`).
 pub const TORCH_GOD_HELPER: u16 = 1084;
 /// `ProjectileID.PrettyMirror` (1085) — the Item106 shatter (`:70904`).
@@ -449,11 +449,11 @@ pub const SKY_DRAGONS_FURY_SHOT: u16 = 709;
 /// `ProjectileID.RemoteControlCar` (1105) — the RC car, aiStyle 205
 /// (`Projectile.cs:10294-10302`, `AI_205_RemoteControlCar` `:38076-38461`;
 /// the `SoundID.RCCar` engine loop, W4-d80).
-pub const REMOTE_CONTROL_CAR: u16 = 1105;
+// (const deduped into the d76 REMOTE_CONTROL_CAR definition above — same id 1105.)
 /// `ProjectileID.JimsDrone` (1020) — Jim's RC drone, aiStyle 195
 /// (`Projectile.cs:9659-9666`, `AI_195_JimsDrone` `:40923-41067`; the
 /// `SoundID.JimsDrone` engine loop, W4-d80).
-pub const JIMS_DRONE: u16 = 1020;
+// (const deduped into the d76 JIMS_DRONE definition above — same id 1020.)
 /// `ProjectileID.PirateCannonBall`-family shell (240) — the Dutchman
 /// cannon's (`Projectile.cs:3219-3228`: 16x16, aiStyle 2, hostile,
 /// penetrate -1, alpha 255).
@@ -4155,9 +4155,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // cue map can spawn them; the AI machines for the four unarmed
             // styles (195/200/202/205) are the documented census follow-ups
             // (UNARMED_ROWED, the i25 precedent) — the cue lands on death.
-            // `:9659-9666` — Jim's Drone (1020): 12x12, aiStyle 195,
-            // friendly, penetrate -1 (the stock tileCollide true / 3600 life).
-            JIMS_DRONE => (12.0, 12.0, 195, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // (d76's JIMS_DRONE row deduped into the W4-d80 arm above —
+            // term-identical; the Kill()-tail cue map still spawns 1020.)
             // `:10078-10086` — Bird Droppings (1080): 10x10, aiStyle 200,
             // alpha 255, penetrate -1, ignoreWater (the overlay below); the
             // stock friendly false / tileCollide true / 3600 life.
@@ -4170,10 +4169,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (the thrown family — its rotation ladder `:23245` is already
             // in `ai_style2`), friendly, penetrate 1.
             PRETTY_MIRROR => (18.0, 18.0, 2, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
-            // `:10294-10302` — the RC Car (1105): 26x26, aiStyle 205,
-            // friendly, tileCollide true, correctSlopeCollision (the slope
-            // pass is the d21 movement follow-up; the d21 row values kept).
-            REMOTE_CONTROL_CAR => (26.0, 26.0, 205, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // (d76's REMOTE_CONTROL_CAR row deduped into the W4-d80 arm
+            // above — term-identical.)
             // W4-g82 — the four rope coils (`Projectile.cs:2570-2578` for
             // 171/505/506, `:5496-5504` for 475 — the two arms are
             // term-identical): 14x14, aiStyle 35, `penetrate = -1`,

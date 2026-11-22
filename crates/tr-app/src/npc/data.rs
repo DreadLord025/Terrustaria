@@ -673,10 +673,10 @@ impl NpcKind {
             // 602/603/608/609 are free in the protocol space — a to_u16 scan
             // of the tree shows no arm on them). `NPCID.cs:11401-11407`/
             // `:11881-11895`.
-            NpcKind::Duck => 362,
-            NpcKind::Duck2 => 363,
-            NpcKind::DuckWhite => 364,
-            NpcKind::DuckWhite2 => 365,
+            NpcKind::Duck => 731, // 108 E3: 362 squats d37 GoldfishWalker (absent lane) — small-lane band
+            NpcKind::Duck2 => 732, // 108 E3 (was 363)
+            NpcKind::DuckWhite => 733, // 108 E3 (was 364)
+            NpcKind::DuckWhite2 => 734, // 108 E3 (was 365)
             NpcKind::Seagull => 602,
             NpcKind::Seagull2 => 603,
             NpcKind::Grebe => 608,
@@ -685,7 +685,7 @@ impl NpcKind {
             // ids (357/442-448/484-487 are free in the protocol space — a
             // to_u16 scan of the tree shows no arm on them).
             // `NPCID.cs:11391`/`:11557-11569`/`:11641-11647`.
-            NpcKind::Worm => 357,
+            NpcKind::Worm => 737, // 108 E3: 357 contested (AngryTrapper/Mummy) — c8 band
             NpcKind::GoldBird => 442,
             NpcKind::GoldBunny => 443,
             NpcKind::GoldButterfly => 444,
@@ -729,9 +729,9 @@ impl NpcKind {
             // `:10989-11002` / `:12105-12118` / `:14483-14495` /
             // `:16679-16693` / `:16795-16808` / `:16892-16904` /
             // `:17653-17666` / `:17709-17722`.
-            NpcKind::CorruptGoldfish => 405,
-            NpcKind::Arapaima => 406,
-            NpcKind::BloodFeeder => 241,
+            NpcKind::CorruptGoldfish => 696, // 108 E3 drops c4@405 to d34@277 (absent lane); 405 squats d23 VampireBat — free band
+            NpcKind::Arapaima => 762, // 108 R5: 406 squats d23 Vampire — first free above the g8 block
+            NpcKind::BloodFeeder => 697, // 108 E3 drops c4@241 to d37@373 (absent lane); 241 squats f18 Snail — free band above 692
             NpcKind::CrimsonGoldfish => 465,
             NpcKind::GoldGoldfish => 592,
             NpcKind::Pupfish => 607,
@@ -744,20 +744,20 @@ impl NpcKind {
             // types ride cs_id/net_id (355-360), NOT these protocol ids.
             NpcKind::Firefly => 237,
             NpcKind::Butterfly => 238,
-            NpcKind::Worm => 239,
+(f18's Worm 239 arm deduped into the W4-c10 roster-tail row above.)
             NpcKind::LightningBug => 240,
-            NpcKind::Snail => 241,
+            NpcKind::Snail => 740, // 108 E3: 241 squats c4 BloodFeeder; 359 squats d37 FlyingFish — c9 band
             // W4-f18 batch 2 — the critters take the next-free band 242..
             // (the vanilla types 360-364 ride cs_id/net_id, NOT these).
             NpcKind::GlowingSnail => 242,
             NpcKind::Frog => 243,
-            NpcKind::Duck => 244,
-            NpcKind::Duck2 => 245,
-            NpcKind::DuckWhite => 246,
+(f18's Duck 244 arm deduped into the W4-c10 waterfowl row above.)
+(f18's Duck2 245 arm deduped into the W4-c10 waterfowl row above.)
+(f18's DuckWhite 246 arm deduped into the W4-c10 waterfowl row above.)
             // W4-f18 batch 3 — the critters take the next-free band 247..
             // (250/288 are the AngryNimbus/DungeonSpirit's port-local ids;
             // the vanilla types 365-375 ride cs_id/net_id, NOT these).
-            NpcKind::DuckWhite2 => 247,
+(f18's DuckWhite2 247 arm deduped into the W4-c10 waterfowl row above.)
             NpcKind::ScorpionBlack => 248,
             NpcKind::Scorpion => 249,
             NpcKind::TruffleWorm => 252,
@@ -772,15 +772,15 @@ impl NpcKind {
             // W4-f42 — the sandstorm debris + desert family: the next-free
             // 354..362 band (353 BlazingWheel reserved; the vanilla types
             // ride cs_id/net_id, the bestiary rows).
-            NpcKind::Tumbleweed => 354,
-            NpcKind::Vulture => 355,
-            NpcKind::Antlion => 356,
-            NpcKind::Mummy => 357,
+            NpcKind::Tumbleweed => 546, // 108 X1f + f42 input §3: vanilla-free (354 squats d23 ManEater)
+            NpcKind::Vulture => 278, // 108 E3: d34 final id (d34 absent lane); 355 squats d23 Snatcher
+            NpcKind::Antlion => 746, // 108 g8 final id (g8 absent lane); 356 squats d23 Clinger
+            NpcKind::Mummy => 702, // 108 d35 final id (d35 absent lane); 357 contested
             NpcKind::DarkMummy => 358,
-            NpcKind::BloodMummy => 359,
-            NpcKind::LightMummy => 360,
+            NpcKind::BloodMummy => 630, // 108 d42 final id, vanilla-free (d42 absent lane); 359 squats FlyingFish
+            NpcKind::LightMummy => 704, // 108 d35 final id (d35 absent lane); 360 squats FlyingSnake
             NpcKind::WalkingAntlion => 361,
-            NpcKind::FlyingAntlion => 362,
+(f42's FlyingAntlion 362 arm deduped into the W4-c4 style-44 row above.)
         }
     }
 
@@ -1143,17 +1143,17 @@ impl NpcKind {
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
             // W4-c10 — the waterfowl family's vanilla ids (`to_u16` above).
-            362 => NpcKind::Duck,
-            363 => NpcKind::Duck2,
-            364 => NpcKind::DuckWhite,
-            365 => NpcKind::DuckWhite2,
+            731 => NpcKind::Duck, // 108 E3 (was 362)
+            732 => NpcKind::Duck2, // 108 E3 (was 363)
+            733 => NpcKind::DuckWhite, // 108 E3 (was 364)
+            734 => NpcKind::DuckWhite2, // 108 E3 (was 365)
             602 => NpcKind::Seagull,
             603 => NpcKind::Seagull2,
             608 => NpcKind::Grebe,
             609 => NpcKind::Grebe2,
             // W4-c10 roster tail — the twelve critters' vanilla ids
             // (`to_u16` above).
-            357 => NpcKind::Worm,
+            737 => NpcKind::Worm, // 108 E3 (was 357)
             442 => NpcKind::GoldBird,
             443 => NpcKind::GoldBunny,
             444 => NpcKind::GoldButterfly,
@@ -1179,9 +1179,9 @@ impl NpcKind {
             // 229/237 squatted the reserved cs-owned holes — renumbered
             // to the free-port band, `to_u16` above); 241/465/592/607/
             // 615/688/692 keep their vanilla ids.
-            405 => NpcKind::CorruptGoldfish,
-            406 => NpcKind::Arapaima,
-            241 => NpcKind::BloodFeeder,
+            696 => NpcKind::CorruptGoldfish, // 108 merge-wave renumber (was 405)
+            762 => NpcKind::Arapaima, // 108 R5 (was 406)
+            697 => NpcKind::BloodFeeder, // 108 merge-wave renumber (was 241)
             465 => NpcKind::CrimsonGoldfish,
             592 => NpcKind::GoldGoldfish,
             607 => NpcKind::Pupfish,
@@ -1192,20 +1192,20 @@ impl NpcKind {
             // above). `NPCID.cs:11387-11395`.
             237 => NpcKind::Firefly,
             238 => NpcKind::Butterfly,
-            239 => NpcKind::Worm,
+            // (f18's 239 Worm decode deduped into the c10 row above.)
             240 => NpcKind::LightningBug,
-            241 => NpcKind::Snail,
+            740 => NpcKind::Snail, // 108 E3 (was 241)
             // W4-f18 batch 2 — the critters' 242.. band (`to_u16` above).
             // `NPCID.cs:11397-11405`.
             242 => NpcKind::GlowingSnail,
             243 => NpcKind::Frog,
-            244 => NpcKind::Duck,
-            245 => NpcKind::Duck2,
-            246 => NpcKind::DuckWhite,
+            // (f18's 244 Duck decode deduped into the c10 row above.)
+            // (f18's 245 Duck2 decode deduped into the c10 row above.)
+            // (f18's 246 DuckWhite decode deduped into the c10 row above.)
             // W4-f18 batch 3 — the critters' 247.. band (`to_u16` above;
             // 250/288 are the AngryNimbus/DungeonSpirit's). `NPCID.cs:
             // 11407-11427`.
-            247 => NpcKind::DuckWhite2,
+            // (f18's 247 DuckWhite2 decode deduped into the c10 row above.)
             248 => NpcKind::ScorpionBlack,
             249 => NpcKind::Scorpion,
             252 => NpcKind::TruffleWorm,
@@ -1219,15 +1219,15 @@ impl NpcKind {
             258 => NpcKind::ArmedZombie,
             // W4-f42 — the sandstorm debris + desert family (`to_u16`'s
             // 354..362 band).
-            354 => NpcKind::Tumbleweed,
-            355 => NpcKind::Vulture,
-            356 => NpcKind::Antlion,
-            357 => NpcKind::Mummy,
+            546 => NpcKind::Tumbleweed, // 108 X1f (was 354)
+            278 => NpcKind::Vulture, // 108 E3 (was 355)
+            746 => NpcKind::Antlion, // 108 g8 final (was 356)
+            702 => NpcKind::Mummy, // 108 d35 final (was 357)
             358 => NpcKind::DarkMummy,
-            359 => NpcKind::BloodMummy,
-            360 => NpcKind::LightMummy,
+            630 => NpcKind::BloodMummy, // 108 d42 final (was 359)
+            704 => NpcKind::LightMummy, // 108 d35 final (was 360)
             361 => NpcKind::WalkingAntlion,
-            362 => NpcKind::FlyingAntlion,
+            // (f42's 362 FlyingAntlion decode deduped into the c4 581 row above.)
             _ => return None,
         })
     }
@@ -2198,13 +2198,13 @@ impl NpcKind {
             | NpcKind::WyvernTail => "NPC_Hit_7",
             // W4-f18 first-20 port — the critters' `SoundID.NPCHit1` rows
             // (`NPC.cs:13525`/`:13539`/`:13553`/`:13567`/`:13581`).
-            NpcKind::Firefly | NpcKind::Butterfly | NpcKind::Worm | NpcKind::LightningBug | NpcKind::Snail => "NPC_Hit_1",
+            NpcKind::Firefly | NpcKind::Butterfly | NpcKind::LightningBug | NpcKind::Snail => "NPC_Hit_1",
             // W4-f18 batch 2 — the critters' `SoundID.NPCHit1` rows
             // (`NPC.cs:13591`/`:13605`/`:13617`/`:13629`/`:13641`).
-            NpcKind::GlowingSnail | NpcKind::Frog | NpcKind::Duck | NpcKind::Duck2 | NpcKind::DuckWhite => "NPC_Hit_1",
+            NpcKind::GlowingSnail | NpcKind::Frog => "NPC_Hit_1",
             // W4-f18 batch 3 — the critters' `SoundID.NPCHit1` rows
             // (`NPC.cs:13653`/`:13665`/`:13766`/`:13781`).
-            NpcKind::DuckWhite2 | NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => "NPC_Hit_1",
+            NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => "NPC_Hit_1",
             // W4-f18 batch 4 — the `SoundID.NPCHit1` rows (`NPC.cs:13815`/
             // `:13829`/`:13843`/`:8616`).
             NpcKind::Grasshopper | NpcKind::ChatteringTeethBomb | NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite | NpcKind::ArmedZombie => "NPC_Hit_1",
@@ -2216,7 +2216,6 @@ impl NpcKind {
             NpcKind::Tumbleweed => "NPC_Hit_11",
             NpcKind::Vulture => "NPC_Hit_28",
             NpcKind::Antlion | NpcKind::WalkingAntlion => "NPC_Hit_31",
-            NpcKind::FlyingAntlion => "NPC_Hit_32",
             NpcKind::Mummy
             | NpcKind::DarkMummy
             | NpcKind::BloodMummy
@@ -2608,13 +2607,13 @@ impl NpcKind {
             | NpcKind::WyvernTail => "NPC_Killed_8",
             // W4-f18 first-20 port — the critters' `SoundID.NPCDeath1` rows
             // (`NPC.cs:13526`/`:13540`/`:13554`/`:13568`/`:13582`).
-            NpcKind::Firefly | NpcKind::Butterfly | NpcKind::Worm | NpcKind::LightningBug | NpcKind::Snail => "NPC_Killed_1",
+            NpcKind::Firefly | NpcKind::Butterfly | NpcKind::LightningBug | NpcKind::Snail => "NPC_Killed_1",
             // W4-f18 batch 2 — the critters' `SoundID.NPCDeath1` rows
             // (`NPC.cs:13592`/`:13606`/`:13618`/`:13630`/`:13642`).
-            NpcKind::GlowingSnail | NpcKind::Frog | NpcKind::Duck | NpcKind::Duck2 | NpcKind::DuckWhite => "NPC_Killed_1",
+            NpcKind::GlowingSnail | NpcKind::Frog => "NPC_Killed_1",
             // W4-f18 batch 3 — the critters' `SoundID.NPCDeath1` rows
             // (`NPC.cs:13654`/`:13666`/`:13767`/`:13782`).
-            NpcKind::DuckWhite2 | NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => "NPC_Killed_1",
+            NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => "NPC_Killed_1",
             // W4-f18 batch 4 — the `SoundID.NPCDeath1` rows (`NPC.cs:
             // 13816`/`:13830`/`:13844`); the ArmedZombie 430's NPCDeath2
             // (`:8617`).
@@ -2628,7 +2627,6 @@ impl NpcKind {
             NpcKind::Tumbleweed => "NPC_Killed_15",
             NpcKind::Vulture => "NPC_Killed_31",
             NpcKind::Antlion | NpcKind::WalkingAntlion => "NPC_Killed_34",
-            NpcKind::FlyingAntlion => "NPC_Killed_35",
             NpcKind::Mummy
             | NpcKind::DarkMummy
             | NpcKind::BloodMummy
@@ -2815,7 +2813,7 @@ impl NpcKind {
             // the Vulture (61, aiStyle 17 `NPC.cs:24024`), the FlyingAntlion
             // (581, aiStyle 44 `:30863`). The Antlion (69) toggles it per
             // tick (the emergence), so its SetDefaults default stays false.
-            NpcKind::Vulture | NpcKind::FlyingAntlion => true,
+            NpcKind::Vulture => true,
             _ => false,
         }
     }
@@ -3011,8 +3009,6 @@ impl NpcKind {
             NpcKind::Vulture => 17,
             // aiStyle 19 — W4-f42: the Antlion (`NPC.cs:9670`).
             NpcKind::Antlion => 19,
-            // aiStyle 44 — W4-f42: the Flying Antlion (`NPC.cs:14872`).
-            NpcKind::FlyingAntlion => 44,
             // aiStyle 22 - NPC.cs:13194
             NpcKind::Poltergeist => 22,
             // aiStyle 22 — the Drippler (S1-D-3z; `NPC.cs:14623`).
@@ -3177,16 +3173,16 @@ impl NpcKind {
             // (`:13549`), 359 67 (`:13577`).
             NpcKind::Firefly | NpcKind::LightningBug => 64,
             NpcKind::Butterfly => 65,
-            NpcKind::Worm => 66,
+(f18's Worm 66 arm deduped into the W4-c10 crawler group above.)
             NpcKind::Snail => 67,
             // W4-f18 batch 2 — 360 67 (`NPC.cs:13589`), 361/362/364 7
             // (`:13603`/`:13615`/`:13639`), 363 68 (`:13627`).
             NpcKind::GlowingSnail => 67,
-            NpcKind::Frog | NpcKind::Duck | NpcKind::DuckWhite => 7,
-            NpcKind::Duck2 => 68,
+            NpcKind::Frog => 7, // (f18 Duck/DuckWhite members deduped into the c10 walker group above)
+(f18's Duck2 68 arm deduped into the W4-c10 swimmer group above.)
             // W4-f18 batch 3 — 365 68 (`NPC.cs:13651`), 366/367 7
             // (`:13663`), 374 66 (`:13764`), 375 6 (`:13779`).
-            NpcKind::DuckWhite2 => 68,
+(f18's DuckWhite2 68 arm deduped into the W4-c10 swimmer group above.)
             NpcKind::ScorpionBlack | NpcKind::Scorpion => 7,
             NpcKind::TruffleWorm => 66,
             NpcKind::TruffleWormDigger => 6,
@@ -3842,7 +3838,7 @@ impl NpcKind {
             // (`:13561-13562`), 359 12x12 (`:13575-13576`).
             NpcKind::Firefly => (10.0, 10.0),
             NpcKind::Butterfly => (10.0, 10.0),
-            NpcKind::Worm => (10.0, 4.0),
+(f18's Worm box deduped into the W4-c10 crawler group above.)
             NpcKind::LightningBug => (12.0, 12.0),
             NpcKind::Snail => (12.0, 12.0),
             // W4-f18 batch 2 — 360 14x14 (`NPC.cs:13587-13588`), 361 12x10
@@ -3850,12 +3846,12 @@ impl NpcKind {
             // `:13637-13638`), 363 28x22 (`:13625-13626`).
             NpcKind::GlowingSnail => (14.0, 14.0),
             NpcKind::Frog => (12.0, 10.0),
-            NpcKind::Duck | NpcKind::DuckWhite => (22.0, 26.0),
-            NpcKind::Duck2 => (28.0, 22.0),
+(f18's Duck/DuckWhite box deduped into the W4-c10 walker group above.)
+(f18's Duck2 box deduped into the W4-c10 swimmer group above.)
             // W4-f18 batch 3 — 365 28x22 (`NPC.cs:13649-13650`), 366/367
             // 26x18 (`:13661-13662`), 374 20x10 (`:13762-13763`), 375
             // 10x10 (`:13777-13778`).
-            NpcKind::DuckWhite2 => (28.0, 22.0),
+(f18's DuckWhite2 box deduped into the W4-c10 swimmer group above.)
             NpcKind::ScorpionBlack | NpcKind::Scorpion => (26.0, 18.0),
             NpcKind::TruffleWorm => (20.0, 10.0),
             NpcKind::TruffleWormDigger => (10.0, 10.0),
@@ -3878,7 +3874,6 @@ impl NpcKind {
                 (18.0, 40.0)
             }
             NpcKind::WalkingAntlion => (26.0, 26.0),
-            NpcKind::FlyingAntlion => (30.0, 22.0),
         }
     }
 
@@ -4676,13 +4671,13 @@ impl NpcKind {
             NpcKind::VileSpit | NpcKind::VileSpitEoW | NpcKind::SolarFlare => 1,
             // W4-f18 first-20 port — the critters' `lifeMax = 5` rows
             // (`NPC.cs:13524`/`:13538`/`:13552`/`:13566`/`:13580`).
-            NpcKind::Firefly | NpcKind::Butterfly | NpcKind::Worm | NpcKind::LightningBug | NpcKind::Snail => 5,
+            NpcKind::Firefly | NpcKind::Butterfly | NpcKind::LightningBug | NpcKind::Snail => 5,
             // W4-f18 batch 2 — the critters' `lifeMax = 5` rows
             // (`NPC.cs:13590`/`:13604`/`:13616`/`:13628`/`:13640`).
-            NpcKind::GlowingSnail | NpcKind::Frog | NpcKind::Duck | NpcKind::Duck2 | NpcKind::DuckWhite => 5,
+            NpcKind::GlowingSnail | NpcKind::Frog => 5,
             // W4-f18 batch 3 — the critters' `lifeMax = 5` rows
             // (`NPC.cs:13652`/`:13664`/`:13765`/`:13780`).
-            NpcKind::DuckWhite2 | NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => 5,
+            NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => 5,
             // W4-f18 batch 4 — 377 5 (`NPC.cs:13814`), 378 200
             // (`:13828`), 379/380 210 (`:13842`), 430 45 (`:8615`).
             NpcKind::Grasshopper => 5,
@@ -4700,7 +4695,6 @@ impl NpcKind {
             NpcKind::DarkMummy | NpcKind::BloodMummy => 180,
             NpcKind::LightMummy => 200,
             NpcKind::WalkingAntlion => 80,
-            NpcKind::FlyingAntlion => 60,
         }
     }
 
@@ -5142,13 +5136,13 @@ impl NpcKind {
             NpcKind::SporeBat => 13,
             // W4-f18 first-20 port — the critters' `damage = 0` rows
             // (`NPC.cs:13522`/`:13536`/`:13550`/`:13564`/`:13578`).
-            NpcKind::Firefly | NpcKind::Butterfly | NpcKind::Worm | NpcKind::LightningBug | NpcKind::Snail => 0,
+            NpcKind::Firefly | NpcKind::Butterfly | NpcKind::LightningBug | NpcKind::Snail => 0,
             // W4-f18 batch 2 — the critters' `damage = 0` rows
             // (`NPC.cs:13588`/`:13602`/`:13614`/`:13626`/`:13638`).
-            NpcKind::GlowingSnail | NpcKind::Frog | NpcKind::Duck | NpcKind::Duck2 | NpcKind::DuckWhite => 0,
+            NpcKind::GlowingSnail | NpcKind::Frog => 0,
             // W4-f18 batch 3 — the critters' `damage = 0` rows
             // (`NPC.cs:13650`/`:13662`/`:13763`/`:13778`).
-            NpcKind::DuckWhite2 | NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => 0,
+            NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => 0,
             // W4-f18 batch 4 — 377 0 (`NPC.cs:13812`), 378 120
             // (`:13826`), 379/380 45 (`:13840`), 430 14 (`:8613`).
             NpcKind::Grasshopper => 0,
@@ -5166,7 +5160,6 @@ impl NpcKind {
             NpcKind::DarkMummy | NpcKind::BloodMummy => 60,
             NpcKind::LightMummy => 55,
             NpcKind::WalkingAntlion => 25,
-            NpcKind::FlyingAntlion => 29,
         }
     }
 }

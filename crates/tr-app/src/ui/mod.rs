@@ -49,8 +49,6 @@ pub mod resource_packs;
 pub(crate) mod reforge;
 pub mod resources;
 pub(crate) mod resource_pack_info;
-pub(crate) mod resource_packs;
-pub(crate) mod savings;
 pub mod save_list;
 pub mod search_bar;
 pub mod sliders;
