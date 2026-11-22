@@ -75,15 +75,38 @@ pub(crate) const TAX_CAP: i32 = 250_000;
 
 /// `Main.NPCChatText_DoTaxCollector` (`Main.cs:40180-40225`): the Tax
 /// Collector's right-click pays the accrued tax purse out in coins — the
-/// platinum→gold→silver→copper split at the player's centre, then the
-/// purse empties. The happiness adjustment scales the payout
-/// (`:40184`); the port's town NPCs carry the plain 1.0.
+/// platinum→gold→silver→copper split at the PLAYER's centre
+/// (`Main.LocalPlayer.Center`, `:40192`/`:40199`/`:40206`/`:40215`), then
+/// the purse empties. The happiness adjustment DIVIDES the payout
+/// (`:40184`: `(int)((float)taxMoney / currentShoppingSettings.
+/// PriceAdjustment)`) — the TALK-OPEN LATCH (`Player.cs:4389`), the same
+/// value `GetCoinValueText_TaxCollector` displays (`:39933`, the <0→0
+/// clamp there is display-only). A happy collector (adjustment < 1) pays
+/// MORE than the accrued purse; an unhappy one pays less. His roster rows
+/// are live: the biome table (`PersonalityDatabasePopulator.cs:47-51`,
+/// Like Snow / Dislike Hallow) + the neighbor switch
+/// (`AllPersonalitiesModifier.cs:321-342`, Merchant love / PartyGirl like /
+/// Demolitionist + Mechanic dislike / Santa hate — the Santa row drops,
+/// 142 unported) + the rows that NAME him (the Merchant `:43-60`, the
+/// Angler `:141-158`, the PartyGirl `:119-140`, the Clothier `:285-302`).
 pub(crate) fn tax_collector_payout(app: &mut App, npc_idx: usize) -> bool {
+    // `Main.DoNPCPortraitHop` (`Main.cs:40224` — the tail of BOTH the
+    // purse>0 and the empty-purse arms).
+    crate::ui::npc_chat::do_npc_portrait_hop(app);
     if app.world.tax_money <= 0 {
         return true;
     }
-    let mut num = app.world.tax_money;
-    let (px, py) = app.npcs[npc_idx].center();
+    // `:40184` — the latched-adjustment divide (float divide, int trunc).
+    let mut num =
+        (app.world.tax_money as f32 / app.shopping_settings.price_adjustment) as i32;
+    // The spawn origin: `Main.LocalPlayer.Center` (`:40192`), NOT the
+    // collector's box — the headless no-player tests fall back to his
+    // centre (the vanilla always has a local player).
+    let (px, py) = app
+        .player
+        .as_ref()
+        .map(|p| p.center())
+        .unwrap_or_else(|| app.npcs[npc_idx].center());
     while num > 0 {
         let (kind, stack) = if num > 1_000_000 {
             let stack = num / 1_000_000;
@@ -179,7 +202,7 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
             if app.open_container() == -1 {
                 crate::chest::play_menu_sound(app, 11);
             }
-            app.talk_npc = None;
+            app.set_talk_npc(None); // `SetTalkNPC(-1)` — the settings reset rides it
             app.npc_chat_text.clear();
         }
     }
@@ -207,7 +230,7 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
     if app.talk_npc == Some(i) {
         return None; // `:43077` — the same NPC re-clicked falls through
     }
-    app.talk_npc = Some(i); // `:43081` — `player.SetTalkNPC(i)`
+    app.set_talk_npc(Some(i)); // `:43081` — `player.SetTalkNPC(i)` (g58's settings latch)
     // W4-d79 — the orphaned Chat emitter (`Main.cs:43083`,
     // `SoundEngine.PlaySound(24)` — UNPOSITIONED): case 24
     // (`LegacySoundPlayer.cs:957-962`) is Volume/Pan only, NO draws, the
@@ -404,8 +427,17 @@ pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     }
     // The Tax Collector's right arm (`NPCInteractions.cs:221-244`'s
     // `TaxCollectorCollectTaxes`): he offers no shop — the click pays the
-    // tax purse out (`Main.NPCChatText_DoTaxCollector`).
+    // tax purse out (`Main.NPCChatText_DoTaxCollector`). The vanilla
+    // button exists only while TALKING (`Condition: TalkNPCType == 441`,
+    // `:223-226`), so the payout reads the talk-open latch
+    // (`Player.cs:4389`); the port's collapse latches on the first press
+    // (`talk_to_npc` ran ahead of this dispatch) and the same-NPC re-click
+    // falls through WITHOUT re-latching (`Main.cs:43077`). A direct call
+    // with no latch (the headless tests) keeps `NotInShop`'s 1.0.
     if let Some(i) = try_tax_collect_at_cursor(app, world_pos) {
+        if app.talk_npc != Some(i) {
+            app.set_talk_npc(Some(i)); // the collapsed first-press latch
+        }
         return tax_collector_payout(app, i);
     }
     // The Dye Trader's Strange Plants turn-in (`NPCInteractions.cs:443-463`'s
@@ -427,8 +459,12 @@ pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         return dye_trader_turn_in(app, i);
     }
     // The town dispatch: the Nurse heals (the vanilla's dialog-button pair
-    // — the port collapses them onto the right-click).
-    let Some(nurse_idx) = app.npcs.iter().position(|n| {
+    // — the port collapses them onto the right-click). The cost reads the
+    // TALK-OPEN LATCH (`App.shopping_settings`, `Player.cs:4389`) — the
+    // first press latched through `talk_to_npc`; the same-NPC re-click
+    // falls through here WITHOUT re-latching, exactly the C# button reading
+    // `currentShoppingSettings` (`Main.GetNurseHealCost`, `Main.cs:40100`).
+    let Some(_nurse_idx) = app.npcs.iter().position(|n| {
         n.hp > 0 && n.kind == NpcKind::Nurse && {
             let (w, h) = n.size();
             world_pos.x >= n.x
@@ -439,7 +475,11 @@ pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     }) else {
         return try_open_town_shop_at_cursor(app, world_pos);
     };
-    app.nurse_heal(nurse_idx)
+    let healed = app.nurse_heal();
+    // `Main.NPCChatText_DoNurseHeal`'s tail (`Main.cs:40177`): the hop is
+    // UNCONDITIONAL — every arm (paid, short purse, nothing to heal).
+    crate::ui::npc_chat::do_npc_portrait_hop(app);
+    healed
 }
 
 /// `Main.CanStartInvasion` (`Main.cs:64414-64432`): `invasionType != 0`
@@ -641,6 +681,8 @@ pub(crate) fn rescue_bound_angler(n: &mut Npc, world: &mut tr_core::World) {
 /// decrement, the `anglerQuestsFinished++` and the reward
 /// (`Player.GetAnglerReward`, `Player.cs:56302`).
 pub(crate) fn angler_turn_in(app: &mut App, angler_idx: usize) -> bool {
+    // `Main.DoNPCPortraitHop` (`Main.cs:40262` — the tail, handed or not).
+    crate::ui::npc_chat::do_npc_portrait_hop(app);
     let mut handed = false;
     // `:40232`'s gate: the day's quest is open and this player has not
     // already handed it in (`anglerWhoFinishedToday`'s single-player
@@ -694,11 +736,16 @@ fn give_angler_reward(app: &mut App, angler_idx: usize) {
     // `GetAnglerReward`'s `questItemType` — the 5303/5302 Jellyfish arm
     // gates on the current quest fish (`Player.cs:56345-56354`).
     let quest_item = crate::angler::QUEST_POOL[app.world.angler_quest as usize];
-    // `:56306`: the Angler's `currentShoppingSettings.PriceAdjustment` — the
-    // mood pass leaves the town roster at 1.0 (`ShopHelper.cs:103`'s
-    // exclusions do not cover 369, but the port's town NPCs carry no mood
-    // rows for him yet, so the plain 1.0 stands).
-    let adjustment = 1.0f32;
+    // `:56306`: the Angler's `currentShoppingSettings.PriceAdjustment` —
+    // the TALK-OPEN LATCH (`Player.cs:4389`). The vanilla turn-in is the
+    // AnglerQuest chat button (`Condition: TalkNPCType == 369`,
+    // `NPCInteractions.cs:137-140`), so the latch is live; the port's
+    // collapsed right-click latched through `talk_to_npc` ahead of this
+    // dispatch. His rows ARE ported (`happiness.rs`: Like Ocean / Dislike
+    // Desert `PersonalityDatabasePopulator.cs:97-101`, the neighbor switch
+    // `AllPersonalitiesModifier.cs:141-158`) — the old constants-off 1.0
+    // was stale. A direct headless call with no latch keeps NotInShop 1.0.
+    let adjustment = app.shopping_settings.price_adjustment;
     // `DropAnglerAccByMissing`'s inventory scan (`Player.cs:56590-56594`):
     // the port's one inventory (the armor/bank/loadout scans are
     // constants-off — the port carries neither).
@@ -1028,13 +1075,35 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         return false;
     };
     let shop = shop_index_for_kind(app.npcs[idx].kind).unwrap_or(1);
-    let (pcx, pcy) = app
-        .player
-        .as_ref()
-        .map(|p| p.center())
-        .unwrap_or((0.0, 0.0));
-    let mood =
-        crate::happiness::process_mood(&app.world, &app.npcs, &app.npcs[idx], (pcx, pcy), false);
+    // W4-g58 final (the f37 capture-once contract, research/68 §4):
+    // `currentShoppingSettings` is captured ONCE per `SetTalkNPC`
+    // (`Player.cs:4387-4390`); `Main.OpenShop` (`Main.cs:40459-40467`) does
+    // NOT recompute it. When the talk latch already names this NPC the
+    // capture stands — no second Princess random-love draw on
+    // `NamedRngs::global()`. The port's collapsed chat-button entry (the
+    // recorded #9 deviation — the shop opens with `talk_npc = None`)
+    // captures HERE, through the SAME `shopping_settings` builder so the
+    // buy/sell latch readers (`Player.cs:35382-35388`) see the mood.
+    if app.talk_npc != Some(idx) {
+        let (pcx, pcy) = app
+            .player
+            .as_ref()
+            .map(|p| p.center())
+            .unwrap_or((0.0, 0.0));
+        let raining = app.world.raining;
+        let rng = app.rngs.global();
+        let mut roll = |n: i32| rng.next_max(n);
+        let settings = crate::happiness::shopping_settings(
+            &app.world,
+            &app.npcs,
+            &app.npcs[idx],
+            (pcx, pcy),
+            raining,
+            &mut roll,
+        );
+        app.shop_mood = settings.price_adjustment;
+        app.shopping_settings = settings;
+    }
     let flags = crate::shop::ShopFlags {
         hard_mode: app.world.hard_mode,
         downed_slime_king: app.world.downed_slime_king,
@@ -1114,7 +1183,6 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         &inv_ids,
         app.world.moon_phase as u32,
     );
-    app.shop_mood = mood.multiplier;
     app.shop_npc = Some(idx);
     if !same_shop {
         app.shop_sellback.clear();
@@ -7656,6 +7724,74 @@ mod tests {
         assert!(kinds.contains(&72), "three silver coins");
         assert!(kinds.contains(&71), "the coppers");
         assert!(app.items.len() > before, "the drops spawn");
+    }
+
+    /// W4-g58: the payout DIVIDES by the TALK-OPEN LATCHED adjustment
+    /// (`Main.cs:40184` — `(int)((float)taxMoney / PriceAdjustment)`), the
+    /// same value `GetCoinValueText_TaxCollector` displays (`:39933`). A
+    /// happy collector pays MORE than the purse; the latch (not a fresh
+    /// mood) prices the payout; the coins spawn at the PLAYER's centre
+    /// (`Main.LocalPlayer.Center`, `:40192`).
+    #[test]
+    fn the_tax_payout_divides_by_the_talk_latch() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        // A HOMELESS collector: the NoHome sentinel rides the 1.5 ceiling.
+        let mut t = Npc::new(NpcKind::TaxCollector, 32.0, 100.0, 1, 0.0);
+        t.hp = t.max_hp;
+        t.home = None;
+        app.npcs.push(t);
+        app.set_talk_npc(Some(0)); // the latch (`Player.cs:4389`)
+        assert_eq!(app.shopping_settings.price_adjustment, 1.5);
+        app.world.tax_money = 300;
+        assert!(tax_collector_payout(&mut app, 0));
+        // 300 / 1.5 = 200 copper — LESS than the purse (the unhappy arm).
+        // The split pays denominations (2 silver), so sum the copper VALUE.
+        let value: i64 = app
+            .items
+            .iter()
+            .map(|d| match d.kind {
+                71 => d.count as i64,
+                72 => d.count as i64 * 100,
+                73 => d.count as i64 * 10_000,
+                74 => d.count as i64 * 1_000_000,
+                _ => 0,
+            })
+            .sum();
+        assert_eq!(value, 200, "the latched 1.5 divides the payout");
+        assert_eq!(app.world.tax_money, 0);
+        // The spawn origin is the PLAYER's centre, not the collector's.
+        let pc = app.player.as_ref().unwrap().center();
+        for d in &app.items {
+            assert!(
+                (d.pos.x - pc.0).abs() < 32.0 && (d.pos.y - pc.1).abs() < 48.0,
+                "the coin spawns near the player ({:?} vs {:?})",
+                d.pos,
+                pc
+            );
+        }
+        // House him AFTER the latch (a fresh mood would drop the sentinel)
+        // and hand-latch the happy band: 300 / 0.75 = 400 — MORE than the
+        // purse. The payout reads the latch, so the housing change is inert.
+        app.npcs[0].home = Some((2, 6));
+        app.shopping_settings.price_adjustment = 0.75;
+        app.items.clear();
+        app.world.tax_money = 300;
+        assert!(tax_collector_payout(&mut app, 0));
+        let value: i64 = app
+            .items
+            .iter()
+            .map(|d| match d.kind {
+                71 => d.count as i64,
+                72 => d.count as i64 * 100,
+                73 => d.count as i64 * 10_000,
+                74 => d.count as i64 * 1_000_000,
+                _ => 0,
+            })
+            .sum();
+        assert_eq!(value, 400, "the happy 0.75 divides UP");
     }
 
     /// `Player.CollectTaxes` (`Player.cs:24129-24155`) + the pump

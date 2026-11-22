@@ -996,7 +996,7 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     // the chat text (S1-P-i43 — the C# clears the chatter before opening;
     // `CloseSign`'s sign half has no port state, `npcChatCornerItem` neither).
     app.close_shop();
-    app.talk_npc = None; // `:33088` — `SetTalkNPC(-1)`
+    app.set_talk_npc(None); // `:33088` - `SetTalkNPC(-1)`
     app.npc_chat_text.clear(); // `:33090` — `Main.npcChatText = ""`
     // `:33091-33096` — a chest-tile click while the rename editor is live
     // flushes it: sound 12, `editChest = false`, `npcChatText = ""`. The
@@ -1223,7 +1223,7 @@ pub(crate) fn try_open_dresser_at_cursor(app: &mut App, world_pos: Vec2) -> bool
     // `:32871-32876` — the prologue: `CancelClothesWindow(quiet)` (no port
     // clothes window), the sign/talk/chat clears (the world route's mapping).
     app.close_shop();
-    app.talk_npc = None; // `:32874` — `SetTalkNPC(-1)`
+    app.set_talk_npc(None); // `:32874` - `SetTalkNPC(-1)`
     app.npc_chat_text.clear(); // `:32876` — `npcChatText = ""`
     // `:32877-32882` — the rename-editor flush (the modal keyboard parks the
     // world routes, the chest path's Gap #6 revive point).

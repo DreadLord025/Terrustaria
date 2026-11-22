@@ -1691,7 +1691,12 @@ impl App {
                             self.shop_npc.map(|_| {
                                 (
                                     self.shop_stock.as_slice(),
-                                    self.shop_mood,
+                                    // `Main.cs:41793` — the chrome reads the
+                                    // LATCHED `currentShoppingSettings.
+                                    // PriceAdjustment`, not the shop-open
+                                    // `shop_mood` capture (the buy-lane
+                                    // repoint, research/240).
+                                    self.shopping_settings.price_adjustment,
                                     self.discount_available,
                                 )
                             }),
@@ -1743,7 +1748,12 @@ impl App {
                                             .map(|s| s.value)
                                             .unwrap_or(0),
                                             self.reforge_slot.count.max(1),
-                                            self.shop_mood,
+                                            // `Main.cs:41591` — the LATCHED
+                                            // `currentShoppingSettings.
+                                            // PriceAdjustment`, the same
+                                            // value the charge reads
+                                            // (`reforge_click`).
+                                            self.shopping_settings.price_adjustment,
                                             self.discount_available,
                                         )
                                     })
@@ -1780,11 +1790,48 @@ impl App {
                             // draws while the talk latch holds.
                             self.talk_npc,
                             &self.npc_chat_text,
+                            // `ReportHappiness.Condition`
+                            // (`NPCInteractions.cs:291-298`).
+                            !crate::happiness::can_show_homeless_text(
+                                self.talk_npc.and_then(|i| self.npcs.get(i)),
+                            ) && !self.shopping_settings.happiness_report.is_empty(),
+                            // `CoinSlot.Savings` — the shop savings pile's
+                            // coin cells (`ItemSlot.DrawSavings`,
+                            // `Main.cs:41791`, W4-g58 D5).
+                            &mut self.coin_slot,
+                            // The chat portrait (W4-g58 retire): the hop
+                            // clock's pre-increment value (`Main.cs:40335`
+                            // reads THEN increments — the tick below), the
+                            // `DialoguePortraitPreference` setting and the
+                            // Zoologist lycanthrope predicate.
+                            self.npc_chat_portrait_frame_counter,
+                            self.settings.portrait_preference,
+                            crate::happiness::should_bestiary_girl_be_lycantrope(
+                                self.world.blood_moon,
+                                self.world.day_time,
+                                self.world.moon_phase,
+                            ),
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after
                         // the interface layers draw.
                         self.coin_slot.update_slot_anims();
+                        // `Main.DrawNPCPortrait` (`Main.cs:40335`): while the
+                        // chat panel draws, the hop counter reads THEN
+                        // increments (`npcChatPortraitFrameCounter++`). The
+                        // Detailed-arm DRAW now consumes the pre-increment
+                        // value inside `draw_hud` (`ui::chat_portrait`,
+                        // W4-g58 retire); the tick stays on the same gate —
+                        // the panel draws iff `talk_npc` holds, and every
+                        // ported town kind has an `NPCPortraits` row
+                        // (`NPCID.cs:5894+`), so the provider/texture
+                        // null-gates never bind (the Disabled/CloseUp/
+                        // FullBodyRetro preferences still tick — the C#
+                        // increments BEFORE the mode branch).
+                        if self.talk_npc.is_some() {
+                            self.npc_chat_portrait_frame_counter =
+                                self.npc_chat_portrait_frame_counter.wrapping_add(1);
+                        }
                         // `Main.DrawDeathText`'s overlay (`Main.cs:45324-45341`):
                         // the death broadcast + the softcore "Dropped coins"
                         // line while the respawn timer runs.

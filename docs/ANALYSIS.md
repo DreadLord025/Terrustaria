@@ -40730,3 +40730,394 @@ commit; the full receipts in `docs/research/W4-d79-pitch-final.md`
 - **The sibling rewire-table (§S2) is NOT this batch's scope** —
   g21/g22/g23/e10/d80 are other batches' lanes; their 48 targets + 3
   deletes execute against the published tables when those lanes merge.
+
+## Shop happiness UI (W4-g58, 2026-11-21, code-only mode)
+
+`crates/tr-app/src/happiness.rs` + `ui/npc_chat.rs` + `ui/shop_happiness.rs`
++ `ui/savings.rs` land the happiness dialogue, the shop price-multiplier
+chrome, the FULL preference DATA tables and the savings coin pile. A
+follow-up deviation round resolves the five constants-off items recorded
+below (the Princess RNG head + HateLonely, the Zoologist shapeshift suffix,
+the Tavernkeep town twin, the player-zone biome judge, the DrawSavings
+pile). **Code-only mode**: no compiler/tests invoked; the witness tests are
+written not run, verified by re-reading the C#.
+
+What landed:
+
+- **The DATA tables** (`happiness.rs`): `biome_preferences_by_id` ports all
+  25 `PersonalityDatabasePopulator.Populate_BiomePreferences` rows
+  (`PersonalityDatabasePopulator.cs:27-147`) keyed on the C# NPCID — the
+  unported kinds (142 Santa, 160 Truffle, 178 Steampunker, 209 Cyborg,
+  229 Pirate, 550 Tavernkeep) carry their rows too;
+  `neighbor_preferences_by_id` ports the whole
+  `AllPersonalitiesModifier.ModifyShopPrice_Relationships` switch
+  (`AllPersonalitiesModifier.cs:41-505`) in the C# `if` order (the report
+  prepends, so the order is the read order). The kind-keyed views ride
+  `NpcKind::cs_id`; a neighbor row for an UNPORTED kind drops out (the
+  vanilla can never house that kind). `biome_name_key` maps the
+  `AShoppingBiome.NameKey` rows — the Underground key is
+  `NormalUnderground` (`UndergroundBiome.cs:7`).
+- **The mood pass** (`process_mood`): the crowd gate now reads the whole
+  town roster (`is_town_resident` minus `IsNotReallyTownNPC`'s 37/368/453,
+  `ShopHelper.cs:363-371`) instead of the Guide alone; the neighbor rows
+  push `MoodFlag::NpcAffection` and the universal LikePrincess row
+  (`AllPersonalitiesModifier.cs:37-40`, ×0.94 for every non-Princess with
+  a nearby Princess) lands; the evil-biome arm names the biome
+  (`HateBiomeNamed`, `_dangerousBiomes` order Corruption/Crimson/Dungeon,
+  `ShopHelper.cs:28-34`/`:353-356`).
+- **The report builder**: `ShoppingSettings` (`ShoppingSettings.cs:3-14`),
+  `shopping_settings` = `ShopHelper.GetShoppingSettings` (`:49-62`),
+  `happiness_report` folds the flags through `AddHappinessReportText`'s
+  PREPEND (`:188-196`: `text + report + " "`, the category
+  `TownNPCMood_{NPCID.Search.GetName(netID)}`, the `{BiomeName}`/
+  `{NPCName}` substitutes), `npc_full_name` = `NPC.GetFullnameByID`
+  (`NPC.cs:7010-7020` — the live resident's `Game.NPCTitle` given-name
+  title, else the type name), the LikePrincess row's dedicated
+  `LikeNPC_Princess` key (`ShopHelper.cs:252-259`).
+- **The dialogue button**: `App.set_talk_npc` ports `Player.SetTalkNPC`'s
+  `currentShoppingSettings` latch (`Player.cs:4375-4394` — the open runs
+  GetShoppingSettings, the close resets NotInShop); all six latch sites
+  repointed (talk open/close, the Close click, the two chest prologues,
+  the recall teleport). `ReportHappiness` (`NPCInteractions.cs:289-312`)
+  draws as the chat panel's second interaction: Condition =
+  `!NPC.CanShowHomelessText(talkNPC) && HappinessReport != ""`
+  (`NPC.cs:94828-94841`), label `UI.NPCCheckHappiness`, Interact = sound 12
+  + `npcChatText = HappinessReport` (the talk latch stays). The button-row
+  rect math generalizes `NPCChatPanel.DrawButtons` (`:93-135`): index 0
+  Close, index 1 Happiness, `x += width + 30`, wrap every 4.
+- **The shop chrome** (`ui/shop_happiness.rs`, `Main.cs:41790-41797`): the
+  `Lang.inter[28]` "Shop" label at (504, invBottom=258), the
+  `UI/NPCHappiness` 4-frame icon strip whose band rides the nested ternary
+  (≤0.82 → 0, ≤1 → 1, ≤1.1 → 2, else 3 — `:41794`), drawn at the
+  frame-centre origin at (504+12, invBottom+108), and the
+  `ToString("P0")` percent ("89 %") at (504+26, invBottom+98) — the
+  offsets are the `Main.cs:67266-67269` statics; the text rides
+  `Utils.DrawBorderStringFourWay`'s ±2 px ring tinted
+  `White * (mouseTextColor/255)`.
+
+Deviations resolved (W4-g58 deviation round, 2026-11-21, code-only mode):
+
+- **The Princess's random three-loves head + HateLonely** — LANDED.
+  `AllPersonalitiesModifier.cs:15-36` draws `Main.rand.Next(list.Count)`
+  three times on the BARE `Main.rand` (the call chain `SetTalkNPC` <-
+  `HoverOverNPCs` <- `DrawMouseOver` <- `DrawInterface_39_MouseOver`,
+  `Main.cs:43081`/`:42939`/`:45150`, runs outside every `SwapRandom`
+  stage), so the port threads `NamedRngs::global()` through
+  `process_mood`/`shopping_settings` (the `roll` closure). The list is the
+  nearby resident TYPES in ascending NPCID order, deduped
+  (`nearbyNPCsByType` is a `bool[NPCID.Count]`, `ShopHelper.cs:152-156`);
+  each pick `RemoveAt`s (no replacement) and applies a Love x0.88 whose
+  report key is the dedicated `LoveNPC_{NPCID.Search.GetName(npcType)}`
+  (`LoveNPCByTypeName`, `ShopHelper.cs:243-250` -> `MoodFlag::PrincessLove`).
+  Her crowd gate (`ShopHelper.cs:122-130`): `flag = false` (no LoveSpace),
+  `num = 1f` (the crowd multiply is inert), and HateLonely + the 1000
+  sentinel when fewer than 2 within-house AND fewer than 2 within-village
+  neighbors (`MoodFlag::HateLonely`). The personality traits now run
+  UNCONDITIONALLY (the C# `:164-168` has no `< 1000` gate — the old port's
+  gate was itself a deviation; the sentinel rides the clamp at `:178` but
+  the report rows + the RNG draws still land).
+- **The Zoologist's shapeshift report suffix** — LANDED. `altTexture == 2`
+  (`ShopHelper.cs:191-194`) is exactly `NPC.ShouldBestiaryGirlBeLycantrope()`
+  (`NPC.cs:93753-93764`): `UpdateAltTexture` (`:90225-90227`) writes
+  `altTexture = 2` on that predicate, a pure world-state gate (a blood-moon
+  night, or a full-moon `moonPhase == 0` night). No alt-texture field is
+  needed: `should_bestiary_girl_be_lycantrope(blood_moon, day_time,
+  moon_phase)` derives it, `shopping_settings` reads the world clock, and
+  `prepend_report` appends the `Transformed` category suffix
+  (`TownNPCMood_BestiaryGirlTransformed`). The `npc_chat.rs` Zoologist arm
+  reuses the shared predicate.
+- **The Tavernkeep town twin** — LANDED (the premise was false). There is
+  NO separate event Bartender: `NPCID.DD2Bartender = 550` IS the town
+  Tavernkeep (`NPC.cs:16261-16274`: `townNPC = true`, aiStyle 7,
+  `friendly = true`); NPCID 109 is the Clown, and 109 is only the port's
+  WIRE id (`to_u16`), not his `cs_id` (which resolves 550 through the
+  bestiary). The crowd gate re-derives `townNPC && !IsNotReallyTownNPC`
+  (admit `DD2Bartender`, drop the Travelling Merchant 368 — the only
+  ported `IsNotReallyTownNPC` kind), and `neighbor_preferences`' kind roster
+  adds `DD2Bartender` so his rows (`:213-230`) + the rows that name him
+  (the Angler `:141-158`, the Demolitionist `:177-194`) resolve.
+- **The home-anchor biome judge** — LANDED (the M4-TOWN-2 convention was
+  wrong). `BiomePreferenceListTrait.ModifyShopPrice` (`:38-53`) tests the
+  PLAYER's zones (`info.player`, `:44`), NOT the home tile, and picks the
+  HIGHEST affection among the matching biomes applying ONE row
+  (`ApplyPreference`, `:55-73`). The "moot for the two-row tables" claim
+  was false — a player can be in two biomes at once (e.g. Hallow +
+  Underground). `AffectionLevel::affection_value` ports the enum ordering
+  (Love 100 / Like 50 / Dislike -50 / Hate -100, `AffectionLevel.cs:5-8`);
+  `biome_is_in` ports each `AShoppingBiome.IsInBiome` (Forest =
+  `ShoppingZone_Forest` = `!ShoppingZone_AnyBiome && !ShoppingZone_BelowSurface`,
+  `Player.cs:3823-3847`; Underground = `ShoppingZone_BelowSurface`;
+  Mushroom = `ZoneGlowshroom`; the rest the zone flags). `process_mood`
+  scans the PLAYER centre and applies the single highest-affection row;
+  `classify_biome` (the first-match collapse) is removed.
+- **`ItemSlot.DrawSavings`' coin pile** — LANDED (`ui/savings.rs`).
+  `ItemSlot.DrawSavings` (`:3704-3741`) sums the four banks
+  (`Utils.CoinsCount` `:1019-1046`, `CoinsCombineStacks` `:1062-1076` cap
+  9,999,999,999, `CoinsSplit` `:1048-1060`), draws the bank-icon pile
+  (4076 Void Vault / 3813 Defender's Forge / 346 Safe / 87 Piggy Bank —
+  `GetItemDrawFrame` returns the full texture, no `itemAnimations` row)
+  and `DrawMoney`'s vertical arm (`:3686-3701`). `CoinSlot.DrawItemCoin`
+  (`:240-254`) uses `TextureAssets.Coin[type-71]` — the 8-frame SPIN
+  strips (`Images/Coin_0..3`, `AssetInitializer.cs:367-370`), NOT the
+  single-frame `Item_71..74` icons; the assets loader packs them and
+  `Lookups::coin_strip_frame` slices them. `CoinSlotState` gains the
+  `Savings[4]` array + `update_savings` (`71 + slot`,
+  `SavingsCoinJumpScale` 10, `:225-228`/`:337`/`:341`); `UpdateSlotAnims`
+  steps Savings first (`:359-361`). The pile draws between the Shop label
+  (`Main.cs:41790`) and the happiness icon (`:41792`) at (504, invBottom).
+
+Deviations still constants-off (each rides its own lane):
+
+- ~~The pets' `housingCategory` filter~~ — LANDED (the latch round,
+  2026-11-21, `f6c6007d4`). `ShopHelper.cs:305` admits a crowd neighbor
+  only when `!WorldGen.TownManager.CanNPCsLiveWithEachOther_ShopHelper`
+  (`TownRoomManager.cs:153-161` — CanLive is housingCategory INEQUALITY,
+  so the negated gate counts SAME-category neighbors: pets crowd pets,
+  never humans). `happiness.rs::crowd_neighbor_counts` reuses the housing
+  lane's `town::can_npcs_live_with_each_other` negated; no pet kind ships,
+  so every ported pair is 0==0 → counted — the filter is armed for the
+  pet lane.
+- ~~The <=0.82 achievement (`Player.cs:4391-4394`)~~ — LANDED (the latch
+  round, `f6c6007d4`). `AchievementManager::complete_row_condition` ports
+  the ROW-TARGETED `GetCondition(row, name).Complete()`
+  (`AchievementsHelper.cs:355-357` case 20 →
+  `TALK_TO_NPC_AT_MAX_HAPPINESS`/"Do"; `AchievementCondition.cs:37-47` +
+  `Achievement.cs:93-108`) — NOT the broadcast `notify_custom`, which
+  would close all nine "Do" rows. `set_talk_npc` fires it on the latched
+  adjustment with the `BoundTownNPCs` (`NPCID.cs:10441`, the six ported
+  kinds) + `!homeless` gates. The portrait hop (`DoNPCPortraitHop`) and
+  the corner item stay unported (S1-E-10b's deferral — no portrait
+  system).
+- ~~The nurse-heal cost recompute~~ — LANDED (the latch round,
+  `3ac5432d5`). `currentShoppingSettings` has exactly ONE write site:
+  `Player.SetTalkNPC` (`Player.cs:4383-4390`; the open chain `Main.cs:
+  42939` HoverOverNPCs ← DrawMouseOver `:45150` → `:43081`), and
+  `GetNurseHealCost` (`Main.cs:40100`) reads the LATCHED `PriceAdjustment`
+  with NO NPC-index parameter (`NurseHeal.Interact`, `NPCInteractions.cs:
+  258-261`). `App::nurse_heal_cost`/`nurse_heal` drop the index and read
+  `shopping_settings.price_adjustment`; the fresh `process_mood` + the
+  no-draw closure are deleted — the Princess head draws at the LATCH on
+  `NamedRngs::global()`, the nurse read is draw-free. Mood changes between
+  the talk and the heal do not change the cost (the witness).
+
+The latch round (2026-11-21, code-only mode, `3ac5432d5`/`f6c6007d4`/
+`13be13a6a`/`a027138d8`):
+
+- **The reforge price's happiness interplay** — LANDED (`13be13a6a`).
+  `Main.DrawInventory`'s reforge block (`:41584-41591`) multiplies the
+  LATCHED `currentShoppingSettings.PriceAdjustment` (`:41591`), not a
+  shop-open capture: the vanilla opens the menu through the Tinkerer's
+  CHAT button (`NPCChatText_TinkererReforge`, `Main.cs:40022-40029`), so
+  the talk latch is live. g57 was visual-only (the reveal/popup lane);
+  S1-P-i45 ported the cast chain but fed `shop_mood`. `reforge_click` +
+  the draw-site price both read `shopping_settings.price_adjustment`;
+  the port's collapsed #9 entry keeps the first press's latch (the
+  same-NPC re-click falls through `talk_to_npc` without re-latching,
+  `Main.cs:43077`). **Cross-note (the buy lane)**: `Player.
+  GetItemExpectedPrice` (`Player.cs:35382-35388`) ALSO reads the latch —
+  the buy/sell transactions still ride the `shop_mood` capture
+  (`buy_shop_item`/`sell_item`); their repoint rides the shop-transaction
+  lane (S1-P-i44's follow-up), not this round.
+- **The tax-collector payout's happiness interplay** — LANDED
+  (`a027138d8`). `Main.NPCChatText_DoTaxCollector` (`:40180-40225`)
+  DIVIDES the purse by the latched adjustment (`:40184` — a happy
+  collector pays MORE than the accrued purse), the same value
+  `GetCoinValueText_TaxCollector` displays (`:39933`, the <0→0 clamp
+  display-only); the coins spawn at `Main.LocalPlayer.Center`
+  (`:40192`/`:40199`/`:40206`/`:40215`), NOT the collector's box.
+  `tax_collector_payout` now divides by `shopping_settings.
+  price_adjustment` and spawns at the player centre (the headless
+  no-player fallback keeps his); the collapsed right-click latches on
+  the first press (the vanilla button's Condition `TalkNPCType == 441`,
+  `NPCInteractions.cs:223-226`, exists only while talking). His roster
+  rows verified live: the biome table (`PersonalityDatabasePopulator.cs:
+  47-51`, Like Snow / Dislike Hallow), the neighbor switch
+  (`AllPersonalitiesModifier.cs:321-342` — the Santa hate row drops, 142
+  unported) and the rows that name him (the Merchant `:43-60`, the Angler
+  `:141-158`, the PartyGirl `:119-140`, the Clothier `:285-302`).
+- **The latch-site census** (the round's spine): `currentShoppingSettings`
+  is written ONLY by `Player.SetTalkNPC` (`Player.cs:4383-4390`). The C#
+  call sites: the talk open (`Main.cs:43081`, the `:42939` HoverOverNPCs
+  chain), the bound-NPC transform (`NPC.cs:44889`), the per-tick close
+  (`Player.cs:27500`), the chest/dresser prologues (`Player.cs:32874`/
+  `:32931`/`:33088`), the recall/death/etc. closes (`Player.cs:5007`/
+  `:17015`/`:29109`/`:37648`, `Main.cs:37730`/`:37808`/`:40683`/`:41098`/
+  `:42399`/`:42454`/`:43675`/`:43689`, `TileEntity.cs:292`,
+  `IngameUIWindows.cs:35`, `NewCraftingUI.cs:942`) and the net sync
+  (`MessageBuffer.cs:2264`). The port's `set_talk_npc` covers the landed
+  six (talk open/close, the Close click, the two chest prologues, the
+  recall teleport); the remaining closes ride their own unported systems.
+  The four latch READERS censused: `GetNurseHealCost` (`:40100`),
+  `NPCChatText_DoTaxCollector` (`:40184`) + its display twin (`:39933`),
+  the reforge block (`:41591`), the shop chrome (`:41793` — already
+  latched via the W4-g58 chrome), `GetItemExpectedPrice` (`:35382-35388`,
+  the buy lane's cross-note) and the Stylist hair price (`:43799`, the
+  hair-dye lane) + the Angler reward rarity (`Player.cs:56306`, the quest
+  lane).
+
+Witnesses (WRITTEN NOT RUN): `happiness.rs::w4_g58_tests` x9 original (the
+25-row biome table, the 25-case neighbor switch, the kind-view filter, the
+affection multipliers, the name keys, the report prepend order, the
+neighbor naming, the Princess key, the homeless gate) + the deviation round
+(the Tavernkeep town neighbor, the lycantrope predicate, the Zoologist
+Transformed suffix, the player-not-home biome judge x2, the
+highest-affection single-row pick, the Princess HateLonely, the Princess
+three-loves head RNG draws, the head list-end break, the Princess
+LoveNPC_{name} report key); `happiness.rs::tests` forest_world widened to
+1000 (the faithful Forest predicate needs a non-beach above-surface player
+row); `ui/npc_chat.rs` x3 (the button click replaces the chat text, the
+homeless Condition, the settings reset); `ui/shop_happiness.rs` x3 (the
+icon bands, the P0 text, the chrome positions); `ui/savings.rs` x5 (the
+CoinsCount denominations, the CoinsCombineStacks cap, the CoinsSplit walk,
+the CenteredRectangle truncation, the savings cell draw state);
+`assets.rs` x1 (the coin spin strips pack + slice 8 frames). The latch
+round adds: `app/mod.rs::s1_e_18_tests` x2 (the nurse cost reads the talk
+latch — the homeless→housed mood change is inert until a re-latch; the
+≤0.82 talk fires ONLY its achievement row, the Nurse + loved ArmsDealer +
+Princess 0.79 band), `happiness.rs::w4_g58_tests` x1 (the crowd gate's
+housingCategory filter), `achievements.rs` x1 (the row-targeted complete
+vs the broadcast), `app/flow.rs` x1 (the reforge charge reads the talk
+latch, not the shop capture), `world_sim/npcs.rs` x1 (the tax payout
+divides by the latch — 300/1.5=200, 300/0.75=400 — and spawns at the
+player centre).
+
+The FINAL round (2026-11-21, code-only mode, `468db5928` + the census
+docs; research/240, renumbered from 143 per registry-150 — 143 stays with
+c4's crimsongoldfish retire-hunk):
+
+- **The buy/sell-lane latch repoint** — LANDED. `Player.
+  GetItemExpectedPrice` (`Player.cs:35382-35388`) reads the TALK-OPEN
+  LATCH (`currentShoppingSettings.PriceAdjustment`, the only write site
+  `SetTalkNPC` `:4389`); the shop button's Condition (`TalkNPCType ==
+  type`, `NPCInteractions.cs:59-62`) keeps it live at every transaction.
+  `buy_shop_item`/`sell_item` + the shop chrome tuple (`Main.cs:41793`)
+  switch `shop_mood` → `shopping_settings.price_adjustment`; the
+  shop-open capture gates `talk_npc != Some(idx)` (the f37 capture-once
+  contract, research/68 — no second Princess draw) and builds the FULL
+  settings (report included) at the collapsed entry. The Angler reward
+  rarity (`Player.cs:56306`) reads the latch too — his Like-Ocean/
+  Dislike-Desert + neighbor rows ARE ported, the constants-off 1.0 was
+  stale. `shop_mood` stays as the f37 merge-side capture (the buy/sell
+  TRANSACTION halves are g58's S1-P-i44 files; f37's tip still fed the
+  capture — unclaimed, so g58 repointed its own call sites). Witness:
+  the_buy_and_sell_read_the_talk_latch_not_the_shop_capture (homeless
+  Merchant 1.5: buy 60000, sell 26667/5=5333, memo round trip 60000;
+  post-latch housing inert; re-latch 0.95 → 38000).
+- **The happiness REPORT UI** — CENSUSED COMPLETE (research/240 §2).
+  There is NO price-slider/neighbor-list widget in the C# (a full
+  sweep returns zero hits); the report is TEXT in the chat panel. The
+  eight-site surface (the Shop label/savings pile/mood icon/P0 percent,
+  the ReportHappiness button, the report builder, the panel display) is
+  fully ported; the legacy `Main.DrawNPCChatButtons` (`:40474`, the
+  `:40635` HappinessReport gate inside it) is DEAD CODE — no callers in
+  the whole decompilation — correctly unported. No missing halves.
+- **The savings 3-way input** — the g58 CALL-SITE census published as
+  the 142-input (research/240 §3): g58 wires ONE call (the shop-panel
+  (504, invBottom) vertical, through the chrome); d122 wires the reforge
+  (180, 258) horizontal + the shop-panel; g12 wires the shop-panel
+  direct. The C# has exactly three `DrawSavings` callers (`:41637`/
+  `:41791`/`:43862`, the hair window unported). g58 votes KEEP d122's
+  both-arms + medal module (research/142's decision); the merge keeps
+  g58's report-lane chrome gate + d122's chrome body/savings signature.
+- **The portrait hop** — the STATE landed, the DRAW deferred
+  (research/240 §4). `DoNPCPortraitHop` (`Main.cs:40675-40678`) +
+  `npcChatPortraitFrameCounter` + `EaseOutBounce` (`Utils.cs:355-363`) +
+  the `DrawNPCPortrait` lift (`:40355-40359`, `-56·0.25·(1−ease)`, the
+  `num4 == 0` gate — no repeat past frame 119) port; the counter ticks
+  per drawn frame (`:40335`), the hop fires at the talk open
+  (`Player.cs:4401`), the ReportHappiness button (`NPCInteractions.cs:
+  310`), the nurse (`:40177`, unconditional), tax (`:40224`) and angler
+  (`:40262`) tails. The portrait DRAW (the `NpcPortraitBackground` + the
+  Detailed/CloseUp/FullBodyRetro modes + the `DialoguePortraitPreference`
+  setting + the `NPCPortraits` provider dictionaries) stays deferred —
+  no portrait system (S1-E-10b); the d85/g53 co-lanes carry only the
+  BESTIARY portraits, a different system, so the chat-portrait lane is
+  unclaimed. Witnesses: the_portrait_hop_lift_matches_the_bounce +
+  the_portrait_hop_resets_on_the_talk_and_the_report.
+
+The RETIRE round (2026-11-21, code-only; research/241 + the chat-portrait
+port):
+
+- **The chat-portrait DRAW, Detailed arm** — LANDED
+  (`ui/chat_portrait.rs` + `ui/chat_portrait_data.rs`, the hop-state's
+  first consumer). `Main.DrawNPCPortrait` (`Main.cs:40318-40447`) from
+  `NPCChatPanel.Draw` (`:79`): the `Portrait_Window` backdrop
+  (`AssetInitializer.cs:650`) at the chatBack tint
+  `Color(200,200,200,200)` + the provider-resolved portrait sheet at
+  `Color.White`, both centre-origin at
+  `panelTopLeft + (-62, 62) + (0, hop_lift)` (`:40337`/`:40358`), + the
+  `GivenOrTypeName` label (`NPC.cs:6743-6753`) in `FontAssets.ItemStack`
+  at `+(0, 57)` centre-origin (`:40444-40446`). The provider table ports
+  the 21 talkable kinds' `NPCPortraits` rows (`NPCID.cs:5894-6073`): the
+  shimmer condition (`IsShimmerVariant` = variation 1 ∧
+  `ShimmerTownTransform`, `NPC.cs:6713-6723`) swaps the `_shimmer` twin;
+  the Zoologist's four-way lycanthrope selector (`:6010-6012`) resolves
+  in entry order. 44 sheets pack eagerly (the E-4b precedent) through
+  `packed_sheet_names`; the `Lookups.chat_portraits` map + the
+  `npc_portrait_background` rect feed the draw. The hop counter's tick
+  stays at the caller (`frame/draw.rs`, gated `talk_npc.is_some()`),
+  matching the C#'s read-then-increment BEFORE the mode branch.
+  DEVIATIONS (deliberate): the `CloseUp`/`FullBodyRetro` dummy-NPC arms
+  (`:40379-40443`, scissored `DrawNPCDirect` scale 3/2 + the offset
+  dictionaries) draw NOTHING — they need the portrait-dummy system
+  (S1-E-10b's successor lane; the f22 task-seed carries the contract);
+  `Disabled` (preference 3) returns exactly; the dead wobble/sway arms
+  (`:40347-40372`) are dropped as in the hop port; the label's shadow is
+  the port's ±2 four-way ring (the `DrawColorCodedStringWithShadow`
+  stand-in, the panel-text precedent). Witnesses (WRITTEN NOT RUN):
+  the_provider_resolves_the_roster_and_the_conditions (21 kinds + the
+  Zoologist four-way + the 44-sheet packing dedupe) +
+  the_shimmer_gate_needs_variation_one_and_the_transform_set +
+  the_anchor_rides_the_hop_lift (frame 0 → −14, frame 10 → −10.71875,
+  80+/120+ → 0).
+- **The f37 latch-repoint** — published as EXACT HUNKS (research/241)
+  for the f37 lane/merger: five `shop_mood` →
+  `shopping_settings.price_adjustment` swaps at f37 tip `908482d52`
+  (`app/mod.rs:1696`/`:1759`/`:1849`/`:2090`,
+  `frame/draw.rs:1694`/`:1746`); the f37 tip probe found it 8.5 h parked
+  with research/68 published (the key-68 registry winner) — not
+  confirmed dead, so no f37-branch edit (the own-branch rule).
+- **The research renumber** — 143 → 240 per registry-150 §2 (143 stays
+  with c4; the late-push scan assigns d120→237, d42→238, c8→239,
+  g58→240; refs updated, zero `research/143` hits remain).
+- **The family SEALED** (research/242): the happiness family is closed
+  for porting — the bible paragraph pins the ONE canonical price path
+  (the `SetTalkNPC` talk-open latch, `Player.cs:4383-4390` the only write
+  site; every reader — buy/sell/reforge/nurse/tax/angler/chrome — reads
+  it), f37 keeps the pure price math + the merge-side `shop_mood` capture
+  (its five stale readers repoint per research/241), d122 owns the stock
+  rows + medal wallet + the KEEP-winning savings module (research/142);
+  the report UI is COMPLETE text, the legacy buttons dead code, the
+  portrait Detailed arm landed. The dummy-NPC portrait modes ride the
+  f22 task-seed (research/242 §2 — the f22 lane is ALIVE, tip `a2fdf86fb`
+  10:57:48).
+
+The SEAL-VERIFICATION round (2026-11-21 ~14:00, code-only; research/243):
+the four retire commits PUSHED (`2ff3b7062..d0f6275a5`, ls-remote
+confirmed). A fresh 358-tip 237–249 scan finds 240 g58's SOLE claim — NO
+collision, the rename stands; the sibling assignments in 240's renumber
+note are SUPERSEDED (c8/d42/g61 collide on 238, e23/g48 on 237, d120's
+chatter-retire is still 143; those lanes/the merger resolve — a
+correction is appended in research/240). No registry-150b refresh exists
+at any tip (d54 still `38bfd1d22`). The f37 hunks re-verified LINE-EXACT
+at the still-parked tip `908482d52` (~11.2 h) — research/241 is now at
+origin for the f37 lane/merger. f22 RETIRED at `8c1b40a46` (12:04:59,
+family COMPLETE) BEFORE the 242 seed reached origin and carries no
+portrait claim — the CloseUp/FullBodyRetro remainder is UNCLAIMED for a
+successor lane (the `draw_portrait` preference-1/2 replace site stands);
+d120 retired `2408233da`, no compose owed. f22's new 144 collides with
+c4's registry-144 (f22 renames on its own branch).
+
+### Batch-L merge receipts (2026-11-22)
+
+- The talk-open seam composes: g58's `set_talk_npc(Some(i))` settings
+  latch survives + d79's draw-free case-24 Chat chime
+  (`play_single_voice("Chat", -1, -1)`) rides right after it (the
+  `Main.cs:43081`→`:43083` order).
+- `complete_row_condition` keep-one: g58's row-targeted twin becomes an
+  ALIAS onto the a6/c36/g88-established `complete_condition` (the
+  research/138 §3 survivor; bodies semantically identical, the `frac`
+  clear rides the survivor). g58's call sites + witnesses stand.
+- The f37 latch-repoint hunks (research/241) execute at the f37 merge
+  below — the five `shop_mood` → `shopping_settings.price_adjustment`
+  sites against the g58-latched canonical.

@@ -469,6 +469,21 @@ impl AchievementManager {
         }
     }
 
+    /// g58's `complete_row_condition` twin — batch-L keep-one: an alias
+    /// onto the a6/c36/g88-established [`Self::complete_condition`] (the
+    /// research/138 §3 row-targeted survivor; the bodies are semantically
+    /// identical — ONE row, ONE condition, tracker-to-max, save + event
+    /// only when the row's LAST condition closes). The alias keeps g58's
+    /// call sites + witnesses compiling; the `frac` clear rides the
+    /// survivor (the C# `Complete()` clears it).
+    pub fn complete_row_condition(
+        &mut self,
+        row: &'static str,
+        condition: &str,
+    ) -> Option<&'static str> {
+        self.complete_condition(row, condition)
+    }
+
     /// `((CustomIntCondition)Main.Achievements.GetCondition(row, name)).Value++`
     /// / `+= amount` (`AchievementsHelper.cs:403`, `:413-417`, `:427`).
     pub fn notify_custom_int(&mut self, name: &'static str, amount: i32) -> Option<&'static str> {
@@ -782,6 +797,35 @@ mod tests {
         // I_AM_LOOT rides the `Peek` CustomFlag (`:347`).
         assert_eq!(m.notify_custom("Peek"), Some("I_AM_LOOT"));
         assert_eq!(m.notify_custom("Nope"), None);
+    }
+
+    /// W4-g58: `GetCondition(row, name).Complete()` — the ROW-TARGETED
+    /// completion (`AchievementsHelper.cs:355-357`'s case 20). The "Do"
+    /// flag is shared by nine rows (`PET_THE_PET`, `FIND_A_FAIRY`, …);
+    /// the targeted hook completes ONLY the named row, unlike the
+    /// broadcast `notify_custom`.
+    #[test]
+    fn the_row_targeted_complete_hits_only_the_named_row() {
+        let mut m = AchievementManager::registry();
+        assert_eq!(
+            m.complete_row_condition("TALK_TO_NPC_AT_MAX_HAPPINESS", "Do"),
+            Some("TALK_TO_NPC_AT_MAX_HAPPINESS")
+        );
+        assert!(m
+            .list
+            .iter()
+            .any(|a| a.name == "TALK_TO_NPC_AT_MAX_HAPPINESS" && a.completed));
+        // The other "Do" rows stay open (the broadcast would close them).
+        assert!(!m.list.iter().any(|a| a.name == "PET_THE_PET" && a.completed));
+        assert!(!m.list.iter().any(|a| a.name == "FIND_A_FAIRY" && a.completed));
+        // The event queue carries exactly the one completion; a second
+        // call is a no-op (`AchievementCondition.Complete`'s guard,
+        // `AchievementCondition.cs:39`).
+        assert_eq!(m.take_completed_events(), vec!["TALK_TO_NPC_AT_MAX_HAPPINESS"]);
+        assert_eq!(m.complete_row_condition("TALK_TO_NPC_AT_MAX_HAPPINESS", "Do"), None);
+        // A wrong condition name touches nothing.
+        let mut m2 = AchievementManager::registry();
+        assert_eq!(m2.complete_row_condition("TALK_TO_NPC_AT_MAX_HAPPINESS", "Nope"), None);
     }
 
     /// `CustomIntCondition.Value` (`CustomIntCondition.cs:15-32`): the setter

@@ -10,11 +10,12 @@
 //! Deferred (documented in docs/ANALYSIS.md "Town chatter UI (S1-E-10b)"):
 //! the interaction buttons other than Close (`NPCInteractions.All`,
 //! `NPCInteractions.cs:486-531` — shop/happiness/housing/reforge/… ride
-//! systems the panel task does not own), the NPC portrait
-//! (`Main.DrawNPCPortrait`, `Main.cs:40318`), the corner item
+//! systems the panel task does not own), the corner item
 //! (`Main.DrawNPCChatBottomRightItem`, `:39789`), the sign-editing blinker
 //! (`NPCChatPanel.cs:236-262`), the Dryad Stardew override (`:195-213`)
-//! and the gamepad/virtual-keyboard arms.
+//! and the gamepad/virtual-keyboard arms. The NPC portrait's Detailed
+//! arm landed with the W4-g58 retire (`ui::chat_portrait`, the `:79`
+//! call site); its hop math lives below (`portrait_hop_lift`).
 
 use glam::Vec2;
 use tr_render::SpriteRenderer;
@@ -64,36 +65,97 @@ pub(crate) fn panel_lines(lookups: &Lookups, chat_text: &str) -> Vec<String> {
     rows
 }
 
-/// The interaction row count the port renders: only `CloseChat`
-/// (`NPCInteractions.cs:271-287`, `Condition() => true`) — the shop /
-/// happiness / housing / … buttons are deferred (module header), so
-/// `_neededInteractionLines = ceil(1 / 4) = 1` (`NPCChatPanel.cs:174`,
-/// `AllowedInteractionsPerLine = 4` `:30`).
-const INTERACTION_LINES: usize = 1;
+/// The interaction rows the port renders (`NPCInteractions.Initialize`
+/// registration order, `NPCInteractions.cs:513-530`): `CloseChat` (`:515`)
+/// always, then `ReportHappiness` (`:529`) when its Condition holds
+/// (`:291-298`: `!NPC.CanShowHomelessText(talkNPC)` AND
+/// `currentShoppingSettings.HappinessReport != ""`). The other buttons
+/// (shop/housing/reforge/…) stay deferred (module header).
+/// `_neededInteractionLines = ceil(count / 4)` (`NPCChatPanel.cs:174`,
+/// `AllowedInteractionsPerLine = 4` `:30`) — 1 line for either count.
+fn interaction_lines(happiness: bool) -> usize {
+    let count = 1 + usize::from(happiness);
+    count.div_ceil(4)
+}
+
+/// The Happiness button's label (`ReportHappiness.GetText`,
+/// `NPCInteractions.cs:300-303`): `Language.GetTextValue("UI.NPCCheckHappiness")`.
+pub(crate) fn happiness_label() -> String {
+    crate::lang::text("UI.NPCCheckHappiness")
+}
 
 /// The panel's box (`NPCChatPanel.cs:65-68` via the selection half's
 /// `chat_box_rect`/`chat_box_height`): `[x, y, w, h]` in UI pixels.
-pub(crate) fn panel_rect(lookups: &Lookups, screen: Vec2, chat_text: &str) -> [f32; 4] {
+pub(crate) fn panel_rect(
+    lookups: &Lookups,
+    screen: Vec2,
+    chat_text: &str,
+    happiness: bool,
+) -> [f32; 4] {
     let base = chat_box_rect(screen.x as i32, screen.y as i32);
     let lines = panel_lines(lookups, chat_text).len();
-    let h = chat_box_height(lines, INTERACTION_LINES);
+    let h = chat_box_height(lines, interaction_lines(happiness));
     [base.x as f32, base.y as f32, base.w as f32, h as f32]
 }
 
-/// The Close button's hit rect (`NPCChatPanel.cs:93-117`): the row origin
-/// is `panelArea.BottomLeft() + (30, -22·lines + max(0, 2·(lines−1)) − 4)`,
-/// the rect 22 tall and as wide as the label measured at scale 0.9
-/// (shrunk to fit 260 px, `:113-117`).
-pub(crate) fn close_button_rect(lookups: &Lookups, screen: Vec2, chat_text: &str) -> [f32; 4] {
-    let panel = panel_rect(lookups, screen, chat_text);
-    let label = crate::lang::inter(52); // `CloseChat.GetText` (`NPCInteractions.cs:280`)
-    let w0 = text::ui_font_width(lookups, &label, 0.9).unwrap_or(label.chars().count() as f32 * 8.0 * 0.9);
-    let shrink = if w0 > 260.0 { 260.0 / w0 } else { 1.0 };
-    let il = INTERACTION_LINES as f32;
-    let x = panel[0] + 30.0;
-    let y = panel[1] + panel[3] - 22.0 * il + (2.0 * (il - 1.0)).max(0.0) - 4.0;
-    // `:117` — `rectangle.Width = (int)(stringSize.X * num4)`.
-    [x, y, (w0 * shrink).trunc(), 22.0]
+/// One interaction button's hit rect (`NPCChatPanel.cs:93-117`): the row
+/// origin is `panelArea.BottomLeft() + (30, -22·lines + max(0, 2·(lines−1))
+/// − 4)`, each rect 22 tall and as wide as its label measured at scale 0.9
+/// (shrunk to fit 260 px, `:113-117`); the next button starts at
+/// `x + width + 30` (`:135`), wrapping every 4 (`:103-107`).
+fn button_rect(
+    lookups: &Lookups,
+    screen: Vec2,
+    chat_text: &str,
+    happiness: bool,
+    index: usize,
+) -> [f32; 4] {
+    let panel = panel_rect(lookups, screen, chat_text, happiness);
+    let il = interaction_lines(happiness) as f32;
+    let row_x = panel[0] + 30.0;
+    let row_y = panel[1] + panel[3] - 22.0 * il + (2.0 * (il - 1.0)).max(0.0) - 4.0;
+    let labels = [crate::lang::inter(52), happiness_label()];
+    let count = 1 + usize::from(happiness);
+    let mut x = row_x;
+    let mut y = row_y;
+    let mut rect = [x, y, 100.0, 22.0];
+    for (i, label) in labels.iter().enumerate().take(count) {
+        if i % 4 == 0 {
+            x = row_x;
+            y = (i / 4) as f32 * 22.0 + row_y;
+        }
+        let w0 =
+            text::ui_font_width(lookups, label, 0.9).unwrap_or(label.chars().count() as f32 * 8.0 * 0.9);
+        let shrink = if w0 > 260.0 { 260.0 / w0 } else { 1.0 };
+        // `:117` — `rectangle.Width = (int)(stringSize.X * num4)`.
+        rect = [x, y, (w0 * shrink).trunc(), 22.0];
+        if i == index {
+            return rect;
+        }
+        x += rect[2] + 30.0; // `:135`
+    }
+    rect
+}
+
+/// The Close button's hit rect — interaction index 0.
+pub(crate) fn close_button_rect(
+    lookups: &Lookups,
+    screen: Vec2,
+    chat_text: &str,
+    happiness: bool,
+) -> [f32; 4] {
+    button_rect(lookups, screen, chat_text, happiness, 0)
+}
+
+/// The Happiness button's hit rect — interaction index 1 (`None` when the
+/// button's Condition is off).
+pub(crate) fn happiness_button_rect(
+    lookups: &Lookups,
+    screen: Vec2,
+    chat_text: &str,
+    happiness: bool,
+) -> Option<[f32; 4]> {
+    happiness.then(|| button_rect(lookups, screen, chat_text, happiness, 1))
 }
 
 /// One crop of a sheet pushed at 1:1 — the panel's `ChatBack` splices draw
@@ -129,11 +191,12 @@ pub(crate) fn draw_panel(
     lookups: &Lookups,
     screen: Vec2,
     chat_text: &str,
+    happiness: bool,
     pulse: UiPulse,
     mouse: Vec2,
 ) -> bool {
     let lines = panel_lines(lookups, chat_text);
-    let panel = panel_rect(lookups, screen, chat_text);
+    let panel = panel_rect(lookups, screen, chat_text, happiness);
     let (x, y, _w, h) = (panel[0], panel[1], panel[2], panel[3]);
     // `:71-72` — the top splice (source `(0, 0, ChatBack.Width(), h−30)`)
     // and the bottom 30 px (`(0, Height−30, Width, 30)`), both at scale 1:
@@ -173,26 +236,35 @@ pub(crate) fn draw_panel(
             line,
         );
     }
-    draw_close_button(r, lookups, screen, chat_text, pulse, mouse);
+    draw_interaction_button(r, lookups, screen, chat_text, happiness, 0, pulse, mouse);
+    if happiness {
+        draw_interaction_button(r, lookups, screen, chat_text, happiness, 1, pulse, mouse);
+    }
     super::in_rect(mouse, panel)
 }
 
-/// The Close button (`DrawButtons`, `NPCChatPanel.cs:88-162`, one
-/// interaction): idle scale 0.9 / hover 1.2 (`:96`, `:119`), the label
-/// colour `(b, b/1.1, b/2, b)` (`:102`), the shadow Black idle / Brown
-/// hovered (`:121`), the origin `(0, stringSize.Y·0.5)` at the rect's
+/// One interaction button (`DrawButtons`, `NPCChatPanel.cs:88-162`): idle
+/// scale 0.9 / hover 1.2 (`:96`, `:119`), the label colour
+/// `(b, b/1.1, b/2, b)` (`:102`), the shadow Black idle / Brown hovered
+/// (`:121`), the origin `(0, stringSize.Y·0.5)` at the rect's
 /// left/centre-Y (`:120-122`) with the hover x-shift
 /// `−(1.2−0.9)·width·0.5` (`:125`).
-fn draw_close_button(
+fn draw_interaction_button(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     screen: Vec2,
     chat_text: &str,
+    happiness: bool,
+    index: usize,
     pulse: UiPulse,
     mouse: Vec2,
 ) {
-    let rect = close_button_rect(lookups, screen, chat_text);
-    let label = crate::lang::inter(52);
+    let rect = button_rect(lookups, screen, chat_text, happiness, index);
+    let label = if index == 0 {
+        crate::lang::inter(52)
+    } else {
+        happiness_label()
+    };
     let hovered = super::in_rect(mouse, rect);
     let b = (pulse.text * 255.0) as i32;
     let chat_color = [
@@ -248,6 +320,43 @@ fn draw_close_button(
         chat_color,
         &label,
     );
+}
+
+/// `Utils.EaseOutBounce` (`Utils.cs:355-358`) → `BounceEaseOut(x, 4, 2.0)`
+/// (`:360-363`): `1 − (1−t)² · |sin(t·4π)|` — the portrait hop's landing
+/// curve. f64 throughout (the C# is `double`).
+pub(crate) fn ease_out_bounce(x: f64) -> f64 {
+    1.0 - (1.0 - x).powi(2) * (x * (4.0 * std::f64::consts::PI)).sin().abs()
+}
+
+/// `Main.DrawNPCPortrait`'s hop lift (`Main.cs:40335-40359`): the frame
+/// counter's `num3 = num % 120`, `num4 = num / 120`; while `num4 == 0`
+/// (the first 120 drawn frames after a `DoNPCPortraitHop` reset) the
+/// portrait centre lifts by `(-56) * 0.25 * (1 − EaseOutBounce(
+/// clamp(num3, 0, 80) / 80))` px (`:40358` — `num2 = 56`, the negative
+/// y is UP). Past frame 119 the lift is 0 and stays 0 (the `num4 == 0`
+/// gate — the hop does NOT repeat every 120 frames). The C# `if (0 != 0)`
+/// wobble (`:40347-40354`) and `flag2 = false` sway (`:40360-40372`) are
+/// dead code — dropped. The portrait DRAW itself is deferred (no portrait
+/// system, S1-E-10b); this is the animation state the draw will consume.
+pub(crate) fn portrait_hop_lift(frame_counter: i32) -> f32 {
+    let num3 = (frame_counter % 120) as f64;
+    let num4 = frame_counter / 120;
+    if num4 != 0 {
+        return 0.0;
+    }
+    let t = num3.clamp(0.0, 80.0) / 80.0;
+    (-56.0f64 * 0.25 * (1.0 - ease_out_bounce(t))) as f32
+}
+
+/// `Main.DoNPCPortraitHop` (`Main.cs:40675-40678`): the counter resets to
+/// 0 — the next drawn frame starts the hop. Called by the talk open
+/// (`Player.SetTalkNPC`, `Player.cs:4397-4402` — the `NPCPortraits` lookup
+/// gates it; every ported town kind has a portrait row, `NPCID.cs:5894+`)
+/// and the chat actions (`ReportHappiness.Interact` `NPCInteractions.cs:
+/// 310`, the nurse/tax/angler/guide/dryad/party-girl/tavernkeep texts).
+pub(crate) fn do_npc_portrait_hop(app: &mut crate::app::App) {
+    app.npc_chat_portrait_frame_counter = 0;
 }
 
 /// The hover pick behind `Main.instance.currentNPCShowingChatBubble`
@@ -363,11 +472,11 @@ mod tests {
     fn the_close_row_rides_the_panel_bottom() {
         let lookups = assets::Lookups::default();
         let screen = Vec2::new(1920.0, 1080.0);
-        let panel = panel_rect(&lookups, screen, "Hello there");
+        let panel = panel_rect(&lookups, screen, "Hello there", false);
         // One text line (no font sheet: the 8 px/char estimate keeps
         // "Hello there" well under 460), one interaction line.
         assert_eq!(panel, [710.0, 100.0, 500.0, 90.0], "30 + 30·1 + 30·1");
-        let rect = close_button_rect(&lookups, screen, "Hello there");
+        let rect = close_button_rect(&lookups, screen, "Hello there", false);
         assert_eq!(rect[0], 740.0, "panel left + 30 (`:93`)");
         assert_eq!(rect[1], 100.0 + 90.0 - 22.0 - 4.0, "bottom − 22·1 − 4 (`:93`)");
         assert_eq!(rect[3], 22.0, "the 22 px row (`:97`)");
@@ -425,7 +534,7 @@ mod tests {
         app.talk_npc = Some(0);
         app.npc_chat_text = "Hello there".to_string();
         let (sw, sh) = app.screen_size();
-        let rect = close_button_rect(&app.lookups, Vec2::new(sw, sh), &app.npc_chat_text);
+        let rect = close_button_rect(&app.lookups, Vec2::new(sw, sh), &app.npc_chat_text, false);
         app.mouse_pos = Vec2::new(rect[0] + 2.0, rect[1] + 2.0);
         app.ui_left_press = true;
         app.handle_npc_chat_clicks();
@@ -433,5 +542,171 @@ mod tests {
         assert!(app.npc_chat_text.is_empty(), "npcChatText = \"\" (`:40685`)");
         assert!(!app.ui_left_press, "the press is consumed (`NPCChatPanel.cs:152`)");
         assert_eq!(app.npc_chat_last_hovered, -1, "Close resets _lastHovered (`:267`)");
+    }
+
+    /// W4-g58: `ReportHappiness` (`NPCInteractions.cs:289-312`) — the
+    /// button's rect rides the Close button's right edge + 30
+    /// (`NPCChatPanel.cs:135`), and its click replaces the chat line with
+    /// the latched report while the talk latch stays.
+    #[test]
+    fn the_happiness_button_replaces_the_chat_text() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        // A housed Guide with a non-empty report — the Condition holds.
+        let mut guide = Npc::new(crate::npc::NpcKind::Guide, 100.0, 100.0, 1, 0.0);
+        guide.hp = guide.max_hp;
+        guide.home = Some((6, 6));
+        app.npcs.push(guide);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.set_talk_npc(Some(0));
+        assert!(
+            !app.shopping_settings.happiness_report.is_empty(),
+            "GetShoppingSettings latched a report (`Player.cs:4389`)"
+        );
+        let report = app.shopping_settings.happiness_report.clone();
+        app.npc_chat_text = "Hello there".to_string();
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let close = close_button_rect(&app.lookups, screen, &app.npc_chat_text, true);
+        let happy = happiness_button_rect(&app.lookups, screen, &app.npc_chat_text, true)
+            .expect("the Condition holds");
+        // `:135` — the next button starts at Close's right edge + 30.
+        assert_eq!(happy[0], close[0] + close[2] + 30.0);
+        assert_eq!(happy[1], close[1], "the same row (`:103-107`)");
+        app.mouse_pos = Vec2::new(happy[0] + 2.0, happy[1] + 2.0);
+        app.ui_left_press = true;
+        app.handle_npc_chat_clicks();
+        assert_eq!(app.talk_npc, Some(0), "the talk latch stays (`:305-311`)");
+        assert_eq!(app.npc_chat_text, report, "npcChatText = HappinessReport (`:309`)");
+        assert!(!app.ui_left_press, "the press is consumed (`:152`)");
+        // The report ends with a trailing space — `string.Concat(…, " ")`
+        // (`ShopHelper.cs:195`).
+        assert!(app.npc_chat_text.ends_with(' '));
+    }
+
+    /// `ReportHappiness.Condition` (`NPCInteractions.cs:291-298`): a
+    /// homeless NPC shows the Housing text instead — no Happiness button.
+    #[test]
+    fn the_homeless_npc_hides_the_happiness_button() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut guide = Npc::new(crate::npc::NpcKind::Guide, 100.0, 100.0, 1, 0.0);
+        guide.hp = guide.max_hp;
+        guide.home = None; // homeless
+        app.npcs.push(guide);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.set_talk_npc(Some(0));
+        assert!(crate::happiness::can_show_homeless_text(app.npcs.get(0)));
+        // The Condition's first arm fails — the button never draws/hits.
+        let (sw, sh) = app.screen_size();
+        let cond = !crate::happiness::can_show_homeless_text(app.npcs.get(0))
+            && !app.shopping_settings.happiness_report.is_empty();
+        assert!(!cond);
+        assert!(
+            happiness_button_rect(&app.lookups, Vec2::new(sw, sh), &app.npc_chat_text, cond)
+                .is_none()
+        );
+        // The Travelling Merchant is excluded from the homeless text
+        // (`NPC.cs:94836-94838`) but his report is empty (`ProcessMood`'s
+        // early return) — the second arm hides the button.
+        let mut tm = Npc::new(crate::npc::NpcKind::TravellingMerchant, 100.0, 100.0, 1, 0.0);
+        tm.hp = tm.max_hp;
+        assert!(!crate::happiness::can_show_homeless_text(Some(&tm)));
+    }
+
+    /// `SetTalkNPC(-1)` resets `currentShoppingSettings` to `NotInShop`
+    /// (`Player.cs:4383-4386`, `ShoppingSettings.cs:9-13`).
+    #[test]
+    fn the_talk_close_resets_the_shopping_settings() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut guide = Npc::new(crate::npc::NpcKind::Guide, 100.0, 100.0, 1, 0.0);
+        guide.hp = guide.max_hp;
+        guide.home = Some((6, 6));
+        app.npcs.push(guide);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.set_talk_npc(Some(0));
+        assert!(!app.shopping_settings.happiness_report.is_empty());
+        app.set_talk_npc(None);
+        assert_eq!(app.shopping_settings.price_adjustment, 1.0);
+        assert!(app.shopping_settings.happiness_report.is_empty());
+    }
+
+    /// W4-g58 final — `Utils.EaseOutBounce` (`Utils.cs:355-363`) and the
+    /// hop lift (`Main.cs:40355-40359`): `1 − (1−t)²·|sin(4πt)|` sampled
+    /// at the quarter points (the sin zeros make them exact), the lift
+    /// `-56·0.25·(1−ease)` clamped at frame 80, and the `num4 == 0` gate
+    /// (past frame 119 the hop does NOT repeat).
+    #[test]
+    fn the_portrait_hop_lift_matches_the_bounce() {
+        // The ease at its exact quarter points: t=0 → 1, t=0.25 → 1−
+        // 0.5625·|sin π| = 1, t=0.5 → 1, t=1 → 1 (the sin zeros); the
+        // mid-bounce dips: t=0.125 → 1−0.765625·1 = 0.234375, t=0.375 →
+        // 1−0.390625 = 0.609375, t=0.625 → 1−0.140625 = 0.859375.
+        assert!((ease_out_bounce(0.0) - 1.0).abs() < 1e-12);
+        assert!((ease_out_bounce(0.125) - 0.234375).abs() < 1e-12);
+        assert!((ease_out_bounce(0.25) - 1.0).abs() < 1e-12);
+        assert!((ease_out_bounce(0.375) - 0.609375).abs() < 1e-12);
+        assert!((ease_out_bounce(0.5) - 1.0).abs() < 1e-12);
+        assert!((ease_out_bounce(0.625) - 0.859375).abs() < 1e-12);
+        assert!((ease_out_bounce(1.0) - 1.0).abs() < 1e-12);
+        // The lift: frame 0 rests (ease 1 → lift 0); frame 10 (t=0.125)
+        // lifts -14·(1−0.234375) = -10.71875 px (UP); frame 30 (t=0.375)
+        // -14·0.390625 = -5.46875; frame 50 (t=0.625) -14·0.140625 =
+        // -1.96875; frame 80+ clamps to t=1 → 0.
+        assert_eq!(portrait_hop_lift(0), 0.0);
+        assert!((portrait_hop_lift(10) - (-10.71875)).abs() < 1e-4);
+        assert!((portrait_hop_lift(30) - (-5.46875)).abs() < 1e-4);
+        assert!((portrait_hop_lift(50) - (-1.96875)).abs() < 1e-4);
+        assert_eq!(portrait_hop_lift(80), 0.0);
+        assert_eq!(portrait_hop_lift(119), 0.0);
+        // The `num4 == 0` gate: frame 120 wraps num3 to 0 but num4 = 1 —
+        // no second hop (the C# `flag = num4 == 0`, `:40345`/`:40355`).
+        assert_eq!(portrait_hop_lift(120), 0.0);
+        assert_eq!(portrait_hop_lift(130), 0.0);
+        assert_eq!(portrait_hop_lift(1000), 0.0);
+    }
+
+    /// W4-g58 final — `Main.DoNPCPortraitHop` (`Main.cs:40675-40678`)
+    /// resets the counter; the talk open hops (`Player.cs:4401`), the
+    /// Happiness button hops (`NPCInteractions.cs:310`), and the counter
+    /// ticks per drawn frame (`Main.cs:40335`).
+    #[test]
+    fn the_portrait_hop_resets_on_the_talk_and_the_report() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut guide = Npc::new(crate::npc::NpcKind::Guide, 100.0, 100.0, 1, 0.0);
+        guide.hp = guide.max_hp;
+        guide.home = Some((6, 6));
+        app.npcs.push(guide);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        // A mid-hop counter: the talk open resets it (`Player.cs:4401`).
+        app.npc_chat_portrait_frame_counter = 57;
+        app.set_talk_npc(Some(0));
+        assert_eq!(app.npc_chat_portrait_frame_counter, 0, "the talk open hops");
+        // The Happiness button's Interact hops again (`:310`).
+        app.npc_chat_portrait_frame_counter = 42;
+        app.npc_chat_text = "Hello there".to_string();
+        let (sw, sh) = app.screen_size();
+        let happy = happiness_button_rect(
+            &app.lookups,
+            Vec2::new(sw, sh),
+            &app.npc_chat_text,
+            true,
+        )
+        .expect("the Condition holds");
+        app.mouse_pos = Vec2::new(happy[0] + 2.0, happy[1] + 2.0);
+        app.ui_left_press = true;
+        app.handle_npc_chat_clicks();
+        assert_eq!(app.npc_chat_portrait_frame_counter, 0, "the report hops");
+        // The close does NOT hop (`Player.cs:4397` clears the provider;
+        // the hop is inside the `nPC != null` arm).
+        app.npc_chat_portrait_frame_counter = 9;
+        app.set_talk_npc(None);
+        assert_eq!(app.npc_chat_portrait_frame_counter, 9, "the close is hop-free");
     }
 }
