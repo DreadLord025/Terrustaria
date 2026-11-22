@@ -736,16 +736,23 @@ impl App {
                         (*frame_count as u64).wrapping_mul(0x6A09_E667_F3BC_C909) ^ world.seed,
                     );
                     if !crate::env::no_waterfall() {
-                        let half_v = screen * 0.5 / world_zoom;
-                        let vx0 = (((camera.x - half_v.x) / TILE_PX).floor() as i32 - 1)
-                            .clamp(0, world.width - 1);
-                        let vx1 = (((camera.x + half_v.x) / TILE_PX).ceil() as i32 + 1)
-                            .clamp(0, world.width - 1);
-                        let vy0 = (((camera.y - half_v.y) / TILE_PX).floor() as i32 - 1)
-                            .clamp(0, world.height - 1);
-                        let vy1 = (((camera.y + half_v.y) / TILE_PX).ceil() as i32 + 1)
-                            .clamp(0, world.height - 1);
-                        let lights = waterfall.draw(
+                        // `Main.screenPosition` / `screenWidth` / `screenHeight`
+                        // for the lavafall ambience scan and the rain-arm view
+                        // cull (`WaterfallManager.cs:381`/`:687-691`): the
+                        // unscaled world-pixel view, top-left = draw_cam -
+                        // screen/2 (the S1-E-19 `Camera.UnscaledPosition`
+                        // convention).
+                        let screen_info = tr_core::waterfall::ScreenInfo {
+                            position: [draw_cam.x - screen.x * 0.5, draw_cam.y - screen.y * 0.5],
+                            width: screen.x,
+                            height: screen.y,
+                        };
+                        // `Main.drewLava` at the `DoDraw_Waterfalls` site
+                        // (`Main.cs:63281`): the port's liquid passes do not
+                        // port `oldDrawWater`'s true-store (`:57938`), so the
+                        // flag rides false; `WaterfallManager.Draw` clears it
+                        // at `:1125` either way.
+                        let (lights, lavafall_scan) = waterfall.draw(
                             world,
                             light,
                             &style,
@@ -753,47 +760,22 @@ impl App {
                             liquid_alpha,
                             params.mouse_text_color,
                             (*frame_count as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ world.seed,
-                            [vx0, vy0, vx1, vy1],
+                            screen_info,
+                            false,
                         );
                         scratch.waterfall_quads = waterfall.take_quads();
-                        // `WaterfallManager.DrawWaterfall`'s accumulators
-                        // (`WaterfallManager.cs:710-733` + the store `:960-965`):
-                        // per nearby fall segment, `1 - dist/(screenWidth*0.75)`
-                        // summed into the waterfall (any kind except the lava and
-                        // the rain/shimmer falls) or the lavafall (kind 1)
-                        // strength; the nearest segment's world position rides
-                        // along for the loop pan.
-                        let mut wfs: [f32; 3] = [0.0, 0.0, 0.0];
-                        let mut lfs: [f32; 3] = [0.0, 0.0, 0.0];
-                        let cam_c = Vec2::new(camera.x + screen.x * 0.5 - screen.x * 0.5, camera.y);
-                        let _ = cam_c;
-                        for q in &scratch.waterfall_quads {
-                            let (fx, fy) = (q.pos[0], q.pos[1]);
-                            let dx = (fx - camera.x).abs();
-                            let dy = (fy - camera.y).abs();
-                            if dx >= screen.x * 2.0 || dy >= screen.y * 2.0 {
-                                continue;
-                            }
-                            let strength = 1.0 - (dx * dx + dy * dy).sqrt() / (screen.x * 0.75);
-                            if strength <= 0.0 {
-                                continue;
-                            }
-                            let (lava, slot) = if q.texture == 1 {
-                                (true, &mut lfs)
-                            } else {
-                                (false, &mut wfs)
-                            };
-                            let _ = lava;
-                            slot[0] += strength;
-                            if dx < slot[1].abs() || slot[1] == 0.0 {
-                                slot[1] = dx;
-                            }
-                            if dy < slot[2].abs() || slot[2] == 0.0 {
-                                slot[2] = dy;
-                            }
-                        }
-                        self.ambient_waterfall = (wfs[0], wfs[1], wfs[2]);
-                        self.ambient_lavafall = (lfs[0], lfs[1], lfs[2]);
+                        // `Main.ambientLavafallX/Y/Strength`
+                        // (`WaterfallManager.cs:685-707` scan, `:963-965`
+                        // store): the walk's kind-1 near-screen strength sum
+                        // and the nearest segment's cell-centre world pixels
+                        // — the lavafall loop's volume/pan inputs. The
+                        // water-style triple (`:960-962`) stays with the
+                        // waterfall co-lane.
+                        self.ambient_lavafall = (
+                            lavafall_scan.strength,
+                            lavafall_scan.x,
+                            lavafall_scan.y,
+                        );
                         scratch.waterfall_lights = lights;
                         // `LightingEngine.ApplyPerFrameLights`'s swap
                         // (`LightingEngine.cs:228-233`): the list just filled becomes

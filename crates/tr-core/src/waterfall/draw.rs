@@ -3,7 +3,7 @@
 //! (finding, frame counters, cadence) stays readable; the walk is a faithful
 //! port and keeps the original local numbering (`num11`..`num34`).
 
-use super::{WaterfallDraw, WaterfallManager, GFX_QUALITY};
+use super::{AmbientScan, ScreenInfo, WaterfallDraw, WaterfallManager, GFX_QUALITY};
 use crate::lighting::{DynamicLight, LightMap, LightStyle};
 use crate::tile::Tile;
 use crate::tile_light::FastRandom;
@@ -17,7 +17,9 @@ fn blocks_water_drawing_behind_self(kind: u16) -> bool {
 }
 
 impl WaterfallManager {
-    /// `WaterfallManager.DrawWaterfall`.
+    /// `WaterfallManager.DrawWaterfall`. Returns the pass's
+    /// `Main.ambientLavafallX/Y/Strength` store (`WaterfallManager.cs:963-965`);
+    /// the water-style ambience (`:960-962`) stays with the waterfall co-lane.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn draw_waterfall(
         &mut self,
@@ -29,10 +31,19 @@ impl WaterfallManager {
         time: f32,
         mouse_text: u8,
         sparkle_rng: &mut FastRandom,
-        view: [i32; 4],
+        screen: ScreenInfo,
+        drew_lava: bool,
         out: &mut Vec<WaterfallDraw>,
         lights: &mut Vec<DynamicLight>,
-    ) {
+    ) -> AmbientScan {
+        // The lavafall ambience locals (`WaterfallManager.cs:333-337`): num6
+        // strength, num7/num8 nearest distances (99999 sentinels), num9/num10
+        // the nearest segment's cell-centre world pixels (-1 until visited).
+        let mut num6 = 0.0f32;
+        let mut num7 = 99999.0f32;
+        let mut num8 = 99999.0f32;
+        let mut num9 = -1i32;
+        let mut num10 = -1i32;
         for index in 0..self.current_max {
             let mut wf = self.waterfalls[index];
             let mut num13 = wf.x;
@@ -50,12 +61,16 @@ impl WaterfallManager {
             let mut num12 = wf.kind;
             let num21;
             if num12 == 1 || num12 == 14 || num12 == 25 {
-                // `Main.drewLava` is always false in our draw order.
-                if wf.stop_at_step == 0 {
+                // `WaterfallManager.cs:354`: `Main.drewLava || stopAtStep == 0`.
+                if drew_lava || wf.stop_at_step == 0 {
                     continue;
                 }
                 num21 = 32 * self.slow_frame;
             } else if num12 == 11 || num12 == 22 || num12 == 26 {
+                // `WaterfallManager.cs:368`: the rain arms skip on drewLava.
+                if drew_lava {
+                    continue;
+                }
                 let mut num22 = self.waterfall_dist / 4;
                 if num12 == 22 {
                     num22 = self.waterfall_dist / 2;
@@ -63,10 +78,12 @@ impl WaterfallManager {
                 if wf.stop_at_step > num22 {
                     wf.stop_at_step = num22;
                 }
+                // `WaterfallManager.cs:381`: the view cull reads the raw
+                // `Main.screenPosition`/`screenWidth`, not the scan rectangle.
                 if wf.stop_at_step == 0
-                    || (num14 + num22) < view[1]
-                    || num13 < view[0] - 20
-                    || num13 > view[2] + 20
+                    || (num14 + num22) as f32 < screen.position[1] / 16.0
+                    || (num13 as f32) < screen.position[0] / 16.0 - 20.0
+                    || (num13 as f32) > (screen.position[0] + screen.width) / 16.0 + 20.0
                 {
                     continue;
                 }
@@ -151,7 +168,12 @@ impl WaterfallManager {
             } else {
                 match num12 {
                     0 => num12 = draw_style,
-                    2 => {}
+                    // `WaterfallManager.cs:531`: the disco fall skips on drewLava.
+                    2 => {
+                        if drew_lava {
+                            continue;
+                        }
+                    }
                     _ => {}
                 }
                 num21 = 32 * self.regular_frame;
@@ -293,6 +315,33 @@ impl WaterfallManager {
                     self.disco_g,
                     self.disco_b,
                 );
+
+                // `Main.ambientLavafall*` scan (`WaterfallManager.cs:685-707`):
+                // per lava segment inside the 2x-screen box, sum
+                // `1 - dist/(screenWidth*0.75)` when positive; track the
+                // nearest cell-centre world pixel per axis. The Y arm keeps
+                // the original's verbatim quirk (`:702-705`): it tests num36
+                // but stores num35 (the X distance) into num8.
+                if num12 == 1 {
+                    let centre = screen.centre();
+                    let num35 = ((num13 * 16 + 8) as f32 - centre[0]).abs();
+                    let num36 = ((num14 * 16 + 8) as f32 - centre[1]).abs();
+                    if num35 < screen.width * 2.0 && num36 < screen.height * 2.0 {
+                        let num37 = 1.0
+                            - (num35 * num35 + num36 * num36).sqrt() / (screen.width * 0.75);
+                        if num37 > 0.0 {
+                            num6 += num37;
+                        }
+                    }
+                    if num35 < num7 {
+                        num7 = num35;
+                        num9 = num13 * 16 + 8;
+                    }
+                    if num36 < num8 {
+                        num8 = num35;
+                        num10 = num14 * 16 + 8;
+                    }
+                }
 
                 let num41 = tile3.liquid as i32 / 16;
                 if flag2 && num17 != num31 {
@@ -631,6 +680,13 @@ impl WaterfallManager {
                 }
                 k += 1;
             }
+        }
+        // `WaterfallManager.cs:963-965`: the lavafall triple store (the water
+        // triple `:960-962` belongs to the waterfall co-lane's scan).
+        AmbientScan {
+            x: num9 as f32,
+            y: num10 as f32,
+            strength: num6,
         }
     }
 }

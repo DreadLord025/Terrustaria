@@ -982,7 +982,8 @@ pub(crate) struct App {
     /// `Main.ambientWaterfallX/Y/Strength` (`Main.cs:2201-2211`): the
     /// waterfall-scan accumulators `Main.Ambience` reads every ¼ s.
     pub(crate) ambient_waterfall: (f32, f32, f32),
-    /// `Main.ambientLavafallX/Y/Strength` (`WaterfallManager.cs:960-962`).
+    /// `Main.ambientLavafallX/Y/Strength` (`Main.cs:2207-2211`, stored by
+    /// `WaterfallManager.cs:963-965`): the lavafall loop's (strength, x, y).
     pub(crate) ambient_lavafall: (f32, f32, f32),
     /// `Main.ambientCounter` — the ¼ s gate of `Main.Ambience`
     /// (`Main.cs:13469-13476`).
