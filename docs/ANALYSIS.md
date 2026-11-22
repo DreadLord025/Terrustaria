@@ -39038,13 +39038,24 @@ accessory damage row with tagdmg 0 — so its `want` was 0 and the assertion
 passed vacuously; it now uses the Focused (88, tagdmg +3) summon row.
 
 Deviations (deliberate, recorded):
-* The PVE strike's melee flag folds to `is_whip`: the flail/yoyo/boomerang
-  `melee = true` rows have no slot flag yet, so their Sharpened +12
-  (`GetArmorPenetration(melee)`) stays missed on those families (the
-  melee HIT path already reads `get_armor_penetration(true)`).
-* The PVE strike's debuff bonuses (ichor +15 / broken armor +20 / Betsy's
-  curse +40, `NPC.cs:81148`) pass false — the NPC debuff scan has not
-  landed on this seam (the melee hit's convention).
+* ~~The PVE strike's melee flag folds to `is_whip`~~ — FIXED (W4-a3): the
+  fold now reads the slot's `Projectile.melee` census flag (the
+  `SetDefaults`/`DefaultTo*` row the data-carrying spawn copies,
+  `Projectile.cs:12831`), so the Sharpened 159 +12 reaches the
+  flail/yoyo/boomerang families; the whip sets NO class flag
+  (`DefaultToWhip` `:10704-10718`) and correctly drops out of the melee
+  fold (the old `is_whip` stand-in over-applied it). Witnesses:
+  `w4_a3_sharpened_pen_reaches_the_flail_and_boomerang`,
+  `w4_a3_sharpened_pen_reaches_the_yoyo_not_the_ranged_shot`.
+* ~~The PVE strike's debuff bonuses (ichor +15 / broken armor +20 / Betsy's
+  curse +40, `NPC.cs:81148`) pass false~~ — FIXED (W4-a3 half 2): the fold
+  now reads the victim's live buff table (`has_buff(69/36/203)` — the
+  `FindBuffIndex` gate), the C# `UpdateNPC_BuffSetFlags` latches
+  (`NPC.cs:92021-92028`, `:92101-92104`) derived fresh at the read (the
+  frost-legion confused precedent). Witnesses:
+  `w4_a3_ichor_and_broken_armor_pen_join_the_pve_strike`,
+  `w4_a3_betsys_curse_pen_caps_at_half_the_defense`. The melee HIT path
+  (`world_sim/editing.rs`) still passes false — its own seam, unchanged.
 * The gem-staff ArPenSpread's +4 (`Projectile.cs:22084`) stays unported
   (the `gem_staves_finalize` note) — the slot field now exists for it.
 * The revolver's `revolverCritChanceBonus` clamp (`Player.cs:42677-42698`,
