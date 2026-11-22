@@ -1,0 +1,67 @@
+    /// W4-d40 sheets phase: the 36 packed strips divide into their
+    /// `Main.npcFrameCount[type]` rows (`Main.cs:67082-67154`) — the real
+    /// `.xnb` dims measured by the c4 LZX harness (`tools/_d40_dims.js`).
+    /// `pumpkin_moon_draw` uses `vanilla_row_h` (INTEGER division, the
+    /// `NPC.SetFrameSize` form `NPC.cs:66666`), so even the non-dividing
+    /// NPC_444 (74/3) loses the leftover 2 px at the bottom instead of
+    /// bleeding them into the last frame. A wrong divisor shows as a
+    /// fractional row here, a squashed sprite in game.
+    #[test]
+    fn the_d40_strips_divide_into_their_vanilla_rows() {
+        // (kind, sheet w, sheet h, npcFrameCount[type])
+        let cases: &[(NpcKind, f32, f32, u32)] = &[
+            (NpcKind::ArmedZombie, 88.0, 476.0, 7), // NPC_430
+            (NpcKind::ArmedZombieEskimo, 88.0, 476.0, 7), // NPC_431
+            (NpcKind::ArmedZombiePincussion, 88.0, 476.0, 7), // NPC_432
+            (NpcKind::ArmedZombieSlimed, 88.0, 476.0, 7), // NPC_433
+            (NpcKind::ArmedZombieSwamp, 88.0, 476.0, 7), // NPC_434
+            (NpcKind::ArmedZombieTwiggy, 88.0, 476.0, 7), // NPC_435
+            (NpcKind::ArmedZombieCenx, 88.0, 476.0, 7), // NPC_436
+            (NpcKind::CultistTablet, 66.0, 384.0, 4), // NPC_437
+            (NpcKind::CultistDevote, 40.0, 216.0, 4), // NPC_438
+            (NpcKind::GoldBird, 30.0, 120.0, 5), // NPC_442
+            (NpcKind::GoldBunny, 48.0, 280.0, 7), // NPC_443
+            (NpcKind::GoldButterfly, 24.0, 74.0, 3), // NPC_444
+            (NpcKind::GoldFrog, 26.0, 286.0, 13), // NPC_445
+            (NpcKind::GoldGrasshopper, 18.0, 24.0, 2), // NPC_446
+            (NpcKind::GoldMouse, 20.0, 96.0, 6), // NPC_447
+            (NpcKind::GoldWorm, 14.0, 16.0, 2), // NPC_448
+            (NpcKind::CultistDragonHead, 80.0, 312.0, 3), // NPC_454
+            (NpcKind::CultistDragonBody1, 80.0, 104.0, 1), // NPC_455
+            (NpcKind::CultistDragonBody2, 80.0, 104.0, 1), // NPC_456
+            (NpcKind::CultistDragonBody3, 80.0, 104.0, 1), // NPC_457
+            (NpcKind::CultistDragonBody4, 80.0, 104.0, 1), // NPC_458
+            (NpcKind::CultistDragonTail, 80.0, 104.0, 1), // NPC_459
+            (NpcKind::Fritz, 34.0, 342.0, 9), // NPC_462
+            (NpcKind::Nailhead, 32.0, 800.0, 16), // NPC_463
+            (NpcKind::CrimsonBunny, 34.0, 280.0, 7), // NPC_464
+            (NpcKind::CrimsonGoldfish, 38.0, 168.0, 6), // NPC_465
+            (NpcKind::ThePossessed, 52.0, 720.0, 12), // NPC_469
+            (NpcKind::CrimsonPenguin, 28.0, 504.0, 12), // NPC_470
+            (NpcKind::ShadowFlameApparition, 52.0, 252.0, 6), // NPC_472
+            (NpcKind::MothronEgg, 38.0, 42.0, 1), // NPC_478
+            (NpcKind::GraniteGolem, 48.0, 1120.0, 20), // NPC_482
+            (NpcKind::EnchantedNightcrawler, 18.0, 20.0, 2), // NPC_484
+            (NpcKind::Grubby, 18.0, 72.0, 4), // NPC_485
+            (NpcKind::Sluggy, 18.0, 72.0, 4), // NPC_486
+            (NpcKind::Buggy, 18.0, 72.0, 4), // NPC_487
+            (NpcKind::TargetDummy, 32.0, 550.0, 11), // NPC_488
+        ];
+        for &(kind, w, h, rows) in cases {
+            let net = texture_net_id(kind);
+            assert_eq!(npc_rows(net), rows, "{kind:?}: NPC_{net} rows");
+            assert!(D40_SHEETS.contains(&(net as u32)), "{kind:?} packed");
+            let t = sheet(w, h);
+            let npc = bare(kind);
+            let (tex, fh, size, _) = pumpkin_moon_draw(Some(&t), rows, &npc, 20.0, 40.0);
+            assert!(tex.is_some());
+            // SetFrameSize integer division: the row is floor(h / rows).
+            assert_eq!(fh, (h as i32 / rows as i32) as f32, "{kind:?}: integer row");
+            assert_eq!(size, [w, fh], "{kind:?}: the frame keeps the sheet width");
+        }
+        // The 20 deferred kinds stay OUT of the packing list (the wyvern
+        // precedent): their draw arms ask npc_sheet, get None, and skip.
+        for id in [440u32, 449u32, 450u32, 451u32, 452u32, 453u32, 460u32, 461u32, 466u32, 467u32, 468u32, 473u32, 474u32, 475u32, 476u32, 477u32, 479u32, 480u32, 481u32, 483u32] {
+            assert!(!D40_SHEETS.contains(&id), "NPC_{id} must stay deferred");
+        }
+    }

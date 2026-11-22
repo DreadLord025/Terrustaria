@@ -2702,6 +2702,331 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     BestiaryEntryDef { credit_id: "HellArmoredBonesSpikeShield", net_id: 278, kind: NpcKind::HellArmoredBonesSpikeShield, variant: None, quick_unlock: false, name: "Hell Armored Bones" },
     BestiaryEntryDef { credit_id: "HellArmoredBonesMace", net_id: 279, kind: NpcKind::HellArmoredBonesMace, variant: None, quick_unlock: false, name: "Hell Armored Bones" },
     BestiaryEntryDef { credit_id: "HellArmoredBonesSword", net_id: 280, kind: NpcKind::HellArmoredBonesSword, variant: None, quick_unlock: false, name: "Hell Armored Bones" },
+    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    BestiaryEntryDef {
+        credit_id: "CultistTablet",
+        net_id: 437,
+        kind: NpcKind::CultistTablet,
+        variant: None,
+        quick_unlock: false,
+        name: "Mysterious Tablet",
+    },
+    BestiaryEntryDef {
+        credit_id: "CultistDevote",
+        net_id: 438,
+        kind: NpcKind::CultistDevote,
+        variant: None,
+        quick_unlock: false,
+        name: "Lunatic Devotee",
+    },
+    BestiaryEntryDef {
+        credit_id: "CultistBossClone",
+        net_id: 440,
+        kind: NpcKind::CultistBossClone,
+        variant: None,
+        quick_unlock: false,
+        name: "Lunatic Cultist",
+    },
+    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    BestiaryEntryDef {
+        credit_id: "GoldBird",
+        net_id: 442,
+        kind: NpcKind::GoldBird,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Bird",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldBunny",
+        net_id: 443,
+        kind: NpcKind::GoldBunny,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Bunny",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldButterfly",
+        net_id: 444,
+        kind: NpcKind::GoldButterfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Butterfly",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldFrog",
+        net_id: 445,
+        kind: NpcKind::GoldFrog,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Frog",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldGrasshopper",
+        net_id: 446,
+        kind: NpcKind::GoldGrasshopper,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Grasshopper",
+    },
+    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    BestiaryEntryDef {
+        credit_id: "GoldMouse",
+        net_id: 447,
+        kind: NpcKind::GoldMouse,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Mouse",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldWorm",
+        net_id: 448,
+        kind: NpcKind::GoldWorm,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Worm",
+    },
+    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    BestiaryEntryDef {
+        credit_id: "SkeletonMerchant",
+        net_id: 453,
+        kind: NpcKind::SkeletonMerchant,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeleton Merchant",
+    },
+    BestiaryEntryDef {
+        credit_id: "CultistDragonHead",
+        net_id: 454,
+        kind: NpcKind::CultistDragonHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Phantasm Dragon",
+    },
+    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    BestiaryEntryDef {
+        credit_id: "Butcher",
+        net_id: 460,
+        kind: NpcKind::Butcher,
+        variant: None,
+        quick_unlock: false,
+        name: "Butcher",
+    },
+    BestiaryEntryDef {
+        credit_id: "CreatureFromTheDeep",
+        net_id: 461,
+        kind: NpcKind::CreatureFromTheDeep,
+        variant: None,
+        quick_unlock: false,
+        name: "Creature from the Deep",
+    },
+    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    BestiaryEntryDef {
+        credit_id: "Fritz",
+        net_id: 462,
+        kind: NpcKind::Fritz,
+        variant: None,
+        quick_unlock: false,
+        name: "Fritz",
+    },
+    BestiaryEntryDef {
+        credit_id: "Nailhead",
+        net_id: 463,
+        kind: NpcKind::Nailhead,
+        variant: None,
+        quick_unlock: false,
+        name: "Nailhead",
+    },
+    BestiaryEntryDef {
+        credit_id: "CrimsonBunny",
+        net_id: 464,
+        kind: NpcKind::CrimsonBunny,
+        variant: None,
+        quick_unlock: false,
+        name: "Vicious Bunny",
+    },
+    // (merge-side drop, d37 tables: the CrimsonGoldfish 465 entry belongs to
+    // c4's kept impl - its "Vicious Goldfish" row lands at the small-lanes
+    // splice; d40's dup port dropped here.)
+    BestiaryEntryDef {
+        credit_id: "Psycho",
+        net_id: 466,
+        kind: NpcKind::Psycho,
+        variant: None,
+        quick_unlock: false,
+        name: "Psycho",
+    },
+    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    BestiaryEntryDef {
+        credit_id: "DeadlySphere",
+        net_id: 467,
+        kind: NpcKind::DeadlySphere,
+        variant: None,
+        quick_unlock: false,
+        name: "Deadly Sphere",
+    },
+    BestiaryEntryDef {
+        credit_id: "DrManFly",
+        net_id: 468,
+        kind: NpcKind::DrManFly,
+        variant: None,
+        quick_unlock: false,
+        name: "Dr. Man Fly",
+    },
+    BestiaryEntryDef {
+        credit_id: "ThePossessed",
+        net_id: 469,
+        kind: NpcKind::ThePossessed,
+        variant: None,
+        quick_unlock: false,
+        name: "The Possessed",
+    },
+    BestiaryEntryDef {
+        credit_id: "CrimsonPenguin",
+        net_id: 470,
+        kind: NpcKind::CrimsonPenguin,
+        variant: None,
+        quick_unlock: false,
+        name: "Vicious Penguin",
+    },
+    BestiaryEntryDef {
+        credit_id: "ShadowFlameApparition",
+        net_id: 472,
+        kind: NpcKind::ShadowFlameApparition,
+        variant: None,
+        quick_unlock: false,
+        name: "Shadowflame Apparition",
+    },
+    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    BestiaryEntryDef {
+        credit_id: "BigMimicCorruption",
+        net_id: 473,
+        kind: NpcKind::BigMimicCorruption,
+        variant: None,
+        quick_unlock: false,
+        name: "Corrupt Mimic",
+    },
+    BestiaryEntryDef {
+        credit_id: "BigMimicCrimson",
+        net_id: 474,
+        kind: NpcKind::BigMimicCrimson,
+        variant: None,
+        quick_unlock: false,
+        name: "Crimson Mimic",
+    },
+    BestiaryEntryDef {
+        credit_id: "BigMimicHallow",
+        net_id: 475,
+        kind: NpcKind::BigMimicHallow,
+        variant: None,
+        quick_unlock: false,
+        name: "Hallowed Mimic",
+    },
+    BestiaryEntryDef {
+        credit_id: "BigMimicJungle",
+        net_id: 476,
+        kind: NpcKind::BigMimicJungle,
+        variant: None,
+        quick_unlock: false,
+        name: "Jungle Mimic",
+    },
+    BestiaryEntryDef {
+        credit_id: "Mothron",
+        net_id: 477,
+        kind: NpcKind::Mothron,
+        variant: None,
+        quick_unlock: false,
+        name: "Mothron",
+    },
+    // W4-d40 seal: the MothronEgg 478 is `Hide = true`
+    // (`NPCID.cs:4405-4410`) so the populator's exclusion set skips it —
+    // but `kind_from_net_id` still needs a row to resolve (the g8
+    // VampireBat 158 precedent, its "still needs a row to resolve"
+    // comment + own row; the g61 research/273 §3 478-resolution-gap fix
+    // PUBLISHED FOR d40). The credit fold stays (`entry_for_npc`'s
+    // `MothronEgg => Mothron` arm — the vanilla kills credit Mothron);
+    // this row only makes the net id resolve, so a saved/remote egg
+    // instantiates the egg, not the moth.
+    BestiaryEntryDef {
+        credit_id: "MothronEgg",
+        net_id: 478,
+        kind: NpcKind::MothronEgg,
+        variant: None,
+        quick_unlock: false,
+        name: "Mothron Egg",
+    },
+    BestiaryEntryDef {
+        credit_id: "MothronSpawn",
+        net_id: 479,
+        kind: NpcKind::MothronSpawn,
+        variant: None,
+        quick_unlock: false,
+        name: "Baby Mothron",
+    },
+    BestiaryEntryDef {
+        credit_id: "Medusa",
+        net_id: 480,
+        kind: NpcKind::Medusa,
+        variant: None,
+        quick_unlock: false,
+        name: "Medusa",
+    },
+    BestiaryEntryDef {
+        credit_id: "GreekSkeleton",
+        net_id: 481,
+        kind: NpcKind::GreekSkeleton,
+        variant: None,
+        quick_unlock: false,
+        name: "Hoplite",
+    },
+    BestiaryEntryDef {
+        credit_id: "GraniteGolem",
+        net_id: 482,
+        kind: NpcKind::GraniteGolem,
+        variant: None,
+        quick_unlock: false,
+        name: "Granite Golem",
+    },
+    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    BestiaryEntryDef {
+        credit_id: "GraniteFlyer",
+        net_id: 483,
+        kind: NpcKind::GraniteFlyer,
+        variant: None,
+        quick_unlock: false,
+        name: "Granite Elemental",
+    },
+    BestiaryEntryDef {
+        credit_id: "EnchantedNightcrawler",
+        net_id: 484,
+        kind: NpcKind::EnchantedNightcrawler,
+        variant: None,
+        quick_unlock: false,
+        name: "Enchanted Nightcrawler",
+    },
+    BestiaryEntryDef {
+        credit_id: "Grubby",
+        net_id: 485,
+        kind: NpcKind::Grubby,
+        variant: None,
+        quick_unlock: false,
+        name: "Grubby",
+    },
+    BestiaryEntryDef {
+        credit_id: "Sluggy",
+        net_id: 486,
+        kind: NpcKind::Sluggy,
+        variant: None,
+        quick_unlock: false,
+        name: "Sluggy",
+    },
+    BestiaryEntryDef {
+        credit_id: "Buggy",
+        net_id: 487,
+        kind: NpcKind::Buggy,
+        variant: None,
+        quick_unlock: false,
+        name: "Buggy",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -2833,6 +3158,32 @@ pub fn try_entry_for_npc(
         NpcKind::GoldfishWalker => NpcKind::Goldfish,
         NpcKind::JungleCreeper => NpcKind::JungleCreeperWall,
         NpcKind::BloodCrawler => NpcKind::BloodCrawlerWall,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::ArmedZombie => NpcKind::Zombie,
+        NpcKind::ArmedZombieEskimo => NpcKind::ZombieEskimo,
+        NpcKind::ArmedZombiePincussion => NpcKind::PincushionZombie,
+        NpcKind::ArmedZombieSlimed => NpcKind::SlimedZombie,
+        NpcKind::ArmedZombieSwamp => NpcKind::SwampZombie,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::ArmedZombieTwiggy => NpcKind::TwiggyZombie,
+        NpcKind::ArmedZombieCenx => NpcKind::FemaleZombie,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::BoneThrowingSkeleton => NpcKind::Skeleton,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::CultistDragonBody1 => NpcKind::CultistDragonHead,
+        NpcKind::CultistDragonBody2 => NpcKind::CultistDragonHead,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::CultistDragonBody3 => NpcKind::CultistDragonHead,
+        NpcKind::CultistDragonBody4 => NpcKind::CultistDragonHead,
+        NpcKind::CultistDragonTail => NpcKind::CultistDragonHead,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::MothronEgg => NpcKind::Mothron,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -2911,6 +3262,32 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         NpcKind::GoldfishWalker => NpcKind::Goldfish,
         NpcKind::JungleCreeper => NpcKind::JungleCreeperWall,
         NpcKind::BloodCrawler => NpcKind::BloodCrawlerWall,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::ArmedZombie => NpcKind::Zombie,
+        NpcKind::ArmedZombieEskimo => NpcKind::ZombieEskimo,
+        NpcKind::ArmedZombiePincussion => NpcKind::PincushionZombie,
+        NpcKind::ArmedZombieSlimed => NpcKind::SlimedZombie,
+        NpcKind::ArmedZombieSwamp => NpcKind::SwampZombie,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::ArmedZombieTwiggy => NpcKind::TwiggyZombie,
+        NpcKind::ArmedZombieCenx => NpcKind::FemaleZombie,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::BoneThrowingSkeleton => NpcKind::Skeleton,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::CultistDragonBody1 => NpcKind::CultistDragonHead,
+        NpcKind::CultistDragonBody2 => NpcKind::CultistDragonHead,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::CultistDragonBody3 => NpcKind::CultistDragonHead,
+        NpcKind::CultistDragonBody4 => NpcKind::CultistDragonHead,
+        NpcKind::CultistDragonTail => NpcKind::CultistDragonHead,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::MothronEgg => NpcKind::Mothron,
         other => other,
     };
     ENTRIES
@@ -2969,6 +3346,24 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), ENTRIES.len());
+    }
+
+    #[test]
+    fn the_mothron_egg_resolves_through_its_own_row_but_credits_mothron() {
+        // W4-d40 seal witness (WRITTEN NOT RUN — code-only): the g61
+        // research/273 §3 478-resolution-gap fix — the Hide=true egg
+        // (`NPCID.cs:4405-4410`) carries an own ENTRIES row so
+        // `kind_from_net_id(478)` resolves (the g8 VampireBat precedent),
+        // while the credit fold keeps `entry_for_npc` on Mothron's row.
+        let (kind, _) = crate::npc::kind_from_net_id(478)
+            .expect("the egg's own row resolves the net id");
+        assert_eq!(kind, NpcKind::MothronEgg);
+        let entry = entry_for_npc(NpcKind::MothronEgg, SlimeVariant::Blue);
+        assert_eq!(entry.net_id, 477, "the credit folds onto Mothron");
+        assert_eq!(entry.credit_id, "Mothron");
+        // The spawn keeps its own row (the Transform(479) target).
+        let (kind, _) = crate::npc::kind_from_net_id(479).expect("the spawn row");
+        assert_eq!(kind, NpcKind::MothronSpawn);
     }
 
     #[test]

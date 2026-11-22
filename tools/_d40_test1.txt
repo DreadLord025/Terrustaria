@@ -1,0 +1,72 @@
+    /// W4-d40 sheets phase: the 56 kinds' `texture_net_id` routes to
+    /// their OWN vanilla id (the Hide-fold/no-entry kinds via the explicit
+    /// rows, the own-entry kinds via the wildcard), and `npc_rows` gives
+    /// the `Main.npcFrameCount[type]` count (`Main.cs:67082`, verified
+    /// == NPC_FRAME_COUNT verbatim). A drift shows as a strip that only
+    /// animates its first few rows (the family-rows test's shape).
+    #[test]
+    fn the_d40_rows_match_between_the_draw_and_the_machine() {
+        let cases: &[(NpcKind, u16, u32)] = &[
+            (NpcKind::ArmedZombie, 430, 7),
+            (NpcKind::ArmedZombieEskimo, 431, 7),
+            (NpcKind::ArmedZombiePincussion, 432, 7),
+            (NpcKind::ArmedZombieSlimed, 433, 7),
+            (NpcKind::ArmedZombieSwamp, 434, 7),
+            (NpcKind::ArmedZombieTwiggy, 435, 7),
+            (NpcKind::ArmedZombieCenx, 436, 7),
+            (NpcKind::CultistTablet, 437, 4),
+            (NpcKind::CultistDevote, 438, 4),
+            (NpcKind::CultistBossClone, 440, 16),
+            (NpcKind::GoldBird, 442, 5),
+            (NpcKind::GoldBunny, 443, 7),
+            (NpcKind::GoldButterfly, 444, 3),
+            (NpcKind::GoldFrog, 445, 13),
+            (NpcKind::GoldGrasshopper, 446, 2),
+            (NpcKind::GoldMouse, 447, 6),
+            (NpcKind::GoldWorm, 448, 2),
+            (NpcKind::BoneThrowingSkeleton, 449, 19),
+            (NpcKind::BoneThrowingSkeleton2, 450, 19),
+            (NpcKind::BoneThrowingSkeleton3, 451, 19),
+            (NpcKind::BoneThrowingSkeleton4, 452, 20),
+            (NpcKind::SkeletonMerchant, 453, 26),
+            (NpcKind::CultistDragonHead, 454, 3),
+            (NpcKind::CultistDragonBody1, 455, 1),
+            (NpcKind::CultistDragonBody2, 456, 1),
+            (NpcKind::CultistDragonBody3, 457, 1),
+            (NpcKind::CultistDragonBody4, 458, 1),
+            (NpcKind::CultistDragonTail, 459, 1),
+            (NpcKind::Butcher, 460, 16),
+            (NpcKind::CreatureFromTheDeep, 461, 21),
+            (NpcKind::Fritz, 462, 9),
+            (NpcKind::Nailhead, 463, 16),
+            (NpcKind::CrimsonBunny, 464, 7),
+            (NpcKind::CrimsonGoldfish, 465, 6),
+            (NpcKind::Psycho, 466, 18),
+            (NpcKind::DeadlySphere, 467, 13),
+            (NpcKind::DrManFly, 468, 20),
+            (NpcKind::ThePossessed, 469, 12),
+            (NpcKind::CrimsonPenguin, 470, 12),
+            (NpcKind::ShadowFlameApparition, 472, 6),
+            (NpcKind::BigMimicCorruption, 473, 14),
+            (NpcKind::BigMimicCrimson, 474, 14),
+            (NpcKind::BigMimicHallow, 475, 14),
+            (NpcKind::BigMimicJungle, 476, 14),
+            (NpcKind::Mothron, 477, 6),
+            (NpcKind::MothronEgg, 478, 1),
+            (NpcKind::MothronSpawn, 479, 3),
+            (NpcKind::Medusa, 480, 25),
+            (NpcKind::GreekSkeleton, 481, 19),
+            (NpcKind::GraniteGolem, 482, 20),
+            (NpcKind::GraniteFlyer, 483, 22),
+            (NpcKind::EnchantedNightcrawler, 484, 2),
+            (NpcKind::Grubby, 485, 4),
+            (NpcKind::Sluggy, 486, 4),
+            (NpcKind::Buggy, 487, 4),
+            (NpcKind::TargetDummy, 488, 11),
+        ];
+        for &(kind, id, rows) in cases {
+            let net = texture_net_id(kind);
+            assert_eq!(net, id, "{kind:?} draws its own NPC_{id} sheet");
+            assert_eq!(npc_rows(net), rows, "{kind:?}: NPC_{net} rows");
+        }
+    }

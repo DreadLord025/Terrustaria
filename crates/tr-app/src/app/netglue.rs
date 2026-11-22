@@ -3600,6 +3600,85 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-d40: the new kinds' net seeds (the bare stats seed; the
+        // net state overwrites the position below).
+        crate::npc::NpcKind::ArmedZombie
+        | crate::npc::NpcKind::ArmedZombieEskimo
+        | crate::npc::NpcKind::ArmedZombiePincussion
+        | crate::npc::NpcKind::ArmedZombieSlimed
+        | crate::npc::NpcKind::ArmedZombieSwamp => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
+        // W4-d40: the new kinds' net seeds (the bare stats seed; the
+        // net state overwrites the position below).
+        crate::npc::NpcKind::ArmedZombieTwiggy
+        | crate::npc::NpcKind::ArmedZombieCenx
+        | crate::npc::NpcKind::CultistTablet
+        | crate::npc::NpcKind::CultistDevote
+        | crate::npc::NpcKind::CultistBossClone => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
+        // W4-d40: the new kinds' net seeds (the bare stats seed; the
+        // net state overwrites the position below).
+        crate::npc::NpcKind::GoldBird
+        | crate::npc::NpcKind::GoldBunny
+        | crate::npc::NpcKind::GoldButterfly
+        | crate::npc::NpcKind::GoldFrog
+        | crate::npc::NpcKind::GoldGrasshopper => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
+        // W4-d40: the new kinds' net seeds (the bare stats seed; the
+        // net state overwrites the position below).
+        crate::npc::NpcKind::GoldMouse
+        | crate::npc::NpcKind::GoldWorm
+        | crate::npc::NpcKind::BoneThrowingSkeleton
+        | crate::npc::NpcKind::BoneThrowingSkeleton2
+        | crate::npc::NpcKind::BoneThrowingSkeleton3 => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
+        // W4-d40: the new kinds' net seeds (the bare stats seed; the
+        // net state overwrites the position below).
+        crate::npc::NpcKind::BoneThrowingSkeleton4
+        | crate::npc::NpcKind::SkeletonMerchant
+        | crate::npc::NpcKind::CultistDragonHead
+        | crate::npc::NpcKind::CultistDragonBody1
+        | crate::npc::NpcKind::CultistDragonBody2 => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
+        // W4-d40: the new kinds' net seeds (the bare stats seed; the
+        // net state overwrites the position below).
+        crate::npc::NpcKind::CultistDragonBody3
+        | crate::npc::NpcKind::CultistDragonBody4
+        | crate::npc::NpcKind::CultistDragonTail
+        | crate::npc::NpcKind::Butcher
+        | crate::npc::NpcKind::CreatureFromTheDeep => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
+        // W4-d40: the new kinds' net seeds (the bare stats seed; the
+        // net state overwrites the position below).
+        crate::npc::NpcKind::Fritz
+        | crate::npc::NpcKind::Nailhead
+        | crate::npc::NpcKind::CrimsonBunny
+        | crate::npc::NpcKind::Psycho => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
+        // W4-d40: the new kinds' net seeds (the bare stats seed; the
+        // net state overwrites the position below).
+        crate::npc::NpcKind::DeadlySphere
+        | crate::npc::NpcKind::DrManFly
+        | crate::npc::NpcKind::ThePossessed
+        | crate::npc::NpcKind::CrimsonPenguin
+        | crate::npc::NpcKind::ShadowFlameApparition => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
+        // W4-d40: the new kinds' net seeds (the bare stats seed; the
+        // net state overwrites the position below).
+        crate::npc::NpcKind::BigMimicCorruption
+        | crate::npc::NpcKind::BigMimicCrimson
+        | crate::npc::NpcKind::BigMimicHallow
+        | crate::npc::NpcKind::BigMimicJungle
+        | crate::npc::NpcKind::Mothron => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
+        // W4-d40: the new kinds' net seeds (the bare stats seed; the
+        // net state overwrites the position below).
+        crate::npc::NpcKind::MothronEgg
+        | crate::npc::NpcKind::MothronSpawn
+        | crate::npc::NpcKind::Medusa
+        | crate::npc::NpcKind::GreekSkeleton
+        | crate::npc::NpcKind::GraniteGolem => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
+        // W4-d40: the new kinds' net seeds (the bare stats seed; the
+        // net state overwrites the position below).
+        crate::npc::NpcKind::GraniteFlyer
+        | crate::npc::NpcKind::EnchantedNightcrawler
+        | crate::npc::NpcKind::Grubby
+        | crate::npc::NpcKind::Sluggy
+        | crate::npc::NpcKind::Buggy => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
+        // W4-d40: the new kinds' net seeds (the bare stats seed; the
+        // net state overwrites the position below).
+        crate::npc::NpcKind::TargetDummy => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
         // The wyvern family (`S1-D-3` wyvern): the sky flyer's net seed
         // rides the hover ctor (the net state overwrites the position
         // below); the chain links rebuild through the sim wiring — a lone

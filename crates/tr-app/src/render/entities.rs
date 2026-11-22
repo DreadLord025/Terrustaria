@@ -573,6 +573,51 @@ pub(crate) fn npc_rotation_allowed(kind: NpcKind) -> bool {
             // W4-d34 (phase 4, merge-side): the Dungeon Guardian's
             // enraged spin (`NPC.cs:22260`).
             | NpcKind::DungeonGuardian
+            // W4-d40 sheets phase (merge-side fold, 367 §1 step 4): the
+            // 421-490 band's rotation writers (the C# AI / FindFrame
+            // `npc.rotation` census). 442 GoldBird (`NPC.cs:73634`, the
+            // 74/297/298/442 bird group's `velocity.X * 0.1`), 444
+            // GoldButterfly (`:72745`, the 356/444/653/661 group's
+            // `velocity.X * 0.3`), 448 GoldWorm + 484 EnchantedNightcrawler
+            // (`:72804`/`:72818`/`:72823`, the 357/448/484/606 crawler
+            // group's `+= direction * 0.1` + slope ±0.785), 485/486/487
+            // Grubby/Sluggy/Buggy (`:72859`/`:72873`/`:72878`, the same
+            // crawler tilt), 454-459 the Cultist Dragon chain (`AI_006`'s
+            // `:51878` follower atan2 + 1.57 / `:52201` head atan2 + PI/2),
+            // 461 CreatureFromTheDeep (`:75328`/`:75343` wet atan2 blend +
+            // dry decay), 467 DeadlySphere (`AI_085`'s `:36991`
+            // `+= direction * 0.3` spin / `:37037` `velocity.X * 0.1`),
+            // 469 ThePossessed (`:75668` atan2 + 1.57 lunge, ai[2] == 1),
+            // 472 ShadowFlameApparition (`:71386` atan2(vY*dir, vX*dir)),
+            // 477 Mothron (`AI_088`'s `:37886` (rot*9 + vX*0.1)/10 blend),
+            // 478 MothronEgg (`AI_089`'s `:38357`/`:38362`
+            // `+= vX * 0.02/0.04`), 479 MothronSpawn (`AI_090`'s `:38399`
+            // (rot*9 + vX*0.1)/10 blend), 483 GraniteFlyer (`:75185`
+            // `+= vX * 0.2` / `:75199` `= vX * 0.1`). The CrimsonGoldfish
+            // 465 row drops with d40's dup port (c4 owns @465 — its kept
+            // impl re-adds the `AI_016` `:24010` tilt at the small-lanes
+            // splice).
+            | NpcKind::GoldBird
+            | NpcKind::GoldButterfly
+            | NpcKind::GoldWorm
+            | NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2
+            | NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail
+            | NpcKind::CreatureFromTheDeep
+            | NpcKind::DeadlySphere
+            | NpcKind::ThePossessed
+            | NpcKind::ShadowFlameApparition
+            | NpcKind::Mothron
+            | NpcKind::MothronEgg
+            | NpcKind::MothronSpawn
+            | NpcKind::GraniteFlyer
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy
     )
 }
 
@@ -652,6 +697,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(D38_B7_SHEETS)
             .chain(SMALL_KIND_SHEETS)
             .chain(D37_SHEETS)
+            .chain(D40_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1117,6 +1163,16 @@ fn npc_anchor_nudge(n: &Npc) -> f32 {
         DD2GoblinBomberT1 | DD2GoblinBomberT2 | DD2GoblinBomberT3 => num47 = -5.0,
         DD2KoboldWalkerT2 => num47 = -4.0,
         DD2WitherBeast => num47 = -3.0,
+        // W4-d40: the `Main.cs:23003-23046` num46/num47 else-if overrides
+        // for the 421-490 band (the generic draw anchor, `:25511`). None of
+        // these kinds appear in the `:23048` halfSize switch or NPCAddHeight,
+        // so the rows stand alone (the else-if chain is mutually exclusive).
+        DeadlySphere => num46 = 7.0, // `:23003` type == 467
+        EnchantedNightcrawler => num46 = 2.0, // `:23019` type == 484
+        GraniteFlyer => num46 = 14.0, // `:23023` type == 483
+        Mothron => num47 = 22.0, // `:23027` type == 477
+        MothronEgg => num46 -= 2.0, // `:23031` type == 478
+        ThePossessed if n.ai[2] == 1.0 => num46 = 14.0, // `:23043` type == 469 && ai[2] == 1
         _ => {}
     }
     num45 + num46 + num47
@@ -1277,6 +1333,32 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         NpcKind::GoldfishWalker => 230,
         NpcKind::JungleCreeper => 236,
         NpcKind::BloodCrawler => 239,
+        // W4-d40 sheets phase: the 421-490 band's Hide-fold / no-entry kinds
+        // draw their OWN `NPC_<id>` sheet. The fold kinds' `net_id()` returns
+        // the HEAD id (the bestiary credit fold), so the wildcard would
+        // mis-route the sheet — the d35 DiggerBody/SeekerBody/VileSpit
+        // fishron-hazard precedent. The four no-entry kinds
+        // (BoneThrowingSkeleton2/3/4, TargetDummy) have cs_id hand rows but
+        // NO bestiary entry, so `net_id()` would panic — the explicit row
+        // bypasses it (the DetonatingBubble/Sharkron2 precedent).
+        NpcKind::ArmedZombie => 430,
+        NpcKind::ArmedZombieEskimo => 431,
+        NpcKind::ArmedZombiePincussion => 432,
+        NpcKind::ArmedZombieSlimed => 433,
+        NpcKind::ArmedZombieSwamp => 434,
+        NpcKind::ArmedZombieTwiggy => 435,
+        NpcKind::ArmedZombieCenx => 436,
+        NpcKind::BoneThrowingSkeleton => 449,
+        NpcKind::BoneThrowingSkeleton2 => 450,
+        NpcKind::BoneThrowingSkeleton3 => 451,
+        NpcKind::BoneThrowingSkeleton4 => 452,
+        NpcKind::CultistDragonBody1 => 455,
+        NpcKind::CultistDragonBody2 => 456,
+        NpcKind::CultistDragonBody3 => 457,
+        NpcKind::CultistDragonBody4 => 458,
+        NpcKind::CultistDragonTail => 459,
+        NpcKind::MothronEgg => 478,
+        NpcKind::TargetDummy => 488,
         _ => kind.net_id() as u16,
     }
 }
@@ -1468,6 +1550,60 @@ pub(crate) const D37_SHEETS: &[u32] = &[
     256, 257, 258, 259, 260, // the fungi family
     268, // the ichor sticker
     269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, // armored bones
+];
+
+/// W4-d40 sheets phase: the 421-490 band's 35 PACKED kinds' own sheets
+/// (merge-side: 36 minus the dropped CrimsonGoldfish 465 dup - c4 owns @465)
+/// (`TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `SMALL_KIND_SHEETS`. The wave's
+/// other 20 kinds (440/449/450/451/452/453/460/461/466/467/468/473/474/
+/// 475/476/477/479/480/481/483) stay sheet-deferred (the wyvern precedent):
+/// the id-order greedy over the real `.xnb` dims (`tools/_d40_pass2.js`,
+/// the c4 LZX harness) packs these 36 at 8185 px main / 8186 px boot-font —
+/// 7/6 px under the 8192 strict-GPU bound; every skipped sheet would
+/// overflow it. The CUMULATIVE pushed-union (35 sibling branches, 403
+/// names) ALREADY overflows at 9361 px (+1169) without this wave, and the
+/// padded AREA alone (8835 px lower bound) exceeds 8192 — a second atlas
+/// page is mandatory (the d35 ATLAS-REPACK plan, docs/research/113). The
+/// Hide-fold kinds draw their OWN sheets here even though their bestiary
+/// credit folds onto the head — `texture_net_id`'s vanilla rows (the
+/// fishron-hazard precedent).
+pub(crate) const D40_SHEETS: &[u32] = &[
+    430, // ArmedZombie (Hide-fold)
+    431, // ArmedZombieEskimo (Hide-fold)
+    432, // ArmedZombiePincussion (Hide-fold)
+    433, // ArmedZombieSlimed (Hide-fold)
+    434, // ArmedZombieSwamp (Hide-fold)
+    435, // ArmedZombieTwiggy (Hide-fold)
+    436, // ArmedZombieCenx (Hide-fold)
+    437, // CultistTablet
+    438, // CultistDevote
+    442, // GoldBird
+    443, // GoldBunny
+    444, // GoldButterfly
+    445, // GoldFrog
+    446, // GoldGrasshopper
+    447, // GoldMouse
+    448, // GoldWorm
+    454, // CultistDragonHead
+    455, // CultistDragonBody1 (Hide-fold)
+    456, // CultistDragonBody2 (Hide-fold)
+    457, // CultistDragonBody3 (Hide-fold)
+    458, // CultistDragonBody4 (Hide-fold)
+    459, // CultistDragonTail (Hide-fold)
+    462, // Fritz
+    463, // Nailhead
+    464, // CrimsonBunny
+    469, // ThePossessed
+    470, // CrimsonPenguin
+    472, // ShadowFlameApparition
+    478, // MothronEgg (Hide-fold)
+    482, // GraniteGolem
+    484, // EnchantedNightcrawler
+    485, // Grubby
+    486, // Sluggy
+    487, // Buggy
+    488, // TargetDummy (Hide-fold)
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -3392,6 +3528,76 @@ pub(crate) fn draw_npcs(
             }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
+            },
+            // W4-d40 sheets phase: the 56 kinds of the 421-490 band draw
+            // their OWN `NPC_<id>` sheet (`D40_SHEETS`, the 35 packed; the
+            // 20 deferred return None and the draw skips — the wyvern
+            // precedent) at `SetFrameSize`'s integer-division row height
+            // (`NPC.cs:66666`) over `Main.npcFrameCount[type]`
+            // (`Main.cs:67082`, `npc_rows`), generic centred anchor
+            // (`Main.cs:25511-25516`) — the blood-moon/small-kinds shape.
+            // The Hide-fold kinds (ArmedZombie*, BoneThrowingSkeleton*,
+            // CultistDragonBody*, MothronEgg, TargetDummy) draw their own
+            // sheets via `texture_net_id`'s vanilla rows (the d35
+            // DiggerBody/SeekerBody fishron-hazard precedent).
+            NpcKind::ArmedZombie
+            | NpcKind::ArmedZombieEskimo
+            | NpcKind::ArmedZombiePincussion
+            | NpcKind::ArmedZombieSlimed
+            | NpcKind::ArmedZombieSwamp
+            | NpcKind::ArmedZombieTwiggy
+            | NpcKind::ArmedZombieCenx
+            | NpcKind::CultistTablet
+            | NpcKind::CultistDevote
+            | NpcKind::CultistBossClone
+            | NpcKind::GoldBird
+            | NpcKind::GoldBunny
+            | NpcKind::GoldButterfly
+            | NpcKind::GoldFrog
+            | NpcKind::GoldGrasshopper
+            | NpcKind::GoldMouse
+            | NpcKind::GoldWorm
+            | NpcKind::BoneThrowingSkeleton
+            | NpcKind::BoneThrowingSkeleton2
+            | NpcKind::BoneThrowingSkeleton3
+            | NpcKind::BoneThrowingSkeleton4
+            | NpcKind::SkeletonMerchant
+            | NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2
+            | NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail
+            | NpcKind::Butcher
+            | NpcKind::CreatureFromTheDeep
+            | NpcKind::Fritz
+            | NpcKind::Nailhead
+            | NpcKind::CrimsonBunny
+            | NpcKind::Psycho
+            | NpcKind::DeadlySphere
+            | NpcKind::DrManFly
+            | NpcKind::ThePossessed
+            | NpcKind::CrimsonPenguin
+            | NpcKind::ShadowFlameApparition
+            | NpcKind::BigMimicCorruption
+            | NpcKind::BigMimicCrimson
+            | NpcKind::BigMimicHallow
+            | NpcKind::BigMimicJungle
+            | NpcKind::Mothron
+            | NpcKind::MothronEgg
+            | NpcKind::MothronSpawn
+            | NpcKind::Medusa
+            | NpcKind::GreekSkeleton
+            | NpcKind::GraniteGolem
+            | NpcKind::GraniteFlyer
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy
+            | NpcKind::TargetDummy
+            => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
             // W4-d34 kinds 1-70: each kind draws its own sheet at the
             // SetFrameSize row height over Main.npcFrameCount[type], the
@@ -3749,6 +3955,11 @@ pub(crate) fn draw_npcs(
         } else {
             flip_uv(npc_frame_uv(tex, frame_h, n.frame()), flip_dir > 0)
         };
+        // MERGE-SIDE (367 §1 wave-1 step 4): d40's inline whitelist is folded
+        // into the d38-extracted `npc_rotation_allowed` gate (its 21 rotation
+        // kinds ride the fn's W4-d40 block; the CrimsonGoldfish 465 row is
+        // dropped with d40's dup port — c4's kept impl re-adds it at the
+        // small-lanes splice). The draw consumes the ONE gate.
         if n.rotation != 0.0 && npc_rotation_allowed(n.kind) {
             // `Main.DrawNPC` draws every NPC at its centre with
             // `origin = frame size / 2` and `rotation = npc.rotation`
@@ -4091,6 +4302,145 @@ mod anchor_tests {
         }
     }
 
+    /// W4-d40 sheets phase: the 56 kinds' `texture_net_id` routes to
+    /// their OWN vanilla id (the Hide-fold/no-entry kinds via the explicit
+    /// rows, the own-entry kinds via the wildcard), and `npc_rows` gives
+    /// the `Main.npcFrameCount[type]` count (`Main.cs:67082`, verified
+    /// == NPC_FRAME_COUNT verbatim). A drift shows as a strip that only
+    /// animates its first few rows (the family-rows test's shape).
+    #[test]
+    fn the_d40_rows_match_between_the_draw_and_the_machine() {
+        let cases: &[(NpcKind, u16, u32)] = &[
+            (NpcKind::ArmedZombie, 430, 7),
+            (NpcKind::ArmedZombieEskimo, 431, 7),
+            (NpcKind::ArmedZombiePincussion, 432, 7),
+            (NpcKind::ArmedZombieSlimed, 433, 7),
+            (NpcKind::ArmedZombieSwamp, 434, 7),
+            (NpcKind::ArmedZombieTwiggy, 435, 7),
+            (NpcKind::ArmedZombieCenx, 436, 7),
+            (NpcKind::CultistTablet, 437, 4),
+            (NpcKind::CultistDevote, 438, 4),
+            (NpcKind::CultistBossClone, 440, 16),
+            (NpcKind::GoldBird, 442, 5),
+            (NpcKind::GoldBunny, 443, 7),
+            (NpcKind::GoldButterfly, 444, 3),
+            (NpcKind::GoldFrog, 445, 13),
+            (NpcKind::GoldGrasshopper, 446, 2),
+            (NpcKind::GoldMouse, 447, 6),
+            (NpcKind::GoldWorm, 448, 2),
+            (NpcKind::BoneThrowingSkeleton, 449, 19),
+            (NpcKind::BoneThrowingSkeleton2, 450, 19),
+            (NpcKind::BoneThrowingSkeleton3, 451, 19),
+            (NpcKind::BoneThrowingSkeleton4, 452, 20),
+            (NpcKind::SkeletonMerchant, 453, 26),
+            (NpcKind::CultistDragonHead, 454, 3),
+            (NpcKind::CultistDragonBody1, 455, 1),
+            (NpcKind::CultistDragonBody2, 456, 1),
+            (NpcKind::CultistDragonBody3, 457, 1),
+            (NpcKind::CultistDragonBody4, 458, 1),
+            (NpcKind::CultistDragonTail, 459, 1),
+            (NpcKind::Butcher, 460, 16),
+            (NpcKind::CreatureFromTheDeep, 461, 21),
+            (NpcKind::Fritz, 462, 9),
+            (NpcKind::Nailhead, 463, 16),
+            (NpcKind::CrimsonBunny, 464, 7),
+            (NpcKind::Psycho, 466, 18),
+            (NpcKind::DeadlySphere, 467, 13),
+            (NpcKind::DrManFly, 468, 20),
+            (NpcKind::ThePossessed, 469, 12),
+            (NpcKind::CrimsonPenguin, 470, 12),
+            (NpcKind::ShadowFlameApparition, 472, 6),
+            (NpcKind::BigMimicCorruption, 473, 14),
+            (NpcKind::BigMimicCrimson, 474, 14),
+            (NpcKind::BigMimicHallow, 475, 14),
+            (NpcKind::BigMimicJungle, 476, 14),
+            (NpcKind::Mothron, 477, 6),
+            (NpcKind::MothronEgg, 478, 1),
+            (NpcKind::MothronSpawn, 479, 3),
+            (NpcKind::Medusa, 480, 25),
+            (NpcKind::GreekSkeleton, 481, 19),
+            (NpcKind::GraniteGolem, 482, 20),
+            (NpcKind::GraniteFlyer, 483, 22),
+            (NpcKind::EnchantedNightcrawler, 484, 2),
+            (NpcKind::Grubby, 485, 4),
+            (NpcKind::Sluggy, 486, 4),
+            (NpcKind::Buggy, 487, 4),
+            (NpcKind::TargetDummy, 488, 11),
+        ];
+        for &(kind, id, rows) in cases {
+            let net = texture_net_id(kind);
+            assert_eq!(net, id, "{kind:?} draws its own NPC_{id} sheet");
+            assert_eq!(npc_rows(net), rows, "{kind:?}: NPC_{net} rows");
+        }
+    }
+
+    /// W4-d40 sheets phase: the 35 packed strips divide into their
+    /// `Main.npcFrameCount[type]` rows (`Main.cs:67082-67154`) — the real
+    /// `.xnb` dims measured by the c4 LZX harness (`tools/_d40_dims.js`).
+    /// `pumpkin_moon_draw` uses `vanilla_row_h` (INTEGER division, the
+    /// `NPC.SetFrameSize` form `NPC.cs:66666`), so even the non-dividing
+    /// NPC_444 (74/3) loses the leftover 2 px at the bottom instead of
+    /// bleeding them into the last frame. A wrong divisor shows as a
+    /// fractional row here, a squashed sprite in game.
+    #[test]
+    fn the_d40_strips_divide_into_their_vanilla_rows() {
+        // (kind, sheet w, sheet h, npcFrameCount[type])
+        let cases: &[(NpcKind, f32, f32, u32)] = &[
+            (NpcKind::ArmedZombie, 88.0, 476.0, 7), // NPC_430
+            (NpcKind::ArmedZombieEskimo, 88.0, 476.0, 7), // NPC_431
+            (NpcKind::ArmedZombiePincussion, 88.0, 476.0, 7), // NPC_432
+            (NpcKind::ArmedZombieSlimed, 88.0, 476.0, 7), // NPC_433
+            (NpcKind::ArmedZombieSwamp, 88.0, 476.0, 7), // NPC_434
+            (NpcKind::ArmedZombieTwiggy, 88.0, 476.0, 7), // NPC_435
+            (NpcKind::ArmedZombieCenx, 88.0, 476.0, 7), // NPC_436
+            (NpcKind::CultistTablet, 66.0, 384.0, 4), // NPC_437
+            (NpcKind::CultistDevote, 40.0, 216.0, 4), // NPC_438
+            (NpcKind::GoldBird, 30.0, 120.0, 5), // NPC_442
+            (NpcKind::GoldBunny, 48.0, 280.0, 7), // NPC_443
+            (NpcKind::GoldButterfly, 24.0, 74.0, 3), // NPC_444
+            (NpcKind::GoldFrog, 26.0, 286.0, 13), // NPC_445
+            (NpcKind::GoldGrasshopper, 18.0, 24.0, 2), // NPC_446
+            (NpcKind::GoldMouse, 20.0, 96.0, 6), // NPC_447
+            (NpcKind::GoldWorm, 14.0, 16.0, 2), // NPC_448
+            (NpcKind::CultistDragonHead, 80.0, 312.0, 3), // NPC_454
+            (NpcKind::CultistDragonBody1, 80.0, 104.0, 1), // NPC_455
+            (NpcKind::CultistDragonBody2, 80.0, 104.0, 1), // NPC_456
+            (NpcKind::CultistDragonBody3, 80.0, 104.0, 1), // NPC_457
+            (NpcKind::CultistDragonBody4, 80.0, 104.0, 1), // NPC_458
+            (NpcKind::CultistDragonTail, 80.0, 104.0, 1), // NPC_459
+            (NpcKind::Fritz, 34.0, 342.0, 9), // NPC_462
+            (NpcKind::Nailhead, 32.0, 800.0, 16), // NPC_463
+            (NpcKind::CrimsonBunny, 34.0, 280.0, 7), // NPC_464
+            (NpcKind::ThePossessed, 52.0, 720.0, 12), // NPC_469
+            (NpcKind::CrimsonPenguin, 28.0, 504.0, 12), // NPC_470
+            (NpcKind::ShadowFlameApparition, 52.0, 252.0, 6), // NPC_472
+            (NpcKind::MothronEgg, 38.0, 42.0, 1), // NPC_478
+            (NpcKind::GraniteGolem, 48.0, 1120.0, 20), // NPC_482
+            (NpcKind::EnchantedNightcrawler, 18.0, 20.0, 2), // NPC_484
+            (NpcKind::Grubby, 18.0, 72.0, 4), // NPC_485
+            (NpcKind::Sluggy, 18.0, 72.0, 4), // NPC_486
+            (NpcKind::Buggy, 18.0, 72.0, 4), // NPC_487
+            (NpcKind::TargetDummy, 32.0, 550.0, 11), // NPC_488
+        ];
+        for &(kind, w, h, rows) in cases {
+            let net = texture_net_id(kind);
+            assert_eq!(npc_rows(net), rows, "{kind:?}: NPC_{net} rows");
+            assert!(D40_SHEETS.contains(&(net as u32)), "{kind:?} packed");
+            let t = sheet(w, h);
+            let npc = bare(kind);
+            let (tex, fh, size, _) = pumpkin_moon_draw(Some(&t), rows, &npc, 20.0, 40.0);
+            assert!(tex.is_some());
+            // SetFrameSize integer division: the row is floor(h / rows).
+            assert_eq!(fh, (h as i32 / rows as i32) as f32, "{kind:?}: integer row");
+            assert_eq!(size, [w, fh], "{kind:?}: the frame keeps the sheet width");
+        }
+        // The 20 deferred kinds stay OUT of the packing list (the wyvern
+        // precedent): their draw arms ask npc_sheet, get None, and skip.
+        for id in [440u32, 449u32, 450u32, 451u32, 452u32, 453u32, 460u32, 461u32, 466u32, 467u32, 468u32, 473u32, 474u32, 475u32, 476u32, 477u32, 479u32, 480u32, 481u32, 483u32] {
+            assert!(!D40_SHEETS.contains(&id), "NPC_{id} must stay deferred");
+        }
+    }
+
     #[test]
     fn the_packing_list_has_no_duplicate_sheets() {
         // A duplicate would just be decoded twice and packed twice — a silent
@@ -4132,7 +4482,11 @@ mod anchor_tests {
         }
         // Every lunar kind must resolve to a sheet the pillar set carries —
         // `npc_sheet(texture_net_id(kind))` is the draw's only source.
-        for net in 396u16..=430 {
+        // W4-d40: the bound is 429 (the lunar vanilla band's last id,
+        // VortexSoldier) — 430 is ArmedZombie, the 421-490 band's first kind,
+        // NOT a lunar minion (the data wave's `from_u16(430)` now resolves it,
+        // so the old `..=430` bound mis-routed it into the pillar audit).
+        for net in 396u16..=429 {
             let Some(kind) = NpcKind::from_u16(net) else {
                 continue;
             };
@@ -4140,6 +4494,17 @@ mod anchor_tests {
             assert!(
                 PILLAR_SHEETS.contains(&(tex_id as u32)),
                 "{kind:?} draws from NPC_{tex_id}, outside PILLAR_SHEETS"
+            );
+        }
+        // W4-d40 sheets phase: the 35 packed kinds' draw arms ask
+        // `npc_sheet(texture_net_id(kind))` too — the same audit (the
+        // deferred 20 are NOT in D40_SHEETS, so their None-returning arms
+        // stay out of this check).
+        for &id in D40_SHEETS {
+            let name = format!("NPC_{id}");
+            assert!(
+                packed(&name),
+                "{name} is asked for by `npc_sheet({id})` but never packed"
             );
         }
     }

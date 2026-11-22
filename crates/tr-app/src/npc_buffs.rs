@@ -471,6 +471,73 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // (`NPCID.cs:8892-8893`).
         | NpcKind::BloodZombie
         | NpcKind::Drippler => &[],
+        // W4-d40: the `DebuffImmunitySets` rows (`NPCID.cs`).
+        NpcKind::ArmedZombie
+        | NpcKind::ArmedZombiePincussion
+        | NpcKind::ArmedZombieSlimed
+        | NpcKind::ArmedZombieSwamp => &[],
+        NpcKind::ArmedZombieEskimo => &[44, 324],
+        // W4-d40: the `DebuffImmunitySets` rows (`NPCID.cs`).
+        NpcKind::ArmedZombieTwiggy
+        | NpcKind::ArmedZombieCenx
+        | NpcKind::CultistBossClone => &[],
+        NpcKind::CultistTablet
+        | NpcKind::CultistDevote => &[31],
+        // W4-d40: the `DebuffImmunitySets` rows (`NPCID.cs`).
+        NpcKind::GoldBird
+        | NpcKind::GoldBunny
+        | NpcKind::GoldButterfly
+        | NpcKind::GoldFrog
+        | NpcKind::GoldGrasshopper => &[31],
+        // W4-d40: the `DebuffImmunitySets` rows (`NPCID.cs`).
+        NpcKind::GoldMouse
+        | NpcKind::GoldWorm => &[31],
+        NpcKind::BoneThrowingSkeleton
+        | NpcKind::BoneThrowingSkeleton2
+        | NpcKind::BoneThrowingSkeleton3 => &[20],
+        // W4-d40: the `DebuffImmunitySets` rows (`NPCID.cs`).
+        NpcKind::BoneThrowingSkeleton4 => &[20],
+        NpcKind::SkeletonMerchant => &[31],
+        NpcKind::CultistDragonHead
+        | NpcKind::CultistDragonBody1
+        | NpcKind::CultistDragonBody2 => &[],
+        // W4-d40: the `DebuffImmunitySets` rows (`NPCID.cs`).
+        NpcKind::CultistDragonBody3
+        | NpcKind::CultistDragonBody4
+        | NpcKind::CultistDragonTail
+        | NpcKind::Butcher => &[],
+        NpcKind::CreatureFromTheDeep => &[31],
+        // W4-d40: the `DebuffImmunitySets` rows (`NPCID.cs`).
+        NpcKind::Fritz
+        | NpcKind::Nailhead
+        | NpcKind::CrimsonBunny
+        | NpcKind::Psycho => &[],
+        // W4-d40: the `DebuffImmunitySets` rows (`NPCID.cs`).
+        NpcKind::DeadlySphere => &[20, 24, 31, 323],
+        NpcKind::DrManFly
+        | NpcKind::ThePossessed
+        | NpcKind::CrimsonPenguin => &[],
+        NpcKind::ShadowFlameApparition => &[31, 153],
+        // W4-d40: the `DebuffImmunitySets` rows (`NPCID.cs`).
+        NpcKind::BigMimicCorruption
+        | NpcKind::BigMimicCrimson
+        | NpcKind::BigMimicHallow
+        | NpcKind::BigMimicJungle => &[20, 24, 31, 323],
+        NpcKind::Mothron => &[31],
+        // W4-d40: the `DebuffImmunitySets` rows (`NPCID.cs`).
+        NpcKind::MothronEgg
+        | NpcKind::MothronSpawn
+        | NpcKind::Medusa => &[31],
+        NpcKind::GreekSkeleton => &[20],
+        NpcKind::GraniteGolem => &[20, 24, 31, 323],
+        // W4-d40: the `DebuffImmunitySets` rows (`NPCID.cs`).
+        NpcKind::GraniteFlyer => &[20, 24, 31, 323],
+        NpcKind::EnchantedNightcrawler
+        | NpcKind::Grubby
+        | NpcKind::Sluggy
+        | NpcKind::Buggy => &[31],
+        // W4-d40: the `DebuffImmunitySets` rows (`NPCID.cs`).
+        NpcKind::TargetDummy => &[31],
         // S1-D-3 W-9 fishron wiring — 370/371/372/373 have NO
         // `DebuffImmunitySets` rows (`NPCID.cs:6075+`'s dictionary carries
         // no 370-373 keys) — the null-row else-branch, no immunity.

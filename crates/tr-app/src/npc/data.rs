@@ -627,6 +627,74 @@ impl NpcKind {
             NpcKind::WyvernBody => 225,
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
+            // W4-d40: ArmedZombie, ArmedZombieEskimo, ArmedZombiePincussion, ArmedZombieSlimed, ArmedZombieSwamp keep their vanilla ids (free in the protocol space).
+            NpcKind::ArmedZombie => 430,
+            NpcKind::ArmedZombieEskimo => 431,
+            NpcKind::ArmedZombiePincussion => 432,
+            NpcKind::ArmedZombieSlimed => 433,
+            NpcKind::ArmedZombieSwamp => 434,
+            // W4-d40: ArmedZombieTwiggy, ArmedZombieCenx, CultistTablet, CultistDevote, CultistBossClone keep their vanilla ids (free in the protocol space).
+            NpcKind::ArmedZombieTwiggy => 435,
+            NpcKind::ArmedZombieCenx => 436,
+            NpcKind::CultistTablet => 437,
+            NpcKind::CultistDevote => 438,
+            NpcKind::CultistBossClone => 440,
+            // W4-d40: GoldBird, GoldBunny, GoldButterfly, GoldFrog, GoldGrasshopper keep their vanilla ids (free in the protocol space).
+            NpcKind::GoldBird => 442,
+            NpcKind::GoldBunny => 443,
+            NpcKind::GoldButterfly => 444,
+            NpcKind::GoldFrog => 445,
+            NpcKind::GoldGrasshopper => 446,
+            // W4-d40: GoldMouse, GoldWorm, BoneThrowingSkeleton, BoneThrowingSkeleton2, BoneThrowingSkeleton3 keep their vanilla ids (free in the protocol space).
+            NpcKind::GoldMouse => 447,
+            NpcKind::GoldWorm => 448,
+            NpcKind::BoneThrowingSkeleton => 449,
+            NpcKind::BoneThrowingSkeleton2 => 450,
+            NpcKind::BoneThrowingSkeleton3 => 451,
+            // W4-d40: BoneThrowingSkeleton4, SkeletonMerchant, CultistDragonHead, CultistDragonBody1, CultistDragonBody2 keep their vanilla ids (free in the protocol space).
+            NpcKind::BoneThrowingSkeleton4 => 452,
+            NpcKind::SkeletonMerchant => 453,
+            NpcKind::CultistDragonHead => 454,
+            NpcKind::CultistDragonBody1 => 455,
+            NpcKind::CultistDragonBody2 => 456,
+            // W4-d40: CultistDragonBody3, CultistDragonBody4, CultistDragonTail, Butcher, CreatureFromTheDeep keep their vanilla ids (free in the protocol space).
+            NpcKind::CultistDragonBody3 => 457,
+            NpcKind::CultistDragonBody4 => 458,
+            NpcKind::CultistDragonTail => 459,
+            NpcKind::Butcher => 460,
+            NpcKind::CreatureFromTheDeep => 461,
+            // W4-d40: Fritz, Nailhead, CrimsonBunny, Psycho keep their vanilla ids (free in the protocol space).
+            // (CrimsonGoldfish 465 dropped - c4 owns @465, d37 tables.)
+            NpcKind::Fritz => 462,
+            NpcKind::Nailhead => 463,
+            NpcKind::CrimsonBunny => 464,
+            NpcKind::Psycho => 466,
+            // W4-d40: DeadlySphere, DrManFly, ThePossessed, CrimsonPenguin, ShadowFlameApparition keep their vanilla ids (free in the protocol space).
+            NpcKind::DeadlySphere => 467,
+            NpcKind::DrManFly => 468,
+            NpcKind::ThePossessed => 469,
+            NpcKind::CrimsonPenguin => 470,
+            NpcKind::ShadowFlameApparition => 472,
+            // W4-d40: BigMimicCorruption, BigMimicCrimson, BigMimicHallow, BigMimicJungle, Mothron keep their vanilla ids (free in the protocol space).
+            NpcKind::BigMimicCorruption => 473,
+            NpcKind::BigMimicCrimson => 474,
+            NpcKind::BigMimicHallow => 475,
+            NpcKind::BigMimicJungle => 476,
+            NpcKind::Mothron => 477,
+            // W4-d40: MothronEgg, MothronSpawn, Medusa, GreekSkeleton, GraniteGolem keep their vanilla ids (free in the protocol space).
+            NpcKind::MothronEgg => 478,
+            NpcKind::MothronSpawn => 479,
+            NpcKind::Medusa => 480,
+            NpcKind::GreekSkeleton => 481,
+            NpcKind::GraniteGolem => 482,
+            // W4-d40: GraniteFlyer, EnchantedNightcrawler, Grubby, Sluggy, Buggy keep their vanilla ids (free in the protocol space).
+            NpcKind::GraniteFlyer => 483,
+            NpcKind::EnchantedNightcrawler => 484,
+            NpcKind::Grubby => 485,
+            NpcKind::Sluggy => 486,
+            NpcKind::Buggy => 487,
+            // W4-d40: TargetDummy keep their vanilla ids (free in the protocol space).
+            NpcKind::TargetDummy => 488,
             NpcKind::WyvernTail => 228,
             // W4-d34 kinds 1-70 coverage wave: the port-local 266..280 band
             // (free in to_u16/from_u16 AND render_key; the vanilla types ride
@@ -1076,6 +1144,73 @@ impl NpcKind {
             225 => NpcKind::WyvernBody,
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            430 => NpcKind::ArmedZombie,
+            431 => NpcKind::ArmedZombieEskimo,
+            432 => NpcKind::ArmedZombiePincussion,
+            433 => NpcKind::ArmedZombieSlimed,
+            434 => NpcKind::ArmedZombieSwamp,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            435 => NpcKind::ArmedZombieTwiggy,
+            436 => NpcKind::ArmedZombieCenx,
+            437 => NpcKind::CultistTablet,
+            438 => NpcKind::CultistDevote,
+            440 => NpcKind::CultistBossClone,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            442 => NpcKind::GoldBird,
+            443 => NpcKind::GoldBunny,
+            444 => NpcKind::GoldButterfly,
+            445 => NpcKind::GoldFrog,
+            446 => NpcKind::GoldGrasshopper,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            447 => NpcKind::GoldMouse,
+            448 => NpcKind::GoldWorm,
+            449 => NpcKind::BoneThrowingSkeleton,
+            450 => NpcKind::BoneThrowingSkeleton2,
+            451 => NpcKind::BoneThrowingSkeleton3,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            452 => NpcKind::BoneThrowingSkeleton4,
+            453 => NpcKind::SkeletonMerchant,
+            454 => NpcKind::CultistDragonHead,
+            455 => NpcKind::CultistDragonBody1,
+            456 => NpcKind::CultistDragonBody2,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            457 => NpcKind::CultistDragonBody3,
+            458 => NpcKind::CultistDragonBody4,
+            459 => NpcKind::CultistDragonTail,
+            460 => NpcKind::Butcher,
+            461 => NpcKind::CreatureFromTheDeep,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            462 => NpcKind::Fritz,
+            463 => NpcKind::Nailhead,
+            464 => NpcKind::CrimsonBunny,
+            466 => NpcKind::Psycho,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            467 => NpcKind::DeadlySphere,
+            468 => NpcKind::DrManFly,
+            469 => NpcKind::ThePossessed,
+            470 => NpcKind::CrimsonPenguin,
+            472 => NpcKind::ShadowFlameApparition,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            473 => NpcKind::BigMimicCorruption,
+            474 => NpcKind::BigMimicCrimson,
+            475 => NpcKind::BigMimicHallow,
+            476 => NpcKind::BigMimicJungle,
+            477 => NpcKind::Mothron,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            478 => NpcKind::MothronEgg,
+            479 => NpcKind::MothronSpawn,
+            480 => NpcKind::Medusa,
+            481 => NpcKind::GreekSkeleton,
+            482 => NpcKind::GraniteGolem,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            483 => NpcKind::GraniteFlyer,
+            484 => NpcKind::EnchantedNightcrawler,
+            485 => NpcKind::Grubby,
+            486 => NpcKind::Sluggy,
+            487 => NpcKind::Buggy,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            488 => NpcKind::TargetDummy,
             228 => NpcKind::WyvernTail,
             266 => NpcKind::AngryBones,
             267 => NpcKind::CursedSkull,
@@ -1411,6 +1546,9 @@ impl NpcKind {
                     // `townNPC = true`) with no ported housing entry yet (the
                     // TravellingMerchant precedent). `is_friendly` reads this.
                     | NpcKind::Pirate
+                    // W4-d40: the Skeleton Merchant's `isLikeATownNPC` row
+                    // (`NPC.cs:6860`: `type == 453`).
+                    | NpcKind::SkeletonMerchant
             )
     }
 
@@ -2101,6 +2239,74 @@ impl NpcKind {
             NpcKind::Necromancer => "NPC_Hit_2",
             NpcKind::NecromancerArmored => "NPC_Hit_2",
             NpcKind::DiabolistRed => "NPC_Hit_2",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::ArmedZombie
+            | NpcKind::ArmedZombieEskimo
+            | NpcKind::ArmedZombiePincussion
+            | NpcKind::ArmedZombieSlimed
+            | NpcKind::ArmedZombieSwamp => "NPC_Hit_1",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::ArmedZombieTwiggy
+            | NpcKind::ArmedZombieCenx
+            | NpcKind::CultistDevote => "NPC_Hit_1",
+            NpcKind::CultistTablet => "NPC_Hit_4",
+            NpcKind::CultistBossClone => "NPC_Hit_2",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::GoldBird
+            | NpcKind::GoldBunny
+            | NpcKind::GoldButterfly
+            | NpcKind::GoldFrog
+            | NpcKind::GoldGrasshopper => "NPC_Hit_1",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::GoldMouse
+            | NpcKind::GoldWorm => "NPC_Hit_1",
+            NpcKind::BoneThrowingSkeleton
+            | NpcKind::BoneThrowingSkeleton2
+            | NpcKind::BoneThrowingSkeleton3 => "NPC_Hit_2",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::BoneThrowingSkeleton4
+            | NpcKind::SkeletonMerchant => "NPC_Hit_2",
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2 => "NPC_Hit_56",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => "NPC_Hit_56",
+            NpcKind::Butcher => "NPC_Hit_7",
+            NpcKind::CreatureFromTheDeep => "NPC_Hit_1",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::Fritz
+            | NpcKind::Nailhead
+            | NpcKind::CrimsonBunny
+ => "NPC_Hit_1",
+            NpcKind::Psycho => "NPC_Hit_48",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::DeadlySphere => "NPC_Hit_34",
+            NpcKind::DrManFly => "NPC_Hit_35",
+            NpcKind::ThePossessed => "NPC_Hit_47",
+            NpcKind::CrimsonPenguin => "NPC_Hit_1",
+            NpcKind::ShadowFlameApparition => "NPC_Hit_52",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::BigMimicCorruption
+            | NpcKind::BigMimicCrimson
+            | NpcKind::BigMimicHallow
+            | NpcKind::BigMimicJungle => "NPC_Hit_4",
+            NpcKind::Mothron => "NPC_Hit_44",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::MothronEgg
+            | NpcKind::MothronSpawn
+            | NpcKind::Medusa => "NPC_Hit_1",
+            NpcKind::GreekSkeleton => "NPC_Hit_2",
+            NpcKind::GraniteGolem => "NPC_Hit_41",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::GraniteFlyer => "NPC_Hit_7",
+            NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => "NPC_Hit_1",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::TargetDummy => "NPC_Hit_15",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2508,6 +2714,74 @@ impl NpcKind {
             NpcKind::Necromancer => "NPC_Killed_2",
             NpcKind::NecromancerArmored => "NPC_Killed_2",
             NpcKind::DiabolistRed => "NPC_Killed_2",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::ArmedZombie
+            | NpcKind::ArmedZombieEskimo
+            | NpcKind::ArmedZombiePincussion
+            | NpcKind::ArmedZombieSlimed
+            | NpcKind::ArmedZombieSwamp => "NPC_Killed_2",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::ArmedZombieTwiggy
+            | NpcKind::ArmedZombieCenx
+            | NpcKind::CultistBossClone => "NPC_Killed_2",
+            NpcKind::CultistTablet => "NPC_Killed_14",
+            NpcKind::CultistDevote => "NPC_Killed_1",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::GoldBird
+            | NpcKind::GoldBunny
+            | NpcKind::GoldButterfly
+            | NpcKind::GoldFrog
+            | NpcKind::GoldGrasshopper => "NPC_Killed_1",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::GoldMouse => "NPC_Killed_4",
+            NpcKind::GoldWorm => "NPC_Killed_1",
+            NpcKind::BoneThrowingSkeleton
+            | NpcKind::BoneThrowingSkeleton2
+            | NpcKind::BoneThrowingSkeleton3 => "NPC_Killed_2",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::BoneThrowingSkeleton4
+            | NpcKind::SkeletonMerchant => "NPC_Killed_2",
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2 => "NPC_Killed_60",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => "NPC_Killed_60",
+            NpcKind::Butcher => "NPC_Killed_17",
+            NpcKind::CreatureFromTheDeep => "NPC_Killed_1",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::Fritz
+            | NpcKind::Nailhead
+            | NpcKind::CrimsonBunny
+ => "NPC_Killed_1",
+            NpcKind::Psycho => "NPC_Killed_50",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::DeadlySphere => "NPC_Killed_37",
+            NpcKind::DrManFly => "NPC_Killed_38",
+            NpcKind::ThePossessed => "NPC_Killed_49",
+            NpcKind::CrimsonPenguin => "NPC_Killed_1",
+            NpcKind::ShadowFlameApparition => "NPC_Killed_55",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::BigMimicCorruption
+            | NpcKind::BigMimicCrimson
+            | NpcKind::BigMimicHallow
+            | NpcKind::BigMimicJungle => "NPC_Killed_6",
+            NpcKind::Mothron => "NPC_Killed_46",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::MothronEgg
+            | NpcKind::MothronSpawn
+            | NpcKind::Medusa => "NPC_Killed_1",
+            NpcKind::GreekSkeleton => "NPC_Killed_2",
+            NpcKind::GraniteGolem => "NPC_Killed_43",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::GraniteFlyer => "NPC_Killed_6",
+            NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => "NPC_Killed_1",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::TargetDummy => "NPC_Killed_2",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2663,6 +2937,23 @@ impl NpcKind {
             NpcKind::Ghost => true,
             // W4-d38 b6 — the noGravity SetDefaults rows.
             NpcKind::PumpkingBlade => true,
+            // W4-d40: the SetDefaults noGravity rows (`NPC.cs`).
+            NpcKind::CultistTablet
+            | NpcKind::CultistBossClone => true,
+            // W4-d40: the SetDefaults noGravity rows (`NPC.cs`).
+            NpcKind::GoldButterfly => true,
+            // W4-d40: the SetDefaults noGravity rows (`NPC.cs`).
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2 => true,
+            // W4-d40: the SetDefaults noGravity rows (`NPC.cs`).
+            NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => true,
+            // W4-d40: the SetDefaults noGravity rows (`NPC.cs`).
+            NpcKind::DeadlySphere => true,
+            // W4-d40: the SetDefaults noGravity rows (`NPC.cs`).
+            NpcKind::Mothron => true,
             NpcKind::AngryNimbus => true,
             // W4-d34: the Cursed Skull's `noGravity = true` (`NPC.cs:9160`,
             // kb 0.2 `:9163`). The ManEater (43) writes noGravity but kb 0
@@ -2964,6 +3255,73 @@ impl NpcKind {
             // Spirit); 72 - :13888 (the ForceBubble).
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::ArmedZombie
+            | NpcKind::ArmedZombieEskimo
+            | NpcKind::ArmedZombiePincussion
+            | NpcKind::ArmedZombieSlimed
+            | NpcKind::ArmedZombieSwamp => 3,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::ArmedZombieTwiggy
+            | NpcKind::ArmedZombieCenx => 3,
+            NpcKind::CultistTablet
+            | NpcKind::CultistDevote => 83,
+            NpcKind::CultistBossClone => 84,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::GoldBird => 24,
+            NpcKind::GoldBunny
+            | NpcKind::GoldFrog => 7,
+            NpcKind::GoldButterfly => 65,
+            NpcKind::GoldGrasshopper => 1,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::GoldMouse => 7,
+            NpcKind::GoldWorm => 66,
+            NpcKind::BoneThrowingSkeleton
+            | NpcKind::BoneThrowingSkeleton2
+            | NpcKind::BoneThrowingSkeleton3 => 3,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::BoneThrowingSkeleton4 => 3,
+            NpcKind::SkeletonMerchant => 7,
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2 => 6,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => 6,
+            NpcKind::Butcher
+            | NpcKind::CreatureFromTheDeep => 3,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::Fritz
+            | NpcKind::Nailhead
+            | NpcKind::CrimsonBunny
+            | NpcKind::Psycho => 3,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::DeadlySphere => 85,
+            NpcKind::DrManFly
+            | NpcKind::ThePossessed
+            | NpcKind::CrimsonPenguin => 3,
+            NpcKind::ShadowFlameApparition => 86,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::BigMimicCorruption
+            | NpcKind::BigMimicCrimson
+            | NpcKind::BigMimicHallow
+            | NpcKind::BigMimicJungle => 87,
+            NpcKind::Mothron => 88,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::MothronEgg => 89,
+            NpcKind::MothronSpawn => 90,
+            NpcKind::Medusa
+            | NpcKind::GreekSkeleton
+            | NpcKind::GraniteGolem => 3,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::GraniteFlyer => 91,
+            NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => 66,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::TargetDummy => 92,
             NpcKind::DungeonSpirit => 56,
             // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults aiStyle rows).
             NpcKind::AngryBones => 3,   // :9112
@@ -3661,6 +4019,74 @@ impl NpcKind {
             // 384 18x40 (`:13885`/`:13887`).
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::ArmedZombie
+            | NpcKind::ArmedZombieEskimo
+            | NpcKind::ArmedZombiePincussion
+            | NpcKind::ArmedZombieSlimed
+            | NpcKind::ArmedZombieSwamp => (18.0, 40.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::ArmedZombieTwiggy
+            | NpcKind::ArmedZombieCenx => (18.0, 40.0),
+            NpcKind::CultistTablet => (54.0, 54.0),
+            NpcKind::CultistDevote => (22.0, 40.0),
+            NpcKind::CultistBossClone => (24.0, 50.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::GoldBird => (14.0, 14.0),
+            NpcKind::GoldBunny => (18.0, 20.0),
+            NpcKind::GoldButterfly => (10.0, 10.0),
+            NpcKind::GoldFrog => (12.0, 10.0),
+            NpcKind::GoldGrasshopper => (14.0, 10.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::GoldMouse => (14.0, 12.0),
+            NpcKind::GoldWorm => (10.0, 4.0),
+            NpcKind::BoneThrowingSkeleton
+            | NpcKind::BoneThrowingSkeleton2
+            | NpcKind::BoneThrowingSkeleton3 => (18.0, 40.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::BoneThrowingSkeleton4
+            | NpcKind::SkeletonMerchant => (18.0, 40.0),
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2 => (32.0, 32.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => (32.0, 32.0),
+            NpcKind::Butcher
+            | NpcKind::CreatureFromTheDeep => (18.0, 40.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::Fritz => (20.0, 24.0),
+            NpcKind::Nailhead
+            | NpcKind::Psycho => (18.0, 40.0),
+            NpcKind::CrimsonBunny
+ => (18.0, 20.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::DeadlySphere => (22.0, 22.0),
+            NpcKind::DrManFly => (18.0, 40.0),
+            NpcKind::ThePossessed => (38.0, 26.0),
+            NpcKind::CrimsonPenguin => (16.0, 34.0),
+            NpcKind::ShadowFlameApparition => (40.0, 24.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::BigMimicCorruption
+            | NpcKind::BigMimicCrimson
+            | NpcKind::BigMimicHallow
+            | NpcKind::BigMimicJungle => (28.0, 44.0),
+            NpcKind::Mothron => (80.0, 50.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::MothronEgg => (34.0, 34.0),
+            NpcKind::MothronSpawn => (46.0, 30.0),
+            NpcKind::Medusa
+            | NpcKind::GreekSkeleton => (18.0, 40.0),
+            NpcKind::GraniteGolem => (28.0, 48.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::GraniteFlyer => (20.0, 30.0),
+            NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => (10.0, 4.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::TargetDummy => (18.0, 40.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
             // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults width/height).
             NpcKind::AngryBones => (18.0, 40.0),  // :9110-9111
@@ -3863,6 +4289,16 @@ impl NpcKind {
             NpcKind::DungeonGuardian => 68,
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
+            // W4-d40: hand rows for the kinds with no bestiary entry
+            // (the Hide=true exclusions with no credit-fold).
+            NpcKind::BoneThrowingSkeleton2 => 450,
+            NpcKind::BoneThrowingSkeleton3 => 451,
+            // W4-d40: hand rows for the kinds with no bestiary entry
+            // (the Hide=true exclusions with no credit-fold).
+            NpcKind::BoneThrowingSkeleton4 => 452,
+            // W4-d40: hand rows for the kinds with no bestiary entry
+            // (the Hide=true exclusions with no credit-fold).
+            NpcKind::TargetDummy => 488,
             NpcKind::Goldfish => 55,
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
@@ -4461,6 +4897,73 @@ impl NpcKind {
             // 300 (`:12228`), 288 200 (`:12745`), 384 1000 (`:13884`).
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::ArmedZombie => 45,
+            NpcKind::ArmedZombieEskimo => 50,
+            NpcKind::ArmedZombiePincussion => 50,
+            NpcKind::ArmedZombieSlimed => 40,
+            NpcKind::ArmedZombieSwamp => 45,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::ArmedZombieTwiggy => 45,
+            NpcKind::ArmedZombieCenx => 38,
+            NpcKind::CultistTablet => 400,
+            NpcKind::CultistDevote => 400,
+            NpcKind::CultistBossClone => 10000,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::GoldBird => 5,
+            NpcKind::GoldBunny => 5,
+            NpcKind::GoldButterfly => 5,
+            NpcKind::GoldFrog => 5,
+            NpcKind::GoldGrasshopper => 5,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::GoldMouse => 5,
+            NpcKind::GoldWorm => 5,
+            NpcKind::BoneThrowingSkeleton => 60,
+            NpcKind::BoneThrowingSkeleton2 => 55,
+            NpcKind::BoneThrowingSkeleton3 => 65,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::BoneThrowingSkeleton4 => 60,
+            NpcKind::SkeletonMerchant => 250,
+            NpcKind::CultistDragonHead => 10000,
+            NpcKind::CultistDragonBody1 => 10000,
+            NpcKind::CultistDragonBody2 => 10000,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::CultistDragonBody3 => 10000,
+            NpcKind::CultistDragonBody4 => 10000,
+            NpcKind::CultistDragonTail => 10000,
+            NpcKind::Butcher => 700,
+            NpcKind::CreatureFromTheDeep => 400,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::Fritz => 270,
+            NpcKind::Nailhead => 4000,
+            NpcKind::CrimsonBunny => 75,
+            NpcKind::Psycho => 550,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::DeadlySphere => 350,
+            NpcKind::DrManFly => 500,
+            NpcKind::ThePossessed => 600,
+            NpcKind::CrimsonPenguin => 75,
+            NpcKind::ShadowFlameApparition => 180,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::BigMimicCorruption => 3500,
+            NpcKind::BigMimicCrimson => 3500,
+            NpcKind::BigMimicHallow => 3500,
+            NpcKind::BigMimicJungle => 3500,
+            NpcKind::Mothron => 6000,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::MothronEgg => 200,
+            NpcKind::MothronSpawn => 700,
+            NpcKind::Medusa => 400,
+            NpcKind::GreekSkeleton => 70,
+            NpcKind::GraniteGolem => 110,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::GraniteFlyer => 40,
+            NpcKind::EnchantedNightcrawler => 5,
+            NpcKind::Grubby => 5,
+            NpcKind::Sluggy => 5,
+            NpcKind::Buggy => 5,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::TargetDummy => 1000,
             NpcKind::DungeonSpirit => 200,
             // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults lifeMax).
             NpcKind::AngryBones => 80,   // :9115
@@ -4915,6 +5418,73 @@ impl NpcKind {
             // head's `damage = 0` (`:8563`, the branch writes none).
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::ArmedZombie => 14,
+            NpcKind::ArmedZombieEskimo => 16,
+            NpcKind::ArmedZombiePincussion => 16,
+            NpcKind::ArmedZombieSlimed => 13,
+            NpcKind::ArmedZombieSwamp => 13,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::ArmedZombieTwiggy => 16,
+            NpcKind::ArmedZombieCenx => 12,
+            NpcKind::CultistTablet => 0,
+            NpcKind::CultistDevote => 0,
+            NpcKind::CultistBossClone => 0,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::GoldBird => 0,
+            NpcKind::GoldBunny => 0,
+            NpcKind::GoldButterfly => 0,
+            NpcKind::GoldFrog => 0,
+            NpcKind::GoldGrasshopper => 0,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::GoldMouse => 0,
+            NpcKind::GoldWorm => 0,
+            NpcKind::BoneThrowingSkeleton => 20,
+            NpcKind::BoneThrowingSkeleton2 => 20,
+            NpcKind::BoneThrowingSkeleton3 => 18,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::BoneThrowingSkeleton4 => 22,
+            NpcKind::SkeletonMerchant => 10,
+            NpcKind::CultistDragonHead => 100,
+            NpcKind::CultistDragonBody1 => 50,
+            NpcKind::CultistDragonBody2 => 50,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::CultistDragonBody3 => 50,
+            NpcKind::CultistDragonBody4 => 50,
+            NpcKind::CultistDragonTail => 50,
+            NpcKind::Butcher => 70,
+            NpcKind::CreatureFromTheDeep => 60,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::Fritz => 70,
+            NpcKind::Nailhead => 100,
+            NpcKind::CrimsonBunny => 21,
+            NpcKind::Psycho => 70,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::DeadlySphere => 100,
+            NpcKind::DrManFly => 65,
+            NpcKind::ThePossessed => 68,
+            NpcKind::CrimsonPenguin => 21,
+            NpcKind::ShadowFlameApparition => 50,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::BigMimicCorruption => 90,
+            NpcKind::BigMimicCrimson => 90,
+            NpcKind::BigMimicHallow => 90,
+            NpcKind::BigMimicJungle => 90,
+            NpcKind::Mothron => 80,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::MothronEgg => 0,
+            NpcKind::MothronSpawn => 50,
+            NpcKind::Medusa => 30,
+            NpcKind::GreekSkeleton => 22,
+            NpcKind::GraniteGolem => 30,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::GraniteFlyer => 24,
+            NpcKind::EnchantedNightcrawler => 0,
+            NpcKind::Grubby => 0,
+            NpcKind::Sluggy => 0,
+            NpcKind::Buggy => 0,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::TargetDummy => 0,
             NpcKind::DungeonSpirit => 70,
             // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults damage).
             NpcKind::AngryBones => 26,   // :9113
