@@ -33070,6 +33070,64 @@ was re-read line-by-line (the parameter table, the state nesting, the
 dust gate order, the fuse). The 18 witness tests are WRITTEN, NOT RUN —
 **no compiler invoked**.
 
+### W4-c12 wiring (2026-11-20, code-only mode)
+
+Branch `task/W4-c12-style74-martian-drone`. The stand-in swap landed:
+
+- **Axis claim**: `npc.rs::update_rng_dust`'s `74` arm rides the
+  `ai_074_hover_charge` adapter — `style74_step` over the live
+  `DustPool` + the frame's `SpawnCtx` on the caller's `UpdateNPCs`
+  stream (the Everscream `update_rng_dust` threading, S1-F-13c). The
+  outcome seams: `knock_back_resist` → `kb_resist_override` (the
+  style-39 precedent), `sound_item14` → the `wants_sound`
+  `NpcSoundCue::Item14` queue (the sim drains it after the machine's
+  draws), `died` → `damage_override = Some(0)` (the mid-update
+  deactivation mirror, the style-70 detonation precedent) +
+  `last_hit_dir = 0` (the C# fuse's argument-less `HitEffect()`,
+  `NPC.cs:35497`/`:81654`). The `light` outcome stays the draw-side
+  feed's (the style-72 pop precedent). The noTileCollide/noGravity
+  integration tail runs in the adapter (`NPC.cs:90490-90498`).
+- **Stand-ins retired**: `update_martian_drone`/`update_solar_corite`
+  deleted; the kind-match arms are `unreachable!` (the saucer-trio
+  precedent). The corite's `wants_blast` invention is gone — the field
+  stays for the DD2 glider/grenadier owners. The corite implosion
+  witness was reconciled (the 192-box swell about the old centre,
+  alpha 255, the 3-tick fuse, NO blast).
+- **FindFrame twins wired**: `find_frame`'s 388/418 arms ride
+  `drone_find_frame`/`corite_find_frame` (behaviour-identical rows;
+  the 418's states 3/4 hold the frame).
+- **Death feed**: `world_sim/npcs.rs::style74_death_feed` draws the
+  388/418 `HitEffect` DEATH arms (`NPC.cs:84483-84499`/`:82985-82991`)
+  when the death retain picks the corpse up — the 388's flat 10 dust
+  226 (scale 0.5, SpeedX `-2.5×hitDirection`) + gores 605/606 at
+  `Center-(10,10)` (the `ai[0]==3` death rides the rotation vector, X
+  flipped at `spriteDirection==1`, ×5), the 418's 20×(241+6) pairs
+  (the 6s: noGravity/scale 1.5/fadeIn 1/velocity ×3) + the
+  841/842×2/843×2 gore fan at `Center` (velocity ×0.8/×0.9,
+  Scale-default 1f). The counts ride `drone_hit_dust_plan`/
+  `corite_hit_dust_plan`; the internals roll inside
+  `DustPool::new_dust`/`GorePool::new_gore`. New `Npc.last_hit_dir`
+  records the strike side at the three strike sites (`hurt`/
+  `hurt_from_projectile`/`strike_pooled`) — the C# passes
+  `hitDirection` straight to `HitEffect` (`:81488`). **Recorded
+  deviations**: (a) the draws ride `UpdateNPCs` (the port batches
+  deaths; the C# runs HitEffect at strike time — the S1-E-21c
+  death-cue deviation); (b) the feed runs BEFORE the death cue in the
+  death loop (the C#'s `:81488` HitEffect precedes checkDead's
+  DeathSound `:81559`→`:78186`); (c) the `life > 0` hit halves stay
+  with the unported strike-side HitEffect (the standing visual skip);
+  (d) the C# fuse death sets `active = false` WITHOUT checkDead
+  (`:35496-35498`) — no DeathSound, no loot — while the port's batched
+  death retain plays the kind's cue and walks the loot db for every
+  `hp <= 0` corpse (the standing S1-E-21c batch deviation; the loot db
+  registers no 388 rules, the drone witness's note).
+- **Witnesses**: 4 new (WRITTEN NOT RUN, code-only): the wired-axis
+  retirement witness (TargetClosest + kb override + the live-pool
+  trail dust), the wired corite ember-gate census (exactly two
+  `Next(3)` on a menu-ctx tick), and the two death-feed draw censuses
+  (twin dust/gore pools replay the C# spawn ladder on a cloned
+  stream; any extra/reordered draw breaks the equality).
+
 ## The W-10 wiring slice (S1-D-4, 2026-11-19, code-only mode)
 
 Branch `task/S1-D-4-wire-unicorn-proj194`, census slice W-10
