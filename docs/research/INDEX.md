@@ -138,6 +138,8 @@ UNASSIGNED (reserved); this lane's new retire-phase docs take 145/148.
 
 | 381 | NPC kinds 351–697 SetDefaults census + first-20 port (W4-f18; 343 arm-bearing ids, 105→125 ported, the value() merge-scar repair, the d37-E8 roster-collision keep-one + exact drop-hunks + the kinds-verify-2 family bible; SEALED, code-only; number chain 64→249-voided→381, registry-150 §10) | `381-npc-kinds-351-697-census.md` | ✅ SEALED |
 
+| 335 | W4-f30 SYSTEMS RETIRE (keep-one drop-hunks c46/d70 vs f30 + the c24/f47/d2 compose meeting points + the FINAL notify-band census; renamed 240→335 per the d54 registry 150 §9.2 — g58's earlier 143→240 rename wins 240; code-only) | `335-f30-systems-retire.md` | ✅ |
+
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
   counts question is ticketed.

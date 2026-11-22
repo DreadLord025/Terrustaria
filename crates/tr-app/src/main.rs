@@ -415,6 +415,9 @@ mod soundid;
 // case-20 female-hit slot pick. The menu-half cues ride Menu::pending_cue
 // (code-only mode — witnesses written not run).
 mod main_sounds;
+mod sun_scorch;
+mod dryad_stardew;
+mod town_shimmer;
 mod test_world_helpers;
 mod town;
 mod town_arrival;

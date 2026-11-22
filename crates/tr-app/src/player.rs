@@ -1068,6 +1068,18 @@ pub struct Player {
     /// `Player.dead`: the player is dead and waiting for the respawn timer
     /// (`Player.cs:38908`).
     pub dead: bool,
+    /// `Player.ghost` (`Player.cs:38909`'s spectating / `:17053`): the
+    /// hardcore permadeath ghost — set when the respawn timer expires on a
+    /// hardcore player whose `statLifeMax` hit 0 (or whose world does not
+    /// survive hardcore death). A ghost never respawns
+    /// (`AllowsRespawnTimerSkip` `:38964`, `UpdateDead` `:17045-17055`).
+    /// W4-f30: the hardcore death penalty (`death.rs`).
+    pub ghost: bool,
+    /// W4-f30 — `PlayerDeathReason.SourceProjectileType` on the killing blow
+    /// (`Player.cs:38834`): the projectile kind that zeroed the life pool, if
+    /// any. The gravestone teammate-death check (`KillMe`'s 36 arm) reads it;
+    /// the death path consumes it. `None` for a non-projectile death.
+    pub death_source_projectile: Option<u16>,
     /// `Player.aggro` (`Player.cs:1446`, the int default 0): the stealth
     /// offset the shared NPC target scan subtracts (`NPC.cs:77688`) and
     /// the facing-inheritance gate reads (`:77749`). The stealth armour
@@ -2761,10 +2773,9 @@ pub struct Player {
     pub catalyst_band: bool,
     /// `Player.vampireBurningInSunlight` (`Player.cs:28709`): the vampire
     /// seed's sun-scorch flag — the gate on the Molten set's
-    /// uffImmune[24] (ArmorSetBonuses.cs:285-288). The granter
-    /// (VampireSeedSunlightExposure, :28672-28719) runs each live tick
-    /// before the counter (W4-d80; update_sun_scorch, the W4-d70
-    /// DOC-SWEEP port); ResetEffects clears it (:18730).
+    /// `buffImmune[24]` (`ArmorSetBonuses.cs:285-288`). The granter is
+    /// `sun_scorch.rs::update_sun_scorch` (`VampireSeedSunlightExposure`,
+    /// `:28672-28719`, W4-f30); `ResetEffects` clears it (`:18730`).
     pub vampire_burning_in_sunlight: bool,
     /// `Player.sunScorchCounter` (`Player.cs:28588`): the vampire seed's
     /// sun-scorch ramp — `Clamp(counter + (burning ? 1 : -num), 0, 300)`,
@@ -2793,6 +2804,13 @@ pub struct Player {
     /// is present, else `None`. The exposure gate (`:28682-28685`) refuses
     /// above 0.5. Fed from the scan's `closest_npc_position[398]`.
     pub moon_lord_sky_intensity: Option<f32>,
+    /// W4-f30 order seam: `buffImmune[24]` captured BEFORE the Molten set
+    /// fold (`armor_sets::apply_armor_set_bonuses`). The C# grants Molten's
+    /// fire immunity AFTER `UpdateSunScorch` (`Player.cs:25634` < `:25685`),
+    /// gated on `!vampireBurningInSunlight`; the port's fold runs first, so
+    /// the sun-scorch call site restores this value on a warm-up burn tick
+    /// (flag set, counter < 120 — the `:28653` `Array.Clear` has not run).
+    pub(crate) fire_immune_pre_molten: bool,
     /// `Player.hasMoltenQuiver` (`Player.cs:1974`): 4002/6181 (`:14467`,
     /// `:14596`) — converts the wooden arrow to the FireArrow and adds 2 ammo
     /// damage (`:53537-53541`).
@@ -3244,6 +3262,8 @@ impl Player {
             // struct — `timeLeft` 0, no text).
             chat_overhead: OverheadMessage::default(),
             dead: false,
+            ghost: false,
+            death_source_projectile: None,
             // The S1-D-3p stock values (`Player.cs:1446`/`:2994`/`:870`'s
             // field defaults): no stealth, no per-type calm, no tank pet.
             aggro: 0,
@@ -3789,6 +3809,7 @@ impl Player {
             sizzle_alive: None,
             zone_graveyard: false,
             moon_lord_sky_intensity: None,
+            fire_immune_pre_molten: false,
             has_molten_quiver: false,
             acc_sharp_barb: false,
             acc_ammo_cycler_damage: false,
@@ -4621,6 +4642,9 @@ impl Player {
         self.breath_cd = 0;
         self.regen = RegenState::default();
         self.dot_death = None;
+        // W4-f30 — the killing-blow source clears on the respawn (the next
+        // death latches its own).
+        self.death_source_projectile = None;
         self.fall_start = (self.y / TILE_PX) as i32;
         self.wet = false;
         self.lava_wet = false;
@@ -4789,8 +4813,9 @@ impl Player {
 
     /// `Player.AllowsRespawnTimerSkip` (`Player.cs:38962-38987`): after the
     /// 90-tick lockout, with no boss hindering, no danger NPCs nearby and
-    /// no Frost/Pumpkin/OOA event running (`:38984-38986`). The
-    /// `ghost`/`pvpDeath` branches stay unreachable in the port.
+    /// no Frost/Pumpkin/OOA event running (`:38984-38986`). The `ghost`
+    /// branch is live since W4-f30 (the hardcore permadeath); `pvpDeath`
+    /// stays unreachable (no PVP).
     pub fn allows_respawn_timer_skip(
         &self,
         boss_near: bool,
@@ -4800,9 +4825,10 @@ impl Player {
         !(self.ghost_like() || self.dead_time < 90 || boss_near || danger_near || moon_event_live)
     }
 
-    /// The port has no ghosts (hardcore) or PVP deaths; both gates are false.
+    /// `Player.ghost` (the hardcore permadeath, W4-f30) — the PVP-death
+    /// half stays false (no PVP).
     fn ghost_like(&self) -> bool {
-        false
+        self.ghost
     }
 
     /// `Player.UpdateDead` (`Player.cs:16919-17070`): `deadTime++`, the
@@ -4815,6 +4841,11 @@ impl Player {
         boss_near: bool,
         danger_near: bool,
         moon_event_live: bool,
+        // W4-f30 — `Player.UpdateDead`'s hardcore gate (`Player.cs:17045`):
+        // `difficulty == 2 && (statLifeMax <= 0 || !Main.surviveHardcoreDeath)`.
+        // The caller folds the difficulty + the seed predicate; a true value
+        // routes the expiry to the ghost instead of the respawn.
+        hardcore_permadeath: bool,
     ) -> bool {
         self.dead_time += 1;
         // `Player.cs:17016`: the dead tick zeroes the life pool.
@@ -4842,6 +4873,20 @@ impl Player {
         // the open container SILENTLY (no sound — the range close's 11 never
         // fires; S1-P-i43). `chestX/Y` stay, exactly like the C#.
         self.chest = crate::bank::CHEST_CLOSED;
+        // W4-f30 — `Player.UpdateDead`'s hardcore gate (`Player.cs:17045-17067`):
+        // a hardcore player whose life pool hit 0 (or whose world does not
+        // survive hardcore death) never respawns — the timer still counts
+        // down, but the expiry sets the ghost instead of reviving. The
+        // respawn-skip below is already ghost-gated (`AllowsRespawnTimerSkip`
+        // `:38964`), so a ghost can neither skip nor revive.
+        if hardcore_permadeath {
+            if self.respawn_timer <= 0 {
+                // `:17051-17054` — `whoAmI == Main.myPlayer || netMode == 2`;
+                // the port's dead branch is the local player.
+                self.ghost = true;
+            }
+            return false;
+        }
         let jump_edge = jump && !self.prev_jump_input;
         self.prev_jump_input = jump;
         let can_skip = self.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);
@@ -5537,6 +5582,13 @@ impl Player {
         // also selects the 20-tick immunity window below, not 40).
         let amount = amount.max(1);
         self.hp = (self.hp - amount).max(0);
+        // W4-f30 — the killing blow's source projectile (`PlayerDeathReason.
+        // SourceProjectileType`, `Player.cs:38834`): the gravestone teammate-
+        // death check (`KillMe`'s 36 arm) reads it. Latched only on the hit
+        // that zeroes the life pool; the death path consumes it.
+        if self.hp <= 0 {
+            self.death_source_projectile = source_projectile;
+        }
         // `Player.Hurt`'s immunity window (`Player.cs:38382-38385`):
         // `int num7 = (pvp ? 8 : ((num2 != 1.0) ? (this.longInvince ? 80 : 40)
         // : (this.longInvince ? 40 : 20)));` then, on the General lane,
@@ -8542,6 +8594,13 @@ impl Player {
         // vampire seed's damage half — deferred with the seed's combat wave.
         self.vampire_seed_sunlight_exposure(world, raining);
         self.tick_sun_scorch();
+        // W4-f30 — the Molten `buffImmune[24]` gate reads the sun-scorch
+        // flag, which the port's `UpdateSunScorch` seam arms AFTER this
+        // fold (the world_sim call site, `Player.cs:25634` precedes
+        // `:25685` in the C# but the port's equipment phase is one call).
+        // Capture the pre-Molten immunity so the seam can restore it on a
+        // warm-up burn tick (flag set, counter < 120 — no `Array.Clear`).
+        self.fire_immune_pre_molten = self.buffs.buff_immune[24];
         crate::armor_sets::apply_armor_set_bonuses(self);
         // `Player.cs:25900-25911` — the Mana Sickness damage cut: after every
         // `magicDamage` grant (the buff scan, the equip/set rows), the recalc
@@ -10567,9 +10626,11 @@ impl Player {
             DotDeath::Burned
         };
         // The generic lane's kill reason — `:19361-19384`. The C# tests
-        // `vampireBurningInSunlight` (22) first; nothing grants it in the
-        // port, so the chain starts at poisoned/venom (9).
-        let death_generic = if self.holding(20) || self.holding(70) {
+        // `vampireBurningInSunlight` (22) first (W4-f30: the sun-scorch
+        // granter landed, `sun_scorch.rs`), then poisoned/venom (9).
+        let death_generic = if self.vampire_burning_in_sunlight {
+            DotDeath::VampireSunlight
+        } else if self.holding(20) || self.holding(70) {
             DotDeath::Poison
         } else if self.holding(144) {
             DotDeath::Electrified
@@ -17072,7 +17133,7 @@ mod tests {
         // the last tick reports the respawn.
         let mut revived_at = None;
         for tick in 0..700 {
-            if p.update_dead(false, false, false, false) {
+            if p.update_dead(false, false, false, false, false) {
                 revived_at = Some(tick);
                 break;
             }
@@ -17092,7 +17153,7 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.start_death(&w, true, true);
         p.respawn_timer = 4000; // the save-load can exceed the cap
-        p.update_dead(false, false, false, false);
+        p.update_dead(false, false, false, false, false);
         // The clamp catches the decrement result (Player.cs:17049).
         assert_eq!(p.respawn_timer, 3600);
     }
@@ -17108,12 +17169,12 @@ mod tests {
         p.chest_x = 20;
         p.chest_y = 10;
         p.start_death(&w, false, false);
-        p.update_dead(false, false, false, false);
+        p.update_dead(false, false, false, false, false);
         assert_eq!(p.chest, -1, "the world chest closes (:17020)");
         assert_eq!((p.chest_x, p.chest_y), (20, 10), "the origin stays");
         // A bank closes too (the C# writes -1 unconditionally).
         p.chest = -4;
-        p.update_dead(false, false, false, false);
+        p.update_dead(false, false, false, false, false);
         assert_eq!(p.chest, -1, "the safe closes too");
     }
 
@@ -17451,13 +17512,13 @@ mod tests {
         // Inside the 90-tick lockout: no skip even on the jump edge (the
         // held jump's edge is consumed while the lockout runs).
         for _ in 0..89 {
-            assert!(!p.update_dead(true, false, false, false));
+            assert!(!p.update_dead(true, false, false, false, false));
         }
         // The lockout expired but the held jump has no fresh edge; a release
         // and a new press do.
-        assert!(!p.update_dead(true, false, false, false));
-        assert!(!p.update_dead(false, false, false, false));
-        assert!(p.update_dead(true, false, false, false));
+        assert!(!p.update_dead(true, false, false, false, false));
+        assert!(!p.update_dead(false, false, false, false, false));
+        assert!(p.update_dead(true, false, false, false, false));
     }
 
     #[test]
@@ -17466,7 +17527,7 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.start_death(&w, false, false);
         for _ in 0..95 {
-            p.update_dead(false, false, false, false);
+            p.update_dead(false, false, false, false, false);
         }
         assert!(!p.allows_respawn_timer_skip(true, false, false));
         assert!(p.allows_respawn_timer_skip(false, false, false));
@@ -17480,13 +17541,13 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.start_death(&w, false, false);
         for _ in 0..95 {
-            p.update_dead(true, false, false, false);
+            p.update_dead(true, false, false, false, false);
         }
         // The held jump consumed its edge at the lockout expiry...
-        assert!(!p.update_dead(true, false, false, false));
+        assert!(!p.update_dead(true, false, false, false, false));
         // ...release and press again: the edge fires.
-        p.update_dead(false, false, false, false);
-        assert!(p.update_dead(true, false, false, false));
+        p.update_dead(false, false, false, false, false);
+        assert!(p.update_dead(true, false, false, false, false));
     }
 
     use super::*;
@@ -23798,18 +23859,48 @@ mod tests {
             assert!(p.dead);
             assert_eq!(p.respawn_timer, 600);
             for _ in 0..599 {
-                assert!(!p.update_dead(false, false, false, false));
+                assert!(!p.update_dead(false, false, false, false, false));
             }
             assert_eq!(p.respawn_timer, 1);
-            assert!(p.update_dead(false, false, false, false), "revive on tick 600");
+            assert!(p.update_dead(false, false, false, false, false), "revive on tick 600");
             // The dead tick zeroes the life (`:17016`).
             p.hp = 40;
-            p.update_dead(false, false, false, false);
+            p.update_dead(false, false, false, false, false);
             assert_eq!(p.hp, 0, "UpdateDead sets statLife = 0");
             p.revive();
             assert!(!p.dead);
             assert_eq!(p.hp, 100, "max(max/2, 100)");
             assert!(p.immune && p.immune_time == 180, "180 revive i-frames");
+        }
+
+        /// W4-f30 — `Player.UpdateDead`'s hardcore gate (`Player.cs:17045-17055`):
+        /// a permadeath hardcore player's timer expiry sets the ghost, never
+        /// the respawn; the ghost refuses the respawn skip (`:38964`).
+        #[test]
+        fn the_hardcore_ghost_never_respawns() {
+            let w = ground_world();
+            let mut p = Player::spawn(&w);
+            p.start_death(&w, false, false);
+            assert_eq!(p.respawn_timer, 600);
+            for _ in 0..599 {
+                assert!(!p.update_dead(false, false, false, false, true));
+            }
+            assert!(!p.ghost, "no ghost before the expiry");
+            // Tick 600: the expiry ghosts instead of reviving.
+            assert!(!p.update_dead(false, false, false, false, true));
+            assert!(p.ghost, "the expiry sets the ghost");
+            assert!(p.dead, "the ghost stays dead");
+            // The ghost refuses the skip even with a jump press.
+            assert!(!p.allows_respawn_timer_skip(false, false, false));
+            assert!(!p.update_dead(true, false, false, false, true));
+            // A surviving-world hardcore player (gate false) still respawns.
+            let mut q = Player::spawn(&w);
+            q.start_death(&w, false, false);
+            for _ in 0..599 {
+                q.update_dead(false, false, false, false, false);
+            }
+            assert!(q.update_dead(false, false, false, false, false), "the survivor revives");
+            assert!(!q.ghost);
         }
     }
 }

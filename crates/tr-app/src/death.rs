@@ -366,6 +366,76 @@ pub fn tick_tomb_falls(app: &mut App, dt: f32) {
     app.tomb_falls.retain(|t| t.alive);
 }
 
+/// `Main.surviveHardcoreDeath` (`Main.cs:2638-2648`): a world with BOTH the
+/// Don't Starve (the constant) and the 10th Anniversary (celebrationmk10)
+/// flags survives hardcore death unless it is also For The Worthy. Every
+/// other world permadeaths. (The two flags co-occur via the advanced seed
+/// toggles or a combined seed; the zenith/getfixedboi world carries both
+/// plus FTW, so it permadeaths.)
+pub fn survive_hardcore_death(seeds: tr_core::seeds::SeedFlags) -> bool {
+    use tr_core::seeds::SeedFlags as S;
+    if seeds.contains(S::DONT_STARVE) && seeds.contains(S::TENTH_ANNIVERSARY) {
+        return !seeds.contains(S::FOR_THE_WORTHY);
+    }
+    false
+}
+
+/// `Player.HardcoreDeathPenalty` (`Player.cs:38775-38787`): on a surviving
+/// world the life pool drops 60 (clamped at 0) and, while it stays positive,
+/// progression 35 (EXTRA_LIFE) fires and the player respawns normally. At 0
+/// — or on any non-surviving world — `KillMeForGood` permadeaths. Returns
+/// `(notify_35, permadeath)`.
+pub fn hardcore_death_penalty(app: &mut App) -> (bool, bool) {
+    let survive = survive_hardcore_death(app.world.seeds);
+    if survive {
+        let p = app.player.as_mut().expect("the death path owns a player");
+        // `:38779` — `statLifeMax = Math.Max(statLifeMax - 60, 0)`.
+        p.max_hp = (p.max_hp - 60).max(0);
+        if p.max_hp > 0 {
+            // `:38782` — the EXTRA_LIFE notify; the caller fires it over the
+            // progression seam (the host wire included).
+            return (true, false);
+        }
+    }
+    // `:38786` — KillMeForGood.
+    kill_me_for_good(app);
+    (false, true)
+}
+
+/// `Player.KillMeForGood` (`Player.cs:38789-38805`): the character file and
+/// its `.bak` delete (`Main.ActivePlayerFileData.ServerSideCharacter` is
+/// false in the port's single-player / host sessions), then the active
+/// player data resets. The port resolves the file from the session
+/// character's name (`tr_core::save::default_player_path`, the
+/// `save_created_character` writer's path) and drops the session draft —
+/// the `new PlayerFileData()` stand-in. The ghost flag itself is set by
+/// `UpdateDead`'s hardcore gate (`Player.cs:17053`) on the timer expiry.
+pub fn kill_me_for_good(app: &mut App) {
+    // The headless test apps carry no bound character file — the erase is
+    // the live-session half only (the `flow_app` rigs must never touch the
+    // real Players dir). The ghost flag + the draft reset still run.
+    #[cfg(not(test))]
+    {
+        let name = app
+            .session_draft
+            .as_ref()
+            .map(|d| d.name.clone())
+            .unwrap_or_else(|| app.player_name.clone());
+        if let Some(path) = tr_core::save::default_player_path(&name) {
+            // `FileUtilities.Exists` + `Delete` (`:38795-38802`) — the port's
+            // erase helper deletes the `.plr`, the `.bak` and the folder side
+            // (`Main.ErasePlayer`'s shape, a superset of the two files the C#
+            // removes here; the folder is the map sidecar dir).
+            if let Err(e) = crate::ui::save_list::erase_player(Some(&path)) {
+                log::warn!("hardcore permadeath: character erase failed: {e}");
+            }
+        }
+    }
+    // `:38803` — `Main.ActivePlayerFileData = new PlayerFileData()`: the
+    // session draft (the port's active-player stand-in) resets.
+    app.session_draft = None;
+}
+
 /// `Lang.cs:1045-1127` `CreateDeathMessage`'s `other` switch — the
 /// `PlayerDeathReason.ByOther(N)` → `DeathText.<base>` row family and its
 /// variant count, per DoT attribution. The `Main.rand.Next(n) + 1` variant
@@ -486,6 +556,17 @@ pub fn on_player_death(app: &mut App, x: f32, y: f32, death_text: &str) {
         }
     }
     app.death_text = death_text.to_string();
+    // W4-f30 — `KillMe`'s hardcore arm (`Player.cs:38864-38867`):
+    // `Main.myPlayer == whoAmI && difficulty == 2` → HardcoreDeathPenalty,
+    // AFTER the drops and BEFORE the tombstone (`:38945`). The surviving
+    // world's EXTRA_LIFE notify (35) fires here; the permadeath's ghost is
+    // set by `UpdateDead`'s gate on the timer expiry.
+    if difficulty == 2 {
+        let (notify35, _permadeath) = hardcore_death_penalty(app);
+        if notify35 {
+            let _ = app.notify_progression_net(35);
+        }
+    }
     let mut tomb = {
         let rng = app.rngs.stream(RngKey::UpdatePlayers);
         roll_tombstone(rng, coins_owned)
@@ -493,6 +574,73 @@ pub fn on_player_death(app: &mut App, x: f32, y: f32, death_text: &str) {
     tomb.pos = Vec2::new(x, y);
     tomb.text = death_text.to_string();
     app.tomb_falls.push(tomb);
+    // W4-f30 — `Player.DropTombstone` (`Player.cs:39108-39137`): the REAL
+    // aiStyle-17 gravestone projectile. The scatter vx + the kind already
+    // rolled above (`roll_tombstone`, the same `Next(-35,36)` retry / `Next(6)`
+    // / rich `Next(5)+527` draws); the launch adds `Next(10,30)*0.1*hitDirection`
+    // to vx and `Next(-40,-20)*0.1` to vy (FTW ×1.5 both), the damage 70 /
+    // knockback 10 on FTW else 0/0, and `ai[0] = whoAmI` (the dead player's
+    // index — the `ByProjectile` death-attribution key, `Projectile.cs:14637`).
+    // The `friendly && hostile` pair is FTW-only (`Projectile.cs:1266-1269`);
+    // a classic stone is inert (the `tomb_falls` visual above keeps falling).
+    let get_good = app.world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+    let hit_direction = 1i32; // the port's death path carries no hitDirection; the C# default arm
+    let (vx, vy, damage, kb) = {
+        let rng = app.rngs.stream(RngKey::UpdatePlayers);
+        let launch_x = rng.next_range(10, 30) as f32 * 0.1 * hit_direction as f32;
+        let launch_y = rng.next_range(-40, -20) as f32 * 0.1;
+        let vx = tomb.vel.x + launch_x;
+        if get_good {
+            (vx * 1.5, launch_y * 1.5, 70, 10.0)
+        } else {
+            (vx, launch_y, 0, 0.0)
+        }
+    };
+    let kind = tomb.kind;
+    let owner = app.local_id as u8;
+    // `NewProjectile`'s X/Y overload centres the box on the player centre
+    // (`Player.cs:39127`'s `position.X + width/2, position.Y + height/2`).
+    let cx = x + crate::player::WIDTH * 0.5;
+    let cy = y + crate::player::HEIGHT * 0.5;
+    if let Some(slot) = app.projectiles.spawn_with_data_ai_owned(
+        kind, owner, cx - 12.0, cy - 12.0, vx, vy, damage, kb, owner as f32, 0.0,
+    ) {
+        let p = &mut app.projectiles.slots_mut()[slot];
+        // `:1266-1269` — the FTW gravestone hits both NPCs and players.
+        p.friendly = get_good;
+        p.hostile = get_good;
+        // `:39134-39135` — the epitaph: the death text + the date line.
+        p.misc_text = format!("{}\n{}", death_text, tombstone_date());
+    }
+}
+
+/// `Player.DropTombstone`'s date line (`Player.cs:39128-39133`):
+/// `DateTime.Now.ToString("MMMM d, yyy")` under the English culture (the
+/// port's `GameCulture` is English; the `"D"` long-date arm is the non-English
+/// fallback). The civil-from-days conversion is the `world_select` precedent
+/// (no date library); the clock is the host's UTC now.
+fn tombstone_date() -> String {
+    const MONTHS: [&str; 12] = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    ];
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let days = (secs / 86_400) as i64;
+    // Hinnant's civil_from_days (the `world_select::civil_from_days` twin).
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = y + (m <= 2) as i64;
+    format!("{} {}, {}", MONTHS[(m - 1) as usize], d, year)
 }
 
 #[cfg(test)]
@@ -699,10 +847,14 @@ mod revenge_tests {
             tvx += expect.next_range(-30, 31) as f32 * 0.1;
         }
         expect.next_max(6);
+        // W4-f30 — the DropTombstone launch draws (`Player.cs:39127`):
+        // Next(10,30) then Next(-40,-20), after the scatter/kind roll.
+        expect.next_range(10, 30);
+        expect.next_range(-40, -20);
         assert_eq!(
             *app.rngs.stream(RngKey::UpdatePlayers),
             expect,
-            "two draws per gem drop, then the tombstone roll"
+            "two draws per gem drop, then the tombstone roll + launch"
         );
     }
 
@@ -765,6 +917,9 @@ mod revenge_tests {
             tvx += expect.next_range(-30, 31) as f32 * 0.1;
         }
         expect.next_max(6);
+        // W4-f30 — the DropTombstone launch draws (`Player.cs:39127`).
+        expect.next_range(10, 30);
+        expect.next_range(-40, -20);
         on_player_death(&mut app, 100.0, 100.0, "Tester was slain...");
         // The drops: gem + block + armor + dye + silver + arrows + cursor
         // stone (the starter tool did NOT drop), no PURSE coin drop.
@@ -855,6 +1010,9 @@ mod revenge_tests {
             tvx += expect.next_range(-30, 31) as f32 * 0.1;
         }
         expect.next_max(6);
+        // W4-f30 — the DropTombstone launch draws (`Player.cs:39127`).
+        expect.next_range(10, 30);
+        expect.next_range(-40, -20);
         on_player_death(&mut app, 100.0, 100.0, "Tester was slain...");
         assert!(app.items.is_empty(), "the cursor RETURNED, no world drop");
         assert_eq!(app.mouse_item.count, 0, "the cursor aired out");
@@ -877,6 +1035,129 @@ mod revenge_tests {
         assert_eq!(app.items[0].count, 2);
         assert_eq!(app.mouse_item.count, 0);
         assert!(!app.inventory.iter().any(|s| s.kind == 1522));
+    }
+
+    /// W4-f30 — `Main.surviveHardcoreDeath` (`Main.cs:2638-2648`): only the
+    /// constant world (Don't Starve + 10th Anniversary) survives, and For The
+    /// Worthy cancels even that.
+    #[test]
+    fn the_survive_hardcore_death_seed_predicate() {
+        use tr_core::seeds::SeedFlags as S;
+        assert!(!survive_hardcore_death(S::none()), "a classic world permadeaths");
+        assert!(!survive_hardcore_death(S::from(S::DONT_STARVE)), "DST alone permadeaths");
+        assert!(
+            survive_hardcore_death(S::from(S::DONT_STARVE | S::TENTH_ANNIVERSARY)),
+            "the constant world survives"
+        );
+        assert!(
+            !survive_hardcore_death(S::from(S::DONT_STARVE | S::TENTH_ANNIVERSARY | S::FOR_THE_WORTHY)),
+            "FTW cancels the survival"
+        );
+    }
+
+    /// W4-f30 — `Player.HardcoreDeathPenalty` (`Player.cs:38775-38787`): on a
+    /// surviving world the life pool drops 60 and EXTRA_LIFE (35) fires while
+    /// it stays positive; at 0 the permadeath arm runs. A non-surviving world
+    /// permadeaths outright (no life reduction, no notify).
+    #[test]
+    fn the_hardcore_penalty_drops_sixty_and_fires_35() {
+        use tr_core::seeds::SeedFlags as S;
+        let rig = |seeds: S, max_hp: i32| {
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world.seeds = seeds;
+            let mut p = crate::player::Player::spawn(&app.world);
+            p.max_hp = max_hp;
+            app.player = Some(p);
+            app
+        };
+        // The surviving world: 200 → 140, notify 35, no permadeath.
+        let mut app = rig(S::from(S::DONT_STARVE | S::TENTH_ANNIVERSARY), 200);
+        let (notify, perma) = hardcore_death_penalty(&mut app);
+        assert!(notify && !perma);
+        assert_eq!(app.player.as_ref().unwrap().max_hp, 140);
+        // 60 → 0: the permadeath arm (no notify).
+        let mut app = rig(S::from(S::DONT_STARVE | S::TENTH_ANNIVERSARY), 60);
+        let (notify, perma) = hardcore_death_penalty(&mut app);
+        assert!(!notify && perma);
+        assert_eq!(app.player.as_ref().unwrap().max_hp, 0);
+        // A classic world: permadeath outright, the life pool untouched.
+        let mut app = rig(S::none(), 400);
+        let (notify, perma) = hardcore_death_penalty(&mut app);
+        assert!(!notify && perma);
+        assert_eq!(app.player.as_ref().unwrap().max_hp, 400, "no reduction on permadeath");
+    }
+
+    /// W4-f30 — `KillMe`'s hardcore arm (`Player.cs:38864-38867`): a
+    /// difficulty-2 death on a surviving world drops the life pool and fires
+    /// EXTRA_LIFE through the progression seam; the row completes.
+    #[test]
+    fn the_hardcore_death_fires_extra_life() {
+        use tr_core::seeds::SeedFlags as S;
+        let rig = |difficulty: u8| {
+            let mut app = flow_app(None, vec![], vec![]);
+            let mut draft = crate::ui::char_creation::NewPlayerDraft::new();
+            draft.difficulty = difficulty;
+            app.session_draft = Some(draft);
+            app.world.seeds = S::from(S::DONT_STARVE | S::TENTH_ANNIVERSARY);
+            let mut p = crate::player::Player::spawn(&app.world);
+            p.max_hp = 200;
+            app.player = Some(p);
+            app.coins = 0;
+            app
+        };
+        let mut app = rig(2); // hardcore
+        on_player_death(&mut app, 100.0, 100.0, "Tester was slain...");
+        assert_eq!(app.player.as_ref().unwrap().max_hp, 140, "the −60 landed");
+        let row = app.achievements.list.iter().find(|a| a.name == "EXTRA_LIFE").unwrap();
+        assert!(row.completed, "EXTRA_LIFE (35) fired");
+        // A softcore death never fires it.
+        let mut soft = rig(0);
+        on_player_death(&mut soft, 100.0, 100.0, "Tester was slain...");
+        let row = soft.achievements.list.iter().find(|a| a.name == "EXTRA_LIFE").unwrap();
+        assert!(!row.completed, "softcore never fires 35");
+    }
+
+    /// W4-f30 — `Player.DropTombstone` (`Player.cs:39108-39137`): the death
+    /// spawns the real aiStyle-17 gravestone projectile. A classic world's
+    /// stone is inert (friendly/hostile false, damage 0); a For The Worthy
+    /// world's stone is friendly + hostile with damage 70 / knockback 10.
+    /// The epitaph carries the death text + the date line. WRITTEN NOT RUN.
+    #[test]
+    fn f30_the_death_spawns_the_gravestone_projectile() {
+        use tr_core::seeds::SeedFlags as S;
+        let rig = |seeds: S| {
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world.seeds = seeds;
+            app.player = Some(crate::player::Player::spawn(&app.world));
+            app.coins = 0;
+            app
+        };
+        // The classic world: the stone is inert.
+        let mut app = rig(S::none());
+        on_player_death(&mut app, 100.0, 100.0, "Tester was slain...");
+        let stone = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && (p.kind == 43 || (201..=205).contains(&p.kind) || (527..=531).contains(&p.kind)))
+            .expect("the gravestone spawned");
+        assert!(!stone.friendly && !stone.hostile, "the classic stone is inert");
+        assert_eq!(stone.damage, 0);
+        assert!(stone.misc_text.starts_with("Tester was slain...\n"), "the epitaph");
+        // The FTW world: friendly + hostile, damage 70 / knockback 10.
+        let mut ftw = rig(S::from(S::FOR_THE_WORTHY));
+        on_player_death(&mut ftw, 100.0, 100.0, "Tester was slain...");
+        let stone = ftw
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && (p.kind == 43 || (201..=205).contains(&p.kind) || (527..=531).contains(&p.kind)))
+            .expect("the gravestone spawned");
+        assert!(stone.friendly && stone.hostile, "the FTW stone hits both lanes");
+        assert_eq!(stone.damage, 70);
+        assert_eq!(stone.knock_back, 10.0);
+        // `ai[0]` carries the dead player's index (the ByProjectile key).
+        assert_eq!(stone.ai[0], ftw.local_id as f32);
     }
 }
 

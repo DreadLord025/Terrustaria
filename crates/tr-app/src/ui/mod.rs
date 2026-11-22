@@ -794,6 +794,10 @@ pub fn draw_hud(
     // pile's `UpdateSavings` rows animate through it (`ItemSlot.cs:3739`
     // → `DrawMoney` → `CoinSlot.UpdateSavings`).
     coin_state: &mut coin_slot::CoinSlotState,
+    // W4-f30 — the Dryad's Stardew bit (`NPCInteractions.cs:79-103`): the
+    // "Purify" button shows while the cola is held + the Dryad is the talk
+    // NPC (the caller folds `CanDryadPlayStardewAnimation`).
+    stardew_button: bool,
 ) {
     // `DrawInterface`'s head (`Main.cs:63334-63339`): the player chat
     // overheads draw under `UIScaleMatrix` before the combat text — the
@@ -872,7 +876,7 @@ pub fn draw_hud(
     // dialogue panel while `talkNPC >= 0` (`CanHoldConversation`,
     // `:276-283`; the sign half is unported).
     if talk_npc.is_some() {
-        npc_chat::draw_panel(r, lookups, screen, npc_chat_text, pulse, mouse_pos);
+        npc_chat::draw_panel(r, lookups, screen, npc_chat_text, pulse, mouse_pos, stardew_button);
     }
 
     // `Main.DrawBestiaryIcon(num, num2)` (`Main.cs:41013`): the button rides

@@ -732,6 +732,34 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     if let Some(p) = app.player.as_mut() {
         app.projectiles.apply_channel_tracks(p);
     }
+    // W4-f30 — the aiStyle-17 gravestone's landing (`Projectile.cs:25348-
+    // 25364`): the placement + the epitaph sign + the Dig sound + the Kill.
+    // The AI arm queued the intent (it cannot borrow the world mutably); the
+    // pass resolves it here. `place_item_tile(85, style)` is the C#'s
+    // `TileObject.CanPlace/Place`; a refused placement keeps the stone
+    // falling (no Kill, the `flag7` false arm).
+    for (slot, tx, ty, style, text) in app.projectiles.drain_gravestone_places() {
+        if tr_core::edit::place_item_tile(&mut app.world, tx, ty, 85, style, 1) {
+            // `Sign.ReadSign` + `Sign.TextSign` (`:25358-25361`): the epitaph
+            // lands on the tombstone's sign record (the origin decode resolves
+            // the 2-wide tile's top-left).
+            if let Some((ox, oy)) = crate::signs::origin(&app.world, tx, ty) {
+                if let Some(idx) = crate::signs::find_or_create(&mut app.world.signs, ox, oy) {
+                    crate::signs::text_sign(&mut app.world, idx, ox, oy, text);
+                }
+            }
+            // `SoundEngine.PlaySound(0, x*16, y*16)` (`:25357`) — the Dig cue,
+            // the id-0 place façade (the wave-B precedent above).
+            app.audio.play_place_sound((0, 0), (tx * 16) as f32, (ty * 16) as f32, rng);
+            app.projectiles.kill_gravestone(slot);
+            app.world_key = None;
+        }
+    }
+    // W4-f30 — `Player.OnKillNPC`'s GRAVE_MISTAKE (`Player.cs:20471-20474`):
+    // a gravestone's strike killed a town NPC this tick → progression 36.
+    if app.projectiles.drain_grave_mistake() {
+        let _ = app.notify_progression_net(36);
+    }
     // `AI_103`'s mark spawn (`Projectile.cs:33467-33475`): the stardust
     // tower's mark resolves into the NPC vec here (the pool can't grow it).
     for (kind, x, y, vx, vy) in app.projectiles.drain_mark_spawns() {

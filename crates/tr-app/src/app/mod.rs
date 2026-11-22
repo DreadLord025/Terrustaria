@@ -190,6 +190,16 @@ pub(crate) struct App {
     /// interaction index; the hover-change edge plays sound 12 (`:157-160`)
     /// and `Close` resets it to −1 (`:267`).
     pub(crate) npc_chat_last_hovered: i32,
+    /// W4-f30 — `NPC.PreventJojaColaDialog` (`NPC.cs:6629`): the Dryad's
+    /// Stardew bit latches it after the gift so the cola reminder does not
+    /// re-print over the thank-you line. Cleared on the chat close
+    /// (`NPC.cs:93772`/`:95303`).
+    pub(crate) prevent_joja_cola_dialog: bool,
+    /// W4-f30 — `NPC.RerollDryadText` (`NPC.cs:6631`): the Stardew bit's
+    /// text-reroll state machine (`NPCChatPanel.cs:199-208`): 2 right after
+    /// the gift, 1 once the Dryad enters the animation state 24, 0 once she
+    /// leaves it (the chat re-rolls to `GetChat()`).
+    pub(crate) reroll_dryad_text: i32,
     /// `Main.combatText[100]` (`CombatText.cs:65`): the floating damage
     /// numbers, indexed and updated like the C# pool.
     pub(crate) combat_texts: Vec<crate::combat_text::CombatText>,
@@ -301,6 +311,18 @@ pub(crate) struct App {
     /// for the native `.trwld` the kills ride the sidecar's v5 line, which the
     /// sights/chats have no equivalent for (they stay empty).
     pub(crate) bestiary: tr_core::bestiary::WorldBestiary,
+    /// W4-f30 — `CreativeItemSacrificesCatalog`'s per-world sacrificed counts
+    /// (`ItemsSacrificedUnlocksTracker`, the Journey research). The live
+    /// sacrifice UI is unported, so the tracker never edits in play yet; the
+    /// `CheckResearchAchievement` call sites (the per-tick armor tail +
+    /// EnterWorld) read it through `check_research_achievement` (the prep
+    /// landed with the f30 tail census). The save rides M6-SAVE's world
+    /// sections when the UI lands.
+    pub(crate) research: crate::research::ResearchTracker,
+    /// `AchievementsHelper._lastResearchVersion` (`AchievementsHelper.cs:17`):
+    /// the static latch `CheckResearchAchievement` compares the tracker's
+    /// `LastEditId` against to skip unchanged frames.
+    pub(crate) last_research_version: i32,
     /// `WorldGen.TownManager` (`TownRoomManager.cs`): one room per town NPC,
     /// loaded from world-file section 9 (`SaveTownManager`'s list) and rebuilt
     /// by the load fix-ups.
@@ -2897,6 +2919,18 @@ impl App {
         if let Some(engine) = self.legacy_light.as_mut() {
             engine.reset_map_delay();
         }
+        // W4-f30 — `Player.Hooks.EnterWorld`'s forced research check
+        // (`Player.cs:325` → `AchievementsHelper.CheckResearchAchievement(
+        // forced: true)`): the world-entry re-count fires 45 (TRASH_COMPACTOR)
+        // if half the researchable catalogue is already complete. The tracker
+        // loads empty until the Journey sacrifice UI lands (M6-SAVE's world
+        // section), so this is inert in play but the call site is wired.
+        let (fired, version) =
+            crate::research::check_research_achievement(&self.research, self.last_research_version, true);
+        self.last_research_version = version;
+        if fired {
+            let _ = self.notify_progression_net(45);
+        }
     }
 
     pub(crate) fn is_client(&self) -> bool {
@@ -4224,6 +4258,8 @@ impl App {
             talk_npc: None,
             npc_chat_text: String::new(),
             npc_chat_last_hovered: -1,
+            prevent_joja_cola_dialog: false,
+            reroll_dryad_text: 0,
             gpu: None,
             renderer: None,
             post: None,
@@ -4400,6 +4436,8 @@ impl App {
             craft_filter: None,
             craft_filters: crate::craft_filter::FilterBoard::default(),
             bestiary: app_bestiary,
+            research: crate::research::ResearchTracker::default(),
+            last_research_version: 0,
             town_rooms,
             shimmered_npcs: crate::town::ShimmeredTownNpcs::from_wld_indices(
                 &sections.data.npcs.shimmered,

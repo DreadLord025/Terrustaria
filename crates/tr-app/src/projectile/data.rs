@@ -4166,6 +4166,24 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `projectile_rope_coil.rs` (the kind constants there).
             171 | 505 | 506 => (14.0, 14.0, 35, -1, 400, 0, false, false, false, RESET_STATE),
             475 => (14.0, 14.0, 35, -1, 400, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:9446-9457` — the Junimo: 240x104, aiStyle 192
+            // (the AI_192 fall/opacity animation), friendly, penetrate -1,
+            // tileCollide false, ignoreWater, `timeLeft *= 5` (3600 → 18000).
+            // The AI_192 arm is unported (the dispatch no-ops until it lands);
+            // the row carries the box/flight so the spawn is faithful.
+            995 => {
+                (240.0, 104.0, 192, -1, TIME_LEFT_DEFAULT * 5, 0, false, false, false, RESET_STATE)
+            }
+            // W4-f30 — the gravestone family (aiStyle 17, the falling
+            // tombstone): 24x24, knockBack 12, penetrate -1, the stock
+            // tileCollide/timeLeft (`Projectile.cs:1258-1270` the plain 43,
+            // `:2872-2937` the grave markers 201-205, `:5971-5983` the rich
+            // gravestones 527-531 — every row identical bar the type). The
+            // FTW `friendly && hostile` pair is a spawn-time gate
+            // (`DropTombstone`), not a SetDefaults row.
+            43 | 201..=205 | 527..=531 => {
+                (24.0, 24.0, 17, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
