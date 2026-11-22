@@ -36035,7 +36035,8 @@ Mana regen delay (`ApplyManaRegenerationDelay` `:19396-19416`,
 - The full-bar trigger now fires only when a point was granted THIS chunk
   (flag4), matching `:19550` — an idling full bar no longer re-fires.
 - `manaRegenDelayBonus` has NO grant source in the source (`:18656` is its
-  only write) and the arcane crystal is unported — both stay folded out.
+  only write, 0f) — folded out. The arcane crystal's READ arms landed with
+  W4-d117 (below); the 5339 use arm stays the crystals/powerups lane's.
 
 Mana Sickness (buff 94) — **not for weapons**:
 - `CheckMana` has NO buff grant; the ONLY grant site is `ApplyLifeAndOrMana`
@@ -36207,6 +36208,53 @@ read/grep (the `Player` field additions, the `update_survival` feed, the
 (`regen.rs` ×6, `player.rs` ×3, `world_sim/editing.rs` ×6, the rewritten
 `projectile.rs` Last Prism pair) are WRITTEN, NOT RUN — **no compiler
 invoked**.
+
+### The W4-d117 regen census fill (i12/i37 leftovers)
+
+A second line-by-line census of `UpdateManaRegen`/`ApplyNebulaBuffMana`
+(`Player.cs:19418-19585`) against `regen.rs` after the i12/i37 waves. The
+movement curve, Mana Sickness and the potion drink were already complete;
+the gaps were the booster read arms, two input feeds and the Update tail:
+
+- **`ApplyNebulaBuffMana` (`:19565-19585`) was unported** — the FIRST call of
+  `UpdateManaRegen` (`:19421`), before the delay countdown. Added
+  `regen.rs::apply_nebula_buff_mana` + `RegenState::nebula_mana_counter`
+  (`Player.nebulaManaCounter` `:928`): counter += tier, ONE `if ≥ 6` grant
+  (not a loop — tier 3 still grants at most +1/tick), `≥ max` clamp
+  (`:19575`), tier-0 counter wipe (`:19583`, NOT ResetEffects). The tier
+  field `Player.nebula_level_mana` (`:926`) lands with its ResetEffects
+  zero (`:18755`); the WRITE lane (`UpdateBuffs_NebulaBuffs` `:12070-12079`
+  deriving 1..3 from the live 176-178 slot, the `NebulaLevelup` grant
+  `:57050-57053`) stays the buff-scan lane's.
+- **`usedArcaneCrystal`'s two read arms were unported** — delay −0.05/tick
+  (`:19430-19433`) and regen +`statManaMax2/50` (`:19453-19456`, AFTER the
+  still doubling, BEFORE the fill-curve scale). Added as
+  `RegenInputs::used_arcane_crystal` + `Player.used_arcane_crystal` (`:856`,
+  a permanent — no ResetEffects clear; the use arm `:45399-45404` and the
+  player-file round-trip `:54783`/`:55257` stay the crystals/powerups lane's).
+- **WRONG (movement curve feed):** `moving_x` was `vx != 0` alone; the C#
+  (`:19241`) needs `velocity.X != 0f && grappling[0] < 0` — a hooked player
+  keeps the ×1.25 life ramp. Fixed in the `update_survival` feed.
+- **MISSING (expert feed):** `expert_mode` stayed at its default `false` in
+  the feed; the C# reads `Main.expertMode` (`:19254`). Now fed from
+  `buffs.expert_mode` — the expert-world ramp halving (and the well-fed
+  cancel) actually runs.
+- **MISSING (Update tail):** `Player.Update`'s post-`UpdateManaRegen` clamps
+  (`:25996-26003`: negative `manaRegenCount` → 0, over-max `statMana` → max)
+  were absent. Added UNCONDITIONALLY after the port's hp gate — the C#
+  clamps a dead player's fields too.
+- **Folded out (recorded):** `manaRegenDelayBonus` (`:19425`) — `:18656`'s
+  0f is its only write. The `DebugOptions.DrawManaEstimates` block
+  (`:19486-19531`, flag TRUE at `DebugOptions.cs:84`) computes a sustain
+  estimate whose only consumer is a discarded `f.ToString("F2")` (`:19528`)
+  — zero state writes, pure dead computation, not ported.
+
+Witnesses (`regen.rs` ×5: the nebula cadence/clamp/wipe, the pre-delay
+ordering, both crystal arms with the +4-after-doubling order pin, the
+expert/well-fed matrix; `player.rs` ×3: the grappled-movement ramp+delay
+split, the field flow through `update_survival`/ResetEffects, the dead-
+player tail clamps) are WRITTEN, NOT RUN — code-only mode, no compiler
+invoked.
 
 ## The magic guns + tomes use arms (S1-P-i22)
 
