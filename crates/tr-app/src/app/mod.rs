@@ -537,6 +537,12 @@ pub(crate) struct App {
     /// both decision layers once per fixed step here, then drains the outboxes
     /// on the 10 Hz `net_tick` below.
     pub(crate) net_sync_cadence_timer: f32,
+    /// W4-d100: the remote-entity smoothing's own 60 Hz accumulator — the
+    /// C# runs `Player.UpdateNetOffset` once per `Player.Update`
+    /// (`Player.cs:28172`, `Main.cs:17824-17857`'s fixed-step walk) and
+    /// `NPC.UpdateNetOffset` once per `UpdateNPC`; the port steps both on
+    /// this timer (`net_interp_tick`), never per render frame.
+    pub(crate) net_interp_timer: f32,
     /// The host's per-slot NPC bookkeeping: `(kind, generation)` — the
     /// generation bumps on a kind change so the client recreates the slot
     /// (`MessageBuffer.cs:1602-1613`'s test).
@@ -3874,6 +3880,7 @@ impl App {
             net_proj_outbox: Vec::new(),
             net_proj_prev: HashMap::new(),
             net_sync_cadence_timer: 0.0,
+            net_interp_timer: 0.0,
             net_npc_gen: HashMap::new(),
             net_items: HashMap::new(),
             net_items_dirty: false,

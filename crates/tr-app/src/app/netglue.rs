@@ -1461,11 +1461,18 @@ impl App {
                 if entry.name.is_empty() {
                     entry.name = format!("Player {}", ps.player_id);
                 }
-                if ps.x != 0.0 || ps.y != 0.0 {
-                    entry.off_x += ps.x - entry.x;
-                    entry.off_y += ps.y - entry.y;
+                // `MessageBuffer.cs:1003-1009` — the gate is the OLD position
+                // (`player13.position != Vector2.Zero` before the snap), and
+                // the lag accrues as `oldPos - wirePos`: the draw
+                // (`position + netOffset`, `LegacyPlayerRenderer.cs:468`)
+                // stays at the old spot and slides toward the new one. The
+                // port's old `wirePos - oldPos` sign was invented — it drew
+                // the peer PAST the target and decayed backwards.
+                if entry.x != 0.0 || entry.y != 0.0 {
+                    entry.off_x += entry.x - ps.x;
+                    entry.off_y += entry.y - ps.y;
                     // `multiplayerNPCSmoothingRange` = 300 (`Main.cs:67007`):
-                    // past it the offset snaps to zero.
+                    // past it the offset snaps to zero (`:1006-1008`).
                     if (entry.off_x * entry.off_x + entry.off_y * entry.off_y).sqrt()
                         > SMOOTHING_RANGE
                     {
@@ -1630,12 +1637,20 @@ impl App {
                         None => return,
                     }
                 };
-                // The smoothing: accrue the lag toward the new snap, then snap.
+                // `MessageBuffer.cs:1636-1646` — accrue `oldPos - wirePos`
+                // only when the OLD BASE position is within the smoothing
+                // range of the wire position (the `DistanceSquared` gate on
+                // `nPC5.position + vector8`; the port sends position raw so
+                // the SyncAnchor `vector8` is zero). Beyond it the offset is
+                // LEFT ALONE — the C# has no reset here (the port's old
+                // `> range -> zero` was invented; the clamp to the range
+                // lives in `NPC.UpdateNetOffset`, `NPC.cs:90294-90298`).
                 if !recreate {
-                    npc.net_offset.x += npc.x - info.x;
-                    npc.net_offset.y += npc.y - info.y;
-                    if npc.net_offset.length() > SMOOTHING_RANGE {
-                        npc.net_offset = Vec2::ZERO;
+                    let dx = npc.x - info.x;
+                    let dy = npc.y - info.y;
+                    if dx * dx + dy * dy <= SMOOTHING_RANGE * SMOOTHING_RANGE {
+                        npc.net_offset.x += npc.x - info.x;
+                        npc.net_offset.y += npc.y - info.y;
                     }
                 }
                 npc.x = info.x;
@@ -2864,32 +2879,48 @@ impl App {
         }
     }
 
-    /// The per-frame smoothing upkeep for a joining client: both `netOffset`
-    /// accumulators decay toward zero (the C#'s `Player.UpdateNetOffset` —
-    /// `max(2, 10% of the lag)` per tick, collision-boosted; the NPC arm's
-    /// `2 + 2*(len/range)` — `NPC.cs:90287-90311`), and the client's npc list
-    /// is refreshed from the slot store so the render sees the decayed
-    // offsets. Host/single-player: a no-op (`net_offset`/`off_*` stay zero).
+    /// The 60 Hz smoothing upkeep for a joining client — the C#'s
+    /// `Player.UpdateNetOffset` (`Player.cs:28721-28750`, called once per
+    /// `Player.Update`, `:28172`, from `Main.UpdateWorld_Players`,
+    /// `Main.cs:17824-17857`) and `NPC.UpdateNetOffset`'s decay block
+    /// (`NPC.cs:90289-90311`, inside `UpdateNPC`'s 60 Hz walk). The port
+    /// steps it on its own 60 Hz accumulator (like `net_sync_cadence_timer`)
+    /// so a 144 Hz display runs exactly one decay per simulation tick — the
+    /// old per-render-frame `dt * 60` scaling was invented. The client's npc
+    /// list is refreshed from the slot store so the render sees the decayed
+    /// offsets. Host/single-player: a no-op (`net_offset`/`off_*` stay zero).
     pub(crate) fn net_interp_tick(&mut self, dt: f32) {
         if !self.is_client() {
             return;
         }
-        // One 60 Hz tick of decay per (dt * 60) so a 144 Hz display does not
-        // decay faster than the original.
-        let scale = (dt * 60.0).clamp(0.0, 4.0);
+        // One `UpdateNetOffset` per 60 Hz tick, burst-capped like
+        // `FixedStepper` (the C# runs it inside the fixed-step player walk).
+        self.net_interp_timer += dt;
+        let mut steps = 0;
+        while self.net_interp_timer >= 1.0 / 60.0 && steps < 8 {
+            self.net_interp_timer -= 1.0 / 60.0;
+            self.net_offset_decay_tick();
+            steps += 1;
+        }
+        if self.net_interp_timer > 8.0 / 60.0 {
+            self.net_interp_timer = 8.0 / 60.0;
+        }
+    }
+
+    /// One 60 Hz decay tick: the verbatim `Player.UpdateNetOffset` +
+    /// `NPC.UpdateNetOffset` bodies for every remote peer and net NPC.
+    fn net_offset_decay_tick(&mut self) {
         for p in self.remote_players.values_mut() {
-            let len = (p.off_x * p.off_x + p.off_y * p.off_y).sqrt();
-            if len <= 0.0 {
-                continue;
-            }
             // `Player.UpdateNetOffset` (`Player.cs:28721-28750`): an offset
             // shorter than 2 px is cleared outright (`:28730-28734`).
+            let len = (p.off_x * p.off_x + p.off_y * p.off_y).sqrt();
             if len < 2.0 {
                 p.off_x = 0.0;
                 p.off_y = 0.0;
                 continue;
             }
-            // `:28737-28747` — the collision boost: the tile collision at
+            // `:28736-28747` — the collision boost (the `!ghost` arm; the
+            // port's peers are never ghosts): the tile collision at
             // `position + netOffset` that eats the velocity raises the step,
             // so a peer pushed into a wall snaps back faster.
             let mut min_step = 2.0f32;
@@ -2909,31 +2940,39 @@ impl App {
                     min_step = min_step.max(value.length_squared() * len / num4 * 1.0001);
                 }
             }
-            let step = min_step.max(len * 0.1) * scale;
+            // `:28749` — `Utils.MoveTowards(netOffset, Zero, max(num2,
+            // len * 0.1))` (`Utils.cs:1772-1780`): the step is capped by the
+            // remaining length, so the offset lands exactly on zero when
+            // the step covers it (no sub-pixel residue clear — the port's
+            // old `< 0.5` snap was invented).
+            let step = min_step.max(len * 0.1);
             let k = ((len - step) / len).max(0.0);
             p.off_x *= k;
             p.off_y *= k;
-            if (p.off_x * p.off_x + p.off_y * p.off_y).sqrt() < 0.5 {
-                p.off_x = 0.0;
-                p.off_y = 0.0;
-            }
         }
         let mut dirty = false;
         for npc in self.net_npcs.values_mut() {
-            let len = npc.net_offset.length();
+            // `NPC.UpdateNetOffset` (`NPC.cs:90289-90311`): the offset is
+            // clamped to the range (`:90294-90298`), the step is
+            // `2 + 2*(len/range)` (`:90300`), it moves toward zero along its
+            // own direction (`:90301-90303`), and a resulting offset shorter
+            // than the STEP is cleared (`:90304-90307` — `Length() < num`,
+            // not the port's old invented `< 0.5`).
+            let mut len = npc.net_offset.length();
             if len <= 0.0 {
                 continue;
             }
-            // `NPC.UpdateNetOffset` (`NPC.cs:90280-90310`): the step is
-            // `2 + 2*(len/range)` and the offset moves toward zero along its
-            // own direction (`:90300-90302`).
-            let step = (2.0 + 2.0 * len / SMOOTHING_RANGE) * scale;
-            let k = ((len - step) / len).max(0.0);
-            npc.net_offset *= k;
-            if npc.net_offset.length() < 0.5 {
+            if len > SMOOTHING_RANGE {
+                npc.net_offset = npc.net_offset.normalize() * SMOOTHING_RANGE;
+                len = SMOOTHING_RANGE;
+            }
+            let step = 2.0 + len / SMOOTHING_RANGE * 2.0;
+            let dir = npc.net_offset.normalize();
+            npc.net_offset -= dir * step;
+            if npc.net_offset.length() < step {
                 npc.net_offset = Vec2::ZERO;
             }
-            // `:90306-90310` — a town NPC that reached its home drops the
+            // `:90308-90311` — a town NPC that reached its home drops the
             // offset: the smoothed position is the home itself.
             if let Some((hx, hy)) = npc.home {
                 let (nw, nh) = npc.size();
@@ -3958,15 +3997,21 @@ mod handshake_tests {
         );
         assert!(peer.off_x.abs() < 0.01, "the first snap carries no lag");
         assert_eq!(peer.name, "host");
-        // A 60 px step: the lag accrues, the position snaps.
+        // A 60 px step: the lag accrues as `oldPos - wirePos`
+        // (`MessageBuffer.cs:1005`) — NEGATIVE here, so the draw
+        // (`x + off_x`) stays at the old spot and slides forward.
         host_app.player.as_mut().unwrap().x = spawn.0 + 60.0;
         pump(&mut host_app, &mut client_app, 12);
         let peer = client_app.remote_players.get(&0).expect("host peer stored");
         assert!((peer.x - (spawn.0 + 60.0)).abs() < 0.01);
         assert!(
-            (peer.off_x - 60.0).abs() < 0.01,
-            "the offset is the visual lag: {:.2}",
+            (peer.off_x + 60.0).abs() < 0.01,
+            "the offset is the old-minus-wire lag: {:.2}",
             peer.off_x
+        );
+        assert!(
+            (peer.x + peer.off_x - spawn.0).abs() < 0.01,
+            "the draw stays at the old position"
         );
     }
 
@@ -4036,20 +4081,78 @@ mod handshake_tests {
         pump(&mut host_app, &mut client_app, 12);
         host_app.player.as_mut().unwrap().x = 160.0;
         pump(&mut host_app, &mut client_app, 12);
+        // W4-d100: the lag is `oldPos - wirePos` (`MessageBuffer.cs:1005`),
+        // so a forward step accrues a NEGATIVE offset.
         let first = client_app.remote_players[&0].off_x;
-        assert!(first > 50.0, "the 60 px step accrued a lag");
-        // One 60 Hz frame of the C#'s decay: `max(2, 10%)` toward zero.
+        assert!(first < -50.0, "the 60 px step accrued a lag: {first}");
+        // One 60 Hz tick of the C#'s decay: `max(2, 10%)` toward zero
+        // (`Player.cs:28749`'s `Utils.MoveTowards`).
         client_app.net_interp_tick(1.0 / 60.0);
         let second = client_app.remote_players[&0].off_x;
         assert!(
-            second < first && second > 0.0,
-            "the lag decays, not jumps: {first} -> {second}"
+            second > first && second < 0.0,
+            "the lag decays toward zero, not jumps: {first} -> {second}"
         );
         // Enough frames and it is gone.
         for _ in 0..600 {
             client_app.net_interp_tick(1.0 / 60.0);
         }
         assert_eq!(client_app.remote_players[&0].off_x, 0.0);
+    }
+
+    #[test]
+    fn the_decay_is_one_sixtieth_tick_per_call_not_dt_scaled() {
+        // W4-d100 witness: `Player.UpdateNetOffset` runs once per 60 Hz
+        // `Player.Update` (`Player.cs:28172`); the port's accumulator must
+        // run exactly one decay per 1/60 s regardless of the frame dt — a
+        // 144 Hz frame (dt = 1/144) runs NO decay on its own, and four of
+        // them run exactly one (3/144 > 1/60 fires the tick on the third).
+        let (mut host_app, mut client_app) = in_world_pair();
+        host_app.player.as_mut().unwrap().x = 100.0;
+        pump(&mut host_app, &mut client_app, 12);
+        host_app.player.as_mut().unwrap().x = 200.0;
+        pump(&mut host_app, &mut client_app, 12);
+        let start = client_app.remote_players[&0].off_x;
+        assert!(start < -50.0);
+        // A sub-tick frame: no decay at all (the old dt-scaled port decayed
+        // a fraction every render frame).
+        client_app.net_interp_tick(1.0 / 144.0);
+        assert_eq!(client_app.remote_players[&0].off_x, start);
+        // The next two 144 Hz frames cross the 1/60 threshold (on the third
+        // call total): exactly one `MoveTowards` step of `max(2, len * 0.1)`
+        // toward zero; the fourth call adds no second step.
+        for _ in 0..3 {
+            client_app.net_interp_tick(1.0 / 144.0);
+        }
+        let len = start.abs();
+        let step = 2.0f32.max(len * 0.1);
+        let expect = -(len - step);
+        let got = client_app.remote_players[&0].off_x;
+        assert!(
+            (got - expect).abs() < 0.01,
+            "one tick, one step: {got} vs {expect}"
+        );
+    }
+
+    #[test]
+    fn the_first_wire_position_from_zero_accrues_no_lag() {
+        // W4-d100 witness: the C# gate is the OLD position
+        // (`player13.position != Vector2.Zero`, `MessageBuffer.cs:1003`) —
+        // a peer whose stored position is still zero accrues nothing even
+        // when the wire position is far away.
+        let (mut host_app, mut client_app) = in_world_pair();
+        host_app.player.as_mut().unwrap().x = 100.0;
+        pump(&mut host_app, &mut client_app, 12);
+        let peer = client_app.remote_players.get_mut(&0).expect("host peer stored");
+        peer.x = 0.0;
+        peer.y = 0.0;
+        peer.off_x = 0.0;
+        peer.off_y = 0.0;
+        host_app.player.as_mut().unwrap().x = 400.0;
+        pump(&mut host_app, &mut client_app, 12);
+        let peer = client_app.remote_players.get(&0).expect("host peer stored");
+        assert!((peer.x - 400.0).abs() < 0.01);
+        assert_eq!(peer.off_x, 0.0, "the zero-position gate skips the accrual");
     }
 
     #[test]
