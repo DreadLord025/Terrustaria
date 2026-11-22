@@ -900,6 +900,54 @@ pub const CANNON_EXPLOSIVE: u16 = 601;
 /// The bunny cannon's projectile (281, `Projectile.cs:3676-3687` — aiStyle 49,
 /// no ported AI; the constant anchors the `BunnyCannonCanFire` scan).
 pub const CANNON_BUNNY: u16 = 281;
+/// `ProjectileID.ShadowFlame` (496, `ProjectileID.cs:1546`) — the
+/// Shadowflame Hex Doll's aiStyle-91 flame (`Projectile.cs:5692-5704`).
+pub const SHADOW_FLAME: u16 = 496;
+/// The Toxic Flasks' cloud trio (511-513, `ProjectileID.cs:1576-1580`) —
+/// aiStyle 92 (`Projectile.cs:5805-5840`), the `UseGroupStaticImmunity(511)`
+/// shared identity. W4-d10.
+pub const TOXIC_CLOUD: u16 = 511;
+pub const TOXIC_CLOUD_2: u16 = 512;
+pub const TOXIC_CLOUD_3: u16 = 513;
+/// `ProjectileID.GasTrap` (1007, `ProjectileID.cs:2568`) — the dart trap's
+/// poison gas, aiStyle 92 (`Projectile.cs:9558-9569`), hostile AND friendly
+/// AND trap. W4-d10.
+pub const GAS_TRAP: u16 = 1007;
+/// `ProjectileID.ChlorophyteClaymoreSporeCloud` (1128,
+/// `ProjectileID.cs:2810`) — the claymore's spore orb, aiStyle 92
+/// (`Projectile.cs:10565-10579`), the idStatic-30 pair. W4-d10.
+pub const SPORE_CLOUD: u16 = 1128;
+/// `ProjectileID.NailFriendly` (514, `ProjectileID.cs:1582`) — the Nail
+/// Gun's nail, aiStyle 93 (`Projectile.cs:5841-5850`). W4-d10.
+pub const NAIL_FRIENDLY: u16 = 514;
+/// `ProjectileID.CoinPortal` (518, `ProjectileID.cs:1590`) — the Coin
+/// Gun's portal, aiStyle 94 (`Projectile.cs:5879-5888`). W4-d10.
+pub const COIN_PORTAL: u16 = 518;
+/// `ProjectileID.ToxicBubble` (523, `ProjectileID.cs:1600`) — the Toxic
+/// Flask's bubble, aiStyle 95 (`Projectile.cs:5929-5938`). W4-d10.
+pub const TOXIC_BUBBLE: u16 = 523;
+/// `ProjectileID.IchorSplash` (524, `ProjectileID.cs:1602`) — the Ichor
+/// Flask's splash, aiStyle 96 (`Projectile.cs:5939-5952`). W4-d10.
+pub const ICHOR_SPLASH: u16 = 524;
+/// `ProjectileID.FlyingPiggyBank` (525, `ProjectileID.cs:1604`) — the
+/// Money Trough's flying piggy bank, aiStyle 97
+/// (`Projectile.cs:5953-5961`). W4-d10.
+pub const FLYING_PIGGY_BANK: u16 = 525;
+/// `ProjectileID.CultistBossParticle` (526, `ProjectileID.cs:1606`) — the
+/// Lunatic Cultist's homing particle, aiStyle 98
+/// (`Projectile.cs:5962-5970`). W4-d10.
+pub const CULTIST_BOSS_PARTICLE: u16 = 526;
+/// `ProjectileID.MedusaHead` (535, `ProjectileID.cs:1624`) — the Medusa
+/// Head's held channel marker, aiStyle 100 (`Projectile.cs:6094-6106`).
+/// W4-d10.
+pub const MEDUSA_HEAD: u16 = 535;
+// `ProjectileID.MedusaHeadRay` (536) — the ray kind is d11's claim
+// (`6aca9b7f`: the row + `ai_medusa_ray` + the `MEDUSA_HEAD_RAY` const).
+// The keep-one drop-hunk EXECUTED (W4-d10, the crosschecks doc §2): d10's
+// duplicate const is REMOVED; the 535 dispatch spawns the rays through
+// the LITERAL 536 (`spawn_with_data_ai_owned(536, …)`) so this branch
+// compiles standalone (the no-row spawn declines) AND merges without a
+// const collision — d11's const is the one definition.
 /// `ProjectileID.LeafBlower` (`Projectile.cs:2937-2945`): the Leaf Blower's
 /// 14x14 petal, aiStyle 40 (`AI_040_LeafBlower` `:38003-38082`).
 pub const LEAF_BLOWER: u16 = 206;
@@ -965,6 +1013,38 @@ pub const EYE_OF_CTHULHU_DASH: u16 = 1130;
 pub const KRAKEN_WAVE: u16 = 1135;
 /// `ProjectileID.HiveFive` (999, the 1.4.4 yoyo — `Projectile.cs:9483-9490`).
 pub const HIVE_FIVE: u16 = 999;
+/// The yoyo accessory counterweights (`Projectile.cs:6084-6093`): 10×10,
+/// `extraUpdates = 1`, `DefaultToYoyo()` (aiStyle 99, melee, penetrate −1),
+/// `drawLayer = 0`, `scale = 1f`, `counterweight = true`. Their AI is the
+/// style-99 SUB-arm `AI_099_1_Counterweights` (`:67380-67731`), gated ahead
+/// of the yoyo arm by the C# `AI()` chain (`:33153-33156`) — W4-d10 (the
+/// f19 F1 census finding).
+pub const BLACK_COUNTERWEIGHT: u16 = 556;
+pub const BLUE_COUNTERWEIGHT: u16 = 557;
+pub const GREEN_COUNTERWEIGHT: u16 = 558;
+pub const PURPLE_COUNTERWEIGHT: u16 = 559;
+pub const RED_COUNTERWEIGHT: u16 = 560;
+pub const YELLOW_COUNTERWEIGHT: u16 = 561;
+/// `ProjectileID.PinkCounterweight` (1079, the 1.4.4 pink bag drop).
+pub const PINK_COUNTERWEIGHT: u16 = 1079;
+/// The seven counterweight kinds — the `AI()` sub-arm gate
+/// (`(aiStyle == 99 && type >= 556 && type <= 561) || type == 1079`,
+/// `Projectile.cs:33153`).
+pub const COUNTERWEIGHT_KINDS: [u16; 7] = [
+    BLACK_COUNTERWEIGHT,
+    BLUE_COUNTERWEIGHT,
+    GREEN_COUNTERWEIGHT,
+    PURPLE_COUNTERWEIGHT,
+    RED_COUNTERWEIGHT,
+    YELLOW_COUNTERWEIGHT,
+    PINK_COUNTERWEIGHT,
+];
+/// The counterweight kind test — the C# inline
+/// `(type >= 556 && type <= 561) || type == 1079` (`:33153`, `:67397`'s
+/// complement, `:67820`, `:18415`).
+pub const fn is_counterweight(kind: u16) -> bool {
+    matches!(kind, 556..=561 | 1079)
+}
 /// `ProjectileID.LightsBane` (974) — the Light's Bane sword's slash wave
 /// (`Projectile.cs:9237-9252`'s SetDefaults, `AI_188_LightsBane`
 /// `:42229-42262`, `Main.DrawProj_LightsBane` `Main.cs:27455-27495`).
@@ -2110,6 +2190,115 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             43 | 201..=205 | 527..=531 => {
                 (24.0, 24.0, 17, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
             }
+            // W4-d10 — the Shadowflame Hex Doll's flame (496,
+            // `Projectile.cs:5692-5704`): 40×40, aiStyle 91, magic,
+            // `MaxUpdates = 3` (extraUpdates 2, `:554-563`'s setter),
+            // penetrate 3, the local-immunity −1 pair, alpha 255; the
+            // stock tileCollide true / timeLeft 3600. The AI is
+            // `projectile_ai_91_100::ai_shadowflame`.
+            SHADOW_FLAME => (
+                40.0,
+                40.0,
+                91,
+                3,
+                TIME_LEFT_DEFAULT,
+                2,
+                true,
+                false,
+                false,
+                (true, -1, false, -1, 255, 1.0),
+            ),
+            // W4-d10 — the Toxic Cloud trio (`Projectile.cs:5805-5840`):
+            // 32×32 / 40×38 / 30×28, aiStyle 92, penetrate −1, scale 1.1,
+            // magic, alpha 255, `UseGroupStaticImmunity(511)` (the shared
+            // identity below). The stock tileCollide stands at spawn — the
+            // AI clears it every tick (`:32567`).
+            TOXIC_CLOUD => (
+                32.0, 32.0, 92, -1, TIME_LEFT_DEFAULT, 0, true, false, false,
+                (false, -2, true, 10, 255, 1.1),
+            ),
+            TOXIC_CLOUD_2 => (
+                40.0, 38.0, 92, -1, TIME_LEFT_DEFAULT, 0, true, false, false,
+                (false, -2, true, 10, 255, 1.1),
+            ),
+            TOXIC_CLOUD_3 => (
+                30.0, 28.0, 92, -1, TIME_LEFT_DEFAULT, 0, true, false, false,
+                (false, -2, true, 10, 255, 1.1),
+            ),
+            // W4-d10 — the Gas Trap's poison gas (`Projectile.cs:9558-9569`):
+            // 50×50, aiStyle 92, hostile AND friendly, penetrate −1, scale
+            // 1.1, trap, hide (no port field — the draw layer).
+            GAS_TRAP => (
+                50.0, 50.0, 92, -1, TIME_LEFT_DEFAULT, 0, true, false, true,
+                (false, -2, false, -1, 0, 1.1),
+            ),
+            // W4-d10 — the Chlorophyte Claymore's spore cloud
+            // (`Projectile.cs:10565-10579`): 30×30, aiStyle 92, melee,
+            // penetrate −1, scale 1.1, tileCollide false, the idStatic-30
+            // pair (the double noEnchantmentVisuals write is one flag).
+            SPORE_CLOUD => (
+                30.0, 30.0, 92, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (false, -2, true, 30, 0, 1.1),
+            ),
+            // W4-d10 — the Nail Gun's nail (`Projectile.cs:5841-5850`):
+            // 10×10, aiStyle 93, penetrate 3, alpha 255, ranged; the stock
+            // tileCollide/timeLeft. The AI is `ai_nail` + the 4×4
+            // collision box (`:19962`).
+            NAIL_FRIENDLY => (
+                10.0, 10.0, 93, 3, TIME_LEFT_DEFAULT, 0, true, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-d10 — the Coin Gun's portal (`Projectile.cs:5879-5888`):
+            // 32×32, aiStyle 94, alpha 255, tileCollide false, ignoreWater;
+            // the stock penetrate 1 / timeLeft 3600. No damage-class flag.
+            COIN_PORTAL => (
+                32.0, 32.0, 94, 1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-d10 — the Toxic Flask's bubble (`Projectile.cs:5929-5938`):
+            // 32×32, aiStyle 95, alpha 255, ranged, penetrate 1; the stock
+            // tileCollide/timeLeft.
+            TOXIC_BUBBLE => (
+                32.0, 32.0, 95, 1, TIME_LEFT_DEFAULT, 0, true, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-d10 — the Ichor Flask's splash (`Projectile.cs:5939-5952`):
+            // 10×10, aiStyle 96, alpha 255, penetrate 5, ignoreWater,
+            // melee, extraUpdates 5, the idStatic-10 pair.
+            ICHOR_SPLASH => (
+                10.0, 10.0, 96, 5, TIME_LEFT_DEFAULT, 5, true, false, false,
+                (false, -2, true, 10, 255, 1.0),
+            ),
+            // W4-d10 — the Money Trough's flying piggy bank
+            // (`Projectile.cs:5953-5961`): 30×24, aiStyle 97, tileCollide
+            // false, timeLeft 10800, drawLayer 3 (no port field); the
+            // stock penetrate 1, no damage-class flag (the bank is a
+            // friendly interactable, `IsInteractable` :78832).
+            FLYING_PIGGY_BANK => (
+                30.0, 24.0, 97, 1, 10800, 0, false, false, false, RESET_STATE,
+            ),
+            // W4-d10 — the Lunatic Cultist's homing particle
+            // (`Projectile.cs:5962-5970`): 8×8, aiStyle 98, tileCollide
+            // false, timeLeft 120, alpha 255; the stock penetrate 1. The
+            // C# row sets NO hostile flag — the particle is a visual
+            // homing marker (the `:788` friendly default false stands;
+            // the port's hostile-contact proxy keeps it inert).
+            CULTIST_BOSS_PARTICLE => (
+                8.0, 8.0, 98, 1, 120, 0, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-d10 — the Medusa Head's held marker
+            // (`Projectile.cs:6094-6106`): 18×18, aiStyle 100, friendly,
+            // penetrate −1, tileCollide false, magic, ignoreWater; the
+            // stock timeLeft 3600 (the AI pins 2 every tick). drawLayer 8
+            // + usesOwnerLight are draw-layer state (no port fields). The
+            // `Damage_CanDealDamage` refusal (`:12448`'s `type == 535`)
+            // means the marker itself never hits — its 536 rays carry the
+            // damage (d11's claim).
+            MEDUSA_HEAD => (
+                18.0, 18.0, 100, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                RESET_STATE,
+            ),
             // `Projectile.cs:1310-1316` — the throwing knife (48): 12x12, aiStyle
             // 2, `penetrate = 2`.
             THROWING_KNIFE => (12.0, 12.0, 2, 2, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
@@ -3660,6 +3849,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             | VALOR_YOYO
             | TERRARIAN_YOYO
             | HIVE_FIVE => (16.0, 16.0, 99, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),            // The yoyo shots (M4-PROJ-4b): the four children the yoyo
+            // W4-d10 (f19 F1) — the counterweight family
+            // (`Projectile.cs:6084-6093`): 10×10, `extraUpdates = 1`,
+            // `DefaultToYoyo()` (aiStyle 99, melee, penetrate −1),
+            // `drawLayer = 0`, `scale = 1f`, `counterweight = true` (no
+            // port field — the draw path knows the kinds, assets.rs:706).
+            // The AI is the style-99 SUB-arm `AI_099_1_Counterweights`.
+            BLACK_COUNTERWEIGHT | BLUE_COUNTERWEIGHT | GREEN_COUNTERWEIGHT
+            | PURPLE_COUNTERWEIGHT | RED_COUNTERWEIGHT | YELLOW_COUNTERWEIGHT
+            | PINK_COUNTERWEIGHT => (10.0, 10.0, 99, -1, TIME_LEFT_DEFAULT, 1, true, false, false, RESET_STATE),
             // on-hit arms spawn — `SetDefaults` verbatim.
             // `CascadeExplosion` (`:10528-10541`): 32×32, aiStyle 189, the
             // `alpha = 255`/`hide` pair, `penetrate = 4`, local-immunity with
@@ -5051,9 +5249,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         },
         // `UseGroupStaticImmunity(181)` (`Projectile.cs:10676-10681`) — the
         // Bee Gun's bee 181 and giant bee 566 share the identity 181, so the
-        // id-static table keys both under one cooldown. Every other row keeps
-        // 0 = "use the kind" (the `:782` reset `immunityIdentity = type`).
-        immunity_identity: if matches!(kind, BEE | GIANT_BEE) { BEE } else { 0 },
+        // id-static table keys both under one cooldown. W4-d10: the Toxic
+        // Cloud trio shares 511 the same way (`:5814`/`:5826`/`:5838`).
+        // Every other row keeps 0 = "use the kind" (the `:782` reset
+        // `immunityIdentity = type`).
+        immunity_identity: if matches!(kind, BEE | GIANT_BEE) {
+            BEE
+        } else if matches!(kind, TOXIC_CLOUD | TOXIC_CLOUD_2 | TOXIC_CLOUD_3) {
+            TOXIC_CLOUD
+        } else {
+            0
+        },
         alpha,
         // the yoyo family's per-kind scale ladder (`DefaultToYoyo`); every
         // other row carries its own scale in the state group.
@@ -5077,6 +5283,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-P-i21: the Nimbus Rod's two clouds set `netImportant`
             // (`Projectile.cs:3186`/`:3194`); the rain drop 239 keeps false.
             || matches!(kind, RAIN_CLOUD_MOVING | RAIN_CLOUD_RAINING)
+            // W4-d10 — the Coin Portal sets `netImportant` (`:5881`).
+            || kind == COIN_PORTAL
             // S1-P-i35 — the bobber family sets `netImportant` itself
             // (`Projectile.cs:4514`/`:9428`).
             || BOBBER_KINDS.contains(&kind)
@@ -5177,6 +5385,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (`Projectile.cs:3195`); the moving cloud 237 and the drop 239
             // keep the stock false.
             || kind == RAIN_CLOUD_RAINING
+            // W4-d10 — the Coin Portal sets `ignoreWater` (`:5887`); the
+            // Ichor Splash too (`:5947`); the Medusa Head marker (`:6105`).
+            || matches!(kind, COIN_PORTAL | ICHOR_SPLASH | MEDUSA_HEAD)
             // S1-D-4: the Empress family's five arms all set `ignoreWater`
             // (`Projectile.cs:8365`/`:8378`/`:8414`/`:8725`/`:8768`).
             || matches!(
@@ -5279,6 +5490,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         // the whip sets NONE (`DefaultToWhip` `:10704-10718`). The bombs
         // (28/29/37/519) and the Crystal Storm item 518's proj set none.
         melee: YOYO_KINDS.contains(&kind)
+            // W4-d10 — the counterweights ride `DefaultToYoyo` too
+            // (`Projectile.cs:6089` → `:10770`).
+            || is_counterweight(kind)
             || FLAIL_KINDS.contains(&kind)
             || matches!(
                 kind,
@@ -5317,6 +5531,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | ALE
                     // W4-d9 — the InfluxWaver's melee wave (`Projectile.cs:5234`).
                     | INFLUX_WAVER
+                // W4-d10 — the Chlorophyte Claymore's spore cloud (1128,
+                // `:10572`) and the Ichor Flask's splash (524, `:5948`).
+                    | SPORE_CLOUD | ICHOR_SPLASH
             ),
         ranged: matches!(
             kind,
@@ -5355,6 +5572,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d4 — `Projectile.cs:2787`: the Mechanical Piranha (190)
             // sets `ranged = true`.
                 | MECHANICAL_PIRANHA
+            // W4-d10 — the Nail Gun's nail (514, `:5849`) and the Toxic
+            // Flask's bubble (523, `:5935`).
+                | NAIL_FRIENDLY | TOXIC_BUBBLE
         ),
         magic: matches!(
             kind,
@@ -5398,6 +5618,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | BUBBLE
                 // W4-d9 — the ClingerStaff's magic wall (`Projectile.cs:5583`).
                 | CLINGER_STAFF
+            // W4-d10 — the Shadowflame Hex Doll's flame (496, `:5699`) and
+            // the Toxic Cloud trio (511-513, `:5813`/`:5825`/`:5837`), the
+            // Medusa Head marker (535, `:6104`).
+                | SHADOW_FLAME | TOXIC_CLOUD | TOXIC_CLOUD_2 | TOXIC_CLOUD_3
+                | MEDUSA_HEAD
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
@@ -5704,6 +5929,14 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         456 => 4,
         462 => 5,
         519 => 4,
+        // W4-d10 — the aiStyle-92/94/97/100 sheets: the Coin Portal's
+        // 4-frame spin (`Main.cs:8486`), the Flying Piggy Bank's 5-frame
+        // flap (`:8479`), the Medusa Head's 12-frame charge (`:8548`), the
+        // spore cloud's 5-frame first-tick roll (`:8726`).
+        518 => 4,
+        525 => 5,
+        535 => 12,
+        1128 => 5,
         574 => 2,
         601 => 2,
         645 => 7,

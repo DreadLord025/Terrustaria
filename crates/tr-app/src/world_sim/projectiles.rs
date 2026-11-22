@@ -169,6 +169,19 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             .player
             .as_ref()
             .map_or(1.0, |p| p.melee_speed(app.inventory[app.selected].kind)),
+        // W4-d10 — `AI_099_1_Counterweights`'s channel push (`:67521`):
+        // the frame-head `UpdateMainMouse` snapshot (`PlayerInput.cs:
+        // 911-917`), already in the world-update zoom basis
+        // (`SetZoom_MouseInWorld`, `:2528-2542`). Drained per projectile
+        // tick — every sub-step reads the same per-tick delta, exactly
+        // like the C# reads the same `Main.mouseX/lastMouseX` pair.
+        mouse_delta: (app.mouse_tick_delta.x, app.mouse_tick_delta.y),
+        // W4-d10 — the yoyo-string accessory grants (`Player.cs:14710-
+        // 14754`, the `ApplyEquipFunctional` rows; `ResetEffects` clears
+        // per tick `:18435`/`:18439`). The yoyo arm's lifetime/range terms
+        // and the counterweight's radius/ghost split read them.
+        yoyo_string: app.player.as_ref().is_some_and(|p| p.yoyo_string),
+        magic_string: app.player.as_ref().is_some_and(|p| p.magic_string),
     };
     // The whips anchor their curve on the player center and aim the Moon
     // Lord arms along the same aim point (`AI_165_Whip`'s mouse aim, `:47709`)
@@ -710,6 +723,29 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         app.swing = 5.0 / 60.0;
         app.swing_max = app.swing;
         app.item_time = 5.0 / 60.0;
+    }
+    // W4-d10 — the Coin Portal's gold-coin fountain (`Projectile.cs:32932-
+    // 32933`): `Item.NewItem` of the Gold Coin 73 (stack 1, prefix 0) at
+    // the truncated centre with the arm's EXPLICIT velocity — the
+    // RotatedByRandom pair + the NextFloat speed already drew on the
+    // `UpdateProjectiles` stream inside the AI; the explicit-velocity arm
+    // (`Item.cs:49738-49741`) skips the scatter pair and prefix 0 rolls
+    // nothing, so this drain is stream-neutral. The 14×14 item box centres
+    // on the spawn point (`WorldItem.Center = center`, `Item.cs:49736`).
+    for (x, y, vx, vy) in app.projectiles.drain_coin_drops() {
+        app.items.push(crate::item::ItemDrop::new(
+            73,
+            1,
+            0,
+            x - crate::item::SIZE * 0.5,
+            y - crate::item::SIZE * 0.5,
+            vx,
+            vy,
+            0.0,
+        ));
+        if app.items.len() > 300 {
+            app.items.remove(0);
+        }
     }
     // S1-P-i35 — the bobber death hook's catch drain (`Projectile.cs:71986-
     // 71994` → `GiveItemToPlayer` → `QuickSpawnItem` → `GetOrDropItem`): the
