@@ -84,6 +84,8 @@ per `docs/superpowers` agreements).
 | W4-e10 | Voice-family SEAL receipts (the f44g hydration closure + the d79 rewire hunks + the g21 disjointness + the f3 65-seam compose-note + the voice bible; docs-only over 8e0d951fc) | `W4-e10-voice-seal.md` | ✅ SEALED 2026-11-21 |
 | W4-e10 gap | The 51-unclaimed gap census: 4 PORTED (pet grants 17306/17338 + sign tails 33537/33547) → 211/164/47; the d79 cross-check (16 strict instrument sites, 63/64/65/66 zero Player.cs) + the owner-contract task seeds (instruments/Journey/QueenSlime/type-75 + the 23-site backlog); code-only, 10 witnesses written not run | `W4-e10-gap-census.md` | 🟡 CODE-ONLY 2026-11-21 |
 
+| 141 | NPC-sound FINAL census (W4-e9): the 27-tail activation census (all UNWIRED — d33b/d41r/d42r/d43r do not exist), the second 147-quirk + the critter cs_id key fixes, the f2/f47/d53/g2 co-lane keep-ones, the 32/32 idle-loop census; §8 TAIL-ACTIVATION-2 re-probe after the roster pushes (d42 vanilla-free 43-kind row, d33's wired-114-only axis activates ZERO tail cues, :24449 machine-owned-LIVE on f42/g8, the per-kind activation contract + the ten-tip critter-rekey scan with the exact f2 hunk); **§9 SEALED — the npc-sound-tail-family bible (e9 wholesale DROP / f2-canonical `b754bdcd`, the exit-LAVA hunk MOOT under the DROP, the twelve-tip rekey re-scan + d43-rowed/c10-fixed deltas, the Frog/Duck arm-label correction, the style-114 ZERO-tail-cues re-verify)** | `141-npc-sound-final-census.md` | SEALED (code-only) |
+
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
   counts question is ticketed.

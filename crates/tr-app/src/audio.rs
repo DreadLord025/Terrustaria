@@ -192,6 +192,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     // The Wyvern's death cue (`NPC.cs:9951`'s `NPCDeath8`, S1-D-3 wyvern)
     // — the `Sounds/NPC_Killed_8.xnb` asset ships with the content.
     ("NPC_Killed_8", 4),
+    // W4-e9 — the Vile Spit's `ai[0] == 2` tick cry (`SoundID`-less
+    // `PlaySound(4, pos, 9)`, `NPC.cs:21480`; `Sounds/NPC_Killed_9.xnb`).
+    ("NPC_Killed_9", 4),
     ("NPC_Killed_10", 4),
     ("NPC_Killed_11", 4),
     ("NPC_Killed_12", 4),
@@ -216,10 +219,18 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_45", 4),
     ("NPC_Killed_42", 4),
     ("NPC_Killed_44", 4),
+    // W4-e9 tail — Medusa's stone-gaze cry (`NPC.cs:56403`,
+    // `PlaySound(4, pos, 17)` int overload) and the balloon pops'
+    // `NPCDeath63` (`NPC.cs:43726`/`:47951`/`:48062`, the style façade).
+    ("NPC_Killed_17", 4),
+    ("NPC_Killed_63", 4),
     // The Force Bubble's death cue (`NPC.cs:13890`'s `NPCDeath45`) and the
     // Tesla Turret's (`NPC.cs:13931`'s `NPCDeath56`, S1-F-13d).
     ("NPC_Killed_45", 4),
     ("NPC_Killed_56", 4),
+    // W4-e9 — the Ghost's flee cry (`NPC.cs:24693`'s `SoundID.NPCDeath55`,
+    // the aiStyle-22 type-316 `localAI[3]` 0→1 latch; the style façade).
+    ("NPC_Killed_55", 4),
     ("NPC_Killed_54", 4),
     ("NPC_Killed_57", 4),
     ("NPC_Killed_59", 4),
@@ -419,7 +430,8 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_26", 2),
     ("Item_46", 2),
     ("Item_132", 2),
-    ("Item_167", 2),
+    // Item_167 already banked by the d77 kill-tail wave above (the merge
+    // dedupe — one row per asset).
     ("Item_189", 2),
     ("Item_190", 2),
     ("Item_205", 2),
@@ -437,6 +449,16 @@ const SFX_CUES: &[(&str, u32)] = &[
     // `LegacySoundStyle(2, 182)`, `SoundID.cs:1566`; `Sounds/Item_182.xnb`
     // verified on disk).
     ("Item_182", 2),
+    // W4-e9 tail — the NPC AI sites' Item cues (`SoundID.Item170/172`
+    // = `LegacySoundStyle(2, N)`, `SoundID.cs:1551-1556`; `Item150`
+    // `:1534`): the Blood Nautilus' volley/scream
+    // (`NPC.cs:47263`/`:47268`/`:47293`) and the Big Mimic's
+    // projectile-reflect tink (`:66429`). The Queen Slime's landing thud
+    // (`:45558`) rides `Item_167` — already banked by d75 part 1 above
+    // (the merge dedupe, one row per asset).
+    ("Item_170", 2),
+    ("Item_172", 2),
+    ("Item_150", 2),
     // `SoundID.Roar` = 15 (`SoundID.cs`) — the boss-summon roar
     // (`Player.cs:43765`'s `SoundEngine.PlaySound(15, ...)`; the `Roar_0`
     // cue family).
@@ -530,6 +552,88 @@ const SFX_CUES: &[(&str, u32)] = &[
     // Style-is-the-slot row 103, the ×0.4 arm (`LegacySoundPlayer.cs:1025-
     // 1028`); the asset is on disk (`Sounds/Zombie_103.xnb`).
     ("Zombie_103", 29),
+    // W4-e9 — the IdleSounds chain's case-29 slots 24-44
+    // (`NPC.cs:90079-90118`, arms 1-10: the blood crawlers' 24/25 through
+    // the walking antlion's 44; `LegacySoundPlayer.cs:1008-1050` — the
+    // 24..=87 volume arm cuts ×0.5). The `Sounds/Zombie_24..44.xnb`
+    // assets all ship with the content (the 131-entry bank `:112`).
+    ("Zombie_24", 29),
+    ("Zombie_25", 29),
+    ("Zombie_26", 29),
+    ("Zombie_27", 29),
+    ("Zombie_28", 29),
+    ("Zombie_29", 29),
+    ("Zombie_30", 29),
+    ("Zombie_31", 29),
+    ("Zombie_32", 29),
+    ("Zombie_33", 29),
+    ("Zombie_34", 29),
+    ("Zombie_35", 29),
+    ("Zombie_36", 29),
+    ("Zombie_37", 29),
+    ("Zombie_38", 29),
+    ("Zombie_39", 29),
+    ("Zombie_40", 29),
+    ("Zombie_41", 29),
+    ("Zombie_42", 29),
+    ("Zombie_43", 29),
+    ("Zombie_44", 29),
+    // W4-e9 slice 2 — IdleSounds arms 11-20 (`NPC.cs:90119-90158`): the
+    // antlion family's 45/46, crawdad 47, deadly sphere 48/49, DrManFly
+    // 50-52, dungeon spirit 53/54, desert ghouls 55/56, shellies 57/58.
+    ("Zombie_45", 29),
+    ("Zombie_46", 29),
+    ("Zombie_47", 29),
+    ("Zombie_48", 29),
+    ("Zombie_49", 29),
+    ("Zombie_50", 29),
+    ("Zombie_51", 29),
+    ("Zombie_52", 29),
+    ("Zombie_53", 29),
+    ("Zombie_54", 29),
+    ("Zombie_55", 29),
+    ("Zombie_56", 29),
+    ("Zombie_57", 29),
+    ("Zombie_58", 29),
+    // W4-e9 slice 3 — IdleSounds arms 21-30 (`NPC.cs:90159-90198`): the
+    // giga zapper 59/60 through the reaper/wraith 81-83.
+    ("Zombie_59", 29),
+    ("Zombie_60", 29),
+    ("Zombie_61", 29),
+    ("Zombie_62", 29),
+    ("Zombie_63", 29),
+    ("Zombie_64", 29),
+    ("Zombie_65", 29),
+    ("Zombie_66", 29),
+    ("Zombie_67", 29),
+    ("Zombie_68", 29),
+    ("Zombie_69", 29),
+    ("Zombie_70", 29),
+    ("Zombie_71", 29),
+    ("Zombie_72", 29),
+    ("Zombie_73", 29),
+    ("Zombie_74", 29),
+    ("Zombie_75", 29),
+    ("Zombie_76", 29),
+    ("Zombie_77", 29),
+    ("Zombie_78", 29),
+    ("Zombie_79", 29),
+    ("Zombie_80", 29),
+    ("Zombie_81", 29),
+    ("Zombie_82", 29),
+    ("Zombie_83", 29),
+    // W4-e9 slice 4 — the last two arms (`NPC.cs:90199-90206`): the
+    // sandpoor family 84/85, the scutlix 86.
+    ("Zombie_84", 29),
+    ("Zombie_85", 29),
+    ("Zombie_86", 29),
+    // W4-e9 tail — the Queen Slime's idle moan bank (case 65,
+    // `LegacySoundPlayer.cs:1382-1402`: `Next(115, 118)` behind the
+    // 115/116/117 playing guards, ×0.5, NO pitch draw — the
+    // `NPC.cs:45759` site).
+    ("Zombie_115", 65),
+    ("Zombie_116", 65),
+    ("Zombie_117", 65),
 ];
 
 /// The `Sounds/Custom/` NPC cues — the DD2 families' hit/death sounds and
@@ -569,6 +673,19 @@ pub(crate) const NPC_CUSTOM_CUES: &[&str] = &[
     // S1-E-21g — the EoW head's dig rumble (`SoundID.EOWDiggin`,
     // `SoundID.cs:1763`'s `CreateTrackable("eow_dig")`, one variation).
     "eow_dig",
+    // W4-e9 tail — the Pals' pain/joy cries (`AI_127_Pal`,
+    // `NPC.cs:42983`/`:42987`/`:42997`/`:43001`; `SoundID.cs:1714-1721`'s
+    // `CreateTrackable(...).WithVolume(0.35f)`, one variation each) and
+    // the Statue Mimic's scare/jump/laugh (`AI_126_StatueMimic`,
+    // `NPC.cs:43562`/`:43569`/`:43580`/`:43608`; `SoundID.cs:1741-1743`,
+    // the laugh three variations — the `_0` pin like wave A).
+    "pal_cattiva_pain",
+    "pal_foxparks_pain",
+    "pal_cattiva_joy",
+    "pal_foxparks_joy",
+    "statuemimic_scare",
+    "statuemimic_jump",
+    "statuemimic_laugh_0",
 ];
 
 /// The `Sounds/Custom/` trackable cues the liquid-merge events play
@@ -1565,12 +1682,22 @@ impl Audio {
         let (x, y) = (x.trunc(), y.trunc());
         let cue = match style_num {
             13 => "NPC_Killed_13",
+            // W4-e9 — the Ghost's flee cry (`NPC.cs:24693`,
+            // `PlaySound(SoundID.NPCDeath55, (int)Center.X, (int)Center.Y)`
+            // — the façade consumes the NextFloat on the audio-only stream;
+            // the 316 machine's wiring consumes the row).
+            55 => "NPC_Killed_55",
             61 => "NPC_Killed_61",
             // S1-E-21h d75 part 4 — the 1055 Ghoulder's death cue
             // (`Projectile.cs:74869`, `PlaySound(SoundID.NPCDeath6, x,
             // y)`): d3's `boulder_kill` parks the (4, 6) tuple; the row
             // rides d3's pushed tip 2d01693ca.
             6 => "NPC_Killed_6",
+            // W4-e9 tail — the balloon pops' `this.DeathSound` =
+            // `NPCDeath63` (`SetDefaults` 686/594, `NPC.cs:17636`/`:16716`;
+            // the ClumsySlimeBalloon `:43726` + the WindyBalloon
+            // `:47951`/`:48062` sites, the style façade).
+            63 => "NPC_Killed_63",
             _ => return None,
         };
         let style = npc_sound_style(cue, "NPC_Killed_", 4)?;
@@ -1600,12 +1727,21 @@ impl Audio {
         // Center via `:83-85`) — truncate here.
         let (x, y) = (x.trunc(), y.trunc());
         let cue = match style_num {
+            // W4-e9 — the Vile Spit's every-`ai[0]==2`-tick cry
+            // (`NPC.cs:21480`, `PlaySound(4, pos, 9)` — the int overload,
+            // NO NextFloat; the 112/666 kinds' wiring consumes the row).
+            9 => "NPC_Killed_9",
             6 => "NPC_Killed_6",
             // S1-E-21h d77 — the Stardust Jellyfish's style-7 cry
             // (`Projectile.cs:72571`).
             7 => "NPC_Killed_7",
             19 => "NPC_Killed_19",
             22 => "NPC_Killed_22",
+            // W4-e9 tail — Medusa's stone-gaze cry (`NPC.cs:56403`,
+            // `PlaySound(4, (int)position.X, (int)position.Y, 17)` — the
+            // int overload, NO NextFloat; the 480 kind's wiring consumes
+            // the row).
+            17 => "NPC_Killed_17",
             _ => return None,
         };
         let style = npc_sound_style(cue, "NPC_Killed_", 4)?;
@@ -1808,6 +1944,74 @@ impl Audio {
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.emit("eow_dig", x, y, style.volume, pitch.clamp(-1.0, 1.0));
         Some("eow_dig")
+    }
+
+    /// W4-e9 tail — one case-65 Queen Slime idle-moan play
+    /// (`NPC.cs:45759`, `PlaySound(65, base.position)` — the int overload,
+    /// NO `GetRandomPitch` NextFloat). The attenuation gate first
+    /// (`LegacySoundPlayer.cs:369-436`), then case 65 (`:1382-1402`): the
+    /// 115/116/117 playing guards refuse BEFORE any draw, `Next(115, 118)`
+    /// picks the slot, ×0.5 volume, NO pitch draw. The slot is overwritten
+    /// (detached, the case creates a fresh instance `:1397`). Returns the
+    /// asset played; `None` when the gate or a playing guard refused.
+    pub fn play_queen_slime_moan(
+        &mut self,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        let x = x.trunc();
+        let y = y.trunc();
+        if sound::play_sound(65, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let voice = crate::ambient_sound::critter_legacy_voice(
+            65,
+            0,
+            &mut |lo, hi| rng.next_range(lo, hi),
+            &|slot| self.zombie_playing(slot),
+        )?;
+        self.play_critter(voice, x, y);
+        Some(voice.asset)
+    }
+
+    /// W4-e9 tail — one `Sounds/Custom/` NPC trackable play by asset name
+    /// (the Pal pain/joy cries `NPC.cs:42983-43001` and the Statue Mimic's
+    /// scare/jump/laugh `:43562-43608`; `SoundID.CreateTrackable`,
+    /// `SoundID.cs:1714-1743`). The style façade (`SoundEngine.cs:93-99`)
+    /// consumes the `GetRandomPitch` NextFloat on the audio-only stream
+    /// (the Pal rows variance 0, the Statue Mimic rows 0.1 — the draw
+    /// still happens), then the attenuation gate, then case 42
+    /// (`LegacySoundPlayer.cs:1376-1381`): no volume tweak, no gameplay
+    /// draw, the style's own volume, the pinned first variation (the
+    /// multi-variation laugh plays `_0`, the wave-A pin). `cue` must be a
+    /// registered [`NPC_CUSTOM_CUES`] name. Returns the cue played;
+    /// `None` when the name is unregistered or the gate refused.
+    pub fn play_npc_trackable(
+        &mut self,
+        cue: &'static str,
+        x: f32,
+        y: f32,
+    ) -> Option<&'static str> {
+        if !NPC_CUSTOM_CUES.contains(&cue) {
+            return None;
+        }
+        // The multi-variation families pin `_0` (the bank's name); the
+        // style row's trackable is the base name (strip the suffix).
+        let base = cue.strip_suffix("_0").unwrap_or(cue);
+        let style = crate::soundid::SOUND_STYLES
+            .iter()
+            .find(|s| s.sound_id == 42 && s.trackable == Some(base))?;
+        let draw = self.sound_style_random.next_float();
+        let pitch = sound::get_random_pitch(style.pitch_variance, draw);
+        let x = x.trunc();
+        let y = y.trunc();
+        if sound::play_sound(42, x, y, self.listener, style.volume).is_none() {
+            return None;
+        }
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit(cue, x, y, style.volume, pitch.clamp(-1.0, 1.0));
+        Some(cue)
     }
 
     /// S1-E-21 wave B — one tile/wall-placement cue
@@ -3772,6 +3976,46 @@ mod tests {
         assert_eq!(audio.play_npc_death_int(6, 0.0, 0.0, &mut rng), None);
         assert_eq!(audio.play_npc_death_style(13, 0.0, 0.0, &mut rng), None);
         assert_eq!(rng.peek(), peek, "the muted plays are draw-free");
+    }
+
+    /// W4-e9 — the Vile Spit's int style-9 cry (`NPC.cs:21480`) and the
+    /// Ghost's NPCDeath55 façade (`:24693`): both resolve to registered
+    /// bank rows, the int peer draws ONE case-4 pitch with no NextFloat,
+    /// the façade adds the audio-only NextFloat; muted plays draw nothing.
+    #[test]
+    fn w4_e9_the_spit_and_ghost_death_rows_follow_the_overload_split() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        assert!(sfx_cue_registered("NPC_Killed_9"));
+        assert!(sfx_cue_registered("NPC_Killed_55"));
+        // The int overload (style 9): one Next(-10, 11), no NextFloat.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        let style_before = audio.sound_style_random.clone();
+        assert_eq!(
+            audio.play_npc_death_int(9, 0.0, 0.0, &mut rng),
+            Some("NPC_Killed_9")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one gameplay draw");
+        assert_eq!(audio.sound_style_random, style_before, "no NextFloat");
+        // The style façade (NPCDeath55): the same draw + the NextFloat.
+        let mut rng = UnifiedRandom::new(7);
+        assert_eq!(
+            audio.play_npc_death_style(55, 0.0, 0.0, &mut rng),
+            Some("NPC_Killed_55")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one gameplay draw");
+        assert_ne!(audio.sound_style_random, style_before, "the NextFloat");
+        // Muted: both peers draw nothing (the gate precedes the switch).
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_npc_death_int(9, 0.0, 0.0, &mut rng), None);
+        assert_eq!(audio.play_npc_death_style(55, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
     }
 
     /// S1-E-21g — the caster Item8 puff rides wave A's case-2 path: the

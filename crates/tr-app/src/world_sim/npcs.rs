@@ -1164,11 +1164,38 @@ fn play_npc_sound_request(
         NpcSoundCue::NpcDeath61 => {
             audio.play_npc_death_style(61, req.x, req.y, rng);
         }
+        NpcSoundCue::NpcDeath55 => {
+            audio.play_npc_death_style(55, req.x, req.y, rng);
+        }
+        NpcSoundCue::NpcHit6 => {
+            audio.play_npc_hit_sound("NPC_Hit_6", req.x, req.y, rng);
+        }
+        NpcSoundCue::NpcDeath63 => {
+            audio.play_npc_death_style(63, req.x, req.y, rng);
+        }
         NpcSoundCue::NpcDeath13 => {
             audio.play_npc_death_style(13, req.x, req.y, rng);
         }
         NpcSoundCue::EowDig => {
             audio.play_eow_dig(req.x, req.y);
+        }
+        NpcSoundCue::Splash(style) => {
+            audio.play_splash_sound(style, req.x, req.y, rng);
+        }
+        NpcSoundCue::ItemCue(style) => {
+            audio.play_npc_item_cue(style, req.x, req.y, rng);
+        }
+        NpcSoundCue::SandSharkCry => {
+            audio.play_fighter_moan(14, 542, req.x, req.y, rng);
+        }
+        NpcSoundCue::QueenSlimeMoan => {
+            audio.play_queen_slime_moan(req.x, req.y, rng);
+        }
+        NpcSoundCue::Pixie => {
+            audio.play_pixie(req.x, req.y, rng);
+        }
+        NpcSoundCue::Trackable(cue) => {
+            audio.play_npc_trackable(cue, req.x, req.y);
         }
     }
 }
@@ -4469,6 +4496,32 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         };
                         crate::npc_ai_style56::style56_step(&mut npcs[i], &mut env);
                     }
+                    // W4-e9 — `NPC.IdleSounds` (`NPC.cs:90422` →
+                    // `:90075-90208`): the ambient cry chain rolls BEFORE
+                    // `AI()` (`:90423`), on the same `UpdateNPCs` stream.
+                    // A matching type consumes its one Next(N) gate roll
+                    // even on failure (the style49 module's cited
+                    // obligation); the case-29 play (slot guard + one
+                    // pitch) rides `play_fighter_moan`, attenuation
+                    // BEFORE any case draw. The dead skip is `UpdateNPC`'s
+                    // `life <= 0` early return (`:90385-90392`), which
+                    // precedes the call. The cs_id() key (the hand table +
+                    // bestiary fallback, the fighter-moan precedent) — NOT
+                    // to_u16 (the internal protocol space, the MERGER-L7
+                    // sphere mis-route).
+                    if npcs[i].hp > 0 {
+                        let (ix, iy) = (npcs[i].x, npcs[i].y);
+                        let mut idle_roll = |hi: u32| npcs_rng.next_max(hi as i32) as u32;
+                        let style = crate::ambient_sound::idle_sound_cue(
+                            npcs[i].kind.cs_id() as i32,
+                            npcs[i].wet,
+                            npcs[i].shimmer_transparency,
+                            &mut idle_roll,
+                        );
+                        if let Some(style) = style {
+                            audio.play_fighter_moan(29, style, ix, iy, npcs_rng);
+                        }
+                    }
                     // S1-D-3-wire-saucer: the aiStyle-75 mount family is a
                     // POOL step (the host/crew slot links read `App::npcs`
                     // live) — it runs here, in slot order, on the
@@ -4556,6 +4609,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // clears at the update's end — the strike tick only
                     // (S1-D-3 W-1: the Hungry's recoil arm reads it).
                     n.just_hit = false;
+                    // W4-e9 — `NPC.UpdateCollision`'s water pass
+                    // (`NPC.cs:90492` → `:92526`): the splash layer runs
+                    // at the C# call position — AFTER the AI machine's
+                    // draws, BEFORE the queued-sound drain — for the
+                    // kinds whose port machine integrates tile collision
+                    // (the `!noTileCollide` branch; the raw-integration
+                    // flyers/bosses take the `:90494-90503` else and
+                    // never wet). The decision queues its case-19 play
+                    // on `wants_sound`; the drain below spends its one
+                    // pitch on the `UpdateNPCs` stream.
+                    if crate::npc_water_collision::water_collision_kind(n.kind) {
+                        crate::npc_water_collision::collision_water_step(n, world);
+                    }
                     // S1-E-21g — the AI machine's queued sound plays
                     // (the `wants_hostile_shot` shape): drained right
                     // after the machine's draws, BEFORE the moan/critter
@@ -4621,12 +4687,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // draws — the table's rolls, then the legacy family's
                     // slot/pitch draws. The C#'s `Main.netMode == 2` gate
                     // (`NPC.cs:92245`) is the dedicated server's; the port
-                    // has none. No ported kind matches the critter table
-                    // yet (M4-NPC's roster has no critter ids), so the
-                    // emitter stays silent until they land.
+                    // has none. W4-e9 census fix: the key is cs_id() (the
+                    // vanilla `this.type`), NOT to_u16 — the protocol space
+                    // put GolemHead on 74, the C# Bird's critter id (the
+                    // MERGER-L7 mis-route class the idle wiring's 3793fef8
+                    // comment pinned). No ported kind's cs_id matches the
+                    // critter table yet (the roster has no critter ids), so
+                    // the emitter stays silent until they land — but a
+                    // Golem head no longer rolls the bird's Next(400).
                     let mut hi_roll = |hi: u32| npcs_rng.next_max(hi as i32) as u32;
                     let cue = crate::ambient_sound::critter_sound_cue(
-                        n.kind.to_u16() as i32,
+                        n.kind.cs_id() as i32,
                         world.day_time,
                         world.time,
                         (world.world_surface * 16.0) as f32,
@@ -7163,14 +7234,15 @@ mod tests {
     /// `NPC.cs:92244-92340`): an NPC the critter table does not name consumes
     /// no `Main.rand` draws — the port's roster has no critter kinds yet
     /// (M4-NPC), so the zombie's id 3 must leave the per-NPC stream
-    /// untouched through the `NPC.cs:90323` seam.
+    /// untouched through the `NPC.cs:90323` seam. W4-e9: the key is
+    /// cs_id() (the vanilla `this.type`), NOT the protocol id.
     #[test]
     fn the_critter_seam_consumes_no_rolls_outside_the_table() {
         let mut rng = UnifiedRandom::new(0);
         let mut hi_roll = |hi: u32| rng.next_max(hi as i32) as u32;
         assert_eq!(
             crate::ambient_sound::critter_sound_cue(
-                NpcKind::Zombie.to_u16() as i32,
+                NpcKind::Zombie.cs_id() as i32,
                 true,
                 1000.0,
                 3000.0,
@@ -7186,6 +7258,60 @@ mod tests {
             UnifiedRandom::new(0),
             "out-of-table types consume no draws"
         );
+    }
+
+    /// W4-e9 — the critter-key census fix: GolemHead's PROTOCOL id is 74
+    /// (`to_u16`), the C# Bird's critter id — the pre-fix `to_u16` key
+    /// rolled the bird's day `Next(400)` + slot pick for every attached
+    /// Golem head (the MERGER-L7 mis-route class). The cs_id() key folds
+    /// the head onto the body's 245 (`bestiary.rs:2035`), outside the
+    /// table: zero draws, no cue. The protocol-key call still hits the
+    /// bird arm — the pin that the spaces differ.
+    #[test]
+    fn w4_e9_the_critter_key_is_cs_id_not_the_protocol_golem_head_74() {
+        assert_eq!(NpcKind::GolemHead.to_u16(), 74, "the protocol collision");
+        assert_eq!(NpcKind::GolemHead.cs_id(), 245, "the bestiary fold");
+        // The faithful key: outside the table, no draws (day AND night —
+        // the bird arm is day-gated but the 611/689 night arm must not
+        // catch the head either).
+        for day in [true, false] {
+            let mut rng = UnifiedRandom::new(3);
+            let mut hi_roll = |hi: u32| rng.next_max(hi as i32) as u32;
+            assert_eq!(
+                crate::ambient_sound::critter_sound_cue(
+                    NpcKind::GolemHead.cs_id() as i32,
+                    day,
+                    1000.0,
+                    3000.0,
+                    3000.0,
+                    0.0,
+                    &mut hi_roll
+                ),
+                None,
+                "the Golem head is outside the critter table (day={day})"
+            );
+            assert_eq!(rng, UnifiedRandom::new(3), "no draws (day={day})");
+        }
+        // The pre-fix protocol key DOES enter the bird arm (the witness
+        // that the fix changes behaviour for exactly this kind): the
+        // day gate rolls Next(400) even on failure.
+        let mut rng = UnifiedRandom::new(3);
+        let mut hi_roll = |hi: u32| rng.next_max(hi as i32) as u32;
+        let _ = crate::ambient_sound::critter_sound_cue(
+            NpcKind::GolemHead.to_u16() as i32,
+            true,
+            1000.0,
+            3000.0,
+            3000.0,
+            0.0,
+            &mut hi_roll,
+        );
+        let mut witness = UnifiedRandom::new(3);
+        let hit = witness.next_max(400) == 0;
+        if hit {
+            let _ = witness.next_max(3);
+        }
+        assert_eq!(rng, witness, "the protocol key rolls the bird's gate");
     }
 
     /// S1-E-21 wave C — the death play's stream contract: `checkDead`'s
@@ -17477,6 +17603,111 @@ mod dw3_tests {
         let before = app.audio.played_count();
         update_npcs(&mut app, 1.0 / 60.0);
         assert_eq!(app.audio.played_count() - before, 0, "one roar per charge");
+    }
+
+    /// W4-e9 — the IdleSounds wiring's stream contract (`NPC.cs:90422`,
+    /// the style49 module's cited obligation): the AngryNimbus's
+    /// `Next(700)` gate roll runs BEFORE the AI arm on the `UpdateNPCs`
+    /// stream — consumed even on failure; a hit adds the `Next(41, 44)`
+    /// slot pick and (the gate + slot guard passing) the case-29
+    /// `Next(-10, 11)` pitch. The cloud parks out of the rain window, so
+    /// the AI arm itself draws nothing (`nimbus_step`'s one draw is the
+    /// 9th qualifying shot tick).
+    #[test]
+    fn w4_e9_the_nimbus_idle_roll_rides_the_stream_before_the_ai() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = crate::test_world_helpers::ground();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 150.0 * 16.0;
+        player.y = 110.0 * 16.0;
+        app.player = Some(player);
+        // Inside the headless listener's radius, horizontally OFF the
+        // player's box (the rain window fails → zero AI draws).
+        let mut cloud = Npc::new(NpcKind::AngryNimbus, 1400.0, 1000.0, 1, 0.0);
+        cloud.hp = cloud.max_hp;
+        app.npcs.push(cloud);
+        app.rngs = crate::app::rng::NamedRngs::new(7);
+        let before = app.audio.played_count();
+        update_npcs(&mut app, 1.0 / 60.0);
+        // The mirror stream: the gate roll always; a hit adds the slot
+        // pick (Next(3) ≡ Next(41, 44) on the sample) + the case-29 pitch.
+        let mut witness = UnifiedRandom::new(7);
+        let hit = witness.next_max(700) == 0;
+        if hit {
+            let _ = witness.next_max(3);
+            let _ = witness.next_range(-10, 11);
+        }
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateNpcs),
+            witness,
+            "the idle gate roll rides the stream before the (draw-free) AI"
+        );
+        assert_eq!(
+            app.audio.played_count() - before,
+            u64::from(hit),
+            "the cry plays exactly when the gate hits"
+        );
+    }
+
+    /// W4-e9 — the water-collision wiring's stream contract
+    /// (`NPC.cs:90492` → `:92526`): the splash layer runs AFTER the AI
+    /// machine's draws and queues its case-19 play, which the drain
+    /// spends as exactly ONE `Next(-10, 11)` pitch on the `UpdateNPCs`
+    /// stream. A lone zombie inside a water column above the surface by
+    /// day: the idle ladder has no type-3 arm and the fighter-moan gate
+    /// closes (`NPC.cs:60302`), so the AI is draw-free and the splash is
+    /// the pass's only draw. The entry edge arms `wetCount` 10 (decayed
+    /// to 9) and sets `wet`; the next tick (wet→wet) plays nothing.
+    #[test]
+    fn w4_e9_the_water_splash_wiring_spends_one_case19_pitch() {
+        let build = || {
+            let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+            let mut world = crate::test_world_helpers::ground();
+            world.day_time = true;
+            world.world_surface = 50.0;
+            // A water column ABOVE the surface line (x 60..64, y 40..50).
+            for x in 60..64 {
+                for y in 40..50 {
+                    let i = world.index(x, y);
+                    world.tiles[i].liquid = 255;
+                }
+            }
+            app.world = world;
+            // Far from the zombie: no contact-damage variance roll.
+            let mut player = crate::player::Player::spawn(&app.world);
+            player.x = 150.0 * 16.0;
+            player.y = 110.0 * 16.0;
+            app.player = Some(player);
+            let mut zombie = Npc::new(NpcKind::Zombie, 61.0 * 16.0, 42.0 * 16.0, 1, 0.0);
+            zombie.hp = zombie.max_hp;
+            app.npcs.push(zombie);
+            app.rngs = crate::app::rng::NamedRngs::new(7);
+            app
+        };
+        let mut app = build();
+        let before = app.audio.played_count();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.audio.played_count() - before, 1, "the entry splash played");
+        assert!(app.npcs[0].wet && app.npcs[0].wet_prev, "base.wet set (:93175)");
+        assert_eq!(app.npcs[0].wet_count, 9, "10 armed, then :92535's decay");
+        assert!(app.npcs[0].wants_sound.is_empty(), "the queue drained");
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11); // the case-19 pitch, the only draw
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateNpcs),
+            witness,
+            "the splash spends exactly one case-19 pitch on the NPC stream"
+        );
+        // The next tick: wet→wet, no edge, no second play, no draw.
+        let before = app.audio.played_count();
+        let peek = app.rngs.stream(RngKey::UpdateNpcs).peek();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.audio.played_count() - before, 0, "no re-splash while wet");
+        assert_eq!(
+            app.rngs.stream(RngKey::UpdateNpcs).peek(),
+            peek,
+            "the wet→wet tick is draw-free"
+        );
     }
 
     /// S1-E-21g — the drain's stream contract in isolation (the machines'

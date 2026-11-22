@@ -42138,3 +42138,99 @@ retired on ITS side into g24's
 idempotence assertions carried over) — no witness dup survives the merge.
 Cross-receipt hashes: g24 `c3eccb77`/`7ca8b087` ⇄ g73 `4e7e3f58` → `bce01ece8`.
 
+## The NPC-sound final round (W4-e9, research/141)
+
+The 232-site `NPC.cs` PlaySound census closes on this branch: the
+32-arm IdleSounds ladder + the 8-site water splash layer (wired), the
+VileSpit/Ghost extras, and the 27 tail decisions
+(`npc_sounds_tail.rs`, UNWIRED — every consumer kind is unrowed on
+every pushed tip; the prompt's d33b/d41r/d42r/d43r branches do not
+exist, d41 is claim-only, d42 a non-compiling WIP, d43 zero commits,
+d33's 15 style modules carry no `NpcKind`). Two fidelity fixes this
+round:
+
+1. **The second 147-quirk** (`712e3c54`): the exit-water gate
+   `NPC.cs:93250` drops `type != 147` while the entry `:93152` and the
+   shimmer/honey arms keep it — `water_splash_gate` gains the
+   `exit_water` selector (f2's `9d9c94fe` finding adopted). The 615
+   override's kind is the **Dolphin** (NPCID.cs:11913), not the
+   seahorse (626) — the comment corrected.
+2. **The critter-emitter key** (`c7523984`): the
+   `UpdateNPC_CritterSounds` wiring keyed `to_u16()` — GolemHead's
+   protocol 74 collides with the C# Bird 74's critter arm
+   (`NPC.cs:92271`), rolling the bird's `Next(400)`+`Next(3)` for every
+   attached Golem head (a live Golem-fight stream drift). The key is
+   now `cs_id()` (the head folds onto 245, outside the table). A
+   mechanical scan finds GolemHead 74 as the ONLY protocol-space
+   collision with the critter table; f2's pushed tip carries the same
+   bug at its critter wiring — the merger applies the same one-line
+   re-key there (cross-note, not duplicated).
+
+Co-lane verdicts (research/141 §5): d53's projectile wet host is LIVE
+and disjoint from the NPC layer; g2's STAGED `Shimmer()` composes at
+d53's wet-block tail (`:17009-17012`, g2's claimed follow-up); f47's
+`shimmer_wet_contact_pass` is a second writer of the same
+`Collision_WaterCollision` probe — keep-one e9's
+`collision_water_step` (the superset) and lift f47's buff-353
+`try_adding_repeated_buff(353, 100, 10)` into its shimmer arm; the
+`shimmer_wet` field dedupes (both citations kept). The slime
+wet-gravity consumer (`slime_gravity`'s shimmer 0.15/5.5 + honey
+0.1/4 merges) is live on b1's adapter via the at-site probe — the
+carried-flag feed is b1's one-line follow-up. The idle-loop census
+closes 32/32 arms; the seven rowed idle kinds (250/288/389/471/520/
+388/391) roll today, the rest are table-complete until the roster
+wave. Witnesses WRITTEN NOT RUN (code-only).
+
+**TAIL-ACTIVATION-2 addendum (research/141 §8, after the roster
+pushes):** the re-probe re-intersects the 27 tail sites against the
+landed rows + axes. d42 (`489308b5`, the vanilla-free reconcile —
+43 kinds, protocol == NPCID, the 8 sibling-owned drops) rowed the
+tail kinds 583-585/594/618 with `{}` style stand-ins; d33
+(`b08acf46`) wired ONLY the aiStyle-114 axis (dragonflies 595-601) —
+the machine has NO PlaySound site and neither ambient table names
+595-601, so the LIVE axis activates ZERO tail cues (the new witness
+`w4_e9_tail_activation_2_the_landed_roster_ambient_census` pins it).
+The ONE amendment: :24449 (Antlion 69) is machine-owned-LIVE on f42
+(`75f055fc`, the inline `antlion_ai` Item5 block) and g8 (`82c93cec`,
+the axis-19 → d24 module route) — a dup-port per f2's research/94
+§10, NOT an e9 activation; the f42-inline vs d24-module keep-one is
+the style-19 machine merge. The `allow(dead_code)` verdict stands
+(re-cited `a4cacbfc`); the per-kind activation contract for the
+rowed-but-unwired kinds is research/141 §8.2. The critter-key scan
+extended to TEN pushed tips (research/141 §8.3): beyond GolemHead 74,
+f42's WalkingAntlion/FlyingAntlion (361/362), g8's five 361-365 kinds
+and d37's five 361-365 kinds mis-enter the squirrel/bunny critter
+arms on their own tips — the SAME one-line `to_u16`→`cs_id` rekey
+fixes each (the exact f2 hunk published); d42's Seagull/Rat/Owl and
+d40's gold critters are correct-by-band (protocol == cs_id) and keep
+firing after the rekey — the positive control.
+
+**SEAL addendum (research/141 §9 — the family CLOSED, e9-DROP /
+f2-canonical):** f2's research/94 §15 (`b754bdcd`) declares the
+NPC-sound family f2-canonical; e9 ACCEPTS the wholesale DROP (§4 +
+§9b items 1-12 — the ladder/wiring, the water module + decision +
+gates, the 19 tail fns + 10 witnesses, the 4+4 decision witnesses,
+the wet quintet + tail-cue duplicates; the extras/adoptions/fixes
+already unioned both ways). The exit-LAVA 147 fix-hunk (f2 §14.7) is
+MOOT under the DROP — f2's pass carries both quirks verbatim
+(`lava_entry_gate`/`lava_exit_gate`); e9's `honey_splash_gate:98` +
+the :176 exit-lava caller still keep `type != 147` at `f78613cf`
+(re-confirmed; the C# :93267 drops it, 147 IceSlime is aiStyle-1
+latent). Two corrections to the prior rounds' text: the :92264/:92257
+critter arms are the **Frog** (361/445/687) and **Duck** (362-365)
+arms — NOT squirrel (299)/bunny (46) (NPCID.cs:11399/:11401-11407;
+the mis-route mechanics unchanged); and f2's "e9 has no 147-gate
+test" claim is stale — e9's entry/exit witnesses pin the 147 WATER
+arms since `712e3c54` (npc.rs:19288-19343), they DROP with item 7.
+The ten-tip scan RE-RAN at the current tips (§9d) and gained TWO
+lanes: **d43 rowed** (`0253bde90`, 13 batches — the tail kinds
+657/662/686/690/695/696 now `{}` stand-ins, ZERO activation change;
+its seven new critter-set hits 671-675/687/689 correct-by-band) and
+**c10 already keys cs_id** (`15f93d134`, the waterfowl/golds
+correct-by-band — no rekey owed); d41's rows 508-526 add no critter
+collision. The style-114 ZERO-tail-cues verdict re-verified at
+source (the whole AI_114_Dragonflies :47716-47886 re-read, 0
+PlaySound hits; neither ambient table names 595-601; d33's 114
+still the ONLY wired axis arm). The npc-sound-tail-family bible is
+research/141 §9f; the 232 count re-run = 232. Code-only, docs + 1
+anchors row.
