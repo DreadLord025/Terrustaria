@@ -46440,3 +46440,81 @@ callers, verified).
 canonical); e4 wires ParticleOrchestrator 41-61 only. The merger drops
 e4's Mount emitters to avoid double-drawing (research/198, renamed from 67).
 Code-only: the 6 wiring drain-parity witnesses are WRITTEN NOT RUN.
+
+## The Main.cs AddLight census (W4-f9, third tile batch, 2026-11-20, code-only)
+**Verdict: the Main.cs tile/ambient `Lighting.AddLight` remainder is EMPTY.**
+The third tile batch (`task/W4-f9-addlight-tiles-3`) was dispatched to take
+whatever the first (W4-c20), second (W4-e8) and Main batches (W4-g18/g19)
+left unclaimed. A full-file census of the current decompilation
+(`decompiled/Terraria/Main.cs`, 65 265 lines) finds **exactly five**
+`Lighting.AddLight` call sites — case-insensitive `AddLight` grep and a
+`.AddLight|_activeEngine|LightingEngine` cross-check return the same five
+lines, no other light-write form exists in the file:
+| # | Site | Arm | Colour | Anchor |
+| - | ---- | --- | ------ | ------ |
+| 1 | `Main.cs:29016` | `DrawProj` type-332 Christmas-hook chain, `num112 == 0` | `(0, 0.2, 0.2)` | `(int)vector19.X / 16` (`:29012-29013`) |
+| 2 | `Main.cs:29020` | same walk, `num112 == 1` | `(0.1, 0.2, 0)` | same |
+| 3 | `Main.cs:29024` | same walk, `num112 == 2` | `(0.2, 0.1, 0)` | same |
+| 4 | `Main.cs:29028` | same walk, `num112 == 3` | `(0.2, 0, 0.2)` | same |
+| 5 | `Main.cs:29186` | `DrawProj` type-488 Illuminant-hook chain, per stepped link | `(0.2, 0, 0.175)` | `AddLight(Vector2, …)` quotient `(int)(v/16f)` (`Lighting.cs:140-143`) |
+**Negative census (the "ambient" half):** Main.cs has NO update-side or
+ambient `AddLight` — tile ambience (torches/lava/glowing blocks) is
+scanner-seeded (`TileLightScanner`, already ported in `tr-core/tile_light`),
+not entity-list fed. Main.cs also has zero `Utils.PlotTileLine` /
+`DelegateMethods.CastLight*` call sites (grep count 0) — the laser/hook
+tile-cast delegates live in `DelegateMethods.cs`/`Utils.cs` and are claimed
+by the same W4-e8 module. The mushroom-tree flicker
+(`TileDrawing.cs:8127/8132/8172/8177/8220/8225`) is TileDrawing's, not
+Main.cs's, and is likewise in the W4-e8 scope.
+**Claim map (probed before work, 2026-11-20):**
+* W4-c20 (first mixed NPC/tile batch): worktree clean at `a725acb0`, nothing
+  pushed, no in-flight files.
+* W4-e8 (second tile batch): in-flight untracked
+  `crates/tr-app/src/tile_lights.rs` whose header explicitly claims
+  `Main.cs:29016-29028`, `:29186` plus the TileDrawing flicker and the five
+  `CastLight*`/`SpreadLight` delegates. **All five Main.cs sites are
+  claimed here.**
+* W4-g18 / W4-g19 (Main batches 1/2): worktrees clean at `a725acb0`, nothing
+* Siblings W4-f7/f8 (proj/npc third batches), W4-c19, W4-e7: no Main.cs
+  tile claims (e7's in-flight file is `npc_lights_b.rs`; g20's in-flight
+  edits are the item family).
+**Verbatim audit of the W4-e8 port of the five sites** (read against the
+C# windows `Main.cs:28990-29189` + `Lighting.cs:135-163`; the file is
+in-flight/uncommitted, audited as-is):
+* `christmas_hook_chain_lights` — init at `proj.Center` (`:28994`), the
+  `< 30f` exit (`:29002-29006`) and NaN exit (`:29007-29011`) BEFORE the
+  light, the truncate-then-divide anchor (`:29012-29013`, NOT the quotient
+  form), the four colour rows in source order, the `16f / num115` step +
+  mounted-centre re-aim (`:29030-29036`), the `num112` wrap after 3
+  (`:29039-29043`), light sampled at the PRE-step position. **Faithful.**
+  The C# `flag21 = false; continue` exits map to `break` exactly.
+* `illuminant_hook_chain_lights` — `num116 = value11.Height` with
+  `Chains[488-486] = Chains[2]` (`:29071-29074`, `:29088`), NO `num117`
+  offset (the switch `:29097-29111` lists 383/446/489/487 only) and NO
+  383-style bend (`:29153-29172` is 383-gated), the NaN double-gates
+  (`:29123-29130`, AND within each pair / OR across pairs), the
+  `Length() < num116 + 1f` exit checked BEFORE the step (`:29146-29150`),
+  normalize → step → re-aim (`:29151-29174`), the light at the STEPPED
+  `center2` via the Vector2 quotient overload (`:29186`).
+  `normalize_or_zero` matches XNA `Normalize`'s zero-vector behaviour (a
+  zero aim cannot reach the step: the length gate exits first).
+  **Faithful.**
+* Witness arithmetic hand-checked (written-not-run, e8's tests): the
+  332 walk (160,160)→(160,320) lights 9 links y=160..288 (tiles 10..18,
+  colours wrap 0..3,0..3,0; exit at remaining 16 < 30); the 488 walk with
+  height 24 lights 6 stepped links y=184..304 (tiles 11,13,14,16,17,19;
+  exit at remaining 16 < 25). Both match the port's loop order.
+**Result:** no new module, no code change — the remainder is empty, so
+this round is the census + distrust-verbatim audit (the
+S1-D-3-aistyle61 docs-only precedent). The five sites land with W4-e8's
+merge; the merger should keep `tile_lights.rs`'s two Main.cs chain
+functions as the single copy.
+**Citation-drift note for the proj family (not fixed here, out of scope):**
+the yoyo section above cites "the beam's `Lighting.AddLight` (`:34416`)"
+as a Main.cs render skip; in the current decompilation `Main.cs:34416` is
+the proj-1025 draw arm (no AddLight) while `Projectile.cs:34416` is the
+aiStyle-115 `AddLight(base.Center, (0.075, 0.3, 0.15))` — the citation
+belongs to the Projectile.cs family register, not Main.cs.
+Code-only: the census is two independent greps over the full Main.cs;
+the audit re-read the cited C# windows line by line and hand-replayed
+both walks. **No cargo/rustc/rustfmt/tests/dotnet/graphify invoked.**
