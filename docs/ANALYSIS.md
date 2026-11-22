@@ -39609,3 +39609,76 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The NPC lights, first half (W4-c20, S1-E-5 wave 4, 2026-11-20, code-only)
+
+**Claim map (probed in-flight before work, 2026-11-20).** NPC.cs carries
+exactly 80 `Lighting.AddLight` call sites (full-file grep). This lane
+(`task/W4-c20-addlight-npcs-tiles`) owns the **FIRST 40**
+(`:21307`-`:48641`); the SECOND 40 (`:49929`-`:92412`) are claimed by
+W4-e7's in-flight `npc_lights_b.rs` (its header names this branch as the
+first-half owner). The Main.cs tile sites (5: `:29016`/`:29020`/
+`:29024`/`:29028`/`:29186`) are ALL claimed by W4-e8's in-flight
+`tile_lights.rs` (W4-f9's census `c2740784`); the TileDrawing
+mushroom-flicker + CastLight delegates ride the same e8 module. W4-g18/g19
+probed clean; W4-c19/e6/g20 are the projectile/item families. No overlap.
+
+Port: `crates/tr-app/src/npc_lights_a.rs` (the first-half module; the
+landed `npc_lights.rs` keeps the aiStyle-8 533/else tail, deduped at the
+feed). Status: LANDED (code-only) — all 40 sites ported, the per-site
+table below. **Code-only mode: no cargo/rustc/rustfmt/tests/graphify
+invoked; witnesses written-not-run.**
+
+**Per-site port table (all 40 sites landed, commits b610c020 /
+69f310cb / 15168064 / the batch-4 commit on this branch).** Dispositions: **FED** =
+`npc_light_a` returns it and `app/frame/draw.rs` appends it in
+`Main.npc` slot order after the step (no arm draws `Main.rand`);
+**DEDUP** = already ported AND fed elsewhere, this module records it
+only; **TWIN** = verbatim pure fn + witnesses, dispatcher returns
+`None` until the kind/machine wave (the `npc_lights.rs` aiStyle-23
+precedent).
+
+| # | Site | Kind(s) | Disposition |
+|---|------|---------|-------------|
+| 1 | :21307 | 693 LibrarianSkeleton | TWIN `librarian_skeleton_light` (Remap² gate) |
+| 2 | :21360 | 533 DesertDjinn | DEDUP `npc_lights.rs::npc_light` (live) |
+| 3 | :21365 | else (24 FireImp) | DEDUP `npc_lights.rs::npc_light` (live) |
+| 4 | :21561 | 25 BurningSphere (else arm) | FED ×2 (the `:21517` 2-iteration dust loop appends twice; `npc_light_a_emits` carries the count — the list key hashes every entry) |
+| 5 | :23764 | 102 AnglerFish | TWIN `angler_fish_light` (direction·(width+8) ahead anchor) |
+| 6-8 | :24211/:24215/:24219 | 63/103/else (not 221/242) | TWIN `jellyfish_light` (the HEIGHT-half-on-X quirk kept; wet-shield num263=1.5) |
+| 9 | :24664 | 72 BlazingWheel | DEDUP `npc_ai_style21::blazing_wheel_light` (live) |
+| 10 | :24801 | 122 Gastropod | TWIN `gastropod_light` (CenterTruncated, netOffset bracket) |
+| 11 | :24862 | 169 IceElemental | TWIN `ice_elemental_light` (netOffset bracket) |
+| 12-14 | :25241/:25245/:25249 | 83/179/else (84) | TWIN `cursed_weapon_light` (the aiStyle-23 chain the npc_lights.rs docs park) |
+| 15 | :26403 | 115 Hungry | FED (wall-gone deactivation = hp 0, the feed's dead skip) |
+| 16/17 | :32781/:32785 | 344 Everscream / 325 MourningWood | FED `moon_boss_bottom_light` (Bottom+(0,-30), float halves) |
+| 18 | :33059 | 327 Pumpking | FED `pumpking_light` |
+| 19 | :33709 | 346 SantaNK1 | FED `santa_nk1_light` (InWorld+!SolidTile probe on `(int)>>4` tiles; the light itself quotient-truncates; shares `npc_ai_frost_boss_b::worldgen_solid_tile`) |
+| 20-22 | :34162/:34166/:34170 | 358/654/else fireflies | DEDUP-TWIN `npc_ai_style64.rs::Ai64Effects::light` (UNWIRED; feeds once at its wiring) |
+| 23 | :34258 | 484 EnchantedNightcrawler | TWIN `nightcrawler_light` (takes the ROLLED Next(90,111) factor — the draw rides the future aiStyle-66 machine on UpdateNPCs, the item_lights rand-head precedent) |
+| 24/25 | :34387/:34391 | 360/655 snails | DEDUP-TWIN `npc_ai_style67.rs::SnailEvents::light` (UNWIRED) |
+| 26 | :35092 | 384 ForceBubble | DEDUP the draw feed's small-kinds inline arm (live) |
+| 27/28 | :35167/:35175 | 387 MartianTurret | DEDUP-TWIN `npc_ai_style73.rs::Style73Outcome::light` (UNWIRED — the turret's update_kind_ai arm is `{}`; the fade factor rides the machine's ai[1] cadence) |
+| 29 | :35462 | 388 MartianDrone / 418 SolarCorite | FED `implosion_light` at ai[0]==3 (the C#'s 192-box re-centre keeps Center invariant; the death-tick light is the documented dead-skip) |
+| 30 | :36623 | 399 MartianProbe | FED `martian_probe_light` (SkyBlue·0.65 / state-2 Red·0.65; the state-0 dead-player gate folds the :36575 return) |
+| 31 | :36923 | 437 CultistTablet | TWIN `cultist_tablet_light` |
+| 32 | :40732 | 548 DD2EterniaCrystal | FED `eternia_crystal_light` (alpha==0 gate; the loss fade :40899 is ported) |
+| 33 | :40975 | 549 DD2LanePortal | FED `lane_portal_light` (alpha==0; neither side writes alpha) |
+| 34 | :43017 | 696 PalFoxsparks | TWIN `pal_foxsparks_light` |
+| 35 | :44904 | 661 EmpressButterfly | TWIN `empress_butterfly_light` (hslToRgb via tr_core's byte-quantised port, ×0.3+0.1) |
+| 36 | :45111 | 653 HellButterfly | TWIN `hell_butterfly_light` (CenterTruncated, netOffset bracket) |
+| 37 | :45217 | 657 QueenSlimeBoss | TWIN `queen_slime_light` |
+| 38 | :46941 | 636 HallowBoss | DEDUP-TWIN `npc_ai_empress.rs` (UNWIRED; `hallow_boss_light` pure twin for its wiring — One·Opacity) |
+| 39 | :47434 | 618 BloodNautilus | TWIN `blood_nautilus_light` (state-3 ai[1]<180 window, UNCLAMPED GetLerpValue pair, netOffset bracket) |
+| 40 | :48641 | 583/584/585 FairyCritters | TWIN `fairy_critter_light` (HotPink/LimeGreen/RoyalBlue ·0.7) |
+
+Deviations recorded: the FED feeds run draw-side after the step (the
+`npc_lights.rs` precedent — vanilla runs them inside `NPC.AI`; the
+one-frame-late `EntityLights` pair makes the placement pixel-exact and
+no FED arm draws RNG, so the streams are untouched). The death-tick
+lights (the implosion's `:35492-35498` kill-after-light, the probe's
+state-2 escape death) are skipped by the feed's `hp <= 0` gate — the
+shared NPC-feed dead-skip convention. The TWIN sites' lights are dark
+until their kind/machine waves land (the roster census above); their
+pure fns + witnesses pin the exact colours/anchors/gates for those
+waves. 27 witness tests written NOT run (code-only mode).

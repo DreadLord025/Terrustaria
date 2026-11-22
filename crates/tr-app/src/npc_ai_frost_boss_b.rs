@@ -296,7 +296,7 @@ pub struct FrostBossBShot {
 /// (`:70128-70131`); an in-world null tile returns TRUE (`:70115-70117`)
 /// but in-world tiles are never null in the port, so `None` ⇒ false is
 /// exact (the sibling module's convention).
-fn worldgen_solid_tile(world: &World, x: i32, y: i32) -> bool {
+pub(crate) fn worldgen_solid_tile(world: &World, x: i32, y: i32) -> bool {
     let Some(t) = world.tile(x, y) else {
         return false;
     };

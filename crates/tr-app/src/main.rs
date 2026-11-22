@@ -39,6 +39,7 @@ mod env;
 mod entity_lights;
 mod item_lights;
 mod npc_lights;
+mod npc_lights_a;
 mod player_lights;
 mod proj_lights;
 mod eoc_fight;
