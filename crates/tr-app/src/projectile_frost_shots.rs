@@ -140,8 +140,13 @@ fn move_tile_collide(p: &mut Projectile, world: &World) {
 /// the shared tail. The needle flies straight for 50 ticks then falls at
 /// 0.5/tick.
 fn needle(p: &mut Projectile, world: &World) {
-    // `:57118-57122` — the first-tick latch (`SoundID.Item1` skipped).
-    latch_local0(p);
+    // `:57118-57122` — the first-tick latch + SoundID.Item1 (S1-E-21h d76,
+    // `:57121`; the live dispatch routes 345 to projectile_ai_frostmoon —
+    // this reference copy keeps the same cue).
+    if p.local_ai[0] == 0.0 {
+        p.local_ai[0] = 1.0;
+        p.wants_sound = Some((2, 1, p.pos.x, p.pos.y, 0.0, 1.0));
+    }
     // `:56038-56041` — `flag3` true: the counter runs.
     p.ai[0] += 1.0;
     // `:57123-57127` — the gravity arm (mutually exclusive with the
@@ -162,9 +167,11 @@ fn needle(p: &mut Projectile, world: &World) {
 /// (`:55985`): the counter rests, no gravity. The alpha/scale pulse cycles
 /// `ai[0]` 0→1→2.
 fn wave(p: &mut Projectile, world: &World) {
-    // `:56248-56252` — the `localAI[1]` latch (`SoundID.Item8` skipped).
+    // `:56248-56252` — the `localAI[1]` latch + SoundID.Item8 (S1-E-21h
+    // d76, `:56251`; the live dispatch routes 348 to projectile_ai_frostmoon).
     if p.local_ai[1] == 0.0 {
         p.local_ai[1] = 1.0;
+        p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0, 1.0));
     }
     // `:56253-56272` — the pulse.
     if p.ai[0] == 0.0 || p.ai[0] == 2.0 {
@@ -223,9 +230,12 @@ fn missile(p: &mut Projectile, world: &World) {
     // `:55137` — the light plot (skipped, no light layer).
     // `:55138-55157` — the two dust rolls at `alpha == 0` (SKIPPED, the
     // FLAMING_WOOD precedent; they ride UpdateProjectiles, not UpdateNPCs).
-    // `:55158-55162` — the `ai[1]` latch (`SoundID.Item42` skipped).
+    // `:55158-55162` — the `ai[1]` latch + SoundID.Item42 (S1-E-21h d76,
+    // `:55161`; a legacy id-2 style, `SoundID.cs:1425`. The live dispatch
+    // routes 350 to projectile_ai_frostmoon).
     if p.ai[1] == 0.0 {
         p.ai[1] = 1.0;
+        p.wants_sound = Some((2, 42, p.pos.x, p.pos.y, 0.0, 1.0));
     }
     finish_style1(p, world, false);
 }

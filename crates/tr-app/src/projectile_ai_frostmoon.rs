@@ -60,10 +60,13 @@
 //! cited C# blocks and hand arithmetic.
 //!
 //! Deliberate skips (ANALYSIS): dust, `Lighting.AddLight` (346's per-frame
-//! light `:24877`/`:24881`, 350's `:55137`), sound (345 Item1 `:57121`, 346
-//! Item1 `:24872`, 348 Item8 `:56251`, 350 Item42 `:55161`), `netUpdate`.
-//! The 346 burst's `owner == Main.myPlayer` gate folds to `owner ==
-//! local_owner` (the port's single-player stand-in, the saucer precedent).
+//! light `:24877`/`:24881`, 350's `:55137`) and `netUpdate`. SOUND now rides
+//! the `wants_sound` seam (S1-E-21h d76): 345 Item1 `:57121`, 348 Item8
+//! `:56251`, 350 Item42 `:55161` (a legacy id-2 style, `SoundID.cs:1425`).
+//! The 346 ornament's Item1 (`:24872`) is outside the d76 line range — it
+//! stays as landed. The 346 burst's `owner == Main.myPlayer` gate folds to
+//! `owner == local_owner` (the port's single-player stand-in, the saucer
+//! precedent).
 
 use tr_core::World;
 
@@ -134,6 +137,11 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
         }
         if p.ai[1] == 0.0 {
             p.ai[1] = 1.0;
+            // `:55161` — SoundID.Item42 at base.position (S1-E-21h d76).
+            // Item42 IS a legacy id-2 style (`SoundID.cs:1425`,
+            // `new LegacySoundStyle(2, 42)`) — the wave-A "trackable" label
+            // was a misclassification; the cue rides the plain case-2 play.
+            p.wants_sound = Some((2, 42, p.pos.x, p.pos.y, 0.0, 1.0));
         }
     }
 
@@ -174,6 +182,8 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
     if p.kind == FROST_WAVE {
         if p.local_ai[1] == 0.0 {
             p.local_ai[1] = 1.0;
+            // `:56251` — SoundID.Item8 at base.position (S1-E-21h d76).
+            p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0, 1.0));
         }
         if p.ai[0] == 0.0 || p.ai[0] == 2.0 {
             p.scale += 0.01;
@@ -206,6 +216,8 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
         // starts on tick 50.
         if p.local_ai[0] == 0.0 {
             p.local_ai[0] = 1.0;
+            // `:57121` — SoundID.Item1 at base.position (S1-E-21h d76).
+            p.wants_sound = Some((2, 1, p.pos.x, p.pos.y, 0.0, 1.0));
         }
         if p.ai[0] >= 50.0 {
             p.ai[0] = 50.0;
@@ -673,5 +685,30 @@ mod tests {
         }
         assert!((q.vel.y - 3.0).abs() < 1e-5);
         assert_eq!(q.alpha, 0); // long faded
+    }
+
+    // ---- S1-E-21h d76: the frostmoon cue witnesses (WRITTEN, NOT RUN) ------
+
+    /// 345 (`:57121`) → Item1, 348 (`:56251`) → Item8, 350 (`:55161`) →
+    /// Item42 — each once per life at base.position.
+    #[test]
+    fn s1_e_21h_d76_the_frostmoon_latches_carry_their_cues() {
+        let w = air();
+        for (kind, style) in [
+            (PINE_NEEDLE_HOSTILE, 1), // :57121
+            (FROST_WAVE, 8),          // :56251
+            (SANTA_MISSILE, 42),      // :55161
+        ] {
+            let mut p = shot(kind);
+            step(&mut p, &w);
+            assert_eq!(
+                p.wants_sound,
+                Some((2, style, 1600.0, 800.0, 0.0, 1.0)),
+                "kind {kind}'s cue at base.position"
+            );
+            p.wants_sound = None;
+            step(&mut p, &w);
+            assert_eq!(p.wants_sound, None, "kind {kind}: one cue per life");
+        }
     }
 }
