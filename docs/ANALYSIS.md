@@ -12708,6 +12708,70 @@ on the e16 branch):
   6daf6d3d, none an ancestor of main at this writing); the deferred list
   above carries each merger's exact fill. `ResearchTracker.sacrifice_numbers`
   landed here so the c24 merge dedupes onto it.
+## The item tooltip line census (W4-e16, 2026-11-21)
+
+The full `GetLinesInfo` line-kind census
+(`docs/research/64-item-tooltip-line-census.md`, `Main.cs:20631-21343`)
+against the S1-E-20 port, and the four fix families that close it:
+
+1. **Stat-gate corrections** — the damage gate's `notAmmo`/`useStyle` arm
+   and the 71-74 Coin-Gun carve-out (`HasItem(905)`), the
+   `RapidAttackBonusDamage` read-only ramp (`Player.rapid_attack_bonus`
+   lands at 0 — the melee increase arm `Player.cs:44291` and the
+   `ResetEffects` decay stay with the combat lane), the
+   `GetVisualCritChance` revolver clamp, the summon/whip use-time
+   exclusion, the quiver ×1.1 INT truncation + the Psycho-Knife 3106
+   stealth arm, the shop tip[60] swap, the tileWand row, the
+   Strange-Brew `RestoresLifeRange`, the
+   `PlaceTileOnAltUse`/notAmmo/extractinator place-ammo-consumable gates
+   and the Wireable/Container/WireTrigger rows (`ui/tooltip_sets.rs`).
+   The fishing row's key was fixed to the vanilla's own typo
+   `GameUI.PrecentFishingPower` (`Main.cs:20806`).
+2. **The ToolTip tail + world rows** — the cursed-Plantera first-line
+   override, the anniversary/ftw seed rows, the Mechdusa last-line swap
+   (the 5334 double-`numLines--` replace walk), the DD2 misc[104] and
+   WellFed misc[40] expert rows, the buffTime duration (banker's
+   `Math.Round`), the yoyo blank logo line, the expert set's
+   `GameUI.Expert` row + −12 disco name colour and the rare −13
+   `GameUI.Master` row + masterColor channel.
+3. **The prefix comparison** — the percent-delta rows against a fresh
+   `SetDefaults` copy (the mana row's INVERTED colour test), the
+   `{0:+0;-#}` armor-pen/tag rows (the sign applied port-side —
+   `format_net` drops specifiers, research/33 D5) and the accessory
+   fixed rows 62-80. The stat rows now read the PREFIXED instance
+   (`prefix::prefixed_stats_of`, `Item.cs:576-586`); `oldKB` is captured
+   BEFORE the glove scale (`Main.cs:20333`).
+4. **Favourite/social/loadout + armor-set + share hint** — the
+   `TooltipContext` favourite/context/open-bank fields, the
+   `canLoadoutShareAt` flag/flag2 latches, the armor-set bonus row over
+   `armor_sets::best_worn_set` and the `Settings.ShowLoadoutShareHint`
+   config key. `draw_hud` maps the `HoverRef` to the `ItemSlot.Draw`
+   context and derives the world gates (`TooltipWorld`) once per frame.
+
+Deviations (deliberate):
+
+- **The journey creative-sacrifice rows are constants-off**
+  (`Main.cs:21318-21333`): the port has no journey difficulty
+  (`Main.LocalPlayer.difficulty == 3` never holds — the `player.rs`
+  journey-godmode precedent).
+- **`Item.BestiaryNotes` is a cited drop** (`Main.cs:21334-21342`): only
+  the bestiary's item cache ever writes the field
+  (`UIBestiaryInfoItemLine.cs:155`); the port's bestiary drop rows never
+  build an item tooltip.
+- **The OneDropLogo texture is unported**: the yoyo kinds' blank line
+  keeps the row geometry (`Main.cs:21016-21021`); the draw pass's logo
+  swap (`:20410-20438`) waits for the texture.
+- **The −13 masterColor / diff 1/2 name colours**: masterColor rides the
+  static default 1.0 (no animated global yet); the mediumcore/hardcore
+  overrides stay out (no difficulty flag).
+- **The loadout `SharedFrom` arm is unreachable**: the port has no
+  loadout system, so `GetSharedLoadoutItem` never answers — the
+  favourited shareable slot prints `UI.ItemLoadoutShared` directly.
+- **The shop price rows** (`AddShopLines`, `Main.cs:20448-20555`) stay
+  with the shop lane (W4-f37).
+
+Witnesses: 26 tooltip tests + 3 set tests + 1 settings test, WRITTEN NOT
+RUN (code-only mode — no compiler invoked).
 
 
 ## Tile sections (M6-NET-3)

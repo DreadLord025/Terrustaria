@@ -40,6 +40,7 @@ pub mod slot;
 pub mod text;
 pub mod tooltip;
 pub mod tooltip_lines2;
+pub(crate) mod tooltip_sets;
 pub mod uistate;
 pub mod secret_seeds_list;
 pub mod world_creation;

@@ -682,6 +682,11 @@ pub fn item_tooltip_rows(
     (lines, yoyo_logo)
 }
 
+/// `Main.cs:20634-20635` — the prefix-delta colours: `color` (190,120,120)
+/// for the worse arm, `color2` (120,190,120) for the better.
+const PREFIX_BAD: [f32; 4] = [190.0 / 255.0, 120.0 / 255.0, 120.0 / 255.0, 1.0];
+const PREFIX_GOOD: [f32; 4] = [120.0 / 255.0, 190.0 / 255.0, 120.0 / 255.0, 1.0];
+
 /// `Main.MouseText_DrawItemTooltip` (`Main.cs:20322-20446`): the generic tooltip box
 /// plus the item name in its rare colour, with placeholder zeroed stat lines for
 /// weapons (spec §9.3; the real `Item.ToolTip` lines are a later data port).
@@ -1452,6 +1457,730 @@ mod tests {
             rows.iter().any(|(t, _)| t.contains("20")),
             "the mana restore row: {:?}",
             rows.iter().map(|(t, _)| t).collect::<Vec<_>>()
+        );
+    }
+
+    // --- W4-e16 family 1: the stat-gate corrections ---------------------------
+
+    /// `Main.cs:20669`: the coins 71-74 (notAmmo, useStyle 1 — the place
+    /// arm admits them) show their damage row ONLY while the Coin Gun 905
+    /// is carried; the acorn 27 (notAmmo, useStyle 1) keeps its gate.
+    #[test]
+    fn w4_e16_the_coin_damage_row_needs_the_coin_gun() {
+        let coin = crate::registry::get(71).expect("the copper coin row");
+        let rows = item_tooltip_lines(71, coin, TooltipContext::default());
+        // The coin is RANGED class (`itemdata.rs`) — the tip[3] suffix.
+        let dmg = crate::lang::tip(3);
+        assert!(
+            !rows.iter().any(|(t, _)| t.ends_with(&dmg)),
+            "no damage row without the Coin Gun: {rows:?}"
+        );
+        let rows = item_tooltip_lines(
+            71,
+            coin,
+            TooltipContext { has_coin_gun: true, ..Default::default() },
+        );
+        assert!(
+            rows.iter().any(|(t, _)| t == &format!("25{dmg}")),
+            "the coin's 25 damage with the Coin Gun: {rows:?}"
+        );
+    }
+
+    /// `Main.cs:20717`: the summon staffs show no use-time row; the whips
+    /// (IsAWhip[shoot]) do. The Pygmy Staff 1157 (summon, shoot 191 — not a
+    /// whip) vs a whip-shaped summon row.
+    #[test]
+    fn w4_e16_the_use_time_row_skips_the_summon_staffs_but_not_the_whips() {
+        let staff = crate::registry::get(1157).expect("the pygmy staff row");
+        let rows = item_tooltip_lines(1157, staff, TooltipContext::default());
+        let tier = crate::lang::tip(9); // useAnimation 28 -> the <=30 tier
+        assert!(!rows.iter().any(|(t, _)| *t == tier), "no speed row: {rows:?}");
+        let whip = crate::itemdata::ItemDef { projectile: Some(841), ..*staff };
+        let rows = item_tooltip_lines(1157, &whip, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| *t == tier), "the whip keeps it: {rows:?}");
+    }
+
+    /// `Main.cs:20758-20760`: the quiver's ×1.1 TRUNCATES — kb 6.5 → 7.15 →
+    /// (int) 7 → the <=7 "Strong knockback" word, not the <=9 tier the
+    /// untruncated 7.15 would still pick; kb 8.5 → 9.35 → 9 stays <=9, but
+    /// kb 9.5 → 10.45 → 10 crosses into the <=11 word.
+    #[test]
+    fn w4_e16_the_quiver_knockback_truncates_before_the_word_tier() {
+        let bow = crate::registry::get(1).expect("a base row");
+        let row = crate::itemdata::ItemDef {
+            knock_back: 9.5,
+            use_ammo: crate::ammo::AMMO_ARROW,
+            ..*bow
+        };
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut player = crate::player::Player::spawn(&world);
+        player.magic_quiver = true;
+        let rows = item_tooltip_lines(
+            1,
+            &row,
+            TooltipContext { player: Some(&player), ..Default::default() },
+        );
+        // (int)(9.5 * 1.1f) = (int)10.45 = 10 -> tip[21] (<=11), not tip[22].
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(21)), "{rows:?}");
+        assert!(!rows.iter().any(|(t, _)| *t == crate::lang::tip(22)));
+    }
+
+    /// `Main.cs:20762-20765`: the Psycho Knife 3106 held AND hovered adds
+    /// `kb * (1 - stealth)` — at full stealth (0) the shown kb doubles.
+    #[test]
+    fn w4_e16_the_psycho_knife_stealth_arm_doubles_the_shown_knockback() {
+        let base = crate::registry::get(1).expect("a base row");
+        let knife = crate::itemdata::ItemDef { knock_back: 4.0, ..*base };
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut player = crate::player::Player::spawn(&world);
+        player.stealth = 0.0;
+        let ctx = TooltipContext {
+            player: Some(&player),
+            held_kind: 3106,
+            ..Default::default()
+        };
+        let rows = item_tooltip_lines(3106, &knife, ctx);
+        // 4 + 4 * (1 - 0) = 8 -> the <=9 word tip[20], not the <=4 tip[17].
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(20)), "{rows:?}");
+        // A different held kind leaves the row at the base word.
+        let rows = item_tooltip_lines(
+            3106,
+            &knife,
+            TooltipContext { player: Some(&player), ..Default::default() },
+        );
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(17)), "{rows:?}");
+    }
+
+    /// `Main.cs:20673-20676` + `Player.cs:18251-18273`: the rapid-attack
+    /// kinds scale the shown damage by (1 + min(bonus, 0.5)); other kinds
+    /// pass through.
+    #[test]
+    fn w4_e16_the_rapid_attack_bonus_scales_only_the_three_kinds() {
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut player = crate::player::Player::spawn(&world);
+        player.rapid_attack_bonus = 0.7; // clamps to 0.5
+        assert_eq!(player.apply_rapid_attack_bonus(25, 2608, false), 37); // (int)(25*1.5)
+        assert_eq!(player.apply_rapid_attack_bonus(25, 1, false), 25, "not in the set");
+        let blade = crate::registry::get(2608).expect("the falcon blade row");
+        let rows = item_tooltip_lines(
+            2608,
+            blade,
+            TooltipContext { player: Some(&player), ..Default::default() },
+        );
+        let dmg = crate::lang::tip(2);
+        assert!(rows.iter().any(|(t, _)| t == &format!("37{dmg}")), "{rows:?}");
+    }
+
+    /// `Item.cs:637-645`: the Revolver 2269's crit row carries the charged
+    /// bonus clamped to [0, 100]; other kinds read the plain crit.
+    #[test]
+    fn w4_e16_the_revolver_visual_crit_clamps_the_charge() {
+        let revolver = crate::registry::get(2269).expect("the revolver row");
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut player = crate::player::Player::spawn(&world);
+        player.ranged_crit = 4;
+        player.revolver_crit_chance_bonus = 120;
+        let rows = item_tooltip_lines(
+            2269,
+            revolver,
+            TooltipContext { player: Some(&player), ..Default::default() },
+        );
+        // clamp(0 + 120, 0, 100) = 100; the row is 4 - 0 + 100.
+        let crit = crate::lang::tip(5);
+        assert!(rows.iter().any(|(t, _)| t == &format!("104{crit}")), "{rows:?}");
+    }
+
+    /// `Main.cs:20818-20825`: the Discount Card 854's equipable row swaps to
+    /// tip[60] while a shop is open.
+    #[test]
+    fn w4_e16_the_shop_swaps_the_discount_card_equipable_row() {
+        let mirror = crate::registry::get(854).expect("the discount card row");
+        let rows = item_tooltip_lines(854, mirror, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(23)));
+        let rows = item_tooltip_lines(
+            854,
+            mirror,
+            TooltipContext { world: tooltip_lines2::TooltipWorld { npc_shop: true, ..Default::default() }, ..Default::default() },
+        );
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(60)), "{rows:?}");
+        assert!(!rows.iter().any(|(t, _)| *t == crate::lang::tip(23)));
+    }
+
+    /// `Main.cs:20828-20832`: the tileWand row is tip[52] + the material's
+    /// name — the Living Wood Wand 832 consumes Wood 9.
+    #[test]
+    fn w4_e16_the_tile_wand_row_names_the_consumed_material() {
+        let wand = crate::registry::get(832).expect("the living wood wand row");
+        let rows = item_tooltip_lines(832, wand, TooltipContext::default());
+        let want = format!("{}{}", crate::lang::tip(52), crate::lang::item_name(9));
+        assert!(rows.iter().any(|(t, _)| *t == want), "{rows:?}");
+    }
+
+    /// `Main.cs:20878-20882`: the Strange Brew 3001 prints the range row
+    /// (healLife..120), not the plain RestoresLife.
+    #[test]
+    fn w4_e16_the_strange_brew_prints_the_life_range() {
+        let brew = crate::registry::get(3001).expect("the strange brew row");
+        let rows = item_tooltip_lines(3001, brew, TooltipContext::default());
+        let want = crate::lang::text_args(
+            "CommonItemTooltip.RestoresLifeRange",
+            &[brew.heal_life.to_string(), "120".to_string()],
+        );
+        assert!(rows.iter().any(|(t, _)| *t == want), "{rows:?}");
+        let plain = crate::lang::common_item_tooltip_fmt("RestoresLife", brew.heal_life);
+        assert!(!rows.iter().any(|(t, _)| *t == plain));
+    }
+
+    /// `Main.cs:20919-20936`: the extractinator kinds (86, the Shadow
+    /// Scale) drop the Consumable row; the alt-use kinds (4367,
+    /// non-consumable) still show "Can be placed"; the notAmmo acorn 27
+    /// drops the Ammo row.
+    #[test]
+    fn w4_e16_the_place_ammo_consumable_gates() {
+        let sirens = crate::registry::get(86).expect("the shadow scale row");
+        let rows = item_tooltip_lines(86, sirens, TooltipContext::default());
+        assert!(
+            !rows.iter().any(|(t, _)| *t == crate::lang::tip(35)),
+            "the extractinator kind drops Consumable: {rows:?}"
+        );
+        let kite = crate::registry::get(4367).expect("the blue kite row");
+        let rows = item_tooltip_lines(4367, kite, TooltipContext::default());
+        assert!(
+            rows.iter().any(|(t, _)| *t == crate::lang::tip(33)),
+            "the alt-use kind keeps Can be placed: {rows:?}"
+        );
+        // The ale 353: ammo > 0 but notAmmo and no tile — the Ammo row
+        // drops, the Consumable row stays (`Main.cs:20927-20935`).
+        let ale = crate::registry::get(353).expect("the ale row");
+        let rows = item_tooltip_lines(353, ale, TooltipContext::default());
+        assert!(
+            !rows.iter().any(|(t, _)| *t == crate::lang::tip(34)),
+            "the notAmmo ale drops Ammo: {rows:?}"
+        );
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(35)));
+    }
+
+    /// `Main.cs:20942-20956`: the chest 48 shows Wireable + Container; the
+    /// Goblin Statue 441 (tile 105, in the statue set) shows Wireable; the
+    /// non-set statue kind drops it.
+    #[test]
+    fn w4_e16_the_wiring_rows_follow_the_tile_sets() {
+        let chest = crate::registry::get(48).expect("the chest row");
+        let rows = item_tooltip_lines(48, chest, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::common_item_tooltip("Wireable")));
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::common_item_tooltip("Container")));
+        let statue = crate::registry::get(441).expect("the goblin statue row");
+        let rows = item_tooltip_lines(441, statue, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::common_item_tooltip("Wireable")));
+    }
+
+    // --- W4-e16 family 2: the ToolTip tail + the world rows -------------------
+
+    /// The language rows the tail reads (the shipped values,
+    /// `Terraria.Localization.Content.en-US.Items.json` / `.Legacy.json`).
+    fn register_tail_language() {
+        crate::lang::test_register_source(
+            "Terraria.Localization.Content.en-US.Items.json",
+            r#"{
+                "ItemTooltip": {
+                    "JungleKey": "Unlocks a Jungle Chest in the dungeon",
+                    "MechanicalWorm": "Summons The Destroyer",
+                    "MechdusaSummon": "Summons ???\n'You really shouldn't'"
+                },
+                "CommonItemTooltip": {
+                    "MechSummonDuringEverything": "'Part of a set'",
+                    "MechdusaSummonNotDuringEverything": "'It has no effect in this world'",
+                    "WizardHatDuringAnniversary": "Increases your max number of minions by 1",
+                    "BurningBlock": "Burns you when touched without special protection",
+                    "SecondDuration": "{0} second duration",
+                    "MinuteDuration": "{0} minute duration"
+                }
+            }"#,
+        );
+    }
+
+    /// `Main.cs:20961-20965`: the Jungle Key 1533's first tooltip line is
+    /// tip[59] until Plantera falls, then the real text.
+    #[test]
+    fn w4_e16_the_biome_keys_stay_cursed_until_plantera() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let key = crate::registry::get(1533).expect("the jungle key row");
+        let rows = item_tooltip_lines(1533, key, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(59)), "{rows:?}");
+        assert!(
+            !rows.iter().any(|(t, _)| t == "Unlocks a Jungle Chest in the dungeon"),
+            "the real text stays hidden: {rows:?}"
+        );
+        let rows = item_tooltip_lines(
+            1533,
+            key,
+            TooltipContext { world: tooltip_lines2::TooltipWorld { downed_plant_boss: true, ..Default::default() }, ..Default::default() },
+        );
+        assert!(
+            rows.iter().any(|(t, _)| t == "Unlocks a Jungle Chest in the dungeon"),
+            "{rows:?}"
+        );
+        assert!(!rows.iter().any(|(t, _)| *t == crate::lang::tip(59)));
+    }
+
+    /// `Main.cs:20973-20982`: the anniversary Wizard Hat 238 and the
+    /// for-the-worthy Crispy Honey Block 1127 rows.
+    #[test]
+    fn w4_e16_the_seed_rows_gate_on_their_world_flags() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let hat = crate::registry::get(238).expect("the wizard hat row");
+        let rows = item_tooltip_lines(238, hat, TooltipContext::default());
+        let anniversary_row = crate::lang::common_item_tooltip("WizardHatDuringAnniversary");
+        assert!(!rows.iter().any(|(t, _)| *t == anniversary_row));
+        let rows = item_tooltip_lines(
+            238,
+            hat,
+            TooltipContext { world: tooltip_lines2::TooltipWorld { tenth_anniversary: true, ..Default::default() }, ..Default::default() },
+        );
+        assert!(rows.iter().any(|(t, _)| *t == anniversary_row), "{rows:?}");
+        let honey = crate::registry::get(1127).expect("the crispy honey row");
+        let burning = crate::lang::common_item_tooltip("BurningBlock");
+        let rows = item_tooltip_lines(1127, honey, TooltipContext::default());
+        assert!(!rows.iter().any(|(t, _)| *t == burning));
+        let rows = item_tooltip_lines(
+            1127,
+            honey,
+            TooltipContext { world: tooltip_lines2::TooltipWorld { get_good_world: true, ..Default::default() }, ..Default::default() },
+        );
+        assert!(rows.iter().any(|(t, _)| *t == burning), "{rows:?}");
+    }
+
+    /// `Main.cs:20983-20999`: under Mechdusa the Mechanical Worm 556's last
+    /// line becomes "Part of a set"; outside it Ocram's Razor 5334 drops
+    /// its last line and replaces the previous one (the double `numLines--`).
+    #[test]
+    fn w4_e16_the_mechdusa_swap_rewrites_the_last_lines() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let worm = crate::registry::get(556).expect("the mechanical worm row");
+        let rows = item_tooltip_lines(
+            556,
+            worm,
+            TooltipContext { world: tooltip_lines2::TooltipWorld { mechdusa: true, ..Default::default() }, ..Default::default() },
+        );
+        assert_eq!(
+            rows.last().unwrap().0, "'Part of a set'",
+            "the last line is rewritten, not appended: {rows:?}"
+        );
+        let razor = crate::registry::get(5334).expect("the ocram's razor row");
+        let rows = item_tooltip_lines(5334, razor, TooltipContext::default());
+        assert_eq!(
+            rows.last().unwrap().0, "'It has no effect in this world'",
+            "{rows:?}"
+        );
+        assert!(
+            !rows.iter().any(|(t, _)| t == "'You really shouldn't'"),
+            "the dropped last line stays gone: {rows:?}"
+        );
+        assert!(
+            !rows.iter().any(|(t, _)| t == "Summons ???"),
+            "the previous line was REPLACED (numLines-- twice): {rows:?}"
+        );
+        // Under Mechdusa the razor keeps its own text (the else-if arm).
+        let rows = item_tooltip_lines(
+            5334,
+            razor,
+            TooltipContext { world: tooltip_lines2::TooltipWorld { mechdusa: true, ..Default::default() }, ..Default::default() },
+        );
+        assert!(rows.iter().any(|(t, _)| t == "'You really shouldn't'"), "{rows:?}");
+    }
+
+    /// `Main.cs:21000-21009`: the DD2 popper 3818 prints misc[104] until
+    /// the crystal is defended; the Apple 4009 (WellFed 26) prints misc[40]
+    /// only in expert mode.
+    #[test]
+    fn w4_e16_the_dd2_and_well_fed_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let popper = crate::registry::get(3818).expect("the dd2 popper row");
+        let rows = item_tooltip_lines(3818, popper, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::misc(104)), "{rows:?}");
+        let rows = item_tooltip_lines(
+            3818,
+            popper,
+            TooltipContext { world: tooltip_lines2::TooltipWorld { downed_dd2_any: true, ..Default::default() }, ..Default::default() },
+        );
+        assert!(!rows.iter().any(|(t, _)| *t == crate::lang::misc(104)));
+        let apple = crate::registry::get(4009).expect("the apple row");
+        let rows = item_tooltip_lines(4009, apple, TooltipContext::default());
+        assert!(!rows.iter().any(|(t, _)| *t == crate::lang::misc(40)));
+        let rows = item_tooltip_lines(
+            4009,
+            apple,
+            TooltipContext { world: tooltip_lines2::TooltipWorld { expert_mode: true, ..Default::default() }, ..Default::default() },
+        );
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::misc(40)), "{rows:?}");
+    }
+
+    /// `Main.cs:21010-21015`: the Apple's 18000 ticks → 300 s → 5 minutes;
+    /// the seconds arm rounds BANKER'S (2730 → 45.5 → 46, 2670 → 44.5 → 44).
+    #[test]
+    fn w4_e16_the_duration_row_rounds_bankers() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let apple = crate::registry::get(4009).expect("the apple row");
+        let rows = item_tooltip_lines(4009, apple, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| t == "5 minute duration"), "{rows:?}");
+        let base = crate::registry::get(1).expect("a base row");
+        let odd_half = crate::itemdata::ItemDef { buff_time: 2730, ..*base };
+        let rows = item_tooltip_lines(1, &odd_half, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| t == "46 second duration"), "{rows:?}");
+        let even_half = crate::itemdata::ItemDef { buff_time: 2670, ..*base };
+        let rows = item_tooltip_lines(1, &even_half, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| t == "44 second duration"), "{rows:?}");
+    }
+
+    /// `Main.cs:21016-21031`: the Code 1 yoyo appends the blank logo line;
+    /// the Hive Backpack 3333 prints GameUI.Expert and takes the −12 disco
+    /// name colour; the Pirate Ship Mount 4792 (rare −13) prints
+    /// GameUI.Master with the masterColor green channel.
+    #[test]
+    fn w4_e16_the_yoyo_expert_and_master_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let yoyo = crate::registry::get(3262).expect("the code 1 row");
+        let rows = item_tooltip_lines(3262, yoyo, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| t == " "), "the blank logo line: {rows:?}");
+        let backpack = crate::registry::get(3333).expect("the hive backpack row");
+        let ctx = TooltipContext { world: tooltip_lines2::TooltipWorld { disco: [0, 255, 0], ..Default::default() }, ..Default::default() };
+        let rows = item_tooltip_lines(3333, backpack, ctx);
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::game_ui("Expert")), "{rows:?}");
+        assert_eq!(rows[0].1, [0.0, 1.0, 0.0, 1.0], "the disco name colour");
+        let mount = crate::registry::get(4792).expect("the pirate ship mount row");
+        let rows = item_tooltip_lines(4792, mount, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::game_ui("Master")), "{rows:?}");
+        // masterColor 1.0 -> (byte)(1 * 200) = 200.
+        assert_eq!(rows[0].1, [1.0, 200.0 / 255.0, 0.0, 1.0]);
+    }
+
+    // --- W4-e16 family 3: the prefix comparison rows --------------------------
+
+    /// `Main.cs:21032-21137`: the Legendary 81 Iron Broadsword 4 prints the
+    /// percent deltas against the base — damage 12→14 (+17%), speed 20→18
+    /// (+10%, negated), crit +5 (raw), knockback 5.5→6.325 (+15%), size
+    /// 1→1.1 (+10%) — all green; the name colour rides the prefixed rare.
+    #[test]
+    fn w4_e16_the_legendary_prefix_prints_the_percent_deltas() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let sword = crate::registry::get(4).expect("the iron broadsword row");
+        let rows = item_tooltip_lines(
+            4,
+            sword,
+            TooltipContext { prefix: 81, ..Default::default() },
+        );
+        let texts: Vec<&str> = rows.iter().map(|(t, _)| t.as_str()).collect();
+        assert!(texts.contains(&format!("+17{}", crate::lang::tip(39)).as_str()), "{texts:?}");
+        assert!(texts.contains(&format!("+10{}", crate::lang::tip(40)).as_str()), "{texts:?}");
+        assert!(texts.contains(&format!("+5{}", crate::lang::tip(41)).as_str()), "{texts:?}");
+        assert!(texts.contains(&format!("+15{}", crate::lang::tip(45)).as_str()), "{texts:?}");
+        assert!(texts.contains(&format!("+10{}", crate::lang::tip(43)).as_str()), "{texts:?}");
+        // The damage ROW itself reads the prefixed 14, not the base 12.
+        assert!(texts.contains(&format!("14{}", crate::lang::tip(2)).as_str()), "{texts:?}");
+        // Every delta row is green (120,190,120).
+        for (t, c) in &rows {
+            if t.ends_with(&crate::lang::tip(39)) || t.ends_with(&crate::lang::tip(45)) {
+                assert_eq!(*c, PREFIX_GOOD, "{t}");
+            }
+        }
+    }
+
+    /// `Main.cs:21040-21051`: the Broken 10 prefix (dmg 0.85) prints the
+    /// negative damage delta in RED (190,120,120); the mana row's colour
+    /// test is INVERTED (`:21093` — a cost increase is the worse arm).
+    #[test]
+    fn w4_e16_the_negative_deltas_are_red_and_the_mana_colour_inverts() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let sword = crate::registry::get(4).expect("the iron broadsword row");
+        // Broken 10: dmg 0.85 -> round(12 * 0.85) = 10 -> (10-12)/12 = -17%.
+        let rows = item_tooltip_lines(
+            4,
+            sword,
+            TooltipContext { prefix: 10, ..Default::default() },
+        );
+        let bad = rows
+            .iter()
+            .find(|(t, _)| *t == format!("-17{}", crate::lang::tip(39)))
+            .expect("the negative damage delta");
+        assert_eq!(bad.1, PREFIX_BAD);
+        // The Adept 26 prefix on the Space Gun 127 (mana 6 -> round(6*0.85)
+        // = 5): the mana delta is -17% and GREEN (a decrease is good).
+        let gun = crate::registry::get(127).expect("the space gun row");
+        let rows = item_tooltip_lines(
+            127,
+            gun,
+            TooltipContext { prefix: 26, ..Default::default() },
+        );
+        let mana = rows
+            .iter()
+            .find(|(t, _)| t.ends_with(&crate::lang::tip(42)))
+            .expect("the mana delta");
+        assert_eq!(mana.1, PREFIX_GOOD, "{mana:?}");
+        // The Mystical 35 prefix (mcst 1.2): mana 6 -> round(7.2) = 7,
+        // +17% — RED through the inverted test.
+        let rows = item_tooltip_lines(
+            127,
+            gun,
+            TooltipContext { prefix: 35, ..Default::default() },
+        );
+        let mana = rows
+            .iter()
+            .find(|(t, _)| *t == format!("+17{}", crate::lang::tip(42)))
+            .expect("the positive mana delta");
+        assert_eq!(mana.1, PREFIX_BAD);
+    }
+
+    /// `Main.cs:21138-21151`: the Ruthless 85 Sanguine Staff 4269 prints
+    /// the armor-penetration (+10) and tag-damage (+3) rows through the
+    /// `{0:+0;-#}` keys (the sign applied port-side, research/33 D5).
+    #[test]
+    fn w4_e16_the_whip_prefix_prints_the_signed_pen_and_tag_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::test_register_source(
+            "Terraria.Localization.Content.en-US.Items.json",
+            r#"{
+                "CommonItemTooltip": {
+                    "PrefixArmorPenetration": "{0:+0;-#} armor penetration",
+                    "PrefixTagDamage": "{0:+0;-#} summon tag damage"
+                }
+            }"#,
+        );
+        let staff = crate::registry::get(4269).expect("the sanguine staff row");
+        let rows = item_tooltip_lines(
+            4269,
+            staff,
+            TooltipContext { prefix: 85, ..Default::default() },
+        );
+        assert!(
+            rows.iter().any(|(t, c)| t == "+10 armor penetration" && *c == PREFIX_GOOD),
+            "{rows:?}"
+        );
+        assert!(
+            rows.iter().any(|(t, c)| t == "+3 summon tag damage" && *c == PREFIX_GOOD),
+            "{rows:?}"
+        );
+    }
+
+    /// `Main.cs:21152-21265`: the accessory prefixes print fixed green
+    /// rows — Hard 62 "+1 defense", Warding 66 "+20 mana" (the literal
+    /// space), Quick 2 67 "+2% critical strike chance".
+    #[test]
+    fn w4_e16_the_accessory_prefixes_print_the_fixed_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let watch = crate::registry::get(15).expect("the copper watch row");
+        for (prefix, want) in [
+            (62u16, format!("+1{}", crate::lang::tip(25))),
+            (66, format!("+20 {}", crate::lang::tip(31))),
+            (67, format!("+2{}", crate::lang::tip(5))),
+            (80, format!("+4{}", crate::lang::tip(47))),
+        ] {
+            let rows = item_tooltip_lines(
+                15,
+                watch,
+                TooltipContext { prefix, ..Default::default() },
+            );
+            let row = rows.iter().find(|(t, _)| *t == want).expect(&want);
+            assert_eq!(row.1, PREFIX_GOOD, "prefix {prefix}: {rows:?}");
+        }
+    }
+
+    /// `Main.cs:20333` + `:21124`: oldKB is captured BEFORE the glove
+    /// scale — the knockback DELTA row stays prefix-only (+15%) even with
+    /// the glove, while the WORD tier reads the glove-scaled knockback
+    /// (5.5 × 1.15 × 2 = 12.65 → the insane word tip[22]).
+    #[test]
+    fn w4_e16_the_knockback_delta_reads_the_prefix_only_oldkb() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let sword = crate::registry::get(4).expect("the iron broadsword row");
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut player = crate::player::Player::spawn(&world);
+        player.kb_glove = true;
+        let rows = item_tooltip_lines(
+            4,
+            sword,
+            TooltipContext { prefix: 81, player: Some(&player), ..Default::default() },
+        );
+        // oldKB = 5.5 * 1.15 = 6.325; (6.325 - 5.5) / 5.5 * 100 = 15.
+        assert!(
+            rows.iter().any(|(t, _)| *t == format!("+15{}", crate::lang::tip(45))),
+            "{rows:?}"
+        );
+        assert!(
+            !rows.iter().any(|(t, _)| *t == format!("+130{}", crate::lang::tip(45))),
+            "the glove scale must not leak into the delta: {rows:?}"
+        );
+        // The word tier reads the glove-scaled 12.65 → tip[22].
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(22)), "{rows:?}");
+    }
+
+    // --- W4-e16 family 4: favourite/social/loadout + armor-set + hint ---------
+
+    /// `Main.cs:20655-20663`: the favorited grid item prints tip[56]/[57];
+    /// the favorited Money Trough 3213 with the piggy bank open adds the
+    /// "Placing into itself will be blocked" row.
+    #[test]
+    fn w4_e16_the_favorite_rows_and_the_bank_block() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let sword = crate::registry::get(4).expect("the iron broadsword row");
+        let rows = item_tooltip_lines(
+            4,
+            sword,
+            TooltipContext { flags: tooltip_lines2::HoverFlags { favorited: true, ..Default::default() }, ..Default::default() },
+        );
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(56)), "{rows:?}");
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(57)));
+        let trough = crate::registry::get(3213).expect("the money trough row");
+        let rows = item_tooltip_lines(
+            3213,
+            trough,
+            TooltipContext { flags: tooltip_lines2::HoverFlags { favorited: true, ..Default::default() }, open_chest: -2, ..Default::default() },
+        );
+        assert!(
+            rows.iter().any(|(t, _)| *t == crate::lang::text("UI.ItemCannotBePlacedInsideItself")),
+            "{rows:?}"
+        );
+        // The same item over a world chest (no bank) keeps the plain pair.
+        let rows = item_tooltip_lines(
+            3213,
+            trough,
+            TooltipContext { flags: tooltip_lines2::HoverFlags { favorited: true, ..Default::default() }, ..Default::default() },
+        );
+        assert!(
+            !rows.iter().any(|(t, _)| *t == crate::lang::text("UI.ItemCannotBePlacedInsideItself"))
+        );
+    }
+
+    /// `Main.cs:20638-20654` + `:20816`: a shareable context (8-12) latches
+    /// `flag` — the favorited piece prints UI.ItemLoadoutShared and the
+    /// equipable row drops; the unfavourited piece latches flag2 (the
+    /// share hint at the tail).
+    #[test]
+    fn w4_e16_the_loadout_share_arm_suppresses_the_equipable_row() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let helmet = crate::registry::get(123).expect("the meteor helmet row");
+        let rows = item_tooltip_lines(
+            123,
+            helmet,
+            TooltipContext { flags: tooltip_lines2::HoverFlags { context: 8, favorited: true, worn_armor: true, ..Default::default() }, ..Default::default() },
+        );
+        assert!(
+            rows.iter().any(|(t, _)| *t == crate::lang::text("UI.ItemLoadoutShared")),
+            "{rows:?}"
+        );
+        assert!(!rows.iter().any(|(t, _)| *t == crate::lang::tip(23)));
+        assert!(!rows.iter().any(|(t, _)| *t == crate::lang::tip(56)));
+        // The unfavourited shareable slot: the hint row, OurFavoriteColor
+        // at alpha 190 (`Main.cs:21315`, `Main.cs:66748`).
+        let rows = item_tooltip_lines(
+            123,
+            helmet,
+            TooltipContext { flags: tooltip_lines2::HoverFlags { context: 8, worn_armor: true, ..Default::default() }, ..Default::default() },
+        );
+        let hint = rows
+            .iter()
+            .find(|(t, _)| *t == crate::lang::text("UI.ItemLoadoutShareHint"))
+            .expect("the share hint");
+        assert_eq!(hint.1, super::color::tint([255, 231, 69, 190]));
+        // The setting off drops the hint.
+        let rows = item_tooltip_lines(
+            123,
+            helmet,
+            TooltipContext { flags: tooltip_lines2::HoverFlags { context: 8, worn_armor: true, ..Default::default() }, show_loadout_share_hint: false, ..Default::default() },
+        );
+        assert!(
+            !rows.iter().any(|(t, _)| *t == crate::lang::text("UI.ItemLoadoutShareHint"))
+        );
+    }
+
+    /// `Main.cs:20664-20668`: the social vanity slot (context 9/11) prints
+    /// tip[61] — except the vanity kinds and the hasVanityEffects kinds
+    /// (the Compass 393 keeps its function).
+    #[test]
+    fn w4_e16_the_social_row_skips_the_vanity_and_info_kinds() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let helmet = crate::registry::get(123).expect("the meteor helmet row");
+        let rows = item_tooltip_lines(
+            123,
+            helmet,
+            TooltipContext { flags: tooltip_lines2::HoverFlags { context: 9, social: true, ..Default::default() }, ..Default::default() },
+        );
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(61)), "{rows:?}");
+        let compass = crate::registry::get(393).expect("the compass row");
+        let rows = item_tooltip_lines(
+            393,
+            compass,
+            TooltipContext { flags: tooltip_lines2::HoverFlags { context: 9, social: true, ..Default::default() }, ..Default::default() },
+        );
+        assert!(
+            !rows.iter().any(|(t, _)| *t == crate::lang::tip(61)),
+            "the info accessory keeps its function: {rows:?}"
+        );
+        let box_row = crate::registry::get(562).expect("the music box row");
+        let rows = item_tooltip_lines(
+            562,
+            box_row,
+            TooltipContext { flags: tooltip_lines2::HoverFlags { context: 9, social: true, ..Default::default() }, ..Default::default() },
+        );
+        assert!(!rows.iter().any(|(t, _)| *t == crate::lang::tip(61)));
+    }
+
+    /// `Main.cs:21267-21311`: the Meteor Helmet 123 in the grid prints the
+    /// grey single-piece set row; worn (context 8) with the full set
+    /// equipped it prints the LimeGreen found/needed row.
+    #[test]
+    fn w4_e16_the_armor_set_row_grey_unworn_green_complete() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let helmet = crate::registry::get(123).expect("the meteor helmet row");
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut player = crate::player::Player::spawn(&world);
+        player.equipped[0] = 123;
+        player.equipped[1] = 124;
+        player.equipped[2] = 125;
+        // Unworn (grid context 0): the grey (130,130,130,190) single piece.
+        let rows = item_tooltip_lines(
+            123,
+            helmet,
+            TooltipContext { player: Some(&player), ..Default::default() },
+        );
+        let set_row = rows
+            .iter()
+            .find(|(_, c)| *c == super::color::tint([130, 130, 130, 190]))
+            .expect("the grey single-piece row");
+        assert!(!set_row.0.is_empty());
+        // Worn (context 8) + complete: LimeGreen (50,205,50).
+        let rows = item_tooltip_lines(
+            123,
+            helmet,
+            TooltipContext { player: Some(&player), flags: tooltip_lines2::HoverFlags { context: 8, worn_armor: true, ..Default::default() }, ..Default::default() },
+        );
+        assert!(
+            rows.iter().any(|(_, c)| *c == super::color::tint([50, 205, 50, 255])),
+            "{rows:?}"
+        );
+        // Worn but incomplete: the grey (130,130,130,255) found/needed row.
+        player.equipped[2] = 0;
+        let rows = item_tooltip_lines(
+            123,
+            helmet,
+            TooltipContext { player: Some(&player), flags: tooltip_lines2::HoverFlags { context: 8, worn_armor: true, ..Default::default() }, ..Default::default() },
+        );
+        assert!(
+            rows.iter().any(|(_, c)| *c == super::color::tint([130, 130, 130, 255])),
+            "{rows:?}"
         );
     }
 }
