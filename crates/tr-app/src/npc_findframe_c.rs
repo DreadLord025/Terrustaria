@@ -180,6 +180,39 @@ impl Default for FrameInput {
     }
 }
 
+/// The shared `case 366 : case 367` scuttle machine (`NPC.cs:76820-76850`):
+/// the flip rides the GROUND only (the two one-sided direction ifs); the
+/// idle snaps row 0; the walk accumulator is `|vx| + 1` a tick stepping
+/// at > 6 over the full 4 rows (`frame.Y / num >= npcFrameCount` wraps
+/// to 0). The merge-side keep-one dedupe: wave C's 366 arm and wave D's
+/// (`npc_findframe_high2`) 367 arm were verbatim twins on in-flight
+/// sibling branches; both now ride this one machine (the d49 module-doc
+/// note). `count` is the caller's `npcFrameCount` (4 for both kinds).
+pub fn scorpion_scuttle(s: &mut FrameState, vx: f32, vy: f32, direction: i32, count: u32) {
+    if vy == 0.0 {
+        if direction == 1 {
+            s.sprite_dir = 1;
+        }
+        if direction == -1 {
+            s.sprite_dir = -1;
+        }
+    }
+    if vx == 0.0 {
+        s.row = 0;
+        s.counter = 0.0;
+    } else {
+        s.counter += vx.abs();
+        s.counter += 1.0;
+        if s.counter > 6.0 {
+            s.row += 1;
+            s.counter = 0.0;
+        }
+        if s.row >= count {
+            s.row = 0;
+        }
+    }
+}
+
 /// `NPC.FindFrame` (`NPC.cs:66684`) for the wave-C kinds — one tick.
 pub fn find_frame_c(kind: FindFrameKind, s: &mut FrameState, i: &FrameInput) {
     let count = kind.frame_count();
@@ -390,34 +423,10 @@ pub fn find_frame_c(kind: FindFrameKind, s: &mut FrameState, i: &FrameInput) {
                 }
             }
         }
-        // `case 366` (`NPC.cs:76820-76850`, shared with 367 — d49's
-        // kind): the scuttle — the flip rides the GROUND only (the two
-        // one-sided direction ifs); the idle snaps row 0; the walk
-        // accumulator is `|vx| + 1` a tick stepping at > 6 over the
-        // full 4 rows (`frame.Y / num >= npcFrameCount` wraps to 0).
+        // `case 366` (`NPC.cs:76820-76850`, shared with 367 — wave D's
+        // kind): the scuttle rides the shared keep-one machine.
         FindFrameKind::ScorpionBlack => {
-            if i.vy == 0.0 {
-                if i.direction == 1 {
-                    s.sprite_dir = 1;
-                }
-                if i.direction == -1 {
-                    s.sprite_dir = -1;
-                }
-            }
-            if i.vx == 0.0 {
-                s.row = 0;
-                s.counter = 0.0;
-            } else {
-                s.counter += i.vx.abs();
-                s.counter += 1.0;
-                if s.counter > 6.0 {
-                    s.row += 1;
-                    s.counter = 0.0;
-                }
-                if s.row >= count {
-                    s.row = 0;
-                }
-            }
+            scorpion_scuttle(s, i.vx, i.vy, i.direction, count);
         }
     }
 }
