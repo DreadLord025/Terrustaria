@@ -14847,6 +14847,92 @@ mod tests {
         }
         assert!(C2s::decode(84, &mut NetReader::new(&body[..4])).is_none());
     }
+
+    #[test]
+    fn w4_f21_tail_census_this_branch_closes_43_of_44() {
+        // The f21 census: MessageID 1-162 vs net.rs + the d89-d100/c27
+        // lanes found 44 MISSING ids; 132 PlayLegacySound is dead (zero
+        // PlayNetSound call-sites) and skipped per the task. This branch
+        // ports the other 43 — constants for all of them (the dead
+        // 24/145/148 are census-doc-only, the 24 precedent).
+        let f21_ids: [u8; 43] = [
+            24, 25, 26, 39, 44, 48, 52, 57, 58, 67, 76, 79, 83, 85, 86, 87, 88, 89, 90, 93, 94,
+            104, 105, 107, 111, 119, 121, 122, 123, 124, 129, 133, 138, 139, 144, 145, 146, 148,
+            149, 152, 156, 160, 161,
+        ];
+        // Every f21 id has a constant in `id` (checked via the encode
+        // path where a variant exists, and the constant where dead).
+        assert_eq!(id::UNUSED_MELEE_STRIKE, 24);
+        assert_eq!(id::SHIMMER_ITEMS_DEPRECATED, 145);
+        assert_eq!(id::ITEM_ENEMY_LOCK_DEPRECATED, 148);
+        // The live ones round-trip their id byte through msg_id().
+        let live_c2s: Vec<u8> = vec![
+            C2s::ReleaseItemOwnership(ReleaseItemOwnership { slot: 0, force_assign_to_server: false }).msg_id(),
+            C2s::LiquidUpdate(LiquidUpdate { x: 0, y: 0, liquid: 0, liquid_type: 0 }).msg_id(),
+            C2s::LockAndUnlock(LockAndUnlock { action: 1, x: 0, y: 0 }).msg_id(),
+            C2s::InstrumentSound(InstrumentSound { player_id: 0, pitch: 0.0 }).msg_id(),
+            C2s::QuestsCountSync(QuestsCountSync { player_id: 0, angler_quests_finished: 0, golfer_score: 0 }).msg_id(),
+            C2s::PlaceObject(PlaceObject { x: 0, y: 0, kind: 0, style: 0, alternative: 0, random: 0, direction: true }).msg_id(),
+            C2s::QuickStackRequest(QuickStackRequest { slots: vec![], smart_stack: false }).msg_id(),
+            C2s::TileEntityPlacement(TileEntityPlacement { x: 0, y: 0, kind: 0 }).msg_id(),
+            C2s::ItemFrameTryPlacing(TryPlacingItem { x: 0, y: 0, kind: 0, prefix: 0, stack: 0 }).msg_id(),
+            C2s::DevCommands(DevCommands { command: String::new(), number: 0, number2: 0.0, number3: 0.0 }).msg_id(),
+            C2s::GemLockToggle(GemLockToggle { x: 0, y: 0, on: false }).msg_id(),
+            C2s::ToggleParty.msg_id(),
+            C2s::DisplayDollSync(DisplayDollSync { player_id: 0, entity_id: 0, item_index: 0, command: 2, data: DollSyncData::Pose(0) }).msg_id(),
+            C2s::TileEntityInteraction(TileEntityInteraction { entity_id: -1, player_id: 0 }).msg_id(),
+            C2s::WeaponsRackTryPlacing(TryPlacingItem { x: 0, y: 0, kind: 0, prefix: 0, stack: 0 }).msg_id(),
+            C2s::HatRackItemSync(HatRackItemSync { player_id: 0, entity_id: 0, wire_slot: 0, item: TeItem::default() }).msg_id(),
+            C2s::FoodPlatterTryPlacing(TryPlacingItem { x: 0, y: 0, kind: 0, prefix: 0, stack: 0 }).msg_id(),
+            C2s::ClientSyncedInventory.msg_id(),
+            C2s::RequestQuestEffect.msg_id(),
+            C2s::DeadCellsJarTryPlacing(TryPlacingItem { x: 0, y: 0, kind: 0, prefix: 0, stack: 0 }).msg_id(),
+            C2s::ItemUseSound { player_id: 0 }.msg_id(),
+            C2s::LeashedAnchorPlaceItem(LeashedAnchorPlaceItem { x: 0, y: 0, item_type: 0 }).msg_id(),
+            C2s::HostToken(String::new()).msg_id(),
+        ];
+        for got in &live_c2s {
+            assert!(f21_ids.contains(got), "unexpected C2s id {got}");
+        }
+        let live_s2c: Vec<u8> = vec![
+            S2c::Unused25.msg_id(),
+            S2c::Unused26.msg_id(),
+            S2c::Unknown44.msg_id(),
+            S2c::Unknown67.msg_id(),
+            S2c::Unused83.msg_id(),
+            S2c::SocialHandshake.msg_id(),
+            S2c::ReleaseItemOwnership(ReleaseItemOwnership { slot: 0, force_assign_to_server: false }).msg_id(),
+            S2c::LiquidUpdate(LiquidUpdate { x: 0, y: 0, liquid: 0, liquid_type: 0 }).msg_id(),
+            S2c::WorldEvilBytes(WorldEvilBytes { good: 0, evil: 0, blood: 0 }).msg_id(),
+            S2c::InstrumentSound(InstrumentSound { player_id: 0, pitch: 0.0 }).msg_id(),
+            S2c::QuestsCountSync(QuestsCountSync { player_id: 0, angler_quests_finished: 0, golfer_score: 0 }).msg_id(),
+            S2c::PlaceObject(PlaceObject { x: 0, y: 0, kind: 0, style: 0, alternative: 0, random: 0, direction: true }).msg_id(),
+            S2c::QuickStackBlocked(QuickStackBlocked { chests: vec![] }).msg_id(),
+            S2c::TileEntitySharing(TileEntitySharing { id: 0, record: Vec::new() }).msg_id(),
+            S2c::ItemTweaker(ItemTweaker::default()).msg_id(),
+            S2c::SpawnInstancedItem(Box::new(ItemState { slot: 0, x: 0.0, y: 0.0, vx: 0.0, vy: 0.0, stack: 0, prefix: 0, kind: 0, shimmered: false, shimmer_time: 0.0, enemy_grab_delay: 0 })).msg_id(),
+            S2c::DevCommands(DevCommands { command: String::new(), number: 0, number2: 0.0, number3: 0.0 }).msg_id(),
+            S2c::ShopOverride(ShopOverride { slot: 0, kind: 0, stack: 0, prefix: 0, value: 0, buy_once: false }).msg_id(),
+            S2c::SmartText(SmartText { color: Rgb(0, 0, 0), text: NetText(String::new()), width_limit: 0 }).msg_id(),
+            S2c::CombatTextString(CombatTextString { x: 0.0, y: 0.0, color: Rgb(0, 0, 0), text: NetText(String::new()) }).msg_id(),
+            S2c::DisplayDollSync(DisplayDollSync { player_id: 0, entity_id: 0, item_index: 0, command: 2, data: DollSyncData::Pose(0) }).msg_id(),
+            S2c::TileEntityInteraction(TileEntityInteraction { entity_id: -1, player_id: 0 }).msg_id(),
+            S2c::HatRackItemSync(HatRackItemSync { player_id: 0, entity_id: 0, wire_slot: 0, item: TeItem::default() }).msg_id(),
+            S2c::FinishedConnecting.msg_id(),
+            S2c::CountsAsHost(CountsAsHost { player_id: 0, counts_as_host: false }).msg_id(),
+            S2c::ShimmerAction(ShimmerAction::Unknown(0)).msg_id(),
+            S2c::ItemUseSound { player_id: 0 }.msg_id(),
+            S2c::ItemPosition(ItemPosition { slot: 0, x: 0.0, y: 0.0 }).msg_id(),
+        ];
+        for got in &live_s2c {
+            assert!(f21_ids.contains(got), "unexpected S2c id {got}");
+        }
+        // 132 is the ONLY missing id this branch does not carry — the
+        // dead PlayLegacySound skip (zero PlayNetSound call-sites).
+        assert!(!f21_ids.contains(&132));
+        assert!(C2s::decode(132, &mut NetReader::new(&[])).is_none());
+        assert!(S2c::decode(132, &mut NetReader::new(&[])).is_none());
+    }
 }
 
 /// `msg 119 CombatTextString`'s body (`NetMessage.cs:1188-1196`, W4-g50):

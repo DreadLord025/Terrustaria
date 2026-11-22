@@ -4336,10 +4336,15 @@ impl App {
     }
 
     /// The move-driven section catch-up (the C#'s per-tick
-    /// `RemoteClient.CheckSection`, `RemoteClient.cs:126-188`): the sections
-    /// each remote peer lacks, collected without borrowing `self` mutably
-    /// (the send pass runs inside the `net_tick` match).
-    fn pending_sections(&self, server: &net::Server) -> Vec<(u32, i32, i32)> {
+    /// `RemoteClient.CheckSection`, `RemoteClient.cs:126-188`, called from
+    /// `Main.UpdateServer`'s per-player loop `Main.cs:64620-64623`): the
+    /// sections each remote peer lacks, collected without borrowing `self`
+    /// mutably (the send pass runs inside the `net_tick` match). Returns
+    /// `(id, sx, sy, announce)` — `announce` is the count of missing sections
+    /// in the fluff box, non-zero only on the FIRST missing section of a
+    /// peer's pass (`RemoteClient.cs:177-181`: one `9 Status` before the
+    /// `SendSection` walk, `Lang.inter[44]` "Receiving tile data").
+    fn pending_sections(&self, server: &net::Server) -> Vec<(u32, i32, i32, i32)> {
         let (w, h) = (self.world.width, self.world.height);
         let (gx, gy) = (net::sections_x(w), net::sections_y(h));
         let mut out = Vec::new();
@@ -4347,10 +4352,25 @@ impl App {
             server.ensure_sections(*id, w, h);
             let psx = net::section_x(p.x as i32 / tr_core::TILE_PX as i32).clamp(0, gx - 1);
             let psy = net::section_y(p.y as i32 / tr_core::TILE_PX as i32).clamp(0, gy - 1);
+            // `CheckSection_ForClient`'s fluff box (`RemoteClient.cs:158-176`):
+            // count the missing sections first — the `9` announces the count.
+            let mut missing = 0;
             for sy in (psy - 1).max(0)..=(psy + 1).min(gy - 1) {
                 for sx in (psx - 1).max(0)..=(psx + 1).min(gx - 1) {
                     if !server.is_section_sent(*id, sx, sy) {
-                        out.push((*id, sx, sy));
+                        missing += 1;
+                    }
+                }
+            }
+            if missing == 0 {
+                continue; // `RemoteClient.cs:177-180` — nothing to stream
+            }
+            let mut announced = false;
+            for sy in (psy - 1).max(0)..=(psy + 1).min(gy - 1) {
+                for sx in (psx - 1).max(0)..=(psx + 1).min(gx - 1) {
+                    if !server.is_section_sent(*id, sx, sy) {
+                        out.push((*id, sx, sy, if announced { 0 } else { missing }));
+                        announced = true;
                     }
                 }
             }
@@ -8190,8 +8210,19 @@ impl App {
                     });
                 }
                 // Newly approached sections stream before the cadence batch
-                // (the C#'s per-tick CheckSection).
-                for (id, sx, sy) in self.pending_sections(server) {
+                // (the C#'s per-tick CheckSection, `Main.cs:64620-64623`).
+                // `RemoteClient.cs:177-188`: one `9 Status` announcing the
+                // missing count, then the `SendSection` walk row-major.
+                for (id, sx, sy, announce) in self.pending_sections(server) {
+                    if announce > 0 {
+                        server.send(
+                            id,
+                            &S2c::Status {
+                                text: "Receiving tile data".into(),
+                                max: announce,
+                            },
+                        );
+                    }
                     server.mark_section_sent(id, sx, sy);
                     let block = self.tile_block_at(sx, sy);
                     server.send(id, &S2c::TileBlock(Box::new(block)));
@@ -9498,18 +9529,31 @@ impl App {
 mod player_item_slot {
     /// The 1:1 `PlayerItemSlotID` block arithmetic the inventory messages use
     /// (`Terraria/ID/PlayerItemSlotID.cs`); the 59 grid slots are sent as
-    /// plain `0..58` indices.
+    /// plain `0..58` indices. The banks carry the port's 40-slot stores
+    /// (`bank.rs`'s `BANK_SLOTS`), NOT the C#'s 200 — the bases derive from
+    /// the same walk, so the trash sits at 179 and bank3 starts at 180.
     pub const ARMOR_0: i16 = 59;
     pub const DYE_0: i16 = 59 + 20;
     pub const MISC_0: i16 = DYE_0 + 10;
     pub const MISC_DYE_0: i16 = MISC_0 + 5;
     pub const BANK_1_0: i16 = MISC_DYE_0 + 5;
     pub const BANK_2_0: i16 = BANK_1_0 + 40;
+    /// `PlayerItemSlotID.TrashItem` (`PlayerItemSlotID.cs:183`) — the one-slot
+    /// reservation between bank2 and bank3.
     pub const TRASH: i16 = BANK_2_0 + 40;
+    pub const BANK_3_0: i16 = TRASH + 1;
+    pub const BANK_4_0: i16 = BANK_3_0 + 40;
 
-    /// `PlayerItemSlotID.Bank1_0 + bank * 40` (the `Bank1_0..Bank4_39` block).
+    /// The bank block bases in the C#'s allocation order — the trash sentinel
+    /// breaks the uniform stride (`PlayerItemSlotID.cs:181-185`), so bank3/4
+    /// are NOT `BANK_1_0 + bank * 40`.
     pub const fn bank_1_0(bank: usize) -> i16 {
-        BANK_1_0 + (bank as i16) * 40
+        match bank {
+            0 => BANK_1_0,
+            1 => BANK_2_0,
+            2 => BANK_3_0,
+            _ => BANK_4_0,
+        }
     }
 
     /// `PlayerItemSlotID.CanRelay` (`PlayerItemSlotID.cs:168-186`): the
@@ -9524,7 +9568,7 @@ mod player_item_slot {
             return true;
         }
         // The fourth bank (`Bank4_0`, the only relayable bank).
-        (bank_1_0(3)..bank_1_0(3) + 40).contains(&slot)
+        (BANK_4_0..BANK_4_0 + 40).contains(&slot)
     }
 }
 
