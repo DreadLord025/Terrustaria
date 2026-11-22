@@ -332,6 +332,39 @@ mod tests {
     // unpinned until the gate generates them). `PaintTheTemple` itself
     // already landed with M5-SEED-1 (`finish_seeds.rs`) and only fires
     // under the anniversary flag — likewise inert here.
+    // W4-d101 pass 1 (2026-11-20, code-only): the `Sand Patches` pass
+    // (`WorldGen.cs:11689-11717`, `passes1.rs::pass_sand_patches`) lands on
+    // its own `pass_rng("Sand Patches")` stream — on a 512-wide world
+    // `(512 * 0.013) as i32 = 6` sand-53 blobs scatter through the
+    // surface-to-rock band, so this pin moves BY DESIGN. The re-pin is
+    // DEFERRED to the merge gate (no compiler on this branch); the a == b
+    // determinism assert stays in place.
+    // W4-d101 pass 2 (code-only): `Mount Caves` (`WorldGen.cs:11784-11857`,
+    // `passes1.rs::pass_mount_caves`) raises `(512 * 0.001) as i32 = 0`
+    // mountains on a 512-wide world — the count truncates to zero, so this
+    // pass draws NOTHING and the pin does not move from it (the pass-1
+    // re-pin above still stands).
+    // W4-d101 pass 3 (code-only): `Dirt Wall Backgrounds`
+    // (`WorldGen.cs:11858-11895`) re-paints the surface band's walls (the
+    // snow-40 arm over the eastern-third snow skin, the per-column stop
+    // walk) — this pin moves BY DESIGN; deferred to the gate.
+    // W4-d101 pass 4 (code-only): `Clay` (`WorldGen.cs:11959-12007`) —
+    // `512*512*2E-05 = 5` + `*5E-05 = 13` + 5 clay blobs plus the tidy
+    // sweep move this pin BY DESIGN; deferred to the gate.
+    // W4-d101 pass 5 (code-only): `Small Holes` (`:12008-12066`) — 393
+    // paired diggers on the 512² world; deferred to the gate.
+    // W4-d101 pass 6 (code-only): `Dirt Layer Caves` (`:12067-12106`) — 7
+    // long worms on the 512² world; deferred to the gate.
+    // W4-d101 pass 7 (code-only): `Rock Layer Caves` (`:12107-12161`) — 34
+    // deep worms on the 512² world; deferred to the gate.
+    // W4-d101 pass 8 (code-only): `Generate Ice Biome` (`:12312-12422`) —
+    // the snow walk retypes the eastern band (the Reset origin draws land
+    // in [0.6, 0.75]·width) and its fringe drip reaches below the lava
+    // line; deferred to the gate.
+    // W4-d101 pass 9 (code-only): the marble/granite step split is
+    // RNG-NEUTRAL — same call order, same per-pass streams, no new tiles —
+    // so this pin does not move from it (only the progress weight sum
+    // gains the Granite slot's own weight, which draws nothing).
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -470,6 +503,26 @@ mod tests {
     // drunk spike rows, the remix search/fallback; `a == b` stays the
     // guard). The pre-existing S1-P-i33 staleness note still applies at
     // the gate.
+    // W4-d101 pass 1 (code-only): the Sand Patches blobs (54 on a 4200-wide
+    // world) retype the surface-to-rock band, so this pin moves BY DESIGN
+    // too — deferred to the gate with the SEED42_512 note above.
+    // W4-d101 pass 2 (code-only): Mount Caves raises 4 dirt mountains on a
+    // 4200-wide world (`Mountinater`, the climbing circle) — this pin moves
+    // BY DESIGN too; deferred to the gate.
+    // W4-d101 pass 3 (code-only): the Dirt Wall Backgrounds sweep moves the
+    // surface-band wall fields — deferred to the gate.
+    // W4-d101 pass 4 (code-only): the Clay bands (100 + 252 + 100 blobs on
+    // the default size) + the tidy sweep — deferred to the gate.
+    // W4-d101 pass 5 (code-only): Small Holes' 7560 paired diggers carve
+    // the underground — deferred to the gate.
+    // W4-d101 pass 6 (code-only): Dirt Layer Caves' 151 long worms —
+    // deferred to the gate.
+    // W4-d101 pass 7 (code-only): Rock Layer Caves' 655 deep worms —
+    // deferred to the gate.
+    // W4-d101 pass 8 (code-only): the Generate Ice Biome walk retypes the
+    // snow band's dirt/stone/clay/sand into 147/161 (+ wall 40) — a large
+    // deliberate move; deferred to the gate.
+    // W4-d101 pass 9: the marble/granite row split is RNG-neutral (above).
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
