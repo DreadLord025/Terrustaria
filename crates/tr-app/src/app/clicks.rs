@@ -1199,6 +1199,316 @@ impl App {
         }
     }
 
+    /// `UIDebugCommandsList`'s clicks (W4-d85 row 7): the Back panel closes
+    /// (`GoBackClick` → `IngameFancyUI.Close`, `UIDebugCommandsList.cs:122-125`),
+    /// a row seeds the chat (`UIDebugCommandItem.LeftClick`, `:106-112`), the
+    /// search box opens the keyboard (`Click_SearchArea` — the port's
+    /// documented stand-in for the inline `UISearchBar` typing). Consumes
+    /// the press while the overlay is open.
+    pub(crate) fn handle_debug_commands_clicks(&mut self) {
+        if !self.ui_left_press || !self.debug_commands_open {
+            return;
+        }
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let rows = ui::debug_commands::visible_commands(&self.debug_commands_search);
+        let click = ui::debug_commands::click_at(
+            screen,
+            self.mouse_pos,
+            self.debug_commands_scroll,
+            &rows,
+        );
+        match click {
+            ui::debug_commands::Click::Back => {
+                self.close_debug_commands();
+            }
+            ui::debug_commands::Click::Search => {
+                // `OpenVirtualKeyboardWhenNeeded` (`UIWrappedSearchBar.cs:
+                // 171-182`): `UI.PlayerNameSlot` label, the live contents,
+                // `allowEmpty: true`, the `UISearchBar` 50 cap (`:63`).
+                self.audio.play("Menu_Tick");
+                self.open_keyboard_with_tail(
+                    ui::keyboard::Request {
+                        label: crate::lang::text("UI.PlayerNameSlot"),
+                        initial: self.debug_commands_search.clone(),
+                        allow_empty: true,
+                        max_length: 50,
+                        context: ui::keyboard::Context::Text,
+                    },
+                    None,
+                    crate::app::flow::KeyboardTail::DebugCommandSearch,
+                );
+            }
+            ui::debug_commands::Click::SearchCancel => {
+                // `searchCancelButton_OnClick` (`:153-164`): contents clear
+                // with sound 11, an empty box just ticks 12.
+                if self.debug_commands_search.is_empty() {
+                    self.audio.play("Menu_Tick");
+                } else {
+                    self.debug_commands_search.clear();
+                    self.debug_commands_scroll = 0.0;
+                    self.audio.play("Menu_Close");
+                }
+            }
+            ui::debug_commands::Click::Row(i) => {
+                // `LeftClick` (`UIDebugCommandItem.cs:106-112`): close, open
+                // the chat with `"/name "`, and the yellow notice.
+                let name = ui::debug_commands::COMMANDS[i].name.to_lowercase();
+                self.close_debug_commands();
+                self.chat.open = true;
+                self.chat.text = format!("/{name} ");
+                self.chat.new_text(
+                    format!("Chat has been set to \"{}\"", self.chat.text),
+                    [255, 255, 0],
+                );
+            }
+            ui::debug_commands::Click::None => {}
+        }
+        self.ui_left_press = false;
+    }
+
+    /// `IngameFancyUI.Close` for the debug commands overlay: a fresh
+    /// `UIDebugCommandsList` builds on the next open, so the search and
+    /// scroll reset here (the ctor's `BuildPage`, `:21-24`).
+    pub(crate) fn close_debug_commands(&mut self) {
+        self.debug_commands_open = false;
+        self.debug_commands_search.clear();
+        self.debug_commands_scroll = 0.0;
+        self.audio.play("Menu_Close"); // `Close`'s sound 11 (`:165-168`)
+    }
+
+    /// `UIDebugLoadoutsList`'s clicks (W4-d85 row 8) — the commands list's
+    /// twin: Back closes, a row applies the loadout
+    /// (`UIDebugLoadoutItem.LeftClick`, `:143-148`), the search box opens
+    /// the keyboard.
+    pub(crate) fn handle_debug_loadouts_clicks(&mut self) {
+        if !self.ui_left_press || !self.debug_loadouts_open {
+            return;
+        }
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let rows =
+            ui::debug_loadouts::visible_loadouts(&self.debug_loadouts, &self.debug_loadouts_search);
+        let click = ui::debug_loadouts::click_at(
+            screen,
+            self.mouse_pos,
+            self.debug_loadouts_scroll,
+            &rows,
+        );
+        match click {
+            ui::debug_loadouts::Click::Back => {
+                self.close_debug_loadouts();
+            }
+            ui::debug_loadouts::Click::Search => {
+                self.audio.play("Menu_Tick");
+                self.open_keyboard_with_tail(
+                    ui::keyboard::Request {
+                        label: crate::lang::text("UI.PlayerNameSlot"),
+                        initial: self.debug_loadouts_search.clone(),
+                        allow_empty: true,
+                        max_length: 50,
+                        context: ui::keyboard::Context::Text,
+                    },
+                    None,
+                    crate::app::flow::KeyboardTail::DebugLoadoutSearch,
+                );
+            }
+            ui::debug_loadouts::Click::SearchCancel => {
+                if self.debug_loadouts_search.is_empty() {
+                    self.audio.play("Menu_Tick");
+                } else {
+                    self.set_debug_loadouts_search(String::new());
+                    self.audio.play("Menu_Close");
+                }
+            }
+            ui::debug_loadouts::Click::Row(i) => {
+                // `LeftClick` (`UIDebugLoadoutItem.cs:143-148`): close,
+                // `Loadout.Apply(Main.LocalPlayer)`, the Command-color
+                // notice.
+                let entry = self.debug_loadouts[i].clone();
+                self.close_debug_loadouts();
+                self.apply_loadout(&entry.loadout);
+                self.chat.new_text(
+                    format!("Loadout {} set!", entry.name),
+                    crate::chat::COLOR_COMMAND,
+                );
+            }
+            ui::debug_loadouts::Click::None => {}
+        }
+        self.ui_left_press = false;
+    }
+
+    /// `ScenarioTestLoadout.Apply(Main.LocalPlayer)` through the App's
+    /// split state (the player, the inventory/equip arrays, the clock, the
+    /// projectile pool and the selection request). The minion respawn's
+    /// cursor is the camera — `RestoreMinionsFor` parks the mouse at the
+    /// screen centre (`MinionRespawner.cs:36-39`), whose world point IS the
+    /// camera; the staff arms' kind picks draw the `UpdatePlayers` stream
+    /// (the use-path convention).
+    pub(crate) fn apply_loadout(&mut self, loadout: &crate::loadout::ScenarioTestLoadout) {
+        let Some(mut player) = self.player.take() else {
+            return;
+        };
+        let selected = self.selected;
+        let my_player = self.local_id as u8;
+        let is_client = self.is_client();
+        let cursor_world = self.camera;
+        crate::loadout::apply(
+            loadout,
+            &mut player,
+            &mut self.inventory,
+            &mut self.equip,
+            &mut self.world,
+            &mut self.projectiles,
+            my_player,
+            &mut self.selection,
+            selected,
+            is_client,
+            cursor_world,
+            self.rngs.stream(crate::app::RngKey::UpdatePlayers),
+        );
+        self.player = Some(player);
+    }
+
+    /// `searchbar_OnSearchContentsChanged` (`UIDebugLoadoutsList.cs:88-105`):
+    /// the raw contents latch the static `_lastSearch` (`:94`), the list
+    /// rebuilds and the scroll resets (a fresh `UIList.Clear`).
+    pub(crate) fn set_debug_loadouts_search(&mut self, contents: String) {
+        self.debug_loadouts_last_search = contents.clone();
+        self.debug_loadouts_search = contents;
+        self.debug_loadouts_scroll = 0.0;
+    }
+
+    /// `IngameFancyUI.Close` for the loadouts overlay. `_lastSearch` is
+    /// static in the C# (`:20`) — it survives the close.
+    pub(crate) fn close_debug_loadouts(&mut self) {
+        self.debug_loadouts_open = false;
+        self.debug_loadouts.clear();
+        self.debug_loadouts_search.clear();
+        self.debug_loadouts_scroll = 0.0;
+        self.audio.play("Menu_Close");
+    }
+
+    /// `IngameFancyUI.OpenUIState(new UIDebugLoadoutsList())`: the ctor
+    /// populates from the `Loadouts` dir and re-seeds the search bar with
+    /// `_lastSearch` (`BuildPage`'s tail, `:84-85`).
+    pub(crate) fn open_debug_loadouts(&mut self) {
+        self.debug_loadouts = crate::loadout::loadouts_dir()
+            .map(|d| ui::debug_loadouts::populate(&d))
+            .unwrap_or_default();
+        self.debug_loadouts_open = true;
+        let last = self.debug_loadouts_last_search.clone();
+        self.set_debug_loadouts_search(last);
+    }
+
+    /// The loadouts list's wheel scroll (`UIList.ScrollWheel`).
+    pub(crate) fn scroll_debug_loadouts(&mut self, delta: i32) {
+        if !self.debug_loadouts_open {
+            return;
+        }
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let rows = ui::debug_loadouts::visible_loadouts(
+            &self.debug_loadouts,
+            &self.debug_loadouts_search,
+        )
+        .len();
+        if !ui::debug_loadouts::wheel_target(screen, self.mouse_pos, rows) {
+            return;
+        }
+        let container = ui::debug_loadouts::container_rect(screen);
+        let panel = ui::debug_loadouts::panel_rect(&container);
+        let list = ui::debug_loadouts::list_rect(&panel);
+        self.debug_loadouts_scroll = ui::char_select::scroll_wheel(
+            self.debug_loadouts_scroll,
+            delta,
+            list[3],
+            ui::debug_loadouts::content_height(rows),
+        );
+    }
+
+    /// The debug commands list's wheel scroll (`UIList.ScrollWheel`,
+    /// `UIList.cs:107-114` — `ViewPosition -= ScrollWheelValue`, clamped by
+    /// `SetView`).
+    pub(crate) fn scroll_debug_commands(&mut self, delta: i32) {
+        if !self.debug_commands_open {
+            return;
+        }
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        if !ui::debug_commands::wheel_target(screen, self.mouse_pos, ui::debug_commands::visible_commands(&self.debug_commands_search).len()) {
+            return;
+        }
+        let container = ui::debug_commands::container_rect(screen);
+        let panel = ui::debug_commands::panel_rect(&container);
+        let list = ui::debug_commands::list_rect(&panel);
+        let rows = ui::debug_commands::visible_commands(&self.debug_commands_search).len();
+        self.debug_commands_scroll = ui::char_select::scroll_wheel(
+            self.debug_commands_scroll,
+            delta,
+            list[3],
+            ui::debug_commands::content_height(rows),
+        );
+    }
+
+    /// The `/hh` debug command (`ToolkitDebugCommands.cs:42-47`):
+    /// `IngameFancyUI.OpenUIState(new UIDebugCommandsList())`. Returns
+    /// whether the text was a handled debug command (the chat send is then
+    /// skipped, like `DebugCommands.Process`'s `true` at `Main.cs:18355`).
+    /// Gated on `DebugOptions.enableDebugCommands` (`DebugCommandProcessor.
+    /// cs:76-79`) — the port's `TR_DEBUG_COMMANDS` pin.
+    pub(crate) fn try_debug_command(&mut self, text: &str) -> bool {
+        if !crate::env::debug_commands() {
+            return false;
+        }
+        let Some(rest) = text.strip_prefix('/') else {
+            return false;
+        };
+        let name = rest.split(' ').next().unwrap_or("").to_ascii_lowercase();
+        match name.as_str() {
+            "hh" => {
+                self.debug_commands_open = true;
+                self.debug_commands_search.clear();
+                self.debug_commands_scroll = 0.0;
+                true
+            }
+            // `LoadoutsCommand` (`ToolkitDebugCommands.cs:884-889`).
+            "loadouts" => {
+                self.open_debug_loadouts();
+                true
+            }
+            // `LoadoutLoadCommand` (`:862-882`): no argument lists the
+            // available loadouts; a named one applies it.
+            "loadout" => {
+                let arg = rest.split_once(' ').map(|(_, r)| r.trim()).unwrap_or("");
+                if arg.is_empty() {
+                    self.chat.new_text("Available loadouts:", crate::chat::COLOR_COMMAND);
+                    if let Some(dir) = crate::loadout::loadouts_dir() {
+                        for path in crate::loadout::find_all(&dir) {
+                            let name = path
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("")
+                                .replace(".json", "");
+                            self.chat
+                                .new_text(format!("    {name}"), crate::chat::COLOR_COMMAND);
+                        }
+                    }
+                    return true;
+                }
+                // `TryReadFromFriendlyName` + `config?.Apply` (`:879-880`).
+                if let Some(loadout) = crate::loadout::loadouts_dir()
+                    .map(|d| d.join(format!("{arg}.json")))
+                    .and_then(|p| crate::loadout::try_read_from_file_path(&p))
+                {
+                    self.apply_loadout(&loadout);
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// The achievements menu's clicks (`UIAchievementsMenu`'s
     /// `GoBackClick`/`FilterList`/`FadedMouseOver`): the Back panel closes
     /// the overlay, a category toggle flips the filter, the wheel scrolls
@@ -4062,6 +4372,85 @@ mod tests {
         app.inventory_open = true;
         app.player = Some(crate::player::Player::spawn(&app.world));
         app
+    }
+
+    /// W4-d85 row 7 — `UIDebugCommandItem.LeftClick` (`:106-112`): the row
+    /// click closes the overlay, opens the chat with `"/name "` and appends
+    /// the yellow "Chat has been set to" notice.
+    #[test]
+    fn w4_d85_a_command_row_click_seeds_the_chat() {
+        let mut app = inv_app();
+        app.debug_commands_open = true;
+        // The headless screen is 1280x720: container = (240, 220, 800, 500),
+        // panel inner (252, 232, 776, 366), list y 292, row 0 at 292..322.
+        app.mouse_pos = Vec2::new(400.0, 300.0);
+        app.ui_left_press = true;
+        app.handle_debug_commands_clicks();
+        assert!(!app.debug_commands_open, "IngameFancyUI.Close ran");
+        assert!(app.chat.open, "Main.drawingPlayerChat = true");
+        assert_eq!(app.chat.text, "/= ", "the first sorted row is `=`");
+        assert_eq!(app.chat.messages[0].text, "Chat has been set to \"/= \"");
+        assert_eq!(app.chat.messages[0].color, [255, 255, 0]);
+        assert!(!app.ui_left_press, "the press was consumed");
+    }
+
+    /// W4-d85 row 8 — `UIDebugLoadoutItem.LeftClick` (`:143-148`): the row
+    /// click closes, applies the loadout to the player and appends the
+    /// Command-color notice.
+    #[test]
+    fn w4_d85_a_loadout_row_click_applies_and_notices() {
+        let mut app = inv_app();
+        let loadout = crate::loadout::deserialize(
+            r#"{ "Life": 250, "LifeMax": 400, "Mana": 60, "ManaMax": 100,
+                 "Items_Inventory": [ { "Index": 1, "Type": "CopperShortsword", "Stack": 1 } ] }"#,
+        )
+        .unwrap();
+        app.debug_loadouts = vec![ui::debug_loadouts::LoadoutEntry {
+            name: "BossTest".into(),
+            loadout,
+        }];
+        app.debug_loadouts_open = true;
+        // Row 0 at 1280x720: y 292..362.
+        app.mouse_pos = Vec2::new(400.0, 300.0);
+        app.ui_left_press = true;
+        app.handle_debug_loadouts_clicks();
+        assert!(!app.debug_loadouts_open);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!((p.hp, p.max_hp, p.mana, p.mana_max), (250, 400, 60, 100));
+        assert_eq!(app.inventory[1].kind, crate::loadout::item_id_for_name("CopperShortsword").unwrap());
+        assert_eq!(app.chat.messages[0].text, "Loadout BossTest set!");
+        assert_eq!(app.chat.messages[0].color, crate::chat::COLOR_COMMAND);
+    }
+
+    /// W4-d85 row 8 — `_lastSearch` is static (`UIDebugLoadoutsList.cs:20`):
+    /// it survives the close and re-seeds the next open (`:85`).
+    #[test]
+    fn w4_d85_the_loadouts_last_search_survives_the_close() {
+        let mut app = inv_app();
+        app.debug_loadouts_open = true;
+        app.set_debug_loadouts_search("boss".into());
+        app.close_debug_loadouts();
+        assert!(app.debug_loadouts_search.is_empty(), "the bar clears");
+        assert_eq!(app.debug_loadouts_last_search, "boss", "the static survives");
+        app.open_debug_loadouts();
+        assert_eq!(app.debug_loadouts_search, "boss", "the ctor re-seeds it");
+    }
+
+    /// W4-d85 row 7 — the Back panel closes and resets the overlay state
+    /// (`GoBackClick` → `IngameFancyUI.Close`; a fresh ctor rebuilds).
+    #[test]
+    fn w4_d85_the_back_panel_closes_and_resets() {
+        let mut app = inv_app();
+        app.debug_commands_open = true;
+        app.debug_commands_search = "snap".into();
+        app.debug_commands_scroll = 100.0;
+        // Back at 1280x720: y = 220 + 500 - 45 - 50 = 625..675, x 445..835.
+        app.mouse_pos = Vec2::new(640.0, 650.0);
+        app.ui_left_press = true;
+        app.handle_debug_commands_clicks();
+        assert!(!app.debug_commands_open);
+        assert!(app.debug_commands_search.is_empty());
+        assert_eq!(app.debug_commands_scroll, 0.0);
     }
 
     /// M7-UI-2b — the coin (ctx 1) and ammo (ctx 2) rows became click

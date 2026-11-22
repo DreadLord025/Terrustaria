@@ -523,6 +523,20 @@ pub(crate) const ITEM_CUSTOM_CUES: &[&str] = &[
 /// One variation, pinned like the item-use trackables.
 pub(crate) const MOUNT_CUSTOM_CUES: &[&str] = &["pal_chillet"];
 
+/// W4-d85 FINAL — the `Sounds/Custom/` trackables the UI layer plays:
+/// `SoundID.DD2_ExplosiveTrapExplode` (`SoundID.cs:1604`'s
+/// `CreateTrackable("dd2_explosive_trap_explode", 3)`), the issue-report
+/// indicator's notify cue (`IssueReportsIndicator.AttemptLettingPlayerKnow`,
+/// `IssueReportsIndicator.cs:24`). The legacy id-42 play picks a variation
+/// (`LegacySoundStyle.Style`, `LegacySoundStyle.cs:24-27` — the audio-only
+/// `Random` stream), so all three assets register (the liquid-change
+/// precedent, not the item-use first-variation pin).
+pub(crate) const UI_CUSTOM_CUES: &[&str] = &[
+    "dd2_explosive_trap_explode_0",
+    "dd2_explosive_trap_explode_1",
+    "dd2_explosive_trap_explode_2",
+];
+
 /// Whether the cue name is in the SFX bank (the item-use coverage test's
 /// seam, S1-E-21 wave A).
 pub(crate) fn sfx_cue_registered(cue: &str) -> bool {
@@ -562,7 +576,7 @@ fn sound_type(cue: &str) -> u32 {
         // `LegacySoundPlayer.PlaySound(style.SoundId = 42, …)`), whose
         // ambient-scaling switch treats 42 like any unlisted id.
         .or_else(|| {
-        (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue) || ITEM_CUSTOM_CUES.contains(&cue) || MOUNT_CUSTOM_CUES.contains(&cue)).then_some(42)
+        (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue) || ITEM_CUSTOM_CUES.contains(&cue) || MOUNT_CUSTOM_CUES.contains(&cue) || UI_CUSTOM_CUES.contains(&cue)).then_some(42)
     })
         .unwrap_or(0)
 }
@@ -714,6 +728,7 @@ impl Audio {
                     .chain(NPC_CUSTOM_CUES.iter())
                     .chain(ITEM_CUSTOM_CUES.iter())
                     .chain(MOUNT_CUSTOM_CUES.iter())
+                    .chain(UI_CUSTOM_CUES.iter())
                 {
                     let path = custom.join(format!("{name}.xnb"));
                     match load_sound(&path) {
@@ -1199,6 +1214,40 @@ impl Audio {
             channel: 0,
         });
         Some(sink)
+    }
+
+    /// W4-d85 FINAL — the issue-report indicator's notify cue
+    /// (`IssueReportsIndicator.AttemptLettingPlayerKnow`,
+    /// `IssueReportsIndicator.cs:24`: `SoundEngine.PlaySound(
+    /// SoundID.DD2_ExplosiveTrapExplode)` — the unpositioned legacy play).
+    /// The façade (`SoundEngine.cs:93-99`) consumes the `GetRandomPitch`
+    /// NextFloat on the audio-only stream (variance 0 — the draw still
+    /// happens) AND the variation pick (`LegacySoundStyle.Style`,
+    /// `LegacySoundStyle.cs:24-27`, the audio-only `Random` — the tracked
+    /// layer's `style_random` precedent); then case 42
+    /// (`LegacySoundPlayer.cs:1376-1381`): no volume tweak, no pitch switch,
+    /// the style's own volume 1, the picked `<cue>_<n>` asset. Unpositioned
+    /// (`x == -1`) — no attenuation, no pan (`:376-379`).
+    pub fn play_issue_report_notify(&mut self) -> Option<&'static str> {
+        let style = crate::soundid::SOUND_STYLES
+            .iter()
+            .find(|s| s.name == "DD2_ExplosiveTrapExplode")?;
+        let draw = self.sound_style_random.next_float();
+        let pitch = sound::get_random_pitch(style.pitch_variance, draw);
+        if sound::play_sound(u32::from(style.sound_id), -1.0, -1.0, self.listener, style.volume)
+            .is_none()
+        {
+            return None;
+        }
+        let n = self.style_random.next_range(0, style.variations as i32);
+        let cue = match n {
+            0 => "dd2_explosive_trap_explode_0",
+            1 => "dd2_explosive_trap_explode_1",
+            _ => "dd2_explosive_trap_explode_2",
+        };
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit(cue, -1.0, -1.0, style.volume, pitch.clamp(-1.0, 1.0));
+        Some(cue)
     }
 
     /// S1-E-21 wave C — `NPC.StrikeNPC`'s hit-sound arm
@@ -3679,6 +3728,31 @@ mod tests {
         let cue = audio.play_use_sound(idx("AbigailSummon"), 0.0, 0.0, 0.0, &mut rng);
         assert_eq!(cue, Some("abigail_summon"));
         assert_eq!(rng.peek(), peek, "case 42 consumes no gameplay draw");
+    }
+
+    /// W4-d85 FINAL — the issue-report notify cue
+    /// (`IssueReportsIndicator.cs:24`): the three variations register on the
+    /// legacy id-42 path, the play picks one on the audio-only `style_random`
+    /// (no gameplay stream exists for the unpositioned UI play), and the
+    /// played-count seam ticks even headless.
+    #[test]
+    fn the_issue_report_notify_cue_registers_and_plays() {
+        for n in ["dd2_explosive_trap_explode_0", "dd2_explosive_trap_explode_1", "dd2_explosive_trap_explode_2"] {
+            assert!(UI_CUSTOM_CUES.contains(&n), "{n} in the UI list");
+            assert_eq!(sound_type(n), 42, "{n} rides the trackable path");
+        }
+        let mut audio = Audio::new(None);
+        let before = audio.played_count();
+        let cue = audio.play_issue_report_notify();
+        assert!(
+            cue.is_some_and(|c| UI_CUSTOM_CUES.contains(&c)),
+            "a variation of the family played ({cue:?})"
+        );
+        assert_eq!(audio.played_count(), before + 1, "the count ticks headless");
+        // The variation pick rides the audio-only stream — a second play
+        // advances it (the C#'s `LegacySoundStyle.Random`, unobservable seed).
+        let second = audio.play_issue_report_notify();
+        assert!(second.is_some());
     }
 
     /// S1-E-21a — the NPC hit/death cue families: the sound id 3 (the hits)

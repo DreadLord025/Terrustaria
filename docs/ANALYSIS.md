@@ -3157,11 +3157,13 @@ keyboard, credits вЂ” commits `02182dc..043e11c`) is ported at the source
 geometry; the screens, coordinates and flow are in `docs/UI.md` в†’
 "Front-end screens (P6)". The deviations and stand-ins:
 
-* **No `.plr` reader/writer** (spec В§9.4). Characters are the implicit
-  session entry plus optional `TR_FAKE_CHARS` fakes; Create records the
-  session draft instead of writing a character file. The `.plr` directory
-  scan stays so a future reader slots into the same shape (`Main.cs:4007`);
-  a scanned `.plr` is skipped like `Player.GetFileData`'s null return.
+* ~~**No `.plr` reader/writer**~~ **STALE — closed** (S1-J-5 + W4-f22):
+  `player_file.rs` reads and writes real `.plr`s (the full
+  Serialize/Deserialize walk), `save_list::list_players` scans them, and
+  `session.rs::save_created_character` writes the creation draft. The
+  card renames landed W4-f22 (`rename_player_file`/`rename_world`, the
+  keyboard tails). The implicit session entry + `TR_FAKE_CHARS` fakes
+  remain as the disk-less stand-ins.
 * **World metadata stand-ins.** Favourites are a `<world>.trfav` marker file
   (`Main.LocalFavoriteData` has no port); creation time is the file's mtime;
   the world writer stores no `GameMode`, so every real entry reads Classic
@@ -3180,14 +3182,21 @@ geometry; the screens, coordinates and flow are in `docs/UI.md` в†’
   `UIWorldListItem.cs:205`, have no port) and **no UI click sounds**: the
   `SoundEngine.PlaySound(10/11/12)` sites вЂ” the confirms' Yes/No included вЂ”
   stay silent, consistent with the P5 menus (`audio.rs:22-31`).
-* **Rename caps** 20 (character) / 27 (world); the world-creator's
-  `TrimDisplayIfOverElementDimensions(27)` display trim is not ported.
+* **Rename caps** 20 (character) / 27 (world); the creation plates'
+  `TrimDisplayIfOverElementDimensions` display trims **landed 2026-11-21**
+  (W4-d85 doc-sweep: `world_creation::trim_plate_display`, padding 27/40
+  on both creation screens); the keyboard's own textbox trim stays
+  unported (research/19 deviation 14).
 * **The keyboard draws the desktop layer only** (`ShowGamepadHints` false
   without a gamepad); the 50-key grid layer is kept behind `TR_VK_GRID=1`.
-* **The Advanced seed tab is out of scope** (spec В§9.4): the seed plate's
-  click degrades to the plain seed keyboard and the special-seed ring effect
-  is not drawn; `UIWorldLoad`/`UIWorldGenDebug`/`UIWorldCreationAdvanced`
-  have no counterpart yet.
+* ~~**The Advanced seed tab is out of scope**~~ **STALE — closed**: the
+  Advanced tab + secret-seeds list landed (W4-d85 rows 11-12,
+  `ui/world_creation_advanced.rs` + `ui/secret_seeds_list.rs`); the
+  special-seed ring effect stays unported (that section's deviation 1).
+  `UIWorldLoad` landed S1-E-17 ("The loading screen + capture mode"
+  below); `UIWorldGenDebug` is the d86-recorded dev-only scope-out;
+  `UIWorldCreationAdvanced` is ported. The seed plate's click opens the
+  Advanced tab — the degradation is gone.
 * **Credits** (`menuMode` 3000) is the world backdrop + the single Back row;
   the `SkyManager.Activate("CreditsRoll")` cinematic is not ported.
 * **The legacy create flows** (menuModes 2/3/7/8/16/17-24/222/в€’7/в€’71/5000)
@@ -39896,3 +39905,230 @@ owed. 3 seal witnesses WRITTEN NOT RUN (18 total). Registry number 338
 per research/150 §8.5 (281 self-pick → §8.1 308 → §8.5 338; g13 KEEPS 308,
 executed pre-§8). No style/kind/dust/cue in the band is
 unclaimed; d30 owes nothing further.
+
+## Debug lists (W4-d85, 2026-11-20, code-only)
+
+The `UIDebugCommandsList` + `UIDebugCommandItem` port
+(`ui/debug_commands.rs`, table row 7 + the row-9 element half):
+
+- **Registry**: the 62 `[DebugCommand]` attributes of
+  `ToolkitDebugCommands.cs` verbatim (name/description/requirements/
+  help text), sorted `OrdinalIgnoreCase` (`PopulateCommandsList`,
+  `UIDebugCommandsList.cs:140-151`). The requirement composites fold to
+  their `CommandRequirement` values (`Client`=3, `AnyAuthority`=13).
+- **Geometry**: `BuildPage`'s chain resolved through `uistate::resolve`
+  (0.8-wide container, MaxWidth 800 / MinWidth 600, Top 220; panel -110;
+  search 200x24 at Top 20; list (-25,-60) VAlign 1; rows 30+5).
+- **Deviations**: (1) the fake-item hover tooltip
+  (`UIDebugCommandItem.DrawSelf`'s `Main.DisplayAndGetFakeItem`,
+  `:51-56` + `MouseOver`'s wrapped `ItemTooltip`, `:87-98`) is not
+  drawn — the port has no fake-item hover seam; (2) the search bar's
+  inline typing (`UISearchBar.ToggleTakingText`) opens the port's
+  virtual keyboard instead (`KeyboardTail::DebugCommandSearch`,
+  `UIWrappedSearchBar.cs:171-197`'s `OpenVirtualKeyboardWhenNeeded`
+  path); (3) the command *processors* are not ported — only `/hh`
+  (this list's opener) runs, gated on the `TR_DEBUG_COMMANDS` pin
+  (`DebugOptions.enableDebugCommands`); (4) the overlay opens in-world
+  only (the achievements-overlay treatment); the `Main.gameMenu` arm
+  has no legacy-menu entry point in the port.
+- **Row click**: `LeftClick` (`:106-112`) closes the overlay, sets
+  `chat.text = "/name "` and appends the yellow (255,255,0) notice.
+- Code-only mode: the witness tests (`debug_commands.rs` 6 +
+  `clicks.rs` 2) are WRITTEN, NOT RUN — no cargo/graphify invoked.
+
+The `UIDebugLoadoutsList` + `UIDebugLoadoutItem` port
+(`ui/debug_loadouts.rs` + `loadout.rs`, table row 8 + the row-9 element
+half):
+
+- **Data layer**: `ScenarioTestLoadout`'s JSON shape read through
+  `serde_json::Value` walks (the Newtonsoft
+  `EasyDeserializationJsonContractResolver` is not ported — the shipped
+  files carry plain PascalCase fields); `FindAll` = the `*json` files
+  under `Terrustaria/Loadouts` (`Main.SavePath/Loadouts`);
+  `TryReadFromFilePath`'s catch answers `None` on any failure.
+- **Apply** (`ScenarioTestLoadout.cs:88-106`): the clock (off-client
+  only), life/mana stats, the selection request, the four item groups
+  (inventory / ammo 54..57 / armor / misc equips), the owned-minion kill
+  and the direct buff-slot writes. **The minion-respawn half landed
+  2026-11-21 (DOC-SWEEP lane 30)**: `MinionRespawner.RestoreMinionsFor`
+  (`MinionRespawner.cs:34-47`) + `MinionSpawnFromInventoryItem.TryRespawn`
+  (`:30-47`) port as `loadout::respawn_minions` — the first inventory
+  0..49 slot matching type AND prefix, the `buffType > 0` grant
+  (`buffTime == 0` → 3600) through `BuffSlots::add_buff`, then the
+  silent summon-staff shot (`SilentlyShootItem` → `ItemCheck_Shoot`'s
+  `SpawnMinionOnCursor` arms, weaponDamage 0, the minionKB knockback
+  fold, the per-staff ai seeds + kind picks on the `UpdatePlayers`
+  stream; the Stardust Dragon's fresh-chain arm included). The cursor
+  is the camera (`RestoreMinionsFor` parks the mouse at the screen
+  centre). **The FINAL phase (2026-11-21) added the dragon GROW arm**
+  (`Player.cs:48537-48553`): the Apply kill sweep only kills
+  `minionSlots > 0` (`ScenarioTestLoadout.cs:129`) and the dragon head
+  625 / tail 628 carry ZERO slots (`Projectile.cs:6731-6738`), so a live
+  head+tail survives the apply and the respawn grows the chain (two
+  bodies at the player centre with the aim velocity, the key relink,
+  `ai[1] = 1` + netUpdate + originalDamage on all three); a half chain
+  (head xor tail) spawns nothing. Cap census: `SpawnMinionOnCursor` has
+  NO cap check and `FreeUpPetsAndMinions` rides the use start the silent
+  shot bypasses — an over-cap respawn dies on the first pool tick
+  (`Projectile.cs:16712`), as the C#. Remaining deviation: the
+  non-summon per-item tail of `ItemCheck_Shoot` stays on the use path —
+  a loadout's `Minions` records are `TrackMinionSpawnFromItemUse` spawns
+  (summon staffs only, `ProjectileID.cs:550` — the default-true set minus
+  388/625/627/628), so the tail is unreachable here. The Clay Pot (6161)
+  is tracked (its 1118 is in the set) but its generic-tail shot stays on
+  the use path — the respawn's summon-arm gate excludes it (the i25
+  census pin).
+- **Geometry**: the commands list's container/panel/search chain
+  byte-for-byte (`BuildPage` `:34-83`); rows 70+5; the four
+  `PositionItems` icon groups at (0.1-0.3, 0.75), (0.35-0.45, 0.75),
+  (0.65-0.75, 0.25), (0.6-0.9, 0.75) with `HAlign = i/(n-1)`.
+- **`_lastSearch`** is static (`UIDebugLoadoutsList.cs:20`) — it survives
+  the close and re-seeds the next open (`:85`); the port keeps it on the
+  App (`debug_loadouts_last_search`).
+- **Deviations**: the hover tooltip (`MouseOver`'s hardcoded "test"
+  wrap, `UIDebugLoadoutItem.cs:132-133`) is not drawn; the search bar
+  opens the keyboard (`KeyboardTail::DebugLoadoutSearch`); `/loadout
+  <name>` applies from the dir, `/loadout` bare lists the names
+  (`ToolkitDebugCommands.cs:862-882`); `/saveloadout` is NOT ported (the
+  writer half — `Prepare` reads the live minion/buff state the port's
+  split arrays only partially mirror).
+- Code-only mode: the witness tests (`loadout.rs` 3 +
+  `debug_loadouts.rs` 5 + `clicks.rs` 2) are WRITTEN, NOT RUN.
+
+## Reports page (W4-d85, 2026-11-20, code-only)
+
+The `UIReportsPage` port (`ui/reports.rs`, table row 10):
+
+- **Geometry**: `BuildPage` (`UIReportsPage.cs:48-136`) — the 0.8-wide
+  container (MaxWidth 500 / MinWidth 300) at Top 230, the -110 panel,
+  the 28 px header, the log area (VAlign 1, Height -40, Top -2), the
+  list at -10 (detached) / -25 (attached) with PaddingRight 20 and
+  ListPadding 40, the fat Back panel.
+- **Scrollbar**: attaches only on overflow (`Recalculate`, `:186-204`)
+  and opens at the bottom (`GoToBottom`, `:124`); the wheel path
+  re-derives the content height through the renderer-free
+  `wrap_line_count` (the detached-list wrap width — the C# re-wraps on
+  the attach flip, a 15 px difference the port approximates).
+- **The reporter pipeline landed 2026-11-21 (DOC-SWEEP lane 30)**:
+  `GeneralIssueReporter` (`GeneralIssueReporter.cs:5-18`) ports as
+  `ui::reports::GeneralIssueReporter` on the App (`Main.IssueReporter`,
+  `Main.cs:2169/:10832`); `open_reports` runs `OpenReportsMenu`'s merge
+  (`merged_reports` — general first, Workshop after when live) and the
+  `GoToBottom` over the merged rows. The Workshop reporter's 1000-entry
+  ring (`WorkshopIssueReporter.cs:10/:18-26`) is pinned as
+  `workshop_add_report` + `WORKSHOP_MAX_REPORTS` (Steam-only, never
+  constructed — the port's `SocialAPI.Workshop == null` state).
+  **Doc-final 2026-11-21 (FINAL phase)**: the ring's ONLY construction
+  site is `Steam.WorkshopSocialModule`'s ctor (`WorkshopSocialModule.cs:
+  35-38`), and a live Steam module implies a running Steam client
+  (`CoreSocialModule.cs:34-38` hard-exits when `SteamAPI.Init()` fails) —
+  the port has no Steamworks runtime, so the ring never exists; the
+  pinned rule is the whole port scope. Its six `Report*Problem`
+  producers are all Steam-gated (the full call-site table:
+  docs/research/112 §3b); the non-Steam report surface (general
+  reporter + page + indicator) is fully ported.
+- **No report SUBMIT exists** (census, docs/research/112 §3):
+  `UIReportsPage` is a read-only log viewer — the only "send" in the C#
+  is the SteamUGC publish (`WorkshopHelper.cs:247-318`,
+  `CreateItem`/`StartItemUpdate`/`SubmitItemUpdate`), Steam-only and out
+  of scope (§38). The only non-Steam report producer is the
+  resource-pack music failure (`LegacyAudioSystem.cs:114-119`); the port
+  has no resource-pack pipeline, so the log stays empty exactly as
+  vanilla with no packs.
+- **The consumer census closed 2026-11-21 (FINAL phase)**: the ONLY
+  `IProvideReports.GetReports` consumer in the whole decompile is
+  `UIReportsPage.PopulateLogs` (`:144`) — there are no F3-panel report
+  rows (the debug cheat-sheet reads none) and no other reader. The
+  consumer-side entry half landed: `IssueReportsIndicator`
+  (`IssueReportsIndicator.cs:10-80`) ports as `ui::reports::IssueIndicator`
+  on the App (`Main.IssueReporterIndicator`, `Main.cs:1813/:67043`) —
+  the ±1-per-drawn-frame slide (`Draw`, `:48`), the
+  `ScreenSize + (40,-80)` → `+(-80,0)` lerp (`:54-55`), the
+  `Utils.CenteredRectangle` int-box hover (`:59`), the outline +
+  `UI.IssueReporterHasThingsToShow` mouse text (`:62-63/:73-78`), and
+  the click → `OpenReportsMenu` + `Hide` (`:64-68`). The draw site is
+  `DrawMenu`'s tail (`Main.cs:51886`, after `MenuUI.Draw` at `:51063` —
+  both menu regimes); the press routes ahead of the menu rows / card
+  table. The notify seam (`App::issue_report_notify`) plays
+  `SoundID.DD2_ExplosiveTrapExplode` (`SoundID.cs:1604`, the three
+  variations registered on the legacy id-42 path, the audio-only
+  `style_random` pick). The producer census: the only non-Steam
+  `AddReport`/`AttemptLettingPlayerKnow` caller is the resource-pack
+  music failure (`LegacyAudioSystem.cs:114-119`); the Steam reporter's
+  six `Report*Problem` methods (`WorkshopIssueReporter.cs:49-90`) feed
+  from `WorkshopHelper.cs:103/:261-370` + `WorkshopSocialModule.cs:
+  142/:169` — all Steam-only. With neither pipeline the indicator never
+  shows: the exact vanilla state on a pack-free, no-Steam install.
+- **Deviations**: (1) the log is always empty in practice (no
+  resource-pack pipeline — the `Workshop.ReportLogsInitialMessage` row
+  draws, `PopulateLogs`'s empty arm, `:147-160`); (2) the entries are the
+  `TR_UI=reports` preset and the ported indicator's click (the Workshop
+  hub's Reports button, `UIWorkshopHub.cs:295-300`, stays d84's lane —
+  its `front_hint` notice is the no-Steam stand-in); (3) the gamepad snap
+  points (`SetupGamepadPoints`, `:232-247`) are out of scope (§J.3);
+  (4) the indicator's `Setup()` asset requests resolve through the atlas
+  Lookups (`UI/Workshop/IssueButton` + `_Outline`, packed) instead of
+  per-call `Main.Assets.Request` — the sheets are static.
+- **Back**: `GoBackClick` (`:206-211`) returns the parked
+  `_previousUIState` / `_menuIdToGoBackTo` — the flow table's
+  `FlowClick::ReportsBack` row carries both.
+- Code-only mode: the witness tests (`reports.rs` 6 + `flow.rs` 4 +
+  `audio.rs` 1 + `assets.rs` 1) are WRITTEN, NOT RUN.
+
+## Advanced world creation (W4-d85, 2026-11-20, code-only)
+
+The `UIWorldCreationAdvanced` + `UIWorldCreationAdvancedSecretSeedsList`
+ports (`ui/world_creation_advanced.rs` + `ui/secret_seeds_list.rs`,
+table rows 11-12; the research/18 task seed "M — UIWorldCreationAdvanced
++ secret-seeds list" closes):
+
+- **Draft extension**: `NewWorldDraft` carries the Advanced tab's state
+  — `options_enabled` (the ten `WorldGenerationOptions` registrations),
+  `is_special_seed_text`, `secret_texts` / `disabled_secret_texts`
+  (`_secretSeedTextsEntered` / `_disabledSecretSeedTextsEntered`). The
+  `AWorldGenerationOption.Enabled` cascades are ported as
+  `set_option_enabled`: Normal's enable clears the rest, its subscriber
+  re-derives Normal = all-others-off; Everything's enable/disable carries
+  its seven dependencies (the early-return disable guard included), its
+  subscriber re-derives Everything = all-seven-on.
+- **Seed keyboard tail**: `OnFinishedSettingSeed`
+  (`UIWorldCreation.cs:817-898`) now runs the classic-option select
+  (sound 24) and the micro-seed enable + park-restore + `ClearSeedText`;
+  the tail returns to the Advanced tab when the keyboard opened from it
+  (`GoBackHere` → `_goBackTarget`). `TryApplyingCopiedSeed`'s four
+  leading `.`-separated paste values stay unported (the M5-SEED-1
+  deviation stands).
+- **Generation**: `WorldGenJob::start` + `create_world_in` join the
+  entered micro-seed texts onto the base seed
+  (`FinishCreatingWorld`, `:991-995`) and OR the toggled option flags
+  into the classic flags.
+- **Geometry**: the 500-wide root at Top 202 (MaxHeight 400), the -102
+  panel, the 40x40 randomize + seed plate row, the 6-per-row 60x60 grid
+  at 67 px pitch (`HAlign = col/5`), the 88 px description panel
+  (title 0.82 / separator Top 22 / wrapped body 0.7), the fat Apply
+  panel at Top -43. The seeds list: the 40+5 rows in the (-20, -60)
+  container, the 56 px description, the attach-on-overflow scrollbar.
+- **Deviations**: (1) the special-seed ring + particle systems
+  (`DrawSeedSystems`, `SpawnParticles`, `DrawSpecialSeedRingCallback`)
+  are not drawn; (2) `SecretSeedsTracker`'s settings persistence is not
+  ported — the interface rows derive from the draft's entered/parked
+  lists (a removed text leaves the list, where the C#'s tracker keeps
+  it); (3) the option list's scrollbar only exists under
+  `allowScrolling` (ctor default false) — the port draws none; (4) the
+  `MouseOverSeed` held-button re-click (`:174-177`) is not ported; (5)
+  the gamepad snap points are out of scope (§J.3); (6) the base screen's
+  seed-icon degradation is GONE — the icon opens the Advanced tab
+  (`Click::AdvancedSeed`).
+- **The Everything glitch icon landed 2026-11-21 (DOC-SWEEP lane 30)**:
+  `WorldSeedOption_Everything.ProvideUIElement`'s `UIImageFramed` closure
+  (`WorldSeedOption_Everything.cs:69-98`) ports as `EverythingGlitch`
+  (`ui/world_creation_advanced.rs`) — the 7x16 frame walker (frame 0 holds
+  `Next(15,121)` ticks, later frames advance after `Next(3,4)` == 3, the
+  4/8/12 frames roll `Next(3)` then `Next(7)` for the variation), ticked
+  once per frame from `frame.rs` on the bare global stream while the tab
+  is live, reset at `enter_front` (the C# closures are per-ctor). The
+  draw cuts the live cell through `Utils.Frame(7,16,var,frame)` at the
+  cell's own size; the other nine options stay whole-sheet `UIImage`s.
+- Code-only mode: the witness tests (`world_creation.rs` 2 cascade tests
+  + `world_creation_advanced.rs` 7 + `secret_seeds_list.rs` 5 +
+  `flow.rs` 2) are WRITTEN, NOT RUN.

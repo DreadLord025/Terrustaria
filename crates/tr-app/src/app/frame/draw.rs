@@ -259,6 +259,7 @@ impl App {
                     menu,
                     front,
                     front_hint,
+                    issue_indicator,
                     settings,
                     remote_players,
                     map,
@@ -1545,6 +1546,7 @@ impl App {
                             scroll: self.front_scroll,
                             vk_grid: self.vk_grid,
                             frame_count: *frame_count,
+                            everything_glitch: self.world_advanced_glitch,
                         };
                         front.draw(&mut d);
                         // The port's not-ported notice for the front screens
@@ -1843,6 +1845,56 @@ impl App {
                             &self.achievements_categories,
                             self.mouse_pos,
                             menu.is_some(),
+                        );
+                    }
+                    // `UIDebugCommandsList` (W4-d85 row 7): the same overlay
+                    // treatment — the state draws over whatever the frame
+                    // rendered (`IngameFancyUI.OpenUIState`).
+                    if self.debug_commands_open {
+                        let is_client = self.is_client();
+                        ui::debug_commands::draw_screen(
+                            renderer,
+                            lookups,
+                            screen,
+                            &self.debug_commands_search,
+                            self.debug_commands_scroll,
+                            self.mouse_pos,
+                            is_client,
+                        );
+                    }
+                    // `UIDebugLoadoutsList` (W4-d85 row 8) — the twin overlay.
+                    if self.debug_loadouts_open {
+                        ui::debug_loadouts::draw_screen(
+                            renderer,
+                            lookups,
+                            screen,
+                            &self.debug_loadouts,
+                            &self.debug_loadouts_search,
+                            self.debug_loadouts_scroll,
+                            self.mouse_pos,
+                        );
+                    }
+                    // `Main.IssueReporterIndicator.Draw` (`Main.cs:51886`,
+                    // `DrawMenu`'s tail right before `DrawCursor` — AFTER the
+                    // 888 `MenuUI.Draw` at `:51063`, the legacy rows and the
+                    // fancy-UI overlays, so it covers both menu regimes):
+                    // the issue-report button slides in from the right edge
+                    // while a report needs attention (`IssueReportsIndicator.
+                    // cs:45-79`). The percent ticks once per DRAWN frame here
+                    // — the C# advances it inside Draw, not Update. Never
+                    // shows in the port (no producer), the exact vanilla
+                    // state on a pack-free, no-Steam install.
+                    if (menu.is_some() || front.is_some()) && issue_indicator.tick_draw() {
+                        ui::reports::draw_indicator(
+                            renderer,
+                            lookups,
+                            screen,
+                            issue_indicator.display_up_percent,
+                            self.mouse_pos,
+                            ui::UiPulse {
+                                text: self.mouse_text_color as f32 / 255.0,
+                                cursor_scale: self.cursor.scale(),
+                            },
                         );
                     }
                     // `DrawInterface_13_AchievementCompletePopups`
