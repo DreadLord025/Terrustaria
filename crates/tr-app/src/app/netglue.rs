@@ -1937,6 +1937,14 @@ impl App {
                     }
                 }
             }
+            // S1-I-1 wave B (W4-d89): `11 TileFrameSection` — the client
+            // would run `WorldGen.SectionTileFrame(startX, startY, endX,
+            // endY)` (`MessageBuffer.cs:895-899`, `WorldGen.cs:80343`);
+            // the port's framing pass is not net-wired yet and no C# site
+            // sends 11 (deprecated, `MessageID.cs:29-30`) — parked for
+            // S1-I-4. `15 Unknown15` is the reader's ignore group
+            // (`MessageBuffer.cs:4483-4490`): accepted, nothing to do.
+            S2c::TileFrameSection(_) | S2c::Unknown15 => {}
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
