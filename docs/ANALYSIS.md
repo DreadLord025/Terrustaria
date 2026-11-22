@@ -1176,6 +1176,57 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
   `ambient_sound.rs`, 1 live-pan in `audio.rs` — listed in the
   source-detection-residuals and ambience-consumers bullets above) — 43 lane
   witnesses in total, all written, not run (code-only).
+
+  in total, all written, not run (code-only).
+- FALLS FINAL SWEEP (W4-g75, 2026-11-21, code-only): the full-file re-census of
+  `WaterfallManager.cs` (1182 lines) against the union found every spawn/draw/
+  frame/light arm present EXCEPT the disco fall's colour source. The C# manager
+  carries NO `DiscoR/G/B` state — `StylizeColor` case 2 (`:1010-1012`) and
+  `AddLight` case 2 (`:1084`) read the SHARED `Main.DiscoR/G/B` statics that
+  `Main.DoUpdate_AnimateDiscoRGB` (`Main.cs:19591-19648`) steps once per update.
+  The union's manager-local cycle copy was out of phase with the app's shared
+  one (`world_sim::clock::advance_disco`) and initialised `disco_r: 0` against
+  `Main.Initialize`'s `DiscoR = 255` (`Main.cs:66780`). The sweep removes the
+  private cycle (`update_disco_rgb` + `disco_style`), adds the
+  `set_disco_rgb` latch (the `set_show_invisible` pattern) and feeds it from
+  `params.disco` in `frame/draw.rs` beside the invisible latch; the init is now
+  `[255, 0, 0]`. Witnesses: `the_disco_fall_reads_the_shared_disco_latch` (the
+  tile-160 conversion via `num34 = tile5.type` `:654-661`, the 0.6 below-surface
+  damp × the latched colour, `AddLight` case 2, the re-latch on the next pass),
+  `update_tick_does_not_cycle_the_disco_rgb`,
+  `the_waterfall_block_latches_the_shared_disco_statics` (the wiring pin).
+  The census also witnesses the previously-untested lava-fountain arm: tile 717
+  → type 26 spawn (`:236-251`) + the two-sheet draw pair (texture 27 background
+  at 0.4 / texture 26 foreground at 0.9, the flat `Color(255,255,255,127)` tint
+  `:463`, the even-column 3/2 lava-rain frame lead `:398-408`, `AddLight` case 26
+  per cell `:464`/`:1077-1081`) and its `:708` water-ambience inclusion (26 is
+  NOT in the 11/12/22 exclusion — the lava fountain feeds the WATER triple, never
+  the lavafall one): `lava_fountain_tile_717_drops_below`,
+  `lava_fountain_draws_the_two_sheet_pair_and_lights_every_cell`. The ambience
+  consumer is verified LIVE (`frame.rs:300-335` → `sound::liquid_ambience` →
+  `audio.rs::set_liquid_loop`, both re-pitch branches); the `ambientLava` blend
+  (`Main.cs:13488-13497`) stays unported HERE — `Main.ambientLava*` is stored by
+  `DrawWaters` (`:57934-57936`), outside the waterfall lane; on the canonical g73
+  branch (82ae8b96) the blend is resolved UPSTREAM by
+  `ambient_sound::liquid_loop_update`, which delegates its volume walk to the
+  pure `sound::liquid_ambience` (the two-tier split — the `sound.rs`
+  DELEGATED-STATUS note; the merger keeps BOTH fns). Retire-contract update:
+  `DrawTile_LiquidBehindTile`'s `:3858` `CheckForWaterfall` refusal arm is now
+  WIRED (`render/liquids.rs::liquid_behind_spout_refused`, the manager handle
+  fed from `draw_tiles`' existing `waterfall` seam, the `:3835-3844` type-379
+  bubble exclusion verbatim; 3 witnesses written not run); the
+  `inActive()` half belongs to the g80 actuator lane (af6cd44f
+  `liquid_behind_refused` — that commit explicitly leaves the spout clause as
+  a recorded deviation; the halves compose by OR at the family merge). The tile-side fountain
+  chain verified complete: tile 338 placement (`tileobject/registry.rs` D_338,
+  item 2738), wiring case 338 (`wiring.rs:2315` → `firework_fountain` :1660,
+  `Wiring.cs:1522-1546` verbatim incl. `CheckMech(30)` + `419 + Next(4)`), the
+  pool-side aiStyle-73 dedupe (`world_sim/wiring.rs:427-430` `fountain_anchored`),
+  and tile 207's `SwitchFountain` (`wiring.rs:2544`/`:2808`,
+  `WorldGen.cs:51150-51193` ±72 frameY flip). The proj 419-422 AI arm itself
+  (`ai_fountain`) rides the d8 lane (`task/W4-d8-proj-ai-71-80`, `e66b41b0` —
+  not yet in main, not duplicated here). All witnesses written, not run
+  (code-only).
 - `LiquidRenderer.DrawShimmer` (`LiquidRenderer.cs:675-723`): shimmer liquid never
   takes the normal liquid path вЂ” every type-3 cell draws twice, the base quad with
   per-corner `GetShimmerBaseColor` wave colours (self-luminous: the light map is

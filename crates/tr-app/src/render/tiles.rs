@@ -4233,3 +4233,26 @@ mod w4_g75_retire_contract_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod w4_g75_retire_contract_tests {
+    /// W4-g75 retire-contract — the solid-layer `DrawTile_LiquidBehindTile`
+    /// call feeds the manager handle (`TileDrawing.cs:3858`'s
+    /// `Main.instance.waterfallManager.CheckForWaterfall(tileX, tileY)`):
+    /// `draw_tiles` already carries `waterfall` (the `DoDraw_Waterfalls`
+    /// seam), so the spout clause needs no new plumbing. The `inActive()`
+    /// half of the same line rides the g80 lane's gate (af6cd44f).
+    #[test]
+    fn the_liquid_behind_call_feeds_the_waterfall_manager() {
+        let src = include_str!("tiles.rs");
+        let call = src
+            .find("stats.quads += draw_tile_liquid_behind(")
+            .expect("the solid-layer liquid-behind call");
+        let tail = &src[call..call + 600];
+        let end = tail.find(");").expect("the call's argument list closes");
+        assert!(
+            tail[..end].contains("waterfall,"),
+            "the :3858 spout clause needs the manager handle at the call site"
+        );
+    }
+}

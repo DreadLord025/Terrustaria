@@ -1855,6 +1855,56 @@ mod tests {
         assert_eq!(out2[0].source, [18, 0, 16, 16]);
     }
 
+    /// The lava-fountain draw arm (`WaterfallManager.cs:481-484`): type 26
+    /// draws TWO sheets — the background texture 27 at 0.4 × the fade and the
+    /// foreground texture 26 at 0.9 × the fade, both with the flat
+    /// `Color(255,255,255,127)` tint (`:463`), and every cell seeds `AddLight`
+    /// case 26 (`:464`/`:1077-1081`: `(0.55 + (270-mouseText)/900) * 0.6`).
+    /// Even columns lead the lava-rain frames by 3/2 (`:398-408`), odd columns
+    /// ride them raw (`:431-433`).
+    #[test]
+    fn lava_fountain_draws_the_two_sheet_pair_and_lights_every_cell() {
+        let mut w = World::new("test".into(), 80, 200);
+        w.world_surface = 30.0;
+        put(&mut w, 10, 10, stone(717));
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        // 4 ticks: lavaRainFrameCounter cycles 1,2,3,0 → foreground advances
+        // on 1 and 3 → 2; background decrements once → 7.
+        for _ in 0..4 {
+            mgr.update_tick();
+        }
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        let (lights, water_scan, lava_scan) = mgr.draw(
+            &w, &light, &style, 0.0, &active_alpha(), 255, 0, screen_at(0.0, 0.0), false,
+        );
+        let out = mgr.take_quads();
+        let fg: Vec<&WaterfallDraw> = out.iter().filter(|d| d.texture == 26).collect();
+        let bg: Vec<&WaterfallDraw> = out.iter().filter(|d| d.texture == 27).collect();
+        assert!(!fg.is_empty() && fg.len() == bg.len(), "the pair draws together");
+        // Even column 10: num23 = 2 + 3 = 5 → x = 90; num24 = 7 + 2 = 9 > 7
+        // → 1 → x = 18.
+        assert_eq!(fg[0].source, [5 * 18, 0, 16, 16]);
+        assert_eq!(bg[0].source, [18, 0, 16, 16]);
+        // The flat white-127 tint scaled by 0.9 / 0.4 (`:459-475`): the head
+        // cell (j = 0, no fade) keeps RGB (int)(255*0.9) = 229 / 102 and
+        // alpha (int)(127*0.9) = 114 / 50 — the XNA byte multiply truncates
+        // each channel independently.
+        assert_eq!(fg[0].color, [229.0 / 255.0, 229.0 / 255.0, 229.0 / 255.0, 114.0 / 255.0]);
+        assert_eq!(bg[0].color, [102.0 / 255.0, 102.0 / 255.0, 102.0 / 255.0, 50.0 / 255.0]);
+        // AddLight case 26 on every walked cell: (0.55 + 15/900) * 0.6.
+        let n = (0.55 + 15.0 / 900.0) * 0.6;
+        assert!(lights.iter().any(|l| l.x == 10 && l.y == 11
+            && (l.rgb[0] - n).abs() < 1e-6
+            && (l.rgb[1] - n * 0.3).abs() < 1e-6
+            && (l.rgb[2] - n * 0.1).abs() < 1e-6));
+        // Type 26 feeds the WATER ambience scan (`:708` excludes 11/12/22
+        // only) and never the lavafall one (kind != 1).
+        assert!(water_scan.strength > 0.0, "the lava fountain counts as water ambience");
+        assert_eq!(lava_scan, AmbientScan::default());
+    }
+
     /// `WaterfallManager.GetAlpha`'s default arm (`WaterfallManager.cs:1037`):
     /// an Echo-coated wall (`invisibleWall()`) or the glass wall 318 skips the
     /// 0.6 damp above `worldSurface` — unless the `_shouldShowInvisible...`
