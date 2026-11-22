@@ -455,6 +455,11 @@ pub(crate) struct App {
     /// inside the handle is kept (`:134-135`). `LeftMouseUp` clears it
     /// (`:145-149`).
     pub(crate) front_scroll_drag: Option<f32>,
+    /// Which list the `front_scroll_drag` latch belongs to on the two-list
+    /// pack-selection screen (`UIResourcePackSelectionMenu`'s
+    /// `_availablePacksList`/`_enabledPacksList`): `false` = available (left),
+    /// `true` = enabled (right). The single-list screens ignore it.
+    pub(crate) front_scroll_drag_enabled: bool,
     /// `Main.PendingPlayer`'s recorded twin — `FinishCreatingCharacter`'s
     /// `PlayerFileData.CreateAndSave` + `Main.LoadPlayers` port: the created
     /// draft feeds the implicit session entry's name/difficulty
@@ -2548,6 +2553,71 @@ impl App {
             // The generation job is started by `finish_creating_world`
             // before the hop (`WorldGen.CreateNewWorld`, `:6607-6625`).
             FrontScreen::WorldLoad(_) => {}
+            // `UIResourcePackInfoMenu` has no `OnActivate` override — the
+            // ctor's `BuildPage` (`:33-38`) is the whole setup; the pack and
+            // the back target rode in from `Click_Info`.
+            FrontScreen::ResourcePackInfo(_) => {}
+            // `Main.OpenResourcePacksMenu` (`Main.cs:52371-52375`): the ctor
+            // takes `AssetInitializer.CreateResourcePackList` — the config's
+            // saved entries + the directory discovery (`ResourcePackList.
+            // FromJson`) — then `PopulatePackList` (`:57`). The back target
+            // rode in from the opener (null for the menu row, the hub for
+            // `Click_OpenResourcePacksMenu`).
+            FrontScreen::ResourcePackSelection(ref mut state) => {
+                let dir = crate::resource_pack::resource_packs_dir();
+                state.packs = match dir {
+                    Some(dir) => crate::resource_pack::ResourcePackList::from_config(
+                        &self.settings.resource_packs,
+                        &dir,
+                    ),
+                    None => crate::resource_pack::ResourcePackList::default(),
+                };
+                state.populate();
+                state.available_scroll = 0.0;
+                state.enabled_scroll = 0.0;
+            }
+            // `UIWorkshopSelectResourcePackToPublish.OnActivate` (`:128-135`)
+            // → `PopulateEntries` (`:137-151`): the publishable list (no
+            // saved state), Branding-None filter + IsCompressed sort. The
+            // back target rode in from the hub's opener.
+            FrontScreen::WorkshopPublishPacks(ref mut state) => {
+                let dir = crate::resource_pack::resource_packs_dir();
+                state.packs = match dir {
+                    Some(dir) => crate::resource_pack::ResourcePackList::publishable(&dir),
+                    None => crate::resource_pack::ResourcePackList::default(),
+                };
+                state.populate();
+                state.scroll = 0.0;
+            }
+            // `UIWorkshopSelectWorldToPublish.OnActivate` (`:125-132`) →
+            // `PopulateEntries` (`:134-149`): `Main.LoadWorlds`, drop
+            // `!IsValid`, the favourite/name/file sort — NOT the world
+            // select's Journey-first sort. The back target rode in from the
+            // hub's opener.
+            FrontScreen::WorkshopPublishWorlds(ref mut state) => {
+                let fakes = crate::env::fake_count("TR_FAKE_WORLDS");
+                let dir = save::default_world_dir().unwrap_or_default();
+                let mut worlds = ui::save_list::list_worlds(&dir, fakes);
+                worlds.retain(|w| w.valid);
+                ui::workshop_publish::sort_publish_worlds(&mut worlds);
+                state.worlds = worlds;
+                state.scroll = 0.0;
+            }
+            // `UIWorkshopWorldImport.OnActivate` (`:131-140`):
+            // `UpdateWorkshopWorldList` (`:142-153`) returns early without
+            // `SocialAPI.Workshop`, so `UpdateWorldsList` (`:155-166`)
+            // sorts an empty list — the screen is always empty live. The
+            // back target rode in from the hub's opener.
+            FrontScreen::WorkshopImportWorlds(ref mut state) => {
+                state.worlds.clear();
+                ui::workshop_publish::sort_publish_worlds(&mut state.worlds);
+                state.scroll = 0.0;
+            }
+            // `UIWorkshopHub` has no `OnActivate` override — `EnterHub`
+            // (`:40-43`) fires the empty `OnWorkshopHubMenuOpened` event
+            // (`:368-373`); no re-list. The back target rode in from the
+            // opener (null from the menu row).
+            FrontScreen::WorkshopHub(_) => {}
         }
         self.park_menu();
         self.front = Some(front);
@@ -2707,6 +2777,15 @@ impl App {
             // closes back into gameplay.
             KeyboardTail::ChestRename => {
                 crate::chest::rename_submit(self, &chest_text);
+            }
+            // `OnFinishedSettingName` (`UIWorkshopImportWorldListItem.cs:
+            // 107-114`): `SocialAPI.Workshop` is null, so the import never
+            // runs and no state change happens — the keyboard stays open,
+            // exactly like the source. The notice is the port's channel.
+            KeyboardTail::WorldImport => {
+                self.front_hint = Some(format!(
+                    "Importing \"{name}\" is not ported yet (no Steam Workshop)"
+                ));
             }
         }
     }
@@ -3944,6 +4023,7 @@ impl App {
             front_mouse_down: false,
             front_scroll: 0.0,
             front_scroll_drag: None,
+            front_scroll_drag_enabled: false,
             session_draft: None,
             vk_grid: crate::env::vk_grid(),
             settings,

@@ -38715,6 +38715,179 @@ the dark-flame/ignore-light arms, the glow/wall lifts, the visibility veto +
 byte maths incl. the f32-rounding pins, the shimmer blend, the final-colour
 chain order, and the four families' gate→final-colour pass-through).
 
+## The Workshop/ResourcePack screens (W4-d84)
+The six-screen cluster of research/18 rows 1-6 (`UIWorkshopHub`,
+`UIWorkshopSelectResourcePackToPublish`, `UIWorkshopSelectWorldToPublish`,
+`UIWorkshopWorldImport`, `UIResourcePackSelectionMenu`,
+`UIResourcePackInfoMenu`), landed as `FrontScreen` variants over the shared
+`ui/workshop_kit.rs`. Range split: docs/research/W4-UI-SCREENS-RANGES.md.
+Deviations (cluster-wide):
+- **No Steam** (`SocialAPI.Workshop == null`): the port's menuMode 11 row 4
+  is `UI.ResourcePacks` (`Main.cs:48949-48957`'s else branch), opening the
+  selection menu directly with a null back target. The Workshop hub and the
+  three workshop list screens are reachable through `TR_UI` presets and the
+  hub's own buttons (the hub's `UI.Workshop` menu row, `Main.cs:48937-48948`,
+  needs Steam). `UIWorkshopWorldImport`'s subscribed-world list is always
+  empty (`UpdateWorkshopWorldList`, `UIWorkshopWorldImport.cs:142-153`,
+  early-returns on the null Workshop).
+- **No zip packs** (`resource_pack.rs`'s module header): directory packs
+  only; `IsCompressed` stays false, so the publish screen's
+  `TryMovingToRejectionMenuIfNeeded` zip rejection
+  (`UIWorkshopPublishResourcePackListItem.cs:133-147`) is unreachable.
+- **The pack icon is the atlas fallback** (`Images/UI/DefaultResourcePackIcon`):
+  `ResourcePack.CreateIcon` (`IO/ResourcePack.cs:103-111`) decodes the pack's
+  own `icon.png`; the port does not decode per-pack images.
+- **The publish tail is a notice**: `WorkshopPublishInfoStateForResourcePack`/
+  `ForWorld` (the Steam publish form) are out of the d84 range; a Publish
+  click sets the port's `front_hint` notice instead (the same convention the
+  world-select rejection uses).
+- **Gamepad snap points** (every screen's `SetupGamepadPoints`) are out of
+  scope (research/18 §J.3).
+- **The word wrap** is the port's greedy `wrap_text_with` (the bestiary
+  twin), not `ChatManager.LayoutSnippets`' snippet walk; plain pack
+  descriptions wrap identically.
+### UIWorkshopHub (row 1)
+`ui/workshop_hub.rs` + `FrontScreen::WorkshopHub`. The 600-wide root at
+Top 250 (`UIWorkshopHub.cs:48-57`), the 260 px panel, the 154 px 2x2
+`MakeFancyButton` grid (`(-3, 0.5)` panels, `:252-253`), the separator
+(`Utils.DrawPanel` edge-2 strip at the creation screens' colour), the
+CategoryPanelHighlight description panel (LightGray*0.7, the wrapped
+UIText at Top 5 / padding 20/6) and the Back/Logs fat pair (the hub's
+`FadedMouseOut` bg is `(63,82,151)*0.8`, `:311` — not the lists' 0.7).
+- **No-Steam deviation**: the menuMode 11 row opens the hub only when
+  `SocialAPI.Workshop != null` (`Main.cs:48937-48947`); the port keeps the
+  ResourcePacks else branch (row 5's entry) and reaches the hub through
+  `TR_UI=wshub` (the screenshot entry, null back target like the ctor).
+- The four openers (`Click_Open*`, `:128-174`) play 10 and park the live
+  hub as the child screen's back target (`FlowClick::HubOpen*`); Use
+  Packs routes through `Main.OpenResourcePacksMenu(this)` — the
+  pack-selection screen re-lists from the config on entry.
+- The hover description (`ShowOptionDescription`, `:186-209`) swaps the
+  wrapped text per hovered button; leaving restores
+  `Workshop.HubDescriptionDefault` (`:211-214`).
+- Logs (`GoLogsClick`, `:295-300`) opens `UIReportsPage` — d85 row 10,
+  out of range: the click plays 10 and sets the `front_hint` notice.
+- Back (`HandleBackButtonUsage`, `:329-339`): the null target (the menu
+  row) closes to `menuMode = 0`, a parked target returns verbatim;
+  sound 11.
+### UIWorkshopSelectResourcePackToPublish (row 2)
+`ui/workshop_publish.rs` + `FrontScreen::WorkshopPublishPacks`. The shared
+list chrome (`workshop_root`/`workshop_panel`/`workshop_title`/
+`workshop_back`/`workshop_scrollbar`, `UIWorkshopSelectResourcePackToPublish.cs:40-82`)
+carries the `Recalculate` scrollbar-attach branch (`:84-102`) as the
+layout's `attached` flag — the list width drops 25 while attached.
+`PopulateEntries` (`:137-151`) re-lists on `OnActivate`:
+`ResourcePackList::publishable` (no saved state) + the `Branding == None`
+filter (always true without Steam) + the stable `orderby IsCompressed`
+(all false — the `AllPacks` name/version/file order survives).
+- The rows are the 82 px `UIWorkshopPublishResourcePackListItem`
+  (`:41-215`): the 72x72 icon block (`Left 4, VAlign 0.5`, the 66x66
+  `ScaleToFit` inner + the `Achievement_Borders` frame), the Publish
+  `UIIconTextButton` (`HAlign 1, VAlign 1`), the author/version plates
+  (`num2 = (innerW - 22 - iconW - buttonW)/2`, bottom-aligned at the
+  button height, the centred labels at `+3` y).
+- The grey `!canPublish` row colours (`:109-110`, `:120-121`) and the zip
+  rejection menu (`:133-147`) are ported but unreachable (no zips) —
+  pinned by tests.
+- The Publish tail is the `front_hint` notice (cluster deviation): the
+  button plays 12 itself (`UIIconTextButton.LeftMouseDown`, `:102-106`);
+  the icon/body double-click publishes silently (`:56/:82`'s
+  `OnLeftDoubleClick`, no cue in the handler).
+- Back (`HandleBackButtonUsage`, `:109-113`) plays 11 and restores the
+  parked hub verbatim (`FlowClick::WorkshopListBack`).
+### UIWorkshopSelectWorldToPublish (row 3)
+`ui/workshop_publish.rs` + `FrontScreen::WorkshopPublishWorlds`. The same
+shared chrome as row 2 (`UIWorkshopSelectWorldToPublish.cs:37-99` — the
+identical `OnInitialize`/`Recalculate`). `PopulateEntries` (`:134-149`)
+re-lists on `OnActivate`: `Main.LoadWorlds`, `RemoveAll(!IsValid)`,
+`orderby IsFavorite descending, Name, GetFileName()` — **not** the world
+select's Journey-first sort (`sort_publish_worlds`, pinned by tests).
+- The rows are the 82 px `UIWorkshopPublishWorldListItem` (`:25-140`):
+  the 60x58 world icon (`GetIconElement` — the fixed `IconCrimson` sheet,
+  the world-select deviation: no evil/hardmode data, no cycling), the
+  name at `(icon right + 6, inner.Y + 3)`, the difficulty/size plates
+  (`num2` split like the pack twin; the size plate grows 40 px
+  off-English, `:128-131`) and the same `UIIconTextButton` Publish.
+- The world twin has no grey arm (`:61-71`) — every row is valid after
+  the RemoveAll, so the Gray name branch (`:113`) is unreachable. The
+  name crop (`GetWorldName(allowCropping: true)`, 494 px) is a no-op for
+  the port's short names.
+- The Publish tail is the `front_hint` notice (cluster deviation —
+  `WorkshopPublishInfoStateForWorld`, `:77`, is out of range); the button
+  plays 12 itself, the icon/body double-click is silent.
+- Back (`HandleBackButtonUsage`, `:106-110`) plays 11 and restores the
+  parked hub (`FlowClick::WorkshopListBack`, the row-2 table arm).
+### UIWorkshopWorldImport (row 4)
+`ui/workshop_publish.rs` + `FrontScreen::WorkshopImportWorlds`. The same
+shared chrome (`UIWorkshopWorldImport.cs:43-105`), title
+`UI.WorkshopImportWorld`. `OnActivate` (`:131-140`) runs
+`UpdateWorkshopWorldList` (`:142-153`), which returns early when
+`SocialAPI.Workshop` is null — **the list is always empty live**; the
+96 px import rows are ported for the record, exercised by tests only.
+- The rows are `UIWorkshopImportWorldListItem` (`:30-198`): the 60x58
+  world icon at the inner TOP (no VAlign, unlike the publish twin), the
+  play `UIImageButton` (`VAlign 1, Left 4`, White at 1.0 hovered / 0.4
+  idle) with the hover "Import" label (`PlayMouseOver`, `:86-89`), the
+  Extra_243 workshop badge top-right, the stretched divider, and three
+  3-slice plates (difficulty 100 / size 150 +40 off-English / created
+  the rest) — the import `DrawPanel` (`:144-149`) is the horizontal
+  8/8/8 strip, NOT the publish rows' 10-slice. Plate labels sit at a
+  flat `+3` y (`:177/:189/:196`).
+- Import (`ImportButtonClick_ImportWorldToLocalFiles`, `:96-105`): the
+  IsValid gate + sound 10, then the rename keyboard
+  (`Workshop.EnterNewNameForImportedWorld`, initial the world name,
+  `allowEmpty: true`, 27-char cap) over the parked import screen
+  (`KeyboardTail::WorldImport`). Submit runs `OnFinishedSettingName`
+  (`:107-114`) — null Workshop means no import and **no state change**
+  (the keyboard stays open, like the source); the port surfaces the
+  notice on its `front_hint` channel. Cancel (`GoBackHere`, `:116-121`)
+  plays 11 and restores the import screen.
+- Back (`HandleBackButtonUsage`, `:112-116`) plays 11 and restores the
+  parked hub (`FlowClick::WorkshopListBack`).
+### UIResourcePackInfoMenu (row 6)
+`ui/resource_pack_info.rs` + `FrontScreen::ResourcePackInfo`. The payload
+carries `_pack`, the description scrollbar's `ViewPosition` and the
+`_resourceMenu` back target (the exact parent selection screen — the C#
+`SetState(_resourceMenu)` restores the live instance, so the selection
+menu's unapplied pack edits survive the info round-trip; the port parks the
+parent `FrontScreen` in the payload, the `KeyboardSession.back` pattern).
+`GoBackClick` (`UIResourcePackInfoMenu.cs:170-173`) plays NO sound — the
+flow's cue arm skips `PackInfoBack` (only the hover `FadedMouseOver` plays
+12). The `Recalculate` scrollbar-attach branch (`:150-168`) is ported as the
+layout's `attached` flag; the description height re-measures after the
+25 px width flip (the C# converges in one `Recalculate` pass).
+### UIResourcePackSelectionMenu (row 5)
+`ui/resource_packs.rs` + `FrontScreen::ResourcePackSelection`. The menuMode 11
+row 4 hint ("Resource packs are not ported yet") becomes `Action::ResourcePacks`
+(`Main.cs:48949-48957`'s no-Steam else branch → `OpenResourcePacksMenu(null)`);
+`TR_UI=packs` presets the screen. The payload carries `_packsList` (the flat
+store the two views index into), the two list scrolls and the
+`_uiStateToGoBackTo` target. `enter_front` re-lists from the config
+(`AssetInitializer.CreateResourcePackList` → `ResourcePackList::from_config`)
+and runs `PopulatePackList`'s priority cleanup.
+- **`ApplyListChanges` stores the enabled-only list** (`:272-275` →
+  `AssetSourceController.UseResourcePacks`, `AssetSourceController.cs:38-63`):
+  the C# builds `new ResourcePackList(_enabledPacksList.Select(...))` — only
+  the enabled packs become the active list, so `Main.SaveSettings`'
+  `SaveResourcePacks` (`Main.cs:6528-6536`) writes only those. The port's Back
+  tail mirrors it: `Settings.resource_packs = enabled_only.to_json()` + save.
+  Disabled packs are re-discovered from the directory on the next open
+  (`CreatePacksFromDirectories`), exactly as the vanilla re-lists them.
+- **The offset arrows' dead-end gate** (`CreateOffsetButton`, `:131`): an
+  up-arrow on `SortingOrder == 0` (or a down-arrow on the last) plays sound 12
+  without moving — the gate is click-side, the draw is identical.
+- **The hover `MouseText`** (`DisplayMouseTextIfHovered`, `:528-535`) is
+  ported as `hover_text_key` (the `OnUpdate` handlers' keys, including the
+  swapped up/down wording); the cursor-following tooltip draw is the
+  `front_hint` channel's documented stand-in.
+- **`ResetAllContentBasedRenderTargets`** (`:162/:204`) has no port seam —
+  dropped with the content-pipeline deviation.
+- The two lists' scrollbars are always children (`:379-386`/`:412-418` — no
+  `Recalculate` detach branch on this screen, unlike the info menu); the
+  wheel/press/drag route per-list through `front_pack_wheel`/
+  `front_pack_scrollbar_press`/`front_pack_scrollbar_drag`, the drag latch
+  recording its list (`front_scroll_drag_enabled`).
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the

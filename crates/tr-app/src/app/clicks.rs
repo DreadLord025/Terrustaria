@@ -2791,6 +2791,15 @@ impl App {
                 // The menu row's `SoundEngine.PlaySound(10)` already fired in
                 // `Menu::click`.
             }
+            // menuMode 11 row 4 (`Main.cs:48949-48957`): `menuMode = 888` +
+            // `OpenResourcePacksMenu(null)` — the pack-selection screen with
+            // a null back target (Back returns to menuMode 0). The menu
+            // row's `SoundEngine.PlaySound(10)` already fired in `Menu::click`.
+            Action::ResourcePacks => {
+                self.enter_front(FrontScreen::ResourcePackSelection(Box::new(
+                    ui::resource_packs::PackSelectionState::new(),
+                )));
+            }
             Action::Join { addr, password } => match net::Client::connect(&addr) {
                 Ok(client) => {
                     self.net = NetRole::Client(client);
