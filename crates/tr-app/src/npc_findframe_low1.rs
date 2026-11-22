@@ -49,8 +49,9 @@
 //! * the disabled profile-texture block (`NPC.cs:68637`, `if (false &&
 //!   …)`) — dead in the C# itself.
 
-// The wiring is a later round (the kinds are not in `NpcKind` yet) — the
-// `npc_findframe_a.rs`/`npc_findframe_mid2.rs` precedent.
+// W4-g6 wired the `cs_id` hook at the `find_frame` head (stream-inert
+// until the roster wave adds the kinds) — the allow stays for the
+// not-yet-rostered arms (the `npc_findframe_mid1.rs` precedent).
 #![allow(dead_code)]
 
 /// The slice-1 kinds, keyed by their VANILLA `NPC.type`
@@ -137,6 +138,31 @@ impl FindFrameLow1Kind {
             Self::Crab => 8,
         }
     }
+}
+
+/// W4-g6 wiring — the `cs_id` → [`FindFrameLow1Kind`] mapping the
+/// `npc.rs::find_frame` hook reads (the `npc_findframe_mid1.rs`
+/// `find_frame_kind_for_cs_id` precedent). Returns `None` for every id
+/// outside this wave's set — so the hook is inert for all current kinds
+/// (none has a `cs_id` in the set; the bestiary net ids that share these
+/// values ride different tables — `npc/data.rs`'s `net_id` rows) and
+/// fires only once the roster wave adds them.
+pub fn find_frame_kind_for_cs_id(cs_id: u16) -> Option<FindFrameLow1Kind> {
+    Some(match cs_id {
+        37 => FindFrameLow1Kind::OldMan,
+        43 => FindFrameLow1Kind::ManEater,
+        46 => FindFrameLow1Kind::Bunny,
+        47 => FindFrameLow1Kind::CorruptBunny,
+        48 => FindFrameLow1Kind::Harpy,
+        56 => FindFrameLow1Kind::Snatcher,
+        57 => FindFrameLow1Kind::CorruptGoldfish,
+        61 => FindFrameLow1Kind::Vulture,
+        62 => FindFrameLow1Kind::Demon,
+        63 => FindFrameLow1Kind::BlueJellyfish,
+        64 => FindFrameLow1Kind::PinkJellyfish,
+        67 => FindFrameLow1Kind::Crab,
+        _ => return None,
+    })
 }
 
 /// The `NPC` fields `FindFrame` reads/writes for these arms:

@@ -59,8 +59,9 @@
 //! * the cursed-hammer group's 83/179 siblings (`:74622-74624`) — the
 //!   Enchanted Sword 84 shares the spin/bonk arm (179 rides d47).
 
-// The wiring is a later round (the kinds are not in `NpcKind` yet) —
-// the `npc_findframe_a.rs`/`npc_findframe_b.rs` precedent.
+// W4-g6 wired the `cs_id` hook at the `find_frame` head (stream-inert
+// until the roster wave adds the kinds) — the allow stays for the
+// not-yet-rostered arms (the `npc_findframe_low1.rs` precedent).
 #![allow(dead_code)]
 
 /// The 15 extra-wave-2 kinds, keyed by their VANILLA `NPC.type`
@@ -184,6 +185,34 @@ impl FindFrameExtra2Kind {
             Self::FaceMonster => 16,
         }
     }
+}
+
+/// W4-g6 wiring — the `cs_id` → [`FindFrameExtra2Kind`] mapping the
+/// `npc.rs::find_frame` hook reads (the `npc_findframe_low1.rs`
+/// `find_frame_kind_for_cs_id` precedent). Returns `None` for every id
+/// outside this wave's set — so the hook is inert for all current kinds
+/// (none has a `cs_id` in the set; verified over the `npc/data.rs` hand
+/// rows AND the bestiary `net_id` fallback) and fires only once the
+/// roster wave adds them.
+pub fn find_frame_kind_for_cs_id(cs_id: u16) -> Option<FindFrameExtra2Kind> {
+    Some(match cs_id {
+        84 => FindFrameExtra2Kind::EnchantedSword,
+        93 => FindFrameExtra2Kind::GiantBat,
+        94 => FindFrameExtra2Kind::Corruptor,
+        101 => FindFrameExtra2Kind::Clinger,
+        102 => FindFrameExtra2Kind::AnglerFish,
+        103 => FindFrameExtra2Kind::GreenJellyfish,
+        116 => FindFrameExtra2Kind::TheHungryII,
+        120 => FindFrameExtra2Kind::ChaosElemental,
+        121 => FindFrameExtra2Kind::Slimer,
+        137 => FindFrameExtra2Kind::IlluminantBat,
+        141 => FindFrameExtra2Kind::ToxicSludge,
+        142 => FindFrameExtra2Kind::SantaClaus,
+        148 => FindFrameExtra2Kind::Penguin,
+        149 => FindFrameExtra2Kind::PenguinBlack,
+        181 => FindFrameExtra2Kind::FaceMonster,
+        _ => return None,
+    })
 }
 
 /// The `NPC` fields `FindFrame` reads/writes for these arms:

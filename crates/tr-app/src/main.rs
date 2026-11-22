@@ -269,6 +269,13 @@ mod npc_findframe_extra7h;
 mod npc_findframe_extra7i;
 mod npc_findframe_extra7j;
 mod npc_findframe_extra7k;
+mod npc_findframe_low1;
+// W4-g6 wiring lane 1 — the FIRST-half unwired findframe waves'
+// modules (the C#-slot order: extra2 84-181, mid2 166-180, extra3
+// 182-219; the SECOND half 233+ rides W4-g7).
+mod npc_findframe_extra2;
+mod npc_findframe_mid2;
+mod npc_findframe_extra3;
 mod persist;
 mod grapple;
 mod gore_seam;

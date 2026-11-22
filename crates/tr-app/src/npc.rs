@@ -10747,6 +10747,114 @@ impl Npc {
         self.rotation = s.rotation;
     }
 
+    /// W4-g6 low-1 — the bridge into `npc_findframe_low1`'s pure
+    /// machines: copy the four `FindFrame` fields out, run one tick,
+    /// copy them back (the `find_frame_wave_a` precedent). `direction`
+    /// is `facing` (the C#'s `Entity.direction`); `wet`/`ai` ride the
+    /// NPC's own fields (the CorruptGoldfish's wet/dry bands read `wet`,
+    /// the jellyfish pair's attack gate reads `ai[1]`).
+    fn find_frame_wave_low1(&mut self, kind: crate::npc_findframe_low1::FindFrameLow1Kind) {
+        let mut s = crate::npc_findframe_low1::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+        };
+        let i = crate::npc_findframe_low1::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            wet: self.wet,
+            ai: self.ai,
+        };
+        crate::npc_findframe_low1::find_frame_low1(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+    }
+
+    /// W4-g6 extra-2 — the bridge into `npc_findframe_extra2`'s pure
+    /// machines: the four `FindFrame` fields PLUS `localAI[0]` copy both
+    /// ways (the Slimer's one-shot init latch writes it,
+    /// `NPC.cs:74014-74018`; the penguin pair reads it as the colour
+    /// bank — the e13 extra-1 bridge precedent). `wet` rides the fish
+    /// group's swim/flop split (`NPC.cs:74191`).
+    fn find_frame_wave_extra2(&mut self, kind: crate::npc_findframe_extra2::FindFrameExtra2Kind) {
+        let mut s = crate::npc_findframe_extra2::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+            local_ai0: self.local_ai[0],
+        };
+        let i = crate::npc_findframe_extra2::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            ai: self.ai,
+            local_ai0: self.local_ai[0],
+            wet: self.wet,
+        };
+        crate::npc_findframe_extra2::find_frame_extra2(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+        self.local_ai[0] = s.local_ai0;
+    }
+
+    /// W4-g6 mid-2 — the bridge into `npc_findframe_mid2`'s pure
+    /// machines: the four fields both ways; `localAI[0]` is INPUT-only
+    /// here (the CorruptPenguin's colour bank reads it,
+    /// `NPC.cs:76398-76409` — no slice-2 arm writes it, so the module's
+    /// `FrameState` does not carry it).
+    fn find_frame_wave_mid2(&mut self, kind: crate::npc_findframe_mid2::FindFrameMid2Kind) {
+        let mut s = crate::npc_findframe_mid2::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+        };
+        let i = crate::npc_findframe_mid2::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            ai: self.ai,
+            local_ai0: self.local_ai[0],
+        };
+        crate::npc_findframe_mid2::find_frame_mid2(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+    }
+
+    /// W4-g6 extra-3 — the bridge into `npc_findframe_extra3`'s pure
+    /// machines: the four fields both ways; `aiAction` rides the
+    /// SpikedJungleSlime's `num2` motion class (`NPC.cs:66696-66704` —
+    /// the King Slime's wind-up writes the NPC field).
+    fn find_frame_wave_extra3(&mut self, kind: crate::npc_findframe_extra3::FindFrameExtra3Kind) {
+        let mut s = crate::npc_findframe_extra3::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+        };
+        let i = crate::npc_findframe_extra3::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            ai: self.ai,
+            ai_action: self.ai_action,
+        };
+        crate::npc_findframe_extra3::find_frame_extra3(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+    }
+
     pub(crate) fn find_frame(&mut self) {
         // W4-d44 wire (d48 wave C) — the `cs_id`-keyed hook into the
         // wave-C pure machines (`npc_findframe_c.rs`) via
@@ -10908,6 +11016,54 @@ impl Npc {
             crate::npc_findframe_extra1::find_frame_kind_for_cs_id(self.kind.cs_id())
         {
             self.find_frame_wave_extra1(kind);
+            return;
+        }
+        // W4-g6 low-1 — the `cs_id`-keyed hook into the low-band wave's
+        // pure machines (`npc_findframe_low1.rs`, the FIRST-12 missing
+        // set 37/43/46/47/48/56/57/61/62/63/64/67, the W4-d44 module).
+        // NO current kind's `cs_id` lands in the set (the roster wave
+        // adds them), so this is stream-inert today; the arms themselves
+        // draw no RNG. The W4-d46 mid-1 hook precedent.
+        if let Some(kind) =
+            crate::npc_findframe_low1::find_frame_kind_for_cs_id(self.kind.cs_id())
+        {
+            self.find_frame_wave_low1(kind);
+            return;
+        }
+        // W4-g6 extra-2 — the hook into `npc_findframe_extra2.rs` (the
+        // W4-e14 module, the SECOND-15 remaining set 84/93/94/101/102/
+        // 103/116/120/121/137/141/142/148/149/181). Stream-inert: no
+        // current kind's `cs_id` lands in the set (verified over the
+        // `npc/data.rs` hand rows AND the bestiary `net_id` fallback);
+        // the arms draw no RNG (the town pose zones are the documented
+        // skip, the Slimer's dust is type 23's).
+        if let Some(kind) =
+            crate::npc_findframe_extra2::find_frame_kind_for_cs_id(self.kind.cs_id())
+        {
+            self.find_frame_wave_extra2(kind);
+            return;
+        }
+        // W4-g6 mid-2 — the hook into `npc_findframe_mid2.rs` (the
+        // W4-d47 module, the SECOND-12 mid-band set 166/168/169/170/171/
+        // 172/173/175/176/178/179/180). Stream-inert on the same proof;
+        // the arms draw no RNG.
+        if let Some(kind) =
+            crate::npc_findframe_mid2::find_frame_kind_for_cs_id(self.kind.cs_id())
+        {
+            self.find_frame_wave_mid2(kind);
+            return;
+        }
+        // W4-g6 extra-3 — the hook into `npc_findframe_extra3.rs` (the
+        // W4-f26 module, the first-15 UNCLAIMED set 182/185/195/196/198/
+        // 199/201/202/203/204/205/209/217/218/219). The mapper speaks
+        // vanilla `i16` (the `find_frame_kind_high2` precedent) — the
+        // `cs_id` cast is lossless (every id ≤ 697). Stream-inert on the
+        // same proof; the arms draw no RNG (the Cyborg's town pose zones
+        // are the documented skip).
+        if let Some(kind) =
+            crate::npc_findframe_extra3::find_frame_kind_extra3(self.kind.cs_id() as i16)
+        {
+            self.find_frame_wave_extra3(kind);
             return;
         }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
@@ -42896,6 +43052,307 @@ mod b1_skeletron_tests {
     }
 }
 
+
+#[cfg(test)]
+mod w4_g6_low1_tests {
+    use super::tests::{bare, ALL_KINDS};
+    use super::*;
+
+    // ---- W4-g6 low-1 — the `find_frame` hook into `npc_findframe_low1` ----
+    // The pure machines carry their own 12 pinned witnesses in
+    // `npc_findframe_low1.rs`; these pin the NPC-side seam: the hook is
+    // inert for every current kind, and the bridge copies the four
+    // fields both ways. WRITTEN NOT RUN (code-only mode — no compiler
+    // invoked on this branch).
+
+    /// The `cs_id` hook fires for NO current kind — the inertness proof
+    /// (the roster wave has not added the 12 low-1 kinds; the bestiary's
+    /// net ids that share the values ride different tables — the
+    /// ArmsDealer's 37, the QueenBee's 43 and the WallOfFlesh's 46 are
+    /// `net_id` rows, not `cs_id`s).
+    #[test]
+    fn w4_g6_the_low1_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                crate::npc_findframe_low1::find_frame_kind_for_cs_id(kind.cs_id()),
+                None,
+                "{kind:?} cs_id {} must not ride the low-1 hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The bridge copies row/counter/sprite_dir/rotation both ways and
+    /// feeds vx/vy/facing/wet/ai through — pinned on the CorruptGoldfish
+    /// (the fish wet/dry bands, `NPC.cs:74181-74226`), the Harpy (the
+    /// floater group's velocity-sign flip + tilt, `:74823-74885`) and the
+    /// BlueJellyfish `ai[1]` attack gate (`:73921-73937`).
+    #[test]
+    fn w4_g6_the_low1_bridge_copies_the_four_fields_both_ways() {
+        let mut n = bare(NpcKind::Piranha);
+        // The CorruptGoldfish dry: the <6 band pins row 4, the counter
+        // ticks once from the preset 2 → 3; the flip is UNCONDITIONAL
+        // (the fish group writes spriteDirection = direction even in
+        // the air, `:74189`).
+        n.frame = 0;
+        n.frame_counter = 2.0;
+        n.sprite_dir = 1;
+        n.facing = -1;
+        n.vx = 0.0;
+        n.vy = 1.0;
+        n.wet = false;
+        n.find_frame_wave_low1(crate::npc_findframe_low1::FindFrameLow1Kind::CorruptGoldfish);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (4, 3.0, -1));
+        // Wet: the <6 band pins row 0, the counter ticks 3 → 4.
+        n.wet = true;
+        n.find_frame_wave_low1(crate::npc_findframe_low1::FindFrameLow1Kind::CorruptGoldfish);
+        assert_eq!((n.frame, n.frame_counter), (0, 4.0));
+        // The Harpy flips by the velocity sign (not facing), tilts
+        // vx * 0.1 and steps every 5 ticks over the full 6 rows.
+        n.frame = 5;
+        n.frame_counter = 4.0;
+        n.sprite_dir = -1;
+        n.facing = -1;
+        n.vx = 2.0;
+        n.rotation = 0.0;
+        n.find_frame_wave_low1(crate::npc_findframe_low1::FindFrameLow1Kind::Harpy);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0), "row 5 + step wraps");
+        assert_eq!(n.sprite_dir, 1, "the velocity-sign flip");
+        assert_eq!(n.rotation, 0.2, "the vx * 0.1 tilt");
+        // The jellyfish attack gate rides ai[1]: the >4 counter steps
+        // the row and BOTH clamps lift a low row into the 4..6 band.
+        n.frame = 1;
+        n.frame_counter = 4.0;
+        n.ai = [0.0; 4];
+        n.ai[1] = 1.0;
+        n.find_frame_wave_low1(crate::npc_findframe_low1::FindFrameLow1Kind::BlueJellyfish);
+        assert_eq!((n.frame, n.frame_counter), (4, 0.0), "the <4 clamp lifts");
+    }
+}
+
+#[cfg(test)]
+mod w4_g6_extra2_tests {
+    use super::tests::{bare, ALL_KINDS};
+    use super::*;
+
+    // ---- W4-g6 extra-2 — the `find_frame` hook into `npc_findframe_extra2` ----
+    // The pure machines carry their own 15 pinned witnesses in
+    // `npc_findframe_extra2.rs`; these pin the NPC-side seam: the hook is
+    // inert for every current kind, and the bridge copies the FIVE
+    // fields both ways (the four + `localAI[0]`). WRITTEN NOT RUN
+    // (code-only mode — no compiler invoked on this branch).
+
+    /// The `cs_id` hook fires for NO current kind — the inertness proof
+    /// (the roster wave has not added the 15 extra-2 kinds; verified
+    /// statically over the `npc/data.rs` hand rows AND the bestiary
+    /// `net_id` fallback — no value in 84..181's set appears).
+    #[test]
+    fn w4_g6_the_extra2_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                crate::npc_findframe_extra2::find_frame_kind_for_cs_id(kind.cs_id()),
+                None,
+                "{kind:?} cs_id {} must not ride the extra-2 hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The bridge copies row/counter/sprite_dir/rotation AND local_ai[0]
+    /// both ways — pinned on the Slimer's one-shot init latch
+    /// (`NPC.cs:74014-74018` writes localAI[0] = 1 + row 2), the
+    /// Penguin's colour bank (localAI[0] = 3 → the +6 bank, read-only —
+    /// the copy-back keeps it) and the AnglerFish's wet band + the
+    /// unconditional flip (`:74189`).
+    #[test]
+    fn w4_g6_the_extra2_bridge_copies_the_five_fields_both_ways() {
+        let mut n = bare(NpcKind::Piranha);
+        // The Slimer: localAI[0] 0 → the init latch fires (row 2,
+        // localAI[0] 1), the vx-sign flip + the vx * 0.1 tilt.
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.sprite_dir = -1;
+        n.rotation = 0.0;
+        n.local_ai = [0.0; 4];
+        n.vx = 2.0;
+        n.vy = 0.0;
+        n.find_frame_wave_extra2(crate::npc_findframe_extra2::FindFrameExtra2Kind::Slimer);
+        assert_eq!((n.frame, n.frame_counter), (2, 1.0));
+        assert_eq!((n.sprite_dir, n.rotation), (1, 0.2));
+        assert_eq!(n.local_ai[0], 1.0, "the init latch copies back");
+        // The second tick: the latch is spent (localAI[0] 1), the row
+        // holds 2 and the counter ticks on.
+        n.find_frame_wave_extra2(crate::npc_findframe_extra2::FindFrameExtra2Kind::Slimer);
+        assert_eq!((n.frame, n.frame_counter), (2, 2.0));
+        assert_eq!(n.local_ai[0], 1.0);
+        // The Penguin: localAI[0] = 3 → the +6 colour bank; the idle
+        // snaps to the bank's row 0 (= row 6) and the bank copies back
+        // unchanged (no arm writes it).
+        n.local_ai[0] = 3.0;
+        n.vx = 0.0;
+        n.facing = -1;
+        n.find_frame_wave_extra2(crate::npc_findframe_extra2::FindFrameExtra2Kind::Penguin);
+        assert_eq!((n.frame, n.frame_counter), (6, 0.0));
+        assert_eq!(n.sprite_dir, -1);
+        assert_eq!(n.local_ai[0], 3.0, "the read-only bank round-trips");
+        // The AnglerFish wet: the <6 band pins row 0, the counter ticks
+        // 2 → 3, the flip is UNCONDITIONAL (`:74189`).
+        n.frame_counter = 2.0;
+        n.wet = true;
+        n.find_frame_wave_extra2(crate::npc_findframe_extra2::FindFrameExtra2Kind::AnglerFish);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (0, 3.0, -1));
+    }
+}
+
+#[cfg(test)]
+mod w4_g6_mid2_tests {
+    use super::tests::{bare, ALL_KINDS};
+    use super::*;
+
+    // ---- W4-g6 mid-2 — the `find_frame` hook into `npc_findframe_mid2` ----
+    // The pure machines carry their own 13 pinned witnesses in
+    // `npc_findframe_mid2.rs`; these pin the NPC-side seam. WRITTEN NOT
+    // RUN (code-only mode — no compiler invoked on this branch).
+
+    /// The `cs_id` hook fires for NO current kind — the inertness proof
+    /// (verified statically over the hand rows AND the bestiary
+    /// `net_id` fallback — no value in the 166..180 set appears).
+    #[test]
+    fn w4_g6_the_mid2_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                crate::npc_findframe_mid2::find_frame_kind_for_cs_id(kind.cs_id()),
+                None,
+                "{kind:?} cs_id {} must not ride the mid-2 hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The bridge copies the four fields both ways and feeds
+    /// local_ai[0]/ai through as INPUTS — pinned on the CorruptPenguin's
+    /// colour bank (`NPC.cs:76398-76409`), the SwampThing's +2 idle
+    /// counter (`:75629-75642`), the IceElemental's 8-tick strip with NO
+    /// sprite write (`:74044-74058`) and the RuneWizard's cast/air pose
+    /// rows (`:77041-77049`).
+    #[test]
+    fn w4_g6_the_mid2_bridge_copies_the_four_fields_and_feeds_the_bank() {
+        let mut n = bare(NpcKind::Piranha);
+        // The CorruptPenguin: localAI[0] = 2 → the +3 bank; the idle
+        // snaps to row 3, the grounded flip writes facing.
+        n.frame = 9;
+        n.frame_counter = 4.0;
+        n.sprite_dir = 1;
+        n.facing = -1;
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.local_ai = [2.0, 0.0, 0.0, 0.0];
+        n.find_frame_wave_mid2(crate::npc_findframe_mid2::FindFrameMid2Kind::CorruptPenguin);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (3, 0.0, -1));
+        // The air pins row 2 + bank = 5 (both vy signs, `:76446-76455`).
+        n.vy = 1.0;
+        n.find_frame_wave_mid2(crate::npc_findframe_mid2::FindFrameMid2Kind::CorruptPenguin);
+        assert_eq!((n.frame, n.frame_counter), (5, 0.0));
+        // The SwampThing idle: the +2 counter steps at >7 — preset 6 →
+        // 8 steps row 0 → 1 and zeroes.
+        n.vy = 0.0;
+        n.frame = 0;
+        n.frame_counter = 6.0;
+        n.find_frame_wave_mid2(crate::npc_findframe_mid2::FindFrameMid2Kind::SwampThing);
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0));
+        // The IceElemental: the 8-tick strip, NO spriteDirection write
+        // (169 is in neither flip list) — the preset -1 stands.
+        n.frame = 0;
+        n.frame_counter = 7.0;
+        n.sprite_dir = -1;
+        n.find_frame_wave_mid2(crate::npc_findframe_mid2::FindFrameMid2Kind::IceElemental);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (1, 0.0, -1));
+        // The RuneWizard: ai[1] > 0 casts on row 1; the air wins (row 2).
+        n.ai = [0.0, 1.0, 0.0, 0.0];
+        n.find_frame_wave_mid2(crate::npc_findframe_mid2::FindFrameMid2Kind::RuneWizard);
+        assert_eq!(n.frame, 1, "the cast pose");
+        n.vy = -1.0;
+        n.find_frame_wave_mid2(crate::npc_findframe_mid2::FindFrameMid2Kind::RuneWizard);
+        assert_eq!(n.frame, 2, "the air gate wins over the cast");
+    }
+}
+
+#[cfg(test)]
+mod w4_g6_extra3_tests {
+    use super::tests::{bare, ALL_KINDS};
+    use super::*;
+
+    // ---- W4-g6 extra-3 — the `find_frame` hook into `npc_findframe_extra3` ----
+    // The pure machines carry their own 13 pinned witnesses in
+    // `npc_findframe_extra3.rs`; these pin the NPC-side seam (incl. the
+    // wave-B fighter delegate through the bridge). WRITTEN NOT RUN
+    // (code-only mode — no compiler invoked on this branch).
+
+    /// The `cs_id` hook fires for NO current kind — the inertness proof
+    /// (verified statically over the hand rows AND the bestiary
+    /// `net_id` fallback — no value in the 182..219 set appears).
+    #[test]
+    fn w4_g6_the_extra3_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                crate::npc_findframe_extra3::find_frame_kind_extra3(kind.cs_id() as i16),
+                None,
+                "{kind:?} cs_id {} must not ride the extra-3 hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The bridge copies the four fields both ways and feeds
+    /// vx/vy/facing/ai/ai_action through — pinned on the FloatyGross
+    /// floater (`NPC.cs:74850-74883`), the SpikedJungleSlime's aiAction
+    /// motion class (`:66696-66704` + `:70828-70845`), the
+    /// HeadacheSkeleton/SnowFlinx wave-B delegate air pins
+    /// (`:69642-69650`, 201 pin-0 vs 185 row-1) and the Moth's half-tick
+    /// bands (`:74935-74957`).
+    #[test]
+    fn w4_g6_the_extra3_bridge_copies_the_four_fields_and_feeds_ai_action() {
+        let mut n = bare(NpcKind::Piranha);
+        // The FloatyGross: row 4 + the 6-tick step wraps the FULL 5-row
+        // sheet to 0; the vx-sign flip + the vx * 0.1 tilt.
+        n.frame = 4;
+        n.frame_counter = 5.0;
+        n.sprite_dir = -1;
+        n.rotation = 0.0;
+        n.vx = 2.0;
+        n.vy = 0.0;
+        n.find_frame_wave_extra3(crate::npc_findframe_extra3::FindFrameExtra3Kind::FloatyGross);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0), "row 4 + step wraps");
+        assert_eq!((n.sprite_dir, n.rotation), (1, 0.2));
+        // The SpikedJungleSlime: aiAction 1 forces num2 = 4 → the
+        // counter adds THREE (preset 5 → 8 steps the 2-row sheet).
+        n.frame = 0;
+        n.frame_counter = 5.0;
+        n.vx = 0.0;
+        n.ai_action = 1;
+        n.find_frame_wave_extra3(crate::npc_findframe_extra3::FindFrameExtra3Kind::SpikedJungleSlime);
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0), "the attack triple-add");
+        // aiAction 0 idle: the single add only (5 → 6, no step).
+        n.ai_action = 0;
+        n.frame_counter = 5.0;
+        n.find_frame_wave_extra3(crate::npc_findframe_extra3::FindFrameExtra3Kind::SpikedJungleSlime);
+        assert_eq!((n.frame, n.frame_counter), (1, 6.0));
+        // The wave-B delegate through the bridge: the HeadacheSkeleton
+        // (201, in the `:69647` pin list) pins air row 0; the SnowFlinx
+        // (185, not in the list) holds the group's row 1.
+        n.vy = 1.0;
+        n.frame = 7;
+        n.find_frame_wave_extra3(crate::npc_findframe_extra3::FindFrameExtra3Kind::HeadacheSkeleton);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0), "the 201 air pin-0");
+        n.find_frame_wave_extra3(crate::npc_findframe_extra3::FindFrameExtra3Kind::SnowFlinx);
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0), "the 185 air row-1");
+        // The Moth: the +0.5 half-tick — preset 1.5 → 2.0 lands the <4
+        // band's row 1.
+        n.frame_counter = 1.5;
+        n.find_frame_wave_extra3(crate::npc_findframe_extra3::FindFrameExtra3Kind::Moth);
+        assert_eq!((n.frame, n.frame_counter), (1, 2.0));
+    }
+}
 
 /// S1-F-13d — the Martian Madness defaults completion: the census found 15
 /// of the 17 martian kinds already ported; the two missing — the Force
