@@ -27555,6 +27555,71 @@ pattern. Deliberate deviations:
 
 Tests: 22 `s1_e_7f_*` witnesses (written, NOT run — code-only mode).
 
+## The post-debuff buff tail (S1-E-7 wave H, 2026-11-20, code-only)
+**Claimed range** (`task/W4-d74-buff-effects-wave-h`, disjoint from the landed
+waves A `:9875-10048` / B `:10049-10317` / C `:10800-11400` / D
+`:11400-12069`+pet head): `Player.cs:10318-10808` — the `UpdateBuffs` arms
+between Electrified (144, B's last) and the Trusty Cattiva keep-alive's tail
+(386) — **exactly 40 buff ids**, the tail of the debuff scan:
+- **94 Mana Sickness** (`:10318-10327`) — already ported inline
+  (`player.rs` scan arm → `potions::apply_mana_sickness_arm`); witness-only
+  here (the `DebugOptions.ManaPotionDelay` mirror stays constants-off).
+- **396 Mana Heat** (`:10328-10341`) — MISSING: `manaHeat += latestBonus *
+  buffTime/latestDuration` with the `duration == 0 → 1` guard; the
+  `TryApplyManaHeat` producer is in (`player.rs::try_apply_mana_heat`), only
+  this consumer arm was absent.
+- **The six armor-set orb-tier triples** (`:10342-10461`) — ALL MISSING (18
+  ids): Beetle Defense 95-97 (`buffTime = 5` pin, tier-or-DelBuff ladder vs
+  `beetleOrbs`, `beetleDefense` gate → `beetleBuff`), Solar Shields 170-172
+  (same ladder vs `solarShields`/`setSolar`), Beetle Might 98-100 (no time
+  pin; `meleeDamage`/`meleeSpeed += 0.1 * orbs`, `beetleOffense` gate),
+  Nebula Mana 176-178 / Life 173-175 (+`lifeRegen += 6 * level`) / Damage
+  179-181 (+0.15 * level to all four classes) via
+  `UpdateBuffs_NebulaBuffs` (`:12070-12079`: level = 1 + type − base; at
+  `buffTime == 2` with level > 1: level−−, type−−, time = 480).
+- **62 Ice Barrier** (`:10462-10485`) — PARTIAL inline (the endurance +0.25
+  half rides `player.rs`); MISSING: the `iceBarrier` flag, the 12-frame /
+  3-tick frame counter, and the above-half-life `DelBuff(j); j--`. The light
+  RGB is already in `player_lights.rs` (witness there).
+- **The 19 summon keep-alives** 49/83/64/125/126/133/134/135/214/139/140/
+  182/213/216/355/385/393/394/386 (`:10486-10808`) — already ported
+  (`player.rs::SUMMON_BUFF_ARMS` + `run_baby_bird_arm`); witness-only census
+  here, no second effect path.
+Shape: a PURE accumulator module `buff_effects_tail.rs`
+(`apply_tail_effect_arm` → `TailEffects`), the wave-B/C/D pattern — wiring
+rides the waves' merge step. RNG census: the block draws NO `Main.rand` (the
+orb ladders, nebula step and ice frames are deterministic); the only RNG
+nearby is the beetle-orb VISUAL drift in `UpdateArmorSets_Always_Beetle`
+(`:16466-16467`, outside this range, unported draw family).
+Landed shape + wiring contract (tests written, NOT run — code-only mode):
+- `TailEffects` carries the slot mutations the wave-D pattern established:
+  `delete_buff` + `rescan_slot` (every delete in this block rescans),
+  `clear_buff_range` (the lower-tier purge loop's inclusive id range — the
+  wiring walks the slots `DelBuff(m); m--`), `buff_time_set` (the 5-pin and
+  the nebula 480), `buff_type_decrement` (the nebula step's `buffType[b]--`).
+- The tier/level fields are ASSIGNMENTS (`beetle_orbs_set`,
+  `solar_shields_set`, `nebula_level_*`), not adds — `ResetEffects` zeroes
+  them per tick (`:18501/:18505/:18755`), last live slot wins like the C#
+  `ref`/field writes. The ladder/gate ORDER is pinned per arm: pin → ladder
+  → count assignment → (Might: stat adds) → gate; the gate failure zeroes
+  the count AFTER the adds ran (the C# adds before the gate, `:10431-10435`).
+- `latest_mana_potion_duration_fix` records the 396 arm's real field
+  assignment (`duration == 0 → 1`, `:10331-10334`) — the wiring copies it
+  back, it is not just a local guard.
+- 62's split: the inline `player.rs` arm keeps the endurance +0.25; this
+  table adds the flag/frames/light/DelBuff. The wiring must NOT re-add
+  endurance from the accumulator (there is no endurance field here).
+- The 40-id `TAIL_CENSUS` (`(id, TailOwner)` in chain order) is the per-id
+  witness map: `PlayerScan` (94), `SummonArms` (the 19 keep-alives),
+  `SplitIceBarrier` (62), `Tail` (the 20 missing ids). The dispatch returns
+  `false` for every non-`Tail` id — the census test pins that a second
+  effect path can never double-apply.
+- 15 `s1_e_7h_*` tests: the census sweep, 396 decay + zero-duration guard,
+  the three ladder arms per tier + ladder directions + gate failures, the
+  three nebula families incl. the time-2 step-down (level AND stat add
+  lower), the ice frame 3-tick/12-frame wrap + the `<=` half-life boundary,
+  the 94/summon witness declines, and the RNG-free reproducibility sweep.
+
 ## The accessory/set-bonus buff-effect block (S1-E-7 wave C, 2026-11-18)
 
 `crates/tr-app/src/buff_effects_accessory.rs` ports the `Player.UpdateBuffs`
