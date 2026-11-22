@@ -3291,7 +3291,23 @@ fn fire_non_ammo_shot(
     // so it escapes the `dir != ZERO` gate (the facing fallback below).
     let boomerang_use = def.use_style == 1
         && crate::projectile::proj_data(proj).is_some_and(|d| d.ai_style == 3);
-    if dir == Vec2::ZERO && !boomerang_use {
+    // W4-f40 DOC-SWEEP — the Release Doves (4682) / Release Lantern (4702)
+    // (`Item.cs:38555-38562`/`:38644-38651`, `DefaultToThrownWeapon`
+    // `:48455-48466` + the `ranged = false`/`noUseGraphic` overrides): the
+    // LANTERN 4702 carries NO per-item `ItemCheck_Shoot` arm — it rides the
+    // generic tail (`Player.cs:49437`) at the EXACT
+    // `RotatedRelativePoint(MountedCenter)` (`:47196`, no `+dir*10` lead),
+    // and the zero-aim fallback (`:47291-47296`) fires it at the facing
+    // like the boomerangs. The DOVES 4682 DO have an arm (`:48383-48392`,
+    // FINAL census correction): three projectiles, each velocity
+    // `aim + Next(-20, 21) * 0.1` per axis, then `return`. RETIRE keep-one
+    // (d17 `8a9e035e` vs f40 `3d7a9b77` adjudicated, research/105 §9.1):
+    // the volley is d17's standalone `else if held.kind == 4682` arm in
+    // the per-item chain below; the lantern's exact-centre spawn rides a
+    // `release_spawn` override on the generic tail; `release_use` keeps
+    // only the shared zero-aim escape + facing flip.
+    let release_use = matches!(held.kind, 4682 | 4702);
+    if dir == Vec2::ZERO && !boomerang_use && !release_use {
         return false;
     }
     let class = def.class;
@@ -3341,6 +3357,9 @@ fn fire_non_ammo_shot(
     // (`:47196`) = the player center with no rotation/mount/sleep offsets;
     // the `+ dir * 10` the generic port arm carries is its own recorded
     // deviation (M4-PROJ-3), NOT the C# — the boomerang variant drops it.
+    // The release pair's exact-centre points ride their own arms (the
+    // d17-kept volley arm + the generic tail's `release_spawn` override,
+    // W4-f40 RETIRE) — the shared `spawn` keeps d17's generic shape.
     let mut spawn = if boomerang_use {
         Vec2::new(pcx, pcy)
     } else if held.kind == 2611 || held.kind == 5526 {
@@ -3411,7 +3430,7 @@ fn fire_non_ammo_shot(
     // `num4 *= num6` scale — the shot flies at the facing
     // × the shootSpeed (the NaN arm is unreachable through
     // `normalize_or_zero`).
-    let shot = if dir == Vec2::ZERO && boomerang_use {
+    let shot = if dir == Vec2::ZERO && (boomerang_use || release_use) {
         Vec2::new(boomerang_facing as f32 * shot_speed, 0.0)
     } else {
         Vec2::new(dir.x * shot_speed, dir.y * shot_speed)
@@ -3424,10 +3443,15 @@ fn fire_non_ammo_shot(
     // in `damage_pve` (`Projectile.cs:12883-12917`, S1-P-i11). The facing
     // flip (`ChangeDir` `:47202-47224`) writes through a short mutable
     // re-borrow (the shared read borrow is parked for the arm).
-    if boomerang_use {
+    // W4-f40 RETIRE: the `ChangeDir` flip is the C# shared prologue
+    // (`:47214-47223`, `flag` true for every kind but the Void Vault 3611)
+    // — it runs for the release pair too, ahead of their separate arms.
+    if boomerang_use || release_use {
         if let Some(pl) = app.player.as_mut() {
             pl.facing = boomerang_facing;
         }
+    }
+    if boomerang_use {
         // `NewProjectile` centers the box on the point (`Projectile.cs:
         // 10876-10877`: `position = X − width/2, Y − height/2`); the port's
         // spawn seam takes the top-left, so the half-box subtracts here —
@@ -4330,6 +4354,36 @@ fn fire_non_ammo_shot(
                 app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
             }
         }
+    } else if held.kind == 4682 {
+        // W4-d17 DOC-SWEEP — `ItemCheck_Shoot`'s Release Doves arm
+        // (`Player.cs:48383-48392`): THREE doves per use, each at the aim
+        // velocity plus `Next(-20, 21) * 0.1` per axis (X draw then Y draw,
+        // six `UpdatePlayers` draws total). The C# `return`s — the generic
+        // tail's tweaks never run. The item is `noUseGraphic` + consumable
+        // (`Item.cs:38555-38562`, DefaultToThrownWeapon(851, 25, 4)); the
+        // damage −1 stock rides `weaponDamage` like every thrown item.
+        // The Release Lantern 4702 has NO special arm — it keeps the
+        // generic single shot (the census: only 4682 is named).
+        // W4-f40 RETIRE keep-one (d17 `8a9e035e` form kept; the f40
+        // `3d7a9b77` merged-arm variant retired, research/105 §9.1): the
+        // spawn takes f40's exact-centre graft — the C# passes
+        // `pointPosition` (the rotated mount anchor, no `+dir*10`) and
+        // `NewProjectile` centres the box (`Projectile.cs:10876-10877`),
+        // so the half-box subtracts off the player centre, not the
+        // generic arm's led `spawn`.
+        let (bw, bh) = crate::projectile::proj_data(proj)
+            .map_or((0.0, 0.0), |d| (d.w, d.h));
+        for _ in 0..3 {
+            let vx = shot.x + loot_rng.next_range(-20, 21) as f32 * 0.1;
+            let vy = shot.y + loot_rng.next_range(-20, 21) as f32 * 0.1;
+            let slot = app.projectiles.spawn_with_data_ai(
+                proj, pcx - bw * 0.5, pcy - bh * 0.5, vx, vy, raw as i32, fx_kb, 0.0, 0.0,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_armor_penetration(slot, arpen);
+                app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+            }
+        }
     } else if tr_core::whip::is_whip(proj) {
         // S1-P-i24 — `Player.ItemCheck_Shoot`'s whip arm
         // (`Player.cs:48655-48690`): the 18 whip items fire
@@ -4456,8 +4510,23 @@ fn fire_non_ammo_shot(
                 break;
             }
         }
+        // W4-f40 RETIRE (the d17 `8a9e035e` adjudication): the Release
+        // Lantern 4702 rides THIS generic tail (`Player.cs:49437`), which
+        // passes `pointPosition` itself — no `+dir*10` lead, and
+        // `NewProjectile` centres the box (`Projectile.cs:10876-10877`).
+        // The release arm above owns the 4682 volley only; this pair of
+        // corrections gives the lantern the same exact-centre geometry on
+        // d17's tail shape (the i08 boomerang precedent — the generic
+        // arm's lead is the M4-PROJ-3 recorded deviation for OTHER kinds).
+        let release_spawn = if held.kind == 4702 {
+            let (bw, bh) = crate::projectile::proj_data(proj)
+                .map_or((0.0, 0.0), |d| (d.w, d.h));
+            Vec2::new(pcx - bw * 0.5, pcy - bh * 0.5)
+        } else {
+            leaf_spawn
+        };
         let slot = app.projectiles.spawn_with_data_ai(
-            proj, leaf_spawn.x, leaf_spawn.y, vx, vy, raw as i32, fx_kb, ai0, ai1,
+            proj, release_spawn.x, release_spawn.y, vx, vy, raw as i32, fx_kb, ai0, ai1,
         );
         if let Some(slot) = slot {
             app.projectiles.set_armor_penetration(slot, arpen);
@@ -18451,7 +18520,7 @@ mod use_loop_tests {
     use crate::world_sim::editing::limit_point_to_player_reachable_area;
     use glam::Vec2;
 
-    fn app_with_staff(kind: u16) -> crate::app::App {
+    pub(super) fn app_with_staff(kind: u16) -> crate::app::App {
         // A real staged world (the 8×8 `flow_app` default is too small — the
         // reach gate and the `LimitPointToPlayerReachableArea` clamp misbehave
         // on it): 64 wide, a solid floor at row 300, the player + camera near
@@ -19976,6 +20045,54 @@ mod item_mechanics {
         assert_eq!(app.inventory[app.selected].count, 4, "one consumed");
     }
 
+    /// W4-d17 doc-sweep — the Release Doves 4682 (`Item.cs:38555-38562`,
+    /// DefaultToThrownWeapon(851, 25, 4), noUseGraphic, consumable) fires
+    /// THREE doves per use (`Player.cs:48383-48392`), each jittered by
+    /// `Next(-20,21)*0.1` per axis — six `UpdatePlayers` draws. ONE bucket
+    /// is consumed (the consumable tail runs once per use, not per dove).
+    /// The Release Lantern 4702 keeps the generic single shot.
+    /// W4-f40 RETIRE keep-one publish (research/105 §9.1): d17's `8a9e035e`
+    /// witness re-derived VERBATIM here — THIS copy is the keeper (the
+    /// merge drops d17's original beside the chum witness). UNION-SCOPED:
+    /// the 851/855 `proj_data` rows are absent on THIS branch (d17's
+    /// claim), so the spawn-count asserts run green only after d17's rows
+    /// fold at the merge; the branch-local behaviour (launch + consume +
+    /// draw count) is pinned by `w4_f40_release_tests` below.
+    #[test]
+    fn w4_d17_the_doves_release_three_and_the_lantern_one() {
+        let mut app = thrown_app(4682, 5);
+        let screen = MINE_SCREEN;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        let doves: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 851)
+            .collect();
+        assert_eq!(doves.len(), 3, "three doves per use (:48385)");
+        // Each dove's velocity sits inside the ±2 px jitter band around
+        // the aim-normalized shootSpeed 4.
+        for d in &doves {
+            assert!(d.vel.x > 0.0, "the flock flies toward the cursor");
+            assert!(
+                (d.vel.length() - 4.0).abs() < 2.9,
+                "shootSpeed 4 ± the jitter band"
+            );
+        }
+        assert_eq!(app.inventory[app.selected].count, 4, "ONE consumed per use");
+        // The lantern: one 855, no special arm.
+        let mut app = thrown_app(4702, 5);
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        let lanterns: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 855)
+            .collect();
+        assert_eq!(lanterns.len(), 1, "the lantern is a single generic shot");
+        assert_eq!(app.inventory[app.selected].count, 4);
+    }
+
     /// The bone javelin throws from the upper third of the hitbox
     /// (`Player.cs:47225-47228`): spawn.Y = position.Y + height/3.
     #[test]
@@ -20465,6 +20582,165 @@ mod s1_p_i08_throw_tests {
         assert_eq!(p.mana, 50);
         assert!(p.buffs.find_buff_index(94).is_some(), "ManaSickness 94");
         assert_eq!(app.inventory[app.selected].count, 2);
+    }
+}
+
+/// W4-f40 DOC-SWEEP — the Release Doves (4682) / Release Lantern (4702) USE
+/// arm (`Item.cs:38555-38562`/`:38644-38651`: `DefaultToThrownWeapon`
+/// `:48455-48466` — useStyle 1, useTime/useAnimation 25, shoot 851/855,
+/// shootSpeed 4, consumable, `ranged = false`, `noUseGraphic`). The LANTERN
+/// 4702 carries no per-item `ItemCheck_Shoot` arm — the generic tail
+/// (`Player.cs:49437`) at the exact `RotatedRelativePoint(MountedCenter)`
+/// with the zero-aim facing fallback (`:47291-47296`); the DOVES 4682 carry
+/// the three-shot volley arm (`:48383-48392`, FINAL census correction —
+/// three spawns, each `aim + Next(-20, 21) * 0.1` per axis). RETIRE
+/// keep-one (research/105 §9.1): the volley arm is d17's `8a9e035e`
+/// standalone form (with f40's exact-centre graft); the lantern's
+/// exact-centre point rides the generic tail's `release_spawn` override.
+/// Both then take the `ItemCheck` consumable arm (`:43280-43326`: no
+/// ranged roll chain, always consume, the stack-empty
+/// `itemTime = itemAnimation` latch). The aiStyle-166 flight + the 851/855
+/// `proj_data` rows are the d17 lane's claim — on THIS branch the spawn
+/// seam no-ops (no rows), so the witnesses pin the launch decision + the
+/// consume + the volley's draw count; the exact-center spawn assertion
+/// rides the rows' landing (recorded in the doc). Code-only mode:
+/// WRITTEN NOT RUN.
+#[cfg(test)]
+mod w4_f40_release_tests {
+    use super::*;
+
+    /// The release rig: the item held, the cursor 80 px right of the player
+    /// centre (the +x aim). `app_with_staff`'s layout with the cursor moved.
+    fn release_app(kind: u16, count: u32) -> App {
+        let mut app = super::use_loop_tests::app_with_staff(kind);
+        app.inventory[app.selected].count = count;
+        let (sw, sh) = app.screen_size();
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        let off = (Vec2::new(cx, cy) - app.camera) * app.zoom;
+        app.mouse_pos = Vec2::new(sw * 0.5 + off.x + 80.0, sh * 0.5 + off.y);
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        app
+    }
+
+    fn fire(app: &mut App) {
+        let (sw, sh) = app.screen_size();
+        update_editing(app, 1.0 / 60.0, Vec2::new(sw, sh));
+    }
+
+    /// The press launches: the swing arms (useAnimation 25) and the stack
+    /// decrements — the generic tail fires even while the 851/855 rows are
+    /// absent (the spawn seam no-ops, the launch decision + consume run).
+    #[test]
+    fn w4_f40_the_release_press_arms_the_swing_and_consumes() {
+        for kind in [4682u16, 4702] {
+            let mut app = release_app(kind, 3);
+            fire(&mut app);
+            assert!(app.swing > 0.0, "{kind}: the swing arms on the press");
+            assert_eq!(
+                app.inventory[app.selected].count, 2,
+                "{kind}: the consumable arm decrements (`Player.cs:43317-43320`)"
+            );
+        }
+    }
+
+    /// The stack-empty latch: the last lantern's consume pins
+    /// `itemTime = itemAnimation` (`Player.cs:43321-43324`) so the empty
+    /// slot cannot re-fire. The port's `item_time` rides the swing it armed.
+    #[test]
+    fn w4_f40_the_last_release_latches_the_item_time() {
+        let mut app = release_app(4702, 1);
+        fire(&mut app);
+        assert_eq!(app.inventory[app.selected].count, 0, "the stack drains");
+        assert!(app.swing > 0.0, "the swing still runs");
+        assert!(
+            (app.item_time - app.swing).abs() < 1e-6,
+            "itemTime = itemAnimation on the empty stack: {} vs {}",
+            app.item_time,
+            app.swing
+        );
+    }
+
+    /// The zero-aim fallback: the cursor ON the player centre still fires
+    /// (`Player.cs:47291-47296` — `num4 = direction, num5 = 0`), the
+    /// facing flips to the aim side, and the stack consumes. The old
+    /// generic gate refused the zero aim for the non-boomerang kinds.
+    #[test]
+    fn w4_f40_the_zero_aim_release_still_fires_at_the_facing() {
+        let mut app = release_app(4702, 2);
+        let (sw, sh) = app.screen_size();
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        let off = (Vec2::new(cx, cy) - app.camera) * app.zoom;
+        app.mouse_pos = Vec2::new(sw * 0.5 + off.x, sh * 0.5 + off.y);
+        fire(&mut app);
+        assert!(app.swing > 0.0, "the zero-aim press fires");
+        assert_eq!(app.inventory[app.selected].count, 1, "the consume runs");
+        // The `ChangeDir` flip (`:47213-47223`): the zero aim's dot is 0,
+        // the `num > 0` test fails, so the facing goes −1.
+        assert_eq!(app.player.as_ref().unwrap().facing, -1, "the zero-aim flip");
+    }
+
+    /// The release items carry NO ranged flag (`Item.cs:38560`/`:38649`
+    /// override `DefaultToThrownWeapon`'s `ranged = true`), so the
+    /// consumable arm skips the four not-consume rolls — the UpdatePlayers
+    /// stream spends ZERO draws on the whole use (the ammo-cost flags up
+    /// would roll for a ranged consumable; here they never run).
+    #[test]
+    fn w4_f40_the_release_consume_spends_no_rng_draw() {
+        let mut app = release_app(4702, 3);
+        {
+            let p = app.player.as_mut().unwrap();
+            p.huntress_ammo_cost90 = true;
+            p.chloro_ammo_cost80 = true;
+            p.ammo_cost80 = true;
+            p.ammo_cost75 = true;
+        }
+        let seed = 0x4702;
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
+        fire(&mut app);
+        assert_eq!(app.inventory[app.selected].count, 2, "always consume");
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
+            tr_core::UnifiedRandom::new(seed),
+            "no not-consume roll: the release items are not ranged"
+        );
+    }
+
+    /// W4-f40 FINAL — the Release DOVES (4682) DO have a per-item
+    /// `ItemCheck_Shoot` arm (`Player.cs:48383-48392`): THREE projectiles,
+    /// each velocity `aim + Next(-20, 21) * 0.1` per axis (SIX
+    /// `UpdatePlayers` draws per use), then `return` — it never reaches the
+    /// generic tail. The Release LANTERN (4702) has NO arm (the generic
+    /// `:49437` tail, ONE projectile, zero draws — the earlier "no per-item
+    /// arm for them" census was half-wrong: 4682's arm was missed). The
+    /// 4702 half below stands; the 4682 volley arm is ported here.
+    #[test]
+    fn w4_f40_the_doves_fire_a_three_shot_volley_of_six_draws() {
+        let mut app = release_app(4682, 3);
+        let seed = 0x4682;
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
+        fire(&mut app);
+        assert_eq!(app.inventory[app.selected].count, 2, "one consume per use");
+        // The six draws: 3 shots x (X jitter, Y jitter), Next(-20, 21) each.
+        let mut probe = tr_core::UnifiedRandom::new(seed);
+        for _ in 0..3 {
+            let _ = probe.next_range(-20, 21);
+            let _ = probe.next_range(-20, 21);
+        }
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
+            probe,
+            "the volley spends exactly six UpdatePlayers draws"
+        );
+        // The lantern contrast: ONE shot, ZERO draws (the generic tail).
+        let mut app = release_app(4702, 3);
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
+        fire(&mut app);
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
+            tr_core::UnifiedRandom::new(seed),
+            "the lantern rides the draw-free generic tail"
+        );
     }
 }
 

@@ -723,6 +723,16 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 Some(1.0 - ((dist - 3000.0) / (6000.0 - 3000.0)).clamp(0.0, 1.0))
             }
         };
+        // W4-f40: `Player.RecalculateLuck`'s lantern-night term
+        // (`Player.cs:29146-29149`, `if (LanternNight.LanternsUp) luck +=
+        // 0.3f`). The C# reads the static live inside `UpdateLuck`; the port
+        // snapshots `LanternsUp` once per tick beside the auras/zones (the
+        // flag only flips at the dusk/dawn boundaries and `UpdateTime`, never
+        // mid-player-step), so `update_luck`'s `recalculate_luck` below reads
+        // the same value the C# would. The +0.3 add itself already lives in
+        // `luck.rs::recalculate_luck` (the M4-EVENT-4 neutral-default input
+        // this wires).
+        p.luck_state.lantern_night = crate::world_events::lanterns_up(&app.world_events);
         // The held torch's style (`inventory[selectedItem].createTile == 4`,
         // `Player.cs:17917-17920`).
         p.held_torch_style = app
@@ -4337,6 +4347,46 @@ mod w4_d80_vampire_sizzle_tests {
         wear(&mut partial, 11, 5515);
         tick_ammo(&mut partial);
         assert!(!row_completed(&partial, "MINI_ME"), "two of three refuses");
+    }
+
+    /// W4-f40 — `Player.RecalculateLuck`'s lantern-night term
+    /// (`Player.cs:29146-29149`): while `LanternNight.LanternsUp` the player's
+    /// luck carries +0.3. The port snapshots the flag beside the auras/zones
+    /// each tick, so `update_luck`'s recalculation reads it. The contrast arm
+    /// (lanterns down) keeps the base luck, and the genuine/manual flags both
+    /// drive `LanternsUp` (`LanternNight.cs:17-27`).
+    #[test]
+    fn w4_f40_the_lantern_night_adds_the_luck_bonus_through_the_player_tick() {
+        // Lanterns down: the base luck (no torch/coin/ladybug inputs on the
+        // empty rig) is 0.
+        let mut down = ammo_app();
+        tick_ammo(&mut down);
+        assert!(
+            down.player.as_ref().unwrap().luck().abs() < 1e-6,
+            "no lantern bonus while down"
+        );
+        assert!(!down.player.as_ref().unwrap().luck_state.lantern_night);
+
+        // Manual lanterns up (the `ToggleManualLanterns` path): +0.3.
+        let mut manual = ammo_app();
+        manual.world_events.manual_lanterns = true;
+        tick_ammo(&mut manual);
+        let p = manual.player.as_ref().unwrap();
+        assert!(p.luck_state.lantern_night, "the tick latched the flag");
+        assert!(
+            (p.luck() - 0.3).abs() < 1e-6,
+            "the +0.3 lantern-night luck: {}",
+            p.luck()
+        );
+
+        // Genuine lanterns up (the natural/override path): the same +0.3.
+        let mut genuine = ammo_app();
+        genuine.world_events.genuine_lanterns = true;
+        tick_ammo(&mut genuine);
+        assert!(
+            (genuine.player.as_ref().unwrap().luck() - 0.3).abs() < 1e-6,
+            "the genuine lanterns carry the same bonus"
+        );
     }
 }
 

@@ -140,6 +140,8 @@ UNASSIGNED (reserved); this lane's new retire-phase docs take 145/148.
 
 | 335 | W4-f30 SYSTEMS RETIRE (keep-one drop-hunks c46/d70 vs f30 + the c24/f47/d2 compose meeting points + the FINAL notify-band census; renamed 240→335 per the d54 registry 150 §9.2 — g58's earlier 143→240 rename wins 240; code-only) | `335-f30-systems-retire.md` | ✅ |
 
+| 105 | DOC-SWEEP lane 25 lantern/events (W4-f40: ReleaseLantern 4702 USE arm + noUseGraphic draw gate, the 4703/5613 census correction, the c39 gates union contract, d130 wind-drift verify, f45 lantern-quad persistence-order fix; FINAL s8: the c39 114-exec cross-receipt + world-seed graft, the music ambient-only census, the 4702-recipe-less/5613-bench craft census, the f45 compose-contract witness, the doves-volley correction; RETIRE s9: the doves-dup adjudication d17-form keep-one + brace fix, the f41 shop-row dedupe receipt, the 114 FINAL merge-scope receipts, the LANTERN-FAMILY unified merger order; code-only) | `105-doc-sweep-lantern.md` | ✅ |
+
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
   counts question is ticketed.

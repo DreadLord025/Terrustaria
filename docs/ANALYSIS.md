@@ -54350,3 +54350,85 @@ departure keyed rows), `ui/housing.rs` 1 extended (the named hover),
 world_clear), `world_sim/clock.rs` 1 (the party broadcasts + the dusk
 cake clear), `npc_chat.rs` 3 (the probe cadence, the pending-row head,
 the talk gift).
+
+## The lantern-night second half (W4-f40)
+`task/W4-f40-lantern-night-2` lands the lantern night's remaining event-side
+pieces on top of the S1-F-14 schedulers (the c39 gates lane and the d17
+aiStyle-166 projectile lane are separate, in-flight claims вЂ” this lane does
+not duplicate them). Code-only mode: the witnesses are WRITTEN, NOT RUN (no
+cargo/rustc/tests invoked).
+- **The luck bonus** (`Player.cs:29146-29149`): `world_sim/player.rs`
+  snapshots `LanternNight.LanternsUp` into `LuckState.lantern_night`
+  beside the auras/zones each tick; `recalculate_luck`'s +0.3 add (already
+  present, the M4-EVENT-4 neutral-default input) is now live. The C# reads
+  the static live inside `UpdateLuck`; the port snapshots once per tick
+  (the flag only flips at the boundaries/UpdateTime, never mid-player-step).
+- **The wish interaction** (`Chest.cs:2309-2312`): the Party Girl's shop
+  (index 13) gains the Release Lantern (4702) row gated on
+  `StockWhen::LanternNight` (`ShopFlags.lanterns_up`, fed at the
+  shop-open seam from `world_events`). The row's `num` position is right
+  after 4681 (the graveyard 4682 row stays constants-off).
+- **The triggers** (`NPC.cs:78769-78793`):
+  `world_events::on_game_event_cleared` ports
+  `OnGameEventClearedForTheFirstTime`'s lantern half вЂ” the first boss/event
+  clear arms `NextNightIsLanternNight` (the default arm + cases
+  10/16/17/18), the skip ids 4/21/22 (Mourning Wood / Everscream / SantaNK1
+  — c39 research/114 §0.1: Pumpking is id 5, the DEFAULT arm, so it arms;
+  the earlier "Pumpking 4" label was wrong, the id table is the C#'s) skip.
+  It fires only on the downed flag's false->true edge (`SetEventFlagCleared`'s
+  gate), wired into the 16 ported boss-death arms AND the four invasion
+  clears (ids 0/1/2/3, `Main.cs:64335-64354`, DOC-SWEEP). The case-10 credits
+  roll and the case-16/17/18 Plantera-bulb generation are separate unported
+  systems (recorded); the dual-dungeon wall clears (`:78794+`) are unported.
+- **The visuals** (`LanternSky.cs` whole): `render/lantern_sky.rs` ports
+  the background lantern field вЂ” `GenerateLanterns` (the `maxTilesY/4`
+  array + the view-band position draws), `ResetLantern` (the depth ladder
+  `(1-i/len)*4.4+1.6`, the `-1.5-2.5*NextDouble` speed, the `Next(3)`
+  variant, the `(2000+Next(1200))*2` float timer), `Update` (the В±0.01
+  opacity walk, the sine bob + float + wind drift, the 300-px reset/leave)
+  and `Draw`/`DrawLantern` (the depth-band cull, the (250,120,60,120)
+  tint Г— depth ladder, the `(1/Depth,0.9/Depth)*1.2` parallax, the 4000-px
+  X wrap, the 3-copy alpha-0 glow + body). The activate/deactivate edges ride
+  `update_time_lanterns`' `Option<bool>`; the draw threads through the
+  `SkyManager` depth boundaries (the ambience's `AmbiencePass`).
+Deliberate folds (recorded):
+- The sky's `_random` is a PRIVATE `UnifiedRandom` (`LanternSky.cs:71`,
+  the time-seeded ctor) вЂ” NOT `Main.rand`, on no named port stream. The
+  port seeds it from the WORLD seed xored 0x1A2B_3C4D (c39's
+  `event_skies.rs` form, grafted per research/114 §1b's KEEP verdict:
+  per-world variety, still deterministic; the earlier pinned-0 seed is
+  superseded). The C#'s time seed is unobservable in a
+  deterministic port. The draw ORDER is the C#'s (X then Y in Generate,
+  speed/variant/timer in Reset).
+- `FocusHelper.PauseSkies` folds into the step-gated ambience phase; the
+  `gameMenu` draw-clear folds into the in-world-only sky pass.
+- The `LanternNightActive` `InfoToSetBackColor` field (`Main.cs:216`)
+  is WRITE-ONLY in the C# (no reader) вЂ” a dead field, not ported.
+- The world-load clear (`WorldGen.cs:6996` `LanternNight.WorldClear` +
+  `SkyManager.Reset`) rides the CLEAR-THEN-RESTORE sites — `swap_world`
+  ahead of the `App::new` restore, `client_install_world` ahead of the
+  tile install, NOT `enter_loaded_world` (the DOC-SWEEP order fix
+  `5a19073e`: the C# `clearWorld` precedes `SetOngoingToTemps`, so a tail
+  clear would clobber f45's restored lantern quad; the earlier
+  `enter_loaded_world` note is superseded). The vanilla `.wld` carries
+  the quad at the v≥207 flags sites; the TRWLD file carries no lantern
+  temps (S1-J-7) — f40 claims NO v18 tail bytes (research/105 §9.3).
+### The RETIRE phase — the LANTERN-FAMILY declaration (research/105 §9)
+The retire phase adjudicated the sibling duplicates and published the
+unified merger order (105 §9.4 + c39 research/114 §7/§11 at `4f72847e`):
+- **The doves volley** (§9.1): d17 `8a9e035e` vs f40 `3d7a9b77` were
+  DIVERGENT ports of `Player.cs:48383-48392` — keep-one landed on this
+  branch: d17's standalone per-item arm FORM + f40's exact-centre spawn
+  graft + the zero-aim/facing prologue; the lantern's exact-centre point
+  rides the generic tail's `release_spawn` override. The FINAL splice's
+  unclosed-witness brace defect fixed. d17's witness re-derived verbatim
+  here as the keeper (union-scoped: green when d17's 851/855 rows fold).
+- **The wish row** (§9.2): f40's 4702 row is NOT one of f41's eleven
+  `PartyUp` gift rows; f41 `be4cb841` ported the same row independently.
+  The merge keeps f41's `case 13` superset; f40's `LanternNight` variant
+  renames to `LanternsUp`; ONE field + ONE feed line.
+- **The merger order** (§9.4): d17 machine → f40 use-side → c39
+  gates/triggers (+ the v18 9-way union) → f40 sky module wholesale
+  (c39's interim lantern half drops) → f41 shop superset → f45
+  persistence (the c43≡f45 identity keep-ONE). All family witnesses
+  remain WRITTEN NOT RUN until the merged tree runs the catalog command.

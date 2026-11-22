@@ -1384,6 +1384,8 @@ impl App {
                         // S1-G-13 consumers: the gated path moves the
                         // underground backdrop to the backgroundTarget.
                         layer_targets_on,
+                        &self.lantern_sky,
+                        anim_time % 3600.0,
                     );
                     // `Main.cs:62217`: `ScreenDarkness.DrawBack` sits right after
                     // `Overlays.Scene.Draw(Background)`.

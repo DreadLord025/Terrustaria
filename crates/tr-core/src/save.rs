@@ -86,6 +86,13 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// file-absent temps (`_tempSandstorm*`/`_tempParty*`/`_tempLanternNight*` —
 /// no writer or loader site in `WorldFile.cs`) reset on load by design, so
 /// the port saves none of them either (S1-J-7).
+///
+/// W4-f40 RETIRE receipt (research/105 §9.3): this branch claims NO v18
+/// tail bytes — the lantern quad persists through f45's `.wld` flags-block
+/// sites (`wld/sections/flags.rs`, the v≥207 arm), NOT a TRWLD tail field.
+/// The v18 UNION (c39 research/114 §8, tip `4f72847e`: the 9-way 106-byte
+/// fixed head + d109 dense LAST, VERSION 18) carries no f40 row; this
+/// constant stays 17 until that union lands at the merge.
 pub const VERSION: u32 = 18;
 
 /// The v7+ sections' payload — the world chests, the banner kill counts, the

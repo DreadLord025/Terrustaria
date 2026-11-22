@@ -607,6 +607,24 @@ impl App {
     for _ in 0..sky_iters {
         self.sandstorm_sky.update(dt);
     }
+    // W4-f40: `SkyManager.Update`'s `LanternSky` iteration (`SkyManager.cs:
+    // 24-46`, `max(1, dayRate)` per 60 Hz tick). The sky's private RNG draws
+    // on no named stream; the opacity walk + lantern drift ride the same
+    // step gate as the ambience (the `FocusHelper.PauseSkies` fold — module
+    // docs). The dedicated accumulator keeps the cadence frame-rate
+    // independent (the ambience precedent).
+    {
+        let lanterns_up = crate::world_events::lanterns_up(&self.world_events);
+        let wind = self.wind.speed_current;
+        let (max_x, surface) = (self.world.width, self.world.world_surface);
+        let day_rate = self.world.day_rate().max(1);
+        let sky = &mut self.lantern_sky;
+        self.lantern_sky_step.tick(dt, |_| {
+            for _ in 0..day_rate {
+                sky.update(lanterns_up, wind, max_x, surface);
+            }
+        });
+    }
     }
 
     /// S1-B-3 (batch review fix 1): the tile-edit and net halves ride the

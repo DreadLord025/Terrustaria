@@ -22,6 +22,12 @@ pub struct ShopFlags {
     pub downed_moon_lord: bool,
     pub night: bool,
     pub blood_moon: bool,
+    /// W4-f40: `LanternNight.LanternsUp` (`Chest.cs:2309`) — the Party
+    /// Girl's Release-Lantern (4702) row appears only while the lanterns
+    /// are up. Fed from `App.world_events` at the shop-open seam (the
+    /// `from_world` view leaves it false: the flag lives on the event
+    /// state, not the `World`, like the other event gates).
+    pub lanterns_up: bool,
     pub zone_snow: bool,
     pub zone_jungle: bool,
     /// `Main.player[Main.myPlayer].ZoneGraveyard` — W4-d123's second-half
@@ -56,9 +62,6 @@ pub struct ShopFlags {
     /// `NPC.unlockedPrincessSpawn` (`Main.cs:65948`): the debug override
     /// that opens the Princess's arrival without the full roster.
     pub unlocked_princess: bool,
-    /// W4-d123: `LanternNight.LanternsUp` (`LanternNight.cs:17-27`) — the
-    /// Party Girl's 4702 row (`Chest.cs:2309`).
-    pub lantern_night: bool,
     /// W4-d123: `NPC.AnyNPCs(229)` (`Chest.cs:2318`) — the Party Girl's
     /// 3369 row. The port has no town Pirate kind yet (constants-off).
     pub pirate_present: bool,
@@ -153,6 +156,7 @@ impl Default for ShopFlags {
             downed_moon_lord: false,
             night: false,
             blood_moon: false,
+            lanterns_up: false,
             zone_snow: false,
             zone_jungle: false,
             zone_graveyard: false,
@@ -171,7 +175,6 @@ impl Default for ShopFlags {
             golfer_score: 0,
             bestiary_completion: 0.0,
             unlocked_princess: false,
-            lantern_night: false,
             pirate_present: false,
             downed_golem: false,
             party_is_up: false,
@@ -292,6 +295,9 @@ pub enum StockWhen {
     HardMode,
     Night,
     BloodMoon,
+    /// W4-f40: `LanternNight.LanternsUp` (`Chest.cs:2309-2312`) — the Party
+    /// Girl's Release Lantern (4702) row.
+    LanternNight,
     DownedBoss3,
     DownedBoss2Or3OrHard,
     ZoneSnow,
@@ -1959,6 +1965,7 @@ pub fn resolve_stock_entries_moon(
             StockWhen::HardMode => flags.hard_mode,
             StockWhen::Night => flags.night,
             StockWhen::BloodMoon => flags.blood_moon,
+            StockWhen::LanternNight => flags.lanterns_up,
             StockWhen::DownedBoss3 => flags.downed_boss3,
             StockWhen::DownedBoss2Or3OrHard => {
                 flags.downed_boss2 || flags.downed_boss3 || flags.hard_mode
@@ -1997,7 +2004,6 @@ pub fn resolve_stock_entries_moon(
             StockWhen::PartyGirlPresent => flags.party_girl_present,
             // W4-d123: the Party Girl's second-half gates (`Chest.cs:2285-2358`).
             StockWhen::Day => !flags.night,
-            StockWhen::LanternNight => flags.lantern_night,
             StockWhen::PiratePresent => flags.pirate_present,
             StockWhen::DownedGolem => flags.downed_golem,
             StockWhen::PartyIsUp => flags.party_is_up,

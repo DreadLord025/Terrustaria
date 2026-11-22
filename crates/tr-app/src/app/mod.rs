@@ -1093,6 +1093,14 @@ pub(crate) struct App {
     /// [`Self::rngs`]`::global()` — the bare-`Main.rand` stand-in
     /// (`Main.cs:17214-17216`), shared with chat commands and menu rolls.
     pub(crate) ambience: crate::ambience::Ambience,
+    /// W4-f40: the `LanternSky : CustomSky` background lantern field
+    /// (`crates/tr-app/src/render/lantern_sky.rs`). Its private RNG draws on
+    /// no named stream (the C#'s `_random`, `LanternSky.cs:71`); the
+    /// activate/deactivate edges ride `world_events::update_time_lanterns`.
+    pub(crate) lantern_sky: crate::render::lantern_sky::LanternSky,
+    /// W4-f40: the `LanternSky`'s 60 Hz accumulator (`SkyManager.Update`
+    /// runs once per world update, `Main.cs:17139`; the ambience precedent).
+    pub(crate) lantern_sky_step: FixedStepper,
     pub(crate) tree_wind_counter: f32,
     pub(crate) grass_wind_counter: f32,
     /// `TileDrawing._sunflowerWindCounter` (`TileDrawing.cs:374`): the sunflower's
@@ -2931,6 +2939,14 @@ impl App {
         if fired {
             let _ = self.notify_progression_net(45);
         }
+        // W4-f40 DOC-SWEEP: the lantern world-load clear (`WorldGen.cs:6996`
+        // `LanternNight.WorldClear()` + the `SkyManager.Reset` family) lives
+        // at the clear-then-restore sites — `swap_world` (ahead of the
+        // `App::new` restore) and `client_install_world` (ahead of the tile
+        // install) — NOT here: this tail runs AFTER the restore, and a
+        // clear here would clobber a loaded lantern night (the C#
+        // `clearWorld` precedes `SetOngoingToTemps`, `WorldFile.cs:1977`
+        // vs `:173-176`).
     }
 
     pub(crate) fn is_client(&self) -> bool {
@@ -3371,6 +3387,18 @@ impl App {
     /// so the menu stays alive with its own world rather than a black screen.
     pub(crate) fn swap_world(&mut self, path: &Path) -> anyhow::Result<()> {
         let (world, sections) = load_world(path)?;
+        // W4-f40 DOC-SWEEP: the C# `LoadWorld` runs `WorldGen.clearWorld()`
+        // (`WorldFile.cs:1977`) BEFORE `LoadWorldFlags` reads the event temps
+        // back (`SetOngoingToTemps`, `:173-176`) — the clear-then-restore
+        // order. The port's restore rides `App::new` below (f45's from_wld
+        // block), so the clear runs here, ahead of it; a clear in
+        // `enter_loaded_world` (AFTER the rebuild) would clobber the
+        // restored lantern quad. The fresh `App::new` builds
+        // `WorldEvents`/`LanternSky` from defaults anyway — this pins the
+        // order for any future restore-onto-self path. The failed-load
+        // early return above leaves the current world untouched.
+        crate::world_events::world_clear(&mut self.world_events);
+        self.lantern_sky.reset();
         let content = assets::content_dir().context("no retail Content directory")?;
         let mut static_cache = self.static_sheets.take();
         let mut fonts_cache = self.fonts_cache.take();
@@ -4785,6 +4813,8 @@ impl App {
                 }
                 ambience
             },
+            lantern_sky: crate::render::lantern_sky::LanternSky::new(world_seed),
+            lantern_sky_step: FixedStepper::new(1.0 / 60.0, 8),
 
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,

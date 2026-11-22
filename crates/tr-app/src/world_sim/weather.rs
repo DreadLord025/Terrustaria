@@ -206,10 +206,28 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         // `LanternNight.UpdateTime`'s persistence gate: the lanterns ride
         // the night (`LanternsCanPersist` = `!dayTime && LanternsCanStart()`).
         let lantern_can_persist = !world.day_time;
-        let _ = crate::world_events::update_time_lanterns(
+        let lantern_edge = crate::world_events::update_time_lanterns(
             &mut app.world_events,
             lantern_can_persist,
         );
+        // W4-f40: `LanternNight.UpdateTime`'s sky edges (`LanternNight.cs:
+        // 133-150`): the up-edge activates the `LanternSky`, the down-edge
+        // deactivates it (the leaving latch). The C# calls
+        // `SkyManager.Activate/Deactivate("Lantern")`; the port drives the
+        // sky's own activate/deactivate. The activate reads the live view
+        // band (`Main.screenPosition.Y`/`screenHeight`, `LanternSky.cs:93`).
+        let (_sw, sh) = app.screen_size();
+        match lantern_edge {
+            Some(true) => app.lantern_sky.activate(
+                world.width,
+                world.height,
+                app.camera.y - sh * 0.5,
+                sh,
+                world.world_surface,
+            ),
+            Some(false) => app.lantern_sky.deactivate(),
+            None => {}
+        }
         if scene_state.forced_severity.is_none() {
             // W4-c40: the hardMode start-delay denominator
             // (`Sandstorm.cs:58-59`) reads the live world flag.

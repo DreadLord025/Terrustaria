@@ -1018,6 +1018,11 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         downed_moon_lord: app.world.downed_moon_lord,
         night: !app.world.day_time,
         blood_moon: app.world.blood_moon,
+        // W4-f40: `Chest.cs:2309`'s `LanternNight.LanternsUp` gate — the
+        // Party Girl's Release-Lantern row reads the live event flag.
+        // RETIRE (research/105 §9.2): f41 `be4cb841`'s feed line is the
+        // identical expression — the merge keeps ONE (either copy).
+        lanterns_up: crate::world_events::lanterns_up(&app.world_events),
         zone_snow: app.scene_metrics.zone_snow,
         zone_jungle: app.scene_metrics.zone_jungle,
         // W4-d123: `Main.player[Main.myPlayer].ZoneGraveyard` — the second-
@@ -3230,21 +3235,36 @@ pub(crate) fn update_invasion_state(app: &mut App) {
         // `SetEventFlagCleared(ref NPC.downedX, n)` + the matching
         // `AchievementsHelper.NotifyProgressionEvent` (`Main.cs:64335-64354`):
         // goblins 10, frost 12, pirates 11, martians 13.
+        // W4-f40 DOC-SWEEP: `SetEventFlagCleared` (`NPC.cs:78759-78766`)
+        // calls `OnGameEventClearedForTheFirstTime(gameEventId)` on the
+        // flag's false→true edge — the invasion ids are goblins 0 / frost 1
+        // / pirates 2 / martians 3 (`Main.cs:64336`/`:64341`/`:64346`/
+        // `:64351`), all the DEFAULT arm (`NPC.cs:78773-78775`), so the
+        // first invasion clear arms the next lantern night. The `first`
+        // edge keeps repeat clears inert (the boss-death precedent).
         match app.world.invasion_type {
             2 => {
+                let first = !app.world.downed_frost;
                 app.world.downed_frost = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 1, first);
                 let _ = app.notify_progression_net(12);
             }
             3 => {
+                let first = !app.world.downed_pirates;
                 app.world.downed_pirates = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 2, first);
                 let _ = app.notify_progression_net(11);
             }
             4 => {
+                let first = !app.world.downed_martians;
                 app.world.downed_martians = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 3, first);
                 let _ = app.notify_progression_net(13);
             }
             _ => {
+                let first = !app.world.downed_goblins;
                 app.world.downed_goblins = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 0, first);
                 let _ = app.notify_progression_net(10);
             }
         }
@@ -6485,7 +6505,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     for npc in &dead {
         match npc.kind {
             NpcKind::Golem => {
+                // W4-f40: `NPC.cs:79346` `SetEventFlagCleared(ref
+                // downedGolemBoss, 6)` → the first clear arms the next
+                // lantern night (`OnGameEventClearedForTheFirstTime`).
+                let first = !app.world.downed_golem;
                 app.world.downed_golem = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 6, first);
             }
             // S1-D-3 W-9 fishron wiring — `DoDeathEvents`'s case 370
             // (`NPC.cs:79348-79350`): `SetEventFlagCleared(ref
@@ -6493,10 +6518,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             // flag-7 net message) rides the flag; the port's
             // notify_progression_net carries the WoF precedent's shape.
             NpcKind::DukeFishron => {
+                let first = !app.world.downed_fishron;
                 app.world.downed_fishron = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 7, first);
             }
             NpcKind::Deerclops => {
+                // `NPC.cs:79355` `SetEventFlagCleared(ref downedDeerclops, 25)`.
+                let first = !app.world.downed_deerclops;
                 app.world.downed_deerclops = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 25, first);
             }
             NpcKind::SolarTower => {
                 app.world.downed_tower_solar = true;
@@ -6531,6 +6561,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     }
                     app.world.lunar_apocalypse_is_up = false;
                 } else if !npc.moon_despawn_kill {
+                    // W4-f40: `NPC.cs:79398` `SetEventFlagCleared(ref
+                    // downedMoonlord, 10)` — case 10 arms the lantern night
+                    // (the credits roll is a separate unported system).
+                    let first = !app.world.downed_moon_lord;
                     app.world.downed_moon_lord = true;
                     app.world.lunar_apocalypse_is_up = false;
                     // W4-d70 DOC-SWEEP — `NPC.HitEffect`'s 398/1337 arm
@@ -6543,6 +6577,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     let (cx, cy) = npc.center();
                     let seed = app.rngs.stream(RngKey::UpdateNpcs).next_max(100);
                     app.scene_state.throw_pieces([cx, cy], seed);
+                    crate::world_events::on_game_event_cleared(&mut app.world_events, 10, first);
                 }
             }
             NpcKind::NebulaTower => {
@@ -6567,7 +6602,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             // cultist's death clears its flag and raises the apocalypse
             // (`WorldGen.TriggerLunarApocalypse`).
             NpcKind::AncientCultist => {
+                // W4-f40: `NPC.cs:79394` `SetEventFlagCleared(ref
+                // downedAncientCultist, 9)` — the first clear arms the
+                // lantern night.
+                let first = !app.world.downed_ancient_cultist;
                 app.world.downed_ancient_cultist = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 9, first);
                 // `WorldGen.TriggerLunarApocalypse` fires from `checkDead`
                 // under the `UpdateNPCs` swap (`NPC.cs:79393-79396`,
                 // `Main.cs:17767-17769`).
@@ -6628,6 +6668,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 // ONE shared flag for both halves (the nightly `Next(50)`
                 // meteor roll + the hardmode-ore unlock read it).
                 app.world.downed_eow = true;
+                // W4-f40: `NPC.cs:79457` `SetEventFlagCleared(ref
+                // downedBoss2, 14)` — the first EoW/Brain clear arms the
+                // lantern night (the shared downedBoss2 flag).
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 14, !was_down);
             }
             NpcKind::GolemHead => {
                 let mut free =
@@ -6833,7 +6877,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // bestiary credit above.
         match npc.kind {
             NpcKind::KingSlime => {
+                // W4-f40: `NPC.cs:79416` `SetEventFlagCleared(ref
+                // downedSlimeKing, 11)` — the first clear arms the lantern
+                // night (the dual-dungeon wall clear is unported).
+                let first = !app.world.downed_slime_king;
                 app.world.downed_slime_king = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 11, first);
                 // `NPC.cs:79405-79410` (case 50): the King's death while a
                 // slime rain is up calls `Main.StopSlimeRain()` and fires
                 // STICKY_SITUATION (progression 16).
@@ -6849,11 +6898,31 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     let _ = app.notify_progression_net(16);
                 }
             }
-            NpcKind::EyeOfCthulhu => app.world.downed_eoc = true,
+            NpcKind::EyeOfCthulhu => {
+                // W4-f40: `NPC.cs:79441` `SetEventFlagCleared(ref downedBoss1, 13)`.
+                let first = !app.world.downed_eoc;
+                app.world.downed_eoc = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 13, first);
+            }
             NpcKind::EaterOfWorldsHead => app.world.downed_eow = true,
-            NpcKind::QueenBee => app.world.downed_queen_bee = true,
-            NpcKind::TheDestroyer => app.world.downed_mech_boss1 = true,
-            NpcKind::SkeletronPrime => app.world.downed_mech_boss3 = true,
+            NpcKind::QueenBee => {
+                // W4-f40: `NPC.cs:79387` `SetEventFlagCleared(ref downedQueenBee, 8)`.
+                let first = !app.world.downed_queen_bee;
+                app.world.downed_queen_bee = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 8, first);
+            }
+            NpcKind::TheDestroyer => {
+                // W4-f40: `NPC.cs:79476` `SetEventFlagCleared(ref downedMechBoss1, 16)`.
+                let first = !app.world.downed_mech_boss1;
+                app.world.downed_mech_boss1 = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 16, first);
+            }
+            NpcKind::SkeletronPrime => {
+                // W4-f40: `NPC.cs:79469` `SetEventFlagCleared(ref downedMechBoss3, 18)`.
+                let first = !app.world.downed_mech_boss3;
+                app.world.downed_mech_boss3 = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 18, first);
+            }
             // The Twins: the flag when BOTH eyes are dead (the vanilla
             // checks `!AnyNPCs(125) && !AnyNPCs(126)` after the death).
             NpcKind::Retinazer => {
@@ -6862,7 +6931,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     .iter()
                     .any(|n| n.kind == NpcKind::Spazmatism && n.hp > 0)
                 {
+                    // W4-f40: `NPC.cs:79426` `SetEventFlagCleared(ref
+                    // downedMechBoss2, 17)`.
+                    let first = !app.world.downed_mech_boss2;
                     app.world.downed_mech_boss2 = true;
+                    crate::world_events::on_game_event_cleared(&mut app.world_events, 17, first);
                 }
             }
             NpcKind::Spazmatism => {
@@ -6871,14 +6944,26 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     .iter()
                     .any(|n| n.kind == NpcKind::Retinazer && n.hp > 0)
                 {
+                    let first = !app.world.downed_mech_boss2;
                     app.world.downed_mech_boss2 = true;
+                    crate::world_events::on_game_event_cleared(&mut app.world_events, 17, first);
                 }
             }
-            NpcKind::Plantera => app.world.downed_plant_boss = true,
+            NpcKind::Plantera => {
+                // W4-f40: `NPC.cs:79433` `SetEventFlagCleared(ref downedPlantBoss, 12)`.
+                let first = !app.world.downed_plant_boss;
+                app.world.downed_plant_boss = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 12, first);
+            }
             // The Brain: the vanilla shares `downedBoss2` with the EoW —
             // the port's `downed_eow` covers the shared flag.
             NpcKind::BrainOfCthulhu => app.world.downed_eow = true,
-            NpcKind::SkeletronHead => app.world.downed_skeletron = true,
+            NpcKind::SkeletronHead => {
+                // W4-f40: `NPC.cs:79463` `SetEventFlagCleared(ref downedBoss3, 15)`.
+                let first = !app.world.downed_skeletron;
+                app.world.downed_skeletron = true;
+                crate::world_events::on_game_event_cleared(&mut app.world_events, 15, first);
+            }
             NpcKind::WallOfFlesh => {
                 // `WorldGen.StartHardmode()` (`NPC.cs:79485`'s death hook,
                 // `WorldGen.cs:31701-31712`): `Main.hardMode = true` — the
@@ -6888,6 +6973,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 if !app.world.hard_mode {
                     app.world.hard_mode = true;
                     let _ = app.notify_progression_net(9);
+                    // W4-f40: `NPC.cs:79490` `SetEventFlagCleared(ref
+                    // eventFlag, 19)` — the hardmode flag's false→true edge
+                    // arms the lantern night (the dual-dungeon wall clear is
+                    // unported). The edge is the same `!hardMode` guard.
+                    crate::world_events::on_game_event_cleared(&mut app.world_events, 19, true);
                 }
             }
             _ => {}
@@ -10853,6 +10943,39 @@ mod invasion_tests {
         app.world.invasion_size = 5;
         report_invasion_kill(&mut app, NpcKind::Zombie);
         assert_eq!(app.world.invasion_size, 5);
+    }
+
+    /// W4-f40 DOC-SWEEP — the FIRST invasion clear arms the next lantern
+    /// night (`Main.cs:64335-64354` → `SetEventFlagCleared(ref downedX, id)`
+    /// → `OnGameEventClearedForTheFirstTime`, `NPC.cs:78759-78775`): the
+    /// invasion ids (goblins 0 / frost 1 / pirates 2 / martians 3) all take
+    /// the DEFAULT arm, so each first clear sets `NextNightIsLanternNight`.
+    /// The flag's false→true edge keeps a repeat clear inert.
+    #[test]
+    fn w4_f40_the_first_invasion_clear_arms_the_lantern_night() {
+        for (ty, id) in [(1i32, 0i32), (2, 1), (3, 2), (4, 3)] {
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = surface_world();
+            app.world.invasion_type = ty;
+            app.world.invasion_size = 0;
+            app.world.invasion_size_start = 120;
+            assert!(!app.world_events.next_night_is_lantern_night);
+            update_invasion_state(&mut app);
+            assert!(
+                app.world_events.next_night_is_lantern_night,
+                "invasion {ty} (event {id}) first clear arms the night"
+            );
+            // A repeat clear of the SAME invasion (flag already true) is a
+            // no-op: re-arm a fresh invasion, clear again, the edge holds.
+            app.world_events.next_night_is_lantern_night = false;
+            app.world.invasion_type = ty;
+            app.world.invasion_size = 0;
+            update_invasion_state(&mut app);
+            assert!(
+                !app.world_events.next_night_is_lantern_night,
+                "invasion {ty} repeat clear is inert (the was-down edge)"
+            );
+        }
     }
 
     #[test]
@@ -15776,6 +15899,39 @@ mod tower_shield_tests {
         update_tower_shields(&mut app);
         assert_eq!(app.world.tower_shield_stardust, 0, "the reset zeroes");
         assert_eq!(app.world.lunar_shield_power_normal, 100);
+    }
+
+    /// W4-f40 — the boss-death → `NextNightIsLanternNight` trigger wiring
+    /// (`NPC.cs:78769-78793` via `SetEventFlagCleared`): the FIRST Eye of
+    /// Cthulhu kill arms the next lantern night; a repeat kill (the flag
+    /// already downed) does not re-arm it. The death rides `update_npcs`'
+    /// retain (the `checkDead` boss arms).
+    #[test]
+    fn w4_f40_the_first_boss_kill_arms_the_next_lantern_night() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        assert!(!app.world_events.next_night_is_lantern_night);
+        // The first EoC death.
+        let mut eoc = Npc::new(NpcKind::EyeOfCthulhu, 100.0, 100.0, 1, 0.0);
+        eoc.hp = 0;
+        app.npcs.push(eoc);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_eoc, "the downed flag set");
+        assert!(
+            app.world_events.next_night_is_lantern_night,
+            "the first clear arms the lantern night"
+        );
+        // Consume the override at the next dusk (CheckNight), then a repeat
+        // EoC kill must NOT re-arm it (the flag is already true).
+        app.world_events.next_night_is_lantern_night = false;
+        let mut eoc2 = Npc::new(NpcKind::EyeOfCthulhu, 100.0, 100.0, 1, 0.0);
+        eoc2.hp = 0;
+        app.npcs.push(eoc2);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            !app.world_events.next_night_is_lantern_night,
+            "a repeat kill does not re-arm (SetEventFlagCleared's edge)"
+        );
     }
 }
 

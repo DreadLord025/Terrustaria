@@ -1294,6 +1294,70 @@ mod tests {
             .unwrap()
     }
 
+    /// W4-f40 FINAL — the lantern CRAFT census (`Recipe.cs` whole-file grep:
+    /// zero hits for 4702/4682/ReleaseLantern/ReleaseDoves; the only Lantern
+    /// rows are the furniture-set helper's `lantern` parameter `:16597-16600`
+    /// and `AddFallenStarFurniture` `:16415-16418`):
+    /// - **4702 Release Lantern has NO recipe** — it is shop-only, the Party
+    ///   Girl's lantern-night wish row (`Chest.cs:2309-2312`, the f40
+    ///   `StockWhen::LanternNight` arm). The doves 4682 likewise (`:2307`).
+    ///   No workbench row exists in the C#, so none is ported — the generator
+    ///   cannot invent one (`gen_recipes.py` splices only the C# bodies).
+    /// - **5613 FallenStarLantern IS craftable** — 6 Fallen Star (5622) +
+    ///   1 Torch (8) at the WORK BENCH (tile 18, `SetCraftingStation(18)`
+    ///   `Recipe.cs:16417` — the C# station 18 is the Work Bench,
+    ///   `TileID.cs`), NOT by hand. `recipes_gen.rs` row 1548 carries it
+    ///   (the `AddFallenStarFurniture` body is spliced literal, no
+    ///   parametric expansion needed).
+    #[test]
+    fn w4_f40_the_release_lantern_has_no_recipe_the_star_lantern_crafts_at_the_bench() {
+        // The release pair: no authored row anywhere in the generated table.
+        for kind in [4702u16, 4682] {
+            assert!(
+                RECIPES.iter().all(|r| r.create.0 != kind),
+                "{kind}: shop-only (Chest.cs:2307/:2311), no Recipe.cs row"
+            );
+        }
+        // The star lantern's row: exact ingredients + station.
+        let r = recipe_by_create(5613);
+        assert_eq!(r.create, (5613, 1));
+        assert_eq!(r.required.len(), 2);
+        assert_eq!((r.required[0].item, r.required[0].stack), (5622, 6));
+        assert_eq!((r.required[1].item, r.required[1].stack), (8, 1));
+        assert_eq!(r.stations, &[18], "the work bench (Recipe.cs:16417)");
+        assert!(!r.need_water && !r.need_honey && !r.need_lava && !r.need_graveyard);
+        // The craft runs at the bench and refuses without it.
+        let zones = Zones::default();
+        let mut chests = Vec::new();
+        let mut inv = inv_with(&[(5622, 6), (8, 1)]);
+        let mut rng = UnifiedRandom::new(1);
+        let mut prefix_rng = UnifiedRandom::new(2);
+        assert!(
+            try_craft(
+                &mut inv, &mut empty_equip(), &mut chests, &[], r,
+                &dry_adj(), &zones, &Gates::default(), &mut rng, &mut prefix_rng
+            )
+            .is_none(),
+            "no station adjacent: refused"
+        );
+        let bench = Adjacent {
+            tiles: vec![18],
+            water: false,
+            honey: false,
+            lava: false,
+            alchemy_table: false,
+        };
+        assert_eq!(
+            try_craft(
+                &mut inv, &mut empty_equip(), &mut chests, &[], r,
+                &bench, &zones, &Gates::default(), &mut rng, &mut prefix_rng
+            ),
+            Some(CreatedItem { kind: 5613, count: 1, prefix: 0 })
+        );
+        assert_eq!(count_kind(&inv, 5622), 0, "the 6 stars drain");
+        assert_eq!(count_kind(&inv, 8), 0, "the torch drains");
+    }
+
     fn dry_adj() -> Adjacent {
         Adjacent {
             tiles: Vec::new(),

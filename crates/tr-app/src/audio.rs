@@ -3141,6 +3141,16 @@ impl MusicSystem {
     /// boss, underground (`Main.ugMusic`), rain, surface day (`Main.dayMusic`) and
     /// night. The biome branches (`Main.cs:12690-12925`) need `SceneMetrics` and are
     /// left for when those zones exist.
+    ///
+    /// W4-f40 FINAL census — the LANTERN NIGHT has NO music track: `MusicID.cs`
+    /// (105 tracks, whole read) carries no Lantern entry; the whole
+    /// `UpdateAudio_DecideOnNewMusic` ladder (`Main.cs:12175-12990`) has zero
+    /// `LanternNight`/`LanternsUp` branches (the town arm `flag23` `:12199` is
+    /// `TownNPCCount >= 3 && !ZoneShadowCandle`, NOT the lanterns); the
+    /// `LanternNightActive` field (`Main.cs:216`) is fed only into
+    /// `SetBackColor` (`:56718`/`:61980`), which never reads it — write-only,
+    /// dead. A lantern night plays the ordinary night track 3 (or town 47
+    /// with 3+ town NPCs) — AMBIENT-ONLY, nothing to port.
     fn decide_new_music(&mut self, env: MusicEnv) {
         // `if (Main.musicVolume == 0f) Main.newMusic = 0;`
         if env.music_volume == 0.0 {
@@ -4101,6 +4111,34 @@ mod tests {
         e.shadow_candle = true;
         m.decide_new_music(e);
         assert_ne!(m.new_music, 46);
+    }
+
+    /// W4-f40 FINAL — the lantern-night MUSIC census (`MusicID.cs` whole,
+    /// `Main.UpdateAudio_DecideOnNewMusic` `:12175-12990` whole): the lantern
+    /// night carries NO track — there is no Lantern MusicID, no lantern
+    /// branch in the ladder, and `LanternNightActive` (`Main.cs:216`) is
+    /// write-only (fed at `:56718`/`:61980`, never read). The night plays
+    /// the ordinary tail: track 3 alone, town 47 with 3+ town NPCs — the
+    /// `MusicEnv` carries no lantern field BY DESIGN (nothing to feed).
+    #[test]
+    fn w4_f40_the_lantern_night_is_ambient_only_no_music_track() {
+        // The plain night: track 3 (`:12979`), no event override exists.
+        let mut m = system();
+        let e = env(false);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 3, "a lantern night plays the ordinary night track");
+        // The town night: 47 (`flag23` `:12674`) — the ONLY lantern-adjacent
+        // change a lantern night can ride is the town-NPC count, and that is
+        // the town gate, not a lantern gate.
+        let mut m = system();
+        let mut e = env(false);
+        e.town_npcs = 3;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 47, "the town arm, not a lantern arm");
+        // The track table itself: 105 ids (`MusicID.Count`), no Lantern
+        // entry — the negative census pin (a future MusicID addition would
+        // need a C# re-read, not a guess).
+        assert_eq!(MAX_MUSIC, 105);
     }
 
     #[test]

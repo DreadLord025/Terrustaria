@@ -676,6 +676,11 @@ pub(crate) fn draw_sky(
     // into the backgroundTarget via the `RenderBackground` callback
     // (`Main.cs:55200-55218`) instead. The fused default passes `false`.
     skip_underground_background: bool,
+    // W4-f40: the `LanternSky` background lantern field, drawn at the same
+    // `SkyManager` depth boundaries as the ambience (`LanternSky.cs:154-240`).
+    lantern_sky: &crate::render::lantern_sky::LanternSky,
+    // `Main.GlobalTimeWrappedHourly` — the lantern glow's hourly bob.
+    global_time: f32,
 ) {
     // `Background_0.png` is the game's own 48x1400 sky gradient: deep blue at the top,
     // pale near the horizon. It is anchored to `Main.worldSurface`.
@@ -1060,6 +1065,39 @@ pub(crate) fn draw_surface_bg(
     //   1.0   (`Main.cs:60186`) — after the last front row
     //   flush (`Main.cs:59626` `DrawRemainingDepth`) — before the underground
     //   backdrop
+    let mut amb_last = f32::INFINITY;
+    let amb_ctx = crate::ambience::SkyDrawCtx {
+        camera,
+        zoom,
+        screen,
+        color_of_the_skies: sky_color,
+        atmo,
+        bg_alpha_front,
+        background_enabled,
+        world_surface: world.world_surface,
+    };
+    // W4-f40: the `LanternSky` rides the SAME `SkyManager` depth tracker as
+    // the ambience — every `DrawToDepth(minDepth)` boundary draws its
+    // `[minDepth, last)` band (`LanternSky.cs:169-187`'s own cull). The
+    // tracker mirrors `amb_last`; the final flush draws the remainder.
+    let mut lantern_last = f32::INFINITY;
+    let draw_lantern_band = |r: &mut SpriteRenderer, min_depth: f32, last: &mut f32| {
+        if *last <= min_depth {
+            return;
+        }
+        lantern_sky.draw(
+            r,
+            lookups,
+            camera,
+            zoom,
+            screen,
+            world.world_surface,
+            global_time,
+            min_depth,
+            *last,
+        );
+        *last = min_depth;
+    };
     // `DrawSurfaceBG`'s three cloud passes, in the original order: distant
     // (`Main.cs:59334`, before the storm banks), closer (`Main.cs:59449`,
     // between the mountain steps) and closest (`Main.cs:59520`, before the front
@@ -1142,6 +1180,7 @@ pub(crate) fn draw_surface_bg(
         1.0 / 0.15,
         amb_last,
     );
+    draw_lantern_band(r, 1.0 / 0.15, &mut lantern_last);
     if show_bg {
         if far_forest > 0.0 {
             if let Some(far) = sky.far {
@@ -1205,6 +1244,7 @@ pub(crate) fn draw_surface_bg(
     // pass: the mid-depth entities draw between the mountain rows and the
     // closer clouds.
     crate::ambience::draw_range_min(r, ambience, lookups, amb_ctx, 5.0, amb_last);
+    draw_lantern_band(r, 5.0, &mut lantern_last);
     if bg_block {
         let closer_top = if background_enabled {
             magic * 1300.0 + 1090.0 + sc_adj + 30.0 + 150.0
@@ -1333,6 +1373,9 @@ pub(crate) fn draw_surface_bg(
         lookups,
         ctx: amb_ctx,
         last: amb_last,
+        lantern_sky,
+        lantern_last: &mut lantern_last,
+        global_time,
     });
     if show_bg {
         // `pushBGTopHack` for the front loop is `30 - 180` (`Main.cs:59302`,
@@ -1668,6 +1711,9 @@ pub(crate) fn draw_surface_bg(
             sky_flush_max,
         );
     }
+    // W4-f40: the lantern sky's remainder (the shallowest lanterns, below
+    // the last front-row boundary) flush here too (`Main.cs:59626`).
+    draw_lantern_band(r, f32::NEG_INFINITY, &mut lantern_last);
     // `Main.DrawBackground_SurfaceTransitionBackground`,
     // `Main.DrawBackground_DirtBackground`, `DrawBackground_DrawUnderworldBlackBox`,
     // `DrawBackground_DrawRockLayer` and `DrawBackground_DrawMagmaLayer`: the textured
