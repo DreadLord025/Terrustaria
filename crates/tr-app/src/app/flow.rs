@@ -3634,6 +3634,8 @@ pub(crate) mod front_flow_tests {
                 dust.set_wet_probe(Box::new(crate::player::wet_collision));
                 dust
             },
+            // `Main.waterStyle`'s static default (research/116 gap 4).
+            water_style: 0,
             wind: tr_core::wind::Wind::new(1),
             world_tick_step: FixedStepper::new(1.0 / 60.0, 8),
             atmo: 1.0,

@@ -36,9 +36,10 @@ pub(crate) fn update_rain(app: &mut App, dt: f32, screen: Vec2) {
     );
     let snow_tile_count = app.scene_metrics.snow_tile_count;
     let zone_rain = app.scene_metrics.zone_rain;
-    // The snow spawn cap scales with the gfx quality (S1-B-6,
-    // `Main.cs:13057`).
-    app.rain.gfx_quality = app.gfx_quality.quality;
+    // W4-g11: the snow spawn no longer rides Rain — `Main.snowing()`
+    // (`main_dust.rs`) reads `App.gfx_quality.quality` at its own
+    // `Main.cs:17238` slot (`scene_scan::update_scene`), so the retired
+    // `rain.gfx_quality` copy is gone.
     app.rain.update(
         &app.world,
         app.camera,

@@ -1391,9 +1391,10 @@ lightning flash every 5вЂ“15 s. The flash is a 0.38-alpha full-screen white 
 decays over ~11 ticks; there is no bolt geometry or thunder audio yet.
 
 Snow biomes use vanilla's `DustID.Snowflake` (type 76): rain drops are suppressed and the
-ambient snow dust is spawned at `500 * screenWidth/1920` per second (scaled by
-`1 + 2*cloudAlpha`), falling at 2вЂ“5 px/tick with a per-flake sine sway and the storm wind.
-Flakes die on solid or wet tiles and are drawn from `Dust` frame 76 (X = 760, Y = 0/10/20).
+ambient snow dust is `Main.snowing()` (`Main.cs:13032-13116`, the W4-g11 `main_dust.rs`
+port) spawning into the shared `DustPool` at the `Main.cs:17238` slot on the bare
+`Main.rand` stream. The retired session-local `Snowflake` vector (the
+`500 * screenWidth/1920` rate, the sine sway, the Rain-stream rolls) is gone — keep-one.
 
 First-pass simplifications, as updated by later tasks: the session-local weather
 schedule is **retired** вЂ” M1.4-BG-22 landed the vanilla `rainTime`/`maxRaining` pair
@@ -46518,3 +46519,127 @@ belongs to the Projectile.cs family register, not Main.cs.
 Code-only: the census is two independent greps over the full Main.cs;
 the audit re-read the cited C# windows line by line and hand-replayed
 both walks. **No cargo/rustc/rustfmt/tests/dotnet/graphify invoked.**
+
+## The Main.cs dust sites, batch 1 (W4-g11, code-only 2026-11-21)
+`crates/tr-app/src/main_dust.rs` ports the first line-order third of the
+Main.cs `Dust.NewDust*` census (research/64's split: g11 sites 1-8,
+g12 9-16, g13 17-23): `Main.snowing()` (`Main.cs:13032-13116`, the
+type-76 site `:13088`) and `Main.TeleportEffect`'s styles 0/1/2/3/4/5/7
+(`:13233-13369`). The full ledger + witness list: research/65.
+Deliberate deviations / drops (all cited in the module):
+- **RNG slots.** `snowing` runs at `:17238`, before every `SwapRandom` —
+  the bare `Main.rand`, the port's `NamedRngs::global()`.
+  `TeleportEffect` takes the calling pass's key (`Player.Teleport` →
+  UpdatePlayers, `NPC.Teleport` → the NPC pass, `Wiring.Teleport` →
+  UpdateWorldGen); the Item6/Item8/Splash cues ride the same stream, the
+  audio-only `GetRandomPitch` draw stays on the audio stream (the
+  `play_npc_item_cue` façade).
+- **`Main.snowDust`** (`Main.cs:621`) is a Main static the pool does not
+  carry (d50's cited skip of the 76 arm's `snowDust++`); the budget gate
+  reads the live type-76 population — the `SandStormCount` stand-in
+  pattern (`sand.rs:115`).
+- **`maxScreenW`** is the HiDef 4096 (`Main.cs:3709`); `sand.rs`'s 1920
+  stand-in is its own recorded deviation, not shared here.
+- **Dropped:** `snowing`'s per-iteration try/catch (no exceptions),
+  `TeleportEffect`'s unread `side` param and `otherPosition` (feeds only
+  g12's style 10), the MP portal-colour hue ladder (SP port), style 9's
+  pylon dust (`TeleportPylonsSystem.SpawnInWorldDust` — not a Main.cs
+  NewDust site).
+- **Staged → wired (the W4-g11 wiring round):** `snowing` is WIRED —
+  `world_sim::scene_scan::update_scene` calls it at the `:17238` slot
+  (before `Sandstorm.EmitDust` `:17247`) on `NamedRngs::global()`, and the
+  `rain.rs` `Snowflake` vector stand-in is retired (keep-one: the flakes
+  live in the shared pool; the 76 physics arm is d50's `dust_physics.rs`
+  lane, the generic draw pass the draw lane's). The `TeleportEffect`
+  styles 0/1/2/3/4/5/7 are WIRED at the caller seams: `Player.Teleport`
+  (`player.rs::teleport_style_with_extra` queues the Entry/Exit pair +
+  the `teleportTime`/`teleportStyle`/`lastPortalColorIndex` grants;
+  `main_dust::player_teleport` replays Entry-at-OLD, move, Exit-at-NEW)
+  drained by the player tick (`world_sim/player.rs`, UpdatePlayers) and
+  the wiring pads (`world_sim/wiring.rs`, UpdateWorldGen — the move
+  defers to the replay via `queue_teleport_effect`); `NPC.Teleport`
+  (`main_dust::npc_teleport`, the `Npc` teleport fields) drained by the
+  wiring pads in pool order. The caller passes its pass's `RngKey`; the
+  Item6/Item8/Splash cues ride the same stream. The per-tick
+  `UpdateTeleportVisuals`/`UpdateNPC_TeleportVisuals` decay arms are the
+  W4-e1/NPC dust lanes' (the grants stay at 1 until then — the C# clamps
+  the multiplier either way). The 11 port witnesses + 5 wiring witnesses
+  (`main_dust.rs::tests`, `world_sim/wiring.rs::tests`) mirror every draw
+  sequence with full-stream equality. WRITTEN NOT RUN — no cargo/rustc
+  invoked (code-only).
+### The TeleportEffect union-exec (research/116 EXECUTED, 2026-11-21)
+The 4-way keep-one landed on this branch (`56afc0c0` + `8540a8ad`): the
+surviving body is g61's widest-11 (`crates/tr-app/src/teleport_dust.rs`,
+adapted per-hunk from `a9628928` — `TeleportDustEnv` drops the gore pool,
+the canonical `ui::color::hsl_to_rgb`, sounds at the C# position via the
+callback, the style-10 spawned-slot clone guard, the pylon style 9);
+`main_dust::teleport_effect` is the App-level dispatcher (the pass stream
+rides a `RefCell<UnifiedRandom>` shared between the `CellRng` `DustRng`
+adapter and the Audio-façade closure — observation-identical to the C#'s
+one `Main.rand`; the advanced state writes back after the body). The g11
+seven arm bodies + `nd`/`nd_full`/`nd_direct`/`item_cue`/`portal_color`
+are retired. All six research/116 gaps closed: the Queen-Slime hook rides
+`teleport_style(…, 10)` drained at the projectile pass tail
+(UpdateProjectiles), the Shellphone/no-space 11 fires through the
+player-tick drain; `otherPosition` on both legs of both replays; the
+style-9 `lastTeleportPylonStyleUsed` latch; the STORED `App.water_style`
+(written at `DrawWaters` `Main.cs:57475` in `frame/draw.rs`) replaces the
+inline recompute; the style-8 double Item6 cue + the replay-owned camera
+transition (style 1 → delay 10; the pad's inline arm retired); the inline
+grant dedupe (the replay owns `Player.cs:37490-37491`). The NPC per-tick
+fade (`update_npc_teleport_visuals`, the g11 `Npc` fields) is WIRED
+**PRE-AI** in the `UpdateNPC` slot preamble (`NPC.cs:90322` — after the
+cast lights `:90320`, BEFORE `AI()` `:90423`; the g61b seam-4 order fold,
+research/116 §5 — the earlier post-AI tail placement was a stream-order
+deviation on any slot with a live grant), UpdateNPCs stream;
+`timeForVisualEffects` = the `anim_time*60 % 216000` stand-in (g61b
+`c289d64f`'s shape, the `frame/draw.rs:374` convention). The statue
+teleport (`Wiring.cs:2437`/`:2465`, style 14) rides the SAME replay queue
+as the pads (research/116 §5 fold B — zero dust, the grants latch for
+the fade's −0.005 decay tail). The `Player.UpdateTeleportVisuals`
+decay stays the W4-e1 lane's. Deliberate drops (cited): the remaining
+`Player.Teleport` head/tail arms (funkytown/environment-immunity fields,
+PressurePlateHelper ×2, netOffset/spectate/wall-scan, mapTime/maxQ/
+renderNow, style-4 portalPhysicsFlag/gravity, advanced/social shadows —
+each its own lane, research/116 §4). Merger drops: g12's three staged
+`teleport_effect_case*` fns + 4 witnesses, d54's ten-style body + helpers
++ 8 witnesses (the snowing halves → research/83, whose F1-F7 are
+published as exact patch-hunks for d130's own-branch execution). Witness
+union: 33 adapted (g11 12 + g61 9 + g12 4 + d54 8) + 3 new gap witnesses,
+ALL WRITTEN NOT RUN (code-only).
+Final phase (research/116 §5/§6, research/83 §-adjudication): the g61b
+co-lane (`5852697a`, +5 wiring seams over `a9628928`) cross-verified —
+no spawn-dust dup with the teleport dispatcher (its poof/mimic/transform
+families are disjoint lanes); its seam-4 semantics folded into the
+surviving shapes (the fade PRE-AI re-slot + the statue style-14 queue
+latch, above). The snow-stream adjudication: the `:17238` pre-swap claim
+STANDS (the C# scope walk — `DoUpdate` `:16828` has no `SwapRandom`
+before `:17732`'s `DoUpdateInWorld`); d130's tip `560a02ea` kept its
+splitmix by its own §2 merger-delegation, so F1 stays the published
+recommendation, F2/F3 landed on d130 (`85250712`), and g11's
+`main_dust.rs::snowing` + `SnowingEnv` are marked DEPRECATED in-code
+(the merger drops them for d130's `snow.rs`; the branch keeps
+compiling). The main_dust.rs g11×g13 filename union-plan (ONE file, the
+per-fn keep table, the g13 test-helper rename, the Moon-Lord feed fuse)
+is research/116 §6 — the merger's worklist for d54f-131. Two new/extended
+witnesses (the style-13 pre-AI clear, the statue latch census) WRITTEN
+NOT RUN.
+Dust-retire phase (research/83 §-receipt, research/116 §7, research/65
+final sweep): **d130e APPLIED the F1 global-stream fold on its own
+branch** — `099df89e2` retired the `Snow` splitmix (struct + `App.snow`
++ both inits), `snowing` is a free fn on `&mut UnifiedRandom` fed
+`app.rngs.global()` at the `scene_scan` slot, F5's int loop + F7's
+witness re-pins + g11's three draw-mirrors landed with it; `16a792d56`
+(the d130 LOCAL tip, origin still `560a02eac` — push-rescue flag) adds
+the cull-kill into `snow::draw`. The REFUTED-AS-APPLIED flag is RETIRED;
+the merger's snow delta shrinks to the DROP of g11's deprecated copies
+(no hunks, no witness migration owed). The g61b worktree probe: ALIVE
+(tracked-clean + 2 scratch dumps; wiring.rs mtime 08:30 vs probe 09:05),
+local tip `b5ff1803d` +9 over origin `a96289284` (seams 1-6 + docs + 2
+borrow-fix rounds) — seam 6 key-summon cross-verified NO DUP with the
+dispatcher (a NewNPC spawn family, never TeleportEffect). The Main.cs
+dust-family final sweep (research/65): ZERO unclaimed sites — all 23
+NewDust-family sites + the CloneDust + the pool ctor/UpdateDust/DrawDust/
+DrawCapture-cull/counter windows map to the union-table owners. The
+ONE-paragraph merger instruction for dust-master 131 is research/116
+§7.2. Code-only; the `main_dust.rs` RETIRE-NOTE re-worded to the receipt.

@@ -398,6 +398,42 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         *zoom,
         app.gfx_quality.max_dust_to_draw,
     );
+    // W4-g11 — `Main.snowing()` (`Main.cs:17238`, the bare `Main.rand` slot
+    // BEFORE the `DoUpdateInWorld` swap at `:17732`; `:17247`'s
+    // `Sandstorm.EmitDust` follows it). The port's per-frame scene update is
+    // the `:17238`/`:17247` pair's home (the `update_scene` doc): the flakes
+    // spawn into the shared pool on `NamedRngs::global()`, the retired
+    // `rain.rs` `Snowflake` stand-in is gone. The env reads the STORED
+    // metrics (vanilla's last-scan persistence — the rescan below overwrites
+    // them after both emitters, exactly the `EmitDust` convention).
+    let snow_env = crate::main_dust::SnowingEnv {
+        remix_world: world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+        game_paused: app.game_paused,
+        snow_tile_count: app.scene_metrics.snow_tile_count,
+        surface_atmospherics: app.scene_metrics.surface_atmospherics,
+        cloud_alpha: rain.intensity_value(),
+        // `Main.Camera.ScaledPosition`/`ScaledSize` — the world-space view
+        // rect (the `spawn_ctx_from` convention: `camera - screen*0.5/zoom`,
+        // `screen/zoom`).
+        scaled_size: screen / *zoom,
+        scaled_position: *camera - screen * 0.5 / *zoom,
+        gfx_quality: app.gfx_quality.quality,
+        // `NPC.IsADeerclopsNearScreen()` (`NPC.cs:44534-44537`):
+        // `npcsFoundForCheckActive[668]` — any ACTIVE Deerclops in the list
+        // (`UpdateFoundActiveNPCs`, `NPC.cs:7229-7239`; the port's `hp > 0`
+        // is the active flag).
+        deerclops_near: npcs.iter().any(|n| n.hp > 0 && n.kind == NpcKind::Deerclops),
+        player_vy,
+        raining: rain.is_raining(),
+        wind_speed_current: wind.speed_current,
+    };
+    crate::main_dust::snowing(
+        &snow_env,
+        app.rngs.global(),
+        &ctx,
+        world,
+        &mut app.dust,
+    );
     app.sand.emit_dust(
         &app.scene_metrics,
         sandstorm.severity,

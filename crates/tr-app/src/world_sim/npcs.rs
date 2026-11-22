@@ -4796,6 +4796,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // ess_scale stamp's one-frame convention — the sim runs ahead of the
     // draw that refreshes it).
     let app_light = &app.light;
+    // W4-g11 final phase (g61b seam-4 fold, research/116 §5):
+    // `Main.timeForVisualEffects` (`Main.cs:1181` — a double, ticks since
+    // start wrapped at 216000) as the port's `anim_time * 60` stand-in
+    // (the `frame/draw.rs:374` convention, g61b `c289d64f`'s shape),
+    // captured ONCE per call before the field borrows — the fade's
+    // style-12 hue clock reads it.
+    let time_for_visuals = (app.anim_time as f64 * 60.0) % 216000.0;
     // Limit the scope of borrows to just the tick closure
     {
         // S1-D-3 W-1: `&mut` — the WoF arm's band/index statics write back
@@ -4933,6 +4940,36 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     {
                         let n = &mut npcs[i];
                         n.slot = i;
+                        // W4-g11 union-exec (research/116 §2) —
+                        // `NPC.UpdateNPC_TeleportVisuals` (`NPC.cs:90322`,
+                        // body `:92194-92241`): the per-tick teleport fade
+                        // runs PRE-AI in the C# — `:90322` sits after
+                        // `UpdateAltTexture` `:90313` / `UpdateNPC_CastLights`
+                        // `:90320` and BEFORE `AI()` `:90423` (the g61b
+                        // seam-4 order fold, research/116 §5 — the earlier
+                        // g11 tail placement ran it after the AI's draws,
+                        // a stream-order deviation on any slot with a live
+                        // teleport grant). The head gate (`teleport_time
+                        // <= 0`) draws nothing, so the common case is a
+                        // zero-draw no-op either way; the fade plays no
+                        // sound (styles 0/4/12/13 are dust-only). The
+                        // style-12 clock reads `time_for_visuals` (the
+                        // `anim_time*60 % 216000` stand-in captured above).
+                        if n.teleport_time > 0.0 {
+                            let mut no_sound = |_: i32, _: i32, _: f32, _: f32| {};
+                            let mut tv_env = crate::teleport_dust::TeleportDustEnv {
+                                world,
+                                dust: &mut *dust,
+                                dust_ctx: &dust_ctx,
+                                rng: &mut *npcs_rng,
+                                play_sound: &mut no_sound,
+                            };
+                            crate::teleport_dust::update_npc_teleport_visuals(
+                                &mut tv_env,
+                                n,
+                                time_for_visuals,
+                            );
+                        }
                         // `NPC.OnSpawn`'s type-113 arm (`NPC.cs:8404-8407`):
                         // `Main.wofNPCIndex = whoAmI` at spawn — the presence
                         // mirror stays on while the wall lives (the death
@@ -5155,6 +5192,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         play_npc_sound_request(audio, n, req, npcs_rng);
                     }
                     black_slime_darkness_touch(n, player, npcs_rng);
+                    // `NPC.UpdateNPC_TeleportVisuals` moved PRE-AI to the
+                    // slot preamble (the `n.slot = i` block above —
+                    // `NPC.cs:90322` before `AI()` `:90423`, the g61b
+                    // seam-4 fold, research/116 §5). The fade's scoped env
+                    // borrows end there; this tail resumes the slot's
+                    // mutable borrow directly.
+                    let n = &mut npcs[i];
                     // `NPC.UpdateNPC`'s tail (`NPC.cs:90324-90327`): the
                     // look-for-home timer decays one per tick.
                     if n.look_for_home_timeout > 0 {
@@ -7875,6 +7919,43 @@ mod tests {
                 k.name()
             );
         }
+    }
+
+    /// W4-g11 final phase (g61b seam-4 fold, research/116 §5) — the fade's
+    /// PRE-AI wiring contract (`NPC.cs:90322` before `AI()` `:90423`):
+    /// * style 13 (the frog's instant clear, `:92238`) zeroes
+    ///   `teleport_time` on the FIRST tick — the AI never sees a live
+    ///   grant; the arm draws nothing (`:92236-92239`), so the
+    ///   `UpdateNPCs` stream's fade share is zero draws.
+    /// * a zero grant (the common case) is a head-gate no-op
+    ///   (`:92196-92199`) — the pass leaves the field untouched.
+    #[test]
+    fn w4_g11_the_fade_clears_style13_pre_ai_in_one_tick() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        // The slot loop (the fade included) runs only with a session player.
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let mut npc = Npc::new(NpcKind::Zombie, 100.0, 100.0, 1, 0.0);
+        npc.hp = npc.max_hp;
+        npc.teleport_time = 1.0;
+        npc.teleport_style_id = 13; // the frog grant shape (`NPC.cs:79880`)
+        app.npcs.push(npc);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let n = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::Zombie)
+            .expect("the zombie survives its first tick");
+        assert_eq!(
+            n.teleport_time, 0.0,
+            "style 13 clears on the fade tick, before the AI runs"
+        );
+        // A second tick with the cleared grant is a head-gate no-op (the
+        // zombie may despawn in the 8×8 fixture — either way no grant).
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs.iter().all(|n| n.teleport_time == 0.0),
+            "the head gate holds"
+        );
     }
 
     /// `NPC.cs:7117-7145`'s `SpawnAllowed_DyeTrader`: the inventory carries

@@ -252,6 +252,9 @@ impl App {
                     dust,
                     gore,
                     liquid_alpha,
+                    // W4-g11 union-exec (research/116 gap 4): the
+                    // `Main.waterStyle` static write (`DrawWaters` :57475).
+                    water_style,
                     wind,
                     tree_wind_counter,
                     grass_wind_counter,
@@ -683,6 +686,11 @@ impl App {
                     // plain water style — lava (1), honey (11) and shimmer (14) sit
                     // outside the ramp.
                     let water_style_now = crate::biome::calculate_water_style(world, draw_cam);
+                    // `Main.waterStyle = Main.CalculateWaterStyle()`
+                    // (`Main.cs:57475`): the STORED static the
+                    // `TeleportEffect` style-5 arm reads (research/116
+                    // gap 4) — written here at the C# position.
+                    *water_style = water_style_now as i32;
                     if crate::render::liquids::is_liquid_style_water(water_style_now) {
                         for (i, a) in liquid_alpha.iter_mut().enumerate() {
                             *a = if i == water_style_now {
@@ -2206,7 +2214,9 @@ impl App {
                             liquids.active_len(),
                             rain.visual_alpha(),
                             rain.drop_count(),
-                            rain.snow_count(),
+                            // W4-g11: the flakes are the shared pool's live
+                            // type-76 population (`Main.snowing`'s spawns).
+                            crate::minecart::live_type(dust, 76),
                         );
                     }
 

@@ -569,6 +569,32 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         app.swing = secs;
         app.item_time = secs;
     }
+    // W4-g11 union-exec (research/116 gap 1) — the Queen-Slime hook's
+    // `Player.Teleport(vector, 10)` (`Projectile.cs:52775` →
+    // `Player.cs:22753`): the 935 latch queued the style-10 effect pair
+    // (the move ran inline); the replay runs Entry-at-OLD → Exit-at-NEW
+    // on the `UpdateProjectiles` stream (`Main.cs:17775` — the C# executes
+    // `Teleport` inside the projectile pass). The same-tick deferral is
+    // observation-identical (nothing probes the dust between the latch
+    // and this drain); the replay owns the grants + the camera transition.
+    if let Some((ox, oy, nx, ny, style, e2, ei, mult)) =
+        app.player.as_mut().and_then(|p| p.take_teleport_effect())
+    {
+        crate::main_dust::player_teleport(
+            app,
+            crate::main_dust::PlayerTeleportReq {
+                old_x: ox,
+                old_y: oy,
+                new_x: nx,
+                new_y: ny,
+                style,
+                extra_info2: e2,
+                extra_info: ei,
+                mult,
+                key: crate::app::RngKey::UpdateProjectiles,
+            },
+        );
+    }
     // S1-C-7 wave B — the hostile-shot lane's hurt modifiers (`Player.Hurt`
     // `:38396-38517` via `Projectile.Damage` `Projectile.cs:14868`): the
     // accepted shot queued its retaliate request and possibly a dismount-on-

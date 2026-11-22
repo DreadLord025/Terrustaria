@@ -103,6 +103,14 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
     // THROW_A_PARTY (25) rides after the fixed step: the `98` broadcast needs
     // `&mut App`, which the wiring closure holds across its body.
     let mut party_credits = 0;
+    // W4-g11 — the pad teleports' effect replays (`Wiring.cs:3154`/`:3170`):
+    // the movement cores ran inline (the C# order — the player first, then
+    // the NPC pool walk); the Entry/Exit `TeleportEffect` pairs + the grants
+    // drain after the step on the `UpdateWorldGen` stream (the same `&mut App`
+    // constraint as the party credits). The stream order is the C#'s: the
+    // player's pair, then each NPC's, in pool order.
+    let mut teleport_replays: Vec<crate::main_dust::PlayerTeleportReq> = Vec::new();
+    let mut npc_teleports: Vec<crate::main_dust::NpcTeleportReq> = Vec::new();
     app.wiring_step.tick(dt.min(0.25), |_| {
         app.wiring.update(&mut app.world);
         // `Wiring.Teleport()` per registered pad pair (`Wiring.cs:3120-3178`):
@@ -210,7 +218,14 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                     // 50 roster NPCs in index order), one roll from the core
                     // stream when the collection is non-empty, and only the
                     // rolled NPC moves — to `(x - width/2, y - height - 1)` with
-                    // the roll's style 14.
+                    // the roll's style 14 (`Wiring.cs:2437`/`:2465`). W4-g11
+                    // final phase (g61b seam-4 fold, research/116 §5): the
+                    // move rides `NPC.Teleport` (`NPC.cs:81035-81058`) through
+                    // the SAME replay queue as the pads — style 14 has NO
+                    // `TeleportEffect` arm (the switch falls through, zero
+                    // dust), but the `teleportTime`/`teleportStyle` grants
+                    // latch (`:81052-81053`) for the per-tick fade. The
+                    // `SendData(65)` relay is the server arm — dropped.
                     let mut candidates = Vec::new();
                     for (idx, n) in app.npcs.iter().enumerate() {
                         if n.hp > 0 && roster.contains(&n.kind.cs_id()) {
@@ -224,10 +239,16 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                         continue;
                     }
                     let roll = app.wiring.rand_next(candidates.len() as i32) as usize;
-                    let npc = &mut app.npcs[candidates[roll]];
-                    let (w, h) = npc.size();
-                    npc.x = x as f32 - w * 0.5;
-                    npc.y = y as f32 - h - 1.0;
+                    let slot = candidates[roll];
+                    let (w, h) = app.npcs[slot].size();
+                    npc_teleports.push(crate::main_dust::NpcTeleportReq {
+                        index: slot,
+                        new_x: x as f32 - w * 0.5,
+                        new_y: y as f32 - h - 1.0,
+                        style: 14,
+                        extra_info: 0,
+                        key: crate::app::RngKey::UpdateWorldGen,
+                    });
                 }
                 // The boulder statue's projectile 99 (aiStyle 25) has no ported
                 // family — dropped with the ANALYSIS note, like the other
@@ -293,37 +314,55 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                 ux1 >= ux0 && uy1 >= uy0
             };
             if !app.wiring.block_player_teleportation() {
+                // W4-g11 union-exec: queue ONLY (the move defers to the
+                // replay so the Entry effect reads the true OLD box — the
+                // C# order Entry-at-OLD, move, Exit-at-NEW). The camera
+                // transition moved INTO the replay (`player_teleport`,
+                // `Player.cs:37456-37463` — research/116 gap 5: the pad and
+                // the player-tick callers share the one C#-position arm).
                 if let Some(p) = &mut app.player {
                     let px = p.x;
                     let py = p.y;
                     if !p.dead && hits(px, py, crate::player::WIDTH, crate::player::HEIGHT) {
-                        // `Player.Teleport`'s camera transition
-                        // (`Player.cs:37463`, `Main.cs:62572` — the wiring pad
-                        // rides the default style, so the lerp delay is 0).
-                        let old_center = glam::Vec2::from(p.center());
-                        let mut state = std::mem::take(&mut app.camera_state);
-                        crate::world_sim::camera::start_camera_transition_for_player_teleport(
-                            &mut state,
-                            old_center,
-                            0.1,
-                            0,
-                        );
-                        app.camera_state = state;
-                        p.teleport(px + dx, py + dy);
+                        p.queue_teleport_effect(px + dx, py + dy, 0, 0);
+                        if let Some((ox, oy, nx, ny, style, e2, ei, mult)) =
+                            p.take_teleport_effect()
+                        {
+                            teleport_replays.push(crate::main_dust::PlayerTeleportReq {
+                                old_x: ox,
+                                old_y: oy,
+                                new_x: nx,
+                                new_y: ny,
+                                style,
+                                extra_info2: e2,
+                                extra_info: ei,
+                                mult,
+                                key: crate::app::RngKey::UpdateWorldGen,
+                            });
+                        }
                     }
                 }
             }
             // `Wiring.cs:3147-3157`: the NPC gates — `lifeMax > 5`, no bosses,
             // `noTileCollide` and the `TeleportationImmune` set (none of the
-            // implemented kinds is immune; bosses = King Slime).
-            for n in app.npcs.iter_mut() {
+            // implemented kinds is immune; bosses = King Slime). W4-g11: each
+            // hit NPC rides `NPC.Teleport` (`Wiring.cs:3170`, the default
+            // style 0) — the Entry/Exit effect pair + the grants replay on the
+            // `UpdateWorldGen` stream, in pool order (the C#'s `k` walk), at
+            // the post-step drain.
+            for idx in 0..app.npcs.len() {
+                let n = &app.npcs[idx];
                 if n.max_hp > 5 && n.hp > 0 && n.kind != NpcKind::KingSlime {
-                    let nx = n.x;
-                    let ny = n.y;
                     let (w, h) = n.size();
-                    if hits(nx, ny, w, h) {
-                        n.x = nx + dx;
-                        n.y = ny + dy;
+                    if hits(n.x, n.y, w, h) {
+                        npc_teleports.push(crate::main_dust::NpcTeleportReq {
+                            index: idx,
+                            new_x: n.x + dx,
+                            new_y: n.y + dy,
+                            style: 0,
+                            extra_info: 0,
+                            key: crate::app::RngKey::UpdateWorldGen,
+                        });
                     }
                 }
             }
@@ -342,6 +381,17 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
             );
         }
     });
+    // W4-g11 — the pad teleports' effect replays: the player's pair first,
+    // then each NPC's in pool order (the C#'s `j`-then-`k` walk,
+    // `Wiring.cs:3144-3173`), all on the `UpdateWorldGen` stream. The moves
+    // DEFER to the replays (the C# order Entry-at-OLD, move, Exit-at-NEW);
+    // nothing between the trip and this drain probes the entity positions.
+    for req in teleport_replays {
+        crate::main_dust::player_teleport(app, req);
+    }
+    for req in npc_teleports {
+        crate::main_dust::npc_teleport(app, req);
+    }
     for _ in 0..party_credits {
         let _ = app.notify_progression_net(25);
     }
@@ -945,6 +995,21 @@ mod tests {
             moved.y,
             anchor_y - h - 1.0
         );
+        // W4-g11 final phase (g61b seam-4 fold, research/116 §5): the move
+        // rides the `NPC.Teleport` replay — style 14 has NO TeleportEffect
+        // arm (zero dust, the wiring stream spends only the roster roll),
+        // but the `teleportTime`/`teleportStyle` grants latch
+        // (`NPC.cs:81052-81053`) for the per-tick fade.
+        assert_eq!(moved.teleport_time, 1.0, "the teleport time latches");
+        assert_eq!(moved.teleport_style_id, 14, "the statue's style 14");
+        assert_eq!(
+            app.npcs[other].teleport_time, 0.0,
+            "the unpicked NPC never teleports"
+        );
+        assert!(
+            !app.dust.slots().iter().any(|d| d.active),
+            "style 14 draws no TeleportEffect dust"
+        );
     }
 
     #[test]
@@ -955,6 +1020,95 @@ mod tests {
         app.npcs.push(npc_of(crate::npc::NpcKind::Slime, 100.0, 100.0));
         trip_and_tick(&mut app);
         assert_eq!((app.npcs[0].x, app.npcs[0].y), (100.0, 100.0));
+    }
+
+    /// W4-g11 wiring — the pad pair's `Player.Teleport`/`NPC.Teleport`
+    /// (`Wiring.cs:3154`/`:3170`, the default style 0): both entities move by
+    /// the pad delta, the Entry/Exit effect pairs draw type-159 dust on the
+    /// `UpdateWorldGen` stream (the wiring tick's swap), and the
+    /// `teleportTime`/`teleportStyle` grants land. Union-exec: the camera
+    /// transition is armed by the REPLAY (`player_teleport`, gap 5 — the
+    /// pad's inline arm retired; style 0 → delay 0).
+    #[test]
+    fn w4_g11_the_pads_teleport_with_the_effect_pair() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = world();
+        // The two pads + the wire line + the switch (the tr-core
+        // `two_pads_register_and_emit_one_event` rig).
+        let put_pad = |w: &mut tr_core::world::World, x: i32, y: i32| {
+            let i = w.index(x, y);
+            w.tiles[i] = Tile { kind: 235, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+            w.wires.set(x, y, tr_core::wiring::WireColor::Red, true);
+        };
+        put_pad(&mut w, 10, 20);
+        put_pad(&mut w, 30, 24);
+        let i = w.index(9, 20);
+        w.tiles[i] = Tile { kind: 135, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.wires.set(9, 20, tr_core::wiring::WireColor::Red, true);
+        for x in 10..=30 {
+            w.wires.set(x, 20, tr_core::wiring::WireColor::Red, true);
+        }
+        for y in 21..=24 {
+            w.wires.set(30, y, tr_core::wiring::WireColor::Red, true);
+        }
+        app.world = w;
+        app.gfx_quality.max_dust_to_draw = 6000;
+        // The player stands in pad A's 48×48 box ([160,208]×[272,320]).
+        let mut p = crate::player::Player::spawn(&app.world);
+        p.x = 170.0;
+        p.y = 278.0;
+        app.player = Some(p);
+        // The camera covers BOTH pad boxes (the NewDust off-screen cull,
+        // `Dust.cs:97-101`: the view + the 400 margin must reach the Exit
+        // box at (490, 342)).
+        app.camera = Vec2::new(330.0, 310.0);
+        // The Nurse (max_hp > 5, not a boss) stands in the same box.
+        app.npcs.push(npc_of(crate::npc::NpcKind::Nurse, 170.0, 278.0));
+        let stream_before = app.rngs.stream(crate::app::RngKey::UpdateWorldGen).clone();
+        let players_before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        // The trip registers the pair and emits ONE event (`Wiring.cs:651-661`);
+        // the drain below consumes it. The events are taken BEFORE the tick so
+        // the switch's mech re-trip inside `wiring.update` cannot register a
+        // second pair into the same drain (the C# re-trip rides the NEXT
+        // update's teleport walk).
+        app.wiring.trip_wire(&mut app.world, 9, 20, 1, 1);
+        let events = app.wiring.take_teleport_events();
+        assert_eq!(events.len(), 1, "both pads registered → one teleport");
+        app.wiring.push_teleport_event_for_test(events[0]);
+        update_wiring(app, 1.0 / 60.0);
+        // The pad delta: (30-10)*16 = 320 x, (24-20)*16 = 64 y.
+        let p = app.player.as_ref().unwrap();
+        assert_eq!((p.x, p.y), (490.0, 342.0));
+        assert_eq!(p.teleport_time, 1.0);
+        assert_eq!(p.teleport_style_id, 0);
+        // The replay armed the camera transition (style 0 → delay 0).
+        assert_eq!(app.camera_state.camera_lerp, 0.1);
+        assert_eq!(app.camera_state.camera_lerp_time_toggle, 0);
+        assert!(app.player.as_mut().unwrap().take_teleport_effect().is_none(), "the drain consumed the pair");
+        assert_eq!((app.npcs[0].x, app.npcs[0].y), (490.0, 342.0));
+        assert_eq!(app.npcs[0].teleport_time, 1.0);
+        assert_eq!(app.npcs[0].teleport_style_id, 0);
+        // The effects drew type-159 dust (the style-0 sparkle) on the
+        // UpdateWorldGen stream ONLY.
+        let sparkles = app
+            .dust
+            .slots()
+            .iter()
+            .filter(|d| d.active && d.dust_type == 159)
+            .count();
+        assert!(sparkles > 0, "the Entry/Exit pairs drew dust");
+        assert_ne!(
+            app.rngs.stream(crate::app::RngKey::UpdateWorldGen).clone(),
+            stream_before,
+            "the wiring stream advanced"
+        );
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
+            players_before,
+            "the player stream stayed untouched"
+        );
     }
 
     #[test]
