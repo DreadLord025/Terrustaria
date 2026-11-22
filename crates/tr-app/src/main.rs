@@ -158,6 +158,10 @@ mod npc_ai_cultist;
 mod npc_ai_pillar;
 mod npc_ai_style71;
 mod npc_target;
+// W4-d55 (gore table wave A): UNWIRED NPC.HitEffect per-NPC gore table —
+// the first 30 death sites (NPC.cs:81660-81941); the StrikeNPC_Inner
+// dispatch claim is the wiring wave (the npc_ai_style39 precedent).
+mod npc_hit_effect_a;
 mod npc_ai_style21;
 mod npc_buffs;
 mod npc_findframe_a;
