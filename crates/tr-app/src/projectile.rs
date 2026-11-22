@@ -7026,6 +7026,18 @@ impl Projectile {
     /// The rotation spins by `(|vx|+|vy|)·0.01·direction` (`:23952`). The
     /// dust/gore rolls (`:23883/:23973/:23983/:24035/:24039`) are SKIPPED.
     fn ai_falling_star(&mut self, world: &World) {
+        // W4-d15 — the natural FallingStar 12's daylight kill
+        // (`Projectile.cs:23841-23844`): non-remix daylight + the 1000
+        // starfall damage. The C# has NO early return — the rest of the
+        // arm runs on the dead slot (the port's kill convention zeroes
+        // time_left; the writes below land on the dead slot too).
+        if self.kind == NATURAL_FALLING_STAR
+            && world.day_time
+            && !world.seeds.contains(tr_core::seeds::SeedFlags::REMIX)
+            && self.damage == 1000
+        {
+            self.kill();
+        }
         if self.kind == STARFURY {
             // `:23865-23868` — `tileCollide = base.Bottom.Y >= this.ai[1]`.
             self.tile_collide = self.pos.y + self.h >= self.ai[1];
@@ -7071,6 +7083,13 @@ impl Projectile {
         // `AutomaticallyChangesDirection` `:17281-17288`, true for aiStyle 5).
         self.direction = if self.vel.x < 0.0 { -1 } else { 1 };
         self.rot += (self.vel.x.abs() + self.vel.y.abs()) * 0.01 * self.direction as f32;
+        // W4-d15 — the 12/955 block's unconditional light 0.9
+        // (`Projectile.cs:23982`); the block's screen-gated gore/dust
+        // draws (`:23973-23986`) and the soundDelay roll (`:23883`) are
+        // the i22 arm's recorded layer skips (the 955 precedent).
+        if self.kind == NATURAL_FALLING_STAR {
+            self.light = 0.9;
+        }
         // The movement: `HandleMovement`'s default tile arm (`:19849-19853`)
         // — the blocked hit kills. The 9's `tileCollide` is the latch above.
         self.kill_step(world);
@@ -15596,7 +15615,7 @@ fn aura_solid_at(world: &World, x: i32, y: i32) -> bool {
 /// explicit fallback — the Ballista's aim and the aura's arc read the C#'s
 /// `SafeNormalize(Vector2.UnitY)` form, where a zero delta keeps the unit-Y
 /// default instead of collapsing to zero.
-fn safe_normalize_or(v: Vec2, default_value: Vec2) -> Vec2 {
+pub(crate) fn safe_normalize_or(v: Vec2, default_value: Vec2) -> Vec2 {
     if v == Vec2::ZERO || v.is_nan() {
         default_value
     } else {
@@ -15848,6 +15867,23 @@ pub struct ProjectilePool {
     /// pass drains it into `app.reuse_delay` (the `take_spear_hold`
     /// write-back precedent). `None` = no swing died this tick.
     pending_monk_reuse: Option<i32>,
+
+    /// W4-d15 — the DD2 slice's owner snapshot (`AI_142`/`AI_144`/`AI_148`'s
+    /// `Main.player[owner]` reads). The world-sim pass sets it per fixed
+    /// step through [`ProjectilePool::set_dd2_owner`] (the `set_spear_owner`
+    /// pattern). `None` = no player link: the 142 arm holds the slot (the
+    /// orphan guard).
+    dd2_owner: Option<crate::projectile_ai_dd2::Dd2Owner>,
+    /// W4-d15 — the 142 arm's player writes (`player.heldProj` `:69822`,
+    /// `player.reuseDelay = 2` `:69966`): drained by the world-sim pass
+    /// after the step (the `take_spear_hold` precedent).
+    pending_dd2_writes: Vec<(Option<i32>, Option<i32>)>,
+    /// W4-d15 — the 144 arm's 1050 shake-tick effect requests
+    /// (`KillTile_MakeTileDust`/`PlaySounds`/`DropItems`,
+    /// `Projectile.cs:70217-70229`): the three `Main.rand` draws stay
+    /// inline in the arm; the effects drain in the world-sim pass on the
+    /// same `UpdateProjectiles` stream (the `pending_catches` precedent).
+    pending_dd2_shakes: Vec<crate::projectile_ai_dd2::Dd2Shake>,
 
     /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
     /// (`AI_061` + `FishingCheck`'s `Main.player[owner]` reads). The world sim
@@ -16275,6 +16311,9 @@ impl ProjectilePool {
             spear_owner: None,
             pending_spear_hold: None,
             pending_monk_reuse: None,
+            dd2_owner: None,
+            pending_dd2_writes: Vec::new(),
+            pending_dd2_shakes: Vec::new(),
             bobber_inputs: None,
             pending_splashes: Vec::new(),
             pending_catches: Vec::new(),
@@ -16570,6 +16609,30 @@ impl ProjectilePool {
     /// `app.reuse_delay` to this many ticks. `None` when no swing died.
     pub fn take_monk_reuse(&mut self) -> Option<i32> {
         self.pending_monk_reuse.take()
+    }
+
+    /// W4-d15 — the DD2 slice's owner snapshot (`AI_142`'s
+    /// `Main.player[owner]` reads, `Projectile.cs:69819-69844`). The
+    /// world-sim pass builds it per fixed step from the live player + the
+    /// swing timers (the `set_spear_owner` pattern). `None` clears the
+    /// link (the arm's orphan guard).
+    pub fn set_dd2_owner(&mut self, owner: Option<crate::projectile_ai_dd2::Dd2Owner>) {
+        self.dd2_owner = owner;
+    }
+
+    /// W4-d15 — drain the 142 arm's player writes: `(heldProj, reuseDelay)`
+    /// per fired arm, in slot order (`Projectile.cs:69822`/`:69966`). The
+    /// world-sim pass applies them after the step.
+    pub fn take_dd2_writes(&mut self) -> Vec<(Option<i32>, Option<i32>)> {
+        std::mem::take(&mut self.pending_dd2_writes)
+    }
+
+    /// W4-d15 — drain the 144 arm's 1050 shake-tick effect requests
+    /// (`Projectile.cs:70217-70229`), in slot order. The world-sim pass
+    /// resolves the dust/sound/drop effects on the `UpdateProjectiles`
+    /// stream (the arm's three draws already ran inline).
+    pub fn take_dd2_shakes(&mut self) -> Vec<crate::projectile_ai_dd2::Dd2Shake> {
+        std::mem::take(&mut self.pending_dd2_shakes)
     }
 
     /// `AI_GetMyGroupIndexAndFillBlackList` (`Projectile.cs:51895-51911`) plus
@@ -18432,16 +18495,23 @@ impl ProjectilePool {
                         // i17 slice; the Starfury star 9 + the Star Cannon
                         // star 955 (S1-P-i22) ride the fuller i22 arm (the
                         // tileCollide latches + the alpha ramps + the spin).
-                        // The other aiStyle-5 kinds (12/503/723-726/1037/
+                        // The other aiStyle-5 kinds (503/723-726/1037/
                         // 1049/1133) have no rows yet — the arm stays
                         // kind-gated so they keep the no-op fall-through.
+                        // W4-d15: the natural FallingStar 12 (the 148
+                        // spawner's shot) joins the i22 machine — the
+                        // generic latch/alpha/spin arms serve it (the
+                        // 955 precedent) plus its daylight kill.
                         5 => {
                             if self.slots[i].kind == FALLING_STAR {
                                 crate::special_arrows::falling_star_step(
                                     &mut self.slots[i],
                                     world,
                                 );
-                            } else if matches!(self.slots[i].kind, STARFURY | STAR_CANNON_STAR) {
+                            } else if matches!(
+                                self.slots[i].kind,
+                                STARFURY | STAR_CANNON_STAR | NATURAL_FALLING_STAR
+                            ) {
                                 self.slots[i].ai_falling_star(world);
                             }
                         }
@@ -18800,6 +18870,168 @@ impl ProjectilePool {
                             );
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
+                        }
+                        // W4-d15 — aiStyle 141: the Sleepy Octopod's ground
+                        // blast 698 (`AI_141_MonkStaffT1Explosion`,
+                        // `Projectile.cs:69602-69620`): the 20-tick counter
+                        // kill and the tick-1 impact-explosion draw census
+                        // (the tile walk's dust rows + the 25-point rings).
+                        141 => {
+                            crate::projectile_ai_dd2::ai_monk_staff_t1_explosion(
+                                &mut self.slots[i],
+                                world,
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return
+                            // (:17015/:17027); the row keeps tileCollide =
+                            // false (`:7391`) — the free integrate.
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d15 — aiStyle 142: the Monk Staff T2 (699) /
+                        // T3-alt (708) swing (`AI_142_MonkStaffT2And3`,
+                        // `Projectile.cs:69817-69968`): the owner anchor,
+                        // the swing arc, the 708's animation-2/6/10 709
+                        // volley and the draw census. The owner snapshot
+                        // rides the pool's `set_dd2_owner` seam; a `None`
+                        // link holds the slot (the orphan guard, the
+                        // aiStyle-19 precedent).
+                        142 => {
+                            if let Some(o) = self.dd2_owner {
+                                let tick = crate::projectile_ai_dd2::ai_monk_staff_t2_and_3(
+                                    &mut self.slots[i],
+                                    i,
+                                    &o,
+                                    local_owner,
+                                    rng,
+                                );
+                                self.pending_dd2_writes
+                                    .push((tick.held_proj, tick.reuse_delay));
+                                let owner_id = self.slots[i].owner;
+                                for s in tick.shots {
+                                    // `NewProjectile` centres the box
+                                    // (`:10876-10877`).
+                                    let _ = self.spawn_with_data_ai_owned(
+                                        s.kind,
+                                        owner_id,
+                                        s.x - proj_data(s.kind).map_or(0.0, |d| d.w) * 0.5,
+                                        s.y - proj_data(s.kind).map_or(0.0, |d| d.h) * 0.5,
+                                        s.vx,
+                                        s.vy,
+                                        s.damage,
+                                        s.knock_back,
+                                        0.0,
+                                        s.ai1.unwrap_or(0.0),
+                                    );
+                                }
+                            }
+                            // HandleMovement after the AI (`:17015`); the
+                            // rows keep tileCollide = false (`:7413`/
+                            // `:7502`) — the free integrate.
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d15 — aiStyle 143: the T2 ghast 700
+                        // (`AI_143_MonkStaffT2Ghast`,
+                        // `Projectile.cs:69970-70036`): the tracked-sound
+                        // fold, the ±25 alpha ramps, the ×0.98 decay, the
+                        // 5-tick frame wrap, the 60-tick kill and the
+                        // 10..34 trail window's 2 floats.
+                        143 => {
+                            crate::projectile_ai_dd2::ai_monk_staff_t2_ghast(
+                                &mut self.slots[i],
+                                rng,
+                            );
+                            // HandleMovement after the AI (`:17015`); the
+                            // row keeps tileCollide = false (`:7431`).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d15 — aiStyle 144: the DD2 pets 701/702/703/
+                        // 764/1050 (`AI_144_DD2Pet`,
+                        // `Projectile.cs:70038-70324`): the hover machine,
+                        // the pet-flag re-pin, the 1050 tree-shake scan
+                        // and the draw census. The owner snapshot rides
+                        // `set_dd2_owner`; a `None` link holds the slot.
+                        144 => {
+                            if let Some(o) = self.dd2_owner {
+                                let mut shakes = Vec::new();
+                                crate::projectile_ai_dd2::ai_dd2_pet(
+                                    &mut self.slots[i],
+                                    &o,
+                                    world,
+                                    rng,
+                                    &mut shakes,
+                                );
+                                self.pending_dd2_shakes.extend(shakes);
+                            }
+                            // HandleMovement after the AI (`:17015`); the
+                            // rows keep tileCollide = false (`:7444`).
+                            // manualDirectionChange (`:7445`) — the arm
+                            // pins facing; the free integrate never
+                            // rewrites it (the aiStyle-120 precedent).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d15 — aiStyle 145: the Book Staff twister 704
+                        // (`AI_145_BookStaffStorm`,
+                        // `Projectile.cs:70326-70468`): the 300-tick age +
+                        // the 16-counter fast-forward, the column probe's
+                        // rise/fall, the swirl-dust float census and the
+                        // three gore gates (the G3 NewGore kicks).
+                        145 => {
+                            crate::projectile_ai_dd2::ai_book_staff_storm(
+                                &mut self.slots[i],
+                                world,
+                                rng,
+                            );
+                            // HandleMovement after the AI (`:17015`); the
+                            // row keeps tileCollide = false (`:7454`).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d15 — aiStyle 146: the DD2 victory banner 713
+                        // (`AI_146_DD2Victory`, `Projectile.cs:53960-53962`
+                        // — an EMPTY C# body). The documented no-op arm;
+                        // the free integrate + the 900-tick life are the
+                        // whole behaviour.
+                        146 => {
+                            crate::projectile_ai_dd2::ai_dd2_victory(&mut self.slots[i]);
+                            // HandleMovement after the AI (`:17015`); the
+                            // row keeps tileCollide = false (`:7566`).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d15 — aiStyle 148: the starfall spawner 720
+                        // (`AI_148_StarSpawner`, `Projectile.cs:53094-
+                        // 53128`): the daylight kill, the day-rate age,
+                        // the one-shot background-star fall census and
+                        // the 180-age FallingStar 12 spawn. The owner
+                        // snapshot rides `set_dd2_owner`; a `None` link
+                        // holds the slot.
+                        148 => {
+                            if let Some(o) = self.dd2_owner {
+                                let tick = crate::projectile_ai_dd2::ai_star_spawner(
+                                    &mut self.slots[i],
+                                    &o,
+                                    world,
+                                    local_owner,
+                                    rng,
+                                );
+                                let owner_id = self.slots[i].owner;
+                                for s in tick.shots {
+                                    // `NewProjectile` centres the box
+                                    // (`:10876-10877`).
+                                    let _ = self.spawn_with_data_ai_owned(
+                                        s.kind,
+                                        owner_id,
+                                        s.x - proj_data(s.kind).map_or(0.0, |d| d.w) * 0.5,
+                                        s.y - proj_data(s.kind).map_or(0.0, |d| d.h) * 0.5,
+                                        s.vx,
+                                        s.vy,
+                                        s.damage,
+                                        s.knock_back,
+                                        0.0,
+                                        s.ai1.unwrap_or(0.0),
+                                    );
+                                }
+                            }
+                            // aiStyle 148 is on `UpdatePosition`'s skip
+                            // list (`:20435`) — NO free integrate runs.
                         }
                         // aiStyle 147 — the Celebration Mk2 rockets
                         // (`AI_147_Celeb2Rocket` `:52881-53092`): the
@@ -22141,6 +22373,11 @@ impl ProjectilePool {
                     if let Some(p) = player.as_deref_mut() {
                         self.try_cancel_channel(i, p);
                     }
+                    // W4-d15 RETIRE cross-note (research/249 §3): the d77
+                    // lane's `kill_tail_cue(i)` inserts HERE at the merge
+                    // (`5f10560b2`'s hook shape) — its `9 | 12 | 955`
+                    // Item10 arm (`Projectile.cs:75683`) rides our 12
+                    // row + daylight kill; no local cue copy exists.
                 }
                 self.spawn_inferno_blast(i);
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
@@ -26418,19 +26655,15 @@ mod tests {
         // Dragon chain (121) WAS ported at the gate (`dragon_step`) — its
         // deferral collided with the same pin and the machine is one
         // self-contained family.
-        // W4-d14: 141 (the MonkStaffT1Explosion 698, `AI_141_MonkStaffT1
-        // Explosion` `:69602+`) is rowed so the 140 arm's ground-impact
-        // spawn resolves, but its arm is d15's claim (141-150) — the
-        // rowed-but-unarmed deferral (the census §3c pattern).
-        // W4-d14 doc-sweep item 1 cross-note: d15 (`2cea7454`, tip
-        // `5b7f028d`) LANDED the 141 arm + a field-identical 698 row and
-        // removed 141 from ITS pin, taking 140 instead (d14's arm — the
-        // mirror deferral, `90b368a4`): d15's list is `[140, 156, 164,
-        // 169, 206]`. The integrate is a keep-one 698 row/const dedupe +
-        // this pin's reconciliation — BOTH 140 and 141 are armed in the
-        // merged tree, so the merged list drops both: `[156, 164, 169,
-        // 206]` (d15's `b1d2a416` cross-note records the same reconcile).
-        const UNARMED_ROWED: [u8; 5] = [141, 156, 164, 169, 206];
+        // BATCH-D RECONCILE (d14 `90b368a4` × d15 `b1d2a416` cross-notes):
+        // W4-d14 LANDED the 140 arm (`ai_monk_staff`, `AI_140_MonkStaffT1`
+        // `:69416+`) + the 697/707/698 rows; W4-d15 LANDED the 141 arm
+        // (`AI_141_MonkStaffT1Explosion` `:69602+`) + a field-identical 698
+        // row (the keep-one row dedupe). BOTH 140 and 141 are armed in the
+        // merged tree, so BOTH leave this list: the merged pin is
+        // `[156, 164, 169, 206]` — the four i25 minion-machine deferrals
+        // (the a9 machines lane, merge-pending).
+        const UNARMED_ROWED: [u8; 4] = [156, 164, 169, 206];
         // S1-F-13c: the Frost Moon bosses' seven hostile-shot kinds ride the
         // KIND-gated `projectile_frost_shots::handles` arm ahead of the
         // aiStyle dispatch — their styles are armed there, not in the
@@ -26609,6 +26842,127 @@ mod tests {
         for i in active_before {
             assert!(pool.slots[i].active, "the ai0==1 predicate (:15079) skips ai0=2");
         }
+    }
+
+    /// W4-d15 final phase — the 141-150 band residual census: EVERY
+    /// style in the decade has a live dispatch arm on this branch (the
+    /// s1_d_4c pin above enforces it — none of 141..=150 sits in
+    /// UNARMED_ROWED, so a deleted band arm fails the coverage scan).
+    /// The band's full kind roster, straight from the C# `SetDefaults`
+    /// aiStyle assignments: 698→141 (:7389), 699/708→142 (:7406/:7495),
+    /// 700→143 (:7423), 701/702/703 (:7437) + 764 (:7870) + 1050
+    /// (:9957)→144, 704→145 (:7451), 713→146 (:7564), 715-718→147
+    /// (:7588/:7600), 720→148 (:7621), 721+739-752→149 (:7633),
+    /// 722→150 (:7640). The 140 deferral is RESOLVED at the batch-D
+    /// integrate (d14's `ai_monk_staff` armed — the merged pin
+    /// `[156, 164, 169, 206]`). WRITTEN NOT RUN (code-only round).
+    #[test]
+    fn w4_d15_the_141_150_band_has_no_unarmed_residual() {
+        // The deferral list carries NO band style (the batch-D merged pin).
+        const UNARMED_ROWED: [u8; 4] = [156, 164, 169, 206];
+        for style in 141..=150u8 {
+            assert!(
+                !UNARMED_ROWED.contains(&style),
+                "style {style} is in the decade — it must be armed"
+            );
+        }
+        // The kind roster: every band kind is rowed with its C# style.
+        let band: &[(u16, u8)] = &[
+            (698, 141),
+            (699, 142),
+            (708, 142),
+            (700, 143),
+            (701, 144),
+            (702, 144),
+            (703, 144),
+            (764, 144),
+            (1050, 144),
+            (704, 145),
+            (713, 146),
+            (715, 147),
+            (716, 147),
+            (717, 147),
+            (718, 147),
+            (720, 148),
+            (721, 149),
+            (722, 150),
+        ];
+        for &(kind, style) in band {
+            let d = proj_data(kind).unwrap_or_else(|| panic!("kind {kind} rowed"));
+            assert_eq!(d.ai_style, style, "kind {kind}'s C# aiStyle");
+        }
+        // The 14 dyed golf twins (739-752) share the 149 row.
+        for kind in 739..=752u16 {
+            assert_eq!(proj_data(kind).expect("the golf twin row").ai_style, 149);
+        }
+        // Every band style is reachable from at least one rowed kind
+        // (the coverage direction the s1_d_4c scan guards).
+        let mut seen = std::collections::BTreeSet::new();
+        for kind in 0..=2048u16 {
+            if let Some(d) = proj_data(kind) {
+                if (141..=150).contains(&d.ai_style) {
+                    seen.insert(d.ai_style);
+                }
+            }
+        }
+        assert_eq!(seen.len(), 10, "all ten band styles rowed: {:?}", seen);
+    }
+
+    /// W4-d15 RETIRE — the d77c cue-12 compose (research/249 §3). The d77
+    /// lane (`5f10560b2`, `0573b70f2`) arms `9 | 12 | 955 => (2, 10, pos)`
+    /// on its `kill_tail_cue` map (`Projectile.cs:75681-75683` — Item10 at
+    /// the PRE-hook `base.position`, no resize precedes the play). Their
+    /// branch has NO 12 row/dispatch (the cue is inert there); ours has
+    /// NO `kill_tail_cue` (their map is the only copy — nothing to
+    /// dedupe). The merge inserts their one call line at our death hook
+    /// (after `try_cancel_channel`, inside `!died_out_of_world`). This
+    /// witness pins OUR half: the 12 row, the daylight kill funnelling
+    /// through `Projectile::kill` (so the once-per-death hook fires) and
+    /// the unrowed 503 sibling. The cue's position read is the C#'s
+    /// in-`Kill()` `base.position` — at the merge the play rides the
+    /// death hook's slot state (the daylight kill runs mid-arm; the
+    /// arm's tail keeps writing the dead slot, the no-early-return
+    /// convention — so the hook-time position is the port's cue point).
+    /// WRITTEN NOT RUN (code-only round).
+    #[test]
+    fn w4_d15_the_d77_cue_12_composes_on_the_death_hook() {
+        // Our half 1: the 12 row exists (aiStyle 5, the i22 machine).
+        let d = proj_data(NATURAL_FALLING_STAR).expect("the 12 row");
+        assert_eq!(d.ai_style, 5, ":926 — the falling-star family");
+        // The 503 sibling stays unrowed on BOTH branches (their comment).
+        assert!(proj_data(503).is_none(), "the unrowed 503 stays out");
+        // Our half 2: no local kill_tail_cue copy; the death hook's
+        // channel-cancel marker is unique (their call line inserts after
+        // it — the s1_d_4c include_str scan precedent). The markers are
+        // concat-built so this witness's own source cannot self-match.
+        let src = include_str!("projectile.rs");
+        let cue_fn = concat!("fn kill_tail", "_cue");
+        assert!(!src.contains(cue_fn), "d77's map is the only copy");
+        let hook = concat!("self.try_cancel_channel(i,", " p);");
+        assert_eq!(src.matches(hook).count(), 1, "the one death-hook insert point");
+        // Our half 3: the daylight kill rides Projectile::kill — the
+        // kill_time_left capture proves the funnel (the direct
+        // deactivate paths never set it). vel stays zero so the arm's
+        // dead-slot tail writes move nothing (the hook-time position is
+        // the kill-time position for a stationary star).
+        let w = ground(); // World::new defaults day_time = true
+        assert!(w.day_time);
+        let mut p = Projectile {
+            active: true,
+            kind: NATURAL_FALLING_STAR,
+            damage: 1000,
+            time_left: 3600,
+            pos: Vec2::new(320.0, 100.0),
+            w: d.w,
+            h: d.h,
+            ..Default::default()
+        };
+        let before = p.pos;
+        p.ai_falling_star(&w);
+        assert!(!p.active, "the :23841 daylight kill fires");
+        assert_eq!(p.time_left, 0);
+        assert_eq!(p.kill_time_left, 3600, "the kill() funnel, not a deactivate");
+        assert_eq!(p.pos, before, "the zero-vel tail moves nothing");
     }
 
     /// S1-D-4c — the 185 row pin: `SetDefaults` (`Projectile.cs:2717-2727`)

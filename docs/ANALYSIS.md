@@ -39774,3 +39774,358 @@ identical on both sides. Pinned by
 `the_states_advance_and_the_fall_integrates`
 (`projectile.rs`, `assert_eq!(p.vel.y, 0.0, "state 1 writes no velocity
 (dedServ)")`) — a verbatim source quirk, not a port deviation.
+## The W4-d15 DD2 slice (task/W4-d15-proj-ai-141-150, 2026-11-21, code-only)
+
+The census of the `match data.ai_style` dispatch for aiStyles 141-150:
+147 (Celebration Mk2, `projectile_ai_misc::ai_celeb2_rocket`) and
+149/150 (golf, `projectile_ai_golf`, S1-P-i55) were already landed;
+**141, 142, 143, 144, 145, 146, 148 were MISSING** (the `_ => {}`
+fall-through). All seven ported verbatim into
+`crates/tr-app/src/projectile_ai_dd2.rs`, one style per commit:
+
+- **141** `AI_141_MonkStaffT1Explosion` (`Projectile.cs:69602-69620`) +
+  `CreateImpactExplosion_SleepyOctopod` (`:69680-69731`) +
+  `CreateImpactExplosion2_SleepyOctopod` (`:69733-69772`) — the 698
+  ground blast: the 20-tick counter kill, the tick-1 tile walk as the
+  draw census (per qualifying exposed-solid tile: amount×8 first-row
+  dusts with TWO `NextFloat`s each — the Y scale `:69709` + the X kick
+  `:69710` — then amount×8−1 second-row dusts with ONE each `:69720`),
+  the 25-point ring (2 floats each) + the unshocked second ring (1 float
+  each). The `KillTile_GetTileDustAmount` table rides the misc module's
+  `kill_tile_dust_amount_fail` (widened `pub(crate)`).
+- **142** `AI_142_MonkStaffT2And3` (`:69817-69968`) — the 699/708 swing:
+  the anchor Centre pin + `heldProj` claim ahead of the dead gate, the
+  frozen hold, the π+num·2π swing arc (the `Utils.RotatedBy` double-angle
+  seam, `bow_launch::rotated_by`), the 708's animation-2/6/10 709 volley
+  (`NextVector2Square(-0.2,0.2)` = 2 `NextDouble` + `Next(4)`; the switch
+  overwrite keeps the draws spent), the 2-float trail + `Next(3)`
+  sparkle, the `Next(6)`/float/`Next(3)` dust gates (k = 0, 2 only — the
+  k = 1/3 switch arms are the C#'s own dead branches). The
+  `player.heldProj`/`reuseDelay = 2` writes ride the
+  `pending_dd2_writes` drain (the `take_spear_hold` precedent).
+- **143** `AI_143_MonkStaffT2Ghast` (`:69970-70036`) — the 700 ghast:
+  the tracked-sound fold (the `localAI[1]` slot latch keeps
+  `SlotId.Invalid` = `f32::from_bits(65535)`, `ReLogic.Utilities/
+  SlotId.cs:5`/`:75-78`; zero draws), the ±25 alpha ramps (100 floor /
+  255 cap at the 50-tick midpoint), the ×0.98 decay, the 5-tick frame
+  wrap 4, the velocity-sign facing + π flip, the 60-tick kill (the
+  facing/rotation/dust still run on the kill tick — no early return),
+  the [10,34) trail window (2 floats/tick). The `SummonMonkGhast`
+  hit-hook spawner (`:15155-15184`) is a `Damage_PVE` seam follow-up —
+  unchanged here.
+- **144** `AI_144_DD2Pet` (`:70038-70324`) — the 701/702/703/764/1050
+  pets: the per-kind parameter block + pet-flag `timeLeft = 2` re-pin,
+  the ghost sparkle gate chain (`Next(24)` → `Next(3)` → the else
+  `Next(2)` → 1 float), the 764 own-counter spin phase + the
+  speed-gated `Next(30)`/`Next(15)` gates, the 1050 12-step
+  `IsShakeable` tree scan (`tr_core::tiledata::SET_IS_SHAKEABLE`, the
+  generated `TileID.cs:488` set) + the shake-tick `Next(100)` /
+  conditional `Next(20)` / conditional `Next(5)` census, the 1000-px
+  teleport + the leash velocity + the flight/idle rotation-frame
+  machines. Recorded folds: the `PlotTileLine` light casts
+  (`:70087-70091`), the `Opacity` write (`:70155`, no port field — the
+  Last Prism fold), the dead `Hitbox.Intersects` read (`:70143-70144`),
+  the `KillTile_MakeTileDust`/`PlaySounds`/`DropItems` effects
+  (`:70217-70229` — no tile-drop seam; their own rolls ride
+  `WorldGen.genRand`, NOT `Main.rand`), the `suspiciouslookingTentacle`
+  half of `:70241` (folds false; the `petFlagDD2Ghost` half reads for
+  EVERY kind).
+- **145** `AI_145_BookStaffStorm` (`:70326-70468`) — the 704 twister:
+  the `soundDelay = -1` tracked-loop fold, the `localAI[0] >= 16`
+  fast-forward to 285 + the 300-tick kill, the 16×160 solid/wet column
+  probe's ±2/±4 velocity ladder (clamp ±16, counter +2/−1), the <270
+  swirl's 3+conditional-float census, the three 5/7/7 gore gates — each
+  taken branch: `NextVector2Square(0,1)` = 2 doubles, one velocity
+  float, `SelectRandom(1007,1008,1008)` = one `Next(3)`, then the G3
+  `NewGore` kicks (`Next(10,31)` Y-first, `Next(-20,21)` X,
+  `Gore.cs:1327-1328`).
+- **146** `AI_146_DD2Victory` (`:53960-53962`) — an EMPTY C# body; the
+  713 banner's documented no-op arm (the free integrate + the 900-tick
+  life are the whole behaviour). `hostile = true` rides the
+  `spawn_hostile` seam.
+- **148** `AI_148_StarSpawner` (`:53094-53128`) — the 720 spawner: the
+  daylight kill (remix exempt), the day-rate age, the one-shot
+  `Star.StarFall` census (`Next(700,1001)` then `Next(-400,401)`,
+  `Star.cs:166-167`; the secret-seed gate `WorldGen.cs:429` suppresses
+  BOTH draws; the visual fall is the recorded skip — `render/sky.rs`'s
+  `StarSprite` has no fall state), the 180-age steer (the −1 sentinel
+  and every inactive player index read the default 20×42 box at (0,0) →
+  centre (10,21), the `Player` ctor fold) + the FallingStar 12 spawn
+  (damage 1000, knockback 10, ai1 = 10, the position args pre-centred
+  for the dispatch's half-box recentre) + the kill. aiStyle 148 is on
+  `UpdatePosition`'s skip list (`:20435`) — NO free integrate. The 12
+  joins the i22 `ai_falling_star` machine (the 955 precedent) plus its
+  `:23841` daylight kill and the `:23982` light 0.9; the 12/955 block's
+  screen-gated gore/dust draws (`:23973-23986`) stay the i22 arm's
+  recorded layer skips.
+
+Rows landed in `projectile/data.rs`: 698/699/700/708/709 (`:7385-7432`,
+`:7491-7520`), 701/702/703 (`:7433-7446`), 704 (`:7447-7460`), 713
+(`:7560-7571`), 720 (`:7617-7625`), 764 (`:7866-7878`), 1050
+(`:9953-9966`), 12 (`:924-938`, light 1f in `set_defaults_light`);
+`proj_frames`: 700→4, 709→3, 701→3, 702→4, 703→8, 1050→16
+(`Main.cs:8473`/`:8554`/`:8626-8628`/`:8719`; the 764 keeps the stock 1).
+The `Dd2Owner` snapshot rides `set_dd2_owner` (the `set_spear_owner`
+pattern); the 142 writes drain at the world-sim pass tail.
+
+### Verification
+
+Code-only: every arm re-read against the cited C# windows (the ≤100-line
+reads); the seam call sites checked against the actual signatures by
+read/grep (`DropRng`, `proj_data`/`proj_frames`, `solid_collision`/
+`solid_tile`/`wet_collision`, `SET_IS_SHAKEABLE`, `Player.pet_flags`,
+`spawn_with_data_ai_owned`, `World::day_rate`/`seeds`). The 27 witness
+tests in `projectile_ai_dd2.rs` are WRITTEN, NOT RUN — **no cargo/rustc/
+rustfmt/tests/graphify invoked**. The dispatch coverage pin
+(`s1_d_4c_every_rowed_style_has_exactly_one_live_arm`) sees one live arm
+per new style; the `#[deny(unreachable_patterns)]` guard covers
+duplicates.
+
+### The W4-d15 wiring round (the four remaining seams, 2026-11-21, code-only)
+
+The census of the slice's remaining seams — what was live, what was
+missing, and where each landed:
+
+1. **The Dd2Owner write drain was LIVE** (`world_sim/projectiles.rs`'s
+   `take_dd2_writes` tail) — but the C#'s per-tick `heldProj = -1` reset
+   (`Player.cs:24376`, the movement-defaults block) was MISSING: a stale
+   claim survived every tick with no live claimant. The reset joins
+   `Player::update_with_grapple`'s defaults block (the `:24364-24371`
+   site); the 142 claim re-arms it through the drain each live tick.
+   3 drain/reset witnesses in `world_sim/projectiles.rs`.
+2. **The 709 volley spawn path was MISSING its item arms.** The census:
+   item 3836 (Monk Staff T2, `Item.cs:33977-33994`) shoots 699 with
+   `ai0 = NextFloat() * speed * 0.75 * direction` (`Player.cs:48731-
+   48735`) — the generic port tail spawned it ai0 = 0, collapsing the
+   142 swing arc's radius. Item 3858 (Monk Staff T3, `Item.cs:34104-
+   34123`) shoots 707 normally and 708 on the right-click alt
+   (`Player.cs:48736-48747`): `ItemCheck_ManageRightClickFeatures`
+   (`:31646-31650`) arms `altFunctionUse = 1` + forces `controlUseItem`
+   (3858 is an `ItemsThatAllowRepeatedRightClick` member, `ItemID.cs:342`
+   — the port's only ported member), the use-start gate converts 1→2
+   (`:42735-42738`), the animation-zero head clears 2 (`:42673-42676`),
+   a released left button clears 1 (`:31691-31694`). The alt arm spawns
+   the 708 at velocity ×1.5, `ai0 = (0.3 + 0.7·NextFloat) · speed · 1.75
+   · direction`, damage ×0.5 (int truncation), knockback +4. `speed`
+   stays the `:47059-47063` value computed off the ITEM's shoot 707 — a
+   `NoMeleeSpeedVelocityScaling` member (`ProjectileID.cs:547`), so NO
+   meleeSpeed division even on the alt shot. The `App.alt_function_use`
+   latch + the `update_editing` head/manage blocks + the two
+   `fire_non_ammo_shot` arms landed; the 707 row (`Projectile.cs:7474-
+   7490`, aiStyle 140 — OUTSIDE the 141-150 slice, the free integrate
+   holds it until the 140 port) lands verbatim so the normal arm spawns.
+   4 witnesses in `world_sim/editing.rs`. Recorded fold: the C#
+   `controlUseItem` is re-derived from the physical button EVERY tick
+   (the manage block re-forces it only on the `altFunctionUse == 0`
+   arm tick); the port's `mine_down` is event-driven, so the forced
+   `true` persists until a left-button event. A right-RELEASE mid-swing
+   (alt == 2, no re-arm) leaves it stale — the autoReuse restart can
+   fire one extra NORMAL 707 swing after the alt ends (the C# returns
+   to the physical up-state and does not restart). The right-HELD
+   repeat cadence is exact (the animation-zero clear re-arms 1 each
+   cycle); the fold is the release edge only (the `bug_net`
+   `!place_down` stand-in class).
+3. **The 1050 tree-shake DropItems was a recorded skip** — now wired.
+   The arm queues a `Dd2Shake` (the scanned cell + the taken `Next(5)`
+   gate; the three `Main.rand` draws stay inline on the
+   `UpdateProjectiles` stream); the pass drains it: the
+   `KillTile_PlaySounds(fail: true)` cue through the break-sound table,
+   and `editing::dd2_shake_tile_drops` — the per-cell
+   `KillTile_GetItemDrops` rolls WITHOUT killing the tile (the pet
+   shakes, never breaks): the trunk kinds 5/596/616/634 ride the break
+   path's `trunk_tree_drops` resolver (axe power = the closest player's
+   held slot, the `WorldGen.cs:66255-66256` read), the gem trees
+   583-589 ride `gem_tree_drops`, the mushroom 72 rides
+   `mushroom_tree_drops`, the palm 323 rides its `:65232-65266` arm.
+   `SpecialSeedFeatures.ShouldDropExtraWood` (tenth + drunk + !remix +
+   !notTheBees, `SpecialSeedFeatures.cs:17-27`) gates the ×2/×3 stacks.
+   The dust body stays the pool's layer skip. The tree-scan witness
+   asserts the queue.
+4. **The 148 spawner's item census: NO item shoots 720.** Starfury (65)
+   shoots 9 (`Item.cs:2158`, the i22 arm already landed); the ONLY 720
+   spawn site in the whole decompilation is `WorldGen.SpawnFallingObjects`'s
+   natural-starfall loop (`WorldGen.cs:71853`, called from `UpdateWorld`
+   `:71624`). The loop lands in the growth pass
+   (`world_sim/growth.rs::spawn_natural_starfall`, after the growth
+   picks — the C#'s call order): the `isThereAWorldSurface` gate
+   (`Main.cs:2788`), the daylight gate (remix exempt), the dayRate loop
+   of `Next(8000) < 10 · (maxTilesX/4200 · starfallBoost)` gate rolls,
+   the sky point, the `RollLuck(15)`/`RollBadLuck(15)` (remix)
+   player-targeted branch (`Next(1,640)` then `Next(-n,n+1)`), the
+   solid-box refusal and the velocity rolls normalized to 12. Recorded
+   folds: `starfallBoost` pinned 1 at the wiring round — LANDED in the
+   final phase (below); `Player.FindClosest` folds to the one player
+   (no player reads the inactive slot: position (0,0), luck 0),
+   `afkCounter` folds 0 (no port field at the wiring round — the final
+   phase ports it, below). The boulder-rain/meteor-shower/coin-rain
+   arms ahead of the loop: `_isRainingBoulders` keeps its unported
+   fold; `meteorShowerCount`/`coinRain` are the f45 lane's fields
+   (`1f3a47fa`, the .wld v291 pair + the start setters — their
+   `SpawnFallingObjects` consumers stay documented-unported there).
+   5 witnesses in `world_sim/growth.rs` (the daylight/no-surface
+   draw-free gates, the gate-roll draw-order twin, the forced-hit
+   payload pin, the phase-order pin). The existing DW-1.4 draw-count
+   pin stays valid — the day fixture's loop returns draw-free.
+
+All wiring-round witnesses are WRITTEN, NOT RUN (the code-only round's
+contract). The RNG streams are untouched in order: every new draw sits
+in its C# slot (the use arms on `UpdatePlayers`, the shake drain + the
+starfall loop on their pass streams — `UpdateProjectiles` /
+`UpdateWorldGen` respectively, the `genRand == Main.rand` swap,
+`WorldGen.cs:4445`).
+
+### The W4-d15 final phase (the cross-lane folds, 2026-11-21, code-only)
+
+**The d14 composition (the 707-row deferral resolved).** W4-d14
+`eaa05ae9` (branch `task/W4-d14-proj-ai-131-140`, style-140 commit
+`6d7b1b9b`) landed `AI_140_MonkStaffT1` (`ai_monk_staff`,
+`Projectile.cs:69416-69600`) with 697/707 rows + the 698 explosion row
+(the 141 arm deferred to d15 — armed here). Verified against their
+tree: their 707 row (`16×16, 140, pen −1, stock life, local immunity 6,
+alpha 255, scale 1`) and 698 row (`75×200, 141, pen −1, life 5, local
+immunity −1, alpha 255`) are FIELD-IDENTICAL to this branch's rows —
+the integrate is a keep-one dedupe of the two row/const copies, and
+the wiring composes: the 3858 use arm's normal spawn (this branch,
+`editing.rs:4025-4035`) feeds their `ai_monk_staff` 707 arm
+(`:69505-69591`), whose 697 sibling's ground impact spawns the 698
+this branch's 141 arm serves. The dispatch pins reconcile at the
+integrate: this branch's `UNARMED_ROWED` keeps 140 (no local arm) and
+theirs keeps 141 (no local arm); the merged list is
+`[156, 164, 169, 206]`. No behaviour gap remains — cross-note comments
+on the 707/698 rows + the pin, one compose witness
+(`the_707_and_698_rows_match_the_d14_landed_values`).
+
+**The starfallBoost pins-1 fold — LANDED.** The census corrected the
+task's premise: the C# `Star.starfallBoost` is NOT derived from
+`WorldGen.meteorShowerCount`. Its ONLY writers are `Star.NightSetup`
+(`Star.cs:43`/`:53`/`:57`, called from `UpdateTime_StartNight`
+`Main.cs:65223`) and the static ctor (`Star.cs:322`, stock 1); its
+readers are the starfall gate (`WorldGen.cs:71834`) and the
+boosted-night critter spawn (`NPC.cs:2406`, `starfallBoost > 3f` →
+kind 484, an unported kind). The meteor-shower interplay is the
+SIBLING ARM of `SpawnFallingObjects` (`:71744-71779`): the shower
+spawns 1078 MeteorOre (damage 50/40/35 by difficulty, the
+`FindClosest` + `!dead` + `Next(2)` player-clamp branch, the
+`fastForwardTime` zeroing) and decrements `meteorShowerCount` — the
+f45 lane's field (`1f3a47fa`: the .wld v291 round-trip +
+`StartMeteorShower`'s `Next(650,751)*4` + the `HandleMeteorFall`
+failed-pick `Next(3)` arm). The shower's 1078 spawner stays the f45
+lane's documented unported consumer (the 1078 row is unported; its
+`Main.masterMode`/`expertMode` tiers + dead-gate are its own slice) —
+the two systems share the function, not state. The port lands
+`World.starfall_boost` (runtime-only, a C# static — no .wld byte) +
+`World::roll_starfall_night_setup` (the (10,3)/(5,2) gate pair, the
+`Next(300,501)`/`Next(100,151)` band rolls, f32 `* 0.01` exact), wired
+into the clock's dusk boundary AHEAD of the blood-moon roll (the C#
+`:65223` < `:65336` order; 1-3 `UpdateTime` draws per dusk — the
+`stream_with_first_roll` test helper replays the prefix). The growth
+gate consumes the field (`growth.rs`'s `num16`). The second reader
+(`NPC.cs:2406`'s 484 spawn) is a recorded unported-kind fold.
+`starFallCount` (`Star.cs:37`/`:59`) stays unported (the background-
+star layer skip). 3 roll witnesses (tr-core world.rs), 1 dusk-order
+witness (clock.rs), 1 threshold witness (growth.rs). WRITTEN NOT RUN.
+
+**The afkCounter fold — SMALL-PORTED.** The census: `Player.afkCounter`
+(`Player.cs:986`) increments per tick while standing still + idle + no
+controls (`:25497-25506`, after ResetEffects/UpdateDyes), zeroes on any
+activity, and `Select` zeroes it on every local hotbar selection
+(`:515`). Readers: the lucky-star gate (`WorldGen.cs:71842`,
+`< AFKTimeNeededForNoLuckyStars` = 10800, `Player.cs:57103`), the
+storm-lightning near-player gate (`:71905`, the unported
+`SpawnStormLightning` arm) and `NPC.cs:411`'s
+`noGroundWorms = afkCounter >= 300` (the spawn-info lane's fold).
+`FindClosest` itself (`Player.cs:4942-4967`) stays the one-player fold
+(the first-active fallback keeps a dead player's position/luck — the
+`:71842` gate has NO dead term; the shower arm's `!dead` at `:71755` is
+a different branch). The port lands `Player.afk_counter` +
+`Player.control_torch` (the `:25497` gate's last term, fed by the
+world-sim tick's Torch-key read), the `IS_A_KITE` 24-kind set
+(`ItemID.cs:411` — a held kite keeps the climb through the swing), the
+two AFK constants, the tick block at the controls-landed site (the
+pre-movement velocity, the C# position) and the `Select` reset at the
+hotbar click seam. The starfall gate consumes the snapshot (the
+inactive slot folds afk 0). Unported remainders: `afkCounterForKiting`
+(the kite machine — `selectedKite` folds −1), the spectating clamp
+(`:17086`, `Math.Min(afkCounter, 300)` on the spectate-input arm — no
+spectate state), the mouse-item/petting kiting resets (`:25508-25514`,
+kiting-only). 1 tick witness (player.rs), 1 gate witness (growth.rs —
+the ceiling refuses the targeted branch, the offset-draw delta pinned).
+WRITTEN NOT RUN.
+
+**The DD2 shake dust body — the layer-skip cross-note.** The 1050
+shake tick's `KillTile_MakeTileDust` (`Projectile.cs:70218`, the
+`fail`-shaped call — no tile kill, one dust per shake frame) stays the
+recorded skip on this branch, but the census pins the ownership: the
+BODY (`WorldGen.cs:66687-69169`, the full type ladder + the spawn tail)
+is the d54/g14 lane's — `tr_core::worldgen_dust_tile::
+kill_tile_make_tile_dust` on `task/W4-d54-dust-sites-world` (tip
+`ac132be1`, the g14 body re-point `e41a90f0`), including EVERY
+shakeable kind's arm: the 5 trunk ground-walk (`:68160-68232`, the
+frameX/Y canopy nudges + the soil-kind colour ladder 23/661→77,
+60→78, 70→26, 109→79, 199/662→121, 147→122), the 323 palm
+(`:68235-68260` soil walk 234→121/116→79/112→77 + the `:69118-69121`
+frameY-rides-X spawn offset), the 72 mushroom (`:68778`, num 26), the
+583-589 gem `genRand.Next(10)` colour rolls (`:67031-67049`, 1 vs
+87/86/88/89/90/91/138), 596/616 → 78 (`:67055`/`:67061`), the 634
+`Next(10)` (36 vs 31) + `Next(12)` (→6) pair (`:67071-67077`). The
+CALL SITE (`:70218`) is claimed by NEITHER dust lane — d54's census is
+the WorldGen/Main `Dust.NewDust*` sites (research/65: 29+11), g17 is
+the gore lane; the Projectile.cs AI dust sites are this slice's. The
+integrate recipe (cross-noted at the drain, `world_sim/projectiles.rs`):
+call their body with `rng` = the `UpdateProjectiles` stream and `gen` =
+the SAME stream (the `genRand == Main.rand` property,
+`WorldGen.cs:4445` — under the `SwapRandom("UpdateProjectiles")` block
+both names alias one stream), plus `app.dust`/`spawn_ctx`/`app.disco`;
+the gem/634 genRand draws then join the stream AHEAD of the drop
+resolver's rolls (the C# order dust `:70218` → sounds `:70219` →
+`Next(100)`/`Next(20)`/`Next(5)` `:70220-70225` → drops `:70228` — the
+three arm draws stay inline in the AI arm, so at the integrate the
+drain's dust draws land AFTER them, the recorded within-pass order
+deviation of the queue design). Until then the skip draws NOTHING
+(the census-only contract). 1 ownership witness (the shakeable set ×
+the ladder-arm facts). WRITTEN NOT RUN.
+
+**The 141-150 band residual census — NONE.** Every style in the decade
+has a live dispatch arm on this branch: 141/142/143/144/145/146/148
+(the DD2 slice, `projectile.rs:17380-17540`), 147 (the Celebration Mk2
+rockets 715-718, `projectile_ai_misc::ai_celeb2_rocket`, the
+`projectile.rs:17541` arm), 149/150 (the golf family,
+`projectile_ai_golf`, the `:19867`/`:19933` arms). The full kind roster
+is rowed: 698→141, 699/708→142, 700→143, 701/702/703/764/1050→144,
+704→145, 713→146, 715-718→147, 720→148, 721+739-752→149, 722→150 (the
+C# `SetDefaults` citations in the witness). The `s1_d_4c` coverage pin
+enforces the arm direction (no band style sits in `UNARMED_ROWED`, so
+a deleted band arm fails the scan); the new
+`w4_d15_the_141_150_band_has_no_unarmed_residual` witness pins the
+roster + the deferral-list exclusion + the ten-style reachability. The
+ONLY decade-adjacent deferral is 140 — OUTSIDE the band, d14's
+`ai_monk_staff` (the item-1 cross-note; the integrate drops it from
+this branch's pin). WRITTEN NOT RUN.
+
+### The W4-d15 RETIRE round (the final ledger, 2026-11-21, code-only)
+
+The band's final ledger is published as **research/249**
+(`249-projectile-ai-141-150-final.md` — numbered per the registry-150
+collision protocol: a fresh all-tip scan shows 244 four-way contested,
+245/246/247 consumed, 248 claimed by the local e26 lane; 249 is the
+first free number). Contents: the ten-style band table with landing
+hashes, the kind-row census, the **d77c cue-12 compose** (their
+`kill_tail_cue` `9 | 12 | 955` Item10 arm at `Projectile.cs:75683` is
+inert on d77 — no 12 row there — and arms at the merge on our row +
+daylight kill; no local cue copy exists, the merge inserts their one
+call line at our death hook after `try_cancel_channel`; the band's
+Kill()-tail census pins the 704 tracked-loop stop as d80's and the
+709/459 Kill host + the 1110 circle as the ONE unclaimed remainder),
+the **d14 keep-one** re-verification (697/707/698 row dedupe + the
+`UNARMED_ROWED` reconciliation to `[156,164,169,206]`) and the **d16
+afk keep-one table** (both lanes ported `Player.cs:25497-25506`; the
+merge keeps ONE tick at the C# PRE-movement position — our site —
+folding d16's richer kiting tail in; their `KITE_ITEMS` is
+byte-identical to our `IS_A_KITE`; the three AFK constants are
+disjoint; their two-field Select resets are the superset form). Two
+compose witnesses added (`w4_d15_the_d77_cue_12_composes_on_the_death_hook`
+in projectile.rs, `w4_d15_the_d16_afk_keep_one_pins` in player.rs) —
+**51 witnesses total, ALL WRITTEN NOT RUN**. Cross-note comments land
+at the death hook and the afk tick block. The band is DECLARED
+COMPLETE (code-only); the recorded remainders are other lanes'
+documented folds, not band gaps (the full list in research/249 §5).

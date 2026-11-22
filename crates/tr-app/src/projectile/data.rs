@@ -442,17 +442,6 @@ pub const QUEEN_SLIME_SMASH: u16 = 922;
 /// 1.35, penetrate -1, alpha 255, tileCollide false, ignoreWater, the
 /// local-immunity 12 pair); `AI_140_MonkStaffT1` `:69416-69600`.
 pub const MONK_STAFF_T1: u16 = 697;
-/// `ProjectileID.MonkStaffT1Explosion` (698) — the T1 swing's ground
-/// impact (`Projectile.cs:7385-7401`: 75x200, aiStyle 141, alpha 255,
-/// tileCollide false, ignoreWater, timeLeft 5, friendly, penetrate -1,
-/// the local-immunity -1 pair, melee). The aiStyle-141 arm is d15's
-/// claim — the row rides here so the 140 arm's spawn resolves.
-pub const MONK_STAFF_T1_EXPLOSION: u16 = 698;
-/// `ProjectileID.MonkStaffT3` (707) — the Sleepy Octopod's swing
-/// (`Projectile.cs:7474-7490`: 16x16, aiStyle 140, friendly+melee,
-/// penetrate -1, alpha 255, tileCollide false, ignoreWater, the
-/// local-immunity 6 pair); the 140 arm's second kind branch.
-pub const MONK_STAFF_T3: u16 = 707;
 /// `ProjectileID.DD2DarkMageShot` (675) — the Dark Mage's shadowflame
 /// (`Projectile.cs:7221-7230`: 10x10, aiStyle 1, alpha 255, penetrate -1).
 pub const DARK_MAGE_FLAME: u16 = 675;
@@ -1382,6 +1371,64 @@ pub const GOLF_BALL: u16 = 721;
 /// S1-P-i55.
 pub const GOLF_CLUB_HELPER: u16 = 722;
 
+// W4-d15 — the DD2 weapon/pet slice's kinds (`ProjectileID.cs`'s values,
+// the `SetDefaults` rows cited in [`proj_data`]).
+/// `ProjectileID.MonkStaffT1Explosion` (698) — the Brand of the Inferno's
+/// (T1, 697) ground blast, aiStyle 141 (`Projectile.cs:7385-7401`). The
+/// 140 arm's 697 branch spawns it (`:69500`); the 141 arm is this slice's.
+pub const MONK_STAFF_T1_EXPLOSION: u16 = 698;
+/// `ProjectileID.MonkStaffT2` (699) — the Monk Staff T2's swing ghost,
+/// aiStyle 142 (`Projectile.cs:7402-7418`).
+pub const MONK_STAFF_T2: u16 = 699;
+/// `ProjectileID.MonkStaffT2Ghast` (700) — the ghast the T2's first hit
+/// summons (`SummonMonkGhast` `:15155-15184`), aiStyle 143
+/// (`Projectile.cs:7419-7432`).
+pub const MONK_STAFF_T2_GHAST: u16 = 700;
+/// `ProjectileID.MonkStaffT3` (707) — the Monk Staff T3's normal swing,
+/// aiStyle 140 (`Projectile.cs:7474-7490`). The row lands so the 3858's
+/// normal use arm spawns. CROSS-NOTE (W4-d15 final phase): W4-d14
+/// `eaa05ae9` landed `AI_140_MonkStaffT1` (`ai_monk_staff`, the 707 arm
+/// `:69505-69591`) with a FIELD-IDENTICAL 707 row (16×16, 140, pen −1,
+/// stock life, local immunity 6, alpha 255, scale 1) — the integrate is
+/// a keep-one dedupe of this row + const, and the use arm's spawn
+/// composes with their machine (no wiring gap).
+pub const MONK_STAFF_T3: u16 = 707;
+/// `ProjectileID.MonkStaffT3_Alt` (708) — the T3-alt swing ghost,
+/// aiStyle 142 (`Projectile.cs:7491-7507`).
+pub const MONK_STAFF_T3_ALT: u16 = 708;
+/// `ProjectileID.MonkStaffT3_AltShot` (709) — the T3-alt's volley shot,
+/// aiStyle 1 (`Projectile.cs:7508-7520`).
+pub const MONK_STAFF_T3_ALT_SHOT: u16 = 709;
+/// `ProjectileID.DD2PetDragon` (701) — the DD2 dragon pet, aiStyle 144
+/// (`Projectile.cs:7433-7446`).
+pub const DD2_PET_DRAGON: u16 = 701;
+/// `ProjectileID.DD2PetGhost` (702) — the DD2 ghost pet, aiStyle 144
+/// (the same row block).
+pub const DD2_PET_GHOST: u16 = 702;
+/// `ProjectileID.DD2PetGato` (703) — the DD2 gato pet, aiStyle 144
+/// (the same row block).
+pub const DD2_PET_GATO: u16 = 703;
+/// `ProjectileID.DD2ApprenticeStorm` (704) — the Tome of Infinite
+/// Wisdom's twister, aiStyle 145 (`Projectile.cs:7447-7460`).
+pub const DD2_APPRENTICE_STORM: u16 = 704;
+/// `ProjectileID.DD2Win` (713) — the DD2 victory banner, aiStyle 146
+/// (an empty AI body, `Projectile.cs:53960-53962`; the row `:7560-7571`).
+pub const DD2_VICTORY: u16 = 713;
+/// `ProjectileID.FallingStarSpawner` (720) — the natural starfall's
+/// spawner, aiStyle 148 (`Projectile.cs:7617-7625`); at age 180 it spawns
+/// the FallingStar 12 (`AI_148_StarSpawner` `:53094-53128`).
+pub const FALLING_STAR_SPAWNER: u16 = 720;
+/// `ProjectileID.FallingStar` (12) — the natural starfall's star,
+/// aiStyle 5 (`Projectile.cs:924-938`). Distinct from the HallowStar 92
+/// ([`FALLING_STAR`], the Holy Arrow's death spawn).
+pub const NATURAL_FALLING_STAR: u16 = 12;
+/// `ProjectileID.UpbeatStar` (764) — the Upbeat Star pet, aiStyle 144
+/// (`Projectile.cs:7866-7878`).
+pub const UPBEAT_STAR: u16 = 764;
+/// `ProjectileID.AxeFairyPet` (1050) — the Axe Fairy pet, aiStyle 144
+/// (`Projectile.cs:9953-9966`).
+pub const AXE_FAIRY_PET: u16 = 1050;
+
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
 pub const MAX_PROJECTILES: usize = 1000;
@@ -1781,6 +1828,9 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         // S1-P-i35 — the glow bobbers 987-993 (`Projectile.cs:9430-9434`):
         // `light = 1f` (the 986 plain override keeps the stock 0).
         987..=993 => 1.0,
+        // W4-d15 — the natural FallingStar's `light = 1f`
+        // (`Projectile.cs:936`).
+        NATURAL_FALLING_STAR => 1.0,
         _ => 0.0,
     }
 }
@@ -2952,39 +3002,6 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 false,
                 (true, 12, false, -1, 255, 1.35),
-            ),
-            // `MonkStaffT3` (`Projectile.cs:7474-7490`): the same box/style,
-            // scale 1 (no override), the local-immunity 6 pair. W4-d14.
-            MONK_STAFF_T3 => (
-                16.0,
-                16.0,
-                140,
-                -1,
-                TIME_LEFT_DEFAULT,
-                0,
-                false,
-                false,
-                false,
-                (true, 6, false, -1, 255, 1.0),
-            ),
-            // `MonkStaffT1Explosion` (`Projectile.cs:7385-7401`): 75x200,
-            // aiStyle 141, alpha 255, tileCollide false, ignoreWater,
-            // timeLeft 5, friendly, penetrate -1, the local-immunity -1
-            // pair, melee. The aiStyle-141 arm is d15's claim (141-150) —
-            // the row rides here so the 140 arm's ground-impact spawn
-            // (`:69500`) resolves; the kind sits rowed-but-unarmed until
-            // d15 lands the arm (the census §3c deferral pattern). W4-d14.
-            MONK_STAFF_T1_EXPLOSION => (
-                75.0,
-                200.0,
-                141,
-                -1,
-                5,
-                0,
-                false,
-                false,
-                false,
-                (true, -1, false, -1, 255, 1.0),
             ),
             // `DD2DarkMageRaise` / `DD2DarkMageHeal` (`Projectile.cs:7208-7219`):
             // 10x10, aiStyle 133, `alpha = 255`, `timeLeft = 900`,
@@ -4519,6 +4536,99 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             GOLF_CLUB_HELPER => {
                 (2.0, 2.0, 150, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
             }
+            // W4-d15 — `Projectile.cs:7385-7401`: the Brand of the
+            // Inferno's ground blast (698): 75x200, aiStyle 141, alpha 255,
+            // tileCollide false, ignoreWater (the overlay), timeLeft 5,
+            // penetrate -1, local immunity -1, melee (the overlay).
+            // W4-d14's row is field-identical (the integrate keep-one).
+            MONK_STAFF_T1_EXPLOSION => (
+                75.0, 200.0, 141, -1, 5, 0, false, false, false,
+                (true, -1, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:7402-7418`: the T2 swing ghost (699): 24x24,
+            // aiStyle 142, penetrate -1, alpha 255, tileCollide false,
+            // ignoreWater (the overlay), melee (the overlay), idStatic
+            // immunity 10. drawLayer 7 / usesOwnerLight / ownerHitCheck
+            // are draw/hit-check seams — no port fields.
+            MONK_STAFF_T2 => (
+                24.0, 24.0, 142, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (false, -2, true, 10, 255, 1.0),
+            ),
+            // `Projectile.cs:7419-7432`: the T2 ghast (700): 40x40,
+            // aiStyle 143, alpha 255, penetrate -1, melee (the overlay),
+            // local immunity -1, ignoreWater (the overlay), tileCollide
+            // false.
+            MONK_STAFF_T2_GHAST => (
+                40.0, 40.0, 143, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (true, -1, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:7474-7490`: the T3 normal swing (707):
+            // 16x16, aiStyle 140, penetrate -1, alpha 255, tileCollide
+            // false, ignoreWater, local immunity 6, melee (the overlay).
+            // drawLayer 7 / usesOwnerLight / ownerHitCheck are draw/
+            // hit-check seams — no port fields. W4-d14's row is
+            // field-identical and its `ai_monk_staff` arm serves it
+            // (the integrate keep-one — the cross-note on the const).
+            MONK_STAFF_T3 => (
+                16.0, 16.0, 140, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (true, 6, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:7491-7507`: the T3-alt swing ghost (708) —
+            // the 699 box with LOCAL immunity 6 instead of idStatic 10.
+            MONK_STAFF_T3_ALT => (
+                24.0, 24.0, 142, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (true, 6, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:7508-7520`: the T3-alt volley shot (709):
+            // 12x12, aiStyle 1 (the generic flight arm), stock penetrate
+            // 1 / tileCollide true / 3600 life, alpha 255, ignoreWater
+            // (the overlay), extraUpdates 1, scale 0.6, melee (the
+            // overlay).
+            MONK_STAFF_T3_ALT_SHOT => (
+                12.0, 12.0, 1, 1, TIME_LEFT_DEFAULT, 1, true, false, false,
+                (false, -2, false, -1, 255, 0.6),
+            ),
+            // `Projectile.cs:7433-7446` (701/702/703) + `:7866-7878`
+            // (764) + `:9953-9966` (1050): the DD2 pets — 20x20, aiStyle
+            // 144, penetrate -1, netImportant (the overlay), timeLeft *=
+            // 5 (18000), friendly, ignoreWater (the overlay), tileCollide
+            // false, manualDirectionChange (no port field — the arms pin
+            // facing themselves).
+            DD2_PET_DRAGON | DD2_PET_GHOST | DD2_PET_GATO | UPBEAT_STAR | AXE_FAIRY_PET => (
+                20.0, 20.0, 144, -1, TIME_LEFT_DEFAULT * 5, 0, false, false, false, RESET_STATE
+            ),
+            // `Projectile.cs:7447-7460`: the Book Staff twister (704):
+            // 60x210, aiStyle 145, magic (the overlay), tileCollide
+            // false, penetrate -1, local immunity -1, timeLeft 600,
+            // ignoreWater (the overlay).
+            DD2_APPRENTICE_STORM => (
+                60.0, 210.0, 145, -1, 600, 0, false, false, false,
+                (true, -1, false, -1, 0, 1.0),
+            ),
+            // `Projectile.cs:7560-7571`: the DD2 victory banner (713):
+            // 10x10, aiStyle 146 (the empty body), alpha 255, tileCollide
+            // false, ignoreWater (the overlay), timeLeft 900, penetrate
+            // -1. `hostile = true` (`:7569`) rides the `spawn_hostile`
+            // seam (the port's hostile convention — no data field).
+            DD2_VICTORY => (
+                10.0, 10.0, 146, -1, 900, 0, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:7617-7625`: the starfall spawner (720):
+            // 16x16, aiStyle 148, tileCollide false, penetrate -1,
+            // alpha 255, stock 3600 life.
+            FALLING_STAR_SPAWNER => (
+                16.0, 16.0, 148, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:924-938`: the natural FallingStar (12):
+            // 18x18, aiStyle 5, penetrate -1, alpha 50, light 1f, trap,
+            // stock tileCollide true / 3600 life. `hostile` on remix
+            // (`:929-932`) rides the spawn seam (no data field).
+            NATURAL_FALLING_STAR => (
+                18.0, 18.0, 5, -1, TIME_LEFT_DEFAULT, 0, true, false, true,
+                (false, -2, false, -1, 50, 1.0),
+            ),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -4700,7 +4810,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             )
             // S1-P-i55 — `Projectile.cs:7628`: the golf balls (721 + the 14
             // dyed twins) set `netImportant = true` themselves.
-            || matches!(kind, GOLF_BALL | 739..=752),
+            || matches!(kind, GOLF_BALL | 739..=752)
+            // W4-d15 — the DD2 pets set `netImportant = true` themselves
+            // (`Projectile.cs:7439`/`:7872`/`:9959`).
+            || matches!(
+                kind,
+                DD2_PET_DRAGON | DD2_PET_GHOST | DD2_PET_GATO | UPBEAT_STAR | AXE_FAIRY_PET
+            ),
         ignore_water: ((minion || sentry)
             && !matches!(
                 kind,
@@ -4832,8 +4948,26 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || matches!(kind, DARK_MAGE_MARKER | DARK_MAGE_HEAL | DD2_ELDER_WINS)
             // `Projectile.cs:7289`/`:8752` — the Ogre/QueenSlime stomps.
             || matches!(kind, OGRE_SMASH | QUEEN_SLIME_SMASH)
-            // `Projectile.cs:7379`/`:7392`/`:7486` — the monk staff family.
-            || matches!(kind, MONK_STAFF_T1 | MONK_STAFF_T1_EXPLOSION | MONK_STAFF_T3),
+            // `Projectile.cs:7379` — the monk staff T1 swing (the 698/707
+            // twins fold into the d15 family list below, :7392/:7486).
+            || kind == MONK_STAFF_T1
+            // W4-d15 — the DD2 slice's `ignoreWater = true` rows: the 698
+            // (`Projectile.cs:7392`), the 699 (`:7414`), the 700 (`:7430`),
+            // the 707 (`:7486`), the 708 (`:7503`) and the 709 (`:7516`).
+            || matches!(
+                kind,
+                MONK_STAFF_T1_EXPLOSION | MONK_STAFF_T2 | MONK_STAFF_T2_GHAST
+                    | MONK_STAFF_T3 | MONK_STAFF_T3_ALT | MONK_STAFF_T3_ALT_SHOT
+            )
+            // W4-d15 — the DD2 pets' `ignoreWater = true`
+            // (`Projectile.cs:7443`/`:7875`/`:9963`).
+            || matches!(
+                kind,
+                DD2_PET_DRAGON | DD2_PET_GHOST | DD2_PET_GATO | UPBEAT_STAR | AXE_FAIRY_PET
+            )
+            // W4-d15 — the Book Staff twister (`Projectile.cs:7459`) and
+            // the victory banner (`:7567`).
+            || matches!(kind, DD2_APPRENTICE_STORM | DD2_VICTORY),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4875,9 +5009,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // (636, `:6844`), the Tentacle Spike (971, `:9203`) and
                     // the Blood Butcherer (975, `:9293`).
                     | DAYBREAK | TENTACLE_SPIKE | BLOOD_BUTCHERER
-                    // W4-d14 — the monk staff swings + the T1 ground impact
-                    // (`Projectile.cs:7372`/`:7398`/`:7480`).
-                    | MONK_STAFF_T1 | MONK_STAFF_T1_EXPLOSION | MONK_STAFF_T3
+                    // W4-d14 — the monk staff T1 swing (`Projectile.cs:7372`).
+                    | MONK_STAFF_T1
+                    // W4-d15 — the Sleepy Octopod's blast (`:7398`), the
+                    // Monk Staff swings (`:7408`/`:7480`/`:7497`), the ghast
+                    // (`:7427`) and the volley shot (`:7514`).
+                    | MONK_STAFF_T1_EXPLOSION | MONK_STAFF_T2 | MONK_STAFF_T2_GHAST
+                    | MONK_STAFF_T3 | MONK_STAFF_T3_ALT | MONK_STAFF_T3_ALT_SHOT
             ),
         ranged: matches!(
             kind,
@@ -4949,6 +5087,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d13 — the friendly Sandnado's `magic = true`
             // (`Projectile.cs:7054`).
                 | SANDNADO_FRIENDLY
+                // W4-d15 — the Book Staff twister (`Projectile.cs:7453`).
+                | DD2_APPRENTICE_STORM
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
@@ -5253,6 +5393,20 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         659 => 4,
         837 => 3,
         1130 => 6,
+        // W4-d15 — the DD2 pets' sheets (`Main.cs:8626-8628`): the gato 8
+        // (the arm overrides the wrap to 4), the dragon 3, the ghost 4;
+        // the 1050's 16 (`Main.cs:8719`) — the tree-shake frames 8/12
+        // (`Projectile.cs:70215`) index it. The 764 has no override (the
+        // init loop's 1).
+        DD2_PET_GATO => 8,
+        DD2_PET_DRAGON => 3,
+        DD2_PET_GHOST => 4,
+        AXE_FAIRY_PET => 16,
+        // W4-d15 — the T2 ghast's 4-frame sheet (`Main.cs:8473`) — the
+        // 5-tick frame machine (`Projectile.cs:70003-70010`) wraps at it.
+        MONK_STAFF_T2_GHAST => 4,
+        // W4-d15 — the T3-alt volley shot's 3-frame sheet (`Main.cs:8554`).
+        MONK_STAFF_T3_ALT_SHOT => 3,
         // The Flamelash's 6-frame sheet (`Main.cs:8454`). Its AI's
         // `frameCounter++`/`frame` writes (`Projectile.cs:43216-43222`) are a
         // Phase-6 documented skip, so `frame` stays 0 and the slice reads the

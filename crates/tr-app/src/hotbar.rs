@@ -64,7 +64,9 @@ impl SelectionState {
     /// the tick cue plays (`SoundEngine.PlaySound(12)`, `:506` — suppressed
     /// when the request lands on the override/buffer slot). The remote
     /// half (`:492-495`, immediate) is the net glue's own write; the
-    /// `afkCounter` resets (`:515-516`) have no port field.
+    /// `afkCounter` reset (`:515`) rides the click seam
+    /// (`app/clicks.rs` — W4-d15 final phase); `afkCounterForKiting`
+    /// (`:516`) stays unported (no kite machine).
     pub(crate) fn select(&mut self, selected: usize, item: usize, item_is_air: bool) -> bool {
         if item < 10 {
             self.hotbar = item;

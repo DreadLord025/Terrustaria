@@ -501,6 +501,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             .keys
             .iter()
             .any(|k| crate::input_map::is_bound(&binds, crate::input_map::Action::Torch, *k));
+        // `Player.controlTorch` lands on the player for the afk gate
+        // (`Player.cs:25497` — W4-d15 final phase); the C# sets it in
+        // `TriggersSet.CopyInto` ahead of `Player.Update`.
+        if let Some(p) = app.player.as_mut() {
+            p.control_torch = control_torch;
+        }
         let override_slot = if can_change {
             app.player.as_ref().and_then(|p| {
                 let (sw, sh) = app.screen_size();

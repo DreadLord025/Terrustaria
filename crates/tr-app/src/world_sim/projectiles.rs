@@ -261,6 +261,36 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     });
     app.projectiles.set_spear_owner(spear_owner);
 
+    // W4-d15 — the DD2 slice's owner snapshot (`AI_142_MonkStaffT2And3`'s
+    // `Main.player[owner]` reads, `Projectile.cs:69819-69844`). The anchor
+    // is `RotatedRelativePoint(MountedCenter)` (`:69820`); the animation
+    // integers derive from the swing timers (the spear convention). The
+    // pet arms' reads extend this snapshot with their styles.
+    let dd2_owner = app.player.as_ref().map(|p| {
+        let (mcx, mcy) = p.mounted_center();
+        let (cx, cy) = p.center();
+        crate::projectile_ai_dd2::Dd2Owner {
+            anchor: p.rotated_relative_point(Vec2::new(mcx, mcy), 0),
+            center: Vec2::new(cx, cy),
+            mounted_center: Vec2::new(mcx, mcy),
+            direction: p.facing,
+            dead: p.dead,
+            frozen: p.frozen,
+            item_animation: (app.swing * 60.0).round() as i32,
+            item_animation_max: (app.swing_max * 60.0).round() as i32,
+            // `player.petFlagDD2Dragon/Ghost/Gato/UpbeatStar/AxeFairyPet`
+            // — the buff rows index `pet_flags` by PET PROJECTILE id
+            // (`buff_effects_accessory.rs`).
+            pet_flag_dd2_dragon: p.pet_flags[usize::from(crate::projectile::DD2_PET_DRAGON)],
+            pet_flag_dd2_ghost: p.pet_flags[usize::from(crate::projectile::DD2_PET_GHOST)],
+            pet_flag_dd2_gato: p.pet_flags[usize::from(crate::projectile::DD2_PET_GATO)],
+            pet_flag_upbeat_star: p.pet_flags[usize::from(crate::projectile::UPBEAT_STAR)],
+            pet_flag_axe_fairy: p.pet_flags[usize::from(crate::projectile::AXE_FAIRY_PET)],
+            player_pos: Vec2::new(p.x, p.y),
+        }
+    });
+    app.projectiles.set_dd2_owner(dd2_owner);
+
     // S1-P-i35 — the bobber arm's per-tick player/world snapshot (`AI_061` +
     // `FishingCheck`'s `Main.player[owner]` reads, `Projectile.cs:53658+`).
     // Built from the live player/world/scene state before the pass (the
@@ -493,6 +523,81 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // `take_spear_hold` write-back precedent, the seconds timer).
     if let Some(frames) = app.projectiles.take_monk_reuse() {
         app.reuse_delay = frames as f32 / 60.0;
+    }
+    // W4-d15 — the 142 arm's player writes (`Projectile.cs:69822`'s
+    // `player.heldProj = whoAmI` + `:69966`'s `player.reuseDelay = 2`),
+    // drained in slot order (the `take_spear_hold` precedent). The port's
+    // reuse timer runs in seconds.
+    for (held_proj, reuse_delay) in app.projectiles.take_dd2_writes() {
+        if let Some(p) = app.player.as_mut() {
+            if let Some(slot) = held_proj {
+                p.held_proj = slot;
+            }
+        }
+        if let Some(ticks) = reuse_delay {
+            app.reuse_delay = ticks as f32 / 60.0;
+        }
+    }
+    // W4-d15 — the 144 arm's 1050 shake-tick effects
+    // (`Projectile.cs:70217-70229`): the arm's three `Main.rand` draws
+    // ran inline on the `UpdateProjectiles` stream; the effects resolve
+    // here on the SAME stream (the `drain_catches` precedent). The dust
+    // body (`KillTile_MakeTileDust`, `:70218`) is the recorded layer
+    // skip — CROSS-NOTE (final phase): the BODY is the d54/g14 lane's
+    // (`tr_core::worldgen_dust_tile::kill_tile_make_tile_dust`, d54 tip
+    // `ac132be1` — the full `:66687-69169` ladder incl. every shakeable
+    // kind's arm: the 5 trunk ground-walk `:68160`, the 323 palm
+    // `:68235` + frameY-offset tail `:69118`, the 72 mushroom `:68778`,
+    // the 583-589 gem `Next(10)` rolls `:67031-67049`, 596/616 → 78,
+    // the 634 `Next(10)`+`Next(12)` pair `:67071`). Neither dust lane
+    // claims the `:70218` CALL SITE (d54's census is WorldGen/Main
+    // sites; g17 is gore) — at the integrate this drain calls their
+    // body with (rng = UpdateProjectiles, gen = the SAME stream — the
+    // `genRand == Main.rand` swap, `WorldGen.cs:4445`), app.dust +
+    // spawn_ctx + app.disco; the gem/634 genRand draws then join this
+    // stream AHEAD of the drop resolver's rolls (the C# order: dust
+    // `:70218` → sounds `:70219` → drops `:70228`). The sound plays
+    // through the break-cue table (`fail: true`, `:70219`); the drop
+    // gate runs the `KillTile_DropItems` per-cell rolls WITHOUT killing
+    // the tile.
+    for shake in app.projectiles.take_dd2_shakes() {
+        let Some(tile) = app.world.tile(shake.x, shake.y).copied().filter(|t| t.active()) else {
+            continue;
+        };
+        let (px, py) = (shake.x as f32 * 16.0, shake.y as f32 * 16.0);
+        // `KillTile_PlaySounds(x, y, fail: true, tileCache)` (`:70219`).
+        let sounds = tr_core::edit::kill_tile_sound(tile.kind, tile.frame_x, true);
+        for cue in [sounds.primary, sounds.extra, sounds.shatter].into_iter().flatten() {
+            if let Some((name, volume)) = crate::world_sim::editing::kill_cue(cue) {
+                app.audio.play_at(name, px, py, volume);
+            }
+        }
+        if shake.drop {
+            // `KillTile_DropItems(x, y, tileCache)` (`:70228`): the
+            // bonus-wood roll reads the closest player's held axe
+            // (`WorldGen.cs:66255-66256` — the port's one player).
+            let axe_power = crate::registry::get(app.inventory[app.selected].kind)
+                .map(|d| i32::from(d.axe))
+                .unwrap_or(0);
+            // `SpecialSeedFeatures.ShouldDropExtraWood`
+            // (`SpecialSeedFeatures.cs:17-27`): tenth + drunk + !remix
+            // + !notTheBees.
+            let seeds = app.world.seeds;
+            let extra_wood = seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
+                && seeds.contains(tr_core::seeds::SeedFlags::DRUNK)
+                && !seeds.contains(tr_core::seeds::SeedFlags::REMIX)
+                && !seeds.contains(tr_core::seeds::SeedFlags::NOT_THE_BEES);
+            let rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
+            let drops = crate::world_sim::editing::dd2_shake_tile_drops(
+                &app.world, shake.x, shake.y, axe_power, extra_wood, rng,
+            );
+            for (id, count) in drops {
+                let rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
+                crate::world_sim::items::spawn_item_drop(
+                    &mut app.items, rng, id, count, shake.x, shake.y,
+                );
+            }
+        }
     }
     // S1-C-7 wave B — the hostile-shot lane's hurt modifiers (`Player.Hurt`
     // `:38396-38517` via `Projectile.Damage` `Projectile.cs:14868`): the
@@ -1303,5 +1408,70 @@ mod s1_p_i09_yoyo_snapshot_tests {
         app.player.as_mut().unwrap().frozen = true;
         update_projectiles(&mut app, 1.0 / 60.0);
         assert_eq!(app.projectiles.slots()[0].ai[0], -1.0, "the CC releases");
+    }
+}
+
+/// W4-d15 seam witnesses — the DD2 write drain (`take_dd2_writes`, the
+/// `AI_142` arm's `player.heldProj = whoAmI` `Projectile.cs:69822` +
+/// `player.reuseDelay = 2` `:69966`) and the per-tick `heldProj = -1`
+/// reset (`Player.cs:24376`). WRITTEN NOT RUN (code-only round).
+#[cfg(test)]
+mod w4_d15_dd2_drain_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::projectile::MONK_STAFF_T2;
+
+    /// One live 699 swing owned by the local player, inside the 8×8-tile
+    /// fixture world; `swing_ticks` arms the owner's `itemAnimation` the
+    /// snapshot derives (`(app.swing * 60).round()`).
+    fn swing_app(swing_ticks: i32) -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let p = crate::player::Player::spawn(&app.world);
+        app.player = Some(p);
+        app.swing = swing_ticks as f32 / 60.0;
+        app.swing_max = 27.0 / 60.0;
+        app.projectiles.spawn_with_data_ai_owned(
+            MONK_STAFF_T2, 0, 32.0, 32.0, 12.0, 0.0, 45, 7.0, 0.0, 0.0,
+        );
+        app
+    }
+
+    /// The animation-end tick (`itemAnimation <= 2`, `:69963-69967`): the
+    /// arm kills, claims `heldProj` (the claim precedes the kill,
+    /// `:69822`) and queues `reuseDelay = 2`; the drain writes BOTH onto
+    /// the player/app (the port's reuse timer runs in seconds).
+    #[test]
+    fn the_animation_end_drains_the_claim_and_the_two_tick_reuse() {
+        let mut app = swing_app(2);
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert!(!app.projectiles.slots()[0].active, ":69965 kills");
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.held_proj, 0, ":69822 — the slot index reaches the Player");
+        assert_eq!(app.reuse_delay, 2.0 / 60.0, ":69966 — 2 ticks in seconds");
+    }
+
+    /// A mid-swing tick (`itemAnimation > 2`): the claim drains every tick
+    /// the swing lives, but NO reuse delay is queued (`:69963`'s gate).
+    #[test]
+    fn the_mid_swing_claim_drains_without_the_reuse() {
+        let mut app = swing_app(10);
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert!(app.projectiles.slots()[0].active, "the swing keeps flying");
+        assert_eq!(app.player.as_ref().unwrap().held_proj, 0, ":69822");
+        assert_eq!(app.reuse_delay, 0.0, ":69963 — no reuse mid-swing");
+    }
+
+    /// `Player.cs:24376` — the movement-defaults block resets `heldProj`
+    /// to −1 EVERY player tick, ahead of ItemCheck and the projectile
+    /// pass: a stale claim from a dead swing cannot survive a tick with
+    /// no live claimant.
+    #[test]
+    fn the_player_tick_resets_the_held_claim() {
+        let mut app = swing_app(10);
+        let w = app.world.clone();
+        let p = app.player.as_mut().unwrap();
+        p.held_proj = 7;
+        p.update(&w, crate::player::PlayerInput::default());
+        assert_eq!(p.held_proj, -1, ":24376 — the per-tick stock reset");
     }
 }

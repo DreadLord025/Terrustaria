@@ -80,6 +80,7 @@ per `docs/superpowers` agreements).
 | 127 | proj 111-120 spawns DOC-SWEEP + FINAL + RETIRE (W4-d12: the 113 six-kind sticker census, the 971/975/121 melee procs, the 5461 card cycle + recall no-active-gate, the 614 ai1 seating, the 978 row keep-d12c; SEALED at c98bd8937 — §R1–R5 receipts + the proj-111-family declaration) | `127-doc-sweep-proj-111.md` | ✅ SEALED |
 | 336 | W4-d13 PET-LIGHT RETIRE FINAL (the c19 zero-site compose + the f11 retire-235 drain seal + the g10/d43 no-consume census + the classic pet single-item 3600 gap FIXED + the pet-light-family declaration; CHAIN 243→304→336 per registry-150 §9.2 UNIFIED FINAL — g58 owns 243, d50 owns 304; code-only) | `336-d13-pet-light-retire-final.md` | ✅ |
 | 353 | W4-d13 band-121-130 BIBLE FINAL (the ten-arm band table: 121-123/129/130 pre-existing + 124-128 this lane, the satellite lanes 813/geyser-proxy/pointer/grant-gap, the SEAL receipts g10/d43 + c19 + f11-235 + g64-dup, the witness ledger; CHAIN 305→353 per registry-150 §9.2 UNIFIED FINAL — f4 KEEPS 305; code-only) | `353-projectile-ai-121-130-band-final.md` | ✅ |
+| 249 | W4-d15 RETIRE/FINAL: the aiStyles 141-150 band ledger (all ten armed, kinds rowed, the d77c cue-12 compose + the d14/d16 keep-one tables, 51 witnesses written not run; numbered per registry-150 — 244-248 consumed) | `249-projectile-ai-141-150-final.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

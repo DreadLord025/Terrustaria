@@ -231,6 +231,7 @@ mod projectile_ai_101_110;
 // dispatch claim + the 608 death-hook drain are wired in projectile.rs.
 // Code-only mode — witness tests written not run.
 mod projectile_ai_explosions;
+mod projectile_ai_dd2;
 // S1-P-i42 — the torch/glowstick/flare light-item projectile family: the
 // aiStyle-14 glowsticks (50/53/473/515/870/1089) + the aiStyle-33 flares
 // (163/310/1008-1011) + the fairy's aiStyle-170 hover. The rows land in

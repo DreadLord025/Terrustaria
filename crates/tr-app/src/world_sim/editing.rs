@@ -272,6 +272,16 @@ fn shooter_use_ammo(kind: u16) -> i32 {
     )
 }
 
+/// W4-d15 — `ItemID.Sets.ItemsThatAllowRepeatedRightClick`
+/// (`ItemID.cs:342`: 3384, 3858, 3852): the right-click feature repeats
+/// while the button holds. The port's only ported member is the Monk
+/// Staff T3 (3858, shoot 707 → the alt 708); the Beetle Scroll 3384 and
+/// the Book Staff 3852 are unported kinds (the 3852's twister alt-fire
+/// is its own census follow-up).
+fn held_kind_is_repeated_right_click(kind: u16) -> bool {
+    kind == 3858
+}
+
 /// The shooter's `Item.autoReuse` (`Item.cs:48997`) — the registry's value, or
 /// the id-keyed vanilla one for the four `gunProj` placeholders.
 fn shooter_auto_reuse(kind: u16) -> bool {
@@ -1761,6 +1771,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     if app.swing <= 0.0 {
         app.swing_max = 0.0;
     }
+    // W4-d15 — `Player.cs:42673-42676`: `itemAnimation == 0 && altFunctionUse
+    // == 2` clears the alt latch at the animation-zero head (the 3858's alt
+    // swing ends → the next right-held tick re-arms 1, the repeated-right-
+    // click cadence). Runs after the `itemAnimationMax` reset, before the
+    // reuse conversion, exactly like the source.
+    if app.swing <= 0.0 && app.alt_function_use == 2 {
+        app.alt_function_use = 0;
+    }
     // `ApplyReuseDelay` (`Player.cs:42668-42671` → `:52835-52840`): the
     // animation-zero tick with a pending lock converts it into a silent
     // `itemAnimation = itemTime = reuseDelay` hold — the lock itself clears.
@@ -1852,6 +1870,36 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     app.mine_prev_down = app.mine_down;
     app.mine_released = !prev_mine_down;
     app.place_released = !app.place_down;
+    // W4-d15 — `Player.ItemCheck_ManageRightClickFeatures`
+    // (`Player.cs:31526-31694`, called at `:28283` right before
+    // `ItemCheckWrapped`): the Monk Staff T3 (3858) is an
+    // `ItemsThatAllowRepeatedRightClick` member (`ItemID.cs:342` — the
+    // port's only ported member; 3384/3852 are unported kinds), so the
+    // `!Main.mouseRightRelease` veto (`:31530-31533`) never blocks it.
+    // `flag` (`:31528`): the right button down, not slot 58, no tile
+    // interaction, the left release latch, the left button up, no
+    // mouse interface. The port's `tileInteractionHappened` has no field
+    // (folds false — the interact arm runs later in this pass, the
+    // `bug_net` precedent); `HoveringAnInteractable`/capture/pending-
+    // inventory folds false (no port state). The press arms
+    // `altFunctionUse = 1` + `controlUseItem = true` (`:31646-31650`) —
+    // the forced left-use is what starts the swing on the RIGHT button.
+    if held_kind_is_repeated_right_click(app.inventory[app.selected].kind)
+        && app.selected != 58
+        && app.place_down
+        && !app.mine_down
+        && app.mine_released
+        && !app.inventory_open
+        && app.alt_function_use == 0
+    {
+        app.alt_function_use = 1;
+        app.mine_down = true;
+    }
+    // `:31691-31694` — a released left button clears the pending 1 (the
+    // forced use above keeps it alive only while the right button holds).
+    if !app.mine_down && app.alt_function_use == 1 {
+        app.alt_function_use = 0;
+    }
     // `ItemCheck_AutoReuseLogic` (`Player.cs:52877-52903`): an `autoReuse`
     // item held with the button down forces `releaseUseItem = true`
     // (`:52885`) — the start gate's release half is satisfied every tick, so
@@ -2562,6 +2610,15 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // starts while held).
         let drill_tool =
             registry::get(held.kind).is_some_and(|d| d.channel && (d.pick > 0 || d.axe > 0));
+        // W4-d15 — `Player.cs:42735-42738`: the use-start gate converts
+        // the pending right-click 1 into the active 2 BEFORE
+        // `ItemCheck_TryStartUse` — the conversion runs even when the
+        // use is refused (the C# `if` precedes the TryStartUse call),
+        // and the 3858's `ItemCheck_Shoot` arm (`:48738`) reads 2 on
+        // the very first shot of the alt swing.
+        if app.alt_function_use == 1 {
+            app.alt_function_use = 2;
+        }
         if app.attack_cd <= 0.0
             && app.reuse_delay <= 0.0
             && throw_ready
@@ -3961,6 +4018,66 @@ fn fire_non_ammo_shot(
         if let Some(slot) = slot {
             app.projectiles.set_armor_penetration(slot, arpen);
             app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+        }
+    } else if held.kind == 3836 {
+        // W4-d15 — `Player.cs:48731-48735`: the Monk Staff T2's swing
+        // ghost 699 spawns with `ai0 = Main.rand.NextFloat() * speed *
+        // 0.75f * direction` — the aiStyle-142 swing arc's radius
+        // (`Projectile.cs:69845`'s `p.ai[0]` scale). ONE float on the
+        // `UpdatePlayers` stream, after the shared launch frame. The
+        // C# reads `base.direction` AFTER the `:47202-47224` facing
+        // flip; the generic port arm keeps the pre-flip facing (its
+        // recorded M4-PROJ-3 fold), so the roll reads the same snapshot.
+        let ai0 = loot_rng.next_float() * shot_speed * 0.75 * p.facing as f32;
+        let slot = app.projectiles.spawn_with_data_ai(
+            proj, spawn.x, spawn.y, shot.x, shot.y, raw as i32, fx_kb, ai0, 0.0,
+        );
+        if let Some(slot) = slot {
+            app.projectiles.set_armor_penetration(slot, arpen);
+            app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+        }
+    } else if held.kind == 3858 {
+        // W4-d15 — `Player.cs:48736-48747`: the Monk Staff T3. The alt
+        // arm (`altFunctionUse == 2`, the right-click latch) spawns the
+        // 708 swing ghost: velocity ×1.5, `ai0 = (0.3f + 0.7f *
+        // NextFloat()) * speed * 1.75f * direction`, damage ×0.5 (the
+        // int truncation of the class-multiplied Damage), knockback
+        // +4. ONE float. `speed` is the `:47059-47063` value computed
+        // off the ITEM's shoot 707 — a `NoMeleeSpeedVelocityScaling`
+        // member (`ProjectileID.cs:547`), so NO meleeSpeed division
+        // runs even on the alt shot (the 708's own absence from the
+        // set never re-enters the gate).
+        if app.alt_function_use == 2 {
+            let ai0 = (0.3 + 0.7 * loot_rng.next_float())
+                * shot_speed
+                * 1.75
+                * p.facing as f32;
+            let alt_shot = shot * 1.5;
+            let slot = app.projectiles.spawn_with_data_ai(
+                crate::projectile::MONK_STAFF_T3_ALT,
+                spawn.x,
+                spawn.y,
+                alt_shot.x,
+                alt_shot.y,
+                (raw * 0.5) as i32,
+                fx_kb + 4.0,
+                ai0,
+                0.0,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_armor_penetration(slot, arpen);
+                app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+            }
+        } else {
+            // `:48745` — the normal 707 swing: the generic shot (the
+            // NoMeleeSpeedVelocityScaling member keeps its raw speed).
+            let slot = app.projectiles.spawn_with_data_ai(
+                proj, spawn.x, spawn.y, shot.x, shot.y, raw as i32, fx_kb, 0.0, 0.0,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_armor_penetration(slot, arpen);
+                app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+            }
         }
     } else if held.kind == 1121 {
         // `Player.cs:48309-48332` — the Bee Gun's multi-bee
@@ -6380,6 +6497,111 @@ fn cell_drops(
         .into_iter()
         .map(|(id, count)| (id, count.max(1) as u32, x, y))
         .collect()
+}
+
+/// W4-d15 — the 1050 Axe Fairy's shake-tick `KillTile_DropItems`
+/// (`Projectile.cs:70228` → `WorldGen.cs:63948-63962`): the per-cell
+/// `KillTile_GetItemDrops` rolls for the SHAKEABLE kinds, WITHOUT killing
+/// the tile (the pet shakes the tree; the C# `KillTile_DropItems` only
+/// spawns the items). The `IsShakeable` set (`TileID.cs:488`) is
+/// 5/72/323/583-589/596/616/634:
+/// - the trunk kinds 5/596/616/634 ride `KillTile_GetTreeDrops`
+///   (`:65214-65231` → `:66189-66261`): the canopy acorn roll + the
+///   family wood + the bonus-wood roll — the SAME resolver the axe break
+///   uses ([`trunk_tree_drops`]), axe power 0 (the pet holds no axe;
+///   `Player.FindClosest` reads the local player's held slot, the
+///   `break_tile` precedent).
+/// - the gem trees 583-589 ride `SetGemTreeDrops` (`:65699-65747` →
+///   `:66094-66108`, [`gem_tree_drops`]).
+/// - the mushroom tree 72 rides `case 71/72` (`:65642-65652`,
+///   [`mushroom_tree_drops`]).
+/// - the palm 323 rides its `:65232-65266` arm (the ground-walk wood
+///   conversion + the canopy acorn).
+/// The `genRand` rolls ride the caller's stream directly (under the C#
+/// swap `genRand == Main.rand`, `WorldGen.cs:4445` — the growth-pass
+/// convention); the trunk resolver's `FastRandom` stand-in takes one
+/// throw off the same stream (the `break_drop_events` precedent).
+/// `SpecialSeedFeatures.ShouldDropExtraWood` (`:65226-65229`) folds
+/// false on a classic world (the tenth-anniversary + drunk + !remix +
+/// !notTheBees conjunction, `SpecialSeedFeatures.cs:17-27`).
+pub(crate) fn dd2_shake_tile_drops(
+    world: &World,
+    x: i32,
+    y: i32,
+    axe_power: i32,
+    extra_wood: bool,
+    rng: &mut UnifiedRandom,
+) -> Vec<(u16, u32)> {
+    let Some(t) = world.tile(x, y).filter(|t| t.active()) else {
+        return Vec::new();
+    };
+    let (kind, fx, fy) = (t.kind, t.frame_x, t.frame_y);
+    match kind {
+        5 | 596 | 616 | 634 => {
+            // `:65219-65229` — the trunk arm: `dropItemStack++` on the
+            // bonus wood (the resolver returns stack 2), ×2 on the
+            // extra-wood seed.
+            let mut gen_stream = tr_core::tile_light::FastRandom::new(rng.next() as u64);
+            let mut drops = trunk_tree_drops(
+                tr_core::tree::tree_type_and_bottom(world, x, y).0,
+                fx,
+                fy,
+                axe_power,
+                &mut gen_stream,
+                rng,
+            );
+            if extra_wood {
+                for (_, count) in &mut drops {
+                    *count *= 2;
+                }
+            }
+            drops
+        }
+        583..=589 => {
+            // `:65699-65747` — the gem/seed pairs per kind.
+            let (gem, seed) = match kind {
+                583 => (180, 4851),
+                584 => (181, 4852),
+                585 => (177, 4853),
+                586 => (179, 4854),
+                587 => (178, 4855),
+                588 => (182, 4856),
+                _ => (999, 4857), // 589
+            };
+            gem_tree_drops(gem, seed, fx, fy, rng)
+        }
+        72 => mushroom_tree_drops(rng),
+        323 => {
+            // `:65232-65266` — the palm: the Coconut 2504 base, the
+            // ground-walk conversion (234→911, 116→621, 112→619), the
+            // canopy acorn (`frameX` 88..=132), the ×3 extra-wood seed.
+            // The tenth-anniversary stack roll (`:65235-65238`) folds
+            // false on a classic world.
+            let mut drop_item = 2504u16;
+            let mut j = y;
+            while j < world.height
+                && !world
+                    .tile(x, j)
+                    .is_some_and(|c| c.active() && tr_core::tiledata::TILE_SOLID.has(c.kind))
+            {
+                j += 1;
+            }
+            if let Some(g) = world.tile(x, j).filter(|c| c.active()) {
+                match g.kind {
+                    234 => drop_item = 911,
+                    116 => drop_item = 621,
+                    112 => drop_item = 619,
+                    _ => {}
+                }
+            }
+            let mut drops = vec![(drop_item, if extra_wood { 3 } else { 1 })];
+            if (88..=132).contains(&fx) {
+                drops.push((27, 1));
+            }
+            drops
+        }
+        _ => Vec::new(),
+    }
 }
 
 /// `IsAlchemyPlantHarvestable` (`WorldGen.cs:66143-66174`): the per-style
@@ -9919,7 +10141,7 @@ mod tests {
         crate::registry::get(app.inventory[app.selected].kind).map_or(0, |d| d.use_ammo)
     }
 
-    fn shooter_app() -> App {
+    pub(super) fn shooter_app() -> App {
         let mut w = World::new("t".into(), 64, 800);
         for x in 0..64 {
             let i = w.index(x, 300);
@@ -10196,7 +10418,7 @@ mod tests {
     /// goes in the ammo slot, the second-to-last in the grid rows). The cursor
     /// sits 80 px right of the screen centre — within the 6-tile reach, the aim
     /// direction +x.
-    fn shooter_rig(kind: u16, name: &'static str, ammo: &[(usize, u16, u32)]) -> App {
+    pub(super) fn shooter_rig(kind: u16, name: &'static str, ammo: &[(usize, u16, u32)]) -> App {
         let mut app = shooter_app();
         app.inventory[app.selected] = crate::item::ItemSlot {
             kind,
@@ -10250,7 +10472,7 @@ mod tests {
     }
 
     /// Hold the button for `n` frames (the press IS the first frame).
-    fn hold(app: &mut App, screen: Vec2, n: usize, log: &mut Vec<(i32, usize)>) {
+    pub(super) fn hold(app: &mut App, screen: Vec2, n: usize, log: &mut Vec<(i32, usize)>) {
         for _ in 0..n {
             step(app, screen, log);
         }
@@ -19508,5 +19730,140 @@ mod wall_placement_tests {
                 None => assert!(app.items.is_empty(), "wall {wall} drops nothing"),
             }
         }
+    }
+}
+
+/// W4-d15 seam witnesses — the 709 volley's spawn path: the 3836's ai0
+/// roll (`Player.cs:48731-48735`), the 3858's right-click alt latch
+/// (`ItemCheck_ManageRightClickFeatures` `:31646-31650` → the use-start
+/// 1→2 conversion `:42735-42738` → the 708 alt arm `:48736-48747`) and
+/// the 707 normal arm. WRITTEN NOT RUN (code-only round).
+#[cfg(test)]
+mod w4_d15_monk_staff_use_tests {
+    use super::*;
+    use super::tests::{hold, shooter_rig};
+
+    /// The 3836 (Monk Staff T2, shoot 699): the use fires ONE 699 whose
+    /// ai0 rides the `NextFloat() * speed * 0.75 * direction` roll
+    /// (`:48733`) — the aiStyle-142 swing arc's radius, never zero-armed
+    /// by the generic tail. The 699 is a NoMeleeSpeedVelocityScaling
+    /// member (`ProjectileID.cs:547`), so the speed stays the raw 42.
+    #[test]
+    fn the_t2_swing_seeds_the_arc_radius_from_one_float() {
+        let mut app = shooter_rig(3836, "Monk Staff T2", &[]);
+        app.mine_released = true;
+        app.mine_prev_down = false;
+        let screen = app.screen_size().into();
+        let mut log = Vec::new();
+        hold(&mut app, screen, 4, &mut log);
+        let fired: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert_eq!(fired.len(), 1, "one swing per press (channel, no autoReuse)");
+        assert_eq!(fired[0].kind, 699, ":48733 — the item's shoot");
+        let facing = app.player.as_ref().unwrap().facing;
+        let bound = 42.0 * 0.75 * facing as f32;
+        if bound >= 0.0 {
+            assert!((0.0..bound).contains(&fired[0].ai[0]), ":48733 — the roll band");
+        } else {
+            assert!((bound..0.0).contains(&fired[0].ai[0]), ":48733 — the roll band");
+        }
+        assert!((fired[0].vel.length() - 42.0).abs() < 0.01, "the raw shootSpeed");
+    }
+
+    /// The 3858 (Monk Staff T3) LEFT use fires the 707 normal swing
+    /// (`:48745`), no ai0 roll (the generic tail's zero).
+    #[test]
+    fn the_t3_left_use_fires_the_707() {
+        let mut app = shooter_rig(3858, "Monk Staff T3", &[]);
+        let screen = app.screen_size().into();
+        let mut log = Vec::new();
+        hold(&mut app, screen, 4, &mut log);
+        let fired: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].kind, 707, ":48745 — the normal swing");
+        assert_eq!(fired[0].ai[0], 0.0, "no alt roll on the normal arm");
+        assert_eq!(app.alt_function_use, 0, "the left use never arms the latch");
+    }
+
+    /// The 3858 RIGHT use: the manage-right-click block arms 1 + forces
+    /// the left use (`:31646-31650`), the use-start converts 1→2
+    /// (`:42735-42738`) and the alt arm spawns the 708 (`:48742`):
+    /// velocity ×1.5 (36), damage ×0.5 (70), knockback +4 (9), ai0 in
+    /// the `(0.3..1.0) * 24 * 1.75 * direction` band. The 707's
+    /// NoMeleeSpeedVelocityScaling membership keeps the speed raw.
+    #[test]
+    fn the_t3_right_use_fires_the_708_alt_swing() {
+        let mut app = shooter_rig(3858, "Monk Staff T3", &[]);
+        // The right button holds; the left button is up (the forced
+        // controlUseItem is what the manage block arms).
+        app.mine_down = false;
+        app.mine_prev_down = false;
+        app.place_down = true;
+        let screen = app.screen_size().into();
+        let mut log = Vec::new();
+        hold(&mut app, screen, 4, &mut log);
+        let fired: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert_eq!(fired.len(), 1, "one alt swing per right press");
+        assert_eq!(fired[0].kind, 708, ":48742 — the alt ghost");
+        assert!((fired[0].vel.length() - 36.0).abs() < 0.01, ":48742 — vector52 * 1.5");
+        assert_eq!(fired[0].damage, 70, ":48742 — (int)(Damage * 0.5)");
+        assert_eq!(fired[0].knock_back, 9.0, ":48742 — KnockBack + 4");
+        let facing = app.player.as_ref().unwrap().facing;
+        let lo = 0.3 * 24.0 * 1.75 * facing as f32;
+        let hi = 1.0 * 24.0 * 1.75 * facing as f32;
+        let (a, b) = if lo <= hi { (lo, hi) } else { (hi, lo) };
+        assert!((a..b).contains(&fired[0].ai[0]), ":48742 — the ai0 band");
+        assert_eq!(app.alt_function_use, 2, "the latch stays 2 while the swing runs");
+    }
+
+    /// The animation-zero head clears the 2 (`:42673-42676`): after the
+    /// alt swing ends, a fresh right-held tick re-arms 1 and the next
+    /// use converts it again — the repeated-right-click cadence
+    /// (`ItemID.cs:342`).
+    #[test]
+    fn the_alt_latch_clears_at_the_animation_zero_head() {
+        let mut app = shooter_rig(3858, "Monk Staff T3", &[]);
+        app.mine_down = false;
+        app.mine_prev_down = false;
+        app.place_down = true;
+        let screen = app.screen_size().into();
+        let mut log = Vec::new();
+        // The swing is 31 ticks (useAnimation 30 + the style-5 num bump);
+        // hold past it — the latch must clear and the right-held repeat
+        // must fire a SECOND alt swing.
+        hold(&mut app, screen, 70, &mut log);
+        let fired: Vec<_> = app.projectiles.slots().iter().filter(|p| p.active).collect();
+        assert!(fired.len() >= 2, "the repeated right click re-fires");
+        assert!(fired.iter().all(|p| p.kind == 708), "every repeat is the alt ghost");
+    }
+
+    /// CROSS-NOTE witness (final phase): the 707/698 rows this branch
+    /// carries are FIELD-IDENTICAL to W4-d14 `eaa05ae9`'s rows (their
+    /// `the_monk_rows_match_set_defaults` pins the same C# values) — the
+    /// integrate's keep-one dedupe is lossless and the 3858 use arm's
+    /// spawn composes with their `ai_monk_staff` 140 machine (the 707
+    /// arm `Projectile.cs:69505-69591`, which spawns the 698 our 141
+    /// arm serves — the round trip closes across the two branches).
+    #[test]
+    fn the_707_and_698_rows_match_the_d14_landed_values() {
+        let t3 = crate::projectile::proj_data(crate::projectile::MONK_STAFF_T3)
+            .expect("the 707 row");
+        assert_eq!((t3.w, t3.h), (16.0, 16.0), ":7476-7477");
+        assert_eq!(t3.ai_style, 140, ":7478 — d14's arm");
+        assert_eq!(t3.penetrate, -1, ":7481");
+        assert_eq!(t3.alpha, 255, ":7482");
+        assert!(!t3.tile_collide, ":7485");
+        assert!(t3.ignore_water, ":7486");
+        assert!(t3.uses_local_immunity, ":7487");
+        assert_eq!(t3.local_hit_cooldown, 6, ":7488");
+        assert!(t3.melee, ":7480");
+        assert_eq!(t3.scale, 1.0, "no scale override");
+        let ex = crate::projectile::proj_data(crate::projectile::MONK_STAFF_T1_EXPLOSION)
+            .expect("the 698 row");
+        assert_eq!((ex.w, ex.h), (75.0, 200.0), ":7387-7388");
+        assert_eq!(ex.ai_style, 141, ":7389 — OUR arm (d14 deferred it)");
+        assert_eq!(ex.time_left, 5, ":7393");
+        assert!(ex.melee, ":7398");
+        assert_eq!(ex.local_hit_cooldown, -1, ":7397");
+        assert_eq!(ex.alpha, 255, ":7390");
     }
 }
