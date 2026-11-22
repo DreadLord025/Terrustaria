@@ -182,6 +182,9 @@ impl App {
             let (sw, sh) = self.screen_size();
             let (m_h, mouse) = (self.main_m_h(), self.mouse_pos);
             let dead = self.player.as_ref().is_some_and(|p| p.dead);
+            // W4-g22 — the previous frame's `Main.mouseExit` latch: the C#'s
+            // `ref mouseOver` reads last frame's value at `:45599`.
+            let was_over = self.ingame_options.button_mouse_over;
             crate::ui::ingame_options::refresh_button(
                 &mut self.ingame_options,
                 &self.lookups,
@@ -192,6 +195,18 @@ impl App {
                 crate::ui::inventory::extra_accessory_slots(),
                 false,
             );
+            // W4-g22 — `Main.DrawSettingButton`'s hover-enter cue
+            // (`Main.cs:45599-45603`): ONE sound 12 on the `!mouseOver` edge.
+            // The `IgnoreMouseInterface`/`mouseInterface` gates (`:45595`/
+            // `:45597`) are not modelled by the port's HUD hover (the pointer
+            // lockout covers the 888 side only) — constants-on here.
+            if let Some(cue) = crate::main_sounds::settings_button_tick(
+                self.ingame_options.button_mouse_over,
+                was_over,
+                true,
+            ) {
+                self.audio.play(cue);
+            }
         }
         // `Main.DrawPageIcons`' tail (`Main.cs:42864-42867`): the drawn page is
         // whatever the held item forces (`ItemSlot.SelectEquipPage`), else the
@@ -463,6 +478,12 @@ impl App {
         // the update branch queued this frame become popups + the chat line
         // + the cue. S1-E-26 wave A.
         self.drain_achievement_completions();
+        // W4-g23 — the `Main.NewText`/`NewTextMultiline` cue tails
+        // (`Main.cs:64635`/`:64641`), centralized in `ChatMonitor::new_text`:
+        // every chat append this frame (deaths, rolls, server messages, the
+        // bed/spawn notices) plays its 12, in append order. The achievement
+        // subscriber drained its own lines already; this covers the rest.
+        self.chat.drain_new_text_cues(&self.audio);
         // S1-B-8 — the draw-half pre-snapshot spine (see `frame/world.rs`);
         // the pure field snapshots below stay inline: the draw region's
         // borrow scaffolding, consumed by the destructure.

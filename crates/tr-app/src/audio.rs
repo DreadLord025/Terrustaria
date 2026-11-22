@@ -66,6 +66,14 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Player_Hit_0", 1),
     ("Player_Hit_1", 1),
     ("Player_Hit_2", 1),
+    // W4-g22 — the female hurt family (`SoundFemaleHit[3]`,
+    // `LegacySoundPlayer.cs:198-200`): case 20 (`:911-923`) picks
+    // `Female_Hit_<Next(3)>`. The menuMode 2 gender toggle's male->female
+    // preview plays it (`Main.cs:49045`); the voice-variant-2 hurt arm
+    // (`Player.cs:38587`) is the same case.
+    ("Female_Hit_0", 20),
+    ("Female_Hit_1", 20),
+    ("Female_Hit_2", 20),
     // The legacy "Player Killed" id 5 (`Player.PlayDeathSound`,
     // `Player.cs:38745`) — the `Sounds/Player_Killed.xnb` asset.
     ("Player_Killed", 5),
@@ -293,6 +301,15 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_41", 2),
     ("Item_43", 2),
     ("Item_44", 2),
+    // W4-g23 — the star-game hit pair's case-37 slots (`LegacySoundPlayer.cs:
+    // 1326-1335`): `Main.rand.Next(57, 59)` picks `SoundItem[57..58]` — the
+    // `Sounds/Item_57/58.xnb` assets. Registered under the legacy id 37 (the
+    // case that plays them, `Main.cs:63169`), the `Coin_N`→38 precedent; the
+    // id-2 item-use family gates explicitly at its own call sites, so a
+    // future style-57/58 use sound is unaffected (2 and 37 share the same
+    // audibility class — both outside 30..=35, neither ambient-scaled).
+    ("Item_57", 37),
+    ("Item_58", 37),
     ("Item_59", 2),
     ("Item_60", 2),
     ("Item_61", 2),
@@ -1971,6 +1988,42 @@ impl Audio {
         Some(cue)
     }
 
+    /// W4-g22 — one female-hurt play (the menuMode 2 gender toggle's
+    /// male->female preview, `Main.cs:49043-49047` `PlaySound(20)`; the
+    /// voice-variant-2 hurt arm `Player.cs:38587` is the same case). The
+    /// preview is unpositioned (`PlayVoicePreview` parks the player at
+    /// `(-1, -1)`, `UICharacterCreation.cs:1522-1524`), so the attenuation
+    /// walk takes the `x == -1` flag arm — no distance gate, only the
+    /// volume-slider checks.
+    ///
+    /// Case 20 (`LegacySoundPlayer.cs:911-923`): ONE `Main.rand.Next(3)`
+    /// slot pick (`:913`) — `Female_Hit_<n>`, NO pitch draw (the case sets
+    /// Volume/Pan only, `:919-920`). The int overload (`SoundEngine.cs:
+    /// 102-108`) draws NO `GetRandomPitch` NextFloat. The pick rides the
+    /// caller's stream (the front-end bare-`Main.rand` stand-in for the
+    /// preview) and only AFTER the gate passed. The instance Stop +
+    /// re-create (`:914-918`) is the standing D4 deviation. Returns the
+    /// cue played; `None` when the gate refused.
+    pub fn play_female_hit_sound(
+        &mut self,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        // The unpositioned gate first — the flag arm still checks the
+        // volume slider (`LegacySoundPlayer.cs:369-436`).
+        if sound::play_sound(20, -1.0, -1.0, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let slot = crate::main_sounds::female_hit_case20(&mut |lo, hi| rng.next_range(lo, hi));
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let cue = match slot {
+            0 => "Female_Hit_0",
+            1 => "Female_Hit_1",
+            _ => "Female_Hit_2",
+        };
+        self.emit(cue, -1.0, -1.0, 1.0, 0.0);
+        Some(cue)
+    }
+
     /// S1-E-21f — the player-death play (`Player.PlayDeathSound`,
     /// `Player.cs:38715-38746`: the default arm `PlaySound(5,
     /// base.position)` `:38745` — the TOP-LEFT position, not the centre).
@@ -2174,6 +2227,55 @@ impl Audio {
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.emit(cue, x, y, tweak, pitch.clamp(-1.0, 1.0));
         Some(cue)
+    }
+
+    /// W4-g23 — the star-game hit's sound pair (`Main.cs:63168-63169`, the
+    /// `DrawStar` falling-star arm): `SoundEngine.PlaySound(38)` THEN
+    /// `SoundEngine.PlaySound(37)`, both UNPOSITIONED, both on the bare
+    /// `Main.rand` (the sky draw pass runs outside every `SwapRandom`
+    /// block). Case 38 (`LegacySoundPlayer.cs:1337-1350`): `Main.starGame`
+    /// cuts ×0.15, `Next(5)` slot then `Next(-40,41)*0.002` pitch. Case 37
+    /// (`:1326-1335`): `Next(57,59)` slot (`SoundItem[57..58]`), ×0.15 while
+    /// starGame, `Next(-40,41)*0.01` pitch — its OWN arm, NOT the case-2
+    /// family. Both gate on audibility BEFORE drawing (`:369` —
+    /// `soundVolume == 0` returns null for type > 35), so a silent hit
+    /// draws NOTHING; the shared gate is exact for the unpositioned pair
+    /// (both ids sit outside 30..=35 and neither is ambient-scaled).
+    ///
+    /// **Dormant seam** (the `play_chest_eat_sound` precedent): the port's
+    /// sky pass draws static stars — `Star.falling`/`fallSpeed` and the
+    /// `Main.starGame` everything-seed arm (`WorldGen.cs:11212-11215`) are
+    /// unported, so no caller exists yet. The exact four-draw order is
+    /// pinned by [`crate::main_sounds_batch3::star_hit_sound_pair`] and the
+    /// witnesses; the draw-side call position lands with the falling-star
+    /// machine. Returns the two cue names in play order; `None` when
+    /// silent (no draw spent).
+    pub fn play_star_hit_pair(
+        &mut self,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<(&'static str, &'static str)> {
+        let (c38, c37) = crate::main_sounds_batch3::star_hit_sound_pair(
+            self.listener.sound_volume,
+            &mut |lo, hi| rng.next_range(lo, hi),
+        )?;
+        let (slot38, tweak38, pitch38) = c38;
+        let coin = match slot38 {
+            0 => "Coin_0",
+            1 => "Coin_1",
+            2 => "Coin_2",
+            3 => "Coin_3",
+            _ => "Coin_4",
+        };
+        // `:63168` — case 38 first, the ×0.15 starGame cut and the ±0.08
+        // pitch window (`Next(-40,41)*0.002`).
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit(coin, -1.0, -1.0, tweak38, pitch38.clamp(-1.0, 1.0));
+        let (slot37, tweak37, pitch37) = c37;
+        let item = if slot37 == 57 { "Item_57" } else { "Item_58" };
+        // `:63169` — case 37 second, the wider ±0.40 window (`*0.01`).
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit(item, -1.0, -1.0, tweak37, pitch37.clamp(-1.0, 1.0));
+        Some((coin, item))
     }
 
     /// S1-E-21f — the drowning gasp (`Player.CheckDrowning`'s breath-zero
@@ -4705,6 +4807,42 @@ mod tests {
         }
     }
 
+    /// W4-g22 — the female-hurt play (case 20, the menuMode 2 gender
+    /// toggle's male->female preview `Main.cs:49045`): ONE `Next(3)` slot
+    /// pick on the passed stream (`LegacySoundPlayer.cs:913`), NO pitch
+    /// draw; the muted gate refuses before any draw. The int overload draws
+    /// no GetRandomPitch. Written, not run (code-only mode).
+    #[test]
+    fn g22_the_female_hit_draws_one_next3_and_no_pitch() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let slot = witness.next_range(0, 3);
+        let cue = audio.play_female_hit_sound(&mut rng);
+        let want = match slot {
+            0 => "Female_Hit_0",
+            1 => "Female_Hit_1",
+            _ => "Female_Hit_2",
+        };
+        assert_eq!(cue, Some(want), "the slot pick rides the stream");
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // Muted: the gate precedes the switch — draw-free.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_female_hit_sound(&mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted female hit is draw-free");
+        // The bank rows resolve to the legacy id 20.
+        for n in 0..3 {
+            let name = format!("Female_Hit_{n}");
+            assert_eq!(sound_type(&name), 20);
+            assert!(SFX_CUES.iter().any(|(c, _)| *c == name), "{name} in the table");
+        }
+    }
+
     /// S1-E-21f — the double-jump and splash plays: case 16 draws one
     /// `Next(-10, 11)` pitch after the gate; case 19's playing guard is
     /// modelled by the splash slots (headless: always fresh), one pitch per
@@ -4840,6 +4978,46 @@ mod tests {
         let peek = rng.peek();
         assert_eq!(audio.play_chest_eat_sound(16.0, 16.0, &mut rng), None);
         assert_eq!(rng.peek(), peek);
+    }
+
+    /// W4-g23 — the star-game hit pair's Audio seam
+    /// (`Main.cs:63168-63169`): case 38 THEN case 37, four draws on the
+    /// passed (bare-`Main.rand`) stream in `[Next(5), Next(-40,41),
+    /// Next(57,59), Next(-40,41)]` order, and NOTHING while silent
+    /// (`LegacySoundPlayer.cs:369`). The cue slots resolve through the
+    /// registered bank (`Coin_N` → 38, `Item_57/58` → 37).
+    #[test]
+    fn w4_g23_the_star_pair_draws_38_then_37_and_is_draw_free_when_silent() {
+        use tr_core::unified_random::UnifiedRandom;
+        // The bank rows the pair resolves through.
+        assert_eq!(sound_type("Item_57"), 37);
+        assert_eq!(sound_type("Item_58"), 37);
+        for n in ["Item_57", "Item_58"] {
+            assert!(SFX_CUES.iter().any(|(name, _)| *name == n), "{n} registered");
+        }
+        // Audible: exactly four draws, in the C# statement order — the
+        // witness stream reproduces them independently.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let slot38 = witness.next_range(0, 5);
+        let _pitch38 = witness.next_range(-40, 41);
+        let slot37 = witness.next_range(57, 59);
+        let _pitch37 = witness.next_range(-40, 41);
+        let pair = audio.play_star_hit_pair(&mut rng);
+        assert!(pair.is_some());
+        let (coin, item) = pair.unwrap();
+        assert_eq!(coin, format!("Coin_{slot38}").as_str());
+        assert_eq!(item, format!("Item_{slot37}").as_str());
+        assert_eq!(rng.peek(), witness.peek(), "exactly four gameplay draws");
+        // Silent: the :369 gate refuses BEFORE any draw.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_star_hit_pair(&mut rng), None);
+        assert_eq!(rng.peek(), peek, "the silent pair is draw-free");
     }
 }
 

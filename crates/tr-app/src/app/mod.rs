@@ -2536,8 +2536,11 @@ impl App {
             let tag = format!("[a:{name}]");
             let line = crate::lang::text_args("Achievements.Completed", &[tag]);
             self.chat.new_text(line, [255, 255, 255]);
-            // `Main.NewText`'s `SoundEngine.PlaySound(12)` tail.
-            self.audio.play("Menu_Tick");
+            // `Main.NewText`'s `SoundEngine.PlaySound(12)` tail — W4-g23
+            // centralized it in `ChatMonitor::new_text`; drain the queue
+            // here so the cue still fires inside this subscriber (the
+            // per-frame drain in `frame()` covers the other callers).
+            self.chat.drain_new_text_cues(&self.audio);
             // `if (SoundEngine.FindActiveSound(SoundID.AchievementComplete)
             // == null) SoundEngine.PlayTrackedSound(...)` (`:731-734`).
             let style = crate::achievements::achievement_complete_style();

@@ -2136,6 +2136,24 @@ impl App {
                         );
                     } else if let Some(menu) = menu.as_mut() {
                         menu.draw(renderer, lookups, screen, dt);
+                        // W4-g23 — the chrome-pass cue drain: `DrawMenu`'s
+                        // draw-time slider-block `PlaySound`s (the colour-
+                        // focus tick `Main.cs:51276`, the volume-bar hover
+                        // tick `:51575`) queue on the menu because the draw
+                        // half cannot borrow `Audio`; they play here, in
+                        // C# statement order, right after the draw. Union
+                        // contract: the ACTIVATION cues (row clicks/keys —
+                        // `:52059`/`:51952` included) ride g22's
+                        // `pending_cue` and drain in the event loop
+                        // (`app/loop.rs`) BEFORE this draw; this queue is
+                        // chrome-only, so the two never double-play.
+                        for id in menu.take_pending_ticks() {
+                            self.audio.play(match id {
+                                10 => "Menu_Open",
+                                11 => "Menu_Close",
+                                _ => "Menu_Tick", // 12
+                            });
+                        }
                     }
                     // `UIAchievementsMenu` (`Main.cs:48931`'s menuMode 888 +
                     // `MenuUI.SetState(Main.AchievementsMenu)`): the state draws

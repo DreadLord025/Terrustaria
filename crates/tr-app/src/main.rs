@@ -75,6 +75,13 @@ mod main_dust;
 // `Main.TeleportEffect` body — g61's widest-11 arms adapted per-hunk +
 // the wired `NPC.UpdateNPC_TeleportVisuals` decay.
 mod teleport_dust;
+// W4-g23: the Main.cs PlaySound census batch 3 (sites 181-271 of 271,
+// :49734-:66248) — the DrawMenu inline-cue census (the rows are landed, the
+// per-site cue seam is g22's in-flight Menu::pending_cue) + the tail sites'
+// pure cue-decision halves (colour/volume hover ticks, star-game hit pair,
+// click-pan toggle, unity-map hover, fullscreen-map close, NewText tail,
+// SelectPlayer/password/IP arms). Code-only — witnesses written not run.
+mod main_sounds_batch3;
 mod melee_swing;
 mod menu;
 mod minecart;
@@ -358,6 +365,12 @@ mod shimmer;
 mod signs;
 mod sound;
 mod soundid;
+// W4-g22: the Main.cs PlaySound census batch 2 (sites 91-180 of 271,
+// :44118-:49727) — the hair-window scroll machine, the clothes-window
+// open/cancel/save cue arms, the builder-accessory toggle cycles and the
+// case-20 female-hit slot pick. The menu-half cues ride Menu::pending_cue
+// (code-only mode — witnesses written not run).
+mod main_sounds;
 mod test_world_helpers;
 mod town;
 mod town_arrival;
