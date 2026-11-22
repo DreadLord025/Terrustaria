@@ -1494,6 +1494,11 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // W4-c3: the WaterBoltMimic's own sheet (the 34/289 rows are
         // d34/d38's above - E8 drop; STYLE10_SHEETS keeps only NPC_694).
         "NPC_694",
+        // W4-c7 — the firefly family's own sheets (`FIREFLY_SHEETS`).
+        "NPC_355",
+        "NPC_358",
+        "NPC_654",
+        "NPC_677",
 ];
 
 

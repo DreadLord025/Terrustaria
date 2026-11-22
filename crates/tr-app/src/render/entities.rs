@@ -658,6 +658,10 @@ pub(crate) fn npc_rotation_allowed(kind: NpcKind) -> bool {
             | NpcKind::GoldGoldfish
             | NpcKind::Pupfish
             | NpcKind::Dolphin
+            // W4-c7 merge fold: the Shimmerfly's velocity tilt (the
+            // aiStyle-64 arm's rotation = velocity.X * 0.3 tail,
+            // NPC.cs:34234-34237); the other three fireflies write none.
+            | NpcKind::Shimmerfly
             | NpcKind::DD2LightningBug
             | NpcKind::GoldGoldfishWalker
             | NpcKind::Seagull2
@@ -781,6 +785,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(STYLE10_SHEETS)
             .chain(STYLE44_SHEETS)
             .chain(STYLE16_SHEETS)
+            .chain(FIREFLY_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1867,6 +1872,13 @@ pub(crate) const STYLE16_SHEETS: &[u32] = &[
     607, // the Pupfish
     615, // the Dolphin
 ];
+
+/// W4-c7 — the firefly family's sheets (the aiStyle-64 wiring): one sheet
+/// per kind, exactly as the vanilla's `TextureAssets.Npc[type]` — the
+/// Firefly (355), the Lightning Bug (358), the Lavafly (654) and the
+/// Shimmerfly (677) each draw their own `NPC_<id>` art. Keyed by the
+/// vanilla net id ([`NpcKind::cs_id`]) in [`NpcAssets::npc_sheet`].
+pub(crate) const FIREFLY_SHEETS: &[u32] = &[355, 358, 654, 677];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -4397,6 +4409,19 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // W4-c7 — the firefly family draws its own sheet
+            // (`FIREFLY_SHEETS`) at `SetFrameSize`'s integer-division row
+            // height over `Main.npcFrameCount[type]` (355/358/654 four
+            // rows, 677 four — `Main.cs:67082`; the FindFrame case-677
+            // wrap at 5 is the vanilla's own over-read quirk, kept in
+            // `find_frame`). The `NPC.scale` latch (0.75..1.10) rides
+            // `scaled_anchor` (the BlazingWheel's convention); only the
+            // Shimmerfly rotates (the arm's `vx * 0.3` tail,
+            // `NPC.cs:34234-34237` — the whitelist below).
+            NpcKind::Firefly => scaled_anchor(assets.npc_sheet(355), npc_rows(355), n, w, h),
+            NpcKind::LightningBug => scaled_anchor(assets.npc_sheet(358), npc_rows(358), n, w, h),
+            NpcKind::Lavafly => scaled_anchor(assets.npc_sheet(654), npc_rows(654), n, w, h),
+            NpcKind::Shimmerfly => scaled_anchor(assets.npc_sheet(677), npc_rows(677), n, w, h),
         };
         let Some(tex) = tex else {
             continue;

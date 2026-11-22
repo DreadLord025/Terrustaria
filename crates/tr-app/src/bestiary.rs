@@ -3577,6 +3577,40 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     },
     // E8 merge: the Pufferfish 688 / Orca 692 entries drop with the
     // kinds (d43 rows them later - research/148's TRIGGERED conditional).
+    // W4-c7 — the firefly family's own entries (the populator registers
+    // all four; `NPCID.Search.GetName` credits).
+    BestiaryEntryDef {
+        credit_id: "Firefly",
+        net_id: 355,
+        kind: NpcKind::Firefly,
+        variant: None,
+        quick_unlock: false,
+        name: "Firefly",
+    },
+    BestiaryEntryDef {
+        credit_id: "LightningBug",
+        net_id: 358,
+        kind: NpcKind::LightningBug,
+        variant: None,
+        quick_unlock: false,
+        name: "Lightning Bug",
+    },
+    BestiaryEntryDef {
+        credit_id: "Lavafly",
+        net_id: 654,
+        kind: NpcKind::Lavafly,
+        variant: None,
+        quick_unlock: false,
+        name: "Lavafly",
+    },
+    BestiaryEntryDef {
+        credit_id: "Shimmerfly",
+        net_id: 677,
+        kind: NpcKind::Shimmerfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Shimmerfly",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

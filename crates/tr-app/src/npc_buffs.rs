@@ -800,6 +800,10 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::GiantFlyingAntlion
         | NpcKind::FlyingAntlion
         | NpcKind::EyeballFlyingFish => &[],
+        // W4-c7: none of 355/358/654/677 has a `DebuffImmunitySets` row
+        // (`NPCID.cs:6075+`'s dictionary carries no keys for them) — the
+        // C# else-branch's no-immunity (`NPC.cs:17826-17832`).
+        NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => &[],
     }
 }
 

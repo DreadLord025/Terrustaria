@@ -928,6 +928,17 @@ impl NpcKind {
             NpcKind::GoldGoldfish => 592,
             NpcKind::Pupfish => 607,
             NpcKind::Dolphin => 615,
+            // W4-c7 — the firefly family keeps its vanilla ids (355/358/
+            // 654/677 are free in the protocol space — a to_u16 scan of
+            // the merged tree shows no arm on them). `NPCID.cs:11387`/
+            // `:11393`/`:11985`/`:12031`.
+            // E8 merge renumber (d37 tables): 355/358 are d37's
+            // CyanBeetle/Squid in the settled roster - the firefly pair
+            // rides the port-local 735/736 (cs_id/net_id stay 355/358).
+            NpcKind::Firefly => 735,
+            NpcKind::LightningBug => 736,
+            NpcKind::Lavafly => 654,
+            NpcKind::Shimmerfly => 677,
         }
     }
 
@@ -1526,6 +1537,12 @@ impl NpcKind {
             592 => NpcKind::GoldGoldfish,
             607 => NpcKind::Pupfish,
             615 => NpcKind::Dolphin,
+            // W4-c7 — the firefly family's vanilla ids (`to_u16` above).
+            // E8 merge renumber: 735/736 (the 355/358 slots are d37's).
+            735 => NpcKind::Firefly,
+            736 => NpcKind::LightningBug,
+            654 => NpcKind::Lavafly,
+            677 => NpcKind::Shimmerfly,
             _ => return None,
         })
     }
@@ -2583,6 +2600,9 @@ impl NpcKind {
             // (`:14850`/`:14877`).
             NpcKind::EyeballFlyingFish => "NPC_Hit_1",
             NpcKind::GiantFlyingAntlion | NpcKind::FlyingAntlion => "NPC_Hit_32",
+            // W4-c7 — the firefly family's `SoundID.NPCHit1` rows
+            // (`NPC.cs:13525`/`:13567`/`:17273`/`:17587`).
+            NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => "NPC_Hit_1",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -3158,6 +3178,9 @@ impl NpcKind {
             // (`:14851`/`:14878`).
             NpcKind::EyeballFlyingFish => "NPC_Killed_1",
             NpcKind::GiantFlyingAntlion | NpcKind::FlyingAntlion => "NPC_Killed_35",
+            // W4-c7 — the firefly family's `SoundID.NPCDeath1` rows
+            // (`NPC.cs:13526`/`:13568`/`:17274`/`:17588`).
+            NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => "NPC_Killed_1",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -3524,6 +3547,10 @@ impl NpcKind {
             NpcKind::GiantFlyingAntlion
             | NpcKind::FlyingAntlion
             | NpcKind::EyeballFlyingFish => true,
+            // W4-c7 — the firefly family's `noGravity = true` rows
+            // (`NPC.cs:13528`/`:13570`/`:17276`/`:17590`); all four keep
+            // the class-default kb 1, so the Y-pop selector reaches them.
+            NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => true,
             _ => false,
         }
     }
@@ -4085,6 +4112,10 @@ impl NpcKind {
             NpcKind::GiantFlyingAntlion
             | NpcKind::FlyingAntlion
             | NpcKind::EyeballFlyingFish => 44,
+            // aiStyle 64 — W4-c7, the firefly family: `NPC.cs:13521` (355),
+            // `:13563` (358), `:17269` (654), `:17583` (677) — the four
+            // `this.aiStyle = 64;` rows of the SetDefaults census.
+            NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => 64,
         }
     }
 
@@ -4953,6 +4984,11 @@ impl NpcKind {
             NpcKind::EyeballFlyingFish => (32.0, 18.0),
             NpcKind::GiantFlyingAntlion => (40.0, 31.0),
             NpcKind::FlyingAntlion => (30.0, 22.0),
+            // W4-c7 — the firefly family's boxes: 355/654/677 10x10
+            // (`NPC.cs:13519-13520`/`:17267-17268`/`:17581-17582`), 358
+            // 12x12 (`:13561-13562`).
+            NpcKind::Firefly | NpcKind::Lavafly | NpcKind::Shimmerfly => (10.0, 10.0),
+            NpcKind::LightningBug => (12.0, 12.0),
         }
     }
 
@@ -5101,6 +5137,13 @@ impl NpcKind {
             NpcKind::GiantFlyingAntlion => 509,
             NpcKind::FlyingAntlion => 581,
             NpcKind::EyeballFlyingFish => 587,
+            // W4-c7 — the firefly family's vanilla `NPC.type` ids (the AI
+            // arm's per-type gates read them): `NPCID.cs:11387`/`:11393`/
+            // `:11985`/`:12031`.
+            NpcKind::Firefly => 355,
+            NpcKind::LightningBug => 358,
+            NpcKind::Lavafly => 654,
+            NpcKind::Shimmerfly => 677,
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
             // W4-d40: hand rows for the kinds with no bestiary entry
@@ -6066,6 +6109,9 @@ impl NpcKind {
             NpcKind::GiantFlyingAntlion => 90,
             NpcKind::FlyingAntlion => 60,
             NpcKind::EyeballFlyingFish => 300,
+            // W4-c7 — the firefly family's `lifeMax = 5` rows
+            // (`NPC.cs:13524`/`:13566`/`:17272`/`:17586`).
+            NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => 5,
         }
     }
 
@@ -6692,6 +6738,10 @@ impl NpcKind {
             NpcKind::GiantFlyingAntlion => 34,
             NpcKind::FlyingAntlion => 29,
             NpcKind::EyeballFlyingFish => 35,
+            // W4-c7 — the firefly family's `damage = 0` rows
+            // (`NPC.cs:13522`/`:13564`/`:17270`/`:17584`) — the 677 threat
+            // scan's own `damage > 0` gate excludes them from each other.
+            NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => 0,
         }
     }
 }

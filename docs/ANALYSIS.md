@@ -33876,6 +33876,34 @@ vanilla type id with the box on `size_override` (the
 is reused UNMODIFIED (style 64 — the `:77761` fighter arm is
 style-3-only, so no `directionY` rewrite).
 
+**WIRED 2026-11-20 (W4-c7, `task/W4-c7-style64-fireflies`, code-only —
+no compiler/tests run).** Phase 1 (81094ca0): the four kinds joined the
+roster (`NpcKind::Firefly`/`LightningBug`/`Lavafly`/`Shimmerfly`, vanilla
+ids 355/358/654/677 kept in the protocol space), the `SetDefaults` tables
+(10x10, the Bug's 12x12; dmg/def/value 0, lifeMax 5, noGravity all four,
+class-default kb 1f, NPCHit1/NPCDeath1, the bestiary entries, the G6
+render rows over `FIREFLY_SHEETS`, the Shimmerfly rotation whitelist, the
+FindFrame cases — the 7-tick flap + dark-pose +2 rows and the 677's
+double-counter pixel-vs-5 wrap quirk, num 27 → row 0 forever). Phase 2
+(045922d9): the `64 =>` axis arm (`update_rng_style64_solo`, empty sibling
+view, the style75 solo precedent), the SIM's POOL pass at the slot turn
+on the `UpdateNPCs` stream (the slot-ordered `Ai64NpcView` list feeds the
+677 threat scan; the fly's own damage-0 view rides along — the module's
+byte-identical fold), the glow drains into the shared `EntityLights`
+pair at the C# call position (the solo path queues `wants_ai_light`),
+and `Npc::ai_064_integrate` owns the post-AI movement: the dead-band X
+snap (`:90473-90476`) + the 677 raw integration (`:90496-90498`) vs the
+other three's no-gravity `UpdateCollision` stand-in. Phase 3: two wiring
+witnesses in `npc.rs` (`w4_c7_the_firefly_defaults_match_the_csharp_rows`
+— the four rows through the port's tables incl. the 4-row frame counts;
+`w4_c7_the_style64_axis_runs_solo_feeds_the_glow_and_splits_the_integration`
+— the solo stream-clone replay, the glow queue → EntityLights byte-exact
+drain, the collideX-latching flyer vs the wall-passing 677, the dead-band
+snap, 60 full ticks per kind never reaching the unreachable! kind arms).
+WRITTEN, NOT RUN. The catch-item/lavaImmune/npcSlots rows ride the
+bug-net/critter systems outside this lane (the bestiary/netglue rows
+landed).
+
 **Verification.** Code-only mode: the whole arm was re-read line-by-line
 against the module (resume re-verification 2026-11-19: the census, the
 four SetDefaults rows, `Utils.cs:1507-1542`/`:1807-1810`/`:1837-1844`/
