@@ -590,10 +590,13 @@ pub(crate) fn spawn_travel_npc(
     player: Option<&crate::player::Player>,
     chat: &mut crate::chat::ChatMonitor,
 ) {
-    // `:5253-5256`'s gates: the eclipse (not ported), the daylight, and an
-    // invasion that has actually started (`invasionDelay == 0 &&
-    // invasionSize > 0`).
-    if !world.day_time
+    // `:5253-5256`'s gates: the eclipse, the daylight, and an invasion that
+    // has actually started (`invasionDelay == 0 && invasionSize > 0`).
+    // W4-d122 fifth round: `Main.eclipse` IS ported (`World.eclipse`, the
+    // Steampunker/Cyborg shop gates read it) — the spawn refuses under it
+    // like the C# (was a constants-off gap).
+    if world.eclipse
+        || !world.day_time
         || (world.invasion_type > 0 && world.invasion_delay == 0 && world.invasion_size > 0)
     {
         return;
@@ -1002,6 +1005,57 @@ mod tests {
             &mut app.chat,
         );
         assert_eq!(app.npcs.len(), count, "no second merchant");
+    }
+
+    /// W4-d122 fifth round — `WorldGen.SpawnTravelNPC`'s eclipse gate
+    /// (`WorldGen.cs:5253`'s `Main.eclipse` disjunct): the merchant never
+    /// arrives under a solar eclipse, even with the daylight + the housed
+    /// anchors + the invasion clear. `World.eclipse` is ported (the
+    /// Steampunker/Cyborg shop gates read it), so the spawn refuses it.
+    /// Written, not run (code-only).
+    #[test]
+    fn the_travelling_merchant_refuses_the_eclipse() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut first = crate::npc::Npc::new(crate::npc::NpcKind::Guide, 64.0, 64.0, 1, 0.0);
+        first.home = Some((4, 4));
+        let mut second = crate::npc::Npc::new(crate::npc::NpcKind::Merchant, 80.0, 64.0, 1, 0.0);
+        second.home = Some((5, 4));
+        app.npcs.push(first);
+        app.npcs.push(second);
+        app.world.day_time = true;
+        app.world.eclipse = true;
+        let stock_before = app.world.travel_shop;
+        let mut rng = UnifiedRandom::new(12345);
+        super::spawn_travel_npc(
+            &mut app.world,
+            &mut app.npcs,
+            &mut rng,
+            app.player.as_ref(),
+            &mut app.chat,
+        );
+        assert!(
+            !app.npcs
+                .iter()
+                .any(|n| n.kind == crate::npc::NpcKind::TravellingMerchant),
+            "the eclipse refuses the arrival (`:5253`)"
+        );
+        assert_eq!(app.world.travel_shop, stock_before, "no stock roll under the eclipse");
+        // The same fixture with the eclipse clear: he arrives (the gate is
+        // the ONLY thing that changed).
+        app.world.eclipse = false;
+        super::spawn_travel_npc(
+            &mut app.world,
+            &mut app.npcs,
+            &mut rng,
+            app.player.as_ref(),
+            &mut app.chat,
+        );
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == crate::npc::NpcKind::TravellingMerchant),
+            "the clear-day arrival stands"
+        );
     }
 
     /// `WorldGen.cs:5253`'s daylight gate and `Main.cs:65012`'s departure:

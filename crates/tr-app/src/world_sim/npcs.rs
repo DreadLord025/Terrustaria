@@ -939,11 +939,27 @@ pub(crate) fn try_spawn_sleeping_angler(app: &mut App) -> bool {
 
 /// `Chest.cs:2714-2746`'s copper total over the 54-slot inventory scan — the
 /// Stylist's Money Hair Dye gate reads it (the cap at 9,999,999,999 stands).
-/// The port's coin model keeps the purse aggregate (`App.coins`) beside the
-/// grid's coin stacks, so both feed the total (the recorded purse deviation).
-fn coin_total(inventory: &[crate::item::ItemSlot], purse: u64) -> i64 {
-    let mut total: i64 = purse as i64;
-    for sl in inventory.iter() {
+/// The C# walks `Player.inventory[0..54]`: the 50-slot grid AND the four coin
+/// rows (50..53); the ammo rows (54..57) and the banks are NOT scanned.
+///
+/// W4-d122 fifth round: the port's coin model keeps the purse aggregate
+/// (`App.coins`) beside the grid's coin stacks, and the pickup lane credits
+/// the mirror with the copper value of what the inventory stacks take
+/// (`world_sim/items.rs`'s `into_inventory` arm, ANALYSIS "the purse") — so
+/// the mirror ALREADY covers every pickup-fed grid/coin-row stack. Adding
+/// those stacks on top double-counted them (a 500k-copper pickup opened the
+/// 1g gate at 1,000,000). The total is therefore `max(purse, grid + coin
+/// rows)`: the purse covers the pickup/sell lanes, the stack scan covers
+/// sidecar-restored / TR_COINS-free grid coins the mirror never saw, and a
+/// stack the mirror already counted is never added twice. The recorded
+/// purse deviation (ANALYSIS "the shop currency remainder", fifth round).
+fn coin_total(
+    inventory: &[crate::item::ItemSlot],
+    coin_rows: &[crate::item::ItemSlot],
+    purse: u64,
+) -> i64 {
+    let mut stacks: i64 = 0;
+    for sl in inventory.iter().chain(coin_rows.iter()) {
         if sl.count == 0 {
             continue;
         }
@@ -954,12 +970,13 @@ fn coin_total(inventory: &[crate::item::ItemSlot], purse: u64) -> i64 {
             74 => 1_000_000,
             _ => continue,
         };
-        total += sl.count as i64 * mult;
-        if total < 0 || total > 9_999_999_999 {
+        stacks += sl.count as i64 * mult;
+        // `:2733-2737`'s mid-walk clamp (the `break` stops the scan).
+        if stacks < 0 || stacks > 9_999_999_999 {
             return 9_999_999_999;
         }
     }
-    total
+    (purse as i64).max(stacks)
 }
 
 /// `TeleportPylonsSystem.DoesPositionHaveEnoughNPCs(2, center)`
@@ -1128,7 +1145,7 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             .is_some_and(|p| (p.y as f64) < app.world.world_surface * 16.0),
         life_max_400: app.player.as_ref().is_some_and(|p| p.max_hp >= 400),
         mana_max_200: app.player.as_ref().is_some_and(|p| p.mana_max >= 200),
-        coins_over_gold: coin_total(&app.inventory, app.coins) >= 1_000_000,
+        coins_over_gold: coin_total(&app.inventory, &app.equip.coins, app.coins) >= 1_000_000,
         // `NPC.AnyNPCs(208)` (`Chest.cs:2762`) — the live roster scan.
         party_girl_present: app
             .npcs
@@ -1141,6 +1158,27 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         downed_mech_2: app.world.downed_mech_boss2,
         downed_mech_3: app.world.downed_mech_boss3,
         downed_martians: app.world.downed_martians,
+        // W4-d122: the Truffle/Steampunker gates (`Chest.cs:2113-2233`).
+        downed_plant_boss: app.world.downed_plant_boss,
+        // `WorldGen.cs:11118-11121` — the seed-option statics ride the
+        // persisted `World.seeds` bits.
+        remix_world: app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+        anniversary_world: app
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
+        get_good_world: app
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+        // W4-d122 shop 11: the Steampunker's scene/event gates
+        // (`Chest.cs:2151-2233`).
+        eclipse: app.world.eclipse,
+        downed_boss1: app.world.downed_eoc,
+        downed_golem: app.world.downed_golem,
+        zone_graveyard: app.scene_metrics.zone_graveyard,
+        zone_sky_height: app.scene_metrics.zone_sky_height,
+        zone_hallow: app.scene_metrics.zone_hallow,
         // M5-SEED-2: `Main.vampireSeed`/`Main.infectedSeed`
         // (`WorldGen.cs:555-562`) — `Chest.SetupShop`'s Dryad and Bestiary
         // Girl vampirism rows (`shop.rs`'s `Vampirism*` gates). The world's
@@ -1167,6 +1205,41 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             .seeds
             .contains(tr_core::seeds::SeedFlags::REMIX),
         time: app.world.time,
+        // W4-d122 shop 1: the Merchant's seed/weather/party gates
+        // (`Chest.cs:1387-1438`).
+        not_the_bees: app
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::NOT_THE_BEES),
+        happy_windy_day: app.wind.happy_windy_day,
+        party_is_up: crate::world_events::party_is_up(&app.world_events),
+        // W4-d122 shop 2: the Arms Dealer's ore-tier split
+        // (`Chest.cs:1489`) — the world's rolled silver tier.
+        silver_ore_tier: app.world.ore_tiers.silver,
+        // W4-d122 shop 4: the Demolitionist's Land Mine triple conjunct
+        // (`Chest.cs:1766`).
+        downed_pirates: app.world.downed_pirates,
+        // W4-d122 shop 5: the Clothier's latches + the Tax Collector scan
+        // (`Chest.cs:1849-1953`). `downed_clown` stays false — the port
+        // persists no clown bit (the recorded deviation).
+        downed_clown: false,
+        downed_cultist: app.world.downed_ancient_cultist,
+        downed_frost: app.world.downed_frost,
+        tax_collector_present: app
+            .npcs
+            .iter()
+            .any(|n| n.hp > 0 && n.kind == NpcKind::TaxCollector),
+        // W4-d122 shop 8: the Mechanic's Rod Angler scan
+        // (`Chest.cs:2085`'s `NPC.AnyNPCs(369)`).
+        angler_present: app.npcs.iter().any(|n| n.hp > 0 && n.kind == NpcKind::Angler),
+        // W4-d122 remainder census, shop 23: the fairy-torch head gate
+        // (`Chest.cs:3266`/:3544-3559 — the three fairy-critter SIGHTS)
+        // and the Solar Pillar latch (`:3304`).
+        fairy_torch_available: crate::bestiary::fairy_torch_available(&app.bestiary),
+        downed_tower_solar: app.world.downed_tower_solar,
+        // W4-d122 remainder census, shop 24: the anniversary block's
+        // desert gate (`Chest.cs:3441`) — the scene metrics' zone flag.
+        zone_desert: app.scene_metrics.zone_desert,
     };
     let inv_ids: Vec<u16> = app
         .inventory
@@ -9941,6 +10014,54 @@ mod tests {
         assert!(app.world.saved_stylist, "savedStylist raises");
     }
 
+    /// W4-d122 fifth round — the Stylist Coins gate's copper total
+    /// (`Chest.cs:2714-2746`): the 54-slot scan covers the grid AND the
+    /// four coin rows; the purse mirror already credits pickup-fed stacks
+    /// (`world_sim/items.rs`'s `into_inventory` arm), so the total is
+    /// `max(purse, stacks)` — a pickup never double-counts. Written, not
+    /// run (code-only).
+    #[test]
+    fn the_stylist_coin_total_never_double_counts_the_pickup_mirror() {
+        use crate::item::{ItemSlot, EMPTY_SLOT};
+        let coin = |kind: u16, count: u32| ItemSlot { kind, name: "", count, prefix: 0 };
+        let grid = vec![EMPTY_SLOT; crate::item::INV];
+        let rows = [EMPTY_SLOT; crate::inv::COINS];
+        // Empty everything: 0.
+        assert_eq!(coin_total(&grid, &rows, 0), 0);
+        // The purse alone (the sell/payout lane): its value stands.
+        assert_eq!(coin_total(&grid, &rows, 1_000_000), 1_000_000);
+        // A grid stack the mirror never saw (sidecar restore): it counts.
+        let mut g = grid.clone();
+        g[3] = coin(73, 100); // 100 gold = 1,000,000
+        assert_eq!(coin_total(&g, &rows, 0), 1_000_000);
+        // The coin ROWS count too (C# inventory[50..53]).
+        let mut r = rows;
+        r[0] = coin(71, 50);
+        assert_eq!(coin_total(&grid, &r, 0), 50);
+        // THE discriminating case: a 500k-copper pickup credits BOTH the
+        // mirror and the coin-row stack — the old purse+stacks sum read
+        // 1,000,000 and opened the 1g gate; the max reads 500,000.
+        let mut r = rows;
+        r[3] = coin(73, 50); // 50 gold = 500,000
+        assert_eq!(coin_total(&grid, &r, 500_000), 500_000, "no double count");
+        assert!(coin_total(&grid, &r, 500_000) < 1_000_000, "the 1g gate stays shut");
+        // The mid-walk clamp (`:2733-2737`): a stack over the cap clamps.
+        let mut g = grid.clone();
+        g[0] = coin(74, 10_000); // 10,000 platinum = 10,000,000,000 > cap
+        assert_eq!(coin_total(&g, &rows, 0), 9_999_999_999);
+        // The denomination multipliers: 71×1, 72×100, 73×10000, 74×1000000.
+        let mut g = grid.clone();
+        g[0] = coin(71, 5);
+        g[1] = coin(72, 3);
+        g[2] = coin(73, 2);
+        g[3] = coin(74, 1);
+        assert_eq!(coin_total(&g, &rows, 0), 5 + 300 + 20_000 + 1_000_000);
+        // A non-coin kind contributes nothing.
+        let mut g = grid.clone();
+        g[0] = coin(8, 999);
+        assert_eq!(coin_total(&g, &rows, 0), 0);
+    }
+
     /// `Main.NPCChatText_DoTaxCollector` (`Main.cs:40180-40225`): the Tax
     /// Collector's right-click pays the accrued taxes out in coins and
     /// empties the purse.
@@ -15655,6 +15776,51 @@ mod dd2_victory_tests {
         app.world.dd2_wave_kills = 60.0;
         dd2_crystal_drop(&mut app, &betsy);
         assert_eq!(app.world.dd2_crystal_drops.already_dropped, 10);
+    }
+
+    /// W4-d122 fifth round — the f36 medal-drop item-id cross-check. The
+    /// C# `DD2Event.DropMedals` (`DD2Event.cs:802-813`) drops **3817**
+    /// (`Item.NewItem(..., 3817, numberOfMedals, noBroadcast: true)`,
+    /// `:809`) — the Defender Medal, NOT the 3822 Eternia Crystal (the
+    /// sentry ammo / the per-kill `ShouldDropCrystals` drop, `:815+`).
+    /// W4-f36 (`fac5f222`) ports the drop side through the SAME
+    /// `tr_core::dd2::MEDAL_ITEM` constant this branch's win/wave lanes
+    /// use; this witness pins the RAW kind on the dropped stacks (the
+    /// `medal_stacks` helper filters by the constant, so a wrong constant
+    /// would hide there) and keeps the two ids distinct. Written, not run.
+    #[test]
+    fn the_f36_medal_drop_item_id_is_3817_not_the_crystal() {
+        assert_eq!(tr_core::dd2::MEDAL_ITEM, 3817, "DD2Event.cs:809's literal");
+        assert_eq!(
+            tr_core::dd2::ENERGY_CRYSTAL_ITEM, 3822,
+            "the crystal is the sentry ammo, not the medal"
+        );
+        assert_ne!(tr_core::dd2::MEDAL_ITEM, tr_core::dd2::ENERGY_CRYSTAL_ITEM);
+        // The wallet's registration agrees (`CustomCurrencyManager.cs:17`).
+        assert_eq!(
+            crate::custom_currency::DEFENDER_MEDAL_ITEM,
+            tr_core::dd2::MEDAL_ITEM
+        );
+        // A tier-1 win pays ONE 3-medal stack of the RAW kind 3817.
+        let mut app = base_app();
+        crystal(&mut app);
+        app.world.dd2_wave = 5;
+        app.world.dd2_wave_kills = 139.0;
+        report_invasion_kill(&mut app, NpcKind::DD2DarkMage);
+        let ci = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::DD2EterniaCrystal)
+            .unwrap();
+        app.npcs[ci].ai[0] = 599.0;
+        update_npcs(&mut app, 1.0 / 60.0);
+        let medals: Vec<&ItemDrop> = app.items.iter().filter(|d| d.kind == 3817).collect();
+        assert_eq!(medals.len(), 1, "one stack per live crystal (`:804-812`)");
+        assert_eq!(medals[0].count, 3, "DropMedals(3) (`:330`)");
+        assert!(
+            !app.items.iter().any(|d| d.kind == 3822),
+            "the win pays no energy crystals"
+        );
     }
 
     #[test]

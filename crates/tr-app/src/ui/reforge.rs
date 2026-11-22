@@ -172,6 +172,8 @@ pub(crate) fn draw(
     // `:41679` — the context-5 slot (`Inventory_Back4`, `ItemSlot.cs:2222`).
     slot::draw_slot(
         r, lookups, slot_item, SLOT_X, SLOT_Y, 5, 0, false, SCALE, BACK_TINT,
+        super::UiPulse { text: mouse_text_color as f32 / 255.0, ..Default::default() },
+        None, -1, true, false,
     );
 }
 

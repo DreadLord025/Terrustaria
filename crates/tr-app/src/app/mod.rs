@@ -449,6 +449,13 @@ pub(crate) struct App {
     /// The coin cells' display-state machine (`CoinSlot.cs`, S1-H-9): the
     /// entry arrays the vanilla carries as statics, owned by the App.
     pub(crate) coin_slot: crate::ui::coin_slot::CoinSlotState,
+    /// `ItemSlot._customCurrencyForSavings` (`ItemSlot.cs:308`, init −1
+    /// `:363`): the savings display's currency latch. `UpdateInterface`
+    /// (`:516-521`) resets it when the inventory closes or the talk ends;
+    /// `MouseHover` (`:3177`) stamps the hovered item's
+    /// `shopSpecialCurrency` — a shop medal row latches 0, every plain
+    /// item −1 (`draw_hud`'s hover stamps).
+    pub(crate) custom_currency_for_savings: i32,
     /// `NPC.RevengeManager._markers` (`NPC.cs:6437`, `CoinLossRevengeSystem
     /// .cs:315`): the cached coin carriers. Session-only — cleared on the
     /// world unload (the vanilla never saves them).
@@ -2395,6 +2402,15 @@ impl App {
         if self.shop_npc.is_some() && !self.inventory_open {
             self.close_shop();
         }
+        // `ItemSlot.UpdateInterface` (`ItemSlot.cs:516-521`, per-update at
+        // `Main.cs:17046`): the savings currency latch resets when the
+        // inventory closes or the talk ends. The port's shop opens
+        // collapse the talk onto `shop_npc` (the same stand-in the close
+        // rule above records); the reforge menu also holds a talk.
+        let talking = self.shop_npc.is_some() || self.talk_npc.is_some();
+        if !self.inventory_open || !talking {
+            self.custom_currency_for_savings = crate::custom_currency::CURRENCY_NONE;
+        }
     }
 
     /// One unit of the shop buy — `ItemSlot.HandleShopSlot`'s loop body
@@ -2413,9 +2429,12 @@ impl App {
     /// `ItemSlot.cs:1220`/`:1650`). The consumer is the shop-grid click
     /// (`app/clicks.rs`).
     ///
-    /// Deviation: the charge rides the port's aggregate `App.coins` purse
-    /// (the recorded coin model, ANALYSIS) — the C# `BuyItem` spends the
-    /// inventory + bank coin stacks through `TryPurchasing`.
+    /// Deviation: the PLAIN-currency charge rides the port's aggregate
+    /// `App.coins` purse (the recorded coin model, ANALYSIS) — the C#
+    /// `BuyItem` spends the inventory + bank coin stacks through
+    /// `TryPurchasing`. The special-currency arm (the Tavernkeep's medal
+    /// rows) IS ported: `custom_currency.rs` spends the real 3817 stacks
+    /// across the inventory + the four banks with the restore-on-fail.
     pub(crate) fn buy_shop_item(&mut self, slot: usize) -> bool {
         // `ItemSlot.HandleShopSlot` (`UI/ItemSlot.cs:2059-2060`): the
         // charge is `GetItemExpectedPrice`'s buying value for the stock
@@ -2437,7 +2456,32 @@ impl App {
         }
         let price =
             crate::shop::buy_price_row(entry, self.discount_available, self.shop_mood) as u64;
-        if self.coins < price {
+        // `Player.BuyItem`'s custom-currency arm (`Player.cs:35402-35405`)
+        // → `CustomCurrencyManager.BuyItem` (`CustomCurrencyManager.cs:
+        // 69-119`): the medal wallet counts the inventory (minus the coin
+        // slots) + the four banks and spends the 3817 stacks through
+        // `CustomCurrencySingleCoin.TryPurchasing` — the full-cache restore
+        // on a failed spend rides `custom_currency.rs`. The plain purse
+        // keeps the recorded aggregate `App.coins` model (ANALYSIS).
+        let special = entry.shop_special_currency;
+        if special != crate::custom_currency::CURRENCY_NONE {
+            let Some(p) = self.player.as_mut() else {
+                return false; // no player = no wallet (the C# always has one)
+            };
+            let ok = crate::custom_currency::buy_with_currency(
+                price as i64,
+                [
+                    self.inventory.as_mut_slice(),
+                    p.banks[0].as_mut_slice(),
+                    p.banks[1].as_mut_slice(),
+                    p.banks[2].as_mut_slice(),
+                    p.banks[3].as_mut_slice(),
+                ],
+            );
+            if !ok {
+                return false; // `:77-80`'s short-wallet refusal / the restore
+            }
+        } else if self.coins < price {
             return false;
         }
         // `:2075-2083` — an air cursor takes the row's kind (and prefix);
@@ -2450,9 +2494,10 @@ impl App {
                 prefix: entry.prefix,
             };
         }
-        // `:2084-2087` — the sellback memo (the medal rows refuse above,
-        // so the `shopSpecialCurrency == -1` half is always true here).
-        if !entry.buy_once {
+        // `:2084-2087` — the sellback memo: plain-currency non-buyOnce rows
+        // only (`!inv[slot].buyOnce && inv[slot].shopSpecialCurrency == -1`
+        // — the medal rows never memo).
+        if !entry.buy_once && special == crate::custom_currency::CURRENCY_NONE {
             self.shop_sellback.add(entry.item, entry.prefix, 1);
         }
         self.mouse_item.count += 1;
@@ -2474,7 +2519,9 @@ impl App {
                 };
             }
         }
-        self.coins -= price;
+        if special == crate::custom_currency::CURRENCY_NONE {
+            self.coins -= price; // the medal arm already spent the wallet
+        }
         true
     }
 
@@ -4840,6 +4887,7 @@ impl App {
             // wiring RNG (S1-L-6c).
             craft_rng: tr_core::unified_random::UnifiedRandom::new(world_seed as i32 | 1),
             coin_slot: crate::ui::coin_slot::CoinSlotState::new(),
+        custom_currency_for_savings: crate::custom_currency::CURRENCY_NONE,
             revenge_markers: Vec::new(),
             revenge_tick: 0,
             menu: menu_state,
@@ -7054,5 +7102,99 @@ mod s1_p_i44_tests {
         app.update_shop_close();
         assert!(app.shop_npc.is_none());
         assert!(app.shop_stock.is_empty());
+    }
+
+    // — W4-d122 shop currency: the medal-buy witnesses (`Player.BuyItem`'s
+    // custom-currency arm, `Player.cs:35402-35405` → `CustomCurrencyManager.
+    // BuyItem`, `CustomCurrencyManager.cs:69-119`). Written, not run
+    // (code-only). —
+
+    fn medals(count: u32) -> ItemSlot {
+        ItemSlot {
+            kind: crate::custom_currency::DEFENDER_MEDAL_ITEM,
+            name: crate::registry::name(crate::custom_currency::DEFENDER_MEDAL_ITEM),
+            count,
+            prefix: 0,
+        }
+    }
+
+    /// A Tavernkeep medal row: the 15-medal tier-2 Flameburst Rod 3819
+    /// (`Chest.cs:3008-3010`), currency 0, raw price 15.
+    fn medal_stock_app() -> App {
+        let mut app = shop_app();
+        app.player = Some(Player::spawn(&app.world));
+        app.shop_stock = vec![crate::shop::ShopEntry {
+            item: 3819,
+            when: crate::shop::StockWhen::Always,
+            shop_custom_price: Some(15),
+            shop_special_currency: crate::custom_currency::DEFENDER_MEDALS,
+            buy_once: false,
+            is_a_shop_item: false,
+            prefix: 0,
+            stack: 1,
+        }];
+        app
+    }
+
+    #[test]
+    fn the_medal_buy_spends_the_wallet_not_the_purse() {
+        // `CustomCurrencyManager.BuyItem` (`:72-77`/`:114`): the inventory
+        // medal stack pays; `App.coins` never moves; the sellback memo
+        // stays empty (`ItemSlot.cs:2084`'s `shopSpecialCurrency == -1`
+        // half); the unit lands on the cursor like every shop buy.
+        let mut app = medal_stock_app();
+        app.inventory[0] = medals(20);
+        assert!(app.buy_shop_item(0));
+        assert_eq!(app.inventory[0].count, 5, "15 medals consumed");
+        assert_eq!(app.coins, 1_000_000, "the purse is untouched");
+        assert_eq!((app.mouse_item.kind, app.mouse_item.count), (3819, 1));
+        assert_eq!(app.shop_sellback.get_amount(3819, 0), 0, "no medal memo");
+        // The raw price ignores the mood AND the Discount Card
+        // (`Player.cs:35361-35365`'s early return).
+        app.shop_mood = 0.75;
+        app.discount_available = true;
+        assert!(app.buy_shop_item(0));
+        assert_eq!(app.inventory[0], crate::item::EMPTY_SLOT, "drained to air");
+    }
+
+    #[test]
+    fn the_medal_buy_spends_the_banks_after_the_inventory() {
+        // The spend order (`CustomCurrencySingleCoin.cs:30-67` over
+        // `BuyItem`'s `:89-93` container list): inventory first, then
+        // bank/bank2/bank3/bank4.
+        let mut app = medal_stock_app();
+        app.inventory[3] = medals(10);
+        let p = app.player.as_mut().unwrap();
+        p.banks[0][0] = medals(4);
+        p.banks[1][7] = medals(50);
+        assert!(app.buy_shop_item(0));
+        assert_eq!(app.inventory[3], crate::item::EMPTY_SLOT);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.banks[0][0].count, 0, "the piggy bank paid the last 5");
+        assert_eq!(p.banks[1][7].count, 50, "the safe untouched");
+    }
+
+    #[test]
+    fn the_short_medal_wallet_refuses_and_restores() {
+        // `CustomCurrencyManager.cs:77-80`: 14 < 15 refuses before any
+        // spend; the cursor/purse/stock stay put. The full-cache restore
+        // (`CustomCurrencySingleCoin.cs:68-72`) is pinned in
+        // `custom_currency.rs`'s own witnesses.
+        let mut app = medal_stock_app();
+        app.inventory[0] = medals(14);
+        assert!(!app.buy_shop_item(0));
+        assert_eq!(app.inventory[0].count, 14, "nothing moved");
+        assert_eq!(app.mouse_item.count, 0);
+        assert_eq!(app.coins, 1_000_000);
+        assert_eq!(app.shop_stock[0].stack, 1);
+        // A funded purse does NOT rescue a medal row (the currencies are
+        // separate — `Player.cs:35402-35405` never reads the coin count).
+        app.coins = 999_999_999;
+        assert!(!app.buy_shop_item(0));
+        // No player = no wallet: the medal row refuses (the C# always has
+        // a local player; the port's headless None is the safe refusal).
+        let mut no_player = medal_stock_app();
+        no_player.player = None;
+        assert!(!no_player.buy_shop_item(0));
     }
 }

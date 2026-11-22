@@ -28,6 +28,7 @@ pub mod cursor;
 pub mod debug_items;
 pub mod elements;
 pub(crate) mod glow;
+pub(crate) mod hair_window;
 pub mod ingame_options;
 pub mod housing;
 pub mod images;
@@ -49,10 +50,12 @@ pub(crate) mod reforge;
 pub mod resources;
 pub(crate) mod resource_pack_info;
 pub(crate) mod resource_packs;
+pub(crate) mod savings;
 pub mod save_list;
 pub mod search_bar;
 pub mod sliders;
 pub mod select_hit;
+pub(crate) mod shop_happiness;
 pub mod slot;
 pub mod sortable;
 pub mod snap;
@@ -763,6 +766,16 @@ pub fn draw_hud(
     // item, the computed cost, `Main.reforgeScale` and the resolved hover
     // latch (`Main.mouseReforge`).
     reforge: Option<(&crate::item::ItemSlot, u64, f32, bool)>,
+    // W4-d122: the coin cells' animation machine (`CoinSlot.Savings[4]` +
+    // the `Custom` dictionary) the savings draws feed (`DrawMoney`'s
+    // fromSavings arm / `DrawSavingsMoney`'s `UpdateCustom`).
+    coin_slot: &mut coin_slot::CoinSlotState,
+    // `ItemSlot._customCurrencyForSavings` (`ItemSlot.cs:308`): the
+    // savings currency latch — read by BOTH DrawSavings call sites
+    // (`:3707-3711`), stamped by this pass's hovers (`MouseHover`,
+    // `:3177` — the grid hover before the reforge draw, the shop-row
+    // hover after the shop pile, matching the C#'s per-frame order).
+    custom_currency_for_savings: &mut i32,
     bank: Option<(&[ItemSlot], i32)>,
     // W4-g56 — the void vault's per-slot favorite bits (context 32's
     // `Inventory_Back19` arm, `ItemSlot.cs:2155-2158`); `None` for the
@@ -963,6 +976,9 @@ pub fn draw_hud(
     // `Main.mouseItem.IsAir` (`Main.cs:41430`): every accessory tick draw and hit
     // is gated on the cursor holding nothing.
     let mouse_item_is_air = mouse_item.kind == 0 || mouse_item.count == 0;
+    // `Main.mouseItem.dye > 0` — the dye-slot dim gate (`GetDimSlotForMouseItem`,
+    // `ItemSlot.cs:1382`): a carried dye does not dim the dye slots.
+    let mouse_item_is_dye = crate::itemdata::ITEMS[mouse_item.kind as usize].dye > 0;
     // The housing page's cell hover (`Main.cs:42059-42065`), which the tooltip
     // layer prints instead of an item name.
     let mut open_housing: Option<(usize, Option<usize>)> = None;
@@ -997,10 +1013,26 @@ pub fn draw_hud(
             hide_visible_accessory,
             mouse_item_is_air,
             pulse,
+            coin_slot,
+            mouse_item_is_dye,
         );
         open_hover = hit.hovered;
         open_housing = hit.housing;
         hide_pvp_icons = hit.hide_pvp_icons;
+        // `ItemSlot.MouseHover` (`ItemSlot.cs:3175-3177`): every non-air
+        // hovered item stamps `_customCurrencyForSavings` with its
+        // `shopSpecialCurrency` (plain items −1). The grid/coin/equipment
+        // hovers run BEFORE the reforge draw in the C# (`Main.cs:41022-
+        // 41039`/`:41762` vs `:41637`); the port's grid items are all
+        // plain (the shop rows live in their own stock), so the stamp is
+        // the item default −1 — it clears a latched medal display.
+        if let Some(h) = open_hover {
+            if hover_item_for(equip, inventory, h, bank.map(|b| b.0))
+                .is_some_and(|it| it.kind > 0 && it.count > 0)
+            {
+                *custom_currency_for_savings = crate::custom_currency::CURRENCY_NONE;
+            }
+        }
         // `num20 = 174 + Main.mH` (`Main.cs:41146`).
         let num20 = 174.0 + m_h;
         // `Main.DrawPageIcons(num20 - 32)` (`Main.cs:41154`).
@@ -1015,14 +1047,30 @@ pub fn draw_hud(
         // slot cannot be opened in the port yet, so the empty label is drawn.
         chrome::draw_guide_text(r, lookups, 73.0, 331.0 + (screen.y - 600.0) / 2.0, None);
         // The shop row (`Main.DrawInventory`'s shop block,
-        // `Main.cs:41788-41818`): the 10×4 context-15 slot grid at
-        // (73, invBottom=258), scale 0.755 — the same layout the chest
-        // panel draws at (`ui::chest`). The ported stock resolves to ≤39
-        // rows (`Chest.AddItemToShop`'s window); a cell past the stock's
-        // end draws air. The happiness label/icon at (504, invBottom)
-        // (`:41790-41797`) and the coin breakdown wait for the chrome
-        // pass (ANALYSIS).
-        if let Some((stock, _mood, _discount)) = shop {
+        // `Main.cs:41788-41818`): the happiness chrome (the Shop label +
+        // the DrawSavings pile + the icon + the P0 percent, `:41790-
+        // 41797`) then the 10×4 context-15 slot grid at (73, invBottom=
+        // 258), scale 0.755 — the same layout the chest panel draws at
+        // (`ui::chest`). The ported stock resolves to ≤39 rows
+        // (`Chest.AddItemToShop`'s window); a cell past the stock's end
+        // draws air.
+        if let Some((stock, mood, _discount)) = shop {
+            // `:41790-41797` — the pile reads the player's four banks
+            // (`Player.bank/bank2/bank3/bank4`) + the currency latch.
+            let banks: Option<[&[ItemSlot]; 4]> = player
+                .map(|p| [&p.banks[0][..], &p.banks[1][..], &p.banks[2][..], &p.banks[3][..]]);
+            let savings_state = match banks.as_ref() {
+                Some(b) => Some((&mut *coin_slot, b, *custom_currency_for_savings)),
+                None => None,
+            };
+            shop_happiness::draw(r, lookups, mood, pulse, savings_state);
+            // The hovered shop row (`Main.cs:41811`'s per-cell hit test
+            // → `ItemSlot.Handle` → `MouseHover`). The cell geometry is
+            // the draw's own (`inventory::shop_slot_at`), so the hover
+            // and the click cannot drift.
+            let shop_cell = lookups.ui_back.map(|b| b.width as f32).unwrap_or(52.0);
+            let shop_hover = inventory::shop_slot_at(mouse_pos, shop_cell)
+                .and_then(|idx| stock.get(idx));
             for i in 0..inventory::SHOP_COLS {
                 for j in 0..inventory::SHOP_ROWS {
                     let idx = i + j * inventory::SHOP_COLS;
@@ -1048,6 +1096,10 @@ pub fn draw_hud(
                         inventory::SHOP_SCALE,
                         [220.0 / 255.0; 4],
                         pulse,
+                        None,
+                        idx as i32,
+                        mouse_item_is_air,
+                        mouse_item_is_dye,
                     );
                 }
             }
@@ -1056,18 +1108,31 @@ pub fn draw_hud(
             // beside the shop grid, vertical, before the happiness
             // chrome (`:41792-41797`, the g58 lane). The four banks ride
             // the local player (`Main.player[Main.myPlayer]`,
-            // `ItemSlot.cs:3706`).
+            // `ItemSlot.cs:3706`). W4-d122: the currency latch rides the
+            // pile (the medal arm when a Tavernkeep row was hovered).
             if let Some(p) = player {
                 savings::draw_savings(
                     r,
                     lookups,
-                    coin_state,
+                    coin_slot,
                     &[&p.banks[0], &p.banks[1], &p.banks[2], &p.banks[3]],
                     504.0,
                     258.0,
                     false,
                     pulse.text,
+                    *custom_currency_for_savings,
                 );
+            }
+            // `ItemSlot.MouseHover` (`ItemSlot.cs:3175-3177`) on the
+            // hovered shop row: the row's `shopSpecialCurrency` latches
+            // `_customCurrencyForSavings` (a Tavernkeep medal row → 0,
+            // a plain row → −1). The C#'s shop-grid Handle (`Main.cs:
+            // 41814`) runs AFTER this frame's DrawSavings (`:41791`),
+            // so the stamp lands here — the NEXT frame's pile reads it.
+            if let Some(entry) = shop_hover {
+                if entry.item > 0 && entry.stack > 0 {
+                    *custom_currency_for_savings = entry.shop_special_currency;
+                }
             }
         }
         // The reforge menu (`Main.DrawInventory`'s inline block,
@@ -1079,6 +1144,25 @@ pub fn draw_hud(
         // labels align with the click hit boxes
         // (`ui::inventory::reforge_*_hit`).
         if let Some((slot_item, cost, scale, hovered)) = reforge {
+            // W4-d122: `Main.cs:41637` — `ItemSlot.DrawSavings(spriteBatch,
+            // num51 + 130, invBottom, horizontal: true)` inside the
+            // `reforgeItem.type > 0` block (`:41584`): (50 + 130, 258) =
+            // (180, 258), the four banks' coin pile + the "Savings" row.
+            if slot_item.kind > 0 {
+                if let Some(p) = player {
+                    savings::draw_savings(
+                        r,
+                        lookups,
+                        coin_slot,
+                        &[&p.banks[0], &p.banks[1], &p.banks[2], &p.banks[3]],
+                        180.0,
+                        258.0,
+                        true,
+                        pulse.text,
+                        *custom_currency_for_savings,
+                    );
+                }
+            }
             reforge::draw(
                 r,
                 lookups,
@@ -1202,6 +1286,10 @@ pub fn draw_hud(
                 scale,
                 [1.0; 4],
                 pulse,
+                None,
+                i as i32,
+                mouse_item_is_air,
+                mouse_item_is_dye,
             );
             x += advance;
         }
@@ -1237,6 +1325,10 @@ pub fn draw_hud(
             pulse.cursor_scale,
             [1.0; 4],
             pulse,
+            None,
+            0,
+            mouse_item_is_air,
+            mouse_item_is_dye,
         );
     } else if mouse_npc.carried() {
         // `DrawInterface_38_MouseCarriedObject`'s else arm

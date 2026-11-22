@@ -2726,6 +2726,7 @@ impl App {
                                 // W4-g56 — the world-chest glow (context 3).
                                 glow: Some(&self.slot_glow),
                                 audio: &mut self.audio,
+                                coin_slot: &mut self.coin_slot,
                             },
                             self.in_reforge_menu.then(|| {
                                 let cost = self
@@ -2753,6 +2754,12 @@ impl App {
                                     self.mouse_reforge,
                                 )
                             }),
+                            // W4-d122: the savings draws' coin machine
+                            // (`CoinSlot.Savings[4]` + the Custom dict).
+                            &mut self.coin_slot,
+                            // `ItemSlot._customCurrencyForSavings` — the
+                            // medal-savings latch (`ItemSlot.cs:308`).
+                            &mut self.custom_currency_for_savings,
                             player.as_ref().and_then(|p| {
                                 crate::bank::bank_for_chest(p.chest)
                                     .map(|bi| (&p.banks[bi][..], p.chest))

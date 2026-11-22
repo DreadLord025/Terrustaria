@@ -8943,6 +8943,511 @@ Deviations:
   seeded stream is untouched.
 
 ## Zoologist/Princess (M4-TOWN-19)
+## Santa/Truffle/Steampunker/Cyborg shops (W4-d122)
+
+The four unclaimed first-half `Chest.SetupShop` cases — 9 (Santa Claus,
+`Chest.cs:2091-2111`), 10 (Truffle, `:2112-2134`), 11 (Steampunker,
+`:2135-2245`) and 14 (Cyborg, `:2360-2442`) — land as row lists with verbatim
+condition gates. The registry is `NPCInteractions.cs:488-512`
+(`Shop(142, 9)`/`Shop(160, 10)`/`Shop(178, 11)`/`Shop(209, 14)`); this
+decompilation has no `NPC.GetShops`. `StockWhen` grows the `All`/`Any`/`Not`
+combinators so the C#'s compound `&&`/`||`/`else` chains keep their exact
+shape (the Steampunker's Jetpack/outfit split and the solution else-chain
+share ONE condition object per branch); the filter match became the
+recursive `stock_gate` evaluator, behaviour-identical for the existing arms.
+`ShopFlags` grows `downed_plant_boss`, the remix/anniversary/getGoodWorld
+trio (fed from `World.seeds`, `WorldGen.cs:11118-11121`), `eclipse`,
+`downed_boss1` (the world's `downed_eoc`), `downed_golem`, `zone_graveyard`,
+`zone_sky_height` and `zone_hallow` — all fed live at the shop-open seam.
+Deviations: the halloween rows (`Main.halloween`, the Steampunk Goggles 1742
+and the Cyborg outfit 1743-1745) stay constants-off (no season system);
+`crimson_world` still rides the caller's field (the port persists no
+world-evil type — the Steampunker's Vaat/Lesion and Red/Purple splits read
+it). The NPCs themselves (SantaClaus/Truffle/Steampunker/Cyborg kinds, their
+arrivals and `shop_index_for_kind` arms) are NOT in this lane — the shops
+resolve through `setup_shop(index, ...)` today; cases 17 (Pirate), 20
+(Tavernkeep), 21 (Skeleton Merchant) and 25 (Painter decor) stay unclaimed
+(the OOA/medal co-lanes own 20/21's currency territory). Witnesses written,
+not run (the code-only swarm).
+
+## The first-half shop completions (W4-d122, second round)
+
+The seven remaining first-half `Chest.SetupShop` cases — 1 (Merchant,
+`Chest.cs:1371-1483`), 2 (Arms Dealer, `:1484-1567`), 3 (Dryad,
+`:1568-1745`), 4 (Demolitionist, `:1746-1813`), 5 (Clothier, `:1814-1988`),
+7 (Wizard, `:2004-2032`) and 8 (Mechanic, `:2033-2090`) — now carry every
+row with its verbatim gate (case 6, Goblin Tinkerer `:1989-2003`, was
+already complete). The stale partial lists are replaced, not extended:
+the Merchant's Flower-Boots scan pair re-slotted BEFORE the 1786 row, the
+Dryad's always-on 66/62/63/745/3217 stand-ins became the real
+blood-moon/else/crimson splits, and the Clothier grew from 5 rows to the
+full 60-row case. New gate machinery: `StockWhen::NumBelow(38, child)`
+threads the C#'s live `num` (the resolved-row count) through
+`resolve_stock_entries_moon`/`stock_gate` for the Clothier's two tail
+guards (`:1979`'s `num < 38 && golferScore >= 2000` and `:1984`'s bare
+`num < 38`); `MoonPhaseExact(n)` distinguishes the Clothier's/Wizard-adjacent
+`moonPhase == n` comparisons from the Dryad's `/2` pairs. `ShopFlags` grows
+`not_the_bees` (the `World.seeds` NOT_THE_BEES bit), `happy_windy_day`
+(`Wind.happy_windy_day`), `party_is_up` (`world_events::party_is_up`),
+`silver_ore_tier` (`World.ore_tiers.silver` — the Arms Dealer's `== 168`
+Tungsten split), `zone_underworld`/`zone_glowshroom` (the scene metrics),
+`downed_pirates`/`downed_cultist`/`downed_frost` (the world latches),
+`downed_clown` (caller-fed — the port persists no clown bit),
+`tax_collector_present`/`angler_present` (the live `AnyNPCs(441)`/`(369)`
+roster scans) — all fed at the shop-open seam
+(`world_sim/npcs.rs::try_open_town_shop_at_cursor`) and, where a world
+field exists, in `ShopFlags::from_world`. Deviations: the halloween rows
+(the Arms Dealer's undertaker 1736-1738, the Dryad's Goodie Bags
+1853/1854, the Clothier's 1740 + 3246/3247, the Wizard's 1739) stay
+constants-off (no season system); `downed_clown` stays false until a
+persisted latch lands; the Dryad's 3217/3218 planter and grave-seed
+splits ride the caller's `crimson_world` like the Steampunker's. The
+stale npc.rs Wizard/Mechanic witnesses were re-derived onto the new
+conjuncts (the blood-moon-alone arm no longer adds the Spell Tome; the
+Rod needs the Angler). Witnesses written, not run (the code-only swarm).
+
+## The shop remainder census (W4-d122, third round)
+
+Census of ALL 25 `Chest.SetupShop` cases (`Chest.cs:1371-3470`) against
+both shop branches (d122 = 1/2/3/4/5/7/8 + prior 9/10/11/14; d123 tip
+`675744c0` = 12/13/15/16/17/18/20/21/25 + the shared `:3472-3541` tail):
+case 6 (Goblin Tinkerer) and case 19 (Travelling Merchant) were already
+verbatim; **`GenerateTravelMerchantInventory` does not exist in 1.4.5.8**
+(zero hits across the decompiled tree) — the RNG loot-slot generator is
+`Chest.SetupTravelShop` (`Chest.cs:1275-1358`, with `_GetItem`
+`:984-1273`/`_GetPainting` `:821-954`/`_AddToShop` `:708-795`), ported
+earlier with the seed-7/99 stock snapshots and the case-19 armor-gate +
+40-slot-walk witnesses. The real gaps were the three M4 classic-subset
+shops:
+
+* **22 (Golfer, `:3156-3262`)** — one wrong gate: the Golf Cart 4264 rode
+  a bare `DownedBoss3`, but the C# nests it INSIDE the
+  `golferScoreAccumulated > 2000` trophy block (`:3207-3222`). Fixed via
+  the `GOLFER_CART` conjunct; the mixed `>=`/`>` ladder
+  (500/1000/2000) was already faithful.
+* **23 (Zoologist, `:3263-3407`)** — the M4-TOWN-19 12-row subset became
+  the full 41-row case: the fairy-torch 4776 HEAD
+  (`BestiaryGirl_IsFairyTorchAvailable`, `:3544-3559` — all three fairy
+  critters 583/584/585 discovered; the critter provider reads the SIGHTS
+  tracker, `CritterUICollectionInfoProvider.cs:15-21`, NOT kills —
+  `bestiary.rs::fairy_torch_available` over `WorldBestiary.sights`; the
+  AI_112 nearby-sighting wiring (`NPC.cs:48642-48646`) is unported, so
+  the gate stays closed until it lands = the recorded deviation), the
+  Solar Monolith 4677 (`downedTowerSolar`), the full completion ladder
+  0.03/0.1/0.25/0.3/0.4/0.45/0.5/0.7/1.0 (the 4788 row's hardmode
+  conjunct), the hardmode-blood-moon 4736, the Plantera 4701, the party
+  5466 and the four moon-pair license tails (the 6/7 arm's 4560+4775).
+* **24 (Princess, `:3409-3470`)** — the tenth-anniversary block
+  (`:3436-3468`, the M4 constants-off deviation) lands: the 1309/1859/
+  1358 heads on `tenthAnniversaryWorld` alone, the `ZoneDesert` Magic
+  Carpet 857, the blood-moon 4144, and the hardmode+`downedPirates` pet
+  block with one exact moon-pair row (2584/854/855/905) — all between
+  the 5044 hat slot and the always 5088 tail.
+
+`ShopFlags` grows `fairy_torch_available`/`downed_tower_solar` (shop 23)
+and `zone_desert` (shop 24), wired at the open seam (+ `from_world` for
+the tower latch); `StockWhen` grows `FairyTorchAvailable`/
+`DownedTowerSolar`/`AnniversaryWorld`/`ZoneDesert`. Witnesses written,
+not run (code-only): the cart's score-0 exclusion + the 2000/2001
+boundary, the Zoologist classic 4-row list + tier/monolith/license
+order, the Princess classic 19-row list + the block's inner gates and
+pet pairs.
+
+## The shop currency remainder (W4-d122, fourth round)
+
+The d123 Tavernkeep medal shop (`675744c0`'s case 21) stamped
+`shopSpecialCurrency` and priced its rows raw, but the BUY refused —
+the wallet was unported. This round ports the wallet and completes the
+buy on the d122 branch (the case-21 row list is re-landed here verbatim
+from the same C# so the branch is self-contained; the two branches'
+`shop_special_currency` field + `row_prices` early return are
+semantically identical for the eventual main merge).
+
+**Currency census (1.4.5.8):** `CustomCurrencyManager.Initialize`
+(`CustomCurrencyManager.cs:14-18`) registers EXACTLY ONE currency —
+`CustomCurrencySingleCoin(3817, 999L)` as `CustomCurrencyID.
+DefenderMedals` (index 0). The medal item is **3817** (`ItemID.
+DefenderMedal`), NOT 3822 — the Elder/Eternia Crystal is the sentry
+ammo (`Player.PayDD2CrystalsBeforeUse`, ported in `world_sim/editing/
+sentry.rs`). There is NO golf-ball currency: the Golfer's case 22
+(`Chest.cs:3156-3262`) stamps no `shopSpecialCurrency` anywhere (the
+only stamps in the whole tree are the Tavernkeep's `:2987-3150`), and
+`RegisterCurrency` has exactly one call site. The base
+`CustomCurrencySystem.TryPurchasing`'s coin-denomination ladder
+(`CustomCurrencySystem.cs:65-216`) is dead code for the registered
+currency — `CustomCurrencySingleCoin` OVERRIDES it (`:26-74`).
+
+**The wallet (`crates/tr-app/src/custom_currency.rs`):**
+* Count — `CustomCurrencyManager.BuyItem` (`:72-77`): the player
+  inventory IGNORING slots {58,57,56,55,54} (the C#'s 59-slot
+  `Player.inventory` tail, `Player.cs:1576`; the port's 50-slot grid
+  has none of them — the ignore list is kept verbatim) + bank/bank2/
+  bank3/bank4, each `CountCurrency` capped at 999 mid-walk
+  (`CustomCurrencySystem.cs:38-42`), then `CombineStacks` capped on the
+  running total (`:49-63`).
+* Spend — `CustomCurrencySingleCoin.TryPurchasing` (`:26-74`): a full
+  item-cache snapshot (`ItemCacheCreate`, `CustomCurrencySystem.cs:
+  244-255`), consume `min(stack, remaining)` per accepted slot in
+  inventory→bank→bank2→bank3→bank4 slot order (the `slotCoins` scan
+  order, `BuyItem` `:99-108`), drained slots turn to air, and a
+  not-fully-covered price RESTORES the whole cache (`ItemCacheRestore`,
+  `:257-263`) — nothing moves on a failed buy.
+* Buy seam — `buy_shop_item`'s medal arm (`Player.BuyItem`'s
+  `customCurrency != -1` route, `Player.cs:35402-35405`): the wallet
+  spends the real 3817 stacks; the aggregate `App.coins` purse is NOT
+  charged, and the sellback memo skips the row (`ItemSlot.cs:2084`'s
+  `shopSpecialCurrency == -1` half). The raw price (no discount/mood/
+  buyOnce divide) rides `row_prices`' `:35361-35365` early return →
+  `CustomCurrencySystem.GetItemExpectedPrice` (`:265-270`).
+* **RNG census: ZERO draws** in `CountCurrency`/`CombineStacks`/
+  `TryPurchasing`/`BuyItem` — the whole buy chain is pure slot
+  arithmetic. The medal DROP side's gravity draws (3 per stack,
+  `Item.cs:49749-49750`) are W4-f36's landed slice (`fac5f222`,
+  ANALYSIS "The OOA medal drop side").
+* **f36 cross-check (fifth round):** the drop side's item id is **3817**,
+  NOT 3822 — `DD2Event.DropMedals` (`DD2Event.cs:802-813`) calls
+  `Item.NewItem(..., 3817, numberOfMedals, noBroadcast: true)` at `:809`.
+  W4-f36 (`fac5f222`) ports it through `tr_core::dd2::MEDAL_ITEM = 3817`
+  (the same constant this branch's win/wave lanes use); the 3822 Eternia
+  Crystal appears only in f36's per-kill `ShouldDropCrystals` lane and the
+  wipe's `TurnToAir` — both correct. No f36 edit needed; this branch pins
+  the RAW kind on the dropped stacks
+  (`world_sim/npcs.rs::the_f36_medal_drop_item_id_is_3817_not_the_crystal`,
+  the `medal_stacks` helper filters by the constant so a wrong constant
+  would hide there).
+
+Deviations: the savings-draw chrome (`CustomCurrencyManager.DrawSavings`
+`:28-62`, `CustomCurrencySingleCoin.DrawSavingsMoney` `:76-101`) landed
+in the sixth round (below); the `GetPriceText` tooltip arm
+(`CustomCurrencySingleCoin.cs:103-107`, the `Main.cs:20456-20458` price
+line) stays unported; the no-player headless refusal is the port's safe
+stand-in (the C# always has a local player). Witnesses written, not
+run (code-only): 7 wallet-side (the 3817-not-3822 constants, the
+count/ignore/cap arms, the combine clamp, the five-container count,
+the container/slot spend order, the restore-on-fail + zero-price, the
+capped-wallet buy) + 4 shop-side (the classic 8-row list, the tier
+conjuncts + 40-row write order, the mug ladder, the raw pricing) + 3
+App-side (wallet-not-purse + no memo, inventory-then-bank, the
+short-wallet/funded-purse/no-player refusals).
+
+## The shop restock + savings draw (W4-d122, fifth round)
+
+Three slices: the f36 medal-id cross-check (above), the reforge savings
+draw (`Main.cs:41637`), and the Stylist Coins gate + the restock-timer
+census.
+
+**The savings draw (`crates/tr-app/src/ui/savings.rs`).** `ItemSlot.
+DrawSavings` (`ItemSlot.cs:3704-3741`) + `DrawMoney` (`:3652-3702`) port
+1:1: the four banks' `Utils.CoinsCount` (`Utils.cs:1019-1046`, the
+71/72/73/74 ×1/×100/×10000/×1000000 walk), `CoinsCombineStacks`'
+9,999,999,999 running clamp (`:1062-1076`), the `> 0` gate, the
+bank-furniture pile (Void Vault 4076 / Defenders Forge 3813 / Safe 346 /
+Piggy Bank 87, one icon per funded bank at the C#'s (+70,+45)/(+92,+45)/
+(+80,+50)/(+70,+60) centres, `Utils.CenteredRectangle`'s `(int)`
+truncations, `frame.Size() * 0.65`), then `DrawMoney`'s "Savings" label
+(`Lang.inter[66]`, `DrawBorderStringFourWay`'s four ±2 px passes) + the
+four-denomination row (`CoinsSplit` `:1048-1060`, platinum first, the
+display count clamped at 999, the `fromSavings` animation state). The
+`CoinSlot.Savings[4]` machine lands in `ui/coin_slot.rs` (`UpdateSavings`
+`:225-228`, the `71 + slot` type, `SavingsCoinJumpScale = 10`); the coin
+icons ride the `Coin_0..3` spin strips (`AssetInitializer.cs:369`,
+`CoinSlot.DrawItemCoin`'s `Frame(1, 8, 0, coinFrame)`, `CoinSlot.cs:242-
+254`'s longer-side `sizeLimit` clamp), the static `Item_71..74` icon the
+fallback. The reforge call site (`Main.cs:41637`, `num51 + 130,
+invBottom` = (180, 258), horizontal) draws inside the `reforgeItem.type
+> 0` block (`:41584`); `draw_hud` takes the `CoinSlotState` and the
+player's four banks.
+
+Deviations (superseded in the sixth round, below): the
+`_customCurrencyForSavings` hover latch and the shop-panel call were
+this round's recorded chrome follow-up — both landed in the sixth
+round. The `GetPriceText` tooltip arm stays unported. The third C#
+caller (`DrawHairWindow`, `Main.cs:43862`) has no port consumer (the
+in-game hair window is unported). The count-text origin was wrong in
+this round's port (frozen scale) — fixed in the sixth round
+(research/142-savings-keep-one.md).
+
+**The Stylist Coins gate (`Chest.cs:2714-2746`).** The C# scans
+`Player.inventory[0..54]` — the 50-slot grid AND the four coin rows
+(50..53); the ammo rows and the banks are NOT scanned. The port's
+`coin_total` read `purse + grid stacks`, but the pickup lane credits the
+`App.coins` mirror with the copper value of what the inventory stacks
+take (`world_sim/items.rs`'s `into_inventory` arm) — so a pickup-fed
+stack was counted TWICE (a 500k-copper pickup opened the 1g Money Hair
+Dye gate at 1,000,000), and the coin rows were missed entirely. FIX:
+`coin_total(inventory, coin_rows, purse) = max(purse, grid + coin rows)`
+— the purse covers the pickup/sell lanes, the stack scan covers
+sidecar-restored grid coins the mirror never saw, and a mirror-counted
+stack is never added twice; the mid-walk 9,999,999,999 clamp stands.
+The graveyard tail row Pretty Mirror 5577 (`:2785-2788`, `ZoneGraveyard`,
+the case's LAST row after the always-on 5104) lands too — it was
+constants-off though `zone_graveyard` has been live at the open seam
+since shop 11. The multiplayer team dye 1982 (`:2752`, `team != 0 &&
+netMode == 1`) stays constants-off.
+
+**The restock-timer census.** The town shops have NO restock timer:
+`Main.OpenShop` (`Main.cs:40459-40467`) re-runs `SetupShop` on EVERY open
+from the live world state (the port's `try_open_town_shop_at_cursor`
+matches — `resolve_stock_entries_moon` at the open seam), and
+`Main.Initialize` (`:6650-6656`) builds all 99 shops once at load. The
+only RNG-driven stock regeneration is the Travelling Merchant's:
+`WorldGen.SpawnTravelNPC` (`WorldGen.cs:5251-5407`) calls `Chest.
+SetupTravelShop` (`:5264`) on each arrival, gated by the morning roll
+`Main.rand.Next((int)(27000/dayRate) * 4) == 0` (`Main.cs:65017-65039`,
+`dayTime && time < 27000 && !IsFastForwardingTime`, ≥2 resident town
+NPCs excluding the Old Man 37 / Skeleton Merchant 453) and the spawn's
+own `Main.eclipse || !Main.dayTime || (invasionType > 0 && invasionDelay
+== 0 && invasionSize > 0)` refusal (`:5253`). The port's
+`travel_visit_roll` + `spawn_travel_npc` (`world_sim/weather.rs`) match
+the roll + the invasion gate; FIX: the eclipse disjunct was a
+constants-off gap — `World.eclipse` IS ported (the Steampunker/Cyborg
+shop gates read it), so `spawn_travel_npc` now refuses under it. The
+departure (`Main.cs:65012`, `!dayTime || time > 48600` →
+`UnspawnTravelNPC`) and the per-open sellback-memo clear
+(`Main.UpdateOldNPCShop`, `:18204-18211`) were already ported.
+
+Witnesses written, not run (code-only): the f36 raw-id pin
+(`world_sim/npcs.rs`), the Stylist Coins-row + graveyard-tail order
+(`shop.rs`), the `coin_total` no-double-count + coin-row + clamp arms
+(`world_sim/npcs.rs`), the eclipse refusal (`world_sim/weather.rs`), and
+4 savings-side (`ui/savings.rs`: the Utils arithmetic, the pile order +
+per-bank gates, the two-arm positions + the >99 platinum nudge, the
+savings machine's clamped-count pulse).
+
+## The savings keep-one round (W4-d122, sixth round)
+
+> **FINAL (the final phase):** the register is closed in
+> `docs/research/142-savings-keep-one.md` §FINAL-receipts — the three-way
+> keep-one (d122 superset × g58b vertical × g12c third copy), the g58d
+> happiness-latch receipt (the hair price is its sixth latch reader) and
+> the final-phase landing summary. The S1-H-9 follow-up + the shop-FULL
+> census + the hair-window price core sections follow below.
+
+The g58b branch (`1328b118`, W4-g58 D5) ported the SAME `ItemSlot.
+DrawSavings` independently. The two-way arm-by-arm comparison + the
+keep-one decision live in `docs/research/142-savings-keep-one.md`; the
+C# caller census found THREE call sites (the reforge `Main.cs:41637`,
+the shop panel `:41791`, and `DrawHairWindow` `:43862` — the third's
+window is unported). Both branches' call sites are real; the union is
+ONE module + both wired calls.
+
+* **Keep d122's module** (`ui/savings.rs`, both DrawMoney arms, the
+  `sizeLimit` clamp + the static-icon fallback) and take g58b's ONE
+  faithful arm: the count-text origin. `DrawBorderStringFourWay`'s
+  origin `(0, LineSpacing)` is SCALED by `DrawString`
+  (`DynamicSpriteFont.InternalDrawFast`, `DynamicSpriteFont.cs:194`:
+  `position -= origin * scale`), so the net top-left is
+  `y + ls*0.75 − ls*scale` — at rest (scale 0.75) the ls terms cancel
+  EXACTLY; the fifth round froze scale at 1 (`y − 0.25*ls`, ~4-5 px off
+  at rest and no pulse lift). `money_text_pos` takes the draw scale.
+* **The shop-panel call lands** (`ui/shop_happiness.rs`, g58b's chrome
+  ported onto this branch's signature): the Shop label (`Lang.inter[28]`
+  at (504, invBottom), `Main.cs:41790`), the DrawSavings vertical pile
+  (`:41791`), the NPCHappiness 4-frame icon (`:41792-41796`, the
+  ≤0.82/≤1/≤1.1/else bands, centre origin, offsets (12,108)) and the P0
+  percent (`:41797`, offsets (26,98), `Main.cs:67266-67269`);
+  `assets.rs` packs `Images/UI/NPCHappiness`. g58b's `happiness_button`
+  report gate is NOT ported here (its own lane — merge note in
+  research/142).
+* **The medal arm lands** (the fifth round's deviation closed):
+  `ItemSlot._customCurrencyForSavings` (`ItemSlot.cs:308/:363`) →
+  `App.custom_currency_for_savings`; the `UpdateInterface` reset
+  (`:516-521`, `!playerInventory || talkNPC == -1`) rides
+  `update_shop_close`'s per-frame cluster (the port's talk stand-in:
+  `shop_npc || talk_npc`); the `MouseHover` stamps (`:3175-3177`) ride
+  `draw_hud` in the C#'s order — the grid/coin hover (all plain, −1)
+  BEFORE the reforge draw, the shop-row hover (the row's
+  `shopSpecialCurrency`) AFTER the shop pile (`Main.cs:41814`'s Handle
+  runs after `:41791`'s draw, so the latch is one frame late — kept).
+  `draw_savings`' `currency != -1` branch (`:3707-3711`) dispatches to
+  the medal display: `custom_currency::count_savings` (the FOUR BANKS
+  only, each capped 999 + the combine capped 999,
+  `CustomCurrencyManager.cs:32-36`), the DIFFERENT pile centres (vault
+  (+96,+50), forge (+80,+50), safe (+80,+50) — the C#'s forge/safe
+  OVERLAP kept as-is `:49/:53`, piggy (+70,+60)), the same Savings label
+  (`:59`), then `DrawSavingsMoney` (`CustomCurrencySingleCoin.cs:76-
+  101`): the STATIC Item_3817 at scale 0.8 centred (no strip, no size
+  clamp, no 999 display clamp), `CoinSlot.UpdateCustom`
+  (`CoinSlot.cs:230-238` — the new `custom_entries` map keyed by 3817,
+  the `Type == 3817` pulse arm, stepped LAST in `UpdateSlotAnims`
+  `:270-273`); the horizontal text RIDES the jump (`:93` passes
+  `position.Y`), the vertical text does NOT (`:99`), origin (0.3, 0.3)
+  scaled, the >99 nudge reads the TOTAL.
+* **The coin-purse display census** (research/142 §purse): the ctx-1
+  coin column (`Main.cs:41752-41764`) is plain `ItemSlot.Draw` — its
+  spin strips/jump/pulse ride `CoinSlot.UpdateDrawState`
+  (`ItemSlot.cs:2349/:2515/:2697-2706`). The dedicated follow-up LANDED in
+  the final phase (see "The S1-H-9 UpdateDrawState follow-up" below):
+  `ui/slot.rs::draw_slot` now consumes the machine on every mapped-context
+  slot.
+
+Witnesses written, not run (code-only): the fixed text-origin formula
+(rest + pulse, both arms), the medal pile centres + the forge/safe
+overlap, the medal text positions (jump-riding horizontal / nudged
+vertical / scaled origin), `update_custom`'s 3817 pulse + rank
+isolation, `count_savings`' banks-only + caps, the shop chrome's
+bands/P0/offsets (g58b's three, kept), the coin-strip + NPCHappiness
+packing.
+
+## The S1-H-9 UpdateDrawState follow-up (W4-d122, final phase)
+
+The sixth round's recorded dedicated-follow-up lands: `ui/slot.rs::
+draw_slot` now CONSUMES the `CoinSlot` machine (`ui/coin_slot.rs::
+update_draw_state`, already ported) on every slot draw, the C#'s
+`CoinSlot.UpdateDrawState(slot, context, item, out drawState)`
+(`ItemSlot.cs:2349`). The machine existed but no slot draw read it — the
+ctx-1/3/4 coin cells drew static `Item_71..74` icons with `stackTextScale
+= 1`. The port:
+
+* **Threading.** `draw_slot`/`draw_slot_favorited` grow `coin_slot:
+  Option<&mut CoinSlotState>` + `vanilla_slot: i32` (the cell's vanilla
+  inventory index — the coin/ammo rows draw at `Player.inventory[50..57]`,
+  `Main.cs:41757/:41775`, while the equip glyph keeps the display index) +
+  `mouse_air`/`mouse_is_dye` (the dim gate). The mapped contexts (grid 0,
+  coins 1, ammo 2, chest 3, bank 4) pass `Some(&mut state)`; the neutral
+  contexts (hotbar 13, mouse 21, shop 15, equip 8-12/16-20/33, trash 6,
+  crafting 7/42) pass `None` (the C# machine returns the neutral state for
+  them, `CoinSlot.cs:306-311`). The state is threaded through
+  `inventory::draw` (a new param), `chest::PanelState` (a new field) and
+  `draw_hud`'s existing `coin_slot` param; `app/frame/draw.rs` fills the
+  PanelState field from `self.coin_slot`.
+* **The coin arm** (`ItemSlot.cs:2515`): `IsACoin || fadeItem > 0` rides
+  the SPIN strip via the shared `coin_slot::draw_item_coin` (moved out of
+  `savings.rs`, which now reuses it with tint+fade params), `sizeLimit =
+  32`, the centre lifted by `coinYOffset * inventoryScale`, tint
+  `GetAlpha(lightColor) * itemFade * fadeScale`; the medal 3817 keeps its
+  STATIC icon but rides the jump (the third arm); every other item is the
+  plain `draw_item_icon` (now taking `item_fade`).
+* **flag4** (`:2500`): `(type > 0 && stack > 0) || fadeItem > 0` — a
+  fading-out coin keeps drawing its icon + stack text after the slot went
+  air (the `FadeAnimKeys` ramp). The `_nextTickDrawAvailable` throttle
+  (`:2503-2511`) is unported.
+* **The stack text** (`:2697-2706`): drawn when `stack > 1 ||
+  stackTextDrawFadeOverload > 0`, scale `inventoryScale * stackTextScale`,
+  tint `color * (overload > 0 ? overload : 1)`. `stack_number_pos` takes
+  `text_scale` + `context`: the net y is `y + (26 + ls)*scale − ls*num23`
+  (the scaled `(0, LineSpacing)` origin, `DynamicSpriteFont.cs:194`); at
+  rest the ls terms cancel, the pulse lifts the count; context 43 shifts
+  `(−5, +7)` and scales `num23` by 1.2. The `num22` ammo/paint/wand count
+  override is unported (the gate is always true).
+* **The dim** (`GetDimSlotForMouseItem`, `:1361`): the dye contexts 12/33
+  dim to 0.6 for a non-dye cursor (`checkItem.dye <= 0`); the background
+  tint `color2 *= itemFade` (`:2352`). The armour/mount/pet dim arms need
+  the equip-validation tables (`CanEquipInArmorSlot`, `MountID.Sets.Cart`,
+  `vanityPet`/`lightPet`) — unported, they stay 1 (a recorded deviation).
+
+Witnesses written, not run (code-only): the coin-row pulse/jump/fade
+consumption (`coin_slot.rs`), the dye dim + the neutral tail + the
+stack-text rest/pulse/ctx43 positions (`slot.rs`).
+
+## The shop-FULL census (W4-d122, final phase)
+
+The final all-25-NPC census of `Chest.SetupShop` (`Chest.cs:1360-3542`),
+script-diffed against `shop.rs::setup_shop`. The 24 NPC shops map through
+`NPCInteractions.cs:488-511` (`Shop(npcType, shopIndex)`); case 25 is the
+Painter's decor shop (the 25th case, not a 25th NPC). The census splits the
+work by **lane ownership** — d122 owns the first half, d123 the second half
+(`shop.rs`'s own header: "the second-half indexes land with their lanes
+(d123 owns 12/13/15/16/17, the OOA/medal co-lanes 20/21)"), f39b the season
+flags, f41d the party rows. **No unclaimed constants-off row remains in
+d122's lane** — every remainder is claimed by an active sibling lane, so
+this phase ports nothing new (the keep-one rule: never duplicate a claimed
+lane) and records the census + the merge cross-notes.
+
+| Case | NPC (shop index) | C# range | d122 state | Remainder owner |
+| --- | --- | --- | --- | --- |
+| 1 | Merchant (1) | :1371-1483 | COMPLETE | halloween: none; party 5643 = `PartyIsUp` live |
+| 2 | Arms Dealer (2) | :1484-1567 | COMPLETE | halloween trio 1736/1737/1738 → f39b |
+| 3 | Dryad (3) | :1568-1745 | COMPLETE | halloween Goodie Bags 1853/1854 → f39b |
+| 4 | Demolitionist (4) | :1746-1813 | COMPLETE | — |
+| 5 | Clothier (5) | :1814-1988 | COMPLETE | halloween 1740 + 3246/3247 → f39b; `downedClown` (no .wld bit) stays caller-fed false |
+| 6 | Goblin Tinkerer (6) | :1989-2003 | COMPLETE | — |
+| 7 | Wizard (7) | :2004-2032 | COMPLETE | halloween hat 1739 → f39b |
+| 8 | Mechanic (8) | :2033-2090 | COMPLETE | — (goggles 4409 + Angler Rod landed shop 8) |
+| 9 | Santa-decor (9) | :2091-2111 | COMPLETE | the 588/589/590/597/598/596 + 1873..1905 walk, no gates |
+| 10 | Truffle (10) | :2112-2134 | COMPLETE | — |
+| 11 | Steampunker (11) | :2135-2245 | COMPLETE | halloween goggles 1742 → f39b |
+| 12 | Dye Trader (12) | :2246-2273 | PARTIAL | **d123** (4f7c5251): exact moonPhase==0 pair + graveyard 4662; halloween 3248/1741 → f39b; netMode==1 1969 MP-only |
+| 13 | Party Girl (13) | :2274-2359 | PARTIAL | **d123** (e8707b54): golfer 4743 / graveyard 4682 / HasItem(3548) / Pirate 3369 / Golem 3546 / hardmode dye set; day/night 1449/4552 split (d122 double-stocks both — d123's `Day`/`Night` arms fix it); lantern 4702 + party block → f41d/d123 |
+| 14 | Cyborg (14) | :2360-2442 | COMPLETE | halloween outfit 1743/1744/1745 → f39b |
+| 15 | Painter (15) | :2443-2482 | STUB (7 rows) | **d123** (eb13bd5b): the 1073-1084 paint loop + hardmode 1967/1968 + graveyard 4668/5344 |
+| 16 | Witch Doctor (16) | :2615-2671 | STUB (2 rows) | **d123** (eb13bd5b): the full ladder (Wizard-present 2999, jungle/night/Plantera imbuing, ten always rows); halloween Tiki 1791 → f39b |
+| 17 | Pirate (17) | :2672-2697 | MISSING | **d123** (a0e918e6): six always + graveyard 5926 + beach 1180 + hardmode-mech-PartyGirl 1337 |
+| 18 | Stylist (18) | :2698-2790 | COMPLETE | MP team dye 1982 (`team != 0 && netMode == 1`) MP-only; graveyard 5577 landed fifth round |
+| 19 | Travelling Merchant (19) | :2791-2810 | COMPLETE | the `SetupTravelShop` RNG generator (:1275-1358) + the Pal-collab gate rows |
+| 20 | Skeleton Merchant (20) | :2811-2962 | MISSING | **d123** (ecfa5727): the eight-phase ladder + clock pair + mod-4 ladder + hardmode block + artisan-bread 5326 |
+| 21 | Tavernkeep (21) | :2963-3154 | COMPLETE | the medal shop (d122 currency round; d123 d4500f6bf is the same case — keep-one at merge) |
+| 22 | Golfer (22) | :3156-3262 | COMPLETE | golf score stays 0 until M4-GOLF-1 (the rows are faithful, score-gated) |
+| 23 | Zoologist (23) | :3263-3407 | COMPLETE | — (full 41-row case, shop 23) |
+| 24 | Princess (24) | :3409-3470 | COMPLETE | — (anniversary block, shop 24) |
+| 25 | Painter Decor (25) | :2483-2614 | MISSING | **d123** (675744c0): the 2158..2160/2008..2014 walks + moon ladder + biome rows + storm + graveyard octet; xMas walk 1948-1957 → f39b |
+| tail | ALL shops | :3472-3541 | MISSING | **d123** (675744c0): the pylon rows 4876/4920/4919/5652/4917/4918/4875/4916/4921 behind `DoesPositionHaveEnoughNPCs(2)` + the `isAShopItem` stamp |
+
+**The still-constants-off rows, by owner:**
+
+* **f39b (the season lane, `bd5a5a24`)** — every `Main.halloween` row:
+  the Arms Dealer's undertaker trio (`:1558`), the Dryad's Goodie Bags
+  (`:1655`), the Clothier's Frankenstein mask + Cat Ears/Bunny Hood
+  (`:1903`/`:1966`), the Wizard's hat (`:2027`), the Steampunker's goggles
+  (`:2240`), the Dye Trader's pair (`:2249`), the Cyborg's outfit (`:2421`),
+  the Witch Doctor's Tiki mask (`:2667`), and Santa's xMas walk (`:2485`).
+  d122 carries these as `StockWhen::Halloween => false` (the recorded
+  deviation); f39b adds `World.halloween`/`xmas` + `ShopFlags.halloween`/
+  `xmas` and flips the evaluator. **Merge cross-note:** d122's `Halloween`
+  variant + rows and f39b's are the SAME rows — keep one evaluator arm
+  (`flags.halloween`), keep d122's row placement (the C# num order). The
+  Steampunker/Cyborg halloween rows (1742/1743-1745) are d122-only (f39b's
+  diff did not touch cases 11/14) — f39b's flag wire activates them.
+* **f41d (the party lane, `be4cb841`)** — the Merchant's Rainbow Glowstick
+  5643 (`:1435`, d122 already has it as `PartyIsUp`), the Party Girl's
+  eleven-row gift block (`:2345-2358`) + Release Lantern 4702 (`:2309`) +
+  the day/night Bubble/Fog split (`:2285`). **Merge cross-note:** f41d's
+  `PartyUp`/`LanternsUp`/`Day` variants and d122's `PartyIsUp` are the same
+  gate (`world_events::party_is_up`/`lanterns_up`) — keep one name; d123
+  also ports the Party Girl case (e8707b54) with its own `Day`/`LanternNight`/
+  `PartyIsUp` — the three-way keep-one resolves to the live scheduler flags.
+* **d123 (the second-half lane)** — cases 12/13/15/16/17/20/25 + the shared
+  pylon tail. d122's stubs (15: 7 rows, 16: 2 rows, 13: the always subset)
+  are SUPERSEDED by d123's full cases at merge — keep d123's. The
+  `shop_index_for_kind` mapping (`world_sim/npcs.rs:519`) lacks the
+  Steampunker/Truffle/Cyborg/Santa/Pirate/SkeletonMerchant kinds (no
+  `NpcKind` for them yet) — their cases are reachable only once the kinds
+  land (d123's lane / the town-NPC lane); d122's first-half kinds are all
+  mapped.
+
+**Witnesses (written, not run):** the census is a doc-only phase — the
+existing per-case witnesses (shops 1-24, the currency round) already pin
+the d122 rows; no new code, no new witness. The merge cross-notes above are
+the deliverable (the keep-one resolutions for the f39b/f41d/d123 overlaps).
+
+## The hair window price core (W4-d122, final phase)
+
+The third `ItemSlot.DrawSavings` caller (`Main.cs:43862`,
+`DrawHairWindow`) — the Stylist's in-game hair-change UI. The full window
+is NOT self-contained (the 213-style hair grid needs all `PlayerHair`
+textures; the port decodes only `Player_Hair_1`, the recorded
+char-creation deviation; plus `LoadHair`/`GetHairDrawOffset`/the in-game
+`UpdateUnlocks`/the Stylist trigger — g21c's hosts 80-90 deferral). The
+task-seed lives in research/142 §hair-window. The SELF-CONTAINED price +
+savings-apply core lands in `ui/hair_window.rs`:
+
+* `hair_price` (`Main.cs:43786-43799`): style 100000 + colour 20000, the
+  Discount Card ×0.8 truncation, the happiness-latch scale + the
+  round-to-whole-gold (`(int)Math.Round((float)(int)(num11 *
+  PriceAdjustment)/10000f)*10000`, banker's via `shop::round_half_to_even`).
+  The price reads the TALK-OPEN latch (g58's census), not a fresh mood.
+* `hair_price_text` (`:43800-43852`): the `CoinsSplit` platinum-first walk
+  + `Lang.inter[15..18]` (platinum/gold/silver/copper) +
+  `GameUI.BuyWithValue`/`Buy`.
+* `hair_savings_pos` (`:43857-43862`): `(screenW/2 − backW/2 + 18,
+  screenH/2 + 146)`, the horizontal `draw_savings` call gated on
+  `price > 0` (the module's horizontal arm covers it).
+
+`coins_split` (savings.rs) + `round_half_to_even` (shop.rs) become
+`pub(crate)` for reuse. Witnesses written, not run: the price ladder +
+banker's boundary, the coin-text walk (lang test_lock + init), the savings
+position.
+
 ## Dye Trader/Party Girl (M4-TOWN-20)
 
 Two late-roster town NPCs. Deviations: the Dye Trader's `item.dye > 0` scan

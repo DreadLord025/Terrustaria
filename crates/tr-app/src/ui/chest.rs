@@ -121,6 +121,10 @@ pub(crate) struct PanelState<'a> {
     pub(crate) glow: Option<&'a crate::ui::glow::GlowState>,
     /// The `SoundEngine.PlaySound(12)` cues (`ChestUI.cs:64`/:325).
     pub(crate) audio: &'a mut audio::Audio,
+    /// The `CoinSlot` machine (`ui/coin_slot.rs`): the chest slots draw at
+    /// context 3, so `ItemSlot.Draw`'s `CoinSlot.UpdateDrawState`
+    /// (`ItemSlot.cs:2349`) feeds the chest array (W4-d122 S1-H-9 follow-up).
+    pub(crate) coin_slot: &'a mut super::coin_slot::CoinSlotState,
 }
 
 /// `ChestUI.Draw` (`ChestUI.cs:84-105`): the whole panel runs while a chest
@@ -374,6 +378,10 @@ fn draw_slots(
                 pulse,
                 false,
                 slot_glow,
+                Some(&mut *p.coin_slot),
+                abs as i32,
+                true,
+                false,
             );
         }
     }
@@ -855,6 +863,7 @@ mod tests {
             button_hovered: &mut app.chest_button_hovered,
             glow: None,
             audio: &mut app.audio,
+            coin_slot: &mut app.coin_slot,
         };
         // The static ctor's `new float[7]` (`ChestUI.cs:1306`): scale 0.0.
         assert_eq!(p.button_scales[BUTTON_RENAME], 0.0);

@@ -9,6 +9,7 @@
 
 use tr_render::{SheetRect, SpriteRenderer};
 
+use super::coin_slot::{draw_item_coin, CoinDrawState, CoinSlotState};
 use super::text::hud_item_text;
 use crate::assets;
 use crate::item::ItemSlot;
@@ -239,12 +240,30 @@ pub(crate) fn closed_hotbar_background(
     }
 }
 
-/// `ItemSlot.cs:2699-2706`: the stack text is positioned at
+/// `ItemSlot.cs:2699-2706`: the stack count's net top-left. The C# draws at
 /// `position + (10, 26 + LineSpacing) * inventoryScale` with origin
-/// `(0, LineSpacing) * inventoryScale`, so its net top-left is `(10, 26) * scale`.
-fn stack_number_pos(x: f32, y: f32, scale: f32, line_spacing: f32) -> (f32, f32) {
-    let pos = (x + 10.0 * scale, y + (26.0 + line_spacing) * scale);
-    (pos.0, pos.1 - line_spacing * scale)
+/// `(0, LineSpacing)` and scale `num23 = inventoryScale * stackTextScale`;
+/// `DrawString` scales the origin (`DynamicSpriteFont.cs:194`), so the net y
+/// is `y + (26 + ls) * scale - ls * num23`. At rest (`stackTextScale = 1`)
+/// the ls terms cancel and the count sits at `(10, 26) * scale`; during the
+/// coin-jump text pulse the count lifts. Context 43 shifts `(-5, +7)` and
+/// scales `num23` by 1.2 (`:2701-2704`).
+fn stack_number_pos(
+    x: f32,
+    y: f32,
+    scale: f32,
+    line_spacing: f32,
+    text_scale: f32,
+    context: i32,
+) -> (f32, f32) {
+    let (mut ox, mut oy) = (10.0, 26.0 + line_spacing);
+    let mut num23 = scale * text_scale;
+    if context == 43 {
+        ox += -5.0;
+        oy += 7.0;
+        num23 *= 1.2;
+    }
+    (x + ox * scale, y + oy * scale - line_spacing * num23)
 }
 
 /// `ChatManager.DrawColorCodedStringWithShadow` (`ChatManager.cs:333-353`): four
@@ -289,6 +308,7 @@ fn draw_item_icon(
     center: (f32, f32),
     scale: f32,
     tint: [f32; 4],
+    item_fade: f32,
 ) {
     let (uv, iw, ih) = match lookups.item_icon(item.kind) {
         Some(v) => v,
@@ -301,7 +321,84 @@ fn draw_item_icon(
     let limit = if longest > 32.0 { 32.0 / longest } else { 1.0 };
     let s = scale * limit;
     let (w, h) = (iw * s, ih * s);
-    r.push_ui_sprite([center.0 - w * 0.5, center.1 - h * 0.5], [w, h], uv, tint);
+    let c = [tint[0] * item_fade, tint[1] * item_fade, tint[2] * item_fade, tint[3] * item_fade];
+    r.push_ui_sprite([center.0 - w * 0.5, center.1 - h * 0.5], [w, h], uv, c);
+}
+
+/// `ItemSlot.cs:2891-2929` (W4-g35): the item's glowMask overlay, drawn at
+/// the icon's own centre/scale with `origin = rectangle.Size() / 2`. The
+/// rect is the icon frame (`Main.itemAnimations` is unported — the whole
+/// sheet, the `draw_item_icon` stand-in), EXCEPT the Monk Staff T3 3858's
+/// `Glow_233.Frame(1, 3, 0, miscCounter % 15 / 5)` with `Height -= 2`
+/// (`:2913-2914`). The 5670/5671 pair draws TWICE (`:2924-2928`): the phase
+/// colour, then the `drawColor: true` copy (A 127). `itemFade`/context-37
+/// `num` stay 1 (no port fade/overdraw system). Returns the quad count.
+fn draw_item_glow(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    item: &ItemSlot,
+    center: (f32, f32),
+    scale: f32,
+    pulse: super::UiPulse,
+) -> u32 {
+    if !item_glow_active(item.kind) {
+        return 0;
+    }
+    let def = crate::registry::get(item.kind).expect("the gate read the row");
+    // The icon's own frame + clamp (`draw_item_icon`'s resolution).
+    let (iw, ih) = match lookups.item_icon(item.kind) {
+        Some((_, w, h)) => (w, h),
+        None => match lookups.plain_tex(item.kind) {
+            Some(_) => (16.0, 16.0),
+            None => return 0,
+        },
+    };
+    let longest = iw.max(ih);
+    let limit = if longest > 32.0 { 32.0 / longest } else { 1.0 };
+    let s = scale * limit;
+    let name = format!("Glow_{}", def.glow_mask);
+    let shoot = def.projectile.unwrap_or(0);
+    let tint = item_glow_tint(item.kind, shoot, pulse);
+    let f = |c: [u8; 4]| {
+        [
+            c[0] as f32 / 255.0,
+            c[1] as f32 / 255.0,
+            c[2] as f32 / 255.0,
+            c[3] as f32 / 255.0,
+        ]
+    };
+    let mut quads = 0;
+    // The 3858 rect override: the Glow_233 3-row strip, the miscCounter row.
+    if item.kind == 3858 {
+        let Some(rect) = lookups.glow_sheets.get("Glow_233") else {
+            return 0;
+        };
+        let row_h = rect.height / 3;
+        let row = (pulse.misc_counter % 15 / 5) as i32;
+        let h = row_h.saturating_sub(2);
+        let Some(uv) = lookups.glow_uv("Glow_233", 0, row * row_h as i32, rect.width, h) else {
+            return 0;
+        };
+        let (w, h) = (rect.width as f32 * s, h as f32 * s);
+        r.push_ui_sprite([center.0 - w * 0.5, center.1 - h * 0.5], [w, h], uv, f(tint));
+        return 1;
+    }
+    let Some(uv) = lookups.glow_uv(&name, 0, 0, iw as u32, ih as u32) else {
+        return 0;
+    };
+    let (w, h) = (iw * s, ih * s);
+    let tl = [center.0 - w * 0.5, center.1 - h * 0.5];
+    if matches!(item.kind, 5670 | 5671) {
+        // `:2926`: the first copy at the phase colour, then the A-127 copy.
+        r.push_ui_sprite(tl, [w, h], uv, f(tint));
+        let second = phase_color(shoot, pulse.misc_counter, true);
+        r.push_ui_sprite(tl, [w, h], uv, f(second));
+        quads += 2;
+    } else {
+        r.push_ui_sprite(tl, [w, h], uv, f(tint));
+        quads += 1;
+    }
+    quads
 }
 
 /// `ItemSlot.cs:2891`'s gate (W4-g35): the glow overlay draws for every
@@ -418,81 +515,6 @@ pub(crate) fn item_glow_tint(
     }
 }
 
-/// `ItemSlot.cs:2891-2929` (W4-g35): the item's glowMask overlay, drawn at
-/// the icon's own centre/scale with `origin = rectangle.Size() / 2`. The
-/// rect is the icon frame (`Main.itemAnimations` is unported — the whole
-/// sheet, the `draw_item_icon` stand-in), EXCEPT the Monk Staff T3 3858's
-/// `Glow_233.Frame(1, 3, 0, miscCounter % 15 / 5)` with `Height -= 2`
-/// (`:2913-2914`). The 5670/5671 pair draws TWICE (`:2924-2928`): the phase
-/// colour, then the `drawColor: true` copy (A 127). `itemFade`/context-37
-/// `num` stay 1 (no port fade/overdraw system). Returns the quad count.
-fn draw_item_glow(
-    r: &mut SpriteRenderer,
-    lookups: &assets::Lookups,
-    item: &ItemSlot,
-    center: (f32, f32),
-    scale: f32,
-    pulse: super::UiPulse,
-) -> u32 {
-    if !item_glow_active(item.kind) {
-        return 0;
-    }
-    let def = crate::registry::get(item.kind).expect("the gate read the row");
-    // The icon's own frame + clamp (`draw_item_icon`'s resolution).
-    let (iw, ih) = match lookups.item_icon(item.kind) {
-        Some((_, w, h)) => (w, h),
-        None => match lookups.plain_tex(item.kind) {
-            Some(_) => (16.0, 16.0),
-            None => return 0,
-        },
-    };
-    let longest = iw.max(ih);
-    let limit = if longest > 32.0 { 32.0 / longest } else { 1.0 };
-    let s = scale * limit;
-    let name = format!("Glow_{}", def.glow_mask);
-    let shoot = def.projectile.unwrap_or(0);
-    let tint = item_glow_tint(item.kind, shoot, pulse);
-    let f = |c: [u8; 4]| {
-        [
-            c[0] as f32 / 255.0,
-            c[1] as f32 / 255.0,
-            c[2] as f32 / 255.0,
-            c[3] as f32 / 255.0,
-        ]
-    };
-    let mut quads = 0;
-    // The 3858 rect override: the Glow_233 3-row strip, the miscCounter row.
-    if item.kind == 3858 {
-        let Some(rect) = lookups.glow_sheets.get("Glow_233") else {
-            return 0;
-        };
-        let row_h = rect.height / 3;
-        let row = (pulse.misc_counter % 15 / 5) as i32;
-        let h = row_h.saturating_sub(2);
-        let Some(uv) = lookups.glow_uv("Glow_233", 0, row * row_h as i32, rect.width, h) else {
-            return 0;
-        };
-        let (w, h) = (rect.width as f32 * s, h as f32 * s);
-        r.push_ui_sprite([center.0 - w * 0.5, center.1 - h * 0.5], [w, h], uv, f(tint));
-        return 1;
-    }
-    let Some(uv) = lookups.glow_uv(&name, 0, 0, iw as u32, ih as u32) else {
-        return 0;
-    };
-    let (w, h) = (iw * s, ih * s);
-    let tl = [center.0 - w * 0.5, center.1 - h * 0.5];
-    if matches!(item.kind, 5670 | 5671) {
-        // `:2926`: the first copy at the phase colour, then the A-127 copy.
-        r.push_ui_sprite(tl, [w, h], uv, f(tint));
-        let second = phase_color(shoot, pulse.misc_counter, true);
-        r.push_ui_sprite(tl, [w, h], uv, f(second));
-        quads += 2;
-    } else {
-        r.push_ui_sprite(tl, [w, h], uv, f(tint));
-        quads += 1;
-    }
-    quads
-}
 
 /// `ItemSlot.cs:2490-2498`: the empty-equipment glyph — `Extra_54`,
 /// `Frame(3, 7, num15 % 3, num15 / 3)`, shrunk 2 px, drawn centred on
@@ -544,6 +566,18 @@ fn draw_equip_glyph(
 /// already receives, with no other context-13 call site (`Main.cs:43648` is the
 /// override slot, not ported). The item, its stack text and the closed-hotbar
 /// digit are tinted by it.
+///
+/// `coin_slot` is the `CoinSlot` machine (`ui/coin_slot.rs`): the C# calls
+/// `CoinSlot.UpdateDrawState(slot, context, item)` on EVERY slot draw
+/// (`ItemSlot.cs:2349`), so the port threads `Some(&mut state)` plus the
+/// cell's VANILLA slot index (`vanilla_slot` — the coin/ammo rows draw at
+/// `Player.inventory[50..57]`, `Main.cs:41757/:41775`, while the glyph keeps
+/// the display index). Contexts outside 0/1/2/3/4 get the neutral state and
+/// may pass `None` (the machine is untouched). `mouse_air` is
+/// `Main.mouseItem.IsAir` for the mouse-item dim (`GetDimSlotForMouseItem`,
+/// `ItemSlot.cs:1361`); the port dims only the dye contexts (12/33) whose
+/// gate needs no equip-validation system (the rest stay 1 — a recorded
+/// deviation, the dim needs `CanEquipInArmorSlot`/mount/pet tables).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_slot(
     r: &mut SpriteRenderer,
@@ -557,8 +591,15 @@ pub(crate) fn draw_slot(
     scale: f32,
     tint: [f32; 4],
     pulse: super::UiPulse,
+    coin_slot: Option<&mut CoinSlotState>,
+    vanilla_slot: i32,
+    mouse_air: bool,
+    mouse_is_dye: bool,
 ) {
-    draw_slot_flagged(r, lookups, item, x, y, context, index, selected, scale, tint, false, pulse, None);
+    draw_slot_flagged(
+        r, lookups, item, x, y, context, index, selected, scale, tint, false,
+        pulse, None, coin_slot, vanilla_slot, mouse_air, mouse_is_dye,
+    );
 }
 
 /// [`draw_slot`] with the favorite flag the C# reads from the item
@@ -577,8 +618,15 @@ pub(crate) fn draw_slot_favorited(
     scale: f32,
     tint: [f32; 4],
     pulse: super::UiPulse,
+    coin_slot: Option<&mut CoinSlotState>,
+    vanilla_slot: i32,
+    mouse_air: bool,
+    mouse_is_dye: bool,
 ) {
-    draw_slot_flagged(r, lookups, item, x, y, context, index, selected, scale, tint, true, pulse, None);
+    draw_slot_flagged(
+        r, lookups, item, x, y, context, index, selected, scale, tint, true,
+        pulse, None, coin_slot, vanilla_slot, mouse_air, mouse_is_dye,
+    );
 }
 
 /// W4-g56 — [`draw_slot_favorited`] with the chest-glow entries
@@ -601,10 +649,39 @@ pub(crate) fn draw_slot_glow(
     scale: f32,
     tint: [f32; 4],
     pulse: super::UiPulse,
+    coin_slot: Option<&mut CoinSlotState>,
+    vanilla_slot: i32,
+    mouse_air: bool,
+    mouse_is_dye: bool,
     favorite: bool,
     glow: Option<(i32, f32)>,
 ) {
-    draw_slot_flagged(r, lookups, item, x, y, context, index, selected, scale, tint, favorite, pulse, glow);
+
+
+/// The neutral `CoinDrawState` for contexts outside the machine's arrays
+/// (`CoinSlot.UpdateDrawState`'s tail, `CoinSlot.cs:306-311`) — used when a
+/// caller passes no machine (`None`).
+fn neutral_draw_state() -> CoinDrawState {
+    CoinDrawState {
+        coin_anim_frame: 0,
+        coin_y_offset: 0.0,
+        stack_text_scale: 1.0,
+        stack_text_draw_fade_overload: -1.0,
+        fade_item: 0,
+        fade_scale: 1.0,
+    }
+}
+
+/// `ItemSlot.GetDimSlotForMouseItem` (`ItemSlot.cs:1361-1420`) for the ported
+/// contexts: with a non-air mouse item the dye slots (12/33) dim to 0.6 when
+/// the carried item is not a dye (`checkItem.dye <= 0`). The armour/mount/pet
+/// arms need the equip-validation tables (unported) and stay 1.
+fn dim_slot_item_fade(context: i32, mouse_air: bool, mouse_is_dye: bool) -> f32 {
+    if !mouse_air && matches!(context, 12 | 33) && !mouse_is_dye {
+        0.6
+    } else {
+        1.0
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -622,6 +699,10 @@ fn draw_slot_flagged(
     favorite: bool,
     pulse: super::UiPulse,
     glow: Option<(i32, f32)>,
+    coin_slot: Option<&mut CoinSlotState>,
+    vanilla_slot: i32,
+    mouse_air: bool,
+    mouse_is_dye: bool,
 ) {
     // `ItemSlot.cs:2109-2112` + `Main.cs:43615`: the derived `lightColor`.
     let light_color = if context == 13 {
@@ -662,9 +743,22 @@ fn draw_slot_flagged(
     // on `InventoryBack.Size()`.
     let cell = back.map(|b| b.width as f32).unwrap_or(52.0);
     let no_background = matches!(context, 14 | 21 | 37);
+
+    // `ItemSlot.cs:2349`: `CoinSlot.UpdateDrawState(slot, context, item, out
+    // drawState)` runs on EVERY slot draw, BEFORE the background. Contexts
+    // 0/1/2 feed the inventory array, 3/4 the chest array; the rest get the
+    // neutral state (`CoinSlot.cs:292-312`).
+    let draw_state = match coin_slot {
+        Some(cs) => cs.update_draw_state(vanilla_slot, context, item.kind, item.count),
+        None => neutral_draw_state(),
+    };
+    // `ItemSlot.cs:2350-2352`: `GetDimSlotForMouseItem` → `itemFade`, and the
+    // BACKGROUND tint `color2 *= itemFade`.
+    let item_fade = dim_slot_item_fade(context, mouse_air, mouse_is_dye);
+    let bg_tint = [tint[0] * item_fade, tint[1] * item_fade, tint[2] * item_fade, tint[3] * item_fade];
     if !no_background {
         if let Some(uv) = lookups.hud_uv(back.as_ref()) {
-            r.push_ui_sprite([x, y], [cell * scale, cell * scale], uv, tint);
+            r.push_ui_sprite([x, y], [cell * scale, cell * scale], uv, bg_tint);
         }
     }
 
@@ -672,36 +766,69 @@ fn draw_slot_flagged(
     // and the empty glyph are centred on `position + vector / 2`.
     let center = (x + cell * 0.5 * scale, y + cell * 0.5 * scale);
 
+    // `ItemSlot.cs:2490-2498`: glyphs are only drawn on an empty slot.
     if item.count == 0 {
-        // `ItemSlot.cs:2490-2498`: glyphs are only drawn on an empty slot.
         draw_equip_glyph(r, lookups, context, index, center, scale);
-    } else {
-        // `ItemSlot.cs:2513-2515`: the item icon (coins/ammo too), tinted by
-        // `item.GetAlpha(lightColor)` (`ItemSlot.cs:2876,2970`).
-        draw_item_icon(r, lookups, item, center, scale, light_color);
-        // `ItemSlot.cs:2891-2929` (W4-g35): the glowMask overlay, drawn right
-        // after the icon (the `item.color != Transparent` second pass at
-        // `:2882-2889` is unported — no tinted-item system — so the glow
-        // follows the icon directly).
+    }
+
+    // `ItemSlot.cs:2500`: `flag4 = (item.type > 0 && item.stack > 0) ||
+    // drawState.fadeItem > 0` — a fading-out coin keeps drawing its icon and
+    // stack text after the slot went air. (The `_nextTickDrawAvailable`
+    // throttle, `:2503-2511`, is unported.)
+    let has_item = (item.kind > 0 && item.count > 0) || draw_state.fade_item > 0;
+    if has_item {
+        // `ItemSlot.cs:2515`: the icon. A coin (or a fading coin) rides the
+        // SPIN strip via `CoinSlot.DrawItemCoin` at `sizeLimit = 32`, lifted
+        // by `coinYOffset * inventoryScale` and faded by `itemFade *
+        // fadeScale`; the medal 3817 keeps its STATIC icon but still rides
+        // the jump (the third arm); every other item is the plain icon.
+        let is_coin = (71..=74).contains(&item.kind);
+        if is_coin || draw_state.fade_item > 0 {
+            let kind = if draw_state.fade_item > 0 { draw_state.fade_item } else { item.kind };
+            let coin_center = (center.0, center.1 - draw_state.coin_y_offset * scale);
+            draw_item_coin(
+                r, lookups, coin_center, (kind - 71) as usize, draw_state.coin_anim_frame,
+                scale, 32.0, light_color, item_fade * draw_state.fade_scale,
+            );
+        } else if item.kind == 3817 {
+            let medal_center = (center.0, center.1 - draw_state.coin_y_offset * scale);
+            draw_item_icon(r, lookups, item, medal_center, scale, light_color, item_fade);
+        } else {
+            draw_item_icon(r, lookups, item, center, scale, light_color, item_fade);
+        }
+        // `ItemSlot.cs:2891-2929` (W4-g35): the glowMask overlay, drawn
+        // right after the icon (the tinted-item second pass is unported).
         draw_item_glow(r, lookups, item, center, scale, pulse);
-        // `ItemSlot.cs:2703-2712`: the stack count, context != 37, tinted by
-        // `color` (= `lightColor`; `drawState.stackTextScale` is 1 outside the
-        // coin-jump animation, `CoinSlot.cs:316-322`).
-        if item.count > 1 {
+        // `ItemSlot.cs:2697-2706`: the stack count, context != 37, drawn when
+        // `stack > 1 || stackTextDrawFadeOverload > 0`; scale
+        // `inventoryScale * stackTextScale`, tint `color * (overload > 0 ?
+        // overload : 1)`. The port has no ammo/paint/wand count override
+        // (`num22`), so the `num22 == -1` gate is always true.
+        if context != 37 && (item.count > 1 || draw_state.stack_text_draw_fade_overload > 0.0) {
             let line_spacing = lookups
                 .item_font
                 .as_ref()
                 .map(|f| f.line_spacing)
                 .unwrap_or(0.0);
-            let (tx, ty) = stack_number_pos(x, y, scale, line_spacing);
+            let text_scale = scale * draw_state.stack_text_scale;
+            let (tx, ty) = stack_number_pos(x, y, scale, line_spacing, draw_state.stack_text_scale, context);
+            let overload = if draw_state.stack_text_draw_fade_overload > 0.0 {
+                draw_state.stack_text_draw_fade_overload
+            } else {
+                1.0
+            };
+            let text_color = [
+                light_color[0] * overload, light_color[1] * overload,
+                light_color[2] * overload, light_color[3] * overload,
+            ];
             let text = item.count.to_string();
-            hud_item_text_shadowed(r, lookups, tx, ty, scale, light_color, scale, &text);
+            hud_item_text_shadowed(r, lookups, tx, ty, text_scale, text_color, text_scale, &text);
         }
     }
 
-    // `ItemSlot.cs:2693-2701`: the closed-hotbar digits are drawn inside the
+    // `ItemSlot.cs:2708-2716`: the closed-hotbar digits are drawn inside the
     // item block (`flag4`), so an empty slot shows no number.
-    if context == 13 && item.count > 0 {
+    if context == 13 && has_item {
         let (dx, dy) = closed_hotbar_digit_offset(x, y, scale);
         let text = hotbar_digit(index);
         hud_item_text_shadowed(r, lookups, dx, dy, scale, light_color, scale, &text);
@@ -820,12 +947,44 @@ mod tests {
 
     #[test]
     fn stack_number_offset_uses_the_source_formula() {
-        // `ItemSlot.cs:2699-2706`: net top-left is `(10, 26) * scale`, independent
-        // of `LineSpacing` (it cancels with the origin).
-        approx(stack_number_pos(0.0, 0.0, 0.85, 17.0), (8.5, 22.1));
-        approx(stack_number_pos(100.0, 200.0, 0.6, 30.0), (106.0, 215.6));
-        approx(stack_number_pos(0.0, 0.0, 1.0, 5.0), (10.0, 26.0));
-        approx(stack_number_pos(0.0, 0.0, 1.0, 40.0), (10.0, 26.0));
+        // `ItemSlot.cs:2699-2706`: at rest (stackTextScale 1) the net top-left
+        // is `(10, 26) * scale`, independent of `LineSpacing` (it cancels with
+        // the scaled origin).
+        approx(stack_number_pos(0.0, 0.0, 0.85, 17.0, 1.0, 0), (8.5, 22.1));
+        approx(stack_number_pos(100.0, 200.0, 0.6, 30.0, 1.0, 0), (106.0, 215.6));
+        approx(stack_number_pos(0.0, 0.0, 1.0, 5.0, 1.0, 0), (10.0, 26.0));
+        approx(stack_number_pos(0.0, 0.0, 1.0, 40.0, 1.0, 0), (10.0, 26.0));
+        // The text pulse (stackTextScale 1.25): num23 = scale*1.25, so the net
+        // y lifts by ls*(num23 - scale) = ls*0.25*scale. At scale 1, ls 20:
+        // y = (26+20) - 20*1.25 = 21 (5 px up from the rest 26).
+        approx(stack_number_pos(0.0, 0.0, 1.0, 20.0, 1.25, 0), (10.0, 21.0));
+        // Context 43 shifts (-5, +7) and scales num23 by 1.2: at rest
+        // num23 = 1.2, y = (26+7+20) - 20*1.2 = 29, x = (10-5) = 5.
+        approx(stack_number_pos(0.0, 0.0, 1.0, 20.0, 1.0, 43), (5.0, 29.0));
+    }
+
+    /// `ItemSlot.GetDimSlotForMouseItem` (`ItemSlot.cs:1361`): the dye contexts
+    /// dim to 0.6 with a non-dye mouse item; an air cursor never dims.
+    #[test]
+    fn the_dye_slots_dim_for_a_non_dye_mouse_item() {
+        assert_eq!(dim_slot_item_fade(12, false, false), 0.6);
+        assert_eq!(dim_slot_item_fade(33, false, false), 0.6);
+        assert_eq!(dim_slot_item_fade(12, false, true), 1.0, "a dye does not dim");
+        assert_eq!(dim_slot_item_fade(12, true, false), 1.0, "an air cursor never dims");
+        assert_eq!(dim_slot_item_fade(0, false, false), 1.0, "the grid is unported-dim");
+    }
+
+    /// The neutral state matches `CoinSlot.UpdateDrawState`'s tail
+    /// (`CoinSlot.cs:306-311`): no jump, no pulse, no fade, scale 1.
+    #[test]
+    fn the_neutral_draw_state_matches_the_csharp_tail() {
+        let n = neutral_draw_state();
+        assert_eq!(n.coin_anim_frame, 0);
+        assert_eq!(n.coin_y_offset, 0.0);
+        assert_eq!(n.stack_text_scale, 1.0);
+        assert_eq!(n.stack_text_draw_fade_overload, -1.0);
+        assert_eq!(n.fade_item, 0);
+        assert_eq!(n.fade_scale, 1.0);
     }
 
     #[test]
