@@ -317,12 +317,12 @@ fn torch_consume_and_calculate(
         }
     }
     // `num` = the wrong-biome penalty accumulator, `num2` = the correct-biome
-    // bonus (`:17925-17926`). The C# gate is
-    // `!ZoneDungeon && !ZoneLihzhardTemple` — the temple zone is unmodelled
-    // in the port, so the skip runs on dungeon only (ANALYSIS deviation).
+    // bonus (`:17921-17922`). The gate `!ZoneDungeon && !ZoneLihzhardTemple`
+    // (`:17923`) runs verbatim since W4-e27: `Zones.temple` rides
+    // `SceneMetrics.zone_lihzhard_temple` (wall 87, `SceneMetrics.cs:694`).
     let mut num = 0.0_f32;
     let mut num2 = 0.0_f32;
-    if !zones.dungeon {
+    if !zones.dungeon && !zones.temple {
         if luck.nearby_torch[9] {
             // Ice torch (`TorchID.Ice`).
             if zones.snow { num2 += 1.0; } else { num += 1.0; }
@@ -1110,6 +1110,285 @@ mod tests {
         s.lady_bug_luck_time_left = -20_000;
         on_town_npc_death(&mut s, 1, true);
         assert_eq!(s.lady_bug_luck_time_left, -20_000, "dead player bails");
+    }
+
+    // — W4-e27: the biome-matching lane's verbatim witnesses —
+
+    #[test]
+    fn e27_temple_zone_skips_the_whole_verdict_table() {
+        // `Player.cs:17923`: `!ZoneDungeon && !ZoneLihzhardTemple` — the
+        // temple flag (wall 87, `SceneMetrics.cs:694`) zeroes the table
+        // exactly like the dungeon flag, even in a matching biome.
+        let w = torch_world();
+        let forest = (640.0, 6400.0);
+        let mut s = LuckState::default();
+        s.nearby_torch[9] = true; // ice in snow would be +1
+        let tz = Zones { snow: true, temple: true, ..Default::default() };
+        torch_consume_and_calculate(&mut s, forest, None, tz, &w);
+        assert_eq!(s.torch_luck, 0.0, "temple skip");
+        // Both flags together still skip; either alone is enough.
+        let mut s = LuckState::default();
+        s.nearby_torch[21] = true;
+        let both = Zones { jungle: true, dungeon: true, temple: true, ..Default::default() };
+        torch_consume_and_calculate(&mut s, forest, None, both, &w);
+        assert_eq!(s.torch_luck, 0.0, "dungeon+temple skip");
+        // The held torch still feeds its flag in on a skipped consume
+        // (`:17917-17920` runs BEFORE the gate) — but the table never reads
+        // it, and the flag clears at the tail (`:18058-18061`).
+        let mut s = LuckState::default();
+        torch_consume_and_calculate(&mut s, forest, Some(9), tz, &w);
+        assert_eq!(s.torch_luck, 0.0);
+        assert!(!s.nearby_torch[9], "cleared even on a skipped consume");
+    }
+
+    #[test]
+    fn e27_wrong_torch_penalty_ladders_are_the_csharp_steps() {
+        // `Player.cs:18037-18056`: bonus `num2 ≥ 1 → +1`, `> 0 → +0.5`
+        // (a SINGLE +1 no matter how many correct torches); penalty
+        // `num ≥ 2 → −1.5`, `≥ 1 → −1`, `> 0 → −0.5`. The `< 0 → 0` clamp
+        // (`:18062-18065`) hides purely-negative outcomes, so the ladders
+        // are witnessed through mixed correct+wrong stacks.
+        let w = torch_world();
+        let forest = (640.0, 6400.0);
+        // num2 = 2 (jungle + mushroom both correct) still bonuses only +1;
+        // with one wrong torch (num = 1 → −1) the result is 0, NOT 0.5.
+        let mut s = LuckState::default();
+        s.nearby_torch[21] = true;
+        s.nearby_torch[22] = true;
+        s.nearby_torch[9] = true; // ice, not snow → num 1
+        let jm = Zones { jungle: true, glowshroom: true, ..Default::default() };
+        torch_consume_and_calculate(&mut s, forest, None, jm, &w);
+        assert_eq!(s.torch_luck, 0.0, "+1 (capped) − 1 = 0");
+        // num = 0.5 (plain torch in the corruption) → the −0.5 step:
+        // jungle-in-jungle +1 minus 0.5 = 0.5.
+        let mut s = LuckState::default();
+        s.nearby_torch[21] = true;
+        s.nearby_torch[0] = true;
+        let jc = Zones { jungle: true, corrupt: true, ..Default::default() };
+        torch_consume_and_calculate(&mut s, forest, None, jc, &w);
+        assert_eq!(s.torch_luck, 0.5, "+1 − 0.5");
+        // num = 2 (ice + desert both wrong) → −1.5: +1 − 1.5 → clamped 0.
+        let mut s = LuckState::default();
+        s.nearby_torch[21] = true;
+        s.nearby_torch[9] = true;
+        s.nearby_torch[16] = true;
+        let j = Zones { jungle: true, ..Default::default() };
+        torch_consume_and_calculate(&mut s, forest, None, j, &w);
+        assert_eq!(s.torch_luck, 0.0, "+1 − 1.5 → clamped");
+        // Bone in the corruption: the neutrality test (`:18021`) includes
+        // ZoneCorrupt, so bone gives NOTHING; the plain torch's −0.5
+        // (`:18031`) then clamps to 0.
+        let mut s = LuckState::default();
+        s.nearby_torch[13] = true;
+        s.nearby_torch[0] = true;
+        let c = Zones { corrupt: true, ..Default::default() };
+        torch_consume_and_calculate(&mut s, forest, None, c, &w);
+        assert_eq!(s.torch_luck, 0.0, "bone is not neutral in the corruption");
+        // The plain torch's snow penalty is 2, not 0.5 (`:18027-18030`):
+        // ice-in-snow +1 with plain-in-snow num 2 → −1.5 → clamped 0.
+        let mut s = LuckState::default();
+        s.nearby_torch[9] = true;
+        s.nearby_torch[0] = true;
+        torch_consume_and_calculate(&mut s, forest, None, snow_zones(), &w);
+        assert_eq!(s.torch_luck, 0.0, "snow plain penalty is the 2-step");
+    }
+
+    #[test]
+    fn e27_shimmer_and_color_torches_have_no_verdict() {
+        // The luck table reads only the 12 arms of `:17925-18035`; the
+        // shimmer torch (23, `TorchID.cs:131`) IS in `Sets.IsABiomeTorch`
+        // (`TorchID.cs:17`) but has NO luck verdict — nor do the colour
+        // torches 1-6/10/12/14/15 or the demon torch 7.
+        let w = torch_world();
+        let forest = (640.0, 6400.0);
+        for style in [1usize, 2, 3, 4, 5, 6, 7, 10, 12, 14, 15, 23] {
+            let mut s = LuckState::default();
+            s.nearby_torch[style] = true;
+            torch_consume_and_calculate(&mut s, forest, None, snow_zones(), &w);
+            assert_eq!(s.torch_luck, 0.0, "style {style} has no verdict");
+        }
+    }
+
+    #[test]
+    fn e27_scan_counts_only_unsnuffed_torches_and_resets_on_consume() {
+        // `Player.cs:17774-17786`: `frameX < 66` bumps `nearbyTorches`
+        // BEFORE the `TorchID.Count` gate; the style flag sets for any
+        // in-range style, snuffed or not. `:18087` zeroes the count on
+        // every consume (the Torch God trigger tail is f33's lane).
+        let mut w = torch_world();
+        place(&mut w, 20, 370, 4, 0, 9 * 22); // unsnuffed ice
+        place(&mut w, 21, 370, 4, 22, 9 * 22); // unsnuffed ice (frameX 22)
+        place(&mut w, 22, 370, 4, 44, 16 * 22); // unsnuffed desert
+        place(&mut w, 23, 370, 4, 66, 9 * 22); // SNUFFED ice (frameX 66)
+        place(&mut w, 24, 370, 4, 0, 24 * 22); // style 24 ≥ Count
+        let center = (32.0 * 16.0, 400.0 * 16.0);
+        let mut s = LuckState::default();
+        for _ in 0..12 {
+            torch_scan_step(&mut s, &w, center, false, None, Zones::default());
+        }
+        assert_eq!(s.nearby_torches, 4, "3 styled + the style-24 torch; snuffed excluded");
+        assert!(s.nearby_torch[9], "the snuffed torch still sets its style flag");
+        assert!(s.nearby_torch[16]);
+        assert_eq!(s.nearby_torch.iter().filter(|f| **f).count(), 2, "style 24 never flags");
+        for _ in 0..70 {
+            torch_scan_step(&mut s, &w, center, false, None, Zones::default());
+        }
+        assert_eq!(s.nearby_torches, 0, "consume zeroes the count (`:18087`)");
+        // 101 unsnuffed torches (the Torch God trigger threshold, `:18066`)
+        // change NOTHING in the luck factor: the count is not a verdict
+        // input, and the event itself is f33's separate lane. The ±40
+        // window is 81 columns wide, so the 101 ride two rows.
+        let mut w = World::new("t".into(), 200, 800);
+        for x in 60..=140 {
+            place(&mut w, x, 370, 4, 0, 0); // 81 plain torches
+        }
+        for x in 60..80 {
+            place(&mut w, x, 371, 4, 0, 0); // +20 → 101
+        }
+        let center = (100.0 * 16.0, 400.0 * 16.0);
+        let mut s = LuckState::default();
+        for _ in 0..13 {
+            torch_scan_step(&mut s, &w, center, false, None, Zones::default());
+        }
+        assert_eq!(s.nearby_torches, 101, "both rows walked, count > 100");
+        for _ in 0..69 {
+            torch_scan_step(&mut s, &w, center, false, None, Zones::default());
+        }
+        assert_eq!(s.torch_luck, 0.0, "plain torches in a neutral biome: no verdict");
+        assert_eq!(s.nearby_torches, 0, "the >100 count still resets, no event here");
+    }
+
+    #[test]
+    fn e27_dry_coral_gate_is_liquid_zero_or_non_water() {
+        // `Player.cs:17782-17785`: `num5 == 17 && (tile.liquid == 0 ||
+        // tile.liquidType() != 0)` — water (type 0) with liquid > 0 is the
+        // ONLY wet case; lava/honey/shimmer (`Tile.cs:235-238` types 1/2/3)
+        // all read dry. The flag clears on consume (`:18057`).
+        let center = (32.0 * 16.0, 400.0 * 16.0);
+        for (kind, want_dry) in [
+            (None, true), // liquid == 0
+            (Some(LiquidKind::Water), false),
+            (Some(LiquidKind::Lava), true),
+            (Some(LiquidKind::Honey), true),
+            (Some(LiquidKind::Shimmer), true),
+        ] {
+            let mut w = torch_world();
+            place(&mut w, 20, 370, 4, 0, 17 * 22);
+            if let Some(k) = kind {
+                if let Some(t) = w.tile_mut(20, 370) {
+                    t.liquid = 255;
+                    t.set_liquid_kind(k);
+                }
+            }
+            let mut s = LuckState::default();
+            for _ in 0..12 {
+                torch_scan_step(&mut s, &w, center, false, None, Zones::default());
+            }
+            assert_eq!(s.dry_coral_torch, want_dry, "liquid kind {kind:?}");
+            for _ in 0..70 {
+                torch_scan_step(&mut s, &w, center, false, None, Zones::default());
+            }
+            assert!(!s.dry_coral_torch, "cleared on consume");
+        }
+    }
+
+    #[test]
+    fn e27_coral_verdict_uses_the_ocean_depths_boundaries() {
+        // `WorldGen.oceanDepths` (`WorldGen.cs:10963-10974`): `y >
+        // oceanLevel` → false (STRICT >), else `x < 380 || x >
+        // maxTilesX − 380` (`beachDistance` 380, `:86914`; `oceanLevel =
+        // (worldSurface + rockLayer)/2 + 40`, `:4447`).
+        let mut w = World::new("t".into(), 800, 800);
+        w.world_surface = 200.0;
+        w.rock_layer = 360.0; // ocean level 320
+        let consume = |x_tile: i32, y_tile: i32| {
+            let mut s = LuckState::default();
+            s.nearby_torch[17] = true;
+            torch_consume_and_calculate(
+                &mut s,
+                (x_tile as f32 * 16.0, y_tile as f32 * 16.0),
+                None,
+                Zones::default(),
+                &w,
+            );
+            s.torch_luck
+        };
+        assert_eq!(consume(20, 320), 1.0, "y == oceanLevel is still ocean (strict >)");
+        assert_eq!(consume(20, 321), 0.0, "one row below the ocean level");
+        assert_eq!(consume(379, 300), 1.0, "x < 380 beach band");
+        assert_eq!(consume(380, 300), 0.0, "x == 380 is out of the band");
+        assert_eq!(consume(420, 300), 0.0, "x == maxTilesX − 380 is out");
+        assert_eq!(consume(421, 300), 1.0, "x > maxTilesX − 380 beach band");
+    }
+
+    #[test]
+    fn e27_window_geometry_is_verbatim_40_40_one_row_81_ticks() {
+        // `Player.cs:17749-17758`: `num = 1` row per tick, `num2 = 40`
+        // half-window → 81 rows, consume on the bottom row INCLUSIVE.
+        let mut w = torch_world();
+        place(&mut w, 20, 359, 4, 0, 13 * 22); // one row ABOVE the window
+        place(&mut w, 21, 441, 4, 0, 13 * 22); // one row BELOW the window
+        place(&mut w, 22, 440, 4, 0, 13 * 22); // the bottom row itself
+        let center = (32.0 * 16.0, 400.0 * 16.0);
+        let mut s = LuckState::default();
+        for _ in 0..82 {
+            torch_scan_step(&mut s, &w, center, false, None, Zones::default());
+        }
+        assert_eq!(s.torch_luck, 0.5, "only the bottom-row bone torch counted");
+        assert_eq!(s.lucky_torch_counter, 0);
+        // The consume re-anchors at the CURRENT center (`:17916`), so a
+        // moving player drags the next window with them.
+        let moved = (33.0 * 16.0, 401.0 * 16.0);
+        torch_scan_step(&mut s, &w, moved, false, None, Zones::default());
+        // (the first post-consume tick walks row top = 401−40 = 361)
+        assert_eq!(s.next_torch_luck_check_center, center, "anchor set at consume");
+        for _ in 0..80 {
+            torch_scan_step(&mut s, &w, moved, false, None, Zones::default());
+        }
+        assert_eq!(s.next_torch_luck_check_center, moved, "re-anchored at the new center");
+    }
+
+    #[test]
+    fn e27_narrow_world_clamp_folds_max_first_and_out_of_range_rows_skip() {
+        // `Utils.Clamp` (`Utils.cs:223-234`) tests the MAX first: on a
+        // 15-wide world (max_x = 5) the ±40 window folds to 10..=5 — an
+        // EMPTY range, no panic, no torch ever walked.
+        let mut w = World::new("t".into(), 15, 800);
+        place(&mut w, 10, 370, 4, 0, 13 * 22);
+        let center = (7.0 * 16.0, 400.0 * 16.0);
+        let mut s = LuckState::default();
+        for _ in 0..200 {
+            torch_scan_step(&mut s, &w, center, false, None, Zones::default());
+        }
+        assert_eq!(s.torch_luck, 0.0, "the folded range never walks a tile");
+        // `Player.cs:17759-17762`: rows outside 10..maxTilesY−10 `continue`
+        // — the counter still bumps but the bottom-row consume check is
+        // SKIPPED, so a window whose bottom lies past the bound never
+        // consumes (the verbatim quirk; the port's early return matches).
+        let mut w = torch_world(); // height 800 → bound 790
+        place(&mut w, 20, 790, 4, 0, 13 * 22); // the last walkable row
+        place(&mut w, 21, 791, 4, 0, 9 * 22); // past the bound
+        let center = (32.0 * 16.0, 780.0 * 16.0); // top 740, bottom 820
+        let mut s = LuckState::default();
+        for _ in 0..100 {
+            torch_scan_step(&mut s, &w, center, false, None, Zones::default());
+        }
+        assert!(s.nearby_torch[13], "row 790 walked (bound is strict >)");
+        assert!(!s.nearby_torch[9], "row 791 skipped");
+        assert_eq!(s.lucky_torch_counter, 99, "no consume: bottom 820 > bound 790");
+        assert_eq!(s.torch_luck, 0.0, "the verdict never runs");
+    }
+
+    #[test]
+    fn e27_held_torch_style_out_of_range_is_ignored() {
+        // `Player.cs:17917-17920`: `placeStyle < TorchID.Count` gates the
+        // held-torch feed; the sim's `held_torch_style` builder applies the
+        // same gate (`world_sim/player.rs`), and the consume re-checks it.
+        let w = torch_world();
+        let mut s = LuckState::default();
+        torch_consume_and_calculate(&mut s, (640.0, 6400.0), Some(24), snow_zones(), &w);
+        assert_eq!(s.torch_luck, 0.0, "style 24 never feeds the table");
+        assert!(s.nearby_torch.iter().all(|f| !*f));
     }
 
     #[test]
