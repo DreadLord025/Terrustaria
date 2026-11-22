@@ -348,23 +348,30 @@ pub fn queue_update(map: &mut [MapTile], x: i32, y: i32, width: i32, height: i32
     true
 }
 
+/// `WorldMap.UnlockMapSection`'s clamped section rect (`WorldMap.cs:111-119`),
+/// half-open `(x0, y0, x1, y1)`: the 200x150 section clamped into the world
+/// inset 40 (`num3`, `:115`). The clamp is `Utils.Clamp` (`Utils.cs:223-234`)
+/// — the max is tested FIRST: a value above `max - 40` folds onto it, a value
+/// below 40 lifts to 40, so on a world smaller than the inset the range
+/// INVERTS (x0 = 40 > x1 = max - 40) and walks empty (vanilla's minimum is
+/// 4200x1200, so this only binds on test-sized worlds). Shared by the reveal
+/// walk and the driver's dirty-rect push so the two cannot drift.
+pub fn section_rect(world: &World, sx: i32, sy: i32) -> (i32, i32, i32, i32) {
+    let clamp = crate::wind::cs_clamp;
+    (
+        clamp(sx * 200, 40, world.width - 40),
+        clamp(sy * 150, 40, world.height - 40),
+        clamp(sx * 200 + 200, 40, world.width - 40),
+        clamp(sy * 150 + 150, 40, world.height - 40),
+    )
+}
+
 /// `WorldMap.UnlockMapSection` (`WorldMap.cs:109-133`): the 200x150 section
 /// clamped into the world inset 40 — the `DebugOptions.unlockMap == 2`
 /// pretty walk or the full `UpdateLighting(255)` sweep. The debug-option
 /// read rides the caller.
 pub fn unlock_map_section(world: &World, map: &mut [MapTile], sx: i32, sy: i32, pretty: bool) {
-    let mut x0 = sx * 200;
-    let mut x1 = x0 + 200;
-    let mut y0 = sy * 150;
-    let mut y1 = y0 + 150;
-    // `:115`: the inset 40 (`num3`). A world smaller than the inset cannot be
-    // clamped at all; vanilla's minimum is 4200x1200, so the `max(40)` only
-    // keeps the test-sized worlds from inverting the range.
-    let clamp = |v: i32, max: i32| v.clamp(40, (max - 40).max(40));
-    x0 = clamp(x0, world.width);
-    x1 = clamp(x1, world.width);
-    y0 = clamp(y0, world.height);
-    y1 = clamp(y1, world.height);
+    let (x0, y0, x1, y1) = section_rect(world, sx, sy);
     if pretty {
         for i in x0..x1 {
             for j in y0..y1 {
@@ -452,7 +459,11 @@ pub fn clear_edges(map: &mut [MapTile], width: i32, height: i32) {
 /// `LightingEngine.ExportToMiniMap` (`LightingEngine.cs:246-270`): sample the
 /// light map per tile with `light = min(255, max(r, g, b) * 255)` and reveal only
 /// the tiles whose pixels changed (Task 6 uploads exactly these). Tiles outside
-/// the computed light rect read `[0, 0, 0]` and stay dark. The rect is inclusive.
+/// the computed light rect read `[0, 0, 0]` and stay dark. The rect is
+/// HALF-OPEN `[x0, x1) x [y0, y1)`, x outer / y inner — the C#
+/// `FastParallel.For(area.Left, area.Right)` column walk with the
+/// `for j = area.Top; j < area.Bottom` inner loop (`:257-262`); `Rectangle`
+/// edges are exclusive, so an inclusive walk revealed one extra column/row.
 pub fn reveal_rect(
     world: &World,
     map: &mut [MapTile],
@@ -463,8 +474,8 @@ pub fn reveal_rect(
     y1: i32,
 ) -> Vec<(i32, i32)> {
     let mut changed = Vec::new();
-    for y in y0..=y1 {
-        for x in x0..=x1 {
+    for x in x0..x1 {
+        for y in y0..y1 {
             let [r, g, b] = light.get(x, y);
             // LightingEngine.cs:264: `(byte)Math.Min(255, (int)(max * 255f))`.
             let l = ((r.max(g).max(b) * 255.0) as i32).clamp(0, 255) as u8;
@@ -697,10 +708,10 @@ mod tests {
         let world = reveal_world();
         let mut map = blank_map(&world);
         let light = LightMap::compute(&world, 5, 5, 10, 10, &LightParams::default());
-        let changed = reveal_rect(&world, &mut map, &light, 0, 0, 15, 15);
+        let changed = reveal_rect(&world, &mut map, &light, 0, 0, 16, 16);
         let mut revealed = 0;
-        for y in 0..=15 {
-            for x in 0..=15 {
+        for y in 0..16 {
+            for x in 0..16 {
                 if light.get(x, y) == [0.0; 3] {
                     assert_eq!(
                         map[world.index(x, y)].light,
@@ -715,5 +726,58 @@ mod tests {
         assert!(revealed > 0, "the computed light rect must reveal a tile");
         // `changed` is exactly the set of newly revealed tiles.
         assert_eq!(changed.len(), revealed);
+    }
+
+    /// W4-e18 witness (written, not run — code-only): the walk is HALF-OPEN —
+    /// `FastParallel.For(area.Left, area.Right)` + `j < area.Bottom`
+    /// (`LightingEngine.cs:257-262`). The window `[2, 6) x [0, 5)` reveals
+    /// exactly the lit cells strictly inside it; column 6 and row 5 stay dark
+    /// even though the light map's padded rect covers them with light. Row 0
+    /// is the surface-seed row (`reveal_world`'s surface is 0), so the window
+    /// interior is lit by construction; the air below the surface keeps the
+    /// passed light (`GetBackgroundType`'s dirt arm, no sky override).
+    #[test]
+    fn reveal_rect_is_half_open_x_outer() {
+        let world = reveal_world();
+        let mut map = blank_map(&world);
+        // The compute pads by AREA_PADDING + CACHE_MARGIN, so the light map
+        // carries non-zero light well past the window's exclusive edges.
+        let light = LightMap::compute(&world, 2, 0, 5, 4, &LightParams::default());
+        let byte_light = |x: i32, y: i32| {
+            let [r, g, b] = light.get(x, y);
+            ((r.max(g).max(b) * 255.0) as i32).clamp(0, 255) as u8
+        };
+        let changed = reveal_rect(&world, &mut map, &light, 2, 0, 6, 5);
+        let mut inside = 0;
+        for y in 0..5 {
+            for x in 2..6 {
+                if byte_light(x, y) > 0 {
+                    inside += 1;
+                    assert_eq!(map[world.index(x, y)].light, byte_light(x, y));
+                }
+            }
+        }
+        assert!(inside > 0, "the window must contain lit cells");
+        assert_eq!(changed.len(), inside, "only the half-open interior");
+        // The exclusive edges stay dark despite the light map covering them.
+        let mut lit_x_edge = 0;
+        for y in 0..5 {
+            if byte_light(6, y) > 0 {
+                lit_x_edge += 1;
+            }
+            assert_eq!(map[world.index(6, y)].light, 0, "x1 is exclusive");
+        }
+        let mut lit_y_edge = 0;
+        for x in 2..6 {
+            if byte_light(x, 5) > 0 {
+                lit_y_edge += 1;
+            }
+            assert_eq!(map[world.index(x, 5)].light, 0, "y1 is exclusive");
+        }
+        assert!(lit_x_edge > 0, "the padding lights the x1 edge");
+        assert!(lit_y_edge > 0, "the padding lights the y1 edge");
+        // An empty (or inverted) window walks nothing.
+        assert!(reveal_rect(&world, &mut map, &light, 5, 5, 5, 9).is_empty());
+        assert!(reveal_rect(&world, &mut map, &light, 6, 5, 2, 9).is_empty());
     }
 }

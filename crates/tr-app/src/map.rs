@@ -6,8 +6,8 @@
 use glam::Vec2;
 use tr_core::lighting::LightMap;
 use tr_core::map::{
-    MapTile, clear_edges, get_map_tile_color, queue_update, reveal_rect, unlock_map_section,
-    unlock_map_tile_pretty, update_map_lighting, update_type,
+    MapTile, clear_edges, get_map_tile_color, queue_update, reveal_rect, section_rect,
+    unlock_map_section, unlock_map_tile_pretty, update_map_lighting, update_type,
 };
 use tr_core::{TILE_PX, World};
 use tr_render::SpriteRenderer;
@@ -33,8 +33,42 @@ pub fn map_wheel_scale(scale: f32, delta_y: f32) -> f32 {
 }
 
 /// `Player.cs:24898-24908`: `MapZoomIn` → `* 1.05`, `MapZoomOut` → `* 0.95`.
+/// The same pair steps `Main.mapOverlayScale` in the style-2 arm
+/// (`:24932-24939`).
 pub fn map_key_scale(scale: f32, zoom_in: bool) -> f32 {
     if zoom_in { scale * 1.05 } else { scale * 0.95 }
+}
+
+/// `Player.cs:24921-24928` / `:24940-24947`: MapAlphaUp/Down step the map
+/// alpha ±0.015 per update while held (style 1 → `mapMinimapAlpha`,
+/// style 2 → `mapOverlayAlpha`). Unclamped here — the C# clamps on the
+/// draw side (`map_alpha_clamp`). W4-g53 `a9774d2a` / W4-e18 `249a0c1b`.
+pub fn map_key_alpha(alpha: f32, up: bool) -> f32 {
+    if up { alpha + 0.015 } else { alpha - 0.015 }
+}
+
+/// `Main.cs:55523-55530` / `:55559-55566`: both map alphas clamp to
+/// `[0.01, 1]` at draw.
+pub fn map_alpha_clamp(alpha: f32) -> f32 {
+    alpha.clamp(0.01, 1.0)
+}
+
+/// `Main.cs:55550-55558`: the overlay scale clamps to
+/// `[screen_w / world_w, 16 * RenderZoom]`. `RenderZoom` is
+/// `GameViewMatrix.ZoomMatrix.M11` (`SpriteViewMatrix.cs:98`/`:149-154`,
+/// the zoom rounded to 1/128 steps) — `ForcedMinimumZoom * Clamp(
+/// GameZoomTarget, 1, 2)` (`Main.cs:61999`); the caller passes the port's
+/// `forced_minimum_zoom(screen) * zoom` product, not the bare settings
+/// zoom (the g53 arm's simplification, corrected here — W4-f46 dup pass).
+/// `world_w <= 0` cannot occur for a loaded world; the guard keeps the
+/// headless 0-width fixtures from dividing by zero. The two ifs run in
+/// the C# order (floor first, cap second — the cap wins if they invert;
+/// `f32::clamp` would panic there).
+pub fn overlay_scale_clamp(screen_w: f32, world_w: i32, render_zoom: f32, proposed: f32) -> f32 {
+    let floor = if world_w > 0 { screen_w / world_w as f32 } else { 0.0 };
+    let s = if proposed < floor { floor } else { proposed }; // `:55551-55554`
+    let cap = 16.0 * render_zoom;
+    if s > cap { cap } else { s } // `:55555-55558`
 }
 
 /// `Main.cs:55398-55413`: X into `10..=maxTilesX-10`, Y into `10..=maxTilesY-19`.
@@ -90,6 +124,33 @@ pub fn head_icon_pos(center_px: [f32; 2], pos: [f32; 2], scale: f32, screen: Vec
 /// drawn tile window is `[10, 10] ..= [maxTilesX-11, maxTilesY-20]`.
 pub fn map_full_quad(pos: [f32; 2], scale: f32, screen: Vec2, world: &World) -> MapQuad {
     let origin = map_origin(pos, scale, screen);
+    let x0 = 10.0;
+    let y0 = 10.0;
+    let x1 = (world.width - 11) as f32;
+    let y1 = (world.height - 20) as f32;
+    MapQuad {
+        dest: [origin[0], origin[1], (x1 - x0) * scale, (y1 - y0) * scale],
+        uv: [
+            x0 / world.width as f32,
+            y0 / world.height as f32,
+            x1 / world.width as f32,
+            y1 / world.height as f32,
+        ],
+    }
+}
+
+/// `Main.DrawMap`'s style-2 overlay geometry (`Main.cs:55567-55578` +
+/// `:55591-55607`): screen-centred on the view centre (no int truncation —
+/// `num34/35` stay fractional, unlike the minimap's `(int)num31`), the same
+/// `[10,10] ..= [maxTilesX-11, maxTilesY-20]` tile window as the fullscreen
+/// map (`num12/num13` stay 0: the `:55593-55608` window shifts only move on
+/// the style-1 branch). `scale` is `Main.mapOverlayScale` (`:55567`), already
+/// clamped by [`WorldMap::clamp_overlay_axes`]. No `MapScale` batch transform:
+/// `transformMatrix = Matrix.Identity` for `mapStyle != 1` (`:55318-55321`).
+pub fn map_overlay_quad(center_tile: [f32; 2], scale: f32, screen: Vec2, world: &World) -> MapQuad {
+    // `:55571-55576`: `num = -(viewCentre.x * scale) + screenWidth/2` (+ the
+    // `num6 * num5` 10-tile inset at `:55577-55578`) — `map_origin`'s shape.
+    let origin = map_origin(center_tile, scale, screen);
     let x0 = 10.0;
     let y0 = 10.0;
     let x1 = (world.width - 11) as f32;
@@ -397,14 +458,41 @@ pub struct WorldMap {
     /// `Main.mapFullscreenScale` (px per tile) and `Main.mapFullscreenPos` (tiles).
     pub scale: f32,
     pub pos: [f32; 2],
-    /// `Main.mapMinimapScale` (`Main.cs:66751`), fixed at 1.05 (no minimap-zoom UI yet).
+    /// `Main.mapMinimapScale` (`Main.cs:66751-66752`, default 1.05): the
+    /// minimap zoom axis — the frame buttons (`MinimapFrame.cs:107-136`) and
+    /// the MapZoomIn/Out keys (`Player.cs:24913-24920`) multiply it, clamped
+    /// 0.2..3 (`Main.cs:55515-55522`, `ui::minimap::clamp_minimap_scale`).
     pub minimap_scale: f32,
+    /// `Main.mapMinimapAlpha` (`Main.cs:66753`, default 1): the minimap's
+    /// opacity — the MapAlphaUp/Down keys step it ±0.015
+    /// (`Player.cs:24921-24928`), clamped 0.01..1 (`Main.cs:55523-55530`);
+    /// it tints the backdrop AND the tile pass (`b = (byte)(255 * alpha)`,
+    /// `:55532`). State ported from W4-e18 `249a0c1b` (final sweep P1).
+    pub minimap_alpha: f32,
+    /// `Main.mapOverlayScale` (`Main.cs:66754`, default 2.5): the overlay's
+    /// zoom axis — keys ×1.05/×0.95 (`Player.cs:24932-24939`), clamped
+    /// `screen_w/world_w .. 16*RenderZoom` (`Main.cs:55550-55558`) by
+    /// [`WorldMap::clamp_overlay_axes`] on the draw half. The style-2
+    /// overlay draw consumes it (`WorldMap::draw_overlay`).
+    pub overlay_scale: f32,
+    /// `Main.mapOverlayAlpha` (`Main.cs:66755`, default 0.35): keys ±0.015
+    /// (`Player.cs:24940-24947`), clamped 0.01..1 (`Main.cs:55559-55566`).
+    /// `b = (byte)(255 * alpha)` (`:55568`) tints the overlay tile pass and
+    /// the icon block (`:55625`).
+    pub overlay_alpha: f32,
     /// `Main.mapTime` (`Main.cs:803`) — the countdown that gates the
     /// lighting → map export (`LegacyLighting.cs:349`).
     map_time: i32,
     /// `Main.mapTimeMax` (`Main.cs:801`) — the refresh budget the countdown
     /// re-arms from; the gfx-quality loop writes it (`Main.cs:16995-17000`).
     pub map_time_max: i32,
+    /// `Main.mapDelay` (`Main.cs:229`, static ctor `= 2` at `:66504`,
+    /// re-armed on world load `WorldGen.cs:6947`) — the modern engine's
+    /// first-frames skip (`LightingEngine.cs:82-89`): while > 0 the
+    /// `MinimapUpdate` state decrements it instead of exporting. The legacy
+    /// engine owns its own copy (`LegacyLighting.map_delay`, S1-E-19 wave B);
+    /// this one gates the Color path's [`Self::update`].
+    map_delay: i32,
     /// Tiles revealed/changed since the last `take_dirty` (Task 6 uploads these).
     dirty: Vec<(i32, i32)>,
     /// The world-sized map texture exists (`ensure_map_texture` has run).
@@ -415,6 +503,17 @@ pub struct WorldMap {
     needs_full_upload: bool,
     /// `Main.resetMapFull`: recentre on the next `prepare`.
     reset_pos: bool,
+    /// `Main.PanTargetMapFullscreen` + `PanTargetMapFullscreenEnd`
+    /// (`Main.cs:849-851`, seeds false / (-1,-1) `:66758-66759`): an
+    /// offscreen pylon marker click pans the fullscreen map toward the
+    /// target (`TeleportPylonsMapLayer.cs:105-107`, the 0.15 lerp
+    /// `Main.cs:55361-55385`). `None` = the C# flag false. The step itself
+    /// rides the overlay pick (f29 `map_pylons.rs::pan_target_step` / e17
+    /// `prepare`); the union carries the state so the input-side cancels
+    /// (`Player.cs:24776-24791` movement keys, `Main.cs:55418`
+    /// resetMapFull, `Player.cs:32199` door close) have their seam —
+    /// W4-f46 shared-gap close (research/84 §10).
+    pub pan_target: Option<[f32; 2]>,
     /// `PingMapLayer`'s pool (`PingMapLayer.cs:16-19`): the ping positions
     /// in world tiles + their age in seconds (the C# stamps `DateTime.Now`
     /// and compares `TotalSeconds > 15`).
@@ -422,6 +521,55 @@ pub struct WorldMap {
     /// `Main.TriggerPing`'s MP half (`Main.cs:56546-56549`): the markers added
     /// this frame that still need the `NetPingModule` relay.
     pub ping_outbox: Vec<[f32; 2]>,
+    /// `Main.updateMap` (`Main.cs:799`, `Rectangle?`) — the area the last
+    /// `ExportToMiniMap` revealed (`LightingEngine.cs:269`; the legacy
+    /// engine's `:432` rect through the `MapLightExport` seam). The
+    /// `Main.cs:61886-61894` consume arm reads it: `Some` + unpaused draws
+    /// the area and nulls the slot; the `refreshMap` → `ClearMapDraw`
+    /// consume rides INSIDE that arm (`:61888-61892`).
+    pub update_map: Option<[i32; 4]>,
+    /// `Main.refreshMap` (`Main.cs:789`): a full map redraw is requested —
+    /// `MapRenderer.QueueChange`'s 2048-per-target threshold (`:295-298`)
+    /// and the `/map` command (`ToolkitDebugCommands.cs:487`) arm it; the
+    /// consume clears it and resets the section sweep (`:61890-61891`).
+    pub refresh_map: bool,
+    /// `MapRenderer.changeQueues` (`MapRenderer.cs:33`, `:70-77`): the
+    /// per-target pending-change lists, `[x / 2000, y / 1800]` over the
+    /// 5x2 target grid (`:62-65`). `QueueChange` (`:288-304`) appends
+    /// while under the threshold; at `ChangeRefreshThreshold = 2048`
+    /// (`:71`) it arms `refreshMap` instead (`:295-298`). The port's
+    /// single world-sized texture uploads the tiles directly (the dirty
+    /// list), so the lists' only live semantics are the threshold counter
+    /// and the `DrawToMap` refresh-clear (`:148-160`).
+    change_queues: Vec<Vec<(i32, i32)>>,
+    /// `Main.loadMap` (`Main.cs:795`): the `.map` load's staged-upload gate
+    /// (`WorldMap.cs:212`). The port's load uploads in one bulk write, so
+    /// the flag is armed for the record and the `!Main.loadMap` gate
+    /// (`Main.cs:61863`) reads it — cleared by the `DrawToMap` consume
+    /// (`MapRenderer.cs:198`).
+    pub load_map: bool,
+    /// `Main.clearMap` (`Main.cs:805`): wipe the map targets on the next
+    /// `DrawToMap` (`MapRenderer.cs:161-173`). Armed by the `.map` load
+    /// (`WorldMap.cs:211`), `/map` + `/clearmap`
+    /// (`ToolkitDebugCommands.cs:483`/`:499`) and the world clear
+    /// (`WorldGen.cs:6982`); the port's single texture clears with one
+    /// transparent bulk write.
+    pub clear_map: bool,
+    /// `Main.mapReady` (`Main.cs:797`): a `DrawToMap` has completed —
+    /// `Main.DrawMap`'s second gate (`Main.cs:55283`,
+    /// `!mapEnabled || !mapReady`). Set by the draw tail
+    /// (`MapRenderer.cs:196`); the world clear drops it
+    /// (`WorldGen.cs:6985`).
+    pub map_ready: bool,
+    /// `Main.loadMapLock` (`Main.cs:793`) + `Main.loadMapLastX`
+    /// (`Main.cs:791`): the staged-upload progress pair — armed by the
+    /// load (`WorldMap.cs:213`), read by the world-load wait loop
+    /// (`WorldGen.cs:6823-6825`) and the netplay connect status
+    /// (`Netplay.cs:506-508`), cleared by the draw tail
+    /// (`MapRenderer.cs:197-199`). The port's bulk write completes in one
+    /// frame, so `load_map_last_x` stays 0 (the tail's reset value).
+    pub load_map_lock: bool,
+    pub load_map_last_x: i32,
 }
 
 impl WorldMap {
@@ -434,28 +582,95 @@ impl WorldMap {
             scale: MAP_FULLSCREEN_SCALE_DEFAULT,
             pos: [0.0, 0.0],
             minimap_scale: 1.05,
+            minimap_alpha: 1.0, // `Main.cs:66753`
+            overlay_scale: 2.5, // `Main.cs:66754`
+            overlay_alpha: 0.35, // `Main.cs:66755`
             map_time: 0,
             map_time_max: 0,
+            map_delay: 2, // `Main.cs:66504` (static ctor), `WorldGen.cs:6947`
             dirty: Vec::new(),
             uploaded: false,
             needs_full_upload: false,
             reset_pos: true,
+            // `Main.cs:66758-66759`: `PanTargetMapFullscreen = false`,
+            // `PanTargetMapFullscreenEnd = (-1, -1)` — no pan armed.
+            pan_target: None,
             pings: Vec::new(),
             ping_outbox: Vec::new(),
+            update_map: None,
+            refresh_map: false,
+            // `MapRenderer.cs:62-77`: 5x2 targets, one change list each.
+            change_queues: vec![Vec::new(); 5 * 2],
+            load_map: false,
+            // `WorldGen.clearWorld` (`WorldGen.cs:6982`): every world load
+            // arms `Main.clearMap = true` (the texture wipe the first
+            // `DrawToMap` consumes). `WorldMap::new` is the port's
+            // world-load construction (boot / swap / net install), so the
+            // flag arms here (W4-f46 salvage, research/84 §6.6);
+            // `mapTime = 0` / `updateMap = null` / `mapReady = false` /
+            // `refreshMap = false` (`:6983-6986`) are the defaults above.
+            clear_map: true,
+            map_ready: false,
+            load_map_lock: false,
+            load_map_last_x: 0,
         }
     }
 
-    /// Reveals 4x/second from `light` — the `LightingEngine.ExportToMiniMap`
-    /// rect (`LightingEngine.cs:246-262`): the engine's processed area
-    /// shrunk 28 px on every side, intersected with the world bounds inset
-    /// 40 and the scene area (`MapHelper.sceneArea`,
-    /// `MapHelper.cs:1819` = the player tile centre's
-    /// `SceneMetrics.ZoneScanSize` box — `SceneMetrics.cs:917-919`'s
-    /// 1920x1200 / 16 + the 25 px padding). The port used to reveal a fixed
-    /// player-centred 75x47 box (the audit's D10) — a smaller, trail-prone
-    /// window than the vanilla's view-derived one.
-    pub fn update(&mut self, world: &World, player: Option<&Player>, light: &LightMap, dt: f32) {
+    /// `WorldMap.Clear` (`WorldMap.cs:249-258`): every tile's
+    /// `MapTile.Clear` — type/light/extra zeroed. The callers are the world
+    /// clear (`WorldGen.cs:6971`, gated on `mapReady`) and `/clearmap`
+    /// (`ToolkitDebugCommands.cs:500`).
+    pub fn clear(&mut self) {
+        for t in self.tiles.iter_mut() {
+            t.clear();
+        }
+    }
+
+    /// `Main.cs:55550-55566`: the style-2 overlay's draw-side clamps —
+    /// scale `screenWidth/maxTilesX .. 16*RenderZoom` (`:55550-55558`,
+    /// [`overlay_scale_clamp`]'s two ifs in C# order), alpha `0.01..1`
+    /// (`:55559-55566`). `render_zoom` is the caller's
+    /// `forced_minimum_zoom(screen) * zoom` product (`Main.cs:61999`).
+    /// Called on the draw half beside `prepare` (the same site as
+    /// `clamp_minimap_axes` runs inside it) — the C# clamps inside the
+    /// style-2 draw branch; the port's every-in-world-frame placement is
+    /// the same idempotent projection (research/84 §10.7 row 7's
+    /// equivalence argument).
+    pub fn clamp_overlay_axes(&mut self, screen_w: f32, world_w: i32, render_zoom: f32) {
+        self.overlay_scale =
+            overlay_scale_clamp(screen_w, world_w, render_zoom, self.overlay_scale);
+        self.overlay_alpha = map_alpha_clamp(self.overlay_alpha);
+    }
+
+    /// Reveals from `light` on the `mapTime` cadence — the
+    /// `LightingEngine.ExportToMiniMap` rect (`LightingEngine.cs:246-270`):
+    /// the engine's processed area shrunk 28 tiles on every side, intersected
+    /// with the world bounds inset 40 and the scene area
+    /// (`MapHelper.sceneArea`, `MapHelper.CaptureSceneState`,
+    /// `MapHelper.cs:1819` = `Utils.CenteredRectangle(TileCenter,
+    /// ZoneScanSize)` — the 169x124 box, `SceneMetrics.cs:917-919`'s
+    /// 1920x1200 / 16 + the 25 px padding - 1). All three rects are
+    /// HALF-OPEN (`Rectangle.Intersect`, XNA): the old inclusive walk
+    /// revealed one extra column/row past every edge (W4-e18).
+    /// `map_enabled` is `Main.mapEnabled`, the export's first gate (`:248`).
+    pub fn update(
+        &mut self,
+        world: &World,
+        player: Option<&Player>,
+        light: &LightMap,
+        map_enabled: bool,
+        dt: f32,
+    ) {
         let _ = dt;
+        // `LightingEngine.cs:82-89`: the `MinimapUpdate` state's first-frames
+        // skip — while `mapDelay > 0` the engine decrements it INSTEAD of
+        // exporting (the static ctor arms 2, `Main.cs:66504`; the world-load
+        // reset re-arms it, `WorldGen.cs:6947`). The port's `update` is the
+        // Color path's export cadence, so the countdown rides its head.
+        if self.map_delay > 0 {
+            self.map_delay -= 1;
+            return;
+        }
         // `Main.cs:61818-61821` — the C# decrements `mapTime` once per frame;
         // `ExportToMiniMap` (`LightingEngine.cs:246-270`) is what the legacy
         // engine runs when `mapTime == 0` (`LegacyLighting.cs:349`), re-arming
@@ -468,6 +683,10 @@ impl WorldMap {
             return;
         }
         self.map_time = self.map_time_max;
+        // `LightingEngine.cs:248`: `!Main.mapEnabled || processed area empty`.
+        if !map_enabled || light.w <= 0 || light.h <= 0 {
+            return;
+        }
         // `:256`: `MapHelper.sceneArea` is the scene-metrics scan's
         // player-centred box — its C# static defaults to `Rectangle.Empty`,
         // so without a scan (no player) the intersect is empty and nothing
@@ -475,31 +694,52 @@ impl WorldMap {
         let Some(p) = player else {
             return;
         };
-        // `LightingEngine.cs:252`: the processed area minus 28 px per side.
+        // `LightingEngine.cs:252`: the processed area minus 28 tiles per side
+        // (`Rectangle(X + 28, Y + 28, W - 56, H - 56)` — half-open edges).
         let (ax, ay, aw, ah) = (light.x0, light.y0, light.w, light.h);
         let mut x0 = ax + 28;
         let mut y0 = ay + 28;
         let mut x1 = ax + aw - 28;
         let mut y1 = ay + ah - 28;
-        // `:253-255`: the world bounds inset 40.
+        // `:253-255`: `Rectangle(0, 0, maxX, maxY).Inflate(-40, -40)` —
+        // the half-open world rect [40, maxX - 40) x [40, maxY - 40).
         x0 = x0.max(40);
         y0 = y0.max(40);
         x1 = x1.min(world.width - 40);
         y1 = y1.min(world.height - 40);
-        // The player tile centre's 169x124 zone-scan box
-        // (`SceneMetrics.cs:919`'s `ZoneScanSize`).
-        let cx = (p.x / TILE_PX) as i32;
-        let cy = (p.y / TILE_PX) as i32;
-        let (hw, hh) = (169 / 2, 124 / 2);
-        x0 = x0.max(cx - hw);
-        y0 = y0.max(cy - hh);
-        x1 = x1.min(cx + hw);
-        y1 = y1.min(cy + hh);
-        if x0 > x1 || y0 > y1 {
+        // `MapHelper.cs:1819`: `CenteredRectangle(metrics.TileCenter,
+        // ZoneScanSize)` (`Utils.cs:952-955`, the Point overload — integer
+        // halves, size kept whole). `TileCenter` is the scan centre's
+        // `ToTileCoordinates().ClampedInWorld()` (`SceneMetrics.cs:333`):
+        // `(int)v >> 4` (`Utils.cs:1807-1810`) of the player CENTRE
+        // (`Main.cs:62534`), both axes clamped to `maxTilesX - 1` — the
+        // vanilla Y clamp reads `maxTilesX` too (`Utils.cs:1855-1858`,
+        // latent bug pinned in `scene_scan.rs`'s `scan_scene_full`).
+        let (zw, zh) = tr_core::scene::ZONE_SCAN_SIZE;
+        let cx = ((p.x + crate::player::WIDTH * 0.5) as i32) >> 4;
+        let cy = ((p.y + crate::player::HEIGHT * 0.5) as i32) >> 4;
+        let cx = cx.clamp(0, world.width - 1);
+        let cy = cy.clamp(0, world.width - 1);
+        x0 = x0.max(cx - zw / 2);
+        y0 = y0.max(cy - zh / 2);
+        x1 = x1.min(cx - zw / 2 + zw);
+        y1 = y1.min(cy - zh / 2 + zh);
+        // `Rectangle.Intersect`: an empty overlap has Left >= Right — XNA
+        // returns `Rectangle.Empty` (0, 0, 0, 0), not the inverted rect
+        // (W4-f46 salvage, research/84 §6.5). `LightingEngine.cs:269` arms
+        // `Main.updateMap = area` even when the intersect came back empty —
+        // the driver still runs its consumer (`Main.cs:61886-61894`).
+        if x0 >= x1 || y0 >= y1 {
+            self.update_map = Some([0, 0, 0, 0]);
             return;
         }
         let changed = reveal_rect(world, &mut self.tiles, light, x0, y0, x1, y1);
         self.dirty.extend(changed);
+        // `LightingEngine.cs:269`: `Main.updateMap = area` — the revealed
+        // rect rides the `Main.cs:61886-61894` consume arm (the port's
+        // texture sync already ran through `dirty`; the slot drives the
+        // `refreshMap` → `ClearMapDraw` consume and the null-out).
+        self.update_map = Some([x0, y0, x1 - x0, y1 - y0]);
     }
 
     /// `WorldMap.UpdateType` (`WorldMap.cs:65-93`) — see the tr-core free fn.
@@ -533,13 +773,11 @@ impl WorldMap {
     /// the rect is the same pixels for one texture sync.
     pub fn unlock_section(&mut self, world: &World, sx: i32, sy: i32, pretty: bool) {
         crate::map::unlock_map_section(world, &mut self.tiles, sx, sy, pretty);
-        // `:111-119` — the same 40 inset clamp the C# applies (nested so a
-        // test-sized world's inverted range cannot panic).
-        let clamp = |v: i32, max: i32| v.clamp(40, (max - 40).max(40));
-        let x0 = clamp(sx * 200, world.width);
-        let x1 = clamp(sx * 200 + 200, world.width);
-        let y0 = clamp(sy * 150, world.height);
-        let y1 = clamp(sy * 150 + 150, world.height);
+        // `:111-119` — the SAME clamped rect the reveal walk used
+        // (`crate::map::section_rect`, the max-first `Utils.Clamp`): the
+        // dirty push cannot drift from the walk (W4-e18; the old duplicate
+        // min-first clamp folded differently on test-sized worlds).
+        let (x0, y0, x1, y1) = section_rect(world, sx, sy);
         for y in y0..y1 {
             for x in x0..x1 {
                 self.dirty.push((x, y));
@@ -547,18 +785,144 @@ impl WorldMap {
         }
     }
 
-    /// The `/map` chat command's reveal (`ToolkitDebugCommands.cs:480-494`):
-    /// every section of the world, as the C# does by walking
-    /// `Main.sectionManager`'s draw queue. `pretty` selects
-    /// `UnlockMapTilePretty` (the 11x11 Manhattan falloff) over the flat 255.
-    pub fn unlock_map(&mut self, world: &World, pretty: bool) {
-        let sx = (world.width as f32 / 200.0).ceil() as i32;
-        let sy = (world.height as f32 / 150.0).ceil() as i32;
-        for y in 0..sy {
-            for x in 0..sx {
-                self.unlock_section(world, x, y, pretty);
+    /// The `/map` chat command (`ToolkitDebugCommands.cs:480-494`): the
+    /// command only arms flags — `Main.clearMap = true`, then
+    /// `DebugOptions.unlockMap = 1` (flat) or `2` (pretty) plus
+    /// `Main.refreshMap = true` when off, or `unlockMap = 0` when already
+    /// on. The reveal itself rides the section sweep
+    /// (`App::map_reveal_sweep_core`, `Main.cs:61871-61883`): the `refreshMap`
+    /// re-walk (`:61888-61892`) clears the drawn bits and the spiral
+    /// re-visits every section, unlocking each as it draws.
+    /// W4-f46 salvage (research/84 §4) replaces the old dead bulk ceil-loop
+    /// sweep; the option is `App.debug_unlock_map` in the union (the C#
+    /// `DebugOptions.unlockMap` static), so it rides in by `&mut i32`.
+    pub fn unlock_map(&mut self, debug_unlock_map: &mut i32, pretty: bool) {
+        self.clear_map = true; // `:483`, both arms
+        if *debug_unlock_map == 0 {
+            // `:484-488`.
+            *debug_unlock_map = if pretty { 2 } else { 1 };
+            self.refresh_map = true; // `:487`
+        } else {
+            // `:489-492`: a second `/map` turns the reveal off.
+            *debug_unlock_map = 0;
+        }
+    }
+
+    /// `MapRenderer.DrawToMap_Section` (`MapRenderer.cs:306-355`): paint
+    /// one 200x150 section into the map texture. The C# walks the section
+    /// row-major (`i` = y outer, `j` = x inner, `:328-335`) through
+    /// `GetMapTileXnaColor` and blits the 200x150 cache at the target
+    /// offset; the port writes the same pixels as one region upload. The
+    /// section rect is NOT inset-clamped here (that clamp is
+    /// `UnlockMapSection`'s, `WorldMap.cs:111-119`) — the draw covers the
+    /// full section, clipped to the world bounds (the C# target grid
+    /// covers every vanilla world size exactly, `MapRenderer.cs:93-102`).
+    /// W4-f46 salvage, research/84 §6.2.
+    pub fn draw_to_map_section(
+        &mut self,
+        r: &mut SpriteRenderer,
+        gpu: &tr_render::Gpu,
+        world: &World,
+        sx: i32,
+        sy: i32,
+    ) {
+        let Some((x0, y0, w, h, rgba)) = self.section_pixels(world, sx, sy) else {
+            return;
+        };
+        r.write_map_region(gpu, x0 as u32, y0 as u32, w, h, &rgba);
+    }
+
+    /// The GPU-free pixel half of [`Self::draw_to_map_section`]
+    /// (`MapRenderer.cs:314-335`): the section's clamped rect and its
+    /// row-major colour cache. Returns `None` for an off-world section.
+    /// The witnesses exercise this directly (no renderer needed).
+    pub fn section_pixels(
+        &self,
+        world: &World,
+        sx: i32,
+        sy: i32,
+    ) -> Option<(i32, i32, u32, u32, Vec<[u8; 4]>)> {
+        let x0 = sx * 200;
+        let y0 = sy * 150;
+        let x1 = (x0 + 200).min(world.width);
+        let y1 = (y0 + 150).min(world.height);
+        if x0 >= x1 || y0 >= y1 {
+            return None;
+        }
+        let w = (x1 - x0) as u32;
+        let h = (y1 - y0) as u32;
+        let mut rgba = vec![[0u8; 4]; (w * h) as usize];
+        // `:328-335`: row-major over the section, `GetMapTileXnaColor` per
+        // tile. The C# blits the colour unconditionally (`:350`) and the
+        // alpha rides `colorLookup[0] = Color.Transparent`
+        // (`MapHelper.cs:1714`); the port's alpha convention is the
+        // reveal's (`prepare`'s two upload paths): a revealed tile
+        // (`light > 0`) is opaque, an unrevealed one transparent — a dark
+        // tile never carries a non-zero type in practice (every
+        // `CreateMapTile` arm that sets a type forces light > 0).
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let t = self.tiles[world.index(x, y)];
+                if t.light > 0 {
+                    let [cr, cg, cb] = get_map_tile_color(t, x, y);
+                    rgba[((y - y0) as u32 * w + (x - x0) as u32) as usize] = [cr, cg, cb, 255];
+                }
             }
         }
+        Some((x0, y0, w, h, rgba))
+    }
+
+    /// `MapRenderer.QueueChange` (`MapRenderer.cs:288-304`): the changed
+    /// tile queues into its target's list (`[x / 2000, y / 1800]`,
+    /// `textureMaxWidth/Height` `:62-63`); at `ChangeRefreshThreshold =
+    /// 2048` (`:71`) the entry is NOT added and `Main.refreshMap` arms
+    /// instead (`:295-298`). While `refreshMap` is already armed the whole
+    /// call is a no-op (`:290`). The port's single texture uploads the
+    /// changed tiles directly through the dirty list; the queues keep the
+    /// threshold semantics — the only producer of `refreshMap` besides
+    /// the `/map` command. Out-of-grid coords drop: the C# indexes
+    /// `changeQueues[num, num2]` unguarded (`:294`) but every producer
+    /// walks world-clamped rects, so the arm is unreachable there.
+    pub fn queue_change(&mut self, x: i32, y: i32) {
+        if self.refresh_map {
+            return; // `:290`
+        }
+        let (tx, ty) = (x / 2000, y / 1800); // `:292-293`
+        if !(0..5).contains(&tx) || !(0..2).contains(&ty) {
+            return; // the 5x2 target grid (`:64-65`)
+        }
+        let q = &mut self.change_queues[(ty * 5 + tx) as usize];
+        if q.len() >= 2048 {
+            self.refresh_map = true; // `:295-298`
+        } else {
+            q.push((x, y)); // `:301`
+        }
+    }
+
+    /// `MapRenderer.ChangesQueued` (`MapRenderer.cs:37-56`): any target's
+    /// change list is non-empty.
+    pub fn changes_queued(&self) -> bool {
+        self.change_queues.iter().any(|q| !q.is_empty())
+    }
+
+    /// `MapRenderer.DrawToMap`'s queue half (`MapRenderer.cs:148-160`,
+    /// `:229-245`): the `clearMap || refreshMap` head clears every change
+    /// list (`:148-160`); otherwise each target's list drains through the
+    /// draw and clears at its tail (`:245`). The port's texture writes
+    /// already ran through the dirty list (`prepare`), so both paths end
+    /// with empty lists. The `refreshMap` flag itself is consumed by the
+    /// `Main.cs:61888-61892` arm, not here — the C# never clears it inside
+    /// `DrawToMap`. The tail (`MapRenderer.cs:196-199`) sets `mapReady`,
+    /// zeroes `loadMapLastX` and lifts `loadMap`/`loadMapLock`.
+    pub fn draw_to_map_queues(&mut self) {
+        for q in self.change_queues.iter_mut() {
+            q.clear();
+        }
+        // `:196-199`: the draw completes the staged `.map` upload.
+        self.map_ready = true; // `:196`
+        self.load_map_last_x = 0; // `:197`
+        self.load_map = false; // `:198`
+        self.load_map_lock = false; // `:199`
     }
 
     /// The edit-queue drain's push (the `MapRenderer.QueueChange` analog —
@@ -604,6 +968,19 @@ impl WorldMap {
         self.map_time
     }
 
+    /// `Main.mapDelay` (`Main.cs:229`).
+    pub fn map_delay(&self) -> i32 {
+        self.map_delay
+    }
+
+    /// `Main.mapDelay = 2` on world entry (`WorldGen.cs:6947`, the static
+    /// ctor `Main.cs:66504`) — the Color path's twin of
+    /// `LegacyLighting::reset_map_delay`. The fresh `WorldMap` a world load
+    /// builds already arms 2; this is the in-place re-arm seam.
+    pub fn reset_map_delay(&mut self) {
+        self.map_delay = 2;
+    }
+
     /// `Main.cs:61818-61821`: the per-frame `mapTime` countdown. The legacy
     /// engine's export (`LegacyLighting.cs:349-373`) reads the counter and
     /// re-arms it from `mapTimeMax`; the modern `ExportToMiniMap` path keeps
@@ -645,7 +1022,21 @@ impl WorldMap {
     /// at world load). Returns `false` when the file is absent or does not match
     /// this world. The whole map texture is re-uploaded on the next `prepare`.
     pub fn load(&mut self, world: &World, path: &std::path::Path) -> bool {
+        // `WorldMap.Load`'s `Lighting.Clear()` head (`WorldMap.cs:178`) is the
+        // lighting engine's reset — the port's world-load path builds a fresh
+        // engine, so there is nothing to clear here.
         if !load_map_file(world, &mut self.tiles, path).unwrap_or(false) {
+            // `WorldMap.Load`'s catch arm (`WorldMap.cs:217-230`): a CORRUPT
+            // file (present but unreadable/truncated/foreign) is copied to
+            // `<path>.bad` and the map is cleared. The absent-file arm
+            // (`TryGetMapPath` false, `:184-188`) returns BEFORE the try —
+            // no `.bad` copy, no clear. The port's `load_map_file` folds
+            // both into `Ok(false)`; the file's existence splits them.
+            if path.exists() {
+                let bad = path.with_extension("map.bad");
+                let _ = std::fs::copy(path, &bad); // `:227` (overwrite: true)
+                self.clear(); // `:229` — `this.Clear()`
+            }
             return false;
         }
         // `WorldMap.Load`'s edge clear (`WorldMap.cs:210`): the 40-tile
@@ -654,6 +1045,14 @@ impl WorldMap {
         // Drop any pending single-tile writes; the full upload replaces them.
         self.dirty.clear();
         self.needs_full_upload = true;
+        // `WorldMap.cs:211-214`: `clearMap = true; loadMap = true;
+        // loadMapLock = true; refreshMap = false`. The staged-upload gate
+        // (`Main.cs:61863`'s `!Main.loadMap`) holds the reveal sweep until
+        // the bulk upload completes (`MapRenderer.cs:198` clears it).
+        self.clear_map = true; // `:211`
+        self.load_map = true; // `:212`
+        self.load_map_lock = true; // `:213`
+        self.refresh_map = false; // `:214`
         true
     }
 
@@ -667,12 +1066,25 @@ impl WorldMap {
         }
     }
 
+    /// `Main.cs:55416-55424`: the `resetMapFull` consume — clear the pan
+    /// target FIRST (`:55418` `PanTargetMapFullscreen = false`, the gap
+    /// f29's arm lacked — W4-f46 shared-gap close), then override the
+    /// clamp with the unclamped view centre
+    /// `(screenPosition + screenSize/2)/16f` and disarm the flag (`:55419`).
+    pub fn recentre(&mut self, center_tile: [f32; 2]) {
+        self.pan_target = None; // `:55418`
+        self.pos = center_tile; // `:55422-55423`
+        self.reset_pos = false; // `:55419`
+    }
+
     /// Per-frame prep: clamp `scale`/`pos`, recentre on the view centre if armed,
     /// then upload the tiles in `take_dirty()` into the map texture.
     ///
     /// `center_tile` is the **view-centre** tile (`[camera.x / TILE_PX,
     /// camera.y / TILE_PX]`, i.e. `(screenPosition + screenSize/2)/16`); it is only
-    /// read when a recentre is armed.
+    /// read when a recentre is armed. `map_enabled` is `Main.mapEnabled` — the
+    /// `DrawToMap` gate (`MapRenderer.cs:130-133`) the staged `.map` upload's
+    /// consume rides (`Main.cs:61746-61750`).
     pub fn prepare(
         &mut self,
         r: &mut SpriteRenderer,
@@ -680,22 +1092,33 @@ impl WorldMap {
         world: &World,
         screen: Vec2,
         center_tile: [f32; 2],
+        map_enabled: bool,
     ) {
         // `Main.cs:55387-55395`.
         self.scale = map_scale_clamp(screen.x, world.width, self.scale);
         // `Main.cs:55398-55413`.
         self.pos = map_clamp_pos(self.pos, world);
         // `Main.cs:55416-55424`: `resetMapFull` overrides the clamp with the unclamped
-        // view centre `(screenPosition + screenSize/2)/16f`.
+        // view centre `(screenPosition + screenSize/2)/16f` — and clears the pan
+        // target first (`:55418`, the `recentre` seam).
         if self.reset_pos {
-            self.pos = center_tile;
-            self.reset_pos = false;
+            self.recentre(center_tile);
         }
 
         // `MapRenderer.CheckMapTargets` (`MapRenderer.cs:357-378`).
         if !self.uploaded {
             r.ensure_map_texture(gpu, world.width as u32, world.height as u32);
             self.uploaded = true;
+        }
+        // `MapRenderer.DrawToMap`'s clear arm (`MapRenderer.cs:161-173`):
+        // `clearMap` wipes every target and clears itself (`:172`). The
+        // port's one texture takes the wipe as a full re-upload: revealed
+        // tiles rewrite their identical colour, unrevealed tiles write
+        // transparent — pixel-identical to clear-then-redraw-changed.
+        // Gated on `mapEnabled` like the whole `DrawToMap` (`:130-133`).
+        if self.clear_map && map_enabled {
+            self.clear_map = false; // `:172`
+            self.needs_full_upload = true;
         }
         // A loaded `.map`: one bulk upload of every revealed tile, matching the
         // first-frame `MapRenderer.DrawChangesToMap` sweep.
@@ -713,6 +1136,18 @@ impl WorldMap {
                 }
             }
             r.write_map_region(gpu, 0, 0, w, h, &rgba);
+            // `Main.cs:61746-61750`: the `loadMap` head consume —
+            // `refreshMap = false; DrawToMap(default)` — whose tail
+            // (`MapRenderer.cs:196-199`) clears `loadMap`/`loadMapLock`
+            // once the staged upload draws. The port's bulk write IS
+            // that draw, so the gate lifts here. `DrawToMap`'s first gate
+            // is `Main.mapEnabled` (`MapRenderer.cs:130-133`): with the
+            // map disabled the consume is skipped and `loadMap` stays
+            // armed until an enabled frame draws it.
+            if map_enabled {
+                self.refresh_map = false;
+                self.draw_to_map_queues();
+            }
         }
         // `MapRenderer.DrawChangesToMap`: one texel per revealed map tile.
         for (x, y) in self.take_dirty() {
@@ -730,6 +1165,47 @@ impl WorldMap {
         }
     }
 
+    /// `Main.DrawMap` style-2 branch (`Main.cs:55548-55578` + the shared
+    /// `MapRenderer.DrawMap` blit `:55609`): the screen-centred overlay tile
+    /// pass. The clamps ran on the draw half ([`Self::clamp_overlay_axes`],
+    /// called beside `prepare`);
+    /// `b = (byte)(255f * mapOverlayAlpha)` (`:55568`) tints the tile pass
+    /// (`MapRenderer.cs:438` `Color(b,b,b,b)`). Returns the icon block's
+    /// context (`Main.cs:55625`): the map offset `num - 10*num5` and the
+    /// truncated byte alpha `b/255` the `:55615-55694` icon draws consume.
+    pub fn draw_overlay(
+        &self,
+        r: &mut SpriteRenderer,
+        world: &World,
+        screen: Vec2,
+        center_tile: [f32; 2],
+    ) -> ([f32; 2], f32, f32) {
+        let q = map_overlay_quad(center_tile, self.overlay_scale, screen, world);
+        // `:55568`: the `(byte)` cast truncates — the port's `as u32`
+        // matches (post-clamp `0.01..1` keeps the product inside `2..255`).
+        let b = (255.0 * self.overlay_alpha) as u32;
+        let a = b as f32 / 255.0;
+        r.push_map_sprite(
+            [q.dest[0], q.dest[1]],
+            [q.dest[2], q.dest[3]],
+            q.uv,
+            [a; 4],
+        );
+        // `:55625`: `new Vector2(num - 10f * num5, num2 - 10f * num5)` with
+        // `mapPosition = Vector2.Zero`. `num` carries the `+num6*num5`
+        // 10-tile inset (`:55577`, inside `map_origin`), so the icon offset
+        // is the inset-free map origin: subtract the inset ONCE.
+        let origin = map_origin(center_tile, self.overlay_scale, screen);
+        (
+            [
+                origin[0] - 10.0 * self.overlay_scale,
+                origin[1] - 10.0 * self.overlay_scale,
+            ],
+            self.overlay_scale,
+            a,
+        )
+    }
+
     /// `Main.DrawMap` minimap branch (`Main.cs:55503-55546`): the minimap is centred
     /// on the **view centre** (`Main.cs:55537-55538`), so the caller passes that
     /// tile, and `MapRenderer.DrawMap` (`MapRenderer.cs:380`) draws the one tile
@@ -745,11 +1221,15 @@ impl WorldMap {
         map_scale: f32,
     ) {
         let q = map_minimap_quad(center_tile, self.minimap_scale, map_scale, screen, world);
+        // `b = (byte)(255f * Main.mapMinimapAlpha)` (`Main.cs:55532`) →
+        // `MapRenderer.DrawMap(..., b)` tints the tile pass
+        // `new Color(alpha, alpha, alpha, alpha)` (`MapRenderer.cs:438`).
+        let a = (255.0 * self.minimap_alpha) as u8 as f32 / 255.0;
         r.push_map_sprite(
             [q.dest[0], q.dest[1]],
             [q.dest[2], q.dest[3]],
             q.uv,
-            [1.0; 4],
+            [a, a, a, a],
         );
     }
 
@@ -997,6 +1477,36 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    /// W4-e18 final sweep (written, not run - code-only): `WorldMap.Load`'s
+    /// catch arm (`WorldMap.cs:217-230`) — a corrupt-but-present `.map` is
+    /// copied to `<path>.bad` (`:227`) and the tiles are cleared (`:229`);
+    /// an ABSENT file takes the `TryGetMapPath` early return (`:184-188`)
+    /// with neither side effect.
+    #[test]
+    fn w4_e18_a_corrupt_map_is_copied_to_bad_and_cleared() {
+        let world = test_world();
+        let dir = unique_dir("badmap");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("w.map");
+        // A truncated file: present, but the prefix read fails.
+        std::fs::write(&path, [0u8; 6]).unwrap();
+        let mut wm = WorldMap::new(&world);
+        // Seed a revealed tile so the clear is observable.
+        wm.tiles[0] = MapTile::create(1, 255, 0);
+        assert!(!wm.load(&world, &path));
+        assert!(dir.join("w.map.bad").exists(), "the .bad copy (:227)");
+        assert_eq!(wm.tiles[0], MapTile::default(), "Clear() (:229)");
+        assert!(!wm.needs_full_upload, "the catch arm does not arm the upload");
+        // The absent file: no .bad copy, no clear.
+        let mut fresh = WorldMap::new(&world);
+        fresh.tiles[0] = MapTile::create(1, 255, 0);
+        let absent = dir.join("absent.map");
+        assert!(!fresh.load(&world, &absent));
+        assert!(!dir.join("absent.map.bad").exists(), "no copy for an absent file");
+        assert_eq!(fresh.tiles[0], MapTile::create(1, 255, 0), "no clear");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     #[test]
     #[ignore]
     fn loads_a_real_vanilla_map() {
@@ -1206,18 +1716,22 @@ mod tests {
         );
         // The C# starts `mapTime == 0` (`Main.cs:803`), so the first frame
         // exports and re-arms from the budget (`LegacyLighting.cs:349-373`).
+        // The `mapDelay` first-frames skip (`LightingEngine.cs:82-89`, W4-e18
+        // final sweep) is a separate gate — this witness pins `mapTime`, so
+        // the delay starts drained (its own witness below pins the skip).
         m.map_time_max = 3;
-        m.update(&world, Some(&p), &light, 0.016);
+        m.map_delay = 0;
+        m.update(&world, Some(&p), &light, true, 0.016);
         assert!(m.tiles.iter().any(|t| t.light > 0), "the first frame exports");
         let _ = m.take_dirty();
         // The next three frames only count down.
         for _ in 0..3 {
-            m.update(&world, Some(&p), &light, 0.016);
+            m.update(&world, Some(&p), &light, true, 0.016);
         }
         assert!(m.take_dirty().is_empty(), "nothing exports mid-countdown");
         // The fourth frame hits zero, exports (no new pixels — the map is
         // already fully revealed) and re-arms from the budget.
-        m.update(&world, Some(&p), &light, 0.016);
+        m.update(&world, Some(&p), &light, true, 0.016);
         assert_eq!(
             m.map_time(),
             3,
@@ -1280,6 +1794,164 @@ mod tests {
         assert_ne!(m.tiles[i].ty, 1);
     }
 
+    /// W4-c35 — `MapUpdateQueue.Update` (`MapUpdateQueue.cs:62-71`): the
+    /// drain order is deterministic — `UpdateTiles` first (`:66`, FIFO
+    /// enqueue order), then `UpdateAreas` (`:67`, area enqueue order, each
+    /// area walked column-major `i` outer / `j` inner, `:76-79`). A tile
+    /// whose flag the tile pass consumed does not report twice.
+    #[test]
+    fn w4_c35_drain_order_is_tiles_fifo_then_areas_column_major() {
+        let mut world = ground_world();
+        let mut m = WorldMap::new(&world);
+        let cells = [(100, 70), (101, 70), (100, 71), (101, 71)];
+        for (x, y) in cells {
+            assert!(update_map_lighting(&world, &mut m.tiles, x, y, 200));
+        }
+        for (x, y) in cells {
+            world.tiles[world.index(x, y)] = Tile::default(); // the edit
+        }
+        let mut q = MapUpdateQueue::default();
+        q.add_tile(&mut m, 101, 70); // FIFO: second column first
+        q.add_tile(&mut m, 100, 71);
+        q.add_area(&mut m, 100, 70, 2, 2); // arms (100,70) + (101,71)
+        let changed = q.update(&world, &mut m);
+        assert_eq!(
+            changed,
+            vec![(101, 70), (100, 71), (100, 70), (101, 71)],
+            "tiles FIFO, then the area walk column-major, no duplicates"
+        );
+        assert!(q.update(&world, &mut m).is_empty(), "both queues cleared");
+    }
+
+    /// W4-c35 — `MapUpdateQueue.Add`'s budget (`MapUpdateQueue.cs:49-55`):
+    /// at `MAX_QUEUED_UPDATES` the entry drops, but `QueueUpdate` armed the
+    /// flag BEFORE the cap check (`:43`), so an area walk still refreshes
+    /// the tile (`UpdateAreas` reads the flag, not the tile queue).
+    #[test]
+    fn w4_c35_at_the_budget_the_entry_drops_but_the_flag_stays_armed() {
+        let mut world = ground_world();
+        let mut m = WorldMap::new(&world);
+        let i = world.index(100, 70);
+        assert!(update_map_lighting(&world, &mut m.tiles, 100, 70, 200));
+        world.tiles[i] = Tile::default(); // the edit
+        let mut q = MapUpdateQueue::default();
+        // Fill the tile queue to the cap with out-of-bounds dummies (the
+        // drain's `UpdateType` bounds-check refuses them, `WorldMap.cs:65`).
+        q.tiles = vec![(-1, -1); MAX_QUEUED_UPDATES];
+        q.add_tile(&mut m, 100, 70);
+        assert_eq!(q.tiles.len(), MAX_QUEUED_UPDATES, "the entry dropped");
+        assert!(m.tiles[i].update_queued(), "the flag armed before the cap");
+        assert!(q.update(&world, &mut m).is_empty(), "no tile-queue entry");
+        assert!(m.tiles[i].update_queued(), "the drain never saw the tile");
+        // The area path recovers it (`:30-37` queues the rect regardless of
+        // the per-tile budget; `:80` consumes the flag).
+        q.add_area(&mut m, 100, 70, 1, 1);
+        assert_eq!(q.update(&world, &mut m), vec![(100, 70)]);
+        assert!(!m.tiles[i].update_queued());
+    }
+
+    /// W4-c35 — `WorldGen.RangeFrame` (`WorldGen.cs:80400-80413`): the
+    /// vanilla rect width `startX - endX + 4` (`:80402`) is inverted for a
+    /// range wider than 4, so the clamped area walk runs empty; the refresh
+    /// rides the per-tile walk, which covers `[start-1, end+1]` inclusive
+    /// (`:80403`'s `num = endX + 1` compared `< num + 1`).
+    #[test]
+    fn w4_c35_range_frame_walks_start_minus_1_to_end_plus_1() {
+        let mut world = ground_world();
+        let mut m = WorldMap::new(&world);
+        // The two extreme corners of the walk, plus a tile the "fixed"
+        // (positive-width) rect would have covered at (95, 70).
+        for (x, y) in [(99, 69), (111, 81), (95, 70)] {
+            assert!(update_map_lighting(&world, &mut m.tiles, x, y, 200));
+        }
+        for (x, y) in [(99, 69), (111, 81)] {
+            world.tiles[world.index(x, y)] = Tile::default();
+        }
+        let mut q = MapUpdateQueue::default();
+        q.add_range_frame(&mut m, 100, 70, 110, 80);
+        assert!(
+            !m.tiles[world.index(95, 70)].update_queued(),
+            "the inverted rect's area walk ran empty"
+        );
+        assert_eq!(
+            q.update(&world, &mut m),
+            vec![(99, 69), (111, 81)],
+            "both walk corners refresh, column-major"
+        );
+    }
+
+    /// W4-c35 — `WorldGen.TileFrame`'s border gate (`WorldGen.cs:81330-81334`):
+    /// the 5-tile world border skips BEFORE the `Add`, so a border tile
+    /// never arms its flag even inside the range walk.
+    #[test]
+    fn w4_c35_range_frame_skips_the_5_tile_world_border() {
+        let mut world = ground_world();
+        let mut m = WorldMap::new(&world);
+        for (x, y) in [(5, 6), (6, 6)] {
+            let t = world.tile_mut(x, y).unwrap();
+            t.kind = 1;
+            t.flags |= FLAG_ACTIVE;
+            assert!(update_map_lighting(&world, &mut m.tiles, x, y, 200));
+            world.tiles[world.index(x, y)] = Tile::default();
+        }
+        let mut q = MapUpdateQueue::default();
+        q.add_range_frame(&mut m, 4, 4, 6, 6);
+        assert!(!m.tiles[world.index(5, 6)].update_queued(), "i <= 5 skips");
+        assert_eq!(q.update(&world, &mut m), vec![(6, 6)], "the first interior tile");
+    }
+
+    /// W4-c35 — the reveal interaction: `UpdateLighting`'s rebuild goes
+    /// through `MapTile.Create` (`MapTile.cs:98-101`), whose `_extraData`
+    /// is `color | 0x80` — the `UpdateQueued` bit is CLEARED. A reveal that
+    /// rebuilds a queued tile consumes the flag; the later drain finds
+    /// nothing (`WorldMap.cs:71-74`) and does not report twice.
+    #[test]
+    fn w4_c35_a_reveal_rebuild_consumes_the_queued_flag() {
+        let mut world = ground_world();
+        let mut m = WorldMap::new(&world);
+        let i = world.index(100, 70);
+        assert!(update_map_lighting(&world, &mut m.tiles, 100, 70, 200));
+        world.tiles[i] = Tile::default(); // the edit
+        let mut q = MapUpdateQueue::default();
+        q.add_tile(&mut m, 100, 70);
+        assert!(m.tiles[i].update_queued());
+        // The reveal window reaches the tile first: the rebuild derives the
+        // CURRENT world state at the brighter light and clears the flag.
+        assert!(update_map_lighting(&world, &mut m.tiles, 100, 70, 255));
+        assert!(!m.tiles[i].update_queued(), "Create resets _extraData");
+        assert_eq!(m.tiles[i].light, 255);
+        assert!(
+            q.update(&world, &mut m).is_empty(),
+            "the drain's UpdateType refuses the consumed flag"
+        );
+    }
+
+    /// W4-c35 — `.map` IO compat: the serializer writes only type/light/
+    /// colour (`MapHelper.cs:3135-3226`), and the loader rebuilds through
+    /// `MapTile.Create` (`:4004`) — a queued flag armed at save time never
+    /// survives the round trip, and the loaded tile queues fresh.
+    #[test]
+    fn w4_c35_the_queued_flag_does_not_survive_a_map_round_trip() {
+        let world = test_world();
+        let mut original = test_tiles(40, 40);
+        original[7].set_update_queued(true); // (7, 0), light 30
+        original[10].set_update_queued(true); // (10, 0), painted
+        let dir = unique_dir("c35flag");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("flag.map");
+        save_map_file(&world, &original, &path).unwrap();
+        let mut loaded = vec![MapTile::default(); original.len()];
+        assert!(load_map_file(&world, &mut loaded, &path).unwrap());
+        assert_eq!(loaded, test_tiles(40, 40), "the flags stripped, pixels kept");
+        assert!(loaded[7].is_changed(), "Create always arms IsChanged");
+        assert!(!loaded[7].update_queued());
+        // The loaded tile enqueues fresh (the flag is free again).
+        let mut m = WorldMap::new(&world);
+        m.tiles = loaded;
+        assert!(m.queue_update(7, 0));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     #[test]
     fn reveal_window_marks_tiles_around_the_player() {
         let world = ground_world();
@@ -1298,7 +1970,8 @@ mod tests {
             &LightParams::default(),
         );
         let mut m = WorldMap::new(&world);
-        m.update(&world, Some(&p), &light, 0.3);
+        m.map_delay = 0; // the mapTime witness, not the mapDelay one
+        m.update(&world, Some(&p), &light, true, 0.3);
         assert!(m.tiles[world.index(px, py)].light > 0);
     }
 
@@ -1307,8 +1980,404 @@ mod tests {
         let world = ground_world();
         let light = LightMap::compute(&world, 0, 0, 63, 127, &LightParams::default());
         let mut m = WorldMap::new(&world);
-        m.update(&world, None, &light, 1.0);
+        m.update(&world, None, &light, true, 1.0);
         assert!(m.tiles.iter().all(|t| t.light == 0));
+    }
+
+    /// W4-e18 witness (written, not run — code-only): the `Main.mapEnabled`
+    /// gate (`LightingEngine.cs:248`) refuses the export even on the export
+    /// frame; the countdown still re-arms (`Main.cs:61818-61821` runs before
+    /// the engine's gate).
+    #[test]
+    fn w4_e18_map_disabled_refuses_the_export() {
+        let world = ground_world();
+        let mut p = Player::spawn(&world);
+        p.x = 100.0 * TILE_PX;
+        let px = (p.x / TILE_PX) as i32;
+        let py = (p.y / TILE_PX) as i32;
+        let light = LightMap::compute(
+            &world,
+            px - 40,
+            py - 30,
+            px + 40,
+            py + 30,
+            &LightParams::default(),
+        );
+        let mut m = WorldMap::new(&world);
+        m.map_time_max = 2;
+        m.map_delay = 0; // the mapEnabled witness, not the mapDelay one
+        m.update(&world, Some(&p), &light, false, 0.016);
+        assert!(m.tiles.iter().all(|t| t.light == 0), "the gate refuses");
+        assert!(m.take_dirty().is_empty());
+        assert_eq!(m.map_time(), 2, "the countdown re-arms regardless");
+        // Enabling on the next export frame reveals.
+        m.update(&world, Some(&p), &light, false, 0.016);
+        m.update(&world, Some(&p), &light, false, 0.016);
+        m.update(&world, Some(&p), &light, true, 0.016);
+        assert!(m.tiles.iter().any(|t| t.light > 0), "enabled exports");
+    }
+
+    /// W4-e18 final sweep (written, not run - code-only): the modern
+    /// engine's first-frames skip (`LightingEngine.cs:82-89`) — while
+    /// `Main.mapDelay > 0` the `MinimapUpdate` state decrements it INSTEAD
+    /// of exporting; the static ctor arms 2 (`Main.cs:66504`) and the
+    /// world-load reset re-arms it (`WorldGen.cs:6947`). The port's
+    /// `WorldMap::update` gates on the same counter.
+    #[test]
+    fn w4_e18_the_map_delay_skips_the_first_two_exports() {
+        let world = ground_world();
+        let mut p = Player::spawn(&world);
+        p.x = 100.0 * TILE_PX;
+        let px = (p.x / TILE_PX) as i32;
+        let py = (p.y / TILE_PX) as i32;
+        let light = LightMap::compute(
+            &world,
+            px - 40,
+            py - 30,
+            px + 40,
+            py + 30,
+            &LightParams::default(),
+        );
+        let mut m = WorldMap::new(&world);
+        assert_eq!(m.map_delay(), 2, "the Main.cs:66504 ctor value");
+        // The first two updates only count the delay down — no export, no
+        // updateMap arming, the mapTime countdown untouched.
+        m.update(&world, Some(&p), &light, true, 0.016);
+        assert_eq!(m.map_delay(), 1);
+        assert!(m.tiles.iter().all(|t| t.light == 0), "skip 1");
+        assert!(m.update_map.is_none(), "no slot arming during the skip");
+        m.update(&world, Some(&p), &light, true, 0.016);
+        assert_eq!(m.map_delay(), 0);
+        assert!(m.tiles.iter().all(|t| t.light == 0), "skip 2");
+        // The third update exports.
+        m.update(&world, Some(&p), &light, true, 0.016);
+        assert!(m.tiles[world.index(px, py)].light > 0, "the export runs");
+        assert!(m.update_map.is_some(), "the slot arms");
+        // The world-load re-arm (`WorldGen.cs:6947`) skips two again.
+        m.reset_map_delay();
+        m.map_time = 0;
+        m.update_map = None;
+        m.update(&world, Some(&p), &light, true, 0.016);
+        assert!(m.update_map.is_none(), "the re-armed delay skips");
+        assert_eq!(m.map_delay(), 1);
+    }
+
+    /// W4-e18 witness (written, not run — code-only): the scene box is
+    /// `CenteredRectangle(TileCenter, ZoneScanSize)` (`MapHelper.cs:1819`,
+    /// `Utils.cs:952-955`) — the player CENTRE's tile (`Main.cs:62534`,
+    /// `Utils.cs:1807-1810`), the 169x124 box's integer halves 84/62, the
+    /// right/bottom edges exclusive. A player whose centre sits on tile
+    /// (100, 41) reveals inside [16, 185) x [-21, 103) ∩ the 40-inset world
+    /// ∩ the light rect — never at the exclusive edges even when lit.
+    #[test]
+    fn w4_e18_scene_box_is_the_centred_zone_scan_rect() {
+        let world = ground_world();
+        let mut p = Player::spawn(&world);
+        // Centre exactly on tile (100, 41): x + 10 = 1608, y + 21 = 664.
+        p.x = 100.0 * TILE_PX + 8.0 - crate::player::WIDTH * 0.5;
+        p.y = 41.0 * TILE_PX + 8.0 - crate::player::HEIGHT * 0.5;
+        // A light rect wider than the scene box on every side.
+        let light = LightMap::compute(&world, 0, 0, 199, 127, &LightParams::default());
+        let mut m = WorldMap::new(&world);
+        m.map_delay = 0; // the scene-box witness, not the mapDelay one
+        m.update(&world, Some(&p), &light, true, 0.016);
+        // Scene box: cx=100, cy=41 → x [16, 185), y [-21, 103); the world
+        // inset 40 trims to x [40, 160), y [40, 88). The processed-area
+        // shrink is [28, 172) x [28, 100) — the intersection is
+        // [40, 160) x [40, 88).
+        assert!(
+            m.tiles[world.index(100, 41)].light > 0,
+            "the centre reveals"
+        );
+        assert_eq!(m.tiles[world.index(39, 41)].light, 0, "the 40 inset");
+        assert_eq!(m.tiles[world.index(160, 41)].light, 0, "the world inset x1");
+        assert_eq!(m.tiles[world.index(100, 88)].light, 0, "the world inset y1");
+        // The dirty list stays inside the half-open intersection.
+        let dirty = m.take_dirty();
+        assert!(!dirty.is_empty());
+        for (x, y) in dirty {
+            assert!((40..160).contains(&x), "dirty x {x} outside the window");
+            assert!((40..88).contains(&y), "dirty y {y} outside the window");
+        }
+    }
+
+    /// W4-e18 witness (written, not run — code-only): the dirty-rect push
+    /// shares `section_rect` with the reveal walk (`WorldMap.cs:111-119`,
+    /// the max-first `Utils.Clamp`, `Utils.cs:223-234`) — on a world smaller
+    /// than the 40 inset the max-first clamp inverts the range
+    /// (x0 = 40 > x1 = max - 40), so the section walks and pushes nothing.
+    #[test]
+    fn w4_e18_unlock_section_dirty_rect_shares_the_fold() {
+        // 60x60 < 80: x0 clamps to 40 (min), x1 to 20 (max) → inverted, empty.
+        let world = World::new("tiny".into(), 60, 60);
+        let mut m = WorldMap::new(&world);
+        m.unlock_section(&world, 0, 0, false);
+        assert!(m.tiles.iter().all(|t| t.light == 0), "the folded rect is empty");
+        assert!(m.take_dirty().is_empty(), "nothing pushed");
+        // A normal-sized section: the push covers exactly the clamped rect.
+        let world = ground_world(); // 200x128
+        let mut m = WorldMap::new(&world);
+        m.unlock_section(&world, 0, 0, false);
+        // x: [40, 160), y: [40, 88) — the same fold the reveal walk used.
+        let dirty = m.take_dirty();
+        assert_eq!(dirty.len(), 120 * 48);
+        for (x, y) in &dirty {
+            assert!((40..160).contains(x));
+            assert!((40..88).contains(y));
+        }
+        assert!(dirty.contains(&(40, 40)));
+        assert!(dirty.contains(&(159, 87)));
+        assert!(!dirty.contains(&(160, 87)), "x1 exclusive");
+        assert!(!dirty.contains(&(159, 88)), "y1 exclusive");
+    }
+
+    /// W4-e18 first half (written, not run — code-only): `ExportToMiniMap`
+    /// arms `Main.updateMap = area` (`LightingEngine.cs:269`) on every
+    /// completed export — the revealed rect, half-open extents as [x, y,
+    /// w, h]. The consume arm (`Main.cs:61886-61894`) nulls it after the
+    /// draw; a second export re-arms it.
+    #[test]
+    fn w4_e18_the_export_arms_update_map_with_the_revealed_rect() {
+        let world = ground_world();
+        let mut p = Player::spawn(&world);
+        p.x = 100.0 * TILE_PX;
+        let px = (p.x / TILE_PX) as i32;
+        let py = (p.y / TILE_PX) as i32;
+        let light = LightMap::compute(
+            &world,
+            px - 40,
+            py - 30,
+            px + 40,
+            py + 30,
+            &LightParams::default(),
+        );
+        let mut m = WorldMap::new(&world);
+        m.map_delay = 0; // the updateMap witness, not the mapDelay one
+        assert!(m.update_map.is_none(), "Main.cs:799 starts null");
+        m.update(&world, Some(&p), &light, true, 0.016);
+        let rect = m.update_map.expect("`LightingEngine.cs:269` arms the slot");
+        // The scene box ∩ the light rect ∩ the 40-inset world — the same
+        // fold `w4_e18_scene_box_is_the_centred_zone_scan_rect` pins.
+        let (zw, zh) = tr_core::scene::ZONE_SCAN_SIZE;
+        let cx = ((p.x + crate::player::WIDTH * 0.5) as i32) >> 4;
+        let cy = ((p.y + crate::player::HEIGHT * 0.5) as i32) >> 4;
+        let cx = cx.clamp(0, world.width - 1);
+        let cy = cy.clamp(0, world.width - 1);
+        let x0 = (px - 40 + 28).max(40).max(cx - zw / 2);
+        let y0 = (py - 30 + 28).max(40).max(cy - zh / 2);
+        let x1 = (px + 40 - 28).min(world.width - 40).min(cx - zw / 2 + zw);
+        let y1 = (py + 30 - 28).min(world.height - 40).min(cy - zh / 2 + zh);
+        assert_eq!(rect, [x0, y0, x1 - x0, y1 - y0]);
+        // The consume nulls the slot; the next export re-arms.
+        m.update_map = None;
+        m.map_time = 0;
+        m.update(&world, Some(&p), &light, true, 0.016);
+        assert!(m.update_map.is_some(), "the next export re-arms");
+    }
+
+    /// W4-e18 first half (written, not run — code-only): `QueueChange`
+    /// (`MapRenderer.cs:288-304`) queues under the threshold and arms
+    /// `refreshMap` AT it — the 2048th entry of one target's list is NOT
+    /// added (`:295-298`), and while `refreshMap` is armed every further
+    /// call is a no-op (`:290`). Targets split at 2000x1800 (`:62-63`).
+    #[test]
+    fn w4_e18_queue_change_arms_refresh_at_the_2048_threshold() {
+        let world = World::new("q".into(), 4200, 1200);
+        let mut m = WorldMap::new(&world);
+        // Target (0,0): x < 2000, y < 1800. Fill to the threshold.
+        for i in 0..2048 {
+            m.queue_change(i % 2000, i / 2000);
+        }
+        assert!(!m.refresh_map, "2048 entries fit under the cap");
+        assert!(m.changes_queued());
+        // The 2049th call arms the refresh instead of adding.
+        m.queue_change(5, 5);
+        assert!(m.refresh_map, "`:295-298`");
+        // While armed, further calls are no-ops (`:290`).
+        m.queue_change(6, 6);
+        // The DrawToMap refresh-clear empties every list (`:148-160`).
+        m.draw_to_map_queues();
+        assert!(!m.changes_queued());
+        assert!(!m.load_map, "`:198` completes the staged upload");
+        // The flag itself is consumed by the Main.cs:61890 arm, not here.
+        assert!(m.refresh_map);
+        m.refresh_map = false;
+        // A second target's list counts independently.
+        for i in 0..2048 {
+            m.queue_change(2000 + i % 2000, i / 2000);
+        }
+        assert!(!m.refresh_map, "target (1,0) has its own budget");
+        m.queue_change(2001, 1);
+        assert!(m.refresh_map);
+    }
+
+    /// W4-e18 first half (written, not run — code-only): the `.map` load
+    /// arms the staged-upload gate (`WorldMap.cs:211-214`: `loadMap = true`,
+    /// `refreshMap = false`); the bulk upload's `DrawToMap` tail
+    /// (`MapRenderer.cs:196-199`) clears it. While armed, the reveal driver
+    /// (`Main.cs:61863`'s `!Main.loadMap`) must not walk.
+    #[test]
+    fn w4_e18_the_map_load_arms_the_staged_upload_gate() {
+        let world = test_world();
+        let tiles = test_tiles(40, 40);
+        let dir = unique_dir("e18load");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("load.map");
+        save_map_file(&world, &tiles, &path).unwrap();
+        let mut m = WorldMap::new(&world);
+        assert!(!m.load_map);
+        assert!(m.load(&world, &path));
+        assert!(m.load_map, "`WorldMap.cs:212`");
+        assert!(!m.refresh_map, "`:214` clears any pending refresh");
+        assert!(m.needs_full_upload);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// W4-e18 residual census (written, not run — code-only): the
+    /// `DrawToMap` tail (`MapRenderer.cs:196-199`) — `mapReady = true`,
+    /// `loadMapLastX = 0`, `loadMap = false`, `loadMapLock = false` — and
+    /// the load arms all three (`WorldMap.cs:211-213`).
+    #[test]
+    fn w4_e18_the_draw_tail_sets_ready_and_lifts_the_load_lock() {
+        let world = test_world();
+        let mut m = WorldMap::new(&world);
+        assert!(!m.map_ready, "Main.cs:797 starts false");
+        assert!(!m.load_map_lock);
+        m.load_map = true;
+        m.load_map_lock = true;
+        m.load_map_last_x = 17;
+        m.draw_to_map_queues();
+        assert!(m.map_ready, "`:196`");
+        assert_eq!(m.load_map_last_x, 0, "`:197`");
+        assert!(!m.load_map, "`:198`");
+        assert!(!m.load_map_lock, "`:199`");
+    }
+
+    /// W4-e18 residual census (written, not run — code-only): the `.map`
+    /// load arms `clearMap` + `loadMapLock` (`WorldMap.cs:211`/`:213`) on
+    /// top of the staged-upload gate.
+    #[test]
+    fn w4_e18_the_load_arms_clear_map_and_the_lock() {
+        let world = test_world();
+        let tiles = test_tiles(40, 40);
+        let dir = unique_dir("e18lock");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("lock.map");
+        save_map_file(&world, &tiles, &path).unwrap();
+        let mut m = WorldMap::new(&world);
+        assert!(m.load(&world, &path));
+        assert!(m.clear_map, "`WorldMap.cs:211`");
+        assert!(m.load_map_lock, "`:213`");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// W4-e18 residual census (written, not run — code-only):
+    /// `WorldMap.Clear` (`WorldMap.cs:249-258`) zeroes every tile — the
+    /// `/clearmap` command's `Main.Map.Clear()` (`ToolkitDebugCommands.cs:500`).
+    #[test]
+    fn w4_e18_clear_zeroes_every_tile() {
+        let world = test_world();
+        let mut m = WorldMap::new(&world);
+        m.tiles = test_tiles(40, 40);
+        assert!(m.tiles.iter().any(|t| t.light > 0));
+        m.clear();
+        assert!(m.tiles.iter().all(|t| {
+            t.ty == 0 && t.light == 0 && !t.is_changed() && !t.update_queued() && t.color() == 0
+        }));
+    }
+
+    /// W4-f46 witness (written, not run — code-only), adapted to the union
+    /// (research/84 §7): the `/map` command (`ToolkitDebugCommands.cs:480-494`)
+    /// only arms flags — `clearMap`, `DebugOptions.unlockMap` (1 flat /
+    /// 2 pretty) and `refreshMap` when off, or `unlockMap = 0` when already
+    /// on. The union's option home is `App.debug_unlock_map` (the C#
+    /// static), so the fn takes it by `&mut i32`.
+    #[test]
+    fn w4_f46_map_command_arms_the_flags_and_toggles_off() {
+        let world = ground_world();
+        let mut m = WorldMap::new(&world);
+        let mut unlock = 0;
+        m.clear_map = false; // isolate the command's own arming
+        m.unlock_map(&mut unlock, true); // `/map pretty`
+        assert!(m.clear_map, "`:483`");
+        assert_eq!(unlock, 2, "`:486` pretty");
+        assert!(m.refresh_map, "`:487`");
+        // A second `/map` turns the reveal off (`:489-492`).
+        m.unlock_map(&mut unlock, true);
+        assert_eq!(unlock, 0, "the toggle off");
+        assert!(m.clear_map, "`:483` runs on both arms");
+        // The flat mode arms 1 (`:486`'s non-pretty arm).
+        m.unlock_map(&mut unlock, false);
+        assert_eq!(unlock, 1, "flat");
+    }
+
+    /// W4-f46 witness (written, not run — code-only): `DrawToMap_Section`'s
+    /// pixel cache (`MapRenderer.cs:328-335`) — the section's clamped rect,
+    /// row-major, revealed tiles opaque and unrevealed transparent. The
+    /// 200x150 section at (0, 0) on the 200x128 world clips to 200x128.
+    #[test]
+    fn w4_f46_section_pixels_paint_revealed_opaque_and_dark_transparent() {
+        let world = ground_world(); // 200x128
+        let mut m = WorldMap::new(&world);
+        // Reveal one interior tile; the rest stay dark.
+        assert!(update_map_lighting(&world, &mut m.tiles, 100, 70, 200));
+        let (x0, y0, w, h, rgba) = m.section_pixels(&world, 0, 0).unwrap();
+        assert_eq!((x0, y0, w, h), (0, 0, 200, 128), "the section clips to the world");
+        assert_eq!(rgba.len(), 200 * 128);
+        // The revealed tile is opaque; a dark tile is transparent.
+        let lit = rgba[70 * 200 + 100];
+        assert_eq!(lit[3], 255, "the revealed tile is opaque");
+        assert_ne!(&lit[..3], &[0, 0, 0], "the revealed tile carries colour");
+        assert_eq!(rgba[0], [0, 0, 0, 0], "a dark tile is transparent");
+        // An off-world section paints nothing.
+        assert!(m.section_pixels(&world, 5, 5).is_none());
+    }
+
+    /// W4-f46 witness (written, not run — code-only): the light export arms
+    /// `Main.updateMap` (`LightingEngine.cs:269`) on every export — even an
+    /// empty intersect (`Rectangle.Empty`, XNA returns (0,0,0,0)) — so the
+    /// driver's consumer always has a rect to consume.
+    #[test]
+    fn w4_f46_the_export_arms_update_map_even_on_an_empty_intersect() {
+        // The processed area sits right of the player's scene box: the
+        // compute pads 60 per side (AREA_PADDING 28 + CACHE_MARGIN 32),
+        // the export shrinks 28 (`LightingEngine.cs:252`), so the rect
+        // lands at x [268, 360) after the world inset — while the scene
+        // box around tile x 100 ends at 185. Left >= Right: empty.
+        let world = World::new("empty".into(), 400, 120);
+        let mut p = Player::spawn(&world);
+        p.x = 100.0 * TILE_PX;
+        p.y = 40.0 * TILE_PX;
+        let light = LightMap::compute(
+            &world,
+            300,
+            40,
+            340,
+            70,
+            &LightParams::default(),
+        );
+        let mut m = WorldMap::new(&world);
+        m.map_delay = 0; // the empty-intersect witness, not the mapDelay one
+        m.update(&world, Some(&p), &light, true, 0.016);
+        assert_eq!(
+            m.update_map,
+            Some([0, 0, 0, 0]),
+            "`Rectangle.Empty`, not the inverted rect"
+        );
+    }
+
+    /// W4-f46 witness (written, not run — code-only): the world-load
+    /// construction arms `Main.clearMap = true` (`WorldGen.cs:6982`); the
+    /// rest of the `clearWorld` map reset (`:6983-6986`) is the defaults.
+    #[test]
+    fn w4_f46_the_constructor_arms_clear_map_like_the_world_clear() {
+        let world = test_world();
+        let m = WorldMap::new(&world);
+        assert!(m.clear_map, "`WorldGen.cs:6982`");
+        assert_eq!(m.map_time(), 0, "`:6983`");
+        assert!(m.update_map.is_none(), "`:6984`");
+        assert!(!m.map_ready, "`:6985`");
+        assert!(!m.refresh_map, "`:6986`");
     }
 
     // ---- Task 6b: fullscreen zoom / pan / minimap geometry ----
@@ -1345,6 +2414,121 @@ mod tests {
         // `Player.cs:24900-24907`.
         assert_eq!(map_key_scale(2.0, true), 2.1);
         assert_eq!(map_key_scale(2.0, false), 1.9);
+    }
+
+    /// W4-f46 dup fold (written, not run - code-only): the g53/e18 alpha
+    /// helpers — `map_key_alpha` steps ±0.015 (`Player.cs:24921-24928`/
+    /// `:24940-24947`), `map_alpha_clamp` is the draw-side 0.01..1
+    /// (`Main.cs:55523-55530`/`:55559-55566`), `overlay_scale_clamp` is
+    /// `[screen_w/world_w, 16*RenderZoom]` (`:55550-55558`) with the two
+    /// ifs in C# order (cap wins on an inverted range).
+    #[test]
+    fn w4_f46_alpha_and_overlay_clamps_match_the_draw_side() {
+        assert_eq!(map_key_alpha(0.5, true), 0.5 + 0.015);
+        assert_eq!(map_key_alpha(0.5, false), 0.5 - 0.015);
+        assert_eq!(map_alpha_clamp(0.0), 0.01);
+        assert_eq!(map_alpha_clamp(2.0), 1.0);
+        assert_eq!(map_alpha_clamp(0.35), 0.35);
+        // 1600/4200 floor ≈ 0.381, 16*1.0 = 16 cap.
+        assert_eq!(overlay_scale_clamp(1600.0, 4200, 1.0, 0.1), 1600.0 / 4200.0);
+        assert_eq!(overlay_scale_clamp(1600.0, 4200, 1.0, 100.0), 16.0);
+        assert_eq!(overlay_scale_clamp(1600.0, 4200, 2.0, 2.5), 2.5);
+        // Inverted range (tiny zoom): the cap if runs LAST (`:55555`).
+        assert_eq!(overlay_scale_clamp(1600.0, 100, 0.01, 2.5), 0.16);
+    }
+
+    /// W4-e18 D18 draw arm (written, not run - code-only): the style-2
+    /// overlay's draw-side clamps (`Main.cs:55550-55566`) — scale floor
+    /// `screenWidth/maxTilesX` (`:55550-55554`), cap `16*RenderZoom`
+    /// (`:55555-55558`, the cap wins on an inverted range), alpha `0.01..1`
+    /// (`:55559-55566`); the state seeds are 2.5/0.35 (`Main.cs:66754-66755`).
+    #[test]
+    fn w4_e18_the_overlay_clamps_match_the_draw_side() {
+        let w = test_world();
+        let mut m = WorldMap::new(&w);
+        assert_eq!(m.overlay_scale, 2.5, "the Main.cs:66754 default");
+        assert_eq!(m.overlay_alpha, 0.35, "the Main.cs:66755 default");
+        // 1600/4200 floor ~ 0.381, cap 16*1.0; 2.5 rides between them.
+        m.clamp_overlay_axes(1600.0, 4200, 1.0);
+        assert_eq!(m.overlay_scale, 2.5);
+        assert_eq!(m.overlay_alpha, 0.35);
+        m.overlay_scale = 0.1;
+        m.clamp_overlay_axes(1600.0, 4200, 1.0);
+        assert_eq!(m.overlay_scale, 1600.0 / 4200.0, "the :55551 floor");
+        m.overlay_scale = 100.0;
+        m.clamp_overlay_axes(1600.0, 4200, 1.0);
+        assert_eq!(m.overlay_scale, 16.0, "the :55555 cap");
+        // Inverted range (tiny zoom): floor first, cap LAST (`:55555`).
+        m.overlay_scale = 2.5;
+        m.clamp_overlay_axes(1600.0, 4200, 0.01);
+        assert_eq!(m.overlay_scale, 16.0 * 0.01, "the cap wins the inversion");
+        // The alpha clamps ride the same pass (`:55559-55566`).
+        m.overlay_alpha = 0.0;
+        m.clamp_overlay_axes(1600.0, 4200, 1.0);
+        assert_eq!(m.overlay_alpha, 0.01);
+        m.overlay_alpha = 2.0;
+        m.clamp_overlay_axes(1600.0, 4200, 1.0);
+        assert_eq!(m.overlay_alpha, 1.0);
+        // The key helpers the input rows use (`Player.cs:24932-24947`).
+        assert_eq!(map_key_scale(2.5, true), 2.5 * 1.05);
+        assert_eq!(map_key_scale(2.5, false), 2.5 * 0.95);
+        assert_eq!(map_key_alpha(0.35, true), 0.35 + 0.015);
+        assert_eq!(map_key_alpha(0.35, false), 0.35 - 0.015);
+        assert_eq!(map_alpha_clamp(0.005), 0.01);
+        assert_eq!(map_alpha_clamp(1.5), 1.0);
+    }
+
+    /// W4-e18 D18 draw arm (written, not run - code-only): the overlay quad
+    /// is SCREEN-centred on the fractional view centre (`Main.cs:55571-55576`
+    /// — no `(int)` truncation, unlike the minimap's `:55543-55544`) with the
+    /// `+10*scale` inset (`:55577-55578`), and the tile window is the
+    /// fullscreen's `[10,10]..=[w-11,h-20]` (`num12/num13` stay 0 — the
+    /// `:55593-55608` shifts are style-1 only). No `MapScale` transform
+    /// (`transformMatrix = Identity`, `:55318-55321`).
+    #[test]
+    fn w4_e18_the_overlay_quad_is_screen_centred_and_unscaled() {
+        let w = test_world(); // 40x40
+        let screen = Vec2::new(1600.0, 900.0);
+        let q = map_overlay_quad([20.5, 10.25], 4.0, screen, &w);
+        // num = -(20.5*4) + 800 + 10*4 = 758; num2 = -(10.25*4) + 450 + 40 = 449.
+        assert_eq!(q.dest[0], 758.0);
+        assert_eq!(q.dest[1], 449.0);
+        // Window [10,10]..=[29,20]: 19x10 tiles at 4 px.
+        assert_eq!(q.dest[2], 19.0 * 4.0);
+        assert_eq!(q.dest[3], 10.0 * 4.0);
+        assert_eq!(q.uv, [10.0 / 40.0, 10.0 / 40.0, 29.0 / 40.0, 20.0 / 40.0]);
+        // The fractional centre shifts sub-pixel — no floor on num34/35
+        // (a larger centre tile moves the origin LEFT/UP).
+        let q2 = map_overlay_quad([20.0, 10.0], 4.0, screen, &w);
+        assert_eq!(q2.dest[0] - q.dest[0], 2.0, "0.5 tile * 4 px");
+        assert_eq!(q2.dest[1] - q.dest[1], 1.0, "0.25 tile * 4 px");
+    }
+
+    /// W4-f46 shared-gap close (written, not run - code-only): the
+    /// `resetMapFull` consume (`Main.cs:55416-55424`) clears the pan target
+    /// FIRST (`:55418` `PanTargetMapFullscreen = false` — the clear f29's
+    /// arm lacked), then recentres on the unclamped view centre and
+    /// disarms the flag (`:55419`). The ctor seeds no pan
+    /// (`Main.cs:66758-66759`).
+    #[test]
+    fn w4_f46_the_reset_clears_the_pan_target_and_recentres() {
+        let world = test_world();
+        let mut m = WorldMap::new(&world);
+        assert_eq!(m.pan_target, None, "`Main.cs:66758` starts false");
+        assert!(m.reset_pos, "the ctor arms the recentre");
+        m.pan_target = Some([30.0, 30.0]);
+        m.pos = [15.0, 15.0];
+        m.recentre([22.5, 17.25]);
+        assert_eq!(m.pan_target, None, "`:55418` cancels the armed pan");
+        assert_eq!(m.pos, [22.5, 17.25], "`:55422-55423` the view centre");
+        assert!(!m.reset_pos, "`:55419` disarms");
+        // The open arm re-arms the reset (`set_open`), so the next
+        // recentre clears a pan armed while the map was closed.
+        m.set_open(true);
+        assert!(m.reset_pos);
+        m.pan_target = Some([10.0, 10.0]);
+        m.recentre([20.0, 20.0]);
+        assert_eq!(m.pan_target, None);
     }
 
     #[test]
@@ -1970,15 +3154,25 @@ pub struct MapUpdateQueue {
     tiles: Vec<(i32, i32)>,
 }
 
+/// `MapUpdateQueue.MAX_QUEUED_UPDATES` (`MapUpdateQueue.cs:11`): the per-tile
+/// queue's hard budget. The C# grows a `Point16[1024]` by doubling (`:55`)
+/// until this cap; the port's `Vec` growth is the same semantics without the
+/// array resizes.
+const MAX_QUEUED_UPDATES: usize = 262_144;
+
 impl MapUpdateQueue {
     /// `MapUpdateQueue.Add(Rectangle)` (`MapUpdateQueue.cs:23-41`): the
-    /// world-clamped rect queues every tile it covers.
+    /// world-clamped rect queues every tile it covers. The clamp is
+    /// `WorldUtils.ClampToWorld(area)` at `fluff = 0` (`WorldUtils.cs:9-14`):
+    /// each edge clamps independently, so an inverted rect keeps a negative
+    /// extent and both walks run empty (vanilla's `RangeFrame` rect relies on
+    /// this — see [`Self::add_range_frame`]).
     pub fn add_area(&mut self, map: &mut WorldMap, x: i32, y: i32, w: i32, h: i32) {
         let (mw, mh) = (map.tiles_w as i32, map.tiles_h as i32);
-        let x0 = x.max(0);
-        let y0 = y.max(0);
-        let x1 = (x + w).min(mw);
-        let y1 = (y + h).min(mh);
+        let x0 = x.clamp(0, mw);
+        let y0 = y.clamp(0, mh);
+        let x1 = (x + w).clamp(0, mw);
+        let y1 = (y + h).clamp(0, mh);
         self.areas.push([x0, y0, x1 - x0, y1 - y0]);
         for i in x0..x1 {
             for j in y0..y1 {
@@ -1993,12 +3187,58 @@ impl MapUpdateQueue {
         if !map.queue_update(x, y) {
             return; // `:44`: the gate skips the enqueue
         }
+        // `:49-55`: at the budget the entry drops — but the `UpdateQueued`
+        // flag stays armed (the C# sets it inside `QueueUpdate` BEFORE the
+        // cap check), so the tile refreshes only when an area walk, a reveal
+        // rebuild or a later `UpdateType` consumes the flag.
+        if self.tiles.len() >= MAX_QUEUED_UPDATES {
+            return;
+        }
         self.tiles.push((x, y));
+    }
+
+    /// `WorldGen.RangeFrame`'s map enqueue (`WorldGen.cs:80399-80411`, the
+    /// `MessageBuffer.cs:1438` net-`20` tail): the area add plus the
+    /// `TileFrame` walk's per-tile adds. The vanilla rect width is
+    /// `startX - endX + 4` (`:80402`) — inverted for a normal range, so the
+    /// clamped area walk runs empty and the refresh rides the per-tile adds
+    /// alone; the expression is kept verbatim. The walk covers
+    /// `[start-1, end+1]` inclusive — `:80403` sets `num = endX + 1` and the
+    /// loops compare `i < num + 1` (`:80405-80407`) — and each `TileFrame`
+    /// gates the 5-tile world border BEFORE its `Add`
+    /// (`WorldGen.cs:81329-81334`).
+    pub fn add_range_frame(
+        &mut self,
+        map: &mut WorldMap,
+        start_x: i32,
+        start_y: i32,
+        end_x: i32,
+        end_y: i32,
+    ) {
+        self.add_area(
+            map,
+            start_x - 2,
+            start_y - 2,
+            start_x - end_x + 4,
+            start_y - end_y + 4,
+        );
+        let (mw, mh) = (map.tiles_w as i32, map.tiles_h as i32);
+        for i in (start_x - 1)..(end_x + 2) {
+            for j in (start_y - 1)..(end_y + 2) {
+                if i <= 5 || j <= 5 || i >= mw - 5 || j >= mh - 5 {
+                    continue; // `WorldGen.cs:81329-81332`
+                }
+                self.add_tile(map, i, j);
+            }
+        }
     }
 
     /// `MapUpdateQueue.Update` (`MapUpdateQueue.cs:62-71`): both queues drain
     /// through `WorldMap.UpdateType`; the changed tiles return (the C#'s
-    /// `MapRenderer.QueueChange`).
+    /// `MapRenderer.QueueChange`). The drain order is deterministic and the
+    /// C#'s: `UpdateTiles` first (`:66`, FIFO enqueue order), then
+    /// `UpdateAreas` (`:67`, area enqueue order, each area walked
+    /// column-major `i` outer / `j` inner — `:76-79`), both cleared after.
     pub fn update(&mut self, world: &World, map: &mut WorldMap) -> Vec<(i32, i32)> {
         let mut changed = Vec::new();
         for (x, y) in std::mem::take(&mut self.tiles) {

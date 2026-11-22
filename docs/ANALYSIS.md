@@ -2777,9 +2777,12 @@ behaviour notes:
   (`audio.rs:22-31`), consistent with the silent menus. `Main.DoStatefulTickSound`
   (`:41126`) is not ported either.
 * `mapStyle == 2` (the overlay style) draws nothing in the minimap branch вЂ”
-  the whole-UI P4 plan's Uncertainty 7: only the style-1 branch
-  (`Main.cs:55503-55547`) is ported, and the style-2 overlay render has no
-  Rust counterpart yet.
+  but its OWN style-2 arm is landed: the D18 draw arm (compose step 0 re-fold
+  of e18 `099beeba5`, research/84 §10.4) draws the overlay tile pass +
+  `num37` layer walk + hover tail in `frame/draw.rs`'s style-2 branch
+  (`Main.cs:55548-55578`/`:55609`/`:55615-55625`); the old "Uncertainty 7 /
+  no Rust counterpart" wording is superseded. The `:55626-55694` icon block
+  rides the f29-tip landing.
 * The minimap **content** icons are not ported: NPC map icons, player heads,
   revenge/death markers (`TextureAssets.MapDeath`) and map pings
   (`TextureAssets.MapPing`) вЂ” the render entry points of research В§F
@@ -18986,6 +18989,269 @@ was the *caller* and the *throttle*:
   ignored. `mapDelay` and the `renderCount == 3` phase gate ride the same
   legacy-engine state the port has no equivalent of (it exports inline), so
   only the `mapTime` half is modelled.
+
+### The map section grid + reveal queue (W4-e18 first half, 2026-11-21, code-only)
+
+The second-half reveal window (above) landed without its driver: the C#'s
+`Main.cs:61863-61899` block walks `Main.sectionManager` — a `WorldSections`
+grid — under a 5 ms wall-clock budget, and nothing in the port constructed
+or walked it. This pass lands the whole first half:
+
+- **`map_sections.rs::MapSections`** ports `WorldSections.cs:6-358` verbatim:
+  the `maxTilesX / 200` × `maxTilesY / 150` grid (`WorldGen.cs:7150`, integer
+  division truncating — NOT the wire's round-up `net::sections_x/y`), the
+  four `BitsByte` flags (loaded/framed/mapDrawn/needsRefresh) in one byte per
+  section, `IterationState`'s off-grid `(-3200, -2400)` reset, and
+  `GetNextMapDraw`'s player-centred spiral with cross-call resume (`prevMap`),
+  the quadrant pick off the section midpoint, the leg-4 ring kick-off, the
+  full-lap fallback and the "Infinite loop" panic. `ClearMapDraw` refills the
+  budget and resets the spiral; `SetAllFramedSectionsAsNeedingRefresh` keeps
+  the C#'s no-dedupe double-count.
+- **The resident-world collapse**: the port keeps the whole world resident,
+  so the constructor arms every section loaded + framed — the state the C#
+  reaches via `SetAllSectionsLoaded` (`WorldGen.cs:6744`/`:6821`) plus the
+  framing walk's per-section `SetSectionFramed` (`WorldGen.cs:80363`).
+  `frameSectionsLeft` therefore sits at 0 (`SetSectionLoaded` counts each
+  first load, `SetSectionFramed` drains it back). The `TileLoaded` gate
+  (`WorldMap.cs:81`) now resolves through the real grid instead of the
+  always-true stand-in; single-player behaviour is unchanged because every
+  section is loaded.
+- **`frame/world.rs::map_reveal_sweep` / `map_reveal_driver`** port
+  `Main.cs:61863-61899`: the sweep runs while the stopwatch is under 5 ms and
+  `GetNextMapDraw` answers; the `DebugOptions.unlockMap != 0 && SectionLoaded`
+  arm reveals the section (`:61873-61876`), `DrawToMap_Section` re-uploads it
+  (the port pushes the clamped section rect dirty — the texture sync rides
+  `prepare`), and an exhausted sweep with no pending refresh zeroes the debug
+  option (`:61880-61883`). The sweep gates only on `!gameMenu &&
+  !generatingWorld` (`:61865`), so it runs OUTSIDE the port's pause gate; the
+  `updateMap` consume arm checks `!gamePaused` itself (`:61886`). The
+  `refreshMap` → `ClearMapDraw` consume rides INSIDE that arm, before the
+  draw (`:61888-61892`); the `else if ChangesQueued` fallback draws
+  `Rectangle.Empty` (`:61896-61898`).
+- **`WorldMap` gains the `Main` statics**: `update_map` (`Main.cs:799`,
+  armed by `ExportToMiniMap`'s `Main.updateMap = area`, `LightingEngine.cs:269`,
+  and by the legacy seam's `:432` rect), `refresh_map` (`:789`), `load_map`
+  (`:795`, the `.map` load's staged-upload gate, `WorldMap.cs:212`, cleared by
+  the bulk upload's `DrawToMap` tail, `MapRenderer.cs:198`), and the
+  `change_queues` (the 5×2 `MapRenderer.changeQueues`, `:33`/`:70-77`).
+  `queue_change` ports `MapRenderer.QueueChange` (`:288-304`): the
+  2048-per-target `ChangeRefreshThreshold` arms `refreshMap` instead of
+  adding the entry, and while armed every call is a no-op. The port uploads
+  through the single world-sized texture's dirty list, so the queues keep
+  only the threshold + clear semantics — equivalent output, different cost.
+- **The `/map` debug row now arms the queue**: `debug_unlock_map = 2` +
+  `refresh_map = true` (`ToolkitDebugCommands.cs:486-487`), and the sweep
+  reveals over the following frames instead of the old direct `unlock_map`
+  walk. The second click is the toggle-off arm (`:491`). `unlock_map` itself
+  stays (the canary row + a whole-world reveal primitive).
+
+Deliberate deviations: the 5 ms budget is the C#'s own wall-clock stopwatch
+(`TimeLogger.StartTimestamp`), so the sections-per-frame count is
+machine-dependent exactly like vanilla — no fixed-count stand-in. The
+`DrawToMap_Section` render-target blit is the dirty-rect push (one texture,
+not the 5×2 grid); the pixels are identical. ~~The `loadMapLock`/`loadMapLastX`
+staged-upload counters are unmodelled~~ **closed (W4-e18 residual census,
+2026-11-21)**: the four `Main` statics (`clearMap`/`mapReady`/`loadMapLock`/
+`loadMapLastX`, `Main.cs:789-805`) now live on `WorldMap`; the `DrawToMap` tail
+(`MapRenderer.cs:196-199`) sets `map_ready` + lifts the load pair, the load arms
+all three (`WorldMap.cs:211-213`), the `clearMap` consume (`:161-173`) rides
+`prepare` as a full re-upload, and `Main.DrawMap`'s `!mapReady` gate
+(`Main.cs:55283`) gates both draw branches. `loadMapLastX` stays 0 (the bulk
+write has no intermediate progress; the MP consumers `WorldGen.cs:6823-6825` /
+`Netplay.cs:506-508` are unported). The same pass landed `WorldMap.Clear`
+(`WorldMap.cs:249-258`), the `/clearmap` debug row
+(`ToolkitDebugCommands.cs:497-503`), the `/map` row's missing `clearMap = true`
+head (`:483`) and the drag's `!CaptureManager.Instance.UsingMap` gate
+(`Main.cs:55342`, the whole block skips — anchor untouched). Still unmodelled:
+the `IsChanged`/`ConsumeUpdate` + run-merge walk and the `maxMapUpdates` budget
+(`MapRenderer.cs:203-286`) — the dirty list carries exactly the changed tiles,
+identical pixels (see `docs/research/14-map-minimap.md` "W4-e18 residual
+census").
+Witnesses: 8 `map_sections::tests::w4_e18_*` (grid dims, first-draw centre,
+spiral coverage/exhaustion, restart-on-move, ClearMapDraw, refresh
+double-count, truncating TileLoaded, quadrant pick), 3 `map::tests::w4_e18_*`
+(update_map arming, QueueChange threshold, load gate), 6
+`frame/world.rs::w4_e18_reveal_driver_tests::*` (sweep reveal + option reset
+on the empty pass, pending-refresh hold, refresh consume, paused skip, load
+gate, mapEnabled drain gate) — all written not run (code-only mode).
+
+**W4-f46 union note (2026-11-21, code-only, research/84 EXECUTED).** The
+e18/f46 dup-reconcile union landed on `task/W4-f46-minimap-reveal-2`: e18's
+skeleton stays (grid, statics, queues, driver state machine, 16-row debug
+tab) and six f46 salvages replace the deviations above —
+
+1. **Placement**: the driver call moved from `update_world_frame` to the
+   draw half (`frame/draw.rs`, ahead of `WorldMap::prepare` — the C# block
+   sits in `DoDraw`, `Main.cs:61863-61899`). The entry is
+   `frame/world.rs::map_reveal_draw` (a field-borrow fn — the draw region's
+   destructure holds `map`/`world`/`settings`); the update-half call is gone.
+2. **Paused else-arm**: the old `if paused { return }` skipped the C#'s
+   `else if (ChangesQueued)` fall-through (`:61896-61898`) — a paused frame
+   with queued changes never drained them. The consume now branches on
+   `updateMap.HasValue && !gamePaused` as one condition, so the else-arm
+   runs while paused (e18's real `changes_queued()` predicate kept).
+3. **`DrawToMap_Section` pixel paint**: the sweep's dirty-rect push is
+   replaced by the real port — `map.rs::section_pixels` (the world-clipped
+   row-major `GetMapTileXnaColor` cache, `MapRenderer.cs:328-335`) +
+   `draw_to_map_section` (one region blit), with `checkMap`'s on-demand
+   `ensure_map_texture` ahead of the walk (`:322` — the texture exists even
+   when `mapEnabled` is off). The deviation paragraph above ("the
+   `DrawToMap_Section` render-target blit is the dirty-rect push") is closed.
+   The sweep splits into a GPU-free state core (`map_reveal_sweep_core`,
+   `budget_ms` test parameter) + the paint wrapper.
+4. **`/map` verbatim flag path**: `WorldMap::unlock_map` is now the command
+   itself (`ToolkitDebugCommands.cs:480-494` — `clearMap` head, 1/2 + refresh
+   arming, toggle-off); the dead ceil-loop bulk sweep is deleted and the
+   debug row routes through the fn. The option stays `App.debug_unlock_map`
+   (the C# `DebugOptions.unlockMap` static's home), passed by `&mut i32`.
+5. **XNA empty intersect**: the export arms `Some([0,0,0,0])`
+   (`Rectangle.Empty`) on an empty overlap, not the inverted rect
+   (`LightingEngine.cs:269`).
+6. **Ctor `clear_map = true`**: `WorldMap::new` is the world-load
+   construction, so it arms the flag like `WorldGen.clearWorld`
+   (`WorldGen.cs:6982`) — a fresh world with no `.map` file now carries the
+   verbatim flag state (pixel-equivalent before, flag-faithful now).
+
+Also: `MapSections::sections_left()` accessor (f46's witness seam), the
+f46 duplicate module (`tr-core/map/sections.rs::MapDrawQueue`) dropped, the
+paused witness extended to assert the else-arm drains while paused, and 4
+f46 witnesses adapted (`/map` toggle, section pixels, empty intersect, ctor
+flag). All written not run (code-only mode); the merger keeps this union
+and drops the separate e18/f46 versions (research/84 §8).
+
+### The first-half DrawMap overlay census (W4-e18, 2026-11-21, code-only)
+
+The seeded six candidates resolved against `Main.cs:55283-56650`: background/edges
+and the fullscreen/minimap frames were already landed; grid lines, the map legend,
+a player-arrow rotation and a zoom-level indicator do not exist in the source
+(phantoms — the player marker is a head icon, never rotated). Two genuinely missing,
+unclaimed pieces landed: the fullscreen close button (`Main.cs:56014-56036`,
+`ui/chrome.rs` + `clicks.rs::handle_fullmap_close`) and the fullscreen vanilla
+cursor with its thick border (`Main.cs:56037-56040` + `DrawThickCursor`
+`:48064-48134`, `ui/cursor.rs`, `Cursor_11` packed). Deliberate deviations: the
+`showFrameRate` `-15` button shift never fires (F10 unported); the gamepad cursor
+branches and `UIWorldGenDebug.IsActive` have no port counterpart; the
+`inventoryScale = 3` swap around `MouseText` is a no-op (`MouseTextInner` draws at
+`Vector2.One`, `:20319`); `OnPostFullscreenMapDraw` has zero subscribers in vanilla
+(mod hook). Full table + evidence: `docs/research/14-map-minimap.md` "W4-e18
+first-half census". Witnesses: 2 chrome + 3 clicks + 1 cursor, written not run.
+
+### The fullscreen open/close arms + the Load catch + mapDelay + the draw head/tail (W4-e18 final sweep, re-folded onto the union by W4-f46 final-retire, 2026-11-21, code-only)
+
+Five more residuals landed the e18d sweep and are re-folded onto this union
+(research/84 §10.2; the sixth, the minimap key rows, rode the dup fold
+`a352b16e` under the union's `update_minimap_zoom_keys` names):
+
+1. **`TryOpeningFullscreenMap`** (`Player.cs:29103-29119`): the M-key open arm
+   (`app/loop.rs::try_open_fullscreen_map`) closes the inventory (`:29107`),
+   clears the talk-NPC latch + chat text (`:29109`, `SetTalkNPC(-1)`),
+   `PlaySound(10)` (`:29111`); scale 2.5 + `resetMapFull` ride `set_open(true)`
+   (`:29112-29115`). The close arms gain `PlaySound(11)` (`:24973` M-key,
+   `:4976` Escape). The inventory map-icon row (`Main.cs:41095-41120`) rides
+   the shared helper; the style icons play `PlaySound(12)` (`:41109/41114/41119`
+   — the stale "no UI cue loaded" comment retired, the cues ARE loaded).
+   `CloseSign(quiet)`/`npcChatCornerItem`/`buffString` have no port state;
+   `MapPylonTile = (-1,-1)` (`:29113`) rides the overlay pick's pylon-click
+   seam — the union's `set_open` → `recentre` already clears `pan_target`
+   (`Main.cs:55418` via the reset arm). Witnesses: 1 loop + 1 clicks.
+2. **`WorldMap.Load`'s catch arm** (`WorldMap.cs:217-230`): a corrupt-but-present
+   `.map` copies to `<path>.bad` (`:227`, overwrite) and clears the tiles
+   (`:229`, `this.Clear()`); the absent file takes `TryGetMapPath`'s early
+   return (`:184-188`) with neither side effect. `map.rs::load` splits the
+   `load_map_file` `Ok(false)` fold on `path.exists()`. The `Lighting.Clear()`
+   head (`:178`) rides the fresh-engine world load. Witness: 1 map.
+3. **The modern engine's `mapDelay` skip** (`LightingEngine.cs:82-89`):
+   `WorldMap::map_delay` (ctor 2, `Main.cs:66504`; world-load re-arm
+   `WorldGen.cs:6947` via `reset_map_delay` + `enter_loaded_world`) gates
+   `update`'s head — while > 0 the `MinimapUpdate` state decrements it INSTEAD
+   of exporting, before the `mapTime` countdown. The legacy engine keeps its
+   own copy (S1-E-19 wave B, `LegacyLighting.map_delay`). D22's `mapDelay` half
+   closed. Witness: 1 map; 6 existing witnesses re-pinned with `map_delay = 0`
+   (e18's 5 + the union-only empty-intersect witness).
+4. **The fullscreen draw head's dialog/inventory close** (`Main.cs:62150-62153`):
+   `talkNPC >= 0 || sign >= 0 || (playerInventory && !CaptureManager.Active)` →
+   `ToggleInv`'s talk/inventory arms (`Player.cs:5005-5016`/`:5033-5056`), every
+   drawn frame BEFORE `DrawMap` (`:62155`). With the map already open the call
+   falls through the map-close first arm (`:4972-4978`, reached only when the
+   map is SHUT) to the talk/inventory writes, leaving the map open.
+   `frame/draw.rs::close_dialog_behind_fullmap`, wired at `draw_region`'s head
+   ahead of the pylon scan (the `2e1f97c8` fix position). The capture-active
+   arm keeps the inventory; the sign editor has no port state. Witness: 1 draw.
+5. **The fullscreen draw tail's chat pass** (`Main.cs:62160`): `DrawPlayerChat`
+   runs after `DrawMap` — the chat log + input strip draw over the map (the HUD
+   is suppressed, the chat is not). `ui::draw_chat` made pub + called at the
+   fullscreen branch tail (after the union's head icon). `DrawFPS` (`:62159`)
+   rides `showFrameRate` (F10, unported); `DrawPendingMouseText` (`:62161`) is
+   the map's own `MouseText` (`:56046-56049`). No new witness (the pass is the
+   existing `draw_chat`).
+
+The remaining-census close (research/14 "W4-e18 final sweep"): the minimap zoom
+keys were the seed's one real gap (landed by the union closeout + dup fold); the
+map ping is verified f29/S1-L-4 (`handle_fullmap_ping` + the `PingMapLayer` pool
++ the net relay); the fullscreen pan inertia/friction is a PHANTOM (`grabMapX`/
+`grabMapY` are the only drag statics, `Main.cs:817-819` — the drag is the
+instantaneous per-frame cursor delta, `:55342-55359`; the only eased pan is
+`PanTargetMapFullscreen`'s `Vector2.Lerp(pos, end, 0.15)`, `:55361-55384`, the
+overlay pick's pylon-click recentre — the union carries the state + cancels);
+the map icon LEGEND is a PHANTOM (confirmed — `Lang.BuildMapAtlas` is the
+hover-NAME lookup, not a drawn legend). One more unclaimed arm recorded as a
+seed: the Unity-potion teleport block (`Main.cs:55960-55975`, `:55998-56010`) —
+MP-client-only (`netMode == 1`), the netcode ladder's territory, the overlay
+pick's head-loop seam.
+
+**MAP-FAMILY SEAL note (W4-f46 seal phase, same day — research/84 §10.4):**
+the e18 seal (`5509cb87a`, its research/84 §10.10) ported D18's style-2
+overlay DRAW as `099beeba5` (`draw_overlay`/`map_overlay_quad`/
+`clamp_overlay_axes` + the `num37` layer walk + the `:56046` hover tail,
+`Main.cs:55548-55625`; style-0 retro censused a PHANTOM — callers gate
+1/2 at `:45778`/`:62231`); it RE-FOLDED onto this union per the SEALED
+16-hunk recipe as compose step 0 — **EXECUTED (receipt below + research/84
+§10.5)** (the f29 seal
+`ff819421d`, research/140 §11, adopts the same table and publishes the
+joint compose steps 0-4: f46-union-FIRST → f29-TIP-SECOND, e17 drops).
+The union's stale "draws nothing" (minimap deviation above +
+`frame/draw.rs`) and "D18 out of scope" (`map.rs` field docs) wording went
+with that re-fold; the `:55626-55694` icon block stays with the f29-tip
+landing. The witness union is exact at seal: 34 (f29) + 56 (f46) + 2
+(D18) = 92, zero shared names; the composed atlas measures 8131 px /
+9606 sheets (margin 61, 140 §11.3). D22's content-lost refresh stays the
+recorded deviation (no GPU-reset path; `ensure_map_texture` +
+`needs_full_upload` is the creation-time equivalent).
+
+### The style-2 overlay draw arm — compose step 0 EXECUTED on the union (W4-f46, 2026-11-21, code-only)
+
+The e18 `099beeba5` D18 draw arm is RE-FOLDED onto this union per e18
+§10.10's SEALED 16-hunk recipe (research/84 §10.4(c)/§10.5; research/14's
+"W4-f46 compose step 0" section carries the hunk-by-hunk receipt). The
+union now carries `map_overlay_quad` + `WorldMap::draw_overlay` +
+`WorldMap::clamp_overlay_axes` + the style-2 draw branch in
+`frame/draw.rs` (gate + `num37` layer walk + the `:56046` hover tail) +
+the pylon-scan gate widening + the clamp call beside `prepare` + the 2
+map witnesses + the `draw_overlay` anchor row. Deliberate choices,
+recorded (the e18-arm notes carried through the re-fold):
+
+- **The 3 helpers stay ONE copy** — `map_key_alpha`/`map_alpha_clamp`/
+  `overlay_scale_clamp` were already on the union byte-identical
+  (`a352b16e`); the recipe's SKIP list honoured, no second copy.
+- **Clamps stay draw-side** (`clamp_overlay_axes` beside `prepare`, fed
+  the frame's `world_zoom` — the `RenderZoom = forced_minimum_zoom * zoom`
+  product, `Main.cs:61999`). The union's `update_minimap_zoom_keys`
+  clamps input-side too (`a352b16e`), so the folded draw-side clamp is a
+  benign double projection — KEPT for draw-side fidelity (the recipe's
+  own ruling; the style-2 key rows + their witness + the `minimap_app`
+  fixture DROPPED as covered by the union equivalents).
+- **The overlay draws under the HUD**: the C# call site is the in-world
+  pass (`:62231`), not interface 16; the port's map batches sit under the
+  UI batch, which reproduces that order. The menu/front/no_hud guards
+  mirror the minimap branch.
+- **The `:55626-55694` icon block is NOT ported here** — it rides the
+  f29-tip landing (compose step 2); the shared `MapIcons.Draw` walk
+  (`:55625`) IS ported (the union's S1-L-4 `map_layers_draw`, a third
+  call site — the f29 merge adds its 4 `MapIconInputs` fields at all
+  three sites, 140 §11.1).
+
+2 witnesses written not run (the recipe's third e18 witness dropped);
+1 anchor row (`map.rs::draw_overlay`). Net union `w4_e18` census: 36 → 38.
 
 ## The crafting focus + quantity (S1-H-7, 2026-11-13)
 

@@ -47,6 +47,32 @@ impl App {
         gate
     }
 
+    /// `Main.cs:62150-62153`: the fullscreen map's draw head —
+    /// `talkNPC >= 0 || sign >= 0 || (playerInventory &&
+    /// !CaptureManager.Instance.Active)` → `Player.ToggleInv()`. The port's
+    /// open paths already clear the dialog/inventory
+    /// (`try_open_fullscreen_map`), but a dialog or inventory opened WHILE
+    /// the map is up must close on the next drawn frame — the C# runs this
+    /// every draw, ahead of `DrawMap`. With the map already open the call
+    /// falls through `ToggleInv`'s first arm (`Player.cs:4972-4978`, the
+    /// map-close, reached only when the map is SHUT) to the talkNPC arm
+    /// (`:5005-5016`: `SetTalkNPC(-1)` + text clear + `playerInventory =
+    /// false`) or the inventory-close arm (`:5033-5056`) — both leave the
+    /// map open. The capture gate's `!Active` arm keeps the inventory while
+    /// a capture renders the interface; the sign editor has no port state.
+    pub(crate) fn close_dialog_behind_fullmap(&mut self) {
+        if !self.settings.map_enabled || !self.map.as_ref().is_some_and(|m| m.open) {
+            return;
+        }
+        let dialog_open = self.talk_npc.is_some();
+        let inv_open = self.inventory_open && !self.capture.interface.active;
+        if dialog_open || inv_open {
+            self.talk_npc = None; // `SetTalkNPC(-1)` (`:5007`)
+            self.npc_chat_text.clear(); // `:5009`
+            self.inventory_open = false; // `:5015`/`:5035`
+        }
+    }
+
     /// The draw region, verbatim from the pre-snapshot locals through the
     /// present: one borrow region as landed (the 55-field destructure and
     /// the gpu/renderer gate move with it unchanged). Returns the frame's
@@ -131,11 +157,17 @@ impl App {
                 .world
                 .micro_seeds
                 .contains(tr_core::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS);
+            // `Main.cs:62150-62153`: the fullscreen map's draw head closes
+            // the inventory / NPC dialog / sign via `ToggleInv` when any is
+            // open — every drawn frame, BEFORE `DrawMap` (`:62155`), so the
+            // pylon scan below reads the post-close state like the C#.
+            self.close_dialog_behind_fullmap();
             // `Main.PylonSystem.Pylons` (`TeleportPylonsMapLayer.cs:32`): the map
             // layers read the live network. The scan walks the TE book, so it stays
-            // off the per-frame path unless the map or the minimap is drawing.
+            // off the per-frame path unless the map or the minimap or the style-2
+            // overlay (`Main.cs:55625`'s same `MapIcons.Draw`) is drawing.
             let map_layer_pylons = if (self.map.as_ref().is_some_and(|m| m.open)
-                || (self.settings.map_enabled && self.map_style == 1))
+                || (self.settings.map_enabled && (self.map_style == 1 || self.map_style == 2)))
                 && !crate::env::no_hud()
             {
                 tr_core::pylons::scan_pylons(&self.world)
@@ -802,10 +834,21 @@ impl App {
                         );
                         // Consume the seam (ending its tile/counter borrows)
                         // before re-borrowing the map for the dirty push.
-                        let changed = export.map(|e| e.changed);
-                        if let Some(changed) = changed {
+                        let consumed = export.map(|e| (e.changed, e.update_map));
+                        if let Some((changed, update_map)) = consumed {
                             if let Some(m) = map.as_mut() {
+                                // The legacy export's changed tiles upload
+                                // directly (`LegacyLighting.cs:429` calls
+                                // `UpdateLighting`, NOT `QueueChange` — only
+                                // `MapUpdateQueue` queues, `:82`/`:97`); the
+                                // IsChanged bit rides the next DrawToMap walk.
                                 m.push_dirty(changed);
+                                // `LegacyLighting.cs:432`: `Main.updateMap =
+                                // rect` — the consume arm (`Main.cs:61886-61894`)
+                                // reads it next frame.
+                                if let Some(rect) = update_map {
+                                    m.update_map = Some(rect);
+                                }
                             }
                         }
                         engine.present_into(light);
@@ -1425,9 +1468,9 @@ impl App {
                     // draw order — the `DrawTo` black backdrop (`:55546`, via
                     // `map_back` so it lands under the tiles), the tile pass
                     // (`MapRenderer.DrawMap`, `:55609`) and the frame foreground
-                    // batch (`:55768-55769`). `mapStyle == 2` (the overlay) draws
-                    // nothing (out of P4 scope, the whole-UI P4 plan's
-                    // Uncertainty 7).
+                    // batch (`:55768-55769`). `mapStyle == 2` (the overlay)
+                    // draws its tile pass + layer walk below (D18's draw arm,
+                    // `Main.cs:55548-55578`/`:55609`/`:55615-55627`).
                     let view_center = [camera.x / TILE_PX, camera.y / TILE_PX];
                     // `Main.MapScale` (`Main.cs:67297`, clamp `Main.cs:4494`): the
                     // minimap anchor and the whole panel's render scale, through the
@@ -1448,12 +1491,18 @@ impl App {
                         && !self.bestiary_open
                         && self.map_style == 1
                     {
-                        if let Some(m) = map.as_ref() {
+                        if let Some(m) = map.as_ref().filter(|m| m.map_ready) {
+                            // `Main.DrawMap`'s second gate (`Main.cs:55283`):
+                            // `!Main.mapEnabled || !Main.mapReady` — no map
+                            // pixels until the first `DrawToMap` completes
+                            // (`MapRenderer.cs:196`).
                             let pos = ui::minimap::draw_to_position(ui::minimap::minimap_origin_raw(
                                 screen, map_scale,
                             ));
-                            // `Main.mapMinimapAlpha = 1` (`Main.cs:66753`).
-                            ui::minimap::draw_background(renderer, lookups, pos, 1.0, map_scale);
+                            // `Main.mapMinimapAlpha` (`Main.cs:66753` seed 1;
+                            // the MapAlphaUp/Down keys step it — W4-f46 dup
+                            // fold of g53 `a9774d2a`/e18 `249a0c1b`).
+                            ui::minimap::draw_background(renderer, lookups, pos, m.minimap_alpha, map_scale);
                             m.draw_minimap(renderer, world, screen, view_center, map_scale);
                             // `Main.cs:55696-55703`: the same layer walk inside the
                             // `mapStyle == 1` branch, clipped to the 240x240 minimap
@@ -1507,7 +1556,7 @@ impl App {
                                 ]),
                                 m.minimap_scale,
                                 num46,
-                                1.0,
+                                m.minimap_alpha, // `b` (`Main.cs:55532` → `:55703`)
                             );
                             // The hover highlight is `MinimapFrame.Update`'s
                             // `buttonUnderMouse.IsHighlighted`
@@ -1524,6 +1573,87 @@ impl App {
                                 self.minimap_hover,
                                 map_scale,
                             );
+                        }
+                    }
+                    // `Main.cs:62231-62235`: the style-2 overlay's call site
+                    // is the in-world draw (`DoDraw_WallsTilesNPCs`' tail),
+                    // NOT interface pass 16 — the gate is only
+                    // `!mapFullscreen && mapStyle == 2` plus `DrawMap`'s own
+                    // `mapEnabled && mapReady` head (`:55283`). The port's
+                    // map batches sit under the UI batch, so the overlay
+                    // draws under the HUD/bestiary like the source; the
+                    // menu/front/no_hud gates mirror the minimap branch
+                    // (the in-world path does not run on the front screens).
+                    if settings.map_enabled
+                        && menu.is_none()
+                        && front.is_none()
+                        && !crate::env::no_hud()
+                        && !fullscreen_map
+                        && self.map_style == 2
+                    {
+                        if let Some(m) = map.as_ref().filter(|m| m.map_ready) {
+                            // `Main.cs:55548-55578` + `:55609`: the clamps ran
+                            // in the prepare block above; the tile pass tints
+                            // `(byte)(255*mapOverlayAlpha)` (`:55568`).
+                            let (overlay_offset, num5, alpha) =
+                                m.draw_overlay(renderer, world, screen, view_center);
+                            // `Main.cs:55619-55625`: the icon draw scale
+                            // `num37 = (num5*0.2*2+1)/3` capped at 1, then
+                            // `*= Main.UIScale`. The layer walk is the SAME
+                            // `MapIcons.Draw` as the fullscreen/minimap arms
+                            // at the overlay transform: `mapPosition =
+                            // Vector2.Zero`, no clip (`null`), `b` opacity.
+                            // The rest of the `:55626-55694` icon block
+                            // (revenge/misc/NPC heads/the 255 player loop +
+                            // death markers) is the f29/e17 overlay
+                            // keep-one's nine pieces — ported with that
+                            // pick, never twice (research/14 retire census).
+                            let num37 = ((num5 * 0.2 * 2.0 + 1.0) / 3.0).min(1.0)
+                                * settings.applied_ui_scale(screen.x, screen.y);
+                            let digtoise =
+                                crate::map_layers::digtoise_marker(player.as_ref(), &self.projectiles);
+                            let near_pylon = player.as_ref().is_some_and(|p| {
+                                let (cx, cy) = p.center();
+                                tr_core::pylons::is_player_near_a_pylon(
+                                    world,
+                                    ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32),
+                                )
+                            });
+                            let hover = crate::map_layers::map_layers_draw(
+                                renderer,
+                                lookups,
+                                &crate::map_layers::MapIconInputs {
+                                    world,
+                                    player: player.as_ref(),
+                                    item_drops: &self.items,
+                                    digtoise,
+                                    pings: crate::map_layers::map_pings(m),
+                                    pylons: &map_layer_pylons,
+                                    near_pylon,
+                                    map: Some(m),
+                                    team_based_spawns,
+                                    mouse: self.mouse_pos,
+                                },
+                                [0.0, 0.0],
+                                overlay_offset,
+                                None,
+                                num5,
+                                num37,
+                                alpha,
+                            );
+                            // `Main.cs:56046-56049`: the shared `MouseText`
+                            // tail — the hover line draws over the overlay.
+                            if let Some(t) = hover {
+                                crate::ui::text::hud_text(
+                                    renderer,
+                                    lookups,
+                                    self.mouse_pos.x + 12.0,
+                                    self.mouse_pos.y + 12.0,
+                                    0.85,
+                                    [1.0; 4],
+                                    &t,
+                                );
+                            }
                         }
                     }
                     if let Some(front) = front.as_mut() {
@@ -1873,6 +2003,35 @@ impl App {
                             popup_goto = Some(name);
                         }
                     }
+                    // W4-f46 salvage (research/84 §3): the section-draw
+                    // driver (`Main.cs:61863-61899`, the `DoDraw` tail
+                    // after `MapUpdateQueue.Update` `:61862`): the 5
+                    // ms-budgeted spiral walk paints the map texture one
+                    // 200x150 section at a time (`GetNextMapDraw` →
+                    // `DrawToMap_Section`), unlocking each while
+                    // `DebugOptions.unlockMap != 0`, then the `updateMap`
+                    // / `refreshMap` flag lifecycle. The `!gameMenu &&
+                    // !generatingWorld` gate (`:61865`) is the in-world
+                    // gate here; the `!Main.loadMap` gate (`:61863`) rides
+                    // inside `map_reveal_draw`. `player_pos` is
+                    // `Main.player[myPlayer].position` in world PIXELS
+                    // (`:61871`); `[0, 0]` without a player
+                    // (`TR_NOPLAYER` — the C# always has one).
+                    if menu.is_none() && front.is_none() {
+                        let player_pos =
+                            player.as_ref().map_or([0.0, 0.0], |p| [p.x, p.y]);
+                        Self::map_reveal_draw(
+                            map,
+                            &mut self.section_manager,
+                            &mut self.debug_unlock_map,
+                            world,
+                            player_pos,
+                            settings.map_enabled,
+                            self.game_paused,
+                            renderer,
+                            gpu,
+                        );
+                    }
                     // Task 6b: upload the revealed tiles into the world-sized map texture
                     // and clamp/recentre the fullscreen map. Vanilla centres the recentre
                     // and the minimap on the view centre (`Main.cs:55420-55421`,
@@ -1880,7 +2039,14 @@ impl App {
                     // is computed above, where the minimap branch consumes it.
                     if settings.map_enabled {
                         if let Some(m) = map.as_mut() {
-                            m.prepare(renderer, gpu, world, screen, view_center);
+                            // `Main.cs:55550-55566`: the style-2 overlay's
+                            // draw-side clamps ride the same draw half as
+                            // the minimap's (`prepare`'s clamp_minimap_axes)
+                            // — `world_zoom` IS `RenderZoom` (`:61999`, the
+                            // `ForcedMinimumZoom * Clamp(GameZoomTarget)`
+                            // product computed above).
+                            m.clamp_overlay_axes(screen.x, world.width, world_zoom);
+                            m.prepare(renderer, gpu, world, screen, view_center, settings.map_enabled);
                         }
                     }
                     if let Some(map) = map.as_ref() {
@@ -1888,6 +2054,11 @@ impl App {
                             && menu.is_none()
                             && front.is_none()
                             && settings.map_enabled
+                            // `Main.DrawMap`'s second gate (`Main.cs:55283`):
+                            // `!Main.mapReady` returns before the fullscreen
+                            // branch too — no backdrop/frame until the first
+                            // `DrawToMap` completes (`MapRenderer.cs:196`).
+                            && map.map_ready
                         {
                             if map.open {
                                 // `Main.cs:55483`: the biome `MapBG` backdrop is
@@ -1959,6 +2130,49 @@ impl App {
                                         &t,
                                     );
                                 }
+                                // `Main.cs:56014-56036`: the close button draws
+                                // AFTER the hover text (`:56046-56049`'s
+                                // `MouseText` rides the batch the icon calls
+                                // run in; the button's `:56012` batch is the
+                                // UI one) — the bottom-left `Map_0`/`Map_4`
+                                // icon, hover resolved against the same box
+                                // `handle_fullmap_close` clicks.
+                                let close_pos =
+                                    ui::chrome::fullmap_close_button_pos(screen);
+                                let close_hovered = self.mouse_pos.x >= close_pos[0]
+                                    && self.mouse_pos.x
+                                        <= close_pos[0] + ui::chrome::MAP_ICON_HIT[0]
+                                    && self.mouse_pos.y >= close_pos[1]
+                                    && self.mouse_pos.y
+                                        <= close_pos[1] + ui::chrome::MAP_ICON_HIT[1];
+                                ui::chrome::draw_fullmap_close_button(
+                                    renderer,
+                                    lookups,
+                                    screen,
+                                    close_hovered,
+                                );
+                                // `Main.cs:56037-56040`: the vanilla cursor
+                                // over the fullscreen map — `DrawCursor(
+                                // DrawThickCursor())` with the thick border
+                                // ring (`Main.cs:48064-48134`) and the
+                                // `(2, 2)` bonus. `!Main.gameMenu &&
+                                // !Main.InGameUI.IsVisible` — the port draws
+                                // no in-game UI over the map (the options
+                                // window rides the inventory, which is shut).
+                                let bonus = crate::ui::cursor::draw_thick(
+                                    renderer,
+                                    lookups,
+                                    &self.cursor,
+                                    self.mouse_pos,
+                                    settings.mouse_border_color,
+                                );
+                                crate::ui::cursor::draw_with_bonus(
+                                    renderer,
+                                    lookups,
+                                    &self.cursor,
+                                    self.mouse_pos,
+                                    bonus,
+                                );
                                 // `Main.cs:55931-55954`: the local player's head icon,
                                 // drawn after the map tiles (`Main.cs:55609`).
                                 if let Some(p) = player.as_ref() {
@@ -1978,6 +2192,16 @@ impl App {
                                         [1.0; 4],
                                     );
                                 }
+                                // `Main.cs:62160`: the fullscreen map's draw
+                                // tail runs `DrawPlayerChat` after `DrawMap`
+                                // — the chat log + input strip draw over the
+                                // map (the HUD is suppressed, the chat is
+                                // not). `DrawFPS` (`:62159`) rides
+                                // `showFrameRate` (F10, unported);
+                                // `DrawPendingMouseText` (`:62161`) is the
+                                // hover-text pass the map's own `MouseText`
+                                // (`:56046-56049`) already covers.
+                                ui::draw_chat(renderer, lookups, screen, &mut self.chat);
                             }
                             // The `else if self.map_style == 1` minimap branch
                             // (`Main.cs:55503-55547`) draws above `ui::draw_hud`
@@ -2242,5 +2466,46 @@ mod s1_p_i53_tests {
         // The next press fires again.
         app.place_down = true;
         assert!(app.buff_cancel_gate());
+    }
+}
+
+#[cfg(test)]
+mod w4_e18_fullmap_draw_head_tests {
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    /// W4-e18 final sweep (written, not run - code-only): the fullscreen
+    /// map's draw head (`Main.cs:62150-62153`) closes a dialog/inventory
+    /// opened while the map is up — `talkNPC >= 0 || (playerInventory &&
+    /// !CaptureManager.Active)` → `ToggleInv`'s talk/inventory arms
+    /// (`Player.cs:5005-5016`/`:5033-5056`), leaving the map open. The
+    /// capture-active arm keeps the inventory.
+    #[test]
+    fn w4_e18_the_fullmap_draw_head_closes_the_dialog_and_inventory() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("drawhead".into(), 260, 200);
+        app.map = Some(crate::map::WorldMap::new(&app.world));
+        app.map.as_mut().unwrap().set_open(true);
+        // A dialog + inventory opened while the map is up.
+        app.talk_npc = Some(0);
+        app.npc_chat_text = "hi".into();
+        app.inventory_open = true;
+        app.close_dialog_behind_fullmap();
+        assert!(app.map.as_ref().unwrap().open, "the map stays open");
+        assert_eq!(app.talk_npc, None, "SetTalkNPC(-1)");
+        assert!(app.npc_chat_text.is_empty(), "the text clears");
+        assert!(!app.inventory_open, "the inventory closes");
+        // Capture active: the inventory arm is gated off (`!Active`), and
+        // with no dialog the whole block is a no-op.
+        app.inventory_open = true;
+        app.capture.interface.active = true;
+        app.close_dialog_behind_fullmap();
+        assert!(app.inventory_open, "the capture gate keeps the inventory");
+        // The map shut: nothing closes.
+        app.capture.interface.active = false;
+        app.map.as_mut().unwrap().set_open(false);
+        app.talk_npc = Some(0);
+        app.close_dialog_behind_fullmap();
+        assert_eq!(app.talk_npc, Some(0), "the map-shut head is a no-op");
+        assert!(app.inventory_open);
     }
 }

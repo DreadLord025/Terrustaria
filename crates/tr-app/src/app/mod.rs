@@ -570,6 +570,16 @@ pub(crate) struct App {
     /// `Terraria.Map.MapUpdateQueue` (`MapUpdateQueue.cs`): the edit-side map
     /// refresh queues, drained per frame (`Main.cs:61862`).
     pub(crate) map_queue: map::MapUpdateQueue,
+    /// `Main.sectionManager` (`Main.cs:399`, `WorldSections.cs:6-358`): the
+    /// section grid the `Main.cs:61871-61879` reveal sweep walks under its
+    /// 5 ms budget. Constructed at `WorldGen.cs:7150`'s truncating dims;
+    /// the port's resident world arms every section loaded + framed.
+    pub(crate) section_manager: crate::map_sections::MapSections,
+    /// `DebugOptions.unlockMap` (`Testing/DebugOptions.cs:34`): 0 off,
+    /// 1 the flat-255 section reveal, 2 the pretty falloff. The sweep's
+    /// `:61873-61876` arm reads it; `:61880-61883` zeroes it once the
+    /// sweep is exhausted and no refresh is pending.
+    pub(crate) debug_unlock_map: i32,
     /// `Main.grabMapX`/`grabMapY`: the cursor anchor of an in-progress
     /// fullscreen-map drag (`Main.cs:55346-55354`).
     pub(crate) map_grab: Option<[f32; 2]>,
@@ -580,8 +590,10 @@ pub(crate) struct App {
     pub(crate) minimap_hover: Option<ui::minimap::MinimapButton>,
     /// `Main.mapStyle` (`Main.cs:66750`, default 1): 0 = off, 1 = the minimap
     /// frame, 2 = the overlay (out of P4 scope — nothing draws, the whole-UI P4
-    /// plan's Uncertainty 7). The map-style buttons land in Task 3, so a debug
-    /// env var selects it for screenshots.
+    /// plan's Uncertainty 7). Cycled by the inventory icon row
+    /// (`Main.cs:41106-41120`, `handle_inventory_clicks`) and the `cMapStyle`
+    /// key (Tab, `Player.cs:24949-24965`, `world_key`); a debug env var selects
+    /// it for screenshots.
     pub(crate) map_style: i32,
     /// `Main.teamCooldown` (`Main.cs:965`): ticks left before the PVP toggle
     /// and the team cells accept another change (`teamCooldownLen = 300`,
@@ -1384,7 +1396,8 @@ impl App {
 
     /// `Player.cs:24774-24793` + `24898-24908`: the fullscreen-map controls. The pan
     /// step is `16 / scale` tiles **once per frame, with no `dt` factor** (the
-    /// original runs it in the per-frame input pass).
+    /// original runs it in the per-frame input pass); each movement arm also
+    /// cancels the pylon pan target (`PanTargetMapFullscreen = false`).
     pub(crate) fn update_map_input(&mut self) {
         let (sw, _) = self.screen_size();
         let Some(m) = self.map.as_mut() else { return };
@@ -1400,16 +1413,24 @@ impl App {
                 .any(|k| crate::input_map::is_bound(&binds, action, *k))
                 || k(arrow)
         };
+        // `Player.cs:24774-24793`: each held movement row pans the map AND
+        // cancels an armed pylon pan target (`PanTargetMapFullscreen =
+        // false` in every arm, `:24776`/`:24781`/`:24786`/`:24791` — the
+        // shared gap both overlay siblings missed, W4-f46 close).
         if held(crate::input_map::Action::Up, KeyCode::ArrowUp) {
+            m.pan_target = None; // `:24776`
             m.pos[1] -= step;
         }
         if held(crate::input_map::Action::Down, KeyCode::ArrowDown) {
+            m.pan_target = None; // `:24781`
             m.pos[1] += step;
         }
         if held(crate::input_map::Action::Left, KeyCode::ArrowLeft) {
+            m.pan_target = None; // `:24786`
             m.pos[0] -= step;
         }
         if held(crate::input_map::Action::Right, KeyCode::ArrowRight) {
+            m.pan_target = None; // `:24791`
             m.pos[0] += step;
         }
         // `Main.cs:67191-67192`: `cMapZoomIn = "Add"`, `cMapZoomOut =
@@ -1428,19 +1449,104 @@ impl App {
         }
         // `Main.cs:55342-55359`: the left button drags the fullscreen map by the
         // per-frame cursor delta (`Main.grabMapX`/`grabMapY`).
+        // `Main.cs:55342`: `Main.mouseLeft && !CaptureManager.Instance.UsingMap`
+        // — while the capture interface owns the map the whole drag block is
+        // skipped (`CaptureManager.cs:44-54`: false while inactive); the grab
+        // anchor is NOT touched, exactly like the C# leaving grabMapX/Y stale.
         let cursor = self.mouse_pos;
         if self.mine_down {
-            if let Some(anchor) = self.map_grab {
-                let d = map::map_drag_delta([cursor.x - anchor[0], cursor.y - anchor[1]], m.scale);
-                m.pos[0] += d[0];
-                m.pos[1] += d[1];
+            if !self.capture.using_map() {
+                if let Some(anchor) = self.map_grab {
+                    let d =
+                        map::map_drag_delta([cursor.x - anchor[0], cursor.y - anchor[1]], m.scale);
+                    m.pos[0] += d[0];
+                    m.pos[1] += d[1];
+                }
+                self.map_grab = Some([cursor.x, cursor.y]);
             }
-            self.map_grab = Some([cursor.x, cursor.y]);
         } else {
             self.map_grab = None;
         }
         m.scale = map::map_scale_clamp(sw, self.world.width, m.scale);
         m.pos = map::map_clamp_pos(m.pos, &self.world);
+    }
+
+    /// `Player.cs:24909-24947`: the not-fullscreen arm of the map-key input
+    /// block — while `Main.mapStyle == 1`, held `MapZoomIn`/`MapZoomOut`
+    /// (`Main.cMapZoomIn`/`cMapZoomOut`, defaults `Add`/`Subtract`,
+    /// `Main.cs:67190-67191`) scale `Main.mapMinimapScale` by 1.025/0.975 per
+    /// update (`ui::minimap::apply_key_zoom`) and `MapAlphaUp`/`MapAlphaDown`
+    /// (`PageUp`/`PageDown`, `:67192-67193`) step `Main.mapMinimapAlpha`
+    /// ±0.015 (`:24921-24928`); while `Main.mapStyle == 2` the same rows step
+    /// `Main.mapOverlayScale` ×1.05/×0.95 + `Main.mapOverlayAlpha` ±0.015
+    /// (`:24930-24947`). No `mapEnabled` gate — the C# arms check only the
+    /// style (`:24911`/`:24930`); the draw side is what goes dark. The clamps
+    /// are the draw-side ones (`Main.cs:55515-55530`/`:55550-55566`), applied
+    /// per update like `apply_key_zoom` does for the chrome buttons. The
+    /// style-2 overlay DRAW stays D18; the state rides for the keys
+    /// (W4-g53 `a9774d2a` superset folded — research/84 §10 dup ruling).
+    /// The Tab style-cycle row (`:24949-24965`) is `world_key`'s
+    /// `MapAction::Style` arm (the port's press edge); the fullscreen half
+    /// is `update_map_input` above.
+    pub(crate) fn update_minimap_zoom_keys(&mut self) {
+        // `Player.cs:24768`: the whole input block sits behind the
+        // chat/sign/chest editors (`!drawingPlayerChat && !editSign &&
+        // !editChest && !blockInput`); the port's chat overlay is the live
+        // one (the e18 `249a0c1b` arm's gate, folded with the dup pass).
+        if self.chat.open || self.menu.is_some() || self.front.is_some() {
+            return;
+        }
+        if self.map_style != 1 && self.map_style != 2 {
+            return;
+        }
+        if self.map.as_ref().is_some_and(|m| m.open) {
+            return; // the fullscreen arm is `update_map_input`
+        }
+        let (sw, sh) = self.screen_size();
+        let map_binds = self.map_binds.clone();
+        let held = |action: crate::input_map::MapAction| {
+            self.keys.iter().any(|k| {
+                map_binds[action.index()].as_str() == crate::input_map::key_name(*k)
+            })
+        };
+        let zoom_in = held(crate::input_map::MapAction::ZoomIn);
+        let zoom_out = held(crate::input_map::MapAction::ZoomOut);
+        let alpha_up = held(crate::input_map::MapAction::AlphaUp);
+        let alpha_down = held(crate::input_map::MapAction::AlphaDown);
+        if self.map_style == 1 {
+            if let Some(m) = self.map.as_mut() {
+                ui::minimap::apply_key_zoom(zoom_in, zoom_out, &mut m.minimap_scale);
+                // `:24921-24928` then the `:55523-55530` clamp.
+                if alpha_up {
+                    m.minimap_alpha = map::map_key_alpha(m.minimap_alpha, true);
+                }
+                if alpha_down {
+                    m.minimap_alpha = map::map_key_alpha(m.minimap_alpha, false);
+                }
+                m.minimap_alpha = map::map_alpha_clamp(m.minimap_alpha);
+            }
+        } else if let Some(m) = self.map.as_mut() {
+            // `:24930-24947`: the overlay's rows — ×1.05/×0.95 (the same
+            // pair as the fullscreen zoom) + ±0.015.
+            if zoom_in {
+                m.overlay_scale = map::map_key_scale(m.overlay_scale, true);
+            }
+            if zoom_out {
+                m.overlay_scale = map::map_key_scale(m.overlay_scale, false);
+            }
+            if alpha_up {
+                m.overlay_alpha = map::map_key_alpha(m.overlay_alpha, true);
+            }
+            if alpha_down {
+                m.overlay_alpha = map::map_key_alpha(m.overlay_alpha, false);
+            }
+            // `Main.cs:55550-55566`: RenderZoom = ForcedMinimumZoom *
+            // Clamp(GameZoomTarget, 1, 2) (`:61999`, the port's `zoom`).
+            let render_zoom = Self::forced_minimum_zoom((sw, sh)) * self.zoom;
+            m.overlay_scale =
+                map::overlay_scale_clamp(sw, self.world.width, render_zoom, m.overlay_scale);
+            m.overlay_alpha = map::map_alpha_clamp(m.overlay_alpha);
+        }
     }
 
     /// `Main.UpdateViewZoomKeys` (`Main.cs:16801-16815`): ViewZoomIn/Out adjust
@@ -2188,6 +2294,55 @@ impl App {
         }
     }
 
+    /// The single-tile map enqueue — `MapUpdateQueue.Add(x, y)` at
+    /// `MessageBuffer.cs:1153`'s head of the net-`5` tile-change arm (BEFORE
+    /// the KillTile/PlaceTile dispatch). The `Main.dedServ` gate
+    /// (`MapUpdateQueue.cs:23/43`) is structural: a dedicated server has no
+    /// map — the port's listen-server host DOES keep one (`netMode == 2` but
+    /// not `dedServ`), so its arm queues too; the
+    /// `generatingWorld`/`!mapEnabled` gates ride the callers as elsewhere.
+    pub(crate) fn queue_map_tile(&mut self, x: i32, y: i32) {
+        if !self.settings.map_enabled {
+            return;
+        }
+        let Some(m) = self.map.as_mut() else {
+            return;
+        };
+        self.map_queue.add_tile(m, x, y);
+    }
+
+    /// `MapUpdateQueue.Add(Rectangle)` behind the map-enabled gate — the
+    /// `NetMessage.cs:2456` tail of `DecompressTileBlock` (the net-`10`
+    /// section snapshot queues its whole rect).
+    pub(crate) fn queue_map_area(&mut self, x: i32, y: i32, w: i32, h: i32) {
+        if !self.settings.map_enabled {
+            return;
+        }
+        let Some(m) = self.map.as_mut() else {
+            return;
+        };
+        self.map_queue.add_area(m, x, y, w, h);
+    }
+
+    /// `WorldGen.RangeFrame`'s map half — the net-`20` tail
+    /// (`MessageBuffer.cs:1438`): the (vanilla-inverted) area add plus the
+    /// border-gated per-tile walk (`WorldGen.cs:80402-80411`).
+    pub(crate) fn queue_map_range_frame(
+        &mut self,
+        start_x: i32,
+        start_y: i32,
+        end_x: i32,
+        end_y: i32,
+    ) {
+        if !self.settings.map_enabled {
+            return;
+        }
+        let Some(m) = self.map.as_mut() else {
+            return;
+        };
+        self.map_queue.add_range_frame(m, start_x, start_y, end_x, end_y);
+    }
+
     pub(crate) fn update_editing(&mut self, dt: f32, screen: Vec2) {
         world_sim::editing::update_editing(self, dt, screen);
     }
@@ -2310,10 +2465,15 @@ impl App {
         self.tile_anim.reset();
         self.tile_anim_step = FixedStepper::new(1.0 / 60.0, 8);
         // `Main.mapDelay = 2` (`WorldGen.cs:6947`, the world-load reset):
-        // the legacy engine owns the counter in the port (S1-E-19 wave B,
-        // `LegacyLighting.cs:345-348`).
+        // the legacy engine owns its counter in the port (S1-E-19 wave B,
+        // `LegacyLighting.cs:345-348`); the Color path's export cadence
+        // (`WorldMap::update`) gates on the map's own copy
+        // (`LightingEngine.cs:82-89`, W4-e18 final sweep).
         if let Some(engine) = self.legacy_light.as_mut() {
             engine.reset_map_delay();
+        }
+        if let Some(m) = self.map.as_mut() {
+            m.reset_map_delay();
         }
     }
 
@@ -3459,6 +3619,10 @@ impl App {
         if crate::env::map_open() {
             world_map.set_open(true);
         }
+        // `WorldGen.cs:7150`: `new WorldSections(maxTilesX / 200,
+        // maxTilesY / 150)` — the truncating grid, resident-armed. The
+        // dims are captured before the struct literal moves `world`.
+        let section_manager = crate::map_sections::MapSections::new(world.width, world.height);
         // `TR_AMBIENCE=<SkyEntityType>[,seed]`: queue one forced spawn (the
         // `AmbienceServer.ForceEntitySpawn` path, `AmbienceServer.cs:139-142`)
         // with a pinned seed, so the creature skies stay screenshotable
@@ -3862,6 +4026,8 @@ impl App {
             join_target,
             map: Some(world_map),
             map_queue: map::MapUpdateQueue::default(),
+            section_manager,
+            debug_unlock_map: 0,
             map_grab: None,
             minimap_hover: None,
             // `Main.mapStyle = 1` (`Main.cs:66750`); `TR_MAPSTYLE=<0|1|2>` selects
@@ -5859,5 +6025,245 @@ mod s1_p_i44_tests {
         app.update_shop_close();
         assert!(app.shop_npc.is_none());
         assert!(app.shop_stock.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod w4_e18_map_drag_capture_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    /// W4-e18 residual census (written, not run - code-only): the drag's
+    /// `!CaptureManager.Instance.UsingMap` gate (`Main.cs:55342`). With the
+    /// capture interface active and its EdgeSelection mode (mode 0 always
+    /// answers true, `CaptureInterface.cs:100-103`) the whole drag block
+    /// skips - the position does not move AND the grab anchor stays stale
+    /// (the C# touches neither grabMapX/Y inside the skipped block).
+    #[test]
+    fn w4_e18_the_capture_using_map_gate_skips_the_whole_drag_block() {
+        let mut app = flow_app(None, vec![], vec![]);
+        // A real-sized world: map_clamp_pos's 10..width-10 range inverts on
+        // the 8x8 fixture (f32::clamp panics on min > max).
+        app.world = tr_core::World::new("drag".into(), 260, 200);
+        app.map = Some(map::WorldMap::new(&app.world));
+        app.map.as_mut().unwrap().open = true;
+        // Park inside the clamp so the tail clamp cannot masquerade as a pan.
+        app.map.as_mut().unwrap().pos = [50.0, 50.0];
+        app.mine_down = true;
+        app.map_grab = Some([100.0, 100.0]);
+        app.mouse_pos = Vec2::new(140.0, 120.0);
+        // Capture active, mode 0 (EdgeSelection) -> UsingMap true.
+        app.capture.interface.active = true;
+        app.capture.interface.selected_mode = 0;
+        let pos_before = app.map.as_ref().unwrap().pos;
+        app.update_map_input();
+        let m = app.map.as_ref().unwrap();
+        assert_eq!(m.pos, pos_before, "the UsingMap gate skipped the pan");
+        assert_eq!(app.map_grab, Some([100.0, 100.0]), "the anchor stays stale");
+        // Deactivating the interface flips UsingMap false
+        // (`CaptureManager.cs:44-54`) and the drag runs.
+        app.capture.interface.active = false;
+        app.update_map_input();
+        assert_eq!(app.map_grab, Some([140.0, 120.0]), "the anchor re-grabs");
+    }
+
+    /// W4-f46 shared-gap close (written, not run - code-only): each held
+    /// movement row cancels an armed pylon pan target
+    /// (`Player.cs:24776`/`:24781`/`:24786`/`:24791` — every arm sets
+    /// `PanTargetMapFullscreen = false` before its pan step); the gap both
+    /// overlay siblings (f29/e17) missed. Without a movement key held the
+    /// armed target survives the input pass (the lerp step is the overlay
+    /// pick's seam, not this fn's).
+    #[test]
+    fn w4_f46_movement_keys_cancel_the_fullscreen_pan_target() {
+        let mut app = flow_app(None, vec![], vec![]);
+        // Width 320 keeps map_scale_clamp's floor (1280/320*0.599 ≈ 2.396)
+        // under the 2.5 default, so the scale — and the step — stay fixed.
+        app.world = tr_core::World::new("pancancel".into(), 320, 200);
+        app.map = Some(map::WorldMap::new(&app.world));
+        let m = app.map.as_mut().unwrap();
+        m.open = true;
+        m.pos = [50.0, 50.0];
+        m.pan_target = Some([80.0, 80.0]);
+        let step = 16.0 / m.scale;
+        // No movement held: the target survives.
+        app.update_map_input();
+        assert_eq!(app.map.as_ref().unwrap().pan_target, Some([80.0, 80.0]));
+        // Each of the four rows cancels it (`cUp/cDown/cLeft/cRight`,
+        // `Main.cs:67163-67166`, defaults W/S/A/D) and pans once.
+        for (code, axis, delta) in [
+            (KeyCode::KeyW, 1usize, -step),
+            (KeyCode::KeyS, 1, step),
+            (KeyCode::KeyA, 0, -step),
+            (KeyCode::KeyD, 0, step),
+        ] {
+            let m = app.map.as_mut().unwrap();
+            m.pan_target = Some([80.0, 80.0]);
+            let before = m.pos[axis];
+            app.keys.insert(code);
+            app.update_map_input();
+            app.keys.remove(&code);
+            let m = app.map.as_ref().unwrap();
+            assert_eq!(m.pan_target, None, "{code:?} clears the pan target");
+            assert_eq!(m.pos[axis], before + delta, "{code:?} pans once");
+        }
+    }
+}
+
+#[cfg(test)]
+mod w4_f46_minimap_zoom_key_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    /// W4-f46 closeout census (written, not run - code-only): the held
+    /// `MapZoomIn` row (`Player.cs:24913-24916`) scales `Main.mapMinimapScale`
+    /// by 1.025 once per update while `mapStyle == 1` and the map is NOT
+    /// fullscreen; the row is the rebindable `cMapZoomIn` (default `Add`,
+    /// `Main.cs:67190`), not a fixed key.
+    #[test]
+    fn w4_f46_held_zoom_in_scales_the_minimap_by_the_button_constant() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("zoom".into(), 260, 200);
+        app.map = Some(map::WorldMap::new(&app.world));
+        app.settings.map_enabled = true;
+        app.map_style = 1;
+        app.keys.insert(KeyCode::NumpadAdd); // `key_name` -> "Add"
+        app.update_minimap_zoom_keys();
+        let m = app.map.as_ref().unwrap();
+        assert_eq!(m.minimap_scale, 1.05 * ui::minimap::ZOOM_IN_MULTIPLIER);
+        // Rebinding moves the row (`Main.cs:4618`'s single-key profile).
+        app.map_binds[crate::input_map::MapAction::ZoomIn.index()] = "PageUp".into();
+        app.update_minimap_zoom_keys();
+        let after = app.map.as_ref().unwrap().minimap_scale;
+        assert_eq!(after, 1.05 * ui::minimap::ZOOM_IN_MULTIPLIER, "Add is free now");
+        app.keys.clear();
+        app.keys.insert(KeyCode::PageUp);
+        app.update_minimap_zoom_keys();
+        assert_eq!(
+            app.map.as_ref().unwrap().minimap_scale,
+            after * ui::minimap::ZOOM_IN_MULTIPLIER
+        );
+    }
+
+    /// W4-f46 closeout census: the style/fullscreen gates — the C# block is
+    /// the `else` of `if (Main.mapFullscreen)` (`Player.cs:24898`/`:24909`)
+    /// and its `Main.mapStyle == 1` arm (`:24911`, no `mapEnabled` check —
+    /// the scale moves even with the map system dark; the draw is what goes
+    /// off). Style 0/2 and the open fullscreen map leave the minimap scale
+    /// alone (the fullscreen zoom keys ride `update_map_input` on
+    /// `mapFullscreenScale` instead).
+    #[test]
+    fn w4_f46_zoom_keys_gate_on_style_one_and_not_fullscreen() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("zoomgate".into(), 260, 200);
+        app.map = Some(map::WorldMap::new(&app.world));
+        app.settings.map_enabled = true;
+        app.keys.insert(KeyCode::NumpadAdd);
+        let before = app.map.as_ref().unwrap().minimap_scale;
+        app.map_style = 0;
+        app.update_minimap_zoom_keys();
+        app.map_style = 2;
+        app.update_minimap_zoom_keys();
+        assert_eq!(app.map.as_ref().unwrap().minimap_scale, before);
+        app.map_style = 1;
+        app.map.as_mut().unwrap().open = true;
+        app.update_minimap_zoom_keys();
+        assert_eq!(app.map.as_ref().unwrap().minimap_scale, before);
+        // mapEnabled off does NOT gate the C# arm (`:24911` checks only the
+        // style) — the scale still moves.
+        app.map.as_mut().unwrap().open = false;
+        app.settings.map_enabled = false;
+        app.update_minimap_zoom_keys();
+        assert_eq!(
+            app.map.as_ref().unwrap().minimap_scale,
+            before * ui::minimap::ZOOM_IN_MULTIPLIER
+        );
+    }
+
+    /// W4-f46 dup fold (written, not run - code-only): the style-1 alpha
+    /// rows (`Player.cs:24921-24928`) step `Main.mapMinimapAlpha` ±0.015 per
+    /// update while held (`cMapAlphaUp`/`cMapAlphaDown`, defaults
+    /// `PageUp`/`PageDown`, `Main.cs:67192-67193`), clamped 0.01..1
+    /// (`Main.cs:55523-55530`). The g53 `a9774d2a` / e18 `249a0c1b` arms
+    /// folded onto the union's `update_minimap_zoom_keys`; D17 closed.
+    #[test]
+    fn w4_f46_alpha_keys_step_the_minimap_alpha_with_the_clamp() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("alpha".into(), 260, 200);
+        app.map = Some(map::WorldMap::new(&app.world));
+        app.settings.map_enabled = true;
+        app.map_style = 1;
+        assert_eq!(app.map.as_ref().unwrap().minimap_alpha, 1.0, "`Main.cs:66753`");
+        // AlphaDown held: −0.015 per update.
+        app.keys.insert(KeyCode::PageDown);
+        app.update_minimap_zoom_keys();
+        assert!((app.map.as_ref().unwrap().minimap_alpha - (1.0 - 0.015)).abs() < 1e-6);
+        // Held to the floor: 0.01 (`Main.cs:55523-55526`).
+        for _ in 0..200 {
+            app.update_minimap_zoom_keys();
+        }
+        assert_eq!(app.map.as_ref().unwrap().minimap_alpha, 0.01);
+        // AlphaUp: back up, capped at 1 (`:55527-55530`).
+        app.keys.clear();
+        app.keys.insert(KeyCode::PageUp);
+        for _ in 0..200 {
+            app.update_minimap_zoom_keys();
+        }
+        assert_eq!(app.map.as_ref().unwrap().minimap_alpha, 1.0);
+        // The zoom rows are untouched by the alpha keys (no cross-step).
+        assert_eq!(app.map.as_ref().unwrap().minimap_scale, 1.05);
+    }
+
+    /// W4-f46 dup fold: the style-2 arm (`Player.cs:24930-24947`) — held
+    /// zoom rows scale `Main.mapOverlayScale` ×1.05/×0.95 (the FULLSCREEN
+    /// pair, not the minimap's 1.025/0.975) and the alpha rows step
+    /// `Main.mapOverlayAlpha` ±0.015 from the 0.35 seed (`Main.cs:66755`),
+    /// clamped `screen_w/world_w .. 16*RenderZoom` / 0.01..1
+    /// (`Main.cs:55550-55566`). The overlay draw stays D18; the state rides.
+    #[test]
+    fn w4_f46_style_two_keys_step_the_overlay_scale_and_alpha() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("ovl".into(), 260, 200);
+        app.map = Some(map::WorldMap::new(&app.world));
+        app.settings.map_enabled = true;
+        app.map_style = 2;
+        assert_eq!(app.map.as_ref().unwrap().overlay_scale, 2.5, "`Main.cs:66754`");
+        assert_eq!(app.map.as_ref().unwrap().overlay_alpha, 0.35, "`:66755`");
+        // Park above the 1280/260 floor (~4.92) so the ×1.05/×0.95 steps
+        // are observable (the draw-side floor clamp would eat the 2.5 seed
+        // on this small fixture — `Main.cs:55551-55554`).
+        app.map.as_mut().unwrap().overlay_scale = 8.0;
+        app.keys.insert(KeyCode::NumpadAdd);
+        app.update_minimap_zoom_keys();
+        let m = app.map.as_ref().unwrap();
+        assert!((m.overlay_scale - 8.0 * 1.05).abs() < 1e-6, "×1.05");
+        assert_eq!(m.minimap_scale, 1.05, "the minimap axis stays put");
+        app.keys.clear();
+        app.keys.insert(KeyCode::NumpadSubtract);
+        app.update_minimap_zoom_keys();
+        assert!((app.map.as_ref().unwrap().overlay_scale - 8.0 * 1.05 * 0.95).abs() < 1e-6);
+        // Alpha up from 0.35 (`:24940-24943`).
+        app.keys.clear();
+        app.keys.insert(KeyCode::PageUp);
+        app.update_minimap_zoom_keys();
+        assert!((app.map.as_ref().unwrap().overlay_alpha - (0.35 + 0.015)).abs() < 1e-6);
+        // The scale ceiling: 16 * RenderZoom = 16 * ForcedMinimumZoom *
+        // zoom (`Main.cs:55555-55557` + `:61999`), left-to-right like the
+        // clamp fn's `16.0 * render_zoom`.
+        let (sw, sh) = app.screen_size();
+        let cap = 16.0 * App::forced_minimum_zoom((sw, sh)) * app.zoom;
+        app.keys.clear();
+        app.keys.insert(KeyCode::NumpadAdd);
+        for _ in 0..300 {
+            app.update_minimap_zoom_keys();
+        }
+        assert_eq!(app.map.as_ref().unwrap().overlay_scale, cap);
+        // Alpha down to the 0.01 floor (`:55559-55562`).
+        app.keys.clear();
+        app.keys.insert(KeyCode::PageDown);
+        for _ in 0..300 {
+            app.update_minimap_zoom_keys();
+        }
+        assert_eq!(app.map.as_ref().unwrap().overlay_alpha, 0.01);
     }
 }
