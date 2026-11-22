@@ -3566,6 +3566,20 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // The Shimmerfly (W4-c9): the noTileCollide/noGravity flyer's
+        // net seed rides the hover ctor (the fishron-hazard shape; the
+        // net state overwrites the position below).
+        crate::npc::NpcKind::Shimmerfly => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d42 - the roster's flyers seed in the open air (the net
+        // state overwrites the position below).
+        crate::npc::NpcKind::GoblinShark
+        => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

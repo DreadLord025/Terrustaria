@@ -1086,6 +1086,27 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.Shimmerfly` (677, `NPCID.cs:12031`) — the shimmer
+    /// transform target of all three snails (`NPCID.cs:10470`'s
+    /// `ShimmerTransformToNPC` rows, `GetShimmered` `NPC.cs:91561-91565`
+    /// → `Transform(677)` `:81084`). `NPC.cs:17579-17593`: 10x10,
+    /// aiStyle 64, dmg 0, def 0, 5 HP, npcSlots 0.2, noGravity +
+    /// noTileCollide, catchItem 5350. ROWED by W4-g62 (the TRAILCACHE
+    /// WIDENING's 677→60 MAX row needs the kind; the c9 2042d77f1
+    /// rowing adopted verbatim — the snail trio 359/360/655 stays
+    /// c9's, the merge dedupes). WIRED here: the kind-gated 64 axis
+    /// arm rides `npc_ai_style64::ai_064_step`'s 677 branches (the
+    /// solo self-view threat scan; the pooled firefly pass is W4-c7's).
+    Shimmerfly,
+    /// `NPCID.GoblinShark` (620) - `NPC.cs:16950-16968 (value Item.buyPrice(0,0,75)=7500 :16961)`:
+    /// 34x58, aiStyle 107, dmg 70, def 30,
+    /// 5000 HP, kb 0.0, value 7500.
+    /// ROWED by W4-g62 (the TRAILCACHE WIDENING's 620→20 row needs the
+    /// kind; the d42 2d7ac08c3 rowing adopted verbatim — the rest of
+    /// the 578-630 roster stays d42's, the merge dedupes). aiStyle 107
+    /// is UNWIRED on this base (the MartianTurret/wyvern precedent):
+    /// the idle stand-in, d42's own dispatch shape.
+    GoblinShark,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -1230,6 +1251,40 @@ pub struct Npc {
     /// per NPC update (`NPC.cs:90516`). NOT the ~11-tick `hurt_cd`
     /// cooldown (the retired `update_creeper` stand-in's W95 defect).
     pub just_hit: bool,
+    /// `NPC.oldPos` (`NPC.cs:6119`): the position trail
+    /// `UpdateNPC_UpdateTrails` shifts once per NPC update (`:90779-
+    /// 90875`, called at `:90512` after `FindFrame`). Only the 402
+    /// Stardust Worm Head's TrailingMode-7 arm rides it so far
+    /// (`NPCID.cs:10430`: 402 → 7 — the position+rotation shift every
+    /// tick); the death dust feed's trail loop reads it
+    /// (`npc_death_dust.rs`, the W4-g60 wiring wave replaces the
+    /// all-zero stand-in). `netOffset` is 0 in the single-player port.
+    /// W4-g62: the SAME mode-7 census row maps 519 → 7 (the SolarGoop's
+    /// hit arm reads it, `npc_hit_dust.rs` `:83008-83022`).
+    /// TRAILCACHE WIDENING (the one-widening-at-merge item, landed on
+    /// this branch): the C# `SetDefaults` RESIZES both rings to
+    /// `NPCID.Sets.TrailCacheLength[type]` (`NPC.cs:8453-8468`) — full
+    /// census `NPCID.cs:10450`: default 10, 402→36, 519→20, 522→20,
+    /// 620→20, 677→60 (the MAX), 685→10. The port carries the max-size
+    /// storage `[Vec2; 60]` + the per-kind logical length `trail_len`
+    /// (`Npc::trail_cache_length`); every loop that walked
+    /// `oldPos.Length` walks `..trail_len` instead. Slots ≥ trail_len
+    /// stay ZERO — the C#'s `Array.Resize` zero-fills grown slots and
+    /// `:8463-8468` zeroes the whole array. The g60 lane must adopt
+    /// the SAME widening hunks byte-identically (ANALYSIS contract).
+    pub old_pos: [Vec2; 60],
+    /// `NPC.oldRot` (`NPC.cs:6121`): the trail's rotation twin — the
+    /// mode-7 shift copies `rotation` alongside the position; resized
+    /// together with `oldPos` (`NPC.cs:8461`).
+    pub old_rot: [f32; 60],
+    /// `this.oldPos.Length` after the `SetDefaults` resize
+    /// (`NPC.cs:8453-8462`): `NPCID.Sets.TrailCacheLength[type]`
+    /// (`NPCID.cs:10450`) — the logical ring length every trail loop
+    /// bounds on (the HitEffect arms, the mode shift, g60's death
+    /// loop). Set at spawn (`Npc::new` ≈ `SetDefaults`) and on
+    /// Transform (`transform_to_kind`). NOT part of the render key —
+    /// it is a pure function of `kind`.
+    pub trail_len: usize,
     /// `NPC.immune[256]`: per-owner i-frame ticks, applied by projectile hits
     /// (`Projectile.cs:14087-14119`) and decremented once per NPC update
     /// (`NPC.cs:90454-90459`).
@@ -1665,6 +1720,14 @@ pub struct Npc {
     /// `wants_hostile_shot` shape). Empty for every kind whose machine
     /// has no wired cue.
     pub wants_sound: Vec<NpcSoundRequest>,
+    /// W4-g62 — the strike's `HitEffect(hitDirection, num)` dust capture
+    /// (`NPC.cs:81488`): the LIVE-arm snapshot taken AFTER the damage +
+    /// knockback writes; `world_sim/npcs.rs::update_npcs` drains it on
+    /// the `UpdateNPCs` stream through `npc_hit_dust::replay_hit_dust`
+    /// (the `wants_gallop_dust` queue precedent — the pool-pass fold is
+    /// the recorded deviation, ANALYSIS "The NPC hit-dust lane"). The
+    /// death halves ride the same capture shape for g59/g60's lane.
+    pub wants_hit_dust: Vec<crate::npc_hit_dust::HitDustSnapshot>,
     /// Plantera's hook spawn request (`NPC.cs:31736-31742` — the first
     /// tick's three `NewNPC(..., 263)` calls). The count is 3; kinds
     /// 263/264/265 have no port arms yet, so the sim records the request
@@ -1777,6 +1840,11 @@ pub struct Npc {
     /// (`NPC.cs:36056-36063`): 390 → 382 RayGunner, 416 → 518 SolarSpearman.
     /// The sim runs `NPC.Transform` (`NPC.cs:81084-81114`) in place.
     pub wants_transform: Option<i32>,
+    /// The Shimmerfly's threat-scan pool (`NPC.cs:34120-34128`, W4-c9):
+    /// the sim pre-pass stamps the slot-ordered `Main.npc` views here
+    /// (the `twin_time_lefts` carrier precedent) — the solo `update_rng`
+    /// path reads the empty list (the style75 solo fold).
+    pub shimmerfly_threat_views: Vec<crate::npc_ai_style64::Ai64NpcView>,
     /// The aiStyle-75 `SoundEngine.PlaySound(SoundID.Item12/Item39, pos)`
     /// cues (`(style, x, y)`) queued by the standalone `update_rng` wrapper
     /// (no audio seam there); the sim's pooled path drains them immediately
@@ -2931,6 +2999,14 @@ impl Npc {
             // `SetDefaults`' field reset (`NPC.cs:8506`) — also the
             // Hungry's strike-tick read (S1-D-3 W-1/W-2 shared field).
             just_hit: false,
+            // `NPC.oldPos`'s field init (`NPC.cs:6119`: `new Vector2[10]`)
+            // widened to the max-size storage (`TrailCacheLength` max 60,
+            // 677's row `NPCID.cs:10450`) — `SetDefaults`' resize
+            // (`NPC.cs:8453-8468`) picks the logical length per kind and
+            // zeroes the array; slots ≥ trail_len stay ZERO forever.
+            old_pos: [Vec2::ZERO; 60],
+            old_rot: [0.0; 60],
+            trail_len: kind.trail_cache_length(),
             immune: [0; 256],
             player_interaction: [false; 256],
             spawned_from_statue: false,
@@ -3078,6 +3154,7 @@ impl Npc {
             wants_hostile_shot_ai: Vec::new(),
             wants_gallop_dust: Vec::new(),
             wants_sound: Vec::new(),
+            wants_hit_dust: Vec::new(),
             wants_plantera_hooks: 0,
             wants_plantera_tentacles: 0,
             wants_plantera_spore: None,
@@ -3099,6 +3176,7 @@ impl Npc {
             wants_saucer_crew: false,
             wants_mount_carrier: None,
             wants_transform: None,
+            shimmerfly_threat_views: Vec::new(),
             wants_item_sounds: Vec::new(),
             // `NPC.alpha`'s `SetDefaults` row — the kind-level default (the
             // Poltergeist's 100, `NPC.cs:13202`); the Destroyer family's
@@ -3126,7 +3204,13 @@ impl Npc {
                         100
                     } else {
                         match kind {
-                            NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
+                            // W4-d42 - the alpha-255 spawn-fade row
+                            // (`NPC.cs:16966` 620; d42's rowing adopted
+                            // by W4-g62 — the rest of the band stays
+                            // d42's, the merge dedupes).
+                            NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2
+                            | NpcKind::GoblinShark
+                            => {
                                 255
                             }
                             _ => 0,
@@ -3529,6 +3613,12 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62): the
+            // `SetDefaults` row writes no knockBackResist — the head's
+            // 1f (`NPC.cs:8533`) stands (the ForceBubble precedent).
+            NpcKind::Shimmerfly => 1.0,
+            // W4-d42 - the NPCID 620-624 SetDefaults rows.
+            NpcKind::GoblinShark => 0.0,
             _ => 0.4,
         }
     }
@@ -3909,6 +3999,11 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62):
+            // defense 0 (`NPC.cs:17585`).
+            NpcKind::Shimmerfly => 0,
+            // W4-d42 - the NPCID 620-624 SetDefaults rows.
+            NpcKind::GoblinShark => 30,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4281,6 +4376,11 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62): the
+            // row writes no value — the head's 0f (`NPC.cs:8544`) stands.
+            NpcKind::Shimmerfly => 0.0,
+            // W4-d42 - the NPCID 620-624 SetDefaults rows.
+            NpcKind::GoblinShark => 7500.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4410,6 +4510,17 @@ impl Npc {
         if self.kind == NpcKind::DetonatingBubble && self.hp <= 0 {
             crate::npc_ai_style70::bubble_check_dead(self);
         }
+        // W4-g62 — the no-list contact strike's `HitEffect` capture
+        // (`NPC.cs:81488`; the EoC dash/thorns callers run `StrikeNPC`
+        // in the C#, `Player.cs:21049-21116`/`:31387`).
+        self.wants_hit_dust
+            .push(crate::npc_hit_dust::HitDustSnapshot::capture(self, amount, dir));
+        // `NPC.cs:86531` — the 133 eye-pop latch write at STRIKE time
+        // (batch 35: the capture computed the gate; the C# writes
+        // localAI[0] before the NewGore body the drain replays).
+        if self.wants_hit_dust.last().is_some_and(|s| s.eye_pop_latched) {
+            self.local_ai[0] = 1.0;
+        }
         true
     }
 
@@ -4457,6 +4568,13 @@ impl Npc {
         // S1-D-3 W-9: the checkDead 371 re-arm (the `hurt` twin above).
         if self.kind == NpcKind::DetonatingBubble && self.hp <= 0 {
             crate::npc_ai_style70::bubble_check_dead(self);
+        }
+        // W4-g62 — the `HitEffect` capture (the `hurt` twin above).
+        self.wants_hit_dust
+            .push(crate::npc_hit_dust::HitDustSnapshot::capture(self, amount, dir));
+        // `NPC.cs:86531` — the eye-pop latch write (the `hurt` twin).
+        if self.wants_hit_dust.last().is_some_and(|s| s.eye_pop_latched) {
+            self.local_ai[0] = 1.0;
         }
         true
     }
@@ -4572,6 +4690,17 @@ impl Npc {
         // (`PrepareForDeathAnimation`, `:78032-78038`). RNG-free.
         if n.kind == NpcKind::DetonatingBubble && n.hp <= 0 {
             crate::npc_ai_style70::bubble_check_dead(n);
+        }
+        // W4-g62 — `StrikeNPC_Inner`'s `HitEffect(hitDirection, num)`
+        // tail (`NPC.cs:81476-81489`): the dust capture at the C# call
+        // moment (post-damage, post-knockback, post bubble re-arm). The
+        // 113/114 every-segment fan (`:81476-81484`) is the WoF death
+        // lane's (g60); the plain strike captures its own slot.
+        n.wants_hit_dust
+            .push(crate::npc_hit_dust::HitDustSnapshot::capture(n, amount, dir));
+        // `NPC.cs:86531` — the eye-pop latch write (the `hurt` twin).
+        if n.wants_hit_dust.last().is_some_and(|s| s.eye_pop_latched) {
+            n.local_ai[0] = 1.0;
         }
         true
     }
@@ -4921,6 +5050,18 @@ impl Npc {
             63 if self.kind == NpcKind::Flocko => {
                 crate::npc_ai_frost_mob::frost_mob_step(self, world, player, rng);
             }
+            // `else if (this.aiStyle == 64)` (`NPC.cs:34019-34248`) — the
+            // firefly family; the ONLY ported member is the Shimmerfly 677
+            // (W4-c9 — the 355/358/654 trio is W4-c7's kind wave). The
+            // faithful `npc_ai_style64::ai_064_step` claims the arm through
+            // a kind-gated adapter: the 677 threat scan reads the sibling
+            // pool the sim pre-pass stamps (`shimmerfly_threat_views`);
+            // the solo path runs it over the empty list (the style75 solo
+            // fold). noGravity + noTileCollide (`NPC.cs:17590-17592`) →
+            // the raw integration tail (`:90494-90498`).
+            64 if self.kind == NpcKind::Shimmerfly => {
+                self.ai_064_shimmerfly(world, player, rng)
+            }
             // `else if (this.aiStyle == 75)` (`NPC.cs:35501-36070`) — the
             // mount/rider family (390/392/393/394/492/416). S1-D-3-wire-saucer:
             // the SOLO path (a test's bare `update_rng`) runs the faithful
@@ -4940,7 +5081,68 @@ impl Npc {
         // the NEXT tick's AI, exactly like the C#'s player-update strike.
         self.just_hit = false;
         self.find_frame();
+        // `NPC.UpdateNPC`'s trail shift (`NPC.cs:90512` calls
+        // `UpdateNPC_UpdateTrails`, `:90779-90875`), AFTER `FindFrame`:
+        // the W4-g60 wiring wave — the 402 arm's mode-7 ring so the death
+        // dust feed reads the LIVE trail (the all-zero stand-in retired).
+        // W4-g62 adopts the SAME call + fn shape (keep-one at merge).
+        self.update_trails();
         self.contact(player, rng);
+    }
+
+    /// `NPC.UpdateNPC_UpdateTrails` (`NPC.cs:90779-90875`): the per-type
+    /// `NPCID.Sets.TrailingMode` shift of the `oldPos`/`oldRot` rings.
+    /// Only the 402 Stardust Worm Head rides it in this wave
+    /// (`NPCID.cs:10430`: 402 → 7 — shift both rings every tick,
+    /// `oldPos[0] = position + netOffset` (0 in single-player),
+    /// `oldRot[0] = rotation`); every other kind's modes wait on their
+    /// wiring lanes (the -1 default draws/shifts nothing).
+    /// W4-g62 mode census: the SAME row maps 519 → 7 (SolarGoop) — when
+    /// the goop KIND lands (`npc_ai_pillar.rs`'s spawn request today),
+    /// the gate below widens to it; the shift body is shared verbatim.
+    /// KEEP-ONE: W4-g60 landed this fn identically (0e0fbd6c7) — the
+    /// merge keeps ONE copy (identical shape; ANALYSIS contract).
+    /// TRAILCACHE WIDENING: the shift walks `..trail_len` — the C#'s
+    /// `oldPos.Length - 1` down to 1 (`:90866`), the RESIZED length
+    /// (`NPC.cs:8453-8462`), NOT the 60-slot storage: 402 shifts 36
+    /// slots, a default-10 kind shifts 10 exactly like before.
+    /// GATE WIDENING (the outside-sites census): the DD2 Kobold Flyers
+    /// 574/575 ARE rowed + wired (`update_diving_flyer`) and map mode 7
+    /// (`NPCID.cs:10430`) — the C# shifts their rings every tick, so
+    /// the port does too (default-10 rings; their FindFrame spark
+    /// `:67939` reads `oldPos[3]`, the DD2 FindFrame lane's arm — the
+    /// shift fills the anchor it will need; NO reader today, zero
+    /// draw/stream change). The Chaos Elemental 120 is NOT rowed on
+    /// this base (the g8 ≤230 wiring lane's; mode 4, default-10 ring).
+    /// W4-g62 follow-up (the trail-kind rowing): the 677 Shimmerfly
+    /// (c9's kind, adopted here) and the 620 GoblinShark (d42's kind,
+    /// adopted here) BOTH map mode 7 (`NPCID.cs:10430`) — the gate
+    /// widens to them the same day their `trail_cache_length` rows
+    /// land (677→60 the MAX, 620→20). Pure state shift: no HitEffect
+    /// oldPos reader exists for either type (the full :81654-89834
+    /// sweep found only 519/402), so zero RNG/draw change. The 522
+    /// AncientLight is NOT rowed (d42's 561-630 band excludes it; the
+    /// cultist lane's kind) — its 522→20 row + gate wait on that lane.
+    pub fn update_trails(&mut self) {
+        // `NPCID.Sets.TrailingMode` == 7 — the `case 7` arm
+        // (`NPC.cs:90863-90872`): 402, 574, 575, 620, 677 today
+        // (`NPCID.cs:10430`).
+        if !matches!(
+            self.kind,
+            NpcKind::StardustWormHead
+                | NpcKind::DD2KoboldFlyerT2
+                | NpcKind::DD2KoboldFlyerT3
+                | NpcKind::Shimmerfly
+                | NpcKind::GoblinShark
+        ) {
+            return;
+        }
+        for i in (1..self.trail_len).rev() {
+            self.old_pos[i] = self.old_pos[i - 1];
+            self.old_rot[i] = self.old_rot[i - 1];
+        }
+        self.old_pos[0] = Vec2::new(self.x, self.y);
+        self.old_rot[0] = self.rotation;
     }
 
     /// The Martian Officer's bubble lifecycle — `AI_003_Fighters`'s
@@ -5092,6 +5294,13 @@ impl Npc {
         // and the frame reset.
         self.kind = new_kind;
         self.size_override = None; // the kind's own box
+        // `SetDefaults`' trail resize + zero loop (`NPC.cs:8453-8468`):
+        // the logical length follows the NEW kind's TrailCacheLength
+        // row and the whole ring re-zeroes (the C# `Array.Resize`
+        // zero-fills growth; `:8463-8468` zeroes every slot).
+        self.trail_len = new_kind.trail_cache_length();
+        self.old_pos = [Vec2::ZERO; 60];
+        self.old_rot = [0.0; 60];
         self.max_hp = new_kind.max_hp();
         self.scale = 1.0;
         self.alpha = 0;
@@ -5670,6 +5879,46 @@ impl Npc {
             // is the tracked-sound seam; the port's NPC sound table has
             // no style-19 row, so it stays a documented skip (ANALYSIS).
         }
+    }
+
+    /// W4-c9 wiring — the aiStyle-64 adapter: the Shimmerfly's faithful
+    /// arm (`npc_ai_style64::ai_064_step`'s 677 branches,
+    /// `NPC.cs:34019-34248`). RNG census (the module's): the scale latch
+    /// `Next(75,111)` once, the rearm `Next(60,180)` + the far/near
+    /// wander draws — all on the caller's stream. The 677 threat scan
+    /// reads the slot-ordered pool the sim pre-pass stamps
+    /// (`shimmerfly_threat_views`); the solo path runs it over the empty
+    /// list (the style75 solo fold — the player scan still fires).
+    /// noGravity + noTileCollide (`NPC.cs:17590-17592`) → the raw
+    /// integration tail (`:90494-90498`); the 677 has NO glow tail
+    /// (the `:34154-34174` branch is the non-677 else), so the light
+    /// request is always None.
+    fn ai_064_shimmerfly(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let cand = crate::npc_target::session_candidate(player);
+        let views = std::mem::take(&mut self.shimmerfly_threat_views);
+        let ctx = crate::npc_ai_style64::Ai64Ctx {
+            players: &[cand],
+            npcs: &views,
+            ticker: 0,
+        };
+        let fx = crate::npc_ai_style64::ai_064_step(
+            crate::npc_ai_style64::SHIMMERFLY,
+            self,
+            world,
+            &ctx,
+            rng,
+        );
+        let _ = fx.light;
+        // `:90473-90476` — the dead-band X snap, then the noTileCollide
+        // stamps + raw integration (`:90496-90498`, the style56 shape).
+        if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
+            self.vx = 0.0;
+        }
+        self.old_x = self.x;
+        self.old_y = self.y;
+        self.old_direction = self.facing;
+        self.x += self.vx;
+        self.y += self.vy;
     }
 
     /// The kind-keyed dispatch — the pre-S1-D-2 `match self.kind`, unchanged
@@ -6287,6 +6536,14 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62): claimed
+            // by the kind-gated 64 axis arm above — this arm keeps the
+            // kind match exhaustive and routes direct-kind callers to
+            // the same machine (the fishron precedent).
+            NpcKind::Shimmerfly => self.ai_064_shimmerfly(world, player, rng),
+            // `NPC.cs:16950-16968 (value Item.buyPrice(0,0,75)=7500 :16961)` - aiStyle 107 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::GoblinShark => {}
         }
     }
 
@@ -8970,6 +9227,110 @@ impl Npc {
             // pinned forever (the style70/71 modules' FRAME_ROW consts).
             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                 self.frame = 1;
+            }
+            // W4-c9 — the Shimmerfly's `case 677` (`NPC.cs:72710-72721`):
+            // spriteDirection = direction; the DOUBLE counter increment
+            // (the plain ++ then the ++ inside the compare), reset at 6.
+            // The `++frame.Y >= 5` wrap counts PIXELS, not rows — the
+            // vanilla quirk: frame.Y cycles 0..4 px INSIDE row 0 (the
+            // sheet's row height is >= 5 px), so the port's row index
+            // never leaves 0 (the sub-row offset is below the port's
+            // row-granular frame model — documented fold).
+            NpcKind::Shimmerfly => {
+                self.sprite_dir = self.facing;
+                self.frame_counter += 1.0;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                }
+            }
+            // W4-d42 - `FindFrame` case 620 (`NPC.cs:68423-68542`): the
+            // attack rows 14..20 (the ai[0]/ai[1] gate, the 16/17
+            // 3-tick pair, the 18->16 loop), the wet swim rows 8..13
+            // with the atan2 turn, the dry walk rows 2..7 (|vx|+1 at
+            // >9), the air row 1.
+            NpcKind::GoblinShark => {
+                if self.ai[1] > 0.0 && self.ai[0] > 0.0 {
+                    self.sprite_dir = self.facing;
+                    if self.frame < 14 || self.frame > 20 || self.ai[1] == 59.0 {
+                        self.frame = 14;
+                        self.frame_counter = 0.0;
+                    }
+                    let num42 = if self.frame == 17 || self.frame == 16 { 3.0 } else { 5.0 };
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= num42 && self.frame < 20 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.ai[1] > 0.0 && self.frame == 18 {
+                            self.frame = 16;
+                        }
+                    }
+                } else if self.wet {
+                    if self.vx < 0.0 {
+                        self.facing = -1;
+                    }
+                    if self.vx > 0.0 {
+                        self.facing = 1;
+                    }
+                    if self.sprite_dir != self.facing {
+                        self.rotation *= -1.0;
+                        self.sprite_dir = self.facing;
+                    }
+                    let num43 = (self.vy * self.facing as f32)
+                        .atan2(self.vx * self.facing as f32);
+                    if (self.rotation - num43).abs() >= std::f32::consts::PI {
+                        if num43 < self.rotation {
+                            self.rotation -= std::f32::consts::PI * 2.0;
+                        } else {
+                            self.rotation += std::f32::consts::PI * 2.0;
+                        }
+                    }
+                    self.rotation = (self.rotation * 4.0 + num43) / 5.0;
+                    self.frame_counter += (self.vx * self.vx + self.vy * self.vy).sqrt();
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 8.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 13 {
+                        self.frame = 8;
+                    } else if self.frame < 8 {
+                        self.frame = 13;
+                    }
+                } else {
+                    if (self.rotation as f64) > 3.14 {
+                        self.rotation -= 6.28;
+                    }
+                    if (self.rotation as f64) > -0.01 && (self.rotation as f64) < 0.01 {
+                        self.rotation = 0.0;
+                    } else {
+                        self.rotation *= 0.9;
+                    }
+                    if self.vy == 0.0 {
+                        self.sprite_dir = self.facing;
+                        if self.vx == 0.0 {
+                            self.frame = 0;
+                            self.frame_counter = 0.0;
+                        } else {
+                            if self.frame < 2 {
+                                self.frame = 2;
+                            }
+                            self.frame_counter += self.vx.abs();
+                            self.frame_counter += 1.0;
+                            if self.frame_counter > 9.0 {
+                                self.frame += 1;
+                                self.frame_counter = 0.0;
+                            }
+                            if self.frame > 7 {
+                                self.frame = 2;
+                            }
+                        }
+                    } else {
+                        self.frame_counter = 0.0;
+                        self.frame = 1;
+                    }
+                }
             }
             // `case 370` (`NPC.cs:72142-72236`): the boss's state-keyed
             // strip over `Main.npcFrameCount[370]` = 8 (`Main.cs:67121`).
@@ -18591,6 +18952,12 @@ impl Npc {
             NpcKind::BlazingWheel => 353,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62): the
+            // vanilla id — unused by every arm above (the G6 key stays
+            // injective).
+            NpcKind::Shimmerfly => 677,
+            // W4-d42 - the vanilla ids 620-624 are free render keys.
+            NpcKind::GoblinShark => 620,
             // The wyvern family (S1-D-3): the gate-reassigned protocol ids
             // (`to_u16`'s 223-228 band) — the vanilla 87-92 collide with the
             // Scutlix/saucer arms above, so the hash rides the port band
@@ -20449,8 +20816,214 @@ mod tests {
         }
     }
 
+    /// W4-g60 wiring — `UpdateNPC_UpdateTrails`'s 402 mode-7 arm
+    /// (`NPC.cs:90863-90872`): each call shifts both rings down and
+    /// stamps `oldPos[0] = position` / `oldRot[0] = rotation`
+    /// (`netOffset` 0, single-player). The fresh ring is all-zero
+    /// (`NPC.cs:6119`'s `new Vector2[10]`, resized to 36 by
+    /// `SetDefaults` `:8453-8468`); after 36 shifts every slot
+    /// carries a recorded position — the death feed's trail loop then
+    /// reads a FULL ring instead of breaking at slot 0.
+    /// W4-g62 adopts this witness (g60 0e0fbd6c7 owns the original)
+    /// with the TRAILCACHE WIDENING: the 402 ring is 36 logical slots
+    /// (`NPCID.cs:10450`), storage 60 — g60 must adopt the SAME hunk.
+    #[test]
+    fn w4_g60_the_worm_head_trail_shifts_mode_7() {
+        let mut n = bare(NpcKind::StardustWormHead);
+        assert_eq!(n.trail_len, 36, "the 402 TrailCacheLength row");
+        assert_eq!(n.old_pos, [Vec2::ZERO; 60], "the field init");
+        n.rotation = 0.25;
+        n.update_trails();
+        assert_eq!(n.old_pos[0], Vec2::new(100.0, 100.0));
+        assert_eq!(n.old_rot[0], 0.25);
+        assert_eq!(n.old_pos[1], Vec2::ZERO, "the shift pulls the zero down");
+        // Move + shift again: slot 1 takes the OLD slot-0 stamp.
+        n.x = 106.0;
+        n.y = 103.0;
+        n.rotation = 0.5;
+        n.update_trails();
+        assert_eq!(n.old_pos[0], Vec2::new(106.0, 103.0));
+        assert_eq!(n.old_pos[1], Vec2::new(100.0, 100.0));
+        assert_eq!(n.old_rot[1], 0.25);
+        assert_eq!(n.old_pos[2], Vec2::ZERO);
+        // 34 more shifts fill the LOGICAL ring — no zero slot remains
+        // below trail_len; slots 36..60 are storage the C# never has.
+        for _ in 0..34 {
+            n.update_trails();
+        }
+        assert!(n.old_pos[..n.trail_len].iter().all(|&p| p != Vec2::ZERO));
+        assert_eq!(n.old_pos[36], Vec2::ZERO, "storage past trail_len stays zero");
+        assert_eq!(n.old_rot[36], 0.0);
+    }
+
+    /// The other kinds' TrailingMode arms are unwired: their rings stay
+    /// all-zero (the -1 default shifts nothing, `NPCID.cs:10430`) — and
+    /// their logical length is the TrailCacheLength default 10.
+    #[test]
+    fn w4_g60_other_kinds_do_not_shift_the_trail() {
+        let mut n = bare(NpcKind::Zombie);
+        assert_eq!(n.trail_len, 10, "the default row");
+        n.update_trails();
+        assert_eq!(n.old_pos, [Vec2::ZERO; 60]);
+        assert_eq!(n.old_rot, [0.0; 60]);
+    }
+
+    /// W4-g62 TRAILCACHE WIDENING — the full-table census
+    /// (`NPCID.cs:10450`) + the `SetDefaults` resize semantics
+    /// (`NPC.cs:8453-8468`): the storage is the max row (677's 60),
+    /// the logical length is the kind's row, Transform re-zeroes and
+    /// re-lengths (the C# resizes on every `SetDefaults`, Transform
+    /// included — `NPC.cs:81096`).
+    #[test]
+    fn w4_g62_the_trail_cache_census_and_resize() {
+        // The full table: only four kinds deviate from 10 (685's
+        // explicit 10 IS the default — not a deviation).
+        assert_eq!(NpcKind::StardustWormHead.trail_cache_length(), 36);
+        assert_eq!(NpcKind::Zombie.trail_cache_length(), 10);
+        // A Transform onto the worm head re-lengths + re-zeroes even a
+        // dirty ring (the SetDefaults :8463-8468 zero loop).
+        let world = World::new("t".into(), 200, 200);
+        let player = Player::spawn(&world);
+        let mut n = bare(NpcKind::Zombie);
+        n.old_pos[0] = Vec2::new(7.0, 7.0);
+        n.old_rot[0] = 1.0;
+        n.transform_to_kind(&world, &player, NpcKind::StardustWormHead);
+        assert_eq!(n.trail_len, 36);
+        assert_eq!(n.old_pos, [Vec2::ZERO; 60], "the resize zero loop");
+        assert_eq!(n.old_rot, [0.0; 60]);
+    }
+
+    /// W4-g62 trail-kind rowing — the 677 Shimmerfly (c9's kind) and
+    /// the 620 GoblinShark (d42's kind) carry their `NPCID.cs:10450`
+    /// rows: 677→60 (the census MAX — the storage size itself) and
+    /// 620→20. Both map TrailingMode 7 (`NPCID.cs:10430`), so the
+    /// widened `update_trails` gate shifts their rings every tick
+    /// (`NPC.cs:90863-90872`). NO HitEffect oldPos reader exists for
+    /// either type (the :81654-89834 sweep: only 519/402) — pure
+    /// state, zero RNG/draw change. The 522 AncientLight is NOT rowed
+    /// (d42's 561-630 band excludes the pillar mob; the cultist
+    /// lane's kind) — its 522→20 row + gate wait on that lane.
+    #[test]
+    fn w4_g62_the_shimmerfly_and_goblin_shark_shift_their_rowed_rings() {
+        // The rows themselves.
+        assert_eq!(NpcKind::Shimmerfly.trail_cache_length(), 60, "677→60 MAX");
+        assert_eq!(NpcKind::GoblinShark.trail_cache_length(), 20, "620→20");
+        // The 677: the FULL storage is logical — 60 shifts fill every
+        // slot, no storage-past-trail_len tail exists.
+        let mut n = bare(NpcKind::Shimmerfly);
+        assert_eq!(n.trail_len, 60);
+        assert_eq!(n.old_pos, [Vec2::ZERO; 60], "the field init");
+        n.rotation = 0.3;
+        for tick in 0..60 {
+            n.x = 100.0 + tick as f32;
+            n.update_trails();
+        }
+        assert_eq!(n.old_pos[0], Vec2::new(159.0, 100.0));
+        assert_eq!(n.old_pos[59], Vec2::new(100.0, 100.0), "the first stamp");
+        assert_eq!(n.old_rot[59], 0.3, "the rotation twin rides");
+        assert!(n.old_pos.iter().all(|&p| p != Vec2::ZERO), "the 60-ring fills");
+        // The 620: 20 logical slots — 20 shifts fill the ring, slots
+        // 20..60 are storage the C# never has.
+        let mut g = bare(NpcKind::GoblinShark);
+        assert_eq!(g.trail_len, 20);
+        g.rotation = 0.125;
+        for tick in 0..20 {
+            g.x = 200.0 + tick as f32;
+            g.update_trails();
+        }
+        assert_eq!(g.old_pos[0], Vec2::new(219.0, 100.0));
+        assert_eq!(g.old_pos[19], Vec2::new(200.0, 100.0), "the first stamp");
+        assert_eq!(g.old_rot[19], 0.125);
+        assert!(g.old_pos[..20].iter().all(|&p| p != Vec2::ZERO));
+        assert_eq!(g.old_pos[20], Vec2::ZERO, "storage past trail_len stays zero");
+        assert_eq!(g.old_rot[20], 0.0);
+        // A Transform onto the 677 re-lengths to the MAX + re-zeroes
+        // (the SetDefaults :8463-8468 zero loop, Transform included).
+        let world = World::new("t".into(), 200, 200);
+        let player = Player::spawn(&world);
+        let mut t = bare(NpcKind::Zombie);
+        t.old_pos[0] = Vec2::new(7.0, 7.0);
+        t.transform_to_kind(&world, &player, NpcKind::Shimmerfly);
+        assert_eq!(t.trail_len, 60);
+        assert_eq!(t.old_pos, [Vec2::ZERO; 60], "the resize zero loop");
+        assert_eq!(t.old_rot, [0.0; 60]);
+    }
+
+    /// W4-g62 outside-sites arm — the DD2 Kobold Flyers 574/575 are
+    /// rowed + wired (`update_diving_flyer`) and map TrailingMode 7
+    /// (`NPCID.cs:10430`): the C# shifts their default-10 rings every
+    /// tick (`NPC.cs:90863-90872`), so the widened gate does too. The
+    /// FindFrame spark (`:67939` reads `oldPos[3]`) is the DD2
+    /// FindFrame lane's arm — this witness pins the SHIFT only: slot 3
+    /// carries the 4-ticks-ago position the spark will anchor on, and
+    /// no draw/stream rides the shift (pure state, zero RNG).
+    #[test]
+    fn w4_g62_the_kobold_flyers_shift_the_mode_7_ring() {
+        for kind in [NpcKind::DD2KoboldFlyerT2, NpcKind::DD2KoboldFlyerT3] {
+            let mut n = bare(kind);
+            assert_eq!(n.trail_len, 10, "574/575 keep the default row");
+            n.rotation = 0.125;
+            for tick in 0..4 {
+                n.x = 100.0 + tick as f32;
+                n.update_trails();
+            }
+            // After 4 shifts slot 3 holds the FIRST stamp (100,100) —
+            // the spark's `oldPos[3] - position` aim anchor (`:67939`).
+            assert_eq!(n.old_pos[0], Vec2::new(103.0, 100.0));
+            assert_eq!(n.old_pos[3], Vec2::new(100.0, 100.0));
+            assert_eq!(n.old_rot[3], 0.125, "the rotation twin rides");
+            assert_eq!(n.old_pos[4], Vec2::ZERO, "the 10-ring's tail");
+            assert_eq!(n.old_pos[10], Vec2::ZERO, "storage past 10");
+        }
+    }
+
     pub(super) fn bare(kind: NpcKind) -> Npc {
         Npc::new(kind, 100.0, 100.0, 1, 0.0)
+    }
+
+    /// W4-g62 trail-kind rowing — the two adopted kinds' `SetDefaults`
+    /// rows pin against the C# (the c9 2042d77f1 / d42 2d7ac08c3 rowing,
+    /// the smallkinds witness shape). The 677 Shimmerfly
+    /// (`NPC.cs:17579-17593`): 10x10, aiStyle 64, dmg 0, def 0, 5 HP,
+    /// kb 1 (the head default), value 0, noGravity. The 620 GoblinShark
+    /// (`NPC.cs:16950-16968`): 34x58, aiStyle 107, dmg 70, def 30,
+    /// 5000 HP, kb 0, value 7500 (`Item.buyPrice(0,0,75)` :16961),
+    /// alpha 255 (the spawn fade :16966). WRITTEN, NOT RUN (code-only).
+    #[test]
+    fn w4_g62_the_rowed_kinds_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::Shimmerfly, 677u16, 64u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::GoblinShark, 620u16, 107u8, 34.0, 58.0, 70, 30, 5000, 0.0f32, 7500.0f32),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The protocol ids keep the vanilla slots (the free 354+ band).
+        assert_eq!(NpcKind::Shimmerfly.to_u16(), 677u16);
+        assert_eq!(NpcKind::GoblinShark.to_u16(), 620u16);
+        // The 677 noGravity row (`NPC.cs:17590`); the 620 keeps false
+        // (its aiStyle-107 charge state writes it live, unmodelled).
+        assert!(NpcKind::Shimmerfly.no_gravity());
+        assert!(!NpcKind::GoblinShark.no_gravity());
+        // The 620 alpha-255 spawn fade (`NPC.cs:16966`); the 677 keeps 0.
+        assert_eq!(Npc::new(NpcKind::GoblinShark, 0.0, 0.0, 1, 0.0).alpha, 255);
+        assert_eq!(Npc::new(NpcKind::Shimmerfly, 0.0, 0.0, 1, 0.0).alpha, 0);
+        // The debuff rows: both carry `{ SpecificallyImmuneTo: [31] }`
+        // (`NPCID.cs:10015-10021` 677 / `:9655-9661` 620).
+        assert!(crate::npc_buffs::NpcBuffs::for_kind(NpcKind::Shimmerfly).buff_immune[31]);
+        assert!(crate::npc_buffs::NpcBuffs::for_kind(NpcKind::GoblinShark).buff_immune[31]);
     }
 
     /// The AI's line-of-sight gate is `Collision.CanHit`'s tile-corner walk, not
@@ -23669,7 +24242,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 272] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -23948,6 +24521,11 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-g62 trail-kind rowing: the 677 Shimmerfly (c9's kind) and
+        // the 620 GoblinShark (d42's kind) — the TRAILCACHE WIDENING's
+        // 677→60 / 620→20 rows need the kinds in the wire roster.
+        NpcKind::Shimmerfly,
+        NpcKind::GoblinShark,
     ];
 
     #[test]
@@ -27559,8 +28137,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
+            272,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-g62's trail-kind rowing (the 677 Shimmerfly + the 620 GoblinShark), L-B gate)"
         );
         assert!(
             covered > 43,
@@ -33544,5 +34122,39 @@ mod s1_f_13d_tests {
             assert_eq!(n.vy, 0.0);
             assert!(n.wants_hostile_shot.is_empty(), "{kind:?} fires nothing");
         }
+    }
+
+    /// W4-g62 — the strike seam: every accepted `StrikeNPC` entry point
+    /// queues exactly ONE `HitEffect` capture (`NPC.cs:81488`) with the
+    /// post-damage life and the knockback side; a refused strike queues
+    /// nothing. The drain itself is `world_sim/npcs.rs`'s (the
+    /// `replay_hit_dust` witnesses pin the draws).
+    #[test]
+    fn w4_g62_every_landed_strike_queues_one_hit_dust_capture() {
+        let mut npcs = vec![Npc::new(NpcKind::Slime, 100.0, 100.0, 1, 0.0)];
+        npcs[0].hp = npcs[0].max_hp;
+        assert!(Npc::strike_melee(&mut npcs, 0, 5, 0.0, 5.0, false, Some(0), false));
+        assert_eq!(npcs[0].wants_hit_dust.len(), 1);
+        let s = npcs[0].wants_hit_dust[0];
+        assert_eq!(s.npc_type, 1);
+        assert_eq!(s.life, npcs[0].hp, "the post-damage life");
+        assert_eq!(s.dmg, 5.0);
+        assert_eq!(s.hit_dir, 1, "the NPC right of the striker is pushed right");
+        // The hurt_cd window refuses the second melee strike — no queue.
+        assert!(!Npc::strike_melee(&mut npcs, 0, 5, 0.0, 5.0, false, Some(0), false));
+        assert_eq!(npcs[0].wants_hit_dust.len(), 1);
+        // The projectile path has no hurt_cd gate — it queues its own.
+        assert!(Npc::strike_projectile(&mut npcs, 0, 5, 200.0, 5.0, false, Some(0), false));
+        assert_eq!(npcs[0].wants_hit_dust.len(), 2);
+        assert_eq!(npcs[0].wants_hit_dust[1].hit_dir, -1);
+        // The no-list contact twins queue too.
+        let mut n = Npc::new(NpcKind::Zombie, 100.0, 100.0, 1, 0.0);
+        n.hp = n.max_hp;
+        assert!(n.hurt(3, 0.0, 5.0, false, false));
+        assert_eq!(n.wants_hit_dust.len(), 1);
+        assert_eq!(n.wants_hit_dust[0].npc_type, 3);
+        n.hurt_cd = 0.0;
+        assert!(n.hurt_from_projectile(3, 200.0, 5.0, false, false));
+        assert_eq!(n.wants_hit_dust.len(), 2);
     }
 }

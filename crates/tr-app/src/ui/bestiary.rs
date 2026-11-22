@@ -1595,6 +1595,14 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        // The Shimmerfly (W4-c9's arm, adopted by W4-g62): the portrait
+        // rests the kind's `SetDefaults` box (`NPC.cs:17581-17582`), the
+        // wave-A shape.
+        (NpcKind::Shimmerfly, _) => (sheet_i, 10.0, 10.0, 10.0, white),
+        // W4-d42 - the roster's portraits rest the kinds' SetDefaults
+        // boxes on their own sheets (the WyvernHead literal-size
+        // precedent - the sheets are deferred, the index folds to 0).
+        (NpcKind::GoblinShark, _) => (sheet_i, 58.0, 34.0, 58.0, white),
     }
 }
 

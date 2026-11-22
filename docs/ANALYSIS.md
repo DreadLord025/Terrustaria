@@ -40262,3 +40262,395 @@ The keep-one contracts hold at the co-lane tips: the sandstorm arm is
 f42's (`4bf7b2e88`), the msg-112 net arm g50's; this lane's twins retire
 at merge. The family bible (research/339 §4) is the merger's one-paragraph
 read: one owner lane per family file, no double-feed, the 68 SEALED.
+## The NPC hit-dust lane (W4-g62)
+
+(2026-11-21, code-only mode, branch `task/W4-g62-npc-hit-dust`.)
+
+### Scope
+
+`NPC.HitEffect`'s LIVE (`life > 0`) per-kind dust arms — the whole giant
+else-if chain `NPC.cs:81654-89834` reached from `StrikeNPC_Inner`'s
+`HitEffect(hitDirection, num)` tail (`:81476-81489`). Ported as
+`crates/tr-app/src/npc_hit_dust.rs` (`HitDustSnapshot` +
+`replay_hit_dust`), 32 batches, ~240 dust sites. The full per-site ledger
+(C# `Dust.NewDust*` line = site id, with the exact args/post-writes) lives
+in the module header; a census sweep at the end confirmed **0 uncovered
+live sites**: all 629 `Dust.NewDust` sites in the range are either cited
+in the ledger (exact line or range) or classified death-half.
+
+### Lane boundaries (what is NOT here)
+
+- The DEATH halves of the same arms (the `life <= 0` sides) are
+  **W4-g59/g60**'s lane — including the 658-660/667/676/657 death blocks,
+  the 371 bubble ring (`:84239`), the daybreak prologue (`:81735`) and
+  the gore-only deaths (686/594/467/346/139/440 etc.).
+- Spawn-side dust is **g61**'s; hit sounds are **c13**'s
+  (`strike_hit_cue`/`queue_hit_effect_sound` — landed 09a3accf, not on
+  main; this lane does not depend on it).
+- The gore BODIES are the gore lanes' (d55/e5/f10/f5) EXCEPT the FOUR
+  hit-half bodies batch 35 owns (`:86532`/`:86947`/`:86951`/`:88648` —
+  the f5 research/111 hand-off, unowned after the f10-overrun delete;
+  research/334 §1, renamed 240→334 per registry-150 §9 — g58 WINS 240). Where another lane's gore call sits between dust
+  draws, its ARGUMENT draws are consumed here in C# order (the W4-e2
+  split precedent): the confetti slime's 5 (`:84738`, f10's LEGIT
+  window) and the Queen minion 667's 3 (`:82043-82047`, f10's legit
+  DD2 window). The zombie-group 186/632 `Next(5)` gates (`:86945`/
+  `:86949`) and the Deerclops 694 LIVE arm (`:88645-88648`) now spawn
+  their BODIES here too (batch 35).
+
+### Architecture — the strike-time capture + UpdateNPCs drain
+
+The C# runs `HitEffect` at STRIKE time, inside the strike's stream swap
+(`UpdatePlayers` for melee, `UpdateProjectiles` for the projectile
+walk). The port captures a `HitDustSnapshot` on all strike entries
+(`npc.rs::strike_pooled`/`hurt`/`hurt_from_projectile`) at the C#
+`HitEffect` call moment — AFTER the damage write and knockback
+(`NPC.cs:81387-81475` precede `:81488`), so `life` is post-damage and
+`vx/vy` post-knockback — pushes it to `NPC.wants_hit_dust`, and
+`world_sim/npcs.rs::update_npcs` drains the queue at the TOP of the pass
+(after the uid sweep, before the death retain drops dead slots) through
+the verbatim `DustPool::new_dust`/`new_dust_direct`
+(`tr_core::particles`, the d50 contract already on main). The
+`wants_gallop_dust` queue is the precedent.
+
+**RNG stream-placement deviation (the recorded fold, the W-10 gallop
+precedent):** every draw rides the **UpdateNPCs** stream after the tick,
+not the strike's own stream. The draw SEQUENCE per strike is identical
+and in C# statement order (explicit `Main.rand` argument/gate draws
+FIRST, then the pool internals, then the post-spawn writes — the
+sentinel slot 6000 takes the writes exactly like the C# when the pool
+refuses); only the stream placement differs. No existing stream
+reordered.
+
+### Numeric conventions
+
+- Loop bounds are f64 with the division FIRST:
+  `(num as f64) < dmg / (lifeMax as f64) * mult` — never
+  `dmg * mult / lifeMax` (different rounding at the boundary).
+- The martian arms (381 `:84287` etc.) use the `dmg / (lifeMax*50)`
+  divisor form verbatim.
+- `Color * float` truncates per byte (XNA): e.g. (222,108,48)×0.7 →
+  (155,75,33,178).
+- `hit_color`: only the Slime variants + MotherSlime write
+  `this.color` (`(0,0,0,50)` for the base slime); every other type keeps
+  `default(Color)` — the snapshot mirrors that.
+- The gold-critter block (`:84637-84644`, `NPCID.Sets.IsGoldCritter` =
+  `NPCID.cs:10126`: 442-448/539/592/593/601/605/613/627) is a STANDALONE
+  if BEFORE the giant chain: FLAT 10 with the `Next(232,234)` type
+  argument drawn BEFORE each spawn. Type 627 ALSO sits in the chain's
+  `:85942` group, so both arms fire in C# order (gold first, then the
+  ×20 dust-5 chain arm); every other gold type returns after the block.
+- Every-strike arms verified life-INDEPENDENT in C# (they run above any
+  life gate): the spheres 25/33/30/665, 690, 374/375, 112/666, 516 and
+  the crystal 522.
+
+### Resolved deferrals — the oldPos trails (the g60 ring landed, g62 widened it)
+
+The 519 oldPos trail (`:83008-83023`) and the Stardust Worm 402's LIVE
+arm (`:83565-83598`) now ride `Npc.old_pos`/`old_rot` — the W4-g60
+field shapes (0e0fbd6c7) adopted then **WIDENED by g62** (the
+TRAILCACHE WIDENING below: `[Vec2; 60]` + `[f32; 60]` storage +
+`trail_len`, the `SetDefaults` resize `NPC.cs:8453-8468` carried) plus
+`Npc::update_trails` (the `UpdateNPC_UpdateTrails` mode-7 shift,
+`NPC.cs:90863-90872`, called at `:90512` after `FindFrame` — both the
+solo `update_rng_dust` tail and the pooled aiStyle-75 path in
+`world_sim/npcs.rs`).
+
+**Mode census** (`NPCID.cs:10430`, `Sets.TrailingMode`): **519 → 7, the
+SAME row as 402 → 7** (shift both rings every tick). The full mode-7
+band: 402/417/418/419/519/521/522/546/551/558-560/574/575/620/636/677/
+685. The gate covers **402 + 574/575** (the rowed+wired kinds,
+945a6ea28); the rest wait on their wiring lanes (the SolarGoop 519
+KIND is unported — `npc_ai_pillar.rs` emits only the spawn request;
+the 519 dust arm is wired on the snapshot's `npc_type`, so it fires
+the day the kind exists).
+
+**TRAILCACHE WIDENING — LANDED on g62 (d3b008c78 + 945a6ea28), the
+one-widening-at-merge item executed on this branch.** Full census
+(`NPCID.cs:10450`): `Sets.TrailCacheLength = CreateIntSet(10, 402, 36,
+519, 20, 522, 20, 620, 20, 677, 60, 685, 10)` — default **10**; the
+deviations are **402→36, 519→20, 522→20, 620→20, 677→60 (the MAX)**;
+685's explicit 10 IS the default. `SetDefaults` (`NPC.cs:8453-8468`)
+reads the row (`:8456`), `Array.Resize`s BOTH rings when the length
+differs (`:8458-8462`), then zeroes the whole array (`:8463-8468`).
+The field init is `new Vector2[10]`/`new float[10]` (`NPC.cs:6119-6121`)
+— the resize runs on EVERY `SetDefaults`, Transform included
+(`NPC.cs:81096`). **Loop-bound census: the HitEffect arms bound on
+`this.oldPos.Length` DIRECTLY — NO `Math.Min`, no TrailCacheLength
+re-read** (519 `:83011` `num123 < this.oldPos.Length; num123 += 3`;
+402 live `:83579` and death `:83611` `num177/num179 <
+this.oldPos.Length`). The mode-7 shift bounds on `oldPos.Length - 1`
+(`:90866`).
+
+**The port shape (both branches MUST carry it identically):**
+`[Vec2; 60]`/`[f32; 60]` max-size storage (677's row is the census max
+— NOT 64) + a `trail_len: usize` logical length; every loop that
+walked `oldPos.Length` walks `..trail_len`. Slots ≥ trail_len stay
+ZERO (the C# resize zero-fills growth; the `:8463-8468` loop zeroes
+everything). `NpcKind::trail_cache_length()` (npc/data.rs, after
+`cs_id`) carries the table; `StardustWormHead => 36` landed with the
+widening, and the **trail-kind follow-up (this commit) rows 677→60
+(the MAX) + 620→20** — the Shimmerfly (c9 2042d77f1's kind) and the
+GoblinShark (d42 2d7ac08c3's kind) adopted verbatim, their mode-7
+gates widened the same day (the rowing note below). 519/522/685 KINDS
+stay unported on this base (522 is NOT rowed by d42 either — its
+561-630 band excludes the pillar mob; the cultist lane's), their
+wiring lanes add the row (and widen the `update_trails` gate) when the
+kind lands. `Npc::new` sets `trail_len` (≈ SetDefaults at spawn);
+`transform_to_kind` re-lengths + re-zeroes both rings.
+
+**EXACT widening-hunk contract for g60 (byte-identical adoption — the
+merge dedupes):**
+1. **Fields** (npc.rs, the `old_pos`/`old_rot` pair): `pub old_pos:
+   [Vec2; 60]`, `pub old_rot: [f32; 60]`, plus the new `pub trail_len:
+   usize` immediately after (doc comments included — see d3b008c78).
+2. **Init** (`Npc::new`): `old_pos: [Vec2::ZERO; 60], old_rot: [0.0;
+   60], trail_len: kind.trail_cache_length(),`.
+3. **Table** (npc/data.rs): `pub fn trail_cache_length(self) -> usize
+   { match self { NpcKind::StardustWormHead => 36, _ => 10 } }` on
+   `impl NpcKind`.
+4. **update_trails stride**: `for i in (1..self.trail_len).rev()`
+   (was `self.old_pos.len()`); the gate is now `matches!(self.kind,
+   StardustWormHead | DD2KoboldFlyerT2 | DD2KoboldFlyerT3)` (945a6ea28
+   — the rowed+wired flyers, mode 7, default-10 rings; pure state, no
+   RNG). The shift body + `old_pos[0]`/`old_rot[0]` stamps unchanged.
+5. **Transform** (`transform_to_kind`, after `self.kind = new_kind`):
+   `self.trail_len = new_kind.trail_cache_length(); self.old_pos =
+   [Vec2::ZERO; 60]; self.old_rot = [0.0; 60];`.
+6. **The two npc.rs witnesses**: g60's
+   `w4_g60_the_worm_head_trail_shifts_mode_7` /
+   `w4_g60_other_kinds_do_not_shift_the_trail` are ADOPTED WIDENED
+   (d3b008c78's versions: 36 logical slots, 34+2 shifts to fill,
+   `[Vec2::ZERO; 60]` inits, the storage-past-trail_len zero asserts)
+   — g60 replaces its 10-slot versions with these byte-identically.
+
+**g60e / g60-death-loop cross-note (same widening, g60's own struct):**
+g60's `DeathFx.old_pos` (its `[Vec2; 10]` snapshot twin) must widen the
+SAME way — `[Vec2; 60]` + `trail_len` captured at strike — and its 402
+DEATH loop (`:83611-83631`, `num179 < this.oldPos.Length`) bounds on
+`..s.trail_len`: up to **36** per-slot Next(4) gates (was 10), the
+zero-break inside the gate unchanged, the passing-slot pair is 2×
+(Next(3) dust 17 + unconditional dust 229 ×3 noGravity). g60's
+fresh-ring death witness's gate loop widens `0..10` → `0..36` exactly
+like g62's live twin (d3b008c78). The `Npc`-side hunks 1-6 above are
+SHARED — one copy at merge; the `DeathFx`-side widening is g60's own
+file, no collision with `HitDustSnapshot` (g62's, already widened).
+
+**g60f-widening RECEIPT — EXECUTED, the DeathFx-half INCLUDED (verified
+against g60 tip 30fea0fe1, 2026-11-21).** The g60 lane consumed this
+contract at 19431e385 ("the g60 half of g62's 6-hunk contract (32af98b4
+CONSUME)") and the follow-up 9a6c543f7 re-verified it in Python UTF-8
+(the PS1 probe misread the cmd-redirected snapshot's encoding — the
+same trap this lane's own probes hit). Re-derived here against the
+g60 tip's raw bytes (LF-normalized; the working tree is CRLF):
+- **Hunks 1-6 (the shared `Npc` surface): ALL BYTE-IDENTICAL to g62
+  32af98b44** — the three fields (`old_pos: [Vec2; 60]` / `old_rot:
+  [f32; 60]` / `trail_len: usize`), the `Npc::new` init trio, the
+  `trail_cache_length` table (402→36, default 10), the `update_trails`
+  fn (gate 402+574/575 + `..trail_len` stride + the stamps), the
+  Transform re-length/re-zero hunk, and ALL FOUR witnesses
+  (`w4_g60_the_worm_head_trail_shifts_mode_7`,
+  `w4_g60_other_kinds_do_not_shift_the_trail`,
+  `w4_g62_the_trail_cache_census_and_resize`,
+  `w4_g62_the_kobold_flyers_shift_the_mode_7_ring`) — each compared
+  segment-for-segment equal. The merge dedupes trivially.
+- **The DeathFx-half (g60's own struct): EXECUTED.**
+  `npc_death_dust.rs`'s `DeathFx.old_pos` is `[Vec2; 60]`,
+  `pub trail_len: usize` sits beside it, the strike capture reads
+  `old_pos: npc.old_pos, trail_len: npc.trail_len`, the 402 death loop
+  bounds `for i in 0..fx.trail_len` (`:83611` NO min — up to 36
+  Next(4) gates, the zero-break unchanged), and the fresh-ring death
+  witness's gate loop walks `0..36`. The g60e cross-note above is
+  LANDED, not pending.
+- **The ONLY g62-side delta g60 does NOT carry: this follow-up's
+  trail-kind rowing** (the 677→60 / 620→20 rows + the two-kind gate
+  widening below) — g60's table/gate stay at the 32af98b44 shape
+  (402-only table, 402+574/575 gate). At merge the g62 versions win
+  (they are the strict superset); g60's byte-identical hunks dedupe
+  against the UNCHANGED parts, the two widened hunks (table + gate)
+  resolve to g62's. No semantic conflict: g60 owns no 677/620 reader.
+
+**Draw-count consequences (re-derived, witnesses updated):**
+- 519 (`:83011`, stride 3 over 20): slots 0,3,6,9,12,15,18 — **FLAT 7
+  groups × 5 = 35 spawns** (was 4×5=20 on the 10-ring). No zero-break;
+  the fresh ring spawns all 35 at (0,0).
+- 402 LIVE (`:83579`, every slot of 36): up to **36 Next(4) gate
+  draws per ×3 iteration** (was 10); a passing gate on a zero slot
+  still BREAKS the walk (later slots draw nothing that iteration).
+- 402 DEATH (g60's `:83611`): same 36-gate bound, g60 re-derives.
+- The mode-7 shift: 402 shifts 35 slots down per tick (was 9); a
+  fresh 402 ring fills after **36** ticks (was 10).
+
+**Keep-one contract (g60 `update_trails` vs g62's):** the fn (widened
+gate + stride), the three fields, the field-init lines, the
+`trail_cache_length` table, the Transform hunk, the `update_rng_dust`
+tail call and the two widened `npc.rs` witnesses are **byte-identical
+adoptions** — the merge keeps ONE copy of each (trivial dedupe). g62's
+ONLY additions to the shared surface: the doc-comment census notes,
+the pooled-path tail call in `world_sim/npcs.rs` (g60 did not touch
+that path), the kobold gate widening + its witness (945a6ea28 — g60
+adopts), and the `HitDustSnapshot.old_pos`/`trail_len` fields (g62's
+own struct). The 402 sites are disjoint: g60 owns the DEATH arm
+(`:83599-83632`, site :83611), g62 the HIT arm (`:83565-83598`, site
+:83579) — the giant else-if's two halves, both replay in their own
+lanes.
+
+### Re-sweep — the other oldPos readers (none left in this lane)
+
+A full `oldPos` sweep of `NPC.cs` after the two ports: inside the
+HitEffect range (`:81654-89834`) the ONLY readers are `:83011-83014`
+(519) and `:83579-83596`/`:83611-83630` (402 live/death) — all now
+ported. Outside it, two dust-adjacent readers remain, both OTHER lanes'
+(and unported kinds' arms):
+- `:57046-57062` — the Chaos Elemental 120's teleport-arrival burst in
+  `AI_003_Fighters` (`ai[3] == -120` latch): 20 dust 71 at the head +
+  20 AT `oldPos[2]` with the normalized offset velocity. An AI-side
+  arm (the g61/AI wiring lanes), NOT a HitEffect site. **Rowed? NO**
+  on this base — no `NpcKind` maps cs_id 120 (`lang_tables.rs:197` is
+  the name row only); the g8 ≤230 kind-wire lane owns it (its tip
+  82c93cecf completes the ≤230 machine wiring; d37's 211-280 range
+  excludes 120). TrailingMode 4 (`NPCID.cs:10430`), TrailCacheLength
+  default 10 — `oldPos[2]` fits either shape; when g8 rows the kind,
+  the mode-4 shift arm (`:90836-90845`, position-only + the per-slot
+  AddLight) joins `update_trails` and this burst arms with the AI
+  lane. NOT armed here (the kind does not exist to shift).
+- `:67939`/`:67957-67967` — the DD2 Kobold Flyers 574/575's FindFrame
+  spark (`oldPos[3]` anchors the Lerp'd aim point, 2 gated dust 6,
+  the Next(maxValue) gate ramps 5→1 by frameCounter). **Rowed? YES**
+  — `DD2KoboldFlyerT2/T3` are wired (`update_diving_flyer`,
+  `npc.rs:6047-6048`) with FindFrame stand-ins (`:7139-7162`). Both
+  map mode 7 (`NPCID.cs:10430`), default-10 rings. **ARMED (small,
+  945a6ea28):** the `update_trails` gate now includes both flyers —
+  the C# shifts their rings every tick, the port now does too (pure
+  state, ZERO RNG/draw change; the spark itself stays the DD2
+  FindFrame lane's arm, but its `oldPos[3]` anchor is LIVE from the
+  first ticks instead of all-zero). The row-9 ignition burst's
+  `caster_counter` latch (`npc.rs:7155`) is untouched.
+- `:49584-49586`/`:49708-49710` — Duke Fishron's ring RESETS (writers,
+  no dust); the Main.cs readers are render-only (the trail draw).
+
+### Trail-kind rowing — 677 Shimmerfly + 620 GoblinShark (this follow-up)
+
+The TRAILCACHE WIDENING's census left four deviation rows unrowed
+because their KINDS were unported on this base. Two of them are now
+rowed by their sibling lanes, so this lane adopts the kinds (verbatim
+where the hunk is shared) and lands the rows + gates:
+
+- **677 Shimmerfly — c9 2042d77f1 rows it** (the snail wall-crawler
+  wave: `NpcKind::Shimmerfly`, aiStyle 64, 10x10, 5 HP, the
+  `npc_ai_style64::ai_064_step` 677 branches + the threat-view pool).
+  Adopted here: the enum variant, the `to_u16`/`from_u16` 677 arms,
+  the stats rows (size/ai_style/max_hp/contact_damage/cs_id/hit_sound/
+  death_sound/no_gravity/kb/defense/value), the kind-gated 64 axis arm
+  + `ai_064_shimmerfly` adapter + the `shimmerfly_threat_views` field
+  + the sim pre-pass stamp (all c9-verbatim), the bestiary entry, the
+  portrait arm, the draw arm (`scaled_anchor` over NPC_677, the
+  rotation whitelist), the NPC_677 sheet pack + the bestiary order-table
+  row, and the `Transform(677)` drain arm (inert here — the snail trio
+  stays c9's, nothing queues 677 yet). **Trail row: 677→60, the census
+  MAX** — the logical length IS the storage; the mode-7 gate widens.
+  NOT adopted (c9's own lane): the snail trio 359/360/655, the
+  aiStyle-67 adapter, the shimmer-seam fields, the collision
+  `walk_down_slope` — the merge takes c9's copies; the shared hunks
+  dedupe. **One deliberate correction over c9:** the 677
+  `DebuffImmunitySets` row is `{ SpecificallyImmuneTo: [31] }`
+  (`NPCID.cs:10015-10021`) — c9's `&[]` arm missed it; this lane rows
+  `&[31]` (the C# dictionary is the source of truth; at merge this
+  arm wins).
+- **620 GoblinShark — d42 2d7ac08c3 rows it** (the 578-630 roster's
+  VANILLA-FREE band renumber: protocol id 620 == the vanilla type).
+  Adopted here: the enum variant, the `to_u16`/`from_u16` 620 arms,
+  the stats rows (34x58, aiStyle 107, 5000 HP, dmg 70, def 30, kb 0,
+  value 7500, the dd2_drakin hit/death cues, the alpha-255 spawn fade),
+  the `update_kind_ai` idle stand-in (aiStyle 107 UNWIRED — d42's own
+  dispatch shape), the full FindFrame case-620 arm (d42-verbatim), the
+  render_key 620 row, the bestiary entry ("Hemogoblin Shark"), the
+  portrait arm, the generic-anchor draw arm (the sheet is NOT packed —
+  d42's atlas-headroom deferral, the arm no-draws), the net-seed hover
+  arm, and the `&[31]` debuff row (`NPCID.cs:9655-9661`). **Trail row:
+  620→20**; the mode-7 gate widens. NOT adopted (d42's own lane): the
+  other 42 roster kinds, the sheets research — the merge takes d42's
+  copies; the shared hunks dedupe.
+- **522 AncientLight — NOT rowed, NOT armed.** The grep census: this
+  base's `npc/data.rs` has no 522 kind (the name row in
+  `lang_tables.rs:599` + the `npc_hit_dust.rs` :83031 crystal arm keyed
+  on `npc_type` are the only 522s), and d42's 561-630 band EXCLUDES it
+  (the pillar mob is the cultist lane's kind — `npc_ai_cultist.rs`'s
+  header names it). Its 522→20 row + mode-7 gate wait on that lane,
+  exactly like the 519 SolarGoop's (the `npc_ai_pillar.rs` spawn
+  request). The 685 BoundTownSlimeOld's explicit 10 IS the default —
+  no row needed when it lands.
+
+**Draw/stream consequence: ZERO.** Neither 677 nor 620 has a HitEffect
+oldPos reader (the :81654-89834 sweep found only 519/402) — the shift
+is pure state, the same shape as the 574/575 arm. The 677's ring fills
+after 60 ticks (the storage IS the logical length), the 620's after 20
+(slots 20..60 stay zero). Witnesses:
+`w4_g62_the_shimmerfly_and_goblin_shark_shift_their_rowed_rings` (the
+rows, the 60/20-tick fills, the storage-past-trail_len zeros, the
+Transform re-length to the MAX) +
+`w4_g62_the_rowed_kinds_defaults_match_the_csharp_rows` (the
+SetDefaults pin, the protocol round-trip, the noGravity/alpha/debuff
+rows) — written, not run (code-only).
+
+### Batch 35 — the FOUR hit-half gore bodies + the 133 eye-pop latch (research/334, chain 240→334 per registry-150 §9 — g58 WINS 240)
+
+The f5 FINAL receipt (research/111) split its 853-site recount into 849
+death-half + **4 hit-half** (`:86532`/`:86947`/`:86951`/`:88648`) — g60's
+§12.8.3 confirmed them unowned after the f10-overrun delete (d55's window
+`:81660-81941` covers none). Batch 35 ports all four through the verbatim
+`GorePool::new_gore` (`tr_core::gore`, the S1-E-4 pool on main) on the SAME
+UpdateNPCs stream, C# statement order — `replay_hit_dust` gains the
+`&mut GorePool` parameter, the drain passes `app.gore`:
+- **133 eye-pop** (`:86529-86533`): the capture computes
+  `eye_pop_latched` on strike-time state (`hp > 0 && hp < max_hp*0.5f &&
+  localAI[0] == 0`, f32 casts, strict `<`); the STRIKE ENTRY writes
+  `localAI[0] = 1` right after the capture push (the C# `:86531` order —
+  before the body); the drain spawns ONE gore 1, scale 1f default, zero
+  argument draws. A killing blow never pops (the gate is under `life > 0`).
+- **186/632 gated bodies** (`:86947`/`:86951`): the Next(5) gates were
+  already consumed here (batch 1); the bodies 242/1217 now spawn INSIDE
+  the gates, scale 1f default.
+- **694 Deerclops LIVE burst** (`:88645-88649`): the clamped
+  `max(1,min(5,(int)(dmg/lifeMax·3)))` count × gore 1008 at Centre +
+  ((-w + (int)(w·NextFloat))·0.5, (-h + (int)(h·NextFloat))·0.5),
+  this.scale carried — the 2 NextFloat argument draws (batch 32) now feed
+  the position (f5's death-twin `:88654` shape; the death half stays f5's).
+
+**The g60f-widening MUTUAL RECEIPT (independently re-verified):** g62 re-ran
+g60's own `g60_verify_widen.py` (pure-text Python) against g60 tip
+`30fea0fe1` vs g62 `32af98b44`: fields 34/34, init 8/8, update_trails 40/40,
+Transform 7/7, witnesses 105/105, table 19/19 — **ALL BYTE-IDENTICAL**. The
+6-hunk contract is CONSUMED; the merge dedupes the shared `Npc` surface.
+
+**HIT-DUST-FAMILY COMPLETE** (research/334, chain 240→334 per registry-150 §9): 629 live dust sites zero
+missed + the 4 hit-half gore bodies owned + the 133 latch owned + the
+TrailCache widening landed and mutually receipted.
+
+**FIFTH hit-half site LANDED (e5 research/351 §§3-4, `74ae9b085`):** the 667 GoldenSlime LIVE 3-gore twin (`NPC.cs:82043-82047`, site `:82045`) now EMITS in g62's 667 arm — per iteration the `NewGore((position.X, Center.Y - 10f), Zero, 1218)` kicks (`Next(10,31)` Y then `Next(-20,21)` X, `Gore.cs:1327-1328`, Scale 1f default) FIRST, then the `:82046` velocity OVERWRITE (`Next(1,10)*0.3*2*hitDirection`, `-(2.5+Next(4)*0.3)` — NOT the death arm's ×2.5 / −(3+…)); the old "bodies f10's legit DD2 window" mislabel superseded, the witness `w4_g62_the_queen_minion_live_gate_and_667_draws` re-derived to 3×(2 kicks + 2 overwrite) + 7 dust with a twin `GorePool` (+6 draws, WRITTEN NOT RUN).
+
+### Verification
+
+Code-only: every arm re-read against the cited C# windows (≤100-line
+reads); the seam call sites checked by read/grep (`DustPool::new_dust`/
+`new_dust_direct` signatures, `SpawnCtx`, `RngKey::UpdateNpcs`,
+`bow_launch::rotated_by`, `tile_light::palette::hsl_to_rgb` for the
+rainbow slime 661). The 63 witness tests in `npc_hit_dust.rs` (the
+519/402 trail twins RE-DERIVED to the widened rings: 7×5 stride-3
+groups / 36-slot gate walks; batch 35's pincushion/Deerclops twins
+RE-DERIVED to mirror the gore slots + the 2 new latch/632 witnesses)
+plus the `npc.rs` seam witness
+(`w4_g62_every_landed_strike_queues_one_hit_dust_capture`), the two
+g60-adopted trail witnesses (widened) and the two new widening
+witnesses (`w4_g62_the_trail_cache_census_and_resize`,
+`w4_g62_the_kobold_flyers_shift_the_mode_7_ring`) plus the trail-kind
+rowing's two (`w4_g62_the_shimmerfly_and_goblin_shark_shift_their_rowed_rings`,
+`w4_g62_the_rowed_kinds_defaults_match_the_csharp_rows`) and the new
+`world_sim/npcs.rs` seam witness
+(`w4_g62_the_drain_latches_the_eye_and_spawns_one_pop`) are
+WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/
+graphify invoked**. Witness convention: twin `UnifiedRandom` + twin
+`DustPool` (+ twin `GorePool` for the batch-35 bodies) replaying the
+exact draw sequence,
+`assert_eq!(rng, twin_rng)` + `assert_eq!(dust.slots(), twin.slots())`
+(+ `assert_eq!(gore.slots(), twin_gore.slots())`).
