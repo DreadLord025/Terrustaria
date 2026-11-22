@@ -1625,6 +1625,62 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
     }
 }
 
+/// `Projectile.hostile`'s `SetDefaults` slice (W4-c19, the `:17341`
+/// enchantment gate census): the reset false (`Projectile.cs:764`) and the
+/// per-type `this.hostile = true` writes — the FULL 179-kind list, frozen
+/// verbatim from the `SetDefaults` ladder (the multi-type arms' every kind
+/// included: the 99/727/1013/1014/1053-1055/1057 boulder family `:1833`,
+/// the 578/579/813 ritual trio `:6282`, the 673/674 pair `:7207`).
+///
+/// The only RUNTIME writes are the two bomb-death flips — aiStyle 49's
+/// `ai[0] == -2` (`:28247`) and the 281's `ai[0] == -2` (`:75798`) — and
+/// both kinds are classless bombs (`melee`/`ranged` false), so they can
+/// never reach the `(melee || ranged)`-gated mount light this census
+/// serves; the kind-derived flag is exact for every consumer.
+pub(crate) fn set_defaults_hostile(kind: u16) -> bool {
+    matches!(
+        kind,
+        12 | 31 | 38 | 39 | 40 | 43 | 44 | 55 | 56 | 67 | 71 | 75 | 81 | 82 | 83 | 84
+            | 96 | 98 | 99 | 100 | 101 | 102 | 108 | 109 | 110 | 115 | 128 | 129 | 164
+            | 174 | 176 | 177 | 179 | 180 | 184 | 185 | 186 | 188 | 201 | 202 | 203
+            | 204 | 205 | 240 | 241 | 257 | 258 | 259 | 264 | 270 | 275 | 276 | 277
+            | 288 | 290 | 291 | 292 | 293 | 299 | 300 | 302 | 303 | 325 | 327 | 329
+            | 345 | 346 | 347 | 348 | 349 | 350 | 351 | 352 | 384 | 385 | 386 | 435
+            | 436 | 437 | 438 | 447 | 448 | 449 | 450 | 452 | 454 | 455 | 456 | 462
+            | 464 | 465 | 466 | 467 | 468 | 471 | 472 | 490 | 498 | 501 | 508 | 526
+            | 537 | 538 | 539 | 540 | 572 | 573 | 574 | 575 | 576 | 577 | 578 | 579
+            | 580 | 581 | 592 | 593 | 596 | 605 | 629 | 654 | 655 | 657 | 658 | 662
+            | 670 | 671 | 672 | 673 | 674 | 675 | 676 | 681 | 682 | 683 | 685 | 686
+            | 687 | 713 | 719 | 727 | 763 | 811 | 812 | 813 | 814 | 836 | 871 | 872
+            | 873 | 874 | 909 | 919 | 920 | 921 | 922 | 923 | 926 | 961 | 962 | 965
+            | 980 | 1001 | 1002 | 1005 | 1007 | 1013 | 1014 | 1021 | 1048 | 1049
+            | 1053 | 1054 | 1055 | 1057 | 1073 | 1078 | 1091 | 1092
+    )
+}
+
+/// `Projectile.noEnchantments`'s `SetDefaults` slice (W4-c19): the reset
+/// false (`Projectile.cs:794`) and the four `this.noEnchantments = true`
+/// writes — the 480 dart (`:5559`), the 1121/1131/1132 Dead Cells flint
+/// helpers (`:10501`/`:10621`/`:10633`). NO runtime writes anywhere in
+/// `Projectile.cs`; the kind-derived flag is exact.
+pub(crate) fn set_defaults_no_enchantments(kind: u16) -> bool {
+    matches!(kind, 480 | 1121 | 1131 | 1132)
+}
+
+/// `Projectile.noEnchantmentVisuals`'s `SetDefaults` slice (W4-c19): the
+/// reset false (`Projectile.cs:795`) and the 21 `this.noEnchantmentVisuals
+/// = true` writes — the outer `Update` gate (`:16700`) that skips
+/// `UpdateEnchantmentVisuals` wholesale. The 1128 arm writes it twice
+/// (`:10575`/`:10578`, a verbatim source quirk); the set is the same.
+/// NO runtime writes; the kind-derived flag is exact.
+pub(crate) fn set_defaults_no_enchantment_visuals(kind: u16) -> bool {
+    matches!(
+        kind,
+        181 | 228 | 229 | 344 | 399 | 401 | 504 | 566 | 611 | 669 | 697 | 698 | 709
+            | 732 | 933 | 954 | 979 | 1100 | 1108 | 1128 | 1129
+    )
+}
+
 /// The ported families' `SetDefaults` slice. The spear trap's spear (186,
 /// aiStyle 37) keeps a stand-in row (see its arm) and the flame jet (187,
 /// aiStyle 38) stays a passthrough — their AI families are M4-PROJ

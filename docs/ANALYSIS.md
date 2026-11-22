@@ -24045,6 +24045,224 @@ colours, the laser/hook arm colours, the negative-coordinate truncation and the
 even-side anchor invariant; `projectile.rs`'s `proj_light_spawn_tests` pin the
 spawn copy, the crystal-storm scale-driven rewrite across the fade gate, the
 dark WaterBolt and the stream-neutrality witness.
+### The projectile AI-arm lights, first wave (S1-E-5, W4-c19, 2026-11-21, code-only mode)
+
+`crates/tr-app/src/proj_lights_a.rs::proj_lights_a` ports the **first 67** of
+`Projectile.cs`'s 107 `Lighting.AddLight` call sites (sites 1-67 in line order,
+`:16655`…`:54071`) — the AI-arm lights OUTSIDE `ProjLight`, the slice the W4-f7
+census freeze (`crates/tr-app/tests/proj_addlight_census.rs`, `67110ccf`) pins
+verbatim. Sites 68-107 are W4-e6's landed second wave (`proj_ai_lights.rs`);
+**67 + 40 = 107 — the Projectile.cs AddLight family is now CLOSED**. The feed is
+ONE loop in `app/frame/draw.rs` beside the `proj_light` feed, after the step, in
+`Main.projectile` slot order, into the **same** `EntityLights` pair. Like the
+`ProjLight` chain and the e6 wave, an arm whose kind has no `proj_data` row is
+absent wholesale (no slot can carry it), a light gated on a `Main.rand` draw is
+absent wholesale (the e6 RNG rule), and no ported arm draws `Main.rand` — the
+feed is pure, so its placement cannot move any stream.
+
+**Accounting (first wave): 23 ported sites / 32 lights, 2 audit-landed, 42
+absent.** Round 2 re-censused the 42 absent and activated 21 of them — see the
+round-2 note below the register (44 ported / 53 lights / 21 absent).
+
+* Sites 1-2 (`:16655`/`:16659`) are the `ProjLight` chain tail, already live in
+  `proj_lights.rs` (the 870 centre `AddLight` rides the common tail; the
+  `FloodFillTile` spread is the documented skip). RE-AUDITED against the census,
+  no new code.
+* **Ported (23 sites):** 346 OrnamentHostile's frame pair (`:24877`/`:24881`,
+  `frame = (int)ai[1]`); 732 ThunderSpearShot (`:27920`, (0.3, 0.6, 0.8)); 533
+  DeadlySphere's `(int)ai[0] % 3` warm/cool pair (`:29674`/`:29678`); 580
+  VortexLightning (`:32155`, (0.3, 0.45, 0.5)); 644 RainbowCrystalExplosion's
+  `hslToRgb(ai[0],1,0.5)·0.5` at `alpha == 0` (`:34265`); 604 TerrarianBeam
+  (`:34416`, (0.075, 0.3, 0.15)); 617 NebulaArcanum's `alpha < 150` gate
+  (`:34802`); 641 MoonlordTurret's `Opacity` scale (`:37070`); the gem bolts'
+  per-kind switch tail (`:38000` — 121 (0.9,0,0.9), 122 (0.9,0.9,0), 123
+  (0,0.1,1.3), 124 (0,1,0.1), 125 (1,0.1,0.1), 126 (1.3,1.3,1.3), 597 amber
+  (0.9,0.6,0.2), the `num24 = type−120` switch with amber remapped to 262); 623
+  StardustGuardian (`:44662`); 342 NorthPole (`:46037`); 856 SparkleGuitar's
+  `HotPink·0.3` (`:46588`); the Storm Tigers 833/834/835 (`:49283`/`:49287`/
+  `:49291`, gated `ai[0] != 4`); 500 CrimsonHeart (`:49464`); 446 AntiGravityHook's
+  mounted-centre light (`:52606`); the lunar hooks 646-649's mounted+centre pair
+  (`:52641`/`:52642`); the Celebration rockets 715-718's `GetCeleb2Color` palette
+  (`:52890`); 601 PortalGunBolt's `Center + velocity·3` lead anchor in the
+  `GetPortalColor` hue (`:54071`).
+* **Absent (42 sites), exactly:** the unrowed kinds — 502 Meowmere (`:24307`),
+  1092 book (`:25394`), 451 InfluxWaver (`:31212`), 464/465/466 cultist orbs
+  (`:31864`/`:31893`/`:31998`/`:32049`), 490 ritual (`:32384`), 492 lantern
+  (`:32410`), 518 coin portal (`:32962`), 575 nebula sphere (`:33580`), 590
+  truffle spore (`:34226`), 602 portal gate (`:34402`), the 612/953/978 trio
+  (`:34487`), 658 sandnado mark (`:36150`), 1115 glacier fang (`:37022`), 731
+  thunder staff (`:37821`), 1105 RC car (`:38458`), 1098 digtoise (`:38707`), the
+  phaseblades (`:39020`/`:39021`), 1091/1117 storm lightning (`:39783`), 1078
+  meteor ore (`:40038`), 567/568 spore traps (`:40046`), the AI_196 petals
+  (`:40507` — the rowed 248 is aiStyle 1 and never reaches AI_196; 1038/1116
+  unrowed), 1116 petalstorm (`:40513`), 614 cell shot (`:40892`), 636 daybreak
+  (`:40896`), 1020 drone (`:41031`), 973/972/984 sword beams (`:41775`/`:42181`/
+  `:42206`), 933/1100 fractals (`:43172`/`:43173`), 535 medusa head (`:44612`),
+  855 release lantern (`:47569`), 1127 saber stab (`:47649`), 756 sharp tears
+  (`:51492`); the mount light (`:17343` — the Chillet `MountData` rows 62-65 DO
+  exist in `mount.rs`, but the arm's `!hostile && !noEnchantments` gate reads two
+  slot fields the port does not carry, so it lands with the enchantment-visuals
+  fields); and the rand-gated 409 Typhoon (`:30378`, inside `Next(3)==0`),
+  849 ScytheWhip (`:47846`) and 912 CoolWhip (`:48011`).
+
+**The two state-driven deviations (recorded).** The Storm Tigers 833-835 and the
+601 PortalGunBolt are ported but read their spawn `ai[0]`: the tiger AI arm is
+deferred (the dispatch gates 833-835 out of `ai_freaking_pirates`) and the portal
+teleport AI is unported, so `ai[0]` keeps its spawn value. A default tiger spawn
+reads 0 (≠ 4) and the light is live; a spawn into the attack state reads 4 and
+stays dark. The 601 reads the `netMode == 0` portal hue by `ai[0] != 0`
+(`PortalHelper.cs:381-384`). Both are the e6 LaserDrill ported-but-dark precedent
+— the colour/gate are faithful to the slot state and land fully when their AI
+arms do. The hooks' `PlotTileLine` rope spread (`:52613`/`:52644`) is the
+light-map write with no port — skipped, the 870 `FloodFillTile` precedent.
+
+**The anchor vocabulary.** The `AddLight(Vector2, …)` overload
+(`Lighting.cs:140-143`) truncates the QUOTIENT (`(int)(v/16f)`,
+`XAnchor::Center`); the raw-vector anchors (the hooks' `mountedCenter`, the 601
+`Center + velocity·3` lead) use the same quotient truncation on the computed
+vector. The `(int)Center/16` form (the absent 409/451 arms) truncates first —
+kept distinct in the register, but the two agree for every real coordinate (the
+e6 anchor-agreement invariant). The 835 tiger's `Color.Lerp(OurFavoriteColor
+(255,231,69), White, 0.8)` uses XNA's per-byte truncation (`(byte)MathHelper.Lerp`
+→ (255,250,217)), the `color.rs::mul` precedent.
+
+Tests (written, **not run** — code-only mode): 18 witnesses in `proj_lights_a.rs`
+— the per-arm colours/anchors/gates (the ornament frame pair, the DeadlySphere
+`ai[0]%3`, the 644 hsl + alpha gate, the 617 alpha gate, the 641 Opacity scale,
+the gem per-kind tints, the tiger tiers + `ai[0]!=4` gate, the hooks'
+mounted-centre-only / mounted+centre pair order, the celeb2 palette, the 601 lead
+anchor + portal hue), the every-ported-kind-has-a-row invariant (32 kinds) and
+the every-unrowed-kind-contributes-nothing sweep (44 kinds).
+
+**Round 2 — the 42-absent re-census (2026-11-21, `1b85dfec` / `88ee3165`).** The
+four blockers re-censused against the pushed d-lanes; the accounting moves to
+**44 ported sites / 53 lights, 2 audit-landed, 21 absent** (30 witnesses).
+
+* **Blocker 1 — the gate fields (site 3, `:17343`).** The `SetDefaults` census:
+  `hostile = true` **179 kinds**, `noEnchantments` **4** (480/1121/1131/1132),
+  `noEnchantmentVisuals` **21** (the outer `:16700` gate). The only runtime
+  `hostile` writes are the two classless bomb-death flips (`:28247` / `:75798`),
+  which the `(melee || ranged)` gate already excludes — so the flags are exact
+  kind-derived facts. They land as `data.rs::set_defaults_hostile /
+  _no_enchantments / _no_enchantment_visuals`; `chillet_mount_light` feeds site 3
+  ahead of the AI arms (`:16702` order), the aiStyle-190/191 swords emitting the
+  two rotated swing rects (`:17299-17305`). The feed resolves the owner's active
+  mount type (`owner == 0` → the local player, the e6 single-player fold).
+* **Blocker 2 — the rand-gated 409/849/912 stay absent.** All three lights sit
+  INSIDE a `Main.rand` gate (409 `Next(3)==0` `:30358`, 849 `Next(9)!=0`
+  `:47829`, 912 `NextFloat()<num28/2` `:47983`); the e6 RNG rule does not allow
+  arming them. The 590 truffle spore (`:34226`) is the same case — its colour
+  rides `Next(28,42)`; the d12 row landed but the rand gate keeps it absent.
+* **Blocker 3 — ~20 kinds activated** (the d-lanes rowed them): d12
+  602/612/953/614/636, d13 658, d17 855/1127, d19 984/1126/933/1100, d20
+  1078/1038/1116/1020/985, d21 1115/1105/1098/1123/1091/1117. The collector
+  matches `p.kind` directly, so an arm is live as soon as its lane's row lets a
+  slot carry the kind; the row stays the lane's to merge (keep-one-dedupe — this
+  branch copies no rows; the row invariant is conditional, the d12 precedent).
+  **Two first-wave misattributions corrected:** site 45 (`:41775`) is the
+  `type == 985` arm (after the `type != 985` return `:41726`), NOT the 973; site
+  46 (`:42181`) the `type == 1126` arm, NOT the 972 (which has no light arm).
+  The 602 gate reads `GetPortalColor(owner, ai[1])` (ai[1], not ai[0]). The
+  1091's `moreLightning && noLightning` seed-green (`:39871`) folds to the teal
+  default — the feed carries no micro-seed flags (faithful for every classic
+  world; a deliberate fold).
+* **Blocker 4 — the tiger/601 deviations unchanged.** W4-d7 still gates 833-835
+  out of `ai_freaking_pirates`; no lane ported the 601 teleport AI (`ai001_b`
+  runs only the fade/frame). Both keep their spawn `ai[0]`.
+
+The 21 still-absent sites: 502 (`:24307`), 1092 (`:25394`), 451 (`:31212`),
+464/465/466 (`:31864`/`:31893`/`:31998`/`:32049`), 490 (`:32384`), 492
+(`:32410`), 518 (`:32962`), 575 (`:33580`), 978 (the `:34487` trio's third
+term), 731 (`:37821`), the phaseblades (`:39020`/`:39021`), 567/568 (`:40046`),
+535 (`:44612`), 756 (`:51492`) — all still unrowed; plus the rand-gated 409
+(`:30378`), 590 (`:34226`), 849 (`:47846`), 912 (`:48011`).
+
+**Round 3 — lights-final (2026-11-21, `0f8c1c077`…`fb58e88aa`).** The four
+rand-gated sites arm IN THE SIM — the `item_lights.rs` named-stream precedent,
+the e6 pure-feed rule's documented exception. The AI arms take their gate
+draws on the pass's `UpdateProjectiles` stream and queue `(tile x, tile y,
+rgb)` intents into `ProjectilePool::pending_ai_lights`; the world-sim pass
+drains them into the ONE `EntityLights` pair (`drain_ai_lights`, after the
+step, in slot + sub-step order). The draw-pass feed stays pure.
+
+* **409 Typhoon (`:30378`).** `ai_typhoon` takes the `localAI[1] > 10 &&
+  Next(3) == 0` gate (`:30358`); the taken branch runs the fade/spin/frame +
+  the light and censuses the ring's 6 × (`NextDouble`, `Next(3,8)`) draws
+  (`:30364`; the `NewDust` internal rolls go with the dust pool). The
+  unconditional-fade deviation is RETIRED — the fade/frame now advance only
+  on taken gates, the C#'s cadence. The DW-6.1 frame witness re-derived on an
+  always-0 gate twin.
+* **590 TruffleSpore (`:34226`).** New `ai_truffle_spore` (`:34194-34233`):
+  the 4-tick frame machine (the `ai[2]==1` grown strip reads 3-5), the
+  15/tick fade, the `Next(28,42)` flicker (`n = draw·0.005 +
+  (270−mouseTextColor)/500`, the 0.35-scaled (0.1, 0.3+n/2, 0.6+n) teal), the
+  `(0, sin(2π·ai[0]/180)·0.15)` hover with the 180 wrap (the C# casts the f32
+  phase to double for `Math.Sin`, back to f32, THEN ×0.15f).
+  `Main.mouseTextColor` rides a pool snapshot (`set_mouse_text_color`, the
+  `set_disco` precedent — the step reads what the last draw left). The 590
+  row is W4-d12's (keep-one-dedupe; the dispatch + seam witness conditional).
+* **849/912 whips (`:47846`/`:48011`).** New `whip_dust_lights` (the AI_165
+  dust-switch tail, after the swing state; a killed swing skips it): the
+  849's `t > 0.4 && Next(9) != 0` gate + the `Next(2)` BlackLightning particle
+  draw; the 912's `num28 > 0.1 && NextFloat() < num28/2` gate + the three
+  `Next(2)` dust-261 draws. The anchor: the curve tip's
+  `Utils.CenteredRectangle(p, 30).Center` (`Utils.cs:947-950` — truncate
+  `p−15` per axis, add 15 back) through the `AddLight(Vector2, Vector3)`
+  quotient truncation. The curve is `fill_whip_control_points` with the
+  slot's `ai[1]` spin seed — the dust cases call the DEFAULT overload
+  (`:47832`/`:47988`), not the collision sweep's forced 1f.
+  `whipRangeMultiplier` folds 1f (the arm carries no player; the golf-context
+  seam is the follow-up). **The inter-case stream deviation:** every OTHER
+  whip type's dust case (848/847/915/914/952/1034/1035/1028/913/1033/1029/
+  1030/1031/1032/1104) stays draw-skipped wholesale — their explicit rolls
+  belong to the dust pass's lane; until it lands, a mixed whip field's
+  stream interleaving differs from the C#'s (the same recorded shape as the
+  S1-E-21c sound-tail batch).
+* **The d9/d10/d11 activations (10 sites / 11 contributions).** d9 rowed
+  451/464/490/492, d10 518/535, d11 567/568/575 — their arms activate in
+  `proj_lights_a` (the rows stay the lanes' to merge). The state-driven
+  folds, each the tiger/601 precedent: the 451 reads its spawn alpha 255
+  (full-bright); the 464's spawn `ai[1]==0` reads the 6-point ring (the
+  `RotatedBy` doubles kept); the 490's `flag43` NPC-active/type gate folds to
+  the `ai[1] >= 0` slot-state half (the feed carries no NPC slice); the 535's
+  local-owner channel-Kill gate folds live; the 567/568 head reads
+  `(1−alpha/255)·scale` — dark at the alpha-255 spawn until the AI arm's
+  fade runs (the e6 ported-but-dark precedent). The 978 Volcano's d12 row is
+  aiStyle 189, NOT the `:34487` trio's 117 — the third term stays unreachable
+  (a style mismatch, not a missing row).
+
+**Round-3 accounting: 58 ported sites (54 feed + 4 sim) / 64 light
+contributions, 2 audit-landed, 7 absent** — 502 (`:24307`), 1092 (`:25394`),
+465/466 (`:31998`/`:32049`), 731 (`:37821`), the phaseblades
+(`:39020`/`:39021`), 756 (`:51492`), all still unrowed on every pushed lane.
+12 new witnesses written not run (42 total).
+
+**Round 4 — the 7-absent re-probe + SEAL (2026-11-21, `538369d63`).**
+Three of the seven are NOW ROWED on pushed lanes and their arms activate
+in `proj_lights_a` (the rows stay the lanes' to merge, keep-one): the
+**502 Meowmere** (site 4, `:24307` — W4-d75 `b59e3a874`/`d328fad8c`, the
+`:5732-5742` row; d75 records the disco AddLight as ITS skipped effect,
+this feed owns it), the **1092 LibrarianSkeletonBook** (site 7, `:25394`
+— W4-g5 `96f074959`, row + `ai_librarian_book` wired; the light precedes
+the ai[0] rand frame pick, unconditional), the **466
+CultistBossLightningOrbArc** (site 16, `:32049` — W4-d53 `c0dc7d37f` tip,
+row `6d09fe617`, `:5392-5403`; the 466 AI branch stays unported there —
+the light is unconditional after `frameCounter++`, reads none of the
+machine, the alpha-255 spawn does not gate it). The feed gains a `disco:
+[u8; 3]` parameter — the draw-pass `App::disco` snapshot the 502's
+`(0.5 + Disco/255)/2` tail reads (the 79 ProjLight `LightParams::disco`
+precedent; still pure, no stream moves). **The 4 still-absent are task
+seeds with row citations** (research/189's round-4 table): 465 (d75's
+`:31943` Item121 latch ARMED but the `:5382-5390` row rows-only owed),
+731 (`:7694-7704`), the 19-kind phaseblade set (`:10006-10058`; the
+colour census `Item.cs:49053-49168` — the 1101/1102 MultiLerp cycle needs
+the `UpdateMiscCounter` 300-wrap, unported; the 1074 lights NOTHING),
+756 (`:7793-7806`). **Round-4 accounting: 61 ported sites (57 feed + 4
+sim) / 67 light contributions, 2 audit-landed, 4 absent.** 3 new
+witnesses written not run (45 total). The compose receipts (e6 disjoint
+keep-one, d13's PET-light-67 zero-site census consumed, g18 disjoint) +
+the addlight-proj-family bible close the lane — research/189
+(ex-65, renumbered per registry-150) SEALED.
 ### The Player family (S1-E-5, 2026-11-18, code-only mode)
 
 `crates/tr-app/src/player_lights.rs::player_lights` ports **32 of Player.cs's

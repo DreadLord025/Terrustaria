@@ -4432,31 +4432,46 @@ impl Projectile {
     }
 
     /// `AI()`'s aiStyle-71 block (`Projectile.cs:30355-30454`) — the Razorblade
-    /// Typhoon (409). The six-dust ring (`:30359-30375`) and the
-    /// `Lighting.AddLight` (`:30382`) have no layer in the pool — documented
-    /// skips.
-    ///
-    /// Deviation from the source: the C# opens the whole fade/spin/frame block
-    /// with `Main.rand.Next(3) == 0` (`:30358`) as well as `localAI[1] > 10f`,
-    /// because the dust that block ends with is rolled on the same branch. The
-    /// pool takes no RNG this phase, so the port runs it every sub-step past
-    /// the 10th (the alpha reaches its 50 floor sooner and the frame advances
-    /// three times as fast as the source's average). The slot's `alpha` has no
-    /// draw consumer yet (`draw_with_hand` ignores it), so nothing visible
-    /// moves; the roll is a follow-up row.
-    fn ai_typhoon(&mut self, world: &World, npcs: &[Npc]) {
-        // `:30357-30383` — the age counter and the fade: past its 10th sub-step
-        // the alpha loses 5 with the 50 floor, the rotation spins by the
-        // flight's own X and the frame rides `localAI[1] / 3 % 3` — the slot's
-        // `frame` field this phase adds, with `localAI[1]` as its counter.
+    /// Typhoon (409). W4-c19 round 3: the `localAI[1] > 10 && Main.rand.Next(3)
+    /// == 0` gate (`:30358`) now lands — the arm takes the gate draw on the
+    /// pass's `UpdateProjectiles` stream and runs the fade/spin/frame block +
+    /// the `Lighting.AddLight` (`:30378`) only on the taken branch, appending
+    /// the light intent for the world-sim drain (`drain_ai_lights`). The
+    /// six-dust ring's explicit draws (`:30364`, one `NextDouble` + one
+    /// `Next(3, 8)` per dust × 6) are censused; the `Dust.NewDust` internal
+    /// rolls go with the dust pool (the `projectile_ai_darts` convention).
+    /// The old unconditional-fade deviation is RETIRED (ANALYSIS round 3).
+    /// Returns the light intent (`(tile x, tile y, rgb)`) or `None`.
+    fn ai_typhoon(
+        &mut self,
+        world: &World,
+        npcs: &[Npc],
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> Option<(i32, i32, [f32; 3])> {
+        // `:30357-30379` — the age counter, then the rand-gated fade: past the
+        // 10th sub-step ONE `Next(3)` decides the whole block — the six-dust
+        // ring, the alpha's 5-loss with the 50 floor, the rotation spin, the
+        // `localAI[1] / 3 % 3` frame and the light.
         self.local_ai[1] += 1.0;
-        if self.local_ai[1] > 10.0 {
+        let mut light = None;
+        if self.local_ai[1] > 10.0 && rng.next_range(0, 3) == 0 {
+            // `:30361-30370` — the ring's explicit draws, in order: per dust
+            // the `NextDouble` angle then the `Next(3, 8)` radius.
+            for _ in 0..6 {
+                let _ = rng.next_double();
+                let _ = rng.next_range(3, 8);
+            }
             self.alpha -= 5;
             if self.alpha < 50 {
                 self.alpha = 50;
             }
             self.rot += self.vel.x * 0.1;
             self.frame = (self.local_ai[1] / 3.0) as i32 % 3;
+            // `:30378` — `AddLight((int)Center.X / 16, (int)Center.Y / 16,
+            // 0.1, 0.4, 0.6)`: truncate the centre BEFORE the /16
+            // (`XAnchor::CenterTruncated`).
+            let (cx, cy) = self.center();
+            light = Some((cx as i32 / 16, cy as i32 / 16, [0.1, 0.4, 0.6]));
         }
         let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
         let mut target = center;
@@ -4547,6 +4562,7 @@ impl Projectile {
             }
         }
         self.pos += self.vel;
+        light
     }
 
     /// The C# caster families' steering blend —
@@ -5715,6 +5731,102 @@ impl Projectile {
             }
         }
         None
+    }
+
+    /// W4-c19 round 3 — `AI_165_Whip`'s per-type dust switch tail
+    /// (`Projectile.cs:47781-48269`) for the 849 ScytheWhip (`:47824-47848`)
+    /// and the 912 CoolWhip (`:47979-48012`): the rand-gated dust bursts'
+    /// EXPLICIT draws censused (the `Dust.NewDust*` internal rolls go with the
+    /// dust pool, the `projectile_ai_darts` convention), the two
+    /// `Lighting.AddLight` sites (`:47846` / `:48011`) armed as intents on the
+    /// pass's `UpdateProjectiles` stream. Every other whip type's dust case is
+    /// draw-skipped wholesale here — the dust pass's lane (ANALYSIS round 3
+    /// records the inter-case stream deviation).
+    ///
+    /// The curve: `FillWhipControlPoints` with `getActualCollisionPoints =
+    /// false` (the dust cases call the default overload, `:47832`/`:47988`) —
+    /// the spin seed is the slot's `ai[1]`, unlike the collision sweep's
+    /// forced 1f. The arm anchor is the player-centre stand-in (the `ai_whip`
+    /// deviation); `whipRangeMultiplier` folds to 1f (the arm carries no
+    /// player — the golf-context seam is the follow-up). The light anchor:
+    /// `Utils.CenteredRectangle(point, 30)` (`Utils.cs:947-950`) truncates
+    /// `point − 15` per axis, `Rectangle.Center` adds 15 back, and the
+    /// `AddLight(Vector2, Vector3)` overload truncates the /16 quotient
+    /// (`Lighting.cs:135-138`).
+    fn whip_dust_lights(
+        &mut self,
+        owner: Option<(f32, f32)>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> Option<(i32, i32, [f32; 3])> {
+        let kind = self.kind;
+        if kind != SCYTHE_WHIP && kind != COOL_WHIP {
+            return None;
+        }
+        let Some(settings) = self.whip_settings else {
+            return None;
+        };
+        // The C# reads `Main.player[owner]` unconditionally (`:47673`); the
+        // port's owner-less whip (the pool tests) has no arm to hang from.
+        let (ax, ay) = owner?;
+        let t = self.ai[0] / settings.time_fly_out;
+        let lerp = tr_core::scene::get_lerp_value;
+        let curve = |this: &Projectile| {
+            let inputs = tr_core::whip::WhipCurveInputs {
+                kind: this.kind,
+                ai0: this.ai[0],
+                frame_offset: 0,
+                ai1: this.ai[1],
+                sprite_direction: this.sprite_direction,
+                rotation: this.rot,
+                arm_position: Vec2::new(ax, ay),
+                held_use_animation: this.whip_use_animation,
+                whip_range_multiplier: 1.0,
+                velocity_len: this.vel.length(),
+                get_actual_collision_points: false,
+            };
+            tr_core::whip::fill_whip_control_points(&inputs, &settings)
+        };
+        // `Utils.CenteredRectangle(p, (30,30)).Center.ToVector2()` →
+        // `AddLight`'s `(int)(v / 16f)` per axis.
+        let anchor = |p: Vec2| {
+            let cx = (p.x - 15.0) as i32 + 15;
+            let cy = (p.y - 15.0) as i32 + 15;
+            ((cx as f32 / 16.0) as i32, (cy as f32 / 16.0) as i32)
+        };
+        if kind == SCYTHE_WHIP {
+            // `:47826-47829` — the two discarded `GetLerpValue` calls, then
+            // `num4 > 0.4 && Main.rand.Next(9) != 0`.
+            if !(t > 0.4) || rng.next_range(0, 9) == 0 {
+                return None;
+            }
+            let points = curve(self);
+            let tip = points[points.len() - 1];
+            // `:47835-47845` — the 191 dust (no draws), then the
+            // `Next(2) == 0` BlackLightningSmall particle gate.
+            if rng.next_range(0, 2) == 0 {
+                // The particle orchestrator has no port (the render
+                // follow-up); the gate draw stays.
+            }
+            // `:47846` — `AddLight(r2.Center, (0.2, 0, 0.4))`.
+            let (x, y) = anchor(tip);
+            return Some((x, y, [0.2, 0.0, 0.4]));
+        }
+        // `:47981-47983` — the 912's `num28 > 0.1 && NextFloat() < num28/2`.
+        let num28 = lerp(0.1, 0.7, t, true) * lerp(0.9, 0.7, t, true);
+        if !(num28 > 0.1) || !(rng.next_float() < num28 / 2.0) {
+            return None;
+        }
+        let points = curve(self);
+        let tip = points[points.len() - 1];
+        // `:47991-48000` — the 3× dust-16 loop + the 1× dust-13: no draws.
+        // `:48001-48010` — the 3-iteration `Next(2) != 0` dust-261 gate
+        // (the taken branch's `NewDustDirect` draws nothing explicit).
+        for _ in 0..3 {
+            let _ = rng.next_range(0, 2);
+        }
+        // `:48011` — `AddLight(r16.Center, (0.1, 0.1, 0.2))`.
+        let (x, y) = anchor(tip);
+        Some((x, y, [0.1, 0.1, 0.2]))
     }
 
     /// The C# `Vector2` overload of `Utils.MoveTowards` (`Utils.cs:1772-1780`)
@@ -10221,6 +10333,76 @@ impl Projectile {
         false
     }
 
+    /// W4-c19 round 3 — `AI()`'s aiStyle-112 type-590 arm
+    /// (`Projectile.cs:34194-34233`): the TruffleSpore's 4-tick frame machine
+    /// (the `ai[2] == 1` grown strip reads frames 3-5), the 15-per-tick alpha
+    /// fade to 0, the rand-flicker light (`:34226`) and the sine hover
+    /// (`:34228-34232`). The 590 row is W4-d12's to merge (keep-one-dedupe —
+    /// this branch copies no rows); the arm is live as soon as the row lets a
+    /// slot carry the kind.
+    ///
+    /// RNG: while `alpha == 0` ONE `Next(28, 42)` per tick colours the light
+    /// (`num831 = draw * 0.005 + (270 - mouseTextColor) / 500`); the fade
+    /// ticks draw nothing. `mouse_text_color` is `Main.mouseTextColor` as of
+    /// the last draw pass (the `item_lights::rand_light` essScale precedent —
+    /// the step reads the value the draw left).
+    ///
+    /// The light anchor is the `AddLight(Vector2, …)` overload's quotient
+    /// truncation (`Lighting.cs:140-143`, `XAnchor::Center`). Returns the
+    /// light intent or `None`.
+    fn ai_truffle_spore(
+        &mut self,
+        mouse_text_color: u8,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> Option<(i32, i32, [f32; 3])> {
+        // `:34196-34210` — the 4-tick frame machine: the grown spore
+        // (`ai[2] == 1`) cycles 3..5, the fresh one 0..2.
+        self.frame_counter += 1;
+        if self.frame_counter >= 4 {
+            let (first, past) = if self.ai[2] == 1.0 { (3, 6) } else { (0, 3) };
+            self.frame_counter = 0;
+            self.frame += 1;
+            if self.frame >= past {
+                self.frame = first;
+            }
+        }
+        // `:34211-34218` — the alpha fade to 0.
+        if self.alpha > 0 {
+            self.alpha -= 15;
+        }
+        if self.alpha < 0 {
+            self.alpha = 0;
+        }
+        let mut light = None;
+        if self.alpha == 0 {
+            // `:34221-34226` — the flicker: one `Next(28, 42)`, the
+            // mouseTextColor term, then the 0.35-scaled (0.1, 0.3+n/2, 0.6+n)
+            // teal at the centre.
+            let num831 = rng.next_range(28, 42) as f32 * 0.005
+                + (270.0 - mouse_text_color as f32) / 500.0;
+            let num832 = 0.1f32;
+            let num833 = 0.3 + num831 / 2.0;
+            let num834 = 0.6 + num831;
+            let num835 = 0.35f32;
+            let (cx, cy) = self.center();
+            light = Some((
+                (cx / 16.0) as i32,
+                (cy / 16.0) as i32,
+                [num832 * num835, num833 * num835, num834 * num835],
+            ));
+        }
+        // `:34228-34232` — the sine hover: `velocity = (0, sin(2π·ai[0]/180)
+        // * 0.15)`, the phase wraps at 180. The C# casts the f32 phase to
+        // double for `Math.Sin`, back to f32, THEN multiplies by 0.15f.
+        let phase = (std::f32::consts::PI * 2.0 * self.ai[0] / 180.0) as f64;
+        self.vel = Vec2::new(0.0, phase.sin() as f32 * 0.15);
+        self.ai[0] += 1.0;
+        if self.ai[0] >= 180.0 {
+            self.ai[0] = 0.0;
+        }
+        light
+    }
+
     /// The generic movement the C#'s `HandleMovement` runs for the styles
     /// without their own bounce or kill scan (`:17587` `Collision.TileCollision`
     /// + `:20468` `UpdatePosition`): a free move steps the box forward; a
@@ -14634,6 +14816,21 @@ pub struct ProjectilePool {
     /// [`ProjectilePool::set_disco`]; the default is `Main.Initialize`'s
     /// `DiscoR = 255` with G/B at 0.
     disco: [u8; 3],
+    /// W4-c19 round 3 — the rand-gated light intents the AI arms collected
+    /// this tick, in `Main.projectile` slot + sub-step order:
+    /// `(tile x, tile y, rgb)`. The C# `Lighting.AddLight` sits inside the
+    /// AI's `Main.rand` gate (`:30378` typhoon, `:34226` spore, `:47846` /
+    /// `:48011` whips); the arm takes the gate draw on the pass's named
+    /// `UpdateProjectiles` stream and appends the light here — the draw-pass
+    /// feed stays pure. The world-sim pass drains them into the ONE
+    /// `EntityLights` pair (`drain_ai_lights`, the `item_lights.rs`
+    /// named-stream precedent — the e6-rule exception).
+    pending_ai_lights: Vec<(i32, i32, [f32; 3])>,
+    /// W4-c19 round 3 — `Main.mouseTextColor` as of the last draw pass, the
+    /// 590 TruffleSpore's flicker term (`Projectile.cs:34221`). The step-time
+    /// arm reads the value the draw left (the `item_lights` essScale
+    /// precedent); the default 225 is the app's seed (`app/mod.rs`).
+    mouse_text_color: u8,
     /// S1-E-21 wave C — the landed strikes' `NPC.HitSound` intents
     /// (`NPC.cs:81544-81553` via `Projectile.Damage`'s `StrikeNPC`,
     /// `Projectile.cs:13649`): `(cue, npc.x, npc.y)` per landed hit, drained
@@ -15081,6 +15278,8 @@ impl ProjectilePool {
             wind_speed: 0.0,
             hook_blacklist: HashMap::new(),
             disco: [255, 0, 0],
+            pending_ai_lights: Vec::new(),
+            mouse_text_color: 225,
             pending_npc_hit_sounds: Vec::new(),
             pending_lucky_coin_drops: Vec::new(),
             pending_proj_sounds: Vec::new(),
@@ -15165,6 +15364,21 @@ impl ProjectilePool {
     /// (`world_sim/clock.rs`) owns the value; the pool only reads it.
     pub fn set_disco(&mut self, disco: [u8; 3]) {
         self.disco = disco;
+    }
+
+    /// W4-c19 round 3 — the rand-gated AI-arm light drain
+    /// (`Projectile.cs:30378`/`:34226`/`:47846`/`:48011`): the world-sim pass
+    /// appends each into the ONE `EntityLights` pair after the step, in the
+    /// C# slot + sub-step order the arms collected them.
+    pub fn drain_ai_lights(&mut self) -> Vec<(i32, i32, [f32; 3])> {
+        std::mem::take(&mut self.pending_ai_lights)
+    }
+
+    /// W4-c19 round 3 — `Main.mouseTextColor` as the 590 TruffleSpore's
+    /// flicker reads it (`Projectile.cs:34221`); the app's draw-pass pulse
+    /// owns the value (the `set_disco` precedent).
+    pub fn set_mouse_text_color(&mut self, mouse_text_color: u8) {
+        self.mouse_text_color = mouse_text_color;
     }
 
     /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
@@ -17772,7 +17986,13 @@ impl ProjectilePool {
                         189 => self.slots[i].ai_volcano(world),
                         // The aiStyle-71 Typhoon (`:30355-30454`): the lock,
                         // the turn, the accel and the full tile reflect.
-                        71 => self.slots[i].ai_typhoon(world, &npcs[..]),
+                        // W4-c19 round 3: the rand-gated fade block's light
+                        // intent (`:30378`) rides the pool's drain seam.
+                        71 => {
+                            if let Some(l) = self.slots[i].ai_typhoon(world, &npcs[..], rng) {
+                                self.pending_ai_lights.push(l);
+                            }
+                        }
                         // The aiStyle-23 Eye Fire (101) / Flames Trap (188)
                         // (`:25861-25935`): the launch ramp, the 60-tick cap
                         // and the spin.
@@ -18217,6 +18437,16 @@ impl ProjectilePool {
                             // pool spawns, so the request comes back out.
                             if let Some(arm) = self.slots[i].ai_whip(owner, aim, rng) {
                                 self.spawn_whip_arm(i, arm, owner);
+                            }
+                            // W4-c19 round 3 — the dust switch tail
+                            // (`:47781-48269`): the 849/912 rand-gated light
+                            // intents (`:47846`/`:48011`), after the swing
+                            // state (the C#'s order). A killed swing (the
+                            // `timeToFlyOut` return `:47683`) skips the tail.
+                            if self.slots[i].active {
+                                if let Some(l) = self.slots[i].whip_dust_lights(owner, rng) {
+                                    self.pending_ai_lights.push(l);
+                                }
                             }
                         }
                         15 => {
@@ -19012,6 +19242,25 @@ impl ProjectilePool {
                             }
                         }
                         112 => {
+                            // W4-c19 round 3 — `AI()`'s aiStyle-112 type-590
+                            // arm (`Projectile.cs:34194-34233`): the Truffle
+                            // Spore's frame/fade/flicker/hover. The C# runs it
+                            // BEFORE the 644 arm (`:34235`'s `type != 644`
+                            // return); the 590 row is W4-d12's (keep-one).
+                            if self.slots[i].kind == 590 {
+                                if let Some(l) = self.slots[i]
+                                    .ai_truffle_spore(self.mouse_text_color, rng)
+                                {
+                                    self.pending_ai_lights.push(l);
+                                }
+                                // `HandleMovement`: `tileCollide = false`
+                                // (`:6394`) — `UpdatePosition` integrates the
+                                // sine hover.
+                                if self.slots[i].active {
+                                    let vel = self.slots[i].vel;
+                                    self.slots[i].pos += vel;
+                                }
+                            } else {
                             // `AI()`'s aiStyle-112 type-644 arm
                             // (`Projectile.cs:34235-34362`, S1-D-4b-3): the
                             // Rainbow Crystal's shard. The parent probe
@@ -19033,6 +19282,7 @@ impl ProjectilePool {
                             if self.slots[i].active {
                                 let vel = self.slots[i].vel;
                                 self.slots[i].pos += vel;
+                            }
                             }
                         }
                         134 => {
@@ -36025,25 +36275,440 @@ mod magic_ai_tests {
     fn test_dw_6_1_the_typhoon_rides_its_frame_off_the_tick_counter() {
         // `:30376-30377` (`Projectile.cs`): `frame = (int)(localAI[1] / 3) % 3`
         // — the age counter into the 3-frame sheet, unwrapped by proj_frames.
+        // W4-c19 round 3: the block is rand-gated (`:30358`), so the witness
+        // drives the arm directly with an always-0 `Next(3)` twin — the frame
+        // math is the C#'s on every TAKEN sub-step (the gate census lives in
+        // `the_typhoon_gate_draws_one_next3_per_substep_past_ten`).
+        struct AlwaysZero(tr_core::tile_light::FastRandom);
+        impl DropRng for AlwaysZero {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                if (min, max) == (0, 3) {
+                    return 0;
+                }
+                self.0.next_range(min, max)
+            }
+            fn next_float(&mut self) -> f32 {
+                self.0.next_float()
+            }
+            fn next_double(&mut self) -> f64 {
+                self.0.next_double()
+            }
+        }
         let mut pool = ProjectilePool::new();
         let slot = pool
             .spawn_with_data(TYPHOON, 10.0 * TILE_PX, 10.0 * TILE_PX, 2.0, 0.0, 40, 5.0)
             .unwrap();
-        let mut w = world();
-        for _ in 0..7 {
-            step(&mut pool, &mut w);
+        let w = world();
+        let mut rng = AlwaysZero(tr_core::tile_light::FastRandom::new(7));
+        // 21 taken sub-steps — the counter's 21st rides 21/3 % 3.
+        for _ in 0..21 {
+            pool.slots[slot].ai_typhoon(&w, &[], &mut rng);
         }
         let p = &pool.slots()[slot];
-        // `extraUpdates = 2` runs the AI three sub-steps per tick (`:16668`),
-        // so seven ticks advance the counter 21 — the frame rides 21/3 % 3.
         assert_eq!(p.local_ai[1], 21.0, "the sub-stepped tick counter");
         assert_eq!(p.frame, 1, "21 / 3 = 7 % 3 — the modulo bounds the sheet");
         assert_eq!(proj_frames(TYPHOON), 3, "the Typhoon's projFrames slice");
-        for _ in 0..5 {
-            step(&mut pool, &mut w);
+        for _ in 0..15 {
+            pool.slots[slot].ai_typhoon(&w, &[], &mut rng);
         }
         // 36 / 3 = 12 — the twelfth frame wraps to the first sheet row.
         assert_eq!(pool.slots()[slot].frame, 0, "36 / 3 = 12 % 3 — the wrap");
+    }
+
+    // ---- W4-c19 round 3: the rand-gated AI lights (written, NOT run) --------
+
+    /// The 409's gate census (`Projectile.cs:30358`): sub-steps 1-10 draw
+    /// NOTHING; every sub-step past the 10th draws exactly one `Next(3)`, and
+    /// a taken branch adds the six-dust ring's 6 × (`NextDouble`, `Next(3,8)`)
+    /// pairs (`:30364`) — the twin replays the whole sequence.
+    #[test]
+    fn the_typhoon_gate_draws_one_next3_per_substep_past_ten() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(TYPHOON, 160.0, 176.0, 0.0, 0.0, 40, 5.0)
+            .unwrap();
+        let w = world();
+        let mut rng = tr_core::tile_light::FastRandom::new(4242);
+        let mut twin = tr_core::tile_light::FastRandom::new(4242);
+        for age in 1..=40u32 {
+            let got = pool.slots[slot].ai_typhoon(&w, &[], &mut rng);
+            if age <= 10 {
+                assert!(got.is_none(), "age {age}: the gate never opens");
+                continue;
+            }
+            let gate = twin.next_range(0, 3);
+            if gate == 0 {
+                for _ in 0..6 {
+                    let _ = twin.next_double();
+                    let _ = twin.next_range(3, 8);
+                }
+                let (cx, cy) = pool.slots[slot].center();
+                assert_eq!(
+                    got,
+                    Some((cx as i32 / 16, cy as i32 / 16, [0.1, 0.4, 0.6])),
+                    "age {age}: the taken branch lights"
+                );
+            } else {
+                assert!(got.is_none(), "age {age}: the missed gate stays dark");
+            }
+            assert_eq!(rng.seed, twin.seed, "age {age}: the draw sequence is the C#'s");
+        }
+    }
+
+    /// The taken branch's fade (`:30371-30375`): the alpha loses 5 per TAKEN
+    /// sub-step with the 50 floor; a missed gate leaves it untouched (the
+    /// retired unconditional-fade deviation's replacement).
+    #[test]
+    fn the_typhoon_fade_only_runs_on_taken_gates() {
+        struct Gate(tr_core::tile_light::FastRandom, bool);
+        impl DropRng for Gate {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                if (min, max) == (0, 3) {
+                    return if self.1 { 0 } else { 1 };
+                }
+                self.0.next_range(min, max)
+            }
+            fn next_float(&mut self) -> f32 {
+                self.0.next_float()
+            }
+            fn next_double(&mut self) -> f64 {
+                self.0.next_double()
+            }
+        }
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(TYPHOON, 160.0, 176.0, 2.0, 0.0, 40, 5.0)
+            .unwrap();
+        let w = world();
+        pool.slots[slot].local_ai[1] = 10.0;
+        pool.slots[slot].alpha = 255;
+        // A missed gate: no fade, no frame, no light.
+        let mut miss = Gate(tr_core::tile_light::FastRandom::new(1), false);
+        assert!(pool.slots[slot].ai_typhoon(&w, &[], &mut miss).is_none());
+        assert_eq!(pool.slots[slot].alpha, 255, "the missed gate keeps the alpha");
+        assert_eq!(pool.slots[slot].frame, 0, "nor advances the frame");
+        // Taken gates: 255 → 250 → … → 50 floor (41 taken sub-steps).
+        let mut hit = Gate(tr_core::tile_light::FastRandom::new(1), true);
+        for _ in 0..41 {
+            pool.slots[slot].ai_typhoon(&w, &[], &mut hit);
+        }
+        assert_eq!(pool.slots[slot].alpha, 50, "the 50 floor holds");
+        // The light anchor truncates the centre BEFORE the /16 (`:30378`).
+        pool.slots[slot].pos = Vec2::new(160.0, 176.0);
+        let got = pool.slots[slot].ai_typhoon(&w, &[], &mut hit).unwrap();
+        // The 30x30 box centres on (175, 191) → (10, 11).
+        assert_eq!(got, (10, 11, [0.1, 0.4, 0.6]));
+    }
+
+    /// The pool seam: a taken typhoon gate appends ONE intent to
+    /// `pending_ai_lights`; `drain_ai_lights` takes the whole vec and leaves
+    /// it empty (the `drain_npc_hit_sounds` shape).
+    #[test]
+    fn the_typhoon_light_rides_the_pending_drain_seam() {
+        struct AlwaysZero(tr_core::tile_light::FastRandom);
+        impl DropRng for AlwaysZero {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                if (min, max) == (0, 3) {
+                    return 0;
+                }
+                self.0.next_range(min, max)
+            }
+            fn next_float(&mut self) -> f32 {
+                self.0.next_float()
+            }
+            fn next_double(&mut self) -> f64 {
+                self.0.next_double()
+            }
+        }
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(TYPHOON, 160.0, 176.0, 0.0, 0.0, 40, 5.0)
+            .unwrap();
+        pool.slots[slot].local_ai[1] = 10.0;
+        let mut w = world();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut rng = AlwaysZero(tr_core::tile_light::FastRandom::new(3));
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            true,
+        );
+        // extraUpdates = 2 → three taken sub-steps → three intents, slot order.
+        let drained = pool.drain_ai_lights();
+        assert_eq!(drained.len(), 3, "one intent per taken sub-step");
+        for l in &drained {
+            assert_eq!(l.2, [0.1, 0.4, 0.6]);
+        }
+        assert!(pool.drain_ai_lights().is_empty(), "the drain empties the vec");
+    }
+
+    /// The 849's gate census (`Projectile.cs:47826-47846`): `t > 0.4` gates
+    /// the ONE `Next(9)`; a taken gate adds the `Next(2)` particle draw and
+    /// the (0.2, 0, 0.4) light at the curve tip's CenteredRectangle anchor.
+    /// The twin replays the draws; the anchor is recomputed off the same
+    /// `fill_whip_control_points` curve (the spin seed = the slot's ai[1]).
+    #[test]
+    fn the_scythe_whip_gate_draws_next9_then_next2() {
+        let center = (300.0, 200.0);
+        let mut pool = whip_at(center, SCYTHE_WHIP, 60);
+        // Mid-swing: ai[0] = 45 of timeToFlyOut 90 → t = 0.5 > 0.4.
+        pool.slots[0].ai[0] = 45.0;
+        pool.slots[0].ai[1] = 1.0;
+        let mut rng = tr_core::tile_light::FastRandom::new(4242);
+        let mut twin = tr_core::tile_light::FastRandom::new(4242);
+        for _ in 0..30 {
+            let got = pool.slots[0].whip_dust_lights(Some(center), &mut rng);
+            let gate = twin.next_range(0, 9);
+            if gate != 0 {
+                let _ = twin.next_range(0, 2);
+                let p = &pool.slots[0];
+                let settings = p.whip_settings.unwrap();
+                let points = tr_core::whip::fill_whip_control_points(
+                    &tr_core::whip::WhipCurveInputs {
+                        kind: p.kind,
+                        ai0: p.ai[0],
+                        frame_offset: 0,
+                        ai1: p.ai[1],
+                        sprite_direction: p.sprite_direction,
+                        rotation: p.rot,
+                        arm_position: Vec2::new(center.0, center.1),
+                        held_use_animation: p.whip_use_animation,
+                        whip_range_multiplier: 1.0,
+                        velocity_len: p.vel.length(),
+                        get_actual_collision_points: false,
+                    },
+                    &settings,
+                );
+                let tip = points[points.len() - 1];
+                let cx = (tip.x - 15.0) as i32 + 15;
+                let cy = (tip.y - 15.0) as i32 + 15;
+                assert_eq!(
+                    got,
+                    Some(((cx as f32 / 16.0) as i32, (cy as f32 / 16.0) as i32, [0.2, 0.0, 0.4]))
+                );
+            } else {
+                assert!(got.is_none(), "the Next(9)==0 miss stays dark");
+            }
+            assert_eq!(rng.seed, twin.seed, "the draw sequence is the C#'s");
+        }
+        // Below the t gate: NO draws at all.
+        pool.slots[0].ai[0] = 9.0; // t = 0.1
+        let before = rng.seed;
+        assert!(pool.slots[0].whip_dust_lights(Some(center), &mut rng).is_none());
+        assert_eq!(rng.seed, before, "the t gate short-circuits the draw");
+        // No owner: no arm anchor, no draws.
+        pool.slots[0].ai[0] = 45.0;
+        assert!(pool.slots[0].whip_dust_lights(None, &mut rng).is_none());
+        assert_eq!(rng.seed, before, "the owner-less whip draws nothing");
+    }
+
+    /// The 912's gate census (`Projectile.cs:47981-48011`): `num28 > 0.1`
+    /// gates ONE `NextFloat` against `num28/2`; a taken gate adds the three
+    /// `Next(2)` dust-261 draws and the (0.1, 0.1, 0.2) light. At t = 0.5,
+    /// the first lerp reads 2/3 and the second CLAMPS to 1 (t < to = 0.7) —
+    /// num28 = 2/3, the float gate is `< 1/3`.
+    #[test]
+    fn the_cool_whip_gate_draws_nextfloat_then_three_next2() {
+        let center = (300.0, 200.0);
+        let mut pool = whip_at(center, COOL_WHIP, 45);
+        // timeToFlyOut = 30 * 2 = 60; ai[0] = 30 → t = 0.5.
+        pool.slots[0].ai[0] = 30.0;
+        pool.slots[0].ai[1] = 1.0;
+        let mut rng = tr_core::tile_light::FastRandom::new(4242);
+        let mut twin = tr_core::tile_light::FastRandom::new(4242);
+        let num28 = tr_core::scene::get_lerp_value(0.1, 0.7, 0.5, true)
+            * tr_core::scene::get_lerp_value(0.9, 0.7, 0.5, true);
+        for _ in 0..30 {
+            let got = pool.slots[0].whip_dust_lights(Some(center), &mut rng);
+            let roll = twin.next_float();
+            if roll < num28 / 2.0 {
+                for _ in 0..3 {
+                    let _ = twin.next_range(0, 2);
+                }
+                let l = got.expect("the taken gate lights");
+                assert_eq!(l.2, [0.1, 0.1, 0.2]);
+            } else {
+                assert!(got.is_none(), "the float miss stays dark");
+            }
+            assert_eq!(rng.seed, twin.seed, "the draw sequence is the C#'s");
+        }
+        // t = 0.05: num28 = 0 → the lerp gate short-circuits the float draw.
+        pool.slots[0].ai[0] = 3.0;
+        let before = rng.seed;
+        assert!(pool.slots[0].whip_dust_lights(Some(center), &mut rng).is_none());
+        assert_eq!(rng.seed, before, "the num28 gate draws nothing");
+    }
+
+    /// The whip seam: a taken 849 gate appends its intent to the pool's
+    /// `pending_ai_lights` through the aiStyle-165 dispatch (the swing state
+    /// runs first, the dust tail after — the C#'s order).
+    #[test]
+    fn the_whip_lights_ride_the_pending_drain_seam() {
+        struct NeverZero(tr_core::tile_light::FastRandom);
+        impl DropRng for NeverZero {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                if (min, max) == (0, 9) {
+                    return 1; // the 849 gate always taken
+                }
+                self.0.next_range(min, max)
+            }
+            fn next_float(&mut self) -> f32 {
+                self.0.next_float()
+            }
+            fn next_double(&mut self) -> f64 {
+                self.0.next_double()
+            }
+        }
+        let center = (300.0, 200.0);
+        let mut pool = whip_at(center, SCYTHE_WHIP, 60);
+        // t past 0.4 on every sub-step of the tick: ai[0] starts at 36.
+        pool.slots[0].ai[0] = 36.0;
+        let mut w = ground();
+        let mut rng = NeverZero(tr_core::tile_light::FastRandom::new(9));
+        pool.update(
+            &mut w,
+            &mut [],
+            Some(center),
+            Some(Vec2::new(1.0, 0.0)),
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            true,
+        );
+        // extraUpdates = 2 → three sub-steps, each t > 0.4 → three intents.
+        let drained = pool.drain_ai_lights();
+        assert_eq!(drained.len(), 3, "one intent per taken sub-step");
+        for l in &drained {
+            assert_eq!(l.2, [0.2, 0.0, 0.4]);
+        }
+        assert!(pool.drain_ai_lights().is_empty(), "the drain empties the vec");
+    }
+
+    /// The 590's flicker (`Projectile.cs:34221-34226`): while alpha == 0 ONE
+    /// `Next(28, 42)` per tick; the colour is the C#'s product order
+    /// `(0.1·0.35, (0.3+n/2)·0.35, (0.6+n)·0.35)` with
+    /// `n = draw·0.005 + (270−mouseTextColor)/500`. The twin replays the draw.
+    #[test]
+    fn the_truffle_spore_flicker_draws_one_next_28_42() {
+        let mut p = Projectile::default();
+        p.kind = 590;
+        p.pos = Vec2::new(160.0, 176.0);
+        p.w = 14.0;
+        p.h = 14.0;
+        p.alpha = 0;
+        let mut rng = tr_core::tile_light::FastRandom::new(4242);
+        let mut twin = tr_core::tile_light::FastRandom::new(4242);
+        for mtc in [225u8, 255, 190] {
+            let got = p.ai_truffle_spore(mtc, &mut rng).expect("alpha 0 lights");
+            let draw = twin.next_range(28, 42);
+            assert_eq!(rng.seed, twin.seed, "exactly one Next(28,42)");
+            let n = draw as f32 * 0.005 + (270.0 - mtc as f32) / 500.0;
+            // The 14x14 box centres on (167, 183) → tile (10, 11).
+            assert_eq!((got.0, got.1), (10, 11));
+            assert_eq!(
+                got.2,
+                [0.1 * 0.35, (0.3 + n / 2.0) * 0.35, (0.6 + n) * 0.35],
+                "mtc {mtc}: the C# product order"
+            );
+        }
+        // The fade ticks draw NOTHING (alpha 255 → 240 → … → 15).
+        p.alpha = 255;
+        let before = rng.seed;
+        for _ in 0..16 {
+            assert!(p.ai_truffle_spore(225, &mut rng).is_none());
+        }
+        assert_eq!(rng.seed, before, "the fade is draw-free");
+        assert_eq!(p.alpha, 15, "255 - 16*15");
+        // The 17th tick lands alpha 0 and lights on the SAME tick (the C#
+        // checks `alpha == 0` after the fade).
+        assert!(p.ai_truffle_spore(225, &mut rng).is_some());
+        assert_eq!(p.alpha, 0);
+    }
+
+    /// The 590's frame machine + hover (`:34196-34210` / `:34228-34232`):
+    /// the fresh spore cycles frames 0-2 every 4 ticks, the grown one
+    /// (`ai[2] == 1`) 3-5; the hover is `(0, sin(2π·ai[0]/180)·0.15)` with the
+    /// 180 wrap.
+    #[test]
+    fn the_truffle_spore_frames_and_hover_follow_the_c() {
+        let mut p = Projectile::default();
+        p.kind = 590;
+        p.alpha = 0;
+        let mut rng = tr_core::tile_light::FastRandom::new(1);
+        // Fresh: ticks 1-3 hold frame 0, tick 4 advances to 1, tick 12 wraps.
+        for tick in 1..=12u32 {
+            p.ai_truffle_spore(225, &mut rng);
+            let want = ((tick / 4) % 3) as i32;
+            assert_eq!(p.frame, want, "tick {tick}");
+        }
+        // Grown: the strip reads 3-5.
+        p.ai[2] = 1.0;
+        p.frame = 3;
+        p.frame_counter = 0;
+        for tick in 1..=12u32 {
+            p.ai_truffle_spore(225, &mut rng);
+            let want = 3 + ((tick / 4) % 3) as i32;
+            assert_eq!(p.frame, want, "grown tick {tick}");
+        }
+        // The hover: ai[0] = 45 → the f32 phase rounds just past π/2, so the
+        // double sine reads a hair under 1 — the C#'s cast order exactly.
+        p.ai[0] = 45.0;
+        p.ai_truffle_spore(225, &mut rng);
+        let phase = (std::f32::consts::PI * 2.0f32 * 45.0 / 180.0) as f64;
+        let want = phase.sin() as f32 * 0.15;
+        assert_eq!(p.vel.y, want, "the quarter-phase peak, the C# cast order");
+        assert!((p.vel.y - 0.15).abs() < 1e-6);
+        assert_eq!(p.vel.x, 0.0);
+        assert_eq!(p.ai[0], 46.0);
+        p.ai[0] = 179.0;
+        p.ai_truffle_spore(225, &mut rng);
+        assert_eq!(p.ai[0], 0.0, "the 180 wrap");
+    }
+
+    /// The 590 dispatch is conditional on the W4-d12 row (keep-one-dedupe —
+    /// this branch copies no rows): once `proj_data(590)` resolves, a spawn
+    /// rides the aiStyle-112 arm and its flicker lands in the drain seam.
+    #[test]
+    fn the_truffle_spore_seam_is_conditional_on_the_d12_row() {
+        let Some(row) = proj_data(590) else {
+            // The d12 row has not merged into this branch — the arm stays
+            // dormant (the Chillet sword-swing witness precedent).
+            return;
+        };
+        assert_eq!(row.ai_style, 112, "the 590 row rides aiStyle 112");
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(590, 160.0, 176.0, 0.0, 0.0, 10, 0.0)
+            .expect("the rowed kind spawns");
+        pool.slots[slot].alpha = 0;
+        pool.set_mouse_text_color(225);
+        let mut w = world();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut rng = tr_core::tile_light::FastRandom::new(11);
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            true,
+        );
+        let drained = pool.drain_ai_lights();
+        assert_eq!(drained.len(), 1, "one flicker per tick at alpha 0");
+        assert_eq!((drained[0].0, drained[0].1), (10, 11));
     }
 
     #[test]
