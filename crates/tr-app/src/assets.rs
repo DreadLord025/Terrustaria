@@ -492,6 +492,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_181",
         "Extra_198",
         "Extra_93",
+        // W4-g84 follow-up: the MultiTileVines pass — the 660 shimmerfly jar's
+        // `Extra[260]` white + HSL glow pair (`TileDrawing.cs:9507/:9515`) and
+        // the 592 suspended brazier's `GlowMask[294]` (`:9437`).
+        "Extra_260",
         // Armor sheets, slots 1..4 = copper/iron/silver/gold. `AssetInitializer.cs:
         // 165-185` indexes the texture arrays by the armor slot itself, so the file
         // number equals the slot: `Armor_Head_{n}`, `Armor_Legs_{n}` and the
@@ -1754,6 +1758,9 @@ const GLOW_SHEET_NAMES: &[&str] = &[
     "Glow_131",
     "Glow_291",
     "Glow_293",
+    // W4-g84 follow-up: the 592 suspended brazier's glowmask
+    // (`TileDrawing.cs:9437`, `TextureAssets.GlowMask[294]`).
+    "Glow_294",
     "Glow_295",
     "Glow_296",
     "Glow_297",

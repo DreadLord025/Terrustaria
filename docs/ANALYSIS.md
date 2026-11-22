@@ -41480,3 +41480,306 @@ re-derived by mechanical Python replay of line-for-line C#
 transcriptions (`tools/_f27_s12_replay.py`, the integer accumulators
 exact in f32; the dark-mage hover |v|*0.1+1 the one non-integer feed,
 f32-rounded, the reset at tick 31 for vx3).
+## The Plantera bulb wind draw (W4-g84, 2026-11-21, code-only)
+
+The bulb's draw census found four of its five C# pieces already landed on
+main: the animator row (`drawdata_anim.rs` `step_gt_ge(238, 20, 4)`,
+`Main.cs:18709-18718` — period 21 ticks, 4 rows, 84-tick cycle), the
+`GetTileDrawData` case 238 (`drawdata.rs` — top 2, `addFrY =
+tileFrame * 36`, `TileDrawing.cs:5441-5444`), the pink glow floor
+(`tile_light/scanner.rs` case 238 — the accumulated R/B floored at 0.5,
+G untouched, `TileLightScanner.cs:1000-1009`; `tileLighted[238]` is in
+the generated `TILE_LIGHTED` set, `Main.cs:10245`) and the map icon
+(`mapdata.rs` `TILE_COLORS[238][0] = [225, 128, 206, 255]`,
+`MapHelper.cs:518`; the 655 GlowingMushroom shares it, `:519`).
+
+**The MISSING piece was the draw path itself.** C# never draws a bulb cell
+through `DrawSingleTile`: the draw-area switch registers the 2×2 object's
+top-left as a `TileCounterType.MultiTileGrass` special point
+(`TileDrawing.cs:606-613` — `236/238/702`, `frameX % 36 == 0 &&
+frameY == 0`), and `PostDrawTiles` draws the object via
+`DrawMultiTileGrass` (`:8738-8805`, the size arm `:8760-8764` —
+`sizeX = sizeY = 2`) / `DrawMultiTileGrassInWind` (`:8916-9032`):
+`GetWindCycle(topLeftX, topLeftY, _sunflowerWindCounter)` (`:8918`),
+the default-arm factor `num = 0.15` (`:8937-8939` — NOT the
+sunflower's 0.07), the per-row `num3 = 1 - (row+1)/2` with the 0-guard
+0.1 (`:8964-8968`) and the `InAPlaceWithWind(2×2)` gate
+(`:8924`/`:8969-8972`), rotation `windCycle * 0.15 * num3` and
+vertical offset `|windCycle| * 2 * num3` about the object's bottom-centre
+anchor `(topLeftX*16 + 16, topLeftY*16 + 32)` minus the cell's
+`(i*16, j*16 + tileTop)` (`:8919`/`:8982`/`:8998-8999`/`:9024`).
+The port drew the bulb as a static generic raised cell (the `dd.top != 0`
+arm) — no wind transform; the animation row landed but the object never
+leaned.
+
+`crates/tr-app/src/render/multi_tile_grass.rs` ports the per-cell
+transform (`bulb_sway`) and `render/tiles.rs` gains the `kind == 238`
+arm before the generic raised arm — the sunflower per-cell precedent (the
+documented z-order approximation; the fused row-major pass keeps its
+structure). The frame grid reconstructs the top-left from
+`frameX.rem_euclid(36)/18` / `frameY/18` (the
+`WorldGen.PlaceJunglePlant` 2×2 write, `WorldGen.cs:47834-47855` —
+`num3 = 0` for 236/238/702). The tint is the RAW `Lighting.GetColor`
+(`:8975` — the special pass applies NO `GetFinalLight` actuation ghost)
+with the `DrawTiles_GetLightOverride` Glow-coating White override
+(`:8977`/`:6626-6629`); the sprite rides
+`push_sprite_origin_rot_paint` (the painted `GetTileDrawTexture`,
+`:9000`). `windCycle = 0` (underground — where bulbs actually grow —
+or calm air) degenerates to the static draw, exactly like the C# pass.
+
+Scope: tile 238 only. The sibling MultiTileGrass kinds 236/702 (jungle
+roses / Life Fruit, the same 2×2 shape) and the rest of the roster (233,
+530, 651, 485…, 519 cattail) keep their existing draws — the general
+`DrawMultiTileGrass` pass is the follow-up (research/09 row 11 stays
+PARTIAL). The g30 special-point registry lane (UNWIRED,
+`236 | 238 | 702 => Deferred(MultiTileGrass)`) is untouched; at its merge
+the inline arm is the keep-one reconciliation point.
+
+Deviations (the recorded lanes, not new skips):
+- the deferred special-point ordering is approximated inline (the
+  sunflower precedent, research/09 deviation 2);
+- the `DrawAnimatedTile_AdjustForVisionChangers` /
+  `DrawTiles_GetLightOverride` vision-potion chain (`:8976-8977`) is the
+  d56 unwired lane — identity for 238 outside the unported potions;
+- the `_rand.Next(4)` flag3 roll + the 238 dust-168 sparkle
+  (`DrawTiles_EmitParticles` `:6956-6961` — `Dust.NewDust(16×16 at
+  (i*16, j*16), 168)`, `noGravity`, `alpha 200`) are the d60 unwired
+  lane (`tile_draw_particles.rs` `:626-629`); adding the roll here
+  would change the `_rand` stream order;
+- the `SideFlags` seams (`:9007-9023`) feed only the unported LitNature
+  shader (the vine strip's deviation).
+
+RNG: zero draws added — `bulb_sway` is pure world/wind state (the
+`VineSegment` shape); the G6 key already covers the inputs (the
+sunflower counter rides the windy `anim` slot, the animator row rides
+`tile_anim` gated on `is_animated_kind(238)`).
+
+Verification: 9 witness tests WRITTEN, NOT RUN (no cargo/rustc invoked) —
+`multi_tile_grass::tests` (4: the per-cell pivot/num3/0.15 transform, the
+style-grid reconstruction, the wall/sway/calm gates, the surface band +
+remix flip), `drawdata_anim` (the 21-tick/4-row period), `drawdata`
+(the four animation rows' `addFrY` 0/36/72/108), `tile_light/scanner`
+(the R/B 0.5 floor, G untouched, brighter channels kept), `map/colors`
+(the pink icon + the 655 share), `render/tiles` (the source-order pin:
+27 → 238 → generic raised, raw light + fullbright override, one site).
+
+## The MultiTileGrass / MultiTileVines roster (W4-g84 follow-up, 2026-11-21, code-only)
+
+The bulb draw's follow-up census compared the C# special-point registration
+(`TileDrawing.Draw`'s draw-area switch, `TileDrawing.cs:534-723`) against the
+port's `tiles.rs` kind arms. Before this pass the port dispatched only **27**
+(sunflower, per-cell) and **238** (bulb); every other MultiTileGrass /
+MultiTileVine kind drew through the static-generic raised arm — no wind lean,
+no platform lift, no jar glow / lid / item-icon specials.
+
+**TileID census.** 236 = `LifeFruit`, 702 = `LifeFruitReplica` (`TileID.cs:1101`
+/`:2033`) — the bulb's 2×2 siblings, NOT PlanteraBulb variants (238 is the only
+bulb). The full MultiTileGrass registration (`:600-687`): 27 sunflower,
+236/238/702, 233 PlantDetritus, 652/651 echo detritus, 530/705 oasis plants,
+485 AntlionLarva / 489 PinWheel / 490 WeatherVane, 521-527 dragonfly jars,
+493 GolfCupFlag, 519 Cattail. The MultiTileVine registration (`:549-599`):
+34 Chandeliers, 698 DeadCellsDisplayJar, 454 Pigronata, 42/270/271/572/581/660
+hanging bottles + jars, 91 Banners, 95/126/444 Chinese lanterns / DiscoBall /
+BeeHive, 465/591/592 WarTableBanner / PotsSuspended / BrazierSuspended. (549
+Seaweed is a ReverseVine, bucket 7; the VineThreads 52/62/115/205/382/528/636/638
+are the strip pass — neither is this bucket.)
+
+**MultiTileGrass (`render/multi_tile_grass.rs`).** `bulb_sway` generalized to
+`grass_sway_2x2` (a `num` factor + a `freeze` flag) and `grass_sway_3x2` (the
+54 px grid, +24 anchor); new `grass_sway_2x3` (489), `golf_flag_sway` (493 —
+the `:8983-8997` frameY==0 wind-sign FlipHorizontally + the resulting-flip
+∓6 px `vector2.X` shift, returned as `(sway, flip_xor, dx)`), `detritus_sway`
+(233 — the split 3×2 at frameY 0/18 / 2×2 at frameY 36/54, `:8765-8768`, the
+port's `place_jungle_plant_detritus` grid), `climb_cat_tail` + `cattail_sway`
+(519 — `:8807-8827` the >10 floor / non-519 break / frameX≥180 flame-top count,
+the anchor shifts up height−1 `:8799`, the TOP-ROW-ONLY wind gate `:8935`).
+The `tiles.rs` arm widens to the full roster; 236/702 carry `tileTop = 0` (no
+GetTileDrawData case) so their pivot sits 2 px lower than 238's; 485/490/489/493
+animation already rides the landed `drawdata_cases_b` arms, 530's biome row
+rides `drawdata`. `bulb_sway` stays `cfg(test)` as the witness entry point.
+
+**MultiTileVines (`render/multi_tile_vines.rs`, new).** Ports
+`DrawMultiTileVines(InWind)` (`:8829-9603`): the size table (`:8845-8884`), the
+top-left frame-grid reconstruction (`col = frameX/18 % sizeX`,
+`row = frameY/18 % sizeY` — the `CheckChand`/`Check2xX`/`CheckSuper` pattern),
+the TOP-centre anchor −2 (`:9243-9248`) + the 8 px non-hammered-platform lift
+(`:9250-9254` — 1-wide kinds vs the 465/591/592 both-columns family), the
+34/126 planter + 42 bottle style tables verbatim (the `:9404-9405`
+`num3 = 0; num3 = null` dead-write — the second write wins), the
+`GetHighestWindGridPushComplex(60, 1.26, 3, swapLoopDir)` push (`:9242`), the
+num7 ladder + the flag2 top-row zero, the 698 wind-cancel + 10 px left shift
+(`:9440-9445`/`:9453-9456`). `draw_vine_cell` does the sprite + the 592
+`Glow_294` + the 660 `Extra_260` white/HSL pair (`:9505-9519`) + the 698 jar
+lids (the rarity colour + `rgbToHsl`/`hslToRgb` + the rotated item icon,
+`:9520-9584`) + the shared-seed flame tail (`:9589-9600`). The `tiles.rs` arm
+sits before the generic raised draw and gates the inline `draw_tile_flames`
+off for the bucket (C# never calls `DrawSingleTile_Flames` for a special-pass
+tile — no double-draw). `assets.rs` adds `Extra_260` + `Glow_294`.
+
+Deviations (the recorded lanes, not new skips):
+- the deferred special-point ordering is approximated inline (the sunflower /
+  bulb precedent);
+- the `DrawAnimatedTile_AdjustForVisionChangers` / `DrawTiles_GetLightOverride`
+  vision-potion chain (`:8976-8977`/`:9487-9488`) is the d56 unwired lane —
+  identity outside the unported potions + the Glow coating (ported);
+- the `_rand.Next(4)` flag roll + dust (`:8974`/`:9485`) are the d60 unwired
+  lane — adding the roll would change the `_rand` stream order;
+- the shared flame seed latches the object's first cell in the C#'s
+  x-outer/y-inner walk (the top-left); the inline pass derives it from the
+  top-left cell directly (same value, the z-order approximation);
+- the 698 item icon's `ItemSlot.DrawItemIcon` colour chain
+  (`GetItemLight`/`GetAlpha`/glowMask, `:9580`) is the d57 furniture lane —
+  the icon draws with the environment-light tint only; the TeItem payload
+  carries no expert flag (fed false), the registry's `rare` feeds the colour;
+- the `SideFlags` seams feed only the unported LitNature shader.
+
+RNG: zero draws added — the transforms are pure world/wind state; the flame
+tail consumes the deterministic `tile_frame_seed_at` stream (the same seed the
+inline flame pass uses), no `_rand` consumption. The G6 key already covers the
+inputs (the sunflower counter rides the windy `anim` slot, the wind-grid push
+rides `wind_grid.key()` when vine strips are on screen).
+
+Verification: 19 witness tests WRITTEN, NOT RUN (no cargo/rustc invoked) —
+`multi_tile_grass::tests` (12: the original 4 bulb + the Life Fruit top-0
+pivot, the 2×2 family parity, the jar freeze, the 3×2 wider anchor, the 2×3
+pinwheel ladder, the golf flip/shift both wind signs, the detritus split
+width, the cattail climb + top-row gate), `multi_tile_vines::tests` (6: the
+size table + roster, the top-left reconstruction, the style tables + the
+dead-write, the platform lift, the jar cancel + shift, the num7 ladder +
+fairy row), `render/tiles` (2 source-order pins: grass → vine → generic
+raised, raw light + fullbright override, the flame-overlay gate).
+
+### The g31 keep-one prep (W4-g84 final phase, 2026-11-21, code-only)
+
+The final-phase census read `origin/task/W4-g31-tile-draw-pass-4` (tip
+`766a5a5a8`, research/136 + UNION-CONTRACT §8): g31's `tile_drains.rs` ports
+the SAME two bodies as pure plan drains — `drain_multi_tile_grass` /
+`multi_tile_grass_in_wind` (bucket 2) and `drain_multi_tile_vines` /
+`multi_tile_vines_in_wind` (bucket 3) — covering every kind of this roster,
+and §8.3 step 3 already rules "the inline grass/vine/sunflower arms DROP
+(the drains own them)". **Keep-one = g31's drains**; this branch's inline
+arms are the interim per-cell approximation until the §8.3 split. The
+per-kind arm↔bucket seam-mapping, the five duplicate helpers
+(`climb_cat_tail`, `planter_style`, `bottle_style`, `multi_tile_vine_size`,
+`is_below_a_non_hammered_platform`), the witness re-pin map and the ONE feed
+this branch contributes to the merge (the LIVE animator row — g31's
+`drain_draw_data` feeds `tileFrame[type] = 0` until S1-G-1f, while the inline
+arms read the landed `drawdata_anim` rows incl. the 238 `tileFrame*36`) are
+published in `docs/research/137-g84-g31-keep-one.md`. No code change this
+phase — the mapping is the deliverable; the arms stay until the merger
+executes the split (dropping them here would regress the draw to the
+static-generic arm with no drain wired on this branch).
+
+### The Life Fruit harvest + the Plantera bulb summon (W4-g84 final phase 2, 2026-11-21, code-only)
+
+The DRAW/ITEM split the brief asked for: g88 (`task/W4-g88-life-fruit-use`)
+owns the item-1291 USE (`life_fruit.rs`, `ItemCheck_UseLifeFruit`
+`Player.cs:45290-45304`); this branch owns the 236-tile DRAW (the roster
+above) and now the tile-break HARVEST. The census verdict: the drop is NOT
+a `KillTile_GetItemDrops` per-cell case (236/238/702 sit in the empty group
+`WorldGen.cs:65829-66090`, generated as `KILL_TILE_NO_CELL_DROP`) — it is
+the `CheckJunglePlant` object-check's own `Item.NewItem`:
+
+* `WorldGen.CheckJunglePlant` (`:47946-48108`), dispatched for 233/236/238/
+  702 (`TileFrameImportant` `:85475-85480`). The 2×2 family (236/238/702 +
+  the 233 rows `frameY >= 36`) reconstructs the origin from the frame grid,
+  scans the four cells + the jungle-grass (60) ground row, and on a break:
+  the 238 arm records the Plantera summon (`:48007-48026`), 236/702 drop
+  ONE Life Fruit 1291 at the TRIGGER cell (`:48027-48034`), then the 2×2
+  kill loop (`:48037-48050`). The 233 3×2 rows (`frameY < 36`) sweep 3×3
+  with no item (`:48093-48105`). Ported as `edit/kill.rs::check_jungle_plant`
+  returning a `CheckPlan` (the `check_sunflower` shape); the summon rides a
+  new `BulbSummonEvent` record on `TileKill.bulb_summons` (the core has no
+  NPC roster — the `PotEvent`/`TreeDropEvent` precedent).
+* The trigger cell is the FIRST surviving plant cell the 3×3
+  `SquareTileFrame` walk visits (`WorldGen.cs:80187-80195`), not the broken
+  cell — breaking the bottom-right of a 2×2 drops at the top-left. The
+  witnesses pin this (`expected_trigger`'s convention).
+* The app seam `editing.rs::bulb_summon_plantera`: the nearest-player
+  Manhattan gate (`dist / 16 < 50`, `:48022` — the 255-slot scan collapses
+  to the port's one player), the `AnyNPCs(262)` refusal (`NPC.cs:80477`),
+  then `NPC.SpawnOnPlayer`'s generic ground scan (`:80565-80632`, ported as
+  `spawner.rs::spawn_on_player_tile` — 500×50 candidates, descend to solid,
+  the last attempt bypasses the safe-area/spawn-space gates) +
+  `SpawnBoss(num10*16+8, num11*16, 262, plr)` (`:80631` → `NewNPC`
+  `Bottom=(X,Y)` `:80770`, the 86×86 box). `stamp_boss_spawn` writes the
+  `timeLeft = activeTime*1.25 = 937` ×20 = 18740 window (`:80772`/`:80686`)
+  and the `Announcement.HasAwoken` broadcast in `ChatColors.BossOrEvent`
+  (`:80702-80704`). The scan's `Main.rand` draws ride the break's
+  `UpdatePlayers` stream (`Main.cs:17754`).
+
+Deviations (recorded, the spawner precedent): the skyblock midair arm
+(`WorldGen.Skyblock.lowTiles`, `:80581-80584`) and the type-50 EoW clearance
+special (`:80604-80614`) are constants-off / type-gated out; the
+`wallHouse` refusal arm (`:80589`) is unmodelled (the port has no
+`wallHouse` table); the `nactive` actuated-bit refinement follows the
+spawner's `active()` convention. The `boot_statics` frame-important bits
+for 233/236/238/702 (`Main.cs:7391/:10235/:10247-10248`) were added so a
+generated world's `PlaceJunglePlant` frames survive `frame_world` and the
+cascade reaches them — no generated-world hash pin exists (only relative
+`a==b` reproducibility + the frozen synthetic grid), so this is
+determinism-safe.
+
+Verification: 8 witness tests WRITTEN, NOT RUN (code-only) —
+`edit/kill.rs::tests` (5: the fruit drop at the trigger, the replica drop,
+the bulb summon record + no-item + noItem survival, the intact-fruit
+survival + stone-ground break, the detritus 3×2 no-drop) +
+`world_sim/editing.rs::tests` (3: the one-1291 harvest, the bulb summon
+once + the living-Plantera refusal, the far-bulb no-summon) +
+`spawner.rs::tests` (2: the ground scan determinism, the boss-spawn stamp).
+
+### The Plantera bulb glow census (W4-g84 final phase 3, 2026-11-21, code-only)
+
+The brief's phase-3 ask ("the bulb's pink glow / pulse — port it if
+unclaimed") resolves to ALREADY-LANDED: the census found no unported
+`AddLight`/`DrawGlow` path for tile 238 anywhere in the vanilla, so there is
+nothing new to port. The glow has exactly three pieces, all on this branch:
+
+* **The pink floor** — `TileLightScanner.ApplyTileLight` case 238
+  (`TileLightScanner.cs:1000-1009`): the ACCUMULATED colour's X (R) and Z (B)
+  are floored at 0.5, Y (G) untouched — a magenta cast, not an emitted RGB
+  lamp colour (unlike e.g. case 270 `R=0.73, G=1, B=0.41` `:917-921`). No
+  fx/fy gate: every active 238 cell gets the floor (`Main.tileLighted[238]`
+  is in the generated `TILE_LIGHTED` set). Ported term-for-term at
+  `tile_light/scanner.rs:945-953` (the same accumulated-colour write, inside
+  the dispatch chain `apply_tile_light` `:36`); the seed feeds both engines
+  (`lighting/mod.rs::seed` `:531` modern Color, `lighting/legacy.rs:1260`
+  White/Retro/Trippy). Witness `w4_g84_plantera_bulb_pink_glow_floor`
+  (`scanner.rs:1262` — dark accumulator lifts R/B to 0.5, brighter channels
+  keep their value, G never moves, frame-independent).
+* **The pulse** — the 4-frame animator `Main.cs:18709-18718` (`tileFrame[238]`
+  advances every 20 ticks, wraps at 4) ported as
+  `drawdata_anim.rs:303` (`step_gt_ge(238, 20, 4)`), and the frame→row metric
+  `TileDrawing.cs:5441-5444` (top 2, `addFrY = tileFrame*36`) ported as
+  `drawdata.rs:744-747`. The family draw arm (`render/tiles.rs`, W4-g84)
+  reads those rows, so the visible brightness pulse is the sprite's own
+  animation rows — there is no light-map pulsation in the vanilla. Witnesses
+  `w4_g84_plantera_bulb_period_and_wrap` (`drawdata_anim.rs:640`) +
+  `w4_g84_plantera_bulb_animation_rows` (`drawdata.rs:1655`).
+* **The spore sparkle** — `TileDrawing.cs:6956-6961`: a `_rand.Next(10) == 0`
+  roll spawns Dust 168 (`noGravity`, alpha 200) above the bulb. That is a
+  d60-lane dust draw (the `DrawTiles` dust rolls), owned by g31's battery —
+  recorded as its lane in research/137, NOT ported here.
+
+Claims checked so nothing is double-ported: e8/g18's light claims are the
+`Main.cs:29016-29028` (tile 332 hook) and `:29186` (tile 488 hook) `AddLight`
+sites only — g18's research/366 bible confirms no ambient-tile `AddLight`
+exists for 238; the only other 238 consumers are the map icon
+(`MapHelper.cs:518`, landed) and the CheckJunglePlant summon (phase 2 above).
+Verdict row: research/09 row 11's glow note + PORT_MAP's phase-3 row; the
+glow-floor arm gains its `anchors.txt` canary row
+(`tile_light/scanner.rs | 238 =>`). Doc-only commit — no behaviour change,
+no new code; the three pre-existing witnesses stand as the phase-3
+verification (WRITTEN, NOT RUN, code-only mode).
+
+Final-phase seal (2026-11-22, code-only): the three final-phase commits
+(`e6c2dcd0d` keep-one prep, `856a57263` harvest/summon, `325034628` glow
+census) were re-verified against the tree — every cited Rust symbol
+exists at its cited line (`check_jungle_plant`, `BulbSummonEvent`/
+`bulb_summons`, `bulb_summon_plantera`, `spawn_on_player_tile`/
+`stamp_boss_spawn`, the `boot_statics` jungle bits, the scanner 238
+floor, the animator + row metric, the 10+3 `w4_g84_*` witnesses, the
+anchors canary row). Verdict: the FINAL phase is CLOSED — no owed items
+on this branch; the remaining work is merger-owned (research/137 §4, the
+§8.3 split) or other-lane-owned (d56/d57/d60, reverse-vines 549 = g31's
+drain). The full receipt: research/137 §5.

@@ -631,6 +631,28 @@ mod tests {
         assert_eq!(a.tile_frame[696], 0);
     }
 
+    /// W4-g84: tile 238 PlanteraBulb (`Main.cs:18709-18718`): the
+    /// post-increment `> 20` counter → period 21 ticks, `>= 4` wrap → 4
+    /// rows (the bulb's pulse animation, one row per 21 ticks, 84-tick
+    /// cycle). The row feeds case 238's `addFrY = tileFrame * 36`
+    /// (`TileDrawing.cs:5441-5444`).
+    #[test]
+    fn w4_g84_plantera_bulb_period_and_wrap() {
+        let mut a = TileAnimator::new();
+        let mut r = UnifiedRandom::new(1);
+        tick_n(&mut a, 20, 0.0, &mut r);
+        assert_eq!(a.tile_frame[238], 0);
+        assert_eq!(a.tile_frame_counter[238], 20);
+        tick_n(&mut a, 1, 0.0, &mut r); // tick 21 — first step
+        assert_eq!(a.tile_frame[238], 1);
+        assert_eq!(a.tile_frame_counter[238], 0);
+        tick_n(&mut a, 62, 0.0, &mut r); // tick 83
+        assert_eq!(a.tile_frame[238], 3);
+        tick_n(&mut a, 1, 0.0, &mut r); // tick 84 — full cycle
+        assert_eq!(a.tile_frame[238], 0);
+        assert!(TileAnimator::is_animated_kind(238));
+    }
+
     /// Tile 247 (`Main.cs:18739-18748`): the `frame > 7` wrap variant.
     #[test]
     fn frame_greater_than_wrap_tile_247() {

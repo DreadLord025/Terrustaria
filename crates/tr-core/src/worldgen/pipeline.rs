@@ -2824,6 +2824,15 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[467] = true;
     world.frame_important[441] = true;
     world.frame_important[468] = true;
+    // W4-g84: the jungle-plants family — the detritus 233 (`Main.cs:7391`),
+    // the Plantera bulb 238 (`:10235`), the Life Fruit 236 + replica 702
+    // (`:10247-10248`). The `PlaceJunglePlant` writes leave style frames the
+    // framer must keep, and the kill cascade's `CheckJunglePlant` arm
+    // (`WorldGen.cs:85475-85480`) reaches them only through the bit.
+    world.frame_important[233] = true;
+    world.frame_important[236] = true;
+    world.frame_important[238] = true;
+    world.frame_important[702] = true;
 }
 
 /// The vanilla `RunPass` shape over the ported steps: per step, build the
