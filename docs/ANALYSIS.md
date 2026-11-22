@@ -17892,7 +17892,9 @@ ported from the same `CreativePowers.cs` classes:
   `IsInTileInteractionRange(..., TileReachCheckSettings.Simple)` вЂ” now
   derives its radius from `tile_range_x() + 1`, so the base gate is the
   previous 6-tile constant unchanged and the power widens it exactly as the
-  C# widens the rectangle.
+  C# widens the rectangle. (W4-a8: the gate is scoped to the placement arm;
+  the mining arm's i29 rectangle reads the same `tile_range_x/y` through
+  `mining_tile_range`.)
 - **`StopBiomeSpreadPower`** (`:1540-1571`) в†’
   `CreativePowers::allowed_to_spread_infections`) =
   `WorldGen.AllowedToSpreadInfections` (`WorldGen.cs:71502-71507`);
@@ -36923,18 +36925,36 @@ ANALYSIS: "the AI machines stay the documented dispatch no-ops
 design, NOT a four-machine port inside the fix round. The minion-AI
 follow-up empties the list again.
 
-**The weapon-use reach gate is a pre-existing deviation (unchanged by
-the gate).** `update_editing`'s hoisted circular reach gate
-(`editing.rs:750-779`, the `IsInTileInteractionRange` stand-in) returns
-for ANY held item out of reach — but the C# gates MINING/PLACEMENT only
+**The weapon-use reach gate was a pre-existing deviation — FIXED by
+W4-a8 (2026-11-20).** `update_editing`'s hoisted circular reach gate
+(the `IsInTileInteractionRange` stand-in) used to return for ANY held
+item out of reach — but the C# gates MINING/PLACEMENT only
 (`Player.cs:17635-17660`, `:23164`); the weapon use-start
 (`Player.cs:42733`) has NO tile-reach gate, and the placeable-sentry
 arm (`:48189-48212`) → `PickSentryLandingSpot` (`:49525-49543`) reads
-the RAW mouse point. Identical on main — the gate did not introduce it
-and did not fix it (the blast radius is the whole use path). The i25
-sentry fixtures moved their cursor inside the reach (−160 → −48, row
-294) instead; the canonical module fix (skip the gate's `return` for
-`held_weapon`) is the recorded follow-up.
+the RAW mouse point. The V2 gate did not introduce it and did not fix
+it (the blast radius is the whole use path); the i25 sentry fixtures
+moved their cursor inside the reach (−160 → −48, row 294) instead.
+**W4-a8 landed the canonical fix**: the hoisted `return` is gone —
+`player_in_reach` is computed where it was (the circular stand-in,
+radius `tile_range_x() + 1`) but consumed ONLY by the placement arm
+(`PlaceThing_Tiles` `:39721` / `PlaceThing_Walls` `:39602` /
+`ItemCheck_UseWiringTools` `:46752` each open with their own
+`IsInTileInteractionRange`; the extractinator route keeps its inner
+Simple-rectangle gate, `extract.rs` `:41669`). The mining arm keeps
+its i29 rectangle gate (`mining_tick` + the caller's `in_reach`, which
+clears `mine_target`/`mine_timer` out of reach), so the mining and
+placement out-of-reach refusals stand; the weapon/summon/sentry/
+potion use-starts now run at any cursor distance, C#-true. The five
+i25 sentry fixtures are restored to cursor_dy −160 (row 287, OUT of
+the tile reach — they witness the ungated sentry use); the
+`the_far_placement_power_widens_the_edit_reach` witness re-derives
+onto the mining refusal (`edit_target` now tracks every in-bounds
+cursor cell — the C# writes `Player.tileTargetX/Y` unconditionally,
+`Player.cs:25389` — while the pick refuses out of reach and mines
+inside the doubled range). RNG-free: no draws added, removed or
+reordered — the newly-reachable use arms spend exactly the streams
+their C# counterparts spend.
 
 **The small-world reach clamp is C#-true.** On a 64-wide world
 `LimitPointToPlayerReachableArea` (`Player.cs:45447-45473`) degenerates:

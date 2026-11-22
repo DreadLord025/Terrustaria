@@ -2125,29 +2125,34 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.edit_target = None;
         return;
     }
-    // The reach gate: the borrow ends at the statement (the arms below
-    // re-borrow `app.player` individually, and the shooters' swing start
-    // mutates `app` after the gate).
+    // W4-a8 — the reach gate is SCOPED to the tile-editing arms, exactly
+    // where the C# has it: `IsInTileInteractionRange` gates the mining
+    // (`Player.cs:45599` → `:46313-46316`), the tile placement (`:39721`),
+    // the wall placement (`:39602`) and the wiring tools (`:46752`) — the
+    // smart-cursor tool strategies read the same per-tool reach windows
+    // (`SmartSelect_GetToolStrategy`, `:17635-17660`). It NEVER gates the
+    // item use-start (`:42733` has no reach term), the projectile shooters
+    // (`ItemCheck_Shoot`), the summon staves (`SpawnMinionOnCursor`
+    // `:49575-49577` CLAMPS, it does not refuse) or the placeable sentries
+    // (`PickSentryLandingSpot` `:49525-49543` reads the RAW mouse point).
+    // The old hoisted gate refused the WHOLE item use out of reach (the
+    // wave-3 V2 deviation record, ANALYSIS "The wave-3 V2 gate decisions");
+    // this fix removes that `return`. The mining arm keeps its own i29
+    // rectangle gate (`mining_tick` + the caller's `in_reach`, which also
+    // clears `mine_target`/`mine_timer` out of reach); the tile/wall/wiring
+    // routes take `player_in_reach` below. The circular gate stays the
+    // documented stand-in for the Simple rectangle
+    // (`TileReachCheckSettings.cs:22-70`, X 5 / Y 3); its radius tracks
+    // `Player.tileRangeX` (`Player.cs:2496`), so the journey
+    // `FarPlacementRangePower` doubling (`:18815-18828`) widens the edit
+    // reach exactly as the C# widens the rectangle.
     let player_in_reach = app.player.as_ref().is_some_and(|p| {
         let (pcx, pcy) = p.center();
         let dx = tx as f32 * TILE_PX + 8.0 - pcx;
         let dy = ty as f32 * TILE_PX + 8.0 - pcy;
-        // The port's circular gate is the documented stand-in for the C#'s
-        // `IsInTileInteractionRange(..., TileReachCheckSettings.Simple)`
-        // rectangle (`TileReachCheckSettings.cs:22-70`, X 5 / Y 3) — and its
-        // radius now tracks `Player.tileRangeX` (`Player.cs:2496`), so the
-        // journey `FarPlacementRangePower`'s doubling (`:18815-18828`) widens
-        // the reach exactly as it does in the vanilla. Base 5 + 1 = the
-        // previous 6-tile constant, so nothing off the power moves.
         let reach = (p.tile_range_x() + 1.0) * TILE_PX;
         dx * dx + dy * dy <= reach * reach
     });
-    if !player_in_reach {
-        app.edit_target = None;
-        app.mine_target = None;
-        app.mine_timer = 0.0;
-        return;
-    }
     app.edit_target = Some((tx, ty));
     // `Player.cs:25446` — the smart cursor re-points the tile target
     // (`SmartCursorHelper.SmartCursorLookup`) before the mining/placement
@@ -5335,7 +5340,14 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             }
         }
     }
-    if app.place_down && !app.inventory_open && (starting || inside_swing) {
+    // W4-a8 — the placement arm takes the reach gate HERE (the C#
+    // `PlaceThing_Tiles` `Player.cs:39721` / `PlaceThing_Walls` `:39602` /
+    // `ItemCheck_UseWiringTools` `:46752` each open with
+    // `IsInTileInteractionRange`); the extractinator route carries its own
+    // Simple-rectangle gate inside (`extract.rs`, `:41669`). The use-start
+    // arms above (weapons/summons/sentries/potions) are NOT reach-gated —
+    // the C# `:42733` start has no reach term.
+    if app.place_down && player_in_reach && !app.inventory_open && (starting || inside_swing) {
         // The extractinator arm first (`PlaceThing`'s order, `Player.cs:39586-39597`:
         // `PlaceThing_ItemInExtractinator` runs before the tile/wall routes). It
         // consumes the tick on its own terms — `ApplyItemTime` makes the swing
@@ -11404,9 +11416,14 @@ mod tests {
     #[test]
     fn the_far_placement_power_widens_the_edit_reach() {
         // `FarPlacementRangePower` (`CreativePowers.cs:730-767`) doubles
-        // `Player.tileRangeX/Y` (`Player.cs:18815-18828`); the reach gate in
-        // `update_editing` tracks `tile_range_x` (its documented stand-in for
-        // `TileReachCheckSettings.Simple`).
+        // `Player.tileRangeX/Y` (`Player.cs:18815-18828`); BOTH reach gates
+        // track `tile_range_x` (the documented stand-ins for
+        // `TileReachCheckSettings.Simple`): the placement arm's circular
+        // gate in `update_editing` and the mining arm's i29 rectangle
+        // (`mining_tile_range`). W4-a8: the gate no longer refuses the WHOLE
+        // item use — the cursor TARGET (`edit_target`) tracks every tile in
+        // bounds, and the refusal witness is the mining arm: nothing is
+        // mined out of reach, the doubled range reaches it.
         let mut w = World::new("t".into(), 64, 800);
         for x in 0..64 {
             let i = w.index(x, 260);
@@ -11421,15 +11438,24 @@ mod tests {
         // The target 13 tiles left of the player: outside the base 6-tile
         // reach, inside the doubled 19.
         app.player.as_mut().unwrap().x = 17.0 * TILE_PX;
-        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
-        assert!(app.edit_target.is_none(), "out of the base reach");
-        assert!(app.mine_target.is_none(), "and nothing is mined");
+        mine_frames(&mut app, 40);
+        assert_eq!(
+            app.edit_target,
+            Some((30, 260)),
+            "the cursor target tracks the out-of-reach cell (no whole-use refusal)"
+        );
+        assert!(app.mine_target.is_none(), "the mining arm refuses out of reach");
+        assert!(app.world.tile(30, 260).unwrap().active(), "and nothing is mined");
         app.player.as_mut().unwrap().far_placement_range = true;
-        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        mine_frames(&mut app, 40);
         assert_eq!(
             app.edit_target,
             Some((30, 260)),
             "the power widens the reach to the cursor's tile"
+        );
+        assert!(
+            !app.world.tile(30, 260).unwrap().active(),
+            "the doubled range mines the cell"
         );
     }
 
@@ -17590,8 +17616,10 @@ mod use_loop_tests {
     }
 
     /// A staged world for the sentry landing scan: 64 wide, a solid floor row
-    /// at `floor_y`, the player + camera + cursor near column 30 (the reach
-    /// gate passes). The cursor's world point is returned for the assertions.
+    /// at `floor_y`, the player + camera + cursor near column 30. W4-a8: the
+    /// fixtures park the cursor OUT of the tile reach — the sentry use-start
+    /// (`Player.cs:42733`) and `PickSentryLandingSpot` (`:49525-49543`) carry
+    /// no reach gate. The cursor's world point is returned for the assertions.
     fn sentry_app(item: u16, floor_y: i32, cursor_dy: f32) -> (crate::app::App, Vec2) {
         let mut w = tr_core::World::new("t".into(), 64, 800);
         for x in 0..64 {
@@ -17645,7 +17673,9 @@ mod use_loop_tests {
     /// `originalDamage` (`:48208-48209`), and centres its 80x74 box.
     #[test]
     fn i25_the_frost_hydra_lands_above_the_floor_with_the_ai0_seed() {
-        let (mut app, cursor) = sentry_app(1572, 300, -48.0); // cursor row 294 (inside the 6-tile reach), floor 300
+        // W4-a8: the cursor parks OUT of the tile reach (row 287) — the
+        // sentry arm has no reach gate (`Player.cs:42733`/`:49525-49543`).
+        let (mut app, cursor) = sentry_app(1572, 300, -160.0); // cursor row 287, floor 300
         app.player.as_mut().unwrap().minion_damage = 2.0;
         sentry_fire(&mut app);
         let slot = app
@@ -17670,7 +17700,7 @@ mod use_loop_tests {
     /// (`:48200-48201`) and lands above the floor like the Hydra.
     #[test]
     fn i25_the_houndius_seeds_ai0_90() {
-        let (mut app, _cursor) = sentry_app(5119, 300, -48.0);
+        let (mut app, _cursor) = sentry_app(5119, 300, -160.0);
         sentry_fire(&mut app);
         let p = app
             .projectiles
@@ -17688,7 +17718,7 @@ mod use_loop_tests {
     /// floor below, `ai0 = 0`, `vy = 15`.
     #[test]
     fn i25_the_rainbow_crystal_skips_the_scan_to_the_cursor_row() {
-        let (mut app, cursor) = sentry_app(3571, 300, -48.0); // cursor row 294 (inside the reach)
+        let (mut app, cursor) = sentry_app(3571, 300, -160.0); // cursor row 287 (out of the tile reach — W4-a8)
         sentry_fire(&mut app);
         let p = app
             .projectiles
@@ -17710,7 +17740,7 @@ mod use_loop_tests {
     /// cursor's exact world Y with `vy = 0` (`:48203-48206`), `ai0 = 0`.
     #[test]
     fn i25_the_barnacle_lands_at_the_cursor_row_with_zero_velocity() {
-        let (mut app, cursor) = sentry_app(5463, 300, -48.0);
+        let (mut app, cursor) = sentry_app(5463, 300, -160.0);
         sentry_fire(&mut app);
         let p = app
             .projectiles
@@ -17729,7 +17759,7 @@ mod use_loop_tests {
     /// sentry dies. Two fresh Hydras at the cap of 1 leave only the newest.
     #[test]
     fn i25_the_sentry_spawn_runs_the_turret_cap_sweep() {
-        let (mut app, _cursor) = sentry_app(1572, 300, -48.0);
+        let (mut app, _cursor) = sentry_app(1572, 300, -160.0);
         app.player.as_mut().unwrap().max_turrets = 1;
         // An older Hydra with a lower timeLeft — the sweep's victim.
         let old = app
