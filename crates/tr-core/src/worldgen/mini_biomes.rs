@@ -2797,7 +2797,8 @@ mod tests {
         let mut rng = crate::worldgen::noise::Rng::from_seed(11);
         // One hive with the full world disc for its patches.
         let before = w.tiles.iter().filter(|t| t.liquid_kind() == crate::tile::LiquidKind::Honey).count();
-        let placed = super::super::structures::pass_beehives(&mut w, &spans, 150.0, &mut rng);
+        let mut larva = Vec::new();
+        let placed = super::super::structures::pass_beehives(&mut w, &spans, 150.0, &mut rng, &mut larva);
         let after = w.tiles.iter().filter(|t| t.liquid_kind() == crate::tile::LiquidKind::Honey).count();
         assert!(placed >= 1, "the hive placed: {placed}");
         assert!(after > before, "the hive's patches hold honey: {before} -> {after}");

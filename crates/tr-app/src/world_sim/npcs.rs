@@ -6714,6 +6714,18 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // the flags ride the buff scan (S1-E-7 wave A).
                     invis: player.invis,
                     enemy_spawns: player.enemy_spawns,
+                    // `NPC.GetSpawnRate`'s sunflower modifier (`NPC.cs:
+                    // 712-716`: rate ×1.2, maxSpawns ×0.8). The flag rides
+                    // the UpdateBuffs 146 arm (`Player.cs:11003`,
+                    // `buff_effects_accessory.rs`'s slot chain) — W4-d105
+                    // doc-sweep: the field existed constants-off since the
+                    // spawner port; this is the missing feed. The `calmed`
+                    // (106) flag stays constants-off on this base — its
+                    // live arm lands with the W4-f12 wiring lane;
+                    // `angler_set` (`NPC.cs:717`) is dead code in the C#
+                    // (`Player.cs:2808`/:18729` declare+clear it, nothing
+                    // sets it true), so it stays off verbatim.
+                    sunflower: player.sunflower,
                     // `Main.pumpkinMoon || Main.snowMoon` — the raid pacing's
                     // moon override (`NPC.cs:771-774`): the events force
                     // `5·2.3` max spawns / rate 20 the moment they are up.

@@ -257,6 +257,39 @@ mod tests {
     // rounds to 0 on 512, so arm A is skipped there too). Whether the pin
     // moves depends on the 512 terrain's pockets; the re-pin is DEFERRED
     // to the gate (no compiler on this branch). The a==b halves stay green.
+    // W4-d105 lane 5 (2026-11-20, code-only): the classic unexecuted passes
+    // #37-45 land one per commit — Guide (the gen-time starter-NPC ledger,
+    // `WorldGen.cs:19685-19897`), Sunflowers (`:19898`), Herbs (`:19964`),
+    // Dye Plants (`:19981`), Flowers (`:20447`), Mushrooms (`:20599`),
+    // Random Gems (`:20729`), Moss Grass (`:20769`) and Larva (`:20868`).
+    // Each draws from its own `pass_rng("<vanilla name>")` stream (no other
+    // step's ledger shifts), but the tile writes move every world's hash BY
+    // DESIGN. The re-pins are DEFERRED to the merge gate (no compiler on
+    // this branch); the `a == b` determinism halves stay untouched. The
+    // Guide pass writes no tiles (the NPC ledger is not hashed), so its
+    // commit alone moves neither pin. #38 Sunflowers writes tile 27 on the
+    // grass tops (the band attempts + the PlaceSunflower style draws), so
+    // both pins move by design from that commit on. #39 Herbs plants tile
+    // 82 (the PlantAlch attempts, `WorldGen.cs:45901-45938`) — both pins
+    // move again by design. #40 Dye Plants writes tile 227 (the plantDye
+    // attempts), matures the herbs (82 → 83 → 84) and plants the glow
+    // tulips 656 + the chillet eggs 752 (`WorldGen.cs:19981-19994` +
+    // `:71286-71455` / `:45748-45775` / `:45622-45678`) — both pins move
+    // again by design. #41 Flowers recolours the grass tufts to the patch
+    // styles (3 → 73) and plants the bare-top flowers
+    // (`WorldGen.cs:20447-20598`) — both pins move again by design.
+    // #42 Mushrooms turns the grass tufts / sunflowers into mushrooms
+    // (frameX 144) and the glowing mushrooms tall (frameX 270)
+    // (`WorldGen.cs:20599-20696`) — both pins move again by design.
+    // #43 Random Gems scatters the exposed gems 178 (the weighted Next(12)
+    // styles + the Next(3) frame_y) and the marble/granite diamond patches
+    // (`WorldGen.cs:20729-20768`) — both pins move again by design.
+    // #44 Moss Grass grows the long moss 184 on the free neighbours of
+    // every moss tile (`WorldGen.cs:20769-20812`) — both pins move again
+    // by design. #45 Larva moves the larva placement out of the hive pass
+    // into its own slot (the 3×4 clear + the Place3x3-231 writes,
+    // `WorldGen.cs:20868-20900`) — the hive-pass larva tiles now land later
+    // (after the muds-walls scan), so both pins move again by design.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its

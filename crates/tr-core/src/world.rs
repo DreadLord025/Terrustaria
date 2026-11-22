@@ -609,6 +609,18 @@ pub struct World {
     /// store materialises from these at `enter_loaded_world`.
     pub chests: Vec<crate::save::ChestRecord>,
 
+    /// The gen-time starter-NPC ledger — the `Guide` pass
+    /// (`GenPassNameID.SpawnStarterNPCs`, `WorldGen.cs:19685-19897`) spawns
+    /// the world's starter town NPCs with `NPC.NewNPC`; the port's `World`
+    /// is tiles + save state, so the spawns land here (W4-d105 lane 5) and
+    /// the App materialises them at `enter_loaded_world` — the same seam the
+    /// `.trwld` town roster rides. The records carry the VANILLA netID (the
+    /// `NewNPC` `Type` argument); the App decodes through `kind_from_net_id`.
+    /// A freshly generated classic world carries exactly one homeless Guide
+    /// at the spawn point; an empty list means "no starter spawns" (a loaded
+    /// file's roster replaces them outright).
+    pub gen_npcs: Vec<crate::worldgen::starter_npcs::StarterNpc>,
+
     // --- world identity / file metadata (S1-J-2, `IO/WorldFile.cs`) ---------
     /// `Main.ActiveWorldFileData.WorldGeneratorVersion` (`WorldFile.cs:1225`).
     pub generator_version: u64,
@@ -648,6 +660,7 @@ impl World {
             frame_important: Vec::new(),
             ore_tiers: crate::ores::SavedOreTiers::new(),
             chests: Vec::new(),
+            gen_npcs: Vec::new(),
             spawn_y: height / 4,
             bed_spawn: None,
             spawn_x: width / 2,

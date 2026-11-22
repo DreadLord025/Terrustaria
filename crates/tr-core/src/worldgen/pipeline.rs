@@ -48,6 +48,7 @@ use super::mini_biomes;
 use super::noise::{Noise, Rng};
 use super::ocean;
 use super::spider_gem_moss;
+use super::starter_npcs;
 use super::structures;
 use super::surface;
 use super::temple;
@@ -366,6 +367,23 @@ pub(crate) struct GenVars {
     /// main item — the cycle with the `> 3 → Next(4)` re-roll. S1-A-4:
     /// drawn at the island-house site, once per house.
     pub(crate) sky_island_house_count: u32,
+    /// `GenVars.logX`/`logY` (`GenVars.cs:252-254`, reset −1 at
+    /// `WorldGen.cs:11210`) — the fallen-log anchor the Place Fallen Log
+    /// pass publishes (`:18645-18646`, a 1/2 roll) and the Flowers pass
+    /// consumes (`:20468-20473` remix / `:20532-20537` classic, resetting
+    /// logX to −1 after the read). The port has no faithful fallen-log pass
+    /// yet, so the fields stay at their −1 reset and the Flowers override
+    /// never fires — the seam is in place for the log pass to write.
+    pub(crate) log_x: i32,
+    pub(crate) log_y: i32,
+    /// `GenVars.numLarva`/`larvaX`/`larvaY` (`GenVars.cs:150-154`, reset 0
+    /// at `WorldGen.cs:11245`, the 100-entry arrays `GenVars.cs:446-447`) —
+    /// the larva anchors the hive pass publishes
+    /// (`HiveBiome.CreateStandForLarva`, `HiveBiome.cs:357-365`) and the
+    /// `BeeLarvaInBeehives` pass consumes (`WorldGen.cs:20868-20900`,
+    /// W4-d105 lane 5 #45). The port's Vec carries the counter implicitly
+    /// (the 100-entry cap rides the push).
+    pub(crate) larva: Vec<(i32, i32)>,
 }
 
 impl Default for GenVars {
@@ -426,6 +444,12 @@ impl Default for GenVars {
             // computes both in `run`'s Reset stand-in.
             crimson_left: false,
             flip_infections: false,
+            // `GenVars.logX` resets to −1 (`WorldGen.cs:11210`); logY is
+            // zero-init until the fallen-log pass writes it.
+            log_x: -1,
+            log_y: 0,
+            // `GenVars.numLarva` resets to 0 (`WorldGen.cs:11245`).
+            larva: Vec::new(),
         }
     }
 }
@@ -1155,9 +1179,11 @@ pub(crate) const VANILLA_CHAIN: &[PassDecl] = &[
 /// `Step::vanilla` values for those constants (`ID/GenPassNameID.cs:239-325`),
 /// which is where the two vocabularies meet.
 ///
-/// Two of the twelve have no executed step in the port yet (`Larva` —
-/// `GenPassNameID.BeeLarvaInBeehives` — and `Shimmer`); listing them keeps the
-/// table 1:1 with the C# so a future step cannot silently un-prune itself.
+/// One of the twelve has no executed step in the port yet (`Shimmer`);
+/// listing it keeps the table 1:1 with the C# so a future step cannot
+/// silently un-prune itself. `Larva` (`GenPassNameID.BeeLarvaInBeehives`)
+/// gained its executed step with W4-d105 lane 5 #45 — the prune now skips
+/// a real step.
 pub(crate) const DUAL_DUNGEON_DISABLED_PASSES: [&str; 12] = [
     "Ice",                     // GenPassNameID.IceBiome            "Generate Ice Biome"
     "Full Desert",             // GenPassNameID.DesertBiome         "Full Desert"
@@ -1183,6 +1209,40 @@ pub(crate) fn pass_disabled_by_special_seeds(
 ) -> bool {
     flags.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS)
         && DUAL_DUNGEON_DISABLED_PASSES.contains(&vanilla)
+}
+
+/// `Skyblock.denyAllGeneration` (`WorldGen.cs:3131`): the skyblock world
+/// skips the pass wholesale. W4-d105 lane 5's Herbs / Dye Plants / Random
+/// Gems / Larva gates.
+pub(crate) fn skyblock_deny_all_generation(opts: &GenOptions) -> bool {
+    opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK)
+}
+
+/// `Skyblock.denySomeGeneration` (`WorldGen.cs:3133-3147`): a skyblock world
+/// skips the pass UNLESS one of the eight surface-shaping micro seeds is on
+/// (then it runs), or — with none of them — `extraLivingTrees` is on (then it
+/// runs too). W4-d105 lane 5's Sunflowers / Flowers / Mushrooms / Moss Grass
+/// gates.
+pub(crate) fn skyblock_deny_some_generation(opts: &GenOptions) -> bool {
+    use crate::seeds::{MicroSeedFlags as M, SeedFlags};
+    if !opts.flags.contains(SeedFlags::SKYBLOCK) {
+        return false;
+    }
+    let m = opts.micro_flags;
+    let shaping = m.intersects(
+        M::WORLD_IS_FROZEN
+            | M::SURFACE_IS_DESERT
+            | M::SURFACE_IS_MUSHROOMS
+            | M::WORLD_IS_INFECTED
+            | M::HALLOW_ON_THE_SURFACE
+            | M::NO_INFECTION
+            | M::EXTRA_FLOATING_ISLANDS
+            | M::EXTRA_LIQUID,
+    );
+    if shaping {
+        return false;
+    }
+    !m.contains(M::EXTRA_LIVING_TREES)
 }
 
 // --- the executed pipeline (today's order, verbatim call sites) -------------
@@ -1353,6 +1413,26 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // insertion.
     step!("jungle plants", "Jungle Plants", step_jungle_plants),
     step!("vines", "Vines", step_vines),
+    // The vanilla Flowers slot (`WorldGen.cs:20447`): after Vines
+    // (`:20193`), before Mushrooms (`:20599`) — W4-d105 lane 5. The patch
+    // rolls + the PlaceTile-3 style draws ride `pass_rng("Flowers")`.
+    step!("flowers", "Flowers", step_flowers),
+    // The vanilla Mushrooms slot (`WorldGen.cs:20599`): after Flowers
+    // (`:20447`), before Gems In Ice Biome (`:20697`, the port's `exposed
+    // gems` sits earlier) / Muds Walls In Jungle (`:20813`) — W4-d105
+    // lane 5. The patch rolls ride `pass_rng("Mushrooms")` (the cell
+    // writes draw nothing).
+    step!("mushrooms", "Mushrooms", step_mushrooms),
+    // The vanilla Random Gems slot (`WorldGen.cs:20729`): after Mushrooms
+    // (`:20599`) / Gems In Ice Biome (`:20697`, the port's `exposed gems`
+    // sits earlier), before Moss Grass (`:20769`) / Muds Walls In Jungle
+    // (`:20813`) — W4-d105 lane 5. The scatter + patch rolls ride
+    // `pass_rng("Random Gems")`.
+    step!("random gems", "Random Gems", step_random_gems),
+    // The vanilla Moss Grass slot (`WorldGen.cs:20769`): after Random Gems
+    // (`:20729`), before Muds Walls In Jungle (`:20813`) — W4-d105 lane 5.
+    // The long-moss frame variants ride `pass_rng("Moss Grass")`.
+    step!("moss grass", "Moss Grass", step_moss_grass),
     // The vanilla slot (`WorldGen.cs:20813`): after Vines, before the
     // islands step the plan pins it against — the M5-BIOME phase-5
     // insertion.
@@ -1361,6 +1441,12 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         "Muds Walls In Jungle",
         step_muds_walls_in_jungle
     ),
+    // The vanilla Larva slot (`WorldGen.cs:20868`): after Muds Walls In
+    // Jungle (`:20813`), before Micro Biomes (`:20901`, the port's grouped
+    // micro steps sit earlier) — W4-d105 lane 5's last insertion. The pass
+    // consumes the hive pass's larva ledger and draws nothing (the 3×4
+    // clear + the Place3x3-231 writes are deterministic).
+    step!("larva", "Larva", step_larva),
     step!(
         "floating islands",
         "Floating Islands",
@@ -1373,7 +1459,30 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("shell piles", "Shell Piles", step_shell_piles),
     step!("slopes", "Smooth World", step_slopes),
     step!("living trees", "Living Trees", step_living_trees),
+    // The vanilla Guide slot (`WorldGen.cs:19685`): after Spawn Point
+    // (`:19460`) / Grass Wall (`:19589`, d104/d106's ranges — not executed
+    // here) and before Sunflowers (`:19898`) / Planting Trees (`:19940`) —
+    // W4-d105 lane 5's first insertion, at the head of the port's tree
+    // family. The Spawn Point product it reads is the world tail's formula,
+    // published early by the adapter (the C# computes it before Guide too).
+    // The pass draws its one name roll per spawn from `pass_rng("Guide")`,
+    // so the insertion shifts no other step's ledger.
+    step!("guide", "Guide", step_guide),
+    // The vanilla Sunflowers slot (`WorldGen.cs:19898`): immediately after
+    // Guide (`:19685`), before Planting Trees (`:19940`) — W4-d105 lane 5.
+    // The pass draws its band rolls from `pass_rng("Sunflowers")`, so the
+    // insertion shifts no other step's ledger.
+    step!("sunflowers", "Sunflowers", step_sunflowers),
     step!("trees", "Planting Trees", step_trees),
+    // The vanilla Herbs slot (`WorldGen.cs:19964`): immediately after
+    // Planting Trees (`:19940`), before Dye Plants (`:19981`) — W4-d105
+    // lane 5. The `PlantAlch` draws ride `pass_rng("Herbs")`.
+    step!("herbs", "Herbs", step_herbs),
+    // The vanilla Dye Plants slot (`WorldGen.cs:19981`): immediately after
+    // Herbs (`:19964`), before Webs And Honey (`:19995`) — W4-d105 lane 5.
+    // The plantDye picks + the three tails' draws ride
+    // `pass_rng("Dye Plants")`.
+    step!("dye plants", "Dye Plants", step_dye_plants),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
     // The vanilla Water Plants slot (`WorldGen.cs:21973`): after the
@@ -2195,6 +2304,256 @@ fn step_moss(
     );
 }
 
+/// `Guide` (`WorldGen.cs:19685-19897`, `GenPassNameID.SpawnStarterNPCs`) —
+/// the gen-time starter town NPCs. The pass reads `Main.spawnTileX/Y`, the
+/// Spawn Point pass's product (`:19460-19588`); the port's Spawn Point is
+/// the world tail's formula, so the adapter publishes it here at pass time
+/// (the C# computes it BEFORE Guide too — more faithful than reading the
+/// tail's late value). Classic worlds use the height-map anchor; remix
+/// scans up from the bottom centre. The name rolls ride `pass_rng("Guide")`.
+fn step_guide(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let (spawn_x, spawn_y) = if opts.flags.contains(crate::seeds::SeedFlags::REMIX) {
+        let x = world.width / 2;
+        let mut y = world.height - 10;
+        while y > 0 && world.tile(x, y).is_some_and(|t| t.active()) {
+            y -= 1;
+        }
+        (x, (y + 1).max(1))
+    } else {
+        let map = gv.map();
+        (
+            map.spawn_center,
+            (map.heights[map.spawn_center as usize] - 6).max(1),
+        )
+    };
+    starter_npcs::pass_starter_npcs(
+        world,
+        opts,
+        spawn_x,
+        spawn_y,
+        &mut streams.pass_rng("Guide"),
+    );
+}
+
+/// `Sunflowers` (`WorldGen.cs:19898-19939`, `GenPassNameID.SunflowersPart2`)
+/// — the `maxTilesX * 0.002` band attempts over the grass tops. The
+/// `Skyblock.denySomeGeneration` gate (`:19900`) rides the adapter; the
+/// band rolls and the `PlaceSunflower` style draws ride
+/// `pass_rng("Sunflowers")`.
+fn step_sunflowers(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if skyblock_deny_some_generation(opts) {
+        return;
+    }
+    let world_surface = gv.layers().world_surface;
+    surface::pass_sunflowers(world, world_surface, &mut streams.pass_rng("Sunflowers"));
+}
+
+/// `Herbs` (`WorldGen.cs:19964-19980`, `GenPassNameID.AlchemyHerbs`) — the
+/// `maxTilesX * 1.7` `PlantAlch` attempts (remix ×5). The
+/// `Skyblock.denyAllGeneration` gate (`:19966`) rides the adapter; the
+/// column/depth/density draws ride `pass_rng("Herbs")`.
+fn step_herbs(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if skyblock_deny_all_generation(opts) {
+        return;
+    }
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    let remix = opts.flags.contains(crate::seeds::SeedFlags::REMIX);
+    surface::pass_herbs(
+        world,
+        world_surface,
+        rock_layer,
+        remix,
+        &mut streams.pass_rng("Herbs"),
+    );
+}
+
+/// `Dye Plants` (`WorldGen.cs:19981-19994`, `GenPassNameID.DyePlants`) —
+/// the per-column `plantDye` attempts + `MatureTheHerbPlants` +
+/// `GrowGlowTulips` + `PlaceChilletEggs`. The
+/// `Skyblock.denyAllGeneration` gate (`:19983`) rides the adapter; every
+/// draw rides `pass_rng("Dye Plants")`.
+fn step_dye_plants(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if skyblock_deny_all_generation(opts) {
+        return;
+    }
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    let remix = opts.flags.contains(crate::seeds::SeedFlags::REMIX);
+    surface::pass_dye_plants(
+        world,
+        world_surface,
+        rock_layer,
+        remix,
+        &mut streams.pass_rng("Dye Plants"),
+    );
+}
+
+/// `Flowers` (`WorldGen.cs:20447-20598`, `GenPassNameID.Flowers`) — the
+/// `maxTilesX * 0.004` patch attempts (remix ×6). The
+/// `Skyblock.denySomeGeneration` gate (`:20449`) rides the adapter; the
+/// patch rolls + the `PlaceTile(3)` style draws ride
+/// `pass_rng("Flowers")`. The log-anchor override reads/writes the
+/// `GenVars.logX/logY` seam (the fallen-log pass's product).
+fn step_flowers(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if skyblock_deny_some_generation(opts) {
+        return;
+    }
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    let remix = opts.flags.contains(crate::seeds::SeedFlags::REMIX);
+    let mut log = (gv.log_x, gv.log_y);
+    surface::pass_flowers(
+        world,
+        &mut log,
+        world_surface,
+        rock_layer,
+        remix,
+        &mut streams.pass_rng("Flowers"),
+    );
+    gv.log_x = log.0;
+    gv.log_y = log.1;
+}
+
+/// `Mushrooms` (`WorldGen.cs:20599-20696`, `GenPassNameID.Mushrooms`) —
+/// the `maxTilesX * 0.002` patch attempts (remix ×9) turning the grass
+/// tufts / sunflowers into mushrooms. The `Skyblock.denySomeGeneration`
+/// gate (`:20601`) rides the adapter; the patch rolls ride
+/// `pass_rng("Mushrooms")`.
+fn step_mushrooms(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if skyblock_deny_some_generation(opts) {
+        return;
+    }
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    let remix = opts.flags.contains(crate::seeds::SeedFlags::REMIX);
+    surface::pass_mushrooms(
+        world,
+        world_surface,
+        rock_layer,
+        remix,
+        &mut streams.pass_rng("Mushrooms"),
+    );
+}
+
+/// `Random Gems` (`WorldGen.cs:20729-20768`,
+/// `GenPassNameID.ExposedGemsUnderground`) — the single-gem scatter + the
+/// marble/granite gem patches. The `Skyblock.denyAllGeneration` gate
+/// (`:20731`) rides the adapter; the scatter/patch rolls + the gem frame_y
+/// draws ride `pass_rng("Random Gems")`.
+fn step_random_gems(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if skyblock_deny_all_generation(opts) {
+        return;
+    }
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    spider_gem_moss::pass_random_gems(
+        world,
+        &mut streams.pass_rng("Random Gems"),
+        world_surface,
+        rock_layer,
+    );
+}
+
+/// `Moss Grass` (`WorldGen.cs:20769-20812`, `GenPassNameID.LongMoss`) —
+/// the full-world sweep growing the long moss (184) on the free neighbours
+/// of every moss tile. The `Skyblock.denySomeGeneration` gate (`:20771`)
+/// rides the adapter; the `PlaceTile`-184 frame variants ride
+/// `pass_rng("Moss Grass")`.
+fn step_moss_grass(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if skyblock_deny_some_generation(opts) {
+        return;
+    }
+    spider_gem_moss::pass_moss_grass(world, &mut streams.pass_rng("Moss Grass"));
+}
+
+/// `Larva` (`WorldGen.cs:20868-20900`, `GenPassNameID.BeeLarvaInBeehives`)
+/// — the larva ledger the hive pass published: each anchor gets the 3×4
+/// clear centre + the `PlaceTile(231)` larva. The
+/// `Skyblock.denyAllGeneration` gate (`:20870`) rides the adapter; the
+/// pass draws nothing (the writes are deterministic), so no stream is
+/// consumed. The dual-dungeons prune (`DUAL_DUNGEON_DISABLED_PASSES`)
+/// already skips this step's vanilla slot.
+fn step_larva(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if skyblock_deny_all_generation(opts) {
+        return;
+    }
+    structures::pass_larva(world, &gv.larva);
+}
+
 /// `Webs And Honey` (`WorldGen.cs:19995`) — the wall-keyed sweep that hangs
 /// cobweb in the spider caves and honeyed speleothems in the hives.
 fn step_webs_and_honey(
@@ -2217,7 +2576,13 @@ fn step_beehives(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    structures::pass_beehives(world, gv.spans(), gv.layers().rock_layer, &mut streams.srng);
+    // The larva anchors ride the GenVars ledger (W4-d105 lane 5 #45): the
+    // hive pass publishes them, the `BeeLarvaInBeehives` pass places them.
+    let spans = gv.spans().clone();
+    let rock_layer = gv.layers().rock_layer;
+    let mut larva = std::mem::take(&mut gv.larva);
+    structures::pass_beehives(world, &spans, rock_layer, &mut streams.srng, &mut larva);
+    gv.larva = larva;
 }
 
 fn step_hell_forts(
@@ -2826,6 +3191,17 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[82] = true;
     world.frame_important[83] = true;
     world.frame_important[84] = true;
+    // The dye plant 227 (`Main.cs:7394`), the glow tulip 656 (`:7748`) and
+    // the chillet egg 752 (`:9810`) — W4-d105 lane 5's Dye Plants pass
+    // writes their style frames; the framer keeps them.
+    world.frame_important[227] = true;
+    world.frame_important[656] = true;
+    world.frame_important[752] = true;
+    // The exposed gems 178 (`Main.cs:7413`) and the long moss 184
+    // (`:7414`) — W4-d105 lane 5's Random Gems / Moss Grass passes write
+    // their style + Next(3) variant frames; the framer keeps them.
+    world.frame_important[178] = true;
+    world.frame_important[184] = true;
     world.frame_important[185] = true;
     world.frame_important[186] = true;
     world.frame_important[187] = true;
@@ -3187,7 +3563,20 @@ mod tests {
         // `WorldGen.cs:20941`) before `campsites`.
         // W4-c29: + `dead man's chests` (vanilla "Micro Biomes",
         // `WorldGen.cs:20916`) before `thin ice` (the block runs first).
-        assert_eq!(names.len(), 67);
+        // W4-d105 lane 5: + `guide` (vanilla "Guide", `WorldGen.cs:19685`)
+        // between `living trees` and `trees`, + `sunflowers` (vanilla
+        // "Sunflowers", `:19898`) between `guide` and `trees`, + `herbs`
+        // (vanilla "Herbs", `:19964`) between `trees` and `surface flora`,
+        // + `dye plants` (vanilla "Dye Plants", `:19981`) between `herbs`
+        // and `surface flora`, + `flowers` (vanilla "Flowers", `:20447`)
+        // between `vines` and `muds walls in jungle`, + `mushrooms`
+        // (vanilla "Mushrooms", `:20599`) after `flowers`, + `random gems`
+        // (vanilla "Random Gems", `:20729`) after `mushrooms`, + `moss
+        // grass` (vanilla "Moss Grass", `:20769`) after `random gems`,
+        // + `larva` (vanilla "Larva", `:20868`) after `muds walls in
+        // jungle`.
+        // batch-O compose: c29's 1 (66→67) + d105's 9 (66→75) = 76.
+        assert_eq!(names.len(), 76);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3273,13 +3662,22 @@ mod tests {
                 "mushroom and jungle plants",
                 "jungle plants",
                 "vines",
+                "flowers",
+                "mushrooms",
+                "random gems",
+                "moss grass",
                 "muds walls in jungle",
+                "larva",
                 "floating islands",
                 "remove water",
                 "shell piles",
                 "slopes",
                 "living trees",
+                "guide",
+                "sunflowers",
                 "trees",
+                "herbs",
+                "dye plants",
                 "surface flora",
                 "cacti",
                 "lihzahrd altar",
@@ -3405,15 +3803,26 @@ mod tests {
     /// plants` (vanilla `:20122` → `:20165`, before Vines `:20193`) and
     /// `muds walls in jungle` between `vines` and `floating islands` (the
     /// plan's slot; vanilla carries Muds Walls In Jungle after Vines,
-    /// `:20193` → `:20813`).
+    /// `:20193` → `:20813`). W4-d105 lane 5 inserts `flowers` (vanilla
+    /// Flowers `:20447`), `mushrooms` (vanilla Mushrooms `:20599`),
+    /// `random gems` (vanilla Random Gems `:20729`) and `moss grass`
+    /// (vanilla Moss Grass `:20769`) between `vines` and `muds walls in
+    /// jungle`, so the adjacency is +5 now — the relative pair itself
+    /// still holds.
     #[test]
     fn test_DW_5_3_new_steps_sit_in_their_vanilla_positions() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("wet jungle"), pos("altars") + 1);
         assert_eq!(pos("jungle plants"), pos("mushroom and jungle plants") + 1);
-        assert_eq!(pos("muds walls in jungle"), pos("vines") + 1);
-        assert_eq!(names[pos("muds walls in jungle") + 1], "floating islands");
+        // + flowers + mushrooms + random gems + moss grass (W4-d105 lane 5,
+        // the vanilla Flowers `:20447` / Mushrooms `:20599` / Random Gems
+        // `:20729` / Moss Grass `:20769` slots).
+        assert_eq!(pos("muds walls in jungle"), pos("vines") + 5);
+        // + larva (W4-d105 lane 5, the vanilla Larva slot `:20868`) between
+        // `muds walls in jungle` and `floating islands`.
+        assert_eq!(names[pos("muds walls in jungle") + 1], "larva");
+        assert_eq!(names[pos("muds walls in jungle") + 2], "floating islands");
         // The vanilla chain carries the same relative pairs.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -3499,6 +3908,207 @@ mod tests {
         assert_eq!(pos("dead man's chests") + 1, pos("thin ice"));
         assert!(pos("dead man's chests") < pos("mining explosives"));
         assert!(pos("dead man's chests") < pos("mahogany trees"));
+    }
+
+    /// W4-d105 lane 5 (#37): `guide` sits in its vanilla slot — after the
+    /// Spawn Point / Grass Wall pair (`WorldGen.cs:19460` / `:19589`, the
+    /// siblings' ranges) and before Sunflowers (`:19898`) / Planting Trees
+    /// (`:19940`). The port's tree family stands in for the unexecuted
+    /// Spawn Point / Grass Wall slots, so the step lands at the head of
+    /// the family, immediately before `sunflowers` (#38 inserted between
+    /// `guide` and `trees`).
+    #[test]
+    fn w4_d105_the_guide_step_sits_before_the_trees() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("guide") + 1, pos("sunflowers"));
+        assert!(pos("guide") < pos("trees"));
+        assert_eq!(names[pos("guide") - 1], "living trees");
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Spawn Point") < cpos("Guide"));
+        assert!(cpos("Grass Wall") < cpos("Guide"));
+        assert!(cpos("Guide") < cpos("Sunflowers"));
+        assert!(cpos("Guide") < cpos("Planting Trees"));
+    }
+
+    /// W4-d105 lane 5 (#38): `sunflowers` sits immediately after `guide`
+    /// and before `trees` — the vanilla Guide (`WorldGen.cs:19685`) →
+    /// Sunflowers (`:19898`) → Planting Trees (`:19940`) chain.
+    #[test]
+    fn w4_d105_the_sunflowers_step_sits_between_guide_and_trees() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("sunflowers"), pos("guide") + 1);
+        assert_eq!(pos("sunflowers") + 1, pos("trees"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Guide") < cpos("Sunflowers"));
+        assert!(cpos("Sunflowers") < cpos("Planting Trees"));
+    }
+
+    /// W4-d105 lane 5 (#39): `herbs` sits immediately after `trees` and
+    /// before `dye plants` (#40 inserted between `herbs` and `surface
+    /// flora`) — the vanilla Planting Trees (`WorldGen.cs:19940`) → Herbs
+    /// (`:19964`) → Dye Plants (`:19981`) → Webs And Honey (`:19995`) →
+    /// Weeds (`:20064`) chain (the port's `surface flora` stands in for
+    /// the Weeds slot).
+    #[test]
+    fn w4_d105_the_herbs_step_sits_after_the_trees() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("herbs"), pos("trees") + 1);
+        assert_eq!(pos("herbs") + 1, pos("dye plants"));
+        assert!(pos("herbs") < pos("surface flora"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Planting Trees") < cpos("Herbs"));
+        assert!(cpos("Herbs") < cpos("Dye Plants"));
+        assert!(cpos("Herbs") < cpos("Weeds"));
+    }
+
+    /// W4-d105 lane 5 (#40): `dye plants` sits immediately after `herbs`
+    /// and before `surface flora` — the vanilla Herbs (`WorldGen.cs:19964`)
+    /// → Dye Plants (`:19981`) → Webs And Honey (`:19995`) → Weeds
+    /// (`:20064`) chain.
+    #[test]
+    fn w4_d105_the_dye_plants_step_sits_after_the_herbs() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("dye plants"), pos("herbs") + 1);
+        assert_eq!(pos("dye plants") + 1, pos("surface flora"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Herbs") < cpos("Dye Plants"));
+        assert!(cpos("Dye Plants") < cpos("Webs And Honey"));
+        assert!(cpos("Dye Plants") < cpos("Weeds"));
+    }
+
+    /// W4-d105 lane 5 (#41): `flowers` sits immediately after `vines` and
+    /// before `muds walls in jungle` — the vanilla Vines
+    /// (`WorldGen.cs:20193`) → Flowers (`:20447`) → Mushrooms (`:20599`) →
+    /// Gems In Ice Biome (`:20697`) → Random Gems (`:20729`) → Moss Grass
+    /// (`:20769`) → Muds Walls In Jungle (`:20813`) chain (the port's
+    /// `muds walls in jungle` stands in for the still-unexecuted slots
+    /// between).
+    #[test]
+    fn w4_d105_the_flowers_step_sits_after_the_vines() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("flowers"), pos("vines") + 1);
+        assert_eq!(pos("flowers") + 1, pos("muds walls in jungle"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Vines") < cpos("Flowers"));
+        assert!(cpos("Flowers") < cpos("Mushrooms"));
+        assert!(cpos("Flowers") < cpos("Muds Walls In Jungle"));
+    }
+
+    /// W4-d105 lane 5 (#42): `mushrooms` sits immediately after `flowers`
+    /// and before `muds walls in jungle` — the vanilla Flowers
+    /// (`WorldGen.cs:20447`) → Mushrooms (`:20599`) → Gems In Ice Biome
+    /// (`:20697`) → Random Gems (`:20729`) → Moss Grass (`:20769`) → Muds
+    /// Walls In Jungle (`:20813`) chain.
+    #[test]
+    fn w4_d105_the_mushrooms_step_sits_after_the_flowers() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("mushrooms"), pos("flowers") + 1);
+        assert_eq!(pos("mushrooms") + 1, pos("muds walls in jungle"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Flowers") < cpos("Mushrooms"));
+        assert!(cpos("Mushrooms") < cpos("Gems In Ice Biome"));
+        assert!(cpos("Mushrooms") < cpos("Muds Walls In Jungle"));
+    }
+
+    /// W4-d105 lane 5 (#43): `random gems` sits immediately after
+    /// `mushrooms` and before `muds walls in jungle` — the vanilla
+    /// Mushrooms (`WorldGen.cs:20599`) → Gems In Ice Biome (`:20697`) →
+    /// Random Gems (`:20729`) → Moss Grass (`:20769`) → Muds Walls In
+    /// Jungle (`:20813`) chain.
+    #[test]
+    fn w4_d105_the_random_gems_step_sits_after_the_mushrooms() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("random gems"), pos("mushrooms") + 1);
+        assert_eq!(pos("random gems") + 1, pos("muds walls in jungle"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Mushrooms") < cpos("Random Gems"));
+        assert!(cpos("Gems In Ice Biome") < cpos("Random Gems"));
+        assert!(cpos("Random Gems") < cpos("Moss Grass"));
+        assert!(cpos("Random Gems") < cpos("Muds Walls In Jungle"));
+    }
+
+    /// W4-d105 lane 5 (#44): `moss grass` sits immediately after
+    /// `random gems` and before `muds walls in jungle` — the vanilla
+    /// Random Gems (`WorldGen.cs:20729`) → Moss Grass (`:20769`) → Muds
+    /// Walls In Jungle (`:20813`) chain.
+    #[test]
+    fn w4_d105_the_moss_grass_step_sits_after_the_random_gems() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("moss grass"), pos("random gems") + 1);
+        assert_eq!(pos("moss grass") + 1, pos("muds walls in jungle"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Random Gems") < cpos("Moss Grass"));
+        assert!(cpos("Moss Grass") < cpos("Muds Walls In Jungle"));
+    }
+
+    /// W4-d105 lane 5 (#45): `larva` sits immediately after `muds walls in
+    /// jungle` and before `floating islands` — the vanilla Muds Walls In
+    /// Jungle (`WorldGen.cs:20813`) → Larva (`:20868`) → Micro Biomes
+    /// (`:20901`) chain (the port's grouped micro steps sit earlier, so
+    /// `floating islands` stands in for the next executed slot).
+    #[test]
+    fn w4_d105_the_larva_step_sits_after_the_muds_walls() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("larva"), pos("muds walls in jungle") + 1);
+        assert_eq!(pos("larva") + 1, pos("floating islands"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Muds Walls In Jungle") < cpos("Larva"));
+        assert!(cpos("Larva") < cpos("Micro Biomes"));
     }
 
     #[test]
@@ -3639,6 +4249,12 @@ mod tests {
         assert_eq!(gv.right_beach_start, 0);
         assert_eq!(gv.water_line, 0);
         assert_eq!(gv.lava_line, 0);
+        // W4-d105 lane 5: the fallen-log anchor resets to −1
+        // (`WorldGen.cs:11210`) and the larva ledger to empty
+        // (`GenVars.numLarva = 0`, `WorldGen.cs:11245`).
+        assert_eq!(gv.log_x, -1);
+        assert_eq!(gv.log_y, 0);
+        assert!(gv.larva.is_empty());
     }
 
     // --- Phase 6: temple stub -------------------------------------------------
