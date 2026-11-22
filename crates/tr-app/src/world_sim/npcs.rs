@@ -4464,6 +4464,59 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         };
                         crate::npc_ai_style56::style56_step(&mut npcs[i], &mut env);
                     }
+                    // W4-d38 — the PumpkingBlade's arm (`NPC.AI()`'s
+                    // aiStyle-59 block, `NPC.cs:33198-33373`): the carrier
+                    // link (`ai[1]` = the Pumpking's slot) resolves here at
+                    // the blade's slot turn (the pool read the solo
+                    // `update_rng` axis cannot see). The faithful
+                    // `npc_ai_style59::ai_style59` runs the hover/rise/dive/
+                    // sweep state machine; the Flaming Scythe 329 shot
+                    // (rotation/spriteDirection in ai0/ai1) drains into
+                    // `wants_hostile_shot_ai`. The noTileCollide integration
+                    // tail rides here. RNG-free by construction.
+                    if npcs[i].kind == NpcKind::PumpkingBlade && npcs[i].hp > 0 {
+                        let cand = crate::npc_target::session_candidate(player);
+                        // The carrier: the living Pumpking (327, aiStyle 58).
+                        // The C# reads `Main.npc[Clamp(ai[1], 0, 199)]`; the
+                        // port resolves the first living Pumpking (the
+                        // single-carrier convention, the moon-core fallback).
+                        let carrier = npcs
+                            .iter()
+                            .find(|m| m.kind == NpcKind::Pumpking && m.hp > 0)
+                            .map(|m| {
+                                let (ccx, ccy) = m.center();
+                                crate::npc_ai_style59::PumpkingCarrier {
+                                    center_x: ccx,
+                                    center_y: ccy,
+                                    top_y: m.y,
+                                    ai1: m.ai[1],
+                                    ai3: m.ai[3],
+                                }
+                            });
+                        let shot = crate::npc_ai_style59::ai_style59(
+                            &mut npcs[i],
+                            world,
+                            &[cand],
+                            carrier.as_ref(),
+                            world.day_time,
+                            0,
+                        );
+                        if let Some(s) = shot {
+                            npcs[i].wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                                kind: s.kind as u16,
+                                x: s.x,
+                                y: s.y,
+                                vx: s.vx,
+                                vy: s.vy,
+                                damage: s.damage,
+                                ai0: s.ai0,
+                                ai1: s.ai1,
+                                scale: None,
+                            });
+                        }
+                        // The noTileCollide integration (`NPC.cs:92605-92607`).
+                        npcs[i].integrate_no_tile_collide();
+                    }
                     // S1-D-3-wire-saucer: the aiStyle-75 mount family is a
                     // POOL step (the host/crew slot links read `App::npcs`
                     // live) — it runs here, in slot order, on the

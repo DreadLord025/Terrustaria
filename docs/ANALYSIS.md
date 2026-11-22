@@ -39244,3 +39244,367 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-d38 sheets/atlas phase (NPC kinds 281-350, 2026-11-21, code-only mode)
+
+**Scope.** The wave's 35 `NPC_<id>` sheets were packed by the wiring
+batches b1-b7 (`STATIC_SHEET_NAMES` + the `D38_B1..B7_SHEETS` rows feeding
+`NpcAssets::npc_sheets`). This phase (1) verifies the packing headroom
+CUMULATIVELY with the sibling d35 wave's 33 deferred sheets, (2) completes
+the draw's rotation whitelist for the kinds whose ported machines write
+`rotation`, and (3) lands the frame-strip witnesses over the REAL retail
+sheet dims.
+
+### Atlas headroom — measured, cumulative (tools/_d38_atlas_cumulative.js)
+
+The harness reuses `tools/atlas_sim.js`'s real-dims census (the LZX/XNB
+first-frame reader over `assets/Content/Images/*.xnb`) and its packer twins
+(skyline bottom-left waste tie-break = the landed `skyline_pack`,
+`tr-render/src/atlas.rs`; maxrects BAF = comparison only). The purged
+`origin/task/S1-L-8b-mount-data` git-show is stubbed IN MEMORY (its 25
+additions all landed on main — the base sim itself reports "L-8b additions
+(0)"); `tools/atlas_sim.js` is untouched. Every reported layout passes the
+harness's `verify` (PAD-inflated no-overlap + in-bounds) and the skyline
+double-run determinism check.
+
+Two sheet sets are measured, because the runtime set changed under the
+wave: the E-4b gore enumeration LANDED on main (`assets.rs`'s
+`enumerate_gore_sheet_ids`, ~1402 sheets), so the honest runtime census
+includes gore. c4's quoted baseline (7757 static / 8143 full) was measured
+pre-landing plus the boot font; `tools/_d38_c4_recheck.js` reproduces BOTH
+numbers exactly (8119 -> 8143 with font), so the ledgers reconcile.
+
+| set (skyline, waste tie-break) | sheets | height | vs 8192 |
+| --- | --- | --- | --- |
+| static-only, pre-d38 baseline | 8095 | 7711 | 481 headroom |
+| static-only, HEAD (d38's 35 packed) | 8130 | **7867** | 325 headroom |
+| static-only, HEAD + d35's 33 deferred | 8163 | **8035** | 157 headroom |
+| static-only, c4 check (baseline + 224/509/581/587) | 8099 | 7757 | c4's exact quote |
+| runtime (gore landed), pre-d38 baseline | 9497 | 8115 | 77 headroom |
+| runtime, HEAD (d38's 35) | 9532 | **8236** | **OVERFLOW +44** |
+| runtime, HEAD + d35's 33 (CUMULATIVE) | 9565 | **8452** | **OVERFLOW +260** |
+| runtime, cumulative + boot font | 9566 | 8452 | OVERFLOW +260 |
+| runtime, three-wave (d38 + d35 + c4's 4) | 9569 | 8461 | OVERFLOW +269 |
+| maxrects BAF, HEAD (d38) | 9532 | 8058 | 134 headroom |
+| maxrects BAF, CUMULATIVE d38 + d35 | 9565 | **8170** | **22 headroom** |
+| maxrects BAF, three-wave | 9569 | 8152 | 40 headroom |
+
+Attribution: d38's 35 sheets cost +121 px skyline over the runtime baseline
+(8115 -> 8236; 0.72 Mpx padded area), d35's 33 deferred sheets a further
++216 (8236 -> 8452; 0.95 Mpx). The best-fit shelves packer (the pre-G-12b
+main) overflows every set here (9116/9204) — the skyline is the only
+landed packer that ever fit the gore set.
+
+**Verdict: OVERFLOW documented.** The d38 sheets fit the STATIC list
+(7867 < 8192) but NOT the runtime set with the landed gore enumeration
+(8236 > 8192). This is NOT a d38 regression alone: the pre-d38 runtime
+baseline already stood at 8115 (77 px headroom), and ANY wave of ~35 NPC
+sheets tips it. The g72 note's "7530 static+gore" is STALE (measured
+before later waves' sheet additions; the same harness now measures 8115
+for the pre-d38 set) — the wyvern-deferral premise ("the atlas stands at
+the 8192 strict-GPU bound") that d35's draw arms cite is REAL again for
+the runtime set, but d38's sheets are already packed and MUST NOT be
+silently dropped: the fix is a packer/atlas decision, not a per-wave
+deferral lottery.
+
+**Proposals (Lead decision — NOT implemented here):**
+1. **maxrects BAF promotion** (preferred, smallest diff): the cumulative
+   d38+d35 set packs 8170 (22 px headroom) and even the three-wave set
+   8152 (40 px) under maxrects best-area-fit — the harness's
+   `maxrectsPack` is already a line-for-line candidate. Promote it into
+   `tr-render/src/atlas.rs` behind the same `Atlas::build` seam (the
+   G-12b skyline swap precedent: layout changes are UV-neutral because
+   every consumer reads `atlas.sheet(name)` rects). Headroom is THIN
+   (22 px) — the next wave (~35 sheets ≈ +120-220 px) overflows again.
+2. **Second atlas page** (structural, unblocks the whole roadmap): the
+   C# itself draws through MANY textures (`Main.spriteBatch` per
+   `TextureAssets` row); the port's one-atlas invariant is a port
+   simplification, not a vanilla constraint. A page-2 texture for the
+   NPC/gore families (the g72 underworld note already asks for "the
+   S1-G-13 background-target family or a second texture array") lifts
+   the bound permanently. Cost: the instanced sprite pipeline binds one
+   texture today — a second bind or a texture array + shader index.
+3. Combined: promote maxrects NOW (buys the d35 repack), land page-2
+   before the d36/d39/d40/d43 waves pack their sheets (four more sibling
+   waves × ~35 kinds each are in flight — at ~+150 px/wave even maxrects
+   dies within two waves).
+
+### Rotation whitelist (draw gate, render/entities.rs)
+
+The port gates rotation per kind (`n.rotation != 0.0 && matches!(...)`);
+the C# generic draw rotates EVERY NPC (`Main.cs:26632`). Per the C#
+rotation-write census of each kind's ported machine:
+
+| kind(s) | writer | citation | whitelist |
+| --- | --- | --- | --- |
+| 281-286 casters (style 8) | none — `NPC.cs:20817-21376` has ZERO `this.rotation` writes; FindFrame `:77023-77054` rows 0/1/2 | — | OUT |
+| 287/290-296 walkers+shooters (style 3) | none — the shooters AIM via frame rows (`ai[2]`, `NPC.cs:76021-76059`/`:76139-76178`); AI_003's rotation writes are the type-471 arm only (`:56507`) | — | OUT |
+| 289 GiantCursedSkull (style 10) | `npc_ai_style10.rs:368/:372` aim atan2 (+PI left) | `NPC.cs:21750-21766` | IN (s8) |
+| 297/298 birds (style 24) | `npc.rs:9401/:9415` `rotation = vx*0.1` | `NPC.cs:73634` | IN (s8) |
+| 299/300/303/337 critters (style 7) | none — AI_007 (`NPC.cs:52965-55563`) has ZERO rotation writes; the hop is frame rows 2/4 | — | OUT |
+| 301 Raven (style 17) | `npc.rs:9469` `rotation = vx*0.1` | `NPC.cs:73589` | IN (s8) |
+| 302/304/333-336 slimes (style 1) | only the balloon-freeze `rotation = 0` (`npc_ai_slime.rs:477`) — a zero is not a tilt | `NPC.cs:61046-61052` | OUT |
+| 316 Ghost (style 22) | `npc.rs:9379` `rotation = vx*0.1` | `NPC.cs:74858` | IN (s9) |
+| 317/318 demon eyes (style 2) | `npc.rs:9317/:9388` atan2 (+3.14 literal left) | `NPC.cs:74019-74031` | IN (s9) |
+| 322-324 skeletons (style 3) | none (humanoid frame group `NPC.cs:68590-68601`) | — | OUT |
+| 328 PumpkingBlade (style 59) | `npc_ai_style59.rs:355/:364/:398` atan2 + the 1.57 LITERAL | `NPC.cs:33296`/`:33305`/`:33340` | IN (s9) |
+
+The eight IN kinds' machines already wrote `rotation` (the wiring batches
+ported the writers); the whitelist was the missing half — without it the
+draw dropped the tilt on the floor. The 27 OUT kinds are a deliberate
+match to the C# (no writer, no rotation), not a deferral.
+
+### Frame-strip witnesses (render/entities.rs `d38_sheet_tests`)
+
+`tools/_d38_dims.py` decodes the REAL `NPC_<id>.xnb` dims through
+atlas_sim's LZX reader (the same decoder the packer measurement uses) and
+cross-checks `Main.npcFrameCount` (`Main.cs:67082`, all 697 entries)
+against the port's verbatim `NPC_FRAME_COUNT` table: all 35 agree. The
+witness module pins, per kind: own-sheet draw (`texture_net_id ==
+cs_id`), the row count, `vanilla_row_h`'s integer division, the
+`pumpkin_moon_draw` width/anchor arithmetic and the last-row UV staying
+in-bounds; plus the M4-NPC-3v packing audit (all 35 `D38_*` ids in
+`STATIC_SHEET_NAMES`). The ONE non-multiple strip: NPC_286 is 40x170 over
+3 rows — `SetFrameSize` (`NPC.cs:90780-90800`) integer-divides to 56 and
+DROPS the 2 px tail; the witness pins the remainder rather than papering
+over it. NPC_328 is a SINGLE 106x86 frame (`npcFrameCount[328] = 1`); the
+C#'s type-328 draw arm (`Main.cs:22669-22699`) draws the Pumpking's ARMS
+(`TextureAssets.PumpkingArm`) — the blade's own sheet is the body only.
+
+### Verification
+
+Code-only: the atlas numbers come from RUNNING the node harness (outputs
+in `tools/_d38_atlas_cumulative.txt`); the dims/rows table from RUNNING
+`tools/_d38_dims.py`. The Rust witnesses (2 tests over 35 kinds) and the
+whitelist arms are WRITTEN, NOT RUN — **no cargo/rustc/tests invoked**.
+Structural check: brace/bracket balance unchanged vs the base file, one
+`d38_sheet_tests` module, 35 STRIPS rows, 8 new whitelist kinds present.
+
+## W4-d38 crossnote phase (2026-11-21, code-only mode)
+
+The sibling-wave crossnote: read the d35 ATLAS-REPACK tips
+(`519c8035`/`7d131be3`, research/113) and the d40 data-only tip
+(`8fe1d6d3`), re-measure the cumulative projection with d40's REAL
+56-sheet set, publish the ADDENDUM (research/293, renumbered from 125 —
+registry round 3, research/150 §7: d125's empress ledger 06:07:29 predates
+this doc, round-1 win REVOKED), and close the two
+draw-side gaps the audit found. Full numbers + the merger notes live in
+`docs/research/293-d38-crossnote-atlas-addendum.md`; the summary:
+
+1. **BAF-alone dies WITHIN ONE wave** (the s11 "within two waves" estimate
+   was optimistic): HEAD + d35's 21 + d40's 56 packs maxrects 8278
+   (OVER +86) / skyline 8688 (OVER +496), and the full three-wave set's
+   padded-area bound ALONE is 8258 > 8192 — no single-page packer fits.
+   The s11 proposal 1 (BAF promotion as the fix) is WITHDRAWN; d38
+   endorses research/113's boundary-split 2-page skyline form. Measured
+   by `tools/_d38_crossnote.js` (8 scenarios, verify + determinism,
+   outputs `.txt`/`.json` committed).
+2. **The portrait-slot gap (research/108 §5, d38 half) CLOSED**: the 35
+   kinds had bestiary ENTRIES + in-world draw arms but no
+   `BESTIARY_NPC_SHEET_IDS` slots — `draw_portrait`'s `entry_sheet` gate
+   None-skipped all 35 cards. +35 slots/vec rows in ENTRIES order
+   (181 → 216, earlier slots byte-identical), the `portrait_data` arms
+   ride the sheet row height over `Main.npcFrameCount` (the c4/d35
+   shape; the 286 row the 170/3 = 56 integer division, the 328 row the
+   whole single-frame sheet). The merger pin 323 is unchanged — d38's
+   +35 moved from the merge worklist into this branch; d40's 38-entry
+   half stays open on d40b.
+3. **The rotation whitelist is consumed**: the draw's inline `matches!`
+   extracted verbatim into `npc_rotation_allowed` (55 kinds; membership
+   + order proven identical vs the pre-edit list by
+   `tools/_d38_crossnote_check.py`, RUN). All 8 IN writers reachable
+   (the style-10/style-59 dispatch sites cited in research/293 §4c); the
+   new witness runs the 6 FindFrame machines live with exact tilt
+   values and pins the 27 OUT kinds against a forced rotation.
+4. **In-world draw arms: no None-skip left** — all 35 ids ride
+   `D38_B1..B7_SHEETS` → `npc_sheets` → `STATIC_SHEET_NAMES`, the G6
+   render_key rows landed per batch. The 328 PumpkingArm overlay is c6's
+   lane (not on main), documented, no d38 action.
+
+### Verification (crossnote)
+
+Code-only: the atlas numbers from RUNNING `tools/_d38_crossnote.js`; the
+structural checks from RUNNING `tools/_d38_crossnote_check.py` (gate
+membership/order identical, brace balance on all 3 edited files,
+216 == 216 == 216 table/vec/declared, first 181 rows byte-identical, tail
+in ENTRIES order — ALL PASSED). The 2 new Rust witnesses
+(`w4_d38_crossnote_the_portrait_slots_ride_the_real_strips`,
+`w4_d38_crossnote_the_rotation_gate_consumes_the_writers`) are WRITTEN,
+NOT RUN — **no cargo/rustc/tests invoked**.
+
+## W4-d38 FINAL phase (2026-11-21, code-only mode)
+
+The four-sheet FINAL close of the d38 lane (research/293 §§6-10, the
+sibling tips re-read at their CURRENT pushed states):
+
+1. **Atlas lazy-load alignment (sheet 1)**: d35's research/113 went
+   FINAL at `e5558b0a9` (§10-12: the NPC-sheet lazy-load census). d38's
+   eager-form addendum stands (both lanes agree: BAF-alone dies within
+   the d40b wave, the boundary-split 2-page form endorsed, the
+   8188-vs-8232 ledger reconciliation); the lazy contract RE-PARTITIONS
+   the input — `tools/_d38_final_lazy.js` (RUN) re-projects: E35
+   (HEAD minus d38's 35 NPC rows) reproduces the **8115** pre-d38
+   baseline exactly (the 35 sheets' eager contribution was precisely
+   the +121 overflow), and L91 (the d38 35 + d40 56 forecast slice)
+   packs **1554 px on ONE own page** (6638 headroom), inside 113
+   §10.4's per-world budgets. Under the §10.6 step-7 contract d38's
+   rows leave `STATIC_SHEET_NAMES` for the per-world NPC page via
+   `texture_net_id` — the draw path already resolves by name, no d38
+   code change; the 216/323 portrait-slot pins are lookup tables, not
+   atlas input, unchanged.
+2. **FindFrame status (sheet 2)**: the C# switch carries 34 of the 35
+   cases (328 PumpkingBlade NO-CASE, count 1, the row-0 pin correct —
+   the `case 328` at `NPC.cs:77828` is `DoesntDespawnToInactivity`);
+   the port has all 35 arms. The wiring-round gap list is exactly **7
+   `humanoid_town_frame` stand-ins** (287/295 → extra6 WIRED(d44),
+   294/296 → the wave-B module, 322/323/324 → extra7 MODULE-LANDED):
+   no grounded sprite flip, no air tail (the C# fighter group
+   `NPC.cs:68647-69655` has both + the `:69647` air-pin-0 list). The
+   d44 `7c430def6` master research/68 keep-one plan resolves every
+   stand-in at merge (the module hook precedes the body match); the
+   27 dedicated arms are faithful twins (read line-for-line this
+   phase). New witness
+   `w4_d38_final_the_seven_town_standins_are_the_wiring_gap` pins the
+   stand-ins' CURRENT behavior so the replacement is a witnessed edit.
+3. **Bestiary unlock census (sheet 3)**: all 35 C# banner chains
+   (`NPCtoBanner` → `BannerToItem` → `KillsToBanner`) agree with the
+   port's `kills_needed_for` — **290 Paladin 25 kills** the one
+   non-default ladder, the other 34 default 50. Three gaps documented
+   for the wiring round: GAP-1 the 6 critters' sight→tier-4 provider
+   (vanilla `CritterUICollectionInfoProvider`) vs the port's kill
+   ladder — PRE-EXISTING base-wide (the Goldfish 55 row inherits it);
+   GAP-2 the 5 rare-spawn rarity stars (display-only); GAP-3 the 328
+   `Hide = true` extra card (vanilla's populator excludes it; the port
+   row + slot stay this phase, the drop is a witnessed wiring-round
+   edit). New witness
+   `w4_d38_final_the_unlock_ladders_match_the_banner_chain` pins all
+   35 ladders + the exact tier thresholds.
+4. **108-extend cross-ref (sheet 4)**: d37's `bdd59afba` full-wave
+   re-census CONFIRMS d38's corridor — **281-337 vanilla-free** (NOT
+   d35's 429-461 port-local band), protocol==vanilla mechanically
+   re-verified for all 35 (hand cs_id rows + the S1-F-3 bestiary
+   fallback), the 22 holes exactly the base-owned ids; the two dedupes
+   (GiantCursedSkull keep d38@289 drop c3, PumpkingBlade keep d38@328
+   drop c6) and the E4 count pins (550 kinds / 489 entries / ≤357
+   slots / 446 eager static sheets / max proto 761) recorded.
+
+### Verification (FINAL)
+
+Code-only: the census scripts RUN and passed
+(`tools/_d38_final_census.py`, `_d38_final_ff.py`, `_d38_final_unlock.py`
+— outputs committed); the lazy re-projection RUN and passed
+(`tools/_d38_final_lazy.js`, 4 scenarios × verify() + double-run
+determinism). The 2 new Rust witnesses are WRITTEN, NOT RUN — **no
+cargo/rustc/tests invoked**; brace balance verified on both edited
+files. The anchors canary rows' markers verified present.
+
+## W4-d38 RETIRE phase (2026-11-21, code-only mode) — the band SEALED
+
+The retire close of the d38 lane (research/293 §§11-13, the SAME
+branch continued past the FINAL tip `1ba0395c7`). No game-code change:
+the phase publishes the wiring-round merger's exact edits + the
+closure receipts, then declares the band complete.
+
+1. **The stand-in drop-hunks + the residual (sheet 1, §11)**: re-probed
+   at d44's CURRENT tip `c863a7a5` (wire round 3, past the FINAL
+   census's `7c430def6`) — the extra7 hook is NOW WIRED (`5568fabf`),
+   so **5 of the 7 stand-ins resolve on the d44 tip itself**
+   (287/295 extra6 + 322/323/324 extra7, the hooks return-early before
+   the body match). The **residual stand-in list is exactly 294/296**:
+   the wave-B module (`npc_findframe_b.rs`) carries the faithful
+   fighter arms (air pin 0) but NO cs_id mapper/hook on ANY pushed tip
+   — the stand-ins stay until the wave-B wiring batch. The five exact
+   comment+arm drop windows + the FINAL-witness re-pin recipe
+   published; the §7 303 row CORRECTED (the extra7 mapper carries 337
+   NOT 303 — the 68 `c863a7a5` cell agrees: 303 keeps the d38 inline
+   arm); the 10 keep-one faithful-twin dedupes enumerated with
+   windows (none draws RNG in either form).
+2. **The 328 extra-card exact drop-hunk (sheet 2, §12)**: the 7-part
+   edit published with unique anchors (the ENTRIES row, the slot id +
+   declared 216→215, the parallel vec row, the portrait arm, the three
+   witness re-pins). The **panic-path proof**: `entry_for_npc` ends in
+   `.expect` and the blade's silent despawn sets `hp = 0`
+   (`npc_ai_style59.rs:255`) which feeds the kill-credit loop
+   (`world_sim/npcs.rs:5283`) — a bare ENTRIES delete PANICS the death
+   pass, so the drop REQUIRES a credit-preserving guard (the
+   `try_entry_for_npc` split; both options recorded, merger-owned).
+   The kill credit itself re-verified faithful at source
+   (`NPC.cs:78901-78912` — 328 passes `IsNPCValidForBestiaryKillCredit`;
+   `NPCKillsTracker.cs:23-33` counts with no entry requirement). The
+   in-world kind/sheet/draw/rotation/b6 witnesses are NOT dropped. The
+   merger re-pins: the 108-E §5 union 323→322, the E4 entries 489→488
+   (the 35-kinds/35-sheets pins unchanged).
+3. **GAP-1 CLOSED by c8 (sheet 3, §13a)**: the critter sight provider
+   landed on `task/W4-c8-style66-crawling-critters`
+   (`scan_world_for_critter_sights` at the `update_npcs` head,
+   `a17cd75b8`) and GENERALIZED to the C# `CountsAsACritter` gate
+   (`af2a06880`, local FINAL tip `af1f8ba1d` — at RETIRE time origin
+   pushes stopped at `3705670d3`, the nine-kind-list form; the
+   SEAL-VERIFY re-probe confirms the generic gate NOW PUSHED at c8
+   origin tip `7c2de9c06`, `bestiary.rs:2280`/`:2412`). **All six d38
+   critters (297/298/299/300/303/337) pass the generic gate on their
+   SetDefaults rows (5 HP / 0 dmg), no other d38 kind passes** —
+   mechanically extracted; the credit ids land unfolded in the same
+   sights set the dispatch reads; none is a `GOLD_PEER_TABLE` key (the
+   d40 gold peers read our Squirrel sightings for free). **d38
+   provider action: NONE** (the 143 §1 cross-lane contract); the merge
+   edit is this branch's 3 kill-only UI call sites
+   (`ui/bestiary.rs:510/:537/:1803`) folding onto `unlock_state_world`.
+   GAP-2 (rarity stars) stays open, display-only, unclaimed.
+4. **The SEAL declaration (§13b)**: 35 kinds + 35 sheets + 35
+   portraits COMPLETE; the 6-item merger hand-off published (the
+   stand-in drops, the keep-one dedupes, the 328 card drop, the UI
+   sight fold, the 113 §10.6 step-7 lazy migration, GAP-2).
+5. **SEAL-VERIFY addendum (same day, later round)**: the residual
+   294/296 re-probed at d44's refresh-4 tip `ce2c3a24a` — STILL no
+   wave-B cs_id hook/mapper, and the 68 §5 "ZERO real wire work left"
+   verdict does NOT cover the wave-B module (not on its DONE rows nor
+   its next-rounds line). The **task seed → d44** is now recorded in
+   research/293 §11 (the 2-id wave-B wiring batch on the extra6
+   `pub(crate)` fighter-delegate precedent, 289 excluded per E3, the
+   stand-in drop + witness re-pin at that batch). The RETIRE receipt's
+   check count corrected 44/44 → **41/41** (the committed output and a
+   fresh RUN both show 41 PASS lines, 0 FAIL — the 44 was a
+   transcription error; the script and its output are unchanged).
+6. **SEAL-RECEIPT addendum (same day, the exact-hunk round,
+   research/293 §§14-18)**: the five receipts published as mechanical
+   edits — (a) the {294,296} mapper-hook task-seed made EXACT for
+   `d44f-wire-lane` (§14: the 3-hunk insertion — the
+   `find_frame_kind_b` mapper {294,296}, the `find_frame_wave_b`
+   bridge, the claim wrapper + the hook after the extra8 block at
+   d44 `ce2c3a24a` `npc.rs:7194`; NO cs_id hand rows needed — the
+   S1-F-3 fallback `data.rs:3363-3370` resolves both through their
+   ENTRIES rows; 289 excluded per E3); (b) the 328 drop-PANIC guard
+   (§15): the consumer census found the panic surface WIDER than
+   RETIRE recorded — `entry_for_npc.expect` is reached by the kill
+   loop `:5283` AND `spawn_loot` `:6840` AND `NpcKind::net_id()`
+   (draw/save/lang/clicks) AND the cs_id fallback; option (a)'s bare
+   `try_entry_for_npc` swap is LOSSY (the town-sleeper folds missing
+   from the try-table) — **recommendation (b)**: the static
+   `PUMPKING_BLADE_CREDIT` stand-in outside ENTRIES + the two `.or`
+   tails + the client kill-arm fallback (the exact hunk published,
+   the vanilla credit chain `NPC.cs:95139-95142` +
+   `ContentSamples.cs:868-870` + `NetBestiaryModule.cs:52` re-verified);
+   (c) the c8 GAP-1 receipt at the PUSHED retire tip `7c2de9c06`
+   (§16: the six auto-covered, the 3 UI sites `:510/:537/:1803` + the
+   full plumbing fold table, the e23 compose hazard — e23's
+   `CRITTER_NET_IDS` static `[55,549]` list must fold onto the
+   generic gate or GAP-1 reopens); (d) the d35 562-union
+   sheets-present receipt at `1afd327b9` (§17: all 35 in the union,
+   dims match the strips witness row-for-row, 717824 padded px, the
+   step-7 obligation unchanged, NPC_328's sheet stays through the
+   card drop); (e) the §13b SEAL re-receipt + the b1-b7 sheets-family
+   table (§18). `tools/_d38_seal_receipt_check.py` RUN **75/75 PASS**,
+   output committed; no game-code file touched.
+
+### Verification (RETIRE)
+
+Code-only: `tools/_d38_retire_check.py` RUN, **41/41 PASS** (R1 the
+d44-tip claim sets/hook order/residual + the wave-B no-hook proof; R2
+the six unique 328 drop anchors + the panic-path; R3 the generic gate
++ the six-critter coverage + the credit rows + the gold-key absence;
+R4 the census pins 284 entries / 216==216==216 slots + the post-drop
+arithmetic). Output `tools/_d38_retire_check.txt` committed (UTF-8 via
+python — the c096bac9 Tee-Object precedent). **No cargo/rustc/tests/
+rustfmt invoked; no game-code file touched this phase.** The anchors
+canary row's marker verified present.

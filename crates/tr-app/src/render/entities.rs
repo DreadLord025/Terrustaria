@@ -447,6 +447,135 @@ fn npc_tex(atlas: &Atlas, name: &str) -> Option<BgTex> {
     sky_tex(atlas, name, None)
 }
 
+/// The draw's rotation gate: the C#'s generic draw rotates EVERY NPC by
+/// `npc.rotation` (`Main.cs:26632`), but the port admits only the kinds
+/// whose ported AI/FindFrame machines actually WRITE `rotation` — the
+/// census per wave is in `docs/ANALYSIS.md`. Extracted from the draw's
+/// inline `matches!` (behaviour unchanged) so the W4-d38 crossnote
+/// witnesses can pin the gate's membership per kind.
+pub(crate) fn npc_rotation_allowed(kind: NpcKind) -> bool {
+    matches!(
+        kind,
+        NpcKind::DemonEye
+            | NpcKind::WanderingEye
+            | NpcKind::GolemFistLeft
+            | NpcKind::GolemFistRight
+            | NpcKind::Goldfish
+            | NpcKind::Piranha
+            | NpcKind::Shark
+            | NpcKind::CaveBat
+            | NpcKind::JungleBat
+            | NpcKind::Hellbat
+            | NpcKind::VoodooDemon
+            | NpcKind::DevourerHead
+            | NpcKind::DevourerBody
+            | NpcKind::DevourerTail
+            | NpcKind::GiantWormHead
+            | NpcKind::GiantWormBody
+            | NpcKind::GiantWormTail
+            | NpcKind::EaterOfWorldsHead
+            | NpcKind::EaterOfWorldsBody
+            | NpcKind::EaterOfWorldsTail
+            // The wyvern chain (`AI_006`'s `:51878` follower /
+            // `:52201` head rotations — the same atan2 tilt).
+            | NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail
+            // The saucer family (`Main.cs:24586-24612`) rotates
+            // about its CENTRE (the `origin = halfSize` draw point
+            // — the quad the anchors computed sits at that centre,
+            // the turret's 8 px lower), and the drone rides the
+            // velocity's folded rotation (`NPC.cs:35220-35229`).
+            | NpcKind::MartianSaucer
+            | NpcKind::MartianSaucerTurret
+            | NpcKind::MartianSaucerCannon
+            | NpcKind::MartianSaucerCore
+            | NpcKind::MartianDrone
+            // The Prime family (`AI_032`'s `rotation = velocity.X / 15`
+            // and its limbs' dock/aim rotations, `NPC.cs:27689`/
+            // `:28151`/`:28350`/`:28656`/`:28891`): the head rolls
+            // with its drift and the limbs aim their "up" along the
+            // dock or the player.
+            | NpcKind::SkeletronPrime
+            | NpcKind::PrimeCannon
+            | NpcKind::PrimeSaw
+            | NpcKind::PrimeVice
+            | NpcKind::PrimeLaser
+            // The Skeletron hand's dock/strike aim (`AI()`'s
+            // aiStyle-12 rotation writes, `NPC.cs:22500`/
+            // `:22508`/`:22559` — B-1 H8, the prime-limb v2
+            // precedent).
+            | NpcKind::SkeletronHand
+            // Betsy's body roll (`AI_110_Betsy`'s `AngleTowards`
+            // tail, `NPC.cs:62256-62301`) — the C#'s generic draw
+            // rotates every NPC by `npc.rotation` (`Main.cs:26632`).
+            | NpcKind::DD2Betsy
+            // The Destroyer family (`AI_037`'s follower snap +
+            // velocity tilt, `NPC.cs:50021-50033`/`:50206`) and the
+            // Probe's sprite-aim (`AI_005` `:50633-50641`).
+            | NpcKind::TheDestroyer
+            | NpcKind::TheDestroyerBody
+            | NpcKind::TheDestroyerTail
+            | NpcKind::Probe
+            // S1-D-3 W-9 fishron wiring — the boss's charge aim /
+            // spin rotation (`AI_069`'s rotation tracking,
+            // `NPC.cs:48888-48975`) and the Sharkron pair's dash
+            // tilt (`NPC.cs:35018-35022`/`:35073-35077`).
+            | NpcKind::DukeFishron
+            | NpcKind::Sharkron
+            | NpcKind::Sharkron2
+            // W4-d38 sheets phase (b2/b4) — the rotation whitelist:
+            // ONLY kinds whose ported AI/FindFrame writes `rotation`
+            // join (the C#'s generic draw rotates every NPC,
+            // `Main.cs:26632`, but the port gates per kind). The
+            // style-8 casters (281-286, `NPC.cs:20817-21376`), the
+            // style-3 shooters (287/290-296), the style-1 slime hops
+            // (302/304/333-336) and the style-7 critters
+            // (299/300/303/337) write NONE (the slime balloon-freeze
+            // zero is not a tilt) — they stay OUT. In here: the 289
+            // skull's aim (`NPC.cs:21750-21766`), the 297/298 birds'
+            // vx*0.1 (`:73634`), the 301 raven's vx*0.1 (`:73589`).
+            | NpcKind::GiantCursedSkull
+            | NpcKind::BirdBlue
+            | NpcKind::BirdRed
+            | NpcKind::Raven
+            // W4-d38 sheets phase (b5/b6): the 317/318 eyes' atan2
+            // (`NPC.cs:74019-74031`), the 316 ghost's vx*0.1
+            // (`:74858`), the 328 blade's atan2+1.57 (`:33296`/
+            // `:33305`/`:33340`).
+            | NpcKind::DemonEyeOwl
+            | NpcKind::DemonEyeSpaceship
+            | NpcKind::Ghost
+            | NpcKind::PumpkingBlade
+            // The small-kinds wiring wave: the BlazingWheel's spin
+            // (`NPC.cs:24626`/`:24645`, ±0.13/tick) and the Dungeon
+            // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
+            | NpcKind::BlazingWheel
+            | NpcKind::DungeonSpirit
+            // W4-d34: the Cursed Skull's aim rotation (`NPC.cs:21750-21766`).
+            | NpcKind::CursedSkull
+            // W4-d34: the Bone Serpent's chain rotation (`NPC.cs:51878`/
+            // `:52201`) and the Harpy's velocity tilt (`:74858`).
+            | NpcKind::BoneSerpentHead
+            | NpcKind::BoneSerpentBody
+            | NpcKind::BoneSerpentTail
+            | NpcKind::Harpy
+            // W4-d34 (phase 3): the Vulture's velocity tilt
+            // (`NPC.cs:73540`), the Demon's (`:73891`), the
+            // BlueJellyfish's chase aim / idle tilt (`:24291`/
+            // `:24334`/`:24390`).
+            | NpcKind::Vulture
+            | NpcKind::Demon
+            | NpcKind::BlueJellyfish
+            // W4-d34 (phase 4, merge-side): the Dungeon Guardian's
+            // enraged spin (`NPC.cs:22260`).
+            | NpcKind::DungeonGuardian
+    )
+}
+
 pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
     NpcAssets {
         slime: npc_tex(atlas, "NPC_1"),
@@ -514,6 +643,13 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(PLANTERA_MINION_SHEETS)
             .chain(DESTROYER_SHEETS)
             .chain(FISHRON_SHEETS)
+            .chain(D38_B1_SHEETS)
+            .chain(D38_B2_SHEETS)
+            .chain(D38_B3_SHEETS)
+            .chain(D38_B4_SHEETS)
+            .chain(D38_B5_SHEETS)
+            .chain(D38_B6_SHEETS)
+            .chain(D38_B7_SHEETS)
             .chain(SMALL_KIND_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
@@ -1253,6 +1389,40 @@ pub(crate) const SNOW_SHEETS: &[u32] = &[
 /// The Queen Bee's volley minions' sheets (S1-D-3 W-3): `NPC_210`/`NPC_211`,
 /// keyed by the vanilla net id in `NpcAssets::npc_sheets` like the families.
 pub(crate) const BEE_SHEETS: &[u32] = &[210, 211];
+
+/// W4-d38 b7 — the batch's own sheets (the vanilla's TextureAssets.Npc[type]),
+/// keyed by the vanilla net id in NpcAssets::npc_sheets.
+pub(crate) const D38_B7_SHEETS: &[u32] = &[333, 334, 335, 336, 337];
+
+
+/// W4-d38 b6 — the batch's own sheets (the vanilla's TextureAssets.Npc[type]),
+/// keyed by the vanilla net id in NpcAssets::npc_sheets.
+pub(crate) const D38_B6_SHEETS: &[u32] = &[318, 322, 323, 324, 328];
+
+
+/// W4-d38 b5 — the batch's own sheets (the vanilla's TextureAssets.Npc[type]),
+/// keyed by the vanilla net id in NpcAssets::npc_sheets.
+pub(crate) const D38_B5_SHEETS: &[u32] = &[302, 303, 304, 316, 317];
+
+
+/// W4-d38 b4 — the batch's own sheets (the vanilla's TextureAssets.Npc[type]),
+/// keyed by the vanilla net id in NpcAssets::npc_sheets.
+pub(crate) const D38_B4_SHEETS: &[u32] = &[297, 298, 299, 300, 301];
+
+
+/// W4-d38 b3 — the batch's own sheets (the vanilla's TextureAssets.Npc[type]),
+/// keyed by the vanilla net id in NpcAssets::npc_sheets.
+pub(crate) const D38_B3_SHEETS: &[u32] = &[292, 293, 294, 295, 296];
+
+
+/// W4-d38 b2 — the batch's own sheets (the vanilla's TextureAssets.Npc[type]),
+/// keyed by the vanilla net id in NpcAssets::npc_sheets.
+pub(crate) const D38_B2_SHEETS: &[u32] = &[286, 287, 289, 290, 291];
+
+
+/// W4-d38 b1 — the batch's own sheets (the vanilla's TextureAssets.Npc[type]),
+/// keyed by the vanilla net id in NpcAssets::npc_sheets.
+pub(crate) const D38_B1_SHEETS: &[u32] = &[281, 282, 283, 284, 285];
 
 /// The small-kinds wiring wave's sheets (S1-D-3-wire-smallkinds): one sheet
 /// per wired kind, exactly as the vanilla's `TextureAssets.Npc[type]` — the
@@ -3254,6 +3424,181 @@ pub(crate) fn draw_npcs(
                 generic_anchor(assets.npc_sheet(68), npc_rows(68), n, w, h)
             }
 
+            // W4-d38 b7 — own NPC_333 sheet, generic centred anchor.
+            NpcKind::SlimeRibbonWhite => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b7 — own NPC_334 sheet, generic centred anchor.
+            NpcKind::SlimeRibbonYellow => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b7 — own NPC_335 sheet, generic centred anchor.
+            NpcKind::SlimeRibbonGreen => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b7 — own NPC_336 sheet, generic centred anchor.
+            NpcKind::SlimeRibbonRed => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b7 — own NPC_337 sheet, generic centred anchor.
+            NpcKind::BunnyXmas => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b6 — own NPC_318 sheet, generic centred anchor.
+            NpcKind::DemonEyeSpaceship => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b6 — own NPC_322 sheet, generic centred anchor.
+            NpcKind::SkeletonTopHat => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b6 — own NPC_323 sheet, generic centred anchor.
+            NpcKind::SkeletonAstonaut => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b6 — own NPC_324 sheet, generic centred anchor.
+            NpcKind::SkeletonAlien => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b6 — own NPC_328 sheet, generic centred anchor.
+            NpcKind::PumpkingBlade => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b5 — own NPC_302 sheet, generic centred anchor.
+            NpcKind::SlimeMasked => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b5 — own NPC_303 sheet, generic centred anchor.
+            NpcKind::BunnySlimed => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b5 — own NPC_304 sheet, generic centred anchor.
+            NpcKind::HoppinJack => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b5 — own NPC_316 sheet, generic centred anchor.
+            NpcKind::Ghost => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b5 — own NPC_317 sheet, generic centred anchor.
+            NpcKind::DemonEyeOwl => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b4 — own NPC_297 sheet, generic centred anchor.
+            NpcKind::BirdBlue => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b4 — own NPC_298 sheet, generic centred anchor.
+            NpcKind::BirdRed => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b4 — own NPC_299 sheet, generic centred anchor.
+            NpcKind::Squirrel => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b4 — own NPC_300 sheet, generic centred anchor.
+            NpcKind::Mouse => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b4 — own NPC_301 sheet, generic centred anchor.
+            NpcKind::Raven => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b3 — own NPC_292 sheet, generic centred anchor.
+            NpcKind::TacticalSkeleton => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b3 — own NPC_293 sheet, generic centred anchor.
+            NpcKind::SkeletonCommando => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b3 — own NPC_294 sheet, generic centred anchor.
+            NpcKind::AngryBonesBig => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b3 — own NPC_295 sheet, generic centred anchor.
+            NpcKind::AngryBonesBigMuscle => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b3 — own NPC_296 sheet, generic centred anchor.
+            NpcKind::AngryBonesBigHelmet => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b2 — own NPC_286 sheet, generic centred anchor.
+            NpcKind::DiabolistWhite => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b2 — own NPC_287 sheet, generic centred anchor.
+            NpcKind::BoneLee => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b2 — own NPC_289 sheet, generic centred anchor.
+            NpcKind::GiantCursedSkull => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b2 — own NPC_290 sheet, generic centred anchor.
+            NpcKind::Paladin => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b2 — own NPC_291 sheet, generic centred anchor.
+            NpcKind::SkeletonSniper => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b1 — own NPC_281 sheet, generic centred anchor.
+            NpcKind::RaggedCaster => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b1 — own NPC_282 sheet, generic centred anchor.
+            NpcKind::RaggedCasterOpenCoat => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b1 — own NPC_283 sheet, generic centred anchor.
+            NpcKind::Necromancer => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b1 — own NPC_284 sheet, generic centred anchor.
+            NpcKind::NecromancerArmored => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d38 b1 — own NPC_285 sheet, generic centred anchor.
+            NpcKind::DiabolistRed => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3324,105 +3669,7 @@ pub(crate) fn draw_npcs(
         } else {
             flip_uv(npc_frame_uv(tex, frame_h, n.frame()), flip_dir > 0)
         };
-        if n.rotation != 0.0
-            && matches!(
-                n.kind,
-                NpcKind::DemonEye
-                    | NpcKind::WanderingEye
-                    | NpcKind::GolemFistLeft
-                    | NpcKind::GolemFistRight
-                    | NpcKind::Goldfish
-                    | NpcKind::Piranha
-                    | NpcKind::Shark
-                    | NpcKind::CaveBat
-                    | NpcKind::JungleBat
-                    | NpcKind::Hellbat
-                    | NpcKind::VoodooDemon
-                    | NpcKind::DevourerHead
-                    | NpcKind::DevourerBody
-                    | NpcKind::DevourerTail
-                    | NpcKind::GiantWormHead
-                    | NpcKind::GiantWormBody
-                    | NpcKind::GiantWormTail
-                    | NpcKind::EaterOfWorldsHead
-                    | NpcKind::EaterOfWorldsBody
-                    | NpcKind::EaterOfWorldsTail
-                    // The wyvern chain (`AI_006`'s `:51878` follower /
-                    // `:52201` head rotations — the same atan2 tilt).
-                    | NpcKind::WyvernHead
-                    | NpcKind::WyvernLegs
-                    | NpcKind::WyvernBody
-                    | NpcKind::WyvernBody2
-                    | NpcKind::WyvernBody3
-                    | NpcKind::WyvernTail
-                    // The saucer family (`Main.cs:24586-24612`) rotates
-                    // about its CENTRE (the `origin = halfSize` draw point
-                    // — the quad the anchors computed sits at that centre,
-                    // the turret's 8 px lower), and the drone rides the
-                    // velocity's folded rotation (`NPC.cs:35220-35229`).
-                    | NpcKind::MartianSaucer
-                    | NpcKind::MartianSaucerTurret
-                    | NpcKind::MartianSaucerCannon
-                    | NpcKind::MartianSaucerCore
-                    | NpcKind::MartianDrone
-                    // The Prime family (`AI_032`'s `rotation = velocity.X / 15`
-                    // and its limbs' dock/aim rotations, `NPC.cs:27689`/
-                    // `:28151`/`:28350`/`:28656`/`:28891`): the head rolls
-                    // with its drift and the limbs aim their "up" along the
-                    // dock or the player.
-                    | NpcKind::SkeletronPrime
-                    | NpcKind::PrimeCannon
-                    | NpcKind::PrimeSaw
-                    | NpcKind::PrimeVice
-                    | NpcKind::PrimeLaser
-                    // The Skeletron hand's dock/strike aim (`AI()`'s
-                    // aiStyle-12 rotation writes, `NPC.cs:22500`/
-                    // `:22508`/`:22559` — B-1 H8, the prime-limb v2
-                    // precedent).
-                    | NpcKind::SkeletronHand
-                    // Betsy's body roll (`AI_110_Betsy`'s `AngleTowards`
-                    // tail, `NPC.cs:62256-62301`) — the C#'s generic draw
-                    // rotates every NPC by `npc.rotation` (`Main.cs:26632`).
-                    | NpcKind::DD2Betsy
-                    // The Destroyer family (`AI_037`'s follower snap +
-                    // velocity tilt, `NPC.cs:50021-50033`/`:50206`) and the
-                    // Probe's sprite-aim (`AI_005` `:50633-50641`).
-                    | NpcKind::TheDestroyer
-                    | NpcKind::TheDestroyerBody
-                    | NpcKind::TheDestroyerTail
-                    | NpcKind::Probe
-                    // S1-D-3 W-9 fishron wiring — the boss's charge aim /
-                    // spin rotation (`AI_069`'s rotation tracking,
-                    // `NPC.cs:48888-48975`) and the Sharkron pair's dash
-                    // tilt (`NPC.cs:35018-35022`/`:35073-35077`).
-                    | NpcKind::DukeFishron
-                    | NpcKind::Sharkron
-                    | NpcKind::Sharkron2
-                    // The small-kinds wiring wave: the BlazingWheel's spin
-                    // (`NPC.cs:24626`/`:24645`, ±0.13/tick) and the Dungeon
-                    // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
-                    | NpcKind::BlazingWheel
-                    | NpcKind::DungeonSpirit
-                    // W4-d34: the Cursed Skull's aim rotation (`NPC.cs:21750-21766`).
-                    | NpcKind::CursedSkull
-                    // W4-d34: the Bone Serpent's chain rotation (`NPC.cs:51878`/
-                    // `:52201`) and the Harpy's velocity tilt (`:74858`).
-                    | NpcKind::BoneSerpentHead
-                    | NpcKind::BoneSerpentBody
-                    | NpcKind::BoneSerpentTail
-                    | NpcKind::Harpy
-                    // W4-d34 (phase 3): the Vulture's velocity tilt
-                    // (`NPC.cs:73540`), the Demon's (`:73891`), the
-                    // BlueJellyfish's chase aim / idle tilt (`:24291`/
-                    // `:24334`/`:24390`).
-                    | NpcKind::Vulture
-                    | NpcKind::Demon
-                    | NpcKind::BlueJellyfish
-                    // W4-d34 (phase 4, merge-side): the Dungeon Guardian's
-                    // enraged spin (`NPC.cs:22260`).
-                    | NpcKind::DungeonGuardian
-            )
-        {
+        if n.rotation != 0.0 && npc_rotation_allowed(n.kind) {
             // `Main.DrawNPC` draws every NPC at its centre with
             // `origin = frame size / 2` and `rotation = npc.rotation`
             // (`NPC.cs` draw pass); the demon eye aims along its flight
@@ -4245,5 +4492,174 @@ mod offset_fix {
         // The Destroyer's shared-bar arm is the open worm work (S1-D-6b),
         // not this list — its head keeps the ordinary scale here.
         assert_eq!(npc_health_bar_scale(NpcKind::TheDestroyer), 1.0);
+    }
+}
+
+/// W4-d38 sheets phase — the frame-strip witnesses for the wave's kinds:
+/// every draw arm's sheet is packed (`STATIC_SHEET_NAMES` + the `D38_*` rows
+/// feeding `npc_sheets`), every kind's row count matches the verbatim
+/// `Main.npcFrameCount` table (`Main.cs:67082`), and the REAL retail dims
+/// (measured by tools/_d38_dims.py through atlas_sim's LZX/XNB reader) divide
+/// into whole `SetFrameSize` rows (`NPC.cs:90780-90800` integer division).
+/// WRITTEN, NOT RUN (code-only mode).
+#[cfg(test)]
+mod d38_sheet_tests {
+    use super::*;
+
+    /// (kind, real sheet w, real sheet h, rows) — the dims decoded from
+    /// `assets/Content/Images/NPC_<id>.xnb` (tools/_d38_dims.json).
+    const STRIPS: &[(NpcKind, f32, f32, u32)] = &[
+        (NpcKind::RaggedCaster, 40.0, 168.0, 3),
+        (NpcKind::RaggedCasterOpenCoat, 40.0, 168.0, 3),
+        (NpcKind::Necromancer, 40.0, 168.0, 3),
+        (NpcKind::NecromancerArmored, 44.0, 168.0, 3),
+        (NpcKind::DiabolistRed, 42.0, 168.0, 3),
+        (NpcKind::DiabolistWhite, 40.0, 170.0, 3), // 170/3 = 56 r2 (the C# drops the 2 px tail)
+        (NpcKind::BoneLee, 44.0, 896.0, 16),
+        (NpcKind::GiantCursedSkull, 52.0, 384.0, 6),
+        (NpcKind::Paladin, 66.0, 816.0, 12),
+        (NpcKind::SkeletonSniper, 68.0, 1260.0, 21),
+        (NpcKind::TacticalSkeleton, 60.0, 1260.0, 21),
+        (NpcKind::SkeletonCommando, 60.0, 1200.0, 20),
+        (NpcKind::AngryBonesBig, 40.0, 896.0, 16),
+        (NpcKind::AngryBonesBigMuscle, 40.0, 840.0, 15),
+        (NpcKind::AngryBonesBigHelmet, 40.0, 840.0, 15),
+        (NpcKind::BirdBlue, 30.0, 120.0, 5),
+        (NpcKind::BirdRed, 30.0, 120.0, 5),
+        (NpcKind::Squirrel, 50.0, 192.0, 6),
+        (NpcKind::Mouse, 20.0, 96.0, 6),
+        (NpcKind::Raven, 44.0, 270.0, 5),
+        (NpcKind::SlimeMasked, 40.0, 56.0, 2),
+        (NpcKind::BunnySlimed, 48.0, 280.0, 7),
+        (NpcKind::HoppinJack, 48.0, 80.0, 2),
+        (NpcKind::Ghost, 40.0, 224.0, 4),
+        (NpcKind::DemonEyeOwl, 48.0, 64.0, 2),
+        (NpcKind::DemonEyeSpaceship, 40.0, 64.0, 2),
+        (NpcKind::SkeletonTopHat, 32.0, 896.0, 16),
+        (NpcKind::SkeletonAstonaut, 42.0, 840.0, 15),
+        (NpcKind::SkeletonAlien, 36.0, 896.0, 16),
+        (NpcKind::PumpkingBlade, 106.0, 86.0, 1),
+        (NpcKind::SlimeRibbonWhite, 38.0, 76.0, 2),
+        (NpcKind::SlimeRibbonYellow, 38.0, 76.0, 2),
+        (NpcKind::SlimeRibbonGreen, 38.0, 76.0, 2),
+        (NpcKind::SlimeRibbonRed, 38.0, 76.0, 2),
+        (NpcKind::BunnyXmas, 48.0, 280.0, 7),
+    ];
+
+    /// Every wave kind draws its OWN sheet, the row count is the verbatim
+    /// `Main.npcFrameCount` value, and the real strip divides into whole rows
+    /// (`NPC.SetFrameSize`'s integer division — the 286 tail is the ONE
+    /// non-multiple, kept as the C# drops it).
+    #[test]
+    fn w4_d38_the_strips_divide_into_their_vanilla_rows() {
+        assert_eq!(STRIPS.len(), 35, "the wave so far");
+        for &(kind, w, h, rows) in STRIPS {
+            let net = texture_net_id(kind);
+            assert_eq!(net, kind.cs_id(), "{kind:?} draws its own sheet");
+            assert_eq!(npc_rows(net), rows, "{kind:?}: NPC_{net} rows");
+            let t = BgTex { uv: [0.0, 0.0, 1.0, 1.0], w, h };
+            let fh = vanilla_row_h(&t, rows);
+            assert_eq!(fh, (h as i32 / rows as i32) as f32, "{kind:?} row height");
+            if net != 286 {
+                assert_eq!(h as i32 % rows as i32, 0, "{kind:?}: whole rows");
+            } else {
+                assert_eq!(h as i32 % rows as i32, 2, "NPC_286's 2 px tail");
+            }
+            // The draw arm's own arithmetic: pumpkin_moon_draw keeps the
+            // sheet width and centres the row on the box.
+            let n = Npc::new(kind, 100.0, 100.0, 1, 0.0);
+            let (bw, bh) = kind.size();
+            let (_, dfh, size, pos) = pumpkin_moon_draw(Some(&t), rows, &n, bw, bh);
+            assert_eq!(dfh, fh, "{kind:?}: draw row == SetFrameSize row");
+            assert_eq!(size, [w, fh], "{kind:?}: the frame keeps the sheet width");
+            assert_eq!(pos, [100.0 + bw * 0.5 - w * 0.5, 100.0 + bh * 0.5 - fh * 0.5]);
+            // The frame the machine walks stays inside the strip.
+            let uv = npc_frame_uv(&t, fh, rows - 1);
+            assert!(uv[3] <= 1.0 + 1e-6, "{kind:?}: the last row stays in-bounds");
+        }
+    }
+
+    /// The M4-NPC-3v audit, d38 edition: every sheet the wave's draw arms ask
+    /// `npc_sheet` for is in the packing list, and the `D38_*` rows feeding
+    /// `npc_sheets` are exactly the wave's 35 net ids.
+    #[test]
+    fn w4_d38_every_draw_sheet_is_packed() {
+        use crate::assets::STATIC_SHEET_NAMES;
+        let all: Vec<u32> = D38_B1_SHEETS.iter().chain(D38_B2_SHEETS)
+            .chain(D38_B3_SHEETS).chain(D38_B4_SHEETS).chain(D38_B5_SHEETS)
+            .chain(D38_B6_SHEETS).chain(D38_B7_SHEETS).copied().collect();
+        assert_eq!(all.len(), 35);
+        for &id in &all {
+            let name = format!("NPC_{id}");
+            assert!(STATIC_SHEET_NAMES.contains(&name.as_str()),
+                "{name} has a D38 row but is never packed");
+        }
+        for &(kind, _, _, _) in STRIPS {
+            let net = texture_net_id(kind);
+            assert!(all.contains(&(net as u32)), "NPC_{net} has no D38 row");
+        }
+    }
+
+    /// W4-d38 crossnote — the draw side CONSUMES the rotation whitelist:
+    /// the eight IN kinds' ported machines write `rotation` (the writers
+    /// the sheets phase cited), `find_frame`/the AI step leaves it non-zero,
+    /// and `npc_rotation_allowed` (the draw gate's extracted membership)
+    /// admits exactly those eight — so the draw takes the `push_sprite_rot`
+    /// centre-rotation path, not the flat push. The 27 OUT kinds' machines
+    /// write no tilt and stay OUT (the census in docs/ANALYSIS.md).
+    #[test]
+    fn w4_d38_crossnote_the_rotation_gate_consumes_the_writers() {
+        // The FindFrame writers: run the real machine arms.
+        for (kind, vx, vy) in [
+            (NpcKind::DemonEyeOwl, 3.0f32, 1.0f32),
+            (NpcKind::DemonEyeSpaceship, -3.0, 1.0),
+            (NpcKind::Ghost, 2.0, 0.0),
+            (NpcKind::BirdBlue, 2.0, 1.0),
+            (NpcKind::BirdRed, -2.0, 1.0),
+            (NpcKind::Raven, 2.0, 1.0),
+        ] {
+            let mut n = Npc::new(kind, 100.0, 100.0, 1, 0.0);
+            n.vx = vx;
+            n.vy = vy;
+            n.find_frame();
+            assert_ne!(n.rotation, 0.0, "{kind:?}: the machine writes a tilt");
+            assert!(npc_rotation_allowed(kind), "{kind:?}: the gate admits it");
+            // The eyes' atan2 (+3.14 left, NPC.cs:74019-74031); the
+            // ghost/birds/raven's vx*0.1 (:74858/:73634/:73589).
+            let want = match kind {
+                NpcKind::DemonEyeOwl | NpcKind::DemonEyeSpaceship => {
+                    if vx > 0.0 { vy.atan2(vx) } else { vy.atan2(vx) + 3.14 }
+                }
+                _ => vx * 0.1,
+            };
+            assert!((n.rotation - want).abs() < 1e-6, "{kind:?} tilt value");
+            // The gate + non-zero rotation is exactly the draw's rotated-path
+            // condition (`n.rotation != 0.0 && npc_rotation_allowed(kind)`).
+            assert!(n.rotation != 0.0 && npc_rotation_allowed(n.kind));
+        }
+        // The AI-machine writers (the style-10 skull's aim and the style-59
+        // blade's atan2+1.57) — the gate admits both; the writers themselves
+        // are witnessed in npc_ai_style10::the_rotation_follows_the_aim… and
+        // npc_ai_style59::the_ladder_push_and_rotation_gate (the 1.57f
+        // literal, not π/2).
+        for kind in [NpcKind::GiantCursedSkull, NpcKind::PumpkingBlade] {
+            assert!(npc_rotation_allowed(kind), "{kind:?}: IN");
+        }
+        // The 27 OUT kinds: the gate refuses them even with a non-zero
+        // rotation forced on (their machines never write one — a forced
+        // value must not leak into a rotated draw).
+        for &(kind, _, _, _) in STRIPS {
+            if matches!(
+                kind,
+                NpcKind::GiantCursedSkull | NpcKind::BirdBlue | NpcKind::BirdRed
+                    | NpcKind::Raven | NpcKind::DemonEyeOwl
+                    | NpcKind::DemonEyeSpaceship | NpcKind::Ghost
+                    | NpcKind::PumpkingBlade
+            ) {
+                continue;
+            }
+            assert!(!npc_rotation_allowed(kind), "{kind:?}: OUT");
+        }
+        assert_eq!(STRIPS.iter().filter(|&&(k, _, _, _)| npc_rotation_allowed(k)).count(), 8);
     }
 }

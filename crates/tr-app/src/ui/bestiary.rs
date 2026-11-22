@@ -1678,6 +1678,193 @@ fn portrait_data(
             (sheet_i, h, 28.0, h, white)
         }
         (NpcKind::DungeonGuardian, _) => (sheet_i, 102.0, 80.0, 102.0, white),
+        // W4-d38 crossnote — the wave's 35 portraits ride the sheet's own
+        // row height over `Main.npcFrameCount[type]` (the c4 swimmers' /
+        // d35 sheets-phase shape); the frame width the sheet's own. The
+        // fallbacks rest the SetDefaults boxes the wiring batches pinned
+        // (`npc/data.rs::size`, the C# rows cited there). The 286 row is
+        // INTEGER division (170/3 = 56, the 2 px tail dropped —
+        // `NPC.SetFrameSize`, `NPC.cs:90780-90800`), the 328 row the whole
+        // single-frame sheet (`npcFrameCount[328] = 1`).
+        // b7 — rows 2 (333-336), 7 (337).
+        (NpcKind::SlimeRibbonWhite
+        | NpcKind::SlimeRibbonYellow
+        | NpcKind::SlimeRibbonGreen
+        | NpcKind::SlimeRibbonRed, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(18.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::BunnyXmas, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 48.0, h, white)
+        }
+        // b6 — rows 2 (318), 16/15/16 (322-324), 1 (328).
+        (NpcKind::DemonEyeSpaceship, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(32.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::SkeletonTopHat, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 32.0, h, white)
+        }
+        (NpcKind::SkeletonAlien, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 36.0, h, white)
+        }
+        (NpcKind::SkeletonAstonaut, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 42.0, h, white)
+        }
+        (NpcKind::PumpkingBlade, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32)
+                .unwrap_or(80.0);
+            (sheet_i, h, 106.0, h, white)
+        }
+        // b5 — rows 2 (302/304), 7 (303), 4 (316), 2 (317).
+        (NpcKind::SlimeMasked, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(18.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::HoppinJack, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(28.0);
+            (sheet_i, h, 48.0, h, white)
+        }
+        (NpcKind::BunnySlimed, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 48.0, h, white)
+        }
+        (NpcKind::Ghost, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::DemonEyeOwl, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(32.0);
+            (sheet_i, h, 48.0, h, white)
+        }
+        // b4 — rows 5 (297/298/301), 6 (299/300).
+        (NpcKind::BirdBlue | NpcKind::BirdRed, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(14.0);
+            (sheet_i, h, 30.0, h, white)
+        }
+        (NpcKind::Squirrel, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 50.0, h, white)
+        }
+        (NpcKind::Mouse, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(12.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::Raven, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 44.0, h, white)
+        }
+        // b3 — rows 21 (292), 20 (293), 16 (294), 15 (295/296).
+        (NpcKind::TacticalSkeleton, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 21.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 60.0, h, white)
+        }
+        (NpcKind::SkeletonCommando, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 20.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 60.0, h, white)
+        }
+        (NpcKind::AngryBonesBig, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::AngryBonesBigMuscle | NpcKind::AngryBonesBigHelmet, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        // b2 — rows 3 (286, the integer division), 16 (287), 6 (289),
+        // 12 (290), 21 (291).
+        (NpcKind::DiabolistWhite, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| (s.height as i32 / 3) as f32)
+                .unwrap_or(40.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::BoneLee, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 44.0, h, white)
+        }
+        (NpcKind::GiantCursedSkull, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 52.0, h, white)
+        }
+        (NpcKind::Paladin, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(62.0);
+            (sheet_i, h, 66.0, h, white)
+        }
+        (NpcKind::SkeletonSniper, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 21.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 68.0, h, white)
+        }
+        // b1 — rows 3 (281-285).
+        (NpcKind::RaggedCaster | NpcKind::RaggedCasterOpenCoat | NpcKind::Necromancer, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::NecromancerArmored, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 44.0, h, white)
+        }
+        (NpcKind::DiabolistRed, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 42.0, h, white)
+        }
     }
 }
 
@@ -2123,6 +2310,61 @@ mod tests {
                 let tabled = crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&(entry.net_id as u16));
                 assert_eq!(entry_sheet(&lk, entry).is_some(), tabled, "{}", entry.name);
             }
+        }
+    }
+
+    /// W4-d38 crossnote — the portrait-slot gap close (research/108 §5's
+    /// d38 half): the wave's 35 entries each resolve their OWN sheet slot
+    /// (appended in ENTRIES order), and the portrait rides the sheet's row
+    /// height over the verbatim `Main.npcFrameCount` value — the real-dims
+    /// strips (`tools/_d38_dims.json`, the `d38_sheet_tests` STRIPS table).
+    /// The 286 row is the INTEGER division 170/3 = 56 (the 2 px tail
+    /// dropped, `NPC.SetFrameSize` `NPC.cs:90780-90800`); the 328 row the
+    /// whole single-frame sheet. Before the close these 35 entries
+    /// None-skipped `draw_portrait`'s `entry_sheet` gate (an empty card).
+    #[test]
+    fn w4_d38_crossnote_the_portrait_slots_ride_the_real_strips() {
+        // (net id, sheet w, sheet h, npcFrameCount) — the real .xnb dims.
+        let strips: &[(i32, u32, u32, u32)] = &[
+            (281, 40, 168, 3), (282, 40, 168, 3), (283, 40, 168, 3),
+            (284, 44, 168, 3), (285, 42, 168, 3), (286, 40, 170, 3),
+            (287, 44, 896, 16), (289, 52, 384, 6), (290, 66, 816, 12),
+            (291, 68, 1260, 21), (292, 60, 1260, 21), (293, 60, 1200, 20),
+            (294, 40, 896, 16), (295, 40, 840, 15), (296, 40, 840, 15),
+            (297, 30, 120, 5), (298, 30, 120, 5), (299, 50, 192, 6),
+            (300, 20, 96, 6), (301, 44, 270, 5), (302, 40, 56, 2),
+            (303, 48, 280, 7), (304, 48, 80, 2), (316, 40, 224, 4),
+            (317, 48, 64, 2), (318, 40, 64, 2), (322, 32, 896, 16),
+            (323, 42, 840, 15), (324, 36, 896, 16), (328, 106, 86, 1),
+            (333, 38, 76, 2), (334, 38, 76, 2), (335, 38, 76, 2),
+            (336, 38, 76, 2), (337, 48, 280, 7),
+        ];
+        assert_eq!(strips.len(), 35);
+        let mut lk = full_bestiary_lookups();
+        // The real dims per slot (the stand-in table above is uniform).
+        for &(net, w, h, _rows) in strips {
+            let slot = lk.bestiary_sheet_index(net as u16)
+                .unwrap_or_else(|| panic!("NPC_{net} has no portrait slot"));
+            lk.bestiary_npc_sheets[slot] = Some(tr_render::SheetRect {
+                x: 0, y: 0, width: w, height: h, plain_frame: (0, 0),
+            });
+        }
+        for &(net, w, h, rows) in strips {
+            let entry = crate::bestiary::ENTRIES.iter()
+                .find(|e| e.net_id == net)
+                .unwrap_or_else(|| panic!("NPC_{net} has no bestiary entry"));
+            assert!(entry_sheet(&lk, entry).is_some(), "NPC_{net} sheet resolves");
+            let (_i, frame_h, fw, fh, _tint) = portrait_data(entry, &lk);
+            let want = (h as i32 / rows as i32) as f32;
+            assert_eq!(frame_h, want, "NPC_{net} row height (SetFrameSize)");
+            assert_eq!(fw, w as f32, "NPC_{net} frame keeps the sheet width");
+            assert_eq!(fh, want, "NPC_{net} draw height == row height");
+            // The portrait's source rect is exactly one row of the strip.
+            let sheet = entry_sheet(&lk, entry).unwrap();
+            let frames_y = portrait_frames_y(sheet.height, frame_h);
+            let uv = sheet_frame_uv(sheet, lk.atlas_size, 1, frames_y, 0);
+            assert!((uv[3] - uv[1] - frame_h / lk.atlas_size.1 as f32).abs() < 1e-6,
+                "NPC_{net} frame-0 UV spans one row");
         }
     }
 

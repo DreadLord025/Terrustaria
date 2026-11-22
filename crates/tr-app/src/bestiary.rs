@@ -2295,6 +2295,356 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Bunny",
     },
+    // W4-d38 b7 — BestiaryEntry.Enemy(333)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "SlimeRibbonWhite",
+        net_id: 333,
+        kind: NpcKind::SlimeRibbonWhite,
+        variant: None,
+        quick_unlock: false,
+        name: "Slime",
+    },
+    // W4-d38 b7 — BestiaryEntry.Enemy(334)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "SlimeRibbonYellow",
+        net_id: 334,
+        kind: NpcKind::SlimeRibbonYellow,
+        variant: None,
+        quick_unlock: false,
+        name: "Slime",
+    },
+    // W4-d38 b7 — BestiaryEntry.Enemy(335)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "SlimeRibbonGreen",
+        net_id: 335,
+        kind: NpcKind::SlimeRibbonGreen,
+        variant: None,
+        quick_unlock: false,
+        name: "Slime",
+    },
+    // W4-d38 b7 — BestiaryEntry.Enemy(336)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "SlimeRibbonRed",
+        net_id: 336,
+        kind: NpcKind::SlimeRibbonRed,
+        variant: None,
+        quick_unlock: false,
+        name: "Slime",
+    },
+    // W4-d38 b7 — BestiaryEntry.Critter(337)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "BunnyXmas",
+        net_id: 337,
+        kind: NpcKind::BunnyXmas,
+        variant: None,
+        quick_unlock: false,
+        name: "Bunny",
+    },
+    // W4-d38 b6 — BestiaryEntry.Enemy(318)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "DemonEyeSpaceship",
+        net_id: 318,
+        kind: NpcKind::DemonEyeSpaceship,
+        variant: None,
+        quick_unlock: false,
+        name: "Demon Eye",
+    },
+    // W4-d38 b6 — BestiaryEntry.Enemy(322)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "SkeletonTopHat",
+        net_id: 322,
+        kind: NpcKind::SkeletonTopHat,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeleton",
+    },
+    // W4-d38 b6 — BestiaryEntry.Enemy(323)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "SkeletonAstonaut",
+        net_id: 323,
+        kind: NpcKind::SkeletonAstonaut,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeleton",
+    },
+    // W4-d38 b6 — BestiaryEntry.Enemy(324)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "SkeletonAlien",
+        net_id: 324,
+        kind: NpcKind::SkeletonAlien,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeleton",
+    },
+    // W4-d38 b6 — BestiaryEntry.Enemy(328)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "PumpkingBlade",
+        net_id: 328,
+        kind: NpcKind::PumpkingBlade,
+        variant: None,
+        quick_unlock: false,
+        name: "Pumpking",
+    },
+    // W4-d38 b5 — BestiaryEntry.Enemy(302)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "SlimeMasked",
+        net_id: 302,
+        kind: NpcKind::SlimeMasked,
+        variant: None,
+        quick_unlock: false,
+        name: "Slime",
+    },
+    // W4-d38 b5 — BestiaryEntry.Critter(303)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "BunnySlimed",
+        net_id: 303,
+        kind: NpcKind::BunnySlimed,
+        variant: None,
+        quick_unlock: false,
+        name: "Bunny",
+    },
+    // W4-d38 b5 — BestiaryEntry.Enemy(304)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "HoppinJack",
+        net_id: 304,
+        kind: NpcKind::HoppinJack,
+        variant: None,
+        quick_unlock: false,
+        name: "Hoppin' Jack",
+    },
+    // W4-d38 b5 — BestiaryEntry.Enemy(316)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "Ghost",
+        net_id: 316,
+        kind: NpcKind::Ghost,
+        variant: None,
+        quick_unlock: false,
+        name: "Ghost",
+    },
+    // W4-d38 b5 — BestiaryEntry.Enemy(317)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "DemonEyeOwl",
+        net_id: 317,
+        kind: NpcKind::DemonEyeOwl,
+        variant: None,
+        quick_unlock: false,
+        name: "Demon Eye",
+    },
+    // W4-d38 b4 — BestiaryEntry.Critter(297)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "BirdBlue",
+        net_id: 297,
+        kind: NpcKind::BirdBlue,
+        variant: None,
+        quick_unlock: false,
+        name: "Blue Jay",
+    },
+    // W4-d38 b4 — BestiaryEntry.Critter(298)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "BirdRed",
+        net_id: 298,
+        kind: NpcKind::BirdRed,
+        variant: None,
+        quick_unlock: false,
+        name: "Cardinal",
+    },
+    // W4-d38 b4 — BestiaryEntry.Critter(299)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "Squirrel",
+        net_id: 299,
+        kind: NpcKind::Squirrel,
+        variant: None,
+        quick_unlock: false,
+        name: "Squirrel",
+    },
+    // W4-d38 b4 — BestiaryEntry.Critter(300)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "Mouse",
+        net_id: 300,
+        kind: NpcKind::Mouse,
+        variant: None,
+        quick_unlock: false,
+        name: "Mouse",
+    },
+    // W4-d38 b4 — BestiaryEntry.Enemy(301)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "Raven",
+        net_id: 301,
+        kind: NpcKind::Raven,
+        variant: None,
+        quick_unlock: false,
+        name: "Raven",
+    },
+    // W4-d38 b3 — BestiaryEntry.Enemy(292)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "TacticalSkeleton",
+        net_id: 292,
+        kind: NpcKind::TacticalSkeleton,
+        variant: None,
+        quick_unlock: false,
+        name: "Tactical Skeleton",
+    },
+    // W4-d38 b3 — BestiaryEntry.Enemy(293)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "SkeletonCommando",
+        net_id: 293,
+        kind: NpcKind::SkeletonCommando,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeleton Commando",
+    },
+    // W4-d38 b3 — BestiaryEntry.Enemy(294)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "AngryBonesBig",
+        net_id: 294,
+        kind: NpcKind::AngryBonesBig,
+        variant: None,
+        quick_unlock: false,
+        name: "Angry Bones",
+    },
+    // W4-d38 b3 — BestiaryEntry.Enemy(295)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "AngryBonesBigMuscle",
+        net_id: 295,
+        kind: NpcKind::AngryBonesBigMuscle,
+        variant: None,
+        quick_unlock: false,
+        name: "Angry Bones",
+    },
+    // W4-d38 b3 — BestiaryEntry.Enemy(296)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "AngryBonesBigHelmet",
+        net_id: 296,
+        kind: NpcKind::AngryBonesBigHelmet,
+        variant: None,
+        quick_unlock: false,
+        name: "Angry Bones",
+    },
+    // W4-d38 b2 — BestiaryEntry.Enemy(286)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "DiabolistWhite",
+        net_id: 286,
+        kind: NpcKind::DiabolistWhite,
+        variant: None,
+        quick_unlock: false,
+        name: "Diabolist",
+    },
+    // W4-d38 b2 — BestiaryEntry.Enemy(287)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "BoneLee",
+        net_id: 287,
+        kind: NpcKind::BoneLee,
+        variant: None,
+        quick_unlock: false,
+        name: "Bone Lee",
+    },
+    // W4-d38 b2 — BestiaryEntry.Enemy(289)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "GiantCursedSkull",
+        net_id: 289,
+        kind: NpcKind::GiantCursedSkull,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Cursed Skull",
+    },
+    // W4-d38 b2 — BestiaryEntry.Enemy(290)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "Paladin",
+        net_id: 290,
+        kind: NpcKind::Paladin,
+        variant: None,
+        quick_unlock: false,
+        name: "Paladin",
+    },
+    // W4-d38 b2 — BestiaryEntry.Enemy(291)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "SkeletonSniper",
+        net_id: 291,
+        kind: NpcKind::SkeletonSniper,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeleton Sniper",
+    },
+    // W4-d38 b1 — BestiaryEntry.Enemy(281)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "RaggedCaster",
+        net_id: 281,
+        kind: NpcKind::RaggedCaster,
+        variant: None,
+        quick_unlock: false,
+        name: "Ragged Caster",
+    },
+    // W4-d38 b1 — BestiaryEntry.Enemy(282)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "RaggedCasterOpenCoat",
+        net_id: 282,
+        kind: NpcKind::RaggedCasterOpenCoat,
+        variant: None,
+        quick_unlock: false,
+        name: "Ragged Caster",
+    },
+    // W4-d38 b1 — BestiaryEntry.Enemy(283)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "Necromancer",
+        net_id: 283,
+        kind: NpcKind::Necromancer,
+        variant: None,
+        quick_unlock: false,
+        name: "Necromancer",
+    },
+    // W4-d38 b1 — BestiaryEntry.Enemy(284)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "NecromancerArmored",
+        net_id: 284,
+        kind: NpcKind::NecromancerArmored,
+        variant: None,
+        quick_unlock: false,
+        name: "Necromancer",
+    },
+    // W4-d38 b1 — BestiaryEntry.Enemy(285)
+    // (the automated populator, BestiaryDatabaseNPCsPopulator.cs:851-868).
+    BestiaryEntryDef {
+        credit_id: "DiabolistRed",
+        net_id: 285,
+        kind: NpcKind::DiabolistRed,
+        variant: None,
+        quick_unlock: false,
+        name: "Diabolist",
+    },
     BestiaryEntryDef {
         credit_id: "ForceBubble",
         net_id: 384,
@@ -2605,5 +2955,78 @@ mod tests {
             unlock_state(king, &kills),
             UnlockState::CanShowDropsWithDropRates
         );
+    }
+
+    /// W4-d38 FINAL (research/293 §8) — the 35 kinds' unlock ladders match
+    /// the C# banner chain: `GetKillCountNeeded`
+    /// (`CommonEnemyUICollectionInfoProvider.cs:21-34`) =
+    /// `KillsToBanner[BannerToItem(NPCtoBanner(BannerID()))]`
+    /// (`BannerSystem.cs:341/:403`, `ItemID.cs:1303-1304`). Mechanically
+    /// re-derived by `tools/_d38_final_unlock.py` (all 35 chains agree):
+    /// 290 Paladin is the ONE non-default ladder (banner 149 → item 2958 →
+    /// 25 kills, tiers 1/5/12/25); every other kind rides the default 50
+    /// (tiers 1/10/25/50). The 6 critters' COMPUTED ladder is pinned here
+    /// too — their vanilla provider is sight-based
+    /// (`CritterUICollectionInfoProvider.cs:14-20`, GAP-1 in research/293
+    /// §8, a pre-existing base-wide gap the wiring round owns), so this
+    /// witness pins the port's CURRENT behavior, not the vanilla tier.
+    #[test]
+    fn w4_d38_final_the_unlock_ladders_match_the_banner_chain() {
+        use crate::npc::NpcKind as K;
+        let d38 = [
+            K::RaggedCaster, K::RaggedCasterOpenCoat, K::Necromancer,
+            K::NecromancerArmored, K::DiabolistRed, K::DiabolistWhite,
+            K::BoneLee, K::GiantCursedSkull, K::Paladin, K::SkeletonSniper,
+            K::TacticalSkeleton, K::SkeletonCommando, K::AngryBonesBig,
+            K::AngryBonesBigMuscle, K::AngryBonesBigHelmet, K::BirdBlue,
+            K::BirdRed, K::Squirrel, K::Mouse, K::Raven, K::SlimeMasked,
+            K::BunnySlimed, K::HoppinJack, K::Ghost, K::DemonEyeOwl,
+            K::DemonEyeSpaceship, K::SkeletonTopHat, K::SkeletonAstonaut,
+            K::SkeletonAlien, K::PumpkingBlade, K::SlimeRibbonWhite,
+            K::SlimeRibbonYellow, K::SlimeRibbonGreen, K::SlimeRibbonRed,
+            K::BunnyXmas,
+        ];
+        assert_eq!(d38.len(), 35);
+        for kind in d38 {
+            let e = entry_for_npc(kind, SlimeVariant::Blue);
+            // protocol == vanilla (research/293 §9, the 108 corridor).
+            assert_eq!(e.net_id, kind.cs_id() as i32, "{kind:?}");
+            // No boss / ShouldBeCountedAsBossForBestiary member in the band
+            // (`NPCID.cs:10481` = {517,422,507,493,13,664}).
+            assert!(!e.quick_unlock, "{kind:?}");
+            let full = tr_core::bestiary::kills_needed_for(e.net_id);
+            let want = if kind == K::Paladin { 25 } else { 50 };
+            assert_eq!(full, want, "{kind:?} full kill count");
+            // The tier ladder at the exact thresholds (the C#'s integer
+            // half/fifth, `CommonEnemyUICollectionInfoProvider.cs:53-54`).
+            let mut kills = KillTracker::new();
+            assert_eq!(unlock_state(e, &kills), UnlockState::NotKnownAtAll);
+            kills.set_kill_count_directly(e.credit_id, 1);
+            assert_eq!(unlock_state(e, &kills), UnlockState::CanShowPortraitOnly);
+            kills.set_kill_count_directly(e.credit_id, full / 5);
+            assert_eq!(unlock_state(e, &kills), UnlockState::CanShowStats);
+            kills.set_kill_count_directly(e.credit_id, full / 2);
+            assert_eq!(unlock_state(e, &kills), UnlockState::CanShowDropsWithoutDropRates);
+            kills.set_kill_count_directly(e.credit_id, full);
+            assert_eq!(unlock_state(e, &kills), UnlockState::CanShowDropsWithDropRates);
+        }
+        // The 6 critters (`CountsAsACritter`, `NPC.cs:6887-6897`: lifeMax 5
+        // + damage 0) — their entries exist on the kill ladder today
+        // (GAP-1: vanilla's sight → tier 4 provider is unwired).
+        for kind in [K::BirdBlue, K::BirdRed, K::Squirrel, K::Mouse,
+                     K::BunnySlimed, K::BunnyXmas] {
+            let e = entry_for_npc(kind, SlimeVariant::Blue);
+            let kills = KillTracker::new();
+            assert_eq!(unlock_state(e, &kills), UnlockState::NotKnownAtAll,
+                "{kind:?}: the port needs kills where vanilla needs a sighting");
+        }
+        // 328 PumpkingBlade: the vanilla draw modifiers Hide it
+        // (`NPCID.cs`'s row, ported verbatim) — the populator's
+        // `GetExclusions` (`BestiaryDatabaseNPCsPopulator.cs:870-886`)
+        // gives it NO entry; the port's extra row is GAP-3 (research/293
+        // §8), pinned here so the wiring-round drop is a deliberate edit.
+        assert!(crate::ui::bestiary_draw_offsets::get(328).unwrap().hide);
+        assert!(ENTRIES.iter().any(|e| e.net_id == 328),
+            "GAP-3: the port carries the Hide kind's entry (vanilla has none)");
     }
 }

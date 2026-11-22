@@ -1,0 +1,74 @@
+[
+ {
+  "scenario": "P: HEAD + d35 21 packed (d35-tip reconciliation)",
+  "sheets": 9553,
+  "areaMpx": 65.24,
+  "areaBound": 7969,
+  "skyline": 8232,
+  "maxrects": 8070,
+  "deterministic": true
+ },
+ {
+  "scenario": "P: HEAD + d35 21 packed (d35-tip reconciliation) + boot font",
+  "sheets": 9554,
+  "areaMpx": 65.25,
+  "areaBound": 7970,
+  "skyline": 8232,
+  "maxrects": 8070,
+  "deterministic": true
+ },
+ {
+  "scenario": "R: HEAD + d35 21 + d40 56 (d40b lands)",
+  "sheets": 9609,
+  "areaMpx": 66.95,
+  "areaBound": 8177,
+  "skyline": 8688,
+  "maxrects": 8278,
+  "deterministic": true
+ },
+ {
+  "scenario": "R: HEAD + d35 21 + d40 56 (d40b lands) + boot font",
+  "sheets": 9610,
+  "areaMpx": 66.96,
+  "areaBound": 8178,
+  "skyline": 8688,
+  "maxrects": 8278,
+  "deterministic": true
+ },
+ {
+  "scenario": "Q: HEAD + d35 33 + d40 56 (FULL wave forecast)",
+  "sheets": 9621,
+  "areaMpx": 67.61,
+  "areaBound": 8258,
+  "skyline": 8621,
+  "maxrects": 8371,
+  "deterministic": true
+ },
+ {
+  "scenario": "Q: HEAD + d35 33 + d40 56 (FULL wave forecast) + boot font",
+  "sheets": 9622,
+  "areaMpx": 67.62,
+  "areaBound": 8259,
+  "skyline": 8621,
+  "maxrects": 8371,
+  "deterministic": true
+ },
+ {
+  "scenario": "S: Q + c4 4 (four-wave check)",
+  "sheets": 9625,
+  "areaMpx": 67.74,
+  "areaBound": 8273,
+  "skyline": 8640,
+  "maxrects": 8373,
+  "deterministic": true
+ },
+ {
+  "scenario": "S: Q + c4 4 (four-wave check) + boot font",
+  "sheets": 9626,
+  "areaMpx": 67.74,
+  "areaBound": 8274,
+  "skyline": 8642,
+  "maxrects": 8373,
+  "deterministic": true
+ }
+]
