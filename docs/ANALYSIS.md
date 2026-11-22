@@ -23547,6 +23547,83 @@ witnesses written not run (45 total). The compose receipts (e6 disjoint
 keep-one, d13's PET-light-67 zero-site census consumed, g18 disjoint) +
 the addlight-proj-family bible close the lane — research/189
 (ex-65, renumbered per registry-150) SEALED.
+### The Projectile.cs AddLight census close, third batch (S1-E-5, W4-f7, 2026-11-21, code-only mode)
+
+The directive's THIRD projectile batch (after W4-c19's claimed sites 1-67 and
+W4-e6's landed sites 68-107) closes the census: the unclaimed remainder is
+**EMPTY**. An independent full-file census of `Projectile.cs` (79 791 lines,
+read through the gitignored `decompiled/` junction, direct file path — no
+junction recursion) finds EXACTLY **107** `Lighting.AddLight` call sites, and
+every `AddLight` token in the file is one of them (107/107 — no bare,
+engine-direct or comment forms). The claim map:
+
+* **Sites 1-67 (`:16655`…`:54071`)** — W4-c19's slice (`task/W4-c19-addlight-projectiles`).
+  The in-flight probe found c19 clean at main `a725acb0` with nothing pushed
+  (branch-name claim only); its register covers the `ProjLight` chain
+  (`:16153-16661`, sites 1-2 — the 870 `FloodFillTile` arm `:16655` and the
+  integer-halved centre tail `:16659`, already landed on main in
+  `proj_lights.rs`) plus the AI-arm lights through `:54071`.
+* **Sites 68-107 (`:54173`…`:78556`)** — W4-e6's LANDED second wave
+  (`origin/task/W4-e6-addlight-proj-2` `c8b072b6`; port commits `3ece0525`
+  sites 68-82, `66d75adb` sites 83-97, `fceb64db` sites 98-107 "SLICE
+  COMPLETE"; record commit `c8b072b6`). 20 ported / 23 lights, 20 absent.
+
+67 + 40 = 107: nothing is left for a fourth batch (the W4-f9 `c2740784`
+Main.cs third-tile-batch precedent — remainder empty, docs + witness round).
+
+**The e6 verbatim audit (this round).** Every ported arm was re-read against
+its C# window (≤100-line windows, direct-path reads): the AI_001 arms
+(436 `:54173`, 634/635 rgb2 heads `:54470`/`:54481` → `:54571`, 459 `:54674`
+behind the centre-invariant box rewrite `:54670-54673`, 442 `:54755` inside
+`alpha == 0` after the `localAI[1] >= 120` kill `:54750`, 449 `:54788` in the
+440/449/606 shared arm, 438 `:54831`, the 350/325 twin orange `:55137`/
+`:55171` with the rand dust halves correctly skipped, 819 `:56421`), the
+foxsparks pair (`:58213`/`:58226`, unconditional inside each type block),
+StardustCell 613 (`:65120`), the LaserDrill 445 (`:66272` — hand anchor
+`:66135`, `localAI[0]` cycle `:66251-66255`, `>= 5f` gate `:66256`, triangle
+wave `:66258-66263`, the `>= 30f` `PlotTileLine` flood half `:66264-66271`
+skipped, the TAIL hand-pin `:67329` AFTER the light — the ported-but-dark
+deviation e6 recorded is confirmed), the tower Centre+Bottom pairs
+(`:68124-68125` ×1, `:68172-68173` ×1.2, `:68224-68225` ×1.5) and the trap
+shared tail (`:69332`, after the sentry-backpack reposition `:69330`). All
+verbatim — colours, anchor forms, gates, pair order. The `Entity.cs` halves
+were cross-checked: `Center` (`:54`) and `Bottom` (`:126`) use FLOAT halves
+(`(float)width / 2f`), so the feed's `w * 0.5` centre and `pos.y + h` bottom
+are exact (the `:16659` ProjLight tail's INTEGER `width / 2` is the distinct
+form `proj_lights.rs` already keeps).
+
+**The absent-kind claims re-derived mechanically.** All 19 unrowed kinds
+(467/468/709/440/606/593/592/435/682/684/585/577/576/312/324/595/735/707/708)
+resolve NO arm in `projectile/data.rs::proj_data` (`:1594`, the
+`#[deny(unreachable_patterns)]` match) — searched by numeric id AND named
+const. All 20 ported kinds resolve (442/819 through the numeric arms
+`data.rs:3148`/`:3275`; 436/438 through the `BRAIN_SCRAMBLER`/`MARTIAN_RAY`
+same-id alias arms). The `:78556` electrification scan stays absent wholesale
+(the `Main.rand.Next(4) == 0` gate `:78549` draws on the projectile stream;
+the `ParticleOrchestrator` request has no port).
+
+**The witness half (the W4-g19 `8005116f` precedent).**
+`crates/tr-app/tests/proj_addlight_census.rs` freezes the census against the
+decompilation: (1) the 107-site table — line numbers AND verbatim argument
+text, in line order (the site numbering both slices use); (2) the negative
+census — zero `_activeEngine`/`perFrameLights`/`LightingEngine`/`DynamicLight`
+forms, and the light-MAP delegate skip lane frozen by count
+(`FloodFillTile` 2 — `:16654` + `:70535`; `PlotTileLine` 44; `CastLight` 40 =
+31 `CastLightOpen` + 9 `CastLight`; `SpreadLight` 1 — these are the documented
+skip lanes, NOT zero, unlike Main.cs); (3) the slice-boundary pins (sites
+1/67/68/107 at `:16655`/`:54071`/`:54173`/`:78556`, the `ProjLight` method at
+`:16153` containing exactly sites 1-2); (4) the second wave's arm-structure
+pins (the gates/anchors/colours above, plus `Entity.cs:54`/`:126`); (5) the
+`Lighting.cs` funnel (`:135-137` Vector3 overload + `:140-143` float overload
+— both QUOTIENT truncation; `:157-163` the int form behind
+`!gamePaused && netMode != 2`). Reads the junction at test time, hard-fails
+when absent (the S1-L-12d precedent). Every pinned string mechanically
+diffed against the C# before commit: 107/107 table rows exact, 51/51
+structure pins exact, token counts 107/2/44/40/1/0/0/0/0 re-counted.
+
+5 witnesses WRITTEN NOT RUN — code-only mode, no cargo/rustc/tests/graphify
+invoked. No production code changed: the ports live on c19's (in-flight) and
+e6's (pushed) branches; this branch adds the freeze + records only.
 ### The Player family (S1-E-5, 2026-11-18, code-only mode)
 
 `crates/tr-app/src/player_lights.rs::player_lights` ports **32 of Player.cs's
