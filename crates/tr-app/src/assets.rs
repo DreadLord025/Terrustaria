@@ -1432,7 +1432,7 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_436",
         "NPC_437",
         "NPC_438",
-        "NPC_442",
+"NPC_442",
         "NPC_443",
         "NPC_444",
         "NPC_445",
@@ -1455,6 +1455,16 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_472",
         "NPC_478",
         "NPC_482",
+        // W4-c10 — the waterfowl family's own sheets (`WATERFOWL_SHEETS`).
+        "NPC_362",
+        "NPC_363",
+        "NPC_364",
+        "NPC_365",
+        "NPC_602",
+        "NPC_603",
+        "NPC_608",
+        "NPC_609",
+        // E8 merge: the c10 12-critter sheet tail dropped (d40/c8's rows above).
         // W4-c8 - the crawling-critter family's own sheets
         // (`CRAWLER_SHEETS`), keyed by the vanilla net id in
         // `NpcAssets::npc_sheets` (`render/entities.rs`). E8 merge: the
@@ -1511,6 +1521,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_359",
         "NPC_360",
         "NPC_655",
+        "NPC_484",
+        "NPC_485",
+        "NPC_486",
+        "NPC_487",
 ];
 
 
@@ -2108,7 +2122,9 @@ pub struct AmbienceTex {
 // d40's slots above own them) = 317.
 // + W4-c9's 3 snails (359/360/655; the 677 + 5 gold dups dropped -
 // c7/d40's slots above own them) = 320.
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 320] = [
+// + W4-c10's 8 waterfowl sheets (362-365/602/603/608/609; the
+// 12-critter tail dropped - d40/c8's slots above own them) = 328.
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 328] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -2203,6 +2219,10 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 320] = [
         // The snail family (W4-c9) - appended last for the same reason
         // (the 677 + 5 gold dups dropped - c7/d40's slots above).
         359, 360, 655,
+        // W4-c10 — the waterfowl family's eight sheets, appended last in
+        // `bestiary_npc_sheets`'s exact order (the vec grew 181 → 189).
+        362, 363, 364, 365, 602, 603, 608, 609,
+        // E8 merge: the c10 12-critter slot tail dropped (d40/c8's slots above).
     ];
 
 
@@ -3079,7 +3099,7 @@ impl Lookups {
                 // portrait rests the SetDefaults box via entry_sheet None).
                 atlas.sheet("NPC_437").copied(),
                 atlas.sheet("NPC_438").copied(),
-                atlas.sheet("NPC_442").copied(),
+atlas.sheet("NPC_442").copied(),
                 atlas.sheet("NPC_443").copied(),
                 atlas.sheet("NPC_444").copied(),
                 atlas.sheet("NPC_445").copied(),
@@ -3100,6 +3120,7 @@ impl Lookups {
                 atlas.sheet("NPC_485").copied(),
                 atlas.sheet("NPC_486").copied(),
                 atlas.sheet("NPC_487").copied(),
+                                // E8 merge: the c10 12-critter vec tail dropped (d40/c8's rows above).
                 // W4-d35 sheets phase — the 16 visible packed kinds' strips,
                 // in BESTIARY_NPC_SHEET_IDS' appended order (the Hide kinds
                 // 96/97/99/100/112 fold onto the heads' rows above).
@@ -3132,6 +3153,15 @@ impl Lookups {
                 atlas.sheet("NPC_359").copied(),
                 atlas.sheet("NPC_360").copied(),
                 atlas.sheet("NPC_655").copied(),
+// W4-c10 — the waterfowl family's eight 15-row strips.
+                atlas.sheet("NPC_362").copied(),
+                atlas.sheet("NPC_363").copied(),
+                atlas.sheet("NPC_364").copied(),
+                atlas.sheet("NPC_365").copied(),
+                atlas.sheet("NPC_602").copied(),
+                atlas.sheet("NPC_603").copied(),
+                atlas.sheet("NPC_608").copied(),
+                atlas.sheet("NPC_609").copied(),
             ],
 
 

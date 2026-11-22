@@ -881,6 +881,19 @@ impl NpcKind {
             NpcKind::Dandelion => 628,
             NpcKind::IceMimic => 629,
             NpcKind::BloodMummy => 630,
+            // W4-c10 — the waterfowl family keeps its vanilla ids (362-365/
+            // 602/603/608/609 are free in the protocol space — a to_u16 scan
+            // of the tree shows no arm on them). `NPCID.cs:11401-11407`/
+            // `:11881-11895`.
+            // E8 merge (d37 tables): the Duck quartet rides 731-734
+            // (d37's GoldfishWalker/HornetFatty/HornetHoney/HornetLeafy
+            // own the vanilla slots; cs_id/net_id stay 362-365); the
+            // Seagull/Grebe pairs + the Rat..BloodMummy band are d42's
+            // rows above (the dup drops - c10's waterfowl wiring composes).
+            NpcKind::Duck => 731,
+            NpcKind::Duck2 => 732,
+            NpcKind::DuckWhite => 733,
+            NpcKind::DuckWhite2 => 734,
             // W4-c3 (the style-10 family): the WaterBoltMimic keeps its
             // vanilla 694 (`NPC.cs:17737-17751`). The CursedSkull and
             // GiantCursedSkull ports dropped per the d37 E8 tables
@@ -967,6 +980,13 @@ impl NpcKind {
             NpcKind::Snail => 740,
             NpcKind::GlowingSnail => 741,
             NpcKind::MagmaSnail => 655,
+            // W4-c10 roster tail — the twelve critters keep their vanilla
+            // ids (357/442-448/484-487 are free in the protocol space — a
+            // to_u16 scan of the tree shows no arm on them).
+            // `NPCID.cs:11391`/`:11557-11569`/`:11641-11647`.
+            // E8 merge: the 12-critter tail dropped - Worm rides c8@737,
+            // the gold septet + the bait tail are d40's rows above (the
+            // dup drops; c10's wiring composes onto the canonical kinds).
         }
     }
 
@@ -1542,6 +1562,13 @@ impl NpcKind {
             628 => NpcKind::Dandelion,
             629 => NpcKind::IceMimic,
             630 => NpcKind::BloodMummy,
+            // W4-c10 — the waterfowl family's vanilla ids (`to_u16` above).
+            // E8 merge: 731-734 (the 362-365 slots are d37's); the
+            // Seagull/Grebe + Rat..BloodMummy band are d42's arms above.
+            731 => NpcKind::Duck,
+            732 => NpcKind::Duck2,
+            733 => NpcKind::DuckWhite,
+            734 => NpcKind::DuckWhite2,
             // W4-c3: 694 keeps its vanilla id (`to_u16` above); the
             // 355/289 dup arms dropped per the d37 E8 tables (d34/d38 own).
             694 => NpcKind::WaterBoltMimic,
@@ -1586,6 +1613,9 @@ impl NpcKind {
             740 => NpcKind::Snail,
             741 => NpcKind::GlowingSnail,
             655 => NpcKind::MagmaSnail,
+            // W4-c10 roster tail — the twelve critters' vanilla ids
+            // (`to_u16` above).
+            // E8 merge: the 12-critter tail dropped (c8/d40's arms above).
             _ => return None,
         })
     }
@@ -2673,6 +2703,18 @@ impl NpcKind {
             NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => {
                 "NPC_Hit_1"
             }
+            // W4-c10 — the waterfowl family's `SoundID.NPCHit1` rows
+            // (`NPC.cs:13621`/`:13633`/`:13645`/`:13657`/`:16747`/
+            // `:16759`/`:16817`/`:16829`).
+            // E8 merge: the Seagull/Grebe rows are d42's above.
+            NpcKind::Duck
+            | NpcKind::Duck2
+            | NpcKind::DuckWhite
+            | NpcKind::DuckWhite2 => "NPC_Hit_1",
+            // W4-c10 roster tail — the twelve critters' `SoundID.NPCHit1`
+            // rows (`NPC.cs:13553`, `:14255`/`:14270`/`:14283`/`:14298`/
+            // `:14311`/`:14326`/`:14340`, the `:14584` range row).
+            // E8 merge: the 12-critter hit rows are c8/d40's above.
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -3266,6 +3308,19 @@ impl NpcKind {
             NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => {
                 "NPC_Killed_1"
             }
+            // W4-c10 — the waterfowl family's `SoundID.NPCDeath1` rows
+            // (`NPC.cs:13622`/`:13634`/`:13646`/`:13658`/`:16748`/
+            // `:16760`/`:16818`/`:16830`).
+            // E8 merge: the Seagull/Grebe rows are d42's above.
+            NpcKind::Duck
+            | NpcKind::Duck2
+            | NpcKind::DuckWhite
+            | NpcKind::DuckWhite2 => "NPC_Killed_1",
+            // W4-c10 roster tail — the GoldMouse's `SoundID.NPCDeath4`
+            // (`NPC.cs:14327`, (4, 4) `ID/SoundID.cs:1318`) — the mouse
+            // squeak; every other critter `NPCDeath1`.
+            // E8 merge: the GoldMouse NPCDeath4 + the 12-critter death
+            // rows are d40/c8's above (the dup drops).
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -3647,6 +3702,15 @@ impl NpcKind {
             // per-tick gravity gate rides `SnailEvents::no_gravity`.
             // E8 merge: Shimmerfly's row is c7's above.
             NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => true,
+            // W4-c10 roster tail — the GoldButterfly's `noGravity = true`
+            // row (`NPC.cs:14286`); the GoldBird's flag is the aiStyle-24
+            // head's per-tick write (`:25325`, the AngryNimbus precedent —
+            // the perch arm clears it, the knockback read sees the flyer
+            // default). Every other critter keeps the false default.
+            // E8 merge: GoldButterfly's row is d40's above; the GoldBird's
+            // noGravity is the aiStyle-24 head's per-tick write (`:25325`,
+            // the AngryNimbus precedent - the superset addition).
+            NpcKind::GoldBird => true,
             _ => false,
         }
     }
@@ -3673,6 +3737,7 @@ impl NpcKind {
             | NpcKind::Crimslime
             | NpcKind::SpikedIceSlime
             | NpcKind::UmbrellaSlime => 1,
+            // E8 merge: the c10 GoldGrasshopper aiStyle-1 dup dropped (d40's).
             // aiStyle 2 - NPC.cs:8590, :10650
             NpcKind::DemonEye
             | NpcKind::WanderingEye
@@ -3742,6 +3807,13 @@ impl NpcKind {
             NpcKind::Clothier | NpcKind::TravellingMerchant | NpcKind::Angler | NpcKind::Stylist | NpcKind::TaxCollector |
             NpcKind::Golfer | NpcKind::Zoologist | NpcKind::Princess | NpcKind::DyeTrader | NpcKind::PartyGirl |
             NpcKind::Wizard | NpcKind::Mechanic | NpcKind::GoblinTinkerer => 7,
+            // aiStyle 7 — W4-c10, the waterfowl WALKERS: `NPC.cs:13617`
+            // (362), `:13641` (364), `:16743` (602), `:16813` (608). The
+            // swimming "2" forms ride aiStyle 68 below.
+            // E8 merge: Seagull/Grebe's 7 rows are d42's above.
+            NpcKind::Duck | NpcKind::DuckWhite => 7,
+            // E8 merge: the c10 12-critter aiStyle tail dropped - d40/c8's
+            // rows above own them (the dup drops; the wiring composes).
             // aiStyle 8 - NPC.cs:9083, :9125, :9326, :14978, :15690
             NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => 8,
             // aiStyle 9 - NPC.cs:9097, :9139, :15703
@@ -4234,6 +4306,11 @@ impl NpcKind {
             // `:14322` (the GoldMouse's aiStyle 7).
             // E8 merge: the 5 gold aiStyle rows are d40's above (24/1/7/
             // 7/7 - the dup drops; c9's wiring composes onto them).
+            // aiStyle 68 — W4-c10, the waterfowl SWIMMERS: `NPC.cs:13629`
+            // (363), `:13653` (365), `:16755` (603), `:16825` (609) — the
+            // four `this.aiStyle = 68;` rows of the SetDefaults census.
+            // E8 merge: Seagull2/Grebe2's 68 rows are d42's above.
+            NpcKind::Duck2 | NpcKind::DuckWhite2 => 68,
         }
     }
 
@@ -5125,6 +5202,18 @@ impl NpcKind {
             // sizes are d40's above (the dup drops).
             NpcKind::Snail => (12.0, 12.0),
             NpcKind::GlowingSnail | NpcKind::MagmaSnail => (14.0, 14.0),
+            // W4-c10 — the waterfowl boxes: the walkers 22x26
+            // (`NPC.cs:13615-13616`/`:13639-13640`/`:16741-16742`/
+            // `:16811-16812`), the swimmers 28x22 (`:13627-13628`/
+            // `:13651-13652`/`:16753-16754`/`:16823-16824`).
+            // E8 merge: Seagull/Grebe's size rows are d42's above.
+            NpcKind::Duck | NpcKind::DuckWhite => {
+                (22.0, 26.0)
+            }
+            NpcKind::Duck2 | NpcKind::DuckWhite2 => {
+                (28.0, 22.0)
+            }
+            // E8 merge: the c10 12-critter size tail dropped (d40/c8's rows).
         }
     }
 
@@ -5280,6 +5369,16 @@ impl NpcKind {
             NpcKind::LightningBug => 358,
             NpcKind::Lavafly => 654,
             NpcKind::Shimmerfly => 677,
+            // W4-c10 — the waterfowl family's own bestiary credits (the
+            // populator registers all eight: `FindEntryByNPCID(362/363/
+            // 364/365/602/603/608/609)`, `BestiaryDatabaseNPCsPopulator.cs:
+            // 1191-1266`) — no fold needed, the vanilla ids ride.
+            NpcKind::Duck => 362,
+            NpcKind::Duck2 => 363,
+            NpcKind::DuckWhite => 364,
+            NpcKind::DuckWhite2 => 365,
+            // E8 merge: Seagull/Grebe's cs_id rows are d42's above.
+            // E8 merge: the c10 12-critter cs_id tail dropped (d40/c8's rows).
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
             // W4-d40: hand rows for the kinds with no bestiary entry
@@ -6293,6 +6392,18 @@ impl NpcKind {
             // E8 merge: Shimmerfly's row is c7's above; the 5 gold rows
             // are d40's above (the dup drops).
             NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => 5,
+            // W4-c10 — the waterfowl family's `lifeMax = 5` rows
+            // (`NPC.cs:13620`/`:13632`/`:13644`/`:13656`/`:16746`/
+            // `:16758`/`:16816`/`:16828`).
+            NpcKind::Duck
+            | NpcKind::Duck2
+            | NpcKind::DuckWhite
+            // E8 merge: Seagull/Grebe's lifeMax rows are d42's above.
+            NpcKind::Duck
+            | NpcKind::Duck2
+            | NpcKind::DuckWhite
+            | NpcKind::DuckWhite2 => 5,
+            // E8 merge: the c10 12-critter lifeMax tail dropped (d40/c8's rows).
         }
     }
 
@@ -6936,6 +7047,18 @@ impl NpcKind {
             // E8 merge: Shimmerfly's row is c7's above; the 5 gold rows
             // are d40's above (the dup drops).
             NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => 0,
+            // W4-c10 — the waterfowl family's `damage = 0` rows
+            // (`NPC.cs:13618`/`:13630`/`:13642`/`:13654`/`:16744`/
+            // `:16756`/`:16814`/`:16826`).
+            NpcKind::Duck
+            | NpcKind::Duck2
+            | NpcKind::DuckWhite
+            // E8 merge: Seagull/Grebe's damage rows are d42's above.
+            NpcKind::Duck
+            | NpcKind::Duck2
+            | NpcKind::DuckWhite
+            | NpcKind::DuckWhite2 => 0,
+            // E8 merge: the c10 12-critter damage tail dropped (d40/c8's rows).
         }
     }
 }

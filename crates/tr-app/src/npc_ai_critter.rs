@@ -104,9 +104,36 @@ pub fn critter_ai(npc: &mut Npc, world: &World, _player: &Player, rng: &mut Unif
             }
         }
     } else if npc.ai[0] == 1.0 {
+        // `:53815` - the walk countdown (W4-c9 merge: the C#'s own order -
+        // the countdown + the exit run BEFORE the ladder/hop/stuck-flip;
+        // the drowning/homing skips are the stand-ins, the homeless
+        // critter always decrements).
+        npc.ai[1] -= 1.0;
+        // `:53817-53831` - walk -> idle: 300 + Next(300), then
+        // (TownCritter) - Next(100); localAI[3] = 60 (the c9 faithful
+        // draw order - the :53824 subtraction; the d38 module's :54289
+        // 60+Next(60) was the sit/talk-state exit, a DIFFERENT AI_007 arm).
+        if npc.ai[1] <= 0.0 {
+            npc.ai[0] = 0.0;
+            npc.ai[1] = 300.0 + rng.next_max(300) as f32;
+            npc.ai[1] -= rng.next_max(100) as f32;
+            npc.ai[2] = 0.0;
+            npc.local_ai[3] = 60.0;
+            npc.net_update = true;
+        }
+        // W4-c10 — `:53917-53927`: flag10 (the frogs 361/445/687) wet REPLACES
+        // the walk ladder: still (|vx| < 0.05 && |vy| < 0.05) kicks
+        // `vx += cap * 10 * direction`, else brakes ×0.9.
+        if npc.kind == NpcKind::GoldFrog && npc.wet {
+            if npc.vx.abs() < 0.05 && npc.vy.abs() < 0.05 {
+                npc.vx += cap * 10.0 * npc.facing as f32;
+            } else {
+                npc.vx *= 0.9;
+            }
+        }
         // `:53928-53950` — the walk ladder: over-cap the grounded brake
         // (×0.8 both axes), under-cap accelerate toward direction, clamped.
-        if npc.vx < -cap || npc.vx > cap {
+        else if npc.vx < -cap || npc.vx > cap {
             if npc.vy == 0.0 {
                 npc.vx *= 0.8;
                 npc.vy *= 0.8;
@@ -133,23 +160,6 @@ pub fn critter_ai(npc: &mut Npc, world: &World, _player: &Player, rng: &mut Unif
         if npc.vy < 0.0 && hop_boost {
             npc.vy *= 1.2;
         }
-        // `:53815` - the walk countdown (W4-c9 merge: the C#'s own order -
-        // the countdown + the exit run BEFORE the ladder/hop/stuck-flip;
-        // the drowning/homing skips are the stand-ins, the homeless
-        // critter always decrements).
-        npc.ai[1] -= 1.0;
-        // `:53817-53831` - walk -> idle: 300 + Next(300), then
-        // (TownCritter) - Next(100); localAI[3] = 60 (the c9 faithful
-        // draw order - the :53824 subtraction; the d38 module's :54289
-        // 60+Next(60) was the sit/talk-state exit, a DIFFERENT AI_007 arm).
-        if npc.ai[1] <= 0.0 {
-            npc.ai[0] = 0.0;
-            npc.ai[1] = 300.0 + rng.next_max(300) as f32;
-            npc.ai[1] -= rng.next_max(100) as f32;
-            npc.ai[2] = 0.0;
-            npc.local_ai[3] = 60.0;
-            npc.net_update = true;
-        }
         // `:54226-54242` - the stuck-flip: parked 30 ticks, flip + re-walk.
         if npc.vx == 0.0 && npc.vy == 0.0 {
             npc.local_ai[2] += 1.0;
@@ -169,6 +179,44 @@ pub fn critter_ai(npc: &mut Npc, world: &World, _player: &Player, rng: &mut Unif
         // W4-c9 merge: the old :54257 tail countdown dropped - the
         // faithful :53815-53831 countdown + exit moved to the block head
         // above (the C#'s own order).
+    }
+    // W4-c10 — `:55158-55197`: flag13 (the turtles + the frogs) wet tail —
+    // the GoldFrog 445 is the port's only member. The ai[1] = 50 pin, the
+    // wall/world-edge bounce (×−0.25), the waterline hover (−0.8 with the
+    // −4 cap + the line-crossing clamp; above the line the vy min-clamp)
+    // and the no-water −0.2 drift.
+    if npc.kind == NpcKind::GoldFrog && npc.wet {
+        npc.ai[1] = 50.0; // `:55160-55163` — flag10's pin.
+        let (cx, cy) = npc.center();
+        let col = (cx / 16.0) as i32;
+        // `:55166-55172` — collideX or the 5-tile world margins.
+        if npc.collide_x
+            || (col < 5 && npc.facing == -1)
+            || (col > world.width - 5 && npc.facing == 1)
+        {
+            npc.facing *= -1;
+            npc.vx *= -0.25;
+            npc.net_update = true;
+        }
+        // `:55173-55196` — GetWaterLine at the truncated centre tile
+        // (`Center.ToTileCoordinates()`, the >>4 floor — the port's
+        // positive-coordinate world folds it onto the /16 truncation).
+        if let Some(line) = crate::collision::get_water_line(world, col, (cy as i32) >> 4) {
+            let num90 = cy + 1.0;
+            if cy > line {
+                npc.vy -= 0.8;
+                if npc.vy < -4.0 {
+                    npc.vy = -4.0;
+                }
+                if num90 + npc.vy < line {
+                    npc.vy = line - num90;
+                }
+            } else {
+                npc.vy = npc.vy.min(line - num90);
+            }
+        } else {
+            npc.vy -= 0.2;
+        }
     }
     // The generic gravity + tile-collision integration (`NPC.UpdateNPC`'s
     // tail, `:90465-90493` — the critters have no noTileCollide/noGravity).
@@ -250,6 +298,55 @@ mod tests {
         assert_eq!(row(NpcKind::Mouse), (2.0, 1.0, false));
         assert_eq!(row(NpcKind::BunnySlimed), (1.0, 0.07, true));
         assert_eq!(row(NpcKind::BunnyXmas), (1.0, 0.07, true));
+    }
+
+    /// W4-c10 — the gold critters' rows: the GoldBunny/GoldFrog the default
+    /// pair + boost (`NPC.cs:53865-53866`, TownCritter `NPCID.cs:10459`),
+    /// the GoldMouse flag8's cap 2 / accel 1 / no boost (`:53451`,
+    /// `:53902-53906`, `:54191`). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_c10_the_gold_critter_walk_rows() {
+        assert_eq!(row(NpcKind::GoldBunny), (1.0, 0.07, true));
+        assert_eq!(row(NpcKind::GoldFrog), (1.0, 0.07, true));
+        assert_eq!(row(NpcKind::GoldMouse), (2.0, 1.0, false));
+    }
+
+    /// W4-c10 — the GoldFrog's wet swim (`NPC.cs:53917-53927` +
+    /// `:55158-55197`): still kicks vx += cap*10*direction, moving brakes
+    /// ×0.9; the tail pins ai[1] = 50, bounces off collideX (×−0.25 + the
+    /// facing flip) and drifts −0.2 with no waterline. The walk-duration
+    /// draws stay untouched on the swim tick (the countdown decrements).
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_c10_the_gold_frog_swims_when_wet() {
+        let w = ground();
+        let player = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::GoldFrog, 100.0 * TILE_PX, 30.0 * TILE_PX, 1, 0.0);
+        n.ai[0] = 1.0;
+        n.ai[1] = 500.0;
+        n.wet = true;
+        n.facing = 1;
+        n.vx = 0.0;
+        n.vy = 0.0;
+        let mut rng = UnifiedRandom::new(3);
+        let witness = rng.clone();
+        critter_ai(&mut n, &w, &player, &mut rng);
+        // The still kick: 1.0 * 10 * 1 = 10 (`:53920`), no wet-tail draws.
+        assert!(n.vx > 0.0, "the still kick fired: {}", n.vx);
+        assert_eq!(n.ai[1], 50.0, "the flag10 pin (:55162)");
+        assert_eq!(rng, witness, "the swim tick draws nothing");
+        // Moving: the ×0.9 brake (`:53925`).
+        let vx0 = n.vx;
+        n.vy = 0.0;
+        critter_ai(&mut n, &w, &player, &mut rng);
+        assert!((n.vx - vx0 * 0.9).abs() < 1e-4, "the wet brake");
+        // The wall bounce (`:55166-55172`): collideX flips + ×−0.25.
+        n.collide_x = true;
+        let (f0, v0) = (n.facing, n.vx);
+        critter_ai(&mut n, &w, &player, &mut rng);
+        assert_eq!(n.facing, -f0, "the bounce flips");
+        assert!((n.vx - v0 * 0.9 * -0.25).abs() < 1e-4, "brake then bounce");
+        assert!(n.net_update);
     }
 
     /// The idle → walk start draws Next(300) then Next(200, 400) (the

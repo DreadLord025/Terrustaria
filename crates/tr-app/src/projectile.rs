@@ -19775,6 +19775,36 @@ impl ProjectilePool {
                                 );
                             }
                         }
+                        // W4-c10 — the BirdDroppings 1080's aiStyle-200
+                        // arm (`AI()`'s `else if (this.aiStyle == 200)`,
+                        // `Projectile.cs:36763-36766` → `AI_200_BirdDroppings`
+                        // `:39985-40017`): the 0.3/16 gravity, the two-dust
+                        // draw census, the player-intersect kill and the
+                        // HandleMovement `:18921-18928` splat — the module
+                        // owns the whole body (the aiStyle-19 spear shape).
+                        // The player rect: the session player while
+                        // active-and-alive (`:40012`'s gate; the port's
+                        // `player` seam is the live session slot).
+                        200 => {
+                            let rect = player.as_deref().and_then(|pl| {
+                                if pl.dead {
+                                    None
+                                } else {
+                                    Some((
+                                        pl.x as i32,
+                                        pl.y as i32,
+                                        crate::player::WIDTH as i32,
+                                        crate::player::HEIGHT as i32,
+                                    ))
+                                }
+                            });
+                            crate::projectile_bird_droppings::bird_droppings_step(
+                                &mut self.slots[i],
+                                world,
+                                rect,
+                                rng,
+                            );
+                        }
                         _ => {}
                     }
                     }
@@ -20008,6 +20038,50 @@ impl ProjectilePool {
                 // `Kill()`'s MoonlordArrow arm (`Projectile.cs:73431-73452`,
                 // S1-D-4): the 639's death spawns its 640 trail.
                 self.moonlord_arrow_kill(i);
+                // W4-c10 sweep — `Kill()`'s type-1080 arm
+                // (`Projectile.cs:70926-70954`): the BirdDroppings' death
+                // — the intersect kill (`:40014`), the HandleMovement
+                // splat (`:18926`) or the lifetime expiry (`:17204`) —
+                // grants Stinky 120/600 to the living local player whose
+                // rect intersects the drop's (`ApplyBuffTo` `:12391-12398`;
+                // the row's trap is false, so the deadMansSweater halve
+                // never fires), plays Item177 at the int centre and runs
+                // the 30-dust draw census. The arm sits at `:70926`,
+                // ABOVE the wave-3 arms below in the C# body — kinds
+                // disjoint, so the between-hook order is unobservable.
+                // The out-of-world deactivate (`:16696`) never calls
+                // `Kill()`: the `died_out_of_world` gate carries that.
+                if self.slots[i].kind == BIRD_DROPPINGS && !died_out_of_world {
+                    let p = &self.slots[i];
+                    let (bx, by) = (p.pos.x as i32, p.pos.y as i32);
+                    let (bw, bh) = (p.w as i32, p.h as i32);
+                    let (cx, cy) = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+                    // `:70928-70934` — netMode != 2 (the port is
+                    // single-player) && !dead && the strict intersect.
+                    if let Some(pl) = player.as_deref_mut() {
+                        if !pl.dead {
+                            let (qx, qy) = (pl.x as i32, pl.y as i32);
+                            let (qw, qh) =
+                                (crate::player::WIDTH as i32, crate::player::HEIGHT as i32);
+                            if bx < qx + qw && qx < bx + bw && by < qy + qh && qy < by + bh {
+                                pl.buffs.add_buff(120, 600); // Stinky
+                            }
+                        }
+                    }
+                    // `:70936` — SoundID.Item177 = LegacySoundStyle(2, 177)
+                    // (`SoundID.cs:1561`) at the int-truncated centre (the
+                    // C# call passes `(int)base.Center.X/Y` — the port
+                    // truncates here, the int overload's shape). The
+                    // generic `wants_sound` forward ran ahead of the AI,
+                    // so the hook pushes the queue directly (the
+                    // death-hook cue convention; drained at the pass tail
+                    // on the same stream).
+                    self.pending_proj_sounds
+                        .push((2, 177, cx as i32 as f32, cy as i32 as f32, 0.0));
+                    // `:70937-70951` — the 30-dust burst's draw census
+                    // (the bodies are the documented visual skip).
+                    crate::projectile_bird_droppings::bird_droppings_kill_draws(rng);
+                }
                 // S1-P-i14 (V5 gate) — `Kill()`'s Xenopopper-bubble arm
                 // (`Projectile.cs:73398-73419`): the 444's death releases
                 // its deferred payload (`localAI[0]` bullet kind,

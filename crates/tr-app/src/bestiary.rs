@@ -2790,6 +2790,50 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     // NPCs.json display names). The digger 375 is Hide=true
     // (`NPCID.cs:3714-3718`) — its entry exists (the ForceBubble
     // precedent) but `entry_for_npc` folds it onto the TruffleWorm.
+    // W4-c10 — the waterfowl family's own entries (the populator
+    // registers all eight: `FindEntryByNPCID(362/363/364/365/602/603/
+    // 608/609).Info`, `BestiaryDatabaseNPCsPopulator.cs:1191-1266`;
+    // `NPCID.Search.GetName` credits). The display names ride the
+    // localization rows: Duck2/DuckWhite/DuckWhite2 all read "Duck",
+    // Seagull2 "Seagull", Grebe2 "Grebe"
+    // (`Terraria.Localization.Content.en-US.NPCs.json`).
+    BestiaryEntryDef {
+        credit_id: "Duck",
+        net_id: 362,
+        kind: NpcKind::Duck,
+        variant: None,
+        quick_unlock: false,
+        name: "Duck",
+    },
+    BestiaryEntryDef {
+        credit_id: "Duck2",
+        net_id: 363,
+        kind: NpcKind::Duck2,
+        variant: None,
+        quick_unlock: false,
+        name: "Duck",
+    },
+    BestiaryEntryDef {
+        credit_id: "DuckWhite",
+        net_id: 364,
+        kind: NpcKind::DuckWhite,
+        variant: None,
+        quick_unlock: false,
+        name: "Duck",
+    },
+    BestiaryEntryDef {
+        credit_id: "DuckWhite2",
+        net_id: 365,
+        kind: NpcKind::DuckWhite2,
+        variant: None,
+        quick_unlock: false,
+        name: "Duck",
+    },
+    // W4-c10 roster tail — the twelve critters' own entries (the
+    // populator registers all twelve: `FindEntryByNPCID(357/442-448/
+    // 484-487).Info`, `BestiaryDatabaseNPCsPopulator.cs:890-1886`;
+    // `NPCID.Search.GetName` credits). The display names ride the
+    // en-US NPCs.json rows ("Gold Bird" … "Enchanted Nightcrawler").
     BestiaryEntryDef {
         credit_id: "Worm",
         net_id: 357,
@@ -3024,6 +3068,49 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Granite Elemental",
+    },
+    // W4-c10 merge: the gold entries RESTORED (the c8/c9 merges dropped
+    // them thinking d40 owned them - but d40's were the same entries
+    // already in main; the c10 insert re-lands the canonical rows).
+    BestiaryEntryDef {
+        credit_id: "GoldBird",
+        net_id: 442,
+        kind: NpcKind::GoldBird,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Bird",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldBunny",
+        net_id: 443,
+        kind: NpcKind::GoldBunny,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Bunny",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldFrog",
+        net_id: 445,
+        kind: NpcKind::GoldFrog,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Frog",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldGrasshopper",
+        net_id: 446,
+        kind: NpcKind::GoldGrasshopper,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Grasshopper",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldWorm",
+        net_id: 448,
+        kind: NpcKind::GoldWorm,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Worm",
     },
     BestiaryEntryDef {
         credit_id: "EnchantedNightcrawler",

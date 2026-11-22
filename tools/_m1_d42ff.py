@@ -1,0 +1,10 @@
+import sys, re, subprocess
+sys.stdout.reconfigure(encoding="utf8", errors="replace")
+head = subprocess.run(["git","show","HEAD:crates/tr-app/src/npc.rs"],capture_output=True).stdout.decode("utf8","replace")
+bt = chr(96)
+i = head.index("// W4-d42 - " + bt + "FindFrame" + bt + " case 602/608")
+j = head.index("// W4-d42 - " + bt + "FindFrame" + bt + " case 603/609", i)
+print(head[i:j])
+k = head.index("// W4-d42 - " + bt + "FindFrame" + bt + " case 603/609")
+m = head.index("\n            }", k)
+print(head[k:m+15])

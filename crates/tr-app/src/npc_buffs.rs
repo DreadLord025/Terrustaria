@@ -821,6 +821,14 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // E8 merge: Shimmerfly's null row is c7's above; the 5 gold
         // {31} rows are d40's above (the dup drops).
         NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => &[],
+        // W4-c10 merge FIX: the C# NPCID.cs DebuffImmunitySets HAS {31}
+        // rows for 362-365 (re-read at this splice - the c10 null claim
+        // was wrong); the Seagull/Grebe {31} rows are d42's above.
+        NpcKind::Duck
+        | NpcKind::Duck2
+        | NpcKind::DuckWhite
+        | NpcKind::DuckWhite2 => &[31],
+        // E8 merge: the c10 12-critter {31} tail dropped (d40/c8's rows above).
     }
 }
 

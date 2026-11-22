@@ -136,6 +136,11 @@ mod npc_ai_style67;
 // TruffleWorm 374 / GoldWorm 448 / 484-487 / Maggot 606) - the kind rows
 // + style-axis arm are the family's merge step (see the module doc).
 mod npc_ai_style66;
+// W4-c10 roster tail — the d30 butterfly module (aiStyle 65, the
+// GoldButterfly 444 wiring) + the d38 TownCritter wander/hop subset
+// (the GoldBunny/GoldFrog/GoldMouse 443/445/447).
+mod npc_ai_style65;
+mod npc_ai_critter;
 mod npc_ai_style72;
 mod npc_ai_style73;
 mod npc_ai_style74;
@@ -164,6 +169,10 @@ mod npc_ai_cultist;
 mod npc_ai_pillar;
 mod npc_ai_style71;
 mod npc_target;
+// W4-c10 sweep — NPC.TransformVisuals (NPC.cs:80963-81033): the
+// transform-visuals draw census + the Item8 cue intent; the eight
+// waterfowl pairs are VISUALLY SILENT (the census verdict, witnessed).
+mod npc_transform_visuals;
 mod npc_ai_style21;
 mod npc_buffs;
 mod npc_findframe_a;
@@ -216,6 +225,10 @@ mod projectile_ai_golf;
 // S1-P-i16: the dart guns' projectile AIs (267/477/478/479/442 aiStyle 1,
 // 443 aiStyle 77, 167-170 aiStyle 34, the 480 flame drop's dust census).
 mod projectile_ai_darts;
+// W4-c10: the BirdDroppings 1080's aiStyle-200 arm (AI_200_BirdDroppings,
+// Projectile.cs:39985-40017 + the HandleMovement :18921-18928 splat) —
+// the aiStyle-24/68 birds' poop shot.
+mod projectile_bird_droppings;
 // S1-P-i18 special bullets: the 11 aiStyle-1 bullet specials' per-type AI_001
 // arms + HandleMovement bounces + Kill() death effects (36/89/104/207/242/
 // 279/283/284/285/286/287), pure per-kind fns behind the `covers` gate.

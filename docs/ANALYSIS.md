@@ -37309,16 +37309,15 @@ will call once `NpcKind::EmpressOfLight` lands. The remainder: the roster row
 `update_kind_ai` wiring + the five projectile AIs + the `IsDamageDodgeable`
 636 arm (`npc.rs:3402-3403` notes it) + the `OurFavoriteColor` enrage tint
 (render-side). 28 witness tests WRITTEN NOT RUN — **no compiler invoked**.
-## The waterfowl family (S1-D-3 aiStyle-68, task/S1-D-3-aistyle68, 2026-11-19, code-only mode)
+## The waterfowl family (S1-D-3 aiStyle-68, task/S1-D-3-aistyle68, 2026-11-19; WIRED by W4-c10, task/W4-c10-style68-waterfowl, 2026-11-21, code-only mode)
 
 `crates/tr-app/src/npc_ai_style68.rs` ports `NPC.AI()`'s
 `else if (this.aiStyle == 68)` block (`NPC.cs:34623-34879`) as a pure
 `ai_style_68(npc, ty, world, ctx, rng)` over the `Style68Ctx`/
 `Style68Outcome` seam. **Code-only mode: no compiler invoked; the 16
-witness tests are written, not run.** The module is UNWIRED — no
-`NpcKind` for the four types, no style-68 row in `npc/data.rs::ai_style`,
-no `update_rng` arm; the wiring is the family's merge step (the
-`npc_ai_style24.rs` precedent).
+witness tests are written, not run.** **WIRED by W4-c10** (see "The
+waterfowl wiring (W4-c10)" below): the module's pure fns are UNCHANGED —
+the wiring reads them verbatim through `npc.rs::ai_068_waterfowl`.
 
 **The census.** `Select-String "aiStyle = 68;"` over `NPC.cs` returns
 exactly FOUR rows: Duck2 363 (`:13629`), DuckWhite2 365 (`:13653`),
@@ -37396,24 +37395,34 @@ client — draws nothing. The witnesses pin this by mirrored
 the 32-seed landing replay, the zero-draw wet/client/descent pins and a
 ten-tick full-cycle replay (flight under the player → dry landing).
 
-**Folds / documented skips (the wiring round's job).**
-- The four `NpcKind` variants + the `SetDefaults` stats + the
-  `update_rng` `68 =>` dispatch claim; the machine keys on the vanilla
-  `npc_type` with the box on `size_override` until then.
-- The 1080 BirdDroppings projectile (`ProjectileID.cs:2714`) rides
-  `Style68Outcome::poop_shot` (the style-24 seam shape).
-- The full `NPC.Transform` (the walker `SetDefaults` sounds/value,
-  `TransformVisuals`, `GiveTownUniqueDataToNPCsThatNeedIt`, the netMode-2
-  SendData pair `:81131-81135`) — `transform_core` applies the observable
-  subset; the type flip itself rides `Style68Outcome::transform`.
-- `noGravity` rides `Style68Outcome::no_gravity` (the `Npc` slot has no
-  field yet); the generic integration tail (gravity/maxFall/oldVelocity
-  latches, `NPC.cs:90465-90503`/`:92538`) stays with the sim.
-- The walkers' water re-entry gate (`NPC.cs:53180`) and the
-  `FindFrame`/gore arms (`:86258-86305`) are the companion wiring rows.
-- The local `solid_tile` copy (the `drawdata_cases_a.rs`/`grapple.rs`
-  shape) — the shared-helper extraction is the wiring step's, the
-  `npc_ai_style16.rs` precedent.
+**Folds / documented skips (W4-c10 landed the wiring; the remainder below).**
+- ~~The four `NpcKind` variants + the `SetDefaults` stats + the
+  `update_rng` `68 =>` dispatch claim~~ — LANDED (W4-c10 phases 1+2, all
+  EIGHT kinds so the `Transform(type-1)` landing has real target rows).
+- ~~The 1080 BirdDroppings projectile (`ProjectileID.cs:2714`) rides
+  `Style68Outcome::poop_shot`~~ — LANDED: the adapter drains it through
+  `wants_hostile_shot`; `projectile_bird_droppings.rs` owns the AI_200
+  arm + the `HandleMovement` splat (the dust VISUALS stay the documented
+  skip; the 2×(Next(2), NextFloat) draw census is preserved).
+- The full `NPC.Transform` — `transform_core` applies the observable
+  subset and the adapter flips the kind; STILL FOLDED: the walker
+  `SetDefaults` sounds/value side-effects, `TransformVisuals` (gore/dust
+  puff), `GiveTownUniqueDataToNPCsThatNeedIt` and the netMode-2 SendData
+  pair (`:81131-81135` — single-player port, no MP consumer).
+- ~~`noGravity` rides `Style68Outcome::no_gravity`~~ — LANDED: the
+  adapter gates `npc_ai_golem::body_gravity` + the 10 fall cap on it,
+  then runs `integrate_flyer_collision` (the bat/fish no-gravity
+  integration stand-in; the waterfowl never sets noTileCollide).
+- ~~The walkers' water re-entry gate (`NPC.cs:53180`) and the
+  `FindFrame` arms~~ — LANDED (`waterfowl_walker_step` + the eight
+  `find_frame` cases). STILL FOLDED: the walkers' full
+  `AI_007_TownEntities` migration (`npc_ai_town.rs`'s step — the stand-in
+  keeps the town-stand-in walk until then) and the gore arms
+  (`:86258-86305`'s gore types ride the generic gore fallback).
+- The local `solid_tile` copy stays (the `drawdata_cases_a.rs`/
+  `grapple.rs` shape); the shared-helper extraction was NOT done by the
+  wiring (the module's fns are unchanged) — still the
+  `npc_ai_style16.rs` precedent's follow-up.
 
 **Verification.** Code-only: the whole arm was re-read line-by-line
 against `NPC.cs:34623-34879` (the gate casts, the flip margin, the water
@@ -37423,6 +37432,305 @@ read/grep (`Npc` fields incl. `sprite_dir`/`old_target`/`target_rect`,
 `World::tile`'s None-out-of-bounds, `target_closest`'s facing/net_update
 writes, `can_hit`'s 9-arg shape, `UnifiedRandom`'s Clone+PartialEq). The
 16 witness tests are WRITTEN, NOT RUN — **no compiler invoked**.
+
+## The waterfowl wiring (W4-c10, task/W4-c10-style68-waterfowl, 2026-11-21, code-only mode)
+
+Three phases on the branch; witnesses WRITTEN NOT RUN — **no cargo, no
+tests, no compiler invoked**.
+
+**Phase 1 — the eight kinds.** ALL EIGHT rows land (not just the four
+swimmers) so the landing `Transform(type - 1)` has real target rows:
+walkers Duck 362 / DuckWhite 364 / Seagull 602 / Grebe 608 (aiStyle 7) +
+swimmers Duck2 363 / DuckWhite2 365 / Seagull2 603 / Grebe2 609 (aiStyle
+68). Vanilla ids for protocol/cs_id/render_key (census: all eight free;
+15 rows in both `NPC_FRAME_COUNT` and `Main.cs:67082`). Every exhaustive
+`NpcKind` match got its arms (the `to_u16`/`ai_style`/`size`/`max_hp`/
+`contact_damage`/`defense`/`value` tables, `npc_buffs::debuff_immune_ids`
+`&[]`, `netglue::npc_seed`, the render draw match); `max_hp` 5 / damage
+0 / defense 0 / value 0 / kb 1.0 / NPCHit1+NPCDeath1 per the SetDefaults
+rows. The `find_frame` cases: walkers the 4-tick 3..9 walk band, swimmers
+the wet 8-tick 1..2 paddle / still row 1 / flight 11..14 with the
+`vx * 0.1` tilt (`NPC.cs:73747-73886`). `WATERFOWL_SHEETS` + the draw arm
++ the rotation whitelist; the bestiary's eight entries use the en-US
+NPCName JSON display names (all four Duck rows "Duck"; Seagull2
+"Seagull", Grebe2 "Grebe"). The walker kind arm is
+`waterfowl_walker_step`: the `AI_007` head takeoff gate
+(`NPC.cs:53180-53184`, `vy > 4 || vy < -4 || wet`) →
+`transform_to_kind(type + 1)`, else the existing `update_guide` town
+stand-in. 1 witness (the defaults-vs-C# rows).
+
+**Phase 2 — the axis claim + the shot.** The style axis's `68 =>
+self.ai_068_waterfowl(...)` claims the four swimmers (their kind arms are
+`unreachable!` markers). The adapter (`npc.rs`): re-probes `wet`, feeds
+the one-slot `Style24Player` seam (`session_candidate` + the live
+`player.luck()` + the sim-stamped `Npc::player_is_cenx` — the new field
+pre-stamped in `world_sim/npcs.rs` from `app.player_name` via the
+unchanged `is_this_cenx`, the wind pre-stamp convention: the player name
+lives on the App, outside the AI borrow), calls the module verbatim with
+`ty = kind.cs_id()`, netMode 0 / ticker 0 (the single-player stand-ins).
+The out-drains: `poop_shot` → `wants_hostile_shot` (1080, zero
+velocity/damage/kb, the `:34632` call shape); `transform` → the kind
+flip onto the walker + `size_override = None` (the kind table carries
+the 22x26 box) + scale 1 / alpha 0 / frame reset — the halves the
+carrier-kind `transform_core` could not know. The movement tail: the
+arm's LAST `no_gravity` write gates `npc_ai_golem::body_gravity` + the
+10 cap (`NPC.cs:90465-90472`, no per-type gravity arm for these types),
+then `integrate_flyer_collision` (the bat/fish stand-in — the waterfowl
+never sets noTileCollide). 2 wiring witnesses (the axis claim's zero-draw
+dry takeoff + the dry landing's kind flip with the ONE mirrored
+`Next(200)`).
+
+**The 1080 BirdDroppings.** `projectile/data.rs`: the `BIRD_DROPPINGS`
+const + the `proj_data` row (`Projectile.cs:10078-10086`: 10x10, aiStyle
+200, alpha 255, penetrate -1, stock tileCollide/timeLeft) + the
+`ignore_water` overlay. New `projectile_bird_droppings.rs`:
+`AI_200_BirdDroppings` (`Projectile.cs:39985-40017` — the 0.3 gravity /
+16 cap, the player-rect intersect kill, damage-free) + the
+`HandleMovement` `:18921-18928` splat (the blocked-step integrate-then-
+kill probe stand-in, the frost-shot granularity — documented). The dust
+VISUALS are the port's documented skip; the DRAWS ride the pool stream
+in C# order: per iteration ONE `Next(2)` then ONE `NextFloat`, two
+iterations per tick (the 480 flame drop's census convention). The pool's
+`200 =>` dispatch arm passes the session player's int-truncated rect
+while alive. 4 witnesses (the row, the fall + draw census, the strict-
+edge intersect kill, the splat).
+
+**Deliberate stand-ins.** netMode 0 (single-player port — the `!= 1`
+gates stand open), ticker 0 (the `npc_ai_bat` convention), the town-AI
+walk stand-in for the walkers (the full `AI_007` migration is
+`npc_ai_town.rs`'s step), the flyer-collision integration tail, the
+blocked-step splat granularity, `TransformVisuals`/gore/sound folds and
+the netMode-2 SendData pair (no MP consumer) — all listed in the family
+section's folds above. The module's pure fns and its 16 witnesses are
+UNCHANGED; `STYLE68_BIRDS` stays as the census fixture (the live kinds
+carry the same boxes through `NpcKind::size`). (Sweep update:
+`TransformVisuals` censused + wired — see the phase-4 section below.)
+
+**Verification.** Code-only: every cross-module reference re-checked by
+read/grep (the `Style68Ctx`/`Style68Outcome` shapes, the
+`wants_hostile_shot` 6-tuple, `body_gravity`'s `(f32, i32, f64)`,
+`ProjData`'s tuple unpacking, `DropRng`'s two methods, the
+`pub use data::*` re-export, `app.player_name`'s `pub(crate)`). All
+witnesses WRITTEN NOT RUN — **no build/tests were run**.
+
+**Phase 3 — the bestiary portrait close-out.** A scripted exhaustive-match
+scan (every `match` over `NpcKind` without a `_` arm, depth-tracked) found
+the FIRST wiring pass had missed ONE: `ui/bestiary.rs::portrait_data`
+(the `(entry.kind, entry.variant)` match, 215 arms, no catch-all) — the
+eight new variants made it non-exhaustive (E0004). The two grouped arms
+land there: the walkers `(Duck | DuckWhite | Seagull | Grebe, _)` and the
+swimmers `(Duck2 | DuckWhite2 | Seagull2 | Grebe2, _)`, each
+`frame_h = entry_sheet.height / 15` (the `Main.npcFrameCount[type]` row,
+the small-kinds `sheet.height / count` shape) over the `SetDefaults` box
+(22x26 walkers / 28x22 swimmers). The same scan surfaced the parallel
+TABLE drift: phase 1 appended the eight sheets to the
+`bestiary_npc_sheets` vec (181 → 189) but left `BESTIARY_NPC_SHEET_IDS`
+at `[u16; 181]`, so `bestiary_sheet_index` resolved no slot for the eight
+waterfowl net ids (the portraits would draw nothing and
+`every_catalog_entry_survives_the_portrait_arm` would fail its
+`entry_sheet == tabled` pin). The id table grows to `[u16; 189]` with
+`362, 363, 364, 365, 602, 603, 608, 609` appended last — a scripted
+element-by-element compare confirms the table and the vec agree on all
+189 slots (the order-table invariant the §15 bug report guards). The
+remaining exhaustive matches were re-verified covered (the `find_frame`
+match's two grouped waterfowl arms, `to_u16`/`from_u16` bijection free of
+duplicates, the G6 render-key rows injective). 1 witness (the eight
+portrait boxes + the 448/15 frame height + the table/vec length parity).
+The 1080 `Kill()` hook's Stinky 120/600 (`Projectile.cs:70926-70935`),
+the Item177 cue and the 30-dust splat stay folded (the module's
+documented kill = deactivate; the buff/sound/dust tails are the
+projectile-effects waves' rows). ROADMAP's aiStyle-68 row flips to WIRED.
+(Sweep update: the Kill hook LANDED — see "The waterfowl sweep (W4-c10
+phase 4)" below.)
+
+## The waterfowl sweep (W4-c10 phase 4, 2026-11-21, code-only mode)
+
+### The 1080 BirdDroppings DUP — arm-by-arm vs W4-d20, keep-one recommendation
+
+**Cross-note to the d20b sweep (reads `origin/task/W4-d20-proj-ai-191-200`
+tip 13de9ccf).** Both branches independently landed the aiStyle-200 arm;
+the merge needs ONE survivor. Compared arm-by-arm against the C#
+(`Projectile.cs:39985-40017` AI / `:18921-18928` HandleMovement /
+`:70926-70954` Kill):
+
+| piece | W4-c10 (`projectile_bird_droppings.rs`) | W4-d20 (`projectile_ai_misc.rs::ai_bird_droppings`) | C# | verdict |
+| --- | --- | --- | --- | --- |
+| `proj_data` row | 10x10 / 200 / -1 / alpha 255 / ignoreWater overlay, stock tileCollide+timeLeft | identical fields (d20 `data.rs:3606` + the `:4275` overlay) | `:10078-10086` | EQUAL — either row stands; keep ONE const + ONE row + ONE overlay arm |
+| gravity + cap | `+0.3`, cap 16 | identical | `:39987-39991` | EQUAL |
+| dust census | 2 × (`Next(2)` then `NextFloat`) | identical (the if/else draws the same one float per branch) | `:39992-40008` | EQUAL — stream-identical |
+| player-intersect kill | `player_rect: Option<(i32,i32,i32,i32)>` seam, dead pre-filtered at the dispatch | `player: Option<&Player>` seam, `!pl.dead` gate inside | `:40009-40016` (`active && !dead`) | EQUAL behaviour — d20's Player-ref seam is the pool's native shape; c10's dispatch pre-filters dead |
+| post-kill drift | LANDED in the sweep: kill → `pos += vel` in-module (the C# UpdatePosition runs before the `!active` return, `:17015`/`:20445`/`:17027`) | the arm returns without integrating; the dispatch's unconditional `kill_step` tail integrates the corpse once | `:20445` | EQUAL net effect by different routes — c10's module owns the drift, d20's `kill_step` tail supplies it |
+| movement | in-module splat: blocked-axis probe → integrate → kill (`:18921-18928` shape, the frost-shot granularity) | dispatch tail calls `kill_step(world)` after the arm — the SAME probe shape in the pool | `:18921-18928` | EQUAL |
+| Kill hook (buff/cue/dust) | LANDED in the sweep: Stinky 120/600 + Item177 + the 90-draw census, pool death hook (commit 8bd6afeb) | ABSENT (d20 landed only the AI arm) | `:70926-70954` | c10 is the superset |
+| dispatch | `200 =>` passes the pre-built rect; module owns AI+movement | `200 =>` passes `player.as_deref()`, then `kill_step` | `:36763-36766` | both faithful |
+| witnesses | 6 (row, fall+census, strict-edge kill+drift, splat, kill census, pool hook) | 4 (row, fall+census, contact kill, dispatch) | — | c10 superset |
+
+**Recommendation: KEEP W4-c10's `projectile_bird_droppings.rs` as the
+survivor; DROP d20's `ai_bird_droppings` fn + its 4 witnesses + its
+`200 =>` dispatch arm + its duplicate `BIRD_DROPPINGS` const/row/overlay.**
+Rationale: (1) c10 carries the Kill hook (the Stinky debuff is gameplay —
+the town flee gate reads buff 120, `NPC.cs:53534`); (2) the module owns
+AI + movement + death together (the spear/frost-shot one-module shape),
+so the merge deletes one fn instead of reconciling two call graphs;
+(3) the census streams are draw-identical, so no RNG re-pin is needed on
+either side. If d20b prefers its Player-ref seam, the alternative is:
+keep d20's fn, move c10's `bird_droppings_kill_draws` + the pool hook
+beside it, and delete c10's module — but then d20's dispatch must ALSO
+gain the corpse-drift order check. The first form is the smaller diff.
+The `handles()` fn is c10-only (d20 dispatches on style directly) — it
+dies with whichever module loses. NOTE the const collision: both
+branches define `BIRD_DROPPINGS` (c10 in `projectile/data.rs:253`, d20
+in its `data.rs:4547`) — the merge keeps one; the pool's `1080` literals
+in d20's witnesses ride the surviving const either way.
+
+### The Kill hook (item 2 — LANDED)
+
+`Kill()`'s type-1080 arm (`Projectile.cs:70926-70954`) lands on the
+pool's death hook (after `moonlord_arrow_kill`; the C# arm sits at
+`:70926`, above the wave-3 arms, but the kinds are disjoint so the
+between-hook order is unobservable): (a) the living local player's
+int-truncated rect intersect → `buffs.add_buff(120, 600)` (Stinky;
+`ApplyBuffTo` `:12391-12398`'s `trap && deadMansSweater` halve never
+fires — the row's trap is false); (b) `SoundID.Item177` =
+`LegacySoundStyle(2, 177)` (`SoundID.cs:1561`) at the int-truncated
+CENTRE, pushed straight into `pending_proj_sounds` (the generic
+`wants_sound` forward runs ahead of the AI, so a hook-set intent needs
+the direct push — the death-hook cue convention); (c) the 30-dust draw
+census: per iteration the UNCONDITIONAL Y-lift `NextFloat` FIRST
+(`:70942`), then `Next(2)` (`:70943`), then the branch's one `NextFloat`
+scale — 90 draws, both gate outcomes (the c10 module's
+`bird_droppings_kill_draws`). The dust bodies stay the documented visual
+skip. The out-of-world deactivate (`:16696`) never calls `Kill()` — the
+`died_out_of_world` gate carries that. The AI-arm intersect kill also
+gained the corpse drift (`pos += vel` after the kill: the C#
+`UpdatePosition` runs ahead of the `!active` return). 2 new witnesses +
+the drift re-pin. The Stinky consumer chain: the town arm's flee-target
+gate reads buff 120 (`npc_ai_town.rs`'s `TownPlayer::stinky`), so the
+drop now feeds the town flee behaviour end-to-end.
+
+### TransformVisuals (item 3 — CENSUSED + WIRED)
+
+`NPC.TransformVisuals(oldType, newType)` (`NPC.cs:80963-81033`, called
+from `Transform` at `:81136`) censused WHOLE into the new
+`npc_transform_visuals.rs` module (the draw-census convention: every
+`Main.rand` draw in C# order, the dust/gore bodies the documented skip,
+the one cue returned as an intent). **The waterfowl verdict: all EIGHT
+transform pairs are VISUALLY SILENT** — the dry landing's 363→362 /
+365→364 / 603→602 / 609→608 (`:34760`) and the takeoff's 362→363 /
+364→365 / 602→603 / 608→609 (`:53182`) match NO arm (the arms are
+158↔159 vampire, 478→479 mothron, 406→405 stardust, 428→427 /
+427→426 vortex). So the "dust/sound on waterfowl takeoff/landing"
+question resolves to: there IS none in the C# — the transform's only
+waterfowl observables are the SetDefaults swap + the ai reset (already
+landed). Both transform sites now call the census explicitly (the
+adapter's kind flip + `waterfowl_walker_step`, whose signature gained
+the `rng` seam): zero draws, `None` cue, `debug_assert`-pinned. The
+module ports all five arms for the kinds that DO transform visually:
+the vampire flip (Item8 + 3×2 gore kicks — neither kind ported), the
+mothron hatch (219 draws — neither ported), the stardust growth
+(2 + Next(10,21)×8 — both ported, `update_stardust_cell`'s flip), the
+two vortex rings (160/240 draws — ported as VortexHeadcrab→Alien→
+Hunter). The `SelectRandom` type pick draws BEFORE the NewDust
+internals (the argument order); the NewDust internals are the six-draw
+`npc_ai_empress.rs::new_dust_draws` shape (kept local). The
+`netOffset` bracket folds to a no-op (zero on the host). **Co-lane
+note:** the pillar-kind transform sites (`npc.rs`'s
+`update_stardust_cell` / `update_vortex_alien` / `update_vortex_headcrab`
+flips) are NOT rewired here — `npc.rs` carries the roster-tail lane's
+in-flight edits; their census wiring is that lane's or the merge's
+(the module is ready: `transform_visuals(406, 405, w, h, rng)` etc.).
+**RESOLVED (W4-c10 final, commit 1e336ee9):** the roster-tail landed
+its tree (d7f42204), the three flips are now WIRED at the C# position
+— see "The waterfowl FINAL (W4-c10)" below.
+5 witnesses (the eight-pair silence, the vampire cue+kicks, the 219
+order, the drawn-count stardust replay, the two vortex rings).
+
+### The waterfowl sounds (item 4 — CENSUSED, ambient already wired)
+
+The full sound census for the eight kinds (362-365 / 602 / 603 / 608 /
+609), every `SoundEngine.PlaySound` site that names them:
+
+* **Hit/death** — `SetDefaults` `HitSound = SoundID.NPCHit1`,
+  `DeathSound = SoundID.NPCDeath1` on all eight rows (`NPC.cs:13621-
+  13622`/`:13633-13634`/`:13645-13646`/`:13657-13658`/`:16745-16746`/
+  `:16757-16758`/`:16815-16816`/`:16827-16828`) — LANDED phase 1 (the
+  `hit_sound`/`death_sound` tables' `NPC_Hit_1`/`NPC_Killed_1` arms).
+* **Ambient** — `UpdateNPC_CritterSounds` (`NPC.cs:92243-92341`): the
+  ducks 362-365 quack **case 30** by day behind `Next(200) == 0`
+  (`:92257-92262`); the seagulls 602/603 cry **case 44** by day behind
+  `Next(1200) == 0` (`:92253-92256`, an INDEPENDENT if above the duck
+  row); the grebes **608/609 match NO row — silent, zero draws** (the
+  else-if ladder's other arms name 361/445/687, 74/297/298/442/671-675,
+  300/447/610 — none is a grebe). All three rows were ALREADY ported in
+  `ambient_sound.rs::critter_sound_cue` (S1-E-21e, table-complete
+  before the kinds existed) and the sim's emitter feeds them
+  (`world_sim/npcs.rs`'s per-NPC tail; the roster-tail co-lane fixed
+  the key to `cs_id` — the waterfowl ids coincide in both spaces, so
+  the rows fired correctly either way). The voice arms (case 30's
+  `Next(10,12)` + rare `Next(300)` re-target behind the slot-12 playing
+  guard + the split pitch range; case 44's `Next(106,109)` + pitch, no
+  guard) are ported in `critter_legacy_voice`.
+* **Takeoff/landing** — NO cue: `TransformVisuals`' only sound is the
+  158↔159 vampire Item8 (item 3's census); the waterfowl pairs are
+  silent.
+* **The 1080 drop's splat** — Item177 at the drop's centre (item 2,
+  LANDED) — the waterfowl's only OTHER sound, played by the projectile.
+* **Census fix** — the case-45 comment in `critter_legacy_voice`
+  attributed the `NPC.cs:23678-23681` quack site to "the duck"; the
+  site actually sits inside the aiStyle-16 arm's `this.type == 615`
+  block (`:23572`) — the **Dolphin** (`NPCID.cs:11907`, unported). The
+  comment is corrected; the arm itself was already right (slot 109,
+  the guard before the pitch, ×0.3, `Next(-10,11)`).
+
+2 new witnesses: the eight-kind ambient census (the duck/seagull rows'
+gates + draws, the grebe silence day AND night, the failing-roll stream
+contract) and the quack/cry voice draw orders (case 30 plain /
+re-target / guard-blocked, case 44). No behaviour change — the rows
+were already live; this item pins them and fixes the attribution.
+
+### AI_007 town migration (item 5 — the b3 co-lane seam, LANDED)
+
+**The claim read:** `origin/task/W4-b3-npc-ai-town-wire` tip `96a5d88f`
+("Wire aiStyle 7 to npc_ai_town::town_npc_ai (W4-b3 phase 1)") claims
+the style axis' `7 =>` arm for ALL aiStyle-7 kinds through
+`Npc::ai_007_town_family` → the faithful `npc_ai_town::town_npc_ai`
+(`AI_007_TownEntities`, `NPC.cs:52965-55561`), retires `update_guide`,
+adds the `town_door_close/x/y` latch fields + the
+`integrate_town_collision` tail, and leaves the waterfowl takeoff
+(`:53180-53184`) a **cited skip** in the module (`npc_ai_town.rs:1596`
+on their tip). Their phase 2 owes the `TownOutputs` drain.
+
+**The seam found + wired:** the takeoff gate lives INSIDE the town arm
+(the C# runs it at `:53180`, after the stat ladder, before
+UpdateSavedStates — the port's gate sits at the same position). This
+sweep lands it there: `town_npc_ai` gains the gate
+(`matches!(net_id, 362|364|602|608) && env.net_mode != 1 && (vy > 4 ||
+vy < -4 || wet)`) emitting the NEW vanilla type on the new
+`TownOutputs::waterfowl_takeoff: Option<i32>` request and RETURNING
+(the C#'s `Transform(this.type + 1); return;`). The arm cannot run the
+Transform core itself (the player seam + kind table live on the
+caller), so the request rides the `wants_transform` pattern. The sim's
+transform drain (`world_sim/npcs.rs`'s aiStyle-75 resolve block) gains
+the four swimmer targets 363/365/603/609 → Duck2/DuckWhite2/Seagull2/
+Grebe2 — the same `transform_to_kind` core the in-place gate uses.
+RNG-free by construction (Transform draws nothing; TransformVisuals
+is silent for the pairs — item 3).
+
+**The merge contract (cross-note to b3):** when b3's axis claim lands,
+the walkers route through `ai_007_town_family`; its `let _ = out`
+discard (phase 1) must become the drain —
+`if let Some(ty) = out.waterfowl_takeoff { self.wants_transform =
+Some(ty); }` (one line, the `wants_transform` seam already exists) —
+and `waterfowl_walker_step`'s in-place gate retires (the town arm owns
+it; the kind arm becomes the b3 adapter or an `unreachable!` marker).
+Until then the walkers keep the phase-2 stand-in walk + the in-place
+gate — BOTH paths run the identical `transform_to_kind`, so the merge
+is behaviour-preserving either way. The gate's witness pins: the wet
+takeoff, the ±4.5 falls/rises, the strict ±4 thresholds (vy == 4 does
+NOT fire), the dry-slow no-request, the client refusal, the zero-draw
+stream, and the pre-state return (the stat ladder's defense write
+still ran — the C#'s order). 1 witness (8 sub-arms × 4 walkers).
+
 ## The mana machinery (S1-P-i19)
 
 **Headline finding — `DebugOptions.ManaV2` is the SHIPPED mana machine.** The
@@ -41497,3 +41805,230 @@ belongs to the Projectile.cs family register, not Main.cs.
 Code-only: the census is two independent greps over the full Main.cs;
 the audit re-read the cited C# windows line by line and hand-replayed
 both walks. **No cargo/rustc/rustfmt/tests/dotnet/graphify invoked.**
+## The bug-net roster tail (W4-c10 phase 5, task/W4-c10-style68-waterfowl, 2026-11-21, code-only mode)
+
+**Scope.** The i36 census's roster gap ("only Goldfish 55 is a ported
+catchable `NpcKind` today", ANALYSIS "The bug net (S1-P-i36)"): the
+catch rows whose kinds had no roster entry. This round ports the LAST
+TWELVE unrostered catchable kinds — Worm 357, the gold band GoldBird 442
+/ GoldBunny 443 / GoldButterfly 444 / GoldFrog 445 / GoldGrasshopper 446
+/ GoldMouse 447 / GoldWorm 448, and the fishing-bait tail
+EnchantedNightcrawler 484 / Grubby 485 / Sluggy 486 / Buggy 487 — onto
+the LANDED pure machines (`npc_ai_critter.rs` from
+`origin/task/W4-d38-npc-kinds-281-350`, `npc_ai_style65.rs` from
+`origin/task/W4-d30-npc-ai-styles-65-72`, `npc_ai_style66.rs` +
+`npc_ai_style24.rs` already on this branch), with the catchable flags,
+bestiary entries, sheets, portraits and the release ladder live. The
+c9 co-lane picks (Snail 359 / GlowingSnail 360 / MagmaSnail 655 /
+Shimmerfly 677, `origin/task/W4-c9-style67-snails`) were read FIRST and
+skipped — not touched here.
+
+**The id corrections (the brief's cites vs the decompile).** The brief
+said "enchanted nightcrawler 582" — WRONG: 582 is `LarvaeAntlion`
+(`ID/NPCID.cs`, aiStyle 3); `EnchantedNightcrawler` is **484**. The gold
+critter band is **442-448** (449-452 are the BoneThrowingSkeleton
+family, aiStyle 3). Grubby/Sluggy/Buggy are **485/486/487**, sharing the
+484-487 `SetDefaults` range row (`NPC.cs:14576-14598`). All twelve keep
+their VANILLA protocol ids (verified free in `npc/data.rs::to_u16` —
+no gate reassignment needed).
+
+**RETIRE-PHASE CROSS-NOTE (W4-c10 waterfowl lane, 2026-11-21, after this
+section was written):** the twelve-kind tree is COMMITTED (`d7f422049`)
+and structurally sound; batches 2-4 never landed on any ref. The d37
+roster reconcile (`a341daa12`, research/108 E8) read this branch's
+PRE-tail tip, so its c10 table does not know the tail: eleven of the
+twelve (442-448 + 484-487) are ALSO on d40's pushed band `8fe1d6d3`,
+and Worm 357 is also on c8 (E8: c8 Worm→737). Per E8's ownership rule
+(kinds-lane owns over wiring lane), d40 keeps those eleven rows at
+merge; the c10 tail drops its duplicate variant/to/from/ALL_KINDS/
+ENTRIES rows but KEEPS its wiring (the 24/65/66 axis claims — d40 has
+none — the critter/style65 modules, the five sim fields, the cs_id
+sound-key fix), re-keyed on the canonical kinds. One bestiary/sheet/
+portrait copy per kind. Full verdict: research/270 §2.5 (renumber chain
+145→149→270). The co-lane's uncommitted ROADMAP phase-5 row was left
+UNSTAGED by every waterfowl commit — it is the co-lane's to commit.
+
+## The waterfowl FINAL (W4-c10 final phase, task/W4-c10-style68-waterfowl, 2026-11-21, code-only mode)
+
+### Item 1 — the co-lane roster-tail status (LIVE, coordinated by note)
+
+Two mtime probes 90 s apart (09:06:59 / 09:08:31 local) plus the branch
+log: the roster-tail session is **LIVE and committing on this branch**.
+It landed `d7f422049` ("phase 5 batch 1/4", the FULL twelve-kind tree —
+its ATOMICITY NOTE: the exhaustive matches need every arm at once,
+batches 2-4 are doc-only) between the sweep's `6a65deeb8` and this
+final phase. **No commit-rescue needed** — its work is committed; the
+only uncommitted foreign file at this phase's start was
+`docs/ROADMAP.md` (its phase-5 row), left intact. Two coordination
+facts: (a) its batch-1 commit ABSORBED this lane's three mis-placed
+sweep hunks' worktree fixes (the item-3 census calls + the item-5 drain
+arms sat at syntactically invalid positions in `67191299b`/`6a65deeb8`
+— inside the golem comment block / between `let` statements; the
+worktree carried the corrected placements and the co-lane committed
+the corrected tree, so HEAD is now structurally sound — verified by
+re-reading all five sites on `d7f422049`); (b) its `critter_sound_cue`
+`cs_id` key fix rides the same emitter the waterfowl ambient rows use
+(item 4) — the waterfowl ids coincide in both spaces, no behaviour
+change for the eight kinds. **Cross-note to the roster-tail:** the
+final phase adds the three `transform_visuals` calls INSIDE
+`update_stardust_cell` / `update_vortex_headcrab` / `update_vortex_alien`
+(their signatures gain/rename the `rng` seam; the dispatch arms at the
+kind match pass it) — none of the twelve critter kinds touches those
+fns; no overlap with batches 2-4's doc slices.
+
+### Item 2 — the d20b keep-one receipt (READ, AGREED)
+
+`origin/task/W4-d20-proj-ai-191-200` tip `243f81672`; its doc-sweep
+item 3 (`e4eeae9b7`, research/109-doc-sweep-proj-191 §Item 3) **read
+this lane's KEEP-c10 verdict and AGREES**: "Keep-one decision — KEEP
+c10's module at merge", both arms FAITHFUL, rows byte-identical, the
+census streams draw-identical. d20 did NOT retire its fn on its own
+branch (its `ai_bird_droppings` + `200 =>` dispatch + row still ride
+its tip) — the retirement is a MERGE instruction (their T3 seed):
+drop d20's `projectile_ai_misc.rs:711-761` fn + its
+`projectile.rs:17381-17389` dispatch arm + its duplicate
+`BIRD_DROPPINGS` const/row/overlay + its 4 witnesses; keep
+`projectile_bird_droppings.rs` + this lane's dispatch/row (the Kill-hook
+superset). Their two micro-differences are recorded and accepted: the
+Player-ref seam is marginally more general for a MOUNTED player's
+shrunk hitbox (the port's session player is unmounted 20x42 — equal);
+the module shape is house-style either way. **No cross-note action
+remains** — both lanes' notes name the same survivor and the same drop
+list.
+
+### Item 3 — the OTHER-kind flip sites (WIRED) + the activation contract
+
+The three PORTED TransformVisuals pairs' in-place kind flips now call
+the census at the C# position (after the SetDefaults swap, `NPC.cs:81136`
+runs `TransformVisuals(oldType, newType)` last in `Transform`):
+
+| pair | flip site (npc.rs) | C# caller | draws | seam |
+| --- | --- | --- | --- | --- |
+| 406→405 stardust growth | `update_stardust_cell`'s 300-tick flip | `NPC.cs:39398` (aiStyle-95) | 2 + count×8 (count = Next(10,21)) | signature + dispatch gain `rng` |
+| 428→427 larva ring | `update_vortex_headcrab`'s 300-tick metamorphosis | `:56865` (the 3x2 probe) | 160 (20×(Next(2)+6+float)), NEW box 40x28 | signature + dispatch gain `rng` |
+| 427→426 queen ring | `update_vortex_alien`'s 1200-counter metamorphosis | `:56897` (the 5x5 probe) | 240 (30×(Next(3)+6+float)), NEW box 50x62 | `_rng` un-underscored |
+
+All three `debug_assert` the None cue (no arm plays a sound); the dust
+BODIES stay the documented visual skip — the DRAW CENSUS keeps the
+UpdateNPCs stream order (the pillar lanes' future dust wiring replays
+the same counts). **The activation contract for the two UNPORTED
+pairs** (module-ready, `#![allow(dead_code)]` narrowed to them):
+
+* **158↔159 vampire** (Item8 + 3×2 gore kicks): claimed by **W4-d36**
+  (research/109-d36 supersede-note `bcf4ac551`: 159 Vampire ports in
+  the 28-kind wave at proto 762+; 158 VampireBat SKIPPED to **g8** per
+  108-E2). The flip callers exist in C# — `NPC.cs:23353`
+  (`Transform(159)`, the aiStyle-14 bat's <200 px CanHit gate) and
+  `:58850` (`Transform(158)`, the aiStyle-3 vampire's >300 px gate) —
+  and the port's `npc_ai_style14::bat_ai` carries the 158 branch as a
+  CITED UNPORTED comment (`:122` on d36x's tip). When d36/g8 land the
+  kinds, their flip wiring calls `transform_visuals(158, 159, w, h,
+  rng)` (and the reverse) and queues the returned `Item8` on
+  `wants_sound`; the gore kicks' six draws ride the same stream.
+* **478→479 mothron hatch** (219 draws): claimed by **W4-d40** — both
+  kinds ROSTERED on their tip `8fe1d6d31` (MothronEgg 478 34x34
+  aiStyle 89, MothronSpawn 479 46x30 aiStyle 90); the egg timer's
+  `Transform(479)` (`NPC.cs:38380`, the aiStyle-89 arm) is their AI
+  wiring step (d40 rosters rows only, the style-89 machine unwired —
+  their style73 precedent). Their flip call:
+  `transform_visuals(478, 479, 46, 30, rng)` — the NEW type's box.
+
+3 new witnesses (the stardust mirrored-stream count replay, the larva
+160 order + the heal-to-new-max, the queen 240 order + the boxed-probe
+zero-draw arm). WRITTEN NOT RUN (code-only).
+
+### Item 4 — the 68-axis FINAL: BAND-COMPLETE DECLARATION
+
+**The aiStyle-68 waterfowl band is COMPLETE on this branch** (code-only
+mode — every witness written, none run). The full ledger:
+
+1. **Eight kinds rostered** (phase 1, `4d3ff5fc3`): walkers Duck 362 /
+   DuckWhite 364 / Seagull 602 / Grebe 608 (aiStyle 7) + swimmers Duck2
+   363 / DuckWhite2 365 / Seagull2 603 / Grebe2 609 (aiStyle 68);
+   SetDefaults rows, FindFrame cases, sheets, rotation whitelist,
+   bestiary entries + portraits (phase 3's parity fix, `c48bbb1ee`).
+2. **The axis claim + adapter** (phase 2, `98a99fb1c`):
+   `68 => ai_068_waterfowl` over the S1-D-3 module (16 module witnesses);
+   the poop gate's `player_is_cenx` pre-stamp, the 1080 drain through
+   `wants_hostile_shot`, the dry landing's kind flip onto the walker
+   rows (the ONE Next(200) draw), the noGravity-gated movement tail.
+3. **The takeoff gate, BOTH paths** (phase 2 + sweep item 5,
+   `6a65deeb8`): the in-place `waterfowl_walker_step` gate AND the
+   faithful `town_npc_ai` gate at the C# position (`NPC.cs:53180-53184`)
+   emitting `TownOutputs::waterfowl_takeoff`; the b3 merge contract
+   published (their `let _ = out` becomes the one-line drain; both
+   paths run the identical `transform_to_kind`).
+4. **The Transform drain** (sweep item 5): the sim's aiStyle-75
+   resolve block carries the four swimmer targets 363/365/603/609 —
+   the takeoff request lands through the same `wants_transform` seam
+   the carrier-gone riders use. RNG-free by construction.
+5. **TransformVisuals** (sweep item 3 + this final): the WHOLE
+   `NPC.cs:80963-81033` census module; the eight waterfowl pairs
+   VISUALLY SILENT (zero draws, None cue, witnessed); both waterfowl
+   transform sites call it explicitly; the three OTHER-kind ported
+   flips now wired (item 3 above), the two unported pairs contracted.
+6. **Sounds** (phase 1 + sweep item 4, `9641e20db`): NPCHit1/NPCDeath1
+   on all eight rows; the ambient census — ducks case 30 Next(200),
+   seagulls case 44 Next(1200), grebes NO row (silent) — already live
+   in `critter_sound_cue` + the sim emitter, now witnessed end-to-end;
+   the case-45 Dolphin attribution fix; NO takeoff/landing cue.
+7. **The 1080 BirdDroppings** (phase 2 + sweep items 1-2, `8bd6afeb3` /
+   `4c2e2b707`): the dedicated module (AI_200 + the splat + the corpse
+   drift), the Kill hook (Stinky 120/600 + Item177 + the 90-draw
+   census), the keep-one verdict AGREED by d20b (item 2 above). The
+   Stinky consumer chain feeds the town flee gate end-to-end.
+
+**Remaining folds (NOT band gaps — cross-lane seams with published
+contracts):** the b3 axis-7 claim's drain line (their phase 2); the
+d20 merge dedupe (their T3); the vampire/mothron census activation
+(d36/g8/d40, item 3 above); the dust/gore BODIES everywhere (the
+standing visual-skip convention — the draw censuses keep the streams).
+Witness ledger for the band (counted from the commits' added
+`#[test]` lines): 16 module (S1-D-3) + 8 phases 1-3 (1 defaults + 6
+phase-2 [2 npc.rs + 4 droppings] + 1 portrait) + 2 kill-hook + 5
+transform-visuals + 2 ambient + 1 town-gate (8 sub-arms × 4 walkers)
++ 3 flip-site (this final) = **37 witnesses, all WRITTEN NOT RUN**
+(code-only mode: no cargo/rustc/rustfmt invoked).
+
+### Item 5 — research FINAL
+
+`docs/research/270-waterfowl-band-final.md` (new, renumber chain
+145→149→270 — g89's rod doc pushed first at 145, e20's devices bible
+pushed first at 149; 270 assigned by the d54 150 registry round 2 §6.3):
+the band ledger,
+the cross-lane contract table, the witness index and the merge
+checklist. INDEX row 270 added. The retire phase SEALED the report:
+the one-paragraph waterfowl bible (the band's whole shape in one
+paragraph) + the §6 seal block; all four retire items closed (the
+renumber, the roster-tail final status, the d76 keep-one below, the
+bible). No further c10 commits planned — the merge wave executes §4.
+
+### Item 6 — the 1080 Kill superset vs d76's kill_tail_cue (retire phase, FINAL keep-one)
+
+The retire-phase origin read found a SECOND 1080 Kill()-site claimant
+besides d20: `origin/task/W4-d76-proj-sounds-2` (LIVE, not in main —
+`ede24bb4f` + `dd90f1629` are non-ancestors of origin/main). Its
+`dd90f1629` lands `ProjectilePool::kill_tail_cue`, the cue-only map
+for the d76 range's four PlaySound sites (`Projectile.cs:70865`
+Item62 Jim's Drone 1020 / RC Car 1105, `:70904` Item106 Pretty Mirror
+1085, `:70936` Item177 BirdDroppings 1080, `:70958` Item10 Torch God
+helper 1084), rows the five kinds, and explicitly defers the 1080
+arm's Stinky write (`:70933`) as "the state follow-up" while skipping
+the dust census entirely. This lane's `8bd6afeb3` hook is the STRICT
+SUPERSET: Stinky 120/600 gated on the living local player's rect
+intersect, the same Item177 at the int-truncated centre (d76 queues
+untruncated and lets the id-2 façade truncate — identical drain
+payload), the full 90-draw 30-dust census in C# order (d76's skip
+would shift the shared Main.rand stream — the superset closes that
+deviation), and the died_out_of_world skip. KEEP-ONE (published in
+research/270 §2.6 + merge-checklist step 2): keep c10's module + hook
++ row + const; keep d76's map for its OTHER four kinds; DROP d76's
+`BIRD_DROPPINGS =>` arm (both hooks fire on the same death seam —
+leaving it queues Item177 twice), its duplicate 1080 row + const
+(E0428/E0592 at merge otherwise), its UNARMED_ROWED `200` entry
+(c10's style-200 is armed) and its witness's 1080 case row. Composes
+with the d20b-agreed dedupe (Item 2): ONE surviving 1080 machine.
+**Cross-note to d76:** your map's shape is kept; only the 1080 arm
+moves into the c10 hook — the cue payload your witness pins is
+byte-identical to the c10 hook's queue entry.
+

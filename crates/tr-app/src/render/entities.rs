@@ -658,6 +658,15 @@ pub(crate) fn npc_rotation_allowed(kind: NpcKind) -> bool {
             | NpcKind::GoldGoldfish
             | NpcKind::Pupfish
             | NpcKind::Dolphin
+            // W4-c10 merge fold: the waterfowl swimmers' flight tilt
+            // (the FindFrame vx*0.1, NPC.cs:73772-73886) + the GoldBird's
+            // flight tilt + the GoldButterfly's flap tilt + the crawlers'
+            // airborne tilt (the c8/c10 superset - the canonical kinds).
+            | NpcKind::Duck2
+            | NpcKind::DuckWhite2
+            | NpcKind::Seagull2
+            | NpcKind::Grebe2
+            | NpcKind::GoldButterfly
             // W4-c9 merge fold: the snail trio's quadrant rotation +
             // ease (the AI_067 Collision_MoveSnailOnSlopes replacement,
             // NPC.cs:92568-92571) + the GoldBird's vx*0.1 tilt (the
@@ -809,6 +818,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(CRAWLER_SHEETS)
             .chain(SNAIL_SHEETS)
             .chain(GOLD_CRITTER_SHEETS)
+            .chain(WATERFOWL_SHEETS)
+            .chain(CRITTER_TAIL_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1242,6 +1253,7 @@ fn boss_half_size(kind: NpcKind, frame_h: f32) -> f32 {
 /// `469`/`357`/`467` ids) has no port kind. The Water Bolt Mimic's
 /// `case 694` Y terms ride here (W4-c3); its `num45` X term rides
 /// [`npc_anchor_nudge_x`] (the `:25511` X anchor).
+/// `694`-only offsets, the `469`/`467` ids) has no port kind.
 fn npc_anchor_nudge(n: &Npc) -> f32 {
     use NpcKind::*;
     let mut num46 = 0.0;
@@ -1253,13 +1265,23 @@ fn npc_anchor_nudge(n: &Npc) -> f32 {
     match n.kind {
         // The vanilla's 124 — the port's `Mechanic` kind — at `:23000`.
         Mechanic | BoundMechanic => num46 = 2.0,
+        // W4-c10 roster tail — `:22999-23002`: the Worm 357's draw nudge
+        // is its FindFrame `localAI[0]` marker (−2 flat, 0 on a slope —
+        // `NPC.cs:72779`/`:72820`/`:72824`). ONLY 357 carries the arm;
+        // 448 keeps the 0 default. The EnchantedNightcrawler shares the
+        // vanilla id 484 with the DD2 Wither Beast T3 stand-in, so its
+        // `num46 = 2` (`:23019-23021`) rides the shared row below (the
+        // Mechanic/MoonLordCore reused-id precedent).
+        Worm => num46 = n.local_ai[0],
         // `:23026` — the id 477 group's `num47 = 22` (an absolute, not an
         // add: the DD2 Ogre's sheet is far taller than its box).
         DD2OgreT2 | DD2OgreT3 => num47 = 22.0,
         // `:23022` — 483's `num46 = 14` (the DD2 Kobold Walker).
         DD2KoboldWalkerT2 | DD2KoboldWalkerT3 => num46 = 14.0,
-        // `:23020` — 484's `num46 = 2` (the DD2 Wither Beast T3's rig).
-        DD2WitherBeastT3 => num46 = 2.0,
+        // `:23020` — 484's `num46 = 2` (the DD2 Wither Beast T3's rig;
+        // W4-c10: the EnchantedNightcrawler shares the vanilla id — the
+        // C# switch keys on `type`, so both kinds take the row).
+        DD2WitherBeastT3 | EnchantedNightcrawler => num46 = 2.0,
         // `:23014` — 581's `num46 = -6` (the port's DD2 Javelin T2). 581 is
         // NOT in the `:23214` support group's overwrite list, so the -6
         // stands alone.
@@ -1947,6 +1969,19 @@ pub(crate) const SNAIL_SHEETS: &[u32] = &[359, 360, 655];
 // E8 merge: the 5 gold sheets ride d40's D40_SHEETS (the dup drop) -
 // the const retires empty (the chain link stays for the witness).
 pub(crate) const GOLD_CRITTER_SHEETS: &[u32] = &[];
+/// W4-c10 — the waterfowl family's own sheets (`TextureAssets.Npc[type]`),
+/// keyed by the vanilla net id in `NpcAssets::npc_sheets` exactly like
+/// `SMALL_KIND_SHEETS`. All eight are 15-row strips
+/// (`Main.npcFrameCount[362..365/602/603/608/609]` = 15, `Main.cs:67082`).
+pub(crate) const WATERFOWL_SHEETS: &[u32] = &[362, 363, 364, 365, 602, 603, 608, 609];
+
+/// W4-c10 roster tail — the twelve critters' own sheets
+/// (`TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `WATERFOWL_SHEETS`. Row counts
+/// (`Main.npcFrameCount`, `Main.cs:67082`): 357→2, 442→5, 443→7, 444→3,
+/// 445→13, 446→2, 447→6, 448→2, 484→2, 485/486/487→4.
+pub(crate) const CRITTER_TAIL_SHEETS: &[u32] =
+    &[357, 442, 443, 444, 445, 446, 447, 448, 484, 485, 486, 487];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3957,7 +3992,8 @@ pub(crate) fn draw_npcs(
             | NpcKind::CultistBossClone
             | NpcKind::GoldBird
             | NpcKind::GoldBunny
-            | NpcKind::GoldButterfly
+            // E8 merge: GoldButterfly rides the c10 scaled_anchor arm below
+            // (the per-spawn scale latch, NPC.cs:44973).
             | NpcKind::GoldFrog
             | NpcKind::GoldGrasshopper
             | NpcKind::GoldMouse
@@ -4370,26 +4406,9 @@ pub(crate) fn draw_npcs(
             NpcKind::ExplosiveBunny => {
                 generic_anchor(assets.npc_sheet(614), npc_rows(614), n, w, h)
             }
-            // W4-d42 - the roster's draw arms ride the generic anchor over
-            // their own NPC_<id> sheets. The sheets are NOT packed yet
-            // (the atlas headroom - the wyvern deferral precedent), so
-            // `npc_sheet` returns None and the arm no-draws.
-            NpcKind::Grebe => {
-                generic_anchor(assets.npc_sheet(608), npc_rows(608), n, w, h)
-            }
-            NpcKind::Grebe2 => {
-                generic_anchor(assets.npc_sheet(609), npc_rows(609), n, w, h)
-            }
-            // W4-d42 - the roster's draw arms ride the generic anchor over
-            // their own NPC_<id> sheets. The sheets are NOT packed yet
-            // (the atlas headroom - the wyvern deferral precedent), so
-            // `npc_sheet` returns None and the arm no-draws.
-            NpcKind::Seagull => {
-                generic_anchor(assets.npc_sheet(602), npc_rows(602), n, w, h)
-            }
-            NpcKind::Seagull2 => {
-                generic_anchor(assets.npc_sheet(603), npc_rows(603), n, w, h)
-            }
+            // E8 merge: the d42 Seagull2 generic_anchor draw dropped - the
+            // c10 waterfowl pumpkin_moon_draw group above owns it (the
+            // integer-division SetFrameSize row height, the faithful one).
             // W4-d42 - the roster's draw arms ride the generic anchor over
             // their own NPC_<id> sheets. The sheets are NOT packed yet
             // (the atlas headroom - the wyvern deferral precedent), so
@@ -4525,6 +4544,45 @@ pub(crate) fn draw_npcs(
             // E8 merge: the 5 gold draws ride d40's group arm above (the
             // identical texture_net_id shape - the dup drop; the GoldBird
             // rotation rides the gate below).
+            // W4-c10 — the waterfowl family: each kind draws its own
+            // sheet (`WATERFOWL_SHEETS`) at `SetFrameSize`'s integer-
+            // division row height over `Main.npcFrameCount[type]` = 15
+            // (`Main.cs:67082`) with the generic centred anchor — the
+            // pumpkin arm's shape. The walkers' 4-tick walk strip and
+            // the swimmers' wet/still/flight poses ride `find_frame`
+            // (`NPC.cs:73747-73886`); the flight tilt rides the rotation
+            // whitelist below.
+            NpcKind::Duck
+            | NpcKind::Duck2
+            | NpcKind::DuckWhite
+            | NpcKind::DuckWhite2
+            | NpcKind::Seagull
+            | NpcKind::Seagull2
+            | NpcKind::Grebe
+            | NpcKind::Grebe2 => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-c10 roster tail — the twelve critters: each kind draws
+            // its own sheet (`CRITTER_TAIL_SHEETS`) at `SetFrameSize`'s
+            // integer-division row height over its `Main.npcFrameCount`
+            // row (2/5/7/3/13/2/6/2/2/4/4/4, `Main.cs:67082`) with the
+            // generic centred anchor — the waterfowl arm's shape. The
+            // crawlers' 12-tick / |vx|*5 strips, the bird's flight band,
+            // the bunny/mouse hops, the butterfly flap and the frog's
+            // wet poses ride `find_frame` (`NPC.cs:72774-72883` /
+            // `:73627-73650` / `:76855-76904` / `:72739-72772` /
+            // `:76619-76685` / `:70959-70980` / `:76514-76565`); the
+            // bird/butterfly/crawler tilts ride the rotation whitelist
+            // below. The GoldButterfly's per-spawn scale latch
+            // (`ai[3]`, `NPC.cs:44973`) rides `scaled_anchor` (the
+            // BlazingWheel convention).
+            NpcKind::GoldButterfly => {
+                let ty = texture_net_id(n.kind);
+                scaled_anchor(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // E8 merge: the c10 12-critter draw tail dropped - d40's group arm
+            // above owns them (the identical texture_net_id shape).
         };
         let Some(tex) = tex else {
             continue;

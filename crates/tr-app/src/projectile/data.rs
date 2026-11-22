@@ -246,6 +246,11 @@ pub const GOLEM_EYE_BEAM: u16 = 259;
 /// Queen Bee's state-3 barrage (`NPC.cs:30742`'s shot, dmg 11, the
 /// post-spawn `timeLeft = 300` `:30743`).
 pub const QUEEN_BEE_STINGER: u16 = 719;
+/// `ProjectileID.BirdDroppings` (1080, `ProjectileID.cs:2714`) — the
+/// aiStyle-24/68 birds' poop (`NPC.cs:25322`/`:34632`, zero
+/// velocity/damage/knockback; `Projectile.cs:10078-10086`: 10x10,
+/// aiStyle 200, alpha 255, penetrate -1, ignoreWater). W4-c10.
+pub const BIRD_DROPPINGS: u16 = 1080;
 /// `ProjectileID.EyeLaser` (83) — the Retinazer's phase-1 laser
 /// (`NPC.cs:26628`'s `num412`).
 pub const EYE_LASER: u16 = 83;
@@ -3991,6 +3996,23 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             GOLF_CLUB_HELPER => {
                 (2.0, 2.0, 150, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
             }
+            // W4-c10 — `Projectile.cs:10078-10086`: the BirdDroppings
+            // 1080: 10x10, aiStyle 200 (`AI_200_BirdDroppings`,
+            // `:39985-40017`), alpha 255, penetrate -1, ignoreWater (the
+            // overlay below); the stock tileCollide true (`:775`) and
+            // timeLeft 3600 (`:787`) stand — the type arm writes neither.
+            BIRD_DROPPINGS => (
+                10.0,
+                10.0,
+                200,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -4196,6 +4218,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-D-3 W-9: the sharknado clouds' `ignoreWater = true`
             // (`Projectile.cs:4672`/`:4694`).
             || matches!(kind, FORCE_BUBBLE | CTHULUNADO)
+            // W4-c10 — the BirdDroppings' `ignoreWater = true`
+            // (`Projectile.cs:10085`).
+            || kind == BIRD_DROPPINGS
             // S1-P-i21: the Nimbus Rod's raining cloud sets `ignoreWater`
             // (`Projectile.cs:3195`); the moving cloud 237 and the drop 239
             // keep the stock false.

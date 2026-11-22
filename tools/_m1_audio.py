@@ -1,0 +1,10 @@
+import re, collections, sys, subprocess
+sys.stdout.reconfigure(encoding='utf8', errors='replace')
+src = subprocess.run(["git","show","HEAD:crates/tr-app/src/audio.rs"],capture_output=True).stdout.decode("utf8","replace")
+m = re.search(r'SFX_CUES[^=]*=\s*&?\[(.*?)\n\];', src, re.S)
+rows = re.findall(r'"([A-Za-z0-9_]+)"', m.group(1))
+print('HEAD bank rows:', len(rows), 'dups:', sorted(x for x,c in collections.Counter(rows).items() if c>1))
+src2 = open('crates/tr-app/src/audio.rs', encoding='utf8').read()
+m2 = re.search(r'SFX_CUES[^=]*=\s*&?\[(.*?)\n\];', src2, re.S)
+rows2 = re.findall(r'"([A-Za-z0-9_]+)"', m2.group(1))
+print('NOW bank rows:', len(rows2), 'dups:', sorted(x for x,c in collections.Counter(rows2).items() if c>1))

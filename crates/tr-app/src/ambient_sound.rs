@@ -464,10 +464,14 @@ pub fn critter_legacy_voice(
             }
             Some(voice(15, 0.2, roll(-10, 31)))
         }
-        // S1-E-21e — case 45 (`:1059-1070`): the duck quack's pinned slot
-        // 109 (`NPC.cs:23678-23681`'s `ai[3] == 60 && Next(2) == 0` site —
-        // the port has no duck kind yet, the arm lands table-complete),
-        // the playing guard BEFORE the pitch draw, ×0.3, `Next(-10, 11)`.
+        // S1-E-21e — case 45 (`:1059-1070`): the pinned slot 109 quack.
+        // W4-c10 sweep census fix: the call site `NPC.cs:23678-23681`
+        // (`ai[3] == 60 && Next(2) == 0`) sits inside the aiStyle-16
+        // arm's `this.type == 615` block (`:23572`) — the DOLPHIN
+        // (`NPCID.cs:11907`), NOT a duck: the waterfowl quack is case 30
+        // (`UpdateNPC_CritterSounds` `:92257-92262`, the 362-365 row).
+        // The Dolphin is unported; the arm stays table-complete. The
+        // playing guard BEFORE the pitch draw, ×0.3, `Next(-10, 11)`.
         45 => {
             if is_playing(109) {
                 return None;
@@ -1437,6 +1441,148 @@ mod tests {
             None
         );
         assert_eq!(calls, 0);
+    }
+
+    /// W4-c10 sweep — the waterfowl ambient census
+    /// (`NPC.UpdateNPC_CritterSounds`, `NPC.cs:92249-92340`): the ducks
+    /// 362-365 quack case 30 by day behind `Next(200)` (`:92257-92262`),
+    /// the seagulls 602/603 cry case 44 by day behind `Next(1200)`
+    /// (`:92253-92256`), the grebes 608/609 match NO row — silent, zero
+    /// draws. The hit/death rows are the SetDefaults NPCHit1/NPCDeath1
+    /// (`:13621-13622` etc., landed phase 1); there is NO takeoff/
+    /// landing cue (the TransformVisuals census: the pairs match no
+    /// arm) and NO idle quack beyond these rolls.
+    #[test]
+    fn w4_c10_the_waterfowl_ambient_rows_census() {
+        // The four ducks: day + Next(200) == 0 → case 30.
+        for ty in [362, 363, 364, 365] {
+            let mut state = Rolls::with_zero(0);
+            let cue =
+                critter_sound_cue(ty, true, 1000.0, 3000.0, 3000.0, 0.0, &mut roll(&mut state));
+            assert_eq!(cue, Some((30, 1.0)), "type {ty} quacks (:92261)");
+            assert_eq!(state.calls, 1, "type {ty}: one Next(200)");
+            // Night: the day gate short-circuits — NO draw.
+            let mut night = Rolls::new();
+            assert_eq!(
+                critter_sound_cue(ty, false, 1000.0, 3000.0, 3000.0, 0.0, &mut roll(&mut night)),
+                None
+            );
+            assert_eq!(night.calls, 0, "type {ty}: the night gate draws nothing");
+        }
+        // The seagulls: day + Next(1200) == 0 → case 44 (the row sits
+        // ABOVE the duck row, an independent if — `:92253`).
+        for ty in [602, 603] {
+            let mut state = Rolls::with_zero(0);
+            let cue =
+                critter_sound_cue(ty, true, 1000.0, 3000.0, 3000.0, 0.0, &mut roll(&mut state));
+            assert_eq!(cue, Some((44, 1.0)), "type {ty} cries (:92255)");
+            assert_eq!(state.calls, 1, "type {ty}: one Next(1200)");
+        }
+        // The grebes 608/609: no row in the whole chain — silent, and
+        // the else-if ladder draws NOTHING for them (the 361/445/687
+        // row's speed gate is on the else branch, `:92264`).
+        for ty in [608, 609] {
+            for day in [true, false] {
+                let mut state = Rolls::new();
+                assert_eq!(
+                    critter_sound_cue(ty, day, 1000.0, 3000.0, 3000.0, 0.0, &mut roll(&mut state)),
+                    None,
+                    "type {ty} has no ambient row"
+                );
+                assert_eq!(state.calls, 0, "type {ty}: zero draws");
+            }
+        }
+        // The failing-roll stream contract: a duck by day with a
+        // failing Next(200) still consumes the draw (the `&&` draws
+        // the right operand; the branch then ends the chain).
+        let mut calls = 0u32;
+        let mut fail = |hi: u32| {
+            calls += 1;
+            1 % hi.max(1)
+        };
+        assert_eq!(
+            critter_sound_cue(362, true, 1000.0, 3000.0, 3000.0, 0.0, &mut fail),
+            None
+        );
+        assert_eq!(calls, 1);
+    }
+
+    /// W4-c10 sweep — the waterfowl voice arms: case 30 (the duck
+    /// quack, `LegacySoundPlayer.cs:1099-1124`) and case 44 (the
+    /// seagull cry, `:1051-1062`) resolve the zombie bank in the C#
+    /// draw order. Case 30: `Next(10, 12)` slot, `Next(300)` rare
+    /// re-target (the playing guard on 12 blocks BEFORE any further
+    /// draw), the pitch range splits on the re-target.
+    #[test]
+    fn w4_c10_the_quack_and_cry_voices_draw_in_order() {
+        // Case 30 plain: slot 10, no re-target, pitch Next(-70, 1).
+        let mut state = Rolls::new();
+        let voice = critter_legacy_voice(
+            30,
+            1,
+            &mut signed_roll(&mut state, &|lo, hi, call| match call {
+                0 => Some(10),  // Next(10, 12)
+                1 => Some(1),   // Next(300) != 0 — no re-target
+                _ => Some(-40), // the pitch Next(-70, 1)
+            }),
+            &|_| unreachable!("the guard only runs on the re-target"),
+        )
+        .unwrap();
+        assert_eq!(voice.slot, 10);
+        assert_eq!(voice.asset, "Zombie_10");
+        assert_eq!(voice.volume_mult, 0.75);
+        assert_eq!(voice.pitch, -0.4);
+        assert_eq!(state.calls, 3, "slot + Next(300) + pitch");
+        // Case 30 re-target: Next(300) == 0, slot 12 free → the pitch
+        // range flips to Next(-40, 21).
+        let mut state = Rolls::new();
+        let voice = critter_legacy_voice(
+            30,
+            1,
+            &mut signed_roll(&mut state, &|lo, hi, call| match call {
+                0 => Some(11),
+                1 => Some(0), // the re-target fires
+                _ => Some(5), // the pitch Next(-40, 21)
+            }),
+            &|_| false,
+        )
+        .unwrap();
+        assert_eq!(voice.slot, 12);
+        assert_eq!(voice.pitch, 0.05);
+        assert_eq!(state.calls, 3);
+        // Case 30 re-target blocked: slot 12 busy → None, NO pitch draw.
+        let mut state = Rolls::new();
+        assert!(
+            critter_legacy_voice(
+                30,
+                1,
+                &mut signed_roll(&mut state, &|_, _, call| match call {
+                    0 => Some(10),
+                    1 => Some(0),
+                    _ => unreachable!("the guard precedes the pitch"),
+                }),
+                &|s| s == 12,
+            )
+            .is_none()
+        );
+        assert_eq!(state.calls, 2, "slot + Next(300), the guard blocks");
+        // Case 44: Next(106, 109) + Next(-70, 1), no guard, ×0.2.
+        let mut state = Rolls::new();
+        let voice = critter_legacy_voice(
+            44,
+            1,
+            &mut signed_roll(&mut state, &|_, _, call| match call {
+                0 => Some(108),
+                _ => Some(-55),
+            }),
+            &|_| unreachable!("case 44 has no guard"),
+        )
+        .unwrap();
+        assert_eq!(voice.slot, 108);
+        assert_eq!(voice.asset, "Zombie_108");
+        assert_eq!(voice.volume_mult, 0.2);
+        assert_eq!(voice.pitch, -0.55);
+        assert_eq!(state.calls, 2);
     }
 
     /// S1-E-21e — the fighter-moan cases' draw contract

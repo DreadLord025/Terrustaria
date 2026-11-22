@@ -4051,6 +4051,15 @@ fn npc_seed(
         // the 5 gold seeds ride d40's bare-stats arm above (the position
         // overwrite + the first-tick machine takeover make the ctor
         // choice behaviour-identical - 349 s6a's netglue note).
+        // W4-c10 - the waterfowl family: the Duck quartet's bare-stats
+        // seed (the net state overwrites the position below; the
+        // machines take over on the first tick). E8 merge: the
+        // Seagull/Grebe seeds ride the d42 cave_walker/hover arms above.
+        crate::npc::NpcKind::Duck
+        | crate::npc::NpcKind::Duck2
+        | crate::npc::NpcKind::DuckWhite
+        | crate::npc::NpcKind::DuckWhite2 => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
+        // E8 merge: the c10 12-critter seed tail dropped (d40/c8's seeds above).
     })
 }
 
