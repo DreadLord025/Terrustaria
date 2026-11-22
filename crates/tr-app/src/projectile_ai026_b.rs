@@ -141,10 +141,11 @@ pub(crate) fn ai026_b_tick(
     }
     let owner = OwnerView::capture(player);
     boss_head_spin_arm(p, world, &owner, rng);
-    // `UpdatePosition` (`:19858` → `:20445`): the dry `position +=
-    // velocity` rides every tick — the arm's early returns leave
-    // `AI_026`, not `Update`, so the integration still runs.
-    p.pos += p.vel;
+    // `UpdatePosition` (`:19858` → `:20439-20446`): the `wet ? wetVelocity :
+    // velocity` integrate rides every tick — the arm's early returns leave
+    // `AI_026`, not `Update`, so the integration still runs. S1-P-i57: the
+    // mirror rides `wet_velocity` (dry byte-identical).
+    p.pos += crate::projectile_wet::wet_velocity(p, world);
     true
 }
 

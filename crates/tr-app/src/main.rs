@@ -190,6 +190,11 @@ pub(crate) mod projectile_id;
 pub(crate) mod id_tables;
 pub(crate) mod world_events;
 mod projectile;
+// W4-d53: the projectile-tick `Dust.NewDust` drain lanes — the per-tick arrow
+// trail (Projectile.cs:17036-17077), the stationary Vortex-bolt trail
+// (:17117-17125) and the enchantment-visuals lane (:17290-17467). The tick
+// snapshots the box/velocity/owner flags, this module replays on the
+// UpdateProjectiles stream (the player_dust / pending_proj_sounds convention).
 mod projectile_dust;
 mod projectile_ai001_b;
 mod projectile_ai_frostmoon;
@@ -238,6 +243,10 @@ mod projectile_ai_empress;
 // S1-P-i35: the fishing bobber's AI_061 flight/bite machine + the FishingCheck
 // orchestration (the pure roll engine is tr_core::fishing).
 mod projectile_bobber;
+// W4-d53 batch 4 — the generic Update wet machine (Projectile.cs:16786-17007):
+// the wetCount cooldown, the liquid-flag latching, the entry/exit splash edges
+// (the 8 census sites :16851-16987 ride projectile_dust's WetSplash drain).
+mod projectile_wet;
 // S1-P-i06 — the spear family (aiStyle 19, `AI_019_Spears`): the held-spear
 // thrust arm + its extension/retract curve and reach-ahead hitbox, plus the
 // small sub-shot arms (the spore/cloud/bolt/snowflake/flake the spears spawn).

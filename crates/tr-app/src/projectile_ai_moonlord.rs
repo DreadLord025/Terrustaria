@@ -120,8 +120,10 @@ fn finish_flight(p: &mut Projectile, world: &World) {
             p.active = false;
             p.time_left = 0;
         } else {
-            p.pos.x = nx;
-            p.pos.y = ny;
+            // S1-P-i57 — the `ai_style1_flight` swap rides here too (the
+            // replica stays byte-identical): `:20441`'s `wet ? wetVelocity :
+            // velocity` via `wet_velocity` (the `:17612-17655` drag wet).
+            p.pos += crate::projectile_wet::wet_velocity(p, world);
         }
     } else {
         p.pos += p.vel;
@@ -229,9 +231,11 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
         // zeroes (the stick). While `localAI[1] > 0` the `:17590` gate
         // skips `TileCollision` entirely — the resolved velocity never
         // differs, so the arm cannot re-fire and `UpdatePosition`
-        // (`:19858`) integrates freely.
+        // (`:19858`) integrates freely. S1-P-i57: the stuck arm's integrate
+        // rides `wet_velocity` — the `:17590` 640-latch gate exempts it from
+        // the drag (the un-scaled capture, wet AND dry byte-identical).
         if p.local_ai[1] > 0.0 {
-            p.pos += p.vel;
+            p.pos += crate::projectile_wet::wet_velocity(p, world);
         } else {
             let last = p.vel;
             let hit_x =
@@ -241,11 +245,15 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
             if hit_x || hit_y {
                 // `:18310-18314` — `localAI[1] += 2f; position += velocity;
                 // velocity = Vector2.Zero` (the PRE-collision velocity).
+                // S1-P-i57: the last step rides `wet_velocity` (`:20441`'s
+                // wet swap — the `:17612-17655` drag while wet; the latch
+                // has not fired yet, the drag applies).
                 p.local_ai[1] += 2.0;
-                p.pos += last;
+                p.pos += crate::projectile_wet::wet_velocity(p, world);
                 p.vel = Vec2::ZERO;
             } else {
-                p.pos += p.vel;
+                // S1-P-i57 — `:20441`'s wet swap on the unblocked move.
+                p.pos += crate::projectile_wet::wet_velocity(p, world);
             }
         }
     } else {

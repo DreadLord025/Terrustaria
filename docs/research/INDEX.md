@@ -216,6 +216,7 @@ INVALID; execute the §9/§10 assignment or request a round-6 refresh.
 5. This INDEX's row set above is the base+d54 view; rows for other lanes'
    docs enter with their merges, renumbered per the registry. The merger
    dedupes INDEX rows by (number, filename) using the registry mapping.
+| 244 | PROJ-DUST RETIRE, SEALED (W4-d53: the wetVelocity 96-site movement-gap census + seed S1-P-i57/R-244-1, the g2 staged-copy drop-hunk + mutual receipt, the d53×e3 DISJOINT merge-note at moved tips, the insurance-patch SHA256 pins DELETE-AT-CLEANUP, the family bible FINAL; renumbered 240→244 — g58 won 240 first-pushed, 241-243 g58's, code-only) | `244-proj-dust-retire.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

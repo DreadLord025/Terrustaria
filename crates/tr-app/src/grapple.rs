@@ -709,8 +709,11 @@ pub(crate) fn ai_hook(
         }
     }
     // `UpdatePosition` (`:20445`): `position += velocity` for the flying and
-    // retracting states (the attached state returned above).
-    slot.pos += slot.vel;
+    // retracting states (the attached state returned above). S1-P-i57 swap
+    // point 5 (the hook mirror): `wet_velocity` — the aiStyle-7 `ai[0] == 2`
+    // latch is skip-listed (`:20435`), the flying/retracting states integrate
+    // `wet ? wetVelocity : velocity` (`:20441`); dry byte-identical.
+    slot.pos += crate::projectile_wet::wet_velocity(slot, world);
     let mut tick = HookTick::alive();
     tick.crack = crack;
     tick
