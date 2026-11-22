@@ -1531,6 +1531,13 @@ pub struct Npc {
     /// `NPC.dontTakeDamage` (`NPC.cs:6525`): the hurt path refuses while
     /// it holds (the Brain of Cthulhu's Creeper shield).
     pub dont_take_damage: bool,
+    /// `NPC.canGhostHeal` (`NPC.cs:6263`, stock true, `SetDefaults` re-arms
+    /// `:8553`): the Spectre set's heal-orb spawn gate
+    /// (`Projectile.cs:13816`, W4-d6 residual). The four false writers are
+    /// the ForceBubble 384 (`:13893`), the Tesla Turret 387 (`:13933`), the
+    /// Martian Drone 388 (`:13950`) and AncientDoom 523 (`:15811` — an
+    /// unported kind).
+    pub can_ghost_heal: bool,
     /// `NPC.behindTiles` (`NPC.cs:6517`, default false, reset `:8520`): drawn
     /// only in the behind-tiles pass (`Main.cs:22320,22336`).
     pub behind_tiles: bool,
@@ -3033,6 +3040,13 @@ impl Npc {
             dont_take_damage: matches!(
                 kind,
                 NpcKind::PlanterasHook | NpcKind::MartianSaucerCore | NpcKind::BlazingWheel
+            ),
+            // `NPC.canGhostHeal = false` (`NPC.cs:13893`/`:13933`/`:13950`
+            // /`:15811`): the martian shield trio; AncientDoom 523 is an
+            // unported kind. Every other ported kind keeps the stock true.
+            can_ghost_heal: !matches!(
+                kind,
+                NpcKind::ForceBubble | NpcKind::MartianTurret | NpcKind::MartianDrone
             ),
             // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
             behind_tiles: kind.behind_tiles(),
@@ -30638,7 +30652,10 @@ mod s1_f_13c2_tests {
         for kind in [NpcKind::Nutcracker, NpcKind::NutcrackerSpinning, NpcKind::ElfArcher] {
             let b = NpcBuffs::for_kind(kind);
             assert!(
-                b.buff_immune.iter().all(|&i| !i),
+                // The shimmer-353 flag is its own set (`NPCID.cs:10467`,
+                // W4-d6 residual 9) — the null DebuffImmunitySets row
+                // pins every OTHER id false.
+                b.buff_immune.iter().enumerate().all(|(i, &v)| !v || i == 353),
                 "{kind:?} carries the null dictionary entry"
             );
         }
@@ -31677,7 +31694,9 @@ mod s1_d_2_tests {
         ] {
             let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
             assert!(
-                !b.buff_immune.iter().any(|x| *x),
+                // The shimmer-353 flag is its own set (`NPCID.cs:10467`,
+                // W4-d6 residual 9), not a DebuffImmunitySets row.
+                !b.buff_immune.iter().enumerate().any(|(i, x)| *x && i != 353),
                 "{kind:?} null row — no immunity"
             );
         }
@@ -31787,10 +31806,11 @@ mod s1_d_2_tests {
             assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
             assert_eq!(kind.death_sound(), Some("NPC_Killed_2"), "{kind:?} death");
             // The null `DebuffImmunitySets` rows (`NPCID.cs:7964-7966`/
-            // `:8024-8025`).
+            // `:8024-8025`). The shimmer-353 flag is its own set
+            // (`NPCID.cs:10467`, W4-d6 residual 9).
             let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
             assert!(
-                !b.buff_immune.iter().any(|x| *x),
+                !b.buff_immune.iter().enumerate().any(|(i, x)| *x && i != 353),
                 "{kind:?} null immunity row"
             );
         }
@@ -32014,8 +32034,13 @@ mod s1_d_2_tests {
             assert_eq!(kind.hit_sound(), Some(hit), "{kind:?} hit");
             assert_eq!(kind.death_sound(), Some(death), "{kind:?} death");
             // The null `DebuffImmunitySets` rows (`NPCID.cs:8892-8893`).
+            // The shimmer-353 flag is its own set (`NPCID.cs:10467`,
+            // W4-d6 residual 9).
             let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
-            assert!(!b.buff_immune.iter().any(|x| *x), "{kind:?} null immunity");
+            assert!(
+                !b.buff_immune.iter().enumerate().any(|(i, x)| *x && i != 353),
+                "{kind:?} null immunity"
+            );
         }
     }
 

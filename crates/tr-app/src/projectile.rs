@@ -519,6 +519,11 @@ pub struct Projectile {
     /// — the second scratch array, reset to zero with `ai` by `SetDefaults`
     /// (`:736-740`). The magic families keep their phase counters there.
     pub local_ai: [f32; 3],
+    /// `Projectile.numHits` (`Projectile.cs:308`, reset `:704`): the landed
+    /// hit counter — `Damage_PVE_Inner` bumps it at `:14199` after every
+    /// hit; `ghostHeal`'s heal share decays `0.2 − numHits·0.05` (`:12066`,
+    /// W4-d6 residual).
+    pub num_hits: i32,
     /// `Projectile.alpha` (`:326`, reset `:779`) — the draw fade, which the AI
     /// arms also read as a state marker (the magic families, Phase 3).
     pub alpha: i32,
@@ -825,6 +830,7 @@ impl Default for Projectile {
             extra_updates: 0,
             ai: [0.0; 4],
             local_ai: [0.0; 3],
+            num_hits: 0,
             alpha: 0,
             scale: 1.0,
             light: 0.0,
@@ -4737,6 +4743,177 @@ impl Projectile {
         }
         // The five-dust ring (`:28992-28996`) — SKIPPED (no dust layer, no
         // rolls to consume).
+        self.pos += self.vel;
+    }
+
+    /// `AI()`'s aiStyle-52 block (`Projectile.cs:28504-28559`) — the heal
+    /// orbs: the Spectre set bonus's SpiritHeal (298) and the Vampire
+    /// Knives' VampireHeal (305). `ai[0]` is the target player index,
+    /// `ai[1]` the heal amount. The orb steers toward the player's centre
+    /// at speed 4 through the `(v * 15 + d) / 16` blend; on the < 50 px
+    /// box-overlap contact the local owner's orb heals (`HealEffect` RAW
+    /// text, `statLife +=`, the `statLifeMax2` cap — `Player.Heal`'s order)
+    /// unless the target carries MoonLeech (buff 145), then `Kill()`s.
+    /// The C# `Kill()` has NO return — the blend still runs on the dead
+    /// slot and `HandleMovement` integrates it (`:17015` before the
+    /// `!active` return `:17027`); the rows keep `tileCollide = false`
+    /// (`:3890`/`:3971`), so the movement is a plain integration.
+    ///
+    /// The per-kind dust trails (`:28533-28558` — the 305's 3× dust 183,
+    /// every other kind's 5× dust 175) roll no `Main.rand` — SKIPPED whole
+    /// (no dust layer). The `NetMessage.SendData(66)` heal broadcast
+    /// (`:28524`) is MP-only. The port's single player maps
+    /// `Main.player[ai[0]]` at index `local_owner`; a foreign index reads
+    /// as the C#'s inactive player — no heal, no steering (the
+    /// `ai_spectre_shot` precedent), but the integration still runs.
+    fn ai_heal_orb(&mut self, player: Option<&mut crate::player::Player>, local_owner: u8) {
+        // The stock friendly = false (`:788` — neither row sets it), held
+        // for the slot's whole life: the orb damages nothing (the pool's
+        // slot default is true — the `ai_dungeon_debris` precedent).
+        self.friendly = false;
+        // `:28506-28511` — the target centre and the distance.
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let target_player = player.filter(|_| self.ai[0] == local_owner as f32);
+        if let Some(p) = target_player {
+            let (pcx, pcy) = p.center();
+            let target = Vec2::new(pcx, pcy);
+            let delta = target - center;
+            let dist = delta.length();
+            // `:28513-28527` — the < 50f + box-overlap contact.
+            let overlap = dist < 50.0
+                && self.pos.x < p.x + crate::player::WIDTH
+                && self.pos.x + self.w > p.x
+                && self.pos.y < p.y + p.height
+                && self.pos.y + self.h > p.y;
+            if overlap {
+                // `:28515-28525` — the owner-gated heal, refused under
+                // MoonLeech (`Player.moonLeech` is UpdateBuffs' buff-145
+                // flag, `Player.cs:11859-11862`; the port reads the live
+                // buff slot).
+                if self.owner == local_owner && p.buffs.find_buff_index(145).is_none() {
+                    let heal = self.ai[1] as i32;
+                    // HealEffect(num383, broadcast: false) → statLife +=
+                    // → the statLifeMax2 cap — `Player.heal`'s order (the
+                    // RAW text survives the cap).
+                    p.heal(heal);
+                }
+                // `:28526` — Kill(); no return (the blend below still runs).
+                self.active = false;
+                self.time_left = 0;
+            }
+            // `:28528-28532` — the speed-4 `(v * 15 + d) / 16` blend; the
+            // epsilon guard is the pool's coincident-centre convention.
+            self.steer_blend(target, center, 4.0, 16.0);
+        }
+        // The dust trails — SKIPPED (no rolls). HandleMovement's free
+        // integrate runs even on the kill tick (`:17015`/`:17027`).
+        self.pos += self.vel;
+    }
+
+    /// `AI()`'s aiStyle-55 block (`Projectile.cs:28773-28844`) — the
+    /// Pumpking's FlamingJack (321): the every-tick 3-frame cycle (the
+    /// `frameCounter++` fires the `> 0` arm each tick), the velocity-sign
+    /// sprite facing + the mirrored atan2 rotation, then the `ai[0]` target
+    /// machine: a held chaseable non-critter NPC steers at speed 8 through
+    /// the `(v * 14 + d) / 15` blend; a stale target rescans every chaseable
+    /// non-critter inside the Manhattan 1000f + `CanHit` and keeps the
+    /// tightest (`ai[0] = index`, RAW). An out-of-range `ai[0]` kills
+    /// (`:28840-28843`). The inset-8 dust 6 (`:28832-28838`) rolls no
+    /// `Main.rand` — SKIPPED.
+    ///
+    /// `NPCID.Sets.CountsAsCritter` (`NPCID.cs:10460`) — every listed id
+    /// has `lifeMax <= 5`, so the port's `chaseable` gate (`lifeMax > 5`)
+    /// already excludes them; the extra test is kept explicit for the
+    /// census. The row keeps `tileCollide = false` (`:4146`) — the movement
+    /// is a plain integration the arm owns (HandleMovement after the AI,
+    /// including the kill tick).
+    fn ai_flaming_jack(&mut self, world: &World, npcs: &[Npc]) {
+        // `:28775-28784` — the frame machine: ++ then `> 0` always fires.
+        self.frame_counter += 1;
+        if self.frame_counter > 0 {
+            self.frame += 1;
+            self.frame_counter = 0;
+            if self.frame > 2 {
+                self.frame = 0;
+            }
+        }
+        // `:28785-28794` — the facing + rotation off the velocity's sign.
+        if self.vel.x < 0.0 {
+            self.sprite_direction = -1;
+            self.rot = (-self.vel.y).atan2(-self.vel.x);
+        } else {
+            self.sprite_direction = 1;
+            self.rot = self.vel.y.atan2(self.vel.x);
+        }
+        // `:28795-28843` — the target machine. `Main.maxNPCs` is 200
+        // (`InitData.cs:9`); an out-of-range index kills.
+        if self.ai[0] >= 0.0 && self.ai[0] < crate::npc_ai_style59::MAX_NPCS as f32 {
+            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            let held = self.ai[0] as usize;
+            let held_ok = npcs
+                .get(held)
+                .is_some_and(|n| chaseable(n) && !counts_as_critter(n));
+            if held_ok {
+                // `:28801-28811` — the speed-8 `(v*14 + d)/15` blend.
+                let target = npc_center(&npcs[held]);
+                self.steer_blend(target, center, 8.0, 15.0);
+            } else {
+                // `:28815-28830` — the re-scan: Manhattan < running min
+                // (opens 1000) + CanHit, the RAW index into ai[0].
+                let mut scan = 1000.0f32;
+                for (idx, n) in npcs.iter().enumerate() {
+                    if !chaseable(n) || counts_as_critter(n) {
+                        continue;
+                    }
+                    let nc = npc_center(n);
+                    let manhattan = (center.x - nc.x).abs() + (center.y - nc.y).abs();
+                    let (nw, nh) = n.size();
+                    if manhattan < scan
+                        && can_hit(world, self.pos.x, self.pos.y, self.w, self.h, n.x, n.y, nw, nh)
+                    {
+                        scan = manhattan;
+                        self.ai[0] = idx as f32;
+                    }
+                }
+            }
+            // The inset dust (`:28832-28838`) — SKIPPED (no rolls).
+        } else {
+            // `:28840-28843` — the out-of-range kill.
+            self.active = false;
+            self.time_left = 0;
+        }
+        // The row's `tileCollide = false` — the free integrate (the dead
+        // slot moves too, `:17015`/`:17027`).
+        self.pos += self.vel;
+    }
+
+    /// `AI()`'s aiStyle-56 block (`Projectile.cs:28845-28866`) — the
+    /// Pumpking blade's FlamingScythe (329, `NPC.cs:33230`'s volley): the
+    /// first-tick latch copies `ai[0]` (the blade's rotation at fire time)
+    /// into `rotation` and `-ai[1]` (the blade's spriteDirection) into
+    /// `spriteDirection`; the Manhattan speed under 16 accelerates ×1.05
+    /// per tick; the direction follows `velocity.X`'s sign and the spin
+    /// adds `(|vx| + |vy|) * 0.025 * direction` every tick. Zero
+    /// `Main.rand` draws. The row keeps `tileCollide = false` (`:4223`) —
+    /// the arm owns the free integration (HandleMovement after the AI).
+    /// The hostile row's `friendly = false` (`:4221`) is held explicitly
+    /// (the pool slot defaults true — the `ai_dungeon_debris` precedent).
+    fn ai_flaming_scythe(&mut self) {
+        self.friendly = false;
+        // `:28847-28852` — the one-shot spawn latch.
+        if self.local_ai[0] == 0.0 {
+            self.local_ai[0] = 1.0;
+            self.rot = self.ai[0];
+            self.sprite_direction = -(self.ai[1] as i32);
+        }
+        // `:28853-28856` — the sub-16 acceleration.
+        if self.vel.x.abs() + self.vel.y.abs() < 16.0 {
+            self.vel *= 1.05;
+        }
+        // `:28857-28864` — the direction sign and the spin.
+        self.direction = if self.vel.x < 0.0 { -1 } else { 1 };
+        self.rot += (self.vel.x.abs() + self.vel.y.abs()) * 0.025 * self.direction as f32;
+        // The free integrate (`:4223` tileCollide false).
         self.pos += self.vel;
     }
 
@@ -10569,10 +10746,18 @@ impl Projectile {
             self.pos += self.vel;
             return;
         }
-        let nx = self.pos.x + self.vel.x;
-        let ny = self.pos.y + self.vel.y;
-        let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
-        let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+        // `GetCollisionParams` (`Projectile.cs:19867-20022`): the probe box
+        // is the slot box except the listed kinds — W4-d6 residual 5 ports
+        // the 304's 4×4 arm (`:20007-20011`); the box anchors at
+        // `Center − (colW, colH) * 0.5` (`:17589`, resizeAnchor (0.5, 0.5)).
+        // Every other kind keeps the full box (the anchor collapses to pos).
+        let (cw, ch) = if self.kind == VAMPIRE_KNIFE { (4.0, 4.0) } else { (self.w, self.h) };
+        let px = self.pos.x + self.w * 0.5 - cw * 0.5;
+        let py = self.pos.y + self.h * 0.5 - ch * 0.5;
+        let nx = px + self.vel.x;
+        let ny = py + self.vel.y;
+        let hit_x = crate::player::collides_rect(world, nx, py, cw, ch);
+        let hit_y = crate::player::collides_rect(world, px, ny, cw, ch);
         self.pos += self.vel;
         if hit_x || hit_y {
             self.kill_time_left = self.time_left;
@@ -14289,6 +14474,25 @@ pub(crate) fn chaseable_held(n: &Npc) -> bool {
     n.hp > 0 && n.max_hp > 5
 }
 
+/// `NPCID.Sets.CountsAsCritter` (`NPCID.cs:10460`) — the verbatim id set
+/// the aiStyle-55 FlamingJack's target gates exclude (`Projectile.cs:28799`/
+/// `:28819`), kept explicit so the C# `CanBeChasedBy && !CountsAsCritter`
+/// gate reads 1:1 (W4-d6).
+const COUNTS_AS_CRITTER: [u16; 99] = [
+    46, 303, 337, 540, 443, 74, 297, 298, 442, 611, 689, 377, 446, 612, 613, 356, 444, 595,
+    596, 597, 598, 599, 600, 601, 604, 605, 357, 448, 374, 484, 355, 358, 606, 359, 360, 485,
+    486, 487, 148, 149, 55, 230, 592, 593, 299, 538, 539, 300, 447, 361, 445, 362, 363, 364,
+    365, 367, 366, 583, 584, 585, 602, 603, 607, 608, 609, 610, 616, 617, 625, 626, 627, 615,
+    639, 640, 641, 642, 643, 644, 645, 646, 647, 648, 649, 650, 651, 652, 653, 654, 655, 661,
+    669, 671, 672, 673, 674, 675, 677, 687, 688,
+];
+
+/// The `!NPCID.Sets.CountsAsCritter[type]` half of the FlamingJack's target
+/// gates (`Projectile.cs:28799`/`:28819`).
+pub(crate) fn counts_as_critter(n: &Npc) -> bool {
+    COUNTS_AS_CRITTER.contains(&n.kind.to_u16())
+}
+
 /// `NPC.Center` (`Entity.cs`: `position + Size / 2f`) for the pool's slots.
 /// `pub(crate)`: S1-P-i18's special-bullet homing / re-target arms read it.
 pub(crate) fn npc_center(n: &Npc) -> Vec2 {
@@ -15009,6 +15213,37 @@ pub struct ProjectilePool {
     /// `spawn_item_drop_px` on the `UpdateItems` stream (the
     /// `pending_catches` seam — the pool cannot borrow the App's items).
     pending_block_drops: Vec<(u16, f32, f32)>,
+    /// W4-d6 — the aiStyle-60 gun streams' campfire-validate mismatch kills
+    /// (`Wiring.ToggleCampFire` → `ValidateTileSquareIsActiveAndOfType`,
+    /// `Wiring.cs:3012` → `WorldGen.cs:37891-37914`): the object drops the
+    /// slime walk's light toggle produced. The world sim drains them into
+    /// item spawns (the `drain_catches` intent pattern — the arm cannot
+    /// borrow the App's item pool).
+    pending_light_drops: Vec<tr_core::edit::ObjectDrop>,
+    /// W4-d6 residual — `Projectile.ghostHeal`'s SpiritHeal spawn requests
+    /// (`Projectile.cs:12095`): `(owner, x, y, ai0 target, ai1 heal)` per
+    /// qualifying hit, drained by the world-sim pass into
+    /// `spawn_with_data_ai_owned(SPIRIT_HEAL, ...)` (the pool cannot borrow
+    /// itself mid-walk — the `drain_light_drops` intent pattern). The C#
+    /// spawn is draw-free (`NewProjectile`'s 298 path rolls nothing).
+    pending_heal_orbs: Vec<(u8, f32, f32, f32, f32)>,
+    /// W4-d6 residual 5 — `Projectile.ghostHurt`'s SpectreWrath spawn
+    /// requests (`Projectile.cs:12060`): `(owner, x, y, vx, vy, damage,
+    /// ai0 target)` per qualifying hit, drained by the world-sim pass into
+    /// `spawn_with_data_ai_owned(SPECTRE_WRATH, ...)`. The direction rolls
+    /// ran at the hit (the pool's stream); the spawn itself is draw-free.
+    pending_wraths: Vec<(u8, f32, f32, f32, f32, i32, f32)>,
+    /// W4-d6 residual 5 — `Projectile.vampireHeal`'s VampireHeal spawn
+    /// requests (`Projectile.cs:12104`): `(owner, x, y, ai0 owner, ai1
+    /// heal)` per qualifying 304 hit, drained into
+    /// `spawn_with_data_ai_owned(VAMPIRE_HEAL, ...)`. Draw-free.
+    pending_vampire_orbs: Vec<(u8, f32, f32, f32, f32)>,
+    /// W4-d6 residual 8 — the gun streams' `Kill()` splash-dust snapshots
+    /// (`Projectile.cs:74029-74147`): the death hook writes the velocity
+    /// base and queues the corpse; the world-sim pass drains them onto
+    /// the real `DustPool` on the `UpdateProjectiles` stream (the g65
+    /// gallop-dust queue→drain convention).
+    pending_gun_splashes: Vec<crate::projectile_gun_splash::GunSplash>,
     /// S1-P-i55 — the golf family's per-tick context
     /// (`Main.LocalGolfState` + `Main.MouseWorld` + the mouse-right pair +
     /// the player snapshot the aiStyle-150 arm reads). The world-sim pass
@@ -15432,6 +15667,11 @@ impl ProjectilePool {
             pending_splashes: Vec::new(),
             pending_catches: Vec::new(),
             pending_block_drops: Vec::new(),
+            pending_light_drops: Vec::new(),
+            pending_heal_orbs: Vec::new(),
+            pending_wraths: Vec::new(),
+            pending_vampire_orbs: Vec::new(),
+            pending_gun_splashes: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
             tile_frame_665: 0,
@@ -15579,6 +15819,43 @@ impl ProjectilePool {
     /// through `spawn_item_drop_px` on the `UpdateItems` stream.
     pub fn drain_block_drops(&mut self) -> Vec<(u16, f32, f32)> {
         std::mem::take(&mut self.pending_block_drops)
+    }
+
+    /// W4-d6 — the aiStyle-60 slime walk's campfire-validate mismatch kills
+    /// (`Wiring.cs:3012`): the world sim spawns each through the item pool
+    /// (the actuation-drops precedent, `world_sim/wiring.rs`).
+    pub fn drain_light_drops(&mut self) -> Vec<tr_core::edit::ObjectDrop> {
+        std::mem::take(&mut self.pending_light_drops)
+    }
+
+    /// W4-d6 residual — the `ghostHeal` SpiritHeal spawn drain
+    /// (`Projectile.cs:12095`): `(owner, x, y, ai0, ai1)` per qualifying
+    /// hit; the world sim spawns each as a 298 (`NewProjectile`'s centre
+    /// subtract rides the spawn seam — the orb's 6×6 half-box).
+    pub fn drain_heal_orbs(&mut self) -> Vec<(u8, f32, f32, f32, f32)> {
+        std::mem::take(&mut self.pending_heal_orbs)
+    }
+
+    /// W4-d6 residual 5 — the `ghostHurt` SpectreWrath spawn drain
+    /// (`Projectile.cs:12060`): `(owner, x, y, vx, vy, damage, ai0)` per
+    /// qualifying hit; the world sim spawns each as a 356 centred on the
+    /// victim point (the `NewProjectile` half-extent subtract).
+    pub fn drain_wraths(&mut self) -> Vec<(u8, f32, f32, f32, f32, i32, f32)> {
+        std::mem::take(&mut self.pending_wraths)
+    }
+
+    /// W4-d6 residual 5 — the `vampireHeal` VampireHeal spawn drain
+    /// (`Projectile.cs:12104`): `(owner, x, y, ai0, ai1)` per qualifying
+    /// 304 hit; the world sim spawns each as a 305 centred on the victim.
+    pub fn drain_vampire_orbs(&mut self) -> Vec<(u8, f32, f32, f32, f32)> {
+        std::mem::take(&mut self.pending_vampire_orbs)
+    }
+
+    /// W4-d6 residual 8 — the gun streams' Kill-splash snapshot drain
+    /// (`Projectile.cs:74029-74147`): the world sim feeds each to
+    /// `projectile_gun_splash::drain` on the live dust pool + stream.
+    pub fn drain_gun_splashes(&mut self) -> Vec<crate::projectile_gun_splash::GunSplash> {
+        std::mem::take(&mut self.pending_gun_splashes)
     }
 
     /// S1-P-i35 — `Player.RemoveAllFishingBobbers` (`Player.cs:33576-33585`):
@@ -16543,6 +16820,8 @@ impl ProjectilePool {
             // `SetDefaults` zeroes both scratch arrays (`:736-740`) — only the
             // C# `NewProjectile`'s `ai0/ai1` arguments ride along.
             local_ai: [0.0; 3],
+            // `SetDefaults`' `numHits = 0` (`Projectile.cs:704`).
+            num_hits: 0,
             alpha: data.alpha,
             scale: data.scale,
             light: data.light,
@@ -17015,6 +17294,183 @@ impl ProjectilePool {
         rng: &mut dyn tr_core::loot::DropRng,
     ) {
         crate::projectile_special_bullets::bullet_on_hit_debuffs(self.slots[slot].kind, npc, rng);
+    }
+
+    /// `Projectile.ghostHeal` (`Projectile.cs:12064-12096`, W4-d6 residual)
+    /// — the Spectre Hood set's heal-orb spawn: the heal share decays
+    /// `0.2 − numHits·0.05` (`:12066`, zero at the 4th hit), the truncated
+    /// share must be positive AND the LOCAL player's `lifeSteal` budget
+    /// above 0 (`:12072` — `Main.myPlayer`, not the owner); the budget
+    /// drains by the FLOAT share (`:12076`) BEFORE the `magic` gate
+    /// (`:12077-12080` — a non-magic shot still spends it). The 255-slot
+    /// lowest-health scan folds to the single local player (index 0 wins
+    /// only when missing health > 0 — the C#'s strict `>` keeps the owner
+    /// default otherwise); the team/hostile/distance terms fold true in
+    /// single-player. The spawn (`:12095`) is draw-free: 298 at the victim
+    /// centre, zero velocity, damage 0, ai0 = target index, ai1 = the
+    /// FLOAT share (the orb's contact heal truncates it, `:28519`). The
+    /// request rides `pending_heal_orbs` out to the world sim (the pool
+    /// cannot spawn into itself mid-walk).
+    fn ghost_heal_on_hit(
+        &mut self,
+        slot: usize,
+        dmg: i32,
+        victim: Vec2,
+        player: Option<&mut crate::player::Player>,
+    ) {
+        let Some(pl) = player else { return };
+        let p = &self.slots[slot];
+        // `:13818` — the owner gate the caller checked `ghostHeal` for;
+        // MoonLeech is the owner's buff-145 flag (`Player.cs:11859-11862`).
+        if p.owner != 0 || !pl.ghost_heal || pl.buffs.find_buff_index(145).is_some() {
+            return;
+        }
+        // `:12066-12070` — the decaying share.
+        let share = 0.2 - p.num_hits as f32 * 0.05;
+        if share <= 0.0 {
+            return;
+        }
+        let amount = dmg as f32 * share;
+        // `:12072-12075` — the truncation + budget gates.
+        if amount as i32 <= 0 || pl.life_steal <= 0.0 {
+            return;
+        }
+        // `:12076` — the budget drains by the float share.
+        pl.life_steal -= amount;
+        // `:12077-12080` — only magic shots spawn the orb.
+        if !p.magic {
+            return;
+        }
+        // `:12081-12094` — the lowest-health scan, folded: the single local
+        // player takes the target slot only with missing health (the
+        // strict `num5 > num3` from 0); otherwise the owner keeps it.
+        let target = if !pl.dead && pl.max_hp - pl.hp > 0 { 0 } else { p.owner };
+        // `:12095` — the spawn request (draw-free).
+        self.pending_heal_orbs.push((p.owner, victim.x, victim.y, target as f32, amount));
+    }
+
+    /// `Projectile.ghostHurt` (`Projectile.cs:12012-12062`, W4-d6 residual 5)
+    /// — the Spectre Mask set's damage-share spawn: only magic shots with
+    /// positive stored damage and a dealt hit above 1 qualify (`:12014-12022`
+    /// — `dmg` is the strike's dealt damage, `this.damage` the shot's stored
+    /// value the 356 inherits). The LOCAL player's `ghostDmg` budget refuses
+    /// above 1500 (`:12024`, `Main.myPlayer` — not the owner) and grows by
+    /// the stored damage BEFORE the target scan (`:12028` — a fruitless scan
+    /// still spends it). The 200-slot scan (`:12033-12053`) keeps chaseable
+    /// NPCs inside the Manhattan 800 box: a `CanHit` LOS pair beyond 50
+    /// enters the PREFERRED list; otherwise the NPC enters the FALLBACK list
+    /// only while the preferred one is still empty (the `num4 == 0` arm —
+    /// early near/blocked NPCs survive as fallbacks until the first
+    /// preferred pick seals the list). The pick is uniform over the
+    /// preferred list when non-empty, else the fallback (`:12056`); the
+    /// velocity is a uniform random direction at speed 4 through the
+    /// `Next(-100,101)` pair + `4/sqrt` normalise (`:12057-12059`). The 356
+    /// spawns at the victim centre with the stored damage, zero knockback,
+    /// ai0 = the RAW npc index (`:12060`).
+    ///
+    /// Deliberate folds (ANALYSIS): the C#'s Manhattan expression at
+    /// `:12039` mis-parenthesises the projectile half (`- base.position.X +
+    /// width/2` instead of `- (base.position.X + width/2)`) — the port keeps
+    /// the verbatim expression (`self.w` rides ADDITIVE) so the box matches
+    /// the shipped game, quirk included. The `(0,0)` direction draw pair
+    /// divides by zero in the C# (NaN velocity) — the port propagates the
+    /// same NaN. `GetProjectileSource_OnHit` bookkeeping has no port seam.
+    fn ghost_hurt_on_hit(
+        &mut self,
+        world: &World,
+        slot: usize,
+        dmg: i32,
+        victim: Vec2,
+        npcs: &[Npc],
+        player: Option<&mut crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        let p = &self.slots[slot];
+        // `:12014-12022` — the magic/damage gates.
+        if !p.magic || p.damage <= 0 {
+            return;
+        }
+        let stored = p.damage;
+        if dmg <= 1 {
+            return;
+        }
+        let Some(pl) = player else { return };
+        // `:12024-12028` — the budget gate, then the spend (before the scan).
+        if pl.ghost_dmg > 1500.0 {
+            return;
+        }
+        pl.ghost_dmg += stored as f32;
+        // `:12029-12053` — the two-list scan. `num3` counts fallbacks,
+        // `num4` preferred picks; both lists share one array in the C#, but
+        // the fallback entries only ever fill while `num4 == 0`, so the two
+        // vectors reproduce the pick ranges exactly.
+        let mut fallback: Vec<usize> = Vec::new();
+        let mut preferred: Vec<usize> = Vec::new();
+        for (i, n) in npcs.iter().enumerate() {
+            if !chaseable(n) {
+                continue;
+            }
+            let (nw, nh) = n.size();
+            // `:12039` — the VERBATIM (mis-parenthesised) Manhattan: the
+            // projectile's half-width/height ride ADDITIVE.
+            let manhattan = (n.x + (nw as i32 / 2) as f32 - p.pos.x + p.w * 0.5).abs()
+                + (n.y + (nh as i32 / 2) as f32 - p.pos.y + p.h * 0.5).abs();
+            if manhattan < 800.0 {
+                if can_hit(world, p.pos.x, p.pos.y, 1.0, 1.0, n.x, n.y, nw, nh)
+                    && manhattan > 50.0
+                {
+                    preferred.push(i);
+                } else if preferred.is_empty() {
+                    fallback.push(i);
+                }
+            }
+        }
+        // `:12054-12060` — the pick + the speed-4 direction + the spawn.
+        let list = if preferred.is_empty() { &fallback } else { &preferred };
+        if list.is_empty() {
+            return;
+        }
+        let target = list[rng.next_range(0, list.len() as i32) as usize];
+        let dx = rng.next_range(-100, 101) as f32;
+        let dy = rng.next_range(-100, 101) as f32;
+        let norm = 4.0 / (dx * dx + dy * dy).sqrt();
+        self.pending_wraths.push((
+            p.owner,
+            victim.x,
+            victim.y,
+            dx * norm,
+            dy * norm,
+            stored,
+            target as f32,
+        ));
+    }
+
+    /// `Projectile.vampireHeal` (`Projectile.cs:12098-12106`, W4-d6
+    /// residual 5) — the Vampire Knives' 7.5% heal share: the truncated
+    /// share must be non-zero AND the LOCAL player's `lifeSteal` budget
+    /// above 0 (`:12101`); the budget drains by the FLOAT share (`:12103`)
+    /// and the 305 spawns at the victim centre, zero velocity, damage 0,
+    /// ai0 = the OWNER index, ai1 = the float share (`:12104` — the orb's
+    /// contact heal truncates it, `:28517`). No magic gate (the knives are
+    /// melee); no target scan (the owner keeps the orb). Draw-free spawn.
+    fn vampire_heal_on_hit(
+        &mut self,
+        slot: usize,
+        dmg: i32,
+        victim: Vec2,
+        player: Option<&mut crate::player::Player>,
+    ) {
+        let amount = dmg as f32 * 0.075;
+        let Some(pl) = player else { return };
+        // `:12101` — the truncation + budget gates.
+        if amount as i32 == 0 || pl.life_steal <= 0.0 {
+            return;
+        }
+        // `:12103` — the budget drains by the float share.
+        pl.life_steal -= amount;
+        // `:12104` — the spawn request (draw-free).
+        let owner = self.slots[slot].owner;
+        self.pending_vampire_orbs.push((owner, victim.x, victim.y, owner as f32, amount));
     }
 
     /// The aiStyle-165 on-hit arms inside `Damage_PVE_Inner`
@@ -18295,6 +18751,52 @@ impl ProjectilePool {
                         // `player` for the dead gate).
                         51 => {
                             self.slots[i].ai_spectre_shot(world, &npcs[..], owner, player.as_deref())
+                        }
+                        // W4-d6 — `AI()`'s `else if (this.aiStyle == 52)`
+                        // (`Projectile.cs:28504-28559`): the heal orbs
+                        // (SpiritHeal 298 / VampireHeal 305). The heal write
+                        // rides the mutable player channel; the arm owns its
+                        // integration (the rows' `tileCollide = false`,
+                        // `:3890`/`:3971` — HandleMovement runs after the AI
+                        // even on the contact-kill tick, `:17015`/`:17027`).
+                        52 => {
+                            self.slots[i].ai_heal_orb(player.as_deref_mut(), local_owner);
+                        }
+                        // W4-d6 — `AI()`'s `else if (this.aiStyle == 55)`
+                        // (`Projectile.cs:28773-28844`): the Pumpking's
+                        // FlamingJack (321), the style's only rowed kind.
+                        // The arm owns its integration (the row's
+                        // `tileCollide = false`, `:4146`).
+                        55 => {
+                            self.slots[i].ai_flaming_jack(world, &npcs[..]);
+                        }
+                        // W4-d6 — `AI()`'s `else if (this.aiStyle == 56)`
+                        // (`Projectile.cs:28845-28866`): the Pumpking
+                        // blade's FlamingScythe (329), the style's only
+                        // rowed kind. The arm owns its integration (the
+                        // row's `tileCollide = false`, `:4223`).
+                        56 => {
+                            self.slots[i].ai_flaming_scythe();
+                        }
+                        // W4-d6 — `AI()`'s `else if (this.aiStyle == 60)`
+                        // (`Projectile.cs:28994-29309`): the gun streams
+                        // (WaterGun 358 / SlimeGun 406 / ShimmerGunStream
+                        // 1042). The tile writes (the light toggles, the
+                        // biome-torch conversion) reborrow `world` mutably
+                        // (the ai_ice_block carve-out); the campfire-
+                        // validate drops ride the pool's drain. The arm
+                        // owns its movement (the 1×1 GetCollisionParams
+                        // probe, `:19872-19876`).
+                        60 => {
+                            let drops = crate::projectile_ai_guns::gun_stream(
+                                &mut self.slots[i],
+                                world,
+                                npcs,
+                                player.as_deref_mut(),
+                                local_owner,
+                                rng,
+                            );
+                            self.pending_light_drops.extend(drops);
                         }
                         // The Spectre Wrath (`:28938-28993`): the hostile
                         // window, the uniform re-pick (one rng draw) and the
@@ -20926,6 +21428,38 @@ impl ProjectilePool {
                 // ABOVE the 478 flame's `:75578`; the fireworks aiStyle-34
                 // arm `:76464` follows both).
                 self.dart_electro_firework_kill(i, rng, local_owner);
+                // W4-d6 residual 8 — `Kill()`'s gun-stream splash dust
+                // (`Projectile.cs:74029-74147`: the 358's 50× dust 211,
+                // the 406's 40× dust 4, the 1042's 50× dust 324 +
+                // colour picks). The C# body order puts these ABOVE
+                // the :75212 Holy star arm inside special_arrow_kill
+                // below. The velocity write (`velocity =
+                // oldVelocity·0.2`, the scale death reading the
+                // ×5-kicked velocity through the `scale <= 0` marker)
+                // stays HERE; the dust bodies + their draws ride the
+                // snapshot out to the pass-tail drain (the g65
+                // gallop-dust convention — the pool cannot borrow the
+                // App's DustPool). The out-of-world guard's direct
+                // deactivate skips Kill() entirely in the C# (the
+                // `:16696` return) — the shared `!died_out_of_world`
+                // gate above already excludes it; this arm keeps the
+                // census body position.
+                if !died_out_of_world
+                    && matches!(self.slots[i].kind, WATER_GUN | SLIME_GUN | SHIMMER_GUN_STREAM)
+                {
+                    let p = &mut self.slots[i];
+                    let base = if p.scale <= 0.0 { p.vel } else { old_velocity };
+                    p.vel = base * 0.2;
+                    self.pending_gun_splashes.push(crate::projectile_gun_splash::GunSplash {
+                        kind: p.kind,
+                        pos: p.pos,
+                        w: p.w,
+                        h: p.h,
+                        old_vel: old_velocity,
+                        vel: p.vel,
+                        scale_dead: p.scale <= 0.0,
+                    });
+                }
                 // S1-P-i17 — `Kill()`'s special-arrow arms, in the C#'s
                 // body order: the Hellfire blast (`:76308-76341`, the
                 // resize + box Damage), the Holy Arrow's star / the
@@ -24402,6 +24936,56 @@ impl ProjectilePool {
                 // arms: the Cascade's 1125, the Kraken's 3× 1135, the Chik's
                 // 5× 1134 and the Eye-of-Cthulhu's homing 1130.
                 self.yoyo_on_hit(slot, idx as u16, hit, player.as_deref_mut(), rng);
+                // W4-d6 residual — `Damage_PVE_Inner`'s Spectre/vampire arms
+                // (`Projectile.cs:13810-13825`, inside `if (flag10)`):
+                // flag10's terms (`:13659`): num24 > 0, lifeMax > 5,
+                // friendly, !hostile, aiStyle != 59 — the pass simulates
+                // friendly non-hostile shots, so only the damage/lifeMax/
+                // style terms stay live (the Wrath 356 turns friendly at 60
+                // ticks and MUST be excluded). The victim centre is the
+                // POST-strike position (the knockback moved it — the C#
+                // reads it live at `:13814`/`:13820`/`:13824`).
+                let flag10 = strike_dmg > 0
+                    && npc_life_max_gt5
+                    && self.slots[slot].friendly
+                    && proj_data(self.slots[slot].kind).map_or(0, |d| d.ai_style) != 59;
+                if flag10 {
+                    let (nw, nh) = npcs[idx].size();
+                    let victim = Vec2::new(npcs[idx].x + nw * 0.5, npcs[idx].y + nh * 0.5);
+                    // `:13812-13815` — the Vampire Knives' 304 arm, OUTSIDE
+                    // the canGhostHeal gate; the owner's MoonLeech (buff
+                    // 145) refuses (the owner folds to the local player).
+                    if self.slots[slot].kind == VAMPIRE_KNIFE
+                        && self.slots[slot].owner == 0
+                        && player
+                            .as_ref()
+                            .is_some_and(|pl| pl.buffs.find_buff_index(145).is_none())
+                    {
+                        self.vampire_heal_on_hit(slot, strike_dmg, victim, player.as_deref_mut());
+                    }
+                    // `:13816` — `targetNPC.canGhostHeal | flag9` (flag9 is
+                    // the debug target-dummy option, folds false).
+                    if npcs[idx].can_ghost_heal {
+                        // `:13818-13821` — the hood's heal-orb arm.
+                        self.ghost_heal_on_hit(slot, strike_dmg, victim, player.as_deref_mut());
+                        // `:13822-13825` — the mask's damage-share arm (NO
+                        // MoonLeech gate on this one — the C# checks only
+                        // `ghostHurt`).
+                        if self.slots[slot].owner == 0
+                            && player.as_ref().is_some_and(|pl| pl.ghost_hurt)
+                        {
+                            self.ghost_hurt_on_hit(
+                                world,
+                                slot,
+                                strike_dmg,
+                                victim,
+                                npcs,
+                                player.as_deref_mut(),
+                                rng,
+                            );
+                        }
+                    }
+                }
             }
             if landed {
                 let p = &mut self.slots[slot];
@@ -24424,6 +25008,10 @@ impl ProjectilePool {
                 if p.kind == SHADOWBEAM {
                     p.damage = (p.damage as f64 * 0.9) as i32;
                 }
+                // W4-d6 residual — `this.numHits++` (`Projectile.cs:14199`):
+                // every landed hit bumps the counter the ghostHeal share
+                // decay reads (`:12066`), AFTER this hit's heal spawn.
+                p.num_hits += 1;
                 p.penetrate -= 1;
                 // W4-d2 — `Damage_PVE_Inner`'s chain-weapon return arms
                 // (`Projectile.cs:14148-14164`), AFTER the penetrate
@@ -25358,6 +25946,322 @@ mod tests {
     fn one_npc(world: &World) -> Npc {
         Npc::spawn_slime(world, 20).unwrap()
     }
+
+    /// W4-d6 residual — `Projectile.ghostHeal` (`Projectile.cs:12064-12096`)
+    /// through the PVE walk's `:13816-13821` arm: the Spectre Hood flag +
+    /// a magic shot's landed hit queues the 298 spawn with the 0.2 share,
+    /// drains the lifeSteal budget by the FLOAT amount and bumps numHits
+    /// (`:14199`); the share decays 0.2/0.15/0.1/0.05 then refuses at the
+    /// 4th re-hit (`:12066-12070`). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_spectre_heal_spawns_the_orb_and_the_share_decays_per_hit() {
+        let w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        player.ghost_heal = true;
+        player.hp = 50;
+        player.max_hp = 100;
+        player.life_steal = 80.0;
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        npc.defense_override = Some(0);
+        // The Lost Soul 297: magic, penetrate 3 — repeated damage_pve calls
+        // re-hit through the id-static window only after it expires, so the
+        // witness drives the helper directly for hits 2-4 (the walk's
+        // numHits bump is pinned on hit 1).
+        let slot = pool
+            .spawn_with_data_ai(LOST_SOUL, npc.x, npc.y, 0.0, 0.0, 100, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(
+            &w, slot, std::slice::from_mut(&mut npc), None, None,
+            Some(&mut player), &mut rng,
+        );
+        assert!(npc.hp < 10_000, "the hit lands");
+        assert_eq!(pool.slots()[slot].num_hits, 1, "the :14199 bump");
+        let orbs = pool.drain_heal_orbs();
+        assert_eq!(orbs.len(), 1, "the heal spawn (:12095)");
+        let (owner, x, y, ai0, ai1) = orbs[0];
+        assert_eq!(owner, 0);
+        // The victim centre is the POST-strike position (knockback moved
+        // it) — recompute from the live NPC, the C# reads it at :13820.
+        let (nw, nh) = npc.size();
+        assert_eq!((x, y), (npc.x + nw * 0.5, npc.y + nh * 0.5));
+        assert_eq!(ai0, 0.0, "the missing-health scan picks the local player");
+        // strike_dmg through DamageVar(seed 7) × 0.2 — pin against the
+        // budget drain (the same float the orb carries).
+        let strike = 10_000 - npc.hp;
+        assert!((ai1 - strike as f32 * 0.2).abs() < 1e-3, "the 0.2 share");
+        assert!((player.life_steal - (80.0 - ai1)).abs() < 1e-3, "the :12076 drain");
+        // Hits 2-4: the share decays by 0.05 per numHits; the 5th refuses.
+        for (hits, share) in [(1, 0.15f32), (2, 0.1), (3, 0.05)] {
+            pool.slots_mut()[slot].num_hits = hits;
+            let before = player.life_steal;
+            pool.ghost_heal_on_hit(slot, 100, Vec2::new(x, y), Some(&mut player));
+            let orbs = pool.drain_heal_orbs();
+            assert_eq!(orbs.len(), 1, "hit {} still spawns", hits + 1);
+            assert!((orbs[0].4 - 100.0 * share).abs() < 1e-3, "share {share}");
+            assert!((player.life_steal - (before - orbs[0].4)).abs() < 1e-3);
+        }
+        pool.slots_mut()[slot].num_hits = 4;
+        pool.ghost_heal_on_hit(slot, 100, Vec2::new(x, y), Some(&mut player));
+        assert!(pool.drain_heal_orbs().is_empty(), "0.2 − 4·0.05 = 0 refuses (:12067)");
+    }
+
+    /// W4-d6 residual — the ghostHeal gates: no flag → nothing; MoonLeech
+    /// (buff 145) refuses; a zero budget refuses; a NON-magic shot still
+    /// drains the budget but spawns nothing (`:12076` before `:12077`);
+    /// the martian trio's `canGhostHeal = false` blocks the walk's arm
+    /// (`:13816`); the full-health scan keeps the owner as target.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_ghost_heal_gates_flag_leech_budget_magic_and_the_npc_flag() {
+        let w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        player.hp = 50;
+        player.max_hp = 100;
+        player.life_steal = 80.0;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(LOST_SOUL, 320.0, 384.0, 0.0, 0.0, 100, 0.0, 0.0, 0.0)
+            .unwrap();
+        let at = Vec2::new(330.0, 390.0);
+        // No ghostHeal flag: nothing.
+        pool.ghost_heal_on_hit(slot, 100, at, Some(&mut player));
+        assert!(pool.drain_heal_orbs().is_empty());
+        assert_eq!(player.life_steal, 80.0, "no drain without the flag");
+        // MoonLeech refuses.
+        player.ghost_heal = true;
+        player.buffs.add_buff(145, 840);
+        pool.ghost_heal_on_hit(slot, 100, at, Some(&mut player));
+        assert!(pool.drain_heal_orbs().is_empty());
+        player.buffs.clear_buff(145);
+        // A zero budget refuses (no drain either).
+        player.life_steal = 0.0;
+        pool.ghost_heal_on_hit(slot, 100, at, Some(&mut player));
+        assert!(pool.drain_heal_orbs().is_empty());
+        // A truncated-zero amount refuses: 4 damage × 0.2 = 0.8 → (int)0.
+        player.life_steal = 80.0;
+        pool.ghost_heal_on_hit(slot, 4, at, Some(&mut player));
+        assert!(pool.drain_heal_orbs().is_empty());
+        assert_eq!(player.life_steal, 80.0, "the :12072 gate precedes the drain");
+        // The non-magic shot drains but does not spawn.
+        let knife = pool
+            .spawn_with_data_ai(SHURIKEN, 320.0, 384.0, 0.0, 0.0, 100, 0.0, 0.0, 0.0)
+            .unwrap();
+        pool.ghost_heal_on_hit(knife, 100, at, Some(&mut player));
+        assert!(pool.drain_heal_orbs().is_empty(), "the :12077 magic gate");
+        assert!((player.life_steal - 60.0).abs() < 1e-3, "the budget still drains");
+        // The full-health player keeps the OWNER as the target (the scan's
+        // strict > from 0 never picks a full-health player).
+        player.hp = 100;
+        pool.ghost_heal_on_hit(slot, 100, at, Some(&mut player));
+        let orbs = pool.drain_heal_orbs();
+        assert_eq!(orbs.len(), 1);
+        assert_eq!(orbs[0].3, 0.0, "owner 0 is the fallback target");
+        // The walk-level canGhostHeal gate: a ForceBubble victim refuses.
+        player.hp = 50;
+        let mut bubble = Npc::new(crate::npc::NpcKind::ForceBubble, 20.0 * TILE_PX, 24.0 * TILE_PX, 1, 0.0);
+        bubble.hp = 10_000;
+        bubble.max_hp = 10_000;
+        bubble.defense_override = Some(0);
+        assert!(!bubble.can_ghost_heal, "the :13893 false row");
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.slots_mut()[slot].penetrate = 3;
+        pool.damage_pve(
+            &w, slot, std::slice::from_mut(&mut bubble), None, None,
+            Some(&mut player), &mut rng,
+        );
+        assert!(bubble.hp < 10_000, "the hit lands");
+        assert!(pool.drain_heal_orbs().is_empty(), "canGhostHeal=false refuses (:13816)");
+    }
+
+    /// W4-d6 residual 5 — the 304 SetDefaults row (`Projectile.cs:3952-3964`)
+    /// + the aiStyle-2 knife machine's spawn latch/decay (`:23240-23244` /
+    /// `:23632-23649`, already ported kind-gated — the row arms them) + the
+    /// 4×4 `GetCollisionParams` probe (`:20007-20011`). WRITTEN NOT RUN
+    /// (code-only).
+    #[test]
+    fn w4_d6_the_vampire_knife_row_is_verbatim_and_the_ai_runs() {
+        let d = proj_data(VAMPIRE_KNIFE).expect("the row");
+        assert_eq!((d.w, d.h), (30.0, 30.0), "`:3955-3956`");
+        assert_eq!(d.ai_style, 2, "`:3957`");
+        assert_eq!(d.penetrate, 1, "`:3959`");
+        assert_eq!(d.alpha, 255, "`:3954`");
+        assert_eq!(d.light, 0.2, "`:3961`");
+        assert_eq!(d.extra_updates, 0, "`:3963`");
+        assert!(d.ignore_water, "`:3962`");
+        assert!(d.melee, "`:3960`");
+        assert!(d.tile_collide, "the stock `:775` stands");
+        assert!(!d.magic && !d.ranged, "the row sets melee only");
+        // The knife fires from the item (the use arm lands in editing.rs).
+        assert_eq!(crate::registry::projectile(1569), Some(VAMPIRE_KNIFE));
+        // The AI: the spawn latch drops alpha to 0 on the first tick, the
+        // 30-tick decay then ramps +10/tick with the ×0.9 damage decay.
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(VAMPIRE_KNIFE, 320.0, 384.0, 3.0, -4.0, 100, 2.75, 0.0, 0.0)
+            .unwrap();
+        step_player(&mut pool, &mut w, &mut crate::player::Player::spawn(&w));
+        let p = &pool.slots()[slot];
+        assert_eq!(p.alpha, 0, "the :23243 invisible start");
+        assert_eq!(p.local_ai[0], 1.0, "the :23242 latch");
+        let expect_rot = (-4.0f32).atan2(3.0) + 1.57;
+        assert!(
+            (p.rot - expect_rot).abs() < 1e-5,
+            "the :23647 aim OVERWRITES the :23255 spin while rising"
+        );
+        assert_eq!(p.damage, 100, "no decay before tick 30");
+    }
+
+    /// W4-d6 residual 5 — `Projectile.ghostHurt`
+    /// (`Projectile.cs:12012-12062`): the magic + stored-damage + dealt>1
+    /// gates, the 1500 budget refusal, the spend-before-scan, the
+    /// preferred/fallback two-list pick and the speed-4 direction. WRITTEN
+    /// NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_ghost_hurt_spends_the_budget_and_spawns_the_wrath() {
+        let w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        player.ghost_hurt = true;
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        npc.defense_override = Some(0);
+        let slot = pool
+            .spawn_with_data_ai(LOST_SOUL, npc.x - 100.0, npc.y, 0.0, 0.0, 100, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let at = Vec2::new(npc.x + 10.0, npc.y + 10.0);
+        // The gates: a dealt hit of 1 refuses (dmg <= 1, `:12019`).
+        pool.ghost_hurt_on_hit(&w, slot, 1, at, std::slice::from_ref(&npc), Some(&mut player), &mut rng);
+        assert!(pool.drain_wraths().is_empty());
+        assert_eq!(player.ghost_dmg, 0.0, "no spend on the refused hit");
+        // The non-magic shot refuses (`:12014`).
+        let knife = pool
+            .spawn_with_data_ai(SHURIKEN, npc.x - 100.0, npc.y, 0.0, 0.0, 100, 0.0, 0.0, 0.0)
+            .unwrap();
+        pool.ghost_hurt_on_hit(&w, knife, 50, at, std::slice::from_ref(&npc), Some(&mut player), &mut rng);
+        assert!(pool.drain_wraths().is_empty());
+        // A qualifying hit: the budget grows by the STORED damage
+        // (`:12028`), the wrath carries it and a speed-4 velocity.
+        pool.ghost_hurt_on_hit(&w, slot, 50, at, std::slice::from_ref(&npc), Some(&mut player), &mut rng);
+        assert_eq!(player.ghost_dmg, 100.0, "the stored damage, not the dealt 50");
+        let wraths = pool.drain_wraths();
+        assert_eq!(wraths.len(), 1, "the 356 spawn (:12060)");
+        let (owner, x, y, vx, vy, dmg, ai0) = wraths[0];
+        assert_eq!((owner, dmg), (0, 100));
+        assert_eq!((x, y), (at.x, at.y), "the victim centre");
+        assert_eq!(ai0, 0.0, "the RAW npc index");
+        assert!(
+            ((vx * vx + vy * vy).sqrt() - 4.0).abs() < 1e-3,
+            "the speed-4 normalise (:12059)"
+        );
+        // The 1500 gate: at 1500 the spawn still fires (strict >), past it
+        // refuses WITHOUT spending.
+        player.ghost_dmg = 1500.0;
+        pool.ghost_hurt_on_hit(&w, slot, 50, at, std::slice::from_ref(&npc), Some(&mut player), &mut rng);
+        assert_eq!(pool.drain_wraths().len(), 1, "1500 is not > 1500");
+        assert_eq!(player.ghost_dmg, 1600.0);
+        pool.ghost_hurt_on_hit(&w, slot, 50, at, std::slice::from_ref(&npc), Some(&mut player), &mut rng);
+        assert!(pool.drain_wraths().is_empty(), "the :12024 refusal");
+        assert_eq!(player.ghost_dmg, 1600.0, "no spend past the cap");
+        // An empty scan still spends (`:12028` precedes the scan) but
+        // spawns nothing (`:12054`).
+        player.ghost_dmg = 0.0;
+        pool.ghost_hurt_on_hit(&w, slot, 50, at, &[], Some(&mut player), &mut rng);
+        assert!(pool.drain_wraths().is_empty());
+        assert_eq!(player.ghost_dmg, 100.0, "the fruitless scan still spends");
+    }
+
+    /// W4-d6 residual 5 — the PVE walk's `:13812-13825` nesting: the 304's
+    /// vampireHeal fires OUTSIDE the canGhostHeal gate (a ForceBubble
+    /// victim still heals), the MoonLeech buff refuses it, and the
+    /// ghostHurt arm sits INSIDE the gate (the bubble refuses the wrath
+    /// even with the flag). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_pve_walk_routes_the_knife_heal_outside_the_ghost_gate() {
+        let w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        player.ghost_hurt = true;
+        player.life_steal = 80.0;
+        let mut pool = ProjectilePool::new();
+        let mut bubble = Npc::new(crate::npc::NpcKind::ForceBubble, 20.0 * TILE_PX, 24.0 * TILE_PX, 1, 0.0);
+        bubble.hp = 10_000;
+        bubble.max_hp = 10_000;
+        bubble.defense_override = Some(0);
+        assert!(!bubble.can_ghost_heal);
+        let slot = pool
+            .spawn_with_data_ai(VAMPIRE_KNIFE, bubble.x, bubble.y, 0.0, 0.0, 100, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(
+            &w, slot, std::slice::from_mut(&mut bubble), None, None,
+            Some(&mut player), &mut rng,
+        );
+        assert!(bubble.hp < 10_000, "the hit lands");
+        let orbs = pool.drain_vampire_orbs();
+        assert_eq!(orbs.len(), 1, "the :13812 arm is OUTSIDE canGhostHeal");
+        // The strike's dealt damage: DamageVar(seed 7) on 100, then
+        // calculate_damage_npcs_take vs the bubble's 20 def — derive the
+        // dealt amount from the hp delta (the takenDamageMultiplier is 1).
+        let strike = 10_000 - bubble.hp;
+        assert!(strike > 1, "the dealt>1 gate passes");
+        assert!((orbs[0].4 - strike as f32 * 0.075).abs() < 1e-3, "the 7.5% share");
+        assert_eq!(orbs[0].3, 0.0, "ai0 = the owner (:12104)");
+        assert!((player.life_steal - (80.0 - orbs[0].4)).abs() < 1e-3, "the :12103 drain");
+        assert!(pool.drain_wraths().is_empty(), "the :13816 gate refuses the wrath");
+        // MoonLeech refuses the knife heal (`:13812`).
+        player.buffs.add_buff(145, 840);
+        pool.slots_mut()[slot].penetrate = 1;
+        let mut bubble2 = Npc::new(crate::npc::NpcKind::ForceBubble, 20.0 * TILE_PX, 24.0 * TILE_PX, 1, 0.0);
+        bubble2.hp = 10_000;
+        bubble2.max_hp = 10_000;
+        bubble2.defense_override = Some(0);
+        pool.damage_pve(
+            &w, slot, std::slice::from_mut(&mut bubble2), None, None,
+            Some(&mut player), &mut rng,
+        );
+        assert!(pool.drain_vampire_orbs().is_empty(), "the moonLeech gate");
+    }
+
+    /// W4-d6 residual 5 — `Projectile.vampireHeal`
+    /// (`Projectile.cs:12098-12106`): the truncated-zero refusal (13 ×
+    /// 0.075 = 0.975 → 0), the budget gate, the float drain; NO magic gate
+    /// (the melee knife spawns). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_vampire_heal_share_truncates_and_drains_the_float() {
+        let w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        player.life_steal = 80.0;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(VAMPIRE_KNIFE, 320.0, 384.0, 0.0, 0.0, 100, 0.0, 0.0, 0.0)
+            .unwrap();
+        let at = Vec2::new(330.0, 390.0);
+        // 13 damage truncates to 0 — refuses, no drain (`:12101`).
+        pool.vampire_heal_on_hit(slot, 13, at, Some(&mut player));
+        assert!(pool.drain_vampire_orbs().is_empty());
+        assert_eq!(player.life_steal, 80.0);
+        // 14 damage → 1.05: spawns, drains the FLOAT 1.05.
+        pool.vampire_heal_on_hit(slot, 14, at, Some(&mut player));
+        let orbs = pool.drain_vampire_orbs();
+        assert_eq!(orbs.len(), 1, "the melee knife spawns (no magic gate)");
+        assert!((orbs[0].4 - 1.05).abs() < 1e-4, "14 × 0.075");
+        assert!((player.life_steal - 78.95).abs() < 1e-4, "the float drain");
+        // A zero budget refuses.
+        player.life_steal = 0.0;
+        pool.vampire_heal_on_hit(slot, 100, at, Some(&mut player));
+        assert!(pool.drain_vampire_orbs().is_empty());
+    }
+
     #[test]
     fn the_hostile_shot_hurts_the_player_and_dies() {
         // The hostile contact pass: the box overlap -> `Player.hurt`
@@ -32459,7 +33363,7 @@ mod widened_state_tests {
     /// sweep lives here rather than over `0..2048`. The rows whose C#
     /// `SetDefaults` overrides the reset (the shadow hand and the Dark Mage
     /// marker, both `alpha = 255`) sit outside it since S1-D-4b-1.
-    const BASELINE_ROWS: [u16; 39] = [
+    const BASELINE_ROWS: [u16; 38] = [
         WOODEN_ARROW,
         FLAME_ARROW,
         WOODEN_ARROW_HOSTILE,
@@ -32485,7 +33389,6 @@ mod widened_state_tests {
         EXPLOSIVES_BLAST,
         LANDMINE_BLAST,
         CANNON_BOMB,
-        CANNON_EXPLOSIVE,
         ENCHANTED_BOOMERANG,
         WOODEN_BOOMERANG,
         ICE_BOOMERANG,
@@ -35565,6 +36468,279 @@ mod magic_ai_tests {
             (pool.slots()[slot].vel.x - 1.0).abs() < 1e-9,
             "a dead player is unhunted"
         );
+    }
+
+    /// W4-d6 — one pool update with the local player channel armed.
+    fn step_player(pool: &mut ProjectilePool, w: &mut World, p: &mut crate::player::Player) {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.update(w, &mut [], None, None, Some(p), YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false);
+    }
+
+    #[test]
+    fn test_w4_d6_style_52_the_heal_orb_blends_at_16_and_heals_on_the_50px_contact() {
+        // `:28528-28532`: the speed-4 `(v*15 + d)/16` blend, one per sub-step
+        // (the 298's `extraUpdates = 3` → four). `:28513-28526`: the < 50f
+        // box-overlap contact heals ai[1] and kills; the HealEffect text
+        // carries the RAW amount even when the cap eats part of it
+        // (`Player.heal`'s order).
+        let mut w = world();
+        let mut player = crate::player::Player::spawn(&w);
+        let (pcx, pcy) = player.center();
+        let mut pool = ProjectilePool::new();
+        // 100 px left of the player centre — out of the 50f contact.
+        let slot = pool
+            .spawn_with_data_ai_owned(SPIRIT_HEAL, 0, pcx - 103.0, pcy - 3.0, 0.0, 0.0, 0, 0.0, 0.0, 5.0)
+            .unwrap();
+        step_player(&mut pool, &mut w, &mut player);
+        let p = &pool.slots()[slot];
+        assert!(p.active, "100f is outside the contact");
+        let mut v = 0.0f32;
+        for _ in 0..4 {
+            v = (v * 15.0 + 4.0) / 16.0;
+        }
+        assert!((p.vel.x - v).abs() < 1e-5, "four speed-4 blends from rest");
+        assert!(p.vel.y.abs() < 1e-9, "the colinear steer leaves y alone");
+        // The contact: spawn overlapping the player at 95/100 hp, heal 20.
+        player.hp = 95;
+        player.max_hp = 100;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(SPIRIT_HEAL, 0, pcx - 3.0, pcy - 3.0, 0.0, 0.0, 0, 0.0, 0.0, 20.0)
+            .unwrap();
+        step_player(&mut pool, &mut w, &mut player);
+        assert!(!pool.slots()[slot].active, "the contact kills (`:28526`)");
+        assert_eq!(player.hp, 100, "the statLifeMax2 cap");
+        assert_eq!(player.take_heal_effect(), Some(20), "the RAW heal text survives the cap");
+    }
+
+    #[test]
+    fn test_w4_d6_style_52_moon_leech_refuses_the_heal_but_the_contact_still_kills() {
+        // `:28515`: `owner == Main.myPlayer && !Main.player[myPlayer].moonLeech`
+        // gates ONLY the heal — the Kill() at `:28526` runs either way.
+        let mut w = world();
+        let mut player = crate::player::Player::spawn(&w);
+        player.buffs.add_buff(145, 840); // MoonLeech (`Player.cs:11859-11862`)
+        player.hp = 50;
+        player.max_hp = 100;
+        let (pcx, pcy) = player.center();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(VAMPIRE_HEAL, 0, pcx - 3.0, pcy - 3.0, 0.0, 0.0, 0, 0.0, 0.0, 20.0)
+            .unwrap();
+        step_player(&mut pool, &mut w, &mut player);
+        assert!(!pool.slots()[slot].active, "the contact kills regardless");
+        assert_eq!(player.hp, 50, "MoonLeech refuses the heal");
+        assert_eq!(player.take_heal_effect(), None, "no heal text either");
+        // The 305 row runs ELEVEN sub-steps (`extraUpdates = 10`, `:3972`):
+        // from 60 px out the approach accelerates through the (v*15+4)/16
+        // blend each sub-step; the leech still refuses every contact heal.
+        player.hp = 50;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(VAMPIRE_HEAL, 0, pcx - 63.0, pcy - 3.0, 0.0, 0.0, 0, 0.0, 0.0, 7.0)
+            .unwrap();
+        step_player(&mut pool, &mut w, &mut player);
+        let p = &pool.slots()[slot];
+        let mut v = 0.0f32;
+        for _ in 0..11 {
+            v = (v * 15.0 + 4.0) / 16.0;
+        }
+        assert!(
+            !p.active || (p.vel.x - v).abs() < 1e-4,
+            "eleven sub-steps of the speed-4 approach (or the contact landed)"
+        );
+        assert_eq!(player.hp, 50, "the leech holds through the approach");
+    }
+
+    #[test]
+    fn test_w4_d6_style_52_the_heal_orb_rows_are_verbatim() {
+        // `:3883-3892` (298) / `:3965-3973` (305): 6x6, aiStyle 52, alpha
+        // 255, tileCollide false; extraUpdates 3 vs 10; the stock
+        // penetrate 1 / timeLeft 3600; friendly stays false (`:788`).
+        let d = proj_data(SPIRIT_HEAL).unwrap();
+        assert_eq!((d.w, d.h), (6.0, 6.0));
+        assert_eq!(d.ai_style, 52);
+        assert_eq!(d.alpha, 255);
+        assert_eq!(d.extra_updates, 3);
+        assert!(!d.tile_collide);
+        assert!(d.magic, "`:3889`");
+        let d = proj_data(VAMPIRE_HEAL).unwrap();
+        assert_eq!(d.ai_style, 52);
+        assert_eq!(d.extra_updates, 10);
+        assert!(!d.magic, "the 305 arm sets no class (`:3965-3973`)");
+        assert_eq!(d.penetrate, 1);
+        assert_eq!(d.time_left, 3600);
+    }
+
+    #[test]
+    fn test_w4_d6_style_55_the_jack_cycles_3_frames_and_faces_the_velocity() {
+        // `:28775-28794`: the frameCounter arm fires EVERY tick (3 frames
+        // wrap); a -X flight mirrors the atan2 and flips spriteDirection.
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(FLAMING_JACK, 10.0 * TILE_PX, 10.0 * TILE_PX, -5.0, 0.0, 40, 0.0)
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        for t in 1..=3 {
+            tick_npcs(&mut w, &mut pool, &mut npcs);
+            let p = &pool.slots()[slot];
+            assert_eq!(p.frame, t % 3, "one frame per tick, wrap at 3");
+            assert_eq!(p.frame_counter, 0, "the > 0 arm always resets");
+            assert_eq!(p.sprite_direction, -1, "the -X flight mirrors");
+            assert!(p.rot.abs() < 1e-6, "atan2(-0, +5) = 0");
+        }
+        // The +X arm: rotation atan2(vy, vx), sprite +1.
+        pool.slots_mut()[slot].vel = Vec2::new(0.0, 5.0);
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.sprite_direction, 1);
+        assert!((p.rot - std::f32::consts::FRAC_PI_2).abs() < 1e-6, "atan2(5, 0)");
+    }
+
+    #[test]
+    fn test_w4_d6_style_55_the_held_target_blends_at_15_and_the_stale_one_rescans() {
+        // `:28801-28811`: the held chaseable target steers `(v*14 + d)/15`
+        // at speed 8. `:28815-28830`: a stale index rescans the tightest
+        // Manhattan inside 1000f + CanHit, storing the RAW index.
+        let mut w = world();
+        let mut npcs = vec![
+            Npc::spawn_slime_sky(20.0 * TILE_PX + 300.0, 24.0 * TILE_PX, SlimeVariant::Blue),
+            Npc::spawn_slime_sky(20.0 * TILE_PX + 100.0, 24.0 * TILE_PX, SlimeVariant::Blue),
+        ];
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(FLAMING_JACK, 20.0 * TILE_PX, 24.0 * TILE_PX, 0.0, 0.0, 40, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].ai[0] = 1.0; // the near slime, held
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        let p = &pool.slots()[slot];
+        let center = Vec2::new(20.0 * TILE_PX + 15.0, 24.0 * TILE_PX + 15.0);
+        let delta = npc_center(&npcs[1]) - center;
+        let expected = delta * (8.0 / delta.length()) / 15.0;
+        assert!(
+            (p.vel.x - expected.x).abs() < 1e-5 && (p.vel.y - expected.y).abs() < 1e-5,
+            "one speed-8 (v*14 + d)/15 blend from rest"
+        );
+        // The stale hold (npc 1 dead) rescans onto the far slime (index 0).
+        npcs[1].hp = 0;
+        pool.slots_mut()[slot].vel = Vec2::ZERO;
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        assert_eq!(pool.slots()[slot].ai[0], 0.0, "the RAW npc index lands");
+        // `:28840-28843`: an out-of-range ai[0] kills.
+        pool.slots_mut()[slot].ai[0] = 200.0;
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        assert!(!pool.slots()[slot].active, "ai[0] >= Main.maxNPCs kills");
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(FLAMING_JACK, 20.0 * TILE_PX, 24.0 * TILE_PX, 0.0, 0.0, 40, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].ai[0] = -1.0;
+        tick_npcs(&mut w, &mut pool, &mut npcs);
+        assert!(!pool.slots()[slot].active, "a negative ai[0] kills");
+    }
+
+    #[test]
+    fn test_w4_d6_style_55_the_jack_row_is_verbatim() {
+        // `:4139-4148`: 30x30, aiStyle 55, friendly, melee, tileCollide
+        // false, ignoreWater; the stock penetrate 1 / timeLeft 3600.
+        let d = proj_data(FLAMING_JACK).unwrap();
+        assert_eq!((d.w, d.h), (30.0, 30.0));
+        assert_eq!(d.ai_style, 55);
+        assert!(d.melee);
+        assert!(!d.tile_collide);
+        assert!(d.ignore_water);
+        assert_eq!(d.penetrate, 1);
+        assert_eq!(d.time_left, 3600);
+        assert_eq!(d.extra_updates, 0);
+    }
+
+    /// W4-d6 — one pool update with the hostile lane simulated (the
+    /// owner-255 shots — `spawn_hostile_ai`'s seam).
+    fn step_hostile(pool: &mut ProjectilePool, w: &mut World) {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(w, &mut npcs, None, None, None, YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, true);
+    }
+
+    #[test]
+    fn test_w4_d6_style_56_the_scythe_latches_the_blade_pose_then_spins_at_0p025() {
+        // `:28847-28852`: localAI[0]'s one-shot latch copies ai[0] →
+        // rotation and -ai[1] → spriteDirection. `:28853-28865`: the
+        // sub-16 ×1.05 acceleration then the (|vx|+|vy|)·0.025·dir spin.
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_hostile_ai(
+                FLAMING_SCYTHE,
+                Vec2::new(20.0 * TILE_PX, 24.0 * TILE_PX),
+                Vec2::new(4.0, 0.0),
+                60,
+                0.0,
+                1.25,
+                -1.0,
+            )
+            .unwrap();
+        step_hostile(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.local_ai[0], 1.0, "the latch fires once");
+        assert_eq!(p.sprite_direction, 1, "-(ai[1] = -1)");
+        assert!(!p.friendly, "the hostile row (`:4221`)");
+        // The first tick: v = (4, 0) → ×1.05 = (4.2, 0); rot = 1.25 + 4.2·0.025.
+        assert!((p.vel.x - 4.2).abs() < 1e-5, "the sub-16 ×1.05");
+        assert!((p.rot - (1.25 + 4.2 * 0.025)).abs() < 1e-5, "the latch then the spin");
+        assert_eq!(p.direction, 1);
+        // The latch never re-fires: a changed ai[0] leaves rotation alone.
+        pool.slots_mut()[slot].ai[0] = 9.0;
+        let rot_before = pool.slots()[slot].rot;
+        let vx = pool.slots()[slot].vel.x;
+        step_hostile(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        let expected_rot = rot_before + (vx * 1.05) * 0.025;
+        assert!((p.rot - expected_rot).abs() < 1e-4, "no re-latch, spin only");
+        // The -X flight spins negative.
+        pool.slots_mut()[slot].vel = Vec2::new(-4.0, 0.0);
+        let rot_before = pool.slots()[slot].rot;
+        step_hostile(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.direction, -1);
+        assert!((p.rot - (rot_before - 4.2 * 0.025)).abs() < 1e-5, "the negative spin");
+    }
+
+    #[test]
+    fn test_w4_d6_style_56_the_accel_stops_at_manhattan_16() {
+        // `:28853`: `|vx| + |vy| < 16` gates the ×1.05 — a 16-Manhattan
+        // flight keeps its speed exactly (the spin still runs).
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_hostile_ai(
+                FLAMING_SCYTHE,
+                Vec2::new(20.0 * TILE_PX, 24.0 * TILE_PX),
+                Vec2::new(10.0, 6.0),
+                60,
+                0.0,
+                0.0,
+                1.0,
+            )
+            .unwrap();
+        step_hostile(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.vel, Vec2::new(10.0, 6.0), "16 is not < 16");
+        assert!((p.rot - 16.0 * 0.025).abs() < 1e-6, "the spin reads the speed");
+    }
+
+    #[test]
+    fn test_w4_d6_style_56_the_scythe_row_is_verbatim() {
+        // `:4215-4225`: 80x80, aiStyle 56, light 0.25, hostile, penetrate
+        // -1, tileCollide false, timeLeft 420.
+        let d = proj_data(FLAMING_SCYTHE).unwrap();
+        assert_eq!((d.w, d.h), (80.0, 80.0));
+        assert_eq!(d.ai_style, 56);
+        assert_eq!(d.light, 0.25);
+        assert_eq!(d.penetrate, -1);
+        assert!(!d.tile_collide);
+        assert_eq!(d.time_left, 420);
     }
 
     #[test]

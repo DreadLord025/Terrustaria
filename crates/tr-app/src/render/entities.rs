@@ -50,6 +50,15 @@ pub(crate) struct PlayerAssets {
     pub(crate) armor_head: [Option<BgTex>; 5],
     pub(crate) armor_body: [Option<BgTex>; 5],
     pub(crate) armor_legs: [Option<BgTex>; 5],
+    /// W4-d6 residual 6 — the Spectre head vanity pair beyond the packed
+    /// 1..4 slots: `TextureAssets.ArmorHead[101]` (the Hood, item 1503)
+    /// and `[156]` (the Mask, item 2189) — `ArmorIDs.Head.SpectreHood/
+    /// SpectreMask` (`ArmorIDs.cs:249/:359`). Both are plain normal hats
+    /// (neither in `GetHairSettings`' fullHair/hatHair lists,
+    /// `Player.cs:16791-16904` — the hair stays suppressed), drawn by the
+    /// normal-hat branch's 52-px crop (`PlayerDrawLayers.cs:2254-2281`).
+    pub(crate) armor_head_spectre_hood: Option<BgTex>,
+    pub(crate) armor_head_spectre_mask: Option<BgTex>,
     /// The mount sheets, indexed by [`crate::mount::mount_index`]: the back
     /// strips (`MountData.backTexture`) and the front strips
     /// (`frontTexture`) of the ground + hover/flyer + cart sets.
@@ -76,6 +85,8 @@ impl Default for PlayerAssets {
             armor_head: [None; 5],
             armor_body: [None; 5],
             armor_legs: [None; 5],
+            armor_head_spectre_hood: None,
+            armor_head_spectre_mask: None,
             mount_back: [None; crate::mount::MOUNT_COUNT],
             mount_front: [None; crate::mount::MOUNT_COUNT],
         }
@@ -119,6 +130,10 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
         shoes: sky_tex(atlas, "Player_0_12", None),
         hair: sky_tex(atlas, "Player_Hair_1", None),
         armor_head: armor_sheets("Armor_Head"),
+        // W4-d6 residual 6 — the Spectre head pair (`AssetInitializer.cs:
+        // 165-185` indexes by the armor slot: file number == slot).
+        armor_head_spectre_hood: sky_tex(atlas, "Armor_Head_101", None),
+        armor_head_spectre_mask: sky_tex(atlas, "Armor_Head_156", None),
         armor_body: {
             let mut body: [Option<BgTex>; 5] = [None; 5];
             for (slot, tex) in body.iter_mut().enumerate().skip(1) {

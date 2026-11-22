@@ -502,6 +502,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Armor_Head_2",
         "Armor_Head_3",
         "Armor_Head_4",
+        // W4-d6 residual 6 — the Spectre head vanity pair (slots 101/156,
+        // `ArmorIDs.cs:249/:359`; the hood/mask visual swap's sheets).
+        "Armor_Head_101",
+        "Armor_Head_156",
         "Armor_Legs_1",
         "Armor_Legs_2",
         "Armor_Legs_3",
