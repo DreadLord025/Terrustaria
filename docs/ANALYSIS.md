@@ -46262,3 +46262,39 @@ re-derived by mechanical Python replay of line-for-line C#
 transcriptions (`tools/_f27_s12_replay.py`, the integer accumulators
 exact in f32; the dark-mage hover |v|*0.1+1 the one non-integer feed,
 f32-rounded, the reset at tick 31 for vx3).
+
+## The banner index-space reconciliation (W4-f31, the d129 escalation fix)
+The d129 census (`scene_scan_w4_d129.rs`'s convention pin) found the port's
+tile-91 decode returning the C#'s `num` family — the PLACE-STYLE space —
+while every reader keyed the `NPCtoBanner` space: a +21 mismatch. The C#
+(`SceneMetrics.cs:410-443`) computes two indices: `num` (`frameX/18` +111
+per 54-row) gates the blank cells and the sheet holes 311/312, then `num3`
+(`frameX/18 - 21`, the same +111 wrap, one `-1` per crossed hole keyed off
+the UNSHIFTED `num`) indexes `NPCBannerBuff[num3]`. The `-21` recovers the
+`NPCtoBanner` index because the placement style is banner + 21
+(`Item.cs:19230`'s `placeStyle = 22 + type - 1615` over `BannerToItem`'s
+base band `1615 + banner - 1`, `BannerSystem.cs:400`).
+- **The fix.** `tr_core::bestiary::banner_num_from_frame` now ports the C#
+  `num3` expression verbatim (the blank/hole gate first, then the shifted
+  index with the `num`-keyed decrements). The scan arm
+  (`world_sim/scene_scan.rs`) indexes `npc_banner_buff[decode]` unchanged —
+  the array now lives in the C# `NPCBannerBuff` space, so the buff reader
+  `banner_buff_for` (`banners.rs`, `Player.cs:20483-20493`) and the hover
+  list `banner_hover_names` (`ui/resources.rs`, `Main.cs:21360-21388`) read
+  the same space the kill tally (`BannerSystem::add_npc_kill_by`) writes.
+  No reader logic changed — only the decode's index space moved.
+- **Scope.** Index-space only: e24's drop lane (`npcs.rs`'s milestone
+  `banner_to_item` spawn) is untouched — the tally already keyed
+  `npc_to_banner`, so the dropped item id is unchanged. The placement side
+  (`itemdata.rs` place_style rows, `dungeon_features.rs::place_banner`'s
+  `style * 18` frames) stays in place-style space, exactly as the C#.
+- **The witnesses.** The bestiary decode pin (the Slime/Pinky families,
+  the row wrap, the hole crossing, the blank strip), the scan-arm pin
+  (`scene_scan.rs`), the updated d129 convention pin
+  (`scene_scan_w4_d129.rs`, carried on this branch ahead of d129's merge —
+  d129 keeps the identical updated pin) and the end-to-end
+  `w4_f31_the_placed_slime_banner_arms_the_correct_buff`
+  (`world_sim/npcs.rs`: 50 kills → item 1683 drop → place style 90 → scan
+  buff 69 → `banner_buff_for(1)` = (1.5, 0.75) → hover names the Blue
+  Slime). WRITTEN NOT RUN — code-only lane, no cargo invoked; every
+  expectation re-derived against the cited C# windows.

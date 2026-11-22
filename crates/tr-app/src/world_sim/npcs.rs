@@ -19874,3 +19874,79 @@ mod w4_d80_tracked_npc_tests {
     }
 }
 
+
+/// W4-f31 — the banner index-space reconciliation witness (the d129 census
+/// finding): the kill tally's banner id, the placed banner's scan decode
+/// and the buff/hover readers all share the `NPCtoBanner` space
+/// (`SceneMetrics.cs:424-440`'s `num3`, `Item.cs:19230`'s style = banner+21,
+/// `BannerSystem.cs:400`). WRITTEN NOT RUN (code-only lane).
+#[cfg(test)]
+mod w4_f31_banner_space_tests {
+    use super::*;
+
+    /// The placed Slime banner arms the CORRECT buff: 50 Blue Slime kills
+    /// drop the Slime Banner item 1683 (`BannerSystem.AddNPCKillBy`,
+    /// `BannerSystem.cs:163-193`); placing it writes tile 91 at its
+    /// `placeStyle` 90 (`Item.cs:19230`'s `22 + 1683 - 1615` = banner 69 +
+    /// 21); the scan's decode recovers 69 = `NPCtoBanner(1)` and the buff
+    /// reader (`Player.cs:20483-20493`) arms the Blue Slime — not the
+    /// place-style index 90's npc.
+    #[test]
+    fn w4_f31_the_placed_slime_banner_arms_the_correct_buff() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = crate::test_world_helpers::ground();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 100.0 * TILE_PX;
+        player.y = 110.0 * TILE_PX;
+        app.player = Some(player);
+        // 49 kills on the tally: the next death is the 50th — the Blue
+        // Slime's `KillsToBanner` milestone (the default 50).
+        for _ in 0..49 {
+            assert!(app.banners.add_npc_kill_by(1, "Tester").is_none());
+        }
+        let mut slime = Npc::new(NpcKind::Slime, 100.0 * TILE_PX, 110.0 * TILE_PX, 1, 0.0);
+        slime.slime = SlimeVariant::Blue;
+        slime.hp = 0;
+        app.npcs.push(slime);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.banners.kills(69), 50, "the tally keys NPCtoBanner(1)");
+        // The milestone dropped the banner ITEM (e24's lane, untouched):
+        // `BannerToItem(69)` = 1683, one at the death spot.
+        let drop = app
+            .items
+            .iter()
+            .find(|d| d.kind == 1683)
+            .expect("the 50th kill drops the Slime Banner");
+        assert_eq!(drop.count, 1);
+        // Place it: the item's own `createTile`/`placeStyle` row writes
+        // tile 91, frameX = style * 18 (`WorldGen.PlaceTile`), frameY 0.
+        let def = crate::itemdata::ITEMS[1683];
+        assert_eq!(def.tile, Some(91));
+        assert_eq!(def.place_style, 90, "banner 69 + 21 (Item.cs:19230)");
+        let i = app.world.index(100, 110);
+        app.world.tiles[i].kind = 91;
+        app.world.tiles[i].frame_x = (def.place_style * 18) as i16;
+        app.world.tiles[i].frame_y = 0;
+        app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        // The scan decodes into the NPCtoBanner space: buff 69, not 90.
+        let m = crate::world_sim::scene_scan::scan_scene_at(
+            &app.world,
+            [100.0 * TILE_PX, 110.0 * TILE_PX],
+            false,
+            false,
+            false,
+        );
+        assert!(m.has_banner);
+        assert!(m.npc_banner_buff[69]);
+        assert!(!m.npc_banner_buff[90], "the place-style index stays cold");
+        // The buff reader arms the Blue Slime (net 1), the classic pair.
+        assert_eq!(
+            crate::banners::banner_buff_for(&m, 1),
+            Some((1.5, 0.75)),
+            "the placed Slime banner arms the Blue Slime buff"
+        );
+        // The hover list names the Blue Slime — `BannerToNPC(69)` = 1.
+        let names = crate::ui::resources::banner_hover_names(&m.npc_banner_buff);
+        assert_eq!(names, vec![crate::lang::npc_name(1)]);
+    }
+}

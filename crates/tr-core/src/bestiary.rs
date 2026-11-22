@@ -1093,28 +1093,48 @@ pub fn banner_to_item(banner: i32) -> i32 {
 pub const BANNER_DAMAGE_DEALT: f32 = 1.5;
 pub const BANNER_DAMAGE_RECEIVED: f32 = 0.75;
 
-/// `SceneMetrics.ScanTiles`' tile-91 arm (`SceneMetrics.cs:416-439`): the
-/// banner id from the placed banner's frames — `frameX / 18` plus 111 per
-/// full `frameY` row, the blank cells (`frameX < 396 && frameY < 54`, the
-/// ids 311/312) skipped.
+/// `SceneMetrics.ScanTiles`' tile-91 arm (`SceneMetrics.cs:410-443`): the
+/// `NPCBannerBuff` index from the placed banner's frames — the C#'s `num3`
+/// (`frameX / 18 - 21` plus 111 per full `frameY` row, the two `-1` steps
+/// keyed off the unshifted `num`). The `-21` recovers the `NPCtoBanner`
+/// index space: the placement style is banner + 21 (`Item.cs:19230`'s
+/// `placeStyle = 22 + type - 1615` over `BannerSystem.BannerToItem`'s base
+/// band `1615 + banner - 1`, `BannerSystem.cs:400`), so the readers
+/// (`Player.GetBannerBuffEffect` `Player.cs:20483-20493`,
+/// `MouseText_DrawBuffTooltip` `Main.cs:21360-21388`) index the same space
+/// the kill tally writes. The blank cells (`frameX < 396 && frameY < 54`)
+/// and the sheet's holes (`num` 311/312) are skipped before the shift.
 pub fn banner_num_from_frame(frame_x: i16, frame_y: i16) -> Option<i32> {
+    // `num` (`SceneMetrics.cs:412-416`): the place-style space index —
+    // `frameX / 18` plus 111 (= 90 + 21) per full row of 54.
     let mut num = frame_x as i32 / 18;
     let mut fy = frame_y;
     while fy >= 54 {
         num += 90 + 21;
         fy -= 54;
     }
-    if num >= 311 {
-        num -= 1;
-    }
-    if num >= 312 {
-        num -= 1;
-    }
+    // `flag` (`:417-421`): the blank cells and the sheet holes 311/312
+    // refuse before any index is derived.
     let blank = frame_x < 396 && frame_y < 54;
     if blank || num == 311 || num == 312 {
         return None;
     }
-    Some(num)
+    // `num3` (`:424-436`): the -21-shifted index, the same +111 row wrap,
+    // then one -1 per crossed hole (the `num >= 311` / `num >= 312` tests
+    // read the UNSHIFTED `num`, not `num3`).
+    let mut num3 = frame_x as i32 / 18 - 21;
+    let mut fy = frame_y;
+    while fy >= 54 {
+        num3 += 90 + 21;
+        fy -= 54;
+    }
+    if num >= 311 {
+        num3 -= 1;
+    }
+    if num >= 312 {
+        num3 -= 1;
+    }
+    Some(num3)
 }
 
 #[cfg(test)]
@@ -1359,6 +1379,48 @@ mod tests {
         assert_eq!(banner_to_npc(288), 133);
         assert_eq!(banner_to_npc(292), 694);
         assert_eq!(banner_to_npc(999), 0);
+    }
+
+    #[test]
+    fn the_banner_frame_decode_recovers_the_npc_to_banner_index() {
+        // `SceneMetrics.ScanTiles`' tile-91 arm (`SceneMetrics.cs:410-443`):
+        // the placed banner's frames decode to the `NPCBannerBuff` index —
+        // the C#'s `num3` (the -21-shifted family), NOT the raw place-style
+        // `num`. The placement style is banner + 21 (`Item.cs:19230`'s
+        // `22 + type - 1615` over `BannerToItem`'s base band,
+        // `BannerSystem.cs:400`), so the decode lands on `npc_to_banner`.
+        // Blue Slime: net 1 -> banner 69 -> item 1683 -> style 90 ->
+        // frameX 1620; num = 90 gates, num3 = 69 indexes.
+        assert_eq!(banner_num_from_frame(1620, 0), Some(69));
+        assert_eq!(banner_num_from_frame(1620, 0), Some(npc_to_banner(1)));
+        // Pinky: net -4 -> banner 151 -> item 2960 -> style 172 ->
+        // frameX 3096 (the `>= 88` band `2897 + banner - 88`).
+        assert_eq!(banner_num_from_frame(3096, 0), Some(151));
+        assert_eq!(banner_num_from_frame(3096, 0), Some(npc_to_banner(-4)));
+        // The row wrap: frameY 54 adds 111 to BOTH indices. Banner 180
+        // (style 201) hangs on the second sheet row: frameX
+        // (201 - 111) * 18 = 1620, frameY 54 — num = 90 + 111 = 201,
+        // num3 = 69 + 111 = 180.
+        assert_eq!(banner_num_from_frame(1620, 54), Some(180));
+        // The hole crossing: style 313 hangs at row 2 (frameY 108),
+        // frameX (313 - 222) * 18 = 1638 — num = 91 + 222 = 313 crosses
+        // BOTH holes, num3 = 91 - 21 + 222 - 1 - 1 = 290 (the C#
+        // expression verbatim; `BannerToItem` special-cases the trailing
+        // ids 289-292 exactly because the sheet arithmetic drifts there).
+        assert_eq!(banner_num_from_frame(1638, 108), Some(290));
+        // The blank cells refuse: frameX < 396 && frameY < 54 (styles
+        // 0..21 — the sheet's leading blank strip).
+        assert_eq!(banner_num_from_frame(378, 0), None);
+        assert_eq!(banner_num_from_frame(0, 0), None);
+        assert_eq!(banner_num_from_frame(395, 53), None);
+        // The sheet holes: num 311/312 refuse wherever they land. Row 2
+        // (frameY 108): frameX (311 - 222) * 18 = 1602 -> num 311;
+        // frameX 1620 -> num 312.
+        assert_eq!(banner_num_from_frame(1602, 108), None);
+        assert_eq!(banner_num_from_frame(1620, 108), None);
+        // frameX 396, frameY 0 is the first real cell: num 22, num3 1 —
+        // the first banner index of the `NPCtoBanner` space.
+        assert_eq!(banner_num_from_frame(396, 0), Some(1));
     }
 
 }
