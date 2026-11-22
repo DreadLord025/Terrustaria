@@ -2171,6 +2171,104 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Force Bubble",
     },
+    // W4-g10 lane 3 — the town pets' entries: the populator registers one
+    // `BestiaryEntry.TownNPC` per town-pet net id
+    // (`BestiaryDatabaseNPCsPopulator.cs:833-843`); the credit ids are
+    // `NPCID.Search.GetName`'s spellings (`lang_tables.rs`'s NPC_ID rows).
+    // The cat/dog/bunny name plates are overridden to `Friends.TownCat`
+    // etc. (`:646-648` → `en-US.json:839-841` "Town Cat"/"Town Dog"/
+    // "Town Bunny"); the slimes keep `NPCName.TownSlime*`
+    // (`en-US.NPCs.json:715-722`).
+    BestiaryEntryDef {
+        credit_id: "TownCat",
+        net_id: 637,
+        kind: NpcKind::TownCat,
+        variant: None,
+        quick_unlock: false,
+        name: "Town Cat",
+    },
+    BestiaryEntryDef {
+        credit_id: "TownDog",
+        net_id: 638,
+        kind: NpcKind::TownDog,
+        variant: None,
+        quick_unlock: false,
+        name: "Town Dog",
+    },
+    BestiaryEntryDef {
+        credit_id: "TownBunny",
+        net_id: 656,
+        kind: NpcKind::TownBunny,
+        variant: None,
+        quick_unlock: false,
+        name: "Town Bunny",
+    },
+    BestiaryEntryDef {
+        credit_id: "TownSlimeBlue",
+        net_id: 670,
+        kind: NpcKind::TownSlimeBlue,
+        variant: None,
+        quick_unlock: false,
+        name: "Nerdy Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "TownSlimeGreen",
+        net_id: 678,
+        kind: NpcKind::TownSlimeGreen,
+        variant: None,
+        quick_unlock: false,
+        name: "Cool Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "TownSlimeOld",
+        net_id: 679,
+        kind: NpcKind::TownSlimeOld,
+        variant: None,
+        quick_unlock: false,
+        name: "Elder Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "TownSlimePurple",
+        net_id: 680,
+        kind: NpcKind::TownSlimePurple,
+        variant: None,
+        quick_unlock: false,
+        name: "Clumsy Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "TownSlimeRainbow",
+        net_id: 681,
+        kind: NpcKind::TownSlimeRainbow,
+        variant: None,
+        quick_unlock: false,
+        name: "Diva Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "TownSlimeRed",
+        net_id: 682,
+        kind: NpcKind::TownSlimeRed,
+        variant: None,
+        quick_unlock: false,
+        name: "Surly Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "TownSlimeYellow",
+        net_id: 683,
+        kind: NpcKind::TownSlimeYellow,
+        variant: None,
+        quick_unlock: false,
+        name: "Mystic Slime",
+    },
+    // W4-g10 lane 3 batch 2 — the copper slime (the populator's
+    // `BestiaryEntry.TownNPC(684)` row, `BestiaryDatabaseNPCsPopulator.cs:843`).
+    BestiaryEntryDef {
+        credit_id: "TownSlimeCopper",
+        net_id: 684,
+        kind: NpcKind::TownSlimeCopper,
+        variant: None,
+        quick_unlock: false,
+        name: "Squire Slime",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

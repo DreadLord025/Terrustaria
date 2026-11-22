@@ -178,6 +178,9 @@ pub(crate) fn advance_time_with_events(
                     // have no ported kinds, so the tax collector (441) is
                     // the only exclusion the port's roster carries.
                     && n.kind != crate::npc::NpcKind::TaxCollector
+                    // `CanNPCParty`'s `IsTownPet` refusal (`:66-69`) —
+                    // W4-g10 lane 3: the town pets never celebrate.
+                    && !n.kind.is_town_pet()
             })
             .collect();
         let party_up = crate::world_events::check_morning_party(

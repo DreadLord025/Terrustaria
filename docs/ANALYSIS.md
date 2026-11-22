@@ -39244,3 +39244,248 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-g10 lane 3 — the town pets (637/638/656/670/678-684)
+
+The eleven town pets (`NPCID.Sets.IsTownPet`, `NPCID.cs:10118`) land as
+`NpcKind` rows and wire to the ALREADY-LANDED pet-aware
+`npc_ai_town::town_npc_ai` machine (`AI_007_TownEntities`,
+`NPC.cs:52965-55561`). Every pet is `aiStyle 7` in `SetDefaults`
+(`NPC.cs:17207-17225` the 637/638 arm, `:17295-17309` 656,
+`:17481-17495` 670, `:17594-17608` the 678-684 arm): 18x20 (the dog
+18x28, the cat's 20-height override `:17213-17216`), dmg 10, def 15,
+250 HP, kb 0.5, value 0, `townNPC + friendly`, `housingCategory 1`.
+Batch 1 landed the ten (637/638/656/670/678-683); batch 2 adds the
+copper slime TownSlimeCopper 684 (the 678-684 arm's last member, the
+`CanConvertIntoCopperSlimeTownNPC` shimmer target `NPCID.cs:10120`) at
+every site — the same rows as the other town slimes.
+
+### The axis claim (disjoint from the in-flight W4-b3 town lane)
+
+The pets ride a KIND-GUARDED axis arm — `7 if self.kind.is_town_pet()`
+(the frost-mob `62 if ElfCopter` precedent) — so the 21 housed town
+residents keep their `update_guide` routing until the W4-b3 town lane
+lands its unguarded `7 =>` arm. The guard keeps the two claims disjoint;
+the merger dedupes the adapters. The pet adapter
+(`npc.rs::ai_007_town_pet_family`) owns only the seams the pure arm
+cannot: the solo `TownEnv` (empty NPC list, the world's live flags, the
+unported statics folded false), a fresh `TownDoorLatch` each tick (the
+pets never open a door — the `h / 16 < 3` gate plus the no-op
+`NoOpTownPetDoors`), and the generic `UpdateNPC` collision tail
+(`integrate_town_pet_collision`, the W4-b3 `integrate_town_collision`
+twin — kept separate so the lanes' edits stay disjoint). The
+`TownOutputs` drain is the town lane's phase 2; the requests are
+discarded but every RNG draw already ran on the caller's stream (the
+eye wiring's `let _ = out` precedent).
+
+### The town-flag predicates
+
+The pets join `is_town_npc()` (the `townNPC` flag — housing, the
+scene-metrics count `SceneMetrics.cs:739`, the Rotten Egg refusal
+`Projectile.cs:23572`, the world-file town block `WorldFile.cs:1717`),
+`is_town_npc_like()` (`isLikeATownNPC`, the stat-ladder gate) and
+`is_friendly()`. They do NOT join `is_town_resident()`: `CollectTaxes`
+(`Player.cs:24145`) and the arrival ladder exclude them, and the party
+refuses them (`BirthdayParty.CanNPCParty` `:66-69`, the
+`world_sim/clock.rs` partyable filter). The contact-damage gate
+(`npc.rs::contact`) skips them on the `friendly` flag
+(`Player.cs:31328`). The save filter (`app/saveglue.rs`) and `to_wld`
+write them in the town block (`SaveNPCs:1717`'s `active && townNPC`).
+
+### The FindFrame arm (`npc_findframe_pet.rs`)
+
+The pets ride `FindFrame`'s humanoid-group case list
+(`NPC.cs:68622-68633`) with the pet overrides: the slime
+`spriteDirection` flip (`:68657-68660`), the state-20/21/22 idle poses
+(`:68680-68917`), the cat's sit row 19 (`:68980-68983`), the dog's idle
+0..7 cycle (`:69491-69508`), the dog/bunny/slime walk stride 12 +
+start-row overrides (`:69532-69571`), the airborne slime hop rows /
+dog air row 8 (`:69601-69654`). `num58 = npcFrameCount -
+AttackFrameCount` and the pets' `AttackFrameCount` rows are 0
+(`NPCID.cs:10465`), so `num58` IS the full row count (28/28/27/14,
+`Main.cs:67147-67152`); `num57 = ExtraFramesCount` (`NPCID.cs:10464`:
+637=18, 638=11, 656=20, slimes=6) bounds the walk wrap.
+
+Deliberate skips: the disabled profile-texture block (`NPC.cs:68637`,
+`if (false && …)`), the `EmoteBubble` spawns (the port has no emote
+system), and the group arm's state branches UNREACHABLE for pets —
+dropped so those states fall through to the idle/walk tail exactly as
+the C#'s own gates make them do: state 6 party talk (`:55289`'s
+`!IsTownPet`), state 7/19 player talk (the branch's own `!IsTownPet`
+gate — a pet in state 7 falls through), state 11 grumble (type 229),
+state 18 Bartender talk (type 550), states 10/13/15/12/14/24 attacks
+(the pets' `AttackType`/`AttackTime` rows are -1, `NPCID.cs:10471-10473`),
+states 3/4/16/17 talk/gossip (`CanTalk` is false for pets,
+`NPC.cs:6633-6643`), state 25 shimmer + state 1001 sleep (unported
+systems). The state-2 small-talk blink and the state-23 ShowItem pose
+are carried verbatim although unreachable today (cheap, keeps the
+pose-reset shape complete). The sitting draw shift (`Main.cs:22178-
+22181`: the cat/bunny/slime sit 10 px deeper, the dog keeps the plain
+-4) lands in `render/entities.rs::npc_add_height`.
+
+### The pet idle RNG census
+
+`AI_007_AttemptToPlayIdleAnimationsForPets` (`NPC.cs:55750-55785`): the
+stationary pet rolls `Next(petIdleChance)` (num20 = 120, the dog 60,
+`:53636-53640`); on 0 the slime takes state 20 with NO state draw
+(num = 0), the cat/bunny roll `Next(20, 23)` (num = 3), the dog
+`Next(20, 22)` (num = 2); then `Next(300)` for the base timer, then the
+per-pet override — the cat state 20 `500 + Next(200)`, the dog state 21
+`100 + Next(100)`, the bunny state 22 `200 + Next(200)`, the slime
+state 20 `180 + Next(240)`. The witnesses pin the draw order + the
+stream position against a mirrored `UnifiedRandom`.
+
+### Verification
+
+Code-only: every row re-read against the cited C# windows; the
+exhaustive-match sites (`to_u16`/`from_u16`/`ai_style`/`size`/`max_hp`/
+`contact_damage`/`knock_back_resist`/`defense`/`value`/`render_key`/
+`find_frame`/`update_kind_ai`/`debuff_immune_ids`/`npc_seed`/
+`portrait_data`/the draw match) verified to carry the ten pet arms; the
+protocol ids are a bijection (281 arms, no dup); the bestiary credit
+ids are unique; `BESTIARY_NPC_SHEET_IDS` (192) matches the
+`bestiary_npc_sheets` vec (192). The 8 wiring witnesses
+(`npc.rs::w4_g10_town_pet_wiring`, the PETS table carries all eleven)
+are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/graphify
+invoked**.
+
+### The FINAL phase (2026-11-21) — the activation consumers + the family declaration
+
+The batches landed the eleven kinds WIRED. The FINAL phase lands the
+three activation consumers that ride ON TOP of the kinds (no new kind
+rows) plus the d43r keep-one receipt and the owed pin-fix. All code-only;
+the witnesses are WRITTEN NOT RUN.
+
+**1. The pet-license exchange NPC side (`npc_pet_exchange.rs`).** The
+a6/g87 use-arm machine (`Player.ItemCheck_UsePetLicenses` →
+`LicenseOrExchangePet` → `NPC.UnlockOrExchangePet`, `Player.cs:45352-45365`
+/`:45438-45445`, `NPC.cs:80894-80918`) owns the bought flags, the gate and
+the chat; its else-arm posts `Misc.PetExchangeFail` unconditionally because
+no kind carried 637/638/656 (research/138 §12.2's activation contract,
+step 1). This module IS step 1's consumer: `RerollVariationForNPCType` +
+`RerollVariation` (`NPC.cs:80920-80961`) over the LIVE roster — the
+first-active-resident scan, the ≤100-draw `Main.rand.Next(6)` loop for the
+three `VariantNPCProfile` pets (`Profiles.cs:214-217`), the constant-0
+NO-DRAW legacy roll for the eight town slimes (`Profiles.cs:83-86`), the
+`GivenName` genRand category draw (`Profiles.cs:219-222`, a DIFFERENT
+stream), the `life = lifeMax` heal and the `Spawn_PetExchange` 13-gore
+smoke burst (`ParticleOrchestrator.cs:2691-2700`). **RNG census:** the
+variation roll is the only `Main.rand` slot before the burst; the burst
+draws 8 per gore × 13 = 104 (the `NextVector2Circular(20,20)` angle+radius,
+`Next(61,64)`, the `1 + NextFloat·0.3` scale, `NewGore`'s two velocity
+jitters, then the raw-`Next()` rotation + `NextFloat` speed overwrite);
+the name draw rides `WorldGen.genRand`. The merged `use_pet_license` swaps
+its hardcoded Fail for the reroll result (contract step 4, a one-line
+conditional). **Keep-one (f43):** `town_arrival_pets.rs`
+(`task/W4-f43-town-spawn-2`, UNWIRED) ports the same chain as pure fns over
+a `PetVariationSlot`; its own note says "the wiring lane maps it onto
+`Npc`" — this module is that mapping. At the merge the shared loop +
+rosters dedup onto f43's shape; this module keeps the live-`Npc` scan, the
+heal/name writes and the gore burst f43 leaves to the caller. 7 witnesses
+incl. the POSITIVE Success witnesses the a6/g87 boundary named (the cat
+two-stream roll/heal/name, the legacy-slime fail zero-draw + nonzero
+success, first-resident-only, the 104-draw burst census).
+
+**2. The petting interaction (`player_petting.rs`) — the e10 deferred
+host.** The player-sounds wave (e10) recorded "petting has no field" at
+five sites; this phase lands the state + machine and goes LIVE at each
+fold. `PlayerPettingInfo` (`PlayerPettingInfo.cs:5-77`),
+`NPC.GetPettingInfo`'s side pick + per-kind distance ladder
+(`NPC.cs:80858-80892`: cat 28 / bunny 24 / six slimes 26 / red 22 / copper
+20, the dog keeps the default 36/not-small), `Player.PetAnimal`'s
+floor-snap + repeat-click stop + vanity/hook/mount teardown
+(`Player.cs:33358-33399`), `PetMount`'s toggle + the `(uint)(type-62) <= 3`
+joy gate (`:33339-33356`), `UpdatePettingAnimal`'s talk/drift/control/facing
+stop gates (`:33470-33490`) and the `ApplyHoldStyle` pat arm
+(`:50243-50269`: the `miscCounter % 14 / 7` ThreeQuarters↔Full cycle,
+`-2π·k·direction` with k 0.3 / 0.2 small / 0.36 Chillemt). `Math.Sign`'s
+zero-at-zero is kept (Rust `signum` differs). The folds go live: the
+`Player.petting` field, the four `StopVanityActions` sites
+(sleep/grapple/teleport/revive), the dismount's mount-petting stop
+(`Mount.cs:6163-6166`), the holdStyle 4/5/6 visual-hold gates
+(`Player.cs:50204`/`:50225-50232`), the Fairy Queen light gate (`:50174`),
+the `UpdatePettingAnimal` call at the C# site (`:26124`, before
+sitting/sleeping — `update_with_grapple` gains the npcs/talk_npc inputs,
+all 14 call sites re-armed). **Sound:** the `PalChilletJoy` cue
+(`SoundID.cs:1717`, `pal_chillet_joy`, 0.35 vol) joins `MOUNT_CUSTOM_CUES`
++ `play_petting_joy_sound` (the case-42 façade, the variance-0 NextFloat on
+the audio-only stream) + the pending/take/drain chain. The `PET_THE_PET`
+achievement queues as a request (the drain uses a6's row-targeted
+`complete_condition`, research/138 keep-one — NOT `notify_custom`). **Net:**
+the petting/petSmall bits ride bitsByte23[4]/[5] (`NetMessage.cs:475-476`,
+`MessageBuffer.cs:1043-1044`) through PlayerNet/PlayerState both directions.
+**Census (the Lead's animation/heart/sound question):** the town-pet path
+draws NO particle (the heart emote is the Pal-projectile path's,
+`Main.cs:34270-34275`, emote 0 = EmotionLove) and NO sound (the joy cue is
+PetMount's); the only petting pose is the composite back arm's pat cycle;
+the whole chain draws ZERO sim RNG. 10 witnesses.
+
+**3. The town-slime colour-per-kind mapping
+(`npc_chat.rs::slime_chat_colour`).** The `Lang.GetSlimeType` 8-word switch
+(`Lang.cs:375-406`) over the landed kinds: 670 Blue (the default), 678
+Green, 679 Old, 680 Purple, 681 Rainbow, 682 Red, 683 Yellow, 684 Copper.
+**Keep-one (d120):** `task/W4-d120-town-chatter` ports the same switch
+type-keyed (`slime_chat_colour(ty)`) AND the `GetChat` arms that consume it
+(`NPC.cs:94816-94819`, the `is_town_slime`-guarded
+`Slime{colour}Chatter.Chatter` pick) plus the `dialog_count`/`select_dialog`
+localization machinery. d120's arms key on the VANILLA type
+(`npc.kind.cs_id()`), so they go LIVE the moment these kinds merge — zero
+d120 edits (its research/143 retire item 2). This kind-keyed fn is the
+colour-per-kind deliverable; at the merge it dedups onto d120's type-keyed
+fn (`kind.cs_id()` bridges them, identical words). d120 owns the dispatch —
+this lane does NOT re-port the GetChat arms or the localization machinery.
+1 witness (every kind answers its word, cs_id/net_id match the case, the
+`is_town_slime` guard holds, each category ships Chatter_1..3, the eight
+first lines are pairwise distinct, the default answers Blue).
+
+**4. The d43r keep-one receipt (`tools/_g10_pet_claims.md`).** d43's
+631-697 band rowed the eleven pets too; the keep-one (g10 canonical) is
+already adjudicated by d43 research/304 §2c (→343 per registry-150 §8.7)
+and d37 research/250. The claims-table is the g10-side confirmation + the
+per-kind keeper evidence (the wired superset vs d43's `update_guide` + `{}`
+FindFrame stand-ins) + the d43 drop-hunks + the notify-note to d43r/d37d-E3.
+A `tools/` claim doc (the `_d120_claim.md` convention), NOT a numbered
+research doc — the research-number registry (research/150 §8.7 FROZEN
+NO-SELF-PICKS, new docs ≥360 after round-5) is respected by taking no number.
+
+**5. The owed pin-fix.** The `s1_f_3_every_kind_resolves_a_vanilla_cs_id`
+coverage pin 270→281 (the d37 research/250 g10 owed fix, `npc.rs:28244`):
+the eleven pets grew ALL_KINDS to 281 but the coverage pin still read 270.
+The round-trip bijection test already keys on `ALL_KINDS.len()` (281); the
+pets' cs_id rides the bestiary net_id fallback (the vanilla ids), so
+covered+sentinel = 281.
+
+### The pets-family declaration (one paragraph)
+
+The town-pet family seals as a four-lane machine with one owner per seam:
+**g10** owns the eleven kinds (637/638/656/670/678-684, cs==proto) + the
+kind-guarded `7 if is_town_pet` axis arm + `npc_findframe_pet.rs` + the
+`is_town_pet`/`is_town_slime` gates + the bestiary Friends.* override + the
+FINAL activation consumers (the exchange NPC side `npc_pet_exchange.rs`,
+the petting machine `player_petting.rs`, the colour-per-kind
+`slime_chat_colour`); **d43** drops its eleven bare `update_guide` pet
+stand-ins onto g10 (research/304 §2c, the keep-wired-superset rule);
+**f43** owns the pure-fn exchange chain shape (`town_arrival_pets.rs`) +
+the arrival gates (`Main.cs:65900-65911`) — g10's exchange module is its
+live-`Npc` mapping, the loop/rosters dedup at the merge; **a6/g87** own the
+use-arm cluster (`powerups.rs::use_pet_license`, the bought flags + gate +
+chat) — the Success dispatch is the one-line conditional onto g10's reroll
+result (research/138 §12.2 step 4); **d120** owns the GetChat dispatch + the
+dialog-filter machinery — its type-keyed pet/slime chat arms activate when
+g10's kinds merge (zero d120 edits); **e10**'s deferred petting folds go
+live on g10's `Player.petting` field. The activation order (research/138
+§12.2): kinds (g10, DONE) → arrival (f43) → profiles/reroll wiring (f43 +
+g10's module) → the use-arm Success swap (a6/g87). The petting + colour
+consumers are g10-owned with no sibling kind claim.
+
+### FINAL verification
+
+Code-only: every FINAL row re-read against the cited C# windows
+(`NPC.cs:80858-80961` GetPettingInfo/exchange, `Player.cs:33339-33490`
+petting + `:50174`/`:50204-50269` the hold/light gates,
+`Profiles.cs:83-86`/`:214-222`, `TownNPCProfiles.cs:138-180`,
+`ParticleOrchestrator.cs:2691-2700`, `Lang.cs:375-411`,
+`NetMessage.cs:475-476`/`MessageBuffer.cs:1043-1044`, `SoundID.cs:1717`).
+The d43/d37/d120/f43/a6 verdicts re-read at their live tips. The 26 FINAL
+witnesses (7 exchange + 10 petting + 1 colour + the 8 batch wiring) are
+WRITTEN NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.

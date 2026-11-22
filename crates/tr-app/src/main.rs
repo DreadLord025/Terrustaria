@@ -63,6 +63,8 @@ mod mount;
 mod net;
 mod npc;
 mod npc_chat;
+mod npc_pet_exchange;
+mod player_petting;
 mod npc_spatial;
 mod revenge;
 mod npc_ai;
@@ -161,6 +163,9 @@ mod npc_ai_style21;
 mod npc_buffs;
 mod npc_findframe_a;
 mod npc_findframe_b;
+// W4-g10 lane 3: the town pets' FindFrame arm (the humanoid-group body
+// with the pet overrides, NPC.cs:68622-69655).
+mod npc_findframe_pet;
 mod persist;
 mod grapple;
 mod gore_seam;

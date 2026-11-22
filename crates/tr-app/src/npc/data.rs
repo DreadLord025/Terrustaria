@@ -586,6 +586,22 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-g10 lane 3 — the town pets ride their VANILLA ids (the
+            // pumpkin/frost precedent): 637/638/656/670/678-684 are all
+            // free in the protocol space (the port-local bands stop at
+            // 353) and the housing/bestiary/`net_id` consumers key on the
+            // vanilla `NPC.type`, so one id serves the wire and the type.
+            NpcKind::TownCat => 637,
+            NpcKind::TownDog => 638,
+            NpcKind::TownBunny => 656,
+            NpcKind::TownSlimeBlue => 670,
+            NpcKind::TownSlimeGreen => 678,
+            NpcKind::TownSlimeOld => 679,
+            NpcKind::TownSlimePurple => 680,
+            NpcKind::TownSlimeRainbow => 681,
+            NpcKind::TownSlimeRed => 682,
+            NpcKind::TownSlimeYellow => 683,
+            NpcKind::TownSlimeCopper => 684,
         }
     }
 
@@ -916,6 +932,20 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // W4-g10 lane 3 — the town pets decode at their vanilla ids
+            // (`to_u16` above; `NPCID.cs:11951`/`:11953`/`:11989`/
+            // `:12017`/`:12033-12043`).
+            637 => NpcKind::TownCat,
+            638 => NpcKind::TownDog,
+            656 => NpcKind::TownBunny,
+            670 => NpcKind::TownSlimeBlue,
+            678 => NpcKind::TownSlimeGreen,
+            679 => NpcKind::TownSlimeOld,
+            680 => NpcKind::TownSlimePurple,
+            681 => NpcKind::TownSlimeRainbow,
+            682 => NpcKind::TownSlimeRed,
+            683 => NpcKind::TownSlimeYellow,
+            684 => NpcKind::TownSlimeCopper,
             _ => return None,
         })
     }
@@ -1129,6 +1159,14 @@ impl NpcKind {
                 | NpcKind::Painter
                 | NpcKind::WitchDoctor
         )
+        // W4-g10 lane 3 — the town pets are housed town NPCs too
+        // (`townNPC = true`, `housingCategory 1`): the housing scans,
+        // the scene-metrics count (`SceneMetrics.cs:739` counts every
+        // `townNPC`), the Rotten Egg's refusal (`Projectile.cs:23572`)
+        // and the world-file town block (`WorldFile.cs:1717`) all read
+        // the flag. They are NOT residents ([`is_town_resident`] stays
+        // pet-free — `CollectTaxes`/the arrival ladder exclude them).
+        || self.is_town_pet()
     }
 
     /// `NPC.isLikeATownNPC` (`NPC.cs:6856-6864`: `townNPC || type == 453` —
@@ -1157,6 +1195,36 @@ impl NpcKind {
                     | NpcKind::Wizard
                     | NpcKind::Mechanic
             )
+            // W4-g10 lane 3 — the town pets write `townNPC = true` too
+            // (`NPC.cs:17209`/`:17297`/`:17483`/`:17596`), so
+            // `isLikeATownNPC` holds for them (the stat ladder's
+            // `:53014` gate + the door-open gate read it).
+            || self.is_town_pet()
+    }
+
+    /// `NPCID.Sets.IsTownPet` (`ID/NPCID.cs:10118`: 637/638/656/670/
+    /// 678-684) — the kind-level twin of `npc_ai_town::is_town_pet`
+    /// (which keys on the net id). The pets are town NPCs for the
+    /// `townNPC`-flag consumers (housing, the scene-metrics count, the
+    /// Rotten Egg's refusal, the world-file town block) but NOT for the
+    /// resident counts (`CollectTaxes` `Player.cs:24145` and the
+    /// arrival ladder exclude them) nor the party
+    /// (`BirthdayParty.CanNPCParty` `:66-69`).
+    pub fn is_town_pet(self) -> bool {
+        matches!(
+            self,
+            NpcKind::TownCat
+                | NpcKind::TownDog
+                | NpcKind::TownBunny
+                | NpcKind::TownSlimeBlue
+                | NpcKind::TownSlimeGreen
+                | NpcKind::TownSlimeOld
+                | NpcKind::TownSlimePurple
+                | NpcKind::TownSlimeRainbow
+                | NpcKind::TownSlimeRed
+                | NpcKind::TownSlimeYellow
+                | NpcKind::TownSlimeCopper
+        )
     }
 
     /// `NPC.friendly` (`NPC.cs:8519`'s default `false` plus the `SetDefaults`
@@ -1559,6 +1627,20 @@ impl NpcKind {
             NpcKind::Princess => "NPC_Hit_1",
             NpcKind::DyeTrader => "NPC_Hit_1",
             NpcKind::PartyGirl => "NPC_Hit_1",
+            // W4-g10 lane 3 — the town pets: `SoundID.NPCHit1`
+            // (`NPC.cs:17221` for 637/638, `:17305` for 656, `:17491`/
+            // `:17604` for the slime rows).
+            NpcKind::TownCat
+            | NpcKind::TownDog
+            | NpcKind::TownBunny
+            | NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => "NPC_Hit_1",
             NpcKind::QueenBee => "NPC_Hit_1",
             NpcKind::SkeletronHead => "NPC_Hit_2",
             NpcKind::WallOfFlesh => "NPC_Hit_8",
@@ -1860,6 +1942,20 @@ impl NpcKind {
             NpcKind::Princess => "NPC_Killed_6",
             NpcKind::DyeTrader => "NPC_Killed_1",
             NpcKind::PartyGirl => "NPC_Killed_1",
+            // W4-g10 lane 3 — the town pets: `SoundID.NPCDeath6`
+            // (`NPC.cs:17222` for 637/638, `:17306` for 656, `:17492`/
+            // `:17605` for the slime rows).
+            NpcKind::TownCat
+            | NpcKind::TownDog
+            | NpcKind::TownBunny
+            | NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => "NPC_Killed_6",
             NpcKind::QueenBee => "NPC_Killed_66",
             NpcKind::SkeletronHead => "NPC_Killed_2",
             NpcKind::WallOfFlesh => "NPC_Killed_10",
@@ -2295,6 +2391,20 @@ impl NpcKind {
             NpcKind::Clothier | NpcKind::TravellingMerchant | NpcKind::Angler | NpcKind::Stylist | NpcKind::TaxCollector |
             NpcKind::Golfer | NpcKind::Zoologist | NpcKind::Princess | NpcKind::DyeTrader | NpcKind::PartyGirl |
             NpcKind::Wizard | NpcKind::Mechanic | NpcKind::GoblinTinkerer => 7,
+            // W4-g10 lane 3 — the town pets' `aiStyle = 7` rows: the
+            // 637/638 arm (`NPC.cs:17217`), 656 (`:17301`), 670
+            // (`:17487`), the 678-684 arm (`:17600`).
+            NpcKind::TownCat
+            | NpcKind::TownDog
+            | NpcKind::TownBunny
+            | NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => 7,
             // aiStyle 8 - NPC.cs:9083, :9125, :9326, :14978, :15690
             NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => 8,
             // aiStyle 9 - NPC.cs:9097, :9139, :15703
@@ -2981,6 +3091,22 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-g10 lane 3 — the town pets' `SetDefaults` boxes: the
+            // 637/638 arm's 18x28 base with the 637-only 20-height
+            // override (`NPC.cs:17211-17216`), 656 18x20 (`:17299-17300`),
+            // 670 18x20 (`:17485-17486`), the 678-684 arm 18x20
+            // (`:17598-17599`).
+            NpcKind::TownCat => (18.0, 20.0),
+            NpcKind::TownDog => (18.0, 28.0),
+            NpcKind::TownBunny
+            | NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => (18.0, 20.0),
         }
     }
 
@@ -3135,6 +3261,20 @@ impl NpcKind {
             // case list carries 338-340 (`NPC.cs:68603-68605`) on their
             // 15-frame strips (`Main.npcFrameCount[338..340]`, `Main.cs`).
             NpcKind::ZombieElf | NpcKind::ZombieElfBeard | NpcKind::ZombieElfGirl => 15,
+            // W4-g10 lane 3 — the town pets' `Main.npcFrameCount` rows:
+            // 637/638 = 28, 656 = 27, the town slimes 670/678-684 = 14
+            // (`Main.cs`'s npcFrameCount init; `FindFrame`'s pet branches
+            // `NPC.cs:68610-69655` wrap the walk band on these strips).
+            NpcKind::TownCat | NpcKind::TownDog => 28,
+            NpcKind::TownBunny => 27,
+            NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => 14,
             _ => 1,
         }
     }
@@ -3168,6 +3308,21 @@ impl NpcKind {
             | NpcKind::Stylist
             | NpcKind::Princess => 7,
             NpcKind::Angler | NpcKind::Mechanic => 9,
+            // W4-g10 lane 3 — the town pets' `ExtraFramesCount` rows
+            // (`NPCID.cs:10464`): 637 = 18, 638 = 11, 656 = 20, the town
+            // slimes = 6 — the reserved bottom rows the pet idle poses
+            // (`NPC.cs:68680-68917`'s state-20/21/22 arms) animate through.
+            NpcKind::TownCat => 18,
+            NpcKind::TownDog => 11,
+            NpcKind::TownBunny => 20,
+            NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => 6,
             _ => 0,
         }
     }
@@ -3622,6 +3777,20 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-g10 lane 3 — the town pets' `lifeMax = 250` rows: the
+            // 637/638 arm (`NPC.cs:17220`), 656 (`:17304`), 670
+            // (`:17490`), the 678-684 arm (`:17603`).
+            NpcKind::TownCat
+            | NpcKind::TownDog
+            | NpcKind::TownBunny
+            | NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => 250,
         }
     }
 
@@ -3986,6 +4155,20 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-g10 lane 3 — the town pets' `damage = 10` rows: the
+            // 637/638 arm (`NPC.cs:17218`), 656 (`:17302`), 670
+            // (`:17488`), the 678-684 arm (`:17601`).
+            NpcKind::TownCat
+            | NpcKind::TownDog
+            | NpcKind::TownBunny
+            | NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow
+            | NpcKind::TownSlimeCopper => 10,
         }
     }
 }
