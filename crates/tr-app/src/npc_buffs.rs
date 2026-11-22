@@ -629,6 +629,18 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::CultistArcherBlue
         | NpcKind::CultistArcherWhite => &[31],
         NpcKind::ArmedZombie => &[],
+        // W4-f42 — the sandstorm debris + desert family: none has a
+        // `DebuffImmunitySets` row (`NPCID.cs:6075+`) — the no-immunity
+        // else-branch.
+        NpcKind::Tumbleweed
+        | NpcKind::Vulture
+        | NpcKind::Antlion
+        | NpcKind::Mummy
+        | NpcKind::DarkMummy
+        | NpcKind::BloodMummy
+        | NpcKind::LightMummy
+        | NpcKind::WalkingAntlion
+        | NpcKind::FlyingAntlion => &[],
     }
 }
 

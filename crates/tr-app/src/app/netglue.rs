@@ -4264,6 +4264,23 @@ fn npc_seed(
         | crate::npc::NpcKind::ArmedZombie => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
+        // W4-f42 — the sandstorm debris + desert family: the walkers (the
+        // mummies, the WalkingAntlion, the Tumbleweed's aiStyle-26 ground
+        // roll) plant the feet on the column surface; the flyers (the
+        // Vulture, the Antlion's emergence, the FlyingAntlion) ride the
+        // hover ctor (the machine takes over on the first tick).
+        crate::npc::NpcKind::Mummy
+        | crate::npc::NpcKind::DarkMummy
+        | crate::npc::NpcKind::BloodMummy
+        | crate::npc::NpcKind::LightMummy
+        | crate::npc::NpcKind::WalkingAntlion
+        | crate::npc::NpcKind::Tumbleweed => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        crate::npc::NpcKind::Vulture
+        | crate::npc::NpcKind::Antlion
+        | crate::npc::NpcKind::FlyingAntlion => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

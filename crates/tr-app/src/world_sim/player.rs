@@ -1716,6 +1716,56 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 slot.velocity *= 0.1;
                 slot.no_gravity = true;
             }
+            // W4-f42 — `Player.DoubleJumpVisuals`' sandstorm arm
+            // (`Player.cs:21913-21925`): the three type-124 dusts, then the
+            // optional 220-222 gore. The tick queued the geometry; the pool
+            // rolls ride the SAME `UpdatePlayers` stream in the C#'s order
+            // (3 `NewDust`s, then the gore's `Next(220, 223)` type pick +
+            // `NewGore`), so the draw order is the source's (S1-A-10).
+            if let Some(v) = p.take_sandstorm_jump() {
+                for _ in 0..3 {
+                    let idx = app.dust.new_dust(
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        &spawn_ctx,
+                        &app.world,
+                        v.dust_pos,
+                        crate::player::WIDTH as i32,
+                        32,
+                        124,
+                        v.dust_vel.x,
+                        v.dust_vel.y,
+                        150,
+                        tr_core::particles::Color::default(),
+                        v.num4,
+                    );
+                    // `:21916-21917` — `velocity *= 0.5*num4`,
+                    // `fadeIn = 1.5*num4` (the refused sentinel takes the
+                    // writes blindly, `Main.dust[6000]`).
+                    let slot = app.dust.slot_mut(idx);
+                    slot.velocity *= 0.5 * v.num4;
+                    slot.fade_in = 1.5 * v.num4;
+                }
+                if let Some((gpos, gvel)) = v.gore {
+                    // `:21922` — `Main.rand.Next(220, 223)` picks the type.
+                    let gore_type = app
+                        .rngs
+                        .stream(crate::app::RngKey::UpdatePlayers)
+                        .next_range(220, 223);
+                    let gi = app.gore.new_gore(
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        &app.world,
+                        gpos,
+                        gvel,
+                        gore_type,
+                        v.num4,
+                    );
+                    // `:21923-21924` — `velocity = base.velocity*0.3*num4`,
+                    // `alpha = 100`.
+                    let g = app.gore.slot_mut(gi);
+                    g.velocity = v.vel * 0.3 * v.num4;
+                    g.alpha = 100;
+                }
+            }
             // `Player.ManaEffect` (`Player.cs:4531-4538`): the cuffs' restore
             // spawns `CombatText.NewText(playerRect, HealMana, amount)` at the
             // hurt position (`:4533`); the NetMessage 43 send (`:4534-4537`)
