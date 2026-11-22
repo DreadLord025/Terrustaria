@@ -6075,22 +6075,49 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             // no Vortex kind at all before, so its `downedTowerVortex` /
             // `TowerActiveVortex` never cleared).
             NpcKind::EaterOfWorldsHead | NpcKind::BrainOfCthulhu => {
-                // `NPC.cs:79450-79456`'s orb-boss-death arm: the pending
-                // meteorite — the guaranteed first (the pre-kill read of
-                // the downed flag), the 1/2 afterwards.
-                let was_down = app.world.downed_eow;
-                if !was_down {
-                    app.world.spawn_meteor = true;
-                } else {
-                    // `NPC.cs:79450-79456` draws `Next(2)` under the
-                    // `UpdateNPCs` swap (`checkDead` -> `DoDeathEvents`
-                    // inside `NPC.UpdateNPC`, `Main.cs:17767-17769`) — the
-                    // stream S1-A-11's npcs pass lands on in P3.
-                    app.world.spawn_meteor = tr_core::worldgen::meteor::boss_death_roll(
-                        app.rngs.stream(crate::app::RngKey::UpdateNpcs),
-                        true,
-                    );
+                // `NPC.cs:79447-79457`'s orb-boss-death arm (`this.boss`
+                // is the kind by construction — the head 13 and the Brain
+                // 266 are the only living-boss kinds of the 13/14/15/266
+                // case group the port spawns; the body/tail deaths ride
+                // the head's split, not this arm).
+                // `NPC.cs:79449-79452`: on a skyblock world with
+                // low tiles the death arms `shadowOrbSmashed` (the
+                // sky islands have no orbs to smash — the boss kill IS
+                // the goblin unlock). The port's lowTiles stand-in is the
+                // seed flag (the `loot.rs` LootFlags.skyblock convention,
+                // `npcs.rs`'s flags build — no dynamic activeTiles census;
+                // a skyblock world past the 10% tile threshold keeps the
+                // flag down — the recorded stand-in deviation).
+                if app
+                    .world
+                    .seeds
+                    .contains(tr_core::seeds::SeedFlags::SKYBLOCK)
+                {
+                    app.world.shadow_orb_smashed = true;
                 }
+                // `NPC.cs:79453-79456`'s pending meteorite — gated on
+                // `Main.isThereAWorldSurface` (`Main.cs:2788`:
+                // `worldSurface > 50.0` — the remix/FTW underground worlds
+                // never meteor): the guaranteed first (the pre-kill read
+                // of the downed flag), the 1/2 afterwards.
+                if app.world.world_surface > 50.0 {
+                    let was_down = app.world.downed_eow;
+                    if !was_down {
+                        app.world.spawn_meteor = true;
+                    } else {
+                        // `NPC.cs:79453` draws `Next(2)` under the
+                        // `UpdateNPCs` swap (`checkDead` -> `DoDeathEvents`
+                        // inside `NPC.UpdateNPC`, `Main.cs:17767-17769`) —
+                        // the stream S1-A-11's npcs pass lands on in P3.
+                        app.world.spawn_meteor = tr_core::worldgen::meteor::boss_death_roll(
+                            app.rngs.stream(crate::app::RngKey::UpdateNpcs),
+                            true,
+                        );
+                    }
+                }
+                // `:79457` — `SetEventFlagCleared(ref downedBoss2, 14)`:
+                // ONE shared flag for both halves (the nightly `Next(50)`
+                // meteor roll + the hardmode-ore unlock read it).
                 app.world.downed_eow = true;
             }
             NpcKind::GolemHead => {
@@ -6611,36 +6638,95 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     // The third-orb summon (`WorldGen.CheckOrb`'s `:54294-54321` edge):
-    // the shared counter's third break summons the Eater of Worlds (a
-    // shadow orb) or the Brain of Cthulhu (a crimson heart) at the
-    // nearest player; the port polls the count delta (the flag edge is
-    // the edge — the sim resets it to 0 on the summon, exactly like the
-    // vanilla's `shadowOrbCount = 0`).
+    // the case-31 counter's third smash summons the Eater of Worlds (the
+    // corruption half) or the Brain of Cthulhu (the crimson half) via
+    // `NPC.SpawnOnPlayer(plr, 13 | 266)`; the port polls the count delta
+    // (the sim resets it to 0 on the summon, exactly like the vanilla's
+    // `shadowOrbCount = 0` INSIDE the living-boss gate — a blocked gate
+    // leaves the count at 3 and every later smash retries).
     // W-A2-3 (T3c): the gate is the C#'s LIVING-BOSS check
     // (`WorldGen.cs:54296`: `!(AnyNPCs(266) & flag) && (!AnyNPCs(13) ||
-    // flag)` — the corruption arm reduces to `!AnyNPCs(13)`), NOT
-    // `downed_eow`: once the EoW is killed the orbs summon it again
-    // freely while none lives. The crimson-Brain arm still rides the
-    // heart-detection wave.
-    if app.world.shadow_orb_count >= 3
-        && !app
-            .npcs
+    // flag)`), NOT `downed_eow`: once the boss is killed the orbs summon
+    // it again freely while none lives. Per-half reduction: crimson
+    // (`flag`) → `!AnyNPCs(266)` (a living EoW does NOT block the Brain);
+    // corruption → `!AnyNPCs(13)` (a living Brain does NOT block the EoW).
+    // W4-g85 final: `flag` = the smash's own `frameX >= 36` bit, recorded
+    // by the core kill plan in `orb_smash_crimson` (the count-poll reads
+    // the last completed smash's bit — the vanilla summons synchronously
+    // inside that smash). NOT the world evil: a drunk world's chasm holds
+    // both halves and each summons its own boss.
+    // `:54294`'s secret-seed override: `dontStarveWorld && getGoodWorld &&
+    // !remixWorld` summons on EVERY 31 smash, not just the third.
+    // The `NPC.SpawnOnPlayer` entry guard `Main.netMode == 1`
+    // (`NPC.cs:80477`): a client never spawns — the host's `23` sync owns it.
+    let ftw_starve_every_smash = app
+        .world
+        .seeds
+        .contains(tr_core::seeds::SeedFlags::DONT_STARVE | tr_core::seeds::SeedFlags::FOR_THE_WORTHY)
+        && !app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+    let crimson_half = app.world.orb_smash_crimson;
+    let boss_lives = if crimson_half {
+        app.npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::BrainOfCthulhu && n.hp > 0)
+    } else {
+        app.npcs
             .iter()
             .any(|n| n.kind == NpcKind::EaterOfWorldsHead && n.hp > 0)
+    };
+    // The `count >= 1` floor is the poll's smash-edge stand-in: the C#
+    // runs inside CheckOrb (a smash happened), the poll must not summon
+    // on an idle FTW/starve world at count 0.
+    if app.world.shadow_orb_count >= 1
+        && (app.world.shadow_orb_count >= 3 || ftw_starve_every_smash)
+        && !boss_lives
+        && !app.is_client()
     {
         app.world.shadow_orb_count = 0;
+        // The chat watermark resets with the count (port bookkeeping —
+        // the next cycle's smashes chat again from count 1).
+        app.world.orb_smash_chat_count = 0;
         if let Some(p) = app.player.as_ref() {
             let (px, py) = p.center();
             let xt = ((px / TILE_PX) as i32).clamp(2, app.world.width - 3);
             let yt = ((py / TILE_PX) as i32).clamp(2, app.world.height - 3);
-            // The crimson flag rides the orb frame — the port's worldgen
-            // places the corruption/crimson orbs per the chasm side; the
-            // port's spawn picks the corruption EoW (the crimson-Brain
-            // arm rides the flag, the detection lands with the wave event).
-            let mut head = Npc::spawn_worm_head(&app.world, xt, yt, NpcKind::EaterOfWorldsHead);
-            head.hp = head.max_hp;
-            head.worm_left = 65;
-            app.npcs.push(head);
+            // `SpawnOnPlayer`'s at-the-player semantics — the port's
+            // standing surface-scan deviation (`use_boss_summon_item`'s
+            // same reduction): the EoW rides the worm engine, the Brain
+            // arrives alone (the Creepers' orbit = the follow-up).
+            if crimson_half {
+                let mut brain = Npc::new(NpcKind::BrainOfCthulhu, px, py, 1, 0.0);
+                brain.hp = brain.max_hp;
+                app.npcs.push(brain);
+            } else {
+                let mut head =
+                    Npc::spawn_worm_head(&app.world, xt, yt, NpcKind::EaterOfWorldsHead);
+                head.hp = head.max_hp;
+                head.worm_left = 65;
+                app.npcs.push(head);
+            }
+        }
+    } else if app.world.shadow_orb_count >= 1
+        && app.world.shadow_orb_count < 3
+        && !ftw_starve_every_smash
+        && !app.is_client()
+    {
+        // `:54322-54330`'s chat arm — the else of the summon threshold
+        // (NOT of the living-boss gate: a BLOCKED third smash chats
+        // nothing, the `count < 3` pin below): every non-third 31 smash
+        // broadcasts `Lang.misc[10]` ("A horrible chill goes down your
+        // spine..."), the second `Lang.misc[11]` ("Screams echo around
+        // you..."), `ChatColors.World`. The port broadcasts once per
+        // smash via a count watermark (`orb_smash_chat_count`): the
+        // C# runs inside CheckOrb, the poll can't see per-smash edges.
+        if app.world.orb_smash_chat_count < app.world.shadow_orb_count {
+            let msg = if app.world.shadow_orb_count == 2 { 11 } else { 10 };
+            crate::chat::broadcast_death_text(
+                &mut app.chat,
+                &crate::lang::misc(msg),
+                crate::chat::COLOR_WORLD,
+            );
+            app.world.orb_smash_chat_count = app.world.shadow_orb_count;
         }
     }
     // The Golem's anchor + shield (`NPC.cs:19507`'s `NPC.golemBoss` +
@@ -16021,6 +16107,184 @@ mod worm_tests {
         eow_spawn_fade(&w, &ctx, &mut npcs, &mut dust2, &mut rng);
         assert_eq!(npcs[0].alpha, 0);
         assert!(dust2.slots().iter().all(|d| !d.active), "invisible: no fade dust");
+    }
+
+    #[test]
+    fn w4_g85_the_crimson_half_summons_the_brain_not_the_eow() {
+        // W4-g85 final witness: `WorldGen.cs:54296-54318` — the summon's
+        // `flag` is the smash's OWN `frameX >= 36` bit (the core records
+        // it in `orb_smash_crimson`), NOT the world evil. The crimson
+        // half spawns the Brain 266; the corruption half the EoW 13.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = fixture();
+        let player = Player::spawn(&app.world);
+        app.player = Some(player);
+        app.world.orb_smash_crimson = true;
+        app.world.shadow_orb_count = 3;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::BrainOfCthulhu && n.hp > 0),
+            "the crimson third smash summons the Brain (`SpawnOnPlayer(plr, 266)`)"
+        );
+        assert!(
+            !app
+                .npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::EaterOfWorldsHead),
+            "no EoW on the crimson half"
+        );
+        assert_eq!(app.world.shadow_orb_count, 0, "the summon resets the count");
+        // `:54296`'s per-half gate: a living EoW does NOT block the Brain
+        // (`(!AnyNPCs(13) || flag)` is vacuously true when flag is set).
+        let mut eow = Npc::new(NpcKind::EaterOfWorldsHead, 100.0, 100.0, 1, 0.0);
+        eow.hp = eow.max_hp;
+        app.npcs.push(eow);
+        app.world.shadow_orb_count = 3;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.npcs
+                .iter()
+                .filter(|n| n.kind == NpcKind::BrainOfCthulhu && n.hp > 0)
+                .count(),
+            2,
+            "the living EoW does not block the crimson summon"
+        );
+        // The mirror: a living Brain does NOT block the corruption EoW
+        // (`!(AnyNPCs(266) & flag)` is vacuously true when flag is clear).
+        app.world.orb_smash_crimson = false;
+        app.world.shadow_orb_count = 3;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.npcs
+                .iter()
+                .filter(|n| n.kind == NpcKind::EaterOfWorldsHead && n.hp > 0)
+                .count(),
+            2,
+            "the living Brain does not block the corruption summon"
+        );
+        // A living Brain DOES block a second crimson summon (`AnyNPCs(266)`).
+        app.world.orb_smash_crimson = true;
+        app.world.shadow_orb_count = 3;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.npcs
+                .iter()
+                .filter(|n| n.kind == NpcKind::BrainOfCthulhu && n.hp > 0)
+                .count(),
+            2,
+            "AnyNPCs(266) blocks the second Brain"
+        );
+        assert_eq!(app.world.shadow_orb_count, 3, "the blocked gate keeps the count");
+    }
+
+    #[test]
+    fn w4_g85_the_ftw_starve_pair_summons_on_every_smash_and_the_chat_arm() {
+        // W4-g85 final witness: `:54294`'s secret-seed override
+        // (`dontStarveWorld && getGoodWorld && !remixWorld`) summons on
+        // EVERY 31 smash; classic worlds broadcast the chill/screams chat
+        // on the non-third smashes (`:54322-54330`, misc[10]/[11]).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = fixture();
+        app.player = Some(Player::spawn(&app.world));
+        // Classic first smash: no summon, the chill broadcast.
+        app.world.shadow_orb_count = 1;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.npcs.is_empty(), "the first smash never summons (classic)");
+        assert_eq!(app.world.orb_smash_chat_count, 1, "the chill broadcast");
+        assert!(app
+            .chat
+            .messages
+            .iter()
+            .any(|m| m.text == crate::lang::misc(10)));
+        // Second smash: the screams line (misc[11]).
+        app.world.shadow_orb_count = 2;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app
+            .chat
+            .messages
+            .iter()
+            .any(|m| m.text == crate::lang::misc(11)));
+        // FTW + Don't Starve, NOT remix: the FIRST smash already summons.
+        let mut app2 = flow_app(None, vec![], vec![]);
+        app2.world = fixture();
+        app2.player = Some(Player::spawn(&app2.world));
+        app2
+            .world
+            .seeds
+            .insert(tr_core::seeds::SeedFlags::DONT_STARVE | tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+        app2.world.shadow_orb_count = 1;
+        update_npcs(&mut app2, 1.0 / 60.0);
+        assert!(
+            app2.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::EaterOfWorldsHead && n.hp > 0),
+            "the FTW/starve pair summons on the first smash"
+        );
+        assert_eq!(app2.world.shadow_orb_count, 0);
+        assert!(app2.chat.messages.is_empty(), "the summon half never chats");
+        // Remix cancels the override (`!remixWorld`).
+        let mut app3 = flow_app(None, vec![], vec![]);
+        app3.world = fixture();
+        app3.player = Some(Player::spawn(&app3.world));
+        app3.world.seeds.insert(
+            tr_core::seeds::SeedFlags::DONT_STARVE
+                | tr_core::seeds::SeedFlags::FOR_THE_WORTHY
+                | tr_core::seeds::SeedFlags::REMIX,
+        );
+        app3.world.shadow_orb_count = 1;
+        update_npcs(&mut app3, 1.0 / 60.0);
+        assert!(app3.npcs.is_empty(), "remix cancels the every-smash override");
+    }
+
+    #[test]
+    fn w4_g85_the_orb_boss_death_arms_the_shared_flag_and_the_skyblock_unlock() {
+        // W4-g85 final witness: `NPC.cs:79443-79458` — the 13/14/15/266
+        // case group sets ONE shared `downedBoss2` (the port's
+        // `downed_eow`), gates the meteor on `isThereAWorldSurface`
+        // (`Main.cs:2788`), and on a low-tile skyblock world arms
+        // `shadowOrbSmashed` (the goblin unlock without any orb).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = fixture();
+        // The Brain's death (the crimson half) — same arm as the EoW's.
+        let mut brain = Npc::new(NpcKind::BrainOfCthulhu, 100.0, 100.0, 1, 0.0);
+        brain.hp = 0;
+        app.npcs.push(brain);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_eow, "the Brain death sets the SHARED boss-2 flag");
+        assert!(
+            app.world.spawn_meteor,
+            "the guaranteed first meteor (world_surface 120 > 50)"
+        );
+        assert!(!app.world.shadow_orb_smashed, "a classic world never arms it here");
+        // The no-surface gate: worldSurface <= 50 blocks the meteor.
+        let mut app2 = flow_app(None, vec![], vec![]);
+        app2.world = fixture();
+        app2.world.world_surface = 40.0;
+        let mut eow = Npc::new(NpcKind::EaterOfWorldsHead, 100.0, 100.0, 1, 0.0);
+        eow.hp = 0;
+        app2.npcs.push(eow);
+        update_npcs(&mut app2, 1.0 / 60.0);
+        assert!(app2.world.downed_eow, "the flag sets regardless of surface");
+        assert!(
+            !app2.world.spawn_meteor,
+            "!isThereAWorldSurface blocks the death meteor"
+        );
+        // The skyblock unlock: the death arms shadowOrbSmashed.
+        let mut app3 = flow_app(None, vec![], vec![]);
+        app3.world = fixture();
+        app3.world
+            .seeds
+            .insert(tr_core::seeds::SeedFlags::SKYBLOCK);
+        let mut brain3 = Npc::new(NpcKind::BrainOfCthulhu, 100.0, 100.0, 1, 0.0);
+        brain3.hp = 0;
+        app3.npcs.push(brain3);
+        update_npcs(&mut app3, 1.0 / 60.0);
+        assert!(
+            app3.world.shadow_orb_smashed,
+            "the skyblock boss death IS the orb-smash unlock"
+        );
     }
 }
 

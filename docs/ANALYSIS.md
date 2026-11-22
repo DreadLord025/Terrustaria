@@ -49734,3 +49734,240 @@ claims were read off their origin branches (f44 `18c133ce` extends
 `player_file.rs` only — the live-player appearance fields are this
 lane's; f6 `d6f555b8` owns the minecart emitters; d55 `ec78d152` owns the
 gore draws).
+
+## The shadow orb / crimson heart draw slice (W4-g85, code-only)
+`crates/tr-app/src/render/orb_draw.rs` ports the orb family's draw-side
+behaviour as an UNWIRED slice (the `render/special_tiles.rs`
+convention); the census + keep-one boundaries live in
+`docs/research/W4-g85-orb-draw.md`. CODE-ONLY: no compiler invoked,
+the 12 witness tests are WRITTEN NOT RUN.
+**Scope.** The crimson heart is the `frameX >= 36` half of the tile-31
+sheet (`AddShadowOrb` `WorldGen.cs:32111-32115`), not a separate
+tile; 696 mirrors 31's animation frame (`Main.cs:18588`). Three sites
+share that stage bit: (1) the glow pulse — ALREADY landed in
+`tile_light/scanner.rs` (`TileLightScanner.cs:2965-2983`), this slice
+adds 2 stage/jitter witnesses only; (2) the ambient draw dust
+(`TileDrawing.cs:7335-7347`: `Next(20)` gate on `_rand`, heart
+stage dust 5 alpha 100 + `velocity.Y=0; velocity.X*=0.3`, orb stage
+dust 14) — `orb_ambient_dust`; (3) the hammer-break dust stages
+(`WorldGen.cs:68966-68969`: heart dust 5 draw-free, orb
+`genRand.Next(2)!=0?1:14`, plain `:69166` tail; fail 3 / break 10
+from `:66601-66606`) — `orb_break_dust_type`/`orb_break_burst`.
+Plus the shine sparkle slice for Heart 12 (red) / ManaCrystal 639 (blue)
+(`:7413-7432` gate + `:7511-7518` colours + `:7527-7528` dust 43
+alpha 254 scale 0.5 velocity 0).
+**Census pins.** The `:7511` colour row also lists 665, but
+`Main.tileShine[665]` is never written (only `[12]=300`
+`Main.cs:7518`, `[639]=300` `:9652`) — the row is dead code and
+the port refuses 665 with zero draws (witnessed). The altar pair 26/695
+(threshold `>= 54`) is the g86 lane — `orb_break_stage` returns
+`None` for them. No `MakeTileDust` arm other than `:68966/:68968`
+mentions 31/696 (full `:66687-69169` scan), so the burst tail is the
+plain `NewDust` (alpha 0, scale 1).
+**RNG (S1-A-10).** Three streams kept separate: `_rand` gates
+(`Next(20)` once per emit tick miss included; shine `Next(300)`
+drawn BEFORE the `>= max/30` miss test, the dark-light early return
+draws nothing), `Main.rand` (every `NewDust` internal + the break
+stage `Next(2)` — `genRand` IS `Main.rand`, `WorldGen.cs:4445`;
+per dust: stage draw THEN internals), and the scanner's per-tile
+`FastRandom` (the glow jitter, untouched).
+**Deviations / deferred seams.** UNWIRED: the emit entry gate
+(`TileDrawing.cs:965-968`, the `FastRandom(TileFrameSeed)`
+quarter-roll) and the `KillTile` dust-seam call site are the wiring
+wave's obligation. Keep-one at merge: W4-d60's whole
+`DrawTiles_EmitParticles` battery and W4-d54's whole
+`KillTile_MakeTileDust` table carry the same arms — one body per arm
+survives; this slice's witnesses pin the contract either way. The
+CheckOrb break-tick sound tail is W4-c14's (in flight), not touched.
+Verification: 10 `render/orb_draw.rs` + 2 `tile_light/scanner.rs`
+witnesses (stage bit, gate-once/miss-zero-draw, heart clamp vs a
+mirrored plain spawn, shine dark-return/roll-before-miss/colours/
+665-dead, break draw census, burst counts + stream-order mirror, glow
+stage flip + per-tile jitter bands) — WRITTEN, NOT RUN (no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked).
+### The wiring round (same branch, 2026-11-21)
+Three seams landed (census `docs/research/W4-g85-orb-draw.md` §6):
+1. **The emit slot WIRED.** `emit_entry_gate` ports the `:965-968`
+   quarter-roll; the ambient/shine block runs in `render/tiles.rs` at
+   the C# position — BEFORE the dark-cell merge (the C# battery runs on
+   dark cells). Deviations: (a) the `_rand` gates ride the per-rebuild
+   `leaf_rng` FastRandom stand-in (vanilla's `_rand` is one session-lived
+   UnifiedRandom — the port pins it per world-range rebuild, the S1-G-1
+   leaf convention); (b) the NewDust internals ride the `frame_rng`
+   clone snapshot written back after the pass (the d54 convention);
+   (c) `Lighting.UpdateEveryFrame` folds to Retro/Trippy — the port's
+   frame path never binds the render-target family (S1-G-13
+   allocation-only), so `RenderTargetsRequired` stands false even at
+   zoom > 1. Contract notes: the pre-entry spelunker `:930 Next(60)`
+   draw (12/639 ARE `tileSpelunker`) was a constants-off potion seam —
+   NOW WIRED for the family slice in wiring round 2 (below); the
+   dangerSense `:911` / biomeSight `:955` siblings stay d60's prologue
+   lane (the family fails both sets — zero draws). The
+   block is family-gated (zero draws for other kinds) so d60's
+   whole-battery keep-one replaces it wholesale.
+2. **The hammer fail-tick dust WIRED** (`orb_hammer_fail_dust` in
+   `hammer_tile_hit`'s sub-100 arm): the `KillTile(fail)` dust loop runs
+   before the `:63736` return — 3 stage dusts per hit on the
+   `UpdatePlayers` stream. The 10-dust BREAK burst stays d54's
+   `tile_break_burst` seam (d54/g14 both carry the `:68966` arm
+   verbatim-identical to `orb_break_dust_type` — keep-one); the fail
+   SOUND stays c14's `play_kill_fail_cue`. The break progression is the
+   i31 HitTile book (no orb-specific accumulation): a 40-power hammer
+   needs 3 hits — puff-puff-break.
+3. **The CheckOrb loot census FIX** (unclaimed lane): the drop switch is
+   FOUR cases (`WorldGen.cs:54226-54333`) — 696 → 5469/5470 (the
+   dispatch arm was missing), 12 → the Life Crystal 29 (tile 12 is the
+   Heart OBJECT; the crimson heart is 31's `fx>=36` half — the pre-fix
+   port rolled the 5-way table for 12, wrong), 639 → 109; only case 31
+   rolls and raises the smash flags (`:54292-54293` is INSIDE case 31 —
+   the pre-fix port counted every kind, wrong). The `Next(5)` draws even
+   on the forced first smash. The case-0 Musket Ball 97×100 pair resolves
+   app-side in `break_drop_events` (one dead-range `Next(100,101)` draw
+   kept, `UpdatePlayers`). Trigger census: CheckOrb sets NO
+   `spawnMeteor` — the meteorite triggers (boss deaths `NPC.cs:79455`,
+   nightly `Next(50)` `Main.cs:65230`) and the dawn goblin invasion roll
+   (`Main.cs:65448-65461`) were already landed; the Goblin Scout spawn
+   gate (`NPC.cs:4478`, `!downedGoblins && shadowOrbSmashed &&
+   Next(7)==0` after the `Next(15)`) rides the UNPORTED day-surface
+   ladder — UNWIRED contract note (6 lanes contest spawner.rs).
+6 new witnesses (entry-gate arms + quarter-roll recipe/band/seed
+advance, fail-3 stage census + stream mirror, 3-hit progression,
+four-case switch + flag census, gun-pair + dead-range draw) — WRITTEN
+NOT RUN; 18 total on the branch.
+### Wiring round 2 — the spelunker pre-entry arm (same branch, 2026-11-21)
+The `:930` potion seam is now WIRED for the orb family. Census first:
+the `findTreasure` flag + the buff-9 grant + the `ResetEffects` clear
+ALREADY landed on main (S1-E-7a, `player.rs:6464`/`:5980`); the
+`tileSpelunker` bitset + `IsTileSpelunkable` are W4-d9's in-flight
+`projectile_ai_style90.rs` (`667e1f0c2`, the MagicLantern scan) — claimed,
+not duplicated. The DRAW GATE itself was unclaimed: d60's module doc
+explicitly defers the `DrawSingleTile` prologue arms `:911-962`.
+* `spelunker_family` — the family slice of `IsTileSpelunkable`: 12
+  (`Main.cs:9424`) and 639 (`:9651`) are `tileSpelunker`; 31/696 are NOT
+  (the orbs themselves are not treasure-highlighted — a common
+  misconception the census pins). Keep-one: at merge this may delegate to
+  d9's full-set function; the family verdict is identical.
+* `spelunker_light_lift` — `:922-929`: R floors at 200, G at 170, **B
+  untouched** (the C# has no B clause, unlike dangerSense's 50). Runs on
+  the RAW cell light BEFORE the actuation ghost (`GetFinalLight` `:4380`
+  applies `actColor` after the lift) and feeds the battery's `tileLight`
+  (`:967`) — so a buff-lit 12/639 cell is never dark to the shine arm.
+* `spelunker_dust` — `:930-936`: `_rand.Next(60)==0` → dust 204, alpha
+  150, scale 0.3, `fadeIn=1`, `velocity*=0.1`, `noLight=true`, **NO
+  noGravity** (the dangerSense arm `:917` sets it; this one does not).
+  Drawn BEFORE the `:965` entry gate, OUTSIDE its quarter-roll, once per
+  admitted cell per unpaused frame.
+* Wiring: `render/tiles.rs` computes `tile_light` (lifted or raw) per
+  cell, ghosts it into `l` for the sprite, and passes `tile_light` to the
+  battery; the sparkle call sits between the drawdata resolution and the
+  emit block. The `_rand.Next(60)` rides `leaf_rng` (the pinned stand-in),
+  the NewDust internals ride `orb_main_rand` (`frame_rng`).
+* Chain position: for 12/639 the dangerSense `:911 Next(30)` arm draws
+  NOTHING (the family is in no `IsTileDangerous` set — `:4437-4446`,
+  `TouchDamageImmediate`/`TouchDamageHot`/`Boulders` all exclude 12/639),
+  and biomeSight `:955 Next(480)` draws nothing (no BiomeSight set member).
+  So the spelunker `Next(60)` is the FIRST draw for an admitted cell, and
+  the ambient/shine arms follow with zero prior `_rand` draws — stream-exact.
+2 new witnesses (family gate + lift floors R/G not B; dust gate
+miss-draws-once / hit dust-204 fadeIn/noLight/no-noGravity + scale band +
+stream mirror) — WRITTEN NOT RUN; 20 total on the branch.
+### Wiring round 2 — the progression-7 chain reconciled (same branch)
+c36's in-flight `orb_smash_notify_pending` (batch 5, `6c8eb75dd`) is set
+UNCONDITIONALLY in its `check_orb` — its base predates the g85 four-case
+fix. The C# `NotifyProgressionEvent(7)` (`WorldGen.cs:54331`) sits INSIDE
+case 31 (the 12/639/696 cases break before it), so merged as-is the
+non-31 breaks would mis-fire SMASHING_POPPET. This round ports the field
++ the `break_tile` drain (c36 keep-one) with the set INSIDE the
+`if kind == 31` block — the same gate as the smash flags. Chain verified:
+case-31 smash → flag → `break_tile` `mem::take` → `notify_progression_net(7)`
+→ `SMASHING_POPPET` (`Cond::Progression(7)`). The four-case witness now
+pins the notify per kind. Drain-coverage note: the drain rides
+`break_tile` only (c36's placement, kept verbatim) — projectile/collision
+kill paths leave the notify pending until the next `break_tile`; widening
+it is the c36 lane's call. Census `docs/research/W4-g85-orb-draw.md` §7.3.
+### Wiring round 2 — the orb light emit VERIFIED scanner-seeded (same branch)
+The contract's "AddLight orb tiles (g18-oracle co-lane)" check resolves
+NEGATIVE: the orb family's light is NOT an entity-list `AddLight` source.
+31/696 (+ the 26/695 altars) glow through `TileLightScanner`'s
+`case 26/31/695/696` (`TileLightScanner.cs:2965-2983`), landed in
+`tile_light/scanner.rs::misc_lights` (`:1051-1061`) — the scanner writes
+the `LightMap` directly. The Heart object 12 / ManaCrystal 639 have NO
+top-level scanner light arm (every `case 12` is a nested torch/chandelier/
+lamp style row; 639 has no scanner mention) — their glow is the
+`Main.tileShine`/`tileShine2` modulation (`Main.cs:7518`/`:9652-9653`) +
+the g85 sparkle dust. W4-g18's independent census (`547154708`) confirms:
+Main.cs has exactly five `Lighting.AddLight` sites, ALL `DrawProj`
+hook-chain arms (332/488, e8's lane), and "NO update-side or ambient
+AddLight — tile ambience is scanner-seeded". Nothing to wire; the g85
+dust wiring + the landed scanner arm are the complete draw/light picture.
+Census `docs/research/W4-g85-orb-draw.md` §7.4.
+### FINAL phase — the summon split, the meteor gates, the keep-one receipt (same branch)
+**G85-FAMILY-COMPLETE** (census + the family table:
+`docs/research/W4-g85-orb-draw.md` §8). Three code seams (`21e8eb1d7`):
+1. **The SHADOW/CORRUPT summon split.** The pre-fix third-orb poll
+   summoned the EoW for BOTH halves (the crimson-Brain arm was a
+   deferral that never landed). The C# selector is the smash's OWN
+   `frameX >= 36` bit (`WorldGen.cs:54175-54180`'s `flag`), NOT the world
+   evil — a drunk world's chasm holds both halves and each summons its
+   own boss (`:54312-54318`: crimson → `SpawnOnPlayer(plr, 266)` the
+   Brain, corruption → 13 the EoW). The core kill plan records the bit
+   in `World.orb_smash_crimson` inside the case-31 block; the poll reads
+   the last completed smash's bit. The per-half living-boss gate
+   (`:54296`) reduces to `!AnyNPCs(266)` (crimson) / `!AnyNPCs(13)`
+   (corruption) — a living boss of the OTHER half never blocks. Also
+   wired: the `:54294` FTW+DontStarve-not-remix every-smash override,
+   the `:54322-54330` chill/screams chat arm, the `SpawnOnPlayer`
+   `netMode == 1` client guard (`NPC.cs:80477`).
+   **Deviations:** (a) the count-poll deferral — the vanilla summons
+   synchronously inside CheckOrb; the port polls the count in the npcs
+   pass (the W-A2-3 shape, kept), so the nearest-player scan folds to
+   the single player and the 500×50 spawn-area scan to the standing
+   at-the-player reduction (`use_boss_summon_item`'s same); (b) the
+   chat arm rides a count watermark (`World.orb_smash_chat_count`,
+   port-only bookkeeping, no save byte, resets with the count) — the
+   poll cannot see per-smash edges; a blocked third smash chats nothing
+   (the `count < 3` pin — the chat is the else of the THRESHOLD, not of
+   the living-boss gate); (c) the FTW override's `count >= 1` poll floor
+   is the smash-edge stand-in (an idle FTW world at count 0 never
+   summons).
+2. **The orb-boss death gates.** The death arm (`NPC.cs:79443-79458`)
+   gains the skyblock lowTiles `shadowOrbSmashed` unlock (`:79449-79452`
+   — the sky islands have no orbs; the boss kill IS the goblin unlock)
+   and the `isThereAWorldSurface` meteor gate (`:79453`, `Main.cs:2788`:
+   `worldSurface > 50.0` — the remix/FTW inversion never meteors).
+   **Deviation:** the lowTiles stand-in is the SKYBLOCK seed flag (the
+   `loot.rs` LootFlags.skyblock convention) — the C# recomputes
+   `lowTiles` from the live active-tile ratio (< 10%, `WorldGen.cs:
+   3210-3218`); a skyblock world past the threshold keeps the flag down
+   in the port. The shared `downedBoss2` for EoW AND Brain was already
+   correct (the port's `downed_eow`).
+3. **The meteor bookend.** The smash flag does NOT feed the meteor —
+   the boss DEATH does (the guaranteed first, then the nightly 1/50 on
+   `downedBoss2`). `meteor_night_bookend` carries the full `:65230`
+   gate (the `Next(50)` draws unconditionally — leftmost operand;
+   `netMode != 1` gates the raise only) + the `:65234-65237` no-surface
+   cancel (boundary-only — a mid-day death flag survives to the next
+   morning's `HandleMeteorFall`). The crossing arm stays the recorded
+   DEAD arm (the S1-A-10 follow-up row above — the clock advances in
+   `time_phase` before `update_world_tick`); the helper keeps the gate
+   faithful and directly witnessable, the re-home is the clock lane's
+   call.
+**The c36 keep-one FINAL receipt (§8.1):** the c36 tip `4e124425c`
+re-probed — its RE-PROBE commits never touched `check_orb`; the
+unconditional notify set is UNFIXED in flight. Merger rule: keep g85's
+`check_orb` WHOLE (the four-case switch + the case-31 flag block),
+either drain/field (identical), DROP c36's `check_orb`; its other
+batch-5 sites are disjoint — keep them.
+4 new witnesses + the four-case crimson-bit extension WRITTEN NOT RUN;
+24 total on the branch.
+**The RETIRE addendum (same day, doc-only — census §9):** the receipts
+re-probed at the NEW co-lane tips and upgraded to exact merger line
+ranges — c36 `3a64a1b96` (`kill.rs:1087-1184` DELETE, g85's
+`:1089-1208` KEEP; the 5043-drop-hunk item is f33b's survival-drop
+hunk per c36's own three-way note — g85 touches no 5043 site), f35
+`1abae9ade` (`npcs.rs:5693-5725` stale poll DELETE, g85's `:5714-5805`
+replaces; the death arm is a strict wrap; the resummon witness
+byte-identical keep-one). The scout contract re-verified UNCLAIMED
+across all 356 W4 tips → the FINAL task-seed R-24-11 (research/90
+§2(d)). §8 SEALED + the ORB bible paragraph in the census. No new
+deviations — the retire phase changes no code.

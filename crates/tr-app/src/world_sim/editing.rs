@@ -1237,6 +1237,43 @@ fn mining_tick(app: &mut App, tx: i32, ty: i32, held: ItemSlot) {
     app.mining_can_hit_walls = can_hit_walls;
 }
 
+/// W4-g85 — the orb-family hammer FAIL-tick dust: `hammer_tile_hit`'s
+/// sub-100 arm calls `WorldGen.KillTile(x, y, fail: true)`
+/// (`Player.cs:45692`), whose dust loop (`WorldGen.cs:63699-63703`) runs
+/// BEFORE the `fail` return (`:63709-63736`): 3 stage dusts per hit
+/// (`KillTile_GetTileDustAmount` default fail arm `:66601-66606`), the
+/// stage type per `:68966-68969` (heart dust 5 draw-free, orb
+/// `genRand.Next(2)` → 1/14). The C# progression: a 40-power hammer needs
+/// 3 hits (40+40+20 ≥ 100 — `HitTile.AddDamage` caps at 100), so the orb
+/// puffs twice then breaks; the break tick's 10-dust burst is d54's
+/// `tile_break_burst` seam (keep-one: this fn is the fail half only, the
+/// family slice `render::orb_draw::orb_break_burst` covers both counts).
+/// Every draw rides `UpdatePlayers` (`genRand` IS `Main.rand`,
+/// `WorldGen.cs:4445`, under the ItemCheck swap `Main.cs:17754`).
+/// Non-family kinds draw NOTHING (the altar 26/695 pair is g86's lane).
+fn orb_hammer_fail_dust(app: &mut App, tx: i32, ty: i32, kind: u16) {
+    if !matches!(kind, 31 | 696) {
+        return;
+    }
+    // `KillTile`'s entry refusal (`CheckTileBreakability` 2-return,
+    // `WorldGen.cs:63542-63545`) precedes the dust loop — the refused cell
+    // puffs nothing (the `break_tile` refusal convention).
+    if !edit::can_kill_tile(&app.world, tx, ty, chest_holds_items(app)) {
+        return;
+    }
+    // The dust reads the STILL-STANDING cell (`KillTile(fail)` never
+    // clears it); a vanished cell puffs nothing.
+    let Some(t) = app.world.tile(tx, ty).filter(|t| t.active() && t.kind == kind) else {
+        return;
+    };
+    let frame_x = t.frame_x;
+    let ctx = app.spawn_ctx();
+    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+    crate::render::orb_draw::orb_break_burst(
+        rng, &mut app.dust, &ctx, &app.world, tx, ty, kind, frame_x, true,
+    );
+}
+
 /// The hammer arm's one hit — `ItemCheck_UseMiningTools_ActuallyUseMiningTool`
 /// (`Player.cs:45665-45704`, S1-P-i31). `num2 += sItem.hammer` (`:45670`);
 /// a `CanKillTile` refusal zeroes it (`:45671-45674`); the demon altar 26
@@ -1316,6 +1353,15 @@ fn hammer_tile_hit(
             let _ = ore;
             app.world_key = None;
         }
+    }
+    // `:45690-45697` — the fail arm: `WorldGen.KillTile(x, y, fail: true)`.
+    // W4-g85 wires the orb-family dust half (`KillTile`'s :63699-63703 loop
+    // runs BEFORE the `fail` return at :63745, so every sub-100 hammer hit
+    // puffs 3 stage dusts); the fail SOUND is W4-c14's lane (its
+    // `play_kill_fail_cue` call lands here at the merge — keep-one comment).
+    // The break tick's 10-dust burst stays d54's `tile_break_burst` seam.
+    if total < 100 {
+        orb_hammer_fail_dust(app, tx, ty, kind);
     }
     // `:45698-45701` — a non-zero damage prunes the book AFTER both
     // branches (the break tick prunes TWICE: the ClearMiningCacheAt prune
@@ -5920,6 +5966,15 @@ fn break_tile_inner(app: &mut App, tx: i32, ty: i32, no_item: bool) {
     let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, no_item) else {
         return;
     };
+    // W4-g85 wiring round 2 — `WorldGen.CheckOrb`'s achievement tail
+    // (`WorldGen.cs:54331`): a completed case-31 orb/heart smash fires
+    // progression 7 (SMASHING_POPPET). The core kill plan sets the flag
+    // INSIDE its case-31 arm (the 12/639/696 breaks never reach `:54331`);
+    // this drain feeds the manager + the host's `98` wire. Co-lane
+    // keep-one: W4-c36 batch 5 lands the same drain at this slot.
+    if std::mem::take(&mut app.world.orb_smash_notify_pending) {
+        let _ = app.notify_progression_net(7);
+    }
     // `Chest.DestroyChest` (`Chest.cs:625-645`, called from
     // `CheckTileBreakability2_ShouldTileSurvive`, `WorldGen.cs:62506`/:62514):
     // a broken chest 21/467 (2 wide) or dresser 88 (3 wide) loses its store
@@ -6249,6 +6304,16 @@ fn break_drop_events(
             .or_else(|| registry::tile_drop(drop.tile_kind, 0));
         if let Some(id) = id {
             events.push((id, 1, drop.x, drop.y));
+            // W4-g85 — `CheckOrb` case 31's case-0 pair (`WorldGen.cs:
+            // :54248-54249` / `:54275-54276`): the gun (Musket 96 / The
+            // Undertaker 800) spawns WITH a Musket Ball 97 stack of
+            // `genRand.Next(100, 101)` — the single-value range always
+            // returns 100 but CONSUMES one draw (genRand IS Main.rand,
+            // `:4445`); the stack spawns at the same rect, after the gun.
+            if matches!(id, 96 | 800) && drop.tile_kind == 31 {
+                let stack = main_rng.next_range(100, 101) as u32;
+                events.push((97, stack, drop.x, drop.y));
+            }
         }
     }
     // The killed tree cells' wood and acorns (`WorldGen.KillTile_GetTreeDrops`,
@@ -10019,6 +10084,86 @@ mod tests {
         );
     }
 
+    /// W4-g85 — `CheckOrb` case 31's case-0 pair (`WorldGen.cs:54248-54249`
+    /// / `:54275-54276`): the gun record spawns the Musket Ball 97 stack of
+    /// 100 AFTER it (`genRand.Next(100, 101)` — the single-value range
+    /// always returns 100 but consumes one draw). The other four table
+    /// items and the non-31 records pair nothing.
+    #[test]
+    fn w4_g85_the_musket_ball_stack_pairs_the_case0_gun() {
+        for (gun, tile_kind) in [(96i32, 31u16), (800, 31)] {
+            let kill = edit::TileKill {
+                kind: 31,
+                object_drops: vec![edit::ObjectDrop {
+                    tile_kind,
+                    x: 10,
+                    y: 19,
+                    item: Some(gun),
+                }],
+                ..Default::default()
+            };
+            let (drops, _) = drop_events(&kill, None);
+            assert_eq!(
+                drops,
+                vec![(gun as u16, 1, 10, 19), (97, 100, 10, 19)],
+                "the gun then the 100-stack at the same rect"
+            );
+        }
+        // A non-case-0 table item pairs nothing.
+        let kill = edit::TileKill {
+            kind: 31,
+            object_drops: vec![edit::ObjectDrop {
+                tile_kind: 31,
+                x: 10,
+                y: 19,
+                item: Some(64), // Vilethorn
+            }],
+            ..Default::default()
+        };
+        assert_eq!(drop_events(&kill, None).0, vec![(64, 1, 10, 19)]);
+        // The replica/heart/crystal records never pair (their ids are not
+        // the guns; the tile_kind gate also holds).
+        for (item, tk) in [(5469i32, 696u16), (29, 12), (109, 639)] {
+            let kill = edit::TileKill {
+                kind: tk,
+                object_drops: vec![edit::ObjectDrop {
+                    tile_kind: tk,
+                    x: 10,
+                    y: 19,
+                    item: Some(item),
+                }],
+                ..Default::default()
+            };
+            assert_eq!(drop_events(&kill, None).0, vec![(item as u16, 1, 10, 19)]);
+        }
+        // The stack draw rides the caller's Main.rand stream: the resolver
+        // consumes exactly one Next(100,101) per gun record.
+        let kill = edit::TileKill {
+            kind: 31,
+            object_drops: vec![edit::ObjectDrop {
+                tile_kind: 31,
+                x: 10,
+                y: 19,
+                item: Some(96),
+            }],
+            ..Default::default()
+        };
+        let mut main = tr_core::UnifiedRandom::new(11);
+        let mirror = main.clone();
+        let _ = break_drop_events(
+            &kill,
+            &object_world(),
+            None,
+            false,
+            0,
+            &mut main,
+            &DropCtx::default(),
+        );
+        let mut want = mirror;
+        let _ = want.next_range(100, 101);
+        assert_eq!(main, want, "one Next(100,101) — the dead-range draw kept");
+    }
+
     #[test]
     fn s1_e_21c_kill_cue_maps_the_legacy_families() {
         // The five families the tile-break table can emit, pinned to the
@@ -11839,6 +11984,122 @@ mod tests {
             !app.world.tile(30, 260).unwrap().active(),
             "the doubled range mines the cell"
         );
+    }
+
+    // ---- W4-g85: the orb hammer fail-tick dust (WRITTEN NOT RUN) -----------
+
+    /// The orb-family fail tick puffs 3 stage dusts per sub-100 hammer hit
+    /// (`WorldGen.KillTile(fail: true)`'s :63699-63703 loop before the
+    /// :63736 return): the heart stage 3× dust 5 with ZERO stage draws,
+    /// the orb stage 3× (1|14) with one Next(2) each. The 40-power hammer
+    /// needs 3 hits (the i31 book), so the progression is puff-puff-break.
+    #[test]
+    fn w4_g85_orb_hammer_fail_puffs_three_stage_dusts() {
+        // Heart stage (frameX 36): 3 dust 5, alpha 0 (the plain :69166
+        // tail), no stage draws — the stream equals 3 plain NewDust calls.
+        let mut app = pick_world_at(31, 30, 260);
+        {
+            let t = app.world.tile_mut(30, 260).unwrap();
+            t.frame_x = 36;
+        }
+        let before = app
+            .rngs
+            .stream(crate::app::RngKey::UpdatePlayers)
+            .clone();
+        orb_hammer_fail_dust(&mut app, 30, 260, 31);
+        let active: Vec<_> = app
+            .dust
+            .slots()
+            .iter()
+            .filter(|d| d.active)
+            .collect();
+        assert_eq!(active.len(), 3, "the fail count (:66606)");
+        for d in &active {
+            assert_eq!(d.dust_type, 5, "the heart stage (:68968)");
+            assert_eq!(d.alpha, 0, "the plain tail (:69166)");
+        }
+        let after = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        // The mirror: 3 plain NewDust(5) on a clone — the heart burst adds
+        // no stage draws, so the streams agree.
+        let mut mirror = before;
+        let mut mirror_pool = tr_core::particles::DustPool::new();
+        let ctx = app.spawn_ctx();
+        for _ in 0..3 {
+            mirror_pool.new_dust(
+                &mut mirror,
+                &ctx,
+                &app.world,
+                glam::Vec2::new(30.0 * 16.0, 260.0 * 16.0),
+                16,
+                16,
+                5,
+                0.0,
+                0.0,
+                0,
+                tr_core::particles::Color::default(),
+                1.0,
+            );
+        }
+        assert_eq!(*after, mirror, "the heart stage is draw-free");
+        // Orb stage (frameX 0): 3 dusts of type 1|14, one Next(2) each —
+        // the stream diverges from the plain mirror.
+        let mut app2 = pick_world_at(31, 30, 260);
+        orb_hammer_fail_dust(&mut app2, 30, 260, 31);
+        let active2: Vec<_> = app2.dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active2.len(), 3);
+        for d in &active2 {
+            assert!(d.dust_type == 1 || d.dust_type == 14, "orb stage types");
+        }
+        // The altar pair is g86's lane: zero dust, zero draws.
+        let mut app3 = pick_world_at(26, 30, 260);
+        let m3 = app3.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        orb_hammer_fail_dust(&mut app3, 30, 260, 26);
+        assert_eq!(app3.dust.slots().iter().filter(|d| d.active).count(), 0);
+        assert_eq!(*app3.rngs.stream(crate::app::RngKey::UpdatePlayers), m3);
+        // A vanished cell puffs nothing.
+        let mut app4 = pick_world_at(31, 30, 260);
+        app4.world.tile_mut(30, 260).unwrap().flags &= !FLAG_ACTIVE;
+        orb_hammer_fail_dust(&mut app4, 30, 260, 31);
+        assert_eq!(app4.dust.slots().iter().filter(|d| d.active).count(), 0);
+    }
+
+    /// The hammer-break stage progression on the orb: the i31 `HitTile`
+    /// book accumulates `sItem.hammer` per hit; the Iron Hammer (40) needs
+    /// 3 hits — two fail ticks (3 dusts each) then the break (the 10-dust
+    /// burst is d54's seam, unwired here). `Main.tileHammer[31]/[696]`
+    /// (`Main.cs:7206-7207`) route the orb to the hammer arm; neither is
+    /// `tileNoFail`, so the first hit never breaks.
+    #[test]
+    fn w4_g85_orb_hammer_break_needs_three_hits() {
+        let mut app = pick_world_at(31, 30, 260);
+        assert!(tr_core::tool::is_hammer_tile(31));
+        assert!(tr_core::tool::is_hammer_tile(696));
+        assert!(!tr_core::tool::is_no_fail_tile(31));
+        let held = ItemSlot { kind: 7, count: 1, prefix: 0 }; // Iron Hammer 40
+        let id = app.hit_tile.hit_object(30, 260, tr_core::hit_tile::TILE);
+        hammer_tile_hit(&mut app, 30, 260, 31, 40, id, held);
+        assert!(app.world.tile(30, 260).unwrap().active(), "hit 1 stands");
+        assert_eq!(hit_damage(&app, 30, 260), 40);
+        assert_eq!(
+            app.dust.slots().iter().filter(|d| d.active).count(),
+            3,
+            "hit 1 puffs the fail 3"
+        );
+        let id = app.hit_tile.hit_object(30, 260, tr_core::hit_tile::TILE);
+        hammer_tile_hit(&mut app, 30, 260, 31, 40, id, held);
+        assert!(app.world.tile(30, 260).unwrap().active(), "hit 2 stands");
+        assert_eq!(
+            app.dust.slots().iter().filter(|d| d.active).count(),
+            6,
+            "hit 2 puffs 3 more"
+        );
+        let id = app.hit_tile.hit_object(30, 260, tr_core::hit_tile::TILE);
+        hammer_tile_hit(&mut app, 30, 260, 31, 40, id, held);
+        // Hit 3 breaks the cell — the single-cell world has no 2x2 to
+        // cascade, the smash flag stays down (CheckOrb needs the object).
+        assert!(!app.world.tile(30, 260).unwrap().active(), "hit 3 breaks");
+        // No break burst here (d54's seam): still the 6 fail dusts.
+        assert_eq!(app.dust.slots().iter().filter(|d| d.active).count(), 6);
     }
 
     // ---- S1-P-i29: the pickaxe/drill mining interaction --------------------

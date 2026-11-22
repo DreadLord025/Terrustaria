@@ -478,6 +478,17 @@ pub(crate) fn draw_tiles(
     // (`Main.cs:21842-21871`) — the drip rows outside frames 7..=9 draw
     // in the behind-tiles slot of this pass (the `:56934-56940` site).
     gore_pool: &tr_core::gore::GorePool,
+    // W4-g85: the orb-family emit slice's inputs (`DrawTiles_EmitParticles`,
+    // `TileDrawing.cs:7335-7347`/`:7413-7529`, entry gate `:965-968`).
+    // `orb_dust` is the shared pool (`Main.dust`); `orb_main_rand` the
+    // `Main.rand` stand-in for the `NewDust` internals (`world.frame_rng`,
+    // borrowed through the draw like the d54 break seam). `orb_ctx` carries
+    // the `Dust.NewDust` cull inputs (`App::spawn_ctx`). The `_rand` gate
+    // stream is the pass-local `leaf_rng` (the pinned per-rebuild stand-in).
+    orb_dust: &mut tr_core::particles::DustPool,
+    orb_main_rand: &mut tr_core::UnifiedRandom,
+    orb_ctx: &tr_core::particles::SpawnCtx,
+    game_paused: bool,
 ) -> TileDrawStats {
     let t_total = Instant::now();
     // `TileDrawing._rand` (`TileDrawing.cs:104,191`): ONE `UnifiedRandom`
@@ -791,7 +802,28 @@ pub(crate) fn draw_tiles(
                 let tile = &world.tiles[row_base + tx as usize];
                 let raw_l = light.get(tx, ty);
                 let inactive = tile.flags & tr_core::tile::FLAG_INACTIVE != 0;
-                let mut l = raw_l;
+                let active = tile.active();
+                // W4-g85 — the spelunker pre-entry arm (`TileDrawing.cs:920-937`),
+                // the orb-family slice. `findTreasure` (buff 9, landed S1-E-7a
+                // `player.rs:6464`) + `IsTileSpelunkable` admits 12/639 (the
+                // family's `tileSpelunker` members, `Main.cs:9424`/`:9651`);
+                // 31/696 are NOT in the set. The light lift (`:922-929`, R→200
+                // G→170, B untouched) runs on the RAW cell light BEFORE the
+                // actuation ghost — C# `GetFinalLight` (`:4380`) applies
+                // `actColor` AFTER the lift — and the lifted `tileLight` is what
+                // the emit battery receives (`:967`), so a buff-lit 12/639 cell
+                // is never dark to the shine arm. The `Next(60)` sparkle
+                // (`:930`) draws OUTSIDE the `:965` entry quarter-roll, once per
+                // admitted cell per unpaused frame, on the `_rand` stand-in.
+                let spelunk = active
+                    && player.is_some_and(|p| p.find_treasure)
+                    && crate::render::orb_draw::spelunker_family(tile.kind);
+                let tile_light = if spelunk {
+                    crate::render::orb_draw::spelunker_light_lift(raw_l)
+                } else {
+                    raw_l
+                };
+                let mut l = tile_light;
                 // `Tile.actColor` (`Tile.cs:272-290`) via
                 // `TileDrawing.GetFinalLight` (`TileDrawing.cs:4380-4397`):
                 // an actuated (inactive) tile draws ghosted — RGB × 0.4.
@@ -1082,6 +1114,100 @@ pub(crate) fn draw_tiles(
                         tile.frame_x,
                         tile.frame_y,
                         &dd,
+                    );
+                }
+                // W4-g85 — the spelunker sparkle (`TileDrawing.cs:930-936`),
+                // drawn BEFORE the emit battery (the C# arm order: :920
+                // precedes :965). The `_rand.Next(60)` rides `leaf_rng` and
+                // is NOT gated by the entry quarter-roll; a paused frame
+                // draws nothing (`_isActiveAndNotPaused`). The light lift
+                // above already ran (it is draw-free and unconditional on
+                // the roll). Keep-one: d60's whole-prologue port owns the
+                // dangerSense `:911` / biomeSight `:955` siblings — the
+                // family kinds fail both sets (census §6/§7), so this slice
+                // draws nothing extra for them.
+                if spelunk && !game_paused {
+                    crate::render::orb_draw::spelunker_dust(
+                        &mut crate::render::orb_draw::GateRand(&mut leaf_rng),
+                        orb_main_rand,
+                        orb_dust,
+                        orb_ctx,
+                        world,
+                        tx,
+                        ty,
+                    );
+                }
+                // W4-g85 — `DrawSingleTile`'s `DrawTiles_EmitParticles` entry
+                // (`TileDrawing.cs:965-968`), the orb-family slice only. The
+                // C# slot is BEFORE the visibility/black gates (`:975-991`):
+                // a fully dark orb cell still runs the battery (the ambient
+                // arm has no light test; the shine arm's dark return is
+                // inside the body). The kind gate precedes every draw: a
+                // non-family cell costs zero RNG (the full battery is
+                // W4-d60's keep-one lane; the family kinds reach their arms
+                // with zero prior `_rand` draws — every preceding arm fails
+                // its type/set test first, census
+                // docs/research/W4-g85-orb-draw.md §6). The entry quarter-roll
+                // is a fresh per-tile FastRandom derivation (no stream state);
+                // the arm gates ride `leaf_rng` (the `_rand` stand-in) and the
+                // NewDust internals ride `orb_main_rand` (Main.rand).
+                if active
+                    && matches!(tile.kind, 31 | 696 | 12 | 639)
+                    && crate::render::orb_draw::emit_entry_gate(
+                        !game_paused,
+                        // `Lighting.UpdateEveryFrame` (`Lighting.cs:77-87`):
+                        // `!RenderTargetsRequired && !NotRetro` — Retro/Trippy
+                        // at zoom 1. The port's frame path never binds the
+                        // target family (S1-G-13 allocation-only), so
+                        // `RenderTargetsRequired` stands false (recorded
+                        // deviation: the zoom > 1 capture path is unported).
+                        matches!(
+                            style.mode,
+                            tr_core::lighting::LightMode::Retro
+                                | tr_core::lighting::LightMode::Trippy
+                        ),
+                        tr_core::flame::tile_frame_seed_at(anim_time),
+                        tx,
+                        ty,
+                    )
+                {
+                    // The battery receives `drawData.tileLight` (`:967`) —
+                    // the spelunker-lifted light, NOT the raw map colour.
+                    let light_bytes = tr_core::particles::Color::new(
+                        (tile_light[0] * 255.0).min(255.0) as u8,
+                        (tile_light[1] * 255.0).min(255.0) as u8,
+                        (tile_light[2] * 255.0).min(255.0) as u8,
+                        255,
+                    );
+                    // The `:7335` ambient arm — 31/696 only; the type test
+                    // inside draws nothing for 12/639.
+                    crate::render::orb_draw::orb_ambient_dust(
+                        &mut crate::render::orb_draw::GateRand(&mut leaf_rng),
+                        orb_main_rand,
+                        orb_dust,
+                        orb_ctx,
+                        world,
+                        tx,
+                        ty,
+                        tile.kind,
+                        tile.frame_x,
+                    );
+                    // The `:7413` shine arm — the family's live rows are
+                    // 12/639 (`Main.tileShine` 300); 31/696 have no row and
+                    // the slice returns before any draw. The C# reaches the
+                    // shine arm only when the ambient arm's chain test
+                    // failed — for 12/639 the ambient type test always
+                    // fails, so both calls in sequence are stream-exact.
+                    crate::render::orb_draw::orb_shine_sparkle(
+                        &mut crate::render::orb_draw::GateRand(&mut leaf_rng),
+                        orb_main_rand,
+                        orb_dust,
+                        orb_ctx,
+                        world,
+                        tx,
+                        ty,
+                        tile.kind,
+                        light_bytes,
                     );
                 }
                 let solid = (tile.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(tile.kind);
