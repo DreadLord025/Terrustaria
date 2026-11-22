@@ -292,54 +292,52 @@ impl App {
             && matches!(self.net, crate::app::NetRole::Off);
         self.audio.update_tracked(pause_sounds);
 
-        // `Main.Ambience` (`Main.cs:13466-13515`): every 15 ticks (¼ s) the
+        // `Main.Ambience` (`Main.cs:13466-13509`): every 15 ticks (¼ s) the
         // waterfall/lavafall loops re-volume from the strength scans; the
         // volume math is the LegacySoundPlayer case 34/35 (the distance
         // attenuation + strength/50 + the 0.2/0.65 multipliers). The strength
-        // scans ran in the waterfall pass this frame.
+        // scans ran in the waterfall pass this frame. The decision half is
+        // `ambient_sound::liquid_loop_update` — the (int) PlaySound casts,
+        // the lavafall arm's ambientLava Manhattan pick + strength sum
+        // (`:13488-13497`) and the out-of-range keep-last-volume arm
+        // (`LegacySoundPlayer.cs:383-397` — `flag` false skips the block;
+        // the case bodies are `:1249-1279` + `:1279-1307`).
         self.ambient_counter += dt;
         if self.ambient_counter >= 0.25 {
             self.ambient_counter = 0.0;
-            let ambient = self.settings.ambient_volume;
-            let quiet = self.menu.is_some() || self.front.is_some();
-            let sources = [
-                (
-                    self.ambient_waterfall.0,
-                    self.ambient_waterfall.1,
-                    self.ambient_waterfall.2,
-                    0.2,
-                ),
-                (
-                    self.ambient_lavafall.0,
-                    self.ambient_lavafall.1,
-                    self.ambient_lavafall.2,
-                    0.65,
-                ),
-            ];
-            for (channel, (strength, x, y, mult)) in sources.into_iter().enumerate() {
-                // The positional attenuation (`LegacySoundPlayer.cs:383-397`).
-                let dist = ((x - self.camera.x).powi(2) + (y - self.camera.y).powi(2)).sqrt();
-                let (atten, pan) = if dist < sound::SOUND_ATTENUATION_DISTANCE {
-                    (
-                        1.0 - dist / sound::SOUND_ATTENUATION_DISTANCE,
-                        ((x - self.camera.x) / (screen.x * 0.5)).clamp(-1.0, 1.0),
-                    )
+            // `Main.screenPosition + (screenWidth/2, screenHeight/2)` with
+            // the int halving (`Main.cs:13488-13489`); the view's top-left
+            // is the same unscaled camera - screen/2 the draw pass feeds
+            // `ScreenInfo`.
+            let centre = (
+                self.camera.x - screen.x * 0.5 + (screen.x as i32 / 2) as f32,
+                self.camera.y - screen.y * 0.5 + (screen.y as i32 / 2) as f32,
+            );
+            for channel in 0..2 {
+                let triple = if channel == 0 {
+                    self.ambient_waterfall
                 } else {
-                    (0.0, 0.0)
+                    self.ambient_lavafall
                 };
-                // `:1249-1279`: strength/50 (clamped 1) x the 0.2/0.65
-                // multiplier x (1 - shimmerAlpha).
-                let strength_factor = (strength / 50.0).min(1.0);
-                let volume = if quiet {
-                    0.0
-                } else {
-                    atten
-                        * strength_factor
-                        * mult
-                        * (1.0 - self.scene_state.shimmer_alpha)
-                        * ambient
-                };
-                self.audio.set_liquid_loop(channel, volume, pan);
+                let update = crate::ambient_sound::liquid_loop_update(
+                    channel,
+                    triple,
+                    self.ambient_lava,
+                    centre,
+                    (self.camera.x, self.camera.y),
+                    self.settings.ambient_volume,
+                    self.menu.is_some() || self.front.is_some(),
+                    self.audio.liquid_loop_playing(channel),
+                    self.scene_state.shimmer_alpha,
+                );
+                if let Some((volume, pan)) = update.volume_pan {
+                    self.audio.set_liquid_loop(channel, volume, pan, update.pitch);
+                } else if !update.playing {
+                    // The stop arm (`:1257-1262`/`:1287-1292`) — volume 0
+                    // stops the slot; the out-of-range arm (playing kept)
+                    // leaves the live loop untouched.
+                    self.audio.set_liquid_loop(channel, 0.0, 0.0, None);
+                }
             }
         }
 

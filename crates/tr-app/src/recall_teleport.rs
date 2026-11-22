@@ -559,6 +559,10 @@ pub(crate) fn spawn_recall(app: &mut App) {
     app.camera_state = state;
     // `:37677` UpdateBiomesIfMovedEnoughForBlackFade — the black fade is M6
     // cinematics (dropped). The unported Spawn tails are cited in the module doc.
+    // `:37569` Main.instantBGTransitionCounter = 10 (the local-player Spawn
+    // arm) — the instant-BG window forces the waterfall rescan
+    // (`Main.cs:61841`).
+    app.bg_instant = 10;
     app.player = Some(p);
 }
 
