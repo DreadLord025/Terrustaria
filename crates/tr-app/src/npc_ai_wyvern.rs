@@ -1,10 +1,12 @@
 //! The Wyvern's head machine — the type-87 arms of `NPC.AI_006_Worms`
 //! (`NPC.cs:50963-52273`, dispatched by `aiStyle == 6`, `SetDefaults`
-//! `NPC.cs:9945`). S1-D-3 (wyvern), **code-only mode**: the machine is
-//! ported here as pure functions over the NPC pool; the sim wiring is
-//! deferred — the shared worm pass (`world_sim/npcs.rs::update_worms_in`)
-//! is R77's lane and stays untouched. See docs/ANALYSIS.md "The Wyvern
-//! family (S1-D-3, code-only mode)".
+//! `NPC.cs:9945`). S1-D-3 (wyvern) + N16 (wiring): the machine is ported
+//! here as pure functions over the NPC pool; the live route is the sim's
+//! `world_sim/npcs.rs::update_wyverns` pool pass (the Destroyer
+//! precedent — the family is NOT `is_worm()`, the shared worm pass
+//! `update_worms_in` is R77's lane and stays untouched). See
+//! docs/ANALYSIS.md "The Wyvern family (S1-D-3, code-only mode)" + "The
+//! wyvern wiring (N16)".
 //!
 //! The C# family is six types — the head (87), the legs (88, chain
 //! indices 1/8), the body (89, the default), body2 (90, index 11), body3
@@ -37,8 +39,9 @@
 //! (`:52201`) are NOT wyvern-specific — they serve every AI_006 head; they
 //! are ported here verbatim for the wyvern path because the live
 //! `worm_head_step` is a velocity-snap stand-in (audit T1b/T1a). The
-//! shared pass's own repair is R77's; this module duplicates nothing it
-//! owns at runtime (UNWIRED).
+//! shared pass's own repair is R77's; the wyvern family never enters it
+//! (`is_worm()` excludes 87-92), so this module duplicates nothing it
+//! owns at runtime.
 //!
 //! Determinism — **RNG by construction**: the 87-92 path through
 //! `AI_006_Worms` draws NOTHING from `Main.rand`. Census of every draw in
@@ -63,12 +66,38 @@
 //! assembly time, the C#'s values) and the stable identity. The follower
 //! step resolves its leader through the stable identity, never a stale
 //! index.
-
-#![allow(dead_code)] // wiring deferred - the sim dispatch + the chain drain land with R77's wave
+//!
+//! Wiring (N16): `world_sim/npcs.rs::update_wyverns` calls
+//! [`wyvern_family_step`] after the per-NPC step (the Destroyer
+//! precedent): the pool driver assembles the chain through
+//! [`assemble_wyvern_chain`] at the head's first AI turn (the
+//! [`WyvernEvents::wants_chain`] gate, drained in-tick BEFORE the orphan
+//! switches), resolves each follower's leader by `worm_id`/`seg_index -
+//! 1`, runs the orphan deaths (`:51425-51433` / `:51468-51475`) and the
+//! noGravity/noTileCollide integration tail (`NPC.cs:90494-90498`). The
+//! `realLife` mirror rides `shares_carrier_life` + `carrier_index` (the
+//! pool already carries it); the death-gore draws stay the documented
+//! cosmetic skip (ANALYSIS).
 
 use crate::npc::{Npc, NpcKind};
 use crate::npc_target::{target_closest, TargetCandidate};
 use tr_core::World;
+
+/// The family membership — the C#'s `type >= 87 && type <= 92` arms
+/// (`NPC.cs:51548`/`:51616`/`:51881`/`:51911`/`:88909`). NOT `is_worm()`
+/// (the deliberate membership choice — the fixed-count sky flyer never
+/// enters the shared worm pass; ANALYSIS "The Wyvern family").
+pub fn is_wyvern_family(kind: NpcKind) -> bool {
+    matches!(
+        kind,
+        NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail
+    )
+}
 
 /// The chain length — `for (int m = 0; m < 14; m++)` (`NPC.cs:51162`).
 pub const WYVERN_CHAIN_LINKS: u32 = 14;
@@ -289,7 +318,11 @@ pub fn wyvern_head_step(
     // `:51976-51996` — the dig-sound block: `this.type != 87` excludes
     // the wyvern head; nothing plays, no soundDelay write.
     // `:51997-52002` — the snapped aim scaled to the max speed. num62
-    // is RE-computed from the snapped delta (the C# reassigns it).
+    // is RE-computed from the snapped delta (the C# reassigns it). The
+    // zero-distance case (the aim lands on the snapped player centre)
+    // divides by zero exactly like the C# — num67 = ∞, the zero deltas
+    // become NaN, and every comparison below is false on NaN in BOTH
+    // languages (IEEE), so the steer takes the same arms; verbatim.
     let num62 = (num48 * num48 + num49 * num49).sqrt();
     let num65 = num48.abs();
     let num66 = num49.abs();
@@ -441,8 +474,8 @@ fn steer_toward_aim(
 /// (`NPC.cs:51867-51922`) with the wyvern's spacing 42 and step-sign
 /// sprite flip. The shared follow model is FAITHFUL per the audit
 /// (T2a: a direct leader snap, not position history); this fn is the
-/// wyvern-parameterised copy for the unwired path — the live shared
-/// pass keeps its own (R77's lane).
+/// wyvern-parameterised copy the family driver calls — the shared worm
+/// pass keeps its own (R77's lane; the family never enters it).
 ///
 /// `leader` is the resolved previous segment (the wiring finds it by
 /// `worm_id` + `seg_index - 1`, the `update_worms_in` convention); the
@@ -517,6 +550,196 @@ pub fn wyvern_hit_dust_plan(life: i32, dmg: f64, life_max: i32) -> WyvernHitDust
     // `Next(1, 4)` draw (1..=3). The plan carries the dust count and the
     // gore-count RANGE; the wiring resolves the draw.
     WyvernHitDust::Death { dust: 10, gores: 0 }
+}
+
+/// The orphan switches' slot read (`NPC.cs:51425`/`:51468`): the linked
+/// slot is "alive" when the chain carries that `seg_index` with hp > 0
+/// and aiStyle 6 — the port's `Main.npc[ai[x]].active && aiStyle ==`
+/// stand-in over the stable identity (the compacting pool has no dead
+/// slots; a struck-to-death link's hp = 0 is the `active = false`).
+fn wyvern_link_alive(npcs: &[Npc], wid: u32, seg: u32) -> bool {
+    npcs.iter()
+        .any(|n| n.worm_id == wid && n.seg_index == seg && n.hp > 0 && n.kind.ai_style() == 6)
+}
+
+/// The family's POOL driver (N16 wiring) — the whole type-87..92 path of
+/// `AI_006_Worms` over the pool, in the C#'s per-slot order: the head's
+/// chain assembly FIRST (`:51156-51190` — the assembly runs before the
+/// orphan switches in the same tick, so a fresh head always has its
+/// follower by the `:51468` check), the realLife pool (`NPC.cs:81374-
+/// 81378` — parked damage pays the carrier, then every link mirrors the
+/// head's life/lifeMax; the destroyer driver's convention), then one
+/// pass in ascending slot order (= ascending `seg_index` within a chain,
+/// the spawn pushes head→tail — each follower reads its leader's
+/// already-updated SAME-TICK position):
+/// - the head (seg 0): the orphan-follower death (`:51444` + `:51468-
+///   51475`), [`wyvern_head_step`], the noGravity/noTileCollide
+///   integration tail (`NPC.cs:90473-90476` dead-band X snap + `:90496-
+///   90498` stamps + raw `position += velocity`);
+/// - a follower (seg > 0): the orphan-leader death (`:51401-51405` +
+///   `:51425-51433`), the family-wide dead-target `EncourageDespawn(300)`
+///   (`:51141-51148` — the flag types are heads only, the `player.dead`
+///   term serves every segment), [`wyvern_follower_step`] with the leader
+///   resolved by `worm_id`/`seg_index - 1` (never a stale ai[] index), the
+///   same integration tail (the follower's velocity is zeroed — a no-op
+///   move, the C#'s own).
+///
+/// The orphan deaths write `hp = 0` (the port's `active = false`
+/// convention); the death retain + the death-sound pass own the rest.
+/// The C#'s `checkDead` runs per slot there — the port batches it (the
+/// recorded S1-E-21c deviation); the HitEffect death-gore draws
+/// (`:88921-88932`, `Next(1,4)` + per-gore `Next(11,14)`) ride the
+/// documented cosmetic skip (ANALYSIS "The Wyvern family").
+///
+/// RNG-free by construction (the module docs' census) — no RNG parameter;
+/// the caller's `UpdateNpcs` stream cannot shift across this pass.
+pub fn wyvern_family_step(
+    npcs: &mut Vec<Npc>,
+    world: &World,
+    players: &[TargetCandidate],
+    ctx: &WyvernCtx,
+    next_worm_id: &mut u32,
+    ticker: u64,
+) {
+    // 1. The chain assembly at the head's first AI turn (`ai[0] == 0`
+    // under netMode != 1 — the exact `:51154-51156` gates). The request
+    // comes from the same step the head runs below; draining it here
+    // keeps the C#'s within-tick order (assembly BEFORE the orphan
+    // switch). `CopyInteractions` (`:51185`) is the identity — the sim
+    // assembles on the spawn tick (the module docs).
+    if ctx.net_mode != 1 {
+        let heads: Vec<usize> = npcs
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| n.kind == NpcKind::WyvernHead && n.hp > 0 && n.ai[0] == 0.0)
+            .map(|(i, _)| i)
+            .collect();
+        for head in heads {
+            assemble_wyvern_chain(npcs, head, next_worm_id);
+        }
+    }
+    // 2. The realLife pool (`NPC.cs:81374-81378`) — the destroyer
+    // driver's convention: parked damage pays the carrier, then the
+    // links mirror the head's life/lifeMax.
+    let mut carrier_of = std::collections::HashMap::new();
+    for (i, n) in npcs.iter().enumerate() {
+        if n.kind == NpcKind::WyvernHead && n.seg_index == 0 && n.worm_id != 0 {
+            carrier_of.insert(n.worm_id, i);
+        }
+    }
+    for i in 0..npcs.len() {
+        if !is_wyvern_family(npcs[i].kind) {
+            continue;
+        }
+        let dmg = npcs[i].pending_pool_damage;
+        if dmg != 0 {
+            npcs[i].pending_pool_damage = 0;
+            if let Some(&c) = carrier_of.get(&npcs[i].worm_id) {
+                npcs[c].hp -= dmg;
+            }
+        }
+    }
+    for i in 0..npcs.len() {
+        if !is_wyvern_family(npcs[i].kind) || npcs[i].seg_index == 0 {
+            continue;
+        }
+        if let Some(&c) = carrier_of.get(&npcs[i].worm_id) {
+            npcs[i].hp = npcs[c].hp;
+            npcs[i].max_hp = npcs[c].max_hp;
+        }
+    }
+    // 3. The machine pass, ascending slot order (the worm pass's
+    // heads-first convention — one chain's head precedes its links).
+    // The C# always reads `Main.player[target]` (the 255-slot array);
+    // the port's slice must hold at least the session player — the
+    // caller guards (the destroyer driver's convention).
+    if players.is_empty() {
+        return;
+    }
+    for i in 0..npcs.len() {
+        if !is_wyvern_family(npcs[i].kind) || npcs[i].hp <= 0 {
+            continue;
+        }
+        if npcs[i].seg_index == 0 {
+            // The head's orphan-FOLLOWER death — the SECOND switch
+            // (`:51444` + `:51468-51475`): 87 checks `ai[0]` (the
+            // follower). The whole orphan-switch region sits inside the
+            // `netMode != 1` block (`:51154`-`:51524`). `hp > 0` is the
+            // port's `active` stand-in — the compacting pool has no
+            // dead slots (the worm pass's convention).
+            if ctx.net_mode != 1 && !wyvern_link_alive(npcs, npcs[i].worm_id, 1) {
+                npcs[i].hp = 0;
+                continue;
+            }
+            let _ev = wyvern_head_step(&mut npcs[i], world, players, ctx, ticker);
+            // The `wants_chain` request was drained in step 1 (the same
+            // gate); `real_life` rides the carrier mirror above — the
+            // port's net sync reads `worm_id` (the module docs).
+        } else {
+            // The family-wide dead-target despawn discouragement
+            // (`:51141-51148`, BEFORE the orphan switches in the C#):
+            // no flag sink (87-92 have no surface-gate case). The head's
+            // own step ran it. (The `:51137-51140` re-pick also runs for
+            // the C# followers; its only writes are target/facing —
+            // unread by the leader-based follow; the worm pass's
+            // segment convention: encouragement only.)
+            if target_player(players, npcs[i].target).dead {
+                npcs[i].encourage_despawn(300);
+            }
+            // The orphan-LEADER death — the FIRST switch (`:51401-51405`
+            // + `:51425-51433`): 88-92 check `ai[1]` (the leader).
+            let (wid, seg) = (npcs[i].worm_id, npcs[i].seg_index);
+            let li = npcs.iter().position(|n| {
+                n.worm_id == wid && n.seg_index == seg - 1 && n.hp > 0 && n.kind.ai_style() == 6
+            });
+            // The orphan-FOLLOWER death — the SECOND switch ALSO lists
+            // 88/89/90/91 (`:51445-51448`): every segment but the TAIL
+            // (92) checks `ai[0]` too. A removed middle link therefore
+            // kills the chain BOTH ways in one pass: the downstream
+            // links lose their leader, the upstream links lose their
+            // follower (the just-written hp = 0 is visible to the next
+            // slot — the C#'s `active = false` + slot order).
+            let follower_gone =
+                npcs[i].kind != NpcKind::WyvernTail && !wyvern_link_alive(npcs, wid, seg + 1);
+            match li {
+                // The leader always precedes the follower in the pool
+                // (the assembly pushes head→tail; `NewNPC`'s
+                // `Start = whoAmI` gives every child a higher slot,
+                // `NPC.cs:80763`) — the guard keeps the split sound.
+                Some(li) if li < i && !(ctx.net_mode != 1 && follower_gone) => {
+                    let (front, rest) = npcs.split_at_mut(i);
+                    wyvern_follower_step(&mut rest[0], Some(&front[li]));
+                }
+                _ => {
+                    if ctx.net_mode != 1 {
+                        npcs[i].hp = 0;
+                        continue;
+                    }
+                    // The client keeps flying with no leader (the C#'s
+                    // try/catch swallow — the orphan switch never ran).
+                    if let Some(li) = li.filter(|&l| l < i) {
+                        let (front, rest) = npcs.split_at_mut(i);
+                        wyvern_follower_step(&mut rest[0], Some(&front[li]));
+                    } else {
+                        wyvern_follower_step(&mut npcs[i], None);
+                    }
+                }
+            }
+        }
+        // The noGravity/noTileCollide integration tail (`NPC.cs:90473-
+        // 90476` + `:90494-90498`): the dead-band X snap (the DOUBLE
+        // compare), the oldPosition/oldDirection stamps, the raw move.
+        // The WetCollision water-perishable tail (`:90499-90502`) serves
+        // no wyvern buff (the [31] On Fire! immunity is the family's
+        // only row) — cited, elided.
+        if (npcs[i].vx as f64) < 0.005 && (npcs[i].vx as f64) > -0.005 {
+            npcs[i].vx = 0.0;
+        }
+        npcs[i].old_x = npcs[i].x;
+        npcs[i].old_y = npcs[i].y;
+        npcs[i].old_direction = npcs[i].facing;
+        npcs[i].integrate_no_tile_collide();
+    }
 }
 
 #[cfg(test)]
@@ -923,5 +1146,173 @@ mod tests {
             let b = crate::npc_buffs::NpcBuffs::for_kind(k);
             assert!(b.buff_immune[31], "{k:?} On Fire! immunity");
         }
+    }
+
+    /// N16 — the family driver assembles the chain on the head's first
+    /// tick, BEFORE the orphan switch (`:51156` precedes `:51468` in the
+    /// same `AI_006` call): a fresh head survives its first pass, and
+    /// every link carries the head's mirrored life (the realLife pool).
+    #[test]
+    fn the_family_driver_assembles_before_the_orphan_switch() {
+        let w = air();
+        let players = [cand(2400.0, 400.0)];
+        let mut npcs = vec![head(1600.0, 400.0)];
+        let mut id = 1u32;
+        wyvern_family_step(&mut npcs, &w, &players, &ctx(), &mut id, 0);
+        assert_eq!(npcs.len(), 15, "head + the fixed 14 links");
+        assert!(npcs.iter().all(|n| n.hp > 0), "no first-tick orphan death");
+        assert_eq!(npcs[0].worm_id, 1);
+        assert_eq!(id, 2);
+        // The links mirror the head's pool (all fresh 4000).
+        for n in &npcs[1..] {
+            assert_eq!(n.hp, npcs[0].hp);
+            assert_eq!(n.max_hp, npcs[0].max_hp);
+        }
+        // The second pass does NOT re-assemble (ai[0] != 0 now).
+        wyvern_family_step(&mut npcs, &w, &players, &ctx(), &mut id, 1);
+        assert_eq!(npcs.len(), 15);
+        assert_eq!(id, 2);
+    }
+
+    /// N16 — the realLife pool (`NPC.cs:81374-81378`): parked damage on
+    /// a segment pays the HEAD's life, then every link mirrors it.
+    #[test]
+    fn the_family_driver_pays_parked_damage_to_the_carrier() {
+        let w = air();
+        let players = [cand(2400.0, 400.0)];
+        let mut npcs = vec![head(1600.0, 400.0)];
+        let mut id = 1u32;
+        wyvern_family_step(&mut npcs, &w, &players, &ctx(), &mut id, 0);
+        npcs[5].pending_pool_damage = 300;
+        wyvern_family_step(&mut npcs, &w, &players, &ctx(), &mut id, 1);
+        assert_eq!(npcs[5].pending_pool_damage, 0, "the park drains");
+        assert_eq!(npcs[0].hp, 4000 - 300, "the carrier pays");
+        for n in &npcs[1..] {
+            assert_eq!(n.hp, 3700, "every link mirrors the head");
+        }
+    }
+
+    /// N16 — the orphan deaths unzip the chain front-to-back in ONE
+    /// pass (the C#'s slot order): kill the head mid-flight, the whole
+    /// chain dies with it (`:51468-51475` the head's follower check +
+    /// `:51425-51433` each link's leader check — the leader's hp = 0
+    /// write is visible to the next slot in the same pass).
+    #[test]
+    fn the_family_driver_unzips_the_chain_when_the_head_dies() {
+        let w = air();
+        let players = [cand(2400.0, 400.0)];
+        let mut npcs = vec![head(1600.0, 400.0)];
+        let mut id = 1u32;
+        wyvern_family_step(&mut npcs, &w, &players, &ctx(), &mut id, 0);
+        npcs[0].hp = 0; // the strike landed outside the pass
+        wyvern_family_step(&mut npcs, &w, &players, &ctx(), &mut id, 1);
+        assert!(npcs.iter().all(|n| n.hp <= 0), "the whole chain unzips");
+    }
+
+    /// N16 — a follower removed mid-chain kills the chain BOTH ways
+    /// (the SECOND orphan switch lists 88/89/90/91 too, `:51445-51448`):
+    /// the downstream links lose their leader (`:51425`) and die in the
+    /// SAME pass (the slot-order `active = false` cascade); the
+    /// upstream links lose their follower one per pass (they were
+    /// processed BEFORE the cut's cascade reached them — the C#'s slot
+    /// order), until the head dies too. The death retain runs between
+    /// passes (the live sim's frame order).
+    #[test]
+    fn the_family_driver_severs_both_ways_from_a_middle_cut() {
+        let w = air();
+        let players = [cand(2400.0, 400.0)];
+        let mut npcs = vec![head(1600.0, 400.0)];
+        let mut id = 1u32;
+        wyvern_family_step(&mut npcs, &w, &players, &ctx(), &mut id, 0);
+        // Remove link m=6 (slot 7) outright — the compacting pool's
+        // "leader/follower slot inactive" case.
+        npcs.remove(7);
+        for t in 1..=20u64 {
+            wyvern_family_step(&mut npcs, &w, &players, &ctx(), &mut id, t);
+            // The frame's death retain (update_npcs runs it after the
+            // family pass — the orphan deaths leave the pool).
+            npcs.retain(|n| n.hp > 0);
+        }
+        assert!(npcs.is_empty(), "the middle cut unzips the chain both ways");
+    }
+
+    /// N16 — the TAIL is exempt from the follower check (92 is not in
+    /// the `:51445-51448` list): removing the tail kills ONLY the tail's
+    /// leader chain via the upstream follower checks... no — the tail's
+    /// leader (body3, slot 13) loses its follower and dies, cascading up
+    /// to the head. The exemption means the TAIL ITSELF never dies for
+    /// a missing follower (it has none by construction).
+    #[test]
+    fn the_tail_has_no_follower_check() {
+        let w = air();
+        let players = [cand(2400.0, 400.0)];
+        let mut npcs = vec![head(1600.0, 400.0)];
+        let mut id = 1u32;
+        wyvern_family_step(&mut npcs, &w, &players, &ctx(), &mut id, 0);
+        // The tail (slot 14, seg 14) has ai[0] == 0 — the C# reads slot
+        // 0, but 92 is NOT in the second switch's list, so no check
+        // runs. One pass keeps it alive.
+        wyvern_family_step(&mut npcs, &w, &players, &ctx(), &mut id, 1);
+        assert!(npcs[14].hp > 0, "the tail never orphan-dies on ai[0]");
+    }
+
+    /// N16 — the followers trail the head's SAME-TICK position (the
+    /// heads-first pass order): the head moves first, then EVERY link
+    /// snaps to exactly 42 px from its leader's post-move centre in the
+    /// same pass — the chain spreads on the spawn tick itself (the
+    /// closer-than-42 delta's negative scale pushes the link past the
+    /// leader, the C#'s own `(len - 42)/len` maths).
+    #[test]
+    fn the_family_driver_trails_the_same_tick_positions() {
+        let w = air();
+        let players = [cand(2400.0, 400.0)];
+        let mut npcs = vec![head(1600.0, 400.0)];
+        let mut id = 1u32;
+        wyvern_family_step(&mut npcs, &w, &players, &ctx(), &mut id, 0);
+        let c = |n: &Npc| (n.x + 16.0, n.y + 16.0);
+        for i in 1..npcs.len() {
+            let (lx, ly) = c(&npcs[i - 1]);
+            let (fx, fy) = c(&npcs[i]);
+            let d = ((lx - fx) * (lx - fx) + (ly - fy) * (ly - fy)).sqrt();
+            assert!((d - 42.0).abs() < 0.01, "link {i} spacing {d}");
+        }
+        // The head flies on its velocity (the integration tail); the
+        // followers' velocity is zeroed (the C#'s Vector2.Zero).
+        assert!(npcs[0].vx != 0.0 || npcs[0].vy != 0.0);
+        for n in &npcs[1..] {
+            assert_eq!((n.vx, n.vy), (0.0, 0.0));
+        }
+        // 30 more passes keep the spacing while the head flies.
+        for t in 1..=30u64 {
+            wyvern_family_step(&mut npcs, &w, &players, &ctx(), &mut id, t);
+        }
+        for i in 1..npcs.len() {
+            let (lx, ly) = c(&npcs[i - 1]);
+            let (fx, fy) = c(&npcs[i]);
+            let d = ((lx - fx) * (lx - fx) + (ly - fy) * (ly - fy)).sqrt();
+            assert!((d - 42.0).abs() < 0.01, "link {i} spacing {d} after flight");
+        }
+    }
+
+    /// N16 — the dead-target discouragement reaches EVERY segment
+    /// (`:51141-51148`'s family-wide `player.dead` term), not just the
+    /// head; the RNG witness holds across the driver too (the census).
+    #[test]
+    fn the_family_driver_encourages_despawn_family_wide_and_draws_nothing() {
+        let w = air();
+        let mut p = cand(2400.0, 400.0);
+        p.dead = true;
+        let mut npcs = vec![head(1600.0, 400.0)];
+        let mut id = 1u32;
+        let rng = UnifiedRandom::new(987654);
+        let witness = rng.clone();
+        wyvern_family_step(&mut npcs, &w, &[p], &ctx(), &mut id, 0);
+        for _ in 0..60u64 {
+            wyvern_family_step(&mut npcs, &w, &[p], &ctx(), &mut id, 1);
+        }
+        for n in &npcs {
+            assert!(n.despawn_timer > 0, "{:?} discouragement", n.kind);
+        }
+        assert_eq!(rng, witness, "the driver draws NOTHING (the census)");
     }
 }

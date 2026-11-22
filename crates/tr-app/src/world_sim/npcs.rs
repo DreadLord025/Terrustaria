@@ -2207,6 +2207,49 @@ pub(crate) fn update_destroyers(app: &mut App) {
     }
 }
 
+/// N16 (wyvern wiring): the Wyvern family's sim pass — the type-87..92
+/// path of `AI_006_Worms` (`npc_ai_wyvern.rs::wyvern_family_step`), the
+/// Destroyer precedent (the family is NOT `is_worm()` — the shared worm
+/// pass never sees it; the stand-in no-op kind arm retires its "UNWIRED"
+/// note). Runs after the per-NPC step, beside `update_destroyers`: the
+/// chain assembly + the orphan deaths need the whole pool, and the
+/// followers snap to their leaders' same-tick positions (the C#
+/// interleaves it in slot order; the port's pass reads the same spawn
+/// order — the documented pool-pass convention).
+///
+/// RNG: the machine draws NOTHING (the module's census) — the pass takes
+/// no stream; the death-gore draws are the documented cosmetic skip.
+pub(crate) fn update_wyverns(app: &mut App) {
+    if !app
+        .npcs
+        .iter()
+        .any(|n| crate::npc_ai_wyvern::is_wyvern_family(n.kind) && n.hp > 0)
+    {
+        return;
+    }
+    // The target candidate (the `npc_target` convention, single-player).
+    let players: Vec<crate::npc_target::TargetCandidate> = app
+        .player
+        .as_ref()
+        .map(|p| vec![crate::npc_target::session_candidate(p)])
+        .unwrap_or_default();
+    if players.is_empty() {
+        return;
+    }
+    let ctx = crate::npc_ai_wyvern::WyvernCtx {
+        net_mode: 0, // single-player (the chain gate `netMode != 1`)
+        world_surface: app.world.world_surface,
+    };
+    crate::npc_ai_wyvern::wyvern_family_step(
+        &mut app.npcs,
+        &app.world,
+        &players,
+        &ctx,
+        &mut app.next_worm_id,
+        0, // the EverLastingTicker stamp (the S1-D-3p convention)
+    );
+}
+
 /// `WorldItem.CheckLavaDeath`'s voodoo arm (`WorldItem.cs:681-763`): the
 /// Guide Voodoo Doll (267) that touches lava is consumed, strikes every
 /// town NPC dead (the Guide first, then the stack's remainder across the
@@ -5171,6 +5214,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // + the Probe's `AI_005` type-139 arm — the same after-the-step position
     // as the worm pass (the family is no longer `is_worm()`).
     update_destroyers(app);
+    // N16 (wyvern wiring): the Wyvern family's own AI_006 path — the same
+    // after-the-step position (the family is NOT `is_worm()` either).
+    update_wyverns(app);
     // `EmoteBubble.UpdateAll` (`EmoteBubble.cs:46-63`): the bubble lifetimes
     // tick on the world update.
     app.emotes.update_all();
@@ -14438,6 +14484,78 @@ mod worm_tests {
             assert_eq!(npcs[0].worm_left, 29, "SolarCrawltipedeHead budget");
             assert_eq!(rng.next(), oracle.next(), "SolarCrawltipedeHead no spawn draws");
         }
+    }
+
+    #[test]
+    fn the_wyvern_family_never_enters_the_shared_worm_pass() {
+        // N16: the wyvern family is NOT `is_worm()` — the shared pass
+        // never claims it, never writes a budget, never grows a chain,
+        // never draws (the R55 Destroyer precedent). The family's own
+        // machine runs in `update_wyverns`.
+        let world = World::new("t".into(), 64, 800);
+        for kind in [
+            NpcKind::WyvernHead,
+            NpcKind::WyvernLegs,
+            NpcKind::WyvernBody,
+            NpcKind::WyvernBody2,
+            NpcKind::WyvernBody3,
+            NpcKind::WyvernTail,
+        ] {
+            assert!(!kind.is_worm(), "{kind:?} stays out of the worm pass");
+            let mut head = Npc::new(kind, 160.0, 160.0, 1, 0.0);
+            head.hp = head.max_hp;
+            let mut npcs = vec![head];
+            let mut rng = UnifiedRandom::new(11);
+            let oracle = rng.clone();
+            let mut next_id = 1u32;
+            update_worms_in(&world, None, &mut npcs, &mut rng, &mut next_id);
+            assert_eq!(npcs.len(), 1, "{kind:?} runs in update_wyverns");
+            assert!(!npcs[0].worm_inited, "{kind:?} the pass never claims it");
+            assert_eq!(rng, oracle, "{kind:?} no draws");
+        }
+    }
+
+    #[test]
+    fn the_wyvern_sim_pass_assembles_and_flies_the_chain() {
+        // N16 through the WIRED sim pass (`update_wyverns`): the fresh
+        // head assembles its 14 links on the first pass, the head flies
+        // toward the player, the followers trail at the 42-px spacing —
+        // and the `UpdateNpcs` stream is bit-identical across the whole
+        // run (the module's RNG census, now over the live route).
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 200, 200);
+        w.world_surface = 50.0;
+        app.world = w;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 2400.0;
+        player.y = 400.0;
+        app.player = Some(player);
+        let mut head = Npc::new(NpcKind::WyvernHead, 1600.0, 400.0, 1, 0.0);
+        head.hp = head.max_hp;
+        app.npcs.push(head);
+        let rng = app.rngs.stream(RngKey::UpdateNpcs).clone();
+        for _ in 0..60 {
+            update_wyverns(&mut app);
+        }
+        assert_eq!(app.npcs.len(), 15, "head + 14 links");
+        assert!(app.npcs.iter().all(|n| n.hp > 0));
+        // The head moved toward the player (the +X aim).
+        assert!(app.npcs[0].x > 1600.0, "the head flies +X");
+        // The chain trails at the spacing (the 60 passes spread it).
+        for i in 1..app.npcs.len() {
+            let l = &app.npcs[i - 1];
+            let f = &app.npcs[i];
+            let d = ((l.x - f.x) * (l.x - f.x) + (l.y - f.y) * (l.y - f.y)).sqrt();
+            assert!((d - 42.0).abs() < 0.5, "link {i} spacing {d}");
+        }
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateNpcs),
+            rng,
+            "the wyvern pass draws NOTHING on the UpdateNpcs stream"
+        );
+        // The shared worm pass leaves the family alone even in the App.
+        update_worms(&mut app);
+        assert_eq!(app.npcs.len(), 15);
     }
 
     #[test]

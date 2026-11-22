@@ -23117,30 +23117,151 @@ and the wiring owns the draws in C# order.
 
 **Documented deferrals**:
 1. **Sheet deferral (NO atlas sheets)**: NPC_87..92 are not packed. The
-   best-fit atlas stands at **8121 px** against the 8192 strict-GPU bound
-   (`tr-render/src/atlas.rs:98-105`) — **~71 px of headroom**; the six
-   sheets (the head alone is a multi-frame 100+-px strip) do not fit.
+   atlas note is REFRESHED by N16 (2026-11-20): the skyline packer
+   (S1-G-12b, landed) holds the full gore+mount+font set at **8119 px**
+   against the 8192 strict-GPU bound — **73 px of headroom** (measured
+   `tools/atlas_sim.js` over the real content dims on this branch; the
+   old "~71 px / 8121" figure was the retired best-fit shelf packer's
+   main-set baseline). The six sheets (the head alone is a multi-frame
+   100+-px strip) still do not fit.
    The draw arms ask `npc_sheet(87..92)` → None → the `let Some(tex)`
    guard skips; the bestiary portrait skips the same way. The repack
    (a wider shelf strategy or the array-layer path) + the
    `BESTIARY_NPC_SHEET_IDS` rows + the head's draw modifiers
    (`NPCID.cs:1811-1819`: Position (55,15), portrait overrides (4,10))
    ride the atlas wave.
-2. **Sim wiring** (the next wave, R77's lane): the head's
-   `update_kind_ai` arm calls `wyvern_head_step` (or the style-6 axis
-   claims it), drains `wants_chain` through `assemble_wyvern_chain`,
-   runs `wyvern_follower_step` for seg_index > 0 with the 42 spacing,
-   and adds the orphan-death checks (`:51425-51433` the leader-gone
-   segment death, `:51468-51475` the follower-gone head death — both
-   need the pool, cited in the module). The natural-spawn gate
+2. **Sim wiring** — **LANDED by N16** (2026-11-20,
+   `task/W4-d126-wyvern-chain-wire`; see "The wyvern wiring (N16)"
+   below). The natural-spawn gate
    (`Main.SpawnNPC`'s wyvern arm — hardmode + sky altitude + the
-   `NPC.downedMechBossAny` gate) rides the spawner wave.
+   `NPC.downedMechBossAny` gate) still rides the spawner wave.
 3. The wyvern health bar's dedicated worm arm
    (`DrawInterface_Healthbar_Worm(npc, 92, scale)`, `Main.cs`'s case-87)
    stays with S1-D-6b's worm-bar work; the 1.5 scale landed.
 4. `CopyInteractions` (`:51185`) is the identity at assembly time (the
    fresh head has no interaction flags on the spawn tick); the wiring
    re-copies if it ever assembles later.
+
+## The wyvern wiring (N16, 2026-11-20 — code-only mode)
+
+Branch `task/W4-d126-wyvern-chain-wire`. The S1-D-3 machine above goes
+LIVE: **no compiler invoked** (the task's code-only constraint) — the 7
+new module witnesses + the 2 new sim witnesses are WRITTEN NOT RUN, the
+16 base witnesses ride along unrun.
+
+**The route** (the Destroyer precedent — the family is NOT `is_worm()`):
+- `npc_ai_wyvern.rs::wyvern_family_step(npcs, world, players, ctx,
+  next_worm_id, ticker)` — the POOL driver, three stages in the C#'s
+  within-tick order:
+  1. the chain assembly (`assemble_wyvern_chain` for every live head
+     with `ai[0] == 0` under `netMode != 1`, `:51154-51156`) — FIRST,
+     because the C# assembles before the orphan switches in the same
+     `AI_006` call, so a fresh head never orphan-dies on its spawn tick;
+  2. the realLife pool (`NPC.cs:81374-81378`): parked
+     `pending_pool_damage` pays the carrier, then every link mirrors the
+     head's `hp`/`max_hp` (the destroyer driver's convention;
+     `shares_carrier_life` was already extended by the kind wave);
+  3. the machine pass in ascending slot order (= ascending `seg_index`,
+     the spawn pushes head→tail): the head runs `wyvern_head_step`; each
+     follower resolves its leader by `worm_id`/`seg_index - 1` (never a
+     stale ai[] index) and runs `wyvern_follower_step` on the leader's
+     SAME-TICK post-move position; both take the noGravity/noTileCollide
+     integration tail (`NPC.cs:90473-90476` the DOUBLE dead-band X snap
+     + `:90496-90498` the oldPosition/oldDirection stamps + raw
+     `position += velocity`; the WetCollision water-perishable arm
+     `:90499-90502` serves no wyvern buff — cited, elided).
+- `world_sim/npcs.rs::update_wyverns(app)` — the sim pass, called from
+  `update_npcs` right after `update_destroyers` (the same
+  after-the-per-NPC-step pool position; the C# interleaves `AI_006` in
+  slot order — the documented pool-pass convention). The kind arm in
+  `npc.rs::update_kind_ai` stays the movement no-op (the worm
+  convention); its UNWIRED note is retired.
+- `is_wyvern_family(kind)` — the module's membership fn (the C#'s
+  `type >= 87 && type <= 92` arms), used by the driver + the sim gate.
+
+**The orphan deaths, BOTH switches** (re-read against the source this
+round — the first draft missed the second switch's segment rows):
+- the FIRST switch (`:51395-51434`) lists 88/89/90/91/92: the LEADER
+  (`ai[1]`) inactive or of another aiStyle → `life = 0` + HitEffect +
+  checkDead + deactivate (`:51425-51433`);
+- the SECOND switch (`:51438-51477`) lists 87/88/89/90/91 — **the tail
+  92 is NOT in it**: the FOLLOWER (`ai[0]`) gone → the same death
+  (`:51468-51475`). So a removed middle link kills the chain BOTH ways:
+  the downstream links lose their leader and die in the SAME pass (the
+  slot-order cascade — the just-written `hp = 0` is visible to the next
+  slot, the C#'s `active = false`), the upstream links lose their
+  follower one per pass (they were processed before the cascade reached
+  them) until the head dies too. The port's `hp > 0` is the `active`
+  stand-in (the compacting pool has no dead slots — the worm pass's
+  convention); the whole switch region is server-only (`netMode != 1`,
+  `:51154`-`:51524`) — the client keeps flying through the C#'s
+  try/catch swallow.
+- The deaths write `hp = 0`; the death retain + the death-sound pass own
+  the removal/events (the S1-E-21c batching deviation). The HitEffect
+  death-gore draws (`:88921-88932`: one `Next(1,4)`, then one
+  `Next(11,14)` per gore) stay the documented cosmetic skip —
+  `wyvern_hit_dust_plan` still carries the counts for the gore wave.
+
+**The follower prologue**: the family-wide dead-target
+`EncourageDespawn(300)` (`:51141-51148`) runs for every segment (the
+flag types are heads only — no sink for 87-92); the `:51137-51140`
+re-pick's only writes are target/facing, unread by the leader-based
+follow — the worm pass's segment convention (encouragement only).
+
+**RNG census re-verified against the source this round** (every
+`Main.rand` site in `AI_006_Worms` `:50963-52273` re-read in ≤100-line
+windows): the 117 leech dust `:50976`, the 454-459 fade `:50993`, the
+621-623 fade + `Next(5)` `:51015`/`:51024`, the 402 stardust burst
+`:51043-51058`, the expert EoW rolls `:51087`/`:51100`, the 454 chain
+`Next(6,10)` `:51235`, the 513 chain `Next(12,21)` `:51259`, the budget
+rolls `:51310-51341` (the `:51303` type list excludes 87), the tile
+crumble `Next(100)` `:51590` (unreachable — flag3 true `:51548-51551`),
+the 412 crawltipede dust `:51656`/`:51662`. NONE fires for 87-92. The
+`NewNPC` getGoodWorld roll `:80752` is constants-off. The driver takes
+NO RNG parameter; the new witnesses pin a seeded `UnifiedRandom`
+bit-identical across the driver (module) AND the live `update_wyverns`
+route's `UpdateNpcs` stream (sim).
+
+**Kind rows re-verified** (`SetDefaults` `:9939-10046`, field by field):
+all six 32×32 / aiStyle 6 / lifeMax 4000 / noGravity / noTileCollide /
+netAlways / kb 0 / scale 1; head dmg 80 def 10 npcSlots 5 value 10000;
+segments dmg 40 def 20 dontCountMe, value 10000 except the plain body's
+2000 (`:9989`); NPCHit7/NPCDeath8 everywhere. The base witness
+`the_wyvern_defaults_match_the_csharp_rows` pins them through the port's
+tables (unchanged this round — the rows were already faithful).
+
+**The chain-follow / head-steering verification** (the task's focus):
+the assembly (`:51156-51190`) and the per-index kind table
+(`:51164-51180`: legs 88 at m 1/8, body2 90 at 11, body3 91 at 12, tail
+92 at 13, body 89 default) re-read verbatim; the altitude gates
+(`:52053-52078`: the 300-px reversal ×1.1 both-axes boost under
+`num46/2` Manhattan, the climb rule's f64 `worldSurface` tile compare +
+the `-direction` zero kick + the `vy > -11` climb) and the shared
+three-arm steer (`:52112-52198`) re-read line-for-line — the S1-D-3 port
+matches; no behaviour edits. The zero-distance aim's `num67 = ∞` NaN
+corner is IEEE-identical in both languages (every NaN comparison false
+— the same arms) and stays verbatim, now cited in the module.
+
+**Atlas note refreshed**: the skyline packer (S1-G-12b) holds the full
+gore+mount+font set at 8119 px — **73 px headroom** under 8192
+(`tools/atlas_sim.js` re-run on this branch over the real content; the
+L-8b static list is now main's, so the sim's branch-fetch was stubbed to
+main's own enumeration for the measurement). The old 8121/~71 figure
+was the retired shelf packer's. The six NPC_87..92 sheets still do not
+fit; the sheet deferral stands (the draw arms' None-guard skips).
+
+**Witnesses** (WRITTEN NOT RUN — code-only): module —
+`the_family_driver_assembles_before_the_orphan_switch`,
+`the_family_driver_pays_parked_damage_to_the_carrier`,
+`the_family_driver_unzips_the_chain_when_the_head_dies`,
+`the_family_driver_severs_both_ways_from_a_middle_cut`,
+`the_tail_has_no_follower_check`,
+`the_family_driver_trails_the_same_tick_positions`,
+`the_family_driver_encourages_despawn_family_wide_and_draws_nothing`;
+sim (`world_sim/npcs.rs`) —
+`the_wyvern_family_never_enters_the_shared_worm_pass`,
+`the_wyvern_sim_pass_assembles_and_flies_the_chain` (the live route +
+the UpdateNpcs stream witness).
 
 ## The Destroyer machine (aiStyle-37, S1-D-3, 2026-11-18 — code-only mode)
 
