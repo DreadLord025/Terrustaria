@@ -210,7 +210,9 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
             lantern_can_persist,
         );
         if scene_state.forced_severity.is_none() {
-            sandstorm.update_time(day_rate, wind.speed_current);
+            // W4-c40: the hardMode start-delay denominator
+            // (`Sandstorm.cs:58-59`) reads the live world flag.
+            sandstorm.update_time(day_rate, wind.speed_current, world.hard_mode);
         }
         night_raining = rain.is_raining();
         // (5) The Slime Rain event (`Main.cs:64925-64949`'s morning roll +

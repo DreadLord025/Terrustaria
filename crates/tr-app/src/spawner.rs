@@ -45,6 +45,12 @@ pub struct SpawnFlags {
     /// `NPC.downedBoss3` (Skeletron defeated).
     pub downed_boss3: bool,
     pub zone_sandstorm: bool,
+    /// `Sandstorm.Happening` (`NPC.cs:3949`'s desert-override gate — the
+    /// zone flag alone is not enough: the C# reads BOTH). W4-c40.
+    pub sandstorm_happening: bool,
+    /// `NPC.downedBoss1` (`NPC.cs:3951`'s pre-hardmode desert ladder gate).
+    /// W4-c40.
+    pub downed_boss1: bool,
     pub zone_underground_desert: bool,
     pub zone_jungle: bool,
     pub zone_evil: bool,
@@ -606,6 +612,49 @@ fn check_not_spawning_on_screen(ctx: &SpawnContext, safe: &SpawnArea, x: i32, y:
         && tile_py < rect_y + (S_HEIGHT + safe_range_y * 2) as f32)
 }
 
+/// `Spawner.Spawning_SandstoneCheck` (`NPC.cs:5452-5491`): the sandstorm
+/// desert ladder's floor gate — count the connected sand mass below and
+/// beside the spawn tile: 8 rows down, each row the centre cell + up to 4
+/// right + up to 4 left, every side breaking on the first non-sand cell.
+/// `>= 40` passes (the remix `>= 10` arm is constants-off — the port has
+/// no remix worlds). `WorldGen.InWorld(x, y, 10)` refuses the border.
+/// W4-c40.
+pub(crate) fn spawning_sandstone_check(world: &World, x: i32, y: i32) -> bool {
+    // `WorldGen.InWorld(x, y, 10)` (`WorldGen.cs:9688-9695`).
+    if x < 10 || x >= world.width - 10 || y < 10 || y >= world.height - 10 {
+        return false;
+    }
+    let is_sand = |tx: i32, ty: i32| {
+        world
+            .tile(tx, ty)
+            .is_some_and(|t| t.active() && tr_core::tiledata::SET_CONVERSION_SAND.has(t.kind))
+    };
+    let mut num = 0;
+    for i in 0..8 {
+        // `:5461-5466`: the centre cell — a break ends the WHOLE scan.
+        if !is_sand(x, y + i) {
+            break;
+        }
+        num += 1;
+        // `:5467-5475`: up to 4 right.
+        for j in 1..=4 {
+            if !is_sand(x + j, y + i) {
+                break;
+            }
+            num += 1;
+        }
+        // `:5476-5484`: up to 4 left.
+        for k in 1..=4 {
+            if !is_sand(x - k, y + i) {
+                break;
+            }
+            num += 1;
+        }
+    }
+    // `:5486-5490`: the remix arm (`>= 10`) is constants-off.
+    num >= 40
+}
+
 /// `Spawner.FindGroundTile` (NPC.cs:5866-5885): walk down at most 30 tiles to
 /// the first solid ground tile.
 fn find_ground_tile(world: &World, x: i32, y: i32) -> i32 {
@@ -1129,6 +1178,38 @@ fn spawn_npc_at(
                     } else {
                         -1
                     },
+                    0.0,
+                );
+                n.hp = n.max_hp;
+                return Some(n);
+            }
+            return None;
+        }
+        // ---- the sandstorm desert override (`NPC.cs:3949-4019`, W4-c40) ----
+        // `Sandstorm.Happening && this.ZoneSandstorm &&
+        // TileID.Sets.Conversion.Sand[tileType] && Spawning_SandstoneCheck`.
+        // The arm sits in the SAME else-if chain as the moon/eclipse arms —
+        // after them, ahead of the hardmode mummy rows (`:4020-4035`, the
+        // port's day/night ladders below map those outcomes) and the
+        // surfaceSpawn probe (`:4165`). Matching it is terminal: the whole
+        // ladder draws its rolls in the C# order and returns.
+        if let Some((pick, spawn_y)) =
+            sandstorm_desert_pick(ctx, rng, tile_kind, no_worms, x, y)
+        {
+            // The kinds 546/61/69/541/510/542-545/78/79/630/80/580/581 have
+            // no `NpcKind` rows yet (the d41/d42 roster lanes own them) —
+            // every outcome consumes its draws exactly where the C# does
+            // and spawns nothing until the roster wave (the Wyvern arm's
+            // consume-and-return shape, `:989-994`). The kind map lands
+            // through `kind_from_net_id` — when the rows arrive the spawn
+            // goes live without touching the roll order.
+            if let Some((kind, _)) = crate::npc::kind_from_net_id(pick as i32) {
+                let (nw, nh) = kind.size();
+                let mut n = Npc::new(
+                    kind,
+                    x as f32 * TILE_PX + 8.0 - nw * 0.5,
+                    spawn_y as f32 - nh,
+                    if ctx.player_center.0 >= x as f32 * TILE_PX + 8.0 { 1 } else { -1 },
                     0.0,
                 );
                 n.hp = n.max_hp;
@@ -1974,6 +2055,90 @@ fn pumpkin_moon_ladder(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<u1
         // `:3545` — the C#'s default: no roll gate, the type is `Next(305, 315)`.
         _ => Some(305 + rng.next_max(10) as u16),
     }
+}
+
+/// The sandstorm desert override's pick ladder (`NPC.cs:3949-4019`,
+/// W4-c40). Returns `Some((vanilla_type, spawn_y_px))` when the arm's
+/// gates pass — the gate itself (`Happening && ZoneSandstorm &&
+/// Conversion.Sand[tileType] && Spawning_SandstoneCheck`) is checked here
+/// so the witness can drive it directly; `None` means the chain advances
+/// to the next arm (the C#'s `else if` miss). Every conditional roll
+/// consumes exactly where the C# draws it, including the arms whose
+/// kinds are unported (the roster-wave map is the caller's).
+///
+/// The roll order (the C# statement order):
+/// - pre-hardmode + !downedBoss1 (`:3951-3965`): Next(2) → 546, else
+///   Next(2) → 61, else 69.
+/// - hardmode (`:3966-4018`): Next(20)==0 && !AnyNPCs(541) → 541;
+///   !noWorms && Next(3)==0 && CountNPCS(510)<4 → 510 at +10 tiles;
+///   !noWorms && Next(2)==0 → the 542-545 sandshark (the tile's
+///   Corrupt/Crimson/Hallow swaps); the four mummy rows (53→78, 112→79,
+///   234→630, 116→80, each Next(3)); Next(2)==0 → 546; Next(2)==0 → 580;
+///   else 581.
+/// - downedBoss1 && !hardmode: the pre-hardmode gate FAILS and every
+///   hardmode arm's `Main.hardMode` term short-circuits — the chain falls
+///   straight to the 546/580/581 tail (the C#'s own shape).
+fn sandstorm_desert_pick(
+    ctx: &SpawnContext,
+    rng: &mut UnifiedRandom,
+    tile_kind: u16,
+    no_worms: bool,
+    x: i32,
+    y: i32,
+) -> Option<(u16, i32)> {
+    if !(ctx.flags.sandstorm_happening
+        && ctx.flags.zone_sandstorm
+        && tr_core::tiledata::SET_CONVERSION_SAND.has(tile_kind)
+        && spawning_sandstone_check(ctx.world, x, y / 16))
+    {
+        return None;
+    }
+    let count = |id: u16| ctx.moon_npc_counts.iter().filter(|&&t| t == id).count() as i32;
+    let pick = if !ctx.flags.downed_boss1 && !ctx.flags.hard_mode {
+        // `:3951-3965`: the pre-EoC ladder.
+        if rng.next_max(2) == 0 {
+            546 // Tumbleweed
+        } else if rng.next_max(2) == 0 {
+            61 // Vulture
+        } else {
+            69 // Antlion
+        }
+    } else if ctx.flags.hard_mode && rng.next_max(20) == 0 && count(541) == 0 {
+        // `:3966-3969`: the Sand Elemental — unique.
+        541
+    } else if ctx.flags.hard_mode && !no_worms && rng.next_max(3) == 0 && count(510) < 4 {
+        // `:3970-3973`: the Dune Splicer at `(spawnTileY + 10) * 16`.
+        return Some((510, y + 10 * 16));
+    } else if ctx.flags.hard_mode && !no_worms && rng.next_max(2) == 0 {
+        // `:3974-3990`: the Sandshark — the conversion swaps in the C#'s
+        // order (a hallowed corrupt tile takes the LAST write).
+        let mut type3 = 542u16;
+        if tr_core::tiledata::SET_CORRUPT.has(tile_kind) {
+            type3 = 543;
+        }
+        if tr_core::tiledata::SET_CRIMSON.has(tile_kind) {
+            type3 = 544;
+        }
+        if tr_core::tiledata::SET_HALLOW.has(tile_kind) {
+            type3 = 545;
+        }
+        type3
+    } else if ctx.flags.hard_mode && tile_kind == 53 && rng.next_max(3) == 0 {
+        78 // Mummy (`:3991-3994`)
+    } else if ctx.flags.hard_mode && tile_kind == 112 && rng.next_max(3) == 0 {
+        79 // Dark Mummy (`:3995-3998`)
+    } else if ctx.flags.hard_mode && tile_kind == 234 && rng.next_max(3) == 0 {
+        630 // Blood Mummy (`:3999-4002`)
+    } else if ctx.flags.hard_mode && tile_kind == 116 && rng.next_max(3) == 0 {
+        80 // Light Mummy (`:4003-4006`)
+    } else if rng.next_max(2) == 0 {
+        546 // Tumbleweed (`:4007-4010`)
+    } else if rng.next_max(2) == 0 {
+        580 // Walking Antlion (`:4011-4014`)
+    } else {
+        581 // Flying Antlion (`:4015-4018`)
+    };
+    Some((pick, y))
 }
 
 /// `Spawner.GetBasicSlimeToSpawn` (`NPC.cs:5625-5654`) + the Pinky swap
@@ -4854,5 +5019,240 @@ mod tests {
             [338u16, 339, 340].into_iter().collect(),
             "the Next(338, 341) band spreads across its three kinds"
         );
+    }
+
+    // ---- W4-c40: the sandstorm desert override (written, NOT run) ----
+
+    /// A desert world: a 400x700 world with a deep sand mass (kind 53)
+    /// from row 300 down — the sandstone check's 8-row × 9-column scan
+    /// passes everywhere on the surface.
+    fn desert_world() -> World {
+        let mut w = World::new("t".into(), 400, 700);
+        for x in 0..400 {
+            for y in 300..700 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 53, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.world_surface = 310.0;
+        w.rock_layer = 320.0;
+        w.spawn_x = 200;
+        w.spawn_y = 296;
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn storm_ctx(w: &World, hard: bool, boss1: bool) -> SpawnContext<'_> {
+        let mut c = ctx(w, 295.0 * 16.0, true);
+        c.flags.sandstorm_happening = true;
+        c.flags.zone_sandstorm = true;
+        c.flags.hard_mode = hard;
+        c.flags.downed_boss1 = boss1;
+        c
+    }
+
+    /// `NPC.cs:5452-5491`: the sandstone scan counts the centre + up to 4
+    /// each side over 8 rows; a full sand mass counts 8×9 = 72 ≥ 40. A
+    /// 4-wide column strip counts 8×(1+3+0)... the scan breaks per side:
+    /// centre + right-until-gap + left-until-gap. Pin the boundary: a
+    /// 5-wide strip (centre ±2) counts 8×5 = 40 — exactly the threshold.
+    #[test]
+    fn w4_c40_the_sandstone_check_counts_the_connected_mass() {
+        let w = desert_world();
+        assert!(spawning_sandstone_check(&w, 200, 300));
+        // A single-column sand pillar: 8 rows × 1 = 8 < 40.
+        let mut w2 = World::new("t".into(), 400, 700);
+        for y in 300..700 {
+            let i = w2.index(200, y);
+            w2.tiles[i] = Tile { kind: 53, ..Default::default() };
+            w2.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        assert!(!spawning_sandstone_check(&w2, 200, 300));
+        // A 5-wide strip: 8 × 5 = 40 — passes (the `>= 40` boundary).
+        let mut w3 = World::new("t".into(), 400, 700);
+        for x in 198..203 {
+            for y in 300..700 {
+                let i = w3.index(x, y);
+                w3.tiles[i] = Tile { kind: 53, ..Default::default() };
+                w3.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        assert!(spawning_sandstone_check(&w3, 200, 300));
+        // 4-wide (198..202): the scan from 200 counts centre + 1 right +
+        // 2 left = 4/row → 32 < 40.
+        let mut w4 = World::new("t".into(), 400, 700);
+        for x in 198..202 {
+            for y in 300..700 {
+                let i = w4.index(x, y);
+                w4.tiles[i] = Tile { kind: 53, ..Default::default() };
+                w4.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        assert!(!spawning_sandstone_check(&w4, 200, 300));
+        // The border refusal (InWorld 10).
+        assert!(!spawning_sandstone_check(&w, 5, 300));
+        // Non-sand floor (the dirt world) never passes.
+        let g = ground_tall();
+        assert!(!spawning_sandstone_check(&g, 200, 300));
+    }
+
+    /// `NPC.cs:3951-3965`: the pre-hardmode ladder replays the two-Next(2)
+    /// chain — 546 on the first hit, 61 on the second, 69 on the double
+    /// miss — and the stream position matches the C# reference per seed.
+    #[test]
+    fn w4_c40_the_pre_hardmode_desert_ladder_replays_the_roll_order() {
+        let w = desert_world();
+        let c = storm_ctx(&w, false, false);
+        for seed in 1..=300u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let got = sandstorm_desert_pick(&c, &mut rng, 53, false, 200, 300 * 16);
+            let mut r#ref = UnifiedRandom::new(seed as i32);
+            let want = if r#ref.next_max(2) == 0 {
+                546
+            } else if r#ref.next_max(2) == 0 {
+                61
+            } else {
+                69
+            };
+            assert_eq!(got, Some((want, 300 * 16)), "seed {seed}");
+            assert_eq!(rng.peek(), r#ref.peek(), "seed {seed}: stream position");
+        }
+    }
+
+    /// `NPC.cs:3966-4018`: the hardmode chain — the 541 uniqueness gate,
+    /// the 510 noWorms+cap gate (+10 tiles), the sandshark conversion
+    /// swaps, the four mummy Next(3) rows, and the 546/580/581 tail. The
+    /// reference replay mirrors every conditional draw.
+    #[test]
+    fn w4_c40_the_hardmode_desert_ladder_replays_the_roll_order() {
+        let w = desert_world();
+        let c = storm_ctx(&w, true, true);
+        for seed in 1..=400u64 {
+            for no_worms in [false, true] {
+                let mut rng = UnifiedRandom::new(seed as i32);
+                let got = sandstorm_desert_pick(&c, &mut rng, 53, no_worms, 200, 300 * 16);
+                let mut r#ref = UnifiedRandom::new(seed as i32);
+                // The C# chain on tile 53 (plain sand, no conversion):
+                let want = if r#ref.next_max(20) == 0 {
+                    Some((541u16, 300 * 16)) // count(541)==0 (empty roster)
+                } else if !no_worms && r#ref.next_max(3) == 0 {
+                    Some((510, 300 * 16 + 160)) // count(510)<4, +10 tiles
+                } else if !no_worms && r#ref.next_max(2) == 0 {
+                    Some((542, 300 * 16)) // plain sand — no swap
+                } else if r#ref.next_max(3) == 0 {
+                    Some((78, 300 * 16)) // tile 53's mummy row
+                } else if r#ref.next_max(2) == 0 {
+                    Some((546, 300 * 16))
+                } else if r#ref.next_max(2) == 0 {
+                    Some((580, 300 * 16))
+                } else {
+                    Some((581, 300 * 16))
+                };
+                assert_eq!(got, want, "seed {seed} no_worms={no_worms}");
+                assert_eq!(rng.peek(), r#ref.peek(), "seed {seed}: stream position");
+            }
+        }
+    }
+
+    /// The closed gates suppress their arms but still draw (the C# `&&`
+    /// order): a live 541 blocks the elemental arm, four 510s block the
+    /// splicer, noWorms blocks both worm arms — the chain advances.
+    #[test]
+    fn w4_c40_the_closed_roster_gates_advance_the_chain() {
+        let w = desert_world();
+        let mut c = storm_ctx(&w, true, true);
+        let roster: Vec<u16> = vec![541, 510, 510, 510, 510];
+        c.moon_npc_counts = &roster;
+        // Find a seed whose Next(20) hits: with the 541 alive the arm is
+        // suppressed and the chain draws the Next(3) splicer gate too.
+        let hit = (1..=200u64)
+            .find(|&s| UnifiedRandom::new(s as i32).next_max(20) == 0)
+            .unwrap();
+        let mut rng = UnifiedRandom::new(hit as i32);
+        let got = sandstorm_desert_pick(&c, &mut rng, 53, false, 200, 300 * 16);
+        assert_ne!(got.map(|(t, _)| t), Some(541), "the uniqueness gate holds");
+        assert_ne!(got.map(|(t, _)| t), Some(510), "the 4-cap holds");
+        let mut r#ref = UnifiedRandom::new(hit as i32);
+        let _ = r#ref.next_max(20); // drawn, suppressed
+        // The splicer gate: !noWorms && Next(3) — drawn; the cap closed.
+        let n3 = r#ref.next_max(3);
+        if n3 != 0 {
+            // The sandshark Next(2) follows only on the splicer miss.
+            let _ = r#ref.next_max(2);
+        }
+        // (The tail draws depend on the branch; the pick is never 541/510.)
+        assert!(got.is_some(), "the chain still picks from the tail");
+    }
+
+    /// `NPC.cs:3974-3990`: the sandshark conversion swaps — a corrupt
+    /// sand tile (112 is ebonsand; the Conversion.Sand set carries it)
+    /// takes 543, crimson (234) 544, hallow (116) 545. The mummy rows
+    /// then never fire on those tiles (the shark arm precedes them).
+    #[test]
+    fn w4_c40_the_sandshark_takes_the_tile_conversion() {
+        let mut w = desert_world();
+        // Recolour the whole mass per case so the sandstone check passes.
+        for (kind, want) in [(112u16, 543u16), (234, 544), (116, 545)] {
+            for x in 0..400 {
+                for y in 300..700 {
+                    let i = w.index(x, y);
+                    w.tiles[i].kind = kind;
+                }
+            }
+            let c = storm_ctx(&w, true, true);
+            // Find a seed reaching the shark arm: Next(20) miss, Next(3)
+            // miss, Next(2) hit.
+            let hit = (1..=500u64)
+                .find(|&s| {
+                    let mut r = UnifiedRandom::new(s as i32);
+                    r.next_max(20) != 0 && r.next_max(3) != 0 && r.next_max(2) == 0
+                })
+                .unwrap();
+            let mut rng = UnifiedRandom::new(hit as i32);
+            let got = sandstorm_desert_pick(&c, &mut rng, kind, false, 200, 300 * 16);
+            assert_eq!(got.map(|(t, _)| t), Some(want), "tile {kind}");
+        }
+    }
+
+    /// The gate itself: no storm / no zone / non-sand tile / a failed
+    /// sandstone check all advance the chain with ZERO draws.
+    #[test]
+    fn w4_c40_the_desert_gate_draws_nothing_on_a_miss() {
+        let w = desert_world();
+        let g = ground_tall();
+        // Storm off.
+        let mut c = storm_ctx(&w, false, false);
+        c.flags.sandstorm_happening = false;
+        let mut rng = UnifiedRandom::new(7);
+        let before = rng.peek();
+        assert_eq!(sandstorm_desert_pick(&c, &mut rng, 53, false, 200, 300 * 16), None);
+        assert_eq!(rng.peek(), before, "a gate miss consumes nothing");
+        // Zone off.
+        let mut c = storm_ctx(&w, false, false);
+        c.flags.zone_sandstorm = false;
+        let mut rng = UnifiedRandom::new(7);
+        let before = rng.peek();
+        assert_eq!(sandstorm_desert_pick(&c, &mut rng, 53, false, 200, 300 * 16), None);
+        assert_eq!(rng.peek(), before);
+        // Non-sand tile (the dirt world's floor).
+        let c = storm_ctx(&g, false, false);
+        let mut rng = UnifiedRandom::new(7);
+        let before = rng.peek();
+        assert_eq!(sandstorm_desert_pick(&c, &mut rng, 1, false, 200, 300 * 16), None);
+        assert_eq!(rng.peek(), before);
+        // Sand tile but a failed sandstone check (a lone pillar).
+        let mut w2 = World::new("t".into(), 400, 700);
+        for y in 300..700 {
+            let i = w2.index(200, y);
+            w2.tiles[i] = Tile { kind: 53, ..Default::default() };
+            w2.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let c = storm_ctx(&w2, false, false);
+        let mut rng = UnifiedRandom::new(7);
+        let before = rng.peek();
+        assert_eq!(sandstorm_desert_pick(&c, &mut rng, 53, false, 200, 300 * 16), None);
+        assert_eq!(rng.peek(), before);
     }
 }

@@ -8989,11 +8989,20 @@ change at all rates.
 
 The research corrected the row: the severity machine, the SceneState
 filters, the music-40 ladder, the zone gate and the bgDelay tracking
-already landed (BG-18 / WEATHER-1), and the `SandstormSky` sky tint is
-**dead code in 1.4.5.8** вЂ” registered (`ScreenEffectInitializer.cs:71`)
-but never activated anywhere, so `_opacity` stays 0 and the quad never
-draws. Documented out; the visible sky wash is the SceneState
-filter/overlay pair.
+already landed (BG-18 / WEATHER-1). The `SandstormSky` sky tint is **NOT dead
+code** — the earlier "never activated" reading (WEATHER-2) was wrong: the
+activation is variable-based, so a grep for a literal `Activate("Sandstorm"`
+misses it. `SceneState.cs:97` calls `ManageSpecialBiomeVisuals("Sandstorm",
+Main.UseStormEffects && Sandstorm.ShowSandstormVisuals())`, and `:313-317`
+activates `SkyManager.Instance[biomeName]` when `inZone` flips — with
+`biomeName == "Sandstorm"`, registered at `ScreenEffectInitializer.cs:71` and
+`UseStormEffects` defaulting true (`Main.cs:66572`). So during a desert
+sandstorm the sky IS activated, `_opacity` ramps to 1, and `SandstormSky.Draw`
+(`:49-56`) paints the `(0.85,0.66,0.33)*0.8*ColorOfTheSkies * _opacity *
+min(1, Severity*1.5)` quad (the same path activates Blizzard/Aurora). The port
+draws the SceneState fg/bg filter pair but NOT this `CustomSky` tint quad — a
+real visual gap owned by the f42 second-half-visuals lane (W4-c40 DOC-SWEEP
+lane 6, research/78, corrected 2026-11-21).
 
 The task's real delta is `Sandstorm.EmitDust` (`Main.cs:17247`) вЂ” the
 flying sand, in `crates/tr-app/src/sand.rs`:
@@ -40966,3 +40975,185 @@ the decompiled C# by scripted census (the boss/rarity rows from the
 town-chat, critter-sight, minion folds, Skeletron OR, boss-flag census,
 threshold pins, star-formula pins, override-beats-formula, the 249-row star
 census; `ui/bestiary.rs` completion test repointed to `WorldBestiary`).
+
+## The Sandstorm sim halves (W4-c40, code-only)
+Branch `task/W4-c40-sandstorm`, base `a725acb0`. The claim + in-flight
+probe + RNG-slot map: `docs/research/W4-c40-sandstorm-claim.md`. The
+second-half VISUALS (dust emit/draw, filters, the 269 trail draw) are
+f42's lane; the 541-546/580/581 `NpcKind` rows are d41/d42's; the
+aiStyle-102 module is d33-co-claimed (KEEP-ONE at merge — this module is
+the kind-scoped 541 port).
+### What landed (the five sim gaps)
+1. **Severity — the hardMode start denominator** (`Sandstorm.cs:58-59`).
+   `scene.rs::Sandstorm::update_time` gains the `hard_mode` input:
+   `num = 21600 * (hardMode ? 2 : 3)` (was pinned `* 3`, "hardmode not
+   ported yet" — stale, `World.hard_mode` exists). The weather tick
+   (`world_sim/weather.rs`) feeds `world.hard_mode`. The roll slot
+   count/order is unchanged (one `Next(num)` per day-rate tick + the one
+   `Next(18000)` intention roll); the decay/intention arms are
+   hardmode-independent (witnessed). `Sandstorm::world_clear`
+   (`Sandstorm.cs:27-30`) added — clears ONLY `Happening` (the
+   timer/severity/intent survive, unlike `StopSandstorm`).
+2. **Desert override — the sandstorm spawn ladder** (`NPC.cs:3949-4019`).
+   `spawner.rs::sandstorm_desert_pick` ports the whole else-if arm:
+   the gate (`Happening && ZoneSandstorm && Conversion.Sand[tileType] &&
+   Spawning_SandstoneCheck`), the pre-EoC 546/61/69 two-Next(2) chain,
+   the hardmode 541-unique (Next(20), !AnyNPCs(541)) / 510 DuneSplicer
+   (!noWorms, Next(3), CountNPCS(510)<4, +10 tiles) / 542-545 sandshark
+   (the Corrupt/Crimson/Hallow tile swaps in the C# order) / the four
+   mummy Next(3) rows (53→78, 112→79, 234→630, 116→80) / the 546/580/581
+   tail. `spawning_sandstone_check` (`NPC.cs:5452-5491`) is the 8-row ×
+   (1+4+4) connected-sand scan, ≥40 (the remix ≥10 arm constants-off).
+   `SpawnFlags` gains `sandstorm_happening`/`downed_boss1`, wired off
+   `app.sandstorm.happening`/`world.downed_eoc` in `world_sim/npcs.rs`.
+   The arm sits after the moon/eclipse ladders, before the surfaceSpawn
+   probe — matching it is terminal. **The kinds are unported (d41/d42
+   own the rows): every outcome consumes its draws exactly where the C#
+   does and spawns through `kind_from_net_id` — None until the rows
+   land** (the Wyvern consume-and-return precedent). The roll ORDER is
+   the port; 5 witnesses incl per-seed C#-reference stream replays.
+3. **Sand elementals — the 541 machine** (`npc_ai_sand_elemental.rs`,
+   UNWIRED, the style73 precedent). `SetDefaults` row
+   (`NPC.cs:15898-15911`: 30×76, aiStyle 102, dmg 40, def 30, 5000 HP,
+   kb 0.05, value 10150 = buyPrice(0,1,50), rarity 2, NPCHit23/
+   NPCDeath39). The aiStyle-102 arm (`:40147-40542`): the hp-scaled
+   chase (speed 2+(1−life%)×2, accel 0.1+(1−life%)×0.02), the half-life
+   kb-zero (the `kb_resist_override` seam), the ai[0] 135→−300 attack
+   cycle, the ai[0]==54 sandnado volley (the 1000-roll
+   Next(point.X−30, point.X+31) column scan, ≥10 apart, the
+   ExpandVertically(1,51) bottom find + CanSpawnSandstormHostile(15,15)
+   span gate, 3 picks, the 900px −200 abort), the CatmullRom dust-269
+   trail plans (the per-dust RandomVector2 draws consumed IN-STEP, the
+   W-10 union convention — the lane replays without re-drawing), the
+   stuck window, the probe/bounce/accel movement core. **Two C# findings
+   pinned**: (a) `:40206` zeroes `localAI[2]` EVERY tick inside the 541
+   block, so the 30-tick ceiling-jump and 60-tick mirror thresholds are
+   DEAD for 541 (the counter only reaches 1) — the arms stay verbatim;
+   (b) `:40523` clamps the up-chase to `-num1385` (the HORIZONTAL cap,
+   not num1387) — a verbatim typo, kept. `FindFrame` case 541
+   (`:69734-69772`, the 13-row strip: the attack rows 4/5-8/9/10-12/1 +
+   the velocity-length walk cycle) as `sand_elemental_find_frame`. The
+   658 Sandnado projectile AI is the projectile family's obligation
+   (the spawn request rides `SandElementalOutcome::sandnados`). 8
+   witnesses.
+4. **Push — the windPushed chain**. `Auras.sandstorm_wind`
+   (`scene.rs`, `!behind_backwall && zone_sandstorm`) feeds the scene
+   grant `AddBuff(194, 2)` (`Player.cs:25556-25559`, the player.rs
+   scene-grant block); the live buff arm `194 → wind_pushed`
+   (`:11835-11838`); the `ResetEffects` clear (`:16970`);
+   `can_be_pushed_by_wind` (`:19751-19770`: isLockedToATile unported
+   constant-false, the roller-skates refusal, the mounted-grounded-
+   steering refusal); the `HorizontalMovement` push arm
+   (`:19795-19817`: sign×0.06, |wind|>0.5 ×1.37, airborne ×1.5, steering
+   ×0.8 + clamp ±0.072, the facing-opposed threshold −|num2|×40) + the
+   flag2 one-sided velocity tail (`:20089-20107`). Wind speed rides the
+   existing `wind: Option<&Wind>` channel (the `update_with_grapple`
+   seam); the plain `update` harness passes 0.0. The pure effect table
+   (`buff_effects_misc.rs:660`) already carried the 194 arm — the live
+   loop is the wired path (keep-one). 6 witnesses incl the zero-draw
+   census.
+5. **i12 sandStorm field reuse**. The run boost
+   (`Player.cs:26573-26577`: `sandStorm → runAcceleration ×1.5,
+   maxRunSpeed ×2`) lands after the floor-modifier chain, reusing the
+   LANDED i12 `sand_storm` field (the `:19837` direction lock + the
+   `:36298` leg pose already read it) — NO new field. The live
+   lifecycle: the `:26743` pre-JumpMovement clear, the
+   `DoubleJumpVisuals` sim seam re-arm (`:21905-21919`, the ascending
+   bottle re-arms every tick; the dust-124 trail + the 220-222 gore are
+   f42/dust-lane visuals — the gore's `Main.rand.Next(220,223)` draw on
+   the miscCounter%3 edge is RECORDED for that lane, this seam draws
+   nothing), the `:26753-26756` jump==0 cancel
+   (`CancelAllJumpVisualEffects` → `performing_jump = None`) + the CCed
+   cancel (`:26811`). 2 witnesses.
+### Deviations (deliberate, recorded)
+- The spawn ladder's kinds consume-and-await the d41/d42 roster rows
+  (the roll order is live; the spawn goes live through
+  `kind_from_net_id` without touching the draws when the rows land).
+- The 541 machine is UNWIRED (no `NpcKind::SandElemental`); the
+  `sandnado_centers` pool read is the wiring caller's obligation.
+- `isLockedToATile` has no port system (constant false in
+  `can_be_pushed_by_wind`).
+- The `DoubleJumpVisuals` dust/gore visuals + the 541 foot-dust pool
+  spawns + the 269 trail draw are the dust/f42 lanes' — the arm-level
+  draws are consumed in-step and carried in the outcome structs (the
+  gallop-dust/W-10 convention); the pool-internal draws ride the drain
+  (the recorded placement deviation).
+- The 658 Sandnado projectile AI is out of scope (the projectile lanes).
+- `Main.remixWorld` arms constants-off (the sandstone ≥10 arm, the
+  ladder's remix terms).
+Code-only: every port re-read against the cited C# windows; the seam
+call sites checked against the actual signatures by read/grep
+(`Npc`/`Player` fields, `UnifiedRandom::next_range/next_max/next_float/
+next_double/peek`, `target_closest`/`TargetCandidate`,
+`tr_core::stray::can_spawn_sandstorm_hostile`, the tile sets decoded
+from `sets.rs` — sand={53,112,116,234}, corrupt∋112, crimson∋234,
+hallow∋116). The witnesses (scene.rs 3, stray.rs 2, spawner.rs 5,
+player.rs 8, npc_ai_sand_elemental.rs 8) are WRITTEN, NOT RUN — **no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
+### The storm-bolt lane (W4-c40c, resume of the frozen in-flight work)
+The admitted "(L) bolt geometry" lane (research/78 item 4) — the
+damaging strike behind `rain.rs::thunder_step`'s flash+thunder:
+- **`lightning_generator.rs`** — `LightningGenerator.cs:9-326` whole:
+  the `StormLightning` static preset (`:285-304`), `Generate`'s
+  UnitY-rotation source point (`:64-76`), the `GenerateBolt` layered
+  random walk (`:78-162`: the layer reroll accumulators, the
+  perpendicular-deviation steering, the fork block whose `:134`
+  `NextFloat` draws UNCONDITIONALLY before the `bolts != null` test —
+  state-bearing even on the `CanHitTarget` path), `TileCollision`
+  (`:164-181`, the `(int)pos.Y % 16 > 16*(255-liquid)/255` liquid-surface
+  dip), the geometric `PickLayerToReroll`/`PickHighLayerToReroll`
+  (`:183-204`), `CanHitTarget` (`:243-246`) + `GenerateMainBoltPath`
+  (`:248-251`, the `Array.Resize(i+1)` truncation ported). The bolt owns
+  a PRIVATE `LCG32Random` per call (`LCG32Random.cs:34-43` — the f64
+  `NextDouble` the steering needs; the Aqua-Scepter bounce copy in
+  projectile.rs only reads NextFloat, so this is a documented second
+  copy, not a refactor). `CalcRotations`/`SmoothRotations` are draw-side
+  (`calcRotations:false` on both sim paths) — not ported.
+- **`storm_lightning.rs`** — `WorldGen.SpawnStormLightning`
+  (`WorldGen.cs:71864-71922`): the seed gates, the AnyDanger ×1.5 /
+  moreLightning ÷2 interval, the 255-slot safe-spot rects (the 24×24
+  CenteredRectangle + the ±5.75-clamped velocity lead union), the
+  per-player `Next(num3)` strike roll (sleeping ×2, fishing pole ×2,
+  the ZoneRain && !ZoneSnow && afkCounter<10800 gate);
+  `SpawnStormLightningNearPlayer` (`:71924-71962`, the MaxWorldViewSize/32
+  view rect ClampToWorld(10), the 400-attempt scan — 350 attractor-only
+  then 50 solid-or-liquid, the upward attractor walk, the liquid-above
+  gate); `IsLightningAttractor` (`:71964-71975`, nactive &&
+  (GetsCheckedForLeaves ∥ AttractsStormLightning) — both sets verified
+  against `TileID.cs:490`/`:624`'s factory lists);
+  `TrySpawnLightningBolt` (`:71977-72018`, the IsSafeFromRain shelter
+  gate, the safe-spot contains, the 800-px nearby-1091 scan with the
+  ref-skip break, the `Next(MaxFloatInt+1)` seed, the liquid surface
+  offset, the CanHitTarget gate, the 1091/500-dmg spawn request);
+  `IsSafeFromRain` (`:72960-72968`) over the `Vector2D` `PlotTileLine`
+  (`Utils.cs:2337-2350`, width 4, the f64 unit/perpendicular/truncation
+  math) + `PlotLine` (`:2238-2292`, the jump:false double-plot) +
+  `CheckStopForSolids` (`DelegateMethods.cs:743-759`).
+- **RNG contract**: every sim draw is `Main.rand` under the
+  `UpdateWorldGen` swap (`Main.cs:17802` → `WorldGen.UpdateWorld` →
+  `:71535`); the wiring caller binds `RngKey::UpdateWorldGen`. The
+  geometry's LCG draws are PRIVATE (seeded from the spawn seed, never
+  the named stream).
+- **Wiring deferred** (the c40-deferred-to-f42 contract, the
+  `npc_ai_sand_elemental` precedent): both modules are registered
+  UNWIRED (`#![allow(dead_code)]`); the 1091 aiStyle-203 projectile AI +
+  the `Kill()` strike + the tick drain that feeds the pool are the
+  wiring follow-up. The bolt VISUAL (ParticleOrchestrator) is the
+  render lane.
+- **Resume fixes** (vs the frozen 10:27 WIP): the `ClampToWorld`
+  witness's expectation corrected to `(10,10,60,14)` — the C# clamps
+  each EDGE (`WorldUtils.cs:11-13`), it does not translate the rect
+  (right=70/bottom=24 are inside [10,390] and stay); `IsSafeFromRain`/
+  `PlotTileLine` widened from f32 to the C#'s `Vector2D` f64 line math
+  (the direction still normalizes in FLOAT first — `:72962` normalizes
+  the float velocity, THEN `.ToVector2D()`).
+- **The g67f one-way gate re-pinned**: `SceneMetrics.cs:698-703`
+  (`ZoneRain = raining && SurfaceAtmospherics; ZoneSandstorm = ...;
+  if (ZoneSandstorm) ZoneRain = false`) was already landed in
+  `scene.rs::calculate_zones` — the citations were off by 3 lines
+  (`:701/:703/:704-707`), corrected; the witness gains the one-way
+  replay arm (raining while the storm holds never clears the storm).
+  Sandstorm stays WIND-ONLY in-lane: the push chain above is the sim
+  consumer; no rain/visual coupling added (f42 owns the visuals).
+- 10 witnesses (5 geometry, 5 spawn) WRITTEN NOT RUN — code-only, no
+  cargo/tests/rustfmt/graphify invoked.

@@ -172,6 +172,12 @@ pub(crate) struct FilterDriver {
     pub(crate) moon_lord_shake_wanted: bool,
     /// MoonLordShake's uniform while its filter is visible.
     pub(crate) moon_lord_shake: Option<FilterParams>,
+    /// W4-c40: the `SceneState.cs:97` condition
+    /// (`Main.UseStormEffects && Sandstorm.ShowSandstormVisuals()`) — the
+    /// SAME boolean the Sandstorm filter manage reads; the SkyManager half
+    /// of `ManageSpecialBiomeVisuals` (`:313-321`) flips
+    /// `App::sandstorm_sky` on its edge in `update_scene`.
+    pub(crate) sandstorm_visuals_on: bool,
 }
 
 impl FilterDriver {
@@ -199,6 +205,7 @@ impl FilterDriver {
             moon_lord_shake_intensity: None,
             moon_lord_shake_wanted: false,
             moon_lord_shake: None,
+            sandstorm_visuals_on: false,
             water: None,
         };
         driver.sync_settings(&crate::settings::Settings::default());
@@ -331,6 +338,10 @@ impl FilterDriver {
                 is_desert_bg_style(inputs.bg_style),
                 inputs.bg_delay,
             );
+        // W4-c40: the SkyManager half of the same `ManageSpecialBiomeVisuals`
+        // call (`SceneState.cs:313-321`) reads the SAME condition — the
+        // caller flips `App::sandstorm_sky` on its edge.
+        self.sandstorm_visuals_on = sandstorm_on;
         self.board
             .manage(FilterId::Sandstorm, sandstorm_on, inputs.skip_transitions);
         self.board.manage(

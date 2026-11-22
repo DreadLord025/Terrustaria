@@ -7022,6 +7022,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         && !app.scene_metrics.zone_hallow,
                     zone_graveyard: app.scene_metrics.zone_graveyard,
                     zone_sandstorm: app.scene_metrics.zone_sandstorm,
+                    // W4-c40 — the desert-override ladder's two extra gates
+                    // (`NPC.cs:3949/:3951`): the event flag and downedBoss1.
+                    sandstorm_happening: app.sandstorm.happening,
+                    downed_boss1: app.world.downed_eoc,
                     zone_water_candle: app.scene_metrics.zone_water_candle,
                     zone_peace_candle: app.scene_metrics.zone_peace_candle,
                     // `Player.UpdateBuffs`' Invisibility (10) / Battle (13)

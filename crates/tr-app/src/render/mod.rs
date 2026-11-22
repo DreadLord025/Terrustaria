@@ -14,6 +14,10 @@ pub(crate) mod liquids;
 pub(crate) mod player_layers;
 pub(crate) mod pylons;
 pub(crate) mod ropes;
+// W4-c40: the SandstormSky tint quad (`GameContent/Skies/SandstormSky.cs`)
+// — the SkyManager "Sandstorm" sky's full-screen tint, drawn at the
+// sky-depth ladder's DrawToDepth(1f) boundary.
+pub(crate) mod sandstorm_sky;
 pub(crate) mod screen_fx;
 pub(crate) mod sky;
 // S1-G-1e: UNWIRED special-tile slice (DrawSpecialTilesLegacy + chest frames

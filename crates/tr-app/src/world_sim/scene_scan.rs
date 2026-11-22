@@ -648,6 +648,17 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
     // The graphics gates follow the live menu toggles (`TR_*` pins override).
     filter_driver.sync_settings(settings);
     filter_driver.apply_visuals(&metrics, scene_state, &inputs);
+    // W4-c40: the SkyManager half of `ManageSpecialBiomeVisuals("Sandstorm",
+    // ...)` (`SceneState.cs:313-321`): `inZone != IsActive()` flips the sky.
+    // The condition is the filter driver's `sandstorm_visuals_on` (the same
+    // `:97` boolean the Sandstorm filter manage read).
+    if filter_driver.sandstorm_visuals_on != app.sandstorm_sky.is_active() {
+        if filter_driver.sandstorm_visuals_on {
+            app.sandstorm_sky.activate();
+        } else {
+            app.sandstorm_sky.deactivate();
+        }
+    }
     // `Main.SceneMetrics` persists per frame (`Main.cs:1789`); the ambience
     // gates read its zone flags from the stored copy.
     app.scene_metrics = metrics;

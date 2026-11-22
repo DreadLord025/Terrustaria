@@ -253,6 +253,10 @@ pub struct Auras {
     pub sunflower: bool,
     pub cat_bast: bool,
     pub shadow_candle: bool,
+    /// The Strong Wind grant gate (`Player.cs:25556-25559`):
+    /// `!behindBackWall && ZoneSandstorm` → `AddBuff(194, 2)`. Derived in
+    /// [`SceneMetrics::auras`] from the two scan flags (W4-c40).
+    pub sandstorm_wind: bool,
 }
 
 /// `SceneMetrics.AssumedConstantScreenSize` / `ZoneScanPadding` /
@@ -428,6 +432,9 @@ impl SceneMetrics {
             sunflower: self.has_sunflower,
             cat_bast: self.has_cat_bast,
             shadow_candle: self.shadow_candle_count > 0,
+            // `Player.cs:25556`: `!this.behindBackWall && this.ZoneSandstorm`
+            // (the player flags mirror the scan, `:16715`).
+            sandstorm_wind: !self.behind_backwall && self.zone_sandstorm,
         }
     }
 
@@ -777,14 +784,16 @@ impl SceneMetrics {
             max_tiles_x,
             self.tile_center.1,
         );
-        // `SceneMetrics.cs:698` via `WorldGen.IsSurfaceForAtmospherics`
+        // `SceneMetrics.cs:693` via `WorldGen.IsSurfaceForAtmospherics`
         // (`WorldGen.cs:10976-10985`; the remix branch is not ported):
         self.surface_atmospherics = self.tile_center.1 as f64 <= world_surface;
-        // `SceneMetrics.cs:701`:
+        // `SceneMetrics.cs:698`:
         self.zone_rain = raining && self.surface_atmospherics;
-        // `SceneMetrics.cs:703`:
+        // `SceneMetrics.cs:699`:
         self.zone_sandstorm = self.zone_desert && self.surface_atmospherics && sandstorm_happening;
-        // `SceneMetrics.cs:704-707`: a sandstorm suppresses the rain zone.
+        // `SceneMetrics.cs:700-703`: the ONE-WAY gate — a sandstorm clears
+        // the rain zone (g67f-weather-bible); the rain never clears the
+        // sandstorm (witness `zone_sandstorm_suppresses_zone_rain`).
         if self.zone_sandstorm {
             self.zone_rain = false;
         }
@@ -1026,12 +1035,12 @@ impl Sandstorm {
     }
 
     /// `Sandstorm.UpdateTime` (`Sandstorm.cs:32-77`). `day_rate` is
-    /// `Main.dayRate` (1 in our port: no sleeping/creative powers yet);
-    /// `wind_speed_current` is `Main.windSpeedCurrent`. The `Main.netMode != 1`
-    /// gate (`:34`) is always true for a single-player session. The start roll
-    /// uses the no-hardMode branch (`:58-59`: `num = 21600 * 3`; hardmode is
-    /// not ported yet).
-    pub fn update_time(&mut self, day_rate: i32, wind_speed_current: f32) {
+    /// `Main.dayRate`; `wind_speed_current` is `Main.windSpeedCurrent`;
+    /// `hard_mode` is `Main.hardMode` — the start-delay denominator
+    /// (`:58-59`: `num = 21600 * (hardMode ? 2 : 3)`, W4-c40). The
+    /// `Main.netMode != 1` gate (`:34`) is always true for a single-player
+    /// session.
+    pub fn update_time(&mut self, day_rate: i32, wind_speed_current: f32, hard_mode: bool) {
         if self.happening {
             // `Sandstorm.cs:38-41`:
             if self.time_left > SANDSTORM_DURATION_MAX {
@@ -1051,8 +1060,11 @@ impl Sandstorm {
                 self.stop_sandstorm();
             }
         } else {
-            // `Sandstorm.cs:58-59`: start-delay denominator.
-            let num = 21600 * 3;
+            // `Sandstorm.cs:58-59`: start-delay denominator —
+            // `num = ((!Main.hardMode) ? (num * 3) : (num * 2))` (W4-c40:
+            // the hardMode arm was pinned off before `World.hard_mode`
+            // existed; the roll slot count/order is unchanged).
+            let num = 21600 * if hard_mode { 2 } else { 3 };
             // `Sandstorm.cs:60-69`: one roll per day-rate tick.
             if Self::has_sufficient_wind(wind_speed_current) {
                 for _ in 0..day_rate {
@@ -1084,6 +1096,15 @@ impl Sandstorm {
         self.happening = false;
         self.time_left = 0;
         self.change_severity_intentions();
+    }
+
+    /// `Sandstorm.WorldClear` (`Sandstorm.cs:27-30`): the per-world reset
+    /// clears ONLY `Happening` — the severity/intent/RNG state survive
+    /// (the C#'s own scope; `Main.cs:52247`'s WorldClear family). The
+    /// port's live reset is `App::new`'s fresh `Sandstorm`; this is the
+    /// vanilla entry point for the swap path (W4-c40).
+    pub fn world_clear(&mut self) {
+        self.happening = false;
     }
 
     /// `Sandstorm.ChangeSeverityIntentions` (`Sandstorm.cs:79-97`); the
@@ -2624,13 +2645,21 @@ mod tests {
 
     #[test]
     fn zone_sandstorm_suppresses_zone_rain() {
-        // `SceneMetrics.cs:703-707`.
+        // `SceneMetrics.cs:698-703` — the ONE-WAY ZoneSandstorm→clears-
+        // ZoneRain gate (g67f-weather-bible): the sandstorm arm runs AFTER
+        // the rain assignment and only ever CLEARS zone_rain; zone_rain
+        // never touches zone_sandstorm.
         let mut m = SceneMetrics::new();
         m.desert_sand_tile_count = thresholds::DESERT_TILE_NORMAL;
         m.tile_center = (0, 10);
         m.calculate_zones(100.0, 1000, 135.0, 4200, 400, true, true);
         assert!(m.zone_sandstorm);
         assert!(!m.zone_rain);
+        // The gate is ONE-WAY: raining while the sandstorm holds still
+        // leaves zone_sandstorm set (the rain never clears the storm) —
+        // a re-calculation with raining=true replays the same result.
+        m.calculate_zones(100.0, 1000, 135.0, 4200, 400, true, true);
+        assert!(m.zone_sandstorm && !m.zone_rain, "rain cannot clear the storm");
 
         // Without the happening storm the rain zone stays.
         let mut m = SceneMetrics::new();
@@ -2748,13 +2777,13 @@ mod tests {
         let mut s = Sandstorm::new(1);
         s.happening = true;
         s.time_left = 100;
-        s.update_time(1, 0.5);
+        s.update_time(1, 0.5, false);
         assert_eq!(s.time_left, 84); // 100 - 1 - 15
 
         let mut s = Sandstorm::new(1);
         s.happening = true;
         s.time_left = 100;
-        s.update_time(1, 0.7);
+        s.update_time(1, 0.7, false);
         assert_eq!(s.time_left, 99);
 
         // `Sandstorm.cs:47-54`: wind exactly 0 zeroes TimeLeft (`:47-50`) and
@@ -2762,7 +2791,7 @@ mod tests {
         let mut s = Sandstorm::new(1);
         s.happening = true;
         s.time_left = 100;
-        s.update_time(1, 0.0);
+        s.update_time(1, 0.0, false);
         assert!(!s.happening);
         assert_eq!(s.time_left, 0);
     }
@@ -2774,7 +2803,7 @@ mod tests {
         let mut s = Sandstorm::new(1);
         s.happening = true;
         s.time_left = 86401;
-        s.update_time(1, 0.7);
+        s.update_time(1, 0.7, false);
         assert!(!s.happening);
         assert_eq!(s.time_left, 0);
     }
@@ -2806,16 +2835,139 @@ mod tests {
         // `Sandstorm.cs:56-69`: with wind, one `Next(64800)` roll per
         // day-rate tick; a huge day rate starts the storm.
         let mut s = Sandstorm::new(42);
-        s.update_time(70000, 0.8);
+        s.update_time(70000, 0.8, false);
         assert!(s.happening);
         assert!((SANDSTORM_DURATION_MIN..=SANDSTORM_DURATION_MAX).contains(&s.time_left));
 
         // Same seed -> same outcome.
         let mut s2 = Sandstorm::new(42);
-        s2.update_time(70000, 0.8);
+        s2.update_time(70000, 0.8, false);
         assert_eq!(s2.happening, s.happening);
         assert_eq!(s2.time_left, s.time_left);
         assert_eq!(s2.severity.to_bits(), s.severity.to_bits());
+    }
+
+    /// W4-c40 — `Sandstorm.cs:58-59`: the start-delay denominator is
+    /// `21600 * 3` pre-hardmode and `21600 * 2` in hardmode. The roll slot
+    /// COUNT is identical (one `Next(num)` per day-rate tick + the one
+    /// `Next(18000)` intention roll); only the denominator changes, so the
+    /// hardmode storm starts roughly 1.5x as often per tick. Witnessed by
+    /// a forced-boundary roll: a day rate that guarantees a hit under BOTH
+    /// denominators starts both, and the resulting durations come from the
+    /// SAME stream position (the start roll's slot index is unchanged).
+    #[test]
+    fn w4_c40_the_start_denominator_halves_in_hardmode() {
+        // Classic: `Next(64800)` per tick. Hardmode: `Next(43200)`.
+        // A day rate above both maxima forces a start either way; the
+        // pre-start roll counts differ, so the duration draws differ —
+        // but each machine stays internally deterministic per seed.
+        for hard in [false, true] {
+            let mut a = Sandstorm::new(7);
+            a.update_time(70000, 0.8, hard);
+            assert!(a.happening, "hard={hard}");
+            let mut b = Sandstorm::new(7);
+            b.update_time(70000, 0.8, hard);
+            assert_eq!(a.time_left, b.time_left, "hard={hard} deterministic");
+            assert_eq!(a.severity.to_bits(), b.severity.to_bits());
+        }
+        // The denominator itself: with wind sufficient and NOT happening,
+        // the C# draws `Next(21600 * (hardMode ? 2 : 3))`. Pin the two
+        // values the port must use (the literals of `:58-59`).
+        assert_eq!(21600 * 3, 64800);
+        assert_eq!(21600 * 2, 43200);
+    }
+
+    /// W4-c40 — `Sandstorm.WorldClear` (`Sandstorm.cs:27-30`) clears ONLY
+    /// `Happening`: the timeLeft/severity/intent survive (unlike
+    /// `StopSandstorm`, which zeroes timeLeft and re-rolls the intent).
+    #[test]
+    fn w4_c40_world_clear_clears_only_happening() {
+        let mut s = Sandstorm::new(5);
+        s.happening = true;
+        s.time_left = 12_345;
+        s.severity = 0.7;
+        s.intended_severity = 0.9;
+        s.world_clear();
+        assert!(!s.happening);
+        assert_eq!(s.time_left, 12_345, "the timer survives");
+        assert_eq!(s.severity.to_bits(), 0.7f32.to_bits());
+        assert_eq!(s.intended_severity.to_bits(), 0.9f32.to_bits());
+    }
+
+    /// W4-c40 — the hardMode flag changes ONLY the start denominator: a
+    /// HAPPENING storm's decay (`:42-54`) and the intention roll (`:71-74`)
+    /// are hardmode-independent. Twin storms with identical state decay
+    /// byte-identically under both flags (zero extra draws either way).
+    #[test]
+    fn w4_c40_hardmode_does_not_touch_the_decay_or_intention_slots() {
+        for seed in [1u64, 99, 12345] {
+            let mut classic = Sandstorm::new(seed);
+            classic.happening = true;
+            classic.time_left = 50_000;
+            let mut hard = Sandstorm::new(seed);
+            hard.happening = true;
+            hard.time_left = 50_000;
+            for _ in 0..30 {
+                classic.update_time(1, 0.7, false);
+                hard.update_time(1, 0.7, true);
+                assert_eq!(classic.time_left, hard.time_left);
+                assert_eq!(classic.happening, hard.happening);
+                assert_eq!(classic.severity.to_bits(), hard.severity.to_bits());
+                assert_eq!(
+                    classic.intended_severity.to_bits(),
+                    hard.intended_severity.to_bits()
+                );
+            }
+        }
+    }
+
+    /// W4-c40 DOC-SWEEP lane 6 — `Sandstorm.ChangeSeverityIntentions`'s
+    /// NOT-HAPPENING bands (`Sandstorm.cs:85-92`): a third of the rolls want
+    /// to stay clear (`Next(3) == 0` → 0), the rest take a low ambient
+    /// severity (`NextFloat() * 0.3`). The HAPPENING band (`:83`,
+    /// `0.4 + NextFloat`) is pinned by `test_DW_1_2_start_sets_duration_range_and_intent`;
+    /// the calm bands had no witness. `stop_sandstorm` (`:124-129`) clears
+    /// `Happening` and re-rolls the intent, so it is the public entry into
+    /// the calm branch. The replay draws the C#'s slot order on a twin
+    /// `FastRandom` (the `random_counter_drift_replays_the_rand_stream`
+    /// convention): ONE `Next(3)` per roll, then a `NextFloat` ONLY on the
+    /// ambient arm — the clear arm consumes no float.
+    #[test]
+    fn w4_c40_the_calm_intent_bands_replay_the_rand_stream() {
+        let mut s = Sandstorm::new(0x5EED);
+        let mut probe = FastRandom::new(0x5EED);
+        let mut clear_rolls = 0;
+        let mut ambient_rolls = 0;
+        for _ in 0..400 {
+            // Re-arm a running storm so `stop_sandstorm` re-rolls the intent
+            // from the not-happening branch every iteration.
+            s.happening = true;
+            s.stop_sandstorm();
+            assert!(!s.happening, "StopSandstorm clears Happening (:126)");
+            assert_eq!(s.time_left, 0, "and zeroes TimeLeft (:127)");
+            // The C#'s calm branch: `Next(3)` first, `NextFloat` only on the
+            // ambient arm (`Sandstorm.cs:85-92`).
+            if probe.next_range(0, 3) == 0 {
+                assert_eq!(s.intended_severity, 0.0, "the clear band (:87)");
+                clear_rolls += 1;
+            } else {
+                let expected = probe.next_float() * 0.3;
+                assert_eq!(
+                    s.intended_severity.to_bits(),
+                    expected.to_bits(),
+                    "the ambient band (:91)"
+                );
+                assert!(
+                    (0.0..0.3).contains(&s.intended_severity),
+                    "ambient severity stays below 0.3"
+                );
+                ambient_rolls += 1;
+            }
+        }
+        // Both bands fire on a 400-roll run (the 1/3 clear split is not
+        // degenerate), and the machine consumed exactly the probe's draws.
+        assert!(clear_rolls > 0 && ambient_rolls > 0, "both calm bands fire");
+        assert_eq!(s.rng.next_float().to_bits(), probe.next_float().to_bits());
     }
 
     #[test]

@@ -512,6 +512,17 @@ impl App {
     };
     ambience.update(dt, &ctx, ambience_rng);
                     }
+    // W4-c40: `SkyManager.Update` (`Main.cs:17139`, `SkyManager.cs:24-46`)
+    // runs the active skies `max(1, dayRate)` times per update — the
+    // SandstormSky tint fade (`SandstormSky.cs:24-47`) rides the same loop
+    // the ambience entities use (`AmbienceCtx::day_rate`). The manager's
+    // `!IsActive()` removal (`:39-42`) is the sky's own below-zero
+    // deactivate; the `FocusHelper.PauseSkies` head is this phase's
+    // `!paused` gate (the f40 lantern-sky fold).
+    let sky_iters = self.world.day_rate().max(1);
+    for _ in 0..sky_iters {
+        self.sandstorm_sky.update(dt);
+    }
     }
 
     /// S1-B-3 (batch review fix 1): the tile-edit and net halves ride the
