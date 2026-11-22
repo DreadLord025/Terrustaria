@@ -664,6 +664,23 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         rain.visual_alpha(),
     );
     let tile_color = crate::render::sky::tile_color(c);
+    // W4-d70: the NPC rows `MoonLordScreenShaderData.UpdateMoonLordIndex`
+    // reads (`MoonLordScreenShaderData.cs:30-68`) — the core (398) and the
+    // deathray eyes (400). Only active NPCs (`hp > 0`, the standing-active
+    // proxy the scan uses).
+    let moon_lord_npcs: Vec<tr_core::scene::MoonLordShaderNpc> = npcs
+        .iter()
+        .filter(|n| n.hp > 0 && matches!(n.kind, NpcKind::MoonLordCore | NpcKind::MoonLordFreeEye))
+        .map(|n| {
+            let (cx, cy) = n.center();
+            tr_core::scene::MoonLordShaderNpc {
+                npc_type: n.kind.net_id(),
+                center: [cx, cy],
+                ai0: n.ai[0],
+                ai1: n.ai[1],
+            }
+        })
+        .collect();
     let inputs = crate::app::filters::SceneVisualInputs {
         storm: &*sandstorm,
         wind_speed_current: wind.speed_current,
@@ -682,6 +699,10 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         bg_style: *bg_style,
         bg_delay: *bg_delay,
         global_time: *anim_time % 3600.0,
+        moon_lord_npcs: &moon_lord_npcs,
+        // W4-d70 DOC-SWEEP: the live sun-scorch counter (the vampire seed's
+        // burn ramp) feeds the HeatDistortion branches.
+        sun_scorch_counter: player.as_ref().map_or(0, |p| p.sun_scorch_counter),
     };
     // The graphics gates follow the live menu toggles (`TR_*` pins override).
     filter_driver.sync_settings(settings);

@@ -1542,6 +1542,35 @@ pub struct Player {
     /// Paladin's/Frozen/Hero shields above 25% life (`:15348-15353`).
     /// The hurt-side team redirect (`:38190`) rides C-7.
     pub has_paladin_shield: bool,
+    /// `Player.defendedByPaladin` (`Player.cs:1406`, reset `:18776`): the
+    /// Paladin's Shield buff (43) arm (`:11882-11885`). The draw half is
+    /// `Main.DrawPaladinsShield`'s second loop (`Main.cs:57224-57233`).
+    pub defended_by_paladin: bool,
+    /// `Player.inferno` (`Player.cs:946`, reset `:18489`): the Inferno
+    /// Potion buff (116) flag arm (`:10212-10213`). The light half is
+    /// already fed by `player_lights.rs`; the draw half is
+    /// `Main.DrawInfernoRings` (`Main.cs:64275-64324`).
+    pub inferno: bool,
+    /// `Player.flameRingScale` (`Player.cs:950`, default 1f): the inferno
+    /// halo's breathing scale, advanced 0.004/draw and reset to 0.8 at 1
+    /// (`Main.cs:64290-64300`). Never reset by `ResetEffects` — it persists
+    /// across buff expiry exactly like the C# field.
+    pub flame_ring_scale: f32,
+    /// `Player.flameRingRot` (`Player.cs:948`): the halo rotation, advanced
+    /// 0.05/draw and wrapped at ±2π (`Main.cs:64301-64311`).
+    pub flame_ring_rot: f32,
+    /// `Player._advancedShadows` (`Player.cs:1898-1902`, MaxAdvancedShadows =
+    /// 60): the per-tick position trail the lens flare's shadow offset reads
+    /// (`LensFlareElement.cs:34-37`). The port keeps only `Position` — the
+    /// `EntityShadowInfo` rotation/origin/direction/frame fields feed the
+    /// unported advanced-shadow DRAW layers (`PlayerDrawLayers.cs:2643+`).
+    advanced_shadows: [[f32; 2]; 60],
+    /// `Player.availableAdvancedShadowsCount` (`Player.cs:1900`): the trail's
+    /// fill, capped at 60 (`UpdateAdvancedShadows` `:4330-4334`).
+    pub available_advanced_shadows_count: i32,
+    /// `Player._lastAddedAvancedShadow` (the C# typo, `Player.cs:4335-4338`):
+    /// the ring's write head, wrapping at 60.
+    last_added_advanced_shadow: i32,
     /// M5-SEED-2: `Main.vampireSeed` — the `vampirism` micro seed's
     /// `InitializeSecretSeeds` write (`WorldGen.cs:555-558`). `UpdateLifeRegen`'s
     /// OnFire row reads it (`Player.cs:18983-18992`: −100 instead of −8, and the
@@ -2610,9 +2639,10 @@ pub struct Player {
     pub catalyst_band: bool,
     /// `Player.vampireBurningInSunlight` (`Player.cs:28709`): the vampire
     /// seed's sun-scorch flag — the gate on the Molten set's
-    /// `buffImmune[24]` (`ArmorSetBonuses.cs:285-288`). The granter
-    /// (`VampireSeedSunlightExposure`, `:28672-28719`) runs each live tick
-    /// before the counter (W4-d80); `ResetEffects` clears it (`:18730`).
+    /// uffImmune[24] (ArmorSetBonuses.cs:285-288). The granter
+    /// (VampireSeedSunlightExposure, :28672-28719) runs each live tick
+    /// before the counter (W4-d80; update_sun_scorch, the W4-d70
+    /// DOC-SWEEP port); ResetEffects clears it (:18730).
     pub vampire_burning_in_sunlight: bool,
     /// `Player.sunScorchCounter` (`Player.cs:28588`): the vampire seed's
     /// sun-scorch ramp — `Clamp(counter + (burning ? 1 : -num), 0, 300)`,
@@ -2632,6 +2662,15 @@ pub struct Player {
     /// 0`; the sim refreshes it per tick (the pool cannot hand a live
     /// player reference to a `Send` closure). `None` while no loop plays.
     pub(crate) sizzle_alive: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    /// `Player.ZoneGraveyard` (`Player.cs:16709` copies `SceneMetrics`):
+    /// the sun-scorch exposure gate (`:28681`). Fed from the scene scan
+    /// beside `zones` (the `craft::Zones` precedent).
+    pub zone_graveyard: bool,
+    /// `SceneMetrics.MoonLordSkyIntensity` (`SceneMetrics.cs:299-310`):
+    /// `1 - SmoothStep(3000, 6000, DistanceToMoonLord)` when a core (398)
+    /// is present, else `None`. The exposure gate (`:28682-28685`) refuses
+    /// above 0.5. Fed from the scan's `closest_npc_position[398]`.
+    pub moon_lord_sky_intensity: Option<f32>,
     /// `Player.hasMoltenQuiver` (`Player.cs:1974`): 4002/6181 (`:14467`,
     /// `:14596`) — converts the wooden arrow to the FireArrow and adds 2 ammo
     /// damage (`:53537-53541`).
@@ -3261,6 +3300,15 @@ impl Player {
             no_knockback: false,
             fire_walk: false,
             has_paladin_shield: false,
+            // `Player.cs:1406`/`:946`/`:948-950` — the buff-granted flags
+            // start false; `flameRingScale`'s field initializer is 1f.
+            defended_by_paladin: false,
+            inferno: false,
+            flame_ring_scale: 1.0,
+            flame_ring_rot: 0.0,
+            advanced_shadows: [[0.0; 2]; 60],
+            available_advanced_shadows_count: 0,
+            last_added_advanced_shadow: 0,
             // M5-SEED-2: `Main.vampireSeed` (`WorldGen.cs:555-558`) — the
             // OnFire regen row's source (`Player.cs:18983-18992`).
             vampirism: world
@@ -3553,6 +3601,8 @@ impl Player {
             sun_scorch_counter: 0,
             sizzle_audio_handle: tr_core::slot::SlotId::INVALID,
             sizzle_alive: None,
+            zone_graveyard: false,
+            moon_lord_sky_intensity: None,
             has_molten_quiver: false,
             acc_sharp_barb: false,
             acc_ammo_cycler_damage: false,
@@ -4317,6 +4367,9 @@ impl Player {
         self.jump = 0;
         self.fall_start = (y / TILE_PX) as i32;
         self.gfx_off_y = 0.0;
+        // The C#'s `Player.Teleport` clears the trail (`Player.cs:37483`);
+        // the debug hook is a teleport too.
+        self.reset_advanced_shadows();
     }
 
     /// `Player.ResetFallDamage` (`Player.cs:37712-37716`): `fallStart =
@@ -4451,6 +4504,9 @@ impl Player {
         // revive clears the sit/sleep state.
         self.sit_up();
         self.stop_sleeping();
+        // `Player.cs:37642` — `ResetAdvancedShadows`: the spawn clears the
+        // trail (the lens flare's shadow offset reads it).
+        self.reset_advanced_shadows();
     }
 
     /// `Player.KillMe`'s respawn setup (`Player.cs:38908-38910`): the dead
@@ -5587,6 +5643,169 @@ impl Player {
     /// the C# point and survives the mount port.
     pub fn mounted_center(&self) -> (f32, f32) {
         self.center()
+    }
+
+    /// `Player.UpdateAdvancedShadows` (`Player.cs:4328-4340`): the count
+    /// caps at 60, the write head pre-increments and wraps at 60, then the
+    /// slot takes the player's position (`EntityShadowInfo.CopyPlayer`
+    /// `:21-29` — the port keeps only `Position`). Runs at `Player.Update`'s
+    /// tail (`:28303`), after the movement.
+    pub fn update_advanced_shadows(&mut self) {
+        self.available_advanced_shadows_count += 1;
+        if self.available_advanced_shadows_count > 60 {
+            self.available_advanced_shadows_count = 60;
+        }
+        self.last_added_advanced_shadow += 1;
+        if self.last_added_advanced_shadow >= 60 {
+            self.last_added_advanced_shadow = 0;
+        }
+        self.advanced_shadows[self.last_added_advanced_shadow as usize] = [self.x, self.y];
+    }
+
+    /// `Player.GetAdvancedShadow` (`Player.cs:4318-4326`): index 0 is the
+    /// freshest slot; the index clamps at the available count (the C#'s `>`
+    /// test, kept verbatim) and walks back through the ring
+    /// (`ModulusPositive(60)`).
+    pub fn get_advanced_shadow(&self, shadow_index: i32) -> [f32; 2] {
+        let shadow_index = shadow_index.min(self.available_advanced_shadows_count);
+        let num = (self.last_added_advanced_shadow - shadow_index).rem_euclid(60);
+        self.advanced_shadows[num as usize]
+    }
+
+    /// `Player.ResetAdvancedShadows` (`Player.cs:4342-4345`): the teleport
+    /// (`:37483`) and spawn (`:37642`) clears — only the count, the ring
+    /// keeps its stale slots (the C# does not zero them).
+    pub fn reset_advanced_shadows(&mut self) {
+        self.available_advanced_shadows_count = 0;
+    }
+
+    /// `Player.VampireSeedSunlightExposure` (`Player.cs:28672-28719`): the
+    /// vampire seed's column probe — 15 tiles up from the feet, burning
+    /// while the sky is open (no wall, or the 21/318 glass walls). The
+    /// `raining`/`zone_graveyard`/`zone_glowshroom` gates read the scene
+    /// snapshot; the umbrella (946/4707) and the UFO mount (56) shield.
+    /// Deviations: the invisible-block/wall terms (`Tile.cs:528-559`) have
+    /// no port bit, so they fold to false (`ShouldShowInvisibleBlocksAndWalls`
+    /// is the debug toggle, off in play).
+    pub fn vampire_seed_sunlight_exposure(
+        &mut self,
+        world: &World,
+        raining: bool,
+    ) {
+        // `:28674-28675`: the column from the centre-x / feet-y tiles.
+        let num = (self.center().0 as i32) / 16;
+        let mut num2 = ((self.bottom().1 - 1.0) as i32) / 16;
+        if !self.vampirism {
+            return;
+        }
+        // `:28681`: above the surface, day, no rain/eclipse/graveyard/glowshroom.
+        let mut flag = (num2 as f64) < world.world_surface
+            && world.day_time
+            && !raining
+            && !world.eclipse
+            && !self.zone_graveyard
+            && !self.zones.glowshroom;
+        // `:28682-28685`: the Moon Lord's sky dim (> 0.5) shelters.
+        if flag && self.moon_lord_sky_intensity.is_some_and(|v| v > 0.5) {
+            flag = false;
+        }
+        if !flag || self.wet {
+            return;
+        }
+        // `:28690-28698`: the umbrella / the UFO mount shield.
+        let mut flag2 = matches!(self.held_item_kind, 946 | 4707);
+        if self.mount.is_active() && self.mount.kind() == 56 {
+            flag2 = false;
+        }
+        if flag2 {
+            return;
+        }
+        // `:28699-28718`: the 15-tile climb.
+        let mut num4 = 15;
+        while num4 > 0 {
+            let Some(tile) = world.tile(num, num2) else {
+                break;
+            };
+            // `:28707`: no wall, or the two glass walls (21/318).
+            if tile.wall == 0 || tile.wall == 21 || tile.wall == 318 {
+                self.vampire_burning_in_sunlight = true;
+                break;
+            }
+            num4 -= 1;
+            num2 -= 1;
+            // `:28714`: `SolidTile3` blocks the climb (the loosest solid
+            // test — `stray.rs::solid_tile3`'s shape), except the alloy
+            // bars (54) and the echo blocks (541, invisible → transparent).
+            let solid3 = world.tile(num, num2).is_some_and(|t| {
+                t.active()
+                    && !t.inactive()
+                    && td::TILE_SOLID.has(t.kind)
+                    && !td::TILE_SOLID_TOP.has(t.kind)
+            });
+            if solid3 && tile.kind != 54 && tile.kind != 541 {
+                break;
+            }
+        }
+    }
+
+    /// `Player.UpdateSunScorchValues` (`Player.cs:28580-28604`): the counter
+    /// ramps +1 while burning, −6 (−2 dead) otherwise, clamped 0..300. The
+    /// sizzle-loop sound half is unmodelled (no tracked-loop seam here).
+    pub fn update_sun_scorch_values(&mut self) {
+        let num = if self.dead {
+            self.vampire_burning_in_sunlight = false;
+            2
+        } else {
+            6
+        };
+        let delta = if self.vampire_burning_in_sunlight { 1 } else { -num };
+        self.sun_scorch_counter = (self.sun_scorch_counter + delta).clamp(0, 300);
+    }
+
+    /// `Player.UpdateSunScorch` (`Player.cs:28626-28670`): the exposure
+    /// probe + the counter ramp, then the ≥120 burn — the buff-immune wipe,
+    /// the OnFire/CursedInferno/Ichor grants, the mount dismount and the
+    /// wing/rocket strip. The `PlayerFrame` charred-visual swap
+    /// (`:28639-28652`) and the VampireOnFire particle (`:28656-28659`) are
+    /// draw seams, unmodelled.
+    pub fn update_sun_scorch(&mut self, world: &World, raining: bool) {
+        self.vampire_seed_sunlight_exposure(world, raining);
+        let num = self.sun_scorch_counter;
+        self.update_sun_scorch_values();
+        if !self.vampire_burning_in_sunlight || self.sun_scorch_counter < 120 {
+            return;
+        }
+        let _ = num; // the charred-frame edge (`:28639`) is the draw seam
+        // `:28653`: `Array.Clear(buffImmune, 0, BuffID.Count)`.
+        self.buffs.reset_buff_immune();
+        // `:28661-28663`: the three burn debuffs, 3 ticks each.
+        self.buffs.add_buff(24, 3);
+        self.buffs.add_buff(23, 3);
+        self.buffs.add_buff(32, 3);
+        // `:28664-28667`: the mount dismounts.
+        if self.mount.is_active() {
+            self.try_dismount(world);
+        }
+        // `:28668-28669`: the flight strip.
+        self.wings_logic = 0;
+        self.rocket_boots = 0;
+    }
+
+    /// `Player.CanDefendWithPaladinsShield` (`Player.cs:38188-38195`):
+    /// active, alive, shield-bearing, on a non-zero team matching the
+    /// other player's, and above 25% of the effective life cap
+    /// (`statLife > statLifeMax2 * 0.25f`, strict >). The port's single
+    /// `max_hp` stands in for `statLifeMax2` (the `player_lights.rs`
+    /// half-life-gate precedent). `active` is true for the live player.
+    pub fn can_defend_with_paladins_shield(&self, other_player_team: i32) -> bool {
+        if !self.dead
+            && self.has_paladin_shield
+            && self.team > 0
+            && self.team == other_player_team
+        {
+            return self.hp as f32 > self.max_hp as f32 * 0.25;
+        }
+        false
     }
 
     /// `Player.MountedTop` (`Player.cs:3349-3360`):
@@ -6929,6 +7148,12 @@ impl Player {
         // `Player.cs:16970`: `ResetEffects` clears `windPushed` — the buff-194
         // arm below re-grants it per tick (W4-c40).
         self.wind_pushed = false;
+        // `Player.cs:18489` (`inferno = false`) and `:18776`
+        // (`defendedByPaladin = false`): the buff-116 / buff-43 arms below
+        // re-grant per tick. `flameRingScale`/`flameRingRot` are NOT reset
+        // (no ResetEffects writer exists — the halo animation persists).
+        self.inferno = false;
+        self.defended_by_paladin = false;
         // S1-P-i41 — the water-mount / Cursed flag clears of `ResetEffects`:
         // `canFloatInWater = false` (`Player.cs:18332`), `accFlipper = false`
         // (`:18361`), `noItems = false` / `cursed = false` (`:18687-18688`),
@@ -7775,6 +8000,17 @@ impl Player {
                     self.lava_vision = true;
                     self.fire_walk = true;
                 }
+                // W4-d70 — `:10212-10213`: the Inferno Potion (116) flag
+                // arm. The `AddLight` half (`:10215`) is already fed by
+                // `player_lights.rs::player_buff_lights` (same RGB, no
+                // double-feed); the NPC/PvP damage scan (`:10216-10264`)
+                // rides the buff-wiring lane (R15), not the screen-effect
+                // draw this flag gates (`Main.DrawInfernoRings`).
+                116 => self.inferno = true,
+                // W4-d70 — `:11882-11885`: the Paladin's Shield buff (43)
+                // grants `defendedByPaladin` (the `DrawPaladinsShield`
+                // second loop's gate, `Main.cs:57224`).
+                43 => self.defended_by_paladin = true,
                 _ => {}
             }
         }
@@ -7840,6 +8076,10 @@ impl Player {
         // `UpdateEquips`' second loop (`Player.cs:12946-12952`): the functional
         // accessory pass over the slots 3..10, gated per slot - the seam below.
         self.update_equips();
+        // `Player.cs:25634` — `UpdateSunScorch` right after `UpdateEquips`
+        // (W4-d70 DOC-SWEEP): the vampire seed's exposure probe + the
+        // sun-scorch counter the lens flare / HeatDistortion read.
+        self.update_sun_scorch(world, raining);
         // `UpdateEquips`' whip-accessory tail (`Player.cs:12970-12984`): the
         // Silver Bracer adds `tagEffectDuration += 2f` and `maxTagEffects++`
         // (`minionDamage += 0f` is a no-op), the Mobius Strip adds
@@ -8914,6 +9154,12 @@ impl Player {
         }
 
         self.update_frames(world);
+
+        // `Player.cs:28300-28303`: the grapple clear + the advanced-shadow
+        // trail's per-tick push, at the update's tail (the port's grapple
+        // registration rebuilds on the projectile pass — the clear's own
+        // seam; the shadow push lands here, after the movement).
+        self.update_advanced_shadows();
 
         // `Player.cs:27618-27635`: the release flags recompute at the end of
         // the tick — the double-tap reads the press edges against them.
@@ -11193,6 +11439,9 @@ impl Player {
         self.fall_start = (new_y / TILE_PX) as i32;
         self.prev_x = new_x;
         self.prev_y = new_y;
+        // `:37483` — `ResetAdvancedShadows`: the teleport clears the trail
+        // (the lens flare's shadow offset must not read the pre-jump path).
+        self.reset_advanced_shadows();
     }
 
     /// `Player.Shellphone_Spawn` (`Player.cs:56164-56181`): the world-spawn
@@ -14430,6 +14679,68 @@ fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slope
 #[cfg(test)]
 
 mod tests {
+    /// W4-d70 DOC-SWEEP — `Player.cs:28580-28604`: the counter ramps +1
+    /// while burning, −6 (−2 dead) otherwise, clamped 0..300.
+    #[test]
+    fn the_sun_scorch_counter_ramps_and_clamps() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // Not burning: −6/tick, floored at 0.
+        p.sun_scorch_counter = 10;
+        p.update_sun_scorch_values();
+        assert_eq!(p.sun_scorch_counter, 4);
+        p.update_sun_scorch_values();
+        assert_eq!(p.sun_scorch_counter, 0);
+        // Burning: +1/tick, capped at 300.
+        p.vampire_burning_in_sunlight = true;
+        p.sun_scorch_counter = 299;
+        p.update_sun_scorch_values();
+        assert_eq!(p.sun_scorch_counter, 300);
+        p.update_sun_scorch_values();
+        assert_eq!(p.sun_scorch_counter, 300);
+        // Dead: the flag clears and the decay is −2.
+        p.dead = true;
+        p.update_sun_scorch_values();
+        assert!(!p.vampire_burning_in_sunlight);
+        assert_eq!(p.sun_scorch_counter, 298);
+    }
+
+    /// W4-d70 DOC-SWEEP — `Player.cs:28672-28719`: the exposure probe only
+    /// fires on the vampire seed, above the surface, in daylight, with an
+    /// open sky column; a wall shelters, the umbrella shields.
+    #[test]
+    fn the_vampire_exposure_probe_gates_on_seed_sky_and_shelter() {
+        let mut w = World::new("t".into(), 64, 800);
+        w.world_surface = 100.0;
+        w.day_time = true;
+        let mut p = Player::spawn(&w);
+        // Stand above the surface with an open column.
+        p.x = 32.0 * 16.0;
+        p.y = 50.0 * 16.0;
+        // Not the vampire seed: never burns.
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight);
+        // The vampire seed + open sky: burns.
+        p.vampirism = true;
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(p.vampire_burning_in_sunlight);
+        // Rain shelters.
+        p.vampire_burning_in_sunlight = false;
+        p.vampire_seed_sunlight_exposure(&w, true);
+        assert!(!p.vampire_burning_in_sunlight);
+        // The umbrella (946) shields.
+        p.held_item_kind = 946;
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight);
+        p.held_item_kind = 0;
+        // A wall shelters: the probe starts at the feet tile
+        // ((50*16 + 42 - 1)/16 = 52), centre-x tile (512+10)/16 = 32.
+        let i = w.index(32, 52);
+        w.tiles[i].wall = 1;
+        p.vampire_seed_sunlight_exposure(&w, false);
+        assert!(!p.vampire_burning_in_sunlight);
+    }
+
     #[test]
     fn dye_cache_mirrors_update_dyes() {
         let mut p = Player::spawn(&World::new("t".into(), 64, 800));

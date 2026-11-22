@@ -232,6 +232,17 @@ const MOON_EXPLOSION_SHEETS: [&str; 5] = [
     "Misc/MoonExplosion/Explosion",
 ];
 
+/// `Images/Misc/Sunflare/Lens/*` sheet names, in the order
+/// [`Lookups::sunflare_lens`] indexes them (`NextHorizonRenderer.cs:57-62`):
+/// the blurry point, the sharp point, the bokeh (`Flare1`), the spectra
+/// (`Flare2`).
+const SUNFLARE_LENS_SHEETS: [&str; 4] = [
+    "Misc/Sunflare/Lens/PointBlurry",
+    "Misc/Sunflare/Lens/PointSharp",
+    "Misc/Sunflare/Lens/Flare1",
+    "Misc/Sunflare/Lens/Flare2",
+];
+
 /// Every whole-image sheet the static half of the atlas packs, in a fixed
 /// order. Exposed so the renderer's tests can assert that a sheet a draw arm
 /// asks `sky_tex` for is actually in here — the M4-NPC-3v bug was exactly that
@@ -1545,6 +1556,19 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         }
     }
 
+    // W4-d70: the lens-flare elements (`NextHorizonRenderer.LoadTextures`,
+    // `NextHorizonRenderer.cs:36-66`): `Images/Misc/Sunflare/Lens/{PointBlurry,
+    // PointSharp,Flare1,Flare2}` — the bokeh/spectra/point sheets the sunrise
+    // and sunset flare chains draw. The gradient/dither/flare1/flare2 sheets
+    // the same loader requests feed the horizon gradient (unported), so only
+    // the four Lens elements are packed here.
+    for name in ["PointBlurry", "PointSharp", "Flare1", "Flare2"] {
+        match load_misc_png(dir, &format!("Sunflare/Lens/{name}")) {
+            Ok(img) => images.push(img),
+            Err(_) => log::warn!("missing Misc/Sunflare/Lens/{name}"),
+        }
+    }
+
     // `DrawTile_LiquidBehindTile`: `Liquid_*` is the 16 px partial strip and
     // `LiquidSlope_*` the four diagonal masks drawn behind blocks that stand in
     // liquid.
@@ -2277,6 +2301,11 @@ pub struct Lookups {
     /// `Images/Misc/MoonExplosion/{Spine,Shoulder,Torso,Head,Explosion}`
     /// (`MoonlordDeathDrama.cs:231-242`).
     pub moon_explosion: [Option<tr_render::SheetRect>; 5],
+    /// `Images/Misc/Sunflare/Lens/{PointBlurry,PointSharp,Flare1,Flare2}`
+    /// (`NextHorizonRenderer.LoadTextures`, `NextHorizonRenderer.cs:57-62`):
+    /// the lens-flare elements — `[0]` the blurry point, `[1]` the sharp
+    /// point, `[2]` the bokeh (`Flare1`), `[3]` the spectra (`Flare2`).
+    pub sunflare_lens: [Option<tr_render::SheetRect>; 4],
     /// `TextureAssets.Buff[type]` (`Images/Buff_<id>`): the buff bar's icons
     /// (`Main.DrawBuffIcon`, `Main.cs:43310`).
     pub buff_icons: HashMap<u16, tr_render::SheetRect>,
@@ -2722,6 +2751,7 @@ impl Lookups {
             extra_98: atlas.sheet("Extra_98").copied(),
             flame_ring: atlas.sheet("FlameRing").copied(),
             moon_explosion: MOON_EXPLOSION_SHEETS.map(|name| atlas.sheet(name).copied()),
+            sunflare_lens: SUNFLARE_LENS_SHEETS.map(|name| atlas.sheet(name).copied()),
             ui_heart: atlas.sheet("Heart").copied(),
             ui_bubble: atlas.sheet("Bubble").copied(),
             ui_health_bar1: atlas.sheet("HealthBar1").copied(),

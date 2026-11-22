@@ -2504,6 +2504,18 @@ pub struct Npc {
     /// `AI_077_MoonLordCore`'s despawn request (`:41492-41513`): clear
     /// the parts with the core.
     pub wants_moon_parts_clear: bool,
+    /// W4-d70 DOC-SWEEP: `MoonlordDeathDrama.RequestLight`
+    /// (`MoonlordDeathDrama.cs:245-256`) — the (light, spot) pairs this
+    /// tick's AI asked for; the sim drains them into `SceneState`
+    /// (`request_light`). The core's spawn/teleport/drama/despawn ramps
+    /// (`NPC.cs:41179/41203/41314/41436/41453`) and the DD2 crystal's
+    /// win/loss scenes (`:40794/40890`) fill it.
+    pub wants_drama_light: Vec<(f32, f32, f32)>,
+    /// W4-d70 DOC-SWEEP: `MoonlordDeathDrama.AddExplosion`
+    /// (`MoonlordDeathDrama.cs:240-243`) — the crash drama's dust-storm
+    /// spots (`NPC.cs:41364`); the sim drains them with the shared
+    /// `Main.rand` frame-speed draw.
+    pub wants_drama_explosion: Vec<(f32, f32)>,
     /// The Moon Leech request (`AI_079`'s `:42303-42318` / the leech
     /// blob's `:36658-36690`): a 456 leeched player spawns the 401 clot,
     /// which then drains 1000 hp from the head -> the core -> the hands.
@@ -3798,6 +3810,8 @@ impl Npc {
             moon_core_phase: 0.0,
             wants_moon_sweep: 0,
             moon_hop: None,
+            wants_drama_light: Vec::new(),
+            wants_drama_explosion: Vec::new(),
             rifleman_rearmed: false,
             wants_hostile_shot: Vec::new(),
             wants_hostile_shot_ai: Vec::new(),
@@ -17079,9 +17093,10 @@ impl Npc {
         // (the machine holds no `App`). Deferred presentation (ANALYSIS):
         // the 713 projectile + the
         // redundant portal re-mark (`:40762-40778` — `StartVictoryScene`
-        // already flipped every 549), the dust rings (`:40804-40856`) and
-        // the `MoonlordDeathDrama` light (`:40791-40795`). W4-d80 final:
-        // the `ai[0] == 3` `DD2_WinScene` cue now rides the tracked queue.
+        // already flipped every 549), the dust rings (:40804-40856).
+        // The MoonlordDeathDrama light (:40791-40795) is the W4-d70
+        // DOC-SWEEP port (wants_drama_light below). W4-d80 final:
+        // the i[0] == 3 DD2_WinScene cue now rides the tracked queue.
         if self.ai[1] == 2.0 {
             // `:40760-40761`: the hostile-only shield folds into the full
             // `dont_take_damage` (the loss arm's recorded deviation).
@@ -17107,6 +17122,13 @@ impl Npc {
                 self.vy = (t * std::f32::consts::TAU).cos() * 0.25 - 0.25;
             } else {
                 self.vy = 0.0;
+            }
+            // `:40791-40795`: the win scene's white-flash ramp
+            // (`GetLerpValue(480, 570, ai[0])`, non-zero only).
+            let lerp = tr_core::scene::get_lerp_value(480.0, 570.0, self.ai[0], true);
+            if lerp != 0.0 {
+                let (cx, cy) = self.center();
+                self.wants_drama_light.push((lerp, cx, cy));
             }
             // `:40796-40803`: the 600-tick end — `StopInvasion(win: true)`,
             // `dontTakeDamage = false`, `life = 0`, `checkDead` (the
@@ -17137,6 +17159,13 @@ impl Npc {
             // `:40886`: `ai[0]++` (the `ai[0] == 0` first-tick arm ran at
             // the sim's intercept).
             self.ai[0] += 1.0;
+            // `:40887-40891`: the loss scene's white-flash ramp
+            // (`GetLerpValue(480, 600, ai[0])`, non-zero only).
+            let lerp = tr_core::scene::get_lerp_value(480.0, 600.0, self.ai[0], true);
+            if lerp != 0.0 {
+                let (cx, cy) = self.center();
+                self.wants_drama_light.push((lerp, cx, cy));
+            }
             // `:40892-40896`: the 96-tick rise — `velocity.Y =
             // Lerp(0, -1, ai[0]/96)` while under 96.
             if self.ai[0] < 96.0 {
@@ -17157,9 +17186,9 @@ impl Npc {
                 self.hp = 0;
             }
             // The scene flight (the velocity the arm wrote; the dust
-            // `:40941-40952` and the `MoonlordDeathDrama.RequestLight`
-            // `:40887-40891` are unmodelled — they draw the C#'s dust RNG,
-            // the port draws nothing here).
+            // `:40941-40952` is unmodelled — it draws the C#'s dust RNG,
+            // the port draws nothing here; the RequestLight ramp above
+            // is the W4-d70 DOC-SWEEP port).
             self.y += self.vy;
             let _ = (world, player);
             return;
@@ -17732,6 +17761,10 @@ impl Npc {
             // then back to the cruise.
             self.dont_take_damage = true;
             self.ai[1] += 1.0;
+            // `:41177-41180`: the white-flash ramp while under 60.
+            if self.ai[1] < 60.0 {
+                self.wants_drama_light.push((self.ai[1] / 30.0, cx, cy));
+            }
             if self.ai[1] == 60.0 {
                 self.ai[1] = 0.0;
                 self.ai[0] = 0.0;
@@ -17747,6 +17780,10 @@ impl Npc {
             // `wants_moon_parts` on the 60th tick.
             self.dont_take_damage = true;
             self.ai[1] += 1.0;
+            // `:41201-41204`: the same white-flash ramp.
+            if self.ai[1] < 60.0 {
+                self.wants_drama_light.push((self.ai[1] / 30.0, cx, cy));
+            }
             if self.ai[1] == 60.0 {
                 self.ai[1] = 0.0;
                 self.ai[0] = 0.0;
@@ -17795,6 +17832,10 @@ impl Npc {
             self.vx += (0.0 - self.vx) * 0.98;
             self.vy += (-0.5 - self.vy) * 0.98;
             self.ai[1] += 1.0;
+            // `:41312-41315`: the white-flash ramp while under 60.
+            if self.ai[1] < 60.0 {
+                self.wants_drama_light.push((self.ai[1] / 60.0, cx, cy));
+            }
             // S1-E-21g — `NPC.cs:41430-41433`: the crash's first tick
             // cries (`ai[1] == 1` AFTER the increment — the C# checks
             // at the arm's tail; `NPCDeath61` at base.Center, the
@@ -17823,15 +17864,33 @@ impl Npc {
                 // per inner-loop iteration another RandomVector2 + radius.
                 // The dust-GATED draws (the `num4 * 2` fan + the inner
                 // Dust.NewDust streams) are deferred with the dust engine.
-                let _ = rng.next_double();
-                let _ = rng.next_double();
-                let _ = rng.next_float();
+                // W4-d70 DOC-SWEEP: the spot itself feeds AddExplosion
+                // (`:41364`, gated on the same in-world/non-solid flag3).
+                let mut ox = rng.next_double() as f32 * 2.0 - 1.0;
+                let mut oy = rng.next_double() as f32 * 2.0 - 1.0;
+                let ol = (ox * ox + oy * oy).sqrt();
+                if ol != 0.0 {
+                    ox /= ol;
+                    oy /= ol;
+                }
+                let r = 20.0 + rng.next_float() * 400.0;
+                let (sx, sy) = (cx + ox * r, cy + oy * r);
+                let (tx, ty) = ((sx / 16.0) as i32, (sy / 16.0) as i32);
+                let in_world = tx >= 0 && ty >= 0 && tx < world.width && ty < world.height;
+                let solid = in_world
+                    && world
+                        .tile(tx, ty)
+                        .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
                 let _ = rng.next_range(6, 19);
                 let _ = rng.next_float();
                 let _ = rng.next_float();
                 let _ = rng.next_float();
                 let _ = rng.next_float();
                 let _ = rng.next_max(2); // Utils.SelectRandom(31, 229)
+                // `:41362-41364`: `flag3 && !Main.dedServ` → AddExplosion.
+                if in_world && !solid {
+                    self.wants_drama_explosion.push((sx, sy));
+                }
                 let inner = (self.ai[1] / 60.0).ceil() as i32;
                 for _ in 0..inner {
                     let _ = rng.next_double();
@@ -17879,6 +17938,11 @@ impl Npc {
                         self.wants_hostile_shot.push((622u16, sx, sy, vx, vy, 0));
                     }
                 }
+            // `:41434-41437`: the white-flash ramp from 480 on.
+            if self.ai[1] >= 480.0 {
+                self.wants_drama_light
+                    .push(((self.ai[1] - 480.0) / 120.0, cx, cy));
+            }
             self.x += self.vx;
             self.y += self.vy;
             if self.ai[1] >= 600.0 {
@@ -17894,6 +17958,10 @@ impl Npc {
             self.vx += (self.facing as f32 - self.vx) * 0.98;
             self.vy += (-0.5 - self.vy) * 0.98;
             self.ai[1] += 1.0;
+            // `:41451-41454`: the white-flash ramp while under 60.
+            if self.ai[1] < 60.0 {
+                self.wants_drama_light.push((self.ai[1] / 40.0, cx, cy));
+            }
             if self.ai[1] == 40.0 {
                 // `:41455-41488`'s sweep: the five projectile kinds + the
                 // 400s drop (the gore sweep is unmodelled — the port has

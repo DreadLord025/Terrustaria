@@ -180,9 +180,11 @@ fn water_uv(uv: vec2<f32>) -> vec2<f32> {
 // phase-4 rule): the port's approximation is the phase-4 distortion shape —
 // two decorrelated noise lookups displace the whole view, scaled by
 // `uIntensity` (the `Main.cs:64977-64979` countdown formula the tick driver
-// feeds). The vanilla pass also reads `uTargetPosition` (the shake anchor);
-// the port passes Zero — the exact `UpdateMoonLordIndex` value while the
-// filter is active, because no Moon Lord exists before the countdown lands.
+// feeds). W4-d70: `uTargetPosition` now carries the live
+// `UpdateMoonLordIndex` anchor (`MoonLordScreenShaderData.cs:20-79`, the
+// core/deathray-eye/despawn-fade position) — the driver feeds it through
+// `build_params`; this approximation does not read it (the compiled pass's
+// anchor-relative falloff is untranslated), so the shake stays whole-view.
 fn moon_lord_uv(uv: vec2<f32>) -> vec2<f32> {
     let p = world_px(uv) / params.image_size * 8.0;
     let t = params.time * 10.0;

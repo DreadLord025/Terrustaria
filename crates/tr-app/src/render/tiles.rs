@@ -497,6 +497,9 @@ pub(crate) fn draw_tiles(
     // W4-d127 — `Main.gamePaused` for the WoF mouth clock's advance gate
     // (`DrawWOFBody`, `Main.cs:38427`).
     game_paused: bool,
+    // W4-d70: `MoonLordScreenShaderData.LatestFilterStrength` — the
+    // `GetMoonLordColoring` input threaded to the NPC pass.
+    latest_filter_strength: f32,
 ) -> TileDrawStats {
     let t_total = Instant::now();
     // W4-d127 — `Main.wofDrawFrameIndex`'s per-frame tick (`Main.cs:38427-
@@ -758,6 +761,7 @@ pub(crate) fn draw_tiles(
             r, &sheets, &wof_ctx, light, style, anim_time, camera, zoom, screen,
         );
     }
+        latest_filter_strength,
 
     // W4-g12 doc-sweep: `Main.DrawGoreBehind` (`Main.cs:21842-21871`,
     // capture site `:56934-56940`) — the drip rows outside frames 7..=9
@@ -1989,6 +1993,7 @@ pub(crate) fn draw_tiles(
         zoom,
         screen,
         false,
+        latest_filter_strength,
     );
     draw_phase("player");
     if let Some(p) = player {

@@ -6443,6 +6443,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 } else if !npc.moon_despawn_kill {
                     app.world.downed_moon_lord = true;
                     app.world.lunar_apocalypse_is_up = false;
+                    // W4-d70 DOC-SWEEP — `NPC.HitEffect`'s 398/1337 arm
+                    // (`NPC.cs:82679-82682`): the drama's end flings the
+                    // four body pieces, seeded by `Main.rand.Next(100)`
+                    // (the death pass's UpdateNPCs stream, the death-cue
+                    // precedent). The `netMode != 2` gate folds away (the
+                    // port's host simulates; the client reads the drama
+                    // through its own scene state).
+                    let (cx, cy) = npc.center();
+                    let seed = app.rngs.stream(RngKey::UpdateNpcs).next_max(100);
+                    app.scene_state.throw_pieces([cx, cy], seed);
                 }
             }
             NpcKind::NebulaTower => {
@@ -8017,6 +8027,22 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     n.carrier_y += hy;
                 }
             }
+        }
+    }
+    // W4-d70 DOC-SWEEP: the MoonlordDeathDrama request drains
+    // (`MoonlordDeathDrama.cs:240-256`) — the AI machines queue the
+    // RequestLight ramps (the core's spawn/teleport/drama/despawn, the DD2
+    // crystal's win/loss scenes) and the crash drama's AddExplosion spots;
+    // the SceneState owns the whitening fade + the blast list. The
+    // explosion's frame-speed draw rides the shared `Main.rand` stream
+    // (`NPC.cs:41364` → `AddExplosion` `:242`), the light requests draw
+    // nothing. Both drain in NPC slot order, like the C#'s array walk.
+    for n in app.npcs.iter_mut() {
+        for (light, sx, sy) in n.wants_drama_light.drain(..) {
+            app.scene_state.request_light(light, [sx, sy]);
+        }
+        for (sx, sy) in n.wants_drama_explosion.drain(..) {
+            app.scene_state.add_explosion([sx, sy], app.rngs.global());
         }
     }
     // The Dutchman's pirate-drop resolve (`AI_093`'s `Next(300)` arm):
@@ -18339,6 +18365,73 @@ mod moon_lord_tests {
             .count();
         assert_eq!(hands, 2, "the two hands — and only the two");
         assert_eq!(heads, 1, "the head — and only the head");
+    }
+
+    /// W4-d70 DOC-SWEEP — the core's white-flash ramps
+    /// (`NPC.cs:41179/41203/41314/41436/41453`) drain into the SceneState's
+    /// `request_light`; the spawn-in's first 59 ticks ask for `ai[1]/30`.
+    #[test]
+    fn the_core_spawn_ramp_requests_drama_light() {
+        let (mut app, _player) = app_player();
+        let mut core = Npc::new(
+            NpcKind::MoonLordCore,
+            150.0 * TILE_PX,
+            100.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        core.hp = core.max_hp;
+        app.npcs.push(core);
+        // One tick: the spawn latch arms ai[0] = -1, ai[1] = 1 → the
+        // request (1/30) drains into the scene state.
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            (app.scene_state.moonlord_requested_light - 1.0 / 30.0).abs() < 1e-6,
+            "the first tick asks for ai[1]/30"
+        );
+        // The SceneState's update moves the whitening toward the request
+        // (0.02/tick) and clears the request — the fade has begun.
+        crate::world_sim::scene_scan::update_scene(&mut app, 1.0 / 60.0, Vec2::new(1280.0, 720.0));
+        assert!(
+            app.scene_state.moonlord_whitening > 0.0,
+            "the whitening fade began"
+        );
+        // The drain empties the machine's queue.
+        assert!(
+            app.npcs
+                .iter()
+                .all(|n| n.wants_drama_light.is_empty()),
+            "the requests drained"
+        );
+    }
+
+    /// W4-d70 DOC-SWEEP — the core's drama end (`NPC.cs:82679-82682`'s
+    /// `HitEffect(0, 1337)` arm) flings the four body pieces through
+    /// `throw_pieces`, seeded by the death pass's `Next(100)`.
+    #[test]
+    fn the_core_death_flings_the_drama_pieces() {
+        let (mut app, _player) = app_player();
+        let mut core = Npc::new(
+            NpcKind::MoonLordCore,
+            150.0 * TILE_PX,
+            100.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        core.hp = core.max_hp;
+        // The drama's own end: ai[0] already 2, ai[1] at 600 → life = 0
+        // through checkDead (NOT the despawn bypass).
+        core.moon_spawn_latch = true;
+        core.ai[0] = 2.0;
+        core.ai[1] = 599.0;
+        app.npcs.push(core);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.scene_state.moonlord_pieces.len(),
+            4,
+            "the four body pieces flung"
+        );
+        assert!(app.world.downed_moon_lord, "the drama's checkDead raised the flag");
     }
 
     #[test]

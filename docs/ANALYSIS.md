@@ -25471,16 +25471,84 @@ Deliberate deviations, recorded rather than guessed:
   `white_uv` quad (`push_fx_rect`). `MoonlordPiece.GetLight` averages the port's
   `LightMap` rather than `Lighting.GetColor` - the same tile colours, a
   different seam.
-* `DrawPaladinsShield` and `DrawInfernoRings` are **not** drawn: their gates are
-  `Player.hasPaladinShield` / `defendedByPaladin` / `inferno` and the
-  `flameRingScale` / `flameRingRot` animation state, none of which the port's
-  `Player` carries. The sheets (`Extra_98`, `FlameRing`) load so the draws can
-  be added without touching the asset pipeline.
-* The lens flare (`Main.DrawLensFlare`, `Main.cs:62509-62514`) is a
-  `NextHorizonRenderer` feature that the port does not have.
+* `DrawPaladinsShield` and `DrawInfernoRings` **landed W4-d70 (2026-11-21)**:
+  `Player` now carries `defendedByPaladin` / `inferno` / `flameRingScale` /
+  `flameRingRot` (the buff-43 / buff-116 grant arms, `Player.cs:11882-11885` /
+  `:10212-10213`, cleared by `ResetEffects` `:18776` / `:18489`; the halo
+  counters are NOT reset, exactly like the C# fields). `screen_fx.rs` ports
+  `DrawPaladinsShield` / `DrawPaladinsShieldBoundary` (`Main.cs:57196-57275`),
+  `DrawPrettyStarSparkle` (`:35297-35313`) and `DrawInfernoRings`
+  (`:64275-64324`), wired at the `Main.cs:62316-62317` seam (after the
+  over-wire cached projectiles, before `DrawLensFlare`). The ring animation
+  advances only while `FocusHelper.AllowPlayerToEmitEffects`
+  (`!WorldUpdateStepper.DrawnThisUpdate`). The paladin peer loops read a
+  `PaladinPeer` snapshot. **W4-d70 DOC-SWEEP (2026-11-21):** `PlayerNet` now
+  carries `team`/`dead` (fed by `12 PlayerSpawn` `MessageBuffer.cs:914-918`,
+  `45 TeamChange` `:2325-2336` and the `13 PlayerState` port extension) and
+  re-derives `hasPaladinShield` from the synced armour block
+  (`PlayerNet::paladin_shield` — 938/3997/3998 in functional slots 3..10 above
+  25% life, `Player.cs:15348-15353`); the draw passes the `remote_players`
+  snapshots in slot order, so both loops are live in MP. Deviation: the port
+  does not simulate remote equips, so the shield flag is re-derived from the
+  `5 PlayerInventory` copies rather than read off the peer's own live
+  `hasPaladinShield`; the local armour block's `5` diff batches on the net
+  cadence tick (`net_armor_last`) instead of the C#'s per-change send.
+* The lens flare **landed W4-d70**: `screen_fx.rs::draw_lens_flare` ports
+  `NextHorizonRenderer.DrawLensFlare` (`NextHorizonRenderer.cs:363-386`) +
+  `DrawSunriseFlare` / `DrawSunsetFlare` (`:401-532`) + `LensFlareElement.Draw`
+  (`LensFlareElement.cs:28-50`), the four `Misc/Sunflare/Lens/*` sheets packed
+  by the static loader. **W4-d70 DOC-SWEEP (2026-11-21):** the
+  `LensFlareElement` advanced-shadow offset (`GetAdvancedShadow`, `:34-37`)
+  is ported — `Player` carries the `_advancedShadows` position ring
+  (`Player.cs:1898-1902,4318-4345`, pushed at `Player.Update`'s tail
+  `:28303`, cleared by the teleport/spawn `:37483`/`:37642`), and
+  `lens_shadow_offset` projects the trail onto the sun axis
+  (`dot(trail unit, sun dir) * len`, shifting the lerp fraction by
+  `-0.0002*num`, `:42`). The `sunScorchCounter` override
+  (`AdjustIntensity`, `:392-397`) reads the live counter — the vampire
+  seed's sun-scorch chain is ported (`Player::update_sun_scorch`,
+  `Player.cs:28580-28719`: the 0..300 ramp, the 15-tile column exposure
+  probe, the ≥120 burn's buff-immune wipe + 24/23/32 grants + dismount +
+  flight strip), fed by `zone_graveyard` + `moon_lord_sky_intensity` from
+  the scene scan. Remaining deviations: the `GameShaders.Misc["LensFlare"]`
+  sun-occlusion pixel mask (`HorizonHelper.SunVisibilityPixelTexture`,
+  `HorizonHelper.cs:35-69`) has no port — it is a GPU render-target
+  downsample + 1×1 alpha readback, NOT a self-contained tile probe, so the
+  flare draws at full temporal intensity (`SunVisibilityEnabled` assumed
+  true); the exposure probe's invisible-block/wall terms (`Tile.cs:528-559`)
+  fold to false (no port bit); the sizzle-loop sound + the charred-frame
+  visual swap + the VampireOnFire particle are unmodelled draw/audio seams.
+  The `ShouldDrawSurfaceBackground` gate (`Main.cs:59630-59642`, remix/drunk
+  seeds + fullscreen map) is honoured.
+* The `MoonLordScreenShaderData.Apply` half **landed W4-d70**: the S1-G-6 tick
+  driver fed the shake's `UseIntensity` but left `UpdateMoonLordIndex` /
+  `LatestFilterStrength` inert. `tr_core::scene::moon_lord_target_position` /
+  `moon_lord_shader_apply` (`MoonLordScreenShaderData.cs:20-96`) now compute
+  the world anchor (the core centre, the deathray-eye lerp, the `-2` despawn
+  fade) and the distance-faded strength; the shake's `build_params` arm feeds
+  `UseTargetPosition` and publishes `LatestFilterStrength`, which
+  `Main.GetMoonLordColoring` (`Main.cs:26323-26332`) lerps the Moon Lord parts
+  toward `(183, 255, 255)` with (the `draw_npcs` tint, threaded through
+  `draw_tiles`; the strength rides the G6 `WorldFrameKey` only while a part is
+  present). `Main.ClearVisualPostProcessEffects` (`Main.cs:52114-52252`)
+  deactivates the board on save-and-quit.
 * `FocusHelper.AllowPlayerToEmitEffects` (the `!WorldUpdateStepper.DrawnThisUpdate`
-  split between a drawn and a stepped frame) is unported, so an inferno-ring
-  animation would always advance - moot while the draw is unwritten.
+  split between a drawn and a stepped frame) is now honoured by the inferno
+  ring animation (W4-d70).
+* The `MoonlordDeathDrama` producers **landed W4-d70 DOC-SWEEP**: the
+  `DrawWhite` flash + the pieces/blasts had draw halves and a `SceneState`
+  update but no callers. The core's `RequestLight` ramps
+  (`NPC.cs:41179/41203/41314/41436/41453`), the DD2 crystal's win/loss scene
+  ramps (`:40794/40890`) and the crash drama's `AddExplosion` spots
+  (`:41364`) queue through `Npc::wants_drama_light`/`wants_drama_explosion`
+  and drain into `SceneState::request_light`/`add_explosion` in the sim's
+  NPC pass; the drama-end `checkDead` (`NPC.cs:82679-82682`'s
+  `HitEffect(0, 1337)` arm) flings the four pieces through `throw_pieces`
+  (the `Next(100)` seed rides the death pass's `UpdateNPCs` stream, the
+  death-cue precedent). The explosion's frame-speed draw rides the shared
+  `Main.rand` stream. Deviation: the dust-storm's dust fan + the inner
+  `Dust.NewDust` streams stay unmodelled (the dust engine), only the
+  unconditional top-level draws + the explosion spot are consumed.
 
 ## S1-E-35 - weather control rows (deviation record)
 

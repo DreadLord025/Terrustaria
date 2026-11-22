@@ -584,6 +584,10 @@ pub(crate) struct App {
     pub(crate) net_reserved: HashMap<i16, (u8, u32)>,
     /// The client's last-sent `13 PlayerState` — the change-driven send test.
     pub(crate) net_ps_last: net::PlayerState,
+    /// W4-d70 DOC-SWEEP: the local player's last-sent armour block
+    /// (`PlayerItemSlotID.Armor0..19`) — the `5 PlayerInventory` diff the
+    /// paladin peer loops' shield re-derivation reads on the other side.
+    pub(crate) net_armor_last: [u16; 20],
     /// The heartbeat counter for the `13` cadence (`net_tick` calls).
     pub(crate) net_beat: u32,
     /// `Main.netPlayCounter` (`Main.cs:64557`): the host's per-tick server
@@ -1263,6 +1267,12 @@ pub(crate) struct WorldFrameKey {
     /// rotation/type. Zero while no drip slot draws (the waterfall
     /// convention: gore-free frames keep the pre-wiring cache behaviour).
     pub(crate) back_gore: u64,
+    /// W4-d70: `MoonLordScreenShaderData.LatestFilterStrength` — the Moon Lord
+    /// parts' `GetMoonLordColoring` tint (`Main.cs:26325`) rides the cached
+    /// world range. Zero unless a Moon Lord part is present, so Moon-Lord-free
+    /// worlds keep the pre-wiring cache behaviour bit-for-bit (the tile_anim
+    /// key's convention).
+    pub(crate) moon_lord_strength: u32,
     pub(crate) world_revision: u64,
     /// W4-d127 — the WoF draw inputs inside the cached world range: the
     /// mouth clock (`Main.wofDrawFrameIndex`, `Main.cs:761`), the band
@@ -1338,6 +1348,7 @@ mod frame_key {
             net_key: 0,
             herb_weather: 0,
             back_gore: 0,
+            moon_lord_strength: 0,
             world_revision: 0,
             wof_key: 0,
         };
@@ -1375,6 +1386,7 @@ mod frame_key {
             net_key: 0,
             herb_weather: 0,
             back_gore: 0,
+            moon_lord_strength: 0,
             world_revision: 0,
             wof_key: 0,
         };
@@ -1592,6 +1604,39 @@ mod frame_key {
                 assert!(seen.insert(pack(0, top, bottom, false)), "({top},{bottom}) aliases");
             }
         }
+    }
+
+    /// W4-d70 key-coverage witness: the Moon Lord parts' `GetMoonLordColoring`
+    /// tint (`Main.cs:26325`, `Color.Lerp(White, (183,255,255), strength)`)
+    /// rides the cached world range, so two frames that differ only in
+    /// `LatestFilterStrength` must not share a cached range. The key input is
+    /// the strength's bits, gated on a Moon Lord part being present (zero
+    /// otherwise — Moon-Lord-free worlds keep the pre-wiring cache behaviour).
+    #[test]
+    fn moon_lord_strength_changes_the_frame_key() {
+        let key = |strength: f32| WorldFrameKey {
+            cam_tile: [0, 0],
+            zoom: 0,
+            screen: [0, 0],
+            sky_light: [0, 0, 0],
+            hell_glow: 0,
+            light_params: 0,
+            light_mode: 0,
+            anim: 0,
+            player_key: 0,
+            npc_key: 0,
+            items_key: 0,
+            hand_key: 0,
+            light_generation: 0,
+            brightness: 0,
+            waterfall: 0,
+            tile_anim: 0,
+            net_key: 0,
+            moon_lord_strength: strength.to_bits(),
+            world_revision: 0,
+        };
+        assert_ne!(key(1.0), key(0.5), "a changed strength must change the key");
+        assert_eq!(key(1.0), key(1.0), "an unchanged strength must not");
     }
 }
 
@@ -4442,6 +4487,7 @@ impl App {
             net_item_last: HashMap::new(),
             net_reserved: HashMap::new(),
             net_ps_last: net::PlayerState::default(),
+            net_armor_last: [0; 20],
             net_beat: 0,
             net_play_counter: 0,
             last_item_update: 0,

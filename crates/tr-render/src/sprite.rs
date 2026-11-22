@@ -1161,6 +1161,30 @@ impl SpriteRenderer {
         });
     }
 
+    /// Screen-space world-effect sprite rotated about an arbitrary origin
+    /// (W4-d70): the fx-range analogue of [`Self::push_sprite_origin_rot`]
+    /// for the `Main.EntitySpriteDraw`/`spriteBatch.Draw` calls that anchor
+    /// on `origin` (`DrawPaladinsShieldBoundary`, `DrawInfernoRings`,
+    /// `DrawPrettyStarSparkle`). `pos` is the C# `position` anchor (the
+    /// origin texel's screen point), `origin` the sprite-local pivot in
+    /// screen pixels; the top-left is shifted by `origin − R(rot)·origin`.
+    pub fn push_fx_sprite_origin_rot(
+        &mut self,
+        pos: [f32; 2],
+        size: [f32; 2],
+        uv: [f32; 4],
+        color: [f32; 4],
+        rot: f32,
+        origin: [f32; 2],
+    ) {
+        let (s, c) = rot.sin_cos();
+        let tl = [
+            pos[0] + origin[0] - (origin[0] * c - origin[1] * s),
+            pos[1] + origin[1] - (origin[0] * s + origin[1] * c),
+        ];
+        self.push_fx_sprite_rot(tl, size, uv, color, rot);
+    }
+
     /// Solid-colour rectangle in the world-effect range (the rain flash).
     pub fn push_fx_rect(&mut self, pos: [f32; 2], size: [f32; 2], color: [f32; 4]) {
         self.fx.push(SpriteInstance {

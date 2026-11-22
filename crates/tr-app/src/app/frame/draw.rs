@@ -1236,6 +1236,24 @@ impl App {
                         // the cached range — 0 while no drip slot draws
                         // (the waterfall convention).
                         back_gore: WorldFrameKey::back_gore_key(gore),
+                        // W4-d70: the Moon Lord parts' `GetMoonLordColoring`
+                        // tint rides the cached world range; the strength only
+                        // rides the key while a part is present (the tile_anim
+                        // key's convention — Moon-Lord-free worlds keep the
+                        // pre-wiring cache behaviour bit-for-bit).
+                        moon_lord_strength: if npcs.iter().any(|n| {
+                            matches!(
+                                n.kind,
+                                crate::npc::NpcKind::MoonLordHead
+                                    | crate::npc::NpcKind::MoonLordHand
+                                    | crate::npc::NpcKind::MoonLordCore
+                                    | crate::npc::NpcKind::MoonLordFreeEye
+                            )
+                        }) {
+                            filter_driver.latest_filter_strength.to_bits()
+                        } else {
+                            0
+                        },
                         world_revision: world.revision,
                         // W4-d127 — the WoF draw inputs inside the cached
                         // world range (`Main.DrawWoF`, `Main.cs:38377-38525`):
@@ -1491,6 +1509,9 @@ impl App {
                             // W4-d127: the WoF mouth clock's pause gate
                             // (`Main.cs:38427`).
                             game_paused_for_specials,
+                            // W4-d70: the Moon Lord parts' `GetMoonLordColoring`
+                            // input (`Main.cs:26325`).
+                            filter_driver.latest_filter_strength,
                         );
                         world.frame_rng = orb_rand;
                         *world_key = Some(key);
@@ -1677,6 +1698,84 @@ impl App {
                         );
                     }
 
+                    // `Main.cs:62316-62317`: `DrawInfernoRings` then
+                    // `DrawPaladinsShield`, after the over-wire cached
+                    // projectiles (`:62315`) and before `DrawLensFlare`.
+                    // `FocusHelper.AllowPlayerToEmitEffects` (`FocusHelper.cs:29`)
+                    // is `!WorldUpdateStepper.DrawnThisUpdate` — the ring
+                    // animation advances only on a frame that did not step.
+                    if let Some(p) = player.as_mut() {
+                        crate::render::screen_fx::draw_inferno_rings(
+                            renderer,
+                            lookups,
+                            p,
+                            draw_cam,
+                            world_zoom,
+                            screen,
+                            !self.stepper.drawn_this_update,
+                        );
+                    }
+                    if let Some(p) = player.as_ref() {
+                        // The C# walks `Main.player[0..255]` skipping
+                        // `Main.myPlayer` (`Main.cs:57205-57231`); the port's
+                        // peers are the `remote_players` snapshots, whose
+                        // team/dead ride the `13`/`12`/`45` wires and whose
+                        // shield flag re-derives from the synced inventory
+                        // (`PlayerNet::paladin_shield`). Slot order, like the
+                        // C#'s array walk.
+                        let mut peers: Vec<_> = remote_players.values().collect();
+                        peers.sort_by_key(|rp| rp.id);
+                        let peers: Vec<_> = peers
+                            .into_iter()
+                            .map(|rp| crate::render::screen_fx::PaladinPeer {
+                                mounted_center: [
+                                    rp.x + crate::player::WIDTH * 0.5,
+                                    rp.y + crate::player::HEIGHT * 0.5,
+                                ],
+                                team: rp.team,
+                                has_paladin_shield: rp.paladin_shield(),
+                                dead: rp.dead,
+                                hp: rp.hp,
+                                max_hp: rp.max_hp,
+                            })
+                            .collect();
+                        crate::render::screen_fx::draw_paladins_shield(
+                            renderer,
+                            lookups,
+                            p,
+                            &peers,
+                            draw_cam,
+                            world_zoom,
+                            screen,
+                        );
+                    }
+                    // `Main.cs:62320`: `DrawLensFlare`, under the background
+                    // zoom (`PlayerInput.SetZoom_Background`). The
+                    // `ShouldDrawSurfaceBackground` gate (`Main.cs:59630-59642`)
+                    // and `HorizonHelper.SunVisibilityEnabled` (the sun-occlusion
+                    // pixel target, unported → assumed visible) gate the chain.
+                    {
+                        let remix = world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+                        let drunk = world.seeds.contains(tr_core::seeds::SeedFlags::DRUNK);
+                        let map_fullscreen =
+                            settings.map_enabled && map.as_ref().is_some_and(|m| m.open);
+                        let should_draw_surface_bg = !remix && !(remix && drunk) && !map_fullscreen;
+                        crate::render::screen_fx::draw_lens_flare(
+                            renderer,
+                            lookups,
+                            world,
+                            // W4-d70 DOC-SWEEP: the advanced-shadow offset +
+                            // the sun-scorch override read the local player.
+                            player.as_ref(),
+                            draw_cam,
+                            bg_zoom,
+                            screen,
+                            self.atmo,
+                            rain.visual_alpha(),
+                            should_draw_surface_bg,
+                            true,
+                        );
+                    }
                     // `Main.cs:62322-62324`: `ScreenDarkness.DrawFront`,
                     // `MoonlordDeathDrama.DrawWhite` and `ScreenObstruction.Draw`
                     // close the world pass, after the projectiles (`:62251`) and
