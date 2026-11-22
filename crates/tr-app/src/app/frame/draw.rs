@@ -191,6 +191,12 @@ impl App {
             // mutates `self` while the draw destructure holds its fields;
             // applied after the gpu block (S1-E-26 wave A).
             let mut popup_goto: Option<&'static str> = None;
+            // S1-G-13 consumers: park the render-target family + compositor
+            // before the field destructure (the gated draw path borrows them
+            // alongside the destructured `&mut` fields; `self.targets` would
+            // conflict). Put back after the gpu block.
+            let mut targets_parked = self.targets.take();
+            let mut compositor_parked = self.target_compositor.take();
 
             {
                 let App {
@@ -396,6 +402,12 @@ impl App {
                         // `TR_SHOW_INVISIBLE=1` pins it on for A/B shots.
                         draw_invisible_walls: crate::env::show_invisible(),
                     };
+                    // S1-G-13 consumers: park the frame's ambient light
+                    // parameters for the capture chunk render
+                    // (`Main.DrawCapture`'s `Lighting.LightTiles`,
+                    // `Main.cs:56727-56732` — the capture tick runs at the
+                    // next frame's head, before this region recomputes them).
+                    self.capture_light_params = Some(params);
                     // `Main.essScale`'s drift (`Main.cs:62264-62277`), which
                     // the C# runs once per draw pass just before `DrawItems`
                     // (`:62278`), behind `!Main.gamePaused`. The step-time
@@ -1117,6 +1129,12 @@ impl App {
                         world.width,
                     );
                     draw_phase("sky");
+                    // S1-G-13 consumers: the gated layer path renders the sky
+                    // into the skyTarget at the present site (after the surface
+                    // is acquired) and the underground backdrop into the
+                    // backgroundTarget via the `RenderBackground` callback;
+                    // the fused default keeps both in this pass.
+                    let layer_targets_on = crate::env::layer_targets();
                     draw_sky(
                         renderer,
                         draw_cam,
@@ -1151,12 +1169,19 @@ impl App {
                             .is_active()
                             .then_some(&self.sandstorm_sky),
                         sandstorm.severity,
+                        // S1-G-13 consumers: the gated path moves the
+                        // underground backdrop to the backgroundTarget.
+                        layer_targets_on,
                     );
                     // `Main.cs:62217`: `ScreenDarkness.DrawBack` sits right after
                     // `Overlays.Scene.Draw(Background)`.
                     crate::render::screen_fx::draw_darkness_back(renderer, screen, scene_state);
                     draw_phase("world");
-                    if !reuse_world {
+                    // S1-G-13 consumers: the gated path renders the world
+                    // through the layer family at the present site (the
+                    // executor + composites need the surface view); the
+                    // fused default keeps the single cached world range.
+                    if !reuse_world && !layer_targets_on {
                         tile_stats = draw_tiles(
                             renderer,
                             world,
@@ -1246,6 +1271,10 @@ impl App {
                             // W4-d58: `Main.chest[]` — the chest rewrite's
                             // lid-frame input (`TileDrawing.cs:4311`).
                             &self.world_chests,
+                            // S1-G-13 consumers: the fused default draws every
+                            // cell (the frozen path); the layer callbacks pass
+                            // the `solidLayer` halves (`Main.cs:57329-57348`).
+                            crate::render::tiles::TileFilter::All,
                         );
                         *world_key = Some(key);
                     }
@@ -2180,13 +2209,149 @@ impl App {
                         .create_view(&wgpu::TextureViewDescriptor::default());
 
                     renderer.aberration = style.aberration_px;
-                    // M1.4-BG-18 phase 3 (`TR_POST=1`): the scene renders into the
-                    // offscreen post target, then the `ApplyVisuals` driver's
-                    // winner uniform (`filter_driver.output`, computed in
-                    // `update_scene`) selects the filter pass. `None` = no filter
-                    // — the NEUTRAL/passthrough pair is the pixel-identity pass
-                    // (DW-2.1).
-                    if let Some(post) = post.as_mut() {
+                    // S1-G-13 consumers (`TR_LAYER_TARGETS=1`): the world
+                    // renders through the render-target family — the
+                    // `RenderToTargets` executor drives the per-layer
+                    // callbacks, the skyTarget bind captures the sky range,
+                    // and the six `DoDraw` composites land on the screen in
+                    // order with the direct-screen entity blocks interleaved
+                    // (`Main.cs:57277-57327`, `:62021-62027`, `:62196-63447`).
+                    // The fused default below is untouched.
+                    if layer_targets_on {
+                        let now_secs = now.elapsed().as_secs_f32();
+                        if let Some(family) = targets_parked.as_mut() {
+                            let compositor = compositor_parked
+                                .get_or_insert_with(|| tr_render::TargetCompositor::new(&gpu.device));
+                            let remote_vec: Vec<_> =
+                                remote_players.values().cloned().collect();
+                            let held = match render_player.as_ref() {
+                                Some(_)
+                                    if *swing > 0.0
+                                        || inventory.get(*selected).is_some_and(|s| {
+                                            s.count > 0 && item::hold_style(s.kind) != 0
+                                        }) =>
+                                {
+                                    inventory
+                                        .get(*selected)
+                                        .filter(|slot| slot.count > 0)
+                                        .map(|slot| {
+                                            (
+                                                slot.kind,
+                                                *swing / self.swing_max.max(f32::EPSILON),
+                                                slot.prefix,
+                                            )
+                                        })
+                                }
+                                _ => None,
+                            };
+                            let armor = [
+                                self.equip.armor.first().map_or(0, |s| if s.count > 0 { s.kind } else { 0 }),
+                                self.equip.armor.get(1).map_or(0, |s| if s.count > 0 { s.kind } else { 0 }),
+                                self.equip.armor.get(2).map_or(0, |s| if s.count > 0 { s.kind } else { 0 }),
+                            ];
+                            let mut lf = crate::app::layer_targets::LayerFrame {
+                                world,
+                                lookups,
+                                atlas: atlas.as_ref(),
+                                sky,
+                                light,
+                                scratch,
+                                params: &params,
+                                style: &style,
+                                entity_lights: &self.entity_lights,
+                                anim_time,
+                                waterfall,
+                                liquid_alpha,
+                                sparkle_seed: (*frame_count as u64)
+                                    .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                                    ^ world.seed,
+                                wind,
+                                grass_wind_counter: *grass_wind_counter,
+                                tree_wind_counter: *tree_wind_counter,
+                                sunflower_wind_counter: *sunflower_wind_counter,
+                                vine_wind_counter: *vine_wind_counter,
+                                wiring: &self.wiring,
+                                party_is_up: crate::world_events::party_is_up(&self.world_events),
+                                show_invisible_blocks: crate::env::show_invisible(),
+                                tile_anim: &self.tile_anim,
+                                camera: draw_cam,
+                                zoom: world_zoom,
+                                screen,
+                                sky_zoom: bg_zoom,
+                                cave_parallax: cave_parallax(settings.parallax_scroll),
+                                player: render_player.as_ref(),
+                                player_assets,
+                                held,
+                                armor,
+                                npcs,
+                                npc_assets,
+                                items,
+                                remote: &remote_vec,
+                                edit_target: *edit_target,
+                                leaf_spawns: &mut leaf_spawns,
+                                // W4-g72 closeout delta 64d §2: the frame's
+                                // scene metrics + the App's cavern-style
+                                // latch for the 14-arg draw_background.
+                                metrics: &self.scene_metrics,
+                                ug_back: &mut self.ug_back,
+                            };
+                            // The skyTarget gate (`Main.cs:62021-62027`):
+                            // `CanCapture || ForegroundSunlightEffects` (the
+                            // retail default true, `:66574`) AND the target
+                            // path / not-fullscreen-map / not-fancy-UI /
+                            // not-Retro. The port's `onlyDrawFancyUI` is false.
+                            let can_capture = tr_core::scene::FilterId::ALL
+                                .iter()
+                                .any(|&id| filter_driver.board.in_list(id));
+                            let not_retro = !matches!(
+                                *light_mode,
+                                tr_core::lighting::LightMode::Retro
+                                    | tr_core::lighting::LightMode::Trippy
+                            );
+                            let map_fullscreen =
+                                settings.map_enabled && map.as_ref().is_some_and(|m| m.open);
+                            let sky_active = tr_render::sky_target_active(
+                                can_capture,
+                                true,
+                                false,
+                                map_fullscreen,
+                                false,
+                                not_retro,
+                            );
+                            crate::app::layer_targets::render_sky_target(
+                                gpu, renderer, family, &lf, compositor, &view, sky_active, now_secs,
+                            );
+                            tile_stats = crate::app::layer_targets::render_layer_targets(
+                                gpu, renderer, family, &mut lf, compositor,
+                                &mut self.layer_render_count, &view, now_secs,
+                            );
+                            // The fx-range passes the frame pushed above
+                            // (rain/gore/dust/leaves/wires/projectiles, the
+                            // screen-fx tail) ride the world range; render
+                            // them over the tile composite, under the water
+                            // (`Main.cs:62279-62315`'s entity section).
+                            let fx_stats = renderer.render_fx_only(
+                                gpu, &view, draw_cam.to_array(), world_zoom, now_secs,
+                            );
+                            stats.instances += fx_stats.instances;
+                            stats.draw_calls += fx_stats.draw_calls;
+                            stats.uploaded_bytes += fx_stats.uploaded_bytes;
+                            // The waterTarget composite after the entity
+                            // passes (`Main.cs:62308`).
+                            crate::app::layer_targets::composite_water(
+                                gpu, renderer, family, &lf, compositor, &view, now_secs,
+                            );
+                            // The map batches + the interface over the
+                            // composited world (the fx range holds the
+                            // rain/gore/projectile passes pushed above).
+                            let ui_stats = renderer.render_map_ui(
+                                gpu, &view, draw_cam.to_array(), *zoom, now_secs,
+                            );
+                            stats.instances += ui_stats.instances;
+                            stats.draw_calls += ui_stats.draw_calls;
+                            stats.uploaded_bytes += ui_stats.uploaded_bytes;
+                        }
+                    } else if let Some(post) = post.as_mut() {
                         let scene = post.scene_view(gpu);
                         // The vanilla order puts the filters between the world draw
                         // and `DrawMap`/`DrawInterface` (`Main.DoDraw`): the world
@@ -2284,6 +2449,9 @@ impl App {
                     gpu.queue.present(frame);
                 }
             }
+            // S1-G-13 consumers: put the parked family + compositor back.
+            self.targets = targets_parked;
+            self.target_compositor = compositor_parked;
         // The popup click's `OpenAchievementsAndGoto` (S1-E-26 wave A) —
         // the field borrows are released, so the overlay open + scroll lands
         // for the next frame's draw.

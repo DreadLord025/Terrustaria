@@ -7,11 +7,14 @@
 //! `main.rs`.)
 
 pub(crate) mod capture_driver;
+pub(crate) mod capture_entities;
+pub(crate) mod capture_render;
 pub(crate) mod clicks;
 pub(crate) mod equip_swap;
 pub(crate) mod filters;
 pub(crate) mod flow;
 pub(crate) mod frame;
+pub(crate) mod layer_targets;
 mod r#loop;
 pub(crate) mod net_npc_sync;
 pub(crate) mod netglue;
@@ -109,6 +112,21 @@ pub(crate) struct App {
     /// "The render-target family (S1-G-13)"). The capture mode's
     /// `DrawCapture` chunk render is the consumer this seam waits for.
     pub(crate) targets: Option<tr_render::RenderTargetFamily>,
+    /// S1-G-13 consumers: the one `TargetCompositor` the six composite sites
+    /// share (`Main.DoDraw`'s `spriteBatch.Draw(target.Texture, ...)` — the
+    /// port rebuilds the bind group per draw, the instance buffer persists).
+    /// Allocated lazily beside the family.
+    pub(crate) target_compositor: Option<tr_render::TargetCompositor>,
+    /// S1-G-13 consumers: `Main.renderCount`'s port for the gated layer path
+    /// — the lighting phase index `LightingEngine.ProcessArea` publishes
+    /// (`LightingEngine.cs:90-103`: MinimapUpdate→3, ExportMetrics→0, Scan→1,
+    /// Blur→2, cycling every frame). Starts at 1 (the first frame's Scan).
+    pub(crate) layer_render_count: i32,
+    /// S1-G-13 consumers: the last draw region's `LightParams` snapshot —
+    /// the capture chunk render (`Main.DrawCapture`, `Main.cs:56727-56732`)
+    /// re-lights its area with the frame's ambient parameters. `None` until
+    /// the first draw; the capture tick falls back to the default params.
+    pub(crate) capture_light_params: Option<tr_core::lighting::LightParams>,
     /// `Main.SceneState` — the phase-1 tr-core port; `update_scene` steps its
     /// fades and the filter driver reads its intensities.
     pub(crate) scene_state: tr_core::scene::SceneState,
@@ -1101,6 +1119,13 @@ pub(crate) struct App {
     /// written after the box draws, so the box always consumes the previous frame's
     /// value (0 on the first frame — a negative height draws nothing, like XNA).
     pub(crate) hell_black_box_bottom: f32,
+    /// `Main.undergroundBackground`/`oldUndergroundBackground`/`ugBackTransition`
+    /// (`Main.cs:52823-52841`): the cavern style latch + cross-fade, carried
+    /// across frames like `hellBlackBoxBottom`. The g72e 14-arg
+    /// `draw_background` consumes it (`&mut`); the layer callback threads
+    /// this field (W4-g72 closeout delta 64d §2 — `bg_styles::UgBackState`
+    /// lands with the g72 lane).
+    pub(crate) ug_back: crate::render::bg_styles::UgBackState,
 }
 
 /// G6: everything the world instance range (sky strips, tiles, walls, dark rects)
@@ -3651,6 +3676,9 @@ impl App {
             },
             water_mask: None,
             targets: None,
+            target_compositor: None,
+            layer_render_count: 1,
+            capture_light_params: None,
             scene_state: tr_core::scene::SceneState::new(),
             sandstorm: tr_core::scene::Sandstorm::new(world_seed),
             sandstorm_sky: crate::render::sandstorm_sky::SandstormSky::default(),
@@ -4172,6 +4200,11 @@ impl App {
             summon_shot: crate::env::summon_shot(),
             world_key: None,
             hell_black_box_bottom: 0.0,
+            ug_back: crate::render::bg_styles::UgBackState {
+                style: 0,
+                old_style: 0,
+                transition: 0.0,
+            },
         };
         // The wiring RNG (`Main.rand` in the C#, `Wiring.cs:811-812`) seeds
         // from the world; vanilla seeds it from the clock (`Main.cs:6461-6463`).

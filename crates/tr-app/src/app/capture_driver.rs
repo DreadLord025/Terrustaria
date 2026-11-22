@@ -215,14 +215,140 @@ impl App {
 
     /// `CaptureManager.Instance.DrawTick()` (`CaptureManager.cs:99-103`) at
     /// the `DoDraw` head (`Main.cs:61729`): the countdown advances and a
-    /// started capture drains one chunk. The GPU render is the S1-G-13
-    /// seam (the stub renderer produces no pixels yet); the `GlobalTimerPaused`
-    /// pause/unpause (`CaptureCamera.cs:112`/`:390`) is the port's
-    /// `game_paused`-adjacent clock gate — documented as pending the targets
-    /// (the stub drains instantly, so the pause would never be observable).
+    /// started capture drains one chunk. S1-G-13 consumers: with
+    /// `TR_LAYER_TARGETS` on, the chunk renders through the family
+    /// (`Main.DrawCapture`, `Main.cs:56673-57081`) and the finished image
+    /// writes to `SavePath/Captures`; the gate off keeps the S1-E-17 no-op
+    /// stub (the queue drains without pixels). The `GlobalTimerPaused`
+    /// pause/unpause (`CaptureCamera.cs:112`/`:390`) rides the existing
+    /// `is_capturing` update gate (`frame.rs`).
     pub(crate) fn capture_draw_tick(&mut self) {
-        let mut renderer = PendingCaptureRenderer;
-        let (_start, _finished) = self.capture.draw_tick(&mut renderer);
+        if !crate::env::layer_targets() {
+            let mut renderer = PendingCaptureRenderer;
+            let (_start, _finished) = self.capture.draw_tick(&mut renderer);
+            return;
+        }
+        // The GPU renderer needs the gpu/renderer/family triple; without it
+        // (headless tests, the front end) the stub drains the queue.
+        let ready = self.gpu.is_some() && self.renderer.is_some() && self.targets.is_some();
+        if !ready {
+            let mut renderer = PendingCaptureRenderer;
+            let (_start, _finished) = self.capture.draw_tick(&mut renderer);
+            return;
+        }
+        // Disjoint field borrows: the renderer owns gpu/renderer/family +
+        // the world state; the capture manager pumps the queue separately.
+        let gpu = self.gpu.as_ref().unwrap();
+        let renderer = self.renderer.as_mut().unwrap();
+        let family = self.targets.as_mut().unwrap();
+        let compositor = self
+            .target_compositor
+            .get_or_insert_with(|| tr_render::TargetCompositor::new(&gpu.device));
+        let params = self
+            .capture_light_params
+            .unwrap_or_default();
+        let style = tr_core::lighting::LightStyle::for_mode(self.light_mode);
+        let mut leaf_spawns = Vec::new();
+        let cw = crate::app::capture_render::CaptureWorld {
+            world: &self.world,
+            lookups: &mut self.lookups,
+            atlas: self.atlas.as_ref(),
+            sky: &self.sky,
+            light: &mut self.light,
+            scratch: &mut self.scratch,
+            params: &params,
+            style: &style,
+            entity_lights: &self.entity_lights,
+            anim_time: self.anim_time,
+            waterfall: &mut self.waterfall,
+            wind: &self.wind,
+            grass_wind_counter: self.grass_wind_counter,
+            tree_wind_counter: self.tree_wind_counter,
+            sunflower_wind_counter: self.sunflower_wind_counter,
+            vine_wind_counter: self.vine_wind_counter,
+            wiring: &self.wiring,
+            party_is_up: crate::world_events::party_is_up(&self.world_events),
+            tile_anim: &self.tile_anim,
+            player_assets: &self.player_assets,
+            npc_assets: &self.npc_assets,
+            leaf_spawns: &mut leaf_spawns,
+            clouds: &self.clouds,
+            counter: self.game_update_count,
+            mouse_text_color: self.mouse_text_color,
+            // W4-g72 closeout delta 64d §2: the live scene metrics + the
+            // App's cavern-style latch (the C# DrawCapture reads the live
+            // statics).
+            metrics: &self.scene_metrics,
+            ug_back: &mut self.ug_back,
+        };
+        // The `captureEntities` arms' inputs (`Main.cs:56876-57017`): the
+        // live entity state at the chunk render. The held item mirrors the
+        // frame path's gate (`PlayerDrawLayers.cs:3084-3086`).
+        let held = match self.player.as_ref() {
+            Some(_)
+                if self.swing > 0.0
+                    || self.inventory.get(self.selected).is_some_and(|s| {
+                        s.count > 0 && crate::item::hold_style(s.kind) != 0
+                    }) =>
+            {
+                self.inventory
+                    .get(self.selected)
+                    .filter(|slot| slot.count > 0)
+                    .map(|slot| {
+                        (
+                            slot.kind,
+                            self.swing / self.swing_max.max(f32::EPSILON),
+                            slot.prefix,
+                        )
+                    })
+            }
+            _ => None,
+        };
+        let armor = [
+            self.equip.armor.first().map_or(0, |s| if s.count > 0 { s.kind } else { 0 }),
+            self.equip.armor.get(1).map_or(0, |s| if s.count > 0 { s.kind } else { 0 }),
+            self.equip.armor.get(2).map_or(0, |s| if s.count > 0 { s.kind } else { 0 }),
+        ];
+        let entities = crate::app::capture_entities::CaptureEntities {
+            player: self.player.as_ref(),
+            held,
+            armor,
+            npcs: &self.npcs,
+            items: &self.items,
+            projectiles: &self.projectiles,
+            rain: &self.rain,
+            gore: &self.gore,
+            dust: &mut self.dust,
+            scene_state: &self.scene_state,
+        };
+        let mut gpu_renderer = crate::app::capture_render::GpuCaptureRenderer {
+            gpu,
+            renderer,
+            family,
+            compositor,
+            cw,
+            entities: Some(entities),
+            frame_buffer: None,
+            scaled_buffer: None,
+        };
+        // The finished-image save (`FinishCapture`, `CaptureCamera.cs:370-
+        // 398`): the output buffer is read BEFORE `draw_tick` drops it.
+        let pending_output = self.capture.camera.output_image().map(|(d, w, h)| {
+            (d.to_vec(), w, h)
+        });
+        let pending_name = self
+            .capture
+            .camera
+            .active_settings_name()
+            .unwrap_or_default();
+        let (_start, finished) = self.capture.draw_tick(&mut gpu_renderer);
+        if finished {
+            if let Some((data, w, h)) = pending_output {
+                if !data.is_empty() && w > 0 && h > 0 {
+                    crate::app::capture_render::save_capture_png(&data, w, h, &pending_name);
+                }
+            }
+        }
     }
 }
 

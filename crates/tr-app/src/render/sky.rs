@@ -657,6 +657,11 @@ pub(crate) fn draw_sky(
     sandstorm_sky: Option<&crate::render::sandstorm_sky::SandstormSky>,
     // `Sandstorm.Severity` — the tint quad's `min(1, Severity * 1.5)` term.
     sandstorm_severity: f32,
+    // S1-G-13 consumers: skip the underground backdrop tail
+    // (`DrawBackground`, `Main.cs:52798`) — the gated layer path renders it
+    // into the backgroundTarget via the `RenderBackground` callback
+    // (`Main.cs:55200-55218`) instead. The fused default passes `false`.
+    skip_underground_background: bool,
 ) {
     // `Background_0.png` is the game's own 48x1400 sky gradient: deep blue at the top,
     // pale near the horizon. It is anchored to `Main.worldSurface`.
@@ -891,10 +896,104 @@ pub(crate) fn draw_sky(
         }
     }
 
-    // `DrawSurfaceBG_BackMountainsStep1/2`: far then near mountain layer, topped by the
-    // biome's tree line. `backgroundTopMagicNumber` makes the layers move at ~30 % of
-    // the camera's vertical speed; using the local horizon instead would drag the whole
-    // forest down into the view whenever the player is on a hill.
+    // `DrawSurfaceBG_BackMountainsStep1/2` + the front biome chains —
+    // extracted so the capture's background pass renders the SAME chains
+    // at the chunk camera with the capture-only bg-alpha arrays
+    // (`Main.DrawCapture`'s `UpdateBGVisibility_*` override,
+    // `Main.cs:56675-56680`; S1-G-13 consumers). The `SkyManager` depth
+    // tracker threads through the call so the `DrawRemainingDepth` flush
+    // below sees the last boundary the chains emitted.
+    let mut amb_last = f32::INFINITY;
+    let amb_ctx = crate::ambience::SkyDrawCtx {
+        camera,
+        zoom,
+        screen,
+        color_of_the_skies: sky_color,
+        atmo,
+        bg_alpha_front,
+        background_enabled,
+    };
+    draw_surface_bg(
+        r,
+        camera,
+        zoom,
+        screen,
+        world,
+        sky,
+        clouds,
+        bg_alpha_front,
+        bg_alpha_far,
+        tint,
+        storm,
+        background_enabled,
+        anim_time,
+        counter,
+        mouse_text_color,
+        ambience,
+        lookups,
+        &amb_ctx,
+        &mut amb_last,
+    );
+
+    // `Main.cs:59626` `DrawRemainingDepth`: the shallowest entities (below the
+    // last front-row boundary) draw after every surface layer, before the
+    // underground backdrop.
+    crate::ambience::draw_range_remaining(r, ambience, lookups, &amb_ctx, &mut amb_last);
+    // `Main.DrawBackground_SurfaceTransitionBackground`,
+    // `Main.DrawBackground_DirtBackground`, `DrawBackground_DrawUnderworldBlackBox`,
+    // `DrawBackground_DrawRockLayer` and `DrawBackground_DrawMagmaLayer`: the textured
+    // underground backdrop, anchored to `worldSurface` across the whole screen, with
+    // the rock bands, the animated magma and the underworld black box below it. (A
+    // per-column gradient used to hang a dark "wall" underneath every player-placed
+    // row of blocks.)
+    if !crate::env::no_bg() && !skip_underground_background {
+        draw_background(
+            r,
+            camera,
+            zoom,
+            screen,
+            world,
+            sky,
+            light,
+            cave_parallax,
+            anim_time,
+            hell_black_box_bottom,
+        );
+    }
+}
+
+/// `Main.DrawSurfaceBG` (`Main.cs:59302-60290` + the per-biome chains
+/// `:59986-61370`): the storm banks, the far/near mountain steps, the three
+/// cloud passes and the front biome tree lines. Extracted verbatim from
+/// [`draw_sky`] so the capture's background pass (`Main.DrawCapture`'s
+/// `DrawSurfaceBG` call, `Main.cs:56837`) renders the SAME chains at the
+/// chunk camera with the capture-only bg-alpha arrays (S1-G-13 consumers).
+/// `amb_ctx`/`amb_last` are the `SkyManager` depth tracker the caller
+/// threads (the flush stays at the caller's `DrawRemainingDepth` site).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn draw_surface_bg(
+    r: &mut SpriteRenderer,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+    world: &World,
+    sky: &SkyAssets,
+    clouds: &[CloudSprite],
+    bg_alpha_front: &[f32; 16],
+    bg_alpha_far: &[f32; 16],
+    tint: [f32; 3],
+    storm: f32,
+    background_enabled: bool,
+    anim_time: f32,
+    counter: u32,
+    mouse_text_color: u8,
+    ambience: &[crate::ambience::SkyEntity],
+    lookups: &crate::assets::Lookups,
+    amb_ctx: &crate::ambience::SkyDrawCtx<'_>,
+    amb_last: &mut f32,
+) {
+    let world_surface_px = (world.world_surface as f32 * TILE_PX).max(1.0);
+    let view_top = camera.y - screen.y * 0.5;
     // `Main.bgAlphaFrontLayer`/`bgAlphaFarBackLayer`: each biome layer is drawn with
     // `ColorOfSurfaceBackgroundsBase * alpha`, so two biomes blend while the style
     // cross-fades (`backgroundLayerTransitionSpeed = 0.05`). Index tables:
@@ -922,11 +1021,12 @@ pub(crate) fn draw_sky(
     // `Main.BackgroundEnabled`: the parallax layers only; the gradient and the
     // clouds above stay, exactly like the original toggle.
     let show_bg = background_enabled && bg_block;
-    // The `SkyManager` depth tracker (`SkyManager.cs:48-78`), reset at the top
-    // of the surface background pass (`Main.cs:59344`). Every `draw_range_min`
-    // below ports one `DrawToDepth` call of `Main.cs:59700-60290`; a call
-    // whose boundary is above the tracker no-ops, exactly like the original's
-    // stale-parallax call (`Main.cs:59890`).
+    // The `SkyManager` depth tracker (`SkyManager.cs:48-78`) is the caller's
+    // `amb_last` (reset at the top of the surface background pass,
+    // `Main.cs:59344`). Every `draw_range_min` below ports one `DrawToDepth`
+    // call of `Main.cs:59700-60290`; a call whose boundary is above the
+    // tracker no-ops, exactly like the original's stale-parallax call
+    // (`Main.cs:59890`).
     //
     // DRAW_TO_DEPTH boundary table (`.code-foundations/build/2026-11-03-
     // M1.4-BG-19-ambient-skies-boundary-table.md`):
@@ -936,16 +1036,6 @@ pub(crate) fn draw_sky(
     //   1.0   (`Main.cs:60186`) — after the last front row
     //   flush (`Main.cs:59626` `DrawRemainingDepth`) — before the underground
     //   backdrop
-    let mut amb_last = f32::INFINITY;
-    let amb_ctx = crate::ambience::SkyDrawCtx {
-        camera,
-        zoom,
-        screen,
-        color_of_the_skies: sky_color,
-        atmo,
-        bg_alpha_front,
-        background_enabled,
-    };
     // `DrawSurfaceBG`'s three cloud passes, in the original order: distant
     // (`Main.cs:59334`, before the storm banks), closer (`Main.cs:59449`,
     // between the mountain steps) and closest (`Main.cs:59520`, before the front
@@ -1024,9 +1114,9 @@ pub(crate) fn draw_sky(
         r,
         ambience,
         lookups,
-        &amb_ctx,
+        amb_ctx,
         1.0 / 0.15,
-        &mut amb_last,
+        amb_last,
     );
     if show_bg {
         if far_forest > 0.0 {
@@ -1090,7 +1180,7 @@ pub(crate) fn draw_sky(
     // Step1's closing `DrawToDepth(5f)` (`Main.cs:59878`) runs before this
     // pass: the mid-depth entities draw between the mountain rows and the
     // closer clouds.
-    crate::ambience::draw_range_min(r, ambience, lookups, &amb_ctx, 5.0, &mut amb_last);
+    crate::ambience::draw_range_min(r, ambience, lookups, amb_ctx, 5.0, amb_last);
     if bg_block {
         let closer_top = if background_enabled {
             magic * 1300.0 + 1090.0 + sc_adj + 30.0 + 150.0
@@ -1217,8 +1307,8 @@ pub(crate) fn draw_sky(
     let mut amb_pass = show_bg.then_some(crate::render::bg::AmbiencePass {
         entities: ambience,
         lookups,
-        ctx: &amb_ctx,
-        last: &mut amb_last,
+        ctx: amb_ctx,
+        last: amb_last,
     });
     if show_bg {
         // `pushBGTopHack` for the front loop is `30 - 180` (`Main.cs:59302`,

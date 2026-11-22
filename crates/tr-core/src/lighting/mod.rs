@@ -701,6 +701,40 @@ mod tests {
         assert!(c[0] > 0.3 && c[0] > c[2], "lava light {c:?}");
     }
 
+    /// S1-G-13 consumers (the four `LightTiles` census): `DrawCapture`'s
+    /// `for (j = 0; j < 4; j++) Lighting.LightTiles(area)`
+    /// (`Main.cs:56729-56732`) walks the modern engine's four-state cycle
+    /// exactly once — MinimapUpdate (map off → no-op) → ExportMetrics →
+    /// Scan → Blur+Present (`LightingEngine.cs:76-113,237-244`). The
+    /// visible light is ONE scan+blur; re-running the same rect is a D2
+    /// cache hit (no recompute, no colour change) — the port's single
+    /// `compute_into` is truly equivalent, and a hypothetical 4-call
+    /// shape would be three no-ops. ANALYSIS "The four LightTiles calls".
+    #[test]
+    fn repeated_compute_into_the_same_rect_is_a_cache_hit() {
+        let mut w = World::new("t".into(), 64, 400);
+        w.world_surface = 10.0;
+        for x in 0..64 {
+            for y in 10..14 {
+                set(&mut w, x, y, 0);
+            }
+        }
+        set(&mut w, 32, 20, 4); // a torch below ground
+        let params = LightParams::default();
+        let mut lm = LightMap::new();
+        lm.compute_into(&w, 20, 4, 40, 30, &params);
+        let colors = lm.colors.clone();
+        let generation = lm.generation();
+        // The three extra `LightTiles` calls of the C# loop: same rect,
+        // same params, same world revision → the D2 key matches and the
+        // compute early-returns (`compute_into_impl`'s cache arm).
+        for _ in 0..3 {
+            lm.compute_into(&w, 20, 4, 40, 30, &params);
+        }
+        assert_eq!(lm.generation(), generation, "no recompute on a cache hit");
+        assert_eq!(lm.colors, colors, "the light is unchanged — one scan+blur");
+    }
+
     /// The M1.5-LIGHT-3 wall: `LightIsBlocked` (`TileLightScanner.cs:151-162`)
     /// treats an `invisibleBlock` tile as blocking only while invisible blocks
     /// are shown; hidden, light passes through — pinned at the mask level, the

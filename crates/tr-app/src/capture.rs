@@ -1130,6 +1130,13 @@ pub(crate) trait CaptureRenderer {
         settings: &CaptureSettings,
         scaled_framebuffer_size: i32,
     ) -> Option<Vec<u8>>;
+
+    /// S1-G-13 consumers: the no-scaling chunk save
+    /// (`CaptureCamera.DrawTick`'s `SaveImage` arm, `CaptureCamera.cs:205-
+    /// 209`) — the GPU renderer writes `Captures/<name>/<x>-<y>.png` from
+    /// the raw framebuffer bytes. The default is a no-op (the stub renders
+    /// nothing); `draw_tick` calls it only when `use_scaling` is false.
+    fn save_chunk(&mut self, _chunk: &CaptureChunk, _settings: &CaptureSettings, _rgba: &[u8]) {}
 }
 
 /// `CaptureCamera` (`CaptureCamera.cs:17-425`) — the capture entity: the
@@ -1184,6 +1191,13 @@ impl CaptureCamera {
     /// `IsCapturing` (`CaptureCamera.cs:78-87`): `_activeSettings != null`.
     pub(crate) fn is_capturing(&self) -> bool {
         self.active_settings.is_some()
+    }
+
+    /// S1-G-13 consumers: the active capture's `OutputName`
+    /// (`CaptureSettings.cs:12`) — the finished-image save path reads it
+    /// before `FinishCapture` drops the settings (`CaptureCamera.cs:375`).
+    pub(crate) fn active_settings_name(&self) -> Option<String> {
+        self.active_settings.as_ref().map(|s| s.output_name.clone())
     }
 
     /// `Capture` + `_Capture` (`CaptureCamera.cs:110-176`): the disposed /
@@ -1276,6 +1290,9 @@ impl CaptureCamera {
                 // (`:205-209`) — the renderer's save path owns it (the
                 // bytes are the cropped chunk; the seam's GPU impl writes
                 // `Captures/<name>/<x>-<y>.png`).
+                if !settings.use_scaling {
+                    renderer.save_chunk(&chunk, &settings, &bytes);
+                }
             }
             self.tiles_processed += (chunk.area.width * chunk.area.height) as f32;
         }

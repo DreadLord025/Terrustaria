@@ -65,6 +65,29 @@ pub(crate) struct DrawScratch {
     /// world range is rebuilt, so it always matches the liquid sprites the
     /// cached range still holds.
     pub(crate) water_rects: Vec<[f32; 4]>,
+    /// S1-G-13 consumers: the vine roots the `tile2` callback's crawl
+    /// collected (`TileDrawing._vineRootsPositions`, `TileDrawing.cs:120`)
+    /// — the `PostDrawTiles(solidLayer: false)` screen-batch `DrawVines`
+    /// (`:429`) consumes them AFTER the tile2 composite, so the split path
+    /// parks them here between the two callbacks. The fused default never
+    /// reads it.
+    pub(crate) vine_roots: Vec<(i32, i32)>,
+    /// S1-G-13 consumers (GATE RNG fix): the shared leaf-roll stream the
+    /// gated halves continue (`TileDrawing._rand` is ONE `UnifiedRandom`
+    /// across every `Draw`/`PostDrawTiles` call, `TileDrawing.cs:104,191`).
+    /// The fused default re-seeds per call (the frozen per-frame pin) and
+    /// never reads this; the gated path pre-seeds it once per frame
+    /// (`layer_targets::render_layer_targets`) and each `draw_tiles` call
+    /// takes/continues/returns it, so the solid half's 192-cell rolls
+    /// advance the stream the extras block's `EmitTreeLeaves` rolls read —
+    /// the fused single-stream shape. ANALYSIS "The render-target family
+    /// (S1-G-13)" A/B section.
+    pub(crate) leaf_rng: Option<tr_core::tile_light::FastRandom>,
+    /// Whether [`Self::leaf_rng`] rides along: the gated consumers set it
+    /// (the layer callbacks AND their direct-screen blocks share one
+    /// stream per frame); the fused default leaves it false — every fused
+    /// call re-seeds from `sparkle_seed` and never touches the slot.
+    pub(crate) leaf_rng_shared: bool,
 }
 
 /// `WallID.EchoWall`. `WallDrawing.DrawWalls` skips it unless
@@ -256,6 +279,79 @@ fn sunflower_sway(
     }
 }
 
+/// S1-G-13 consumers: which cells the tile pass draws — the fused default
+/// (`All`, every cell, the frozen path) or one `solidLayer` half of
+/// `Main.DrawTiles` (`Main.cs:21820`): `RenderTiles` draws the solid layer
+/// (`Main.cs:57329-57348`), `RenderTiles2` the non-solid one (`:57340-57348`).
+/// The C# split is `TileDrawing.Draw(solidLayer)`'s per-cell
+/// `tileSolid[type]` test; the port's `td::TILE_SOLID` is that set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TileFilter {
+    /// The fused pass: solid and non-solid cells, one row-major walk.
+    All,
+    /// `solidLayer: true` — only `TILE_SOLID` cells.
+    Solid,
+    /// `solidLayer: false` — only the non-solid cells.
+    NonSolid,
+    /// S1-G-13 consumers: the wallTarget callback's black half —
+    /// `RenderBlacks` (`Main.cs:58069-58075`, `DrawBlack(intoRenderTargets:
+    /// true)`): the dark-cell merge only, no tile sprites (the wall sprites
+    /// ride [`draw_wall_layer`] beside it).
+    Wall,
+    /// S1-G-13 consumers: the gated frame path's DIRECT-SCREEN extras —
+    /// the cluster `Main.DoDraw_WallsTilesNPCs` draws between the tile2
+    /// composite (`Main.cs:63367`) and the tile composite (`:63333`):
+    /// `DoDraw_Waterfalls` (`:63306-63320`), the behind-tiles NPCs
+    /// (`DoDraw_DrawNPCsBehindTiles`, `:63293/63298`) and `PostDrawTiles
+    /// (solidLayer: false)`'s foliage/vines (`TileDrawing.cs:414-432`).
+    /// NO tile cells, NO liquids, NO entity tail.
+    ScreenExtras,
+    /// S1-G-13 consumers: the gated frame path's DIRECT-SCREEN entity tail
+    /// — the passes after the tile composite: NPCs over tiles
+    /// (`Main.cs:63301`), the players (`:62256`), the dropped items
+    /// (`:62278`) and the edit cursor. NO tile cells (the tile targets own
+    /// them), NO liquid passes (the water/backWater targets own them).
+    Screen,
+}
+
+/// `TileDrawing.IsTileDrawLayerSolid` (`TileDrawing.cs:4469-4475`): the
+/// `TileID.Sets.DrawTileInSolidLayer` override first (the generated
+/// `SET_DRAW_TILE_IN_SOLID_LAYER` table — 1 = forced solid, 0 = unset, the
+/// `bool?` null; `TileID.cs:516-528` sets 11/78/470/475/579 true), else the
+/// `_tileSolid` table — the port's `td::TILE_SOLID`.
+pub(crate) fn tile_draw_layer_solid(kind: u16) -> bool {
+    let forced = td::SET_DRAW_TILE_IN_SOLID_LAYER
+        .get(kind as usize)
+        .copied()
+        .unwrap_or(0);
+    if forced != 0 {
+        return forced > 0;
+    }
+    td::TILE_SOLID.has(kind)
+}
+
+impl TileFilter {
+    /// Does this cell draw under the filter? `TileDrawing.Draw`'s per-cell
+    /// test (`TileDrawing.cs:517`): `!tile.active() ||
+    /// IsTileDrawLayerSolid(type) != solidLayer → continue`. An actuated
+    /// cell is still `active()` in the C# (the inactive bit only ghosts the
+    /// tint, `GetFinalLight` `:4380-4397`), so it keeps its solidity half.
+    pub(crate) fn keeps(self, kind: u16, active: bool) -> bool {
+        match self {
+            Self::All => true,
+            Self::Solid => active && tile_draw_layer_solid(kind),
+            Self::NonSolid => active && !tile_draw_layer_solid(kind),
+            // `DrawBlack`'s own walk keeps every cell (the wall pass runs
+            // before the per-cell filter arm ever asks); never reached.
+            Self::Wall => true,
+            // The direct-screen blocks draw no tile cells — the cell loop
+            // skips before ever asking.
+            Self::ScreenExtras | Self::Screen => false,
+        }
+    }
+}
+}
+
 #[allow(clippy::too_many_arguments)]
 /// Records one draw phase for the order-pinning test (`S1-B-7`) — the
 /// `Main.DoDraw` sequence (`Main.cs:62249-62326`) made assertable.
@@ -330,13 +426,26 @@ pub(crate) fn draw_tiles(
     // chest's lid `frame` (the S1-P-i43 animator's `Chest.frame`, advanced
     // on the world step). Read-only: the draw side rolls no RNG.
     chests: &[crate::chest::WorldChest],
+    // S1-G-13 consumers: `Main.DrawTiles`' `solidLayer` split
+    // (`Main.cs:21820`, the `RenderTiles`/`RenderTiles2` callbacks at
+    // `:57329-57348`). The fused default passes `None` — every cell draws
+    // here exactly as before; the layer callbacks pass the two halves.
+    tile_filter: TileFilter,
 ) -> TileDrawStats {
     let t_total = Instant::now();
-    // `TileDrawing._rand` (`TileDrawing.cs:191`): the leaf-roll stream, pinned
-    // per frame like the sparkle draws.
-    let mut leaf_rng = tr_core::tile_light::FastRandom::new(
-        sparkle_seed ^ 0x9E37_79B9_7F4A_7C15,
-    );
+    // `TileDrawing._rand` (`TileDrawing.cs:104,191`): ONE `UnifiedRandom`
+    // lives across every `Draw`/`PostDrawTiles` call. The fused default
+    // keeps the frozen per-frame pin (re-seed each call); the gated halves
+    // continue the shared stream the caller pre-seeded once per frame
+    // (GATE RNG fix — the solid half's cell rolls must advance the stream
+    // the extras block's foliage rolls read, exactly like the fused walk).
+    let mut leaf_rng = if scratch.leaf_rng_shared {
+        scratch.leaf_rng.take().unwrap_or_else(|| {
+            tr_core::tile_light::FastRandom::new(sparkle_seed ^ 0x9E37_79B9_7F4A_7C15)
+        })
+    } else {
+        tr_core::tile_light::FastRandom::new(sparkle_seed ^ 0x9E37_79B9_7F4A_7C15)
+    };
     let half = screen * 0.5 / zoom;
     let min = camera - half;
     let max = camera + half;
@@ -475,7 +584,12 @@ pub(crate) fn draw_tiles(
     }
     // `Main.DrawLiquid(bg: true, ...)`: water is drawn before walls and tiles at
     // `Opacity` (usually 1.0), so the parallax background never shows through it.
-    if !crate::env::no_liqback() {
+    // S1-G-13 consumers: only the fused default draws it here — under the
+    // gated path the backWaterTarget callback owns this pass
+    // (`Main.RenderBackgroundWater`, `Main.cs:55183-55198` drives
+    // `DrawWaters(isBackground: true)`), and the direct-screen block draws
+    // no liquids at all (the composites carry them).
+    if tile_filter == TileFilter::All && !crate::env::no_liqback() {
         stats.liquids += draw_waters(
             r,
             lookups,
@@ -496,92 +610,59 @@ pub(crate) fn draw_tiles(
     // were walked once per frame in the pre-draw phase (`App::frame`), which also
     // collects their `AddLight` list for the light map — keeping the walk out of
     // the G6-cached path makes the light feed deterministic per frame index.
-    for d in std::mem::take(&mut scratch.waterfall_quads) {
-        let Some(uv) = lookups.waterfall_uv(d.texture as usize, d.source) else {
-            continue;
-        };
-        r.push_sprite(
-            d.pos,
-            [d.source[2] as f32, d.source[3] as f32],
-            flip_uv(uv, d.flip),
-            d.color,
-        );
-        stats.waterfalls += 1;
+    // S1-G-13 consumers: under a split tile half the falls stay in the
+    // scratch for the direct-screen extras' `DoDraw_Waterfalls` push
+    // (`Main.cs:63306-63320`, between the tile2 and tile composites); the
+    // fused default AND the extras block emit them here (the fused path's
+    // documented approximation keeps them early; the extras block sits at
+    // the C# site).
+    if matches!(tile_filter, TileFilter::All | TileFilter::ScreenExtras) {
+        for d in std::mem::take(&mut scratch.waterfall_quads) {
+            let Some(uv) = lookups.waterfall_uv(d.texture as usize, d.source) else {
+                continue;
+            };
+            r.push_sprite(
+                d.pos,
+                [d.source[2] as f32, d.source[3] as f32],
+                flip_uv(uv, d.flip),
+                d.color,
+            );
+            stats.waterfalls += 1;
+        }
     }
 
     // `Main.DrawWalls`: the whole wall layer is drawn before the tile layer. Each
     // frame is a 32x32 sprite placed 8 px up/left of the cell, so neighbouring walls
     // join without seams; drawing it interleaved with tiles would let the overhang
-    // cut into tiles drawn earlier in the row.
-    if crate::env::walls_enabled() {
-        for ty in y0..=y1 {
-            for tx in x0..=x1 {
-                let tile = &world.tiles[ty as usize * width + tx as usize];
-                if !wall_visible(tile.wall) {
-                    continue;
-                }
-                let Some(wf) = lookups.wall_tex(tile.wall, tile.wall_col(), tile.wall_row()) else {
-                    continue;
-                };
-                if tile.active()
-                    && tile_hides_wall(
-                        lookups,
-                        atlas,
-                        tile.kind,
-                        tile.frame_x,
-                        tile.frame_y,
-                        tile.slope(),
-                        tile.half_brick(),
-                    )
-                {
-                    stats.walls_culled += 1;
-                    continue;
-                }
-                // `WallDrawing.cs:91`: Echo-coated walls are hidden unless the
-                // Echo Monolith or an Echo item grants sight (the port has
-                // neither yet, so they stay hidden; wall 318 is handled above).
-                if world.invisible_wall(tx, ty) {
-                    continue;
-                }
-                // `WallDrawing.DrawWalls` skips black cells; the tile pass merges the
-                // fully covered ones into black rectangles.
-                if light_is_zero(light.get(tx, ty)) {
-                    continue;
-                }
-                // The 32 px sprite is centred on the 16 px cell (`x*16 - 8`), like
-                // `new Vector2(j * 16 - 8, i * 16 - 8)` in the original.
-                stats.quads += push_wall_lit(
-                    r,
-                    [tx as f32 * TILE_PX - 8.0, ty as f32 * TILE_PX - 8.0],
-                    wf.uv,
-                    light,
-                    style,
-                    tx,
-                    ty,
-                    anim_time,
-                    world.wall_paint(tx, ty),
-                    world.fullbright_wall(tx, ty),
-                );
-                stats.walls += 1;
-            }
-        }
+    // cut into tiles drawn earlier in the row. S1-G-13 consumers: the loop body
+    // moved verbatim into `draw_wall_layer` so the wallTarget callback
+    // (`Main.RenderWalls`, `Main.cs:58081-58091`) drives the SAME pass; under a
+    // split tile half the wallTarget callback owns it, so it is skipped here.
+    if tile_filter == TileFilter::All {
+        draw_wall_layer(
+            r, world, lookups, atlas, light, style, anim_time, x0, y0, x1, y1, &mut stats,
+        );
     }
 
-    // Main.cs:22320,56951,63390 — behind-tiles NPCs draw before the tile layer
-    // so they appear inside/behind solid tiles (worms, WoF segments).
-    draw_phase("npcs_behind_tiles");
-    stats.quads += draw_npcs(
-        r,
-        npc_assets,
-        npcs,
-        light,
-        style,
-        anim_time,
-        camera,
-        zoom,
-        screen,
-        true,
-    );
+    // S1-G-13 consumers: the direct-screen extras block (`ScreenExtras`)
+    // owns the behind-tiles NPC pass at its `DoDraw_DrawNPCsBehindTiles`
+    // site (`Main.cs:63293/63298`, between the tile2 and tile composites);
+    // the tile halves never draw entities. The fused default is unchanged.
+    if matches!(tile_filter, TileFilter::All | TileFilter::ScreenExtras) {
+        draw_phase("npcs_behind_tiles");
+        stats.quads += draw_npcs(
+            r,
+            npc_assets,
+            npcs,
+            light,
+            style,
+            anim_time,
+            camera,
+            zoom,
+            screen,
+            true,
+        );
+    }
 
     scratch.open.clear();
     // `TileDrawing._vineRootsPositions` / the `TileCounterType.Vine` special
@@ -598,7 +679,15 @@ pub(crate) fn draw_tiles(
     // = the `-1` miss), read through `chest::chest_draw_frame`.
     let mut chest_positions: std::collections::HashMap<(i32, i32), Option<i32>> =
         std::collections::HashMap::new();
+    // S1-G-13 consumers: the direct-screen blocks draw NO tile cells — the
+    // tile targets own them, and re-walking the cells here would re-roll the
+    // leaf RNG (`EmitTreeLeaves`) the tile halves already rolled. The cell
+    // loop runs only for the fused default and the tile-target callbacks.
+    let skip_cells = matches!(tile_filter, TileFilter::ScreenExtras | TileFilter::Screen);
     for ty in y0..=y1 {
+        if skip_cells {
+            break;
+        }
         scratch.cur.clear();
         let mut run_start = -1i32;
         let cy = ty / chunk;
@@ -630,6 +719,38 @@ pub(crate) fn draw_tiles(
                     l = [l[0] * 0.4, l[1] * 0.4, l[2] * 0.4];
                 }
                 let active = tile.active();
+                // S1-G-13 consumers: the wallTarget callback's black half
+                // (`TileFilter::Wall`, `RenderBlacks` → `DrawBlack`): the
+                // dark-cell merge only — no sprite, no drawdata, no RNG roll
+                // (the tile halves own the leaf stream; the wall pass never
+                // rolls it, `TileDrawing._rand` is per-layer, `:191`). The
+                // run-break mirrors the fused arm below.
+                if tile_filter == TileFilter::Wall {
+                    let flame_tile = active
+                        && (tr_core::flame::tile_flame(tile.kind)
+                            || tr_core::flame::has_glow_branch(tile.kind));
+                    if light_is_zero(l)
+                        && !flame_tile
+                        && (active || (crate::env::walls_enabled() && wall_visible(tile.wall)))
+                    {
+                        if run_start < 0 {
+                            run_start = tx;
+                        }
+                        stats.dark_cells += 1;
+                    } else if run_start >= 0 {
+                        scratch.cur.push((run_start, tx - 1));
+                        run_start = -1;
+                    }
+                    continue;
+                }
+                // `TileDrawing.Draw`'s per-cell layer test
+                // (`TileDrawing.cs:517` — `!tile.active() ||
+                // IsTileDrawLayerSolid(type) != solidLayer → continue`),
+                // BEFORE the vine crawl (the C# `switch` sits after it). The
+                // fused default (`All`) keeps every cell — unchanged.
+                if !tile_filter.keeps(tile.kind, active) {
+                    continue;
+                }
                 // `TileDrawing.Draw`'s vine arm (`TileDrawing.cs:536-545`):
                 // a `VineThreads` cell never draws through `DrawSingleTile`
                 // — the crawl registers the strip's root as a special point
@@ -835,10 +956,17 @@ pub(crate) fn draw_tiles(
                     && !flame_tile
                     && (active || (crate::env::walls_enabled() && wall_visible(tile.wall)))
                 {
-                    if run_start < 0 {
-                        run_start = tx;
+                    // S1-G-13 consumers: under a split half the black coverage
+                    // belongs to the wallTarget callback (`RenderBlacks`,
+                    // `Main.cs:58069-58075` — `DrawBlack(intoRenderTargets:
+                    // true)`); the tile half only skips the cell (the C#
+                    // `!flag` return, `TileDrawing.cs:1014-1017`).
+                    if tile_filter == TileFilter::All {
+                        if run_start < 0 {
+                            run_start = tx;
+                        }
+                        stats.dark_cells += 1;
                     }
-                    stats.dark_cells += 1;
                     continue;
                 }
                 if run_start >= 0 {
@@ -1193,7 +1321,31 @@ pub(crate) fn draw_tiles(
         stats.dark_rects += 1;
     }
 
-    if !crate::env::no_foliage() {
+    // S1-G-13 consumers: the layer callbacks (solid/nonSolid halves, the
+    // wall blacks) stop here — `PostDrawTiles(solidLayer: false)`
+    // (`TileDrawing.cs:414-432`) draws the foliage/vines into the SCREEN
+    // batch after the tile2 composite (`Main.cs:63358-63380`); the
+    // direct-screen extras block (`TileFilter::ScreenExtras`) re-runs them
+    // there. The tile2 callback's crawl parks its roots for that block
+    // (`_vineRootsPositions` survives the callback, `:120`). The entity
+    // tail (`TileFilter::Screen`) skips the foliage/vines and continues.
+    if matches!(
+        tile_filter,
+        TileFilter::Solid | TileFilter::NonSolid | TileFilter::Wall
+    ) {
+        if tile_filter == TileFilter::NonSolid {
+            scratch.vine_roots = std::mem::take(&mut vine_roots);
+        }
+        // GATE RNG fix: hand the advanced stream to the next gated call.
+        if scratch.leaf_rng_shared {
+            scratch.leaf_rng = Some(leaf_rng);
+        }
+        stats.instances = stats.quads;
+        stats.draw_ms = t_total.elapsed().as_secs_f32() * 1000.0;
+        return stats;
+    }
+
+    if tile_filter != TileFilter::Screen && !crate::env::no_foliage() {
         stats.foliage = draw_tree_foliage(
             r,
             world,
@@ -1214,7 +1366,12 @@ pub(crate) fn draw_tiles(
     // `TileDrawing.PostDrawTiles`' `DrawTrees` → `DrawVines` order
     // (`TileDrawing.cs:428-429`): the vine strips draw right after the tree
     // canopies (S1-G-1). `DrawReverseVines` (`:430`) and the multi-tile-vine
-    // pass (`:421`) are separate passes, still unported.
+    // pass (`:421`) are separate passes, still unported. S1-G-13 consumers:
+    // the direct-screen extras block reads the roots the tile2 callback
+    // parked.
+    if tile_filter == TileFilter::ScreenExtras {
+        vine_roots = std::mem::take(&mut scratch.vine_roots);
+    }
     if !vine_roots.is_empty() {
         stats.quads += crate::render::vines::draw_vines(
             r,
@@ -1228,6 +1385,19 @@ pub(crate) fn draw_tiles(
             vine_wind_counter,
             &vine_roots,
         );
+    }
+    // `TileDrawing.PostDrawTiles` closes before the entity tail — the
+    // direct-screen extras block stops here; the entity tail rides its own
+    // `TileFilter::Screen` pass after the tile composite.
+    if tile_filter == TileFilter::ScreenExtras {
+        // GATE RNG fix: the extras block consumed the foliage rolls; the
+        // entity tail (`Screen`) draws none, but keep the stream parked.
+        if scratch.leaf_rng_shared {
+            scratch.leaf_rng = Some(leaf_rng);
+        }
+        stats.instances = stats.quads;
+        stats.draw_ms = t_total.elapsed().as_secs_f32() * 1000.0;
+        return stats;
     }
     // Main.cs:22320,63305 — normal NPC pass (non-behind-tiles).
     draw_phase("npcs");
@@ -1323,8 +1493,11 @@ pub(crate) fn draw_tiles(
         stats.items += it.draw(r, lookups, light, style, anim_time);
     }
     // `Main.DrawLiquid(bg: false, ...)` runs after entities: the foreground water
-    // layer tints everything that stands in it.
-    if !crate::env::no_liqfront() {
+    // layer tints everything that stands in it. S1-G-13 consumers: the
+    // waterTarget callback owns this pass under the gated path
+    // (`Main.RenderWater` → `DrawWaters()`, `Main.cs:57371-57386`, composited
+    // at `:62308`); the direct-screen block skips it.
+    if tile_filter == TileFilter::All && !crate::env::no_liqfront() {
         stats.liquids += draw_waters(
             r,
             lookups,
@@ -1358,7 +1531,91 @@ pub(crate) fn draw_tiles(
         + stats.waterfalls
         + stats.items;
     stats.draw_ms = t_total.elapsed().as_secs_f32() * 1000.0;
+    // GATE RNG fix: the tail exit parks the stream too (the fused default
+    // never reads the slot — `leaf_rng_shared` is false there).
+    if scratch.leaf_rng_shared {
+        scratch.leaf_rng = Some(leaf_rng);
+    }
     stats
+}
+
+/// `WallDrawing.DrawWalls` (`Main.DrawWalls`, the wall half of
+/// `Main.RenderWallsAndBlacks`, `Main.cs:58056-58091`): the whole wall layer,
+/// drawn before the tile layer. Each frame is a 32x32 sprite placed 8 px
+/// up/left of the cell so neighbouring walls join without seams. S1-G-13
+/// consumers: extracted verbatim from the fused `draw_tiles` loop so the
+/// wallTarget callback drives the SAME pass; the fused default calls it at
+/// the identical site (the draw order is unchanged).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn draw_wall_layer(
+    r: &mut SpriteRenderer,
+    world: &World,
+    lookups: &mut assets::Lookups,
+    atlas: Option<&Atlas>,
+    light: &LightMap,
+    style: &LightStyle,
+    anim_time: f32,
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
+    stats: &mut TileDrawStats,
+) {
+    if !crate::env::walls_enabled() {
+        return;
+    }
+    let width = world.width as usize;
+    for ty in y0..=y1 {
+        for tx in x0..=x1 {
+            let tile = &world.tiles[ty as usize * width + tx as usize];
+            if !wall_visible(tile.wall) {
+                continue;
+            }
+            let Some(wf) = lookups.wall_tex(tile.wall, tile.wall_col(), tile.wall_row()) else {
+                continue;
+            };
+            if tile.active()
+                && tile_hides_wall(
+                    lookups,
+                    atlas,
+                    tile.kind,
+                    tile.frame_x,
+                    tile.frame_y,
+                    tile.slope(),
+                    tile.half_brick(),
+                )
+            {
+                stats.walls_culled += 1;
+                continue;
+            }
+            // `WallDrawing.cs:91`: Echo-coated walls are hidden unless the
+            // Echo Monolith or an Echo item grants sight (the port has
+            // neither yet, so they stay hidden; wall 318 is handled above).
+            if world.invisible_wall(tx, ty) {
+                continue;
+            }
+            // `WallDrawing.DrawWalls` skips black cells; the tile pass merges the
+            // fully covered ones into black rectangles.
+            if light_is_zero(light.get(tx, ty)) {
+                continue;
+            }
+            // The 32 px sprite is centred on the 16 px cell (`x*16 - 8`), like
+            // `new Vector2(j * 16 - 8, i * 16 - 8)` in the original.
+            stats.quads += push_wall_lit(
+                r,
+                [tx as f32 * TILE_PX - 8.0, ty as f32 * TILE_PX - 8.0],
+                wf.uv,
+                light,
+                style,
+                tx,
+                ty,
+                anim_time,
+                world.wall_paint(tx, ty),
+                world.fullbright_wall(tx, ty),
+            );
+            stats.walls += 1;
+        }
+    }
 }
 
 /// `WallDrawing.DrawWalls`: a 32x32 wall sprite lit by the cell's four corner colours
@@ -2311,5 +2568,138 @@ mod tests {
         // (`blockType() != 0`, `WallDrawing.cs:243` / `Tile.cs:202-214`).
         assert!(!tile_hides_wall(&mut lookups, Some(&atlas), 0, 0, 0, 1, false));
         assert!(!tile_hides_wall(&mut lookups, Some(&atlas), 0, 0, 0, 0, true));
+    }
+
+    // S1-G-13 consumers: the `solidLayer` split (`TileDrawing.Draw`'s per-cell
+    // test, `TileDrawing.cs:517`, via `IsTileDrawLayerSolid` `:4469-4475`).
+    // The fused default keeps every cell; the two halves partition the active
+    // cells by solidity; the direct-screen blocks draw no cells.
+    #[test]
+    fn tile_filter_partitions_the_active_cells_by_solidity() {
+        // Dirt (0) is solid; a torch (4) is not. The forced-solid override
+        // table (`TileID.Sets.DrawTileInSolidLayer`, `TileID.cs:516-528`)
+        // pins 11/78/470/475/579 solid regardless of `_tileSolid`.
+        assert!(tile_draw_layer_solid(0), "dirt is solid");
+        assert!(!tile_draw_layer_solid(4), "a torch is non-solid");
+        // The fused default keeps every cell, active or not.
+        assert!(TileFilter::All.keeps(0, true));
+        assert!(TileFilter::All.keeps(4, false));
+        // The solid half keeps only active solid cells.
+        assert!(TileFilter::Solid.keeps(0, true));
+        assert!(!TileFilter::Solid.keeps(4, true));
+        assert!(!TileFilter::Solid.keeps(0, false), "inactive cells draw in neither half");
+        // The non-solid half keeps only active non-solid cells.
+        assert!(TileFilter::NonSolid.keeps(4, true));
+        assert!(!TileFilter::NonSolid.keeps(0, true));
+        assert!(!TileFilter::NonSolid.keeps(4, false));
+        // The two halves are complementary on active cells.
+        for kind in [0_u16, 4, 11, 78, 470, 475, 579, 82, 192] {
+            assert_ne!(
+                TileFilter::Solid.keeps(kind, true),
+                TileFilter::NonSolid.keeps(kind, true),
+                "kind {kind} lands in exactly one half"
+            );
+        }
+        // The direct-screen blocks draw no tile cells.
+        assert!(!TileFilter::Screen.keeps(0, true));
+        assert!(!TileFilter::ScreenExtras.keeps(4, true));
+    }
+
+    // S1-G-13 consumers: the forced-solid override wins over `_tileSolid`
+    // (`IsTileDrawLayerSolid` checks `DrawTileInSolidLayer[type].HasValue`
+    // first, `TileDrawing.cs:4471-4474`).
+    #[test]
+    fn tile_filter_honours_the_forced_solid_override() {
+        // The generated table sets these to 1 (forced solid).
+        for kind in [11_u16, 78, 470, 475, 579] {
+            assert_eq!(
+                td::SET_DRAW_TILE_IN_SOLID_LAYER.get(kind as usize).copied(),
+                Some(1),
+                "kind {kind} is forced solid in the generated table"
+            );
+            assert!(tile_draw_layer_solid(kind), "kind {kind} draws in the solid half");
+            assert!(TileFilter::Solid.keeps(kind, true));
+            assert!(!TileFilter::NonSolid.keeps(kind, true));
+        }
+    }
+
+    // GATE RNG fix witnesses (S1-G-13 consumers): the shared leaf-roll
+    // stream reproduces the fused single-stream consumption order.
+
+    /// The kind-192 leaf cells (the ONLY cell-loop rolls,
+    /// `TileDrawing.cs:6849-6855`) are SOLID — they land in the Solid half,
+    /// so the gated Solid callback's rolls are exactly the fused walk's
+    /// cell rolls, and the NonSolid half rolls nothing.
+    #[test]
+    fn the_leaf_cell_rolls_live_in_the_solid_half() {
+        assert!(td::TILE_SOLID.has(192), "living-leaf blocks are solid");
+        assert!(tile_draw_layer_solid(192));
+        assert!(TileFilter::Solid.keeps(192, true));
+        assert!(!TileFilter::NonSolid.keeps(192, true));
+    }
+
+    /// The shared-stream mechanics: a gated call takes the parked stream,
+    /// advances it, and parks it back; the next call continues from the
+    /// advanced state — NOT from the pristine seed. The fused default
+    /// (`leaf_rng_shared == false`) ignores the slot entirely.
+    #[test]
+    fn the_shared_leaf_stream_continues_across_gated_calls() {
+        use tr_core::tile_light::FastRandom;
+        let seed = 0x1234_5678_9ABC_DEF0u64 ^ 0x9E37_79B9_7F4A_7C15;
+        let mut scratch = DrawScratch::default();
+        scratch.leaf_rng_shared = true;
+        scratch.leaf_rng = Some(FastRandom::new(seed));
+        // Call 1 (the Solid half): take + roll + park.
+        let mut rng = scratch.leaf_rng.take().unwrap();
+        let first = rng.next_range(0, 500);
+        scratch.leaf_rng = Some(rng);
+        // Call 2 (the extras foliage): continues — the fused single-stream
+        // shape. Re-seeding here (the pre-fix bug) would repeat `first`.
+        let mut rng = scratch.leaf_rng.take().unwrap();
+        let second = rng.next_range(0, 500);
+        scratch.leaf_rng = Some(rng);
+        // The reference: one uninterrupted stream from the same seed.
+        let mut reference = FastRandom::new(seed);
+        assert_eq!(first, reference.next_range(0, 500));
+        assert_eq!(second, reference.next_range(0, 500));
+        // The pristine re-seed (the pre-fix gated behaviour) diverges.
+        let mut pristine = FastRandom::new(seed);
+        assert_eq!(pristine.next_range(0, 500), first);
+        assert_ne!(
+            pristine.next_range(0, 500),
+            second,
+            "the pre-fix re-seed repeats the first draw — the divergence pin"
+        );
+        // The fused default never reads the slot: with the flag off the
+        // parked stream stays untouched while the call re-seeds its own.
+        scratch.leaf_rng_shared = false;
+        let parked_seed = scratch.leaf_rng.unwrap().seed;
+        let mut fused = FastRandom::new(seed);
+        let _ = fused.next_range(0, 500);
+        assert_eq!(scratch.leaf_rng.unwrap().seed, parked_seed);
+        assert_ne!(fused.seed, parked_seed);
+    }
+
+    /// The gated frame pre-seeds the shared stream with the fused pin
+    /// (`sparkle_seed ^ 0x9E37…`) and clears the shared mode at the tail;
+    /// the capture chunk pins its own stream once per render.
+    #[test]
+    fn the_gated_consumers_pre_seed_and_clear_the_shared_stream() {
+        let lt = include_str!("../app/layer_targets.rs");
+        assert!(lt.contains("frame.scratch.leaf_rng_shared = true;"));
+        assert!(lt.contains("frame.sparkle_seed ^ 0x9E37_79B9_7F4A_7C15"));
+        assert!(lt.contains("frame.scratch.leaf_rng_shared = false;"));
+        let cr = include_str!("../app/capture_render.rs");
+        assert!(cr.contains("cw.scratch.leaf_rng_shared = true;"));
+        assert!(cr.contains("self.cw.scratch.leaf_rng_shared = false;"));
+        // Every draw_tiles exit parks the stream back when shared.
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        assert_eq!(
+            body.matches("scratch.leaf_rng = Some(leaf_rng);").count(),
+            3,
+            "all three exits (halves, extras, tail) park the stream"
+        );
     }
 }
