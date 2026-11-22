@@ -345,6 +345,10 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // the tick so the splash drain resolves the water dust type.
     let water_style = crate::biome::calculate_water_style(&app.world, app.camera) as i32;
     app.projectiles.set_water_style(water_style);
+    // W4-g64 (the d13 seam) — `Main.screenWidth` for the aiStyle-124
+    // tentacle's ore-scan distance gate (`Projectile.cs:35577`); the same
+    // swapchain width the dust cull reads (`App::spawn_ctx`).
+    app.projectiles.set_screen_width(sw);
     // S1-P-i55 — the golf context (`Main.LocalGolfState` + `Main.MouseWorld`
     // + the mouse-right pair + the player snapshot). The C# reads the live
     // state mid-walk; the port clones it into the pool for the tick and
@@ -400,6 +404,11 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // (`Main.screenPosition/width/height` + the gfx budget) captured
     // BEFORE the step closure's `&mut app.world`/`&mut app.dust` field
     // borrows (the `world_sim/npcs.rs` `dust_spawn_ctx` convention).
+    // W4-g64 — the trail-dust lane's live seam (the W4-g63 batch-1 shape):
+    // the frame's spawn ctx (`Main.screenPosition/width/height` + the gfx
+    // budget) captured BEFORE the step closure's `&mut app.world`/`&mut
+    // app.dust` field borrows (the `world_sim/npcs.rs` `dust_spawn_ctx`
+    // convention).
     let dust_spawn_ctx = app.spawn_ctx();
     app.projectile_step.tick(dt.min(0.25), |_| {
         app.projectiles.update_dust(
