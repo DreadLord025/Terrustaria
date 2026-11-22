@@ -325,8 +325,13 @@ pub(crate) struct App {
     /// `UIScrollbar._isDragging`'s `_dragYOffset` for the emote wheel's bar
     /// (`UIScrollbar.cs:23-27`, `LeftMouseDown` `:131-135`) — W4-g54.
     pub(crate) emote_scroll_drag: Option<f32>,
-    /// `BannerSystem`'s kill tally (M2-BUFF-8).
+    /// `BannerSystem`'s kill tally + claimable counts (M2-BUFF-8, W4-e24).
     pub(crate) banners: banners::BannerSystem,
+    /// `FakeCursorItem` (`GameContent/FakeCursorItem.cs`): the pending-claim
+    /// cursor overlay the BannerClaimingUI shows while a banner claim is in
+    /// flight (W4-e24). The single-player loopback adds then removes it
+    /// within one claim, so it reads empty between claims.
+    pub(crate) fake_cursor: banners::FakeCursorItem,
     /// The homeless town NPCs' look-for-home timer (`lookForHomeTimeout`'s
     /// stand-in; M4-TOWN-1).
     pub(crate) town_look_timer: f32,
@@ -4115,6 +4120,15 @@ impl App {
             .iter()
             .map(|b| (b.banner, b.kills))
             .collect();
+        // W4-e24: `BannerSystem.Load`'s `version >= 289` claimable half
+        // (`BannerSystem.cs:203-211`) — the v18 section's recorded claimable
+        // counts restore the pool the milestone fills.
+        let seeded_claimable: Vec<(i32, u16)> = sections
+            .native
+            .banner_claimable
+            .iter()
+            .map(|b| (b.banner, b.count))
+            .collect();
         let world_chests = if sections.from_wld {
             let mut loaded = crate::chest::from_wld(&sections.data.chests);
             // `LoadChests:2801-2804`: the pre-115 dresser pass runs after the
@@ -4406,8 +4420,10 @@ impl App {
             banners: {
                 let mut banners = banners::BannerSystem::default();
                 banners.load_pairs(seeded_banners);
+                banners.load_claimable_pairs(seeded_claimable);
                 banners
             },
+            fake_cursor: banners::FakeCursorItem::default(),
             town_look_timer: 0.0,
             town_arrival: crate::town_arrival::ArrivalState::new(),
             reuse_delay: 0.0,

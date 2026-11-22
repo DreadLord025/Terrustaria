@@ -3346,6 +3346,7 @@ pub(crate) mod front_flow_tests {
             emotes: crate::emotes::EmoteSystem::default(),
             emote_scroll_drag: None,
             banners: crate::banners::BannerSystem::default(),
+            fake_cursor: crate::banners::FakeCursorItem::default(),
             town_look_timer: 0.0,
             town_arrival: crate::town_arrival::ArrivalState::new(),
             reuse_delay: 0.0,
