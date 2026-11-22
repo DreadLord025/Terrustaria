@@ -767,6 +767,89 @@ mod tests {
     // into the frames (`:35978-35988`), so the srng tail and the chest tiles
     // move. Values re-measured on the merged tree (S1-A-3's pins + S1-A-4).
     // >>> cc526b1 (Merge branch 'M5-DUNGEON-lights': DungeonGlobalLights + the restored spike pass)
+    // W4-f24 (2026-11-21, code-only): lane B ports the gated Dual Dungeons
+    // Dither Snake pass's geometry — `snake_math.rs` (the f64 Vector2D +
+    // Utils.Remap/Lerp/GetLerpValue/RotatedBy/SafeNormalize, ReLogic
+    // `Vector2D.cs` + `Utils.cs:107/:315/:350/:730/:1686/:1846`) and
+    // `dungeon_bounds.rs` (`DungeonBounds.cs:8-337`, the clamped hitbox
+    // rectangle). UNWIRED: pure math/geometry, no pipeline step consumes
+    // them yet — no RNG draw added, no tile written. BOTH CLASSIC PINS STAY
+    // and the a == b determinism halves are untouched. The gated step (B6)
+    // will draw only under `MicroSeedFlags::DUAL_DUNGEONS`, so a classic
+    // world keeps the byte-identical ledger; the affected seed's hash moves
+    // by design and rides an a == b witness (written NOT run).
+    // W4-f24 B2: `dungeon_control_line.rs` ports `DungeonControlLine`
+    // (`DungeonControlLine.cs:9-285`) — CanPaint's tangent/normal blend,
+    // the Bayer style-transition + edge dither (the NextFloat/Next(3)/
+    // Next(2)/Next(4) rarity rolls), Paint's brick+wall+unbreakable-tier
+    // stamp, IsSelfIntersecting/AdjustTangents, IsInsideBorder and
+    // GetPotentialRoomPosition. Still UNWIRED (B6 lands the gated step) —
+    // no classic draw, both pins stay, a == b untouched.
+    // W4-f24 B3: `dither_snake.rs` ports `DitherSnake`
+    // (`DitherSnake.cs:10-199`) — Add/closest/GetLineContaining (depth-3
+    // walk), GetPositionAlongSnake, the 12-point circle border tests
+    // (ExtraBuffer 1/cos(π/6)), GetRoomPositionInsideBorder (the ×0.8
+    // shrink + Top/Center/Bottom classification), SetTangents, the 100-sweep
+    // AdjustTangentsToPreventSelfIntersection, and the PlotLine border walk
+    // (Utils.cs:2233-2292 early-exit). Still UNWIRED — both pins stay.
+    // W4-f24 B4: `dither_snake.rs` gains the `DitherSnakePass` body
+    // (`DitherSnakePass.cs:22-133`) — CalculateDungeonDitherSnake (the
+    // serpentine grid, the two NextDouble radius walks, the row-end curve
+    // back, the dungeon-side end caps + self-intersection sweep),
+    // GenerateDungeonDitherSnake (paint each line into the outer hitbox) and
+    // ApplyPass's two-dungeon loop. Still UNWIRED (B5 publishes the producer
+    // GenVars, B6 lands the gated step) — both pins stay, a == b untouched.
+    // W4-f24 B5: `dungeon_genvars.rs` ports the producer chain —
+    // SetupDungeonGenVarVariables's colour roll + drunk wall re-roll
+    // (DungeonCrawler.cs:56-108), CreatePotentialDungeonBounds
+    // (DungeonUtils.cs:2067-2087), the dual style quads (:111-128) with the
+    // paint fields of the four statics c32 deferred (Cavern/Corruption/
+    // Jungle/Temple) + Snow/Desert/Hallow + the GetCurrentDungeonStyle
+    // wrapper (DungeonGenerationStyles.cs:95-135). The setup draws only
+    // under DUAL_DUNGEONS (B6 wires it) — both classic pins stay.
+    // W4-f24 B6: the gated step lands — `pipeline.rs` gains the
+    // `dither snake` row (vanilla "Dual Dungeons Dither Snake",
+    // WorldGen.cs:14755) between liquids and dungeon, the Dunes-pass dual
+    // setup (:11520-11525, flag-gated) publishing GenVars.dual_dungeons, and
+    // step_dither_snake (the NormalizedDistanceSafeFromDither :11465 +
+    // both dungeons' calculate/paint). BOTH CLASSIC PINS STAY: the setup
+    // and the step body are gated behind MicroSeedFlags::DUAL_DUNGEONS, so a
+    // classic world runs the byte-identical ledger (the step is a no-op).
+    // The dual seed's hash moves by design and rides the a == b witness
+    // `w4_f24_the_dither_snake_is_gated_and_deterministic` (written NOT run).
+    // W4-f24 A1: `skyblock.rs` ports the Skyblock statics + gate census
+    // (WorldGen.cs:3063-3281) — the 75-name denyAllGeneration table + the
+    // 22-name denySomeGeneration table (the AddPasses body census mapped to
+    // VANILLA_CHAIN names), denySomeGeneration/denyFloatingIslands/
+    // spawnSolidifier/spawnShimmerPool, and the SkyblockState ScanTiles/
+    // Calculate ledger. pass_disabled_by_special_seeds gains the classic
+    // SeedFlags arm (the skyblock pruning). STILL no classic draw — the
+    // tables fire only under SeedFlags::SKYBLOCK; both pins stay.
+    // W4-f24 A2: `skyblock.rs` gains SkyblockIsland (WorldGen.cs:22818-23556)
+    // — the proximity veto, the 14-style palette, the two drifting ellipsoid
+    // blobs + stalactite drip + tidy sweep, the style-1 shimmer pool, the
+    // wall backing, the solidifier/monolith/music-box objects (the tileobject
+    // registry seam + SwitchMonolith/SwitchMB), the cloud puffs + grass
+    // fringe, the LandmassData ledger. STILL UNWIRED (A4 lands the gated
+    // step) — both classic pins stay, a == b untouched.
+    // W4-f24 A3: `seed_tails.rs` ports the skyblock generator's tail helpers
+    // — DoPooEverywhere (WorldGen.cs:2966-2993), DoErrorWorldShuffleBlocks
+    // (:1094-1278 + GetRandomBlock :1084 + SwapTiles :1280 +
+    // errorWorldAdjustment :329), DoAdditionalChangesAroundSpawnIfNeeded
+    // (:24936 + PlaceTorchesAroundSpawn :24989 + RemoveSpecificTilesUnderSpawn
+    // :24953). STILL UNWIRED (A4 lands the gated step) — both pins stay.
+    // W4-f24 A4: the gated Skyblock step lands — `skyblock.rs` gains
+    // GenerateSkyBlockWorld (WorldGen.cs:22526-22816: the tile clear, the
+    // spawn-centre seed bands, the spawn/team/shimmer islands, the flag2
+    // per-seed island loop, the spawn-surface find, the extraLivingTrees
+    // tree, the poo/error-world tails, the spawn-tail torches), the
+    // pipeline `skyblock` row (after plan biome spans, before dunes) +
+    // step_skyblock, and the GenVars landmass/spawn-randomized/dungeon-anchor
+    // fields. BOTH CLASSIC PINS STAY: the generator + the A1 denyAll/denySome
+    // pruning fire only under SeedFlags::SKYBLOCK; a classic world runs the
+    // byte-identical ledger. The skyblock seed's hash moves by design and
+    // rides `w4_f24_the_skyblock_world_is_gated_and_deterministic` (NOT run).
+    // LANE A COMPLETE — both gated passes (Skyblock + Dither Snake) landed.
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {

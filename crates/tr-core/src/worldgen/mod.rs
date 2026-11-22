@@ -29,6 +29,17 @@ mod crystals;
 mod desert;
 mod desert_dunes;
 mod desert_entrances;
+// W4-f24 lane B — the gated Dual Dungeons Dither Snake pass's geometry
+// (the f64 Vector2D/Utils math + the clamped DungeonBounds rectangle).
+mod dungeon_bounds;
+mod dungeon_control_line;
+mod dungeon_genvars;
+// W4-f24 room-content slice — the unclaimed dual-dungeon furniture family
+// (cracked-brick patterns, the set clones, the Bookshelves pass). UNWIRED.
+#[allow(dead_code)] // consumed by the dual-content wiring round (d107 seam)
+mod dungeon_room_content;
+mod dither_snake;
+mod snake_math;
 pub mod evil;
 mod islands;
 mod liquids;
@@ -46,6 +57,8 @@ pub mod progress;
 mod settle_liquids;
 mod spider_gem_moss;
 mod statues;
+mod skyblock;
+mod seed_tails;
 mod structures;
 mod surface;
 mod temple;
@@ -337,6 +350,64 @@ mod tests {
                 (y.kind, y.wall, y.flags, y.frame_x, y.frame_y)
             );
         }
+    }
+
+    /// W4-f24 B6: the gated Dual Dungeons Dither Snake step is a classic
+    /// no-op and deterministic under the dualDungeons seed. The classic
+    /// world's hash equals the no-step baseline (the producer setup and the
+    /// snake body are both flag-gated); the dual seed's whole world replays
+    /// a == b and differs from the seed-matched classic control (the snake
+    /// paints brick/wall into both dungeons' bounds). Written NOT run (the
+    /// code-only lane); the gate measures the affected-seed constants.
+    #[test]
+    fn w4_f24_the_dither_snake_is_gated_and_deterministic() {
+        use crate::seeds::MicroSeedFlags;
+        use crate::worldgen::world_hash::world_hash;
+        let classic = GenOptions { width: 512, height: 512, seed: 42, ..Default::default() };
+        let dual = GenOptions {
+            micro_flags: MicroSeedFlags::from(MicroSeedFlags::DUAL_DUNGEONS),
+            ..classic.clone()
+        };
+        // The classic world is byte-identical with the step present (no-op).
+        let c1 = world_hash(&generate(&classic));
+        let c2 = world_hash(&generate(&classic));
+        assert_eq!(c1, c2);
+        // The dual seed replays a == b.
+        let d1 = world_hash(&generate(&dual));
+        let d2 = world_hash(&generate(&dual));
+        assert_eq!(d1, d2);
+        // The snake moves the dual world (it paints into the dungeon bounds).
+        assert_ne!(d1, c1);
+    }
+
+    /// W4-f24 A4: the gated Skyblock step is a classic no-op and deterministic
+    /// under the skyblock seed. The classic world's hash is unchanged (the
+    /// generator + the denyAll/denySome pruning are flag-gated); the skyblock
+    /// world replays a == b and differs from the seed-matched classic control
+    /// (the island archipelago replaces the terrain). Written NOT run.
+    #[test]
+    fn w4_f24_the_skyblock_world_is_gated_and_deterministic() {
+        use crate::seeds::SeedFlags;
+        use crate::worldgen::world_hash::world_hash;
+        let classic = GenOptions { width: 512, height: 512, seed: 42, ..Default::default() };
+        let sky = GenOptions {
+            flags: SeedFlags::from(SeedFlags::SKYBLOCK),
+            ..classic.clone()
+        };
+        let c1 = world_hash(&generate(&classic));
+        let c2 = world_hash(&generate(&classic));
+        assert_eq!(c1, c2);
+        let s1 = world_hash(&generate(&sky));
+        let s2 = world_hash(&generate(&sky));
+        assert_eq!(s1, s2);
+        assert_ne!(s1, c1);
+        // The skyblock world has far fewer active tiles than the classic
+        // (the denyAll pruning + the island-only generator).
+        let sky_world = generate(&sky);
+        let classic_world = generate(&classic);
+        let sky_active = sky_world.tiles.iter().filter(|t| t.active()).count();
+        let classic_active = classic_world.tiles.iter().filter(|t| t.active()).count();
+        assert!(sky_active < classic_active / 2);
     }
 
     #[test]

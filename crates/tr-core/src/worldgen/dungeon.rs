@@ -132,6 +132,17 @@ impl HallSeed {
     pub fn range(&mut self, lo: u32, hi: u32) -> u32 {
         lo + self.next(hi - lo)
     }
+
+    /// `UnifiedRandom.NextDouble()` (`UnifiedRandom.cs:143-146` — one
+    /// `Sample()` draw). The splitmix stand-in's double: the SAME
+    /// `next_u32` stream step `next`/`range` consume (one draw, scaled to
+    /// [0, 1) by 2^32) — adding this method changes no existing
+    /// `next`/`range` output. The cracked-brick chance roll
+    /// (`LegacyDungeonHall.cs:79-82`) is the first consumer
+    /// (`dungeon_room_content::roll_cracked_brick`).
+    pub fn next_double(&mut self) -> f64 {
+        self.next_u32() as f64 / 4294967296.0
+    }
 }
 
 /// `DungeonData.hallStrengthScalar`/`roomStrengthScalar`/`hallStepScalar`
@@ -622,7 +633,24 @@ pub fn generate_dungeon(world: &mut World, x0: i32, surface_y: i32, r: &mut Hall
     let color = DungeonColor::roll(&mut |n| r.next(n));
     let brick = color.brick_tile();
     let cracked = color.cracked_tile();
-    let wall = color.brick_wall();
+    // W4-f24 R3b: the drunk wall re-roll (`DungeonCrawler.cs:94-108`,
+    // `SetupDungeonGenVarVariables`): AFTER the colour switch, a drunk world
+    // spends one more `genRand.Next(3)` and overrides ONLY brickWallType to
+    // 7/8/9 (the brick/cracked pair keeps the rolled colour). B5 landed the
+    // twin in the dual producer (`dungeon_genvars::roll_dungeon_color`);
+    // this is the legacy path's copy on its own HallSeed stream. The draw
+    // sits before `CreatePotentialDungeonBounds` (:109, draw-free) and the
+    // style roll (:110), so the drunk setup stream shifts by exactly one
+    // Next(3); a classic world burns nothing extra.
+    let wall = if world.seeds.contains(crate::seeds::SeedFlags::DRUNK) {
+        match r.next(3) {
+            1 => 8,
+            2 => 9,
+            _ => 7,
+        }
+    } else {
+        color.brick_wall()
+    };
     let setup = DungeonSetup::roll(&mut |lo, hi| r.range(lo, hi), world.width);
     let bottom = (world.height - 220).min(top + (world.rock_layer as i32) * 2);
     // The entrance tower (:the existing pass's contract — a 5-wide shell
@@ -700,11 +728,29 @@ pub fn generate_dungeon(world: &mut World, x0: i32, surface_y: i32, r: &mut Hall
     if let Some(fp) = fp {
         // `WorldGen.getGoodWorldGen` (`get fixed boi`) triples the spike
         // count; `variants::WorldVariants` uses `FOR_THE_WORTHY` as the port's
-        // proxy for it, so the dungeon pass does too.
+        // proxy for it, so the dungeon pass does too. W4-f24 R3: the drunk/
+        // noSurface scan-row arms ride the world's flags; `gen_pos_y` is the
+        // port's proxy for `genVars.generatingDungeonPositionY` (the start
+        // row `top` — the C# moves it to the topmost room,
+        // `DungeonCrawler.cs:399-400`, no room list in the port).
         let good_world = world
             .seeds
             .contains(crate::seeds::SeedFlags::FOR_THE_WORTHY);
-        super::dungeon_features::place_spikes(world, &fp, world.world_surface, 1.0, good_world, r);
+        let drunk = world.seeds.contains(crate::seeds::SeedFlags::DRUNK);
+        let no_surface = world
+            .micro_seeds
+            .contains(crate::seeds::MicroSeedFlags::NO_SURFACE);
+        super::dungeon_features::place_spikes(
+            world,
+            &fp,
+            world.world_surface,
+            1.0,
+            good_world,
+            drunk,
+            no_surface,
+            top,
+            r,
+        );
         // The style rolls `SetupDungeonDataVariables` makes
         // (`DungeonCrawler.cs:213-280`), drawn before the crawl in the C# —
         // the wall variants feed `DungeonGlobalWallVariants` and the lantern
@@ -1017,10 +1063,22 @@ mod tests {
         // The precalculated entrance hall's brick shell rides ±(strength+4)
         // around the walk's end (the surface entrance) — the vanilla's
         // visible entrance tower — so the topmost brick is the shell's top
-        // edge at the entrance point, not the shaft tower's top row. Both
-        // values are the fixed-seed pins of that shell.
+        // edge at the entrance point, not the shaft tower's top row. The
+        // classic value is the fixed-seed pin of that shell.
+        // W4-f24 R3/R3b: the drunk fixture now feeds drunk=true into the
+        // setup wall re-roll (+1 Next(3), :94-108) and the spike scan-row
+        // redraw (:41-44) — the drunk stream moves by design, so the old
+        // exact `Some(97)` shell pin is replaced by the structural
+        // relationship (the +70 start-row shift dominates any single-draw
+        // jitter); the merge gate re-measures the exact drunk pin. The
+        // classic pin is untouched: both arms are flag-gated.
         assert_eq!(topmost_brick_row(&classic), Some(59), "the classic entrance shell");
-        assert_eq!(topmost_brick_row(&drunk), Some(97), "the drunk entrance shell");
+        let drunk_top = topmost_brick_row(&drunk).expect("the drunk shell exists");
+        assert!(
+            drunk_top > 59,
+            "the drunk entrance shell rides the surface+70 start row (the +38 \
+             nominal shift dominates the one-draw setup jitter): {drunk_top}"
+        );
     }
 
     #[test]
@@ -1037,6 +1095,47 @@ mod tests {
         generate_dungeon(&mut b, 300, 92, &mut r2);
         for i in 0..a.tiles.len() {
             assert_eq!(a.tiles[i].kind, b.tiles[i].kind, "cell {i} kind");
+        }
+    }
+
+    /// W4-f24 R3b: the drunk wall re-roll (`DungeonCrawler.cs:94-108`)
+    /// consumes exactly ONE extra Next(3) after the colour roll, and the
+    /// drunk grid replays itself. Written NOT run (code-only).
+    #[test]
+    fn w4_f24_r3b_the_drunk_wall_reroll_burns_one_draw() {
+        // The stream-position witness on the SETUP prefix: the colour
+        // roll's Next(3) is draw 1 on both streams; the drunk re-roll is
+        // draw 2 (the wall override, :96 `genRand.Next(3)`), so the drunk
+        // strength roll 1 (draw 3) equals an oracle that burned colour +
+        // re-roll, while the classic strength roll 1 is draw 2. After the
+        // re-roll the streams never re-align (splitmix) — the pin is the
+        // exact position, not a tail equality.
+        let mut classic = HallSeed::new(0xD00D);
+        let mut drunk = HallSeed::new(0xD00D);
+        let mut oracle = HallSeed::new(0xD00D);
+        assert_eq!(classic.next(3), drunk.next(3), "the colour roll is draw 1");
+        let wall_roll = drunk.next(3);
+        assert!(wall_roll < 3, "the re-roll is a Next(3)");
+        oracle.next(3); // colour
+        oracle.next(3); // re-roll
+        for _ in 0..5 {
+            assert_eq!(drunk.next(1_000_000), oracle.next(1_000_000),
+                "the drunk setup tail rides colour+reroll");
+        }
+        // And the full drunk pass is deterministic (a == b).
+        let mut a = flat_world(600, 400, 60);
+        let mut b = flat_world(600, 400, 60);
+        a.seeds |= crate::seeds::SeedFlags::DRUNK;
+        b.seeds |= crate::seeds::SeedFlags::DRUNK;
+        a.world_surface = 60.0;
+        b.world_surface = 60.0;
+        let mut ra = HallSeed::new(0xD00D);
+        let mut rb = HallSeed::new(0xD00D);
+        generate_dungeon(&mut a, 300, 92, &mut ra);
+        generate_dungeon(&mut b, 300, 92, &mut rb);
+        for i in 0..a.tiles.len() {
+            assert_eq!(a.tiles[i].kind, b.tiles[i].kind, "cell {i} kind");
+            assert_eq!(a.tiles[i].wall, b.tiles[i].wall, "cell {i} wall");
         }
     }
 

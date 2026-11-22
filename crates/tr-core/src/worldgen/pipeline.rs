@@ -461,6 +461,31 @@ pub(crate) struct GenVars {
     /// hive-bounds publication tightens them.
     pub(crate) desert_hive_high: i32,
     pub(crate) desert_hive_low: i32,
+    /// W4-f24 B6: the dual-dungeon producer setup
+    /// (`GenVars.dungeonGenVars`, `DungeonGenVars.cs`) the gated
+    /// `Dual Dungeons Dither Snake` step (`WorldGen.cs:14755`) consumes —
+    /// the per-dungeon bounds/side/location + the style quads. `None` on a
+    /// classic world (the Dunes-pass dual setup `:11520-11525` only runs
+    /// under `MicroSeedFlags::DUAL_DUNGEONS`); the snake step is a no-op
+    /// until it is `Some`.
+    pub(crate) dual_dungeons: Option<super::dungeon_genvars::DualDungeonSetup>,
+    /// W4-f24 A4: `GenVars.landmassData` (`WorldGen.cs:23554`) — the
+    /// skyblock island ledger the generator appends (the round-landmass /
+    /// extra-liquid consumers belong to other lanes). Empty on a classic
+    /// world.
+    pub(crate) landmass_data: Vec<super::skyblock::LandmassData>,
+    /// W4-f24 A4: `GenVars.worldSpawnHasBeenRandomized` (`GenVars.cs`, reset
+    /// false `WorldGen.cs:8321`, set true by the skyblock generator
+    /// `:22811` and the remix spawn `:23849`). The spawn-tail consumers
+    /// (`:680/:1047/:1819/:1892/:22460`) read it; the port carries it for the
+    /// skyblock arm.
+    pub(crate) world_spawn_has_been_randomized: bool,
+    /// W4-f24 A4: `Main.dungeonX`/`dungeonY` — the skyblock generator sets
+    /// both to −1 (`WorldGen.cs:22792-22793`, no dungeon on a skyblock
+    /// world). The port's classic dungeon rides `spans().dungeon_x`; this
+    /// pair carries the C# statics the skyblock arm writes (−1 sentinel).
+    pub(crate) dungeon_x: i32,
+    pub(crate) dungeon_y: i32,
 }
 
 impl Default for GenVars {
@@ -512,6 +537,13 @@ impl Default for GenVars {
             sky_lake: Vec::new(),
             // `GenVars.hellChest` zero-inits with the statics.
             hell_chest: 0,
+            // W4-f24 B6: no dual-dungeon setup on a classic world.
+            dual_dungeons: None,
+            // W4-f24 A4: the skyblock GenVars statics zero-init.
+            landmass_data: Vec::new(),
+            world_spawn_has_been_randomized: false,
+            dungeon_x: 0,
+            dungeon_y: 0,
             shell_start_x_left: 0,
             shell_start_y_left: 0,
             shell_start_x_right: 0,
@@ -1310,16 +1342,23 @@ pub(crate) const DUAL_DUNGEON_DISABLED_PASSES: [&str; 12] = [
     "Shimmer",                 // GenPassNameID.Shimmer             "Shimmer"
 ];
 
-/// Is `vanilla` one of the passes `WorldGen.cs:22504` disables? The gate reads
-/// the micro-seed bit `SecretSeed.dualDungeons` (`WorldGen.cs:22495`);
-/// `SecretSeed.dualDungeons.Enabled` is the port's
-/// [`crate::seeds::MicroSeedFlags::DUAL_DUNGEONS`].
+/// Is `vanilla` one of the passes the special seeds disable? Two arms:
+/// the micro-seed bit `SecretSeed.dualDungeons` (`WorldGen.cs:22495/:22504`,
+/// the port's [`crate::seeds::MicroSeedFlags::DUAL_DUNGEONS`]) prunes the
+/// twelve-name table; the classic `SeedFlags::SKYBLOCK` arm (W4-f24 A1)
+/// prunes the `denyAllGeneration`/`denySomeGeneration` pass bodies
+/// (`WorldGen.cs:3131-3147`, the `skyblock` module's census).
 pub(crate) fn pass_disabled_by_special_seeds(
     vanilla: &str,
     flags: crate::seeds::MicroSeedFlags,
+    classic: crate::seeds::SeedFlags,
 ) -> bool {
-    flags.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS)
+    if flags.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS)
         && DUAL_DUNGEON_DISABLED_PASSES.contains(&vanilla)
+    {
+        return true;
+    }
+    super::skyblock::skyblock_prunes(vanilla, classic, flags)
 }
 
 // --- the executed pipeline (today's order, verbatim call sites) -------------
@@ -1354,6 +1393,13 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("terrain height map", "Terrain", step_terrain_height_map),
     step!("terrain fill", "Terrain", step_terrain_fill),
     step!("plan biome spans", "", step_plan_biome_spans),
+    // W4-f24 A4: the gated Skyblock slot (`WorldGen.cs:11511`): right after
+    // TerrainPass (`:11504`), before Dunes (`:11517`). The skyblock Jungle
+    // registration (`:11509`) is dead — `denyAllGeneration` is always true
+    // under skyblock (`:3131`), so the `!denyAllGeneration` guard never adds
+    // it; the classic "jungle" step below is pruned by the denyAll table.
+    // A classic world's step is a no-op (the generator is flag-gated).
+    step!("skyblock", "Skyblock", step_skyblock),
     // The vanilla Dunes slot (`WorldGen.cs:11517`, pass #3 after TerrainPass):
     // right after the spans planner, before Ocean Sand (`:11580`). Vanilla
     // runs its dune carver here — the M5-DESERT-structures port (the compact
@@ -1409,6 +1455,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // `mushroom patches`).
     step!("evil", "Corruption", step_evil),
     step!("liquids", "Lakes", step_liquids),
+    // W4-f24 B6: the gated Dual Dungeons Dither Snake slot
+    // (`WorldGen.cs:14755`): between Lakes (`:14556`)/Slush (`:14697`) and
+    // Dungeon (`:14757`). A classic world's step is a no-op (the producer
+    // setup is flag-gated); the dualDungeons seed paints both spines here.
+    step!("dither snake", "Dual Dungeons Dither Snake", step_dither_snake),
     step!("dungeon", "Dungeon", step_dungeon),
     // The vanilla Dungeon tail (`WorldGen.cs:14867`): the Constant's
     // horizontal two-row lava caver (`LavaLayerCaverer`, `:73950-74060`),
@@ -1763,10 +1814,31 @@ fn step_dunes(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    _opts: &GenOptions,
+    opts: &GenOptions,
     _noise: &Noise,
     pass_config: &ConfigSection,
 ) {
+    // W4-f24 B6: the dual-dungeon setup the C# runs at the head of the
+    // Dunes pass (`WorldGen.cs:11519-11525`): dungeon 0's
+    // SetupDungeonGenVarVariables, then — under dualDungeons — dungeon 1's.
+    // The port rolls both colours + bounds + style quads here (the producer
+    // chain, B5) and publishes them for the gated snake step. A classic
+    // world draws nothing extra (the block is flag-gated).
+    if opts.micro_flags.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS) {
+        let dungeon_location = gv.spans().dungeon_x;
+        let setup = super::dungeon_genvars::setup_dual_dungeons(
+            &mut streams.pass_rng("Dunes"),
+            opts.flags,
+            opts.micro_flags,
+            opts.crimson,
+            world.width,
+            world.height,
+            gv.layers().world_surface,
+            gv.layers().surface_high,
+            dungeon_location,
+        );
+        gv.dual_dungeons = Some(setup);
+    }
     let count = pass_config
         .get_range("Count")
         .map_or(1, |r| r.get_random(&mut streams.pass_rng("Dunes"), world.width, world.height));
@@ -1944,6 +2016,27 @@ fn step_plan_biome_spans(
         right_beach_start,
         jungle_origin_x,
     ));
+}
+
+/// W4-f24 A4: the gated `Skyblock` pass (`WorldGen.cs:11511-11515` →
+/// `GenerateSkyBlockWorld` `:22526-22816`). Registered only under
+/// `WorldGen.skyblockWorldGen` (the port's `SeedFlags::SKYBLOCK`); a classic
+/// world's step is a no-op. The generator clears the terrain tiles and
+/// places the island archipelago; the denyAll/denySome pruning (A1) skips
+/// the classic passes that would otherwise overwrite it.
+fn step_skyblock(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if !opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let mut rng = streams.pass_rng("Skyblock");
+    super::skyblock::generate_skyblock_world(world, &mut rng, opts.flags, opts.micro_flags, opts.crimson, gv);
 }
 
 fn step_jungle(
@@ -2262,6 +2355,48 @@ fn step_dungeon(
     // bias (`initializeHardMode` `:31593`) and the `.wld` header read it.
     world.dungeon_x = dungeon_x;
     world.dungeon_y = surface_row;
+}
+
+/// W4-f24 B6: the gated `Dual Dungeons Dither Snake` pass
+/// (`WorldGen.cs:14753-14756`, `DitherSnakePass.cs:22-31`). Registered only
+/// under `SecretSeed.dualDungeons` (the port's
+/// `MicroSeedFlags::DUAL_DUNGEONS`); the step is a no-op on a classic world
+/// (the producer setup never ran, `gv.dual_dungeons` is `None`). The snake
+/// paints both dungeons' spines into their outer potential bounds; the
+/// `NormalizedDistanceSafeFromDither` static is the world-wide
+/// `1.0 - 0.075 * (maxTilesY / 1200.0)` (`WorldGen.cs:11465`).
+fn step_dither_snake(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if !opts.micro_flags.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS) {
+        return;
+    }
+    let Some(setup) = gv.dual_dungeons.as_ref() else {
+        return;
+    };
+    let safe_distance = 1.0 - 0.075 * (world.height as f64 / 1200.0);
+    let mut rng = streams.pass_rng("Dual Dungeons Dither Snake");
+    // The two dungeons paint back-to-back, each with its own style quad
+    // (DitherSnakePass.ApplyPass's CurrentDungeon 0 then 1, :25-30).
+    for (d, styles) in setup.dungeons.iter().zip(setup.styles.iter()) {
+        let mut snake = super::dither_snake::calculate_dungeon_dither_snake(
+            &mut rng,
+            world.width,
+            &d.outer,
+            d.dungeon_side,
+            d.dungeon_location,
+            d.style_count,
+            safe_distance,
+        );
+        super::dither_snake::generate_dungeon_dither_snake(
+            world, &mut rng, &mut snake, styles, &d.outer, safe_distance,
+        );
+    }
 }
 
 fn step_ocean_caves(
@@ -3624,7 +3759,7 @@ fn reset_genvars(core: &StreamCore, opts: &GenOptions) -> GenVars {
 fn total_weight(opts: &GenOptions) -> f64 {
     EXECUTED_PIPELINE
         .iter()
-        .filter(|s| !pass_disabled_by_special_seeds(s.vanilla, opts.micro_flags))
+        .filter(|s| !pass_disabled_by_special_seeds(s.vanilla, opts.micro_flags, opts.flags))
         .map(|s| {
             VANILLA_CHAIN
                 .iter()
@@ -3653,8 +3788,8 @@ fn apply_step(
     // pass returns a `Skipped` result without applying — no tiles and no
     // draws from its stream. The port's steps own their streams, so a
     // skipped step is simply not called.
-    if pass_disabled_by_special_seeds(step.vanilla, opts.micro_flags) {
-        log::debug!("worldgen pass '{}' skipped (dualDungeons)", step.name);
+    if pass_disabled_by_special_seeds(step.vanilla, opts.micro_flags, opts.flags) {
+        log::debug!("worldgen pass '{}' skipped (special seeds)", step.name);
         return false;
     }
     // The vanilla `RunPass` trace (`WorldGenerator.cs`: `Trace.WriteLine`
@@ -3816,10 +3951,11 @@ impl GenerationRunner {
             && pass_disabled_by_special_seeds(
                 EXECUTED_PIPELINE[self.cursor].vanilla,
                 self.opts.micro_flags,
+                self.opts.flags,
             )
         {
             log::debug!(
-                "worldgen pass '{}' skipped (dualDungeons)",
+                "worldgen pass '{}' skipped (special seeds)",
                 EXECUTED_PIPELINE[self.cursor].name
             );
             self.cursor += 1;
@@ -3941,7 +4077,12 @@ mod tests {
         // `WorldGen.cs:22141`) between `remove broken traps` and `world tail`.
         // W4-d106 R1-R6: + `grass wall`/`settle liquids again`/`tile cleanup`/
         // `stalac`/`remove broken traps`/`final cleanup` (the six lane-6 passes).
-        assert_eq!(names.len(), 83);
+        // W4-f24 B6: + `dither snake` (vanilla "Dual Dungeons Dither Snake",
+        // `WorldGen.cs:14755`) between `liquids` and `dungeon` — gated, a
+        // classic world's step is a no-op.
+        // W4-f24 A4: + `skyblock` (vanilla "Skyblock", `WorldGen.cs:11511`)
+        // after `plan biome spans`, before `dunes` — gated, classic no-op.
+        assert_eq!(names.len(), 85);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3973,6 +4114,7 @@ mod tests {
                 "terrain height map",
                 "terrain fill",
                 "plan biome spans",
+                "skyblock",
                 "dunes",
                 "ocean sand",
                 "micro grass",
@@ -3994,6 +4136,7 @@ mod tests {
                 "ores and gems",
                 "evil",
                 "liquids",
+                "dither snake",
                 "dungeon",
                 "constant lava layer",
                 "beaches",
@@ -4099,10 +4242,16 @@ mod tests {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("ocean sand"), pos("dunes") + 1);
-        assert_eq!(pos("dunes"), pos("plan biome spans") + 1);
+        // W4-f24 A4: the gated skyblock step sits between the spans planner
+        // and dunes (a classic no-op).
+        assert_eq!(pos("skyblock"), pos("plan biome spans") + 1);
+        assert_eq!(pos("dunes"), pos("skyblock") + 1);
         assert_eq!(names[pos("ocean sand") + 1], "micro grass"); // + the M5-SEED-2 Grass slot
         assert_eq!(names[pos("micro grass") + 1], "jungle");
         assert_eq!(pos("beaches"), pos("dungeon") + 2); // + the seed Constant lava layer (M5-SEED-1)
+        // W4-f24 B6: the gated dither snake sits between liquids and dungeon.
+        assert_eq!(pos("dither snake"), pos("dungeon") - 1);
+        assert_eq!(pos("dither snake"), pos("liquids") + 1);
         assert_eq!(pos("gravitating sand"), pos("beaches") + 1);
         assert_eq!(names[pos("gravitating sand") + 1], "ocean caves");
         // The vanilla chain carries the same relative order.
@@ -4659,18 +4808,19 @@ mod tests {
     /// micro-seed prunes exactly the twelve.
     #[test]
     fn s1_k_1_the_gate_reads_the_dual_dungeons_micro_seed() {
-        use crate::seeds::MicroSeedFlags;
+        use crate::seeds::{MicroSeedFlags, SeedFlags};
         let classic = MicroSeedFlags::none();
         let dual = MicroSeedFlags::from_sum(MicroSeedFlags::DUAL_DUNGEONS);
+        let no_classic = SeedFlags::none();
         for name in DUAL_DUNGEON_DISABLED_PASSES {
-            assert!(!pass_disabled_by_special_seeds(name, classic));
-            assert!(pass_disabled_by_special_seeds(name, dual));
+            assert!(!pass_disabled_by_special_seeds(name, classic, no_classic));
+            assert!(pass_disabled_by_special_seeds(name, dual, no_classic));
         }
         // A pass outside the list stays enabled under the seed.
-        assert!(!pass_disabled_by_special_seeds("Terrain", dual));
+        assert!(!pass_disabled_by_special_seeds("Terrain", dual, no_classic));
         // Another micro-seed does not prune.
         let other = MicroSeedFlags::from_sum(MicroSeedFlags::EXTRA_LIQUID);
-        assert!(!pass_disabled_by_special_seeds("Jungle", other));
+        assert!(!pass_disabled_by_special_seeds("Jungle", other, no_classic));
     }
 
     /// End to end: a `dualDungeons` world runs the shrunken chain. The jungle
