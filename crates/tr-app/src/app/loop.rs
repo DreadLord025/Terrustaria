@@ -269,6 +269,9 @@ impl ApplicationHandler for App {
                             self.achievements_open = false;
                             self.achievements_categories = [true; 4];
                             self.achievements_scroll = 0.0;
+                            self.achievements_scroll_drag = None;
+                            self.achievements_back_sounded = false;
+                            self.achievements_handle_hover = false;
                             return;
                         }
                         if self.menu.is_some() {
@@ -322,6 +325,11 @@ impl ApplicationHandler for App {
                         self.world_key(code);
                     } else {
                         self.keys.remove(&code);
+                        // `DoUpdate_F11_ToggleUI`'s else arm (`Main.cs:18420-18423`):
+                        // the released key re-arms the press latch.
+                        if code == KeyCode::F11 {
+                            self.release_ui = true;
+                        }
                         // The smart-cursor hold mode (`Player.cs:28835-28839`):
                         // releasing the key turns the wanted state off when the
                         // toggle mode (`Main.cSmartCursorModeIsToggleAndNotHold`,
@@ -461,11 +469,7 @@ impl ApplicationHandler for App {
                     {
                         crate::ui::chest::scroll(self, ui_delta, self.mouse_pos);
                     }
-                    if step != 0
-                        && self.menu.is_none()
-                        && self.front.is_none()
-                        && !self.inventory_open
-                    {
+                    if step != 0 && self.hotbar_wheel_allowed() {
                         // S1-P-i54 — `HandleHotbarControls` (`Player.cs:
                         // 31766-31796`): `num += ScrollWheelDelta / -120`
                         // (`:31790`) — wheel-UP (+120) steps BACKWARD — and
@@ -502,6 +506,12 @@ impl ApplicationHandler for App {
                             // bars drag off this flag (`Main.cs:51533-51576`),
                             // held between the press and release events.
                             m.mouse_down = pressed;
+                            if !pressed {
+                                // `UIScrollbar.LeftMouseUp` — the achievements
+                                // bar's drag latch clears on release in the
+                                // menu arm too (the world arm's twin below).
+                                self.achievements_scroll_drag = None;
+                            }
                             if pressed {
                                 // `UIAchievementsMenu` rides over the legacy menu
                                 // (`Main.MenuUI.SetState`), so its Back and filter
@@ -585,6 +595,10 @@ impl ApplicationHandler for App {
                             // `UIScrollbar.LeftMouseUp` (`UIScrollbar.cs:145-149`):
                             // the wheel bar's drag latch clears on release.
                             self.emote_scroll_drag = None;
+                            // `UIScrollbar.LeftMouseUp` (`UIScrollbar.cs:145-149`):
+                            // the achievements bar's drag latch clears on
+                            // release (the front screens' twin rides above).
+                            self.achievements_scroll_drag = None;
                             // S1-P-i54 — `TriggersSet.CopyInto`
                             // (`TriggersSet.cs:844-847`): the left release
                             // clears `Main.blockMouse`, so the next press
@@ -673,6 +687,13 @@ impl ApplicationHandler for App {
                 // while the handle is held the view follows the pointer.
                 if self.front_scroll_drag.is_some() {
                     self.front_scrollbar_drag();
+                }
+                // The achievements overlay's twins: the scrollbar drag and
+                // the Back panel's `FadedMouseOver` sound-12 edge
+                // (`UIAchievementsMenu.cs:150-155`).
+                if self.achievements_open {
+                    self.achievements_scrollbar_drag();
+                    self.achievements_hover_tick();
                 }
                 // Bug 17: the front-end hover edge — `FadedMouseOver`'s
                 // menu tick (`UICharacterSelect.cs:124`, `UIWorldSelect.cs:126`)
@@ -777,6 +798,22 @@ impl App {
         self.map_binds[action.index()].as_str() == crate::input_map::key_name(code)
     }
 
+    /// S1-P-i54 + W4-g53 doc-sweep — the hotbar wheel arm's gate:
+    /// `Player.cs:25203-25212` routes the wheel to `HandleHotbarControls`
+    /// only with the inventory closed (and no map/capture/hair window — the
+    /// caller's branches), and `:31788-31791` gates the wheel delta itself
+    /// on `!Main.inFancyUI && !Main.ingameOptionsWindow`. The port's fancy
+    /// states are the bestiary/emotes overlays (the achievements overlay
+    /// consumes the wheel earlier in the handler) and the options window.
+    pub(crate) fn hotbar_wheel_allowed(&self) -> bool {
+        self.menu.is_none()
+            && self.front.is_none()
+            && !self.inventory_open
+            && !self.bestiary_open
+            && !self.emotes.menu_open
+            && !self.ingame_options.open
+    }
+
     /// S1-P-i54 — one hotbar digit press (`Player.cs:25095-25134` +
     /// `:25174-25177`): the digit latches `num7` and `Select` buffers the
     /// request; the apply + use-timer reset run on the player tick
@@ -844,6 +881,11 @@ impl App {
                 log::info!("light mode: {}", self.light_mode.label());
             }
             KeyCode::F9 => self.save_world(),
+            KeyCode::F11 => {
+                // `Main.DoUpdate_F11_ToggleUI` (`Main.cs:18402-18424`): the
+                // press latch flips `Main.hideUI` + plays sound 12.
+                self.toggle_hide_ui(true);
+            }
             _ if self.is_map_bound(crate::input_map::MapAction::Full, code) => {
                 // `Main.TryOpeningFullscreenMap` (`Player.cs:29105`) on
                 // `Main.cMapFull` (`Main.cs:67192`, default `M`): the key only
@@ -908,6 +950,54 @@ mod tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::map::WorldMap;
+
+    /// W4-g53 doc-sweep — `Player.cs:31788-31791`: the wheel's hotbar arm
+    /// is gated on `!Main.inFancyUI && !Main.ingameOptionsWindow` — the
+    /// bestiary/emotes overlays and the options window eat the notch; the
+    /// plain closed-inventory world still cycles.
+    #[test]
+    fn g53_the_fancy_ui_and_options_window_eat_the_hotbar_wheel() {
+        let mut app = flow_app(None, vec![], vec![]);
+        assert!(app.hotbar_wheel_allowed(), "the plain world cycles");
+        app.bestiary_open = true;
+        assert!(!app.hotbar_wheel_allowed(), "the bestiary is inFancyUI");
+        app.bestiary_open = false;
+        app.emotes.menu_open = true;
+        assert!(!app.hotbar_wheel_allowed(), "the emotes wheel is inFancyUI");
+        app.emotes.menu_open = false;
+        app.ingame_options.open = true;
+        assert!(!app.hotbar_wheel_allowed(), "the options window");
+        app.ingame_options.open = false;
+        app.inventory_open = true;
+        assert!(!app.hotbar_wheel_allowed(), "the open inventory routes to DoScrollingInInventory (`:25205-25207`)");
+    }
+
+    /// W4-g53 doc-sweep — `Main.DoUpdate_F11_ToggleUI` (`Main.cs:18402-18424`):
+    /// the press latch flips `hideUI` once per press (never on held repeats),
+    /// plays sound 12, and re-arms on release. The static `releaseUI` starts
+    /// false (`Main.cs:2087`); the first released-frame pass arms it.
+    #[test]
+    fn g53_f11_flips_hide_ui_once_per_press_with_the_tick() {
+        let mut app = flow_app(None, vec![], vec![]);
+        assert!(!app.hide_ui);
+        // The first update with the key released arms the latch
+        // (`:18420-18423`).
+        app.toggle_hide_ui(false);
+        assert!(app.release_ui);
+        let played = app.audio.played_count();
+        // The press frame: flip + sound 12 (`:18408-18416`).
+        app.world_key(KeyCode::F11);
+        assert!(app.hide_ui, "the press flips hideUI on");
+        assert!(!app.release_ui, "the latch drops while held");
+        assert!(app.audio.played_count() > played, "PlaySound(12)");
+        // Held repeats (winit delivers them as presses): no second flip.
+        app.world_key(KeyCode::F11);
+        assert!(app.hide_ui, "held frames never re-flip");
+        // The release re-arms (`:18420-18423`); the next press flips back.
+        app.release_ui = true; // the window_event release arm's write
+        app.world_key(KeyCode::F11);
+        assert!(!app.hide_ui, "the next press flips hideUI off");
+    }
 
     /// A headless App with the map live and open (`M` while `mapEnabled`),
     /// ready for the world-key chain.

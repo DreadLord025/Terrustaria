@@ -76,6 +76,55 @@ pub(crate) fn push_font_text(
     }
 }
 
+/// `DynamicSpriteFont.DrawString` with a `Vector2` scale — the achievement
+/// description's `vector3 = (0.92, clampedY)` (`UIAchievementListItem.cs:101`,
+/// `:109-112`, `:130`): X advances at `scale.X`, the line step and glyph
+/// height at `scale.Y`. The uniform [`push_font_text`] is the `scale.X ==
+/// scale.Y` special case.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn push_font_text_xy(
+    r: &mut SpriteRenderer,
+    font: &assets::UiFont,
+    x: f32,
+    y: f32,
+    scale_x: f32,
+    scale_y: f32,
+    color: [f32; 4],
+    text: &str,
+) {
+    let mut pen = Vec2::new(x, y);
+    let mut first = true;
+    for c in text.chars() {
+        match c {
+            '\n' => {
+                pen.x = x;
+                pen.y += font.line_spacing * scale_y;
+                first = true;
+                continue;
+            }
+            '\r' => continue,
+            _ => {}
+        }
+        let Some(g) = font.glyph(c) else { continue };
+        let mut bearing = g.kerning[0];
+        if first {
+            bearing = bearing.max(0.0);
+        } else {
+            pen.x += font.spacing * scale_x;
+        }
+        pen.x += bearing * scale_x;
+        r.push_font_glyph(
+            [pen.x + g.pad[0] * scale_x, pen.y + g.pad[1] * scale_y],
+            [g.w * scale_x, g.h * scale_y],
+            g.uv,
+            color,
+            g.layer,
+        );
+        pen.x += (g.kerning[1] + g.kerning[2]) * scale_x;
+        first = false;
+    }
+}
+
 /// UI label with the original `Mouse_Text` font, or the built-in bitmap font when
 /// the retail fonts are unavailable (PNG-only fallback).
 pub(crate) fn hud_text(

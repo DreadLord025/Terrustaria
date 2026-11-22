@@ -1835,15 +1835,20 @@ impl App {
                     // `Main.cs:62340-62396`: the combat-text pass closes `DoDraw`,
                     // under the interface. Then `DrawInterface_14_EntityHealthBars`
                     // (`Main.cs:45810`) paints the ordinary mob bars.
+                    // `Main.cs:62334`: the `!Main.hideUI` block — the combat
+                    // text (and the player chat bubbles, unported) skip while
+                    // F11 hides the interface.
                     draw_phase("combat_text");
-                    crate::combat_text::draw(
-                        renderer,
-                        lookups,
-                        combat_texts,
-                        draw_cam,
-                        world_zoom,
-                        screen,
-                    );
+                    if !self.hide_ui {
+                        crate::combat_text::draw(
+                            renderer,
+                            lookups,
+                            combat_texts,
+                            draw_cam,
+                            world_zoom,
+                            screen,
+                        );
+                    }
                     // `Main.cs:62397-62402` — `PopupText.DrawItemTextPopups`
                     // closes the floating-text pair right after the combat
                     // text (W4-g57): the reforge reveal's rise/fade + the
@@ -1877,17 +1882,21 @@ impl App {
                         );
                     }
                     draw_phase("entity_health_bars");
-                    crate::render::entities::draw_npc_health_bars(
-                        renderer,
-                        lookups,
-                        npcs,
-                        light,
-                        &style,
-                        anim_time,
-                        draw_cam,
-                        world_zoom,
-                        screen,
-                    );
+                    // Layer 14 (`Main.cs:44784-44788`) sits after the layer-8
+                    // hide check.
+                    if !self.hide_ui {
+                        crate::render::entities::draw_npc_health_bars(
+                            renderer,
+                            lookups,
+                            npcs,
+                            light,
+                            &style,
+                            anim_time,
+                            draw_cam,
+                            world_zoom,
+                            screen,
+                        );
+                    }
 
                     let boss = npcs
                         .iter()
@@ -1926,6 +1935,9 @@ impl App {
                         && front.is_none()
                         && !crate::env::no_hud()
                         && !fullscreen_map
+                        // `Main.hideUI` stops the layer loop before layer 16
+                        // (Map/Minimap, `Main.cs:44794-44798`).
+                        && !self.hide_ui
                         // `Main.inFancyUI` (`IngameFancyUI.cs:64-72`): the
                         // bestiary state covers the interface — the minimap HUD
                         // does not draw under it.
@@ -1936,8 +1948,9 @@ impl App {
                             let pos = ui::minimap::draw_to_position(ui::minimap::minimap_origin_raw(
                                 screen, map_scale,
                             ));
-                            // `Main.mapMinimapAlpha = 1` (`Main.cs:66753`).
-                            ui::minimap::draw_background(renderer, lookups, pos, 1.0, map_scale);
+                            // `Main.mapMinimapAlpha` (`Main.cs:66753`, the
+                            // MapAlphaUp/Down keys step it — W4-g53).
+                            ui::minimap::draw_background(renderer, lookups, pos, m.minimap_alpha, map_scale);
                             m.draw_minimap(renderer, world, screen, view_center, map_scale);
                             // `Main.cs:55696-55703`: the same layer walk inside the
                             // `mapStyle == 1` branch, clipped to the 240x240 minimap
@@ -2604,6 +2617,10 @@ impl App {
                                 self.inventory.get(self.selected).map_or(0, |s| s.kind),
                                 self.talk_npc.and_then(|i| self.npcs.get(i)),
                             ),
+                            // `Main.item[]` — the world-hover item walk.
+                            &self.items,
+                            // `Main.hideUI` — the F11 layer-8 stop.
+                            self.hide_ui,
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after
@@ -2613,7 +2630,9 @@ impl App {
                         // the death broadcast + the softcore "Dropped coins"
                         // line while the respawn timer runs.
                         if let Some(p) = player.as_ref() {
-                            if p.hp <= 0 {
+                            // Layer 35 (Death Text) sits after the layer-8
+                            // hide check — F11 hides it too.
+                            if p.hp <= 0 && !self.hide_ui {
                                 // `Main._framesWithRespawnSkipAvailable`
                                 // (`Main.cs:45348-45376`): the counter the C#
                                 // ticks inside `DrawDeathText` — up while the skip
@@ -2638,17 +2657,20 @@ impl App {
                         }
                         // `Main.DrawInvasionProgress` (`Main.cs:47696-47840`):
                         // the bar draws while the fade alpha holds (the
-                        // display-timer decay rides the world tick).
-                        ui::draw_invasion_progress(
-                            renderer,
-                            lookups,
-                            screen,
-                            self.invasion_progress,
-                            self.invasion_progress_max,
-                            self.invasion_progress_icon,
-                            self.invasion_progress_wave,
-                            self.invasion_progress_alpha,
-                        );
+                        // display-timer decay rides the world tick). Layer 15
+                        // sits after the layer-8 hide check.
+                        if !self.hide_ui {
+                            ui::draw_invasion_progress(
+                                renderer,
+                                lookups,
+                                screen,
+                                self.invasion_progress,
+                                self.invasion_progress_max,
+                                self.invasion_progress_icon,
+                                self.invasion_progress_wave,
+                                self.invasion_progress_alpha,
+                            );
+                        }
                     } else if let Some(menu) = menu.as_mut() {
                         menu.draw(renderer, lookups, screen, dt);
                         // W4-g23 — the chrome-pass cue drain: `DrawMenu`'s
@@ -2675,7 +2697,8 @@ impl App {
                     // over whatever the frame rendered — the menu's world
                     // backdrop here, the world itself in the fancy-UI arm. Its
                     // `OnActivate` picks the container's Top by `Main.gameMenu`.
-                    if self.achievements_open {
+                    // Layer 12 (Fancy UI) sits after the layer-8 hide check.
+                    if self.achievements_open && !self.hide_ui {
                         ui::achievements::draw_screen(
                             renderer,
                             lookups,
@@ -2685,6 +2708,8 @@ impl App {
                             &self.achievements_categories,
                             self.mouse_pos,
                             menu.is_some(),
+                            self.mouse_text_color,
+                            self.achievements_scroll_drag.is_some(),
                         );
                     }
                     // `DrawInterface_13_AchievementCompletePopups`
@@ -2696,7 +2721,7 @@ impl App {
                     // the port's popups only ever exist in-world (the drain
                     // runs on the world branch and `SaveAndQuit` clears the
                     // tracker, `WorldGen.cs:6714`). S1-E-26 wave A.
-                    if menu.is_none() && front.is_none() && !crate::env::no_hud() {
+                    if menu.is_none() && front.is_none() && !crate::env::no_hud() && !self.hide_ui {
                         if let Some(name) = ui::notifications::draw(
                             renderer,
                             lookups,
@@ -2734,6 +2759,10 @@ impl App {
                             && menu.is_none()
                             && front.is_none()
                             && settings.map_enabled
+                            // Layer 16 is after the layer-8 hide check; the
+                            // fullscreen map draws on its own branch above
+                            // (F11 never reaches it — `Main.cs:62147-62181`).
+                            && !self.hide_ui
                         {
                             if map.open {
                                 // `Main.cs:55483`: the biome `MapBG` backdrop is

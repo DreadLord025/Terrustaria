@@ -69,6 +69,7 @@ pub(crate) mod workshop_hub;
 pub(crate) mod workshop_kit;
 pub(crate) mod workshop_publish;
 pub mod world_creation;
+pub mod world_hover;
 pub(crate) mod world_load;
 pub mod world_select;
 pub mod worldgen_debug;
@@ -798,12 +799,28 @@ pub fn draw_hud(
     // "Purify" button shows while the cola is held + the Dryad is the talk
     // NPC (the caller folds `CanDryadPlayStardewAnimation`).
     stardew_button: bool,
+    // `Main.item[]` — the dropped-item hover walk (`DrawMouseOver`,
+    // `Main.cs:42884-42913`).
+    items: &[crate::item::ItemDrop],
+    // `Main.hideUI` (`Main.cs:2085`): the F11 toggle stops the interface
+    // layer loop at layer 8 (`DrawInterface_8_CheckF11UIHideToggle`,
+    // `:46175-46183`). The emote/NPC-chat bubbles are layer 1_1
+    // (`:44730-44734`) — BEFORE the check — so they keep drawing.
+    hide_ui: bool,
 ) {
     // `DrawInterface`'s head (`Main.cs:63334-63339`): the player chat
     // overheads draw under `UIScaleMatrix` before the combat text — the
     // port's local-player half (`ui::chat_overhead`, W4-d121).
     chat_overhead::draw(r, lookups, player, camera, zoom, screen);
 
+    if hide_ui {
+        // The two layer-1_1 passes, then the layer-8 stop: nothing else of
+        // the interface draws (resources 25, inventory 27, hotbar 30, mouse
+        // text 33, cursor 36 all sit after the check).
+        emotes::draw(r, lookups, screen, emotes_state, player, camera, zoom, mouse_pos, pulse);
+        npc_chat::draw_bubble(r, lookups, npcs, player, camera, zoom, screen, mouse_pos, pulse);
+        return;
+    }
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
     // hotbar (30).
@@ -1309,6 +1326,38 @@ pub fn draw_hud(
     }
     if let Some(text) = reforge_hover_text.as_ref().filter(|_| !mouse_npc.carried()) {
         tooltip::draw_mouse_text(r, lookups, mouse_pos, text, screen, pulse);
+    }
+
+    // `DrawInterface_39_MouseOver` → `Main.DrawMouseOver`
+    // (`Main.cs:44904-44908`, `:42871-42988`): the in-world hover texts —
+    // the dropped item's affix name + stack (`:42884-42913`) and the NPC's
+    // GivenOrTypeName + carrier life (`:43087-43104`), both through the
+    // plain `MouseTextInner` arm (no box). The `Main.mouseText` priority:
+    // the slot tooltip / PVP / housing texts above are the earlier
+    // claimants (`:45188`'s carried item sets it too), so this pass only
+    // runs when none of them drew. The emote/bestiary overlays own the
+    // pointer while open (their own MouseText rides their draw).
+    let earlier_text = hover_item.is_some()
+        || pvp_hover_text.is_some()
+        || housing_hover_text.is_some()
+        || mouse_item.count > 0
+        || mouse_npc.carried();
+    if !earlier_text && !bestiary_open && !emotes_state.menu_open {
+        let mouse_world =
+            world_hover::mouse_world_point(mouse_pos, camera, zoom, screen);
+        // The item walk first (`:42884-42913`), then the NPC walk
+        // (`:42939` → `HoverOverNPCs`) only while no item claimed the text.
+        if let Some(drop) = world_hover::hovered_drop(items, lookups, mouse_world) {
+            let (label, color) = world_hover::drop_hover_text(drop);
+            world_hover::draw_hover_text(
+                r, lookups, mouse_pos, false, &label, color, screen, pulse,
+            );
+        } else if let Some(i) = world_hover::hovered_npc(npcs, mouse_world) {
+            let label = world_hover::npc_hover_text(npcs, i);
+            world_hover::draw_hover_text(
+                r, lookups, mouse_pos, false, &label, [1.0; 4], screen, pulse,
+            );
+        }
     }
 
     // `Main.DrawPendingMouseText()` then `Main.DrawCursor(...)` are the last

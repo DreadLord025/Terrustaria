@@ -3966,6 +3966,12 @@ is a `UserInterface` element in 1.4.5.8.
   (`UIAchievementsMenu.cs:86`). The former one-row-per-notch stand-in
   (`delta * (ROW_H + 5)`) is gone.
 
+  (`|d| < 0.5`), which C# cannot produce. W4-g53: `scroll_achievements` now
+  rounds to notches and spends them at the C#'s 120 raw px per detent
+  (`UIList.cs:112` → `UIScrollbar.ViewPosition -=`), gated on the pointer
+  riding the list or the bar (`UIInnerList.ContainsPoint`, `UIList.cs:16-19`)
+  — the old row-height stand-in is gone.
+
 ## World select (S1-H-10, 2026-11-13)
 
 `UIWorldListItem.PlayGame` (`UIWorldListItem.cs:360-385`) runs `base._data.IsValid`
@@ -15983,13 +15989,20 @@ powers/research вЂ” each needs its own scope.
   `every_rows_conditions_match_the_initializer_verbatim` compares against
   `ROWS` entry by entry, so the lossy-`CreateMany` class of bug fails the
   test pass instead of silently shipping.
-- **The category filter cannot name the `None` row.** Vanilla's `FilterList`
-  indexes `_categoryButtons[(int)achievement.Category]`, and
-  `GAIN_TORCH_GODS_FAVOR` is the one row `RegisterAchievementCategory` never
-  touches (`AchievementCategory.None = -1`) вЂ” the C# would throw an
-  `ArgumentOutOfRangeException` on a filter click. The port keeps the secret row
-  visible in every filtered view instead of crashing (documented deviation).
-- **Save path and persistence (S1-E-18).** The port still uses its own
+- **The category filter never sees a `None` row (W4-g53 census correction).**
+  Vanilla's `FilterList` indexes `_categoryButtons[(int)achievement.Category]`,
+  and `GAIN_TORCH_GODS_FAVOR` is the one row `RegisterAchievementCategory` never
+  touches (`AchievementInitializer.cs:360-362` constructs it; `:582-721` skips
+  it). `Achievement._category` is an unset enum FIELD (`Achievement.cs:25`), so
+  its CLR default is `(AchievementCategory)0 = Slayer` -- NOT `None = -1`
+  (`AchievementCategory.cs:5-6`). The C# therefore never indexes -1 and never
+  throws; the torch row filters and icons as Slayer. The port's registry row
+  now carries `Category::Slayer` (the old `None` pin and the keep-visible
+  filter arm were the deviation); `filter_visible`'s -1 arm hides
+  defensively. The completed-first sort (`sorted_indices` =
+  `UIAchievementListItem.CompareTo` `:259-274`) and the popup's
+  `GotoAchievement` scroll were already ported -- no search box exists in the
+  C# state, so none is owed.- **Save path and persistence (S1-E-18).** The port still uses its own
   `achievements.trdat` text format (not the vanilla Rijndael-CBC+BSON
   `"RELOGIC-TERRARIA"` blob) вЂ” writing the vanilla format would touch a real
   install's `achievements.dat`. The path is bound at bootstrap / world swap
@@ -16025,13 +16038,59 @@ powers/research вЂ” each needs its own scope.
   and the `MinWidth`/`MaxWidth` at 700/900. The in-game arm (`OnActivate`'s
   else) drops the container to `Top 120 / Height -120`; the menu arm keeps
   `220/-220`. The port picks the arm from whether the legacy menu is live.
-- **Deviations:** no word wrap (`CreateWrappedText`) вЂ” the row's description
-  shrinks to fit the text width instead of growing to a second line; the
-  progress bar is two flat quads rather than the `ColorBar` 9-slice + the
-  `MagicPixel` fill/blip splices; the scroll rides the mouse wheel instead of the
-  `UIScrollbar`; the gamepad link points (`SetupGamepadPoints`, ids 3000+) are
-  out of scope; there are no UI click sounds.
-
+- **W4-g53 (2026-11-21) completed the screen against the C#** (on the d81
+  `6d700ed7` pure-halves + e22 condition-table base): the `UIPanel`
+  `(12, 0, 12, 12)` inner padding now insets the list/scrollbar/category
+  strip (`UIPanel.cs:32` + `UIAchievementsMenu.cs:49`, resolved per
+  `UIElement.cs:287-288`); the attached `UIScrollbar` is real — draw
+  (`panel::draw_scrollbar`), handle-grab drag + track jump
+  (`UIScrollbar.cs:109-143`), the release latch, and the wheel at 120 raw
+  px per detent (`UIList.cs:112`); `FilterList` plays sound 12 and CLAMPS
+  the scroll into the new range instead of resetting it (`:163-175` →
+  `SetView`, `UIScrollbar.cs:75`); the list draws under its scissor
+  (`OverflowHidden`, `UIList.cs:59`); the menu panel/title/rows draw
+  through the `UIPanel` 9-slice with the byte-truncating colour pairs
+  (incl. the row's `MouseOver` border `(20, 30, 56)` and the Back's own
+  `*0.8` `FadedMouseOut`, `:159`); the `UIToggleImage` ON frame is the
+  sheet's TOP row (the ctor's `(on, off)` parameter order,
+  `UIToggleImage.cs:26-36`); the row's text geometry is re-derived from
+  `vector2`/`vector4` (`UIAchievementListItem.cs:87-133` — the splices
+  ride `innerY-2`/`innerY+27`, the category icon is `Frame(4,2,i)` at 0.5
+  scale, the splices tint `Gray`(128) idle); the progress bar is the real
+  `DrawProgressBar` (`:224-257`) on d81's `tracker_bar_geometry`/`colors`
+  — `ColorBar` centre-anchored body + caps, centre-out fill, the 2 px
+  alpha-127 blip, the black remainder, the readout in the name colour;
+  the category tooltip draws (`Draw` `:108-135`, the `screenW-460`
+  overflow literal included) and the Back hover sounds 12 once per edge.
+- **W4-g53 round 2 (2026-11-21) closed the remaining deviations:**
+  (1) the description wraps through d121's ReLogic port
+  (`ui/text_wrap.rs`, `WrappedTextBuilder` at 6b0c15f4, reused byte-exact):
+  `description_layout` wraps at `(num2 - 20) * (1/0.92)`
+  (`UIAchievementListItem.cs:102`), measures the wrapped box and clamps Y
+  at the 38+20 cap (`:103-112`, d81's `description_scale_y` now wired),
+  and `draw_description` draws the '\n'-separated rows at X 0.92 / Y the
+  clamp through the new non-uniform `text::push_font_text_xy` with the
+  four +/-2 px black shadow passes (`ChatManager.ShadowDirections`,
+  `ChatManager.cs:376-382`); the horizontal shrink-to-fit stand-in is gone
+  (the name row keeps its clamp -- registry names never wrap).
+  (2) The scrollbar handle's hover is modelled: `panel::scrollbar_hover_tick`
+  (`UIScrollbar.cs:113-120` -- truncated-pointer `Rectangle.Contains`,
+  sound 12 on the false-to-true edge) ticks in `App::achievements_hover_tick`
+  beside the Back latch, and the draw's handle tint is the live
+  `dragging || hovering ? White : White*0.85` pair (`:122`,
+  `panel::scrollbar_handle_tint`, 216 = (byte)(255*0.85)); the other
+  screens keep the idle-0.85 `panel::draw_scrollbar`.
+  (3) The `None`-row filter deviation is RETIRED by the census correction
+  above (the row is Slayer in the C# too).
+  **Remaining:** the gamepad link points (`SetupGamepadPoints`, ids 3000+,
+  `UILinkPointNavigator.Shortcuts.BackButtonCommand = 3`,
+  `UIAchievementsMenu.cs:197-222` + `OnActivate`'s `ChangePoint(3002)`)
+  stay unported -- the census finds no `UILinkPointNavigator` /
+  `PlayerInput.UsingGamepadUI` machinery anywhere in `crates/` (the one
+  housing.rs mention is a comment), so the whole gamepad-UI layer is a
+  global gap, not this screen's. The wrapped measure's per-line height
+  floor keeps d121's recorded `Padding.Height`-to-drawn-height
+  approximation; the bitmap-fallback wrap measures 8 px/char rows.
 ## The achievement unlock popup (S1-E-26 wave A)
 
 The completion в†’ toast chain is ported: `AchievementManager.AchievementCompleted`
@@ -41941,6 +42000,54 @@ disjoint module `crates/tr-app/src/buff_frame_wiring.rs::update_buff_frame`
   arm is canonical (it IS the frame pass); d115's inline copy folds out
   at the merge (its dodge grant + retaliate census stay d115's) — or 321
   moves to INLINE_OWNED and out of the booster match; never both.
+
+## The UI doc-sweep residuals (W4-g53 lane 10, code-only)
+Four small UI mechanics ported after a census of ANALYSIS/UI.md/research
+18-19 (full report: `docs/research/81-doc-sweep-ui.md`); two candidates
+verified already-landed (the achievement toast, S1-E-26 wave A — including
+the ItemStack plate measure vs the MouseText title draw; the buff
+right-click cancel, S1-P-i53 — **no confirmation dialog exists in the
+C#**, `Main.cs:43329-43349` removes directly).
+- **F11 hide-UI** (`6aad8504`): `Main.DoUpdate_F11_ToggleUI`
+  (`Main.cs:18402-18424`) + the layer-8 stop (`:46175-46183`).
+  `App.hide_ui`/`release_ui`; the emote/NPC-chat bubbles (layer 1_1)
+  keep drawing, everything after layer 8 hides (HUD, minimap, toasts,
+  death text, invasion bar, combat text `:62334`, health bars, the game
+  cursor). Deviation: the `maxQ = true` force-max arm
+  (`:46179`/`:16983-16987`) has no port writer (the gfx-quality
+  adaptive loop's `maxQ` is unported); the smart-cursor highlight gate
+  (`:3948-3951`) is moot (the highlight is unported).
+- **Minimap/overlay map keys + Tab cycle** (`a9774d2a`):
+  `Player.cs:24909-24965`'s not-fullscreen block — minimap zoom
+  ×1.025/×0.975 (the `MinimapFrame` multipliers, NOT the fullscreen's
+  1.05/0.95), alpha ±0.015, the overlay's own ×1.05/×0.95 state, the
+  draw-side clamps (`Main.cs:55515-55530`/`:55550-55566`), Tab cycles
+  `mapStyle` on the `releaseMapStyle` latch with sound 12.
+  `WorldMap` carries the alpha/overlay state; the tile pass tints
+  `Color(b×4)` (`MapRenderer.cs:438`). Deviation: the overlay DRAW
+  stays out of P4 scope — the state rides for the keys.
+- **Hotbar wheel fancy-UI gate** (`05ff5c56`): the i54 wheel arm now
+  reads `!Main.inFancyUI && !Main.ingameOptionsWindow`
+  (`Player.cs:31788-31791`) — the bestiary/emotes overlays and the
+  options window eat the notch (`App::hotbar_wheel_allowed`).
+- **In-world mouse-over** (`f7bb95f8`): `Main.DrawMouseOver`
+  (`Main.cs:42871-42988`, layer 39) — the dropped item's affix name +
+  stack in its rare colour over the `GetDrawHitbox` rect (the atlas-icon
+  stand-in, the 16×16 `WorldItem` fallback), the NPC's
+  `GivenOrTypeName` + carrier `life/lifeMax` with the `ShowLife`
+  gate, the special hover boxes (87-92/677/695-696) and the buried-mimic
+  exclusions; both through the plain `MouseTextInner` arm (mouse+14,
+  +34 carrying, the 40px int clamp, the 4-pass shadow, NO box).
+  Deviations: the hover box uses `Npc::size()` (the `bubble_npc`
+  stand-in, not the C# frame rect); the stealth-remote hover, the sign
+  hover (claim f22b), the elder-slime arm, the `cursorItemIcon`
+  interact-icon family and the talk arm's smart-interact/stinky/651/
+  mouseInterface gates are unported (documented in `ui/world_hover.rs`).
+Recorded gaps (not ported, too large for the lane): the
+`cursorItemIcon`/`TileInteractionsMouseOver` interact-icon subsystem
+(`Player.cs:33587+`), the `DrawNPCMapIcons2` minimap head hover
+(`Main.cs:56144-56220`, rides the unported map-content icons), the
+gamepad radial hotbar (`Player.cs:31769-31787`).
 
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,

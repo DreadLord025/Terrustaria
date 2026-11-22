@@ -5,6 +5,7 @@
 //! Every draw takes the sheet as an `Option`; a `None` sheet draws nothing rather
 //! than panicking, so `Lookups::default()` renders a blank frame.
 
+use glam::Vec2;
 use tr_render::{SheetRect, SpriteRenderer};
 
 use super::color;
@@ -262,9 +263,44 @@ fn draw_scrollbar_bar(
     }
 }
 
+/// `UIScrollbar.DrawSelf`'s handle-hover update (`UIScrollbar.cs:113-120`):
+/// `_isHoveringOverHandle = handle.Contains((int)mouse.X, (int)mouse.Y)` —
+/// XNA `Rectangle.Contains` is inclusive left/top, exclusive right/bottom,
+/// on the TRUNCATED pointer. Returns `(hovering, sound_12_edge)` — the edge
+/// fires only on the false→true transition (`:117-119`).
+pub fn scrollbar_hover_tick(
+    rect: [f32; 4],
+    view: f32,
+    max_view: f32,
+    pos: f32,
+    mouse: Vec2,
+    was_hovering: bool,
+) -> (bool, bool) {
+    let handle = scrollbar_handle_at(rect, view, max_view, pos);
+    let (mx, my) = (mouse.x.trunc(), mouse.y.trunc());
+    let hovering = mx >= handle[0]
+        && mx < handle[0] + handle[2]
+        && my >= handle[1]
+        && my < handle[1] + handle[3];
+    (hovering, !was_hovering && hovering)
+}
+
+/// `UIScrollbar.DrawSelf`'s handle tint (`UIScrollbar.cs:122`):
+/// `Color.White * ((isDragging || isHoveringOverHandle) ? 1f : 0.85f)` —
+/// the 0.85 multiply truncates every channel (216 = (byte)(255*0.85)).
+pub fn scrollbar_handle_tint(dragging: bool, hovering: bool) -> [f32; 4] {
+    if dragging || hovering {
+        [1.0; 4]
+    } else {
+        color::tint(color::mul([255, 255, 255, 255], 0.85))
+    }
+}
+
 /// `UIScrollbar.DrawSelf` (`UIScrollbar.cs:103-124`): the cyan track
 /// (`ui_scrollbar`, `Scrollbar2`) and the handle (`ui_scrollbar_inner`,
 /// `ScrollbarInner`). Draws nothing when `auto_hide && !can_scroll` (`:105`).
+/// The callers without a hover model pin the idle 0.85 handle; the
+/// achievements overlay draws through [`draw_scrollbar_handle_tint`] instead.
 pub fn draw_scrollbar(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -379,5 +415,41 @@ mod tests {
         let (bar, handle) = scrollbar_rects([482.0, 454.0, 20.0, 392.0], 1.0, 1.0);
         assert_eq!(bar, [482.0, 454.0, 20.0, 392.0]);
         assert_eq!(handle, [482.0, 459.0 - 3.0, 20.0, 382.0 + 7.0]);
+    }
+
+    /// W4-g53 witness: `UIScrollbar.DrawSelf`'s handle hover
+    /// (`UIScrollbar.cs:113-120`) — `Rectangle.Contains((int)mouse)` is
+    /// inclusive left/top, exclusive right/bottom on the truncated pointer,
+    /// and sound 12 fires only on the false→true edge.
+    #[test]
+    fn scrollbar_hover_ticks_the_truncated_pointer_and_edges() {
+        // view/max = 0.5/1 over (100, 200, 20, 400): inner (105..590),
+        // handle y = 200+5+390*0 - 3 = 202, h = 195+7 = 202 at pos 0.
+        let rect = [100.0, 200.0, 20.0, 400.0];
+        let handle = scrollbar_handle_at(rect, 195.0, 390.0, 0.0);
+        // Inside: hover, edge fires from the idle latch.
+        let mid = Vec2::new(handle[0] + 10.9, handle[1] + 4.9);
+        assert_eq!(scrollbar_hover_tick(rect, 195.0, 390.0, 0.0, mid, false), (true, true));
+        // Already hovering: no second sound.
+        assert_eq!(scrollbar_hover_tick(rect, 195.0, 390.0, 0.0, mid, true), (true, false));
+        // The exclusive right/bottom edges (`Rectangle.Contains`): the
+        // truncated pointer AT the edge is out.
+        let edge = Vec2::new(handle[0] + handle[2], handle[1] + handle[3]);
+        assert_eq!(scrollbar_hover_tick(rect, 195.0, 390.0, 0.0, edge, true), (false, false));
+        // Off the handle entirely: no hover, no edge.
+        let off = Vec2::new(handle[0] - 5.0, handle[1]);
+        assert_eq!(scrollbar_hover_tick(rect, 195.0, 390.0, 0.0, off, false), (false, false));
+    }
+
+    /// W4-g53 witness: the handle tint (`UIScrollbar.cs:122`) —
+    /// `White * (dragging || hovering ? 1 : 0.85)`; the 0.85 multiply
+    /// truncates 255*0.85 = 216.75 to 216.
+    #[test]
+    fn scrollbar_handle_tint_brightens_on_drag_or_hover() {
+        let idle = scrollbar_handle_tint(false, false);
+        assert_eq!(idle, [216.0 / 255.0; 4]);
+        assert_eq!(scrollbar_handle_tint(true, false), [1.0; 4]);
+        assert_eq!(scrollbar_handle_tint(false, true), [1.0; 4]);
+        assert_eq!(scrollbar_handle_tint(true, true), [1.0; 4]);
     }
 }

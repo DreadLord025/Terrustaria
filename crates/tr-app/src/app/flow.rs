@@ -3393,6 +3393,9 @@ pub(crate) mod front_flow_tests {
             achievements_open: crate::env::achievements_open(),
             achievements_scroll: 0.0,
             achievements_categories: [true; 4],
+            achievements_scroll_drag: None,
+            achievements_back_sounded: false,
+            achievements_handle_hover: false,
             notifications: ui::notifications::NotificationsTracker::default(),
             emotes: crate::emotes::EmoteSystem::default(),
             emote_scroll_drag: None,
@@ -3669,6 +3672,9 @@ pub(crate) mod front_flow_tests {
             mouse_text_color_dir: 1,
             // `Main.invAlpha = 1f; Main.invDir = 1f` (`Main.cs:66846-66847`).
             inv_pulse: crate::ui::inv_pulse::InvPulse::default(),
+            hide_ui: false,
+            release_ui: false,
+            release_map_style: false,
             demon_torch: 1.0,
             demon_torch_dir: 1.0,
             master_color: 1.0, // `Main.cs:66833-66834`

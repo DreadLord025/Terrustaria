@@ -25,9 +25,11 @@ pub use crate::achievements_data::{Cond, Row, Tracker, ROWS};
 use crate::achievements_data::ROWS as REGISTRY;
 use tr_core::bestiary::KillTracker;
 
-/// `AchievementCategory.cs` — `None = -1` is the secret row
-/// (`GAIN_TORCH_GODS_FAVOR`, which `AchievementInitializer` never passes to
-/// `RegisterAchievementCategory`).
+/// `AchievementCategory.cs` — `None = -1` exists in the enum but no
+/// registry row carries it: `Achievement._category` is an unset enum field
+/// whose CLR default is `0 = Slayer`, so `GAIN_TORCH_GODS_FAVOR` (the row
+/// `AchievementInitializer` never passes to `RegisterAchievementCategory`)
+/// filters as Slayer (`Achievement.cs:25`; W4-g53 census correction).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Category {
     None,
@@ -698,20 +700,24 @@ mod tests {
         let mut icons: Vec<u16> = m.list.iter().map(|a| a.icon).collect();
         icons.sort_unstable();
         assert_eq!(icons, (0..137).collect::<Vec<u16>>());
-        // The category pass leaves exactly one row uncategorised.
+        // The category pass registers 136 rows; `GAIN_TORCH_GODS_FAVOR`
+        // (`:360-362`) is skipped, so its unset `_category` field keeps the
+        // CLR enum default `(AchievementCategory)0 = Slayer` — NOT `None`
+        // (`Achievement.cs:25`, `AchievementCategory.cs:5-6`; W4-g53 census
+        // correction). No registry row is None.
         assert_eq!(
             m.list
                 .iter()
                 .filter(|a| a.category == Category::None)
                 .count(),
-            1
+            0
         );
         assert_eq!(
             m.list
                 .iter()
-                .find(|a| a.category == Category::None)
-                .map(|a| a.name),
-            Some("GAIN_TORCH_GODS_FAVOR")
+                .find(|a| a.name == "GAIN_TORCH_GODS_FAVOR")
+                .map(|a| a.category),
+            Some(Category::Slayer)
         );
     }
 

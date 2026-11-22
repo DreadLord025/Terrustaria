@@ -337,6 +337,7 @@ pub(crate) fn create_wrapped_text(
 /// `CreateWrappedText` split on '\n', the first `min(len, maxLines)` rows
 /// copied into a `maxLines`-slot array — the tail slots stay null in the C#;
 /// the port returns only the filled rows.
+#[allow(dead_code)] // d121's npc_chat::panel_lines consumer rides the d121 branch
 pub(crate) fn wordwrap_string(
     font: Option<&UiFont>,
     text: &str,

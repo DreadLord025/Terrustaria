@@ -184,8 +184,19 @@ and one persistent store per world (the `.wld` section 10 triple).
   asserts `SLAYER_OF_WORLDS == (1,3)` (vanilla: `(1,15)`) and
   `the_ported_hooks_still_complete_their_rows` asserts `GELATIN_WORLD_TOUR`
   completes on one gel kill (vanilla: 24 conditions).
-- `crates/tr-app/src/ui/achievements.rs::tests` (9): the panel/list/back/filter/
-  sort/row-hit/scroll/icon-frame layout tests (784-898).
+- `crates/tr-app/src/ui/achievements.rs::tests`: the panel/list/back/filter/
+  sort/row-hit/scroll/icon-frame layout tests (M6-ACH-2), d81's five pure-half
+  witnesses (row height/icon offsets/icon frame/description clamp/tracker
+  geometry+colours, `6d700ed7`), and W4-g53's three new ones
+  (`the_scrollbar_rides_the_lists_right_edge`,
+  `the_content_height_and_scroll_range_are_the_ui_list_walk`,
+  `the_scrollbar_press_grabs_the_handle_or_jumps_the_track`) plus the two
+  re-derived onto the padded layout (`the_list_and_rows_follow_the_layout_constants`,
+  `the_scroll_range_is_the_list_overflow`). App-level W4-g53 witnesses in
+  `app/clicks.rs::tests`: `g53_the_achievements_scrollbar_grabs_drags_and_jumps`,
+  `g53_the_filter_toggle_sounds_and_clamps_the_scroll`,
+  `g53_the_wheel_walks_120_px_per_detent_on_the_list`,
+  `g53_the_back_hover_sounds_once_per_edge` — all written not run (code-only).
 - `crates/tr-core/src/bestiary.rs::tests` (7): `the_tier_ladder_is_the_half_and_fifth_steps`
   (335), `the_quick_unlock_skips_the_ladder` (378),
   `the_kill_tracker_caps_and_persists_pairs` (392),

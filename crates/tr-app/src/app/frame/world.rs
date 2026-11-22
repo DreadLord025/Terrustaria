@@ -28,6 +28,10 @@ impl App {
     self.handle_minimap_clicks();
     self.handle_fullmap_ping();
     self.handle_bestiary_clicks();
+    // The achievements overlay's clicks (`UIAchievementsMenu` rides
+    // `IngameFancyUI`): the scrollbar/Back/toggles consume the press
+    // before the chest/crafting/inventory handlers see it (W4-g53).
+    self.handle_achievements_clicks();
     // The town-chatter panel's Close button + hover tick
     // (`NPCChatPanel.DrawButtons`, `NPCChatPanel.cs:88-162`) — the press
     // is consumed before the chest/crafting/inventory handlers see it.
