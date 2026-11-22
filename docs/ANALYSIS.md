@@ -32192,6 +32192,47 @@ screenshot SHA256s change by construction and must be re-taken when a build
 is next allowed (no pixel-behaviour change вЂ” the same texels, new addresses).
 The E-4b and L-8b branches can now un-skip: their sheet sets fit.
 
+**W4-b4 re-verify + re-pin procedure (2026-11-20, code-only).** The packer
+landed intact (`548fc335` via merge `4791ae7f`; the scout's "unmerged branch"
+note was stale — the branch was merged, then deleted in the wave-2 purge).
+E-4b's gore enumeration landed on main afterwards (`b45c70fc`), so the
+`the_full_gore_and_mount_sheet_set_fits_the_strict_gpu_bound` witness's
+"simulated E-4b additions" now double-enumerate the gore set — the name dedup
+makes the second copy a no-op (first wins, identical pixels), the test stays
+correct. The `skyline_backfills_the_tall_sheets_tail` witness was re-verified
+by hand-trace (bin 98: Tall(42,82)@(0,0), Wide(56,22)@(42,0), Small(32,12)
+backfills at (42,22) — y=22 beats y=82; height 82+2=84). UV-pin audit: no
+absolute atlas-coordinate expectations exist outside the packer's own
+witnesses (all draw UVs ride `SheetRect` at draw time). `tools/atlas_sim.js`
+was repaired for the purge: the L-8b branch ref is gone, so the sim falls
+back to the pinned 25-name additions list (the same list the assets.rs
+witness simulates) and its census now includes the landed gore enumeration.
+The golden re-pin procedure (which goldens, the harness commands, twin-run +
+pixel-diff gates) lives in **`docs/GOLDEN_REPIN.md`** — owed, executed in the
+next build-allowed window. Unblocks: N16 wyvern sheets, S1-L-8b mounts, gore
+draw refinements (each lane re-takes the goldens it touches at its merge).
+
+**Fresh measurement (2026-11-20, `node tools/atlas_sim.js`, real `.xnb` dims,
+no compiler).** The sheet set GREW since the 2026-11-19 measurement (E-4b's
+1402 gore sheets landed on main plus the wave-3 sheet additions): the full
+set is now **9498 sheets / 64.3 Mpx padded area** (was 9254). Heights:
+
+| sheet set (2026-11-20 census) | best-fit shelves | skyline waste | skyline span | maxrects BAF |
+| --- | --- | --- | --- | --- |
+| main (E-4b gore landed, 9497 sheets) | 9012 OVERFLOW | **8115** | 8140 | 7956 |
+| full: L-8b static list + gore + font (9498) | 9012 OVERFLOW | **8119** | 8142 | 7956 |
+| main pre-E-4b (historical, 8095 sheets) | 8628 OVERFLOW | **7711** | 7743 | 7946 |
+
+The 7932 px figure above is the 2026-11-19 census; today's full set packs in
+**8119 px ≤ 8192 — 73 px headroom** (was 260). The fit proof still holds
+(deterministic double run, no overlaps incl. padding, in-bounds — the sim
+verifies all three), but the headroom is nearly eaten: the N16 wyvern sheets
+(~6 more) and any further sheet wave must re-measure, and **maxrects BAF
+(7956 px, 236 px headroom) is now the recommended next packer step** rather
+than a distant fallback. The L-8b additions are already on main (the sim's
+fallback list resolves to 0 new names — the mount/glow/minecart rows landed
+with the mount waves), so the "full" scenario equals main + font today.
+
 ## The vines keep their background walls (fix/vines-destroy-walls)
 
 **User report.** Spawned vines destroy background-wall tiles: in mini-caves
