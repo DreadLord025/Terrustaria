@@ -682,6 +682,60 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::ZombieMushroomHat
         | NpcKind::AnomuraFungus
         | NpcKind::MushiLadybug => &[],
+        // W4-d42 - the NPCID 578-582 immunity rows (`NPCID.cs:9395+`).
+        // The null rows + the fairies' ImmuneToAllBuffsThatAreNotWhips
+        // (the mask loop is unmodelled - the documented gap; the
+        // fairies' ImmuneToWhips rides `whip_immune`).
+        NpcKind::WalkingAntlion
+        | NpcKind::LarvaeAntlion => &[],
+        NpcKind::DD2LightningBug
+        | NpcKind::BartenderUnconscious => &[31],
+        // W4-d42 - the NPCID 583-587 immunity rows (`NPCID.cs:9395+`).
+        // The null rows + the fairies' ImmuneToAllBuffsThatAreNotWhips
+        // (the mask loop is unmodelled - the documented gap; the
+        // fairies' ImmuneToWhips rides `whip_immune`).
+        NpcKind::ZombieMerman => &[],
+        // W4-d42 - the NPCID 590-594 immunity rows (`NPCID.cs:9395+`).
+        // The null rows + the fairies' ImmuneToAllBuffsThatAreNotWhips
+        // (the mask loop is unmodelled - the documented gap; the
+        // fairies' ImmuneToWhips rides `whip_immune`).
+        NpcKind::TorchZombie
+        | NpcKind::ArmedTorchZombie => &[],
+        NpcKind::GoldGoldfishWalker => &[31],
+        // W4-d42 - the NPCID 600-604 immunity rows (`NPCID.cs:9395+`).
+        NpcKind::Seagull
+        | NpcKind::Seagull2 => &[31],
+        // W4-d42 - the NPCID 605-609 immunity rows (`NPCID.cs:9395+`).
+        NpcKind::Grebe
+        | NpcKind::Grebe2 => &[31],
+        // W4-d42 - the NPCID 610-614 immunity rows (`NPCID.cs:9395+`).
+        NpcKind::Rat
+        | NpcKind::Owl
+        | NpcKind::WaterStrider
+        | NpcKind::GoldWaterStrider
+        | NpcKind::ExplosiveBunny => &[31],
+        // W4-d42 - the NPCID 615-619 immunity rows (`NPCID.cs:9395+`).
+        NpcKind::Turtle
+        | NpcKind::TurtleJungle
+        | NpcKind::BloodNautilus
+        | NpcKind::BloodSquid => &[31],
+        // W4-d42 - the NPCID 620-624 immunity rows (`NPCID.cs:9395+`).
+        NpcKind::GoblinShark
+        | NpcKind::BloodEelHead
+        | NpcKind::BloodEelBody
+        | NpcKind::BloodEelTail
+        | NpcKind::Gnome => &[31],
+        // W4-d42 - the NPCID 625-629 immunity rows (`NPCID.cs:9395+`).
+        NpcKind::SeaTurtle
+        | NpcKind::Seahorse
+        | NpcKind::GoldSeahorse
+        | NpcKind::Dandelion => &[31],
+        NpcKind::IceMimic => &[20, 24, 31, 44, 323, 324],
+        // W4-d42 - the NPCID 630-630 immunity rows (`NPCID.cs:9395+`).
+        // The null rows + the fairies' ImmuneToAllBuffsThatAreNotWhips
+        // (the mask loop is unmodelled - the documented gap; the
+        // fairies' ImmuneToWhips rides `whip_immune`).
+        NpcKind::BloodMummy => &[],
     }
 }
 
@@ -694,10 +748,11 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
 /// the whip tag gate
 /// (`WhipTagEffect.CanApplyTagToNPC`) reads this.
 pub fn whip_immune(kind: NpcKind) -> bool {
-    matches!(
-        kind,
-        NpcKind::MartianSaucer | NpcKind::FlyingDutchman | NpcKind::DungeonGuardian
-    )
+    // MERGE-SIDE (367 s1): the union keeps d34's DungeonGuardian row;
+    // d42's fairy critters 583-585 drop with the d33-owned dups (d33's
+    // kept impl re-adds their `ImmuneToWhips` rows at the small-lanes
+    // splice, `NPCID.cs:9420+`).
+    matches!(kind, NpcKind::MartianSaucer | NpcKind::FlyingDutchman | NpcKind::DungeonGuardian)
 }
 
 impl NpcBuffs {

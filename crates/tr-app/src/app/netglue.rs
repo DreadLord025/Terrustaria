@@ -3803,6 +3803,110 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-d42 - the roster's ground/stand kinds plant on the column
+        // surface (the wave-A walker precedent).
+        crate::npc::NpcKind::BloodMummy
+        => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-d42 - the roster's ground/stand kinds plant on the column
+        // surface (the wave-A walker precedent).
+        crate::npc::NpcKind::SeaTurtle
+        => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-d42 - the roster's flyers seed in the open air (the net
+        // state overwrites the position below).
+        crate::npc::NpcKind::Seahorse
+        | crate::npc::NpcKind::GoldSeahorse
+        | crate::npc::NpcKind::Dandelion
+        | crate::npc::NpcKind::IceMimic
+        => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d42 - the roster's ground/stand kinds plant on the column
+        // surface (the wave-A walker precedent).
+        crate::npc::NpcKind::Gnome
+        => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-d42 - the roster's flyers seed in the open air (the net
+        // state overwrites the position below).
+        crate::npc::NpcKind::GoblinShark
+        | crate::npc::NpcKind::BloodEelHead
+        | crate::npc::NpcKind::BloodEelBody
+        | crate::npc::NpcKind::BloodEelTail
+        => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d42 - the roster's ground/stand kinds plant on the column
+        // surface (the wave-A walker precedent).
+        crate::npc::NpcKind::Turtle
+        | crate::npc::NpcKind::TurtleJungle
+        => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-d42 - the roster's flyers seed in the open air (the net
+        // state overwrites the position below).
+        crate::npc::NpcKind::BloodNautilus
+        | crate::npc::NpcKind::BloodSquid
+        => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d42 - the roster's ground/stand kinds plant on the column
+        // surface (the wave-A walker precedent).
+        crate::npc::NpcKind::Rat
+        | crate::npc::NpcKind::ExplosiveBunny
+        => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-d42 - the roster's flyers seed in the open air (the net
+        // state overwrites the position below).
+        crate::npc::NpcKind::Owl
+        | crate::npc::NpcKind::WaterStrider
+        | crate::npc::NpcKind::GoldWaterStrider
+        => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d42 - the roster's ground/stand kinds plant on the column
+        // surface (the wave-A walker precedent).
+        crate::npc::NpcKind::Grebe
+        => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-d42 - the roster's flyers seed in the open air (the net
+        // state overwrites the position below).
+        crate::npc::NpcKind::Grebe2
+        => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d42 - the roster's ground/stand kinds plant on the column
+        // surface (the wave-A walker precedent).
+        crate::npc::NpcKind::Seagull
+        => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-d42 - the roster's flyers seed in the open air (the net
+        // state overwrites the position below).
+        crate::npc::NpcKind::Seagull2
+        => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d42 - the roster's ground/stand kinds plant on the column
+        // surface (the wave-A walker precedent).
+        crate::npc::NpcKind::TorchZombie
+        | crate::npc::NpcKind::ArmedTorchZombie
+        | crate::npc::NpcKind::GoldGoldfishWalker
+        => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-d42 - the roster's ground/stand kinds plant on the column
+        // surface (the wave-A walker precedent).
+        crate::npc::NpcKind::ZombieMerman
+        => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-d42 - the roster's ground/stand kinds plant on the column
+        // surface (the wave-A walker precedent).
+        crate::npc::NpcKind::BartenderUnconscious
+        | crate::npc::NpcKind::WalkingAntlion
+        | crate::npc::NpcKind::LarvaeAntlion
+        => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-d42 - the roster's flyers seed in the open air (the net
+        // state overwrites the position below).
+        crate::npc::NpcKind::DD2LightningBug
+        => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

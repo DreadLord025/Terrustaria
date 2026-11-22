@@ -3027,6 +3027,241 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Buggy",
     },
+    // W4-d42 - the NPCID 578-582 roster's own credits (the
+    // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
+    BestiaryEntryDef {
+        credit_id: "DD2LightningBugT3",
+        net_id: 578,
+        kind: NpcKind::DD2LightningBug,
+        variant: None,
+        quick_unlock: false,
+        name: "Etherian Lightning Bug",
+    },
+    BestiaryEntryDef {
+        credit_id: "WalkingAntlion",
+        net_id: 580,
+        kind: NpcKind::WalkingAntlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Antlion Charger",
+    },
+    BestiaryEntryDef {
+        credit_id: "LarvaeAntlion",
+        net_id: 582,
+        kind: NpcKind::LarvaeAntlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Antlion Larva",
+    },
+    // W4-d42 - the NPCID 583-587 roster's own credits (the
+    // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
+    BestiaryEntryDef {
+        credit_id: "ZombieMerman",
+        net_id: 586,
+        kind: NpcKind::ZombieMerman,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie Merman",
+    },
+    // W4-d42 - the NPCID 590-594 roster's own credits (the
+    // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
+    BestiaryEntryDef {
+        credit_id: "TorchZombie",
+        net_id: 590,
+        kind: NpcKind::TorchZombie,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
+    },
+    // W4-d42 - the GoldGoldfishWalker's interim OWN entry: its vanilla
+    // credit folds onto the GoldGoldfish (592, `ContentSamples.cs:1049`),
+    // but 592 is c4b's unported kind — the d40 BoneThrowingSkeleton2/3
+    // unported-fold-target precedent. The merge folds it onto 592 once
+    // c4b lands (the `entry_for_npc` note).
+    BestiaryEntryDef {
+        credit_id: "GoldGoldfishWalker",
+        net_id: 593,
+        kind: NpcKind::GoldGoldfishWalker,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Goldfish",
+    },
+    // W4-d42 - the NPCID 595-599 roster's own credits (the
+    // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
+    // W4-d42 - the NPCID 600-604 roster's own credits (the
+    // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
+    BestiaryEntryDef {
+        credit_id: "Seagull",
+        net_id: 602,
+        kind: NpcKind::Seagull,
+        variant: None,
+        quick_unlock: false,
+        name: "Seagull",
+    },
+    // W4-d42 - the NPCID 605-609 roster's own credits (the
+    // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
+    BestiaryEntryDef {
+        credit_id: "Grebe",
+        net_id: 608,
+        kind: NpcKind::Grebe,
+        variant: None,
+        quick_unlock: false,
+        name: "Grebe",
+    },
+    // W4-d42 - the NPCID 610-614 roster's own credits (the
+    // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
+    BestiaryEntryDef {
+        credit_id: "Rat",
+        net_id: 610,
+        kind: NpcKind::Rat,
+        variant: None,
+        quick_unlock: false,
+        name: "Rat",
+    },
+    BestiaryEntryDef {
+        credit_id: "Owl",
+        net_id: 611,
+        kind: NpcKind::Owl,
+        variant: None,
+        quick_unlock: false,
+        name: "Owl",
+    },
+    BestiaryEntryDef {
+        credit_id: "WaterStrider",
+        net_id: 612,
+        kind: NpcKind::WaterStrider,
+        variant: None,
+        quick_unlock: false,
+        name: "Water Strider",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldWaterStrider",
+        net_id: 613,
+        kind: NpcKind::GoldWaterStrider,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Water Strider",
+    },
+    BestiaryEntryDef {
+        credit_id: "ExplosiveBunny",
+        net_id: 614,
+        kind: NpcKind::ExplosiveBunny,
+        variant: None,
+        quick_unlock: false,
+        name: "Explosive Bunny",
+    },
+    // W4-d42 - the NPCID 615-619 roster's own credits (the
+    // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
+    BestiaryEntryDef {
+        credit_id: "Turtle",
+        net_id: 616,
+        kind: NpcKind::Turtle,
+        variant: None,
+        quick_unlock: false,
+        name: "Turtle",
+    },
+    BestiaryEntryDef {
+        credit_id: "TurtleJungle",
+        net_id: 617,
+        kind: NpcKind::TurtleJungle,
+        variant: None,
+        quick_unlock: false,
+        name: "Jungle Turtle",
+    },
+    BestiaryEntryDef {
+        credit_id: "BloodNautilus",
+        net_id: 618,
+        kind: NpcKind::BloodNautilus,
+        variant: None,
+        quick_unlock: false,
+        name: "Dreadnautilus",
+    },
+    BestiaryEntryDef {
+        credit_id: "BloodSquid",
+        net_id: 619,
+        kind: NpcKind::BloodSquid,
+        variant: None,
+        quick_unlock: false,
+        name: "Blood Squid",
+    },
+    // W4-d42 - the NPCID 620-624 roster's own credits (the
+    // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
+    BestiaryEntryDef {
+        credit_id: "GoblinShark",
+        net_id: 620,
+        kind: NpcKind::GoblinShark,
+        variant: None,
+        quick_unlock: false,
+        name: "Hemogoblin Shark",
+    },
+    BestiaryEntryDef {
+        credit_id: "BloodEelHead",
+        net_id: 621,
+        kind: NpcKind::BloodEelHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Blood Eel",
+    },
+    BestiaryEntryDef {
+        credit_id: "Gnome",
+        net_id: 624,
+        kind: NpcKind::Gnome,
+        variant: None,
+        quick_unlock: false,
+        name: "Gnome",
+    },
+    // W4-d42 - the NPCID 625-629 roster's own credits (the
+    // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
+    BestiaryEntryDef {
+        credit_id: "SeaTurtle",
+        net_id: 625,
+        kind: NpcKind::SeaTurtle,
+        variant: None,
+        quick_unlock: false,
+        name: "Sea Turtle",
+    },
+    BestiaryEntryDef {
+        credit_id: "Seahorse",
+        net_id: 626,
+        kind: NpcKind::Seahorse,
+        variant: None,
+        quick_unlock: false,
+        name: "Seahorse",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldSeahorse",
+        net_id: 627,
+        kind: NpcKind::GoldSeahorse,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Seahorse",
+    },
+    BestiaryEntryDef {
+        credit_id: "Dandelion",
+        net_id: 628,
+        kind: NpcKind::Dandelion,
+        variant: None,
+        quick_unlock: false,
+        name: "Angry Dandelion",
+    },
+    BestiaryEntryDef {
+        credit_id: "IceMimic",
+        net_id: 629,
+        kind: NpcKind::IceMimic,
+        variant: None,
+        quick_unlock: false,
+        name: "Ice Mimic",
+    },
+    // W4-d42 - the NPCID 630-630 roster's own credits (the
+    // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
+    BestiaryEntryDef {
+        credit_id: "BloodMummy",
+        net_id: 630,
+        kind: NpcKind::BloodMummy,
+        variant: None,
+        quick_unlock: false,
+        name: "Blood Mummy",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -3184,6 +3419,17 @@ pub fn try_entry_for_npc(
         // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
         // the Hide=true variants have no own entry).
         NpcKind::MothronEgg => NpcKind::Mothron,
+        // W4-d42 (merge-side mirror, 367 s1): the Hide=true folds ride BOTH
+        // resolvers (the d37/d40 precedent) — d42's own commit wired only
+        // `entry_for_npc`; `try_entry_for_npc` gets the same arms.
+        NpcKind::BartenderUnconscious => NpcKind::DD2Bartender,
+        NpcKind::ArmedTorchZombie => NpcKind::TorchZombie,
+        // (the fairy/balloon/dragonfly dups 583-585/594/595-601 dropped —
+        // d33 owns them, d37 tables; their folds land with its splice.)
+        NpcKind::Seagull2 => NpcKind::Seagull,
+        NpcKind::Grebe2 => NpcKind::Grebe,
+        NpcKind::BloodEelBody => NpcKind::BloodEelHead,
+        NpcKind::BloodEelTail => NpcKind::BloodEelHead,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -3288,6 +3534,32 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
         // the Hide=true variants have no own entry).
         NpcKind::MothronEgg => NpcKind::Mothron,
+        // W4-d42 - the Hide=true folds (`NPCID.cs`'s draw modifiers):
+        // one credit per family (the SleepingGolfer precedent).
+        NpcKind::BartenderUnconscious => NpcKind::DD2Bartender,
+        // W4-d42 - the Hide=true folds (`NPCID.cs`'s draw modifiers):
+        // one credit per family (the SleepingGolfer precedent).
+        NpcKind::ArmedTorchZombie => NpcKind::TorchZombie,
+        // The GoldGoldfishWalker (593) folds onto the GoldGoldfish (592,
+        // `ContentSamples.cs:1049`); 592 is c4b's unported kind, so the
+        // walker keeps its OWN entry for now (the d40 BoneThrowingSkeleton2/3
+        // unported-fold-target precedent) — the merge re-points this arm at
+        // `NpcKind::GoldGoldfish` and drops the walker's entry once c4b lands.
+        // W4-d42 - the Hide=true folds (`NPCID.cs`'s draw modifiers):
+        // one credit per family (the SleepingGolfer precedent).
+        // (merge-side drop, d37 tables: the fairy/balloon/dragonfly dups
+        // 583-585/594/595-601 belong to d33 - their folds land with its
+        // small-lanes splice; d42 keeps the waterfowl.)
+        // W4-d42 - the Hide=true folds (`NPCID.cs`'s draw modifiers):
+        // one credit per family (the SleepingGolfer precedent).
+        NpcKind::Seagull2 => NpcKind::Seagull,
+        // W4-d42 - the Hide=true folds (`NPCID.cs`'s draw modifiers):
+        // one credit per family (the SleepingGolfer precedent).
+        NpcKind::Grebe2 => NpcKind::Grebe,
+        // W4-d42 - the Hide=true folds (`NPCID.cs`'s draw modifiers):
+        // one credit per family (the SleepingGolfer precedent).
+        NpcKind::BloodEelBody => NpcKind::BloodEelHead,
+        NpcKind::BloodEelTail => NpcKind::BloodEelHead,
         other => other,
     };
     ENTRIES

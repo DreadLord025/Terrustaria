@@ -22336,6 +22336,172 @@ and the wiring owns the draws in C# order.
    fresh head has no interaction flags on the spawn tick); the wiring
    re-copies if it ever assembles later.
 
+## The NPCID 578-630 roster join (W4-d42, 2026-11-21 — code-only mode)
+
+The data-only `SetDefaults` join for the vanilla NPCID 578-630 band. The first
+pass (batches 1-11) landed 51 kinds on a port-local 354-404 wire band; the
+**reconcile commit (`49346dba6`)** renumbered them to the research/108 union
+plan's **vanilla-free band** (protocol == NPCID, the d38/d40 precedent — the
+354-404 band collided with d37's pushed 354-399, 108 §2a) and **dropped the 8
+kinds other lanes own**: FlyingAntlion 581 / EyeballFlyingFish 587 (c4
+style-44), GoldGoldfish 592 / Pupfish 607 / Dolphin 615 (c4b style-16),
+LadyBug 604 / GoldLadyBug 605 (e26b luck), Maggot 606 (c8 style-66). The
+remaining **43 kinds** (578/579/580/582/583-586/590/591/593/594/595-603/
+608-614/616-630) are this lane's. Branch `task/W4-d42-npc-kinds-561-630`, NOT
+merged. **Code-only mode: no compiler/tests/graphify invoked**; the eleven
+`w4_d42_bN_the_defaults_match_the_csharp_rows` witness tests in `npc.rs` are
+WRITTEN NOT RUN (the smallkinds shape — `(kind, vanilla, ai, w, h, dmg, def,
+life, kb, value)` through the `Npc::new` shell), their `to_u16` pins re-derived
+to the vanilla ids. Static checks (PowerShell): `to_u16`/`from_u16` bijection
+313/313 (0 dups, 0 mismatches), `ALL_KINDS` 313 (no dups), bestiary 281 entries
+(no dup net_id/kind), every exhaustive `NpcKind` match carries an arm for all
+43 kept kinds, `render_key` injective across the band — 0 errors.
+
+**Protocol == vanilla ids** (the 108 §3 union plan): the 43 kinds ride their
+vanilla NPCID slots in `to_u16`/`from_u16` (protocol space >=489 is free on the
+union). `cs_id` hand rows keep the TRUE id for EVERY kind (folded ones included
+— the AI arms read `cs_id`); `net_id` is the bestiary entry; `render_key` uses
+the vanilla ids (all free render keys). `ALL_KINDS` 270 → 313; the s1_f_3 pin
+313. The eight dropped kinds' ids stay free for c4/c4b/e26b/c8.
+
+**Bestiary folds** (the SleepingGolfer precedent): the `Hide = true` kinds fold
+ONLY in `entry_for_npc` — BartenderUnconscious→DD2Bartender (579→550),
+ArmedTorchZombie→TorchZombie (591→590), Black/Blue/Green/Orange/YellowDragonfly
+→RedDragonfly (595-598/600→599), Seagull2→Seagull (603→602), Grebe2→Grebe
+(609→608), BloodEelBody/Tail→BloodEelHead (622/623→621). The GoldGoldfishWalker
+(593) folds onto GoldGoldfish (592, `ContentSamples.cs:1049`) in the vanilla,
+but 592 is c4b's UNPORTED kind — so the walker keeps an interim OWN entry (the
+d40 BoneThrowingSkeleton2/3 unported-fold-target precedent); the merge re-points
+the fold once c4b lands. `try_entry_for_npc` does NOT fold them (returns None →
+the s1_f_3 cs_id==net_id invariant exempts them, their hand rows keep the true
+id). The folded kinds keep their OWN draw sheets via `texture_net_id` hand rows
+(the ForceBubble precedent — the credit folds, the sheet does not); they have no
+`portrait_data` arm (the entry they render is the fold target's).
+
+**Deliberate deviations / deferrals** (the wyvern precedent):
+1. **Draw sheets deferred (MEASURED — research/238, renamed from 143 per
+   research/150's late-push rule; the 238 key CONFIRMED d42's by registry
+   rounds 2/3 — c8→262, g61→273).** All 43 `NPC_<id>.xnb`
+   decode (`tools/_d42_sheets.js`, the atlas_sim stub-reuse technique;
+   inventory `tools/_d42_sheet_inventory.json`): **0.807 Mpx padded**. The
+   full runtime set (HEAD + gore + font + the 43) measures skyline
+   **8382 > 8192 (+190 OVERFLOW)**; static-only fits at 8021 but the pack is
+   NOT taken — the sheets ride d35's research/113 §10 lazy-load wave (NPC
+   rows leave STATIC_SHEET_NAMES; the roster-43 solo page is 1768 px, one
+   per-world page). The stale "~71 px (8121)" headroom figure re-measures
+   as **77 px (8115)** on this base. The 39-name union-forecast delta (the
+   four c10-owned waterfowl sheets already union-rowed; the seven
+   dragonflies shared with d33's tip) is published in research/238 §5 for
+   the d35 merger. The `draw_npcs` arms call
+   `generic_anchor(assets.npc_sheet(id), npc_rows(id), …)` — `npc_sheet` returns
+   None for an unpacked name, so the arm no-draws (the wyvern deferral). The
+   kinds are NOT added to `STATIC_SHEET_NAMES`/the sheet lists (the `npc_tex`
+   debug_assert would fire). `NPC_FRAME_COUNT` was already byte-identical to the
+   C# for all 697 ids — no change (re-verified entry-by-entry vs `Main.cs:67082`).
+   The bestiary portraits use literal SetDefaults-box sizes (the WyvernHead
+   `(sheet_i, 32.0, …)` precedent); the sheet index folds to 0 until the sheets
+   land.
+2. **Unwired AI styles idle in place.** aiStyles 111-119 (the DD2 bug, the
+   fairies, the balloon, the dragonflies, the water striders, the dreadnautilus,
+   the seahorses, the dandelion), 68 (the flying grebe/seagull), 24 (the owl),
+   107 (the hemogoblin shark), 25-for-629 (the ice mimic — the style axis claims
+   only PresentMimic) and 0 (the bound bartender) get `{}` idle stand-in arms
+   with citations (the MartianTurret/wyvern precedent). The noGravity/
+   noTileCollide kinds (578, 618, 621-623) run the raw integration tail
+   (`integrate_no_tile_collide`, `NPC.cs:90494-90498`) so the spawn velocity
+   carries (the style-56 arm's shape).
+3. **Wired families.** The aiStyle-3 walkers (580/582/586/590/591/624/630) ride
+   `update_zombie` → the C# ladder's own per-type arms (`npc_ai3_speeds.rs`:
+   580/582 the lerp machine, 586 the life-scaled cap, 591 the charge family,
+   624/630 the num107/half-life-rage arms); `ai3_walk_speed` pins the caps
+   (580 2.5, 582 2.25, 586 1.5 full-life base, 590/591 1.0, 624 2.5, 630 1.5).
+   The BloodSquid (619, aiStyle 5) is WIRED to `ai_005_hover_family` via the new
+   `HoverParams::BLOOD_SQUID` (num 6 / num2 0.1 `NPC.cs:50323-50327`, no flag5
+   double-add `:50447`, tile collision with the 0.7 bounce `:50658`, the Aim
+   tilt `:50643-50646`). **FINAL phase: the documented bob/boost/rise gap is
+   CLOSED** — the shared `hover_step` now models the flag4 bob drift
+   (`:50446-50473`: ai[0]++ every tick — the `(num7 > 100f) | flag4` gate
+   `:50450` is always true for 619 — ±0.023 Y by sign / X by the ±100 band,
+   the >200 wrap to −200), the <150px approach boost (`:50474-50478`,
+   `velocity += num4/num5 * 0.007` on the normalized aim) and the −0.3 rise
+   (`:50485-50488`, the dead-flee's else-if, `Center.Y > target.Center.Y −
+   200f`), all at the exact C# position (drift/boost after the aim normalize,
+   before the flee/rise block and the approach). The three gates are new
+   `HoverParams` fields (`bob_drift`/`close_boost`/`hover_rise`), TRUE only
+   for `BLOOD_SQUID` — the four legacy presets keep them false so every
+   pre-existing hover kind is behaviour-frozen (the bees' drift stays
+   bee-local in `update_bee_hover`, no double-apply). Witnesses:
+   `w4_d42_the_blood_squid_bob_drifts_every_tick_and_wraps`,
+   `w4_d42_the_blood_squid_close_boost_and_rise_gates`,
+   `w4_d42_the_hover_bob_gates_are_blood_squid_only` (npc_ai.rs, WRITTEN NOT
+   RUN). The num8 kinds' >100px-gated bob (the EoS's own arm) rides the
+   hover-family wiring wave. The aiStyle-16 swimmers
+   (592/607/615) are c4b's — NOT wired here.
+4. **FindFrame RNG stand-ins.** `find_frame` has no RNG seam, so the Owl's (611)
+   idle head-turn table (`NPC.cs:73687-73731`, `Main.rand.Next(80)`/`Next(3)`)
+   HOLDS row 0 and the WaterStrider's (612/613) row-0 idle gate
+   (`Main.rand.Next(180)`, `:69788`) keeps the counter running — both documented
+   in the arm; the blink cycles ride the frame-machine wiring wave. The
+   Dandelion's (628) `Main.WindForVisuals` reads fold to 0f (unported). Every
+   other FindFrame case is ported verbatim (the cites ride each arm).
+5. **IceMimic hardMode rows.** 629's `SetDefaults` writes the hardMode stats
+   (80/30/500/100000, `NPC.cs:17092-17097`) with a `!Main.hardMode` variant
+   (30/12/300/20000, `:17099-17105`). The port has no per-kind hardmode seam, so
+   the hardMode rows ship (the documented choice; the variant awaits the
+   difficulty wiring).
+6. **Blood Eel chain deferred.** The eel trio (621-623) is NOT added to
+   `is_worm`/`shares_carrier_life` (the chain wiring is a follow-up — the wyvern
+   membership choice); the segments hold row 0 (FindFrame has no case 621-623).
+   The spawner is untouched (data-only join). The pre-existing duplicate `value()`
+   arms on main (SolarCrawltipedeHead/StardustWormHead/SolarSpearman/VortexTower/
+   DD2LanePortal) are out of scope.
+7. **Fairy immunity gap.** The fairy critters' (583-585)
+   `ImmuneToAllBuffsThatAreNotWhips` mask loop is unmodelled (the port's
+   documented gap — they ride `&[]` in `debuff_immune_ids`); their
+   `ImmuneToWhips` rides `whip_immune` (the MartianSaucer precedent).
+
+**Sounds**: the `NPC_Hit_31` + `NPC_Killed_34/63` bank rows and the
+`dd2_lightning_bug_hurt_0/death_0` trackables joined `audio.rs` (the soundid
+style rows already existed); the hemogoblin shark rides the existing
+`dd2_drakin` trackables. The ExplosiveBunny's (614) `DeathSound = null`
+(`NPC.cs:16889`) rides the None fall-through. The `NPC_Hit_32`/`NPC_Killed_35`
+rows the first pass added are c4's (581/587) — left in the bank (harmless, the
+table tolerates unused cues) for c4 to claim.
+
+**FINAL phase (research/239)**: the lane closes at **32 owned kinds** — the
+11 d33/c10-owned dragonflies (595-601) + waterfowl (602/603/608/609) are
+keep-one DROPPED at merge (the exact d42 drop-hunks are published in
+research/239 §1a, merger-mechanical; d42 keeps its rows on-branch so the
+exhaustive matches compile). The GoldGoldfishWalker-593 bestiary fold
+re-points onto c4's now-ported GoldGoldfish-592 (research/239 §2, the
+interim OWN entry retires at merge). The 592/607/615 re-adjudication
+(c4 STANDS, d42 ceded) + the CorruptGoldfish-405/Arapaima-406 verdicts
+(keep d34@277 / accept c4@406) are in research/239 §3. The BloodSquid-619
+hover bob/boost/rise gap is CLOSED (deviation 3 above). The 32-kind
+vanilla-free band declaration is research/239 §4.
+
+**SEAL phase (research/239 §6 + research/238 §9)**: the number keys are
+CONFIRMED d42's by registry-150 rounds 2/3 (d54 `72226e500`/`0426245f2`
+§6.2: "d42 … 238 KEEPS; new doc 239 KEEPS … CONFIRMED - no further
+action"; c8→262, g61→273, g56→274, f21→276, g48's 237→272). The d37e
+roster seal (`fbb948172`, research/108 S1) receipts d42 PARTIAL-EXECUTED
+36/36 moves with the 8-kind ownership flip ACCEPTED; its "7 dragonfly
+drops owed" line predates bac408be0 — those drops (and the 4 waterfowl)
+are the §1a EXECUTE-prep hunks under the E8 dropped-lane rule. The
+108-E8/S1 keep-d42-waterfowl order is SUPERSEDED by §1's keep-c10 verdict
+(the fully-wired superset rule, R3's dragonfly precedent) — flagged for
+d37f/the merger. The styles-idle-in-place lane-close publishes the
+per-module ACTIVATION CONTRACT for the d33-wiring-wave (research/239 §6:
+style 114 IS wired on d33's tip; 111/112/113/116/117/118/119 unwired with
+their env seams itemized; 115=e26-wired, 24=d127-wired, 68=c10-wired;
+107/25-for-629/6/7/0 module-less). The c10 Seagull2/Grebe2 credit-fold
+flag is CORRECTED (§1b: the C# has NO 603→602/609→608 credit remap — the
+HighestOf UI provider is the fold; c10's own-row shape is faithful, the
+grid-slot/provider half is the merger obligation). The 43-sheets
+562-union confirm: 14 union-named under owner tags, 29 d42-only names
+union-absent (the NO-pack extraction gap) — all 43 ride research/113 §10's
+lazy-load wave by contract (research/238 §9).
+
 ## The Destroyer machine (aiStyle-37, S1-D-3, 2026-11-18 — code-only mode)
 
 `NPC.AI_037_Destroyer` (`NPC.cs:49756-50242`, dispatched at `:28991-28994`)

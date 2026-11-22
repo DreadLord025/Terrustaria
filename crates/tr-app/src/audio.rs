@@ -120,6 +120,8 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Hit_14", 3),
     // S1-D-3z — the Blood Zombie's hit cue (`NPC.cs:14613`'s NPCHit18).
     ("NPC_Hit_18", 3),
+    // W4-d42 - the roster's hit cue (`SoundID.NPCHit32`).
+    ("NPC_Hit_32", 3),
     ("NPC_Hit_19", 3),
     ("NPC_Hit_21", 3),
     // W4-d34 kinds 1-70: the Vulture's NPCHit28 (`NPC.cs:9563`), the Antlion's
@@ -212,6 +214,8 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_20", 4),
     // S1-D-3z — the Blood Zombie's death cue (`NPC.cs:14614`'s NPCDeath21).
     ("NPC_Killed_21", 4),
+    // W4-d42 - the roster's death cue (`SoundID.NPCDeath35`).
+    ("NPC_Killed_35", 4),
     ("NPC_Killed_22", 4),
     ("NPC_Killed_24", 4),
     // W4-d34 kinds 1-70: the jellyfish pair's NPCDeath28 (`NPC.cs:9592`/`:9606`),
@@ -513,6 +517,10 @@ pub(crate) const NPC_CUSTOM_CUES: &[&str] = &[
     "dd2_kobold_flyer_death_0",
     "dd2_kobold_flyer_hurt_0",
     "dd2_kobold_hurt_0",
+    // W4-d42 - the lightning bug's trackables (`SoundID.cs:1691+`).
+    "dd2_lightning_bug_hurt_0",
+    // W4-d42 - the lightning bug's trackables (`SoundID.cs:1691+`).
+    "dd2_lightning_bug_death_0",
     "dd2_ogre_death_0",
     "dd2_ogre_hurt_0",
     "dd2_skeleton_death_0",

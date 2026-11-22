@@ -1661,6 +1661,148 @@ pub enum NpcKind {
     /// `NPCID.ArmedZombieSwamp` (434): 18x40, aiStyle 3, dmg 13, def 8, 45 HP,
     /// kb 0.45, value 80 (`NPC.cs` SetDefaults arm).
     ArmedZombieSwamp,
+
+    // ---- W4-d42: the NPCID 578-630 SetDefaults roster (data-only join;
+    // the protocol ids ride the VANILLA 578-630 slots — the 108 union
+    // plan's vanilla-free band, the d38/d40 precedent — and the vanilla
+    // types ride `cs_id`/`net_id`/the bestiary). The eight kinds other
+    // lanes own are NOT here: 581/587 (c4 style-44), 592/607/615 (c4b
+    // style-16), 604/605 (e26b luck), 606 (c8 style-66). ----
+    /// `NPCID.DD2LightningBugT3` (578) — the Old One's Army's tier-3
+    /// lightning bug (`NPC.cs:16536-16553`: 30×24, aiStyle 111, dmg 80,
+    /// def 36, 500 HP, kb 0.8, noGravity/noTileCollide, npcSlots 0,
+    /// lavaImmune, netAlways; no value row — the head's 0f `:8544`).
+    /// The aiStyle-111 zap machine is UNWIRED (the wyvern precedent).
+    DD2LightningBug,
+    /// `NPCID.BartenderUnconscious` (579) — the fallen tavernkeeper
+    /// (`NPC.cs:16554-16568`: 34×8, aiStyle 0 the bound stand, friendly,
+    /// dmg 10, def 15, 250 HP, kb 0.5, scale 1, rarity 1). The bestiary
+    /// hides it (`NPCID.cs` GetLeinforsEntries `Hide = true`) — the
+    /// credit folds onto the Bartender (the SleepingAngler precedent).
+    BartenderUnconscious,
+    /// `NPCID.WalkingAntlion` (580) — the underground-desert charger
+    /// (`NPC.cs:14854-14867`: 26×26, aiStyle 3, dmg 25, def 10, 80 HP,
+    /// kb 0.5, value 80, npcSlots 0.8). The walk rides `AI_003_Fighters`'
+    /// 508/580/582 lerp machine (`NPC.cs:58139-58202`, ported in
+    /// `npc_ai3_speeds.rs`).
+    WalkingAntlion,
+    /// `NPCID.LarvaeAntlion` (582) — the desert larva (`NPC.cs:
+    /// 16569-16582`: 18×18, aiStyle 3, dmg 10, def 2, 30 HP, kb 0.75,
+    /// value 40, npcSlots 0.4). The 582 lerp arm (`NPC.cs:58144-58150`:
+    /// the 2.25/7 pair, the >2.5 sprint to 3) is ported.
+    LarvaeAntlion,
+    /// `NPCID.ZombieMerman` (586) - `NPC.cs:16608-16622`:
+    /// 18x40, aiStyle 3, dmg 40, def 20,
+    /// 400 HP, kb 0.0, value 1000.
+    ZombieMerman,
+    /// `NPCID.TorchZombie` (590) - `NPC.cs:16666-16678`:
+    /// 18x40, aiStyle 3, dmg 14, def 6,
+    /// 45 HP, kb 0.5, value 60.
+    TorchZombie,
+    /// `NPCID.ArmedTorchZombie` (591) - `NPC.cs:16666-16678 (the 590/591 group)`:
+    /// 18x40, aiStyle 3, dmg 14, def 6,
+    /// 45 HP, kb 0.5, value 60.
+    ArmedTorchZombie,
+    /// `NPCID.GoldGoldfishWalker` (593) - `NPC.cs:16694-16706`:
+    /// 18x20, aiStyle 7, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    GoldGoldfishWalker,
+    /// `NPCID.Seagull` (602) - `NPC.cs:16739-16750`:
+    /// 22x26, aiStyle 7, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    Seagull,
+    /// `NPCID.Seagull2` (603) - `NPC.cs:16751-16762`:
+    /// 28x22, aiStyle 68, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    Seagull2,
+    /// `NPCID.Grebe` (608) - `NPC.cs:16809-16820`:
+    /// 22x26, aiStyle 7, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    Grebe,
+    /// `NPCID.Grebe2` (609) - `NPC.cs:16821-16832`:
+    /// 28x22, aiStyle 68, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    Grebe2,
+    /// `NPCID.Rat` (610) - `NPC.cs:16833-16845`:
+    /// 14x12, aiStyle 7, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    Rat,
+    /// `NPCID.Owl` (611) - `NPC.cs:16846-16859`:
+    /// 18x34, aiStyle 24, dmg 0, def 0,
+    /// 5 HP, kb 0.8, value 0.
+    Owl,
+    /// `NPCID.WaterStrider` (612) - `NPC.cs:16860-16879 (catchItem type-612+4418 :16875)`:
+    /// 10x10, aiStyle 116, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    WaterStrider,
+    /// `NPCID.GoldWaterStrider` (613) - `NPC.cs:16860-16879 (rarity 3 :16873)`:
+    /// 10x10, aiStyle 116, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    GoldWaterStrider,
+    /// `NPCID.ExplosiveBunny` (614) - `NPC.cs:16880-16891 (DeathSound = null :16889)`:
+    /// 18x20, aiStyle 7, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    ExplosiveBunny,
+    /// `NPCID.Turtle` (616) - `NPC.cs:16905-16917 (catchItem type-616+4464 :16916)`:
+    /// 22x20, aiStyle 7, dmg 0, def 0,
+    /// 5 HP, kb 0.5, value 0.
+    Turtle,
+    /// `NPCID.TurtleJungle` (617) - `NPC.cs:16905-16917`:
+    /// 22x20, aiStyle 7, dmg 0, def 0,
+    /// 5 HP, kb 0.5, value 0.
+    TurtleJungle,
+    /// `NPCID.BloodNautilus` (618) - `NPC.cs:16918-16933 (value Item.buyPrice(0,2)=20000 :16930)`:
+    /// 100x100, aiStyle 117, dmg 55, def 24,
+    /// 7000 HP, kb 0.0, value 20000.
+    BloodNautilus,
+    /// `NPCID.BloodSquid` (619) - `NPC.cs:16934-16949`:
+    /// 44x44, aiStyle 5, dmg 60, def 16,
+    /// 750 HP, kb 0.0, value 500.
+    BloodSquid,
+    /// `NPCID.GoblinShark` (620) - `NPC.cs:16950-16968 (value Item.buyPrice(0,0,75)=7500 :16961)`:
+    /// 34x58, aiStyle 107, dmg 70, def 30,
+    /// 5000 HP, kb 0.0, value 7500.
+    GoblinShark,
+    /// `NPCID.BloodEelHead` (621) - `NPC.cs:16969-16987 (value Item.buyPrice(0,0,75)=7500 :16984)`:
+    /// 28x28, aiStyle 6, dmg 90, def 0,
+    /// 6000 HP, kb 0.0, value 7500.
+    BloodEelHead,
+    /// `NPCID.BloodEelBody` (622) - `NPC.cs:16988-17006`:
+    /// 28x28, aiStyle 6, dmg 60, def 30,
+    /// 6000 HP, kb 0.0, value 0.
+    BloodEelBody,
+    /// `NPCID.BloodEelTail` (623) - `NPC.cs:17007-17025`:
+    /// 28x28, aiStyle 6, dmg 50, def 40,
+    /// 6000 HP, kb 0.0, value 0.
+    BloodEelTail,
+    /// `NPCID.Gnome` (624) - `NPC.cs:17026-17038`:
+    /// 14x30, aiStyle 3, dmg 10, def 0,
+    /// 25 HP, kb 1.0, value 0.
+    Gnome,
+    /// `NPCID.SeaTurtle` (625) - `NPC.cs:17039-17050`:
+    /// 22x20, aiStyle 7, dmg 0, def 0,
+    /// 5 HP, kb 0.5, value 0.
+    SeaTurtle,
+    /// `NPCID.Seahorse` (626) - `NPC.cs:17051-17071 (catchItem 4480 :17066)`:
+    /// 16x20, aiStyle 118, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    Seahorse,
+    /// `NPCID.GoldSeahorse` (627) - `NPC.cs:17051-17071 (rarity 3 :17064, catchItem 4482 :17069)`:
+    /// 16x20, aiStyle 118, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    GoldSeahorse,
+    /// `NPCID.Dandelion` (628) - `NPC.cs:17072-17084`:
+    /// 22x40, aiStyle 119, dmg 15, def 0,
+    /// 50 HP, kb 0.0, value 50.
+    Dandelion,
+    /// `NPCID.IceMimic` (629) - `NPC.cs:17085-17106 (hardMode rows; !hardMode 30/12/300/20000 :17099-17105)`:
+    /// 24x24, aiStyle 25, dmg 80, def 30,
+    /// 500 HP, kb 0.3, value 100000.
+    IceMimic,
+    /// `NPCID.BloodMummy` (630) - `NPC.cs:17107-17119`:
+    /// 18x40, aiStyle 3, dmg 60, def 18,
+    /// 180 HP, kb 0.5, value 700.
+    BloodMummy,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3637,6 +3779,9 @@ impl Npc {
             friendly: kind.is_town_resident()
                 || kind == NpcKind::SleepingAngler
                 || kind == NpcKind::OldMan
+                // W4-d42 - the explicit friendly row (the bound stand,
+                // `NPC.cs:16556`).
+                || kind == NpcKind::BartenderUnconscious
                 // `NPC.SetDefaults`' catchable arm (`NPC.cs:17851-17855`):
                 // every `Main.npcCatchable` kind spawns friendly with the
                 // 90-tick window (S1-P-i36).
@@ -3740,7 +3885,17 @@ impl Npc {
                             NpcKind::CultistDragonBody3
                             | NpcKind::CultistDragonBody4
                             | NpcKind::CultistDragonTail => 255,
-                            NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
+                            // W4-d42 - the alpha-255 spawn-fade rows
+                            // (`NPC.cs:16620` 586, `:16948` 619, `:16966`
+                            // 620, `:16985`/`:17005`/`:17024` 621-623).
+                            NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2
+                            | NpcKind::ZombieMerman
+                            | NpcKind::BloodSquid
+                            | NpcKind::GoblinShark
+                            | NpcKind::BloodEelHead
+                            | NpcKind::BloodEelBody
+                            | NpcKind::BloodEelTail
+                            => {
                                 255
                             }
                             // W4-d34: the BlueJellyfish's `alpha = 20` row
@@ -4317,6 +4472,49 @@ impl Npc {
             NpcKind::RustyArmoredBonesSwordNoArmor => 0.35,
             NpcKind::BlueArmoredBones | NpcKind::BlueArmoredBonesNoPants => 0.15,
             NpcKind::BlueArmoredBonesMace | NpcKind::HellArmoredBones | NpcKind::HellArmoredBonesSword => 0.4,
+            // W4-d42 - the NPCID 578-582 SetDefaults rows.
+            NpcKind::DD2LightningBug => 0.8,
+            NpcKind::BartenderUnconscious => 0.5,
+            NpcKind::WalkingAntlion => 0.5,
+            NpcKind::LarvaeAntlion => 0.75,
+            // W4-d42 - the NPCID 583-587 SetDefaults rows.
+            NpcKind::ZombieMerman => 0.0,
+            // W4-d42 - the NPCID 590-594 SetDefaults rows.
+            NpcKind::TorchZombie => 0.5,
+            NpcKind::ArmedTorchZombie => 0.5,
+            NpcKind::GoldGoldfishWalker => 1.0,
+            // W4-d42 - the NPCID 595-599 SetDefaults rows.
+            // W4-d42 - the NPCID 600-604 SetDefaults rows.
+            NpcKind::Seagull => 1.0,
+            NpcKind::Seagull2 => 1.0,
+            // W4-d42 - the NPCID 605-609 SetDefaults rows.
+            NpcKind::Grebe => 1.0,
+            NpcKind::Grebe2 => 1.0,
+            // W4-d42 - the NPCID 610-614 SetDefaults rows.
+            NpcKind::Rat => 1.0,
+            NpcKind::Owl => 0.8,
+            NpcKind::WaterStrider => 1.0,
+            NpcKind::GoldWaterStrider => 1.0,
+            NpcKind::ExplosiveBunny => 1.0,
+            // W4-d42 - the NPCID 615-619 SetDefaults rows.
+            NpcKind::Turtle => 0.5,
+            NpcKind::TurtleJungle => 0.5,
+            NpcKind::BloodNautilus => 0.0,
+            NpcKind::BloodSquid => 0.0,
+            // W4-d42 - the NPCID 620-624 SetDefaults rows.
+            NpcKind::GoblinShark => 0.0,
+            NpcKind::BloodEelHead => 0.0,
+            NpcKind::BloodEelBody => 0.0,
+            NpcKind::BloodEelTail => 0.0,
+            NpcKind::Gnome => 1.0,
+            // W4-d42 - the NPCID 625-629 SetDefaults rows.
+            NpcKind::SeaTurtle => 0.5,
+            NpcKind::Seahorse => 1.0,
+            NpcKind::GoldSeahorse => 1.0,
+            NpcKind::Dandelion => 0.0,
+            NpcKind::IceMimic => 0.3,
+            // W4-d42 - the NPCID 630-630 SetDefaults rows.
+            NpcKind::BloodMummy => 0.5,
             _ => 0.4,
         }
     }
@@ -4852,6 +5050,49 @@ impl Npc {
             NpcKind::BlueArmoredBonesSword | NpcKind::HellArmoredBonesMace => 54,
             NpcKind::HellArmoredBones => 32,
             NpcKind::HellArmoredBonesSpikeShield => 48,
+            // W4-d42 - the NPCID 578-582 SetDefaults rows.
+            NpcKind::DD2LightningBug => 36,
+            NpcKind::BartenderUnconscious => 15,
+            NpcKind::WalkingAntlion => 10,
+            NpcKind::LarvaeAntlion => 2,
+            // W4-d42 - the NPCID 583-587 SetDefaults rows.
+            NpcKind::ZombieMerman => 20,
+            // W4-d42 - the NPCID 590-594 SetDefaults rows.
+            NpcKind::TorchZombie => 6,
+            NpcKind::ArmedTorchZombie => 6,
+            NpcKind::GoldGoldfishWalker => 0,
+            // W4-d42 - the NPCID 595-599 SetDefaults rows.
+            // W4-d42 - the NPCID 600-604 SetDefaults rows.
+            NpcKind::Seagull => 0,
+            NpcKind::Seagull2 => 0,
+            // W4-d42 - the NPCID 605-609 SetDefaults rows.
+            NpcKind::Grebe => 0,
+            NpcKind::Grebe2 => 0,
+            // W4-d42 - the NPCID 610-614 SetDefaults rows.
+            NpcKind::Rat => 0,
+            NpcKind::Owl => 0,
+            NpcKind::WaterStrider => 0,
+            NpcKind::GoldWaterStrider => 0,
+            NpcKind::ExplosiveBunny => 0,
+            // W4-d42 - the NPCID 615-619 SetDefaults rows.
+            NpcKind::Turtle => 0,
+            NpcKind::TurtleJungle => 0,
+            NpcKind::BloodNautilus => 24,
+            NpcKind::BloodSquid => 16,
+            // W4-d42 - the NPCID 620-624 SetDefaults rows.
+            NpcKind::GoblinShark => 30,
+            NpcKind::BloodEelHead => 0,
+            NpcKind::BloodEelBody => 30,
+            NpcKind::BloodEelTail => 40,
+            NpcKind::Gnome => 0,
+            // W4-d42 - the NPCID 625-629 SetDefaults rows.
+            NpcKind::SeaTurtle => 0,
+            NpcKind::Seahorse => 0,
+            NpcKind::GoldSeahorse => 0,
+            NpcKind::Dandelion => 0,
+            NpcKind::IceMimic => 30,
+            // W4-d42 - the NPCID 630-630 SetDefaults rows.
+            NpcKind::BloodMummy => 18,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -5387,6 +5628,49 @@ impl Npc {
             NpcKind::FungiBulb => 350.0,
             NpcKind::GiantFungiBulb => 1250.0,
             NpcKind::IchorSticker => 450.0,
+            // W4-d42 - the NPCID 578-582 SetDefaults rows.
+            NpcKind::DD2LightningBug => 0.0,
+            NpcKind::BartenderUnconscious => 0.0,
+            NpcKind::WalkingAntlion => 80.0,
+            NpcKind::LarvaeAntlion => 40.0,
+            // W4-d42 - the NPCID 583-587 SetDefaults rows.
+            NpcKind::ZombieMerman => 1000.0,
+            // W4-d42 - the NPCID 590-594 SetDefaults rows.
+            NpcKind::TorchZombie => 60.0,
+            NpcKind::ArmedTorchZombie => 60.0,
+            NpcKind::GoldGoldfishWalker => 0.0,
+            // W4-d42 - the NPCID 595-599 SetDefaults rows.
+            // W4-d42 - the NPCID 600-604 SetDefaults rows.
+            NpcKind::Seagull => 0.0,
+            NpcKind::Seagull2 => 0.0,
+            // W4-d42 - the NPCID 605-609 SetDefaults rows.
+            NpcKind::Grebe => 0.0,
+            NpcKind::Grebe2 => 0.0,
+            // W4-d42 - the NPCID 610-614 SetDefaults rows.
+            NpcKind::Rat => 0.0,
+            NpcKind::Owl => 0.0,
+            NpcKind::WaterStrider => 0.0,
+            NpcKind::GoldWaterStrider => 0.0,
+            NpcKind::ExplosiveBunny => 0.0,
+            // W4-d42 - the NPCID 615-619 SetDefaults rows.
+            NpcKind::Turtle => 0.0,
+            NpcKind::TurtleJungle => 0.0,
+            NpcKind::BloodNautilus => 20000.0,
+            NpcKind::BloodSquid => 500.0,
+            // W4-d42 - the NPCID 620-624 SetDefaults rows.
+            NpcKind::GoblinShark => 7500.0,
+            NpcKind::BloodEelHead => 7500.0,
+            NpcKind::BloodEelBody => 0.0,
+            NpcKind::BloodEelTail => 0.0,
+            NpcKind::Gnome => 0.0,
+            // W4-d42 - the NPCID 625-629 SetDefaults rows.
+            NpcKind::SeaTurtle => 0.0,
+            NpcKind::Seahorse => 0.0,
+            NpcKind::GoldSeahorse => 0.0,
+            NpcKind::Dandelion => 50.0,
+            NpcKind::IceMimic => 100000.0,
+            // W4-d42 - the NPCID 630-630 SetDefaults rows.
+            NpcKind::BloodMummy => 700.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6266,6 +6550,14 @@ impl Npc {
             // shot needs the hostile-shot seam); the per-NPC step is the
             // family no-op (the Destroyer precedent).
             NpcKind::Probe => {}
+            // W4-d42 - the Blood Squid (619): `AI_005`'s type-619
+            // pair (`NPC.cs:50323-50327`: num 6, num2 0.1), the
+            // flag4 bob family (`:50446`), no flag5 double-add
+            // (`:50447`), tile collision with the 0.7 bounce and
+            // the aim tilt (`:50643-50646` lists 619).
+            NpcKind::BloodSquid => {
+                self.update_hover(world, player, HoverParams::BLOOD_SQUID)
+            }
             _ => unreachable!("only aiStyle-5 kinds reach the family arm"),
         }
     }
@@ -7696,6 +7988,166 @@ impl Npc {
             | NpcKind::GiantFungiBulb
             | NpcKind::Reaper
             | NpcKind::IchorSticker => {}
+            // ---- W4-d42 batch 11: the NPCID 630-630 roster
+            // (data-only join). Unwired styles idle in place (the
+            // wyvern precedent); walkers ride the aiStyle-3 family,
+            // swimmers the aiStyle-16 family.
+            // `NPC.cs:17107-17119` - the aiStyle-3 walk rides the C#
+            // ladder's own per-type arm (`npc_ai3_speeds.rs`).
+            NpcKind::BloodMummy => self.update_zombie(world, player, dt),
+            // ---- W4-d42 batch 10: the NPCID 625-629 roster
+            // (data-only join). Unwired styles idle in place (the
+            // wyvern precedent); walkers ride the aiStyle-3 family,
+            // swimmers the aiStyle-16 family.
+            // `NPC.cs:17039-17050` - aiStyle 7 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::SeaTurtle => {}
+            // `NPC.cs:17051-17071 (catchItem 4480 :17066)` - aiStyle 118 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::Seahorse => {}
+            // `NPC.cs:17051-17071 (rarity 3 :17064, catchItem 4482 :17069)` - aiStyle 118 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::GoldSeahorse => {}
+            // `NPC.cs:17072-17084` - aiStyle 119 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::Dandelion => {}
+            // `NPC.cs:17085-17106 (hardMode rows; !hardMode 30/12/300/20000 :17099-17105)` - aiStyle 25 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::IceMimic => {}
+            // ---- W4-d42 batch 9: the NPCID 620-624 roster
+            // (data-only join). Unwired styles idle in place (the
+            // wyvern precedent); walkers ride the aiStyle-3 family,
+            // swimmers the aiStyle-16 family.
+            // `NPC.cs:16950-16968 (value Item.buyPrice(0,0,75)=7500 :16961)` - aiStyle 107 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::GoblinShark => {}
+            // `NPC.cs:16969-16987 (value Item.buyPrice(0,0,75)=7500 :16984)` - aiStyle 6 is UNWIRED (the
+            // wyvern precedent); the noGravity/noTileCollide raw
+            // integration tail (`NPC.cs:90494-90498`) runs so the
+            // spawn velocity carries (the style-56 arm's shape).
+            NpcKind::BloodEelHead => {
+                self.integrate_no_tile_collide();
+            }
+            // `NPC.cs:16988-17006` - aiStyle 6 is UNWIRED (the
+            // wyvern precedent); the noGravity/noTileCollide raw
+            // integration tail (`NPC.cs:90494-90498`) runs so the
+            // spawn velocity carries (the style-56 arm's shape).
+            NpcKind::BloodEelBody => {
+                self.integrate_no_tile_collide();
+            }
+            // `NPC.cs:17007-17025` - aiStyle 6 is UNWIRED (the
+            // wyvern precedent); the noGravity/noTileCollide raw
+            // integration tail (`NPC.cs:90494-90498`) runs so the
+            // spawn velocity carries (the style-56 arm's shape).
+            NpcKind::BloodEelTail => {
+                self.integrate_no_tile_collide();
+            }
+            // `NPC.cs:17026-17038` - the aiStyle-3 walk rides the C#
+            // ladder's own per-type arm (`npc_ai3_speeds.rs`).
+            NpcKind::Gnome => self.update_zombie(world, player, dt),
+            // ---- W4-d42 batch 8: the NPCID 615-619 roster
+            // (data-only join; 615 the Dolphin is c4b's). Unwired styles
+            // idle in place (the wyvern precedent); walkers ride the
+            // aiStyle-3 family.
+            // `NPC.cs:16905-16917 (catchItem type-616+4464 :16916)` - aiStyle 7 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::Turtle => {}
+            // `NPC.cs:16905-16917` - aiStyle 7 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::TurtleJungle => {}
+            // `NPC.cs:16918-16933 (value Item.buyPrice(0,2)=20000 :16930)` - aiStyle 117 is UNWIRED (the
+            // wyvern precedent); the noGravity/noTileCollide raw
+            // integration tail (`NPC.cs:90494-90498`) runs so the
+            // spawn velocity carries (the style-56 arm's shape).
+            NpcKind::BloodNautilus => {
+                self.integrate_no_tile_collide();
+            }
+            // `NPC.cs:16934-16949` - aiStyle 5 rides the style axis
+            // (`ai_005_hover_family`'s BloodSquid arm); this kind
+            // arm is the direct-call route (the bee precedent).
+            NpcKind::BloodSquid => self.ai_005_hover_family(world, player),
+            // ---- W4-d42 batch 7: the NPCID 610-614 roster
+            // (data-only join). Unwired styles idle in place (the
+            // wyvern precedent); walkers ride the aiStyle-3 family,
+            // swimmers the aiStyle-16 family.
+            // `NPC.cs:16833-16845` - aiStyle 7 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::Rat => {}
+            // `NPC.cs:16846-16859` - aiStyle 24 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::Owl => {}
+            // `NPC.cs:16860-16879 (catchItem type-612+4418 :16875)` - aiStyle 116 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::WaterStrider => {}
+            // `NPC.cs:16860-16879 (rarity 3 :16873)` - aiStyle 116 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::GoldWaterStrider => {}
+            // `NPC.cs:16880-16891 (DeathSound = null :16889)` - aiStyle 7 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::ExplosiveBunny => {}
+            // ---- W4-d42 batch 6: the NPCID 605-609 roster
+            // (data-only join; 605 the GoldLadyBug is e26b's, 606 the
+            // Maggot c8's, 607 the Pupfish c4b's). Unwired styles idle
+            // in place (the wyvern precedent).
+            // `NPC.cs:16809-16820` - aiStyle 7 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::Grebe => {}
+            // `NPC.cs:16821-16832` - aiStyle 68 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::Grebe2 => {}
+            // ---- W4-d42 batch 5: the NPCID 600-604 roster
+            // (data-only join; 604 the LadyBug is e26b's). Unwired
+            // styles idle in place (the wyvern precedent).
+            // `NPC.cs:16739-16750` - aiStyle 7 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::Seagull => {}
+            // `NPC.cs:16751-16762` - aiStyle 68 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::Seagull2 => {}
+            // ---- W4-d42 batch 4: the NPCID 595-599 roster
+            // (data-only join). Unwired styles idle in place (the
+            // wyvern precedent); walkers ride the aiStyle-3 family,
+            // swimmers the aiStyle-16 family.
+            // ---- W4-d42 batch 3: the NPCID 590-594 roster
+            // (data-only join; 592 the GoldGoldfish is c4b's). Unwired
+            // styles idle in place (the wyvern precedent); walkers ride
+            // the aiStyle-3 family.
+            // `NPC.cs:16666-16678` - the aiStyle-3 walk rides the C#
+            // ladder's own per-type arm (`npc_ai3_speeds.rs`).
+            NpcKind::TorchZombie => self.update_zombie(world, player, dt),
+            // `NPC.cs:16666-16678 (the 590/591 group)` - the aiStyle-3 walk rides the C#
+            // ladder's own per-type arm (`npc_ai3_speeds.rs`).
+            NpcKind::ArmedTorchZombie => self.update_zombie(world, player, dt),
+            // `NPC.cs:16694-16706` - aiStyle 7 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::GoldGoldfishWalker => {}
+            // ---- W4-d42 batch 2: the NPCID 583-587 roster
+            // (data-only join; 587 the EyeballFlyingFish is c4's).
+            // Unwired styles idle in place (the wyvern precedent);
+            // walkers ride the aiStyle-3 family.
+            // `NPC.cs:16608-16622` - the aiStyle-3 walk rides the C#
+            // ladder's own per-type arm (`npc_ai3_speeds.rs`).
+            NpcKind::ZombieMerman => self.update_zombie(world, player, dt),
+            // ---- W4-d42 batch 1: the NPCID 578-582 roster
+            // (data-only join; 581 the FlyingAntlion is c4's). Unwired
+            // styles idle in place (the wyvern precedent); walkers ride
+            // the aiStyle-3 family.
+            // `NPC.cs:16536-16553` - aiStyle 111 is UNWIRED (the
+            // wyvern precedent); the noGravity/noTileCollide raw
+            // integration tail (`NPC.cs:90494-90498`) runs so the
+            // spawn velocity carries (the style-56 arm's shape).
+            NpcKind::DD2LightningBug => {
+                self.integrate_no_tile_collide();
+            }
+            // `NPC.cs:16554-16568` - aiStyle 0 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::BartenderUnconscious => {}
+            // `NPC.cs:14854-14867` - the aiStyle-3 walk rides the C#
+            // ladder's own per-type arm (`npc_ai3_speeds.rs`).
+            NpcKind::WalkingAntlion => self.update_zombie(world, player, dt),
+            // `NPC.cs:16569-16582` - the aiStyle-3 walk rides the C#
+            // ladder's own per-type arm (`npc_ai3_speeds.rs`).
+            NpcKind::LarvaeAntlion => self.update_zombie(world, player, dt),
         }
     }
 
@@ -11605,6 +12057,171 @@ impl Npc {
                     }
                 }
             }
+            // W4-d42 - 578 `NPC.cs:16536-16553` (`FindFrame` `NPC.cs:67875` / the fairies `:69835`): the 4-tick counter over
+            // the 4-frame strip.
+            NpcKind::DD2LightningBug => {
+                self.rotation = self.vx * 0.1;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 4.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame >= 4 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d42 - no per-kind animation: 579 `NPC.cs:16554-16568` - row 0 holds
+            // (the ForceBubble/wyvern-segment precedent).
+            NpcKind::BartenderUnconscious => {
+                self.frame = 0;
+            }
+            // W4-d42 - `FindFrame` case 580/582 (`NPC.cs:70069-70103`):
+            // air row 1, stand row 0, the walk steps rows 2..5 on the
+            // `1 + |vx|/2` accumulator (>6), wrapping to row 2.
+            NpcKind::WalkingAntlion | NpcKind::LarvaeAntlion => {
+                if self.vy != 0.0 {
+                    self.frame = 1;
+                } else if self.vx == 0.0 {
+                    self.frame = 0;
+                } else {
+                    if self.facing < 0 && self.vx < 0.0 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.facing > 0 && self.vx > 0.0 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.frame < 2 {
+                        self.frame = 2;
+                    }
+                    self.frame_counter += 1.0 + self.vx.abs() / 2.0;
+                    if self.frame_counter > 6.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    let rows = crate::render::entities::npc_rows(self.kind.cs_id());
+                    if self.frame >= rows {
+                        self.frame = 2;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 586 (`NPC.cs:75411-75465`): the
+            // wet swim (rows 0..1 on the |velocity|+1 clock at >60),
+            // the dry walk (row 1 idle, the |vx|+0.5 clock at >8,
+            // wrapping over the 14-row strip).
+            NpcKind::ZombieMerman => {
+                if self.wet {
+                    if self.vx < 0.0 {
+                        self.facing = -1;
+                    }
+                    if self.vx > 0.0 {
+                        self.facing = 1;
+                    }
+                    self.sprite_dir = self.facing;
+                    self.frame_counter += (self.vx * self.vx + self.vy * self.vy).sqrt();
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 60.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 1 {
+                        self.frame = 0;
+                    }
+                } else {
+                    if self.vy == 0.0 {
+                        self.sprite_dir = self.facing;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 1;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs();
+                        self.frame_counter += 0.5;
+                        if self.frame_counter > 8.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= 14 {
+                            self.frame = 0;
+                        }
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame`'s case-3 walker group (590 `NPC.cs:16666-16678`).
+            NpcKind::TorchZombie => {
+                self.walker_frame();
+            }
+            // W4-d42 - `FindFrame` case 591 (`NPC.cs:70886-70951`): the
+            // charge-state rows 3..6 off ai[2], then the case-3 walk
+            // bands over the 7-row strip's first three rows.
+            NpcKind::ArmedTorchZombie => {
+                if self.ai[2] > 0.0 {
+                    self.frame = if self.ai[2] < 5.0 {
+                        3
+                    } else if self.ai[2] < 10.0 {
+                        4
+                    } else if self.ai[2] < 15.0 {
+                        5
+                    } else {
+                        6
+                    };
+                } else {
+                    if self.vy == 0.0 {
+                        self.sprite_dir = self.facing;
+                    }
+                    if self.vy != 0.0
+                        || (self.facing == -1 && self.vx > 0.0)
+                        || (self.facing == 1 && self.vx < 0.0)
+                    {
+                        self.frame_counter = 0.0;
+                        self.frame = 2;
+                    } else if self.vx == 0.0 {
+                        self.frame_counter = 0.0;
+                        self.frame = 0;
+                    } else {
+                        self.frame_counter += self.vx.abs();
+                        if self.frame_counter < 8.0 {
+                            self.frame = 0;
+                        } else if self.frame_counter < 16.0 {
+                            self.frame = 1;
+                        } else if self.frame_counter < 24.0 {
+                            self.frame = 2;
+                        } else if self.frame_counter < 32.0 {
+                            self.frame = 1;
+                        } else {
+                            self.frame_counter = 0.0;
+                        }
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 593 (`NPC.cs:75923-75962`): the
+            // ground walk on the |vx|*2+1 accumulator (>10, wrap over
+            // 6 rows), the air row 0 with the >4 fall tilt.
+            NpcKind::GoldGoldfishWalker => {
+                if self.vy == 0.0 {
+                    self.rotation = 0.0;
+                    self.sprite_dir = self.facing;
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs() * 2.0;
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 10.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= 6 {
+                            self.frame = 0;
+                        }
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                    if self.vy > 4.0 {
+                        self.rotation -= self.vy * 0.01;
+                    }
+                }
+            }
             // The hornets (231-235) ride the case-42 flap (`NPC.cs:74907-
             // 74934`): the 1..8 counter's four-phase 0/1/2/1 strip.
             NpcKind::HornetFatty
@@ -11966,6 +12583,573 @@ impl Npc {
                     self.frame_counter = 0.0;
                     self.frame = 0;
                 }
+            }
+            // W4-d42 - `FindFrame` case 602/608 (`NPC.cs:73819-73841` /
+            // `:73749-73771`): stand row 0, the walk steps rows 3..9
+            // every 4 ticks.
+            NpcKind::Seagull => {
+                self.sprite_dir = self.facing;
+                if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 10 {
+                        self.frame = 3;
+                    }
+                    if self.frame < 3 {
+                        self.frame = 3;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 603/609 (`NPC.cs:73842-73886` /
+            // `:73772-73818`): the wet paddle rows 1..2 (8-tick), the
+            // dry stand row 1, the fly rows 11..14 (4-tick) with the
+            // vx*0.1 tilt.
+            NpcKind::Seagull2 => {
+                self.sprite_dir = self.facing;
+                if self.wet {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 8.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 2 {
+                        self.frame = 1;
+                    }
+                    if self.frame < 1 {
+                        self.frame = 1;
+                    }
+                    self.rotation = 0.0;
+                } else if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 1;
+                    self.frame_counter = 0.0;
+                    self.rotation = 0.0;
+                } else {
+                    self.rotation = self.vx * 0.1;
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 15 {
+                        self.frame = 11;
+                    }
+                    if self.frame < 11 {
+                        self.frame = 11;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 602/608 (`NPC.cs:73819-73841` /
+            // `:73749-73771`): stand row 0, the walk steps rows 3..9
+            // every 4 ticks.
+            NpcKind::Grebe => {
+                self.sprite_dir = self.facing;
+                if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 10 {
+                        self.frame = 3;
+                    }
+                    if self.frame < 3 {
+                        self.frame = 3;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 603/609 (`NPC.cs:73842-73886` /
+            // `:73772-73818`): the wet paddle rows 1..2 (8-tick), the
+            // dry stand row 1, the fly rows 11..14 (4-tick) with the
+            // vx*0.1 tilt.
+            NpcKind::Grebe2 => {
+                self.sprite_dir = self.facing;
+                if self.wet {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 8.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 2 {
+                        self.frame = 1;
+                    }
+                    if self.frame < 1 {
+                        self.frame = 1;
+                    }
+                    self.rotation = 0.0;
+                } else if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 1;
+                    self.frame_counter = 0.0;
+                    self.rotation = 0.0;
+                } else {
+                    self.rotation = self.vx * 0.1;
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 15 {
+                        self.frame = 11;
+                    }
+                    if self.frame < 11 {
+                        self.frame = 11;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 610 (`NPC.cs:76566-76602`): the
+            // idle sniff rows 0..1 (>8), the walk rows 2..5 on the
+            // |vx|*0.5+1 accumulator (>6).
+            NpcKind::Rat => {
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                    if self.vx == 0.0 {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 8.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame > 1 {
+                            self.frame = 0;
+                        }
+                    } else {
+                        self.frame_counter += self.vx.abs() * 0.5;
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() {
+                            self.frame = 2;
+                        }
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                }
+            }
+            // W4-d42 - `FindFrame` case 611/689 (`NPC.cs:73681-73746`):
+            // the mirrored sprite + vx*0.1 tilt; the idle head-turn
+            // table (:73687-73731) draws Main.rand.Next(80)/Next(3) -
+            // find_frame has no RNG seam, so the idle HOLDS row 0
+            // (the documented stand-in; the blink cycle rides the
+            // frame-machine wiring wave). The flight rows 8..12 step
+            // every 5 ticks verbatim.
+            NpcKind::Owl => {
+                self.sprite_dir = -self.facing;
+                self.rotation = self.vx * 0.1;
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 5.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 13 || self.frame < 8 {
+                        self.frame = 8;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 612/613 (`NPC.cs:69773-69834`):
+            // the row-0 idle gate draws Main.rand.Next(180) - the
+            // RNG-free stand-in keeps the counter running (the
+            // documented fold; the 1/180 blink rides the wiring
+            // wave). The ai[1]/velocity row-4 pins, the 2/10/60
+            // strides and the 5-row wrap are verbatim.
+            NpcKind::WaterStrider | NpcKind::GoldWaterStrider => {
+                self.frame_counter += 1.0;
+                if self.vx != 0.0 {
+                    self.sprite_dir = if self.vx > 0.0 { 1 } else { -1 };
+                }
+                let mut num286 = 10.0;
+                let flag14 = self.vx.abs() > 1.0;
+                if self.ai[1] == 1.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                }
+                if self.vy.abs() > 0.1 || flag14 {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                } else if self.frame == 0 {
+                    num286 = 2.0;
+                }
+                if self.frame == 4 {
+                    num286 = if flag14 { 60.0 } else { 2.0 };
+                }
+                if self.frame_counter >= num286 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame >= 5 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 614 (`NPC.cs:76858-76904`, the
+            // bunny group): the ground walk on the |vx|+1 accumulator
+            // (>6, wrap over 7 rows), the rise row 4, the fall row 6.
+            NpcKind::ExplosiveBunny => {
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs();
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= 7 {
+                            self.frame = 0;
+                        }
+                    }
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 6;
+                }
+            }
+            // W4-d42 - `FindFrame` case 616/617 (`NPC.cs:76686-76731`):
+            // the wet paddle rows 8..13 (>5, >10 idle), the dry walk
+            // rows 0..7 (>8), the stand pin and the air row 8.
+            NpcKind::Turtle | NpcKind::TurtleJungle => {
+                let num193 = if self.vx == 0.0 { 10.0 } else { 5.0 };
+                self.sprite_dir = self.facing;
+                if self.wet {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > num193 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame > 13 {
+                            self.frame = 8;
+                        }
+                    }
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 8.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame > 7 {
+                            self.frame = 0;
+                        }
+                    }
+                    if self.vx == 0.0 {
+                        self.frame_counter = 0.0;
+                        self.frame = 0;
+                    }
+                    if self.vy != 0.0 {
+                        self.frame_counter = 0.0;
+                        self.frame = 8;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 618 (`NPC.cs:67000-67010`): the 5-tick counter over
+            // the 4-frame strip.
+            NpcKind::BloodNautilus => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 5.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame >= 4 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 619 (`NPC.cs:67011-67021`): the 6-tick counter over
+            // the 6-frame strip.
+            NpcKind::BloodSquid => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame >= 6 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 620 (`NPC.cs:68423-68542`): the
+            // attack rows 14..20 (the ai[0]/ai[1] gate, the 16/17
+            // 3-tick pair, the 18->16 loop), the wet swim rows 8..13
+            // with the atan2 turn, the dry walk rows 2..7 (|vx|+1 at
+            // >9), the air row 1.
+            NpcKind::GoblinShark => {
+                if self.ai[1] > 0.0 && self.ai[0] > 0.0 {
+                    self.sprite_dir = self.facing;
+                    if self.frame < 14 || self.frame > 20 || self.ai[1] == 59.0 {
+                        self.frame = 14;
+                        self.frame_counter = 0.0;
+                    }
+                    let num42 = if self.frame == 17 || self.frame == 16 { 3.0 } else { 5.0 };
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= num42 && self.frame < 20 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.ai[1] > 0.0 && self.frame == 18 {
+                            self.frame = 16;
+                        }
+                    }
+                } else if self.wet {
+                    if self.vx < 0.0 {
+                        self.facing = -1;
+                    }
+                    if self.vx > 0.0 {
+                        self.facing = 1;
+                    }
+                    if self.sprite_dir != self.facing {
+                        self.rotation *= -1.0;
+                        self.sprite_dir = self.facing;
+                    }
+                    let num43 = (self.vy * self.facing as f32)
+                        .atan2(self.vx * self.facing as f32);
+                    if (self.rotation - num43).abs() >= std::f32::consts::PI {
+                        if num43 < self.rotation {
+                            self.rotation -= std::f32::consts::PI * 2.0;
+                        } else {
+                            self.rotation += std::f32::consts::PI * 2.0;
+                        }
+                    }
+                    self.rotation = (self.rotation * 4.0 + num43) / 5.0;
+                    self.frame_counter += (self.vx * self.vx + self.vy * self.vy).sqrt();
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 8.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 13 {
+                        self.frame = 8;
+                    } else if self.frame < 8 {
+                        self.frame = 13;
+                    }
+                } else {
+                    if (self.rotation as f64) > 3.14 {
+                        self.rotation -= 6.28;
+                    }
+                    if (self.rotation as f64) > -0.01 && (self.rotation as f64) < 0.01 {
+                        self.rotation = 0.0;
+                    } else {
+                        self.rotation *= 0.9;
+                    }
+                    if self.vy == 0.0 {
+                        self.sprite_dir = self.facing;
+                        if self.vx == 0.0 {
+                            self.frame = 0;
+                            self.frame_counter = 0.0;
+                        } else {
+                            if self.frame < 2 {
+                                self.frame = 2;
+                            }
+                            self.frame_counter += self.vx.abs();
+                            self.frame_counter += 1.0;
+                            if self.frame_counter > 9.0 {
+                                self.frame += 1;
+                                self.frame_counter = 0.0;
+                            }
+                            if self.frame > 7 {
+                                self.frame = 2;
+                            }
+                        }
+                    } else {
+                        self.frame_counter = 0.0;
+                        self.frame = 1;
+                    }
+                }
+            }
+            // W4-d42 - no per-kind animation: 621 `NPC.cs:16969-16987 (value Item.buyPrice(0,0,75)=7500 :16984)`, 622 `NPC.cs:16988-17006`, 623 `NPC.cs:17007-17025` - row 0 holds
+            // (the ForceBubble/wyvern-segment precedent).
+            NpcKind::BloodEelHead | NpcKind::BloodEelBody | NpcKind::BloodEelTail => {
+                self.frame = 0;
+            }
+            // W4-d42 - `FindFrame` case 624 (`NPC.cs:77067-77102`): the
+            // stand row 0, the rise row 9, the fall row 10, the walk
+            // rows 1..8 on the |vx| accumulator (>8, subtractive).
+            NpcKind::Gnome => {
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                }
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 9;
+                } else if self.vy > 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 10;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter > 8.0 {
+                        self.frame_counter -= 8.0;
+                        self.frame += 1;
+                        if self.frame > 8 {
+                            self.frame = 1;
+                        }
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 625 (`NPC.cs:76732-76779`): the
+            // wet paddle rows 6..11 (>4, >8 idle), the dry walk rows
+            // 0..5 (>7) with the stand pin.
+            NpcKind::SeaTurtle => {
+                let num185 = if self.vx == 0.0 { 8.0 } else { 4.0 };
+                self.sprite_dir = self.facing;
+                if self.wet {
+                    if self.frame < 6 {
+                        self.frame = 6;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > num185 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame > 11 {
+                            self.frame = 6;
+                        }
+                    }
+                } else {
+                    if self.frame > 5 {
+                        self.frame = 0;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 7.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame > 5 {
+                            self.frame = 0;
+                        }
+                    }
+                    if self.vx == 0.0 {
+                        self.frame_counter = 0.0;
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 626/627 (`NPC.cs:76780-76819`):
+            // the velocity-sign sprite flip; dry row 0, the wet drift
+            // rows 3/2/1/0 by |velocity| > 0.15/0.05/0.025.
+            NpcKind::Seahorse | NpcKind::GoldSeahorse => {
+                if self.vx != 0.0 {
+                    self.sprite_dir = if self.vx > 0.0 { 1 } else { -1 };
+                }
+                if !self.wet {
+                    self.frame = 0;
+                } else {
+                    let speed = (self.vx * self.vx + self.vy * self.vy).sqrt();
+                    self.frame = if speed > 0.15 {
+                        3
+                    } else if speed > 0.05 {
+                        2
+                    } else if speed > 0.025 {
+                        1
+                    } else {
+                        0
+                    };
+                }
+            }
+            // W4-d42 - `FindFrame` case 628 (`NPC.cs:77103-77201`): the
+            // wind-facing sprite pin and the wind-speed accumulator
+            // read `Main.WindForVisuals` (unported - the 0 stand-in,
+            // the documented fold); the ai[0]==0 sway rows 0..6 and
+            // the localAI[0]==0 attack rows 6..10 are verbatim. The
+            // localAI[0]==1 lerp arm (:77182-77199) rides the
+            // aiStyle-119 wiring wave.
+            NpcKind::Dandelion => {
+                // `Main.WindForVisuals` is unported - 0f (the sprite
+                // pins +1, the accumulator rides the plain 1f).
+                let wind = 0.0f32;
+                self.sprite_dir = if wind > 0.0 { -1 } else { 1 };
+                if self.ai[0] == 0.0 {
+                    if self.frame == 6 {
+                        self.frame_counter += 1.0 + 0.5 * wind.abs();
+                        if self.frame_counter > 8.0 {
+                            self.frame_counter -= 8.0;
+                            self.frame = 0;
+                        }
+                    } else if self.frame > 5 {
+                        self.frame_counter = 0.0;
+                        self.frame = 6;
+                    } else {
+                        self.frame_counter += 1.0 + 0.5 * wind.abs();
+                        if self.frame_counter > 8.0 {
+                            self.frame_counter -= 8.0;
+                            self.frame += 1;
+                            if self.frame > 5 {
+                                self.frame = 0;
+                            }
+                        }
+                    }
+                } else if self.local_ai[0] == 0.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 4.0 {
+                        self.frame_counter = 0.0;
+                        if self.frame == 6 {
+                            self.frame = 7;
+                        } else if self.frame < 7 {
+                            self.frame = 6;
+                        } else {
+                            self.frame += 1;
+                            if self.frame > 10 {
+                                self.frame = 7;
+                            }
+                        }
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 85/341/629 (`NPC.cs:73445-73515`,
+            // the chest group): the closed row 0, the open/close
+            // counter (-1 grounded / +1 airborne, clamped 0..12), the
+            // 3-tick phase rows 1..5 and the ai[3] hop offsets.
+            NpcKind::IceMimic => {
+                if self.ai[0] == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    if self.vy == 0.0 {
+                        self.frame_counter -= 1.0;
+                    } else {
+                        self.frame_counter += 1.0;
+                    }
+                    if self.frame_counter < 0.0 {
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame_counter > 12.0 {
+                        self.frame_counter = 12.0;
+                    }
+                    self.frame = if self.frame_counter < 3.0 {
+                        1
+                    } else if self.frame_counter < 6.0 {
+                        2
+                    } else if self.frame_counter < 9.0 {
+                        3
+                    } else if self.frame_counter < 12.0 {
+                        4
+                    } else {
+                        // The clamp caps the counter at 12, so the
+                        // `<15` arm (`:73486-73489`) is the live one:
+                        // row 5. The `<21`/else arms (`:73490-73504`)
+                        // are unreachable under the clamp.
+                        5
+                    };
+                }
+                if self.ai[3] == 2.0 {
+                    self.frame += 6;
+                } else if self.ai[3] == 3.0 {
+                    self.frame += 12;
+                }
+            }
+            // W4-d42 - `FindFrame`'s humanoid-group case list (630 `NPC.cs:17107-17119`);
+            // the 16-row strip rides `humanoid_frame_count`.
+            NpcKind::BloodMummy => {
+                self.humanoid_town_frame();
             }
         }
     }
@@ -14077,6 +15261,12 @@ impl Npc {
             no_tile_collide: false,
             bounce: 0.7,
             rotation: HoverRotation::Velocity,
+            // The bees' flag4 drift runs kind-locally below (the C#
+            // position, ahead of this call) — the shared-core gates stay
+            // off so the drift is not double-applied.
+            bob_drift: false,
+            close_boost: false,
+            hover_rise: false,
         };
         // `:50446-50471` — flag4's drift runs BEFORE the velocity
         // approach (`:50540-50578`): ai[0]++ every tick (the bees are in
@@ -22365,6 +23555,49 @@ impl Npc {
             NpcKind::HellArmoredBonesSpikeShield => 803,
             NpcKind::HellArmoredBonesMace => 804,
             NpcKind::HellArmoredBonesSword => 805,
+            // W4-d42 - the vanilla ids 578-582 are free render keys.
+            NpcKind::DD2LightningBug => 578,
+            NpcKind::BartenderUnconscious => 579,
+            NpcKind::WalkingAntlion => 580,
+            NpcKind::LarvaeAntlion => 582,
+            // W4-d42 - the vanilla ids 583-587 are free render keys.
+            NpcKind::ZombieMerman => 586,
+            // W4-d42 - the vanilla ids 590-594 are free render keys.
+            NpcKind::TorchZombie => 590,
+            NpcKind::ArmedTorchZombie => 591,
+            NpcKind::GoldGoldfishWalker => 593,
+            // W4-d42 - the vanilla ids 595-599 are free render keys.
+            // W4-d42 - the vanilla ids 600-604 are free render keys.
+            NpcKind::Seagull => 602,
+            NpcKind::Seagull2 => 603,
+            // W4-d42 - the vanilla ids 605-609 are free render keys.
+            NpcKind::Grebe => 608,
+            NpcKind::Grebe2 => 609,
+            // W4-d42 - the vanilla ids 610-614 are free render keys.
+            NpcKind::Rat => 610,
+            NpcKind::Owl => 611,
+            NpcKind::WaterStrider => 612,
+            NpcKind::GoldWaterStrider => 613,
+            NpcKind::ExplosiveBunny => 614,
+            // W4-d42 - the vanilla ids 615-619 are free render keys.
+            NpcKind::Turtle => 616,
+            NpcKind::TurtleJungle => 617,
+            NpcKind::BloodNautilus => 618,
+            NpcKind::BloodSquid => 619,
+            // W4-d42 - the vanilla ids 620-624 are free render keys.
+            NpcKind::GoblinShark => 620,
+            NpcKind::BloodEelHead => 621,
+            NpcKind::BloodEelBody => 622,
+            NpcKind::BloodEelTail => 623,
+            NpcKind::Gnome => 624,
+            // W4-d42 - the vanilla ids 625-629 are free render keys.
+            NpcKind::SeaTurtle => 625,
+            NpcKind::Seahorse => 626,
+            NpcKind::GoldSeahorse => 627,
+            NpcKind::Dandelion => 628,
+            NpcKind::IceMimic => 629,
+            // W4-d42 - the vanilla ids 630-630 are free render keys.
+            NpcKind::BloodMummy => 630,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -27433,12 +28666,14 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    // Wave-1 splice pin (367 §1): 423 = the pre-wave 270 + W4-d34's 17 +
+    // Wave-1 splice pin (367 §1): 455 = the pre-wave 270 + W4-d34's 17 +
     // W4-d38's 35 + W4-d37's 46 + W4-d40's 55 (56 minus the CrimsonGoldfish
-    // dup dropped per the d37 tables — c4's impl owns @465 and lands in the
-    // small-lanes wave; the 290/305/316/326 branch pins were
-    // stale-by-design; the roster grows to 665 by the spine end).
-    pub(super) const ALL_KINDS: [NpcKind; 423] = [
+    // dup — c4 owns @465) + W4-d42's 32 (43 minus the 11 d33-owned dups:
+    // the fairy trio 583-585 + WindyBalloon 594 + the 7 dragonflies
+    // 595-601, d37 tables; d33's wiring composes at the small-lanes
+    // splice; the 290/305/316/326/313 branch pins were stale-by-design;
+    // the roster grows to 665 by the spine end).
+    pub(super) const ALL_KINDS: [NpcKind; 455] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -27896,6 +29131,49 @@ mod tests {
         NpcKind::ArmedZombiePincussion,
         NpcKind::ArmedZombieSlimed,
         NpcKind::ArmedZombieSwamp,
+        // W4-d42 - the NPCID 578-582 roster.
+        NpcKind::DD2LightningBug,
+        NpcKind::BartenderUnconscious,
+        NpcKind::WalkingAntlion,
+        NpcKind::LarvaeAntlion,
+        // W4-d42 - the NPCID 583-587 roster.
+        NpcKind::ZombieMerman,
+        // W4-d42 - the NPCID 590-594 roster.
+        NpcKind::TorchZombie,
+        NpcKind::ArmedTorchZombie,
+        NpcKind::GoldGoldfishWalker,
+        // W4-d42 - the NPCID 595-599 roster.
+        // W4-d42 - the NPCID 600-604 roster.
+        NpcKind::Seagull,
+        NpcKind::Seagull2,
+        // W4-d42 - the NPCID 605-609 roster.
+        NpcKind::Grebe,
+        NpcKind::Grebe2,
+        // W4-d42 - the NPCID 610-614 roster.
+        NpcKind::Rat,
+        NpcKind::Owl,
+        NpcKind::WaterStrider,
+        NpcKind::GoldWaterStrider,
+        NpcKind::ExplosiveBunny,
+        // W4-d42 - the NPCID 615-619 roster.
+        NpcKind::Turtle,
+        NpcKind::TurtleJungle,
+        NpcKind::BloodNautilus,
+        NpcKind::BloodSquid,
+        // W4-d42 - the NPCID 620-624 roster.
+        NpcKind::GoblinShark,
+        NpcKind::BloodEelHead,
+        NpcKind::BloodEelBody,
+        NpcKind::BloodEelTail,
+        NpcKind::Gnome,
+        // W4-d42 - the NPCID 625-629 roster.
+        NpcKind::SeaTurtle,
+        NpcKind::Seahorse,
+        NpcKind::GoldSeahorse,
+        NpcKind::Dandelion,
+        NpcKind::IceMimic,
+        // W4-d42 - the NPCID 630-630 roster.
+        NpcKind::BloodMummy,
     ];
 
 
@@ -28243,6 +29521,341 @@ mod tests {
         for (kind, _, _, _, _, _, _, _, _, _) in rows {
             assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
         }
+    }
+
+    /// W4-d42 batch 1 - the NPCID 578-582 `SetDefaults` rows pin
+    /// against the C# (NPC.cs:16536-16553, NPC.cs:16554-16568, NPC.cs:14854-14867, NPC.cs:16569-16582), through the port's
+    /// tables - the smallkinds witness shape. 581 the FlyingAntlion is
+    /// c4's (the style-44 lane). WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_b1_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::DD2LightningBug, 578u16, 111u8, 30.0, 24.0, 80, 36, 500, 0.8f32, 0.0f32),
+            (NpcKind::BartenderUnconscious, 579u16, 0u8, 34.0, 8.0, 10, 15, 250, 0.5f32, 0.0f32),
+            (NpcKind::WalkingAntlion, 580u16, 3u8, 26.0, 26.0, 25, 10, 80, 0.5f32, 80.0f32),
+            (NpcKind::LarvaeAntlion, 582u16, 3u8, 18.0, 18.0, 10, 2, 30, 0.75f32, 40.0f32),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The vanilla-free wire band (protocol == NPCID, the 108 plan).
+        assert_eq!(NpcKind::DD2LightningBug.to_u16(), 578u16);
+        assert_eq!(NpcKind::BartenderUnconscious.to_u16(), 579u16);
+        assert_eq!(NpcKind::WalkingAntlion.to_u16(), 580u16);
+        assert_eq!(NpcKind::LarvaeAntlion.to_u16(), 582u16);
+        assert_eq!(ALL_KINDS.len(), 427);
+    }
+
+    /// W4-d42 batch 2 - the NPCID 583-587 `SetDefaults` rows pin
+    /// against the C# (NPC.cs:16583-16607, NPC.cs:16583-16607 (catchItem 4069 :16599), NPC.cs:16583-16607 (catchItem 4070 :16602), NPC.cs:16608-16622), through the port's
+    /// tables - the smallkinds witness shape. 587 the EyeballFlyingFish
+    /// is c4's. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_b2_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::ZombieMerman, 586u16, 3u8, 18.0, 40.0, 40, 20, 400, 0.0f32, 1000.0f32),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The vanilla-free wire band (protocol == NPCID, the 108 plan).
+        assert_eq!(NpcKind::ZombieMerman.to_u16(), 586u16);
+        assert_eq!(ALL_KINDS.len(), 428);
+    }
+
+    /// W4-d42 batch 3 - the NPCID 590-594 `SetDefaults` rows pin
+    /// against the C# (NPC.cs:16666-16678, NPC.cs:16666-16678 (the 590/591 group), NPC.cs:16694-16706, NPC.cs:16707-16719), through the port's
+    /// tables - the smallkinds witness shape. 592 the GoldGoldfish is
+    /// c4b's. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_b3_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::TorchZombie, 590u16, 3u8, 18.0, 40.0, 14, 6, 45, 0.5f32, 60.0f32),
+            (NpcKind::ArmedTorchZombie, 591u16, 3u8, 18.0, 40.0, 14, 6, 45, 0.5f32, 60.0f32),
+            (NpcKind::GoldGoldfishWalker, 593u16, 7u8, 18.0, 20.0, 0, 0, 5, 1.0f32, 0.0f32),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The vanilla-free wire band (protocol == NPCID, the 108 plan).
+        assert_eq!(NpcKind::TorchZombie.to_u16(), 590u16);
+        assert_eq!(NpcKind::ArmedTorchZombie.to_u16(), 591u16);
+        assert_eq!(NpcKind::GoldGoldfishWalker.to_u16(), 593u16);
+        assert_eq!(ALL_KINDS.len(), 431);
+    }
+
+    // W4-d42 batch 4 (NPCID 595-599) merge-side DROP (367 s1, d37 tables):
+    // all five dragonfly dups dropped - d33 owns 595-601 (its wiring
+    // composes at the small-lanes splice); the batch witness retires.
+
+    /// W4-d42 batch 5 - the NPCID 600-604 `SetDefaults` rows pin
+    /// against the C# (NPC.cs:16720-16738, NPC.cs:16720-16738 (rarity 3 :16735), NPC.cs:16739-16750, NPC.cs:16751-16762), through the port's
+    /// tables - the smallkinds witness shape. 604 the LadyBug is e26b's.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_b5_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::Seagull, 602u16, 7u8, 22.0, 26.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::Seagull2, 603u16, 68u8, 28.0, 22.0, 0, 0, 5, 1.0f32, 0.0f32),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The vanilla-free wire band (protocol == NPCID, the 108 plan).
+        assert_eq!(NpcKind::Seagull.to_u16(), 602u16);
+        assert_eq!(NpcKind::Seagull2.to_u16(), 603u16);
+        assert_eq!(ALL_KINDS.len(), 433);
+    }
+
+    /// W4-d42 batch 6 - the NPCID 605-609 `SetDefaults` rows pin
+    /// against the C# (NPC.cs:16809-16820, NPC.cs:16821-16832), through the port's
+    /// tables - the smallkinds witness shape. 605 the GoldLadyBug is
+    /// e26b's, 606 the Maggot c8's, 607 the Pupfish c4b's. WRITTEN, NOT
+    /// RUN (code-only mode).
+    #[test]
+    fn w4_d42_b6_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::Grebe, 608u16, 7u8, 22.0, 26.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::Grebe2, 609u16, 68u8, 28.0, 22.0, 0, 0, 5, 1.0f32, 0.0f32),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The vanilla-free wire band (protocol == NPCID, the 108 plan).
+        assert_eq!(NpcKind::Grebe.to_u16(), 608u16);
+        assert_eq!(NpcKind::Grebe2.to_u16(), 609u16);
+        assert_eq!(ALL_KINDS.len(), 435);
+    }
+
+    /// W4-d42 batch 7 - the NPCID 610-614 `SetDefaults` rows pin
+    /// against the C# (NPC.cs:16833-16845, NPC.cs:16846-16859, NPC.cs:16860-16879 (catchItem type-612+4418 :16875), NPC.cs:16860-16879 (rarity 3 :16873), NPC.cs:16880-16891 (DeathSound = null :16889)), through the port's
+    /// tables - the smallkinds witness shape. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_b7_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::Rat, 610u16, 7u8, 14.0, 12.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::Owl, 611u16, 24u8, 18.0, 34.0, 0, 0, 5, 0.8f32, 0.0f32),
+            (NpcKind::WaterStrider, 612u16, 116u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::GoldWaterStrider, 613u16, 116u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::ExplosiveBunny, 614u16, 7u8, 18.0, 20.0, 0, 0, 5, 1.0f32, 0.0f32),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The vanilla-free wire band (protocol == NPCID, the 108 plan).
+        assert_eq!(NpcKind::Rat.to_u16(), 610u16);
+        assert_eq!(NpcKind::Owl.to_u16(), 611u16);
+        assert_eq!(NpcKind::WaterStrider.to_u16(), 612u16);
+        assert_eq!(NpcKind::GoldWaterStrider.to_u16(), 613u16);
+        assert_eq!(NpcKind::ExplosiveBunny.to_u16(), 614u16);
+        assert_eq!(ALL_KINDS.len(), 440);
+    }
+
+    /// W4-d42 batch 8 - the NPCID 615-619 `SetDefaults` rows pin
+    /// against the C# (NPC.cs:16905-16917 (catchItem type-616+4464 :16916), NPC.cs:16905-16917, NPC.cs:16918-16933 (value Item.buyPrice(0,2)=20000 :16930), NPC.cs:16934-16949), through the port's
+    /// tables - the smallkinds witness shape. 615 the Dolphin is c4b's.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_b8_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::Turtle, 616u16, 7u8, 22.0, 20.0, 0, 0, 5, 0.5f32, 0.0f32),
+            (NpcKind::TurtleJungle, 617u16, 7u8, 22.0, 20.0, 0, 0, 5, 0.5f32, 0.0f32),
+            (NpcKind::BloodNautilus, 618u16, 117u8, 100.0, 100.0, 55, 24, 7000, 0.0f32, 20000.0f32),
+            (NpcKind::BloodSquid, 619u16, 5u8, 44.0, 44.0, 60, 16, 750, 0.0f32, 500.0f32),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The vanilla-free wire band (protocol == NPCID, the 108 plan).
+        assert_eq!(NpcKind::Turtle.to_u16(), 616u16);
+        assert_eq!(NpcKind::TurtleJungle.to_u16(), 617u16);
+        assert_eq!(NpcKind::BloodNautilus.to_u16(), 618u16);
+        assert_eq!(NpcKind::BloodSquid.to_u16(), 619u16);
+        assert_eq!(ALL_KINDS.len(), 444);
+    }
+
+    /// W4-d42 batch 9 - the NPCID 620-624 `SetDefaults` rows pin
+    /// against the C# (NPC.cs:16950-16968 (value Item.buyPrice(0,0,75)=7500 :16961), NPC.cs:16969-16987 (value Item.buyPrice(0,0,75)=7500 :16984), NPC.cs:16988-17006, NPC.cs:17007-17025, NPC.cs:17026-17038), through the port's
+    /// tables - the smallkinds witness shape. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_b9_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::GoblinShark, 620u16, 107u8, 34.0, 58.0, 70, 30, 5000, 0.0f32, 7500.0f32),
+            (NpcKind::BloodEelHead, 621u16, 6u8, 28.0, 28.0, 90, 0, 6000, 0.0f32, 7500.0f32),
+            (NpcKind::BloodEelBody, 622u16, 6u8, 28.0, 28.0, 60, 30, 6000, 0.0f32, 0.0f32),
+            (NpcKind::BloodEelTail, 623u16, 6u8, 28.0, 28.0, 50, 40, 6000, 0.0f32, 0.0f32),
+            (NpcKind::Gnome, 624u16, 3u8, 14.0, 30.0, 10, 0, 25, 1.0f32, 0.0f32),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The vanilla-free wire band (protocol == NPCID, the 108 plan).
+        assert_eq!(NpcKind::GoblinShark.to_u16(), 620u16);
+        assert_eq!(NpcKind::BloodEelHead.to_u16(), 621u16);
+        assert_eq!(NpcKind::BloodEelBody.to_u16(), 622u16);
+        assert_eq!(NpcKind::BloodEelTail.to_u16(), 623u16);
+        assert_eq!(NpcKind::Gnome.to_u16(), 624u16);
+        assert_eq!(ALL_KINDS.len(), 449);
+    }
+
+    /// W4-d42 batch 10 - the NPCID 625-629 `SetDefaults` rows pin
+    /// against the C# (NPC.cs:17039-17050, NPC.cs:17051-17071 (catchItem 4480 :17066), NPC.cs:17051-17071 (rarity 3 :17064, catchItem 4482 :17069), NPC.cs:17072-17084, NPC.cs:17085-17106 (hardMode rows; !hardMode 30/12/300/20000 :17099-17105)), through the port's
+    /// tables - the smallkinds witness shape. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_b10_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::SeaTurtle, 625u16, 7u8, 22.0, 20.0, 0, 0, 5, 0.5f32, 0.0f32),
+            (NpcKind::Seahorse, 626u16, 118u8, 16.0, 20.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::GoldSeahorse, 627u16, 118u8, 16.0, 20.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::Dandelion, 628u16, 119u8, 22.0, 40.0, 15, 0, 50, 0.0f32, 50.0f32),
+            (NpcKind::IceMimic, 629u16, 25u8, 24.0, 24.0, 80, 30, 500, 0.3f32, 100000.0f32),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The vanilla-free wire band (protocol == NPCID, the 108 plan).
+        assert_eq!(NpcKind::SeaTurtle.to_u16(), 625u16);
+        assert_eq!(NpcKind::Seahorse.to_u16(), 626u16);
+        assert_eq!(NpcKind::GoldSeahorse.to_u16(), 627u16);
+        assert_eq!(NpcKind::Dandelion.to_u16(), 628u16);
+        assert_eq!(NpcKind::IceMimic.to_u16(), 629u16);
+        assert_eq!(ALL_KINDS.len(), 454);
+    }
+
+    /// W4-d42 batch 11 - the NPCID 630-630 `SetDefaults` rows pin
+    /// against the C# (NPC.cs:17107-17119), through the port's
+    /// tables - the smallkinds witness shape. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_b11_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::BloodMummy, 630u16, 3u8, 18.0, 40.0, 60, 18, 180, 0.5f32, 700.0f32),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The vanilla-free wire band (protocol == NPCID, the 108 plan).
+        assert_eq!(NpcKind::BloodMummy.to_u16(), 630u16);
+        assert_eq!(ALL_KINDS.len(), 455);
     }
 
     /// The small-kinds wiring wave: the style axis claims 21/49/56/72, so
@@ -31760,8 +33373,10 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            423,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate; wave-1: W4-d34's 17 (266-280 keeps + Crab/DungeonGuardian @791/792) + W4-d38's 35 (the 281-337 anchor) + W4-d37's 46 (the 211-280 band, protocol 354-399 ZERO-MOVE) + W4-d40's 55 (430-488 minus the CrimsonGoldfish dup — c4 owns @465), 367 §1)"
+            455,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate; wave-1: W4-d34's 17 (266-280 keeps + Crab/DungeonGuardian @791/792) + W4-d38's 35 (the 281-337 anchor) + W4-d37's 46 (the 211-280 band, protocol 354-399 ZERO-MOVE) + W4-d40's 55 (430-488 minus the CrimsonGoldfish dup — c4 owns @465) + W4-d42's 32 (578-630 minus the 11 d33-owned fairy/balloon/dragonfly dups), 367 §1)"
+            313,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d42's 43 NPCID 578-630 kinds (the 108 vanilla-free band; 581/587/592/604/605/606/607/615 ride c4/c4b/e26b/c8), L-B gate)"
         );
         assert!(
             covered > 43,

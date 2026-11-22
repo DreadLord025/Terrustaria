@@ -1,0 +1,555 @@
+{
+ "roster_ids": [
+  578,
+  579,
+  580,
+  582,
+  583,
+  584,
+  585,
+  586,
+  590,
+  591,
+  593,
+  594,
+  595,
+  596,
+  597,
+  598,
+  599,
+  600,
+  601,
+  602,
+  603,
+  608,
+  609,
+  610,
+  611,
+  612,
+  613,
+  614,
+  616,
+  617,
+  618,
+  619,
+  620,
+  621,
+  622,
+  623,
+  624,
+  625,
+  626,
+  627,
+  628,
+  629,
+  630
+ ],
+ "c10_owned": [
+  602,
+  603,
+  608,
+  609
+ ],
+ "inventory": [
+  {
+   "name": "NPC_578",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 48,
+   "h": 160,
+   "padded_area": 8100,
+   "missing": false
+  },
+  {
+   "name": "NPC_579",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 52,
+   "h": 20,
+   "padded_area": 1188,
+   "missing": false
+  },
+  {
+   "name": "NPC_580",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 66,
+   "h": 192,
+   "padded_area": 13192,
+   "missing": false
+  },
+  {
+   "name": "NPC_582",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 34,
+   "h": 144,
+   "padded_area": 5256,
+   "missing": false
+  },
+  {
+   "name": "NPC_583",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 24,
+   "h": 96,
+   "padded_area": 2548,
+   "missing": false
+  },
+  {
+   "name": "NPC_584",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 24,
+   "h": 96,
+   "padded_area": 2548,
+   "missing": false
+  },
+  {
+   "name": "NPC_585",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 24,
+   "h": 96,
+   "padded_area": 2548,
+   "missing": false
+  },
+  {
+   "name": "NPC_586",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 60,
+   "h": 840,
+   "padded_area": 52204,
+   "missing": false
+  },
+  {
+   "name": "NPC_590",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 38,
+   "h": 144,
+   "padded_area": 5840,
+   "missing": false
+  },
+  {
+   "name": "NPC_591",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 88,
+   "h": 476,
+   "padded_area": 43020,
+   "missing": false
+  },
+  {
+   "name": "NPC_593",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 25,
+   "h": 180,
+   "padded_area": 4914,
+   "missing": false
+  },
+  {
+   "name": "NPC_594",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 256,
+   "h": 76,
+   "padded_area": 20124,
+   "missing": false
+  },
+  {
+   "name": "NPC_595",
+   "owners": [
+    "W4-d33-npc-ai-styles-95-127",
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 20,
+   "h": 48,
+   "padded_area": 1100,
+   "missing": false
+  },
+  {
+   "name": "NPC_596",
+   "owners": [
+    "W4-d33-npc-ai-styles-95-127",
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 20,
+   "h": 48,
+   "padded_area": 1100,
+   "missing": false
+  },
+  {
+   "name": "NPC_597",
+   "owners": [
+    "W4-d33-npc-ai-styles-95-127",
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 20,
+   "h": 48,
+   "padded_area": 1100,
+   "missing": false
+  },
+  {
+   "name": "NPC_598",
+   "owners": [
+    "W4-d33-npc-ai-styles-95-127",
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 20,
+   "h": 48,
+   "padded_area": 1100,
+   "missing": false
+  },
+  {
+   "name": "NPC_599",
+   "owners": [
+    "W4-d33-npc-ai-styles-95-127",
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 20,
+   "h": 48,
+   "padded_area": 1100,
+   "missing": false
+  },
+  {
+   "name": "NPC_600",
+   "owners": [
+    "W4-d33-npc-ai-styles-95-127",
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 20,
+   "h": 48,
+   "padded_area": 1100,
+   "missing": false
+  },
+  {
+   "name": "NPC_601",
+   "owners": [
+    "W4-d33-npc-ai-styles-95-127",
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 20,
+   "h": 48,
+   "padded_area": 1100,
+   "missing": false
+  },
+  {
+   "name": "NPC_602",
+   "owners": [
+    "W4-c10-style68-waterfowl",
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 44,
+   "h": 540,
+   "padded_area": 24932,
+   "missing": false
+  },
+  {
+   "name": "NPC_603",
+   "owners": [
+    "W4-c10-style68-waterfowl",
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 44,
+   "h": 540,
+   "padded_area": 24932,
+   "missing": false
+  },
+  {
+   "name": "NPC_608",
+   "owners": [
+    "W4-c10-style68-waterfowl",
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 52,
+   "h": 600,
+   "padded_area": 32508,
+   "missing": false
+  },
+  {
+   "name": "NPC_609",
+   "owners": [
+    "W4-c10-style68-waterfowl",
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 52,
+   "h": 600,
+   "padded_area": 32508,
+   "missing": false
+  },
+  {
+   "name": "NPC_610",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 20,
+   "h": 96,
+   "padded_area": 2156,
+   "missing": false
+  },
+  {
+   "name": "NPC_611",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 40,
+   "h": 520,
+   "padded_area": 21924,
+   "missing": false
+  },
+  {
+   "name": "NPC_612",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 28,
+   "h": 70,
+   "padded_area": 2160,
+   "missing": false
+  },
+  {
+   "name": "NPC_613",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 28,
+   "h": 70,
+   "padded_area": 2160,
+   "missing": false
+  },
+  {
+   "name": "NPC_614",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 48,
+   "h": 280,
+   "padded_area": 14100,
+   "missing": false
+  },
+  {
+   "name": "NPC_616",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 50,
+   "h": 364,
+   "padded_area": 19032,
+   "missing": false
+  },
+  {
+   "name": "NPC_617",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 50,
+   "h": 364,
+   "padded_area": 19032,
+   "missing": false
+  },
+  {
+   "name": "NPC_618",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 150,
+   "h": 528,
+   "padded_area": 80560,
+   "missing": false
+  },
+  {
+   "name": "NPC_619",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 48,
+   "h": 444,
+   "padded_area": 22300,
+   "missing": false
+  },
+  {
+   "name": "NPC_620",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 102,
+   "h": 1764,
+   "padded_area": 183664,
+   "missing": false
+  },
+  {
+   "name": "NPC_621",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 38,
+   "h": 74,
+   "padded_area": 3040,
+   "missing": false
+  },
+  {
+   "name": "NPC_622",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 38,
+   "h": 74,
+   "padded_area": 3040,
+   "missing": false
+  },
+  {
+   "name": "NPC_623",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 38,
+   "h": 74,
+   "padded_area": 3040,
+   "missing": false
+  },
+  {
+   "name": "NPC_624",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 32,
+   "h": 462,
+   "padded_area": 15776,
+   "missing": false
+  },
+  {
+   "name": "NPC_625",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 56,
+   "h": 360,
+   "padded_area": 20996,
+   "missing": false
+  },
+  {
+   "name": "NPC_626",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 20,
+   "h": 132,
+   "padded_area": 2948,
+   "missing": false
+  },
+  {
+   "name": "NPC_627",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 20,
+   "h": 132,
+   "padded_area": 2948,
+   "missing": false
+  },
+  {
+   "name": "NPC_628",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 70,
+   "h": 782,
+   "padded_area": 56448,
+   "missing": false
+  },
+  {
+   "name": "NPC_629",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 32,
+   "h": 276,
+   "padded_area": 9452,
+   "missing": false
+  },
+  {
+   "name": "NPC_630",
+   "owners": [
+    "W4-d42-npc-kinds-561-630"
+   ],
+   "w": 40,
+   "h": 896,
+   "padded_area": 37716,
+   "missing": false
+  }
+ ],
+ "missing": [],
+ "scenarios": {
+  "A: HEAD static-only": {
+   "sheets": 8095,
+   "padded": 61175982,
+   "shelf": 8628,
+   "skyline": 7711,
+   "maxrects": 7946,
+   "deterministic": true
+  },
+  "B: HEAD + gore": {
+   "sheets": 9497,
+   "padded": 64242894,
+   "shelf": 9012,
+   "skyline": 8115,
+   "maxrects": 7956,
+   "deterministic": true
+  },
+  "C: HEAD static + roster 43": {
+   "sheets": 8138,
+   "padded": 61982536,
+   "shelf": 8722,
+   "skyline": 8021,
+   "maxrects": 7730,
+   "deterministic": true
+  },
+  "D: HEAD + gore + roster 43": {
+   "sheets": 9540,
+   "padded": 65049448,
+   "shelf": 9099,
+   "skyline": 8382,
+   "maxrects": 8058,
+   "deterministic": true
+  },
+  "E: D + boot font": {
+   "sheets": 9541,
+   "padded": 65057148,
+   "shelf": 9103,
+   "skyline": 8382,
+   "maxrects": 8058,
+   "deterministic": true
+  },
+  "F: HEAD + gore + union-delta 39": {
+   "sheets": 9536,
+   "padded": 64934568,
+   "shelf": 9089,
+   "skyline": 8418,
+   "maxrects": 8596,
+   "deterministic": true
+  },
+  "G: roster-43 solo page": {
+   "sheets": 43,
+   "padded": 806554,
+   "shelf": 1768,
+   "skyline": 1768,
+   "maxrects": 1768,
+   "deterministic": true
+  }
+ }
+}

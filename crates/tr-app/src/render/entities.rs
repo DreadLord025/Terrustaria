@@ -618,6 +618,34 @@ pub(crate) fn npc_rotation_allowed(kind: NpcKind) -> bool {
             | NpcKind::Grubby
             | NpcKind::Sluggy
             | NpcKind::Buggy
+            // W4-d42 rotation census (research/238 §7) - ONLY the kinds
+            // whose PORTED machines write rotation join. IN: the 578
+            // bug's vx*0.1 (`NPC.cs:67876`, FindFrame), the 593 walker's
+            // air tilt (`:75926`/`:75959`), the 603/609 waterfowl's vx*0.1
+            // (`:73870`/`:73802`), the Owl's vx*0.1 (`:73684`), the
+            // BloodSquid's hover Aim tilt (`HoverParams::BLOOD_SQUID`,
+            // `:50643-50646`) and the GoblinShark's spin wrap
+            // (`:68468-68499`, FindFrame). MERGE-SIDE (367 s1): the
+            // fairies' vx*0.1 (`:69838`) rows drop with the d33-owned
+            // 583-585 dups (d33's kept impl re-adds them). OUT (C# writes
+            // exist but the port's machine does not write yet - they join
+            // with their axis-wiring commits): 594 balloon (`AI_113`
+            // `:47919`, d33-owned), 618 nautilus (`AI_117`
+            // `:47248-47430`), 626/627 seahorses
+            // (`AI_118` `:47082`/`:47107`), 621-623 eel chain (`AI_006`
+            // — `is_worm` membership deferred, ANALYSIS deviation 6).
+            // The style-3 walkers (580/582/586/590/591/624/630) write
+            // NONE: `AI_003`'s rotation arms are type-471/427/185/428
+            // local (`:56507`/`:58627-58640`/`:58824-58840`), none of
+            // ours; the style-7 critters and the unwired 111-119 idle
+            // stand-ins write none either.
+            | NpcKind::DD2LightningBug
+            | NpcKind::GoldGoldfishWalker
+            | NpcKind::Seagull2
+            | NpcKind::Grebe2
+            | NpcKind::Owl
+            | NpcKind::BloodSquid
+            | NpcKind::GoblinShark
     )
 }
 
@@ -1065,6 +1093,12 @@ fn npc_add_height(n: &Npc) -> f32 {
         // `:22169` 269/270/271/274/277 — the Painted/vanity town ids' -2.
         // `:22174` the `townNPC && ai[0] == 5` sitting row: -4 as a flat
         // shift, -6 for the Mechanic's 124 and -14 for the town slimes.
+        // `Main.cs:22153` - the 579 row.
+        BartenderUnconscious => -2.0,
+        // `Main.cs:22157` - the 612 row.
+        WaterStrider => 2.0,
+        // `Main.cs:22157` - the 613 row.
+        GoldWaterStrider => 2.0,
         _ => 0.0,
     };
     // `:22174`: the `townNPC && ai[0] == 5` sitting row — a `num -= 4`
@@ -1359,6 +1393,28 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         NpcKind::CultistDragonTail => 459,
         NpcKind::MothronEgg => 478,
         NpcKind::TargetDummy => 488,
+        // W4-d42 - the folded kinds keep their OWN draw sheets (the
+        // ForceBubble precedent - the bestiary credit folds, the
+        // sheet does not).
+        NpcKind::BloodEelBody => 622,
+        NpcKind::BloodEelTail => 623,
+        // W4-d42 - the folded kinds keep their OWN draw sheets (the
+        // ForceBubble precedent - the bestiary credit folds, the
+        // sheet does not).
+        NpcKind::Grebe2 => 609,
+        // W4-d42 - the folded kinds keep their OWN draw sheets (the
+        // ForceBubble precedent - the bestiary credit folds, the
+        // sheet does not).
+        NpcKind::Seagull2 => 603,
+        // W4-d42 - the folded kinds keep their OWN draw sheets (the
+        // ForceBubble precedent - the bestiary credit folds, the
+        // sheet does not).
+        NpcKind::ArmedTorchZombie => 591,
+        NpcKind::GoldGoldfishWalker => 593,
+        // W4-d42 - the folded kinds keep their OWN draw sheets (the
+        // ForceBubble precedent - the bestiary credit folds, the
+        // sheet does not).
+        NpcKind::BartenderUnconscious => 579,
         _ => kind.net_id() as u16,
     }
 }
@@ -2499,6 +2555,8 @@ fn npc_health_bar_scale(kind: NpcKind) -> f32 {
         | DukeFishron
         // `Main.cs:45911-45914` — `if (type == 87) scale = 1.5f`.
         | WyvernHead
+        // W4-d42 - `Main.cs:45915`: 510/454/621 ride the 1.5 bar.
+        | BloodEelHead
         | AncientCultist => 1.5,
         _ => 1.0,
     }
@@ -3885,6 +3943,146 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // W4-d42 - the roster's draw arms ride the generic anchor over
+            // their own NPC_<id> sheets. The sheets are NOT packed yet
+            // (the atlas headroom - the wyvern deferral precedent), so
+            // `npc_sheet` returns None and the arm no-draws.
+            NpcKind::BloodMummy => {
+                generic_anchor(assets.npc_sheet(630), npc_rows(630), n, w, h)
+            }
+            // W4-d42 - the roster's draw arms ride the generic anchor over
+            // their own NPC_<id> sheets. The sheets are NOT packed yet
+            // (the atlas headroom - the wyvern deferral precedent), so
+            // `npc_sheet` returns None and the arm no-draws.
+            NpcKind::SeaTurtle => {
+                generic_anchor(assets.npc_sheet(625), npc_rows(625), n, w, h)
+            }
+            NpcKind::Seahorse => {
+                generic_anchor(assets.npc_sheet(626), npc_rows(626), n, w, h)
+            }
+            NpcKind::GoldSeahorse => {
+                generic_anchor(assets.npc_sheet(627), npc_rows(627), n, w, h)
+            }
+            NpcKind::Dandelion => {
+                generic_anchor(assets.npc_sheet(628), npc_rows(628), n, w, h)
+            }
+            NpcKind::IceMimic => {
+                generic_anchor(assets.npc_sheet(629), npc_rows(629), n, w, h)
+            }
+            // W4-d42 - the roster's draw arms ride the generic anchor over
+            // their own NPC_<id> sheets. The sheets are NOT packed yet
+            // (the atlas headroom - the wyvern deferral precedent), so
+            // `npc_sheet` returns None and the arm no-draws.
+            NpcKind::GoblinShark => {
+                generic_anchor(assets.npc_sheet(620), npc_rows(620), n, w, h)
+            }
+            NpcKind::BloodEelHead => {
+                generic_anchor(assets.npc_sheet(621), npc_rows(621), n, w, h)
+            }
+            NpcKind::BloodEelBody => {
+                generic_anchor(assets.npc_sheet(622), npc_rows(622), n, w, h)
+            }
+            NpcKind::BloodEelTail => {
+                generic_anchor(assets.npc_sheet(623), npc_rows(623), n, w, h)
+            }
+            NpcKind::Gnome => {
+                generic_anchor(assets.npc_sheet(624), npc_rows(624), n, w, h)
+            }
+            // W4-d42 - the roster's draw arms ride the generic anchor over
+            // their own NPC_<id> sheets. The sheets are NOT packed yet
+            // (the atlas headroom - the wyvern deferral precedent), so
+            // `npc_sheet` returns None and the arm no-draws.
+            NpcKind::Turtle => {
+                generic_anchor(assets.npc_sheet(616), npc_rows(616), n, w, h)
+            }
+            NpcKind::TurtleJungle => {
+                generic_anchor(assets.npc_sheet(617), npc_rows(617), n, w, h)
+            }
+            NpcKind::BloodNautilus => {
+                generic_anchor(assets.npc_sheet(618), npc_rows(618), n, w, h)
+            }
+            NpcKind::BloodSquid => {
+                generic_anchor(assets.npc_sheet(619), npc_rows(619), n, w, h)
+            }
+            // W4-d42 - the roster's draw arms ride the generic anchor over
+            // their own NPC_<id> sheets. The sheets are NOT packed yet
+            // (the atlas headroom - the wyvern deferral precedent), so
+            // `npc_sheet` returns None and the arm no-draws.
+            NpcKind::Rat => {
+                generic_anchor(assets.npc_sheet(610), npc_rows(610), n, w, h)
+            }
+            NpcKind::Owl => {
+                generic_anchor(assets.npc_sheet(611), npc_rows(611), n, w, h)
+            }
+            NpcKind::WaterStrider => {
+                generic_anchor(assets.npc_sheet(612), npc_rows(612), n, w, h)
+            }
+            NpcKind::GoldWaterStrider => {
+                generic_anchor(assets.npc_sheet(613), npc_rows(613), n, w, h)
+            }
+            NpcKind::ExplosiveBunny => {
+                generic_anchor(assets.npc_sheet(614), npc_rows(614), n, w, h)
+            }
+            // W4-d42 - the roster's draw arms ride the generic anchor over
+            // their own NPC_<id> sheets. The sheets are NOT packed yet
+            // (the atlas headroom - the wyvern deferral precedent), so
+            // `npc_sheet` returns None and the arm no-draws.
+            NpcKind::Grebe => {
+                generic_anchor(assets.npc_sheet(608), npc_rows(608), n, w, h)
+            }
+            NpcKind::Grebe2 => {
+                generic_anchor(assets.npc_sheet(609), npc_rows(609), n, w, h)
+            }
+            // W4-d42 - the roster's draw arms ride the generic anchor over
+            // their own NPC_<id> sheets. The sheets are NOT packed yet
+            // (the atlas headroom - the wyvern deferral precedent), so
+            // `npc_sheet` returns None and the arm no-draws.
+            NpcKind::Seagull => {
+                generic_anchor(assets.npc_sheet(602), npc_rows(602), n, w, h)
+            }
+            NpcKind::Seagull2 => {
+                generic_anchor(assets.npc_sheet(603), npc_rows(603), n, w, h)
+            }
+            // W4-d42 - the roster's draw arms ride the generic anchor over
+            // their own NPC_<id> sheets. The sheets are NOT packed yet
+            // (the atlas headroom - the wyvern deferral precedent), so
+            // `npc_sheet` returns None and the arm no-draws.
+            // W4-d42 - the roster's draw arms ride the generic anchor over
+            // their own NPC_<id> sheets. The sheets are NOT packed yet
+            // (the atlas headroom - the wyvern deferral precedent), so
+            // `npc_sheet` returns None and the arm no-draws.
+            NpcKind::TorchZombie => {
+                generic_anchor(assets.npc_sheet(590), npc_rows(590), n, w, h)
+            }
+            NpcKind::ArmedTorchZombie => {
+                generic_anchor(assets.npc_sheet(591), npc_rows(591), n, w, h)
+            }
+            NpcKind::GoldGoldfishWalker => {
+                generic_anchor(assets.npc_sheet(593), npc_rows(593), n, w, h)
+            }
+            // W4-d42 - the roster's draw arms ride the generic anchor over
+            // their own NPC_<id> sheets. The sheets are NOT packed yet
+            // (the atlas headroom - the wyvern deferral precedent), so
+            // `npc_sheet` returns None and the arm no-draws.
+            NpcKind::ZombieMerman => {
+                generic_anchor(assets.npc_sheet(586), npc_rows(586), n, w, h)
+            }
+            // W4-d42 - the roster's draw arms ride the generic anchor over
+            // their own NPC_<id> sheets. The sheets are NOT packed yet
+            // (the atlas headroom - the wyvern deferral precedent), so
+            // `npc_sheet` returns None and the arm no-draws.
+            NpcKind::DD2LightningBug => {
+                generic_anchor(assets.npc_sheet(578), npc_rows(578), n, w, h)
+            }
+            NpcKind::BartenderUnconscious => {
+                generic_anchor(assets.npc_sheet(579), npc_rows(579), n, w, h)
+            }
+            NpcKind::WalkingAntlion => {
+                generic_anchor(assets.npc_sheet(580), npc_rows(580), n, w, h)
+            }
+            NpcKind::LarvaeAntlion => {
+                generic_anchor(assets.npc_sheet(582), npc_rows(582), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -4094,6 +4292,112 @@ pub(crate) fn draw_npcs(
 #[cfg(test)]
 mod anchor_tests {
     use super::*;
+
+    /// W4-d42 rotation census (research/238 §7) — the draw gate CONSUMES
+    /// the writers: the seven IN kinds' ported machines write `rotation`
+    /// (the FindFrame arms / the BloodSquid's hover Aim preset), and
+    /// `npc_rotation_allowed` admits exactly those seven. The 25 OUT
+    /// kinds' ported machines write no tilt (the unwired 111-119 idle
+    /// stand-ins included — 594/618/626/627 join with their axis-wiring
+    /// commits) and stay OUT even with a rotation forced on.
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_the_rotation_gate_consumes_the_writers() {
+        // The FindFrame writers: run the real machine arms.
+        for (kind, vx, vy) in [
+            (NpcKind::DD2LightningBug, 3.0f32, 1.0f32),
+            (NpcKind::Owl, 2.5, 1.0),
+        ] {
+            let mut n = Npc::new(kind, 100.0, 100.0, 1, 0.0);
+            n.vx = vx;
+            n.vy = vy;
+            n.find_frame();
+            // The vx*0.1 tilt (`NPC.cs:67876` 578, `:69838` the fairies,
+            // `:73684` the Owl).
+            assert!(
+                (n.rotation - vx * 0.1).abs() < 1e-6,
+                "{kind:?}: the machine writes vx*0.1"
+            );
+            assert!(npc_rotation_allowed(kind), "{kind:?}: the gate admits it");
+            // The gate + non-zero rotation is exactly the draw's rotated-path
+            // condition (`n.rotation != 0.0 && npc_rotation_allowed(kind)`).
+            assert!(n.rotation != 0.0 && npc_rotation_allowed(n.kind));
+        }
+        // The 593 walker's air tilt (`NPC.cs:75957-75959`: vy > 4 only).
+        let mut n = Npc::new(NpcKind::GoldGoldfishWalker, 100.0, 100.0, 1, 0.0);
+        n.vy = 5.0;
+        n.rotation = 0.2;
+        n.find_frame();
+        assert!((n.rotation - (0.2 - 5.0 * 0.01)).abs() < 1e-6, "the -= vy*0.01 air tilt");
+        assert!(npc_rotation_allowed(NpcKind::GoldGoldfishWalker));
+        // Grounded zeroes it (`:75926`).
+        n.vy = 0.0;
+        n.find_frame();
+        assert_eq!(n.rotation, 0.0, "the grounded zero");
+        // The 603/609 waterfowl's fly tilt (`NPC.cs:73870`/`:73802`): dry +
+        // moving = vx*0.1; wet or standing zeroes it (`:73860`/`:73866`).
+        for kind in [NpcKind::Seagull2, NpcKind::Grebe2] {
+            let mut n = Npc::new(kind, 100.0, 100.0, 1, 0.0);
+            n.vx = 2.0;
+            n.find_frame();
+            assert!((n.rotation - 0.2).abs() < 1e-6, "{kind:?}: the fly tilt");
+            assert!(npc_rotation_allowed(kind));
+            n.wet = true;
+            n.find_frame();
+            assert_eq!(n.rotation, 0.0, "{kind:?}: the wet zero");
+        }
+        // The GoblinShark's spin wrap (`NPC.cs:68463-68475`): the wet arm
+        // lerps rotation towards the direction-folded atan2 by /5.
+        let mut n = Npc::new(NpcKind::GoblinShark, 100.0, 100.0, 1, 0.0);
+        n.wet = true;
+        n.vx = 3.0;
+        n.vy = 1.0;
+        n.find_frame();
+        let num43 = (1.0f32).atan2(3.0);
+        assert!(
+            (n.rotation - num43 / 5.0).abs() < 1e-6,
+            "the (rot*4 + atan2)/5 lerp from zero"
+        );
+        assert!(npc_rotation_allowed(NpcKind::GoblinShark));
+        // The BloodSquid's hover Aim writer is witnessed in
+        // npc_ai::tests::w4_d42_the_blood_squid_hover_writes_the_aim_tilt
+        // (the `HoverParams::BLOOD_SQUID` preset, `NPC.cs:50643-50646`).
+        assert!(npc_rotation_allowed(NpcKind::BloodSquid));
+        // The 25 OUT kinds: the gate refuses them even with a non-zero
+        // rotation forced on (their ported machines never write one — a
+        // forced value must not leak into a rotated draw). 594/618/626/627
+        // have C# writers (AI_113/117/118) but their port arms are the
+        // unwired `{}` stand-ins — they join with the axis wiring.
+        for kind in [
+            NpcKind::BartenderUnconscious,
+            NpcKind::WalkingAntlion,
+            NpcKind::LarvaeAntlion,
+            NpcKind::ZombieMerman,
+            NpcKind::TorchZombie,
+            NpcKind::ArmedTorchZombie,
+            NpcKind::Seagull,
+            NpcKind::Grebe,
+            NpcKind::Rat,
+            NpcKind::WaterStrider,
+            NpcKind::GoldWaterStrider,
+            NpcKind::ExplosiveBunny,
+            NpcKind::Turtle,
+            NpcKind::TurtleJungle,
+            NpcKind::BloodNautilus,
+            NpcKind::BloodEelHead,
+            NpcKind::BloodEelBody,
+            NpcKind::BloodEelTail,
+            NpcKind::Gnome,
+            NpcKind::SeaTurtle,
+            NpcKind::Seahorse,
+            NpcKind::GoldSeahorse,
+            NpcKind::Dandelion,
+            NpcKind::IceMimic,
+            NpcKind::BloodMummy,
+        ] {
+            assert!(!npc_rotation_allowed(kind), "{kind:?}: OUT");
+        }
+    }
 
     /// fix/player-motion-blur — the entity-snapping invariant: an unrotated
     /// sprite's top-left lands on a WHOLE screen pixel at every zoom, even

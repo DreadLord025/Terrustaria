@@ -2124,6 +2124,65 @@ fn portrait_data(
             let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 16.0).unwrap_or(40.0);
             (sheet_i, h, 18.0, h, white)
         }
+        // W4-d42 - the roster's portraits rest the kinds' SetDefaults
+        // boxes on their own sheets (the WyvernHead literal-size
+        // precedent - the sheets are deferred, the index folds to 0).
+        (NpcKind::DD2LightningBug, _) => (sheet_i, 24.0, 30.0, 24.0, white),
+        (NpcKind::WalkingAntlion, _) => (sheet_i, 26.0, 26.0, 26.0, white),
+        (NpcKind::LarvaeAntlion, _) => (sheet_i, 18.0, 18.0, 18.0, white),
+        // W4-d42 - the roster's portraits rest the kinds' SetDefaults
+        // boxes on their own sheets (the WyvernHead literal-size
+        // precedent - the sheets are deferred, the index folds to 0).
+        (NpcKind::ZombieMerman, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        // W4-d42 - the roster's portraits rest the kinds' SetDefaults
+        // boxes on their own sheets (the WyvernHead literal-size
+        // precedent - the sheets are deferred, the index folds to 0).
+        (NpcKind::TorchZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::GoldGoldfishWalker, _) => (sheet_i, 20.0, 18.0, 20.0, white),
+        // W4-d42 - the roster's portraits rest the kinds' SetDefaults
+        // boxes on their own sheets (the WyvernHead literal-size
+        // precedent - the sheets are deferred, the index folds to 0).
+        // W4-d42 - the roster's portraits rest the kinds' SetDefaults
+        // boxes on their own sheets (the WyvernHead literal-size
+        // precedent - the sheets are deferred, the index folds to 0).
+        (NpcKind::Seagull, _) => (sheet_i, 26.0, 22.0, 26.0, white),
+        // W4-d42 - the roster's portraits rest the kinds' SetDefaults
+        // boxes on their own sheets (the WyvernHead literal-size
+        // precedent - the sheets are deferred, the index folds to 0).
+        (NpcKind::Grebe, _) => (sheet_i, 26.0, 22.0, 26.0, white),
+        // W4-d42 - the roster's portraits rest the kinds' SetDefaults
+        // boxes on their own sheets (the WyvernHead literal-size
+        // precedent - the sheets are deferred, the index folds to 0).
+        (NpcKind::Rat, _) => (sheet_i, 12.0, 14.0, 12.0, white),
+        (NpcKind::Owl, _) => (sheet_i, 34.0, 18.0, 34.0, white),
+        (NpcKind::WaterStrider, _) => (sheet_i, 10.0, 10.0, 10.0, white),
+        (NpcKind::GoldWaterStrider, _) => (sheet_i, 10.0, 10.0, 10.0, white),
+        (NpcKind::ExplosiveBunny, _) => (sheet_i, 20.0, 18.0, 20.0, white),
+        // W4-d42 - the roster's portraits rest the kinds' SetDefaults
+        // boxes on their own sheets (the WyvernHead literal-size
+        // precedent - the sheets are deferred, the index folds to 0).
+        (NpcKind::Turtle, _) => (sheet_i, 20.0, 22.0, 20.0, white),
+        (NpcKind::TurtleJungle, _) => (sheet_i, 20.0, 22.0, 20.0, white),
+        (NpcKind::BloodNautilus, _) => (sheet_i, 100.0, 100.0, 100.0, white),
+        (NpcKind::BloodSquid, _) => (sheet_i, 44.0, 44.0, 44.0, white),
+        // W4-d42 - the roster's portraits rest the kinds' SetDefaults
+        // boxes on their own sheets (the WyvernHead literal-size
+        // precedent - the sheets are deferred, the index folds to 0).
+        (NpcKind::GoblinShark, _) => (sheet_i, 58.0, 34.0, 58.0, white),
+        (NpcKind::BloodEelHead, _) => (sheet_i, 28.0, 28.0, 28.0, white),
+        (NpcKind::Gnome, _) => (sheet_i, 30.0, 14.0, 30.0, white),
+        // W4-d42 - the roster's portraits rest the kinds' SetDefaults
+        // boxes on their own sheets (the WyvernHead literal-size
+        // precedent - the sheets are deferred, the index folds to 0).
+        (NpcKind::SeaTurtle, _) => (sheet_i, 20.0, 22.0, 20.0, white),
+        (NpcKind::Seahorse, _) => (sheet_i, 20.0, 16.0, 20.0, white),
+        (NpcKind::GoldSeahorse, _) => (sheet_i, 20.0, 16.0, 20.0, white),
+        (NpcKind::Dandelion, _) => (sheet_i, 40.0, 22.0, 40.0, white),
+        (NpcKind::IceMimic, _) => (sheet_i, 24.0, 24.0, 24.0, white),
+        // W4-d42 - the roster's portraits rest the kinds' SetDefaults
+        // boxes on their own sheets (the WyvernHead literal-size
+        // precedent - the sheets are deferred, the index folds to 0).
+        (NpcKind::BloodMummy, _) => (sheet_i, 40.0, 18.0, 40.0, white),
     }
 }
 
