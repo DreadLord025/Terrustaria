@@ -115,7 +115,7 @@ On the Rust side the module lives in `crates/tr-app/src/spawner.rs` (~2 290 line
 | `GetSpawnRate` zone group (dungeon/sandstorm/UD/jungle-town/evil/meteor/temple/hallow-deep) (`:573-657`) | PORTED | `:248-291` | incl. the four jungle town tiers (`jungle_town_tiers` 96/13, 132/12, 168/11) |
 | `GetSpawnRate` WoF override + nearby ramps + candles + player state (`:667-748`) | PORTED | `:292-349` | the `isNearFairy` arm (`:744-748`) is NOT ported |
 | `GetSpawnRate` floor/cap (`:749-756`) | PORTED | `:350-357` | `the_rate_floor_and_cap_hold` (48 → 60, max 15) |
-| `GetSpawnRate` moon-event raid pacing (`:771-775`) | PORTED | `:360-363` | `moon_event_forces_the_raid_pacing` (20, 11) |
+| `GetSpawnRate` moon-event raid pacing (`:771-775`) | PORTED | `spawner.rs:430-437` | `moon_event_forces_the_raid_pacing` (20, 11); **W4-c38 (2026-11-20)**: the surface gate `player.position.Y < worldSurface*16` landed (`de5f8c8e`) — `the_moon_pacing_keeps_the_unpaced_rate_underground` (360/6 below the line, strict `<` boundary) |
 | `GetSpawnRate` `this.invaders` override (rate 20, max `5·(2+0.3·players)`) (`:781-785`) | MISSING | — | no `invaders` branch in `get_spawn_rate`; the invasion path has its own unrated loop (see deviations) |
 | `GetSpawnRate` pre-Skeletron dungeon rate 10 (`:786-789`) | PORTED | `:364-366` | `dungeon_pre_skeletron_is_rate_ten` (10 / 180 post) |
 | `GetSpawnRate` getGoodWorld / Journey / Skyblock (`:757-770`, `:790-793`) | MISSING (documented constants-off) | `:197-201` | needs M5-SEED-1 / M6-CREATIVE-1 |
@@ -211,6 +211,10 @@ On the Rust side the module lives in `crates/tr-app/src/spawner.rs` (~2 290 line
    unconditionally, but the C# gates it on `(Main.remixWorld || player.position.Y < worldSurface *
    16.0)` (`NPC.cs:771`) — an underground player during a moon event should keep the un-paced rate.
    Pre-existing, one row for a follow-up (S1-F-13's neighbourhood).
+   **CLOSED 2026-11-20 (W4-c38, `de5f8c8e` + `b3f53f0f`)**: the gate landed verbatim (the strict
+   `<`, `Main.remixWorld` constants-off) and the inner night moon arm (`:542-546`) carries the same
+   gate; `the_moon_pacing_keeps_the_unpaced_rate_underground` pins the un-paced 360/6 below the
+   line and the strict boundary at exactly `worldSurface*16`.
 2. **No `invaders` spawn-rate override** (`NPC.cs:781-785`) — *behavioural, high*. C# forces
    `spawnRate = 20` / `maxSpawns = 5·(2+0.3·players)` while an invasion window is open. The port
    instead fires `invasion_spawn_pick` **once per fixed step** with no rate roll and no nearby cap
