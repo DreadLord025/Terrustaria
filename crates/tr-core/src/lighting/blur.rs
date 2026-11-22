@@ -247,7 +247,13 @@ pub(super) fn mask_of(
     world: &World,
 ) -> Mask {
     let invisible_block = world.invisible_block(x, y);
-    if light_blocked(tile, invisible_block, draw_invisible) && tile.kind != 131 && tile.slope() == 0
+    // `TileLightScanner.cs:68`: `LightIsBlocked(tile) && tile.type != 131 &&
+    // !tile.inActive() && tile.slope() == 0` — an actuated block is air to the
+    // mask (W4-d66; the legacy `legacy_mask` already kept this conjunct).
+    if light_blocked(tile, invisible_block, draw_invisible)
+        && tile.kind != 131
+        && !tile.inactive()
+        && tile.slope() == 0
     {
         if td::SET_CRACKED_BRICKS.has(tile.kind) {
             return Mask::CrackedBricks;

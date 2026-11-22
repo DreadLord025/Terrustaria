@@ -227,6 +227,18 @@ foreach (Match m in Regex.Matches(mainSrc,
     }
 }
 
+// W4-d66: the gemspark lighted flags are set by a LOOP, not literal writes —
+// `Main.cs:10334-10342`: `for (num3 = 255; num3 <= 268; num3++) { tileSolid =
+// true; if (num3 > 261) { tileLighted[num3] = true; tileShine2[num3] = true; } }`.
+// The literal-index regex above cannot see it, so TILE_LIGHTED was missing
+// 262-268 and the scanner's `Main.tileLighted` gate (`TileLightScanner.cs:345`)
+// muted the seven gemspark arms (`:970-995`). Scoped to tileLighted ONLY: the
+// same loop's tileSolid half (and the other loop writes, `:9970-9974` /
+// `:9986-9995` / `:8387-8395`) feeds worldgen/collision tables whose drift
+// needs the frozen-hash A/B — see docs/research/10-lighting.md (W4-d66).
+for (int id = 262; id <= 268; id++)
+    mainBools["tileLighted"][id] = true;
+
 // BlockMergesWithMergeAllBlock is derived in Main.SetupTileMerge.
 var mergesWithAll = new bool[TileCount];
 for (int j = 0; j < TileCount; j++)
