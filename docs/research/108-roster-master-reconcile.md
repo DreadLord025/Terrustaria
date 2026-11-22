@@ -1879,3 +1879,73 @@ netprobe/vseow/vseow2/d23probe/d23b/d9probe/f42probe/basecs/lastprobe.py`
 (git-show source reads at the cited tips). No code was changed on this
 branch; this seal is the deliverable. Witnesses WRITTEN NOT RUN.
 
+## X6. SPINE-END RECEIPT (merger wave-1 steps 4-6, TR-MERGE-1, 2026-11-22)
+
+The roster spine's second half landed on main IN X5 ORDER, `git merge
+--no-ff` only (no banned forms), ancestry + symbol verified after EVERY
+push:
+
+| Step | Lane | Merge commit | Push receipt |
+|---|---|---|---|
+| 4 | d40 (`f4355d380`) | **`ffec6b991`** | `d3164f5b9..ffec6b991`, ancestry exit 0, `478 => NpcKind::MothronEgg` symbol ✓ |
+| 5 | d42 (`adb304ab8`) | **`54098ee45`** | `ffec6b991..54098ee45`, ancestry exit 0, `630 => NpcKind::BloodMummy` symbol ✓ |
+| 6 | d35 (`8fa3b3dbf`) LAST | **`e0bef5a3b`** | `54098ee45..e0bef5a3b`, ancestry exit 0, `NpcKind::GoblinScout => 698` symbol ✓ |
+
+**Count pins at the spine end (mechanical python census, re-run after
+EACH splice — to/from arms bijective, ALL_KINDS decl==rows==enum-set,
+ENTRIES nets distinct, sheets parallel vec order-equal):**
+
+- `ALL_KINDS` = `to_u16` = `from_u16` = `s1_f_3` pin = **488**
+  (270 base + 17 d34 + 35 d38 + 46 d37 + 55 d40 + 32 d42 + 33 d35;
+  the stale 290/305/316/326/313/303 branch pins corrected at each splice;
+  665 remains the ALL-LANES target after the small lanes land).
+- `ENTRIES` = **426** (all positive nets distinct; d35's 28 own rows
+  wholesale from its splice-repaired tip, the 96/97/99/100/112 Hide
+  folds onto 95/98/94 in BOTH resolvers).
+- `BESTIARY_NPC_SHEET_IDS` = **313** = 181 base + 17 d34 + 35 d38 +
+  43 d37 + 21 d40 + 16 d35, parallel `bestiary_npc_sheets` vec
+  order-equal (517 remains the all-lanes X4 target).
+- `STATIC_SHEET_NAMES` NPC rows = **402** (D35_SHEETS 21 packed / 12
+  deferred; D40_SHEETS 35 after the 465 drop; d42's 43 ALL deferred per
+  research/238's None-skip verdict — the 113 §17.5 lazy wave owns them).
+
+**Drops executed per the d37 X3 tables (merger-side, canonical owners
+land later):**
+
+- d40's **CrimsonGoldfish 465** dup dropped across 10 files (variant +
+  to/from/hash/ALL_KINDS/ENTRIES/stat+sound+noGravity+buffs/netglue/
+  FindFrame/draw/sheet/portrait/rotation rows) — c4's impl owns @465.
+- d42's **11 d33-owned dups** dropped: FairyCritterPink/Green/Blue
+  583-585, WindyBalloon 594, the 7 dragonflies 595-601 (variant + arms +
+  entries + folds + wiring + the b4 witness retired) — d33's wiring
+  composes at the small-lanes splice.
+- d35's **+269 order-preserving renumber 429-461→698-730 EXECUTED**
+  against the settled roster (GoblinScout 698 .. PossessedArmor 730,
+  row-for-row the X3 d35 table; to_u16/from_u16/render-key + every batch
+  witness assert; cs_id/net_id/sheets untouched).
+
+**MERGER-SIDE obligations discharged:**
+
+- **Render-key 791-805 RESERVATION HELD**: 791 Crab, 792 DungeonGuardian
+  (d34), 793-805 the 13 d37 armored-bones/ichor kinds — d40 rides
+  vanilla 430-488, d42 rides vanilla 578-630, d35 rides 698-730; ZERO
+  reuse of 791-805 by any of the three. The render-key injectivity
+  DELTA vs the pre-spine base is ZERO at every step (scripted).
+- The d38-extracted `npc_rotation_allowed` gate stays the ONE draw
+  gate: d40's 21-kind and d35's 19-kind inline whitelists folded into
+  the fn; d42's census block composed (7 IN after the fairy drops).
+- Audio bank dedupe at each splice (d42's NPC_Hit_31/NPC_Killed_34 →
+  d34 rows kept; d35's NPC_Hit_5/NPC_Killed_7 → d37 rows kept,
+  NPC_Killed_28 → d34 row kept).
+- d42's Hide folds mirrored into `try_entry_for_npc` (the d37/d40
+  both-resolvers precedent); MothronEgg-478 own-row resolution fix +
+  the 479 drain-arm witness ride (d40 seal).
+
+**PRE-EXISTING anomalies (untouched, FLAGGED FOR THE §3 GATE):**
+the SolarCrawltipedeTail dup arms, the 5 SFX dup bank rows (Item_14,
+Item_17, NPC_Hit_1, NPC_Hit_43, NPC_Killed_45), the 13 vec-sheets-absent
+rows, and the VortexTower render-key fold (dup arm + the 18 colliding
+hash values — byte-identical to the pre-spine base, verified scripted).
+
+Code-only lane: no cargo/tests run (per the 367 dispatch); the single
+gate (§3, baseline `051600da8`) runs on the merged main after the wave.
