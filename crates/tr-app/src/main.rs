@@ -44,6 +44,7 @@ mod player_lights;
 mod player_lights_b;
 mod proj_lights;
 mod proj_lights_a;
+mod tile_lights;
 mod eoc_fight;
 mod input_map;
 mod inv;
