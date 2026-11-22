@@ -41266,3 +41266,36 @@ damaging strike behind `rain.rs::thunder_step`'s flash+thunder:
   consumer; no rain/visual coupling added (f42 owns the visuals).
 - 10 witnesses (5 geometry, 5 spawn) WRITTEN NOT RUN — code-only, no
   cargo/tests/rustfmt/graphify invoked.
+
+## The id-set census hardening (W4-c45, 2026-11-20, code-only)
+**Scope.** The research/34 audit's landed rows (S1-F-1..F-6) re-verified by a
+mechanical parse-and-diff of every table against the decompiled C#, plus the
+two carriers the audit still listed as missing. No behaviour change; no
+`ItemID`/`TileID`/`WallID`/`BuffID` edits (their counts match).
+**What was verified (script: parse the C# consts/ctor order, diff row-by-row).**
+| Table | C# source | Result |
+| `prefix_id::PREFIX_ID` (97) | `PrefixID.cs` consts | ALL OK |
+| `id_tables::DUST_ID` (207) | `DustID.cs` consts (`short`) | ALL OK |
+| the sixteen `ARMOR_*` walks (1020) | `ArmorIDs.cs` per-class consts (`int`/`sbyte`), declaration order incl. the HandOn/HandOff ClimbingClaws trio (11/11/11 and 6/6/6) and Shoe's ShoeSpikes=4 alias | ALL OK |
+| `soundid::SOUND_STYLES` names (506) | `SoundID.cs` static ctor `:1254-1768` — `new LegacySoundStyle` + `CreateTrackable` + the two `.WithVolume` re-assignments (DD2_BetsysWrathShot/Impact `:1674-1675`) | ALL OK |
+| `prefix.rs::stat_switch` (78 arms) | `Item.cs:720-1045` switch cases | 0 mismatches — the C# switch has NO 62..80 cases (the accessory prefixes ride `value_multiplier` `Item.cs:1047-1062` + `grant_prefix_benefits` `Player.cs:13955-14046`, both already verbatim) |
+| `npc/data.rs` `to_u16`/`from_u16` | roster sweep | 270 encode ids over 270 distinct kinds, 270 decode arms, 0 duplicates / 0 mismatches both directions — the S1-F-1 collision fix holds on the grown roster, no id moved |
+**What landed.**
+- Census tests pinning EVERY `(id, name)` pair (the S1-F-4/F-6 tests only
+  pinned lengths + samples): `prefix_id.rs` 1, `id_tables.rs` 3 (armor,
+  dust, sound-field-walk + counters). WRITTEN NOT RUN (code-only wave).
+- `prefix_id::SETS_REDUCED_NATURAL_CHANCE` — `PrefixID.Sets`' only bool set
+  (`PrefixID.cs:14`) in the C#'s declaration order (56 rides between 40 and
+  41); the roll engine's sorted working copy (`prefix.rs`, now `pub(crate)`)
+  is cross-pinned against it so the two cannot drift.
+- `id_tables::NPC_DEATH_COUNT = 69` (`SoundID.cs:1383`) and
+  `ITEM_SOUND_COUNT = 211` (`:1595`) — the audit's SoundID row had no
+  carrier for the two size counters.
+**Deliberate non-changes.** The "19 missing prefix constants" of the task
+intake were already landed (S1-F-4 names + the `prefix.rs` behaviour above);
+nothing to add. The `SoundID`/`ArmorIDs.*.Sets` bool arrays stay with their
+consumers (the S1-F-8 generated-set pattern covers `TileID` only); the
+small-set long tail stays research/34's open list.
+**Verification.** No cargo/rustc/tests invoked (code-only mode). The
+parse-and-diff script's per-table ALL OK output is the evidence; the new
+witness tests are WRITTEN NOT RUN.

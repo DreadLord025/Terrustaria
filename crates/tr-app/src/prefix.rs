@@ -106,8 +106,10 @@ const BOOMERANGS_CHAKRAMS: &[u16] = &[
 const ITEMS_THAT_CAN_HAVE_LEGENDARY_2: &[u16] = &[3389];
 
 /// `PrefixID.Sets.ReducedNaturalChance` (`PrefixID.cs:14`): the weak prefixes
-/// only survive a natural roll 1/3 of the time.
-const REDUCED_NATURAL_CHANCE: &[u16] = &[
+/// only survive a natural roll 1/3 of the time. The verbatim C#-order carrier
+/// is `prefix_id::SETS_REDUCED_NATURAL_CHANCE` (W4-c45); this working copy is
+/// the same membership sorted for the binary searches, cross-pinned there.
+pub(crate) const REDUCED_NATURAL_CHANCE: &[u16] = &[
     7, 8, 9, 10, 11, 22, 23, 24, 29, 30, 31, 39, 40, 41, 47, 48, 49, 56,
 ];
 
