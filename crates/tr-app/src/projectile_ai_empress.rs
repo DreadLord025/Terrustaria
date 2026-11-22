@@ -76,8 +76,9 @@
 //!   along the rotation, width 8), 923's three-segment beam hitbox
 //!   (`:15642-15668`, 510/660/800 × scale at widths 100/60/10 × 0.7 scale),
 //!   872's oldPos-ring hitbox (`:15675-15694`, every 2nd of 50 entries —
-//!   needs the 120-entry `TrailCacheLength` ring, `ProjectileID.cs:522`,
-//!   vs the port's fixed 10);
+//!   needs the 120-entry `TrailCacheLength` ring, `ProjectileID.cs:522`;
+//!   W4-d16's `trail_len`/`TRAIL_RING_CAP` seam now carries the depth —
+//!   the cap must rise to 120 when this kind rows, `trail_cache_length`);
 //! * the render-side slices stay with the draw work: 872/873's trail rings
 //!   (`TrailingMode` 2, cache 120/60, `ProjectileID.cs:521-522`), the
 //!   `GetAlpha`/`AI_173_GetColor` tints (`:45442-45449`, `:78999-79002`),

@@ -495,7 +495,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         }
         // `PickItemSelectionOverride` (`Player.cs:17410-17432`): the
         // mouse-item arm (`:17412-17416`, slot 58) has no port (the live
-        // slot indexes the 50-grid); the smart-select arm is the override.
+        // slot indexes the 50-grid); the smart-select arm is the override,
+        // then the afk auto-kite arm (`:17421-17428`, W4-d16 residual 8 —
+        // the 3600-tick gate + the holdStyle-0 use-button force).
         // `controlTorch` = the LeftShift auto-select key (`Main.cTorch`).
         let control_torch = app
             .keys
@@ -507,8 +509,19 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         if let Some(p) = app.player.as_mut() {
             p.control_torch = control_torch;
         }
+        // W4-d16 residual 8 — `UpdateEquips`' `RefreshAutoKitingFromItemTypeAndSlot`
+        // scan (`Player.cs:12898`/`:12905`): the C# `ResetEffects` clears
+        // `selectedKite = -1` (`:18432`, `:25491`) AFTER the `:25218`
+        // selection update reads it, so the override sees LAST tick's
+        // `UpdateEquips` pin (`:25633`). The port's `update_with_grapple`
+        // ResetEffects clear runs later in this pass; re-pinning here
+        // (pre-override, against this tick's inventory) gives the gate a
+        // live slot — the one-tick-early deviation is observation-identical
+        // for a stable inventory (the pin only changes when the kite moves
+        // slots, and the C# would catch up the next tick).
+        super::editing::kites::refresh_selected_kite(app);
         let override_slot = if can_change {
-            app.player.as_ref().and_then(|p| {
+            let smart = app.player.as_ref().and_then(|p| {
                 let (sw, sh) = app.screen_size();
                 let mouse = (
                     app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
@@ -525,7 +538,10 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     wet: p.wet,
                 };
                 crate::hotbar::smart_select_lookup(&ctx, control_torch, app.selected)
-            })
+            });
+            // `:17417-17420` — SmartSelectLookup wins; the afk arm is the
+            // else (`:17421`).
+            smart.or_else(|| super::editing::kites::afk_auto_kite_override(app))
         } else {
             None
         };
@@ -559,6 +575,17 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.mine_down = false;
                 }
             }
+        }
+        // W4-d16 residual 8 — `Player.Update`'s afk-counter tail
+        // (`Player.cs:25497-25514`): AFTER the `:25218` selection update
+        // (the override gate read the pre-increment counter) and BEFORE
+        // the movement block — the standing-still read is the PREVIOUS
+        // tick's velocity, exactly the C# order. The counters are not
+        // ResetEffects fields, so the later `update_with_grapple` clear
+        // block does not touch them.
+        {
+            let item_animation = (app.swing * 60.0).round() as i32;
+            super::editing::kites::afk_counter_tick(app, item_animation, control_torch);
         }
     }
 

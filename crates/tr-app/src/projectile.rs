@@ -580,21 +580,34 @@ pub struct Projectile {
     /// AI_026 slice C latches it in `ai026_c_tick`; the other arms keep
     /// the stock ZERO until their movement ports land.
     pub old_position: Vec2,
-    /// `Projectile.oldPos` (`Projectile.cs:388`) — the 10-entry position ring the
+    /// `Projectile.oldPos` (`Projectile.cs:388`) — the position ring the
     /// `TrailingMode` chain shifts once per update call (`:17091-17195`),
     /// newest first (index 0 = this tick's position). M4-PROJ-6b Phase 7's
     /// trail quads walk it (`Main.DrawTrail`'s cheap fallback,
     /// `Main.cs:27886-27905`); an unwritten slot reads `Vec2::ZERO`, the C#'s
-    /// "no entry" marker.
-    pub old_pos: [Vec2; 10],
+    /// "no entry" marker. W4-d16 residual 6: the ring is per-kind — the C#
+    /// field starts `new Vector2[10]` but `SetDefaults` resizes it to
+    /// `ProjectileID.Sets.TrailCacheLength[type]` (`Projectile.cs:718-728`,
+    /// the factory default 10, `ProjectileID.cs:522`); the kites carry
+    /// 60/65/80. The port stores the full depth ([`TRAIL_RING_CAP`]) plus
+    /// [`Self::trail_len`] — the C# array length the walks read (the
+    /// `Array.Resize` stand-in; readers slice `..trail_len`).
+    pub old_pos: [Vec2; TRAIL_RING_CAP],
     /// `Projectile.oldRot` (`:390`) — the rotations the modes 2-5 record beside
     /// the ring positions (the C# orients the strip's width axis by them,
     /// `VertexStrip.cs:151-156`; the quad approximation orients by the segment
     /// direction instead, so the ring's rotations are state only here).
-    pub old_rot: [f32; 10],
+    /// Resized with `oldPos` (`:726`); slice `..trail_len`.
+    pub old_rot: [f32; TRAIL_RING_CAP],
     /// `Projectile.oldSpriteDirection` (`:392`) — the sprite directions the
-    /// modes 2-5 records beside the ring positions.
-    pub old_sprite_direction: [i32; 10],
+    /// modes 2-5 records beside the ring positions. Resized with `oldPos`
+    /// (`:727`); slice `..trail_len`.
+    pub old_sprite_direction: [i32; TRAIL_RING_CAP],
+    /// The live ring depth — the C# `oldPos.Length` after `SetDefaults`'
+    /// resize (`Projectile.cs:718-728`): [`trail_cache_length`] of the kind,
+    /// 10 for every kind the set omits. Set on spawn (`reset_trailing_rings`,
+    /// the `SetDefaults` zeroing `:729-735` included).
+    pub trail_len: usize,
     /// `Kill()`'s captured `num = this.timeLeft` (`Projectile.cs:70649`,
     /// taken BEFORE the `:70650` zeroing) — the 639 MoonlordArrow's death
     /// hook (`:73444-73451`) computes the 640 trail's spawn delay from it.
@@ -848,9 +861,10 @@ impl Default for Projectile {
             frame: 0,
             frame_counter: 0,
             old_position: Vec2::ZERO,
-            old_pos: [Vec2::ZERO; 10],
-            old_rot: [0.0; 10],
-            old_sprite_direction: [0; 10],
+            old_pos: [Vec2::ZERO; TRAIL_RING_CAP],
+            old_rot: [0.0; TRAIL_RING_CAP],
+            old_sprite_direction: [0; TRAIL_RING_CAP],
+            trail_len: 10,
             kill_time_left: 0,
             w: SIZE,
             h: SIZE,
@@ -10538,6 +10552,19 @@ impl Projectile {
         }
     }
 
+    /// `SetDefaults`' history-ring reset (`Projectile.cs:718-735`): the
+    /// per-kind depth (`TrailCacheLength[type]`, the `Array.Resize` at
+    /// `:723-728`) plus the all-zero clear (`:729-735`). The spawn seams
+    /// call it right after the slot write — the C# runs SetDefaults inside
+    /// `NewProjectile` ahead of the argument writes, and none of those
+    /// touch the rings.
+    pub(crate) fn reset_trailing_rings(&mut self) {
+        self.trail_len = trail_cache_length(self.kind).min(TRAIL_RING_CAP);
+        self.old_pos = [Vec2::ZERO; TRAIL_RING_CAP];
+        self.old_rot = [0.0; TRAIL_RING_CAP];
+        self.old_sprite_direction = [0; TRAIL_RING_CAP];
+    }
+
     /// `AI()`'s `TrailingMode` chain (`Projectile.cs:17091-17195`): the history
     /// rings shift **once per update call** — after the AI sub-steps, ahead of
     /// the `timeLeft--` at `:17201` — so a sub-stepped kind records one entry
@@ -10554,12 +10581,15 @@ impl Projectile {
             return;
         }
         // Modes 2-5 record the rotations and the sprite directions beside the
-        // positions; modes 0/1 the positions only.
+        // positions; modes 0/1 the positions only. The C# loops run to
+        // `oldPos.Length` — the slot's per-kind depth (`trail_len`, the
+        // `SetDefaults` resize `:718-728`), not the storage cap.
+        let len = self.trail_len;
         let with_rotations = mode >= 2;
-        shift_ring(&mut self.old_pos);
+        shift_ring(&mut self.old_pos[..len]);
         if with_rotations {
-            shift_ring(&mut self.old_rot);
-            shift_ring(&mut self.old_sprite_direction);
+            shift_ring(&mut self.old_rot[..len]);
+            shift_ring(&mut self.old_sprite_direction[..len]);
         }
         self.old_pos[0] = self.pos;
         if with_rotations {
@@ -10574,7 +10604,7 @@ impl Projectile {
             const PASSES: usize = 1; // `num25` (`:17152`)
             const AMOUNT: f32 = 0.65; // `amount` (`:17151`)
             for _ in 0..PASSES {
-                for i in (1..self.old_pos.len()).rev() {
+                for i in (1..len).rev() {
                     if self.old_pos[i] != Vec2::ZERO {
                         if self.old_pos[i].distance(self.old_pos[i - 1]) > 2.0 {
                             self.old_pos[i] =
@@ -10703,14 +10733,18 @@ impl Projectile {
         screen: Vec2,
         global_time: f32,
     ) {
-        self.draw_with_hand(r, lookups, light, camera, zoom, screen, None, global_time);
+        self.draw_with_hand(r, lookups, light, camera, zoom, screen, None, global_time, 0.0, 0.0);
     }
 
     /// The draw entry the frame calls with the player in scope: the yoyo
     /// family takes the string path (`Main.DrawProjDirect`'s aiStyle-99 arm),
     /// the trail families their quad-ribbon trails, the rest keep the
     /// shuriken stub. `global_time` is the frame's `Main.GlobalTimeWrappedHourly`
-    /// analogue — the Rainbow Rod's trail hue scrolls by it.
+    /// analogue — the Rainbow Rod's trail hue scrolls by it. `wind` is
+    /// `Main.WindForVisuals` and `visual_time` the `Main.timeForVisualEffects`
+    /// tick clock — the kite draw's two scene reads (`Main.cs:28056`,
+    /// `:37455-37467`).
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_with_hand(
         &self,
         r: &mut SpriteRenderer,
@@ -10721,9 +10755,19 @@ impl Projectile {
         screen: Vec2,
         owner_hand: Option<(f32, f32)>,
         global_time: f32,
+        wind: f32,
+        visual_time: f64,
     ) {
         if crate::yoyo_string::is_yoyo_sprite(self.kind) {
             self.draw_yoyo(r, lookups, light, camera, zoom, screen, owner_hand);
+            return;
+        }
+        // W4-d16 — `Main.DrawProjDirect`'s aiStyle-160 arm
+        // (`Main.cs:28054-28058`): `DrawKite` owns the string, the tail
+        // ribbons AND the kite sprite (`:37568`), then returns — the
+        // generic emit never runs for kites.
+        if crate::projectile_ai_kites::KITE_KINDS.contains(&self.kind) {
+            self.draw_kite(r, lookups, light, camera, zoom, screen, owner_hand, wind, visual_time);
             return;
         }
         // `Main.DrawProj`'s per-type switch routes 974 to its own drawer
@@ -10839,6 +10883,192 @@ impl Projectile {
         ) {
             r.push_ui_sprite_blend(q.pos, q.size, q.uv, q.tint, self.rot, q.origin, q.blend);
         }
+    }
+
+    /// W4-d16 — `Main.DrawKite` (`Main.cs:37134-37569`), the aiStyle-160
+    /// arm of `DrawProjDirect` (`:28054-28058`): the FishingLine string
+    /// from the owner's arm to the kite (`kite_string_walk`), the per-kind
+    /// tail ribbons over the history ring (`kite_tail_chains`) and the
+    /// kite sprite itself (`:37568`). The geometry lives in
+    /// `crate::kite_string` (the pure-math half); this is the emission.
+    /// `owner_hand` is the `GetArmPosition() + netOffset` stand-in (the
+    /// yoyo-string precedent — the player centre + gfxOffY); a `None`
+    /// owner draws the sprite alone (the string needs the anchor).
+    #[allow(clippy::too_many_arguments)]
+    fn draw_kite(
+        &self,
+        r: &mut SpriteRenderer,
+        lookups: &assets::Lookups,
+        light: &LightMap,
+        camera: Vec2,
+        zoom: f32,
+        screen: Vec2,
+        owner_hand: Option<(f32, f32)>,
+        wind: f32,
+        visual_time: f64,
+    ) {
+        let Some(p) = crate::kite_string::kite_tail_params(self.kind) else {
+            return;
+        };
+        let Some((kite_uv, frame_w, frame_h)) =
+            lookups.proj_frame(self.kind, self.frame.max(0) as u32)
+        else {
+            return;
+        };
+        let world_light = |x: f32, y: f32| -> [f32; 3] {
+            let tx = (x / TILE_PX) as i32;
+            let ty = (y / TILE_PX) as i32;
+            if light.w > 0 && light.h > 0 {
+                light.get(
+                    tx.clamp(light.x0, light.x0 + light.w - 1),
+                    ty.clamp(light.y0, light.y0 + light.h - 1),
+                )
+            } else {
+                [1.0; 3]
+            }
+        };
+        let (cx, cy) = self.center();
+        let center = Vec2::new(cx, cy);
+        // `GetAlpha(Lighting.GetColor(Center))` (`:37346`) — the kite
+        // kinds carry no per-type arm, so the generic tail
+        // (`Projectile.cs:79744-79757`): RGB × (255−alpha)/255, A − alpha.
+        let lc = world_light(cx, cy);
+        let op = (255 - self.alpha).max(0) as f32 / 255.0;
+        let alpha_c = [lc[0] * op, lc[1] * op, lc[2] * op, op];
+        let dir = self.sprite_direction;
+        let flip = dir != 1; // `:37342` — FlipHorizontally on dir != 1
+        let scale = self.scale.max(0.0) * zoom;
+        let snapped = |x: f32, y: f32| {
+            crate::render::entities::snap_to_screen_pub([x, y], camera, zoom, screen)
+        };
+        let line = lookups.fishing_line;
+        let line_atlas = line.map(|l| (1u32.max(l.width), 1u32.max(l.height)));
+        // The string walk (`:37356-37453`) — the anchor is the arm.
+        let (segs, string_end) = if let (Some(hand), Some(_)) = (owner_hand, line) {
+            crate::kite_string::kite_string_walk(
+                center,
+                Vec2::new(hand.0, hand.1),
+                self.vel,
+            )
+        } else {
+            (Vec::new(), Vec2::new(0.0, 5.0))
+        };
+        if let (Some(line), Some(atlas)) = (line, line_atlas) {
+            let lw = line.width as f32;
+            let lh = line.height as f32;
+            for seg in &segs {
+                // `:37450-37452` — the final segment slices `(int)num24`
+                // rows; the rest take the full sheet. Scale (0.8, 1),
+                // origin (width/2, 2), colour light × 109/255 × shade.
+                let h = if seg.height > 0.0 { seg.height.min(lh) } else { lh };
+                let uv = assets::uv_rect(&line, atlas, 0, 0, line.width, h as u32);
+                let shade = 109.0 / 255.0 * seg.shade;
+                r.push_sprite_origin_rot(
+                    snapped(seg.x, seg.y),
+                    [lw * 0.8 * zoom, h * zoom],
+                    uv,
+                    [lc[0] * shade, lc[1] * shade, lc[2] * shade, shade],
+                    seg.rot,
+                    [lw * 0.5 * 0.8 * zoom, 2.0 * zoom],
+                );
+            }
+        }
+        // The tail ribbons (`:37454-37567`).
+        let (chains, num6) = crate::kite_string::kite_tail_chains(
+            &p,
+            center,
+            Vec2::new(self.w * 0.5, self.h * 0.5),
+            frame_w,
+            self.rot,
+            dir,
+            self.local_ai[0],
+            self.local_ai[1],
+            wind,
+            visual_time,
+            string_end.y,
+            // The C# walks `oldPos[num37]` up to `(num3+1)*num4` — the
+            // per-kind TrailCacheLength depth (`SetDefaults`' resize), so
+            // the slices stop at the slot's live length, not the cap.
+            &self.old_pos[..self.trail_len],
+            &self.old_rot[..self.trail_len],
+            &self.old_sprite_direction[..self.trail_len],
+        );
+        let tail_sheet = lookups.kite_tails.get(&p.extra).copied();
+        let num2 = if p.quarter_turn {
+            if dir == 1 { std::f32::consts::FRAC_PI_2 } else { -std::f32::consts::FRAC_PI_2 }
+        } else {
+            0.0
+        };
+        for list in &chains {
+            // The FishingLine links (`:37535-37548`, flag-gated): pairs
+            // from the far end toward the head, scale (1, len/height).
+            if p.link {
+                if let (Some(line), Some(atlas)) = (line, line_atlas) {
+                    let lw = line.width as f32;
+                    let lh = line.height as f32;
+                    let uv = assets::uv_rect(&line, atlas, 0, 0, line.width, line.height);
+                    for i in (0..list.len() - 1).rev() {
+                        let v = list[i + 1] - list[i];
+                        let len = v.length();
+                        if len < 2.0 {
+                            continue;
+                        }
+                        let sy = len / lh;
+                        let c = 109.0 / 255.0;
+                        r.push_sprite_origin_rot(
+                            snapped(list[i].x, list[i].y),
+                            [lw * zoom, len * zoom],
+                            uv,
+                            [alpha_c[0] * c, alpha_c[1] * c, alpha_c[2] * c, alpha_c[3] * c],
+                            v.to_angle() - std::f32::consts::FRAC_PI_2,
+                            [lw * 0.5 * zoom, 2.0 * sy * zoom],
+                        );
+                    }
+                }
+            }
+            // The tail sprites (`:37549-37566`): the Extra sheet's
+            // horizontal frames, width − 2, walking the column DOWN from
+            // frames−1 and wrapping to num12 (−1 on flag2).
+            let Some(sheet) = tail_sheet else { continue };
+            let atlas = (1u32.max(sheet.width), 1u32.max(sheet.height));
+            let fw = (sheet.width as i32 / p.frames.max(1)).max(1);
+            let tw = (fw - 2).max(1);
+            let th = sheet.height as f32;
+            let mut col = p.frames - 1;
+            for i in (0..list.len() - 1).rev() {
+                let v2 = list[i + 1] - list[i];
+                let uv = assets::uv_rect(
+                    &sheet, atlas, col * fw, 0, tw as u32, sheet.height,
+                );
+                let uv = crate::render::player_layers::flip_uv(uv, flip);
+                r.push_sprite_origin_rot(
+                    snapped(list[i + 1].x, list[i + 1].y),
+                    [tw as f32 * scale, th * scale],
+                    uv,
+                    alpha_c,
+                    v2.to_angle() - std::f32::consts::FRAC_PI_2 + num2,
+                    [tw as f32 * 0.5 * scale, th * 0.5 * scale],
+                );
+                col -= 1;
+                if col < 0 {
+                    col = if p.wrap_minus1 { p.wrap_start - 1 } else { p.wrap_start };
+                }
+            }
+        }
+        // The kite sprite (`:37568`): the frame rect, rotation + num6,
+        // origin (frameSize/2) with X −= 2·dir (`:37355`), scale, flip.
+        let uv = crate::render::player_layers::flip_uv(kite_uv, flip);
+        r.push_sprite_origin_rot(
+            snapped(cx, cy),
+            [frame_w * scale, frame_h * scale],
+            uv,
+            alpha_c,
+            self.rot + num6,
+            [
+                (frame_w * 0.5 - 2.0 * dir as f32) * scale,
+                frame_h * 0.5 * scale,
+            ],
+        );
     }
 
     /// The followup kinds' frame-sliced quad, computed pure so the unit tests
@@ -10985,7 +11215,7 @@ impl Projectile {
             self.w,
             self.h,
             self.local_ai[0],
-            &self.old_pos,
+            &self.old_pos[..self.trail_len],
             global_time,
         )
         .into_iter()
@@ -14368,7 +14598,7 @@ pub(crate) fn opacity_of(alpha: i32) -> f32 {
 
 /// `Projectile.Opacity`'s setter (`Projectile.cs:546-549`): the alpha the
 /// opacity value stands for.
-fn alpha_of(opacity: f32) -> i32 {
+pub(crate) fn alpha_of(opacity: f32) -> i32 {
     ((1.0 - opacity) * 255.0).clamp(0.0, 255.0) as i32
 }
 
@@ -14577,9 +14807,37 @@ pub(crate) fn frame_slice_uv(
     )
 }
 
+/// W4-d16 residual 6 — the port's ring storage depth: the LARGEST
+/// `TrailCacheLength` among the ported kinds (the kites' 80 —
+/// `ProjectileID.cs:522`'s `771/822/823/830/838/845/846/850, 80`). The C#
+/// field is per-instance (`Array.Resize`, `Projectile.cs:723-728`); the port
+/// stores the cap in every slot and walks `..trail_len` (the memory-for-
+/// simplicity trade — a `Box<[Vec2]>` per ring would churn the pool's
+/// `Clone`/`Default` shape). The unported 120/41/51/71 kinds (872/883/887/
+/// 893) keep their own recorded deviations; when they land, raise this cap.
+pub(crate) const TRAIL_RING_CAP: usize = 80;
+
+/// `ProjectileID.Sets.TrailCacheLength` (`ProjectileID.cs:522`) — the ring
+/// depth `SetDefaults` resizes `oldPos/oldRot/oldSpriteDirection` to
+/// (`Projectile.cs:718-728`; the factory default 10). The in-scope slice:
+/// the kites' 60/65/80 census (the `DefaultToKite` 24 kinds —
+/// `766-770, 824, 826, 828, 829, 839, 840, 843, 852, 853 → 60`;
+/// `827, 844 → 65`; `771, 822, 823, 830, 838, 845, 846, 850 → 80`). Every
+/// other ported kind keeps the default 10 (the 640's C# 20 stays its own
+/// recorded deviation — `projectile_ai_moonlord.rs`, S1-D-4's ring).
+pub(crate) fn trail_cache_length(kind: u16) -> usize {
+    match kind {
+        771 | 822 | 823 | 830 | 838 | 845 | 846 | 850 => 80,
+        827 | 844 => 65,
+        k if crate::projectile_ai_kites::KITE_KINDS.contains(&k) => 60,
+        _ => 10,
+    }
+}
+
 /// `Projectile.cs:17093-17096`'s ring shift (and `:17131-17134`'s for the
 /// rotation rings): every entry takes its newer neighbour's value, which frees
-/// index 0 for the current one.
+/// index 0 for the current one. The walk stops at the slot's live depth
+/// (`oldPos.Length` — `trail_len`), never the storage cap.
 fn shift_ring<T: Copy>(ring: &mut [T]) {
     for i in (1..ring.len()).rev() {
         ring[i] = ring[i - 1];
@@ -14612,11 +14870,20 @@ pub(crate) fn trailing_mode(kind: u16) -> i32 {
         | MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL => 0,
         // `:17099`'s mode 1 — the Vortex Ritual's bolt.
         VORTEX_RITUAL_BOLT => 1,
-        // `:17128`'s mode 2 — the gem bolts' family plus the Gradient yoyo and
+        // `:17128`'s mode 2 - the gem bolts' family plus the Gradient yoyo and
         // Betsy's fireball.
         GRADIENT_YOYO | BETSY_FIREBALL | GEM_BOLT_AMETHYST | GEM_BOLT_TOPAZ
         | GEM_BOLT_SAPPHIRE | GEM_BOLT_EMERALD | GEM_BOLT_RUBY | GEM_BOLT_DIAMOND
         | GEM_BOLT_AMBER => 2,
+        // W4-d16 — the kites' mode 2 (`ProjectileID.cs:521`: every
+        // DefaultToKite kind carries 2): `DrawKite`'s tail walk reads
+        // `oldPos`/`oldRot`/`oldSpriteDirection` (`Main.cs:37513-37521`).
+        // The C# `TrailCacheLength` is 60/65/80 (`:522`) — residual 6
+        // CLOSED the ring deviation: `trail_cache_length` resizes the
+        // slot's `trail_len` on every spawn seam and every reader walks
+        // `..trail_len` (`TRAIL_RING_CAP` 80, the 640's C#-20 keeps its
+        // own recorded deviation above).
+        k if crate::projectile_ai_kites::KITE_KINDS.contains(&k) => 2,
         // `:17140`'s mode 3 — the three aimed spells with a trail drawer.
         MAGIC_MISSILE | FLAMELASH | RAINBOW_ROD_BULLET => 3,
         _ => -1,
@@ -15780,6 +16047,29 @@ pub struct ProjectilePool {
     /// the app's wind is wired in through [`ProjectilePool::set_wind`] — no
     /// ported arm's behaviour changes meanwhile.
     wind_speed: f32,
+    /// W4-d16 — the aiStyle-151 SuperStar's on-screen gore gate
+    /// (`Projectile.cs:22152-22153`): `(screen centre, screen size)` in
+    /// world px — `Main.screenPosition + (screenWidth, screenHeight)/2`
+    /// and the size. The world-sim pass feeds it per tick through
+    /// [`ProjectilePool::set_screen_view`] (the `set_wind` setter
+    /// pattern); `None` folds the gate false (the pool-only tests).
+    screen_view: Option<(Vec2, Vec2)>,
+    /// W4-d16 — the paper airplane's (aiStyle 159) and the kite's (160)
+    /// wind/scene reads: `(Main.WindForVisuals, Main.timeForVisualEffects,
+    /// Main.cloudAlpha, Main.GlobalTimeWrappedHourly)`. The world-sim pass
+    /// feeds it per tick through [`ProjectilePool::set_visual_scene`] (the
+    /// `set_wind` setter pattern). Defaults: calm wind, zero clocks — the
+    /// airplane glides straight and the kite hovers (the pool-only tests).
+    /// `wind_for_visuals` is `Main.windSpeedCurrent` (`Main.cs:2823`), NOT
+    /// the wind-physics tail's `wind_speed` (that gate is off, `:16777`).
+    visual_scene: (f32, f64, f32, f32),
+    /// W4-d16 — the kite family's (aiStyle 160) per-tick item-state
+    /// snapshot (`AI_160_Kites`/`KiteLogic`'s `selectedItem.shoot` /
+    /// `itemAnimation` / `controlUseItem` reads). The world-sim pass
+    /// feeds it through [`ProjectilePool::set_kite_context`] (the
+    /// `set_spear_owner` pattern); `None` keeps the kite arm inert (the
+    /// pool-only tests feed it directly).
+    kite_ctx: Option<crate::projectile_ai_kites::KiteContext>,
     /// `Player._blackListedTileCoordsForGrappling` (`Player.cs:6202`) per
     /// owner: the tiles that owner's hooks may not latch on. The C# rebuilds
     /// the set when a hook latches (`Projectile.cs:52772` →
@@ -15898,6 +16188,12 @@ pub struct ProjectilePool {
     /// (`Projectile.cs:71986-71994` → `GiveItemToPlayer`): `(owner, item,
     /// stack)` the world sim resolves into the inventory/drop.
     pending_catches: Vec<(u8, u16, i32)>,
+    /// W4-d16 — the paper airplane's `Kill()` recovery drop
+    /// (`Projectile.cs:76083-76095` → `Item.RequestNewItem`): `(item,
+    /// centre x, centre y)` the world sim resolves into a world item drop
+    /// on the `UpdateItems` stream (the `drain_catches` shape — the pool
+    /// cannot borrow the App's item vec).
+    pending_item_drops: Vec<(u16, f32, f32)>,
     /// S1-P-i55 — the golf family's per-tick context
     /// (`Main.LocalGolfState` + `Main.MouseWorld` + the mouse-right pair +
     /// the player snapshot the aiStyle-150 arm reads). The world-sim pass
@@ -16297,6 +16593,9 @@ impl ProjectilePool {
             hook_reg: [-1; 10],
             hook_grap_count: 0,
             wind_speed: 0.0,
+            screen_view: None,
+            visual_scene: (0.0, 0.0, 0.0, 0.0),
+            kite_ctx: None,
             hook_blacklist: HashMap::new(),
             disco: [255, 0, 0],
             mouse_text_color: 225,
@@ -16317,6 +16616,7 @@ impl ProjectilePool {
             bobber_inputs: None,
             pending_splashes: Vec::new(),
             pending_catches: Vec::new(),
+            pending_item_drops: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
             lazy_npc_owned_search: Vec::new(),
@@ -16386,6 +16686,28 @@ impl ProjectilePool {
     /// (`Projectile.cs:16777-16781`, the port's `Main.windSpeedCurrent`).
     pub fn set_wind(&mut self, wind_speed: f32) {
         self.wind_speed = wind_speed;
+    }
+
+    /// W4-d16 — the aiStyle-151 SuperStar's on-screen gate view
+    /// (`Projectile.cs:22152-22153`): `(screen centre, screen size)` in
+    /// world px. The world-sim pass feeds it before `update`.
+    pub fn set_screen_view(&mut self, view: Option<(Vec2, Vec2)>) {
+        self.screen_view = view;
+    }
+
+    /// W4-d16 — the paper airplane's / kite's wind + scene clocks
+    /// (`Main.WindForVisuals`, `Main.timeForVisualEffects`, `Main.cloudAlpha`,
+    /// `Main.GlobalTimeWrappedHourly`). The world-sim pass feeds it before
+    /// `update` (the `set_screen_view` pattern).
+    pub fn set_visual_scene(&mut self, scene: (f32, f64, f32, f32)) {
+        self.visual_scene = scene;
+    }
+
+    /// W4-d16 — the kite family's per-tick item-state snapshot
+    /// (`AI_160_Kites`/`KiteLogic`'s app-level reads). The world-sim pass
+    /// feeds it before `update` (the `set_spear_owner` pattern).
+    pub fn set_kite_context(&mut self, ctx: Option<crate::projectile_ai_kites::KiteContext>) {
+        self.kite_ctx = ctx;
     }
 
     /// `Main.DiscoR/G/B` as the aiStyle-123 crystal's shard-hue roll sees it
@@ -16461,6 +16783,13 @@ impl ProjectilePool {
     /// hands to the owner's inventory (the `QuickSpawnItem` overflow drop).
     pub fn drain_catches(&mut self) -> Vec<(u8, u16, i32)> {
         std::mem::take(&mut self.pending_catches)
+    }
+
+    /// W4-d16 — the paper airplane's `Kill()` recovery-drop drain
+    /// (`Projectile.cs:76083-76095`): `(item, centre x, centre y)` the world
+    /// sim spawns as a world item drop on the `UpdateItems` stream.
+    pub fn drain_item_drops(&mut self) -> Vec<(u16, f32, f32)> {
+        std::mem::take(&mut self.pending_item_drops)
     }
 
     /// S1-P-i35 — `Player.RemoveAllFishingBobbers` (`Player.cs:33576-33585`):
@@ -16780,6 +17109,7 @@ impl ProjectilePool {
             if let Some(v) = st.ai2 {
                 p.ai[2] = v;
             }
+            p.reset_trailing_rings();
             self.slots[slot] = p;
             let base = slot * 256;
             self.local_immunity[base..base + 256].fill(0);
@@ -17089,6 +17419,8 @@ impl ProjectilePool {
             crit,
             ..Default::default()
         };
+        // `SetDefaults`' ring resize + zero (`:718-735`).
+        self.slots[slot].reset_trailing_rings();
         // A spawned slot starts with clean local immunity.
         let base = slot * 256;
         self.local_immunity[base..base + 256].fill(0);
@@ -17277,6 +17609,8 @@ impl ProjectilePool {
             detonated: false,
             ..Default::default()
         };
+        // `SetDefaults`' ring resize + zero (`:718-735`).
+        self.slots[slot].reset_trailing_rings();
         let base = slot * 256;
         self.local_immunity[base..base + 256].fill(0);
         Some(slot)
@@ -17521,6 +17855,9 @@ impl ProjectilePool {
             bonus_crit_chance: 0,
             ..Default::default()
         };
+        // `SetDefaults`' ring resize + zero (`:718-735`) — the kites' 60/65/80
+        // depths land here (W4-d16 residual 6).
+        self.slots[slot].reset_trailing_rings();
         let base = slot * 256;
         self.local_immunity[base..base + 256].fill(0);
         // `NewProjectile`'s tail (`Projectile.cs:11094`): `FinalizeProjectile`
@@ -19072,6 +19409,110 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d16 — aiStyle 151, the Super Star Cannon's
+                        // star (`AI_151_SuperStar` `:22138-22168`): the
+                        // alpha ramp, the Item9 cue re-arm, the spin, the
+                        // on-screen gore gate + the two dust gates. The
+                        // row keeps tileCollide true (`:7665`) — the
+                        // kill_step probe is HandleMovement's default arm.
+                        151 => {
+                            crate::projectile_ai_misc::ai_super_star(
+                                &mut self.slots[i],
+                                rng,
+                                self.screen_view,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d16 — aiStyle 152, the four slashes
+                        // (`AI_152_SuperStarSlash` `:22230-22351`): the
+                        // 729 cannon slash, the Zenith's 977/976, the
+                        // Moon Lord whip's 1045. The arm pins
+                        // tileCollide false (`:22350`) — the kill_step
+                        // is the free integrate.
+                        152 => {
+                            crate::projectile_ai_misc::ai_super_star_slash(
+                                &mut self.slots[i],
+                                world,
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d16 — aiStyle 153, the toilet's pop
+                        // (`AI_153_ToiletPop` `:52198-52236`): the
+                        // first-tick 6-dust/1-gore burst, the 1-in-5 gore
+                        // ticks, the past-10 kill. The row keeps
+                        // tileCollide false — the free integrate.
+                        153 => {
+                            crate::projectile_ai_misc::ai_toilet_pop(
+                                &mut self.slots[i],
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d16 — aiStyle 154, the Void Lens
+                        // (`AI_154_VoidLens` `:52154-52196`): the
+                        // owner-gated same-type dedupe scans the LIVE
+                        // pool (`:52157-52176` — the C# reads
+                        // `Main.projectile` while killing), so the scan
+                        // is pool-side here (the dragon_step shape); the
+                        // post-dedupe body lives in the misc module.
+                        // `HadAnActiveInteractableProjectile` (`:52156`)
+                        // is a frame flag with no port consumer — skipped.
+                        154 => {
+                            let mut survived = true;
+                            if self.slots[i].owner == local_owner {
+                                for j in 0..MAX_PROJECTILES {
+                                    if j == i {
+                                        continue;
+                                    }
+                                    let other = &self.slots[j];
+                                    if other.active
+                                        && other.owner == self.slots[i].owner
+                                        && other.kind == self.slots[i].kind
+                                    {
+                                        if self.slots[i].time_left < other.time_left {
+                                            self.slots[i].kill();
+                                            survived = false;
+                                            break;
+                                        }
+                                        self.slots[j].kill();
+                                    }
+                                }
+                            }
+                            if survived {
+                                crate::projectile_ai_misc::ai_void_lens(
+                                    &mut self.slots[i],
+                                    rng,
+                                );
+                            }
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d16 — aiStyle 155, the Mystic Snake's rope
+                        // coil (`AI_155_MysticSnakeCoil` `:51939-52112`):
+                        // the rise machine + the owner-gated PlaceTile-504
+                        // column + the attached conversion/death walks.
+                        // The tile writes reborrow `world` mutably (the
+                        // ai_ice_block carve-out). The owner centre rides
+                        // the dispatch's `owner` snapshot; the resolved
+                        // player's presence is `active`.
+                        155 => {
+                            let owner_center = owner.map(|(x, y)| Vec2::new(x, y));
+                            let owner_active = player.is_some();
+                            crate::projectile_ai_misc::ai_mystic_snake_coil(
+                                &mut self.slots[i],
+                                world,
+                                owner_center,
+                                owner_active,
+                                local_owner,
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
                         // S1-P-i56 — `AI()`'s `else if (this.aiStyle == 120)`
                         // (`Projectile.cs:34888-34891`) ->
                         // `AI_120_StardustGuardian` (`:44634-44963`): the
@@ -19347,6 +19788,59 @@ impl ProjectilePool {
                         // (`:51358-51477`): the opacity ramp, the scale and
                         // the 20-tick life.
                         157 => self.slots[i].ai_sharp_tears(world, rng),
+                        // W4-d16 — aiStyle 159, the paper airplanes
+                        // (`AI_159_PaperAirplanes` `:48695-48755`): the
+                        // wind glider. The wet probe is the tick-head
+                        // centre-cell stand-in (the i16 bomb precedent —
+                        // the C# wet block runs post-AI, the one-tick lag
+                        // is the bobber convention); the row keeps
+                        // tileCollide true (`:775` stock) — the kill_step
+                        // is the blocked-move default (die on contact).
+                        159 => {
+                            let p = &self.slots[i];
+                            let wet = world
+                                .tile(
+                                    ((p.pos.x + p.w * 0.5) / 16.0) as i32,
+                                    ((p.pos.y + p.h * 0.5) / 16.0) as i32,
+                                )
+                                .is_some_and(|t| t.liquid > 0);
+                            self.slots[i].wet = wet;
+                            let (wind, visual_time, _, _) = self.visual_scene;
+                            crate::projectile_ai_misc::ai_paper_airplanes(
+                                &mut self.slots[i],
+                                rng,
+                                wind,
+                                visual_time,
+                                local_owner,
+                                old_velocity.x,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d16 — aiStyle 160, the kites
+                        // (`AI_160_Kites` `:48421-48464` + `KiteLogic`
+                        // `:48466-48693`): the 24 DefaultToKite kinds'
+                        // wind hover + anchor reel. The arm owns its
+                        // movement (the flail precedent — the blocked
+                        // chain excludes 160, `:18398`, so kites slide).
+                        // `sub_steps - 2 - sub` is the C# `numUpdates`
+                        // (the ai001_c precedent); the item-state
+                        // snapshot rides `kite_ctx` (the spear pattern).
+                        160 => {
+                            if let Some(ctx) = self.kite_ctx {
+                                crate::projectile_ai_kites::kite_step(
+                                    &mut self.slots[i],
+                                    world,
+                                    player.as_deref_mut(),
+                                    &ctx,
+                                    self.visual_scene,
+                                    rng,
+                                    local_owner,
+                                    sub_steps as i32 - 2 - sub as i32,
+                                    i as i32,
+                                );
+                            }
+                        }
                         // The aiStyle-2 thrown family
                         // (`Projectile.cs:23205-23689`): the wind head, the
                         // per-kind gravity ladder and the fall clamp. The
@@ -22031,6 +22525,16 @@ impl ProjectilePool {
                                 rng,
                             );
                             if alive {
+                                // `:53685` — the live bobber zeroes the
+                                // owner's kiting afk counter every tick
+                                // (W4-d16 residual 8; the kill gates above
+                                // returned already, the C# reset sits
+                                // behind them).
+                                if self.slots[i].owner == local_owner {
+                                    if let Some(pl) = player.as_deref_mut() {
+                                        pl.afk_counter_for_kiting = 0;
+                                    }
+                                }
                                 // `HandleMovement`'s default integrate
                                 // (`Projectile.cs:19851`): the bobber's
                                 // tileCollide is true in the cast state, false
@@ -22541,6 +23045,22 @@ impl ProjectilePool {
                             0.0,
                             blast.ai1,
                         );
+                    }
+                }
+                // W4-d16 — `Kill()`'s paper-airplane arm
+                // (`Projectile.cs:76083-76095`): the Item10 cue + the
+                // owner-gated `!noDropItem` recovery drop (761 → 4343,
+                // 762 → 4344) at the centre. The cue rides the pool's
+                // sound queue directly (the dead slot's `wants_sound`
+                // never drains — the death-hook convention); the drop
+                // rides `pending_item_drops` (the `drain_catches` shape).
+                if matches!(self.slots[i].kind, PAPER_AIRPLANE_A | PAPER_AIRPLANE_B) {
+                    let p = &self.slots[i];
+                    self.pending_proj_sounds.push((2, 10, p.pos.x, p.pos.y, 0.0));
+                    if p.owner == local_owner && !p.no_drop_item {
+                        let item = if p.kind == PAPER_AIRPLANE_B { 4344 } else { 4343 };
+                        let (cx, cy) = p.center();
+                        self.pending_item_drops.push((item, cx, cy));
                     }
                 }
                 // The dead slot's parked cue (the card's Item8) — the
@@ -33740,9 +34260,10 @@ mod phasmal_projectile_tests {
             trap: false,
             bounces: 0,
             blast_spawned: false,
-            old_pos: [Vec2::ZERO; 10],
-            old_rot: [0.0; 10],
-            old_sprite_direction: [0; 10],
+            old_pos: [Vec2::ZERO; TRAIL_RING_CAP],
+            old_rot: [0.0; TRAIL_RING_CAP],
+            old_sprite_direction: [0; TRAIL_RING_CAP],
+            trail_len: 10,
             kill_time_left: 0,
             should_fall_through: false,
             step_speed: 1.0,
@@ -34209,9 +34730,10 @@ mod ritual_projectile_tests {
             trap: false,
             bounces: 0,
             blast_spawned: false,
-            old_pos: [Vec2::ZERO; 10],
-            old_rot: [0.0; 10],
-            old_sprite_direction: [0; 10],
+            old_pos: [Vec2::ZERO; TRAIL_RING_CAP],
+            old_rot: [0.0; TRAIL_RING_CAP],
+            old_sprite_direction: [0; TRAIL_RING_CAP],
+            trail_len: 10,
             kill_time_left: 0,
             should_fall_through: false,
             step_speed: 1.0,
@@ -38902,6 +39424,47 @@ mod magic_ai_tests {
         // the set omits reads the −1 factory default.
         assert_eq!(trailing_mode(1120), -1, "the unported kind defaults");
         assert_eq!(trailing_mode(WOODEN_ARROW), -1, "the arrows have no history");
+    }
+
+    /// W4-d16 residual 6 — `SetDefaults`' ring resize (`Projectile.cs:718-728`,
+    /// `ProjectileID.Sets.TrailCacheLength` `ProjectileID.cs:522`): a spawned
+    /// kite carries its per-kind depth (60/65/80), the shift chain walks it,
+    /// and the entries past the old fixed 10 fill with real history. The
+    /// non-kite kinds keep the factory default 10. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d16_the_kite_rings_resize_to_the_trail_cache_length() {
+        let mut pool = ProjectilePool::new();
+        for (kind, want) in [(766u16, 60usize), (827, 65), (771, 80), (850, 80), (852, 60)] {
+            let slot = pool
+                .spawn_with_data_ai(kind, 100.0, 100.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+                .expect("the kite row");
+            let p = &pool.slots()[slot];
+            assert_eq!(p.trail_len, want, "kind {kind}'s TrailCacheLength");
+            assert_eq!(p.old_pos[0], Vec2::ZERO, "the SetDefaults zero (`:729-735`)");
+            assert_eq!(trailing_mode(kind), 2, "the kites' mode 2");
+        }
+        // The default-10 kinds keep the stock depth.
+        let gem = pool
+            .spawn_with_data(GEM_BOLT_AMETHYST, 100.0, 100.0, 4.0, 0.0, 20, 0.0)
+            .unwrap();
+        assert_eq!(pool.slots()[gem].trail_len, 10);
+        // Drive a colour kite 12 ticks: the mode-2 chain fills entries past
+        // the old 10-entry depth (the tail walk reads them, `Main.cs:37513`).
+        let kite = pool
+            .spawn_with_data_ai(766, 100.0, 100.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        for t in 0..12 {
+            let p = &mut pool.slots_mut()[kite];
+            p.pos = Vec2::new(100.0 + t as f32, 100.0);
+            p.shift_trailing_history();
+        }
+        let p = &pool.slots()[kite];
+        for i in 0..12 {
+            assert_ne!(p.old_pos[i], Vec2::ZERO, "entry {i} fills");
+        }
+        assert_eq!(p.old_pos[12], Vec2::ZERO, "the unwritten entry stays zero");
+        // The 60-deep shift never touches the storage past trail_len.
+        assert_eq!(p.old_pos[60], Vec2::ZERO);
     }
 
     #[test]

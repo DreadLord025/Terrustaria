@@ -40129,3 +40129,207 @@ in projectile.rs, `w4_d15_the_d16_afk_keep_one_pins` in player.rs) —
 at the death hook and the afk tick block. The band is DECLARED
 COMPLETE (code-only); the recorded remainders are other lanes'
 documented folds, not band gaps (the full list in research/249 §5).
+## W4-d16 kite residuals (the 151-160 lane's follow-up)
+
+The aiStyle-160 kite machine landed with the pool seams; the residuals close
+the item-use path, the draw and the census pins.
+
+- **The kite use-path** (`world_sim/editing/kites.rs`): the 24 `IsAKite`
+  item ids (`ID/ItemID.cs:411` — the SAME set as `PlaceTileOnAltUse`
+  `:412` and `HasAProjectileThatHasAUsabilityCheck`) launch on the LMB
+  press edge through `ItemCheck_Shoot`'s generic tail
+  (`Player.cs:49437` — the kite kinds carry no per-item arm): the spawn is
+  `RotatedRelativePoint(MountedCenter)` (`:47196`), the aim normalized
+  to `shootSpeed` 8, damage −1 (the marker rows). The RMB arms the
+  PARAMETERLESS `StartChanneling()` (`:43537-43541` → `:52952-52956` —
+  no cancel key; the item's `channel` flag stays false,
+  `Item.DefaultToKite` `Item.cs:47828-47838` →
+  `DefaultToThrownWeapon(projId, 15, 8f)`). The channel release reads
+  `controlUseTile` for kites (`ItemCheck`'s flag5 override
+  `:42792-42794`), NOT `controlUseItem` — the hoisted i23 head clear and
+  the aim-refresh else-if both exempt the kite latch. `CheckUsability`
+  (`Projectile.cs:53466-53472`) refuses EVERY new use while ANY same-owner
+  kite lives (the pulley gate `:52059-52062` refuses too); the RMB anchor
+  placement (`createTile` 723) rides the generic tile route when no kite
+  is out. The windy-day achievement (`Player.cs:49458-49461` →
+  `AchievementsHelper.cs:319-321`) fires on the spawn tick.
+  - Skips: the per-slot `holdStyle` mutation has no port item-instance
+    field — `kite_hold_out` derives the flag per tick from the pool (the
+    fishing-bobber hack's shape, `:52844-52856`); the hack's `ChangeDir`
+    is render-side (the `kite_step` facing write stands).
+    `TryInterruptingItemUsage` (`Player.cs:24162-24245`) +
+    `Projectile.Interrupt` (`:22179-22188`) have NO caller in the
+    decompiled tree (census) — the hotbar-switch kill rides the AI's
+    held-shoot mismatch gate (`:48431`) instead.
+- **The afk auto-kite LANDED (residual 8)** — the hotbar.rs:67 afkCounter
+  skip is closed: `Player.afk_counter`/`afk_counter_for_kiting`
+  (`Player.cs:991-992`) + `selected_kite` (`:1464`, the ResetEffects −1
+  clear `:18432`). The counter tail (`:25497-25514`:
+  `IsConsideredStandingStill` `:3323-3333` — both |v| < 0.05 — +
+  `itemAnimation == 0 || IsAKite[HeldItem]` + the six !control gates;
+  the mouse-item / sitting / sleeping kiting-only zeros) runs in
+  `update_player` AFTER the `:25218` selection update and BEFORE the
+  movement tick (the C# reads the previous tick's velocity). The
+  `selectedKite` scan (`RefreshAutoKitingFromItemTypeAndSlot`
+  `:12843-12849` — held first `:12898`, then the 0..57 walk `:12905`;
+  the port's 50-grid, coins/ammo never kites) re-pins per tick. The
+  override (`PickItemSelectionOverride` `:17421-17428`): past
+  `AFKTimeNeededForAutoKiting` = 3600 (`:57104`) with a pinned slot and
+  no `noItems`, the selection switches to the kite slot and — while
+  `holdStyle == 0` (the pool-derived `kite_hold_out`) — forces
+  `controlUseItem = releaseUseItem = true` (the `mine_down` +
+  released-edge pair). SmartSelectLookup keeps priority (`:17417`);
+  the mouse-item slot-58 arm (`:17412-17416`) stays unported. The
+  resets: `Select` (`:515-516`, the three request sites), the
+  fully-reeled kite kill (`Projectile.cs:48597-48598`, BOTH counters),
+  the live bobber tick (`:53685`, kiting only). Skips:
+  `isOperatingAnotherEntity`/`spectating` (no port fields — the
+  single-player defaults pass), petting (no port field), the
+  `HandleSpectatingControls` clamp (`:17087`, spectating unported),
+  the plain counter's worm-spawn consumer (`AFKTimeNeededForNoWormSpawns`
+  = 300 — the field rides for the resets).
+- **The kite string DRAW** (`kite_string.rs` + `Projectile::draw_kite`):
+  `Main.DrawKite` (`Main.cs:37134-37569`), the `DrawProjDirect`
+  aiStyle-160 arm (`:28054-28058`). The pure geometry (the per-kind tail
+  parameter table `:37161-37341`, the 12-px FishingLine string walk with
+  the velocity-swap sag `:37356-37453`, the tail ribbon chains
+  `:37454-37534`) lives in `kite_string.rs` (the yoyo_string precedent);
+  the emission draws the string, the flag-gated tail links, the Extra-sheet
+  tail frames (103/104/132-148, packed in `assets.rs`) and the kite sprite
+  (`:37568`, the generic `GetAlpha` tail `Projectile.cs:79744-79757`).
+  The kites' mode-2 trailing (`ProjectileID.cs:521`) is wired so the tail
+  walk reads `oldPos`/`oldRot`/`oldSpriteDirection`.
+  - CLOSED (residual 6): the C# `TrailCacheLength` is 60/65/80 per kite
+    (`ProjectileID.cs:522`) — `SetDefaults` RESIZES `oldPos/oldRot/
+    oldSpriteDirection` to it (`Projectile.cs:718-728`; the field's
+    `new Vector2[10]` at `:388` is only the pre-resize default). The port
+    now carries the per-kind depth: `Projectile::trail_len` +
+    `trail_cache_length(kind)` (projectile.rs), storage cap 80
+    (`TRAIL_RING_CAP` — the largest ported length; the unported 120/41/
+    51/71 kinds keep their own deviations), `reset_trailing_rings` on
+    every spawn seam (the `:729-735` zero included), the shift chain and
+    every reader (`draw_kite`'s tail slices, `trail_quads`, the 640's
+    at-rest scan) walk `..trail_len`. The old fixed-10 deviation is gone
+    for the kites; the 640's C#-20 ring stays its own recorded deviation
+    (`projectile_ai_moonlord.rs`). Unwritten entries still read zero (the
+    first-frames collapse, exactly like the C#). The `num18` wind-remap's
+    first two assignments (`:37157-37158`) are dead stores — the final
+    `Remap(localAI[0], 0, 300, 0, 1)` is the live value; the no-tail five's
+    `num6` spin (`:37331`) is zeroed on the next line — both fold to
+    their final values.
+- **The kite WIND interplay verified (residual 7)**: the aiStyle census
+  pins 155 = the mystic snake coil, 156 = the Bat of Light
+  (`AI_156_BatOfLight`, `Projectile.cs:51516`), the KITES = 160 (the
+  dispatch `:36603-36606`). The generic wind-physics tail
+  (`ShouldUseWindPhysics`, `:22101-22136`) never serves aiStyle 160 (its
+  case list stops at 106) AND `Main.windPhysics` is false for the whole
+  1.4.5.8 tree (`Main.cs:66841`, no `= true` write) — the kite's ONLY
+  wind is `KiteLogic`'s `WindForVisuals` hover (`:48520-48565`: the
+  300-cap counter, the num7 = GetLerpValue(0.2, 0.5, |wind|)·0.5 lift vs
+  the 0.02 + num7·0.25 gravity, the storm squash, the ±2 clamp), fed by
+  the `visual_scene` seam (`wind.speed_current` = `Main.WindForVisuals`
+  `Main.cs:2823`). The windy-day achievement's flag
+  (`Main.IsItAHappyWindyDay` = `_shouldUseWindyDayMusic`, `Main.cs:2903`)
+  rides `Wind::update_windy_day_state` (`Main.cs:12990-13027`).
+  - FIX: `in_a_place_with_wind`'s out-of-world arm — the C# `InWorld`
+    guard (`WorldGen.cs:86868`) SKIPS outside cells; the port's old
+    refuse-on-`None` folded every edge-of-map kite calm. Now `continue`
+    (the liquid/wall refusals unchanged, `WallID.Sets.AllowsWind`
+    `WallID.cs:95` = `tr_core::wind::wall_allows_wind`).
+- **The 723 kite-anchor place/kill chain LANDED (residual 9)**: the
+  `TileObjectData` row EXISTS (`TileObjectData.cs:4488-4517` — the 1x1
+  Style1x1 base, the bottom solid anchor 43 + the four top/left/right/
+  wall alternates, `HookPostPlaceMyPlayer = TEKiteAnchor.
+  Hook_AfterPlacement`, DrawYOffset 2; the generated `D_723` row
+  matches). The PLACE hook (`Player.cs:40144`
+  `CallPostPlacementPlayerHook` → `TileObjectData.cs:5269-5283` →
+  `TEKiteAnchor.cs:41-44` → `TELeashedEntityAnchorWithItem.cs:49-67` →
+  `TELeashedEntityAnchor.cs:19-28` → `TileEntity.Place`,
+  `DataStructures/TileEntity.cs:99-108`): the app's `place_tile` seam
+  calls `kites::kite_anchor_place_hook` after a successful 723 place —
+  `TileEntities::place` (the ValidTile kind-723 + position-free gates)
+  creates the entity, `InsertItem` stores the held kite type
+  (`TeData::Anchor`). The held kind is captured BEFORE the consumption
+  (the C# `num2` capture `:53` — the slot may turn to air). The hook's
+  `--stack` (`:54-57`) is the TileObject route's ONLY decrement
+  (`TileObject.Place` never touches the stack); the port's
+  `place_item_and_consume` generic decrement stands in for it (one
+  drain, same net effect — the hook does not consume again). The KILL
+  chain (`WorldGen.cs:63691-63694` `DropItemForTileBreak` +
+  `:63873-63876` `TEKiteAnchor.Kill`): `edit::kill_tile`'s
+  `anchor_teardown` removes the entity (`TileEntity.Kill`'s position +
+  type match, `TileEntity.cs:110-116`) and drops the stored item
+  (`TELeashedEntityAnchorWithItem.cs:20-30`, `itemType > 0` only) through
+  `object_drops` → `break_drop_events` → `spawn_item_drop`. The drop is
+  `!fail`-gated ONLY (the `noItem` gate `:63860` covers
+  `KillTile_DropItems`, not this arm). Skips: the leashed-kite visual
+  (`RespawnLeashedEntity`/`DespawnLeashedEntity` → `LeashedKite`,
+  M7-TE-2 — the entity + stored item stand), the `CheckAnchor` reorient
+  (`WorldGen.cs:53827-53885`, the framing pass's anchor support walk),
+  the netMode-1 `SendData(156/87)` arms (single-player).
+- **The 155 rope seams are LIVE**: the dispatch passes `&mut World`
+  straight into `ai_mystic_snake_coil` (the ai_ice_block carve-out);
+  `place_tile`/`kill_tile` bump `world.revision` (the `WorldFrameKey`
+  input, draw.rs's `world_revision`) so the frame cache invalidates. The
+  dispatch-level drain witness pins the attach column + the death removal.
+- **The 159 recovery-drop rows**: 4343/4344 match `Item.cs:37117-37129`
+  (22x16, sellPrice 5000, `DefaultToThrownWeapon(761/762, 17, 5f)` +
+  `SetWeaponValues(4, 2f)`); the Kill-arm gates (the foreign-owner and
+  `noDropItem` refusals, `Projectile.cs:76086`) are pinned.
+- **The 161 shortsword census** (the g4 G4 finding): `DefaultToShortsword`
+  (`Projectile.cs:10773-10787` — 18x18, aiStyle 161, friendly, pen −1,
+  tileCollide false, scale 1, ownerHitCheck, melee, extraUpdates 1,
+  drawLayer 7, usesOwnerLight) covers exactly ELEVEN kinds through four
+  call sites: the Gladius 802 (`:7923`), the Ruler 842 (`:8147`), the
+  eight ore shortswords 938-945 (`:8919`, + timeLeft 360) and the
+  Chlorophyte Saber 1127 (`:10561`, + the local-immunity pair). The
+  dispatch is `AI_161_RapierStabs` (`:36607-36610` → `:47612-47665`);
+  NO other `aiStyle = 161` write exists. The port rows are UNROWED — the
+  161-170 AI lane is d17's read claim; the census witness
+  (`projectile/data.rs`) pins the helper shape for the rowing pass.
+
+- **The 728/729 death cues COMPOSE with d77** (the SEAL round): the
+  `Kill()` arms' Item10 plays (`Projectile.cs:75127`/`:75151`, both at
+  `base.position` ahead of the dust bodies — the 728's 7-dust + two
+  NextFloat star rings + the screen-gated 7-gore fan `:75128-75147` are
+  the g65/g16 lanes', the 729's 10-dust `:75152-75157` likewise) are
+  ARMED on the d77 lane's `kill_tail_cue` map (`0573b70f2`:
+  `728 | 729 => Some((2, 10, pos.x, pos.y, 1.0))`, its fifth field
+  volumeScale — the d77 queue's shape). d16's half of the compose is the
+  ROWS + the aiStyle-151/152 dispatch arms (the map is kind-keyed, the
+  row only gates the spawn — d77's own witness comment); the
+  paper-airplane 761/762 cue stays d16-SELF-ARMED (the death-hook block,
+  `projectile.rs` — d77's keep-one list names them). DO NOT add a second
+  728/729 arm at the merge: one play per death (the d77 supersedes-f1
+  precedent, `research/26f-d78-final-kill-dedupe.md`'s family).
+- **The wind-guard fix covers BOTH copies** (the SEAL round): the shared
+  `tr_core::wind::Wind::in_a_place_with_wind` (`wind.rs`, the
+  `drawdata_cases_b`/`player.rs`/`render/tiles.rs` consumers) carried the
+  same refuse-on-`None` bug — now `continue` on the out-of-world cell
+  (the C# `InWorld` skip, `WorldGen.cs:86868`), the in-world liquid/wall
+  refusals unchanged; the skip-arm witness pins the border-straddling
+  region, the height gate, both refusals, the AllowsWind 150 pass and
+  the fully-outside region.
+- **The afk-counter seam comment corrected** (the SEAL round): the
+  `afk_counter_tick` doc said "AFTER the movement tick" — the seam
+  (`world_sim/player.rs:573-583`) runs it AFTER the `:25218` selection
+  update and BEFORE the movement block (the previous tick's velocity,
+  the C# order); the doc now matches the seam.
+
+### Verification (W4-d16 residuals)
+
+Code-only: every port re-read against the cited C# windows; the seam call
+sites checked against the actual signatures by read/grep (`registry::get`,
+`Player::mounted_center/rotated_relative_point/weapon_knockback`,
+`ProjectilePool::spawn_with_data_ai_owned/slots_mut`,
+`assets::Lookups::proj_frame/uv_rect`, `tr_core::edit::place_tile/kill_tile`,
+`world.revision`). The witness tests (projectile_ai_kites.rs 10 +
+kite_string.rs 6 + world_sim/editing/kites.rs 13 + projectile_ai_misc.rs
+37 + projectile/data.rs 1 + projectile.rs 1 + tr-core wind.rs 1 = 69) are
+WRITTEN, NOT RUN — no cargo/rustc/rustfmt/tests/graphify invoked. The SEAL
+round's record + the merge contracts live in
+`docs/research/326-d16-research-final.md` + `327-kite-family-bible.md`
+(renumbered 246→326 / 247→327 per the 150 registry §9.2: 246=e23's
+published reservation, 247=d10's reservation EXECUTED — the original
+382-tip scan's "max taken 245" self-pick was superseded).
+

@@ -488,6 +488,24 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // sprite (`TextureAssets.Extra[66]`, `Main.cs:34025`) — the draw
         // arm behind the pet's generic sprite (`:34026`).
         "Extra_66",
+        // W4-d16 — the kite tail sheets (`Main.DrawKite`, `Main.cs:37137`/
+        // `:37164-37329`): the stock `Extra[103]` plus the per-kind arms
+        // (104 wyvern, 132/133/135-140/144-148).
+        "Extra_103",
+        "Extra_104",
+        "Extra_132",
+        "Extra_133",
+        "Extra_135",
+        "Extra_136",
+        "Extra_137",
+        "Extra_138",
+        "Extra_139",
+        "Extra_140",
+        "Extra_144",
+        "Extra_145",
+        "Extra_146",
+        "Extra_147",
+        "Extra_148",
         // S1-G-1 wave D: the pylon crystal (`TextureAssets.Extra[181]`,
         // `TileDrawing.cs:8656`), the master-trophy relic (`Extra[198]`,
         // `:8612`) and the void lens's selection mask (`Extra[93]`,
@@ -1998,6 +2016,10 @@ pub struct Lookups {
     /// `TextureAssets.Extra[66]`: the 650 tentacle pet's spelunker-pointer
     /// sprite (`Main.cs:34025`) — W4-d13's draw arm consumes it.
     pub extra_66: Option<tr_render::SheetRect>,
+    /// W4-d16 — the kite tail sheets (`TextureAssets.Extra[id]`,
+    /// `Main.DrawKite` `Main.cs:37137`/`:37164-37329`), keyed by the Extra
+    /// id (103/104/132/133/135-140/144-148).
+    pub kite_tails: HashMap<u16, tr_render::SheetRect>,
     /// `TextureAssets.FlameRing`: the inferno halo (`Main.cs:64321`), 400×1200
     /// (3 rings of 400×400) — the draw is gated on `Player.inferno`.
     pub flame_ring: Option<tr_render::SheetRect>,
@@ -2417,6 +2439,10 @@ impl Lookups {
             extra_49: atlas.sheet("Extra_49").copied(),
             extra_98: atlas.sheet("Extra_98").copied(),
             extra_66: atlas.sheet("Extra_66").copied(),
+            kite_tails: [103u16, 104, 132, 133, 135, 136, 137, 138, 139, 140, 144, 145, 146, 147, 148]
+                .iter()
+                .filter_map(|&id| atlas.sheet(&format!("Extra_{id}")).map(|r| (id, *r)))
+                .collect(),
             flame_ring: atlas.sheet("FlameRing").copied(),
             moon_explosion: MOON_EXPLOSION_SHEETS.map(|name| atlas.sheet(name).copied()),
             ui_heart: atlas.sheet("Heart").copied(),

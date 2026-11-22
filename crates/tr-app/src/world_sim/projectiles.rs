@@ -384,6 +384,48 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         mouse_right: app.place_down,
         mouse_right_release: !app.place_prev_down,
     }));
+    // W4-d16 — the aiStyle-151 SuperStar's on-screen gore gate
+    // (`Projectile.cs:22152-22153`): the screen rect in world px. The
+    // port's camera IS the screen centre (`Main.screenPosition +
+    // (screenWidth, screenHeight)/2` at zoom 1); the world-space size
+    // divides the pixel size by the zoom (the golf mouse-world conversion).
+    let screen_view = Some((
+        Vec2::new(app.camera.x, app.camera.y),
+        Vec2::new(sw / app.zoom, sh / app.zoom),
+    ));
+    app.projectiles.set_screen_view(screen_view);
+    // W4-d16 — the paper airplane's / kite's wind + scene clocks
+    // (`Main.WindForVisuals` = `windSpeedCurrent` `Main.cs:2823`,
+    // `Main.timeForVisualEffects` = the draw-frame clock ticks
+    // (`anim_time * 60 % 216000`, the frame feed's form),
+    // `Main.cloudAlpha` = the rain's visible intensity,
+    // `Main.GlobalTimeWrappedHourly` = `anim_time % 3600`).
+    app.projectiles.set_visual_scene((
+        app.wind.speed_current,
+        (app.anim_time as f64 * 60.0) % 216000.0,
+        app.rain.visual_alpha(),
+        app.anim_time % 3600.0,
+    ));
+    // W4-d16 — the kite family's item-state snapshot (`AI_160_Kites`'s
+    // `inventory[selectedItem].shoot` gate `Projectile.cs:48431` +
+    // `KiteLogic`'s `controlUseItem && itemAnimation == 0` reel-out gate
+    // `:48485`). The swing timer derives the tick count (the spear
+    // `ticks_of` convention); the use button is the raw `mine_down`
+    // (the flail `control_use_item` precedent).
+    let kite_ctx = app.player.as_ref().map(|_| {
+        let held = app.inventory[app.selected];
+        let selected_shoot = if held.count > 0 {
+            crate::registry::projectile(held.kind).unwrap_or(0)
+        } else {
+            0
+        };
+        crate::projectile_ai_kites::KiteContext {
+            selected_shoot,
+            item_animation: (app.swing * 60.0).round() as i32,
+            control_use_item: app.mine_down,
+        }
+    });
+    app.projectiles.set_kite_context(kite_ctx);
     // S1-P-i55 — the golf context (`Main.LocalGolfState` + `Main.MouseWorld`
     // + the mouse-right pair + the player snapshot). The C# reads the live
     // state mid-walk; the port clones it into the pool for the tick and
@@ -816,6 +858,20 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 );
             }
         }
+    }
+    // W4-d16 — the paper airplane's `Kill()` recovery drop
+    // (`Projectile.cs:76083-76095` → `Item.RequestNewItem`): the world sim
+    // spawns the item at the plane's centre on the `UpdateItems` stream
+    // (`Item.NewItem` under `Main.cs:17779`), the `spawn_item_drop_px`
+    // velocity-triplet-then-prefix order (the catch-overflow precedent).
+    for (item, cx, cy) in app.projectiles.drain_item_drops() {
+        crate::world_sim::items::spawn_item_drop_px(
+            &mut app.items,
+            app.rngs.stream(crate::app::RngKey::UpdateItems),
+            item,
+            1,
+            glam::Vec2::new(cx, cy),
+        );
     }
     // S1-P-i55 — the golf arms' queued effects, drained at the pass tail
     // (the `drain_mark_spawns` shape — the pool cannot borrow the App).

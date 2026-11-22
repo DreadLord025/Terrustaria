@@ -1370,6 +1370,34 @@ pub const GOLF_BALL: u16 = 721;
 /// false, ignoreWater, penetrate -1, hide (`Projectile.cs:7636-7645`).
 /// S1-P-i55.
 pub const GOLF_CLUB_HELPER: u16 = 722;
+/// `ProjectileID.SuperStar` (728, `ProjectileID.cs`'s row) — the Super
+/// Star Cannon's star, aiStyle 151 (`Projectile.cs:7659-7671`). W4-d16.
+pub const SUPER_STAR: u16 = 728;
+/// `ProjectileID.SuperStarSlash` (729) — the cannon's slash, aiStyle 152
+/// (`Projectile.cs:7672-7687`). W4-d16.
+pub const SUPER_STAR_SLASH: u16 = 729;
+/// `ProjectileID.BladeOfGrass` (976) — the Zenith component's grass-blade
+/// slash, aiStyle 152 (`Projectile.cs:9270-9286`). W4-d16.
+pub const ZENITH_GRASS_SLASH: u16 = 976;
+/// `ProjectileID.Muramasa` (977) — the Zenith component's Muramasa slash,
+/// aiStyle 152 (`Projectile.cs:9208-9224`). W4-d16.
+pub const ZENITH_MURAMASA_SLASH: u16 = 977;
+/// `ProjectileID.MoonLordWhipProc` (1045) — the Moon Lord whip's proc
+/// slash, aiStyle 152 (`Projectile.cs:9890-9907`). W4-d16.
+pub const MOON_LORD_WHIP_PROC: u16 = 1045;
+/// `ProjectileID.ToiletEffect` (733) — the toilet's pop effect, aiStyle
+/// 153 (`Projectile.cs:7716-7725`). W4-d16.
+pub const TOILET_EFFECT: u16 = 733;
+/// `ProjectileID.VoidLens` (734) — the Void Lens' placed lens, aiStyle
+/// 154 (`Projectile.cs:7726-7735`). W4-d16.
+pub const VOID_LENS: u16 = 734;
+/// `ProjectileID.MysticSnakeCoil` (754) — the Mystic Snake's rope coil,
+/// aiStyle 155 (`Projectile.cs:7767-7776`). W4-d16.
+pub const MYSTIC_SNAKE_COIL: u16 = 754;
+/// `ProjectileID.PaperAirplaneA` (761) / `PaperAirplaneB` (762) — the
+/// thrown paper gliders, aiStyle 159 (`Projectile.cs:7846-7854`). W4-d16.
+pub const PAPER_AIRPLANE_A: u16 = 761;
+pub const PAPER_AIRPLANE_B: u16 = 762;
 
 // W4-d15 — the DD2 weapon/pet slice's kinds (`ProjectileID.cs`'s values,
 // the `SetDefaults` rows cited in [`proj_data`]).
@@ -4629,6 +4657,91 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 18.0, 18.0, 5, -1, TIME_LEFT_DEFAULT, 0, true, false, true,
                 (false, -2, false, -1, 50, 1.0),
             ),
+            // W4-d16 — `Projectile.cs:7659-7671` (728, the Super Star
+            // Cannon's star): 24x24, aiStyle 151, alpha 255, tileCollide
+            // true (the stock), ranged + friendly (the overlays),
+            // penetrate -1, the LOCAL pair (-1, `:7669-7670`).
+            SUPER_STAR => {
+                (24.0, 24.0, 151, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (true, -1, false, -1, 255, 1.0))
+            }
+            // W4-d16 — `Projectile.cs:7672-7687` (729, the Super Star
+            // Cannon's slash): 20x20, aiStyle 152, friendly, tileCollide
+            // false, ignoreWater (the overlay), ranged (the overlay),
+            // penetrate -1, extraUpdates 2, timeLeft 10*MaxUpdates = 30,
+            // the idStatic pair (10, `:7685-7686`). The `scale = 1f +
+            // Next(30)*0.01f` (`:7682`) is a spawn-time draw — the row
+            // carries the 1f base (the Horseman-pumpkin precedent).
+            SUPER_STAR_SLASH => {
+                (20.0, 20.0, 152, -1, 30, 2, false, false, false, (false, -2, true, 10, 0, 1.0))
+            }
+            // W4-d16 — `Projectile.cs:9208-9224` (977, the Zenith's
+            // Muramasa slash): 20x20, aiStyle 152, friendly, tileCollide
+            // false, ignoreWater, melee (the overlay), penetrate 1, the
+            // LOCAL pair (-1), extraUpdates 2, timeLeft 10*MaxUpdates =
+            // 30; armorPenetration 5 (`:9220`, no port row field — the
+            // 864 precedent); the scale roll (`:9221`) is spawn-time.
+            ZENITH_MURAMASA_SLASH => {
+                (20.0, 20.0, 152, 1, 30, 2, false, false, false, (true, -1, false, -1, 0, 1.0))
+            }
+            // W4-d16 — `Projectile.cs:9270-9286` (976, the Zenith's
+            // Blade-of-Grass slash): 20x20, aiStyle 152, friendly,
+            // tileCollide false, ignoreWater, melee, penetrate 2, the
+            // LOCAL pair (-1), extraUpdates 0, timeLeft 60*MaxUpdates =
+            // 60; armorPenetration 20 (`:9285`, dropped); the scale roll
+            // (`:9282`) is spawn-time.
+            ZENITH_GRASS_SLASH => {
+                (20.0, 20.0, 152, 2, 60, 0, false, false, false, (true, -1, false, -1, 0, 1.0))
+            }
+            // W4-d16 — `Projectile.cs:9890-9907` (1045, the Moon Lord
+            // whip's proc slash): 20x20, aiStyle 152, friendly,
+            // tileCollide false, ignoreWater, melee, penetrate 1, the
+            // LOCAL pair (-1), extraUpdates 1, timeLeft 24*MaxUpdates =
+            // 48, alpha 255 (`:9905`); armorPenetration 50 (`:9906`,
+            // dropped); the scale roll (`:9902`) is spawn-time.
+            MOON_LORD_WHIP_PROC => {
+                (20.0, 20.0, 152, 1, 48, 1, false, false, false, (true, -1, false, -1, 255, 1.0))
+            }
+            // W4-d16 — `Projectile.cs:7716-7725` (733, the toilet's pop):
+            // 2x2, aiStyle 153, tileCollide false, ignoreWater (the
+            // overlay), penetrate -1, alpha 255. Stock friendly/hostile
+            // false — the effect damages nothing (the debris precedent).
+            TOILET_EFFECT => {
+                (2.0, 2.0, 153, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // W4-d16 — `Projectile.cs:7726-7735` (734, the Void Lens):
+            // 30x24, aiStyle 154, tileCollide false, timeLeft 10800,
+            // alpha 255; drawLayer 3 (`:7734`) is render-side (dropped).
+            // Stock penetrate 1, friendly/hostile false — the lens is a
+            // marker, not a shot.
+            VOID_LENS => {
+                (30.0, 24.0, 154, 1, 10800, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // W4-d16 — `Projectile.cs:7767-7776` (754, the Mystic Snake's
+            // rope coil): 16x16, aiStyle 155, tileCollide false,
+            // ignoreWater (the overlay), penetrate -1, alpha 255.
+            MYSTIC_SNAKE_COIL => {
+                (16.0, 16.0, 155, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // W4-d16 — `Projectile.cs:7846-7854` (761/762, the paper
+            // airplanes): 10x10, aiStyle 159, friendly + ranged,
+            // manualDirectionChange (no ProjData field — the arm owns the
+            // direction, the dispatch skips the auto-flip). Stock
+            // penetrate 1 / timeLeft 3600 / tileCollide true / alpha 0.
+            PAPER_AIRPLANE_A | PAPER_AIRPLANE_B => {
+                (10.0, 10.0, 159, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
+            // W4-d16 — `DefaultToKite` (`Projectile.cs:10744-10751`), the
+            // 24 kinds the SetDefaults blocks route to it (`:7889-7892`/
+            // `:8040-8044`/`:8055-8059`/`:8136-8140`/`:8149-8153`/
+            // `:8168-8172`/`:8182-8186`): 4x4, aiStyle 160, penetrate -1,
+            // extraUpdates 60 (the first tick's 61 sub-steps settle to 0
+            // at the numUpdates==1 sub-step, `:48516-48519`). Stock
+            // timeLeft 3600 / tileCollide true / alpha 0 / friendly false
+            // (the helper sets none — the kite is a held marker, not a
+            // shot; the item rows carry damage -1).
+            k if crate::projectile_ai_kites::KITE_KINDS.contains(&k) => {
+                (4.0, 4.0, 160, -1, TIME_LEFT_DEFAULT, 60, true, false, false, RESET_STATE)
+            }
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -4816,7 +4929,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || matches!(
                 kind,
                 DD2_PET_DRAGON | DD2_PET_GHOST | DD2_PET_GATO | UPBEAT_STAR | AXE_FAIRY_PET
-            ),
+            )
+            // W4-d16 — the 822+ kites set `netImportant = true` themselves
+            // (`Projectile.cs:8042`/`:8057`/`:8138`/`:8151`/`:8170`/
+            // `:8184`); the 766-771 block (`:7889-7892`) keeps the stock
+            // false (the `DefaultToKite` helper sets none).
+            || matches!(kind, 822..=824 | 826..=830 | 838..=840 | 843..=846 | 850 | 852..=853),
         ignore_water: ((minion || sentry)
             && !matches!(
                 kind,
@@ -4938,6 +5056,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // block sets `ignoreWater` (`Projectile.cs:6290`); the 578/579
             // rows predated the flag list, the 813 joins them.
             || matches!(kind, VORTEX_LIGHTNING | VORTEX_PORTAL | BLOOD_NAUTILUS_TEARS)
+            // W4-d16 — `Projectile.cs:7679`/`:9215`/`:9277`/`:9897`/`:7722`/
+            // `:7773`: the four aiStyle-152 slashes + the toilet pop + the
+            // snake coil set ignoreWater.
+            || matches!(kind, SUPER_STAR_SLASH | ZENITH_MURAMASA_SLASH | ZENITH_GRASS_SLASH | MOON_LORD_WHIP_PROC | TOILET_EFFECT | MYSTIC_SNAKE_COIL)
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
             || kind == GOLF_CLUB_HELPER
@@ -5016,9 +5138,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // (`:7427`) and the volley shot (`:7514`).
                     | MONK_STAFF_T1_EXPLOSION | MONK_STAFF_T2 | MONK_STAFF_T2_GHAST
                     | MONK_STAFF_T3 | MONK_STAFF_T3_ALT | MONK_STAFF_T3_ALT_SHOT
+                    // W4-d16 — the three melee aiStyle-152 slashes: the
+                    // Muramasa (`:9216`), the Blade of Grass (`:9278`),
+                    // the Moon Lord whip proc (`:9898`).
+                    | ZENITH_MURAMASA_SLASH | ZENITH_GRASS_SLASH | MOON_LORD_WHIP_PROC
             ),
         ranged: matches!(
             kind,
+            // W4-d16 — `Projectile.cs:7666`/`:7680`/`:7852`: the Super Star
+            // (728), its slash (729) and the paper airplanes (761/762) set
+            // `ranged = true` (the 151/152/159 rows).
+            SUPER_STAR | SUPER_STAR_SLASH | PAPER_AIRPLANE_A | PAPER_AIRPLANE_B |
             // The arrows/bullets (1/2/14, `:814`/`:825`/`:961`), the thrown
             // kinds (3/48/166, `:835`/`:1317`/`:2555`), the moon-lord drop
             // shots (638/639/640, `:6867`/`:6880`/`:6895`), the DD2 kobold
@@ -5459,6 +5589,19 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         FAIRY_QUEEN_PET => 6,
         PUMPKING_PET | ICE_QUEEN_PET => 16,
         GLOMMER_PET => 12,
+        // W4-d16 — the Void Lens' 8-frame sheet (`Main.cs:8504`) —
+        // `AI_154`'s 5-tick cycle wraps at it (`Projectile.cs:52179-52186`).
+        VOID_LENS => 8,
+        // W4-d16 — the kite sheets (`Main.cs:8632-8636`/`:8643`/`:8645-
+        // :8647`/`:8655-8656`/`:8658`): the 766-770 five 4-frame kites,
+        // the 824/839/840/853 wind-flap fours, the 826 pigron's 3, the
+        // 828/829 jellyfish pair's 2. The rest keep the stock 1 (no
+        // override in `Main.cs:8444-8727`). `KiteLogic`'s frame machine
+        // (`Projectile.cs:48627-48691`) reads them.
+        766..=770 => 4,
+        824 | 839 | 840 | 853 => 4,
+        826 => 3,
+        828 | 829 => 2,
 
         // The Explosive Trap family (`Main.cs:8467-8472`): the traps and the
         // T1/T2 blasts animate 4 frames, the T3 blast 5 — `AI_138`'s wrap
@@ -5778,5 +5921,71 @@ mod tests {
         assert!(d.uses_local_immunity && d.local_hit_cooldown == -1, ":9265-9266");
         assert!(d.melee, ":9267");
         assert_eq!(proj_frames(VOLCANO), 5, "Main.cs:8493");
+    }
+
+    /// W4-d16 residual 5 — the aiStyle-161 shortsword census (the g4 G4
+    /// finding: styles 160/161 ride the `DefaultToKite`/`DefaultToShortsword`
+    /// helpers). `DefaultToShortsword` (`Projectile.cs:10773-10787`): 18x18,
+    /// aiStyle 161, friendly, penetrate −1, tileCollide FALSE, scale 1,
+    /// ownerHitCheck, melee, extraUpdates 1, drawLayer 7, usesOwnerLight.
+    /// The FOUR call sites cover exactly ELEVEN kinds: the Gladius 802
+    /// (`:7921-7924`), the Ruler 842 (`:8145-8148`), the eight ore
+    /// shortswords 938-945 (`:8917-8921`, + timeLeft 360) and the
+    /// Chlorophyte Saber 1127 (`:10559-10564`, + usesLocalNPCImmunity /
+    /// localNPCHitCooldown −1). The dispatch is `AI_161_RapierStabs`
+    /// (`:36607-36610` → `:47612-47665`). NO other `aiStyle = 161` write
+    /// exists in Projectile.cs (census). The port rows are UNROWED — the
+    /// 161-170 AI lane is d17's read claim; this witness pins the census
+    /// so the rowing pass lands the exact helper shape. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d16_161_the_shortsword_helper_census() {
+        // The eleven kinds the four DefaultToShortsword call sites cover.
+        const SHORTSWORD_KINDS: [u16; 11] =
+            [802, 842, 938, 939, 940, 941, 942, 943, 944, 945, 1127];
+        // The item rows shoot exactly these kinds (the useStyle-13 stab
+        // items — the generated itemdata census).
+        const SHORTSWORD_ITEMS: [(u16, u16); 11] = [
+            (4463, 802),  // Gladius
+            (486, 842),   // Ruler
+            (3507, 938),  // Copper Shortsword
+            (3501, 939),  // Tin Shortsword
+            (6, 940),     // Iron Shortsword
+            (3495, 941),  // Lead Shortsword
+            (3513, 942),  // Silver Shortsword
+            (3489, 943),  // Tungsten Shortsword
+            (3519, 944),  // Gold Shortsword
+            (3483, 945),  // Platinum Shortsword
+            (1227, 1127), // Chlorophyte Saber
+        ];
+        for (item, shoot) in SHORTSWORD_ITEMS {
+            let d = crate::registry::get(item).unwrap_or_else(|| panic!("item {item}"));
+            assert_eq!(d.projectile, Some(shoot), "item {item}");
+            assert_eq!(d.use_style, 13, "the stab useStyle");
+            assert!(SHORTSWORD_KINDS.contains(&shoot));
+        }
+        // The port rows are UNROWED today (d17 owns the 161-170 lane):
+        // when the rowing pass lands, every kind must carry the helper
+        // shape — 18x18, aiStyle 161, pen −1, tileCollide false,
+        // extraUpdates 1, melee. Until then `proj_data` is None and the
+        // dispatch's `_ => {}` keeps the slot inert (the census pin).
+        for k in SHORTSWORD_KINDS {
+            if let Some(d) = proj_data(k) {
+                assert_eq!((d.w, d.h, d.ai_style), (18.0, 18.0, 161), "kind {k}");
+                assert_eq!(d.penetrate, -1);
+                assert!(!d.tile_collide);
+                assert_eq!(d.extra_updates, 1);
+                assert!(d.melee);
+                assert_eq!(d.scale, 1.0);
+                // The per-site overrides: the ore eight's timeLeft 360,
+                // the saber's local-immunity pair.
+                if (938..=945).contains(&k) {
+                    assert_eq!(d.time_left, 360, "kind {k}");
+                }
+                if k == 1127 {
+                    assert!(d.uses_local_immunity);
+                    assert_eq!(d.local_hit_cooldown, -1);
+                }
+            }
+        }
     }
 }

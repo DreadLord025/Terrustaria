@@ -62,7 +62,7 @@ use tr_core::loot::DropRng;
 
 use crate::npc::Npc;
 use crate::projectile::{
-    Projectile, can_hit, chaseable, chaseable_held, get_lerp_value, rotate, safe_normalize,
+    Projectile, can_hit, chaseable, chaseable_held, csign, get_lerp_value, rotate, safe_normalize,
 };
 
 /// `AI()`'s aiStyle-31 arm (`Projectile.cs:26786-26886`) — the Clentaminator
@@ -697,6 +697,699 @@ fn create_ground_explosion(
 }
 
 // ---------------------------------------------------------------------------
+// W4-d16 — projectile aiStyles 151-160 MINUS 156/164 (task/W4-a9 owns those
+// two). The census found 157/158 already armed (projectile.rs's
+// `ai_sharp_tears`/`ai_baby_bird` — verify-only) and 151/152/153/154/155/
+// 159/160 MISSING: no rows, no arms. The rows land in projectile/data.rs
+// (cited per field); this module owns the machines, one style per commit.
+//
+// RNG contract (the `projectile_ai_misc` S1-D-4 precedent above): every
+// EXPLICIT `Main.rand` call-site draw stays in C# order (gates included,
+// with the C#'s `&&` short-circuits); the `Dust.NewDust*` bodies + their
+// internal rolls go with the dust layer; the `Gore.NewGore` kicks
+// `Next(10, 31)` / `Next(-20, 21)` stay (`Gore.cs:1327-1328`).
+//
+// CODE-ONLY MODE (W4-d16): the witness tests are WRITTEN NOT RUN.
+
+/// `AI_151_SuperStar` (`Projectile.cs:22138-22168`) — the Super Star
+/// Cannon's star (728). The −10 alpha ramp to the 100 floor, the Item9
+/// cue's `20 + Next(40)` re-arm, the `(|vx|+|vy|)·0.005·direction` spin,
+/// the on-screen 1-in-6 gore gate (the `SelectRandom(16,17,17,17)` pick +
+/// the NewGore kicks) and the two 1-in-8 dust gates (bodies skipped).
+///
+/// `screen` is the pool's per-tick view snapshot `(centre, size)` —
+/// `Main.screenPosition + (screenWidth, screenHeight)/2` and the size
+/// (`:22152-22153`); `None` folds the hitbox test false (the C#'s
+/// off-screen short-circuit spends NO `Next(6)`).
+///
+/// `direction` is the velocity-sign stand-in (`AutomaticallyChangesDirection`
+/// is true for style 151, `:17283` — the `ai_spray` precedent).
+pub(crate) fn ai_super_star(
+    p: &mut Projectile,
+    rng: &mut dyn DropRng,
+    screen: Option<(Vec2, Vec2)>,
+) {
+    // `:22140-22145` — the alpha ramp and its floor.
+    p.alpha -= 10;
+    if p.alpha < 100 {
+        p.alpha = 100;
+    }
+    // `:22146-22150` — the cue re-arm (the pool decrements soundDelay
+    // ahead of the AI, `:16768-16771`; the `-1` latch convention holds).
+    if p.sound_delay == 0 {
+        p.sound_delay = 20 + rng.next_range(0, 40);
+        p.wants_sound = Some((2, 9, p.pos.x, p.pos.y, 0.0));
+    }
+    // `:22151` — the spin.
+    let direction = if p.vel.x < 0.0 { -1.0 } else { 1.0 };
+    p.rot += (p.vel.x.abs() + p.vel.y.abs()) * 0.005 * direction;
+    // `:22152-22156` — the on-screen gore gate: the hitbox against the
+    // screen rect grown 400 px (`Utils.CenteredRectangle`), THEN the
+    // `Next(6)` (the `&&` order — off-screen spends nothing).
+    let on_screen = screen.is_some_and(|(centre, size)| {
+        let half = (size + Vec2::splat(400.0)) * 0.5;
+        let (l, t) = (centre.x - half.x, centre.y - half.y);
+        let (r, b) = (centre.x + half.x, centre.y + half.y);
+        // XNA `Rectangle.Intersects` — the strict edge comparisons.
+        p.pos.x < r && l < p.pos.x + p.w && p.pos.y < b && t < p.pos.y + p.h
+    });
+    if on_screen && rng.next_range(0, 6) == 0 {
+        // `Utils.SelectRandom(Main.rand, 16, 17, 17, 17)` — one `Next(4)`
+        // (`Utils.cs:2459-2462`); the gore body is skipped, the NewGore
+        // kicks stay (`Gore.cs:1327-1328`).
+        let _ = rng.next_range(0, 4);
+        let _ = rng.next_range(10, 31);
+        let _ = rng.next_range(-20, 21);
+    }
+    // `:22157-22167` — the two dust gates: the `Next(8)` draws stay, the
+    // `NewDustDirect` bodies + their internal rolls go with the dust
+    // layer (the velocity blend is deterministic — no draws inside).
+    for _ in 0..2 {
+        if rng.next_range(0, 8) == 0 {
+            // The dust spawn + its ×0.25 / rotated-velocity blend — SKIPPED.
+        }
+    }
+}
+
+/// `AI_152_SuperStarSlash` (`Projectile.cs:22230-22351`) — the four
+/// aiStyle-152 slashes: the Super Star Cannon's 729, the Zenith's
+/// Muramasa 977 + Blade-of-Grass 976, the Moon Lord whip's proc 1045.
+///
+/// The alpha ladder (the 976 skips it; the 1045 ramps −50 to 0, the rest
+/// −10 to 100), the per-kind cue latch (977/1045 Item1 once, 976 silent,
+/// the rest the `20 + Next(40)` Item9 re-arm), the `ai[0]` velocity spin
+/// (the 976 spins the FULL angle, the rest `ai[0] / (num4·MaxUpdates)`),
+/// the 977/1045 ×0.96 drag + 1-in-8 centre dust, the 976's lava kill +
+/// 7-frame cycle + the Remap speed/opacity envelope + the one-shot
+/// 10-dust burst, and the shared `rotation = velocity.ToRotation() + num`
+/// + `tileCollide = false` tail.
+///
+/// RNG: the cue `Next(40)` (the else arm only), the 977/1045 dust gates'
+/// `Next(8)` + the taken branch's `NextVector2Circular(1,1)` pair (TWO
+/// floats, `Utils.cs:1266-1269` — the dust body's velocity is REWRITTEN
+/// from it, so the draws are call-site state), the 976's `Next(3)` gate
+/// and the one-shot burst's per-dust `NextFloat` pair (the rotated
+/// velocity's angle + speed, `:22345`). The `NewDustDirect` bodies +
+/// their internal rolls go with the dust layer.
+pub(crate) fn ai_super_star_slash(p: &mut Projectile, world: &World, rng: &mut dyn DropRng) {
+    use crate::projectile::{MOON_LORD_WHIP_PROC, ZENITH_GRASS_SLASH, ZENITH_MURAMASA_SLASH, alpha_of};
+    // `:22232-22237` — the rotation offset and the alpha-ladder flag.
+    let mut num = std::f32::consts::FRAC_PI_2;
+    let flag = p.kind != ZENITH_GRASS_SLASH;
+    // `:22238-22252` — the alpha ladder.
+    if flag {
+        let (mut num2, mut num3) = (10, 100);
+        if p.kind == MOON_LORD_WHIP_PROC {
+            num3 = 0;
+            num2 = 50;
+        }
+        p.alpha -= num2;
+        if p.alpha < num3 {
+            p.alpha = num3;
+        }
+    }
+    // `:22253-22257` — the spin divisor base.
+    let num4 = if p.kind == MOON_LORD_WHIP_PROC { 24 } else { 10 };
+    // `:22258-22279` — the cue ladder.
+    if p.sound_delay == 0 {
+        if p.kind == ZENITH_MURAMASA_SLASH || p.kind == MOON_LORD_WHIP_PROC {
+            p.sound_delay = -1;
+            p.wants_sound = Some((2, 1, p.pos.x, p.pos.y, 0.0));
+        } else if p.kind == ZENITH_GRASS_SLASH {
+            p.sound_delay = -1; // the silent latch (`:22270-22273`)
+        } else {
+            p.sound_delay = 20 + rng.next_range(0, 40);
+            p.wants_sound = Some((2, 9, p.pos.x, p.pos.y, 0.0));
+        }
+    }
+    // `:22280-22291` — the ai[0] spin.
+    if p.ai[0] != 0.0 {
+        if p.kind == ZENITH_GRASS_SLASH {
+            p.vel = crate::bow_launch::rotated_by(p.vel, p.ai[0] as f64);
+        } else {
+            let num5 = num4 * (p.extra_updates + 1) as i32;
+            p.vel = crate::bow_launch::rotated_by(p.vel, (p.ai[0] / num5 as f32) as f64);
+        }
+    }
+    // `:22292-22313` — the 977/1045 drag + centre dust (the two kinds
+    // differ only in the dust TYPE — 172 vs 229 — the draws are the same).
+    if p.kind == ZENITH_MURAMASA_SLASH || p.kind == MOON_LORD_WHIP_PROC {
+        p.vel *= 0.96;
+        if rng.next_range(0, 8) == 0 {
+            // The dust body is skipped; its REWRITTEN velocity reads
+            // `NextVector2Circular(1,1)` — two floats stay on the stream.
+            let _ = (rng.next_float(), rng.next_float());
+        }
+    }
+    // `:22314-22348` — the 976's machine.
+    if p.kind == ZENITH_GRASS_SLASH {
+        // `:22316-22320` — `Collision.LavaCollision` over the box.
+        if lava_collision(world, p.pos, p.w, p.h) {
+            p.active = false;
+            p.time_left = 0;
+            return;
+        }
+        // `:22321-22328` — the 2-tick frame cycle over the 7-frame sheet.
+        p.frame_counter += 1;
+        if p.frame_counter >= 2 {
+            p.frame_counter = 0;
+            p.frame += 1;
+            if p.frame >= 7 {
+                p.frame = 0;
+            }
+        }
+        // `:22329-22332` — the age envelope: the speed Remap pair and the
+        // opacity fade-in/out (the `Opacity` property is the alpha view).
+        let from_value = 60.0 - p.time_left as f32;
+        let num6 = remap_clamped(from_value, p.ai[1], p.ai[1] + 20.0, 0.0, 1.0)
+            * remap_clamped(from_value, p.ai[1], p.ai[1] + 60.0, 1.0, 0.0);
+        let unit = crate::bow_launch::safe_normalize(p.vel, Vec2::Y);
+        p.vel = unit * (4.0 + 12.0 * (1.0 - num6));
+        let opacity = remap_clamped(from_value, 0.0, 10.0, 0.0, 1.0)
+            * remap_clamped(from_value, 30.0, 60.0, 1.0, 0.0);
+        p.alpha = alpha_of(opacity);
+        num = 0.0;
+        // `:22334-22339` — the 1-in-3 trail dust (no draws inside the
+        // body — the velocity is `base.velocity * 0.5f`).
+        if rng.next_range(0, 3) == 0 {
+            // The dust spawn — SKIPPED.
+        }
+        // `:22340-22347` — the one-shot 10-dust burst: per dust the
+        // rotated velocity's angle `NextFloat` + speed `NextFloat`
+        // (`RotatedBy(NextFloat() * 2π * 0.25) * (NextFloat() * 3)`).
+        if p.local_ai[1] == 0.0 {
+            p.local_ai[1] = 1.0;
+            for _ in 0..10 {
+                let _ = rng.next_float(); // the angle
+                let _ = rng.next_float(); // the speed
+            }
+        }
+    }
+    // `:22349-22350` — the shared tail.
+    p.rot = p.vel.y.atan2(p.vel.x) + num;
+    p.tile_collide = false;
+}
+
+/// `Utils.Remap` (`Utils.cs:345-348`, clamped by default) over the port's
+/// `get_lerp_value` — XNA's `a + (b - a) * amount` lerp.
+fn remap_clamped(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+    to_min + (to_max - to_min) * get_lerp_value(from_min, from_max, from_value)
+}
+
+/// `AI_153_ToiletPop` (`Projectile.cs:52198-52236`) — the toilet's pop
+/// effect (733). The first tick (`ai[0] == 0`) spawns 6 dust + 1 gore;
+/// ticks 1-10 spawn 2 dust + a 1-in-5 gore; past 10 the effect dies.
+/// The counter advances AFTER the branch pick (`:52222`).
+///
+/// RNG: the else branch's `Next(5)` gate (`:52216`, ONLY when
+/// `ai[0] <= 10` — the kill returns first); every spawned gore's
+/// `NextVector2Circular(1,1)` pair (two floats, `:52233` — the velocity
+/// argument `UnitY * -3f + NextVector2Circular(1f, 1f)` is evaluated
+/// BEFORE the call, on the first tick too) + the `Next(580,583)` type
+/// roll + the NewGore kicks `Next(10,31)` / `Next(-20,21)`
+/// (`Gore.cs:1327-1328`). The dust bodies (`:52223-52230`) roll nothing
+/// explicit.
+pub(crate) fn ai_toilet_pop(p: &mut Projectile, rng: &mut dyn DropRng) {
+    // `:52200-52221` — the branch pick (the centre/speedY feed only the
+    // skipped dust bodies).
+    let (num, mut num2) = if p.ai[0] == 0.0 {
+        (6, 1)
+    } else {
+        if p.ai[0] > 10.0 {
+            // `:52211-52215` — the kill (the C# `Kill()`; the port's
+            // death convention zeroes time_left).
+            p.active = false;
+            p.time_left = 0;
+            return;
+        }
+        let mut g = 0;
+        if rng.next_range(0, 5) == 0 {
+            g = 1;
+        }
+        (2, g)
+    };
+    // `:52222` — the counter.
+    p.ai[0] += 1.0;
+    // `:52223-52230` — the dust loop: `num` bodies, no explicit draws.
+    let _ = num;
+    // `:52231-52235` — the gore loop: `num2` gores, each the circular
+    // velocity pair + the type roll + the NewGore kicks.
+    for _ in 0..num2 {
+        let _ = (rng.next_float(), rng.next_float()); // NextVector2Circular(1,1)
+        let _ = rng.next_range(580, 583); // the gore type
+        let _ = rng.next_range(10, 31); // NewGore's Y kick
+        let _ = rng.next_range(-20, 21); // NewGore's X kick
+    }
+}
+
+/// `AI_154_VoidLens` (`Projectile.cs:52154-52196`) — the Void Lens'
+/// placed lens (734). The owner-gated same-type dedupe (the YOUNGER lens
+/// kills the older siblings; an older sibling kills THIS lens and
+/// returns), the ×0.94 velocity damp, the direction pin, the 5-tick
+/// 8-frame cycle, the +0.03 opacity climb and the `VoidLensHelper.Update`
+/// dust gate.
+///
+/// The dedupe scans the LIVE pool (the C# reads `Main.projectile` while
+/// killing), so this half is POOL-SIDE ([`crate::projectile::ProjectilePool`]'s
+/// dispatch, the `dragon_step` shape); this fn is the post-dedupe body.
+/// `true` = the lens survived the dedupe (the caller runs the body).
+///
+/// RNG (`VoidLensHelper.SpawnVoidLensDust`, `VoidLensHelper.cs:40-75`):
+/// the `Next(3)` gate, then the `Next(2)` branch pick; EACH branch's
+/// `RotatedByRandom(2π)` pair (two doubles — one float step each), the
+/// `SelectRandom(86, 88)` pick `Next(2)`, the position's `Next(10,21)` /
+/// `Next(5,10)` and the scale `NextFloat`. The dust bodies are skipped.
+/// `Lighting.AddLight` (`:36`) is the light layer's skip (no draws).
+pub(crate) fn ai_void_lens(p: &mut Projectile, rng: &mut dyn DropRng) {
+    use crate::projectile::{alpha_of, opacity_of, proj_frames};
+    // `:52177-52178` — the damp and the direction pin.
+    p.vel *= 0.94;
+    p.direction = 1;
+    // `:52179-52186` — the 5-tick frame cycle over projFrames[734] = 8.
+    p.frame_counter += 1;
+    if p.frame_counter >= 5 {
+        p.frame_counter = 0;
+        p.frame += 1;
+        if p.frame >= proj_frames(p.kind) as i32 {
+            p.frame = 0;
+        }
+    }
+    // `:52187-52194` — the opacity climb (the alpha view).
+    if opacity_of(p.alpha) < 1.0 {
+        let mut opacity = opacity_of(p.alpha) + 0.03;
+        if opacity > 1.0 {
+            opacity = 1.0;
+        }
+        p.alpha = alpha_of(opacity);
+    }
+    // `:52195` → `VoidLensHelper.Update` → `SpawnVoidLensDust`.
+    if rng.next_range(0, 3) == 0 {
+        if rng.next_range(0, 2) == 0 {
+            // `:46-53` — the first branch.
+            let _ = (rng.next_float(), rng.next_float()); // RotatedByRandom(2π)
+            let _ = rng.next_range(0, 2); // SelectRandom(86, 88)
+            let _ = rng.next_range(10, 21); // the position radius
+            let _ = rng.next_float(); // the scale
+        } else {
+            // `:61-68` — the second branch (the 5-10 radius).
+            let _ = (rng.next_float(), rng.next_float()); // RotatedByRandom(2π)
+            let _ = rng.next_range(0, 2); // SelectRandom(86, 88)
+            let _ = rng.next_range(5, 10); // the position radius
+            let _ = rng.next_float(); // the scale
+        }
+    }
+}
+
+/// `WorldGen.InWorld(x, y, fluff)` (`WorldGen.cs:9688-9695`).
+fn in_world_fluff(world: &World, x: i32, y: i32, fluff: i32) -> bool {
+    x >= fluff && x < world.width - fluff && y >= fluff && y < world.height - fluff
+}
+
+/// `WorldGen.TileEmpty` (`WorldGen.cs:69976-69983`): no tile / inactive
+/// flag clear / actuated (`inActive`).
+fn tile_empty(world: &World, x: i32, y: i32) -> bool {
+    match world.tile(x, y) {
+        Some(t) if t.active() => t.inactive(),
+        _ => true,
+    }
+}
+
+/// `AI_155_RemoveRope` (`Projectile.cs:52114-52129`): the start→end
+/// column walk (descending y), killing every active 504 MysticSnakeRope
+/// cell. The net SendData is the MP skip.
+fn snake_remove_rope(world: &mut World, start: (i32, i32), end: (i32, i32)) {
+    let x = start.0;
+    let mut y = start.1;
+    while y >= end.1 {
+        if world.tile(x, y).is_some_and(|t| t.active() && t.kind == 504) {
+            let _ = tr_core::edit::kill_tile(world, x, y, false);
+        }
+        y -= 1;
+    }
+}
+
+/// `AI_155_SpawnRopeIn` (`Projectile.cs:52131-52152`) — the per-cell
+/// conversion burst: the 3-in-4 gore gate (`Next(4) != 0` → the
+/// `Next(61,64)` type + the NewGore kicks + the `NextVector2Circular
+/// (1.5,0.8)` velocity pair — the unit angle + the radius,
+/// `Utils.cs:1261-1268`), then the 5-dust loop (each the `Next(8)`
+/// gate; the bodies roll nothing explicit). The call-site draw order:
+/// the type feeds `NewGoreDirect`'s argument (rolled FIRST), the kicks
+/// run INSIDE `NewGore` (`Gore.cs:1327-1328`), the circular velocity is
+/// the assignment AFTER the call (`:52137`).
+fn snake_spawn_rope_in(rng: &mut dyn DropRng) {
+    // `:52134-52141` — the gore gate.
+    if rng.next_range(0, 4) != 0 {
+        let _ = rng.next_range(61, 64); // the gore type (`:52136`'s argument)
+        let _ = rng.next_range(10, 31); // NewGore's Y kick
+        let _ = rng.next_range(-20, 21); // NewGore's X kick
+        // `:52137` — NextVector2Circular(1.5, 0.8): the unit angle's
+        // NextFloat, then the radius NextFloat (`Utils.cs:1266-1268`).
+        let _ = (rng.next_float(), rng.next_float());
+    }
+    // `:52142-52151` — the 5-dust loop.
+    for _ in 0..5 {
+        let _ = rng.next_range(0, 8); // the first dust's gate
+        // Both dust bodies — SKIPPED (no explicit draws inside).
+    }
+}
+
+/// `AI_155_MysticSnakeCoil` (`Projectile.cs:51939-52112`) — the Mystic
+/// Snake's rope coil (754): the orphan kill (+ rope removal), the launch
+/// latch (spriteDirection from the owner's centre, `velocity.Y = -5`),
+/// the rise machine (the localAI[1] counter, the 15→30 Remap ease into
+/// the −32 launch at 60, the int truncation), the 60-tick 30-dust burst,
+/// the 1-in-6 trail dust gate (the roll is the `||`'s LEFT operand — it
+/// runs every rise tick; `flag` suppresses only the body), the
+/// −5 alpha ramp, the 12-tick 4-frame cycle, the owner-gated rope
+/// placement walk (the 100-cell cap, the InWorld-40 gate, the
+/// solid-non-cut-non-504 blocker scan, the PlaceTile-504 column fill,
+/// the snap-to-anchor + velocity zero), then the attached state's
+/// per-cell rope conversion (the one-shot latch / the 1-in-80 dust walk
+/// / the timeLeft-4 re-burst) and the ≤4 death (the InWorld-20 gate, the
+/// owner-gated rope removal).
+///
+/// `owner_center` is `Main.player[owner].Center` (the dispatch's owner
+/// snapshot); `owner_active` folds `Main.player[owner].active` (the
+/// port's single-player stand-in: the resolved player exists). The
+/// `Main.netMode != 1` head gate is always true in the port.
+///
+/// Movement: the C# `HandleMovement` integrates after the AI; the
+/// dispatch's `kill_step` is the free integrate (tileCollide false).
+pub(crate) fn ai_mystic_snake_coil(
+    p: &mut Projectile,
+    world: &mut World,
+    owner_center: Option<Vec2>,
+    owner_active: bool,
+    local_owner: u8,
+    rng: &mut dyn DropRng,
+) {
+    // `:51941-51949` — the orphan kill: remove the rope column, die.
+    if !owner_active {
+        let num = p.ai[0];
+        let y = p.pos.y;
+        let cx = ((p.pos.x + p.w * 0.5) / 16.0) as i32;
+        // (`point.Y` — the centre's tile row — is computed in the C# but
+        // only its X feeds the removal points, `:51945-51946`.)
+        snake_remove_rope(world, (cx, num as i32 / 16), (cx, y as i32 / 16));
+        p.active = false;
+        p.time_left = 0;
+        return;
+    }
+    let owner_center = owner_center.unwrap_or(Vec2::ZERO);
+    // `:51950-51957` — the launch latch.
+    let num2 = 100;
+    let num3 = 1800;
+    if p.ai[1] == 0.0 {
+        let pcx = owner_center.x;
+        let scx = p.pos.x + p.w * 0.5;
+        p.sprite_direction = if !(pcx > scx) { 1 } else { -1 };
+        p.ai[1] = 1.0;
+        p.vel.y = -5.0;
+    }
+    // `:51958-52047` — the rise state.
+    if p.ai[1] == 1.0 {
+        p.local_ai[1] += 1.0;
+        // `:51961-51964` — the ease + the launch, then the truncation.
+        let num4 = remap_clamped(p.local_ai[1], 15.0, 30.0, 0.0, 1.0);
+        let num5 = if p.local_ai[1] >= 60.0 { 1 } else { 0 };
+        p.vel.y = -3.0 * (1.0 - num4) + (-32 * num5) as f32;
+        p.vel.y = p.vel.y as i32 as f32;
+        // `:51965-51982` — the 60-tick burst: 30 dust, each the
+        // NextFloatDirection X jitter + the rotated-velocity pair
+        // (NextFloatDirection × 0 — the ANGLE draw still happens) + the
+        // conditional NextFloat Y scale. The dust bodies are skipped;
+        // the explicit call-site draws stay.
+        if p.local_ai[1] == 60.0 {
+            for _ in 0..30 {
+                let _ = rng.next_float(); // NextFloatDirection (`:51975`)
+                let _ = rng.next_float(); // the RotatedBy angle's NextFloatDirection (`:51976`)
+                let _ = rng.next_float(); // the speed's NextFloatDirection (`:51976`)
+                // The rotated (0,-1) vector's Y is -cos(0) = -1 < 0 for
+                // EVERY draw (the angle is ×0f) — the conditional scale
+                // ALWAYS fires (`:51977-51980`).
+                let _ = rng.next_float();
+            }
+        }
+        // `:51983-51992` — the trail dust gate: `flag = num4 > 0 &&
+        // num5 <= 0`; `(Next(6) == 0 || num5 > 0) && !flag` — the roll is
+        // the LEFT operand, so it runs EVERY rise tick (num5 > 0 only
+        // short-circuits the right operand when the roll failed; flag
+        // suppresses the body, never the roll). The body is skipped.
+        let flag = num4 > 0.0 && num5 <= 0;
+        let rolled = rng.next_range(0, 6) == 0;
+        let gate = rolled || num5 > 0;
+        if gate && !flag {
+            // The dust spawn — SKIPPED (no explicit draws inside).
+        }
+        // `:51993` — the alpha ramp.
+        p.alpha = (p.alpha - 5).clamp(0, 255);
+        // `:51994-52001` — the 12-tick 4-frame cycle.
+        p.frame_counter += 1;
+        if p.frame_counter >= 12 {
+            p.frame_counter = 0;
+            p.frame += 1;
+            if p.frame >= 4 {
+                p.frame = 0;
+            }
+        }
+        // `:52002-52046` — the owner-gated rope placement.
+        if local_owner == p.owner {
+            let num6 = p.ai[0];
+            let y2 = p.pos.y;
+            let cx = ((p.pos.x + p.w * 0.5) / 16.0) as i32;
+            // (`point2.Y` is computed but only its X feeds the points.)
+            let point3 = (cx, y2 as i32 / 16);
+            let point4 = (cx, num6 as i32 / 16);
+            let mut flag2 = point4.1 - point3.1 >= num2;
+            let x = point4.0;
+            if !in_world_fluff(world, x, point3.1, 40) || !in_world_fluff(world, x, point4.1, 40) {
+                flag2 = true;
+            }
+            if !flag2 {
+                let mut y = point4.1;
+                while y >= point3.1 {
+                    if world.tile(x, y).is_some_and(|t| {
+                        t.active() && !tr_core::tileobject::tile_cut(t.kind) && t.kind != 504
+                    }) {
+                        flag2 = true;
+                        break;
+                    }
+                    y -= 1;
+                }
+            }
+            if flag2 {
+                // `:52028-52039` — the column fill (the count is unused
+                // state in the C# — `num8` feeds nothing).
+                let mut y = point4.1;
+                while y > point3.1 {
+                    let empty_or_cut = tile_empty(world, x, y)
+                        || world.tile(x, y).is_some_and(|t| tr_core::tileobject::tile_cut(t.kind));
+                    if empty_or_cut && tr_core::edit::place_tile(world, x, y, 504) {
+                        // The net SendData — the MP skip.
+                    }
+                    y -= 1;
+                }
+                // `:52040-52044` — the attach: the life re-arm, the
+                // state flip, the snap (Top = the anchor cell's bottom
+                // centre) and the velocity zero.
+                p.time_left = num3;
+                p.ai[1] = 2.0;
+                p.net_update = true;
+                p.pos = Vec2::new(x as f32 * 16.0 + 8.0 - p.w * 0.5, point3.1 as f32 * 16.0 + 16.0);
+                p.vel = Vec2::ZERO;
+            }
+        }
+    }
+    // `:52048-52051` — only the attached state continues.
+    if p.ai[1] != 2.0 {
+        return;
+    }
+    // `:52052-52059` — the attached head.
+    p.alpha = 0;
+    let num10 = p.ai[0];
+    let y3 = p.pos.y;
+    let cx = ((p.pos.x + p.w * 0.5) / 16.0) as i32;
+    // (`point5.Y` is computed but only its X feeds the points.)
+    let end = (cx, y3 as i32 / 16);
+    let start = (cx, num10 as i32 / 16);
+    let x2 = start.0;
+    // `:52060-52086` — the one-shot conversion / the per-tick dust walk.
+    if p.local_ai[0] == 0.0 {
+        p.local_ai[0] = 1.0;
+        let mut y = start.1;
+        while y >= end.1 {
+            if world.tile(x2, y).is_some_and(|t| t.active() && t.kind == 504) {
+                snake_spawn_rope_in(rng);
+            }
+            y -= 1;
+        }
+    } else {
+        let mut y = start.1;
+        while y >= end.1 {
+            if world.tile(x2, y).is_some_and(|t| t.active() && t.kind == 504)
+                && rng.next_range(0, 80) == 0
+            {
+                // The dust spawn — SKIPPED (no explicit draws inside).
+            }
+            y -= 1;
+        }
+    }
+    // `:52087-52097` — the timeLeft-4 re-burst.
+    if p.time_left == 4 {
+        let mut y = start.1;
+        while y >= end.1 {
+            if world.tile(x2, y).is_some_and(|t| t.active() && t.kind == 504) {
+                snake_spawn_rope_in(rng);
+            }
+            y -= 1;
+        }
+    }
+    // `:52098-52111` — the death window.
+    if p.time_left > 4 {
+        return;
+    }
+    if !in_world_fluff(world, x2, end.1, 20) || !in_world_fluff(world, x2, start.1, 20) {
+        p.active = false;
+        p.time_left = 0;
+        return;
+    }
+    if local_owner == p.owner {
+        snake_remove_rope(world, start, end);
+    }
+    p.active = false;
+    p.time_left = 0;
+}
+
+/// `AI_159_PaperAirplanes` (`Projectile.cs:48695-48755`) — the thrown
+/// paper gliders (761/762): the one-shot launch latch (the velocity-sign
+/// direction, the velocity rotation, `ai[0] = -Next(30,80)`), the wet
+/// kill (the owner-gated `base.wet && owner == myPlayer` — the port's
+/// wet probe is the tick-head stand-in, the bobber precedent), the glide
+/// counter, the wind-borne sine bob (`timeForVisualEffects % 90`), the
+/// 20..69 downwind loop window (the `GetLerpValue(0,30)` eased
+/// `−direction·2π·0.02` bank), the 70 re-arm (`-Next(120,600)`), the
+/// speed-preserving `SafeNormalize(UnitY)` steer, and the non-loop
+/// float (the `Lerp(0.15,0.05,|wind|)` bob step on the `timeLeft % 40`
+/// half-cycle, the ±2 Y clamp, the `wind·0.006` X drift clamped ±6, the
+/// X-sign flip re-arm `-Next(120,300)`).
+///
+/// RNG: the three `Main.rand.Next` draws are the glide TIMERS (`ai[0]`),
+/// state-bearing — the launch `Next(30,80)`, the 70 re-arm
+/// `Next(120,600)`, the flip re-arm `Next(120,300)`. No dust/gore bodies.
+///
+/// `wind` is `Main.WindForVisuals` (= `windSpeedCurrent`, `Main.cs:2823`);
+/// `visual_time` is `Main.timeForVisualEffects`; `old_vel_x` is
+/// `base.oldVelocity.X` (the sub-step's start velocity, `:16766`).
+/// Movement: the C# `HandleMovement` integrates after the AI; the row's
+/// tileCollide true + the blocked-move chain's default (`:19849-19853`)
+/// is the dispatch's `kill_step` (die on contact). `manualDirectionChange`
+/// (`:7853`) suppresses the post-move auto-flip (`:17283`) — the arm owns
+/// `direction` alone.
+pub(crate) fn ai_paper_airplanes(
+    p: &mut Projectile,
+    rng: &mut dyn DropRng,
+    wind: f32,
+    visual_time: f64,
+    local_owner: u8,
+    old_vel_x: f32,
+) {
+    // `:48697-48704` — the launch latch.
+    if p.ai[1] == 0.0 {
+        p.direction = if p.vel.x > 0.0 { 1 } else { -1 };
+        p.rot = p.vel.y.atan2(p.vel.x);
+        p.ai[1] = 1.0;
+        p.ai[0] = -rng.next_range(30, 80) as f32;
+        p.net_update = true;
+    }
+    // `:48705-48708` — the wet kill (the owner gate folds to the
+    // simulated-slot set; the port probes wet at the tick head).
+    if p.wet && p.owner == local_owner {
+        p.kill_time_left = p.time_left;
+        p.active = false;
+        p.time_left = 0;
+    }
+    // `:48709` — the glide counter.
+    p.ai[0] += 1.0;
+    // `:48710-48712` — the wind-borne bob. `vector` is the rotation unit
+    // ×8; `v` adds the wind X and the sine Y (`direction · WindForVisuals`).
+    // The C# association: the double `% 90 / 90` casts to float, the
+    // `(float)π * 2f * phase` is float math, `Math.Sin` widens to double
+    // and the result casts back (`:48711`).
+    let vector = Vec2::new(p.rot.cos(), p.rot.sin()) * 8.0;
+    let phase = ((visual_time % 90.0) / 90.0) as f32;
+    let bob = ((std::f32::consts::PI * 2.0 * phase) as f64).sin() as f32;
+    let mut v = vector + Vec2::new(wind, bob * p.direction as f32 * wind);
+    // `:48713-48714` — the downwind flag and the loop window.
+    let flag = p.direction as f32 == csign(wind) && p.vel.length() > 3.0;
+    let num = p.ai[0] >= 20.0 && p.ai[0] <= 69.0;
+    // `:48715-48718` — the 70 re-arm.
+    if p.ai[0] == 70.0 {
+        p.ai[0] = -rng.next_range(120, 600) as f32;
+    }
+    // `:48719-48724` — the loop bank (the C# `&` is non-short-circuit, but
+    // both operands are pure — no draws).
+    let num2 = num && flag;
+    if num2 {
+        let lerp_value = get_lerp_value(0.0, 30.0, p.ai[0]);
+        v = rotate(vector, -p.direction as f32 * std::f32::consts::TAU * 0.02 * lerp_value);
+    }
+    // `:48725` — the speed-preserving steer (`SafeNormalize(UnitY)`).
+    let speed = p.vel.length();
+    p.vel = if v == Vec2::ZERO || v.is_nan() { Vec2::Y } else { v.normalize() } * speed;
+    // `:48726-48752` — the non-loop float.
+    if !num2 {
+        let num3 = 0.15 + (0.05 - 0.15) * wind.abs();
+        if p.time_left % 40 < 20 {
+            p.vel.y -= num3;
+        } else {
+            p.vel.y += num3;
+        }
+        p.vel.y = p.vel.y.clamp(-2.0, 2.0);
+        p.vel.x = (p.vel.x + wind * 0.006).clamp(-6.0, 6.0);
+        // `:48746-48751` — the X-sign flip re-arm.
+        if p.vel.x * old_vel_x < 0.0 {
+            p.direction *= -1;
+            p.ai[0] = -rng.next_range(120, 300) as f32;
+            p.net_update = true;
+        }
+    }
+    // `:48753-48754` — the rotation and the sprite facing.
+    p.rot = p.vel.y.atan2(p.vel.x);
+    p.sprite_direction = p.direction;
+}
+
+/// `Collision.LavaCollision` (`Collision.cs:1653-1684`) — the clamped
+/// box scan (`[x/16−1, (x+w)/16+2)` × `[y/16−1, (y+h)/16+2)`, the y-range
+/// capped at `maxTilesY−40`): any lava cell whose liquid surface
+/// (`(256−liquid)/32·2` px down from the cell top) the box overlaps.
+fn lava_collision(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
+    let x0 = ((pos.x / 16.0) as i32 - 1).clamp(0, world.width - 1);
+    let x1 = (((pos.x + w) / 16.0) as i32 + 2).clamp(0, world.width - 1);
+    let y0 = ((pos.y / 16.0) as i32 - 1).clamp(0, (world.height - 40).max(0));
+    let y1 = (((pos.y + h) / 16.0) as i32 + 2).clamp(0, (world.height - 40).max(0));
+    for tx in x0..x1 {
+        for ty in y0..y1 {
+            let Some(t) = world.tile(tx, ty) else { continue };
+            if t.liquid == 0 || t.liquid_kind() != tr_core::tile::LiquidKind::Lava {
+                continue;
+            }
+            let surface = (256.0 - t.liquid as f32) / 32.0 * 2.0;
+            let top = ty as f32 * 16.0 + surface;
+            let height = 16.0 - surface as i32 as f32;
+            if pos.x + w > tx as f32 * 16.0
+                && pos.x < tx as f32 * 16.0 + 16.0
+                && pos.y + h > top
+                && pos.y < top + height
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+// ---------------------------------------------------------------------------
 // Witnesses (S1-D-4 code-only round — WRITTEN NOT RUN).
 
 #[cfg(test)]
@@ -1233,5 +1926,1222 @@ mod tests {
                 pool.slots()[s].kind
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod w4_d16_151_tests {
+    //! W4-d16 — aiStyle 151 (`AI_151_SuperStar`, `Projectile.cs:22138-22168`,
+    //! the dispatch `:36567-36570`). WRITTEN NOT RUN (code-only mode). The
+    //! witnesses mirror the C# on the port's seams: the row, the alpha
+    //! ramp + floor, the cue re-arm's `Next(40)`, the spin, the on-screen
+    //! gore gate's `&&` short-circuit (off-screen spends NO `Next(6)`) and
+    //! the two dust gates' `Next(8)` pair — the RNG census pins count AND
+    //! order on a recording stream.
+    use super::*;
+    use crate::projectile::{ProjectilePool, SUPER_STAR, FlailInputs, YoyoInputs, proj_data};
+
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min // every gate takes its branch — the census sees the kicks
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+    fn census() -> CensusRng {
+        CensusRng { ranges: Vec::new(), floats: 0 }
+    }
+
+    fn star() -> Projectile {
+        let d = proj_data(SUPER_STAR).expect("the 728 row");
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = SUPER_STAR;
+        p.owner = 0;
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.w = d.w;
+        p.h = d.h;
+        p.alpha = d.alpha;
+        p.time_left = d.time_left;
+        p.penetrate = d.penetrate;
+        p.max_penetrate = d.penetrate;
+        p.tile_collide = d.tile_collide;
+        p
+    }
+
+    /// The row (`Projectile.cs:7659-7671`): 24x24, aiStyle 151, alpha 255,
+    /// tileCollide true, ranged, friendly, penetrate -1, the LOCAL pair
+    /// (-1).
+    #[test]
+    fn w4_d16_151_the_row_matches_set_defaults() {
+        let d = proj_data(SUPER_STAR).unwrap();
+        assert_eq!((d.w, d.h), (24.0, 24.0), ":7661-7662");
+        assert_eq!(d.ai_style, 151, ":7663");
+        assert_eq!(d.alpha, 255, ":7664");
+        assert!(d.tile_collide, ":7665");
+        assert!(d.ranged, ":7666");
+        assert_eq!(d.penetrate, -1, ":7668");
+        assert!(d.uses_local_immunity, ":7669");
+        assert_eq!(d.local_hit_cooldown, -1, ":7670");
+        assert_eq!(d.extra_updates, 0, "no override — the stock 0");
+    }
+
+    /// The alpha ramp (`:22140-22145`): −10/tick, floored at 100. The
+    /// cue re-arm (`:22146-22150`): `20 + Next(40)` — the census min 0
+    /// gives 20; the Item9 cue rides `wants_sound`. The spin (`:22151`):
+    /// (|3|+|4|)·0.005·1 = 0.035.
+    #[test]
+    fn w4_d16_151_the_ramp_cue_and_spin() {
+        let mut p = star();
+        p.vel = Vec2::new(3.0, 4.0);
+        let mut rng = census();
+        // Off-screen (`None`): the gore gate short-circuits BEFORE its
+        // Next(6) — the census sees only the cue + the two dust gates.
+        ai_super_star(&mut p, &mut rng, None);
+        assert_eq!(p.alpha, 245, "255 − 10");
+        assert_eq!(p.sound_delay, 20, "20 + Next(40)=0");
+        assert_eq!(p.wants_sound, Some((2, 9, 1600.0, 800.0, 0.0)), "Item9");
+        assert!((p.rot - 0.035).abs() < 1e-6, "the spin: {}", p.rot);
+        assert_eq!(rng.ranges, vec![(0, 40), (0, 8), (0, 8)], "no Next(6) off-screen");
+        assert_eq!(rng.floats, 0);
+        // The floor: alpha 105 → 95 → 100.
+        p.alpha = 105;
+        p.sound_delay = -1; // the latch — no re-arm, no draw
+        let mut rng2 = census();
+        ai_super_star(&mut p, &mut rng2, None);
+        assert_eq!(p.alpha, 100, "the floor");
+        assert_eq!(rng2.ranges, vec![(0, 8), (0, 8)], "the latch spends no Next(40)");
+        // The negative-velocity spin mirrors (`direction = -1`).
+        let mut p3 = star();
+        p3.vel = Vec2::new(-3.0, 4.0);
+        p3.sound_delay = -1;
+        ai_super_star(&mut p3, &mut census(), None);
+        assert!((p3.rot + 0.035).abs() < 1e-6, "the mirrored spin");
+    }
+
+    /// The on-screen gore gate (`:22152-22156`): the hitbox inside the
+    /// grown screen rect → `Next(6)`; on the taken branch the
+    /// `SelectRandom` pick `Next(4)` + the NewGore kicks `Next(10,31)` /
+    /// `Next(-20,21)` (`Gore.cs:1327-1328`). The dust gates follow.
+    #[test]
+    fn w4_d16_151_the_on_screen_gore_census() {
+        let mut p = star();
+        p.sound_delay = -1;
+        let mut rng = census();
+        // The screen centre on the star, any size — the box intersects.
+        ai_super_star(&mut p, &mut rng, Some((Vec2::new(1612.0, 812.0), Vec2::new(800.0, 600.0))));
+        assert_eq!(
+            rng.ranges,
+            vec![(0, 6), (0, 4), (10, 31), (-20, 21), (0, 8), (0, 8)],
+            "the gate, the pick, the kicks, the dust pair"
+        );
+        // Far off-screen: the rect test fails, NO Next(6) (`&&` order).
+        let mut p2 = star();
+        p2.sound_delay = -1;
+        let mut rng2 = census();
+        ai_super_star(&mut p2, &mut rng2, Some((Vec2::new(9000.0, 9000.0), Vec2::new(800.0, 600.0))));
+        assert_eq!(rng2.ranges, vec![(0, 8), (0, 8)]);
+    }
+
+    /// The dispatch wiring: one pool update runs the arm (alpha 255→245,
+    /// the cue re-arm, the spin) and the kill_step integrates the flight.
+    #[test]
+    fn w4_d16_151_the_dispatch_arms_the_star() {
+        let mut w = World::new("t".into(), 300, 200);
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let slot = pool
+            .spawn_with_data(SUPER_STAR, 1600.0, 800.0, 3.0, 4.0, 40, 2.0)
+            .unwrap();
+        pool.slots_mut()[slot].alpha = 255;
+        let mut rng = census();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+        let p = &pool.slots()[slot];
+        assert!(p.active);
+        assert_eq!(p.alpha, 245, "one sub-step (extraUpdates 0)");
+        assert_eq!(p.pos, Vec2::new(1603.0, 804.0), "the kill_step integrate");
+        assert_eq!(p.time_left, 3599, "the lifetime block");
+        // screen_view None in the pool-only test: no Next(6).
+        assert_eq!(rng.ranges, vec![(0, 40), (0, 8), (0, 8)]);
+    }
+}
+
+#[cfg(test)]
+mod w4_d16_152_tests {
+    //! W4-d16 — aiStyle 152 (`AI_152_SuperStarSlash`,
+    //! `Projectile.cs:22230-22351`, the dispatch `:36571-36574`). WRITTEN
+    //! NOT RUN (code-only mode). The four rows (729/977/976/1045), the
+    //! alpha ladders, the cue latches, the ai[0] spin's per-kind divisor,
+    //! the 977/1045 drag + dust census, the 976 lava kill + frame cycle +
+    //! Remap envelope + one-shot burst census, the shared rotation tail.
+    use super::*;
+    use crate::projectile::{
+        FlailInputs, MOON_LORD_WHIP_PROC, ProjectilePool, SUPER_STAR_SLASH, YoyoInputs,
+        ZENITH_GRASS_SLASH, ZENITH_MURAMASA_SLASH, proj_data,
+    };
+
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+    fn census() -> CensusRng {
+        CensusRng { ranges: Vec::new(), floats: 0 }
+    }
+
+    fn slash(kind: u16) -> Projectile {
+        let d = proj_data(kind).expect("the rowed slash");
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = kind;
+        p.owner = 0;
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.w = d.w;
+        p.h = d.h;
+        p.alpha = d.alpha;
+        p.time_left = d.time_left;
+        p.penetrate = d.penetrate;
+        p.max_penetrate = d.penetrate;
+        p.tile_collide = d.tile_collide;
+        p.extra_updates = d.extra_updates;
+        p
+    }
+
+    /// The four rows (`:7672-7687`/`:9208-9224`/`:9270-9286`/`:9890-9907`).
+    #[test]
+    fn w4_d16_152_the_four_rows_match_set_defaults() {
+        let d = proj_data(SUPER_STAR_SLASH).unwrap();
+        assert_eq!((d.w, d.h, d.ai_style), (20.0, 20.0, 152));
+        assert_eq!((d.penetrate, d.time_left, d.extra_updates), (-1, 30, 2), "10*MaxUpdates");
+        assert!(d.uses_id_static_immunity && d.id_static_hit_cooldown == 10);
+        assert!(d.ranged && d.ignore_water && !d.tile_collide);
+        let d = proj_data(ZENITH_MURAMASA_SLASH).unwrap();
+        assert_eq!((d.penetrate, d.time_left, d.extra_updates), (1, 30, 2));
+        assert!(d.uses_local_immunity && d.local_hit_cooldown == -1);
+        assert!(d.melee && d.ignore_water);
+        let d = proj_data(ZENITH_GRASS_SLASH).unwrap();
+        assert_eq!((d.penetrate, d.time_left, d.extra_updates), (2, 60, 0), "60*MaxUpdates");
+        assert!(d.melee);
+        let d = proj_data(MOON_LORD_WHIP_PROC).unwrap();
+        assert_eq!((d.penetrate, d.time_left, d.extra_updates, d.alpha), (1, 48, 1, 255), "24*MaxUpdates");
+        assert!(d.melee);
+    }
+
+    /// The 729: the −10 alpha ramp to 100, the Item9 `20 + Next(40)`
+    /// re-arm, the ai[0]/(10·3) spin, the π/2 rotation offset, the
+    /// tileCollide pin. NO other draws (the 729 has no dust branch).
+    #[test]
+    fn w4_d16_152_the_cannon_slash_ramp_spin_and_cue() {
+        let mut p = slash(SUPER_STAR_SLASH);
+        p.alpha = 255; // the spawn seam's stock 0 — the C# row leaves 0;
+        // the witness drives the ramp from a visible value.
+        p.vel = Vec2::new(10.0, 0.0);
+        p.ai[0] = 30.0; // one full divisor turn: 30/(10*3) = 1 rad
+        let mut rng = census();
+        let w = World::new("t".into(), 300, 200);
+        ai_super_star_slash(&mut p, &w, &mut rng);
+        assert_eq!(p.alpha, 245);
+        assert_eq!(p.sound_delay, 20, "20 + Next(40)=0");
+        assert_eq!(p.wants_sound, Some((2, 9, 1600.0, 800.0, 0.0)));
+        assert_eq!(rng.ranges, vec![(0, 40)], "the cue draw only");
+        // The spin: RotatedBy(1 rad) of (10,0) — cos/sin in double.
+        let c = 1.0f64.cos() as f32;
+        let s = 1.0f64.sin() as f32;
+        assert!((p.vel.x - 10.0 * c).abs() < 1e-4 && (p.vel.y - 10.0 * s).abs() < 1e-4);
+        assert!((p.rot - (p.vel.y.atan2(p.vel.x) + std::f32::consts::FRAC_PI_2)).abs() < 1e-6);
+        assert!(!p.tile_collide, ":22350");
+        // The alpha floor.
+        p.alpha = 105;
+        p.sound_delay = -1;
+        ai_super_star_slash(&mut p, &w, &mut census());
+        assert_eq!(p.alpha, 100);
+    }
+
+    /// The 977: the Item1 one-cue latch, the ×0.96 drag, the 1-in-8 dust
+    /// gate + the taken branch's NextVector2Circular pair (two floats).
+    #[test]
+    fn w4_d16_152_the_muramasa_drag_and_dust_census() {
+        let mut p = slash(ZENITH_MURAMASA_SLASH);
+        p.vel = Vec2::new(10.0, 0.0);
+        let mut rng = census();
+        let w = World::new("t".into(), 300, 200);
+        ai_super_star_slash(&mut p, &w, &mut rng);
+        assert_eq!(p.sound_delay, -1, "the one-cue latch");
+        assert_eq!(p.wants_sound, Some((2, 1, 1600.0, 800.0, 0.0)), "Item1");
+        assert!((p.vel.x - 9.6).abs() < 1e-5, "the ×0.96 drag");
+        assert_eq!(rng.ranges, vec![(0, 8)]);
+        assert_eq!(rng.floats, 2, "NextVector2Circular(1,1) — the rewritten velocity");
+        // The latch holds: no second cue, the gate still rolls.
+        let mut rng2 = census();
+        ai_super_star_slash(&mut p, &w, &mut rng2);
+        assert_eq!(rng2.ranges, vec![(0, 8)]);
+        assert_eq!(rng2.floats, 2);
+    }
+
+    /// The 1045: the −50 ramp to 0, the 24-base divisor (24·2 = 48), the
+    /// Item1 latch + the same dust census as the 977.
+    #[test]
+    fn w4_d16_152_the_whip_proc_ramp_and_divisor() {
+        let mut p = slash(MOON_LORD_WHIP_PROC);
+        p.vel = Vec2::new(10.0, 0.0);
+        p.ai[0] = 48.0; // 48/48 = 1 rad
+        let mut rng = census();
+        let w = World::new("t".into(), 300, 200);
+        ai_super_star_slash(&mut p, &w, &mut rng);
+        assert_eq!(p.alpha, 205, "255 − 50");
+        assert_eq!(p.sound_delay, -1);
+        assert_eq!(rng.ranges, vec![(0, 8)], "no Next(40) — the Item1 arm");
+        assert_eq!(rng.floats, 2);
+        let c = 1.0f64.cos() as f32;
+        // The drag runs AFTER the spin: 10·cos(1)·0.96.
+        assert!((p.vel.x - 10.0 * c * 0.96).abs() < 1e-4);
+        // The floor at 0.
+        p.alpha = 30;
+        ai_super_star_slash(&mut p, &w, &mut census());
+        assert_eq!(p.alpha, 0);
+    }
+
+    /// The 976: the silent latch (NO cue draw), the full-angle spin, the
+    /// frame cycle, the Remap speed envelope (ai[1] = 0, timeLeft 60 →
+    /// fromValue 0 → num6 = 0 → speed 16), the opacity fade-in start
+    /// (alpha 255), the Next(3) gate + the one-shot 10-dust burst's 20
+    /// floats, the zero rotation offset.
+    #[test]
+    fn w4_d16_152_the_grass_slash_envelope_and_burst() {
+        let mut p = slash(ZENITH_GRASS_SLASH);
+        p.vel = Vec2::new(10.0, 0.0);
+        p.ai[0] = 0.5; // the FULL angle (no divisor)
+        let mut rng = census();
+        let w = World::new("t".into(), 300, 200);
+        ai_super_star_slash(&mut p, &w, &mut rng);
+        assert_eq!(p.sound_delay, -1, "the silent latch");
+        assert_eq!(p.wants_sound, None, "no cue");
+        assert_eq!(p.alpha, 255, "Opacity 0 at fromValue 0");
+        assert!((p.vel.length() - 16.0).abs() < 1e-4, "4 + 12·(1−0)");
+        assert_eq!(p.frame, 0, "frameCounter 1 < 2");
+        assert_eq!(p.frame_counter, 1);
+        assert_eq!(p.local_ai[1], 1.0, "the burst latch");
+        assert_eq!(rng.ranges, vec![(0, 3)], "the trail gate only — no cue draw");
+        assert_eq!(rng.floats, 20, "10 dust × (angle + speed)");
+        assert!((p.rot - p.vel.y.atan2(p.vel.x)).abs() < 1e-6, "num = 0");
+        // Second tick: the frame advances, the burst does NOT re-fire.
+        let mut rng2 = census();
+        ai_super_star_slash(&mut p, &w, &mut rng2);
+        assert_eq!(p.frame, 1);
+        assert_eq!(p.frame_counter, 0);
+        assert_eq!(rng2.floats, 0, "the one-shot latch");
+        // The speed at fromValue 30 (timeLeft 30): num6 = Remap(30,0,20→
+        // clamped 1)·Remap(30,0,60,1→0 = 0.5) = 0.5 → speed 10.
+        p.time_left = 30;
+        ai_super_star_slash(&mut p, &w, &mut census());
+        assert!((p.vel.length() - 10.0).abs() < 1e-4);
+    }
+
+    /// The 976 lava kill (`:22316-22320`): a full lava cell under the box
+    /// kills BEFORE the frame/envelope work — zero draws.
+    #[test]
+    fn w4_d16_152_the_grass_slash_dies_in_lava() {
+        let mut w = World::new("t".into(), 300, 200);
+        let i = w.index(100, 50);
+        w.tiles[i].liquid = 255;
+        w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        let mut p = slash(ZENITH_GRASS_SLASH);
+        p.pos = Vec2::new(100.0 * 16.0, 50.0 * 16.0 - 10.0);
+        let mut rng = census();
+        ai_super_star_slash(&mut p, &w, &mut rng);
+        assert!(!p.active, "the lava kill");
+        assert_eq!(p.time_left, 0);
+        assert_eq!(rng.ranges, Vec::new(), "the kill precedes every draw");
+        assert_eq!(rng.floats, 0);
+    }
+
+    /// The dispatch wiring: one pool update runs the 729 arm (3 sub-steps
+    /// — extraUpdates 2) and the free integrate moves the slot.
+    #[test]
+    fn w4_d16_152_the_dispatch_arms_the_slashes() {
+        let mut w = World::new("t".into(), 300, 200);
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let slot = pool
+            .spawn_with_data(SUPER_STAR_SLASH, 1600.0, 800.0, 10.0, 0.0, 40, 2.0)
+            .unwrap();
+        let mut rng = census();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+        let p = &pool.slots()[slot];
+        assert!(p.active);
+        assert_eq!(p.sound_delay, 20, "the first sub-step's cue re-arm");
+        assert_eq!(p.time_left, 27, "30 − 3 sub-steps");
+        assert!((p.pos.x - 1630.0).abs() < 1e-3, "3 × 10 px");
+        // The cue draws ONCE (the re-arm holds across the sub-steps).
+        assert_eq!(rng.ranges, vec![(0, 40)]);
+    }
+}
+
+#[cfg(test)]
+mod w4_d16_153_tests {
+    //! W4-d16 — aiStyle 153 (`AI_153_ToiletPop`, `Projectile.cs:52198-
+    //! 52236`, the dispatch `:36575-36578`). WRITTEN NOT RUN (code-only
+    //! mode). The row, the first-tick burst census (no Next(5) gate —
+    //! the gore is unconditional), the 1-in-5 gate ticks, the past-10
+    //! kill (zero draws), the counter's after-the-pick advance.
+    use super::*;
+    use crate::projectile::{FlailInputs, ProjectilePool, TOILET_EFFECT, YoyoInputs, proj_data};
+
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+    fn census() -> CensusRng {
+        CensusRng { ranges: Vec::new(), floats: 0 }
+    }
+
+    fn pop() -> Projectile {
+        let d = proj_data(TOILET_EFFECT).unwrap();
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = TOILET_EFFECT;
+        p.owner = 0;
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.w = d.w;
+        p.h = d.h;
+        p.alpha = d.alpha;
+        p.time_left = d.time_left;
+        p.penetrate = d.penetrate;
+        p.max_penetrate = d.penetrate;
+        p.tile_collide = d.tile_collide;
+        p
+    }
+
+    /// The row (`Projectile.cs:7716-7725`): 2x2, aiStyle 153, tileCollide
+    /// false, ignoreWater, penetrate -1, alpha 255.
+    #[test]
+    fn w4_d16_153_the_row_matches_set_defaults() {
+        let d = proj_data(TOILET_EFFECT).unwrap();
+        assert_eq!((d.w, d.h, d.ai_style), (2.0, 2.0, 153));
+        assert!(!d.tile_collide && d.ignore_water);
+        assert_eq!(d.penetrate, -1);
+        assert_eq!(d.alpha, 255);
+    }
+
+    /// The first tick (`:52204-52208`, `:52231-52235`): NO Next(5) gate —
+    /// the gore is unconditional: the circular pair + the type roll +
+    /// the kicks. The counter advances to 1.
+    #[test]
+    fn w4_d16_153_the_first_tick_burst_census() {
+        let mut p = pop();
+        let mut rng = census();
+        ai_toilet_pop(&mut p, &mut rng);
+        assert_eq!(p.ai[0], 1.0);
+        assert_eq!(rng.ranges, vec![(580, 583), (10, 31), (-20, 21)], "no gate on tick 0");
+        assert_eq!(rng.floats, 2, "the circular velocity pair");
+    }
+
+    /// The gate ticks (`:52216-52220`): the Next(5) draws; on the taken
+    /// branch (census min 0) the gore row follows. The counter advances.
+    #[test]
+    fn w4_d16_153_the_gate_ticks_census() {
+        let mut p = pop();
+        p.ai[0] = 5.0;
+        let mut rng = census();
+        ai_toilet_pop(&mut p, &mut rng);
+        assert_eq!(p.ai[0], 6.0);
+        assert_eq!(rng.ranges, vec![(0, 5), (580, 583), (10, 31), (-20, 21)]);
+        assert_eq!(rng.floats, 2);
+    }
+
+    /// The past-10 kill (`:52211-52215`): ai[0] = 11 dies BEFORE the gate
+    /// — zero draws, the counter does NOT advance.
+    #[test]
+    fn w4_d16_153_the_past_ten_kill_spends_nothing() {
+        let mut p = pop();
+        p.ai[0] = 11.0;
+        let mut rng = census();
+        ai_toilet_pop(&mut p, &mut rng);
+        assert!(!p.active);
+        assert_eq!(p.time_left, 0);
+        assert_eq!(p.ai[0], 11.0, "the kill returns before the ++");
+        assert_eq!(rng.ranges, Vec::new());
+        assert_eq!(rng.floats, 0);
+        // ai[0] = 10 is the LAST live tick (`<= 10f` holds).
+        let mut p2 = pop();
+        p2.ai[0] = 10.0;
+        ai_toilet_pop(&mut p2, &mut census());
+        assert!(p2.active);
+        assert_eq!(p2.ai[0], 11.0);
+    }
+
+    /// The dispatch wiring: one pool update runs the first-tick burst.
+    #[test]
+    fn w4_d16_153_the_dispatch_arms_the_pop() {
+        let mut w = World::new("t".into(), 300, 200);
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let slot = pool
+            .spawn_with_data(TOILET_EFFECT, 1600.0, 800.0, 0.0, 0.0, 0, 0.0)
+            .unwrap();
+        let mut rng = census();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            false,
+        );
+        let p = &pool.slots()[slot];
+        assert!(p.active);
+        assert_eq!(p.ai[0], 1.0);
+        assert_eq!(rng.ranges, vec![(580, 583), (10, 31), (-20, 21)]);
+        assert_eq!(rng.floats, 2);
+    }
+}
+
+#[cfg(test)]
+mod w4_d16_154_tests {
+    //! W4-d16 — aiStyle 154 (`AI_154_VoidLens`, `Projectile.cs:52154-
+    //! 52196`, the dispatch `:36579-36582`). WRITTEN NOT RUN (code-only
+    //! mode). The row + sheet, the damp/direction/frame/opacity body, the
+    //! VoidLensHelper dust census (both branches), the pool-side dedupe
+    //! (the younger lens kills the older; an older sibling kills this).
+    use super::*;
+    use crate::projectile::{FlailInputs, ProjectilePool, VOID_LENS, YoyoInputs, proj_data};
+
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+    fn census() -> CensusRng {
+        CensusRng { ranges: Vec::new(), floats: 0 }
+    }
+
+    fn lens() -> Projectile {
+        let d = proj_data(VOID_LENS).unwrap();
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = VOID_LENS;
+        p.owner = 0;
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.w = d.w;
+        p.h = d.h;
+        p.alpha = d.alpha;
+        p.time_left = d.time_left;
+        p.tile_collide = d.tile_collide;
+        p
+    }
+
+    /// The row (`Projectile.cs:7726-7735`) + the 8-frame sheet
+    /// (`Main.cs:8504`).
+    #[test]
+    fn w4_d16_154_the_row_and_sheet_match_set_defaults() {
+        let d = proj_data(VOID_LENS).unwrap();
+        assert_eq!((d.w, d.h, d.ai_style), (30.0, 24.0, 154));
+        assert!(!d.tile_collide);
+        assert_eq!(d.time_left, 10800);
+        assert_eq!(d.alpha, 255);
+        assert_eq!(crate::projectile::proj_frames(VOID_LENS), 8);
+    }
+
+    /// The body (`:52177-52194`): the ×0.94 damp, direction 1, the 5-tick
+    /// frame cycle, the +0.03 opacity climb (alpha 255 → 247: opacity
+    /// 0.03 → alpha (1−0.03)·255 = 247.35 → 247). The dust census: the
+    /// Next(3) gate + the Next(2) pick (census min 0 → the FIRST branch)
+    /// + the RotatedByRandom pair + the SelectRandom Next(2) + the
+    /// Next(10,21) radius + the scale float.
+    #[test]
+    fn w4_d16_154_the_body_and_dust_census() {
+        let mut p = lens();
+        p.vel = Vec2::new(10.0, 0.0);
+        let mut rng = census();
+        ai_void_lens(&mut p, &mut rng);
+        assert!((p.vel.x - 9.4).abs() < 1e-5, "the ×0.94 damp");
+        assert_eq!(p.direction, 1);
+        assert_eq!(p.frame_counter, 1);
+        assert_eq!(p.frame, 0);
+        assert_eq!(p.alpha, 247, "the opacity climb's truncation");
+        assert_eq!(rng.ranges, vec![(0, 3), (0, 2), (0, 2), (10, 21)]);
+        assert_eq!(rng.floats, 3, "the rotation pair + the scale");
+        // The frame cycle: 5 ticks advance the frame, 40 wrap it.
+        for _ in 0..4 {
+            ai_void_lens(&mut p, &mut census());
+        }
+        assert_eq!(p.frame, 1, "the 5th tick");
+        assert_eq!(p.frame_counter, 0);
+        // The opacity caps at 1 (alpha 0).
+        p.alpha = 3; // opacity ≈ 0.988 + 0.03 > 1 → clamp
+        ai_void_lens(&mut p, &mut census());
+        assert_eq!(p.alpha, 0);
+    }
+
+    /// The dedupe (`:52157-52176`): two lenses, one owner — the YOUNGER
+    /// (lower timeLeft) dies, the older survives; the scan kills the
+    /// older siblings when THIS lens is the oldest.
+    #[test]
+    fn w4_d16_154_the_dedupe_keeps_the_oldest() {
+        let mut w = World::new("t".into(), 300, 200);
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let older = pool.spawn_with_data(VOID_LENS, 1600.0, 800.0, 0.0, 0.0, 0, 0.0).unwrap();
+        let younger = pool.spawn_with_data(VOID_LENS, 1700.0, 800.0, 0.0, 0.0, 0, 0.0).unwrap();
+        pool.slots_mut()[younger].time_left = 100; // younger than 10800
+        let mut rng = census();
+        pool.update(
+            &mut w, &mut npcs, None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+        );
+        assert!(pool.slots()[older].active, "the older lens survives");
+        assert!(!pool.slots()[younger].active, "the younger lens dies");
+        // The foreign-owner lens is NOT deduped (`:52166`'s owner gate).
+        let mut pool2 = ProjectilePool::new();
+        let a = pool2.spawn_with_data(VOID_LENS, 1600.0, 800.0, 0.0, 0.0, 0, 0.0).unwrap();
+        let b = pool2.spawn_with_data(VOID_LENS, 1700.0, 800.0, 0.0, 0.0, 0, 0.0).unwrap();
+        pool2.slots_mut()[b].owner = 1;
+        pool2.slots_mut()[b].time_left = 100;
+        pool2.update(
+            &mut w, &mut npcs, None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut census(), 0, false,
+        );
+        assert!(pool2.slots()[a].active && pool2.slots()[b].active, "the owner gate");
+        let _ = younger;
+    }
+}
+
+#[cfg(test)]
+mod w4_d16_155_tests {
+    //! W4-d16 — aiStyle 155 (`AI_155_MysticSnakeCoil`,
+    //! `Projectile.cs:51939-52112` + the rope helpers `:52114-52152`, the
+    //! dispatch `:36583-36586`). WRITTEN NOT RUN (code-only mode). The
+    //! row, the launch latch + rise truncation, the 60-tick burst census
+    //! (4 floats × 30), the trail gate's `||` short-circuit, the rope
+    //! placement + attach snap, the attached conversion census, the
+    //! timeLeft-4 re-burst + the ≤4 removal death, the orphan kill.
+    use super::*;
+    use crate::projectile::{FlailInputs, MYSTIC_SNAKE_COIL, ProjectilePool, YoyoInputs, proj_data};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+    fn census() -> CensusRng {
+        CensusRng { ranges: Vec::new(), floats: 0 }
+    }
+
+    fn coil() -> Projectile {
+        let d = proj_data(MYSTIC_SNAKE_COIL).unwrap();
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = MYSTIC_SNAKE_COIL;
+        p.owner = 0;
+        // The whip's spawn shape (`Player.cs:47884`): pos.y = ai[0] =
+        // the anchor's cell centre − 16 (row 50 → 792). Centre
+        // (1608, 800) — tile (100, 50); the rope-scan rows are
+        // `position.Y / 16` = 49 (NOT the centre row).
+        p.pos = Vec2::new(1600.0, 792.0);
+        p.w = d.w;
+        p.h = d.h;
+        p.alpha = d.alpha;
+        p.time_left = d.time_left;
+        p.penetrate = d.penetrate;
+        p.max_penetrate = d.penetrate;
+        p.tile_collide = d.tile_collide;
+        p.ai[0] = 792.0; // the anchor y — scan row 49
+        p
+    }
+
+    fn world() -> World {
+        World::new("t".into(), 300, 200)
+    }
+
+    fn put(w: &mut World, x: i32, y: i32, kind: u16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile { kind, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// The row (`Projectile.cs:7767-7776`).
+    #[test]
+    fn w4_d16_155_the_row_matches_set_defaults() {
+        let d = proj_data(MYSTIC_SNAKE_COIL).unwrap();
+        assert_eq!((d.w, d.h, d.ai_style), (16.0, 16.0, 155));
+        assert!(!d.tile_collide && d.ignore_water);
+        assert_eq!(d.penetrate, -1);
+        assert_eq!(d.alpha, 255);
+    }
+
+    /// The launch latch (`:51952-51957`): spriteDirection from the
+    /// owner-centre comparison, ai[1] = 1, velocity.Y = −5 → the rise
+    /// machine's first tick truncates it to −3 (localAI[1] = 1 < 15 →
+    /// num4 = 0 → −3·1 = −3). The trail gate rolls Next(6) (census min 0
+    /// → taken), the alpha ramps −5, the frame counter advances.
+    #[test]
+    fn w4_d16_155_the_launch_and_first_rise_tick() {
+        let mut w = world();
+        let mut p = coil();
+        let mut rng = census();
+        // The owner to the RIGHT of the coil → spriteDirection −1.
+        ai_mystic_snake_coil(&mut p, &mut w, Some(Vec2::new(2000.0, 808.0)), true, 0, &mut rng);
+        assert_eq!(p.sprite_direction, -1);
+        assert_eq!(p.ai[1], 1.0);
+        assert_eq!(p.local_ai[1], 1.0);
+        assert_eq!(p.vel.y, -3.0, "the int truncation of −3·(1−0)");
+        assert_eq!(p.alpha, 250);
+        assert_eq!(p.frame_counter, 1);
+        assert_eq!(rng.ranges, vec![(0, 6)], "the trail gate only");
+        assert_eq!(rng.floats, 0);
+        // The owner to the LEFT → spriteDirection 1 (the `!(>)` form).
+        let mut p2 = coil();
+        ai_mystic_snake_coil(&mut p2, &mut world(), Some(Vec2::new(1000.0, 808.0)), true, 0, &mut census());
+        assert_eq!(p2.sprite_direction, 1);
+    }
+
+    /// The 60-tick burst (`:51965-51982`): 30 dust × 4 floats (the X
+    /// jitter, the angle pair, the ALWAYS-taken Y scale — the rotated
+    /// (0,−1) vector's Y is −1 for every draw since the angle is ×0f).
+    /// The trail gate's Next(6) is the `||`'s LEFT operand — it rolls
+    /// EVERY rise tick (num5 = 1 only skips the body, never the roll).
+    #[test]
+    fn w4_d16_155_the_sixty_tick_burst_census() {
+        let mut w = world();
+        let mut p = coil();
+        p.ai[1] = 1.0;
+        p.local_ai[1] = 59.0; // this tick → 60
+        let mut rng = census();
+        ai_mystic_snake_coil(&mut p, &mut w, Some(Vec2::new(2000.0, 808.0)), true, 0, &mut rng);
+        assert_eq!(p.local_ai[1], 60.0);
+        assert_eq!(p.vel.y, -32.0, "−3·0 + −32·1");
+        assert_eq!(rng.floats, 120, "30 × 4");
+        assert_eq!(rng.ranges, vec![(0, 6)], "the Next(6) is the ||'s left operand — always rolled");
+    }
+
+    /// The rope placement (`:52002-52046`): the coil has risen to row 43
+    /// (pos.y 688), the anchor row 49 — a solid dirt cell at row 45 trips
+    /// the blocker scan (`:52017-52024`), so the column fills rows 49..44
+    /// (`> point3.Y` — row 43 stays empty; the dirt at 45 is neither
+    /// TileEmpty nor tileCut, so it is skipped), the life re-arms to
+    /// 1800, ai[1] = 2, the Top snaps to (100·16+8, 43·16+16) and the
+    /// velocity zeroes. The attached half runs the SAME tick: the
+    /// one-shot conversion over the 5 rope cells (44, 46..49).
+    #[test]
+    fn w4_d16_155_the_placement_attach_and_conversion() {
+        let mut w = world();
+        put(&mut w, 100, 45, 1); // the solid blocker (dirt)
+        let mut p = coil();
+        p.pos = Vec2::new(1600.0, 688.0); // risen — centre row 43
+        p.ai[1] = 1.0;
+        p.local_ai[1] = 5.0;
+        let mut rng = census();
+        ai_mystic_snake_coil(&mut p, &mut w, Some(Vec2::new(2000.0, 808.0)), true, 0, &mut rng);
+        assert_eq!(p.ai[1], 2.0, "the attach");
+        assert_eq!(p.time_left, 1800);
+        assert!(p.net_update);
+        assert_eq!(p.vel, Vec2::ZERO);
+        // Top = (1608, 704) → pos = (1600, 704) for the 16x16 box.
+        assert_eq!(p.pos, Vec2::new(1600.0, 704.0));
+        for y in [44, 46, 47, 48, 49] {
+            assert_eq!(w.tile(100, y).unwrap().kind, 504, "the column cell {y}");
+        }
+        assert_eq!(w.tile(100, 45).unwrap().kind, 1, "the blocker untouched");
+        assert!(!w.tile(100, 43).unwrap().active(), "the `> point3.Y` bound");
+        assert_eq!(p.alpha, 0, "the attached head");
+        assert_eq!(p.local_ai[0], 1.0, "the one-shot latch");
+        // The conversion census: the trail gate's Next(6) first, then 5
+        // rope cells × (Next(4) + 5×Next(8)) — census min 0 → the gore
+        // gate FAILS, no gore draws.
+        assert_eq!(rng.ranges.len(), 1 + 5 * 6, "the trail gate + 5 cells × 6");
+        assert_eq!(rng.ranges[0], (0, 6));
+        assert!(rng.ranges[1..].iter().all(|&(a, b)| (a, b) == (0, 4) || (a, b) == (0, 8)));
+        assert_eq!(rng.floats, 0, "the gore gate failed — no circular pair");
+    }
+
+    /// The gore-taking conversion census: a stream whose Next(4) returns
+    /// 1 (gate taken) — per cell the type roll + the kicks + the circular
+    /// pair + the 5 dust gates.
+    #[test]
+    fn w4_d16_155_the_conversion_gore_census() {
+        struct GoreRng {
+            ranges: Vec<(i32, i32)>,
+            floats: usize,
+        }
+        impl DropRng for GoreRng {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                self.ranges.push((min, max));
+                if (min, max) == (0, 4) { 1 } else { min }
+            }
+            fn next_float(&mut self) -> f32 {
+                self.floats += 1;
+                0.0
+            }
+        }
+        let mut w = world();
+        // One rope cell at the coil's own row — the start == end scan.
+        put(&mut w, 100, 49, 504);
+        let mut p = coil();
+        p.ai[0] = 792.0; // the anchor ON the coil row → a 1-cell scan
+        p.ai[1] = 2.0;
+        let mut rng = GoreRng { ranges: Vec::new(), floats: 0 };
+        ai_mystic_snake_coil(&mut p, &mut w, Some(Vec2::new(2000.0, 808.0)), true, 0, &mut rng);
+        assert_eq!(
+            rng.ranges,
+            vec![(0, 4), (61, 64), (10, 31), (-20, 21), (0, 8), (0, 8), (0, 8), (0, 8), (0, 8)],
+            "the gate, the type, the kicks, the 5 dust gates"
+        );
+        assert_eq!(rng.floats, 2, "NextVector2Circular(1.5, 0.8)");
+    }
+
+    /// The timeLeft-4 re-burst + the ≤4 death (`:52087-52111`): the
+    /// conversion walks AGAIN, then the owner-gated rope removal kills
+    /// every 504 cell and the coil dies.
+    #[test]
+    fn w4_d16_155_the_death_reburst_and_removal() {
+        let mut w = world();
+        put(&mut w, 100, 49, 504);
+        let mut p = coil();
+        p.ai[0] = 792.0; // the anchor ON the coil row → a 1-cell scan
+        p.ai[1] = 2.0;
+        p.local_ai[0] = 1.0; // the per-tick dust walk (not the one-shot)
+        p.time_left = 4;
+        let mut rng = census();
+        ai_mystic_snake_coil(&mut p, &mut w, Some(Vec2::new(2000.0, 808.0)), true, 0, &mut rng);
+        assert!(!p.active, "the ≤4 death");
+        assert_eq!(p.time_left, 0);
+        assert!(!w.tile(100, 49).unwrap().active(), "the rope removed");
+        // The per-tick walk's Next(80) (census min 0 → the dust body,
+        // skipped) + the re-burst's per-cell row.
+        assert_eq!(rng.ranges[0], (0, 80), "the per-tick dust gate");
+        assert_eq!(rng.ranges[1], (0, 4), "the re-burst's gore gate");
+    }
+
+    /// The orphan kill (`:51941-51949`): no active owner → the rope
+    /// column dies with the coil, ZERO draws.
+    #[test]
+    fn w4_d16_155_the_orphan_kill_removes_the_rope() {
+        let mut w = world();
+        put(&mut w, 100, 49, 504);
+        put(&mut w, 100, 50, 504);
+        let mut p = coil();
+        p.ai[0] = 800.0; // the anchor BELOW the coil — rows 50..49 scan
+        let mut rng = census();
+        ai_mystic_snake_coil(&mut p, &mut w, None, false, 0, &mut rng);
+        assert!(!p.active);
+        assert!(!w.tile(100, 49).unwrap().active());
+        assert!(!w.tile(100, 50).unwrap().active());
+        assert_eq!(rng.ranges, Vec::new());
+        assert_eq!(rng.floats, 0);
+    }
+
+    /// The dispatch wiring: one pool update runs the launch tick (no
+    /// player → the orphan kill; with the owner snapshot the rise runs).
+    #[test]
+    fn w4_d16_155_the_dispatch_arms_the_coil() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let slot = pool
+            .spawn_with_data_ai(MYSTIC_SNAKE_COIL, 1600.0, 800.0, 0.0, 0.0, 0, 0.0, 700.0, 0.0)
+            .unwrap();
+        let mut rng = census();
+        // No player: the orphan kill (the C# reads an inactive player).
+        pool.update(
+            &mut w, &mut npcs, None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+        );
+        assert!(!pool.slots()[slot].active, "the orphan kill");
+        assert_eq!(rng.ranges, Vec::new());
+    }
+
+    /// The LIVE wiring drain (the residual-3 census): a pool update with
+    /// a resolved owner runs the placement walk against the REAL world —
+    /// the blocker at row 45 trips the scan, the column fills rows
+    /// 49..44 with 504, the coil attaches (ai[1] = 2, life 1800), and the
+    /// tile writes bump `world.revision` (the `WorldFrameKey` input —
+    /// the frame cache invalidates, `draw.rs:1041`). The death window
+    /// then removes every rope cell through the same live path.
+    #[test]
+    fn w4_d16_155_the_dispatch_drains_the_rope_seams_live() {
+        let mut w = world();
+        put(&mut w, 100, 45, 1); // the solid blocker (dirt)
+        let mut pl = crate::player::Player::spawn(&w);
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        // The risen coil: pos.y 688 (centre row 43), anchor row 49,
+        // ai[1] = 1 (the rise state) — the first update's blocker scan
+        // attaches it.
+        let slot = pool
+            .spawn_with_data_ai(MYSTIC_SNAKE_COIL, 1600.0, 688.0, 0.0, 0.0, 0, 0.0, 792.0, 1.0)
+            .unwrap();
+        let rev0 = w.revision;
+        let mut rng = census();
+        pool.update(
+            &mut w, &mut npcs, Some((2000.0, 808.0)), None, Some(&mut pl),
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+        );
+        assert!(pool.slots()[slot].active, "the coil attached");
+        assert_eq!(pool.slots()[slot].ai[1], 2.0, "the attach state");
+        for y in [44, 46, 47, 48, 49] {
+            assert_eq!(w.tile(100, y).unwrap().kind, 504, "the LIVE column cell {y}");
+        }
+        assert_eq!(w.tile(100, 45).unwrap().kind, 1, "the blocker untouched");
+        assert!(w.revision > rev0, "the tile writes bump the frame-cache key");
+        // The death window: timeLeft 4 → the re-burst + the owner-gated
+        // removal kill every 504 cell through the same dispatch.
+        pool.slots_mut()[slot].time_left = 4;
+        let rev1 = w.revision;
+        pool.update(
+            &mut w, &mut npcs, Some((2000.0, 808.0)), None, Some(&mut pl),
+            YoyoInputs::default(), FlailInputs::default(), &mut census(), 0, false,
+        );
+        assert!(!pool.slots()[slot].active, "the ≤4 death");
+        for y in [44, 46, 47, 48, 49] {
+            assert!(!w.tile(100, y).unwrap().active(), "the LIVE removal {y}");
+        }
+        assert!(w.revision > rev1, "the removal bumps the key too");
+    }
+}
+
+#[cfg(test)]
+mod w4_d16_159_tests {
+    //! W4-d16 — aiStyle 159 (`AI_159_PaperAirplanes`,
+    //! `Projectile.cs:48695-48755`, the dispatch `:36599-36602`, the row
+    //! `:7846-7854`, the Kill arm `:76083-76095`). WRITTEN NOT RUN
+    //! (code-only mode). The row, the launch latch + the glide census,
+    //! the 70 re-arm, the loop bank, the float bob + the X-flip re-arm,
+    //! the wet kill, the dispatch + the recovery drop.
+    use super::*;
+    use crate::projectile::{
+        FlailInputs, PAPER_AIRPLANE_A, PAPER_AIRPLANE_B, ProjectilePool, YoyoInputs, proj_data,
+    };
+
+    struct CensusRng {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+    fn census() -> CensusRng {
+        CensusRng { ranges: Vec::new(), floats: 0 }
+    }
+
+    fn plane() -> Projectile {
+        let d = proj_data(PAPER_AIRPLANE_A).unwrap();
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = PAPER_AIRPLANE_A;
+        p.owner = 0;
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.w = d.w;
+        p.h = d.h;
+        p.time_left = d.time_left;
+        p.penetrate = d.penetrate;
+        p.max_penetrate = d.penetrate;
+        p.tile_collide = d.tile_collide;
+        // The throw: 5 px/tick rightward (`shootSpeed` 5, the item row).
+        p.vel = Vec2::new(5.0, 0.0);
+        p
+    }
+
+    fn world() -> World {
+        World::new("t".into(), 300, 200)
+    }
+
+    /// The row (`Projectile.cs:7846-7854`).
+    #[test]
+    fn w4_d16_159_the_row_matches_set_defaults() {
+        for kind in [PAPER_AIRPLANE_A, PAPER_AIRPLANE_B] {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.w, d.h, d.ai_style), (10.0, 10.0, 159));
+            assert!(d.tile_collide && !d.ignore_water);
+            assert_eq!(d.penetrate, 1);
+            assert_eq!(d.time_left, 3600);
+            assert!(d.ranged, "the ranged crit class (`:7852`)");
+        }
+    }
+
+    /// The launch latch (`:48697-48704`): the velocity-sign direction,
+    /// the rotation, ai[1] = 1, ai[0] = -Next(30,80) (census min 30 →
+    /// -30, then the counter++ → -29). Calm wind: the float arm runs —
+    /// the bob step −0.15 (timeLeft 3600 % 40 = 0 < 20), the Y clamp,
+    /// the X drift 0. The steer keeps the speed 5 along +X.
+    #[test]
+    fn w4_d16_159_the_launch_and_first_glide_tick() {
+        let mut p = plane();
+        let mut rng = census();
+        ai_paper_airplanes(&mut p, &mut rng, 0.0, 0.0, 0, 5.0);
+        assert_eq!(p.direction, 1);
+        assert_eq!(p.rot, 0.0);
+        assert_eq!(p.ai[1], 1.0);
+        assert_eq!(p.ai[0], -29.0, "-Next(30,80) + the counter++");
+        assert!(p.net_update);
+        assert_eq!(p.vel, Vec2::new(5.0, -0.15), "the steer keeps 5, the bob −0.15");
+        assert_eq!(p.sprite_direction, 1);
+        assert_eq!(rng.ranges, vec![(30, 80)], "the launch timer only");
+        assert_eq!(rng.floats, 0);
+        // The leftward throw → direction −1 (the `> 0` form).
+        let mut p2 = plane();
+        p2.vel = Vec2::new(-5.0, 0.0);
+        ai_paper_airplanes(&mut p2, &mut census(), 0.0, 0.0, 0, -5.0);
+        assert_eq!(p2.direction, -1);
+    }
+
+    /// The 70 re-arm (`:48715-48718`): ai[0] = 69 → the counter++ hits
+    /// 70 → ai[0] = -Next(120,600) (census min 120 → -120). The loop
+    /// window `num` was computed BEFORE the re-arm (69 ≤ 69 → true), but
+    /// calm wind folds `flag` false — the float arm runs.
+    #[test]
+    fn w4_d16_159_the_seventy_rearm() {
+        let mut p = plane();
+        p.ai[1] = 1.0;
+        p.ai[0] = 69.0;
+        let mut rng = census();
+        ai_paper_airplanes(&mut p, &mut rng, 0.0, 0.0, 0, 5.0);
+        assert_eq!(p.ai[0], -120.0, "the 70 re-arm");
+        assert_eq!(rng.ranges, vec![(120, 600)]);
+    }
+
+    /// The loop bank (`:48719-48725`): downwind (direction 1, wind 0.5,
+    /// speed 5 > 3) and ai[0] = 30 (the window's top) → the eased bank
+    /// `−1·2π·0.02·1` rotates the 8-unit vector; the steer normalizes it
+    /// back to speed 5. The float arm is SKIPPED (num2 true) — no bob,
+    /// no drift, no flip draw.
+    #[test]
+    fn w4_d16_159_the_loop_bank_steers() {
+        let mut p = plane();
+        p.ai[1] = 1.0;
+        p.ai[0] = 30.0; // the counter++ → 31, still in 20..69
+        p.direction = 1;
+        let mut rng = census();
+        ai_paper_airplanes(&mut p, &mut rng, 0.5, 0.0, 0, 5.0);
+        // ai[0] 31 → GetLerpValue(0,30,31) clamps to 1 → the full bank.
+        let banked = rotate(Vec2::new(8.0, 0.0), -std::f32::consts::TAU * 0.02);
+        let want = banked.normalize() * 5.0;
+        assert!((p.vel - want).length() < 1e-4, "the banked steer: {:?} vs {:?}", p.vel, want);
+        assert_eq!(rng.ranges, Vec::new(), "the loop arm draws nothing");
+        // The rotation follows the banked velocity.
+        assert_eq!(p.rot, p.vel.y.atan2(p.vel.x));
+    }
+
+    /// The X-flip re-arm (`:48746-48751`): a leftward drift crosses zero
+    /// against the old velocity's sign → direction flips, ai[0] =
+    /// -Next(120,300). Wind −0.5, the plane flying left at 5: the steer
+    /// keeps −5, the drift −0.003 keeps it negative — no flip. Force the
+    /// crossing with a tiny leftward velocity and a rightward wind.
+    #[test]
+    fn w4_d16_159_the_x_flip_rearm() {
+        let mut p = plane();
+        p.ai[1] = 1.0;
+        p.ai[0] = 0.0;
+        p.vel = Vec2::new(-0.001, 0.0); // barely leftward
+        p.direction = -1;
+        let mut rng = census();
+        // Wind +0.5: the bob is downwind-flagged false (direction −1 vs
+        // sign +1), the float arm runs; the drift +0.003 crosses zero.
+        ai_paper_airplanes(&mut p, &mut rng, 0.5, 0.0, 0, -0.001);
+        assert_eq!(p.direction, 1, "the X-sign flip");
+        // ai[0] was 0 → the counter++ → 1, then the flip re-arm → -120
+        // (the re-arm is the LAST write — no counter after it).
+        assert_eq!(p.ai[0], -120.0, "-Next(120,300)");
+        assert!(p.net_update);
+        assert_eq!(rng.ranges, vec![(120, 300)]);
+    }
+
+    /// The wet kill (`:48705-48708`): the owner-gated wet probe kills
+    /// the plane (the port's death convention zeroes time_left).
+    #[test]
+    fn w4_d16_159_the_wet_kill() {
+        let mut p = plane();
+        p.wet = true;
+        let mut rng = census();
+        ai_paper_airplanes(&mut p, &mut rng, 0.0, 0.0, 0, 5.0);
+        assert!(!p.active);
+        assert_eq!(p.time_left, 0);
+        // The foreign owner's wet plane survives (the owner gate).
+        let mut p2 = plane();
+        p2.wet = true;
+        p2.owner = 1;
+        ai_paper_airplanes(&mut p2, &mut census(), 0.0, 0.0, 0, 5.0);
+        assert!(p2.active, "the owner gate");
+    }
+
+    /// The dispatch wiring + the Kill recovery drop: a plane thrown into
+    /// a solid tile dies on contact (the blocked-move default) and queues
+    /// the Item10 cue + the 4343 recovery drop at its centre.
+    #[test]
+    fn w4_d16_159_the_dispatch_and_recovery_drop() {
+        let mut w = world();
+        // A dirt wall at tile (101, 50) — the plane at (1600, 800) flies
+        // right into it (centre row 50).
+        let i = w.index(101, 50);
+        w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let slot = pool
+            .spawn_with_data_ai(PAPER_AIRPLANE_A, 1600.0, 800.0, 5.0, 0.0, 4, 2.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = census();
+        pool.update(
+            &mut w, &mut npcs, None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+        );
+        assert!(!pool.slots()[slot].active, "the tile kill");
+        let sounds = pool.drain_proj_sounds();
+        assert!(sounds.iter().any(|&(id, style, _, _, _)| id == 2 && style == 10), "the Item10 cue");
+        let drops = pool.drain_item_drops();
+        assert_eq!(drops.len(), 1, "the recovery drop");
+        assert_eq!(drops[0].0, 4343, "761 → 4343");
+        // The B variant drops 4344.
+        let mut pool2 = ProjectilePool::new();
+        let s2 = pool2
+            .spawn_with_data_ai(PAPER_AIRPLANE_B, 1600.0, 800.0, 5.0, 0.0, 4, 2.0, 0.0, 0.0)
+            .unwrap();
+        pool2.update(
+            &mut w, &mut npcs, None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut census(), 0, false,
+        );
+        assert!(!pool2.slots()[s2].active);
+        assert_eq!(pool2.drain_item_drops()[0].0, 4344, "762 → 4344");
+    }
+
+    /// The recovery-drop ITEM rows census (residual 4): 4343/4344
+    /// (`Item.cs:37117-37129`) — 22x16, sellPrice(0,0,10) = 5000,
+    /// `DefaultToThrownWeapon(761/762, 17, 5f)` (`:48455-48466`:
+    /// useStyle 1, useTime/useAnimation 17, shoot, shootSpeed 5,
+    /// noMelee, ranged, consumable, autoReuse false) +
+    /// `SetWeaponValues(4, 2f)` (damage 4, knockback 2). The generated
+    /// rows must carry the drop's re-throw shape exactly.
+    #[test]
+    fn w4_d16_159_the_recovery_item_rows_match_set_defaults() {
+        for (item, shoot) in [(4343u16, 761u16), (4344, 762)] {
+            let d = crate::registry::get(item).unwrap_or_else(|| panic!("item {item}"));
+            assert_eq!((d.width, d.height), (22, 16), "item {item}");
+            assert_eq!(d.value, 5000, "sellPrice(0,0,10) × 5");
+            assert_eq!(d.projectile, Some(shoot));
+            assert_eq!(d.use_style, 1);
+            assert_eq!((d.use_time, d.use_animation), (17, 17));
+            assert_eq!(d.shoot_speed, 5.0);
+            assert_eq!(d.damage, 4);
+            assert_eq!(d.knock_back, 2.0);
+            assert!(d.ranged && d.consumable);
+            assert!(!d.auto_reuse && !d.channel);
+            assert_eq!(d.class, crate::registry::DamageClass::Ranged);
+        }
+    }
+
+    /// The recovery-drop gates (`Projectile.cs:76086`): a FOREIGN
+    /// owner's plane queues the cue but NO drop; the local owner's
+    /// `noDropItem` flag refuses it too.
+    #[test]
+    fn w4_d16_159_the_recovery_drop_gates() {
+        let mut w = world();
+        let i = w.index(101, 50);
+        w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut npcs: Vec<Npc> = Vec::new();
+        // The foreign owner (1 ≠ local 0).
+        let mut pool = ProjectilePool::new();
+        let s = pool
+            .spawn_with_data_ai_owned(PAPER_AIRPLANE_A, 1, 1600.0, 800.0, 5.0, 0.0, 4, 2.0, 0.0, 0.0)
+            .unwrap();
+        pool.update(
+            &mut w, &mut npcs, None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut census(), 0, false,
+        );
+        assert!(!pool.slots()[s].active);
+        assert!(pool.drain_item_drops().is_empty(), "the owner gate");
+        assert!(
+            pool.drain_proj_sounds().iter().any(|&(id, style, _, _, _)| id == 2 && style == 10),
+            "the cue plays regardless"
+        );
+        // The local owner's noDropItem flag.
+        let mut pool2 = ProjectilePool::new();
+        let s2 = pool2
+            .spawn_with_data_ai(PAPER_AIRPLANE_A, 1600.0, 800.0, 5.0, 0.0, 4, 2.0, 0.0, 0.0)
+            .unwrap();
+        pool2.slots_mut()[s2].no_drop_item = true;
+        pool2.update(
+            &mut w, &mut npcs, None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut census(), 0, false,
+        );
+        assert!(!pool2.slots()[s2].active);
+        assert!(pool2.drain_item_drops().is_empty(), "the noDropItem gate");
     }
 }
