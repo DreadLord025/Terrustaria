@@ -470,6 +470,11 @@ pub const GREEK_FIRE_3: u16 = 328;
 /// `ProjectileID.Skull` (270, `Projectile.cs:3558-3566`) — the Skeletron
 /// head's spin shot (the expert mode's fired skull).
 pub const SKULL: u16 = 270;
+/// `ProjectileID.Shadowflames` (299, `Projectile.cs:3893-3905`) — the Giant
+/// Cursed Skull's bolt (`NPC.cs:21808`, W4-c3): 6x6, aiStyle 1, hostile,
+/// alpha 255, penetrate -1, extraUpdates 2, magic, ignoreWater,
+/// tileCollide false.
+pub const SHADOWFLAMES: u16 = 299;
 /// `ProjectileID.SeedPlantera` (275, `Projectile.cs:3614-3621`) —
 /// Plantera's phase-1 seed (the aiStyle-1 flight, hostile, alpha 255).
 pub const SEED_PLANTERA: u16 = 275;
@@ -1986,6 +1991,23 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 TIME_LEFT_DEFAULT,
                 0,
                 true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-c3 — `Projectile.cs:3893-3905` — the Shadowflames bolt
+            // (299): 6x6, aiStyle 1, hostile, `alpha = 255`,
+            // `penetrate = -1`, `extraUpdates = 2`, magic, ignoreWater,
+            // `tileCollide = false`; the stock timeLeft 3600 (`:787`). The
+            // Giant Cursed Skull's tick-20 volley (`NPC.cs:21808`).
+            SHADOWFLAMES => (
+                6.0,
+                6.0,
+                1,
+                -1,
+                TIME_LEFT_DEFAULT,
+                2,
+                false,
                 false,
                 false,
                 (false, -2, false, -1, 255, 1.0),
@@ -4211,7 +4233,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == HIGH_VELOCITY_BULLET
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
-            || kind == GOLF_CLUB_HELPER,
+            || kind == GOLF_CLUB_HELPER
+            // W4-c3 — `Projectile.cs:3903`: the Shadowflames bolt (299) sets
+            // `ignoreWater = true`.
+            || kind == SHADOWFLAMES,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4308,6 +4333,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | NEBULA_ARCANUM | NEBULA_ARCANUM_SUBSHOT
                 | LAST_PRISM_LASER | LAST_PRISM | NEBULA_BLAZE_1 | NEBULA_BLAZE_2
                 | POISON_DART | SPIRIT_FLAME | SKY_FRACTURE | BOOK_OF_SKULLS | SPARK
+                // W4-c3 — the Shadowflames bolt's `magic = true`
+                // (`Projectile.cs:3902`).
+                | SHADOWFLAMES
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the

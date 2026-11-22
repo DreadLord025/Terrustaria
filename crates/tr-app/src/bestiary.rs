@@ -3488,6 +3488,19 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Possessed Armor",
+    // W4-c3 (the style-10 family): the WaterBoltMimic's own entry
+    // (`BestiaryDatabaseNPCsPopulator.cs:1561` - the automated enemy
+    // registration `:851-868`, not in the Hide exclusions; the credit id
+    // is the vanilla `NPCID.Search.GetName` row, `NPCID.cs:12065`). The
+    // CursedSkull 34 / GiantCursedSkull 289 defs dropped per the d37 E8
+    // tables - d34/d38's rows above own them.
+    BestiaryEntryDef {
+        credit_id: "WaterBoltMimic",
+        net_id: 694,
+        kind: NpcKind::WaterBoltMimic,
+        variant: None,
+        quick_unlock: false,
+        name: "Water Bolt Mimic",
     },
 ];
 

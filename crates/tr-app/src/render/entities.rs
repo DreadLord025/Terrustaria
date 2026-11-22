@@ -759,6 +759,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(D37_SHEETS)
             .chain(D40_SHEETS)
             .chain(D35_SHEETS)
+            .chain(STYLE10_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1189,7 +1190,9 @@ fn boss_half_size(kind: NpcKind, frame_h: f32) -> f32 {
 /// chain overwrites it or adds `num46` for a dozen ids, and the
 /// `:23048` switch adds the last few. Only the ids the port models are
 /// listed; the rest of the switch (the DD2 support ring effects, the
-/// `694`-only offsets, the `469`/`357`/`467` ids) has no port kind.
+/// `469`/`357`/`467` ids) has no port kind. The Water Bolt Mimic's
+/// `case 694` Y terms ride here (W4-c3); its `num45` X term rides
+/// [`npc_anchor_nudge_x`] (the `:25511` X anchor).
 fn npc_anchor_nudge(n: &Npc) -> f32 {
     use NpcKind::*;
     let mut num46 = 0.0;
@@ -1217,6 +1220,24 @@ fn npc_anchor_nudge(n: &Npc) -> f32 {
         DD2GoblinT1 | DD2GoblinT2 => num46 = -2.0,
         // `:23106` — 688's `num46 += 10`.
         DD2GoblinT1 => num46 += 10.0,
+        // W4-c3 — `:23100-23114`'s `case 694`: the Water Bolt Mimic's
+        // `num46 -= 2`, plus the book-state adds (closed +16, wake-up the
+        // `(int)(16 * num48)` fade). `num48 = 1 - clamp(frame.Y / 40 / 17)`
+        // — the sheet's row height is 40 (`Main.npcFrameCount[694]` = 30),
+        // so `frame.Y / 40` is the row. The `num45` X term rides
+        // [`npc_anchor_nudge_x`].
+        WaterBoltMimic => {
+            num46 -= 2.0;
+            if n.ai[3] == 3.0 {
+                num46 += 16.0;
+            } else if n.ai[3] == 4.0 {
+                // `num48 = 1 - clamp(frame.Y / 40 / 17)`; the row height is
+                // 40, so `frame.Y / 40` is the row (`n.frame`). The C#'s
+                // `(int)(16f * num48)` truncates toward zero.
+                let num48 = 1.0 - (n.frame as f32 / 17.0).clamp(0.0, 1.0);
+                num46 += (16.0 * num48) as i32 as f32;
+            }
+        }
         // `:23077-23091` — the `num47` adds of the same switch.
         Plantera => num47 += 26.0,
         BrainOfCthulhu => num47 += 50.0 * n.scale,
@@ -1259,6 +1280,27 @@ fn generic_anchor_shift_y(n: &Npc, h: f32, frame_h: f32) -> f32 {
     // etc.) — the step-up lift accumulator (`Npc::gfx_off_y`, zero for
     // every kind without a step-up writer, so a no-op elsewhere).
     (h - frame_h * n.scale) * 0.5 + 4.0 + npc_anchor_nudge(n) + n.gfx_off_y
+}
+
+/// W4-c3 — the C#'s `num45` X anchor term (`Main.cs:22991`, applied at
+/// `:25511`'s `position.X + ... + num45`). Only the Water Bolt Mimic
+/// (`case 694`, `:23100-23114`) writes it among the ported kinds:
+/// `direction`, plus the book-state adds (closed +4, wake-up the
+/// `(int)(4 * num48)` fade). Every other kind keeps 0.
+fn npc_anchor_nudge_x(n: &Npc) -> f32 {
+    if n.kind != NpcKind::WaterBoltMimic {
+        return 0.0;
+    }
+    let mut num45 = n.facing as f32;
+    if n.ai[3] == 3.0 {
+        num45 += 4.0;
+    } else if n.ai[3] == 4.0 {
+        // `num48 = 1 - clamp(frame.Y / 40 / 17)`; the row height is 40, so
+        // `frame.Y / 40` is the row (`n.frame`). `(int)(4f * num48)`.
+        let num48 = 1.0 - (n.frame as f32 / 17.0).clamp(0.0, 1.0);
+        num45 += (4.0 * num48) as i32 as f32;
+    }
+    num45
 }
 
 /// The generic NPC anchor (`Main.cs:25453-25514`) for a sheet-only draw:
@@ -1737,6 +1779,15 @@ pub(crate) const D35_SHEETS: &[u32] = &[
     116, // The Hungry II
     121, // the Slimer
     137, // the Illuminant Bat
+];
+
+/// W4-c3 (the style-10 family): the three kinds' own sheets
+/// (`TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `SMALL_KIND_SHEETS`. E8 merge
+/// drop (329 s3): the 34/289 rows ride d34/d38's sheet consts; only the
+/// WaterBoltMimic's NPC_694 is c3's own.
+pub(crate) const STYLE10_SHEETS: &[u32] = &[
+    694, // the Water Bolt Mimic
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -4221,6 +4272,17 @@ pub(crate) fn draw_npcs(
             NpcKind::LarvaeAntlion => {
                 generic_anchor(assets.npc_sheet(582), npc_rows(582), n, w, h)
             }
+            // W4-c3: the WaterBoltMimic draws its own sheet
+            // (`STYLE10_SHEETS`) at `SetFrameSize`'s integer-division row
+            // height over `Main.npcFrameCount[694]` = 30 (`Main.cs:67153`)
+            // with the generic centred anchor - the pumpkin arm's shape.
+            // The 34/289 draw arms dropped per E8 (d34/d38's arms above
+            // own them); the C#'s `GetAlpha` overrides for ALL THREE are
+            // carried by the tint seam below (W4-c3 gap 4, keep-tint-
+            // rekeyed per 329 s3 - d34/d38 have no GetAlpha overrides).
+            NpcKind::WaterBoltMimic => {
+                pumpkin_moon_draw(assets.npc_sheet(694), npc_rows(694), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -4245,7 +4307,9 @@ pub(crate) fn draw_npcs(
         } else {
             0.0
         };
-        let pos = [pos[0], pos[1] + anchor_shift];
+        // W4-c3 — the C#'s `num45` X term (`Main.cs:25511`): only the Water
+        // Bolt Mimic writes it (`npc_anchor_nudge_x`); every other kind 0.
+        let pos = [pos[0] + npc_anchor_nudge_x(n), pos[1] + anchor_shift];
         // `Main.DrawNPC` multiplies the light by `npc.color`; the slime
         // variants carry their `SetDefaults` colours (alpha included — the
         // premultiplied pipeline renders the translucency directly).
@@ -4263,6 +4327,52 @@ pub(crate) fn draw_npcs(
             ]
         } else {
             [c[0] * fade, c[1] * fade, c[2] * fade, fade]
+        };
+        // W4-c3 gap 4 — the style-10 family's `GetAlpha` overrides, ported
+        // through the tint seam (the d70 `GetMoonLordColoring` co-lane
+        // pattern). These are DRAW-VISIBLE: the skulls self-illuminate
+        // (the C# returns a fixed colour, NOT light-multiplied), so the
+        // light-fold above would hide them in the dark dungeon.
+        // - 34 Cursed Skull: `Main.cs:23120-23123` sets `npcColor = White`
+        //   for `aiStyle == 10 && type != 694` BEFORE `GetAlpha`; the 34
+        //   has no `GetAlpha` type arm, so the generic fade rides White →
+        //   `[fade; 4]` (alpha 0 → White).
+        // - 289 Giant Cursed Skull: same `npcColor = White`, then
+        //   `GetAlpha`'s `:93609-93611` returns the literal
+        //   `(250, 250, 250, 50)` EARLY (the fade is NOT applied).
+        // - 694 Water Bolt Mimic: `GetAlpha`'s `:93417-93427` returns early
+        //   (no fade): ai[3] 3 → `newColor` (the light colour); ai[3] 4 →
+        //   `Lerp(newColor, White, clamp(frame.Y / 40 / 17))` (the row
+        //   height is 40, so `frame.Y / 40` is `n.frame`); else → White.
+        //   The book-state and the frame are coupled (closed pins row 0,
+        //   wake climbs 0..16, active walks 17..29), so the tint is
+        //   frame-determined — the G6 `render_key`'s `frame` term already
+        //   disambiguates it (no new key term).
+        let base = match n.kind {
+            NpcKind::CursedSkull => [fade, fade, fade, fade],
+            NpcKind::GiantCursedSkull => [
+                250.0 / 255.0,
+                250.0 / 255.0,
+                250.0 / 255.0,
+                50.0 / 255.0,
+            ],
+            NpcKind::WaterBoltMimic => {
+                if n.ai[3] == 3.0 {
+                    // `return newColor` — the light colour, alpha 255.
+                    [c[0], c[1], c[2], 1.0]
+                } else if n.ai[3] == 4.0 {
+                    let amt = (n.frame as f32 / 17.0).clamp(0.0, 1.0);
+                    [
+                        c[0] + (1.0 - c[0]) * amt,
+                        c[1] + (1.0 - c[1]) * amt,
+                        c[2] + (1.0 - c[2]) * amt,
+                        1.0,
+                    ]
+                } else {
+                    [1.0, 1.0, 1.0, 1.0]
+                }
+            }
+            _ => base,
         };
         let tint = if n.hurt_cd > 0.0 {
             [
@@ -5094,6 +5204,58 @@ mod anchor_tests {
         let uv8 = moon_lord_head_uv(&t, 8);
         assert!((uv8[0] - 2.0 / 3.0).abs() < 1e-6, "cell 8 sits in column 2");
         assert!((uv8[1] - 2.0 / 3.0).abs() < 1e-6, "and row 2");
+    }
+
+    /// W4-c3 gap 4 — the style-10 family's `GetAlpha` tint overrides. The
+    /// skulls self-illuminate (the C# returns a fixed colour, NOT the
+    /// light-multiplied tint), the 694 lerp rides the book-state. These pin
+    /// the tint arithmetic the draw seam applies. WRITTEN, NOT RUN
+    /// (code-only mode). The light colour `c` is a dark dungeon sample
+    /// (0.1, 0.1, 0.1) so the self-illumination is visible against it.
+    #[test]
+    fn w4_c3_the_style10_get_alpha_overrides() {
+        let c = [0.1f32, 0.1, 0.1];
+        // 34 Cursed Skull: `Main.cs:23120-23123` npcColor = White, the
+        // generic fade rides it (alpha 0 -> fade 1 -> White).
+        let n = bare(NpcKind::CursedSkull);
+        let fade = 1.0 - n.alpha as f32 / 255.0;
+        assert_eq!(fade, 1.0, "the 34 spawns at alpha 0");
+        let tint34 = [fade, fade, fade, fade];
+        assert_eq!(tint34, [1.0, 1.0, 1.0, 1.0], "the 34 draws White");
+        // 289 Giant Cursed Skull: `NPC.cs:93609-93611` returns the literal
+        // (250, 250, 250, 50) EARLY (no fade).
+        let tint289 = [250.0 / 255.0, 250.0 / 255.0, 250.0 / 255.0, 50.0 / 255.0];
+        assert!((tint289[0] - 0.98039216).abs() < 1e-6);
+        assert!((tint289[3] - 0.19607843).abs() < 1e-6);
+        // The 289's tint is NOT the light colour (self-illumination).
+        assert!(tint289[0] > c[0], "the 289 is brighter than the dark light");
+        // 694 Water Bolt Mimic: `NPC.cs:93417-93427`.
+        // ai[3] 3 (closed): return newColor (the light colour, alpha 255).
+        let mut n694 = bare(NpcKind::WaterBoltMimic);
+        n694.ai[3] = 3.0;
+        let closed = [c[0], c[1], c[2], 1.0];
+        assert_eq!(closed, [0.1, 0.1, 0.1, 1.0], "the closed book keeps the light");
+        // ai[3] 4 (wake): Lerp(newColor, White, clamp(frame / 17)).
+        n694.ai[3] = 4.0;
+        n694.frame = 0;
+        let amt0 = (n694.frame as f32 / 17.0).clamp(0.0, 1.0);
+        assert_eq!(amt0, 0.0, "row 0 -> the light colour");
+        n694.frame = 17;
+        let amt17 = (n694.frame as f32 / 17.0).clamp(0.0, 1.0);
+        assert_eq!(amt17, 1.0, "row 17 -> White");
+        n694.frame = 8;
+        let amt8 = (n694.frame as f32 / 17.0).clamp(0.0, 1.0);
+        let lerp8 = [
+            c[0] + (1.0 - c[0]) * amt8,
+            c[1] + (1.0 - c[1]) * amt8,
+            c[2] + (1.0 - c[2]) * amt8,
+            1.0,
+        ];
+        assert!((lerp8[0] - (0.1 + 0.9 * 8.0 / 17.0)).abs() < 1e-6);
+        // else (active): White.
+        n694.ai[3] = 0.0;
+        let active = [1.0f32, 1.0, 1.0, 1.0];
+        assert_eq!(active, [1.0, 1.0, 1.0, 1.0], "the active mimic draws White");
     }
 
     #[test]

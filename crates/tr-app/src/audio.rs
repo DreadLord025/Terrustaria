@@ -242,6 +242,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_33", 4),
     ("NPC_Killed_39", 4),
     ("NPC_Killed_45", 4),
+    // W4-c3 merge dedupe: the Water Bolt Mimic's NPCDeath52
+    // (`NPC.cs:17746`) is already registered by the d35 (B) row above
+    // (the spine-end precedent - one bank row per cue).
     ("NPC_Killed_42", 4),
     ("NPC_Killed_44", 4),
     // The Force Bubble's death cue (`NPC.cs:13890`'s `NPCDeath45`) and the
@@ -513,6 +516,11 @@ const SFX_CUES: &[(&str, u32)] = &[
 pub(crate) const NPC_CUSTOM_CUES: &[&str] = &[
     "dd2_betsy_death_0",
     "dd2_betsy_hurt_0",
+    // W4-c3 (the style-10 family): the Water Bolt Mimic's HitSound —
+    // `SoundID.DD2_BookStaffCast = CreateTrackable("dd2_book_staff_cast",
+    // 3)` (`SoundID.cs:1676`, `NPC.cs:17745`); the `_0` pin, the DD2
+    // families' convention.
+    "dd2_book_staff_cast_0",
     "dd2_crystal_cart_impact_0",
     "dd2_dark_mage_death_0",
     "dd2_dark_mage_hurt_0",

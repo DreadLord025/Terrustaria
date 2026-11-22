@@ -1469,6 +1469,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_116",
         "NPC_121",
         "NPC_137",
+        // W4-c3: the WaterBoltMimic's own sheet (the 34/289 rows are
+        // d34/d38's above - E8 drop; STYLE10_SHEETS keeps only NPC_694).
+        "NPC_694",
 ];
 
 
@@ -2056,11 +2059,12 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-// W4-d34+d38+d37+d40+d35 wave-1 union (367 §1): 181 base + 17 d34 + 35 d38
-// + 43 d37 + 21 d40 (minus the dropped CrimsonGoldfish 465 dup — c4 owns
+// W4-d34+d38+d37+d40+d35 wave-1 union (367 s1): 181 base + 17 d34 + 35 d38
+// + 43 d37 + 21 d40 (minus the dropped CrimsonGoldfish 465 dup - c4 owns
 // @465) + 16 d35 (the 71-140 band's visible packed kinds; the 96/97/99/100/
-// 112 Hide folds ride their heads) = 313 slots.
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 313] = [
+// 112 Hide folds ride their heads) = 313 slots; + W4-c3's WaterBoltMimic
+// 694 (the 34/289 dups dropped per the d37 E8 tables) = 314.
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 314] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -2144,6 +2148,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 313] = [
         // vanilla rows).
         73, 74, 75, 77, 78, 82, 83, 93, 94, 95,
         98, 101, 102, 116, 121, 137,
+        // W4-c3 - appended last so the earlier slots keep their indexes
+        // (the 34/289 dups dropped per E8; d34/d38's slots above own them).
+        694,
     ];
 
 
@@ -3060,6 +3067,9 @@ impl Lookups {
                 atlas.sheet("NPC_116").copied(),
                 atlas.sheet("NPC_121").copied(),
                 atlas.sheet("NPC_137").copied(),
+                // W4-c3 - the WaterBoltMimic strip, parallel to
+                // BESTIARY_NPC_SHEET_IDS (the 34/289 dups dropped per E8).
+                atlas.sheet("NPC_694").copied(),
             ],
 
 

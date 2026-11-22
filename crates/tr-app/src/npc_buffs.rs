@@ -777,6 +777,10 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::DiggerHead => &[31],
         NpcKind::EnchantedSword => &[20, 24, 31, 323],
         NpcKind::Mummy => &[],
+        // W4-c3: the WaterBoltMimic carries `SpecificallyImmuneTo =
+        // { 20, 31 }` (`NPCID.cs:10066-10072`) - Poisoned + On Fire!;
+        // the 34/289 rows are d34/d38's above (E8 keep-both).
+        NpcKind::WaterBoltMimic => &[20, 31],
     }
 }
 

@@ -1577,6 +1577,16 @@ fn portrait_data(
                 .unwrap_or(26.0);
             (sheet_i, h, 26.0, h, white)
         }
+        // W4-c3: the WaterBoltMimic's portrait - the sheet's own row
+        // height over `Main.npcFrameCount[694]` = 30 (`Main.cs:67153`),
+        // the frame width the sheet's own (the small-kinds arm's shape).
+        // The 34/289 portrait arms dropped per E8 (d34/d38's arms own).
+        (NpcKind::WaterBoltMimic, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 30.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 44.0, h, white)
+        }
         (NpcKind::ForceBubble, _) => {
             let h = entry_sheet(lookups, entry)
                 .map(|s| s.height as f32)

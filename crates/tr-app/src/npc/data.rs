@@ -881,6 +881,11 @@ impl NpcKind {
             NpcKind::Dandelion => 628,
             NpcKind::IceMimic => 629,
             NpcKind::BloodMummy => 630,
+            // W4-c3 (the style-10 family): the WaterBoltMimic keeps its
+            // vanilla 694 (`NPC.cs:17737-17751`). The CursedSkull and
+            // GiantCursedSkull ports dropped per the d37 E8 tables
+            // (research/329 s3) - d34@267 / d38@289 own them above.
+            NpcKind::WaterBoltMimic => 694,
         }
     }
 
@@ -1456,6 +1461,9 @@ impl NpcKind {
             628 => NpcKind::Dandelion,
             629 => NpcKind::IceMimic,
             630 => NpcKind::BloodMummy,
+            // W4-c3: 694 keeps its vanilla id (`to_u16` above); the
+            // 355/289 dup arms dropped per the d37 E8 tables (d34/d38 own).
+            694 => NpcKind::WaterBoltMimic,
             _ => return None,
         })
     }
@@ -2493,6 +2501,11 @@ impl NpcKind {
             | NpcKind::Buggy => "NPC_Hit_1",
             // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
             NpcKind::TargetDummy => "NPC_Hit_15",
+            // W4-c3: 694 DD2_BookStaffCast (`NPC.cs:17745` - the
+            // `CreateTrackable("dd2_book_staff_cast", 3)` style,
+            // `SoundID.cs:1676`; the `_0` pin, the DD2 families'
+            // convention). The 34/289 NPCHit2 rows are d34/d38's above.
+            NpcKind::WaterBoltMimic => "dd2_book_staff_cast_0",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -3050,6 +3063,9 @@ impl NpcKind {
             | NpcKind::Buggy => "NPC_Killed_1",
             // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
             NpcKind::TargetDummy => "NPC_Killed_2",
+            // W4-c3: 694 NPCDeath52 (`NPC.cs:17746`); the 34/289
+            // NPCDeath2 rows are d34/d38's above.
+            NpcKind::WaterBoltMimic => "NPC_Killed_52",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -3254,6 +3270,10 @@ impl NpcKind {
             | NpcKind::Drippler
             | NpcKind::Poltergeist
             | NpcKind::DungeonSpirit
+            // W4-c3: the WaterBoltMimic writes `noGravity = true` +
+            // kb 0.2 (`NPC.cs:17747-17750`); the 34/289 rows are
+            // d34/d38's below (E8 keep-both).
+            | NpcKind::WaterBoltMimic
             | NpcKind::Piranha
             | NpcKind::Shark => true,
             // The Hungry (115, `NPC.cs:10388`) — knockBackResist 1.1, so its
@@ -3928,6 +3948,10 @@ impl NpcKind {
             NpcKind::IceMimic => 25,
             // W4-d42 - the NPCID 630-630 SetDefaults rows.
             NpcKind::BloodMummy => 3,
+            // W4-c3 (the style-10 family): aiStyle 10 - NPC.cs:17741
+            // (the WaterBoltMimic 694); the 34/289 aiStyle-10 rows are
+            // d34/d38's above (E8 keep-both, same axis machine).
+            NpcKind::WaterBoltMimic => 10,
         }
     }
 
@@ -4777,6 +4801,9 @@ impl NpcKind {
             NpcKind::IceMimic => (24.0, 24.0),
             // W4-d42 - the NPCID 630-630 SetDefaults rows.
             NpcKind::BloodMummy => (18.0, 40.0),
+            // W4-c3: 694 44x44 (`NPC.cs:17739-17740`); the 34/289 size
+            // rows are d34/d38's above (identical values, E8 keep-both).
+            NpcKind::WaterBoltMimic => (44.0, 44.0),
         }
     }
 
@@ -4909,6 +4936,12 @@ impl NpcKind {
             NpcKind::BlueJellyfish => 63,
             NpcKind::Crab => 67,
             NpcKind::DungeonGuardian => 68,
+            // W4-c3 (the style-10 family): the vanilla `NPC.type` ids
+            // (`NPCID.cs:11255`/`:12065`); the CursedSkull's 34 row is
+            // d34's above. The GiantCursedSkull 289 row rides here (the
+            // superset-module rule - d38 carries no cs_id arm for it).
+            NpcKind::GiantCursedSkull => 289,
+            NpcKind::WaterBoltMimic => 694,
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
             // W4-d40: hand rows for the kinds with no bestiary entry
@@ -5842,6 +5875,9 @@ impl NpcKind {
             NpcKind::IceMimic => 500,
             // W4-d42 - the NPCID 630-630 SetDefaults rows.
             NpcKind::BloodMummy => 180,
+            // W4-c3: 694 60 (`NPC.cs:17744`); the 34/289 lifeMax rows
+            // are d34/d38's above (identical values, E8 keep-both).
+            NpcKind::WaterBoltMimic => 60,
         }
     }
 
@@ -6450,6 +6486,9 @@ impl NpcKind {
             NpcKind::IceMimic => 80,
             // W4-d42 - the NPCID 630-630 SetDefaults rows.
             NpcKind::BloodMummy => 60,
+            // W4-c3: 694 20 (`NPC.cs:17742`); the 34/289 damage rows
+            // are d34/d38's above (identical values, E8 keep-both).
+            NpcKind::WaterBoltMimic => 20,
         }
     }
 }

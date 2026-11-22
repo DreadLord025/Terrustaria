@@ -1935,6 +1935,17 @@ pub enum NpcKind {
     /// 18x40, aiStyle 3, dmg 55, def 28, 260 HP,
     /// kb 0.4, value 400. UNWIRED (data-only; the AI lands with its wave).
     PossessedArmor,
+    // W4-c3 merge-side E8 drop (329 s3): the CursedSkull/GiantCursedSkull
+    // dup variants dropped - d34@267 / d38@289 own the canonical kinds
+    // (the enum docs above); c3's machine wires them through the axis.
+    /// `NPCID.WaterBoltMimic` (694, `ID/NPCID.cs:12065`) — the
+    /// dungeon's book mimic (`aiStyle 10`): 44x44, dmg 20, def 4,
+    /// 60 HP, DD2_BookStaffCast/NPCDeath52, noGravity + noTileCollide,
+    /// value 150, kb 0.2 (`NPC.cs:17737-17751`). WIRED (W4-c3), the
+    /// 34 seam; the book machine's dash tick 17 plays Item8 and
+    /// summons the Water Sphere (33) at the truncated centre+10
+    /// (`NPC.cs:21896-21900`).
+    WaterBoltMimic,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -4718,6 +4729,11 @@ impl Npc {
             NpcKind::IceMimic => 0.3,
             // W4-d42 - the NPCID 630-630 SetDefaults rows.
             NpcKind::BloodMummy => 0.5,
+            // W4-c3: 694 kb 0.2 (`NPC.cs:17750`); its live 0/1/0.2 writes
+            // ride `kb_resist_override` (the axis adapter,
+            // `Style10Out::knock_back_resist`). The 34/289 rows are
+            // d34/d38's above (E8 keep-both).
+            NpcKind::WaterBoltMimic => 0.2,
             _ => 0.4,
         }
     }
@@ -5336,6 +5352,9 @@ impl Npc {
             NpcKind::IceMimic => 30,
             // W4-d42 - the NPCID 630-630 SetDefaults rows.
             NpcKind::BloodMummy => 18,
+            // W4-c3: 694 def 4 (`NPC.cs:17742`); the 34/289 defense rows
+            // are d34/d38's above (E8 keep-both).
+            NpcKind::WaterBoltMimic => 4,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -5954,6 +5973,9 @@ impl Npc {
             NpcKind::IceMimic => 100000.0,
             // W4-d42 - the NPCID 630-630 SetDefaults rows.
             NpcKind::BloodMummy => 700.0,
+            // W4-c3: 694 value 150 (`NPC.cs:17749`); the 34/289 rows are
+            // d34/d38's above (E8 keep-both).
+            NpcKind::WaterBoltMimic => 150.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6358,6 +6380,59 @@ impl Npc {
             // aiStyle-9 family (it would run AI); they fall through to
             // the update_kind_ai no-op until the AI wave.
             9 if !matches!(self.kind, NpcKind::VileSpit) => self.ai_009_sphere_family(world, player, rng),
+            // `else if (this.aiStyle == 10)` (`NPC.cs:21572-21918`) — the
+            // Cursed Skull (34) / Giant Cursed Skull (289) / Water Bolt
+            // Mimic (694). W4-c3: the faithful `npc_ai_style10::style10_ai`
+            // claims the axis (the module owns the whole arm + the
+            // noTileCollide integration tail, `NPC.cs:92538-92540` /
+            // `:92605-92607`). The kb writes ride `kb_resist_override`, the
+            // Item8 cue queues on `wants_sound` (the S1-E-21g seam), the
+            // Water Sphere summon rides `wants_sphere` (the `wants_sphere`
+            // shape; the C#'s `NewNPC` Bottom placement, `NPC.cs:80770`),
+            // and the 289's Shadowflames bolt is already on
+            // `wants_hostile_shot` (the module pushes it). `justHit` is the
+            // one-tick `self.just_hit` flag; `netMode` folds to 0 (the port
+            // is single-player host — the module's client gate is inert).
+            10 => {
+                // `NPC.UpdateNPC`'s noTileCollide tail (`NPC.cs:90496-90497`):
+                // `oldPosition = position; oldDirection = direction` BEFORE
+                // the integration. The module owns the `position += velocity`
+                // step (and the `oldVelocity` capture, `:92538-92540`); these
+                // stamps are the C#'s own pre-move latches the module does
+                // not carry (the axis 56/72 arms' precedent).
+                self.old_x = self.x;
+                self.old_y = self.y;
+                self.old_direction = self.facing;
+                let out = crate::npc_ai_style10::style10_ai(
+                    self,
+                    world,
+                    player,
+                    self.kind.cs_id() as i32,
+                    self.just_hit,
+                    0,
+                    rng,
+                );
+                if let Some(kb) = out.knock_back_resist {
+                    self.kb_resist_override = Some(kb);
+                }
+                if out.play_item8_sound {
+                    // `SoundEngine.PlaySound(SoundID.Item8, base.position)`
+                    // (`NPC.cs:21896`) — the top-left position, the S1-E-21g
+                    // queue (the sim drains it after the machine's draws).
+                    self.wants_sound.push(NpcSoundRequest {
+                        cue: NpcSoundCue::Item8,
+                        x: self.x,
+                        y: self.y,
+                    });
+                }
+                if let Some((sx, sy)) = out.spawn_water_sphere {
+                    // `NPC.NewNPC(..., (int)center3.X, (int)center3.Y, 33)`
+                    // (`NPC.cs:21899`) — the truncated centre+10 point,
+                    // Bottom-placed by the sim's sphere drain (`NPC.cs:80770`).
+                    self.wants_sphere
+                        .push((NpcKind::WaterSphere, sx as f32, sy as f32, 0.0));
+                }
+            }
             // `else if (this.aiStyle == 27)` (`NPC.cs:25635-26052`) —
             // S1-D-3 W-1: the Wall of Flesh rides the faithful
             // `npc_ai_style27::style27_step` (the one-time init, the band
@@ -7835,6 +7910,13 @@ impl Npc {
             NpcKind::DungeonSpirit => {
                 unreachable!("aiStyle 56 rides the style axis (S1-D-3-wire-smallkinds)")
             }
+            // W4-c3 (the style-10 family): the three kinds ride the style
+            // axis (10) — these arms are unreachable through `update_rng`
+            // (the axis claims style 10 first; the module owns the machine
+            // + the noTileCollide integration tail).
+            NpcKind::CursedSkull | NpcKind::GiantCursedSkull | NpcKind::WaterBoltMimic => {
+                unreachable!("aiStyle 10 rides the style axis (W4-c3)")
+            }
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
                 self.update_swimmer(world, player, rng)
             }
@@ -8131,7 +8213,9 @@ impl Npc {
             // machine is UNWIRED (the wyvern precedent — identity rows ship).
             NpcKind::AngryBones => self.update_skeleton(world, player, dt),
             NpcKind::OldMan | NpcKind::Bunny => self.update_guide(world, dt),
-            NpcKind::CursedSkull => self.update_cursed_skull(world, player, rng),
+            // W4-c3 merge (329 s4): the CursedSkull rides the axis-10
+            // superset module above (the unreachable arm); d34's legacy
+            // machine wrapper removed (the axis arm owns the latches).
             NpcKind::ManEater => {}
             // W4-d34: the Bone Serpent chain rides the world-sim worm pass
             // (the Devourer precedent — the per-NPC step is a no-op); the
@@ -8215,7 +8299,9 @@ impl Npc {
             // W4-d38 b2 — aiStyle 3, the 5/0.2 cap NPC.cs:57944-57971.
             NpcKind::BoneLee => self.update_skeleton(world, player, dt),
             // W4-d38 b2 — aiStyle 10, NPC.cs:21572-21918.
-            NpcKind::GiantCursedSkull => self.update_giant_cursed_skull(world, player, rng),
+            // W4-c3 merge (329 s4): the GiantCursedSkull rides the axis-10
+            // superset module above (the 299 bolt + tint + drains); d38's
+            // legacy machine call dropped.
             // W4-d38 b2 — aiStyle 3 shooter, NPC.cs:59069-59800.
             NpcKind::Paladin => self.update_dungeon_shooter(world, player, rng),
             // W4-d38 b2 — aiStyle 3 shooter.
@@ -9017,6 +9103,84 @@ impl Npc {
             }
             NpcKind::DungeonGuardian => {
                 self.frame = 0;
+            }
+            // W4-c3 merge-side E8 drop (329 s3): the 34/289 find_frame_b
+            // arms dropped - d34's inline case-34 (above) and d38's inline
+            // case-289 (below) own the canonical arms; both re-read
+            // byte-faithful against NPC.cs:77055-77066/:72652-72675 at
+            // this splice. The module keeps its CursedSkull/GiantCursedSkull
+            // entries for its own witnesses.
+            // The Water Bolt Mimic's `case 694` (`NPC.cs:77202-77289`) — the
+            // book strip over `Main.npcFrameCount[694]` = 30 (`Main.cs:67153`,
+            // entry 694 = 30). The closed state (ai[3] 3) pins row 0; the
+            // wake-up (ai[3] 4) climbs rows 0..16 on the 5-tick counter; the
+            // charge (ai[3] 2) walks rows 17..23 (the ai[2] < 40 cap at 19);
+            // the dash (ai[3] 1) walks rows 24..29; the idle else-arm cycles
+            // 17→22→23→17 on the 6-tick counter (the `>= npcFrameCount` wrap
+            // is dead — the switch never leaves 17/22/23).
+            NpcKind::WaterBoltMimic => {
+                let mut row = self.frame;
+                if self.ai[3] == 3.0 {
+                    row = 0;
+                    self.frame_counter = 0.0;
+                } else if self.ai[3] == 4.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 5.0 {
+                        self.frame_counter = 0.0;
+                        row += 1;
+                        if row > 16 {
+                            row = 16;
+                        }
+                    }
+                } else if self.ai[3] == 2.0 {
+                    let num4 = self.ai[2];
+                    if num4 == 0.0 {
+                        row = 17;
+                    }
+                    if row < 17 || row > 23 {
+                        row = 17;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 5.0 {
+                        self.frame_counter = 0.0;
+                        row += 1;
+                        if num4 < 40.0 && row > 19 {
+                            row = 19;
+                        }
+                        if row > 23 {
+                            row = 23;
+                        }
+                    }
+                } else if self.ai[3] == 1.0 {
+                    if row < 24 || row > 29 {
+                        row = 24;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 5.0 {
+                        self.frame_counter = 0.0;
+                        row += 1;
+                        if row > 29 {
+                            row = 29;
+                        }
+                    }
+                } else {
+                    if row < 17 || row > 23 {
+                        row = 17;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 6.0 {
+                        self.frame_counter = 0.0;
+                        row = match row {
+                            17 => 22,
+                            22 => 23,
+                            _ => 17,
+                        };
+                    }
+                    if row >= 30 {
+                        row = 0;
+                    }
+                }
+                self.frame = row;
             }
             // The ForceBubble has NO `FindFrame` case (`NPC.cs:66684-
             // 77370` has no `case 384`; the post-switch tail is aiStyle-39
@@ -13832,24 +13996,9 @@ impl Npc {
         }
     }
 
-    /// W4-d34 — the Cursed Skull (34) through the faithful aiStyle-10
-    /// machine (`npc_ai_style10::style10_ai`, `NPC.cs:21572-21918`). The
-    /// step owns the whole C# state machine and ends with the noTileCollide
-    /// integration (`NPC.cs:92538-92540` + `:92605-92607`); the type-34 path
-    /// writes no knockBackResist / sound / spawn (the 289/694 tails only),
-    /// so the returned `Style10Out` is inert here. `justHit` rides the
-    /// strike flag; `netMode` folds 0 (single-player).
-    fn update_cursed_skull(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
-        let _ = crate::npc_ai_style10::style10_ai(
-            self,
-            world,
-            player,
-            crate::npc_ai_style10::CURSED_SKULL,
-            self.just_hit,
-            0,
-            rng,
-        );
-    }
+    // W4-c3 merge (329 s4): d34's update_cursed_skull wrapper removed -
+    // the aiStyle-10 axis arm (update_rng_dust) owns the machine for the
+    // canonical CursedSkull with the pre-move latches + drain adapters.
 
     /// W4-d34 — `FindFrame`'s `case 46` bunny hop (`NPC.cs:76851-76904`):
     /// grounded the sprite faces `direction`, the idle pins row 0, the walk
@@ -16507,30 +16656,9 @@ impl Npc {
         crate::npc_ai_dungeon_shooter::dungeon_shooter_ai(self, world, player, rng);
     }
 
-    /// W4-d38 — the Giant Cursed Skull (289) through the faithful
-    /// `npc_ai_style10::style10_ai` (`NPC.cs:21572-21918`, the aiStyle-10
-    /// arm). The 289 path: the 600-tick cycle, the distance-banded approach,
-    /// the 120-tick charge → 40-tick dash with the tick-20 Shadowflames bolt
-    /// (299, 25 dmg, 6 speed, `:21804-21811`). The module owns the
-    /// noTileCollide integration; the bolt drains into `wants_hostile_shot`.
-    /// The 34/289 paths draw NO `Main.rand` (the only draw is the 694 book
-    /// tail's, `:21851`). `justHit` folds onto `hurt_cd > 0` (the module
-    /// convention); netMode 0 (single-player).
-    fn update_giant_cursed_skull(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
-        let out = crate::npc_ai_style10::style10_ai(
-            self,
-            world,
-            player,
-            crate::npc_ai_style10::GIANT_CURSED_SKULL,
-            self.hurt_cd > 0.0,
-            0,
-            rng,
-        );
-        // The 289 path writes no knockBackResist override and spawns no
-        // Water Sphere (those are the 694 book's); the Item8 play is the
-        // book's too. The bolt already rode `wants_hostile_shot` in-module.
-        let _ = out;
-    }
+    // W4-c3 merge (329 s4): d38's update_giant_cursed_skull wrapper removed
+    // - the aiStyle-10 axis arm owns the machine (the 299 bolt rides
+    // wants_hostile_shot in-module, the drains compose at the axis arm).
 
     /// W4-d38 — the birds (297 Blue Jay / 298 Cardinal) through the faithful
     /// `npc_ai_style24::ai_style_24` (`NPC.cs:25313-25537`). The module is
@@ -24024,6 +24152,10 @@ impl Npc {
             NpcKind::IceMimic => 629,
             // W4-d42 - the vanilla ids 630-630 are free render keys.
             NpcKind::BloodMummy => 630,
+            // W4-c3: the WaterBoltMimic's vanilla 694 is an unused render
+            // key (injective); the CursedSkull 267 / GiantCursedSkull 289
+            // keys are d34/d38's above (E8 drop of the 355 dup).
+            NpcKind::WaterBoltMimic => 694,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -29092,14 +29224,10 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    // Wave-1 splice pin (367 §1): 488 = the pre-wave 270 + W4-d34's 17 +
-    // W4-d38's 35 + W4-d37's 46 + W4-d40's 55 (56 minus the CrimsonGoldfish
-    // dup — c4 owns @465) + W4-d42's 32 (43 minus the 11 d33-owned dups,
-    // d37 tables) + W4-d35's 33 (the 71-140 band, +269 order-preserving
-    // renumber 429-461→698-730 executed at THIS splice per 367 §1 E7 —
-    // d35 LAST by design; the 290/305/316/326/313/303 branch pins were
-    // stale-by-design; the roster grows to 665 by the spine end).
-    pub(super) const ALL_KINDS: [NpcKind; 488] = [
+    // Wave-1 splice pin (367 s1): 489 = the spine-end 488 + W4-c3's 1
+    // (WaterBoltMimic 694; its CursedSkull 355 / GiantCursedSkull 289 dup
+    // ports dropped per the d37 E8 tables - d34@267/d38@289 own them).
+    pub(super) const ALL_KINDS: [NpcKind; 489] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -29640,6 +29768,8 @@ mod tests {
         NpcKind::IceMimic,
         // W4-d42 - the NPCID 630-630 roster.
         NpcKind::BloodMummy,
+        // W4-c3 (the style-10 family; the 34/289 dups dropped per E8).
+        NpcKind::WaterBoltMimic,
     ];
 
 
@@ -30024,7 +30154,7 @@ mod tests {
         // MERGE-SIDE re-pin (367 s1 step 6): the batch pins were
         // cumulative-on-branch; every batch test reads the SETTLED
         // roster (455 after d42 + d35's 33 = 488).
-        assert_eq!(ALL_KINDS.len(), 488);
+        assert_eq!(ALL_KINDS.len(), 489);
     }
 
     /// W4-d42 batch 2 - the NPCID 583-587 `SetDefaults` rows pin
@@ -30053,7 +30183,7 @@ mod tests {
         }
         // The vanilla-free wire band (protocol == NPCID, the 108 plan).
         assert_eq!(NpcKind::ZombieMerman.to_u16(), 586u16);
-        assert_eq!(ALL_KINDS.len(), 488);
+        assert_eq!(ALL_KINDS.len(), 489);
     }
 
     /// W4-d42 batch 3 - the NPCID 590-594 `SetDefaults` rows pin
@@ -30086,7 +30216,7 @@ mod tests {
         assert_eq!(NpcKind::TorchZombie.to_u16(), 590u16);
         assert_eq!(NpcKind::ArmedTorchZombie.to_u16(), 591u16);
         assert_eq!(NpcKind::GoldGoldfishWalker.to_u16(), 593u16);
-        assert_eq!(ALL_KINDS.len(), 488);
+        assert_eq!(ALL_KINDS.len(), 489);
     }
 
     // W4-d42 batch 4 (NPCID 595-599) merge-side DROP (367 s1, d37 tables):
@@ -30121,7 +30251,7 @@ mod tests {
         // The vanilla-free wire band (protocol == NPCID, the 108 plan).
         assert_eq!(NpcKind::Seagull.to_u16(), 602u16);
         assert_eq!(NpcKind::Seagull2.to_u16(), 603u16);
-        assert_eq!(ALL_KINDS.len(), 488);
+        assert_eq!(ALL_KINDS.len(), 489);
     }
 
     /// W4-d42 batch 6 - the NPCID 605-609 `SetDefaults` rows pin
@@ -30153,7 +30283,7 @@ mod tests {
         // The vanilla-free wire band (protocol == NPCID, the 108 plan).
         assert_eq!(NpcKind::Grebe.to_u16(), 608u16);
         assert_eq!(NpcKind::Grebe2.to_u16(), 609u16);
-        assert_eq!(ALL_KINDS.len(), 488);
+        assert_eq!(ALL_KINDS.len(), 489);
     }
 
     /// W4-d42 batch 7 - the NPCID 610-614 `SetDefaults` rows pin
@@ -30189,7 +30319,7 @@ mod tests {
         assert_eq!(NpcKind::WaterStrider.to_u16(), 612u16);
         assert_eq!(NpcKind::GoldWaterStrider.to_u16(), 613u16);
         assert_eq!(NpcKind::ExplosiveBunny.to_u16(), 614u16);
-        assert_eq!(ALL_KINDS.len(), 488);
+        assert_eq!(ALL_KINDS.len(), 489);
     }
 
     /// W4-d42 batch 8 - the NPCID 615-619 `SetDefaults` rows pin
@@ -30224,7 +30354,7 @@ mod tests {
         assert_eq!(NpcKind::TurtleJungle.to_u16(), 617u16);
         assert_eq!(NpcKind::BloodNautilus.to_u16(), 618u16);
         assert_eq!(NpcKind::BloodSquid.to_u16(), 619u16);
-        assert_eq!(ALL_KINDS.len(), 488);
+        assert_eq!(ALL_KINDS.len(), 489);
     }
 
     /// W4-d42 batch 9 - the NPCID 620-624 `SetDefaults` rows pin
@@ -30260,7 +30390,7 @@ mod tests {
         assert_eq!(NpcKind::BloodEelBody.to_u16(), 622u16);
         assert_eq!(NpcKind::BloodEelTail.to_u16(), 623u16);
         assert_eq!(NpcKind::Gnome.to_u16(), 624u16);
-        assert_eq!(ALL_KINDS.len(), 488);
+        assert_eq!(ALL_KINDS.len(), 489);
     }
 
     /// W4-d42 batch 10 - the NPCID 625-629 `SetDefaults` rows pin
@@ -30296,7 +30426,7 @@ mod tests {
         assert_eq!(NpcKind::GoldSeahorse.to_u16(), 627u16);
         assert_eq!(NpcKind::Dandelion.to_u16(), 628u16);
         assert_eq!(NpcKind::IceMimic.to_u16(), 629u16);
-        assert_eq!(ALL_KINDS.len(), 488);
+        assert_eq!(ALL_KINDS.len(), 489);
     }
 
     /// W4-d42 batch 11 - the NPCID 630-630 `SetDefaults` rows pin
@@ -30324,7 +30454,7 @@ mod tests {
         }
         // The vanilla-free wire band (protocol == NPCID, the 108 plan).
         assert_eq!(NpcKind::BloodMummy.to_u16(), 630u16);
-        assert_eq!(ALL_KINDS.len(), 488);
+        assert_eq!(ALL_KINDS.len(), 489);
     }
 
     /// The small-kinds wiring wave: the style axis claims 21/49/56/72, so
@@ -30346,6 +30476,91 @@ mod tests {
                 crate::render::entities::texture_net_id(kind),
             );
             let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            for _ in 0..60 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+                assert!(n.frame < rows, "{kind:?} row {} of {rows}", n.frame);
+            }
+        }
+    }
+
+    /// W4-c3 (the style-10 family): the three kinds' `SetDefaults` rows pin
+    /// against the C# (`NPC.cs:9150-9165` / `:12753-12768` / `:17737-17751`),
+    /// through the port's tables — the small-kinds pin's shape. The protocol
+    /// ids at the merged roster: CursedSkull rides d34's port-local 267
+    /// (the c3 355 dup dropped per E8); 289/694 keep their vanilla ids.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c3_the_style10_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::CursedSkull, 34u16, 10u8, 26.0, 28.0, 35, 6, 40, 0.2f32, 150.0f32),
+            (NpcKind::GiantCursedSkull, 289, 10, 44.0, 44.0, 60, 20, 400, 0.2, 150.0),
+            (NpcKind::WaterBoltMimic, 694, 10, 44.0, 44.0, 20, 4, 60, 0.2, 150.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            // noGravity + noTileCollide (`NPC.cs:9160-9161`/`:12763-12764`/
+            // `:17747-17748`).
+            assert!(kind.no_gravity(), "{kind:?} noGravity");
+        }
+        // The hit/death cues: 34/289 NPCHit2/NPCDeath2, 694
+        // DD2_BookStaffCast/NPCDeath52 (`NPC.cs:9158-9159`/`:12761-12762`/
+        // `:17745-17746`).
+        assert_eq!(NpcKind::CursedSkull.hit_sound(), Some("NPC_Hit_2"));
+        assert_eq!(NpcKind::CursedSkull.death_sound(), Some("NPC_Killed_2"));
+        assert_eq!(NpcKind::GiantCursedSkull.hit_sound(), Some("NPC_Hit_2"));
+        assert_eq!(NpcKind::GiantCursedSkull.death_sound(), Some("NPC_Killed_2"));
+        assert_eq!(NpcKind::WaterBoltMimic.hit_sound(), Some("dd2_book_staff_cast_0"));
+        assert_eq!(NpcKind::WaterBoltMimic.death_sound(), Some("NPC_Killed_52"));
+        // The protocol ids + round-trips.
+        assert_eq!(NpcKind::CursedSkull.to_u16(), 267); // d34 canon (E8)
+        assert_eq!(NpcKind::GiantCursedSkull.to_u16(), 289);
+        assert_eq!(NpcKind::WaterBoltMimic.to_u16(), 694);
+        for (kind, _, _, _, _, _, _, _, _, _) in rows {
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The debuff immunities: all three carry {20, 31} (`NPCID.cs:6286-
+        // 6292`/`:7787-7793`/`:10066-10072`), plus the derived 30/375.
+        for kind in [NpcKind::CursedSkull, NpcKind::GiantCursedSkull, NpcKind::WaterBoltMimic] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[20], "{kind:?} Poisoned immune");
+            assert!(b.buff_immune[31], "{kind:?} On Fire! immune");
+            assert!(b.buff_immune[30], "{kind:?} the derived 30");
+        }
+    }
+
+    /// W4-c3: the style axis claims 10, so the three kinds never reach
+    /// `update_kind_ai`'s `unreachable!` arm. A full `update` tick steps each
+    /// kind without panicking and keeps it inside its own frame strip (34
+    /// three rows, 289 six, 694 thirty). The 694 starts in the closed-book
+    /// state (ai[3] 3, the `NPC.cs:2751` spawn arg) — its FindFrame pins row
+    /// 0 until a hit wakes it. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c3_the_style10_axis_claims_the_three_kinds() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for kind in [
+            NpcKind::CursedSkull,
+            NpcKind::GiantCursedSkull,
+            NpcKind::WaterBoltMimic,
+        ] {
+            let rows = crate::render::entities::npc_rows(
+                crate::render::entities::texture_net_id(kind),
+            );
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            if kind == NpcKind::WaterBoltMimic {
+                n.ai[3] = 3.0; // the closed book (the spawn arg)
+            }
             for _ in 0..60 {
                 n.update(&w, &mut player, 1.0 / 60.0);
                 assert!(n.frame < rows, "{kind:?} row {} of {rows}", n.frame);
@@ -33842,8 +34057,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            488,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate; wave-1: W4-d34's 17 + W4-d38's 35 + W4-d37's 46 + W4-d40's 55 (minus the CrimsonGoldfish dup — c4 owns @465) + W4-d42's 32 (minus the 11 d33-owned dups) + W4-d35's 33 (the +269 renumber 698-730, LAST per 367 §1 E7), 367 §1)"
+            489,
+            "every decodable kind resolves (the wire roster's size - the spine-end 488 (367 s1: d34 17 + d38 35 + d37 46 + d40 55 minus the 465 dup + d42 32 minus the 11 d33 dups + d35 33 at 698-730) + W4-c3's WaterBoltMimic 694 (the 355/289 dups dropped per the d37 E8 tables), L-B gate)"
         );
         assert!(
             covered > 43,
@@ -37567,6 +37782,9 @@ mod s1_d_2_tests {
         (NpcKind::IlluminantBat, 14),
         (NpcKind::PossessedArmor, 3),
         (NpcKind::WyvernTail, 6),
+        // W4-c3 (the style-10 family, `NPC.cs:17741`; the 34/289 rows are
+        // d34/d38's above - E8 dedupe).
+        (NpcKind::WaterBoltMimic, 10),
     ];
 
     #[test]

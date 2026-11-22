@@ -3449,7 +3449,13 @@ fn npc_seed(
         | crate::npc::NpcKind::BlazingWheel
         | crate::npc::NpcKind::AngryNimbus
         | crate::npc::NpcKind::DungeonSpirit
-        | crate::npc::NpcKind::ForceBubble => {
+        | crate::npc::NpcKind::ForceBubble
+        // W4-c3: the style-10 family's relay seeds ride the same hover
+        // placement (the box comes from `kind.size()`; the machine takes
+        // over on the first tick — all three are noTileCollide flyers).
+        | crate::npc::NpcKind::CursedSkull
+        | crate::npc::NpcKind::GiantCursedSkull
+        | crate::npc::NpcKind::WaterBoltMimic => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
