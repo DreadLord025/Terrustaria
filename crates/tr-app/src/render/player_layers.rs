@@ -20,6 +20,10 @@ pub(crate) const SHOES: [f32; 3] = [160.0 / 255.0, 105.0 / 255.0, 60.0 / 255.0];
 /// `colorArmorHead/Body/Legs` with empty dye slots (`PlayerDrawSet.cs:860` and
 /// the `Color.White` fallbacks): the armor sheets are dyed art, plain white.
 pub(crate) const ARMOR_WHITE: [f32; 3] = [1.0, 1.0, 1.0];
+/// `Player.hairColor`'s default (`Player.cs:2554`, `new Color(215, 90, 55)`)
+/// as the 0..1 tint — W4-f37: the live tint rides
+/// [`PlayerCompositeState::hair_color`]; this constant is the default the
+/// state seeds from (and the render-key gate's compare).
 pub(crate) const HAIR: [f32; 3] = [215.0 / 255.0, 90.0 / 255.0, 55.0 / 255.0];
 pub(crate) const EYE_WHITE: [f32; 3] = [1.0, 1.0, 1.0];
 pub(crate) const EYES: [f32; 3] = [105.0 / 255.0, 90.0 / 255.0, 75.0 / 255.0];
@@ -229,6 +233,11 @@ pub(crate) struct PlayerCompositeState {
     /// `Player.fullRotation` (`PlayerSleepingHelper.cs:73`): `PI/2 *
     /// (-direction)` while asleep.
     pub(crate) full_rotation: f32,
+    /// `Player.hairColor` (`Player.cs:2554`) as the 0..1 tint the hair
+    /// layer multiplies — W4-f37: the hair window's HSL sliders write it
+    /// (`Main.cs:44091-44092`), the default (215, 90, 55) reproduces the
+    /// former [`HAIR`] constant bit-for-bit.
+    pub(crate) hair_color: [f32; 3],
 }
 
 /// `WeaponDrawOrder` (`PlayerDrawSet.cs:358`): which of the three
@@ -840,7 +849,7 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         |t| flip_uv(hair_uv(t, s.body_frame), flip),
         part_pos(s, seat_drop, [0.0, 0.0], 0.0),
         0.0,
-        tint(s.light, HAIR),
+        tint(s.light, s.hair_color),
         54.0,
     );
     push_part_h(
@@ -2180,6 +2189,7 @@ mod tests {
             seat_y_offset: 0,
             sleeping: false,
             full_rotation: 0.0,
+            hair_color: HAIR,
         }
     }
 
@@ -3014,6 +3024,7 @@ mod player_draw_tests {
             seat_y_offset: 0,
             sleeping: false,
             full_rotation: 0.0,
+            hair_color: HAIR,
         }
     }
 

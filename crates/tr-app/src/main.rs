@@ -169,6 +169,7 @@ mod grapple;
 mod gore_seam;
 mod creative;
 mod creative_sacrifices;
+mod hair_window;
 mod happiness;
 mod hotbar;
 mod hurt_modifiers;

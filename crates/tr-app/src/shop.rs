@@ -1508,9 +1508,47 @@ pub fn can_bulk_buy(entry: &ShopEntry, shift_in_use: bool) -> bool {
     (entry.is_a_shop_item || entry.buy_once) && shift_in_use
 }
 
+/// The Stylist's hair-restyle charge (`Main.DrawHairWindow`'s inline block,
+/// `Main.cs:43786-43799`): +100000 when the hair STYLE changed, +20000 when
+/// the hair COLOR changed (both can stack), the Discount Card's
+/// `(int)((float)num11 * 0.8f)` truncation (`:43795-43798`), then
+/// `(int)Math.Round((float)(int)((float)num11 * PriceAdjustment) / 10000f)
+/// * 10000` (`:43799`) — the mood multiply TRUNCATES to int first, the
+/// /10000 rounds through `Math.Round`'s banker's default, and the result
+/// snaps to whole gold. The charge at `:43978` is this unclamped value
+/// (`BuyItem(num11)`); the `< 0 → 0` clamp at `:43808-43812` is the display
+/// half (the inputs are non-negative anyway). W4-f37: the price MATH only —
+/// the hair-window UI itself is the recorded M4-TOWN-17 deviation, so the
+/// helper stays pinned by its golden vectors until the window lands.
+#[allow(dead_code)]
+pub fn hair_restyle_cost(
+    style_changed: bool,
+    color_changed: bool,
+    mood: f32,
+    discount_available: bool,
+) -> i64 {
+    // `:43786-43794` — `int num11 = 0;` + the two change adds.
+    let mut num11 = 0i32;
+    if style_changed {
+        num11 += 100000;
+    }
+    if color_changed {
+        num11 += 20000;
+    }
+    // `:43795-43798` — the Discount Card's f32 truncation.
+    if discount_available {
+        num11 = (num11 as f32 * 0.8f32) as i32;
+    }
+    // `:43799` — the float multiply truncates to int FIRST, then the
+    // banker's round of the /10000f, then ×10000.
+    let adjusted = (num11 as f32 * mood) as i32;
+    round_half_to_even(adjusted as f32 / 10000.0) as i64 * 10000
+}
+
 /// The C# `Math.Round`'s default = the banker's rounding (the damage.rs
-/// convention).
-fn round_half_to_even(v: f32) -> i32 {
+/// convention). `pub(crate)` since W4-f37: the happiness cents round
+/// (`ShopHelper.cs:179`) rides the same helper.
+pub(crate) fn round_half_to_even(v: f32) -> i32 {
     let r = v.round();
     if (v - v.trunc()).abs() == 0.5 && r % 2.0 != 0.0 {
         let down = (v - 0.5).round();
@@ -1788,6 +1826,44 @@ mod tests {
         // their NPCs — 1..8, 15..19, 22).
         assert!(resolve_stock(0, &ShopFlags::default(), &[]).is_empty());
         assert!(resolve_stock(30, &ShopFlags::default(), &[]).is_empty());
+    }
+
+    /// W4-f37 — the Stylist's hair-restyle charge (`Main.cs:43786-43799`):
+    /// the style +100000 / color +20000 adds, the Discount Card's f32 ×0.8
+    /// truncation, the mood's float multiply truncating to int FIRST, then
+    /// the banker's round of /10000 and the whole-gold snap.
+    #[test]
+    fn the_hair_restyle_cost_snaps_to_whole_gold() {
+        // No change: 0 → 0 (`BuyItem(0)` succeeds — the free re-style).
+        assert_eq!(hair_restyle_cost(false, false, 1.0, false), 0);
+        // Style only: 100000 → round(10) = 10 → 100000 (10 gold).
+        assert_eq!(hair_restyle_cost(true, false, 1.0, false), 100000);
+        // Color only: 20000 → 2 → 20000.
+        assert_eq!(hair_restyle_cost(false, true, 1.0, false), 20000);
+        // Both: 120000 → 12 → 120000.
+        assert_eq!(hair_restyle_cost(true, true, 1.0, false), 120000);
+        // The mood truncates BEFORE the round: 120000 × 1.06f =
+        // 127199.992 → int 127199 → /10000 = 12.7199 → 13 → 130000.
+        assert_eq!(hair_restyle_cost(true, true, 1.06, false), 130000);
+        // The f32 product ROUNDS before the truncation: 0.95f32 =
+        // 0.949999988…, ×100000 = 94999.9988 — the nearest f32 is 95000.0
+        // (ulp 0.0078125, the exact product sits 0.0012 below it), so the
+        // int truncation lands 95000 → 9.5 → the BANKER'S round → 10
+        // (even) → 100000.
+        assert_eq!(hair_restyle_cost(true, false, 0.95, false), 100000);
+        // The tie that separates banker's from away: 100000 × 0.85 =
+        // 85000 → 8.5 → 8 (even) → 80000. Away-from-zero would give 9.
+        assert_eq!(hair_restyle_cost(true, false, 0.85, false), 80000);
+        // 100000 × 0.75 = 75000 → 7.5 → 8 (even) → 80000.
+        assert_eq!(hair_restyle_cost(true, false, 0.75, false), 80000);
+        // The Discount Card: 120000 × 0.8f = 96000 exactly (the product
+        // rounds to the exact f32) → mood 1 → 9.6 → 10 → 100000.
+        assert_eq!(hair_restyle_cost(true, true, 1.0, true), 100000);
+        // Card + mood: 96000 × 1.06f = 101759.992 → truncate 101759 →
+        // 10.1759 → 10 → 100000.
+        assert_eq!(hair_restyle_cost(true, true, 1.06, true), 100000);
+        // The f32 truncation arm: 20000 × 0.8f = 16000 exactly.
+        assert_eq!(hair_restyle_cost(false, true, 1.0, true), 20000);
     }
 
     /// `Chest.SetupTravelShop` (`Chest.cs:1275-1358`): the visit's stock —

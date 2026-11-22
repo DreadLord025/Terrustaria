@@ -537,6 +537,8 @@ pub(crate) fn spawn_recall(app: &mut App) {
     p.prev_y = p.y - 1.0;
     // `:37648-37652` SetTalkNPC(-1) + npcChatCornerItem = 0.
     app.talk_npc = None;
+    // `Player.cs:4383-4386`: NotInShop — the captured mood resets (W4-f37).
+    app.shop_mood = 1.0;
     // `:37665-37672` the RecallFromItem immune arm: immuneTime = 60 (not the
     // ReviveFromDeath 180 / pvpDeath 300), immuneNoBlink when !hostile.
     p.immune_time = 60;
