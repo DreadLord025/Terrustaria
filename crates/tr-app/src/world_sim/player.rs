@@ -692,6 +692,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     }
                 }
                 p.revive();
+                // `Player.Spawn`'s local-player arm (`Player.cs:37569`):
+                // `Main.instantBGTransitionCounter = 10` — the instant-BG
+                // window that also forces the waterfall rescan
+                // (`Main.cs:61841`, world_sim/liquids.rs reads it).
+                app.bg_instant = 10;
                 app.respawn_skip_available = false;
                 app.respawn_skip_frames = 0;
                 app.npcs.clear();

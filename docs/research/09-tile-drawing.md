@@ -101,6 +101,7 @@ render-target cache.
 | 15. `DrawVoidLenses` (:8708) | PORTED | `render/pylons.rs::void_lens_sprites` + `void_lens_light` | S1-G-1 wave D: `VoidLensHelper.cs:11-105` — the -2px anchor, float-mod frame, 3-copy purple ring, the AddLight(0.4,0.2,0.9) into EntityLights; dust skipped. |
 | 16. `PostDrawTiles` (:414) | MISSING | — | |
 | 17. `Update` counters (:367-388) | PORTED | `wind.rs::advance_counter`/`…_tree`/`…_sunflower`/`…_vine` | |
+| 18. Waterfall overlay (`Main.DoDraw_Waterfalls` :63281 → `WaterfallManager.Draw`, the falls between the non-solid and solid tile passes) | PORTED (W4-g73/g74/g75 FINAL UNION + final sweep + closeout, 2026-11-21) | `tr-core/src/waterfall/{mod,draw}.rs` + `render/tiles.rs` (the quad drain) + `render/liquids.rs::draw_shimmer_fall` | The full-file `WaterfallManager.cs` census: all 4 `FindWaterfalls` spawn arms (half-brick spout with the lava/honey/shimmer precedence :182-197, cloud fountains 196→11 :204-219 / 460→22 :220-235 / 717→26 :236-251), every draw arm (typed 1/14/25 slow-frame, rain 11/22/26 two-sheet pairs + frame tables, disco 160→2 + gemspark 262-268→15-21 conversions, the slope/bend walk, the :749 white foam), `UpdateFrame`'s 6 counters, `StylizeColor`/`GetAlpha`/`TrySparkling`/`AddLight` all cases, both ambience scans + the live two-tier `liquid_loop_update`→`liquid_ambience` consumer. Final-sweep fix (folded): the disco fall reads the SHARED `Main.DiscoR/G/B` via `set_disco_rgb(params.disco)` (the manager-local cycle copy removed — the C# manager has no disco state). Deviations: the row-major fusion z-order (deviation 1), the one-frame-late AddLight (matches vanilla). `docs/UNION-CONTRACT-waterfalls.md`, ANALYSIS "Waterfall overlay" + "W4-g73 FALLS CLOSEOUT". |
 
 ### B. DrawData struct & ordering
 
@@ -135,7 +136,7 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
 | **Tile-entity-bearing furniture** — 395/698/520/471/470/475/378/334/620/237 | special-point registry + entity item sprites | none | **MISSING** |
 | **Particles/dust from tiles** — `DrawTiles_EmitParticles` :6688-7548, `EmitLivingTreeLeaf` :7549, `EmitAlchemyHerbParticles` :9605 | per-tile sparkle/dust rolls on `Main.TileFrameSeed` | none (leaves only: `tiles.rs:868-914`) | **MISSING** (leaves partial) |
 | **Dangerous-tile outline / `GetTileOutlineInfo` :4478** | highlight overlay | none | **MISSING** (debug feature) |
-| **`Draw_LiquidBehindTile` / submerged vertex tints :3824-4152, :4145** | water mask behind sloped cells + shimmer tint | `render/liquids.rs::draw_tile_liquid_behind` + comment :638 | **PARTIAL** — the shimmer vertex tint is called out in ROADMAP :188-189 as open |
+| **`Draw_LiquidBehindTile` / submerged vertex tints :3824-4152, :4145** | water mask behind sloped cells + shimmer tint | `render/liquids.rs::draw_tile_liquid_behind` + `liquid_behind_spout_refused` | **PARTIAL** — the shimmer vertex tint is called out in ROADMAP :188-189 as open. **W4-g75 final-sweep census + retire-contract wiring (2026-11-21, folded into g73):** the `:3858` refusal chain's `CheckForWaterfall` arm — `tileCache.halfBrick() && (num3 > 160 || num > 160) && waterfallManager.CheckForWaterfall(tileX, tileY)` (a spouting half-brick suppresses its own behind-water so the fall reads clean) — is now WIRED as `liquid_behind_spout_refused` (the `:3835-3844` type-379 bubble exclusion on `num3`/`num` verbatim; the manager handle rides `draw_tiles`' existing `waterfall` seam). The `inActive()` half of the same refusal is owned by the g80 actuator lane (`liquid_behind_refused`, af6cd44f — that commit leaves the spout clause as a recorded deviation; the halves compose by OR at the family merge). 3 witnesses written not run. |
 | **Master trophy / pylon / void lens / critter cage** | dedicated passes | `render/pylons.rs` (S1-G-1 wave D) | **PORTED** (trophy/pylon/lens; critter cage stays MISSING — `DrawSpecialTilesLegacy`) |
 
 ## Tests
@@ -245,6 +246,11 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
 
 ## Task seeds
 
+- ~~**S** — Wire `WaterfallManager.CheckForWaterfall` into `draw_tile_liquid_behind`'s refusal
+  (`TileDrawing.cs:3858`)~~ **DONE (W4-g75 retire-contract, 2026-11-21, folded into g73):**
+  `liquid_behind_spout_refused` (`render/liquids.rs`), the manager handle fed from the
+  `draw_tiles` seam; the g80 `inActive()` half (af6cd44f) composes by OR at the family
+  merge — complementary, not contested. *[was the W4-g75 final-sweep residual]*
 - **S** — Port the platform arms: `SET_PLATFORMS` cases in `drawdata.rs` (martian glow rows
   26/27 from `TileDrawing.cs:6157-6170`) + the slope side-fill quads (`:1517-1543`) in
   `tiles.rs`. Depends on nothing; high pixel payoff. *[covers deviation 6]*
