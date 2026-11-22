@@ -211,9 +211,10 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
     }
     app.talk_npc = Some(i); // `:43081` — `player.SetTalkNPC(i)`
     // The context off the live state. The world flags the port does not
-    // carry yet (the storm clock, the happy-windy-day, `BirthdayParty`,
-    // `LanternNight`, the remix world, `WorldGen.crimson`, the Moon Lord)
-    // default off — each noted at its field.
+    // carry yet (the storm clock, the happy-windy-day, the remix world,
+    // `WorldGen.crimson`) default off — each noted at its field. W4-f38:
+    // the party/lantern flags and the Moon Lord latch now read the live
+    // schedulers (`world_events`) and the world.
     let day_time = app.world.day_time;
     let time = app.world.time;
     let blood_moon = app.world.blood_moon;
@@ -258,16 +259,16 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         storming: false,       // `Main.cloudAlpha`'s storm — no storm clock yet
         windy_day: false,      // `Main.IsItAHappyWindyDay` — no wind-day state
         zone_graveyard: false, // `Player.ZoneGraveyard` — the zone rides the biome pass
-        party_is_up: false,    // `BirthdayParty.PartyIsUp` — unported
+        party_is_up: crate::world_events::party_is_up(&app.world_events),
         crimson: false,        // `WorldGen.crimson` — the world-evil flag
         downed_boss1: app.world.downed_eoc, // `NPC.downedBoss1`
         downed_boss2: app.world.downed_eow, // `NPC.downedBoss2`
         downed_boss3: app.world.downed_skeletron, // `NPC.downedBoss3`
-        downed_moonlord: false, // `NPC.downedMoonlord` — unported
+        downed_moonlord: app.world.downed_moon_lord, // `NPC.downedMoonlord`
         dd2_downed_t1: dd2_t1,
         dd2_downed_t2: dd2_t2,
         dd2_ongoing,
-        lanterns_up: false, // `LanternNight.LanternsUp` — unported
+        lanterns_up: crate::world_events::lanterns_up(&app.world_events),
         player_life: life,
         player_life_max: life_max,
         player_base_life_max: life_max, // `Player.statLifeMax` — the port keeps one max
@@ -282,6 +283,43 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         golfer_score,
     };
     let text = crate::npc_chat::get_chat(&app.npcs[i], &mut ctx);
+    // `FreeCakeDialogue.GetChatAndClearCondition`'s side effects
+    // (`ConditionalDialogue.cs:58-66`), AFTER the text draw: the condition
+    // clears (`NPC.freeCake = false`), the pending row with it, and the
+    // Slice Of Cake (3750) gift rides `QuickSpawnItem(GiftRecieved)` →
+    // `GetOrDropItem` — the inventory fills first, the overflow drops at
+    // the player centre (the bobber-catch seam, `Player.cs:7187-7200`).
+    // The `SendData(51, …, 10f)` net sync has no single-player consumer.
+    if app.npcs[i].next_dialogue {
+        app.world_events.free_cake = false;
+        app.npcs[i].next_dialogue = false;
+        let max_stack = crate::registry::max_stack(3750);
+        let mut pending = 1u32;
+        while pending > 0 {
+            let Some(slot) = crate::item::slot_for_pickup(&mut app.inventory, 3750, 0) else {
+                break;
+            };
+            let room = max_stack.saturating_sub(app.inventory[slot].count);
+            if room == 0 {
+                break;
+            }
+            let take = pending.min(room);
+            app.inventory[slot].count += take;
+            pending -= take;
+        }
+        if pending > 0 {
+            if let Some(p) = app.player.as_ref() {
+                let (cx, cy) = p.center();
+                crate::world_sim::items::spawn_item_drop_px(
+                    &mut app.items,
+                    app.rngs.stream(RngKey::UpdateItems),
+                    3750,
+                    pending,
+                    glam::Vec2::new(cx, cy),
+                );
+            }
+        }
+    }
     app.npc_chat_text = text.clone(); // `:43082` — `Main.npcChatText = GetChat()`
     Some(text)
 }
@@ -554,6 +592,17 @@ pub(crate) fn rescue_bound_goblin(n: &mut Npc, world: &mut tr_core::World) {
     n.max_hp = NpcKind::GoblinTinkerer.max_hp();
     n.hp = n.max_hp;
     world.saved_goblin = true;
+    name_the_freed_town_npc(n, world);
+}
+
+/// `NPC.Transform`'s tail (`NPC.cs:81137`): every rescue re-runs
+/// `GiveTownUniqueDataToNPCsThatNeedIt` for the NEW type — the freed NPC
+/// names himself. All six rescue targets are legacy profiles (variation 0,
+/// `Profiles.cs:83-91`), so the `Main.rand` stand-in is never drawn; the
+/// name draws ride `WorldGen.genRand` (`World::frame_rng`).
+fn name_the_freed_town_npc(n: &mut Npc, world: &mut tr_core::World) {
+    let mut main_rand = tr_core::unified_random::UnifiedRandom::new(world.seed as i32);
+    crate::npc_names::give_town_unique_data(n, &mut main_rand, &mut world.frame_rng);
 }
 
 /// The Sleeping Angler's rescue (`AI_000_TransformBoundNPC`'s 376 → 369 arm,
@@ -569,6 +618,7 @@ pub(crate) fn rescue_bound_wizard(n: &mut Npc, world: &mut tr_core::World) {
     n.hp = n.max_hp;
     n.home = None;
     world.saved_wizard = true;
+    name_the_freed_town_npc(n, world);
 }
 
 /// The bound Mechanic's rescue (`AI_000_TransformBoundNPC`'s 123 → 124 arm,
@@ -580,6 +630,7 @@ pub(crate) fn rescue_bound_mechanic(n: &mut Npc, world: &mut tr_core::World) {
     n.hp = n.max_hp;
     n.home = None;
     world.saved_mech = true;
+    name_the_freed_town_npc(n, world);
 }
 
 /// The webbed Stylist's rescue (`AI_000_TransformBoundNPC`'s 354 → 353 arm,
@@ -596,6 +647,7 @@ pub(crate) fn rescue_sleeping_golfer(n: &mut Npc, world: &mut tr_core::World) {
     n.hp = n.max_hp;
     n.home = None;
     world.saved_golfer = true;
+    name_the_freed_town_npc(n, world);
 }
 
 pub(crate) fn rescue_webbed_stylist(n: &mut Npc, world: &mut tr_core::World) {
@@ -604,6 +656,7 @@ pub(crate) fn rescue_webbed_stylist(n: &mut Npc, world: &mut tr_core::World) {
     n.hp = n.max_hp;
     n.home = None;
     world.saved_stylist = true;
+    name_the_freed_town_npc(n, world);
 }
 
 /// The Sleeping Angler's rescue (`AI_000_TransformBoundNPC`'s 376 → 369 arm,
@@ -616,6 +669,7 @@ pub(crate) fn rescue_bound_angler(n: &mut Npc, world: &mut tr_core::World) {
     n.hp = n.max_hp;
     n.home = None;
     world.saved_angler = true;
+    name_the_freed_town_npc(n, world);
 }
 
 /// `Main.NPCChatText_DoAnglerQuest` (`Main.cs:40227-40263`) — the quest's
@@ -4577,6 +4631,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         app.next_npc_uid = next;
     }
+    // `NPC.CheckDialogue` (`NPC.cs:90510`/`:90519-90532`): the conditional
+    // dialogue probe — every 10th tick per NPC, else the failed-condition
+    // clear. The C# runs it inside each NPC's own `UpdateNPC` after the AI;
+    // the port batches it at the phase head (the pre-pass convention — the
+    // only consumer is the right-click `GetChat`, a separate input path, so
+    // the intra-tick position is unobservable). `who` = the stable uid.
+    {
+        let free_cake = app.world_events.free_cake;
+        let count = app.game_update_count;
+        for n in app.npcs.iter_mut() {
+            crate::npc_chat::check_dialogue(n, count, n.uid, free_cake);
+        }
+    }
     // S1-D-3: `NPC.checkDead`'s Moon Lord arms (`NPC.cs:78060-78078`) +
     // `PrepareForDeathAnimation` (`:78032-78038`). The C# runs checkDead
     // at STRIKE time (before `UpdateNPCs`), so the restore rides ahead of
@@ -6193,6 +6260,27 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     } else if let Some(mut n) = Npc::spawn_town_at(&app.world, hx, hy, kind) {
                         // `WorldGen.cs:5564-5565`: the arrival writes its room.
                         n.home = Some((hx, hy));
+                        // `NPC.NewNPC` → `GiveTownUniqueDataToNPCsThatNeedIt`
+                        // (`NPC.cs:80769`): the arrival names himself — the
+                        // name draws ride `WorldGen.genRand` (the port's
+                        // `frame_rng` stand-in), the pet variation roll rides
+                        // the `SpawnNPC` SwapRandom wrapper's stream.
+                        crate::npc_names::give_town_unique_data(
+                            &mut n,
+                            app.rngs.stream(RngKey::SpawnNpc),
+                            &mut app.world.frame_rng,
+                        );
+                        // `WorldGen.cs:5575`: the arrival announcement —
+                        // `Announcement.HasArrived` ("{0} has arrived!") with
+                        // `GetFullNetName` in `ChatColors.NPCTravel`
+                        // (`ChatColors.cs:25`, 50/125/255), BEFORE the
+                        // progression event (`:5576`).
+                        let announcement = crate::lang::text_args(
+                            "Announcement.HasArrived",
+                            &[crate::npc_names::full_name(&n)],
+                        );
+                        app.chat
+                            .new_text(announcement, crate::chat::COLOR_NPC_TRAVEL);
                         app.npcs.push(n);
                         // `WorldGen.cs:5576`: the arrival fires NO_HOBO
                         // (progression 8) — the Truffle's IT_CAN_TALK (18,
@@ -9286,6 +9374,81 @@ mod tests {
         assert!(
             app.npcs.iter().any(|n| n.kind == NpcKind::DyeTrader),
             "the dye material opens the gate"
+        );
+    }
+
+    /// W4-f38 — the move-in notification (`WorldGen.cs:5575`): the arrival
+    /// names himself (`NPC.cs:80769` → `GiveTownUniqueDataToNPCsThatNeedIt`)
+    /// and broadcasts `Announcement.HasArrived` with `GetFullNetName` in
+    /// `ChatColors.NPCTravel` BEFORE the NO_HOBO event (`:5576`). The
+    /// relocation arm (`:5453-5462`) fires NO_HOBO with NO announcement.
+    #[test]
+    fn the_town_arrival_announces_the_full_name_in_npc_travel() {
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut world = crate::test_world_helpers::ground();
+        crate::test_world_helpers::build_furnished_room(&mut world, 60, 105, 12, 9);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 66.0 * 16.0;
+        player.y = 112.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        let mut guide = Npc::new(NpcKind::Guide, 32.0, 100.0, 1, 0.0);
+        guide.home = Some((2, 6));
+        guide.hp = guide.max_hp;
+        app.npcs.push(guide);
+        // The dye-material gate (the test above): the Dye Trader arrives.
+        let slot = &mut app.inventory[0];
+        slot.kind = 1109;
+        slot.name = "Yellow Dye";
+        slot.count = 1;
+        app.town_arrival.check_for_spawns = 7199;
+        app.rngs = crate::app::rng::NamedRngs::new(app.world.seed as i32);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let trader = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::DyeTrader)
+            .expect("the Dye Trader arrives");
+        assert!(!trader.given_name.is_empty(), "the arrival names himself");
+        let expected = crate::lang::text_args(
+            "Announcement.HasArrived",
+            &[crate::npc_names::full_name(trader)],
+        );
+        assert!(expected.ends_with(" the Dye Trader has arrived!"));
+        assert!(
+            app.chat
+                .messages
+                .iter()
+                .any(|m| m.text == expected && m.color == crate::chat::COLOR_NPC_TRAVEL),
+            "the Announcement.HasArrived broadcast (`WorldGen.cs:5575`)"
+        );
+        // The relocation arm: a homeless Dye Trader takes the next room
+        // with NO second announcement (`:5453-5462` has no broadcast).
+        app.npcs.retain(|n| n.kind != NpcKind::DyeTrader);
+        let mut homeless = Npc::new(NpcKind::DyeTrader, 32.0, 100.0, 1, 0.0);
+        homeless.hp = homeless.max_hp;
+        homeless.home = None;
+        homeless.look_for_home_timeout = 0;
+        app.npcs.push(homeless);
+        app.chat.messages.clear();
+        app.town_arrival.check_for_spawns = 7199;
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::DyeTrader && n.home.is_some()),
+            "the homeless trader relocates"
+        );
+        assert!(
+            !app.chat
+                .messages
+                .iter()
+                .any(|m| m.text.contains("has arrived")),
+            "the relocation arm is silent (`WorldGen.cs:5453-5462`)"
         );
     }
 

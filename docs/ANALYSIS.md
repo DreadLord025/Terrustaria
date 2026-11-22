@@ -19528,13 +19528,17 @@ showed equipment that vanilla shows on page 0. `ui::housing` ports the page now:
   centred on `(x + 26*scale, y + 26*scale)` and shrunk to `36 / max(w, h)` when it
   is larger than 36 px. The shipped content pack's heads are 24x22, so they draw
   1:1.
-* **Hover** (`:42059-42065`, M7-UI-3c): the cell under the pointer prints a
-  name through the tooltip layer вЂ” `Lang.inter[8]` for the query cell, the NPC's
+* **Hover** (`:42059-42065`, M7-UI-3c; W4-f38): the cell under the pointer prints a
+  name through the tooltip layer - `Lang.inter[8]` for the query cell, the NPC's
   name otherwise. The C# prints `Main.npc[n].FullName`, i.e. the *given* name
-  plus the type ("Andrew the Guide"); the port stores no per-NPC given names, so
-  it prints the type name from the `NPCName.<Kind>` localization key
-  (`housing::npc_type_name` в†’ `lang::npc_name`, the C#'s
-  `Lang.GetNPCName`) вЂ” the same string the bestiary entry carries.
+  plus the type ("Andrew the Guide"). The former deviation (type-name-only,
+  because the port stored no per-NPC given names) is **closed by W4-f38**: the
+  naming layer (`npc_names.rs`, `NPC.GiveTownUniqueDataToNPCsThatNeedIt`
+  `NPC.cs:80839-80856`) writes `given_name` at every town spawn/rescue, and
+  `housing::label` reads `npc_names::full_name` - the same `FullName`/
+  `GetFullNetName` seam (`NPC.cs:6729-6739`/`:7349-7356`) the move-in
+  announcements broadcast. An unnamed NPC still answers the bare `TypeName`
+  (`NPC.cs:6733-6736`), the `NPCName.<Kind>` localization key.
 * **Not ported**: the click (`Main.SetMouseNPC` / `SetMouseNPC_ToHousingQuery`),
   because the port has no `Main.mouseNPC` housing query at all; the
   `Inventory_Back14` white swap, which is the gamepad UI-point highlight the port
@@ -54241,3 +54245,108 @@ the butterflies, 654 Lavafly, 655 MagmaSnail, 657 QueenSlimeBoss,
 658-660 the minions, 662/664 the floater siblings, 667/676 the
 slimes, 669 Stinkbug, 671-675 the birds, 677 Shimmerfly, 687-689,
 691-696 — re-check at the next census.
+
+## Town naming + move-in chatter (W4-f38, 2026-11-21)
+The housing/chatter lane's second half (code-only: tests WRITTEN NOT RUN, no
+cargo/rustc invoked). Four phases on `task/W4-f38-housing-chatter-2`:
+* **The naming layer** (`npc_names.rs`): `NPC.getNewNPCName`
+  (`NPC.cs:7276-7324` — the whole 37-row type→category switch),
+  `GiveTownUniqueDataToNPCsThatNeedIt` (`:80839-80856`) and the
+  `FullName`/`GetFullNetName`/`GetGivenOrTypeNetName` trio
+  (`:6729-6739`/`:7349-7356`/`:7358-7365`). The two-draw profile shape is
+  verbatim: `:80844` draws the type's variant-0 category FIRST, then
+  `:80847-80848` rolls the variation and re-draws through
+  `GetNameForVariant` — the legacy/transformable profiles re-draw the same
+  category (`Profiles.cs:88-91`/`:144-147`), the pet variant profiles draw
+  `<Base>Names_<variant>` (`:219-222`) after `Main.rand.Next(6)`
+  (`:214-217`). Streams: the name draws ride `WorldGen.genRand` (the port's
+  `World::frame_rng` stand-in, the framing precedent); the pet variation
+  roll rides the caller's `SpawnNPC`-wrapper stream (`app.rngs.stream(
+  RngKey::SpawnNpc)`). The starter Guide (`app/mod.rs`'s spawn) and the
+  rescue transforms (`NPC.Transform`'s tail `:81137` — all six rescue fns)
+  name through the same seam. **Deviations**: (1) the
+  `ShimmeredTownNPCs[Type]` override (`:80850-80853`) only rewrites the
+  variation AFTER the name was drawn and the legacy shimmer profiles name
+  through the same category — with no runtime shimmer transform ported the
+  flag can only ride a loaded save where the name is already restored, so
+  the override is inert for the name and skipped; (2) the port stores no
+  `townNpcVariationIndex` write from the naming seam (the existing
+  `variation_index` field keeps its save/load role — the name is the only
+  consumer the announcements read); (3) the starter Guide's `Main.rand`
+  stand-in is a fresh seed-derived stream — the legacy profile rolls 0 and
+  never draws it, so the stand-in is inert.
+* **The move-in notifications**: `Announcement.HasArrived` ("{0} has
+  arrived!") with `GetFullNetName` in `ChatColors.NPCTravel` (50/125/255,
+  `ChatColors.cs:25`) at the town arrival (`WorldGen.cs:5575`, BEFORE the
+  NO_HOBO progression event `:5576`) and the travelling merchant's arrival
+  (`:5406`); the departure is `Lang.misc[35]` ("{0} has departed!",
+  `LegacyMisc.35`) BEFORE the deactivation (`:5029-5031`). The relocation
+  arm (`:5453-5462`) fires NO_HOBO with NO announcement — the witness pins
+  the silence. The pre-existing hardcoded "The Travelling Merchant has
+  arrived/left!" literals (wrong color `COLOR_COMMAND`, wrong text) are
+  replaced by the keyed rows.
+* **The housing hover** (`ui/housing.rs::label`, `Main.cs:42053`): reads
+  `npc_names::full_name` — the M7-UI-3c type-name-only deviation is closed
+  (the hover bullet above). The room-validity messages (`town.rs::
+  move_town_npc`) were audited against `WorldGen.cs:4685-4841` and are
+  already 1:1 keyed (the six failure reasons, the `Game.HouseMissing_{n}`
+  furniture list, the stinkbug gates, the occupied/evil/no-standing-space
+  score texts, the Truffle `inter[55] + TypeName` row, the `inter[39]`
+  success in `ChatColors.ServerMessage` = the C#'s explicit 255/240/20) —
+  no change needed; the `RichRoomCheckFeedback` particle pass stays the
+  recorded S1-E-11d deviation.
+* **The party broadcasts** (`world_events.rs` + `world_sim/clock.rs`): the
+  dawn start row `Game.BirthdayParty_{n}` over the celebrants'
+  `GetGivenOrTypeNetName` (`BirthdayParty.cs:127-139`, color 255/0/160,
+  BEFORE the `SendData(7)`/`CheckForAchievement` tail) and the dusk
+  farewell `Lang.misc[99]` = "Party time's over!" (`:56`) — the stale
+  "Everyone has gone home!" literal (the pre-1.4.5 text) is fixed.
+  `NPC.freeCake` rides `WorldEvents::free_cake`: armed on the genuine
+  party (`:106`), cleared at dusk (`Main.cs:65222`, BEFORE the event pair)
+  and in `world_clear` (`WorldGen.cs:6945`).
+* **`ConditionalDialogue`** (S1-E-10's remaining half,
+  `ConditionalDialogue.cs`): the registry carries exactly one row —
+  `FreeCakeDialogue` on type 208, condition `NPC.freeCake` (`Init`
+  `:122-125`). `Npc::next_dialogue` (a bool — the single-row registry makes
+  the row identity trivial) + `npc_chat::check_dialogue` port
+  `NPC.CheckDialogue` (`NPC.cs:90519-90532`): every 10th tick
+  (`(GameUpdateCount + whoAmI) % 10 == 0`) the probe REPLACES the pending
+  row; the other nine ticks clear a failed condition immediately. The
+  `GetChat` head (`:93768-93771`) answers the pending row BEFORE the
+  ladder: `PartyGirlSpecialText.Cake{Main.rand.Next(1, 4)}` (`:65`). The
+  side effects ride the talk seam (`world_sim/npcs.rs::talk_to_npc`):
+  `freeCake = false`, the row consumed, and the Slice Of Cake (3750) gift
+  through `QuickSpawnItem(GiftRecieved)` → `GetOrDropItem`
+  (`Player.cs:7187-7200` — the inventory fills first, the overflow drops
+  at the player centre, the bobber-catch seam). **Deviations**: (1) `who`
+  is the stable `Npc::uid` standing in for `whoAmI` (the compaction
+  deviation — the cadence is identical, the phase rides the stable id);
+  (2) `CheckDialogue` batches at the `update_npcs` phase head instead of
+  each NPC's own `UpdateNPC` tail — the only consumer is the right-click
+  `GetChat` (a separate input path), so the intra-tick position is
+  unobservable; (3) the `SendData(51, …, 10f)` net sync has no
+  single-player consumer; (4) the `ShowIndicator` draw consumers
+  (`Main.cs:46089`/`:56556`'s notification icon) are unported — the port
+  draws no homeless-text indicator either, the same surface; (5) the
+  `ItemGroups`/`CreateInventoryCondition` helpers (`:11-49`/`:127-135`)
+  have no registered consumer (the only row is the cake) and stay
+  unported. The chatter context's `party_is_up`/`lanterns_up`/
+  `downed_moonlord` now read the live schedulers/world instead of the
+  constants-off stand-ins.
+Code-only: every seam re-read against the cited C# windows (≤100-line
+reads, direct file paths — no junction recursion); the call sites checked
+against the actual signatures by read/grep (`lang::text_args/misc/inter/
+category_size/random_from_category`, `chat::COLOR_NPC_TRAVEL/new_text/
+broadcast_death_text`, `Npc::given_name/uid`, `NamedRngs::stream/global`,
+`registry::max_stack`, `item::slot_for_pickup`,
+`items::spawn_item_drop_px`). rustfmt --check on the touched files: the
+new/edited hunks are clean (pre-existing style diffs in untouched code
+left alone). 10 new witness tests WRITTEN NOT RUN: `npc_names.rs` 4 (the
+category table, the stream draw, the full name, the two-draw legacy
+profile), `world_sim/npcs.rs` 1 (the arrival announcement + the silent
+relocation), `world_sim/weather.rs` 2 extended (the merchant arrival/
+departure keyed rows), `ui/housing.rs` 1 extended (the named hover),
+`world_events.rs` 2 extended (freeCake + the keyed farewell + the
+world_clear), `world_sim/clock.rs` 1 (the party broadcasts + the dusk
+cake clear), `npc_chat.rs` 3 (the probe cadence, the pending-row head,
+the talk gift).

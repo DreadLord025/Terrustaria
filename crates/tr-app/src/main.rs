@@ -97,6 +97,7 @@ mod npc_scaling;
 mod npc_glow;
 mod npc_chat;
 mod npc_death_dust;
+mod npc_names;
 mod npc_spatial;
 mod revenge;
 mod npc_ai;

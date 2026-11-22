@@ -10,10 +10,12 @@
 //!
 //! Deviations: the party's `OrderBy(Main.rand.Next())` celebrating-NPC pick
 //! indexes the port's compacted `Vec<Npc>` (the C# indexes the stable
-//! `Main.npc` slots — recorded); `NPC.freeCake = true`'s companion consumer
-//! (the party girl's cake NPC) is unported; the party's `BroadcastText`
-//! rides the port's death-text broadcast with the C# colour
-//! (`new Color(255, 0, 160)`).
+//! `Main.npc` slots — recorded). W4-f38: the `BroadcastText` rows are keyed
+//! now — the start `Game.BirthdayParty_{n}` over `GetGivenOrTypeNetName`
+//! (`BirthdayParty.cs:127-139`) and the dusk `Lang.misc[99]` farewell
+//! (`:56`) — in the C# colour (`new Color(255, 0, 160)`); `NPC.freeCake`
+//! rides [`WorldEvents::free_cake`] (the `ConditionalDialogue` consumer is
+//! the chatter layer's).
 
 use crate::chat::{self, ChatMonitor};
 use crate::npc::{Npc, NpcKind};
@@ -45,6 +47,11 @@ pub(crate) struct WorldEvents {
     pub celebrating_npcs: Vec<usize>,
     /// `BirthdayParty._wasCelebrating`.
     was_celebrating: bool,
+    /// `NPC.freeCake` (`NPC.cs:6093`): the genuine party hands the Party
+    /// Girl's free-cake dialogue its condition (`BirthdayParty.cs:106`);
+    /// dusk clears it (`Main.cs:65222`), `clearWorld` too
+    /// (`WorldGen.cs:6945`).
+    pub free_cake: bool,
     // --- CultistRitual (`CultistRitual.cs`) ---
     /// `CultistRitual.delay` (`CultistRitual.delayStart` = 86400).
     pub cultist_delay: i32,
@@ -164,10 +171,10 @@ pub(crate) fn check_morning_lanterns(ev: &mut WorldEvents) {
     }
 }
 
-/// `BirthdayParty.CheckNight` (`BirthdayParty.cs:37-51`): the genuine party
+/// `BirthdayParty.CheckNight` (`BirthdayParty.cs:40-58`): the genuine party
 /// clears at dusk (its celebrating roster with it) and the manual one
-/// expires, with the "everyone has gone home" broadcast — `Lang.misc[99]`
-/// keyed, `new Color(255, 0, 160)`.
+/// expires, with the `Lang.misc[99]` broadcast ("Party time's over!",
+/// `LegacyMisc.99`) in `new Color(255, 0, 160)`.
 pub(crate) fn check_night_party(ev: &mut WorldEvents, chat: &mut ChatMonitor) {
     let mut cleared = false;
     if ev.genuine_party {
@@ -180,7 +187,10 @@ pub(crate) fn check_night_party(ev: &mut WorldEvents, chat: &mut ChatMonitor) {
         ev.manual_party = false;
     }
     if cleared {
-        chat::broadcast_death_text(chat, "Everyone has gone home!", [255, 0, 160]);
+        // `:56`: `NetworkText.FromKey(Lang.misc[99].Key)` — the keyed row,
+        // not a literal (the pre-1.4.5 "Everyone has gone home!" text was
+        // replaced by "Party time's over!").
+        chat::broadcast_death_text(chat, &crate::lang::misc(99), [255, 0, 160]);
     }
 }
 
@@ -216,6 +226,9 @@ pub(crate) fn check_morning_party(
     }
     ev.genuine_party = true;
     ev.party_days_on_cooldown = rng(5, 11);
+    // `BirthdayParty.cs:106`: the genuine party arms the Party Girl's
+    // free-cake dialogue (`ConditionalDialogue.FreeCakeDialogue`).
+    ev.free_cake = true;
     ev.celebrating_npcs.clear();
     // `Main.rand.Next(5) == 0 && list.Count > 12` → 3 celebrants, else the
     // `Next(3) == 0` → 2 arm — both draws consumed in the C#'s order.
@@ -313,6 +326,8 @@ pub(crate) fn world_clear(ev: &mut WorldEvents) {
     ev.party_days_on_cooldown = 0;
     ev.celebrating_npcs.clear();
     ev.was_celebrating = false;
+    // `WorldGen.clearWorld:6945`: `NPC.freeCake = false`.
+    ev.free_cake = false;
     // The ritual's `delay`/`recheck` are NOT in the WorldClear family — they
     // ride the world-file load (`WorldFile.cs:163`'s `_tempCultistDelay`
     // restore), so this fn leaves them alone (the C#'s own scope).
@@ -371,6 +386,10 @@ mod tests {
 
     #[test]
     fn s1_f_14_the_party_machine_follows_natural_attempt() {
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let mut ev = WorldEvents::default();
         let mut chat = ChatMonitor::default();
         let partyable = [true; 5];
@@ -387,9 +406,19 @@ mod tests {
         assert!(ev.genuine_party);
         assert_eq!(ev.party_days_on_cooldown, 6);
         assert_eq!(ev.celebrating_npcs.len(), 1);
+        // W4-f38: `BirthdayParty.cs:106` — the genuine party arms freeCake.
+        assert!(ev.free_cake, "NPC.freeCake = true on the genuine party");
         check_night_party(&mut ev, &mut chat);
         assert!(!ev.genuine_party);
         assert!(ev.celebrating_npcs.is_empty());
+        // W4-f38: `:56` — `Lang.misc[99]` = "Party time's over!"
+        // (`LegacyMisc.99`), in `new Color(255, 0, 160)`.
+        assert!(
+            chat.messages
+                .iter()
+                .any(|m| m.text == "Party time's over!" && m.color == [255, 0, 160]),
+            "the keyed farewell broadcast, not a literal"
+        );
         let mut ev2 = WorldEvents::default();
         let partyable12 = [true; 13];
         let mut seq2 = [0i32, 6i32, 0i32].into_iter();
@@ -427,6 +456,7 @@ mod tests {
             party_days_on_cooldown: 5,
             celebrating_npcs: vec![1, 2, 3],
             was_celebrating: true,
+            free_cake: true,
             cultist_delay: 86400,
             cultist_recheck: 600,
         };
@@ -435,6 +465,8 @@ mod tests {
         assert_eq!(ev.lantern_nights_on_cooldown, 0);
         assert!(!ev.manual_party && !ev.genuine_party);
         assert!(ev.celebrating_npcs.is_empty());
+        // `WorldGen.clearWorld:6945` — `NPC.freeCake = false`.
+        assert!(!ev.free_cake);
         // The ritual's delay survives the clear (the world-file restore owns
         // it — `WorldFile.cs:163`).
         assert_eq!(ev.cultist_delay, 86400);
