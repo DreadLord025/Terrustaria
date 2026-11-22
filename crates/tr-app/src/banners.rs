@@ -14,12 +14,18 @@ pub struct BannerSystem {
 }
 
 impl BannerSystem {
-    /// `AddNPCKillBy` (`:163-193`): count the kill, and on the
+    /// `AddNPCKillBy` (`BannerSystem.cs:231-258`): count the kill, and on the
     /// `KillsToBanner` milestone return the banner id whose banner item the
     /// player may claim (the port spawns the item at the death spot) plus
     /// the announcement text — `Game.EnemiesDefeatedByAnnouncement`
-    /// (`{name} has defeated {count} {npc}!`, color 250,250,0 = the Command
-    /// chat color).
+    /// (`:254`, `"{0} has defeated the {1}th {2}!"`, color 250,250,0 = the
+    /// Command chat color). The NPC name rides `Lang.GetNPCName(netID).Key`
+    /// (`:254`) = the `NPCName.*` language row, not the English bestiary
+    /// column; the resource-less fallback keeps the C# English wording with
+    /// the bestiary's English name (the `lang::item_name` fallback pattern).
+    /// The player-less `Game.EnemiesDefeatedAnnouncement` arm (`:251`,
+    /// `plr` outside 0..255) has no port caller — every kill pass names its
+    /// local player.
     pub fn add_npc_kill_by(&mut self, banner_id: i32, player_name: &str) -> Option<(i32, String)> {
         let banner = bestiary::npc_to_banner(banner_id);
         if banner <= 0 {
@@ -33,15 +39,27 @@ impl BannerSystem {
             return None;
         }
         let net = bestiary::banner_to_npc(banner);
-        let name = crate::bestiary::ENTRIES
+        // `Lang.GetNPCName(netID)` (`Lang.cs:180-191`) — the localized row;
+        // an unresolved key (no resources) falls back to the English column.
+        let english = crate::bestiary::ENTRIES
             .iter()
             .find(|e| e.net_id == net)
             .map(|e| e.name)
             .unwrap_or("?");
-        Some((
-            banner,
-            format!("{player_name} has defeated {count} {name}!"),
-        ))
+        let name = crate::lang::npc_name_or(net, english);
+        let key = "Game.EnemiesDefeatedByAnnouncement";
+        let text = crate::lang::text_args(
+            key,
+            &[player_name.to_string(), count.to_string(), name.clone()],
+        );
+        let text = if text == key {
+            // The manager answers a missing key with the key itself — keep
+            // the C# en-US wording (`en-US.json:816`).
+            format!("{player_name} has defeated the {count}th {name}!")
+        } else {
+            text
+        };
+        Some((banner, text))
     }
 
     /// The banner's kill count (the tracker display data).
@@ -93,6 +111,10 @@ mod tests {
 
     #[test]
     fn the_milestone_lands_every_kills_to_banner() {
+        // The announcement reads the live language manager — pin the culture
+        // like the other lang-reading tests (the shared `test_lock`).
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         // The blue slime needs 50 kills for the banner milestone; the 50th
         // returns the announcement, the 49th returns nothing.
         let mut sys = BannerSystem::default();
@@ -104,7 +126,12 @@ mod tests {
         last = sys.add_npc_kill_by(1, "Belsin");
         let (banner, text) = last.take().expect("the 50th kill lands the milestone");
         assert_eq!(banner, 69);
-        assert!(text.contains("Belsin has defeated 50 Blue Slime!"), "{text}");
+        // `Game.EnemiesDefeatedByAnnouncement` (`en-US.json:816`): the
+        // resource row and the resource-less fallback share the C# wording.
+        assert!(
+            text.contains("Belsin has defeated the 50th Blue Slime!"),
+            "{text}"
+        );
         assert_eq!(sys.kills(69), 50);
         // The Pinky needs only 25 (`ItemID.cs:1304`'s override).
         let mut sys = BannerSystem::default();
