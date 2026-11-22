@@ -930,7 +930,7 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         golfer_score: app.player.as_ref().map_or(0, |p| p.golfer_score),
         // `Main.GetBestiaryProgressReport()` (`Chest.cs:3265`) — the
         // port's tracker over the ENTRIES' unlock states.
-        bestiary_completion: crate::bestiary::completion_percent(&app.bestiary.kills),
+        bestiary_completion: crate::bestiary::completion_percent_world(&app.bestiary),
         // `NPC.unlockedPrincessSpawn` (`Main.cs:65948`) — the debug
         // override; the port's roster is the other half of her gate.
         unlocked_princess: false,
@@ -1357,7 +1357,15 @@ fn update_worms_ctx(
     // (`:52004-52050`).
     let mut despawn_chains: Vec<(u32, u32)> = Vec::new();
     for i in 0..npcs.len() {
-        if !npcs[i].kind.is_worm_head() || npcs[i].hp <= 0 {
+        // W4-c8 — the TruffleWormDigger (375) rides the head machine too:
+        // a LONE AI_006 worm (the StardustWormHead precedent — `is_worm`
+        // true, `is_worm_head` false so the init grows no chain, the
+        // follower trail skips seg_index 0). Its 6/0.15 tunables
+        // (`NPC.cs:51730-51734`), the 1000-px dig override (`:51598`) and
+        // the aim inversion (`:51861-51865`) ride `worm_head_step`.
+        if (!npcs[i].kind.is_worm_head() && npcs[i].kind != NpcKind::TruffleWormDigger)
+            || npcs[i].hp <= 0
+        {
             continue;
         }
         let Some(ctx) = head_ctx else { continue };
@@ -1653,12 +1661,20 @@ pub(crate) fn update_plantera_minions(app: &mut App) {
 /// surface gate (`:51110-51148`), the `flag3` dig-mode scan
 /// (`:51525-51597`, margins + overlap + solidTop + the per-tile
 /// `Next(100)` crumble draw), the 1000-px no-player dig override
-/// (`:51598-51615`), the corruption escape (`:52004-52050`) and the
-/// head rotation (`:52201`). The air stumble / dig steer stays the
-/// documented stand-in (the three-arm accel steer `:52112-52198` is
-/// audit T1b, wave W-A2-2). Returns `true` when the corruption escape
-/// deactivates the whole chain (`:52028-52047`'s `ai[0]` walk).
-/// `noTileCollide` is family-wide — no collision blocks the head.
+/// (`:51598-51615`), the corruption escape (`:52004-52050`), the head
+/// rotation (`:52201`) and the dig-mode latch (`:52202-52224`). W4-c8
+/// final COMPOSE of W4-d22 b24977d9 (audit T1b): the air stumble
+/// (`:51925-51973`) and the dig steer (`:52112-52199`) are the FAITHFUL
+/// three-arm accel approaches — the air arms key on the velocity sign +
+/// the snapped aim, the dig arm approaches the num45-scaled aim by
+/// num46 with the two cross-axis ×2 kicks and the dominant-axis ×1.1
+/// else arms (the pre-fix stand-in snapped vx/vy to the aim). The 375
+/// FLEE inversion (`:51861-51865`) sits at the C# position — AFTER the
+/// tile snap, BEFORE the length and BOTH branches (the air stumble's
+/// num48 target is inverted for the digger too). Returns `true` when
+/// the corruption escape deactivates the whole chain (`:52028-52047`'s
+/// `ai[0]` walk). `noTileCollide` is family-wide — no collision blocks
+/// the head.
 fn worm_head_step(
     npc: &mut Npc,
     world: &tr_core::World,
@@ -1745,9 +1761,10 @@ fn worm_head_step(
     // The 1000-px dig override (`:51598-51615`): a listed head with no
     // player inside the ±1000-px box around its rect burrows anyway.
     // The list (7/10/13/39/95/98/117/375/454/510/513/621) covers the
-    // ported Devourer/GiantWorm/EoW/Leech heads; the Destroyer and the
-    // crawltipede are NOT in it. Single-player: one rectangle test
-    // (`Rectangle.Intersects`, strict inequalities).
+    // ported Devourer/GiantWorm/EoW/Leech heads + the TruffleWormDigger
+    // (375, W4-c8); the Destroyer and the crawltipede are NOT in it.
+    // Single-player: one rectangle test (`Rectangle.Intersects`, strict
+    // inequalities).
     if !flag3
         && matches!(
             npc.kind,
@@ -1756,6 +1773,7 @@ fn worm_head_step(
                 | NpcKind::EaterOfWorldsHead
                 | NpcKind::LeechHead
                 | NpcKind::BoneSerpentHead
+                | NpcKind::TruffleWormDigger
         )
     {
         let (nx, ny) = (npc.x as i32, npc.y as i32);
@@ -1768,30 +1786,66 @@ fn worm_head_step(
     }
     let (num45, num46) = npc.kind.worm_tunables();
     let mut despawn_chain = false;
+    // The tile-snapped aim (`NPC.cs:51855-51866`): BOTH the player centre
+    // and the NPC centre floor to the 16-px grid before the delta; num48/
+    // num49 is the snapped vector, num62 its length. Computed once for both
+    // the air stumble (which steers vx toward num48) and the dig branch
+    // (W4-d22 compose).
+    let mut num48 = (((ctx.pcx / TILE_PX) as i32 - ((npc.x + w * 0.5) / TILE_PX) as i32) * 16)
+        as f32;
+    let mut num49 = (((ctx.pcy / TILE_PX) as i32 - ((npc.y + h * 0.5) / TILE_PX) as i32) * 16)
+        as f32;
+    // W4-c8 — `NPC.cs:51861-51865`: the TruffleWormDigger (375) FLEES —
+    // the tile-snapped aim is inverted HERE, after the snap and before
+    // the length (`:51866`), so BOTH the air stumble's num48 steer and
+    // the dig branch read the away-aim (the d22 compose moved the flip
+    // from the dig branch to the C# position). The sign flip leaves the
+    // length unchanged.
+    if npc.kind == NpcKind::TruffleWormDigger {
+        num48 *= -1.0;
+        num49 *= -1.0;
+    }
     if !flag3 {
-        // The air stumble (`:51927-51973`) — the stand-in steer (T1b's
-        // faithful three-arm rewrite is wave W-A2-2).
+        // `:51927` — `TargetClosest()` faces the target (the solo fold: the
+        // one player; the retarget itself has no seam, documented).
+        npc.facing = if ctx.pcx >= npc.x + w * 0.5 { 1 } else { -1 };
+        // The air stumble (`NPC.cs:51925-51973`): the gravity +0.11 capped
+        // at num45, then the three-arm steer keyed on the VELOCITY sign
+        // (not the facing) and the snapped aim num48 (not the raw centre
+        // delta). W4-d22 compose: the pre-fix stand-in used `facing`/
+        // `signum()`/the raw aim — the faithful arms restore the C# sign
+        // tests (vx == 0 takes the `else` +branch, vy > 4 decelerates
+        // toward zero).
         npc.vy = (npc.vy + 0.11).min(num45);
         if (npc.vx.abs() + npc.vy.abs()) < num45 * 0.4 {
-            npc.vx += npc.facing as f32 * num46 * 1.1;
+            // `:51940-51950` — the low-speed kick along the velocity sign.
+            if npc.vx < 0.0 {
+                npc.vx -= num46 * 1.1;
+            } else {
+                npc.vx += num46 * 1.1;
+            }
         } else if npc.vy == num45 {
-            let target_vx = ctx.pcx - (npc.x + w * 0.5);
-            if npc.vx < target_vx {
+            // `:51951-51961` — at terminal fall, steer toward the snapped aim.
+            if npc.vx < num48 {
                 npc.vx += num46;
-            } else if npc.vx > target_vx {
+            } else if npc.vx > num48 {
                 npc.vx -= num46;
             }
         } else if npc.vy > 4.0 {
-            npc.vx -= npc.vx.signum() * num46 * 0.9;
+            // `:51962-51972` — the falling decel toward zero.
+            if npc.vx < 0.0 {
+                npc.vx += num46 * 0.9;
+            } else {
+                npc.vx -= num46 * 0.9;
+            }
         }
-        npc.facing = if ctx.pcx >= npc.x + w * 0.5 { 1 } else { -1 };
     } else {
-        // The dig (`:51974-52002`): the tile-snapped aim at the max speed.
-        let mut dx =
-            (((ctx.pcx / TILE_PX) as i32 - ((npc.x + w * 0.5) / TILE_PX) as i32) * 16) as f32;
-        let mut dy =
-            (((ctx.pcy / TILE_PX) as i32 - ((npc.y + h * 0.5) / TILE_PX) as i32) * 16) as f32;
-        let len = (dx * dx + dy * dy).sqrt().max(0.001);
+        // The dig (`:51974-52200`): the tile-snapped aim (num48/num49 above,
+        // the 375 inversion already applied) scaled to num45, then the
+        // three-arm accel steer — NOT a velocity snap (W4-d22 compose: the
+        // pre-fix stand-in set vx/vy = the scaled aim directly; the C#
+        // approaches it by num46 per tick, audit T1b).
+        let len = (num48 * num48 + num49 * num49).sqrt().max(0.001);
         // S1-E-21g — `NPC.cs:51976-51995`: the dig rumble on the
         // `soundDelay == 0` cadence — the distance/40 clamp (10..20)
         // re-arms the delay BEFORE the play (`:51987`), then the EoW
@@ -1823,9 +1877,14 @@ fn worm_head_step(
                 y: npc.y,
             });
         }
+        // `:51997-52002` — num65/num66 are the UNSCALED |num48|/|num49|
+        // (the axis-dominance test below reads them); num62 re-reads the
+        // length, then the aim scales to num45.
+        let num65 = num48.abs();
+        let num66 = num49.abs();
         let num67 = num45 / len;
-        dx *= num67;
-        dy *= num67;
+        num48 *= num67;
+        num49 *= num67;
         // The corruption escape (`:52004-52050`, INSIDE the dig branch,
         // after the aim scale): Devourer/EoW (7/13) whose target is
         // outside Corrupt/Crimson or dead → `flag6`; then if NO living
@@ -1843,18 +1902,114 @@ fn worm_head_step(
                 if (npc.y / TILE_PX) as f64 > (world.rock_layer + world.height as f64) / 2.0 {
                     despawn_chain = true;
                 }
-                dx = 0.0;
-                dy = num45;
+                num48 = 0.0;
+                num49 = num45;
             }
         }
-        npc.vx = dx;
-        npc.vy = dy;
+        // The three-arm accel steer (`NPC.cs:52112-52199`, flag8 false for
+        // every ported head — the 87/454/621 charge arms are unported).
+        // W4-d22 compose: the faithful approach replaces the pre-fix
+        // velocity snap (audit T1b). The same-sign arm accelerates both
+        // axes toward the aim with the two cross-axis ×2 kicks; the else
+        // arms steer the dominant axis by ×1.1 and nudge the other when
+        // slow. The 375 digger rides the SAME machine — its aim is
+        // already inverted above, so every arm flees.
+        let same_sign = (npc.vx > 0.0 && num48 > 0.0)
+            || (npc.vx < 0.0 && num48 < 0.0)
+            || (npc.vy > 0.0 && num49 > 0.0)
+            || (npc.vy < 0.0 && num49 < 0.0);
+        if same_sign {
+            // `:52116-52131` — both axes approach the aim by num46.
+            if npc.vx < num48 {
+                npc.vx += num46;
+            } else if npc.vx > num48 {
+                npc.vx -= num46;
+            }
+            if npc.vy < num49 {
+                npc.vy += num46;
+            } else if npc.vy > num49 {
+                npc.vy -= num46;
+            }
+            // `:52132-52142` — the Y cross-kick: a near-horizontal aim
+            // (|num49| < num45*0.2) with the X velocity opposing the aim
+            // kicks vy away from zero by num46*2.
+            if num49.abs() < num45 * 0.2
+                && ((npc.vx > 0.0 && num48 < 0.0) || (npc.vx < 0.0 && num48 > 0.0))
+            {
+                if npc.vy > 0.0 {
+                    npc.vy += num46 * 2.0;
+                } else {
+                    npc.vy -= num46 * 2.0;
+                }
+            }
+            // `:52143-52153` — the X cross-kick (the mirror).
+            if num48.abs() < num45 * 0.2
+                && ((npc.vy > 0.0 && num49 < 0.0) || (npc.vy < 0.0 && num49 > 0.0))
+            {
+                if npc.vx > 0.0 {
+                    npc.vx += num46 * 2.0;
+                } else {
+                    npc.vx -= num46 * 2.0;
+                }
+            }
+        } else if num65 > num66 {
+            // `:52155-52176` — X-dominant: steer vx by ×1.1, nudge vy when
+            // the total speed is below num45*0.5.
+            if npc.vx < num48 {
+                npc.vx += num46 * 1.1;
+            } else if npc.vx > num48 {
+                npc.vx -= num46 * 1.1;
+            }
+            if npc.vx.abs() + npc.vy.abs() < num45 * 0.5 {
+                if npc.vy > 0.0 {
+                    npc.vy += num46;
+                } else {
+                    npc.vy -= num46;
+                }
+            }
+        } else {
+            // `:52177-52198` — Y-dominant: the mirror.
+            if npc.vy < num49 {
+                npc.vy += num46 * 1.1;
+            } else if npc.vy > num49 {
+                npc.vy -= num46 * 1.1;
+            }
+            if npc.vx.abs() + npc.vy.abs() < num45 * 0.5 {
+                if npc.vx > 0.0 {
+                    npc.vx += num46;
+                } else {
+                    npc.vx -= num46;
+                }
+            }
+        }
     }
     // The head rotation (`NPC.cs:52201`, the no-leader `else`'s tail —
     // every head, every tick): `Atan2(vy, vx) + Math.PI/2`. The heads use
     // PI/2, NOT the followers' `1.57f` literal (`:51878`) — keep the two
     // constants distinct.
     npc.rotation = npc.vy.atan2(npc.vx) + std::f32::consts::FRAC_PI_2;
+    // `:52202-52224` — the dig-mode latch (the ported heads 7/10/13/117
+    // are on the type list; the digger 375 is NOT — the C# list is
+    // 7/10/13/39/95/98/117/510/513/621): `localAI[0]` tracks flag3 (1
+    // digging, 0 airborne), arming netUpdate on the transition. The
+    // velocity-flip netUpdate (`:52220`) reads `oldVelocity`, which the
+    // C# captures ONLY in `UpdateCollision` (`:92538`) — the
+    // noTileCollide worms skip that path, so oldVelocity stays (0,0) and
+    // the flip test is inert; the latch is the live write. W4-d22
+    // compose (the stand-in dropped both).
+    if matches!(
+        npc.kind,
+        NpcKind::DevourerHead
+            | NpcKind::GiantWormHead
+            | NpcKind::EaterOfWorldsHead
+            | NpcKind::LeechHead
+    ) {
+        let latch = if flag3 { 1.0 } else { 0.0 };
+        if npc.local_ai[0] != latch {
+            npc.net_update = true;
+        }
+        npc.local_ai[0] = latch;
+    }
     // `noTileCollide` — the direct integration (`NPC.cs:90495-90498`).
     npc.x += npc.vx;
     npc.y += npc.vy;
@@ -3795,6 +3950,14 @@ fn king_slime_minion_batch(king: &Npc, count: u32, rng: &mut UnifiedRandom) -> V
 }
 
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
+    // W4-c8 sweep — `Main.BestiaryTracker.Sights.ScanWorldForFinds()`
+    // (`Main.cs:17912-17915`, under `netMode != 1` — the port folds
+    // true): the critter proximity scan runs BEFORE the `UpdateNPC`
+    // loop (`:17948-17952`), so a critter that despawns this tick still
+    // earns its sight. RNG-free (the set insert + the achievement
+    // hook). The kill tracker's entries are untouched — the critter
+    // bestiary unlocks ride the SIGHT providers (the W4-c8 census).
+    crate::bestiary::scan_world_for_critter_sights(app);
     // `Main.UpdateTime`'s Moon-Lord block (`Main.cs:64987-64994`): the
     // apocalypse's countdown ticks down and at zero the boss spawns.
     crate::world_sim::lunar::update_moon_lord_countdown(app);
@@ -4259,6 +4422,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
+    // W4-c8 — `Main.essScale` pre-stamp for the aiStyle-66 flicker
+    // (`NPC.cs:34257`): the AI's `&World` borrow cannot reach
+    // `app.ess_scale`, so the sim stamps it before the update (the
+    // wind_speed_current pre-pass convention above). The draw pass's
+    // `item_lights::update_ess_scale` owns the live value.
+    {
+        let ess = app.ess_scale;
+        for n in app.npcs.iter_mut() {
+            if n.kind.ai_style() == 66 {
+                n.ess_scale = ess;
+            }
+        }
+    }
     // The Twins' shared-despawn seam (S1-D-3-wire-retinazer,
     // `NPC.cs:26468-26474` — the aiStyle-30 arm's `num400 != whoAmI`
     // scan over the other ACTIVE type-125/126 slots, feeding
@@ -4295,6 +4471,27 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     let dust_ctx = dust_spawn_ctx;
     // Limit the scope of borrows to just the tick closure
     {
+        // W4-c8 sweep — the GoldWorm sparkle's light inputs, captured
+        // BEFORE the field borrows below (`app.light`/`app.light_mode`
+        // cannot be read through `app` while `world`/`dust` hold it
+        // mutable — the `dust_spawn_ctx` capture precedent). The style
+        // folds the mode's transforms + GlobalBrightness (the draw.rs
+        // construction: legacy modes pass through, blind drops 1.2 →
+        // 1.0); the light MAP itself is borrowed immutably (disjoint
+        // from the `&mut` fields).
+        let sparkle_light = &app.light;
+        let sparkle_anim_time = app.anim_time;
+        let mut sparkle_style = tr_core::lighting::LightStyle::for_mode(app.light_mode);
+        if app.light_mode != tr_core::lighting::LightMode::Color {
+            sparkle_style.grayscale = false;
+            sparkle_style.levels = 0;
+            sparkle_style.perturb = 0.0;
+        }
+        if player.as_ref().is_some_and(|p| p.blind) {
+            // `Lighting.UpdateGlobalBrightness` (`Lighting.cs:108-116`):
+            // the Darkness debuff's blind flag drops 1.2 → 1.0.
+            sparkle_style.brightness = 1.0;
+        }
         // S1-D-3 W-1: `&mut` — the WoF arm's band/index statics write back
         // INSIDE the loop, right after the wall's own update, so the
         // eye/Hungry slots later in the tick read the fresh values exactly
@@ -4310,6 +4507,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // turn (the `item_lights::rand_light` fixed-step precedent,
         // `world_sim/items.rs`); the C# appends inside `NPC.AI`
         // (`NPC.cs:34162`/`:34166`/`:34170`), mid-`UpdateNPCs`.
+        // W4-c8 — the aiStyle-66 flicker's `Lighting.AddLight` requests
+        // drain into the shared `EntityLights` pair at the NPC's slot
+        // turn (the `item_lights::rand_light` fixed-step precedent,
+        // `world_sim/items.rs`); the C# appends inside `NPC.AI`
+        // (`NPC.cs:34258`), mid-`UpdateNPCs`.
         let entity_lights = &mut app.entity_lights;
         // The aiStyle-75 family's per-tick difficulty inputs: the port is
         // single-difficulty classic (the expert bridge arm is constants-off
@@ -4426,6 +4628,45 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         // `:90534-90556`): the wild critter's 90-tick
                         // friendly window ticks down pre-AI, in slot order.
                         crate::bug_net::tick_catchable_immunity(n);
+                        // W4-c8 sweep — `UpdateNPC_CastLights`'s
+                        // IsGoldCritter arm (`NPC.cs:90320` →
+                        // `:92345-92368`), BEFORE `AI()` in `UpdateNPC`:
+                        // of the ported roster only the GoldWorm 448 is
+                        // in the set (`NPCID.cs:10126`). The light
+                        // sample is `Lighting.GetColor((int)Center.X/16,
+                        // (int)Center.Y/16)` (`:92348`, truncate-before-
+                        // divide) on the netOffset-added position; the
+                        // shade folds the mode + GlobalBrightness (the
+                        // draw.rs style construction — legacy modes are
+                        // pass-throughs, blind drops 1.2 → 1.0), then
+                        // the byte truncation (`Lighting.cs:240`). The
+                        // gate's Next(300) + the dust-43 spawn's
+                        // internal draws ride THIS `UpdateNPCs` stream
+                        // at the slot turn (the C# order — the gate
+                        // first, the spawn only on success).
+                        if n.kind == NpcKind::GoldWorm {
+                            let px = n.x + n.net_offset.x;
+                            let py = n.y + n.net_offset.y;
+                            let (nw, nh) = n.size();
+                            let tx = (px + nw * 0.5) as i32 / 16;
+                            let ty = (py + nh * 0.5) as i32 / 16;
+                            let c = sparkle_style.shade(
+                                sparkle_light.get(tx, ty),
+                                tx,
+                                ty,
+                                sparkle_anim_time,
+                            );
+                            let bytes = [
+                                ((c[0] * 255.0) as i32).min(255) as u8,
+                                ((c[1] * 255.0) as i32).min(255) as u8,
+                                ((c[2] * 255.0) as i32).min(255) as u8,
+                            ];
+                            if crate::npc_ai_style66::gold_worm_sparkle(bytes, npcs_rng) {
+                                crate::npc_ai_style66::gold_worm_sparkle_dust(
+                                    n, world, dust, &dust_ctx, npcs_rng,
+                                );
+                            }
+                        }
                         if crate::ambient_sound::fighter_walker_kind(n.kind) {
                             let (nw, nh) = n.size();
                             let player_intersects = n.x < player.x + crate::player::WIDTH
@@ -4642,6 +4883,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         npcs[i].contact(player, npcs_rng);
                     } else if style != 75 {
                         npcs[i].update_rng_dust(world, player, step, npcs_rng, dust, &dust_spawn_ctx);
+                        // W4-c8 — the aiStyle-66 flicker's AddLight request
+                        // lands in the shared pair NOW, at the C# call
+                        // position (`NPC.cs:34258`, inside `AI()`); no RNG
+                        // — the feed's placement cannot move any stream.
+                        // The solo axis queued it on `wants_ai_light`.
+                        for (lx, ly, rgb) in npcs[i].wants_ai_light.drain(..) {
+                            entity_lights.add(lx, ly, rgb);
+                        }
                     } else {
                         npcs[i].update_preamble(step);
                         let ctx = crate::npc_ai_style75::Style75Ctx {
@@ -4684,7 +4933,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         }
                         // `out.died`: hp is already 0 — the death pass owns
                         // the HitEffect + deactivation pair.
-                        npcs[i].find_frame();
+                        // W4-c8 sweep — the world-read entry (the d44
+                        // pattern, BOTH production call sites): the
+                        // crawler groups' slope tail reads the live world.
+                        npcs[i].find_frame_world(world);
                         npcs[i].contact(player, npcs_rng);
                     }
                     let n = &mut npcs[i];
@@ -14260,10 +14512,24 @@ mod worm_tests {
         let mut npcs = vec![head];
         let mut rng = UnifiedRandom::new(5);
         let mut next_id = 1u32;
-        // Shallow: the aim overrides to straight down at num45 = 9.
+        // Shallow: the escape aims straight down (num48 = 0, num49 =
+        // num45 = 9). W4-d22 compose: the dig steer is the faithful accel
+        // approach (audit T1b), not a velocity snap — from rest the
+        // Y-dominant else arm (`:52177-52198`) nudges vy by num46*1.1 =
+        // 0.11; the total speed 0 < num45*0.5 also kicks vx by num46
+        // (vx == 0 takes the `else` −branch, `:52191-52196`). The aim
+        // points down; the speed ramps over ticks.
         update_worms_in(&world, Some((160.0, 176.0)), &mut npcs, &mut rng, &mut next_id);
-        assert_eq!(npcs[0].vx, 0.0, "the escape aims straight down");
-        assert_eq!(npcs[0].vy, 9.0, "num49 = num45");
+        assert!(
+            (npcs[0].vx + 0.1).abs() < 1e-4,
+            "the X slow-speed nudge from rest: {}",
+            npcs[0].vx
+        );
+        assert!(
+            (npcs[0].vy - 0.11).abs() < 1e-4,
+            "the Y-dominant accel approach from rest: {}",
+            npcs[0].vy
+        );
         assert!(npcs[0].hp > 0, "shallow: no despawn");
         // Deep (y/16 = 600 > 550): the chain walks dead.
         let mut deep = Npc::new(NpcKind::DevourerHead, 160.0, 9600.0, 1, 0.0);
@@ -14288,8 +14554,13 @@ mod worm_tests {
         // Giant Worm (type 10) is in the list but NOT in the corruption
         // escape's 7/13 pair — the aim keeps pointing at the far player
         // (a Devourer here would aim straight down, `:52048-52049`, the
-        // escape's own witness below).
-        let world = World::new("t".into(), 200, 800);
+        // escape's own witness below). W4-d22 compose: the dig steer is
+        // the faithful accel approach (audit T1b) — the velocity ramps
+        // toward the num45-scaled aim over ticks, not an instant snap.
+        // A wide world so the head stays in bounds while the velocity
+        // saturates (the off-world guard only kills below the world's
+        // bottom).
+        let world = World::new("t".into(), 2000, 800);
         let mut head = Npc::new(NpcKind::GiantWormHead, 160.0, 160.0, 1, 0.0);
         head.hp = head.max_hp;
         head.worm_inited = true;
@@ -14297,16 +14568,88 @@ mod worm_tests {
         let mut npcs = vec![head];
         let mut rng = UnifiedRandom::new(5);
         let mut next_id = 1u32;
-        // Player 3000 px away: outside the box → the dig branch runs
-        // (the aim snaps toward the player at num45, not the air
-        // stumble's 0.11 gravity).
-        update_worms_in(&world, Some((3160.0, 160.0)), &mut npcs, &mut rng, &mut next_id);
+        // Player 3000 px away: outside the box → the dig branch runs.
+        // The aim is horizontal (num49 = 0), so the X-dominant else arm
+        // (`:52155-52176`) accelerates vx by num46*1.1 = 0.055 per tick
+        // toward num45 = 6; ~110 ticks saturate it. The head travels
+        // ~660 px over those ticks — well inside the 2000-tile row.
+        for _ in 0..150 {
+            update_worms_in(&world, Some((3160.0, 160.0)), &mut npcs, &mut rng, &mut next_id);
+        }
         let speed = (npcs[0].vx * npcs[0].vx + npcs[0].vy * npcs[0].vy).sqrt();
         assert!(
-            (speed - 6.0).abs() < 0.01,
+            (speed - 6.0).abs() < 0.1,
             "the override digs at full speed (the Giant Worm's num45 = 6): {speed}"
         );
         assert!(npcs[0].vx > 0.0, "toward the far player");
+    }
+
+    // ---- W4-c8 final COMPOSE witnesses (W4-d22 b24977d9's faithful
+    // dig/air steer, audit T1b — carried onto the crawler branch so the
+    // digger rides the upgraded machine; the d22 originals keep their
+    // names on their own branch). WRITTEN NOT RUN — code-only mode.
+
+    #[test]
+    fn w4_c8_compose_the_dig_steer_accelerates_instead_of_snapping() {
+        // `NPC.cs:52112-52199`: the dig arm approaches the num45-scaled aim
+        // by num46 per tick — NOT a velocity snap. A Giant Worm head
+        // (num45 = 6, num46 = 0.05) at rest digging toward a far horizontal
+        // player takes the X-dominant else arm (`:52155-52176`): the first
+        // tick nudges vx by num46*1.1 = 0.055 (the pre-fix stand-in snapped
+        // vx straight to 6). The Y slow-speed nudge (`:52165-52175`) fires
+        // too (total speed 0 < num45*0.5, vy == 0 takes the −branch).
+        let world = World::new("t".into(), 2000, 800);
+        let mut head = Npc::new(NpcKind::GiantWormHead, 160.0, 160.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.worm_inited = true;
+        head.worm_id = 99;
+        let mut npcs = vec![head];
+        let mut rng = UnifiedRandom::new(5);
+        let mut next_id = 1u32;
+        update_worms_in(&world, Some((3160.0, 160.0)), &mut npcs, &mut rng, &mut next_id);
+        assert!(
+            (npcs[0].vx - 0.055).abs() < 1e-4,
+            "the first-tick accel, not the 6-snap: {}",
+            npcs[0].vx
+        );
+        assert!(
+            (npcs[0].vy + 0.05).abs() < 1e-4,
+            "the Y slow-speed nudge from rest: {}",
+            npcs[0].vy
+        );
+        // The dig-mode latch (`:52204-52210`): localAI[0] = 1 while digging.
+        assert_eq!(npcs[0].local_ai[0], 1.0, "the dig latch (:52210)");
+    }
+
+    #[test]
+    fn w4_c8_compose_the_air_stumble_keys_on_the_velocity_sign() {
+        // `NPC.cs:51940-51950`: the low-speed kick follows the VELOCITY sign
+        // (vx < 0 → −num46*1.1, else +), NOT the facing. A Devourer head
+        // (num45 = 9, num46 = 0.1) in open air with the player INSIDE the
+        // ±1000-px box (so the dig override does not fire) and to the RIGHT:
+        // a head already moving LEFT kicks further left even though the
+        // player is right — the pre-fix stand-in used `facing` (+1 here).
+        let world = World::new("t".into(), 2000, 800);
+        let mut head = Npc::new(NpcKind::DevourerHead, 160.0, 160.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.worm_inited = true;
+        head.worm_id = 99;
+        head.vx = -1.0; // moving left, player right
+        let mut npcs = vec![head];
+        let mut rng = UnifiedRandom::new(5);
+        let mut next_id = 1u32;
+        // Player centre (600, 160): position (590, 139) sits inside the
+        // head's ±1000-px box → no dig override; open air → flag3 false.
+        update_worms_in(&world, Some((600.0, 160.0)), &mut npcs, &mut rng, &mut next_id);
+        // Gravity 0.11; |vx| + |vy| = 1.0 + 0.11 = 1.11 < num45*0.4 = 3.6 →
+        // the kick; vx < 0 → −num46*1.1 = −0.11 → vx = −1.11.
+        assert!(
+            (npcs[0].vx + 1.11).abs() < 1e-4,
+            "the velocity-sign kick (not facing): {}",
+            npcs[0].vx
+        );
+        // Airborne: the dig latch clears to 0 (`:52212-52218`).
+        assert_eq!(npcs[0].local_ai[0], 0.0, "the air latch (:52218)");
     }
 
     #[test]
@@ -14383,6 +14726,198 @@ mod worm_tests {
         // The pass's head machine never touches it (not is_worm_head):
         // the velocity stays whatever its own machine wrote (zero here).
         assert_eq!((npcs[0].vx, npcs[0].vy), (0.0, 0.0));
+    }
+
+    /// W4-c8 — the TruffleWormDigger (375) rides the worm pass's head
+    /// machine as a LONE worm: `is_worm` true but no chain (375 sits
+    /// outside the `:51301`/`:51436` lists), the 6/0.15 tunables
+    /// (`NPC.cs:51730-51734`), the 1000-px dig override (`:51598`) and
+    /// the FLEE aim inversion (`:51861-51865`). W4-c8 final compose of
+    /// W4-d22 b24977d9: the head machine is the faithful three-arm accel
+    /// (not the velocity snap) — the inversion sits BEFORE both branches
+    /// so the air stumble's num48 steer flees too; 375 is NOT on the
+    /// dig-latch type list (`:52202`). WRITTEN, NOT RUN (code-only).
+    #[test]
+    fn w4_c8_the_digger_rides_the_worm_pass_and_flees() {
+        assert!(NpcKind::TruffleWormDigger.is_worm());
+        assert!(!NpcKind::TruffleWormDigger.is_worm_head());
+        assert!(!NpcKind::TruffleWormDigger.is_worm_mid());
+        assert!(!NpcKind::TruffleWormDigger.shares_carrier_life());
+        assert_eq!(NpcKind::TruffleWormDigger.worm_tunables(), (6.0, 0.15));
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::TruffleWormDigger,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        let mut npcs = vec![n];
+        let mut rng = UnifiedRandom::new(7);
+        let mut next_id = 1u32;
+        // The player sits RIGHT of the digger, above the ground (the air
+        // box is clear → flag3 false until the 1000-px override; the
+        // player is NEAR, so the override does not fire — the digger
+        // stumbles through the air arm's velocity-sign kick, then the
+        // dig aim inverts once it burrows). One tick: the head machine
+        // runs.
+        let px = 160.0 * TILE_PX;
+        let py = 112.0 * TILE_PX;
+        crate::world_sim::npcs::update_worms_in(
+            &world,
+            Some((px, py)),
+            &mut npcs,
+            &mut rng,
+            &mut next_id,
+        );
+        assert_eq!(npcs.len(), 1, "the lone digger grows no chain");
+        assert!(npcs[0].worm_inited, "the pass claims it (is_worm)");
+        // The head machine ran: the rotation is the atan2 + PI/2 tail
+        // (`:52201`) and the velocity moved (the air stumble / dig steer).
+        // The digger is noGravity/noTileCollide — the raw integration
+        // (`:90495-90498`) moved it off the spawn point.
+        assert!(
+            npcs[0].x != 150.0 * TILE_PX || npcs[0].y != 112.0 * TILE_PX,
+            "the head machine integrated the digger"
+        );
+        // The air arm's low-speed kick (`:51940-51950`): from rest vx == 0
+        // takes the +branch → vx = num46*1.1 = 0.165; vy = the 0.11
+        // gravity. The dig-mode latch does NOT fire for 375 (the
+        // `:52202` type list has no 375 — localAI[0] untouched).
+        assert!(
+            (npcs[0].vx - 0.165).abs() < 1e-4,
+            "the air kick from rest: {}",
+            npcs[0].vx
+        );
+        assert!((npcs[0].vy - 0.11).abs() < 1e-4, "the gravity: {}", npcs[0].vy);
+        assert_eq!(npcs[0].local_ai[0], 0.0, "375 is not on the latch list");
+        // The FLEE inversion: place the digger underground (flag3 true via
+        // the tile scan) with the player to its RIGHT — the dig aim must
+        // point LEFT (away). The tile-snapped aim inverts (`:51861`).
+        let mut d = Npc::new(
+            NpcKind::TruffleWormDigger,
+            150.0 * TILE_PX,
+            130.0 * TILE_PX, // below the surface (y=120) — inside dirt
+            1,
+            0.0,
+        );
+        d.hp = d.max_hp;
+        let mut npcs2 = vec![d];
+        let mut rng2 = UnifiedRandom::new(7);
+        let mut next_id2 = 1u32;
+        // Player far to the RIGHT (same row): the snapped dx is positive,
+        // the inversion flips it negative → the digger burrows LEFT.
+        // W4-d22 compose: the accel approach, not the snap — from rest
+        // the X-dominant else arm (`:52155-52176`) steers vx by
+        // −num46*1.1 = −0.165 (toward the inverted aim) and the Y
+        // slow-speed nudge kicks vy by −num46 = −0.15.
+        crate::world_sim::npcs::update_worms_in(
+            &world,
+            Some((200.0 * TILE_PX, 130.0 * TILE_PX)),
+            &mut npcs2,
+            &mut rng2,
+            &mut next_id2,
+        );
+        assert!(npcs2[0].vx < 0.0, "the dig aim inverts — flees LEFT (vx {})", npcs2[0].vx);
+        assert!(
+            (npcs2[0].vx + 0.165).abs() < 1e-4,
+            "the first-tick flee accel, not the −6-snap: {}",
+            npcs2[0].vx
+        );
+    }
+
+    /// W4-c8 sweep — `ScanWorldForFinds` (`NPCWasNearPlayerTracker.cs:
+    /// 102-130`): a crawler within the player's 300×200-inflated hitbox
+    /// registers its sight; a far one does not; a non-critter (the
+    /// zombie — lifeMax > 5) never does; the insert is idempotent.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c8_the_critter_sight_scan_registers_proximity_once() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 40.0;
+        player.y = 40.0;
+        app.player = Some(player);
+        // A Maggot 100 px right of the player — inside the inflated box.
+        let mut near = Npc::new(NpcKind::Maggot, 140.0, 40.0, 1, 0.0);
+        near.hp = near.max_hp;
+        // A Worm 2000 px away — outside.
+        let mut far = Npc::new(NpcKind::Worm, 2040.0, 40.0, 1, 0.0);
+        far.hp = far.max_hp;
+        // A zombie near — NOT a critter (lifeMax > 5).
+        let mut zombie = Npc::new(NpcKind::Zombie, 150.0, 40.0, 1, 0.0);
+        zombie.hp = zombie.max_hp;
+        // A dead crawler near — the active gate skips it.
+        let mut dead = Npc::new(NpcKind::Grubby, 160.0, 40.0, 1, 0.0);
+        dead.hp = 0;
+        app.npcs = vec![near, far, zombie, dead];
+        crate::bestiary::scan_world_for_critter_sights(&mut app);
+        assert!(app.bestiary.was_seen_near_player("Maggot"), "the near crawler");
+        assert!(!app.bestiary.was_seen_near_player("Worm"), "the far one stays unseen");
+        assert!(!app.bestiary.was_seen_near_player("Zombie"), "not a critter");
+        assert!(!app.bestiary.was_seen_near_player("Grubby"), "the dead one is inactive");
+        // Idempotent: a second scan adds nothing new.
+        let count = app.bestiary.sights.len();
+        crate::bestiary::scan_world_for_critter_sights(&mut app);
+        assert_eq!(app.bestiary.sights.len(), count, "the set insert dedups");
+        // The kill tracker is untouched — sights are the credit.
+        assert_eq!(app.bestiary.kills.get_kill_count("Maggot"), 0);
+        // The Maggot entry now reads tier 4 through the sight provider.
+        let maggot = crate::bestiary::ENTRIES
+            .iter()
+            .find(|e| e.credit_id == "Maggot")
+            .unwrap();
+        assert_eq!(
+            crate::bestiary::unlock_state_world(maggot, &app.bestiary),
+            tr_core::bestiary::UnlockState::CanShowDropsWithDropRates
+        );
+    }
+
+    /// W4-c8 final — the scan is GENERIC: the Goldfish 55 (the c4 lane's
+    /// kind, lifeMax 5 / damage 0, `NPC.cs:9460-9473`) earns its sight
+    /// through the SAME scan with no crawler-specific wiring — the
+    /// cross-lane contract witness (c7/c9/c10/e26 kinds are the same
+    /// 5-HP/0-dmg shape and auto-ride it once rowed). WRITTEN, NOT RUN.
+    #[test]
+    fn w4_c8_final_the_sight_scan_covers_the_other_lanes_critters() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 40.0;
+        player.y = 40.0;
+        app.player = Some(player);
+        // A Goldfish 100 px right — the c4 lane's critter, not a crawler.
+        let mut fish = Npc::new(NpcKind::Goldfish, 140.0, 40.0, 1, 0.0);
+        fish.hp = fish.max_hp;
+        app.npcs = vec![fish];
+        crate::bestiary::scan_world_for_critter_sights(&mut app);
+        assert!(
+            app.bestiary.was_seen_near_player("Goldfish"),
+            "the generic gate scans the c4 lane's critter"
+        );
+        // The entry unlocks through the generic critter dispatch.
+        let entry = crate::bestiary::ENTRIES
+            .iter()
+            .find(|e| e.credit_id == "Goldfish")
+            .unwrap();
+        assert_eq!(
+            crate::bestiary::unlock_state_world(entry, &app.bestiary),
+            tr_core::bestiary::UnlockState::CanShowDropsWithDropRates
+        );
+        // The GoldWorm's collection gate reads the same sights set: a
+        // gold-critter sight from ANOTHER lane (here simulated directly,
+        // the d40 GoldBunny row) opens 448's gate once its peer is seen.
+        app.bestiary.set_was_seen_directly("GoldBunny");
+        app.bestiary.set_was_seen_directly("Worm");
+        let gold = crate::bestiary::ENTRIES
+            .iter()
+            .find(|e| e.credit_id == "GoldWorm")
+            .unwrap();
+        assert_eq!(
+            crate::bestiary::unlock_state_world(gold, &app.bestiary),
+            tr_core::bestiary::UnlockState::CanShowDropsWithDropRates,
+            "a cross-lane gold sight opens the collection gate"
+        );
     }
 
     #[test]

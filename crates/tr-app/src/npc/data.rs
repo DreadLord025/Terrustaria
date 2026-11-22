@@ -939,6 +939,21 @@ impl NpcKind {
             NpcKind::LightningBug => 736,
             NpcKind::Lavafly => 654,
             NpcKind::Shimmerfly => 677,
+            // W4-c8 — the crawling-critter family keeps its vanilla ids
+            // (357/374/375/448/484-487/606 are free in the protocol space
+            // — a to_u16 scan of the tree shows no arm on them).
+            // `NPCID.cs:11391`/`:11425`/`:11427`/`:11569`/`:11641-11647`/
+            // `:11889`.
+            // E8 merge (d37 tables): Worm/TruffleWorm/TruffleWormDigger
+            // ride 737/738/739 (d37's SeaSnail/BloodJelly/IceGolem own
+            // the vanilla slots; cs_id/net_id stay 357/374/375); the
+            // GoldWorm 448 + EnchantedNightcrawler/Grubby/Sluggy/Buggy
+            // 484-487 dups DROP (d40's rows above own them - c8's
+            // style-66 wiring composes onto the canonical kinds).
+            NpcKind::Worm => 737,
+            NpcKind::TruffleWorm => 738,
+            NpcKind::TruffleWormDigger => 739,
+            NpcKind::Maggot => 606,
         }
     }
 
@@ -1543,6 +1558,14 @@ impl NpcKind {
             736 => NpcKind::LightningBug,
             654 => NpcKind::Lavafly,
             677 => NpcKind::Shimmerfly,
+            // W4-c8 — the crawling-critter family's vanilla ids (`to_u16`
+            // above).
+            // E8 merge: 737/738/739 (the 357/374/375 slots are d37's);
+            // the 448/484-487 dups dropped (d40's decode arms above).
+            737 => NpcKind::Worm,
+            738 => NpcKind::TruffleWorm,
+            739 => NpcKind::TruffleWormDigger,
+            606 => NpcKind::Maggot,
             _ => return None,
         })
     }
@@ -1612,6 +1635,13 @@ impl NpcKind {
                 | NpcKind::BoneSerpentHead
                 | NpcKind::BoneSerpentBody
                 | NpcKind::BoneSerpentTail
+                // W4-c8: the TruffleWormDigger (375) is the same shape —
+                // an AI_006 kind (`NPC.cs:13781` aiStyle 6, the `:51598`
+                // 1000-px dig list, the `:51730-51734` 6/0.15 tunables,
+                // the `:51861-51865` aim inversion) with NO chain (375
+                // sits outside the `:51301`/`:51436` lists;
+                // `is_worm_head`/`is_worm_mid` stay false).
+                | NpcKind::TruffleWormDigger
         )
     }
 
@@ -1762,6 +1792,10 @@ impl NpcKind {
             // NOT the wyvern's machine — the fixed 14-link chain and the
             // altitude-gate flyer live in `npc_ai_wyvern.rs` (UNWIRED).
             NpcKind::WyvernHead => (11.0, 0.25),
+            // W4-c8 — the TruffleWormDigger's 6/0.15 (`NPC.cs:51730-
+            // 51734`): the lone fleeing digger (the StardustWormHead
+            // precedent — `is_worm` true, no chain).
+            NpcKind::TruffleWormDigger => (6.0, 0.15),
             _ => (8.0, 0.07),
         }
     }
@@ -2603,6 +2637,15 @@ impl NpcKind {
             // W4-c7 — the firefly family's `SoundID.NPCHit1` rows
             // (`NPC.cs:13525`/`:13567`/`:17273`/`:17587`).
             NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => "NPC_Hit_1",
+            // W4-c8 — the crawling-critter family's `SoundID.NPCHit1`
+            // rows (`NPC.cs:13553`/`:13770`/`:13785`/`:14340`/`:14584`/
+            // `:16789`).
+            // E8 merge: the GoldWorm/EnchantedNightcrawler/Grubby/
+            // Sluggy/Buggy rows are d40's above (the dup drop).
+            NpcKind::Worm
+            | NpcKind::TruffleWorm
+            | NpcKind::TruffleWormDigger
+            | NpcKind::Maggot => "NPC_Hit_1",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -3181,6 +3224,14 @@ impl NpcKind {
             // W4-c7 — the firefly family's `SoundID.NPCDeath1` rows
             // (`NPC.cs:13526`/`:13568`/`:17274`/`:17588`).
             NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => "NPC_Killed_1",
+            // W4-c8 — the crawling-critter family's `SoundID.NPCDeath1`
+            // rows (`NPC.cs:13554`/`:13771`/`:13786`/`:14341`/`:14585`/
+            // `:16790`).
+            // E8 merge: the 5 d40-owned dups dropped (rows above).
+            NpcKind::Worm
+            | NpcKind::TruffleWorm
+            | NpcKind::TruffleWormDigger
+            | NpcKind::Maggot => "NPC_Killed_1",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -3551,6 +3602,10 @@ impl NpcKind {
             // (`NPC.cs:13528`/`:13570`/`:17276`/`:17590`); all four keep
             // the class-default kb 1, so the Y-pop selector reaches them.
             NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => true,
+            // W4-c8 — the TruffleWormDigger's `noGravity = true` row
+            // (`NPC.cs:13787`); the eight style-66 crawlers keep the head
+            // default false (`:8535`) — they walk on gravity.
+            NpcKind::TruffleWormDigger => true,
             _ => false,
         }
     }
@@ -4116,6 +4171,19 @@ impl NpcKind {
             // `:13563` (358), `:17269` (654), `:17583` (677) — the four
             // `this.aiStyle = 64;` rows of the SetDefaults census.
             NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => 64,
+            // aiStyle 66 — W4-c8, the crawling critters: `NPC.cs:13549`
+            // (357), `:13766` (374), `:14336` (448), `:14580` (the
+            // 484-487 range row), `:16785` (606) — the eight
+            // `this.aiStyle = 66;` rows of the SetDefaults census.
+            // E8 merge: the 5 d40-owned dups dropped - d40's aiStyle-66
+            // rows above own them (the superset wiring composes).
+            NpcKind::Worm
+            | NpcKind::TruffleWorm
+            | NpcKind::Maggot => 66,
+            // aiStyle 6 — W4-c8, the TruffleWorm's dig target
+            // (`NPC.cs:13781`): the worm pass's lone-minion member (the
+            // StardustWormHead precedent — `is_worm` true, no chain).
+            NpcKind::TruffleWormDigger => 6,
         }
     }
 
@@ -4989,6 +5057,16 @@ impl NpcKind {
             // 12x12 (`:13561-13562`).
             NpcKind::Firefly | NpcKind::Lavafly | NpcKind::Shimmerfly => (10.0, 10.0),
             NpcKind::LightningBug => (12.0, 12.0),
+            // W4-c8 — the crawling critters' boxes: the eight style-66
+            // kinds are 10x4 except the TruffleWorm's 20x10
+            // (`NPC.cs:13547-13548`/`:13764-13765`/`:14334-14335`/
+            // `:14578-14579`/`:16783-16784`); the digger 375 is 10x10
+            // (`:13779-13780`).
+            NpcKind::TruffleWorm => (20.0, 10.0),
+            NpcKind::TruffleWormDigger => (10.0, 10.0),
+            // E8 merge: the 5 d40-owned dups dropped (rows above).
+            NpcKind::Worm
+            | NpcKind::Maggot => (10.0, 4.0),
         }
     }
 
@@ -5267,6 +5345,22 @@ impl NpcKind {
             // keep their own - the AI arms read cs_id; the bestiary
             // folds in entry_for_npc only).
             NpcKind::BloodMummy => 630,
+            // W4-c8 — the crawling-critter family's vanilla `NPC.type`
+            // ids (the AI arm's per-type gates read them):
+            // `NPCID.cs:11391`/`:11425`/`:11427`/`:11569`/`:11641-11647`/
+            // `:11889`. The digger 375 keeps its OWN hand row — it is
+            // Hide=true in the bestiary (`NPCID.cs:3714-3718`, folds onto
+            // the TruffleWorm in `entry_for_npc`) but NOT `npcCatchable`
+            // (`Main.cs:9326-9418` lists 374, not 375), so cs_id must stay
+            // 375 to keep `friendly`/immunity false (the ForceBubble
+            // precedent — own cs_id, folded net_id).
+            // E8 merge: the trio keeps its vanilla cs hand rows (the
+            // protocol ids renumbered, the C#-type gates unchanged); the
+            // 5 d40-owned dups dropped (d40's rows/fallback above).
+            NpcKind::Worm => 357,
+            NpcKind::TruffleWorm => 374,
+            NpcKind::TruffleWormDigger => 375,
+            NpcKind::Maggot => 606,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -5430,6 +5524,9 @@ impl NpcKind {
                 | NpcKind::BloodEelHead
                 | NpcKind::BloodEelBody
                 | NpcKind::BloodEelTail
+                // W4-c8 — the TruffleWormDigger's `behindTiles = true`
+                // row (`NPC.cs:13790`): the digger draws under the tiles.
+                | NpcKind::TruffleWormDigger
         )
     }
 
@@ -6112,6 +6209,14 @@ impl NpcKind {
             // W4-c7 — the firefly family's `lifeMax = 5` rows
             // (`NPC.cs:13524`/`:13566`/`:17272`/`:17586`).
             NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => 5,
+            // W4-c8 — the crawling-critter family's `lifeMax = 5` rows
+            // (`NPC.cs:13552`/`:13769`/`:13784`/`:14339`/`:14583`/
+            // `:16788`).
+            // E8 merge: the 5 d40-owned dups dropped (rows above).
+            NpcKind::Worm
+            | NpcKind::TruffleWorm
+            | NpcKind::TruffleWormDigger
+            | NpcKind::Maggot => 5,
         }
     }
 
@@ -6742,6 +6847,14 @@ impl NpcKind {
             // (`NPC.cs:13522`/`:13564`/`:17270`/`:17584`) — the 677 threat
             // scan's own `damage > 0` gate excludes them from each other.
             NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => 0,
+            // W4-c8 — the crawling-critter family's `damage = 0` rows
+            // (`NPC.cs:13550`/`:13767`/`:13782`/`:14337`/`:14581`/
+            // `:16786`) — the friendly critters never hurt the player.
+            // E8 merge: the 5 d40-owned dups dropped (rows above).
+            NpcKind::Worm
+            | NpcKind::TruffleWorm
+            | NpcKind::TruffleWormDigger
+            | NpcKind::Maggot => 0,
         }
     }
 }

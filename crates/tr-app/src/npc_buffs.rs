@@ -804,6 +804,17 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // (`NPCID.cs:6075+`'s dictionary carries no keys for them) — the
         // C# else-branch's no-immunity (`NPC.cs:17826-17832`).
         NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => &[],
+        // W4-c8 — the crawling-critter family's `SpecificallyImmuneTo`
+        // rows: all nine carry `{ 31 }` (Confused) — `NPCID.cs:8171-8175`
+        // (357), `:8290-8294` (374), `:8297-8301` (375), `:8654-8658`
+        // (448), `:8858-8862` (484), `:8865-8869` (485), `:8872-8876`
+        // (486), `:8879-8883` (487), `:9551-9555` (606).
+        // E8 merge: the GoldWorm/EnchantedNightcrawler/Grubby/Sluggy/
+        // Buggy rows are d40's above (the dup drop - same {31} values).
+        NpcKind::Worm
+        | NpcKind::TruffleWorm
+        | NpcKind::TruffleWormDigger
+        | NpcKind::Maggot => &[31],
     }
 }
 

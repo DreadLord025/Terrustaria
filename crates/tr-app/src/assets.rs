@@ -1455,10 +1455,13 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_472",
         "NPC_478",
         "NPC_482",
-        "NPC_484",
-        "NPC_485",
-        "NPC_486",
-        "NPC_487",
+        // W4-c8 - the crawling-critter family's own sheets
+        // (`CRAWLER_SHEETS`), keyed by the vanilla net id in
+        // `NpcAssets::npc_sheets` (`render/entities.rs`). E8 merge: the
+        // 448/484-487 dups ride d40's D40_SHEETS rows above.
+        "NPC_357",
+        "NPC_374",
+        "NPC_375",
         "NPC_488",
         // W4-d35 sheets phase — the 21 packed kinds of the 71-140 wave
         // (`render/entities.rs`'s D35_SHEETS). The wave's other 12 sheets
@@ -1499,6 +1502,7 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_358",
         "NPC_654",
         "NPC_677",
+        "NPC_606",
 ];
 
 
@@ -2091,7 +2095,10 @@ pub struct AmbienceTex {
 // @465) + 16 d35 (the 71-140 band's visible packed kinds; the 96/97/99/100/
 // 112 Hide folds ride their heads) = 313 slots; + W4-c3's WaterBoltMimic
 // 694 (the 34/289 dups dropped per the d37 E8 tables) = 314.
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 314] = [
+// + W4-c8's 3 visible crawlers (357/374/606; the digger 375 is
+// Hide=true - folds onto the TruffleWorm; the 448/484-487 dups dropped,
+// d40's slots above own them) = 317.
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 317] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -2178,6 +2185,11 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 314] = [
         // W4-c3 - appended last so the earlier slots keep their indexes
         // (the 34/289 dups dropped per E8; d34/d38's slots above own them).
         694,
+        // W4-c8 - the crawling-critter family, appended last for the same
+        // reason. The digger 375 is Hide=true (no grid card of its own -
+        // it folds onto the TruffleWorm); the 448/484-487 dups dropped
+        // (d40's slots above own them) - 3 new slots.
+        357, 374, 606,
     ];
 
 
@@ -3097,6 +3109,11 @@ impl Lookups {
                 // W4-c3 - the WaterBoltMimic strip, parallel to
                 // BESTIARY_NPC_SHEET_IDS (the 34/289 dups dropped per E8).
                 atlas.sheet("NPC_694").copied(),
+                // W4-c8 - the 3 new crawler strips, parallel to
+                // BESTIARY_NPC_SHEET_IDS (the 448/484-487 dups dropped).
+                atlas.sheet("NPC_357").copied(),
+                atlas.sheet("NPC_374").copied(),
+                atlas.sheet("NPC_606").copied(),
             ],
 
 

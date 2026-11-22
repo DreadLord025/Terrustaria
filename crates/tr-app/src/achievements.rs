@@ -414,8 +414,8 @@ impl AchievementManager {
     /// `AchievementsHelper.TryGrantingBestiary100PercentAchievement` (`:81-84`):
     /// when the bestiary completion reaches 100%, fire progression event 29
     /// (`BOOK_WORM`).
-    pub fn try_grant_bestiary_100(&mut self, kills: &tr_core::bestiary::KillTracker) -> Option<&'static str> {
-        let pct = crate::bestiary::completion_percent(kills);
+    pub fn try_grant_bestiary_100(&mut self, bestiary: &tr_core::bestiary::WorldBestiary) -> Option<&'static str> {
+        let pct = crate::bestiary::completion_percent_world(bestiary);
         if pct >= 1.0 {
             self.notify_progression(29)
         } else {

@@ -1037,6 +1037,10 @@ pub(crate) fn release_npc(app: &mut App, x: i32, y: i32, ty: i32, style: i32, wh
         // GoldGoldfish/Pupfish/Pufferfish) now resolve through their
         // bestiary entries; the remaining gap is the non-fish critters
         // (the birds/insects/rock critters of the d38/d40/d42 lanes).
+        // The roster gap (the ported catchable kinds today: the
+        // Goldfish 55 + the W4-c8 crawlers 357/374/448/484-487/606 —
+        // the c4/c7 waves' kinds land with their rosters) — the C#
+        // spawns; the port has no model. ANALYSIS.
         return;
     };
     // `NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80770`, `Entity.cs:128-131`):
@@ -1485,6 +1489,79 @@ mod tests {
         let plan = release_plan(614, 4, 1, &mut rng);
         assert!(plan.statue_form);
         assert_eq!(plan.direction, Some(-1)); // 4-2=2 → dir -1
+    }
+
+    /// W4-c8 sweep — the nine aiStyle-66 kinds in the catch chain: the
+    /// catchItem rows (already pinned in the i36 matrix — re-pinned here
+    /// per kind against the SetDefaults citations), the release
+    /// whitelist (375 the ONE non-member — the digger has a catchItem
+    /// but is NOT in `Main.npcCatchable`, `Main.cs:9326-9418` has no
+    /// 375 row), the verdict (none is lava bait or the 583-family —
+    /// every net catches), the release plan (the default arm — spawn +
+    /// owner only, NO draws) and the cage-item round trip (the item's
+    /// `makeNPC` row spawns the SAME kind back — the itemdata rows).
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c8_the_nine_crawlers_ride_the_catch_chain() {
+        use crate::npc::{NpcKind, kind_from_net_id};
+        // (vanilla type, catchItem, NpcKind, release-catchable) —
+        // NPC.cs:13556 (357→2002), :13773/:13792 (374/375→2673),
+        // :14343 (448→2895), :14587 (484-487→3191+type-484),
+        // :16792 (606→4363).
+        let rows: [(i32, i32, NpcKind, bool); 9] = [
+            (357, 2002, NpcKind::Worm, true),
+            (374, 2673, NpcKind::TruffleWorm, true),
+            (375, 2673, NpcKind::TruffleWormDigger, false),
+            (448, 2895, NpcKind::GoldWorm, true),
+            (484, 3191, NpcKind::EnchantedNightcrawler, true),
+            (485, 3192, NpcKind::Grubby, true),
+            (486, 3193, NpcKind::Sluggy, true),
+            (487, 3194, NpcKind::Buggy, true),
+            (606, 4363, NpcKind::Maggot, true),
+        ];
+        let mut rng = UnifiedRandom::new(3);
+        for (ty, item, kind, catchable) in rows {
+            // The catch conversion row.
+            assert_eq!(catch_item(ty, 0.0), item, "{ty} catchItem");
+            // The release whitelist (Main.cs:9341/:9352/:9361-9364/
+            // :9381 + the 442..=448 loop :9415-9418; NO 375 row).
+            assert_eq!(npc_catchable(ty), catchable, "{ty} npcCatchable");
+            // The verdict: all three nets catch (no lava bait, no
+            // 583-family gate — Player.cs:44714-44738).
+            for net in [1991u16, 3183, 4821] {
+                assert_eq!(
+                    catch_verdict(net, item, ty, 0.0, 100.0, 200.0),
+                    CatchVerdict::Catch,
+                    "{ty} net {net}"
+                );
+            }
+            // The CatchNPC branch: SP converts (the statue poof is the
+            // SpawnedFromStatue arm, not a kind gate).
+            assert_eq!(catch_outcome(0, true, item, ty, false), CatchOutcome::Convert);
+            assert_eq!(catch_outcome(0, true, item, ty, true), CatchOutcome::StatuePoof);
+            // The release plan: the default arm (NPC.cs:80160-80163) —
+            // spawn + owner only, no ai2/target/direction/statue, and
+            // NO RNG draw.
+            let witness = rng.clone();
+            let plan = release_plan(ty, 0, 1, &mut rng);
+            assert_eq!(plan.spawn_type, ty, "{ty} releases as itself");
+            assert_eq!(plan.ai2, None);
+            assert!(!plan.target_closest);
+            assert_eq!(plan.direction, None);
+            assert!(!plan.statue_form);
+            assert_eq!(rng, witness, "{ty} the default arm draws nothing");
+            // The cage item's makeNPC row spawns the SAME kind back
+            // (itemdata.rs: 2002→357, 2673→374, 2895→448, 3191-3194→
+            // 484-487, 4363→606). NOTE 2673 releases the WALKER 374 —
+            // the digger 375 is a Transform-only form (no item row).
+            let make = crate::registry::make_npc(item as u16) as i32;
+            let expect_type = if ty == 375 { 374 } else { ty };
+            assert_eq!(make, expect_type, "item {item} makeNPC");
+            let (k, _) = kind_from_net_id(make).expect("the released kind is ported");
+            if ty != 375 {
+                assert_eq!(k, kind, "{ty} round-trips through its cage item");
+            }
+        }
     }
 
     #[test]

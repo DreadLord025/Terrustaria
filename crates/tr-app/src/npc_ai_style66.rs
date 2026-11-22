@@ -129,12 +129,46 @@
 //! CastLights arms (160, 254..=261/634/635, 209, 44) matches a family
 //! kind.
 //!
-//! ## Wiring deferred (the BlazingWheel / style72 precedent)
+//! ## Wiring (W4-c8 — the roster wave)
 //!
-//! The roster has NO `NpcKind` for any of the eight kinds (only the
-//! lang/sacrifice tables name them), so `update_rng`'s aiStyle axis
-//! (`npc.rs:3651`) has no style-66 arm to claim. This module is the pure
-//! port + the minimal seams:
+//! The nine kinds landed (`NpcKind::Worm`/`TruffleWorm`/`TruffleWormDigger`/
+//! `GoldWorm`/`EnchantedNightcrawler`/`Grubby`/`Sluggy`/`Buggy`/`Maggot`,
+//! vanilla ids 357/374/375/448/484-487/606): the `SetDefaults` rows ride
+//! `npc/data.rs` + `npc.rs`'s tables, the aiStyle-66 axis claim lives in
+//! `update_rng_dust` (`npc.rs::ai_066_crawler_family`), and the sim's tick
+//! closure runs `update_rng_dust` unchanged (the arm needs no sibling
+//! pool — the dig proximity scan reads the players only). The 484 light
+//! request queues on `Npc::wants_ai_light` and drains into the shared
+//! `EntityLights` pair at the slot turn (the c7 firefly precedent); the
+//! dig runs `transform_to_kind(TruffleWormDigger)` INLINE (the C# order —
+//! `Transform(375)` inside `AI()` before integration, preserving the +16
+//! sink), then returns — the digger's movement is the worm pass's. The
+//! integration tail is the family arm's own: the depth-scaled default
+//! gravity (`body_gravity`, `NPC.cs:90878-90955`) + the 10 fall cap, the
+//! dead-band X snap (`:90473-90476`) and the ground `UpdateCollision`
+//! stand-in (`integrate_flyer_collision`). The digger 375 (aiStyle 6) is
+//! a LONE `AI_006` worm (the StardustWormHead precedent) — the worm pass's
+//! head machine runs it (the 6/0.15 tunables, the 1000-px dig override,
+//! the FLEE aim inversion `:51861-51865`), no chain. The FindFrame family
+//! cases live in `npc.rs::find_frame_crawler_groups` + the slope tail
+//! (`find_frame_crawler_slope_tail`) — the W4-c8 sweep wired the tail
+//! through `find_frame_world` (the d44 worm-slope world-read bridge
+//! pattern, BOTH production call sites). The GoldWorm sparkle
+//! ([`gold_worm_sparkle`] + [`gold_worm_sparkle_dust`]) is WIRED by the
+//! same sweep: the sim's slot-turn pre-pass (the C# `UpdateNPC_CastLights`
+//! position, `NPC.cs:90320` — BEFORE `AI()`) samples the shaded light map
+//! at the truncated centre tile, runs the gate on the `UpdateNPCs`
+//! stream and spawns the ONE dust 43 through the real `DustPool` on
+//! success (the gate draw FIRST, the NewDust internals only on success —
+//! the C# order). See docs/ANALYSIS.md
+//! "The crawling critters" → "W4-c8 — the roster + wiring wave".
+//!
+//! ## The original deferral (S1-D-3 — superseded by W4-c8 above)
+//!
+//! The roster had NO `NpcKind` for any of the eight kinds (only the
+//! lang/sacrifice tables named them), so `update_rng`'s aiStyle axis
+//! had no style-66 arm to claim. This module was the pure port + the
+//! minimal seams:
 //! * `Main.essScale` is the caller's `App::ess_scale`
 //!   (`item_lights.rs::update_ess_scale`, S1-E-5) — passed in.
 //! * `Main.netMode != 1` folds to true (single-player port, the
@@ -160,7 +194,7 @@
 //!
 //! See docs/ANALYSIS.md "The crawling critters (S1-D-3 aiStyle-66,
 //! code-only)".
-#![allow(dead_code)] // wiring deferred — the kinds + dispatch arm land with the roster wave
+#![allow(dead_code)] // WIRED by W4-c8 (the axis 66 + Transform drain + light feed); the witnesses stay as the audit cross-check
 
 use glam::Vec2;
 
@@ -506,6 +540,50 @@ pub fn gold_worm_sparkle(tile_light: [u8; 3], rng: &mut UnifiedRandom) -> bool {
         return rng.next_max(300) < num;
     }
     false
+}
+
+/// W4-c8 sweep — the sparkle's dust SPAWN half (`NPC.cs:92363-92364`),
+/// the wiring caller the gate's doc names: ONE `Dust.NewDust(position,
+/// width, height, 43, 0f, 0f, 254, new Color(255, 255, 0), 0.5f)` then
+/// `Main.dust[num2].velocity *= 0f`. The position is the NPC's
+/// `base.position` AFTER the `+= netOffset` round trip's add half
+/// (`:92347`; zero in single-player, the style56 precedent keeps the
+/// shape). The pool's internal draws ride the caller's `UpdateNPCs`
+/// stream in C# order — the gate's `Next(300)` FIRST, then the spawn's
+/// position/velocity/frame/scale rolls (the `DustPool::new_dust`
+/// verbatim). The sentinel slot takes the velocity write too
+/// (`Main.dust[6000]` exists in the C#).
+pub fn gold_worm_sparkle_dust(
+    npc: &Npc,
+    world: &World,
+    dust: &mut tr_core::particles::DustPool,
+    ctx: &tr_core::particles::SpawnCtx,
+    rng: &mut UnifiedRandom,
+) {
+    // `:92347` — position += netOffset (the spawn reads the offset
+    // position; the `:92367` subtract restores it — the port reads a
+    // copy, the NPC's own position never moves).
+    let pos = Vec2::new(npc.x + npc.net_offset.x, npc.y + npc.net_offset.y);
+    let (w, h) = npc.size();
+    // `:92363` — the ONE dust 43: SpeedX/SpeedY 0, Alpha 254, the pure
+    // yellow `new Color(255, 255, 0)` (alpha byte 255 — the XNA 3-arg
+    // ctor), Scale 0.5.
+    let idx = dust.new_dust(
+        rng,
+        ctx,
+        world,
+        pos,
+        w as i32,
+        h as i32,
+        43,
+        0.0,
+        0.0,
+        254,
+        tr_core::particles::Color::new(255, 255, 0, 255),
+        0.5,
+    );
+    // `:92364` — velocity *= 0f (the sentinel slot included).
+    dust.slot_mut(idx).velocity *= 0.0;
 }
 
 #[cfg(test)]
@@ -892,6 +970,65 @@ mod tests {
         let got3 = gold_worm_sparkle([21, 90, 30], &mut rng);
         assert_eq!(got3, roll3 < 3);
         assert_eq!(rng, witness3);
+    }
+
+    /// W4-c8 sweep — the sparkle's spawn half (`NPC.cs:92363-92364`):
+    /// ONE dust 43 at the netOffset-added position, alpha 254, pure
+    /// yellow, scale ×0.5, velocity zeroed AFTER the spawn's rolls;
+    /// the pool's internal draws ride the caller's stream in C# order
+    /// (the gate's Next(300) is the CALLER's — this fn draws only the
+    /// NewDust internals). WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c8_the_sparkle_dust_spawns_one_zeroed_yellow_43() {
+        let w = air();
+        let mut n = crawler(448, 1000.0, 1000.0);
+        n.net_offset = glam::Vec2::new(3.0, -2.0);
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: glam::Vec2::ZERO,
+            screen_size: glam::Vec2::new(8000.0, 8000.0),
+            max_dust_to_draw: 6000,
+        };
+        let mut rng = UnifiedRandom::new(23);
+        // Replay the NewDust internals on a witness stream (the empty
+        // pool takes slot 0, no pressure-band draw): the position pair
+        // (the < 5 floor makes width 10 → Next(6) and height 4 → 5 →
+        // Next(1)), the velocity pair, the frame row, the scale roll —
+        // the particles.rs verbatim.
+        let mut witness = rng.clone();
+        let mut expected = tr_core::particles::DustPool::new();
+        let exp_idx = expected.new_dust(
+            &mut witness,
+            &ctx,
+            &w,
+            glam::Vec2::new(1003.0, 998.0),
+            10,
+            4,
+            43,
+            0.0,
+            0.0,
+            254,
+            tr_core::particles::Color::new(255, 255, 0, 255),
+            0.5,
+        );
+        expected.slot_mut(exp_idx).velocity *= 0.0;
+        gold_worm_sparkle_dust(&n, &w, &mut dust, &ctx, &mut rng);
+        assert_eq!(rng, witness, "exactly the NewDust internal draws");
+        let d = dust.slot(exp_idx);
+        let e = expected.slot(exp_idx);
+        assert!(d.active, "the empty pool spawns");
+        assert_eq!(d.dust_type, 43);
+        assert_eq!(d.alpha, 254);
+        assert_eq!(d.color, tr_core::particles::Color::new(255, 255, 0, 255));
+        assert_eq!(d.velocity, e.velocity);
+        assert_eq!(d.velocity, glam::Vec2::ZERO, ":92364 velocity *= 0f");
+        assert_eq!(d.scale, e.scale, "the rolled scale ×0.5");
+        assert_eq!(d.position, e.position, "the netOffset-added position");
+        // The NPC's own position never moved (the port reads a copy).
+        assert_eq!((n.x, n.y), (1000.0, 1000.0));
     }
 
     /// The whole-arm RNG witness: a mixed 120-tick run (grounded walk /

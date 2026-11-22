@@ -658,6 +658,18 @@ pub(crate) fn npc_rotation_allowed(kind: NpcKind) -> bool {
             | NpcKind::GoldGoldfish
             | NpcKind::Pupfish
             | NpcKind::Dolphin
+            // W4-c8 merge fold: the crawling critters' airborne tilt
+            // (the FindFrame vx*0.1 / digger aim writes, NPC.cs:72774-
+            // 72883); the canonical d40 kinds ride c8's machine now.
+            | NpcKind::Worm
+            | NpcKind::TruffleWorm
+            | NpcKind::TruffleWormDigger
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy
+            | NpcKind::Maggot
             // W4-c7 merge fold: the Shimmerfly's velocity tilt (the
             // aiStyle-64 arm's rotation = velocity.X * 0.3 tail,
             // NPC.cs:34234-34237); the other three fireflies write none.
@@ -786,6 +798,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(STYLE44_SHEETS)
             .chain(STYLE16_SHEETS)
             .chain(FIREFLY_SHEETS)
+            .chain(CRAWLER_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1540,6 +1553,10 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // ForceBubble precedent - the bestiary credit folds, the
         // sheet does not).
         NpcKind::BartenderUnconscious => 579,
+        // W4-c8 — the TruffleWormDigger's bestiary entry folds onto the
+        // TruffleWorm (Hide=true), but its DRAW sheet is its own NPC_375
+        // (the fishron-hazard precedent). The eight crawlers ride cs_id.
+        NpcKind::TruffleWormDigger => 375,
         _ => kind.net_id() as u16,
     }
 }
@@ -1879,6 +1896,33 @@ pub(crate) const STYLE16_SHEETS: &[u32] = &[
 /// Shimmerfly (677) each draw their own `NPC_<id>` art. Keyed by the
 /// vanilla net id ([`NpcKind::cs_id`]) in [`NpcAssets::npc_sheet`].
 pub(crate) const FIREFLY_SHEETS: &[u32] = &[355, 358, 654, 677];
+/// W4-c8 — the crawling-critter family's sheets (the aiStyle-66 wiring):
+/// one sheet per kind, exactly as the vanilla's `TextureAssets.Npc[type]`
+/// — the eight crawlers plus the TruffleWormDigger (375) each draw their
+/// own `NPC_<id>` art. Keyed by the vanilla net id ([`NpcKind::cs_id`] /
+/// [`texture_net_id`]) in [`NpcAssets::npc_sheet`].
+///
+/// W4-c8 final SHEETS census (the d35 lazy-load contract, research/113
+/// §10 at `e5558b0a9`): the C# registers ALL `TextureAssets.Npc`
+/// `DoNotLoad` (`AssetInitializer.cs:127-129`) and `Main.LoadNPC`
+/// (`Main.cs:59084-59090`) fires per DRAWN NPC from `NPC.SetFrameSize`
+/// (`NPC.cs:66661-66663` ← `DrawNPCDirect` `Main.cs:22516`) + the
+/// bestiary hover (`UnlockableNPCEntryIcon.cs:185`) + the leashed-critter
+/// draws (`LeashedCritter.cs:199`) — NOT on spawn. The port's eager
+/// `STATIC_SHEET_NAMES` packing is the documented superset deviation
+/// (the E-4b precedent); under the §10.6 step-7 amendment these nine
+/// rows leave the eager union and join the per-world RESIDENT+SPAWNABLE
+/// NPC page — all nine are in the d35 FINAL 490-name union inventory
+/// (357/606 rows 82/83, 374/375 rows 50/51 owned c8; 448/484-487 ride
+/// the d40 forecast), and the bestiary-opened superset (8 of the 9 in
+/// `BESTIARY_NPC_SHEET_IDS`; 375 folds onto the TruffleWorm card) keeps
+/// the atlas immutable in play. Real retail dims (the pinned d35
+/// harness, LZX first-frame): 357/448/606 14×16, 374/375 38×144,
+/// 484 18×20, 485/486/487 18×72 — 17,424 padded px total (PAD 2), the
+/// rows divide evenly by `npcFrameCount` (2/4/4/2/2/4/4/4/2,
+/// `Main.cs:67082`). No code change here — the census + the witness.
+// E8 merge: the 448/484-487 dups ride d40's D40_SHEETS (the dup drop).
+pub(crate) const CRAWLER_SHEETS: &[u32] = &[357, 374, 375, 606];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -4422,6 +4466,24 @@ pub(crate) fn draw_npcs(
             NpcKind::LightningBug => scaled_anchor(assets.npc_sheet(358), npc_rows(358), n, w, h),
             NpcKind::Lavafly => scaled_anchor(assets.npc_sheet(654), npc_rows(654), n, w, h),
             NpcKind::Shimmerfly => scaled_anchor(assets.npc_sheet(677), npc_rows(677), n, w, h),
+            // W4-c8 — the crawling-critter family draws its own sheet
+            // (`CRAWLER_SHEETS`) at `SetFrameSize`'s integer-division row
+            // height over `Main.npcFrameCount[type]` (357/448/484/606 two
+            // rows, 374/375/485/486/487 four — `Main.cs:67082`) with the
+            // generic centred anchor (`Main.cs:25511-25516`) — the
+            // AngryNimbus shape. No kind writes `NPC.scale` (all 1f), so
+            // the plain anchor stands; the airborne tilt / digger aim ride
+            // the rotation whitelist below.
+            // E8 merge: the GoldWorm/EnchantedNightcrawler/Grubby/Sluggy/
+            // Buggy draws ride d40's group arm above (the identical
+            // texture_net_id shape - keep-one).
+            NpcKind::Worm
+            | NpcKind::TruffleWorm
+            | NpcKind::TruffleWormDigger
+            | NpcKind::Maggot => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -4852,6 +4914,81 @@ mod anchor_tests {
     /// A bare NPC at the spawn point (the port's test helper).
     fn bare(kind: NpcKind) -> Npc {
         Npc::new(kind, 100.0, 100.0, 1, 0.0)
+    }
+
+    /// W4-c8 final — the crawler sheets census witness: all nine
+    /// `CRAWLER_SHEETS` ids are packed (the `STATIC_SHEET_NAMES` rows +
+    /// the `npc_sheets` chain), each kind's `texture_net_id` maps to its
+    /// own sheet (the 375 Hide fold draws NPC_375, not NPC_374), and the
+    /// real retail dims divide evenly by the `npcFrameCount` rows (the
+    /// `SetFrameSize` integer-division contract — no leftover pixels).
+    /// The d35 lazy-load contract (research/113 §10): the C# loads these
+    /// per DRAW (`LoadNPC` `Main.cs:59084` ← `SetFrameSize`
+    /// `NPC.cs:66663`), never on spawn; the port's eager pack is the
+    /// documented superset until the §10.6 per-world NPC page lands.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c8_final_the_crawler_sheets_are_in_the_union_inventory() {
+        // Every sheet id has a STATIC_SHEET_NAMES row (the npc_tex
+        // debug_assert's contract — a missing row is a silent no-draw).
+        for &id in CRAWLER_SHEETS {
+            let name = format!("NPC_{id}");
+            assert!(
+                crate::assets::STATIC_SHEET_NAMES.contains(&name.as_str()),
+                "{name} is packed by load_static_sheets"
+            );
+        }
+        // The kind → sheet mapping: the eight crawlers ride cs_id, the
+        // digger its own 375 (the bestiary fold does NOT touch the draw).
+        for (kind, id) in [
+            (NpcKind::Worm, 357u16),
+            (NpcKind::TruffleWorm, 374),
+            (NpcKind::TruffleWormDigger, 375),
+            (NpcKind::GoldWorm, 448),
+            (NpcKind::EnchantedNightcrawler, 484),
+            (NpcKind::Grubby, 485),
+            (NpcKind::Sluggy, 486),
+            (NpcKind::Buggy, 487),
+            (NpcKind::Maggot, 606),
+        ] {
+            assert_eq!(texture_net_id(kind), id, "{kind:?} draws NPC_{id}");
+            // E8 merge: the 448/484-487 dups ride D40_SHEETS (the c8
+            // CRAWLER_SHEETS keeps the 4 own rows).
+            assert!(
+                CRAWLER_SHEETS.contains(&(id as u32)) || D40_SHEETS.contains(&(id as u32)),
+                "NPC_{id} packed by one of the two consts"
+            );
+        }
+        // The real retail dims (the pinned d35 LZX harness, W4-c8 final
+        // measurement) vs the frame-count rows: every sheet's height is
+        // an exact multiple of its row count (the SetFrameSize integer
+        // division loses nothing here).
+        for (id, w, h, rows) in [
+            (357u16, 14u32, 16u32, 2u32),
+            (374, 38, 144, 4),
+            (375, 38, 144, 4),
+            (448, 14, 16, 2),
+            (484, 18, 20, 2),
+            (485, 18, 72, 4),
+            (486, 18, 72, 4),
+            (487, 18, 72, 4),
+            (606, 14, 16, 2),
+        ] {
+            assert_eq!(npc_rows(id), rows, "NPC_{id} frame count (Main.cs:67082)");
+            assert_eq!(h % rows, 0, "NPC_{id} {w}x{h} divides by {rows} rows");
+        }
+        // The bestiary superset: the eight visible crawlers hold sheet
+        // slots; the digger 375 folds onto the TruffleWorm card (Hide).
+        for &id in &[357u16, 374, 448, 484, 485, 486, 487, 606] {
+            assert!(
+                crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&id),
+                "NPC_{id} has a bestiary sheet slot"
+            );
+        }
+        assert!(
+            !crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&375),
+            "375 is Hide — no grid card of its own"
+        );
     }
 
     /// A sheet of the given pixel size, packed into the whole atlas UV
