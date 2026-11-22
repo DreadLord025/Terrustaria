@@ -1161,9 +1161,12 @@ impl App {
         // open the emotes wheel.
         if self.inventory_open && ui::bestiary::emote_button_hit(self.mouse_pos) {
             self.inventory_open = false;
-            // `UIEmotesMenu.OnActivate` rebuilds the page, so the wheel opens
-            // with its scroll at 0 (`EmoteSystem::open`).
-            self.emotes.open();
+            // `UIEmotesMenu.OnActivate` rebuilds the page from the CURRENT
+            // downed flags (`InitializePage`'s seven `TryAddingList` calls,
+            // `UIEmotesMenu.cs:90-97`), so the wheel opens with its scroll
+            // at 0 and the gated Critters/Bosses tails fresh (W4-g54).
+            let gates = crate::emotes::EmoteGates::from_world(&self.world);
+            self.emotes.open_with(&gates);
             self.ui_left_press = false;
             return;
         }
@@ -1173,7 +1176,48 @@ impl App {
         if self.emotes.menu_open {
             let (sw, sh) = self.screen_size();
             let screen = Vec2::new(sw, sh);
-            if let Some(id) = ui::emotes::card_at(screen, self.mouse_pos, self.emotes.scroll) {
+            let panel = ui::emotes::panel_rect(screen, true);
+            // The scrollbar first (`UIScrollbar.LeftMouseDown`,
+            // `UIScrollbar.cs:126-143`): a press on the handle latches the
+            // drag, a press on the track jumps the view to centre the
+            // handle under the pointer.
+            if ui::emotes::scrollbar_attaches(&self.emotes.groups, &panel) {
+                let sb = ui::emotes::scrollbar_rect(&panel);
+                let list = ui::emotes::list_rect(&panel, true);
+                let content = ui::emotes::list_content_height(&self.emotes.groups);
+                let handle = crate::ui::panel::scrollbar_handle_at(
+                    sb,
+                    list[3],
+                    content,
+                    self.emotes.scroll,
+                );
+                let m = self.mouse_pos;
+                if m.x >= sb[0] && m.x <= sb[0] + sb[2] && m.y >= sb[1] && m.y <= sb[1] + sb[3] {
+                    let max = ui::emotes::max_scroll(&self.emotes.groups, &list);
+                    if m.x >= handle[0]
+                        && m.x <= handle[0] + handle[2]
+                        && m.y >= handle[1]
+                        && m.y <= handle[1] + handle[3]
+                    {
+                        // `_dragYOffset = mouseY - handle.Y` (`:131-135`).
+                        self.emote_scroll_drag = Some(m.y - handle[1]);
+                    } else {
+                        let value = crate::ui::panel::scrollbar_jump_value(
+                            sb,
+                            list[3],
+                            content,
+                            handle[3],
+                            m.y,
+                        );
+                        self.emotes.scroll_to(value, max);
+                    }
+                    self.ui_left_press = false;
+                    return;
+                }
+            }
+            if let Some(id) =
+                ui::emotes::card_at(screen, self.mouse_pos, &self.emotes.groups, self.emotes.scroll)
+            {
                 // `MakeLocalPlayerEmote`'s dead gate (`:280`):
                 // `Main.netMode == 2 || !Main.LocalPlayer.dead` — the port's
                 // single-player arm silences a dead player.
@@ -1191,7 +1235,6 @@ impl App {
             // not the bestiary's panel it used to borrow (`Top(-25)` on a
             // different container) — the same BUG-18 mis-box the draw side
             // fixed and the click side kept.
-            let panel = ui::emotes::panel_rect(screen, true);
             if ui::emotes::back_hit(&panel, self.mouse_pos) {
                 self.emotes.close();
                 self.ui_left_press = false;
@@ -2795,26 +2838,29 @@ impl App {
 mod tests {
     #[test]
     fn the_wheel_click_spawns_the_drawn_cells_emote() {
-        // The break: `card_at` read the uncentred lattice while the draw
-        // centred the roster (+31 px), so a click on the drawn cell spawned
-        // its neighbour's emote. At the headless 1280x720 the grid origin is
-        // (388, 160); the drawn centre of cell (3, 1) is (514, 214) = id 17.
+        // The break: `card_at` read a different lattice than the draw, so a
+        // click on the drawn cell spawned its neighbour's emote. W4-g54: both
+        // sides read the grouped `EmotesGroupListItem` lattice — General's
+        // cell (row 1, col 3) is roster index 17 = id 91 (`GetEmotesGeneral`,
+        // `UIEmotesMenu.cs:108-116`).
         let mut app = inv_app();
         app.inventory_open = false;
         app.emotes.open();
         let screen = Vec2::new(1280.0, 720.0);
-        let grid = ui::emotes::grid_rect(screen);
-        let origin = ui::emotes::grid_origin(&grid);
-        let mouse = Vec2::new(
-            origin[0] + 3.0 * ui::emotes::CELL + ui::emotes::CELL * 0.5,
-            origin[1] + ui::emotes::CELL + ui::emotes::CELL * 0.5,
+        let panel = ui::emotes::panel_rect(screen, true);
+        let list = ui::emotes::list_rect(&panel, true);
+        let gr = ui::emotes::group_rect(&list, &app.emotes.groups, 0, 0.0);
+        let br = ui::emotes::button_rect(&gr, 17);
+        let mouse = Vec2::new(br[0] + br[2] * 0.5, br[1] + br[3] * 0.5);
+        assert_eq!(
+            ui::emotes::card_at(screen, mouse, &app.emotes.groups, 0.0),
+            Some(91)
         );
-        assert_eq!(ui::emotes::card_at(screen, mouse, 0), Some(17));
         app.mouse_pos = mouse;
         app.ui_left_press = true;
         app.handle_bestiary_clicks();
         assert_eq!(app.emotes.bubbles.len(), 1, "the pick spawned a bubble");
-        assert_eq!(app.emotes.bubbles[0].emote, 17, "the drawn cell's id");
+        assert_eq!(app.emotes.bubbles[0].emote, 91, "the drawn cell's id");
         assert_eq!(app.emotes.bubbles[0].life_time, 360, "the vanilla lifetime");
         assert!(app.emotes.bubbles[0].anchored_to_player);
         // `EmoteButton.LeftClick` closes the wheel (`IngameFancyUI.Close`);
@@ -2833,9 +2879,11 @@ mod tests {
         app.player.as_mut().unwrap().dead = true;
         app.emotes.open();
         let screen = Vec2::new(1280.0, 720.0);
-        let grid = ui::emotes::grid_rect(screen);
-        let origin = ui::emotes::grid_origin(&grid);
-        app.mouse_pos = Vec2::new(origin[0] + 18.0, origin[1] + 18.0);
+        let panel = ui::emotes::panel_rect(screen, true);
+        let list = ui::emotes::list_rect(&panel, true);
+        let gr = ui::emotes::group_rect(&list, &app.emotes.groups, 0, 0.0);
+        let br = ui::emotes::button_rect(&gr, 0);
+        app.mouse_pos = Vec2::new(br[0] + br[2] * 0.5, br[1] + br[3] * 0.5);
         app.ui_left_press = true;
         app.handle_bestiary_clicks();
         assert!(app.emotes.bubbles.is_empty(), "the dead gate silences it");
@@ -2865,6 +2913,96 @@ mod tests {
         app.handle_bestiary_clicks();
         assert!(app.emotes.menu_open, "the bestiary's box is not the wheel's");
         assert!(app.ui_left_press, "the press stays unconsumed");
+    }
+
+    #[test]
+    fn g54_the_emote_button_rebuilds_the_page_from_the_world_gates() {
+        // `OnActivate` → `InitializePage` (`UIEmotesMenu.cs:30-44`/`:90-97`):
+        // the page is rebuilt from the CURRENT downed flags on every open,
+        // not the fresh-world page — a downed Eye of Cthulhu adds the Bosses
+        // list (id 39, `GetEmotesBosses` `:181-184`) the next time the wheel
+        // opens.
+        let mut app = inv_app();
+        app.world.downed_eoc = true;
+        app.mouse_pos = Vec2::new(549.0, 293.0); // inside `EMOTE_BUTTON_RECT`
+        app.ui_left_press = true;
+        app.handle_bestiary_clicks();
+        assert!(app.emotes.menu_open);
+        assert!(!app.inventory_open);
+        assert_eq!(app.emotes.groups.len(), 7, "the Bosses list joined");
+        assert_eq!(app.emotes.groups[6].title_key, "UI.EmoteCategoryBosses");
+        assert_eq!(app.emotes.groups[6].emotes, vec![39]);
+        assert_eq!(app.emotes.scroll, 0.0, "the fresh scrollbar starts at 0");
+        // Closing and reopening after a second kill rebuilds again.
+        app.emotes.close();
+        app.inventory_open = true;
+        app.world.downed_slime_king = true;
+        app.ui_left_press = true;
+        app.handle_bestiary_clicks();
+        assert_eq!(app.emotes.groups[6].emotes, vec![39, 51]);
+    }
+
+    #[test]
+    fn g54_the_wheel_scrollbar_latches_drags_and_jumps() {
+        // `UIScrollbar.LeftMouseDown` (`UIScrollbar.cs:126-143`): a press on
+        // the handle latches `_dragYOffset = mouseY - handle.Y`; a press on
+        // the track jumps the view to centre the handle under the pointer.
+        // At 1280x720 the fresh page's bar is (903, 135, 20, 458), the inner
+        // track y 140..588 (448 tall), view 428 of content 696 → the handle
+        // at scroll 0 is (903, 137, 20, 282) (`GetHandleRectangle` `:93`:
+        // trunc(448·428/696) + 7 = 282).
+        let mut app = inv_app();
+        app.inventory_open = false;
+        app.emotes.open();
+        let screen = Vec2::new(1280.0, 720.0);
+        let panel = ui::emotes::panel_rect(screen, true);
+        let sb = ui::emotes::scrollbar_rect(&panel);
+        assert_eq!(sb, [903.0, 135.0, 20.0, 458.0]);
+        let list = ui::emotes::list_rect(&panel, true);
+        let content = ui::emotes::list_content_height(&app.emotes.groups);
+        let handle = crate::ui::panel::scrollbar_handle_at(sb, list[3], content, 0.0);
+        assert_eq!(handle, [903.0, 137.0, 20.0, 282.0]);
+        // A press inside the handle latches the drag, spawns nothing.
+        app.mouse_pos = Vec2::new(910.0, 200.0);
+        app.ui_left_press = true;
+        app.handle_bestiary_clicks();
+        assert_eq!(app.emote_scroll_drag, Some(200.0 - 137.0));
+        assert_eq!(app.emotes.scroll, 0.0, "the latch alone moves nothing");
+        assert!(app.emotes.menu_open);
+        assert!(app.emotes.bubbles.is_empty());
+        assert!(!app.ui_left_press, "the press was consumed");
+        // The drag math (`DrawSelf` `:109-112`): pointer y 400 with offset
+        // 63 → (400 − 140 − 63)/448 × 696 ≈ 306, clamped to 268; pointer
+        // y 250 → (250 − 140 − 63)/448 × 696 ≈ 73.02 lands mid-range.
+        let value = crate::ui::panel::scrollbar_drag_value(sb, list[3], content, 63.0, 400.0);
+        app.emotes.scroll_to(value, 268.0);
+        assert_eq!(app.emotes.scroll, 268.0, "clamped at maxView − view");
+        let value = crate::ui::panel::scrollbar_drag_value(sb, list[3], content, 63.0, 250.0);
+        let expect = (250.0f32 - 140.0 - 63.0) / 448.0 * 696.0;
+        assert!((value - expect).abs() < 0.01, "got {value}");
+        app.emotes.scroll_to(value, 268.0);
+        assert_eq!(app.emotes.scroll, value);
+        // The release clears the latch (`LeftMouseUp` `:145-149` — loop.rs).
+        app.emote_scroll_drag = None;
+        // A track press off the handle jumps (`:137-141`): at scroll 268 the
+        // handle spans y 309..591, so a press ABOVE it (y 160) jumps to
+        // (160 − 140 − 141)/448 × 696 < 0 → clamped to 0.
+        app.mouse_pos = Vec2::new(910.0, 160.0);
+        app.ui_left_press = true;
+        app.handle_bestiary_clicks();
+        assert_eq!(app.emotes.scroll, 0.0);
+        assert_eq!(app.emote_scroll_drag, None, "the track arm never latches");
+        assert!(!app.ui_left_press);
+        // Back at the top, a track press BELOW the handle (which spans
+        // y 137..419 at scroll 0) lands mid-range: pointer y 430 →
+        // (430 − 140 − 141)/448 × 696 ≈ 231.48.
+        app.emotes.scroll_to(0.0, 268.0);
+        app.mouse_pos = Vec2::new(910.0, 430.0);
+        app.ui_left_press = true;
+        app.handle_bestiary_clicks();
+        let expect = (430.0f32 - 140.0 - 141.0) / 448.0 * 696.0;
+        assert!((app.emotes.scroll - expect).abs() < 0.01, "got {}", app.emotes.scroll);
+        assert_eq!(app.emote_scroll_drag, None);
     }
 
     #[test]

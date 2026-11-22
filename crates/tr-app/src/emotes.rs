@@ -170,6 +170,242 @@ pub const EMOTE_NAMES: [(i32, &str); 151] = [
     (150, "BossDeerclops"),
 ];
 
+/// One `EmotesGroupListItem`'s roster (`UIEmotesMenu.TryAddingList`,
+/// `UIEmotesMenu.cs:100-106`): the localized title key, the group index
+/// (`currentGroupIndex++` only when the list is non-empty, `:104`) and the
+/// emote ids in the C# list order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EmoteGroup {
+    /// `Language.GetText("UI.EmoteCategory…")` (`UIEmotesMenu.cs:91-97`).
+    pub title_key: &'static str,
+    /// `_groupIndex` (`EmotesGroupListItem.cs:19`, `CompareTo` `:87-94`).
+    pub index: i32,
+    pub emotes: Vec<i32>,
+}
+
+/// The `NPC.downed*` / `Main.hardMode` / `DD2Event` gates the Critters and
+/// Bosses lists read (`UIEmotesMenu.GetEmotesCritters` `:153-176`,
+/// `GetEmotesBosses` `:178-283`). The page is rebuilt on every open
+/// (`OnActivate` → `InitializePage`), so the flags are sampled once per open.
+///
+/// The Empress / Halloween / Christmas flags have no ported world state
+/// (`wld/sections/flags.rs:146-150`/`:217` skip them) — the caller passes
+/// `false` and the six gated emotes (143, 54, 55, 56, 57, 58) stay out until
+/// those flags land (documented in ANALYSIS, W4-g54).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct EmoteGates {
+    /// `NPC.downedGoblins` (`:159`).
+    pub goblins: bool,
+    /// `NPC.downedFrost` (`:163`).
+    pub frost: bool,
+    /// `NPC.downedPirates` (`:167`, `:270`).
+    pub pirates: bool,
+    /// `NPC.downedMartians` (`:171`, `:274`).
+    pub martians: bool,
+    /// `NPC.downedBoss1` (`:181`).
+    pub boss1: bool,
+    /// `NPC.downedBoss2` (`:185`) — the port's `downed_eow` covers both the
+    /// Eater and the Brain (`world_sim/npcs.rs:5295`/`:5322`).
+    pub boss2: bool,
+    /// `NPC.downedSlimeKing` (`:190`).
+    pub slime_king: bool,
+    /// `NPC.downedDeerclops` (`:194`).
+    pub deerclops: bool,
+    /// `NPC.downedQueenBee` (`:198`).
+    pub queen_bee: bool,
+    /// `NPC.downedBoss3` (`:202`).
+    pub boss3: bool,
+    /// `Main.hardMode` (`:206`).
+    pub hard_mode: bool,
+    /// `NPC.downedQueenSlime` (`:210`).
+    pub queen_slime: bool,
+    /// `NPC.downedMechBoss1` (`:214`).
+    pub mech1: bool,
+    /// `NPC.downedMechBoss3` (`:218`) — note the C# order: 3 before 2.
+    pub mech3: bool,
+    /// `NPC.downedMechBoss2` (`:222`).
+    pub mech2: bool,
+    /// `NPC.downedPlantBoss` (`:226`).
+    pub plant: bool,
+    /// `NPC.downedGolemBoss` (`:230`).
+    pub golem: bool,
+    /// `NPC.downedFishron` (`:234`).
+    pub fishron: bool,
+    /// `NPC.downedEmpressOfLight` (`:238`) — unowned in the port's world.
+    pub empress: bool,
+    /// `NPC.downedAncientCultist` (`:242`).
+    pub cultist: bool,
+    /// `NPC.downedMoonlord` (`:246`).
+    pub moonlord: bool,
+    /// `NPC.downedHalloweenTree` (`:250`) — unowned.
+    pub halloween_tree: bool,
+    /// `NPC.downedHalloweenKing` (`:254`) — unowned.
+    pub halloween_king: bool,
+    /// `NPC.downedChristmasTree` (`:258`) — unowned.
+    pub christmas_tree: bool,
+    /// `NPC.downedChristmasIceQueen` (`:262`) — unowned.
+    pub christmas_ice_queen: bool,
+    /// `NPC.downedChristmasSantank` (`:266`) — unowned.
+    pub christmas_santank: bool,
+    /// `DD2Event.DownedInvasionAnyDifficulty` (`:278`, `DD2Event.cs:89-98`:
+    /// T1 || T2 || T3).
+    pub dd2_any: bool,
+}
+
+/// `UIEmotesMenu.InitializePage`'s seven `TryAddingList` calls
+/// (`UIEmotesMenu.cs:90-97`): the rosters in the C# order, the Critters and
+/// Bosses tails gated by the downed flags, an empty list skipped WITHOUT
+/// consuming a group index (`:100-106`'s `ref currentGroupIndex++` inside
+/// the non-empty arm). The per-row caps (10/10/11/8/9/7/8) are dead — the
+/// `EmotesGroupListItem` ctor hard-overrides `maxEmotesPerRow = 14`
+/// (`EmotesGroupListItem.cs:25`), so the port keeps one 14-wide lattice.
+pub fn build_groups(gates: &EmoteGates) -> Vec<EmoteGroup> {
+    let mut groups: Vec<EmoteGroup> = Vec::new();
+    let mut next_index = 0i32;
+    let mut add = |title_key: &'static str, emotes: Vec<i32>| {
+        if !emotes.is_empty() {
+            groups.push(EmoteGroup {
+                title_key,
+                index: next_index,
+                emotes,
+            });
+            next_index += 1;
+        }
+    };
+    // `GetEmotesGeneral` (`:108-116`).
+    add(
+        "UI.EmoteCategoryGeneral",
+        vec![
+            0, 1, 2, 3, 15, 136, 94, 16, 135, 134, 137, 138, 139, 17, 87, 88, 89, 91, 92, 93,
+            8, 9, 10, 11, 14, 100, 146, 147, 148,
+        ],
+    );
+    // `GetEmotesRPS` (`:118-121`).
+    add("UI.EmoteCategoryRPS", vec![36, 37, 38, 33, 34, 35]);
+    // `GetEmotesItems` (`:123-131`).
+    add(
+        "UI.EmoteCategoryItems",
+        vec![
+            7, 73, 74, 75, 76, 131, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 90, 132, 126, 127,
+            128, 129, 149,
+        ],
+    );
+    // `GetEmotesBiomesAndEvents` (`:133-141`).
+    add(
+        "UI.EmoteCategoryBiomesAndEvents",
+        vec![
+            22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 18, 19, 20, 21, 99, 4, 5, 6, 95, 96,
+            97, 98,
+        ],
+    );
+    // `GetEmotesTownNPCs` (`:143-151`).
+    add(
+        "UI.EmoteCategoryTownNPCs",
+        vec![
+            101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116,
+            117, 118, 119, 120, 121, 122, 123, 124, 125, 130, 140, 141, 142, 145,
+        ],
+    );
+    // `GetEmotesCritters` (`:153-176`): the 10 fixed ids, then the four
+    // invasion-gated ones in the C# append order.
+    let mut critters = vec![12, 13, 61, 62, 63, 67, 68, 69, 70, 72];
+    if gates.goblins {
+        critters.push(64);
+    }
+    if gates.frost {
+        critters.push(66);
+    }
+    if gates.pirates {
+        critters.push(65);
+    }
+    if gates.martians {
+        critters.push(71);
+    }
+    add("UI.EmoteCategoryCritters", critters);
+    // `GetEmotesBosses` (`:178-283`): the downed ladder in the C# if-order
+    // (boss2 adds TWO ids; mech3 before mech2; pirates/martians reuse the
+    // critter flags).
+    let mut bosses: Vec<i32> = Vec::new();
+    if gates.boss1 {
+        bosses.push(39);
+    }
+    if gates.boss2 {
+        bosses.push(40);
+        bosses.push(41);
+    }
+    if gates.slime_king {
+        bosses.push(51);
+    }
+    if gates.deerclops {
+        bosses.push(150);
+    }
+    if gates.queen_bee {
+        bosses.push(42);
+    }
+    if gates.boss3 {
+        bosses.push(43);
+    }
+    if gates.hard_mode {
+        bosses.push(44);
+    }
+    if gates.queen_slime {
+        bosses.push(144);
+    }
+    if gates.mech1 {
+        bosses.push(45);
+    }
+    if gates.mech3 {
+        bosses.push(46);
+    }
+    if gates.mech2 {
+        bosses.push(47);
+    }
+    if gates.plant {
+        bosses.push(48);
+    }
+    if gates.golem {
+        bosses.push(49);
+    }
+    if gates.fishron {
+        bosses.push(50);
+    }
+    if gates.empress {
+        bosses.push(143);
+    }
+    if gates.cultist {
+        bosses.push(52);
+    }
+    if gates.moonlord {
+        bosses.push(53);
+    }
+    if gates.halloween_tree {
+        bosses.push(54);
+    }
+    if gates.halloween_king {
+        bosses.push(55);
+    }
+    if gates.christmas_tree {
+        bosses.push(56);
+    }
+    if gates.christmas_ice_queen {
+        bosses.push(57);
+    }
+    if gates.christmas_santank {
+        bosses.push(58);
+    }
+    if gates.pirates {
+        bosses.push(59);
+    }
+    if gates.martians {
+        bosses.push(60);
+    }
+    if gates.dd2_any {
+        bosses.push(133);
+    }
+    add("UI.EmoteCategoryBosses", bosses);
+    groups
+}
+
 /// The bubble state — one `EmoteBubble` instance (the by-ID map folds to a
 /// list; the port's single player owns at most one at a time in practice,
 /// the cap mirrors `byID`'s unbounded growth bounded by the lifetimes).
@@ -192,7 +428,14 @@ pub struct EmoteSystem {
     next_id: u32,
     /// The `UIEmotesMenu` wheel state: open + the scroll offset.
     pub menu_open: bool,
-    pub scroll: i32,
+    /// `UIScrollbar._viewPosition` in PIXELS (`UIList.DrawSelf`'s
+    /// `_innerList.Top = -GetValue()`, `UIList.cs:179-182`) — W4-g54 replaces
+    /// the flat-roster row count with the real grouped-list scroll.
+    pub scroll: f32,
+    /// `InitializePage`'s seven `EmotesGroupListItem`s
+    /// (`UIEmotesMenu.cs:90-97`), rebuilt on every open from the downed
+    /// flags — the page the draw/hit/scroll all read.
+    pub groups: Vec<EmoteGroup>,
     /// The shared `EmoteButton._frameCounter` (`EmoteButton.cs:20`,
     /// `UpdateFrame` `:38-44`): every button on the page ticks the same
     /// 0..19 counter (the page is rebuilt on open, so they all start at 0
@@ -207,37 +450,89 @@ pub struct EmoteSystem {
     pub hover: Option<i32>,
 }
 
+impl EmoteGates {
+    /// The world's downed flags (`NPC.downed*` statics → the port's `World`
+    /// fields, `tr-core/src/world.rs:192-237`/`:368`/`:401-404`/`:450-452`).
+    /// The six unowned flags (Empress, Halloween×2, Christmas×3 —
+    /// `wld/sections/flags.rs:146-150`/`:217` skip them on read AND write)
+    /// stay `false`; `DD2Event.DownedInvasionAnyDifficulty` is
+    /// `T1 || T2 || T3` (`DD2Event.cs:89-98`).
+    pub fn from_world(w: &tr_core::World) -> Self {
+        Self {
+            goblins: w.downed_goblins,
+            frost: w.downed_frost,
+            pirates: w.downed_pirates,
+            martians: w.downed_martians,
+            boss1: w.downed_eoc,
+            boss2: w.downed_eow,
+            slime_king: w.downed_slime_king,
+            deerclops: w.downed_deerclops,
+            queen_bee: w.downed_queen_bee,
+            boss3: w.downed_skeletron,
+            hard_mode: w.hard_mode,
+            queen_slime: w.downed_queen_slime,
+            mech1: w.downed_mech_boss1,
+            mech3: w.downed_mech_boss3,
+            mech2: w.downed_mech_boss2,
+            plant: w.downed_plant_boss,
+            golem: w.downed_golem,
+            fishron: w.downed_fishron,
+            empress: false,
+            cultist: w.downed_ancient_cultist,
+            moonlord: w.downed_moon_lord,
+            halloween_tree: false,
+            halloween_king: false,
+            christmas_tree: false,
+            christmas_ice_queen: false,
+            christmas_santank: false,
+            dd2_any: w.dd2_downed_t1 || w.dd2_downed_t2 || w.dd2_downed_t3,
+        }
+    }
+}
+
 impl EmoteSystem {
     /// `UIEmotesMenu.OnActivate`'s rebuild (`UIEmotesMenu.cs:30-44`): the page
-    /// is rebuilt from scratch on every open, so the wheel's scroll starts at 0
-    /// (`UIList`'s `Clear` + `InitializePage`).
-    pub fn open(&mut self) {
+    /// is rebuilt from scratch on every open (`InitializePage`'s seven
+    /// `TryAddingList` calls, `:90-97`), so the wheel's scroll starts at 0
+    /// (`UIList`'s fresh `UIScrollbar`, `_viewPosition = 0`).
+    pub fn open_with(&mut self, gates: &EmoteGates) {
         self.menu_open = true;
-        self.scroll = 0;
+        self.scroll = 0.0;
+        self.groups = build_groups(gates);
         // The rebuilt page's buttons all start their frame counter at 0
         // (`InitializePage`'s fresh `EmoteButton`s, `EmoteButton.cs:20`).
         self.button_tick = 0;
         self.hover = None;
     }
 
+    /// [`open_with`](Self::open_with) with every gate closed — the fresh
+    /// world's page (6 groups, no Bosses).
+    pub fn open(&mut self) {
+        self.open_with(&EmoteGates::default());
+    }
+
     /// `UIEmotesMenu`'s close (`IngameFancyUI.Close` `:162-188` / the pick and
     /// Back arms `:281-286`): the state drops with the panel.
     pub fn close(&mut self) {
         self.menu_open = false;
-        self.scroll = 0;
+        self.scroll = 0.0;
         self.hover = None;
     }
 
-    /// The wheel scroll (`UIList.ScrollWheel`, `UIList.cs:107-114`): the offset
-    /// moves by the wheel's notches and clamps at the roster's end. `visible_rows`
-    /// is how many rows the open panel fits — the caller's (`ui::emotes::grid_rect`
-    /// divided by the 36 px cell), the port's stand-in for `UIScrollbar`'s
-    /// `viewSize`/`maxViewSize` pair.
-    pub fn scroll_by(&mut self, step: i32, visible_rows: usize) {
-        let total = crate::emotes::EMOTE_COUNT as usize;
-        let rows = total.div_ceil(crate::ui::emotes::COLS);
-        let max = rows.saturating_sub(visible_rows) as i32;
-        self.scroll = (self.scroll + step).clamp(0, max);
+    /// The wheel scroll (`UIList.ScrollWheel`, `UIList.cs:107-114`:
+    /// `_scrollbar.ViewPosition -= evt.ScrollWheelValue`) in PIXELS, clamped
+    /// by the `ViewPosition` setter (`UIScrollbar.cs:45`:
+    /// `MathHelper.Clamp(value, 0, maxViewSize - viewSize)`). `max_scroll`
+    /// is the caller's `ui::emotes::max_scroll` over the rebuilt page.
+    pub fn scroll_by(&mut self, delta: f32, max_scroll: f32) {
+        self.scroll = (self.scroll - delta).clamp(0.0, max_scroll.max(0.0));
+    }
+
+    /// `UIScrollbar.LeftMouseDown`'s track jump (`UIScrollbar.cs:137-141`)
+    /// and drag (`:109-112`) share the clamp — the caller computes the value
+    /// through `panel::scrollbar_jump_value`/`scrollbar_drag_value`.
+    pub fn scroll_to(&mut self, value: f32, max_scroll: f32) {
+        self.scroll = value.clamp(0.0, max_scroll.max(0.0));
     }
 }
 
