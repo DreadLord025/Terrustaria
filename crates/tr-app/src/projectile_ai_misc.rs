@@ -218,6 +218,7 @@ pub(crate) fn ai_celeb2_rocket(
     world: &World,
     npcs: &[Npc],
     rng: &mut dyn DropRng,
+    gore: Option<&mut tr_core::gore::GorePool>,
 ) {
     // `:52886-52888` — the age counter, the alpha pin, the rotation
     // (`velocity.ToRotation() + π/2`).
@@ -240,7 +241,7 @@ pub(crate) fn ai_celeb2_rocket(
             // `:52903-52906` — the every-20-tick firework burst (strictly
             // past 20).
             if p.local_ai[0] > 20.0 && p.local_ai[0] % 20.0 == 0.0 {
-                celeb2_explosion(p, world, rng);
+                celeb2_explosion(p, world, rng, gore);
             }
         }
         1 => {
@@ -484,22 +485,27 @@ pub(crate) fn fairy_queen_death_draws(rng: &mut dyn DropRng) {
 ///
 /// The float-step loops keep the C#'s f32 accumulation (`num += 0.0125f`)
 /// — the iteration count is the source's own, drift included.
-pub(crate) fn celeb2_explosion(p: &Projectile, world: &World, rng: &mut dyn DropRng) {
-    // One gore's draw row (the `:53151-53154` shape, shared by every
-    // state): position pair, type, the NewGore kicks, the velocity kicks.
-    fn gore(rng: &mut dyn DropRng) {
-        let _ = rng.next_range(0, 100);
-        let _ = rng.next_range(0, 100);
-        let _ = rng.next_range(61, 64);
-        let _ = rng.next_range(10, 31);
-        let _ = rng.next_range(-20, 21);
-        let _ = rng.next_range(-10, 11);
-        let _ = rng.next_range(-10, 11);
-    }
+///
+/// W4-g16 wiring: with a LIVE gore pool the seven identical gore rows are
+/// REAL spawns (`projectile_gore_c::celeb2_gore` — the same 7 range draws
+/// the census consumed: the Next(100) pair, the Next(61,64) type, the two
+/// NewGore kicks, the two Next(-10,11) velocity kicks), and the state-1
+/// ground walk's taken branch spawns the tile gore
+/// (`projectile_gore_d::ground_explosion_tile_gore`). `None` keeps the
+/// draw-only census — the witnesses' draw-count pins.
+pub(crate) fn celeb2_explosion(
+    p: &Projectile,
+    world: &World,
+    rng: &mut dyn DropRng,
+    mut gore: Option<&mut tr_core::gore::GorePool>,
+) {
     match p.ai[0] as i32 {
         0 => {
             // `:53136-53155` — the dust rolls nothing; one gore.
-            gore(rng);
+            match gore.as_mut() {
+                Some(g) => crate::projectile_gore_c::celeb2_gore(p, g, rng, world),
+                None => gore_census_one(rng),
+            }
         }
         1 => {
             // `:53162` — the discarded draw (the C# keeps it on the stream).
@@ -513,10 +519,13 @@ pub(crate) fn celeb2_explosion(p: &Projectile, world: &World, rng: &mut dyn Drop
             }
             // `:53175-53181` — three gores.
             for _ in 0..3 {
-                gore(rng);
+                match gore.as_mut() {
+                    Some(g) => crate::projectile_gore_c::celeb2_gore(p, g, rng, world),
+                    None => gore_census_one(rng),
+                }
             }
             // `:53182` — the ground explosion.
-            create_ground_explosion(p, world, rng, 40.0, 20, 100, 2, 10, 2);
+            create_ground_explosion(p, world, rng, 40.0, 20, 100, 2, 10, 2, gore.as_deref_mut());
         }
         2 => {
             // `:53191-53197` — the big-burst pick and the star rotation.
@@ -525,7 +534,10 @@ pub(crate) fn celeb2_explosion(p: &Projectile, world: &World, rng: &mut dyn Drop
             // `:53198-53224` — the 5-spoke web: no explicit draws.
             // `:53225-53270` — both branches end in one gore.
             let _ = big;
-            gore(rng);
+            match gore.as_mut() {
+                Some(g) => crate::projectile_gore_c::celeb2_gore(p, g, rng, world),
+                None => gore_census_one(rng),
+            }
         }
         3 => {
             // `:53281` — the ring rotation.
@@ -535,7 +547,10 @@ pub(crate) fn celeb2_explosion(p: &Projectile, world: &World, rng: &mut dyn Drop
                 let _ = rng.next_float();
             }
             // `:53299-53305` — one gore.
-            gore(rng);
+            match gore.as_mut() {
+                Some(g) => crate::projectile_gore_c::celeb2_gore(p, g, rng, world),
+                None => gore_census_one(rng),
+            }
         }
         4 => {
             // `:53312` — the discarded draw.
@@ -548,7 +563,10 @@ pub(crate) fn celeb2_explosion(p: &Projectile, world: &World, rng: &mut dyn Drop
             }
             // `:53325-53331` — three gores.
             for _ in 0..3 {
-                gore(rng);
+                match gore.as_mut() {
+                    Some(g) => crate::projectile_gore_c::celeb2_gore(p, g, rng, world),
+                    None => gore_census_one(rng),
+                }
             }
         }
         5 => {
@@ -575,10 +593,25 @@ pub(crate) fn celeb2_explosion(p: &Projectile, world: &World, rng: &mut dyn Drop
                 t += 0.07;
             }
             // `:53389-53395` — one gore.
-            gore(rng);
+            match gore.as_mut() {
+                Some(g) => crate::projectile_gore_c::celeb2_gore(p, g, rng, world),
+                None => gore_census_one(rng),
+            }
         }
         _ => {}
     }
+}
+
+/// The census-only gore row (the `gore(rng)` inner fn's body, kept for the
+/// no-pool witnesses): the same 7 range draws, bodies skipped.
+fn gore_census_one(rng: &mut dyn DropRng) {
+    let _ = rng.next_range(0, 100);
+    let _ = rng.next_range(0, 100);
+    let _ = rng.next_range(61, 64);
+    let _ = rng.next_range(10, 31);
+    let _ = rng.next_range(-20, 21);
+    let _ = rng.next_range(-10, 11);
+    let _ = rng.next_range(-10, 11);
 }
 
 /// `WorldGen.KillTile_GetTileDustAmount(fail: true, tile)`
@@ -618,24 +651,32 @@ fn kill_tile_dust_amount_fail(kind: u16, frame_x: i16) -> i32 {
 ///
 /// The `InWorld(j, k, 10)` refusal RETURNS from the whole walk (`:53418-
 /// 53421`) — the C#'s early exit, kept.
+///
+/// W4-g16 wiring: with a LIVE gore pool the taken branch spawns the tile
+/// gore (`projectile_gore_d::ground_explosion_tile_gore` — the `61+Next(3)`
+/// type, the kicks and the NextFloat velocity scale the census consumed);
+/// the mid-column `num` (`:53409`) feeds the scale's `num5`. `None` keeps
+/// the draw-only census.
 fn create_ground_explosion(
     p: &Projectile,
     world: &World,
     rng: &mut dyn DropRng,
-    _max_spread: f32,
+    max_spread: f32,
     fluff: i32,
     dist_fluff: i32,
     layer_start: i32,
     layer_end: i32,
     layer_jump: i32,
+    mut gore: Option<&mut tr_core::gore::GorePool>,
 ) {
     // `:53403-53410` — the fluffed tile box (the `(int)(X/16)` truncation)
     // and the INTEGER radius half (`width / 2`). The `num = point.X/2 +
-    // point2.X/2` mid-column feeds only the gore scale (draw-only, skipped).
+    // point2.X/2` mid-column feeds the gore scale's `num5` (`:53455`).
     let x0 = (p.pos.x / 16.0) as i32 - fluff;
     let y0 = (p.pos.y / 16.0) as i32 - fluff;
     let x1 = ((p.pos.x + p.w) / 16.0) as i32 + fluff;
     let y1 = ((p.pos.y + p.h) / 16.0) as i32 + fluff;
+    let num = x0 / 2 + x1 / 2;
     let radius = (p.w as i32 / 2 + dist_fluff) as f32;
     let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
     let mut layer = layer_start;
@@ -683,12 +724,25 @@ fn create_ground_explosion(
                         let _ = rng.next_float();
                     }
                 }
-                // `:53453-53460` — the 2-in-3 gore gate.
+                // `:53453-53460` — the 2-in-3 gore gate. W4-g16: the taken
+                // branch is a REAL tile-gore spawn with the pool; the census
+                // keeps its 4 draws without one (the witness pin).
                 if amount > 0 && rng.next_range(0, 3) != 0 {
-                    let _ = rng.next_range(0, 3); // the 61 + Next(3) type
-                    let _ = rng.next_range(10, 31); // NewGore's Y kick
-                    let _ = rng.next_range(-20, 21); // NewGore's X kick
-                    let _ = rng.next_float(); // the velocity.Y scale
+                    match gore.as_mut() {
+                        Some(g) => {
+                            // `:53455` — num5 = abs(num − j) / (MAX_SPREAD/2).
+                            let num5 = (num - j).abs() as f32 / (max_spread / 2.0);
+                            crate::projectile_gore_d::ground_explosion_tile_gore(
+                                p, j, k, layer, num5, g, rng, world,
+                            );
+                        }
+                        None => {
+                            let _ = rng.next_range(0, 3); // the 61 + Next(3) type
+                            let _ = rng.next_range(10, 31); // NewGore's Y kick
+                            let _ = rng.next_range(-20, 21); // NewGore's X kick
+                            let _ = rng.next_float(); // the velocity.Y scale
+                        }
+                    }
                 }
             }
         }
@@ -914,14 +968,14 @@ mod tests {
         let mut p = proj(715);
         let mut rng = census();
         for _ in 0..20 {
-            ai_celeb2_rocket(&mut p, &w, &[], &mut rng);
+            ai_celeb2_rocket(&mut p, &w, &[], &mut rng, None);
         }
         assert_eq!(p.penetrate, -1, "the arm at 20 (`:52897`)");
         assert_eq!(p.max_penetrate, -1);
         assert_eq!(p.vel.y, 0.12, "one fall step at tick 20");
         assert_eq!(rng.ranges.len(), 0, "no burst at exactly 20 (strict >)");
         for _ in 0..20 {
-            ai_celeb2_rocket(&mut p, &w, &[], &mut rng);
+            ai_celeb2_rocket(&mut p, &w, &[], &mut rng, None);
         }
         // Tick 40: the first burst — the case-0 gore row.
         assert_eq!(
@@ -950,10 +1004,10 @@ mod tests {
         p.vel = Vec2::new(0.0, 5.0);
         let mut rng = census();
         for _ in 0..9 {
-            ai_celeb2_rocket(&mut p, &w, &[], &mut rng);
+            ai_celeb2_rocket(&mut p, &w, &[], &mut rng, None);
         }
         assert_eq!(p.vel.y, 5.0, "no kick before 10");
-        ai_celeb2_rocket(&mut p, &w, &[], &mut rng);
+        ai_celeb2_rocket(&mut p, &w, &[], &mut rng, None);
         // Tick 10: −10 then +0.25 → −4.75; the ring rolls its floats.
         assert_eq!(p.vel.y, -4.75, "the kick + fall (`:52910-52917`)");
         assert_eq!(p.scale, 1.0f32 + 0.015, "the scale climb (`:52926`)");
@@ -966,7 +1020,7 @@ mod tests {
         assert_eq!(rng.floats, n, "one colour float per ring particle");
         // The scale caps at 2.5 (`:52927-52930`).
         for _ in 0..200 {
-            ai_celeb2_rocket(&mut p, &w, &[], &mut rng);
+            ai_celeb2_rocket(&mut p, &w, &[], &mut rng, None);
         }
         assert_eq!(p.scale, 2.5);
         assert_eq!(p.vel.y, 16.0, "the clamp (`:52918-52921`)");
@@ -993,7 +1047,7 @@ mod tests {
         n.x = cx + 100.0 - (nw as i32 / 2) as f32;
         n.y = cy - (nh as i32 / 2) as f32;
         let mut rng = census();
-        ai_celeb2_rocket(&mut p, &w, &[n], &mut rng);
+        ai_celeb2_rocket(&mut p, &w, &[n], &mut rng, None);
         assert_eq!(p.local_ai[1], 6.0, "the speed latch (`:52966-52972`)");
         assert_eq!(p.ai[1], 1.0, "the acquire commits index + 1 (`:53014`)");
         // The blend: d = (6, 0) (the target is exactly right at the
@@ -1010,7 +1064,7 @@ mod tests {
         h.vel = Vec2::new(0.0, 6.0);
         h.local_ai[0] = 24.0;
         let n2 = npc_at(h.pos.x + 100.0, h.pos.y);
-        ai_celeb2_rocket(&mut h, &w, &[n2], &mut rng);
+        ai_celeb2_rocket(&mut h, &w, &[n2], &mut rng, None);
         assert_eq!(h.vel.x, 0.0, "the friendly gate refuses the steer");
     }
 
@@ -1028,7 +1082,7 @@ mod tests {
         p.vel = Vec2::new(8.0, 0.0);
         let before = p.pos;
         let mut rng = census();
-        ai_celeb2_rocket(&mut p, &w, &[], &mut rng);
+        ai_celeb2_rocket(&mut p, &w, &[], &mut rng, None);
         assert_eq!(p.local_ai[0], 46.0, "1 + 45 (`:52886` + `:53054-53057`)");
         assert_eq!(p.scale, 2.0, "the pin (`:53060`)");
         let phase = 46.0f32 * (std::f32::consts::PI / 45.0);
@@ -1062,19 +1116,19 @@ mod tests {
         let mut p = proj(715);
         p.ai[0] = 3.0;
         let mut rng = census();
-        celeb2_explosion(&p, &w, &mut rng);
+        celeb2_explosion(&p, &w, &mut rng, None);
         assert_eq!(rng.floats, 41);
         assert_eq!(rng.ranges.len(), 7);
         // State 5: 20 floats, no gore.
         p.ai[0] = 5.0;
         let mut rng = census();
-        celeb2_explosion(&p, &w, &mut rng);
+        celeb2_explosion(&p, &w, &mut rng, None);
         assert_eq!(rng.floats, 20);
         assert_eq!(rng.ranges.len(), 0);
         // State 6: the three wobble rings + one gore.
         p.ai[0] = 6.0;
         let mut rng = census();
-        celeb2_explosion(&p, &w, &mut rng);
+        celeb2_explosion(&p, &w, &mut rng, None);
         let count = |step: f32| {
             let mut n = 0;
             let mut t = 0.0f32;
@@ -1089,14 +1143,14 @@ mod tests {
         // State 2: Next(4) + NextFloatDirection + one gore (both branches).
         p.ai[0] = 2.0;
         let mut rng = census();
-        celeb2_explosion(&p, &w, &mut rng);
+        celeb2_explosion(&p, &w, &mut rng, None);
         assert_eq!(rng.floats, 1);
         assert_eq!(rng.ranges[0], (0, 4));
         assert_eq!(rng.ranges.len(), 8);
         // State 4: the discarded float + the 0.025 ring + three gores.
         p.ai[0] = 4.0;
         let mut rng = census();
-        celeb2_explosion(&p, &w, &mut rng);
+        celeb2_explosion(&p, &w, &mut rng, None);
         assert_eq!(rng.floats, 1 + count(0.025));
         assert_eq!(rng.ranges.len(), 21);
     }
@@ -1118,7 +1172,7 @@ mod tests {
         p.h = 128.0;
         put(&mut w, 100, 50, 0); // dirt, exposed (the neighbours are air)
         let mut rng = census();
-        create_ground_explosion(&p, &w, &mut rng, 40.0, 20, 100, 2, 10, 2);
+        create_ground_explosion(&p, &w, &mut rng, 40.0, 20, 100, 2, 10, 2, None);
         // Radius = 128/2 + 100 = 164: the centre tile is inside; the
         // fluffed box spans ±(4 + 20) tiles but only (100, 50) is solid.
         // 4 layers × (3 + 2) floats + 4 Next(3) gates (all refuse at min).

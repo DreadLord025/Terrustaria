@@ -39641,3 +39641,236 @@ Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked
 **Completion (batch 103, tip `fa3c526d5`).** All 853 gore sites of `NPC.cs:85560-89835` are ported (source count re-verified: 853 `Gore.NewGore(` lines in the window; 685 `gore.new_gore` call sites in the module — the difference is the shared `mech_smoke_burst`/`mech_quadrant_smoke`/ladder helpers fanning out to the mech rows). **FINAL verification (research/111): the 853 split 849 DEATH-half (f5's, all citation-covered, 0 missed) + 4 HIT-half (`:86532/86947/86951/88648`, g62's lane — f5 references none; their gore BODIES are a wiring hand-off, the one residual, see 111 §1.2).** The NO-gore arms are recorded in dispatcher comments, not ported: 59/60/151 lava, 687/685, 265 Spore, 663 (`:88411` unreachable), 277-280, 169, 316/330, 662, 34, 289, 23 Meteor Head, 25 Burning Sphere, 33 Water Sphere, 30/665. The else-arm's `type != 156` early-return is the dispatcher fallthrough (unmatched types draw nothing; witness-pinned). Witness fix `086827426`: the dust-6 per-type tweak draws a SEVENTH `Next(-10,6)` (`Dust.cs:214-218`) — `twin_dust6` replays it in the 7 mech/twins witnesses. Stand-ins unchanged: no `Npc.altTexture` (default-0 keeps head gores), no `Npc.color` (`Color::default()` for dye rows), `netMode` SP fold, sounds c13. **The gore-family total census (1578 sites, 5 files) + the f10-overrun merger-delete hunks (f10 tip `05f40324e`, b137) are published in research/111.**
 
 **SEAL (research/111 §§7-10, over receipt tip `d1d507461`).** The lane's one residual is CLOSED to a wiring checklist: the 4 hit-half gore bodies have an exact assignment (111 §7) — g62 EMIT-AT-WIRING for `:86947` (186 `Next(5)`→242), `:86951` (632 `Next(5)`→1217) and `:88648` (694 clamped-count × 2 `NextFloat`→1008 at `this.scale`; the gate draws ALREADY ride g62's arms in-stream, only the `let _ =` discards become emits) + the WIRING CALLER for `:86532` (the 133 `localAI[0]` latch writes live-NPC state g62's immutable snapshot cannot; a 5-line draw-free arm after g62's dust replay, landing in the SAME merge as the f10 delete that removes its sole current port). d55 does NOT extend (wave A `:81660-81941` only). The f10-overrun delete is RE-CENSUSED at f10 LIVE tip `d197124d1` (b157, still advancing): three contiguous bands — fns `:3672-8180` (131 bodies incl. the `five_gore_ladder`/`smoke_99_trio` helpers + the straddling `town_pet_death`), gates `:8604-9179` (128), witnesses `:11527-14415` (138) — plus the header rows `:136-257` and the `king_slime_babies`/`maggot_zombie_spawns` outcome fields; the b157 `wyvern_death` NAME TWIN (DD2 `:563` keeps / overrun `:7844` drops) and 3 substring-collision legit witnesses are pinned; the merger MUST re-run g60's census scripts at the merge-time tip (111 §8). The g60f death-bible compose (111 §9): g60 `30fea0fe1` §12.8 consumed, the f5↔g60-DeathFx keep-one receipt is DISJOINTNESS (g60's feed has zero gore refs, f5 zero ring refs — both merge whole; the 32-kind g60∩f5 + 93-kind g59∩f5 strips ride wiring), and g60's compile flag is FIXED here: `HitEffectOutcomeD` now declares `pub king_slime_spawns: Option<(f32, f32)>` (the field the `:221` write + two witnesses read). The GORE-FAMILY bible FINAL (111 §10): 1578 sites / 5 files / zero unowned / zero unassigned bodies, one-paragraph declaration + the re-runnable gate-command (expected 1345/165/36/32/0 = 1578; f5 window 853).
+## The Projectile gore sites (W4-g16)
+
+Code-only wave port of every `Gore.NewGore*` call site in `Projectile.cs`
+(165 sites, censused 2026-11-21 by direct grep of the decompiled file —
+the junction is never recursed). The NPC-file gore table is W4-d55/e5/f10
+(`npc_hit_effect_a.rs`); the `Main.cs`/`Player.cs` world+player sites are
+W4-g17. This lane owns ONLY the projectile-file sites, landed in 10-site
+commits, source order, one module per wave (`projectile_gore_a.rs`, ...).
+
+Contract (the `npc_hit_effect_a.rs` precedent): each site fn takes the
+slot's `Projectile`, the `GorePool`, the caller's `UnifiedRandom` (the
+`Main.UpdateProjectiles` stream — NOT a new stream) and the `World`; the
+explicit argument draws evaluate before the pool call, the `NewGore`
+kicks (`Gore.cs:1327-1328`) roll inside `GorePool::new_gore`, and the
+post-spawn writes land on the returned slot, sentinel included. The dust
+bodies interleaved with the gore rows are the dust lanes' documented
+skip; a dust GATE roll that precedes a gore gate on the same stream IS
+consumed (enchant-7's `Next(20)`, `:17441`). Screen-gated trails resolve
+the padded-screen hitbox test through `TrailCtx.on_screen` (the caller's
+screen seam); the C# `&&` short-circuit means an off-screen trail draws
+NOTHING. The anniversary 12/955 arm draws BOTH SelectRandom picks
+(`:23975-23978`), the second value wins. The `:23990` inner gate lists
+726 twice and omits 724 — the wiring dispatch must reproduce that quirk.
+
+Wave A (sites 1-11): `projectile_gore_a.rs`, 5 witnesses written not run.
+The `:24037` type-9 trail was missed by the first wave-A pass and filled
+in the gap commit — the grep census (165 sites) is authoritative over the
+wave tables; the later waves' site numbers shift by one accordingly.
+Wave B (sites 11-20): `projectile_gore_b.rs`, 5 witnesses written not run.
+`NextVector2Square`/`RotatedByRandom` draw TWO `NextDouble` each
+(`Utils.cs:1251-1254`/`:1697-1700`) — NOT `NextFloat`; the witnesses replay
+`next_double`. The lava-bounce gores upgrade the landed census arms
+(`projectile.rs::ai_aqua_scepter` + the type-27 twin) at wiring: the census
+line is REPLACED by the pool fn (gate + type + kicks + post-writes). The
+volcano's shared `num7 = Next(3,7)` (`:42311`) rides `volcano_gores` as an
+input — the caller draws it between the two dust loops.
+Wave C (sites 21-30): `projectile_gore_c.rs`, 5 witnesses written not run.
+The `AI_147` firework gore row is IDENTICAL at all seven state sites — one
+keep-one `celeb2_gore` fn consuming the landed census's same 7 range draws
+(`projectile_ai_misc.rs:490-498`); the wiring swaps each census call. The
+idle gate's `Next(900,1200)` ALWAYS draws (`:51157`); the rope gate is
+`Next(4) != 0` (3-in-4 TAKEN, `:52134`).
+Wave D (sites 31-40): `projectile_gore_d.rs`, 5 witnesses written not run.
+`NextVector2CircularEdge` draws ONE `NextFloat` (the unit only,
+`Utils.cs:1271-1274`). The pool-internal type arms are part of the site
+contract: 1225 draws `Next(6)` (`Gore.cs:1382`), the SpecialAI==3 types
+(910-925, 1007/1008, 1113-1121, 1248-1255, 1257, 1278 — `GoreID.cs:20`)
+draw two `NextFloat` + `Next(8)` + `Next(8)` (`Gore.cs:1391-1402`); the
+witnesses replay them after the kicks. The wave-B drill witness was
+corrected for the 1007/1008 SpecialAI four.
+Wave E (sites 41-51): `projectile_gore_e.rs`, 5 witnesses written not run.
+The 1085 mirror's four consecutive lines are ONE keep-one group (11 sites
+in the wave — a C# statement block is never split across waves). The
+ogre-stomp tile gore is the SAME row as the ground explosion (keep-one
+onto `ground_explosion_tile_gore`). `Utils.RandomVector2` draws TWO
+`NextDouble` (`Utils.cs:2431-2434`); the Betsy type roll evaluates AFTER
+the position argument (C# left-to-right).
+Wave F (sites 52-63): `projectile_gore_f.rs`, 5 witnesses written not run.
+The goblin-bomb four and the 590 triple are consecutive blocks kept intact
+(12 sites). `SelectRandom` over a ONE-element list still draws `Next(1)`
+(the 856 pick). The DD2 loop's count/box-resize ride the caller
+(`setApprenticeT3`, `:71832-71846`); its row adds the `Next(2)` Y-drop gate
+to the fire-explosion shape. The 590 scale float is drawn ONCE before the
+triple; the 375-377 alpha=100 is the pool's sticky arm.
+Wave G (sites 64-74): `projectile_gore_g.rs`, 4 witnesses written not run.
+The coin pile's four loops are intact (50 gores, two floats each). The
+cursed-flame position rolls are `Next(width)`/`Next(height)` on the GROWN
+box (NOT the ×Next(100)/100 shape); its 5th gore takes the switch default
+(-,-). The 483 kicks are INTEGER `Next(-1,2)`. The 459/709 count is 0
+below scale 1 (the delegation draws nothing at count 0).
+Wave H (sites 75-84): `projectile_gore_h.rs`, 5 witnesses written not run.
+The 408 triple divides timeLeft by 10 post-spawn (sticky 600 → 60). The
+nebula gores add a `Circular(25,25)` reposition (two floats) to the celeb2
+argument row — the 1078 twin (`:75030`) shares it. The confetti postlude
+ADDS before MULTIPLYING (`:74581-74587`), the opposite order of enchant-7
+(`:17453-17457`); seven rolls either way.
+Wave I (sites 86-96): `projectile_gore_i.rs`, 5 witnesses written not run.
+The tombstone/lava-boulder offsets use INTEGER `width / 2` (the int
+division truncates before the float cast). The 723 `NewGoreDirect(...).
+velocity *= 2` doubles the KICKED velocity. The :75204/:75221 row is one
+keep-one fn with the 907 halving flag.
+Wave J (sites 97-109): `projectile_gore_j.rs`, 4 witnesses written not run.
+The 503 type override keeps the `Next(16,18)` draw (`:75729-75733`). The
+281 head gores draw TWO `Next(-20,21)` velocity rolls each; their corner
+four comes AFTER the dust loops (the wiring keeps that stream order). The
+281/162 corner rows are one magnitude-parameter keep-one (±1 / ±1.5, both
+after ×0.4 — distinct from the 1053 boulder row, which has no ×0.4).
+Wave K (sites 110-119): `projectile_gore_k.rs`, 5 witnesses written not
+run. The confetti row gained a velocity parameter (`confetti_gores_vel`)
+for the 284 `-vel*0.3` twin. The 286 gore has NO `Next(100)` position pair
+(fixed pos−10). The 183 bee four applies signs FIRST then ×0.3 — the
+opposite order of the corner rows, a distinct fn. The 1023 barrel
+overwrites the velocity with the spoke direction × `NextFloat` × 8.
+Wave L (sites 120-131): `projectile_gore_l.rs`, 4 witnesses written not
+run. The 312 block is two passes (scale 0.4 then 0.8) × four corners,
+scale BEFORE signs. The 246 gore is the 483 row verbatim (keep-one). The
+370/371 duck gores normalize a `Next(-10,11)` pair (no draw for the
+normalize), the 371 scales the vector ×0.4 before both uses and draws its
+type `Next(435,438)` after the speed; both set `sticky = false`.
+Waves M/N/O (sites 132-165): `projectile_gore_m.rs` / `_n.rs` / `_o.rs`,
+the `Kill_Bombs_DoUsualKillCode` family — 9 witnesses written not run.
+The bomb gore blocks are all `NewGore(Direct)(pos, Zero, Next(61,64))`
+with a scale-then-sign postlude; they collapse to a few keep-one rows:
+the 4-corner ×0.4 (wave-J `corner_gores`), the 8-gore two-pass 0.4/0.8
+(wave-L `kill312_gores`), the gated rocket corner (wave-E), the offset
+scale-1.5 boulder (wave-I). The distinct shapes: the bundle's three-pass
+fractional scale (`num38/3`), the cluster's single-pass ×0.8 (`num49 =
+2..=2`, the `== 1` arm dead), the sticky's offset three-pass 0.33/0.66/1.0,
+the scarab's dig-direction push (`velocity*0.5 + digDir*3 + sign*0.2`),
+and the 588 confetti bomb's four INDEPENDENT `Next(2)` gates with the
+confetti type range 276-283 (not 61-64).
+
+**CENSUS COMPLETE**: all 165 `Gore.NewGore*` sites in `Projectile.cs` are
+ported across waves A-O (15 modules, `projectile_gore_a.rs` .. `_o.rs`),
+verified by the coverage check against the direct grep of the decompiled
+file (the junction never recursed). Two gaps found and filled mid-run
+(`:24037` type-9 trail, `:36331` crystal burst + `:75871-75883` 240
+corners).
+
+**WIRING (the `UpdateProjectiles` dispatch)** — landed in five batches on
+`task/W4-g16-gore-projectile-sites`, code-only (witnesses written not run):
+
+* Batch 1 (`1deeb8ca`): the GorePool seam — `DropRng` gained stream-exact
+  `next_max`/`next_float_direction` defaults, `GoreRng for dyn DropRng` +
+  `?Sized` pool ctors (tr-core); the 15 site modules generalized
+  `&mut UnifiedRandom` → `&mut dyn DropRng`; `ProjectilePool` gained
+  `gore_pool: Option<GorePool>` (set/take, the `golf_ctx` precedent),
+  `trail_screen` + `anniversary`, and the `trail_on_screen`/`trail_ctx`
+  helpers (the int-truncated `CenteredRectangle`, pad 400, `Utils.cs:947-950`);
+  `world_sim/projectiles.rs` moves `app.gore` in/out around the step and feeds
+  the padded screen + the anniversary flag. The lava/firework census→pool
+  upgrades: `ai_aqua_scepter` :24581 + the WaterBolt twin :24265 →
+  `lava_bounce_gore`; `celeb2_explosion`'s 7 rows → `celeb2_gore` (+ the
+  `gore_census_one` None-path helper); `create_ground_explosion`'s taken
+  branch → `ground_explosion_tile_gore`; `rocket_kill_census`'s 6 families →
+  the wave-M/N keep-ones; the 284/286/41/91-92/183 kill rows → wave-K/I/J
+  spawns. Census paths kept as draw-count pins when `gore=None`.
+* Batch 2 (`36e03444`): the AI-side landing/trail/burst sites at their C#
+  call positions — `ai_style2` 162/281 + `ai_dutchman_shell` 240 `ai[0]==3`
+  landings (`tombstone_landing_gore` 1.5/1.25), `ai_falling_star` 9/955 trails
+  (site 7 + site 10, `TrailCtx` screen gate) + the 92 `ai_style2_gore` site 11
+  at the dispatch, `ai_volcano` `ai[0]==1` caller-draw `num7=Next(3,7)` +
+  `volcano_gores`, `ai_freaking_pirates` jump `Next(4)` branch + idle
+  `Next(900,1200)`.
+* Batch 3 (`69eaf77f`): the Kill-side gore death arms (`gore_death_arms`,
+  kind-gated once-per-death, below the gem arm :75425 / above the
+  floating-turret arms :72068) — 856 stellar (screen-gated, 128 resize + pen
+  −1 + Damage), 664/666/668 DD2 (`setApprenticeT3` count 4/8 + 16·num129
+  resize + Damage BEFORE the loop), 681 goblin bomb (22 → corners → 80 +
+  Damage, the type-arm chain), 645 Lunar Flare (NO resize/Damage — reads the
+  current 140/10 box; the wave-F doc's "Resize(144)" error corrected against
+  :72094-72125), 617 Nebula (176 resize + pen −1 + Damage → pair → owner-gated
+  618 key sweep; the 620 burst deferred no-row), 452/454 phantasmal (144→gore
+  →Resize(30)+Damage / 208→×3+Damage), 459 blaster orb (scale≥1 gate), 448
+  saucer missile (112→gore+Damage).
+* Batch 4 (`a05959ec`): the wave-H/J Kill rows — 178 confetti ×40 (ADD-then-
+  MULTIPLY postlude), 955 star ×7 screen-gated, 9 star ×3, 240 Dutchman
+  corners ×4 + 96 resize + Damage.
+* Batch 5 (`43a99ff1`): the 1025 barnacle tile-collision burst
+  (`AI_197_HandleTileCollision` rides INSIDE `sentry_turret_step` at the
+  blocked-move latch — the C# handler runs only from the blocked arm
+  `:18637-18643`, so the burst gates on the same `vel != before && ai[0]==0`
+  condition the latch reads + the type==1025 gate, 9 gores) + the wave-O bomb
+  family — `explode_bomb` threads the pass's rng + gore pool and adds ONLY the
+  `Kill_Bombs_DoUsualKillCode` gore rows on the PASS stream (bomb-corner
+  family 22 recentre + ×4; dynamite 200 recentre + ×8 boulders) AFTER the
+  frozen zero-rng `Damage()` walk (KEPT untouched — the M4-PROJ-9 deviation,
+  no double-feed) and BEFORE `Kill_ExplodeTiles`.
+
+**The bomb-family stream decision (batch 5)**: the C# `Kill()` runs
+`PrepareBombToBlow` → `Damage()` → `Kill_Bombs_DoUsualKillCode` (the gore
+rows) → `Kill_ExplodeTiles`, all on `Main.rand`. The port's `explode_bomb`
+`Damage()` walk is the frozen zero-rng `FastRandom::new(0)` (the documented
+M4-PROJ-9 deviation). The gore rows are a SEPARATE stream consumer: they ride
+the pass's `UpdateProjectiles` rng (the C# `Main.rand` the `Kill_Bombs` draws
+on), threaded into `explode_bomb` alongside the gore pool. The frozen damage
+walk is NOT changed — the gore draws do not feed it (the module RNG contract:
+no double-feed). `None` pool spawns nothing (the bomb family had no landed
+census, so there is no draw pin to keep).
+
+**Cited deferrals (unrowed hosts)**: the wiring rides a host's `proj_data`
+row — a kind with no row never spawns, so its arm cannot fire. The site fns
+stay landed; the wiring rides the host's row/path when it lands (the
+`npc_hit_effect_a.rs` precedent). Deferred Kill hosts: 1020/1105 rocket
+corners (:70888), 1085 mirror (:70912), 608 Solar Counter (:72219), 590
+Truffle Spore (:72634), 676 Ogre Spit coin pile (:72758), 501 cursed flame
+(:72890), 467/468/483 (:73086/:73133/:73242), 709 Sky Dragon's Fury
+(:73367's twin), 616/424-426 (:73668/:73843), 510 Star Cannon (:73691), 408
+phoenix (:73754), 1037/1049 nebula bolts (:73895), 289 confetti (:74605),
+191-194 tombstones (:74812), 1053 lava boulder (:74898), 1078 (:75030), 728
+star (:75145), 723 shadow (:75172), 724/725/726/907/1133 falling stars
+(:75204), 12 star (:75709/:75744), 503 (:75734), 281/162 Kill corners
+(:75754/:75831 — the AI landing gores ARE wired in `ai_style2`), 712
+(:76116), 1023 barrel (:76881), 312 (:76919), 246/249 (:76960/:77003),
+370/371 ducks (:77172/:77189), the 617's 620 burst (:72336-72371), and the
+bomb-family 102/75/588/773/108/164 (not in `explode_bomb`'s
+`PrepareBombToBlow` set / no rows). Deferred AI hosts (unported arms):
+enchant-7 melee swing (:17452, the melee-lane seam), super_star_trail
+(:22155, AI_151), ai503_trail (:23965), shadowflare/ai723 trails
+(:23995/:24018, kinds 723-726/1133 — the dispatch's :23990 inner gate lists
+726 twice and omits 724, reproduced when those kinds get rows), drill_unit
+(:25438, 1092), ai49 tombstone landing (:28306, style 49), crystal
+destruction (:36331, style 132), chum (:53560-53583, style 163), the ai026_c
+ground machine 881/934/854/875/860 (:60816-62889, census-only
+`ground_machine_census`), betsy_breath (:68828, AI_136), book_storm
+(:70444-70466, AI_145), ogre_stomp (:68780, AI_135). The d78 magic-death-
+blasts lane (`5fe6d940`, kinds 79/16/34/634/635/661) is a co-lane — read-only,
+no overlap with these gore rows, no double-feed.
+
+**SEAL (research/364 — sealed as 360, renumbered per registry §9 row 364, 2026-11-21, code-only)**: the family gate re-run
+matches the f5 seal (111 §10.2) exactly — NPC 1345 / Projectile 165 /
+WorldGen 36 / Player 32 / Main 0 = Σ1578, the f5 window 853; the 165-line
+coverage cross-check finds every grep line cited by a `projectile_gore_*`
+module (159 exact + 6 range-cited — the `gore_j` 240-corner doc-comment
+line break + the `gore_m` frost table row), zero uncited. The g65 compose
+(research/364 §3): the death-dust drain (241 arms → **316** distinct kinds
+— the owed-pool "309" was the stale batch-28 census, 26i's "317" a +1
+miscount; the roster matches g65's 346 bible kind-for-kind) carries ZERO
+gore bodies and these modules ZERO dust refs — the bodies are DISJOINT,
+both lanes merge whole; the overlap is g65's draw-only gore census stubs
+(`gore_census` :4756 + the inline `let _` loops), retired for every WIRED
+kind by the §3.2 drop-table (12 drop hunks at g65 tip `37ec2f3aa`, the
+KEEP list for the deferred hosts pinned) — the stubs and the bodies draw
+the identical stream values (6 compose witnesses `w4_g16_seal_*` in
+`projectile_gore_o.rs` pin the six stub shapes, WRITTEN NOT RUN). Two
+caveats published: the **706** DD2 twin (g65's drain arm covers
+664|666|668|706, `gore_death_arms` only the three rowed kinds — re-check
+706's row status at merge before dropping the `:269` census whole) and
+the **503** stub draw-gate (g65 `:3697` skips the `Next(16,18)` for 503;
+the C# `:75729-75733` ALWAYS draws then overrides — g65 owes the one-line
+fix before the 503 row lands; g16's `kill9_503_gores` keeps the draw).
+The 87 g16 witnesses (73 module + 14 wiring) stay WRITTEN NOT RUN, owed
+one compile window before merge.

@@ -245,6 +245,21 @@ mod projectile_bobber;
 // thrust arm + its extension/retract curve and reach-ahead hitbox, plus the
 // small sub-shot arms (the spore/cloud/bolt/snowflake/flake the spears spawn).
 mod projectile_ai_spear;
+mod projectile_gore_a;
+mod projectile_gore_b;
+mod projectile_gore_c;
+mod projectile_gore_d;
+mod projectile_gore_e;
+mod projectile_gore_f;
+mod projectile_gore_g;
+mod projectile_gore_h;
+mod projectile_gore_i;
+mod projectile_gore_j;
+mod projectile_gore_k;
+mod projectile_gore_l;
+mod projectile_gore_m;
+mod projectile_gore_n;
+mod projectile_gore_o;
 mod rain;
 // S1-P-i38: the recall / magic-mirror / ice-mirror / potion-of-return use
 // path — ItemCheck's spawn-recall arms (Player.cs:42976-42999 / :43107-43140 /
