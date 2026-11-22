@@ -66,7 +66,8 @@ pub struct TileCollision {
     pub down: bool,
 }
 
-/// `Collision.TileCollision` with `gravDir = 1`, `hoik = true`.
+/// `Collision.TileCollision` with `gravDir = 1`, `hoik = true`,
+/// `ignoreAetheriumPlatforms = false` — the general-collision wrapper.
 pub fn tile_collision(
     world: &World,
     pos: [f32; 2],
@@ -75,6 +76,24 @@ pub fn tile_collision(
     height: f32,
     fall_through: bool,
     fall2: bool,
+) -> TileCollision {
+    tile_collision_opts(world, pos, vel, width, height, fall_through, fall2, false)
+}
+
+/// `Collision.TileCollision` (`Collision.cs:2292-2460`) with the
+/// `ignoreAetheriumPlatforms` flag (`:2332-2335`): the shimmer-world
+/// platform (tile 19, `frameY / 18 == 50`) is NON-solid for the caller —
+/// `WorldItem.MoveInWorld` passes true (`WorldItem.cs:1051`/`:1064`), so
+/// items fall through the aetherium platforms (W4-f47).
+pub fn tile_collision_opts(
+    world: &World,
+    pos: [f32; 2],
+    vel: [f32; 2],
+    width: f32,
+    height: f32,
+    fall_through: bool,
+    fall2: bool,
+    ignore_aetherium_platforms: bool,
 ) -> TileCollision {
     let mut up = false;
     let mut down = false;
@@ -100,6 +119,11 @@ pub fn tile_collision(
                 continue;
             };
             if !solid(&t) {
+                continue;
+            }
+            // `:2332-2335` — the aetherium platform is non-solid for the
+            // item pass (the flag is false for every other caller).
+            if ignore_aetherium_platforms && t.kind == 19 && t.frame_y / 18 == 50 {
                 continue;
             }
             let rx = i as f32 * TILE_PX;
@@ -205,7 +229,7 @@ pub struct SlopeCollision {
 }
 
 /// `Collision.SlopeCollision`: slides the body along ground ramps and pushes it
-/// out of ceiling ramps.
+/// out of ceiling ramps. `ignore_aetherium_platforms = false` wrapper.
 pub fn slope_collision(
     world: &World,
     pos: [f32; 2],
@@ -213,6 +237,21 @@ pub fn slope_collision(
     width: f32,
     height: f32,
     fall: bool,
+) -> SlopeCollision {
+    slope_collision_opts(world, pos, vel, width, height, fall, false)
+}
+
+/// `Collision.SlopeCollision` (`Collision.cs:1791-2031`) with the
+/// `ignoreAetheriumPlatforms` flag (`:1825-1828`) — the item pass
+/// (`WorldItem.cs:1067`) skips the shimmer-world platform (W4-f47).
+pub fn slope_collision_opts(
+    world: &World,
+    pos: [f32; 2],
+    vel: [f32; 2],
+    width: f32,
+    height: f32,
+    fall: bool,
+    ignore_aetherium_platforms: bool,
 ) -> SlopeCollision {
     let mut stair = false;
     let mut stair_fall = false;
@@ -236,6 +275,10 @@ pub fn slope_collision(
                 continue;
             };
             if !solid(&t) {
+                continue;
+            }
+            // `:1825-1828` — the aetherium platform skip (the item pass).
+            if ignore_aetherium_platforms && t.kind == 19 && t.frame_y / 18 == 50 {
                 continue;
             }
             let rx = i as f32 * TILE_PX;

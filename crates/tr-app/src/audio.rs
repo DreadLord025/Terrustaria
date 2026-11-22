@@ -34,6 +34,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Tink_2", 21),
     ("Coins", 18),
     ("Item_27", 2),
+    // W4-f47 — `WorldItem.ShimmerEffect`'s cue (`SoundID.Item176`,
+    // `WorldItem.cs:1668`): the case-2 style-176 ×0.9 volume tweak.
+    ("Item_176", 2),
     // S1-E-21 wave D — the Moon Lord legs' fast-run footstep
     // (`Player.cs:35959-35964` swaps `hermesStepSound` to Item style 24).
     ("Item_24", 2),

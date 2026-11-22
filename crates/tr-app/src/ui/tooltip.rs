@@ -507,7 +507,10 @@ pub fn item_tooltip_lines(
         }
     } else if d.ammo > 0 {
         lines.push((crate::lang::tip(34), [1.0, 1.0, 1.0, 1.0]));
-    } else if d.consumable {
+    } else if d.consumable && !tr_core::extract::chlorophyte_extractinator_consumable(kind) {
+        // `Main.cs:20932` — `item.consumable && !item.chlorophyteExtractinatorConsumable`:
+        // the extractinator-only consumables (Shadow Scale / Tissue Sample /
+        // the junk trio) print no "Consumable" row (W4-f47).
         lines.push((crate::lang::tip(35), [1.0, 1.0, 1.0, 1.0]));
     }
     // `:20931-20933` — the material row.
@@ -763,6 +766,27 @@ mod tests {
     }
 
     use super::*;
+
+    /// W4-f47 — `Main.cs:20932`: the chlorophyte-extractinator consumables
+    /// (Shadow Scale 86 / Tissue Sample 1329 / the junk trio) print no
+    /// "Consumable" row; a plain consumable still does.
+    #[test]
+    fn w4_f47_the_extractinator_consumables_skip_the_consumable_row() {
+        let consumable_row = crate::lang::tip(35);
+        for kind in [86u16, 1329, 2337, 2338, 2339] {
+            let d = crate::registry::get(kind).expect("the item row");
+            assert!(d.consumable, "kind {kind} is consumable");
+            let rows = item_tooltip_lines(kind, d, TooltipContext::default());
+            assert!(
+                !rows.iter().any(|(t, _)| *t == consumable_row),
+                "kind {kind} must not print the Consumable row"
+            );
+        }
+        // A plain consumable (the Mushroom 5) keeps the row.
+        let d = crate::registry::get(5).expect("the mushroom row");
+        let rows = item_tooltip_lines(5, d, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| *t == consumable_row));
+    }
 
     #[test]
     fn inv_bg_min_size_is_twenty() {

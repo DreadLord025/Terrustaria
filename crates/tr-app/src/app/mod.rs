@@ -172,6 +172,10 @@ pub(crate) struct App {
     pub(crate) combat_texts: Vec<crate::combat_text::CombatText>,
     pub(crate) npc_assets: NpcAssets,
     pub(crate) npc_timer: f32,
+    /// `NPC.noSpawnCycle` (`NPC.cs:6179`) — the one-cycle spawn skip the
+    /// shimmer statue-poof / item-drop arms set (`NPC.cs:91553`/`:91570`);
+    /// `NPC.SpawnNPC` consumes and clears it (`:80171-80175`).
+    pub(crate) npc_no_spawn_cycle: bool,
     /// The worm chain id counter (`AI_006`'s chain identity) — the head
     /// takes the next id, the segments share it.
     pub(crate) next_worm_id: u32,
@@ -3603,6 +3607,7 @@ impl App {
             npcs,
             npc_assets,
             npc_timer: 6.0,
+            npc_no_spawn_cycle: false,
             next_worm_id: 1,
             next_npc_uid: 1,
             shop_npc: None,

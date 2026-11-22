@@ -1595,6 +1595,15 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        // Doc-sweep lane 36 — the ShimmerSlime's portrait rests the
+        // 2-frame strip's row height over the 24x18 box (the
+        // small-kinds shape).
+        (NpcKind::ShimmerSlime, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 32.0, h, white)
+        }
     }
 }
 

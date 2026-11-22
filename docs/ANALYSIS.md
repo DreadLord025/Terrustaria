@@ -11666,9 +11666,236 @@ Deliberate deviations and notes:
   layer and skipped.
 - **Out:** the player's В§7 rules (the buff 353 "Shimmering" frozen/emerge cycle,
   `ShimmerUnstuckHelper`'s unstuck вЂ” the helper is ported, the driver is not);
-  `NPC.GetShimmered`'s own transform (`NPC.cs:91548`, the map is ported as a
-  table); `Collision.shimmer`-driven entity wet flags beyond the item's box; the
-  shimmer tile's rendering/animation.
+  the shimmer tile's rendering/animation. (`NPC.GetShimmered`'s own transform
+  and the `Collision.shimmer`-driven NPC wet flags landed with W4-f47 вЂ” the
+  note below; the item-side wet probe stays the full-box stand-in.)
+
+## The shimmer second half (W4-f47)
+
+Branch `task/W4-f47-liquid-shimmer-2`, code-only mode 2026-11-21 — no compiler
+invoked, all witnesses WRITTEN NOT RUN. The e19 first half (quicksell/transform)
+had no pushed claims at probe time (the branch sat at main with zero commits);
+this lane took the remaining three pieces: the NPC shimmer transforms, the
+item fall-through physics, and the ChlorophyteExtractinator residuals.
+
+**NPC shimmer transforms.** `tr-core/src/shimmer_tables.rs` grows the two
+unported sets verbatim: `NPCID.Sets.ShimmerTransformToItem` (`NPCID.cs:10468`,
+15 pairs — the gem critters 639-651 to their gems, the moths 652/645 to amber,
+the bound Wizard 448 to the Rod of Discord 5341) and `ShimmerTownTransform`
+(`:10469`, 29 ids). `tr-core/src/shimmer.rs` ports `NPC.GetShimmered`
+(`NPC.cs:91548-91592`) as `resolve_npc_shimmer` (statue > NPC-set > item-set >
+town-set order), the transparency ramp (`:91514-91544`) as
+`npc_shimmer_transparency_tick` (+0.01 rise, the **f64-widened** `> 0.9`
+crossing — a JS harness pins `f32(0.89)+f32(0.01) == f32(0.9)` BELOW the double
+0.9 literal, so the crossing lands at tick 91 from zero, not 90 — then the
+justHit −0.1 FIRST and the immune-353 −0.015/−0.001 split, the 0 floor),
+`AppearsFriendlyToHunterPotion` (`:91008-91017`) with the single 689→false
+override row (`NPCID.cs:10128-10132`), `CurrentlyShimmerTransparent`
+(`:90995-91006`) and the `UpdateGravity` wet tail (`:90937-90954`, shimmer
+0.15/5.5 > honey 0.1/4 > water/lava 0.2/7).
+
+App-side: buff 353 sets `NpcBuffFlags.shimmering` in `UpdateNPC_BuffSetFlags`
+(`npc_buffs.rs`, the immune branch `DelBuff(i)` MID-scan verbatim — the
+shift-left skips the shifted-in slot that tick); `TryAddingRepeatedBuff`
+(`:93303-93313`) and `remove_buff` join the engine. `Npc` gains
+`shimmering`/`shimmer_wet`/`honey_wet`/`wants_shimmer_transform`; the ramp runs
+in `update_preamble` (the C# VFX position `:90378`, before the AI) and arms the
+request on the crossing. `world_sim/npcs.rs::drain_shimmer_transforms` resolves
+the requests post-pass (the shimmer item-chain's convention): the statue poof
+and item-drop arms set `App.npc_no_spawn_cycle` (consumed at the `SpawnNPC`
+head, `:80171-80175`) and deactivate via `despawn_timer = 0`; the NPC-set arm
+rides `transform_to_kind` then `ShimmerEffect` at the POST-transform centre;
+the town arm zeroes the ai, sets 0.89 and strips buff 353.
+`shimmer_wet_contact_pass` ports `Collision_WaterCollision`'s shimmer/honey
+contact (`:93052-93076`) with the `:93055` exemption list, as a post-pass —
+timing-equivalent because `BuffSetFlags` and `UpdateGravity` read the flags at
+the NEXT tick's head. `shimmer.rs` (app) grows `shimmer_effect`
+(`WorldItem.cs:1661-1689`: the Item176 cue — the case-2 ×0.9 tweak, the bank row
+added — plus 20 type-309 dusts each `scale *= 1.2` and a `Next(6)` colour) and
+`spawn_shimmered_item` (`:628-637`: the explicit
+`(itemNumber * (itemNumber % 2 * 2 - 1), 0)` velocity REPLACES the scatter
+draws, prefix 0 rolls nothing, the modifier writes
+shimmerTime/shimmered/shimmerWet/wet).
+
+**The town state-25 emergence** (`npc_ai_town.rs`, the cited skip retired):
+`town_shimmer_state25` ports `:53187-53277` — the ai[2] teleport hold, the
+dry 1/60 transparency decay vs the fresh-WetCollision wet pin at ai[1] 30, the
+(0, −4·t) velocity, the hue light (`hslToRgb(tve/360 % 1, 0.6, 0.65)` ×
+`Remap(ai1, 30, 90, 0, 0.7)`) + the conditional 309 dust + the 1/15 particle
+triple (the draws spend `rng` in C# order: NextFloatDirection, the NextFloat
+gate, the rectangle pair + the circular pair; the visuals ride the new
+`ShimmerFx` seam — the module stays RNG-free-of-pool), the completion at
+ai[1] ≥ 75 && t ≤ 0 (the ai/localAI zero, the (0,−4) kick, the variation flip,
+progression 43 when it lands on 1; the `Math.Sign` result is DISCARDED like the
+C# `:53257`), and `shimmer_teleport_to_landing_spot` — the four expanding scans
+(`:55563-55641`) over the core `find_spot_without_shimmer` with a faithful
+`IsSpotShimmerFree` (`SolidCollision` acceptTop + `PlatformProperTopFrame`,
+`WorldGen.cs:70153-70165`). `TownEnv` gains `time_for_visual_effects`. The
+`Teleport(pos, 12)` effect/teleportTime latch and the particle orchestrator are
+cited visual seams.
+
+Doc-sweep lane 36 (`docs/research/121-doc-sweep-shimmer.md`) WIRED the
+emergence seam without duplicating the b3 migration: the full aiStyle-7
+`update_guide` retirement is W4-b3's pushed phase 1
+(`task/W4-b3-npc-ai-town-wire` 96a5d88f — the axis claim, the door latch, the
+generic `UpdateNPC` tail); THIS branch adds `npc_ai_town::town_shimmer_step`,
+called from the `world_sim/npcs.rs` slot loop when a living town-like NPC
+carries `ai[0] == 25` (the state `drain_shimmer_transforms`' TownVariant arm
+sets). The seam runs the preamble + the emergence machine at the C# AI()
+position on the `UpdateNPCs` stream, drains `ShimmerFx` (the hue light onto
+`EntityLights` with the `(int)(v/16)` truncation, the 309 dust via
+`NewDustPerfect`), skips the dry walk for that tick (the C# returns at
+`:53277`), and credits progression 43 through a post-pass latch. Order
+deviation: the dust allocator's own six draws per `NewDustPerfect` land AFTER
+the same tick's particle-triple draws (the C# spawns inline between them) —
+the in-arm gate/direction draws keep their exact order; the pool-pass
+convention, same as the item splash drain. `timeForVisualEffects` rides
+`anim_time × 60 mod 216000` (`Main.cs:17162-17164`). MERGE CONTRACT: when b3
+lands, its `ai_007_town_family` reaches the same `:53187` arm — keep ONE
+driver (fold this seam into the adapter's `TownOutputs` drain or drop the
+adapter's state-25 call); the adapter's `shimmering: false` fold must become
+the live buff-353 flag either way.
+
+**Item fall-through physics.** `collision.rs` grows
+`tile_collision_opts`/`slope_collision_opts` with `ignoreAetheriumPlatforms`
+(`Collision.cs:2332-2335`/`:1825-1828`: tile 19 `frameY/18 == 50` non-solid);
+the existing wrappers pass false, so every other caller is byte-identical.
+`item.rs::update`/`move_in_world` re-derive `WorldItem.UpdateItem`/`MoveInWorld`
+verbatim: the gravity ladder (`:379-396`, shimmerWet 0.065/4/0.375 > honeyWet
+0.05/3/0.25 > wet 0.08/5/0.5 > air 0.1/7/0.5) with the **wetVelocity captured at
+the update head** (the C# `ref` semantics — the shimmered rise arms the velocity
+this tick but integrates the NEXT tick; the old `pos += vel` float witness is
+re-derived onto that one-tick lag), the `ItemNoGravity` set (`ItemID.cs:1320`,
+16 ids) both-axis ×0.95 + 0.1-snap arm (`:774-786`), the shimmered-repulsion
+scan (`:789-848`) as a list pre-pass (`shimmered_repulsion`: the 50-neighbour
+budget, `halfWidthSum/Distance` clamp-10, the ±0.1·num2 X push with the
+±3·num2/±3 caps and the equal-X lower-slot arm) arming `repulsion_brake` → the
+extra ×0.8 X friction (`:859-862`), the wet probe + the 20-tick `wetCount`
+cooldown, the `ignoreAetheriumPlatforms: true` tile collision (`:1051`/`:1064`)
++ `ApplyMovement` (wet integrates wetVelocity, `:1074-1084`) + the slope pass
+(`:1067`). `UpdateShimmer` zeroes gravity by `&mut` (`:483`). `ItemDrop` gains
+`wet`/`honey_wet`/`lava_wet`/`wet_count`/`repulsion_brake`.
+
+Deviations: the repulsion pre-pass reads pre-tick velocities (the C# reads the
+live array mid-scan — the one-tick pool-pass lag, the documented convention).
+The splash dust/sound arms and the full-box wet-probe stand-in were RETIRED by
+the doc-sweep (lane 36, `docs/research/121-doc-sweep-shimmer.md`): the probes
+are now the shared `WetCollision` centre-inset port + the full-box
+`LavaCollision` surface-drop port, the splash arms (`:886-954` entry /
+`:965-1033` exit) are ported verbatim as `ItemDrop::splash` (the items pass
+drains the `Splash` latch same-tick on the `UpdateItems` stream, before the
+visual-effects draws), and `UpdateShimmer` reads the PREVIOUS tick's sticky
+`shimmerWet` like the C# — the fresh-drop transform crossing re-pins 91 → 92
+(one-tick probe lag; the ramp arithmetic itself is unchanged).
+
+**ChlorophyteExtractinator residuals.** `tr-core/src/extract.rs` grows
+`chlorophyte_extractinator_consumable` (the three
+`MakeUsableWithChlorophyteExtractinator` call sites: Shadow Scale 86
+`Item.cs:2405`, Tissue Sample 1329 `:16477`, the junk trio 2337-2339 `:23497`).
+The `CanUseItem` gate (`Player.cs:52285-52292`) refuses the use unless the
+cursor cell is an ACTIVE extractinator tile 219/642 (placed in `update_editing`
+after the smart-cursor repoint, before the use-start arms); the tooltip
+"Consumable" row is suppressed for those kinds (`Main.cs:20932`); the
+smart-select strategy-7 `ItemTrader` arm (`Player.cs:17593-17607`) picks a
+trade-table slot on 642 before the ExtractinatorMode arm (642-only — the trader
+table is tile-gated).
+
+RNG: the NPC drain's `ShimmerEffect`/`SpawnShimmeredItem` draws ride
+`UpdateNpcs` (`Main.cs:17767`); the town state-25 draws ride the caller's
+stream in C# order; the item physics is draw-free by construction (the splash
+arms skipped). 29 witnesses across the four phases, WRITTEN NOT RUN.
+
+**Keep-one 277 (formerly 144 — renumbered per registry §6.3; the e19 splash 2-way, 2026-11-21).** The e19 co-lane
+(`task/W4-e19-liquid-quicksell-shimmer`, tip `939e45dc8`) ported the SAME
+entry/exit splash region (`7d3cb5e3` deferred 4 + the `3ea49d98b` wet flags
++ the round-3 `e2003946b` box fix / `939e45dc8` flush fix). The arm-by-arm
+verdict + fold-hunks live in `docs/research/277-item-splash-keep-one.md`;
+the folded changes on THIS branch:
+
+- **The drop box is the C# 16** (`WorldItem.cs:138`): `item::SIZE` 14 → 16
+  across every probe; the DRAW quad keeps the 14 px visual centred
+  (`pos + 1`, `SIZE - 2`) so pixels are unchanged. The wet probe grows
+  10x7 → 10x8 at `(pos+3, pos+4)`; the splash dust box width+12 = 28 (the
+  `NewDust` `Next(24)` roll); the witnesses re-pinned (grab-rect 42/43 edge,
+  magnet centre-8 spawns 292/192, light anchors 168/184 + the −12
+  truncation, resting fixtures 19*16 flush, the entry-latch park 184, the
+  aetherium normal-platform residual 0).
+- **`box_is_wet` restored** (the e19 name kept): the doc-sweep 36 deletion
+  left `app/frame/draw.rs:419` calling a missing method — a compile break.
+  The restored fn is the faithful `player::wet_collision` bool half (the
+  same inset maths as `wet_probe`'s `npc_ai_slime` engine).
+- **The splash latch KEPT** (this lane's `Splash`/`splash_due` shape): both
+  lanes are faithful; this lane's entry gate reads the LOCAL `flag2`
+  verbatim (`:886`) where e19 reads the sticky `lava_wet` (equivalent at
+  the entry edge — the probe just set it — but not verbatim). The e19
+  `ItemSplash` queue + `take_splash` + the free-fn `item_splash` are the
+  dedupe losers; the four pass-level e19 witnesses folded as
+  `w4_f47k1_*` (the unit-level 71/31-draw twins stay this lane's).
+- **The dry flush residual**: this lane never had e19's snap-and-zero
+  stand-in (`tile_collision_opts` keeps the residual verbatim in both
+  arms); the e19 round-3 landing/rest witness pair folded as `w4_f47k1_*`.
+- **The 676 ShimmerSlime light/dust arm WIRED** (`NPC.cs:61128-61150`, the
+  censused skip retired): the gate + the 4-NextFloat body roll in
+  `npc_ai_slime::ai_001_slimes` (the exact `(speed > 1 && Next(3) == 0) ||
+  Next(5) == 0` short-circuit), the `NewDustPerfect(306)` spawn rides
+  `wants_shimmer_slime_dust` to the sim drain (the gallop-dust seam — the
+  hue colour `(tve/300 + jitter*0.1) % 1` sat 1 lum 0.65 A=0, alpha 127,
+  fadeIn 0.9, noGravity + noLightEmittance, the netOffset on the position
+  only); the torch-23 centre light is the draw-side
+  `npc_lights::shimmer_slime_light` feed (the `CenterTruncated` anchor —
+  `Lighting.cs:154` truncates before dividing — and the animated
+  `ShimmerTorchLight` colour). The live `update_slime` stand-in route
+  draws nothing until b1's `ai_001_slime_family` lands (the documented
+  merge seam — the faithful core + the drain are wired, the stand-in
+  keeps its byte-identical behaviour). The `HitEffect` 676 arm
+  (`NPC.cs:82058-82078`: 8/40 dust 310, the `Next(3)` noGravity gate,
+  vel ×1.5 + base.vel ×0.1) is the DUST lanes' — g62 ports the LIVE
+  half (`npc_hit_dust.rs`, the 658-660/667/676 block), g60 owns the
+  death halves but its census missed the 676 row (the 669-685 band
+  read `--` pre-roster; the 40-count death half is a g60 task-seed).
+  The old "cited-unwired, the HitEffect dust pass unported port-wide"
+  note is superseded (the seal census, research/151 §2).
+- **The wiring.rs `ItemDrop` literals** gained the missing
+  `honey_wet`/`lava_wet`/`wet_count`/`splash_due`/`repulsion_brake` fields
+  (the phase-3 addition never updated them — a compile break the keep-one
+  census caught).
+
+The e19-owned hunks NOT folded (their lane's claim, the merge keeps them):
+the `shimmer_tail`/`apply_decraft` `wet = true` writes (`3ea49d98b`,
+`WorldItem.cs:1844`/`:635` — this lane's Transform arm still misses the
+shared-tail `wet` write; e19's chain-apply half carries it), the
+`rise_over_shimmer` two-row centre scan (e19's `UpdateShimmer` shape vs
+this lane's `over_shimmer` single-tile — both cited, the merge reconciles),
+and the wetVelocity blocked-axis refresh ordering (e19's hand-rolled
+TileCollision vs this lane's `tile_collision_opts` — the residual semantics
+agree). 12 new witnesses (3 gate + 1 light + 1 drain + 4 pass-level splash
++ 2 flush + 1 box_is_wet), WRITTEN NOT RUN.
+
+**The shimmer-family SEAL (research/151, 2026-11-21).** The five cross-lane
+compositions closed on top of the arbiter: (1) the e19 lights mutual-receipt
+— the 16-box fix folded both ways, `box_is_wet` the e19 name+body kept, the
+splash keeper f47 (379-ARBITER-FINAL-v2 definitive — renumbered
+144→379 per registry §10 — the witness-superset
+ground at the e19 SHIMMER-SEAL tip `0fb0ac4ad`), the lights/AddLight scope
+DISJOINT (e19 touches no `npc_lights.rs`; its item-light hunks are the same
+16-box fixture re-pins; the 676 torch-23 NPC-source vs the item-sources share
+only the `XAnchor` vocabulary); the e19 lunar-brick RAW-enum fix
+(`cab982244`) FOLDED here (`lunar_brick_for_moon_phase` re-pinned to the
+`Enums/MoonPhase.cs` indices — the f47 table carried the same inverted
+stand-in; the other moon-phase readers censused already-RAW-correct).
+(2) The 676 HitEffect census — g62 owns the LIVE half (ported), g60 the
+death halves (the 676 row a census gap, seeded); f47 ports nothing there.
+(3) The b1 activation-contract — the f47 676 arm goes LIVE when b1's
+`ai_001_slime_family` adapter claims aiStyle 1 (the merge adds ShimmerSlime
+to b1's unreachable kind arm, retires the `update_slime` route). (4) The d6
+ShimmerImmunity-131 compose — d6's `for_kind` set write vs f47's
+flag/ramp/contact readers, DISJOINT (the 676/677 are in the set — immune to
+re-shimmering, faithful; the f47 per-tick arm ignores the buff). (5) The d43
+676-row keep-one — the f47 AI-arm superset kept, the d43 duplicate surfaces
+dedupe, the FindFrame group arm loses its 676 member to f47's dedicated
+count-read shape. The family bible (the single-owner map + the merge
+checklist) is research/151 §7.
+
 ## Ocean passes fidelity (M5-OCEAN)
 
 The full ocean family landed 2026-11-08 (branch `M5-OCEAN`, commits
@@ -23716,9 +23943,11 @@ rand-drawing item arms feed the same list from the fixed step instead
   `base.wet` from `Collision.WetCollision(position, width, height)`
   (`WorldItem.cs:870`) in the movement half that runs *before*
   `UpdateItem_VisualEffects` (`:436`). `ItemDrop::box_is_wet` (`crates/tr-app/src/item.rs`)
-  tests the same 14Г—14 box for `tile.liquid > 0`; `box_in_shimmer` is the same helper
-  with the shimmer predicate. The item box is `ItemDrop::SIZE` (14) in both, matching
-  `Entity.width`/`height` for a dropped item.
+  is the faithful centre-inset `Collision.WetCollision` bool half (the
+  `player::wet_collision` port — keep-one 277 (formerly 144) restored the name the
+  doc-sweep 36 deletion dropped; the draw feed re-probes, the S1-E-5
+  draw-side convention). The item box is `ItemDrop::SIZE` (16,
+  `WorldItem.cs:138`), matching `Entity.width`/`height` for a dropped item.
 * **The `createTile == 4` arm shadows 19 per-id arms.** `WorldItem.cs:1375` comes
   before every later `type == N` test, and every placeable torch has
   `createTile == 4` вЂ” so the per-id arms for 3114, 1245, 433, 523, 974, 1333, 4383,
@@ -24327,9 +24556,12 @@ Deliberate gaps, all recorded here rather than guessed:
 * The NPC path (`NPC.cs:92575-92578`, gated by `ConveyorBeltCollision`)
   is **not** wired: the port has no unified `NPC.UpdateCollision` to hang it
   on, and `NPCID.Sets.ConveyorBeltCollision` is not in `tiledata` yet.
-* The item box stays the port's 14 px (`item.rs::SIZE`) rather than the C#'s
-  16 (`WorldItem.cs:138`): widening it changes every existing drop's
-  collision, which is a separate task.
+* The item box is the C# 16 (`item.rs::SIZE`, `WorldItem.cs:138` — keep-one
+  277 (formerly 144) folded the e19 round-3 fix `e2003946b`; the old 14 px stand-in is
+  retired). The DRAW quad keeps the 14 px visual centred in the box
+  (`pos + 1`, `SIZE - 2`), so pixels are unchanged; every probe (grab rect,
+  WetCollision/LavaCollision, conveyor, TileCollision, the repulsion span,
+  the splash width+12) reads the 16.
 
 ## The screen effects (S1-E-16, 2026-11-16)
 

@@ -2189,6 +2189,7 @@ pub(crate) mod front_flow_tests {
             npc_chat_last_hovered: -1,
             npc_assets: NpcAssets::default(),
             npc_timer: 0.0,
+            npc_no_spawn_cycle: false,
             next_worm_id: 1,
             next_npc_uid: 1,
             shop_npc: None,
