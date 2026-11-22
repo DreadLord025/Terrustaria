@@ -5590,6 +5590,19 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             frame_y: t.frame_y,
         });
     app.queue_map_ring(tx, ty);
+    // W4-c42 final (§8.4 re-audit find): the C# `DestroyPlate` runs inside
+    // `KillTile_GetItemDrops` (`WorldGen.cs:65327`) at `:63863` — BEFORE
+    // the tile clear at `:63885` — so the release poke sees the LIVE
+    // plate (`HitSwitch`'s type-428 arm). The port cleared the cell first
+    // (kill_tile below) and the poke hit a dead tile: `hit_switch`'s
+    // active gate refused and the release never tripped. The poke moves
+    // ahead of the kill; its clicks/cues drain at the site tail below
+    // (the stage-stream contract, after the break sounds like the C#).
+    if hit.as_ref().is_some_and(|h| h.kind == 428) {
+        // The §8.1 stamp: the release poke trips the plate's wire line.
+        crate::world_sim::wiring::stamp_wiring_entity_boxes(app);
+        app.wiring.destroy_plate(&mut app.world, tx, ty);
+    }
     let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, false) else {
         return;
     };
@@ -5732,12 +5745,13 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     app.liquids.wake_around(&app.world, tx, ty, 3);
     // `PressurePlateHelper.DestroyPlate` (`WorldGen.cs:65327`, case 428 of
     // `KillTile_GetItemDrops`): a pressed weighted plate that is broken fires
-    // its switch once so the device releases. The pick break runs in
-    // `Player.ItemCheck` under the `UpdatePlayers` swap (`Main.cs:17754`), so
-    // the click's pitch draw rides that stream (the `HitSwitch` precedent,
-    // `doors.rs`). An unpressed plate is a no-op.
+    // its switch once so the device releases — the poke itself moved ABOVE
+    // the kill (the C# order: the drop pass runs before the clear, so the
+    // poke sees the live plate). The pick break runs in `Player.ItemCheck`
+    // under the `UpdatePlayers` swap (`Main.cs:17754`), so the click's
+    // pitch draw rides that stream (the `HitSwitch` precedent, `doors.rs`).
+    // An unpressed plate is a no-op (the poke's TryGetValue gate).
     if hit.as_ref().is_some_and(|h| h.kind == 428) {
-        app.wiring.destroy_plate(&mut app.world, tx, ty);
         for (px, py) in app.wiring.take_switch_clicks() {
             app.audio.play_switch_click(
                 px as f32,
@@ -5745,6 +5759,19 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
                 app.rngs.stream(crate::app::RngKey::UpdatePlayers),
             );
         }
+        // W4-c42 final (§8.4 drain-union finish): the release poke's wired
+        // door/trapdoor/gate cues ride the same UpdatePlayers stream —
+        // this site drained only the switch clicks before.
+        for (open, px, py) in app.wiring.take_door_cues() {
+            app.audio.play_door_sound(
+                open,
+                px as f32,
+                py as f32,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+        }
+        // The §8.2 echoes: SP discards (the netMode-0 return).
+        let _ = app.wiring.take_door_echoes();
     }
     // `WorldGen.TileFrame`'s falling check (`WorldGen.cs:81380`): the tile
     // above the break loses its support and the falling kind spawns the
@@ -18736,5 +18763,61 @@ mod wall_placement_tests {
                 None => assert!(app.items.is_empty(), "wall {wall} drops nothing"),
             }
         }
+    }
+
+    /// W4-c42 FINAL (§8.4 drain-union finish): breaking a PRESSED weighted
+    /// plate (428) fires `DestroyPlate` → the release poke trips the wire
+    /// line → a wired CLOSED trapdoor opens on the press and CLOSES again
+    /// on the release. The release cue must drain HERE on the UpdatePlayers
+    /// stream (the site drained only the switch clicks before — the cue
+    /// lingered into the next stage's drain). The ordering fix is the
+    /// observable: the C# poke runs inside `KillTile_GetItemDrops` BEFORE
+    /// the clear (`WorldGen.cs:63863`/`:63885`), so it sees the LIVE plate;
+    /// the port poked after the kill and the active gate refused the
+    /// release trip entirely (the trapdoor stayed open). WRITTEN NOT RUN.
+    #[test]
+    fn c42_the_broken_pressed_plate_drains_its_door_cues_in_pass() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 64, 64);
+        // The plate at (10, 20); the closed trapdoor 2×2 at columns 14/15,
+        // rows 19/20 — ONLY the (14, 20) body cell carries wire (a wire on
+        // both columns would re-shift the trapdoor mid-flood).
+        let i = w.index(10, 20);
+        w.tiles[i] = Tile { kind: 428, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        for row in 0..2i32 {
+            for col in 0..2i32 {
+                let k = w.index(14 + col, 19 + row);
+                w.tiles[k] = Tile {
+                    kind: 386,
+                    frame_x: (col * 18) as i16,
+                    frame_y: (row * 18) as i16,
+                    ..Default::default()
+                };
+                w.tiles[k].flags |= FLAG_ACTIVE;
+            }
+        }
+        // The red line: plate → row 20 → the trapdoor's left body cell.
+        for x in 10..=14 {
+            w.wires.set(x, 20, tr_core::wiring::WireColor::Red, true);
+        }
+        app.world = w;
+        // The plate is PRESSED (the release poke fires only then —
+        // `PressurePlateHelper.cs:94-101`'s TryGetValue gate). The press
+        // poke trips the line: the styleX-0 trapdoor opens DOWNWARD (the
+        // bottom row becomes 387, `WorldGen.cs:51453-51494`).
+        app.wiring.press_plate(&mut app.world, 10, 20);
+        assert_eq!(app.world.tile(14, 20).unwrap().kind, 387, "the press opened it");
+        let _ = app.wiring.take_door_cues();
+        let _ = app.wiring.take_switch_clicks();
+        let _ = app.wiring.take_door_echoes();
+        break_tile(&mut app, 10, 20);
+        // The release poke closes the trapdoor (the 387 pair closes back
+        // to 386, `:51534-51592`) — the poke saw the LIVE plate (the
+        // ordering fix; the old post-kill poke never tripped).
+        assert_eq!(app.world.tile(14, 20).unwrap().kind, 386, "the release closed the trapdoor");
+        // The cue drained HERE — nothing lingers past the break.
+        assert!(app.wiring.take_door_cues().is_empty(), "the close cue drained in-pass");
+        assert!(app.wiring.take_door_echoes().is_empty(), "the §8.2 SP discard ran");
     }
 }

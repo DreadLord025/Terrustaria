@@ -7890,6 +7890,72 @@ Deviations:
   2Г—2 detonator lamp flip, `Wiring.cs:335-372`) is still unported вЂ” a WIRE-1
   gap outside this row's scope.
 
+### W4-e20 — the second device-arm slice (2026-11-21, code-only)
+
+The C#-case-order second block of `HitWireSingle` (`Wiring.cs:1582-2013`, cases
+429→531) re-verified against the source and closed. c42 took the first block
+(144/421/422/235 + the shared `validate_tile_square`/`DeActive` infra), e21 the
+35/139-onward tail, f11 the remainder; this slice is the light family, the
+volcano traps, the switch-track, the candles/lamp-post, the traps, the geyser,
+the hopper, the extractinator and the boulder statue.
+
+Two trap WRONGs fixed (arm 137):
+
+- **The wall-mounted traps (−10/−9/−8) keep `speedY = 0`**: the C# assigns only
+  `speedX = 12·dir` (`Wiring.cs:1898`/`:1914`/`:1930`) and the `+2` is a
+  POSITION offset (`vector3.Y += 2f`, `:1903`/`:1919`/`:1935`). The port had
+  folded the +2 into `vy`; corrected, witness re-pinned.
+- **The spiky-ball cap measures from the verbatim anchor to `Center` (F3)**:
+  the C#'s proximity loop reads `(i*16+8, j*18+8)` — the **18** is verbatim
+  (`Wiring.cs:1819` floor / `:1950` ceiling) — against `Main.projectile[..].Center`.
+  The port had measured the spawn point against `pos` (top-left). `TrapRequest::Spear`
+  gains `cap_x`/`cap_y`; `spear_cap_allows` reads them and the projectile's
+  `center()`. A discriminating app fixture pins the fix.
+
+The three D8-residual arms landed (their supporting systems arrived since
+S1-L-6): the engine emits requests, the app resolves the anchor + gates +
+effect (decision D1 — the chest store / item pool / track table live app-side).
+
+- **314 `FlipSwitchTrack`** (`Wiring.cs:1744-1748` → `Minecart.cs:1296-1319`):
+  the engine's `CheckMech(5)` gates the request; `minecart.rs::flip_switch_track`
+  swaps a normal track's front/back (`frameX`/`frameY`, `Minecart.cs:1632-1650`)
+  and re-frames a booster through `frame_track_pound` — the verbatim
+  `FrameTrack(pound: true, mute: true)` pound branch (`Minecart.cs:1040-1168`)
+  over the `_trackSwitchOptions` table (`:449-518`, rebuilt as
+  `track_switch_options(mask)` from `TRACK_FRAMES`). The non-pound branch and
+  the `KillTile(fail)` sound (`!mute`) are unreachable from the wiring caller
+  and not ported. A front frame absent from the option list panics (the C#
+  `IndexOutOfRangeException`, the module's out-of-range convention).
+- **21/467 `Hopper`** (`Wiring.cs:2638-2678`): the 2×2 anchor from the negative
+  frame offsets, `CheckMech(60)`, the locked/in-use gates, then every ground
+  item in the 192×192 grab box (`HopperGrabHitboxSize`, `:3429`;
+  `Utils.CenteredRectangle`'s floored top-left, the strict-`<`
+  `Rectangle.Intersects`) is pulled in via `TryToPutItemInChest`
+  (`:2680-2701`) — coins ride `TryMoveCoinsInChest` (`:2703-2757`,
+  `CoinsCount`/`CoinsSplit`, `Utils.cs:1019-1060`), others the stack-merge then
+  the first empty slot; a successful pull sorts the chest
+  (`ItemSorting.SortInventory`, withSync/withFeedback false). The
+  `playerIndexTheItemIsReservedFor == Main.myPlayer` gate folds to "all drops"
+  (single player). `VisualizeChestTransfer` is draw-only (no port).
+- **219/642 `Extractinator`** (`Wiring.cs:2554-2584`): the 3×3 anchor from
+  `frameX/Y % 54 / 18`, `CheckMech(60)`, `TryFindChestForExtractinator`
+  (`:2586-2608`, the 8×8 unlocked-chest search), the in-use gate, then the LAST
+  non-air chest slot rolls through `ExtractinatorHelper.RollExtractinatorDrop`
+  (`extract.rs`, the mode map + the verbatim roll chain); a positive output
+  consumes one input and spawns the drop at the anchor centre
+  (`Item.NewItem(num*16, num2*16, 32, 32, …)`, prefix −1). The roll + drop ride
+  the wiring stream (the `HitWireSingle` `Main.rand` site, S1-L-6c) and reuse
+  the player-mode extractinator's `spawn_item_drop_px` seam (keep-one).
+
+Witnesses (written, not run — code-only): the light family's multi-cell flips +
+SkipWire sets (42/93/95/100/126/173/564/34/92/149/244/565), the 429 WireBulb's
+four colour bits, the b=0 neighbour rule (D1, a discriminating pipe-loop
+fixture), the residual arms' request emission + the app effects (the track
+swap/booster re-frame, the hopper pull + coin merge, the extractinator roll +
+the mode-−1 no-op). The b=0 rule and the i34 seams (`destroy_plate`,
+`wire_view`, `mine_released`) were already correct (S1-L-6 / S1-P-i34) — this
+slice pins the former and leaves the latter untouched.
+
 ## Falling blocks (M7-FALL-1)
 
 `tr-core/src/falling.rs` ports the trigger half of

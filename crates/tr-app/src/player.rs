@@ -997,6 +997,23 @@ pub struct Player {
     /// the lock across ticks and a fresh press re-arms it.
     pub actuation_rod_lock: bool,
     pub actuation_rod_lock_setting: bool,
+    /// `Player.wireOperationsCooldown` (`Player.cs:2868`): the Grand Design /
+    /// Multicolor Wrench mass-operation throttle. `ResetEffects` decrements
+    /// it (`:18798-18800`), `CanUseItem` refuses 3611/3625 while it stands
+    /// (`:52075-52078`), and the msg-110 pay bill clears it
+    /// (`MessageBuffer.cs:3805`). No setter assigns a positive value in
+    /// 1.4.5.8 (the only write is the clear) — the port keeps the field +
+    /// decrement + gates for the wire shape (W4-f11).
+    pub wire_operations_cooldown: i32,
+    /// `Player._quickGrappleCooldown` (`Player.cs:3102`): the gamepad
+    /// shared-key grapple throttle. `GamepadEnableGrappleCooldown` sets 3
+    /// (`:24157-24160` — the monolith/party-box use arms call it,
+    /// `:32275`/:32282); `Update` decrements while positive (`:24445-24448`,
+    /// the fullscreen-map arm re-arms instead). The `QuickGrapple`
+    /// shared-interact gate reads it (`:6304`) — that gate is unported
+    /// (the port's grapple fires on its own key), so the field + setter +
+    /// decrement keep the shape (W4-c42 final, the g78 use-arm request).
+    pub quick_grapple_cooldown: i32,
     /// `Player.InfoAccMechShowWires` (`Player.cs:2620`): the Mechanical Lens
     /// (3619) / Wire Kite (3611) show the wires without a mech tool held.
     /// Cleared in `ResetEffects` (`:18524`), re-granted by
@@ -2627,6 +2644,8 @@ impl Player {
             old_y: sy,
             actuation_rod_lock: false,
             actuation_rod_lock_setting: false,
+            wire_operations_cooldown: 0,
+            quick_grapple_cooldown: 0,
             info_acc_mech_show_wires: false,
             auto_actuator: false,
             // `Player.cs:814`'s all-zero field init + the reset's `[0] = 1`
@@ -9184,6 +9203,13 @@ impl Player {
             return crate::mount::DismountCheck::FailedNoSpace;
         }
         crate::mount::DismountCheck::Succeeded
+    }
+
+    /// `Player.GamepadEnableGrappleCooldown` (`Player.cs:24157-24160`):
+    /// `_quickGrappleCooldown = 3` — the monolith/party-box use arms and
+    /// the fullscreen-map tick call it (W4-c42 final, the g78 request).
+    pub fn gamepad_enable_grapple_cooldown(&mut self) {
+        self.quick_grapple_cooldown = 3;
     }
 
     /// `Mount.TryDismount` (`Mount.cs:6127-6140`) → `TryDismountWithResult`:

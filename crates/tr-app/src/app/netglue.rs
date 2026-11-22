@@ -641,6 +641,9 @@ impl App {
                 ); // `:1886`
                 // `:1887-1893` — the Dead Man's Chest trips its wiring.
                 if is_rigged(&self.world, cx, cy) {
+                    // The §8.1 stamp: the rigged trip can shift a wired
+                    // door family (the peers ride the boxes too).
+                    crate::world_sim::wiring::stamp_wiring_entity_boxes(self);
                     self.wiring.hit_switch(&mut self.world, cx, cy);
                     // S1-E-21i — the trip's Mech-28 click: the host's
                     // positioned gate refuses (netMode 2), draw-free.
@@ -648,6 +651,16 @@ impl App {
                         self.audio
                             .play_switch_click(px as f32, py as f32, self.rngs.global());
                     }
+                    // W4-c42 — the rigged chest's wired door cues (the bare
+                    // stream, the switch-click precedent).
+                    for (open, px, py) in self.wiring.take_door_cues() {
+                        self.audio
+                            .play_door_sound(open, px as f32, py as f32, self.rngs.global());
+                    }
+                    // The §8.2 echoes: the MP relay attaches with the g48b
+                    // `19` codec lane (contract note); drained so the
+                    // queue never lingers across messages.
+                    let _ = self.wiring.take_door_echoes();
                     server.broadcast_except(
                         &S2c::HitSwitch(net::HitSwitch {
                             x: cx as i16,
@@ -781,6 +794,9 @@ impl App {
             // `case 59` — a tripped switch: apply and relay to the others
             // (`MessageBuffer.cs:2682-2693`).
             C2s::HitSwitch(hs) => {
+                // The §8.1 stamp: the relayed trip can shift a wired door
+                // family (the peers ride the boxes too).
+                crate::world_sim::wiring::stamp_wiring_entity_boxes(self);
                 self.wiring
                     .hit_switch(&mut self.world, hs.x as i32, hs.y as i32); // `:2687`
                 // S1-E-21i — the click plays on the host's stream shape
@@ -790,6 +806,14 @@ impl App {
                     self.audio
                         .play_switch_click(px as f32, py as f32, self.rngs.global());
                 }
+                // W4-c42 — the trip's wired door cues (the bare stream, the
+                // switch-click precedent).
+                for (open, px, py) in self.wiring.take_door_cues() {
+                    self.audio
+                        .play_door_sound(open, px as f32, py as f32, self.rngs.global());
+                }
+                // The §8.2 echoes: the g48b codec-lane attach point.
+                let _ = self.wiring.take_door_echoes();
                 self.world_key = None;
                 server.broadcast_except(&S2c::HitSwitch(hs), id); // `:2691`
             }
@@ -1771,6 +1795,8 @@ impl App {
             // `case 59` — a peer tripped a switch: replay it locally
             // (`MessageBuffer.cs:2682-2693`).
             S2c::HitSwitch(hs) => {
+                // The §8.1 stamp: the replay can shift a wired door family.
+                crate::world_sim::wiring::stamp_wiring_entity_boxes(self);
                 self.wiring
                     .hit_switch(&mut self.world, hs.x as i32, hs.y as i32);
                 // S1-E-21i — the client's click replay: the message handler
@@ -1780,6 +1806,14 @@ impl App {
                     self.audio
                         .play_switch_click(px as f32, py as f32, self.rngs.global());
                 }
+                // W4-c42 — the replay's wired door cues (the bare stream).
+                for (open, px, py) in self.wiring.take_door_cues() {
+                    self.audio
+                        .play_door_sound(open, px as f32, py as f32, self.rngs.global());
+                }
+                // The §8.2 echoes: a client's `SendData` rides msg 19 to
+                // the host (the g48b attach point); drained either way.
+                let _ = self.wiring.take_door_echoes();
                 self.world_key = None;
             }
             // `case 80` — which chest a player has open

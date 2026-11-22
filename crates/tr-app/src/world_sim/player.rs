@@ -571,6 +571,19 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         if app.mine_released {
             p.actuation_rod_lock = false;
         }
+        // `Player.cs:18798-18800` (W4-f11, fold-133): the mass-wire operation
+        // cooldown ticks down beside the rod lock in `ResetEffects`.
+        if p.wire_operations_cooldown > 0 {
+            p.wire_operations_cooldown -= 1;
+        }
+        // `Player.cs:24439-24448` (W4-c42 final): the quick-grapple cooldown
+        // — the fullscreen-map arm RE-ARMS it every tick (`:24441-24443`),
+        // otherwise it decrements while positive (`:24445-24448`).
+        if map_open {
+            p.gamepad_enable_grapple_cooldown();
+        } else if p.quick_grapple_cooldown > 0 {
+            p.quick_grapple_cooldown -= 1;
+        }
         // `Player.ResetEffects`' journey block, re-run every tick: the godmode
         // flag (`:18789` clears, `:25493-25497` sets) and the far-placement
         // tile-range toggle (`:18815-18828`).
@@ -1117,6 +1130,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `Player.cs:28274-28275`: the switch-tile bridge — the player's
             // box reaching a pressure plate trips the wiring (the C#'s call
             // sits right after `FloorVisuals`, inside `Player.Update`).
+            // The §8.1 stamp (parts form — inside the player borrow): the
+            // trip can shift a wired trapdoor/gate.
+            app.wiring.set_entity_boxes(
+                crate::world_sim::wiring::collect_entity_boxes(
+                    Some(&*p),
+                    &app.npcs,
+                    &app.remote_players,
+                ),
+            );
             let switch = crate::collision::switch_tiles(
                 &mut app.wiring,
                 &mut app.world,
@@ -1153,9 +1175,28 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
+            // W4-c42 — the player-tripped wired door cues (same stream).
+            for (open, px, py) in app.wiring.take_door_cues() {
+                app.audio.play_door_sound(
+                    open,
+                    px as f32,
+                    py as f32,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // The §8.2 echoes: SP discards (the netMode-0 return).
+            let _ = app.wiring.take_door_echoes();
             // `PressurePlateHelper.UpdatePlayerPosition(this)`
             // (`Player.cs:28276`): the weighted pressure plates (428) the
-            // player stands on.
+            // player stands on. The §8.1 stamp (parts form): the poke can
+            // shift a wired trapdoor/gate on the plate's line.
+            app.wiring.set_entity_boxes(
+                crate::world_sim::wiring::collect_entity_boxes(
+                    Some(&*p),
+                    &app.npcs,
+                    &app.remote_players,
+                ),
+            );
             crate::world_sim::wiring::update_pressure_plates(
                 &mut app.wiring,
                 &mut app.world,
@@ -1177,6 +1218,18 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.rngs.stream(crate::app::RngKey::UpdatePressurePlates),
                 );
             }
+            // W4-c42 — the weighted plates' wired door cues (the
+            // UpdatePressurePlates stream, the click precedent).
+            for (open, px, py) in app.wiring.take_door_cues() {
+                app.audio.play_door_sound(
+                    open,
+                    px as f32,
+                    py as f32,
+                    app.rngs.stream(crate::app::RngKey::UpdatePressurePlates),
+                );
+            }
+            // The §8.2 echoes: SP discards (the netMode-0 return).
+            let _ = app.wiring.take_door_echoes();
             if run_eligible && p.vy == 0.0 {
                 run_pixels += (p.x - run_x0).abs();
             }
@@ -1320,6 +1373,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `Wiring.HitSwitch` at the magnet tile and announces it as `59`
             // (`Minecart.cs:1287`).
             if let Some((i, j)) = p.take_switch_trip() {
+                // The §8.1 stamp (parts form): the track trip can shift a
+                // wired trapdoor/gate on the magnet's line.
+                app.wiring.set_entity_boxes(
+                    crate::world_sim::wiring::collect_entity_boxes(
+                        Some(&*p),
+                        &app.npcs,
+                        &app.remote_players,
+                    ),
+                );
                 app.wiring.hit_switch(&mut app.world, i, j);
                 switch_sends.push((i, j));
                 // S1-E-21i — the track switch's Mech-28 click rides the
@@ -1332,6 +1394,17 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                         app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                     );
                 }
+                // W4-c42 — the track trip's wired door cues (same stream).
+                for (open, px, py) in app.wiring.take_door_cues() {
+                    app.audio.play_door_sound(
+                        open,
+                        px as f32,
+                        py as f32,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
+                }
+                // The §8.2 echoes: SP discards (the netMode-0 return).
+                let _ = app.wiring.take_door_echoes();
             }
             // The wheel-spark drain: the tick queued fully-rolled dust-213
             // particles (`Minecart.WheelSparks` → `DelegateMethods.Minecart.Sparks`)

@@ -44,9 +44,11 @@
 //!   `!bloodMoon`.
 //! - `player.insideUnbreakableWalls` (`flag26`, `:60002`) — no Player
 //!   field, false; the +6 bash bonus never fires.
-//! - `WorldGen.ShiftTallGate` (`:60074`) — unported; the gate-388 bash
-//!   still counts `ai[1] += 2` and plays the thud, the gate never shifts
-//!   and the refusal (`ai[3] = num57`) never fires for it.
+//! - `WorldGen.ShiftTallGate` (`:60074`) — NOW PORTED (W4-g4, re-pointed at
+//!   the c42 canonical `tr_core::edit::shift_tall_gate` per research/95
+//!   §3): the gate-388 bash shifts the gate to its open kind (389) in the
+//!   drain; a refusal sets `ai[3] = num57` (`:60077`). The bash still
+//!   counts `ai[1] += 2` and plays the thud.
 //! - The step-up's `gfxOffY`/`stepSpeed` writes land on the NPC fields,
 //!   but the render pass does not read `gfx_off_y` yet and the decay
 //!   (`npc_ai_unicorn_b.rs:285`'s helper) is unwired — the lift itself
@@ -321,8 +323,8 @@ pub(crate) fn fighter_obstacle_scan(npc: &mut Npc, world: &World) -> bool {
                 // KillTile arm names no zombie kind. The door (10) open
                 // rides `edit::open_door` in the drain; a refusal sets
                 // `ai[3] = num57` (`:60064`) there. The tall gate (388)
-                // `ShiftTallGate` is unported (module docs) — the bash
-                // still counted +2 above.
+                // `ShiftTallGate` rides `edit::shift_tall_gate` in the drain
+                // (W4-g4); a refusal sets `ai[3] = num57` (`:60077`).
             }
         } else {
             // `:60089-60203` — the probe jump ladder.

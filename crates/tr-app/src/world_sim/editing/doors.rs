@@ -216,7 +216,8 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
         edit::TileInteraction::HitSwitch { x, y } => {
             // `Player.cs:32174-32178`: the used tile is a lever (132), a
             // switch (136) or a timer (144) — `Wiring.HitSwitch` fires and
-            // the click is consumed.
+            // the click is consumed. The §8.1 stamp first.
+            crate::world_sim::wiring::stamp_wiring_entity_boxes(app);
             app.wiring.hit_switch(&mut app.world, *x, *y);
             // S1-E-21i — the Mech-28 click (`Wiring.cs:285`/`:310`/`:375`):
             // the pitch draw rides the `UpdatePlayers` stream — the tile
@@ -228,7 +229,39 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
+            // W4-c42 — the wired door cues ride the same UpdatePlayers
+            // stream (the C# plays inside the trip's WorldGen body).
+            for (open, px, py) in app.wiring.take_door_cues() {
+                app.audio.play_door_sound(
+                    open,
+                    px as f32,
+                    py as f32,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // The §8.2 echoes: SP discards (the netMode-0 return).
+            let _ = app.wiring.take_door_echoes();
             app.send_hit_switch(*x, *y); // `:32178`/`:32226`/`:32340`
+            app.world_key = None;
+            return true;
+        }
+        edit::TileInteraction::MonolithToggle { x, y } => {
+            // `Player.cs:32271-32277` (W4-c42 final — the g78 research/76
+            // contested-seam request): `flag2 = true` + `PlaySound(28,
+            // myX*16, myY*16, 0)` + `GamepadEnableGrappleCooldown()` +
+            // `WorldGen.SwitchMonolith(myX, myY)`. The Mech-28 pitch draw
+            // rides the UpdatePlayers stream (the tile-use precedent);
+            // the flip runs the kept wired body with `running == false`
+            // (the use path's SkipWire tail is inert).
+            app.audio.play_switch_click(
+                *x as f32 * TILE_PX,
+                *y as f32 * TILE_PX,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+            if let Some(p) = app.player.as_mut() {
+                p.gamepad_enable_grapple_cooldown(); // `:32275`
+            }
+            app.wiring.use_switch_monolith(&mut app.world, *x, *y);
             app.world_key = None;
             return true;
         }
@@ -428,6 +461,9 @@ fn interaction_events(
         // The switch trip is consumed in `interact_tile` ahead of this
         // mapping — no cue, no drops.
         edit::TileInteraction::HitSwitch { .. } => (None, Vec::new()),
+        // The monolith toggle is consumed in `interact_tile` ahead of this
+        // mapping (its Mech-28 plays there) — no cue, no drops.
+        edit::TileInteraction::MonolithToggle { .. } => (None, Vec::new()),
         edit::TileInteraction::ChairSit { .. } => (None, Vec::new()),
         edit::TileInteraction::BedInteract { .. } => (None, Vec::new()),
         edit::TileInteraction::BedSleep { .. } => (None, Vec::new()),
@@ -1094,5 +1130,58 @@ mod tests {
                 .all(|n| n.kind != NpcKind::Golem || n.hp == 0),
             "the hardmode gate refuses"
         );
+    }
+
+    /// W4-c42 FINAL (the g78 research/76 contested-seam request): the
+    /// Echo Monolith 657's RIGHT-CLICK use arm (`Player.cs:32271-32277`) —
+    /// `PlaySound(28)` + `GamepadEnableGrappleCooldown` (3 ticks) +
+    /// `SwitchMonolith`: the 2×3 body flips frameY ±54 (the e21 nine-kind
+    /// gate's kept body), the click is consumed, the frames toggle back on
+    /// the second use. The SceneMetrics lit-row gate (frameY ≥ 54) is the
+    /// g78 consumer — this pins the flip that feeds it. WRITTEN NOT RUN.
+    #[test]
+    fn c42_the_monolith_right_click_flips_the_body_and_arms_the_grapple_cooldown() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 64, 64);
+        // The unlit 2×3 Echo Monolith body at columns 10/11, rows 18-20
+        // (the g78 placement witness's grid: frameX 0/18, frameY 0/18/36).
+        for row in 0..3i32 {
+            for col in 0..2i32 {
+                let i = w.index(10 + col, 18 + row);
+                w.tiles[i] = Tile {
+                    kind: 657,
+                    frame_x: (col * 18) as i16,
+                    frame_y: (row * 18) as i16,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        app.world = w;
+        app.player = Some(Player::spawn(&app.world));
+        // A non-anchor cell click (the C# decodes the anchor from frames).
+        assert!(interact_tile(&mut app, 11, 19), "the click is consumed");
+        for row in 0..3i32 {
+            for col in 0..2i32 {
+                assert_eq!(
+                    app.world.tile(10 + col, 18 + row).unwrap().frame_y,
+                    (row * 18 + 54) as i16,
+                    "the lit row (the SceneMetrics frameY>=54 gate feeds)"
+                );
+            }
+        }
+        assert_eq!(
+            app.player.as_ref().unwrap().quick_grapple_cooldown,
+            3,
+            "GamepadEnableGrappleCooldown armed 3"
+        );
+        // The second use flips back (frameY >= 54 → −54).
+        assert!(interact_tile(&mut app, 10, 18));
+        for row in 0..3i32 {
+            assert_eq!(app.world.tile(10, 18 + row).unwrap().frame_y, (row * 18) as i16);
+        }
+        // No wiring flood ran: the skip set is untouched (the use path's
+        // `Wiring.running` tail is inert, `WorldGen.cs:51137`).
+        assert!(app.wiring.take_door_cues().is_empty());
     }
 }
