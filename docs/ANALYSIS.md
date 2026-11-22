@@ -46722,7 +46722,7 @@ order. The e8/f9 tile/ambient co-lanes were probed BEFORE work
   is pushed yet.
 * W4-e8 worktree: in-flight untracked `crates/tr-app/src/tile_lights.rs`
   (445 lines) porting ALL FIVE Main.cs sites
-  (`christmas_hook_chain_lights` / `illuminant_hook_chain_lights`) plus
+  (`christmas_hook_chain_lights` / `illuminant_hook_chain_lights`) plus the
   the TileDrawing mushroom flicker and the five
   `DelegateMethods.CastLight*`/`SpreadLight` delegates.
 * W4-g19 worktree: in-flight untracked
@@ -46931,3 +46931,72 @@ per §9 UNIFIED FINAL row 366 (chain 304→338→341→344→360→366; the seal
 360 pick followed §8.7 + a fresh 362-tip sweep, §9 superseded it). **No cargo/rustc/rustfmt/tests/dotnet/
 graphify invoked.** The 6 family-census witnesses + g18's 5 oracle tests
 are WRITTEN, NOT RUN.
+
+## The Main.cs AddLight census freeze (W4-g19, Main batch 2, 2026-11-20, code-only)
+**Verdict: batch 2's unclaimed port remainder is EMPTY; the round lands the
+census's missing WITNESS half.** W4-g19 (`task/W4-g19-addlight-main-2`, the
+second Main.cs batch after g18) probed in-flight first, per dispatch:
+* Full-file census re-derived independently (not trusted from the sibling):
+  `decompiled/Terraria/Main.cs` (65 265 lines) carries **exactly five**
+  `Lighting.AddLight` call sites — `:29016/29020/29024/29028` (the `DrawProj`
+  type-332 Christmas-hook chain's four rotating colour rows) and `:29186`
+  (the type-488 Illuminant-hook chain's per-stepped-link light). The
+  case-insensitive `AddLight` token count equals the site count (5); the
+  negative census is zero for `PlotTileLine`, `CastLight`, `SpreadLight`,
+  `_activeEngine`, `perFrameLights`, `DynamicLight`, `LightingEngine` —
+  Main.cs has NO ambient/update-side light writes (tile ambience is
+  scanner-seeded, `tr-core/tile_light`) and no engine-internal feeds.
+* Claim map: **W4-e8**'s in-flight untracked `crates/tr-app/src/tile_lights.rs`
+  (18 138 bytes, read as-is) ports ALL FIVE verbatim
+  TileDrawing mushroom flicker and the five `CastLight*`/`SpreadLight`
+  delegates — its header claims the exact lines. **W4-f9** pushed
+  `c2740784` (docs-only): the same census + a distrust-verbatim audit of
+  e8's two chain functions (both faithful). **W4-g18 / W4-c20**: worktrees
+  clean at `a725acb0`, nothing pushed, no in-flight files. Porting any
+  Main.cs site here would duplicate e8's claimed copy — the AGENTS
+  no-duplicate rule wins over the batch label.
+* **Deliverable (the unclaimed half): `crates/tr-app/tests/main_addlight_census.rs`**
+  — an always-on `cargo test` freeze of the census, the
+  `doc_claims.rs`/`main_anchors.rs` precedent (a one-shot grep census is not
+  a regression gate; f9's round left no executable witness). Five tests:
+  1. `the_main_cs_addlight_census_is_exactly_five_sites` — the five sites'
+     1-based line numbers AND verbatim trimmed argument text pinned as a
+     tuple vector; the whole-file `AddLight` token count pinned at 5 (a
+     sixth form, even in a comment, trips it).
+  2. `main_cs_has_no_other_light_write_forms` — the seven negative-census
+     tokens pinned at 0 occurrences.
+  3. `the_christmas_hook_arm_structure_is_pinned` — the 332 arm gate
+     (`:28991`), the `< 30f`/NaN exits (`:29002/:29007`), the
+     truncate-then-divide anchor (`:29012-29013`, NOT the quotient form),
+     the four colour-row gates (`:29014/29018/29022/29026`), the
+     `16f / num115` step (`:29030`) and the wrap-after-3
+     (`:29040/:29042`) — the pre-step light order is pinned by the line
+     numbers themselves (anchor < colours < step).
+  4. `the_illuminant_hook_arm_structure_is_pinned` — the shared chain gate
+     (`:29046`), `Chains[type - 486]` = `Chains[2]` (`:29071/:29073`),
+     `num116 = value11.Height` (`:29088`), the num117 switch listing
+     383/446/489/487 only (`:29099-29108`, 488 absent), the
+     `Length() < num116 + 1f` exit BEFORE the step (`:29146` vs `:29173`),
+     the 488 light gate (`:29184`).
+  5. `the_lighting_cs_funnel_and_gate_are_pinned` — `Lighting.cs:140-143`
+     the Vector2 quotient overload `(int)(position.X / 16f)`, `:154` the
+     torch overload's THIRD anchor shape `(int)position.X / 16`, and
+     `:157-163` the int funnel behind `!Main.gamePaused && Main.netMode != 2`.
+  The tests read the gitignored `decompiled/` junction at test time and
+  HARD-FAIL when it is absent (the S1-L-12d localization precedent,
+  `tr-core/localization/mod.rs:573-607` — a silent skip once let a
+  zero-coverage suite pass green). This also protects e8's port: its
+  citation lines are now frozen, so a decomp refresh that moves them
+  fails the suite instead of silently invalidating the port.
+Code-only: **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked**; the 5
+witnesses are WRITTEN NOT RUN. Mechanical check performed instead: all 33
+pinned line strings (27 Main.cs + 6 Lighting.cs) diffed case-sensitively
+against the decompilation via PowerShell — **0 mismatches**; the `:29046`
+contains-check True; token counts re-counted by regex (AddLight 5, all
+seven negative tokens 0). The two chain walks' arithmetic was hand-replayed
+by W4-f9's audit (9 links / 6 links) and e8's own written-not-run witnesses
+cover the behaviour; this freeze covers the SOURCE side so the two halves
+meet at the merge. Merger note: keep e8's `tile_lights.rs` as the single
+port copy; this test file is disjoint (new `tests/` file, no src edits).
+One `anchors.txt` row protects the freeze itself from a lossy merge (the
+canary's purpose); the ROADMAP S1-E-5 row carries the census-freeze note.
