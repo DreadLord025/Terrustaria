@@ -4725,6 +4725,41 @@ pub fn can_run_whip_hit_effects(minion: bool, sentry: bool, kind: u16) -> bool {
     minion || sentry || MINION_SHOT.contains(&kind) || SENTRY_SHOT.contains(&kind)
 }
 
+/// `Main.projHostile` (`Main.cs:6612-6619`): the init loop stamps every kind
+/// whose `SetDefaults(i).hostile` is true (`Projectile.cs:697-10673`, the
+/// `hostile = false` reset `:764`). The loop runs in
+/// `Initialize_AlmostEverything` BEFORE any world load, with the seed flags
+/// still false (`Main.cs:66532-66536`'s static-ctor defaults), so the
+/// seed-gated writes — 12's `Main.remixWorld` (`Projectile.cs:929-932`), 43 /
+/// 201-205 / 527-531's `Main.getGoodWorld` (`:1265-1269`, `:2879-2936`,
+/// `:5978-5982`) — never land in the table. The 173 kinds below are the
+/// unconditional `this.hostile = true` arms, verbatim (S1-I-1 W4-d93: the
+/// `27` host read gate, `MessageBuffer.cs:1725-1728`).
+pub const PROJ_HOSTILE: &[u16] = &[
+    31, 38, 39, 40, 44, 55, 56, 67, 71, 75, 81, 82,
+    83, 84, 96, 98, 99, 100, 101, 102, 108, 109, 110, 115,
+    128, 129, 164, 174, 176, 177, 179, 180, 184, 185, 186, 188,
+    240, 241, 257, 258, 259, 264, 270, 275, 276, 277, 288, 290,
+    291, 292, 293, 299, 300, 302, 303, 325, 326, 327, 328, 329,
+    345, 346, 347, 348, 349, 350, 351, 352, 384, 385, 386, 435,
+    436, 437, 438, 447, 448, 449, 450, 452, 454, 455, 456, 462,
+    464, 465, 466, 467, 468, 471, 472, 490, 498, 501, 508, 537,
+    538, 539, 540, 572, 573, 574, 575, 576, 577, 578, 579, 580,
+    581, 592, 593, 596, 605, 629, 654, 655, 657, 658, 662, 670,
+    671, 672, 673, 674, 675, 676, 681, 682, 683, 685, 686, 687,
+    713, 719, 727, 763, 811, 812, 813, 814, 836, 871, 872, 873,
+    874, 909, 919, 920, 921, 922, 923, 926, 961, 962, 965, 980,
+    1001, 1002, 1005, 1007, 1013, 1014, 1021, 1048, 1049, 1053, 1054, 1055,
+    1057, 1073, 1078, 1091, 1092,
+];
+
+/// `Main.projHostile[type]` — the `27` host gate's hostile-kind test
+/// (`MessageBuffer.cs:1725`). An unlisted kind reads false, exactly like the
+/// C# array's untouched entries.
+pub fn proj_hostile(kind: u16) -> bool {
+    PROJ_HOSTILE.contains(&kind)
+}
+
 /// `ItemID.Sets.SummonerWeaponThatScalesWithAttackSpeed` (`ID/ItemID.cs:497`):
 /// the 18 whip items — `ApplyItemAnimation` (`Player.cs:4474-4476`) scales
 /// their swing by `summonerWeaponSpeedBonus * whipUseTimeMultiplier`.
@@ -4949,6 +4984,45 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// S1-I-1 W4-d93: the `Main.projHostile` census pin — the 173 kinds are
+    /// the unconditional `this.hostile = true` arms of `SetDefaults`
+    /// (`Projectile.cs:697-10673`) plus the 326..328 range arm (`:4193-4212`);
+    /// the seed-gated writes (12 remix `:929-932`, 43 / 201-205 / 527-531
+    /// getGoodWorld `:1265-1269`, `:2872-2936`, `:5978-5982`) never land in
+    /// the table because the init loop (`Main.cs:6612-6619`) runs before any
+    /// world load with the seed flags false (`Main.cs:66531-66536`).
+    #[test]
+    fn the_proj_hostile_table_matches_the_set_defaults_census() {
+        assert_eq!(PROJ_HOSTILE.len(), 173);
+        let mut sorted = PROJ_HOSTILE.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), 173, "no duplicate kinds");
+        assert_eq!(sorted, PROJ_HOSTILE, "the table is ascending");
+        // The seed-gated kinds read false — the table's whole point.
+        for k in [12, 43, 201, 202, 203, 204, 205, 527, 528, 529, 530, 531] {
+            assert!(
+                !proj_hostile(k),
+                "seed-gated kind {k} is not hostile at init"
+            );
+        }
+        // The range arm's three kinds all land (`:4193` covers 326..=328).
+        for k in [326, 327, 328] {
+            assert!(proj_hostile(k), "range-arm kind {k}");
+        }
+        // The multi-kind arms: the boulder trap family (`:1833`) and the
+        // cannonball pair (`:7925`).
+        for k in [99, 727, 1013, 1014, 1053, 1054, 1055, 1057, 811, 814] {
+            assert!(proj_hostile(k), "multi-kind arm {k}");
+        }
+        // Friendly staples read false (the `hostile = false` reset `:764`).
+        for k in [0, 1, 2, 14, 602, 651, 1006] {
+            assert!(!proj_hostile(k), "friendly kind {k}");
+        }
+        // An out-of-range kind reads false, like the untouched array tail.
+        assert!(!proj_hostile(u16::MAX));
+    }
 
     #[test]
     fn w4_g35_the_glow_mask_slice_matches_the_set_defaults_census() {
