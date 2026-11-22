@@ -366,6 +366,13 @@ pub(crate) struct GenVars {
     /// main item — the cycle with the `> 3 → Next(4)` re-roll. S1-A-4:
     /// drawn at the island-house site, once per house.
     pub(crate) sky_island_house_count: u32,
+    /// `GenVars.shimmerPosition` (`GenVars.cs:282`) — the Shimmer pass's
+    /// pool anchor (`WorldGen.cs:15241`), reset to `Vector2D.Zero`
+    /// (`:7039`). The W4-f25 `Settle Liquids` pass reads it through
+    /// `ShimmerRemoveWater`; d102's Shimmer step writes it (the same field
+    /// name — the merge reconciles). `None` until then: the C# zero reset
+    /// puts the circle off-world, a classic no-op.
+    pub(crate) shimmer_position: Option<(i32, i32)>,
 }
 
 impl Default for GenVars {
@@ -426,6 +433,10 @@ impl Default for GenVars {
             // computes both in `run`'s Reset stand-in.
             crimson_left: false,
             flip_infections: false,
+            // `GenVars.shimmerPosition` resets to `Vector2D.Zero`
+            // (`WorldGen.cs:7039`) — `None` until d102's Shimmer step writes
+            // the pool anchor (W4-f25's Settle Liquids reads it).
+            shimmer_position: None,
         }
     }
 }
@@ -1362,6 +1373,13 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         "Floating Islands",
         step_floating_islands
     ),
+    // The vanilla Settle Liquids slot (`WorldGen.cs:16132`): after Jungle
+    // Chests (`:15977`), before Remove Water From Sand (`:16211`). The port's
+    // chain groups the later carve/decor family between them, so the step
+    // sits immediately before `remove water` — every liquid-producing pass
+    // (Lakes, the ocean family, the jungle/shrine water) has already applied.
+    // W4-f25's orphan adoption (12g): the first real liquid-simulation pass.
+    step!("settle liquids", "Settle Liquids", step_settle_liquids),
     // The vanilla Remove Water From Sand / Shell Piles slots
     // (`WorldGen.cs:16211`, `:16266`): after the carve family, before Smooth
     // World (`:16419`) — the M5-OCEAN phase-4 insertion.
@@ -2618,6 +2636,21 @@ fn step_surface_flora(
     surface::plant_surface_flora(world, &mut streams.rng, width, heights);
 }
 
+fn step_settle_liquids(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // `Settle Liquids` (`WorldGen.cs:16132-16210`) — no RNG of its own. The
+    // remix flag rides the seed options (the `SettleWaterAt` lava-retype arm
+    // and the `LavaCheck` desert-strip gate); a classic world passes false.
+    let remix = opts.flags.contains(crate::seeds::SeedFlags::REMIX);
+    settle_liquids::settle_liquids(world, gv, remix);
+}
+
 fn step_remove_water(
     world: &mut World,
     gv: &mut GenVars,
@@ -2790,6 +2823,11 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[82] = true;
     world.frame_important[83] = true;
     world.frame_important[84] = true;
+    // The loose moss 184 (`Main.cs:7414`) — W4-f25 C8 wiring: the growth
+    // moss arm (`growth/grass.rs::grow_moss_arm`) and d105's Moss Grass pass
+    // write its frames; the framer must keep them and the kill cascade must
+    // reach `TileFrameImportant`'s case-184 colour pick (`WorldGen.cs:85149`).
+    world.frame_important[184] = true;
     world.frame_important[185] = true;
     world.frame_important[186] = true;
     world.frame_important[187] = true;
@@ -3140,7 +3178,9 @@ mod tests {
         // `WorldGen.cs:21066`) between `sword shrines` and `mahogany trees`.
         // S1-K-2 wave C: + `thin ice` (vanilla "Micro Biomes",
         // `WorldGen.cs:20941`) before `campsites`.
-        assert_eq!(names.len(), 66);
+        // W4-f25: + `settle liquids` (vanilla "Settle Liquids",
+        // `WorldGen.cs:16132`) immediately before `remove water`.
+        assert_eq!(names.len(), 67);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3227,6 +3267,7 @@ mod tests {
                 "vines",
                 "muds walls in jungle",
                 "floating islands",
+                "settle liquids",
                 "remove water",
                 "shell piles",
                 "slopes",

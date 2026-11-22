@@ -65,6 +65,10 @@ pub use grass::{
     spread_desert_walls, spread_grass, spread_grass_walls, update_world_grass_growth,
 };
 pub(crate) use grass::convert_wall_by_case;
+// W4-f25 C4: the type-7 spray cell's `:55465` union pre-gate seams.
+pub(crate) use grass::{conversion_hardened_sand_walls_contains, conversion_snow_walls_contains};
+// W4-f25 closeout: the Convert 16/18 wall-union seams (the dungeon-biome cells).
+pub(crate) use grass::{conversion_dirt_walls_contains, conversion_new_wall_set};
 use grass::{grow_moss_arm, SPREAD_UNDERGROUND};
 
 // S1-K-3: the decorations family lives in `growth/decorations.rs`; the public

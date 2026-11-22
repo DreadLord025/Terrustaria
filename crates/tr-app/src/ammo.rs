@@ -2187,6 +2187,37 @@ mod tests {
         assert_eq!(s.damage, 0, "the solution's `damage -1` → no damage add");
     }
 
+    /// W4-f25 closeout (solutions census): ALL EIGHT solution items resolve
+    /// through the additive arm — the five classic solutions' `shoot` 0-4
+    /// (`Item.cs:10517-10561`) and the three 1.4.4 solutions'
+    /// `DefaultToSolution` `projectileId - 145` offsets 870/871/872
+    /// (`Item.cs:42772-42780` + `:47799-47808`). Both Clentaminators (779
+    /// `shootSpeed 7` / 5134 `shootSpeed 11`, `Item.cs:10501-10516` /
+    /// `:41174-41189`) carry `shoot 145` + `useAmmo Solution`, so every
+    /// pair lands on the 145-149/1015-1017 spray kinds the closeout rowed.
+    /// WRITTEN NOT RUN (code-only round).
+    #[test]
+    fn w4_f25_closeout_all_eight_solutions_resolve_on_both_clentaminators() {
+        let f = AmmoFlags::default();
+        for &(ammo, proj) in &[
+            (780u16, 145u16), // Green
+            (781, 146),       // Blue
+            (782, 147),       // Purple
+            (783, 148),       // Dark Blue
+            (784, 149),       // Red
+            (5392, 1015),     // Sand  (145 + 870)
+            (5393, 1016),     // Snow  (145 + 871)
+            (5394, 1017),     // Dirt  (145 + 872)
+        ] {
+            let s = shot(779, 780, ammo, 145, 7.0, &f).expect("the 779 picks the solution");
+            assert_eq!(s.projectile, proj, "779 + {ammo}");
+            assert_eq!(s.speed, 7.0, "7 + the solution's shootSpeed 0");
+            let s = shot(5134, 780, ammo, 145, 11.0, &f).expect("the 5134 picks the solution");
+            assert_eq!(s.projectile, proj, "5134 + {ammo}");
+            assert_eq!(s.speed, 11.0, "11 + the solution's shootSpeed 0");
+        }
+    }
+
     #[test]
     fn test_DW_1_2_the_pair_table_beats_the_additive_arm() {
         // The C# order trap: a table hit EXCLUDES the additive and the

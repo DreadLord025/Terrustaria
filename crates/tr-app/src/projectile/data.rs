@@ -3308,6 +3308,36 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // ammo and then decline the spawn.
             85 => (6.0, 6.0, 193, 4, TIME_LEFT_DEFAULT, 2, true, false, false, RESET_STATE),
             145 => (6.0, 6.0, 31, -1, TIME_LEFT_DEFAULT, 2, false, false, false, RESET_STATE),
+            // W4-f25 closeout (solutions census): the four solution sprays
+            // 146-149 (`Projectile.cs:2350-2397` — line-identical copies of
+            // the 145 arm: 6x6, aiStyle 31, pen -1, extraUpdates 2,
+            // tileCollide false, `alpha`/`ignoreWater` dropped) and the
+            // three 1.4.4 sprays 1015-1017 (`:9633-9636` →
+            // `DefaultToSpray` `:10691-10702`, the same stats). Without
+            // these rows the Clentaminator's ammo resolution (`ammo.rs`'s
+            // additive Solution arm, 145 + the solution's own shoot) drains
+            // the ammo and then declines the spawn. The ai_spray per-kind
+            // dispatch (the W4-f25 C3/C4 wiring) converts 146 → type 2 and
+            // 1015/1016/1017 → types 5/6/7; 147/148/149 stay no-ops until
+            // d1's type-1/4 / g42's type-3 cells land.
+            //
+            // W4-f25e CONVERT-RETIRE verdict (keep-d18c, 12g "the dup
+            // verdicts"): d18's 78ffe8e11 rowed the SAME seven kinds with
+            // the FULL state group — alpha 255 + ignoreWater true
+            // (`:2356`/`:2360`/`:2368`/`:2372`/`:2380`/`:2384`/`:2392`/
+            // `:2396`, `DefaultToSpray` `:10697`/`:10701`) — the verbatim
+            // superset of this RESET_STATE copy (which inherits the 145
+            // row's dropped-alpha/ignoreWater M3-ITEM-6 deviation). The
+            // merger KEEPS d18's row + ignoreWater overlay and DROPS this
+            // block; f25's row/dispatch/ammo witnesses all pass on d18's
+            // rows (they assert no alpha), d18's row witness (alpha 255 /
+            // ignoreWater) FAILS on this copy — keep-one is forced. The
+            // rows STAY on this branch until the merge: the armed
+            // ai_spray dispatch + its witnesses need rowed kinds (the
+            // d18-978 merge-order precedent, f53de9c71).
+            146..=149 | 1015..=1017 => {
+                (6.0, 6.0, 31, -1, TIME_LEFT_DEFAULT, 2, false, false, false, RESET_STATE)
+            }
             1088 => (20.0, 20.0, 16, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // The Fairy Queen's shot 932 (`:8842-8856`): 10x10, aiStyle 181,
             // arrow, `penetrate = 5`, `timeLeft = 120`, `alpha = 0` and

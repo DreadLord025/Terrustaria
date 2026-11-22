@@ -238,6 +238,16 @@ mod tests {
     // S1-P-i33 (code-only): the wall-framing mask fix (see DEFAULT_WORLD
     // below) moves this pin too — glass & co. beside a wall change the
     // generated `wall_frame`. Stale-by-design; the gate re-pins it.
+    // W4-f25 (2026-11-20, code-only): the `Settle Liquids` pass
+    // (`WorldGen.cs:16132-16210`, `settle_liquids.rs::settle_liquids`) lands
+    // immediately before `remove water` — the first real liquid-simulation
+    // pass. On a 512-wide world the Lakes/ocean water now drops, fans and
+    // levels through `QuickWater`/`SettleWaterAt` + the 10-round quickSettle
+    // loop, and the water-line lava retype fires below `GenVars.waterLine`,
+    // so the liquid fields move BY DESIGN. The pass draws NO RNG (the
+    // kill_tile drops ride deterministic position seeds), so every other
+    // step's stream is untouched. The re-pin is DEFERRED to the merge gate
+    // (no compiler on this branch); the a == b determinism assert stays.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -281,6 +291,41 @@ mod tests {
     // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
+    // W4-f25 (code-only): the `Settle Liquids` pass (see SEED42_512 above)
+    // settles the default world's lakes/ocean water and retypes the
+    // below-water-line falls to lava, so this pin moves BY DESIGN too —
+    // deferred to the gate with the SEED42_512 note. No RNG draw added.
+    // W4-f25 helper round (2026-11-21, code-only): the missing-WorldGen-helper
+    // ports (`spread::tile_is_exposed_to_air` etc., the `12g-f25-worldgen-
+    // helpers.md` ledger C1-C8) are UNWIRED — no executed step calls them,
+    // so BOTH pins are untouched by that round (the g39 H1-H15 precedent).
+    // The CLOSEOUT's ConvertSkyIslands is gen-time but anniversary-only (see
+    // the DEFAULT_WORLD note) — this pin is untouched by it too.
+    // W4-f25 WIRING phase (code-only): the C3/C4 spray cells land at the
+    // Clentaminator/holy-water/SpreadGrass consumers, the C7 tree conversion
+    // at `try_kill_invalid_tree_above`, the C8 moss colour pick at
+    // `edit/kill.rs::check_long_moss` — all RUNTIME seams (no executed
+    // worldgen step calls them), so both pins stay unchanged. The 184 boot
+    // static is a `frame_important` flag, not a hashed tile field. C5 stays
+    // unwired (d103 P8 owns the hardUpdateWorld chlorophyte arms).
+    // W4-f25 CLOSEOUT (2026-11-21, code-only): ConvertSkyIslands lands at the
+    // FinishTenthAnniversaryWorld call (`finish_seeds.rs::convert_sky_islands`)
+    // — a GEN-TIME seam, but the anniversary pass only runs on the
+    // tenthAnniversary seed; neither pinned world (SEED42_512 / DEFAULT_WORLD)
+    // sets it, so both pins stay unchanged. The solution-spray rows
+    // (146-149/1015-1017) and the Convert 15/16/18/19 dungeon-biome cells are
+    // runtime / unwired respectively — no executed classic step calls them.
+    // W4-f25 g46 LIQUID-UNION (2026-11-21, code-only): the SettleWaterAt
+    // dungeon re-type now reads the ORIGIN cell's wall (Liquid.cs:152/:188 —
+    // the pre-fix copy read the landing cell's, a real deviation research/70
+    // step 6 flagged). This moves the gen output wherever an origin/landing
+    // wall pair differs inside the potential bounds — BOTH pins are already
+    // stale-by-design from the Settle Liquids landing; the RE-DERIVE at the
+    // g46-union gate covers this fix too (the union's real DelWater drain +
+    // swap-remove buffer move them further). The gen-side edit_kills drain
+    // choice is DISCARD (no worldgen loot side channel, the C# gen-time
+    // noItem gate :63546-63549) — recorded in 12g per 70's witness table.
+    // The f25e/g42e seal rounds are comment/witness-only — no pin effect.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

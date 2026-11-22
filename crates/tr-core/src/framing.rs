@@ -1313,6 +1313,30 @@ pub fn reframe_area(world: &mut World, cx: i32, cy: i32, radius: i32, reset: boo
     }
 }
 
+/// `WorldGen.GetTileMossColor(tileType)` (`WorldGen.cs:81215-81255`, W4-f25
+/// helper C8): the moss tile / moss-brick pairs map to their colour index
+/// 0-10 (the loose-moss 184 frame column = `22 * colour`, `TileFrame` case
+/// 184 `:85176-85202`); every other kind reads -1 (`None`). WIRED: the
+/// case-184 arm lives in `edit/kill.rs::check_long_moss` (the port's
+/// `TileFrameImportant` dispatch), which calls this for the four-neighbour
+/// colour pick.
+pub fn get_tile_moss_color(tile_type: u16) -> Option<i32> {
+    Some(match tile_type {
+        179 | 512 => 0,
+        180 | 513 => 1,
+        181 | 514 => 2,
+        182 | 515 => 3,
+        183 | 516 => 4,
+        381 | 517 => 5,
+        534 | 535 => 6,
+        536 | 537 => 7,
+        539 | 540 => 8,
+        625 | 626 => 9,
+        627 | 628 => 10,
+        _ => return None,
+    })
+}
+
 /// Port of `Framing.WallFrame`: picks the 36 px cell for every wall.
 #[allow(clippy::needless_range_loop)] // `x` also indexes the world, not just `row`
 pub fn frame_walls(world: &mut World) -> usize {
@@ -1812,5 +1836,34 @@ mod tests {
             "snow-facing edge framed as isolated: {:?}",
             (t.frame_x, t.frame_y)
         );
+    }
+
+    // W4-f25 helper C8 — GetTileMossColor (`WorldGen.cs:81215-81255`).
+    // WRITTEN NOT RUN (code-only round).
+
+    #[test]
+    fn w4_f25_c8_the_moss_colour_pairs() {
+        // The eleven tile/brick pairs, colour 0-10 in source order.
+        let pairs = [
+            (179u16, 512u16, 0i32),
+            (180, 513, 1),
+            (181, 514, 2),
+            (182, 515, 3),
+            (183, 516, 4),
+            (381, 517, 5),
+            (534, 535, 6),
+            (536, 537, 7),
+            (539, 540, 8),
+            (625, 626, 9),
+            (627, 628, 10),
+        ];
+        for (tile, brick, colour) in pairs {
+            assert_eq!(get_tile_moss_color(tile), Some(colour), "tile {tile}");
+            assert_eq!(get_tile_moss_color(brick), Some(colour), "brick {brick}");
+        }
+        // The default arm: every other kind reads -1.
+        for kind in [0u16, 1, 2, 184, 511, 518, 538, 541, 624, 629] {
+            assert_eq!(get_tile_moss_color(kind), None, "kind {kind}");
+        }
     }
 }

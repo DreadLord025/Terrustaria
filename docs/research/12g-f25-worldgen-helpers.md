@@ -1,0 +1,663 @@
+# 12g (helpers) — W4-f25: the WorldGen helper census, round 2 — **SEALED**
+
+> Wave 4 · lane `task/W4-f25-worldgen-passes-8` @ 0ed1f3cf (Settle Liquids landed)
+> · claimed 2026-11-21 · **CLOSED 2026-11-21 @ 9fc704a15 + the final-ledger
+> commit d587b128d** · **SEALED 2026-11-21** (the f25e convert-retire +
+> g42e growth-seal park + g46 liquid-union contract rounds appended below;
+> no census/arm/row/wiring work owed on this lane). The pass ledger lives
+> in `12g-f25-settle-liquids.md`;
+> with the classic-pass census exhausted this lane takes the **missing
+> WorldGen.cs helper functions**, the g39 H1-H15 precedent (its `12j` doc).
+> Code-only mode: C# read in ≤100-line windows, ONE helper per commit+push,
+> witnesses written NOT run, helpers UNWIRED (no executed step calls them —
+> both world-hash pins unchanged, `a == b` halves untouched).
+
+## In-flight probe (pushed siblings re-read at claim time)
+
+- **g39** `12j` (bab25558 tip): H1-H15 landed — the Place-wrapper family
+  (Place1x1/1x2/2x1/2x2/3x1/3x2/3x3/3x4/5x4/4x2/6x3, wall paintings,
+  PlaceOnTable1x1/PlaceLogicTiles, Place1xX/2xX, PlaceMan/Woman, the five
+  SolidTile placement-floor variants). Its census also pins:
+  **`ConvertGrassToDirt` does not exist in this decompilation (1.4.5.8)** —
+  re-verified here (`Select-String WorldGen.cs ConvertGrassToDirt` = 0 hits);
+  the grass→dirt conversion rides `Convert`/`Convert_ActuallyConvertTile`.
+- **d1** `task/W4-d1-proj-ai-1-10` (660e111f + 78dc5272): the aiStyle-6
+  powder arm + **Convert types 1/4/11** (`spread::convert_sized` /
+  `convert_powder_cell`, the type-11 wall no-op gates, the torch style set).
+  NOT on this branch — the types below are the COMPLEMENT, no overlap.
+- **g42** (e2707f2d): **Convert type 3** as `spread::convert_cell_mushroom`
+  + DoSurfaceIsMushrooms — claimed there, excluded here.
+- **g37/d103/d106** (df468d00 / 463cab95 / ee0fcbef): `Spread.Wall` /
+  `Spread.Wall2` as pass-local `spread_wall`/`spread_wall2` copies + the
+  generation-time `SpreadGrass(0, 2)` slices — claimed, excluded.
+- **g41**: `SpiderWallRemover` (:77279) + the egg-sac/stalactite arms —
+  claimed, excluded. **g38/d104**: `PlaceTile(488)` slice — excluded.
+- **c32**: dungeon style TABLES only (3d0f3c19) — the biome-dungeon room
+  bodies (`BiomeDungeonRoom.cs` etc., the `TileIsExposedToAir` /
+  `BlockBelowMakesSandConvertIntoHardenedSand` consumers) are NOT on it.
+- **d4** (proj-ai-31-40): no pushed Convert work — the aiStyle-31
+  Clentaminator's spray types 5/6/7 (`Projectile.cs:26815-26823`) have no
+  ported cell arm; this lane ports them UNWIRED for that consumer.
+
+## The helper census (C# `WorldGen.cs` vs `crates/` on this branch)
+
+Already ported (NOT this lane): `Convert` type 0 (`spread::convert_cleanse`,
+the S1-D-4 slice), types 1/4/11 on d1, type 3 on g42; the spread runtime
+(`hard_update_world` :69645-69860, `convert_cell`/`convert_cell_flavor`);
+`SpreadGrass` runtime slice (`growth::spread_grass` :75146-75257 repeat:false)
++ the gen-time copies (`evil.rs::spread_evil_grass`,
+`biomes.rs::spread_jungle_grass`); `SpreadGrassWalls`/`SpreadDesertWalls`
+(:74884/:74984, `growth/grass.rs`); `Spread.Moss`/`Gem`/`Spider`
+(:3526/:3594/:3682, `spider_gem_moss.rs`); `MossConversion` (:71457,
+`growth/grass.rs`) + `randMoss`/`setMoss`/`neonMossBiome`; `PlaceTile`'s
+torch/platform/planter/alch arms (`edit/place.rs`), `KillTile` + the
+`KillTile_GetItemDrops` per-cell records + `KillTile_GetTreeDrops` +
+`KillTile_PlaySounds` (`edit/kill.rs` — the `no_item` flag IS the C#
+noItem gate, no separate variant exists in the C#); the g39 H-family.
+
+### Missing — this lane's claim (verbatim ports, unwired)
+
+| # | C# helper | anchor | port seam | consumers | commit |
+| --- | --- | --- | --- | --- | --- |
+| C1 | `TileIsExposedToAir` | `WorldGen.cs:54782-54800` | `spread::tile_is_exposed_to_air` | Convert 7/15/18/19 (C4), the c32 biome-dungeon rooms | **landed 59fb188b** |
+| C2 | `BlockBelowMakesSandConvertIntoHardenedSand` | `:86562-86583` | `spread::block_below_makes_sand_convert_into_hardened_sand` | Convert 5/16 (C4), BiomeDungeonRoom | **landed 8e3eb894** |
+| C3 | `Convert` type 2 (hallow cell) | `:55176-55260` | `spread::convert_hallow_cell` + `convert_sized_hallow` | SpreadGrass :75218, DoHallowOnSurface :1967-2011, ConvertSkyIslands :24701, initializeHardMode :31630-31651, the 146 spray / ChlorophyteBolt :77635 | **landed 6c5dcea1** |
+| C4 | `Convert` types 5/6/7 (desert/snow/purify spray cells) | `:55363-55408` / `:55409-55445` / `:55446-55526` | `spread::convert_spray_cell` + `convert_sized_spray` (+ the two `:55465` union seams in `growth/grass.rs`) | the aiStyle-31 Clentaminator 1015/1016/1017 (`Projectile.cs:26813-26823`, d4's dispatch) | **landed 0e6bee9e** |
+| C5 | `Convert` types 8/9/10 (chlorophyte/jungle-mud cells) | `:55665-55670` / `:55671-55720` / `:55721-55763` | `spread::convert_chlorophyte_cell` + `convert_sized_chlorophyte` | hardUpdateWorld :69658/:69686/:69697 (the ported `convert_cell` approximation stays — unwired), ChlorophyteDefense :69460 (remix) | **landed a6b21b72** |
+| C6 | `IsTileATreeBranch` / `IsTileATreeRoot` | `:29717-29740` / `:29742-29765` | `tree::is_tile_a_tree_branch` / `is_tile_a_tree_root` (`Option<i32>` = the C# `out offsetToTrunk`) | C7, ConsideredSolidTileForAnchor :53903 | **landed b53ebbc0** |
+| C7 | `ConvertTreeAndGround` (+ `_Branches`) | `:54902-55052` (+ `:55054-55065`) | `tree::convert_tree_and_ground` (explicit `&mut UnifiedRandom` = the caller's genRand) | the 596/616/5/323 arms of TryConvertingOrKillingTreesAbove :54855-54896 (the port's kill-only copies stay — unwired) | **landed f9c3dba7** |
+| C8 | `GetTileMossColor` | `:81215-81255` | `framing::get_tile_moss_color` | TileFrame case 184 (:85176-85202, the loose-moss colour pick) | **landed 6e9ae957** |
+
+Claim commit: 057d9ce1. **C1-C8 fully landed — the round is closed.**
+
+## Landing notes / deliberate deviations
+
+- **The wall halves** ride the shared `growth::convert_wall_by_case`
+  (types 2/5/6/7 verbatim). Type 7's `:55465` dirt arm there carries only
+  the Dirt set — C4 pre-gates the HardenedSand/Snow union half through two
+  `pub(crate)` membership seams (`conversion_hardened_sand_walls_contains` /
+  `conversion_snow_walls_contains`), order-equivalent: both unions are
+  disjoint from the natural Stone/Ice/Sandstone arm, the 262/274 switch and
+  the NewWall sets, so the pre-gate cannot reorder a conversion.
+- **genRand**: the wall ladders take `None` (the `convert_cleanse_cell` / d1
+  precedent — no runtime genRand stream; types 2/5/6/8/9/10 draw nothing
+  anyway; type 7's ladder has no roll). C7 takes the explicit caller stream
+  (the g39 H-family precedent) and draws in C# order — the base/top/middle
+  frame rolls, the `Next(2)`-then-`Next(2)` branch lottery.
+- **The C7 trunk-walk quirk kept**: the loop's branch test reads the FIXED
+  `y - 1` cell (`:54924`), not `y - 1 - num2` — verbatim.
+- **The re-frame** is the port's `reframe_area` superset (the
+  `convert_cleanse_cell` documented deviation); the
+  `RainbowSandAndBlackSandWalls` paint arms and the `NetMessage` tails are
+  the d1-documented skips (a mode the port does not generate / MP-only).
+- **The thorn kills** call `edit::kill_tile(world, x, y, false)` — the C#
+  `KillTile(i2, j2)` default arm (fail/effectOnly/noItem all false).
+- **The type-2 mud arm** (`:55256-55259`) reads the SNAPSHOT type 59 against
+  the LIVE 109 4-neighbours, independent of the else-if ladder — kept.
+- **Unwired**: no executed step calls any C1-C8 fn; both world-hash pins
+  unchanged by this round (the comment-only `world_hash.rs` note), the
+  `a == b` determinism halves untouched. 19 witnesses WRITTEN NOT RUN
+  (code-only; no cargo/rustc/rustfmt/tests/dotnet/graphify invoked).
+  Verified by re-reading the cited C# blocks in ≤100-line windows and hand
+  arithmetic against the ladders.
+
+Not claimed (owner lanes / no worldgen consumer): `Convert` types 12-21
+(the paint-spray/evil-II family — zero call sites in the whole decompile
+outside the switch itself; the 21 dungeon arm reads
+`GenVars.CurrentDungeonGenVars`, c32/d107's seam); `Spread.Wall`/`Wall2`
+(g37/d103/d106 own copies); `SpiderWallRemover` (g41);
+`OverGrownDungeonWithRainbowMoss` (:24037, the celebrationmk10 arm — d107/c30
+special-seed lane); `KillTile_ShouldDropSeeds`/`KillTile_DropBait`
+(:66176/:66263 — player-state runtime halves, the kill lane's phase-3 drop
+resolution owns them); `PlaceTile` proper (:59342, the player-facing
+dispatcher — g37/g38/d104 carry per-kind slices, `edit/place.rs` the arms).
+
+## Discipline
+
+- Verbatim ports (golden rule): same structure, maths, draw order; citation
+  comment per block; readable Rust names; C# read in ≤100-line windows.
+- The Convert wall halves route through the shared
+  `growth::convert_wall_by_case` where its arm exists (types 2/5/6/7/12 —
+  the M5-SPREAD-2c chains); the genRand rolls take `None` (the
+  `convert_cleanse_cell` / d1 precedent — no runtime genRand stream).
+- Helpers are UNWIRED until their consumer lands — **both world-hash pins
+  stay unchanged** (a comment-only note records that in `world_hash.rs`);
+  the `a == b` determinism halves stay untouched.
+- ONE helper per commit+push; this ledger + an `anchors.txt` row per slice.
+- Code-only lane: no cargo/tests/graphify on this branch; witnesses written
+  NOT run, per the S1-K-2-wave-B / d10x convention.
+
+## Wiring phase (consumers census + landed seams)
+
+The helper round closed unwired; this phase wires the C1-C8 cells at their
+**unclaimed** C# consumer positions (the pushed sibling claims re-read after
+`git fetch --prune`). One commit per consumer-family. All seams are
+**runtime-only** (no executed worldgen step calls them), so both world-hash
+pins stay unchanged; the `a == b` halves stay untouched.
+
+### The consumer census (C# call-sites → port seam → owner)
+
+| helper | C# consumers | port seam wired | owner verdict |
+| --- | --- | --- | --- |
+| C1 `TileIsExposedToAir` | Convert 7 `:55512`; 15/18/19 `:56031/:56171/:56222`; BiomeDungeonRoom | the C4 type-7 cell's sand arm (transitive) | types 15/18/19 unported; BiomeDungeonRoom = c32's lane |
+| C2 `BlockBelow…HardenedSand` | Convert 5 `:55386`; 16 `:56064`; BiomeDungeonRoom `:264/:280` | the C4 type-5 cell's sand arm (transitive) | type 16 unported; BiomeDungeonRoom = c32 |
+| C3 `Convert` type 2 | aiStyle-31 146 `:26803`; holy water `:77635`; SpreadGrass `:75218`; DoHallowOnSurface `:1967`; ConvertSkyIslands `:24701`; initializeHardMode `:31630`; GERunner | `ai_spray` + `water_death` + `spread_grass` (tiles-only) | GERunner/initializeHardMode = **d103 P2/P4 (pushed)**; ConvertSkyIslands unported; DoHallowOnSurface keeps its map approximation |
+| C4 `Convert` 5/6/7 | aiStyle-31 1015/1016/1017 `:26813-26823` | `ai_spray` per-kind dispatch | d4 marks style 31 "P" (ported), does not touch the file |
+| C5 `Convert` 8/9/10 | hardUpdateWorld `:69658/:69686/:69697`; ChlorophyteDefense `:69460` | **none — stays unwired** | **d103 P8 (pushed 014cf2937)** owns the verbatim hardUpdateWorld + its own `convert_purge_cell` |
+| C6 `IsTileATreeBranch/Root` | ConvertTreeAndGround `:54924+`; ConsideredSolidTileForAnchor `:53903` | C7 (transitive) | ConsideredSolidTileForAnchor/ValidateOrAttemptReorientingAnchor unported |
+| C7 `ConvertTreeAndGround` | TryConvertingOrKillingTreesAbove 596/616/5/323 `:54855-54896` | `try_kill_invalid_tree_above` (the Convert/clentaminator path) | unclaimed (d103 keeps the "documented skip"); growth/trees.rs copy = g17's lane |
+| C8 `GetTileMossColor` | TileFrameImportant case 184 `:85176-85202` (the ONLY caller — no Main lighting arm) | `edit/kill.rs::check_long_moss` (the Check* dispatch) | unclaimed in the pushed record (d109/d110 don't carry it; d105 owns PlaceTile-184 growth, not TileFrame) |
+
+### Landed wiring slices
+
+1. **Spray family (C3+C4, transitively C1+C2)** — `ai_spray`'s owner-gated
+   `WorldGen.Convert` dispatches type 2 → `convert_sized_hallow`, types 5/6/7
+   → `convert_sized_spray` beside the type-0 cleanse; `water_death`'s holy
+   arm → `convert_sized_hallow`; `spread_grass`'s 109 arm →
+   `convert_hallow_cell_halves(tiles, walls=false)` (the C3 cell gained the
+   C# single-cell overload's `tiles`/`walls` flags). The evil arms keep
+   `convert_cell_flavor` until d1's type-1/4 cells land.
+2. **Tree family (C7, transitively C6)** — `try_kill_invalid_tree_above`
+   grows the 596/616/5/323 `ConvertTreeAndGround` arms on the explicit
+   `frame_rng` stream (the C# `genRand == Main.rand`, the port's runtime
+   stand-in).
+3. **Moss family (C8)** — `edit/kill.rs::check_long_moss` ports
+   TileFrameImportant case 184 verbatim (the four-neighbour colour pick via
+   `get_tile_moss_color`, the `Next(3)*18` frameY roll on `frame_rng`, the
+   no-colour KillTile), dispatched from `square_tile_frame`; the 184 boot
+   static lands in `boot_statics`.
+
+**C5 stays unwired** — d103 P8 owns the verbatim hardUpdateWorld chlorophyte
+arms with its own `convert_purge_cell`; wiring the C5 cells there would
+collide. The C5 helpers remain available for that lane / the merger.
+
+## Closeout phase (2026-11-21) — the Convert-family census gaps
+
+The wiring round left four Convert-family consumers unported/unrowed; this
+phase closes them (one commit per item, witnesses written not run).
+
+### 1. ConvertSkyIslands — LANDED f0fe0f388
+
+`WorldGen.cs:24674-24714` as `finish_seeds.rs::convert_sky_islands`, wired
+at the `:24243` anniversary call (the `!getGood && !drunk` gate inside the
+reduced `:24239` guard). g44's islands lane (read at tip 32e478d34) marks
+the call "not ported" in its `finish_seeds.rs` module note — the
+Convert-family port lands HERE (cross-note in ANALYSIS/PORT_MAP). The C3
+`convert_hallow_cell` single-cell overload is the Convert arm; the vanity
+596/616 + plant 82/83/185-187/227 kills ride `kill_tile(no_item: true)`
+(the gen-time `:63546-63549` flag, the `finish_get_good_world` precedent);
+the 1-in-3 `TryGrowingTreeByType(5)` = `GrowTree` roll rides
+`growth::grow_tree` on a fresh `UnifiedRandom(opts.seed as i32)` (the
+`micro_surface.rs::start_in_hardmode` precedent — the per-pass xorshift
+contract cannot feed the `UnifiedRandom` growth seam). Classic worlds
+never run the anniversary pass: both pins unchanged.
+
+### 2. The clentaminator SOLUTIONS census — LANDED 5e83d3ecb
+
+The full `ItemID` solution list vs the `ai_spray` dispatch
+(`Projectile.cs:26791-26824`):
+
+| item | name | `Item.shoot` | + 145 → proj | Convert type | cell owner |
+| --- | --- | --- | --- | --- | --- |
+| 780 | Green Solution | 0 (`Item.cs:10517`) | 145 PureSpray | 0 | `convert_cleanse` (landed) |
+| 781 | Blue Solution | 1 (`:10526`) | 146 HallowSpray | 2 | C3 (landed, wired) |
+| 782 | Purple Solution | 2 (`:10535`) | 147 CorruptSpray | 1 | d1 `convert_sized` (unmerged) |
+| 783 | Dark Blue Solution | 3 (`:10544`) | 148 MushroomSpray | 3 | g42 `convert_cell_mushroom` (unmerged) |
+| 784 | Red Solution | 4 (`:10553`) | 149 CrimsonSpray | 4 | d1 `convert_sized` (unmerged) |
+| 5392 | Sand Solution | 870 (`DefaultToSolution(1015)`, `:42772`+`:47799`) | 1015 SandSpray | 5 | C4 (landed, wired) |
+| 5393 | Snow Solution | 871 (`:42775`) | 1016 SnowSpray | 6 | C4 (landed, wired) |
+| 5394 | Dirt Solution | 872 (`:42778`) | 1017 DirtSpray | 7 | C4 (landed, wired) |
+
+- The dispatch itself was already verbatim-complete (the wiring round);
+  the GAP was the seven missing `proj_data` rows (146-149 line-identical
+  `:2350-2397` copies of the 145 arm; 1015-1017 `DefaultToSpray`
+  `:9633-9636` → `:10691-10702`) — rowed this phase. All eight item rows
+  were already in the registry; both guns (779 speed 7 / 5134 speed 11,
+  `shoot 145` + `useAmmo Solution`) resolve through `ammo.rs`'s additive
+  arm (`Player.cs:53487-53490`).
+- **5495 is NOT a Clentaminator**: it is the **Shimmer Gun**
+  (`ItemID.cs:12673`, `Item.cs:43313-43325` — `shoot 1042`
+  ShimmerGunStream, aiStyle 60 `Projectile.cs:9848-9857`, NO useAmmo).
+  Its `Player.cs:49124-49128` spawn passes `ai1 = 1`, but that is the
+  shimmer stream's own flag — no solution arm belongs to it. The 1042
+  row is the shimmer lane's (unrowed here, out of scope).
+- The 147/148/149 arms stay no-ops in `ai_spray` until d1/g42 merge —
+  their cells are the COMPLEMENT this lane documented at claim time.
+
+### 3. The powder items — census, d1 owns the machine (no port here)
+
+The task prompt's "194/195" are NOT powders: `ItemID.cs:2071/:2073` —
+194 MushroomGrassSeeds, 195 JungleGrassSeeds. The powders are:
+
+| item | name | `Item.shoot` | proj | Convert call (`Projectile.cs:24191-24202`) |
+| --- | --- | --- | --- | --- |
+| 66 | Purification Powder (`Item.cs:2168-2184`) | 10 | 10 (`:897-912`) | `Convert(x, y, 11, 1)` (`:24193`) |
+| 67 | Vile Powder (`:2185-2198`) | 11 | 11 (`:913-923`) | `Convert(x, y, 1, 1)` (`:24197`) |
+| 2886 | Vicious Powder (`:27373-27386`) | 463 | 463 (`:5340-5350`) | `Convert(x, y, 4, 1)` (`:24201`) |
+
+The aiStyle-6 machine (`Projectile.cs:24100-24228`) is **d1's claim,
+verified at tip e271b5bc8**: `projectile_ai_powder.rs::step` (660e111fc)
+ports the whole arm — the 0.95 decay / 180-tick kill / one-shot dust burst
+(the 1051's 50 `Next(3)` draws stay), the owner-gated tile scan calling
+`spread::convert_sized(world, tx, ty, 11|1|4, 1)` (78dc52720's
+`convert_powder_cell` — the type-1/4/11 ladders), the fertilizer
+(1019/1051) sapling growth deferring to the `UpdateWorldGen` pass via
+`wants_sapling_grow` → `growth::attempt_grow_tree_from_sapling`, the five
+`SetDefaults` rows (7e70c3c91) + the dispatch 6-arm. The three item rows
+(66/67/2886) are already registry-rowed on THIS branch; the generic
+throw path (`editing.rs`'s `held_use_ammo == 0` fire block) spawns them.
+
+**Are f25's Convert cells called by the powder chain? NO — and correctly
+so.** The powders call types 11/1/4 (d1's cells); f25's C3/C4/C5 cells
+are types 2/5/6/7/8/9/10 — disjoint. The only shared seams are
+`growth::convert_wall_by_case` (d1's types 1/4/11 ride the same flat
+ladder) and the `CONV_THORN`/`in_world`/`CONV_JUNGLE_GRASS` constants —
+d1's `CONV_THORN` duplicate carries the merger-dedupe note (the C3
+precedent). No f25 wiring is missing on the powder chain; the merge
+lands d1's machine whole.
+
+### 4. Convert types 15/16/18/19 — LANDED (the dungeon-biome cells)
+
+`WorldGen.cs:56008-56040` (15 glowing-mushroom), `:56041-56086` (16
+desert), `:56124-56189` (18 pure), `:56190-56231` (19 jungle) as
+`spread::convert_biome_cell` + `convert_sized_biome`.
+
+- **c32 read at tip d27fb00ae**: its `dungeon_styles.rs` is the style
+  TABLES + lookups only (the module note's "UNWIRED: data tables + pure
+  lookups"); it carries NO Convert cells and NO `BiomeDungeonRoom`
+  bodies. The room bodies (`BiomeDungeonRoom.cs`'s
+  `BiomeRoom_GrassySurface`/`SandySurface`/`SnowySurface`) call
+  `DungeonUtils.ChangeTileType` DIRECTLY (`:232/:236/:248/:252/:266/
+  :270/:282/:286`) — NOT `WorldGen.Convert` — so they are c32's room-port
+  lane, not these cells. The C1/C2 helpers they DO call
+  (`TileIsExposedToAir` `:230/:246`, `BlockBelow…HardenedSand`
+  `:264/:280`) are f25's, already landed.
+- **Zero C# call sites**: a whole-decompile grep for `Convert(…, 15|16|
+  18|19[,)]` and `conversionType = 15|16|18|19` returns nothing — the
+  four switch arms are dead code in 1.4.5.8 (the dungeon-biome conversion
+  the rooms would use if they routed through Convert). They are part of
+  the Convert family, so f25 ports them UNWIRED (the C1-C8 precedent).
+- **The catch-all is the new shape**: unlike C3/C4/C5, these arms carry
+  the INDEPENDENT `!Main.tileFrameImportant[type]` tail (`:56029`/
+  `:56082`/`:56185`/`:56220`) — any non-frame-important tile converts to
+  the biome base (15: 70/59 by C1 exposure; 16: 396; 18: 1; 19: 60/59 by
+  C1). The thorn arms differ: 15/18 KILL, 16 kills with the 69 exemption,
+  19 CONVERTS to the jungle thorn 69 (then the catch-all re-types it).
+  The 15/19 catch-alls re-read the LIVE tile (the C# `ref Tile` — a
+  thorn kill deactivates it, the `active()` gate refuses the write).
+- **The wall chains** are cell-local (the shared `convert_wall_by_case`
+  has no 15/16/18/19 arm): 15 → 80; 16 the HardenedSand/Dirt/Snow union →
+  216 else 187; 18 the union → 2 / NewWall → 212-215 / else 349 (the
+  else-if fall-through is load-bearing — a wall already at its target
+  falls to 349); 19 the wall>0 switch (63/69/70/81 → 64, 15 no-op,
+  default 15). Two new `pub(crate)` seams in `growth/grass.rs`
+  (`conversion_dirt_walls_contains`, `conversion_new_wall_set`) feed the
+  16/18 unions.
+- Both pins unchanged (no executed step calls them), a == b untouched.
+  5 witnesses written not run.
+
+## FINAL — the round is closed (2026-11-21)
+
+### The full commit ledger (origin/main..HEAD, 20 commits)
+
+| phase | commits | scope |
+| --- | --- | --- |
+| census + orphan claim | fd0985287 | Settle Liquids = the ONE classic unexecuted pass |
+| Settle Liquids pass | 0ed1f3cfa | WorldGen.cs:16132-16210, both pins move BY DESIGN (re-pin deferred to the gate) |
+| helper claim | 057d9ce17 | the C1-C8 census |
+| C1-C8 helpers | 59fb188b6 / 8e3eb894b / 6c5dcea11 / 0e6bee9ef / a6b21b728 / b53ebbc03 / f9c3dba7e / 6e9ae957e | the eight verbatim ports, UNWIRED |
+| helpers ledger close | 803093b16 | the C1-C8 landing notes |
+| wiring (spray family) | cffdc1c70 | ai_spray / water_death / spread_grass -> C3/C4 |
+| wiring (tree family) | e76c077d3 | try_kill_invalid_tree_above -> C7 (C6 transitive) |
+| wiring (moss family) | b004f4f1b | check_long_moss case 184 -> C8 + the 184 boot static |
+| closeout 1/5 | f0fe0f388 | ConvertSkyIslands (the g44 cross-note) |
+| closeout 2/5 | 5e83d3ecb | the seven solution-spray rows + the solutions census |
+| closeout 3/5 | 84b903607 | the powder census (d1 owns the machine, docs-only) |
+| closeout 4/5 | 9fc704a15 | Convert 15/16/18/19 (the dungeon-biome cells, the c32 cross-note) |
+| closeout 5/5 | (this commit) | the FINAL ledger + the closeout pin notes |
+
+### The Convert-type coverage map (the whole switch, :55098-56284)
+
+| type | cell | owner | state |
+| --- | --- | --- | --- |
+| 0 cleanse | convert_cleanse_cell | f25 (S1-D-4 slice) | landed, wired (ai_spray 145) |
+| 1 corruption | d1 convert_powder_cell | d1 (78dc52720) | landed on d1, unmerged |
+| 2 hallow | convert_hallow_cell (C3) | f25 | landed, wired (ai_spray 146 / holy water / spread_grass / ConvertSkyIslands) |
+| 3 mushroom | g42 convert_cell_mushroom | g42 (e2707f2d) | landed on g42, unmerged |
+| 4 crimson | d1 convert_powder_cell | d1 | landed on d1, unmerged |
+| 5/6/7 sprays | convert_spray_cell (C4) | f25 | landed, wired (ai_spray 1015/1016/1017) |
+| 8/9/10 chlorophyte | convert_chlorophyte_cell (C5) | f25 | landed, UNWIRED (d103 P8 owns hardUpdateWorld) |
+| 11 purify | d1 convert_powder_cell | d1 | landed on d1, unmerged |
+| 12/13/14 evil-II/paint | — | unclaimed | zero C# call sites (the claim-time census) |
+| 15/16/18/19 dungeon-biome | convert_biome_cell | f25 (closeout) | landed, UNWIRED (zero C# call sites) |
+| 17 snow-II | — | unclaimed | zero C# call sites |
+| 20 temple | — | unclaimed | zero C# call sites |
+| 21 dungeon | — | c32/d107 seam | reads GenVars.CurrentDungeonGenVars |
+
+### The helper coverage (C1-C8 + the closeout)
+
+- C1 TileIsExposedToAir / C2 BlockBelow...HardenedSand: wired through the
+  C4 type-7/5 cells AND the closeout's 15/16/18/19 cells; the c32
+  BiomeDungeonRoom bodies are the remaining C# consumers (c32's lane).
+- C3/C4: wired at every unclaimed consumer (the spray family + the
+  ConvertSkyIslands gen-time call).
+- C5: stays unwired (d103 P8).
+- C6/C7: wired at try_kill_invalid_tree_above (the Convert/clentaminator
+  path); the growth/trees.rs kill-only copy is g17's lane.
+- C8: wired at check_long_moss (the TileFrame case-184 dispatch).
+
+### The deviations register (the whole round)
+
+1. The re-frame is the port's reframe_area superset (the
+   convert_cleanse_cell documented deviation) — every Convert cell.
+2. The genRand wall rolls take None (the convert_cleanse_cell / d1
+   precedent — no runtime genRand stream); C7 takes the explicit caller
+   stream; ConvertSkyIslands takes a fresh world-seeded UnifiedRandom
+   (the start_in_hardmode precedent).
+3. The RainbowSandAndBlackSandWalls paint arms + the NetMessage tails are
+   the d1-documented skips (a mode the port does not generate / MP-only).
+4. The C7 trunk-walk fixed-y-1 quirk kept (:54924); the type-2 mud arm
+   reads the SNAPSHOT 59 against the LIVE 109 neighbours.
+5. The 15/19 catch-alls re-read the LIVE tile (the C# ref Tile semantics).
+6. The type-18 wall chain's else-if fall-through is load-bearing (a wall
+   at its union/NewWall target falls to 349).
+
+### The pin state
+
+- SEED42_512 / DEFAULT_WORLD: the Settle Liquids pass moves BOTH by
+  design (the re-pin is deferred to the merge gate — no compiler on this
+  branch). The helper round, the wiring phase and the closeout leave both
+  unchanged (the helpers are unwired, the wiring is runtime-only, the
+  ConvertSkyIslands gen-time call is anniversary-only and neither pinned
+  world sets that seed). The a == b determinism halves are untouched
+  throughout.
+
+### The witness count
+
+19 (helpers) + 3 (spray wiring) + 3 (tree wiring) + 5 (moss wiring) +
+3 (ConvertSkyIslands) + 2 (solutions) + 5 (Convert 15/16/18/19) =
+**40 witnesses WRITTEN NOT RUN** (code-only; no cargo/rustc/rustfmt/
+tests/dotnet/graphify invoked on this branch). Every expected value is
+hand-derived from the cited C# windows (read in <=100-line slices).
+
+### The merger's hand-off
+
+- d1's CONV_THORN duplicate dedupes onto the C3 constant (the note is on
+  d1's branch); the convert_wall_by_case 1/4/11 arms are shared.
+- d103 P8's convert_purge_cell vs the C5 cells: the merger picks the
+  verbatim hardUpdateWorld arms (d103) — the C5 helpers remain available.
+- g44's finish_seeds.rs module note ("ConvertSkyIslands not ported") is
+  superseded by f0fe0f388 — the merger keeps the f25 body.
+- c32's BiomeDungeonRoom bodies (when they land) call the f25 C1/C2
+  helpers + DungeonUtils.ChangeTileType; the Convert 15/16/18/19 cells
+  stay unwired (zero C# call sites).
+- The seven solution-spray rows (5e83d3ecb) complete the ai_spray
+  dispatch; 147/148/149 stay no-ops until d1/g42 merge.
+
+## f25e CONVERT-RETIRE (2026-11-21) — the dup verdicts + the closeout re-verify
+
+The dispatched-earlier retire round, verified/executed against the pushed
+tips (d18 tip 6e8083751, d1 tip 212516a82, g42 tip 910cc9747, g46 tip
+9bc722e5f — all fetched). Code-only; witnesses written not run.
+
+### 1. The seven-spray-rows DUP — keep-d18c (78ffe8e11)
+
+Both lanes rowed 146-149/1015-1017: f25 5e83d3ecb (09:22, the solutions
+census) and d18 78ffe8e11 (09:41, "rows UNCLAIMED on every pushed tip" —
+written against f25's pre-closeout tip b004f4f1b). Per-field compare
+against the C# re-read (`Projectile.cs:2350-2397` the four line-identical
+blocks, `:10691-10702` `DefaultToSpray`):
+
+| field | C# | f25 row (RESET_STATE) | d18c row |
+| --- | --- | --- | --- |
+| 6x6 / aiStyle 31 / pen −1 / extraUpdates 2 / tileCollide false / stock 3600 | yes | yes | yes |
+| alpha 255 (`:2356`/`:10697`) | yes | **0 (dropped)** | **255** |
+| ignoreWater true (`:2360`/`:10701`) | yes | **false (dropped)** | **true (overlay)** |
+| class flag / immunity pair | none | none | none |
+
+f25's copy inherits the 145 row's M3-ITEM-6 dropped-alpha/ignoreWater
+devolution; d18c is the VERBATIM superset. **KEEP d18c.** The verdict is
+forced by the witnesses: f25's row sweep
+(`w4_f25_closeout_the_solution_sprays_carry_the_145_row`) asserts no
+alpha/ignoreWater and passes on BOTH copies; d18's
+`w4_d18_the_solution_spray_rows_are_the_145_shape` pins alpha 255 +
+ignoreWater and FAILS on the f25 copy. The dispatch witness
+(`w4_f25_the_spray_dispatch_converts_each_solution_type`) and the ammo
+resolution witness (`w4_f25_closeout_all_eight_solutions_resolve_on_both_
+clentaminators`) pass on d18's rows unchanged (same box/style/life).
+
+**THE DROP-HUNK (for the merger — drop from the f25 side):**
+1. `projectile/data.rs` — the `146..=149 | 1015..=1017 => { RESET_STATE }`
+   block + its comment (the row-site carries the keep-d18c note); keep
+   d18's `(6.0, 6.0, 31, -1, TIME_LEFT_DEFAULT, 2, …, (false, -2, false,
+   -1, 255, 1.0))` row.
+2. `projectile/data.rs` — nothing else: d18's ignoreWater overlay arm
+   (`|| matches!(kind, 146..=149 | 1015..=1017)`) is d18-side only; f25
+   never added one.
+3. The f25 witnesses STAY (they pass on d18's rows); d18's census-flags
+   extension + row witness STAY. No f25 ai_spray/ammo hunk drops.
+
+The rows STAY on this branch until the merge (the armed ai_spray dispatch
++ the `proj(kind)` witnesses need rowed kinds — the d18-978 merge-order
+precedent f53de9c71, "merge-order not coverage").
+
+### 2. The powder items — VERIFIED, d1 owns the machine (no port here)
+
+Re-verified at d1 tip 212516a82: `660e111fc` (projectile_ai_powder::step),
+`7e70c3c91` (the five SetDefaults rows), `78dc52720` (convert_sized types
+11/1/4) are all ancestors of the tip (`merge-base --is-ancestor` = 0).
+`ItemID.cs:2071/:2073` re-read: 194 = MushroomGrassSeeds, 195 =
+JungleGrassSeeds — grass SEEDS, not powders (the prompt's ids corrected,
+the closeout-3 census stands). The real powders 66/67/2886 (shoot
+10/11/463) are registry-rowed here and ride the generic throw path; the
+aiStyle-6 machine calls Convert types 11/1/4 ONLY — f25's C3/C4/C5 cells
+(2/5/6/7/8/9/10) are disjoint. Nothing owed on this branch; the merge
+lands d1's machine whole (the CONV_THORN dedupe note stands).
+
+### 3. Convert 15/16/18/19 — VERIFIED zero C# call sites, unwired stands
+
+Whole-decompile re-grep: no `Convert(…, 15|16|18|19[,)]` call and no
+`conversionType = 15|16|18|19` assignment anywhere (the assignment census
+hits are 1/2/4 only — `:2045-2059`, `:18379-18382`, `:26437-26440`,
+`:75009-75016`). The four arms stay dead-code ports (`convert_biome_cell`
++ `convert_sized_biome`, 9fc704a15), UNWIRED; c32's BiomeDungeonRoom
+bodies use `DungeonUtils.ChangeTileType`, not Convert. Both pins
+unchanged.
+
+## g42e GROWTH-SEAL (2026-11-21) — the fourth Convert(3) site parked
+
+g42's growth seal (tip 910cc9747, `12j-g42-biome-mushroom.md` phase 9
+SEALED) completed `spread::convert_sized_mushroom`
+(`WorldGen.cs:55067-55083` — the same square + Manhattan-<6 walk as
+`convert_cleanse`, the `convert_cell_mushroom` per-cell arm, RNG-free)
+and corrected the mushroom-CONVERT census to FOUR sites: the fourth is
+**this lane's ai_spray dispatch** — `Projectile.cs:26834` with num245 = 3
+for the DarkBlueSolution spray 148 (`:26805-26808`; item 783 shoot 3 +
+Clentaminator 145 via `Player.cs:53487-53490`). The UpdateWorld side has
+no Convert(3) (the grass-70 mud spread is g42's T-3/D1/D4).
+
+- **The park**: the type-3 arm stays a no-op HERE (the g42 fns do not
+  exist on this branch — wiring would not compile); the dispatch-site
+  comment carries the one-arm MERGER CONTRACT:
+  `3 => tr_core::spread::convert_sized_mushroom(world, tx, ty, size)`
+  into the `match conversion` — the 133-cap/counter/spin already run for
+  every kind, this arm is the only missing piece. Types 1/4 ride d1's
+  `convert_sized` the same way.
+- **The witness**: the dispatch test gained the park pin — a 60 under a
+  148 spray STANDS on this branch (no-op), the cap/counter run; at the
+  merge the one-arm contract flips the tile pin to 70 (g42's seal witness
+  `w4_g42_seal_the_sized_mushroom_walk_matches_the_convert_gate` pins the
+  walk itself: size-2 full diamond, size-3 Manhattan-6 corner refusal,
+  a == b). Written not run.
+- The g42 seal's c31 DUP-RECONCILE (the jungle-tail keepers + the ONE
+  drop-hunk set in 12j phase 9) touches no f25 file — noted for the
+  merger's worldgen master merge, no action here.
+
+Runtime-only (the ai_spray comment + witness), both pins unchanged,
+a == b untouched. 1 witness written not run.
+
+## g46 LIQUID-UNION — the f25 gen-driver contract (2026-11-21)
+
+Read against the g46 RE-FOLD tip **9bc722e5f** (research/70 FINAL +
+the R-12-5 drivers addendum, `docs/research/69` SUPERSEDED-BY-70).
+The union base is g47's `liquid.rs` wholesale (the 4-step landing
+e7626b72/f588d53c/16fd6ad7/d95911ce is DONE on that branch); this lane's
+obligations are the step-6 dedupe, the step-7 producer arming and the
+RE-DERIVE.
+
+### The ORIGIN-wall fix — LANDED HERE pre-merge
+
+`Liquid.cs:152` binds `Tile tile = Main.tile[originX, originY]` and the
+`:188` dungeon re-type reads `tile.wall` — the **ORIGIN** cell's wall.
+f25's gen-local `settle_water_at` read the LANDING cell's wall
+(`world.tiles[index(num, num2)].wall`) — a real deviation (70 step 6
+flagged it "fix at this graft"). FIXED on this branch: the read is now
+`origin.wall` (the `origin` snapshot the fn already binds); the bounds
+test keeps the landing `(num, num2)` arguments (both are the fan's
+current cell in the C#). The g46-union copy already reads `origin.wall`
+(its `:1981-1990` comment names this lane's deviation) — **both copies
+now agree**, the merge is a clean delete not a reconcile. 1 witness
+written not run (`w4_f25_g46_the_dungeon_retype_reads_the_origin_wall`:
+the origin behind wall 7 outside the bounds drops into them below
+waterLine → water; the no-wall mirror keeps lava; full-width shelf so
+the fan finds no hole).
+
+### The DELETE-dedupe table (step 6, at the liquid merge)
+
+| f25 gen-local copy | union surface (already on 9bc722e5f) | action |
+| --- | --- | --- |
+| `settle_liquids.rs::shimmer_remove_water` | `LiquidSystem::set_gen_shimmer_position` + the quick_water arms (`:1884`/`:1898`) | DELETE the private fn; the driver arms the position from `gv.shimmer_position` (g36-A1 producer) |
+| `settle_liquids.rs::in_any_potential_dungeon_bounds` + `clamp_bound` + the wall read | `GenDungeonContext::in_any_bounds`/`is_dungeon_wall` via `set_gen_dungeon_context` | DELETE; the driver builds the context from the f24 producer (`DualDungeonSetup.dungeons[i].outer` hitboxes + the style-quad wall extensions, `DungeonCrawler.cs:155-181`; classic = empty extension; single-dungeon = the one entry) — c30's duplicate producer dedupes onto f24's at the worldgen master merge |
+| `settle_liquids.rs::settle_water_at` + `attempt_to_move` + `quick_water` | `LiquidSystem::quick_water(world, 3, height-3)` (the g47 method covers the whole C# surface incl. the origin-wall form) | DELETE (70's RECOMMENDED unification); the origin-wall fix above makes the semantics identical first |
+| the driver's 10-round budget loop | `LiquidSystem::gen_settle_loop` (`:16158-16206` verbatim, the Part-2 twin classic-identical) | DELETE the inline loop; call the method |
+| `liquid.rs` quick_settle/gen_ignore_water fields + `set_generating` | the union's `set_gen_settle_context(water_line, lava_line, remix)` + the carried export surface (`tiles_ignore_water`/`world_gen_tiles_ignore_water`/`gen_ignore_water` kind_solid fold/`set_bubble_solid`/`num_liquid_total`/`clear_pending_liquid`/`liquid_reaction_check` — the R-12-5 addendum carried them ALL) | the f25 liquid.rs hunks dedupe onto the union file; `set_generating` maps onto `set_gen_settle_context` |
+| KEEP driver-local | the ocean retype sweep (`:16137-16146`) + `liquid_interactions_cleanup` (`:23672-23799`) | the union quick_water's doc explicitly leaves the cleanup to the gen driver; the sweep is pass-head, not Liquid surface |
+| KEEP | `tileobject.rs::resolve_tile_def`/`check_water_death`/`check_lava_death` | the d112/d114 reconciliation stands (identical names/semantics) |
+
+### The edit_kills drain choice — DISCARD (recorded per 70's witness table)
+
+The union `LiquidSystem` queues the DelWater grass-ring/alch/lily kills +
+the AddWater inline death onto `edit_kills` (`drain_edit_kills`). The
+gen driver **drains and DISCARDS** at the pass tail: the port's worldgen
+has no loot side channel (the `square_tile_frame_gen` precedent — "the
+kills' events discarded"), the C# `KillTile` under
+`isGeneratingOrLoadingWorld` sets `noItem = true` (`:63546-63549`) so no
+item spawns either; the records must not leak across the per-pass
+instance (69 row 11). The TILE effects (the kills themselves) still
+apply — only the drop records drop.
+
+### The RE-DERIVE obligation (stands, gate-side)
+
+`SEED42_512` / `DEFAULT_WORLD` + `the_pass_is_deterministic` were derived
+against f25's discard-only `end_pass` + FIFO buffer. The union swaps in
+the real DelWater drain/tail (grass burns, alch/lily kills now fire
+during gen), the swap-remove buffer, and this origin-wall fix — **expect
+a delta, RE-DERIVE, do not silence** (70's witness table row 1). The
+DISCARD choice above is the recorded drain decision the table asks for.
+No compiler on this branch: the re-pin runs at the union gate. The
+`a == b` halves stay (no RNG draw added — the union drivers draw none,
+the R-12-5 addendum's pin).
+
+1 witness written not run (the origin-wall pair). The driver's other
+witnesses stay as written (they test semantics the union preserves).
+
+## SEALED — the convert-family bible (2026-11-21)
+
+> **12g SEALED.** The Convert family (`WorldGen.cs:55067-56284` — the
+> sized walk `:55067-55083`, the single-cell switch `:55085-56284`) is
+> fully censused, ported and dispositioned across the wave's lanes. No
+> census/arm/row/wiring work is owed on f25. This section is the ONE
+> reference the merger reads.
+
+### The whole switch — one row per type (the bible)
+
+| type | semantic | cell fn (lane @ commit) | consumers wired | merge state |
+| --- | --- | --- | --- | --- |
+| 0 | cleanse | `spread::convert_cleanse` (f25, S1-D-4) | ai_spray 145, the GERunner/special-seed sites on their lanes | landed main-line |
+| 1 | corruption | d1 `convert_powder_cell`/`convert_sized` (78dc52720) | d1's powder aiStyle-6 machine (660e111fc); f25's ai_spray 147 arm = the one-arm contract | d1 unmerged |
+| 2 | hallow | `spread::convert_hallow_cell` + `convert_sized_hallow` (C3, 6c5dcea11) | ai_spray 146, water_death holy (:77635), spread_grass 109 (:75218 tiles-only), ConvertSkyIslands (:24701); DoHallowOnSurface keeps its map approximation; initializeHardMode/GERunner = d103 P2/P4 | landed, wired |
+| 3 | mushroom | g42 `convert_cell_mushroom` (G7) + `convert_sized_mushroom` (910cc9747) | the FOUR sites: DoSurfaceIsMushrooms + the two :2101/:2125-2129 gen arms (g42), the ai_spray 148 arm = the one-arm contract (parked here, g42e) | g42 unmerged |
+| 4 | crimson | d1 `convert_powder_cell` (78dc52720) | d1's powder machine; f25's ai_spray 149 arm = the one-arm contract | d1 unmerged |
+| 5/6/7 | desert/snow/purify sprays | `spread::convert_spray_cell` + `convert_sized_spray` (C4, 0e6bee9ef) | ai_spray 1015/1016/1017 | landed, wired |
+| 8/9/10 | chlorophyte/jungle-mud | `spread::convert_chlorophyte_cell` + `convert_sized_chlorophyte` (C5, a6b21b728) | UNWIRED — d103 P8 (014cf2937) owns hardUpdateWorld :69658/:69686/:69697 + ChlorophyteDefense :69460 with its own convert_purge_cell; the merger picks d103's verbatim arms, the C5 helpers remain available | landed, unwired by design |
+| 11 | purify powder | d1 `convert_powder_cell` (78dc52720) | d1's powder machine (66 → Convert 11) | d1 unmerged |
+| 12/13/14 | evil-II/paint | — | ZERO C# call sites (claim-time + f25e re-grep) | unclaimed, dead code |
+| 15/16/18/19 | dungeon-biome | `spread::convert_biome_cell` + `convert_sized_biome` (9fc704a15) | ZERO C# call sites (f25e re-grep: no call, no conversionType assignment); c32's BiomeDungeonRoom uses DungeonUtils.ChangeTileType — its room bodies call the f25 C1/C2 helpers when they land | landed, unwired by design |
+| 17 | snow-II | — | ZERO C# call sites | unclaimed, dead code |
+| 20 | temple | — | ZERO C# call sites | unclaimed, dead code |
+| 21 | dungeon | — | reads GenVars.CurrentDungeonGenVars — the c32/d107 seam | unclaimed, seam noted |
+
+### The helper ring (C1-C8) — the bible's dependency rows
+
+- **C1** `tile_is_exposed_to_air` (:54782-54800) — consumed by the C4
+  type-7 sand arm + the 15/18/19 catch-alls; c32's room bodies are the
+  remaining C# consumers.
+- **C2** `block_below_makes_sand_convert_into_hardened_sand`
+  (:86562-86583) — the C4 type-5 + the 16 sand arms; c32's rooms.
+- **C3/C4** — the wall halves ride the shared
+  `growth::convert_wall_by_case` (types 2/5/6/7; d1's 1/4/11 ride the
+  same ladder); the :55465 union pre-gate seams
+  (`conversion_hardened_sand_walls_contains`/`conversion_snow_walls_contains`).
+- **C5** — tiles-only, no wall/torch half (the C# has none).
+- **C6/C7** `is_tile_a_tree_branch`/`_root` + `convert_tree_and_ground`
+  — wired at `try_kill_invalid_tree_above` (the 596/616/5/323 arms);
+  the growth-tick kill-only copy is g17's lane;
+  ConsideredSolidTileForAnchor (:53903) unported (anchor lane).
+- **C8** `get_tile_moss_color` — wired at `check_long_moss` (the
+  TileFrame case-184 dispatch) + the 184 boot static.
+- The 16/18 wall-union seams: `conversion_dirt_walls_contains` +
+  `conversion_new_wall_set` (growth/grass.rs).
+
+### The item→proj→type chains (the bible's consumer rows)
+
+- **Solutions** (the eight): 780-784 shoot 0-4 → 145-149 → types
+  0/2/1/3/4; 5392-5394 DefaultToSolution 870-872 → 1015-1017 → types
+  5/6/7. Both guns 779 (speed 7) / 5134 (speed 11) resolve through
+  ammo.rs's additive arm. The seven proj rows: **keep-d18c** (the f25e
+  verdict — d18's alpha-255/ignoreWater superset; the f25 RESET_STATE
+  block drops at the merge). 5495 = the Shimmer Gun, NOT a solution gun.
+- **Powders** (the three): 66 shoot 10 → Convert 11; 67 shoot 11 →
+  Convert 1; 2886 shoot 463 → Convert 4. d1's aiStyle-6 machine whole;
+  the prompt's 194/195 are grass SEEDS (ItemID.cs:2071/:2073), not
+  powders. f25's cells are disjoint from the powder chain — correctly
+  uncalled.
+- **Holy/unholy water**: the holy death arm rides C3 (wired); the
+  unholy/blood arms keep convert_cell_flavor until d1's 1/4 land.
+- **ConvertSkyIslands**: the anniversary :24243 call → C3 single-cell
+  (wired, gen-time, anniversary-only — neither pinned world runs it).
+
+### The merger's ONE checklist (the hand-off, consolidated)
+
+1. **Spray rows**: keep-d18c 78ffe8e11, drop the f25 row block (the
+   f25e drop-hunk; all f25 witnesses pass on d18's rows).
+2. **ai_spray one-arm contracts**: `1|4 => d1 convert_sized`,
+   `3 => g42 convert_sized_mushroom` into the f25 match (the g42e park
+   + d1's dispatch note; the f25 park witness's tile pin flips 60→70).
+3. **CONV_THORN dedupe**: d1's duplicate onto the C3 constant.
+4. **C5 vs d103 P8**: the merger picks d103's verbatim hardUpdateWorld
+   arms; the C5 helpers stay available.
+5. **Liquid union**: the g46 DELETE-dedupe table above; the origin-wall
+   fix already agrees on both sides; edit_kills DISCARD recorded; the
+   pins RE-DERIVE at the gate.
+6. **g44 module note**: "ConvertSkyIslands not ported" superseded by
+   f0fe0f388 — keep the f25 body.
+7. **c32 room bodies**: call the f25 C1/C2 helpers +
+   DungeonUtils.ChangeTileType; the 15/16/18/19 cells stay unwired.
+8. **g42 c31 DUP-RECONCILE**: the 12j phase-9 drop-hunk set (no f25
+   file touched).
+
+### The seal ledger (the post-FINAL rounds)
+
+| round | commit | scope |
+| --- | --- | --- |
+| f25e CONVERT-RETIRE | 85b4a0f15 | the keep-d18c verdict + drop-hunk, the powder re-verify, the 15/16/18/19 zero-callsite re-grep |
+| g42e GROWTH-SEAL park | 8b91b761b | the fourth Convert(3) site's one-arm contract + the park witness |
+| g46 LIQUID-UNION | 00d4d2dca | the origin-wall fix + the DELETE table + the DISCARD choice + the RE-DERIVE note |
+| SEAL (this commit) | — | the SEALED banner + this bible + the anchors row |
+
+Witness total: 40 (the FINAL count) + 1 (g42e park) + 1 (g46 origin-wall
+pair) = **42 witnesses WRITTEN NOT RUN** on this lane (code-only; no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked). The f25e round added
+none (comment/doc-only). Both pins: the Settle Liquids + origin-wall
+moves are BY DESIGN, the RE-DERIVE is gate-side; every other round
+leaves them unchanged; a == b untouched throughout.

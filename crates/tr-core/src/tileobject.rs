@@ -682,6 +682,153 @@ pub fn check_liquid_placement(kind: u16, style: i32, tile: &Tile) -> bool {
     }
 }
 
+/// `TileObjectData.GetTileData(Tile)` (`TileObjectData.cs:5196-5261`) — the
+/// frame-based resolution: decode the stored `frameX`/`frameY` into a
+/// style/alternate pair and walk the def's sub-tiles and alternates. The
+/// `GetStyleOverride` hook (:5222-5226) wins over the whole decode when
+/// present (the three `GetStyle_*` bodies :5294-5327). Read by the liquid
+/// death checks below (`CheckWaterDeath`/`CheckLavaDeath`'s Tile overloads).
+///
+/// C# deviations (documented): a null `Tile` is the caller's `world.tile()`
+/// `None`; the out-of-range-type throw (:5203-5206) degrades to `None` like
+/// [`def_for_tile`]. Integer division truncates toward zero in both languages.
+/// The sub-tile null-padding (`addSubTile` :2085-2091) is the port's
+/// (style, def) pair lookup — a null slot keeps the current def, 1:1.
+pub fn resolve_tile_def(tile: &Tile) -> Option<&'static TileObjectDef> {
+    // :5198-5201 — inactive tiles resolve nothing.
+    if !tile.active() {
+        return None;
+    }
+    // :5202-5211 — `_data[type]`, null for unregistered kinds.
+    let mut resolved = def_for_tile(tile.kind)?;
+    // :5212-5213 — the frame cell inside the coordinate grid.
+    let num = tile.frame_x as i32 / resolved.coordinate_full_width();
+    let num2 = tile.frame_y as i32 / resolved.coordinate_full_height();
+    // :5214-5218 — StyleWrapLimit 0 means 1.
+    let mut num3 = resolved.style_wrap_limit;
+    if num3 == 0 {
+        num3 = 1;
+    }
+    // :5219 — horizontal sheets lay styles out row-major, vertical column-major.
+    let num4 = if !resolved.style_horizontal {
+        num * num3 + num2
+    } else {
+        num2 * num3 + num
+    };
+    // :5220-5221 — style (sub-tile index) and alternate (range offset).
+    let mut num5 = num4 / resolved.style_multiplier;
+    let mut num6 = num4 % resolved.style_multiplier;
+    // :5222-5226 — the override hook replaces the entire decode.
+    if resolved.get_style_override != GetStyleOverride::None {
+        return apply_style_override(resolved.get_style_override, tile, resolved);
+    }
+    // :5227-5240 — StyleLineSkip re-decodes around the skipped frame lines.
+    let style_line_skip = resolved.style_line_skip;
+    if style_line_skip > 1 {
+        if resolved.style_horizontal {
+            num5 = num2 / style_line_skip * num3 + num;
+            num6 = num2 % style_line_skip;
+        } else {
+            num5 = num / style_line_skip * num3 + num2;
+            num6 = num % style_line_skip;
+        }
+    }
+    // :5241-5248 — SubTiles[num5] when present and non-null.
+    if num5 >= 0 {
+        if let Some((_, sub)) = resolved
+            .subtiles
+            .iter()
+            .find(|(sub_style, _)| *sub_style as i32 == num5)
+        {
+            resolved = sub;
+        }
+    }
+    // :5249-5259 — the FIRST alternate whose [Style, Style+RandomStyleRange]
+    // window contains num6 wins (inclusive upper bound, list order).
+    for alt in resolved.alternates {
+        if num6 >= alt.style && num6 <= alt.style + alt.random_style_range {
+            return Some(alt);
+        }
+    }
+    // :5260
+    Some(resolved)
+}
+
+/// The three `GetStyleOverride` bodies (`TileObjectData.cs:5294-5327`), called
+/// from [`resolve_tile_def`] at :5222-5226. Each indexes `current.SubTiles`
+/// POSITIONALLY (C# list index, not style): the generated sub-tile pairs of
+/// the three override kinds are dense from 0, so the pair slice index is the
+/// C# list index. A missing slot degrades to `None` (C# throws).
+fn apply_style_override(
+    tag: GetStyleOverride,
+    tile: &Tile,
+    current: &'static TileObjectDef,
+) -> Option<&'static TileObjectDef> {
+    let sub = |i: usize| current.subtiles.get(i).map(|(_, def)| *def);
+    match tag {
+        GetStyleOverride::None => Some(current),
+        // GetStyle_Detritus (:5294-5301).
+        GetStyleOverride::Detritus => {
+            if tile.frame_y >= 36 {
+                sub(0)
+            } else {
+                Some(current)
+            }
+        }
+        // GetStyle_SmallPiles (:5303-5310).
+        GetStyleOverride::SmallPiles => {
+            if tile.frame_y >= 18 {
+                sub(0)
+            } else {
+                Some(current)
+            }
+        }
+        // GetStyle_Stalactite (:5312-5327) — descending thresholds.
+        GetStyleOverride::Stalactite => {
+            if tile.frame_y >= 90 {
+                sub(2)
+            } else if tile.frame_y >= 72 {
+                sub(1)
+            } else if tile.frame_y >= 36 {
+                sub(0)
+            } else {
+                Some(current)
+            }
+        }
+    }
+}
+
+/// `TileObjectData.CheckWaterDeath(Tile)` (`TileObjectData.cs:5083-5095`):
+/// an inactive tile never dies; a registered def answers through its own
+/// `WaterDeath` unless `UsesGlobalLiquidChecks` routes it to the global
+/// `Main.tileWaterDeath` table; an unregistered kind reads the global table.
+/// Read by `WorldGen.WaterCheck` (`WorldGen.cs:80444`) and `Liquid.AddWater`
+/// (`Liquid.cs:1195`).
+pub fn check_water_death(tile: &Tile) -> bool {
+    if !tile.active() {
+        return false;
+    }
+    match resolve_tile_def(tile) {
+        Some(td) if !td.uses_global_liquid_checks => td.water_death,
+        _ => TILE_WATER_DEATH.contains(&tile.kind),
+    }
+}
+
+/// `TileObjectData.CheckLavaDeath(Tile)` (`TileObjectData.cs:5107-5119`) —
+/// the lava twin of [`check_water_death`], reading `LavaDeath` /
+/// `Main.tileLavaDeath` (the generated [`crate::tiledata::TILE_LAVA_DEATH`]).
+/// Read by `WorldGen.WaterCheck` (`WorldGen.cs:80439`) and `Liquid.AddWater`
+/// (`Liquid.cs:1190`).
+pub fn check_lava_death(tile: &Tile) -> bool {
+    if !tile.active() {
+        return false;
+    }
+    match resolve_tile_def(tile) {
+        Some(td) if !td.uses_global_liquid_checks => td.lava_death,
+        _ => crate::tiledata::TILE_LAVA_DEATH.has(tile.kind),
+    }
+}
+
 /// Membership in [`TILE_CUT`] — read by the placement cut rule
 /// (`Player.cs:41303`) and the door sweep (`WorldGen.cs:37704-37717`).
 pub fn tile_cut(kind: u16) -> bool {
