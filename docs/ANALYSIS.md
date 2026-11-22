@@ -39515,3 +39515,79 @@ ExtraFramesCount-9 band + lift-then-step order, the Penguin 4-bank
 walk/idle/air matrix, the two-penguin byte-parity run, and the
 15-kind strip sweep (5x3x3x2x2 input grid, 40 ticks each, rows stay
 inside their sheets).
+## The NPC lights, third batch (W4-f8, S1-E-5 wave 4, 2026-11-21, code-only)
+
+**Claim map (probed in-flight before work, 2026-11-20/21).** NPC.cs carries
+exactly 80 DIRECT `Lighting.AddLight` call sites (full-file grep,
+case-insensitive `addlight` cross-check: same 80). W4-c20's pushed claim
+(`9555e586`) owns the FIRST 40 (`:21307`-`:48641`, `npc_lights_a.rs`);
+W4-e7's in-flight untracked `npc_lights_b.rs` owns the SECOND 40
+(`:49929`-`:92412`) - its header table was read site-by-site. W4-e8's
+in-flight `tile_lights.rs` owns the `DelegateMethods.CastLight*` delegates
+and the Main.cs/TileDrawing tile sites (f9's census `c2740784`); its header
+explicitly leaves the NPC update-side call sites to the NPC modules.
+g18/g19 are Main.cs batches (clean, nothing NPC-side); c19/e6/f7 are the
+projectile family; g20 the item family. No overlap.
+
+**The unclaimed remainder: the two INDIRECT light writes.** NPC.cs's only
+other light-bearing forms are `Utils.PlotTileLine(base.Top, base.Bottom,
+base.width, DelegateMethods.CastLightOpen)` at `:63543`
+(`AI_107_ImprovedWalkers`' case 566/567 head, the DD2 etherian skeletons)
+and `:65829` (`AI_109_DarkMage`'s `type == 564 || type == 565` per-kind
+block), each preceded by `DelegateMethods.v3_1 = new Vector3(0.3f, 0.05f,
+0.45f) * 1.5f` (`:63542`/`:65828`). Neither c20's claim nor e7's 80-site
+table names them. Negative census: `Lighting.` outside `AddLight` is only
+`:92348`'s `GetColor` READ (e7's gold-critter citation); the other two
+`PlotTileLine` sites (`:55401`/`:55680`) pass `SearchAvoidedByNPCs` - a
+collision probe, no light, already ported in
+`npc_ai_town.rs::body_line_avoids`; zero
+`TileLightScanner`/`LightingEngine`/`lightValue`/`SpreadLight`/other
+`CastLight*` forms.
+
+Port: `crates/tr-app/src/npc_lights_c.rs::dd2_body_cast_light` - one shared
+fn for both arms (same colour, same walk), feeding the SAME
+`EntityLights` pair from the frame pass (`app/frame/draw.rs`, beside the
+aiStyle-8/horseman feeds, `Main.npc` slot order). The walk is the verbatim
+`Utils.PlotTileLine` (`Utils.cs:2337-2350`) + `PlotLine`
+(`:2238-2292`, the `npc_ai_town.rs::plot_line` twin) + `CastLightOpen`
+(`DelegateMethods.cs:726-741`, the NPC-side call-site copy of e8's
+delegate - the merger keeps ONE copy). Verbatim quirks kept:
+
+* **The C# offset signs**: `perp = (-dir.Y, dir.X) * w/2 = (-w/2, 0)` for
+  the vertical Top->Bottom line, so `point = start - perp` is the RIGHT
+  edge (`lineMinOffset`) and `point2 = start + perp` the LEFT edge - the
+  inner span walks RIGHT->LEFT. The light list's order is part of the C#
+  per-frame list, so the port keeps right-first (the
+  `npc_ai_town.rs::body_line_avoids` twin swaps the edges - harmless for
+  its boolean probe's common case, NOT corrected here, out of scope).
+* **`PlotLine` never plots its end point** (`for (i = x0; i != x1; ...)`,
+  `Utils.cs:2256`; only the lone-tile head plots): the span's leftmost
+  column is dropped (the 18 px skeleton's 2-column span lights only its
+  right column; the 34 px mage's 3-column span lights its right two) and
+  the body's last tile row is unploted.
+* **`ToTileCoordinates` = truncate-then-ARITHMETIC-shift**
+  (`Utils.cs:1807-1810`, `(int)v >> 4`), not the quotient form - they
+  differ below zero.
+* **`CastLightOpen` gates only the light, never the in-bounds walk**
+  (returns true even on a solid tile); the bounds/null gate aborts.
+  The open-test is `:736` verbatim (`!active || inActive || solidTop ||
+  !solid`).
+
+netOffset: both casts read the RAW position (AI_107's only wrap is the
+Drakin 620 arm's `:63655`/`:63690`, after the case; AI_109's wraps are the
+tail blocks `:66224`/`:66256`). RNG: both casts are draw-free (the
+skeleton case's `Main.rand` dust/gore halves sit at `:63573-63610`, after
+the cast) - the draw-side feed cannot move any stream. The four kinds'
+boxes: 566/567 18x40 (`NPC.cs:16348-16349`/`:16365-16366`), 564/565 34x62
+(`:16450-16451`/`:16468-16469`) - the port's `npc/data.rs` rows match.
+
+### Verification
+
+Code-only: 8 witness tests WRITTEN NOT RUN in `npc_lights_c.rs` (the
+colour product, the skeleton/mage span fixtures hand-replayed through
+`PlotLine` step-by-step, the solid/actuated open-test, the out-of-world
+abort, the shift-anchor negative case, the other-kinds negative, and the
+full-file census freeze - 80 direct + exactly 2 casts + the negative
+forms, the `main_addlight_census.rs` precedent). Every cited C# line was
+re-read line-by-line in <=100-line windows. **No
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked.**
