@@ -48,7 +48,7 @@ per `docs/superpowers` agreements).
 | 27 | Mounts / pets / minecart / grapple | `27-mounts-pets-vehicles.md` | в¬њ |
 | 28 | Buffs & debuffs (apply, UI, sync) | `28-buffs-debuffs.md` | в¬њ |
 | 29 | Town NPCs (housing/happiness/pylon) | `29-town-npc-housing.md` | в¬њ |
-| 30 | Achievements / bestiary | `30-achievements-bestiary.md` | в¬њ |
+| 30 | Achievements / bestiary | `30-achievements-bestiary.md` | ✅ **W4-c36 RETIRE FINAL-FINAL** (the d43r DEAD-pre-work probe + the HIGH slime-8 seed, the all-357-tip 180-condition FINAL census — 17 no-path rows, the 5043 keep-f33 drop-hunk, the achievement-family merger-bible; RETIRE (1)-(4)) |
 | 31 | Golf / ball physics | `31-golf-ball-physics.md` | в¬њ |
 | 32 | Sound / audio engine | `32-sound-audio.md` | в¬њ |
 | 33 | Localization | `33-localization.md` | в¬њ |

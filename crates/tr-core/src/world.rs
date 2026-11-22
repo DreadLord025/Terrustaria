@@ -377,6 +377,11 @@ pub struct World {
     /// (a crimson heart = the Brain, a shadow orb = the Eater of Worlds)
     /// summons the boss (`:54294-54321`).
     pub shadow_orb_count: i32,
+    /// W4-c36 — `WorldGen.CheckOrb`'s achievement tail (`WorldGen.cs:54331`):
+    /// every completed orb/heart smash fires progression 7 (SMASHING_POPPET).
+    /// The core kill plan sets the flag; the app's break seam drains it into
+    /// the manager (the core carries no achievement system).
+    pub orb_smash_notify_pending: bool,
     /// `Main.invasionType` (`Main.cs:64455`): 1 = the Goblin Army.
     /// `DD2Event.Ongoing` (the Old One's Army) — the crystal summon
     /// raises it, the win/loss clears it.
@@ -726,6 +731,7 @@ impl World {
             altars_smashed: 0,
             shadow_orb_smashed: false,
             shadow_orb_count: 0,
+            orb_smash_notify_pending: false,
             downed_goblins: false,
             downed_frost: false,
             downed_pirates: false,
@@ -924,7 +930,10 @@ impl World {
     /// kill's wave, the points added, the advance when the requirement is met
     /// and non-zero. The wave-text broadcast and the
     /// `ReportInvasionProgress` bar are UI/MP — out. Draws nothing.
-    fn moon_event_kill_walk(&mut self, npc_type: u16, points: fn(u16) -> f32) {
+    /// W4-c36: returns true when the advance lands ON wave 15 — the C# fires
+    /// progression 14 (frost, `:78569-78572`) / 15 (pumpkin, `:78703-78706`)
+    /// inside the wave-text branch; the caller notifies.
+    fn moon_event_kill_walk(&mut self, npc_type: u16, points: fn(u16) -> f32) -> bool {
         // `MoonEventRequiredPointsPerWaveLookup[NPC.waveNumber]` — the C# index
         // runs 0..20 (the start's 1 and the stop's 0 are both valid, the table
         // has 21 rows); an out-of-range wave reads the terminal 0 rather than
@@ -941,26 +950,30 @@ impl World {
             // requirement right after for the broadcast (out of scope).
             self.wave_kills = 0.0;
             self.wave_number += 1;
+            return self.wave_number == 15;
         }
+        false
     }
 
     /// `NPC.CheckProgressFrostMoon` (`NPC.cs:78445-78586`) on the kill of
     /// `npc_type` — self-gates on `Main.snowMoon`, so a kill under any other
-    /// state (or another event's family) scores nothing.
-    pub fn report_frost_moon_kill(&mut self, npc_type: u16) {
+    /// state (or another event's family) scores nothing. Returns true when
+    /// the walk advanced onto wave 15 (the progression-14 hook).
+    pub fn report_frost_moon_kill(&mut self, npc_type: u16) -> bool {
         if !self.snow_moon {
-            return;
+            return false;
         }
-        self.moon_event_kill_walk(npc_type, Self::frost_moon_points);
+        self.moon_event_kill_walk(npc_type, Self::frost_moon_points)
     }
 
     /// `NPC.CheckProgressPumpkinMoon` (`NPC.cs:78588-78719`) on the kill of
-    /// `npc_type` — self-gates on `Main.pumpkinMoon`.
-    pub fn report_pumpkin_moon_kill(&mut self, npc_type: u16) {
+    /// `npc_type` — self-gates on `Main.pumpkinMoon`. Returns true when the
+    /// walk advanced onto wave 15 (the progression-15 hook).
+    pub fn report_pumpkin_moon_kill(&mut self, npc_type: u16) -> bool {
         if !self.pumpkin_moon {
-            return;
+            return false;
         }
-        self.moon_event_kill_walk(npc_type, Self::pumpkin_moon_points);
+        self.moon_event_kill_walk(npc_type, Self::pumpkin_moon_points)
     }
 
     /// `UpdateTime_StartDay`'s invasion roll (`Main.cs:65439-65462`): the
@@ -1737,6 +1750,40 @@ mod tests {
             (w.wave_kills, w.total_invasion_points, w.wave_number),
             (0.0, 0.0, 0)
         );
+    }
+
+    /// W4-c36 — the wave-15 hook (`NPC.cs:78569-78572`/`:78703-78706`): the
+    /// walk returns true exactly when the advance lands ON wave 15 — the
+    /// caller fires progression 14 (frost) / 15 (pumpkin).
+    #[test]
+    fn w4_c36_the_wave_fifteen_advance_returns_the_hook() {
+        // Wave 14's requirement is 675; a 150-point kill at 600 advances
+        // onto 15 → the hook fires once.
+        let mut w = World::new("t".into(), 40, 40);
+        w.start_snow_moon();
+        w.wave_number = 14;
+        w.wave_kills = 600.0;
+        assert!(w.report_frost_moon_kill(345), "the 150-point kill clears wave 14");
+        assert_eq!(w.wave_number, 15);
+        // The next advance (15 → 16, requirement 850) fires nothing.
+        w.wave_kills = 800.0;
+        assert!(!w.report_frost_moon_kill(345));
+        assert_eq!(w.wave_number, 16);
+        // The pumpkin twin.
+        let mut w = World::new("t".into(), 40, 40);
+        w.start_pumpkin_moon();
+        w.wave_number = 14;
+        w.wave_kills = 600.0;
+        assert!(w.report_pumpkin_moon_kill(327), "the 150-point pumpking");
+        assert_eq!(w.wave_number, 15);
+        w.wave_kills = 800.0;
+        assert!(!w.report_pumpkin_moon_kill(327));
+        // A non-advancing kill at wave 14 fires nothing.
+        let mut w = World::new("t".into(), 40, 40);
+        w.start_snow_moon();
+        w.wave_number = 14;
+        assert!(!w.report_frost_moon_kill(349), "4 points hold wave 14");
+        assert_eq!(w.wave_number, 14);
     }
 
     /// DW-1.3: the `requirement == 0` terminal waves never advance — wave 20

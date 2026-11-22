@@ -440,6 +440,20 @@ pub fn slain_message(player_name: &str) -> String {
 /// (`Player.cs:54373` → `Item.cs:49651`). The npcs-pass caller hands the
 /// pre-death position, not the centre.
 pub fn on_player_death(app: &mut App, x: f32, y: f32, death_text: &str) {
+    // W4-c36 — `KillMe`'s achievement head (`Player.cs:38822-38828`): a trap
+    // debuff source fires WATCH_YOUR_STEP ("Hit"), and a death inside the
+    // rigged-chest window fires DIE_TO_DEAD_MANS_CHEST ("Do"). Both run
+    // BEFORE the drops (the C# order — the hooks precede `DropItems`).
+    let (trap, deadmans) = app
+        .player
+        .as_ref()
+        .map_or((false, false), |p| (p.trap_debuff_source, p.deadmans_chest_death_frames > 0));
+    if trap {
+        let _ = app.achievements.complete_condition("WATCH_YOUR_STEP", "Hit");
+    }
+    if deadmans {
+        let _ = app.achievements.complete_condition("DIE_TO_DEAD_MANS_CHEST", "Do");
+    }
     // `KillMe` `:38863`: `DropItems(difficulty == 0 || difficulty == 3)` —
     // softcore/journey gems-only, mediumcore/hardcore the whole carry. The
     // difficulty rides the session draft (`App::active_player_difficulty`,
@@ -624,6 +638,30 @@ mod revenge_tests {
         assert_eq!(value_to_coins(10_050), format!("1 {} 50 {}", crate::lang::text("Currency.Gold").to_lowercase(), crate::lang::text("Currency.Copper").to_lowercase()));
         assert_eq!(value_to_coins(1_010_050), format!("1 {} 1 {} 50 {}", crate::lang::text("Currency.Platinum").to_lowercase(), crate::lang::text("Currency.Gold").to_lowercase(), crate::lang::text("Currency.Copper").to_lowercase()));
         assert_eq!(value_to_coins(2_000_000), format!("2 {}", crate::lang::text("Currency.Platinum").to_lowercase()));
+    }
+
+    /// W4-c36 — `KillMe`'s achievement head (`Player.cs:38822-38828`): the
+    /// trap-debuff death fires WATCH_YOUR_STEP, the rigged-chest window
+    /// fires DIE_TO_DEAD_MANS_CHEST; a plain death fires neither.
+    #[test]
+    fn w4_c36_the_death_hooks_fire_the_trap_and_rigged_rows() {
+        let done = |app: &crate::app::App, name: &str| {
+            app.achievements.list.iter().any(|a| a.name == name && a.completed)
+        };
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut p = crate::player::Player::spawn(&app.world);
+        p.trap_debuff_source = true;
+        p.deadmans_chest_death_frames = 600;
+        app.player = Some(p);
+        on_player_death(&mut app, 100.0, 100.0, "Tester was slain...");
+        assert!(done(&app, "WATCH_YOUR_STEP"));
+        assert!(done(&app, "DIE_TO_DEAD_MANS_CHEST"));
+        // A plain death fires neither.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        on_player_death(&mut app, 100.0, 100.0, "Tester was slain...");
+        assert!(!done(&app, "WATCH_YOUR_STEP"));
+        assert!(!done(&app, "DIE_TO_DEAD_MANS_CHEST"));
     }
 
     #[test]

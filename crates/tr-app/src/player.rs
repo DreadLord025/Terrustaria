@@ -783,6 +783,34 @@ pub struct Player {
     /// `Player.deadTime`: the ticks spent dead (`Player.cs:16923`); gates the
     /// respawn-skip (90-tick lockout, `Player.cs:57111`).
     pub dead_time: i32,
+    /// `Player._funkytownAchievementCheckCooldown` (`Player.cs:16752-16775`,
+    /// W4-c36): alive ticks decrement it, a dead tick re-arms 100 — the
+    /// FUNKYTOWN/FOUND_GRAVEYARD reach rows wait out the death respawn.
+    pub funkytown_achievement_check_cooldown: i32,
+    /// `Player._framesLeftEligibleForDeadmansChestDeathAchievement`
+    /// (`Player.cs:1360`, W4-c36): the rigged-chest open arms 600
+    /// (`:33114`/`:33257`), the per-tick decay floors at 0 (`:24617-24620`),
+    /// and `KillMe`'s window test (`:38826-38828`) fires
+    /// DIE_TO_DEAD_MANS_CHEST while it runs.
+    pub deadmans_chest_death_frames: i32,
+    /// `Player.trapDebuffSource` (`Player.cs:2414`, W4-c36): a trap
+    /// projectile's player hit arms it (`Projectile.cs:14874`/`:15056`),
+    /// `UpdateBuffs`' tail clears it when neither OnFire nor Poisoned runs
+    /// (`:25569-25572`), and `KillMe` fires WATCH_YOUR_STEP on a trap death
+    /// (`:38822-38825`).
+    pub trap_debuff_source: bool,
+    /// W4-c36 — the fall-damage LUCKY_BREAK hook (`Player.cs:25354-25357`/
+    /// `:25371-25374`): a damaging fall that leaves the player alive at
+    /// `statLife <= statLifeMax2 / 10` queues the event-8 completion; the
+    /// world-sim pass drains it into the manager (the `pending_mana_effect`
+    /// convention — the bare player tick carries no manager).
+    pub pending_lucky_break: bool,
+    /// W4-c36 DOC-SWEEP — the coffin-cart ROLLIN_IN_YOUR_GRAVE hook
+    /// (`Mount.SetMount`'s `:6301-6304`): mounting the Coffin Minecart
+    /// (MountID 38) queues progression 32; the world-sim pass drains it into
+    /// the manager (the `pending_lucky_break` convention — the bare player
+    /// tick carries no manager).
+    pub pending_grave_cart: bool,
     /// `Player.anglerQuestsFinished` (`Player.cs:1910`): the count
     /// the Angler's reward table reads (`GetAnglerReward_MainReward`'s
     /// milestone switch, `Player.cs:56323`).
@@ -1385,8 +1413,8 @@ pub struct Player {
     p_stone_prev: bool,
     /// `Player.statManaMax` (`Player.cs:1931`): the PERMANENT mana cap —
     /// the character file's `manaMax` (`:55226`, clamped to 200) and the
-    /// Mana Crystal's +20 use-grant (`:45276-45281`, unported). The
-    /// per-tick rebase reads it; nothing else writes it in play.
+    /// Mana Crystal's +20 use-grant (`:45276-45281`, W4-c36's
+    /// `use_permanent_powerup`). The per-tick rebase reads it.
     pub mana_max_base: i32,
     /// `Player.manaFlower` (`Player.cs:1876`-adjacent field, armed by the Mana
     /// Flower 555 `:15591-15594`, Arcane Flower 3991 `:14405-14406`, Magnet
@@ -2653,6 +2681,11 @@ impl Player {
             loadouts: Default::default(),
             current_loadout_index: 0,
             dead_time: 0,
+            funkytown_achievement_check_cooldown: 0,
+            deadmans_chest_death_frames: 0,
+            trap_debuff_source: false,
+            pending_lucky_break: false,
+            pending_grave_cart: false,
             respawn_timer: 0,
             immune: false,
             immune_time: 0,
@@ -5959,6 +5992,12 @@ impl Player {
         if self.time_since_last_dash_started >= 300 {
             self.time_since_last_dash_started = 300;
         }
+        // W4-c36 — `Player.cs:24617-24620`: the rigged-chest death window
+        // decays one per tick, floored at 0 (`KillMe`'s `> 0` test reads it).
+        self.deadmans_chest_death_frames -= 1;
+        if self.deadmans_chest_death_frames < 0 {
+            self.deadmans_chest_death_frames = 0;
+        }
         // `Player.cs:24761-24764`: every resting tick recovers 2 hover
         // fatigue — the read is the PREVIOUS tick's velocity (the head runs
         // before this tick's movement).
@@ -7990,6 +8029,14 @@ impl Player {
                     let cx = self.x + self.width * 0.5;
                     self.hurt_inner(dmg, cx, false, rng, true, false, None, true);
                     self.hurt_cd = 0.0;
+                    // W4-c36 — `:25354-25357`: alive at ≤ statLifeMax2/10
+                    // after the hit → LUCKY_BREAK ("Hit"). The port's
+                    // `max_hp` is the statLifeMax2 stand-in (the per-tick
+                    // rebase convention); `hp > 0` is the `!dead` test (the
+                    // port latches `dead` in the later death seam).
+                    if self.hp > 0 && self.hp <= self.max_hp / 10 {
+                        self.pending_lucky_break = true;
+                    }
                 }
             } else if (fell > threshold) && !self.no_fall_dmg && !self.has_wings {
                 // `Player.cs:25360-25374`: `(fell - threshold) * 10` damage with
@@ -8004,6 +8051,12 @@ impl Player {
                     (fell - threshold) * 10
                 };
                 self.hurt_fall(dmg, rng);
+                // W4-c36 — `:25371-25374`: the same LUCKY_BREAK test on the
+                // normal fall arm (`hp > 0` = the `!dead` test, the port
+                // latches `dead` in the later death seam).
+                if self.hp > 0 && self.hp <= self.max_hp / 10 {
+                    self.pending_lucky_break = true;
+                }
             }
             self.fall_start = (self.y / TILE_PX) as i32;
         }
@@ -9656,6 +9709,16 @@ impl Player {
         if matches!(m, 62..=65) {
             let (cx, cy) = self.center();
             self.pending_chillet_sound = Some((cx, cy));
+        }
+        // W4-c36 DOC-SWEEP — `:6301-6304`: `if (_type == 38 &&
+        // mountedPlayer.whoAmI == Main.myPlayer)` fires progression 32
+        // (ROLLIN_IN_YOUR_GRAVE, the Coffin Minecart mount). The local player
+        // is this `Player` in the port's single-player pass; the queue drains
+        // in `world_sim/player.rs` (the `pending_lucky_break` convention).
+        // The same-type re-mount never reaches here (`MountState::set_mount`'s
+        // `kind == m` guard returns None), matching the C# `:6198` early-out.
+        if m == 38 {
+            self.pending_grave_cart = true;
         }
         true
     }
@@ -13489,7 +13552,8 @@ mod tests {
         p.update(&w, PlayerInput::default());
         assert_eq!(p.mana_max, 40);
         // The base itself is the owned 20 (`:56075`); the crystal-use arm
-        // (`:45274-45288`) is unported, so it never grows here.
+        // (`:45274-45288`) rides W4-c36's `use_permanent_powerup` — this
+        // bare-player test never uses one, so the base stays 20.
         assert_eq!(p.mana_max_base, 20);
     }
 

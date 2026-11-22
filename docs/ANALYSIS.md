@@ -15208,13 +15208,105 @@ powers/research вЂ” each needs its own scope.
   `AchievementsHelper.cs:411-418`), acorn plant `Do` (`Player.cs:40139`), Shadow
   chest `Peek` (`Player.cs:33243-33246`), grounded running `Move`
   (`Player.cs:28233-28236`). `StopSlimeRain` sets the negative cooldown clock
-  (`Main.cs:64787-64820`). **Blocked/unported:** progression 29 BOOK_WORM waits
-  on S1-F-15 (bestiary tier/`completion_percent` bug); nurse `Pay`
-  (`Main.cs:40110`), IT_CAN_TALK 18 (no Truffle kind 160), REAL_ESTATE_AGENT 17
-  partial (missing 107/178/229/209/160/550), DUNGEON_HEIST 19 / BIG_BOOTY 20
-  (locked-chest unlock path), and most other progression/CustomFlag rows lack
+  (`Main.cs:64787-64820`). **Blocked/unported (2026-11-12 snapshot; the W4-c36
+  re-probe reconciles it in research/30):** progression 29 BOOK_WORM's hook
+  FIRES (S1-E-18p29) and the S1-F-15 denominator bug is FIXED — the residual
+  gate is the town/critter provider fold (c37); nurse `Pay`
+  (`Main.cs:40110`) landed via S1-E-18-nurse-pay; IT_CAN_TALK 18 (no Truffle
+  kind 160 ON THIS BASE — the NOTIFY-SYNC update: the kind IS on d120
+  `4b17a2cf1`, the arrival notify hunk published in research/30),
+  REAL_ESTATE_AGENT 17 partial (missing 178/229/209/160 on this base — 107 and
+  550 ARE ported; NOTIFY-SYNC: all four now on d120/d37 tips, the roster
+  activates at their merge), DUNGEON_HEIST 19 / BIG_BOOTY 20 landed via
+  S1-E-18b-chest-progress; most other progression/CustomFlag rows lack
   owning systems. `tile_drop` returns `None` for altar 26 (C# empty drop group)
-  to avoid leaking the Journey altar item.
+  to avoid leaking the Journey altar item. **NOTIFY-SYNC (W4-c36, second
+  pass 2026-11-21):** TRAINING_DAY 40 + NEW_DIGS 43 are WIRED LIVE on
+  g90b `b3b82d071` / f47 `a2561d6d9` — c36's owed rows retired (the
+  keep-one contracts + the published b3/d20b/d120 hunks live in
+  research/30 NOTIFY-SYNC (1)-(4)). **RETIRE FINAL (W4-c36, 2026-11-21):**
+  EXTRA_LIFE 35 joins the retired rows — c46 `2802ed5b9` wires it live
+  (`death.rs:527`); the FINAL no-path census is 17 rows (research/30
+  RETIRE (2)); the d43 slime lane is DEAD pre-work (the HIGH-priority
+  d43r seed, RETIRE (1)).
+- **Notify sites, first batch (W4-c36, 2026-11-21).** The row-targeted
+  `AchievementManager::complete_condition(row, cond)` primitive ports
+  `GetCondition(row, conditionName).Complete()` (`AchievementManager.cs:220-227`,
+  `AchievementCondition.cs:37-47`) — the C# hooks NEVER broadcast a flag; the
+  four lossy `notify_custom` broadcasts (drowned-sip "Use" ×2, shadow-chest
+  "Peek", angler "Finish") are re-pointed onto their named rows. New sites:
+  `HandleOnEquip`/`OnPlayerEnteredWorld` (`app/achievement_hooks.rs` — the
+  equip contexts at the ItemSlot call sites, the enter-world pickup fan-out +
+  stat flags), the Blood Moon Starter/Solar Tablet event items, the permanent
+  power-ups (Life Crystal/Mana Crystal/Life Fruit + the Torch God's Favor with
+  its bestiary credit), the yoyo/kite shoot-tail hooks, the 9-minion
+  YOU_AND_WHAT_ARMY test, the `UpdateBiomes` reach ladder (hive/spider walls,
+  special seed, underworld/glowshroom/graveyard + the funkytown cooldown) and
+  the `BordersMovement` reads, the `KillMe` trap/rigged-chest death hooks (the
+  600-tick window + the trap-debuff flag's arm/clear), the fall-damage
+  LUCKY_BREAK, the moon wave-15 progressions 14/15, the Bee-set/Unicorn-mount
+  weapon hooks, lava fishing, the max-happiness talk and the orb-smash
+  progression 7. The natural blood-moon/eclipse progressions 4/2 are faithful
+  no-op wires (no shipped row listens — `AchievementInitializer` never calls
+  `Create(2)`/`Create(4)`). **Deviations:** the enter-world `Loadouts` walk
+  (`AchievementsHelper.cs:134-146`) has no loadout system; the Bee/Unicorn
+  hooks read the post-tick state at the player-pass drain (the C# runs them
+  inside `UpdateArmorSets`/`Mount.UpdateEffects` mid-tick — same tick, same
+  inputs); the kite aiStyle-160 arm stands ready (no ported kite `proj_data`
+  rows yet); the minecart-kill (9) and pet-the-pet (21) hooks stay unwired (no
+  owning systems). The full site table + the unwired list live in
+  `docs/research/30-achievements-bestiary.md` "Lane claim — W4-c36".
+- **Save-wire audit (W4-c36).** The C#'s only external `Main.Achievements.Save()`
+  call site is `Player.InternalSavePlayer`'s first statement (`Player.cs:54700`);
+  the port's `save_world` head covers every exit route (autosave/F9/close/quit),
+  and both `notify_with` and `complete_condition` save per completing row.
+  `Clear`/`ClearAll` (`AchievementManager.cs:152-178`) have no retail caller —
+  unported. Witnesses pin the quit route and the row-targeted completion write.
+- **DOC-SWEEP batch (W4-c36 lane 32, 2026-11-21).** Four more sites after
+  reading the co-lane claims (f30's tail census `f8cef8cb` — its 21/37/38/41
+  wires are taken; g53's screen sweep — the popup toast was already done by
+  S1-E-26 wave A, skipped): the coffin-cart mount progression 32
+  (`Mount.cs:6301-6304` — `Player::set_mount` queues `pending_grave_cart`,
+  the player pass drains), the FTW Moon Lord kill progression 30
+  (`NPC.cs:79398-79402` — `Main.getGoodWorld` is the ForTheWorthy seed bit,
+  `WorldGen.cs:11118`; the strike-death arm only, the despawn/part-clear
+  rides skip it), the locked Lihzahrd door progression 22
+  (`Player.cs:32792-32834` + `WorldGen.UnlockDoor` `:37599-37627` —
+  `editing/doors.rs::try_unlock_temple_door`/`unlock_door`, the Temple Key
+  1141 inventory pay + void-bag bank4 fallback, the frameY-594 top walk and
+  the +54 three-cell shift), and `CheckAchievement_RealEstateAndTownSlimes`
+  (`WorldGen.cs:5659-5677` — `achievement_hooks.rs`, the faithful 25-id +
+  8-slime roster scan wired at the three C# call sites the port carries).
+  **Deviations:** the door arm's dust burst (4× Dust 11 per cell) and the MP
+  `52` door-sync send have no port layer (the standing tile-edit dust / net
+  gaps); the roster check is a faithful NO-OP wire in play — Truffle 160,
+  Steampunker 178, Cyborg 209, Pirate 229, Bartender 550 and the eight town
+  slimes have no NpcKind rows; the coffin-cart queue drains at the player
+  pass (the C# fires inside `SetMount` — same tick, the
+  `pending_lucky_break` convention). **5043 keep-one (c36/f33b/g90b):**
+  ~~no overlap to delete~~ **SUPERSEDED — the RETIRE (3) FINAL verdict
+  (f33 93a §3b/§8, tip `83387628b`): keep f33's full-body use arm + named
+  dispatcher, DROP c36's reduced copy (the exact 4-hunk drop published in
+  research/30 RETIRE (3): `editing.rs:2017/:2088-2094/:16325-16353/:16534-16559`)
+  and a6's arm; c36's enter-world re-check survives.** The full
+  180-condition notify-path census (the gap list: 20 rows with no complete
+  notify path, each with its missing owning system) lives in research/30
+  "W4-c36 DOC-SWEEP". 4 witnesses written not run (code-only mode).
+- **RETIRE FINAL-FINAL (W4-c36, 2026-11-21).** The lane retires at the
+  RETIRE (4) commit; code behaviour is exactly `3a64a1b96`'s (the four
+  retire phases are doc-only, witnesses written not run). The final
+  state: the 180-condition census re-swept across ALL 357 pushed tips —
+  **17 rows have no notify path anywhere** (research/30 RETIRE (2));
+  40/43/35 retired onto g90b/f47/c46 live wires; the Gnome 624 + Fairy
+  583-585 kinds landed on d42 `2d7ac08c3` (the conversion/sight seams stay
+  unowned); the roster 17 activates at the d120/d37 merge, 26 waits on
+  the DEAD d43 lane (checkout-only reflog, zero commits — the
+  HIGH-priority d43r fresh-dispatch seed, three published consumers
+  waiting). The 5043 keep-one is f33's full body (the c36 drop-hunk
+  published). The achievement-family merger-bible (the 10-step ordered
+  recipe: e22/g53 data, the notify union, 5043, b3/f47, d20, d120/d37,
+  c24+f30, c37, d43r, the post-merge verify) lives in research/30
+  "W4-c36 RETIRE (4)". All witnesses WRITTEN NOT RUN (code-only).
 - **The menu's `largeForOtherLanguages` flag is always `true`** (`flag = true` in
   `InitializePage`), which is what fixes the row height at `66 + 16 + 20 = 102`
   and the `MinWidth`/`MaxWidth` at 700/900. The in-game arm (`OnActivate`'s

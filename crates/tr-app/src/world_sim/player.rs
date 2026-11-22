@@ -1310,6 +1310,22 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 // draw order are unchanged.
                 app.rngs.stream(crate::app::RngKey::UpdatePlayers),
             );
+            // W4-c36 — `Player.cs:25567-25572` (`UpdateBuffs`' tail, the
+            // myPlayer arm): with neither OnFire (24) nor Poisoned (20)
+            // running, the trap-debuff source clears — a trap death only
+            // counts while its debuff lingers. The `hp > 0` gate keeps the
+            // flag for the death seam: the port latches `dead` in the LATER
+            // npcs pass (`on_player_death` reads the flag), so a lethal
+            // trap hit this tick must survive the clear (the C# `KillMe`
+            // runs synchronously inside the hit, before any clear).
+            let burning_or_poisoned = p
+                .buffs
+                .active_types()
+                .iter()
+                .any(|&b| b == 20 || b == 24);
+            if !burning_or_poisoned && p.hp > 0 {
+                p.trap_debuff_source = false;
+            }
             // DW-3.3/DW-3.4 — the ammo-mastery half of `Player.Update`
             // (`Player.UpdateBuffs` → `UpdateEquips` → … → `Update_AmmoCycler` →
             // `ItemCheck`, `:25566`/`:25633`/`:24566`/`:31827`), which the port
@@ -1738,6 +1754,54 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // unchanged; at half the catalog it fires progression 45
         // (TRASH_COMPACTOR).
         let _ = app.achievements.check_research(&app.research, false);
+        // W4-c36 — `Player.UpdateBiomes`' reach/biome tail (`Player.cs:
+        // 16732-16776`) + `BordersMovement`'s reads (`:24099`/`:24125`):
+        // the per-tick wall/zone/depth checks fire the named reach rows.
+        // The pairs resolve after the player borrow releases the manager.
+        let reach_rows = if let Some(p) = app.player.as_mut() {
+            crate::app::achievement_hooks::reach_check(
+                p,
+                &app.world,
+                app.scene_metrics.zone_graveyard,
+            )
+        } else {
+            Vec::new()
+        };
+        for (row, cond) in reach_rows {
+            let _ = app.achievements.complete_condition(row, cond);
+        }
+        // W4-c36 — the fall-damage LUCKY_BREAK drain (`Player.cs:25354-25357`/
+        // `:25371-25374`): the bare player tick queued the event-8 test.
+        if app.player.as_mut().is_some_and(|p| std::mem::take(&mut p.pending_lucky_break)) {
+            let _ = app.achievements.complete_condition("LUCKY_BREAK", "Hit");
+        }
+        // W4-c36 DOC-SWEEP — `Mount.SetMount`'s coffin-cart arm
+        // (`Mount.cs:6301-6304`): the Coffin Minecart (MountID 38) mount
+        // queued progression 32 (ROLLIN_IN_YOUR_GRAVE).
+        if app.player.as_mut().is_some_and(|p| std::mem::take(&mut p.pending_grave_cart)) {
+            let _ = app.notify_progression_net(32);
+        }
+        // W4-c36 — `Mount.UpdateEffects` case 10 (`Mount.cs:4955-4958`): the
+        // Unicorn mount swinging the Rainbow Gun 1260 fires
+        // HandleSpecialEvent(5) → RAINBOWS_AND_UNICORNS ("Use").
+        let unicorn_rainbow = app.player.as_ref().is_some_and(|p| {
+            p.mount.is_active() && p.mount.kind() == 10
+        });
+        if unicorn_rainbow && app.swing > 0.0 && app.inventory[app.selected].kind == 1260 {
+            let _ = app.achievements.complete_condition("RAINBOWS_AND_UNICORNS", "Use");
+        }
+        // W4-c36 — `ArmorSetBonuses.Benefits.Bee` (`ArmorSetBonuses.cs:23-30`):
+        // the completed Bee set (2361/2362/2363) fires HandleSpecialEvent(3)
+        // → NOT_THE_BEES ("Use") while the Bee Gun 1121 swings
+        // (`itemAnimation > 0 && inventory[selectedItem].type == 1121`).
+        // The C# runs it inside `UpdateArmorSets` (`Player.cs:25685`); the
+        // port reads the same tick's post-update state here.
+        let bee_set = app.player.as_ref().is_some_and(|p| {
+            p.equipped[0] == 2361 && p.equipped[1] == 2362 && p.equipped[2] == 2363
+        });
+        if bee_set && app.swing > 0.0 && app.inventory[app.selected].kind == 1121 {
+            let _ = app.achievements.complete_condition("NOT_THE_BEES", "Use");
+        }
         if run_pixels > 0.0 {
             // `Player.cs:28233-28236` -> `AchievementsHelper.HandleRunning`
             // (`AchievementsHelper.cs:420-423`): grounded, unmounted running
@@ -2571,6 +2635,37 @@ mod tests {
         let before = app.audio.played_count();
         update_player(&mut app, 1.0 / 60.0);
         assert_eq!(app.audio.played_count(), before, "no item, no UseSound");
+    }
+
+    /// W4-c36 DOC-SWEEP — `Mount.SetMount`'s coffin-cart arm
+    /// (`Mount.cs:6301-6304`): mounting the Coffin Minecart (38) queues
+    /// progression 32 and the player pass drains it into ROLLIN_IN_YOUR_GRAVE;
+    /// a non-coffin mount never queues, and the same-type re-mount is the
+    /// `:6198` no-op (no second event). WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_c36_the_coffin_cart_mount_completes_rollin_in_your_grave() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(Player::spawn(&app.world));
+        // A non-coffin mount (the Unicorn) queues nothing.
+        app.player.as_mut().unwrap().set_mount(10, false);
+        assert!(!app.player.as_ref().unwrap().pending_grave_cart);
+        update_player(&mut app, 1.0 / 60.0);
+        assert!(
+            !app.achievements.list.iter().any(|a| a.name == "ROLLIN_IN_YOUR_GRAVE" && a.completed),
+            "the unicorn is not the coffin cart"
+        );
+        // The coffin cart (38) queues the drain.
+        app.player.as_mut().unwrap().set_mount(38, false);
+        assert!(app.player.as_ref().unwrap().pending_grave_cart);
+        update_player(&mut app, 1.0 / 60.0);
+        assert!(!app.player.as_ref().unwrap().pending_grave_cart, "drained");
+        assert!(
+            app.achievements.list.iter().any(|a| a.name == "ROLLIN_IN_YOUR_GRAVE" && a.completed),
+            "progression 32 completes the row"
+        );
+        // The same-type re-mount never reaches the arm (`:6198` guard).
+        app.player.as_mut().unwrap().set_mount(38, false);
+        assert!(!app.player.as_ref().unwrap().pending_grave_cart, "the no-op guard");
     }
 
     /// S1-L-10c — `Player.QuickGrapple` (`Player.cs:6334-6337`): the mount

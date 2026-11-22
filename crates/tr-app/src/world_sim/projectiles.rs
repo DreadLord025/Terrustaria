@@ -557,6 +557,11 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     for (style, x, y) in app.projectiles.drain_splashes() {
         app.audio.play_splash_sound(style, x, y, rng);
     }
+    // W4-c36 — the lava-fishing achievement drain (`Projectile.cs:20798-
+    // 20801`): `HandleSpecialEvent(19)` → GO_LAVA_FISHING's "Do".
+    if app.projectiles.drain_lava_fishing_achievement() {
+        let _ = app.achievements.complete_condition("GO_LAVA_FISHING", "Do");
+    }
     // S1-P-i35 — the bobber death hook's catch drain (`Projectile.cs:71986-
     // 71994` → `GiveItemToPlayer` → `QuickSpawnItem` → `GetOrDropItem`): the
     // item fills the owner's inventory first (`Player.GetItem`'s slot walk),

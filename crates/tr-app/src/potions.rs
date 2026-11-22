@@ -497,8 +497,13 @@ pub fn use_potion_item(app: &mut App, held: ItemSlot) -> bool {
     }
     if drowning {
         // HandleSpecialEvent(25) → DRINK_BOTTLED_WATER_WHILE_DROWNING "Use"
-        // (`AchievementsHelper.cs:370-372`).
-        let _ = app.achievements.notify_custom("Use");
+        // (`AchievementsHelper.cs:370-372`). W4-c36: the C# names ONE row's
+        // condition (`GetCondition(row, "Use").Complete()`), never a
+        // flag-wide broadcast — the old `notify_custom("Use")` also closed
+        // STAR_POWER/GET_A_LIFE/TOPPED_OFF/… on a drowned sip.
+        let _ = app
+            .achievements
+            .complete_condition("DRINK_BOTTLED_WATER_WHILE_DROWNING", "Use");
     }
     true
 }
@@ -740,7 +745,12 @@ pub fn quick_heal(app: &mut App) -> bool {
     // `:5535-5542`: `CanConsumeConsumableItem` is true → stack--, TurnToAir.
     loc.consume(app);
     if drowning {
-        let _ = app.achievements.notify_custom("Use");
+        // `:5543-5546` → HandleSpecialEvent(25), the row-targeted form
+        // (`AchievementsHelper.cs:370-372`, W4-c36 — the quick-heal sip must
+        // not close the other "Use" rows).
+        let _ = app
+            .achievements
+            .complete_condition("DRINK_BOTTLED_WATER_WHILE_DROWNING", "Use");
     }
     true
 }
@@ -850,7 +860,7 @@ pub fn undo_slow_magic_use(app: &mut App) {
 /// 4529`): the player hitbox rect, the HealLife colour, the UpdatePlayers
 /// stream. Shared by the ItemCheck and quick-use paths. Reads the player
 /// coords into locals first so the pool/rng borrows stay disjoint.
-fn spawn_heal_text(app: &mut App, amount: i32) {
+pub(crate) fn spawn_heal_text(app: &mut App, amount: i32) {
     let Some(p) = app.player.as_ref() else {
         return;
     };

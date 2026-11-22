@@ -392,6 +392,12 @@ pub(crate) fn apply_due_transforms(app: &mut App, indices: &[u32]) {
                 let c = drop_mut.center();
                 app.world.unlocked_slime_rainbow_spawn = true;
                 crate::world_sim::npcs::spawn_shimmer_release(app, 681, c.x + 4.0, c.y);
+                // W4-c36 DOC-SWEEP — `WorldItem.cs:1742`: the rainbow-slime
+                // release runs the roster check (17/26). The 681 kind is
+                // unported (the spawn is the roster-gap skip), so the check
+                // can never see it today — the wire is the faithful call
+                // order, cited.
+                crate::app::achievement_hooks::check_real_estate_and_town_slimes(app);
                 let Some(drop_mut) = app.items.get_mut(idx as usize) else {
                     continue;
                 };

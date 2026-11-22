@@ -769,6 +769,10 @@ pub struct Projectile {
     /// S1-P-i35 — the pull's Duke Fishron spawn (`Player.cs:52403-52414`,
     /// `NPC.SpawnOnPlayer(plr, 370)`): the owner player id.
     pub wants_duke_spawn: bool,
+    /// W4-c36 — the lava-fishing achievement intent (`Projectile.cs:20798-
+    /// 20801`, `HandleSpecialEvent(19)` → GO_LAVA_FISHING "Do"): the world
+    /// sim drains it into the manager (the `wants_splash` pattern).
+    pub wants_lava_fishing_achievement: bool,
 }
 
 impl Default for Projectile {
@@ -855,6 +859,7 @@ impl Default for Projectile {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            wants_lava_fishing_achievement: false,
         }
     }
 }
@@ -14723,7 +14728,7 @@ impl ProjectilePool {
         staff: u16,
         staff_item: u16,
         owner: u8,
-    ) {
+    ) -> bool {
         // `:51703-51724` — the two pet pairs die outright when their staff is
         // re-used: the first pair kills BOTH its kinds, the second
         // cross-kills (a used 1094 kills the 1113s and vice versa).
@@ -14836,9 +14841,12 @@ impl ProjectilePool {
                 s.active = false;
                 s.time_left = 0;
             }
-            // `:51826-51829` — the 9-slot achievement is unported (no
-            // achievement system); the C# `return`s here either way.
-            return;
+            // `:51826-51829` — W4-c36: the 9-slot achievement
+            // (`num + num2 >= 9f`, the accumulated minion slots + the
+            // staff's required slots) — the caller fires
+            // `HandleSpecialEvent(6)` → YOU_AND_WHAT_ARMY's "Spawn".
+            // The C# `return`s here either way.
+            return total + required >= 9.0;
         }
         // `:51832-51850` — the non-sacrificable tail: every owned projectile
         // of THIS shoot kind dies on a re-use (the sentry staves' own
@@ -14857,6 +14865,9 @@ impl ProjectilePool {
                 s.time_left = 0;
             }
         }
+        // The non-sacrificable tail carries no 9-slot hook (the C# `return`s
+        // inside the sacrificable arm, `:51830`).
+        false
     }
 
     /// `Player.UpdateMaxTurrets` (`Player.cs:53061-53090`): while the wipable
@@ -15007,6 +15018,20 @@ impl ProjectilePool {
     /// the world sim plays each on the `UpdateProjectiles` stream.
     pub fn drain_splashes(&mut self) -> Vec<(i32, f32, f32)> {
         std::mem::take(&mut self.pending_splashes)
+    }
+
+    /// W4-c36 — the lava-fishing achievement drain (`Projectile.cs:20798-
+    /// 20801`): true when any bobber's `FishingCheck` fired the condition
+    /// this pass; the world sim completes GO_LAVA_FISHING's "Do".
+    pub fn drain_lava_fishing_achievement(&mut self) -> bool {
+        let mut fired = false;
+        for s in self.slots.iter_mut() {
+            if s.wants_lava_fishing_achievement {
+                s.wants_lava_fishing_achievement = false;
+                fired = true;
+            }
+        }
+        fired
     }
 
     /// S1-P-i35 — the bobber death hook's catch drain
@@ -23434,6 +23459,14 @@ impl ProjectilePool {
         // The single-hit kill below runs after `Hurt` regardless of the
         // dodge (the C# `Damage()`'s kill block follows the `Hurt` arm).
         player.hurt_with_source(p.damage, cx, rng, p.is_damage_dodgeable(), p.kind);
+        // W4-c36 — `Projectile.cs:14872-14879`: a trap projectile's player
+        // hit arms `trapDebuffSource` (the `KillMe` WATCH_YOUR_STEP test,
+        // `Player.cs:38822-38825`); the death itself fires the event 4 hook
+        // there too — the port's death seam (`death.rs::on_player_death`)
+        // reads the flag, so the immediate-death arm needs no second site.
+        if proj_data(p.kind).is_some_and(|d| d.trap) {
+            player.trap_debuff_source = true;
+        }
         self.slots[slot].active = false;
         self.slots[slot].time_left = 0;
     }
@@ -30445,6 +30478,7 @@ mod phasmal_projectile_tests {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            wants_lava_fishing_achievement: false,
         }
     }
 
@@ -30854,6 +30888,7 @@ mod ritual_projectile_tests {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            wants_lava_fishing_achievement: false,
         }
     }
 
@@ -39123,6 +39158,34 @@ mod use_path_tests {
         let hornet = spawn_minion(&mut pool, HORNET, 300.0);
         pool.free_up_pets_and_minions(&p, 373, 2364, 0);
         assert!(!pool.slots[hornet].active, "the over-budget minion dies");
+    }
+
+    /// W4-c36 — the 9-slot achievement test (`Player.cs:51826-51829`):
+    /// `num + num2 >= 9f` — the accumulated minion slots plus the staff's
+    /// required 1 — returns true for the caller's YOU_AND_WHAT_ARMY hook.
+    #[test]
+    fn w4_c36_the_nine_slot_test_rides_the_free_up_return() {
+        let mut pool = ProjectilePool::new();
+        let w = world();
+        let mut p = player(&w);
+        p.max_minions = 10;
+        // Eight 1-slot minions + the staff's 1 = 9 → the hook fires.
+        for i in 0..8 {
+            spawn_minion(&mut pool, HORNET, 100.0 + i as f32 * 20.0);
+        }
+        assert!(pool.free_up_pets_and_minions(&p, 266, 1309, 0));
+        // Seven + 1 = 8 → no hook.
+        let mut pool = ProjectilePool::new();
+        for i in 0..7 {
+            spawn_minion(&mut pool, HORNET, 100.0 + i as f32 * 20.0);
+        }
+        assert!(!pool.free_up_pets_and_minions(&p, 266, 1309, 0));
+        // The non-sacrificable tail never fires the hook.
+        let mut pool = ProjectilePool::new();
+        for i in 0..12 {
+            spawn_minion(&mut pool, HORNET, 100.0 + i as f32 * 20.0);
+        }
+        assert!(!pool.free_up_pets_and_minions(&p, 9999, 9999, 0));
     }
 
     /// DW-6.2 — the ordering: the C# insertion sort (`Player.cs:51736-51747`)
