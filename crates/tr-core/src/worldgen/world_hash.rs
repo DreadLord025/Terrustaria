@@ -479,6 +479,11 @@ mod tests {
     // into the frames (`:35978-35988`), so the srng tail and the chest tiles
     // move. Values re-measured on the merged tree (S1-A-3's pins + S1-A-4).
     // >>> cc526b1 (Merge branch 'M5-DUNGEON-lights': DungeonGlobalLights + the restored spike pass)
+    // W4-g39 (2026-11-20, code-only): the shared WorldGen placement wrappers
+    // (`place_helpers.rs` — Place1x2/Place2x1/… the 12j census) land UNWIRED:
+    // no executed step calls them until their consumer passes (the pending
+    // d10x/g37 lanes) land, so BOTH pins stay UNCHANGED by this lane. The
+    // a == b determinism halves are untouched.
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {
