@@ -118,6 +118,20 @@ namespace Terraria
 
         // --- SaveWorldTiles status text (Lang.gen[49]) ----------------------
         public static string statusText;
+
+        // --- the AddNPCKillBy announcement chain (W4-c44) --------------------
+        public static int netMode;                              // Main.cs:1961 (0 = single player)
+        public static bool dedServ;                             // Main.cs:1123
+        public static bool gameMenu;                            // Main.cs:1861
+        public static Player[] player;                          // Main.cs:1733 (Initialize: new Player[256], :67020)
+        public static int PlayerOverheadChatMessageDisplayTime = 400; // Main.cs:1667, set :67009
+
+        // Main.NewTextMultiline (Main.cs:64638-64642) writes chatMonitor +
+        // plays sound 12 - UI/audio only, never serialized. The shim records
+        // the lines so the fixture can assert the kill announcement fired.
+        public static readonly List<string> FixtureChatSink = new List<string>();
+        public static void NewTextMultiline(string text, bool force = false, Color c = default(Color), int WidthLimit = -1)
+            => FixtureChatSink.Add(text);
     }
 
     // The `Main.GameMode` property reads ActiveWorldFileData.GameMode; the
@@ -176,6 +190,41 @@ namespace Terraria
         }
     }
 
+    // Lang is `namespace Terraria` (Lang.cs:15); the extracted GetNPCName
+    // partial (Generated/TrackerSave.cs) lands in the same namespace.
+    public static partial class Lang
+    {
+        public static Localization.LocalizedText[] gen = MakeGen();
+        private static Localization.LocalizedText[] MakeGen()
+        {
+            var a = new Localization.LocalizedText[64];
+            for (int i = 0; i < a.Length; i++) a[i] = new Localization.LocalizedText("gen" + i);
+            return a;
+        }
+
+        // GetNPCName (Lang.cs:180-191, extracted) reads these caches.
+        // FillNameCacheArray (:450-470) reflects over the FULL NPCID class's
+        // const fields, which the shim Ids.cs does not carry; the cache is
+        // built directly for the one net id the fixture's kill chain names
+        // (banner 1 -> BannerToNPC(1) = 102 AnglerFish). Lang.cs:1221-1222
+        // sizes; :517 fills; :521-524 the negative map (no negative-id kill
+        // in the fixture, so it stays Empty).
+        private static Localization.LocalizedText[] _npcNameCache = MakeNpcNames();
+        private static Localization.LocalizedText[] _negativeNpcNameCache = MakeEmpty(65);
+        private static Localization.LocalizedText[] MakeEmpty(int n)
+        {
+            var a = new Localization.LocalizedText[n];
+            for (int i = 0; i < n; i++) a[i] = Localization.LocalizedText.Empty;
+            return a;
+        }
+        private static Localization.LocalizedText[] MakeNpcNames()
+        {
+            var a = MakeEmpty(ID.NPCID.Count);
+            a[ID.NPCID.AnglerFish] = Localization.Language.GetText("NPCName.AnglerFish");
+            return a;
+        }
+    }
+
     // SaveWorldTiles writes `Lang.gen[49].Value + " " + pct + "%"` into
     // Main.statusText (a UI side effect, never serialized). A one-entry stub
     // keeps the verbatim line compilable without the localization manager.
@@ -183,19 +232,59 @@ namespace Terraria
     {
         public class LocalizedText
         {
+            // LocalizedText.cs:9-11/:47-51 - Key + Value; the (value) ctor is
+            // the gen-table convenience, Key mirrors Value there.
+            public static readonly LocalizedText Empty = new LocalizedText("", "");
+            public string Key { get; }
             public string Value { get; }
-            public LocalizedText(string value) { Value = value; }
+            public LocalizedText(string value) { Key = value; Value = value; }
+            public LocalizedText(string key, string value) { Key = key; Value = value; }
         }
 
-        public static class Lang
+        // Language.GetTextValue (Language.cs:15/:35 -> LanguageManager.cs:446/
+        // :482): the template lookup + string.Format. The shim reads the REAL
+        // en-US localization JSON out of decompiled/ (the same tree the
+        // extractor slices), flattening category.key -> value; a missing key
+        // returns the key itself, exactly LanguageManager's fallback (:452).
+        public static class Language
         {
-            public static LocalizedText[] gen = MakeGen();
-            private static LocalizedText[] MakeGen()
+            private static readonly Dictionary<string, string> Texts = LoadTexts();
+            private static Dictionary<string, string> LoadTexts()
             {
-                var a = new LocalizedText[64];
-                for (int i = 0; i < a.Length; i++) a[i] = new LocalizedText("gen" + i);
-                return a;
+                var map = new Dictionary<string, string>();
+                string dir = System.IO.Path.Combine(AppContext.BaseDirectory,
+                    "..", "..", "..", "..", "..", "decompiled");
+                foreach (string f in new[] {
+                    "Terraria.Localization.Content.en-US.json",
+                    "Terraria.Localization.Content.en-US.NPCs.json" })
+                {
+                    string p = System.IO.Path.Combine(dir, f);
+                    if (!System.IO.File.Exists(p)) continue;
+                    var root = Newtonsoft.Json.Linq.JObject.Parse(System.IO.File.ReadAllText(p));
+                    foreach (var cat in root.Properties())
+                        if (cat.Value is Newtonsoft.Json.Linq.JObject obj)
+                            foreach (var kv in obj.Properties())
+                                if (kv.Value.Type == Newtonsoft.Json.Linq.JTokenType.String)
+                                    map[cat.Name + "." + kv.Name] = (string)kv.Value;
+                }
+                return map;
             }
+            public static LocalizedText GetText(string key)
+                => new LocalizedText(key, Texts.TryGetValue(key, out var v) ? v : key);
+            public static string GetTextValue(string key)
+                => Texts.TryGetValue(key, out var v) ? v : key;
+            public static string GetTextValue(string key, params object[] args)
+                => Texts.TryGetValue(key, out var v) ? string.Format(v, args) : key;
+        }
+
+        // NetworkText's state (NetworkText.cs:15-21); the construction +
+        // ToString bodies are extracted verbatim (Generated/TrackerSave.cs).
+        public partial class NetworkText
+        {
+            public static readonly NetworkText Empty = FromLiteral(""); // :15, cctor :161
+            private NetworkText[] _substitutions;
+            private string _text;
+            private Mode _mode;
         }
     }
 
@@ -209,5 +298,47 @@ namespace Terraria
             public Item GetItemByIndex(int itemSlotContext)
                 => itemSlotContext == 0 ? _itemSlotsForUI[0] : null;
         }
+    }
+
+    // The announcement's dedicated-server branch (ChatHelper.cs:55-59) is
+    // guarded by Main.dedServ=false and never taken; the sinks exist only so
+    // the verbatim bodies compile. NetTextModule.cs:24-30 is the real shape.
+    namespace GameContent.NetModules
+    {
+        public static class NetTextModule
+        {
+            public static Net.NetPacket SerializeServerMessage(Localization.NetworkText text, Color color, byte authorId)
+                => throw new InvalidOperationException("dedServ path not modelled");
+        }
+    }
+
+    namespace Net
+    {
+        public class NetPacket { }
+
+        // NetManager.cs:19/:79-90 - the broadcast walks Netplay.Clients; the
+        // fixture never reaches it (netMode 0 / dedServ false).
+        public class NetManager
+        {
+            public delegate bool BroadcastCondition(int clientIndex);
+            public static readonly NetManager Instance = new NetManager();
+            public void Broadcast(NetPacket packet, BroadcastCondition conditionToBroadcast, int ignoreClient = -1)
+                => throw new InvalidOperationException("dedServ path not modelled");
+            public void Broadcast(NetPacket packet, int ignoreClient = -1)
+                => throw new InvalidOperationException("netMode 2 path not modelled");
+        }
+    }
+
+    // Netplay.Clients (Netplay.cs:39) + RemoteClient.State (RemoteClient.cs:27),
+    // read by ChatHelper.OnlySendToPlayersWhoAreLoggedIn (:67-70) - only the
+    // dedServ branch references it.
+    public class RemoteClient
+    {
+        public int State;
+    }
+
+    public static class Netplay
+    {
+        public static RemoteClient[] Clients = new RemoteClient[256];
     }
 }
