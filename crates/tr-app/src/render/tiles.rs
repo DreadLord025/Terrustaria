@@ -954,7 +954,7 @@ pub(crate) fn draw_tiles(
                 // candles, palms, frame strides...). `tile_frame` is
                 // `Main.tileFrame[kind]` (`TileDrawing.cs:4533`), fed from
                 // the wired animator (S1-G-1f, `drawdata_anim.rs`).
-                let dd = if active && marker.is_none() && !is_tree {
+                let (dd, glow) = if active && marker.is_none() && !is_tree {
                     let solid_above = world.tile(tx, ty - 1).is_some_and(|t| {
                         t.active() && td::TILE_SOLID.has(t.kind) && !td::TILE_SOLID_TOP.has(t.kind)
                     });
@@ -1031,14 +1031,16 @@ pub(crate) fn draw_tiles(
                     // biome rows (530/529) and the SECOND GetTileDrawData
                     // switch's frame/top maths + glow pick
                     // (TileDrawing.cs:6049-6507), applied after the main
-                    // switch like the C#. The glow record rides unused
-                    // until the glow pass binds it (TILE-DRAW-2); the
-                    // cell light converts to XNA bytes (alpha 255, the
-                    // `Lighting.GetColor` colour has no alpha) and the UI
-                    // text pulse is steady 255 — documented deviations.
-                    // martianLight is the LIVE bounce (W4-g12 doc-sweep:
-                    // `Main.cs:17145` ticks it unconditionally; the old
-                    // "0 outside the event" reading was wrong).
+                    // switch like the C#. TILE-DRAW-2 (W4-f15): the glow
+                    // record is BOUND — `render/tile_glow.rs` draws it at
+                    // the C# glow-bind site (:1343-1403) after the cell
+                    // sprite + flames. The cell light converts to XNA
+                    // bytes (alpha 255, the `Lighting.GetColor` colour has
+                    // no alpha); the UI text pulse and disco colours ride
+                    // `LightParams`. martianLight is the LIVE bounce
+                    // (W4-g12 doc-sweep: `Main.cs:17145` ticks it
+                    // unconditionally; the old "0 outside the event"
+                    // reading was wrong).
                     let cell = raw_l;
                     let cell_bytes = [
                         (cell[0] * 255.0).min(255.0) as u8,
@@ -1081,8 +1083,17 @@ pub(crate) fn draw_tiles(
                             &mut dd,
                         );
                     }
-                    let _glow = crate::drawdata_cases_a::apply_cases_a(
-                        &mut dd, world, tile, tx, ty, cell_bytes, 255, martian_light,
+                    let glow = crate::drawdata_cases_a::apply_cases_a(
+                        &mut dd,
+                        world,
+                        tile,
+                        tx,
+                        ty,
+                        cell_bytes,
+                        params.mouse_text_color,
+                        martian_light,
+                        params.disco,
+                        anim_row,
                     );
                     // W4-d58: `CacheSpecialDraws_Part2`'s BasicChest block
                     // (`TileDrawing.cs:4289-4330`), which `DrawSingleTile`
@@ -1117,9 +1128,9 @@ pub(crate) fn draw_tiles(
                             dd.height = h as u16;
                         }
                     }
-                    dd
+                    (dd, glow)
                 } else {
-                    tr_core::drawdata::TileDrawData::default()
+                    (tr_core::drawdata::TileDrawData::default(), None)
                 };
 
                 // Resolve the drawn tile frame once; reused for opacity and drawing.
@@ -1275,10 +1286,14 @@ pub(crate) fn draw_tiles(
                 // so a dark 160 cell draws black in the C# too — the port's
                 // merge is faithful there.
                 let glow_mask_tile = active && tile.kind == 692;
+                // must keep their own quad. TILE-DRAW-2: a `glowTexture`
+                // record sets the same `flag` (`TileDrawing.cs:971`), so a
+                // glow-carrying cell (e.g. the 711 boulder) never merges.
                 let flame_tile = active
                     && (tr_core::flame::tile_flame(tile.kind)
                         || tr_core::flame::has_glow_branch(tile.kind)
-                        || glow_mask_tile);
+                        || glow_mask_tile
+                        || glow.is_some());
                 if light_is_zero(l)
                     && !flame_tile
                     && (active || (crate::env::walls_enabled() && wall_visible(tile.wall)))
@@ -1880,6 +1895,36 @@ pub(crate) fn draw_tiles(
                 if !crate::render::multi_tile_vines::is_multi_tile_vine(tile.kind) {
                     stats.quads +=
                         draw_tile_flames(r, lookups, world, tile, &dd, tx, ty, params, anim_time);
+                }
+                // TILE-DRAW-2 glow bind (`TileDrawing.cs:1343-1403`): the
+                // second switch's glow record draws AFTER `DrawBasicTile`
+                // (whose tail is the flames hook, `:1723`) and BEFORE the
+                // highlight (`:1404`). The platform arm reuses the C#
+                // `vector` (`:1363`, built at `:1008-1013`: centring +
+                // tileTop + halfBrickHeight), every other kind re-derives
+                // the plain centred anchor (`:1360`).
+                if let Some(g) = glow {
+                    let num5 = if dd.no_width_adjust {
+                        0.0
+                    } else {
+                        (dd.width as f32 - 16.0) * 0.5
+                    };
+                    let half = if tile.half_brick() { 8.0 } else { 0.0 };
+                    let vector = [pos[0] - num5, pos[1] + dd.top as f32 + half];
+                    stats.quads += crate::render::tile_glow::draw_tile_glow(
+                        r,
+                        lookups,
+                        atlas,
+                        world,
+                        tile.kind,
+                        tx,
+                        ty,
+                        &dd,
+                        &g,
+                        vector,
+                        tile_anim.animation_row(412),
+                        show_invisible_blocks,
+                    );
                 }
             }
         }
@@ -3120,6 +3165,41 @@ mod tests {
         );
     }
 
+    /// TILE-DRAW-2 (W4-f15) draw-order witness: the glow bind sits at the
+    /// C# `DrawSingleTile` position — AFTER `DrawBasicTile`'s tail (the
+    /// flames hook, `TileDrawing.cs:1723`) and gated on the second
+    /// switch's record (`:1343` `glowTexture != null`). The record is no
+    /// longer dropped (`_glow` is gone), the platform anchor is the
+    /// sprite `pos`, and the 412 cross-fade reads `Main.tileFrame[412]`.
+    #[test]
+    fn td2_glow_bind_draws_after_the_flames_hook() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        assert!(
+            !body.contains("let _glow"),
+            "the glow record must be consumed, not dropped (TILE-DRAW-2)"
+        );
+        let flames = body.find("draw_tile_flames(r, lookups").expect("flames hook");
+        let glow = body
+            .find("tile_glow::draw_tile_glow(")
+            .expect("the glow bind");
+        assert!(
+            glow > flames,
+            "the glow bind follows DrawBasicTile's flames tail (:1723 → :1343)"
+        );
+        // Exactly one bind site; the record gate is `if let Some(g)`.
+        assert_eq!(body.matches("tile_glow::draw_tile_glow").count(), 1);
+        let gate = &body[flames..glow];
+        assert!(gate.contains("if let Some(g) = glow"));
+        // The call feeds the sprite anchor + the 412 animator row.
+        let call = &body[glow..glow + 700];
+        assert!(call.contains("tile_anim.animation_row(412)"));
+        assert!(call.contains("show_invisible_blocks,"));
+        // The dark-merge gate counts the glow record (:971 flag).
+        assert!(body.contains("|| glow.is_some()"));
+    }
+
     /// S1-G-1f draw-feed witness: the animator's rows/counters feed the
     /// per-cell drawdata resolution (`Main.tileFrame[typeCache]`,
     /// `TileDrawing.cs:4533`) — `draw_data`, `apply_world_corrections` and
@@ -3130,7 +3210,7 @@ mod tests {
         let src = include_str!("tiles.rs");
         let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
         let body = &body[..body.find("#[cfg(test)]").unwrap()];
-        let dd_block = &body[body.find("let dd = if active").unwrap()
+        let dd_block = &body[body.find("let (dd, glow) = if active").unwrap()
             ..body.find("// Resolve the drawn tile frame once").unwrap()];
         assert!(
             dd_block.contains("tile_anim.animation_row(tile.kind)"),
@@ -3140,9 +3220,11 @@ mod tests {
             dd_block.contains("tile_anim.tile_frame_counter[tile.kind as usize]"),
             "slice B's counter is Main.tileFrameCounter[kind]"
         );
-        // Both draw_data and apply_world_corrections take anim_row (the
-        // two `anim_row,` arguments), and case_draw_data takes the pair.
-        assert_eq!(dd_block.matches("anim_row,").count(), 3);
+        // draw_data, apply_world_corrections and case_draw_data take
+        // anim_row, and apply_cases_a takes it for 564's pre-clear glow
+        // rect (TILE-DRAW-2) — four `anim_row,` arguments; case_draw_data
+        // takes the counter pair.
+        assert_eq!(dd_block.matches("anim_row,").count(), 4);
         assert!(dd_block.contains("anim_counter,"));
         assert!(body.contains("weather_vane_bobframe: tile_anim.weather_vane_bobframe"));
     }

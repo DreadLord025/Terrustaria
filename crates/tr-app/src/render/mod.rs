@@ -50,6 +50,9 @@ pub(crate) mod tile_pass;
 // pass siblings; wiring is the family's merge step (module doc lists the
 // intended call sites).
 pub(crate) mod tile_draw_pass;
+// TILE-DRAW-2 (W4-f15): the DrawSingleTile glow bind (:1343-1403) — the
+// second GetTileDrawData switch's record drawn after the cell sprite.
+pub(crate) mod tile_glow;
 pub(crate) mod tiles;
 pub(crate) mod vines;
 pub(crate) mod wires;
