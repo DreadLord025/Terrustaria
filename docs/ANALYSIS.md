@@ -27503,6 +27503,58 @@ hang, the sway ladder + anchor walk, the blocking-wall freeze, the remix
 gate, the grid push subtract/bounce, the gap/bottom-bound break, the Echo
 hide-not-break.
 
+## The UpdateBuffs frame (S1-E-7 wave F, 2026-11-20, code-only)
+
+`task/W4-d72-buff-effects-wave-f` — the FIFTH-block census came back with
+**zero unclaimed arm ids**: every one of the 254 `buffType[j]` heads in
+`Player.cs:9855-12069` is owned by the landed waves A-D or the in-flight
+c17 (`fa1e8930`, `:10318-10461`), c18 (`02d946e1`, `:10462-10976`), d71
+(`e2dc1fcf`, `:11406-12012`), d73 (`7cf886f9`, `:10328-10485` + `:9935-9946`)
+and d74 (`dc654c62`, `:10318-10808`) claims (the full table + per-piece
+live-owner evidence: `docs/research/28f-wave-f-claim.md`). Per the
+"genuinely unclaimed" rule this wave re-ports NO arm id; it ports the
+**`UpdateBuffs` FRAME** — the statements around the arm chain no wave's
+range includes — as `crates/tr-app/src/buff_effects_frame.rs`
+(`run_buff_frame` → `FrameEffects` + `FrameState`), the wave-B seam
+pattern. Deliberate deviations:
+
+- **Wiring deferred**: the module is test-only until the waves' merge
+  step copies the accumulator onto the live fields — no runtime behaviour
+  change, no RNG or fixed-step-order change. `player.rs` untouched.
+- **The loop preamble is witness-only**: the slot skip + the
+  `TimeLeftDoesNotDecrease` decrement (`:9865-9874`) is already live
+  (`buffs.rs::update_buffs_tick`); the `s1_e_7f_preamble_*` test pins it,
+  no second copy.
+- **The hunger ladder is keep-one**: `potions.rs::update_hunger_buffs`
+  (the drink path's helper) split into the slot-level
+  `update_hunger_buffs_slots` — the frame's per-tick call site
+  (`:12046`, the missing half: hunger tiers never expired on their own)
+  runs the SAME ladder, no second copy of the expiry logic. The
+  emote/sound halves the potions port deferred are REQUESTS here
+  (`emotes: Vec<i32>` 146/147/148 in C# order, `hungry_sounds` count for
+  `SoundID.Hungry` `:12138`), gated on the same pre-expiry timers.
+- **`FrameState` carries the two persistent fields the port lacks**:
+  `oldLuckPotion` (`Player.cs:1136`, byte) and `lavaOpacity` (`:1534`,
+  `= 1f`); neither is ResetEffects-cleared in the C#, so the port keeps
+  them across ticks. The `luckNeedsSync` flag is the bookkeeping half —
+  the packet-134 send stays net-only (`luck.rs:16-17`).
+- **The lavaOpacity f32 drift is kept**: 0.04 is not exact in binary; the
+  ladder's clamps (0.4 floor / 1.0 ceiling) make the drift observable
+  only mid-fade, exactly like the source. The 0.4 fixed point (the down
+  gate is strict `> 0.4f`) is pinned by test.
+- **soulDrain's producer/consumer stay out**: the head only grants
+  `AddBuff(151, 2)` while `soulDrain > 0` (`:9857-9860`); the counter's
+  writer (the Spirit Flame hit) and the regen consumers (`:19121`,
+  `:19160-19162`'s `(5 + soulDrain) / 2`) ride `RegenInputs.extra_*` —
+  unfilled inputs, the M2-BUFF-2 pattern.
+- **RNG census: ZERO draws** (`:9857-9864`, `:12046-12067`,
+  `:12098-12182` scanned). `AddBuff` draws no rand; the emote makes are
+  deterministic (`emotes.rs::new_bubble`); the Hungry sound's pitch roll
+  rides the audio seam. The `s1_e_7f_the_frame_draws_no_rng` mirror
+  pins two identical runs byte-equal.
+
+Tests: 22 `s1_e_7f_*` witnesses (written, NOT run — code-only mode).
+
 ## The accessory/set-bonus buff-effect block (S1-E-7 wave C, 2026-11-18)
 
 `crates/tr-app/src/buff_effects_accessory.rs` ports the `Player.UpdateBuffs`

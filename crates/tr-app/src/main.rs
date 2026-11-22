@@ -19,6 +19,7 @@ mod bestiary;
 mod bestiary_data;
 mod biome;
 mod buff_effects;
+mod buff_effects_frame;
 mod buff_effects_misc;
 mod buff_effects_summons;
 mod buff_effects_orbs;

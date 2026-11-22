@@ -71,6 +71,7 @@
 use tr_core::UnifiedRandom;
 
 use crate::app::App;
+use crate::buffs::BuffSlots;
 use crate::item::ItemSlot;
 use crate::player::Player;
 use crate::registry::{self, ItemDef};
@@ -261,13 +262,22 @@ pub fn try_to_reset_hunger_to_neutral(p: &mut Player, dont_starve: bool, remix: 
 /// TYPES. The 332 expiry's remix+dontStarve arm grants 28800 (`:12110-12113`),
 /// every other world 18000 (`:12116`).
 fn update_hunger_buffs(p: &mut Player, dont_starve: bool, remix: bool) {
-    let slots: Vec<(i32, i32)> = (0..crate::buffs::MAX_BUFFS)
-        .filter(|&i| p.buffs.buff_type[i] > 0 && p.buffs.buff_time[i] > 0)
-        .map(|i| (p.buffs.buff_type[i], p.buffs.buff_time[i]))
+    update_hunger_buffs_slots(&mut p.buffs, dont_starve, remix);
+}
+
+/// The slot-level keep-one of `UpdateHungerBuffs` (S1-E-7 wave F): the
+/// per-tick frame call site (`buff_effects_frame.rs`, `Player.cs:12046`)
+/// runs the SAME ladder on `BuffSlots` — no second copy of the expiry
+/// logic. The emote/sound requests the frame adds are gated on the same
+/// pre-expiry timers this ladder reads.
+pub fn update_hunger_buffs_slots(slots: &mut BuffSlots, dont_starve: bool, remix: bool) {
+    let live: Vec<(i32, i32)> = (0..crate::buffs::MAX_BUFFS)
+        .filter(|&i| slots.buff_type[i] > 0 && slots.buff_time[i] > 0)
+        .map(|i| (slots.buff_type[i], slots.buff_time[i]))
         .collect();
-    for (bt, time) in slots {
+    for (bt, time) in live {
         // Re-find by type: an earlier AddBuff may have compacted the slot.
-        let Some(slot) = p.buffs.find_buff_index(bt) else {
+        let Some(slot) = slots.find_buff_index(bt) else {
             continue;
         };
         match bt {
@@ -275,7 +285,7 @@ fn update_hunger_buffs(p: &mut Player, dont_starve: bool, remix: bool) {
                 if time <= 2 {
                     // `:12108-12117`: remix AND dontStarve → 28800, else 18000.
                     let t = if remix && dont_starve { 28800 } else { 18000 };
-                    p.buffs.add_buff(333, t);
+                    slots.add_buff(333, t);
                 }
                 if !dont_starve {
                     // Re-find AFTER the add: `AddBuff(333)`'s fed-state
@@ -284,24 +294,24 @@ fn update_hunger_buffs(p: &mut Player, dont_starve: bool, remix: bool) {
                     // writes `buffTime[i]` on whatever now occupies `i`,
                     // the port's type re-find lands the same zeroing on the
                     // live 332 when it survived (the dontStarve arm).
-                    if let Some(s) = p.buffs.find_buff_index(332) {
-                        p.buffs.buff_time[s] = 0; // `:12120-12123`
+                    if let Some(s) = slots.find_buff_index(332) {
+                        slots.buff_time[s] = 0; // `:12120-12123`
                     }
                 }
             }
             333 => {
                 if time <= 2 {
-                    p.buffs.add_buff(334, 5); // `:12131`/`:12135` (both arms 5)
+                    slots.add_buff(334, 5); // `:12131`/`:12135` (both arms 5)
                 }
                 if !dont_starve {
-                    if let Some(s) = p.buffs.find_buff_index(333) {
-                        p.buffs.buff_time[s] = 0; // `:12140-12143`
+                    if let Some(s) = slots.find_buff_index(333) {
+                        slots.buff_time[s] = 0; // `:12140-12143`
                     }
                 }
             }
             334 => {
                 if !dont_starve {
-                    p.buffs.buff_time[slot] = 0; // `:12145-12148`
+                    slots.buff_time[slot] = 0; // `:12145-12148`
                 }
             }
             _ => {}
