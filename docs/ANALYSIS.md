@@ -36212,6 +36212,83 @@ Mana Sickness (buff 94) — **not for weapons**:
   `DebugOptions.ManaPotionDelay` halves (`:10320-10323`, `:51939-51943`) are
   false in the shipped statics (`DebugOptions.cs:86`) — folded out.
 
+## The deferred bucket drains (W4-g31 pass 4)
+
+C#'s `Draw` classifies each cell and registers a special point instead of
+drawing it inline (the g30 switch, `TileDrawing.cs:534-723`);
+`PostDrawTiles(false)` (`:414-442`) then drains the eleven `TileCounterType`
+buckets in a fixed order. The pass family split the work: g28 (pass 1) the
+quality-light tiers, g29 (pass 2) the `Draw` orchestration structure, g30
+(pass 3) the classification switch + registry, g32 (pass 5) the orchestration
++ the `PostDrawTiles` ORDER. g29's module doc assigns the deferred bucket
+drains to "g31/g32 (passes 4-5)"; g32 took the order/structure, so **g31
+(pass 4) owns the drain BODIES** — `render/tile_drains.rs`, UNWIRED (the
+`special_tiles.rs:35` pattern; the `draw_tiles` seam is contested by g28-g32
++ d56-d60).
+
+The five MISSING drains ported (research/09 rows 10-12):
+* `DrawGrass` (`:8326-8381`) — the WindyGrass bucket; the wall/place wind
+  gates (`:8360-8367`) zero the cycle, the `GetWindGridPush(20, 0.35)` grid
+  push still adds; the sprite anchors at `(x*16+8, y*16+16)`, rotates
+  `num3*0.1` about `(tileWidth/2, 16-half-tileTop)`.
+* `DrawAnyDirectionalGrass` (`:8383-8479`) — tile 184; the four-direction
+  switch on `tileFrameY/54` (`:8429-8467`) picks the origin + position nudges
+  + the wind-lean sign; the 2-axis grid push projects onto `(num4, num5)`.
+* `DrawRisingVineStrip` (`:9134-9193`) — the reverse-vine (549) strip walks
+  UP from the root (`num7 > 10`), the anchor advances along `(rot - PI/2)`,
+  the grid push is `(40, -0.004)`, the rotation `num2*(0-num4)*windCycle`;
+  the exposure gate has NO remix arm (unlike the forward strip).
+* `DrawMultiTileGrass(InWind)` (`:8738-9032`) + `ClimbCatTail` (`:8807-8827`)
+  — the 519 campfire's height crawl + anchor shift (`num3 -= num4 - 1`), the
+  sunflower's +74 px glow latch, the 493 golf-flag wind-sign flip (±6 px), the
+  521-527 crystal-shard freeze (`num = 0`, `flag = false`).
+* `DrawMultiTileVines(InWind)` (`:8829-9603`) — the platform lift
+  (`IsBelowANonHammeredPlatform`, `WorldGen.cs:38289-38301`; the 465/591/592
+  family checks both columns), the 34/126 + 42 style tables verbatim (incl.
+  the `:9404-9405` dead-write `num3 = 0f; num3 = null;` — the second wins),
+  the 660 fairy-jar `Extra_260` white+HSL pair, the 698 dead-cells-jar lid
+  rows + rarity colour + rotated item icon, the shared-seed flame tail.
+
+The five already-ported bodies (Trees / Vines / Pylons / Trophies /
+VoidLenses) drain through the `PortedBodyDrain` seam — the driver walks the
+bucket points in C# order and hands each to the existing
+`foliage.rs`/`vines.rs`/`pylons.rs` pass at the family merge.
+
+Deviations:
+* **The 660 fairy-jar draws THREE sprites on its bottom row** (`:9505-9519`):
+  an `Extra_260` white copy BEFORE the tile draw, the tile draw itself
+  (`:9512`, which runs for EVERY cell), then the `Extra_260` HSL glow (A=127)
+  AFTER. The port models the pair as a `DrainFairyJar` plan + the normal
+  `DrainSprite`; the discarded `% 1f` at `:9508` is dead (the glow re-derives
+  the hue at `:9516`).
+* **The shared flame seed** (`:9590-9594`): the first non-zero `flameSeed`
+  across the object's cells latches and is reused for every flame quad. The
+  270/271/581 jar types return a ZERO seed from `GetTileFlameData`
+  (`:1851-1871`), so they never latch it — the next real-seed cell wins.
+* **The `_rand` stream is one `UnifiedRandom` per `TileDrawing`** (`:104`,
+  `:191`): the drains consume the per-cell `Next(4)` dust flags in pass order
+  (the stream-order rule). Dust EMISSION is the d60 lane — the drains record
+  the flag and spawn nothing; the per-cell light chain
+  (`DrawAnimatedTile_AdjustForVisionChangers` `:8481-8552` +
+  `DrawTiles_GetLightOverride` `:6624-6686`) is seamed to d56's
+  `tr-render::animated_tiles` (`DrainCellLight`).
+* **The 698 jar's TE item carries no rare/expert** — the port's `TeItem`
+  payload is `(kind, prefix, stack)`; rare/expert are fed 0/false (the d57
+  TeItem-runtime deferral), so a filled jar draws the white-rarity lid until
+  the runtime item lands. The TE lookup is at the ANCHOR (`:9520`), not the
+  per-cell position.
+* `GetTileDrawData`'s `Main.tileFrame[type]` animator row is fed 0 (the
+  `vines.rs` convention — S1-G-1f binds it at the merge); the LitNature
+  shader + `SideFlags` seams are unported (the `vines.rs` deviation); the C#
+  null-tile arms have no port counterpart (the dense tile array).
+* `IsVisible` (`:1411-1432`) is re-ported here (the `pylons.rs` copy is
+  private); the family merge keep-ones one. The `TileCounterType` bucket
+  indices mirror g30's enum as constants (import-free); the merge binds
+  `DrainBuckets` to `SpecialPoints::buckets`.
+
+22 witnesses (`tile_drains::tests::*`) WRITTEN, NOT RUN — **no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the
@@ -39650,3 +39727,408 @@ stream-agnostic — the wiring wave hands the runtime `world.frame_rng`
 Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify
 invoked** (user directive). The 24 witnesses (7 + 7 + 10) are owed a
 compile window before merge.
+
+## The Draw quality-light tiers (W4-g28 pass 1)
+
+`TileDrawing.Draw` rebuilds `_highQualityLightingRequirement` /
+`_mediumQualityLightingRequirement` once per call (`TileDrawing.cs:479-495`);
+`DrawSingleTile_SlicedBlock` picks the 9-slice / 4-slice / flat arm by a
+per-channel strict `>` on `drawData.tileLight` bytes (`:3524` / `:3605`).
+The port lands the pure tier maths in `tr-render::quality_light`
+(`quality_light_tiers` / `tile_light_bytes` / `QualityLightTiers::slice_arm`),
+UNWIRED — the `draw_tiles` seam is contested by the tile-draw siblings; the
+sliced-arm wiring rides the family merge step.
+
+* **The byte cast wraps (net40).** The decompiled target is `net40`
+  (`Terraria.csproj:7`): an unchecked `(byte)f` lowers to `conv.i4` then
+  `conv.u1`, so out-of-range products WRAP — at `gfxQuality = 0` the high
+  tier is `[255, 24, 50]` (G = (byte)280.5 = 24, B = (byte)306 = 50), NOT
+  `[255, 255, 255]`. Rust's `as u8` saturates, so the port spells the wrap
+  out via `i32`. The old renderer compared raw floats against the R-only
+  constants 142/255 and 26/255 (research/09 row 1) — the G/B channels and the
+  q-dependence were silently dropped; the witnesses pin all three channels at
+  q = 0 / 0.25 / 0.5 / 1 and the double-precision ×1.1/×1.2 factors
+  (q = 0.25's B = 238 vs the truncated-first 237).
+* **The comparison input is quantised bytes.** `tileLight` is
+  `Lighting.GetColor` (`Lighting.cs:224-238`): `(int)(engineColor *
+  GlobalBrightness * 255)` per channel, clamped at 255 — `tile_light_bytes`
+  reproduces the f32 product + truncation (0.1f × 306f = 30.6000004 → 30).
+* `DebugOptions.devLightTilesCheat` pins both tiers to 255 (every block
+  flat); no port toggle exists — the parameter is fed `false`.
+* The tier rebuild is per-`Draw` (twice per frame); the wiring step calls it
+  at the head of each layer pass, never caches across frames.
+
+## The Draw main pass (W4-g28 pass 1)
+
+`render::tile_pass` (UNWIRED) ports the `TileDrawing.Draw` orchestration
+head/tail the pass siblings plug into: `GetScreenDrawArea`
+(`TileDrawing.cs:6549-6573`) + the `:504-506` loop margins
+(`firstTileX-2 .. lastTileX+2`, `firstTileY .. lastTileY+4`, ends exclusive),
+the per-`Draw` clears (`ClearLegacyCachedDraws` `:477`/`:6613-6622` on BOTH
+layers; `ClearCachedTileDraws` `:478`/`:6588-6599` clears the special counts
+ONLY before the non-solid pass), the quality-tier rebuild call
+(`tr_render::quality_light`), the layer constants (`:791-794`) and the frozen
+`PostDrawTiles(false)` order (`:421-430`, `POST_DRAW_ORDER`). The
+classification switch itself (`:534-723`) is g30's
+`render::special_points::classify_tile` — this module drives the loop
+through that seam at the family merge, it does not re-port the switch.
+
+* **The frame runs NON-SOLID first.** `DoDraw_WallsTilesNPCs`
+  (`Main.cs:63280` → `DoDraw_Tiles_NonSolid` `:63358`, then `:63295` →
+  `DoDraw_Tiles_Solid` `:63322`; the capture path repeats the order,
+  `:56957-56988`). Each `DrawTiles` is followed by
+  `DrawTileEntities(solidLayer)` → `PostDrawTiles` (`:21758-21761`). The
+  order is load-bearing: the counts clear only before the non-solid pass,
+  so the solid pass's Tree points survive into `PostDrawTiles(false)`, and
+  `PostDrawTiles(true)` (HatRacks → DisplayDolls, `:435-441`) runs LAST.
+* **The section-framing half of `GetScreenDrawArea` is unported**
+  (`:6574-6585`, `SectionTileFrameWithCheck`/`RefreshSections`): the port
+  frames tiles eagerly on edit (`tr_core::framing`), no `sectionManager`
+  exists. The bounds maths (truncation toward zero, +2/+5 far pads, 4-tile
+  border clamps, the offscreen `drawOffSet`) is 1:1.
+* **The C# null-tile arm is unported** (`:509-514`, lazy `new Tile()` +
+  `mapTime += 60`): the port's tile array is dense; an out-of-bounds read
+  skips (g30's driver convention).
+* **`ClearSpecialBlockCounts` skips bucket 5** (`:388-402` clears
+  3,2,6,4,1,10,0,7,8,9 — BiomeGrass is never registered by `Draw` either);
+  the port clears the same ten in the same order.
+* **Draw-side state is not registry state**: `DrawBlackHelper` (`:497`),
+  `_martianGlow` (`:498-499`), the paint-lookup reset (`:500-503`), the
+  `EmitLiquidDrops` battery (`:693`, W4-d60) and the placement preview
+  (`:737-741`, no `objectPreview` in the port) stay with the sprite-side
+  wiring step; `begin_draw_pass` ports only `:477-506`.
+* **Pre-merge duplicate registry**: `tile_pass::SpecialPoints` is the
+  stand-in this module's witnesses run against; at the family merge it
+  reconciles onto g30's shape (its `single_tiles`/`liquid_drop_cells`
+  wiring witnesses) — keep-one, never both. The `torch.rs`
+  `top_edge_can_be_attached_to` visibility lift (`pub(crate)` → `pub`) is
+  identical to g30's; keep-one at the merge.
+
+
+## The Draw orchestration (W4-g29 pass 2)
+
+`TileDrawing.Draw` (`TileDrawing.cs:465-742`) is more than its per-cell
+body: a fixed prologue (the non-solid `Main.critterCage = false` reset
+`:472-475`, `EnsureWindGridSize` `:476`/`:7773-7777` with its OWN
+`GetScreenDrawArea` probe, `ClearLegacyCachedDraws` `:477`/`:6613-6622`
+in the exact 7-step order, `ClearCachedTileDraws(solidLayer)` `:478`/
+`:6588-6599` - solid clears the doll/hat-rack dictionaries, non-solid
+clears the special-point registry, the tier rebuild `:479-495`, the
+martian glow byte `:498-499`, the paint-key reset `:500-503`), the
+padded row-major walk (`:504-506`: rows `firstY ..< lastY+4`, columns
+`firstX-2 ..< lastX+2`), and a fixed epilogue (`:728-741`: the black
+flush, `RestartLayeredBatch`, the SOLID-only crack pair - hitReplace
+FIRST then hitTile - plus `RestartSpriteBatch`,
+`DrawSpecialTilesLegacy`, the 4-condition object-preview gate with
+`GetPlacementPreviewOpacity`'s kite fade `Player.cs:43389-43400`).
+Research/09 pass row 2 marks this MISSING - the port fuses both layers
+into one `draw_tiles` loop. `render/tile_pass.rs` ports the structure
+UNWIRED (the `special_tiles.rs:35` convention): the driver owns the
+order/bounds/gates/black coalescing and delegates every draw through
+`TilePassSeams` - the family merge binds g28's `quality_light_tiers`,
+g30's `classify_tile`/`apply_cell_class`, the g31/g32 drains, the
+already-ported liquids/cracks/special-tiles/pylons/vines/foliage passes.
+
+* **The two-layer order flips by path.** Draw-to-screen
+  (`Main.cs:63265-63301`): NON-solid first (`:63280`), then the
+  behind-tiles NPCs (before the solid layer when `!detectCreature`,
+  after when `detectCreature` - the `:63290-63299` flip), then solid
+  (`:63295`); each `DoDraw_Tiles_*` runs `DrawTiles(layer)` then
+  `PostDrawTiles(layer)` (`:63322-63382`, `:21758-21761`). The
+  render-target refresh path (`:57296-57306`) is the OPPOSITE:
+  `tileTarget` (solid, `RenderTiles` `:57329-57348`) before `tile2Target`
+  (non-solid, `RenderTiles2` `:57350-57368`). Both orders are pinned as
+  data (`walls_tiles_npcs_order`; the union-exec dropped
+  `render_target_layer_order` onto g32's richer
+  `tile_draw_pass::render_target_tile_order`, contract §1.3 — the
+  hideTiles/hideTiles2 gate notes folded there).
+* **`GetScreenDrawArea`** (`:6549-6573`): truncating `(int)` casts (the
+  camera can sit negative near the world edge), the -1 near / +2/+5 far
+  pads, the offscreen offset `(offScreenRange, offScreenRange)` when
+  `!drawToScreen`, and the four 4-cell clamps (`maxTiles - 4`, NOT -3).
+  The section-framing side effects (`:6574-6585`) stay the framing
+  family's seam - the port has no `sectionManager`.
+* **`DrawBlackHelper`** (`DrawBlackHelper.cs:5-38`) ports verbatim: the
+  same-row contiguous extension (`y == this.y && x == endX`), the
+  break-flush, the i32 `<< 4` shifts BEFORE the float math, and the
+  `EndStrip` no-reset quirk (a second call re-emits the same strip; the
+  Draw epilogue calls it once). The port returns the strip rect instead
+  of drawing it.
+* **`DrawLiquidBehindTiles`** (`:444-463`) has a DIFFERENT gate from
+  `Draw`: null-check only (`:454`), no `active()`/layer gate - inactive
+  cells still get the liquid-behind call, always `solidLayer: false`.
+* **The martian glow byte** (`:498`): `(byte)(100f + 150f *
+  martianLight)` - the net40 unchecked cast wraps (the g28 finding);
+  the updater clamps `martianLight` to 0..1 (`Main.cs:18251-18259`) so
+  the wrap is unreachable in vanilla, spelled out anyway.
+* **`PostDrawTiles`** (`:414-442`): the non-solid 12-step order
+  (MultiTileVines, MultiTileGrass, VoidLenses, Pylons, Trophies, Grass,
+  AnyDirectionalGrass, Trees, Vines, ReverseVines, EndBatch,
+  NatureAfterAllObjects - the nature hook runs AFTER the batch end);
+  solid = hat racks BEFORE display dolls.
+* Deviations: the null-tile lazy-alloc arm (`:509-514`, `mapTime += 60`)
+  is the dense-array skip (the g30 convention); TimeLogger counters
+  dropped (profiler-only); `ShowUnbreakableWall`/`hideTiles`/`hideTiles2`
+  have no port toggles; the legacy 1000-slot cap (`:70`) drops the
+  excess instead of throwing. The G6 cached range is untouched - the
+  +4/-2 margins here are C#'s loop bounds, the wiring step keeps the
+  `WorldFrameKey` intact. 15 witness tests WRITTEN NOT RUN - no
+  cargo/rustc/rustfmt/tests/graphify invoked.
+
+
+## The Draw orchestration (W4-g32 pass 5)
+
+`TileDrawing.Draw` is more than the per-cell loop: a fixed head/tail
+sequence (`TileDrawing.cs:465-533`, `:728-741`) plus the post-pass drain
+`PostDrawTiles` (`:414-442`) that the caller runs after EACH layer
+(`Main.cs:56957-56988`). The port lands the orchestration in
+`render/tile_draw_pass.rs` (`draw_steps`, `post_draw_tiles_passes`,
+`frame_tile_draw_order`), UNWIRED — the `draw_tiles` seam is contested by
+the tile-draw siblings (g28-g31, d56-d60); the wiring rides the family
+merge. Pass-family state at this branch's base: g28 (pass 1, quality-light
+tiers) and g30 (pass 3, classification + registry) are pushed; g29 (pass
+2) and g31 (pass 4) were EMPTY claims (branch tips = base, no commits) —
+the screen-area maths (`GetScreenDrawArea`, `:6549-6586`, pass-2 territory)
+is ported here because the orchestration consumes it; the family merge
+keep-ones whichever copy survives.
+**STALE-CLAIM CORRECTION (union-exec, docs/UNION-CONTRACT-tilepass.md
+header):** the EMPTY-claims note was true at g32's fork time only — g29
+pushed the full orchestration (`9bb92d0b`) and g31 the full drains
+(`3af480de`). The union keep-ones g29's area maths; this file survives
+REDUCED to the g32-only pieces (wind-grid binding, layer pick,
+`LegacyCaches`, the step/phase witnesses — contract §1.3).
+
+* **The screen-area casts truncate toward zero.** `(int)((scaledPos.X -
+  off) / 16f - 1f)` (`:6554`) keeps the `-1f` INSIDE the cast while the
+  `+2`/`+5` sit OUTSIDE the last casts (`:6555-6557`); the four clamps pin
+  the rect 4 tiles inside each world edge with NO first<=last reorder.
+  The port's fused loop used floor/ceil + a different margin
+  (`tiles.rs:335-341`, research/09 row 2); the walk pads the clamped area
+  by `+4` rows / `-2`/`+2` columns (`:504-506`).
+* **The clear split.** `ClearLegacyCachedDraws` (`:6613-6622`, six
+  dictionaries + the 1000-slot legacy point count) runs at the head of
+  EVERY Draw; `ClearCachedTileDraws` (`:6588-6599`) clears the clothing
+  pair on the SOLID arm and chains `ClearSpecialBlockCounts` on the
+  NON-SOLID arm — so the solid pass's points survive into
+  `PostDrawTiles(false)` (the g30 registry note). The port's
+  `LegacyCaches::clear_cached_tile_draws(false)` returns the g30 seam flag.
+* **DrawBlackHelper's EndStrip does not reset** (`DrawBlackHelper.cs:30-
+  37`): a second call re-emits the same quad; `Draw` constructs a fresh
+  helper per call (`:497`). The port keeps the quirk (witnessed).
+* **The layer pick.** `DrawSingleTile` sets OverTiles when `tileTop < 0`,
+  Tiles when `tileTop + tileHeight <= 16`, else BehindTiles (`:877-887`);
+  the solid cell draws its behind-liquid on layer 0 first (`:521-526`).
+  The port's single atlas pass folds the layers away — the constants +
+  pick are ported for the S1-G-13 layer-target family.
+* **The post-pass order is load-bearing**: MultiTileVines, MultiTileGrass,
+  VoidLenses, TeleportationPylons, MasterTrophies, Grass,
+  AnyDirectionalGrass, Trees, Vines, ReverseVines, then the nature flush
+  (`:421-433`); the SOLID arm draws HatRacks BEFORE DisplayDolls
+  (`:438-439`). Each pass drains its `TileCounterType` bucket (the g30
+  discriminants). The render-target capture order is the REVERSE of the
+  screen order (solid first, `Main.cs:57296-57305`) with no post passes.
+* Deviations: `TimeLogger` selections (`:467-468`) are profiling-only —
+  omitted; the null-tile lazy-alloc arm (`:509-514`, `mapTime += 60`) has
+  no dense-array counterpart; `DebugOptions.devLightTilesCheat` /
+  `ShowUnbreakableWall` / `hideTiles`/`hideTiles2` have no port toggles —
+  fed false; the section-framing side effects inside `GetScreenDrawArea`
+  (`:6574-6585`) ride out as flags (the port frames in `tr-core::framing`);
+  the 1000 legacy slots grow instead of throwing (the g30 cap convention);
+  `_martianGlow`'s byte ramp (`:498-499`) is ported but the martian event
+  itself is unported (the caller feeds 0). Code-only mode: 20 witnesses
+  WRITTEN NOT RUN — no cargo/rustc/tests invoked.
+
+## The tile-pass union-exec (W4-g31, UNION-CONTRACT-tilepass EXECUTED)
+
+The 5-way g-family union landed ON `task/W4-g31-tile-draw-pass-4` (the
+biggest mechanical merge, done in-lane instead of at merge-time — the
+contract doc `docs/UNION-CONTRACT-tilepass.md` is the prescription and
+now reads EXECUTED). What changed versus the five lane tips:
+
+* **g29 `tile_pass.rs` is the BASE** (tip `9bb92d0b`): the g28 head
+  folds in (its stand-in registry/`begin_draw_pass`/tuple area/
+  `POST_DRAW_ORDER`/crawls all DROP, contract §1.1), the g32
+  `needs_framing`/`needs_refresh` flags fold onto `ScreenDrawArea`
+  (+ two ctor inputs threaded through `DrawLayerInputs`), the
+  `LegacySpecialPoints` struct drops onto g32 `LegacyCaches` (the cap
+  witness REBINDs), `render_target_layer_order` drops onto g32's phase
+  order, the `:517` gate comment carries the g28 wall-350 debug-arm
+  fold. g28's real payload — `tr-render/src/quality_light.rs` (225 ln,
+  6 witnesses) — landed verbatim with its `lib.rs` declaration.
+* **g30 `special_points.rs` landed verbatim** (tip `cd7f7d31`, 14
+  witnesses); its `collect_special_points` driver stays the witness
+  fixture (the g29 `draw_layer` owns the walk at wiring).
+* **g32 `tile_draw_pass.rs` landed REDUCED** (tip `8b4fe36c` →
+  contract §1.3 KEEP set): `ensure_wind_grid_size` (over the g29 area
+  type), `single_tile_layer`/`cell_batch_layers`, `LegacyCaches`
+  (the storage canonical + the per-step `clear_legacy_step`/
+  `clear_layer_step` bindings for the g29 ORDER enums), `draw_steps`/
+  `placement_preview_draws`/`legacy_restarts_batch`, the
+  `FrameTileStep` phase orders. Every duplicated constant/maths/order
+  copy imports or drops onto `tile_pass.rs`.
+* **g31 `tile_drains.rs` binds mechanically** (contract §1.4): the
+  `BUCKET_*` constants derive from g30 `TileCounterType` (keep-one),
+  the drivers take `&[Vec<(i32,i32)>; 11]` (pass `&g30_reg.buckets`
+  directly — `DrainBuckets` stays as the owned witness fixture),
+  `drain_one_pass` is the per-pass dispatch the g29 `post_draw_tiles`
+  seam binds through (`drain_pass_for_post_step` maps the 12-step
+  order; the g32 `None` arms fold into the bucket witness), and
+  `post_draw_drain_order` is the thin frozen-order loop — ONE shared
+  `_rand` threaded in pass order (the stream witness re-runs the
+  per-pass fold for exact flag equality). `DrainCellLight` → d56 and
+  `PortedBodyDrain` → foliage/vines/pylons stay seams (the d-lanes are
+  not on main; the bodies need the renderer).
+* **torch.rs keep-one**: `top_edge_can_be_attached_to` lifted `pub`
+  with g30's doc + the g28 identical-change note.
+* **Witness census**: 92 at the tips − 14 (g28 file) − 8 (g32 dups) = 70
+  per the contract map; the executed union carries 70 `#[test]` —
+  quality_light 6, tile_pass 18 (g29 16 + the 2 g32 REBINDs
+  `the_area_cast_truncates_toward_zero`/`the_black_strip_offset_and_row_break`),
+  special_points 14, tile_drains 22, tile_draw_pass 10 (the contract's
+  "g32 KEEP 12" double-counted the two REBINDs that live in tile_pass.rs
+  — they land once, in the canonical file; the reduced file keeps its
+  9 KEEP + the legacy-cap REBIND; every dropped assertion is folded
+  into a survivor — contract §7).
+* **Still UNWIRED**: `render/tiles.rs::draw_tiles` is untouched — the
+  attach is contested by d56/d57/d58/d59/d60 (contract §5 census; d58/d59
+  are WIRED on their branches). The bind-order checklist (contract §4:
+  tiers → area → classify → drains → post) is the wiring wave's script.
+  *(Superseded by the attach phase below — the shadow attach landed.)*
+
+Code-only: **no cargo/rustc/tests/graphify invoked** — every seam was
+compiled by inspection (imports, signatures, enum arms, borrow shapes).
+
+## The TR_TILEPASS shadow attach + the ctor-draw residual (W4-g31 attach phase)
+
+The attach phase (same branch, on top of the union-exec `c3027a38`)
+censused the five d-lane tips against the union driver shape and wired
+what is safely wireable. Verdict + the exact seam signatures + the
+pixel-merge script: `docs/UNION-CONTRACT-tilepass.md` §8. Summary:
+
+* **Census verdict**: d56/d57/d60 are UNWIRED module payloads whose
+  attach claims REPLACE fused-loop regions (they are the
+  `classify_and_draw_cell`/TE-post seam implementations); d58/d59 are
+  WIRED unconditional per-cell hunks INSIDE the fused loop. The
+  union's `draw_layer` is a structural replacement of that loop, and
+  its per-cell seam needs a standalone `DrawSingleTile` body that
+  exists only AS the fused loop — so a pixel-binding attach is the
+  family-merge split (§8.3), not a call beside the loop.
+* **The shadow attach** (`render/tile_attach.rs`, commit `2f5e0698` +
+  fixup `a584eb57`): behind `TR_TILEPASS` (default OFF, the `env.rs`
+  named-accessor convention — the same gate pattern family as
+  `TR_NO_FOLIAGE`/`TR_SHOW_INVISIBLE`), the four C# calls run in frame
+  order at the `PostDrawTiles` position in `draw_tiles` (after the
+  fused walk + the inline foliage/vine passes, before the NPC pass)
+  with the REAL binds: g32 `LegacyCaches` per-step clears (the
+  `SpecialBlockCounts` flag chains g30's registry clear), g28
+  `quality_light_tiers`, g30 `classify_tile`/`apply_cell_class` per
+  cell, g29 `post_draw_tiles` → g31 `drain_pass_for_post_step` →
+  `drain_one_pass` over `&reg.buckets` with ONE shadow `UnifiedRandom`
+  across the ten nature passes. PLAN-ONLY: no sprites pushed, no
+  shared state mutated, the G6 key untouched.
+* **A/B**: unset = zero union code in the frame path (the gate
+  short-circuits before any allocation). Set = identical pixels; one
+  `TILEPASS shadow:` log line per world-range rebuild carries the
+  per-pass plan counts (cells/buckets/sprites/jars/rising/porteds/
+  steps/tiers). The shadow rides the `!reuse_world` arm — a G6 hit
+  skips it (`TR_NOCACHE=1` or a moving camera for a per-frame A/B).
+* **Recorded deviations** (deliberate, all in the module doc):
+  the drain RNG is a SEPARATE stream seeded from `sparkle_seed`
+  (`leaf_rng` never moves — at the pixel merge the two fold into the
+  ONE C# `_rand` in call order, §8.3 step 4); `gfx_quality` fed the
+  fused pass's pinned 0.5 (the adaptive `App.gfx_quality.quality`
+  threads in at the pixel merge — a `draw_tiles` signature change is
+  d58-contested); `martianLight`/`masterColor` fed 0.0 (no port
+  globals, the `resources.rs:499` convention); the wind grid is
+  shadow-owned (the shared `Wind::wind_grid` is borrowed immutably;
+  its S1-G-8 update-site sizing stays until the merge moves it to the
+  draw-site probe); `cache_tree_point` deferred (needs the
+  `GetTileDrawData`-corrected frames the fused loop owns — the shadow's
+  Tree bucket stays empty); the black helper stays empty (the FEED
+  decision is d56's gate, not on this branch); cracks counted
+  (`draw_mining_cracks` owns the per-frame site); the ported drain
+  bodies (foliage/vines/pylons) counted per-point (they need the
+  renderer + `SpecialEnv`).
+* **The ctor-draw residual CLOSED** (`render/tile_ctor.rs`, commit
+  `8d7a3532`): the `TileDrawing` static ctor (`TileDrawing.cs:789-802`)
+  census — the four layer constants are `tile_pass::LAYER_*`, `_zero`
+  is the origin literal the sprite pushes pass, the instance ctor's
+  registry/`_rand` are g30 + the caller streams; the LAST draw was the
+  `noise[256]` table (`System.Random(0)`, 256 `NextDouble()*2-1`
+  draws) + its consumer chain. Ported: the table through the
+  oracle-pinned `UnifiedRandom` seed-0 stream (`OnceLock` = the static
+  ctor's run-once), `LinearNoise` (the floor-arm `num--`, `&0xFF`
+  wrap), `Hash`/`Hash2`, `DistToWanderingCircle` (the 24-bit seed
+  mask, the f32 add-then-multiply order), the CUBIC `SmoothStep`
+  (`x*x*(3-2x)` — NOT `Utils.SmoothStep`'s inverse lerp) and
+  `LavaLightA` (the four wandering circles, the `SolidTile`-above
+  `[0.8,1]` band) for the type-717 lava glowmask arm (`:1193-1197`,
+  bind deferred to the f15 glow seam). Golden f32 bit patterns
+  independently re-derived from the .NET Framework Knuth subtractive
+  algorithm (the same oracle `unified_random.rs`'s golden tests pin).
+* **Witnesses**: 6 (tile_ctor) + 4 (tile_attach) written NOT run;
+  union g-family 70 + attach 10 = 80 on this branch. Anchors rows for
+  both modules; the attach-site witness pins the gated call's position
+  (after the fused walk, before the NPC pass) and the RNG separation.
+  *(Superseded by the final phase: 6 attach + 3 tile_visibility → 85;
+  UNION-CONTRACT §9.2 is the pinned inventory.)*
+
+Code-only: **no cargo/rustc/tests/graphify invoked** — every seam was
+compiled by inspection; the golden literals were re-derived with an
+independent Python evaluation of the .NET algorithms (not the Rust
+bodies).
+
+## The TILEPASS final phase (W4-g31, same branch)
+
+On top of the d-hunk fold prep (`766a5a5a8`, research/136). Three code
+commits + the contract final-status; the full record is
+`docs/UNION-CONTRACT-tilepass.md` §9. Summary + deliberate deviations:
+
+* **The `is_visible` keep-one EXECUTED** (`d3b5d5fd9`): d60's standalone
+  shape (`tile_draw_particles.rs:442`) promoted to
+  `tr-render/src/tile_visibility.rs`; g31 `tile_drains::is_visible` +
+  `pylons::is_visible` rebound as thin world-reading wrappers (bodies
+  deleted). **Deviation from research/136 §4's sketch**: the promoted fn
+  takes PRIMITIVES (`kind, frame_y, invisible_block,
+  show_invisible_blocks`), not `&Tile` — tr-render has no tr-core
+  dependency and d56's `tile_draw_gate` already takes the same
+  primitives, so this shape binds every consumer without a crate
+  dependency change. The invisible bit is a PARAMETER (d60 hardcodes
+  `false`; the union wrappers pass the real `World::invisible_block`
+  bit — zero behaviour change on this branch: the old bodies read the
+  same bit, and the `i16 /18` truncation equals the promoted `i32` cast
+  for every `frame_y`). d56's gate / d60's battery rebind at the merge.
+* **C2/C6 verified, nothing to strip**: this branch carries NO
+  `emit_living_tree_leaf` copy (the union never ported the battery — the
+  base inline 192 arm is g68's deletion target at ITS merge); the two
+  on-branch `solid_tile` twins (`tile_ctor.rs` / `drawdata_cases_a.rs`)
+  have identical bodies, keep-one stays a merge obligation per C6.
+* **The 717 `lava_light_a` bind EXECUTED as a shadow PLAN**
+  (`cb70b15d1`): `tile_attach.rs::classify_and_draw_cell` plans one
+  `lava_glows` entry per drawn 717 cell at CAD step 14 (the
+  `Main.tileGlowMask` table pass `:1178-1342` — f15's `:1343` record
+  seam explicitly scopes it OUT), colour = the XNA `Color(v,v,v,v/2)`
+  per-channel truncation (`b=(v*255) as u8`, `a=((v/2)*255) as u8` —
+  NOT `b/2`), clock `(anim_time*60) % 216000` (the `frame/draw.rs:374`
+  convention). Stream-free. **Asset census**: `Glow_362.xnb` exists in
+  `assets/Content/Images` but is NOT in f15's `GLOW_SHEET_NAMES`
+  addition (its 44 sheets came from `glow_switch`; the table-pass masks
+  are a different census) — the sheet load + the pixel push + the `:971`
+  gate coupling (`tile_draw_gate(glow_mask_id: 362)`) + the G6
+  `time_for_visual_effects` keying are the table-pass lane's obligations
+  (research/136 §3).
+* **The §8.5 drip seam EXECUTED as the direct-bind ORDER plan**
+  (`10530fd88`): g68's latest tip (`d247a1c9f`) re-read — its
+  `emit_liquid_drops` is now WIRED on ITS branch (the
+  `emit_liquid_drops_area` per-frame rescan + the persistent
+  `App.tile_draw_rand`); the body does not exist HERE, and copying it
+  would create the C2-class dup. The union's LiquidDrops arm plans
+  `drip_plan` row-major (the exact call order the pixel hunk fires in —
+  C5: the C# emits inside the Draw switch BEFORE the `continue`, so
+  draining the recorded cells later re-orders the ONE `_rand`); the
+  exact 2-line pixel hunk + the rescan-DROPS obligation are published in
+  UNION-CONTRACT §8.5.
+* **Witnesses**: +2 attach (the 717 truncation/band plan, the drip
+  row-major order) + 3 tile_visibility = 85 total on this branch
+  (§9.2's pinned inventory; the g-family 70 untouched). All written NOT
+  run — code-only, no cargo/tests/rustfmt/graphify in this phase.

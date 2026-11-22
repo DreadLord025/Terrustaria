@@ -143,15 +143,16 @@ pub(crate) fn selection_glow_color(selected: bool, avg: i32) -> [f32; 4] {
 
 /// `TileDrawing.IsVisible` (`TileDrawing.cs:1411-1432`): an Echo-coated block
 /// hides unless sight is granted; platforms on row 48 and the two invisible
-/// wiring tiles (541/631) always ride the flag.
+/// wiring tiles (541/631) always ride the flag. KEEP-ONE EXECUTED (g31
+/// TILEPASS final, research/136 §4): thin wrapper over the promoted d60
+/// shape, `tr_render::tile_visibility::is_visible`.
 fn is_visible(world: &World, x: i32, y: i32, tile: &tr_core::Tile, show_invisible: bool) -> bool {
-    let mut flag = world.invisible_block(x, y);
-    match tile.kind {
-        19 if tile.frame_y / 18 == 48 => flag = true,
-        541 | 631 => flag = true,
-        _ => {}
-    }
-    !flag || show_invisible
+    tr_render::tile_visibility::is_visible(
+        tile.kind,
+        tile.frame_y,
+        world.invisible_block(x, y),
+        show_invisible,
+    )
 }
 
 /// `Point.ToWorldCoordinates(autoAddX, autoAddY)` (`Utils.cs`): `p * 16 + add`.
