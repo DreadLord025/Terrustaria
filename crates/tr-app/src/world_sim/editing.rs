@@ -498,6 +498,47 @@ pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
             app.rngs.stream(crate::app::RngKey::UpdatePlayers),
         );
     }
+    // W4-f32 — the Sparkle Guitar 4715's chord (`Player.cs:46591-46603`,
+    // `ItemCheck_UseMisc`'s `ItemAnimationJustStarted` arm): the note arm
+    // starts the swing through `fire_non_ammo_shot` → this seam, so the
+    // chord fires here. The range clamp + luck roll + pitch draw ride the
+    // `UpdatePlayers` stream (`luck::guitar_chord_cue`). The Carbon/Ivy
+    // guitars (4057/4372) are damage-less and never start a swing — their
+    // chord fires on the dedicated press-edge arm in `update_editing`, NOT
+    // here (listing them would double-draw). The `58` net-sync and the
+    // progression-37 notify are the documented skips.
+    if held_kind == 4715 {
+        play_guitar_chord(app, Vec2::new(cx, cy), mouse_world, Vec2::new(sw, sh));
+    }
+}
+
+/// W4-f32 — `Player.PlayGuitarChord`'s play seam (`Player.cs:46671-46703`):
+/// the range clamp, the luck roll + pitch draw (`luck::guitar_chord_cue`)
+/// and the cue's `play_use_sound` at the player's Centre — all on the
+/// `UpdatePlayers` stream. Shared by the use-start seam (the Sparkle
+/// Guitar's note start) and the Carbon/Ivy press-edge arm (the two
+/// damage-less guitars never start a swing in the port's use path).
+fn play_guitar_chord(app: &mut App, centre: Vec2, mouse_world: Vec2, screen: Vec2) {
+    let mut range =
+        (mouse_world - centre).length() / (smaller_scaled_axis(screen, app.zoom) / 2.0);
+    if range > 1.0 {
+        range = 1.0;
+    }
+    let luck = app.player.as_ref().map_or(0.0, |p| p.luck());
+    let (cue, pitch) = crate::luck::guitar_chord_cue(
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+        luck,
+        range,
+    );
+    if let Some(idx) = crate::luck::item_sound_style_index(cue) {
+        app.audio.play_use_sound(
+            idx,
+            centre.x,
+            centre.y,
+            pitch,
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+        );
+    }
 }
 
 /// The gem-bolt kinds the gem-staff shoot fires (`Player.cs:49262`'s kind
@@ -2447,6 +2488,35 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if !pulley && fishing_use(app, held, world_pos, prev_mine_released && !prev_mine_down) {
             return;
         }
+    }
+    // W4-f32 — the Carbon/Ivy Guitar's press-edge chord (`Player.cs:46576-
+    // 46589`, `ItemCheck_UseMisc`'s `Main.mouseLeft && Main.mouseLeftRelease`
+    // arm): the two damage-less guitars (4057/4372 — no projectile, no
+    // tile) never start a swing in the port's use path, so the chord fires
+    // on the press edge here. The C# gate is `itemAnimation > 0` (the use
+    // started elsewhere); the port's edge + cooldown pair stands in. The
+    // Sparkle Guitar 4715's chord rides the use-start seam (its note arm
+    // starts the swing). The `58` net-sync + progression 37 are skips.
+    if matches!(held.kind, 4057 | 4372)
+        && held.count > 0
+        && app.mine_down
+        && prev_mine_released
+        && !prev_mine_down
+        && !app.inventory_open
+        && app.attack_cd <= 0.0
+        && app.reuse_delay <= 0.0
+    {
+        let (sw, sh) = app.screen_size();
+        let centre = app
+            .player
+            .as_ref()
+            .map(|p| Vec2::new(p.center().0, p.center().1))
+            .unwrap_or(app.camera);
+        play_guitar_chord(app, centre, world_pos, Vec2::new(sw, sh));
+        start_use_timers(app, held);
+        app.mine_target = None;
+        app.mine_timer = 0.0;
+        return;
     }
     if app.mine_down && held_weapon && !app.inventory_open {
         // Weapons use LMB toward the cursor instead of mining. The shuriken
@@ -5808,6 +5878,10 @@ pub(crate) struct DropCtx {
     /// No player (headless shots) reads full life + 0 torches.
     pub player_hurt: bool,
     pub torches: i32,
+    /// `Player.GetClosestRollLuck(i, j, range)`'s luck input
+    /// (`Player.cs:18236-18239` → the closest player's `luck`) — the Coin
+    /// Portal roll (`WorldGen.cs:57176`, W4-f32). No player reads 0.
+    pub luck: f32,
     /// `player2.Zone*` — the scene metrics refresh at the player centre;
     /// `ZoneGlowshroom` has no port metric (false, phase-5 ANALYSIS).
     pub zone_hallow: bool,
@@ -5863,6 +5937,9 @@ fn drop_ctx(app: &App) -> DropCtx {
             .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM),
         player_hurt,
         torches,
+        // `Player.GetClosestRollLuck`'s luck (`Player.cs:18236-18239`) —
+        // the Coin Portal roll's input (W4-f32).
+        luck: app.player.as_ref().map_or(0.0, |p| p.luck()),
         zone_hallow: app.scene_metrics.zone_hallow,
         zone_crimson: app.scene_metrics.zone_crimson,
         zone_corrupt: app.scene_metrics.zone_corrupt,
@@ -6413,10 +6490,11 @@ fn spawn_things_from_pot(
     // :57099-57171 — the style multiplier and the luck range.
     let range = pot_luck_range(pot_style_multiplier(style, ctx.hard_mode));
     // :57176-57182 — the Coin Portal (`Player.GetClosestRollLuck` →
-    // `Luck.RollLuck(luck, range)` with the port's luck 0 = one
-    // `Main.rand.Next(range)`, `Luck.cs:5-12`, `Player.cs:18236-18239`);
-    // the caller spawns the projectile (`NewProjectile(…, 518, …)`).
-    if main_rng.next_range(0, range) == 0 {
+    // `Luck.RollLuck(luck, range)`, `Luck.cs:5-16`, `Player.cs:18236-
+    // 18239`); W4-f32: the roll rides `ctx.luck` — at luck 0 it
+    // degenerates to the same single `Main.rand.Next(range)` the
+    // pre-luck port drew; the caller spawns the 518 projectile.
+    if tr_core::loot::roll_luck(main_rng, ctx.luck, range) == 0 {
         return (Vec::new(), true);
     }
     // :57184-57182 — the dungeon key: `genRand.Next(35)` consumes first, the
@@ -7778,6 +7856,44 @@ fn resolve_melee_strike(
                     // type 453, which the port does not ship.
                     flymeal_town_hit = true;
                 }
+                // W4-f32 — the Tax Collector's cane coin shower
+                // (`Player.cs:44367-44374`): `sItem.type == 3351 &&
+                // nPC.type != 488 && nPC.life > 5` → a copper coin at
+                // `npc.position + (Next(width), Next(height))` with
+                // `stack: 1 + RollBadLuck(25)` and the explicit velocity
+                // `(2 + NextFloat*2) * direction, -2 - NextFloat*2`.
+                // The C# draw order: the two velocity NextFloats FIRST
+                // (`:44369`), then the centre's Next(width)/Next(height)
+                // (`:44370`'s center argument), then the stack's
+                // RollBadLuck(25) — all on the `UpdatePlayers` stream,
+                // BEFORE StatusToNPC (`:44391`). The 488 (Target Dummy)
+                // refusal is constants-on (the kind is unported). The
+                // ClassyCane particle is a visual skip. Runs pre-strike
+                // (the C# block precedes `StrikeNPC` `:44403`), so the
+                // life gate reads the PRE-hit hp.
+                if held.kind == 3351 && n.hp > 5 {
+                    let dir = app.player.as_ref().map_or(1, |p| p.facing);
+                    let vx = (2.0 + loot_rng.next_float() * 2.0) * dir as f32;
+                    let vy = -2.0 - loot_rng.next_float() * 2.0;
+                    let (nw, nh) = n.size();
+                    let cx = n.x + loot_rng.next_max(nw as i32) as f32;
+                    let cy = n.y + loot_rng.next_max(nh as i32) as f32;
+                    let stack = 1 + tr_core::loot::roll_bad_luck(loot_rng, luck, 25);
+                    // `NewItemOwnership.GrabDelayForAllPlayers` — every
+                    // player (and the monsters) wait the 100-tick delay.
+                    let mut coin = crate::item::ItemDrop::new(
+                        71,
+                        stack.max(1) as u32,
+                        0, // prefix: 0 — no prefix draw
+                        cx - crate::item::SIZE * 0.5,
+                        cy - crate::item::SIZE * 0.5,
+                        vx,
+                        vy,
+                        0.0,
+                    );
+                    coin.apply_grab_delay(crate::item::GRAB_DELAY_ALL);
+                    app.items.push(coin);
+                }
                 // The struck NPC's Copy reads — captured before the
                 // mutable buff borrow below ends the `n` borrow (NLL).
                 let n_defense = n.defense();
@@ -9054,6 +9170,72 @@ mod tests {
             state_0,
             "luck 1.0 rerolled DamageVar"
         );
+    }
+
+    /// W4-f32 — the Tax Collector's cane coin shower (`Player.cs:44367-
+    /// 44374`): a 3351 hit on a `life > 5` NPC draws the velocity pair
+    /// (NextFloat ×2), the centre pair (Next(width), Next(height)) and the
+    /// stack's `RollBadLuck(25)`, then spawns the 71 copper with
+    /// `GrabDelayForAllPlayers`. Differential witness: the cane rig and
+    /// the plain-sword rig share the pre-block draws; the cane's stream
+    /// is the sword's advanced by exactly 5 draws at luck 0 (2 floats +
+    /// 2 centre + 1 plain Next(25)), and the coin spawns at stack 1..26.
+    #[test]
+    fn f32_the_classy_cane_shower_draws_and_spawns() {
+        let mut saw_coin = false;
+        for seed in 0..12i32 {
+            // The plain baseline: same rig, same seed, no cane.
+            let mut base = melee_app();
+            seed_stream(&mut base, seed);
+            let hp0 = base.npcs[0].hp;
+            mine_frames(&mut base, 1);
+            assert!(base.npcs[0].hp < hp0, "the baseline hit lands (seed {seed})");
+            assert!(base.items.is_empty(), "no cane, no shower");
+            let base_state = stream_of(&mut base);
+
+            // The cane rig: the 3351 in the selected slot.
+            let mut cane = melee_app();
+            cane.inventory[cane.selected] = crate::item::ItemSlot {
+                kind: 3351,
+                name: "Tax Collectors Stick Of Doom",
+                count: 1,
+                prefix: 0,
+            };
+            seed_stream(&mut cane, seed);
+            mine_frames(&mut cane, 1);
+            // The shower runs pre-strike on the PRE-hit hp (25 > 5).
+            let coins: Vec<&crate::item::ItemDrop> =
+                cane.items.iter().filter(|it| it.kind == 71).collect();
+            assert_eq!(coins.len(), 1, "one copper per landed cane hit");
+            let coin = coins[0];
+            assert!((1..=26).contains(&(coin.count as i32)), "stack 1 + Next(25)");
+            assert_eq!(coin.grab_delay_player, crate::item::GRAB_DELAY_ALL);
+            assert_eq!(coin.grab_delay_time, crate::item::DEFAULT_GRAB_DELAY);
+            // The 5-draw advance: replay the block over the baseline's
+            // pre-block state is not directly observable (the block sits
+            // mid-chain), so pin the SHAPE on the engine instead: the
+            // cane's stream differs from the baseline's by the block's
+            // draws plus the downstream damage difference (the cane's
+            // 40-damage row vs the sword's) — assert divergence only.
+            assert_ne!(stream_of(&mut cane), base_state);
+            saw_coin = true;
+        }
+        assert!(saw_coin);
+        // The RollBadLuck(25) shape at luck 0: one plain Next(25).
+        let mut a = tr_core::UnifiedRandom::new(3);
+        let r = tr_core::loot::roll_bad_luck(&mut a, 0.0, 25);
+        let mut b = tr_core::UnifiedRandom::new(3);
+        assert_eq!(r, b.next_max(25));
+        assert_eq!(a, b);
+        // Positive luck WIDENS the range (RollBadLuck is the inverted
+        // RollLuck, `Luck.cs:18-28`): Next(Next(25, 50)) — smaller stacks.
+        let mut c = tr_core::UnifiedRandom::new(3);
+        let r1 = tr_core::loot::roll_bad_luck(&mut c, 1.0, 25);
+        let mut d = tr_core::UnifiedRandom::new(3);
+        let _gate = d.next_float();
+        let inner = d.next_range(25, 50);
+        assert_eq!(r1, d.next_range(0, inner));
+        assert_eq!(c, d);
     }
 
     /// S1-P-i50 — the Lucky Coin melee proc (`ApplyNPCOnHitEffects`' tail,
@@ -13082,6 +13264,43 @@ mod tests {
         let (loot, portal) = run_pot(&ctx, 0, surface_y, gen_seed, portal_seed, 0, 0);
         assert!(portal, "the portal roll fires on the found seed");
         assert!(loot.is_empty(), "the portal returns without loot");
+
+        // W4-f32 — the portal roll rides `ctx.luck` (`WorldGen.cs:57176` →
+        // `Player.GetClosestRollLuck` → `Luck.RollLuck`, `Luck.cs:5-16`):
+        // luck 0 is the plain Next(500) (the seed above proves it); luck
+        // 1.0 shrinks the range to Next(Next(250, 500)) — a seed whose
+        // plain Next(500) MISSES can still portal under the shrunk range.
+        let mut lucky_ctx = pot_ctx();
+        lucky_ctx.luck = 1.0;
+        let mut diverged = false;
+        for seed in 0u64..20_000 {
+            let mut plain = tr_core::UnifiedRandom::new(seed as i32);
+            if plain.next_range(0, 500) == 0 {
+                continue; // both would portal — not the divergence case
+            }
+            let mut probe = tr_core::UnifiedRandom::new(seed as i32);
+            if tr_core::loot::roll_luck(&mut probe, 1.0, 500) == 0 {
+                let (loot, portal) =
+                    run_pot(&lucky_ctx, 0, surface_y, gen_seed, seed, 0, 0);
+                assert!(portal, "the shrunk range portals on seed {seed}");
+                assert!(loot.is_empty());
+                // The plain ctx on the same seed does NOT portal.
+                let (_, plain_portal) = run_pot(&ctx, 0, surface_y, gen_seed, seed, 0, 0);
+                assert!(!plain_portal);
+                diverged = true;
+                break;
+            }
+        }
+        assert!(diverged, "positive luck portals where luck 0 misses");
+        // Negative luck widens the range (Next(Next(500, 1000))) — the
+        // portal fires LESS often; the draw shape is three draws.
+        let mut a = tr_core::UnifiedRandom::new(7);
+        let bad = tr_core::loot::roll_luck(&mut a, -1.0, 500);
+        let mut b = tr_core::UnifiedRandom::new(7);
+        let _gate = b.next_float();
+        let inner = b.next_range(500, 1000);
+        assert_eq!(bad, b.next_range(0, inner));
+        assert_eq!(a, b);
 
         // Dungeon key: `genRand.Next(35) == 0` with a dungeon wall below the
         // surface → exactly item 327, before any potion roll.

@@ -7598,6 +7598,126 @@ runs in C# order, every term live or neutral-default; residual work is merge-tim
 only (the c8 UI `unlock_state_world` fold, the d130 rain union, the f33 torch-scan
 compose, the c10 Duck@731 + style68 wiring, the d37 bijection re-pin). No further
 e26 commits planned.
+## The luck consumers (W4-f32)
+
+The e26 core (`loot.rs`'s five `Luck.cs` roll fns + `luck.rs`'s `LuckState`)
+and the e27 torch lane landed the VALUE; this wave ports the missing
+CONSUMER sites verbatim — the places the C# reads `player.luck` /
+`RollLuck` / `RollOnlyBadLuck*` that the port still ran as plain `Next(n)`
+or skipped. Every site keeps the exact RNG slot: at luck 0 each roll
+degenerates to the same single `Next(range)` the pre-luck port drew
+(byte-identical stream), and the bad-luck-only fns (`RollOnlyBadLuck*`)
+consume NOTHING at luck >= 0 (the `-1` return, `Luck.cs:53-60`). The
+`f32_*` witnesses pin both the luck-0 equality and the luck-fed draw
+shapes. Code-only mode: no compiler invoked, witnesses WRITTEN NOT RUN.
+
+Landed sites (C# → Rust):
+- **Spawner** (`spawner.rs`, `SpawnContext.luck` ← `NPC.cs:369`
+  `this.luck = player.luck`, fed in `world_sim/npcs.rs`): the
+  `GetSpawnRate` tail `RollOnlyBadLuckExtreme(50)` (`NPC.cs:924-928`,
+  rate ×0.85 / cap ×1.15, gated `!spawnFriendly`); the Pinky promotion
+  `RollLuck(180)` (`:5242`) + the anniversary second `RollLuck(180)`
+  (`:5246`, the 667 Golden Slime kind unported — the roll consumes, the
+  pick stands); the bound Goblin/Wizard `RollLuck(20)` (`:2084`/`:2088`);
+  the blood-moon `RollOnlyBadLuck(300)` pair (`:4618`/`:4623`).
+- **NPC loot** (`world_sim/npcs.rs`, the re-ordered death loop's
+  `spawn_heals` / `summon_dungeon_spirit` on the `UpdateNPCs` stream):
+  `NPCLoot_DropCommonLifeAndMana` `RollLuck(6)` +
+  `RollLuck(2)` (`NPC.cs:79531-79557`, the 16/121/81 `num = 1` skip draws
+  NOTHING, the star-first `Next(2)` + the else-if re-roll); the
+  `NPCLoot_DropHeals` per-type hearts `RollLuck(4/6/5)` (`:79098-79195`);
+  `DoDeathEvents_SummonDungeonSpirit` `RollLuck(13/9)` (`:79064-79078`,
+  the wall check AFTER the draw, the 288 spawn at the dead NPC's centre).
+- **Pot Coin Portal** (`world_sim/editing.rs`, `DropCtx.luck`):
+  `SpawnThingsFromPot`'s `GetClosestRollLuck(range)` (`WorldGen.cs:57176`
+  → `Player.cs:18236-18239`) now rides `ctx.luck` instead of the plain
+  `Next(range)`.
+- **Classy Cane** (`world_sim/editing.rs` `resolve_melee_strike`): the
+  3351 coin shower `RollBadLuck(25)` (`Player.cs:44367-44374`, the
+  velocity NextFloat pair + the centre Next(width)/Next(height) + the
+  stack, pre-strike on the PRE-hit hp, `GrabDelayForAllPlayers`).
+- **TryToPoop** (`luck.rs::try_to_poop_stack` + `player.rs`
+  `update_survival` + the `pending_poop` drain): the toilet-sitting
+  digestion `RollOnlyBadLuckExtreme(10)` stack boost (`Player.cs:18896-
+  18940`, the 207/206/26 tier ladder, the max-first `Utils.Clamp`, the
+  ×1.2 f64 truncation); the `IsAToilet` seat flag
+  (`PlayerSittingHelper.cs:166-180`) set in `editing/doors.rs`.
+- **PlayGuitarChord** (`luck.rs::guitar_chord_cue` +
+  `editing.rs::play_guitar_chord`): the chord's `RollOnlyBadLuckExtreme(10)`
+  pitch draw (`Player.cs:46671-46703`, the six-range cue ladder); the
+  Sparkle 4715 fires through the use-start seam, the damage-less
+  Carbon/Ivy 4057/4372 through a dedicated press-edge arm (they never
+  start a swing in the port's use path).
+- **The projectile-side Lucky Coin proc** (`projectile.rs::damage_pve` +
+  `world_sim/projectiles.rs` drain, W4-f32 sweep-luck-loot research/380):
+  `Projectile.cs:13685-13697` — the `Next(5)` gate + the denomination pair
+  (`Next(10)` silver / `Next(100)` gold, gold wins) + the DISCARDED
+  `Next(1, 11)` stack draw + the velocity pair, six rolls inline on
+  `UpdateProjectiles`; the drop (stack 1, prefix 0, the NPC-centre box)
+  spawns draw-free at the pass tail. The `num23` owner-centre override
+  (697/699/707/708/759/1118 + aiStyles 15/188-191 + WaterStream 22) verbatim.
+  The melee twin is S1-P-i50's; this closes the projectile twin's recorded
+  "own unported row". 7 witnesses WRITTEN NOT RUN.
+
+Deliberate deviations:
+- **The death path is re-ordered to the C# `NPCLoot` sequence** (W4-f32
+  DOC-SWEEP, research/74). The earlier "death tail appended after the
+  coins/loot batch" deviation is RETIRED: `update_npcs` now runs one per-NPC
+  loop in the C# order — death sound → bestiary/banner → `spawn_loot`
+  (DropItems) → `advance_slime_rain`/`summon_dungeon_spirit`/
+  `do_death_events_switch`/boss tail (DoDeathEvents) → `spawn_coins`
+  (DropMoney) → `spawn_heals` (DropHeals) → the draw-free invasion/moon
+  reports (`NPC.cs:78830-78899` + the `checkDead` tail `:78230-78275`). The
+  DW-3.2 twin replay and the King-death witness are re-pinned to the order.
+- **The heart/star scatter now uses the real C# draws** (W4-f32 DOC-SWEEP).
+  The earlier "ItemDrop triplet stand-in" deviation is RETIRED for the heals
+  tail: `spawn_heals` draws `Next(-30,31)*0.1` / `Next(-40,-15)*0.1`
+  (`Item.cs:49749-49750`), two integer draws, prefix-first (draw-free for
+  hearts), phase pinned 0. The triplet stand-in REMAINS in `spawn_loot`,
+  `spawn_coins`, the banner drop and the boss potions/hearts (the per-item
+  `Item.NewItem` velocity model is a separate follow-up).
+- **The Twins surviving-half demotion is unported.** `DoDeathEvents_BeforeLoot`
+  (`NPC.cs:78916-78923`) zeroes `value`/`boss` on a Twin whose other half
+  lives; the port's read-only death clone keeps the static boss flag (the
+  first eye still drops money + the boss tail). Needs a per-NPC value/boss
+  override threaded through the loot/coins/tail seams.
+- **The EoW last-segment boss latch is unported.** `DropEoWLoot`
+  (`NPC.cs:78414-78430`) sets `boss = true` on the last EoW segment; the
+  port's `is_boss_kind` is a static kind read, so the EoW head's trophy/tail
+  stay gated off. The faithful static roster (19 ported kinds incl. the
+  Martian Saucer Core 395 + the Moon parts 396/397) IS landed.
+- **The statue rarity gate is unported** (`NPC.cs:78849-78852`, the
+  `StatueSpawnedDropRarity` `NextFloat` early-return).
+- **The goldCritterChance arms stay constants-off.** The ~40
+  `RollLuck(NPC.goldCritterChance)` sites (`NPC.cs:1588-4447`, the
+  `ShakeTree` critters `WorldGen.cs:63270/63306/63346`, the tile-break
+  gold critters `:66364/66382`) all spawn unported kinds (442/444/445/
+  446/448/539/592/613 etc.) behind documented constants-off arms; there
+  is no reachable consumer to port without inventing the spawn arm. The
+  `GetSpawnRate`/Pinky/bound-NPC/blood-moon sites above ARE reachable and
+  landed.
+- **The TryToPoop DelBuff folds after the roll.** The C# removes the fed
+  tier (`:18926`) before the clamp/luck roll; the slot clear draws
+  nothing, so the port folds it after (same stream). The Digestion
+  particle is a visual skip.
+- **The guitar `58` net-sync + progression-37 notify are skips** (the
+  port's single-player audio seam plays the cue only).
+- **The minecart NPC-strike pass is unported** (W4-f32 sweep-luck-loot
+  census, research/380). `Player.cs:27539-27605` — the cart-speed hitbox
+  inflate, the max-class crit roll, `TryConsumingTimerCrit`,
+  `GetMinecartDamage`'s four `DamageVar(…, luck)` calls (`:29242-29293`),
+  the knockback-resist divide, `ApplyDamageToNPC(…, 2343)` and
+  `immune[i]=30` — is a whole combat pass, not a small luck arm. The four
+  luck consumers ride it; deferred to the mount/combat lane. The
+  `GetClosestPlayersLuck`/`GetClosestRollBadLuck` helpers (`:18169-18177`/
+  `:18241-18249`) are DEAD in C# (zero callers) — nothing to port.
+- **The e26 factor census and the f32 consumer census are disjoint**
+  (research/380 §4): e26 owns the luck VALUE inputs (the `RecalculateLuck`
+  terms, draw-free), f32 owns the CONSUMER read sites (the `RollLuck`/
+  `DamageVar` spends). They meet only at the `player.luck()` accessor; the
+  shared `has_lucky_coin` bool is read by both (e26's +0.05 equip twin, the
+  proc's gate) with no conflict — the port carries one bool, the C# flags
+  are never set apart.
 
 ## Mounts framework (M2-MOUNT-1)
 
@@ -39459,8 +39579,16 @@ invoked — the witness tests are WRITTEN, NOT RUN.**
   `WorldItem.DefaultGrabDelay`, `WorldItem.cs:110`) has no port field — the
   player pickup delay (0.35 s) is the standing stand-in; the revenge arm's
   expert gate keeps the proc's coin safe in classic mode regardless.
-- **The projectile-side Lucky Coin proc** (`Projectile.cs:13685`, the
-  `Next(1, 11)` draw discarded, stack 1) is its own unported row.
+- **The projectile-side Lucky Coin proc** (`Projectile.cs:13685-13697`, the
+  `Next(1, 11)` draw discarded, stack 1) — NOW PORTED (W4-f32 sweep-luck-loot,
+  research/380): `projectile.rs::damage_pve`'s landed block (after the javelin
+  arm, before the whip/yoyo arms — the C# draw order), the six rolls inline on
+  `UpdateProjectiles`, the drop queued on `pending_lucky_coin_drops` and spawned
+  draw-free at the `world_sim/projectiles.rs` pass tail. The `num23` owner-centre
+  override list (697/699/707/708/759/1118 + aiStyles 15/188-191 + WaterStream 22)
+  transcribed verbatim. The boxed walk (`damage_pve_boxed`) does not thread the
+  owner's `hasLuckyCoin` — a follow-up with that seam's player-borrow reconcile.
+  7 witnesses WRITTEN NOT RUN.
 
 ### RNG order (the pitch/share/proc rolls)
 
