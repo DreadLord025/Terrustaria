@@ -433,8 +433,16 @@ impl App {
     let rng = self.rngs.global();
     let step = &mut self.tile_anim_step;
     let animator = &mut self.tile_anim;
+    // W4-f14: `Main.AnimateTiles`'s tail call
+    // `Main.AnimateTiles_CritterCages()` (`Main.cs:19303`) rides the SAME
+    // tick and the SAME `Main.rand` stream, after the tile-493 counter —
+    // the cage animator's `critter_cage` gate (set by the draw while a
+    // cage is in view, TileDrawing.cs:5672 etc.) returns before any draw
+    // when no cage is on screen, so the interleave stays bit-for-bit.
+    let cages = &mut self.cage_anim;
     step.tick(dt, |_| {
         animator.animate_tiles(wind, rng, false);
+        cages.animate_critter_cages(rng);
     });
     step.cap_backlog();
     }

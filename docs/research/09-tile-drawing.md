@@ -212,6 +212,12 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
    The cage-frame draw rewrites (deviation 4's furniture slice) are likewise ported in
    `drawdata_furniture.rs::cage_draw_data` with the `Main.*CageFrame` tables as a lookup;
    only the cage animator (`Main.AnimateTiles_CritterCages`) is still missing.
+   **Update 2026-11-20 (W4-f14, code-only):** the cage animator is ported AND wired —
+   `drawdata_cages.rs::CritterCageAnimator` (tick at the `AnimateTiles` tail,
+   `Main.cs:19303`), `draw_tiles` runs the cage post-pass at the FIRST-switch tail
+   (before slice A's post-cage glow rects), G6 `WorldFrameKey::cage_anim` view-gated;
+   ANALYSIS "W4-f14 cage furniture wiring". The chest half + the `DrawSpecialTilesLegacy`
+   620 lid pass stay unwired.
 6. **Platforms: martian-conduit glow rows (frameY/18 == 26/27) and slope side-fill quads
    missing** — `pixel`. `SET_PLATFORMS` is generated but unused by the renderer. **Not
    admitted.**
