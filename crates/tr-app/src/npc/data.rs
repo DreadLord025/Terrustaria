@@ -1966,7 +1966,8 @@ impl NpcKind {
             | NpcKind::Maggot => "NPC_Hit_1",
             // The snail family + its shimmer target (W4-c9): NPCHit1
             // each (`NPC.cs:13581` / `:13595` / `:17288` / `:17587`).
-            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail |                "NPC_Hit_1"
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => {
+                "NPC_Hit_1"
             }
             // The gold critters (W4-c9): NPCHit1 each (`NPC.cs:14255` /
             // `:14311` / `:14326` / `:14270` / `:14298`).
@@ -2320,7 +2321,8 @@ impl NpcKind {
             | NpcKind::Maggot => "NPC_Killed_1",
             // The snail family + its shimmer target (W4-c9): NPCDeath1
             // each (`NPC.cs:13582` / `:13596` / `:17289` / `:17588`).
-            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail |                "NPC_Killed_1"
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => {
+                "NPC_Killed_1"
             }
             // The gold critters (W4-c9): the GoldBird/GoldGrasshopper/
             // GoldBunny/GoldFrog NPCDeath1 (`NPC.cs:14257` / `:14312` /
@@ -2497,7 +2499,8 @@ impl NpcKind {
             // `:17291` / `:17590`). kb 1 (the head default — the rows
             // write none), so a strike can push them; the crawl's own
             // per-tick gravity gate rides `SnailEvents::no_gravity`.
-            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail |            _ => false,
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => true,
+            _ => false,
         }
     }
 
