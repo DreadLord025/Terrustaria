@@ -39931,6 +39931,130 @@ cross-checks the dust tip against the shared walk) mirror
 the full draw sequences on same-seeded probe streams (WRITTEN, NOT
 RUN — no cargo/rustc/rustfmt/tests/dotnet/graphify invoked).
 
+## The fighter residuals (W4-g4 lane 15, task/W4-g4-npc-style3-fighter, 2026-11-21, code-only mode)
+Branch `task/W4-g4-npc-style3-fighter` on the DONE base `6dbed20d`. The
+five residual items the Lead scoped after the doc-sweep phase; the
+full census + the d22r RESUME keep-both fold-list live in
+`docs/research/91-addendum-d22r-fold-list.md`. **Code-only mode — no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked; every witness below is
+WRITTEN, NOT RUN.**
+### The blood-moon door-break distinction was inverted (items 1-2, fixed in place)
+The port's `DOOR_BASH_TYPES` doc + the bash-gate witness note claimed the
+Blood Zombie (489) "resets on a normal night but accumulates on a blood
+moon". The C# is the OPPOSITE: flag27 (`NPC.cs:60007`,
+`(!bloodMoon || getGoodWorld) && !flag25 & flag24`) is false for 489 on
+EVERY night (489 is NOT in the flag24 list `:59996`), so the Blood Zombie
+accumulates `ai[1]` and opens doors on a NORMAL night. The flag24 types
+(the zombie family) reset every bash on a normal night and only
+accumulate on a BLOOD MOON (or a graveyard 1/60 roll, flag25) — the
+blood-moon door-BREAK is the flag24 types' privilege. The bash CODE was
+already faithful (`flag27 = (!world.blood_moon) && !flag25 && flag24`);
+only the comments were wrong. Fix: the doc + witness note corrected, and
+`w4_g4_the_blood_zombie_opens_doors_on_a_normal_night` added (the 489
+normal-night open + the flag24 zombie reset control).
+The census also confirmed fighters do NOT open doors "normally" (no
+town-style 1/10 walk roll): the ONLY fighter door interaction is the
+60-tick bash (`ai[2] >= 60`) gated on `ai[1] >= 10` (flag28). The three
+`WorldGen.OpenDoor` call sites are the town walker (`:54047`/`:54056`),
+the fighter bash (`:60061`) and the unicorn (`:64257`) — no missing
+fighter arm. d22's GoblinPeon door-SMASH (`:60049-60056`, the type-26
+`KillTile` arm) is a distinct mechanic it claims in the drain.
+### The confused-immunity table (item 3, fixed)
+`npc_buffs::debuff_immune_ids` folded whole families to `&[]` where the
+C# `NPCID.Sets.DebuffImmunitySets` carries rows. The fighter-relevant
+fixes: Skeleton 21 / UndeadMiner 44 → [20]; the frost trio 143/144/145 →
+[20, 44, 324]; GoblinSummoner 471 → [31, 153]; PirateCaptain 216 → [31];
+the lunar [31] kinds (402/405/406/407/412-414/420/421/428/518) + Corite
+418 → [20, 24, 31, 323]; the DD2 walker roster → [31] (Betsy 551 →
+[24, 31, 323], skeletons 566/567 → [20, 31]). `whip_immune` gains the
+BlazingWheel 72 + the DD2LanePortal 549. The knockback half
+(`tr_core::damage::knock_back_npc` + the per-kind `knock_back_resist`
+table) was re-censused against every g4 fighter kind's `SetDefaults`
+block — ALL rows match; the AI_003 head's live `knockBackResist` writes
+name no g4-claimed kind except the Summoner 471 (already P2). So item
+(3)'s real g4-side gap is the immunity census, not a knockback gap.
+Two existing witnesses tested IMPOSSIBLE states (a Confused-immune kind
+carrying buff 31): `w4_g4_the_confused_shooter_never_fires` used
+BrainScrambler 381 ([31]) and `w4_g4_the_confused_generic_walkers_reverse_the_walk`
+used VortexHeadcrab 428 ([31]). Repointed to RayGunner 382 / VortexSoldier
+429 (null rows) respectively, with the immune kinds' rejection pinned.
+The new census witness
+`w4_g4_the_fighter_roster_immunity_rows_match_the_csharp_sets` pins the
+rows. d22's core reads the flip through `find_buff_index(31)` — the
+immune table hides the buff, so the flip correctly never fires for the
+immune kinds; the fold-list forbids re-folding the table to `&[]`.
+### The coin/star drops (item 4, cross-note only — SUPERSEDED by the FINAL phase)
+Per the Lead's scope, g4 does NOT wire the drops (f35 owns the loot
+trees, g60 the death-feed dust). Cross-noted in the addendum:
+`spawn_coins` carries two false stand-ins (`midas = false`,
+`blood_moon = false`) where the C# reads `this.midas` (buff 72) and
+`Main.bloodMoon` (`NPC.cs:79631-79634`/`:79660-79663`) — both LIVE port
+inputs; wiring them adds one draw per value roll on UpdateNPCs. The
+heart/star `NPCLoot_DropHeals` → `DropCommonLifeAndMana`
+(`NPC.cs:79098-79557`) is UNPORTED (no `spawn_heals` seam). Both are f35
+remainders.
+**FINAL-phase update (commit `55840d9a`):** f35's own census
+(`65-expert-drop-trees-census.md:39`) explicitly disclaims the heal seam
+("missing, OUT of this task"), so g4 ported it: `spawn_heal_drops` + the
+two pure draw-order helpers, wired LAST on the death path after
+`spawn_coins`/`spawn_loot` (`NPC.cs:78897-78898`). The two `spawn_coins`
+stand-ins are now LIVE (`npc.buffs.has_buff(72)` + `app.world.blood_moon`).
+The per-difficulty census: the ONLY difficulty input is the 116-119 leech
+arm's `!expert || Next(5)==0` (classic short-circuits the draw). The full
+census + the 9 witnesses live in `docs/research/91-final-fighter-census.md`.
+**SEAL-phase correction (the keep-one re-adjudication):** the FINAL probe
+misread f35's census row — it sits in a **"Port status BEFORE this task"**
+table. f35's pushed tip ported the SAME heal seam FIRST (`b72cdfbfc`
+08:19 `npc_death_heals.rs` + `00a5b27db` 08:43 the `spawn_heals` wiring —
+both BEFORE g4's `55840d9a` 09:16), as a SUPERSET: the boss
+potions/hearts tail (`:78945-79016`) + the Badger's Hat latch chain +
+the EoW head's dynamic boss latch, with its own anchors + 10 witnesses.
+**Keep-one: f35 owns the heal seam.** g4's duplicate `spawn_heal_drops`
++ helpers + the 8 seam witnesses are RETIRED on this branch (a second
+copy would double-feed the UpdateNPCs death stream). The g4-unique
+`spawn_coins` midas/blood-moon LIVE wiring stays (neither d22 nor f35
+carries it — both still pass `false, false`); it must survive the merge
+as a targeted hunk. Full adjudication: `docs/research/91-seal-keep-one.md`.
+### The d22r RESUME fold-list (item 5 — CONSUMED, the reconcile landed)
+d22's tip re-probed to `b24977d9` (four pushed commits). Its style-3 core
+(`npc_ai_style3.rs`, the 22-plain-walker claim set) still carries the
+pre-P5 scan (`flag25 = false`, no rng). The addendum publishes the exact
+keep-both fold-list: thread rng into `fighter_obstacle_scan_g`, replace
+`flag25 = false` with the `target_zone_graveyard` pre-stamp &&
+`next_max(60)`, keep the P5 pre-pass + chain term + the four witnesses,
+keep the P6 generic arms (non-claimed riders), keep the P9 immunity rows,
+keep d22's GoblinPeon smash drain. The full checklist is addendum §7.
+**FINAL-phase receipt:** the d22 tip has MOVED to `bcd42ddd1` — the
+**W4-d22r G4 reconcile** landed (four commits `0cfd08ac5`/`4150d3748`/
+`e6c83bef8`/`bcd42ddd1` on top of `b24977d9`), executing the keep-both
+contract. The addendum's §0 "still pre-P5" probe is now STALE. Verified
+against `git show origin/task/W4-d22-npc-ai-styles-3-6`: the flag25 line
+is `npc.target_zone_graveyard && rng.next_max(60) == 0`, both scan entries
+take the rng, the sim pre-pass + chain term + the P5 witnesses are kept,
+the P9 immunity rows are NOT re-folded to `&[]`, the GoblinPeon smash +
+the tall-gate drain + the blood-moon census correction are kept. d22r's
+ANALYSIS record explicitly cites g4's research/91 + 91-addendum as the
+contract it executed. **No g4 re-fold is needed — the reconcile is
+complete.** The full receipt table lives in
+`docs/research/91-final-fighter-census.md` §2.
+### The fighter-variant FINAL census (the MartianWalker shooter remainder)
+The FINAL census (`docs/research/91-final-fighter-census.md` §3) re-read
+the whole `AI_003_Fighters` (`NPC.cs:55856-60298`) + the two despawn
+helpers. Every ported aiStyle-3 kind is routed: the 22 plain walkers on
+d22's axis, the 17 zombie variants on `update_zombie`, the shooters on
+their machines, the martian head-arm kinds on their fns + the P3 resets,
+the pillar mobs on their machines, the summoner on its phase machine, the
+frost siblings on `npc_ai_frost_mob`/`update_skeleton`. The banner-carrier
+question resolves to the Scutlix 391 carrier group (the invented 50-px
+stop retired by d22r); the goblin-peasant is the invasion four (26/27/28/
+111, the Peon smash live). **The ONE genuine remainder: the MartianWalker
+520** rides `update_skeleton` (the plain walker) but the C# 520 is a
+shooter-block type (`:59069`) — its walk is routed, but its 592 laser shot
++ the aim cycle + the 400-px stop are unported (**SEAL: a d41 task seed**
+— band 491-560, the salamander-572 in-lane precedent; only the engineer's
+turret + the zapper's spear stay with the projectile-work lane). The ~123
+unported style-3 types are kind-roster gaps (d34-d43), not AI-arm gaps.
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the

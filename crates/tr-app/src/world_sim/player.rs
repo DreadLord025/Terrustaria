@@ -693,6 +693,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // global the source reads): the frame's `update_scene` scan feeds
         // the per-tick aura copy.
         p.auras = app.scene_metrics.auras();
+        // `Player.SceneMetrics.NPCBannerBuff` (`Player.cs:44197-44199`):
+        // the per-banner strength flags the strike lanes' `GetBannerBuffEffect`
+        // reads. The C# reads the live global mid-tick; the port snapshots it
+        // beside the auras (the same one-tick scene-scan latency).
+        p.npc_banner_buff = app.scene_metrics.npc_banner_buff.clone();
         // The zone flags (`Player.ZoneSnow`-family) — the torch-luck table's
         // inputs (`Player.cs:17924-18036`), refreshed beside the auras.
         p.zones = app.scene_metrics.zones();

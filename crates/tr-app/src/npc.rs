@@ -1590,9 +1590,9 @@ pub struct Npc {
     /// drains it after the tick (the `wants_sphere` borrow-safe shape —
     /// `update_zombie` holds `&World` immutable). `open` is `flag28`
     /// (`ai[1] >= 10`): the drain plays the `KillTile(fail: true)` thud
-    /// on every bash and, when `open`, calls `edit::open_door` (a refusal
-    /// sets `ai[3] = num57`, `:60064`) + the `Door_Opened` cue. The tall
-    /// gate (388) `ShiftTallGate` is unported — the bash still counts.
+    /// on every bash and, when `open`, calls `edit::open_door` (door 10) or
+    /// `edit::shift_tall_gate` (gate 388, W4-g4); a refusal sets
+    /// `ai[3] = num57` (`:60064`/`:60077`) + the `Door_Opened` cue.
     pub wants_door_bash: Option<(i32, i32, i32, bool)>,
     /// The King Slime's minion batch count (`AI_015` `:44233`'s
     /// `rand(1, 4)` damage spawn / `:85689`'s `rand(4) + 4` death spawn).
@@ -2062,6 +2062,15 @@ pub struct Npc {
     /// stamps it before the update (the `wind_speed_current` convention);
     /// 0 outside the sim (the solo tests' flat-ground default).
     pub frame_slope: u8,
+    /// `Main.player[target].ZoneGraveyard` pre-stamped by the sim before the
+    /// update (the `wind_speed_current` pre-pass convention) — the fighter
+    /// bash gate (`NPC.cs:59997`) and the despawn-discouragement chain
+    /// (`:60302`) read it. The port is single-player, so the session
+    /// player's `scene_metrics.zone_graveyard` (the d120 biome pass) stands
+    /// in for the target's zone; the AI's `&World` borrow cannot reach
+    /// `app.scene_metrics`. False until the sim stamps it (the solo/test
+    /// path keeps the legacy zero-draw short-circuit).
+    pub target_zone_graveyard: bool,
     /// The Twins' shared-despawn seam (S1-D-3-wire-retinazer): the OTHER
     /// active type-125/126 NPCs' `timeLeft`s in slot order — the C#'s
     /// `num400 != whoAmI` scan inside the aiStyle-30/31 arms
@@ -3473,6 +3482,7 @@ impl Npc {
             butterfly_threat_views: Vec::new(),
             wants_critter_light: None,
             frame_slope: 0,
+            target_zone_graveyard: false,
             twin_time_lefts: Vec::new(),
             slot: 0,
             wants_martian_invasion: false,
@@ -7158,7 +7168,7 @@ impl Npc {
             // S1-D-3z — the Blood Zombie (489) rides the same aiStyle-3
             // walker (`NPC.cs:14609`); its `num107` cap is the
             // distance-scaled 489 row (`npc_ai3_speeds.rs:550`).
-            | NpcKind::BloodZombie => self.update_zombie(world, player, dt),
+            | NpcKind::BloodZombie => self.update_zombie(world, player, dt, rng),
             // W4-b3: the 21 town kinds' aiStyle 7 rides the style axis
             // above (`ai_007_town_family` → `npc_ai_town::town_npc_ai`);
             // `ai_style()` maps them unconditionally, so the fallthrough
@@ -7328,10 +7338,22 @@ impl Npc {
             // The martians: aiStyle 3 rides the walker (the per-type speeds
             // fold into the walker params — the Scrambler/RayGunner/zapper
             // shot arms land with the projectile work).
-            NpcKind::GrayGrunt
-            | NpcKind::MartianEngineer
-            | NpcKind::GigaZapper
-            | NpcKind::MartianWalker => self.update_skeleton(world, player, dt),
+            NpcKind::GrayGrunt | NpcKind::MartianWalker => {
+                self.update_skeleton(world, player, dt)
+            }
+            // W4-g4 — the engineer (386) and the zapper (389) carry their
+            // `AI_003_Fighters` confused resets (`NPC.cs:58986-58989` /
+            // `:59048-59051`) ahead of the walker: the Confused debuff (31)
+            // parks the work timer at −60. The engineer's turret-spawn cycle
+            // and the zapper's spear shot are unported (the shot arms land
+            // with the projectile work) — the confused reset is the carried
+            // remainder; the non-confused timer arms stay with those machines.
+            NpcKind::MartianEngineer | NpcKind::GigaZapper => {
+                if self.buffs.find_buff_index(31).is_some() {
+                    self.ai[2] = -60.0;
+                }
+                self.update_skeleton(world, player, dt)
+            }
             // The officer: the same aiStyle-3 walker, plus its own
             // `AI_003_Fighters` bubble block (`NPC.cs:56222-56251`) — the
             // small-kinds wiring wave's ForceBubble lifecycle seam. The
@@ -12082,7 +12104,13 @@ impl Npc {
     }
 
     /// `AI_003_Fighters`: walk toward the player and jump when the path is blocked.
-    fn update_zombie(&mut self, world: &World, player: &mut Player, _dt: f32) {
+    fn update_zombie(
+        &mut self,
+        world: &World,
+        player: &mut Player,
+        _dt: f32,
+        rng: &mut UnifiedRandom,
+    ) {
         // S1-D-3ff: the ten zombie variants share the 18x40 box; read it
         // off the kind like the C# arm does (`kind.size()` keeps the
         // base Zombie's behaviour byte-identical).
@@ -12101,12 +12129,14 @@ impl Npc {
         // under the `DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged`
         // gate (`:57336`, `:60300-60330`). For the zombie (type 3) that
         // gate is false only on a non-eclipse day above the surface
-        // (`!Main.eclipse && IsItDay() && !SpawnedFromStatue &&
-        // !(position.Y > worldSurface * 16)`); the graveyard/invasion/
-        // event terms cannot fire for this kind in the port. The walker
-        // migration batch 1 ported the FULL gate as
-        // `npc_ai::fighters_not_discouraged`; the zombie's own fold stays
-        // until its arm joins a batch.
+        // outside a graveyard (`!Main.eclipse && IsItDay() &&
+        // !SpawnedFromStatue && !(position.Y > worldSurface * 16) &&
+        // !ZoneGraveyard`); the invasion/event terms cannot fire for this
+        // kind in the port. The walker migration batch 1 ported the FULL
+        // gate as `npc_ai::fighters_not_discouraged`; the zombie's own
+        // fold stays until its arm joins a batch. W4-g4 lane 15: the
+        // graveyard term rides the sim's pre-stamp
+        // (`target_zone_graveyard` ← `scene_metrics.zone_graveyard`).
         // The candidate rides the shared seam (the batch-1 convention):
         // the player's live `aggro`/`npcTypeNoAggro` fields (stock 0 /
         // all-false until the stealth/calm systems land), the tank-pet
@@ -12115,7 +12145,8 @@ impl Npc {
         let discouraged = !world.eclipse
             && world.day_time
             && !self.spawned_from_statue
-            && !((self.y as f64) > world.world_surface * 16.0);
+            && !((self.y as f64) > world.world_surface * 16.0)
+            && !self.target_zone_graveyard;
         // S1-D-3z (zombie fighter audit) — the chase gate's MISSING idle
         // term: `NPC.cs:57336` is `ai[3] < num57 && NotDiscouraged(...)`,
         // and `num57` is 60 for the zombie family (the type-120 row's 180,
@@ -12201,10 +12232,11 @@ impl Npc {
         // request, drained in `world_sim/npcs.rs`) and the probe jump
         // ladder (-8/-7/-6/-5 tiers + the gap leap). Runs at the C#'s
         // position — after the chase/despawn arms and the num107 ladder,
-        // BEFORE the gravity + collision integration. The scan draws
-        // zero rand (the bash's Next(60) short-circuits on the unported
-        // graveyard zone — the module's RNG census).
-        crate::npc_ai_fighter_scan::fighter_obstacle_scan(self, world);
+        // BEFORE the gravity + collision integration. W4-g4 lane 15: the
+        // scan takes the caller's stream — its only draw is the graveyard
+        // bash gate's Next(60) (`:59997`); outside a graveyard the zone
+        // short-circuit keeps it zero-draw (the module's RNG census).
+        crate::npc_ai_fighter_scan::fighter_obstacle_scan(self, world, rng);
         self.vy = (self.vy + GRAVITY).min(MAX_FALL);
 
         let nx = self.x + self.vx;
@@ -13665,8 +13697,17 @@ impl Npc {
         let (cx, cy) = self.center();
 
         // NPC.cs:56491-56718
+        // W4-g4 — the per-phase `knockBackResist`/`defense` writes the port's
+        // stand-in dropped. `defDefense` is the kind's base 26 (`SetDefaults`
+        // 471, `NPC.cs:15734`); the classic `GetKnockbackMultiplier_ScaledByDifficulty`
+        // sample is ×1 (`GameDifficultyData.cs:86`), so 0.35 stands verbatim.
+        let def_defense = 26;
         if self.ai[3] < 0.0 {
             // shadowflame phase (noGravity/noTileCollide in C#)
+            // `:56495-56496` — the flight phase is knockback-immune and takes
+            // the ×1.1 defense (26 * 1.1 = 28.6 → 28, the C# `(int)` truncation).
+            self.kb_resist_override = Some(0.0);
+            self.defense_override = Some((def_defense as f64 * 1.1) as i32);
             if self.vx < 0.0 {
                 self.facing = -1;
             } else if self.vx > 0.0 {
@@ -13763,6 +13804,12 @@ impl Npc {
         }
 
         // Normal / summoning (ai[3] >= 0). NPC.cs:56520-56717.
+        // `:56522-56525` — the ground phase restores the knockback (0.35
+        // classic) and the base defense; `localAI[3]` (the flight-phase
+        // apparition timer) zeroes.
+        self.local_ai[3] = 0.0;
+        self.kb_resist_override = Some(0.35);
+        self.defense_override = Some(def_defense);
         self.rotation *= 0.9;
         // aiStyle 3 baseline chase (NPC.cs:15728).
         let dx = pcx - cx;
@@ -13780,6 +13827,10 @@ impl Npc {
         if (self.ai[3] - 1.0).abs() < f32::EPSILON {
             // summoning pose (56643-56680); ShadowFlameApparition (472) spawn
             // at ai[2]==60 is not modeled (kind unavailable).
+            // `:56529-56533` — the summoning pose is knockback-immune and
+            // gains +10 defense (the C# `defense += 10` on the restored base).
+            self.kb_resist_override = Some(0.0);
+            self.defense_override = Some(def_defense + 10);
             self.vx *= 0.8;
             self.ai[2] += 1.0;
             if self.ai[2] >= 90.0 {
@@ -14431,9 +14482,19 @@ impl Npc {
         if self.ai[1] > 0.0 {
             self.ai[1] -= 1.0;
         }
-        // `justHit`'s interrupt (`:59094`): the shot cycle rests 30.
+        // `justHit`'s interrupt (`:59091-59097`): the shot cycle rests 30.
         if self.hurt_cd > 0.0 && self.ai[1] > 30.0 {
             self.ai[1] = 30.0;
+            self.ai[2] = 0.0;
+        }
+        // W4-g4 — `NPC.cs:59197-59201`: the Confused debuff (31) zeroes the
+        // shot timer and the aim octant, so the confused shooter never fires
+        // (the `ai[2] > 0` fire gate below stays closed) and the sleep-exit
+        // resets ride. The C# latches `this.confused` from the buff scan
+        // (`:92029-92032`); the port reads buff 31 directly (the frost-trio
+        // convention, `npc.rs:10165`).
+        if self.buffs.find_buff_index(31).is_some() {
+            self.ai[1] = 0.0;
             self.ai[2] = 0.0;
         }
         if self.ai[2] > 0.0 {
@@ -16016,13 +16077,19 @@ impl Npc {
             self.rifleman_rearmed = true;
             self.ai[3] = -120.0;
         }
-        // `:58470-58473`: grounded clears the leap state.
-        if self.vy == 0.0 {
+        // W4-g4 — the Confused debuff (31) latch (`NPC.cs:92029-92032`); the
+        // rifleman's four confused arms read it (`:58470`/`:58485`/`:58566`/
+        // `:58576`). The port reads buff 31 directly (the frost-trio convention).
+        let confused = self.buffs.find_buff_index(31).is_some();
+        // `:58470-58473`: grounded OR confused clears the leap state.
+        if self.vy == 0.0 || confused {
             self.ai[2] = 0.0;
         }
         if self.vy != 0.0 && self.ai[2] == 1.0 {
-            // The flight homing (`:58480-58545`).
-            let dx = pcx - self.facing as f32 * 300.0 - cx;
+            // The flight homing (`:58480-58545`). `:58484-58488`: the confused
+            // rifleman homes on the MIRRORED side (`num114 = direction * -1`).
+            let aim_dir = if confused { -self.facing } else { self.facing };
+            let dx = pcx - aim_dir as f32 * 300.0 - cx;
             let dy = (pcy + h * 0.5) - (self.y + h);
             if dx < 0.0 && self.vx > 0.0 {
                 self.vx *= 0.9;
@@ -16045,7 +16112,8 @@ impl Npc {
             } else if dy > 20.0 && self.vy < 8.0 {
                 self.vy += 0.3;
             }
-        } else if pcy + 100.0 < self.y
+        } else if !confused
+            && pcy + 100.0 < self.y
             && crate::projectile::can_hit(
                 world,
                 self.x,
@@ -16058,12 +16126,17 @@ impl Npc {
                 player.height,
             )
         {
-            // `:58566-58571`'s leap arm.
+            // `:58566-58571`'s leap arm (`!this.confused` gate).
             self.vy = -5.0;
             self.ai[2] = 1.0;
         }
         if self.ai[3] < 0.0 {
             self.ai[3] += 1.0;
+        }
+        // `:58572-58579`: the confused rifleman's arming timer zeroes (the
+        // C# increments the negative timer first, then the confused reset).
+        if confused {
+            self.ai[3] = 0.0;
         }
         // `:58580-58594`'s arming: inside the 30-tick window the timer
         // advances only on the 800-px horizontal line of sight, then the
@@ -21434,6 +21507,15 @@ impl Npc {
                 } else {
                     0
                 };
+                // `Player.cs:31388-31391` — `if (this.GetBannerBuffEffect(
+                // Main.npc[i], out var effect)) num3 = (int)(num3 *
+                // effect.DamageReceived.Sample(Main.Difficulty))`: the placed
+                // banner cuts the contact damage AFTER DamageVar and BEFORE
+                // the thorns reflect / Hurt (the C# order). RNG-free.
+                let dmg = match player.banner_buff_for_npc(self.kind.cs_id() as i32) {
+                    Some((_, received)) => (dmg as f32 * received) as i32,
+                    None => dmg,
+                };
                 // `Player.cs:31390` — `flag4 = !this.immune`: the PRE-hit
                 // immunity gates the thorns arms (`:31397-31418`), so a
                 // contact that dodges (`Hurt` runs after, `:31423`) still
@@ -22888,6 +22970,57 @@ mod tests {
         );
     }
 
+    /// W4-g4 — the contact banner-buff arm (`Player.cs:31388-31391`): a placed
+    /// banner cuts the contact damage by `DamageReceived` (classic 0.75)
+    /// AFTER DamageVar. Differential witness: the banner and no-banner rigs
+    /// share the seed, so the DamageVar draw is identical — the banner's
+    /// stream equals the baseline's (the arm is RNG-free) and the hit deals
+    /// strictly less.
+    #[test]
+    fn w4_g4_the_contact_banner_buff_cuts_the_damage_rng_free() {
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        let mut bat = Npc::new(NpcKind::CaveBat, 32.0, 16.0, 1, 0.0);
+        bat.damage_override = Some(100);
+        // The cave bat's banner (7, `BannerSystem.NPCtoBanner(49)`).
+        let banner = tr_core::bestiary::npc_to_banner(bat.kind.cs_id() as i32);
+        assert!(banner > 0, "the cave bat carries a banner");
+
+        let mut rng_base = UnifiedRandom::new(11);
+        let mut base_player = crate::player::Player::spawn(&w);
+        base_player.x = bat.x;
+        base_player.y = bat.y;
+        base_player.hurt_cd = 0.0;
+        let hp0 = base_player.hp;
+        bat.contact(&mut base_player, &mut rng_base);
+        let base_dealt = hp0 - base_player.hp;
+        assert!(base_dealt > 0, "the baseline contact lands");
+
+        let mut rng_banner = UnifiedRandom::new(11);
+        let mut banner_player = crate::player::Player::spawn(&w);
+        banner_player.x = bat.x;
+        banner_player.y = bat.y;
+        banner_player.hurt_cd = 0.0;
+        banner_player.npc_banner_buff[banner as usize] = true;
+        bat.contact(&mut banner_player, &mut rng_banner);
+        let banner_dealt = hp0 - banner_player.hp;
+        assert!(
+            banner_dealt < base_dealt,
+            "the banner's ×0.75 lands less ({banner_dealt} vs {base_dealt})"
+        );
+        assert_eq!(
+            rng_banner, rng_base,
+            "the banner arm draws nothing — the stream matches the baseline"
+        );
+    }
+
     #[test]
     fn s1_c_1_dw_2_2_a_dodged_contact_still_reflects_thorns() {
         // `Player.Update_NPCCollision`'s order (`Player.cs:31387-31426`): the
@@ -23920,6 +24053,105 @@ mod tests {
         let mut rng = UnifiedRandom::new(1);
         rifleman.update_vortex_rifleman(&w, &player, &mut rng);
         assert_eq!(rifleman.ai[3], 0.0, "no arming through the blocked walk");
+    }
+
+    /// W4-g4 — the confused shooter (`NPC.cs:59197-59201`): the Confused
+    /// debuff (31) zeroes the shot timer `ai[1]` and the aim octant `ai[2]`,
+    /// so the fire gate (`ai[2] > 0`) stays closed and no shot is queued.
+    /// The non-confused shooter at the half-cooldown fires.
+    #[test]
+    fn w4_g4_the_confused_shooter_never_fires() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        player.x = 40.0 * TILE_PX;
+        player.y = 20.0 * TILE_PX;
+        let mut rng = UnifiedRandom::new(1);
+        // The RayGunner mid-cycle: ai[1] = 40 (the 80-tick cooldown's
+        // half), ai[2] = 3 (the aim octant) — the fire arm's gate.
+        // W4-g4 P9: the kind is the RayGunner 382 (null immunity row,
+        // `NPCID.cs:8345`), NOT the BrainScrambler 381 — the scrambler is
+        // Confused-immune (`NPCID.cs:8339-8343`), so `add_buff(31)` is
+        // rejected and its confused arm is unreachable in the C#. Both
+        // share `update_martian_shooter`.
+        let mut calm = Npc::new(NpcKind::RayGunner, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        calm.ai[1] = 40.0;
+        calm.ai[2] = 3.0;
+        calm.update_martian_shooter(&w, &player, &mut rng);
+        assert!(!calm.wants_hostile_shot.is_empty(), "the calm shooter fires");
+
+        let mut confused = Npc::new(NpcKind::RayGunner, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        confused.ai[1] = 40.0;
+        confused.ai[2] = 3.0;
+        confused.buffs.add_buff(31, 600);
+        confused.update_martian_shooter(&w, &player, &mut rng);
+        assert_eq!(confused.ai[1], 0.0, "the confused reset zeroes the timer");
+        assert_eq!(confused.ai[2], 0.0, "the confused reset zeroes the octant");
+        assert!(confused.wants_hostile_shot.is_empty(), "the confused shooter never fires");
+        // The BrainScrambler's immunity: the add is rejected and the
+        // latch never reads (`NPC.AddBuff`'s immune guard,
+        // `NPC.cs:89928-89931`).
+        let mut scram = Npc::new(NpcKind::BrainScrambler, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        scram.buffs.add_buff(31, 600);
+        assert!(scram.buffs.find_buff_index(31).is_none(), "381 rejects Confused");
+    }
+
+    /// W4-g4 — the confused Vortex Rifleman (`NPC.cs:58470`/`:58566`/`:58576`):
+    /// the Confused debuff clears the leap state, blocks the leap arm and
+    /// zeroes the arming timer. The flight-homing mirror (`:58485`, the
+    /// `num114 = direction * -1` offset) is carried in the flight arm; the
+    /// confused reset clears `ai[2]` each tick so the arm is reached only
+    /// with the leap state re-armed (the C# reads the live field too).
+    #[test]
+    fn w4_g4_the_confused_rifleman_resets_the_leap_and_the_timer() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        player.x = 40.0 * TILE_PX;
+        player.y = 20.0 * TILE_PX;
+        let mut rng = UnifiedRandom::new(1);
+        let mut r = Npc::new(NpcKind::VortexRifleman, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        r.rifleman_rearmed = true;
+        r.ai[2] = 1.0; // the leap state
+        r.ai[3] = 10.0; // mid-arming
+        r.vy = 0.0;
+        r.buffs.add_buff(31, 600);
+        r.update_vortex_rifleman(&w, &player, &mut rng);
+        assert_eq!(r.ai[2], 0.0, "the confused reset clears the leap state");
+        assert_eq!(r.ai[3], 0.0, "the confused reset zeroes the arming timer");
+
+        // The leap arm is blocked: the player far above (pcy + 100 < y) with
+        // a clear line would leap the calm rifleman; the confused one stays.
+        let mut high = Player::spawn(&w);
+        high.x = 30.0 * TILE_PX;
+        high.y = 5.0 * TILE_PX;
+        let mut calm = Npc::new(NpcKind::VortexRifleman, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        calm.rifleman_rearmed = true;
+        calm.vy = 0.0;
+        calm.update_vortex_rifleman(&w, &high, &mut rng);
+        assert_eq!(calm.ai[2], 1.0, "the calm rifleman leaps toward the high player");
+        let mut conf = Npc::new(NpcKind::VortexRifleman, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        conf.rifleman_rearmed = true;
+        conf.vy = 0.0;
+        conf.buffs.add_buff(31, 600);
+        conf.update_vortex_rifleman(&w, &high, &mut rng);
+        assert_eq!(conf.ai[2], 0.0, "the confused rifleman never leaps");
+    }
+
+    /// W4-g4 — the engineer (386) and zapper (389) confused resets
+    /// (`NPC.cs:58986-58989` / `:59048-59051`): the Confused debuff parks the
+    /// work timer `ai[2]` at −60 ahead of the walker.
+    #[test]
+    fn w4_g4_the_confused_engineer_and_zapper_park_the_work_timer() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        player.x = 40.0 * TILE_PX;
+        player.y = 20.0 * TILE_PX;
+        for kind in [NpcKind::MartianEngineer, NpcKind::GigaZapper] {
+            let mut n = Npc::new(kind, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+            n.ai[2] = 30.0;
+            n.buffs.add_buff(31, 600);
+            n.update_kind_ai(&w, &mut player, 1.0 / 60.0, &mut UnifiedRandom::new(1));
+            assert_eq!(n.ai[2], -60.0, "{kind:?}: the confused reset parks ai[2]");
+        }
     }
 
     /// DW-3.4 — `NPC.CanBeChasedBy` (`NPC.cs:90030-90041`) over the gate's
@@ -31616,6 +31848,50 @@ mod s1_d_3b_tests {
         );
         // caster path would not produce this 471-specific ground-phase cycle
         assert_eq!(n.caster_counter, 0, "must not run aiStyle 8 caster cycle");
+    }
+
+    /// W4-g4 — the summoner's per-phase `knockBackResist`/`defense` writes
+    /// (`NPC.cs:56495-56496` flight, `:56523-56525` ground, `:56531-56532`
+    /// pose). The port's stand-in dropped them; the kind-table kb 0.15 /
+    /// def 26 stood for every phase. Classic difficulty: the flight phase
+    /// kb 0 / def `(int)(26 * 1.1)` = 28, the ground phase kb 0.35 / def 26,
+    /// the summoning pose kb 0 / def 36.
+    #[test]
+    fn w4_g4_the_goblin_summoner_phases_write_knockback_and_defense() {
+        let w = flat_world();
+        let mut player = crate::player::Player::spawn(&w);
+        // The player far below: the flight phase's rise/strafe arms keep
+        // ai[3] negative (no ground landing), so the phase writes are stable.
+        player.x = 80.0 * 16.0;
+        player.y = 110.0 * 16.0;
+        let mut rng = UnifiedRandom::new(1);
+
+        // Flight phase (ai[3] = -2, the rise): kb 0, def 28.
+        let mut n = bare(NpcKind::GoblinSummoner);
+        n.x = 80.0 * 16.0;
+        n.y = 60.0 * 16.0;
+        n.ai[3] = -2.0;
+        n.update_goblin_summoner(&w, &player, &mut rng);
+        assert_eq!(n.knock_back_resist(), 0.0, "the flight phase is kb-immune");
+        assert_eq!(n.defense(), 28, "the flight defense is (int)(26 * 1.1)");
+
+        // Ground phase (ai[3] = 0): kb 0.35, def 26 (the base restored).
+        let mut g = bare(NpcKind::GoblinSummoner);
+        g.x = 80.0 * 16.0;
+        g.y = 60.0 * 16.0;
+        g.ai[3] = 0.0;
+        g.update_goblin_summoner(&w, &player, &mut rng);
+        assert_eq!(g.knock_back_resist(), 0.35, "the ground phase kb 0.35");
+        assert_eq!(g.defense(), 26, "the ground defense is the base 26");
+
+        // Summoning pose (ai[3] = 1): kb 0, def 36 (the base + 10).
+        let mut s = bare(NpcKind::GoblinSummoner);
+        s.x = 80.0 * 16.0;
+        s.y = 60.0 * 16.0;
+        s.ai[3] = 1.0;
+        s.update_goblin_summoner(&w, &player, &mut rng);
+        assert_eq!(s.knock_back_resist(), 0.0, "the pose is kb-immune");
+        assert_eq!(s.defense(), 36, "the pose defense is the base + 10");
     }
 
     #[test]

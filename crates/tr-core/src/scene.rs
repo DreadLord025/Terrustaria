@@ -257,6 +257,10 @@ pub struct Auras {
     /// `!behindBackWall && ZoneSandstorm` → `AddBuff(194, 2)`. Derived in
     /// [`SceneMetrics::auras`] from the two scan flags (W4-c40).
     pub sandstorm_wind: bool,
+    /// `SceneMetrics.hasBanner` (`SceneMetrics.cs:136`) — any strength-
+    /// enabled banner in the scan window; the MonsterBanner (147) 2-tick
+    /// indicator grant reads it (`Player.cs:25552-25555`).
+    pub banner: bool,
 }
 
 /// `SceneMetrics.AssumedConstantScreenSize` / `ZoneScanPadding` /
@@ -438,6 +442,7 @@ impl SceneMetrics {
             // `Player.cs:25556`: `!this.behindBackWall && this.ZoneSandstorm`
             // (the player flags mirror the scan, `:16715`).
             sandstorm_wind: !self.behind_backwall && self.zone_sandstorm,
+            banner: self.has_banner,
         }
     }
 

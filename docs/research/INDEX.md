@@ -94,6 +94,11 @@ per `docs/superpowers` agreements).
 
 | 137 | g84 inline arms vs g31 drains keep-one seam-mapping (W4-g84 final phase: the per-kind MultiTileGrass/MultiTileVines arm↔bucket table, the duplicate helpers, the animator-row feed the merger must bind) | `137-g84-g31-keep-one.md` | ✅ |
 
+| 91 | Fighter (aiStyle 3) doc-sweep lane 15: d22 core probe, graveyard bash gate, door-open census, confused generic arm | `91-doc-sweep-fighter.md` | 🟡 |
+| 91-A | Fighter residuals: the d22r RESUME keep-both fold-list (graveyard/confused hunks), the blood-moon door-break census correction, the confused-immunity table fix, the coin/star cross-notes | `91-addendum-d22r-fold-list.md` | 🟡 |
+| 91-F | Fighter FINAL: the heart/star seam ported (f35 disclaimed it), the d22r reconcile receipt (fold-list CONSUMED at bcd42ddd1), the fighter-variant census (the MartianWalker 520 shooter remainder), the banner-carrier/goblin-peasant resolution | `91-final-fighter-census.md` | ✅ |
+| 91-S | Fighter SEAL: the corrected keep-one — f35 ported the heal seam FIRST (b72cdfbfc/00a5b27db, a superset; the census :39 disclaimer was a BEFORE snapshot), g4's duplicate RETIRED; the g4-unique spawn_coins LIVE-inputs hunk + the Thief/Skeleton witnesses cherry-route; the 520 shooter remainder = d41 (band 491-560, the salamander precedent); 91-F SEALED + the fighter-family bible | `91-seal-keep-one.md` | ✅ |
+
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
   counts question is ticketed.
