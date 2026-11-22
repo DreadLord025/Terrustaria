@@ -609,6 +609,51 @@ impl App {
                             self.entity_lights.add(x, y, rgb);
                         }
                     }
+                    // The projectile AI-arm lights, FIRST wave (S1-E-5,
+                    // W4-c19, `proj_lights_a.rs`): sites 1-67 of the 107
+                    // (`Projectile.cs:16655`…`:54071`) — sites 1-2 are the
+                    // `ProjLight` tail above (audit-landed), the rest are
+                    // the AI-arm lights outside it. Like the `ProjLight`
+                    // feed above and the e6 second wave, the port collects
+                    // the sources here after the step in `Main.projectile`
+                    // slot order; an arm whose kind has no `proj_data` row
+                    // is absent wholesale, and a rand-gated light is absent
+                    // wholesale (the e6 RNG rule). No ported arm draws
+                    // `Main.rand`, so the placement leaves the
+                    // UpdateProjectiles stream untouched.
+                    for p in projectiles.slots().iter().filter(|p| p.active) {
+                        // The hooks' anchor is the owner's `MountedCenter`
+                        // (`AI_007`, `Projectile.cs:52572`). Single-player
+                        // fold: `owner == 0` resolves the local player (the
+                        // e6 `ai_drill` hand precedent); every other owner
+                        // has no player slot, so the anchor stays `None`
+                        // and the arm skips.
+                        let mounted_center =
+                            player.as_ref().filter(|_| p.owner == 0).map(|pl| {
+                                let (mx, my) = pl.mounted_center();
+                                Vec2::new(mx, my)
+                            });
+                        // Site 3 (`:17343`) — the Chillet-mount enchantment
+                        // light runs in `Update` BEFORE the AI arms
+                        // (`:16702`), so it feeds first. The owner's active
+                        // mount type resolves for `owner == 0` (the same
+                        // single-player fold); `None` otherwise.
+                        let owner_mount = player
+                            .as_ref()
+                            .filter(|_| p.owner == 0)
+                            .filter(|pl| pl.mount.is_active())
+                            .map(|pl| pl.mount.kind());
+                        for (x, y, rgb) in
+                            crate::proj_lights_a::chillet_mount_light(p, owner_mount)
+                        {
+                            self.entity_lights.add(x, y, rgb);
+                        }
+                        for (x, y, rgb) in
+                            crate::proj_lights_a::proj_lights_a(p, mounted_center, self.disco)
+                        {
+                            self.entity_lights.add(x, y, rgb);
+                        }
+                    }
                     // The Dust `UpdateDust` lights (S1-E-5, dust family):
                     // the RNG-free AddLight arms of the FIRST ladder
                     // (`Dust.cs:483-1047`, `dust_lights.rs`) run per active

@@ -332,6 +332,10 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // it (`Projectile.cs:37262`); the clock's `advance_disco` owns the cycle.
     let disco = app.disco;
     app.projectiles.set_disco(disco);
+    // W4-c19 round 3 — `Main.mouseTextColor` as the 590 TruffleSpore's flicker
+    // reads it (`Projectile.cs:34221`); the draw-pass pulse owns the value
+    // (the `set_disco` precedent — the step reads what the last draw left).
+    app.projectiles.set_mouse_text_color(app.mouse_text_color);
     // S1-P-i55 — the golf context (`Main.LocalGolfState` + `Main.MouseWorld`
     // + the mouse-right pair + the player snapshot). The C# reads the live
     // state mid-walk; the port clones it into the pool for the tick and
@@ -440,6 +444,16 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             expert,
             rng,
         );
+    }
+    // W4-c19 round 3 — the rand-gated AI-arm light intents
+    // (`Projectile.cs:30378` typhoon / `:34226` spore / `:47846`/`:48011`
+    // whips): the arms took their gate draws on the `UpdateProjectiles`
+    // stream mid-walk and queued the lights in slot + sub-step order; the
+    // drain appends them into the ONE `EntityLights` pair here (the
+    // `item_lights.rs` named-stream precedent — the e6-rule exception, the
+    // draw-pass feed stays pure). No RNG: the append is stream-neutral.
+    for (x, y, rgb) in app.projectiles.drain_ai_lights() {
+        app.entity_lights.add(x, y, rgb);
     }
     // S1-E-21 wave C — the landed strikes' `NPC.HitSound` plays
     // (`NPC.cs:81544-81553` via `Projectile.Damage` `Projectile.cs:13649`):
@@ -803,6 +817,83 @@ mod s1_e_21h_sound_stream_tests {
             witness,
             "the one-cue-per-life latch draws nothing on tick 2"
         );
+    }
+}
+
+#[cfg(test)]
+mod w4_c19_ai_light_drain_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::RngKey;
+    use crate::projectile::TYPHOON;
+    use tr_core::UnifiedRandom;
+
+    /// W4-c19 round 3 witness (written, NOT run): the typhoon's rand-gated
+    /// light intents drain into the ONE `EntityLights` pair at the pass tail
+    /// — the gate draws ride `UpdateProjectiles` ONLY (the `item_lights`
+    /// named-stream precedent), every other stage stream stays pristine,
+    /// and the intents land in slot + sub-step order with the C# colour.
+    #[test]
+    fn the_typhoon_intents_drain_into_the_entity_lights_pair() {
+        let mut app = flow_app(None, vec![], vec![]);
+        // Muted: any spawn-cue play draws nothing (the s1_e_21h precedent),
+        // so the stream witness sees ONLY the gate + dust-ring draws.
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        // Past the 10-sub-step gate: the 30x30 box at (32, 32) centres on
+        // (47, 47) → tile (2, 2) inside the 8x8 fixture world.
+        let slot = app
+            .projectiles
+            .spawn_with_data_ai_owned(TYPHOON, 0, 32.0, 32.0, 0.0, 0.0, 40, 5.0, 0.0, 0.0)
+            .expect("a free slot");
+        app.projectiles.slots_mut()[slot].local_ai[1] = 10.0;
+        update_projectiles(&mut app, 1.0 / 60.0);
+        // The drain emptied the pool seam.
+        assert!(app.projectiles.drain_ai_lights().is_empty());
+        // The lights: swap the pair, then read the frame's sources. Every
+        // intent is the typhoon's (0.1, 0.4, 0.6) at the truncated centre.
+        app.entity_lights.end_frame();
+        let lights = app.entity_lights.visible();
+        assert!(!lights.is_empty(), "at least one gate taken on seed 0");
+        for l in lights {
+            assert_eq!(l.rgb, [0.1, 0.4, 0.6]);
+        }
+        // The twin: replay the three sub-steps' gate draws (the taken
+        // branches add the 6 × (NextDouble, Next(3,8)) dust-ring pairs).
+        let mut twin = UnifiedRandom::new(0);
+        let mut taken = 0;
+        for _ in 0..3 {
+            if twin.next_range(0, 3) == 0 {
+                taken += 1;
+                for _ in 0..6 {
+                    let _ = twin.next_double();
+                    let _ = twin.next_range(3, 8);
+                }
+            }
+        }
+        assert_eq!(lights.len(), taken, "one light per taken gate");
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            twin,
+            "the gate + dust-ring draws, nothing else"
+        );
+        for key in RngKey::ALL {
+            if key == RngKey::UpdateProjectiles {
+                continue;
+            }
+            assert!(
+                !app.rngs.is_created(key) || *app.rngs.stream(key) == UnifiedRandom::new(0),
+                "{} stayed pristine",
+                key.name()
+            );
+        }
     }
 }
 

@@ -41,6 +41,7 @@ mod npc_lights;
 mod player_lights;
 mod proj_ai_lights;
 mod proj_lights;
+mod proj_lights_a;
 mod eoc_fight;
 mod input_map;
 mod inv;
