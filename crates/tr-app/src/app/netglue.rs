@@ -4201,6 +4201,61 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-f18 first-20 port — batch 1's critters: the flyers (355/356/
+        // 358, noGravity) ride the hover ctor; the grounded crawler 357
+        // and the wall-crawler 359 plant their feet on the column surface
+        // (the machines take over on the first tick; the net state
+        // overwrites the position below).
+        crate::npc::NpcKind::Firefly
+        | crate::npc::NpcKind::Butterfly
+        | crate::npc::NpcKind::LightningBug => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        crate::npc::NpcKind::Worm | crate::npc::NpcKind::Snail => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-f18 batch 2 — the GlowingSnail 360 (noGravity) rides the
+        // hover ctor; the Frog/Duck/DuckWhite (grounded town critters) and
+        // the Duck2 (the swimming waterfowl) plant their feet on the
+        // column surface (the machines take over on the first tick).
+        crate::npc::NpcKind::GlowingSnail => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        crate::npc::NpcKind::Frog
+        | crate::npc::NpcKind::Duck
+        | crate::npc::NpcKind::Duck2
+        | crate::npc::NpcKind::DuckWhite => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-f18 batch 3 — the DuckWhite2 (swimming waterfowl) and the
+        // scorpion pair / TruffleWorm (grounded critters) plant their feet
+        // on the column surface; the TruffleWormDigger 375 (noTileCollide
+        // burrower) rides the hover ctor (the net state overwrites the
+        // position below).
+        crate::npc::NpcKind::DuckWhite2
+        | crate::npc::NpcKind::ScorpionBlack
+        | crate::npc::NpcKind::Scorpion
+        | crate::npc::NpcKind::TruffleWorm => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::TruffleWormDigger => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-f18 batch 4 — the Grasshopper (grounded critter), the
+        // ChatteringTeethBomb / cultist archers / ArmedZombie (grounded
+        // fighters) plant their feet on the column surface (the machines
+        // take over on the first tick; the net state overwrites the
+        // position below).
+        crate::npc::NpcKind::Grasshopper
+        | crate::npc::NpcKind::ChatteringTeethBomb
+        | crate::npc::NpcKind::CultistArcherBlue
+        | crate::npc::NpcKind::CultistArcherWhite
+        | crate::npc::NpcKind::ArmedZombie => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
     })
 }
 

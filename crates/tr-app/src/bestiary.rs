@@ -2667,6 +2667,122 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Queen Slime Minion",
     },
+    // W4-f18 first-20 port — batch 1's five critters. The credit ids are
+    // the vanilla `NPCID` names (`BestiaryDatabaseNPCsPopulator.cs`'s
+    // `ContentSamples.NpcBestiaryCreditIdsByNpcNetIds` rows); the display
+    // names ride `en-US.NPCs.json`'s NPCName rows.
+    BestiaryEntryDef {
+        credit_id: "Firefly",
+        net_id: 355,
+        kind: NpcKind::Firefly,
+        variant: None,
+        quick_unlock: false,
+        name: "Firefly",
+    },
+    BestiaryEntryDef {
+        credit_id: "Butterfly",
+        net_id: 356,
+        kind: NpcKind::Butterfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Butterfly",
+    },
+    BestiaryEntryDef {
+        credit_id: "LightningBug",
+        net_id: 358,
+        kind: NpcKind::LightningBug,
+        variant: None,
+        quick_unlock: false,
+        name: "Lightning Bug",
+    },
+    BestiaryEntryDef {
+        credit_id: "Snail",
+        net_id: 359,
+        kind: NpcKind::Snail,
+        variant: None,
+        quick_unlock: false,
+        name: "Snail",
+    },
+    // W4-f18 batch 2 — the GlowingSnail, the Frog and the two walker
+    // ducks. The Duck2 363 is Hide=true (`NPCID.cs:3617-3622`) — it folds
+    // onto the Duck 362's entry (no row of its own, the DetonatingBubble
+    // precedent); the credit ids ride the vanilla NPCID names.
+    BestiaryEntryDef {
+        credit_id: "GlowingSnail",
+        net_id: 360,
+        kind: NpcKind::GlowingSnail,
+        variant: None,
+        quick_unlock: false,
+        name: "Glowing Snail",
+    },
+    BestiaryEntryDef {
+        credit_id: "Frog",
+        net_id: 361,
+        kind: NpcKind::Frog,
+        variant: None,
+        quick_unlock: false,
+        name: "Frog",
+    },
+    BestiaryEntryDef {
+        credit_id: "ScorpionBlack",
+        net_id: 366,
+        kind: NpcKind::ScorpionBlack,
+        variant: None,
+        quick_unlock: false,
+        name: "Scorpion",
+    },
+    BestiaryEntryDef {
+        credit_id: "Scorpion",
+        net_id: 367,
+        kind: NpcKind::Scorpion,
+        variant: None,
+        quick_unlock: false,
+        name: "Scorpion",
+    },
+    BestiaryEntryDef {
+        credit_id: "TruffleWorm",
+        net_id: 374,
+        kind: NpcKind::TruffleWorm,
+        variant: None,
+        quick_unlock: false,
+        name: "Truffle Worm",
+    },
+    // W4-f18 batch 4 — the Grasshopper, the ChatteringTeethBomb, the
+    // CultistArcherBlue and the ArmedZombie. The CultistArcherWhite 380
+    // (Hide=true, `NPCID.cs:3734-3739`) folds onto the CultistArcherBlue
+    // 379 — no row of its own (the DetonatingBubble precedent).
+    BestiaryEntryDef {
+        credit_id: "Grasshopper",
+        net_id: 377,
+        kind: NpcKind::Grasshopper,
+        variant: None,
+        quick_unlock: false,
+        name: "Grasshopper",
+    },
+    BestiaryEntryDef {
+        credit_id: "ChatteringTeethBomb",
+        net_id: 378,
+        kind: NpcKind::ChatteringTeethBomb,
+        variant: None,
+        quick_unlock: false,
+        name: "Chattering Teeth Bomb",
+    },
+    BestiaryEntryDef {
+        credit_id: "CultistArcherBlue",
+        net_id: 379,
+        kind: NpcKind::CultistArcherBlue,
+        variant: None,
+        quick_unlock: false,
+        name: "Cultist Archer",
+    },
+    BestiaryEntryDef {
+        credit_id: "ArmedZombie",
+        net_id: 430,
+        kind: NpcKind::ArmedZombie,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
+    },
 ];
 
 /// The entry's current unlock tier — its `UIInfoProvider`'s
@@ -2859,6 +2975,18 @@ pub fn try_entry_for_npc(
         // Pumpking (the fishron-hazard precedent). The DRAW sheet stays
         // NPC_328 through `texture_net_id`'s own row.
         NpcKind::PumpkingBlade => NpcKind::Pumpking,
+        // W4-f18 batch 2 — the Duck2 363 is Hide=true (`NPCID.cs:3617-
+        // 3622`): the swimming form folds onto the walker Duck 362's
+        // entry (one credit per waterfowl, the DetonatingBubble precedent).
+        NpcKind::Duck2 => NpcKind::Duck,
+        // W4-f18 batch 3 — the DuckWhite2 365 folds onto the DuckWhite 364
+        // (Hide=true, `NPCID.cs:3633-3638`); the TruffleWormDigger 375
+        // folds onto the TruffleWorm 374 (Hide=true, `NPCID.cs:3713-3718`).
+        NpcKind::DuckWhite2 => NpcKind::DuckWhite,
+        NpcKind::TruffleWormDigger => NpcKind::TruffleWorm,
+        // W4-f18 batch 4 — the CultistArcherWhite 380 folds onto the
+        // CultistArcherBlue 379 (Hide=true, `NPCID.cs:3734-3739`).
+        NpcKind::CultistArcherWhite => NpcKind::CultistArcherBlue,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -2938,6 +3066,16 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // the vanilla DB but is hidden from the grid; the port's fold
         // keeps the credit on the boss row like every Hide=true rider.
         NpcKind::PumpkingBlade => NpcKind::Pumpking,
+        // W4-f18 batch 2 — the Duck2 363 folds onto the Duck 362's row
+        // (Hide=true, `NPCID.cs:3617-3622`; the try_entry twin above).
+        NpcKind::Duck2 => NpcKind::Duck,
+        // W4-f18 batch 3 — the DuckWhite2 365 / TruffleWormDigger 375 fold
+        // onto their walker rows (the try_entry twin above).
+        NpcKind::DuckWhite2 => NpcKind::DuckWhite,
+        NpcKind::TruffleWormDigger => NpcKind::TruffleWorm,
+        // W4-f18 batch 4 — the CultistArcherWhite 380 folds onto the
+        // CultistArcherBlue 379 (the try_entry twin above).
+        NpcKind::CultistArcherWhite => NpcKind::CultistArcherBlue,
         other => other,
     };
     ENTRIES

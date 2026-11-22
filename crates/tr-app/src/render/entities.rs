@@ -538,6 +538,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(MANEATER_SHEETS)
             .chain(SPIT_FLARE_SHEETS)
             .chain(FLYER14_SHEETS)
+            .chain(CRITTER_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1181,6 +1182,18 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // precedent. `net_id()` would read the folded 327, so the explicit
         // row keeps the blade on its own art.
         NpcKind::PumpkingBlade => 328,
+        // W4-f18 batch 2 — the Duck2 363's bestiary credit folds onto the
+        // Duck 362 (`entry_for_npc`), but its DRAW sheet is its own
+        // NPC_363 (the swimming form's art) — the fishron-hazard precedent.
+        NpcKind::Duck2 => 363,
+        // W4-f18 batch 3 — the folded DuckWhite2 365 / TruffleWormDigger
+        // 375 keep their OWN draw sheets (the bestiary fold is the
+        // credit's, not the texture's — the fishron-hazard precedent).
+        NpcKind::DuckWhite2 => 365,
+        NpcKind::TruffleWormDigger => 375,
+        // W4-f18 batch 4 — the folded CultistArcherWhite 380 keeps its OWN
+        // draw sheet (the bestiary fold is the credit's, not the texture's).
+        NpcKind::CultistArcherWhite => 380,
         _ => kind.net_id() as u16,
     }
 }
@@ -1461,6 +1474,18 @@ pub(crate) const FLYER14_SHEETS: &[u32] = &[
     226, // the Flying Snake
     634, // the Spore Bat
     660, // the Queen Slime minion
+];
+
+/// W4-f18 first-20 port — the critters' own sheets (the vanilla's
+/// `TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// [`NpcAssets::npc_sheets`] exactly like `SMALL_KIND_SHEETS`. Batch 1:
+/// the Firefly (355), the Butterfly (356), the Worm (357), the Lightning
+/// Bug (358) and the Snail (359).
+pub(crate) const CRITTER_SHEETS: &[u32] = &[
+    355, 356, 357, 358, 359, // batch 1
+    360, 361, 362, 363, 364, // batch 2 (the Duck2 363 draws its own sheet)
+    365, 366, 367, 374, 375, // batch 3 (the folded 365/375 draw their own)
+    377, 378, 379, 380, 430, // batch 4 (the folded 380 draws its own)
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -3552,6 +3577,83 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // W4-f18 first-20 port — batch 1's critters: the generic
+            // anchor (`Main.cs:25511-25516`), the sheet's own row height
+            // over `Main.npcFrameCount[type]`. The three scale-rolled
+            // kinds (355/356/358/359 — the AI latches `scale` from
+            // `Next(75,111)`/`Next(80,111)`) ride `scaled_anchor` (the
+            // BlazingWheel's shape); the worm's scale stays 1.
+            NpcKind::Firefly => {
+                scaled_anchor(assets.npc_sheet(355), npc_rows(355), n, w, h)
+            }
+            NpcKind::Butterfly => {
+                scaled_anchor(assets.npc_sheet(356), npc_rows(356), n, w, h)
+            }
+            NpcKind::Worm => {
+                pumpkin_moon_draw(assets.npc_sheet(357), npc_rows(357), n, w, h)
+            }
+            NpcKind::LightningBug => {
+                scaled_anchor(assets.npc_sheet(358), npc_rows(358), n, w, h)
+            }
+            NpcKind::Snail => {
+                scaled_anchor(assets.npc_sheet(359), npc_rows(359), n, w, h)
+            }
+            // W4-f18 batch 2 — the GlowingSnail's scale stays 1 (the 359
+            // scale roll is type-359-only, `NPC.cs:34361`); the Frog and
+            // the walker ducks are grounded (scale 1); the Duck2's flight
+            // scale stays 1 too. All ride the generic anchor.
+            NpcKind::GlowingSnail => {
+                pumpkin_moon_draw(assets.npc_sheet(360), npc_rows(360), n, w, h)
+            }
+            NpcKind::Frog => {
+                pumpkin_moon_draw(assets.npc_sheet(361), npc_rows(361), n, w, h)
+            }
+            NpcKind::Duck => {
+                pumpkin_moon_draw(assets.npc_sheet(362), npc_rows(362), n, w, h)
+            }
+            NpcKind::Duck2 => {
+                pumpkin_moon_draw(assets.npc_sheet(363), npc_rows(363), n, w, h)
+            }
+            NpcKind::DuckWhite => {
+                pumpkin_moon_draw(assets.npc_sheet(364), npc_rows(364), n, w, h)
+            }
+            // W4-f18 batch 3 — the DuckWhite2 (flight, scale 1), the
+            // scorpion pair + the TruffleWorm (grounded, scale 1) and the
+            // TruffleWormDigger (the burrower, scale 1) ride the generic
+            // anchor.
+            NpcKind::DuckWhite2 => {
+                pumpkin_moon_draw(assets.npc_sheet(365), npc_rows(365), n, w, h)
+            }
+            NpcKind::ScorpionBlack => {
+                pumpkin_moon_draw(assets.npc_sheet(366), npc_rows(366), n, w, h)
+            }
+            NpcKind::Scorpion => {
+                pumpkin_moon_draw(assets.npc_sheet(367), npc_rows(367), n, w, h)
+            }
+            NpcKind::TruffleWorm => {
+                pumpkin_moon_draw(assets.npc_sheet(374), npc_rows(374), n, w, h)
+            }
+            NpcKind::TruffleWormDigger => {
+                pumpkin_moon_draw(assets.npc_sheet(375), npc_rows(375), n, w, h)
+            }
+            // W4-f18 batch 4 — the Grasshopper, the ChatteringTeethBomb,
+            // the cultist archers and the ArmedZombie ride the generic
+            // anchor (scale 1 — none carries a scale-rolled draw).
+            NpcKind::Grasshopper => {
+                pumpkin_moon_draw(assets.npc_sheet(377), npc_rows(377), n, w, h)
+            }
+            NpcKind::ChatteringTeethBomb => {
+                pumpkin_moon_draw(assets.npc_sheet(378), npc_rows(378), n, w, h)
+            }
+            NpcKind::CultistArcherBlue => {
+                pumpkin_moon_draw(assets.npc_sheet(379), npc_rows(379), n, w, h)
+            }
+            NpcKind::CultistArcherWhite => {
+                pumpkin_moon_draw(assets.npc_sheet(380), npc_rows(380), n, w, h)
+            }
+            NpcKind::ArmedZombie => {
+                pumpkin_moon_draw(assets.npc_sheet(430), npc_rows(430), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3837,6 +3939,26 @@ pub(crate) fn draw_npcs(
                     | NpcKind::VampireBat
                     | NpcKind::FlyingSnake
                     | NpcKind::SporeBat
+                    // W4-f18 first-20 port — batch 1's critters: the
+                    // butterfly's velocity tilt (`NPC.cs:72745`, vx*0.3),
+                    // the worm's airborne tilt (`:72804`, direction*0.1)
+                    // and the snail's wall-crawl quadrant rotation
+                    // (`:34525-34619`, the ±0.1 ease).
+                    | NpcKind::Butterfly
+                    | NpcKind::Worm
+                    | NpcKind::Snail
+                    // W4-f18 batch 2 — the GlowingSnail's wall-crawl
+                    // rotation (the Snail's machine) and the Duck2's fly
+                    // tilt (`NPC.cs:73802`, vx*0.1).
+                    | NpcKind::GlowingSnail
+                    | NpcKind::Duck2
+                    // W4-f18 batch 3 — the DuckWhite2's fly tilt, the
+                    // TruffleWorm's airborne tilt (`NPC.cs:71144`) and the
+                    // TruffleWormDigger's burrow rotation (`:52201`, the
+                    // atan2 + PI/2).
+                    | NpcKind::DuckWhite2
+                    | NpcKind::TruffleWorm
+                    | NpcKind::TruffleWormDigger
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

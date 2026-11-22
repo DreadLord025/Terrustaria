@@ -597,6 +597,38 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::Vampire
         | NpcKind::FlyingSnake
         | NpcKind::SporeBat => &[],
+        // W4-f18 first-20 port — the critters' `SpecificallyImmuneTo`
+        // rows: 355-359 each immune to the Confused debuff (31)
+        // (`NPCID.cs:8156-8190`).
+        NpcKind::Firefly
+        | NpcKind::Butterfly
+        | NpcKind::Worm
+        | NpcKind::LightningBug
+        | NpcKind::Snail => &[31],
+        // W4-f18 batch 2 — the critters' `SpecificallyImmuneTo` rows:
+        // 360-364 each immune to the Confused debuff (31)
+        // (`NPCID.cs:8191-8232`).
+        NpcKind::GlowingSnail
+        | NpcKind::Frog
+        | NpcKind::Duck
+        | NpcKind::Duck2
+        | NpcKind::DuckWhite => &[31],
+        // W4-f18 batch 3 — the critters' `SpecificallyImmuneTo` rows:
+        // 365-367/374/375 each immune to the Confused debuff (31)
+        // (`NPCID.cs:8233-8246` / the 374/375 rows).
+        NpcKind::DuckWhite2
+        | NpcKind::ScorpionBlack
+        | NpcKind::Scorpion
+        | NpcKind::TruffleWorm
+        | NpcKind::TruffleWormDigger => &[31],
+        // W4-f18 batch 4 — 377-380 each immune to the Confused debuff (31)
+        // (`NPCID.cs`'s 377/378/379/380 rows); the ArmedZombie 430 has NO
+        // `DebuffImmunitySets` row (the null-row else-branch, no immunity).
+        NpcKind::Grasshopper
+        | NpcKind::ChatteringTeethBomb
+        | NpcKind::CultistArcherBlue
+        | NpcKind::CultistArcherWhite => &[31],
+        NpcKind::ArmedZombie => &[],
     }
 }
 

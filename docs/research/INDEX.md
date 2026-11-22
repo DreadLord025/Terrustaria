@@ -136,6 +136,8 @@ UNASSIGNED (reserved); this lane's new retire-phase docs take 145/148.
 | W4-f12-retire | The retire receipts (f50 tip ff56e6e51 retired NOTHING → both dup rulings RE-FLAGGED with exact drop-hunks :7010-7013 / :4606-4708+:4582+:7451-lift+:6203-6205-flag-fix + the two witness retargets; f49 6c0ee2aa2 R3-exec still NOT landed → both-halves bridge/deletion ranges pinned; d73 33c38000a ancestor + blob-identical boosters, sweep re-run set-diff EMPTY; the ONE-paragraph BUFF merger-instruction — f12-canonical + g27-orbs + d115-321-folds + f50-drops + f49-bridge) | `W4-f12-closeout.md` "RETIRE phase" | ✅ receipts recorded, script re-run green — the f49/f50 monitor notes SUPERSEDED by 28g |
 | W4-f12-seal | The BUFF SEAL on `task/W4-f12-buff-effects` (the five seal items: 270-ids-zero-dup + 400-icons landed; the f49-mana-seal — R3 EXECUTED at their SEALED 0d1f941af, the 3-ASSIGN stub bridge + the extra_regen SUM :11492 + items.rs wholesale; Panic-63 canonical — the f50 51eefdf84 / f48 e5b66bb06 THIRD copies drop with re-pinned hunks; the owed merger-actions; research FINAL registry 28g + the buff-family bible) | `28g-buff-family-seal.md` | 🔒 SEALED, 5 witnesses written not run, sweep re-run green |
 
+| 381 | NPC kinds 351–697 SetDefaults census + first-20 port (W4-f18; 343 arm-bearing ids, 105→125 ported, the value() merge-scar repair, the d37-E8 roster-collision keep-one + exact drop-hunks + the kinds-verify-2 family bible; SEALED, code-only; number chain 64→249-voided→381, registry-150 §10) | `381-npc-kinds-351-697-census.md` | ✅ SEALED |
+
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
   counts question is ticketed.
