@@ -5157,8 +5157,8 @@ impl Player {
     /// slot 9 needs master mode. Deviations: the `Main.gameMenu` escape arms
     /// read false in the sim; the port has no master difficulty yet, so the
     /// slot 9 stays locked (docs/ANALYSIS.md "The UpdateEquip seam"). The
-    /// Demon Heart's use-grant (`:45197`) is LIVE (W4-g87,
-    /// `world_sim/editing/permanent_upgrades.rs`).
+    /// Demon Heart's use-grant (`:45197`) is LIVE (W4-g87 → the batch-L
+    /// keep-one survivor `powerups::use_demon_heart`, research/263 §6.5).
     pub fn is_item_slot_unlocked_and_usable(&self, slot: usize) -> bool {
         match slot {
             8 | 18 => self.extra_accessory && self.buffs.expert_mode,
