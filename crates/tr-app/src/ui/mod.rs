@@ -680,7 +680,7 @@ pub fn draw_hud(
     map_style: i32,
     bestiary_open: bool,
     bestiary_selected: Option<usize>,
-    kill_tracker: &tr_core::bestiary::KillTracker,
+    kill_tracker: &tr_core::bestiary::WorldBestiary,
     chat_state: &mut crate::chat::ChatMonitor,
     emotes_state: &crate::emotes::EmoteSystem,
     ingame_options: Option<(&Settings, &ingame_options::IngameOptions)>,

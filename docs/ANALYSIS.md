@@ -31213,6 +31213,8 @@ CODE-ONLY MODE: no cargo/rustc/rustfmt invoked; the 12 witness tests are
 written, not run. Wiring deferred (the style72/spore precedent): none of
 the eight kinds has an `NpcKind`, so the style axis (`npc.rs:3651`) has
 no arm to claim; only the one-line `mod npc_ai_style66;` seam landed.
+**WIRED by W4-c8 (2026-11-20, code-only — see the W4-c8 subsection
+below).**
 
 - **Census verified from the C#** — every `this.aiStyle = 66;` row:
   Worm 357 (`:13545-13558`), TruffleWorm 374 (`:13762-13776`), GoldWorm
@@ -31279,6 +31281,262 @@ no arm to claim; only the one-line `mod npc_ai_style66;` seam landed.
   (`Main.cs:67082-67153`: 357→2, 374→4, 375→4, 448→2, 484→2, 485→4,
   486→4, 487→4, 606→2) pinned as consts; the kinds + axis arm + the
   Transform executor wait on the roster wave.
+
+### W4-c8 — the roster + wiring wave (2026-11-20, code-only)
+
+The nine kinds landed (`NpcKind::Worm`/`TruffleWorm`/`TruffleWormDigger`/
+`GoldWorm`/`EnchantedNightcrawler`/`Grubby`/`Sluggy`/`Buggy`/`Maggot`,
+vanilla protocol ids 357/374/375/448/484-487/606 — all free in the
+protocol space) with the full `SetDefaults` table rows, the `{31}`
+Confused-immunity rows (`NPCID.cs:8171`/`:8290`/`:8297`/`:8654`/
+`:8858-8883`/`:9551`), bestiary entries, sheets (`CRAWLER_SHEETS`),
+portraits and the netglue bare seed. The wiring:
+
+- **The axis claim**: `update_rng_dust`'s `66 => ai_066_crawler_family`
+  (`npc.rs`) runs the faithful `npc_ai_style66::ai_style66` with the
+  session-player candidate, `cs_id`, the sim-stamped `Main.essScale`
+  (`Npc::ess_scale`, the `wind_speed_current` pre-stamp convention) and
+  ticker 0. The arm needs NO sibling pool (the dig proximity scan reads
+  the players only), so the solo path is the live route — the sim's tick
+  closure runs `update_rng_dust` unchanged.
+- **The light feed**: the 484 flicker queues `wants_ai_light`; the sim
+  drains it into the shared `EntityLights` pair at the NPC's slot turn
+  (the C# `AddLight` position, `NPC.cs:34258`; the c7 firefly precedent).
+  No RNG — the feed's placement cannot move any stream.
+- **The Transform(375) executor**: the dig runs `transform_to_kind`
+  INLINE in the axis arm (the C# order — `Transform(375)` inside `AI()`,
+  `NPC.cs:34345`, BEFORE the post-AI integration), then returns; the
+  digger's movement is the worm pass's. The inline swap preserves the
+  +16 sink — a deferred transform would let the crawler's ground
+  collision snap the worm back to the surface. The executor gained the
+  `SetDefaults` head refresh (`NPC.cs:8508`/`:8519-8520`/`:8523` + the
+  catchable arm `:17851-17855`): friendly (374 true → 375 false — 375 is
+  NOT `npcCatchable`, `Main.cs:9326-9418`), the 90-tick immunity window,
+  behindTiles (`:13790`) and rotation. The aiStyle-75 pairs (390→382,
+  416→518) are all non-catchable / non-behindTiles kinds whose riders
+  never write rotation, so the refresh is a no-op for them (they keep
+  the deferred sim drain). The bottom-anchored reposition nets 0 (both
+  heights 10), the arm's +16 sink stands; AI_006 lands one tick early on
+  the transform tick (the pool-pass fold — a single move, the sink
+  intact).
+- **The digger's movement**: 375 is aiStyle 6 — a LONE `AI_006` worm (the
+  StardustWormHead precedent): `is_worm` true, `is_worm_head`/
+  `is_worm_mid` false (375 sits outside the `:51301`/`:51436` chain
+  lists), so the worm-pass init grows no chain and the follower trail
+  skips it (seg_index 0). The worm pass's head loop claims it alongside
+  the heads and runs `worm_head_step` — the 6/0.15 tunables
+  (`:51730-51734`), the 1000-px dig override (`:51598`, 375 added to the
+  kind list) and the FLEE aim inversion (`:51861-51865`, the tile-snapped
+  dx/dy sign-flip before the length — it burrows AWAY from the player).
+  The per-NPC `update_kind_ai` arm is empty (the worm pass owns the
+  movement, the Devourer precedent). The dig rumble (`:51976-51995`)
+  plays the case-15 roar (375 is not in the silent list).
+- **The FindFrame cases** landed in `npc.rs::find_frame` (phase 1):
+  `case 375` (`:71109-71120`, the 4-tick cycle over 4 rows wrapping to
+  0), `case 374` (`:71121-71155`, the `localAI[0] = -2` marker, the
+  grounded still-pin row 0 / 6-tick cycle wrapping to row 1, the
+  airborne 3-tick spin + `direction * 0.1f` tilt), the 357/448/484/606
+  group (`:72774-72828`, the still-pin row 1 / 12-tick two-frame cycle /
+  airborne tilt + row-1 pin) and the 485/486/487 group (`:72829-72883`,
+  `spriteDirection = direction`, the `|vx| * 5`-weighted 10-tick
+  four-frame cycle). All nine rotate (the draw whitelist).
+- **The bestiary unlock conditions (W4-c8 sweep census)**: the nine
+  kinds unlock on neither catch nor kill — on SIGHT (proximity). The
+  populator registers every `CountsAsACritter` NPC
+  (`NPC.cs:6887-6897` — `lifeMax <= 5 && damage == 0`, all nine qualify)
+  through `BestiaryEntry.Critter` (`BestiaryEntry.cs:82-101`,
+  `AddEmptyEntries_CrittersAndEnemies_Automated`
+  `BestiaryDatabaseNPCsPopulator.cs:851-860`) →
+  `CritterUICollectionInfoProvider` (`:14-20`): tier 4 once
+  `Sights.GetWasNearbyBefore(creditId)`, else tier 0. The GoldWorm 448
+  gets the `GoldCritterUICollectionInfoProvider` override (the
+  populator's dictionary `:715` — peer list `{357}`): max(own sight,
+  357's sight), gated on ANY `GoldCrittersCollection` member seen
+  (`NPCID.cs:10121-10125`, the provider `:46-52`). The sight credit is
+  `NPCWasNearPlayerTracker.ScanWorldForFinds` (`:102-130`, run from
+  `Main.cs:17914` BEFORE the UpdateNPC loop): the NPC hitbox vs the
+  player's `HitboxForBestiaryNearbyCheck` (the box inflated 300×200,
+  `Player.cs:3313-3321`). The kill credit still registers on death
+  (`IsNPCValidForBestiaryKillCredit` `:78901-78914` — true for all
+  nine) but the critter UI never reads it. The port wired the census:
+  `bestiary.rs::unlock_state_world` dispatches the nine entries to the
+  sight providers (`critter_unlock_state` / `gold_critter_unlock_state`
+  — the 14-member collection gate), `scan_world_for_critter_sights`
+  runs at the `update_npcs` head (the C# position), the bestiary UI +
+  completion + the BOOK_WORM achievement hook ride the world-aware
+  forms (`completion_percent_world`, the `WorldBestiary` tracker
+  through the draw chain). The Goldfish 55's C# provider is also the
+  critter one but its port entry keeps the kill provider (the c4
+  wave's row — the no-behaviour-change freeze; recorded for the c4
+  follow-up). Witnesses: `w4_c8_the_critter_entries_unlock_on_sight_not_kills`,
+  `w4_c8_the_gold_worm_entry_gates_on_any_gold_critter_seen`,
+  `w4_c8_the_completion_counts_critter_sights`,
+  `w4_c8_the_critter_sight_scan_registers_proximity_once`.
+- **The catch-net chain (W4-c8 sweep census)**: all nine kinds were
+  ALREADY in the c4/c7 catch pattern (`bug_net.rs`) — the sweep verified
+  and pinned them per kind (`w4_c8_the_nine_crawlers_ride_the_catch_chain`):
+  the catchItem rows (357→2002 `NPC.cs:13556`, 374/375→2673
+  `:13773`/`:13792`, 448→2895 `:14343`, 484-487→3191+type-484 `:14587`,
+  606→4363 `:16792`), the release whitelist (375 the ONE non-member —
+  `Main.npcCatchable` `Main.cs:9326-9418` has no 375 row; the digger is
+  a Transform-only form), the verdict (none is lava bait
+  `ItemID.cs:1306` or the 583-family — every net catches,
+  `Player.cs:44712-44740`), the CatchNPC branch order
+  (`NPC.cs:79891-79927`), the release plan (the default arm
+  `:80160-80163` — spawn + owner only, NO draws) and the cage-item
+  round trip (the `itemdata.rs` makeNPC rows 2002→357, 2673→374 — the
+  walker, NOT the digger — 2895→448, 3191-3194→484-487, 4363→606; the
+  release resolves through `kind_from_net_id`, all nine ported). No
+  code change needed — the witness is the deliverable.
+- **Deviations / deferrals (W4-c8)**: the FindFrame slope tail
+  (`:72807-72826`/`:72862-72881`, the slope-1/2 ±0.785f rotation +
+  `localAI[0] = 0` marker) is WIRED by the W4-c8 sweep — the d44
+  worm-slope world-read bridge pattern (`origin/task/W4-d44-findframe-
+  low-1` 7cb3f8d0): `find_frame_crawler_slope` resolves
+  `Framing.GetTileSafely((int)Center.X/16, (int)position.Y/16)` + the
+  slope-0 below-tile fall-through (`Framing.cs:426-439`'s `new Tile()`
+  out-of-world → slope 0), `find_frame_crawler_slope_tail` pins the
+  ±0.785f rotation + the marker clear AFTER the group machine (the C#
+  order — the tail overwrites the airborne tilt), and
+  `find_frame_world` runs at BOTH production call sites
+  (`npc.rs::update_rng_dust` tail + `world_sim/npcs.rs` slot loop);
+  the world-free `find_frame` keeps slope 0 (the flat-tile default).
+  The GoldWorm sparkle (`gold_worm_sparkle`) is WIRED by the same sweep:
+  the census verdict is DUST, not light — `UpdateNPC_CastLights`'s
+  `IsGoldCritter` arm (`NPC.cs:92345-92368`, called at `:90320` BEFORE
+  `AI()`) spawns ONE dust 43 (alpha 254, `new Color(255,255,0)`, scale
+  0.5, velocity zeroed) when `Next(300) < maxchannel/30` on a tile whose
+  shaded light has any channel > 20. The sim's slot-turn pre-pass samples
+  `app.light` through the draw.rs `LightStyle` construction (legacy
+  pass-throughs + the blind brightness drop), runs the gate on the
+  `UpdateNPCs` stream and spawns through the real `DustPool`
+  (`gold_worm_sparkle_dust`) — the gate draw FIRST, the NewDust internals
+  only on success (the C# order; dust 43 is ChildSafety-safe, no extra
+  draw). The 484 essScale flicker was already the `wants_ai_light` feed
+  (phase 2) — the two effects are distinct C# arms. The `dontTakeDamage-
+  FromHostiles` field LANDED with the sweep: the census pins the
+  declaration (`NPC.cs:6277`), the reset (`:8501`), the ported roster's
+  only true rows (374 `:13775` / 375 `:13794` — the DD2 crystal 548's AI
+  writes `:40760`/`:40866`/`:78092`, the 686 row `:17638` and the
+  aiStyle-112 `:48598` write are unported kinds) and the consumers
+  (`GetHurtByOtherNPCs`'s early return `:92418` — the NPC-vs-NPC lane,
+  unported; `Damage_PVE_Inner`'s `flag2 = friendly &&
+  !dontTakeDamageFromHostiles` `Projectile.cs:12606` + the
+  `!(hostile & flag2)` refusal `:12611`; the DD2 draw arms
+  `Main.cs:24054`/`:46100` and the 548 target gate `NPC.cs:62999` are
+  unported). The port carries the field (`Npc::
+  dont_take_damage_from_hostiles`, the SetDefaults matches! + the
+  Transform refresh) and the flag2 gate in `damage_pve` (the hostile
+  term reads `!p.friendly` — the `spawn_hostile` stand-in). The gate is
+  INERT today: both carriers are non-catchable so `friendly` is false
+  and flag2 never holds for them — the field + gate land for the census
+  and the future friendly carriers (the no-behaviour-change freeze).
+  The ground integration rides `integrate_flyer_collision`
+  (the established `UpdateCollision` stand-in — the wet 0.5 slow matches
+  the C# `waterMovementSpeed = 0.5f` head default `:8437`; the
+  slope/stair/conveyor tails are the port's documented collision gap).
+  The gravity is the C# default depth-scaled 0.3 (`body_gravity`,
+  `:90878-90955`) + the 10 fall cap — NOT the walker GRAVITY 0.4/8
+  constants (the sharkron precedent). Witnesses WRITTEN NOT RUN: the
+  defaults/FindFrame pins (`npc.rs::w4_c8_*`), the axis/dig/Transform
+  integration pins and the digger worm-pass pin
+  (`world_sim/npcs.rs::w4_c8_*`).
+
+### W4-c8 FINAL phase (2026-11-21, code-only — research/262, renumber-chain 143→238→262 per registry-150 §6.3)
+
+- **The SIGHT-provider CROSS-LANE contract**: `is_critter_entry`
+  generalized from the nine-kind list to the GENERIC
+  `counts_as_a_critter(kind)` gate (`NPC.cs:6887-6897` — the kind's
+  `SetDefaults` `max_hp <= 5 && contact_damage() == 0` + the
+  `cs_id != 594/686` exclusions). The other critter lanes (c7 fireflies
+  355/358/654/677, c9 snails 359/360/655, c10 waterfowl
+  362-365/602/603/608/609, e26 Frog 361 / LadyBug 604 / GoldLadyBug 605,
+  c4 Goldfish 55 / GoldGoldfish 592 / GoldGoldfishWalker 593) are ALL
+  5-HP/0-dmg in the C# — auto-covered by the scan AND the dispatch once
+  rowed, NO per-lane provider wiring. The Goldfish 55's sweep-recorded
+  c4 follow-up is CLOSED (its C# provider IS the critter one — the
+  freeze lifted); the DD2LanePortal 549 is the one exclusion (raw gate
+  passes but Hide=true `NPCID.cs:4910-4915` — the populator's
+  `GetExclusions` never registers it, the kill provider stands).
+- **The gold set SET-COMPLETE**: the 14-member `GoldCrittersCollection`
+  (`NPCID.cs:10121-10125`) matches verbatim; the provider arm is now
+  the full 13-row `GOLD_PEER_TABLE`
+  (`BestiaryDatabaseNPCsPopulator.cs:703-716` — 593 is collection-only,
+  the 539 squirrel the one two-peer row {299, 538}); the dispatch keys
+  on `net_id ∈ table` so a merged lane's gold row needs no edit.
+- **The digger COMPOSE on the d22-upgraded worm-head machine**
+  (`b24977d99`, audit T1b): the faithful three-arm accel steer
+  (`:52112-52199`), the velocity-sign air stumble (`:51925-51973`) and
+  the dig-mode latch (`:52202-52224` — 375 NOT on the type list)
+  transplanted into `worm_head_step`; the 375 FLEE inversion moved to
+  the C# position (`:51861-51865`, after the tile snap before BOTH
+  branches — the air arm's num48 steer flees too, the compose's one
+  semantic delta). The digger's first-tick flee is −0.165 (the accel),
+  not the −6 snap; the corruption-escape/far-player/digs-and-stumbles
+  witnesses re-derived per d22. DEVIATION closed: the pre-compose
+  velocity-snap stand-in is gone from this branch.
+- **The crawler SHEETS census** (the d35 lazy-load contract,
+  research/113 §10 at `e5558b0a9`): the C# loads NPC sheets per DRAW
+  (`LoadNPC` `Main.cs:59084` ← `SetFrameSize` `NPC.cs:66663`), never on
+  spawn — the port's eager `STATIC_SHEET_NAMES` pack stays the
+  documented superset (the E-4b precedent) until the §10.6 step-7
+  per-world NPC page lands. All nine sheets are in the d35 FINAL
+  490-name union (357/606/374/375 owned c8; 448/484-487 the d40
+  forecast); real dims measured via the pinned LZX harness (17,424
+  padded px total, every height divides by its `npcFrameCount` row).
+  The d35 `_d35_npc_census.json` predates the c8 landing — re-run the
+  extraction on the merged base (research/262 §4 cross-note).
+- Witnesses WRITTEN NOT RUN: `w4_c8_final_*` (bestiary.rs ×2,
+  world_sim/npcs.rs ×1, render/entities.rs ×1), `w4_c8_compose_*` ×2
+  (the d22 carries), the re-pinned digger flee witness. Full register +
+  merge notes: `docs/research/262-c8-crawler-final-census.md`.
+
+### W4-c8 RETIRE phase (2026-11-21, code-only — research/262 §7)
+
+**CRAWLER-FAMILY COMPLETE on the branch** — the nine aiStyle-66 kinds
+fully rowed + wired (gait/flicker/dig/Transform, the d22-composed
+fleeing worm-head, sparkle dust, hostile-shot flag, catch chain, the
+GENERIC sight provider + the 13-row gold peer table). The retire
+receipts (research/262): §3a the d22 saturation cross-warn — d22 tip
+`bcd42ddd1` re-read, the 150-tick `ground_air` loop UNFIXED
+(`npc.rs:21889`), the merger keeps c8's 110-tick pin; §1a the
+Goldfish-55 freeze-lift — 55 is a BASE kind on main (`a725acb04`), the
+lift is LIVE on this branch with no c4 merge needed (only c4's three
+UI `unlock_state` call sites still fold at merge); §7a the
+critter-lanes auto-cover — c7 `c2cc6ec61` / c9 `2042d77f1` / c10
+`5fcc68ae6` / e26 `048cca6cf` / c4 `0df6964be` tips verified: every
+lane's kinds carry the 5-HP/0-dmg rows the generic gate reads, the
+605/592 gold rows are pre-tabled — zero per-lane provider wiring at
+merge. The research number renamed 143→238→262 per the d54 registry-150
+(§6.3 round 2, `72226e500`: 143 belongs to c4; the interim 238 lost to
+d42's earlier `9eadc3043` 12:15:55 rename vs c8's `2a0b5c701` 12:24:19 —
+c8 assigned 262).
+
+### W4-c8 SEAL (2026-11-21, code-only — research/262 §8, the four seal items)
+
+All four seal claims re-verified at the pushed tips (research/262 §8
+carries the full receipt): (1) the retire chain `7c2de9c06` landed —
+the 143→238 rename, the §3a d22 warn, the §1a Goldfish-55 lift LIVE
+(base kind, `a725acb04` ancestor of current main `051600da8`), the §7
+CRAWLER-FAMILY declaration + the §7a five-lane auto-cover receipt (the
+lane tips re-resolved exact; the c9 5/0-row citation corrected to
+`npc/data.rs:3720`/`:4090` — the retire draft had e26's line numbers);
+(2) d22's SEAL `3ec231f98` CONSUMED the 110-tick fix —
+`the_worm_head_digs_and_stumbles` now `0..110` on d22 too (npc.rs:21897
+at d22 tip `7307eaae9`, seal ancestor-check exit 0); the
+`worm_head_step` comment-stripped diff shows the ONLY code delta is
+c8's five 375 lines (head-list row + the `:51861` inversion block) —
+type-10 kinematics identical; the far-player 150-loop stays both
+branches; merger keep-one by content, keep c8's superset body; (3) the
+238 TRIPLE collision resolved per registry-150 round 2 (`72226e500`
+§6.3): d42 WINS 238 (`9eadc3043` 12:15:55, tip `bac408be0`), c8 renamed
+262 at `65dd65f8b` (zero stale refs, git grep exit 1), g61's
+237→238→273 EXECUTED (tip `707a972e1`); a fresh all-tip sweep shows 238
+only d42 / 262 only c8; (4) research/262 is the SEALED receipt + the
+§7 CRAWLER-FAMILY bible FINAL — no further c8 commits planned beyond
+the seal; the merge-time residuals stand (§6). Witnesses remain
+WRITTEN NOT RUN.
+
 ## The aiStyle-9 sphere family (S1-D-3 aiStyle-9, 2026-11-18, code-only mode)
 
 `NPC.AI()`'s `if (this.aiStyle == 9)` arm (`NPC.cs:21377-21571`) now rides

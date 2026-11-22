@@ -1300,6 +1300,18 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_358",
         "NPC_654",
         "NPC_677",
+        // W4-c8 — the crawling-critter family's own sheets
+        // (`CRAWLER_SHEETS`), keyed by the vanilla net id in
+        // `NpcAssets::npc_sheets` (`render/entities.rs`).
+        "NPC_357",
+        "NPC_374",
+        "NPC_375",
+        "NPC_448",
+        "NPC_484",
+        "NPC_485",
+        "NPC_486",
+        "NPC_487",
+        "NPC_606",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1885,7 +1897,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 189] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 197] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1936,6 +1948,11 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 189] = [
         // W4-c3 (the style-10 family) — appended last so the earlier slots
         // keep their indexes.
         34, 289, 694,
+        // W4-c8 — the crawling-critter family, appended last for the same
+        // reason. The digger 375 is Hide=true (no grid card of its own —
+        // it folds onto the TruffleWorm), so only the eight visible
+        // crawlers take sheet slots.
+        357, 374, 448, 484, 485, 486, 487, 606,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2718,6 +2735,18 @@ impl Lookups {
                 atlas.sheet("NPC_34").copied(),
                 atlas.sheet("NPC_289").copied(),
                 atlas.sheet("NPC_694").copied(),
+                // W4-c8 — the eight visible crawlers' strips, parallel to
+                // BESTIARY_NPC_SHEET_IDS (the digger 375 folds onto the
+                // TruffleWorm card — no slot). Appended last so the
+                // earlier slots keep their indexes.
+                atlas.sheet("NPC_357").copied(),
+                atlas.sheet("NPC_374").copied(),
+                atlas.sheet("NPC_448").copied(),
+                atlas.sheet("NPC_484").copied(),
+                atlas.sheet("NPC_485").copied(),
+                atlas.sheet("NPC_486").copied(),
+                atlas.sheet("NPC_487").copied(),
+                atlas.sheet("NPC_606").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

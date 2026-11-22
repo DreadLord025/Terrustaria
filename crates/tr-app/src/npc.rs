@@ -1201,6 +1201,46 @@ pub enum NpcKind {
     /// critter (`aiStyle 64`): 10x10, noTileCollide, catchItem 5350
     /// (`NPC.cs:17579-17593`); the world-margin + threat-flee member.
     Shimmerfly,
+    /// `NPCID.Worm` (357, `ID/NPCID.cs:11391`) — the surface crawler
+    /// (`aiStyle 66`): 10x4, dmg 0, def 0, 5 HP, npcSlots 0.1, catchItem
+    /// 2002, friendly (`NPC.cs:13545-13558`). WIRED by W4-c8: the axis'
+    /// 66 arm rides `npc_ai_style66::ai_style66`.
+    Worm,
+    /// `NPCID.TruffleWorm` (374, `ID/NPCID.cs:11425`) — the mushroom
+    /// bait crawler (`aiStyle 66`): 20x10, npcSlots 0.15, catchItem
+    /// 2673, rarity 4, dontTakeDamageFromHostiles, NOT friendly
+    /// (`NPC.cs:13762-13776`). The only kind with the 90-tick dig tail
+    /// → `Transform(375)` (`NPC.cs:34342-34346`).
+    TruffleWorm,
+    /// `NPCID.TruffleWormDigger` (375, `ID/NPCID.cs:11427`) — the
+    /// transformed TruffleWorm's fleeing digger (`aiStyle 6`, the worm
+    /// pass): 10x10, noGravity/noTileCollide/behindTiles, kb 0,
+    /// npcSlots 0.15, catchItem 2673, rarity 4 (`NPC.cs:13777-13795`).
+    /// NOT a style-66 kind — only the dig request is that arm's.
+    TruffleWormDigger,
+    /// `NPCID.GoldWorm` (448, `ID/NPCID.cs:11569`) — the gold crawler
+    /// (`aiStyle 66`): 10x4, catchItem 2895, rarity 3, friendly
+    /// (`NPC.cs:14332-14346`). The family's only `IsGoldCritter` member
+    /// (`ID/NPCID.cs:10126` — the CastLights sparkle gate).
+    GoldWorm,
+    /// `NPCID.EnchantedNightcrawler` (484, `ID/NPCID.cs:11641`) — the
+    /// glowing crawler (`aiStyle 66`): 10x4, catchItem 3191, friendly
+    /// (the RANGE row `NPC.cs:14576-14589`). The only kind with the
+    /// essScale flicker (`NPC.cs:34255-34259`).
+    EnchantedNightcrawler,
+    /// `NPCID.Grubby` (485, `ID/NPCID.cs:11643`) — the 0.25-speed grub
+    /// (`aiStyle 66`): the 484 row, catchItem 3192 (`NPC.cs:14587`).
+    Grubby,
+    /// `NPCID.Sluggy` (486, `ID/NPCID.cs:11645`) — the 0.325-speed grub
+    /// (`aiStyle 66`): the 484 row, catchItem 3193 (`NPC.cs:14587`).
+    Sluggy,
+    /// `NPCID.Buggy` (487, `ID/NPCID.cs:11647`) — the 0.4-speed grub
+    /// (`aiStyle 66`): the 484 row, catchItem 3194 (`NPC.cs:14587`).
+    Buggy,
+    /// `NPCID.Maggot` (606, `ID/NPCID.cs:11889`) — the graveyard crawler
+    /// (`aiStyle 66`): 10x4, catchItem 4363, friendly
+    /// (`NPC.cs:16781-16794`).
+    Maggot,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -1666,6 +1706,19 @@ pub struct Npc {
     /// `NPC.dontTakeDamage` (`NPC.cs:6525`): the hurt path refuses while
     /// it holds (the Brain of Cthulhu's Creeper shield).
     pub dont_take_damage: bool,
+    /// `NPC.dontTakeDamageFromHostiles` (`NPC.cs:6277`, the `SetDefaults`
+    /// reset false `:8501`): the hostile-damage refusal — the C#
+    /// consumers are `GetHurtByOtherNPCs`'s early return (`:92418`, the
+    /// NPC-vs-NPC lane, unported) and `Damage_PVE_Inner`'s
+    /// `flag2 = targetNPC.friendly && !dontTakeDamageFromHostiles`
+    /// (`Projectile.cs:12606` — a hostile shot may hit a friendly NPC
+    /// only when flag2 holds). Of the ported roster ONLY the
+    /// TruffleWorm 374 (`NPC.cs:13775`) and its digger 375 (`:13794`)
+    /// set it — both NOT `npcCatchable`, so their `friendly` rides the
+    /// stock false and the flag2 gate is a no-op for them today (the
+    /// field is carried for the census + the future hostile lanes).
+    /// W4-c8 sweep.
+    pub dont_take_damage_from_hostiles: bool,
     /// `NPC.behindTiles` (`NPC.cs:6517`, default false, reset `:8520`): drawn
     /// only in the behind-tiles pass (`Main.cs:22320,22336`).
     pub behind_tiles: bool,
@@ -1989,14 +2042,23 @@ pub struct Npc {
     /// on the `UpdateNPCs` stream at the C# call position, and this queue
     /// is the fallback drain (the `wants_hostile_shot` pattern).
     pub wants_item_sounds: Vec<(i32, f32, f32)>,
-    /// The aiStyle-64 glow tail's `Lighting.AddLight(i2, j2, r, g, b)`
-    /// request (`NPC.cs:34162`/`:34166`/`:34170`) — `(tile_x, tile_y,
-    /// [r, g, b])`, the colours already scaled by `this.scale` and the
-    /// tile coords TRUNCATED (`(int)Center / 16`, `:34156-34157`). The
-    /// sim drains it into the shared `EntityLights` pair at the NPC's
-    /// slot turn (the `item_lights::rand_light` fixed-step precedent);
-    /// the solo `update_rng` wrapper queues it for the caller. W4-c7.
+    /// The aiStyle-64 glow tail's + the aiStyle-66 flicker's
+    /// `Lighting.AddLight(i, j, r, g, b)` requests (W4-c7
+    /// `NPC.cs:34162`/`:34166`/`:34170`, W4-c8 `:34258`) —
+    /// `(tile_x, tile_y, [r, g, b])`. The 64 colours ride `this.scale`
+    /// at the TRUNCATED `(int)Center / 16`; the 66 colour rides the
+    /// `Next(90,111)` roll × `Main.essScale` at the quotient-truncated
+    /// `(int)((X + width/2) / 16f)`. The sim drains them into the
+    /// shared `EntityLights` pair at the NPC's slot turn (the
+    /// `item_lights::rand_light` fixed-step precedent); the solo
+    /// `update_rng` wrappers queue them for the caller.
     pub wants_ai_light: Vec<(i32, i32, [f32; 3])>,
+    /// `Main.essScale` as of the last draw pass (`App::ess_scale`,
+    /// `item_lights::update_ess_scale`) — the sim stamps it before the
+    /// tick for the aiStyle-66 flicker (`NPC.cs:34257`), the
+    /// `wind_speed_current` pre-stamp convention. The solo wrapper reads
+    /// the 1.0 stock (the `App::new` init). W4-c8.
+    pub ess_scale: f32,
     /// `NPC.alpha`: the spawn fade (`SetDefaults` 245/246/247/248's
     /// `alpha = 255`, `NPC.cs:12176/12190/12201`); the Golem family's
     /// machines decrement it by 10 per tick and the draw reads it as
@@ -3266,6 +3328,15 @@ impl Npc {
                 kind,
                 NpcKind::PlanterasHook | NpcKind::MartianSaucerCore | NpcKind::BlazingWheel
             ),
+            // W4-c8 sweep — `NPC.dontTakeDamageFromHostiles`
+            // (`NPC.cs:6277`, reset false `:8501`): the TruffleWorm 374
+            // (`:13775`) and the digger 375 (`:13794`) are the ported
+            // roster's only true rows (the DD2 crystal 548's AI writes
+            // and the 686/687 rows are unported kinds).
+            dont_take_damage_from_hostiles: matches!(
+                kind,
+                NpcKind::TruffleWorm | NpcKind::TruffleWormDigger
+            ),
             // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
             behind_tiles: kind.behind_tiles(),
             // The `CanBeChasedBy` slice (`NPC.cs:6261`/`:6259`/`:6563`):
@@ -3345,6 +3416,9 @@ impl Npc {
             ritual_uids: [0; 4],
             wants_item_sounds: Vec::new(),
             wants_ai_light: Vec::new(),
+            // `Main.essScale`'s stock 1.0 (the `App::new` init) — the sim
+            // pre-stamps the live value each tick (W4-c8).
+            ess_scale: 1.0,
             // `NPC.alpha`'s `SetDefaults` row — the kind-level default (the
             // Poltergeist's 100, `NPC.cs:13202`); the Destroyer family's
             // 255 fade-in start (`NPC.cs:10678`/`:10698`/`:10718`,
@@ -3807,6 +3881,20 @@ impl Npc {
             // `:17579-17593`), so the class default 1f stands (`:8533`) —
             // the stock `_ => 0.4` below never sees them.
             NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => 1.0,
+            // W4-c8 — the eight style-66 crawlers write NO knockBackResist
+            // row (`NPC.cs:13545-13558`/`:13762-13776`/`:14332-14346`/
+            // `:14576-14589`/`:16781-16794`), so the class default 1f
+            // stands (`:8533`); the digger 375's `knockBackResist = 0f`
+            // row (`:13789`). The stock `_ => 0.4` below never sees them.
+            NpcKind::Worm
+            | NpcKind::TruffleWorm
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy
+            | NpcKind::Maggot => 1.0,
+            NpcKind::TruffleWormDigger => 0.0,
             _ => 0.4,
         }
     }
@@ -4214,6 +4302,18 @@ impl Npc {
             // W4-c7 — the firefly family's `defense = 0` rows
             // (`NPC.cs:13523`/`:13565`/`:17271`/`:17585`).
             NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => 0,
+            // W4-c8 — the crawling-critter family's `defense = 0` rows
+            // (`NPC.cs:13551`/`:13768`/`:13783`/`:14338`/`:14582`/
+            // `:16787`).
+            NpcKind::Worm
+            | NpcKind::TruffleWorm
+            | NpcKind::TruffleWormDigger
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy
+            | NpcKind::Maggot => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4614,6 +4714,17 @@ impl Npc {
             // W4-c7 — the firefly family writes no value row (the head's
             // `value = 0f`, `NPC.cs:8544`).
             NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => 0.0,
+            // W4-c8 — the crawling-critter family writes no value row
+            // (the head's `value = 0f`, `NPC.cs:8544`).
+            NpcKind::Worm
+            | NpcKind::TruffleWorm
+            | NpcKind::TruffleWormDigger
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy
+            | NpcKind::Maggot => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -5356,6 +5467,17 @@ impl Npc {
             // resolve. The retired `update_scutlix_rider`/`update_saucer_mount`/
             // `update_solar_drakomire_rider` stand-ins are gone.
             75 => self.update_rng_style75_solo(world, player, rng),
+            // `else if (this.aiStyle == 66)` (`NPC.cs:34253-34347`) — the
+            // crawling critters (357/374/448/484-487/606). W4-c8: the
+            // faithful `npc_ai_style66::ai_style66` arm claims the style
+            // (the S1-D-3 code-only port wired). The arm needs no sibling
+            // pool (the dig proximity scan reads the PLAYERS only), so the
+            // solo path is the live route — the sim's tick closure runs
+            // `update_rng_dust` and drains the light/Transform requests at
+            // the slot turn. The integration tail is the family arm's own
+            // (the depth-scaled gravity + the ground UpdateCollision
+            // stand-in).
+            66 => self.ai_066_crawler_family(world, player, rng),
             // `else if (this.aiStyle == 64)` (`NPC.cs:34019-34248`) — the
             // firefly family (355/358/654/677). W4-c7: the SOLO path runs
             // the faithful `ai_064_step` with an empty sibling view (the
@@ -5492,7 +5614,11 @@ impl Npc {
         // in here — a thorns reflect landing in `contact` must survive to
         // the NEXT tick's AI, exactly like the C#'s player-update strike.
         self.just_hit = false;
-        self.find_frame();
+        // W4-c8 sweep — the world-read entry: the crawler groups resolve
+        // their slope probe against the live world (the d44
+        // find_frame_world pattern); every other kind falls through to
+        // the world-free hook unchanged.
+        self.find_frame_world(world);
         self.contact(player, rng);
     }
 
@@ -5787,11 +5913,15 @@ impl Npc {
     }
 
     /// `NPC.Transform(int newType, ...)` (`NPC.cs:81084-81114`) with the
-    /// default arguments the aiStyle-75 fallbacks pass (`Transform(382)` /
-    /// `Transform(518)`: ai0..3 = 0, `withReposition = true`), on the host
-    /// path (`Main.netMode != 1`, `:81086`). The bottom-anchored
-    /// reposition, the `SetDefaults` observable subset, the `TargetClosest`
-    /// and the integer life rescale floored at 1 — the `npc_ai_style42::
+    /// default arguments the callers pass (ai0..3 = 0, `withReposition =
+    /// true`): the aiStyle-75 carrier-gone fallbacks (`Transform(382)` /
+    /// `Transform(518)`, the deferred sim drain) and the aiStyle-66
+    /// TruffleWorm dig (`Transform(375)`, W4-c8 — run INLINE in the axis
+    /// arm, the C# order, so the +16 sink survives). Host path
+    /// (`Main.netMode != 1`, `:81086`). The bottom-anchored reposition, the
+    /// `SetDefaults` observable subset (incl. the friendly/immunity/
+    /// behindTiles/rotation head refresh), the `TargetClosest` and the
+    /// integer life rescale floored at 1 — the `npc_ai_style42::
     /// transform_to` / `npc_ai_style24::transform_core` precedent, keyed to
     /// the port's kind table. The value/knockback/visual halves are the
     /// wiring's full-Transform job (ANALYSIS).
@@ -5823,6 +5953,31 @@ impl Npc {
         self.frame_counter = 0.0;
         self.collide_x = false;
         self.collide_y = false;
+        // W4-c8 — the SetDefaults head rows the kind swap must refresh
+        // (`NPC.cs:8508`/`:8519-8520`/`:8523` + the catchable arm
+        // `:17851-17855`): the 374→375 dig flips friendly true→false (375
+        // is not npcCatchable, `Main.cs:9326-9418`) and behindTiles
+        // false→true (`:13790`), clears the 90-tick immunity window and
+        // zeroes the rotation. The aiStyle-75 pairs (390→382, 416→518)
+        // are all non-catchable / non-behindTiles kinds with rotation 0
+        // at the carrier-gone tick, so the refresh is a no-op for them.
+        self.friendly = new_kind.is_town_resident()
+            || new_kind == NpcKind::SleepingAngler
+            || crate::bug_net::npc_catchable(new_kind.cs_id() as i32);
+        self.catchable_immunity = if crate::bug_net::npc_catchable(new_kind.cs_id() as i32) {
+            90
+        } else {
+            0
+        };
+        self.behind_tiles = new_kind.behind_tiles();
+        // W4-c8 sweep — the SetDefaults hostile-refusal row refreshes
+        // with the kind (`NPC.cs:8501` reset + the 374/375 rows
+        // `:13775`/`:13794`): the 374→375 dig keeps true on both sides.
+        self.dont_take_damage_from_hostiles = matches!(
+            new_kind,
+            NpcKind::TruffleWorm | NpcKind::TruffleWormDigger
+        );
+        self.rotation = 0.0;
         let (_, new_h) = self.size();
         self.y -= new_h;
         // `:81101` — Transform re-picks the target after the defaults.
@@ -6265,6 +6420,90 @@ impl Npc {
                 self.y = ny;
             }
         }
+    }
+
+    /// W4-c8 — the aiStyle-66 family arm (`NPC.AI()`'s
+    /// `else if (this.aiStyle == 66)` block, `NPC.cs:34253-34347`): the
+    /// eight crawling critters (357/374/448/484-487/606). The faithful
+    /// machine lives in `npc_ai_style66.rs` (`ai_style66`, the S1-D-3
+    /// code-only port); this seam feeds the session player as the one
+    /// `TargetCandidate` (the S1-D-3p convention), the kind's vanilla
+    /// `cs_id`, the sim-stamped `Main.essScale` and ticker 0 (the
+    /// `EverLastingTicker` stand-in). RNG: the 484 flicker's `Next(90,111)`
+    /// every tick + the grounded gait timer's one range roll per expiry
+    /// ride the caller's `UpdateNPCs` stream (the module's witnesses pin
+    /// the exact order).
+    ///
+    /// The 484 light request queues on `wants_ai_light` for the sim's
+    /// `EntityLights` drain at the slot turn (the `wants_hostile_shot`
+    /// pattern; the solo wrapper leaves it for the caller). The 374 dig
+    /// (`ai[1] == 90`) runs `NPC.Transform(375)` (`NPC.cs:81084-81145`)
+    /// INLINE — the C# calls it inside `AI()` (`:34345`), BEFORE the
+    /// post-AI integration, so the kind swap to the noGravity/noTileCollide
+    /// digger preserves the +16 sink (a deferred transform would let the
+    /// crawler's ground collision snap the worm back to the surface). The
+    /// transform is RNG-free (the module's census), so the inline call
+    /// cannot move the stream. The digger's movement is the worm pass's
+    /// (`AI_006`, the lone-worm routing) — it runs after the per-NPC loop,
+    /// so this arm returns without integrating on the transform tick (a
+    /// single move; AI_006 lands one tick early, the pool-pass fold).
+    ///
+    /// The integration tail is `NPC.UpdateNPC`'s post-AI movement
+    /// (`NPC.cs:90459-90503`): the crawlers are noGravity=false /
+    /// noTileCollide=false, so the default depth-scaled gravity
+    /// (`UpdateNPC_UpdateGravity`, `:90878-90955` — `body_gravity`, the
+    /// ForceBubble precedent) + the 10 fall cap, the dead-band X snap
+    /// (`:90473-90476`) and the ground `UpdateCollision` stand-in
+    /// (`integrate_flyer_collision`, the blocked-axis latches the NEXT
+    /// tick's `collideX` reversal reads).
+    fn ai_066_crawler_family(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let players = [crate::npc_target::session_candidate(player)];
+        let outcome = crate::npc_ai_style66::ai_style66(
+            self,
+            world,
+            &players,
+            self.kind.cs_id() as i32,
+            self.ess_scale,
+            0,
+            rng,
+        );
+        // `:34258` — the 484 flicker's AddLight request (the sim drains it
+        // into the shared EntityLights pair at the slot turn).
+        if let Some(light) = outcome.light {
+            self.wants_ai_light.push(light);
+        }
+        // `:34342-34346` — the TruffleWorm dig: the module already sank
+        // `y += 16`; Transform(375) runs INLINE (the C# order — inside
+        // `AI()`, before integration). The bottom-anchored reposition nets
+        // 0 (both heights 10), the SetDefaults swap flips friendly/
+        // immunity/behindTiles, TargetClosest re-picks, the integer life
+        // rescale carries (both maxima 5), the ai zeroes — all RNG-free.
+        // The inline swap is what preserves the +16 sink: a deferred
+        // transform would let the crawler's ground collision below snap the
+        // worm back to the surface. The digger's movement is the worm
+        // pass's (`AI_006`, the lone-worm routing) — it runs after the
+        // per-NPC loop, so this arm returns without integrating (the
+        // pool-pass owns the movement; AI_006 lands one tick early on the
+        // transform tick, the documented pool-pass fold — a single move,
+        // the sink intact).
+        if outcome.transform_to_digger {
+            self.transform_to_kind(world, player, NpcKind::TruffleWormDigger);
+            return;
+        }
+        // `NPC.UpdateNPC`'s post-AI movement (`NPC.cs:90459-90503`). The
+        // eight crawlers walk on gravity (noGravity false, `:8535`): the
+        // default depth-scaled gravity + the 10 fall cap, the dead-band X
+        // snap and the ground `UpdateCollision` stand-in.
+        self.vy = (self.vy
+            + crate::npc_ai_golem::body_gravity(self.y, world.width as i32, world.world_surface))
+        .min(10.0);
+        // `:90473-90476` — the dead-band X snap (double f64 compare).
+        if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
+            self.vx = 0.0;
+        }
+        let (w, h) = self.size();
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        self.integrate_flyer_collision(world);
     }
 
     /// S1-D-3 W-9 wiring — the aiStyle-69 adapter: the live `Npc` fields
@@ -7464,6 +7703,25 @@ impl Npc {
             NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => {
                 unreachable!("aiStyle 64 rides the world-sim pool pass (W4-c7)")
             }
+            // W4-c8 — the crawling-critter family (357/374/448/484-487/
+            // 606, aiStyle 66): the style axis claims 66 above
+            // (`ai_066_crawler_family`), so these arms are unreachable
+            // through `update_rng`.
+            NpcKind::Worm
+            | NpcKind::TruffleWorm
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy
+            | NpcKind::Maggot => {
+                unreachable!("aiStyle 66 rides the style axis (W4-c8)")
+            }
+            // W4-c8 — the TruffleWormDigger (375, aiStyle 6): the lone
+            // fleeing digger rides the world-sim worm pass
+            // (`worm_head_step`, the AI_006 head machine — the
+            // StardustWormHead precedent, `is_worm` with no chain).
+            NpcKind::TruffleWormDigger => {}
         }
     }
 
@@ -7768,6 +8026,142 @@ impl Npc {
         self.rotation = s.rotation;
     }
 
+    /// W4-c8 sweep — the crawler arm's tile-slope probe, CALLER-RESOLVED
+    /// (`NPC.cs:72807-72815` for the 357/448/484/606 group, `:72862-72870`
+    /// for the 485/486/487 group — the SAME probe): `Framing.GetTileSafely
+    /// ((int)Center.X/16, (int)position.Y/16)`, then the tile one row
+    /// BELOW when that tile's `slope() == 0`. `GetTileSafely` never
+    /// returns null (out of world / null slot → `new Tile()`, slope 0,
+    /// `Framing.cs:426-439`), so the probe always runs and the
+    /// out-of-bounds read is slope 0 — the `world.tile` None arm. The
+    /// int casts truncate toward zero, like the C#'s `(int)` on the
+    /// position floats. The d44 worm-slope bridge
+    /// (`origin/task/W4-d44-findframe-low-1` 7cb3f8d0,
+    /// `find_frame_worm_slope`) adopted verbatim for this family.
+    pub(crate) fn find_frame_crawler_slope(&self, world: &World) -> i32 {
+        let tx = (self.center().0 as i32) / 16;
+        let ty = (self.y as i32) / 16;
+        let slope = world.tile(tx, ty).map_or(0, |t| t.slope());
+        if slope == 0 {
+            world.tile(tx, ty + 1).map_or(0, |t| t.slope()) as i32
+        } else {
+            slope as i32
+        }
+    }
+
+    /// W4-c8 sweep — the slope tail BOTH crawler groups share
+    /// (`NPC.cs:72816-72825` / `:72871-72880`): slope 1 pins
+    /// `rotation = 0.785f`, slope 2 pins `-0.785f`, and either clears the
+    /// `localAI[0]` -2 marker to 0 (the "on a slope" flag the AI reads);
+    /// every other slope leaves the frame machine's writes untouched.
+    /// Runs AFTER the group's row/counter/tilt block — the C# order.
+    fn find_frame_crawler_slope_tail(&mut self, slope: i32) {
+        if slope == 1 {
+            self.rotation = 0.785;
+            self.local_ai[0] = 0.0;
+        } else if slope == 2 {
+            self.rotation = -0.785;
+            self.local_ai[0] = 0.0;
+        }
+    }
+
+    /// W4-c8 sweep — the WORLD-READ entry (the d44 `find_frame_world`
+    /// pattern): the two crawler groups resolve their slope probe
+    /// against the live world before the shared frame machine; every
+    /// other kind falls through to the world-free `find_frame` hook
+    /// unchanged. The world-free lane keeps slope 0 (the flat-tile
+    /// default, the g6 world-free convention).
+    pub(crate) fn find_frame_world(&mut self, world: &World) {
+        let slope = match self.kind {
+            // `case 357/448/484/606` (`NPC.cs:72807-72826`) and
+            // `case 485/486/487` (`:72862-72881`) — the same probe.
+            NpcKind::Worm
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Maggot
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => self.find_frame_crawler_slope(world),
+            _ => {
+                self.find_frame();
+                return;
+            }
+        };
+        self.find_frame_crawler_groups();
+        self.find_frame_crawler_slope_tail(slope);
+    }
+
+    /// W4-c8 sweep — the two crawler FindFrame groups WITHOUT the slope
+    /// tail, split out of `find_frame` so the world-read entry can run
+    /// the tail with the resolved probe (the d44 `find_frame_c_world`
+    /// split precedent). The world-free `find_frame` calls this then the
+    /// tail with slope 0 — a cited no-op (neither 1 nor 2).
+    fn find_frame_crawler_groups(&mut self) {
+        match self.kind {
+            // W4-c8 — `case 357/448/484/606` (`NPC.cs:72774-72828`): the
+            // two-frame crawl. `localAI[0] = -2f`; grounded + still pins
+            // row 1 (`frame.Y = num`); grounded + moving runs the 12-tick
+            // two-frame cycle (`> num` wraps to 0); airborne adds the
+            // `direction * 0.1f` tilt and pins row 1. The slope-1/2
+            // ±0.785f rotation + `localAI[0] = 0` tail (`:72807-72826`)
+            // rides `find_frame_crawler_slope_tail` — the world-read
+            // entry resolves the probe, the world-free lane passes 0.
+            NpcKind::Worm | NpcKind::GoldWorm | NpcKind::EnchantedNightcrawler | NpcKind::Maggot => {
+                self.local_ai[0] = -2.0;
+                if self.vy == 0.0 {
+                    self.rotation = 0.0;
+                    if self.vx == 0.0 {
+                        self.frame = 1;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 12.0 {
+                            self.frame_counter = 0.0;
+                            self.frame += 1;
+                            if self.frame > 1 {
+                                self.frame = 0;
+                            }
+                        }
+                    }
+                } else {
+                    self.rotation += self.facing as f32 * 0.1;
+                    self.frame = 1;
+                }
+            }
+            // W4-c8 — `case 485/486/487` (`NPC.cs:72829-72883`): the grub
+            // trio. `spriteDirection = direction` + `localAI[0] = -2f`;
+            // grounded + still pins row 1; grounded + moving accumulates
+            // `|vx| * 5f` per tick, the > 10 reset advancing the row over
+            // the 4-frame strip (`> num * 3` wraps to 0); airborne the
+            // same tilt + row-1 pin. The slope tail (`:72862-72881`) is
+            // the same shared `find_frame_crawler_slope_tail`.
+            NpcKind::Grubby | NpcKind::Sluggy | NpcKind::Buggy => {
+                self.sprite_dir = self.facing;
+                self.local_ai[0] = -2.0;
+                if self.vy == 0.0 {
+                    self.rotation = 0.0;
+                    if self.vx == 0.0 {
+                        self.frame = 1;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += (self.vx * 5.0).abs();
+                        if self.frame_counter > 10.0 {
+                            self.frame_counter = 0.0;
+                            self.frame += 1;
+                            if self.frame > 3 {
+                                self.frame = 0;
+                            }
+                        }
+                    }
+                } else {
+                    self.rotation += self.facing as f32 * 0.1;
+                    self.frame = 1;
+                }
+            }
+            _ => {}
+        }
+    }
+
     pub(crate) fn find_frame(&mut self) {
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
         // `aiAction == 0`; `aiAction == 1` forces the crouch class 4 (the
@@ -8021,6 +8415,70 @@ impl Npc {
                     // `++this.frame.Y >= 5` on the pixel value (num = 27).
                     self.frame = 0;
                 }
+            // W4-c8 — `case 375` (`NPC.cs:71109-71120`): the digger's
+            // 4-tick cycle over the 4-frame strip — the counter resets
+            // at > 4 and the row wraps at `num * 4` back to 0.
+            NpcKind::TruffleWormDigger => {
+                self.frame_counter += 1.0;
+                if self.frame_counter > 4.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame >= 4 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-c8 — `case 374` (`NPC.cs:71121-71155`): the TruffleWorm.
+            // `localAI[0] = -2f` every tick; grounded + still pins row 0
+            // and zeroes the counter; grounded + moving runs the 6-tick
+            // cycle wrapping to row 1 (NOT 0); airborne adds the
+            // `direction * 0.1f` tilt and runs the 3-tick spin, also
+            // wrapping to row 1.
+            NpcKind::TruffleWorm => {
+                self.local_ai[0] = -2.0;
+                if self.vy == 0.0 {
+                    self.rotation = 0.0;
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame_counter = 0.0;
+                            self.frame += 1;
+                            if self.frame >= 4 {
+                                self.frame = 1;
+                            }
+                        }
+                    }
+                } else {
+                    self.rotation += self.facing as f32 * 0.1;
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 3.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame >= 4 {
+                            self.frame = 1;
+                        }
+                    }
+                }
+            }
+            // W4-c8 sweep — the crawler groups (357/448/484/606 +
+            // 485/486/487) ride the shared machine
+            // (`find_frame_crawler_groups`) + the slope tail at slope 0
+            // (the world-free flat-tile default — the tail writes
+            // nothing at 0). The world-read entry `find_frame_world`
+            // resolves the probe against the live world (the d44
+            // pattern); one machine, one copy.
+            NpcKind::Worm
+            | NpcKind::GoldWorm
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Maggot
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => {
+                self.find_frame_crawler_groups();
+                self.find_frame_crawler_slope_tail(0);
             }
             // The Wizard/Mechanic: `FindFrame`'s humanoid-group case list
             // carries them (`NPC.cs:68554`/`:68556`) with no arm of their
@@ -19987,6 +20445,18 @@ impl Npc {
             NpcKind::LightningBug => 736,
             NpcKind::Lavafly => 654,
             NpcKind::Shimmerfly => 677,
+            // W4-c8 — the crawling-critter family's vanilla type ids (the
+            // same values `to_u16`/`cs_id` ride; unused by every arm
+            // above, so the G6 key stays injective).
+            NpcKind::Worm => 357,
+            NpcKind::TruffleWorm => 374,
+            NpcKind::TruffleWormDigger => 375,
+            NpcKind::GoldWorm => 448,
+            NpcKind::EnchantedNightcrawler => 484,
+            NpcKind::Grubby => 485,
+            NpcKind::Sluggy => 486,
+            NpcKind::Buggy => 487,
+            NpcKind::Maggot => 606,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -22689,9 +23159,10 @@ mod tests {
 
     #[test]
     fn the_worm_head_digs_and_stumbles() {
-        // The head machine (`:51923-52051`): inside the solid the velocity
-        // aims at the tile-snapped player at `num45`; in the open air the
-        // gravity pulls.
+        // The head machine (`:51923-52200`): inside the solid the velocity
+        // APPROACHES the tile-snapped player aim at num45 by num46 per tick
+        // (W4-d22 compose: the faithful accel steer, audit T1b — not the
+        // pre-fix velocity snap); in the open air the gravity pulls.
         let mut w = ground_air();
         // The head deep in the dirt, the player above. The Giant Worm
         // (type 10) rides the plain dig — the corruption escape's 7/13
@@ -22704,27 +23175,47 @@ mod tests {
         let mut npcs = vec![head];
         let mut rng = UnifiedRandom::new(11);
         let mut next_id = 1u32;
-        // The player parked above the dirt.
+        // The player parked above the dirt. The dig ramps the speed toward
+        // num45 = 6 by num46 = 0.05 per tick (the accel approach, not an
+        // instant snap) — ~109 ticks saturate it (the numeric re-derivation:
+        // speed 6.02 at tick 109). The window closes before the head
+        // reaches the surface hole (y 2000..2160 at x 960..2240): at tick
+        // 110 the head is still at y ~2165, deep in the dirt; by tick ~118
+        // it enters the hole and the air arm takes over (the d22 original's
+        // 150-tick loop overshoots into the hole — the velocity flips
+        // positive there; 110 is the faithful saturation pin).
         let pc = (100.0 * 16.0, 116.0 * 16.0);
-        crate::world_sim::npcs::update_worms_in(&w, Some(pc), &mut npcs, &mut rng, &mut next_id);
+        for _ in 0..110 {
+            crate::world_sim::npcs::update_worms_in(&w, Some(pc), &mut npcs, &mut rng, &mut next_id);
+        }
         let h0 = &npcs[0];
-        // The dig: the velocity magnitude rides num45 (6 for the Giant Worm).
         let speed = (h0.vx * h0.vx + h0.vy * h0.vy).sqrt();
         assert!((speed - 6.0).abs() < 0.1, "the dig speed ({speed})");
         assert!(h0.vy < 0.0, "the head digs up toward the player");
         // The Devourer (7) in the same dirt with the same non-evil target:
-        // the corruption escape aims straight down at num45 = 9
-        // (`:52048-52049`; shallow — above the (rockLayer+maxTilesY)/2
-        // depth gate, the chain-despawn arm is the worm_tests witness's
-        // own).
+        // the corruption escape aims straight down (num48 = 0, num49 =
+        // num45 = 9, `:52048-52049`; shallow — above the
+        // (rockLayer+maxTilesY)/2 depth gate, the chain-despawn arm is
+        // the worm_tests witness's own). From rest the Y-dominant else
+        // arm nudges vy by num46*1.1 = 0.11 and the X slow-speed nudge
+        // kicks vx by −num46 = −0.1 (the faithful approach, not the
+        // 9-snap).
         let mut dev = Npc::spawn_worm_head(&w, 40, 140, NpcKind::DevourerHead);
         dev.hp = dev.max_hp;
         dev.worm_inited = true;
         dev.worm_id = 3;
         let mut npcs3 = vec![dev];
         crate::world_sim::npcs::update_worms_in(&w, Some(pc), &mut npcs3, &mut rng, &mut next_id);
-        assert_eq!(npcs3[0].vx, 0.0, "the escape aims straight down");
-        assert_eq!(npcs3[0].vy, 9.0, "num49 = num45 (the Devourer's 9)");
+        assert!(
+            (npcs3[0].vx + 0.1).abs() < 1e-4,
+            "the X slow-speed nudge: {}",
+            npcs3[0].vx
+        );
+        assert!(
+            (npcs3[0].vy - 0.11).abs() < 1e-4,
+            "the Y-dominant approach from rest: {}",
+            npcs3[0].vy
+        );
         assert!(npcs3[0].hp > 0, "shallow: no chain despawn");
         // The air stumble: the head in the open cavern falls.
         let mut w2 = ground_air();
@@ -25055,7 +25546,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 289] = [
+    pub(super) const ALL_KINDS: [NpcKind; 298] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -25359,6 +25850,16 @@ mod tests {
         NpcKind::LightningBug,
         NpcKind::Lavafly,
         NpcKind::Shimmerfly,
+        // The crawling-critter family (W4-c8).
+        NpcKind::Worm,
+        NpcKind::TruffleWorm,
+        NpcKind::TruffleWormDigger,
+        NpcKind::GoldWorm,
+        NpcKind::EnchantedNightcrawler,
+        NpcKind::Grubby,
+        NpcKind::Sluggy,
+        NpcKind::Buggy,
+        NpcKind::Maggot,
     ];
 
     #[test]
@@ -25755,6 +26256,331 @@ mod tests {
                 assert!(k.frame < 4, "{kind:?} row {} of 4", k.frame);
             }
         }
+    }
+
+    /// W4-c8 — the crawling-critter family's `SetDefaults` rows pin
+    /// against the C# (`NPC.cs:13545-13558` / `:13762-13776` /
+    /// `:13777-13795` / `:14332-14346` / `:14576-14589` / `:16781-16794`),
+    /// through the port's tables — the small-kinds pin's shape. WRITTEN,
+    /// NOT RUN (code-only mode).
+    #[test]
+    fn w4_c8_the_crawler_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, kb)
+        let rows = [
+            (NpcKind::Worm, 357u16, 66u8, 10.0, 4.0, 1.0f32),
+            (NpcKind::TruffleWorm, 374, 66, 20.0, 10.0, 1.0),
+            (NpcKind::TruffleWormDigger, 375, 6, 10.0, 10.0, 0.0),
+            (NpcKind::GoldWorm, 448, 66, 10.0, 4.0, 1.0),
+            (NpcKind::EnchantedNightcrawler, 484, 66, 10.0, 4.0, 1.0),
+            (NpcKind::Grubby, 485, 66, 10.0, 4.0, 1.0),
+            (NpcKind::Sluggy, 486, 66, 10.0, 4.0, 1.0),
+            (NpcKind::Buggy, 487, 66, 10.0, 4.0, 1.0),
+            (NpcKind::Maggot, 606, 66, 10.0, 4.0, 1.0),
+        ];
+        for (kind, ty, ai, w, h, kb) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), 0, "{kind:?} damage");
+            assert_eq!(shell.defense(), 0, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), 5, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, 5, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), 0.0, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+            // The catchable arm (`NPC.cs:17851-17855` + `Main.cs:9326-
+            // 9418`): the eight crawlers are npcCatchable (374 included —
+            // the row writes no friendly, the arm sets it); the digger
+            // 375 is NOT in the set → friendly false, no immunity window.
+            if kind == NpcKind::TruffleWormDigger {
+                assert!(!shell.friendly, "375 is not npcCatchable");
+                assert_eq!(shell.catchable_immunity, 0);
+                assert!(shell.behind_tiles, ":13790 behindTiles");
+                assert!(kind.no_gravity(), ":13787 noGravity");
+                // The Hide=true bestiary fold (`NPCID.cs:3714-3718`): the
+                // net id rides the TruffleWorm's entry; the DRAW sheet
+                // stays 375 (`texture_net_id`).
+                assert_eq!(kind.net_id(), 374, "the bestiary fold");
+                assert_eq!(crate::render::entities::texture_net_id(kind), 375);
+            } else {
+                assert!(shell.friendly, "{kind:?} the catchable arm");
+                assert_eq!(shell.catchable_immunity, 90);
+                assert!(!shell.behind_tiles);
+                assert!(!kind.no_gravity(), "the crawlers walk on gravity");
+                assert_eq!(kind.net_id(), ty as i32);
+            }
+        }
+        // The frame budgets (`Main.cs:67082-67153`, the module's
+        // FRAME_COUNTS pin): 357/448/484/606 two rows, the rest four.
+        for (ty, rows) in [
+            (357u16, 2u32), (374, 4), (375, 4), (448, 2), (484, 2),
+            (485, 4), (486, 4), (487, 4), (606, 2),
+        ] {
+            assert_eq!(crate::render::entities::npc_rows(ty), rows, "net {ty}");
+        }
+        // The catchItem ladder (`bug_net::catch_item`, `NPC.cs:13556`/
+        // `:13773`/`:13792`/`:14343`/`:14587`/`:16792`).
+        assert_eq!(crate::bug_net::catch_item(357, 0.0), 2002);
+        assert_eq!(crate::bug_net::catch_item(374, 0.0), 2673);
+        assert_eq!(crate::bug_net::catch_item(375, 0.0), 2673);
+        assert_eq!(crate::bug_net::catch_item(448, 0.0), 2895);
+        assert_eq!(crate::bug_net::catch_item(484, 0.0), 3191);
+        assert_eq!(crate::bug_net::catch_item(487, 0.0), 3194);
+        assert_eq!(crate::bug_net::catch_item(606, 0.0), 4363);
+    }
+
+    /// W4-c8 — the family's `FindFrame` cases (`NPC.cs:71109-71155` +
+    /// `:72774-72883`), driven through `find_frame` directly. WRITTEN,
+    /// NOT RUN (code-only mode).
+    #[test]
+    fn w4_c8_the_findframe_cases_match_the_csharp() {
+        // `case 375` (:71109-71120): the 4-tick cycle over 4 rows, wrap
+        // to 0. The advances land on ticks 5/10/15/20.
+        let mut d = Npc::new(NpcKind::TruffleWormDigger, 100.0, 100.0, 1, 0.0);
+        for _ in 0..4 {
+            d.find_frame();
+        }
+        assert_eq!(d.frame, 0, "the counter has not passed 4 yet");
+        d.find_frame();
+        assert_eq!(d.frame, 1, "tick 5 advances");
+        for _ in 0..15 {
+            d.find_frame();
+        }
+        assert_eq!(d.frame, 0, "tick 20 wraps 3 -> 0");
+        assert_eq!(d.frame_counter, 0.0);
+        // `case 374` (:71121-71155): grounded + still pins row 0; the
+        // localAI[0] = -2 marker every tick.
+        let mut t = Npc::new(NpcKind::TruffleWorm, 100.0, 100.0, 1, 0.0);
+        t.vx = 0.0;
+        t.vy = 0.0;
+        t.frame = 3;
+        t.find_frame();
+        assert_eq!(t.frame, 0, ":71128 the still pin");
+        assert_eq!(t.frame_counter, 0.0);
+        assert_eq!(t.local_ai[0], -2.0, ":71122");
+        assert_eq!(t.rotation, 0.0, ":71125");
+        // Grounded + moving: the 6-tick cycle wraps to row 1 (NOT 0).
+        t.vx = 0.6;
+        for _ in 0..28 {
+            t.find_frame();
+        }
+        assert_eq!(t.frame, 1, "the 4th advance wraps 3 -> 1 (:71139)");
+        // Airborne: the 3-tick spin + the direction * 0.1 tilt.
+        let mut a = Npc::new(NpcKind::TruffleWorm, 100.0, 100.0, 1, 0.0);
+        a.vy = 1.0;
+        a.vx = 0.6;
+        for _ in 0..16 {
+            a.find_frame();
+        }
+        assert_eq!(a.frame, 1, "the airborne wrap is row 1 too (:71152)");
+        assert!((a.rotation - 1.6).abs() < 1e-5, ":71144 the tilt accumulates");
+        // `case 357/448/484/606` (:72774-72828): grounded + still pins
+        // row 1 (`frame.Y = num`); the 12-tick two-frame cycle.
+        let mut w = Npc::new(NpcKind::Worm, 100.0, 100.0, 1, 0.0);
+        w.vx = 0.0;
+        w.vy = 0.0;
+        w.find_frame();
+        assert_eq!(w.frame, 1, ":72785 the still pin is row 1");
+        assert_eq!(w.local_ai[0], -2.0, ":72779");
+        w.vx = 0.2;
+        for _ in 0..13 {
+            w.find_frame();
+        }
+        assert_eq!(w.frame, 0, "tick 13: 1 -> 0 (the > num wrap)");
+        for _ in 0..13 {
+            w.find_frame();
+        }
+        assert_eq!(w.frame, 1, "tick 26: 0 -> 1");
+        // Airborne: row 1 + the tilt.
+        let mut wa = Npc::new(NpcKind::GoldWorm, 100.0, 100.0, -1, 0.0);
+        wa.vy = 1.0;
+        wa.find_frame();
+        assert_eq!(wa.frame, 1, ":72805");
+        assert!((wa.rotation + 0.1).abs() < 1e-6, ":72804 facing -1");
+        // `case 485/486/487` (:72829-72883): spriteDirection = direction,
+        // the |vx| * 5 accumulator over the 4-frame strip.
+        let mut g = Npc::new(NpcKind::Grubby, 100.0, 100.0, -1, 0.0);
+        g.vx = -0.25; // |vx| * 5 = 1.25 per tick → advances every 9th
+        g.vy = 0.0;
+        g.find_frame();
+        assert_eq!(g.sprite_dir, -1, ":72833");
+        assert_eq!(g.local_ai[0], -2.0, ":72834");
+        for _ in 0..35 {
+            g.find_frame();
+        }
+        // Advances at ticks 9/18/27/36: rows 1/2/3/0 — tick 36 wraps.
+        assert_eq!(g.frame, 0, "the > num * 3 wrap (:72852)");
+        // The still pin is row 1 here too.
+        let mut g2 = Npc::new(NpcKind::Buggy, 100.0, 100.0, 1, 0.0);
+        g2.vx = 0.0;
+        g2.vy = 0.0;
+        g2.find_frame();
+        assert_eq!(g2.frame, 1, ":72840");
+    }
+
+    /// W4-c8 — the axis-66 wiring: a full `update_rng` tick runs the
+    /// faithful arm (the 484 flicker queues the light request, the
+    /// grounded gait timer draws on the caller's stream), the 374 dig
+    /// transforms INLINE to the digger (the C# order — `Transform(375)`
+    /// inside `AI()` before integration, so the +16 sink survives the
+    /// noTileCollide raw move), and the SetDefaults refresh flips
+    /// friendly/immunity/behindTiles, the life carries, the ai zeroes.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c8_the_axis_claims_style66_and_the_dig_transforms() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        // The 484 flicker: one Next(90,111) every tick + the light request.
+        // The light is computed at the PRE-integration position (the arm's
+        // flicker reads the position first) — capture it before the tick.
+        let mut night = Npc::new(NpcKind::EnchantedNightcrawler, 20.0 * TILE_PX, 29.0 * TILE_PX, 1, 0.0);
+        night.local_ai[1] = 500.0; // no gait expiry this tick
+        let (cw, ch) = night.size();
+        let (ex, ey) = (night.x, night.y);
+        let mut rng = UnifiedRandom::new(11);
+        let mut witness = rng.clone();
+        let roll = witness.next_range(90, 111);
+        night.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, witness, "exactly one Next(90,111) — the flicker");
+        assert_eq!(night.wants_ai_light.len(), 1, "the 484 light request queues");
+        let (lx, ly, rgb) = night.wants_ai_light[0];
+        let num983 = roll as f32 * 0.01 * ((1.0f32 + 0.5) / 2.0);
+        assert_eq!(rgb, [0.3 * num983, 0.1 * num983, 0.25 * num983]);
+        // The centre tile: the quotient-truncated form (`:34258`).
+        assert_eq!(lx, ((ex + cw / 2.0) / TILE_PX) as i32);
+        assert_eq!(ly, ((ey + ch / 2.0) / TILE_PX) as i32);
+        // A non-484 crawler queues no light.
+        let mut worm = Npc::new(NpcKind::Worm, 20.0 * TILE_PX, 29.0 * TILE_PX, 1, 0.0);
+        worm.local_ai[1] = 500.0;
+        let mut rng2 = UnifiedRandom::new(11);
+        worm.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng2);
+        assert!(worm.wants_ai_light.is_empty(), "357 has no flicker");
+        // The 374 dig: seed the counter at 89 with the player near — the
+        // tick increments to 90, sinks 16 and transforms INLINE to the
+        // digger (the C# order). The digger is noGravity/noTileCollide, so
+        // the raw integration preserves the sink (no ground snap-back).
+        let mut t = Npc::new(NpcKind::TruffleWorm, 20.0 * TILE_PX, 29.0 * TILE_PX, 1, 0.0);
+        t.local_ai[1] = 5000.0;
+        t.ai[1] = 89.0;
+        t.hp = 3; // a damaged worm keeps 3 through the rescale (both maxima 5)
+        player.x = t.x; // the player centre within 160 of the worm centre
+        player.y = t.y;
+        let y0 = t.y;
+        let mut rng3 = UnifiedRandom::new(11);
+        t.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng3);
+        // The inline transform landed the digger THIS tick.
+        assert_eq!(t.kind, NpcKind::TruffleWormDigger, "the dig transforms inline");
+        assert!(t.y >= y0 + 16.0, "the +16 sink survives (:34344, y {} vs {})", t.y, y0);
+        assert!(!t.friendly, "375 is not npcCatchable — friendly flips false");
+        assert_eq!(t.catchable_immunity, 0, "the immunity window clears");
+        assert!(t.behind_tiles, ":13790 behindTiles");
+        assert_eq!(t.hp, 3, "the integer life share carries (3*5/5)");
+        assert_eq!(t.max_hp, 5);
+        assert_eq!(t.ai, [0.0; 4], "the ai zeroes (:81111-81114) — the 90-counter cleared");
+        assert_eq!(t.size(), (10.0, 10.0), "the digger's 10x10 box");
+        assert_eq!(t.rotation, 0.0, "the SetDefaults rotation reset (:8523)");
+        // The transform executor on its own (the direct-call path): the
+        // same refresh, the bottom-anchored reposition nets 0.
+        let mut t2 = Npc::new(NpcKind::TruffleWorm, 100.0, 100.0, 1, 0.0);
+        t2.hp = 3;
+        let ty0 = t2.y;
+        t2.transform_to_kind(&w, &player, NpcKind::TruffleWormDigger);
+        assert_eq!(t2.kind, NpcKind::TruffleWormDigger);
+        assert_eq!(t2.y, ty0, "the reposition nets 0 (both heights 10)");
+        assert_eq!(t2.hp, 3);
+        assert!(!t2.friendly);
+        assert!(t2.behind_tiles);
+    }
+
+    /// W4-c8 sweep — the crawler slope probe reads `(int)Center.X/16,
+    /// (int)position.Y/16` and falls to the tile BELOW on slope 0
+    /// (`NPC.cs:72807-72815` / `:72862-72870`); out-of-world reads are
+    /// slope 0 (`Framing.GetTileSafely`'s `new Tile()`,
+    /// `Framing.cs:426-439`). The d44 worm-slope witness pattern.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c8_the_crawler_slope_probe_reads_the_world() {
+        let mut w = ground();
+        let mut n = bare(NpcKind::Worm);
+        // The 10x4 box: centre.x = 100 + 5 = 105 → tx 6; y = 464 → ty 29
+        // (air above the row-30 ground). Flat everywhere → 0.
+        n.x = 100.0;
+        n.y = 464.0;
+        assert_eq!(n.find_frame_crawler_slope(&w), 0, "air over flat ground");
+        // Slope on the probed tile itself: read directly, no fall-through.
+        let i = w.index(6, 29);
+        w.tiles[i].set_slope(2);
+        assert_eq!(n.find_frame_crawler_slope(&w), 2, "the probed tile wins");
+        // Slope 0 on the probed tile → the tile BELOW is read.
+        w.tiles[i].set_slope(0);
+        let j = w.index(6, 30);
+        w.tiles[j].set_slope(1);
+        assert_eq!(n.find_frame_crawler_slope(&w), 1, "the below fall-through");
+        // Out of world: slope 0 both reads.
+        n.x = -500.0;
+        n.y = -500.0;
+        assert_eq!(n.find_frame_crawler_slope(&w), 0, "out of world");
+        // The grub trio runs the SAME probe (`:72862-72870`).
+        let mut g = bare(NpcKind::Grubby);
+        g.x = 100.0;
+        g.y = 464.0;
+        assert_eq!(g.find_frame_crawler_slope(&w), 1, "485 shares the probe");
+    }
+
+    /// W4-c8 sweep — the world-read entry pins the slope tail on BOTH
+    /// groups: slope 1 → rotation 0.785 + localAI[0] cleared to 0,
+    /// slope 2 → -0.785 + 0, slope 0/3+ → the frame machine's writes
+    /// stand (localAI[0] = -2). The airborne tilt is OVERWRITTEN by the
+    /// tail (the C# runs the tail after the tilt, `:72804-72825`).
+    /// The world-free hook keeps slope 0. WRITTEN, NOT RUN.
+    #[test]
+    fn w4_c8_the_slope_tail_pins_rotation_on_both_groups() {
+        let mut w = ground();
+        // Ground under the probe: y = 480 → ty 30; centre tx 6.
+        let j = w.index(6, 30);
+        for kind in [NpcKind::Worm, NpcKind::GoldWorm, NpcKind::EnchantedNightcrawler,
+                     NpcKind::Maggot, NpcKind::Grubby, NpcKind::Sluggy, NpcKind::Buggy] {
+            let mut n = Npc::new(kind, 100.0, 480.0, 1, 0.0);
+            n.vx = 0.2; // grounded + moving: the cycle arms run first
+            // Slope 1: rotation +0.785, the -2 marker cleared.
+            w.tiles[j].set_slope(1);
+            n.find_frame_world(&w);
+            assert_eq!(n.rotation, 0.785, "{kind:?} :72818/:72873");
+            assert_eq!(n.local_ai[0], 0.0, "{kind:?} :72819/:72874");
+            // Slope 2: rotation -0.785.
+            w.tiles[j].set_slope(2);
+            n.find_frame_world(&w);
+            assert_eq!(n.rotation, -0.785, "{kind:?} :72823/:72878");
+            assert_eq!(n.local_ai[0], 0.0);
+            // Slope 3 (painted half-block etc.): no tail write — the
+            // grounded machine's rotation 0 + the -2 marker stand.
+            w.tiles[j].set_slope(3);
+            n.find_frame_world(&w);
+            assert_eq!(n.rotation, 0.0, "{kind:?} slope 3 leaves the machine's writes");
+            assert_eq!(n.local_ai[0], -2.0);
+            // Airborne + slope 1: the tilt runs, then the tail OVERWRITES.
+            w.tiles[j].set_slope(1);
+            n.vy = 1.0;
+            n.rotation = 0.0;
+            n.find_frame_world(&w);
+            assert_eq!(n.rotation, 0.785, "{kind:?} the tail wins over the tilt");
+            // The world-free hook: slope 0 — the machine's writes stand.
+            n.vy = 0.0;
+            n.find_frame();
+            assert_eq!(n.rotation, 0.0, "{kind:?} the world-free lane keeps slope 0");
+            assert_eq!(n.local_ai[0], -2.0);
+        }
+        // A NON-crawler kind falls through unchanged (the zombie arm).
+        let mut z = bare(NpcKind::Zombie);
+        z.vx = 1.0;
+        z.find_frame_world(&w);
+        let mut z2 = bare(NpcKind::Zombie);
+        z2.vx = 1.0;
+        z2.find_frame();
+        assert_eq!((z.frame, z.frame_counter), (z2.frame, z2.frame_counter),
+            "the fall-through is the world-free hook");
     }
 
     /// The Dye Trader's shop (`case 12`): the four always rows, the moon-phase
@@ -29217,8 +30043,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            289,
-            "every decodable kind resolves (the wire roster's size - 289 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d33's seven dragonflies + W4-d33 wiring's three fairies + the windy balloon + W4-c3's style-10 three + W4-c7's firefly four (E8 renumber 735/736 executed), L-B gate + W4-d25 STYLE-26 wiring's Unicorn; the Wolf/Tumbleweed dropped per keep-one f5f486c7c; the c3 34/289 kind rows re-pin to d34@267/d38@289 at their merges, research/329 E8)"
+            298,
+            "every decodable kind resolves (the wire roster's size - 298 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d33's seven dragonflies + W4-d33 wiring's three fairies + the windy balloon + W4-c3's style-10 three + W4-c7's firefly four (E8 renumber 735/736 executed) + W4-c8's nine crawling critters, L-B gate + W4-d25 STYLE-26 wiring's Unicorn; the Wolf/Tumbleweed dropped per keep-one f5f486c7c; the c3 34/289 kind rows re-pin to d34@267/d38@289 at their merges, research/329 E8)"
         );
         assert!(
             covered > 43,
@@ -32889,6 +33715,18 @@ mod s1_d_2_tests {
         (NpcKind::LightningBug, 64),
         (NpcKind::Lavafly, 64),
         (NpcKind::Shimmerfly, 64),
+        // W4-c8 (the crawling critters, `NPC.cs:13549`/`:13766`/`:14336`/
+        // `:14580`/`:16785` — the eight aiStyle-66 rows; the digger 375
+        // rides aiStyle 6, `:13781` — the worm pass's lone minion).
+        (NpcKind::Worm, 66),
+        (NpcKind::TruffleWorm, 66),
+        (NpcKind::TruffleWormDigger, 6),
+        (NpcKind::GoldWorm, 66),
+        (NpcKind::EnchantedNightcrawler, 66),
+        (NpcKind::Grubby, 66),
+        (NpcKind::Sluggy, 66),
+        (NpcKind::Buggy, 66),
+        (NpcKind::Maggot, 66),
     ];
 
     #[test]
