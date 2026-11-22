@@ -98,16 +98,17 @@ impl App {
             // step; the render is now the same. `gfxOffY` stays a separate
             // draw offset (`draw_player`'s `gfx_off_y`), not baked into `y`.
             // The dead player renders nothing until the respawn (vanilla draws
-            // no corpse; the ghost is master-mode only).
+            // no corpse); the hardcore ghost draws its own sheet after the
+            // cached world pass (W4-c46, `draw_ghost` below).
             // W4-d115 wiring round — `LegacyPlayerRenderer.cs:433-448`:
             // `shadowDodgeCount` steps ±1 per DRAW frame (cap 30/floor 0,
             // keyed on the buff-scan `shadowDodge` flag). The C# mutates
             // the live Player inside the renderer; the port steps the
             // live field here, before the render clone below, so the
             // clone, the G6 key and the ghost draw all read the stepped
-            // value. Dead players render nothing (the ghost branch is
-            // master-mode only), so their counter holds — the sim tick
-            // and the respawn never touch it (writer census: the
+            // value. Dead players render nothing here (the hardcore ghost
+            // is the W4-c46 sheet below), so their counter holds — the sim
+            // tick and the respawn never touch it (writer census: the
             // renderer is the field's ONLY writer).
             if let Some(p) = self.player.as_mut().filter(|p| !p.dead) {
                 p.step_shadow_dodge_draw_counter();
@@ -1213,6 +1214,31 @@ impl App {
                         *world_key = Some(key);
                     }
 
+                    // W4-c46 — the hardcore ghost (`LegacyPlayerRenderer.
+                    // DrawPlayerFull`'s ghost arm, `:274-281`): the dead
+                    // player renders no body, but the ghost flies and draws
+                    // every frame — OUTSIDE the cached world pass (the cache
+                    // key carries no ghost, so a cached frame still animates
+                    // it). The C# draws it in the player phase; the port's
+                    // post-tiles slot keeps it above the terrain like the
+                    // living body (the item-drop z-order rides the cache).
+                    if let (Some(p), Some(a)) =
+                        (player.as_ref().filter(|p| p.ghost), atlas.as_ref())
+                    {
+                        crate::render::entities::draw_ghost(
+                            renderer,
+                            a,
+                            p,
+                            light,
+                            &style,
+                            anim_time,
+                            draw_cam,
+                            world_zoom,
+                            screen,
+                            self.mouse_text_color,
+                        );
+                    }
+
                     // S1-G-1 wave C: the tile-crack overlay
                     // (`Main.DrawTileCracks`, `Main.cs:61533-61626`; the
                     // solid-layer sites `TileDrawing.cs:732-733`). It rides
@@ -1835,6 +1861,10 @@ impl App {
                                     &self.lost_coin_string,
                                     p.respawn_timer,
                                     self.respawn_skip_frames,
+                                    // `GetDeathAlpha(Color.Transparent)`
+                                    // (`Main.cs:45332`): the death fade rides
+                                    // `Player.immuneAlpha` (UpdateDead's +2/tick).
+                                    p.immune_alpha,
                                 );
                             }
                         }
@@ -1993,15 +2023,22 @@ impl App {
                                     let center_px = [cx, cy + p.gfx_off_y];
                                     let icon_pos =
                                         map::head_icon_pos(center_px, map.pos, map.scale, screen);
-                                    // `Main.GetPlayerHeadBordersColor` (`Main.cs:56616-56618`)
-                                    // → `Main.teamColor[0]` = White (singleplayer).
+                                    // `Main.GetPlayerHeadBordersColor` (`Main.cs:56610-56618`):
+                                    // ghost/dead → `Color.Transparent` (`:56612-56615`),
+                                    // else `Main.teamColor[0]` = White (singleplayer,
+                                    // `:56616-56618`). W4-c46 final: the ghost/dead arm.
+                                    let border = if p.ghost || p.dead {
+                                        [0.0; 4]
+                                    } else {
+                                        [1.0; 4]
+                                    };
                                     draw_player_map_icon(
                                         renderer,
                                         player_assets,
                                         p,
                                         icon_pos,
                                         self.settings.applied_ui_scale(screen.x, screen.y),
-                                        [1.0; 4],
+                                        border,
                                     );
                                 }
                             }

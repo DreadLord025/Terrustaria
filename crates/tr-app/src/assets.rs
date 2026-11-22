@@ -346,6 +346,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Player_0_11",
         "Player_0_12",
         "Player_Hair_1",
+        // W4-c46 — `TextureAssets.Ghost` (`Images/Ghost`,
+        // `AssetInitializer.cs:318`): the hardcore ghost's 4-row sheet
+        // (`LegacyPlayerRenderer.DrawGhost`, `:514-524`).
+        "Ghost",
         // The mount sheets of the M2-MOUNT-1 ground set (`MountData`
         // back/front textures, `Mount.cs:696-2567`): the named `Mount_*`
         // sheets plus the `Extra_*` files the C# binds through
@@ -835,6 +839,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_Head_45",
         "Heart",
         "Bubble",
+        // `TextureAssets.Flame` (`AssetInitializer.cs:496`): the lava-budget
+        // meter's flame (`Main.DrawInterface_Resources_Breath`, `Main.cs:43511`).
+        "Flame",
         // `TextureAssets.Hb1`/`Hb2` (`AssetInitializer.cs:404-405`): the
         // ordinary NPC health bar's fill and depleted strips
         // (`Main.DrawHealthBar`, `Main.cs:21909-21990`).
@@ -2049,6 +2056,10 @@ pub struct Lookups {
     pub logo: Option<([f32; 4], f32, f32)>,
     pub ui_heart: Option<tr_render::SheetRect>,
     pub ui_bubble: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Flame` (`Images/Flame`, `AssetInitializer.cs:496`): the
+    /// lava-budget meter's flame (`Main.DrawInterface_Resources_Breath`,
+    /// `Main.cs:43511`), 22x22 like the Bubble.
+    pub ui_flame: Option<tr_render::SheetRect>,
     /// `TextureAssets.Hb1` (`Images/HealthBar1`): the health bar's filled
     /// strip (`Main.cs:21988-21990`).
     pub ui_health_bar1: Option<tr_render::SheetRect>,
@@ -2448,6 +2459,7 @@ impl Lookups {
             moon_explosion: MOON_EXPLOSION_SHEETS.map(|name| atlas.sheet(name).copied()),
             ui_heart: atlas.sheet("Heart").copied(),
             ui_bubble: atlas.sheet("Bubble").copied(),
+            ui_flame: atlas.sheet("Flame").copied(),
             ui_health_bar1: atlas.sheet("HealthBar1").copied(),
             ui_health_bar2: atlas.sheet("HealthBar2").copied(),
             ui_boss_bar: atlas.sheet("UI/UI_BossBar").copied(),

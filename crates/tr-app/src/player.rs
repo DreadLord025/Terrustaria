@@ -51,7 +51,9 @@ const CART_MOUNT_BUFF: i32 = 118;
 const CART_MOUNT_HEIGHT: f32 = 52.0;
 /// `Player.breathMax`; `breath` is in ticks.
 pub const BREATH_MAX: i32 = 200;
-/// `Player.breathCDMax`: ticks between breath decrements.
+/// `Player.breathCDMax`'s base (`Player.cs:3859`): ticks between breath
+/// decrements before the Breathing Reed ×2 / Diving Helm ×6 property arms
+/// (`breath_cd_max`, `Player.cs:3855-3869`).
 const BREATH_CD: i32 = 7;
 
 /// The extra-jump options (`Player.hasJumpOption_*` / `canJumpAgain_*` /
@@ -582,6 +584,9 @@ pub(crate) struct StickyDust {
     /// `noGravity` tail. Only the type-153 honey puffs carry it; the type-30
     /// web puff (`Collision.cs:3403`) is a bare `NewDust`.
     pub(crate) post_arms: bool,
+    /// The `NewDust` Scale argument — 1.0 for the sticky family, 1.2 for
+    /// `CheckDrowning`'s bubble (`Player.cs:23316`).
+    pub(crate) scale: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -726,6 +731,24 @@ pub struct Player {
     /// `Player.dead`: the player is dead and waiting for the respawn timer
     /// (`Player.cs:38908`).
     pub dead: bool,
+    /// `Player.difficulty` (`Player.cs:1654`): 0 softcore / 1 mediumcore /
+    /// 2 hardcore / 3 journey. `UpdateDead`'s hardcore arm (`:17044-17053`)
+    /// reads it; the session feeds `active_player_difficulty` at spawn
+    /// (the `App::new`/`enter_loaded_world` seam).
+    pub difficulty: u8,
+    /// `Player.ghost` (`Player.cs:1350`): the hardcore dead player keeps
+    /// flying after the timer expires (`UpdateDead` `:17053`, `Ghost()`
+    /// `:6715-6849`). The C# never clears it in SP — a hardcore death is
+    /// permanent until the world reload; the port's `revive` keeps it too.
+    pub ghost: bool,
+    /// `Player.ghostFrame`/`ghostFrameCounter` (`Player.cs:1352-1354`): the
+    /// 4-row ghost sheet animator — 8 ticks per frame (`Ghost()` `:6803-6819`).
+    pub ghost_frame: i32,
+    ghost_frame_counter: i32,
+    /// `Player.immuneAlpha` (`Player.cs:1502`): the death/immunity fade the
+    /// ghost draw's `GetImmuneAlpha` reads (`:54162-54181`). `UpdateDead`
+    /// adds 2 per tick capped at 255 (`:17022-17026`); `Ghost()` zeroes it.
+    pub immune_alpha: i32,
     /// `Player.aggro` (`Player.cs:1446`, the int default 0): the stealth
     /// offset the shared NPC target scan subtracts (`NPC.cs:77688`) and
     /// the facing-inheritance gate reads (`:77749`). The stealth armour
@@ -948,8 +971,22 @@ pub struct Player {
     pub ignore_water: bool,
     /// `Player.accFlipper` (`Player.cs`): the flipper grant the water mounts
     /// share (`:9888`/`:9893`/`:9898`/`:9903`/`:9908`); `ResetEffects` clears
-    /// (`:18361`).
+    /// (`:18361`). The swim-ascent arms read it (`JumpMovement` `:20637`/
+    /// `:20681`); the Flipper 187 (`:15101-15104`), the Diving Gear family
+    /// (`:15198-15262`), the frog boots (`:14426-14438`), the Flipper buff
+    /// 109 (`:10168-10172`), the wet float grant (`UpdateEquips`
+    /// `:13016-13019`) and the merman transformation (`:25583`) re-grant.
     pub acc_flipper: bool,
+    /// `Player.accDivingHelm` (`Player.cs`): the Diving Helmet 268
+    /// (`GrantArmorBenefits` `:13249-13252`) and the Diving Gear family
+    /// 394/1860/1861 (`:15201`/`:15238`/`:15252`) arm it; `ResetEffects`
+    /// clears (`:18331`). `breathCDMax` ×6 reads it (`:3864-3867`).
+    pub acc_diving_helm: bool,
+    /// `Player.itemAnimation > 0` — the sim feeds the swing state each tick
+    /// (the `mana_regen_item_in_use` convention). The `breathCDMax` property
+    /// and `CheckDrowning`'s reed probe gate on `itemAnimation == 0`
+    /// (`Player.cs:3860`/`:23199`).
+    pub item_animation_active: bool,
     /// `Player.canFloatInWater` (`Player.cs:1086`): the Water Strider's
     /// (buff 265) float grant (`:9895-9898`) or the mount item 4404
     /// (`GrantArmorBenefits` `:13265-13267`); `ResetEffects` clears
@@ -2709,6 +2746,11 @@ impl Player {
         };
         Self {
             dead: false,
+            difficulty: 0,
+            ghost: false,
+            ghost_frame: 0,
+            ghost_frame_counter: 0,
+            immune_alpha: 0,
             // The S1-D-3p stock values (`Player.cs:1446`/`:2994`/`:870`'s
             // field defaults): no stealth, no per-type calm, no tank pet.
             aggro: 0,
@@ -3040,6 +3082,8 @@ impl Player {
             rocket_release: false,
             merman: false,
             acc_merman: false,
+            acc_diving_helm: false,
+            item_animation_active: false,
             time_since_last_dash_started: 0,
             cart_mount: 13,
             release_grappling_hooks: false,
@@ -3893,19 +3937,28 @@ impl Player {
         self.sliding = false;
         self.sand_storm = false;
         self.carpet_frame = -1;
-        // `Player.Spawn`'s revive life (`Player.cs:37598-37608`): the pool
-        // is `max(statLifeMax, statLifeMax2)` — the port's single `max_hp`
-        // is the effective max — and the life is `max(pool / 2, 100)`. A
-        // fresh 100-life character revives FULL; the `spawnMax` Journey arm
-        // (`:37609-37611`) has no port counterpart.
-        self.hp = (self.max_hp / 2).max(100).min(self.max_hp.max(100));
-        // `:37658-37666`: the i-frames — `immune = true` (`:37594`) and the
-        // `PlayerSpawnContext.ReviveFromDeath` arm lands 180 (the port's
-        // respawn is always the death revive; the 60 arm rides the other
-        // `PlayerSpawnContext`s).
+        // `Player.Spawn`'s revive life (`Player.cs:37596-37611`): the arm
+        // fires ONLY while `statLife <= 0` — a living spawn keeps its life.
+        // The pool is `max(statLifeMax, statLifeMax2)` — the port's single
+        // `max_hp` is the effective max — and the life is `max(pool / 2,
+        // 100)`. A fresh 100-life character revives FULL; the `spawnMax`
+        // Journey arm (`:37606-37610`) has no port counterpart. The breath
+        // refill (`:37605`) rides the same arm.
+        if self.hp <= 0 {
+            self.hp = (self.max_hp / 2).max(100);
+            self.breath = BREATH_MAX;
+        }
+        // `:37589`: `lavaTime = lavaMax` — the spawn refills the lava budget
+        // unconditionally (the Lava Charm family's 420 ticks).
+        self.lava_time = self.lava_max;
+        // `:37612-37615` + `:37661-37672`: the i-frames — `immune = true`
+        // and the `PlayerSpawnContext.ReviveFromDeath` arm lands 180 (the
+        // port's respawn is always the death revive; the 60 arm rides the
+        // other `PlayerSpawnContext`s — `recall_teleport::spawn_recall`).
+        // `immuneNoBlink` gates on `!hostile` (`:37669-37672`).
         self.immune = true;
         self.immune_time = 180;
-        self.immune_no_blink = true;
+        self.immune_no_blink = !self.hostile;
         self.hurt_cd = 0.0;
         // M4-HAZARD-1 writer census: the C# `Spawn` never writes
         // `hurtCooldowns` (the field's only mentions are `Player.cs:3160`
@@ -3916,7 +3969,6 @@ impl Player {
         // `UpdateDead`'s brain-counter zero (`Player.cs:16932`): the death tail
         // clears the animation window with the rest of the per-life state.
         self.brain_of_confusion_dodge_animation_counter = 0;
-        self.breath = BREATH_MAX;
         self.breath_cd = 0;
         self.regen = RegenState::default();
         self.dot_death = None;
@@ -3999,6 +4051,9 @@ impl Player {
         self.dead = true;
         self.dead_time = 0;
         self.respawn_timer = Player::get_respawn_time(boss_near, expert);
+        // `Player.KillMe`'s fade reset (`Player.cs:38911`): the death fade
+        // climbs from 0 (the ChildSafety 255 arm is gore-only, unported).
+        self.immune_alpha = 0;
         // `Player.KillMe` -> `mount.Dismount` (`Player.cs:38907`).
         let _ = self.dismount(world, true);
         // `Player.KillMe`'s tail (`Player.cs:38868`): the death cue — the
@@ -4006,9 +4061,12 @@ impl Player {
         self.pending_death_sound = Some("Player_Killed");
     }
 
-    /// `Player.GetRespawnTime` (`Player.cs:39060-39082`): 600 base, +600 when
-    /// a boss hinders the respawn, x1.5 in expert. The FTW-multiplier x2 and
-    /// the master-mode path stay with M5-SEED-1 / the master difficulty.
+    /// `Player.GetRespawnTime` (`Player.cs:39060-39093`): 600 base, +600 when
+    /// a boss hinders the respawn (the caller gates that on `netMode != 0 &&
+    /// !pvp`, `:39064-39067` — single-player keeps the base), x1.5 in expert
+    /// (`:39072-39075`). The FTW-multiplier x2 (`:39076-39091`, also
+    /// multiplayer-only) and the master-mode path stay with M5-SEED-1 / the
+    /// master difficulty.
     pub fn get_respawn_time(boss_near: bool, expert: bool) -> i32 {
         let mut time = 600;
         if boss_near {
@@ -4069,8 +4127,8 @@ impl Player {
 
     /// `Player.AllowsRespawnTimerSkip` (`Player.cs:38962-38987`): after the
     /// 90-tick lockout, with no boss hindering, no danger NPCs nearby and
-    /// no Frost/Pumpkin/OOA event running (`:38984-38986`). The
-    /// `ghost`/`pvpDeath` branches stay unreachable in the port.
+    /// no Frost/Pumpkin/OOA event running (`:38984-38986`). The `ghost`
+    /// branch refuses the skip (`:38964-38967`); `pvpDeath` has no port lane.
     pub fn allows_respawn_timer_skip(
         &self,
         boss_near: bool,
@@ -4080,15 +4138,44 @@ impl Player {
         !(self.ghost_like() || self.dead_time < 90 || boss_near || danger_near || moon_event_live)
     }
 
-    /// The port has no ghosts (hardcore) or PVP deaths; both gates are false.
+    /// The `ghost` half of the skip gate (`Player.cs:38964`); the `pvpDeath`
+    /// twin (`:38968`) has no port lane and stays false.
     fn ghost_like(&self) -> bool {
+        self.ghost
+    }
+
+    /// `Main.surviveHardcoreDeath` (`Main.cs:2638-2647`): the Don't-Starve ×
+    /// 10th-anniversary crossover lets a hardcore death revive — unless For
+    /// the Worthy is also on. Every other seed combination keeps the ghost.
+    fn survive_hardcore_death(seeds: tr_core::seeds::SeedFlags) -> bool {
+        seeds.contains(tr_core::seeds::SeedFlags::DONT_STARVE)
+            && seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
+            && !seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY)
+    }
+
+    /// `Player.HardcoreDeathPenalty` (`Player.cs:38775-38787`)'s stat half:
+    /// ONLY inside `Main.surviveHardcoreDeath` does
+    /// `statLifeMax = Math.Max(statLifeMax - 60, 0)` run (`:38779` — the
+    /// floor is 0; the −60 does NOT touch the plain ghost death). Returns
+    /// true when the character survives (`statLifeMax > 0`, `:38780-38784`
+    /// — the caller fires `AchievementsHelper.NotifyProgressionEvent(35)`,
+    /// EXTRA_LIFE); false means `KillMeForGood` (`:38786` — the App-side
+    /// file deletion, `death.rs::hardcore_permadeath`).
+    pub fn hardcore_death_penalty(&mut self, seeds: tr_core::seeds::SeedFlags) -> bool {
+        if Self::survive_hardcore_death(seeds) {
+            self.max_hp = (self.max_hp - 60).max(0);
+            if self.max_hp > 0 {
+                return true;
+            }
+        }
         false
     }
 
     /// `Player.UpdateDead` (`Player.cs:16919-17070`): `deadTime++`, the
     /// respawn decrement clamped to `respawnTimerMax` (3600), and the
     /// jump-press skip while `AllowsRespawnTimerSkip`. Returns true when the
-    /// player should respawn now.
+    /// player should respawn now. `seeds` feeds the hardcore arm's
+    /// `Main.surviveHardcoreDeath` crossover gate (`:17044`).
     /// `Player.UpdateDead`'s visible-accessory clear (`Player.cs:16937` →
     /// `ResetVisibleAccessories` `:31134`): the dead tick drops the visible
     /// shield (the `PlayerFrame` re-derive never runs while dead).
@@ -4098,6 +4185,19 @@ impl Player {
         boss_near: bool,
         danger_near: bool,
         moon_event_live: bool,
+    ) -> bool {
+        self.update_dead_seeded(jump, boss_near, danger_near, moon_event_live, tr_core::seeds::SeedFlags::none())
+    }
+
+    /// The seeded form — the world-sim caller passes `World.seeds`; the bare
+    /// callers keep the no-seed default (the crossover gate stays false).
+    pub fn update_dead_seeded(
+        &mut self,
+        jump: bool,
+        boss_near: bool,
+        danger_near: bool,
+        moon_event_live: bool,
+        seeds: tr_core::seeds::SeedFlags,
     ) -> bool {
         self.dead_time += 1;
         self.shield = -1;
@@ -4116,7 +4216,9 @@ impl Player {
         // reset, exactly like the source).
         self.potion_delay = 0;
         self.mana_potion_delay = 0;
-        self.respawn_timer = (self.respawn_timer - 1).clamp(0, 3600);
+        // `Player.cs:17023-17027`: the death fade climbs 2 per tick to 255
+        // (the ghost draw's `GetImmuneAlpha` and the death text read it).
+        self.immune_alpha = (self.immune_alpha + 2).min(255);
         // `Player.UpdateDead`'s counter reset (`Player.cs:17009-17010`): the
         // budget zeroes while dead — the pool stays until AI_062's dead-owner
         // flag read (M4-PROJ-8 phase 4) despawns the minions.
@@ -4126,6 +4228,21 @@ impl Player {
         // the open container SILENTLY (no sound — the range close's 11 never
         // fires; S1-P-i43). `chestX/Y` stay, exactly like the C#.
         self.chest = crate::bank::CHEST_CLOSED;
+        // `Player.cs:17044-17066`: the hardcore arm — `difficulty == 2 &&
+        // (statLifeMax <= 0 || !Main.surviveHardcoreDeath)` drains the timer
+        // ONLY while it is positive (`:17047-17050`), then latches `ghost`
+        // (`:17053`, `myPlayer` — the port's single player). No revive, no
+        // skip: the ghost flies until the world reloads. Everyone else
+        // decrements unconditionally and revives at 0 (`:17057-17065`).
+        if self.difficulty == 2 && (self.max_hp <= 0 || !Self::survive_hardcore_death(seeds)) {
+            if self.respawn_timer > 0 {
+                self.respawn_timer = (self.respawn_timer - 1).clamp(0, 3600);
+            } else {
+                self.ghost = true;
+            }
+            return false;
+        }
+        self.respawn_timer = (self.respawn_timer - 1).clamp(0, 3600);
         let jump_edge = jump && !self.prev_jump_input;
         self.prev_jump_input = jump;
         let can_skip = self.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);
@@ -4133,6 +4250,117 @@ impl Player {
             return true;
         }
         self.respawn_timer <= 0
+    }
+
+    /// `Player.Ghost` (`Player.cs:6715-6849`): the hardcore dead player's
+    /// free flight — the 7 px/s cap with the 0.2 acceleration and the ×0.9
+    /// opposite-direction brake, the ±0.1 dead-band snap, the 8-tick frame
+    /// animator (4 rows), and the 640 px world-margin clamps (`Main.leftWorld`
+    /// etc. are 0 / width×16 — the `:6822-6847` arms). The controls ride the
+    /// live input (the C# copies `PlayerInput.Triggers` after zeroing).
+    /// `ResetEffects`/`ResetVisibleAccessories` are the per-tick clears the
+    /// living tick already runs — the port's dead branch does not re-derive
+    /// equipment, so the flight needs no stat state (the immune flag clears).
+    pub fn ghost_tick(&mut self, world: &World, input: PlayerInput) {
+        self.immune = false;
+        self.immune_alpha = 0;
+        self.control_up = input.up;
+        self.control_left = input.left;
+        self.control_down = input.down;
+        self.control_right = input.right;
+        self.control_jump = input.jump;
+        // `:6737-6766`: the vertical flight — up/jump ascend, down descends,
+        // the ±0.1 band snaps to rest, everything else brakes ×0.9.
+        let num = 7.0f32;
+        let num2 = 0.2f32;
+        if self.control_up || self.control_jump {
+            if self.vy > 0.0 {
+                self.vy *= 0.9;
+            }
+            self.vy -= num2;
+            if self.vy < -num {
+                self.vy = -num;
+            }
+        } else if self.control_down {
+            if self.vy < 0.0 {
+                self.vy *= 0.9;
+            }
+            self.vy += num2;
+            if self.vy > num {
+                self.vy = num;
+            }
+        } else if self.vy < -0.1 || self.vy > 0.1 {
+            self.vy *= 0.9;
+        } else {
+            self.vy = 0.0;
+        }
+        // `:6767-6796`: the horizontal twin.
+        if self.control_left && !self.control_right {
+            if self.vx > 0.0 {
+                self.vx *= 0.9;
+            }
+            self.vx -= num2;
+            if self.vx < -num {
+                self.vx = -num;
+            }
+        } else if self.control_right && !self.control_left {
+            if self.vx < 0.0 {
+                self.vx *= 0.9;
+            }
+            self.vx += num2;
+            if self.vx > num {
+                self.vx = num;
+            }
+        } else if self.vx < -num2 || self.vx > num2 {
+            self.vx *= 0.9;
+        } else {
+            self.vx = 0.0;
+        }
+        // `:6797`: `position += velocity` — no collision, the ghost passes
+        // through tiles.
+        self.prev_x = self.x;
+        self.prev_y = self.y;
+        self.x += self.vx;
+        self.y += self.vy;
+        // `:6798-6819`: the facing follows the velocity sign; the frame
+        // counter ticks every call and rolls the 4-row sheet every 8.
+        self.ghost_frame_counter += 1;
+        if self.vx < 0.0 {
+            self.facing = -1;
+        } else if self.vx > 0.0 {
+            self.facing = 1;
+        }
+        if self.ghost_frame_counter >= 8 {
+            self.ghost_frame_counter = 0;
+            self.ghost_frame += 1;
+            if self.ghost_frame >= 4 {
+                self.ghost_frame = 0;
+            }
+        }
+        // `:6820-6847`: the 640 px margins. `leftWorld`/`topWorld` are 0,
+        // `rightWorld`/`bottomWorld` the world pixel bounds (`Main.cs:66786-
+        // 66789`'s load-time rebind); the top clamp keeps a −0.1 upward drift.
+        let num3 = 640.0f32;
+        if self.x < num3 {
+            self.x = num3;
+            self.vx = 0.0;
+        }
+        let max_x = world.width as f32 * TILE_PX - num3 - self.width;
+        if self.x > max_x {
+            self.x = max_x;
+            self.vx = 0.0;
+        }
+        if self.y < num3 {
+            self.y = num3;
+            if self.vy < -0.1 {
+                self.vy = -0.1;
+            }
+        }
+        let max_y = world.height as f32 * TILE_PX - num3 - self.height;
+        if self.y > max_y {
+            self.y = max_y;
+            self.vy = 0.0;
+        }
     }
 
     /// `Player.Spawn(ReviveFromDeath)`: the dead flags clear, then the
@@ -6261,6 +6489,33 @@ impl Player {
             }
             // The Rocket Boots (`:15021-15024` - `rocketBoots = 1`).
             128 => self.rocket_boots = 1,
+            // W4-c46 — the Flipper (`Player.cs:15101-15104`): `accFlipper`.
+            187 => self.acc_flipper = true,
+            // W4-c46 — the Diving Gear family (`:15198-15202` 394,
+            // `:15235-15247` 1860, `:15248-15262` 1861): flipper + helm;
+            // the Arctic row also arms the ice skates (the light arms are
+            // the AddLight lanes).
+            394 | 1860 => {
+                self.acc_flipper = true;
+                self.acc_diving_helm = true;
+            }
+            1861 => {
+                self.acc_flipper = true;
+                self.acc_diving_helm = true;
+                self.ice_skate = true;
+            }
+            // W4-c46 — the frog boots (`:14426-14431` Frog Flipper 3994,
+            // `:14432-14438` Frog Gear 3995): the auto-jump / +1.6 / +10
+            // safe-fall row plus `accFlipper` (3995 also +2 spiked boots).
+            3994 | 3995 => {
+                self.auto_jump = true;
+                self.jump_speed_boost += 1.6;
+                self.extra_fall += 10;
+                self.acc_flipper = true;
+                if kind == 3995 {
+                    self.spiked_boots += 2;
+                }
+            }
             // The Spectre Boots (`:15219-15223` - tier 2).
             405 => {
                 self.acc_run_speed = 6.0;
@@ -6746,17 +7001,11 @@ impl Player {
         // the slot's buff grant is the state change.
     }
 
-    /// Direct health loss with no knockback or i-frames, used by drowning and fall
-    /// damage (`statLife -= ...` in `Player.cs`).
-    fn lose_health(&mut self, amount: i32) {
-        if self.hp <= 0 {
-            return;
-        }
-        self.hp = (self.hp - amount).max(0);
-        self.hurt_cd = self.hurt_cd.max(0.8);
-        // No ramp reset here: the C# direct `statLife -=` paths (drowning, fall
-        // damage) leave `lifeRegenTime` untouched.
-    }
+    // W4-c46: `lose_health` was removed — its only caller was
+    // `CheckDrowning`, whose C# source (`Player.cs:23261-23263`) writes
+    // `lifeRegenTime = 0f; statLife -= 2` with NO `immuneTime` write; the
+    // old `hurt_cd.max(0.8)` forcing was the S1-E-13b deviation. The drain
+    // now lives inline in `check_drowning`.
 
     /// `UpdateDyes` (`Player.cs:9587-9614`): the per-tick dye cache, refilled
     /// after the `ResetEffects` clears and before the `UpdateEquips` grants
@@ -7047,6 +7296,12 @@ impl Player {
                 honey_wet: self.honey_wet,
                 lava_wet: self.lava_wet,
                 shimmer_wet: self.shimmer_wet,
+                // W4-c46 — the live transformation flags feed the rebase
+                // (the C# reads the previous tick's state here — the
+                // transformation runs later in `Update`, `:25577`; the
+                // absorbed-state writers are S1-E-16, default false).
+                shimmering: self.shimmering,
+                merman: self.merman,
                 ..WetStaticsFlags::default()
             };
             let (g, mf, jh, js) =
@@ -7094,6 +7349,9 @@ impl Player {
         // re-grant them per tick.
         self.can_float_in_water = false;
         self.acc_flipper = false;
+        // W4-c46 — `ResetEffects`' `accDivingHelm = false` (`Player.cs:18331`):
+        // the helm rows re-grant per tick (`:13251`/`:15201`/`:15238`/`:15252`).
+        self.acc_diving_helm = false;
         self.no_items = false;
         self.cursed = false;
         // `Player.cs:18455`: `empressBrooch = false`.
@@ -7471,6 +7729,12 @@ impl Player {
             if matches!(kind, 2367 | 2368 | 2369 | 5591 | 5592 | 5593) {
                 self.fishing_skill += 5;
             }
+            // W4-c46 — `GrantArmorBenefits`' Diving Helmet row
+            // (`Player.cs:13249-13252`): the head piece 268 arms
+            // `accDivingHelm` (the `breathCDMax` ×6, `:3864-3867`).
+            if kind == 268 {
+                self.acc_diving_helm = true;
+            }
             // `GrantArmorBenefits`' `switch (armorPiece.type)` rows that touch
             // `manaCost` (`Player.cs:13118-13760`): the Magic Hat and Wizard
             // Hat robes (1282-1287, −0.05…−0.15 by tier; the Amber Robe 4256
@@ -7718,6 +7982,12 @@ impl Player {
                 104 => self.pick_speed_bonus += 0.25,
                 // `:9956-9959` — Gills (4): `CheckDrowning` inverts the probe.
                 4 => self.gills = true,
+                // W4-c46 — `:10168-10172` — Flipper (109): `ignoreWater` +
+                // `accFlipper` (the Merfolk buff's swim grant).
+                109 => {
+                    self.ignore_water = true;
+                    self.acc_flipper = true;
+                }
                 // `:9964-9967` — ManaRegeneration (6): `manaRegenBuff = true`.
                 6 => self.mana_regen_buff = true,
                 // `:9968-9976` — MagicPower (7): `magicDamage += 0.2f` (the
@@ -8082,6 +8352,13 @@ impl Player {
         // `UpdateEquips`' second loop (`Player.cs:12946-12952`): the functional
         // accessory pass over the slots 3..10, gated per slot - the seam below.
         self.update_equips();
+        // W4-c46 — `UpdateEquips`' wet float grant (`Player.cs:13016-13019`):
+        // `base.wet && ShouldFloatInWater` arms `accFlipper` (the swim-ascent
+        // trigger the Water Strider / float family rides). The port's `wet`
+        // is water-only (the recorded Phase-4 split).
+        if self.wet && self.should_float_in_water() {
+            self.acc_flipper = true;
+        }
         // `UpdateEquips`' whip-accessory tail (`Player.cs:12970-12984`): the
         // Silver Bracer adds `tagEffectDuration += 2f` and `maxTagEffects++`
         // (`minionDamage += 0f` is a no-op), the Mobius Strip adds
@@ -8223,13 +8500,23 @@ impl Player {
         // player merman; the flight gates read it (`CanUseWingAbilities`
         // `:3994`, `WingAirLogicTweaks` `:26496`). The port folds the C#'s
         // `base.wet` (WetCollision, any liquid) + `!lavaWet` into the
-        // water/honey/shimmer union. The `releaseJump`/`wings = 0`/`accFlipper`
-        // /`AddBuff(34)` siblings are the swim/visual families (out of flight
-        // scope); `accMerman` clears at the reset above (`:25598`).
+        // water/honey/shimmer union. `accMerman` clears at the reset above
+        // (`:25598`); the swim siblings ride the W4-c46 block below.
         let merman_wet = (self.wet || self.honey_wet || self.shimmer_wet)
             && !self.lava_wet
             && (!self.mount.is_active() || !self.mount.is_considered_a_slime_mount());
         self.merman = self.acc_merman && merman_wet;
+        // W4-c46 — the transformation's siblings (`Player.cs:25580-25584`):
+        // `releaseJump = true`, `wings = 0` (the port's `wings_logic`/
+        // `has_wings` pair), `accFlipper = true` and `AddBuff(34, 2)` (the
+        // Merfolk buff — the buff-table arm rides the grant, no effect row).
+        if self.merman {
+            self.release_jump = true;
+            self.wings_logic = 0;
+            self.has_wings = false;
+            self.acc_flipper = true;
+            self.buffs.add_buff(34, 2);
+        }
         // `Player.cs:25714-25717`: the raised shield grants +20 defense —
         // after the equip pass (`UpdateEquips` `:25633`), before the floor
         // below. `shieldRaised` toggles in ItemCheck (`:28283`, after
@@ -8544,10 +8831,53 @@ impl Player {
                     self.jump = 0;
                 } else {
                     self.vy = -self.jump_speed;
-                    self.jump -= 1;
+                    // W4-c46 — `Player.cs:20656-20667`: the merman's held
+                    // jump refreshes the swim window (`swimTime <= 10 → 30`)
+                    // INSTEAD of decrementing the boost — the infinite
+                    // merman ascent; everyone else burns the counter.
+                    if self.merman
+                        && (!self.mount.is_active()
+                            || !crate::mount::is_cart(self.mount.kind()))
+                    {
+                        if self.swim_time <= 10 {
+                            self.swim_time = 30;
+                        }
+                    } else {
+                        self.jump -= 1;
+                    }
                 }
-            } else if self.in_water {
-                self.vy = -2.0;
+            } else if released
+                && self.wet
+                && self.acc_flipper
+                && (!self.mount.is_active() || !crate::mount::is_cart(self.mount.kind()))
+            {
+                // W4-c46 — the swim ascent, `Player.cs:20637`/`:20670`/
+                // `:20681-20688`/`:20760-20767`: `flag2 = wet && accFlipper`,
+                // `flag3 = !mount.Active || !mount.Cart` — the `flag2 &
+                // flag3` term enters the jump branch on the release edge
+                // (the outer `releaseJump` gate, `:20670`), `flag4` arms
+                // `swimTime = 30` once, and the `(velocity.Y == 0 | flag4)`
+                // arm assigns the FULL wet jump statics (`-jumpSpeed` =
+                // −6.01, `jump = jumpHeight` = 30, `Player.cs:24429-24430`)
+                // — the held boost then sustains the ascent. The old
+                // `vy = -2.0` stand-in had no C# counterpart (research/03
+                // S9 — the −2f sites `:21716`/`:50491` are the Rat wall
+                // climb and the umbrella hold, not a swim rule).
+                if self.swim_time == 0 {
+                    self.swim_time = 30;
+                }
+                // `:20749-20754`: the branch's shared rocket disarm + tilt
+                // level; `:20755-20758`: the rest/slide double-jump refill.
+                self.can_rocket = false;
+                self.rocket_release = false;
+                if !self.on_track {
+                    self.full_rotation = 0.0;
+                }
+                if self.vy == 0.0 || self.sliding {
+                    self.refresh_double_jumps();
+                }
+                self.vy = -self.jump_speed;
+                self.jump = self.jump_height;
             } else if self.jump == 0
                 && released
                 && self.can_jump_again.iter().any(|&c| c)
@@ -8694,11 +9024,12 @@ impl Player {
         if !grappling {
             self.hover_dampening();
         }
-        self.vy = self.vy.max(if in_liquid {
-            -(MAX_FALL / 3.0)
-        } else {
-            -MAX_FALL
-        });
+        // W4-c46 (research/03 S9): the old `vy.max(-(MAX_FALL/3))` upward
+        // clamp in liquid had NO C# counterpart — the plain arm (gravDir 1,
+        // `Player.cs:27363-27376`) caps only the DESCENT at `maxFallSpeed`;
+        // the flipped-gravity mirror (`:27378-27391`) caps the ascent, but
+        // the port has no gravity flip. The clamp capped the flipper/merman
+        // swim ascent (−6.01) to −3.33; it is removed with the swim port.
 
         // `Player.cs:28093-28161`: the `Minecart.TrackCollision` slot — it runs
         // before the integration because it snaps Y itself and rewrites the
@@ -12409,30 +12740,90 @@ impl Player {
         self.release_down = !control_down;
     }
 
-    /// `Player.CheckDrowning` (`Player.cs:23191-23281`): the breath only
+    /// `Player.hasBreathingReed` (`Player.cs:4136-4150`): the held item is
+    /// the Breathing Reed (186) — on a mount only when the mount holds items
+    /// (`MountID.Sets.DontHoldItems` = 55/56/61, `MountID.cs:46`).
+    fn has_breathing_reed(&self) -> bool {
+        if self.held_item_kind != 186 {
+            return false;
+        }
+        if self.mount.is_active() {
+            return !matches!(self.mount.kind(), 55 | 56 | 61);
+        }
+        true
+    }
+
+    /// `Player.breathCDMax` (`Player.cs:3855-3869`): 7 base; the held
+    /// Breathing Reed doubles it while no item animation runs (`:3860`),
+    /// the Diving Helm accessory sextuples it (`:3864`) — both stack (42).
+    pub fn breath_cd_max(&self) -> i32 {
+        let mut num = BREATH_CD;
+        if self.has_breathing_reed() && !self.item_animation_active {
+            num *= 2;
+        }
+        if self.acc_diving_helm {
+            num *= 6;
+        }
+        num
+    }
+
+    /// `Player.CheckDrowning` (`Player.cs:23191-23317`): the breath only
     /// drains while the **head** is under the water — the C#'s
     /// `Collision.DrownCollision` probe (`:23193`), not the "any water"
     /// stand-in the port used before S1-E-13b. The drain's shape is the
-    /// C#'s: the breath counter (`breathCD`) reaches `breathCDMax` (7) before
-    /// a tick is taken, and the refill is 3 ticks per tick out of the water.
+    /// C#'s: the breath counter (`breathCD`) reaches `breathCDMax` (the
+    /// property — 7 base, reed ×2, helm ×6) before a tick is taken, and
+    /// the refill is 3 ticks per tick out of the water.
     ///
-    /// The C#'s accessory arms (the Merman armour 250/4275, the breathing
-    /// reed, the shimmering and the mount 4) have no ported counterparts
-    /// yet; the Gills buff (4) arm IS ported (`Player.cs:23226-23229`,
-    /// S1-E-7 wave A): `flag = Main.getGoodWorld && !flag` — on the For the
-    /// Worthy seed the gills invert the probe (air drowns, water breathes).
-    fn check_drowning(&mut self, world: &World) {
-        // `this.gravDir` is -1 for the vanilla gravity — the probe sits at the
-        // head; the NPCs' call passes 1 (the feet).
+    /// The fish-bowl head arm (`GetEffectiveArmor(0)` 250/4275 forces the
+    /// probe true, `:23194-23198`), the reed snorkel probe (`:23199-23224`)
+    /// and the Gills buff (4) arm (`:23226-23229`) are ported; the
+    /// `shimmering` absorbed-state clear (`:23230-23233`) rides the port's
+    /// flag, the mount-4 turtle clear (`:23234-23237`) reads the live mount,
+    /// and `accMerman` (`:23240-23247`) hands the drowning player to the
+    /// merman state instead of draining. The breath-zero gasp (`:23255-
+    /// 23258`) queues once on the 1→0 edge; the −2 damage is the direct
+    /// `statLife -= 2` (`:23263`) — NO `immuneTime` write — with the
+    /// `lifeRegenTime = 0f` reset (`:23261`) and the `ByOther(1)` drowning
+    /// attribution on the kill (`:23268`). The bubble tail (`:23283-23316`)
+    /// draws `Next(20)` even when the dust culls (S1-A-10).
+    fn check_drowning(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
+        // `Player.cs:23193`: the player passes `this.gravDir` — the vanilla
+        // value is 1f (`Player.cs:1956`), NOT the probe's −1f default (that
+        // default serves the flipped-gravity arm; the NPCs' calls pass 1f
+        // explicitly). The port has no gravity flip, so the probe sits at
+        // `position.Y − 2` (the body top) with the floor row at `value3`.
         let mut drowning = crate::collision::drown_collision(
             world,
             self.x,
             self.y,
             self.width as i32,
             self.body_height() as i32,
-            -1.0,
+            1.0,
             false,
         );
+        // `:23194-23198`: the Fish Bowl 250 / Gold Goldfish Bowl 4275 head
+        // forces the drowning flag (`GetEffectiveArmor(0)` — the slot itself,
+        // no loadouts).
+        if matches!(self.equipped[0], 250 | 4275) {
+            drowning = true;
+        }
+        // `:23199-23224`: the held reed's snorkel probe — the tile at the
+        // reed tip; dry and non-solid clears the flag. `gravDir == 1f` keeps
+        // `num2 = 0` and `-44f` ABOVE the position (`:23205-23209`).
+        if self.has_breathing_reed() && !self.item_animation_active {
+            let num = ((self.x + self.width / 2.0 + 6.0 * self.facing as f32) / 16.0) as i32;
+            let num3 = ((self.y - 44.0) / 16.0) as i32;
+            if let Some(t) = world.tile(num, num3) {
+                if t.liquid < 128
+                    && (!t.active()
+                        || !td::TILE_SOLID.has(t.kind)
+                        || td::TILE_SOLID_TOP.has(t.kind))
+                {
+                    drowning = false;
+                }
+            }
+        }
         // `Player.cs:23226-23229`: the Gills buff flips the probe — only the
         // For-the-Worthy seed keeps a drain (in the dry).
         if self.gills {
@@ -12441,9 +12832,29 @@ impl Player {
                 .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
             drowning = good_world && !drowning;
         }
+        // `:23230-23233`: the absorbed `shimmering` state never drowns.
+        // `shimmerWet` alone does NOT clear the flag (the C# tests
+        // `shimmering`, not `shimmerWet`); the absorbed-state writers stay
+        // with S1-E-16 (the shimmer-emergence work), the gate reads the field.
+        if self.shimmering {
+            drowning = false;
+        }
+        // `:23234-23237`: the Turtle mount (4) never drowns.
+        if self.mount.is_active() && self.mount.kind() == 4 {
+            drowning = false;
+        }
+        // `:23240-23247`: `accMerman` (the shell grant) turns the drowning
+        // player merman and swallows the drain (`Main.myPlayer` — the port's
+        // single player).
+        if self.acc_merman {
+            if drowning {
+                self.merman = true;
+            }
+            drowning = false;
+        }
         if drowning {
             self.breath_cd += 1;
-            if self.breath_cd >= BREATH_CD {
+            if self.breath_cd >= self.breath_cd_max() {
                 self.breath_cd = 0;
                 self.breath -= 1;
                 // `Player.cs:23255-23258`: the breath-zero gasp —
@@ -12453,14 +12864,49 @@ impl Player {
                     self.pending_drown_sound = true;
                 }
                 if self.breath <= 0 {
+                    // `:23261`: the ramp resets; `:23263`: the direct −2 —
+                    // the C# writes NO immuneTime here (the port's
+                    // `lose_health` hurt_cd forcing was the deviation).
+                    self.regen.life_regen_time = 0.0;
                     self.breath = 0;
-                    self.lose_health(2);
+                    self.hp = (self.hp - 2).max(0);
+                    if self.hp <= 0 {
+                        // `:23265-23269`: `KillMe(ByOther(1), 10.0, 0)` —
+                        // the drowning attribution the death pass resolves
+                        // (`DeathText.Drowned_*`, `Lang.cs:1060`).
+                        self.dot_death = Some(DotDeath::Drowned);
+                    }
                 }
             }
         } else {
             self.breath = (self.breath + 3).min(BREATH_MAX);
             self.breath_cd = 0;
         }
+        // `:23283-23316`: the bubble tail — `!flag || Next(20) != 0 ||
+        // lavaWet || honeyWet` returns; the C#'s `||` short-circuits, so the
+        // draw happens ONLY while drowning (and never in lava/honey). The
+        // dust spawns at `(position.X + 12*direction, position.Y + 4)` —
+        // `num4 = 0` for the vanilla gravDir (`:23287-23292`) — with the
+        // reed's `(-2*direction, -58)` lift (`:23293-23296`); the mount
+        // MouthPosition arms (52/54) have no ported mouth seam. `NewDust`
+        // (`:23316`): width−8 × 8, type 34, scale 1.2.
+        if !drowning || rng.next_range(0, 20) != 0 || self.lava_wet || self.honey_wet {
+            return;
+        }
+        let mut bx = self.x + 12.0 * self.facing as f32;
+        let mut by = self.y + 4.0;
+        if self.has_breathing_reed() {
+            bx += -2.0 * self.facing as f32;
+            by += -58.0;
+        }
+        self.pending_sticky_dust.push(StickyDust {
+            pos: Vec2::new(bx, by),
+            kind: 34,
+            w: self.width as i32 - 8,
+            h: 8,
+            post_arms: false,
+            scale: 1.2,
+        });
     }
 
     /// `Player.StickyMovement` (`Player.cs:22910-23087`): the cobweb (51) /
@@ -12506,6 +12952,7 @@ impl Player {
                 w: 16,
                 h: 16,
                 post_arms: false,
+                scale: 1.0,
             });
         }
         let tile_type = world.tile(num3, num4).map_or(0, |t| t.kind as i32);
@@ -12599,6 +13046,7 @@ impl Player {
             w: 4,
             h: 16,
             post_arms: true,
+            scale: 1.0,
         };
         self.pending_sticky_dust.push(honey(num4));
         // `:23048-23064`: the row below, gated on `type == 229` and the body
@@ -12623,7 +13071,7 @@ impl Player {
         self.refresh_wet_state();
         let dots = self.derive_dot_inputs(self.buffs.expert_mode);
 
-        self.check_drowning(world);
+        self.check_drowning(world, rng);
 
         // `Player.Update` → `UpdateLifeRegen` / `UpdateManaRegen`
         // (`Player.cs:25977,25995`). The aura/item/grapple inputs stay at their
@@ -12671,24 +13119,22 @@ impl Player {
         // The lava hit and the water extinguish both trail `UpdateLifeRegen` in
         // the original frame (`Player.cs:27630-27761` > `:25977`): a DoT kill
         // this tick wins over the lava hit.
-        // `Player.cs:27681-27722`: the lava timer. Standing in lava drains one
-        // tick of the immunity budget per frame; only when it is empty does the
-        // 80-damage hit land (and grant On Fire for 420). Out of the lava the
-        // budget refills up to `lavaMax` — the Lava Charm family's 420 ticks.
-        // `Player.cs:27676`: `flag25 && !lavaImmune` — ObsidianSkin (buff 1)
-        // keeps the flag true, so the drain/hit arm is skipped AND `flag26`
-        // stays true (the budget refills while standing in lava).
-        // `Player.cs:27674-27719`: `flag26` starts true and clears only while
-        // standing in lava without immunity — the refill arm below reads it
-        // (the budget does NOT refill in lava, even while the Lava counter
-        // gates the drain/hit arm off).
+        // `Player.cs:27673-27722`: the lava timer. W4-c46 — the C#'s `flag26`
+        // starts TRUE and clears ONLY on the `flag25 && !lavaImmune` entry
+        // (`:27676-27678`), so the budget refills (+1/tick, `:27716-27722`)
+        // out of lava AND while lava-immune in it (ObsidianSkin, buff 1);
+        // a non-immune lava stand NEVER refills — the old `else` arm refilled
+        // through the hit-cooldown ticks (the deviation). Standing in lava
+        // drains one tick of the immunity budget per frame; only when it is
+        // empty does the 80-damage hit land (and grant On Fire for 420).
         let mut lava_refill = true;
         if self.in_lava && !self.lava_immune {
             lava_refill = false;
             // `Player.cs:27679`: `hurtCooldowns[ImmunityCooldownID.Lava] <= 0`
             // gates the WHOLE arm — the budget drain AND the hit (M4-HAZARD-1:
             // the Lava lane's own slot, not the General window; a contact
-            // hit's i-frames no longer pause the lava budget).
+            // hit's i-frames no longer pause the lava budget; a live cooldown
+            // skips the drain too, the W4-c46 census).
             if self.hurt_cooldowns[crate::id_tables::IMMUNITY_LAVA as usize] <= 0 {
                 if self.lava_time > 0 {
                     self.lava_time -= 1;
@@ -18708,6 +19154,10 @@ mod tests {
         assert_eq!(p.hp, 100, "a 10-tile fall must not hurt");
     }
 
+    /// The drain cadence with no i-frame interference: the −2 lands exactly
+    /// once per `breathCDMax` frames (`Player.cs:23251-23263`) and writes NO
+    /// `hurt_cd` (the old `lose_health` forcing was the deviation). The
+    /// meter is driven by hand so the standing regen cannot mask the drain.
     #[test]
     fn drowning_drains_breath_and_damages() {
         let mut w = ground_world();
@@ -18720,16 +19170,36 @@ mod tests {
         }
         w.spawn_y = 44;
         let mut p = Player::spawn(&w);
-        for _ in 0..1500 {
+        // Settle on the pool floor first (the fall + the wet entry).
+        for _ in 0..300 {
             p.update(&w, PlayerInput::default());
         }
         assert!(p.in_water);
-        assert_eq!(p.breath, 0, "breath {}", p.breath);
-        assert!(p.hp < 100, "drowning should hurt, hp {}", p.hp);
+        assert!(p.on_ground, "settled on the floor, y={}", p.y);
+        // 70 ticks of the drain: 10 drains × −2, the meter re-armed each
+        // tick so the cadence is the only variable. Driven through
+        // `check_drowning` directly — the standing regen cannot mask it.
+        let hp0 = p.hp;
+        let mut rng = tr_core::UnifiedRandom::new(1);
+        for _ in 0..70 {
+            p.breath = 0;
+            p.check_drowning(&w, &mut rng);
+        }
+        assert_eq!(p.breath, 0);
+        assert_eq!(p.hp, hp0 - 20, "exactly −2 per 7-frame drain");
+        assert_eq!(p.hurt_cd, 0.0, "no i-frame write on the drain");
+        // A breath-zero kill records ByOther(1) (`:23268`).
+        p.hp = 2;
+        p.breath = 1;
+        p.breath_cd = 6;
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(p.hp, 0);
+        assert_eq!(p.dot_death, Some(DotDeath::Drowned));
     }
 
     /// `Player.CheckDrowning` (`Player.cs:23191-23281`): the breath follows
-    /// `Collision.DrownCollision` — the **head** probe, not "any water".
+    /// `Collision.DrownCollision` — the probe at the vanilla `gravDir = 1f`
+    /// position (`position.Y - 2`, the top of the body), not "any water".
     #[test]
     fn the_breath_drains_only_while_the_head_is_under() {
         let pool = |rows: std::ops::Range<i32>| {
@@ -18742,10 +19212,10 @@ mod tests {
             }
             w
         };
-        // The player stands on the ground (row 60): the feet at 960, the head
-        // probe at [931, 943].
+        // The player stands on the ground (row 60): the feet at 960, the
+        // probe at [916, 928] (`position.Y - 2`, `gravDir = 1f`).
         // A shallow pool (row 59 only) — the water's surface is at 944, so
-        // the head stays dry and the breath is untouched.
+        // the probe stays dry and the breath is untouched.
         let mut w = pool(59..60);
         let mut p = Player::spawn(&w);
         p.x = 10.0 * 16.0 + 8.0;
@@ -18754,7 +19224,7 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         assert_eq!(p.breath, BREATH_MAX, "the head stays dry");
-        // A deep pool — the head goes under and the breath runs down.
+        // A deep pool — the probe goes under and the breath runs down.
         let mut w = pool(50..60);
         let mut p = Player::spawn(&w);
         p.x = 10.0 * 16.0 + 8.0;
@@ -18767,6 +19237,574 @@ mod tests {
             "the head is under the water, breath {}",
             p.breath
         );
+    }
+
+    // ---- W4-c46: the breath/drown/swim witnesses ---------------------------
+
+    /// `Player.breathCDMax` (`Player.cs:3855-3869`): 7 base; the held reed
+    /// ×2 only while `itemAnimation == 0`; the helm ×6 — both stack to 42.
+    #[test]
+    fn w4_c46_breath_cd_max_is_the_reed_helm_property() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert_eq!(p.breath_cd_max(), 7);
+        // The reed doubles only while held AND idle.
+        p.held_item_kind = 186;
+        assert_eq!(p.breath_cd_max(), 14);
+        p.item_animation_active = true;
+        assert_eq!(p.breath_cd_max(), 7, "mid-swing: no reed bonus");
+        p.item_animation_active = false;
+        // The helm sextuples; reed + helm stack.
+        p.acc_diving_helm = true;
+        assert_eq!(p.breath_cd_max(), 84, "14 × 6");
+        p.held_item_kind = 0;
+        assert_eq!(p.breath_cd_max(), 42, "7 × 6");
+        // A DontHoldItems mount (55/56/61) refuses the reed (`:4142-4145`).
+        p.held_item_kind = 186;
+        p.mount.set_mount(55, false);
+        assert!(p.mount.is_active());
+        assert_eq!(p.breath_cd_max(), 42, "the Rat holds no reed");
+    }
+
+    /// The drain cadence rides the property: a helm slows the breath loss
+    /// ×6 (`Player.cs:23251` reads `breathCDMax`). Both players settle first,
+    /// then drain from a full meter for exactly 420 ticks — driven through
+    /// `check_drowning` directly so the standing regen cannot mask it.
+    #[test]
+    fn w4_c46_the_helm_slows_the_breath_drain() {
+        let mut w = ground_world();
+        for x in 0..64 {
+            for y in 40..60 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+            }
+        }
+        w.spawn_y = 44;
+        let mut bare = Player::spawn(&w);
+        let mut helm = Player::spawn(&w);
+        helm.equipped[0] = 268; // the Diving Helmet head piece
+        for _ in 0..300 {
+            bare.update(&w, PlayerInput::default());
+            helm.update(&w, PlayerInput::default());
+        }
+        assert!(bare.on_ground && helm.on_ground);
+        assert!(helm.acc_diving_helm, "the helm row grants (:13251)");
+        bare.breath = BREATH_MAX;
+        bare.breath_cd = 0;
+        helm.breath = BREATH_MAX;
+        helm.breath_cd = 0;
+        let mut rng = tr_core::UnifiedRandom::new(1);
+        for _ in 0..420 {
+            bare.check_drowning(&w, &mut rng);
+            helm.check_drowning(&w, &mut rng);
+        }
+        // 420 ticks: bare loses 60 breath (420/7), helm 10 (420/42).
+        assert_eq!(bare.breath, BREATH_MAX - 60);
+        assert_eq!(helm.breath, BREATH_MAX - 10);
+    }
+
+    /// The drowning −2 is a direct `statLife -= 2` with NO i-frame write
+    /// (`Player.cs:23261-23263`): the ramp resets, `hurt_cd` stays untouched,
+    /// and the kill records the `ByOther(1)` drowning attribution. Driven
+    /// through `check_drowning` directly on a settled, submerged player.
+    #[test]
+    fn w4_c46_the_drown_damage_writes_no_iframes() {
+        let mut w = ground_world();
+        for x in 0..64 {
+            for y in 40..60 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+            }
+        }
+        w.spawn_y = 44;
+        let mut p = Player::spawn(&w);
+        for _ in 0..300 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.in_water && p.on_ground);
+        p.breath = 1;
+        p.breath_cd = 6;
+        p.hp = 2;
+        p.regen.life_regen_time = 500.0;
+        let mut rng = tr_core::UnifiedRandom::new(1);
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(p.breath, 0);
+        assert_eq!(p.hp, 0, "the −2 lands");
+        assert_eq!(p.hurt_cd, 0.0, "NO immuneTime write (:23263)");
+        assert_eq!(p.regen.life_regen_time, 0.0, "the ramp resets (:23261)");
+        assert_eq!(p.dot_death, Some(DotDeath::Drowned), "ByOther(1) (:23268)");
+        assert!(p.take_drown_sound(), "the 1→0 gasp edge");
+    }
+
+    /// The reed snorkel probe (`Player.cs:23199-23224`): the tile 44 px ABOVE
+    /// the position, 6 px toward the facing — dry and non-solid clears the
+    /// drowning flag even fully submerged.
+    #[test]
+    fn w4_c46_the_reed_snorkel_reaches_the_air() {
+        let mut w = ground_world();
+        for x in 0..64 {
+            for y in 40..60 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+            }
+        }
+        w.spawn_y = 44;
+        let mut p = Player::spawn(&w);
+        p.held_item_kind = 186;
+        // Settle under the water first (the probe row is wet).
+        for _ in 0..300 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.wet && p.on_ground);
+        // The snorkel tip: x + width/2 + 6*facing, y − 44. With the player
+        // at row ~57 (y ≈ 918), the tip sits at row ~54 — carve an air pocket
+        // there (liquid 0) and the probe clears.
+        let tx = ((p.x + p.width / 2.0 + 6.0 * p.facing as f32) / 16.0) as i32;
+        let ty = ((p.y - 44.0) / 16.0) as i32;
+        let i = w.index(tx, ty);
+        w.tiles[i].liquid = 0;
+        p.breath = 100;
+        p.breath_cd = 6;
+        let mut rng = tr_core::UnifiedRandom::new(1);
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(p.breath, 103, "the snorkel breathes (+3 refill)");
+        // A SOLID tile at the tip keeps the drowning (the `!tileSolid` gate).
+        // The reed doubles breathCDMax to 14, so arm the counter at 13.
+        w.tiles[i].liquid = 255;
+        w.tiles[i].kind = 1;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        p.breath_cd = 13;
+        p.breath = 100;
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(p.breath, 99, "the solid tip blocks the snorkel");
+    }
+
+    /// The fish-bowl head (`Player.cs:23194-23198`): 250/4275 forces the
+    /// drowning flag even in the dry.
+    #[test]
+    fn w4_c46_the_fish_bowl_drowns_on_land() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(!p.wet);
+        p.equipped[0] = 250;
+        p.breath_cd = 6;
+        p.breath = 100;
+        let mut rng = tr_core::UnifiedRandom::new(1);
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(p.breath, 99, "the Fish Bowl drowns in the dry");
+        p.equipped[0] = 4275;
+        p.breath_cd = 6;
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(p.breath, 98, "the Gold Goldfish Bowl too");
+    }
+
+    /// The absorbed-shimmer clear (`Player.cs:23230-23233`) and the Turtle
+    /// mount clear (`:23234-23237`): both swallow the drowning flag even
+    /// with the Fish Bowl forcing it. `shimmerWet` alone does NOT clear it.
+    #[test]
+    fn w4_c46_the_shimmering_and_turtle_never_drown() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.equipped[0] = 250; // force the flag even in the dry
+        p.breath_cd = 6;
+        p.breath = 100;
+        let mut rng = tr_core::UnifiedRandom::new(1);
+        // shimmerWet alone keeps the drain (`shimmering`, not `shimmerWet`).
+        p.shimmer_wet = true;
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(p.breath, 99, "shimmerWet alone does not clear");
+        // The absorbed state clears it.
+        p.shimmering = true;
+        p.breath_cd = 6;
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(p.breath, 102, "shimmering breathes (+3)");
+        p.shimmering = false;
+        p.shimmer_wet = false;
+        // The Turtle mount (4) clears it.
+        p.mount.set_mount(4, false);
+        p.breath_cd = 6;
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(p.breath, 105, "the Turtle never drowns (+3)");
+    }
+
+    /// The bubble tail's RNG census (`Player.cs:23283`): `!flag || Next(20)
+    /// != 0 || lavaWet || honeyWet` — the draw happens ONLY while drowning;
+    /// a dry tick draws NOTHING, and a `Next(20) == 0` queues the type-34
+    /// bubble at `(x + 12*direction, y + 4)` with the reed lift.
+    #[test]
+    fn w4_c46_the_bubble_draws_only_while_drowning() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // Dry: no draw at all.
+        let mut rng = tr_core::UnifiedRandom::new(5);
+        let untouched = rng.clone();
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(rng, untouched, "the dry tick draws nothing");
+        // Drowning (fish bowl): find a seed whose first Next(20) is 0.
+        let mut seed = 0;
+        while tr_core::UnifiedRandom::new(seed).next_max(20) != 0 {
+            seed += 1;
+        }
+        p.equipped[0] = 250;
+        p.facing = 1;
+        let mut rng = tr_core::UnifiedRandom::new(seed);
+        p.check_drowning(&w, &mut rng);
+        let bubbles = p.take_sticky_dust();
+        assert_eq!(bubbles.len(), 1, "the Next(20)==0 bubble");
+        assert_eq!(bubbles[0].kind, 34);
+        assert_eq!(bubbles[0].pos, Vec2::new(p.x + 12.0, p.y + 4.0));
+        assert_eq!((bubbles[0].w, bubbles[0].h), (p.width as i32 - 8, 8));
+        assert!((bubbles[0].scale - 1.2).abs() < 1e-6);
+        // The reed lifts the bubble (−2*direction, −58) (`:23293-23296`).
+        // The lift checks ONLY `hasBreathingReed`; the snorkel clear
+        // (`:23199`) also needs no item animation — mid-swing the snorkel is
+        // down, so the fish-bowl drowning (and the bubble) survives on dry
+        // ground. Without the animation the dry-air tip would clear the flag.
+        p.held_item_kind = 186;
+        p.item_animation_active = true;
+        let mut rng = tr_core::UnifiedRandom::new(seed);
+        p.check_drowning(&w, &mut rng);
+        let bubbles = p.take_sticky_dust();
+        assert_eq!(bubbles.len(), 1);
+        assert_eq!(bubbles[0].pos, Vec2::new(p.x + 10.0, p.y - 54.0));
+        // lavaWet/honeyWet refuse the bubble AFTER the draw (`:23283`).
+        p.honey_wet = true;
+        let mut rng = tr_core::UnifiedRandom::new(seed);
+        p.check_drowning(&w, &mut rng);
+        assert!(p.take_sticky_dust().is_empty(), "honeyWet: no bubble");
+        let mut expect = tr_core::UnifiedRandom::new(seed);
+        expect.next_max(20);
+        assert_eq!(rng, expect, "the draw still happened");
+    }
+
+    /// The swim ascent (`Player.cs:20637-20767`): wet + accFlipper on the
+    /// release edge arms `swimTime = 30` and assigns the FULL wet jump
+    /// statics (−6.01 / 30) — NOT the old −2.0 stand-in. Driven through the
+    /// jump block directly on a settled, submerged player (the velocity is
+    /// read before the tick's gravity integration).
+    #[test]
+    fn w4_c46_the_flipper_swim_uses_the_wet_jump_statics() {
+        let mut w = ground_world();
+        for x in 0..64 {
+            for y in 40..60 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+            }
+        }
+        w.spawn_y = 44;
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 187; // the Flipper
+        for _ in 0..300 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.wet && p.acc_flipper && p.on_ground);
+        assert_eq!(p.jump_height, 30);
+        assert!((p.jump_speed - 6.01).abs() < 1e-5);
+        // Park mid-pool (row 50): no floor under the feet, so the ascent
+        // velocity survives the collision. The swim branch needs the PRESS
+        // edge (`controlJump && releaseJump`, `:20670`) while airborne —
+        // the ground jump would fire first on a grounded player.
+        p.y = 50.0 * 16.0;
+        p.vy = 1.0;
+        p.on_ground = false;
+        p.jump = 0;
+        p.update(&w, PlayerInput { jump: true, ..Default::default() });
+        assert_eq!(p.swim_time, 29, "flag4 arms the window (30, then the frame tick)");
+        // The ascent velocity: −6.01 + the tick's 0.2 gravity.
+        assert!((p.vy - -5.81).abs() < 1e-3, "the full wet ascent: {}", p.vy);
+        assert_eq!(p.jump, 30, "the hold boost arms");
+        // Without the flipper the wet player does NOT swim (no −2 stand-in).
+        let mut q = Player::spawn(&w);
+        for _ in 0..300 {
+            q.update(&w, PlayerInput::default());
+        }
+        assert!(q.wet && !q.acc_flipper);
+        q.y = 50.0 * 16.0;
+        q.vy = 1.0;
+        q.on_ground = false;
+        q.jump = 0;
+        q.update(&w, PlayerInput { jump: true, ..Default::default() });
+        assert_eq!(q.swim_time, 0, "no flipper: no swim window");
+        assert!(q.vy > 0.0, "no flipper: keeps sinking, vy {}", q.vy);
+    }
+
+    /// The merman's held jump refreshes the swim window instead of burning
+    /// the boost (`Player.cs:20656-20667`) — the infinite ascent. The player
+    /// is parked mid-pool (above the floor) so the held boost keeps firing.
+    #[test]
+    fn w4_c46_the_merman_held_jump_refreshes_the_swim_window() {
+        let mut w = ground_world();
+        for x in 0..64 {
+            for y in 40..60 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+            }
+        }
+        w.spawn_y = 44;
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 497; // Neptune's Shell → accMerman
+        for _ in 0..300 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.merman, "the wet shell turns merman");
+        assert!(p.acc_flipper, "the transformation grants the flipper (:25583)");
+        assert!(p.buffs.find_buff_index(34).is_some(), "AddBuff(34, 2) (:25584)");
+        // Park mid-pool (row 50) — no floor under the feet, no ceiling above.
+        p.y = 50.0 * 16.0;
+        p.on_ground = false;
+        p.jump = 5;
+        p.swim_time = 8;
+        p.vy = -3.0;
+        for _ in 0..20 {
+            p.update(&w, PlayerInput { jump: true, ..Default::default() });
+        }
+        assert_eq!(p.jump, 5, "the merman boost never burns: {}", p.jump);
+        assert!(p.swim_time > 10, "the window keeps refreshing: {}", p.swim_time);
+        assert!(p.vy < 0.0, "still ascending: {}", p.vy);
+        // The accMerman drowning hand-off (`:23240-23247`): no breath drain.
+        p.breath = 100;
+        p.breath_cd = 6;
+        let mut rng = tr_core::UnifiedRandom::new(1);
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(p.breath, 103, "the merman never drowns (+3 refill)");
+    }
+
+    /// The respawn life arm fires ONLY at `statLife <= 0`
+    /// (`Player.cs:37596`): a living spawn keeps its life; the dead revive
+    /// halves the pool floored at 100 and refills the lava budget.
+    #[test]
+    fn w4_c46_the_living_spawn_keeps_its_life() {
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.max_hp = 400;
+        p.hp = 150;
+        p.lava_max = 420;
+        p.lava_time = 0;
+        p.respawn();
+        assert_eq!(p.hp, 150, "the living spawn keeps its life");
+        assert_eq!(p.lava_time, 420, "lavaTime = lavaMax (:37589)");
+        p.hp = 0;
+        p.respawn();
+        assert_eq!(p.hp, 200, "the dead revive halves the pool");
+        // immuneNoBlink gates on !hostile (`:37669-37672`).
+        assert!(p.immune_no_blink);
+        p.hostile = true;
+        p.hp = 0;
+        p.respawn();
+        assert!(!p.immune_no_blink, "hostile: no blink suppress");
+    }
+
+    /// W4-c46 — `UpdateDead`'s hardcore arm (`Player.cs:17044-17053`): a
+    /// difficulty-2 death drains the timer ONLY while positive, then latches
+    /// `ghost` — no revive, no jump skip (`AllowsRespawnTimerSkip`'s ghost
+    /// gate, `:38964`). The Don't-Starve × anniversary crossover
+    /// (`Main.surviveHardcoreDeath`, `Main.cs:2638-2647`) revives instead —
+    /// unless For the Worthy is also on.
+    #[test]
+    fn w4_c46_the_hardcore_death_latches_the_ghost() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.difficulty = 2;
+        p.start_death(&w, false, false);
+        p.respawn_timer = 3;
+        for _ in 0..3 {
+            assert!(!p.update_dead(false, false, false, false));
+        }
+        assert_eq!(p.respawn_timer, 0);
+        assert!(!p.ghost, "the drain ticks do not latch yet");
+        // The next tick latches the ghost — and never revives.
+        assert!(!p.update_dead(false, false, false, false));
+        assert!(p.ghost);
+        assert!(p.dead, "the ghost stays dead");
+        // The ghost refuses the skip even past the lockout.
+        p.dead_time = 200;
+        assert!(!p.allows_respawn_timer_skip(false, false, false));
+        // A jump press never revives a ghost.
+        for _ in 0..10 {
+            assert!(!p.update_dead(true, false, false, false));
+        }
+        assert_eq!(p.respawn_timer, 0, "the ghost's timer stays at 0");
+        // Softcore keeps the plain revive.
+        let mut q = Player::spawn(&w);
+        q.start_death(&w, false, false);
+        q.respawn_timer = 1;
+        assert!(q.update_dead(false, false, false, false));
+        // The crossover seed pair revives a hardcore death.
+        let mut r = Player::spawn(&w);
+        r.difficulty = 2;
+        r.start_death(&w, false, false);
+        r.respawn_timer = 1;
+        let crossover = tr_core::seeds::SeedFlags::from(
+            tr_core::seeds::SeedFlags::DONT_STARVE | tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY,
+        );
+        assert!(r.update_dead_seeded(false, false, false, false, crossover));
+        assert!(!r.ghost);
+        // For the Worthy cancels the crossover.
+        let mut s = Player::spawn(&w);
+        s.difficulty = 2;
+        s.start_death(&w, false, false);
+        s.respawn_timer = 1;
+        let ftw = crossover | tr_core::seeds::SeedFlags::FOR_THE_WORTHY;
+        assert!(!s.update_dead_seeded(false, false, false, false, ftw));
+        assert!(!s.ghost, "the timer drained to 0, the ghost latches next tick");
+        assert!(!s.update_dead_seeded(false, false, false, false, ftw));
+        assert!(s.ghost);
+        // The dead tick's fade climbs 2/tick to 255 (`:17023-17027`).
+        let mut t = Player::spawn(&w);
+        t.start_death(&w, false, false);
+        assert_eq!(t.immune_alpha, 0, "KillMe resets the fade (:38911)");
+        for _ in 0..200 {
+            t.update_dead(false, false, false, false);
+        }
+        assert_eq!(t.immune_alpha, 255);
+    }
+
+    /// W4-c46 final — `Player.HardcoreDeathPenalty` (`Player.cs:38775-38787`)'s
+    /// stat half: ONLY inside the survive crossover does the −60 statLifeMax
+    /// run (floor 0); a positive remainder returns true (EXTRA_LIFE fires at
+    /// the App layer), 0 or no crossover returns false (KillMeForGood).
+    #[test]
+    fn w4_c46_the_hardcore_penalty_drains_60_only_inside_the_crossover() {
+        let w = ground_world();
+        let crossover = tr_core::seeds::SeedFlags::from(
+            tr_core::seeds::SeedFlags::DONT_STARVE | tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY,
+        );
+        // No crossover: the pool is UNTOUCHED, the character dies for good.
+        let mut p = Player::spawn(&w);
+        p.max_hp = 400;
+        assert!(!p.hardcore_death_penalty(tr_core::seeds::SeedFlags::none()));
+        assert_eq!(p.max_hp, 400, "no −60 outside the crossover (:38777)");
+        // Crossover: −60, positive remainder survives.
+        assert!(p.hardcore_death_penalty(crossover));
+        assert_eq!(p.max_hp, 340);
+        // The floor is 0 (`Math.Max(statLifeMax - 60, 0)`, :38779): 40 → 0,
+        // and 0 means KillMeForGood even inside the crossover.
+        let mut q = Player::spawn(&w);
+        q.max_hp = 40;
+        assert!(!q.hardcore_death_penalty(crossover));
+        assert_eq!(q.max_hp, 0, "the 0 floor, no negative pool");
+        // Exactly 60 lands on 0 — no survive at the boundary.
+        let mut r = Player::spawn(&w);
+        r.max_hp = 60;
+        assert!(!r.hardcore_death_penalty(crossover));
+        assert_eq!(r.max_hp, 0);
+        // FTW cancels the crossover — the pool stays, death for good.
+        let mut s = Player::spawn(&w);
+        s.max_hp = 500;
+        let ftw = crossover | tr_core::seeds::SeedFlags::FOR_THE_WORTHY;
+        assert!(!s.hardcore_death_penalty(ftw));
+        assert_eq!(s.max_hp, 500);
+    }
+
+    /// W4-c46 — `Player.Ghost` (`Player.cs:6715-6849`): the 0.2 acceleration
+    /// toward the ±7 cap, the ×0.9 opposite brake, the ±0.1 dead-band snap,
+    /// the 8-tick 4-row animator and the 640 px world-margin clamps.
+    #[test]
+    fn w4_c46_the_ghost_flight_caps_brakes_and_clamps() {
+        let w = World::new("t".into(), 200, 200);
+        let mut p = Player::spawn(&w);
+        p.ghost = true;
+        p.x = 1600.0;
+        p.y = 1600.0;
+        // Ascend: 40 ticks of up reaches the −7 cap (0.2/tick).
+        for _ in 0..40 {
+            p.ghost_tick(&w, PlayerInput { up: true, ..Default::default() });
+        }
+        assert!((p.vy - -7.0).abs() < 1e-4, "the ascent cap: {}", p.vy);
+        assert!(p.y < 1600.0);
+        // Release inside the ±0.1 band snaps to rest.
+        p.vy = 0.05;
+        p.ghost_tick(&w, PlayerInput::default());
+        assert_eq!(p.vy, 0.0, "the dead-band snap");
+        // The opposite-direction brake: down while ascending ×0.9 first.
+        p.vy = -4.0;
+        p.ghost_tick(&w, PlayerInput { down: true, ..Default::default() });
+        assert!((p.vy - (-4.0 * 0.9 + 0.2)).abs() < 1e-4, "brake then accel");
+        // The frame animator: 8 ticks per row, 4 rows.
+        p.ghost_frame = 0;
+        p.ghost_frame_counter = 0;
+        for _ in 0..8 {
+            p.ghost_tick(&w, PlayerInput::default());
+        }
+        assert_eq!(p.ghost_frame, 1);
+        for _ in 0..24 {
+            p.ghost_tick(&w, PlayerInput::default());
+        }
+        assert_eq!(p.ghost_frame, 0, "the 4-row wrap");
+        // The left margin clamp (640 px) zeroes the velocity.
+        p.x = 630.0;
+        p.vx = -3.0;
+        p.ghost_tick(&w, PlayerInput::default());
+        assert_eq!(p.x, 640.0);
+        assert_eq!(p.vx, 0.0);
+        // The top clamp keeps the −0.1 drift.
+        p.y = 630.0;
+        p.vy = -5.0;
+        p.ghost_tick(&w, PlayerInput::default());
+        assert_eq!(p.y, 640.0);
+        assert!((p.vy - -0.1).abs() < 1e-5);
+        // The right/bottom margins read the world bounds − 640 − the box.
+        p.x = 200.0 * 16.0;
+        p.vx = 3.0;
+        p.ghost_tick(&w, PlayerInput::default());
+        assert_eq!(p.x, 200.0 * 16.0 - 640.0 - p.width);
+        p.y = 200.0 * 16.0;
+        p.vy = 3.0;
+        p.ghost_tick(&w, PlayerInput::default());
+        assert_eq!(p.y, 200.0 * 16.0 - 640.0 - p.height);
+        // The facing follows the velocity sign (`:6805-6811`).
+        p.vx = 0.0;
+        p.ghost_tick(&w, PlayerInput { right: true, ..Default::default() });
+        assert_eq!(p.facing, 1);
+        p.ghost_tick(&w, PlayerInput { left: true, ..Default::default() });
+        assert_eq!(p.facing, -1);
+    }
+
+    /// W4-c46 — the lava budget's `flag26` semantics (`Player.cs:27673-27722`):
+    /// a non-immune lava stand NEVER refills (the old else-arm refilled
+    /// through the hit-cooldown ticks); the drain sits INSIDE the cooldown
+    /// gate; a lava-immune stand DOES refill.
+    #[test]
+    fn w4_c46_the_lava_budget_refills_only_when_open() {
+        let w = ground_world();
+        let mut rng = tr_core::UnifiedRandom::default();
+        let mut p = Player::spawn(&w);
+        p.max_hp = 500;
+        p.hp = 500;
+        p.lava_max = 420;
+        p.lava_time = 10;
+        p.in_lava = true;
+        p.lava_wet = true;
+        // A live hurt cooldown skips the drain AND the refill.
+        p.hurt_cd = 1.0;
+        p.update_survival(&w, &mut rng);
+        assert_eq!(p.lava_time, 10, "the cooldown gates the drain");
+        // The cooldown free: the drain runs, no refill.
+        p.hurt_cd = 0.0;
+        p.update_survival(&w, &mut rng);
+        assert_eq!(p.lava_time, 9);
+        // The budget empty: the hit lands, still no refill.
+        p.lava_time = 0;
+        p.update_survival(&w, &mut rng);
+        assert_eq!(p.lava_time, 0, "the hit tick does not refill");
+        assert!(p.hp < 500, "the 80-damage hit landed");
+        // Lava-immune in lava: the budget refills (flag26 stays true).
+        p.lava_immune = true;
+        p.lava_time = 10;
+        p.update_survival(&w, &mut rng);
+        assert_eq!(p.lava_time, 11, "immune: the budget refills in lava");
+        // Out of lava: the refill runs for everyone.
+        p.in_lava = false;
+        p.lava_wet = false;
+        p.lava_immune = false;
+        p.update_survival(&w, &mut rng);
+        assert_eq!(p.lava_time, 12);
     }
 
     #[test]

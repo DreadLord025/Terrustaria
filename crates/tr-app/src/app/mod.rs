@@ -2708,6 +2708,12 @@ impl App {
         let font_atlas = new_font_atlas.or_else(|| self.font_atlas.take());
         let settings = self.settings.clone();
         let shot_path = self.shot_path.clone();
+        // W4-c46 — the session character survives the world swap
+        // (`Main.ActivePlayerFileData` is world-independent): the fresh
+        // `App::new` boots `session_draft: None`, which reset the difficulty
+        // to softcore on every Play — the hardcore ghost arm needs the draft.
+        let session_draft = self.session_draft.take();
+        let player_name = self.player_name.clone();
         let audio = std::mem::replace(&mut self.audio, audio::Audio::new(assets::content_dir()));
         let music = std::mem::replace(
             &mut self.music,
@@ -2742,6 +2748,8 @@ impl App {
         self.noise_tex = noise_tex;
         self.water_mask = water_mask;
         self.shot_path = shot_path;
+        self.session_draft = session_draft;
+        self.player_name = player_name;
         // `App::new` builds fresh `None` caches; the decoded halves ride the swap
         // so the next Play is fast too (both are world-independent).
         self.static_sheets = static_cache;

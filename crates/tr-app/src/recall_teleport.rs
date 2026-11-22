@@ -461,6 +461,47 @@ fn spawn_set_position_at_world_spawn(app: &mut App) -> (f32, f32) {
     pos
 }
 
+/// `Player.Spawn_SetPositionAtTeamSpawn` (`Player.cs:37993-38011`) +
+/// `ExtraSpawnPointManager.TryGetExtraSpawnPointForTeam`
+/// (`ExtraSpawnPointManager.cs:18-38`): the team-based-spawns-seed arm of the
+/// `Player.Spawn` position pick (`:37627-37629`) — the bed (`SpawnX >= 0`)
+/// wins first; without one, the player's team indexes the world's
+/// `extra_spawn_points` list (the `.wld` v297 anchors, W4-f45's codec). The
+/// gate chain: `Main.teamBasedSpawnsSeed` (`:37995` + the manager's `:21`),
+/// `team < 0 || team >= extraSpawnPoints.Length` refuses (`:25` — team 0 is
+/// a VALID index: `GenerateExtraSpawns` stamps `extraSpawnPoints[0]` with the
+/// world spawn, `:101`), then the same `Spawn_GetPositionAtSpawn` floor pick
+/// + `Spawn_SetPosition` + moved-and-invalid `ForceClearArea` as the world
+/// arm. Returns the pixel position, or `None` when no team anchor applies
+/// (the C# leaves the position untouched then).
+pub(crate) fn spawn_set_position_at_team_spawn(app: &mut App) -> Option<(f32, f32)> {
+    if !app
+        .world
+        .micro_seeds
+        .contains(tr_core::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS)
+    {
+        return None;
+    }
+    let team = app.player.as_ref()?.team;
+    if team < 0 || team as usize >= app.world.extra_spawn_points.len() {
+        return None;
+    }
+    let (sx, sy) = app.world.extra_spawn_points[team as usize];
+    let (sx, sy) = (sx as i32, sy as i32);
+    let (floor_x, floor_y, moved) = spawn_get_position_at_spawn(&app.world, sx, sy);
+    let height = app.player.as_ref()?.height;
+    let pos = spawn_set_position(floor_x, floor_y, WIDTH, height);
+    if let Some(p) = app.player.as_mut() {
+        p.x = pos.0;
+        p.y = pos.1;
+    }
+    // `:38006-38009`: `flag && !Spawn_IsAreaValidSpawn` → ForceClearArea.
+    if moved && !spawn_is_area_valid_spawn(&app.world, floor_x, floor_y) {
+        spawn_force_clear_area(app, floor_x, floor_y);
+    }
+    Some(pos)
+}
+
 // --- Player.Spawn (RecallFromItem) ------------------------------------------
 
 /// `Player.Spawn(PlayerSpawnContext.RecallFromItem)` (`Player.cs:37534-37710`),
@@ -505,7 +546,8 @@ pub(crate) fn spawn_recall(app: &mut App) {
     // `:37619-37620` spectating = -1 (no port); the camera reads the pre-spawn
     // position (SpectatingCameraPosition, :4082-4093, spectating < 0 → position).
     let old_pos = Vec2::new(p.x, p.y);
-    // `:37621-37634` the position pick: bed Spawn_SetPosition else world spawn.
+    // `:37621-37634` the position pick: bed Spawn_SetPosition, else the
+    // team-based-spawns arm (`:37627-37629`), else world spawn.
     match bed {
         Some((bx, by)) => {
             let (px, py) = spawn_set_position(bx, by, WIDTH, p.height);
@@ -515,7 +557,11 @@ pub(crate) fn spawn_recall(app: &mut App) {
         None => {
             // Spawn_SetPositionAtWorldSpawn writes p.x/p.y itself; re-borrow.
             app.player = Some(p);
-            let _ = spawn_set_position_at_world_spawn(app);
+            // `else if (Main.teamBasedSpawnsSeed)` (`:37627`): the team anchor
+            // wins over the world spawn when the manager has one for the team.
+            if spawn_set_position_at_team_spawn(app).is_none() {
+                let _ = spawn_set_position_at_world_spawn(app);
+            }
             p = app.player.take().unwrap();
         }
     }
@@ -1027,6 +1073,58 @@ mod tests {
         let p = app.player.as_ref().unwrap();
         assert_eq!(p.x, 67.0 * TILE_PX + 8.0 - WIDTH * 0.5, "bed spawn X");
         assert_eq!(p.y, 108.0 * TILE_PX - HEIGHT, "bed spawn feet");
+    }
+
+    /// W4-c46 — `Player.Spawn_SetPositionAtTeamSpawn` (`Player.cs:37993-38011`)
+    /// + `ExtraSpawnPointManager.TryGetExtraSpawnPointForTeam`
+    /// (`ExtraSpawnPointManager.cs:18-38`): the team-based-spawns-seed arm of
+    /// the recall position pick. The seed gate, the team-index bounds (team 0
+    /// IS valid — `GenerateExtraSpawns` stamps `[0]` with the world spawn,
+    /// `:101`), the floor descend, and the bed-first precedence. Written NOT
+    /// run (code-only mode).
+    #[test]
+    fn w4_c46_the_team_spawn_anchor_feeds_the_recall_pick() {
+        // No seed → None even with anchors + a team.
+        let mut app = rig(RECALL_POTION, 5);
+        app.world.extra_spawn_points = vec![(100, 120), (40, 100)];
+        app.player.as_mut().unwrap().team = 1;
+        assert!(spawn_set_position_at_team_spawn(&mut app).is_none(), "the seed gate");
+        // The seed on, team 1 → the second anchor (40, 100) descends to the
+        // floor row 120 (the air above is a valid area, no move flag).
+        app.world
+            .micro_seeds
+            .insert(tr_core::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS);
+        let pos = spawn_set_position_at_team_spawn(&mut app).expect("the team anchor");
+        assert_eq!(pos.0, 40.0 * TILE_PX + 8.0 - WIDTH * 0.5);
+        assert_eq!(pos.1, 120.0 * TILE_PX - HEIGHT);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!((p.x, p.y), pos, "the position lands on the player");
+        // Team out of bounds → None (the manager's `:25` refusal).
+        app.player.as_mut().unwrap().team = 2;
+        assert!(spawn_set_position_at_team_spawn(&mut app).is_none(), "team >= len");
+        app.player.as_mut().unwrap().team = -1;
+        assert!(spawn_set_position_at_team_spawn(&mut app).is_none(), "team < 0");
+        // Team 0 is a VALID index (the world-spawn stamp).
+        app.player.as_mut().unwrap().team = 0;
+        let pos = spawn_set_position_at_team_spawn(&mut app).expect("team 0 is valid");
+        assert_eq!(pos.0, 100.0 * TILE_PX + 8.0 - WIDTH * 0.5);
+        // The full recall pick: the bed wins over the team anchor
+        // (`Player.cs:37621-37629` — SpawnX >= 0 first).
+        crate::test_world_helpers::build_furnished_room(&mut app.world, 60, 100, 12, 9);
+        let i = app.world.index(67, 107);
+        app.world.tiles[i] = Tile { kind: 79, frame_x: 0, frame_y: 0, ..Default::default() };
+        app.world.tiles[i].flags |= FLAG_ACTIVE;
+        app.world.bed_spawn = Some((67, 108));
+        app.player.as_mut().unwrap().team = 1;
+        spawn_recall(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.x, 67.0 * TILE_PX + 8.0 - WIDTH * 0.5, "the bed wins");
+        // No bed → the recall lands on the team anchor, not the world spawn.
+        app.world.bed_spawn = None;
+        spawn_recall(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.x, 40.0 * TILE_PX + 8.0 - WIDTH * 0.5, "the team anchor wins");
+        assert_eq!(p.y, 120.0 * TILE_PX - HEIGHT);
     }
 
     // ---- the mirror arm ----------------------------------------------------

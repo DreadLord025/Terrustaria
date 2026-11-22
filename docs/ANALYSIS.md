@@ -2627,10 +2627,20 @@ The deviations below are deliberate and are the places the port is **not** pixel
   when `statLifeMax2 > statLifeMax > 400`) is unreachable and **not ported**. A fresh
   character has `max_hp = 100`, where the branch cannot trigger; the `Heart2` sheet is
   therefore never drawn.
-* `Player.ghost` (`:39-42`) is not modelled, so a dead player still draws hearts.
-* Breath bubbles are drawn at the heart row without the source's `+32` y offset and use
-  the per-bubble alpha directly rather than `num2` (`:223-241`); the bubble count is
-  correct.
+* `Player.ghost` is modelled now (W4-c46's hardcore lane, `Player.cs:1350`); the
+  breath/lava meters gate on it (`Main.cs:43440`/`:43476`). The hearts/mana still
+  draw for the dead/ghost player — the C# resource set has no dead/ghost
+  early-return (`ClassicPlayerResourcesDisplaySet.Draw`), so that is faithful.
+* Breath bubbles: **W4-c46 sweep landed the full
+  `Main.DrawInterface_Resources_Breath`** (`Main.cs:43406-43513`) — the dead
+  early-return, the lava-suppression flag, the anchor walk (the `+32` row offset,
+  the `gfxOffY`, the open-inventory `< 1000` drop / closed `-100` lift, the
+  options/fancy-UI re-anchors), the per-bubble `num2` grey **as the alpha**, the
+  `breathMax/20` count with the `i > 10` wrap, and the lava **flame** meter
+  (`TextureAssets.Flame`, `lavaMax/10` per flame). The old deviations (no `+32`,
+  alpha 1.0, fixed 10 bubbles, no lava meter) are resolved. The `UIScale` divide
+  (`:43431`) cancels the C#'s `UIScaleMatrix` batch; the port's whole HUD is
+  unscaled (the S1-H-3 deviation above), so the anchor stays raw.
 * `Main.statLifeMax`-driven heart *count* and the per-heart scale/alpha/`Main.cursorScale`
   pulse are ported exactly.
 
@@ -18244,9 +18254,12 @@ Scope notes, none of which change the ported numbers:
   while the port derives them earlier in its tick. The rebase formula is
   exact; the dryв†’wet frame boundary is the swim-ascent seed's (research/03
   S9) territory and is left unverified there.
-- The upward velocity clamp (`-(MAX_FALL/3)` in liquid) is pre-existing
-  port structure, untouched вЂ” the C# plain arm (gravDir 1) caps only the
-  descent; the swim-ascent verification belongs to the S9 seed.
+- The upward velocity clamp (`-(MAX_FALL/3)` in liquid) was pre-existing
+  port structure with NO C# counterpart — **removed by W4-c46** (research/03
+  S9): the C# plain arm (gravDir 1, `Player.cs:27363-27376`) caps only the
+  descent at `maxFallSpeed`; the ascent cap lives in the flipped-gravity
+  mirror (`:27378-27391`), which the port has no gravity flip for. The clamp
+  had capped the flipper/merman swim ascent (−6.01) to −3.33.
 
 ## The liquid reactions (R-11-5, 2026-11-13)
 
@@ -39972,3 +39985,245 @@ read from the pushed tips: f3 `4d820f7d`/`b9575da6`, g64 `77616a7d`, d70
 `ee4905939`. 6 new witnesses WRITTEN NOT RUN (`player.rs` x1 orb-orbit,
 `hurt_modifiers.rs` x2 frost/bone, `projectile_ai_misc.rs` x2 burst
 bodies, `render/player_layers.rs` x1 orb draw) — 20 total.
+## The respawn / breath / drowning / swim wave (W4-c46, task/W4-c46-respawn-breath-drown, 2026-11-21, code-only mode)
+
+research/03 seeds S3/S4/S5/S6/S9 landed in one wave; the per-block C#
+citations ride the code (`player.rs::respawn`/`check_drowning`/
+`breath_cd_max`/the jump block, `death.rs::drop_coins`,
+`world_sim/npcs.rs`'s death pass).
+
+- **Respawn (S5)**: the revive life is `max(max_hp/2, 100)` gated on
+  `hp <= 0` (`Player.cs:37596-37611` — a LIVING spawn keeps its life; the
+  old unconditional refill over-healed every recall). Breath rides the
+  same arm; `lavaTime = lavaMax` is unconditional (`:37589`); the 180
+  i-frames carry `immuneNoBlink = !hostile` (`:37669-37672`). The 60-frame
+  non-death spawn contexts ride `recall_teleport::spawn_recall`.
+- **Expert (S6)**: the death pass's `expert = false` hardcode is gone —
+  `buffs.expert_mode` (the `world_sim/items.rs:176` mirror convention)
+  feeds `start_death` (×1.5 timer) and `drop_coins` (expert keeps stack/4,
+  `Player.cs:54271-54274`). The boss +600 gates on `Main.netMode != 0`
+  (`:39064-39067`): the port's `NetRole::Off` ⇔ SP keeps the 600 base.
+  Master (keeps 0) stays with the unported difficulty.
+- **breathCDMax (S3)**: the property (`Player.cs:3855-3869`) — 7 base,
+  ×2 held Breathing Reed while `itemAnimation == 0`, ×6 Diving Helm, both
+  stack (42/84). `has_breathing_reed` (`:4136-4150`) refuses the reed on
+  the DontHoldItems mounts 55/56/61 (`MountID.cs:46`). Grants: helm 268
+  (head), 394/1860/1861 (flipper+helm accessories), frog 3994/3995, buff
+  109 (Flipper: ignoreWater+accFlipper), the wet-float grant
+  (`:13016-13019`). `item_animation_active` feeds from the tick's
+  `item_in_use` (`world_sim/player.rs`).
+- **Drowning (S4)**: `check_drowning` (`Player.cs:23191-23317`) walks
+  `collision::drown_collision` with the vanilla `gravDir = 1f`
+  (`Player.cs:1956`) — the old `-1` call misread the probe's default as
+  the player's gravity and probed mid-body. Fish-bowl 250/4275 forces the
+  flag; the reed snorkel tip (`x + width/2 + 6*facing`, `y − 44`) clears
+  it on dry non-solid air while no item animation runs; Gills/FTW invert;
+  mount 4 clears; accMerman hands off to merman. The −2 is a DIRECT
+  `hp -= 2` with `lifeRegenTime = 0` and NO immuneTime write
+  (`:23261-23263`) — `lose_health` (whose `hurt_cd = max(…, 0.8)` forcing
+  was the deviation) is deleted; drowning was its only caller. The kill
+  records `DotDeath::Drowned` (`ByOther(1)`), resolved to
+  `DeathText.Drowned_1..7` (`Lang.cs:1060`). The bubble tail draws
+  `Next(20)` ONLY while drowning (the C# `||` short-circuit, `:23283`);
+  the type-34 bubble carries Scale 1.2 through the new `StickyDust.scale`
+  field (the drain in `world_sim/player.rs` passes it to
+  `DustPool::new_dust`). The `shimmering` absorbed-state clear
+  (`:23230-23233`) reads the existing default-false field — the
+  absorbed-state WRITERS stay with the shimmer-emergence work (S1-E-16);
+  the mount-mouth bubble arms (52/54) have no ported mouth seam.
+- **Swim (S9)**: the invented `vy = -2.0` in-water ascent is replaced by
+  the C# `flag2 & flag3` branch (`Player.cs:20637-20638`/`:20670`/
+  `:20681-20688`/`:20760-20767`): on the jump release edge,
+  `wet && accFlipper && !cart` arms `swimTime = 30` once and assigns the
+  FULL wet statics (−6.01 / 30). The merman's held jump refreshes
+  `swimTime <= 10 → 30` instead of burning `jump` (`:20656-20667` — the
+  infinite ascent). The transformation siblings landed (`:25580-25584`):
+  `releaseJump = true`, wings cleared, `accFlipper = true`,
+  `AddBuff(34, 2)`. The invented `-(MAX_FALL/3)` upward clamp in liquid
+  is REMOVED (see the rebase note above — the gravDir-1 arm caps only the
+  descent).
+
+### RNG order (S1-A-10 contract)
+
+- The bubble tail's `Next(20)` (`Player.cs:23283`) now draws ONLY while
+  the drowning flag survives every clear — the dry tick draws NOTHING
+  (the old port had no bubble at all); lavaWet/honeyWet cull the dust
+  AFTER the draw. Stream: the caller's survival rng (UpdatePlayers).
+- The death-text variant roll (`Lang.cs:1057-1127`): the single-variant
+  rows (Poisoned/Slain/Spored) draw NOTHING — the C# switch has no
+  `Main.rand` call for them; the old port drew `Next(1)` anyway (one
+  wasted stream step per poison/spore death). Drowned rolls one
+  `Next(7) + 1` on UpdatePlayers.
+
+### Verification
+
+Code-only: every block re-read against the cited C# windows
+(`Player.cs:3855-3869/4136-4150/23191-23317/37534-37710/38807-38960/
+39060-39093/20630-20767/24380-24437/25577-25598/27330-27404`,
+`Collision.cs:1383-1432`, `Lang.cs:1045-1127`, `MountID.cs:46`). The 13
+new `w4_c46_*` witness tests (player.rs 10, death.rs 1, world_sim/npcs.rs
+2) plus the two rewritten drowning tests are WRITTEN, NOT RUN — no
+cargo/rustc/rustfmt/tests/graphify invoked. (The phase-1 commit message's
+"12 witnesses" predates the shimmering/turtle witness — 13 is the count
+at landing.)
+
+## The respawn/breath residual sweep (W4-c46, 2026-11-21, code-only mode)
+
+The five residuals the wave left, censused and resolved:
+
+1. **Breath meter (draw-side)** — `ui/resources.rs::draw_breath` was a
+   10-fixed-bubble stand-in. The full `Main.DrawInterface_Resources_Breath`
+   (`Main.cs:43406-43513`) landed: the dead early-return (`:43409`), the
+   lava-suppression flag (`:43413-43420` — `lavaTime < lavaMax && (lavaWet
+   || breath == breathMax)` hides the bubbles), the ghost gates
+   (`:43440`/`:43476`), the anchor walk (`:43421-43438` — `Top + gfxOffY`,
+   the open-inventory `< 1000` `height - 20` drop, the closed/tall `-100`
+   lift, the options `centre + 236` / fancy-UI `screenHeight - 64`
+   re-anchors), the per-bubble grey `30 + 225*num4` / scale `num4/4 + 0.75`
+   floors with **alpha = grey** (`:43446-43473` — the old alpha 1.0 was
+   wrong), the `breathMax/20` count + `i > 10` `-260/+26` wrap + the `+32`
+   row offset, and the **lava flame meter** (`:43476-43512`,
+   `TextureAssets.Flame` 22×22, `lavaMax/10` per flame). The `UIScale`
+   divide cancels the C# batch transform; the port's HUD is unscaled
+   (S1-H-3), so the anchor stays raw. `draw_hud` feeds the
+   inventory/options/bestiary state. 2 witnesses.
+2. **Respawn timer UI** — the death screen + countdown were already ported
+   (BUG-06), but the countdown drew at scale 1.0 (C# `num2 = 0.7`,
+   `Main.cs:45384`) and every line drew full-bright. `GetDeathAlpha`
+   (`Player.cs:54198-54213` — `immuneAlpha*0.9/0.5/0.5/0.4` byte-truncated,
+   alpha clamped) now tints every `DrawInterface_35_YouDied` line; the fade
+   rides `UpdateDead`'s `immuneAlpha += 2`/tick (the hardcore lane's field,
+   8816f3dc2). The skip prompt's ramp multiplies the fade alpha
+   (`Main.cs:45355`). 1 witness.
+3. **extraSpawnPoints consumer** — f45's `.wld` v297 codec (143406272, its
+   own branch) lands `World.extra_spawn_points`; this sweep adds the
+   consumer: `Spawn_SetPositionAtTeamSpawn` (`Player.cs:37993-38011`) +
+   `TryGetExtraSpawnPointForTeam` (`ExtraSpawnPointManager.cs:18-38`) in
+   `recall_teleport.rs`, wired into `spawn_recall`'s position pick
+   (`:37621-37633`, bed-first) and the revive path. The gate chain: the
+   `teamBasedSpawnsSeed` micro-seed, `team < 0 || team >= len` refuses,
+   **team 0 IS valid** (`GenerateExtraSpawns` stamps `[0]` with the world
+   spawn, `:101`), then the same floor pick + moved-and-invalid
+   `ForceClearArea` as the world arm. The bed-spawn validity
+   (`CheckSpawn`, `Player.cs:54533-54590`) was already ported
+   (`editing/doors.rs::bed_spawn_valid`/`check_bed_spawn` — the bounds, the
+   bed tile above, the 3×3 obstruction box, the room check). 1 witness.
+4. **Mediumcore drop-all** — already fully ported (S1-P-i51,
+   `death.rs::drop_items`' `gems_only == false` arm: the starter tools air,
+   the whole inventory + coin/ammo rows + cursor + armor/dye/misc arrays
+   drop, the starter re-grant rolls `Prefix(-1)`; the purse stays whole,
+   `KillMe` `:38925`'s difficulty gate). The
+   `mediumcore_death_drops_the_whole_carry_and_regrants_the_tools` witness
+   pins the drop kinds, the RNG order and the re-grant. **No new code** —
+   verified against `Player.cs:54302-54362`/`:38863`/`:38925-38936`.
+5. **Hardcore ghost** — BIG, landed by the concurrent hardcore lane
+   (8816f3dc2): `Player.Ghost()`'s free flight (`Player.cs:6715-6849` — the
+   7 cap / 0.2 accel / ×0.9 brake / ±0.1 dead-band / 8-tick 4-row animator /
+   640 px world margins), `UpdateDead`'s difficulty-2 arm (`:17044-17066` —
+   drain-only-while-positive then the ghost latch, the
+   `Main.surviveHardcoreDeath` Don't-Starve × anniversary crossover minus
+   FTW, `Main.cs:2638-2647`), the skip refusal (`:38964`), and
+   `DrawGhost`'s 3 velocity trails + `GetImmuneAlpha` tint
+   (`LegacyPlayerRenderer.cs:274-281`/`:514-524`). The remaining ghost
+   surface — the **file deletion** (`KillMeForGood`, `Player.cs:38789-
+   38805`) and the `HardcoreDeathPenalty` `-60 statLifeMax` survive arm
+   (`:38775-38787`) — landed in the FINAL phase below (4445a1459); the
+   `.plr` read/write walk itself stays the f44-family persistence lane.
+
+### Verification (sweep)
+
+Code-only: every block re-read against the cited C# windows
+(`Main.cs:43406-43513`/`:45322-45390`, `Player.cs:54198-54213`/
+`:37993-38011`/`:54533-54590`/`:54302-54362`,
+`ExtraSpawnPointManager.cs:18-38`/`:91-113`). The 4 new `w4_c46_*` witness
+tests (resources.rs 2, ui/mod.rs 1, recall_teleport.rs 1) are WRITTEN, NOT
+RUN — no cargo/rustc/rustfmt/tests/graphify invoked.
+
+## The respawn-family FINAL phase (W4-c46, 2026-11-21, code-only mode)
+
+The c46 family's closing phase: the hardcore permadeath (the death-side half
+of the persistence lane) and the ghost-HUD census gaps. The full census table
+and the ghost line-by-line live in `docs/research/03-player-core.md` ("The
+respawn-family FINAL census"); this section records the deviations.
+
+### The hardcore permadeath (4445a1459)
+
+`KillMe` `:38864-38866`'s `myPlayer && difficulty == 2` gate calls
+`HardcoreDeathPenalty` AFTER `DropItems`. The port wires it in
+`death.rs::on_player_death` at the same position:
+
+* **Stat half** — `player.rs::hardcore_death_penalty`: ONLY inside
+  `Main.surviveHardcoreDeath` (the Don't-Starve × anniversary crossover minus
+  FTW, `Main.cs:2638-2647`) does `statLifeMax = max(statLifeMax - 60, 0)` run
+  (`Player.cs:38779` — the floor is 0; the plain ghost death does NOT lose
+  60). A positive remainder returns true → the App glue fires
+  `notify_progression_net(35)` (EXTRA_LIFE, `:38782`).
+* **File deletion** — `player_file.rs::kill_player_files` +
+  `death.rs::kill_me_for_good`: the `Exists`-then-`Delete` pair on
+  `Main.playerPathName` (`Main.cs:2857` = `ActivePlayerFileData.Path`) then
+  `path + ".bak"` (`Player.cs:38795-38802`). `backup_path` is the STRING
+  CONCAT (`Belsin.plr.bak`), not a `with_extension` swap — the C# uses the
+  concat at `:54732`/`:38799`/`:55873`. The path resolves through
+  `save::default_player_path(session_draft.name)` — the same path
+  `save_created_character` writes. A disk-less session stand-in resolves a
+  non-existent path, so the `Exists` guard deletes nothing (the C# shape).
+
+**Deviation 1 — the recycle bin.** `FileUtilities.Delete` without
+`forceDeleteFile` routes to `IPathService.MoveToRecycleBin`
+(`FileUtilities.cs:23-37`); the port deletes outright. The same deviation
+`save_list::erase_player` already documents (no recycle-bin API).
+
+**Deviation 2 — the `ActivePlayerFileData = new PlayerFileData()` reset
+(`Player.cs:38803`) is NOT ported.** In C# the reset swaps the *file-data*
+singleton, but `Main.player[myPlayer]` still points at the OLD `Player`
+object — its `difficulty` stays 2, so `UpdateDead` still latches the ghost.
+The port derives `Player.difficulty` from `session_draft` every tick
+(`world_sim/player.rs:638`); clearing the draft would reset the live
+difficulty to 0 and break the ghost latch the sibling lane landed
+(8816f3dc2). The reset's only SP-observable effect is menu-side (the
+character select shows no active player), which the port's disk re-list
+already reflects once the file is gone. The `!ServerSideCharacter` gate
+(`:38792`) and the `IsCloudSave` arm have no port carriers (no server-side
+characters, no cloud saves) — the deletion always runs on the local path.
+
+**Lane boundary.** The f44-family owns the `.plr` read/write walk
+(`SavePlayer`'s `.bak` copy `:54732`, `LoadPlayer`'s corrupt-restore
+`:55873-55875`); THIS phase owns only the death-side DELETE call. The
+`backup_path` helper is shared — the persistence lane can reuse it.
+
+### The ghost-HUD gates (2802ed5b9)
+
+The ghost census (`Player.cs:6715-6849` vs `player.rs::ghost_tick`) found the
+SP flight behaviourally complete; the gaps were in the HUD consumers:
+
+* **`GUIHotbarDrawInner`'s early-return** (`Main.cs:43588`:
+  `playerInventory || LocalPlayer.ghost || spectating >= 0`). The port's
+  closed hotbar drew for the ghost. Now: the hotbar row AND the selected-item
+  name skip (`ui/mod.rs` — the name draw moved INSIDE the closed arm, where
+  the C# has it; the old port drew it even with the inventory open), the
+  closed-hotbar hover refuses (`ui/mod.rs` `hover_item` +
+  `clicks.rs::slot_at_mouse`), and the scale lerp freezes
+  (`frame/world.rs` — it lives inside the function, `:43604-43611`).
+  `spectating` has no port field (SP has no spectate).
+* **`GetPlayerHeadBordersColor`'s ghost/dead arm** (`Main.cs:56612-56615`):
+  `Color.Transparent` for ghost/dead, else `teamColor[0]` (White in SP). The
+  map-head border was hardcoded White; now it reads the arm
+  (`frame/draw.rs`).
+
+**Ghost residuals (documented, not blocking):** the unmodelled `spectating`
+field (no SP effect), the `!drawingPlayerChat && !editSign && !editChest &&
+!blockInput` input gate (`Player.cs:6729` — the port's ghost arm reads
+movement keys even with the chat open; minor), and the net-sync calls
+(`TrySyncingInput`/`UpdateNetOffset`, SP out of scope).
+
+### Verification (FINAL)
+
+Code-only: every block re-read against the cited C# windows
+(`Player.cs:38775-38805`/`:38864-38866`/`:6715-6849`,
+`Main.cs:43588`/`:56610-56618`/`:2857`, `FileUtilities.cs:14-37`,
+`LegacyPlayerRenderer.cs:274-281`/`:514-524`). The 3 new `w4_c46_*` witnesses
+(player.rs penalty, death.rs file-delete, frame.rs ghost-hotbar) are WRITTEN,
+NOT RUN — no cargo/rustc/rustfmt/tests/graphify invoked. The ghost-sibling
+(8816f3dc2 → 6d8fc54c3) was probed live via mtimes + origin tip before each
+write; its pending respawn-skip edit landed as 6d8fc54c3 and was not
+disturbed.
