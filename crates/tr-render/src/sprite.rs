@@ -56,6 +56,14 @@ pub struct SpriteInstance {
     /// batches (`Main.cs:27457-27494`); the port keeps one buffer and splits
     /// each range into contiguous blend runs in `draw_ranges` (S1-G-3).
     pub blend: u32,
+    /// The `TileBatch` layered-batch sort key (S1-G-11, research/41 D-3/D-11)
+    /// as `[lo, hi]` words of [`crate::batch::sort_key`]'s u64 — CPU-only:
+    /// `draw_ranges` stably reorders each blend run by it before upload and
+    /// the GPU layout never reads it (the vertex attributes stop at `blend`,
+    /// the trailing 8 bytes ride the stride). `[0, 0]` = unlayered: keeps
+    /// push order, the frozen pre-S1-G-11 default. Two u32 words instead of
+    /// a u64 keep the struct 4-aligned with no implicit padding (Pod).
+    pub sort: [u32; 2],
 }
 
 /// The sprite pipeline's blend batches (S1-G-3, research/41 D-2). The vanilla
@@ -166,7 +174,10 @@ pub struct RenderStats {
 /// blend-run splits inside a range: each contiguous [`BlendMode`] run is its
 /// own draw, so a range holding the Lightsbane multiply/additive batches
 /// (`Main.cs:27457-27494`) costs up to 3 draws instead of 1 (up to 8 per
-/// frame when both batches are live).
+/// frame when both batches are live). S1-G-11 reorders instances inside a
+/// blend run by the TileBatch sort key before upload (`batch.rs`), never
+/// across runs: the blend-batch boundaries stay exactly where the C# put
+/// them, and an all-zero-key range uploads byte-identically to before.
 pub const PASS_BUFFERS: usize = 6;
 
 pub struct SpriteRenderer {
@@ -215,6 +226,23 @@ pub struct SpriteRenderer {
     pub map: Vec<SpriteInstance>,
     pub ui: Vec<SpriteInstance>,
     pub sheets: HashMap<String, [f32; 4]>,
+    /// S1-G-11: stable per-sheet texture ids for the `TileBatch` sort —
+    /// sheet names in lexicographic order, 1-based (0 stays "no sheet").
+    /// The vanilla id is the pass-local first-use ordinal
+    /// (`TileBatch.cs:513-521`); the port's stable ids keep the sort
+    /// deterministic across runs and atlas repacks (batch.rs deviation 1).
+    sheet_ids: HashMap<String, u32>,
+    /// Reverse-lookup cache for [`Self::sheet_id_at`]: the last resolved
+    /// `(normalized rect, id)`. Consecutive tile draws ride the same sheet,
+    /// so the linear scan almost never runs.
+    last_sheet: Option<([f32; 4], u32)>,
+    /// The world range's `TileBatch` cursor (`TileBatch.cs:117-119`):
+    /// `None` = layered sorting never armed — every world instance keeps
+    /// sort key 0 and the upload is the frozen push-order copy. The first
+    /// [`Self::set_tile_layer`] enables it (`SetLayerStack`'s
+    /// `_layeredSortingEnabled` latch, `:246-253`); [`Self::end_tile_batch`]
+    /// resets it (`End`/`FlushLayered`, `:717-724`).
+    world_cursor: Option<crate::batch::BatchCursor>,
     pub atlas_size: (u32, u32),
     pub font_glyph_px: f32,
     /// RGB split applied to the world pass (light mode "Trippy"); 0 disables it.
@@ -504,6 +532,17 @@ impl SpriteRenderer {
             );
         }
 
+        // S1-G-11: stable per-sheet batch ids — lexicographic name order,
+        // 1-based. The vanilla id is the pass-local first-use ordinal
+        // (`TileBatch.cs:513-521`); the stable order is batch.rs deviation 1.
+        let mut names: Vec<&String> = sheets.keys().collect();
+        names.sort();
+        let sheet_ids: HashMap<String, u32> = names
+            .into_iter()
+            .enumerate()
+            .map(|(i, n)| (n.clone(), i as u32 + 1))
+            .collect();
+
         let font = atlas.sheet("__font").expect("font sheet");
         let font_uv0 = [
             font.x as f32 / atlas.width as f32,
@@ -544,6 +583,9 @@ impl SpriteRenderer {
             map: Vec::with_capacity(8),
             ui: Vec::with_capacity(8 * 1024),
             sheets,
+            sheet_ids,
+            last_sheet: None,
+            world_cursor: None,
             atlas_size: (atlas.width, atlas.height),
             font_glyph_px: font_glyph_px as f32,
             aberration: 0.0,
@@ -735,8 +777,77 @@ impl SpriteRenderer {
         ])
     }
 
+    /// S1-G-11: the stable texture id of a sheet for the `TileBatch` sort.
+    /// The vanilla id is the texture's first-use ordinal within the pass
+    /// (`TileBatch.cs:513-521`); the port assigns lexicographic 1-based ids
+    /// so the order is deterministic across runs and atlas repacks
+    /// (batch.rs deviation 1). 0 = unknown sheet.
+    pub fn sheet_batch_id(&self, sheet: &str) -> u32 {
+        self.sheet_ids.get(sheet).copied().unwrap_or(0)
+    }
+
+    /// The sheet id whose atlas rect contains `uv0` — the reverse of
+    /// [`Self::uv`], so a push that only carries UVs still lands on its
+    /// source sheet's batch. Cached on the last hit (tile runs ride one
+    /// sheet); the scan ([`crate::batch::sheet_at`]) picks the lowest id on
+    /// the impossible overlap so the result never depends on `HashMap`
+    /// iteration order.
+    fn sheet_id_at(&mut self, uv0: [f32; 2]) -> u32 {
+        if let Some((rect, id)) = self.last_sheet {
+            if crate::batch::sheet_rect_contains(&rect, uv0, self.atlas_size) {
+                return id;
+            }
+        }
+        let entries = self
+            .sheets
+            .iter()
+            .map(|(name, rect)| (self.sheet_batch_id(name), rect));
+        match crate::batch::sheet_at(entries, uv0, self.atlas_size) {
+            Some((id, rect)) => {
+                self.last_sheet = Some((rect, id));
+                id
+            }
+            None => 0,
+        }
+    }
+
+    /// `TileBatch.SetLayer` (`TileBatch.cs:235-242`) on the world range:
+    /// arm the layer for the next world push. The first call enables
+    /// layered sorting (`SetLayerStack`'s latch, `:246-253`); until then
+    /// every world instance keeps sort key 0 — the frozen push-order
+    /// composite. Layer constants: [`crate::batch`]'s `LAYER_*`.
+    pub fn set_tile_layer(&mut self, layer: u32, stack: u8) {
+        let stack = crate::batch::layer_stack(layer, stack);
+        self.world_cursor
+            .get_or_insert_with(Default::default)
+            .set_layer(stack);
+    }
+
+    /// `TileBatch.End`'s state reset (`TileBatch.cs:540`, `:717-724`):
+    /// disarm layered sorting; subsequent world pushes are unlayered again.
+    /// The instances already pushed keep their keys — the flush itself is
+    /// `draw_ranges`' stable reorder.
+    pub fn end_tile_batch(&mut self) {
+        self.world_cursor = None;
+    }
+
+    /// The sort key a world push lands on (`GetNextSpriteIndex`,
+    /// `TileBatch.cs:421-439`): unlayered ranges stay 0; otherwise the
+    /// cursor resolves the armed layer / texture-change auto-increment and
+    /// the key composes with the sheet's stable id.
+    fn world_sort(&mut self, uv: [f32; 4]) -> [u32; 2] {
+        if self.world_cursor.is_none() {
+            return [0, 0];
+        }
+        let tex = self.sheet_id_at([uv[0], uv[1]]);
+        let cursor = self.world_cursor.as_mut().expect("checked above");
+        let key = crate::batch::sort_key(cursor.take_layer(tex), tex);
+        [key as u32, (key >> 32) as u32]
+    }
+
     pub fn push_sprite(&mut self, pos: [f32; 2], size: [f32; 2], uv: [f32; 4], color: [f32; 4]) {
         probe(pos, size, uv, color);
+        let sort = self.world_sort(uv);
         self.world.push(SpriteInstance {
             pos,
             size,
@@ -749,6 +860,7 @@ impl SpriteRenderer {
             layer: 0,
             clip: self.clip.current(),
             blend: 0,
+            sort,
         });
     }
 
@@ -773,6 +885,7 @@ impl SpriteRenderer {
             layer: 0,
             clip: self.clip.current(),
             blend: 0,
+            sort: [0, 0],
         });
     }
 
@@ -798,6 +911,7 @@ impl SpriteRenderer {
             layer: 0,
             clip: self.clip.current(),
             blend: 0,
+            sort: [0, 0],
         });
     }
 
@@ -812,6 +926,7 @@ impl SpriteRenderer {
         rot: f32,
         paint: u8,
     ) {
+        let sort = self.world_sort(uv);
         self.world.push(SpriteInstance {
             pos,
             size,
@@ -824,6 +939,7 @@ impl SpriteRenderer {
             layer: 0,
             clip: self.clip.current(),
             blend: 0,
+            sort,
         });
     }
 
@@ -841,6 +957,7 @@ impl SpriteRenderer {
         rot: f32,
         dye: u32,
     ) {
+        let sort = self.world_sort(uv);
         self.world.push(SpriteInstance {
             pos,
             size,
@@ -853,6 +970,7 @@ impl SpriteRenderer {
             layer: 0,
             clip: self.clip.current(),
             blend: 0,
+            sort,
         });
     }
 
@@ -896,6 +1014,7 @@ impl SpriteRenderer {
             layer: 0,
             clip: self.clip.current(),
             blend: blend as u32,
+            sort: [0, 0],
         });
     }
 
@@ -920,6 +1039,7 @@ impl SpriteRenderer {
         color: [f32; 4],
         rot: f32,
     ) {
+        let sort = self.world_sort(uv);
         self.world.push(SpriteInstance {
             pos,
             size,
@@ -932,6 +1052,7 @@ impl SpriteRenderer {
             layer: 0,
             clip: self.clip.current(),
             blend: 0,
+            sort,
         });
     }
 
@@ -1002,6 +1123,7 @@ impl SpriteRenderer {
             layer: 0,
             clip: self.clip.current(),
             blend: 0,
+            sort: [0, 0],
         });
     }
 
@@ -1027,6 +1149,7 @@ impl SpriteRenderer {
             layer: 0,
             clip: self.clip.current(),
             blend: 0,
+            sort: [0, 0],
         });
     }
 
@@ -1044,6 +1167,7 @@ impl SpriteRenderer {
             layer: 0,
             clip: self.clip.current(),
             blend: 0,
+            sort: [0, 0],
         });
     }
 
@@ -1061,6 +1185,7 @@ impl SpriteRenderer {
             layer: 0,
             clip: self.clip.current(),
             blend: 0,
+            sort: [0, 0],
         });
     }
 
@@ -1078,6 +1203,7 @@ impl SpriteRenderer {
             layer: 0,
             clip: self.clip.current(),
             blend: 0,
+            sort: [0, 0],
         });
     }
 
@@ -1105,6 +1231,7 @@ impl SpriteRenderer {
             layer,
             clip: self.clip.current(),
             blend: 0,
+            sort: [0, 0],
         });
     }
 
@@ -1129,6 +1256,7 @@ impl SpriteRenderer {
             layer: 0,
             clip: self.clip.current(),
             blend: 0,
+            sort: [0, 0],
         });
     }
 
@@ -1152,6 +1280,7 @@ impl SpriteRenderer {
             layer: 0,
             clip: self.clip.current(),
             blend: 0,
+            sort: [0, 0],
         });
     }
 
@@ -1178,6 +1307,7 @@ impl SpriteRenderer {
                     layer: 0,
                     clip: self.clip.current(),
                     blend: 0,
+                    sort: [0, 0],
                 });
             }
             cx += gw * scale;
@@ -1201,12 +1331,17 @@ impl SpriteRenderer {
         self.map.clear();
         self.ui.clear();
         self.clip.clear();
+        // TileBatch.End's state reset (TileBatch.cs:717-724): the cursor
+        // never carries across passes.
+        self.world_cursor = None;
     }
 
     /// G6: clear only the UI range and keep the previous frame's world instances. The
     /// caller must have proven that camera, zoom, screen size, sky tint and world
     /// contents are unchanged (see `WorldFrameKey` in the app), otherwise the kept
-    /// range is stale.
+    /// range is stale. The kept world instances keep their S1-G-11 sort
+    /// keys (they were resolved at push time); the cursor stays armed so
+    /// appended pushes continue the same pass's layer numbering.
     pub fn begin_frame_keep_world(&mut self) {
         self.back.clear();
         self.fx.clear();
@@ -1355,6 +1490,23 @@ impl SpriteRenderer {
             self.capacity = new_cap;
             self.frame_index = 0;
         }
+
+        // S1-G-11 (research/41 D-3/D-11): the TileBatch layered flush
+        // (`TileBatch.cs:672-725`) — stably reorder each range by the
+        // per-instance sort key INSIDE each contiguous blend run, never
+        // across a run boundary (the C#'s End/Begin blend batches flush in
+        // push order). All-zero keys (the frozen default: no SetLayer ever
+        // armed) short-circuit to the identity — the upload stays
+        // byte-identical to the pre-S1-G-11 straight copy. In-place so the
+        // offsets and `draw_blend_runs` below see the final order; a stable
+        // sort of an already-sorted range is the identity, so the G6-kept
+        // world range is safe to re-run.
+        reorder_layered(&mut self.back);
+        reorder_layered(&mut self.world);
+        reorder_layered(&mut self.fx);
+        reorder_layered(&mut self.map_back);
+        reorder_layered(&mut self.map);
+        reorder_layered(&mut self.ui);
 
         // B1: no per-frame `collect`. The world and UI ranges are written straight
         // into one buffer at their final offsets (80-byte instances — four
@@ -1536,6 +1688,25 @@ fn blend_runs(range: &[SpriteInstance]) -> Vec<(u32, u32, u32)> {
     runs
 }
 
+/// S1-G-11: the `TileBatch.End` layered flush applied to one range — each
+/// contiguous same-blend run is stably sorted by the instance's `sort` key
+/// (`crate::batch::sorted_draw_order`), never across a blend-run boundary
+/// (the C# flushes each `Begin` blend batch before re-beginning the next,
+/// `Main.cs:27457-27494`). A run whose keys are already ascending (the
+/// frozen all-zero default) is left untouched — `needs_reorder` keeps the
+/// unlayered path allocation-free and byte-identical.
+fn reorder_layered(range: &mut [SpriteInstance]) {
+    let key = |i: &SpriteInstance| (i.sort[1] as u64) << 32 | i.sort[0] as u64;
+    for (_, start, end) in blend_runs(range) {
+        let run = &mut range[start as usize..end as usize];
+        if run.windows(2).any(|w| key(&w[0]) > key(&w[1])) {
+            // `sort_by_key` is stable: equal keys (one batch) keep push
+            // order — the C#'s per-bucket slice chain (`TileBatch.cs:686-715`).
+            run.sort_by_key(key);
+        }
+    }
+}
+
 /// `TR_PROBE=x,y`: log every sprite whose rect covers that world point, in draw
 /// order, to find which pass paints a stray pixel.
 fn probe(pos: [f32; 2], size: [f32; 2], uv: [f32; 4], color: [f32; 4]) {
@@ -1700,8 +1871,9 @@ mod tests {
         // `draw_ranges` copies each range straight into the instance ring at
         // `range_index * size_of::<SpriteInstance>()` (no per-range staging
         // buffer), so the stride must be 4-byte aligned for `write_buffer` —
-        // wgpu's `COPY_BUFFER_ALIGNMENT`. 84 today: 2+2+2+2 floats (32), color
-        // (16), rot/paint (8), dye/layer (8), clip (16), blend (4, S1-G-3).
+        // wgpu's `COPY_BUFFER_ALIGNMENT`. 92 today: 2+2+2+2 floats (32), color
+        // (16), rot/paint (8), dye/layer (8), clip (16), blend (4, S1-G-3),
+        // sort (8, S1-G-11 — CPU-only trailing words, no implicit padding).
         let stride = std::mem::size_of::<SpriteInstance>();
         assert_eq!(
             stride % wgpu::COPY_BUFFER_ALIGNMENT as usize,
@@ -1711,7 +1883,7 @@ mod tests {
         // And the vertex layout's `array_stride` is that same stride, so the
         // shader's `Instance` struct and the CPU struct cannot drift apart
         // without this failing first.
-        assert_eq!(stride, 84, "the fields documented above add up to 84 bytes");
+        assert_eq!(stride, 92, "the fields documented above add up to 92 bytes");
     }
 
     #[test]
@@ -1734,7 +1906,14 @@ mod tests {
             10 => Uint32,
         ];
         let total: u64 = attrs.iter().map(|a| a.format.size()).sum();
-        assert_eq!(total, std::mem::size_of::<SpriteInstance>() as u64);
+        // The attributes stop at `blend` (location 10); the trailing S1-G-11
+        // `sort` words are CPU-only — the vertex `array_stride` still spans
+        // them, so the GPU skips 8 unread bytes per instance.
+        assert_eq!(
+            total + 8,
+            std::mem::size_of::<SpriteInstance>() as u64,
+            "attrs + the CPU-only sort words must span the stride"
+        );
         assert_eq!(attrs[9].shader_location, 9);
         assert_eq!(attrs[9].format, wgpu::VertexFormat::Float32x4);
         assert_eq!(attrs[10].shader_location, 10);
@@ -1794,6 +1973,7 @@ mod tests {
             layer: 0,
             clip: crate::clip::NO_CLIP,
             blend,
+            sort: [0, 0],
         };
         let plain: Vec<SpriteInstance> = (0..7).map(|_| inst(0)).collect();
         assert_eq!(blend_runs(&plain), vec![(0, 0, 7)]);
@@ -1805,6 +1985,91 @@ mod tests {
         assert_eq!(
             blend_runs(&seq),
             vec![(0, 0, 2), (2, 2, 8), (1, 8, 10), (0, 10, 11)]
+        );
+    }
+
+    // ---- S1-G-11: the layered flush on the ranges (research/41 D-3/D-11) ----
+
+    /// The frozen default: an all-zero-key range is left byte-identical by
+    /// the reorder — the pre-S1-G-11 straight-copy upload survives.
+    #[test]
+    fn unlayered_ranges_stay_byte_identical() {
+        let inst = |i: u32| SpriteInstance {
+            pos: [i as f32, 0.0],
+            size: [0.0; 2],
+            uv0: [0.0; 2],
+            uv1: [0.0; 2],
+            color: [1.0; 4],
+            rot: 0.0,
+            paint: 0.0,
+            dye: 0,
+            layer: 0,
+            clip: crate::clip::NO_CLIP,
+            blend: i % 3, // mixed blend runs — still all sort keys 0
+            sort: [0, 0],
+        };
+        let mut range: Vec<SpriteInstance> = (0..12).map(inst).collect();
+        let before = range.clone();
+        reorder_layered(&mut range);
+        assert_eq!(
+            bytemuck::cast_slice::<SpriteInstance, u8>(&range),
+            bytemuck::cast_slice::<SpriteInstance, u8>(&before),
+            "the frozen default must not move a byte"
+        );
+    }
+
+    /// The layered flush sorts inside each blend run by `(hi, lo)` key,
+    /// stably, and never moves an instance across a blend-run boundary —
+    /// the C# flushes each `Begin` blend batch before the next
+    /// (`Main.cs:27457-27494`), so a multiply quad can never ride an alpha
+    /// batch no matter what its layer says.
+    #[test]
+    fn layered_flush_sorts_inside_blend_runs_only() {
+        let key = |k: u64| [k as u32, (k >> 32) as u32];
+        let inst = |id: f32, blend: u32, k: u64| SpriteInstance {
+            pos: [id, 0.0],
+            size: [0.0; 2],
+            uv0: [0.0; 2],
+            uv1: [0.0; 2],
+            color: [1.0; 4],
+            rot: 0.0,
+            paint: 0.0,
+            dye: 0,
+            layer: 0,
+            clip: crate::clip::NO_CLIP,
+            blend,
+            sort: key(k),
+        };
+        // Run 1 (alpha): keys 0x200_0007, 0x200_0003, 0x300_0007, 0x200_0003
+        // — the last two share the low bucket with index 1 (stable order).
+        // Run 2 (multiply): key 0x100_0001 sorts BEFORE every alpha key, but
+        // must stay in its own run.
+        // Run 3 (alpha again): key 0x200_0005 — a separate batch from run 1.
+        let mut range = vec![
+            inst(0.0, 0, 0x0200_0007),
+            inst(1.0, 0, 0x0200_0003),
+            inst(2.0, 0, 0x0300_0007),
+            inst(3.0, 0, 0x0200_0003),
+            inst(4.0, 2, 0x0100_0001),
+            inst(5.0, 0, 0x0200_0005),
+        ];
+        reorder_layered(&mut range);
+        let ids: Vec<f32> = range.iter().map(|i| i.pos[0]).collect();
+        assert_eq!(ids, vec![1.0, 3.0, 0.0, 2.0, 4.0, 5.0]);
+        // The blend tags are untouched — the run boundaries survive.
+        let blends: Vec<u32> = range.iter().map(|i| i.blend).collect();
+        assert_eq!(blends, vec![0, 0, 0, 0, 2, 0]);
+        // The high word dominates (a u64 key above 2^32 still sorts right).
+        let mut wide = vec![inst(0.0, 0, 1 << 32), inst(1.0, 0, (1 << 32) - 1)];
+        reorder_layered(&mut wide);
+        assert_eq!(wide[0].pos[0], 1.0);
+        // Re-running the flush on the sorted range is the identity (the
+        // G6-kept world range re-uploads every frame).
+        let before = range.clone();
+        reorder_layered(&mut range);
+        assert_eq!(
+            bytemuck::cast_slice::<SpriteInstance, u8>(&range),
+            bytemuck::cast_slice::<SpriteInstance, u8>(&before)
         );
     }
 

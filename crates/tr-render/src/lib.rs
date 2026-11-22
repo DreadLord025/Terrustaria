@@ -1,6 +1,7 @@
 //! GPU side: sprite atlas, instanced quad renderer, Vulkan device setup.
 
 pub mod atlas;
+pub mod batch;
 pub mod clip;
 pub mod font_atlas;
 pub mod gpu;
