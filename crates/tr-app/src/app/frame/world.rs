@@ -236,6 +236,7 @@ impl App {
             > self.scene_metrics.evil_tile_count,
         meteor: self.scene_metrics.zone_meteor,
         graveyard: self.scene_metrics.zone_graveyard,
+        underground_desert: self.scene_metrics.zone_underground_desert,
         desert: self.scene_metrics.zone_desert,
         jungle: self.scene_metrics.zone_jungle,
         snow: self.scene_metrics.zone_snow,

@@ -13163,26 +13163,57 @@ The three micro-biome passes are 1:1 ports; the deviations:
 - **`tile_is_ore` is a hardcoded kind list**, not the generated
   `TileID.Sets.Ore` bitset (`TileID.cs`): the port's `tiledata` carries no
   Ore set, so the slab map's ore preservation uses the vanilla's ore ids
-  literal (`MarbleBiome.cs:142`, `GraniteBiome.cs:224`).
-- **No `PlaceTight` pots** (`MarbleBiome.cs:151-158`): the port has no pot
-  tile yet вЂ” the pots land with M5-STRUCT's pots step.
+  literal (`MarbleBiome.cs:142`, `GraniteBiome.cs:224`). W4-g40
+  (2026-11-21): the list is now the `TileID.cs:614` literal verbatim —
+  7/166/6/167/9/168/8/169/22/204/37/58/107/221/108/222/111/223/211 (the
+  pre-residual list carried eight non-ore kinds and missed eight ores).
+- **No `PlaceTight` pots** (`MarbleBiome.cs:151-158`): RETIRED by W4-g40 —
+  the two `SolidTile`-gated `Next(4)` arms call the shared
+  `spider_gem_moss::place_tight` (the C#'s `PlaceTight` places stalactite
+  speleothems, not pots — the old note misnamed them). The post-place
+  `CheckStalactite` validation (`WorldGen.cs:38320-38323`) rides the
+  shared helper's existing deviation.
 - **No `structures.AddStructure(8)`**: the port has no `StructureMap`; the
   cave-house voters read the tiles directly, so the registration has no
   consumer yet.
-- **The C# `PlaceSlab`'s `Tile.SmoothSlope` call is not ported** вЂ” the port
-  has no worldgen `SmoothSlope`; the marble caves carry no slopes yet (the
-  slabs' corner states flatten to the active pattern).
-- **The granite's `ShouldUseLava` is off** (`GraniteBiome.cs:171-196`): the
-  port's lava line is not tracked yet, so `PlaceGranite`'s lava arm rides off.
+- **The C# `PlaceSlab`'s `Tile.SmoothSlope` call is not ported** — RETIRED
+  by W4-g40: the slab grid carries the seven `SlabStates` delegates
+  (`MarbleBiome.cs:12-48`) with the `SmoothSlope` mask map (`:79-110`),
+  `PlaceSlab` writes the per-cell active pattern + `ResetToType` (`:142`,
+  the extent seeds 0/scale per `:121-124`), and the per-tile
+  `Tile.SmoothSlope` cascade (`Tile.cs:792-865`, neighbours-first, the
+  `CanPoundTile` gate on the shared `edit::can_pound_tile` with
+  `generating: true`, the flag2 no-write veto) runs per written cell. The
+  drunk 368/180 swap (`:116-120`) landed with it.
+- **The granite's `ShouldUseLava` is off** (`GraniteBiome.cs:171-196`):
+  RETIRED by W4-g40 — `GenVars.lavaLine` is tracked since the terrain
+  step's `TerrainPass.cs:211-236` pair; the lava-line gate + the 100x100
+  ice-family scan run, and `PlaceGranite`'s `(liquid > 0) & flag` retype
+  (`:239-242`) lands. The resistance<0.01 `ClearTile` arm (`:234-238`),
+  the ore-arm `ResetToType` + wall repaint, the `SolidTile` cleanup
+  census (`:266-279`) and the drunk wall swaps landed too.
 - **`PlaceDecorations` (the FastRandom stalactite pass) is not ported**
-  (`GraniteBiome.cs:296-330`): the stalactites land with the spider/gem-cave
-  decor family.
-- **The granite step moved after the cave carve** вЂ” the vanilla order
-  (`WorldGen.cs:11100`-`12600` caves в†’ `:12757` Marble в†’ `:12839` Granite).
+  (`GraniteBiome.cs:296-330`): RETIRED by W4-g40 — the
+  `FastRandom(worldSeed).WithModifier(65440)` per-chamber stream with the
+  per-cell `WithModifier(x, y)` copies runs the `Next(8)` stalactite pair
+  (below first, then above) and the unconditional `Next(2)` smoothing
+  roll; the granite/marble hanging stalactite arms
+  (`WorldGen.cs:38448-38505`) and the hive rising arm (`:38543-38552`)
+  joined the shared frame table. No worldgen-stream draw (the FastRandom
+  is world-seed-keyed, the hive precedent).
+- **The granite step moved after the cave carve** — the vanilla order
+  (`WorldGen.cs:11100`-`12600` caves → `:12757` Marble → `:12839` Granite).
   The pass's own isolated stream keeps the move RNG-neutral for the other
-  steps; the world contract's per-step pins hold.
+  steps; the world contract's per-step pins hold. W4-g40 also fixed the
+  collection-phase quirks: the f32 fraction (`:12855`), the success arm's
+  missing attempts reset (`:12907-12911` — the marble pass resets, the
+  granite pass does not) and `Place`'s origin-only re-gate (`:64-67`).
 - The three passes draw from their own `pass_rng` streams; the shared
-  `streams.rng` is untouched by them.
+  `streams.rng` is untouched by them. W4-g40 hash notes: DEFAULT_WORLD
+  moves by design (the chambers' shape/walls/decor + the Marble stream's
+  new PlaceTight tail), the re-pin deferred to the merge gate; SEED42_512
+  is unchanged by the residual (both Count draws truncate to 0 at 512
+  wide) - `world_hash.rs`'s notes carry the ledger.
 
 ### The glowing mushroom biome lane (W4-g42, code-only)
 
@@ -40493,3 +40524,115 @@ open-flanks/no-torch census (1). No RNG stream moves — the housing fix is
 a pure predicate widening on the room-check path (no draws), the desert
 and sky-lake witnesses are read-only replays.
 
+## The desert entrance residual (W4-g40 continuation, code-only, 2026-11-21)
+
+**Census first** (research `222-w4g40-biome-residual-census.md`, renumbered
+from 94 per the d54 research/150 registry): after the
+marble/granite residual closed (79361f00), the remaining C# biome classes
+were censused against the landed port. Co-lane claims READ, not touched:
+g44 owns FloatingIslands/IslandHouse (local census d32816ce + phase-2 tip),
+d101/d107 own the Ice passes (the `GenPassNameID.IceBiome` = "Generate Ice
+Biome" name fix, `GenPassNameID.cs:239`, consistent on both), g37 B8 + d104
+own Spreading Grass, d106 R1 owns Grass Wall, c29 owns the dead-man's-chest
+biome, g43 owns the jungle temple. **Census correction:** the Lead's
+`ConvertGrassToDirt` does not exist in the 1.4.5.8 decompilation (0 hits
+tree-wide) — the real units are `Convert` (`WorldGen.cs:55085`) and
+`SpreadGrass` (`:75146`), both landed (M5-SPREAD-2 / S1-K-3b).
+
+**First unclaimed residual:** the `DesertBiome.Place` entrance family
+(`desert_entrances.rs`, no branch since ab6c11f7). The shape-level port
+(97a7db29) skipped the stochastic modifiers and approximated three chains.
+Seventeen deviations found and closed verbatim (the full line-by-line list
+is in research 222, renumbered from 94); the load-bearing ones:
+
+* `Shapes.Circle` (`Shapes.cs:33-49`) is a **y-major** row walk with the
+  `(hr+1)²` inflation — not a normalised ellipse, and not x-major. With
+  `Blotches` drawing per cell the visit order is part of the RNG ledger.
+* `Modifiers.Blotches` (`Modifiers.cs:126-146`) lands at all five sites
+  through the shared `mini_biomes::blotched_gen_shared` seam (the S1-K-2
+  wave-C body, exposed `pub(crate)` — no second copy).
+* `Actions.Smooth` (`Actions.cs:608-622`) runs the anthill tail
+  (single-cell) and the larva mouth (`Offset(0,1)+Expand(1)+IsSolid`,
+  neighbours-first) on the g40-P1 `biomes::tile_smooth_slope{,_one}` seams
+  (exposed `pub(crate)`).
+* `Actions.SetTile` (`Actions.cs:203-236`) is `Clear(~(Wiring|Actuator))`
+  (`Tile.cs:744-790`) — the **wall does not survive** (the old port used
+  `ResetToType`); `Actions.ClearTile` keeps kind/wall/liquid
+  (`Tile.cs:123-128`, the `clear_tile_keep` seam); `Modifiers.IsSolid` is
+  `SolidOrSlopedTile` (`Modifiers.cs:561-571`) — slopes/half-bricks pass.
+* The chambers' `OuterOutline` walks the RECORDED `ShapeData`'s 8-neighbour
+  exterior (`ModShapes.cs:28-71`), the tunnel `Rectangle(2,4)` sits at
+  `(0,0)` (not centred) and its chain order is load-bearing — the 397
+  `SetTile`'s Clear wipes the wall the `Expand(1)` just placed (no trailing
+  `PlaceWall`, unlike the outline chain); `NotInShape` filters the rect
+  cell only, not the expansion; the direction draw `Next(2) != 0 ? 1 : -1`
+  was INVERTED in the old port (`chance(2)` returned +1 on the zero draw).
+* The pit `SmootherStep` carries the C# f32-π literal
+  `3.1415927410125732` (`PitEntrance.cs:70`) — the old port dropped the
+  multiply (the taper closed far too early); the bowl depth is
+  `min(10, (hr-|k|)²)` (`:50`), not `min(num6, min(10, num6²))`.
+* `Shapes.Tail`'s `ToTileCoordinates` floors (`(int)v >> 4`,
+  `Utils.cs:1812-1815`) — the old truncation differed on negatives.
+
+**P2 — the entrance gate** (`DesertBiome.cs:23`): `!tenthAnniversaryWorld
+&& NextDouble() <= ChanceOfEntrance && !extraLiquid.Enabled`. The
+anniversary seed short-circuits BEFORE the fraction draw; extraLiquid
+draws it then skips (the && order kept). `ChanceOfEntrance` now reads the
+embedded `Biomes.DesertBiome` JSON 0.5 through the `CreateBiome` lookup
+(`WorldGenConfiguration.cs:27-34`) — the C# field default 0.3333 only
+applies when the entry is absent.
+
+**Kept deviations:** the `ShapeData` HashSet iteration order is
+.NET-unspecified — the port pins insertion order (the RNG-free outline
+chain is outcome-order-independent: a converted cell fails `OnlyTiles(53)`
+on any later visit; the larva Smooth chain is order-dependent in C#
+itself). The `SquareWallFrame`/`TileFrame` framing rides the post-pipeline
+seam. The hive carve's `PostPlacementEffect.Smooth`
+(`DesertHive.cs:197,216-218`) closed with the W4-g40 hive-smooth slice
+(research 248 §2 — the effect map + the post-carve walk on the
+`tile_smooth_slope_one` seam, RNG-free). `structures.AddStructure(area,
+10)` (`DesertBiome.cs:43-44`) is the NON-protected list no ported
+`CanPlace` reads (`StructureMap.cs:19-52`) — a documented no-op, the
+thin-ice precedent.
+
+**RNG/hash:** the entrance Blotches draws land on the `Full Desert`
+per-pass stream only — no other pass's ledger moves. Both `DEFAULT_WORLD`
+and `SEED42_512` may move BY DESIGN (the 512 world's 36-wide desert band
+can fire the entrance fraction); the re-pin is DEFERRED to the merge gate
+(no compiler on this branch). `a == b` stays green: 15 witnesses WRITTEN
+NOT RUN — the Blotches ledger replayed independently, the circle walk
+order/extents, the SetTile mask, the IsSolid slope arms, the π literal,
+the squared bowl, the shifted larva shape, the direction draw, the
+anniversary stream separation, and the per-kind end-to-end replay.
+
+## The desert/marble family FINAL (W4-g40 close-out, code-only, 2026-11-21)
+
+Research `248-w4g40-desert-marble-final.md` (renumbered 246-248 at the batch-B merge - g43 owns 246) is the lane-closing record
+(the census doc renumbered 94→222 per the d54 research/150 registry).
+Three census verdicts retire the dispatch's open questions: (1)
+**marble/granite MUSIC and runtime GROWTH do not exist in vanilla** —
+`MusicID.cs` has no marble/granite track, `UpdateAudio_DecideOnNewMusic`
+(`Main.cs:12175-12988`) and the `Convert`/`Grow*` families never read
+`ZoneMarble`/`ZoneGranite` or tiles 367/368 as a source; the zones' only
+runtime consumers are `Player.UpdateBiomes` and the out-of-scope RGB
+conditions. (2) The marble/granite SPAWN arms
+(`SetSpawnFlagsForChosenTile` `NPC.cs:1058-1141` + the cavern ladder
+`:5019-5042` — Medusa 480/Hoplite 481/GraniteGolem 482/GraniteFlyer 483)
+are UNCLAIMED at every tip but kind-gated on d40's roster merge —
+TASK-SEED with the prerequisite named, not ported (the
+consume-without-kind deviation). (3) The last unclaimed worldgen
+residual — the `DesertHive.PostPlacementEffect.Smooth` map
+(`DesertHive.cs:210-221`, the four mark sites `:284/:315/:331/:358`) —
+landed this round: `place_clusters_area` fills the hive-local effect
+grid, `full_desert` runs the post-carve x-major
+`Tile.SmoothSlope(applyToNeighbors:false)` walk on the
+`biomes::tile_smooth_slope_one` seam BEFORE `AddTileVariance` (the C#
+`Place` order). RNG-free; the shell edges gain slope/half-brick states,
+so both hash pins are stale-by-design where the hive fires (re-pin
+deferred); 3 witnesses WRITTEN NOT RUN. Compose maps measured hunk-by-hunk
+(research 248 §3): f42's sandstorm/mummy-tail vs g40's desert growth are
+disjoint (the only shared file `audio.rs` carries disjoint SFX-vs-MUSIC
+hunks); g17's ShakeTree/palm-ash hunks bracket g40's fossil-shatter and
+growth hunks without overlap in `editing.rs`/`kill.rs`/`growth.rs`; the
+BIOME-music ladder is g40's lane (P2) — g22/g23 own the MENU title-track
+ladder and cue plumbing only, keep-all-three with no duplicate arm.

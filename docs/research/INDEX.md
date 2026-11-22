@@ -1,4 +1,4 @@
-﻿# Research index вЂ” full C# Terraria audit
+# Research index вЂ” full C# Terraria audit
 
 Map of the research effort backing the new ROADMAP. One file per module,
 `docs/research/NN-slug.md`. Status: вњ… done В· рџ”„ in flight В· в¬њ planned.
@@ -81,6 +81,8 @@ per `docs/superpowers` agreements).
 | 94 | NOT-THE-BEES host census (W4-g41 follow-up: FinishNotTheBees + NotTheBees vs WorldGen.cs; c31 co-lane claim check — zero pushed claims, host unclaimed/taken; ILied-family wiring census; spider_wall_remover wiring; code-only) | `94-not-the-bees-host-census.md` | ✅ landed (pins unchanged, flag-gated) |
 | 95 | FinishNoTraps + FinishRemixWorld census (W4-g41 finish gaps: the two remaining classic-seed Finish tails vs WorldGen.cs; d107 co-lane claim check — remix host explicitly deferred, no-traps claims micro-seed side only, both unclaimed/taken; seam census + deviation pins; FINAL: the QuickWater g47d activation addendum (fdeb897c/d222af69 read); RETIRE: receipt re-verified at g47 5c09a68b8 + the g46 RE-FOLD union 9bc722e5f — activation targets the union; code-only) | `95-finish-no-traps-remix-census.md` | ✅ landed (pins unchanged; QuickWater activates with the g46 union + f25 graft) |
 | 96 | BIOME RETIRE receipts + FINAL declaration (W4-g41 retire phase: §1 g47f liquid-retire — the 3-seam QuickWater contract re-verified at 5c09a68b8 + union 9bc722e5f, g46d re-base DONE; §2 d36e hand-off — zero kind code at bcf4ac551/0eb4fee95, activation hunk PUBLISHED id-agnostic (Bottom placement, corrects 93's spawn_cave_walker recipe), band R7 767-816; §3 research/88 stalactite keep-one — d106 e2c2609c5 half verified + the 6-point FINAL INSTRUCTION; §4 the SPIDER+NTB+FINISH all-landed declaration + the refreshed merger 6-step + anchors canary; code-only) | `96-biome-retire-receipts.md` | ✅ retire complete (no unclaimed g41 work; residuals owned cross-lane) |
+| 222 | Biome-residual census + the desert entrance port (W4-g40 continuation: the gap table vs the landed port, the co-lane claims, the ConvertGrassToDirt correction; the 17-deviation entrance residual closed verbatim; code-only; renumbered 94→222 per the d54 research/150 registry key-94 row) | `222-w4g40-biome-residual-census.md` | ✅ |
+| 248 | W4-g40 FINAL (renumbered 246→248 at merge): the desert/marble-family declaration + the hive-smooth slice + the f42/g17/g22/g23 compose maps (the marble/granite music/growth census = NONE in vanilla; the NPC.cs:5019-5042 spawn arms task-seeded to the d40 kind merge; research number per registry-150: 246 claimed first-free but g43 temple SEAL landed 246 earlier (15:10:56 vs 16:02:53) - renumbered 246 to 248 at the batch-B merge (248 free at every tip); code-only) | `248-w4g40-desert-marble-final.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

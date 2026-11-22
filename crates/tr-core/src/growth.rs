@@ -131,20 +131,26 @@ pub fn grow_cactus(world: &mut World, i: i32, j: i32, rng: &mut UnifiedRandom) {
     let Some(tile) = world.tile(i, j) else {
         return;
     };
-    if !tile.active() || tile.half_brick() || tile.slope() != 0 {
+    // `:56585` — `!tile.nactive() || halfBrick() || (!isGeneratingOrLoadingWorld
+    // && slope() != 0) || (type != 80 && !Conversion.Sand[type]) ||
+    // tile2.liquid > 0`. The runtime growth pass is never generating, so the
+    // slope gate always applies (the worldgen cactus pass keeps its own
+    // isGeneratingOrLoadingWorld arm). `Conversion.Sand` = {53, 112, 116, 234}
+    // (`TileID.cs:92`).
+    if !tile.active() || tile.inactive() || tile.half_brick() || tile.slope() != 0 {
         return;
     }
-    let is_sand = matches!(tile.kind, 53 | 234 | 116 | 112)
-        || tile.kind == 234
-        || tile.kind == 116
-        || tile.kind == 112;
+    let is_sand = crate::tiledata::SET_CONVERSION_SAND.has(tile.kind);
     if tile.kind != 80 && !is_sand {
         return;
     }
     if world.tile(i, j - 1).is_some_and(|t| t.liquid > 0) {
         return;
     }
-    // The water box abort (:56588-56595).
+    // The water box abort (:56590-56602): k in [i-50, i+50), l in [j-25, j+25)
+    // (EXCLUSIVE high), the InWorld guard, `num3 / 255 > cactusWaterLimit(25)`.
+    // The remix-world below-surface exemption (`!remixWorld || !(j >
+    // worldSurface)`) is constants-off (no remix seed in the runtime pass).
     let mut num3 = 0u32;
     for k in (i - 50)..(i + 50) {
         for l in (j - 25)..(j + 25) {
@@ -157,8 +163,9 @@ pub fn grow_cactus(world: &mut World, i: i32, j: i32, rng: &mut UnifiedRandom) {
         return;
     }
     if is_sand {
-        // The sand arm (:56598-56660): the neighbours above must be clear,
-        // the box scan gates, then the plant.
+        // The sand arm (:56604-56666): the three neighbours above must be
+        // clear, the i±6 × j-3..j+1 box scan gates (≤3 cacti, >10 sand), then
+        // the plant into the cell ABOVE (`tile2`, `:56584`).
         if world.tile(i, j - 1).is_some_and(|t| t.active())
             || world.tile(i - 1, j - 1).is_some_and(|t| t.active())
             || world.tile(i + 1, j - 1).is_some_and(|t| t.active())
@@ -169,35 +176,64 @@ pub fn grow_cactus(world: &mut World, i: i32, j: i32, rng: &mut UnifiedRandom) {
         let mut num5 = 0;
         for m in (i - 6)..=(i + 6) {
             for n in (j - 3)..=(j + 1) {
-                if let Some(t) = world.tile(m, n) {
-                    if t.active() {
-                        if t.kind == 80 {
-                            num4 += 1;
-                        }
-                        if matches!(t.kind, 53 | 234 | 116 | 112)
-                            || matches!(t.kind, 234 | 116 | 112)
-                        {
-                            num5 += 1;
-                        }
+                // `:56616` — `InWorld(m, n, 5)`: the 5-tile margin.
+                if m < 5 || n < 5 || m >= world.width - 5 || n >= world.height - 5 {
+                    continue;
+                }
+                let Some(t) = world.tile(m, n) else { continue };
+                if !t.active() {
+                    continue;
+                }
+                if t.kind == 80 {
+                    num4 += 1;
+                    // `:56629-56632` — the 4th cactus aborts immediately.
+                    if num4 >= 4 {
+                        return;
+                    }
+                }
+                if crate::tiledata::SET_CONVERSION_SAND.has(t.kind) {
+                    num5 += 1;
+                    // `:56637-56640` — the 11th sand breaks the inner loop.
+                    if num5 > 10 {
+                        break;
                     }
                 }
             }
+            // `:56647-56650` — the outer break once the sand count exceeds 10.
+            if num5 > 10 {
+                break;
+            }
         }
-        if num4 >= 4 || num5 <= 10 {
-            return;
+        // `:56652` — the plant gate: >10 sand in the box.
+        if num5 > 10 {
+            // `:56658-56665` — `tile2.active = true; tile2.type = 80;
+            // CopyPaintAndCoating(tile); SquareTileFrame(num, num2 - 1)`. The
+            // paint/coating rides from the sand cell below (the port's `meta`
+            // + `extras`, the spike-arm convention `:45481`). The
+            // isGeneratingOrLoadingWorld slope(0) Next(2) arm (`:56654`) is
+            // worldgen-only — the runtime pass skips it.
+            let (src_meta, src_extras) = {
+                let si = world.index(i, j);
+                (world.tiles[si].meta, world.extras_at(si))
+            };
+            let di = world.index(i, j - 1);
+            world.tiles[di] = crate::tile::Tile {
+                kind: 80,
+                frame_x: 0,
+                frame_y: 0,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+            world.tiles[di].meta = src_meta;
+            world.set_extras_at(di, src_extras);
+            if world.frame_important.len() <= 80 {
+                world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
+            }
+            world.frame_important[80] = true;
+            // `WorldGen.SquareTileFrame(num, num2 - 1)` (`:56665`, num=i,
+            // num2=j) — the 3×3 reframe around the new cactus cell.
+            crate::edit::square_tile_frame_gen(world, i, j - 1);
         }
-        let idx = world.index(i, j - 1);
-        world.tiles[idx] = crate::tile::Tile {
-            kind: 80,
-            frame_x: 0,
-            frame_y: 0,
-            flags: FLAG_ACTIVE,
-            ..Default::default()
-        };
-        if world.frame_important.len() <= 80 {
-            world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
-        }
-        world.frame_important[80] = true;
         return;
     }
     // The cactus arm (:56668-56799): the stack walk DOWN from the top with the
@@ -840,17 +876,100 @@ pub fn update_world_overground_tile(
             place_bamboo(world, x, y - 1, rng);
         }
     }
-    // The cactus arm (:72229-72231): `Next(15)`. The C# else-if does not
-    // return — the walk reaches the wall arms (W4-g42 GROWTH FINAL); no
-    // later arm matches 80.
-    if kind == 80 && rng.next_max(15) == 0 {
-        grow_cactus(world, x, y, rng);
-    }
-    // The bare-sand arm (:72282-72284) rolls `Next(300)` inside the
-    // beach-distance bounds — the port has no beachDistanceYet; the
-    // water-box abort inside `grow_cactus` keeps the shore in check.
-    if matches!(kind, 53 | 234 | 116 | 112) && rng.next_max(300) == 0 {
-        grow_cactus(world, x, y, rng);
+    // The cactus arm (:72227-72233): the cactus 80 itself rolls `Next(15)`
+    // and grows the stack. The C# `else if` chain: 80 → 529 → Conversion.Sand
+    // → 530, each mutually exclusive. The chain fall-through reaches the
+    // wall arms (W4-g42 GROWTH FINAL — the C# arms do not return; no later
+    // chain arm matches these kinds, so the port's early return is
+    // equivalent for the chain and the wall arms below still run — see the
+    // tail: the wall arms are OUTSIDE the chain).
+    if kind == 80 {
+        if rng.next_max(15) == 0 {
+            grow_cactus(world, x, y, rng);
+        }
+    } else if kind == 529 {
+        // The sea-oat arm (:72234-72240): the 529 oat checks its water and rolls
+        // `Next(20)` to advance a stage (`CheckSeaOat && Next(20)==0 → GrowSeaOat`).
+        if check_sea_oat_runtime(world, x, y) && rng.next_max(20) == 0 {
+            grow_sea_oat_runtime(world, x, y);
+        }
+    } else if crate::tiledata::SET_CONVERSION_SAND.has(kind) {
+        // The Conversion.Sand arm (:72241-72288): the cell ABOVE (`num3 = j-1`,
+        // clamped to ≥10 at :72044-72046) must be inactive. Then the oasis plant
+        // (`Next(25)`), the sea oat (`Next(20)`), and — only when the oat did NOT
+        // plant — the coral band (ocean edge, `Next(500)`) or the inland cactus
+        // (`beachDistance+20` bounds, `Next(300)`). The `num3` clamp is the
+        // overground window's top edge (:72034/:72044).
+        let num3 = (y - 1).max(10);
+        if world.tile(x, num3).is_some_and(|t| !t.active()) {
+            // `:72245-72252` — the oasis plant at Next(25).
+            if rng.next_max(25) == 0 {
+                place_oasis_plant_runtime(world, x, num3, 530, rng);
+            }
+            // `:72253` — the sea oat at Next(20); the coral/cactus arms run
+            // only when the oat roll misses OR the plant refuses.
+            if rng.next_max(20) != 0 || !plant_sea_oat_runtime(world, x, num3, rng) {
+                if x < OCEAN_DISTANCE || x > world.width - OCEAN_DISTANCE {
+                    // `:72255-72281` — the coral band: Next(500), the 15×15
+                    // coral-count < 6 gate, the 5-deep full-water column.
+                    if rng.next_max(500) == 0 {
+                        let num9 = 7;
+                        let num10 = 6;
+                        let mut num11 = 0;
+                        for n in (x - num9)..=(x + num9) {
+                            for m in (num3 - num9)..=(num3 + num9) {
+                                if world.tile(n, m).is_some_and(|t| t.active() && t.kind == 81) {
+                                    num11 += 1;
+                                }
+                            }
+                        }
+                        let full_water = (0..5).all(|d| {
+                            world
+                                .tile(x, num3 - d)
+                                .is_some_and(|t| t.liquid == u8::MAX)
+                        });
+                        if num11 < num10 && full_water {
+                            // `:72274` — PlaceTile(i, num3, 81, mute). The
+                            // coral 1×1 slice (`:59431-59448`): the cell above
+                            // inactive, the floor below active + tileSolid +
+                            // !halfBrick + slope==0 (the solid_tile_2 shape —
+                            // NOT the solidTop-excluding SolidTile). The
+                            // coral cell keeps its liquid (the full-water
+                            // column gate above already requires it).
+                            let above_free =
+                                world.tile(x, num3 - 1).is_some_and(|t| !t.active());
+                            let below_ok = world.tile(x, num3 + 1).is_some_and(|t| {
+                                t.active()
+                                    && crate::tiledata::TILE_SOLID.has(t.kind)
+                                    && t.slope() == 0
+                                    && !t.half_brick()
+                            });
+                            if above_free && below_ok {
+                                if let Some(t) = world.tile_mut(x, num3) {
+                                    t.flags |= FLAG_ACTIVE;
+                                    t.kind = 81;
+                                    t.frame_x = 0;
+                                    t.frame_y = 0;
+                                    t.set_slope(0);
+                                }
+                            }
+                        }
+                    }
+                } else if x > BEACH_DISTANCE + 20
+                    && x < world.width - BEACH_DISTANCE - 20
+                    && rng.next_max(300) == 0
+                {
+                    // `:72282-72285` — the inland cactus at Next(300).
+                    grow_cactus(world, x, y, rng);
+                }
+            }
+        }
+    } else if kind == 530 {
+        // The oasis-plant arm (:72289-72298): the 530 plant kills itself when the
+        // boosted water check fails (`OasisPlantWaterCheck(i, j, boost: true)`).
+        if !oasis_plant_water_check(world, x, y, true) {
+            let _ = crate::edit::kill_tile(world, x, y, false);
+        }
     }
     // The grass-growth pass (:72357 + :73282): the spread-overground grasses
     // with the plant windows (minI/maxI = i±1, minJ/maxJ = j±1 per :72350-
@@ -1148,6 +1267,212 @@ pub fn update_world(
 /// `WorldGen.beachDistance` = 380 (`WorldGen.cs:86914`) — the shell arm's
 /// beach margins (the runtime cattail's sand gate reads it too, `:58700`).
 pub(crate) const BEACH_DISTANCE: i32 = 380;
+/// `WorldGen.oceanDistance` = 250 (`WorldGen.cs:86913`) — the runtime sand
+/// arm's coral band (`:72255`).
+const OCEAN_DISTANCE: i32 = 250;
+
+// ---- W4-g40 desert chain: the runtime desert-surface growth arm ----------
+// `UpdateWorld_OvergroundTile`'s `Conversion.Sand` branch
+// (`WorldGen.cs:72241-72288`) + the sea-oat (`:72234-72239`) and oasis-plant
+// (`:72289-72298`) arms. The C# calls the shared `WorldGen.PlaceOasisPlant` /
+// `PlantSeaOat` / `GrowSeaOat` / `CheckSeaOat` statics on `genRand`
+// (`UnifiedRandom`); the worldgen pass's ocean.rs copies draw the xorshift
+// `Rng` instead, so the runtime arm carries its own `UnifiedRandom` versions
+// here (the RNG-type split — the two consumers cannot share one helper).
+
+/// `WorldGen.SolidTile(i, j)` (`WorldGen.cs:70111-70131`) — the indexed
+/// probe the water checks read: active, solid, non-solidTop, non-halfBrick,
+/// slopeless. Out-of-world cells are not solid.
+fn growth_solid_tile(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    t.active()
+        && !t.inactive()
+        && crate::tiledata::TILE_SOLID.has(t.kind)
+        && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+        && !t.half_brick()
+        && t.slope() == 0
+}
+
+/// `WorldGen.SolidTileAllowBottomSlope(i, j)` (`WorldGen.cs:70167-70185`) —
+/// the sea-oat ground probe: active, solid or solidTop, non-halfBrick, top
+/// not sloped. Out-of-world / null cells count as solid (the vanilla quirk).
+fn growth_solid_tile_allow_bottom_slope(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    t.active()
+        && (crate::tiledata::TILE_SOLID.has(t.kind)
+            || crate::tiledata::TILE_SOLID_TOP.has(t.kind))
+        && !t.top_slope()
+        && !t.half_brick()
+}
+
+/// `WorldGen.OasisPlantWaterCheck(x, y, boost)` (`WorldGen.cs:47506-47536`):
+/// the 45/20 water sum (boost widens to 49/23), the `x <= beachDistance`
+/// column-skip quirk (the beach columns count no water and fail by
+/// construction), `num4 / 255 >= 20`.
+fn oasis_plant_water_check(world: &World, x: i32, y: i32, boost: bool) -> bool {
+    let (num, num2) = if boost { (49, 23) } else { (45, 20) };
+    let num3 = 20u32;
+    let mut num4 = 0u32;
+    for i in (x - num)..=(x + num) {
+        // `:72519` — the skip is on the CENTRE x, not the loop i (the C#
+        // quirk: a beach-centred plant counts no water at all).
+        if x <= BEACH_DISTANCE || x >= world.width - BEACH_DISTANCE {
+            continue;
+        }
+        for j in (y - num2)..=(y + num2) {
+            if world.tile(i, j).is_some_and(|t| !growth_solid_tile(world, i, j)) {
+                if let Some(t) = world.tile(i, j) {
+                    num4 += t.liquid as u32;
+                }
+            }
+        }
+    }
+    num4 / 255 >= num3
+}
+
+/// `WorldGen.SeaOatWaterCheck(x, y)` (`WorldGen.cs:58253-58296`): the water
+/// sum with the beach band's widened 65/25 box and INVERTED verdict — inland
+/// needs ≥20 water units, the beach band needs <20 (the `flag` return).
+fn sea_oat_water_check(world: &World, x: i32, y: i32) -> bool {
+    let (mut num, mut num2) = (45i32, 20i32);
+    let num3 = 20u32;
+    let beach = x <= BEACH_DISTANCE || x >= world.width - BEACH_DISTANCE;
+    if beach {
+        num = 65;
+        num2 += 5;
+    }
+    let mut num6 = 0u32;
+    for i in (x - num)..=(x + num) {
+        for j in (y - num2)..=(y + num2) {
+            if let Some(t) = world.tile(i, j) {
+                if !growth_solid_tile(world, i, j) && t.liquid > 0 {
+                    num6 += t.liquid as u32;
+                }
+            }
+        }
+    }
+    if num6 / 255 >= num3 {
+        return !beach;
+    }
+    beach
+}
+
+/// `WorldGen.PlaceOasisPlant(X, Y, type)` (`WorldGen.cs:47538-47613`) over
+/// the runtime `genRand` (`UnifiedRandom`): the `Next(9)` frame column FIRST
+/// (before the bounds gate), the 3×2 occupancy scan (the sea-oat 529 cells
+/// are allowed), the sand-floor + water-check gates, the `KillTile(noItem)`
+/// strip across the box, then the 3×2 frame write (`54*style` column,
+/// `36*0` row). The runtime caller passes type 530.
+fn place_oasis_plant_runtime(world: &mut World, x: i32, y: i32, kind: u16, rng: &mut UnifiedRandom) {
+    let num = rng.next_max(9); // `:47540` — the draw precedes the bounds gate.
+    let num2 = 0i32;
+    // `:47542` — the bounds gate (beachDistance margins, 5-tile y margin).
+    if x < BEACH_DISTANCE || x > world.width - BEACH_DISTANCE || y < 5 || y > world.height - 5 {
+        return;
+    }
+    let mut flag = true;
+    for i in (x - 1)..=(x + 1) {
+        for j in (y - 1)..=y {
+            if let Some(t) = world.tile(i, j) {
+                if t.active() && t.kind != 529 {
+                    flag = false;
+                }
+                if t.liquid > 0 {
+                    flag = false;
+                }
+            }
+        }
+        // `:47568` — the floor below must be solid sand.
+        if !growth_solid_tile(world, i, y + 1)
+            || !world.tile(i, y + 1).is_some_and(|t| crate::tiledata::SET_CONVERSION_SAND.has(t.kind))
+        {
+            flag = false;
+        }
+    }
+    if !flag || !oasis_plant_water_check(world, x, y, false) {
+        return;
+    }
+    // `:47577-47586` — the KillTile(noItem) strip across the 3×2 box.
+    for k in (x - 1)..=(x + 1) {
+        for l in (y - 1)..=y {
+            if world.tile(k, l).is_some_and(|t| t.active()) {
+                let _ = crate::edit::kill_tile(world, k, l, true);
+            }
+        }
+    }
+    // `:47587-47612` — the 3×2 frame write.
+    let num3 = (54 * num) as i16;
+    let num4 = (36 * num2) as i16;
+    for dx in 0..3 {
+        for dy in 0..2 {
+            let cx = x - 1 + dx;
+            let cy = y - 1 + dy;
+            if let Some(t) = world.tile_mut(cx, cy) {
+                t.flags |= FLAG_ACTIVE;
+                t.kind = kind;
+                t.frame_x = num3 + (dx * 18) as i16;
+                t.frame_y = num4 + (dy * 18) as i16;
+            }
+        }
+    }
+}
+
+/// `WorldGen.PlantSeaOat(x, y)` (`WorldGen.cs:58299-58326`) over the runtime
+/// `genRand`: the wall/active/liquid refusals, the solid-sand floor below
+/// (`SolidTileAllowBottomSlope` + `Conversion.Sand`), the water check, then
+/// the 529 write with `Next(5)*18` frameX. Returns whether it planted.
+fn plant_sea_oat_runtime(world: &mut World, x: i32, y: i32, rng: &mut UnifiedRandom) -> bool {
+    // `:58301` — the cell refusals + the floor probe.
+    let here = world.tile(x, y);
+    if here.is_some_and(|t| t.wall > 0 || t.active() || t.liquid > 0) {
+        return false;
+    }
+    if !growth_solid_tile_allow_bottom_slope(world, x, y + 1)
+        || !world.tile(x, y + 1).is_some_and(|t| crate::tiledata::SET_CONVERSION_SAND.has(t.kind))
+    {
+        return false;
+    }
+    if !sea_oat_water_check(world, x, y) {
+        return false;
+    }
+    // `:58314-58320` — the write (slope 0, halfBrick false, 529, Next(5)*18).
+    let frame_x = (rng.next_max(5) * 18) as i16;
+    if let Some(t) = world.tile_mut(x, y) {
+        t.flags |= FLAG_ACTIVE;
+        t.set_slope(0);
+        t.flags &= !crate::tile::FLAG_HALF_BRICK;
+        t.kind = 529;
+        t.frame_x = frame_x;
+        t.frame_y = 0;
+    }
+    true
+}
+
+/// `WorldGen.GrowSeaOat(x, y)` (`WorldGen.cs:58342-58352`): the frameX
+/// advances by 90 while below 180 (the 3-stage growth). Returns false (the
+/// C# return value, unused by the caller).
+fn grow_sea_oat_runtime(world: &mut World, x: i32, y: i32) -> bool {
+    if let Some(t) = world.tile_mut(x, y) {
+        if t.frame_x < 180 {
+            t.frame_x += 90;
+        }
+    }
+    false
+}
+
+/// `WorldGen.CheckSeaOat(x, y)` (`WorldGen.cs:58328-58340`): the water check
+/// kills the oat when it fails. Returns whether the oat survives.
+fn check_sea_oat_runtime(world: &mut World, x: i32, y: i32) -> bool {
+    if !sea_oat_water_check(world, x, y) {
+        let _ = crate::edit::kill_tile(world, x, y, false);
+        return false;
+    }
+    true
+}
 
 /// `WorldGen.RollRandomSeaShellStyle` (`WorldGen.cs:45170-45187`) over the
 /// growth pass's `UnifiedRandom` (the C# `genRand`): the 5 seashell styles on
@@ -1751,6 +2076,86 @@ pub(super) mod tests {
         let mut rng = UnifiedRandom::new(7);
         grow_cactus(&mut w, 100, 200, &mut rng);
         assert!(w.tile(100, 199).is_none_or(|t| !t.active() || t.kind != 80), "the crowd gate");
+    }
+
+    // ---- W4-g40 desert chain: the runtime desert-surface growth arm --------
+
+    #[test]
+    fn the_sand_arm_grows_the_inland_cactus_at_next_300() {
+        // `WorldGen.cs:72282-72285` — inland sand (x > beachDistance+20) with
+        // the cell above free rolls Next(300) → GrowCactus. The oasis/sea-oat
+        // rolls (Next(25)/Next(20)) precede it; a seed that misses both and
+        // hits the 300 plants the cactus. The world is 4200 wide, x=2000 is
+        // inland (380+20 < 2000 < 4200-380-20).
+        let mut w = world();
+        w.world_surface = 250.0;
+        for dx in -8..=8 {
+            put(&mut w, 2000 + dx, 200, 53, 0);
+        }
+        // Find a seed whose Next(25)!=0, Next(20)!=0, Next(300)==0 in order.
+        let mut planted = false;
+        for seed in 0..4000i32 {
+            let mut w = world();
+            w.world_surface = 250.0;
+            for dx in -8..=8 {
+                put(&mut w, 2000 + dx, 200, 53, 0);
+            }
+            let mut rng = UnifiedRandom::new(seed);
+            update_world_overground_tile(&mut w, 2000, 200, true, false, 0.0, 0.0, &mut rng);
+            if w.tile(2000, 199).is_some_and(|t| t.active() && t.kind == 80) {
+                planted = true;
+                break;
+            }
+        }
+        assert!(planted, "some seed plants the inland cactus through the sand arm");
+    }
+
+    #[test]
+    fn the_sea_oat_arm_advances_the_frame_and_checks_water() {
+        // `WorldGen.cs:72234-72240` — the 529 oat: CheckSeaOat (water) then
+        // Next(20)==0 → GrowSeaOat (frameX += 90 while < 180). An inland oat
+        // with no water nearby fails CheckSeaOat and is killed.
+        let mut w = world();
+        w.world_surface = 250.0;
+        put(&mut w, 2000, 200, 53, 0); // the sand floor
+        put(&mut w, 2000, 199, 529, 0); // the oat, frameX 0
+        // No water inland → CheckSeaOat kills it.
+        let mut rng = UnifiedRandom::new(7);
+        update_world_overground_tile(&mut w, 2000, 199, true, false, 0.0, 0.0, &mut rng);
+        assert!(w.tile(2000, 199).is_none_or(|t| !t.active()), "the dry inland oat dies");
+    }
+
+    #[test]
+    fn the_oasis_plant_arm_kills_on_failed_boosted_water_check() {
+        // `WorldGen.cs:72289-72298` — the 530 plant kills itself when
+        // OasisPlantWaterCheck(boost:true) fails. An inland plant with no
+        // water dies.
+        let mut w = world();
+        w.world_surface = 250.0;
+        put(&mut w, 2000, 200, 53, 0);
+        put(&mut w, 2000, 199, 530, 0);
+        let mut rng = UnifiedRandom::new(7);
+        update_world_overground_tile(&mut w, 2000, 199, true, false, 0.0, 0.0, &mut rng);
+        assert!(w.tile(2000, 199).is_none_or(|t| !t.active()), "the dry oasis plant dies");
+    }
+
+    #[test]
+    fn the_grow_cactus_sand_arm_copies_paint_and_reframes() {
+        // `WorldGen.cs:56658-56665` — the new cactus cell copies the sand
+        // cell's paint/coating and runs SquareTileFrame. The port writes the
+        // paint (meta) from the source sand cell.
+        let mut w = world();
+        for dx in -8..=8 {
+            put(&mut w, 100 + dx, 200, 53, 0);
+        }
+        // Paint the seed sand cell.
+        let si = w.index(100, 200);
+        w.tiles[si].set_paint(5);
+        let mut rng = UnifiedRandom::new(7);
+        grow_cactus(&mut w, 100, 200, &mut rng);
+        let cactus = w.tile(100, 199).expect("the cactus");
+        assert!(cactus.active() && cactus.kind == 80);
+        assert_eq!(cactus.paint(), 5, "the paint rides from the sand cell");
     }
 
     #[test]

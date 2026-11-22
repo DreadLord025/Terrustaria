@@ -1664,11 +1664,20 @@ fn step_full_desert(
     } else {
         -1
     };
+    // `CreateBiome<DesertBiome>()` (`WorldGen.cs:12511`,
+    // `WorldGenConfiguration.cs:27-34`): the embedded JSON's
+    // `Biomes.DesertBiome.ChanceOfEntrance` = 0.5 populates the field
+    // (the C# 0.3333 default only applies when the entry is absent).
+    let chance_of_entrance = super::config::WorldGenConfig::parse()
+        .biome("DesertBiome")
+        .and_then(|b| b.get_f64("ChanceOfEntrance"))
+        .unwrap_or(0.3333);
     desert::full_desert(
         world,
         gv,
         dungeon_side,
         world.world_surface,
+        chance_of_entrance,
         &mut streams.pass_rng("Full Desert"),
     );
 }
@@ -1920,9 +1929,13 @@ fn step_granite_marble(
         gv.layers().rock_layer,
         &mut streams.pass_rng("Marble"),
     );
+    // `GenVars.lavaLine` (the Terrain step's `TerrainPass.cs:211-236` pair)
+    // feeds `GraniteBiome.ShouldUseLava` (`GraniteBiome.cs:177`).
+    let lava_line = gv.lava_line;
     biomes::pass_granite(
         world,
         gv.layers().rock_layer,
+        lava_line,
         &mut streams.pass_rng("Granite"),
     );
 }

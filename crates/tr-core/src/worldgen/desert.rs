@@ -19,14 +19,19 @@
 //! ```
 //!
 //! Deviations (documented per the golden rule): the special-seed arms
-//! (`remixWorldGen`, `tenthAnniversaryWorld`, `surfaceIsDesert`,
-//! `notTheBees`, `dualDungeons`, `extraLiquid`, `skyblock`) have no port
-//! model and are skipped, so their branches and extra draws never run; the
-//! C#'s per-tile `Tile.SmoothSlope` effect map (the `PostPlacementEffect.Smooth`
-//! flags) has no port equivalent — the carve's slopes are left as-is, and
-//! `CleanupArea`'s `SquareWallFrame`/`TileFrame` pair runs through
-//! [`crate::framing::reframe_area`]; the `Main.tileSolid[484] = false` poke is
-//! a load-order detail the port's tile data does not model.
+//! (`remixWorldGen`, `surfaceIsDesert`, `notTheBees`, `dualDungeons`,
+//! `skyblock`) have no port model and are skipped, so their branches and
+//! extra draws never run; the entrance gate's `tenthAnniversaryWorld` +
+//! `extraLiquid` halves ARE modelled (W4-g40 P2, `DesertBiome.cs:23` — the
+//! anniversary seed skips the entrance fraction draw entirely, extraLiquid
+//! draws it then skips); the C#'s per-tile `Tile.SmoothSlope` effect map (the
+//! `PostPlacementEffect.Smooth` flags) IS carried since the W4-g40 hive-smooth
+//! slice (`DesertHive.cs:210-221` — the post-carve walk on the
+//! `biomes::tile_smooth_slope_one` seam, RNG-free); `CleanupArea`'s
+//! `SquareWallFrame`/`TileFrame`
+//! pair runs through [`crate::framing::reframe_area`]; the
+//! `Main.tileSolid[484] = false` poke is a load-order detail the port's tile
+//! data does not model.
 
 use crate::framing::reframe_area;
 use crate::tile::{FLAG_ACTIVE, FLAG_HALF_BRICK, FLAG_LIQUID_HONEY, FLAG_LIQUID_LAVA, FLAG_LIQUID_SHIMMER};
@@ -542,7 +547,12 @@ fn attempt_claim(
 
 /// `DesertHive.PlaceClustersArea` (`DesertHive.cs:224-381`): the metaball carve
 /// — the summed inverse-square cluster density decides the concentric shells.
-/// Returns the carved bounds (`UpdateDesertHiveBounds`, `WorldGen.cs:10989`).
+/// Returns the carved bounds (`UpdateDesertHiveBounds`, `WorldGen.cs:10989`)
+/// and fills `smooth_map` — the `PostPlacementEffect[,]` grid (`:210`,
+/// hive-local `[i - area.Left, j - area.Top]`, `Point.Zero` offset): `true`
+/// where the C# sets `PostPlacementEffect.Smooth` (`:284` core clear, `:315`
+/// sandstone band, `:331` outer band, `:358` speckle hit). The caller runs the
+/// post-carve `Tile.SmoothSlope` walk (`PlaceClusters`, `:212-221`).
 fn place_clusters_area(
     world: &mut World,
     desc: &DesertGeom,
@@ -550,6 +560,7 @@ fn place_clusters_area(
     area: Rect,
     world_surface: f64,
     fast: &mut FastRandom,
+    smooth_map: &mut [bool],
 ) -> (i32, i32, i32, i32) {
     let hive_w = desc.hive.w as f64;
     let hive_h = desc.hive.h as f64;
@@ -602,7 +613,14 @@ fn place_clusters_area(
             let mut flag2 = true;
             let mut write_tile: Option<u16> = None;
             let mut wall: Option<u16> = None;
+            // `PostPlacementEffect postPlacementEffect = None` (`:280`) —
+            // recorded into the hive-local map at `:370` on EVERY visited
+            // cell (the `InWorld` continue at `:235` skips the write, the
+            // map cell keeps its `false` default).
+            let mut smooth = false;
             if num7 > 3.5 {
+                // `:284`: the core clear carries Smooth unconditionally.
+                smooth = true;
                 // `tile.ClearEverything()` (`Tile.cs:110-121`) then the wall.
                 if let Some(t) = world.tile_mut(i, j) {
                     t.kind = 0;
@@ -630,6 +648,8 @@ fn place_clusters_area(
                 }
                 if !flag || world.tile(i, j).is_some_and(|t| t.active()) {
                     write_tile = Some(TILE_SANDSTONE);
+                    // `:315` — the sandstone-band ResetToType carries Smooth.
+                    smooth = true;
                 }
             } else if num7 > 0.7 || !flag {
                 wall = Some(WALL_HARDENED_SAND);
@@ -638,6 +658,8 @@ fn place_clusters_area(
                 }
                 if !flag || world.tile(i, j).is_some_and(|t| t.active()) {
                     write_tile = Some(tile_type);
+                    // `:331` — the outer-band ResetToType carries Smooth.
+                    smooth = true;
                 }
             } else if num7 > 0.25 {
                 let mut derived = fast.with_modifier(num4, num5);
@@ -655,6 +677,9 @@ fn place_clusters_area(
                     }
                     if world.tile(i, j).is_some_and(|t| t.active()) {
                         write_tile = Some(tile_type);
+                        // `:358` — the speckle hit's ResetToType carries
+                        // Smooth (a speckle MISS leaves None).
+                        smooth = true;
                     }
                 }
             } else {
@@ -681,6 +706,14 @@ fn place_clusters_area(
                 bounds.1 = bounds.1.min(j);
                 bounds.2 = bounds.2.max(i);
                 bounds.3 = bounds.3.max(j);
+            }
+            // `postEffectMap[i - area.X + offset.X, j - area.Y + offset.Y]`
+            // (`:370`) — the offset is `Point.Zero` (`:211`), row-major
+            // `[Width, Height]` flattened as `x * height + y`.
+            let mx = i - area.left();
+            let my = j - area.top();
+            if mx >= 0 && my >= 0 && mx < area.w && my < area.h {
+                smooth_map[(mx * area.h + my) as usize] = smooth;
             }
         }
     }
@@ -776,12 +809,15 @@ fn cleanup_area(world: &mut World, hive: Rect) {
 /// `Full Desert` (`WorldGen.cs:12500-12543` + `DesertBiome.Place`): one
 /// underground desert, placed opposite the dungeon with the vanilla retry
 /// loop. Writes `GenVars.UndergroundDesertLocation`/`HiveLocation` and the
-/// hive bounds through `gv`.
+/// hive bounds through `gv`. `chance_of_entrance` is the config-populated
+/// `DesertBiome.ChanceOfEntrance` (`DesertBiome.cs:10-11`, the embedded JSON
+/// `Biomes.DesertBiome` 0.5 — `CreateBiome<T>`, `WorldGenConfiguration.cs:27-34`).
 pub(crate) fn full_desert(
     world: &mut World,
     gv: &mut GenVars,
     dungeon_side: i32,
     world_surface: f64,
+    chance_of_entrance: f64,
     rng: &mut Rng,
 ) -> bool {
     let mut num = 0;
@@ -809,9 +845,20 @@ pub(crate) fn full_desert(
             sand_mound_place(world, &desc, rng);
             // `UpdateSurfaceMap` (`:22`).
             desc.update_surface(world);
-            // The entrance roll (`:23-40`): the JSON `ChanceOfEntrance` 0.5
-            // gate, then the `Next(4)` style pick.
-            if rng.next_f64() <= 0.5 {
+            // The entrance roll (`DesertBiome.cs:23-40`): the C# gate is
+            // `!Main.tenthAnniversaryWorld && GenBase._random.NextDouble()
+            // <= this.ChanceOfEntrance && !WorldGen.SecretSeed.extraLiquid
+            // .Enabled` — the anniversary seed short-circuits BEFORE the
+            // fraction draw (no entrance, no Next(4)); the extraLiquid seed
+            // still draws the fraction (the && order), then skips. The
+            // JSON `Biomes.DesertBiome.ChanceOfEntrance` is 0.5 (the C#
+            // field default 0.3333 only applies when the entry is absent).
+            if !world.seeds.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY)
+                && rng.next_f64() <= chance_of_entrance
+                && !world
+                    .micro_seeds
+                    .contains(crate::seeds::MicroSeedFlags::EXTRA_LIQUID)
+            {
                 let kind = rng.range(0, 4);
                 super::desert_entrances::place_entrance(
                     world,
@@ -826,8 +873,28 @@ pub(crate) fn full_desert(
             let mut hive = desc.hive;
             hive.inflate(20, 20);
             let mut fast = FastRandom::new(world.seed as i32 as u64).with_modifier_u64(HIVE_MODIFIER);
-            let (left, top, right, bottom) =
-                place_clusters_area(world, &desc, &clusters, hive, world_surface, &mut fast);
+            // `PostPlacementEffect[,] array` (`DesertHive.cs:210`) — the
+            // hive-inflated grid the carve marks, walked after the carve.
+            let mut smooth_map = vec![false; (hive.w * hive.h).max(0) as usize];
+            let (left, top, right, bottom) = place_clusters_area(
+                world, &desc, &clusters, hive, world_surface, &mut fast, &mut smooth_map,
+            );
+            // `PlaceClusters`' post-carve walk (`DesertHive.cs:212-221`):
+            // x-major over the inflated hive, `Tile.SmoothSlope(i, j,
+            // applyToNeighbors: false)` on every Smooth-marked cell — the
+            // g40-P1 single-cell seam, RNG-free (the slope map only). Runs
+            // BEFORE `AddTileVariance` (the C# `Place` order `:202-203`).
+            for i in hive.left()..hive.right() {
+                for j in hive.top()..hive.bottom() {
+                    let mx = i - hive.left();
+                    let my = j - hive.top();
+                    if mx >= 0 && my >= 0 && mx < hive.w && my < hive.h
+                        && smooth_map[(mx * hive.h + my) as usize]
+                    {
+                        super::biomes::tile_smooth_slope_one(world, i, j);
+                    }
+                }
+            }
             if clusters.len() > 0 {
                 gv.desert_hive_bounds = Some((left, top, right, bottom));
             }
@@ -936,8 +1003,10 @@ mod tests {
         hive.inflate(20, 20);
         let mut fast = FastRandom::new(world.seed as i32 as u64).with_modifier_u64(HIVE_MODIFIER);
         let surface_cap = world.world_surface;
-        let (left, top, right, bottom) =
-            place_clusters_area(&mut world, &desc, &clusters, hive, surface_cap, &mut fast);
+        let mut smooth_map = vec![false; (hive.w * hive.h).max(0) as usize];
+        let (left, top, right, bottom) = place_clusters_area(
+            &mut world, &desc, &clusters, hive, surface_cap, &mut fast, &mut smooth_map,
+        );
         let count = |kind: u16| {
             world
                 .tiles
@@ -975,6 +1044,196 @@ mod tests {
                 assert_eq!(ba.x.to_bits(), bb.x.to_bits());
                 assert_eq!(ba.y.to_bits(), bb.y.to_bits());
             }
+        }
+    }
+
+    /// W4-g40 P2: the embedded config's `Biomes.DesertBiome.ChanceOfEntrance`
+    /// is 0.5 (`CreateBiome<DesertBiome>` populates the field; the C# 0.3333
+    /// default only applies when the entry is absent —
+    /// `WorldGenConfiguration.cs:27-34`).
+    #[test]
+    fn w4_g40_desert_entrance_chance_reads_the_json_half() {
+        let config = super::super::config::WorldGenConfig::parse();
+        let biome = config.biome("DesertBiome").expect("the JSON entry exists");
+        assert_eq!(biome.get_f64("ChanceOfEntrance"), Some(0.5));
+    }
+
+    /// W4-g40 P2: the anniversary seed short-circuits the entrance gate
+    /// BEFORE the fraction draw (`DesertBiome.cs:23` — `!tenthAnniversary &&
+    /// NextDouble() <= chance && !extraLiquid`): a celebrationmk10 world
+    /// consumes NO entrance draws, so the hive's stream position differs
+    /// from a classic world's by exactly the entrance ledger.
+    #[test]
+    fn w4_g40_anniversary_skips_the_entrance_draws() {
+        // Two identical worlds; one carries the anniversary bit. The
+        // entrance gate is the ONLY seed-sensitive arm in full_desert's
+        // classic path, so the post-pass stream states must differ (the
+        // classic world drew the fraction + maybe the entrance).
+        let mut classic = flat(4200, 1200);
+        classic.world_surface = 400.0;
+        let mut anniv = flat(4200, 1200);
+        anniv.world_surface = 400.0;
+        anniv.seeds = crate::seeds::SeedFlags::from(crate::seeds::SeedFlags::TENTH_ANNIVERSARY);
+        let mut gv_a = super::super::pipeline::GenVars::default();
+        let mut gv_b = super::super::pipeline::GenVars::default();
+        let mut ra = Rng(0x5EED);
+        let mut rb = Rng(0x5EED);
+        full_desert(&mut classic, &mut gv_a, -1, 400.0, 0.5, &mut ra);
+        full_desert(&mut anniv, &mut gv_b, -1, 400.0, 0.5, &mut rb);
+        // The anniversary world never draws the entrance fraction; the
+        // classic one always does — the streams diverge at that draw.
+        assert_ne!(ra.0, rb.0, "the entrance fraction draw separates the streams");
+        // The anniversary world has no entrance carve: its hive bounds
+        // still land (the hive runs unconditionally).
+        assert!(gv_b.desert_hive.is_some());
+    }
+
+    /// W4-g40 hive-smooth witness 1: the `PostPlacementEffect` map marks the
+    /// four C# arms (`DesertHive.cs:284/:315/:331/:358`) and nothing else —
+    /// the core clear marks Smooth even where the cell was inactive, the
+    /// band arms mark only where the `!flag || active` ResetToType fires,
+    /// and a speckle MISS (`NextDouble >= num8`) leaves the cell unmarked.
+    #[test]
+    fn w4_g40_hive_smooth_map_marks_exactly_the_reset_arms() {
+        let mut world = flat(4200, 1200);
+        world.world_surface = 400.0;
+        let mut rng = Rng(0x5EED);
+        let desc =
+            DesertGeom::create_from_placement(&world, 2100, world.world_surface, false, &mut rng);
+        let clusters = ClusterGroup::new(desc.block_columns, desc.block_rows, &mut rng);
+        let mut hive = desc.hive;
+        hive.inflate(20, 20);
+        let mut fast = FastRandom::new(world.seed as i32 as u64).with_modifier_u64(HIVE_MODIFIER);
+        let mut map = vec![false; (hive.w * hive.h).max(0) as usize];
+        place_clusters_area(
+            &mut world, &desc, &clusters, hive, world.world_surface, &mut fast, &mut map,
+        );
+        // The carve fired (the shells exist) and the map carries marks.
+        assert!(map.iter().any(|&m| m), "the carve marks Smooth cells");
+        // Every marked cell is either a carved shell tile (sand/hardened/
+        // sandstone/fossil active), a Smooth-marked core clear (inactive
+        // with the sandstone wall), or the un-walled outer band edge —
+        // never an untouched stone cell deep outside the density field.
+        for i in hive.left()..hive.right() {
+            for j in hive.top()..hive.bottom() {
+                let (mx, my) = (i - hive.left(), j - hive.top());
+                if mx < 0 || my < 0 || mx >= hive.w || my >= hive.h {
+                    continue;
+                }
+                if !map[(mx * hive.h + my) as usize] {
+                    continue;
+                }
+                let Some(t) = world.tile(i, j) else { continue };
+                let carved = t.active()
+                    && matches!(t.kind, TILE_SAND | TILE_HARDENED_SAND | TILE_SANDSTONE | TILE_DESERT_FOSSIL);
+                let cleared_core = !t.active() && t.wall == WALL_SANDSTONE;
+                assert!(
+                    carved || cleared_core,
+                    "marked cell ({i},{j}) kind {} active {} wall {} is not a Smooth arm's write",
+                    t.kind, t.active(), t.wall
+                );
+            }
+        }
+    }
+
+    /// W4-g40 hive-smooth witness 2: the post-carve walk slopes the hive —
+    /// the flat-stone fixture starts with ZERO slopes/half-bricks, and after
+    /// `full_desert` the Smooth-marked shell edges carry the mask-map's
+    /// slope/half-brick states (`Tile.SmoothSlope`, `Tile.cs:814-846`).
+    #[test]
+    fn w4_g40_hive_smooth_walk_slopes_the_shell_edges() {
+        let mut world = flat(4200, 1200);
+        world.world_surface = 400.0;
+        let sloped_before = world
+            .tiles
+            .iter()
+            .filter(|t| t.slope() != 0 || t.half_brick())
+            .count();
+        assert_eq!(sloped_before, 0, "the fixture is unsloped");
+        let mut gv = super::super::pipeline::GenVars::default();
+        let mut rng = Rng(0x5EED);
+        assert!(full_desert(&mut world, &mut gv, -1, 400.0, 0.5, &mut rng));
+        let hive = gv.desert_hive.expect("the hive placed");
+        let mut sloped_in_hive = 0;
+        for i in (hive.x - 20)..(hive.x + hive.w + 20) {
+            for j in (hive.y - 20)..(hive.y + hive.h + 20) {
+                if world
+                    .tile(i, j)
+                    .is_some_and(|t| t.active() && (t.slope() != 0 || t.half_brick()))
+                {
+                    sloped_in_hive += 1;
+                }
+            }
+        }
+        assert!(
+            sloped_in_hive > 0,
+            "the Smooth walk slopes the shell edges (was 0 pre-slice)"
+        );
+    }
+
+    /// W4-g40 hive-smooth witness 3: the walk is RNG-free — two same-seed
+    /// `full_desert` runs end on the SAME `Rng` state and byte-identical
+    /// tiles (a==b), and the stream state equals a run whose Smooth walk is
+    /// suppressed (the walk takes no `Rng`/`FastRandom` argument — the
+    /// carve's ledger is untouched by the slice).
+    #[test]
+    fn w4_g40_hive_smooth_walk_is_rng_neutral_and_deterministic() {
+        let mut a = flat(4200, 1200);
+        a.world_surface = 400.0;
+        let mut b = flat(4200, 1200);
+        b.world_surface = 400.0;
+        let mut gv_a = super::super::pipeline::GenVars::default();
+        let mut gv_b = super::super::pipeline::GenVars::default();
+        let mut ra = Rng(0xC0FFEE);
+        let mut rb = Rng(0xC0FFEE);
+        full_desert(&mut a, &mut gv_a, -1, 400.0, 0.5, &mut ra);
+        full_desert(&mut b, &mut gv_b, -1, 400.0, 0.5, &mut rb);
+        assert_eq!(ra.0, rb.0, "same seed, same stream end");
+        assert_eq!(a.tiles.len(), b.tiles.len());
+        for (ta, tb) in a.tiles.iter().zip(b.tiles.iter()) {
+            assert_eq!(ta.kind, tb.kind);
+            assert_eq!(ta.flags, tb.flags);
+            assert_eq!(ta.wall, tb.wall);
+            assert_eq!(ta.liquid, tb.liquid);
+        }
+        // The carve alone (no walk) draws the identical ledger: replay
+        // place_clusters_area on a fresh twin with the same fast seed and
+        // compare the FastRandom-derived outcomes through the map — the
+        // walk never touches `fast`, so the maps must be identical.
+        let w0 = flat(4200, 1200);
+        let mut rng = Rng(0x5EED);
+        let desc =
+            DesertGeom::create_from_placement(&w0, 2100, 400.0, false, &mut rng);
+        assert!(desc.valid, "the fixture placement is valid");
+        let clusters = ClusterGroup::new(desc.block_columns, desc.block_rows, &mut rng);
+        let mut hive = desc.hive;
+        hive.inflate(20, 20);
+        let mut m1 = vec![false; (hive.w * hive.h).max(0) as usize];
+        let mut m2 = vec![false; (hive.w * hive.h).max(0) as usize];
+        let mut w1 = flat(4200, 1200);
+        w1.world_surface = 400.0;
+        let mut w2 = flat(4200, 1200);
+        w2.world_surface = 400.0;
+        let mut f1 = FastRandom::new(w1.seed as i32 as u64).with_modifier_u64(HIVE_MODIFIER);
+        let mut f2 = FastRandom::new(w2.seed as i32 as u64).with_modifier_u64(HIVE_MODIFIER);
+        place_clusters_area(&mut w1, &desc, &clusters, hive, 400.0, &mut f1, &mut m1);
+        place_clusters_area(&mut w2, &desc, &clusters, hive, 400.0, &mut f2, &mut m2);
+        assert_eq!(m1, m2, "the effect map is a pure function of the carve");
+        // The walk on w1 leaves every FastRandom-untouched field equal to
+        // w2's except the slope/half-brick bits (the ONLY delta the slice
+        // introduces).
+        for i in hive.left()..hive.right() {
+            for j in hive.top()..hive.bottom() {
+                let (mx, my) = (i - hive.left(), j - hive.top());
+                if mx >= 0 && my >= 0 && mx < hive.w && my < hive.h && m1[(mx * hive.h + my) as usize] {
+                    super::super::biomes::tile_smooth_slope_one(&mut w1, i, j);
+                }
+            }
+        }
+        for (ta, tb) in w1.tiles.iter().zip(w2.tiles.iter()) {
+            assert_eq!(ta.kind, tb.kind, "the walk retypes nothing");
+            assert_eq!(ta.wall, tb.wall, "the walk repaints no wall");
+            assert_eq!(ta.liquid, tb.liquid, "the walk moves no liquid");
         }
     }
 }
