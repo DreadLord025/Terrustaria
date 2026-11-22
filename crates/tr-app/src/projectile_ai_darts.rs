@@ -512,16 +512,26 @@ pub(crate) fn firework_flight(p: &mut Projectile) {
     // The movement: the kill-on-tile stand-in runs at the dispatch.
 }
 
-/// The 480 flame drop's AI_014 dust block (`Projectile.cs:25227-25245`)
-/// as the draw census: the `alpha = 255` pin, the first dust's `Next(50)`
-/// scale and the `Next(2)` gate (a second `Next(50)` when taken). The
-/// generic AI_014 flight runs at the dispatch's `ai_spear`.
-pub(crate) fn flame_drop_dust(p: &mut Projectile, rng: &mut dyn DropRng) {
+/// The 480 flame drop's AI_014 dust block (`Projectile.cs:25227-25245`):
+/// the `alpha = 255` pin, then the two dust-75 spawn through the
+/// `projectile_dust3` seam (W4-f5). The generic AI_014 flight runs at the
+/// dispatch's `ai_spear`. The first dust's `Next(50)` scale and the `Next(2)`
+/// gate (a second `Next(50)` when taken) now ride inside the emitter's
+/// `NewDust` internals + post-arms, in the C#'s order.
+pub(crate) fn flame_drop_dust(
+    p: &mut Projectile,
+    world: &World,
+    rng: &mut dyn DropRng,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+) {
     p.alpha = 255;
-    let _ = rng.next_range(0, 50);
-    if rng.next_range(0, 2) == 0 {
-        let _ = rng.next_range(0, 50);
-    }
+    let mut d = crate::projectile_dust3::ProjDust3 {
+        pool: dust,
+        ctx: dust_ctx,
+        rng,
+    };
+    crate::projectile_dust3::style14_flame_480(p, world, &mut d);
 }
 
 // =====================================================================

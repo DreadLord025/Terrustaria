@@ -1,4 +1,4 @@
-﻿# Research index вЂ” full C# Terraria audit
+# Research index вЂ” full C# Terraria audit
 
 Map of the research effort backing the new ROADMAP. One file per module,
 `docs/research/NN-slug.md`. Status: вњ… done В· рџ”„ in flight В· в¬њ planned.
@@ -76,6 +76,7 @@ per `docs/superpowers` agreements).
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 351 | Gore-sites family bible + the e5-vs-f10 HitEffect keep-one (W4-e5: the 1578-site census re-verified 1345/165/36/32/0; the 551 flipped-twin overlap RESOLVED — e5 drops :82206-82215, f10 keeps its betsy_flipped_death; the 5th hit-half :82045 found, g62 emit-at-wiring; the d55 compose + the registry-150 free-number take; code-only) — renumbered 304→351 per FROZEN registry-150 §8.7 | `351-gore-sites-family-bible.md` | ✅ SEALED |
+| 111 | Gore-family FINAL verification + completion receipt + SEAL (W4-f5: the 853-site wave-D recount 849 death/4 hit, 849/849 citation-covered; g60 §12.1 remaining-window closed b86-103; SEAL §7 the 4 hit-half bodies' exact wiring-assignment — g62 emit-at-wiring ×3 + wiring-caller 133 latch, d55 NOT extended; §8 the f10-overrun delete re-censused at f10 LIVE tip d197124d1 b157 — 131 fns 3672-8180 / 128 gates 8604-9179 / 138 witnesses 11527-14415 + the wyvern-twin/substring traps + re-census-at-merge; §9 g60f death-bible compose + the f5↔DeathFx keep-one = disjointness + the king_slime_spawns field fix; §10 the 1578-site bible FINAL one-paragraph + gate-command; f5 dust 43/43; code-only) | `111-gore-final-verification.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

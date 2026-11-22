@@ -39491,3 +39491,153 @@ by read against `tr-core/src/gore.rs`/`particles.rs`. The 251 witness
 tests are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/
 graphify invoked**. The `:91340` loveStruck heart gore is in a different
 function (not HitEffect) and stays out of scope.
+## The dust physics chain (W4-d50, task/W4-d50-dust-type-table, 2026-11-20, code-only mode)
+
+The dust foundation was PARTIAL on main: the `Dust` record + `DustPool` + the
+verbatim `NewDust` family (`particles.rs`, S1-E-1), the generic `UpdateDust`
+skeleton with its `type_arm` hook (S1-E-3), the colour/fade table
+(`dust_table.rs`, S1-E-2) and the `DUST_ID` names (`id_tables.rs`, S1-F-6) all
+landed. The missing piece вЂ” the ROADMAP S1-E-2/E-3 remainder "E-2's if-chain
+arms at `:467-2334`" вЂ” is the **per-type physics chain** the hook dispatches.
+Only 213/268 were hand-dispatched (`minecart::tick`); every other type fell
+through to the generic gravity tail.
+
+`crates/tr-core/src/dust_physics.rs` ports `Dust.cs:467-2334` verbatim as a
+pure, UNWIRED module (the `npc_ai_*` code-only precedent), sibling to
+`dust_table`'s colour half:
+
+* `pre_move` (`:468-476`) вЂ” the 299/300/301/305 family shrink+lift and the 35
+  lava-bubble counter, which the C# runs BEFORE `position += velocity` (`:477`).
+* `type_chain` (`:478-2334`) вЂ” the whole post-move if-chain over a
+  `DustPhysicsEnv` seam (the `solid_collision`/`wet_collision`/`light_color`
+  probes, the player velocity/wet/centre snapshot, the sandstorm-visuals flag,
+  the child-spawn sink, the `SandStormCount` delta). The hook's `bool` is the
+  SECOND-chain match (`:2130-2334`), so the skeleton's final
+  `else if (type != 304 && noGravity)` gravity tail (`:2335`) is suppressed
+  exactly as the C#'s else-if structure does; the FIRST-ladder standalone arms
+  (213/268 included) return `false` and take the tail alongside вЂ” the corrected
+  S1-E-3 chain reading.
+
+**RNG `NewDust` census.** Every `Main.rand` draw in the chain is preserved in
+per-slot C# order on the caller's stream (the module header carries the full
+table): 235's dead `vector3` two `Next(-100,101)` (`:817`, computed never used вЂ”
+the draws kept), the 159/164/173/160/162 jitter pairs + child-spawn gates
+(`Next(5)`/`Next(10)`/`Next(50)`), the 168 pair, the 34/35/152 wet `Next(2)` +
+`Next(-10,10)` (dry path draws nothing), and the 41/44 jitter pairs. The five
+child `NewDust` requests are recorded in `DustPhysicsEnv::spawns` and drained by
+the caller after the pass (the `wants_*` sink precedent); the deferral is
+stream-neutral for every current consumer (only 213/268 are live, neither spawns
+children). A scripted-RNG witness pins each census order exactly; 38 `w4_d50_*`
+tests incl. a full-pool integration (pre_move + move + type_chain + tail).
+
+**Deliberate deviations / drops (each cited at its arm):**
+
+* **Lights** вЂ” every `Lighting.AddLight` in the chain is the S1-E-5 column
+  (`tr-app::dust_lights`, which already feeds the 42 RNG-free FIRST-ladder arms).
+  The physics mutations land here; the light feed must read the POST-update
+  record. **Wiring-wave reconciliation owed:** `dust_lights` currently applies a
+  LOCAL decrement to its copy for 206 (`:766`), 174 (`:807`) and 230 (`:639`) to
+  recover the post-mutation scale; once the physics chain is wired those local
+  compensations must be RETIRED (the pool record already carries the mutation)
+  or the light double-counts the decrement. 309 (`:486`) and 261 (`:695-704`)
+  likewise read post-mutation scale.
+* **`customData`** вЂ” dropped with the field (`particles.rs`'s `Dust` record): the
+  Player/Projectile/NPC/Vector2/Color/int/float follower halves never fire. The
+  31 `else if (noGravity)` arm (`:1297`) becomes reachable BECAUSE the NPC
+  `customData` branch (`:1277`) is dropped вЂ” noted at the arm.
+* **`Main.snowDust`** (`:1747`, the 76 arm) вЂ” a `Main` static (`Main.cs:621`), not
+  a `Dust` one; the pool does not carry it (the skeleton's documented drop).
+* **43's death check** reads the PRE-ramp scale (`:1406-1414` precedes `:1415`),
+  ported in that order; the `light_color` probe is the real `Lighting.GetColor`
+  sample at the wiring wave (until then the caller passes the bright default, so
+  43 never spuriously dies).
+
+**Wiring (the d51-54 / e1-e4 sites' wave):** the generic loop calls `pre_move`
+over the active slots before the move, then `update_dust` with `type_chain` as
+the hook, then adds the `SandStormCount` delta and drains the child-spawn sink
+through `DustPool::new_dust` (post-write `no_gravity = true; scale = spawn.scale`).
+The `minecart::tick` 213/268 hand-dispatch and `sand::type_268_arm` retire into
+the chain at that wave (their bodies are already the chain's 213/268 arms).
+
+Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked**
+(user directive). The 38 witnesses are owed a compile window before merge.
+
+## The projectile dust sites, third batch (W4-f5, task/W4-f5-dust-proj-3, 2026-11-21, code-only mode)
+
+The `Projectile.cs` `Dust.NewDust*` census is **1196 sites** (891 plain
+`NewDust(` + 112 `NewDustPerfect(` + 193 `NewDustDirect(`; the earlier "1220"
+was a stale over-count — re-grepped at the final phase, research/111 §4.2).
+The co-lane split:
+W4-d53 owns sites 1-40 (unpushed), W4-e3 owns sites 41-82 (`:22230-24336`, the
+aiStyle-2/4/5/6/8/152 chains, in-flight in its worktree) AND the
+`ProjectilePool::update` -> `update_dust` plumbing + the `particles.rs`
+generic-RNG widening. **This lane takes sites 83-125 (`:24406-26501`), 43
+sites** — the aiStyle-11/12/14/18/20/21/22/23/24/25/27 set, disjoint from e3's
+2/4/5/6/8/152. The g63/g64/g65 trail/death lanes are reserved (no pushed
+claims) and untouched.
+
+`crates/tr-app/src/projectile_dust3.rs` ports the 30 LIVE sites (rowed kind +
+host arm) as emitters over a `ProjDust3` bundle (the live `DustPool` + the
+frame's `SpawnCtx` + the pass's `UpdateProjectiles` stream, the e3 `ProjDust`
+shape). The 13 LATENT sites (unrowed kinds: 18/72/86/87 fairy-orb, 196 Smoke
+Bomb, 261 Boulder Staff, 538 Twinkle, 1092 Librarian Book, 288 hostile Golden
+Shower, 1048/1053 boulders, 1114 Daybloom Staff) are recorded at their arm and
+stay dormant until the kind row lands (the d51 ungrantered-arm precedent).
+
+**The plumbing is reproduced byte-compatibly with e3** (the `update` scratch
+entry + the `update_dust` live entry + the `world_sim/projectiles.rs`
+`dust_spawn_ctx` capture + the `particles.rs` `new_dust_direct<R: DustRng>`
+widening) so the merge is a keep-one, not a conflict (the d51/e2 co-lane
+precedent). Only the disjoint dispatch arms are wired here.
+
+**RNG.** Every roll (the gates, the `NewDust` internals, the post-arms) rides
+the pass's `UpdateProjectiles` stream in the C#'s order (`Main.cs:17775-17777`'s
+`SwapRandom` wraps the walk, dust included). Argument draws evaluate BEFORE
+the `NewDust` call; the post-arms read the returned slot (the sentinel
+included). The `NewDust` default block is 6 draws (pos.x, pos.y, vel.x, vel.y,
+frame, scale); the per-type tweak chain adds a 7th for types 6/75/228/64
+(velocity.y override, x0.3 vel.x, x0.7 scale) — the emitters' post-arms run
+AFTER `NewDust` returns, so the tweak is already applied. The aiStyle-27 sites
+read `base.oldVelocity` (the sub-step start velocity, threaded from the
+`old_velocity` latch at `projectile.rs:16868`).
+
+**Deliberate deviations / drops (each cited at its arm):**
+
+* **Kill falls through.** The C# `Kill()` sets `active = false` (`:77262`) but
+  does NOT return from `AI()` — the dust trails still run on the dying
+  sub-step. The Golden Shower (`:24511-24514`), the fire overlay's wet kill
+  (`:25273-25276`) and the Ice Rod standing probe (`:25660`) keep their draws
+  on the death tick; the port marks the slot dead and falls through (the
+  pre-existing `ai_aqua_scepter` convention).
+* **Gore siblings.** The `Gore.NewGore` calls interleaved with these dust
+  blocks (the Aqua Scepter lava bounce `:24581-24587`) stay the d55/e5 lane's
+  skip — their gate + type rolls (`Next(3)`, `Next(61,64)`) stay on the stream
+  (the gore-type-roll convention), the bodies unported.
+* **Lights / shader.** The `Lighting.AddLight` arms (the light lane c19/e6)
+  and the `shader` write (`:24408`, dropped field) are not ported.
+* **The 445 Laser Drill** (aiStyle 75) reuses `ai_drill` as a channel stand-in
+  but its C# `AI_075` arm (`:66244-66358`) has no dust/jitter — the aiStyle-20
+  tail is gated to `proj_data(kind).ai_style == 20` so the 445 keeps its
+  no-draw behaviour.
+* **The 450/326-328 per-type heads** (Saucer Scrap frame machine, Greek Fire
+  wet kill + sound latch) are ported alongside their dust at the dispatch,
+  ahead of the shared `ai_spear` tail (the C# runs them after the generic
+  gravity/rotation, before the tile-kill scan).
+
+Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify
+invoked** (user directive). The 21 draw-mirror witnesses are owed a compile
+window before merge.
+
+## The NPC HitEffect classic-mob chain (W4-f5 phase 2, wave D, task/W4-f5-dust-proj-3, 2026-11-21, code-only mode)
+
+**Claim.** `npc_hit_effect_d.rs` ports the giant classic-mob else-if tail of `NPC.HitEffect` (`NPC.cs:85560-89835`): 853 `Gore.NewGore` sites in source order, from the 50 King Slime death (`:85684`) to the 156 arm's 184/185/185 (`:89829-89831`). Boundary: f10 wave C (`npc_hit_effect_c.rs`, tip `7d94a465`) owns everything BELOW `:85560` including its in-flight `:83562-85559` continuation; d55 wave A owns `:81660-81941`; e5 wave B owns `:81942-82202`. The dust halves stay the dust lanes': g62 owns the HIT (`life > 0`) halves (its `npc_hit_dust.rs` replay already covers this window's bat/demon-eye/zombie/skeleton/goblin/EoS/hornet hit loops), g59/g60 the death feeds; this module ports the death-half dust loops ONLY as the gore bodies' draw census (the f10 `death_dust_loop` precedent, keep-one at merge).
+
+**RNG contract.** The strike caller's `Main.rand` (`StrikeNPC_Inner` `:81488`, NOT the NPC pass stream). Per site, in C# order: (1) the death dust loop through `DustPool::new_dust` — 6 default-block draws + per-type tweaks pool-owned, culls consume the C#'s draws; (2) ARGUMENT draws BEFORE the `NewGore` (named args evaluate in source-written order — `:87405`'s Velocity/Position/Type draws Next(-80,81), Next(-60,21), Next(140,143)); (3) the two `NewGore` kicks, Y then X (`Gore.cs:1327-1328`, pool-side). Sentinel writes kept (`Main.gore[600]`).
+
+**Documented drops.** The 59/60/151 lava arm (`:85562-85669`) has NO gore sites — dust census the dust lanes', expert/skyblock/remix lava writes a World seam (wiring wave). Roster/World seams ride `HitEffectOutcomeD` (the 50 King Slime's `Next(4)+4` blue-slime spawns first). `netMode` SP fold; sounds c13; the type axis rides an explicit `npc_type` parameter (unrowed kinds, f10 precedent).
+
+Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked** (user directive). Batches land <=10 sites per commit, witnesses owed a compile window before merge.
+
+**Completion (batch 103, tip `fa3c526d5`).** All 853 gore sites of `NPC.cs:85560-89835` are ported (source count re-verified: 853 `Gore.NewGore(` lines in the window; 685 `gore.new_gore` call sites in the module — the difference is the shared `mech_smoke_burst`/`mech_quadrant_smoke`/ladder helpers fanning out to the mech rows). **FINAL verification (research/111): the 853 split 849 DEATH-half (f5's, all citation-covered, 0 missed) + 4 HIT-half (`:86532/86947/86951/88648`, g62's lane — f5 references none; their gore BODIES are a wiring hand-off, the one residual, see 111 §1.2).** The NO-gore arms are recorded in dispatcher comments, not ported: 59/60/151 lava, 687/685, 265 Spore, 663 (`:88411` unreachable), 277-280, 169, 316/330, 662, 34, 289, 23 Meteor Head, 25 Burning Sphere, 33 Water Sphere, 30/665. The else-arm's `type != 156` early-return is the dispatcher fallthrough (unmatched types draw nothing; witness-pinned). Witness fix `086827426`: the dust-6 per-type tweak draws a SEVENTH `Next(-10,6)` (`Dust.cs:214-218`) — `twin_dust6` replays it in the 7 mech/twins witnesses. Stand-ins unchanged: no `Npc.altTexture` (default-0 keeps head gores), no `Npc.color` (`Color::default()` for dye rows), `netMode` SP fold, sounds c13. **The gore-family total census (1578 sites, 5 files) + the f10-overrun merger-delete hunks (f10 tip `05f40324e`, b137) are published in research/111.**
+
+**SEAL (research/111 §§7-10, over receipt tip `d1d507461`).** The lane's one residual is CLOSED to a wiring checklist: the 4 hit-half gore bodies have an exact assignment (111 §7) — g62 EMIT-AT-WIRING for `:86947` (186 `Next(5)`→242), `:86951` (632 `Next(5)`→1217) and `:88648` (694 clamped-count × 2 `NextFloat`→1008 at `this.scale`; the gate draws ALREADY ride g62's arms in-stream, only the `let _ =` discards become emits) + the WIRING CALLER for `:86532` (the 133 `localAI[0]` latch writes live-NPC state g62's immutable snapshot cannot; a 5-line draw-free arm after g62's dust replay, landing in the SAME merge as the f10 delete that removes its sole current port). d55 does NOT extend (wave A `:81660-81941` only). The f10-overrun delete is RE-CENSUSED at f10 LIVE tip `d197124d1` (b157, still advancing): three contiguous bands — fns `:3672-8180` (131 bodies incl. the `five_gore_ladder`/`smoke_99_trio` helpers + the straddling `town_pet_death`), gates `:8604-9179` (128), witnesses `:11527-14415` (138) — plus the header rows `:136-257` and the `king_slime_babies`/`maggot_zombie_spawns` outcome fields; the b157 `wyvern_death` NAME TWIN (DD2 `:563` keeps / overrun `:7844` drops) and 3 substring-collision legit witnesses are pinned; the merger MUST re-run g60's census scripts at the merge-time tip (111 §8). The g60f death-bible compose (111 §9): g60 `30fea0fe1` §12.8 consumed, the f5↔g60-DeathFx keep-one receipt is DISJOINTNESS (g60's feed has zero gore refs, f5 zero ring refs — both merge whole; the 32-kind g60∩f5 + 93-kind g59∩f5 strips ride wiring), and g60's compile flag is FIXED here: `HitEffectOutcomeD` now declares `pub king_slime_spawns: Option<(f32, f32)>` (the field the `:221` write + two witnesses read). The GORE-FAMILY bible FINAL (111 §10): 1578 sites / 5 files / zero unowned / zero unassigned bodies, one-paragraph declaration + the re-runnable gate-command (expected 1345/165/36/32/0 = 1578; f5 window 853).

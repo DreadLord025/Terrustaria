@@ -659,9 +659,9 @@ impl DustPool {
     /// `Dust.NewDustDirect` (`Dust.cs:65-73`): a `NewDust` whose NaN velocity
     /// is zeroed (`Vector2.HasNaNs`).
     #[allow(clippy::too_many_arguments)]
-    pub fn new_dust_direct(
+    pub fn new_dust_direct<R: DustRng>(
         &mut self,
-        rng: &mut UnifiedRandom,
+        rng: &mut R,
         ctx: &SpawnCtx,
         world: &World,
         position: Vec2,
