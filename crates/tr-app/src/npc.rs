@@ -1340,6 +1340,26 @@ pub struct Npc {
     /// `MessageBuffer.cs:1636-1646` + `NPC.cs:90287-90311`). Zero on the host
     /// and in single-player, so nothing single-player-rendered moves.
     pub net_offset: Vec2,
+    /// `NPC.teleportTime` (`NPC.cs:6041`) — the teleport-in fade timer
+    /// `NPC.Teleport` (`:81052`) stamps 1 and
+    /// `UpdateNPC_TeleportVisuals` (`:92194-92241`) decays per tick
+    /// (styles 4/12 −0.02 in-arm, style 13 instant clear, the shared
+    /// −0.005 tail). 0 = no fade armed (the head gate draws nothing).
+    /// KEEP-ONE (g11 research/116 §5 seam-1 row): semantically the SAME
+    /// field as g11's — the merger keeps ONE field set under g11's names.
+    pub teleport_time: f32,
+    /// `NPC.teleportStyle` (`NPC.cs:6039`) — the `Teleport` style the
+    /// fade reads (`NPC.cs:81053` writes it last). The pad ride is 0,
+    /// the teleporting statues 14 (no dust arm — fields only), the
+    /// mystic frog 13, the shimmer town hop 12, the portal pair 4.
+    /// KEEP-ONE (g11 research/116 §2/§5): the surviving name is g11's
+    /// `teleport_style_id` (`npc.rs:1256-1263` on the g11 branch) — the
+    /// merger renames this field onto it, one field set.
+    pub teleport_style: i32,
+    /// `NPC.lastPortalColorIndex` (`NPC.cs:6581`) — the style-4 latch
+    /// `Teleport` writes BETWEEN the Entry/Exit bursts (`:81046-81050`)
+    /// and the fade's `GetPortalColor` reads (`:92216`).
+    pub last_portal_color_index: i32,
     /// Accumulated daylight burn time — RETIRED by S1-D-3z (the zombie
     /// fighter audit): the C# `AI_003_Fighters` has no daylight damage, so
     /// the zombie's dawn "burn" was removed in favour of `EncourageDespawn`
@@ -1853,6 +1873,16 @@ pub struct Npc {
     /// (the `twin_time_lefts` carrier precedent) — the solo `update_rng`
     /// path reads the empty list (the style75 solo fold).
     pub shimmerfly_threat_views: Vec<crate::npc_ai_style64::Ai64NpcView>,
+    /// W4-g61 wiring — the `Transform` tail's `TransformVisuals(oldType,
+    /// newType)` request (`NPC.cs:81136`, the per-kind burst `:80963-81033`).
+    /// The live in-place kind swaps (the 406→405 cell, the 428→427 / 427→426
+    /// vortex ladder) stamp `(oldType, newType)` in C# NPC-id space; the sim
+    /// drains it through the g61 module's `transform_visuals` on the
+    /// `UpdateNPCs` stream right after the AI (the C# call position), then
+    /// clears it. `None` = no transform this tick. The 158/159 vampire +
+    /// 478/479 mothron arms are roster-gapped (no ported kind), so their
+    /// swaps never stamp here yet.
+    pub wants_transform_visuals: Option<(i32, i32)>,
     /// The aiStyle-75 `SoundEngine.PlaySound(SoundID.Item12/Item39, pos)`
     /// cues (`(style, x, y)`) queued by the standalone `update_rng` wrapper
     /// (no audio seam there); the sim's pooled path drains them immediately
@@ -3039,6 +3069,11 @@ impl Npc {
                 // the small-kinds wiring wave).
                 .unwrap_or(if kind == NpcKind::BlazingWheel { 1.2 } else { 1.0 }),
             net_offset: Vec2::ZERO,
+            // `NPC.teleportTime`/`teleportStyle`/`lastPortalColorIndex`
+            // (`NPC.cs:6041`/`:6039`/`:6581`): the C# field zero-init.
+            teleport_time: 0.0,
+            teleport_style: 0,
+            last_portal_color_index: 0,
             burn: 0.0,
             wants_minion: false,
             wants_door_bash: None,
@@ -3186,6 +3221,7 @@ impl Npc {
             wants_mount_carrier: None,
             wants_transform: None,
             shimmerfly_threat_views: Vec::new(),
+            wants_transform_visuals: None,
             wants_item_sounds: Vec::new(),
             // `NPC.alpha`'s `SetDefaults` row — the kind-level default (the
             // Poltergeist's 100, `NPC.cs:13202`); the Destroyer family's
@@ -4738,6 +4774,7 @@ impl Npc {
     /// real pool through [`Npc::update_rng_dust`], S1-F-13c wiring).
         pub fn update_rng(&mut self, world: &World, player: &mut Player, dt: f32, rng: &mut UnifiedRandom) {
             let mut dust = tr_core::particles::DustPool::new();
+            let mut gore = tr_core::gore::GorePool::new();
             // A permissive ctx: the whole world on-screen, the full dust
             // budget — the pool never culls, so the scratch spawn always
             // lands (the draw count matches the live empty-pool path).
@@ -4752,7 +4789,7 @@ impl Npc {
                 ),
                 max_dust_to_draw: 6000,
             };
-            self.update_rng_dust(world, player, dt, rng, &mut dust, &ctx);
+            self.update_rng_dust(world, player, dt, rng, &mut dust, &ctx, &mut gore);
         }
 
     /// The full step with the caller's RNG stream AND the live dust pool +
@@ -4762,7 +4799,10 @@ impl Npc {
     /// ride (`Main.cs:17767-17769`'s `SwapRandom("UpdateNPCs")` wraps
     /// `NPC.UpdateNPC`, dust included). The live sim
     /// (`world_sim/npcs.rs::update_npcs`) threads `app.dust` + the frame's
-    /// `spawn_ctx` here; every other kind ignores the pool.
+    /// `spawn_ctx` here; every other kind ignores the pool. W4-g61 wiring:
+    /// the gore pool joins for the `Transform` tail's `TransformVisuals`
+    /// drain (the 406→405 ring is dust-only, but the seam carries the pool
+    /// for the roster-gapped 158/159 + 478/479 gore arms).
     pub fn update_rng_dust(
         &mut self,
         world: &World,
@@ -4771,6 +4811,7 @@ impl Npc {
         rng: &mut UnifiedRandom,
         dust: &mut tr_core::particles::DustPool,
         dust_ctx: &tr_core::particles::SpawnCtx,
+        gore: &mut tr_core::gore::GorePool,
     ) {
         // The shared `NPC.Update` preamble (the aiStyle-75 pooled wrapper
         // runs the same block — the family machine is a POOL step, so the
@@ -5087,6 +5128,27 @@ impl Npc {
             // `update_solar_drakomire_rider` stand-ins are gone.
             75 => self.update_rng_style75_solo(world, player, rng),
             _ => self.update_kind_ai(world, player, dt, rng),
+        }
+        // W4-g61 wiring — the `Transform` tail's `TransformVisuals(oldType,
+        // newType)` (`NPC.cs:81136`, the per-kind burst `:80963-81033`): the
+        // live in-place kind swaps stamp `wants_transform_visuals`; the drain
+        // runs HERE, right after the AI (the C# call position — `Transform`
+        // runs inside `AI()`, before `UpdateNPC`'s `find_frame`/collision
+        // tail), on the caller's `UpdateNPCs` stream. The netOffset round trip
+        // is the module's (`:80965`/`:81032`). The 406→405 ring is dust-only;
+        // the gore pool rides for the roster-gapped 158/159 + 478/479 arms.
+        if let Some((old_type, new_type)) = self.wants_transform_visuals.take() {
+            let mut env = crate::npc_spawn_visuals::SpawnVisualsEnv {
+                world,
+                dust,
+                dust_ctx,
+                gore,
+                rng,
+                // The 406/428/427 arms play no sound; the 158/159 Item8 cue
+                // (roster-gapped) resolves through the NPC item façade.
+                play_sound: &mut |_, _, _, _, _| {},
+            };
+            crate::npc_spawn_visuals::transform_visuals(&mut env, self, old_type, new_type);
         }
         // `NPC.UpdateNPC`'s tail (`NPC.cs:90516`): `this.justHit = false`
         // once per NPC update, AFTER the AI read it. The clear sits before
@@ -13091,6 +13153,11 @@ impl Npc {
         if self.ai[0] >= 300.0 {
             // `:39394-39401`'s `Transform(405)` — the port swaps the kind in
             // place (the vanilla's `SetDefaultsFromNetId` keeps `life`).
+            // W4-g61 wiring: the `Transform` tail's `TransformVisuals(406, 405)`
+            // (`NPC.cs:81136`) — the 10-20 dust ring (`:80991-81007`). The
+            // C# ids 406/405 (NPCID.StardustCellSmall/Big), NOT the port's
+            // net ids 116/121.
+            self.wants_transform_visuals = Some((406, 405));
             self.kind = NpcKind::StardustCellBig;
             self.scale = 1.0;
             self.ai = [0.0; 4];
@@ -15455,6 +15522,10 @@ impl Npc {
                 }
             }
             if !boxed {
+                // W4-g61 wiring: `Transform(426)`'s tail `TransformVisuals(427,
+                // 426)` (`NPC.cs:81136`/`:56897`) — the 30× SelectRandom(229,240,240)
+                // shimmer-fairy step (`:81020-81031`). C# ids 427/426.
+                self.wants_transform_visuals = Some((427, 426));
                 self.kind = NpcKind::VortexHunter;
                 self.max_hp = NpcKind::VortexHunter.max_hp();
                 self.hp = self.max_hp;
@@ -15565,6 +15636,10 @@ impl Npc {
                 }
             }
             if !boxed {
+                // W4-g61 wiring: `Transform(427)`'s tail `TransformVisuals(428,
+                // 427)` (`NPC.cs:81136`/`:56865`) — the 20× SelectRandom(229,240)
+                // shimmer-fairy step (`:81008-81019`). C# ids 428/427.
+                self.wants_transform_visuals = Some((428, 427));
                 self.kind = NpcKind::VortexAlien;
                 self.max_hp = NpcKind::VortexAlien.max_hp();
                 self.hp = self.max_hp;
@@ -32775,6 +32850,7 @@ mod s1_f_13c_wire_tests {
         let mut p = night_player(&w);
         let mut rng = UnifiedRandom::new(7);
         let mut dust = DustPool::new();
+        let mut gore = tr_core::gore::GorePool::new();
         let ctx = dust_ctx(&w);
 
         let mut ever = Npc::new(NpcKind::Everscream, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
@@ -32785,9 +32861,9 @@ mod s1_f_13c_wire_tests {
         santa.hp = santa.max_hp;
 
         for _ in 0..10 {
-            ever.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
-            queen.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
-            santa.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+            ever.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng, &mut dust, &ctx, &mut gore);
+            queen.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng, &mut dust, &ctx, &mut gore);
+            santa.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng, &mut dust, &ctx, &mut gore);
         }
         // The Everscream's idle counter runs 1/tick at full hp (`:32794`).
         assert_eq!(ever.ai[1], 10.0, "the Everscream idle machine ran");
@@ -32810,6 +32886,7 @@ mod s1_f_13c_wire_tests {
         let mut p = night_player(&w);
         let mut rng = UnifiedRandom::new(3);
         let mut dust = DustPool::new();
+        let mut gore = tr_core::gore::GorePool::new();
         let ctx = dust_ctx(&w);
 
         // The Everscream's pine-needle spray: ai[0]=1, ai[1]=4 → tick 5 fires
@@ -32820,7 +32897,7 @@ mod s1_f_13c_wire_tests {
         ever.hp = ever.max_hp;
         ever.ai[0] = 1.0;
         ever.ai[1] = 4.0;
-        ever.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+        ever.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng, &mut dust, &ctx, &mut gore);
         let needles_plain = ever.wants_hostile_shot.iter().filter(|s| s.0 == 345).count();
         let needles_ai = ever.wants_hostile_shot_ai.iter().filter(|s| s.kind == 345).count();
         assert_eq!(needles_plain + needles_ai, 1, "the needle drained");
@@ -32838,7 +32915,7 @@ mod s1_f_13c_wire_tests {
         ever2.hp = ever2.max_hp;
         ever2.ai[0] = 2.0;
         ever2.ai[1] = 74.0;
-        ever2.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+        ever2.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng, &mut dust, &ctx, &mut gore);
         let orn_plain = ever2.wants_hostile_shot.iter().filter(|s| s.0 == 346).count();
         let orn_ai = ever2.wants_hostile_shot_ai.iter().filter(|s| s.kind == 346).count();
         assert_eq!(orn_plain + orn_ai, 1, "the ornament drained");
@@ -32859,7 +32936,7 @@ mod s1_f_13c_wire_tests {
         let mut fired = false;
         for _ in 0..40 {
             queen.wants_hostile_shot.clear();
-            queen.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+            queen.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng, &mut dust, &ctx, &mut gore);
             if queen.wants_hostile_shot.iter().any(|s| s.0 == 348) {
                 fired = true;
                 break;
@@ -32873,7 +32950,7 @@ mod s1_f_13c_wire_tests {
         santa.hp = santa.max_hp;
         santa.ai[0] = 1.0;
         santa.ai[1] = 15.0;
-        santa.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+        santa.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng, &mut dust, &ctx, &mut gore);
         assert!(
             santa.wants_hostile_shot.iter().any(|s| s.0 == 180 && s.5 == 36),
             "the SantaNK1 fired a BulletDeadeye"
@@ -32896,11 +32973,12 @@ mod s1_f_13c_wire_tests {
         ever.hp = ever.max_hp;
         let mut rng2 = UnifiedRandom::new(5);
         let mut dust2 = DustPool::new();
+        let mut gore2 = tr_core::gore::GorePool::new();
         for _ in 0..299 {
-            ever.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng2, &mut dust2, &ctx);
+            ever.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng2, &mut dust2, &ctx, &mut gore2);
         }
         assert_eq!(rng2, UnifiedRandom::new(5), "no draws before the 300th tick");
-        ever.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng2, &mut dust2, &ctx);
+        ever.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng2, &mut dust2, &ctx, &mut gore2);
         let mut witness = UnifiedRandom::new(5);
         let pick = witness.next_range(1, 3);
         assert_eq!(ever.ai[0], pick as f32, "the state is the drawn pick");
@@ -32914,7 +32992,8 @@ mod s1_f_13c_wire_tests {
         santa.hp = santa.max_hp;
         let mut rng3 = UnifiedRandom::new(11);
         let mut dust3 = DustPool::new();
-        santa.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng3, &mut dust3, &ctx);
+        let mut gore3 = tr_core::gore::GorePool::new();
+        santa.update_rng_dust(&w, &mut p, 1.0 / 60.0, &mut rng3, &mut dust3, &ctx, &mut gore3);
         assert_ne!(rng3, UnifiedRandom::new(11), "the attack rolls drew");
         assert_eq!(santa.ai[1], 1.0, "the idle counter advanced");
     }

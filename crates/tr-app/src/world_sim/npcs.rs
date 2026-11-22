@@ -4478,6 +4478,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         let npcs = &mut app.npcs;
         let audio = &mut app.audio;
         let dust = &mut app.dust;
+        // W4-g61 wiring — the teleport-fade drain's gore pool (the poof/transform
+        // sites spawn gores; the fade itself draws only dust, but the env seam
+        // carries the pool). `Main.timeForVisualEffects` (`Main.cs:1181`, a double,
+        // ticks since start wrapped at 216000) — the port's `anim_time * 60` stand-in
+        // (the draw.rs:374 convention), captured before the field borrows.
+        let gore = &mut app.gore;
+        let time_for_visuals = (app.anim_time as f64 * 60.0) % 216000.0;
         // The aiStyle-75 family's per-tick difficulty inputs: the port is
         // single-difficulty classic (the expert bridge arm is constants-off
         // until the difficulty system lands — the module's `ctx.expert`).
@@ -4605,6 +4612,40 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     {
                         let n = &mut npcs[i];
                         n.slot = i;
+                        // W4-g61 wiring — `NPC.UpdateNPC_TeleportVisuals`
+                        // (`NPC.cs:92194-92241`, called at `:90322` after the
+                        // cast lights and BEFORE `AI()` `:90423`): the per-tick
+                        // teleport fade on the `UpdateNPCs` stream. The fields
+                        // copy in/out (the `&mut Npc` + `&mut`-field convention);
+                        // the head gate (`time <= 0`) draws nothing, so the
+                        // common case is a zero-draw no-op. The fade plays no
+                        // sound (the module's styles 0/4/12/13 are dust-only).
+                        // DEPRECATED SHAPE (g11 research/116 §4/§5, g11
+                        // `56afc0c0` + `cc8c767b`): the merger keeps g11's
+                        // `teleport_dust::update_npc_teleport_visuals` taking
+                        // `&mut Npc` on the g11 fields (`teleport_style_id`)
+                        // at this SAME pre-AI slot — this copy-in/out triple
+                        // drain drops with the g61 module's teleport family.
+                        if n.teleport_time > 0.0 {
+                            let mut tp = (n.teleport_time, n.teleport_style, n.last_portal_color_index);
+                            let mut env = crate::npc_spawn_visuals::SpawnVisualsEnv {
+                                world,
+                                dust: &mut *dust,
+                                dust_ctx: &dust_ctx,
+                                gore: &mut *gore,
+                                rng: npcs_rng,
+                                play_sound: &mut |_, _, _, _, _| {},
+                            };
+                            crate::npc_spawn_visuals::update_npc_teleport_visuals(
+                                &mut env,
+                                n,
+                                &mut tp,
+                                time_for_visuals,
+                            );
+                            n.teleport_time = tp.0;
+                            n.teleport_style = tp.1;
+                            n.last_portal_color_index = tp.2;
+                        }
                         // `NPC.OnSpawn`'s type-113 arm (`NPC.cs:8404-8407`):
                         // `Main.wofNPCIndex = whoAmI` at spawn — the presence
                         // mirror stays on while the wall lives (the death
@@ -4682,7 +4723,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // so the Everscream/Santa dust arms reach the live pool.
                     let is_style75 = npcs[i].kind.ai_style() == 75;
                     if !is_style75 {
-                        npcs[i].update_rng_dust(world, player, step, npcs_rng, dust, &dust_spawn_ctx);
+                        npcs[i].update_rng_dust(world, player, step, npcs_rng, dust, &dust_spawn_ctx, gore);
                     } else {
                         npcs[i].update_preamble(step);
                         let ctx = crate::npc_ai_style75::Style75Ctx {
@@ -6403,25 +6444,42 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // (`:81084-81114`) in place — the bottom-anchored reposition, the
     // SetDefaults swap, TargetClosest and the integer life rescale.
     {
-        let player_ref = app.player.as_ref();
-        let world_ref = &app.world;
-        let npcs = &mut app.npcs;
-        if let Some(player) = player_ref {
-            for i in 0..npcs.len() {
-                if let Some(ty) = npcs[i].wants_transform {
-                    let new_kind = match ty {
-                        382 => NpcKind::RayGunner,
-                        518 => NpcKind::SolarSpearman,
-                        // W4-c9's snail shimmer Transform(677) drain arm
-                        // (adopted with the Shimmerfly rowing — inert on
-                        // this base: the snail trio stays c9's, nothing
-                        // queues 677 here yet; the merge dedupes).
-                        677 => NpcKind::Shimmerfly,
-                        _ => continue,
-                    };
-                    npcs[i].transform_to_kind(world_ref, player, new_kind);
-                }
+        for i in 0..app.npcs.len() {
+            let Some(ty) = app.npcs[i].wants_transform else {
+                continue;
+            };
+            let new_kind = match ty {
+                382 => NpcKind::RayGunner,
+                518 => NpcKind::SolarSpearman,
+                // W4-c9's snail shimmer Transform(677) drain arm
+                // (adopted with the Shimmerfly rowing — inert on
+                // this base: the snail trio stays c9's, nothing
+                // queues 677 here yet; the merge dedupes).
+                677 => NpcKind::Shimmerfly,
+                _ => continue,
+            };
+            // W4-g61 wiring: the C# `Transform` tail calls
+            // `TransformVisuals(oldType, newType)` (`NPC.cs:81136`). The
+            // 390→382 / 416→518 pairs match NO arm (`:80963-81033`), so the
+            // call draws nothing — a parity call through the g61 module on
+            // the `UpdateNPCs` stream (the netOffset round trip is a no-op at
+            // zero offset). The old type is the pre-swap C# id (390
+            // ScutlixRider / 416 SolarDrakomireRider).
+            let old_type = app.npcs[i].kind.cs_id() as i32;
+            if let Some(player) = app.player.as_ref() {
+                app.npcs[i].transform_to_kind(&app.world, player, new_kind);
             }
+            let ctx = app.spawn_ctx();
+            let rng = app.rngs.stream(RngKey::UpdateNpcs);
+            let mut env = crate::npc_spawn_visuals::SpawnVisualsEnv {
+                world: &app.world,
+                dust: &mut app.dust,
+                dust_ctx: &ctx,
+                gore: &mut app.gore,
+                rng,
+                play_sound: &mut |_, _, _, _, _| {},
+            };
+            crate::npc_spawn_visuals::transform_visuals(&mut env, &mut app.npcs[i], old_type, ty);
         }
     }
     // The saucer core's crew (`AI`'s aiStyle-76 init arm): the 2 turrets
@@ -15458,6 +15516,70 @@ mod vortex_trio_tests {
         assert!(turned, "the alien becomes the hunter");
         assert_eq!(n.hp, n.max_hp, "the transform heals");
         assert_eq!(n.max_hp, 1000, "the hunter's full hp");
+    }
+
+    /// W4-g61 wiring — the `Transform` tail's `TransformVisuals(428, 427)`
+    /// (`NPC.cs:81136`/`:56865`): the headcrab→alien swap stamps
+    /// `wants_transform_visuals`, and the `update_rng_dust` drain runs the
+    /// 20× SelectRandom(229,240) shimmer-fairy step (`:81008-81019`) on the
+    /// caller's stream — 20 type-229/240 dust, noGravity, fadeIn 0.25, the
+    /// scale 0.6+NextFloat×1.8, velocity ×scale/2. The request clears after
+    /// the drain (one burst per transform).
+    #[test]
+    fn w4_g61_the_headcrab_transform_drains_the_fairy_burst() {
+        let (_app, mut player) = {
+            let mut a = flow_app(None, vec![], vec![]);
+            let p = Player::spawn(&a.world);
+            (a, p)
+        };
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::VortexHeadcrab,
+            150.0 * TILE_PX,
+            118.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = 10;
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = UnifiedRandom::new(7);
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut gore = tr_core::gore::GorePool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(world.width as f32 * TILE_PX, world.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        let mut burst_tick = false;
+        for _ in 0..320 {
+            let before = dust.slots().iter().filter(|d| d.active).count();
+            n.update_rng_dust(&world, &mut player, 1.0 / 60.0, &mut rng, &mut dust, &ctx, &mut gore);
+            let after = dust.slots().iter().filter(|d| d.active).count();
+            if n.kind == NpcKind::VortexAlien {
+                // The transform tick: the 20-dust fairy burst landed.
+                assert_eq!(after - before, 20, "the 20× SelectRandom fairy step");
+                assert!(n.wants_transform_visuals.is_none(), "the request cleared");
+                burst_tick = true;
+                break;
+            }
+        }
+        assert!(burst_tick, "the headcrab transformed");
+        // The burst's dust are type 229/240, noGravity, fadeIn 0.25.
+        let fairy: Vec<_> = dust
+            .slots()
+            .iter()
+            .filter(|d| d.active && (d.dust_type == 229 || d.dust_type == 240))
+            .collect();
+        assert_eq!(fairy.len(), 20, "the fairy dust types");
+        for d in fairy {
+            assert!(d.no_gravity);
+            assert_eq!(d.fade_in, 0.25);
+            assert!(d.scale >= 0.6 && d.scale <= 2.4);
+        }
     }
 }
 

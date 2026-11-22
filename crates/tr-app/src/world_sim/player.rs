@@ -1794,6 +1794,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         }
     }
     crate::chest::tick_open(app); // `Player.HandleBeingInChestRange` (`Player.cs:25290`/:31015-31124)
+    // W4-g61 wiring — `Player.ChestChangeEvents` (`Player.cs:25384`/:28760-28775):
+    // the close edge runs the key-summon (`NPC.BigMimicSummonCheck`) on the
+    // just-closed chest; `lastChest` latches. Runs after the range close above
+    // (the C# call sits inside `Player.Update`, after the movement/hurt block).
+    crate::chest::chest_change_events(app);
     if map_open {
         app.update_map_input();
     }

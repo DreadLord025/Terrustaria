@@ -210,7 +210,12 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                     // 50 roster NPCs in index order), one roll from the core
                     // stream when the collection is non-empty, and only the
                     // rolled NPC moves — to `(x - width/2, y - height - 1)` with
-                    // the roll's style 14.
+                    // the roll's style 14. W4-g61 wiring: the move rides
+                    // `NPC.Teleport` (`NPC.cs:81035-81058`) — style 14 has NO
+                    // `Main.TeleportEffect` arm (the switch falls through), so
+                    // the two-sided burst draws nothing, but the teleport fields
+                    // latch (time 1 / style 14) for the per-tick fade. The
+                    // `SendData(65)` relay is the server arm — dropped.
                     let mut candidates = Vec::new();
                     for (idx, n) in app.npcs.iter().enumerate() {
                         if n.hp > 0 && roster.contains(&n.kind.cs_id()) {
@@ -224,15 +229,42 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                         continue;
                     }
                     let roll = app.wiring.rand_next(candidates.len() as i32) as usize;
-                    let npc = &mut app.npcs[candidates[roll]];
-                    let (w, h) = npc.size();
-                    npc.x = x as f32 - w * 0.5;
-                    npc.y = y as f32 - h - 1.0;
+                    let slot = candidates[roll];
+                    let (w, h) = app.npcs[slot].size();
+                    let new_pos = Vec2::new(x as f32 - w * 0.5, y as f32 - h - 1.0);
+                    npc_teleport_wiring(app, slot, new_pos, 14, 0);
                 }
                 // The boulder statue's projectile 99 (aiStyle 25) has no ported
                 // family — dropped with the ANALYSIS note, like the other
                 // not-yet-ported projectile families.
                 tr_core::wiring::StatueSpawn::Boulder { .. } => {}
+                tr_core::wiring::StatueSpawn::Poof {
+                    x,
+                    y,
+                    npc_id,
+                    cap_ids,
+                } => {
+                    // W4-g61 wiring — `Wiring.cs:2274-2276`/`:2328-2330`/
+                    // `:2396-2398`: a body-gated statue spawn whose `CheckMech`
+                    // cooldown was consumed and whose `NPC.MechSpawn` cap passed,
+                    // but whose `Collision.SolidTiles` body gate blocked the
+                    // spawn, poofs INSTEAD of spawning. The cap is re-checked here
+                    // (it reads the entity list, in queue order — the statues
+                    // spawned earlier in the flood are already in `app.npcs`, so
+                    // the count matches the C#'s inline check). The poof anchor is
+                    // `(num140 - 4, num141 - 22) - (10, 10)` = `(x - 14, y - 32)`.
+                    let caps: Vec<u16> = cap_ids.iter().map(|&c| c as u16).collect();
+                    if !crate::wiring_stub::npc_mech_spawn(
+                        app.npcs.iter().map(|n| (n.x, n.y, n.kind.cs_id())),
+                        &caps,
+                        npc_id as u16,
+                        x as f32,
+                        y as f32,
+                    ) {
+                        continue;
+                    }
+                    wiring_poof(app, Vec2::new((x - 14) as f32, (y - 32) as f32));
+                }
             }
         }
         // The actuation cascade's object drops (`SquareTileFrame(resetFrame:
@@ -313,17 +345,29 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                     }
                 }
             }
-            // `Wiring.cs:3147-3157`: the NPC gates — `lifeMax > 5`, no bosses,
+            // `Wiring.cs:3162-3173`: the NPC gates — `lifeMax > 5`, no bosses,
             // `noTileCollide` and the `TeleportationImmune` set (none of the
-            // implemented kinds is immune; bosses = King Slime).
-            for n in app.npcs.iter_mut() {
-                if n.max_hp > 5 && n.hp > 0 && n.kind != NpcKind::KingSlime {
-                    let nx = n.x;
-                    let ny = n.y;
-                    let (w, h) = n.size();
+            // implemented kinds is immune; bosses = King Slime). W4-g61 wiring:
+            // the move rides `NPC.Teleport(position + vector)` (the default
+            // style 0, `:3170`) — the two-sided W*H/5 type-159 burst + Item6
+            // on the wiring stream, then the teleport fields latch for the
+            // per-tick fade. The `teleporting` re-entry flag is a single-player
+            // no-op (one pass per pad pair).
+            for slot in 0..app.npcs.len() {
+                // The gate reads copy out before the teleport (the `n` borrow
+                // of app.npcs must end before npc_teleport_wiring's &mut app).
+                let probe = {
+                    let n = &app.npcs[slot];
+                    if n.max_hp > 5 && n.hp > 0 && n.kind != NpcKind::KingSlime {
+                        let (w, h) = n.size();
+                        Some((n.x, n.y, w, h))
+                    } else {
+                        None
+                    }
+                };
+                if let Some((nx, ny, w, h)) = probe {
                     if hits(nx, ny, w, h) {
-                        n.x = nx + dx;
-                        n.y = ny + dy;
+                        npc_teleport_wiring(app, slot, Vec2::new(nx + dx, ny + dy), 0, 0);
                     }
                 }
             }
@@ -340,6 +384,13 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                 py as f32,
                 app.rngs.stream(crate::app::RngKey::UpdateWorldGen),
             );
+        }
+        // W4-g61 wiring — the logic-gate burn-out poofs (`Wiring.cs:824-826`):
+        // a gate re-poked while `_GatesDone` poofs at `(lampX, i) * 16 - (10, 10)`
+        // (the core computed the pixel anchor). No cap — the poof runs on the
+        // wiring stream like the statue body-gate poofs.
+        for (px, py) in app.wiring.take_lamp_poofs() {
+            wiring_poof(app, Vec2::new(px as f32, py as f32));
         }
     });
     for _ in 0..party_credits {
@@ -471,6 +522,82 @@ fn statue_npc(npc_id: i16, x: i32, y: i32) -> Option<Npc> {
     };
     let (w, h) = kind.size();
     Some(Npc::new(kind, x as f32 - w * 0.5, y as f32 - h, 1, 0.0))
+}
+
+/// W4-g61 wiring — one `Utils.PoofOfSmoke` (`Utils.cs:1078-1093`) through the
+/// g61 module on the wiring stream (the statue/lamp poofs run inside
+/// `HitWireSingle`/`CheckLogicGate`, which the C# reaches under the
+/// `UpdateWorldGen` swap — the port's wiring-RNG stand-in, M7-WIRE-1, the
+/// actuation-drop convention). `position` is the C# anchor in world pixels.
+/// The poof plays no sound; the gore/dust pools are the App's live ones.
+fn wiring_poof(app: &mut App, position: Vec2) {
+    let ctx = app.spawn_ctx();
+    let rng = app.wiring.rand_mut();
+    let mut env = crate::npc_spawn_visuals::SpawnVisualsEnv {
+        world: &app.world,
+        dust: &mut app.dust,
+        dust_ctx: &ctx,
+        gore: &mut app.gore,
+        rng,
+        play_sound: &mut |_, _, _, _, _| {},
+    };
+    crate::npc_spawn_visuals::poof_of_smoke(&mut env, position);
+}
+
+/// W4-g61 wiring — one `NPC.Teleport` (`NPC.cs:81035-81058`) through the g61
+/// module on the wiring stream (the statue/pad teleports run inside
+/// `HitWireSingle`/`Wiring.Teleport`, the `UpdateWorldGen` swap — the port's
+/// wiring-RNG stand-in, M7-WIRE-1). The teleport fields copy in/out of the
+/// `Npc` (the `&mut Npc` + `&mut`-field disjoint-borrow convention); the
+/// two-sided Entry/Exit burst + the style-4 latch ride the module. The cues
+/// resolve through `play_teleport_cue` at the C# call position (the pitch
+/// draws join the wiring stream). `water_style` is `Dust.dustWater()`
+/// (`Main.cs`'s `calculateWaterStyle` at the camera) for the style-5 column.
+///
+/// DEPRECATED (the §5 DUP RISK — g11 research/116, g11 tip `98283df0`): the
+/// merger KEEPS the g11 QUEUE replay (`main_dust::npc_teleport` draining
+/// `NpcTeleportReq` on the `UpdateWorldGen` key — the pad loop already rides
+/// it on g11, and the §5 Fold B queues the statue style 14 through the SAME
+/// drain with the `:81052-81053` grants latched) and DROPS this immediate
+/// helper with the module's env-level `npc_teleport` driver. The semantics
+/// this helper pins (the two-sided burst, the style-14 zero-draw latch, the
+/// cue position) are already in the surviving g11 shape. Kept compiling
+/// until the merge so the seam witnesses stay runnable.
+fn npc_teleport_wiring(app: &mut App, slot: usize, new_pos: Vec2, style: i32, extra_info: i32) {
+    let water_style = crate::biome::calculate_water_style(&app.world, app.camera) as i32;
+    let ctx = app.spawn_ctx();
+    let mut tp = (
+        app.npcs[slot].teleport_time,
+        app.npcs[slot].teleport_style,
+        app.npcs[slot].last_portal_color_index,
+    );
+    // Disjoint field borrows: the cue callback owns `audio`, the env owns
+    // world/dust/gore/rng/npc — no whole-`app` capture (the closure would
+    // conflict with the env's field borrows).
+    let audio = &mut app.audio;
+    let rng = app.wiring.rand_mut();
+    let mut env = crate::npc_spawn_visuals::SpawnVisualsEnv {
+        world: &app.world,
+        dust: &mut app.dust,
+        dust_ctx: &ctx,
+        gore: &mut app.gore,
+        rng,
+        play_sound: &mut |id, st, x, y, rng| {
+            audio.play_teleport_cue(id, st, x, y, rng);
+        },
+    };
+    crate::npc_spawn_visuals::npc_teleport(
+        &mut env,
+        &mut app.npcs[slot],
+        new_pos,
+        style,
+        extra_info,
+        &mut tp,
+        water_style,
+    );
+    app.npcs[slot].teleport_time = tp.0;
+    app.npcs[slot].teleport_style = tp.1;
+    app.npcs[slot].last_portal_color_index = tp.2;
 }
 
 /// The spiky ball's proximity cap (`Wiring.cs:1814-1822`/`:1945-1953`): the
@@ -768,6 +895,83 @@ mod tests {
         assert!(app.npcs.is_empty(), "the unported kind drops");
     }
 
+    /// W4-g61 wiring — `Wiring.cs:2320-2332`: the hornet statue (style 16)
+    /// whose 2×2 body gate is blocked poofs INSTEAD of spawning (the cap
+    /// passes — the npc list is empty). The poof anchor is
+    /// `(num140 - 4, num141 - 22) - (10, 10)` = `(anchor_x - 14, anchor_y - 32)`;
+    /// the ten type-16 dust + 3-6 gores land on the wiring stream (the
+    /// scratch-pool replay ends where the live stream ends).
+    #[test]
+    fn w4_g61_the_blocked_hornet_statue_poofs_on_the_wiring_stream() {
+        let mut app = app_with(105, 16 * 36, 0); // style 16 → the Hornet (42)
+        // A solid tile inside the 2×2 body gate (num137-1..num137+1,
+        // num136..num136+1) = x∈[9,11], y∈[20,21]. (9,21) is below the wired
+        // row 20, so the flood still reaches the statue.
+        let bi = app.world.index(9, 21);
+        app.world.tiles[bi] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        app.world.tiles[bi].flags |= FLAG_ACTIVE;
+        let before = app.wiring.rand_mut().clone();
+        trip_and_tick(&mut app);
+        assert!(app.npcs.is_empty(), "the body gate blocks the spawn");
+        let after = app.wiring.rand_mut().clone();
+        // The replay: a scratch pool + the same ctx, the pre-trip stream.
+        let anchor_x = 10 * 16 + 16;
+        let anchor_y = (20 + 3) * 16;
+        let ctx = app.spawn_ctx();
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut gore = tr_core::gore::GorePool::new();
+        let mut replay = before;
+        let mut env = crate::npc_spawn_visuals::SpawnVisualsEnv {
+            world: &app.world,
+            dust: &mut dust,
+            dust_ctx: &ctx,
+            gore: &mut gore,
+            rng: &mut replay,
+            play_sound: &mut |_, _, _, _, _| {},
+        };
+        crate::npc_spawn_visuals::poof_of_smoke(
+            &mut env,
+            Vec2::new((anchor_x - 14) as f32, (anchor_y - 32) as f32),
+        );
+        assert_eq!(after, replay, "the poof's draws ride the wiring stream");
+        let live: Vec<_> = app.dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 10, "ten type-16 dust");
+        for d in live {
+            assert_eq!(d.dust_type, 16);
+        }
+        let gores: Vec<_> = app.gore.slots().iter().filter(|g| g.active).collect();
+        assert!((3..=6).contains(&gores.len()), "the smoke gores");
+    }
+
+    /// W4-g61 wiring — the cap gate: a blocked hornet statue whose
+    /// `NPC.MechSpawn` cap FAILS (10 hornets already alive) poofs NOTHING
+    /// (the C# checks the cap before the body gate, `:2321`).
+    #[test]
+    fn w4_g61_the_cap_blocked_hornet_statue_poofs_nothing() {
+        let mut app = app_with(105, 16 * 36, 0);
+        let bi = app.world.index(9, 21);
+        app.world.tiles[bi] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        app.world.tiles[bi].flags |= FLAG_ACTIVE;
+        // Ten living hornets near the anchor exhaust the global cap.
+        for k in 0..10 {
+            app.npcs
+                .push(npc_of(NpcKind::Hornet, 176.0 + k as f32, 368.0));
+        }
+        trip_and_tick(&mut app);
+        assert_eq!(app.npcs.len(), 10, "no spawn");
+        assert!(
+            app.dust.slots().iter().all(|d| !d.active),
+            "the cap-blocked statue poofs nothing"
+        );
+        assert!(app.gore.slots().iter().all(|g| !g.active));
+    }
+
     #[test]
     fn dw_4_3_the_item_caps_filter_by_type() {
         // `Item.MechSpawn` (`Item.cs:49385-49406`) counts only the requested
@@ -944,6 +1148,74 @@ mod tests {
             "the moved NPC's y: {} vs {}",
             moved.y,
             anchor_y - h - 1.0
+        );
+        // W4-g61 wiring: `NPC.Teleport` latches the fields (style 14 has no
+        // TeleportEffect arm — zero dust — but time 1 / style 14 stamp for the
+        // per-tick fade, `NPC.cs:81052-81053`).
+        assert_eq!(moved.teleport_time, 1.0, "the teleport time latches");
+        assert_eq!(moved.teleport_style, 14, "the statue's style 14");
+        assert_eq!(app.npcs[other].teleport_time, 0.0, "the unpicked NPC never teleports");
+    }
+
+    /// W4-g61 wiring — `Wiring.cs:3162-3173`: an NPC standing in a pad's 48×48
+    /// box rides `NPC.Teleport(position + vector)` (the default style 0) — the
+    /// two-sided W*H/5 type-159 burst + Item6 on the wiring stream, the fields
+    /// latch (time 1 / style 0). The Nurse (18, lifeMax 250 > 5, not a boss)
+    /// qualifies; the move lands at the other pad's offset.
+    #[test]
+    fn w4_g61_the_pad_teleports_the_npc_with_the_style0_burst() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = world();
+        // Two pads: (10,20) and (30,24), wired to a switch at (8,20).
+        for (px, py) in [(10i32, 20i32), (30, 24)] {
+            let i = app.world.index(px, py);
+            app.world.tiles[i] = Tile {
+                kind: 235,
+                ..Default::default()
+            };
+            app.world.tiles[i].flags |= FLAG_ACTIVE;
+            app.world.wires.set(px, py, tr_core::wiring::WireColor::Red, true);
+        }
+        let si = app.world.index(8, 20);
+        app.world.tiles[si] = Tile {
+            kind: 135,
+            ..Default::default()
+        };
+        app.world.tiles[si].flags |= FLAG_ACTIVE;
+        for x in 8..=30 {
+            app.world.wires.set(x, 20, tr_core::wiring::WireColor::Red, true);
+        }
+        for y in 21..=24 {
+            app.world.wires.set(30, y, tr_core::wiring::WireColor::Red, true);
+        }
+        // The Nurse stands in pad 0's box: the pad anchor (10*16, 20*16-48) =
+        // (160, 272), the 48×48 box [160,208]×[272,320]. The Nurse's box at
+        // (170, 280) intersects it.
+        app.npcs.push(npc_of(NpcKind::Nurse, 170.0, 280.0));
+        let before = app.wiring.rand_mut().clone();
+        app.wiring.trip_wire(&mut app.world, 8, 20, 1, 1);
+        update_wiring(&mut app, 1.0 / 60.0);
+        let moved = &app.npcs[0];
+        // The pad delta: pad1 anchor (30*16, 24*16-48) = (480, 336) minus pad0
+        // (160, 272) = (320, 64). The NPC moves by that delta.
+        assert!(
+            (moved.x - (170.0 + 320.0)).abs() < 0.01,
+            "the NPC rides the pad delta x: {}",
+            moved.x
+        );
+        assert!(
+            (moved.y - (280.0 + 64.0)).abs() < 0.01,
+            "the NPC rides the pad delta y: {}",
+            moved.y
+        );
+        assert_eq!(moved.teleport_time, 1.0, "the fields latch");
+        assert_eq!(moved.teleport_style, 0, "the pad's default style 0");
+        // The style-0 burst drew dust (the W*H/5 count per side) on the wiring
+        // stream — the stream advanced past the pre-trip state.
+        assert_ne!(app.wiring.rand_mut().clone(), before, "the burst drew");
+        assert!(
+            app.dust.slots().iter().any(|d| d.active && d.dust_type == 159),
+            "the type-159 teleport dust"
         );
     }
 

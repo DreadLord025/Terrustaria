@@ -76,6 +76,21 @@ pub enum StatueSpawn {
     /// The boulder statue (case 531, `Wiring.cs:1994-2013`): the projectile-99 anchor —
     /// the app spawns kind 99, damage 70, knockback 10, velocity (0, 0).
     Boulder { x: i32, y: i32 },
+    /// A body-gated statue spawn that POOFED instead of spawning (`Wiring.cs:2274-2276`
+    /// first-table `flag7` block, `:2328-2330` style 16, `:2396-2398` style 50): the
+    /// `CheckMech` cooldown was consumed and the C# `NPC.MechSpawn` cap passed, but the
+    /// `Collision.SolidTiles` body gate blocked the spawn, so `Utils.PoofOfSmoke` runs
+    /// at `(num140 - 4, num141 - 22) - (10, 10)` = `(x - 14, y - 32)` INSTEAD of `NewNPC`.
+    /// `(x, y)` is the cap anchor `(num140, num141)` = `(anchor_x, anchor_y)`; the app
+    /// re-checks `NPC.MechSpawn` (it reads the entity list) and poofs only when the cap
+    /// passes — the cap is checked in queue order, so it sees the statues spawned earlier
+    /// in the flood exactly as the C#'s inline check does. W4-g61 wiring.
+    Poof {
+        x: i32,
+        y: i32,
+        npc_id: i16,
+        cap_ids: &'static [i16],
+    },
 }
 
 /// The four wire colours, in `TripWire`'s pass order (`Wiring.cs:525`).
@@ -297,6 +312,13 @@ pub struct Wiring {
     /// [`Self::rand`] — so the app layer drains these and plays them on its
     /// stage's named stream (`take_statue_spawns`' event-queue seam).
     switch_clicks: Vec<(i32, i32)>,
+    /// The logic-gate burn-out poofs (`Wiring.cs:824-826`): when a gate whose
+    /// output should fire was ALREADY processed this pass (`_GatesDone`), the
+    /// re-poke poofs at `(lampX, i) * 16 - (10, 10)` instead of re-firing. The
+    /// position is world pixels, computed core-side; the app drains and runs
+    /// `Utils.PoofOfSmoke` on the wiring stream (no cap — unlike the statue
+    /// body-gate poofs). W4-g61 wiring.
+    lamp_poofs: Vec<(i32, i32)>,
 }
 
 /// A device shot request: one `Projectile.NewProjectile` call from the device
@@ -774,6 +796,13 @@ impl Wiring {
         std::mem::take(&mut self.switch_clicks)
     }
 
+    /// Drains the logic-gate burn-out poofs (`Wiring.cs:824-826`), in flood
+    /// order, world pixels. The caller runs `Utils.PoofOfSmoke` at each on
+    /// the wiring stream (the g61 module's `poof_of_smoke`).
+    pub fn take_lamp_poofs(&mut self) -> Vec<(i32, i32)> {
+        std::mem::take(&mut self.lamp_poofs)
+    }
+
     /// Drains the trap emission requests (the case-137 trap family).
     pub fn take_trap_requests(&mut self) -> Vec<TrapRequest> {
         std::mem::take(&mut self.trap_requests)
@@ -977,9 +1006,10 @@ impl Wiring {
     /// decode, the 2×3 `SkipWire` and the anchor verbatim, both spawn tables, the `flag7`
     /// body gate and the mushroom swap. `NPC.MechSpawn`/`Item.MechSpawn`, `NewNPC` and
     /// `Item.NewItem` are app-side (decision D1): the core emits the request, the app
-    /// applies the caps and builds the entities. `PoofOfSmoke` and
-    /// `NewTemporaryAnimation` have no port target (ANALYSIS "Traps & statues
-    /// (M7-WIRE-2)").
+    /// applies the caps and builds the entities. The body-gated poofs (`PoofOfSmoke`,
+    /// `:2274-2276`/`:2328-2330`/`:2396-2398`) emit a `Poof` request the app drains
+    /// through the g61 module (W4-g61 wiring); `NewTemporaryAnimation` has no port
+    /// target (ANALYSIS "Traps & statues (M7-WIRE-2)").
     pub fn statue_trigger(&mut self, world: &mut World, i: i32, j: i32) {
         let (frame_x, frame_y) = {
             let Some(tile) = world.tile(i, j) else {
@@ -1067,18 +1097,33 @@ impl Wiring {
             // `:2266`: `num143 != -1 && CheckMech(30) && NPC.MechSpawn(num140, num141,
             // num143)`. The C#'s `& flag6` only bites for style 63, whose veto travels in
             // `cap_ids`; the cooldown is consumed either way.
-            if self.check_mech(num137, num136, 30)
-                // `:2268`: the styles-64/71 body gate — a blocked spawn poofs instead.
-                && (!flag7 || !self.solid_tiles(world, num137 - 2, num137 + 3, num136, num136 + 2))
-            {
-                // `:2270`: the verbatim anchor — no `-12` offset in the first table.
-                self.statue_spawns.push(StatueSpawn::Npc {
-                    x: anchor_x,
-                    y: anchor_y,
-                    npc_id,
-                    cap_ids,
-                });
-                spawned = true;
+            if self.check_mech(num137, num136, 30) {
+                // `:2268`: the styles-64/71 body gate. The C# checks `NPC.MechSpawn`
+                // BEFORE the gate (`:2266`), so a body-blocked spawn whose cap passed
+                // poofs (`:2274-2276`); the cap is app-side (it reads the entity list),
+                // so a blocked body emits a `Poof` request carrying the cap ids — the
+                // app re-checks the cap and poofs only when it passes (W4-g61 wiring).
+                if !flag7 || !self.solid_tiles(world, num137 - 2, num137 + 3, num136, num136 + 2) {
+                    // `:2270`: the verbatim anchor — no `-12` offset in the first table.
+                    self.statue_spawns.push(StatueSpawn::Npc {
+                        x: anchor_x,
+                        y: anchor_y,
+                        npc_id,
+                        cap_ids,
+                    });
+                    spawned = true;
+                } else {
+                    // `:2274-2276`: the body gate blocked → poof at
+                    // `(num140 - 4, num141 - 22) - (10, 10)`; the cap anchor is
+                    // `(num140, num141)` = `(anchor_x, anchor_y)`. `num142` stays -1,
+                    // so the second table still runs (no style lives in both).
+                    self.statue_spawns.push(StatueSpawn::Poof {
+                        x: anchor_x,
+                        y: anchor_y,
+                        npc_id,
+                        cap_ids,
+                    });
+                }
             }
         }
         if !spawned {
@@ -1112,15 +1157,25 @@ impl Wiring {
             }
             // `:2320-2332`: the hornet's own body gate (the 2×2 above the statue).
             16 => {
-                if self.check_mech(num137, num136, 30)
-                    && !self.solid_tiles(world, num137 - 1, num137 + 1, num136, num136 + 1)
-                {
-                    self.statue_spawns.push(StatueSpawn::Npc {
-                        x: anchor_x,
-                        y: anchor_y - 12,
-                        npc_id: 42,
-                        cap_ids: NO_CAPS,
-                    });
+                if self.check_mech(num137, num136, 30) {
+                    // `:2321` `NPC.MechSpawn` is app-side; `:2323` the body gate. A
+                    // blocked body whose cap passed poofs (`:2328-2330`) — the cap
+                    // anchor is `(num140, num141)` = `(anchor_x, anchor_y)` (W4-g61).
+                    if !self.solid_tiles(world, num137 - 1, num137 + 1, num136, num136 + 1) {
+                        self.statue_spawns.push(StatueSpawn::Npc {
+                            x: anchor_x,
+                            y: anchor_y - 12,
+                            npc_id: 42,
+                            cap_ids: NO_CAPS,
+                        });
+                    } else {
+                        self.statue_spawns.push(StatueSpawn::Poof {
+                            x: anchor_x,
+                            y: anchor_y,
+                            npc_id: 42,
+                            cap_ids: NO_CAPS,
+                        });
+                    }
                 }
             }
             18 => {
@@ -1172,16 +1227,26 @@ impl Wiring {
                 }
                 // `:2388-2400`: the shark's body gate (the wide rect).
                 50 => {
-                    if self.check_mech(num137, num136, 30)
-                        && !self.solid_tiles(world, num137 - 2, num137 + 3, num136, num136 + 2)
-                    {
-                self.statue_spawns.push(StatueSpawn::Npc {
-                    x: anchor_x,
-                    y: anchor_y - 12,
-                    npc_id: 65,
-                    cap_ids: NO_CAPS,
-                });
-            }
+                    if self.check_mech(num137, num136, 30) {
+                        // `:2389` `NPC.MechSpawn` app-side; `:2391` the body gate. A
+                        // blocked body whose cap passed poofs (`:2396-2398`) at the
+                        // `(num140, num141)` cap anchor (W4-g61).
+                        if !self.solid_tiles(world, num137 - 2, num137 + 3, num136, num136 + 2) {
+                            self.statue_spawns.push(StatueSpawn::Npc {
+                                x: anchor_x,
+                                y: anchor_y - 12,
+                                npc_id: 65,
+                                cap_ids: NO_CAPS,
+                            });
+                        } else {
+                            self.statue_spawns.push(StatueSpawn::Poof {
+                                x: anchor_x,
+                                y: anchor_y,
+                                npc_id: 65,
+                                cap_ids: NO_CAPS,
+                            });
+                        }
+                    }
                 }
                 2 => {
                     if self.check_mech(num137, num136, 600) {
@@ -2020,7 +2085,11 @@ impl Wiring {
                             self.gates_next.push_back((lamp_x, i));
                             break;
                         }
-                        // The burn-out poof (`:822-825`) is visual — M7-WIRE-3.
+                        // `:824-826`: the gate already fired this pass — the re-poke
+                        // burns out with `Utils.PoofOfSmoke((lampX, i) * 16 - (10, 10))`.
+                        // The position is core-computed; the app drains `take_lamp_poofs`
+                        // and runs the g61 poof on the wiring stream (W4-g61 wiring).
+                        self.lamp_poofs.push((lamp_x * 16 - 10, i * 16 - 10));
                     }
                     break;
                 }
@@ -3552,6 +3621,39 @@ mod tests {
         assert_eq!(f, gate_frame(&w2), "the faulty roll is deterministic");
     }
 
+    /// W4-g61 wiring — `Wiring.cs:824-826`: a gate that already fired this pass
+    /// (`_GatesDone`) and is re-poked with its output still on burns out with
+    /// `Utils.PoofOfSmoke((lampX, i) * 16 - (10, 10))`. The two-OR-gate chain
+    /// (the flip-flop test's fixture) re-pokes the upper gate when its own
+    /// re-trip's flood re-toggles the stack lamp — the upper gate is `done`, so
+    /// the second evaluation queues a lamp poof at the gate cell. The queue
+    /// draws NOTHING from the wiring stream (the poof's draws are the app's).
+    #[test]
+    fn w4_g61_the_gate_burn_out_poofs_at_the_gate_cell() {
+        let mut w = world();
+        put_device(&mut w, 10, 20, 420, 0, 1 * 18);
+        put_device(&mut w, 10, 19, 419, 0, 0);
+        put_device(&mut w, 10, 30, 420, 0, 1 * 18);
+        put_device(&mut w, 10, 29, 419, 18, 0);
+        for y in 19..=30 {
+            w.wires.set(10, y, WireColor::Red, true);
+        }
+        let mut wiring = Wiring::new();
+        let peek = wiring.rand_mut().peek();
+        wiring.hit_wire_single(&mut w, 10, 19);
+        wiring.logic_gate_pass(&mut w);
+        // The upper gate (10,20) fired then was re-poked while done → burn-out
+        // poof at (10*16-10, 20*16-10). The lower gate (10,30) evaluates off
+        // (its lamp toggled off), so it queues nothing.
+        let poofs = wiring.take_lamp_poofs();
+        assert!(
+            poofs.contains(&(10 * 16 - 10, 20 * 16 - 10)),
+            "the upper gate burns out at its cell: {poofs:?}"
+        );
+        assert_eq!(wiring.rand_mut().peek(), peek, "the poof queue draws nothing");
+        assert!(wiring.take_lamp_poofs().is_empty(), "the drain empties");
+    }
+
     #[test]
     fn the_wire_rolls_come_from_the_unified_random_stream() {
         // Every wiring draw is `Main.rand.Next(...)`, and `Main.rand` is a
@@ -4315,8 +4417,9 @@ mod statue_tests {
     fn dw_1_1_styles_64_and_71_block_when_the_body_is_solid() {
         // `Wiring.cs:2266-2278`: the unicorn (64) and the pigron (71) carry `flag7` —
         // `SolidTiles(num137 - 2, num137 + 3, num136, num136 + 2)` blocks the spawn
-        // (the C# poofs instead, `:2274-2276`, which has no port target) while the
-        // cooldown is consumed either way.
+        // and the C# poofs instead (`:2274-2276`, W4-g61 wiring: a `Poof` request
+        // carrying the cap ids — the app re-checks `NPC.MechSpawn` and poofs only
+        // when the cap passes), while the cooldown is consumed either way.
         let mut clear = world_with_statue(64, 0);
         let mut wiring = Wiring::new();
         wiring.trip_wire(&mut clear, 9, 20, 1, 1);
@@ -4334,9 +4437,15 @@ mod statue_tests {
         put_solid(&mut blocked, 8, 21); // inside x∈[8,13], y∈[20,22]
         let mut wiring2 = Wiring::new();
         wiring2.trip_wire(&mut blocked, 9, 20, 1, 1);
-        assert!(
-            wiring2.take_statue_spawns().is_empty(),
-            "the body gate blocks the unicorn"
+        assert_eq!(
+            wiring2.take_statue_spawns(),
+            vec![StatueSpawn::Poof {
+                x: ANCHOR_X,
+                y: ANCHOR_Y,
+                npc_id: 86,
+                cap_ids: &[],
+            }],
+            "the body gate blocks the unicorn → poof"
         );
         wiring2.trip_wire(&mut blocked, 9, 20, 1, 1);
         assert!(
@@ -4348,10 +4457,14 @@ mod statue_tests {
         put_solid(&mut pigron, 13, 22);
         let mut wiring3 = Wiring::new();
         wiring3.trip_wire(&mut pigron, 9, 20, 1, 1);
-        assert!(
-            wiring3.take_statue_spawns().is_empty(),
-            "style 71: the corner tile blocks"
-        );
+        let spawns = wiring3.take_statue_spawns();
+        assert_eq!(spawns.len(), 1, "style 71: the corner tile blocks → poof");
+        match spawns[0] {
+            StatueSpawn::Poof { npc_id, .. } => {
+                assert!([170, 180, 171].contains(&npc_id), "the pigron poof carries the rolled id");
+            }
+            _ => panic!("style 71: the blocked body emits a Poof"),
+        }
     }
 
     #[test]
@@ -4365,7 +4478,11 @@ mod statue_tests {
         let mut w = world_with_statue(71, 0);
         put_solid(&mut w, 8, 21);
         blocked.trip_wire(&mut w, 9, 20, 1, 1);
-        assert!(blocked.take_statue_spawns().is_empty());
+        // W4-g61: the blocked body emits a Poof (the roll still burned).
+        assert!(matches!(
+            blocked.take_statue_spawns()[..],
+            [StatueSpawn::Poof { .. }]
+        ));
         let mut once = Wiring::new();
         once.seed_rand(seed);
         let mut w2 = world_with_statue(71, 0);
@@ -4625,8 +4742,9 @@ mod statue_tests {
     #[test]
     fn dw_1_2_the_hornet_and_shark_statues_gate_on_their_body_tiles() {
         // `Wiring.cs:2320-2332` (style 16, the 2×2 rect) and `:2388-2400` (style 50,
-        // the wide rect): a solid tile inside the rect blocks the spawn.
-        for style in [16, 50] {
+        // the wide rect): a solid tile inside the rect blocks the spawn — and the
+        // C# poofs instead (`:2328-2330`/`:2396-2398`, W4-g61: a Poof request).
+        for (style, npc_id) in [(16, 42i16), (50, 65)] {
             let mut clear = world_with_statue(style, 0);
             let mut wiring = Wiring::new();
             wiring.trip_wire(&mut clear, 9, 20, 1, 1);
@@ -4639,9 +4757,15 @@ mod statue_tests {
             put_solid(&mut blocked, 9, 21); // inside both rects
             let mut wiring2 = Wiring::new();
             wiring2.trip_wire(&mut blocked, 9, 20, 1, 1);
-            assert!(
-                wiring2.take_statue_spawns().is_empty(),
-                "style {style}: the body gate blocks"
+            assert_eq!(
+                wiring2.take_statue_spawns(),
+                vec![StatueSpawn::Poof {
+                    x: ANCHOR_X,
+                    y: ANCHOR_Y,
+                    npc_id,
+                    cap_ids: &[],
+                }],
+                "style {style}: the body gate blocks → poof"
             );
         }
     }
@@ -4770,10 +4894,11 @@ mod statue_tests {
         let mut left = world_with_statue_xy(64, 0, 1, 20);
         let mut wiring = Wiring::new();
         wiring.hit_wire_single(&mut left, 1, 20);
-        assert!(
-            wiring.take_statue_spawns().is_empty(),
-            "the left edge counts as solid"
-        );
+        // W4-g61: the blocked body emits a Poof (the left edge counts as solid).
+        assert!(matches!(
+            wiring.take_statue_spawns()[..],
+            [StatueSpawn::Poof { npc_id: 86, .. }]
+        ));
         let mut near_floor = world_with_statue_xy(64, 0, 10, 21);
         let mut wiring2 = Wiring::new();
         wiring2.trip_wire(&mut near_floor, 9, 21, 1, 1);
@@ -4785,10 +4910,11 @@ mod statue_tests {
         let mut at_floor = world_with_statue_xy(64, 0, 10, 22);
         let mut wiring3 = Wiring::new();
         wiring3.trip_wire(&mut at_floor, 9, 22, 1, 1);
-        assert!(
-            wiring3.take_statue_spawns().is_empty(),
-            "endY 24 hits the maxTilesY - 40 bound"
-        );
+        // W4-g61: endY 24 hits the bound → Poof.
+        assert!(matches!(
+            wiring3.take_statue_spawns()[..],
+            [StatueSpawn::Poof { npc_id: 86, .. }]
+        ));
     }
 
     #[test]
