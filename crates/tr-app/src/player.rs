@@ -1188,6 +1188,13 @@ pub struct Player {
     /// lives in `player_petting.rs`; the per-tick stop gates ride
     /// `update_petting_animal` beside the sitting/sleeping updates.
     pub petting: crate::player_petting::PettingInfo,
+    /// S3/K2 (the d21 compose contract, g10-side seat): the proj-lane
+    /// `TryGetTarget` feed — the resolved live projectile's bottom
+    /// (`PlayerPettingInfo.cs:70-75`: slot active + same type), refreshed
+    /// by the projectile pass when d21's lane lands (batch-D wires the
+    /// writer; until then it stays None and the proj petting path is
+    /// unreachable — the `from_projectile` ctor has no live caller).
+    pub petting_target_bottom: Option<(f32, f32)>,
     /// `PlayerSleepingHelper.timeSleeping` (`:17`): the fully-asleep counter
     /// — `>= 120` (`TimeToFullyFallAsleep`, `:11`) arms the clock's ×5
     /// (`World::day_rate`).
@@ -2811,6 +2818,7 @@ impl Player {
             sitting: false,
             sleeping: false,
             petting: crate::player_petting::PettingInfo::default(),
+            petting_target_bottom: None,
             sleep_time: 0,
             sleeping_style: 0,
             offset_for_seat: (0.0, 0.0),
@@ -6121,7 +6129,12 @@ impl Player {
         // — the petting stop gates read this tick's control flags (W4-g10
         // FINAL; the machine lives in `player_petting.rs`, the NPC roster +
         // talk latch are the App's, so the call rides the world-sim seam).
-        self.update_petting_animal(npcs, talk_npc);
+        // S3 feed (the d21 compose contract): the proj-lane TryGetTarget
+        // resolves off `petting_target_bottom` — the field d21's K2 half
+        // lands with its projectile lane (batch-D); until then no live
+        // proj target exists (the from_projectile ctor is unwired), so the
+        // None feed is exact for every current caller.
+        self.update_petting_animal(npcs, talk_npc, self.petting_target_bottom);
         // `PlayerSittingHelper.UpdateSitting` (`Player.cs:26125`) and
         // `PlayerSleepingHelper.UpdateState` (`:26126`): the stand-up/wake
         // gates run after the controls land, before the movement applies.

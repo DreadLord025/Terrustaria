@@ -1644,6 +1644,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if let Some((sx, sy)) = p.take_petting_joy_sound() {
                 app.audio.play_petting_joy_sound(sx, sy);
             }
+            // W4-g10 FINAL — the PET_THE_PET achievement request
+            // (`AchievementsHelper.cs:358-360`, HandleSpecialEvent(21)):
+            // the row-targeted `complete_condition` (a6's shape, NOT the
+            // broadcast notify_custom — research/138 keep-one). The
+            // queue's production drain (the g10 host landed the request;
+            // batch-L wires it beside the joy drain).
+            if p.take_pet_achievement() {
+                let _ = app.achievements.complete_condition("PET_THE_PET", "Do");
+            }
             // S1-P-i41 — the QuickMount no-space tink (`Player.cs:6057`):
             // case 0's Dig variation + pitch draws ride the `UpdatePlayers`
             // stream (the player tick runs under the `Main.cs:17754` swap).
