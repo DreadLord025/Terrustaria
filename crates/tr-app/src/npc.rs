@@ -8476,6 +8476,32 @@ impl Npc {
         self.rotation = s.rotation;
     }
 
+    /// W4-d46 mid-1 — the bridge into `npc_findframe_mid1`'s pure
+    /// machines: copy the four `FindFrame` fields out, run one tick,
+    /// copy them back (the `find_frame_wave_a` precedent). `direction`
+    /// is `facing` (the C#'s `Entity.direction`); `wet`/`ai` ride the
+    /// NPC's own fields (the Arapaima's dry double-clock reads `wet`).
+    fn find_frame_wave_mid1(&mut self, kind: crate::npc_findframe_mid1::FindFrameMid1Kind) {
+        let mut s = crate::npc_findframe_mid1::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+        };
+        let i = crate::npc_findframe_mid1::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            wet: self.wet,
+            ai: self.ai,
+        };
+        crate::npc_findframe_mid1::find_frame_mid1(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+    }
+
     pub(crate) fn find_frame(&mut self) {
         // W4-d44 wire (d48 wave C) — the `cs_id`-keyed hook into the
         // wave-C pure machines (`npc_findframe_c.rs`) via
@@ -8614,6 +8640,17 @@ impl Npc {
             crate::npc_findframe_low2::find_frame_kind_for_cs_id(self.kind.cs_id())
         {
             self.find_frame_wave_low2(kind);
+            return;
+        }
+        // W4-d46 mid-1 — the `cs_id`-keyed hook into the mid-band wave's
+        // pure machines (`npc_findframe_mid1.rs`, vanilla ids
+        // 150-165's first-12-missing set). NO current kind's `cs_id`
+        // lands in the set (the roster wave adds them), so this is
+        // stream-inert today; the arms themselves draw no RNG.
+        if let Some(kind) =
+            crate::npc_findframe_mid1::find_frame_kind_for_cs_id(self.kind.cs_id())
+        {
+            self.find_frame_wave_mid1(kind);
             return;
         }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
@@ -35195,6 +35232,64 @@ mod s1_d_2_tests {
                 assert!(n.hp <= hp, "{kind:?} hp grew");
             }
         }
+    }
+
+    // ---- W4-d46 mid-1 — the `find_frame` hook into `npc_findframe_mid1` ----
+    // The pure machines carry their own 11 pinned witnesses in
+    // `npc_findframe_mid1.rs`; these pin the NPC-side seam: the hook is
+    // inert for every current kind, and the bridge copies the four
+    // fields both ways. WRITTEN NOT RUN (code-only mode — no compiler
+    // invoked on this branch).
+
+    /// The `cs_id` hook fires for NO current kind — the inertness proof
+    /// (the roster wave has not added the 12 mid-1 kinds; the bestiary's
+    /// only in-band id is 161 ZombieEskimo, a wave-A walker).
+    #[test]
+    fn w4_d46_the_mid1_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                crate::npc_findframe_mid1::find_frame_kind_for_cs_id(kind.cs_id()),
+                None,
+                "{kind:?} cs_id {} must not ride the mid-1 hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The bridge copies row/counter/sprite_dir/rotation both ways and
+    /// feeds vx/vy/facing/wet through — pinned on the Arapaima (the dry
+    /// double-clock, `NPC.cs:74134-74180`) and the bat flap group
+    /// (`:74786-74822`).
+    #[test]
+    fn w4_d46_the_mid1_bridge_copies_the_four_fields_both_ways() {
+        let mut n = bare(NpcKind::Piranha);
+        // The Arapaima dry: +2 a tick from the preset counter 30 (row
+        // 5's band) → 32 row 5; the flip rides facing.
+        n.frame = 4;
+        n.frame_counter = 30.0;
+        n.sprite_dir = 1;
+        n.facing = -1;
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.wet = false;
+        n.find_frame_wave_mid1(crate::npc_findframe_mid1::FindFrameMid1Kind::Arapaima);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (5, 32.0, -1));
+        // Wet ticks once: 32 → 33, still row 5.
+        n.wet = true;
+        n.find_frame_wave_mid1(crate::npc_findframe_mid1::FindFrameMid1Kind::Arapaima);
+        assert_eq!((n.frame, n.frame_counter), (5, 33.0));
+        // The bat group writes the rotation off vx and flips by the
+        // velocity sign (not facing).
+        n.frame = 3;
+        n.frame_counter = 5.0;
+        n.sprite_dir = -1;
+        n.facing = -1;
+        n.vx = 2.0;
+        n.rotation = 0.0;
+        n.find_frame_wave_mid1(crate::npc_findframe_mid1::FindFrameMid1Kind::IceBat);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0), "row 3 + step wraps");
+        assert_eq!(n.sprite_dir, 1, "the velocity-sign flip");
+        assert_eq!(n.rotation, 0.2, "the vx * 0.1 tilt");
     }
 
     // ---- S1-D-3z (zombie fighter audit) — the holiday zombie variants +
