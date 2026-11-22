@@ -27,23 +27,24 @@
 //! - The type arms after the ladder (`:60205-60277` — the 31/294-296
 //!   family, 120's ×1.1, 287's dash, 460's ×1.3) name no zombie type.
 //!
-//! RNG census (W4-g4 lane 15 update): the door bash's only draw is
-//! `flag25`'s `Main.rand.Next(60)` (`:59997`), guarded by
-//! `Main.player[target].ZoneGraveyard`. The zone is NOW WIRED: the sim
+//! RNG census (W4-g4 lane 15, folded by the W4-d22 reconcile): the door
+//! bash's only draw is `flag25`'s `Main.rand.Next(60)` (`:59997`), guarded
+//! by `Main.player[target].ZoneGraveyard`. The zone is NOW WIRED: the sim
 //! pre-stamps `Npc::target_zone_graveyard` from
 //! `app.scene_metrics.zone_graveyard` (the d120 biome pass; the
 //! single-player stand-in for the target's zone, the `wind_speed_current`
-//! pre-pass convention), and the scan takes the caller's `UpdateNPCs`
-//! stream. Outside a graveyard the `&&` still short-circuits and ZERO
-//! draws are consumed (the legacy census holds for every non-graveyard
-//! tick); inside one, each 60-tick bash spends exactly one `Next(60)`.
-//! The ladder, the step-up and the ground probe draw nothing. NOTE the
-//! draw position: the C# rolls it inside `AI_003_Fighters`' scan tail,
-//! AFTER the head's moan rolls (`:57340-57367`); the port's moans ride
-//! the sim tail after `update_rng` (the S1-E-21e deviation), so in a
-//! graveyard the bash draw precedes the moan draw — the same documented
-//! moan-position remainder, extended by one conditional draw. The bash's
-//! world mutation (`WorldGen.OpenDoor`) rides the
+//! pre-pass convention), and BOTH scan entries take the caller's
+//! `UpdateNPCs` stream. Outside a graveyard the `&&` still short-circuits
+//! and ZERO draws are consumed (the legacy census holds for every
+//! non-graveyard tick — the axis core stays draw-free there); inside one,
+//! each 60-tick bash spends exactly one `Next(60)`. The ladder, the
+//! step-up and the ground probe draw nothing. Draw position (the W4-d22
+//! retire fold): the C# rolls the moans at the head (`:57340-57367`)
+//! BEFORE this scan's bash draw (`:59997`); the port's moan emitter now
+//! runs at the sim's PRE-SLOT head position (the C# order — the old
+//! sim-tail position that put the bash draw first is retired, the
+//! S1-E-21e moan-position remainder CLOSED). The bash's world mutation
+//! (`WorldGen.OpenDoor`) rides the
 //! `Npc::wants_door_bash` request drained in `world_sim/npcs.rs` (the
 //! `wants_sphere` borrow-safe shape); the `KillTile(fail: true)` thud and
 //! the `Door_Opened` cue play there on the `UpdateNPCs` stream (the C#
@@ -55,9 +56,9 @@
 //!   `!bloodMoon`.
 //! - `player.insideUnbreakableWalls` (`flag26`, `:60002`) — no Player
 //!   field, false; the +6 bash bonus never fires.
-//! - `WorldGen.ShiftTallGate` (`:60074`) — NOW PORTED (W4-g4,
-//!   `tr_core::edit::shift_tall_gate`): the gate-388 bash shifts the gate to
-//!   its open kind (389) in the drain; a refusal sets `ai[3] = num57`
+//! - `WorldGen.ShiftTallGate` (`:60074`) — NOW PORTED (W4-g4 P4,
+//!   `tr_core::edit::shift_tall_gate`): the gate-388 bash shifts the gate
+//!   to its open kind (389) in the drain; a refusal sets `ai[3] = num57`
 //!   (`:60077`). The bash still counts `ai[1] += 2` and plays the thud.
 //! - The step-up's `gfxOffY`/`stepSpeed` writes land on the NPC fields,
 //!   but the render pass does not read `gfx_off_y` yet and the decay
@@ -133,11 +134,127 @@ fn solid_tile_allow_bottom_slope(world: &World, x: i32, y: i32) -> bool {
 /// every bash on a normal night and only accumulate on a BLOOD MOON
 /// (or a graveyard 1/60 roll, flag25) — the blood-moon door-break is
 /// the flag24 types' privilege, not the Blood Zombie's (W4-g4 lane 15
-/// residual census: the old note had the distinction inverted).
+/// residual census, the W4-d22 reconcile fold: the old note had the
+/// distinction inverted).
 const DOOR_BASH_TYPES: [u16; 35] = [
     3, 691, 430, 590, 331, 332, 132, 161, 186, 187, 188, 189, 200, 223, 320, 321, 319, 21, 324,
     323, 322, 44, 196, 167, 77, 197, 202, 203, 449, 450, 451, 452, 481, 201, 635,
 ];
+
+/// W4-d22 (style-3 axis) — `flag8` (`NPC.cs:57067-57075`): false for the
+/// turn-on-player critters and the long type list, true for every other
+/// fighter. The zombie family folds to true (none of its ids is listed —
+/// the S1-D-3z module note); the scarecrows 305-309, the Scutlix 391, the
+/// Drakomire 415, the Selenian 419 and the Yeti 343 fold to FALSE (their
+/// bash gate `:59990` and the no-obstacle resets `:60140`/`:60280` skip).
+pub(crate) fn fighter_flag8(t: u16) -> bool {
+    if crate::npc_ai3_speeds::TURN_CRITTERS.contains(&t) {
+        return false;
+    }
+    !matches!(
+        t,
+        343 | 47
+            | 67
+            | 109
+            | 110
+            | 111
+            | 120
+            | 163
+            | 164
+            | 239
+            | 168
+            | 199
+            | 206
+            | 214
+            | 215
+            | 216
+            | 217
+            | 218
+            | 219
+            | 220
+            | 226
+            | 243
+            | 251
+            | 257
+            | 258
+            | 290
+            | 291
+            | 292
+            | 293
+            | 305
+            | 306
+            | 307
+            | 308
+            | 309
+            | 348
+            | 349
+            | 350
+            | 351
+            | 379
+            | 591
+            | 380
+            | 381
+            | 382
+            | 383
+            | 386
+            | 391
+            | 466
+            | 464
+            | 166
+            | 469
+            | 468
+            | 471
+            | 470
+            | 480
+            | 481
+            | 482
+            | 411
+            | 424
+            | 409
+            | 425
+            | 427
+            | 426
+            | 428
+            | 580
+            | 508
+            | 415
+            | 419
+            | 520
+            | 528
+            | 529
+            | 530
+            | 532
+            | 582
+            | 624
+            | 631
+    ) && !(430..=436).contains(&t)
+        && !(449..=452).contains(&t)
+        && !(494..=506).contains(&t)
+        && !(524..=527).contains(&t)
+}
+
+/// W4-d22 — the wide-body ahead-probe override list (`NPC.cs:59953`):
+/// these types probe `centre + (width/2 + 16) * direction` instead of the
+/// plain `centre + 15 * direction` (`:59951`).
+fn wide_probe_body(t: u16) -> bool {
+    matches!(
+        t,
+        109 | 163 | 164 | 199 | 236 | 239 | 257 | 258 | 290 | 391 | 425 | 427 | 426 | 580 | 508
+            | 415 | 530 | 532 | 582
+    )
+}
+
+/// W4-d22 — the post-ladder charge-hop type list (`NPC.cs:60205`): the
+/// grounded close-range `vx *= 2` (cap ±3) + `vy = -4` hop. Among the
+/// ported axis walkers only the GrayGrunt 385 is listed (389 GigaZapper
+/// rides its own deferred shot machine); the 586 expert inner arm
+/// (`:60209-60241`) is unported (no expert flag, 586 has no kind).
+fn charge_hop_type(t: u16) -> bool {
+    matches!(
+        t,
+        31 | 294 | 295 | 296 | 47 | 77 | 104 | 168 | 196 | 385 | 389 | 464 | 470
+    ) || (524..=527).contains(&t)
+}
 
 /// `AI_003_Fighters`' obstacle scan (`NPC.cs:59831-60284`) for the zombie
 /// family, one fixed step at the C#'s pre-integration position. Returns
@@ -148,22 +265,57 @@ const DOOR_BASH_TYPES: [u16; 35] = [
 /// `AI()` regardless).
 ///
 /// `rng` is the caller's `UpdateNPCs` stream — the ONLY draw the scan can
-/// make is the graveyard bash gate's `Next(60)` (`:59997`, W4-g4 lane 15);
-/// outside a graveyard it is untouched (the zero-draw census).
+/// make is the graveyard bash gate's `Next(60)` (`:59997`, W4-g4 lane 15,
+/// the W4-d22 signature union); outside a graveyard it is untouched (the
+/// zero-draw census).
 pub(crate) fn fighter_obstacle_scan(
     npc: &mut Npc,
     world: &World,
     rng: &mut UnifiedRandom,
 ) -> bool {
+    // W4-d22: the zombie fold — flag8 true, the hop flag false, num57 60
+    // (the S1-D-3z module docs). The general entry below serves the axis.
+    // The player centre rides the target rect (`npc_target`'s
+    // SetTargetTrackingValues write); no zombie id is in the charge-hop
+    // list, so the window read never fires for this entry.
+    let r = npc.target_rect;
+    let pc = (
+        (r.0 + r.2 / 2) as f32,
+        (r.1 + r.3 / 2) as f32,
+    );
+    fighter_obstacle_scan_g(npc, world, rng, true, false, 60.0, pc)
+}
+
+/// W4-d22 (style-3 axis) — the GENERAL scan: `flag8` from the type gate,
+/// `hop_flag` the ladder's `fx.hop_flag` (the scarecrow 305-309 arm,
+/// `NPC.cs:57847`), `num57` the idle cap (60; the type-120 row's 180),
+/// `player_center` the C#'s `Main.player[target].Center` for the
+/// charge-hop window (`:60214`). Every type fold the S1-D-3z module
+/// documented is now computed from the live type — the zombie family's
+/// results are unchanged (flag8 true for all 17 ids, none in the
+/// wide-probe/step-up-reach/charge-hop lists).
+///
+/// W4-d22 reconcile — the signature UNION with W4-g4 lane 15: `rng` is the
+/// caller's `UpdateNPCs` stream (g4b's threading), the type folds are the
+/// axis generalisation (d22's). The only draw is the graveyard bash gate
+/// (`:59997`); outside a graveyard the scan stays draw-free.
+pub(crate) fn fighter_obstacle_scan_g(
+    npc: &mut Npc,
+    world: &World,
+    rng: &mut UnifiedRandom,
+    flag8: bool,
+    hop_flag: bool,
+    _num57: f32,
+    player_center: (f32, f32),
+) -> bool {
     let (w, h) = npc.size();
+    let t = npc.kind.cs_id();
     // `:57019-57026` — flag6: parked and not just-hit.
     let flag6 = npc.vx == 0.0 && npc.hurt_cd <= 0.0;
-    // `:57067-57075` — flag8: true for every zombie kind (module docs).
-    let flag8 = true;
-    // `:59831-59867` — the flag5 ground probe. `flag` (the hop flag) is
-    // false for the zombie family (module docs), so the gate is vy == 0.
+    // `:59831-59867` — the flag5 ground probe. The gate is
+    // `(velocity.Y == 0) | flag` — the scarecrow hop flag rides along.
     let mut flag5 = false;
-    if npc.vy == 0.0 {
+    if npc.vy == 0.0 || hop_flag {
         // `:59833-59838` — the C#'s `(int)` casts truncate toward zero
         // (positions are non-negative in-world; the cast keeps the shape).
         let num185 = (npc.y + h + 7.0) as i32 / 16;
@@ -206,12 +358,15 @@ pub(crate) fn fighter_obstacle_scan(
             return true;
         }
     }
-    // `:59868-59871` — the type-428 flag5 reset: not a zombie kind.
+    // `:59868-59871` — the type-428 flag5 reset (the VortexHeadcrab).
+    if t == 428 {
+        flag5 = false;
+    }
     // `:59872-59948` — the 1-tile step-up assist (the unicorn machine's
     // inline copy shape, `npc_ai_unicorn.rs:328-387`, but the AI_003
     // probe rows). Only while falling or level; the type-580 directionY
-    // gate names no zombie kind.
-    if npc.vy >= 0.0 {
+    // gate (`:59872`) is live for the axis kinds.
+    if npc.vy >= 0.0 && (t != 580 || npc.direction_y != 1) {
         let num192 = if npc.vx < 0.0 {
             -1i32
         } else if npc.vx > 0.0 {
@@ -259,8 +414,8 @@ pub(crate) fn fighter_obstacle_scan(
                 && body_clear
             {
                 // `:59915-59945` — the lift: half-brick offsets, the 16.1
-                // reach (the 163/164/236/239/530 +8 list names no zombie
-                // kind), the gfxOffY record and the 1/2 step speed.
+                // reach (+8 for the 163/164/236/239/530 list, `:59928`),
+                // the gfxOffY record and the 1/2 step speed.
                 let mut num195 = num194 as f32 * 16.0;
                 if t0.half_brick() {
                     num195 += 8.0;
@@ -270,7 +425,10 @@ pub(crate) fn fighter_obstacle_scan(
                 }
                 if num195 < npc.y + h {
                     let num196 = npc.y + h - num195;
-                    let num197 = 16.1f32;
+                    let mut num197 = 16.1f32;
+                    if matches!(t, 163 | 164 | 236 | 239 | 530) {
+                        num197 += 8.0;
+                    }
                     if num196 <= num197 {
                         npc.gfx_off_y += npc.y + h - num195;
                         npc.y = num195 - h;
@@ -281,10 +439,15 @@ pub(crate) fn fighter_obstacle_scan(
         }
     }
     if flag5 {
-        // `:59951-59952` — the ahead probe: centre + 15 * direction, the
-        // body's bottom - 15 row (the wide-body override list `:59953`
-        // names no zombie kind).
-        let num198 = ((npc.x + (w as i32 / 2) as f32 + (15 * npc.facing) as f32) / 16.0) as i32;
+        // `:59951-59956` — the ahead probe: centre + 15 * direction, the
+        // body's bottom - 15 row; the wide-body override list switches to
+        // centre + (width/2 + 16) * direction.
+        let reach = if wide_probe_body(t) {
+            (w as i32 / 2 + 16) as f32
+        } else {
+            15.0
+        };
+        let num198 = ((npc.x + (w as i32 / 2) as f32 + reach * npc.facing as f32) / 16.0) as i32;
         let num199 = ((npc.y + h - 15.0) / 16.0) as i32;
         let ahead = tile_or_blank(world, num198, num199 - 1);
         // `:59990` — the door (10) / tall gate (388) bash gate.
@@ -328,32 +491,27 @@ pub(crate) fn fighter_obstacle_scan(
                 npc.ai[1] += num200;
                 // `:60023-60034` — the +6 unbreakable bonus (flag26, never
                 // fires), the type-27 GoblinThief +1 and the 31/294-296
-                // AngryBones-family +6. W4-g4 FINAL census: the Thief IS
-                // a ported kind (the `update_skeleton` dispatch) — the
-                // arms were dropped as "no zombie kind" but the scan
-                // serves every fighter; the AngryBones kinds are unported
-                // (the arm waits on their landing, the cs_id gate keeps
-                // it verbatim).
+                // AngryBones-family +6 (`else if` chain — the W4-g4 FINAL
+                // census, `55840d9a`: NOT the mummies 78-80/630; the
+                // AngryBones kinds are unported, the cs_id gate keeps the
+                // arm verbatim for their landing).
                 if flag26 {
                     npc.ai[1] += 6.0;
-                } else if npc.kind.cs_id() == 27 {
+                } else if t == 27 {
                     npc.ai[1] += 1.0;
-                } else if matches!(npc.kind.cs_id(), 31 | 294 | 295 | 296) {
+                } else if matches!(t, 31 | 294 | 295 | 296) {
                     npc.ai[1] += 6.0;
                 }
                 // `:60035` — the bash counter resets.
                 npc.ai[2] = 0.0;
                 // `:60036-60045` — at 10 the door opens; the type-460
-                // Butcher ALWAYS opens (`flag28 = true` regardless of
-                // ai[1]) — the kind is unported (the bestiary carries no
-                // 460 row), the cs_id gate keeps the arm verbatim for its
-                // landing (W4-g4 FINAL census).
+                // always-open arm (`:60042-60045`).
                 let mut flag28 = false;
                 if npc.ai[1] >= 10.0 {
                     flag28 = true;
                     npc.ai[1] = 10.0;
                 }
-                if npc.kind.cs_id() == 460 {
+                if t == 460 {
                     flag28 = true;
                 }
                 // `:60046` — the failure thud (`KillTile(fail: true)`)
@@ -367,18 +525,18 @@ pub(crate) fn fighter_obstacle_scan(
                 // KillTile arm names no zombie kind. The door (10) open
                 // rides `edit::open_door` in the drain; a refusal sets
                 // `ai[3] = num57` (`:60064`) there. The tall gate (388)
-                // `ShiftTallGate` rides `edit::shift_tall_gate` in the drain
-                // (W4-g4); a refusal sets `ai[3] = num57` (`:60077`).
+                // `ShiftTallGate` rides `edit::shift_tall_gate` in the
+                // drain (W4-g4 P4); a refusal sets `ai[3] = num57`
+                // (`:60077`).
             }
         } else {
             // `:60089-60203` — the probe jump ladder.
-            // `:60091-60095` — num201 = spriteDirection (the type-425
-            // flip names no zombie kind).
-            let num201 = npc.sprite_dir;
+            // `:60091-60095` — num201 = spriteDirection; the type-425
+            // VortexRifleman flips it (the flight aim faces backwards).
+            let num201 = if t == 425 { -npc.sprite_dir } else { npc.sprite_dir };
             // `:60096` — only while moving WITH the facing.
             if (npc.vx < 0.0 && num201 == -1) || (npc.vx > 0.0 && num201 == 1) {
-                // `:60098-60110` — the 2/3-tile wall tiers (the zombie
-                // box is 40 tall, >= 32).
+                // `:60098-60110` — the 2/3-tile wall tiers (height >= 32).
                 if h >= 32.0 && solid_tile_no_platforms(world, num198, num199 - 2) {
                     if solid_tile_no_platforms(world, num198, num199 - 3) {
                         npc.vy = -8.0;
@@ -388,8 +546,10 @@ pub(crate) fn fighter_obstacle_scan(
                         npc.net_update = true;
                     }
                 } else if solid_tile_no_platforms(world, num198, num199 - 1) {
-                    // `:60111-60128` — the 1-tile wall: -6f (the type-624
-                    // gnome arm names no zombie kind).
+                    // `:60111-60128` — the 1-tile wall: -6f; the type-624
+                    // gnome arm (`:60113-60122`) jumps -8 and turns away
+                    // from a low ceiling — 624 has no port kind, the arm
+                    // stays documented-unreachable.
                     npc.vy = -6.0;
                     npc.net_update = true;
                 } else if npc.y + h - (num199 as f32 * 16.0) > 20.0
@@ -400,11 +560,12 @@ pub(crate) fn fighter_obstacle_scan(
                     npc.vy = -5.0;
                     npc.net_update = true;
                 } else if npc.direction_y < 0
+                    && t != 67
                     && !solid_tile_allow_bottom_slope(world, num198, num199 + 1)
                     && !solid_tile_allow_bottom_slope(world, num198 + npc.facing, num199 + 1)
                 {
                     // `:60134-60139` — the gap leap: -8f and vx ×1.5 (the
-                    // type-67 exclusion names no zombie kind).
+                    // type-67 face-monster exclusion, `:60134`).
                     npc.vy = -8.0;
                     npc.vx *= 1.5;
                     npc.net_update = true;
@@ -419,12 +580,33 @@ pub(crate) fn fighter_obstacle_scan(
                     npc.vy = -5.0;
                 }
                 // `:60149-60203` — the expert-mode / type-586 hop: skipped
-                // (no expertMode flag, 586 not a zombie kind — module
-                // docs).
+                // (no expertMode flag, 586 has no port kind — the S1-D-3z
+                // module docs; the -7.9 platform hop is inside the gate).
             }
-            // `:60205-60277` — the post-ladder type arms (31/294-296/47/
-            // 77/104/168/196/385/389/464/470/524-527, 120, 287, 460): none
-            // is a zombie kind.
+            // `:60205-60257` — the charge hop: grounded, inside the
+            // 100×50 window, moving with the facing at >= 1: vx ×2 (cap
+            // ±3) + vy -4. The 586 inner arm is expert-only (skipped).
+            if charge_hop_type(t) && npc.vy == 0.0 {
+                let (px, py) = (npc.x + (w as i32 / 2) as f32, npc.y + (h as i32 / 2) as f32);
+                let (tx, ty) = player_center;
+                if (px - tx).abs() < 100.0
+                    && (py - ty).abs() < 50.0
+                    && ((npc.facing > 0 && npc.vx >= 1.0) || (npc.facing < 0 && npc.vx <= -1.0))
+                {
+                    npc.vx *= 2.0;
+                    if npc.vx > 3.0 {
+                        npc.vx = 3.0;
+                    }
+                    if npc.vx < -3.0 {
+                        npc.vx = -3.0;
+                    }
+                    npc.vy = -4.0;
+                    npc.net_update = true;
+                }
+            }
+            // `:60258-60261` — the type-120 rising ×1.1 (no port kind).
+            // `:60262-60272` — the type-287 dash (no port kind).
+            // `:60273-60277` — the type-460 rising boost (no port kind).
         }
     } else if flag8 {
         // `:60280-60284` — no floor under the body: the bash counters
@@ -432,7 +614,7 @@ pub(crate) fn fighter_obstacle_scan(
         npc.ai[1] = 0.0;
         npc.ai[2] = 0.0;
     }
-    // `:60285-60297` — the type-120 teleport: not a zombie kind.
+    // `:60285-60297` — the type-120 teleport: no port kind.
     false
 }
 
@@ -612,12 +794,13 @@ mod tests {
         assert!(!n.wants_door_bash.expect("the request").3, "never opens on a normal night");
     }
 
-    /// W4-g4 lane 15 residual — the Blood Zombie's NORMAL-night door
-    /// open (`NPC.cs:59996`/`:60007`): 489 is NOT in flag24, so flag27
-    /// is false for it on every night — two bashes arm the open even
-    /// without a blood moon. The flag24 zombie twin resets (the test
-    /// above). This is the census's "fighters also open doors normally"
-    /// arm: the non-flag24 fighters, not the zombie family.
+    /// W4-g4 lane 15 residual (the W4-d22 reconcile fold) — the Blood
+    /// Zombie's NORMAL-night door open (`NPC.cs:59996`/`:60007`): 489 is
+    /// NOT in flag24, so flag27 is false for it on every night — two
+    /// bashes arm the open even without a blood moon. The flag24 zombie
+    /// twin resets (the test above). This is the census's "fighters also
+    /// open doors normally" arm: the non-flag24 fighters, not the zombie
+    /// family. WRITTEN NOT RUN.
     #[test]
     fn w4_g4_the_blood_zombie_opens_doors_on_a_normal_night() {
         let mut w = ground();
@@ -643,15 +826,19 @@ mod tests {
         assert!(!z.wants_door_bash.expect("the request").3);
     }
 
-    /// W4-g4 FINAL — the type-bonus bash arms (`NPC.cs:60027-60034`):
-    /// the GoblinThief (27, NOT in flag24) adds +1 per bash, the skeleton
-    /// variants 31/294-296 (in flag24) add +6. The Thief accumulates on a
-    /// normal night (non-flag24) and reaches the open in TWO bashes
-    /// (6 + 6 = 12 → cap 10), one fewer than the plain +5 fighter.
+    /// W4-d22 g4d (the g4 FINAL fold, `55840d9a`) — the type-bonus bash
+    /// arms (`NPC.cs:60027-60030`): the GoblinThief (27, NOT in flag24)
+    /// adds +1 per bash. The Thief accumulates on a normal night
+    /// (non-flag24) and reaches the open in TWO bashes (6 + 6 = 12 →
+    /// cap 10), one fewer than the plain +5 fighter. WRITTEN NOT RUN.
+    /// (The g4 witness's door row corrected for the port: the Thief's
+    /// 18×38 box — `npc/data.rs` `SetDefaults` case 27 — puts the probe
+    /// row at `num199 - 1 = (440 + 38 - 15)/16 - 1 = 27`, not the
+    /// zombie-box row 28.)
     #[test]
     fn w4_g4_the_goblin_thief_bash_adds_one() {
         let mut w = ground();
-        let i = w.index(21, 28);
+        let i = w.index(21, 27);
         w.tiles[i] = Tile { kind: 10, frame_x: 0, frame_y: 0, ..Default::default() };
         w.tiles[i].flags |= FLAG_ACTIVE;
         w.blood_moon = false; // normal night — the Thief is NOT in flag24
@@ -666,14 +853,12 @@ mod tests {
         assert!(n.wants_door_bash.expect("the second request").3, "the open armed in two bashes");
     }
 
-    /// W4-g4 FINAL — the AngryBones-family +6 (`NPC.cs:60031-60034`, the
-    /// types 31/294-296 — NOT the Skeleton 21): the family sits in
-    /// flag24, so a normal night resets `ai[1]`, then +5 +6 = 11 → cap
-    /// 10: the open arms on the FIRST bash even without a blood moon
-    /// (the +6 outruns the reset). The kinds are unported (the bestiary
-    /// carries no 31/294-296 rows) — the arm is pinned at the scan level
-    /// through a kind whose `cs_id` the fixture forces; the Skeleton 21
-    /// control takes the plain +5 reset.
+    /// W4-d22 g4d (the g4 FINAL fold, `55840d9a`) — the +6 arm's census
+    /// correction (`NPC.cs:60031-60034`): the arm names the AngryBones
+    /// family 31/294-296 ONLY — NOT the Skeleton 21. The Skeleton (in
+    /// flag24) takes the normal-night reset then the plain +5; the
+    /// AngryBones kinds are unported (the d38 lane rows 294-296), so the
+    /// scan-level control pins the negative census. WRITTEN NOT RUN.
     #[test]
     fn w4_g4_the_skeleton_family_bash_bonus_census() {
         let mut w = ground();
@@ -723,14 +908,13 @@ mod tests {
         assert_eq!(n.direction_y, 1, "no equality: unchanged");
     }
 
-    // ---- W4-g4 lane 15 — the graveyard bash gate (`NPC.cs:59997`) ----
-    //
-    // WRITTEN NOT RUN (code-only mode). The zone rides the sim's
-    // pre-stamp (`Npc::target_zone_graveyard`); the witnesses set it
-    // directly (the solo convention). The door fixture mirrors
-    // `the_door_bash_counts_and_requests_the_open`: a closed door (10)
-    // at the probe cell (21, 28), ai[2] = 59 so the next scan fires the
-    // 60-tick bash.
+    // ---- W4-g4 lane 15 (the W4-d22 reconcile fold) — the graveyard bash
+    // gate (`NPC.cs:59997`). WRITTEN NOT RUN (code-only mode). The zone
+    // rides the sim's pre-stamp (`Npc::target_zone_graveyard`); the
+    // witnesses set it directly (the solo convention). The door fixture
+    // mirrors `the_door_bash_counts_and_requests_the_open`: a closed door
+    // (10) at the probe cell (21, 28), ai[2] = 59 so the next scan fires
+    // the 60-tick bash.
 
     /// A blood-moon door fixture ready to bash (ai[2] = 59 → 60).
     fn bash_ready() -> (World, Npc) {
@@ -811,5 +995,30 @@ mod tests {
         fighter_obstacle_scan(&mut n2, &w2, &mut UnifiedRandom::new(nonzero));
         assert_eq!(n2.ai[1], 5.0, "the non-zero roll keeps the normal-night reset");
         assert!(!n2.wants_door_bash.expect("the request").3, "no open");
+    }
+
+    /// W4-d22 reconcile — the GENERAL entry (`fighter_obstacle_scan_g`,
+    /// the axis core's scan) carries the SAME graveyard gate: the
+    /// zombie-fold parameters (flag8 true, hop false, num57 60) replay
+    /// the g4b stream contract through the union signature. Outside the
+    /// zone the axis core stays draw-free (the module header's census);
+    /// inside, one Next(60).
+    #[test]
+    fn w4_d22_the_axis_scan_g_carries_the_same_graveyard_gate() {
+        let (w, mut n) = bash_ready();
+        n.target_zone_graveyard = false;
+        let mut rng = UnifiedRandom::new(11);
+        let pristine = rng.clone();
+        let pc = (400.0, 460.0);
+        fighter_obstacle_scan_g(&mut n, &w, &mut rng, true, false, 60.0, pc);
+        assert!(n.wants_door_bash.is_some(), "the bash fires");
+        assert_eq!(rng, pristine, "outside the zone: zero draws (the axis census)");
+        let (w2, mut n2) = bash_ready();
+        n2.target_zone_graveyard = true;
+        let mut rng2 = UnifiedRandom::new(11);
+        let mut mirror = rng2.clone();
+        let _ = mirror.next_max(60);
+        fighter_obstacle_scan_g(&mut n2, &w2, &mut rng2, true, false, 60.0, pc);
+        assert_eq!(rng2, mirror, "inside the zone: exactly one Next(60)");
     }
 }

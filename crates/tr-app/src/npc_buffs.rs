@@ -573,9 +573,10 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
 /// (`:6499`/`:6528`/`:8378`/`:8601`/`:8899`/`:9194`/`:9415`/`:9423`/`:9431`/
 /// `:10034`/`:10042`): DungeonGuardian 68, BlazingWheel 72, MartianSaucer 392,
 /// CultistBossClone 440, FlyingDutchman 491, DD2LanePortal 549, the fairy
-/// critters 583/584/585, the bound town slimes 686/687. W4-g4 P9: the wheel
-/// and the lane portal joined the saucer + the pirate ship on the ported
-/// roster — the whip tag gate (`WhipTagEffect.CanApplyTagToNPC`) reads this.
+/// critters 583/584/585, the bound town slimes 686/687. W4-g4 P9 (the
+/// W4-d22 reconcile fold): the wheel and the lane portal joined the
+/// saucer + the pirate ship on the ported roster — the whip tag gate
+/// (`WhipTagEffect.CanApplyTagToNPC`) reads this.
 pub fn whip_immune(kind: NpcKind) -> bool {
     matches!(
         kind,

@@ -5599,6 +5599,31 @@ impl Player {
         (self.x + self.width * 0.5, self.y)
     }
 
+    /// `Player.GetBannerBuffEffect(NPC, out effect)` (`Player.cs:20478-20492`)
+    /// for the port's single player: the banner strength pair
+    /// `(DamageDealt, DamageReceived)` when the NPC's banner stands in the
+    /// scene window, `None` otherwise. Reads the per-tick
+    /// `npc_banner_buff` snapshot (`Player.SceneMetrics.NPCBannerBuff`,
+    /// `:44197-44199`); the classic `BannerEffect(1f)` sample is the port's
+    /// 1.5/0.75 pair (`tr_core::bestiary`, the `ItemID.cs:23-32` ctor).
+    /// W4-g4 P1 (the W4-d22 reconcile fold).
+    pub fn banner_buff_for_npc(&self, net_id: i32) -> Option<(f32, f32)> {
+        let banner = tr_core::bestiary::npc_to_banner(net_id);
+        if banner <= 0 {
+            return None;
+        }
+        self.npc_banner_buff
+            .get(banner as usize)
+            .copied()
+            .filter(|b| *b)
+            .map(|_| {
+                (
+                    tr_core::bestiary::BANNER_DAMAGE_DEALT,
+                    tr_core::bestiary::BANNER_DAMAGE_RECEIVED,
+                )
+            })
+    }
+
     /// S1-P-i35 — `Player.GetFishingConditions` (`Player.cs:42176-42206`)
     /// over the App's inventory layout: the grid 0-49, the coins 50-53 and
     /// the ammo 54-57 (the C# `inventory[58]`). Returns

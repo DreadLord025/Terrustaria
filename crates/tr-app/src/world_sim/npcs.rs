@@ -1345,6 +1345,9 @@ pub(crate) fn play_npc_sound_request(
         NpcSoundCue::Item14 => {
             audio.play_npc_item_cue(14, req.x, req.y, rng);
         }
+        NpcSoundCue::Item17 => {
+            audio.play_npc_item_cue(17, req.x, req.y, rng);
+        }
         NpcSoundCue::Item34 => {
             audio.play_npc_item_cue(34, req.x, req.y, rng);
         }
@@ -2213,12 +2216,17 @@ pub(crate) fn update_plantera_minions(app: &mut App) {
 /// surface gate (`:51110-51148`), the `flag3` dig-mode scan
 /// (`:51525-51597`, margins + overlap + solidTop + the per-tile
 /// `Next(100)` crumble draw), the 1000-px no-player dig override
-/// (`:51598-51615`), the corruption escape (`:52004-52050`) and the
-/// head rotation (`:52201`). The air stumble / dig steer stays the
-/// documented stand-in (the three-arm accel steer `:52112-52198` is
-/// audit T1b, wave W-A2-2). Returns `true` when the corruption escape
-/// deactivates the whole chain (`:52028-52047`'s `ai[0]` walk).
-/// `noTileCollide` is family-wide — no collision blocks the head.
+/// (`:51598-51615`), the corruption escape (`:52004-52050`), the head
+/// rotation (`:52201`) and the dig-mode latch (`:52202-52224`). W4-d22:
+/// the air stumble (`:51925-51973`) and the dig steer (`:52112-52199`)
+/// are now the FAITHFUL three-arm accel approaches (audit T1b's deferred
+/// rewrite landed) — the air arms key on the velocity sign + the snapped
+/// aim, the dig arm approaches the num45-scaled aim by num46 with the two
+/// cross-axis ×2 kicks and the dominant-axis ×1.1 else arms (the pre-fix
+/// stand-in snapped vx/vy to the aim and used facing/signum/raw-aim).
+/// Returns `true` when the corruption escape deactivates the whole chain
+/// (`:52028-52047`'s `ai[0]` walk). `noTileCollide` is family-wide — no
+/// collision blocks the head.
 fn worm_head_step(
     npc: &mut Npc,
     world: &tr_core::World,
@@ -2346,30 +2354,53 @@ fn worm_head_step(
         }
     }
     let mut despawn_chain = false;
+    // The tile-snapped aim (`NPC.cs:51855-51866`): BOTH the player centre
+    // and the NPC centre floor to the 16-px grid before the delta; num48/
+    // num49 is the snapped vector, num62 its length. Computed once for both
+    // the air stumble (which steers vx toward num48) and the dig branch.
+    let mut num48 = (((ctx.pcx / TILE_PX) as i32 - ((npc.x + w * 0.5) / TILE_PX) as i32) * 16)
+        as f32;
+    let mut num49 = (((ctx.pcy / TILE_PX) as i32 - ((npc.y + h * 0.5) / TILE_PX) as i32) * 16)
+        as f32;
     if !flag3 {
-        // The air stumble (`:51927-51973`) — the stand-in steer (T1b's
-        // faithful three-arm rewrite is wave W-A2-2).
+        // `:51927` — `TargetClosest()` faces the target (the solo fold: the
+        // one player; the retarget itself has no seam, documented).
+        npc.facing = if ctx.pcx >= npc.x + w * 0.5 { 1 } else { -1 };
+        // The air stumble (`NPC.cs:51925-51973`): the gravity +0.11 capped
+        // at num45, then the three-arm steer keyed on the VELOCITY sign
+        // (not the facing) and the snapped aim num48 (not the raw centre
+        // delta). W4-d22: the pre-fix stand-in used `facing`/`signum()`/the
+        // raw aim — the faithful arms restore the C# sign tests (vx == 0
+        // takes the `else` +branch, vy > 4 decelerates toward zero).
         npc.vy = (npc.vy + 0.11).min(num45);
         if (npc.vx.abs() + npc.vy.abs()) < num45 * 0.4 {
-            npc.vx += npc.facing as f32 * num46 * 1.1;
+            // `:51940-51950` — the low-speed kick along the velocity sign.
+            if npc.vx < 0.0 {
+                npc.vx -= num46 * 1.1;
+            } else {
+                npc.vx += num46 * 1.1;
+            }
         } else if npc.vy == num45 {
-            let target_vx = ctx.pcx - (npc.x + w * 0.5);
-            if npc.vx < target_vx {
+            // `:51951-51961` — at terminal fall, steer toward the snapped aim.
+            if npc.vx < num48 {
                 npc.vx += num46;
-            } else if npc.vx > target_vx {
+            } else if npc.vx > num48 {
                 npc.vx -= num46;
             }
         } else if npc.vy > 4.0 {
-            npc.vx -= npc.vx.signum() * num46 * 0.9;
+            // `:51962-51972` — the falling decel toward zero.
+            if npc.vx < 0.0 {
+                npc.vx += num46 * 0.9;
+            } else {
+                npc.vx -= num46 * 0.9;
+            }
         }
-        npc.facing = if ctx.pcx >= npc.x + w * 0.5 { 1 } else { -1 };
     } else {
-        // The dig (`:51974-52002`): the tile-snapped aim at the max speed.
-        let mut dx =
-            (((ctx.pcx / TILE_PX) as i32 - ((npc.x + w * 0.5) / TILE_PX) as i32) * 16) as f32;
-        let mut dy =
-            (((ctx.pcy / TILE_PX) as i32 - ((npc.y + h * 0.5) / TILE_PX) as i32) * 16) as f32;
-        let len = (dx * dx + dy * dy).sqrt().max(0.001);
+        // The dig (`:51974-52200`): the tile-snapped aim (num48/num49 above)
+        // scaled to num45, then the three-arm accel steer — NOT a velocity
+        // snap (W4-d22: the pre-fix stand-in set vx/vy = the scaled aim
+        // directly; the C# approaches it by num46 per tick, audit T1b).
+        let len = (num48 * num48 + num49 * num49).sqrt().max(0.001);
         // S1-E-21g — `NPC.cs:51976-51995`: the dig rumble on the
         // `soundDelay == 0` cadence — the distance/40 clamp (10..20)
         // re-arms the delay BEFORE the play (`:51987`), then the EoW
@@ -2401,9 +2432,14 @@ fn worm_head_step(
                 y: npc.y,
             });
         }
+        // `:51997-52002` — num65/num66 are the UNSCALED |num48|/|num49|
+        // (the axis-dominance test below reads them); num62 re-reads the
+        // length, then the aim scales to num45.
+        let num65 = num48.abs();
+        let num66 = num49.abs();
         let num67 = num45 / len;
-        dx *= num67;
-        dy *= num67;
+        num48 *= num67;
+        num49 *= num67;
         // The corruption escape (`:52004-52050`, INSIDE the dig branch,
         // after the aim scale): Devourer/EoW (7/13) whose target is
         // outside Corrupt/Crimson or dead → `flag6`; then if NO living
@@ -2421,18 +2457,111 @@ fn worm_head_step(
                 if (npc.y / TILE_PX) as f64 > (world.rock_layer + world.height as f64) / 2.0 {
                     despawn_chain = true;
                 }
-                dx = 0.0;
-                dy = num45;
+                num48 = 0.0;
+                num49 = num45;
             }
         }
-        npc.vx = dx;
-        npc.vy = dy;
+        // The three-arm accel steer (`NPC.cs:52112-52199`, flag8 false for
+        // every ported head — the 87/454/621 charge arms are unported).
+        // W4-d22: the faithful approach replaces the pre-fix velocity snap
+        // (audit T1b). The same-sign arm accelerates both axes toward the
+        // aim with the two cross-axis ×2 kicks; the else arms steer the
+        // dominant axis by ×1.1 and nudge the other when slow.
+        let same_sign = (npc.vx > 0.0 && num48 > 0.0)
+            || (npc.vx < 0.0 && num48 < 0.0)
+            || (npc.vy > 0.0 && num49 > 0.0)
+            || (npc.vy < 0.0 && num49 < 0.0);
+        if same_sign {
+            // `:52116-52131` — both axes approach the aim by num46.
+            if npc.vx < num48 {
+                npc.vx += num46;
+            } else if npc.vx > num48 {
+                npc.vx -= num46;
+            }
+            if npc.vy < num49 {
+                npc.vy += num46;
+            } else if npc.vy > num49 {
+                npc.vy -= num46;
+            }
+            // `:52132-52142` — the Y cross-kick: a near-horizontal aim
+            // (|num49| < num45*0.2) with the X velocity opposing the aim
+            // kicks vy away from zero by num46*2.
+            if num49.abs() < num45 * 0.2
+                && ((npc.vx > 0.0 && num48 < 0.0) || (npc.vx < 0.0 && num48 > 0.0))
+            {
+                if npc.vy > 0.0 {
+                    npc.vy += num46 * 2.0;
+                } else {
+                    npc.vy -= num46 * 2.0;
+                }
+            }
+            // `:52143-52153` — the X cross-kick (the mirror).
+            if num48.abs() < num45 * 0.2
+                && ((npc.vy > 0.0 && num49 < 0.0) || (npc.vy < 0.0 && num49 > 0.0))
+            {
+                if npc.vx > 0.0 {
+                    npc.vx += num46 * 2.0;
+                } else {
+                    npc.vx -= num46 * 2.0;
+                }
+            }
+        } else if num65 > num66 {
+            // `:52155-52176` — X-dominant: steer vx by ×1.1, nudge vy when
+            // the total speed is below num45*0.5.
+            if npc.vx < num48 {
+                npc.vx += num46 * 1.1;
+            } else if npc.vx > num48 {
+                npc.vx -= num46 * 1.1;
+            }
+            if npc.vx.abs() + npc.vy.abs() < num45 * 0.5 {
+                if npc.vy > 0.0 {
+                    npc.vy += num46;
+                } else {
+                    npc.vy -= num46;
+                }
+            }
+        } else {
+            // `:52177-52198` — Y-dominant: the mirror.
+            if npc.vy < num49 {
+                npc.vy += num46 * 1.1;
+            } else if npc.vy > num49 {
+                npc.vy -= num46 * 1.1;
+            }
+            if npc.vx.abs() + npc.vy.abs() < num45 * 0.5 {
+                if npc.vx > 0.0 {
+                    npc.vx += num46;
+                } else {
+                    npc.vx -= num46;
+                }
+            }
+        }
     }
     // The head rotation (`NPC.cs:52201`, the no-leader `else`'s tail —
     // every head, every tick): `Atan2(vy, vx) + Math.PI/2`. The heads use
     // PI/2, NOT the followers' `1.57f` literal (`:51878`) — keep the two
     // constants distinct.
     npc.rotation = npc.vy.atan2(npc.vx) + std::f32::consts::FRAC_PI_2;
+    // `:52202-52224` — the dig-mode latch (the ported heads 7/10/13/117
+    // are all on the type list): `localAI[0]` tracks flag3 (1 digging, 0
+    // airborne), arming netUpdate on the transition. The velocity-flip
+    // netUpdate (`:52220`) reads `oldVelocity`, which the C# captures ONLY
+    // in `UpdateCollision` (`:92538`) — the noTileCollide worms skip that
+    // path, so oldVelocity stays (0,0) and the flip test is inert; the
+    // latch is the live write. W4-d22 restored it (the stand-in dropped
+    // both).
+    if matches!(
+        npc.kind,
+        NpcKind::DevourerHead
+            | NpcKind::GiantWormHead
+            | NpcKind::EaterOfWorldsHead
+            | NpcKind::LeechHead
+    ) {
+        let latch = if flag3 { 1.0 } else { 0.0 };
+        if npc.local_ai[0] != latch {
+            npc.net_update = true;
+        }
+        npc.local_ai[0] = latch;
+    }
     // `noTileCollide` — the direct integration (`NPC.cs:90495-90498`).
     npc.x += npc.vx;
     npc.y += npc.vy;
@@ -5052,6 +5181,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         let npcs = &mut app.npcs;
         let audio = &mut app.audio;
         let dust = &mut app.dust;
+        // W4-d22: the EoC's spin hand-off gore burst (`NPC.cs:20365-20370`)
+        // draws Main.rand through the live gore pool on the UpdateNPCs
+        // stream — threaded alongside the dust pool (the S1-F-13c shape).
+        let gore = &mut app.gore;
         // The aiStyle-75 family's per-tick difficulty inputs: the port is
         // single-difficulty classic (the expert bridge arm is constants-off
         // until the difficulty system lands — the module's `ctx.expert`).
@@ -5358,6 +5491,50 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                                 n.hurt_cd > 0.0,
                                 player_intersects,
                             );
+                            // W4-d22 retire (the S1-E-21e moan-position
+                            // remainder CLOSED) — `AI_003_Fighters`' ambient
+                            // moan arms (`NPC.cs:57336-57367`) run at the
+                            // C# HEAD position: after the idle counter
+                            // (`:57120-57149`), BEFORE the chase arm's
+                            // TargetClosest (`:57369`) and every machine
+                            // draw — the scan's graveyard bash Next(60)
+                            // (`:59997`) included. The gate is the full
+                            // `DespawnEncouragement_AIStyle3_Fighters_
+                            // NotDiscouraged` (`NPC.cs:60300-60330`); the
+                            // kind gate keeps the counter-only walkers (the
+                            // scarecrows 305-314, Splinterling 326, the
+                            // renumbered goblins/pirates — none sits in a
+                            // moan type list) draw-free. The plays gate
+                            // attenuation BEFORE any case draw (the E21e
+                            // convention), on the UpdateNPCs stream.
+                            let npc_type = n.kind.cs_id() as i32;
+                            let not_discouraged = crate::ambient_sound::fighter_not_discouraged(
+                                npc_type,
+                                n.y as f64,
+                                world.world_surface * 16.0,
+                                world.eclipse,
+                                world.day_time,
+                                n.spawned_from_statue,
+                                zone_graveyard,
+                                world.snow_moon,
+                                world.invasion_type,
+                                world
+                                    .seeds
+                                    .contains(tr_core::seeds::SeedFlags::DONT_STARVE),
+                                n.ai[1],
+                                n.ai[2],
+                            );
+                            let (nx, ny) = (n.x, n.y);
+                            crate::ambient_sound::fighter_ambient_moans(
+                                npc_type,
+                                n.ai[3],
+                                not_discouraged,
+                                n.shimmer_transparency,
+                                npcs_rng,
+                                &mut |legacy_case, style, rng| {
+                                    audio.play_fighter_moan(legacy_case, style, nx, ny, rng);
+                                },
+                            );
                         }
                     }
                     // The DungeonSpirit's arm (`NPC.AI()`'s aiStyle-56
@@ -5440,7 +5617,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // so the Everscream/Santa dust arms reach the live pool.
                     let is_style75 = npcs[i].kind.ai_style() == 75;
                     if !is_style75 {
-                        npcs[i].update_rng_dust(world, player, step, npcs_rng, dust, &dust_spawn_ctx);
+                        npcs[i].update_rng_dust_gore(world, player, step, npcs_rng, dust, &dust_spawn_ctx, gore);
                     } else {
                         npcs[i].update_preamble(step);
                         let ctx = crate::npc_ai_style75::Style75Ctx {
@@ -5523,11 +5700,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     n.just_hit = false;
                     // S1-E-21g — the AI machine's queued sound plays
                     // (the `wants_hostile_shot` shape): drained right
-                    // after the machine's draws, BEFORE the moan/critter
-                    // emitters — the C#'s plays sit inside `AI()` which
-                    // precedes both (`NPC.cs:90323`). Each play gates
-                    // attenuation BEFORE any case draw (the E21e
-                    // precedent); the draws ride the UpdateNPCs stream.
+                    // after the machine's draws, BEFORE the critter
+                    // emitter — the C#'s plays sit inside `AI()` which
+                    // precedes it (`NPC.cs:90323`). The fighter moans ran
+                    // at the AI HEAD (the pre-slot block above, the W4-d22
+                    // retire fold — the C# `:57338-57367` position). Each
+                    // play gates attenuation BEFORE any case draw (the
+                    // E21e precedent); the draws ride the UpdateNPCs stream.
                     for req in std::mem::take(&mut n.wants_sound) {
                         play_npc_sound_request(audio, n, req, npcs_rng);
                     }
@@ -5544,50 +5723,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     if n.look_for_home_timeout > 0 {
                         n.look_for_home_timeout -= 1;
                     }
-                    // S1-E-21e — `AI_003_Fighters`' ambient moan arms
-                    // (`NPC.cs:57336-57367`) ride the AI's tail, after its
-                    // draws and before `UpdateNPC_CritterSounds`
-                    // (`NPC.cs:90323`) — all on the `UpdateNPCs` stream
-                    // (`Main.cs:17767`). The gate is the full
-                    // `DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged`
-                    // (`NPC.cs:60300-60330`, `fighter_not_discouraged`):
-                    // the event/exclusion terms and the switch's critter-set
-                    // default all ride along — the excluded moan types (the
-                    // mummies, the face monster, …) are not discouraged even
-                    // by day above the surface. The kind gate keeps the
-                    // counter-only walkers (the scarecrows 305-314,
-                    // Splinterling 326, the renumbered goblins/pirates)
-                    // draw-free.
-                    if crate::ambient_sound::fighter_walker_kind(n.kind) {
-                        let npc_type = n.kind.cs_id() as i32;
-                        let not_discouraged = crate::ambient_sound::fighter_not_discouraged(
-                            npc_type,
-                            n.y as f64,
-                            world.world_surface * 16.0,
-                            world.eclipse,
-                            world.day_time,
-                            n.spawned_from_statue,
-                            zone_graveyard,
-                            world.snow_moon,
-                            world.invasion_type,
-                            world
-                                .seeds
-                                .contains(tr_core::seeds::SeedFlags::DONT_STARVE),
-                            n.ai[1],
-                            n.ai[2],
-                        );
-                        let (nx, ny) = (n.x, n.y);
-                        crate::ambient_sound::fighter_ambient_moans(
-                            npc_type,
-                            n.ai[3],
-                            not_discouraged,
-                            n.shimmer_transparency,
-                            npcs_rng,
-                            &mut |legacy_case, style, rng| {
-                                audio.play_fighter_moan(legacy_case, style, nx, ny, rng);
-                            },
-                        );
-                    }
+                    // S1-E-21e — the fighter ambient moans MOVED to the
+                    // pre-slot head block (the W4-d22 retire fold: the C#
+                    // rolls them at `:57338-57367` BEFORE the machine's
+                    // draws; the old sim-tail position put the graveyard
+                    // bash Next(60) ahead of the moan Next(1000) — the
+                    // documented remainder, now closed).
                     // `NPC.UpdateNPC`'s tail (`NPC.cs:90323`): the critter
                     // sounds ride the same per-NPC stream after the AI's
                     // draws — the table's rolls, then the legacy family's
@@ -5708,9 +5849,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // then, when `ai[1] >= 10` (`flag28`), `WorldGen.OpenDoor`
     // (`:60061`) + the `Door_Opened` cue (`WorldGen.cs:37732`'s
     // `PlaySound(8)`); a refusal sets `ai[3] = num57` (`:60064`). The
-    // tall gate (388) `ShiftTallGate` (W4-g4) shifts the gate to its open
-    // kind (389) on the same stream; a refusal sets `ai[3] = num57`
-    // (`:60077`).
+    // tall gate (388) `ShiftTallGate` (W4-g4 P4, the W4-d22 reconcile
+    // fold) shifts the gate to its open kind (389) on the same stream; a
+    // refusal sets `ai[3] = num57` (`:60077`).
     for i in 0..app.npcs.len() {
         let Some((tx, ty, dir, open)) = app.npcs[i].wants_door_bash.take() else {
             continue;
@@ -5736,16 +5877,35 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         if !open {
             continue;
         }
-        // `:60049-60056` — the GoblinPeon (26) door SMASH (W4-g4 FINAL,
-        // the d22-core cross-note): instead of opening, the Peon KILLS
-        // the door (`WorldGen.KillTile(num198, num199 - 1)` — the real
-        // break, no fail flag) and skips the open/shift arms entirely.
-        // The break rides the shared `break_tile` seam (the pick path:
-        // the CanKillTile refusals, the door item drop, the break cue —
-        // the C#'s KillTile owns all three); the netMode-2 SendData(17)
-        // is host-only inert.
-        if app.npcs[i].kind.cs_id() == 26 {
-            crate::world_sim::editing::break_tile(app, tx, ty);
+        // `:60049-60056` — the type-26 GoblinPeon SMASHES the door
+        // (`WorldGen.KillTile`, no open): W4-d22 claims the Peon on the
+        // axis, so its bash destroys the tile + drops it instead of the
+        // OpenDoor path. The kill's sound + drop ride the UpdateNPCs
+        // stream (the C# plays them inside the AI tick).
+        if app.npcs[i].kind == NpcKind::GoblinPeon {
+            if let Some(kill) = tr_core::edit::kill_tile(&mut app.world, tx, ty, false) {
+                let (px, py) = (tx as f32 * TILE_PX, ty as f32 * TILE_PX);
+                let sounds = tr_core::edit::kill_tile_sound(kill.kind, 0, false);
+                for cue in [sounds.primary, sounds.extra, sounds.shatter]
+                    .into_iter()
+                    .flatten()
+                {
+                    if let Some((name, volume)) = crate::world_sim::editing::kill_cue(cue) {
+                        app.audio.play_at(name, px, py, volume);
+                    }
+                }
+                if let Some(item) = registry::tile_drop(kill.kind, 0) {
+                    crate::world_sim::items::spawn_item_drop(
+                        &mut app.items,
+                        app.rngs.stream(RngKey::UpdateNpcs),
+                        item,
+                        1,
+                        tx,
+                        ty,
+                    );
+                }
+                app.world_key = None;
+            }
             continue;
         }
         // `:60059-60071` — the door (10) open. The port is the host
@@ -7156,6 +7316,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // (`NPC.cs:31307`/`:31333`/`:31568` - S1-D-3), Plantera's seeds
         // (`NPC.cs:31966-31969` - every volley kind except the 277 thorn
         // ball), the Queen Bee's stinger (`NPC.cs:30743` - S1-D-3 W-3),
+        // the Hornet's stinger (`NPC.cs:50797` - W4-d22 style-5),
         // the VoodooDemon's DemonSickle (`NPC.cs:23450` — the S1-D-3 bat
         // reconcile's `bat_ai` shot drain) and the Skeletron head's
         // spin-shot Skull (`NPC.cs:22013` - B-1).
@@ -7166,6 +7327,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             || kind == crate::projectile::SEED_PLANTERA
             || kind == crate::projectile::POISON_SEED_PLANTERA
             || kind == crate::projectile::QUEEN_BEE_STINGER
+            || kind == crate::projectile::HORNET_STINGER
             || kind == crate::projectile::DEMON_SICKLE
             || kind == crate::projectile::SKULL
         {
@@ -9546,20 +9708,22 @@ mod tests {
         );
     }
 
-    // W4-g4 SEAL — the heart/star seam witness set (HealScriptRng + the
-    // 7 helper pins) was RETIRED with the duplicate port; f35's
-    // npc_death_heals.rs carries its own 10-witness set for the same C#
-    // census (research/91-seal-keep-one.md). The money-stand-in witness
-    // below is g4-unique and stays.
-
-    /// The money stand-ins are LIVE (W4-g4 FINAL): a Midas-debuffed NPC
-    /// spends the extra Next(30,51) bump draw; a blood moon spends the
-    /// extra Next(101) — both on the UpdateNPCs stream, both absent on a
-    /// clean classic kill (the pre-wiring byte-identity).
+    /// W4-d22 g4d (the g4 FINAL fold, `55840d9a`) — the money stand-ins
+    /// are LIVE: a Midas-debuffed NPC spends the extra `Next(30, 51)`
+    /// bump draw; a blood moon spends the extra `Next(101)` — both on
+    /// the UpdateNPCs stream, both absent on a clean classic kill (the
+    /// pre-wiring byte-identity). `NPC.cs:79631`/`:79660`, the bump arms
+    /// in `tr_core::loot::drop_money`. WRITTEN NOT RUN.
     #[test]
     fn w4_g4_spawn_coins_midas_and_blood_moon_inputs_are_live() {
-        use crate::app::flow::front_flow_tests::flow_app;
-        let mut a = flow_app(None, vec![], vec![]);
+        let mut a = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        // A floor row gives the spawner a surface (the twin test above).
+        for x in 0..a.world.width {
+            let i = a.world.index(x, 5);
+            a.world.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+            a.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        a.world.compute_column_surface();
         a.player = Some(crate::player::Player::spawn(&a.world));
         let npc = Npc::spawn_slime_variant(
             &a.world,
@@ -9589,10 +9753,6 @@ mod tests {
             "the blood-moon Next(101) bump joins the stream"
         );
     }
-
-    // W4-g4 SEAL — the `w4_g4_spawn_heal_drops_rides_the_death_path_stream`
-    // witness was RETIRED with the duplicate port; f35's wiring witness
-    // covers the same death-path slot (spawn_heals AFTER spawn_loot).
 
     // DW-2.5 — the runtime seams drive the new arms end to end: the slime
     // rain's carried item (`npc.ai[1]`, `SlimeBodyItemDropRule.cs:19-22`)
@@ -16388,10 +16548,24 @@ mod worm_tests {
         let mut npcs = vec![head];
         let mut rng = UnifiedRandom::new(5);
         let mut next_id = 1u32;
-        // Shallow: the aim overrides to straight down at num45 = 9.
+        // Shallow: the escape aims straight down (num48 = 0, num49 =
+        // num45 = 9). W4-d22: the dig steer is the faithful accel approach
+        // (audit T1b), not a velocity snap — from rest the Y-dominant else
+        // arm (`:52177-52198`) nudges vy by num46*1.1 = 0.11; the total
+        // speed 0 < num45*0.5 also kicks vx by num46 (vx == 0 takes the
+        // `else` −branch, `:52191-52196`). The aim points down; the speed
+        // ramps over ticks.
         update_worms_in(&world, Some((160.0, 176.0)), &mut npcs, &mut rng, &mut next_id);
-        assert_eq!(npcs[0].vx, 0.0, "the escape aims straight down");
-        assert_eq!(npcs[0].vy, 9.0, "num49 = num45");
+        assert!(
+            (npcs[0].vx + 0.1).abs() < 1e-4,
+            "the X slow-speed nudge from rest: {}",
+            npcs[0].vx
+        );
+        assert!(
+            (npcs[0].vy - 0.11).abs() < 1e-4,
+            "the Y-dominant accel approach from rest: {}",
+            npcs[0].vy
+        );
         assert!(npcs[0].hp > 0, "shallow: no despawn");
         // Deep (y/16 = 600 > 550): the chain walks dead.
         let mut deep = Npc::new(NpcKind::DevourerHead, 160.0, 9600.0, 1, 0.0);
@@ -16416,8 +16590,14 @@ mod worm_tests {
         // Giant Worm (type 10) is in the list but NOT in the corruption
         // escape's 7/13 pair — the aim keeps pointing at the far player
         // (a Devourer here would aim straight down, `:52048-52049`, the
-        // escape's own witness below).
-        let world = World::new("t".into(), 200, 800);
+        // escape's own witness below). W4-d22: the dig steer is the
+        // faithful accel approach (audit T1b) — the velocity ramps toward
+        // the num45-scaled aim over ticks, not an instant snap.
+        // A wide world so the head stays in bounds while the velocity
+        // saturates (the off-world guard only kills below the world's
+        // bottom; the X exit has no guard, but the wide row keeps the
+        // chain's follower scans cheap and the head on-map).
+        let world = World::new("t".into(), 2000, 800);
         let mut head = Npc::new(NpcKind::GiantWormHead, 160.0, 160.0, 1, 0.0);
         head.hp = head.max_hp;
         head.worm_inited = true;
@@ -16425,13 +16605,17 @@ mod worm_tests {
         let mut npcs = vec![head];
         let mut rng = UnifiedRandom::new(5);
         let mut next_id = 1u32;
-        // Player 3000 px away: outside the box → the dig branch runs
-        // (the aim snaps toward the player at num45, not the air
-        // stumble's 0.11 gravity).
-        update_worms_in(&world, Some((3160.0, 160.0)), &mut npcs, &mut rng, &mut next_id);
+        // Player 3000 px away: outside the box → the dig branch runs.
+        // The aim is horizontal (num49 = 0), so the X-dominant else arm
+        // (`:52155-52176`) accelerates vx by num46*1.1 = 0.055 per tick
+        // toward num45 = 6; ~110 ticks saturate it. The head travels
+        // ~660 px over those ticks — well inside the 2000-tile row.
+        for _ in 0..150 {
+            update_worms_in(&world, Some((3160.0, 160.0)), &mut npcs, &mut rng, &mut next_id);
+        }
         let speed = (npcs[0].vx * npcs[0].vx + npcs[0].vy * npcs[0].vy).sqrt();
         assert!(
-            (speed - 6.0).abs() < 0.01,
+            (speed - 6.0).abs() < 0.1,
             "the override digs at full speed (the Giant Worm's num45 = 6): {speed}"
         );
         assert!(npcs[0].vx > 0.0, "toward the far player");
@@ -16469,6 +16653,73 @@ mod worm_tests {
             (dist - bw).abs() < 0.01,
             "same-tick spacing: {dist} vs {bw}"
         );
+    }
+
+    // ---- W4-d22 style-6 witnesses (the faithful dig/air steer, audit T1b) ----
+    // WRITTEN NOT RUN — code-only mode. Each pins the C# accel approach the
+    // pre-fix velocity-snap stand-in dropped.
+
+    #[test]
+    fn w4_d22_the_dig_steer_accelerates_instead_of_snapping() {
+        // `NPC.cs:52112-52199`: the dig arm approaches the num45-scaled aim
+        // by num46 per tick — NOT a velocity snap. A Giant Worm head
+        // (num45 = 6, num46 = 0.05) at rest digging toward a far horizontal
+        // player takes the X-dominant else arm (`:52155-52176`): the first
+        // tick nudges vx by num46*1.1 = 0.055 (the pre-fix stand-in snapped
+        // vx straight to 6). The Y slow-speed nudge (`:52165-52175`) fires
+        // too (total speed 0 < num45*0.5, vy == 0 takes the −branch).
+        let world = World::new("t".into(), 2000, 800);
+        let mut head = Npc::new(NpcKind::GiantWormHead, 160.0, 160.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.worm_inited = true;
+        head.worm_id = 99;
+        let mut npcs = vec![head];
+        let mut rng = UnifiedRandom::new(5);
+        let mut next_id = 1u32;
+        update_worms_in(&world, Some((3160.0, 160.0)), &mut npcs, &mut rng, &mut next_id);
+        assert!(
+            (npcs[0].vx - 0.055).abs() < 1e-4,
+            "the first-tick accel, not the 6-snap: {}",
+            npcs[0].vx
+        );
+        assert!(
+            (npcs[0].vy + 0.05).abs() < 1e-4,
+            "the Y slow-speed nudge from rest: {}",
+            npcs[0].vy
+        );
+        // The dig-mode latch (`:52204-52210`): localAI[0] = 1 while digging.
+        assert_eq!(npcs[0].local_ai[0], 1.0, "the dig latch (:52210)");
+    }
+
+    #[test]
+    fn w4_d22_the_air_stumble_keys_on_the_velocity_sign() {
+        // `NPC.cs:51940-51950`: the low-speed kick follows the VELOCITY sign
+        // (vx < 0 → −num46*1.1, else +), NOT the facing. A Devourer head
+        // (num45 = 9, num46 = 0.1) in open air with the player INSIDE the
+        // ±1000-px box (so the dig override does not fire) and to the RIGHT:
+        // a head already moving LEFT kicks further left even though the
+        // player is right — the pre-fix stand-in used `facing` (+1 here).
+        let world = World::new("t".into(), 2000, 800);
+        let mut head = Npc::new(NpcKind::DevourerHead, 160.0, 160.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.worm_inited = true;
+        head.worm_id = 99;
+        head.vx = -1.0; // moving left, player right
+        let mut npcs = vec![head];
+        let mut rng = UnifiedRandom::new(5);
+        let mut next_id = 1u32;
+        // Player centre (600, 160): position (590, 139) sits inside the
+        // head's ±1000-px box → no dig override; open air → flag3 false.
+        update_worms_in(&world, Some((600.0, 160.0)), &mut npcs, &mut rng, &mut next_id);
+        // Gravity 0.11; |vx| + |vy| = 1.0 + 0.11 = 1.11 < num45*0.4 = 3.6 →
+        // the kick; vx < 0 → −num46*1.1 = −0.11 → vx = −1.11.
+        assert!(
+            (npcs[0].vx + 1.11).abs() < 1e-4,
+            "the velocity-sign kick (not facing): {}",
+            npcs[0].vx
+        );
+        // Airborne: the dig latch clears to 0 (`:52212-52218`).
+        assert_eq!(npcs[0].local_ai[0], 0.0, "the air latch (:52218)");
     }
 
     // ---- W-A2-3 witnesses (audit 55, fix/eow-leech-worm-defects) ----
@@ -19839,12 +20090,12 @@ mod dw3_tests {
         let mut twin = Npc::new(NpcKind::Zombie, 21.0 * 16.0, 70.0 * 16.0, 1, 0.0);
         twin.hp = twin.max_hp;
         let mut twin_rng = UnifiedRandom::new(a.world.seed as i32);
-        twin.update_rng(&twin_world, &mut twin_player, 1.0 / 60.0, &mut twin_rng);
-        // S1-E-21e: `AI_003_Fighters`' ambient-moan arms (`NPC.cs:57336-57367`)
-        // ride the SAME `UpdateNPCs` stream after the AI's draws — the C#
-        // `UpdateNPC` includes them, so the twin replays the gate + arms too
-        // (the fixture's default world opens the NotDiscouraged gate; the
-        // type-3 arm spends its `Next(1000)` roll every tick).
+        // S1-E-21e (the W4-d22 retire position): `AI_003_Fighters`' ambient-
+        // moan arms (`NPC.cs:57338-57367`) roll at the AI HEAD — BEFORE the
+        // machine's own draws — on the SAME `UpdateNPCs` stream. The twin
+        // replays the gate + arms FIRST (the fixture's default world opens
+        // the NotDiscouraged gate; the type-3 arm spends its `Next(1000)`
+        // roll every tick), then the AI's draws (zero here: no graveyard).
         let twin_not_discouraged = crate::ambient_sound::fighter_not_discouraged(
             twin.kind.cs_id() as i32,
             twin.y as f64,
@@ -19869,6 +20120,9 @@ mod dw3_tests {
             &mut twin_rng,
             &mut |_, _, _| {},
         );
+        // Then the machine's own draws (the zombie fold draws zero outside
+        // a graveyard — the call keeps the replay's shape honest).
+        twin.update_rng(&twin_world, &mut twin_player, 1.0 / 60.0, &mut twin_rng);
         assert_eq!(after, twin_rng, "one AI tick == one update_rng draw shape");
 
         // No other stage stream moved (the AI group's isolation).
@@ -20096,8 +20350,10 @@ mod dw3_tests {
     /// S1-E-21e — the fighter-moan wiring's stream contract: the idle counter
     /// ticks BEFORE `update_rng` (the `old_x` still holds the prior-tick
     /// stamp, `NPC.cs:57126`'s `oldPosition.X` read) and the moan arms run
-    /// AFTER the AI's draws, BEFORE the critter emitter (`NPC.cs:57336` vs
-    /// `:90323`), all on the `UpdateNPCs` stream (`Main.cs:17767`). A lone
+    /// at the AI HEAD — after the counter, BEFORE the machine's draws
+    /// (`NPC.cs:57338-57367`; the W4-d22 retire fold closed the old
+    /// sim-tail position), all on the `UpdateNPCs` stream (`Main.cs:17767`).
+    /// A lone
     /// stuck zombie above the surface: by day the `NotDiscouraged` gate is
     /// closed (`NPC.cs:60302`) and the pass is draw-free; by night the gate
     /// opens and the type-3 arm spends exactly one `Next(1000)` roll plus the
@@ -20319,10 +20575,10 @@ mod dw3_tests {
     /// `KillTile(fail: true)` thud and opens nothing; with `open = true`
     /// on a closed door it calls `edit::open_door` (the cell turns to the
     /// open door, tile 11) and plays the `Door_Opened` cue. The request
-    /// drains either way. (W4-g4 lane 15: the scan's only draw is the
-    /// graveyard bash gate's `Next(60)` — outside a graveyard the zone
-    /// guard short-circuits it; the door cue's one pitch draw rides
-    /// `UpdateNPCs`, `WorldGen.cs:37732`.)
+    /// drains either way. (W4-g4 lane 15, the W4-d22 reconcile fold: the
+    /// scan's only draw is the graveyard bash gate's `Next(60)` — outside
+    /// a graveyard the zone guard short-circuits it; the door cue's one
+    /// pitch draw rides `UpdateNPCs`, `WorldGen.cs:37732`.)
     #[test]
     fn s1_d_3z_the_door_bash_drain_opens_the_door() {
         use tr_core::tile::{Tile, FLAG_ACTIVE};
@@ -20377,10 +20633,11 @@ mod dw3_tests {
         );
     }
 
-    /// W4-g4 — the door-bash drain's tall-gate arm (`NPC.cs:60072-60084`,
-    /// `WorldGen.ShiftTallGate`): a queued bash with `open = true` on a
-    /// closed tall gate (388) shifts it to the open kind (389); the request
-    /// drains. The S1-D-3z stand-in (no shift) is retired.
+    /// W4-g4 P4 (the W4-d22 reconcile fold) — the door-bash drain's
+    /// tall-gate arm (`NPC.cs:60072-60084`, `WorldGen.ShiftTallGate`): a
+    /// queued bash with `open = true` on a closed tall gate (388) shifts
+    /// it to the open kind (389); the request drains. The S1-D-3z
+    /// stand-in (no shift) is retired. WRITTEN NOT RUN (code-only mode).
     #[test]
     fn w4_g4_the_door_bash_drain_shifts_the_tall_gate() {
         use tr_core::tile::{Tile, FLAG_ACTIVE};
@@ -20414,65 +20671,16 @@ mod dw3_tests {
         );
     }
 
-    /// W4-g4 FINAL — the GoblinPeon door SMASH (`NPC.cs:60049-60056`,
-    /// the d22-core cross-note): a queued bash with `open = true` from a
-    /// Peon (26) KILLS the door instead of opening it — the tile clears
-    /// (the `break_tile` seam: the door item drop + the break cue), no
-    /// open-kind (11) remains. The zombie twin on the same fixture opens.
-    #[test]
-    fn w4_g4_the_goblin_peon_smashes_the_door() {
-        use tr_core::tile::{Tile, FLAG_ACTIVE};
-        let build = |kind: NpcKind| {
-            let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
-            let mut world = crate::test_world_helpers::ground();
-            world.compute_column_surface();
-            world.day_time = false;
-            app.world = world;
-            let mut player = crate::player::Player::spawn(&app.world);
-            player.x = 150.0 * 16.0;
-            player.y = 110.0 * 16.0;
-            app.player = Some(player);
-            // A closed door (10) at column 30, rows 116-118 (the 1×3
-            // style-0 object).
-            for (k, y) in (116..=118).enumerate() {
-                let i = app.world.index(30, y);
-                app.world.tiles[i] = Tile {
-                    kind: 10,
-                    frame_x: 0,
-                    frame_y: (k as i16) * 18,
-                    ..Default::default()
-                };
-                app.world.tiles[i].flags |= FLAG_ACTIVE;
-            }
-            let mut n = Npc::new(kind, 28.0 * 16.0, 116.0 * 16.0, 1, 0.0);
-            n.hp = n.max_hp;
-            n.wants_door_bash = Some((30, 118, 1, true));
-            app.npcs.push(n);
-            app
-        };
-        let mut peon = build(NpcKind::GoblinPeon);
-        update_npcs(&mut peon, 1.0 / 60.0);
-        assert!(peon.npcs[0].wants_door_bash.is_none(), "the request drained");
-        assert!(
-            peon.world.tile(30, 118).is_none_or(|t| !t.active()),
-            "the Peon KILLED the door — no open kind remains"
-        );
-        let mut zombie = build(NpcKind::Zombie);
-        update_npcs(&mut zombie, 1.0 / 60.0);
-        assert_eq!(
-            zombie.world.tile(30, 118).map(|t| t.kind),
-            Some(11),
-            "the zombie twin OPENS the door (tile 11)"
-        );
-    }
-
-    /// W4-g4 lane 15 — the graveyard bash wiring end to end: the sim
-    /// pre-stamps `target_zone_graveyard` from `scene_metrics.zone_graveyard`
-    /// (the d120 biome pass), and a 60-tick bash inside the zone spends
-    /// exactly one `Next(60)` on the `UpdateNPCs` stream (`NPC.cs:59997`).
-    /// The twin replays the scan draw + the sim-tail moan roll (the
-    /// S1-E-21e position convention); outside the zone the same fixture
-    /// is draw-free apart from the moan (the legacy census).
+    /// W4-g4 lane 15 (the W4-d22 reconcile fold) — the graveyard bash
+    /// wiring end to end: the sim pre-stamps `target_zone_graveyard` from
+    /// `scene_metrics.zone_graveyard` (the d120 biome pass), and a 60-tick
+    /// bash inside the zone spends exactly one `Next(60)` on the
+    /// `UpdateNPCs` stream (`NPC.cs:59997`). W4-d22 retire: the twin
+    /// replays the C# DRAW ORDER — the moan head (`:57338-57367`) rolls
+    /// BEFORE the scan's bash draw (the S1-E-21e position remainder
+    /// CLOSED; the pre-retire port rolled them bash-first at the sim
+    /// tail); outside the zone the same fixture is draw-free apart from
+    /// the moan (the legacy census). WRITTEN NOT RUN.
     #[test]
     fn w4_g4_the_graveyard_bash_draws_on_the_update_npcs_stream() {
         use tr_core::tile::{Tile, FLAG_ACTIVE};
@@ -20507,25 +20715,29 @@ mod dw3_tests {
             app.rngs = crate::app::rng::NamedRngs::new(app.world.seed as i32);
             app
         };
-        // Inside the graveyard: one Next(60) ahead of the moan roll.
+        // Inside the graveyard: the moan head's Next(1000) FIRST, then
+        // the scan's one Next(60) — the C# order (`:57340` before `:59997`).
         let mut a = build(true);
         update_npcs(&mut a, 1.0 / 60.0);
         assert!(a.npcs[0].target_zone_graveyard, "the pre-stamp landed");
         assert!(a.npcs[0].wants_door_bash.is_none(), "the bash drained");
         let after = a.rngs.stream(RngKey::UpdateNpcs).clone();
         let mut twin_rng = UnifiedRandom::new(a.world.seed as i32);
-        let _bash = twin_rng.next_max(60); // the scan's ONE draw (:59997)
-        // The sim-tail moan (the DW-3.1 replay shape): the night gate
-        // passes, the type-3 arm spends its Next(1000).
+        // The moan head (the W4-d22 retire position): the night gate
+        // passes, the type-3 arm spends its Next(1000) BEFORE any machine
+        // draw. The bash resets ai[3] to 0 (`:59993`) AFTER the moan gate
+        // read it; the twin replays with 0 — the gate only tests `< 60`,
+        // so the pre-bash counter's exact value (0 or 1) is draw-neutral.
         crate::ambient_sound::fighter_ambient_moans(
             3,
-            a.npcs[0].ai[3],
+            0.0,
             true,
             a.npcs[0].shimmer_transparency,
             &mut twin_rng,
             &mut |_, _, _| {},
         );
-        assert_eq!(after, twin_rng, "bash Next(60) + moan Next(1000), in order");
+        let _bash = twin_rng.next_max(60); // the scan's ONE draw (:59997)
+        assert_eq!(after, twin_rng, "moan Next(1000) + bash Next(60), in order");
         // Outside the graveyard: the zone guard short-circuits — the
         // stream carries ONLY the moan roll (the legacy zero-draw bash).
         let mut b = build(false);
