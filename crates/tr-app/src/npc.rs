@@ -1586,10 +1586,7 @@ pub enum NpcKind {
     /// kb 0.0, value 0 (`NPC.cs` SetDefaults arm).
     CultistDragonBody2,
     // W4-d40 (NPCID 421-490 roster wave): GoldMouse, GoldWorm, BoneThrowingSkeleton, BoneThrowingSkeleton2, BoneThrowingSkeleton3.
-    /// `NPCID.GoldMouse` (447): 14x12, aiStyle 7, dmg 0, def 0, 5 HP,
-    /// kb 1.0, value 0 (`NPC.cs` SetDefaults arm).
-    GoldMouse,
-        /// `NPCID.BoneThrowingSkeleton` (449): 18x40, aiStyle 3, dmg 20, def 8, 60 HP,
+            /// `NPCID.BoneThrowingSkeleton` (449): 18x40, aiStyle 3, dmg 20, def 8, 60 HP,
     /// kb 0.5, value 100 (`NPC.cs` SetDefaults arm).
     BoneThrowingSkeleton,
     /// `NPCID.BoneThrowingSkeleton2` (450): 18x40, aiStyle 3, dmg 20, def 12, 55 HP,
@@ -1599,22 +1596,10 @@ pub enum NpcKind {
     /// kb 0.5, value 120 (`NPC.cs` SetDefaults arm).
     BoneThrowingSkeleton3,
     // W4-d40 (NPCID 421-490 roster wave): GoldBird, GoldBunny, GoldButterfly, GoldFrog, GoldGrasshopper.
-    /// `NPCID.GoldBird` (442): 14x14, aiStyle 24, dmg 0, def 0, 5 HP,
-    /// kb 0.8, value 0 (`NPC.cs` SetDefaults arm).
-    GoldBird,
-    /// `NPCID.GoldBunny` (443): 18x20, aiStyle 7, dmg 0, def 0, 5 HP,
-    /// kb 1.0, value 0 (`NPC.cs` SetDefaults arm).
-    GoldBunny,
-    /// `NPCID.GoldButterfly` (444): 10x10, aiStyle 65, dmg 0, def 0, 5 HP,
+            /// `NPCID.GoldButterfly` (444): 10x10, aiStyle 65, dmg 0, def 0, 5 HP,
     /// kb 1.0, value 0 (`NPC.cs` SetDefaults arm).
     GoldButterfly,
-    /// `NPCID.GoldFrog` (445): 12x10, aiStyle 7, dmg 0, def 0, 5 HP,
-    /// kb 1.0, value 0 (`NPC.cs` SetDefaults arm).
-    GoldFrog,
-    /// `NPCID.GoldGrasshopper` (446): 14x10, aiStyle 1, dmg 0, def 0, 5 HP,
-    /// kb 1.0, value 0 (`NPC.cs` SetDefaults arm).
-    GoldGrasshopper,
-    // W4-d40 (NPCID 421-490 roster wave): ArmedZombieTwiggy, ArmedZombieCenx, CultistTablet, CultistDevote, CultistBossClone.
+            // W4-d40 (NPCID 421-490 roster wave): ArmedZombieTwiggy, ArmedZombieCenx, CultistTablet, CultistDevote, CultistBossClone.
     /// `NPCID.ArmedZombieTwiggy` (435): 18x40, aiStyle 3, dmg 16, def 4, 45 HP,
     /// kb 0.55, value 70 (`NPC.cs` SetDefaults arm).
     ArmedZombieTwiggy,
@@ -2016,11 +2001,7 @@ pub enum NpcKind {
     /// critter (`aiStyle 64`): 10x10, lavaImmune, catchItem 4847
     /// (`NPC.cs:17265-17279`).
     Lavafly,
-    /// `NPCID.Shimmerfly` (677, `ID/NPCID.cs:12031`) — the Aether glow
-    /// critter (`aiStyle 64`): 10x10, noTileCollide, catchItem 5350
-    /// (`NPC.cs:17579-17593`); the world-margin + threat-flee member.
-    Shimmerfly,
-    /// `NPCID.Worm` (357, `ID/NPCID.cs:11391`) — the surface crawler
+        /// `NPCID.Worm` (357, `ID/NPCID.cs:11391`) — the surface crawler
     /// (`aiStyle 66`): 10x4, dmg 0, def 0, 5 HP, npcSlots 0.1, catchItem
     /// 2002, friendly (`NPC.cs:13545-13558`). WIRED by W4-c8: the axis'
     /// 66 arm rides `npc_ai_style66::ai_style66`.
@@ -2060,6 +2041,67 @@ pub enum NpcKind {
     /// (`aiStyle 66`): 10x4, catchItem 4363, friendly
     /// (`NPC.cs:16781-16794`).
     Maggot,
+    /// `NPCID.Snail` (359, `NPCID.cs:11395`) — the wall-crawler critter
+    /// (`NPC.cs:13573-13586`): 12x12, aiStyle 67, dmg 0, def 0, 5 HP,
+    /// kb 1 (the head default — the row writes none), npcSlots 0.5,
+    /// noGravity, catchItem 2006. WIRED (W4-c9): the axis' 67 arm rides
+    /// `npc_ai_style67::snail_ai_step` — the 359-only scale roll
+    /// `Next(80,111)` + the integer-half `-2f` resize.
+    Snail,
+    /// `NPCID.GlowingSnail` (360, `NPCID.cs:11397`) — the blue-light
+    /// snail (`NPC.cs:13587-13600`): 14x14, the 359 stats, catchItem
+    /// 2007; the AI's `AddLight(Center, 0.1, 0.2, 0.7)` (`:34387`) rides
+    /// the draw-side `EntityLights` feed.
+    GlowingSnail,
+    /// `NPCID.MagmaSnail` (655, `NPCID.cs:11987`) — the orange-light,
+    /// lava-immune snail (`NPC.cs:17280-17294`): 14x14, the 359 stats +
+    /// lavaImmune, catchItem 4849; the AI's `AddLight(Center, 0.6, 0.3,
+    /// 0.1)` (`:34391`) rides the same feed.
+    MagmaSnail,
+    /// `NPCID.Shimmerfly` (677, `NPCID.cs:12031`) — the shimmer
+    /// transform target of all three snails (`NPCID.cs:10470`'s
+    /// `ShimmerTransformToNPC` rows, `GetShimmered` `NPC.cs:91561-91565`
+    /// → `Transform(677)` `:81084`). `NPC.cs:17579-17593`: 10x10,
+    /// aiStyle 64, dmg 0, def 0, 5 HP, npcSlots 0.2, noGravity +
+    /// noTileCollide, catchItem 5350. WIRED (W4-c9): the kind-gated 64
+    /// axis arm rides `npc_ai_style64::ai_064_step`'s 677 branches (the
+    /// solo self-view threat scan; the pooled firefly pass is W4-c7's).
+    Shimmerfly,
+    /// `NPCID.GoldBird` (442, `NPCID.cs:11557`) — the gold bird critter
+    /// (`NPC.cs:14247-14261`): 14x14, aiStyle 24, dmg 0, def 0, 5 HP,
+    /// kb 0.8, npcSlots 0.4, rarity 3, catchItem 2889. WIRED (W4-c9): the
+    /// kind-match arm rides `npc_ai_style24::ai_style_24` (the perch/
+    /// startle/flight machine + the tile-collision tail). Shimmer →
+    /// Shimmerfly 677 (`NPCID.cs:10470`'s `(442, 677)` row).
+    GoldBird,
+    /// `NPCID.GoldGrasshopper` (446, `NPCID.cs:11565`) — the gold
+    /// grasshopper critter (`NPC.cs:14303-14317`): 14x10, aiStyle 1,
+    /// dmg 0, def 0, 5 HP, kb 1 (the head default), friendly, npcSlots
+    /// 0.1, rarity 3, catchItem 2893. WIRED (W4-c9): the kind-match arm
+    /// rides `npc_ai_slime::ai_001_slimes`'s 446 branches (the hop cadence
+    /// + the friendly latch). Shimmer → 677 (`(446, 677)`).
+    GoldGrasshopper,
+    /// `NPCID.GoldMouse` (447, `NPCID.cs:11567`) — the gold mouse critter
+    /// (`NPC.cs:14318-14331`): 14x12, aiStyle 7, dmg 0, def 0, 5 HP,
+    /// kb 1 (the head default), npcSlots 0.25, rarity 3, NPCDeath4,
+    /// catchItem 2894. WIRED (W4-c9): the kind-match arm rides
+    /// `npc_ai_critter::critter_ai` (the AI_007 wander/hop subset, the
+    /// flag8 mouse row). Shimmer → 677 (`(447, 677)`).
+    GoldMouse,
+    /// `NPCID.GoldBunny` (443, `NPCID.cs:11559`) — the gold bunny critter
+    /// (`NPC.cs:14262-14274`): 18x20, aiStyle 7, dmg 0, def 0, 5 HP,
+    /// kb 1 (the head default), rarity 3, catchItem 2890. WIRED (W4-c9):
+    /// the kind-match arm rides `npc_ai_critter::critter_ai` (the AI_007
+    /// wander/hop subset, the default cap 1 / accel 0.07 bunny row).
+    /// Shimmer → 677 (`(443, 677)`).
+    GoldBunny,
+    /// `NPCID.GoldFrog` (445, `NPCID.cs:11563`) — the gold frog critter
+    /// (`NPC.cs:14290-14302`): 12x10, aiStyle 7, dmg 0, def 0, 5 HP,
+    /// kb 1 (the head default), rarity 3, catchItem 2892. WIRED (W4-c9):
+    /// the kind-match arm rides `npc_ai_critter::critter_ai` (the flag10
+    /// frog row — the dry walk; the wet swim override is the documented
+    /// stand-in). Shimmer → 677 (`(445, 677)`).
+    GoldFrog,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -2764,6 +2806,25 @@ pub struct Npc {
     /// (`NPC.cs:36056-36063`): 390 → 382 RayGunner, 416 → 518 SolarSpearman.
     /// The sim runs `NPC.Transform` (`NPC.cs:81084-81114`) in place.
     pub wants_transform: Option<i32>,
+    /// `GetShimmered`'s statue arm (`NPC.cs:91550-91560`, the W4-c9 snail
+    /// shimmer gate): `NPC.noSpawnCycle = true` + `active = false`. The
+    /// adapter despawns through the timer seam (the silent retain) and
+    /// queues this latch; the sim drains it onto `App::spawn_no_cycle`
+    /// (the one-call suppression, `NPC.cs:80171-80174`).
+    pub wants_spawn_no_cycle: bool,
+    /// The Shimmerfly's threat-scan pool (`NPC.cs:34120-34128`, W4-c9):
+    /// the sim pre-pass stamps the slot-ordered `Main.npc` views here
+    /// (the `twin_time_lefts` carrier precedent) — the solo `update_rng`
+    /// path reads the empty list (the style75 solo fold).
+    pub shimmerfly_threat_views: Vec<crate::npc_ai_style64::Ai64NpcView>,
+    /// The snail's per-tick `noGravity` flag (W4-c9, `NPC.cs:34445` /
+    /// `:34488`): the aiStyle-67 machine returns the arm's writes through
+    /// `SnailEvents::no_gravity`; the adapter caches the last write here
+    /// (the `Npc` struct has no live gravity flag — the kind table's
+    /// `no_gravity()` is the strike-time row). Init true — the
+    /// `SetDefaults` rows (`:13584`/`:13598`/`:17291`); the shimmer
+    /// early-return writes nothing, so the flag stands.
+    pub snail_no_gravity: bool,
     /// The aiStyle-75 `SoundEngine.PlaySound(SoundID.Item12/Item39, pos)`
     /// cues (`(style, x, y)`) queued by the standalone `update_rng` wrapper
     /// (no audio seam there); the sim's pooled path drains them immediately
@@ -4170,6 +4231,9 @@ impl Npc {
             wants_saucer_crew: false,
             wants_mount_carrier: None,
             wants_transform: None,
+            wants_spawn_no_cycle: false,
+            shimmerfly_threat_views: Vec::new(),
+            snail_no_gravity: true,
             wants_item_sounds: Vec::new(),
             wants_ai_light: Vec::new(),
             // `Main.essScale`'s stock 1.0 (the `App::new` init) — the sim
@@ -4931,6 +4995,12 @@ impl Npc {
             | NpcKind::TruffleWorm
             | NpcKind::Maggot => 1.0,
             NpcKind::TruffleWormDigger => 0.0,
+            // The snail family + its shimmer target (W4-c9): the
+            // `SetDefaults` rows write no knockBackResist — the head's
+            // 1f (`NPC.cs:8533`) stands (the ForceBubble precedent).
+            // E8 merge: Shimmerfly's kb is c7's above; the 5 gold rows
+            // are d40's above (the dup drops).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => 1.0,
             _ => 0.4,
         }
     }
@@ -5578,6 +5648,11 @@ impl Npc {
             | NpcKind::TruffleWorm
             | NpcKind::TruffleWormDigger
             | NpcKind::Maggot => 0,
+            // The snail family + its shimmer target (W4-c9): defense 0
+            // each (`NPC.cs:13579` / `:13593` / `:17286` / `:17585`).
+            // E8 merge: Shimmerfly's defense is c7's above; the 5 gold
+            // rows are d40's above (the dup drops).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6225,6 +6300,11 @@ impl Npc {
             | NpcKind::TruffleWorm
             | NpcKind::TruffleWormDigger
             | NpcKind::Maggot => 0.0,
+            // The snail family + its shimmer target (W4-c9): the rows
+            // write no value — the head's 0f (`NPC.cs:8544`) stands.
+            // E8 merge: Shimmerfly's value is c7's above; the 5 gold
+            // rows are d40's above (the dup drops).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6944,6 +7024,17 @@ impl Npc {
             63 if self.kind == NpcKind::Flocko => {
                 crate::npc_ai_frost_mob::frost_mob_step(self, world, player, rng);
             }
+                        // E8 merge: the c9 kind-gated 64 arm dropped - c7's plain 64
+            // arm below claims all four fireflies (the solo wrapper + the
+            // sim pool pass own the 677 threat scan; the c9 adapter retired).
+            // `else if (this.aiStyle == 67)` (`NPC.cs:34348-34622`) — the
+            // snail wall-crawler family (359/360/655, W4-c9). The faithful
+            // `npc_ai_style67::snail_ai_step` claims the axis; the adapter
+            // owns the shimmer-seam drain (the Transform(677) / statue
+            // despawn requests), the per-tick gravity flag the machine
+            // returns, and the snail's `UpdateCollision` tail (the
+            // `Collision_MoveSnailOnSlopes` replacement, `:92568-92571`).
+            67 => self.ai_067_snail(world, player, rng),
             // `else if (this.aiStyle == 75)` (`NPC.cs:35501-36070`) — the
             // mount/rider family (390/392/393/394/492/416). S1-D-3-wire-saucer:
             // the SOLO path (a test's bare `update_rng`) runs the faithful
@@ -7919,6 +8010,303 @@ impl Npc {
         }
     }
 
+    /// W4-c9 wiring — the aiStyle-67 adapter: the snail wall-crawler
+    /// family's faithful arm (`npc_ai_style67::snail_ai_step`,
+    /// `NPC.cs:34348-34622`). RNG census (the module's, preserved): the
+    /// 359-only scale `Next(80,111)` once (`:34381`) and the `Next(7200)`
+    /// fall roll while `ai[2] == 0` (`:34411`, gate-fail draw consumed) —
+    /// both on the caller's UpdateNPCs stream. The adapter owns:
+    /// * the shimmer seam — `GetShimmered`'s statue despawn
+    ///   (`:91550-91560`: noSpawnCycle + active=false; the port despawns
+    ///   through the timer seam and queues `wants_spawn_no_cycle`) and
+    ///   the `Transform(677)` request (`:91561-91565`, the style75
+    ///   one-tick drain fold). `WorldItem.ShimmerEffect`'s Item176 cue +
+    ///   20-dust `Next(6)` burst is the documented visual skip (the
+    ///   item-shimmer path's standing fold, `shimmer.rs`).
+    /// * the per-tick `noGravity` flag the machine returns (the fall
+    ///   block writes false, the crawl head true; the shimmer return
+    ///   writes nothing — the flag stands, `snail_no_gravity`).
+    /// * the post-AI movement: the depth-scaled gravity + 10 cap
+    ///   (`UpdateNPC_UpdateGravity` `:90878-90936` dry row — aiStyle 67
+    ///   never wets, `Collision_WaterCollision` `:93055-93060`), the
+    ///   ±0.005 double deadband (`:90473-90476`), then `UpdateCollision`
+    ///   (`:92523-92580`): the `WalkDownSlope` head (`:93342-93350`),
+    ///   fall-through false (no `DecideFallThroughPlatforms` row matches
+    ///   the trio, `:92917-93050`), the identity collision parameters
+    ///   (`:92807-92881` — no snail row), `Collision_MoveNormal`'s
+    ///   `TileCollision(fall: false, fall2: false)` (`:92723-92726`),
+    ///   `Collision_MoveWhileDry` (`:92591-92607`) and the aiStyle-67
+    ///   `Collision_MoveSnailOnSlopes` replacement (`:92568-92571`).
+    fn ai_067_snail(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let cand = crate::npc_target::session_candidate(player);
+        let npc_type = match self.kind {
+            NpcKind::Snail => crate::npc_ai_style67::SNAIL_TYPE,
+            NpcKind::GlowingSnail => crate::npc_ai_style67::GLOWING_SNAIL_TYPE,
+            NpcKind::MagmaSnail => crate::npc_ai_style67::MAGMA_SNAIL_TYPE,
+            _ => unreachable!("only the snail trio rides aiStyle 67"),
+        };
+        // `NPC.gravity` — the static the pre-AI `UpdateNPC_UpdateGravity`
+        // (`:90380`) computes from the PRE-AI position; `WalkDownSlope`
+        // and the gravity term both read it. The dry row (the family
+        // never wets): base 0.3 depth-scaled, maxFallSpeed 10.
+        let gravity = crate::npc_ai_golem::body_gravity(
+            self.y,
+            world.width,
+            world.world_surface,
+        );
+        let ctx = crate::npc_ai_style67::SnailCtx::stock(npc_type);
+        let ev = crate::npc_ai_style67::snail_ai_step(self, &ctx, world, &[cand], rng, 0);
+        // The lights ride the draw-side `EntityLights` feed
+        // (`npc_lights::snail_light` — the post-step position, the
+        // small-kinds convention); the machine's pre-move request is
+        // discarded here.
+        let _ = ev.light;
+        if let Some(ng) = ev.no_gravity {
+            self.snail_no_gravity = ng;
+        }
+        if ev.shimmer_statue_despawn {
+            // `:91550-91560` — noSpawnCycle + active=false (no life=0
+            // outside netMode 2): the silent despawn, no death events.
+            // The timer-0 retain drops the slot this tick; the damage
+            // zero mirrors the mid-update deactivation (no contact).
+            self.wants_spawn_no_cycle = true;
+            self.despawn_timer = 0;
+            self.damage_override = Some(0);
+            return;
+        }
+        if ev.shimmer_transform {
+            // `:91561-91565` — Transform(677) + ShimmerEffect. The C#
+            // `return`s from AI() (`:34358`) AFTER the transform, so the
+            // fresh 677's noTileCollide tail integrates the OLD snail
+            // velocity once. The port queues the request (the style75
+            // one-tick drain fold) and skips that tail too: the drain
+            // swaps the kind after the tick, the bottom anchor holds
+            // exactly across the swap, and the fly's first AI tick is
+            // the next one (the velocity survives `transform_to_kind`,
+            // so the rearm blend still reads it). Documented fold.
+            self.wants_transform = Some(crate::npc_ai_style67::SHIMMERFLY_TYPE);
+            return;
+        }
+        // `:90465-90472` — the gravity term behind the machine's flag.
+        if !self.snail_no_gravity {
+            self.vy = (self.vy + gravity).min(10.0);
+        }
+        // `:90473-90476` — the dead-band X snap (double compare).
+        if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
+            self.vx = 0.0;
+        }
+        // `UpdateCollision` (`:92523-92580`), the snail shape.
+        let (w, h) = self.size();
+        // `:92525` — `Collision_WalkDownSlopes` (velocity-only).
+        let v = crate::collision::walk_down_slope(
+            world,
+            [self.x, self.y],
+            [self.vx, self.vy],
+            w,
+            h,
+            gravity,
+        );
+        self.vx = v[0];
+        self.vy = v[1];
+        // `:92538-92540` — latch, then clear.
+        self.old_vx = self.vx;
+        self.old_vy = self.vy;
+        self.collide_x = false;
+        self.collide_y = false;
+        // `:92544` → `Collision_MoveNormal` (`:92725`): fall = false.
+        let tc = crate::collision::tile_collision(
+            world,
+            [self.x, self.y],
+            [self.vx, self.vy],
+            w,
+            h,
+            false,
+            false,
+        );
+        self.vx = tc.vel[0];
+        self.vy = tc.vel[1];
+        // `Collision_MoveWhileDry` (`:92593-92607`).
+        if tc.up {
+            self.vy = 0.01;
+        }
+        if self.old_vx != self.vx {
+            self.collide_x = true;
+        }
+        if self.old_vy != self.vy {
+            self.collide_y = true;
+        }
+        self.old_x = self.x;
+        self.old_y = self.y;
+        self.old_direction = self.facing;
+        self.x += self.vx;
+        self.y += self.vy;
+        // `:92568-92571` — the aiStyle-67 slope replacement.
+        crate::npc_ai_style67::snail_move_on_slopes(self, world);
+    }
+
+    // W4-c9 merge (E8): the ai_064_shimmerfly wrapper retired - the
+    // c7 axis-64 solo arm + ai_064_integrate own the 677 (the threat
+    // scan rides the sim pool pass; the shimmerfly_threat_views
+    // pre-pass stays as the solo-path carrier).
+
+    /// W4-c9 — the GoldBird (442) through the faithful
+    /// `npc_ai_style24::ai_style_24` (`NPC.cs:25313-25537`). The module is
+    /// velocity-only (the perch/startle/descend/flight state machine, the
+    /// ground probe, the wet tail); this wrapper feeds the single session
+    /// player + the carried collide flags and runs the tile-collision
+    /// integration the C#'s `UpdateNPC` tail applies (the bird has
+    /// noTileCollide false; noGravity rides the module's per-state write —
+    /// perched false → the depth-scaled gravity, flight true → none). The
+    /// poop gate's `RollOnlyBadLuckExtreme(50)` draws only for a
+    /// negative-luck player (the port's session luck is 0 → no draw); the
+    /// 1080 BirdDroppings shot drains into `wants_hostile_shot`. The
+    /// W4-d38 `update_bird` precedent, re-ported on this branch.
+    fn update_gold_bird(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let cand = crate::npc_target::session_candidate_for(player, self.kind);
+        let p = crate::npc_ai_style24::Style24Player {
+            candidate: cand,
+            luck: 0.0,
+            is_cenx: false,
+        };
+        let ctx = crate::npc_ai_style24::Style24Ctx {
+            players: &[p],
+            neighbors: &[],
+            net_mode: 0,
+            cloud_alpha: 0.0,
+            day_time: world.day_time,
+            release_owner: self.release_owner as i32,
+            ticker: 0,
+        };
+        let out = crate::npc_ai_style24::ai_style_24(self, self.kind.cs_id() as i32, world, &ctx, rng);
+        // The poop shot (the 1080 BirdDroppings, zero velocity/damage).
+        if let Some((x, y)) = out.poop_shot {
+            self.wants_hostile_shot.push((1080, x, y, 0.0, 0.0, 0));
+        }
+        // `:90465-90472` — the gravity term behind the module's last
+        // noGravity write (perched false, flight true). The dry row: base
+        // 0.3 depth-scaled, maxFallSpeed 10 (the bird never wets in the
+        // port's dry stand-in; the wet merge is the module's velocity tail).
+        if !out.no_gravity {
+            let gravity = crate::npc_ai_golem::body_gravity(self.y, world.width, world.world_surface);
+            self.vy = (self.vy + gravity).min(10.0);
+        }
+        // `:90473-90476` — the dead-band X snap (double compare).
+        if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
+            self.vx = 0.0;
+        }
+        // `UpdateCollision` (`:92523-92580`) — the bird's tile move. The
+        // collide flags latch for the next tick's flight bounce.
+        let (w, h) = self.size();
+        self.old_vx = self.vx;
+        self.old_vy = self.vy;
+        self.collide_x = false;
+        self.collide_y = false;
+        let nx = self.x + self.vx;
+        if !collides_rect(world, nx, self.y, w, h) {
+            self.x = nx;
+        } else {
+            self.vx = 0.0;
+            self.collide_x = true;
+        }
+        let ny = self.y + self.vy;
+        if !collides_rect(world, self.x, ny, w, h) {
+            self.y = ny;
+            self.on_ground = false;
+        } else if self.vy > 0.0 {
+            let ty = ((ny + h) / TILE_PX).floor() as i32;
+            self.y = ty as f32 * TILE_PX - h;
+            self.vy = 0.0;
+            self.on_ground = true;
+            self.collide_y = true;
+        } else if self.vy < 0.0 {
+            let ty = (ny / TILE_PX).floor() as i32;
+            self.y = (ty + 1) as f32 * TILE_PX;
+            self.vy = 0.0;
+            self.collide_y = true;
+        }
+    }
+
+    /// W4-c9 — the GoldGrasshopper (446) through the faithful
+    /// `npc_ai_slime::ai_001_slimes` (`NPC.cs:60341-61723`, the 446
+    /// branches: the +3 cadence bonus `:61598`, the ×0.9/×0.6 hop + the
+    /// ceiling check `:61684-61697`, the proximity aggro `:61080-61083`).
+    /// The module is velocity-only; this wrapper feeds the carried wet
+    /// flags + the session player and runs the gravity + tile-collision
+    /// tail the C#'s `UpdateNPC` applies (the grasshopper has
+    /// noTileCollide/noGravity false). The 377/446 friendly latch
+    /// (`:61440-61450`) lands here (the module deferred it with the kind):
+    /// localAI[2] counts to 90, then friendly clears.
+    fn update_gold_grasshopper(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let cand = crate::npc_target::session_candidate_for(player, self.kind);
+        let (w, h) = self.size();
+        let (wet, honey_wet, shimmer_wet) =
+            crate::npc_ai_slime::wet_collision(world, self.x, self.y, w as i32, h as i32);
+        self.wet = wet;
+        let ctx = crate::npc_ai_slime::SlimeCtx {
+            players: &[cand],
+            expert_mode: player.buffs.expert_mode,
+            net_mode: 0,
+            ticker: 0,
+            wet,
+            honey_wet,
+            shimmer_wet,
+        };
+        let fx = crate::npc_ai_slime::ai_001_slimes(self, world, &ctx, rng);
+        // The 184 spike volleys never fire for 446 (the shooter is the
+        // SpikedIceSlime's); the frame-counter reset is the -999 balloon
+        // freeze's (never reached for the grasshopper).
+        let _ = fx;
+        // `:61440-61450` — the 377/446 friendly latch (localAI[2] < 90).
+        if self.local_ai[2] < 90.0 {
+            self.local_ai[2] += 1.0;
+        } else {
+            self.friendly = false;
+        }
+        // `:90465-90472` — the slime gravity (the depth-scaled 0.3 / 10
+        // dry row + the wet merges, `npc_ai_slime::slime_gravity`).
+        let (gravity, max_fall) = crate::npc_ai_slime::slime_gravity(
+            self.y,
+            world.width,
+            world.world_surface,
+            wet,
+            honey_wet,
+            shimmer_wet,
+        );
+        self.vy = (self.vy + gravity).min(max_fall);
+        // `:90473-90476` — the dead-band X snap (double compare).
+        if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
+            self.vx = 0.0;
+        }
+        // `UpdateCollision` (`:92523-92580`) — the grasshopper's tile move.
+        self.old_vx = self.vx;
+        self.old_vy = self.vy;
+        self.collide_x = false;
+        self.collide_y = false;
+        let nx = self.x + self.vx;
+        if !collides_rect(world, nx, self.y, w, h) {
+            self.x = nx;
+        } else {
+            self.vx = 0.0;
+            self.collide_x = true;
+        }
+        let ny = self.y + self.vy;
+        if !collides_rect(world, self.x, ny, w, h) {
+            self.y = ny;
+            self.on_ground = false;
+        } else if self.vy > 0.0 {
+            let ty = ((ny + h) / TILE_PX).floor() as i32;
+            self.y = ty as f32 * TILE_PX - h;
+            self.vy = 0.0;
+            self.on_ground = true;
+            self.collide_y = true;
+        } else if self.vy < 0.0 {
+            let ty = (ny / TILE_PX).floor() as i32;
+            self.y = (ty + 1) as f32 * TILE_PX;
+            self.vy = 0.0;
+            self.collide_y = true;
+        }
+    }
+
     /// The kind-keyed dispatch — the pre-S1-D-2 `match self.kind`, unchanged
     /// for every style the axis has not claimed yet. D-3 migrates one family
     /// at a time into the axis above; this match shrinks as they land.
@@ -8585,18 +8973,14 @@ impl Npc {
             | NpcKind::CultistDevote => {}
             // W4-d40: CultistBossClone ride the family machine.
             NpcKind::CultistBossClone => self.update_lunatic_cultist(world, player, rng),
-            // W4-d40: GoldBird, GoldBunny, GoldButterfly, GoldFrog - the aiStyle machine is UNWIRED
-            // (the style73 precedent); the kind arm keeps the match exhaustive.
-            NpcKind::GoldBird
-            | NpcKind::GoldBunny
-            | NpcKind::GoldButterfly
-            | NpcKind::GoldFrog => {}
-            // W4-d40: GoldGrasshopper ride the family machine.
-            NpcKind::GoldGrasshopper => self.update_slime(world, player, dt),
-            // W4-d40: GoldMouse, GoldWorm - the aiStyle machine is UNWIRED
-            // (the style73 precedent); the kind arm keeps the match exhaustive.
-            NpcKind::GoldMouse
-            | NpcKind::GoldWorm => {}
+            // W4-c9 merge keep-one: d40's gold stand-ins dropped - c9's
+            // faithful machines below own the dispatch (the GoldBird
+            // aiStyle-24 bird, the GoldGrasshopper aiStyle-1 hop, the
+            // GoldMouse/GoldBunny/GoldFrog AI_007 critter subset). The
+            // GoldButterfly stays unwired (its case-444 FindFrame is the
+            // row-0 pin; the AI lands with its wave); the GoldWorm rides
+            // c8's axis-66 unreachable arm above.
+            NpcKind::GoldButterfly => {}
             // W4-d40: BoneThrowingSkeleton, BoneThrowingSkeleton2, BoneThrowingSkeleton3 ride the family machine.
             NpcKind::BoneThrowingSkeleton
             | NpcKind::BoneThrowingSkeleton2
@@ -9097,6 +9481,28 @@ impl Npc {
             // (`worm_head_step`, the AI_006 head machine — the
             // StardustWormHead precedent, `is_worm` with no chain).
             NpcKind::TruffleWormDigger => {}
+            // The snail family + its shimmer target (W4-c9): claimed by
+            // the aiStyle-67 axis (the snails) and the kind-gated 64 arm
+            // (the Shimmerfly) above — these arms keep the kind match
+            // exhaustive and route direct-kind callers to the same
+            // machines (the fishron precedent).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => {
+                self.ai_067_snail(world, player, rng)
+            }
+            // E8 merge: the Shimmerfly rides c7's unreachable-64 group
+            // above (the axis claims it - the c9 kind-gated arm retired).
+            // The gold critters (W4-c9): the GoldBird rides the aiStyle-24
+            // bird machine, the GoldGrasshopper the aiStyle-1 slime hop
+            // machine (the 446 branches), the GoldMouse the AI_007
+            // wander/hop subset. None of these styles is claimed by the
+            // axis above (the town aiStyle-7 family stays kind-keyed — the
+            // W4-d38 precedent), so these arms are the live dispatch.
+            NpcKind::GoldBird => self.update_gold_bird(world, player, rng),
+            NpcKind::GoldGrasshopper => self.update_gold_grasshopper(world, player, rng),
+            NpcKind::GoldMouse => crate::npc_ai_critter::critter_ai(self, world, player, rng),
+            NpcKind::GoldBunny | NpcKind::GoldFrog => {
+                crate::npc_ai_critter::critter_ai(self, world, player, rng)
+            }
         }
     }
 
@@ -12301,6 +12707,188 @@ impl Npc {
                     self.frame = 0;
                 }
             }
+            // W4-c9 — the snail trio's `case 359 : case 360 : case 655`
+            // (`NPC.cs:72238-72295`): the fall rows 4/5 (vy > 1, the
+            // 6-tick phase reset at 11) vs the walk rows 0/1/2/3/2/1
+            // (the 10-tick phases, reset at 59); a zero velocity leaves
+            // both untouched. The pure twin lives in the style67 module
+            // (the nimbus_find_frame convention).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => {
+                let (row, counter) = crate::npc_ai_style67::snail_find_frame(
+                    self.vx,
+                    self.vy,
+                    self.frame,
+                    self.frame_counter,
+                );
+                self.frame = row;
+                self.frame_counter = counter;
+            }
+            // E8 merge: the c9 Shimmerfly case-677 dup dropped - c7's
+            // arm above owns it (the same double-increment + pixel-wrap
+            // quirk, NPC.cs:72710-72721).
+            // W4-c9 — the GoldBird's `case 442` (the 74/297/298 group,
+            // `NPC.cs:73628-73653`): spriteDirection = direction, the
+            // vx*0.1 tilt; the still pose pins row 4 (the perched frame),
+            // else the 4-tick counter walks rows 0..3 wrapping at
+            // `npcFrameCount[442] - 1` = 4 (`Main.cs:67128`).
+            NpcKind::GoldBird => {
+                self.sprite_dir = self.facing;
+                self.rotation = self.vx * 0.1;
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 4;
+                    self.frame_counter = 0.0;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= self.rows() - 1 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-c9 — the GoldGrasshopper's `case 446` (the 377 group,
+            // `NPC.cs:70958-70982`): the airborne row 1 vs the grounded
+            // row 0, spriteDirection = direction. (The bestiary-icon dummy
+            // arm `:70960-70972` is the UI's — the world NPC takes the
+            // velocity branch.)
+            NpcKind::GoldGrasshopper => {
+                if self.vy != 0.0 {
+                    self.frame = 1;
+                } else {
+                    self.frame = 0;
+                }
+                self.sprite_dir = self.facing;
+            }
+            // W4-c9 — the GoldMouse's `case 447` (the 300 group,
+            // `NPC.cs:76513-76565`): the grounded idle steps rows 0/1 at
+            // the >8 counter; the grounded walk and the air share the
+            // |vx|*0.5 + 1 accumulator stepping at >6, wrapping at
+            // `npcFrameCount[447]` = 6 to row 2 (`Main.cs:67128`).
+            NpcKind::GoldMouse => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 8.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame > 1 {
+                            self.frame = 0;
+                        }
+                    } else {
+                        self.frame_counter += self.vx.abs() * 0.5;
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() {
+                            self.frame = 2;
+                        }
+                    }
+                } else {
+                    self.frame_counter += self.vx.abs() * 0.5;
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 6.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= self.rows() {
+                        self.frame = 2;
+                    }
+                }
+            }
+            // W4-c9 — the GoldBunny's `case 443` (the 46/47/303/337 bunny
+            // group, `NPC.cs:76851-76904`): the grounded flip, the idle
+            // row 0, the |vx| + 1 walk accumulator stepping at >6 over
+            // `npcFrameCount[443]` = 7 (`Main.cs:67128`); the rising row 4
+            // and the falling row 6.
+            NpcKind::GoldBunny => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs();
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() {
+                            self.frame = 0;
+                        }
+                    }
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 6;
+                }
+            }
+            // W4-c9 — the GoldFrog's `case 445` (the 361/687 frog group,
+            // `NPC.cs:76618-76685`): spriteDirection = direction; the wet
+            // swim rows 10/11/12 by |vx|; the grounded idle steps rows
+            // 0..5 at the >6 counter, the grounded walk the 6-tick phases
+            // (rows 0/6/8/9), the falling row 9 and the rising row 8.
+            // `npcFrameCount[445]` = 13 (`Main.cs:67118`).
+            NpcKind::GoldFrog => {
+                self.sprite_dir = self.facing;
+                if self.wet {
+                    self.frame_counter = 0.0;
+                    if self.vx > 0.25 || self.vx < -0.25 {
+                        self.frame = 10;
+                    } else if self.vx > 0.15 || self.vx < -0.15 {
+                        self.frame = 11;
+                    } else {
+                        self.frame = 12;
+                    }
+                } else if self.vy == 0.0 {
+                    if self.vx == 0.0 {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame_counter = 0.0;
+                            self.frame += 1;
+                        }
+                        if self.frame > 5 {
+                            self.frame = 0;
+                        }
+                    } else {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter < 6.0 {
+                            self.frame = 0;
+                        } else if self.frame_counter < 12.0 {
+                            self.frame = 6;
+                        } else if self.frame_counter < 18.0 {
+                            self.frame = 8;
+                        } else {
+                            self.frame = 9;
+                            if self.frame_counter >= 23.0 {
+                                self.frame_counter = 0.0;
+                            }
+                        }
+                    }
+                } else if self.vy > 0.0 {
+                    self.frame = 9;
+                } else {
+                    self.frame = 8;
+                }
+            }
             // S1-D-3 W-9 fishron wiring — `case 371 : case 372 : case 373`
             // (`NPC.cs:72137-72141`): `frame.Y = num` — the SECOND row,
             // pinned forever (the style70/71 modules' FRAME_ROW consts).
@@ -12744,14 +13332,10 @@ impl Npc {
             NpcKind::CultistBossClone => {
                 self.frame = 0;
             }
-            NpcKind::GoldBird
-            | NpcKind::GoldBunny
-            | NpcKind::GoldButterfly
-            | NpcKind::GoldFrog
-            | NpcKind::GoldGrasshopper => {
-                self.frame = 0;
-            }
-            NpcKind::GoldMouse => {
+            // W4-c9 merge keep-one: d40's gold row-0 stand-ins dropped -
+            // c9's faithful FindFrame cases above own the 442/443/445/
+            // 446/447 machines. The GoldButterfly keeps the row-0 pin.
+            NpcKind::GoldButterfly => {
                 self.frame = 0;
             }
             // W4-c8 merge keep-one: d40's GoldWorm row-0 stand-in dropped
@@ -24703,6 +25287,15 @@ impl Npc {
             NpcKind::Necromancer => 283,
             NpcKind::NecromancerArmored => 284,
             NpcKind::DiabolistRed => 285,
+            // The snail family + its shimmer target (W4-c9): the vanilla
+            // ids — unused by every arm above (the G6 key stays injective).
+            // E8 merge renumber: the snail pair rides 740/741 (the
+            // vanilla 359/360 keys are d37's above); MagmaSnail 655 free;
+            // the Shimmerfly 677 key is c7's above; the 5 gold keys are
+            // d40's above (the dup drops).
+            NpcKind::Snail => 740,
+            NpcKind::GlowingSnail => 741,
+            NpcKind::MagmaSnail => 655,
             // The wyvern family (S1-D-3): the gate-reassigned protocol ids
             // (`to_u16`'s 223-228 band) — the vanilla 87-92 collide with the
             // Scutlix/saucer arms above, so the hash rides the port band
@@ -30088,7 +30681,10 @@ mod tests {
     // (Worm 737 / TruffleWorm 738 / TruffleWormDigger 739 - the d37-table
     // renumber, Maggot 606 keep; the GoldWorm 448 + 484-487 grub dups
     // dropped - d40's rows own them) = 505.
-    pub(super) const ALL_KINDS: [NpcKind; 505] = [
+    // + W4-c9's 3 snails (Snail 740 / GlowingSnail 741 - the d37-table
+    // renumber, MagmaSnail 655 keep; the Shimmerfly + 5 gold dups dropped
+    // - c7/d40's rows own them) = 508.
+    pub(super) const ALL_KINDS: [NpcKind; 508] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -30653,6 +31249,11 @@ mod tests {
         NpcKind::Lavafly,
         NpcKind::Shimmerfly,
         NpcKind::Maggot,
+        // The snail wall-crawler family (W4-c9; the Shimmerfly + 5 gold
+        // dups dropped - c7/d40's rows above own them).
+        NpcKind::Snail,
+        NpcKind::GlowingSnail,
+        NpcKind::MagmaSnail,
     ];
 
 
@@ -31037,7 +31638,7 @@ mod tests {
         // MERGE-SIDE re-pin (367 s1 step 6): the batch pins were
         // cumulative-on-branch; every batch test reads the SETTLED
         // roster (455 after d42 + d35's 33 = 488).
-        assert_eq!(ALL_KINDS.len(), 505);
+        assert_eq!(ALL_KINDS.len(), 508);
     }
 
     /// W4-d42 batch 2 - the NPCID 583-587 `SetDefaults` rows pin
@@ -31066,7 +31667,7 @@ mod tests {
         }
         // The vanilla-free wire band (protocol == NPCID, the 108 plan).
         assert_eq!(NpcKind::ZombieMerman.to_u16(), 586u16);
-        assert_eq!(ALL_KINDS.len(), 505);
+        assert_eq!(ALL_KINDS.len(), 508);
     }
 
     /// W4-d42 batch 3 - the NPCID 590-594 `SetDefaults` rows pin
@@ -31099,7 +31700,7 @@ mod tests {
         assert_eq!(NpcKind::TorchZombie.to_u16(), 590u16);
         assert_eq!(NpcKind::ArmedTorchZombie.to_u16(), 591u16);
         assert_eq!(NpcKind::GoldGoldfishWalker.to_u16(), 593u16);
-        assert_eq!(ALL_KINDS.len(), 505);
+        assert_eq!(ALL_KINDS.len(), 508);
     }
 
     // W4-d42 batch 4 (NPCID 595-599) merge-side DROP (367 s1, d37 tables):
@@ -31134,7 +31735,7 @@ mod tests {
         // The vanilla-free wire band (protocol == NPCID, the 108 plan).
         assert_eq!(NpcKind::Seagull.to_u16(), 602u16);
         assert_eq!(NpcKind::Seagull2.to_u16(), 603u16);
-        assert_eq!(ALL_KINDS.len(), 505);
+        assert_eq!(ALL_KINDS.len(), 508);
     }
 
     /// W4-d42 batch 6 - the NPCID 605-609 `SetDefaults` rows pin
@@ -31166,7 +31767,7 @@ mod tests {
         // The vanilla-free wire band (protocol == NPCID, the 108 plan).
         assert_eq!(NpcKind::Grebe.to_u16(), 608u16);
         assert_eq!(NpcKind::Grebe2.to_u16(), 609u16);
-        assert_eq!(ALL_KINDS.len(), 505);
+        assert_eq!(ALL_KINDS.len(), 508);
     }
 
     /// W4-d42 batch 7 - the NPCID 610-614 `SetDefaults` rows pin
@@ -31202,7 +31803,7 @@ mod tests {
         assert_eq!(NpcKind::WaterStrider.to_u16(), 612u16);
         assert_eq!(NpcKind::GoldWaterStrider.to_u16(), 613u16);
         assert_eq!(NpcKind::ExplosiveBunny.to_u16(), 614u16);
-        assert_eq!(ALL_KINDS.len(), 505);
+        assert_eq!(ALL_KINDS.len(), 508);
     }
 
     /// W4-d42 batch 8 - the NPCID 615-619 `SetDefaults` rows pin
@@ -31237,7 +31838,7 @@ mod tests {
         assert_eq!(NpcKind::TurtleJungle.to_u16(), 617u16);
         assert_eq!(NpcKind::BloodNautilus.to_u16(), 618u16);
         assert_eq!(NpcKind::BloodSquid.to_u16(), 619u16);
-        assert_eq!(ALL_KINDS.len(), 505);
+        assert_eq!(ALL_KINDS.len(), 508);
     }
 
     /// W4-d42 batch 9 - the NPCID 620-624 `SetDefaults` rows pin
@@ -31273,7 +31874,7 @@ mod tests {
         assert_eq!(NpcKind::BloodEelBody.to_u16(), 622u16);
         assert_eq!(NpcKind::BloodEelTail.to_u16(), 623u16);
         assert_eq!(NpcKind::Gnome.to_u16(), 624u16);
-        assert_eq!(ALL_KINDS.len(), 505);
+        assert_eq!(ALL_KINDS.len(), 508);
     }
 
     /// W4-d42 batch 10 - the NPCID 625-629 `SetDefaults` rows pin
@@ -31309,7 +31910,7 @@ mod tests {
         assert_eq!(NpcKind::GoldSeahorse.to_u16(), 627u16);
         assert_eq!(NpcKind::Dandelion.to_u16(), 628u16);
         assert_eq!(NpcKind::IceMimic.to_u16(), 629u16);
-        assert_eq!(ALL_KINDS.len(), 505);
+        assert_eq!(ALL_KINDS.len(), 508);
     }
 
     /// W4-d42 batch 11 - the NPCID 630-630 `SetDefaults` rows pin
@@ -31337,7 +31938,7 @@ mod tests {
         }
         // The vanilla-free wire band (protocol == NPCID, the 108 plan).
         assert_eq!(NpcKind::BloodMummy.to_u16(), 630u16);
-        assert_eq!(ALL_KINDS.len(), 505);
+        assert_eq!(ALL_KINDS.len(), 508);
     }
 
     /// W4-c4: the style-44 swimmers ride the style axis - the axis' 44
@@ -35649,9 +36250,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            505,
-            "every decodable kind resolves (the wire roster's size - 501 (spine 488 + c3's 694 + c4's 8 + c7's 4) + W4-c8's 4 crawlers (Worm 737 / TruffleWorm 738 / TruffleWormDigger 739 renumbered per the d37 tables, Maggot 606 keep; the 5 d40-owned dups dropped), L-B gate)"
-            "every decodable kind resolves (the wire roster's size - 279 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-c8's nine crawling critters)"
+            508,
+            "every decodable kind resolves (the wire roster's size - 505 (spine 488 + c3's 694 + c4's 8 + c7's 4 + c8's 4) + W4-c9's 3 snails (Snail 740 / GlowingSnail 741 renumbered per the d37 tables, MagmaSnail 655 keep; the Shimmerfly + 5 gold dups dropped - c7/d40 own them), L-B gate)"
         );
         assert!(
             covered > 43,
@@ -44117,5 +44717,441 @@ mod w4_d35_g_tests {
         assert_eq!(e.credit_id, "PossessedArmor", "PossessedArmor credit");
         assert_eq!(e.name, "Possessed Armor", "PossessedArmor name");
         assert_eq!(NpcKind::PossessedArmor.cs_id(), 140, "PossessedArmor cs_id");
+    }
+}
+
+/// W4-c9 — the snail wall-crawler family's wiring witnesses: the aiStyle-67
+/// axis arm (`ai_067_snail`) + the kind-gated aiStyle-64 Shimmerfly arm
+/// (`ai_064_shimmerfly`) through the FULL `update_rng` step (the preamble,
+/// the axis dispatch, the movement tail, find_frame). Code-only mode: the
+/// witnesses are written, not run. The pure machines' own 17+19 witnesses
+/// live in `npc_ai_style67.rs` / `npc_ai_style64.rs`.
+#[cfg(test)]
+mod w4_c9_snail_wiring_tests {
+    use super::*;
+
+    /// A 200x120 air world (the style67 module's fixture shape).
+    fn air() -> World {
+        let mut w = World::new("t".into(), 200, 120);
+        w.world_surface = 30.0;
+        w.day_time = false;
+        w
+    }
+
+    fn player_at(w: &World, x: f32, y: f32) -> Player {
+        let mut p = Player::spawn(w);
+        p.x = x;
+        p.y = y;
+        p
+    }
+
+    /// A shimmer liquid tile at (x, y) with `liquid` level.
+    fn shimmer_at(w: &mut World, x: i32, y: i32, liquid: u8) {
+        let i = w.index(x, y);
+        w.tiles[i] = tr_core::tile::Tile { liquid, ..Default::default() };
+        w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Shimmer);
+    }
+
+    /// The axis claim: the trio rides aiStyle 67, the shimmer target 64,
+    /// and the protocol ids keep the vanilla 359/360/655/677 slots.
+    #[test]
+    fn w4_c9_the_axis_claims_the_family_and_the_ids_round_trip() {
+        // E8 merge renumber: the snail pair rides 740/741 (the d37
+        // tables); MagmaSnail 655 + Shimmerfly 677 keep their vanilla ids.
+        for (kind, style, id, proto) in [
+            (NpcKind::Snail, 67, 359u16, 740u16),
+            (NpcKind::GlowingSnail, 67, 360, 741),
+            (NpcKind::MagmaSnail, 67, 655, 655),
+            (NpcKind::Shimmerfly, 64, 677, 677),
+        ] {
+            assert_eq!(kind.ai_style(), style, "{kind:?}");
+            assert_eq!(kind.to_u16(), proto, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(proto), Some(kind), "{kind:?} decodes");
+            assert_eq!(kind.cs_id() as i32, id as i32, "{kind:?} cs_id");
+            assert_eq!(kind.max_hp(), 5, "{kind:?} lifeMax 5");
+            assert_eq!(kind.contact_damage(), 0, "{kind:?} damage 0");
+            assert!(kind.no_gravity(), "{kind:?} the SetDefaults noGravity row");
+        }
+        assert_eq!(NpcKind::Snail.size(), (12.0, 12.0));
+        assert_eq!(NpcKind::GlowingSnail.size(), (14.0, 14.0));
+        assert_eq!(NpcKind::MagmaSnail.size(), (14.0, 14.0));
+        assert_eq!(NpcKind::Shimmerfly.size(), (10.0, 10.0));
+    }
+
+    /// The 359 scale roll through the full step: ONE `Next(80,111)` draw
+    /// rides the caller's stream (`NPC.cs:34381`), `ai[3]` latches and
+    /// netUpdate arms; the resize reads ai[3] BEFORE the roll, so the box
+    /// stays 12x12 this tick. The fall block's noGravity=false reaches the
+    /// carrier flag and the gravity term applies behind it.
+    #[test]
+    fn w4_c9_the_snail_scale_roll_replays_through_update_rng() {
+        let w = air();
+        let mut p = player_at(&w, 1000.0, 800.0);
+        let mut n = Npc::new(NpcKind::Snail, 100.0, 100.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai = [1.0, 0.0, 2.0, 0.0]; // init done, fall armed, scale unset
+        let mut rng = UnifiedRandom::new(3);
+        let mut witness = rng.clone();
+        let d = witness.next_range(80, 111);
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, witness, "exactly one Next(80,111) on the stream");
+        assert_eq!(n.ai[3], d as f32 * 0.01);
+        assert!(n.net_update);
+        assert_eq!(n.size(), (12.0, 12.0), "the resize reads ai[3] pre-roll");
+        assert!(!n.snail_no_gravity, "the fall block wrote noGravity=false");
+        // The second tick resizes the box to (int)(12 * scale) — the
+        // integer-half -2f X quirk / full-height Y offset math is pinned
+        // by the module's own resize witness; here only the box + the
+        // latched scale ride (the fall integration also moves the body).
+        let scale = n.ai[3];
+        let side = (12.0 * scale) as i32;
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.size(), (side as f32, side as f32), "the resize lands");
+        assert_eq!(n.ai[3], scale, "the scale never re-rolls");
+    }
+
+    /// The shimmer gate through the full step: a shimmer tile (liquid >
+    /// 30) under the centre queues the `Transform(677)` request and draws
+    /// NOTHING; the statue variant queues the noSpawnCycle latch + the
+    /// timer-0 despawn instead (`GetShimmered` `NPC.cs:91550-91565`).
+    #[test]
+    fn w4_c9_the_shimmer_gate_queues_the_transform_or_the_despawn() {
+        let mut w = air();
+        // Snail at (160,160), 12-box -> centre (166,166) -> tile (10,10).
+        shimmer_at(&mut w, 10, 10, 40);
+        let mut p = player_at(&w, 1000.0, 800.0);
+        let mut n = Npc::new(NpcKind::Snail, 160.0, 160.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai = [1.0, 0.0, 0.0, 1.0];
+        let mut rng = UnifiedRandom::new(11);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, witness, "the shimmer path consumes zero draws");
+        assert_eq!(n.wants_transform, Some(677), "the Transform(677) request");
+        assert!(!n.wants_spawn_no_cycle);
+        assert_eq!(n.kind, NpcKind::Snail, "the drain is the sim's job");
+        // The statue variant despawns instead of transforming. The 14-box
+        // at (159,159) centres (166,166) -> the same shimmer tile.
+        let mut s = Npc::new(NpcKind::GlowingSnail, 159.0, 159.0, 1, 0.0);
+        s.hp = s.max_hp;
+        s.ai = [1.0, 0.0, 0.0, 0.0];
+        s.spawned_from_statue = true;
+        s.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert!(s.wants_spawn_no_cycle, "the noSpawnCycle latch");
+        assert_eq!(s.despawn_timer, 0, "the silent timer-0 despawn");
+        assert_eq!(s.wants_transform, None);
+        assert_eq!(s.damage_override, Some(0), "no contact on the despawn tick");
+    }
+
+    /// The settled ground crawl through the full step: the machine's
+    /// noGravity=true reaches the carrier, the velocity tail is the 0.6
+    /// pair for 360, and `Collision_MoveWhileDry` latches collideY on the
+    /// ground stop (the NEXT tick's crawl state machine reads it).
+    #[test]
+    fn w4_c9_the_ground_crawl_stops_on_the_floor_and_latches_collide_y() {
+        let mut w = air();
+        for x in 0..w.width {
+            for y in 20..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let mut p = player_at(&w, 1000.0, 100.0);
+        // The 14-box feet rest on row 20's top (y = 320).
+        let mut n = Npc::new(NpcKind::GlowingSnail, 100.0, 306.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai = [1.0, 0.0, 0.0, 0.0];
+        n.facing = 1;
+        n.direction_y = 1;
+        // A seed whose first Next(7200) fails (the fall stays unarmed).
+        let mut seed = 0;
+        for s in 0..1000 {
+            if UnifiedRandom::new(s).next_max(7200) != 0 {
+                seed = s;
+                break;
+            }
+        }
+        let mut rng = UnifiedRandom::new(seed);
+        let mut witness = rng.clone();
+        let _ = witness.next_max(7200);
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, witness, "one gate-fail Next(7200), nothing else");
+        assert!(n.snail_no_gravity, "the crawl head wrote noGravity=true");
+        // Tick 1: the collide flags were false on entry (the AI runs
+        // before UpdateCollision), so the turn is NOT armed yet; the
+        // tail writes the 0.6 pair and the floor stop latches collideY.
+        assert_eq!(n.ai[0], 1.0, "no collideY on entry — the turn waits");
+        assert!(n.collide_y, "MoveWhileDry latched the floor stop");
+        assert_eq!(n.y, 306.0, "the feet rest on the floor top");
+        assert_eq!(n.vy, 0.0, "TileCollision zeroed the downward step");
+        assert_eq!(n.vx, 0.6, "360 crawls at 0.6");
+        assert!((n.x - 100.6).abs() < 1e-4, "the crawl moved one 0.6 step");
+        // Tick 2 reads the latched collideY. The second Next(7200) is
+        // drawn too (ai[2] == 0) — mirror it and branch on the value:
+        // a fail arms the turn (ai[0] = 2); a 0 re-arms the fall instead.
+        let mut witness2 = rng.clone();
+        let d2 = witness2.next_max(7200);
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, witness2, "the second fall-roll draw");
+        if d2 != 0 {
+            assert_eq!(n.ai[0], 2.0, "collideY arms the turn");
+        } else {
+            // The 0 roll re-arms the fall; the ground probe behind the
+            // settled snail decrements it once (`:34446-34451`).
+            assert!(n.ai[2] > 0.0, "the fall re-armed: {}", n.ai[2]);
+        }
+        // The light feed: the blue at the truncated centre tile.
+        let (cx, cy) = n.center();
+        let light = crate::npc_lights::snail_light(n.kind, glam::Vec2::new(n.x, n.y), 14.0, 14.0);
+        assert_eq!(light, Some((cx as i32 / 16, cy as i32 / 16, [0.1, 0.2, 0.7])));
+        // The plain Snail emits nothing; the MagmaSnail the orange.
+        assert!(crate::npc_lights::snail_light(NpcKind::Snail, glam::Vec2::ZERO, 12.0, 12.0).is_none());
+        assert_eq!(
+            crate::npc_lights::snail_light(NpcKind::MagmaSnail, glam::Vec2::new(n.x, n.y), 14.0, 14.0),
+            Some((cx as i32 / 16, cy as i32 / 16, [0.6, 0.3, 0.1]))
+        );
+    }
+
+    /// The Shimmerfly through the full step: the scale latch
+    /// `Next(75,111)` + the rearm `Next(60,180)` + the near-wander draws
+    /// ride the caller's stream in the module's cited order; the raw
+    /// noTileCollide integration moves the body; the tilt is vx * 0.3.
+    #[test]
+    fn w4_c9_the_shimmerfly_first_tick_replays_the_rearm_draws() {
+        let w = air();
+        let mut p = player_at(&w, 1000.0, 800.0);
+        let mut n = Npc::new(NpcKind::Shimmerfly, 800.0, 600.0, 1, 0.0);
+        n.hp = n.max_hp;
+        let mut rng = UnifiedRandom::new(5);
+        let mut witness = rng.clone();
+        // The module's draw census for a fresh fly near the player:
+        // the scale latch, the rearm timer, then the NEAR wander
+        // (the gap < 700): speed + the two spread draws.
+        let scale = witness.next_range(75, 111);
+        let _timer = witness.next_range(60, 180);
+        let _speed = witness.next_range(5, 151);
+        let _sx = witness.next_range(-100, 101);
+        let _sy = witness.next_range(-100, 101);
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, witness, "the five cited draws, in order");
+        assert_eq!(n.ai[3], scale as f32 * 0.01);
+        assert_eq!(n.scale, n.ai[3], "scale rides the latch (:34069)");
+        assert!(n.net_update);
+        assert_eq!(n.local_ai[3], 1.0, "the near-wander latch (:34057)");
+        // The velocity/position maths carry the C#'s NaN pass-through
+        // (two zero spread draws → 0 × ∞); the module's own witnesses
+        // pin the blend — here only the stream + the latches ride.
+        // The second tick: localAI[0] > 0, no rearm — the 677 branch
+        // draws nothing on a non-rearm tick (the top margin keeps the
+        // threat scan off at this depth).
+        let witness2 = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, witness2, "a non-rearm 677 tick draws nothing");
+    }
+
+    /// The find_frame wiring: the snail trio's fall/walk rows ride the
+    /// module's pure twin; the 677's double counter resets at 6 and the
+    /// row stays 0 (the pixel-quirk fold).
+    #[test]
+    fn w4_c9_the_frame_machines_ride_the_module_twins() {
+        let mut n = Npc::new(NpcKind::Snail, 0.0, 0.0, 1, 0.0);
+        n.vy = 2.0; // > 1: the fall rows
+        for _ in 0..6 {
+            n.find_frame();
+        }
+        assert_eq!(n.frame, 5);
+        assert_eq!(n.frame_counter, 6.0);
+        // The walk cycle from rest.
+        let mut m = Npc::new(NpcKind::MagmaSnail, 0.0, 0.0, 1, 0.0);
+        m.vx = 0.6;
+        for _ in 0..10 {
+            m.find_frame();
+        }
+        assert_eq!(m.frame, 1, "the second 10-tick phase");
+        // The Shimmerfly: spriteDirection = direction, the double
+        // counter, the row-0 fold.
+        let mut f = Npc::new(NpcKind::Shimmerfly, 0.0, 0.0, -1, 0.0);
+        f.find_frame();
+        assert_eq!(f.sprite_dir, -1);
+        assert_eq!(f.frame_counter, 2.0);
+        f.find_frame();
+        f.find_frame();
+        assert_eq!(f.frame_counter, 0.0, "the reset at 6");
+        assert_eq!(f.frame, 0, "the pixel-quirk row stays 0");
+    }
+
+    /// The sheets + the bestiary order table: all four strips are packed
+    /// and the frame counts are the vanilla's (359/360/655 six rows, 677
+    /// four — `Main.cs:67121`/`:67125`).
+    #[test]
+    fn w4_c9_the_sheets_resolve_with_the_csharp_frame_counts() {
+        for (kind, id, rows) in [
+            (NpcKind::Snail, 359u16, 6u32),
+            (NpcKind::GlowingSnail, 360, 6),
+            (NpcKind::MagmaSnail, 655, 6),
+            (NpcKind::Shimmerfly, 677, 4),
+        ] {
+            assert_eq!(crate::render::entities::texture_net_id(kind), id);
+            assert_eq!(crate::render::entities::npc_rows(id), rows);
+            let name = format!("NPC_{id}");
+            assert!(
+                crate::assets::STATIC_SHEET_NAMES.contains(&name.as_str()),
+                "{name} is never packed into the atlas"
+            );
+            assert!(crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&id));
+        }
+    }
+
+    /// W4-c9 — the gold critters' axis claim + the protocol ids: the
+    /// GoldBird rides aiStyle 24, the GoldGrasshopper aiStyle 1, the
+    /// GoldMouse aiStyle 7; the vanilla 442/446/447 slots round-trip.
+    #[test]
+    fn w4_c9_the_gold_critters_claim_their_styles_and_ids() {
+        for (kind, style, id) in [
+            (NpcKind::GoldBird, 24u8, 442u16),
+            (NpcKind::GoldGrasshopper, 1, 446),
+            (NpcKind::GoldMouse, 7, 447),
+            (NpcKind::GoldBunny, 7, 443),
+            (NpcKind::GoldFrog, 7, 445),
+        ] {
+            assert_eq!(kind.ai_style(), style, "{kind:?}");
+            assert_eq!(kind.to_u16(), id, "{kind:?} keeps its vanilla slot");
+            assert_eq!(NpcKind::from_u16(id), Some(kind), "{kind:?} decodes");
+            assert_eq!(kind.cs_id() as i32, id as i32, "{kind:?} cs_id");
+            assert_eq!(kind.max_hp(), 5, "{kind:?} lifeMax 5");
+            assert_eq!(kind.contact_damage(), 0, "{kind:?} damage 0");
+            assert!(!kind.no_gravity(), "{kind:?} the gold critters fall");
+        }
+        assert_eq!(NpcKind::GoldBird.size(), (14.0, 14.0));
+        assert_eq!(NpcKind::GoldGrasshopper.size(), (14.0, 10.0));
+        assert_eq!(NpcKind::GoldMouse.size(), (14.0, 12.0));
+        assert_eq!(NpcKind::GoldBunny.size(), (18.0, 20.0));
+        assert_eq!(NpcKind::GoldFrog.size(), (12.0, 10.0));
+        // The GoldBird's kb 0.8 (`NPC.cs:14256`); the others the head's 1.
+        let bird = Npc::new(NpcKind::GoldBird, 0.0, 0.0, 1, 0.0);
+        assert_eq!(bird.knock_back_resist(), 0.8);
+        let mouse = Npc::new(NpcKind::GoldMouse, 0.0, 0.0, 1, 0.0);
+        assert_eq!(mouse.knock_back_resist(), 1.0);
+        // The Confused (31) immunity rows (`NPCID.cs:8612-8652`).
+        for kind in [NpcKind::GoldBird, NpcKind::GoldGrasshopper, NpcKind::GoldMouse, NpcKind::GoldBunny, NpcKind::GoldFrog] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[31], "{kind:?} SpecificallyImmuneTo 31");
+        }
+        // The shimmer transform target (`NPCID.cs:10470`'s 442-447 → 677
+        // rows).
+        for id in [442u16, 443, 445, 446, 447] {
+            assert_eq!(tr_core::shimmer::transform_to_npc(id), 677);
+        }
+    }
+
+    /// The gold critters' find_frame cases: the GoldBird's still pose pins
+    /// row 4, the GoldGrasshopper's airborne row 1, the GoldMouse's idle
+    /// 0/1 cycle.
+    #[test]
+    fn w4_c9_the_gold_critter_frame_machines() {
+        // The GoldBird at rest: row 4, the vx*0.1 tilt zero.
+        let mut b = Npc::new(NpcKind::GoldBird, 0.0, 0.0, 1, 0.0);
+        b.find_frame();
+        assert_eq!(b.frame, 4, "the perched row (NPC.cs:73637)");
+        assert_eq!(b.sprite_dir, 1);
+        // The GoldBird in flight: the 4-tick counter walks rows 0..3.
+        let mut bf = Npc::new(NpcKind::GoldBird, 0.0, 0.0, 1, 0.0);
+        bf.vx = 1.0;
+        bf.rotation = 0.0;
+        for _ in 0..4 {
+            bf.find_frame();
+        }
+        assert_eq!(bf.frame, 1, "the first 4-tick step");
+        assert_eq!(bf.rotation, 0.1, "the vx*0.1 tilt");
+        // The GoldGrasshopper: airborne row 1, grounded row 0.
+        let mut g = Npc::new(NpcKind::GoldGrasshopper, 0.0, 0.0, -1, 0.0);
+        g.vy = 1.0;
+        g.find_frame();
+        assert_eq!(g.frame, 1);
+        assert_eq!(g.sprite_dir, -1);
+        g.vy = 0.0;
+        g.find_frame();
+        assert_eq!(g.frame, 0);
+        // The GoldMouse idle: the >8 counter steps rows 0/1.
+        let mut m = Npc::new(NpcKind::GoldMouse, 0.0, 0.0, 1, 0.0);
+        for _ in 0..9 {
+            m.find_frame();
+        }
+        assert_eq!(m.frame, 1, "the first >8 idle step");
+        for _ in 0..9 {
+            m.find_frame();
+        }
+        assert_eq!(m.frame, 0, "the idle wrap past row 1");
+        // The GoldBunny walk (vx 2): the |vx|+1 accumulator feeds +3.0 —
+        // the step every 3rd tick (the strict >6 edge: 6.0 NOT >6), the
+        // FULL-7 wrap to row 0 (`NPC.cs:76882-76892`).
+        let mut bu = Npc::new(NpcKind::GoldBunny, 0.0, 0.0, 1, 0.0);
+        bu.vx = 2.0;
+        for _ in 0..3 {
+            bu.find_frame();
+        }
+        assert_eq!(bu.frame, 1, "the first >6 walk step");
+        for _ in 0..18 {
+            bu.find_frame();
+        }
+        assert_eq!(bu.frame, 0, "the 7th step wraps 7 >= 7 to row 0");
+        // The GoldBunny air rows: rising 4, falling 6, counter zeroed.
+        bu.vy = -1.0;
+        bu.find_frame();
+        assert_eq!((bu.frame, bu.frame_counter), (4, 0.0));
+        bu.vy = 1.0;
+        bu.find_frame();
+        assert_eq!((bu.frame, bu.frame_counter), (6, 0.0));
+        // The GoldFrog wet swim rows by |vx| (`NPC.cs:76625-76636`).
+        let mut fr = Npc::new(NpcKind::GoldFrog, 0.0, 0.0, -1, 0.0);
+        fr.wet = true;
+        for (vx, row) in [(0.3f32, 10u32), (0.2, 11), (0.0, 12)] {
+            fr.vx = vx;
+            fr.find_frame();
+            assert_eq!(fr.frame, row, "the wet |vx| row");
+            assert_eq!(fr.sprite_dir, -1, "the unconditional sprite copy");
+        }
+        // The GoldFrog grounded walk: the 6-tick phases rows 0/6/8/9,
+        // the >= 23 reset (`NPC.cs:76654-76675`).
+        fr.wet = false;
+        fr.vx = 1.0;
+        fr.frame_counter = 0.0;
+        for _ in 0..6 {
+            fr.find_frame();
+        }
+        assert_eq!(fr.frame, 6, "the second walk phase");
+        for _ in 0..6 {
+            fr.find_frame();
+        }
+        assert_eq!(fr.frame, 8, "the third walk phase");
+        for _ in 0..11 {
+            fr.find_frame();
+        }
+        assert_eq!((fr.frame, fr.frame_counter), (9, 0.0), "the 23 reset");
+    }
+
+    /// The gold critters' sheets + the bestiary order table: all five
+    /// strips are packed and the frame counts are the vanilla's (442 five
+    /// rows, 446 two, 447 six — `Main.cs:67128`; 443 seven, 445 thirteen
+    /// — `:67128`/`:67118`).
+    #[test]
+    fn w4_c9_the_gold_critter_sheets_resolve() {
+        for (kind, id, rows) in [
+            (NpcKind::GoldBird, 442u16, 5u32),
+            (NpcKind::GoldGrasshopper, 446, 2),
+            (NpcKind::GoldMouse, 447, 6),
+            (NpcKind::GoldBunny, 443, 7),
+            (NpcKind::GoldFrog, 445, 13),
+        ] {
+            assert_eq!(crate::render::entities::texture_net_id(kind), id);
+            assert_eq!(crate::render::entities::npc_rows(id), rows);
+            let name = format!("NPC_{id}");
+            assert!(
+                crate::assets::STATIC_SHEET_NAMES.contains(&name.as_str()),
+                "{name} is never packed into the atlas"
+            );
+            assert!(crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&id));
+        }
     }
 }

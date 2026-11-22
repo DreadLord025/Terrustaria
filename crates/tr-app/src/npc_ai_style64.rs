@@ -34,6 +34,14 @@
 //! (the sim at the slot turn, the solo wrapper via `wants_ai_light`).
 //! The integration tail is `Npc::ai_064_integrate` (the dead-band snap +
 //! the noTileCollide/`UpdateCollision` split, `NPC.cs:90473-90503`).
+//! The port has no `NpcKind` for the 355/358/654 trio yet (W4-c7's kind
+//! wave), so those three stay UNWIRED; the Shimmerfly 677 landed with
+//! **W4-c9 (2026-11-21)** — `NpcKind::Shimmerfly` claims the kind-gated
+//! aiStyle-64 axis arm (`npc.rs::ai_064_shimmerfly`): the sim pre-pass
+//! stamps the slot-ordered threat views (`shimmerfly_threat_views`),
+//! the solo path runs the scan over the empty list (the style75 solo
+//! fold), and the noGravity/noTileCollide tail is the raw integration.
+//! The wiring step for the trio adds their kinds + the glow feed.
 //!
 //! Seam: the module writes only the fields the C# arm writes — velocity,
 //! `ai[0]`/`ai[1]`/`ai[3]`, `localAI[0..3]`, `scale`, `rotation` (677),

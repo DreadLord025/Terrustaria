@@ -44,10 +44,15 @@ fn row(kind: NpcKind) -> (f32, f32, bool) {
     match kind {
         // `:53872-53875` — the Squirrel cap 1.5, accel 0.07 (the default).
         NpcKind::Squirrel => (1.5, 0.07, true),
-        // `:53902-53906` — flag8 (the Mouse): cap 2, accel 1; NO hop boost.
-        NpcKind::Mouse => (2.0, 1.0, false),
+        // `:53902-53906` - flag8 (the Mouse): cap 2, accel 1; NO hop boost.
+        // W4-c9 merge: the GoldMouse 447 joins flag8 (`:53451`).
+        NpcKind::Mouse | NpcKind::GoldMouse => (2.0, 1.0, false),
         // The bunnies: the default cap 1 / accel 0.07, the TownCritter boost.
-        NpcKind::BunnySlimed | NpcKind::BunnyXmas => (1.0, 0.07, true),
+        // W4-c9 merge: the GoldBunny 443 + the GoldFrog 445 (flag10's land
+        // row is the default pair, `:53865-53866`).
+        NpcKind::BunnySlimed | NpcKind::BunnyXmas | NpcKind::GoldBunny | NpcKind::GoldFrog => {
+            (1.0, 0.07, true)
+        }
         _ => unreachable!("the catchable critters only"),
     }
 }
@@ -58,7 +63,16 @@ pub fn critter_ai(npc: &mut Npc, world: &World, _player: &Player, rng: &mut Unif
     let (cap, accel, hop_boost) = row(npc.kind);
     let (w, h) = npc.size();
     if npc.ai[0] == 0.0 {
-        // `:53695-53712` — the idle X deadband decay (±0.1 → 0).
+        // `:53632-53635` - the idle localAI[3] countdown (W4-c9 merge).
+        if npc.local_ai[3] > 0.0 {
+            npc.local_ai[3] -= 1.0;
+        }
+        // `:53697-53700` - flag8 (the GoldMouse) halves the idle X first
+        // (W4-c9 merge).
+        if npc.kind == NpcKind::GoldMouse {
+            npc.vx *= 0.5;
+        }
+        // `:53695-53712` - the idle X deadband decay (±0.1 → 0).
         if npc.vx > 0.1 {
             npc.vx -= 0.1;
         } else if npc.vx < -0.1 {
@@ -119,7 +133,24 @@ pub fn critter_ai(npc: &mut Npc, world: &World, _player: &Player, rng: &mut Unif
         if npc.vy < 0.0 && hop_boost {
             npc.vy *= 1.2;
         }
-        // `:54226-54242` — the stuck-flip: parked 30 ticks, flip + re-walk.
+        // `:53815` - the walk countdown (W4-c9 merge: the C#'s own order -
+        // the countdown + the exit run BEFORE the ladder/hop/stuck-flip;
+        // the drowning/homing skips are the stand-ins, the homeless
+        // critter always decrements).
+        npc.ai[1] -= 1.0;
+        // `:53817-53831` - walk -> idle: 300 + Next(300), then
+        // (TownCritter) - Next(100); localAI[3] = 60 (the c9 faithful
+        // draw order - the :53824 subtraction; the d38 module's :54289
+        // 60+Next(60) was the sit/talk-state exit, a DIFFERENT AI_007 arm).
+        if npc.ai[1] <= 0.0 {
+            npc.ai[0] = 0.0;
+            npc.ai[1] = 300.0 + rng.next_max(300) as f32;
+            npc.ai[1] -= rng.next_max(100) as f32;
+            npc.ai[2] = 0.0;
+            npc.local_ai[3] = 60.0;
+            npc.net_update = true;
+        }
+        // `:54226-54242` - the stuck-flip: parked 30 ticks, flip + re-walk.
         if npc.vx == 0.0 && npc.vy == 0.0 {
             npc.local_ai[2] += 1.0;
             if npc.local_ai[2] >= 30.0 {
@@ -135,14 +166,9 @@ pub fn critter_ai(npc: &mut Npc, world: &World, _player: &Player, rng: &mut Unif
         } else {
             npc.local_ai[2] = 0.0;
         }
-        // `:54257-54265` — the walk countdown → idle (the C#'s ai[0]==2/11
-        // rest arm; the walk's own duration ends via the idle transition).
-        npc.ai[1] -= 1.0;
-        if npc.ai[1] <= 0.0 {
-            npc.ai[0] = 0.0;
-            npc.ai[1] = 60.0 + rng.next_max(60) as f32;
-            npc.net_update = true;
-        }
+        // W4-c9 merge: the old :54257 tail countdown dropped - the
+        // faithful :53815-53831 countdown + exit moved to the block head
+        // above (the C#'s own order).
     }
     // The generic gravity + tile-collision integration (`NPC.UpdateNPC`'s
     // tail, `:90465-90493` — the critters have no noTileCollide/noGravity).
@@ -244,5 +270,29 @@ mod tests {
         assert_eq!(rng.peek(), witness.peek(), "the two duration draws");
         assert_eq!(n.ai[0], 1.0, "the walk starts");
         assert_eq!(n.ai[1], 200.0 + d1 as f32 + d2 as f32, "the walk duration");
+    }
+
+    /// W4-c9 merge (349 s6b keeper): the walk -> idle exit draws
+    /// 300 + Next(300) then (TownCritter) - Next(100), localAI[3] = 60
+    /// (`NPC.cs:53817-53831` - the :53824 subtraction; the d38 module's
+    /// old :54289 60+Next(60) was the sit/talk-state exit, a DIFFERENT
+    /// AI_007 arm). The GoldBunny rides the merged module. WRITTEN, NOT
+    /// RUN (code-only mode).
+    #[test]
+    fn w4_c9_the_gold_critter_walk_to_idle_subtracts() {
+        let w = ground();
+        let player = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::GoldBunny, 100.0 * TILE_PX, 40.0 * TILE_PX - 20.0, 1, 0.0);
+        n.on_ground = true;
+        n.ai[0] = 1.0;
+        n.ai[1] = 1.0; // decrements to 0 -> the idle transition
+        let mut rng = UnifiedRandom::new(9);
+        let mut witness = UnifiedRandom::new(9);
+        let d1 = witness.next_max(300);
+        let d2 = witness.next_max(100);
+        critter_ai(&mut n, &w, &player, &mut rng);
+        assert_eq!(n.ai[0], 0.0, "the idle starts");
+        assert_eq!(n.ai[1], 300.0 + d1 as f32 - d2 as f32, "the TownCritter idle");
+        assert_eq!(n.local_ai[3], 60.0);
     }
 }

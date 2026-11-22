@@ -658,6 +658,14 @@ pub(crate) fn npc_rotation_allowed(kind: NpcKind) -> bool {
             | NpcKind::GoldGoldfish
             | NpcKind::Pupfish
             | NpcKind::Dolphin
+            // W4-c9 merge fold: the snail trio's quadrant rotation +
+            // ease (the AI_067 Collision_MoveSnailOnSlopes replacement,
+            // NPC.cs:92568-92571) + the GoldBird's vx*0.1 tilt (the
+            // case-442 FindFrame, :73630). The Shimmerfly is c7's row.
+            | NpcKind::Snail
+            | NpcKind::GlowingSnail
+            | NpcKind::MagmaSnail
+            | NpcKind::GoldBird
             // W4-c8 merge fold: the crawling critters' airborne tilt
             // (the FindFrame vx*0.1 / digger aim writes, NPC.cs:72774-
             // 72883); the canonical d40 kinds ride c8's machine now.
@@ -799,6 +807,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(STYLE16_SHEETS)
             .chain(FIREFLY_SHEETS)
             .chain(CRAWLER_SHEETS)
+            .chain(SNAIL_SHEETS)
+            .chain(GOLD_CRITTER_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1923,6 +1933,20 @@ pub(crate) const FIREFLY_SHEETS: &[u32] = &[355, 358, 654, 677];
 /// `Main.cs:67082`). No code change here — the census + the witness.
 // E8 merge: the 448/484-487 dups ride d40's D40_SHEETS (the dup drop).
 pub(crate) const CRAWLER_SHEETS: &[u32] = &[357, 374, 375, 606];
+/// The snail wall-crawler family + its shimmer target (W4-c9): the Snail
+/// (359), the Glowing Snail (360), the Magma Snail (655) and the
+/// Shimmerfly (677) each draw their own `NPC_<id>` art. Keyed by the
+/// vanilla net id ([`NpcKind::net_id`]) in [`NpcAssets::npc_sheet`].
+// E8 merge: 677 rides c7's FIREFLY_SHEETS (the dup drop).
+pub(crate) const SNAIL_SHEETS: &[u32] = &[359, 360, 655];
+
+/// The gold critters (W4-c9): the Gold Bird (442), the Gold Grasshopper
+/// (446) and the Gold Mouse (447) each draw their own `NPC_<id>` art.
+/// Keyed by the vanilla net id ([`NpcKind::net_id`]) in
+/// [`NpcAssets::npc_sheet`].
+// E8 merge: the 5 gold sheets ride d40's D40_SHEETS (the dup drop) -
+// the const retires empty (the chain link stays for the witness).
+pub(crate) const GOLD_CRITTER_SHEETS: &[u32] = &[];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -4484,6 +4508,23 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // W4-c9 — the snail family + its shimmer target draw their
+            // own sheets (`SNAIL_SHEETS`) at `Main.npcFrameCount[type]`
+            // rows (359/360/655 six, 677 four — `Main.cs:67121`/`:67125`)
+            // with the generic centred anchor. The 359 scale roll
+            // (`Next(80,111) * 0.01f`) and the 677 scale latch
+            // (`Next(75,111) * 0.01f`) ride `n.scale` — `scaled_anchor`
+            // (the BlazingWheel/stardust-cells convention). All four
+            // rotate (the whitelist below).
+            // E8 merge: the Shimmerfly draw is c7's scaled_anchor arm
+            // above (the dup drop).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => {
+                let ty = texture_net_id(n.kind);
+                scaled_anchor(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // E8 merge: the 5 gold draws ride d40's group arm above (the
+            // identical texture_net_id shape - the dup drop; the GoldBird
+            // rotation rides the gate below).
         };
         let Some(tex) = tex else {
             continue;

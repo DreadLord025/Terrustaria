@@ -4038,6 +4038,19 @@ fn npc_seed(
         | crate::npc::NpcKind::LightningBug
         | crate::npc::NpcKind::Lavafly
         | crate::npc::NpcKind::Shimmerfly => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
+        // The snail family (W4-c9): the wall-crawler critters plant on
+        // the column surface like the wave-A walkers (the aiStyle-67
+        // machine takes over on the first tick — the fall roll + the
+        // crawl state machine own the placement from there).
+        crate::npc::NpcKind::Snail
+        | crate::npc::NpcKind::GlowingSnail
+        | crate::npc::NpcKind::MagmaSnail => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // E8 merge: the Shimmerfly seed is c7's bare-stats arm above;
+        // the 5 gold seeds ride d40's bare-stats arm above (the position
+        // overwrite + the first-tick machine takeover make the ctor
+        // choice behaviour-identical - 349 s6a's netglue note).
     })
 }
 

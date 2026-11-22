@@ -34194,6 +34194,9 @@ lifeMax 5, npcSlots 0.5, noGravity, catchItem 2006), GlowingSnail 360
 None has an `NpcKind` — the module is UNWIRED (`#![allow(dead_code)]`); the
 machine is type-parameterised (`SnailCtx::npc_type`) and activates
 unchanged when the kinds land.
+**WIRED by W4-c9 (2026-11-21)** — see "The snail wiring (W4-c9)" below;
+the three kinds + the shimmer target Shimmerfly 677 landed and claim the
+axis arms.
 
 **Fidelity notes (the quirks kept 1:1).**
 - The shimmer probe's clamp upper is `Main.maxTilesX`/`maxTilesY`
@@ -34287,6 +34290,141 @@ signature (the style49/21 precedent). The stale `no_slope_collision`
 comment in `collision.rs` (which misattributed the caller to the snail)
 was repointed to the Blazing Wheel (`NPC.cs:92775-92783`, ported by
 `npc_ai_style21.rs`). 17 `s1_d_3_s67_*` witness tests WRITTEN, NOT RUN —
+
+## The snail wiring (W4-c9)
+
+W4-c9 (2026-11-21), code-only mode. The snail family's kinds landed
+(`NpcKind::Snail`/`GlowingSnail`/`MagmaSnail` — the phase-1 `SetDefaults`
+rows, the vanilla protocol slots 359/360/655, the bestiary entries, the
+`spawn_cave_walker` net seeds, the debuff null-rows) together with the
+shimmer target `NpcKind::Shimmerfly` (677, aiStyle 64, 10×10,
+noGravity + noTileCollide, `NPC.cs:17579-17593`).
+
+**The axis arms** (`npc.rs::update_rng_dust`'s `match self.kind.ai_style()`):
+- `67 => ai_067_snail` — the faithful `snail_ai_step` plus the adapter's
+  seams: the per-tick `noGravity` flag rides the new
+  `Npc::snail_no_gravity` carrier (init true — the `SetDefaults` rows;
+  the shimmer early-return writes nothing, so the flag stands); the
+  gravity term is the dry `UpdateNPC_UpdateGravity` row
+  (`npc_ai_golem::body_gravity`, base 0.3 depth-scaled, cap 10 — aiStyle
+  67 never wets, `NPC.cs:93055-93060`), then the ±0.005 double deadband
+  (`:90473-90476`) and the snail's `UpdateCollision` tail: the NEW
+  `collision::walk_down_slope` port (`Collision.cs:1686-1789`, the
+  exact-gravity gate, the strict `(i*16, j*16-17, 16, 16)` probe rect,
+  the equal-height slope preference, the `|vx|` ramp push), fall-through
+  false (no `Collision_DecideFallThroughPlatforms` row matches the trio,
+  `:92917-93050`), identity collision parameters (`:92807-92881` — no
+  snail row), `Collision_MoveNormal`'s `tile_collision(fall: false,
+  fall2: false)` (`:92723-92726`), `Collision_MoveWhileDry`
+  (`:92591-92607`) and `snail_move_on_slopes` (`:92568-92571`).
+- `64 if Shimmerfly => ai_064_shimmerfly` — the faithful
+  `npc_ai_style64::ai_064_step`'s 677 branches. The threat scan reads the
+  slot-ordered `Ai64NpcView` pool the sim pre-pass stamps onto
+  `Npc::shimmerfly_threat_views` (the `twin_time_lefts` carrier
+  precedent); the solo `update_rng` path runs the scan over the empty
+  list (the style75 solo fold — the player scan still fires). The
+  noTileCollide tail is the raw integration (the style56 shape). The
+  355/358/654 firefly trio stays UNWIRED (W4-c7's kind wave).
+
+**The shimmer seams** (`GetShimmered`, `NPC.cs:91548-91565`):
+- The transform arm queues `wants_transform = Some(677)`; the sim's
+  drain (the style75 `Transform(382/518)` pass, extended with the 677
+  row) runs `Npc::transform_to_kind` in place — the bottom-anchored
+  reposition, the `SetDefaults` subset, `TargetClosest`, the integer
+  life rescale. ORDER FOLD (documented): the C# transforms mid-AI and
+  `return`s (`:34358`), running the fresh 677's noTileCollide tail with
+  the OLD snail velocity once; the port drains after the tick, skips
+  that tail, and the fly's first AI tick is the next one (the velocity
+  survives `transform_to_kind`, so the rearm blend still reads it).
+- The statue arm (`SpawnedFromStatue`) queues `wants_spawn_no_cycle` +
+  the timer-0 despawn (the silent retain — no death cue, no loot, the
+  `active = false` shape) + `damage_override = Some(0)` (no contact on
+  the despawn tick). The sim drains the latch onto `App::spawn_no_cycle`
+  BEFORE the despawn retain drops the slot (one spawn call suppressed,
+  `NPC.cs:80171-80174`).
+- `WorldItem.ShimmerEffect` (`WorldItem.cs:1661-1689`): the Item176 cue
+  + the 20-dust `Next(6)` colour burst is the documented visual skip
+  (the item-shimmer path's standing fold, `shimmer.rs`).
+
+**The lights.** The machine's `SnailEvents::light` is discarded by the
+adapter; the draw-side `npc_lights::snail_light` feeds the shared
+`EntityLights` pair (`app/frame/draw.rs`, the small-kinds convention):
+360 blue (0.1, 0.2, 0.7) / 655 orange (0.6, 0.3, 0.1) at the truncated
+centre tile (`(int)Center / 16`, `XAnchor::CenterTruncated`), 359/677
+dark. The post-step position carries one step of lag vs the C#'s
+in-AI `AddLight` (the `npc_light` precedent).
+
+**FindFrame.** The trio's case 359/360/655 (`NPC.cs:72238-72295`) rides
+the module's pure twin (`snail_find_frame`). The 677 case
+(`:72710-72721`) keeps the DOUBLE counter increment (reset at 6) and the
+`++frame.Y >= 5` PIXEL-quirk fold: the wrap counts pixels inside row 0,
+so the port's row-granular frame never leaves 0 (the sub-row offset is
+below the model).
+
+**Render/bestiary.** The four sheets (`SNAIL_SHEETS` 359/360/655/677)
+pack into the atlas + the bestiary order table (appended last, the
+181→185 slot growth); the draw arms ride `scaled_anchor` (the 359 scale
+roll + the 677 scale latch multiply the sprite about the frame centre)
+and join the rotation whitelist (the quadrant ease / the vx·0.3 tilt).
+The portraits rest the `SetDefaults` boxes (12/14/14/10).
+
+**Verification.** Code-only: the adapters, the `WalkDownSlope` port, the
+drain placements and every exhaustive `NpcKind` match were re-checked by
+read/grep against the decompilation (no compiler invoked). 7
+`w4_c9_*` wiring witnesses in `npc.rs` + 2 sim-level shimmer witnesses
+in `world_sim/npcs.rs` WRITTEN, NOT RUN; the pure machines' 17+19
+witnesses stand unchanged.
+
+**Residual round (2026-11-21, the co-lane re-verification).** The
+catch chain (catchItem 2006/2007/4849/5350 — NOT the 2121 frog/duck
+range), the `EntityLights` snail feed and the Transform(677) chain
+were re-verified end-to-end against the pushed e26/c4/c7/f47/d37
+tips; the full record + the protocol-band collision matrix (d37/g8/
+d42 squat 359/360; 655/677 free everywhere; c7's identical Shimmerfly
+definition dedupes at merge) lives in
+`docs/research/109-snail-band-claims.md`. ONE code residual found and
+fixed: `NPC.cs:17838`'s unconditional `buffImmune[353] =
+NPCID.Sets.ShimmerImmunity[type]` write was unported — the set
+(`NPCID.cs:10467`, 131 ids, scripted zero-drift compare) now rides
+`npc_buffs.rs::shimmer_immune` keyed on `cs_id`, applied in
+`for_kind` after the derived rules. The Shimmerfly 677 is a set
+member (rejects buff 353 — never re-shimmers; the f47 transparency
+ramp reads the flag); the snail trio is NOT (their aiStyle-67 probe
+owns the transform). The f47 wet-contact pass exempts aiStyle 67
+(the C# `:93055` list), so the generic ramp never fires for the
+snails — the two shimmer lanes compose without double-transform.
+Witness `w4_c9_shimmer_immunity_write_keys_the_cs_type` WRITTEN NOT
+RUN.
+
+**FINAL seal (2026-11-21, research/349 — rename chain 281→312→349:
+registry-150 §7 round-3 block 281-303 gave 312, then §8.7 AMENDMENT-3
+BATCH FROZEN (`9dddb32b4`) assigns c9→349 — d106 keeps 312).** The
+adjacent-critter-kinds
+half is complete: the five gold critters 442/443/445/446/447 all landed
+(wave 1 `c830aec3d`, wave 2 `49d4cfb61` — the GoldBunny/GoldFrog kinds,
+the critter_ai dispatch, the case-443/445 find_frame arms re-read
+verbatim from `NPC.cs:76851-76904`/`:76618-76685`, sheets/portraits/
+bestiary/net seeds). The scripted census: enum 279 == ALL_KINDS 279 ==
+from_u16 arms 279, sets identical, zero dups; ENTRIES 258;
+BESTIARY_NPC_SHEET_IDS 190 == the Lookups vec. d37's
+`_d37_c9_allkinds_fix.patch` was EXECUTE-verified (scratch-index
+`git apply --check` exit 0 against `2042d77f1`, post-apply census
+274/274/pin-274) and is superseded by the in-lane fix — the merger
+drops it as already-satisfied. The c8 GENERIC sight gate
+(`counts_as_a_critter`: max_hp<=5 && contact_damage==0, minus 594/686)
+auto-covers all nine c9 kinds with zero provider wiring; f26-7j's 655
+MagmaSnail find_frame arm DELEGATES to `npc_ai_style67::snail_find_frame`
+(one machine, the 180-combo equality grid). The E8 renumber order
+(Snail 359→740, GlowingSnail 360→741, the Shimmerfly row drops to c7)
+is receipted as merge-wave work, NOT executed on this lane. The full
+bible + receipts: `docs/research/349-snail-family-final.md`. The five
+gold-critter dup drop-hunks (c9→c10, the d37-LV +3 extended by wave 2's
+443/445) are published as its §6 EXECUTE-prep — rows stay on-branch per
+the E8 dropped-lane rule; the critter-module keep-one reconciles the
+walk-exit draw order (c9's `NPC.cs:53817-53831` TownCritter subtraction
+is the faithful wander exit; c10's module cites the `:54289-54296`
+sit/talk exit — a different AI_007 arm).
+
 ## The Martian Drone / Solar Corite machine (S1-D-3 aiStyle-74, code-only)
 
 `crates/tr-app/src/npc_ai_style74.rs` ports `NPC.AI()`'s

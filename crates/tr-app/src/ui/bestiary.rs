@@ -2412,6 +2412,14 @@ fn portrait_data(
         // arm never renders; the SetDefaults box (10x10, `NPC.cs:13779-
         // 13780`) stands as the shape (the ForceBubble precedent).
         (NpcKind::TruffleWormDigger, _) => (sheet_i, 10.0, 10.0, 10.0, white),
+        // W4-c9 — the snail family + its shimmer target: the portrait
+        // rests each kind's `SetDefaults` box (`NPC.cs:13575-13576` /
+        // `:13589-13590` / `:17282-17283` / `:17581-17582`), the
+        // wave-A shape.
+        // E8 merge: the Shimmerfly portrait is c7's arm above; the 5
+        // gold portraits are d40's arms above (the dup drops).
+        (NpcKind::Snail, _) => (sheet_i, 12.0, 12.0, 12.0, white),
+        (NpcKind::GlowingSnail | NpcKind::MagmaSnail, _) => (sheet_i, 14.0, 14.0, 14.0, white),
     }
 }
 

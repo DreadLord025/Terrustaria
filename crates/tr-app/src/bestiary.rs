@@ -2728,22 +2728,44 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Lunatic Cultist",
     },
     // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    // The snail wall-crawler family + its shimmer target (W4-c9): the
+    // populator registers all four (`BestiaryDatabaseNPCsPopulator.cs`'s
+    // `AddEmptyEntries_CrittersAndEnemies_Automated` — the
+    // `CountsAsACritter` set — plus the `FindEntryByNPCID(359)`/`(677)`
+    // cavern-spawn info rows).
     BestiaryEntryDef {
-        credit_id: "GoldBird",
-        net_id: 442,
-        kind: NpcKind::GoldBird,
+        credit_id: "Snail",
+        net_id: 359,
+        kind: NpcKind::Snail,
         variant: None,
         quick_unlock: false,
-        name: "Gold Bird",
+        name: "Snail",
     },
     BestiaryEntryDef {
-        credit_id: "GoldBunny",
-        net_id: 443,
-        kind: NpcKind::GoldBunny,
+        credit_id: "GlowingSnail",
+        net_id: 360,
+        kind: NpcKind::GlowingSnail,
         variant: None,
         quick_unlock: false,
-        name: "Gold Bunny",
+        name: "Glowing Snail",
     },
+    BestiaryEntryDef {
+        credit_id: "MagmaSnail",
+        net_id: 655,
+        kind: NpcKind::MagmaSnail,
+        variant: None,
+        quick_unlock: false,
+        name: "Magma Snail",
+    },
+    // E8 merge: the Shimmerfly 677 entry is c7's above (the dup drop).
+    // The gold critters (W4-c9): the populator registers each
+    // (`BestiaryDatabaseNPCsPopulator.cs`'s
+    // `AddEmptyEntries_CrittersAndEnemies_Automated` — the
+    // `CountsAsACritter` set). The names ride the lang table
+    // (`lang_tables.rs`'s 442/446/447 rows).
+    // E8 merge: the GoldBird/GoldGrasshopper/GoldMouse/GoldBunny entries
+    // are d40's above (the dup drops); the GoldButterfly 444 entry is d40's
+    // own (it stays).
     BestiaryEntryDef {
         credit_id: "GoldButterfly",
         net_id: 444,
@@ -2752,22 +2774,8 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Gold Butterfly",
     },
-    BestiaryEntryDef {
-        credit_id: "GoldFrog",
-        net_id: 445,
-        kind: NpcKind::GoldFrog,
-        variant: None,
-        quick_unlock: false,
-        name: "Gold Frog",
-    },
-    BestiaryEntryDef {
-        credit_id: "GoldGrasshopper",
-        net_id: 446,
-        kind: NpcKind::GoldGrasshopper,
-        variant: None,
-        quick_unlock: false,
-        name: "Gold Grasshopper",
-    },
+    // E8 merge: the GoldFrog 445 + the stray GoldGrasshopper 446 dups
+    // dropped (d40's entries above own them).
     // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
     BestiaryEntryDef {
         credit_id: "GoldMouse",

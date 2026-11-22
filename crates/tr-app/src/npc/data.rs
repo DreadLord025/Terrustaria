@@ -954,6 +954,19 @@ impl NpcKind {
             NpcKind::TruffleWorm => 738,
             NpcKind::TruffleWormDigger => 739,
             NpcKind::Maggot => 606,
+            // The snail wall-crawler family + its shimmer target (W4-c9):
+            // the vanilla ids 359/360/655/677 are free protocol slots (the
+            // to_u16 scan: the 354+ band above the landed families is
+            // unclaimed), so they keep their vanilla ids — the
+            // AngryNimbus/DungeonSpirit precedent.
+            // E8 merge (d37 tables): Snail/GlowingSnail ride 740/741
+            // (d37's FlyingFish/FlyingSnake own the vanilla slots;
+            // cs_id/net_id stay 359/360); MagmaSnail 655 keeps; the
+            // Shimmerfly 677 dup + the 5 gold dups drop (c7/d40's rows
+            // above own them - c9's wiring composes, 349 s6).
+            NpcKind::Snail => 740,
+            NpcKind::GlowingSnail => 741,
+            NpcKind::MagmaSnail => 655,
         }
     }
 
@@ -1566,6 +1579,13 @@ impl NpcKind {
             738 => NpcKind::TruffleWorm,
             739 => NpcKind::TruffleWormDigger,
             606 => NpcKind::Maggot,
+            // The snail family + its shimmer target (W4-c9): the vanilla
+            // ids kept (`to_u16` above).
+            // E8 merge: 740/741 (the 359/360 slots are d37's); the
+            // 677 + 442/443/445/446/447 dups dropped (c7/d40's arms above).
+            740 => NpcKind::Snail,
+            741 => NpcKind::GlowingSnail,
+            655 => NpcKind::MagmaSnail,
             _ => return None,
         })
     }
@@ -2646,6 +2666,13 @@ impl NpcKind {
             | NpcKind::TruffleWorm
             | NpcKind::TruffleWormDigger
             | NpcKind::Maggot => "NPC_Hit_1",
+            // The snail family + its shimmer target (W4-c9): NPCHit1
+            // each (`NPC.cs:13581` / `:13595` / `:17288` / `:17587`).
+            // E8 merge: Shimmerfly's row is c7's above; the 5 gold rows
+            // are d40's above (the dup drops).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => {
+                "NPC_Hit_1"
+            }
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -3232,6 +3259,13 @@ impl NpcKind {
             | NpcKind::TruffleWorm
             | NpcKind::TruffleWormDigger
             | NpcKind::Maggot => "NPC_Killed_1",
+            // The snail family + its shimmer target (W4-c9): NPCDeath1
+            // each (`NPC.cs:13582` / `:13596` / `:17289` / `:17588`).
+            // E8 merge: Shimmerfly's row is c7's above; the 5 gold rows
+            // are d40's above (the dup drops).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => {
+                "NPC_Killed_1"
+            }
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -3606,6 +3640,13 @@ impl NpcKind {
             // (`NPC.cs:13787`); the eight style-66 crawlers keep the head
             // default false (`:8535`) — they walk on gravity.
             NpcKind::TruffleWormDigger => true,
+            // The snail family + its shimmer target (W4-c9): the
+            // `SetDefaults` noGravity rows (`NPC.cs:13584` / `:13598` /
+            // `:17291` / `:17590`). kb 1 (the head default — the rows
+            // write none), so a strike can push them; the crawl's own
+            // per-tick gravity gate rides `SnailEvents::no_gravity`.
+            // E8 merge: Shimmerfly's row is c7's above.
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => true,
             _ => false,
         }
     }
@@ -4184,6 +4225,15 @@ impl NpcKind {
             // (`NPC.cs:13781`): the worm pass's lone-minion member (the
             // StardustWormHead precedent — `is_worm` true, no chain).
             NpcKind::TruffleWormDigger => 6,
+            // The snail wall-crawler family (W4-c9) — `NPC.cs:13577` /
+            // `:13591` / `:17284` (the three `this.aiStyle = 67;` rows).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => 67,
+            // E8 merge: the Shimmerfly 64 row is c7's above (the dup drop).
+            // The gold critters (W4-c9) — `NPC.cs:14251` (the GoldBird's
+            // aiStyle 24), `:14307` (the GoldGrasshopper's aiStyle 1),
+            // `:14322` (the GoldMouse's aiStyle 7).
+            // E8 merge: the 5 gold aiStyle rows are d40's above (24/1/7/
+            // 7/7 - the dup drops; c9's wiring composes onto them).
         }
     }
 
@@ -5067,6 +5117,14 @@ impl NpcKind {
             // E8 merge: the 5 d40-owned dups dropped (rows above).
             NpcKind::Worm
             | NpcKind::Maggot => (10.0, 4.0),
+            // The snail family + its shimmer target (W4-c9): 359 12x12
+            // (`NPC.cs:13575-13576`), 360/655 14x14 (`:13589-13590` /
+            // `:17282-17283`), 677 10x10 (`:17581-17582`). The 359 scale
+            // roll's resize rides `size_override` (the machine's).
+            // E8 merge: Shimmerfly's size is c7's above; the 5 gold
+            // sizes are d40's above (the dup drops).
+            NpcKind::Snail => (12.0, 12.0),
+            NpcKind::GlowingSnail | NpcKind::MagmaSnail => (14.0, 14.0),
         }
     }
 
@@ -5361,6 +5419,19 @@ impl NpcKind {
             NpcKind::TruffleWorm => 374,
             NpcKind::TruffleWormDigger => 375,
             NpcKind::Maggot => 606,
+            // The snail family + its shimmer target (W4-c9): the vanilla
+            // `NPC.type` ids — the AI arms' type gates (the 359 scale
+            // roll, the 360/655 lights, the 677 threat scan) and the
+            // catch/convert tables read them (`NPCID.cs:11395`/`:11397`/
+            // `:11987`/`:12031`). All four have their own bestiary
+            // entries (the populator's `FindEntryByNPCID(359)`/`(677)`
+            // info rows), so no fold is needed.
+            // E8 merge: the snail trio keeps its vanilla cs hand rows;
+            // Shimmerfly's 677 is c7's above; the 5 gold rows are d40's
+            // above (the dup drops).
+            NpcKind::Snail => 359,
+            NpcKind::GlowingSnail => 360,
+            NpcKind::MagmaSnail => 655,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -6217,6 +6288,11 @@ impl NpcKind {
             | NpcKind::TruffleWorm
             | NpcKind::TruffleWormDigger
             | NpcKind::Maggot => 5,
+            // The snail family + its shimmer target (W4-c9): lifeMax 5
+            // each (`NPC.cs:13580` / `:13594` / `:17287` / `:17586`).
+            // E8 merge: Shimmerfly's row is c7's above; the 5 gold rows
+            // are d40's above (the dup drops).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => 5,
         }
     }
 
@@ -6855,6 +6931,11 @@ impl NpcKind {
             | NpcKind::TruffleWorm
             | NpcKind::TruffleWormDigger
             | NpcKind::Maggot => 0,
+            // The snail family + its shimmer target (W4-c9): damage 0
+            // each (`NPC.cs:13578` / `:13592` / `:17285` / `:17584`).
+            // E8 merge: Shimmerfly's row is c7's above; the 5 gold rows
+            // are d40's above (the dup drops).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => 0,
         }
     }
 }

@@ -1503,6 +1503,14 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_654",
         "NPC_677",
         "NPC_606",
+        // The snail wall-crawler family + its shimmer target (W4-c9):
+        // one sheet per kind, keyed by the vanilla net id in
+        // `NpcAssets::npc_sheets` (`render/entities.rs`'s SNAIL_SHEETS).
+        // E8 merge: NPC_677 is c7's row above; the 5 gold sheets ride
+        // d40's D40_SHEETS rows above (the dup drops).
+        "NPC_359",
+        "NPC_360",
+        "NPC_655",
 ];
 
 
@@ -2098,7 +2106,9 @@ pub struct AmbienceTex {
 // + W4-c8's 3 visible crawlers (357/374/606; the digger 375 is
 // Hide=true - folds onto the TruffleWorm; the 448/484-487 dups dropped,
 // d40's slots above own them) = 317.
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 317] = [
+// + W4-c9's 3 snails (359/360/655; the 677 + 5 gold dups dropped -
+// c7/d40's slots above own them) = 320.
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 320] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -2190,6 +2200,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 317] = [
         // it folds onto the TruffleWorm); the 448/484-487 dups dropped
         // (d40's slots above own them) - 3 new slots.
         357, 374, 606,
+        // The snail family (W4-c9) - appended last for the same reason
+        // (the 677 + 5 gold dups dropped - c7/d40's slots above).
+        359, 360, 655,
     ];
 
 
@@ -3114,6 +3127,11 @@ impl Lookups {
                 atlas.sheet("NPC_357").copied(),
                 atlas.sheet("NPC_374").copied(),
                 atlas.sheet("NPC_606").copied(),
+                // The snail family (W4-c9) - the 3 new strips, parallel
+                // to BESTIARY_NPC_SHEET_IDS (the 677 + 5 gold dups dropped).
+                atlas.sheet("NPC_359").copied(),
+                atlas.sheet("NPC_360").copied(),
+                atlas.sheet("NPC_655").copied(),
             ],
 
 

@@ -1,10 +1,18 @@
 //! The snail wall-crawler family — the C#'s `else if (this.aiStyle == 67)`
 //! inline arm (`NPC.cs:34348-34622`; the family has no `AI_067_*` method).
 //! S1-D-3 (aiStyle-67), **code-only mode**: the machine is ported here as pure
-//! functions over a single `Npc`; the sim wiring is deferred — none of the
-//! family's three kinds has an `NpcKind` yet. The machine activates unchanged
-//! when the kinds land. See docs/ANALYSIS.md "The snail wall-crawler family
-//! (aiStyle-67)".
+//! functions over a single `Npc`.
+//! **WIRED by W4-c9 (2026-11-21).** The three kinds (`NpcKind::Snail` /
+//! `GlowingSnail` / `MagmaSnail`) claim the aiStyle-67 axis arm
+//! (`npc.rs::ai_067_snail`): the adapter drains the shimmer seam (the
+//! `Transform(677)` request rides `wants_transform` → the sim's
+//! `transform_to_kind`; the statue despawn rides the timer seam +
+//! `wants_spawn_no_cycle`), applies the returned `noGravity` flag
+//! (`Npc::snail_no_gravity`) and runs the snail's `UpdateCollision` tail
+//! (the `WalkDownSlope` head + `TileCollision` + `Collision_MoveWhileDry`
+//! + [`snail_move_on_slopes`]). The lights feed the draw-side
+//! `EntityLights` pair (`npc_lights::snail_light`). See docs/ANALYSIS.md
+//! "The snail wall-crawler family (aiStyle-67)".
 //!
 //! The C# family is THREE types — the only `this.aiStyle = 67;` rows in
 //! `SetDefaults`:
@@ -46,8 +54,11 @@
 //!     arm (`:91550-91560`) and the `ShimmerTransformToNPC` arm
 //!     (`:91561-91565`) ride [`SnailEvents`]. All three types map to 677
 //!     `Shimmerfly` (`NPCID.cs:10470`'s `359,677` / `360,677` / `655,677`
-//!     rows, `NPCID.cs:12031`); `Transform(677)` (`NPC.cs:81084`) needs the
-//!     unported Shimmerfly kind, so the transform is an intent.
+//!     rows, `NPCID.cs:12031`); the W4-c9 wiring resolves the transform
+//!     through `wants_transform` → `Npc::transform_to_kind` (the style75
+//!     one-tick drain fold). `WorldItem.ShimmerEffect`'s Item176 cue +
+//!     20-dust `Next(6)` burst is the documented visual skip (the
+//!     item-shimmer path's standing fold).
 //!
 //! Documented skips (render / hit-path, outside the AI arm — ANALYSIS):
 //!   * `Collision_WaterCollision` (`:93055`): aiStyle 67 never wets
@@ -59,7 +70,6 @@
 //!     and particles ride the caller's strike seam (the style52 dust skips).
 //!   * `GetAlpha` light floors (`:93555-93591`): 360 min RGB (75,175,255),
 //!     655 min (255,100,50), alpha 255 — render-side tint, unported.
-#![allow(dead_code)] // UNWIRED - see the module doc; the wiring is the S1-D-3 kind-wave step.
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};
