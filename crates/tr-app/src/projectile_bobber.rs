@@ -27,8 +27,10 @@
 //! - The sonar popup (`PopupText.AssignAsSonarText`) and the `SoundID.
 //!   SonarPotion` trackable cue are draw/audio seams with no port consumer;
 //!   the `sonarPotion` flag rides but the popup/sound are skipped.
-//! - The chum-bucket projectile book is unported, so `chumsInWater` is 0 and
-//!   `ReduceRemainingChumsInPool` (`:53712`) is a no-op.
+//! - The chum-bucket book LANDED in the W4-d17 doc-sweep: the pool's
+//!   pending/last-frame maps (`ChumBucketProjectileHelper.cs`) feed
+//!   `chumsInWater` through the pond scan, and `ReduceRemainingChumsInPool`
+//!   (`:53712`) rides the `wants_chum_reduce` intent to the dispatcher.
 //! - The blood-moon fish enemies (586/587/618/620/621) and the red town slime
 //!   (682) have no `NpcKind` rows: the enemy ROLL runs verbatim (RNG order)
 //!   but the actual spawn is skipped for the unported kinds; the 682 pull
@@ -148,14 +150,17 @@ fn vanilla_rules() -> &'static FishDropRuleList {
 /// One tick of `AI_061_FishingBobber` (`Projectile.cs:53658-53861`). `owner`
 /// is the owner player's centre (`Main.player[owner].Center`); `None` = no
 /// player link (the orphan bobber kills). `rng` is the pool's
-/// `UpdateProjectiles` stream (`Main.cs:17775`). Returns `true` when the slot
-/// is still active (the caller integrates movement only for a live slot).
+/// `UpdateProjectiles` stream (`Main.cs:17775`). `chums_at` is the pool's
+/// last-frame chum book (`GetChumsInLocation`, the W4-d17 doc-sweep — the
+/// pond scan sums it into `chumsInWater`, `:21599`). Returns `true` when the
+/// slot is still active (the caller integrates movement only for a live slot).
 pub(crate) fn bobber_step(
     p: &mut Projectile,
     world: &World,
     owner: Option<(f32, f32)>,
     inputs: &BobberInputs,
     rng: &mut dyn DropRng,
+    chums_at: &dyn Fn(i32, i32) -> i32,
 ) -> bool {
     // `:53661` — the glow-bobber family ignores the shoot-mismatch gate.
     let glow = (986..=993).contains(&p.kind);
@@ -203,8 +208,10 @@ pub(crate) fn bobber_step(
         }
         if p.frame_counter == 0 {
             p.frame_counter = 1;
-            // `ReduceRemainingChumsInPool` (`:53712`) — the chum book is
-            // unported (module doc), a no-op.
+            // `ReduceRemainingChumsInPool` (`:53712`) — the W4-d17
+            // doc-sweep landed the book: the pool-side reduction rides
+            // this intent (the arm cannot see the sibling chum slots).
+            p.wants_chum_reduce = true;
         }
         p.tile_collide = false;
         let (cx, cy) = p.center();
@@ -307,7 +314,7 @@ pub(crate) fn bobber_step(
         p.local_ai[1] = t;
         if p.local_ai[1] > 660.0 {
             p.local_ai[1] = 0.0;
-            fishing_check(p, world, inputs, rng);
+            fishing_check(p, world, inputs, rng, chums_at);
         }
     } else if p.ai[1] < 0.0 {
         // `:53843-53860` — the negative-countdown kick + advance.
@@ -332,10 +339,21 @@ pub(crate) fn bobber_step(
 /// `FishingCheck` (`Projectile.cs:20583-20595`): the attempt builder, the
 /// (skipped) fake-fish sparkle, the hit roll and the results. The RNG draw
 /// order is the C#'s verbatim (module doc records the sparkle skip).
-fn fishing_check(p: &mut Projectile, world: &World, inputs: &BobberInputs, rng: &mut dyn DropRng) {
+/// `chums_at` is the pool's last-frame chum book — `GetFishingPondState`
+/// sums it into `chumsInWater` (`:21599`, the W4-d17 doc-sweep).
+fn fishing_check(
+    p: &mut Projectile,
+    world: &World,
+    inputs: &BobberInputs,
+    rng: &mut dyn DropRng,
+    chums_at: &dyn Fn(i32, i32) -> i32,
+) {
     let (cx, cy) = p.center();
     let x = (cx / 16.0) as i32;
     let y = (cy / 16.0) as i32;
+    // `:20609` — the pond scan's chum out-param (the +11/+6/+3 bonuses
+    // below read it, `:20638-20649`).
+    let chums = fishing::get_fishing_pond_state_chums(world, x, y, chums_at).chums_in_water;
     let can_lava = pole_fishes_lava(inputs.pole_type)
         || is_lava_bait(inputs.bait_type)
         || inputs.acc_lava_fishing;
@@ -369,7 +387,7 @@ fn fishing_check(p: &mut Projectile, world: &World, inputs: &BobberInputs, rng: 
         can_fish_in_lava: can_lava,
         luck: inputs.luck,
         crate_potion: inputs.crate_potion,
-        chums_in_water: 0,
+        chums_in_water: chums,
         duke_alive: inputs.duke_alive,
         quest_item: inputs.quest_item,
         player_has_quest_item: inputs.player_has_quest_item,
@@ -442,7 +460,9 @@ pub(crate) fn kill_hook(p: &mut Projectile, level: i32, rng: &mut dyn DropRng) -
 /// `Collision.WetCollision` (`Collision.cs:1572-1651`) + `LavaCollision`
 /// (`:1653-1684`) folded into one probe: the inset rectangle for wet/honey/
 /// shimmer, the FULL box for lava. Writes the slot's four flags.
-fn probe_wet(p: &mut Projectile, world: &World) {
+/// W4-d17: `pub(crate)` — the chum arm (aiStyle 163) probes at its tick head
+/// (the same one-tick-lag stand-in the bobber records, ANALYSIS).
+pub(crate) fn probe_wet(p: &mut Projectile, world: &World) {
     let (x, y, w, h) = (p.pos.x, p.pos.y, p.w, p.h);
     let wi = w as i32;
     let hi = h as i32;
@@ -550,16 +570,16 @@ mod tests {
         let mut ins = inputs();
         let mut p = bobber(100.0, 100.0);
         ins.held_pole_power = 0;
-        assert!(!bobber_step(&mut p, &w, Some((100.0, 100.0)), &ins, &mut rng));
+        assert!(!bobber_step(&mut p, &w, Some((100.0, 100.0)), &ins, &mut rng, &|_, _| 0));
         assert!(!p.active);
         // The shoot mismatch kills a plain bobber but not a glow one.
         let mut p = bobber(100.0, 100.0);
         ins.held_pole_power = 5;
         ins.held_shoot = 999;
-        assert!(!bobber_step(&mut p, &w, Some((100.0, 100.0)), &ins, &mut rng));
+        assert!(!bobber_step(&mut p, &w, Some((100.0, 100.0)), &ins, &mut rng, &|_, _| 0));
         let mut g = bobber(100.0, 100.0);
         g.kind = 986;
-        assert!(bobber_step(&mut g, &w, Some((100.0, 100.0)), &ins, &mut rng));
+        assert!(bobber_step(&mut g, &w, Some((100.0, 100.0)), &ins, &mut rng, &|_, _| 0));
     }
 
     #[test]
@@ -572,13 +592,13 @@ mod tests {
         let mut p = bobber(200.0, 100.0);
         p.ai[0] = 1.0;
         // Owner far enough not to intersect, the velocity lerps toward it.
-        assert!(bobber_step(&mut p, &w, Some((100.0, 100.0)), &ins, &mut rng));
+        assert!(bobber_step(&mut p, &w, Some((100.0, 100.0)), &ins, &mut rng, &|_, _| 0));
         assert!(p.vel.x < 0.0, "pulled toward the owner at -x");
         assert!(!p.tile_collide);
         // Owner on top of the bobber: the intersect kills.
         let mut p2 = bobber(100.0, 100.0);
         p2.ai[0] = 1.0;
-        assert!(!bobber_step(&mut p2, &w, Some((100.0, 100.0)), &ins, &mut rng));
+        assert!(!bobber_step(&mut p2, &w, Some((100.0, 100.0)), &ins, &mut rng, &|_, _| 0));
         assert!(!p2.active);
     }
 
@@ -590,7 +610,7 @@ mod tests {
         let ins = inputs();
         let mut p = bobber(0.0, 0.0);
         p.pos = glam::Vec2::new(16.0, 16.0);
-        bobber_step(&mut p, &w, Some((2000.0, 16.0)), &ins, &mut rng);
+        bobber_step(&mut p, &w, Some((2000.0, 16.0)), &ins, &mut rng, &|_, _| 0);
         assert_eq!(p.ai[0], 1.0);
     }
 
@@ -639,7 +659,7 @@ mod tests {
         p.vel = glam::Vec2::ZERO;
         let mut fired = false;
         for _ in 0..200 {
-            bobber_step(&mut p, &w, Some((30.0 * 16.0, 100.0 * 16.0)), &ins, &mut rng);
+            bobber_step(&mut p, &w, Some((30.0 * 16.0, 100.0 * 16.0)), &ins, &mut rng, &|_, _| 0);
             if p.ai[1] != 0.0 || p.local_ai[2] != 0.0 {
                 fired = true;
                 break;

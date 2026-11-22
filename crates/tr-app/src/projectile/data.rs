@@ -1298,6 +1298,93 @@ pub const SPARKLE_GUITAR: u16 = 856;
 /// `ProjectileID.StarCannonStar` (955, `ProjectileID.cs:2464`) — the Star
 /// Cannon's shot (aiStyle 5, `penetrate = -1`, `alpha = 50`).
 pub const STAR_CANNON_STAR: u16 = 955;
+/// W4-d17 — the rapier-stab family (aiStyle 161, `AI_161_RapierStabs`
+/// `Projectile.cs:47612-47665`, the dispatch `:36607-36610`):
+/// `DefaultToShortsword` (`:10773-10787`) — 18x18, `penetrate = -1`,
+/// `tileCollide = false`, melee, `ownerHitCheck`, `extraUpdates = 1`,
+/// `usesOwnerLight`, drawLayer 7. The Gladius (802, `:7921-7924`) and the
+/// Ruler (842, `:8145-8148`) keep the stock 3600 life.
+pub const GLADIUS_STAB: u16 = 802;
+pub const RULER_STAB: u16 = 842;
+/// The eight ore shortswords' stabs (938-945, `Projectile.cs:8917-8921`):
+/// `DefaultToShortsword` + `timeLeft = 360`.
+pub const SHORTSWORD_STAB_FIRST: u16 = 938;
+pub const SHORTSWORD_STAB_LAST: u16 = 945;
+/// `ProjectileID.ChlorophyteSaberStab` (1127, `ProjectileID.cs:2808`) — the
+/// Chlorophyte Saber's stab (`Projectile.cs:10559-10564`):
+/// `DefaultToShortsword` + the LOCAL immunity pair (−1). The `ai[1]`
+/// melee-speed scale stretches the 16-tick machine (`:47621-47631`), the
+/// Oiled-397 on-hit grant is `StatusNPC` `:11721-11724`.
+pub const CHLOROPHYTE_SABER_STAB: u16 = 1127;
+
+/// W4-d17 — `ProjectileID.WhiteTigerPounce` (818, `ProjectileID.cs:2190`) —
+/// the Storm Tiger staff's pounce (aiStyle 162, `AI_162_TigerPounce`
+/// `Projectile.cs:46701-46768`, the dispatch `:36611-36614`). The spawn is
+/// the tiger's state-4 chain (`AI_164`'s sibling machine, `:49096-49115`):
+/// `ai[0]` the negative chain delay, `ai[1]` the arc's tick budget.
+pub const WHITE_TIGER_POUNCE: u16 = 818;
+
+/// W4-d17 — `ProjectileID.ChumBucket` (820, `ProjectileID.cs:2194`) — the
+/// chum bucket's bait (aiStyle 163, `AI_163_Chum`
+/// `Projectile.cs:53474-53603`, the dispatch `:36615-36618`). The fishing
+/// attraction book (`ChumBucketProjectileHelper`) LANDED in the W4-d17
+/// doc-sweep: the pool's pending/last maps feed the bobber's pond scan
+/// (`chumsInWater`), the reel head ages the baits
+/// (`ReduceRemainingChumsInPool`).
+pub const CHUM_BUCKET: u16 = 820;
+
+/// W4-d17 — the dove/lantern release pair (aiStyle 166, `AI_166_Dove`
+/// `Projectile.cs:47540-47610`, the dispatch `:36627-36630`):
+/// `ProjectileID.ReleaseDoves` (851, `ProjectileID.cs:2256`) — the 4x4
+/// dove (`:8173-8181`, timeLeft 300); `ProjectileID.ReleaseLantern` (855,
+/// `:2264`) — the 12x12 lantern (`:8197-8205`, timeLeft 1000). Both
+/// `netImportant`, `penetrate = -1`, the stock tileCollide true. The
+/// blocked-move bounces are the OUTER type chain (`:18336-18361`).
+pub const RELEASE_DOVES: u16 = 851;
+pub const RELEASE_LANTERN: u16 = 855;
+
+/// W4-d17 — `ProjectileID.FirstFractal` (857, `ProjectileID.cs:2268`) — the
+/// Zenith's component sword (aiStyle 168, `AI_168_FirstFractal`
+/// `Projectile.cs:46537-46571`, the dispatch `:36635-36638`). The 60-tick
+/// spin flight; `ai[0]` the per-tick rotation delta, `ai[1]` the hue
+/// (`GetFirstFractalColor` = `hslToRgb(ai[1], 1, 0.5)`, `:70517-70520`).
+pub const FIRST_FRACTAL: u16 = 857;
+
+/// W4-d17 FOLLOW-UP — the whip proc-spawn children's kind aliases. The
+/// ROWS for 916/917/918/1039 are d18's (`task/W4-d18-proj-ai-171-180`) and
+/// 1038 is d20's (`task/W4-d20-proj-ai-191-200`) — NOT duplicated here (the
+/// Zenith 933/1100 precedent); the proc spawns below reference the alias but
+/// `proj_data` returns None until those rows merge, so the spawn no-ops.
+/// Only 1036/1037 are UNCLAIMED — their rows land in this branch.
+/// `ProjectileID.ScytheWhipProj` (916) — the Dark Harvest black lightning.
+pub const SCYTHE_WHIP_PROJ: u16 = 916;
+/// `ProjectileID.CoolWhipProj` (917) — the Cool Whip snowflake minion.
+pub const COOL_WHIP_PROJ: u16 = 917;
+/// `ProjectileID.FireWhipProj` (918) — the Firecracker proc explosion.
+pub const FIRE_WHIP_PROJ: u16 = 918;
+/// `ProjectileID.CobWhipProj` (1036, `ProjectileID.cs:2620`) — the Cob
+/// Whip's spark minion (`Projectile.cs:13931`, the `cobWhipBuff` latch;
+/// aiStyle 67's `flag7` chase `:49130`/`:50538`/`:50601`). UNCLAIMED — rowed.
+pub const COB_WHIP_PROJ: u16 = 1036;
+/// `ProjectileID.MeteorWhipMeteor` (1037, `ProjectileID.cs:2622`) — the
+/// Starcrash (Meteor Whip) proc meteor
+/// (`WhipTagEffect_Starcrash.cs:14-25`, aiStyle 5's 1037 arm). UNCLAIMED — rowed.
+pub const METEOR_WHIP_METEOR: u16 = 1037;
+/// `ProjectileID.FlowerWhipPetal` (1038) — the Flower Whip petal fan.
+pub const FLOWER_WHIP_PETAL: u16 = 1038;
+/// `ProjectileID.ConstellationStar` (1039) — the Constellation star fan.
+pub const CONSTELLATION_STAR: u16 = 1039;
+
+/// W4-d17 — the aiStyle-161 kind set (the `DefaultToShortsword` callers:
+/// `Projectile.cs:7921`/`:8145`/`:8917`/`:10559`). The `Colliding` stab arm
+/// (`:15955`) and the `ownerHitCheck` gate (`:12637`) key on it.
+pub fn is_rapier_stab(kind: u16) -> bool {
+    matches!(
+        kind,
+        GLADIUS_STAB | RULER_STAB | SHORTSWORD_STAB_FIRST..=SHORTSWORD_STAB_LAST
+            | CHLOROPHYTE_SABER_STAB
+    )
+}
 /// `ProjectileID.LastPrism` (633) — the channel holder (aiStyle 75,
 /// 14x18, `penetrate = -1`, `tileCollide = false`).
 pub const LAST_PRISM: u16 = 633;
@@ -4426,6 +4513,60 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // aiStyle 5, `penetrate = -1`, `alpha = 50`, ranged (`light = 1f`
             // dropped).
             STAR_CANNON_STAR => (18.0, 18.0, 5, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 50, 1.0)),
+            // W4-d17 — `DefaultToShortsword` (`Projectile.cs:10773-10787`):
+            // 18x18, aiStyle 161, `penetrate = -1`, `tileCollide = false`,
+            // `extraUpdates = 1`, melee, `ownerHitCheck` (the damage gate is
+            // keyed on the kind set in `damage_pve`, the spear precedent).
+            // The Gladius (802, `:7921-7924`) / Ruler (842, `:8145-8148`)
+            // keep the stock 3600 life and NO immunity slice.
+            GLADIUS_STAB | RULER_STAB => (18.0, 18.0, 161, -1, TIME_LEFT_DEFAULT, 1, false, false, false, RESET_STATE),
+            // `:8917-8921` — the eight ore shortswords (938-945):
+            // `DefaultToShortsword` + `timeLeft = 360`.
+            SHORTSWORD_STAB_FIRST..=SHORTSWORD_STAB_LAST => (18.0, 18.0, 161, -1, 360, 1, false, false, false, RESET_STATE),
+            // `:10559-10564` — the Chlorophyte Saber stab (1127):
+            // `DefaultToShortsword` + `usesLocalNPCImmunity` /
+            // `localNPCHitCooldown = -1`.
+            CHLOROPHYTE_SABER_STAB => (18.0, 18.0, 161, -1, TIME_LEFT_DEFAULT, 1, false, false, false, (true, -1, false, -1, 0, 1.0)),
+            // W4-d17 — `Projectile.cs:8005-8018` — the White Tiger Pounce
+            // (818): 132x132, aiStyle 162, `alpha = 255`,
+            // `tileCollide = false`, `ignoreWater`, `penetrate = -1`,
+            // `extraUpdates = 3`, the LOCAL pair (−1). The stock 3600 life.
+            // `UpdatePosition`'s skip list names 818 (`:20435`) — the
+            // CatmullRom arc IS the position (the dispatch folds the skip).
+            WHITE_TIGER_POUNCE => (132.0, 132.0, 162, -1, TIME_LEFT_DEFAULT, 3, false, false, false, (true, -1, false, -1, 255, 1.0)),
+            // W4-d17 — `Projectile.cs:8019-8029` — the Chum Bucket bait
+            // (820): 12x12, aiStyle 163, `tileCollide = true`,
+            // `netImportant`, `penetrate = -1`, `timeLeft = 86400`. The
+            // stock extraUpdates 0; NO immunity slice (the bait is
+            // friendly but deals no damage — the spawner's damage 0).
+            CHUM_BUCKET => (12.0, 12.0, 163, -1, 86400, 0, true, false, false, RESET_STATE),
+            // W4-d17 — `Projectile.cs:8173-8181` — the Release Doves (851):
+            // 4x4, aiStyle 166, `penetrate = -1`, `timeLeft = 300`,
+            // `netImportant`. The stock tileCollide true / extraUpdates 0.
+            RELEASE_DOVES => (4.0, 4.0, 166, -1, 300, 0, true, false, false, RESET_STATE),
+            // `:8197-8205` — the Release Lantern (855): 12x12, aiStyle 166,
+            // `penetrate = -1`, `timeLeft = 1000`, `netImportant`.
+            RELEASE_LANTERN => (12.0, 12.0, 166, -1, 1000, 0, true, false, false, RESET_STATE),
+            // W4-d17 — `Projectile.cs:8220-8236` — the First Fractal (857):
+            // 32x32, aiStyle 168, `alpha = 255`, melee, `tileCollide = false`,
+            // `ignoreWater`, `extraUpdates = 1`, the LOCAL pair (10),
+            // `manualDirectionChange`, `penetrate = -1`, drawLayer 6. NO
+            // `projFrames[857]` override — the stock 1 stands (the draw reads
+            // the hue sparkle, not a frame slice).
+            FIRST_FRACTAL => (32.0, 32.0, 168, -1, TIME_LEFT_DEFAULT, 1, false, false, false, (true, 10, false, -1, 255, 1.0)),
+            // W4-d17 FOLLOW-UP — `Projectile.cs:9767-9779` — the Cob Whip's
+            // spark minion (1036): 18x10, aiStyle 67, `penetrate = -1`,
+            // `netImportant`, the LOCAL pair (20), `armorPenetration = 30`
+            // (the spawn stamp), `decidesManualFallThrough` (the `flag7`
+            // chase `:49130`/`:50538`/`:50601` — the aiStyle-67 machine is
+            // the documented follow-up; the row + the proc spawn land here).
+            COB_WHIP_PROJ => (18.0, 10.0, 67, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 20, false, -1, 0, 1.0)),
+            // `Projectile.cs:9780-9792` — the Starcrash proc meteor (1037):
+            // 24x24, aiStyle 5, the LOCAL pair (−1), scale 0.8,
+            // `extraUpdates = 1`, alpha 254, `tileCollide = false` (the AI's
+            // `Bottom.Y >= ai[1]` latch re-arms it, `:23865-23868`). The
+            // stock penetrate 1 / 3600 life.
+            METEOR_WHIP_METEOR => (24.0, 24.0, 5, 1, TIME_LEFT_DEFAULT, 1, false, false, false, (true, -1, false, -1, 254, 0.8)),
             // The spear family (S1-P-i06, aiStyle 19 — `DefaultToSpear`
             // `Projectile.cs:10720-10730`: friendly, `penetrate = -1`,
             // `tileCollide = false`, melee, `ownerHitCheck`, `usesOwnerLight`,
@@ -4899,12 +5040,20 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-P-i42 — the glowstick/flare family sets `netImportant = true`
             // (`Projectile.cs:1328`/`:1356`/`:2517`/`:4024`/`:5487`/`:5853`/
             // `:8345`/`:9582`/`:9593`/`:9604`/`:9615`/`:10155`).
+            // W4-d17 FOLLOW-UP — `Projectile.cs:9774`: the Cob Whip spark.
+            || kind == COB_WHIP_PROJ
             || matches!(
                 kind,
                 GLOWSTICK | STICKY_GLOWSTICK | SPELUNKER_GLOWSTICK | BOUNCY_GLOWSTICK
                     | FAIRY_GLOWSTICK | RAINBOW_GLOWSTICK | FLARE | BLUE_FLARE
                     | SPELUNKER_FLARE | CURSED_FLARE | RAINBOW_FLARE | SHIMMER_FLARE
             )
+            // W4-d17 — `Projectile.cs:8026`: the chum bait (820) sets
+            // `netImportant = true`.
+            || kind == CHUM_BUCKET
+            // W4-d17 — `Projectile.cs:8174`/`:8198`: the dove/lantern pair
+            // (851/855) set `netImportant = true`.
+            || matches!(kind, RELEASE_DOVES | RELEASE_LANTERN)
             // AI_026 slice B: the boss-head pets' `netImportant = true`
             // (`Projectile.cs:8488`/`:8523`).
             || matches!(kind, SKELETRON_PET | SKELETRON_PRIME_PET)
@@ -5089,7 +5238,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             )
             // W4-d15 — the Book Staff twister (`Projectile.cs:7459`) and
             // the victory banner (`:7567`).
-            || matches!(kind, DD2_APPRENTICE_STORM | DD2_VICTORY),
+            || matches!(kind, DD2_APPRENTICE_STORM | DD2_VICTORY)
+            // W4-d17 — `Projectile.cs:8013`: the White Tiger Pounce (818)
+            // sets `ignoreWater = true`.
+            || kind == WHITE_TIGER_POUNCE
+            // W4-d17 — `Projectile.cs:8229`: the First Fractal (857) sets
+            // `ignoreWater = true`.
+            || kind == FIRST_FRACTAL,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -5101,6 +5256,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 // — the flinx (`:8980`), the mushroom boi (`:9679`), the
                 // cattivas (`:10207`/`:10374`) and the clay pot (`:10462`).
                 | 951 | 1022 | 1093 | 1112 | 1118
+                // W4-d17 FOLLOW-UP — `Projectile.cs:9778`: the Cob Whip
+                // spark's `decidesManualFallThrough = true`.
+                | COB_WHIP_PROJ
         ),
         // The damage-class flags (`Projectile.cs:751-753` reset false) the
         // per-hit crit block reads (`:12890-12898`). The census is the
@@ -5110,6 +5268,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         // (28/29/37/519) and the Crystal Storm item 518's proj set none.
         melee: YOYO_KINDS.contains(&kind)
             || FLAIL_KINDS.contains(&kind)
+            // W4-d17 — `DefaultToShortsword` sets melee (`Projectile.cs:10783`):
+            // the rapier-stab family (802/842/938-945/1127).
+            || matches!(kind, GLADIUS_STAB | RULER_STAB | SHORTSWORD_STAB_FIRST..=SHORTSWORD_STAB_LAST | CHLOROPHYTE_SABER_STAB)
+            // W4-d17 — `Projectile.cs:8227`: the First Fractal (857) sets
+            // `melee = true`.
+            || kind == FIRST_FRACTAL
             || matches!(
                 kind,
                 // The explicit melee rows: the boomerangs (6/52/113,
@@ -5747,6 +5911,14 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // aiStyle-104 7-tick cycle wraps at it (`Projectile.cs:33499-
         // 33508`).
         BRAIN_OF_CONFUSION => 4,
+        // W4-d17 — the chum bait's 4-frame sheet (`Main.cs:8452`) — the
+        // first-tick `frame = Next(4)` roll (`Projectile.cs:53553`) picks
+        // the row; no frame machine steps it after.
+        CHUM_BUCKET => 4,
+        // W4-d17 — the dove/lantern pair's 4-frame sheets (`Main.cs:8657`/
+        // `:8660`) — the aiStyle-166 frame machine (`Projectile.cs:47553-
+        // 47560`) wraps at 3 (the dove 4-tick, the lantern 6-tick stride).
+        RELEASE_DOVES | RELEASE_LANTERN => 4,
         _ => 1,
     }
 }
