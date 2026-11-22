@@ -150,6 +150,50 @@ module-18 row, research/18 annotations). **Cross-lane note:** d81's batch 1
 in `ui/elements.rs` (pushed after this census); the merge owner keeps one
 copy — see ANALYSIS.
 
+## d83 progress (`task/W4-d83-ui-elements-3`, base = d82 tip `53912fa0`)
+d81's batch 1 (`0b815a62`) landed shared small classes into `ui/elements.rs`
+(GroupOptionButtonState, PowerStrip, traits, UICyclingImage cycler,
+UICreativePowerButton marker) ahead of its row band; d83 keeps the census rows
+as the claim record and ports the *remaining halves* without re-splitting.
+Where d81/d82 already landed a class's state, the row cites both homes.
+| row | class | status |
+| --- | --- | --- |
+| 35 | `UIIconTextButton` | LANDED (`ui/buttons.rs::IconTextButton`, colour/opacity machine + SetText resize + icon geometry `UIIconTextButton.cs:36-132`; hover latch shared with rows 29/32; dead ctor params + `_hoverColor` documented) |
+| 36 | `UIImage` | LANDED (`ui/images.rs::ImageElement`/`ImageDraw`, draw geometry `UIImage.cs:70-99` + SetImage resize) |
+| 37 | `UIImageFramed` | LANDED (`ui/images.rs::FramedImage`, ctor/SetFrame/grid slice `:16-43` via `Utils.cs:1344/1328`) |
+| 38 | `UIImageWithBorder` | LANDED (`ui/images.rs::BorderedImage`, SetBorder resize + border draw `:26-67`) |
+| 39 | `UIItemIcon` | LANDED (`ui/item_collection.rs::ItemIconElement`, 32×32 ctor + context-31 centre draw + blackout tint `UIItemIcon.cs:13-25`; icon draw pre-landed `slot.rs::draw_item_icon`) |
+| 40 | `UIKeybindingCycleListItem` | LANDED (`ui/keybinding_rows.rs::KeybindingCycleRow`, shared row chrome + "???" fallbacks + value GlyphsScale 0.85 window `:18-46`; dead `X -= 17` documented) |
+| 41 | `UIKeybindingListItem` | LANDED (`ui/keybinding_rows.rs::KeybindingRow`, click listen-latch `:28-41`, GenInput join `:80-112`, GetFriendlyName table `:114-176`, listening Gold / unbound (80,80,80) arms + gamepad -3 shift `:43-78`; GlyphTagHandler.GenerateTag table `GlyphTagHandler.cs:169-289`) |
+| 42 | `UIKeybindingSimpleListItem` | LANDED (`ui/keybinding_rows.rs::KeybindingSimpleRow`, centred text X+W/2-strW/2 + shared chrome `:21-39`; DrawSettings2Panel = DrawSettingsPanel documented) |
+| 43 | `UIKeybindingSliderItem` | LANDED (`ui/keybinding_rows.rs::KeybindingSliderRow`, rightHover/rightLock grab machine + num2 bar state + flag overrides + keyboard/gamepad action gates `:42-99`; valuePosition +10; DrawValueBar pre-landed `sliders.rs`) |
+| 44 | `UIKeybindingToggleListItem` | LANDED (`ui/keybinding_rows.rs::KeybindingToggleRow`, (W-2)/2+2 integer toggle frame + right-edge White scale-1 draw `:28-47`; dead Gold arm + X-=17 documented) |
+| 45 | `UIParticleLayer` | LANDED (`ui/particles.rs::ParticleLayer`, ToRectangle-truncated anchor + percents/pixels offsets `:28-33`, IgnoresMouseInteraction pin `:18`; ParticleRenderer unported, caller's seam) |
+| 46 | `UIProgressBar` | LANDED (`ui/progress.rs::ProgressBar`, 0.95/0.05 ease + snap-down SetProgress + Blue MagicPixel fill `UIProgressBar.cs:31-45`; distinct from row 31's UIGenProgressBar) |
+| 47 | `UIResourcePack` | LANDED (`ui/resource_packs.rs::ResourcePackCard` + `pack_child_layout`, static colour pairs *0.8 truncation `:135-141`, hover swap, icon/border stack + workshop badge geometry `:98-114`, BuildChildren top walk `:57-96`; planned home `ui/resources.rs` taken by the HUD module — renamed, no re-split) |
+| 48 | `UIResourcePackInfoButton` | LANDED (`ui/text_panels.rs::PackInfoButton`, PanelGrayscale splice Lerp(Black,_color,0.8)*0.5 + White CategoryPanelBorder hover `:36-50`) |
+| 49 | `UISearchBar` | LANDED (`ui/search_bar.rs::SearchBar`, SetContents placeholder/cap/read-back `:67-89`, int-edge display-trim loop `:91-114`, input latch `:169-196`; shared Utils.TrimUserString/TrimLastCharacter UTF-16 helpers `Utils.cs:2839-2855`; IME/GetInputText caller's seam) |
+| 50 | `UISelectableTextPanel` | LANDED (`ui/text_panels.rs::SelectableTextPanel`, base splice + 4px-inset selected splice Lerp(_color,White,0.7)*0.5 + hover border stack `:36-55`) |
+| 51 | `UISlicedImage` | LANDED (`ui/images.rs::SlicedImage`, ctor-only resize + transparent default(Color) + top/bottom-first SetSliceDepths + int-truncated spliced draw `UISlicedImage.cs:34-66`; pieces ride `uistate::spliced_rects`) |
+| 52 | `UISliderBase` | LANDED (`ui/sliders.rs::SliderLocks`, id-keyed CurrentLocked/AimedSlider statics + GetUsageLevel 0/1/2 + EscapeElements `UISliderBase.cs:13-35`; HSL-bar mirror pre-landed `char_creation.rs`) |
+| 53 | `UIText` | LANDED (`ui/text.rs::TextElement`, InternalSetText metrics (16/32*scale vs wrapped +20*scale, MinWidth 0 for wrapped/dynamic) + DrawSelf geometry (-2/-10*scale shift, origin centring, dynamic shrink, shadow*textAlpha) `UIText.cs:82-194`; snippet layout caller's, wrap = `bestiary.rs::wrap_text`) |
+| 54 | `UITextBox` | LANDED (`ui/text_box.rs::TextBox`, 20-unit cap + cursor clamp/Write-insert/Backspace-tail quirk + draw cursor-to-end pin + 21-of-40 ticker + caret offsets `UITextBox.cs:38-109`; keyboard write/caret halves pre-landed `keyboard.rs`; IME caller's seam) |
+| 55 | `UIToggleImage` | LANDED (`ui/images.rs::ToggleImage`, one-sheet on/off offsets + fixed draw size + White/Silver hover tint + LeftClick toggle `UIToggleImage.cs:26-70`; achievements filter draw pre-landed) |
+| 56 | `UIVerticalSeparator` | LANDED (`ui/chrome_elements.rs::VerticalSeparator`, OnePixel stretch ToRectangle + White ctor + never-hit + dead EdgeWidth `UIVerticalSeparator.cs:16-33`) |
+| 57 | `UIVerticalSlider` | LANDED (`ui/sliders.rs::VerticalSlider`, 5/4/4/4 spliced frame + Right/Bottom-edge insets (-9/-8) + bottom-up fill + CenteredRectangle knob + hit Inflate(4,0) + aim/lock machine + two independent sound one-shots + clamped bottom-up GetLerpValue `UIVerticalSlider.cs:39-138`) |
+| 58 | `UIWorkshopImportWorldListItem` | LANDED (`ui/workshop_rows.rs::WorkshopImportWorldRow`, shared rest/hover pairs, Import label latch, valid+target click gate + name trim + invalid Gray status prefix, 100/150(+40)/remainder panel walk + divider /8 scale `:66-198`; SocialAPI/keyboard caller's seams) |
+| 59 | `UIWorkshopPublishResourcePackListItem` | LANDED (`ui/workshop_rows.rs::WorkshopPublishPackRow`, zip grey arms (Lerp hover→120 *1 / Lerp rest→80 *0.7), rejection-vs-publish click routing, (W-22-icon-btn)/2 two-panel split `:95-215`; spliced 10/10/10/10 panels) |
+| 60 | `UIWorkshopPublishWorldListItem` | LANDED (`ui/workshop_rows.rs::WorkshopPublishWorldRow`, plain shared pairs (no grey arms), target-only click, +6 panel origin + second-panel non-English +40 `:53-139`) |
+| 61 | `UIWorldCreationPreview` | LANDED (re-audit: whole class pre-landed `ui/world_creation.rs::preview_layers`/`draw_preview` — UpdateOption mapping, 0/3→Normal bg, DarkGray Expert/Master tint, Master bunny *1.2 XNA wrap, +4 layer offset + border `UIWorldCreationPreview.cs:44-132`; nothing left) |
+| 62 | `UIWorldListItem` | LANDED (draw/click/colours/labels pre-landed S1-H-10 `ui/world_select.rs`; missing halves added: conditional cloud/seed slot num-walk + their hover keys + status-icon label keys + SeedCopied + WorldFileData.GetFullSeedText/GetSerializedSeedsSum `UIWorldListItem.cs:113-162/:271-318/:460-464`, `WorldFileData.cs:123-197`; slots parked until SocialAPI/generator-version data lands) |
+| 63 | `UIWrappedSearchBar` | LANDED (`ui/search_bar.rs::WrappedSearchBar`, theme box colour (35,40,83)/cyan shift, OurFavoriteColor focus border, HideSearchButton -3 width, cancel 11/12 sounds, right-click/outside-click/search-area gates, virtual submit trim; draw pre-landed `crafting.rs:756-838`) |
+| 64 | `UISortableElement` | LANDED (`ui/sortable.rs::SortableElement`, OrderIndex + ascending CompareTo with the base-arm fallback `UISortableElement.cs:5-22`) |
+**d83 complete (2026-11-20):** all 30 rows (35-64) LANDED. Batches 1-11 on
+`task/W4-d83-ui-elements-3`; tests written not run (code-only lane). The
+planned `ui/resources.rs` home (row 47) was taken by the HUD module — the
+pack card lives in `ui/resource_packs.rs` (no re-split). Row 61 re-audited
+as wholly pre-landed (`world_creation.rs`).
+
 ## Conventions (landed style, per research/18 + S1-E-26 wave B)
 
 Code-only lane: ports are **pure helpers + tests-as-code** (written, not run —
