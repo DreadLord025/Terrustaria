@@ -386,6 +386,91 @@ pub fn draw_map_background(r: &mut SpriteRenderer, bg: MapBg, screen: Vec2, sky:
     r.push_map_back_sprite([0.0, 0.0], [screen.x, screen.y], uv, color);
 }
 
+/// `Main.DrawMap`'s fullscreen tile-hover text (`Main.cs:55782-55913`): the
+/// hovered map cell's name — the chest/dresser style rows with the stored
+/// name suffix (`DrawMap_FindChestName`, `Main.cs:56631-56643`), else
+/// `Lang.GetMapObjectName(type)`. `None` when the cursor is outside the
+/// drawable window (`flag2`, `:55786-55802`), the map cell is dark
+/// (`Light > 40`, `:55809`) or the row has no name. The icon layers' hover
+/// text overrides this one (`:55922`'s `ref text`), so the caller reads it
+/// as the fallback.
+pub(crate) fn fullscreen_hover_name(
+    world: &World,
+    map: &WorldMap,
+    chests: &[crate::chest::WorldChest],
+    mouse: Vec2,
+    screen: Vec2,
+) -> Option<String> {
+    // `:55784-55785`: `(int)((0 - num + mouseX) / num5 + num6)` — `num` is
+    // the drawing origin (`map_origin`), `num6`/`num7` are 10.
+    let origin = map_origin(map.pos, map.scale, screen);
+    let x = ((mouse.x - origin[0]) / map.scale + 10.0) as i32;
+    let y = ((mouse.y - origin[1]) / map.scale + 10.0) as i32;
+    // `:55786-55802`: the drawable window `[10, width-10) x [10, height-19)`.
+    if x < 10 || x >= world.width - 10 || y < 10 || y >= world.height - 19 {
+        return None;
+    }
+    let cell = map.tiles[world.index(x, y)];
+    if cell.light <= 40 {
+        return None;
+    }
+    let table = tr_core::map::color_table();
+    let ty = cell.ty as usize;
+    let lookup = |tile: usize| table.tile_lookup[tile] as usize;
+    let options = |tile: usize| table.tile_option_counts[tile] as usize;
+    // `:55820-55821`: the legacy style tables. `Lang.cs:503-506` aliases
+    // `chestType[52..]` to `chestType[0]`.
+    let chest_row = |style: i32| crate::lang::chest_type(if style >= 52 { 0 } else { style as usize });
+    // `DrawMap_FindChestName` (`:56631-56643`): no chest -> row 0; a named
+    // chest appends ": <name>".
+    let find_name = |row: String, ax: i32, ay: i32| match crate::chest::find_chest(chests, ax, ay) {
+        None => crate::lang::chest_type(0),
+        Some(i) if !chests[i].name.is_empty() => format!("{row}: {}", chests[i].name),
+        Some(_) => row,
+    };
+    let tile = world.tile(x, y)?;
+    let (fx, fy) = (tile.frame_x as i32, tile.frame_y as i32);
+    let text = if ty >= lookup(21) && ty < lookup(21) + options(21) {
+        // `:55822-55839`: tile 21 (Containers) — the anchor cell shift.
+        let ax = if fx % 36 != 0 { x - 1 } else { x };
+        let ay = if fy % 36 != 0 { y - 1 } else { y };
+        find_name(chest_row(fx / 36), ax, ay)
+    } else if ty >= lookup(467) && ty < lookup(467) + options(467) {
+        // `:55840-55857`: tile 467 (Containers2) — the same walk over
+        // `chestType2`.
+        let ax = if fx % 36 != 0 { x - 1 } else { x };
+        let ay = if fy % 36 != 0 { y - 1 } else { y };
+        match crate::chest::find_chest(chests, ax, ay) {
+            None => crate::lang::chest_type2(0),
+            Some(i) if !chests[i].name.is_empty() => {
+                format!("{}: {}", crate::lang::chest_type2((fx / 36) as usize), chests[i].name)
+            }
+            Some(_) => crate::lang::chest_type2((fx / 36) as usize),
+        }
+    } else if ty >= lookup(441) && ty < lookup(441) + options(21) {
+        // `:55858-55875`: tile 441 (FakeContainers) — the bare style row.
+        chest_row(fx / 36)
+    } else if ty >= lookup(468) && ty < lookup(468) + options(467) {
+        // `:55876-55893`: tile 468 (FakeContainers2).
+        crate::lang::chest_type2((fx / 36) as usize)
+    } else if ty >= lookup(88) && ty < lookup(88) + options(88) {
+        // `:55894-55908`: tile 88 (Dressers) — the 54-px anchor shift.
+        let ay = if fy % 36 != 0 { y - 1 } else { y };
+        let ax = x - fx % 54 / 18;
+        match crate::chest::find_chest(chests, ax, ay) {
+            None => crate::lang::dresser_type(0),
+            Some(i) if !chests[i].name.is_empty() => {
+                format!("{}: {}", crate::lang::dresser_type((fx / 54) as usize), chests[i].name)
+            }
+            Some(_) => crate::lang::dresser_type((fx / 54) as usize),
+        }
+    } else {
+        // `:55911`: every other cell reads the map legend row.
+        crate::lang::map_object_name(ty)
+    };
+    if text.is_empty() { None } else { Some(text) }
+}
+
 pub struct WorldMap {
     /// Row-major `y * width + x`, matching `World::index`.
     pub tiles: Vec<MapTile>,
@@ -1050,6 +1135,58 @@ mod tests {
         w.spawn_x = 10;
         w.spawn_y = 40;
         w
+    }
+
+    #[test]
+    fn w4_c21_fullscreen_hover_reads_the_map_legend_and_chest_names() {
+        // `Main.cs:55782-55913` + `DrawMap_FindChestName` (`:56631-56643`):
+        // the hovered cell answers the legend row, the chest style rows
+        // carry the stored ": <name>" suffix, and a dark cell / a cursor
+        // outside the drawable window answers nothing.
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut world = ground_world();
+        let mut m = WorldMap::new(&world);
+        m.pos = [100.0, 60.0];
+        m.scale = 4.0;
+        let screen = Vec2::new(800.0, 600.0);
+        let table = color_table();
+        // The mouse over tile (100, 60): origin + (tile - 10) * scale.
+        let origin = map_origin(m.pos, m.scale, screen);
+        let mouse_at = |tx: i32, ty: i32| {
+            Vec2::new(
+                origin[0] + (tx - 10) as f32 * m.scale + 1.0,
+                origin[1] + (ty - 10) as f32 * m.scale + 1.0,
+            )
+        };
+        // An iron-ore cell (tile 6, `MapObject.Iron`, `Lang.cs:575`).
+        let i = world.index(100, 60);
+        m.tiles[i] = MapTile::create(table.tile_lookup[6], 200, 0);
+        assert_eq!(
+            fullscreen_hover_name(&world, &m, &[], mouse_at(100, 60), screen).as_deref(),
+            Some("Iron")
+        );
+        // A dark cell (`Light <= 40`, `:55809`) answers nothing.
+        m.tiles[i] = MapTile::create(table.tile_lookup[6], 40, 0);
+        assert_eq!(fullscreen_hover_name(&world, &m, &[], mouse_at(100, 60), screen), None);
+        // Outside the drawable window (`flag2`, `:55786-55802`).
+        assert_eq!(fullscreen_hover_name(&world, &m, &[], mouse_at(5, 60), screen), None);
+        // A chest cell (tile 21 style 0) with a named chest at the anchor:
+        // "<style row>: <name>" (`:56640`).
+        m.tiles[i] = MapTile::create(table.tile_lookup[21], 200, 0);
+        world.tiles[i] = Tile { kind: 21, ..Default::default() };
+        world.tiles[i].flags |= FLAG_ACTIVE;
+        let mut chest = crate::chest::WorldChest { tile: (100, 60), ..Default::default() };
+        chest.name = "Loot".into();
+        assert_eq!(
+            fullscreen_hover_name(&world, &m, &[chest], mouse_at(100, 60), screen).as_deref(),
+            Some("Chest: Loot")
+        );
+        // No chest at the anchor -> the bare row 0 (`:56634-56637`).
+        assert_eq!(
+            fullscreen_hover_name(&world, &m, &[], mouse_at(100, 60), screen).as_deref(),
+            Some("Chest")
+        );
     }
 
     #[test]
