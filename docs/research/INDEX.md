@@ -83,6 +83,7 @@ per `docs/superpowers` agreements).
 | 380 | SWEEP-LUCK-LOOT (W4-f32 resume: the Player.cs luck-factor/loot-drop census, the projectile-side Lucky Coin proc port, the e26 factor-census disjointness compose, the minecart-strike gap + dead GetClosest helpers; code-only) — RENUMBERED 75→380 per registry §10 (75 = g37's worldgen-pass-reconcile, 04:32:49) | `380-sweep-luck-loot.md` | ✅ |
 | 82 | DOC-SWEEP lane 11: movement/tile sounds (W4-c14 continuation — the vanity-rocket producer + the 53/55/159 playing guards CLOSED; swim/landing/grapple/mount-loop census; code-only) | `82-doc-sweep-move-sounds.md` | ✅ |
 | 371 | Mount special-ability census (M2-MOUNT-4, W4-c14 - Scutlix+Santank PORTED; Drill/dash/stomp contracts; Meowcart speed-invariance; SEALED with the f6 mutual receipt, the M5-COMBAT-8 combat-seam owner contract, the 441/453 MP-scope correction + the family bible; code-only; renumbered 83→371 per registry §10 — slot 83 = d130 weather-reconcile) | `371-mount-abilities-census.md` | ✅ SEALED |
+| 102 | DOC-SWEEP lane 23: the lights gaps (W4-e7: Snapping-Stone trio lights + global-flicker oscillators landed; wing-27 f3-owned, modern UpdateLightDecay cited; code-only) | `102-doc-sweep-lights.md` | 🟡 |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

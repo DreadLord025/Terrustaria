@@ -836,6 +836,22 @@ pub(crate) struct App {
     /// `Main.demonTorch` / `Main.demonTorchDir` (`DoUpdate_AnimateTileGlows`).
     pub(crate) demon_torch: f32,
     pub(crate) demon_torch_dir: f32,
+    /// `Main.martianLight` / `Main.martianLightDir` (`DoUpdate_AnimateTileGlows`,
+    /// `Main.cs:18251-18261`): the Martian Madness glow pulse, 0..1 by 0.015
+    /// per frame. W4-e7 lane 23 — the oscillator lands (the `demon_torch`
+    /// precedent); its reader (`TileDrawing.cs:498`'s `_martianGlow`,
+    /// `drawdata_cases_a::martian_glow`) stays fed 0 until the glow pass +
+    /// the event land (research/102). Init 1f / dir 1 (`Main.cs:66831-66832`).
+    pub(crate) martian_light: f32,
+    pub(crate) martian_light_dir: f32,
+    /// `Main.masterColor` / `Main.masterColorDir` (`DoUpdate_AnimateCursorColors`,
+    /// `Main.cs:18225-18235`): the master-mode text pulse, 0..1 by 0.05 per
+    /// frame. W4-e7 lane 23 — the oscillator lands; its readers (the rarity
+    /// -13 master colour, `Main.cs:20249`/`:20562`, `PopupText.cs:669`,
+    /// `TileDrawing.cs:9555`) stay unported (research/102). Init 1f / dir 1
+    /// (`Main.cs:66833-66834`).
+    pub(crate) master_color: f32,
+    pub(crate) master_color_dir: f32,
     /// `Main.DiscoR/G/B` and the `Main.DiscoStyle` cycle (`DoUpdate_AnimateDiscoRGB`).
     pub(crate) disco: [u8; 3],
     pub(crate) disco_style: u8,
@@ -3983,6 +3999,12 @@ impl App {
             // `Main.demonTorch = 1f; Main.demonTorchDir = 1` (Main.Initialize).
             demon_torch: 1.0,
             demon_torch_dir: 1.0,
+            // `Main.martianLight = 1f; martianLightDir = 1` / `masterColor = 1f;
+            // masterColorDir = 1` (Main.Initialize, Main.cs:66831-66834).
+            martian_light: 1.0,
+            martian_light_dir: 1.0,
+            master_color: 1.0,
+            master_color_dir: 1.0,
             // `Main.DiscoR = 255` (Main.Initialize); G/B and the style start at 0.
             disco: [255, 0, 0],
             disco_style: 0,

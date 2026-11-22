@@ -14854,6 +14854,13 @@ pub struct ProjectilePool {
     /// AFTER the attenuation gate, the S1-E-21c queue→drain convention
     /// (`Main.cs:17775-17777` wraps the whole `UpdateProjectiles` walk).
     pending_proj_sounds: Vec<(u16, i32, f32, f32, f32)>,
+    /// W4-e7 lane 23 — the Snapping Stone strike family's cue intents
+    /// (`TryMakingSnappingStoneStrike`'s particle-body + owner-side plays,
+    /// `Projectile.cs:14355`/`:14363`/`:14383-14394`): the pool cannot
+    /// borrow the audio mid-walk, so they queue here and the world-sim
+    /// pass drains them on the hitting lane's stream — the S1-E-21c
+    /// queue→drain convention (`snapping_stone.rs`).
+    pending_striking_sounds: Vec<crate::snapping_stone::StrikeSound>,
     /// `NewProjectile`'s `TryUpdateChannel` intents (`Projectile.cs:11097-
     /// 11100`): `(kind, slot)` per local-owner spawn this tick, drained by
     /// the world-sim pass onto the player's `_channelShotCache` — the LAST
@@ -15283,6 +15290,7 @@ impl ProjectilePool {
             pending_npc_hit_sounds: Vec::new(),
             pending_lucky_coin_drops: Vec::new(),
             pending_proj_sounds: Vec::new(),
+            pending_striking_sounds: Vec::new(),
             pending_channel_tracks: Vec::new(),
             spear_owner: None,
             pending_spear_hold: None,
@@ -16542,6 +16550,22 @@ impl ProjectilePool {
         std::mem::take(&mut self.pending_proj_sounds)
     }
 
+    /// W4-e7 lane 23 — queue the Snapping Stone strike family's cue
+    /// intents (`snapping_stone.rs::try_making_snapping_stone_strike`):
+    /// the particle bodies' Item72/PyroclasticStone/ArmletOfRuin plays and
+    /// the owner-side Item30/Item20/Item43, in the C#'s play order. The
+    /// world-sim pass drains them through
+    /// `snapping_stone::play_striking_sound` on the hitting lane's stream.
+    pub(crate) fn queue_striking_sounds(&mut self, sounds: Vec<crate::snapping_stone::StrikeSound>) {
+        self.pending_striking_sounds.extend(sounds);
+    }
+
+    /// W4-e7 lane 23 — the queued strike cues, drained at the pass tail
+    /// (the `drain_proj_sounds` convention).
+    pub fn drain_striking_sounds(&mut self) -> Vec<crate::snapping_stone::StrikeSound> {
+        std::mem::take(&mut self.pending_striking_sounds)
+    }
+
     /// `NewProjectile`'s `TryUpdateChannel` intents (`Projectile.cs:11097-
     /// 11100`): `(kind, slot)` per local-owner spawn this tick. The world sim
     /// drains them onto the player's `_channelShotCache` — the last spawn of
@@ -16619,6 +16643,9 @@ impl ProjectilePool {
     /// `WhipTagEffect.CanRunHitEffects` (`:75-86`) gates on the summon/sentry
     /// shot kinds — the port has none yet, so `is_summon_shot` (set by
     /// M4-PROJ-8's minion/sentry spawns) rejects everything until then.
+    /// W4-e7 lane 23: the third return is `changes.AddProjectileTagDamage`
+    /// — the Armlet of Ruin strike gate (`:13405`) reads the SAME `changes`
+    /// the damage math computed (the C# runs `ModifyHit` once at `:12920`).
     fn tag_damage_for(
         &self,
         slot: usize,
@@ -16627,7 +16654,7 @@ impl ProjectilePool {
         crit: bool,
         player: Option<&crate::player::Player>,
         rng: &mut dyn tr_core::loot::DropRng,
-    ) -> (i32, bool) {
+    ) -> (i32, bool, bool) {
         let p = &self.slots[slot];
         // `WhipTagEffect.CanRunHitEffects` (`:75-86`): owned + the four-way
         // shot test (`minion || MinionShot || sentry || SentryShot`). The
@@ -16637,10 +16664,10 @@ impl ProjectilePool {
         let gate = p.is_summon_shot
             || crate::projectile::can_run_whip_hit_effects(p.minion, p.sentry, p.kind);
         if !gate || p.owner == 255 {
-            return (base, crit);
+            return (base, crit, false);
         }
         let Some(player) = player else {
-            return (base, crit);
+            return (base, crit, false);
         };
         let mut changes = tr_core::whip::TagDamageChanges::none();
         for tag_type in player.tag_effects.active_types() {
@@ -16652,6 +16679,7 @@ impl ProjectilePool {
         (
             crate::tag_effects::apply_tag_damage(base, &changes, p.bonus_tag_damage, p.kind),
             crit,
+            changes.add_projectile_tag_damage,
         )
     }
     /// `TagEffectStack.OnHit` (`Projectile.cs:13658` → `TagEffectStack.cs:115-121`):
@@ -23263,7 +23291,9 @@ impl ProjectilePool {
             // the summon/sentry gate (`WhipTagEffect.CanRunHitEffects`)
             // rejects every ported shot until M4-PROJ-8, the synthetic tests
             // set the slot flag directly. The tag's forced crit wins.
-            let (mut dmg, mut hit_crit) =
+            // W4-e7 lane 23: the third value is `changes.AddProjectileTagDamage`
+            // — the Armlet strike gate (`:13405`) reads it below.
+            let (mut dmg, mut hit_crit, tag_adds_damage) =
                 self.tag_damage_for(slot, idx as u16, damage, crit, player.as_deref(), rng);
             // `:12934-12937`: the Eye-of-Cthulhu yoyo's homing dash (1130)
             // never crits.
@@ -23431,6 +23461,44 @@ impl ProjectilePool {
                             || (kind == CHIK_YOYO && pl.every_some_yoyo_hits(3, false));
                     if doubled {
                         dmg = ((dmg as f32) * 2.0) as i32;
+                    }
+                }
+            }
+            // W4-e7 lane 23 — the Snapping Stone trio's projectile strikes
+            // (`Projectile.cs:13397-13408`): three independent ifs after the
+            // yoyo doublings, BEFORE the boomerang arm / StatusNPC /
+            // StrikeNPC. `(melee || ranged) & owned` + accPyroclast → type 1,
+            // `ranged & owned` + accSnappingStone → type 0,
+            // `changes.AddProjectileTagDamage & owned` + accArmletOfRuin →
+            // type 2. `ownedBySomeone` is the pass's gate above; the bonus
+            // rides the rolled `dmg` (the C# `ref dmg` at this point is the
+            // post-DamageVar value). The dust draws ride the
+            // `UpdateProjectiles` stream inline; the sounds queue on the
+            // pool (the pass-tail drain, `world_sim/projectiles.rs`).
+            if owned_by_someone {
+                if let Some(pl) = player.as_deref_mut() {
+                    let (pm, pr) = (self.slots[slot].melee, self.slots[slot].ranged);
+                    let types = crate::snapping_stone::pve_strike_types(pl, pm, pr, tag_adds_damage);
+                    if !types.is_empty() {
+                        let targeter = {
+                            let sp = &self.slots[slot];
+                            (sp.pos.x, sp.pos.y, sp.w, sp.h)
+                        };
+                        let owner = self.slots[slot].owner;
+                        for snapping_type in types {
+                            crate::snapping_stone::try_making_snapping_stone_strike(
+                                self,
+                                world,
+                                npcs,
+                                pl,
+                                owner,
+                                targeter,
+                                idx,
+                                &mut dmg,
+                                snapping_type,
+                                rng,
+                            );
+                        }
                     }
                 }
             }

@@ -1081,14 +1081,38 @@ impl Audio {
         pitch_offset: f32,
         rng: &mut tr_core::unified_random::UnifiedRandom,
     ) -> Option<&'static str> {
+        self.play_use_sound_scaled(style_index, x, y, pitch_offset, 1.0, rng)
+    }
+
+    /// W4-e7 lane 23 — [`Self::play_use_sound`] with the C# call's
+    /// `volumeScale` argument (`SoundEngine.cs:88-99` passes
+    /// `type.Volume * volumeScale` into the engine; the legacy player's
+    /// `soundEffectInstance.Volume *= volumeScale`, `LegacySoundPlayer.cs:1411`,
+    /// multiplies AFTER the attenuation walk). The Snapping Stone strike
+    /// family's 0.08/0.5 scales ride it (`snapping_stone.rs`); every other
+    /// caller keeps the 1.0 wrapper above. The draw order is unchanged:
+    /// the `GetRandomPitch` NextFloat, the attenuation gate, then case 2's
+    /// `Main.rand` roll — the scale only touches the final gain.
+    pub fn play_use_sound_scaled(
+        &mut self,
+        style_index: u16,
+        x: f32,
+        y: f32,
+        pitch_offset: f32,
+        volume_scale: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
         let style = &crate::soundid::SOUND_STYLES[style_index as usize];
         // `SoundEngine.cs:99` — `pitchOffset + type.GetRandomPitch()`; the
         // NextFloat draw is consumed even at variance 0 (`SoundStyle.cs:42`).
         let draw = self.sound_style_random.next_float();
         let pitch_offset =
             pitch_offset + sound::get_random_pitch(style.pitch_variance, draw);
-        // The façade's volumeScale is `type.Volume * 1` (`SoundEngine.cs:99`).
-        self.play_item_style(style_index, x, y, pitch_offset, style.volume, rng)
+        // The façade's volumeScale is `type.Volume * 1` (`SoundEngine.cs:99`)
+        // — the style volume rides INSIDE `play_item_style`'s case gain
+        // (W4-e7 keep-one: passing it here too would double it against the
+        // `gain *= volume_scale` tail, `LegacySoundPlayer.cs:1411`).
+        self.play_item_style(style_index, x, y, pitch_offset, 1.0, rng)
     }
 
     /// M2-MOUNT-4 (W4-c14) — the Santank ability cues (`Mount.cs:3300`
@@ -1146,7 +1170,7 @@ impl Audio {
         {
             return None;
         }
-        let (cue, volume_scale, pitch) = if style.sound_id == 42 {
+        let (cue, mut gain, pitch) = if style.sound_id == 42 {
             // Case 42 (`:1376-1381`): no volume tweak, no pitch switch —
             // only the caller's offset, clamped at `:1410`.
             let base = style.trackable.expect("trackable style carries an asset");
@@ -1192,7 +1216,12 @@ impl Audio {
             .find(|n| *n == cue);
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let Some(name) = name else { return None };
-        let sink = self.emit(name, x, y, volume_scale, pitch);
+        // `soundEffectInstance.Volume *= volumeScale` (`LegacySoundPlayer.cs:1411`,
+        // W4-e7) — the caller's scale multiplies the case gain (the tweak is
+        // already folded into `gain` above; the 1.0 façade wrapper keeps every
+        // pre-W4-e7 play byte-identical).
+        gain *= volume_scale;
+        let sink = self.emit(name, x, y, gain, pitch);
         // W4-c14 doc-sweep — the case-2 instance pool (`:580-607`): the
         // guarded styles 53/55/159 and the default arm stop the slot's old
         // instance and re-create it; the stack-allowed list (`:595-605`:

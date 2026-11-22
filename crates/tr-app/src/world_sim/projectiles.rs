@@ -592,6 +592,16 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             app.audio.play_proj_sound((id, style), x, y, pitch_offset, rng);
         }
     }
+    // W4-e7 lane 23 — the Snapping Stone strike family's queued cues
+    // (`TryMakingSnappingStoneStrike`'s particle-body + owner-side plays,
+    // `Projectile.cs:14355`/`:14363`/`:14383-14394`): the PVE walk queued
+    // them mid-hit (the pool cannot borrow the audio); they drain here on
+    // the SAME `UpdateProjectiles` stream (`Main.cs:17775`), the S1-E-21c
+    // queue→drain convention. The case-2 draws defer to this tail (the
+    // recorded ANALYSIS deviation); the particle dust draws ran inline.
+    for sound in app.projectiles.drain_striking_sounds() {
+        crate::snapping_stone::play_striking_sound(&mut app.audio, sound, rng);
+    }
     // `NewProjectile`'s `TryUpdateChannel` (`Projectile.cs:11097-11100`):
     // the local spawns of this tick track the cancel key's expected type —
     // the last one wins (`ChannelCancelKey.TryTracking` `Player.cs:134-140`).

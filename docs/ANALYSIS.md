@@ -38582,9 +38582,10 @@ the stream while storing nothing).
   ichor stream 524, confetti 289, Volcano eruption) are OTHER workers'
   lanes; only the direct-swing debuffs land here.
 - 6178's `accPyroclast` half (`:14582`, the snapping-stone strike
-  `:44338-44341`) and 6185's `accPoisonBarb`/`pStone` halves
+  `:44338-44341`) landed in W4-e7 lane 23's strike half (`snapping_stone.rs`,
+  wired at this melee site); 6185's `accPoisonBarb`/`pStone` halves
   (`:14616-14617`) stay unported families — only the on-hit flag halves
-  land.
+  land here.
 - The C# evaluates the per-weapon switch for ANY item type — including
   tools swung as melee; the port matches on `held.kind` at the same
   site, so the Molten Pickaxe/Hamaxe rows fire on their mining-tool
@@ -40990,3 +40991,243 @@ vanity-tier producer + the divergent cue) and
 53/55/159 playing-guard refusal). The movement-sound census verdicts (swim
 strokes none, landing thud = the hurt sound, grapple fire/reel ported, no
 mount ambient loop beyond d80b) live in research/82 §3-4.
+## The NPC lights, second half (W4-e7, S1-E-5 wave 4, 2026-11-21, code-only)
+
+**Claim map (probed in-flight before work).** NPC.cs carries exactly 80
+`Lighting.AddLight` call sites (full-file grep). W4-c20's pushed claim
+(`9555e586`) owns the FIRST 40 (`:21307`-`:48641`, `npc_lights_a.rs`);
+this lane (`task/W4-e7-addlight-npc-2`) owns the SECOND 40
+(`:49929`-`:92412`). The in-flight `npc_lights_b.rs` draft (dirty=1) was
+continued, verified site-by-site against the C#, and landed in five
+~10-site commits. No overlap with c20 (first half) or e8/f9 (Main.cs
+tile sites).
+
+Port: `crates/tr-app/src/npc_lights_b.rs` (1014 lines), declared in
+`main.rs`, fed per live NPC in `app/frame/draw.rs` after the aiStyle-8
+tail (`npc_lights.rs`) and before the Horseman (W-10). One
+`EntityLights` pair, `Main.npc` slot order, draw-side. The feed runs
+`UpdateNPC`'s call order: CastLights (`:90320`) -> BuffApplyVFX
+(`:90378`) -> AI (`:90423`) -> UpdateTrails (`:90512`).
+
+**The 40 sites.** Ported: destroyer airborne 41, probe 42, town
+shimmer/magic/arrival/slime 44-48, Medusa 49-50, torch zombies 51-54,
+fighter tail 55-59, slime lantern/rainbow/golden/shimmer/lava 60/63-66,
+trail mode-4 68, buff-VFX 69-75, cast 79-80. Cited skips: Hungry II 116
+(43, no kind), ore/herb slime content (61/62, deferred init + NPC.color),
+the three CastLights flicker arms (76/77/78, `Next(28,42)` per tick).
+Already landed: Horseman (67, `npc_ai_unicorn_b::horseman_light`) -
+census-only, no double-feed.
+
+**Fixes vs the in-flight draft (all re-derived from the C#):**
+1. `cs_type` no longer maps `Hungry => 116`. The roster's `Hungry` is
+   TheHungry 115 (aiStyle 29, `data.rs:2326`; bestiary net_id 115;
+   `world_sim/npcs.rs:6017`). The 116 arm (`:52425-52428`) is a separate
+   30x32/80 HP/aiStyle-2 kind with no port kind - lighting it via the 115
+   roster would light the wrong NPC. Now a cited skip; the `Hungry`
+   fallback resolves to 115, which the `type == 116` gate never matches.
+2. `torch_zombie_light`'s neighbour liquid check now PASSES out of
+   world: `Framing.GetTileSafely` (`Framing.cs:426-438`) returns a fresh
+   `Tile` (liquid 0) there, not a failed read. The draft's `is_some_and`
+   wrongly darkened torches at the world edge.
+3. `town_shimmer_light` emits for EVERY reached state-25 tick, not only
+   `ai[1] >= 30`: the `AddLight` line (`:53232`) sits after the
+   `ai[2] > 0` countdown return (`:53206-53214`) but outside the
+   `>= 30` block; below 30 the `Utils.Remap` clamps to a zero amount
+   (the source still enters the C#'s list). The `ai[2] > 0` early-return
+   is now gated.
+4. The town magic/arrival aura arms carry the aiStyle-7 dispatch gate
+   (`NPC.cs:20812-20816`): `ai[0]` states are per-machine, so a non-town
+   machine's state 14/24 must never light.
+5. `can_display_buffs` justification corrected: the flag IS read at
+   `:91145` (the draft claimed "no other reader"). The Golem 245-248
+   clears (`:18010/18015/18020`) live inside `getGoodAdjustments`, gated
+   by `Main.getGoodWorld` (`:17843`); the port's machines run stock
+   (`get_good_world: false`), so the fold to TRUE is correct for the
+   shipped config. The gate is kept explicit as the FTW seam.
+
+**RNG / determinism.** Every ported `AddLight` line is RNG-free; the
+rand-bearing dust halves are skipped wholesale (the `npc_lights.rs`
+precedent), so the feed cannot move any `Main.rand` stream. The three
+CastLights flicker arms draw `Next(28,42)` unconditionally per tick and
+stay cited skips until a sim-side feed lands. netOffset is added only
+where the C# wraps it (Medusa, torch zombies, LavaSlime 59, BuffApplyVFX
+head); every other arm reads the raw position.
+
+**Code-only mode: no cargo/rustc/rustfmt/tests/dotnet/graphify invoked;
+the 17 witness tests are WRITTEN, NOT RUN.**
+
+## The remaining-files AddLight census (W4-e7 close, S1-E-5, 2026-11-21, code-only)
+
+**Scope.** The AddLight family's file census was closed for NPC.cs (c20/e7/f8,
+80 sites), Projectile.cs (c19/e6/f7, 107 sites), Main.cs (e8/f9, 5 tile sites)
+and Item.cs/WorldItem.cs (g20, the item family). This round censuses the five
+files the dispatch named as REMAINING — `Player.cs`, `TileObject.cs`,
+`Wiring.cs`, `WorldGen.cs`, `NetMessage.cs` — against the landed feeds, ports
+the gaps, and closes the census (the W4-f9 `c2740784` precedent).
+
+**Full-file census (direct paths, no junction recursion).** Case-sensitive
+`Lighting.AddLight` grep plus the `PlotTileLine|CastLight|SpreadLight|
+FloodFillTile` delegate cross-check:
+
+| File | `AddLight` | light-delegate forms | verdict |
+| ---- | ---------- | -------------------- | ------- |
+| `TileObject.cs` | 0 | 0 | EMPTY |
+| `Wiring.cs` | 0 | 0 | EMPTY |
+| `NetMessage.cs` | 0 | 0 | EMPTY |
+| `WorldGen.cs` | 0 | 1 `PlotTileLine` (`:72966`) | EMPTY of lights — the one `PlotTileLine` uses `DelegateMethods.CheckStopForSolids` (a solid-probe walk, NOT a light delegate) |
+| `Player.cs` | 46 | 4 `CastLightOpen` PlotTileLine (`:12555/:12559/:14561/:14562`) + 1 `FloodFillTile` (`:50135`) | 32 landed + 10 ported here + 4 cited |
+
+The Player delegate lane is the **light-map-direct** family (the f7
+`proj_addlight_census.rs` skip lane): `CastLightOpen`/`SpreadLight` write the
+light map through `Utils.PlotTileLine`/`FloodFillTile`, not the `EntityLights`
+per-frame list. The yoraiz0r-eye trail (`:12555/:12559`) and the
+Magiluminescence accessory (`:14561/:14562`) are `CastLightOpen` walks; 4776's
+fairy-glowstick spread (`:50135`) is `FloodFillTile` — its `AddLight(pos2, rgb)`
+line (`:50136`) already lands in `player_lights.rs::held_item_lights`. None is
+an `EntityLights` site; all stay in the documented delegate skip lane.
+
+**The Player gap batch.** `player_lights.rs` (S1-E-5, 2026-11-18) landed 32 of
+the 46 sites and listed 14 as dropped ("each needs a mount/armor/stealth system
+the port does not carry yet"). Re-censusing those 14 against the CURRENT port:
+the mount roster (`mount.rs`, Rudolph 0 + the Chillet 62-65), the armor-slot
+registry resolution (`ItemDef.head_slot/body_slot/leg_slot`, the draw's
+`render/entities.rs:1616` convention), `melee_swing.rs`'s hitbox/placement, the
+wing-slot table (`Player::wing_slot`) and `Item.GetPhaseColor`'s inputs
+(`ItemDef.projectile` + `misc_counter`) have ALL since landed. **10 of the 14
+are now unblocked** and ported verbatim in `crates/tr-app/src/player_lights_b.rs`
+(740 lines), declared in `main.rs`, fed in `app/frame/draw.rs` after the
+held-light family into the ONE `EntityLights` pair:
+
+| Site | Arm | Colour | Anchor / gate |
+| ---- | --- | ------ | ------------- |
+| `:24495-24497` | Rudolph's three-tile trail (`Update`, mount 0) | `(0.5, 0.2, 0.05)` ×3 | int-division centre `num`, `num+dir`, `num+2dir`; live mounted height (62) |
+| `:31279` | armor HEAD light (`UpdateArmorLights`) | head triplet ×(1+0.5/match) | `(w/2+8dir, 2)` spun by fullRotation |
+| `:31297` | armor BODY light | body triplet ×bonus | `(w/2+8, h/2)` spun |
+| `:31315` | armor LEGS light | legs triplet ×bonus | `(w/2+8dir, h*0.75)` spun |
+| `:21354` | Chillet dash light (`DashMovement` dash-6) | Ignis 63/65 `(0.6,0.3,0.1)` else `(0.5,0.1,0.6)` | `base.Center`, quotient-truncating |
+| `:29547` | Kazzymodus wing (`WingFrame` wings 28) | `(0.3, 0.1, 0.4)` | `base.Bottom`, airborne + ShouldDrawWingsThatAreAlwaysAnimated |
+| `:44916` | phase-blade held light (`ItemCheck_EmitUseVisuals`) | `GetPhaseColor(shoot)*0.5f` bytes | `(itemLocation.X+6+vx, itemLocation.Y-14)` |
+| `:45032` | Chillet melee-swing light (same fn tail) | dash colour ×0.5 (Vector3 float) | `itemRectangle.Center` (melee_hitbox) |
+
+(10 sites: the Rudolph trail is 3 `AddLight` lines, the armor block 3, the
+other four arms 1 each.)
+
+**Kept C# quirks (re-derived from the source windows):**
+1. `UpdateArmorLights` body case 190 (`:31226-31230`) and legs case 130
+   (`:31257-31261`) write the HEAD triplet (`num`/`num2`/`num3`), NOT their own
+   — the Stardust breastplate/leggings light the head colour. Both kept.
+2. The +0.5 match bonus is per-triplet-equality (`num10 += 0.5` for body match
+   AND legs match, `:31266-31273`), so a full matching set lights ×2.
+3. The phase-blade `Color * 0.5f` is the truncating BYTE operator (25→12,
+   127→63, 255→127), then `(float)(int)R / 255f`; the Chillet swing's
+   `Vector3 * 0.5f` is FLOAT (0.5→0.25), NOT byte — the two halves differ.
+4. The rainbow 1101/1102 `GetPhaseColor` arm rides `Utils.MultiLerp`
+   (`Utils.cs:292-303`) over the 9-entry palette at `miscCounterNormalized`;
+   the port's `misc_counter` wraps without the C# 300 reset, so `% 300`
+   recovers the C# value (both tick once per update).
+5. The swing `itemLocation`'s `mountOffset` IS carried
+   (`HeightOffsetHitboxCenter` = `mount.PlayerOffsetHitbox`, `:42846` →
+   `:3253-3267`) — the Chillet swing light runs mounted. This is distinct from
+   the held-light family's `ApplyItemPositionOffsetFromMount` `+ pos` (not
+   present on these two sites).
+
+**Deliberate folds:** `vortexStealthActive` (`:31151`) has no port field —
+folds false (the Vortex stealth toggle is unported), so the armor lights are
+never suppressed. `isDisplayDollOrInanimate` folds false. `wings`/`wingsLogic`
+are the SAME port field (`player.rs:5156-5161`), so `WingFrame`'s
+`flag = wingsLogic != wings` (`:29470`) folds false and the wing-28 `!flag`
+gate is always open; the merman `wings = 0` clear (`:25581`) is an unported
+swim-visual sibling. `noMelee`/`noUseGraphic` have no `ItemDef` fields — the
+phase-blade gate reduces to the 18-kind list (all 18 verified
+`noMelee = noUseGraphic = false` per-case in `Item.cs`) and the Chillet swing
+gate reads the `melee` class flag + useStyle 1. `gravDir` is 1.
+`should_float_in_water` widened `pub(crate)` for the wing gate.
+
+**What stays dropped (the other 4 of the 14):** the wing-27 Shroomite light
+(`:36026`, `0.4f * stealth` — the port's `stealth` has NO producer, it is only
+ever set in a knockback witness `player.rs:20160`) and the Snapping Stone trio
+(`:24575-24583`, gated on `accSnappingStoneLightUp` = `cooldown == 0` with
+`accSnappingStone`/`accPyroclast`/`accArmletOfRuin` — none of those flags, the
+360-tick cooldown setter `Projectile.cs:14316`, nor
+`TryMakingSnappingStoneStrike` `:14283` is ported). The light pets are
+Projectile.AI sites (projectile family); NightOwl sets `nightVision` only.
+
+**RNG argument.** No ported arm draws `Main.rand`: the Chillet dash's 8-dust
+loop (`:21355-21371`), the phase-blade region's dust branches and the
+use-visual dust are all skipped wholesale (the `player_lights.rs` precedent),
+so the UpdatePlayers stream is untouched. The feed collects after the fixed
+step like the item/NPC/player feeds; the `EntityLights` max-merge is
+commutative, so the intra-family order only documents the C# layout.
+
+**Code-only mode: no cargo/rustc/rustfmt/tests/dotnet/graphify invoked; the
+14 witness tests in `player_lights_b.rs` are WRITTEN, NOT RUN.** The first
+build after the merge must run `cargo test -p tr-app player_lights_b` plus the
+catalog command.
+
+## DOC-SWEEP lane 23: the lights gaps (W4-e7, 2026-11-21, code-only)
+
+The four cited gaps from the census close above, re-probed against the
+in-flight branch claims (research/102). Two landed here, two stay cited
+(one owned by an unmerged branch, one a determinism-affecting deferred port).
+
+**The Snapping Stone trio — LANDED (`5ae32127`).** The three ready lights
+(`Player.cs:24571-24585`) now port: `accSnappingStone` 6167 / `accPyroclast`
+6178 / `accArmletOfRuin` 6179 grants (`ApplyEquipFunctional`
+`:14494-14496`/`:14580-14587`), `ResetEffects` clears (`:18476-18478`), the
+shared `accSnappingStoneCooldown` countdown (`Update_SnappingStone`
+`:28385-28410`, wired at the `:24564` world-sim position before
+`Update_AmmoCycler`), the light-up getter (`:3391-3396` = `cooldown == 0`),
+and `snapping_stone_lights` in the ONE `EntityLights` batch (10 → 13 of the
+14). The strike machine (`TryMakingSnappingStoneStrike`,
+`Projectile.cs:14283-14395`, the 360-tick setter `:14316`) LANDED in the strike
+half (`snapping_stone.rs` + the 1121/1131/1132 `proj_data` rows + the
+melee/PVE/recharge wiring, research/102 §1): the cooldown now arms to 360 on a
+strike, so the lights dim while cooling and relight at the recharge — the C#
+behaviour for a struck accessory (the never-struck case still lights whenever
+worn). The recharge cue at the cooldown's zero crossing (`:28394-28408`,
+Item30/Item20/Item28 at `MountedCenter`) fires at the world-sim countdown site
+(`snapping_stone_recharge` replays the burst's draws + returns the cue). The
+particle VISUALS are the cite-skip WITH draws kept (the `prefix.rs` convention,
+the per-arm census in research/102 §1); the strike sounds queue on the pool and
+drain on the hitting lane's stream (the S1-E-21c queue→drain convention — the
+case-2 sound draws defer to the drain, the dust draws stay inline). 7 lantern
+witnesses + 7 strike-half witnesses WRITTEN NOT RUN.
+
+**wing-27 Shroomite light — cited skip (f3 owns the producer).** The producer
+(`update_stealth`, `Player.cs:25733-25899`, `stealth` default 1f, the Shroomite
+set grant `ArmorSetBonuses.cs:370-373`/`:392-394`) LANDED on the in-flight
+`task/W4-f3-dust-player-3` branch but is NOT merged here (verified
+`git merge-base --is-ancestor` exit 1). On this base `stealth` has no producer,
+so the light would be a constant `0.4f` — wrong. Wiring recipe once f3 merges:
+`shroomite_wing_light(p)` gated `wings_logic == 27 && has_wings` (the port's
+`wings`/`wingsLogic` are one field, so `wingsLogic == wings` folds true),
+`0.4 * stealth` at the quotient-truncated centre, rgb `[n, n*0.9, n*0.2]` —
+the `kazzymodus_wing_light` shape. NOT stacked on the unmerged branch.
+
+**The global-flicker oscillators — LANDED (`999b292af`).** `masterColor`
+(`DoUpdate_AnimateCursorColors`, `Main.cs:18225-18235`, ±0.05) and
+`martianLight` (`DoUpdate_AnimateTileGlows`, `:18251-18261`, ±0.015) ride a
+shared `bounce_oscillator` helper (the `demon_torch` precedent), init 1f/dir 1
+(`:66831-66834`), RNG-free. The per-tile torch flicker itself is landed
+(d56/e8, `scanner.rs::torch_lights`); these are the global state half. The
+readers stay cited: `martianLight` → `TileDrawing.cs:498`'s `_martianGlow`
+(fed 0 until the glow pass + Martian event), `masterColor` → the rarity -13
+master text colour (`Main.cs:20249`/`:20562`). 3 witnesses WRITTEN NOT RUN.
+
+**The modern `UpdateLightDecay` table — cited (deferred).** The new engine's
+per-medium decay (`LightingEngine.cs:141-206`) varies water decay per
+`Main.waterStyle` (13 arms) and applies nightVision ×1.03 / blind ×0.95 /
+blackout+headcovered ×0.85 + the `SceneState.airLightDecay`/`solidLightDecay`
+factors; the port hardcodes style-0 water (`blur.rs:36`) and drops the buff/
+SceneState terms (the `scene.rs:1520-1521` fields have no blur consumer). The
+legacy engine's equivalent IS ported (`legacy.rs:1004-1048`); the WoF `gross`
+block is d65's (S1-E-19d), the modern mask residuals are d66's. The fix adds
+fields to `LightParams`/`LightKey` and changes the cached light output — a
+determinism-affecting change to the frozen G6 path needing a byte-equality
+A/B, in `blur.rs`/`mod.rs` which d66 is actively editing. Deferred to the
+10-lighting.md "[M] Water-style decay + buff/debuff decay" seed (research/102
+§4). The water jitter (S1-A-6) and fixed-18 padding (S1-G-10) are already
+exact — 10-lighting.md deviations 4/5 are stale.
+
+**Code-only mode: no cargo/rustc/rustfmt/tests/dotnet/graphify invoked; the
+10 new witnesses (7 Snapping Stone + 3 oscillator) are WRITTEN, NOT RUN.**
