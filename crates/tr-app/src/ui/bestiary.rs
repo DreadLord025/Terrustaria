@@ -1595,6 +1595,11 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        // W4-d9 wiring (d40 rows): the dragon head's portrait box (the
+        // SetDefaults 32x32; the segments fold onto its entry). The 521
+        // squidhead's 60x60 box rides its own entry.
+        (NpcKind::CultistDragonHead, _) => (sheet_i, 32.0, 32.0, 32.0, white),
+        (NpcKind::AncientCultistSquidhead, _) => (sheet_i, 60.0, 60.0, 60.0, white),
     }
 }
 

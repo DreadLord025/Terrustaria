@@ -4175,6 +4175,104 @@ fn fire_non_ammo_shot(
             fx_kb,
             false,
         );
+    } else if held.kind == 3014 {
+        // W4-d9 wiring — `Player.ItemCheck_Shoot`'s ClingerStaff arm
+        // (`Player.cs:48591-48642`): the cursed-flame wall. The point
+        // walks from the spawn along the aim while the line of sight to
+        // it holds, clamped to the reachable cursor; the down/up tile
+        // scans find the ceiling/floor gap (≤30 tiles each, platforms +
+        // the planter box 380 break the down scan); the wall's height
+        // caps at 15 tiles and its top rides `ai0`, the height `ai1`
+        // (the aiStyle-87 arm pins them, `Projectile.cs:31903-31904`).
+        // No solid ceiling/floor → no spawn (`flag8`). The C# `return`s.
+        let mut point = spawn;
+        let target = limit_point_to_player_reachable_area(
+            Vec2::new(pcx, pcy),
+            world_pos,
+            &app.world,
+        );
+        // `:48597-48606` — the CanHitLine walk toward the clamped cursor.
+        while crate::projectile::can_hit_line(
+            &app.world, p.x, p.y, p.width, p.height, point.x, point.y, 1.0, 1.0,
+        ) {
+            point.x += shot.x;
+            point.y += shot.y;
+            if (point - target).length() < 20.0 + shot.x.abs() + shot.y.abs() {
+                point = target;
+                break;
+            }
+        }
+        // `:48607-48622` — the down scan: the first solid tile, or a
+        // platform / the planter box 380, stops it (≤30 tiles). The C#
+        // reuses `num151` as both the start row and the scan cursor;
+        // `num153` latches the start BEFORE the loop.
+        let mut flag8 = false;
+        let start_row = point.y as i32 / 16;
+        let col = point.x as i32 / 16;
+        let num153 = start_row;
+        let mut row = start_row;
+        let is_platform_or_planter = |w: &tr_core::World, x: i32, y: i32| {
+            w.tile(x, y).is_some_and(|t| {
+                t.active()
+                    && (tr_core::tiledata::SET_PLATFORMS.has(t.kind) || t.kind == 380)
+            })
+        };
+        while row < app.world.height - 10
+            && row - num153 < 30
+            && !crate::projectile::solid_tile(&app.world, col, row)
+        {
+            if is_platform_or_planter(&app.world, col, row) {
+                break;
+            }
+            row += 1;
+        }
+        // `:48619-48622` — no solid AND no platform/planter at the stop.
+        if !crate::projectile::solid_tile(&app.world, col, row)
+            && !is_platform_or_planter(&app.world, col, row)
+        {
+            flag8 = true;
+        }
+        // `:48623-48635` — the up scan from the original row (≤30 tiles),
+        // the gap height capped at 15 tiles, the wall top = floor − height.
+        let num154 = (row * 16) as f32;
+        let mut up = num153;
+        while up > 10
+            && num153 - up < 30
+            && !crate::projectile::solid_tile(&app.world, col, up)
+        {
+            up -= 1;
+        }
+        let mut num155 = num154 - (up * 16 + 16) as f32;
+        if num155 > (16 * 15) as f32 {
+            num155 = (16 * 15) as f32;
+        }
+        let ai3 = num154 - num155;
+        // `:48636` — the X snaps to the tile grid (truncating).
+        point.x = (point.x / 16.0) as i32 as f32 * 16;
+        // `:48637-48640` — the spawn: zero velocity, the class-scaled
+        // damage, ai0 = the wall top, ai1 = the height. NewProjectile
+        // centres the box (`Projectile.cs:10876-10877`); the port's seam
+        // takes the top-left, so the half-box subtracts (the aiStyle-87
+        // arm re-pins Y/height on its first tick).
+        if !flag8 {
+            let data = crate::projectile::proj_data(proj).unwrap();
+            let slot = app.projectiles.spawn_with_data_ai_owned(
+                proj,
+                app.local_id as u8,
+                point.x - data.w * 0.5,
+                point.y - data.h * 0.5,
+                0.0,
+                0.0,
+                raw as i32,
+                fx_kb,
+                ai3,
+                num155,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_armor_penetration(slot, arpen);
+                app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+            }
+        }
     } else {
         // The generic `Item.shoot` firing, with the two
         // per-item tweaks: the Crystal Storm's +/-0.04 spread
@@ -4214,6 +4312,14 @@ fn fire_non_ammo_shot(
             // sub-tick); `NewProjectile`'s default arm assigns them
             // verbatim (`:10920-10924` — 1042 has no spawn-roll case).
             (0.0, 1.0)
+        } else if held.kind == 2880 {
+            // W4-d9 wiring — `Player.cs:49405-49408`: the InfluxWaver's
+            // `ai7 = -1f` → the spawn's `ai[0]` (the generic tail's
+            // `NewProjectile(..., ai7, ai8, ai9)`, `:49437`). The aiStyle-81
+            // arm's launch-fade leg reads `ai[0] == -1` (`Projectile.cs:
+            // 31005`); without the seed the wave would skip the fade and
+            // start mid-pulse. No RNG draw.
+            (-1.0, 0.0)
         } else {
             (0.0, 0.0)
         };
@@ -17852,6 +17958,116 @@ mod use_loop_tests {
             .filter(|s| s.active && s.kind == 308)
             .count();
         assert_eq!(live, 1, "the cap of 1 holds after the spawn");
+    }
+
+    /// W4-d9 wiring — the MagicLantern 3043 USE path (`Player.cs:53242-
+    /// 53245`'s `ItemCheck_ApplyPetBuffs` grant + the generic `:49437`
+    /// shoot tail): the use grants buff 152 at 3600 ticks and spawns the
+    /// 492 light pet at the player centre + aim*10 with zero velocity
+    /// (shootSpeed 0), damage 0. The buff-152 arm's keep-alive + the
+    /// aiStyle-90 machine ride `buff_effects_accessory.rs` /
+    /// `projectile_ai_style90.rs`. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d9_the_magic_lantern_use_grants_the_buff_and_spawns() {
+        let mut app = app_with_staff(3043); // the Magic Lantern — shoot 492, buff 152
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        // The use-start grant (`Player.cs:53242-53245`): buff 152 at 3600.
+        let p = app.player.as_ref().unwrap();
+        let i = p.buffs.find_buff_index(152).expect("the 152 grant");
+        assert_eq!(p.buffs.buff_time[i], 3600, "the ApplyPetBuffs 3600 grant");
+        // The generic shoot tail's 492 spawn: zero velocity (shootSpeed 0),
+        // damage 0, the row's box, the player-centre + aim*10 spawn point.
+        let slot = app.projectiles.slots().iter().find(|s| s.active && s.kind == 492)
+            .expect("the lantern spawned");
+        assert_eq!((slot.vel.x, slot.vel.y), (0.0, 0.0), "shootSpeed 0");
+        assert_eq!(slot.damage, 0);
+        assert_eq!((slot.w, slot.h), (18.0, 32.0), "the 492 row's box");
+        assert_eq!(slot.owner, 0, "the local owner");
+        let (cx, cy) = p.center();
+        // The cursor sits left of the player (the fixture's camera column
+        // 30 vs the player column 33) — the aim is (-1, 0), so the spawn
+        // point is the centre + (-10, 0).
+        assert_eq!((slot.pos.x, slot.pos.y), (cx - 10.0, cy));
+    }
+
+    /// W4-d9 wiring — the ClingerStaff 3014 USE path (`Player.cs:48591-
+    /// 48642`): the cursed-flame wall. A corridor fixture — the player at
+    /// column 33 row 297 (centre row 298), a stone floor at row 300 (the
+    /// app_with_staff floor) and a stone ceiling at row 290 over columns
+    /// 36-44; the cursor sits right at (648, 4773) so the aim is pure +X.
+    /// The point walks right to the cursor (col 40), the down scan finds
+    /// the floor (row 300), the up scan the ceiling (row 290): the gap is
+    /// 9 tiles = 144 px (≤ the 15-tile cap), the wall top = 4800 − 144 =
+    /// 4656. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d9_the_clinger_staff_use_spawns_the_wall_in_the_gap() {
+        let mut app = app_with_staff(3014); // the Clinger Staff — shoot 482, magic
+        // The ceiling over the wall region (the floor row 300 already rides
+        // app_with_staff). Rows 297-299 stay air so the CanHitLine walk holds.
+        for x in 36..=44 {
+            let t = app.world.tile_mut(x, 290).unwrap();
+            t.kind = 1;
+            t.flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        // The cursor right of the player, on the centre row → pure +X aim.
+        app.camera = Vec2::new(648.0, 4773.0);
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        let slot = app.projectiles.slots().iter().find(|s| s.active && s.kind == 482)
+            .expect("the wall spawned in the ceiling/floor gap");
+        // The aiStyle-87 payload: ai0 = the wall top, ai1 = the height.
+        assert_eq!(slot.ai[0], 4656.0, "the wall top (floor 4800 − gap 144)");
+        assert_eq!(slot.ai[1], 144.0, "the 9-tile gap height");
+        assert_eq!((slot.vel.x, slot.vel.y), (0.0, 0.0), "zero spawn velocity");
+        assert_eq!(slot.damage, 43, "the class-scaled magic damage");
+        // NewProjectile centres the 16x200 box on (640, 4773) → (632, 4673).
+        assert_eq!((slot.pos.x, slot.pos.y), (632.0, 4673.0));
+    }
+
+    /// W4-d9 wiring — the ClingerStaff's `flag8` refusal (`Player.cs:48619-
+    /// 48622`): with NO ceiling above the cursor column the up scan runs out
+    /// of solid tiles, the gap is unbounded → no wall spawns. WRITTEN, NOT
+    /// RUN (code-only mode).
+    #[test]
+    fn w4_d9_the_clinger_staff_refuses_without_a_ceiling() {
+        let mut app = app_with_staff(3014); // floor row 300 only, NO ceiling
+        app.camera = Vec2::new(648.0, 4773.0);
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert!(
+            !app.projectiles.slots().iter().any(|s| s.active && s.kind == 482),
+            "no ceiling → flag8 → no wall"
+        );
+    }
+
+    /// W4-d9 wiring — the InfluxWaver 2880 USE path (`Player.cs:49405-
+    /// 49408`'s `ai7 = -1f` → the generic `:49437` tail's `ai[0]`): the
+    /// melee wave spawns with the launch-fade seed the aiStyle-81 arm
+    /// reads (`Projectile.cs:31005`), the aim normalized to shootSpeed 11
+    /// (÷ meleeSpeed), the class-scaled melee damage. Progression: the
+    /// Martian Saucer 395 drop (`loot_db_gen.rs:1292`) + the Zenith 4956
+    /// recipe ingredient (`recipes_gen.rs:17780`) — the d19/d20 bands
+    /// carry the id/row, the use-path seed is this wiring. WRITTEN, NOT
+    /// RUN (code-only mode).
+    #[test]
+    fn w4_d9_the_influx_waver_use_seeds_the_launch_fade() {
+        let mut app = app_with_staff(2880); // the Influx Waver — shoot 451, melee
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        let slot = app.projectiles.slots().iter().find(|s| s.active && s.kind == 451)
+            .expect("the wave spawned");
+        assert_eq!(slot.ai[0], -1.0, "the launch-fade seed (`:49407`)");
+        assert_eq!(slot.ai[1], 0.0);
+        assert_eq!(slot.damage, 100, "the class-scaled melee damage");
+        // The cursor sits left of the player → the aim is (-1, 0), the
+        // velocity -shootSpeed (11) on X at meleeSpeed 1.
+        assert_eq!((slot.vel.x, slot.vel.y), (-11.0, 0.0));
+        assert!(slot.melee, "the melee class flag");
     }
 }
 

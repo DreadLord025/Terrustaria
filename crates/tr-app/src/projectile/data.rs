@@ -416,6 +416,28 @@ pub const PHANTASMAL_DEATHRAY: u16 = 455;
 /// (`Projectile.cs:5281-5291`: 16x16, aiStyle 85, hostile,
 /// tileCollide false, timeLeft 600).
 pub const MOON_LEECH: u16 = 456;
+/// `ProjectileID.InfluxWaver` (451) — the Terra Blade-family melee wave
+/// (`Projectile.cs:5229-5239`: 16x16, aiStyle 81, melee, penetrate 3,
+/// light 0.2, alpha 255). W4-d9.
+pub const INFLUX_WAVER: u16 = 451;
+/// `ProjectileID.CultistBossIceMist` (464) — the Lunatic Cultist's ice
+/// mist (`Projectile.cs:5351-5361`: 60x60, aiStyle 86, hostile,
+/// tileCollide false, penetrate −1, alpha 255, ignoreWater). W4-d9.
+pub const CULTIST_BOSS_ICE_MIST: u16 = 464;
+/// `ProjectileID.ClingerStaff` (482) — the Clinger Staff's cursed-flame
+/// wall (`Projectile.cs:5572-5586`: 16x200, aiStyle 87, friendly,
+/// tileCollide false, penetrate −1, alpha 255, ignoreWater, timeLeft
+/// 18000, magic, idStatic-10). W4-d9.
+pub const CLINGER_STAFF: u16 = 482;
+/// `ProjectileID.CultistRitual` (490) — the ritual marker that spawns the
+/// cultist dragon (`Projectile.cs:5655-5666`: 14x14, aiStyle 89, hostile,
+/// alpha 255, ignoreWater, tileCollide false, timeLeft 600,
+/// netImportant). W4-d9.
+pub const CULTIST_RITUAL: u16 = 490;
+/// `ProjectileID.MagicLantern` (492) — the light pet (`Projectile.cs:
+/// 5645-5654`: 18x32, aiStyle 90, friendly, penetrate −1, netImportant,
+/// timeLeft ×5). W4-d9.
+pub const MAGIC_LANTERN: u16 = 492;
 /// `ProjectileID.PhantasmalBolt` (462) — the retargeting lasers
 /// (`Projectile.cs:5329-5339`: 8x8, aiStyle 1, hostile,
 /// extraUpdates 3, tileCollide false, ignoreWater).
@@ -1892,6 +1914,7 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         LIGHT_BEAM => 0.5,                     // `:2441`
         NIGHT_BEAM => 0.5,                     // `:2453`
         ENCHANTED_BEAM => 0.2,                 // `:2598`
+        INFLUX_WAVER => 0.2,                   // `:5236` (W4-d9)
         PIRATE_ARROW => 0.5,                   // `:2667`
         FROST_HYDRA => 0.25,                   // `:4003`
         BALL_OF_FROST => 0.8,                  // `:3364`
@@ -3156,6 +3179,27 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             PHANTASMAL_SPHERE => (40.0, 40.0, 83, -1, 600, 0, false, false, false, RESET_STATE),
             PHANTASMAL_DEATHRAY => (36.0, 36.0, 84, -1, 600, 0, false, false, false, RESET_STATE),
             MOON_LEECH => (16.0, 16.0, 85, -1, 600, 0, false, false, false, RESET_STATE),
+            // W4-d9 — `Projectile.cs:5229-5239`: the InfluxWaver (451): 16x16,
+            // aiStyle 81, melee, penetrate 3, alpha 255, friendly. The stock
+            // tileCollide true (`:775`) / timeLeft 3600 (`:787`) stand; the
+            // light 0.2 rides `set_defaults_light`.
+            INFLUX_WAVER => (16.0, 16.0, 81, 3, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d9 — `Projectile.cs:5351-5361`: the CultistBossIceMist (464):
+            // 60x60, aiStyle 86, hostile, tileCollide false, penetrate −1,
+            // alpha 255, ignoreWater. The stock timeLeft 3600 (`:787`) stands.
+            CULTIST_BOSS_ICE_MIST => (60.0, 60.0, 86, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d9 — `Projectile.cs:5572-5586`: the ClingerStaff (482): 16x200,
+            // aiStyle 87, friendly, tileCollide false, penetrate −1, alpha 255,
+            // ignoreWater, timeLeft 18000, magic, idStatic-10.
+            CLINGER_STAFF => (16.0, 200.0, 87, -1, 18000, 0, false, false, false, (false, -2, true, 10, 255, 1.0)),
+            // W4-d9 — `Projectile.cs:5655-5666`: the CultistRitual (490): 14x14,
+            // aiStyle 89, hostile, alpha 255, ignoreWater, tileCollide false,
+            // timeLeft 600, netImportant. The stock penetrate 1 (`:774`) stands.
+            CULTIST_RITUAL => (14.0, 14.0, 89, 1, 600, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d9 — `Projectile.cs:5645-5654`: the MagicLantern (492): 18x32,
+            // aiStyle 90, friendly, penetrate −1, timeLeft ×5 = 18000,
+            // netImportant. The stock tileCollide true (`:775`) stands.
+            MAGIC_LANTERN => (18.0, 32.0, 90, -1, 5 * TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // `Projectile.cs:5329-5339` — the Phantasmal Bolt (462): 8x8,
             // aiStyle 1, hostile, `alpha = 255`, extraUpdates 3, tileCollide
             // false, ignoreWater. S1-D-5 carries the C# alpha (the slice-B
@@ -5067,6 +5111,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | SHARK_PUP | LIL_HARPY | GLITTERY_BUTTERFLY | QUEEN_BEE_PET
                     | DUKE_FISHRON_PET | MOON_LORD_PET | DD2_BETSY_PET | PUFFERFISH
             )
+            // W4-d9 — `Projectile.cs:5665`: the CultistRitual's netImportant.
+            || kind == CULTIST_RITUAL
+            // W4-d9 — `Projectile.cs:5647`: the MagicLantern's netImportant.
+            || kind == MAGIC_LANTERN
             // S1-P-i55 — `Projectile.cs:7628`: the golf balls (721 + the 14
             // dyed twins) set `netImportant = true` themselves.
             || matches!(kind, GOLF_BALL | 739..=752)
@@ -5167,6 +5215,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d8 DOC-SWEEP (3) — the Scutlix mount's fired laser (606,
             // `Projectile.cs:6540`) sets `ignoreWater = true`.
             || kind == SCUTLIX_LASER
+            // W4-d9 — `Projectile.cs:5360`: the CultistBossIceMist's
+            // `ignoreWater = true`.
+            || kind == CULTIST_BOSS_ICE_MIST
+            // W4-d9 — `Projectile.cs:5581`: the ClingerStaff's `ignoreWater`.
+            || kind == CLINGER_STAFF
+            // W4-d9 — `Projectile.cs:5662`: the CultistRitual's `ignoreWater`.
+            || kind == CULTIST_RITUAL
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
             || kind == GOLF_CLUB_HELPER
@@ -5260,6 +5315,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // W4-d7 wiring (F4) — the Ale's `melee = true`
                     // (`Projectile.cs:7170`).
                     | ALE
+                    // W4-d9 — the InfluxWaver's melee wave (`Projectile.cs:5234`).
+                    | INFLUX_WAVER
             ),
         ranged: matches!(
             kind,
@@ -5339,6 +5396,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | POISON_DART | SPIRIT_FLAME | SKY_FRACTURE | BOOK_OF_SKULLS | SPARK
                 // W4-d8 — the aiStyle-72 Bubble (410, `Projectile.cs:4926`).
                 | BUBBLE
+                // W4-d9 — the ClingerStaff's magic wall (`Projectile.cs:5583`).
+                | CLINGER_STAFF
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
@@ -5580,8 +5639,10 @@ pub const LIGHT_PET_PROJ: &[u16] = &[18, 500, 72, 87, 86, 211, 492, 650, 702, 89
 /// lives (the `:42880` `item.buffTime` grant is 0 for the staves, a ghost).
 /// Verbatim: the 1157/1309/1802/2364/2365 single-item arms (`:53190`/`:53194`/
 /// `:53218`/`:53234`/`:53238`) plus the 24-case switch (`:53254-53277`).
+/// W4-d9 wiring: the 3043 MagicLantern light-pet arm (`:53242-53245`) joins
+/// the list — the same `AddBuff(sItem.buffType, 3600)` grant.
 pub const MINION_STAFF_PET_BUFF_ITEMS: &[u16] = &[
-    1157, 1309, 1802, 2364, 2365, 2535, 2551, 2584, 2621, 2749, 3249, 3474, 3531, 4269, 4273,
+    1157, 1309, 1802, 2364, 2365, 2535, 2551, 2584, 2621, 2749, 3043, 3249, 3474, 3531, 4269, 4273,
     4281, 4607, 4758, 5005, 5069, 5114, 5456, 5663, 5664, 6148, 6149, 6161, 6164,
 ];
 

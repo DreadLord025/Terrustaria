@@ -192,6 +192,11 @@ pub fn update_accessory_buff_arms(
     p.rabid = false;
     p.melee_enchant = 0;
     p.pet_flags = [false; PROJ_COUNT];
+    // W4-d9 wiring — `ResetEffects`' `magicLantern = false` (`Player.cs:
+    // 18485`): the dedicated lantern bool clears per tick, the 152 arm
+    // below re-sets it while the buff stands (the aiStyle-90 keep-alive
+    // reads it, `Projectile.cs:32393-32396`).
+    p.magic_lantern = false;
 
     // `Main.wofNPCIndex >= 0 && npc.active && type == 113`
     // (`Player.cs:10979`): the port's live-WoF scan (hp > 0 is the port's
@@ -319,7 +324,34 @@ pub fn update_accessory_buff_arms(
             // `Player.cs:11355-11368` — Penguin pet (41 → proj 112).
             41 => spawn_pet_if_needed(p, pool, j, 112),
             // `Player.cs:11369-11377` — Magic Lantern (152 → proj 492).
-            152 => spawn_pet_if_needed(p, pool, j, 492),
+            // W4-d9 wiring: the arm sets the DEDICATED `magicLantern` bool
+            // (`:11372`), NOT the generic pet flag — the aiStyle-90 arm's
+            // keep-alive reads it (`Projectile.cs:32393-32396`). The spawn
+            // rides the data-carrying seam (the 492 row landed with W4-d9,
+            // so the pool's `proj_data` dispatch runs the lantern AI — the
+            // rowless `pool.spawn` the shared handler uses would leave the
+            // slot inert). `NewProjectile` centres the box on the player's
+            // centre (`:11375`, `Projectile.cs:10876-10877`); the port's
+            // spawn seam takes the top-left, so the half-box subtracts.
+            152 => {
+                p.buffs.buff_time[j] = 18000;
+                p.magic_lantern = true;
+                if p.owned_projectile_counts[492] == 0 {
+                    let (cx, cy) = p.center();
+                    let _ = pool.spawn_with_data_ai_owned(
+                        492,
+                        0,
+                        cx - 9.0,
+                        cy - 16.0,
+                        0.0,
+                        0.0,
+                        0,
+                        0.0,
+                        0.0,
+                        0.0,
+                    );
+                }
+            }
             // `Player.cs:11378-11391` — Puppy (91 → proj 334).
             91 => spawn_pet_if_needed(p, pool, j, 334),
             // `Player.cs:11392-11405` — Baby Grinch (92 → proj 353).
@@ -452,8 +484,11 @@ mod tests {
 
     #[test]
     fn s1_e_7c_light_pets_spawn_once_and_pin_18000() {
-        // `Player.cs:11005-11032`, `:11254-11267`, `:11369-11377`.
-        for (buff, proj) in [(19, 18u16), (155, 500), (190, 650), (152, 492)] {
+        // `Player.cs:11005-11032`, `:11254-11267`. W4-d9 wiring: the 152
+        // MagicLantern arm left this loop — it sets the DEDICATED
+        // `magicLantern` bool (`:11372`), not the generic pet flag; its own
+        // witness (`w4_d9_the_magic_lantern_arm_*`) pins it.
+        for (buff, proj) in [(19, 18u16), (155, 500), (190, 650)] {
             let mut p = player();
             let mut pool = ProjectilePool::default();
             p.buffs.add_buff(buff, 60);
@@ -477,6 +512,42 @@ mod tests {
                 .count();
             assert_eq!(spawned, 1, "buff {buff} does not double-spawn");
         }
+    }
+
+    /// W4-d9 wiring — the buff-152 MagicLantern arm (`Player.cs:11369-
+    /// 11377`): the dedicated `magicLantern` bool (`:11372`), the 18000
+    /// pin, the data-carrying 492 spawn at the player's centre (the
+    /// aiStyle-90 keep-alive reads the bool, `Projectile.cs:32393-32396`).
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d9_the_magic_lantern_arm_sets_the_bool_and_spawns_the_row() {
+        let mut p = player();
+        let mut pool = ProjectilePool::default();
+        p.buffs.add_buff(152, 60);
+        run(&mut p, &mut pool, &[], &mut NoTrigger);
+        assert!(p.magic_lantern, "the dedicated bool, not the pet flag");
+        assert!(!p.pet_flags[492], "the C# writes magicLantern, not petFlag");
+        let i = p.buffs.find_buff_index(152).unwrap();
+        assert_eq!(p.buffs.buff_time[i], 18000);
+        let slot = pool.slots().iter().find(|s| s.active && s.kind == 492)
+            .expect("the lantern spawned");
+        // The data-carrying spawn: the 492 row's box + lifetime ride the
+        // slot (the rowless pool.spawn would leave them at the defaults).
+        assert_eq!((slot.w, slot.h), (18.0, 32.0), "the 492 row's box");
+        assert_eq!(slot.time_left, 18000, "the row's 5x timeLeft");
+        // NewProjectile centres the box on the player's centre.
+        let (cx, cy) = p.center();
+        assert_eq!((slot.pos.x, slot.pos.y), (cx - 9.0, cy - 16.0));
+        // Recount + second pass: no duplicate while one is owned.
+        p.update_projectile_caches(&pool);
+        run(&mut p, &mut pool, &[], &mut NoTrigger);
+        assert_eq!(pool.slots().iter().filter(|s| s.active && s.kind == 492).count(), 1);
+        assert!(p.magic_lantern, "the bool re-sets each pass");
+        // Expiry clears the bool on the next pass (the ResetEffects
+        // stand-in, `Player.cs:18485`).
+        p.buffs.buff_time[i] = 0;
+        run(&mut p, &mut pool, &[], &mut NoTrigger);
+        assert!(!p.magic_lantern);
     }
 
     #[test]

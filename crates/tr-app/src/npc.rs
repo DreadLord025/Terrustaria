@@ -1086,6 +1086,34 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    // W4-d9 wiring (the d40 7a88c61c/45dbafc3 dragon rows, verbatim): the
+    // Phantasm Dragon's chain — the 490 ritual's aiStyle-89 arm spawns the
+    // head (`Projectile.cs:32350`), the head's `AI_006` arm grows the 30
+    // links (`NPC.cs:51191-51228`). The aiStyle-6 machine is UNWIRED for
+    // the family (the wyvern precedent — the kind arm holds row 0).
+    /// `NPCID.CultistDragonHead` (454): 32x32, aiStyle 6, dmg 100, def 15, 10000 HP,
+    /// kb 0.0, value 0 (`NPC.cs:14414-14432` SetDefaults arm).
+    CultistDragonHead,
+    /// `NPCID.CultistDragonBody1` (455): 32x32, aiStyle 6, dmg 50, def 30, 10000 HP,
+    /// kb 0.0, value 0 (`NPC.cs:14452-14470` SetDefaults arm).
+    CultistDragonBody1,
+    /// `NPCID.CultistDragonBody2` (456): 32x32, aiStyle 6, dmg 50, def 30, 10000 HP,
+    /// kb 0.0, value 0 (`NPC.cs:14452-14470` SetDefaults arm).
+    CultistDragonBody2,
+    /// `NPCID.CultistDragonBody3` (457): 32x32, aiStyle 6, dmg 50, def 30, 10000 HP,
+    /// kb 0.0, value 0 (`NPC.cs:14452-14470` SetDefaults arm).
+    CultistDragonBody3,
+    /// `NPCID.CultistDragonBody4` (458): 32x32, aiStyle 6, dmg 50, def 30, 10000 HP,
+    /// kb 0.0, value 0 (`NPC.cs:14452-14470` SetDefaults arm).
+    CultistDragonBody4,
+    /// `NPCID.CultistDragonTail` (459): 32x32, aiStyle 6, dmg 50, def 30, 10000 HP,
+    /// kb 0.0, value 0 (`NPC.cs:14433-14451` SetDefaults arm).
+    CultistDragonTail,
+    /// `NPCID.AncientCultistSquidhead` (521) — the d41 band's unrowed
+    /// summon, ported here for the ritual's else-arm (`Projectile.cs:32354`):
+    /// 60x60, aiStyle 86, dmg 90, def 30, 2000 HP, kb 0 (`NPC.cs:15768-
+    /// 15779`). The aiStyle-86 machine is UNWIRED (the style73 precedent).
+    AncientCultistSquidhead,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3140,6 +3168,15 @@ impl Npc {
                         100
                     } else {
                         match kind {
+                            // W4-d9 wiring (d40 rows): the dragon family's
+                            // `alpha = 255` spawn-fade rows (`NPC.cs:14431`/
+                            // `:14448`/`:14468`).
+                            NpcKind::CultistDragonHead
+                            | NpcKind::CultistDragonBody1
+                            | NpcKind::CultistDragonBody2
+                            | NpcKind::CultistDragonBody3
+                            | NpcKind::CultistDragonBody4
+                            | NpcKind::CultistDragonTail => 255,
                             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                                 255
                             }
@@ -3543,6 +3580,16 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // W4-d9 wiring (d40 rows): the SetDefaults knockBackResist rows
+            // (`NPC.cs:14428`/`:14446`/`:14466`); the 521 squidhead's 0
+            // (`NPC.cs:15778`).
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2
+            | NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail
+            | NpcKind::AncientCultistSquidhead => 0.0,
             _ => 0.4,
         }
     }
@@ -3923,6 +3970,16 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // W4-d9 wiring (d40 rows): the SetDefaults defense rows
+            // (`NPC.cs:14423`/`:14442`/`:14461`); the 521 squidhead's 30
+            // (`NPC.cs:15774`).
+            NpcKind::CultistDragonHead => 15,
+            NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2
+            | NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail
+            | NpcKind::AncientCultistSquidhead => 30,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4295,6 +4352,17 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // W4-d9 wiring (d40 rows): the SetDefaults value rows
+            // (`NPC.cs:14429`/`:14447`/`:14467` — value 0); the 521
+            // squidhead writes no value row (the `SetDefaults` head's 0
+            // reset, `NPC.cs:8544`).
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2
+            | NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail
+            | NpcKind::AncientCultistSquidhead => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6174,6 +6242,19 @@ impl Npc {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => {}
+            // W4-d9 wiring (d40 rows): the Phantasm Dragon's chain + the
+            // 521 squidhead — the aiStyle-6/86 machines are UNWIRED for
+            // these kinds (the wyvern/style73 precedent); the kind arms
+            // keep the match exhaustive. The ritual's spawn drain
+            // (`world_sim/projectiles.rs`) plants them; the chain-growth
+            // + the squidhead's AI_086 ride the wiring wave.
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2
+            | NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail
+            | NpcKind::AncientCultistSquidhead => {}
             // ---- the Pumpkin Moon family (`S1-F-13b` Phase 2): the wave
             // roster rides alive. The 11 aiStyle-3 walkers ride the walker
             // family on the C#'s per-type speed rows (`AI_003_Fighters`'s
@@ -8194,6 +8275,46 @@ impl Npc {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => {}
+            // W4-d9 wiring (d40 rows): the dragon head's `case 454`
+            // (`NPC.cs:70952-70957`) — the row is frameCounter / 2 over
+            // the 3-row head sheet; the bodies/tail have no case and hold
+            // row 0 (`npcFrameCount` 455-459 = 1). The 521 squidhead's
+            // `case 521` (`NPC.cs:72103-72126`): the velocity facing, the
+            // atan2 tilt + the vx*0.1 term, the 5-tick flap over the
+            // 4-row strip (`npcFrameCount[521]` = 4).
+            NpcKind::CultistDragonHead => {
+                self.frame = (self.frame_counter / 2.0) as u32;
+            }
+            NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2
+            | NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => {
+                self.frame = 0;
+            }
+            NpcKind::AncientCultistSquidhead => {
+                // `:72104-72111` — the X-sign facing + the sprite copy.
+                self.facing = if self.vx < 0.0 { -1 } else { 1 };
+                if self.facing != 0 {
+                    self.sprite_dir = self.facing;
+                }
+                // `:72116` — the atan2 over the sprite-flipped velocity
+                // plus the raw vx*0.1 term.
+                self.rotation = (self.vy * self.sprite_dir as f32)
+                    .atan2(self.vx * self.sprite_dir as f32)
+                    + self.vx * 0.1;
+                // `:72117-72125` — the 5-tick flap, wrapping at the row
+                // count.
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 5.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                    let rows = crate::render::entities::npc_rows(521);
+                    if self.frame >= rows {
+                        self.frame = 0;
+                    }
+                }
+            }
             NpcKind::GoblinPeon
             | NpcKind::GoblinThief
             | NpcKind::GoblinWarrior
@@ -18615,6 +18736,15 @@ impl Npc {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-d9 wiring (d40 rows): the vanilla type ids (the G6 key
+            // stays injective — 454-459/521 are free above).
+            NpcKind::CultistDragonHead => 454,
+            NpcKind::CultistDragonBody1 => 455,
+            NpcKind::CultistDragonBody2 => 456,
+            NpcKind::CultistDragonBody3 => 457,
+            NpcKind::CultistDragonBody4 => 458,
+            NpcKind::CultistDragonTail => 459,
+            NpcKind::AncientCultistSquidhead => 521,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23683,7 +23813,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 277] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -23962,6 +24092,14 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-d9 wiring (the d40 dragon rows + the ported 521 squidhead).
+        NpcKind::CultistDragonHead,
+        NpcKind::CultistDragonBody1,
+        NpcKind::CultistDragonBody2,
+        NpcKind::CultistDragonBody3,
+        NpcKind::CultistDragonBody4,
+        NpcKind::CultistDragonTail,
+        NpcKind::AncientCultistSquidhead,
     ];
 
     #[test]
@@ -24056,6 +24194,84 @@ mod tests {
         for (kind, _, _, _, _, _, _, _, _, _) in rows {
             assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
         }
+    }
+
+    /// W4-d9 wiring (the d40 7a88c61c/45dbafc3 dragon rows + the ported 521
+    /// squidhead): the `SetDefaults` rows pin against the C# through the
+    /// port's piecewise tables (the small-kinds pin's shape). The dragon
+    /// rows are `NPC.cs:14414-14470`, the squidhead `NPC.cs:15768-15779`.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d9_the_cultist_summon_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::CultistDragonHead, 454u16, 6u8, 32.0, 32.0, 100, 15, 10000, 0.0f32, 0.0),
+            (NpcKind::CultistDragonBody1, 455u16, 6u8, 32.0, 32.0, 50, 30, 10000, 0.0f32, 0.0),
+            (NpcKind::CultistDragonBody2, 456u16, 6u8, 32.0, 32.0, 50, 30, 10000, 0.0f32, 0.0),
+            (NpcKind::CultistDragonBody3, 457u16, 6u8, 32.0, 32.0, 50, 30, 10000, 0.0f32, 0.0),
+            (NpcKind::CultistDragonBody4, 458u16, 6u8, 32.0, 32.0, 50, 30, 10000, 0.0f32, 0.0),
+            (NpcKind::CultistDragonTail, 459u16, 6u8, 32.0, 32.0, 50, 30, 10000, 0.0f32, 0.0),
+            (NpcKind::AncientCultistSquidhead, 521u16, 86u8, 60.0, 60.0, 90, 30, 2000, 0.0f32, 0.0),
+        ];
+        for (kind, ty, ai, ww, hh, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (ww, hh), "{kind:?} size");
+            assert_eq!(shell.size(), (ww, hh), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The HitSound/DeathSound rows (`NPC.cs:14425-14426`/`:14443-14444`/
+        // `:14462-14463`; the squidhead `:15776-15777`).
+        for kind in [
+            NpcKind::CultistDragonHead,
+            NpcKind::CultistDragonBody1,
+            NpcKind::CultistDragonBody2,
+            NpcKind::CultistDragonBody3,
+            NpcKind::CultistDragonBody4,
+            NpcKind::CultistDragonTail,
+        ] {
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_56"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_60"), "{kind:?} death");
+            assert!(kind.no_gravity(), "{kind:?} noGravity");
+            // The dragon family's `alpha = 255` spawn-fade rows.
+            assert_eq!(Npc::new(kind, 0.0, 0.0, 1, 0.0).alpha, 255, "{kind:?} alpha");
+        }
+        assert_eq!(NpcKind::AncientCultistSquidhead.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::AncientCultistSquidhead.death_sound(), Some("NPC_Killed_6"));
+        // The bestiary credits: the head + the squidhead keep their OWN
+        // entries (the Sharkron precedent — the UI provider's {454,439}/
+        // {521,439} quickUnlock mapping is not the kill credit); the
+        // segments fold onto the head.
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::CultistDragonHead, SlimeVariant::Blue).net_id, 454);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::AncientCultistSquidhead, SlimeVariant::Blue).net_id, 521);
+        for kind in [
+            NpcKind::CultistDragonBody1,
+            NpcKind::CultistDragonBody2,
+            NpcKind::CultistDragonBody3,
+            NpcKind::CultistDragonBody4,
+            NpcKind::CultistDragonTail,
+        ] {
+            assert_eq!(crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue).kind, NpcKind::CultistDragonHead);
+        }
+        // The ritual's drain resolves the VANILLA ids through the bestiary
+        // NET-id space (`kind_from_net_id`, the spawn_shimmer_release
+        // precedent) — the 454/521 the aiStyle-89 arm requests.
+        assert_eq!(crate::npc::kind_from_net_id(454).map(|(k, _)| k), Some(NpcKind::CultistDragonHead));
+        assert_eq!(crate::npc::kind_from_net_id(521).map(|(k, _)| k), Some(NpcKind::AncientCultistSquidhead));
+        // The squidhead's 14-id immunity row (`NPCID.cs:9040-9048`).
+        let sq = Npc::new(NpcKind::AncientCultistSquidhead, 0.0, 0.0, 1, 0.0);
+        for id in [20, 24, 31, 39, 44, 69, 70, 395, 153, 189, 203, 204, 323, 324] {
+            assert!(sq.buffs.buff_immune[id as usize], "the squidhead immune to {id}");
+        }
+        // The derived rules: immune 20 ⇒ 30 + 375, immune 69 ⇒ 36.
+        assert!(sq.buffs.buff_immune[30] && sq.buffs.buff_immune[375] && sq.buffs.buff_immune[36]);
     }
 
     /// The small-kinds wiring wave: the style axis claims 21/49/56/72, so
@@ -27573,8 +27789,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
+            277,
+            "every decodable kind resolves (the wire roster's size - 277 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d9's six dragon segments and the 521 squidhead, L-B gate)"
         );
         assert!(
             covered > 43,

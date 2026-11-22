@@ -586,6 +586,17 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-d9 wiring (the d40 7a88c61c/45dbafc3 dragon rows, verbatim):
+            // CultistDragonHead..Tail keep their vanilla ids (free in the
+            // protocol space). The 521 squidhead (the d41 band, unrowed —
+            // ported here from `NPC.cs:15768-15779`) keeps 521 too.
+            NpcKind::CultistDragonHead => 454,
+            NpcKind::CultistDragonBody1 => 455,
+            NpcKind::CultistDragonBody2 => 456,
+            NpcKind::CultistDragonBody3 => 457,
+            NpcKind::CultistDragonBody4 => 458,
+            NpcKind::CultistDragonTail => 459,
+            NpcKind::AncientCultistSquidhead => 521,
         }
     }
 
@@ -916,6 +927,15 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // W4-d9 wiring: the vanilla ids (`to_u16` above) — the d40
+            // dragon rows + the ported 521 squidhead.
+            454 => NpcKind::CultistDragonHead,
+            455 => NpcKind::CultistDragonBody1,
+            456 => NpcKind::CultistDragonBody2,
+            457 => NpcKind::CultistDragonBody3,
+            458 => NpcKind::CultistDragonBody4,
+            459 => NpcKind::CultistDragonTail,
+            521 => NpcKind::AncientCultistSquidhead,
             _ => return None,
         })
     }
@@ -1796,6 +1816,16 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            // W4-d9 wiring (d40 rows): the SetDefaults HitSound rows —
+            // the dragon family NPCHit56 (`NPC.cs:14425`/`:14443`/
+            // `:14462`), the 521 squidhead NPCHit1 (`NPC.cs:15776`).
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2
+            | NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => "NPC_Hit_56",
+            NpcKind::AncientCultistSquidhead => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2100,6 +2130,16 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            // W4-d9 wiring (d40 rows): the SetDefaults DeathSound rows —
+            // the dragon family NPCDeath60 (`NPC.cs:14426`/`:14444`/
+            // `:14463`), the 521 squidhead NPCDeath6 (`NPC.cs:15777`).
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2
+            | NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => "NPC_Killed_60",
+            NpcKind::AncientCultistSquidhead => "NPC_Killed_6",
             _ => return None,
         })
     }
@@ -2200,6 +2240,20 @@ impl NpcKind {
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
             NpcKind::AngryNimbus => true,
+            // W4-d9 wiring (d40 rows): the dragon family's `noGravity =
+            // true` SetDefaults rows (`NPC.cs:14427`/`:14445`/`:14465`);
+            // kb 0 keeps them out of the Y-pop selector, the rows ride
+            // for the other `no_gravity` readers. The 521 squidhead's
+            // SetDefaults writes no flag, but its aiStyle-86 AI head sets
+            // `noGravity = true` every tick (`NPC.cs:37231`, the
+            // AngryNimbus precedent).
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2
+            | NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail
+            | NpcKind::AncientCultistSquidhead => true,
             _ => false,
         }
     }
@@ -2451,6 +2505,16 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // W4-d9 wiring (d40 rows): the SetDefaults aiStyle rows —
+            // the dragon family 6 (`NPC.cs:14420`/`:14438`/`:14457`),
+            // the 521 squidhead 86 (`NPC.cs:15772`).
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2
+            | NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => 6,
+            NpcKind::AncientCultistSquidhead => 86,
         }
     }
 
@@ -2981,6 +3045,16 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-d9 wiring (d40 rows): the SetDefaults width/height boxes
+            // (`NPC.cs:14418-14419`/`:14436-14437`/`:14455-14456`); the
+            // 521 squidhead's 60x60 (`NPC.cs:15770-15771`).
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2
+            | NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => (32.0, 32.0),
+            NpcKind::AncientCultistSquidhead => (60.0, 60.0),
         }
     }
 
@@ -3622,6 +3696,16 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-d9 wiring (d40 rows): the SetDefaults lifeMax rows —
+            // the dragon family 10000 (`NPC.cs:14424`/`:14442`/`:14461`),
+            // the 521 squidhead 2000 (`NPC.cs:15775`).
+            NpcKind::CultistDragonHead
+            | NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2
+            | NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => 10000,
+            NpcKind::AncientCultistSquidhead => 2000,
         }
     }
 
@@ -3986,6 +4070,16 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-d9 wiring (d40 rows): the SetDefaults damage rows — the
+            // dragon head 100 (`NPC.cs:14422`), the bodies/tail 50
+            // (`:14440`/`:14459`), the 521 squidhead 90 (`NPC.cs:15773`).
+            NpcKind::CultistDragonHead => 100,
+            NpcKind::CultistDragonBody1
+            | NpcKind::CultistDragonBody2
+            | NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => 50,
+            NpcKind::AncientCultistSquidhead => 90,
         }
     }
 }
