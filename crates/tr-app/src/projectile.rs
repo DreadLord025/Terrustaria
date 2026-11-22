@@ -14151,13 +14151,17 @@ fn trail_segments(
 /// (BookOfSkullsSkull 837) has its own arm and gates first. S1-D-3q adds the
 /// BulletSnowman 110 (the Frost Legion Gangsta's bottle): the first-tick
 /// `ai[1]` latch + the alpha-15 fade, also on the `flag3 = false` list
-/// (`Projectile.cs:55962`).
-const AI_STYLE_1_RIDERS: [u16; 5] = [
+/// (`Projectile.cs:55962`). W4-d23 adds the HarpyFeather 38: NO per-type
+/// hook (the C# carries none — the `:54002-55945` head has no 38 arm),
+/// but `case 38` sits on the `flag3 = false` list (`:55953`), so the
+/// rider's resting flight (no counter, no gravity) is its whole AI.
+const AI_STYLE_1_RIDERS: [u16; 6] = [
     GREEN_LASER,
     PURPLE_LASER,
     VENOM_FANG,
     SKY_FRACTURE,
     BULLET_SNOWMAN,
+    HARPY_FEATHER,
 ];
 
 /// `Projectile.ShouldUseWindPhysics`'s style list (`Projectile.cs:22110-22132`).

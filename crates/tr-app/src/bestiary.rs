@@ -2465,6 +2465,208 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Orca",
     },
+    // The man-eater family (W4-d23, aiStyle 13): the six wired kinds' own
+    // entries — the populator registers all six by id (the normal-enemy
+    // kill ladder, no quick-unlock).
+    BestiaryEntryDef {
+        credit_id: "ManEater",
+        net_id: 43,
+        kind: NpcKind::ManEater,
+        variant: None,
+        quick_unlock: false,
+        name: "Man Eater",
+    },
+    BestiaryEntryDef {
+        credit_id: "Snatcher",
+        net_id: 56,
+        kind: NpcKind::Snatcher,
+        variant: None,
+        quick_unlock: false,
+        name: "Snatcher",
+    },
+    BestiaryEntryDef {
+        credit_id: "Clinger",
+        net_id: 101,
+        kind: NpcKind::Clinger,
+        variant: None,
+        quick_unlock: false,
+        name: "Clinger",
+    },
+    BestiaryEntryDef {
+        credit_id: "AngryTrapper",
+        net_id: 175,
+        kind: NpcKind::AngryTrapper,
+        variant: None,
+        quick_unlock: false,
+        name: "Angry Trapper",
+    },
+    BestiaryEntryDef {
+        credit_id: "FungiBulb",
+        net_id: 259,
+        kind: NpcKind::FungiBulb,
+        variant: None,
+        quick_unlock: false,
+        name: "Fungi Bulb",
+    },
+    BestiaryEntryDef {
+        credit_id: "GiantFungiBulb",
+        net_id: 260,
+        kind: NpcKind::GiantFungiBulb,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Fungi Bulb",
+    },
+    // The aiStyle-9 spit/flare family (W4-d23): the three wired kinds' own
+    // entries — the populator registers all three by id (112/666 the
+    // Corruption spit, 516 the Solar Pillar flare; the normal-enemy kill
+    // ladder, no quick-unlock).
+    BestiaryEntryDef {
+        credit_id: "VileSpit",
+        net_id: 112,
+        kind: NpcKind::VileSpit,
+        variant: None,
+        quick_unlock: false,
+        name: "Vile Spit",
+    },
+    BestiaryEntryDef {
+        credit_id: "VileSpitEaterOfWorlds",
+        net_id: 666,
+        kind: NpcKind::VileSpitEoW,
+        variant: None,
+        quick_unlock: false,
+        name: "Vile Spit",
+    },
+    BestiaryEntryDef {
+        credit_id: "SolarFlare",
+        net_id: 516,
+        kind: NpcKind::SolarFlare,
+        variant: None,
+        quick_unlock: false,
+        name: "Solar Flare",
+    },
+    // The aiStyle-14 flyer family (W4-d23): the 13 wired kinds' own
+    // entries — the populator attaches info to every id (48
+    // `BestiaryDatabaseNPCsPopulator.cs:1653`, 62 `:1548`, 93 `:1129`,
+    // 121 `:1271`, 137 `:1130`, 150 `:1352`, 151 `:1353`, 152 `:1317`,
+    // 156 `:1673`, 158 `:1356`, 159 `:1465`, 226 `:1553`, 634 `:1950`);
+    // 660's UI provider credits 657 (`:694`'s quick-unlock map) but its
+    // entry + draw sheet ride its own id (the Sharkron precedent).
+    BestiaryEntryDef {
+        credit_id: "Harpy",
+        net_id: 48,
+        kind: NpcKind::Harpy,
+        variant: None,
+        quick_unlock: false,
+        name: "Harpy",
+    },
+    BestiaryEntryDef {
+        credit_id: "Demon",
+        net_id: 62,
+        kind: NpcKind::Demon,
+        variant: None,
+        quick_unlock: false,
+        name: "Demon",
+    },
+    BestiaryEntryDef {
+        credit_id: "GiantBat",
+        net_id: 93,
+        kind: NpcKind::GiantBat,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Bat",
+    },
+    BestiaryEntryDef {
+        credit_id: "Slimer",
+        net_id: 121,
+        kind: NpcKind::Slimer,
+        variant: None,
+        quick_unlock: false,
+        name: "Slimer",
+    },
+    BestiaryEntryDef {
+        credit_id: "IlluminantBat",
+        net_id: 137,
+        kind: NpcKind::IlluminantBat,
+        variant: None,
+        quick_unlock: false,
+        name: "Illuminant Bat",
+    },
+    BestiaryEntryDef {
+        credit_id: "IceBat",
+        net_id: 150,
+        kind: NpcKind::IceBat,
+        variant: None,
+        quick_unlock: false,
+        name: "Ice Bat",
+    },
+    BestiaryEntryDef {
+        credit_id: "LavaBat",
+        net_id: 151,
+        kind: NpcKind::Lavabat,
+        variant: None,
+        quick_unlock: false,
+        name: "Lava Bat",
+    },
+    BestiaryEntryDef {
+        credit_id: "GiantFlyingFox",
+        net_id: 152,
+        kind: NpcKind::GiantFlyingFox,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Flying Fox",
+    },
+    BestiaryEntryDef {
+        credit_id: "RedDevil",
+        net_id: 156,
+        kind: NpcKind::RedDevil,
+        variant: None,
+        quick_unlock: false,
+        name: "Red Devil",
+    },
+    BestiaryEntryDef {
+        credit_id: "VampireBat",
+        net_id: 158,
+        kind: NpcKind::VampireBat,
+        variant: None,
+        quick_unlock: false,
+        name: "Vampire Bat",
+    },
+    // The VampireBat's Transform(159) target (`NPC.cs:23353`) — aiStyle 3
+    // (the fighter walker), NOT a style-14 member; it lands here because
+    // the transform pair is one unit (the bat flees the surface by day,
+    // the vampire walks it by night — `:58843-58851` transforms back).
+    BestiaryEntryDef {
+        credit_id: "Vampire",
+        net_id: 159,
+        kind: NpcKind::Vampire,
+        variant: None,
+        quick_unlock: false,
+        name: "Vampire",
+    },
+    BestiaryEntryDef {
+        credit_id: "FlyingSnake",
+        net_id: 226,
+        kind: NpcKind::FlyingSnake,
+        variant: None,
+        quick_unlock: false,
+        name: "Flying Snake",
+    },
+    BestiaryEntryDef {
+        credit_id: "SporeBat",
+        net_id: 634,
+        kind: NpcKind::SporeBat,
+        variant: None,
+        quick_unlock: false,
+        name: "Spore Bat",
+    },
+    BestiaryEntryDef {
+        credit_id: "QueenSlimeMinionPurple",
+        net_id: 660,
+        kind: NpcKind::QueenSlimeMinionPurple,
+        variant: None,
+        quick_unlock: false,
+        name: "Queen Slime Minion",
+    },
 ];
 
 /// The entry's current unlock tier — its `UIInfoProvider`'s

@@ -3783,11 +3783,29 @@ fn npc_seed(
         crate::npc::NpcKind::CaveBat
         | crate::npc::NpcKind::JungleBat
         | crate::npc::NpcKind::Hellbat
-        | crate::npc::NpcKind::VoodooDemon => {
+        | crate::npc::NpcKind::VoodooDemon
+        // The W4-d23 aiStyle-14 flyer family: the same cave-air hang
+        // (the aiStyle-14 machine takes over on the first tick).
+        | crate::npc::NpcKind::Harpy
+        | crate::npc::NpcKind::Demon
+        | crate::npc::NpcKind::GiantBat
+        | crate::npc::NpcKind::Slimer
+        | crate::npc::NpcKind::IlluminantBat
+        | crate::npc::NpcKind::IceBat
+        | crate::npc::NpcKind::Lavabat
+        | crate::npc::NpcKind::GiantFlyingFox
+        | crate::npc::NpcKind::RedDevil
+        | crate::npc::NpcKind::VampireBat
+        | crate::npc::NpcKind::FlyingSnake
+        | crate::npc::NpcKind::SporeBat
+        | crate::npc::NpcKind::QueenSlimeMinionPurple => {
             // The net spawn hangs the bat at the net Y (the cave air).
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_cave_flyer(world, tx, y, kind)?
         }
+        // The Vampire (159, W4-d23): the aiStyle-3 walker plants its
+        // feet on the column surface (the scarecrow band's shape).
+        crate::npc::NpcKind::Vampire => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
         crate::npc::NpcKind::KingSlime => crate::npc::Npc::spawn_king_slime(world, tx)?,
         // The hungry/leeches: the ctor seeds the stats — the net state
         // overwrites the position below (the hover arm's shape).
@@ -3946,6 +3964,29 @@ fn npc_seed(
         | crate::npc::NpcKind::Grubby
         | crate::npc::NpcKind::Sluggy
         | crate::npc::NpcKind::Buggy => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
+        // The man-eater family (W4-d23): the anchored flyers fly through
+        // tiles (the noTileCollide/noGravity rows); the hover ctor's
+        // open-air seed is the join shape (the aiStyle-13 machine takes
+        // over on the first tick — the fishron precedent).
+        crate::npc::NpcKind::ManEater
+        | crate::npc::NpcKind::Snatcher
+        | crate::npc::NpcKind::Clinger
+        | crate::npc::NpcKind::AngryTrapper
+        | crate::npc::NpcKind::FungiBulb
+        | crate::npc::NpcKind::GiantFungiBulb => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // The aiStyle-9 spit/flare family (W4-d23): the spits fly through
+        // tiles (noTileCollide/noGravity); the flare collides but the hover
+        // ctor's open-air seed is the join shape (the aiStyle-9 machine
+        // takes over on the first tick — the fishron precedent).
+        crate::npc::NpcKind::VileSpit
+        | crate::npc::NpcKind::VileSpitEoW
+        | crate::npc::NpcKind::SolarFlare => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

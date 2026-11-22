@@ -566,6 +566,37 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::GiantFlyingAntlion
         | NpcKind::FlyingAntlion
         | NpcKind::EyeballFlyingFish => &[],
+        // The man-eater family (W4-d23): the `DebuffImmunitySets` rows —
+        // 43 `{20,31}` (`NPCID.cs:6349-6355`), 56 `{31}` (`:6410-6416`),
+        // 101 `{39,31}` (`:6692-6698`), 175 `{20,31}` (`:7139-7145`),
+        // 259/260 `{20,31}` (`:7577-7590`). The 20⇒30+375 derived rule
+        // (`NPC.cs:17828-17833`) applies in `for_kind`.
+        NpcKind::ManEater | NpcKind::AngryTrapper | NpcKind::FungiBulb | NpcKind::GiantFungiBulb => &[20, 31],
+        NpcKind::Snatcher => &[31],
+        NpcKind::Clinger => &[39, 31],
+        // The aiStyle-9 spit/flare family (W4-d23): 112/666 `{31}`
+        // (`NPCID.cs:6758-6764`/`:6765-6771`), 516 `{31}` (`:9005-9011`).
+        NpcKind::VileSpit | NpcKind::VileSpitEoW | NpcKind::SolarFlare => &[31],
+        // The aiStyle-14 flyer family (W4-d23): the `DebuffImmunitySets`
+        // rows — 48 `{31}` (`NPCID.cs:6378-6384`), 62/156
+        // `{24,31,153,323}` (`:6452-6458`/`:7042-7048`), 121/137 `{20}`
+        // (`:6827-6833`/`:6927-6933`), 150 `{44,324}` (`:7018-7024`),
+        // 151 `{24,323}` (`:7025-7031`), 660 `{20,31}` (`:9917-9923`);
+        // 93/152/158/159/226 are null rows (`:6642`/`:7032`/`:7056-7057`/
+        // `:7388`), 634 null (`:9741`). The 20⇒30+375 derived rule
+        // (`NPC.cs:17828-17833`) applies in `for_kind`.
+        NpcKind::Harpy => &[31],
+        NpcKind::Demon | NpcKind::RedDevil => &[24, 31, 153, 323],
+        NpcKind::Slimer | NpcKind::IlluminantBat => &[20],
+        NpcKind::IceBat => &[44, 324],
+        NpcKind::Lavabat => &[24, 323],
+        NpcKind::QueenSlimeMinionPurple => &[20, 31],
+        NpcKind::GiantBat
+        | NpcKind::GiantFlyingFox
+        | NpcKind::VampireBat
+        | NpcKind::Vampire
+        | NpcKind::FlyingSnake
+        | NpcKind::SporeBat => &[],
     }
 }
 
