@@ -1713,7 +1713,9 @@ impl App {
                     }
                 }
                 if cue != 0 {
-                    self.audio.play(match cue {
+                    // W4-d79 — the chest-open net replay's menu cue rides the
+                    // single-voice pool (cases 10/11/12, draw-free).
+                    self.audio.play_menu(match cue {
                         10 => "Menu_Open",
                         11 => "Menu_Close",
                         _ => "Menu_Tick",

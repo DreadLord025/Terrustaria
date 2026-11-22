@@ -577,12 +577,12 @@ pub const HEART_KINDS: [u16; 3] = [58, 1734, 1867];
 pub const STAR_KINDS: [u16; 3] = [184, 1735, 1868];
 /// `ItemID.Sets.IsAPickup`'s heart/star subset (`ItemID.cs:493` — the full
 /// set also holds the nebula trio 3453-3455 and the Mana Cloak star 4143,
-/// whose consume arms landed with W4-f49 lane 12): `Player.ItemSpace`
+/// whose consume arms landed with W4-f49 lane 12 / W4-d79): `Player.ItemSpace`
 /// returns `CanTakeItem: true` unconditionally for them
 /// (`Player.cs:39155-39158`) — an inventory-full player still grabs them,
 /// and a FULL-life/full-mana player consumes them too (the heal/restore
 /// caps; only the star's PULL is gated at full mana,
-/// `Player.cs:34947`).
+/// `Player.cs:34947` — the 4143 is NOT in that gate's flag2 list).
 #[allow(dead_code)] // the skip-gate caller landed out with W4-f49 lane 12
 pub fn is_heart_or_star(kind: u16) -> bool {
     HEART_KINDS.contains(&kind) || STAR_KINDS.contains(&kind)

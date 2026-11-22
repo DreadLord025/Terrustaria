@@ -322,7 +322,6 @@ pub(crate) fn fire(
     let Some((frame, misc_counter)) = launch_frame(app, world_pos, speed, None) else {
         return;
     };
-    let center = frame.center;
 
     // The per-bow dispatch, in the C#'s code order. Each arm `return`s in the
     // source; the port folds them into one match. The generic single-shot
@@ -405,8 +404,12 @@ pub(crate) fn fire(
             }
         }
     }
-    let (pcx, pcy) = (center.x, center.y);
-    app.audio.play_at("Item_1", pcx, pcy, 1.0);
+    // W4-d79 — the launch is SILENT: `Player.ItemCheck_Shoot`
+    // (`Player.cs:47056-49468`) carries NO `PlaySound` at all (the census is
+    // zero hits); the bow's `UseSound` plays once at the USE START
+    // (`ItemCheck_StartActualUse`, `:51696` — the wire's
+    // `start_swing_extras`). The pre-wave per-shot `Item_1` was a phantom
+    // duplicate (the gun lane retired its identical cue in S1-P-i14).
 }
 
 /// `Player.cs:47424-47465` — the Daedalus Stormbow 3029: a rain of 2-4 arrows

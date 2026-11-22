@@ -50,7 +50,12 @@ fn use_golem_altar(app: &mut App) -> bool {
                 if app.inventory[slot].count == 0 {
                     app.inventory[slot].kind = 0;
                 }
-                app.audio.play("Roar_0");
+                // `Player.cs:32782` — `PlaySound(15, (int)position.X,
+                // (int)position.Y, 0)`: Style 0 → Roar_0, top-left,
+                // draw-free (case 15's slot guard rides play_roar).
+                let (rx, ry) =
+                    app.player.as_ref().map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
+                app.audio.play_roar(0, rx, ry);
                 spawn_golem_on_altar(app);
                 break;
             }
@@ -376,8 +381,26 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
                     .play_door_sound(false, tx as f32 * TILE_PX, ty as f32 * TILE_PX, rng);
             }
             _ => {
-                app.audio
-                    .play_at(cue, tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
+                // The dial's `SoundID.Item4` (`Player.cs:32642`/:32651 —
+                // the style façade at `base.position`, the TOP-LEFT): the
+                // GetRandomPitch NextFloat rides the audio-only stream,
+                // case 2's pitch draw rides `UpdatePlayers`.
+                if cue == "Item_4" {
+                    if let Some(idx) = crate::soundid::SOUND_STYLES
+                        .iter()
+                        .position(|s| s.sound_id == 2 && s.style == 4)
+                    {
+                        let (rx, ry) = app
+                            .player
+                            .as_ref()
+                            .map(|p| (p.x, p.y))
+                            .unwrap_or((tx as f32 * TILE_PX, ty as f32 * TILE_PX));
+                        app.audio.play_use_sound(idx as u16, rx, ry, 0.0, rng);
+                    }
+                } else {
+                    app.audio
+                        .play_at(cue, tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
+                }
             }
         }
     }

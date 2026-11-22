@@ -790,6 +790,25 @@ pub fn random_from_category(category: &str, index: usize) -> String {
         .value_with(&|name| m.substitution(name))
 }
 
+/// `Language.FindAll(Lang.CreateDialogFilter(prefix))` over a key PREFIX that
+/// is not a whole JSON category (`Lang.cs:422-425`'s `key.StartsWith(prefix)`).
+/// The grouped-key table only carries the top-level categories, so the
+/// sub-category prefixes (`DyeTraderSpecialText.HasPlant`,
+/// `AnglerSpecialText.BloodMoonFishing`) resolve through the flat text table
+/// instead. Returns the matching keys SORTED — the C#'s `FindAll` walks the
+/// dictionary in insertion order; the sorted stand-in keeps the index→line
+/// mapping deterministic (the `category_grouped_keys` convention, S1-L-12c).
+pub fn dialog_prefix_keys(prefix: &str) -> Vec<String> {
+    let m = manager().lock().unwrap();
+    let mut keys: Vec<String> = m
+        .find_all(|k, _| k.starts_with(prefix))
+        .into_iter()
+        .map(|t| t.key().to_string())
+        .collect();
+    keys.sort();
+    keys
+}
+
 /// `GameCulture.FromLegacyId` — the language-menu rows are 1-based legacy ids
 /// (`Main.cs:48520` passes `selectedMenu` straight through).
 pub fn culture_from_legacy_id(id: i32) -> GameCulture {

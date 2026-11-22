@@ -962,15 +962,21 @@ pub(crate) fn bank_open_origin(world: &World, x: i32, y: i32) -> (i32, i32) {
     (ox, oy)
 }
 
-pub(crate) fn play_menu_sound(app: &App, legacy_id: u32) {
+pub(crate) fn play_menu_sound(app: &mut App, legacy_id: u32) {
     // `SoundID.MenuOpen/MenuClose/MenuTick = 10/11/12` (`SoundID.cs:42/44/46`),
-    // played without a position in the C# (`:33242`/:33237/:33251).
-    match legacy_id {
-        10 => app.audio.play("Menu_Open"),
-        11 => app.audio.play("Menu_Close"),
-        12 => app.audio.play("Menu_Tick"),
-        _ => {}
-    }
+    // played without a position in the C# (`:33242`/:33237/:33251). W4-d79 —
+    // cases 10/11/12 (`LegacySoundPlayer.cs:750-782`) are the draw-free
+    // single-voice pool: each Stop()s the old instance + re-creates (`:751-
+    // 777`); the int overload draws no NextFloat. Case 12's
+    // `FocusHelper.AllowInputProcessing` gate (`:771`) folds to true (the
+    // standing D12 focus deviation).
+    let cue = match legacy_id {
+        10 => "Menu_Open",
+        11 => "Menu_Close",
+        12 => "Menu_Tick",
+        _ => return,
+    };
+    app.audio.play_menu(cue);
 }
 
 /// The right-click open path (`Player.cs:33056-33260`), the editing.rs
@@ -1058,8 +1064,14 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             }
             // `:409` — `SoundEngine.PlaySound(22, X * 16, Y * 16)`: the
             // `SoundID.Unlock` cue (`SoundID.cs:66`), banked as "Unlock".
-            app.audio
-                .play_at("Unlock", ox as f32 * 16.0, oy as f32 * 16.0, 1.0);
+            // W4-d79 — case 22 (`LegacySoundPlayer.cs:937-946`) is the
+            // single-voice pool: the old unlock is Stop()ed + re-created
+            // (`:938-942`), draw-free. The int overload draws no NextFloat.
+            app.audio.play_single_voice(
+                "Unlock",
+                ox as f32 * 16.0,
+                oy as f32 * 16.0,
+            );
             if consumes {
                 // `:33183-33189` — the consumed key's stack decrements; an
                 // emptied slot turns to air.
@@ -1100,8 +1112,11 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
                 if let Some(id) = progression {
                     unlocked_progression = Some(id);
                 }
-                app.audio
-                    .play_at("Unlock", ox as f32 * 16.0, oy as f32 * 16.0, 1.0);
+                app.audio.play_single_voice(
+                    "Unlock",
+                    ox as f32 * 16.0,
+                    oy as f32 * 16.0,
+                );
                 if consumes {
                     slot.count -= 1; // `:33210-33214`
                     if slot.count == 0 {
@@ -1630,7 +1645,15 @@ pub(crate) fn try_placing_from(app: &mut App, from: Source, just_check: bool) ->
                     ..s
                 },
             );
-            app.audio.play("Grab"); // `SoundEngine.PlaySound(7)` (`:1241`)
+            // W4-d79 — `SoundEngine.PlaySound(7)` (`ChestUI.cs:1241`): the
+            // UNPOSITIONED int overload, one case-7 `Next(-10, 11) * 0.01`
+            // pitch draw (`LegacySoundPlayer.cs:725`) + the Grab single-voice
+            // Stop/re-create (`:718-722`). The deposit runs from the
+            // shift-click handler OUTSIDE every SwapRandom block, so the draw
+            // rides the bare-`Main.rand` stand-in (`rngs.global()`, the
+            // S1-P-i43 transfer-cue convention).
+            app.audio
+                .play_grab_sound(-1.0, -1.0, app.rngs.global());
             item.count -= num;
             if item.count == 0 {
                 break; // `:1242-1249` — `SetDefaults(0)` (write-through)
@@ -1651,7 +1674,11 @@ pub(crate) fn try_placing_from(app: &mut App, from: Source, just_check: bool) ->
                 placeable = true; // `:1271-1274`
                 break;
             }
-            app.audio.play("Grab"); // `SoundEngine.PlaySound(7)` (`:1276`)
+            // W4-d79 — `SoundEngine.PlaySound(7)` (`ChestUI.cs:1276`): the
+            // unpositioned case-7 pitch draw + Grab pool, on the bare stream
+            // (the merge-pass peer above).
+            app.audio
+                .play_grab_sound(-1.0, -1.0, app.rngs.global());
             set_chest_slot(&mut app.world_chests, chest, j, item); // `:1275` — the whole clone
             item = EMPTY_SLOT; // `:1277-1278` — `SetDefaults(0)` (write-through)
             break;
@@ -1897,7 +1924,7 @@ pub(crate) fn open_rename(app: &mut App) -> bool {
         Some(p) if p.chest >= 0 => (p.chest, p.chest_x, p.chest_y),
         _ => return false, // the DW-5.4 guard (`ChestUI.cs:844-848`'s calm arm)
     };
-    app.audio.play("Menu_Tick"); // `:90` — `SoundEngine.PlaySound(12)`
+    app.audio.play_menu("Menu_Tick"); // `:90` — `SoundEngine.PlaySound(12)`
     // `:103-119` — the tile-default decode at the open chest's origin (the
     // phase-3 `default_chest_name` chain).
     let default_name = app
@@ -1943,7 +1970,7 @@ pub(crate) fn open_rename(app: &mut App) -> bool {
 /// (`UIVirtualKeyboard.cs:1061-1067`); the C# submit closure ignores its
 /// trimmed argument (`:363`), so the untrimmed text is what lands.
 pub(crate) fn rename_submit(app: &mut App, text: &str) -> u32 {
-    app.audio.play("Menu_Tick"); // `:842`
+    app.audio.play_menu("Menu_Tick"); // `:842`
     app.front = None; // `Main.editChest = false` (:843) + `Close(quiet: true)`
     let chest = match app.player.as_ref() {
         Some(p) if p.chest >= 0 => p.chest,
@@ -2028,7 +2055,7 @@ pub(crate) fn flush_edited_chest_name(app: &mut App) {
 /// panel-cancel (ID 6) leaves the keyboard open (recorded deviation).
 /// `Main.blockKey` (`:868`) has no port route.
 pub(crate) fn rename_cancel(app: &mut App) -> u32 {
-    app.audio.play("Menu_Tick"); // `:865`
+    app.audio.play_menu("Menu_Tick"); // `:865`
     app.front = None;
     12
 }

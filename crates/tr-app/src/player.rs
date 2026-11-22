@@ -1437,6 +1437,10 @@ pub struct Player {
     /// sim caller feeds the App's swing/reuse timers each tick (the
     /// `frame_inputs` convention); the bare `update` callers keep false.
     pub mana_regen_item_in_use: bool,
+    // W4-d79's nebula field block DELETED at batch-L (the S1 mutual
+    // receipt): the `nebula_level_*` trio lives above (the f49 documented
+    // fields, `Player.cs:924-930`) and the mana counter lives on
+    // `RegenState::nebula_mana_counter` (the d117/f49 engine form).
     /// The 44 buff slots and `buffImmune` — `Player.buffType`/`buffTime`/`buffImmune`
     /// (`Player.cs:1510-1514`), driven by the `Player.AddBuff` family (`buffs.rs`).
     pub buffs: BuffSlots,
@@ -1931,6 +1935,15 @@ pub struct Player {
     /// arm, `Player.cs:23257`: `PlaySound(23)` — unpositioned). A bare flag:
     /// the case draws nothing, the drain plays `Drown` on no stream.
     pending_drown_sound: bool,
+    /// W4-d79 — the full-mana refill cue + dust burst
+    /// (`Player.UpdateManaRegen`, `Player.cs:19550-19560`): the unpositioned
+    /// `PlaySound(25)` (case 25 — Volume/Pan only, no draws, no Stop) plus
+    /// the 5× dust-45 loop, each rolling `Next(20, 26) * 0.1` as the
+    /// `NewDust` scale argument BEFORE the spawn. `(position.X, position.Y,
+    /// width, height)` — the C# reads `base.position`/`width`/`height` live
+    /// at the refill tick; the drain owns the pool + the `UpdatePlayers`
+    /// stream (the sticky-dust convention).
+    pending_mana_refill: Option<(f32, f32, i32, i32)>,
     /// S1-E-21f — the wing-flap latch `Player.flapSound` (`Player.cs:1128`):
     /// the `wingFrame == 3` edge plays `SoundID.Item32` once (`:26848-26852`),
     /// the off-frame clears it (`:26856`). The port's flap cadence is the
@@ -2852,6 +2865,8 @@ impl Player {
             mana_flower: false,
             slow_magic_use: false,
             mana_regen_item_in_use: false,
+            // The nebula trio inits above (the f49 fields); d79's duplicate
+            // init + Player counter dropped at batch-L (RegenState owns it).
             buffs: BuffSlots::default(),
             hurt_cd: 0.0,
             black_belt: false,
@@ -2981,6 +2996,7 @@ impl Player {
             pending_splash_sound: None,
             wet_count: 0,
             pending_drown_sound: false,
+            pending_mana_refill: None,
             flap_sound: false,
             wing_frame: 0,
             wing_frame_counter: 0,
@@ -3477,6 +3493,15 @@ impl Player {
         std::mem::take(&mut self.pending_drown_sound)
     }
 
+    /// W4-d79 — takes the full-mana refill cue + dust burst
+    /// (`Player.cs:19550-19560`) — `(position.X, position.Y, width, height)`
+    /// captured at the refill tick; the drain plays the unpositioned case-25
+    /// chime and rolls the 5× `Next(20, 26)` dust-scale draws + spawns on
+    /// `UpdatePlayers`.
+    pub(crate) fn take_mana_refill(&mut self) -> Option<(f32, f32, i32, i32)> {
+        self.pending_mana_refill.take()
+    }
+
     /// S1-E-21f — takes the wing-flap `SoundID.Item32` play
     /// (`Player.cs:26850`) — `(style_index, position.X, position.Y)`.
     pub(crate) fn take_flap_sound(&mut self) -> Option<(u16, f32, f32)> {
@@ -3584,15 +3609,17 @@ impl Player {
     }
 
     /// `Player.NebulaLevelup` (`Player.cs:57030-57059`): the Nebula booster
-    /// pickup's buff grant (W4-f49 lane 12). The `whoAmI != Main.myPlayer`
-    /// gate is always false in the single-player port. The scan deletes
-    /// EVERY buff in `[type, type+3)` with the C#'s `DelBuff(i--)` rescan
-    /// (the compaction re-presents the next buff at the same index — the
-    /// port's `del_buff` compacts identically, so the loop re-reads `i`).
-    /// Then the family's tier climbs ONE, clamped 0..3 (`MathHelper.Clamp`
-    /// — the tier is never negative), and `AddBuff(base + tier - 1, 480)`
-    /// grants the tier's buff id. Only the three base ids act; anything
-    /// else falls through the switch with the deletes already done.
+    /// pickup's buff grant (W4-f49 lane 12 — the S1 mutual-receipt survivor,
+    /// d79's line-identical twin dropped at batch-L). The
+    /// `whoAmI != Main.myPlayer` gate is always false in the single-player
+    /// port. The scan deletes EVERY buff in `[type, type+3)` with the C#'s
+    /// `DelBuff(i--)` rescan (the compaction re-presents the next buff at
+    /// the same index — the port's `del_buff` compacts identically, so the
+    /// loop re-reads `i`). Then the family's tier climbs ONE, clamped 0..3
+    /// (`MathHelper.Clamp` — the tier is never negative), and
+    /// `AddBuff(base + tier - 1, 480)` grants the tier's buff id. Only the
+    /// three base ids act; anything else falls through the switch with the
+    /// deletes already done.
     pub(crate) fn nebula_levelup(&mut self, buff_kind: i32) {
         let time = 480; // `:57036`
         let mut i = 0;
@@ -3633,6 +3660,12 @@ impl Player {
     // the POST-tick-head timer read). The `fold_orb` bridge assigns the
     // scan's tiers onto the Player fields; the pickup grant
     // (`nebula_levelup`) and the chained `ResetEffects` zero stay here.
+    // d79's `update_buffs_nebula`/`update_buffs_nebula_scan` twins DELETED
+    // at the batch-L merge (the S1 mutual receipt: three writers on one
+    // buff bar would triple-step the `buffTime == 2` edge); its
+    // Player-method `apply_nebula_buff_mana` twin + `Player.nebula_mana_counter`
+    // also dropped — the d117/f49 regen-engine form (`regen.rs`, the
+    // `RegenState` counter) is the ONE reader.
 
     /// The fold_orb mana-bridge ASSIGN stub (R3 contract step 2). f12's
     /// `buff_frame_wiring::fold_orb` carries these three lines verbatim:
@@ -3644,9 +3677,9 @@ impl Player {
     /// besides `nebula_levelup`'s pickup hint (`:57047-57056`, the C#
     /// runs the grant in `GrabItems` AFTER the scan — the frame order
     /// player → projectiles → items keeps it a same-tick hint only).
-    /// In THIS tree f12's wiring module is not present (merge-base
-    /// a725acb0, neither branch is an ancestor); the wiring seam call
-    /// site in `world_sim/player.rs` marks where the bridge lands. The
+    /// f12's wiring module is NOT in batch-L; the wiring seam call site
+    /// in `world_sim/player.rs` marks where the bridge lands (the
+    /// bridge-with-deletions ONE-COMMIT contract's remaining half). The
     /// regen read keeps the Player field (`RegenInputs.nebula_level_mana`).
     pub(crate) fn fold_orb_nebula_bridge(&mut self, mana: i32, life: i32, damage: i32) {
         self.nebula_level_mana = mana;
@@ -3869,6 +3902,7 @@ impl Player {
         self.pending_fart_sound = None;
         self.pending_splash_sound = None;
         self.pending_drown_sound = false;
+        self.pending_mana_refill = None;
         self.pending_flap_sound = None;
         self.pending_dismount = false;
         // `Player.spawn`/`Spawn` never resets `stickyBreak` (`Player.cs:1966` —
@@ -6449,6 +6483,9 @@ impl Player {
         // re-derives both per tick.
         self.set_stardust = false;
         self.set_forbidden = false;
+        // d79's nebula trio zero DUPLICATE dropped at batch-L (the S1
+        // receipt): the f49 copy above (`mana_regen_bonus` neighbour,
+        // `Player.cs:18755`) is the survivor — identical three lines.
         // `:18663`: `lavaMax = 0` — the charm rows below re-add it.
         self.lava_max = 0;
         // `:18659`: `dashType = 0` - the armor-set rows and the accessory
@@ -6726,6 +6763,13 @@ impl Player {
                 self.dash_type = set.dash_type;
             }
         }
+        // W4-d79's `update_buffs_nebula_scan()` call DELETED at batch-L
+        // (the S1 mutual receipt / R3 step 1): the ONE tier writer is f12's
+        // g27-canonical `buff_effects_orbs.rs::nebula_buffs` via
+        // `update_buff_frame` (not in this batch — the wiring seam in
+        // `world_sim/player.rs` marks its slot); until it lands the tier
+        // rides `nebula_levelup`'s same-tick pickup hint + the reset zero
+        // (the f12 gap-3 convention).
         for bt in self.buffs.active_types() {
             match bt {
                 // S1-E-7 wave A — the potion-buff block, in the C# chain's
@@ -7043,6 +7087,10 @@ impl Player {
                 _ => {}
             }
         }
+        // W4-d79's Nebula damage stat fold (`Player.cs:10453-10461`,
+        // `0.15 * tier` four-class) DELETED at batch-L (the S1 mutual
+        // receipt / R3 step 2): the consumer is f12's `fold_orb` — two
+        // homes for the same C# lines would double-add.
         if self.slow {
             self.strongest_move_speed_debuff = self.strongest_move_speed_debuff.min(0.5);
         }
@@ -7273,6 +7321,10 @@ impl Player {
             match bt {
                 2 => self.accessory_life_regen += 4,
                 165 => self.accessory_life_regen += 6,
+                // W4-d79's Nebula life fold (`Player.cs:10448-10452`,
+                // `lifeRegen += 6 * tier`) DELETED at batch-L (the S1
+                // mutual receipt / R3 step 2): f12's `fold_orb` owns the
+                // `buff_life_regen` consumer — one home per C# line.
                 _ => {}
             }
         }
@@ -11519,6 +11571,11 @@ impl Player {
         // defaults until those systems land (`regen.rs`); the hp gate stands in
         // for the original's dead-player check (M2-DEATH).
         if self.hp > 0 {
+            // W4-d79's Player-method `apply_nebula_buff_mana()` head call
+            // DELETED at batch-L (the S1 mutual receipt): the d117/f49
+            // engine form runs it FIRST inside `update_mana_regen`
+            // (`regen.rs`, the `:19421` position, `RegenInputs.
+            // nebula_level_mana` fed below) — ONE reader, ONE counter.
             let in_ = RegenInputs {
                 max_life: self.max_hp,
                 max_mana: self.mana_max,
@@ -11558,7 +11615,7 @@ impl Player {
             if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {
                 self.dot_death = Some(death);
             }
-            update_mana_regen(
+            let refilled = update_mana_regen(
                 &mut self.regen,
                 &in_,
                 &mut self.mana,
@@ -11566,6 +11623,19 @@ impl Player {
                     item_in_use: self.mana_regen_item_in_use,
                 },
             );
+            if refilled {
+                // W4-d79 — `Player.cs:19550-19560`: the local player's
+                // full-bar `PlaySound(25)` + the 5× dust-45 burst. The
+                // engine returns the flag4-gated trigger (the ManaV2
+                // animation gate already suppressed it mid-swing); the
+                // drain plays the unpositioned chime and rolls the dust
+                // draws on `UpdatePlayers` (the queue convention — the
+                // tick has no `Audio`/`DustPool` borrow). The C# reads
+                // `base.position`/`width`/`height` at THIS point in
+                // `Player.Update` (`:25995`), before the movement tail.
+                self.pending_mana_refill =
+                    Some((self.x, self.y, self.width as i32, self.height as i32));
+            }
         }
         // `Player.Update`'s post-UpdateManaRegen tail (`Player.cs:
         // 25996-26003`): runs UNCONDITIONALLY (outside the port's hp gate —
@@ -21671,6 +21741,98 @@ mod s1_player_composite_tests {
         }
         assert_eq!(p.breath, 0);
         assert_eq!(gasps, 1, "the gasp is the 1->0 edge, not the damage loop");
+    }
+
+    /// W4-d79 — the full-mana refill trigger queues ONCE at the fill
+    /// (`Player.cs:19550-19560`): the payload is the live
+    /// `position`/`width`/`height` at the regen point (`:25995`), the
+    /// idling full bar never re-queues (flag4), and the ManaV2 animation
+    /// gate (`:19542-19545`) suppresses the queue while the point lands.
+    #[test]
+    fn w4_d79_the_mana_refill_queues_once_at_the_fill() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.mana = p.mana_max - 1;
+        p.regen.mana_regen_count = 119;
+        p.regen.mana_regen_delay = 0.0;
+        p.vx = 0.0;
+        p.vy = 0.0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.mana, p.mana_max, "the last point landed");
+        assert_eq!(
+            p.take_mana_refill(),
+            Some((p.x, p.y, p.width as i32, p.height as i32)),
+            "the cue + burst queued at the live box"
+        );
+        // The idling full bar: chunks still cross 120, flag4 stays false.
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+            assert!(p.take_mana_refill().is_none(), "no re-fire at full");
+        }
+        // The animation gate: the point lands, the queue stays empty.
+        let mut q = Player::spawn(&w);
+        q.mana = q.mana_max - 1;
+        q.regen.mana_regen_count = 119;
+        q.regen.mana_regen_delay = 0.0;
+        q.vx = 0.0;
+        q.vy = 0.0;
+        q.mana_regen_item_in_use = true;
+        q.update(&w, PlayerInput::default());
+        assert_eq!(q.mana, q.mana_max, "the grant precedes the gate");
+        assert!(q.take_mana_refill().is_none(), "flag4 = false mid-animation");
+    }
+
+    /// W4-d79 PITCH FINAL — the Nebula owner-table contract
+    /// (`docs/research/W4-d79-pitch-final.md` §F1/S1), RE-TARGETED at the
+    /// batch-L merge per the S1 receipt: the levelup sweep/climb
+    /// (`:57030-57059`) + the chained reset (`:18755`) stay the f49 Player
+    /// shapes; the mana counter pays one point per 6 through the d117/f49
+    /// ENGINE form (`regen.rs`, `RegenState.nebula_mana_counter`); the
+    /// scan/time-2-step assertions move to f12's `apply_orb_arm` witnesses
+    /// when that lane lands (its `fold_orb` bridge drives the tier here —
+    /// the `fold_orb_nebula_bridge` stub stands in, the f12 gap-3
+    /// convention). These pins are the contract, not the implementation.
+    #[test]
+    fn w4_d79_final_the_nebula_owner_table_holds_on_this_tree() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // The levelup: the family sweep + the clamp-0..3 climb.
+        p.nebula_levelup(176);
+        assert_eq!(p.nebula_level_mana, 1);
+        assert!(p.buffs.find_buff_index(176).is_some(), "NebulaUpMana1 @ 480");
+        p.nebula_levelup(176);
+        assert_eq!(p.nebula_level_mana, 2);
+        assert!(p.buffs.find_buff_index(176).is_none(), "tier 1 swept");
+        assert!(p.buffs.find_buff_index(177).is_some(), "NebulaUpMana2");
+        // The bridge ASSIGN carries the scan's tier (f12's writer drives
+        // it in production; the stub is the merged-tree stand-in).
+        p.fold_orb_nebula_bridge(2, 0, 0);
+        assert_eq!(p.nebula_level_mana, 2, "the bridge carried the tier");
+        // The mana counter: +tier/tick, one point per 6 — the ENGINE form
+        // (the regen head runs ApplyNebulaBuffMana first, `:19421`). Park
+        // the normal regen line far out so ONLY the nebula arm grants.
+        p.mana = 0;
+        p.regen.nebula_mana_counter = 0;
+        p.regen.mana_regen_delay = 1000.0;
+        p.fold_orb_nebula_bridge(1, 0, 0);
+        for _ in 0..6 {
+            p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+            p.fold_orb_nebula_bridge(1, 0, 0); // the per-tick scan re-assign
+        }
+        assert_eq!(p.mana, 1, "the 6-count paid once");
+        assert_eq!(p.regen.nebula_mana_counter, 0);
+        p.fold_orb_nebula_bridge(0, 0, 0);
+        p.regen.nebula_mana_counter = 4;
+        p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
+        assert_eq!(p.regen.nebula_mana_counter, 0, "tier 0 wipes (:19583)");
+        // The reset zeroes the trio (the chained :18755 assign).
+        p.nebula_level_mana = 3;
+        p.nebula_level_life = 2;
+        p.nebula_level_damage = 1;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.nebula_level_life, 0, "no live buff -> the reset holds");
+        assert_eq!(p.nebula_level_damage, 0);
+        assert_eq!(p.nebula_level_mana, 0, "the reset holds until the bridge re-assigns");
     }
 
     /// S1-E-21f — the wing flap's Item-32 play (`Player.cs:26835-26858`):

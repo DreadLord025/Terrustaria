@@ -1821,7 +1821,13 @@ impl App {
             false
         };
         if moved {
-            self.audio.play("Grab"); // `SoundEngine.PlaySound(7)`
+            // W4-d79 — case-7 Grab: one `Next(-10, 11) * 0.01` pitch draw
+            // (`LegacySoundPlayer.cs:725`) + the single-voice Stop/re-create
+            // (`:718-722`), on the bare stream (`SoundEngine.PlaySound(7)`,
+            // `ItemSlot.cs:1515-1520`'s ctx-5 — the reforge click runs outside
+            // every SwapRandom block).
+            self.audio
+                .play_grab_sound(-1.0, -1.0, self.rngs.global());
         }
     }
 
@@ -2159,7 +2165,7 @@ impl App {
             let line = crate::lang::text_args("Achievements.Completed", &[tag]);
             self.chat.new_text(line, [255, 255, 255]);
             // `Main.NewText`'s `SoundEngine.PlaySound(12)` tail.
-            self.audio.play("Menu_Tick");
+            self.audio.play_menu("Menu_Tick");
             // `if (SoundEngine.FindActiveSound(SoundID.AchievementComplete)
             // == null) SoundEngine.PlayTrackedSound(...)` (`:731-734`).
             let style = crate::achievements::achievement_complete_style();
@@ -2528,7 +2534,7 @@ impl App {
         // `UIVirtualKeyboard.cs:975`) — the callers' `TextIsValidForSubmit`
         // gates already ran (`:358-365`'s click gate, `keyboard_enter`'s
         // `CanSubmit`).
-        self.audio.play("Menu_Open");
+        self.audio.play_menu("Menu_Open");
         match session.tail {
             KeyboardTail::Rename => {
                 self.front_hint = Some("Renaming is not ported yet (no save-file writer)".into());
@@ -2607,7 +2613,7 @@ impl App {
         // `UIVirtualKeyboard.cs:984`) — the C# cancels play it before the
         // `_cancelAction` (the buttons `:321`/:387, Escape's
         // `TryEscapingMenu` :806-810).
-        self.audio.play("Menu_Close");
+        self.audio.play_menu("Menu_Close");
         if is_chest {
             crate::chest::rename_cancel(self);
             return;

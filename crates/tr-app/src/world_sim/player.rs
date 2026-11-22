@@ -626,7 +626,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             for slot in std::mem::take(&mut app.buff_removals) {
                 let bt = p.buffs.buff_type[slot];
                 if p.try_removing_buff(&app.world, slot, bt, misc_buffs) {
-                    app.audio.play("Menu_Tick");
+                    app.audio.play_menu("Menu_Tick");
                 }
             }
         }
@@ -1380,8 +1380,73 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     );
                 }
             }
+            // W4-d79 — the minecart cues are `SoundID.ItemNN` STYLE plays
+            // (`DelegateMethods.cs:248-256` LandingSound Item53 / BumperSound
+            // Item56, `Player.cs:19870`/:19928 the rolling Item55): the
+            // `SoundEngine.cs:93-99` façade consumes the GetRandomPitch
+            // NextFloat on the audio-only stream, then case 2's per-cue pitch
+            // draw + the 53/55 playing guards + the instance pool
+            // (`LegacySoundPlayer.cs:552-562`/`:612-616`) ride the
+            // `UpdatePlayers` stream — `Player.HorizontalMovement` runs in
+            // `Player.Update` under the `Main.cs:17754` swap. The bare
+            // `play_at` stand-in drew nothing and stacked voices (D1/D4).
             for cue in p.take_cart_sounds() {
-                app.audio.play_at(cue.cue, cue.x, cue.y, 1.0);
+                let style_num: i32 = match cue.cue {
+                    "Item_53" => 53,
+                    "Item_55" => 55,
+                    "Item_56" => 56,
+                    _ => continue,
+                };
+                app.audio.play_npc_item_cue(
+                    style_num,
+                    cue.x,
+                    cue.y,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // W4-d79 — the full-mana refill cue + dust burst
+            // (`Player.UpdateManaRegen`, `Player.cs:19550-19560`): the
+            // unpositioned `PlaySound(25)` — case 25
+            // (`LegacySoundPlayer.cs:963-968`) is Volume/Pan only, NO
+            // draws, NO Stop (the slot overwrites) — then the 5× dust-45
+            // loop. EACH iteration rolls `Next(20, 26) * 0.1` as the
+            // `NewDust` scale argument (`:19555` — the draw precedes the
+            // spawn's own rolls), alpha 255, then `noLight`/`noGravity`/
+            // `velocity *= 0.5` (`:19556-19558`). The dust draws are NOT
+            // gated on the sound gate — the C# loops regardless. The
+            // draws ride `UpdatePlayers` (the `Main.cs:17754` swap covers
+            // `Player.Update`); the drain sits BEFORE the sticky-dust
+            // drain below — the C#'s `UpdateManaRegen` (`:25995`) precedes
+            // `StickyMovement` (`:27654`) in the update order.
+            if let Some((rx, ry, rw, rh)) = p.take_mana_refill() {
+                app.audio.play_single_voice("MaxMana", -1.0, -1.0);
+                for _ in 0..5 {
+                    let scale = app
+                        .rngs
+                        .stream(crate::app::RngKey::UpdatePlayers)
+                        .next_range(20, 26) as f32
+                        * 0.1;
+                    let idx = app.dust.new_dust(
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        &spawn_ctx,
+                        &app.world,
+                        Vec2::new(rx, ry),
+                        rw,
+                        rh,
+                        45,
+                        0.0,
+                        0.0,
+                        255,
+                        tr_core::particles::Color::default(),
+                        scale,
+                    );
+                    // `:19556-19558` — the post-arms write the returned
+                    // slot, the sentinel included (the C#'s own shape).
+                    let slot = app.dust.slot_mut(idx);
+                    slot.no_light = true;
+                    slot.no_gravity = true;
+                    slot.velocity *= 0.5;
+                }
             }
             // `Player.StickyMovement`'s handoffs: the cobweb the drag broke
             // (`Player.cs:22949` `WorldGen.KillTile`) and the type-153 web puffs
@@ -2104,6 +2169,177 @@ mod tests {
             app.combat_texts.iter().filter(|t| t.active).count(),
             1,
             "the queued amount drained exactly once"
+        );
+    }
+
+    /// W4-d79 — the full-mana refill drain (`Player.cs:19550-19560`): the
+    /// flag4-gated trigger queues at the regen fill; the drain plays the
+    /// unpositioned case-25 chime (draw-free) and rolls EXACTLY the 5×
+    /// `Next(20, 26)` scale + 5×6 `NewDust` draws on `UpdatePlayers`, then
+    /// the tick's own revolver-decay `Next(3)` — the twin replays the whole
+    /// spend. Every other stage stream stays pristine.
+    #[test]
+    fn w4_d79_the_mana_refill_drains_the_chime_and_five_dust_draws() {
+        let mut app = ammo_app();
+        // The camera rides the player so the pool's off-screen cull
+        // (`Dust.cs:97-101`) passes every spawn.
+        {
+            let p = app.player.as_mut().unwrap();
+            app.camera = Vec2::new(p.x + 10.0, p.y + 21.0);
+            // One missing point, the chunk one short of a grant, the delay
+            // expired — the tick's regen line (14, standing) crosses 120
+            // and the LAST point fires the trigger.
+            p.mana = p.mana_max - 1;
+            p.regen.mana_regen_count = 119;
+            p.regen.mana_regen_delay = 0.0;
+            p.vx = 0.0;
+            p.vy = 0.0;
+        }
+        app.gfx_quality.max_dust_to_draw = 6000;
+        let played_before = app.audio.played_count();
+        let mut twin = app.rngs.stream(RngKey::UpdatePlayers).clone();
+        // The 5× burst: scale draw FIRST (`:19555`), then the spawn's six
+        // (`Dust.cs:167-173` — pos X/Y, vel X/Y, frame Y, scale jitter);
+        // dust 45 rides no ChildSafety/per-type draw arm.
+        let mut want_scales = Vec::new();
+        for _ in 0..5 {
+            let s = twin.next_range(20, 26) as f32 * 0.1;
+            twin.next_max(16); // width 20 − 4
+            twin.next_max(38); // height 42 − 4
+            twin.next_range(-20, 21);
+            twin.next_range(-20, 21);
+            twin.next_max(3);
+            let jitter = twin.next_range(-20, 21);
+            want_scales.push((1.0 + jitter as f32 * 0.01) * s);
+        }
+        // The tick tail's revolver-decay draw (`Player.cs:42700-42703`).
+        twin.next_max(3);
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, p.mana_max, "the last point landed");
+        assert_eq!(
+            app.audio.played_count(),
+            played_before + 1,
+            "the case-25 chime played once"
+        );
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            twin,
+            "exactly the 5×(1+6) burst draws + the revolver decay"
+        );
+        // The five dust-45 slots: alpha 255, noLight/noGravity, ×0.5
+        // velocity, the rolled scale factor (`:19555-19558`).
+        let live: Vec<_> = app
+            .dust
+            .slots()
+            .iter()
+            .filter(|d| d.active && d.dust_type == 45)
+            .collect();
+        assert_eq!(live.len(), 5, "the burst spawned five dust-45");
+        for (d, &want) in live.iter().zip(want_scales.iter()) {
+            assert_eq!(d.alpha, 255);
+            assert!(d.no_light && d.no_gravity);
+            // The spawn's jitter ×0.01 then ×scale (`Dust.cs:172-173`).
+            assert!((d.scale - want).abs() < 1e-5, "scale {} vs {want}", d.scale);
+            assert!(d.velocity.x.abs() <= 1.0 && d.velocity.y.abs() <= 1.0);
+        }
+        for key in RngKey::ALL {
+            if key == RngKey::UpdatePlayers {
+                continue;
+            }
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} stayed pristine",
+                key.name()
+            );
+        }
+        // The idling full bar never re-fires (`:19550`'s flag4 gate).
+        let played_mid = app.audio.played_count();
+        tick_ammo(&mut app);
+        assert_eq!(app.audio.played_count(), played_mid, "no re-fire at full");
+    }
+
+    /// W4-d79 — the ManaV2 animation gate (`Player.cs:19542-19545`): the
+    /// point still lands mid-swing, but the trigger stays quiet — no chime,
+    /// no burst draws. And a MUTED listener refuses the chime yet the dust
+    /// loop still draws (the C# loops regardless of the play's gate).
+    #[test]
+    fn w4_d79_the_refill_gate_and_the_muted_dust_loop() {
+        let mut app = ammo_app();
+        {
+            let p = app.player.as_mut().unwrap();
+            app.camera = Vec2::new(p.x + 10.0, p.y + 21.0);
+            p.mana = p.mana_max - 1;
+            p.regen.mana_regen_count = 119;
+            p.regen.mana_regen_delay = 0.0;
+            p.vx = 0.0;
+            p.vy = 0.0;
+        }
+        app.gfx_quality.max_dust_to_draw = 6000;
+        // Mid-animation: `mana_regen_item_in_use` feeds flag4 = false.
+        app.swing = 10.0 / 60.0;
+        let played_before = app.audio.played_count();
+        let mut twin = app.rngs.stream(RngKey::UpdatePlayers).clone();
+        twin.next_max(3); // only the revolver decay — no burst
+        tick_ammo(&mut app);
+        assert_eq!(
+            app.player.as_ref().unwrap().mana,
+            app.player.as_ref().unwrap().mana_max,
+            "the point lands even mid-animation"
+        );
+        assert_eq!(app.audio.played_count(), played_before, "no chime mid-swing");
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            twin,
+            "the gated trigger draws nothing"
+        );
+        // Muted: the chime gate refuses, the 5× burst still draws.
+        let mut app = ammo_app();
+        {
+            let p = app.player.as_mut().unwrap();
+            app.camera = Vec2::new(p.x + 10.0, p.y + 21.0);
+            p.mana = p.mana_max - 1;
+            p.regen.mana_regen_count = 119;
+            p.regen.mana_regen_delay = 0.0;
+            p.vx = 0.0;
+            p.vy = 0.0;
+        }
+        app.gfx_quality.max_dust_to_draw = 6000;
+        let mut l = crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        };
+        l.camera_center = (app.camera.x, app.camera.y);
+        app.audio.set_listener(l);
+        let played_before = app.audio.played_count();
+        let mut twin = app.rngs.stream(RngKey::UpdatePlayers).clone();
+        for _ in 0..5 {
+            twin.next_range(20, 26);
+            twin.next_max(16);
+            twin.next_max(38);
+            twin.next_range(-20, 21);
+            twin.next_range(-20, 21);
+            twin.next_max(3);
+            twin.next_range(-20, 21);
+        }
+        twin.next_max(3);
+        tick_ammo(&mut app);
+        assert_eq!(app.audio.played_count(), played_before, "the muted chime refused");
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            twin,
+            "the dust loop draws regardless of the sound gate"
+        );
+        assert_eq!(
+            app.dust.slots().iter().filter(|d| d.active && d.dust_type == 45).count(),
+            5,
+            "the muted burst still spawned"
         );
     }
 
@@ -3011,7 +3247,7 @@ mod tests {
         let style = crate::soundid::SOUND_STYLES
             [crate::item::initial_use_sound(3001).unwrap().0 as usize];
         let mut roll = |lo: i32, hi: i32| expect.next_range(lo, hi);
-        let _ = crate::sound::item_use_case2(style.style, &mut roll);
+        let _ = crate::sound::item_use_case2(style.style, false, &mut roll);
         let expected_delay = expect.next_range(2400, 4201);
         let expected_heal = expect.next_range(70, 121);
         let expected_iframe_roll = expect.next_float();

@@ -282,11 +282,17 @@ impl App {
         {
             let rng = self.rngs.stream(crate::app::RngKey::UpdateGores);
             let wind_for_visuals = self.wind.speed_current;
+            // W4-d79 PITCH SEAL — the case-39 Drip seam: the pool draws
+            // the `Next(2)` style argument and the façade's pitch draw on
+            // the SAME `UpdateGores` stream, at the C# statement position
+            // (`Gore.cs:953`/`:965` — the `Main.cs:17771` swap wraps both).
+            let mut sound = crate::gore_seam::AppGoreSound(&mut self.audio);
             self.gore.update(
                 rng,
                 &self.world,
                 &crate::gore_seam::AppGoreCollision,
                 wind_for_visuals,
+                &mut sound,
             );
         }
     }

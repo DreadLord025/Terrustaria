@@ -151,10 +151,11 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             }
             // The `IsAPickup` consume-on-touch arms (`PickupItem`
             // `:35045-35098`): hearts/stars ride the i52 arms below; the
-            // nebula trio + the Mana Cloak star 4143 land with W4-f49 lane
-            // 12 (the `NebulaLevelup` grant + the tier-writer scan arms).
-            // Every `IsAPickup` kind is consumed on touch — none enters
-            // the inventory walk.
+            // nebula trio + the Mana Cloak star 4143 their consume arms
+            // (W4-f49 lane 12 / W4-d79). Every `IsAPickup` kind is consumed
+            // on touch — none enters the inventory walk. The S1 receipt
+            // keeps f49's gate-REMOVED shape (d79's exclusion-list skip
+            // gate is the same admission expressed as a skip — dropped).
             let Some(pl) = player.as_ref() else {
                 break;
             };
@@ -198,6 +199,38 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 // slot being non-air OR the swing finished (`:34919`).
                 if inventory[app.selected].kind == 0 && app.swing > 0.0 {
                     i += 1;
+                    continue;
+                }
+                // W4-f49 lane 12 — `PickupItem`'s Nebula arm FIRST in the
+                // C# chain (`:35045-35058`, `ItemID.Sets.NebulaPickup` =
+                // 3453/3454/3455, `ItemID.cs:1324`): the POSITIONED
+                // `PlaySound(7, (int)position.X, (int)position.Y)` (the
+                // player's top-left — this one attenuates against the
+                // camera; the heart/star arms are unpositioned), then the
+                // `buffType` read + `TurnToAir`, then `NebulaLevelup(buffType)`
+                // (the netMode-1 SendData 102 arm is MP-only). The buffType
+                // rides the item row (`Item.cs:31008-31016`: 3453→179 Damage,
+                // 3454→173 Life, 3455→176 Mana). S1 keep-one: f49's
+                // registry-read arm survives (d79's hardcoded-map twin
+                // dropped), REWIRED onto d79's `play_grab_sound` — the
+                // faithful `:718-722` Stop-then-recreate on the
+                // SoundInstanceGrab slot (f49's `_at` emit-only twin
+                // retires). The case-7 pitch draw rides `UpdatePlayers`
+                // (the `GrabItems` caller, `Main.cs:17754`); `NebulaLevelup`
+                // draws nothing (the buff grant is RNG-free).
+                if matches!(kind, 3453 | 3454 | 3455) {
+                    let buff_kind = crate::registry::get(kind).map_or(0, |d| d.buff_type);
+                    // `:35047` — `(int)position.X/(int)position.Y` truncates
+                    // (the positioned façade's casts; `as i32 as f32` ≡ trunc).
+                    audio.play_grab_sound(
+                        px as i32 as f32,
+                        py as i32 as f32,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
+                    if let Some(p) = player.as_mut() {
+                        p.nebula_levelup(buff_kind);
+                    }
+                    items.swap_remove(i);
                     continue;
                 }
                 // S1-P-i52 — `Player.PickupItem`'s heart/star arms
@@ -291,33 +324,16 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                     items.swap_remove(i);
                     continue;
                 }
-                // W4-f49 lane 12 — `PickupItem`'s Nebula arm FIRST in the
-                // C# chain (`:35045-35058`, `ItemID.Sets.NebulaPickup` =
-                // 3453/3454/3455, `ItemID.cs:1324`): the POSITIONED
-                // `PlaySound(7, (int)position.X, (int)position.Y)` (the
-                // player's top-left), then `buffType` read + `TurnToAir`,
-                // then `NebulaLevelup(buffType)` (the netMode-1 SendData
-                // 102 arm is MP-only). The buffType rides the item row
-                // (`Item.cs:31008-31016`: 3453→179 Damage, 3454→173 Life,
-                // 3455→176 Mana).
-                if matches!(kind, 3453 | 3454 | 3455) {
-                    let buff_kind = crate::registry::get(kind).map_or(0, |d| d.buff_type);
-                    audio.play_grab_sound_at(
-                        px as i32 as f32,
-                        py as i32 as f32,
-                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                    );
-                    if let Some(p) = player.as_mut() {
-                        p.nebula_levelup(buff_kind);
-                    }
-                    items.swap_remove(i);
-                    continue;
-                }
                 // W4-f49 lane 12 — the Mana Cloak star 4143 (`:35080-
-                // 35098`): the UNPOSITIONED `PlaySound(7)`, `statMana +=
-                // 50`, the local-player `TryApplyManaHeat(0.2f, 2f)` +
-                // `ManaEffect(50)` (the RAW 50 before the cap, the `num2
-                // != 0` gate always true), then `TurnToAir`. The star
+                // 35098`, the S1 keep-one survivor; d79's line-equivalent
+                // twin dropped): the UNPOSITIONED `PlaySound(7)` (one
+                // `Next(-10, 11)` pitch on `UpdatePlayers` after the gate),
+                // `statMana += 50`, the local-player `TryApplyManaHeat(0.2f,
+                // 2f)` + `ManaEffect(50)` (the RAW 50 before the cap, the
+                // `num2 != 0` gate always true), then `TurnToAir`. NOT in
+                // `STAR_KINDS` (`:34942`'s flag2 excludes it — the full-mana
+                // pull gate and the Mana Magnet row never apply; the +12
+                // grab margin is unconditional, `:35141-35144`). The star
                 // SPAWN (the 723 projectile's Kill, `Projectile.cs:75174-
                 // 75177`) is the projectile-Kill lane's — the consume arm
                 // is complete for any 4143 drop.
@@ -667,8 +683,8 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             // (`:34947`). The C# arm order (`:34943-34971`): manaMagnet-star
             // → lifeMagnet-heart → nebula → void-vault → goldRing-coin →
             // journey far-range → common. The treasure magnet's RANGE row
-            // is live via GrabFlags; the nebula 12/5 pull lands with W4-f49
-            // lane 12's consume arms.
+            // is live via GrabFlags; the nebula 12/5 pull below is the S1
+            // keep-one survivor (f49's copy, d79's identical twin dropped).
             let drop = &mut items[i];
             drop.shimmered = false;
             drop.being_grabbed = true;
@@ -684,7 +700,8 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                     crate::item::pull_item_pickup(drop.center(), &mut drop.vel, pc, 15.0, 5);
                 } else if matches!(kind, 3453 | 3454 | 3455) {
                     // `:34953-34956` — `ItemID.Sets.NebulaPickup` →
-                    // `PullItem_Pickup(worldItem, 12f, 5)` (W4-f49 lane 12).
+                    // `PullItem_Pickup(worldItem, 12f, 5)` (W4-f49 lane 12,
+                    // the same 12/5 blend as the Mana Magnet star pull).
                     crate::item::pull_item_pickup(drop.center(), &mut drop.vel, pc, 12.0, 5);
                 } else if status.to_void_vault {
                     // `PullItem_ToVoidVault` (`:34978-34981`).
@@ -2390,6 +2407,117 @@ mod pickup_tests {
         assert!(p.buffs.find_buff_index(396).is_some());
     }
 
+    /// W4-d79 — the Mana Cloak star 4143 (`Player.cs:35080-35097`): the
+    /// star arm's 50-mana twin — +50 capped, the same ManaHeat (0.2, 2 s)
+    /// pair + buff 396, the RAW-50 HealMana text, the drop airs out and
+    /// never enters the inventory. The full-mana touch still consumes
+    /// (the `:34947` pull gate's flag2 list excludes 4143 entirely).
+    #[test]
+    fn w4_d79_the_mana_cloak_star_restores_fifty_and_arms_mana_heat() {
+        let mut app = pickup_world();
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_max = 200;
+            p.mana = 180; // the cap eats 30 of the 50
+        }
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(4143, 1, pc.0 - 4.0, pc.1 - 4.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.is_empty(), "the Mana Cloak star aired out");
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 200, "capped at statManaMax2");
+        assert_eq!(p.latest_mana_potion_damage_bonus, 0.2);
+        assert!(
+            (p.latest_mana_potion_duration - 120.0).abs() < 1e-3,
+            "2 s = 120 ticks"
+        );
+        assert!(p.buffs.find_buff_index(396).is_some(), "ManaHeat added");
+        assert!(
+            app.inventory.iter().all(|s| s.count == 0),
+            "nothing entered the inventory"
+        );
+        let t = app
+            .combat_texts
+            .iter()
+            .find(|t| t.active)
+            .expect("the mana text spawned");
+        assert_eq!(t.text, "50", "the RAW 50 prints before the cap");
+        assert_eq!(t.color, crate::combat_text::HEAL_MANA);
+        // The full-mana touch: consumed, capped, heat refreshed.
+        let mut app = pickup_world();
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_max = 200;
+            p.mana = 200;
+        }
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(4143, 1, pc.0 - 4.0, pc.1 - 4.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.is_empty(), "consumed at full mana");
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 200);
+        assert!(p.buffs.find_buff_index(396).is_some());
+    }
+
+    /// W4-d79 — the 4143 arm's RNG order: the case-7 pitch draw FIRST
+    /// (`:35082`), then the ManaEffect text's two placement draws — the
+    /// same three-draw contract as the heart/star witnesses above.
+    #[test]
+    fn w4_d79_the_mana_cloak_star_draws_ride_update_players_in_order() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut app = pickup_world();
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_max = 200;
+            p.mana = 100;
+        }
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(4143, 1, pc.0 - 4.0, pc.1 - 4.0));
+        let seed = 0x4143_5152i32;
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = UnifiedRandom::new(seed);
+        let mut witness = UnifiedRandom::new(seed);
+        let _pitch = witness.next_range(-10, 11); // case 7 (`:725`)
+        let _dx = witness.next_range(-10, 11); // width 20
+        let _dy = witness.next_range(-21, 22); // height 42
+        update_items(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).peek(),
+            witness.peek(),
+            "exactly the chime + two placement draws, in the C# order"
+        );
+    }
+
+    // W4-d79's `w4_d79_the_nebula_pickup_levels_the_matching_buff_family`
+    // twin FOLDED into f49's set at batch-L (the S1 receipt: ONE set per
+    // behaviour — `w4_f49_the_nebula_pickups_grant_their_family_buff_and_vanish`
+    // below carries the same tier/sweep/independence assertions plus the
+    // Player-field pins). The one-pitch RNG-order twin below is UNIQUE
+    // (stream-exact) and stays.
+
+    /// W4-d79 — the Nebula pickup's RNG order: the POSITIONED case-7 Grab
+    /// draws ONE `Next(-10, 11)` pitch (`LegacySoundPlayer.cs:725`) on
+    /// `UpdatePlayers` after the attenuation gate; `NebulaLevelup` draws
+    /// nothing (the buff grant is RNG-free). Unlike the heart/star arms there
+    /// is NO combat-text placement draw — the nebula arm spawns no text.
+    #[test]
+    fn w4_d79_the_nebula_pickup_draws_one_pitch_and_no_text() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut app = pickup_world();
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(3455, 1, pc.0 - 4.0, pc.1 - 4.0));
+        let seed = 0x0EB0_5152i32;
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = UnifiedRandom::new(seed);
+        let mut witness = UnifiedRandom::new(seed);
+        let _pitch = witness.next_range(-10, 11); // case 7 (`:725`)
+        update_items(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).peek(),
+            witness.peek(),
+            "exactly the one pitch draw — no text, no buff-grant draws"
+        );
+        assert!(app.combat_texts.iter().all(|t| !t.active), "no combat text");
+    }
+
     /// The RNG order inside the heart pickup arm: the case-7 pitch draw
     /// (`LegacySoundPlayer.cs:725`, ONE `Next(-10, 11)`) comes FIRST (the
     /// `PlaySound(7)` at `:35061` precedes `Heal`), then the HealLife
@@ -2430,7 +2558,8 @@ mod pickup_tests {
     /// for 480 ticks via `NebulaLevelup` (the buffType rows
     /// `Item.cs:31008-31016`: 3453→179, 3454→173, 3455→176) and NEVER enters
     /// the inventory. The tier climbs on a second pickup of the same
-    /// family. WRITTEN NOT RUN (code-only).
+    /// family. The d79 twin's Player-field + family-independence assertions
+    /// folded in at batch-L (the S1 keep-one set). WRITTEN NOT RUN (code-only).
     #[test]
     fn w4_f49_the_nebula_pickups_grant_their_family_buff_and_vanish() {
         for (kind, buff) in [(3453u16, 179i32), (3454, 173), (3455, 176)] {
@@ -2442,6 +2571,14 @@ mod pickup_tests {
             let p = app.player.as_ref().unwrap();
             let i = p.buffs.find_buff_index(buff).expect("the tier-1 family buff");
             assert_eq!(p.buffs.buff_time[i], 480, "kind {kind}: the 480 window");
+            // The Player-field grant (the d79 twin's pin — the same-tick
+            // hint the regen bridge re-derives).
+            let tier = match buff {
+                179 => p.nebula_level_damage,
+                173 => p.nebula_level_life,
+                _ => p.nebula_level_mana,
+            };
+            assert_eq!(tier, 1, "kind {kind}: the Player-field tier");
             assert!(
                 app.inventory.iter().all(|s| s.count == 0),
                 "kind {kind}: nothing entered the inventory"
@@ -2456,6 +2593,17 @@ mod pickup_tests {
                 "kind {kind}: tier 2 granted"
             );
         }
+        // The families are independent (the d79 twin's cross-family pin).
+        let mut app = pickup_world();
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(3453, 1, pc.0 - 4.0, pc.1 - 4.0));
+        app.items.push(collectable_drop(3454, 1, pc.0 - 4.0, pc.1 - 4.0));
+        app.items.push(collectable_drop(3455, 1, pc.0 - 4.0, pc.1 - 4.0));
+        update_items(&mut app, 1.0 / 60.0);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.nebula_level_damage, 1);
+        assert_eq!(p.nebula_level_life, 1);
+        assert_eq!(p.nebula_level_mana, 1);
     }
 
     /// W4-f49 lane 12 — the Mana Cloak star 4143 (`Player.cs:35080-35098`):

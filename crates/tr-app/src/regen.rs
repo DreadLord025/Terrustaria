@@ -405,9 +405,10 @@ fn apply_nebula_buff_mana(state: &mut RegenState, level: i32, mana: &mut i32, ma
 
 /// `Player.UpdateManaRegen` (`Player.cs:19418-19563`). Returns true when this
 /// tick refilled the last missing mana point (the full-bar sound + dust in the
-/// C# — M6-AUDIO polish). `manaRegenDelayBonus` has no grant source in the
-/// source (`:18656` is its only write, 0f) — folded out (noted in ANALYSIS).
-/// The `DebugOptions.DrawManaEstimates` block (`:19486-19531`, flag TRUE at
+/// C# — W4-d79 wired the cue + burst through `Player::take_mana_refill`).
+/// `manaRegenDelayBonus` has no grant source in the source (`:18656` is
+/// its only write, 0f) — folded out (noted in ANALYSIS). The
+/// `DebugOptions.DrawManaEstimates` block (`:19486-19531`, flag TRUE at
 /// `DebugOptions.cs:84`) computes a sustain estimate whose only use is a
 /// discarded `f.ToString("F2")` — zero state writes, folded out (ANALYSIS,
 /// W4-d117). The Arcane Crystal's two rows ride

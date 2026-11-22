@@ -5217,7 +5217,12 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                     destroy_oldest_proximity_mines_over_cap(app, app.local_id as u8, 20);
                 }
             }
-            app.audio.play_at("Item_1", pcx, pcy, 1.0);
+            // W4-d79 — the launch is SILENT: `Player.ItemCheck_Shoot`
+            // (`Player.cs:47056-49468`) carries NO `PlaySound` (the census is
+            // zero hits); the launcher's `UseSound` plays once at the USE
+            // START (`:51696`, the wire's `start_swing_extras`). The pre-wave
+            // per-shot `Item_1` was a phantom duplicate (the gun/bow lanes
+            // retired theirs in S1-P-i14 / W4-d79).
         }
         // `ApplyItemTime` (`Player.cs:47184-47193` → `SetItemTime(useTime)`,
         // `:4416-4419`): the shot re-arms the action cadence, so the next shot
@@ -5702,22 +5707,30 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             .into_iter()
             .flatten()
         {
-            if let Some((name, volume)) = kill_cue(cue) {
-                app.audio.play_at(name, px, py, volume);
-            }
+            // W4-d79 — the faithful per-case path (research/32 D1/D4): the
+            // style arms' GetRandomPitch NextFloat rides the audio-only
+            // stream, the case draws ride `UpdatePlayers` (the break runs
+            // in `Player.ItemCheck`, `Main.cs:17754`), the slot pools
+            // Stop/detach per the case. The C# plays the sounds at the top
+            // of `KillTile` (:63558) BEFORE the loot — the port's order.
+            app.audio.play_kill_cue(
+                cue,
+                px,
+                py,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
         }
     }
     // `CheckPot`'s break sound by style (:56856-56867, `pot_break_sound`),
-    // at the event cell.
+    // at the event cell — the int-overload cases 6/4/13 through the same
+    // faithful dispatcher.
     for event in &kill.events {
-        if let Some((name, volume)) = kill_cue((edit::pot_break_sound(event.style), 1)) {
-            app.audio.play_at(
-                name,
-                event.x as f32 * TILE_PX,
-                event.y as f32 * TILE_PX,
-                volume,
-            );
-        }
+        app.audio.play_kill_cue(
+            (edit::pot_break_sound(event.style), 1),
+            event.x as f32 * TILE_PX,
+            event.y as f32 * TILE_PX,
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+        );
     }
     // The breaking player's staff bonus (`GetPlayerForTile(x, y)
     // .staffOfRegrowthBonus`, `WorldGen.cs:65689` — the flag the placement
@@ -16175,7 +16188,12 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
     let Some(boss) = boss else {
         return false;
     };
-    app.audio.play("Roar_0");
+    // `Player.cs:43760` et al. — `PlaySound(15, (int)position.X,
+    // (int)position.Y, 0)`: the int overload, Style 0 → `Roar_0`, the
+    // TOP-LEFT position; case 15 draws NOTHING (the slot guard rides
+    // `play_roar`, research/32 D4).
+    let (rx, ry) = app.player.as_ref().map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, rx, ry);
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -16260,7 +16278,10 @@ pub(crate) fn use_goblin_battle_standard(app: &mut App) -> bool {
         1,
         Some(crate::app::RngKey::UpdatePlayers),
     );
-    app.audio.play("Roar_0");
+    // `Player.cs:43926` — `PlaySound(15, pos, 0)`: Style 0, top-left,
+    // draw-free (case 15).
+    let (rx, ry) = app.player.as_ref().map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, rx, ry);
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -16323,7 +16344,10 @@ pub fn use_snow_globe(app: &mut App) -> bool {
     if !crate::world_sim::npcs::can_start_invasion(&app.world, life_max) {
         return false;
     }
-    app.audio.play("Roar_0");
+    // `Player.cs:43943` — `PlaySound(15, pos, 0)`: Style 0, top-left,
+    // draw-free (case 15).
+    let (rx, ry) = app.player.as_ref().map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, rx, ry);
     app.world.invasion_delay = 0;
     crate::world_sim::npcs::start_invasion_in(
         app,
@@ -16348,7 +16372,10 @@ pub fn use_snow_globe(app: &mut App) -> bool {
 /// play. The C# gate is `ItemTimeIsZero && itemAnimation > 0`: the ACTION
 /// re-arms inside the running swing, the animation is untouched.
 fn apply_moon_item(app: &mut App, kind: u16) {
-    app.audio.play("Roar_0");
+    // `Player.cs:43977`/:44030 — `PlaySound(15, pos, 0)`: Style 0,
+    // top-left, draw-free (case 15).
+    let (rx, ry) = app.player.as_ref().map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, rx, ry);
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -16405,7 +16432,10 @@ pub(crate) fn use_suspicious_looking_eye(app: &mut App) -> bool {
     let Some(eye) = Npc::spawn_eye_of_cthulhu(&app.world, pcx, pcy) else {
         return false;
     };
-    app.audio.play("Roar_0");
+    // `Player.cs:43760` — `PlaySound(15, pos, 0)`: Style 0, top-left,
+    // draw-free (case 15).
+    let (rx, ry) = (player.x, player.y);
+    app.audio.play_roar(0, rx, ry);
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -16737,7 +16767,10 @@ pub fn use_pirate_map(app: &mut App) -> bool {
     if !crate::world_sim::npcs::can_start_invasion(&app.world, life_max) {
         return false;
     }
-    app.audio.play("Roar_0");
+    // `Player.cs:43960` — `PlaySound(15, pos, 0)`: Style 0, top-left,
+    // draw-free (case 15).
+    let (rx, ry) = app.player.as_ref().map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, rx, ry);
     app.world.invasion_delay = 0;
     crate::world_sim::npcs::start_invasion_in(
         app,
