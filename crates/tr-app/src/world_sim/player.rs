@@ -583,6 +583,17 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // The zone flags (`Player.ZoneSnow`-family) — the torch-luck table's
         // inputs (`Player.cs:17924-18036`), refreshed beside the auras.
         p.zones = app.scene_metrics.zones();
+        // W4-f40 (canonical placement, research/114 §1d — c39's duplicate
+        // before-grapple write retired onto this one): `Player.RecalculateLuck`'s
+        // lantern-night term (`Player.cs:29146-29149`, `if (LanternNight.
+        // LanternsUp) luck += 0.3f`). The C# reads the static live inside
+        // `UpdateLuck`; the port snapshots `LanternsUp` once per tick beside
+        // the auras/zones (the flag only flips at the dusk/dawn boundaries
+        // and `UpdateTime`, never mid-player-step), so `update_luck`'s
+        // `recalculate_luck` below reads the same value the C# would. The
+        // +0.3 add itself already lives in `luck.rs::recalculate_luck` (the
+        // M4-EVENT-4 neutral-default input this wires).
+        p.luck_state.lantern_night = crate::world_events::lanterns_up(&app.world_events);
         // The held torch's style (`inventory[selectedItem].createTile == 4`,
         // `Player.cs:17917-17920`).
         p.held_torch_style = app
@@ -1109,6 +1120,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // App's swing/reuse timers (fed before the tick, the
             // `frame_inputs` convention).
             p.mana_regen_item_in_use = app.swing > 0.0 || app.reuse_delay > 0.0;
+            // W4-c39 exec (research/114 §1d): the duplicate luck write here
+            // DROPPED — f40's beside-auras/zones placement is canonical (the
+            // single write moved up beside `p.zones`).
             p.update_with_grapple(
                 &app.world,
                 input,
@@ -3380,5 +3394,37 @@ mod tests {
             mana_now >= mana_before + 50,
             "the second drink restored 50: {mana_before} -> {mana_now}"
         );
+    }
+
+    /// W4-c39 — the lantern-night luck term wires live (`Player.cs:29146-29149`):
+    /// `LanternNight.LanternsUp` feeds `luck_state.lantern_night` before the
+    /// tick's `recalculate_luck`, adding 0.3 luck; the lanterns-down tick
+    /// clears it.
+    #[test]
+    fn w4_c39_the_lantern_night_adds_luck_live() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("luck".into(), 40, 200);
+        app.world.compute_column_surface();
+        let mut p = Player::spawn(&app.world);
+        // Underground: the torch scan's surface gate keeps torch_luck at 0,
+        // so the lantern term is the only luck source.
+        p.y = 150.0 * 16.0;
+        app.player = Some(p);
+        // Lanterns up: the tick feeds the flag and the luck gains 0.3.
+        app.world_events.manual_lanterns = true;
+        update_player(&mut app, 1.0 / 60.0);
+        let pl = app.player.as_ref().unwrap();
+        assert!(pl.luck_state.lantern_night, "the flag feeds from LanternsUp");
+        assert!(
+            (pl.luck_state.luck - 0.3).abs() < 1e-4,
+            "the lantern night adds 0.3 luck: {}",
+            pl.luck_state.luck
+        );
+        // Lanterns down: the flag clears and the term drops.
+        app.world_events.manual_lanterns = false;
+        update_player(&mut app, 1.0 / 60.0);
+        let pl = app.player.as_ref().unwrap();
+        assert!(!pl.luck_state.lantern_night);
+        assert!(pl.luck_state.luck.abs() < 1e-4, "the term drops: {}", pl.luck_state.luck);
     }
 }

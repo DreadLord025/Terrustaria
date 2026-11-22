@@ -1099,6 +1099,13 @@ pub const CRYSTAL_PULSE: u16 = 521;
 /// `ProjectileID.SparkleGuitar` (856, `ProjectileID.cs:2266`) — the Sparkle
 /// Guitar's note (aiStyle 167, the CatmullRom arc).
 pub const SPARKLE_GUITAR: u16 = 856;
+/// `ProjectileID.ReleaseLantern` (855, `ProjectileID.cs:2264`) — the
+/// lantern-night floating lantern (aiStyle 166, the dove machine's lantern
+/// arm, `Projectile.cs:47540-47610`).
+pub const RELEASE_LANTERN: u16 = 855;
+/// `ProjectileID.ReleaseDoves` (851, `ProjectileID.cs:2258`) — the released
+/// dove (aiStyle 166, the dove arm).
+pub const RELEASE_DOVES: u16 = 851;
 /// `ProjectileID.StarCannonStar` (955, `ProjectileID.cs:2464`) — the Star
 /// Cannon's shot (aiStyle 5, `penetrate = -1`, `alpha = 50`).
 pub const STAR_CANNON_STAR: u16 = 955;
@@ -3827,6 +3834,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // aiStyle 167, `alpha = 255`, `tileCollide = false`,
             // `extraUpdates = 2`, local immunity −1, ignoreWater, magic.
             SPARKLE_GUITAR => (32.0, 32.0, 167, 1, TIME_LEFT_DEFAULT, 2, false, false, false, (true, -1, false, -1, 255, 1.0)),
+            // W4-c39 — `Projectile.cs:8197-8205` — the Release Lantern (855):
+            // 12x12, aiStyle 166, `penetrate = -1`, `timeLeft = 1000`,
+            // `netImportant` (the tail below). The stock `tileCollide = true`
+            // stands (the bounce is HandleMovement's `:18347-18361` arm).
+            RELEASE_LANTERN => (12.0, 12.0, 166, -1, 1000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:8173-8181` — the Release Doves (851): 4x4,
+            // aiStyle 166, `penetrate = -1`, `timeLeft = 300`, netImportant.
+            RELEASE_DOVES => (4.0, 4.0, 166, -1, 300, 0, true, false, false, RESET_STATE),
             // `Projectile.cs:9013-9023` — the Star Cannon star (955): 18x18,
             // aiStyle 5, `penetrate = -1`, `alpha = 50`, ranged (`light = 1f`
             // dropped).
@@ -4134,7 +4149,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             )
             // S1-P-i55 — `Projectile.cs:7628`: the golf balls (721 + the 14
             // dyed twins) set `netImportant = true` themselves.
-            || matches!(kind, GOLF_BALL | 739..=752),
+            || matches!(kind, GOLF_BALL | 739..=752)
+            // W4-c39 — `Projectile.cs:8175`/`:8199`: the released dove (851)
+            // and lantern (855) set `netImportant = true`.
+            || matches!(kind, RELEASE_DOVES | RELEASE_LANTERN),
         ignore_water: ((minion || sentry)
             && !matches!(
                 kind,
@@ -4655,6 +4673,11 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // arm's 5-tick frame machine (`Projectile.cs:23477-23486`) wraps at
         // it, back to frame 1.
         861 => 4,
+        // W4-d17 (canonical, research/114 §1c) — the Release Doves (851) /
+        // Release Lantern (855) 4-frame sheets (`Main.cs:8657`/`:8660`):
+        // `AI_166_Dove`'s frame machine wraps at 4 (`Projectile.cs:47556`).
+        // c39's rows omitted the sheet count (the draw would use 1 frame).
+        RELEASE_DOVES | RELEASE_LANTERN => 4,
         // The 909's 6-frame sheet (`Main.cs:8691`) — the arm's
         // `1 + rand.Next(6)` frame roll (`Projectile.cs:23268-23274`) pins
         // one of its rows.

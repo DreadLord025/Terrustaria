@@ -63,6 +63,8 @@ mod mount;
 mod net;
 mod npc;
 mod npc_chat;
+mod party_hat;
+mod event_skies;
 mod npc_spatial;
 mod revenge;
 mod npc_ai;
@@ -195,6 +197,10 @@ mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;
 mod projectile_ai_misc;
+// W4-c39 exec (research/114 §1c): the duplicate `projectile_ai166` module
+// RETIRED — d17's in-file `ai_dove`/`dove_movement`/`dove_bounce` in
+// projectile.rs is canonical (the pool's module convention). c39's live
+// entity-light feed stays grafted in app/frame/draw.rs.
 // S1-P-i42 — the torch/glowstick/flare light-item projectile family: the
 // aiStyle-14 glowsticks (50/53/473/515/870/1089) + the aiStyle-33 flares
 // (163/310/1008-1011) + the fairy's aiStyle-170 hover. The rows land in

@@ -142,6 +142,9 @@ pub(crate) fn advance_time_with_events(
     if was_day && !app.world.day_time {
         // StartNight: the eclipse row cleared above, then the world clear.
         app.world.eclipse = false;
+        // `Main.cs:65222` — `NPC.freeCake = false` at every dusk (ahead of
+        // the event pair, beside `ResetBadgerHatTime`).
+        app.world_events.free_cake = false;
         // `UpdateTime_StartNight`'s event pair (`Main.cs:65225-65226`):
         // `BirthdayParty.CheckNight()` then `LanternNight.CheckNight()` —
         // S1-F-14.
@@ -170,27 +173,42 @@ pub(crate) fn advance_time_with_events(
         let partyable: Vec<bool> = app
             .npcs
             .iter()
-            .map(|n| {
-                n.hp > 0
-                    && n.kind.is_town_npc()
-                    // `CanNPCParty`'s exclusions (`:55-64`): the bound NPCs
-                    // — the old man (37) and the skeleton merchant (453)
-                    // have no ported kinds, so the tax collector (441) is
-                    // the only exclusion the port's roster carries.
-                    && n.kind != crate::npc::NpcKind::TaxCollector
-            })
+            .map(crate::world_events::can_npc_party)
             .collect();
         let party_up = crate::world_events::check_morning_party(
             &mut app.world_events,
             party_girl,
             &partyable,
+            app.world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
             &mut |lo, hi| rng.next_range(lo, hi),
         );
-        // `Main.cs:65375` → `BirthdayParty.CheckMorning` → `:142`'s
+        // `Main.cs:65375` → `BirthdayParty.CheckMorning` → `:141`'s
         // `CheckForAchievement`: a natural party coming up credits
         // THROW_A_PARTY (25).
         if party_up {
             let _ = app.notify_progression_net(25);
+            // `BirthdayParty.cs:127-139` — the `Game.BirthdayParty_1/2/3`
+            // broadcast names the celebrants (`GetGivenOrTypeNetName`),
+            // `new Color(255, 0, 160)`.
+            let names: Vec<String> = app
+                .world_events
+                .celebrating_npcs
+                .iter()
+                .filter_map(|&i| app.npcs.get(i))
+                .map(|n| {
+                    if n.given_name.is_empty() {
+                        crate::lang::npc_name(n.kind.net_id())
+                    } else {
+                        n.given_name.clone()
+                    }
+                })
+                .collect();
+            let key = format!("Game.BirthdayParty_{}", names.len());
+            crate::chat::broadcast_death_text(
+                &mut app.chat,
+                &crate::lang::text_args(&key, &names),
+                [255, 0, 160],
+            );
         }
         crate::world_events::check_morning_lanterns(&mut app.world_events);
     }

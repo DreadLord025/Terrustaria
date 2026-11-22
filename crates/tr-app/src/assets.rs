@@ -492,6 +492,15 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_181",
         "Extra_198",
         "Extra_93",
+        // W4-c39: the lantern-night sky (`LanternSky.cs:79`,
+        // `TextureAssets.Extra[134]`) and the birthday-party balloons
+        // (`PartySky.cs:88`, `Extra[69..71]`) + the town-NPC party hats
+        // (`Main.DrawNPCExtras`, `Main.cs:26922`, `Extra[72]`).
+        "Extra_134",
+        "Extra_69",
+        "Extra_70",
+        "Extra_71",
+        "Extra_72",
         // Armor sheets, slots 1..4 = copper/iron/silver/gold. `AssetInitializer.cs:
         // 165-185` indexes the texture arrays by the armor slot itself, so the file
         // number equals the slot: `Armor_Head_{n}`, `Armor_Legs_{n}` and the
@@ -1998,6 +2007,15 @@ pub struct Lookups {
     /// (`Main.cs:57248`) — loaded for S1-E-16, the draw is gated on
     /// `Player.hasPaladinShield` (unported).
     pub extra_98: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[134]`: the lantern-night sky's lantern sheet
+    /// (`LanternSky.cs:79`), 3 variants across.
+    pub extra_134: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[69..71]`: the birthday-party balloon sheets
+    /// (`PartySky.cs:88`), each a 3x3 grid.
+    pub extra_balloons: [Option<tr_render::SheetRect>; 3],
+    /// `TextureAssets.Extra[72]`: the town-NPC party-hat strip
+    /// (`Main.DrawNPCExtras`, `Main.cs:26922`), 20 frames across.
+    pub extra_72: Option<tr_render::SheetRect>,
     /// `TextureAssets.FlameRing`: the inferno halo (`Main.cs:64321`), 400×1200
     /// (3 rings of 400×400) — the draw is gated on `Player.inferno`.
     pub flame_ring: Option<tr_render::SheetRect>,
@@ -2437,6 +2455,9 @@ impl Lookups {
             extra_305: atlas.sheet("Extra_305").copied(),
             extra_49: atlas.sheet("Extra_49").copied(),
             extra_98: atlas.sheet("Extra_98").copied(),
+            extra_134: atlas.sheet("Extra_134").copied(),
+            extra_balloons: [69, 70, 71].map(|i| atlas.sheet(&format!("Extra_{i}")).copied()),
+            extra_72: atlas.sheet("Extra_72").copied(),
             flame_ring: atlas.sheet("FlameRing").copied(),
             moon_explosion: MOON_EXPLOSION_SHEETS.map(|name| atlas.sheet(name).copied()),
             ui_heart: atlas.sheet("Heart").copied(),
@@ -2993,6 +3014,23 @@ impl Lookups {
             0,
             rect.width,
             rect.height,
+        ))
+    }
+
+    /// The party-hat strip's `column` cell (`Extra_72`, 20 columns × 1 row,
+    /// `Main.DrawNPCExtras` `Main.cs:26939`): the UV quad plus the cell's
+    /// native size. The 2-px trim (`Width -= 2; Height -= 2`) is the caller's
+    /// (the hat draw's `cell`), so this returns the FULL cell.
+    pub fn party_hat_cell(&self, column: u32) -> Option<([f32; 4], [f32; 2])> {
+        let rect = self.extra_72.as_ref()?;
+        let cell_w = rect.width / 20;
+        let x = column * cell_w;
+        if x + cell_w > rect.width {
+            return None;
+        }
+        Some((
+            uv_rect(rect, self.atlas_size, x as i32, 0, cell_w, rect.height),
+            [cell_w as f32, rect.height as f32],
         ))
     }
 

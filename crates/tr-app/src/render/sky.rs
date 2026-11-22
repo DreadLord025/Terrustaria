@@ -654,6 +654,10 @@ pub(crate) fn draw_sky(
     counter: u32,
     // `Main.mouseTextColor` (`Main.cs:1683`): the Mushroom glow's pulse.
     mouse_text_color: u8,
+    // W4-c39 exec (research/114 §1e): the `PartySky` balloon field, drawn at
+    // the same `SkyManager` depth boundaries as the ambience
+    // (`PartySky.cs:171-245`). The f40 `lantern_sky` shape.
+    event_skies: &crate::event_skies::EventSkies,
 ) {
     // `Background_0.png` is the game's own 48x1400 sky gradient: deep blue at the top,
     // pale near the horizon. It is anchored to `Main.worldSurface`.
@@ -954,6 +958,30 @@ pub(crate) fn draw_sky(
         bg_alpha_front,
         background_enabled,
     };
+    // W4-c39 exec (research/114 §1e): the `PartySky` rides the SAME
+    // `SkyManager` depth tracker as the ambience — every `DrawToDepth(min)`
+    // boundary draws its `[min, last)` band (`PartySky.cs:185-198`'s own
+    // cull). The tracker mirrors `amb_last`; the final flush draws the
+    // remainder. The f40 `lantern_sky` shape.
+    let mut party_last = f32::INFINITY;
+    let draw_party_band = |r: &mut SpriteRenderer, min_depth: f32, last: &mut f32| {
+        if *last <= min_depth {
+            return;
+        }
+        crate::event_skies::draw_balloons_band(
+            r,
+            event_skies,
+            lookups,
+            camera,
+            zoom,
+            screen,
+            sky_color,
+            surface_px,
+            min_depth,
+            *last,
+        );
+        *last = min_depth;
+    };
     // `DrawSurfaceBG`'s three cloud passes, in the original order: distant
     // (`Main.cs:59334`, before the storm banks), closer (`Main.cs:59449`,
     // between the mountain steps) and closest (`Main.cs:59520`, before the front
@@ -1036,6 +1064,8 @@ pub(crate) fn draw_sky(
         1.0 / 0.15,
         &mut amb_last,
     );
+    // W4-c39: the party balloons' far band rides the same boundary.
+    draw_party_band(r, 1.0 / 0.15, &mut party_last);
     if show_bg {
         if far_forest > 0.0 {
             if let Some(far) = sky.far {
@@ -1099,6 +1129,8 @@ pub(crate) fn draw_sky(
     // pass: the mid-depth entities draw between the mountain rows and the
     // closer clouds.
     crate::ambience::draw_range_min(r, ambience, lookups, &amb_ctx, 5.0, &mut amb_last);
+    // W4-c39: the party balloons' mid band rides the same boundary.
+    draw_party_band(r, 5.0, &mut party_last);
     if bg_block {
         let closer_top = if background_enabled {
             magic * 1300.0 + 1090.0 + sc_adj + 30.0 + 150.0
@@ -1227,6 +1259,11 @@ pub(crate) fn draw_sky(
         lookups,
         ctx: &amb_ctx,
         last: &mut amb_last,
+        // W4-c39: the party sky's band state threads the front-row chain
+        // (the f40 `lantern_sky`/`lantern_last` shape).
+        event_skies,
+        party_last: &mut party_last,
+        party_surface_px: surface_px,
     });
     if show_bg {
         // `pushBGTopHack` for the front loop is `30 - 180` (`Main.cs:59302`,
@@ -1541,6 +1578,9 @@ pub(crate) fn draw_sky(
     // last front-row boundary) draw after every surface layer, before the
     // underground backdrop.
     crate::ambience::draw_range_remaining(r, ambience, lookups, &amb_ctx, &mut amb_last);
+    // W4-c39: the party sky's remainder (the nearest balloons, below the
+    // last front-row boundary) flush here too (`Main.cs:59626`).
+    draw_party_band(r, f32::NEG_INFINITY, &mut party_last);
     // `Main.DrawBackground_SurfaceTransitionBackground`,
     // `Main.DrawBackground_DirtBackground`, `DrawBackground_DrawUnderworldBlackBox`,
     // `DrawBackground_DrawRockLayer` and `DrawBackground_DrawMagmaLayer`: the textured

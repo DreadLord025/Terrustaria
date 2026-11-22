@@ -253,6 +253,19 @@ pub struct World {
     /// `NPC.downedDeerclops` — the frozen boss's defeat (the event flag
     /// 25, `NPC.cs:79355`).
     pub downed_deerclops: bool,
+    /// The moon-event boss first-kill flags (`NPC.cs:79210-79238`'s
+    /// `DoDeathEvents` rows, W4-c39 exec per research/114 §0.2):
+    /// `downedHalloweenKing` (Pumpking 327, event id 5 — the default arm,
+    /// ARMS the lantern night), `downedHalloweenTree` (Mourning Wood 325,
+    /// id 4 — a skip), `downedChristmasTree` (Everscream 344, id 21 — a
+    /// skip), `downedChristmasIceQueen` (Ice Queen 345, id 20 — arms),
+    /// `downedChristmasSantank` (SantaNK1 346, id 22 — a skip). The `.wld`
+    /// flags block carries all five (`wld/sections/flags.rs`).
+    pub downed_halloween_king: bool,
+    pub downed_halloween_tree: bool,
+    pub downed_christmas_tree: bool,
+    pub downed_christmas_ice_queen: bool,
+    pub downed_christmas_santank: bool,
     /// The Skeletron Prime head's centre + the present flag (the limbs'
     /// tether reads — the WoF write-through shape).
     pub prime_present: bool,
@@ -671,6 +684,11 @@ impl World {
             downed_golem: false,
             downed_fishron: false,
             downed_deerclops: false,
+            downed_halloween_king: false,
+            downed_halloween_tree: false,
+            downed_christmas_tree: false,
+            downed_christmas_ice_queen: false,
+            downed_christmas_santank: false,
             golem_present: false,
             golem_hp_ratio: 1.0,
             spawn_meteor: false,

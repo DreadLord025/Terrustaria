@@ -1110,6 +1110,13 @@ pub(crate) struct AmbiencePass<'a> {
     pub lookups: &'a crate::assets::Lookups,
     pub ctx: &'a crate::ambience::SkyDrawCtx<'a>,
     pub last: &'a mut f32,
+    /// W4-c39 exec (research/114 §1e): the `PartySky` balloon field + its
+    /// own depth tracker + the surface gate, threaded so each front-row
+    /// `DrawToDepth` boundary also draws the party band (the f40
+    /// `lantern_sky`/`lantern_last` shape).
+    pub event_skies: &'a crate::event_skies::EventSkies,
+    pub party_last: &'a mut f32,
+    pub party_surface_px: f32,
 }
 
 /// One row of a `DrawSurfaceBG_*` chain (`Main.cs:59986-61370`).
@@ -1358,6 +1365,8 @@ pub(crate) fn draw_front_trees(
     for l in layers {
         if let Some(p) = ambience.as_deref_mut() {
             crate::ambience::draw_range_min(r, p.entities, p.lookups, p.ctx, l.depth, p.last);
+            // W4-c39: the party balloons' band rides the same boundary.
+            draw_party_band_min(r, p, l.depth);
         }
         if let Some(t) = l.tex {
             let tex = background_frame(&t, l.frame_step, counter);
@@ -1382,7 +1391,31 @@ pub(crate) fn draw_front_trees(
     // strata wait for the flush.
     if closes_with_one && let Some(p) = ambience.as_deref_mut() {
         crate::ambience::draw_range_min(r, p.entities, p.lookups, p.ctx, 1.0, p.last);
+        // W4-c39: the party balloons' band rides the closing boundary too.
+        draw_party_band_min(r, p, 1.0);
     }
+}
+
+/// W4-c39 exec (research/114 §1e): one `DrawToDepth(min)` boundary for the
+/// `PartySky` balloon field — the `[min, party_last)` band, then the tracker
+/// advances (the `draw_range_min` shape, the f40 `lantern_sky` precedent).
+fn draw_party_band_min(r: &mut SpriteRenderer, p: &mut AmbiencePass<'_>, min_depth: f32) {
+    if *p.party_last <= min_depth {
+        return;
+    }
+    crate::event_skies::draw_balloons_band(
+        r,
+        p.event_skies,
+        p.lookups,
+        p.ctx.camera,
+        p.ctx.zoom,
+        p.ctx.screen,
+        p.ctx.color_of_the_skies,
+        p.party_surface_px,
+        min_depth,
+        *p.party_last,
+    );
+    *p.party_last = min_depth;
 }
 
 /// `Main.ComputeScAdj`: small vertical screen-space correction for backgrounds.

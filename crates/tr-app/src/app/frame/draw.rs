@@ -586,6 +586,25 @@ impl App {
                         ) {
                             self.entity_lights.add(x, y, rgb);
                         }
+                        // W4-c39 (the surviving graft, research/114 §1c) —
+                        // `AI_166_Dove`'s lantern light cast
+                        // (`Projectile.cs:47568-47569`): `(1, 0.6, 0.1) *
+                        // (1 - alpha/255)` at the lantern's centre. The AI
+                        // writes it per tick (not the SetDefaults `light`
+                        // slice), so it rides the feed directly. d17's
+                        // in-file `ai_dove` machine skips the light (no pool
+                        // layer); this frame-side seam is c39's unique
+                        // contribution, grafted beside the canonical machine.
+                        if p.kind == crate::projectile::RELEASE_LANTERN {
+                            let num2 = 1.0 - p.alpha as f32 / 255.0;
+                            let cx = (p.pos.x + p.w * 0.5) / TILE_PX;
+                            let cy = (p.pos.y + p.h * 0.5) / TILE_PX;
+                            self.entity_lights.add(
+                                cx as i32,
+                                cy as i32,
+                                [num2, 0.6 * num2, 0.1 * num2],
+                            );
+                        }
                     }
                     // The Dust `UpdateDust` lights (S1-E-5, dust family):
                     // the RNG-free AddLight arms of the FIRST ladder
@@ -1176,10 +1195,31 @@ impl App {
                         self.atmo,
                         self.game_update_count,
                         self.mouse_text_color,
+                        // W4-c39 exec: the PartySky balloons ride the sky
+                        // pass's depth boundaries (research/114 §1e).
+                        &self.event_skies,
                     );
                     // `Main.cs:62217`: `ScreenDarkness.DrawBack` sits right after
                     // `Overlays.Scene.Draw(Background)`.
                     crate::render::screen_fx::draw_darkness_back(renderer, screen, scene_state);
+                    // W4-c39 — the LanternSky draws in the
+                    // `SkyManager.DrawRemainingDepth` slot (after the surface
+                    // layers, before the underground backdrop — the
+                    // depth-sandwich interleave is the ambience pass's own
+                    // machinery, a recorded layering deviation; f40's
+                    // depth-band module is the surviving form at the merge,
+                    // research/114 §1b). The PartySky balloons moved INTO
+                    // draw_sky's depth boundaries (research/114 §1e).
+                    crate::event_skies::draw_lanterns(
+                        renderer,
+                        &self.event_skies,
+                        lookups,
+                        draw_cam,
+                        world_zoom,
+                        screen,
+                        anim_time % 3600.0,
+                        surface_px,
+                    );
                     draw_phase("world");
                     if !reuse_world {
                         tile_stats = draw_tiles(

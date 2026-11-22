@@ -320,6 +320,11 @@ pub fn interact_at(
     if matches!(t.kind, 497 | 89 | 102 | 487) {
         return chair_sit_target(world, i, j, direction);
     }
+    // W4-c39 exec (research/114 §1h): the Slice of Cake (621) dispatch arm
+    // DROPPED — f34's `StationBuff { buff_type, buff_time }` route covers
+    // 621 in the seven-row chain order (`621 => Some((192, 7_200))`, the
+    // anchor-bearing superset per research/70 §1e). Two dispatch arms for
+    // 621 cannot coexist; f41c `f1f95be4` is canonical.
     // The port routes on the registry def's `interaction` tag (Decision #3)
     // where the C# chain tests `Main.tile[myX, myY].type` literals
     // (`Player.cs:32835`/:32857 for 10/11).
@@ -1820,6 +1825,10 @@ mod tests {
             TileInteraction::StationInteract { .. }
         ));
     }
+
+    // W4-c39 exec (research/114 §1h): the cake-dispatch witness DROPPED
+    // with the `CakeEat` route — f34's `StationBuff` dispatch witness
+    // (`621 => Some((192, 7_200))`) covers the surviving arm.
 
     #[test]
     fn test_DW_4_1_interact_at_dispatches_door_kinds() {

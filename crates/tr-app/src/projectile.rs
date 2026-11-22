@@ -6988,6 +6988,155 @@ impl Projectile {
         // (`:20435`) — the CatmullRom arc IS the position.
     }
 
+    /// W4-d17 (canonical, research/114 §1c — c39's duplicate `projectile_ai166`
+    /// machine RETIRED onto this in-file form) — `AI_166_Dove`
+    /// (`Projectile.cs:47540-47610`, the dispatch `:36627-36630`): the
+    /// Release Doves (851) / Release Lantern (855) pair, the style's ONLY
+    /// rows (`:8173-8181`/`:8197-8205`). The first tick rolls `frame =
+    /// Next(4)`; the frame machine strides 4 ticks (dove) / 6 (lantern) over
+    /// the 4-row sheet. The dove climbs (−0.025/tick, capped −3, X clamped
+    /// ±5); the lantern bobs on the `timeLeft % 200` sine, rides the wind
+    /// (`WindForVisuals`, the pool's `wind_speed` — `Main.cs:2823`), X
+    /// clamped ±2. Both fade +3/tick under 90 ticks of life and die at alpha
+    /// 255.
+    ///
+    /// RNG: the first tick's `Next(4)` ONLY (`:47546`). The lantern's
+    /// `Lighting.AddLight` (`:47569`) is the FRAME's entity-light feed
+    /// (`app/frame/draw.rs`, c39's graft — the pool has no light layer).
+    ///
+    /// Movement: the blocked-move bounces are the OUTER type chain
+    /// (`:18336-18361`) — the dove X ×−0.8 / Y ×−0.5, the lantern X ×−1 /
+    /// Y ×−1 (×0.25 when the last Y was negative). [`dove_movement`] runs
+    /// the single `TileCollision` pass + the consumed `Next(3)` cut roll +
+    /// the bounce + the integrate (the `light_movement` shape; the doves'
+    /// ≤5 px/tick speed never reaches the >16 hoik loop).
+    fn ai_dove(&mut self, rng: &mut dyn tr_core::loot::DropRng, wind_speed: f32) {
+        let lantern = self.kind == RELEASE_LANTERN;
+        // `:47543-47547` — the first-tick frame roll.
+        if self.local_ai[0] == 0.0 {
+            self.local_ai[0] = 1.0;
+            self.frame = rng.next_range(0, 4);
+        }
+        // `:47548-47560` — the frame machine (the dove 4, the lantern 6).
+        let num = if lantern { 6 } else { 4 };
+        self.frame_counter += 1;
+        if self.frame_counter > num {
+            self.frame_counter = 0;
+            self.frame += 1;
+            if self.frame > 3 {
+                self.frame = 0;
+            }
+        }
+        // `:47561-47565` — the sprite faces the flight.
+        self.sprite_direction = -1;
+        if self.vel.x > 0.0 {
+            self.sprite_direction = 1;
+        }
+        if lantern {
+            // `:47568-47569` — the light write is the frame's entity-light
+            // feed (c39's graft, `app/frame/draw.rs`); the pool skips it.
+            // `:47570` — the rotation rides velocity.X · 0.2.
+            self.rot = self.vel.x * 0.2;
+            // `:47571-47583` — the bob: the rising damp, else the sine
+            // kick + the 0.5-cap damp, clamped ±1.5.
+            if self.vel.y < -1.0 {
+                self.vel.y *= 0.99;
+            } else {
+                self.vel.y +=
+                    ((self.time_left % 200) as f32 / 200.0 * std::f32::consts::TAU).sin() * 0.25;
+                if self.vel.y > 0.5 {
+                    self.vel.y *= 0.8;
+                }
+                self.vel.y = self.vel.y.clamp(-1.5, 1.5);
+            }
+            // `:47584-47590` — the wind ride (the 0 fallback 0.1).
+            let mut num3 = wind_speed;
+            if num3 == 0.0 {
+                num3 = 0.1;
+            }
+            self.vel.x += 0.0525 * num3;
+            self.vel.x = self.vel.x.clamp(-2.0, 2.0);
+        } else {
+            // `:47594-47600` — the dove's climb.
+            self.rot = self.vel.x * 0.15;
+            self.vel.y -= 0.025;
+            if self.vel.y < -3.0 {
+                self.vel.y = -3.0;
+            }
+            self.vel.x = self.vel.x.clamp(-5.0, 5.0);
+        }
+        // `:47602-47609` — the fade + the alpha-255 kill (d17's inline form
+        // — no `kill()` visibility bump needed).
+        if self.time_left < 90 {
+            self.alpha += 3;
+        }
+        if self.alpha >= 255 {
+            self.kill_time_left = self.time_left;
+            self.active = false;
+            self.time_left = 0;
+        }
+    }
+
+    /// W4-d17 (canonical, research/114 §1c) — `HandleMovement`'s dove/lantern
+    /// half: the single `TileCollision` pass, the blocked-move `Next(3)` cut
+    /// roll (`:17948`, the first operand — consumed on every blocked move,
+    /// the ai026_c precedent), the OUTER-type bounce arms (`:18336-18361`),
+    /// then `UpdatePosition`'s integrate (`:20445`). The `light_movement`
+    /// shape; the ≤5 px/tick speed never reaches the >16 hoik step loop
+    /// (`:17711`).
+    fn dove_movement(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
+        if !self.tile_collide {
+            self.pos += self.vel;
+            return;
+        }
+        let last_velocity = self.vel;
+        let tc = crate::collision::tile_collision(
+            world,
+            [self.pos.x, self.pos.y],
+            [self.vel.x, self.vel.y],
+            self.w,
+            self.h,
+            true,
+            true,
+        );
+        self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
+        if self.vel != last_velocity {
+            // `:17948` — the consumed Next(3) (the ai026_c precedent).
+            let _ = rng.next_range(0, 3);
+            self.dove_bounce(last_velocity);
+        }
+        // `UpdatePosition` (`:20445`) — the dry integrate.
+        self.pos += self.vel;
+    }
+
+    /// W4-d17 (canonical, research/114 §1c) — the OUTER-type bounce arms
+    /// (`Projectile.cs:18336-18361`), split for the witnesses (the
+    /// `light_bounce` precedent): the dove (851) X ×−0.8 / Y ×−0.5; the
+    /// lantern (855) X ×−1 / Y ×−1 (the rising hit damps ×0.25). The
+    /// velocity-delta gates match the C# `velocity != lastVelocity` exactly.
+    fn dove_bounce(&mut self, last: Vec2) {
+        if self.kind == RELEASE_DOVES {
+            // `:18338-18345` — the dove bounce.
+            if self.vel.x != last.x {
+                self.vel.x = (0.0 - last.x) * 0.8;
+            }
+            if self.vel.y != last.y {
+                self.vel.y = (0.0 - last.y) * 0.5;
+            }
+        } else if self.kind == RELEASE_LANTERN {
+            // `:18349-18360` — the lantern bounce.
+            if self.vel.x != last.x {
+                self.vel.x = 0.0 - last.x;
+            }
+            if self.vel.y != last.y {
+                self.vel.y = 0.0 - last.y;
+                if last.y < 0.0 {
+                    self.vel.y *= 0.25;
+                }
+            }
+        }
+    }
+
     /// `AI_001`'s Electrosphere Missile 442 arm (`Projectile.cs:54726-54771`):
     /// the fade-in (alpha −90 every 4 ticks), the fly-to-the-tile-target kill
     /// (`Distance(Center, (ai0,ai1)·16+8) <= 16` → Kill), and the 120-tick
@@ -13027,6 +13176,9 @@ impl Projectile {
     /// off and `timeLeft` zeroed. The `num` capture (`:70649`, the
     /// pre-zeroing timeLeft) rides `kill_time_left` for the 639's death
     /// hook (`:73444`); every other kind's consumer reads nothing.
+    /// (W4-c39 exec: the `pub(crate)` bump for the sibling ai166 module
+    /// REVERTED — d17's inline alpha-kill needs no visibility change,
+    /// research/114 §1c.)
     fn kill(&mut self) {
         self.kill_time_left = self.time_left;
         self.active = false;
@@ -17526,6 +17678,27 @@ impl ProjectilePool {
                         // (aiStyle 167): the 856's CatmullRom arc back to the
                         // owner. The light write SKIPPED (no pool layer).
                         167 => self.slots[i].ai_sparkle_guitar(owner),
+                        // W4-d17 (canonical, research/114 §1c) — `AI()`'s
+                        // `else if (this.aiStyle == 166)` (`Projectile.cs:
+                        // 36627-36630`) -> `AI_166_Dove` (`:47540-47610`): the
+                        // Release Doves (851) / Release Lantern (855) pair.
+                        // The movement runs UNCONDITIONALLY after the AI
+                        // (the C# `HandleMovement` `:17015` precedes the
+                        // `!active` return `:17027` — the kill tick still
+                        // moves), then the `AutomaticallyChangesDirection`
+                        // sign write (`:17016-17026`/`:17281-17288`; neither
+                        // row sets `manualDirectionChange`). The lantern's
+                        // wind reads the pool's `wind_speed`
+                        // (`Main.WindForVisuals` = `windSpeedCurrent`,
+                        // `Main.cs:2823`); the light cast is the frame's
+                        // entity-light feed (c39's graft, `app/frame/draw.rs`).
+                        166 => {
+                            let wind = self.wind_speed;
+                            self.slots[i].ai_dove(rng, wind);
+                            self.slots[i].dove_movement(world, rng);
+                            self.slots[i].direction =
+                                if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
+                        }
                         // S1-P-i16 — the aiStyle-34 fireworks rockets
                         // (`AI()` `Projectile.cs:27136-27188`): the
                         // velocity-pointing rotation + the ai[1] launch
@@ -44564,5 +44737,178 @@ mod s1_p_i25_dragon_tests {
         let cy = d.pos.y + d.h * 0.5;
         assert!((cx - 412.0).abs() < 0.01, "the centre kept: {cx}");
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
+    }
+}
+
+#[cfg(test)]
+mod w4_d17_dove_tests {
+    //! W4-d17 (canonical, research/114 §1c) — the aiStyle-166 machine
+    //! (`AI_166_Dove`, `Projectile.cs:47540-47610`, the dispatch
+    //! `:36627-36630`): the Release Doves (851) / Release Lantern (855)
+    //! pair. c39's duplicate `projectile_ai166` module retired onto this
+    //! in-file form; c39's fade-kill + downward-Y bounce witnesses folded
+    //! in below. WRITTEN NOT RUN (code-only mode).
+    use super::*;
+
+    fn world() -> World {
+        World::new("t".into(), 256, 128)
+    }
+
+    struct CensusRng {
+        draws: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl tr_core::loot::DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            max - 1
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.5
+        }
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut World, rng: &mut CensusRng) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            rng,
+            0,
+            false,
+        );
+    }
+
+    /// Witness 1 — the rows + the dove's climb + the frame machine
+    /// (`:8173-8181`, `:47543-47560`, `:47594-47600`): the 4x4 box,
+    /// aiStyle 166, timeLeft 300, netImportant, projFrames 4. A dove at
+    /// velocity (1, 0): the first tick rolls Next(4) → frame 3, the climb
+    /// −0.025, the rotation 0.15, spriteDirection 1. The frame machine
+    /// strides 4 ticks: tick 5 wraps frame 3 → 0.
+    #[test]
+    fn w4_d17_the_dove_climbs_and_strides_four_ticks() {
+        let d = proj_data(RELEASE_DOVES).unwrap();
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate), (4.0, 4.0, 166, -1));
+        assert_eq!(d.time_left, 300, ":8180");
+        assert!(d.net_important, ":8174");
+        assert_eq!(proj_frames(RELEASE_DOVES), 4, "Main.cs:8657");
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(RELEASE_DOVES, 0, 400.0, 300.0, 1.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut rng);
+        let s = &pool.slots()[slot];
+        assert!(s.active);
+        assert_eq!(s.frame, 3, "Next(4) → 3 (:47546)");
+        assert_eq!(s.local_ai[0], 1.0, "the first-tick latch (:47545)");
+        assert!((s.vel.y - (-0.025)).abs() < 1e-6, "the climb (:47595)");
+        assert!((s.rot - 0.15).abs() < 1e-6, "vx x 0.15 (:47594)");
+        assert_eq!(s.sprite_direction, 1, ":47562-47564");
+        assert_eq!(rng.draws, vec![(0, 4)], "the first tick's Next(4) only");
+        // The frame machine: frameCounter counts 1..5; tick 5 wraps.
+        for _ in 0..4 {
+            tick(&mut pool, &mut w, &mut rng);
+        }
+        let s = &pool.slots()[slot];
+        assert_eq!(s.frame, 0, "frame 3 + 1 > 3 wraps (:47556-47558)");
+        assert_eq!(s.frame_counter, 0, "the wrap zeroes the counter");
+        assert_eq!(rng.draws.len(), 1, "no further draws");
+    }
+
+    /// Witness 2 — the lantern's wind ride + the bounce arms
+    /// (`:8197-8205`, `:47584-47590`, `:18349-18360`): the 12x12 box,
+    /// timeLeft 1000. With wind 0 the fallback 0.1 drives X +0.00525/tick;
+    /// the bob sine at timeLeft 1000 (1000 % 200 = 0) kicks sin(0)·0.25 = 0.
+    /// The lantern's blocked X reverses ×−1; a rising blocked Y (last < 0)
+    /// reverses ×−1 then damps ×0.25.
+    #[test]
+    fn w4_d17_the_lantern_rides_the_wind_and_bounces() {
+        let d = proj_data(RELEASE_LANTERN).unwrap();
+        assert_eq!((d.w, d.h, d.ai_style, d.time_left), (12.0, 12.0, 166, 1000));
+        assert_eq!(proj_frames(RELEASE_LANTERN), 4, "Main.cs:8660");
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(RELEASE_LANTERN, 0, 400.0, 300.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut rng);
+        let s = &pool.slots()[slot];
+        assert!((s.vel.x - 0.00525).abs() < 1e-6, "0.0525 x 0.1 fallback (:47585-47589)");
+        assert!((s.vel.y - 0.0).abs() < 1e-6, "sin(0) = 0 at timeLeft 1000 (:47577)");
+        // The bounce arms (the slot-side probe, the light_bounce pattern).
+        let mut p = Projectile::default();
+        p.kind = RELEASE_LANTERN;
+        p.tile_collide = true;
+        p.vel = Vec2::new(0.0, 0.0);
+        let mut ww = world();
+        for y in 0..128 {
+            let i = ww.index(26, y);
+            ww.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+            ww.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        p.pos = Vec2::new(410.0, 300.0); // right edge 422, wall at 416
+        p.vel = Vec2::new(4.0, 0.0);
+        let mut rng2 = CensusRng { draws: Vec::new(), floats: 0 };
+        p.dove_movement(&ww, &mut rng2);
+        assert!((p.vel.x - (-4.0)).abs() < 1e-6, "the lantern X x-1 (:18351)");
+        assert_eq!(rng2.draws, vec![(0, 3)], "the blocked-move Next(3) (:17948)");
+        // A rising blocked Y: last −2 → new 0 → reverse +2 then ×0.25 = 0.5.
+        p.vel = Vec2::new(0.0, 0.0);
+        p.dove_bounce(Vec2::new(0.0, -2.0));
+        assert!((p.vel.y - 0.5).abs() < 1e-6, "the rising-Y x0.25 damp (:18356-18358)");
+    }
+
+    /// W4-c39 (folded, research/114 §1c) — the lantern's last-90-tick fade
+    /// (`:47602-47609`): alpha +3 per tick, the kill at 255. d17 has no
+    /// fade witness; this one survives the retire (re-pointed at `ai_dove`).
+    #[test]
+    fn w4_c39_the_lantern_fades_and_dies_at_alpha_255() {
+        let mut p = Projectile::default();
+        p.kind = RELEASE_LANTERN;
+        p.active = true;
+        let d = proj_data(RELEASE_LANTERN).unwrap();
+        p.w = d.w;
+        p.h = d.h;
+        p.tile_collide = d.tile_collide;
+        p.local_ai[0] = 1.0; // skip the latch draw
+        p.time_left = 89;
+        p.alpha = 252;
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        p.ai_dove(&mut rng, 0.0);
+        assert_eq!(p.alpha, 255);
+        assert!(!p.active, "alpha >= 255 kills");
+        assert_eq!(p.time_left, 0, "the inline kill zeroes timeLeft");
+    }
+
+    /// W4-c39 (folded, research/114 §1c) — the lantern bounce's DOWNWARD-Y
+    /// arm (`:18349-18360`): a falling blocked Y (last > 0) reverses
+    /// outright (no ×0.25 damp — that is the rising arm only). d17 #2 pins
+    /// the rising arm; this pins the downward one. Re-derived onto
+    /// `dove_bounce(last)` (the two-arg hit-flag form died with c39's fns).
+    #[test]
+    fn w4_c39_the_lantern_bounce_reverses_the_downward_y() {
+        let mut p = Projectile::default();
+        p.kind = RELEASE_LANTERN;
+        // Downward Y (positive): the bounce reverses outright, no damp.
+        p.vel = Vec2::new(0.0, 0.0);
+        p.dove_bounce(Vec2::new(2.0, 4.0));
+        assert!((p.vel.x - (-2.0)).abs() < 1e-6, "X reverses x-1");
+        assert!((p.vel.y - (-4.0)).abs() < 1e-6, "downward Y reverses, no damp");
+        // The dove's scales (the :18338-18345 arm): X x-0.8, Y x-0.5.
+        let mut dove = Projectile::default();
+        dove.kind = RELEASE_DOVES;
+        dove.vel = Vec2::new(0.0, 0.0);
+        dove.dove_bounce(Vec2::new(4.0, -6.0));
+        assert!((dove.vel.x - (-4.0 * 0.8)).abs() < 1e-6);
+        assert!((dove.vel.y - (6.0 * 0.5)).abs() < 1e-6);
     }
 }
