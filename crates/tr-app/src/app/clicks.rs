@@ -1300,10 +1300,13 @@ impl App {
         self.achievements_scroll = top.clamp(0.0, max);
     }
 
-    /// The achievements list's wheel scroll (`UIList`'s scrollbar, driven by
-    /// the mouse wheel here — `UIScrollbar.SetView(100f, 1000f)` is the
-    /// vanilla control; the port's wheel is the documented stand-in).
-    pub(crate) fn scroll_achievements(&mut self, delta: f32) {
+    /// The achievements list's wheel scroll — `UIList.ScrollWheel`
+    /// (`UIList.cs:107-114`): `_scrollbar.ViewPosition -= evt.ScrollWheelValue`,
+    /// the raw XNA counter (120 units per detent), clamped by `SetView`
+    /// (`UIScrollbar.cs:75`). `notches` is the pointer machine's consumed
+    /// `ScrollWheelDeltaForUI` (`UserInterface.cs:219-222`); the former
+    /// one-row-per-notch stand-in (`delta * (ROW_H + 5)`) is gone.
+    pub(crate) fn scroll_achievements(&mut self, notches: i32) {
         if !self.achievements_open {
             return;
         }
@@ -1318,9 +1321,8 @@ impl App {
             .iter()
             .filter(|a| ui::achievements::filter_visible(&self.achievements_categories, a.category))
             .count();
-        let max = ui::achievements::max_scroll(rows, &list);
         self.achievements_scroll =
-            (self.achievements_scroll - delta * (ui::achievements::ROW_H + 5.0)).clamp(0.0, max);
+            ui::achievements::scroll_wheel(self.achievements_scroll, notches, rows, &list);
     }
 
     /// `DrawInterface_38_MouseCarriedObject`'s click tail

@@ -211,14 +211,72 @@ pub fn category_rects(panel: &[f32; 4]) -> [[f32; 4]; 4] {
     })
 }
 
-/// Rows per viewport — the list's height over the row stride.
-pub fn rows_on_screen(list: &[f32; 4]) -> usize {
-    ((list[3] + 5.0) / (ROW_H + 5.0)).floor().max(1.0) as usize
+/// `UIAchievementsMenu.cs:55` — the list's `ListPadding = 5f`.
+pub const LIST_PADDING: f32 = 5.0;
+
+/// The `UIList` content height (`UIList.RecalculateChildren`,
+/// `UIList.cs:116-128`): every row's outer height plus one `ListPadding`
+/// **per row, the last included** (`:125`); the single-row list drops it
+/// (`:122`). N rows = N*(102+5); one row = 102; none = 0. The trailing 5 px
+/// is scrollable — `SetView` receives this total as `maxViewSize`
+/// (`UIList.UpdateScrollbar`, `:130-137`). The shared port is
+/// `uistate::list_total_height`; the uniform-height closed form below is its
+/// exact sum (`n*(ROW_H+5)` for n≥2) without the per-draw allocation —
+/// `the_scroll_range_is_the_content_total_minus_the_view` pins it.
+pub fn list_content_height(rows: usize) -> f32 {
+    match rows {
+        0 => 0.0,
+        1 => ROW_H,
+        n => n as f32 * (ROW_H + LIST_PADDING),
+    }
 }
 
-/// The scroll range: total list height minus the viewport.
+/// `UIScrollbar.SetView` (`UIScrollbar.cs:72-78`) as `UIList.UpdateScrollbar`
+/// calls it (`UIList.cs:130-137`): `SetView(innerHeight, _innerListHeight)` —
+/// `viewSize` is clamped into `[0, maxViewSize]` first (`:74`), so the pair is
+/// `(view.min(content), content)` and the scroll range is their difference
+/// (`maxViewSize - viewSize`, `:75`'s clamp upper bound). The list carries no
+/// padding, so its inner height is its outer height.
 pub fn max_scroll(rows: usize, list: &[f32; 4]) -> f32 {
-    (rows as f32 * (ROW_H + 5.0) - list[3] - 5.0).max(0.0)
+    let content = list_content_height(rows);
+    let view = list[3].clamp(0.0, content);
+    content - view
+}
+
+/// The `UIScrollbar` rect (`UIAchievementsMenu.cs:81-86`): `Width 20`
+/// (`UIScrollbar.cs:59`), `Height (-50, 1)`, `Top 50`, `HAlign 1` of the
+/// panel — the same vertical band as the list, in the 25 px gutter the
+/// list's `Width -25` leaves. Appended unconditionally (no attach branch;
+/// `AutoHide` is false, so it draws even when the list cannot scroll).
+pub fn scrollbar_rect(panel: &[f32; 4]) -> [f32; 4] {
+    let inner = inner_panel(panel);
+    [
+        inner[0] + inner[2] - 20.0,
+        inner[1] + 50.0,
+        20.0,
+        (inner[3] - 50.0).max(0.0),
+    ]
+}
+
+/// `UIList.ScrollWheel` (`UIList.cs:107-114`): `_scrollbar.ViewPosition -=
+/// evt.ScrollWheelValue` — the raw XNA counter, 120 units per detent
+/// (`char_select::WHEEL_STEP`, `PlayerInput` copies `ScrollWheelValue -
+/// ScrollWheelValueOld` into `ScrollWheelDeltaForUI`), clamped by `SetView`
+/// (`UIScrollbar.cs:75`). The former one-row-per-notch stand-in
+/// (`delta * (ROW_H + 5)`) is gone.
+pub fn scroll_wheel(scroll: f32, notches: i32, rows: usize, list: &[f32; 4]) -> f32 {
+    let raw = scroll - notches as f32 * super::char_select::WHEEL_STEP;
+    raw.clamp(0.0, max_scroll(rows, list))
+}
+
+/// Whether the wheel reaches the list — `UserInterface.Update` dispatches to
+/// `GetElementAt` (`UserInterface.cs:219-221`): a point inside the list rect
+/// always lands on the inner list (`UIList.cs:16-19`'s `ContainsPoint =>
+/// true`), whose `ScrollWheel` bubbles to the `UIList` (`UIElement.cs:542-545`).
+/// The achievements scrollbar is a **panel** child (`UIAchievementsMenu.cs:86`),
+/// not a list child, so a wheel over it bubbles past the list — no scroll.
+pub fn wheel_target(panel: &[f32; 4], mouse: Vec2) -> bool {
+    super::in_rect(mouse, list_rect(panel))
 }
 
 /// `FilterList` (`:…`): a row shows when its category's toggle is on. The
@@ -232,15 +290,19 @@ pub fn filter_visible(categories: &[bool; 4], category: Category) -> bool {
 }
 
 /// Which row (in registry order) the pointer is over, by the row lattice.
+/// The list rect gates first — `UIList.ContainsPoint` (`UIElement.cs:354-357`
+/// via `GetElementAt` `:327-341`) rejects a point outside the viewport before
+/// any row is considered; the inner list itself answers `ContainsPoint` with
+/// `true` (`UIList.cs:16-19`), so the row rects (gaps included) decide.
 pub fn row_at(list: &[f32; 4], scroll: f32, mouse: Vec2, rows: usize) -> Option<usize> {
-    if mouse.x < list[0] || mouse.x > list[0] + list[2] {
-        return None;
-    }
-    if mouse.y < list[1] || mouse.y > list[1] + list[3] {
+    if !super::in_rect(mouse, *list) {
         return None;
     }
     let idx = ((mouse.y - list[1] + scroll) / (ROW_H + 5.0)) as usize;
-    (idx < rows).then_some(idx)
+    // The row's own box: the 5 px gap below a row belongs to no row
+    // (`UIAchievementListItem.ContainsPoint` = the panel rect).
+    let within = (mouse.y - list[1] + scroll) % (ROW_H + 5.0) < ROW_H;
+    (idx < rows && within).then_some(idx)
 }
 
 /// The category toggle under the pointer (`FilterList`'s click arm).
@@ -306,6 +368,23 @@ pub fn draw_screen(
     draw_categories(r, lookups, &panel, categories, mouse);
     draw_back(r, lookups, &panel, mouse);
     draw_list(r, lookups, &panel, manager, scroll, categories, mouse);
+    // The `UIScrollbar` panel child (`UIAchievementsMenu.cs:81-87`): appended
+    // unconditionally and `AutoHide` defaults false (`UIScrollbar.cs:29`), so
+    // `DrawSelf` (`:103-124`) draws even when the list cannot scroll — the
+    // handle then fills the track (`viewSize` clamps to `maxViewSize`,
+    // `SetView` `:74`). The view pair is what `UIList.UpdateScrollbar` fed it
+    // (`UIList.cs:130-137`): the list's inner height over the content total.
+    let list = list_rect(&panel);
+    let content = list_content_height(visible_rows(manager, categories).len());
+    super::panel::draw_scrollbar(
+        r,
+        lookups,
+        scrollbar_rect(&panel),
+        list[3].min(content),
+        content,
+        scroll,
+        false,
+    );
 }
 
 /// The `UITextPanel` title — `UI.Achievements` at scale 1.0 through the
@@ -433,18 +512,34 @@ fn draw_list(
 ) {
     let list = list_rect(panel);
     let rows = visible_rows(manager, categories);
-    let first = ((scroll / (ROW_H + 5.0)).floor()).max(0.0) as usize;
-    let count = rows_on_screen(&list);
-    for slot in 0..=count {
-        let idx = match rows.get(first + slot) {
-            Some(&i) => i,
-            None => break,
-        };
-        let rect = row_rect(&list, first + slot);
+    // `UIInnerList.DrawChildren` (`UIList.cs:21-32`): every row whose box
+    // AABB-overlaps the list rect draws WHOLE (`Collision.CheckAABBvAABBCollision`,
+    // `Collision.cs:184-191`); the `UIList`'s `OverflowHidden` scissor
+    // (`UIList.cs:59`, `UIElement.cs:222-237`) cuts the straddling row at the
+    // edge. The port's S1-H-2 scissor is the per-instance clip rect — the
+    // former break-gate (draw only `rows_on_screen` slots, no clip) is gone.
+    // The clip is the list's OUTER rect: `GetClippingRectangle` reads
+    // `_innerDimensions` (`UIElement.cs:254`), which for the zero-padding
+    // `UIList` is the same rect.
+    r.push_clip(list);
+    for (i, &idx) in rows.iter().enumerate() {
+        let rect = row_rect(&list, i);
         let shifted = [rect[0], rect[1] - scroll, rect[2], rect[3]];
+        if !aabb_overlap(&list, &shifted) {
+            continue;
+        }
         let a = &manager.list[idx];
         draw_row(r, lookups, &shifted, a, in_rect(shifted, mouse));
     }
+    r.pop_clip();
+}
+
+/// `Collision.CheckAABBvAABBCollision` (`Collision.cs:184-191`) for two
+/// `(x, y, w, h)` rects — the `UIInnerList.DrawChildren` cull
+/// (`UIList.cs:27`): strict on all four sides, so a row exactly past the
+/// edge (zero overlap) is skipped, a straddling row draws.
+fn aabb_overlap(a: &[f32; 4], b: &[f32; 4]) -> bool {
+    a[0] < b[0] + b[2] && a[1] < b[1] + b[3] && a[0] + a[2] > b[0] && a[1] + a[3] > b[1]
 }
 
 /// One `UIAchievementListItem` — the panel, the icon + border, the category
@@ -881,17 +976,138 @@ mod tests {
     }
 
     #[test]
-    fn the_scroll_range_is_the_list_overflow() {
+    fn the_scroll_range_is_the_content_total_minus_the_view() {
+        // `UIList.RecalculateChildren` (`UIList.cs:116-128`) adds the
+        // ListPadding for EVERY row including the last (`:125`), so the
+        // content total is 137*(102+5) — the trailing 5 px is scrollable
+        // (`SetView` receives it as `maxViewSize`, `UIList.cs:130-137`).
         let p = panel_rect(screen(), true);
         let list = list_rect(&p);
         let rows = 137;
+        assert_eq!(list_content_height(rows), 137.0 * 107.0);
+        // The closed form is the shared verbatim port's exact sum.
+        assert_eq!(
+            list_content_height(rows),
+            uistate::list_total_height(&[ROW_H; 137], LIST_PADDING)
+        );
         let max = max_scroll(rows, &list);
-        let expected = rows as f32 * (ROW_H + 5.0) - list[3] - 5.0;
-        assert!((max - expected).abs() < 0.001);
+        assert_eq!(max, 137.0 * 107.0 - list[3]);
         assert!(max > 0.0);
-        // The last row is reachable at the maximum scroll.
+        // The last row is reachable at the maximum scroll — its bottom sits
+        // exactly 5 px above the list's bottom (the trailing padding).
         let last = row_rect(&list, rows - 1);
-        assert!(last[1] - max + ROW_H <= list[1] + list[3] + 0.001);
+        assert_eq!(last[1] - max + ROW_H, list[1] + list[3] - 5.0);
+        // `SetView` clamps `viewSize` into `[0, maxViewSize]` first
+        // (`UIScrollbar.cs:74`): a short list (fewer rows than the view fits)
+        // has viewSize == maxViewSize and no scroll range, not a negative one.
+        assert_eq!(list_content_height(1), ROW_H);
+        assert_eq!(max_scroll(1, &list), 0.0);
+        assert_eq!(list_content_height(0), 0.0);
+        assert_eq!(max_scroll(0, &list), 0.0);
+        // Five rows total 535 px > the 520 px view, so the range is 15;
+        // four rows (428 px) clamp to zero.
+        assert_eq!(max_scroll(5, &list), 5.0 * 107.0 - list[3]);
+        assert_eq!(max_scroll(4, &list), 0.0);
+    }
+
+    #[test]
+    fn the_scrollbar_rect_is_the_panel_child() {
+        // `UIAchievementsMenu.cs:81-86`: `Width 20` (`UIScrollbar.cs:59`),
+        // `Height (-50, 1)`, `Top 50`, `HAlign 1` of the panel — the same
+        // vertical band as the list, in the 25 px gutter `Width -25` leaves.
+        let p = panel_rect(screen(), true);
+        let list = list_rect(&p);
+        let bar = scrollbar_rect(&p);
+        assert_eq!(bar[2], 20.0);
+        assert_eq!(bar[1], list[1]);
+        assert_eq!(bar[3], list[3]);
+        assert_eq!(bar[0] + bar[2], inner_panel(&p)[0] + inner_panel(&p)[2]);
+        // The `Width -25` gutter is 25 px; the 20 px bar hugs its right edge,
+        // leaving a 5 px gap between the list and the bar.
+        assert_eq!(bar[0] - (list[0] + list[2]), 5.0);
+    }
+
+    #[test]
+    fn the_wheel_moves_the_raw_xna_counter_not_rows() {
+        // `UIList.ScrollWheel` (`UIList.cs:107-114`): `ViewPosition -=
+        // evt.ScrollWheelValue` — one detent is 120 raw units
+        // (`char_select::WHEEL_STEP`), not one 107 px row.
+        let p = panel_rect(screen(), true);
+        let list = list_rect(&p);
+        let rows = 137;
+        // Wheel down (notches negative in the port's up-positive convention)
+        // moves the view forward 120 px per detent.
+        assert_eq!(scroll_wheel(0.0, -1, rows, &list), 120.0);
+        assert_eq!(scroll_wheel(120.0, -1, rows, &list), 240.0);
+        // Wheel up walks back, clamped at 0 (`UIScrollbar.cs:45`).
+        assert_eq!(scroll_wheel(60.0, 1, rows, &list), 0.0);
+        // And forward clamps at the content-minus-view range (`:75`).
+        let max = max_scroll(rows, &list);
+        assert_eq!(scroll_wheel(max - 10.0, -1, rows, &list), max);
+        // A list that cannot scroll pins at 0 whatever the wheel does.
+        assert_eq!(scroll_wheel(0.0, -3, 1, &list), 0.0);
+    }
+
+    #[test]
+    fn the_wheel_reaches_the_list_but_not_the_bar() {
+        // `UserInterface.Update` dispatches through `GetElementAt`
+        // (`UserInterface.cs:219-221`): the inner list answers `ContainsPoint`
+        // with true (`UIList.cs:16-19`), so the whole list rect scrolls. The
+        // scrollbar is a PANEL child (`UIAchievementsMenu.cs:86`), not a list
+        // child, so its `ScrollWheel` bubbles past the list — no scroll.
+        let p = panel_rect(screen(), true);
+        let list = list_rect(&p);
+        let bar = scrollbar_rect(&p);
+        assert!(wheel_target(&p, Vec2::new(list[0] + 10.0, list[1] + 10.0)));
+        // The 5 px row gap still lands on the inner list (ContainsPoint true).
+        assert!(wheel_target(&p, Vec2::new(list[0] + 10.0, list[1] + ROW_H + 2.0)));
+        assert!(!wheel_target(&p, Vec2::new(bar[0] + 10.0, bar[1] + 10.0)));
+        // Outside both: no scroll.
+        assert!(!wheel_target(&p, Vec2::new(list[0] - 5.0, list[1] + 10.0)));
+    }
+
+    #[test]
+    fn the_row_gap_belongs_to_no_row() {
+        // `UIAchievementListItem.ContainsPoint` is the panel rect — the 5 px
+        // ListPadding gap below a row hits no row, while the list rect gate
+        // (`GetElementAt`, `UIElement.cs:327-341`) rejects points outside.
+        let p = panel_rect(screen(), true);
+        let list = list_rect(&p);
+        let rows = 137;
+        let r0 = row_rect(&list, 0);
+        // Inside row 0.
+        assert_eq!(row_at(&list, 0.0, Vec2::new(r0[0] + 5.0, r0[1] + ROW_H - 1.0), rows), Some(0));
+        // The gap between rows 0 and 1.
+        assert_eq!(row_at(&list, 0.0, Vec2::new(r0[0] + 5.0, r0[1] + ROW_H + 2.0), rows), None);
+        // Row 1's top edge.
+        assert_eq!(row_at(&list, 0.0, Vec2::new(r0[0] + 5.0, r0[1] + ROW_H + 5.0), rows), Some(1));
+        // Below the list's bottom edge: the viewport gate rejects it even
+        // though the lattice would name a row.
+        assert_eq!(
+            row_at(&list, 0.0, Vec2::new(r0[0] + 5.0, list[1] + list[3] + 1.0), rows),
+            None
+        );
+    }
+
+    #[test]
+    fn the_inner_list_cull_is_the_strict_aabb_overlap() {
+        // `UIInnerList.DrawChildren` (`UIList.cs:21-32`) draws a row only when
+        // `Collision.CheckAABBvAABBCollision` (`Collision.cs:184-191`) says the
+        // boxes overlap — strict on all four sides, so a row exactly past the
+        // edge (zero overlap) is skipped and a straddling row draws WHOLE
+        // (the `OverflowHidden` scissor cuts it, `UIElement.cs:222-237`).
+        let view = [350.0, 270.0, 875.0, 520.0];
+        let straddler = [350.0, 270.0 + 500.0, 875.0, ROW_H];
+        assert!(aabb_overlap(&view, &straddler), "770..872 overlaps 270..790");
+        // Exactly past the bottom edge: zero overlap, skipped.
+        let past = [350.0, 790.0, 875.0, ROW_H];
+        assert!(!aabb_overlap(&view, &past));
+        // Exactly above the top edge (scrolled fully out): skipped.
+        let above = [350.0, 270.0 - ROW_H, 875.0, ROW_H];
+        assert!(!aabb_overlap(&view, &above));
+        // One pixel of overlap draws.
+        let barely = [350.0, 789.0, 875.0, ROW_H];
+        assert!(aabb_overlap(&view, &barely));
     }
 
     #[test]

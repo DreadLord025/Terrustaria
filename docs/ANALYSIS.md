@@ -3723,14 +3723,28 @@ Open gaps (deliberately out, each with its reason):
   consumer, and the sound 12 it drives is a recorded deviation.
 * **`OverflowHidden`** (`:47`, `:222-237`, 6 users: `UIList`,
   `UIBestiaryEntryButton`, `UIBestiaryNPCEntryPortrait`, `UIResourcePack`,
-  `AWorkshopPublishInfoState`) вЂ” the select screens' clipped rows already emulate
-  the clip by omitting the row from the element list.
+  `AWorkshopPublishInfoState`) — ported (S1-H-2): the select screens, the hair
+  grid, the bestiary cards and (W4-d88) the achievements list ride
+  `push_clip`/`pop_clip`; the achievements draw culls by
+  `UIInnerList.DrawChildren`'s strict AABB overlap (`UIList.cs:21-32`,
+  `Collision.cs:184-191`) and the straddling row draws whole under the scissor.
+  The crafting recipe grid is the remaining `UIList` consumer (W4-d67 lane).
 * **`UIList`/`UIScrollbar` behaviour** (`UIList.cs:107-128`, `UIScrollbar.cs:37-143`):
   the draw-only helpers exist in `ui/panel.rs`; the select screens and (since
   W4-g54) the emotes wheel now carry the pixel `view_position`, the handle
   geometry and the drag latch through those helpers — the char/world select
   bars' hard-coded ratio note is superseded by the front screens' own landed
   scrollbar work.
+
+  the inner-height total is ported verbatim (`uistate::list_total_height` —
+  `RecalculateChildren` `:116-128`, the trailing `ListPadding` included, the
+  single-item drop at `:122`), and the achievements list now scrolls at the raw
+  XNA counter (120 px/detent, `UIList.ScrollWheel` `:107-114`) with the
+  `SetView`-clamped range (`maxViewSize - viewSize`, `UIScrollbar.cs:75`) and
+  draws its unconditional panel-child scrollbar (W4-d88). The char/world select
+  bars drag/jump (WAVE2/F1); the emotes wheel's scroll is still a plain row
+  offset and the achievements bar has no drag yet (the select screens'
+  `scrollbar_press`/`scrollbar_drag` are the ported pattern to reuse).
 * **`IsElementUnderMouse`/`MouseCaptured`** (`UserInterface.cs:113-124`, `:349-356`)
   вЂ” only the minimap's hover mirrors the mine/place suppression today.
 * **`OnActivate`/`OnDeactivate` for the remaining screens** вЂ”
@@ -3798,8 +3812,13 @@ is a `UserInterface` element in 1.4.5.8.
 * **Fidelity note.** The machine's delta is an `i32` (matching C#'s int
   `ScrollWheelDeltaForUI`), so the achievements arm now fires only when the rounded
   delta is non-zero. Previously it scrolled on sub-notch `PixelDelta` values
-  (`|d| < 0.5`), which C# cannot produce; the magnitude still passes through
-  unrounded (`scroll_achievements(d)`), so only that degenerate case changed.
+  (`|d| < 0.5`), which C# cannot produce. W4-d88 completed the arm: the consumed
+  int delta passes through as notches (`scroll_achievements(delta)`), each worth
+  the raw 120-unit XNA counter (`UIList.cs:112`'s `-=`), and the wheel only
+  reaches the list through `GetElementAt` — a point inside the list rect
+  (`UIList.cs:16-19`'s `ContainsPoint => true`), never the panel-child scrollbar
+  (`UIAchievementsMenu.cs:86`). The former one-row-per-notch stand-in
+  (`delta * (ROW_H + 5)`) is gone.
 
 ## World select (S1-H-10, 2026-11-13)
 
