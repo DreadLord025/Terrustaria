@@ -15447,6 +15447,8 @@ mod tests {
                 false,
                 None,
                 &mut tr_core::UnifiedRandom::default(),
+                &[],
+                None,
             );
             p.fold_orb_nebula_bridge(1, 0, 0);
             p.update_survival(&w, &mut tr_core::UnifiedRandom::default());
@@ -15463,6 +15465,8 @@ mod tests {
             false,
             None,
             &mut tr_core::UnifiedRandom::default(),
+            &[],
+            None,
         );
         p.fold_orb_nebula_bridge(1, 0, 0);
         p.update_survival(&w, &mut tr_core::UnifiedRandom::default());

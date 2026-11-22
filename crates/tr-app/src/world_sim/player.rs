@@ -1930,6 +1930,8 @@ mod tests {
                 false,
                 None,
                 &mut UnifiedRandom::default(),
+                &[],
+                None,
             );
             p.fold_orb_nebula_bridge(1, 0, 0);
             p.update_survival(&q.world, &mut UnifiedRandom::default());
