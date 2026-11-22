@@ -1692,6 +1692,14 @@ mod tests {
         world.bought_cat = true;
         world.bought_dog = true;
         world.bought_bunny = true;
+        // W4-f43b: the six-flag slime widening (WorldFile.cs:1398 + :1409-
+        // 1415, v250/v261) — the rainbow/red pair ride above (S1-P-i35).
+        world.unlocked_slime_blue_spawn = true;
+        world.unlocked_slime_green_spawn = true;
+        world.unlocked_slime_old_spawn = true;
+        world.unlocked_slime_purple_spawn = true;
+        world.unlocked_slime_yellow_spawn = true;
+        world.unlocked_slime_copper_spawn = true;
         world
     }
 
@@ -1932,6 +1940,32 @@ mod tests {
         assert_eq!(got.bought_cat, want.bought_cat, "{context}: boughtCat");
         assert_eq!(got.bought_dog, want.bought_dog, "{context}: boughtDog");
         assert_eq!(got.bought_bunny, want.bought_bunny, "{context}: boughtBunny");
+        // W4-f43b: the six-flag slime widening (the rainbow/red pair ride
+        // the Gate-V3 rows above).
+        assert_eq!(
+            got.unlocked_slime_blue_spawn, want.unlocked_slime_blue_spawn,
+            "{context}: unlockedSlimeBlueSpawn"
+        );
+        assert_eq!(
+            got.unlocked_slime_green_spawn, want.unlocked_slime_green_spawn,
+            "{context}: unlockedSlimeGreenSpawn"
+        );
+        assert_eq!(
+            got.unlocked_slime_old_spawn, want.unlocked_slime_old_spawn,
+            "{context}: unlockedSlimeOldSpawn"
+        );
+        assert_eq!(
+            got.unlocked_slime_purple_spawn, want.unlocked_slime_purple_spawn,
+            "{context}: unlockedSlimePurpleSpawn"
+        );
+        assert_eq!(
+            got.unlocked_slime_yellow_spawn, want.unlocked_slime_yellow_spawn,
+            "{context}: unlockedSlimeYellowSpawn"
+        );
+        assert_eq!(
+            got.unlocked_slime_copper_spawn, want.unlocked_slime_copper_spawn,
+            "{context}: unlockedSlimeCopperSpawn"
+        );
     }
 
     #[test]
@@ -2080,10 +2114,20 @@ mod tests {
         tail[2030] = u8::from(world.unlocked_party_girl); // (`:1401`)
         tail[2035] = u8::from(world.unlocked_princess); // (`:1406`)
         tail[2026] = u8::from(world.downed_deerclops); // downedDeerclops (`:1397`)
+        // W4-f43b: the blue slime byte (WorldFile.cs:1398) sits between the
+        // deerclops and the merchant-unlock run.
+        tail[2027] = u8::from(world.unlocked_slime_blue_spawn);
         // The rainbow slime in the 7-slime run at 2038 (`:1410-1414`):
         // green/old/purple, then rainbow@2041, red@2042 (gate V3, i35).
+        // W4-f43b: the other five owned too (green@2038, old@2039,
+        // purple@2040, yellow@2043, copper@2044).
+        tail[2038] = u8::from(world.unlocked_slime_green_spawn);
+        tail[2039] = u8::from(world.unlocked_slime_old_spawn);
+        tail[2040] = u8::from(world.unlocked_slime_purple_spawn);
         tail[2041] = u8::from(world.unlocked_slime_rainbow_spawn);
         tail[2042] = u8::from(world.unlocked_slime_red_spawn);
+        tail[2043] = u8::from(world.unlocked_slime_yellow_spawn);
+        tail[2044] = u8::from(world.unlocked_slime_copper_spawn);
         // combatBookWasUsed (`WorldFile.cs:1379`): trio-end 88 + 8 setBG +
         // 10 clouds/wind + 4 angler count + 8 saved-NPC/quest + 8 invasion/
         // cultist + 2+1172+2+586 banners + 1 dawn + 9+9 event/tower + 10
@@ -3710,6 +3754,25 @@ mod tests {
         let w = parse(&data).expect("v261 loads");
         assert!(w.unlocked_slime_red_spawn, "unlockedSlimeRedSpawn reads from 261");
         assert!(!w.unlocked_slime_rainbow_spawn, "the rainbow byte before it stays 0");
+        // W4-f43b: the six-flag widening — green leads the v261 run (7 from
+        // the tail end), copper closes it (the LAST byte); the blue byte
+        // reads from its own v250 gate (the LAST tail byte at 250).
+        let mut data = synthetic_file(261, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 261);
+        let end = flags_tail(261).len();
+        data[tail_at + end - 7] = 1; // unlockedSlimeGreenSpawn
+        data[tail_at + end - 1] = 1; // unlockedSlimeCopperSpawn
+        let w = parse(&data).expect("v261 loads");
+        assert!(w.unlocked_slime_green_spawn, "green reads from 261 (W4-f43b)");
+        assert!(w.unlocked_slime_copper_spawn, "copper reads from 261 (W4-f43b)");
+        assert!(!w.unlocked_slime_old_spawn, "the untouched bytes stay 0");
+        let w = parse(&synthetic_file(249, &[2, 144], 160, 10)).expect("v249 loads");
+        assert!(!w.unlocked_slime_blue_spawn, "below 250: blue stays false");
+        let mut data = synthetic_file(250, &[2, 144], 160, 10);
+        let tail_at = tail_offset_in_synthetic(&data, 250);
+        data[tail_at + flags_tail(250).len() - 1] = 1; // unlockedSlimeBlueSpawn
+        let w = parse(&data).expect("v250 loads");
+        assert!(w.unlocked_slime_blue_spawn, "blue reads from 250 (W4-f43b)");
         // v326 (the writer's version): both round-trip at their pinned tail
         // offsets — the DW-2.2 owned-fields sweep covers the values; here the
         // raw bytes prove the offsets (book@1939, red@2042).
@@ -3724,6 +3787,13 @@ mod tests {
         assert_eq!(buf[tail_at + 2021], 1, "boughtCat at tail 2021 (W4-a6)");
         assert_eq!(buf[tail_at + 2022], 1, "boughtDog at tail 2022 (W4-a6)");
         assert_eq!(buf[tail_at + 2023], 1, "boughtBunny at tail 2023 (W4-a6)");
+        // W4-f43b: the six slime bytes at their pinned offsets.
+        assert_eq!(buf[tail_at + 2027], 1, "unlockedSlimeBlueSpawn at tail 2027");
+        assert_eq!(buf[tail_at + 2038], 1, "unlockedSlimeGreenSpawn at tail 2038");
+        assert_eq!(buf[tail_at + 2039], 1, "unlockedSlimeOldSpawn at tail 2039");
+        assert_eq!(buf[tail_at + 2040], 1, "unlockedSlimePurpleSpawn at tail 2040");
+        assert_eq!(buf[tail_at + 2043], 1, "unlockedSlimeYellowSpawn at tail 2043");
+        assert_eq!(buf[tail_at + 2044], 1, "unlockedSlimeCopperSpawn at tail 2044");
     }
 
     // --- S1-A-7: the C#-generated world (real genRand) -----------------------

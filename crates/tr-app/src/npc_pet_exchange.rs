@@ -16,15 +16,22 @@
 //! [`reroll_variation_for_kind`]'s result (contract step 4 — a ONE-LINE
 //! conditional, research/138 §12.2).
 //!
-//! Keep-one (f43): `town_arrival_pets.rs` (branch `task/W4-f43-town-spawn-2`,
-//! UNWIRED) ports the same chain as pure fns over a `PetVariationSlot` —
-//! `reroll_variation`/`reroll_variation_for_npc_type`/the variant rosters/
-//! `name_category_for`. Its own module note says "the wiring lane maps it
-//! onto `Npc`"; this module is that mapping. At the merge the shared loop +
-//! rosters dedup onto ONE copy (f43's pure fns are the shape owner; this
-//! module keeps only the live-`Npc` scan, the heal/name writes and the gore
-//! burst f43 leaves to the caller). The rows below are byte-identical to
-//! f43's (`TownNPCProfiles.cs:139-147` re-read).
+//! Keep-one (f43) — EXECUTED at the batch-L merge: the shared 100-draw loop,
+//! the variant rosters and the name-category switch dedup onto f43's pure
+//! fns (`town_arrival_pets.rs::reroll_variation`/`variant_count_for`/
+//! `name_category_for` — the shape owner per research/360 §3 + research/368);
+//! this module keeps only the live-`Npc` scan, the heal/name writes and the
+//! gore burst f43 leaves to the caller. The wired production dispatch is
+//! f43's `exchange_resident_pet` (which fires this module's burst on
+//! success); this fn stays the witnessed kind-keyed drop-in (research/360
+//! §3: "either shape satisfies the contract's CHAT CONTRACT").
+//!
+//! RNG correction (f43 research/368, supersedes the "DIFFERENT stream"
+//! reading below): `WorldGen.genRand` is an ALIAS for `Main.rand`
+//! (`WorldGen.cs:4445`), so at the exchange site BOTH slots ride the active
+//! `UpdatePlayers` swap — ONE stream. The two injected `&mut` slots stay
+//! separate for the unit witnesses; the production caller (f43's adapter)
+//! passes its single stage stream to both draw sites.
 //!
 //! RNG census (the whole chain, research/138 §12.2 + f43's module note):
 //! * the variation roll is `Main.rand.Next(6)` (`Profiles.cs:216`) — the
@@ -72,47 +79,12 @@ impl ExchangeOutcome {
     }
 }
 
-/// `TownNPCProfiles`' variant rosters (`TownNPCProfiles.cs:139-147`): the
-/// texture-name order IS the variation-index order. f43 keep-one: identical
-/// to `town_arrival_pets.rs`'s `CAT_VARIANTS`/`DOG_VARIANTS`/`BUNNY_VARIANTS`.
-const CAT_VARIANTS: [&str; 6] = ["Siamese", "Black", "OrangeTabby", "RussianBlue", "Silver", "White"];
-const DOG_VARIANTS: [&str; 6] = ["Labrador", "PitBull", "Beagle", "Corgi", "Dalmation", "Husky"];
-const BUNNY_VARIANTS: [&str; 6] = ["White", "Angora", "Dutch", "Flemish", "Lop", "Silver"];
-
-/// The `VariantNPCProfile` roll bound — `Some(6)` for the three license pets,
-/// `None` for the eight town slimes (`LegacyNPCProfile.RollVariation` returns
-/// the constant 0, `Profiles.cs:83-86`; every pet HAS a profile, so the
-/// `GetProfile` gate `NPC.cs:80935-80938` passes for all eleven kinds).
-fn variant_count(kind: NpcKind) -> Option<i32> {
-    match kind {
-        NpcKind::TownCat | NpcKind::TownDog | NpcKind::TownBunny => Some(6),
-        _ => None,
-    }
-}
-
-/// `Profiles.VariantNPCProfile.GetNameForVariant` (`Profiles.cs:219-222`) /
-/// `LegacyNPCProfile.GetNameForVariant` → `NPC.getNewNPCName`
-/// (`NPC.cs:7312-7322`): the license pets key on the CURRENT variation, the
-/// town slimes on their fixed colour. The draw itself is
-/// `WorldGen.genRand.Next(category_count)` (`LanguageManager.cs:419`).
-fn name_category(kind: NpcKind, variation: i32) -> Option<String> {
-    let (base, variants): (&str, &[&str]) = match kind {
-        NpcKind::TownCat => ("CatNames", &CAT_VARIANTS),
-        NpcKind::TownDog => ("DogNames", &DOG_VARIANTS),
-        NpcKind::TownBunny => ("BunnyNames", &BUNNY_VARIANTS),
-        NpcKind::TownSlimeBlue => return Some("SlimeNames_Blue".into()),
-        NpcKind::TownSlimeGreen => return Some("SlimeNames_Green".into()),
-        NpcKind::TownSlimeOld => return Some("SlimeNames_Old".into()),
-        NpcKind::TownSlimePurple => return Some("SlimeNames_Purple".into()),
-        NpcKind::TownSlimeRainbow => return Some("SlimeNames_Rainbow".into()),
-        NpcKind::TownSlimeRed => return Some("SlimeNames_Red".into()),
-        NpcKind::TownSlimeYellow => return Some("SlimeNames_Yellow".into()),
-        NpcKind::TownSlimeCopper => return Some("SlimeNames_Copper".into()),
-        _ => return None,
-    };
-    let v = variants.get(variation as usize)?;
-    Some(format!("{base}_{v}"))
-}
+// f43 keep-one EXECUTED (batch-L): the variant rosters
+// (`TownNPCProfiles.cs:139-147`), the `VariantNPCProfile` roll bound
+// (`Profiles.cs:214-217` vs the legacy constant-0 `:83-86`) and the
+// name-category switch (`Profiles.cs:219-222` / `NPC.cs:7312-7322`) dedup
+// onto `town_arrival_pets.rs`'s `variant_count_for`/`name_category_for`
+// (the shape owner, keyed on the vanilla net id — `kind.net_id()` bridges).
 
 /// `ParticleOrchestrator.Spawn_PetExchange`
 /// (`ParticleOrchestrator.cs:2691-2700`): 13 smoke gores (type `Next(61, 64)`
@@ -120,7 +92,7 @@ fn name_category(kind: NpcKind, variation: i32) -> Option<String> {
 /// overwrite after the spawn. Every draw rides the caller's `Main.rand`
 /// (the burst runs inside `RerollVariation`, `NPC.cs:80953`, under no
 /// `SwapRandom` block — the bare stream). 8 draws per gore, 104 total.
-fn spawn_pet_exchange_burst(
+pub(crate) fn spawn_pet_exchange_burst(
     gore: &mut GorePool,
     world: &World,
     center: Vec2,
@@ -176,39 +148,26 @@ pub(crate) fn reroll_variation_for_kind(
     let Some(slot) = npcs.iter_mut().find(|n| n.hp > 0 && n.kind.net_id() == net_id) else {
         return ExchangeOutcome::NoResident; // `:80930`
     };
-    // `:80935-80938` — every town pet HAS a profile (the eleven kinds are
-    // exactly the profile-bearing pets), so the gate passes here.
+    // `:80935-80948` — f43 keep-one: the 100-draw loop is
+    // `town_arrival_pets.rs::reroll_variation` (the shape owner); the
+    // roller is the `VariantNPCProfile` `Main.rand.Next(6)`
+    // (`Profiles.cs:214-217`) or the legacy constant-0 no-draw roll
+    // (`Profiles.cs:83-86`). Every town pet HAS a profile, so the
+    // `GetProfile` gate passes here.
     let old = slot.variation_index;
-    let mut index = old;
-    match variant_count(kind) {
-        // `VariantNPCProfile.RollVariation` = `Main.rand.Next(6)`
-        // (`Profiles.cs:214-217`); `while (num2++ < 100 && index == num)`.
-        Some(count) => {
-            for _ in 0..100 {
-                if index != old {
-                    break;
-                }
-                index = roll_rng.next_max(count);
-            }
-        }
-        // `LegacyNPCProfile.RollVariation` returns 0 with NO draw
-        // (`Profiles.cs:83-86`): the loop spins 100 times drawing nothing.
-        None => {
-            for _ in 0..100 {
-                if index != old {
-                    break;
-                }
-                index = 0;
-            }
-        }
-    }
-    if index == old {
+    let index = match crate::town_arrival_pets::variant_count_for(net_id) {
+        Some(count) => crate::town_arrival_pets::reroll_variation(old, count, &mut |n| {
+            roll_rng.next_max(n)
+        }),
+        None => crate::town_arrival_pets::reroll_variation(old, 1, &mut |_| 0),
+    };
+    let Some(index) = index else {
         return ExchangeOutcome::Fail; // `:80945-80948`
-    }
+    };
     slot.variation_index = index;
     // `:80949` — `GivenName = profile.GetNameForVariant(this)`: the
-    // genRand category draw (a DIFFERENT stream from the roll).
-    if let Some(category) = name_category(kind, index) {
+    // genRand category draw (the genRand ALIAS — see the module note).
+    if let Some(category) = crate::town_arrival_pets::name_category_for(net_id, index) {
         let size = crate::lang::category_size(&category);
         if size > 0 {
             let draw = name_rng.next_max(size as i32) as usize;

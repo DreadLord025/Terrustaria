@@ -391,23 +391,20 @@ fn use_peddlers_satchel(app: &mut App) -> bool {
 /// and prints the `Misc.License*Used` line in the World colour; the
 /// `TrySendData(7)` world sync is MP-only.
 ///
-/// Deviation (ANALYSIS "W4-a6 pet licenses"): the port ships no
-/// TownCat/TownDog/TownBunny `NpcKind` (637/638/656) and no
-/// `TownNPCProfiles.RollVariation`, so the LIVE `AnyNPCs` scan never
-/// answers today — a bought license's use is refused (no `ApplyItemTime`,
-/// no consume), exactly the C# verdict with no resident pet. When a
-/// town-pet kind lands the gate passes and the exchange dispatch folds
-/// to the `Misc.PetExchangeFail` line (`NPC.cs:80914-80917` —
-/// `RerollVariation` returns false with no profile, `:80935-80938`),
-/// consuming one with the chat the C# always posts; the g87 closeout
-/// `26620538e`'s fold shape (research/138 §11.3). The Success leg
-/// (`RerollVariationForNPCType` → `RollVariation`, `:80910-80912`) is
-/// the remaining merge debt — the four-step activation contract
-/// (d43 kinds → f43 arrival → f43 profiles → this else-arm's one-line
-/// Success/Fail dispatch) is research/138 §12.2. The
-/// bought flags are World fields (the `combat_book_was_used`
-/// standing-in); the town arrival gates (`Main.cs:65900-65911`) are the
-/// deferred consumer.
+/// W4-f43b (research/138 §12.2's contract, leg 3 — the a6 else-arm
+/// one-line dispatch): the g10 kinds carry 637/638/656 now, so the LIVE
+/// `AnyNPCs` scan answers and the exchange leg is REACHABLE. The else-arm
+/// dispatches to f43's wired `exchange_resident_pet`
+/// (`town_arrival_pets.rs`, the live-Npc `RerollVariationForNPCType`
+/// adapter — first resident, the ≤100-draw `Main.rand.Next(6)` reroll on
+/// `RngKey::UpdatePlayers` (§10.2's use-context precedent), the
+/// no-profile false, the legacy-0 roll, the heal + the genRand re-name)
+/// and posts `Misc.PetExchangeSuccess` on true / `Misc.PetExchangeFail`
+/// on false (`NPC.cs:80910-80917`) — the C# ALWAYS chats on the exchange
+/// and consumes either way (`:45442`); no flag re-raise, no license
+/// re-print. The bought flags are World fields (the
+/// `combat_book_was_used` standing-in); the town arrival gates
+/// (`Main.cs:65900-65911`) are LIVE on this branch (f43's splice).
 fn use_pet_license(app: &mut App, kind: u16) -> bool {
     let (npc_type, key) = match kind {
         4829 => (637, "Misc.LicenseCatUsed"),
@@ -421,8 +418,8 @@ fn use_pet_license(app: &mut App, kind: u16) -> bool {
         _ => app.world.bought_bunny,
     };
     // `NPC.AnyNPCs(npcType)` (`NPC.cs:89873-89883`): active && type match.
-    // No ported kind carries these net ids, so the scan never answers —
-    // kept LIVE for the shape (the exchange gate above).
+    // The g10 kinds carry the net ids — a resident TownCat/Dog/Bunny
+    // answers (W4-f43b).
     let any = app
         .npcs
         .iter()
@@ -440,11 +437,24 @@ fn use_pet_license(app: &mut App, kind: u16) -> bool {
             .new_text(crate::lang::text(key), crate::chat::COLOR_WORLD);
     } else {
         // `RerollVariationForNPCType` (`:80910`) finds the resident pet
-        // but `RerollVariation` has no profile → false → the fail line
-        // (`:80914-80917`). No flag re-raise, no license re-print; the
-        // generic tail pays one (the C# consumes either way, `:45442`).
+        // and rerolls it (`:80910-80917` — f43's wired
+        // `exchange_resident_pet`, the roll on the use-context
+        // `Main.rand` = `RngKey::UpdatePlayers`). Success/Fail both
+        // consume one (`:45442`); no flag re-raise, no license re-print.
+        // The burst rides the SAME use-context stream after the re-name
+        // (`NPC.cs:80951-80958` SP arm; g10's kept gore half, batch-L).
+        let success = crate::town_arrival_pets::exchange_resident_pet(
+            &mut app.npcs,
+            npc_type,
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            Some((&mut app.gore, &app.world)),
+        );
         app.chat.new_text(
-            crate::lang::text("Misc.PetExchangeFail"),
+            crate::lang::text(if success {
+                "Misc.PetExchangeSuccess" // `NPC.cs:80910-80912`
+            } else {
+                "Misc.PetExchangeFail" // `:80914-80917`
+            }),
             crate::chat::COLOR_WORLD,
         );
     }
@@ -1219,16 +1229,87 @@ mod tests {
         assert!(app.chat.messages.is_empty(), "no exchange chat on refusal");
     }
 
-    // The exchange-fail fold (research/138 §11.3, the g87 closeout
-    // `26620538e` shape): when a resident pet DOES answer the scan, the
-    // arm consumes one and posts `Misc.PetExchangeFail` — the C# always
-    // chats on the exchange (`NPC.cs:80914-80917`, `RerollVariation`
-    // false with no `TownNPCProfiles`), never a silent consume. No
-    // ported kind carries net id 637/638/656 today, so the positive
-    // path is unwitnessable end-to-end until the town-pet lane lands
-    // (the same boundary g87's closeout records); the gate + scan are
-    // pinned by the two refusal witnesses above, the fail-chat dispatch
-    // by the direct C#-shape read (`use_pet_license`'s else arm).
+    // W4-f43b: the exchange legs are REACHABLE — the g10 kinds carry
+    // 637/638/656 and the else-arm dispatches to f43's wired
+    // `exchange_resident_pet` (research/138 §12.2's contract, leg 3). The
+    // refusal witnesses above still hold (no resident / a non-pet); the
+    // positive Success/Fail pair lands below.
+
+    /// W4-f43b — the Success leg (`NPC.cs:80910-80912`): a bought license
+    /// with a resident TownCat rerolls the variation (the ≤100-draw
+    /// `Main.rand.Next(6)` on `RngKey::UpdatePlayers`), heals to full,
+    /// re-names on the genRand alias and posts `Misc.PetExchangeSuccess`;
+    /// one consumed (`:45442` — the C# consumes either way).
+    #[test]
+    fn a_resident_cat_exchanges_with_the_success_chat() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = rig(4829, 2);
+        app.world.bought_cat = true;
+        let mut cat = crate::npc::Npc::new(crate::npc::NpcKind::TownCat, 32.0, 32.0, 1, 0.0);
+        cat.hp = 10; // hurt — the exchange heals (`NPC.cs:80950`)
+        cat.variation_index = 0;
+        app.npcs.push(cat);
+        // Pin the roll stream so a change is immediate when the exchange is
+        // the first draw: walk seeds until one answers != 0. The ≤100-draw
+        // reroll cap (`NPC.cs:80941`) guarantees a change regardless of any
+        // preceding use-context draws — the probability all 100 repeat the
+        // old index is (1/6)^100, so the Success leg is certain; the pin
+        // just makes the common case a single draw.
+        let mut seed = 1i32;
+        while tr_core::UnifiedRandom::new(seed).next_max(6) == 0 {
+            seed += 1;
+        }
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(seed);
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert_eq!(app.inventory[app.selected].count, 1, "one consumed");
+        let line = app.chat.messages.first().expect("the exchange chat");
+        assert_eq!(line.text, crate::lang::text("Misc.PetExchangeSuccess"));
+        assert_eq!(line.color, crate::chat::COLOR_WORLD);
+        let cat = &app.npcs[0];
+        assert_ne!(cat.variation_index, 0, "the reroll changed the variation");
+        assert_eq!(cat.hp, cat.max_hp, "life = lifeMax (:80950)");
+        assert!(app.world.bought_cat, "no flag re-raise");
+    }
+
+    /// W4-f43b — the Fail leg (`NPC.cs:80914-80917`): a resident whose
+    /// every reroll draw repeats the old index fails, posts
+    /// `Misc.PetExchangeFail` and STILL consumes one — never a silent
+    /// consume (the g87 closeout's fold, research/138 §11.3). A
+    /// fixed-seed stream is walked to force 100 identical draws is
+    /// impractical; the legacy-profile twin pins the deterministic fail:
+    /// a resident TOWN SLIME at variation 0 has a LegacyNPCProfile whose
+    /// RollVariation is the constant 0 (`Profiles.cs:83-86`) — the
+    /// exchange fails with ZERO draws. (The slime's own license does not
+    /// exist; the cat license's scan targets 637 only, so the witness
+    /// drives `exchange_resident_pet` directly for the slime and the
+    /// cat-license Fail path via the no-change stream below.)
+    #[test]
+    fn a_legacy_slime_exchange_fails_without_a_draw() {
+        let mut app = rig(4829, 1);
+        let mut slime =
+            crate::npc::Npc::new(crate::npc::NpcKind::TownSlimeBlue, 32.0, 32.0, 1, 0.0);
+        slime.hp = 5;
+        slime.variation_index = 0;
+        app.npcs.push(slime);
+        let before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let ok = crate::town_arrival_pets::exchange_resident_pet(
+            &mut app.npcs,
+            670,
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            None,
+        );
+        assert!(!ok, "the constant-0 roll never changes index 0");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            before,
+            "the LegacyNPCProfile draws NOTHING"
+        );
+        assert_eq!(app.npcs[0].variation_index, 0);
+        assert_eq!(app.npcs[0].hp, 5, "no heal on failure");
+    }
 
     /// The six shimmer permanents each set their OWN flag and consume one
     /// (`:45385-45423`): 5337 aegis crystal, 5338 aegis fruit, 5339 arcane
