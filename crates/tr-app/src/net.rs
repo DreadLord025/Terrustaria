@@ -1057,8 +1057,9 @@ pub struct WorldInfo {
     pub generator_version: u64,
     pub moon_type: u8,
     /// treeBG1..4, corrupt, jungle, snow, hallow, crimson, desert, ocean,
-    /// mushroom, underworld (`NetMessage.cs:246-258`).
-    pub backgrounds: [u8; 11],
+    /// mushroom, underworld — 13 bytes (`NetMessage.cs:245-257`; the reader
+    /// applies them as `setBG(0,10,11,12,1..9)`, `MessageBuffer.cs:493-505`).
+    pub backgrounds: [u8; 13],
     pub ice_back_style: u8,
     pub jungle_back_style: u8,
     pub hell_back_style: u8,
@@ -1174,7 +1175,7 @@ impl WorldInfo {
         let unique_id: [u8; 16] = r.take(16)?.try_into().ok()?;
         let generator_version = r.u64()?;
         let moon_type = r.u8()?;
-        let mut backgrounds = [0u8; 11];
+        let mut backgrounds = [0u8; 13];
         for b in backgrounds.iter_mut() {
             *b = r.u8()?;
         }
@@ -3901,7 +3902,7 @@ mod tests {
             unique_id: [9; 16],
             generator_version: 0x0102_0304_0506_0708,
             moon_type: 3,
-            backgrounds: [1; 11],
+            backgrounds: std::array::from_fn(|i| (i + 1) as u8),
             ice_back_style: 1,
             jungle_back_style: 2,
             hell_back_style: 1,
@@ -4101,7 +4102,7 @@ mod tests {
                 unique_id: [0; 16],
                 generator_version: 0,
                 moon_type: 0,
-                backgrounds: [0; 11],
+                backgrounds: [0; 13],
                 ice_back_style: 0,
                 jungle_back_style: 0,
                 hell_back_style: 0,

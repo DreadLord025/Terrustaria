@@ -1308,6 +1308,121 @@ biome (`corrupt_bg_style`, вЂ¦), and `surface_bg_texture_ids` resolves it to 
 no atlas rebuild вЂ” but the world-dependent sheets are packed at load
 (`assets::load_world_sheets`), hence a world's session must see one style set.
 
+**W4-g71 (2026-11-20, code-only)** adopted the three remaining surface `setBG` slots:
+snow (3, `WorldGen.cs:7317-7423` — the 16-arm style table incl the `-1` triplets of
+styles 2/3/4 and the `snowMntBG` mountain pair), desert (6, `:7501-7546` — the four
+`BackgroundVariantSet` rows Pure/Corrupt/Crimson/Hallow, `HasAny` per
+`BackgroundVariant.cs:9-19`) and ocean (7, `:7548-7576` — a single far-layer id).
+`World` gained `snow_bg_style`/`desert_bg_style`/`ocean_bg_style` (persisted in the
+`.wld` setBG bytes at tail 91/94/95 and the `.trwld` v18 tail; pre-v18 files load the
+slot-0 defaults). The draw side: `bg_offsets` carries the snow 258-268/298/299 and
+desert 248-250/207/303-318 arms of `SetBackgroundOffsets`, `layer_y_offset` is now the
+**complete** `GetLayerYOffset` switch (`Main.cs:59740-59797`), Step1/2 skip the desert
+mountains 23/22 for `desertBG == 4` and apply the snow/ocean mountain Y offsets,
+`DrawSurfaceBG_Desert` runs on `Pure.Backgrounds` (the oasis style 4 adds the third row
+250), and `DrawSurfaceBG_GoodEvilDesert` (`:60868-60926`) dispatches front styles
+5/13/14 to the variant sets or the 26/27 fallback dunes. The cross-fade arm
+(`UpdateBGVisibility_FrontLayer_IsDesertVariantSwap`, `:64120-64143`) holds the outgoing
+variant's alpha until the incoming one reaches 1 (`:64109`) when both sets `HasAny`;
+the far-side twin (`:64268`) is kept verbatim and is inert by construction (the far
+target of every desert variant is slot 2, which is never an outgoing variant slot).
+`GetPreferredBGStyleForPlayer`'s desert branch (`:64225`) now selects 5/14/2/13 through
+the pure `desert_preferred_style` helper. `UpdateOceanWaterLineForAmbience`'s geometry
+(`:59965-59984`) is ported as `ocean_water_line_offset`; the ambience ocean-line
+**opacity** term stays the documented Q4 constant-1 deviation. 15 witnesses written
+not run (no compiler invoked, code-only mode).
+
+**W4-g71 WIRING phase (2026-11-21, code-only)** wired the background style rolls into
+`step_world_tail` (`WorldGen.cs:11338-11340`): `RandomizeTreeStyle` /
+`RandomizeCaveBackgrounds` / `RandomizeBackgrounds`, writing
+`World.tree_x`/`tree_style`/`cave_back_x`/`cave_back_style`/`ice_back_style`/
+`jungle_back_style`/`forest_bg_styles`/`underworld_bg_style` + the eight surface
+styles through `set_surface_bg_style`. The `hell_back_style` `Next(3)` (`:8247`) folds
+into the cave block (the former standalone tail draw is gone). The boot re-roll
+(`Main.cs:6594-6603`) is ported as `bg_rolls::boot_reroll_backgrounds` — the menu seam
+(the C# runs it once per process before any load; `LoadWorldFlags` then overwrites
+with the file values, so a loaded world keeps its saved styles).
+
+**W4-g71 FINAL keep-one (2026-11-21, code-only, `fc76a48b`) — SUPERSEDES the wiring
+phase's "g72c STALE" verdict.** That verdict read g72's pre-wiring tip `1f5c2b1e`;
+at the CURRENT tip `4a75715e`, `2184ba07` DID land the cave-roll wiring
+(`worldgen/cave_bg.rs` on `streams.rng` ahead of the moon) plus the persistence trio
+and the live draw consumer. Both branches having wired a cave roll, a naive merge
+would draw the block TWICE. Adjudication (research/218 §2.1-FINAL): **keep g72's
+`cave_bg.rs` VERBATIM** (faithful previous-style carry through the un-rolled arm
+slots, the C# `new int[4]` shape, u8 ice/hell/jungle, and every landed consumer is
+typed against its outcome); **drop the `bg_rolls` cave duplicate** (draw-order-
+equivalent but zeroed the un-rolled slots and returned `[i32;3]`). The g71 `RollRng`
+seam + tree/surface rolls + boot fn are kept (g72 has no copy); the boot fn's cave
+leg calls the canonical driver. `step_world_tail` composes the C# order:
+:11338 tree (`pass_rng`) → :11339 cave (`streams.rng`, g72's seat) → :11340 surface
+(`pass_rng`) → :11341 moon (`streams.rng`, shifts behind the cave block —
+stale-by-design VALUE). `World.cave_back_x` is `[i32;4]` (`[3]` never
+rolled/persisted/sent); the `.wld` flags loops slice `[..3]`. **The tile-hash pins do
+NOT move**: the tail is the last `streams.rng` consumer, the tree/surface rolls ride
+isolated `pass_rng` slots, the cave block writes only style fields —
+`SEED42_512`/`DEFAULT_WORLD` stay byte-identical; the moon/hell values move
+(stale-by-design, the `a == b` determinism witnesses stay green). The v18 `.trwld`
+union is FINALIZED as research/218 §1-FULL: 13 claimant branches, 107-byte fixed head
++ d109 dense LAST (supersedes the 21/53/65-byte drafts).
+
+**W4-g71 BG SEAL (2026-11-21, code-only, `d2fcf9f2` net fix) — 92 SEALED.** The seal
+receipted the three external 107 re-derivations at their latest tips (g88 103
+L3-DEFINITIVE `fc5cf11ae` — its own 100-byte step-10 superseded, an independent
+C#-row re-derivation confirming the 13-branch census/dedups/keep-one; f44 132 RETIRE
+§3-L3 `d35876af9` — same field set, different order; g72 64a/64b SEALED `b069439eb` —
+its 53-byte prefix now-in-107 verbatim, retire defers layout authority here "per the
+Lead") and adjudicated the ORDER: research/218 §1-FULL's 64a-stable [0..53] prefix WINS
+— **that verdict was OVERRULED by the PERSIST-ARBITER (g88 research/103 §L3-ARBITER
+FINAL, `d09d7e10a`): the C# ACTUAL write order is DEFINITIVE, D5 strict-C#-row middle
+CONFIRMED (the books-before-moon middle inverted `WorldFile.cs:1407-1408` vs
+`:1347-1351`). §1-FULL.2 is CORRECTED to 103 A3: crimson [50] → moon [51..56] →
+underworld [56] → pets [57..60] → empress [60] → books [61..63], identity [63..107];
+the registry/census/dedups + §1-FULL.4 site table STAND (order-agnostic); the seal's
+own "free alternative" move is activated, and 103 A4's 92-row is mutually receipted.
+The `d2fcf9f2` net fix + setBG hunks are UNAFFECTED (wire/draw order, not byte
+layout).** g88's D5 flagged three registry tip-column hash slips (e19/d125/c43) —
+fixed. §1-FULL stays the `.trwld` union-layout DOC (INDEX pointer) seating 103 A3,
+THE byte-order authority; f44's 132 keeps the L1/L2 + merger-bible scope. The f45 flags-block audit (§1-SEAL.2): f45's file is
+the `.wld` base, g71's live setBG 0/3/6/7/9/10-12 hunks supersede its zero stand-ins,
+the five shared live styles + g69's crimson dedup onto f45's write — wire widths
+byte-identical, ownership-only compose. **The net hop was the last LOGIC gap in the
+roll→persist→net→draw chain and this seal closed it:** `WorldInfo.backgrounds` was
+`[u8;11]` (C# writes 13, `NetMessage.cs:245-257` — every post-style header field was
+shifted 2 bytes against a vanilla peer) and unwired (host zeros, client no-op). Fixed
+to `[u8;13]`, `world_info` emits the live rolls + treeX/treeStyle + g72's cave roll,
+`client_install_world` applies via `setBG` wire order 0,10,11,12,1..9
+(`MessageBuffer.cs:493-505`). Remaining gaps are merge-scoped sheet supply (d35) +
+g72's two draw modules + the forest style-0 pin — not logic (research/218 §5).
+**BG-SEAL RECEIPT phase (doc-only, over `8224c94f1`):** the four compose receipts
+closed in research/218 §1-SEAL.3/.4/.5 — the f45-flags compose re-verified hunk-exact
+at both heads (f45 has not published a read; the standing input is seated), the
+WorldInfo `[u8;13]` census keep-one (ten net-lane tips + main + f45 + g72 carry
+the inherited `f6b736a4c` `[u8;11]` block untouched; ONE other editor found — g52
+`856edb86c`'s five-style partial fill on the old width, a strict subset of g71's
+thirteen: g71's width+full emit+BG_SLOTS apply WIN, g52 keeps only its WorldInfo
+re-push cadence scope calling the merged `world_info`; f45's live
+game_mode/cloud/extra-spawn emits compose field-disjoint), and the cross-receipt
+at the dependents' current
+tips: 64b `aa1645481` (D5-RE-PIN + the g71f mutual receipt CLOSED by the re-pin),
+138 `9a4acd729` + 135 `43fee29a4` already on D3/A3, only f44's 132 `d35876af9`
+still owes its one-move underworld re-pin — FOUR of five L3 dependents publish the
+identical strict-C#-row middle; the persist-order dispute is RESOLVED on the
+published record. Registry tips refreshed (e19 `c7a38bea`, d125 `7a048230`, g90
+`43fee29a` — every claimant `save.rs` byte-unchanged, diff-verified).
+
+**Deliberate deviation — the atlas budget guard.** A rolled non-default surface style
+can overflow the 8192 px atlas (style-0 baseline 7847 px; non-default styles add
+336–1503 px, measured). The C# draws surface bgs through `Main.spriteBatch` under the
+sky matrix, OUTSIDE the tile atlas (the S1-G-13 background-target family). Until that
+lands, `build_atlas_inner` runs `assets::fit_bg_styles_to_atlas`: on overflow it
+reverts the offending biome styles to slot-0 (the classic look) in fixed `setBG` order
+1..8 until the set fits (measured via the cheap `Atlas::packed_height`), then rebuilds.
+Deterministic, greedy, no RNG; the forest tree sets + underworld are not reverted
+(g70/g72 own their draw sides). This trades the rolled look for an in-bounds atlas on
+overflowing worlds — recorded here as the interim fix pending S1-G-13. See
+`docs/research/218-doc-sweep-bg.md` §2.
+
 Every row goes through `FrontLayer` + `front_layers`, which is a literal port of each
 `DrawSurfaceBG_*` row: the caller's `(scale, parallax, magicВ·k + top)` magic numbers,
 then `SetBackgroundOffsets` (`Main.cs:60384-60775`) overriding `bgScale`/`bgParallax` and,
@@ -1322,8 +1437,11 @@ The per-row quirks are applied *after* the offsets, exactly like the source: cor
 `DrawSurfaceBG_GetLayerYOffset` on every row (`:59740`, `:60944-61008`); crimson nudges
 row 0 by `+50` for `105` and `-350` for `174`, and row 2's `175` by `-1000` in X, `-400` in
 Y plus one extra tile (`:60206-60291`); hallow's first `SkyManager` boundary is
-`1.2f / parallax` after the offset override (`:60788`); snow and mushroom close with
-`DrawToDepth(1f)` (`:60386`, `:60186`). Row 1 of corrupt/jungle/forest is mirrored
+`1.2f / parallax` after the offset override (`:60788`); mushroom closes with
+`DrawToDepth(1f)` (`:60186`). (The snow close the earlier port carried was a
+deviation — `DrawSurfaceBG_Snow` has **no** trailing `DrawToDepth`, its stratum
+waits for the `DrawRemainingDepth` flush like the other biomes; fixed by
+W4-g71.) Row 1 of corrupt/jungle/forest is mirrored
 (`SpriteEffects.FlipHorizontally`), mushroom's three rows each replace the tint with the
 glow colour (`:60001/60065/60127`), clamped at or above the base colour's byte.
 

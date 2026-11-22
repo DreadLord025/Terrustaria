@@ -170,22 +170,13 @@ pub fn load_world_sheets(
     }
 
     // The surface-background layer sheets of *this* world's own style variants
-    // (`Main.corruptBG`/`jungleBG`/`hallowBG`/`crimsonBG`/`mushroomBG`, filled by
-    // `WorldGen.setBG`). They belong in the world half: which `Background_<id>`
-    // files exist depends on the world's rolled styles, and the whole 95-sheet
-    // variant set is ~300 MB — every world packs only its own five styles.
-    // `-1` is a layer the C# never draws, so no sheet is packed for it.
-    let mut bg_ids: Vec<i32> = [
-        world.corrupt_bg(),
-        world.jungle_bg(),
-        world.hallow_bg(),
-        world.crimson_bg(),
-        world.mushroom_bg(),
-    ]
-    .into_iter()
-    .flatten()
-    .filter(|&id| id >= 0)
-    .collect();
+    // (`Main.corruptBG`/`jungleBG`/`snowBG`/`hallowBG`/`crimsonBG`/`desertBG`/
+    // `oceanBG`/`mushroomBG`, filled by `WorldGen.setBG`). They belong in the
+    // world half: which `Background_<id>` files exist depends on the world's
+    // rolled styles, and the whole variant set is ~300 MB — every world packs
+    // only its own eight styles. `-1` is a layer the C# never draws, so no
+    // sheet is packed for it.
+    let mut bg_ids = world_bg_sheet_ids(world);
     // W4-g70: the four forest sets' own sheets (`SetForestBGSet` ids — tree
     // lines AND hills). The animated hill families (94/114-116, 180-183) and
     // the far-row swaps (168-170) are packed whole so the update-side
@@ -240,6 +231,152 @@ pub fn load_world_sheets(
     Ok(images)
 }
 
+/// The sorted, deduped `Background_<id>` sheet ids the world's own surface
+/// styles ask for (`load_world_sheets`'s bg half). The eight biome variants +
+/// the desert variant rows + the snow mountains + the ocean id; `-1` layers
+/// (the C# never draws them) are dropped. Extracted so the atlas budget guard
+/// ([`fit_bg_styles_to_atlas`]) can recompute the set after a style revert.
+pub(crate) fn world_bg_sheet_ids(world: &World) -> Vec<i32> {
+    let desert = world.desert_bg_set();
+    let mut ids: Vec<i32> = [
+        world.corrupt_bg(),
+        world.jungle_bg(),
+        world.snow_bg(),
+        world.hallow_bg(),
+        world.crimson_bg(),
+        desert[0],
+        desert[1],
+        desert[2],
+        desert[3],
+        world.mushroom_bg(),
+    ]
+    .into_iter()
+    .flatten()
+    .chain(world.snow_mountains())
+    .chain([world.ocean_bg()])
+    .filter(|&id| id >= 0)
+    .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
+}
+
+/// The eight biome style bytes the atlas budget guard reverts (the `setBG`
+/// 1..8 slots, in slot order). A lightweight snapshot — the guard trials
+/// reverts on this copy, never the whole `World` (the tile grid is megabytes).
+#[derive(Clone, Copy)]
+pub(crate) struct BgStyleBytes {
+    pub corrupt: u8,
+    pub jungle: u8,
+    pub snow: u8,
+    pub hallow: u8,
+    pub crimson: u8,
+    pub desert: u8,
+    pub ocean: u8,
+    pub mushroom: u8,
+}
+
+impl BgStyleBytes {
+    /// Snapshot the world's eight biome style bytes.
+    pub(crate) fn from_world(world: &World) -> Self {
+        Self {
+            corrupt: world.corrupt_bg_style,
+            jungle: world.jungle_bg_style,
+            snow: world.snow_bg_style,
+            hallow: world.hallow_bg_style,
+            crimson: world.crimson_bg_style,
+            desert: world.desert_bg_style,
+            ocean: world.ocean_bg_style,
+            mushroom: world.mushroom_bg_style,
+        }
+    }
+
+    /// The sorted, deduped bg sheet ids for these style bytes (the same set
+    /// `world_bg_sheet_ids` computes from a `World`).
+    fn sheet_ids(&self) -> Vec<i32> {
+        let desert = crate::world::desert_bg_set(self.desert as i32);
+        let mut ids: Vec<i32> = [
+            crate::world::surface_bg_texture_ids(1, self.corrupt as i32).unwrap(),
+            crate::world::surface_bg_texture_ids(2, self.jungle as i32).unwrap(),
+            crate::world::surface_bg_texture_ids(3, self.snow as i32).unwrap(),
+            crate::world::surface_bg_texture_ids(4, self.hallow as i32).unwrap(),
+            crate::world::surface_bg_texture_ids(5, self.crimson as i32).unwrap(),
+            desert[0],
+            desert[1],
+            desert[2],
+            desert[3],
+            crate::world::surface_bg_texture_ids(8, self.mushroom as i32).unwrap(),
+        ]
+        .into_iter()
+        .flatten()
+        .chain(crate::world::snow_mountain_texture_ids(self.snow as i32))
+        .chain([crate::world::ocean_bg_texture_id(self.ocean as i32)])
+        .filter(|&id| id >= 0)
+        .collect();
+        ids.sort_unstable();
+        ids.dedup();
+        ids
+    }
+
+    /// Revert one `setBG` slot (1..8) to slot-0.
+    fn revert(&mut self, slot: i32) {
+        match slot {
+            1 => self.corrupt = 0,
+            2 => self.jungle = 0,
+            3 => self.snow = 0,
+            4 => self.hallow = 0,
+            5 => self.crimson = 0,
+            6 => self.desert = 0,
+            7 => self.ocean = 0,
+            8 => self.mushroom = 0,
+            _ => {}
+        }
+    }
+}
+
+/// The eight biome style slots the atlas budget guard can revert to slot-0,
+/// in a FIXED order (the C# `setBG` slot order 1..8). The forest tree sets
+/// (0/10/11/12) and the underworld (9) are NOT reverted here — g70/g72 own
+/// their draw sides and their sheets are not in the surface-bg world half.
+const BG_BUDGET_SLOTS: [i32; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
+
+/// The atlas budget guard (W4-g71 wiring): a rolled non-default surface style
+/// can push the world-half `Background_<id>` sheets past the 8192 px strict-GPU
+/// bound (the style-0 baseline packs ~7847 px; non-default styles add 336–1503
+/// px, measured — research/92 §2). Rather than overflow, revert the offending
+/// biome styles to slot-0 (the classic look) until the set fits.
+///
+/// Deterministic + greedy: try the full rolled set first; if it overflows,
+/// revert the slots one at a time in `BG_BUDGET_SLOTS` order, recomputing the
+/// sheet set after each, until the packed height fits. Returns the list of
+/// reverted `setBG` slots (empty when the rolled set already fits). The caller
+/// applies the reverts to the `World` and rebuilds the atlas — the same
+/// revert-then-repack the C# avoids by drawing surface bgs outside the tile
+/// atlas (the S1-G-13 background-target family, the long-term fix).
+///
+/// `pack_height` is the skyline packer's height for a candidate bg-id set
+/// (the caller closes over the static half + the real packer). Pure over its
+/// inputs — no RNG, no global state.
+pub(crate) fn fit_bg_styles_to_atlas(
+    styles: BgStyleBytes,
+    pack_height: impl Fn(&[i32]) -> u32,
+    max_height: u32,
+) -> Vec<i32> {
+    let mut reverted = Vec::new();
+    let mut trial = styles;
+    if pack_height(&trial.sheet_ids()) <= max_height {
+        return reverted;
+    }
+    for slot in BG_BUDGET_SLOTS {
+        trial.revert(slot);
+        reverted.push(slot);
+        if pack_height(&trial.sheet_ids()) <= max_height {
+            break;
+        }
+    }
+    reverted
+}
+
 /// `Images/Misc/MoonExplosion/*` sheet names, in the order
 /// [`Lookups::moon_explosion`] indexes them (`MoonlordDeathDrama.cs:231-242`).
 const MOON_EXPLOSION_SHEETS: [&str; 5] = [
@@ -291,9 +428,12 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Background_28",
         "Background_21",
         "Background_20",
-        // Desert mountain layers behind the dunes (`DrawSurfaceBG_BackMountainsStep1/2`).
+        // Desert mountain layers behind the dunes (`DrawSurfaceBG_BackMountainsStep1/2`)
+        // and the GoodEvilDesert fallback dunes (`Main.cs:60885-60925`).
         "Background_23",
         "Background_22",
+        "Background_26",
+        "Background_27",
         "Background_112",
         "Background_113",
         "Sun",
@@ -3538,6 +3678,87 @@ mod tests {
         }
     }
 
+    // ---- W4-g71 wiring: the atlas budget guard ----
+
+    #[test]
+    fn w4_g71_bg_budget_guard_no_revert_when_the_set_fits() {
+        // A style-0 world (the classic baseline) fits — the guard returns no
+        // reverts. The pack_height closure is a stand-in that always fits.
+        let w = tr_core::world::World::new("t".into(), 64, 64);
+        let styles = BgStyleBytes::from_world(&w);
+        let reverted = fit_bg_styles_to_atlas(styles, |_| 7847, 8192);
+        assert!(reverted.is_empty(), "the baseline fits, no revert");
+    }
+
+    #[test]
+    fn w4_g71_bg_budget_guard_reverts_in_slot_order_until_fit() {
+        // A world with every biome style non-default. The stand-in packer is a
+        // step model: it reports overflow (8400) for the first three trials
+        // (the rolled set + the first two reverts) then fits (7900) — so the
+        // guard must revert exactly slots 1, 2, 3 in order and stop. This pins
+        // the greedy prefix behaviour without depending on real sheet dims.
+        let mut w = tr_core::world::World::new("t".into(), 64, 64);
+        w.corrupt_bg_style = 4;
+        w.jungle_bg_style = 6;
+        w.snow_bg_style = 7;
+        w.hallow_bg_style = 5;
+        w.crimson_bg_style = 6;
+        w.desert_bg_style = 51;
+        w.ocean_bg_style = 5;
+        w.mushroom_bg_style = 4;
+        let styles = BgStyleBytes::from_world(&w);
+        let calls = std::cell::Cell::new(0u32);
+        let reverted = fit_bg_styles_to_atlas(
+            styles,
+            |_| {
+                let n = calls.get();
+                calls.set(n + 1);
+                if n < 3 { 8400 } else { 7900 }
+            },
+            8192,
+        );
+        assert_eq!(reverted, vec![1, 2, 3], "greedy prefix, stops at first fit");
+        assert_eq!(calls.get(), 4, "initial trial + three revert trials");
+    }
+
+    #[test]
+    fn w4_g71_bg_budget_guard_reverts_all_eight_when_nothing_fits() {
+        // If even the all-slot-0 set overflows the model, the guard reverts all
+        // eight slots (the caller then warns; the C# long-term fix is S1-G-13).
+        let mut w = tr_core::world::World::new("t".into(), 64, 64);
+        w.corrupt_bg_style = 4;
+        let styles = BgStyleBytes::from_world(&w);
+        let reverted = fit_bg_styles_to_atlas(styles, |_| 9000, 8192);
+        assert_eq!(reverted, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn w4_g71_bg_budget_guard_sheet_ids_match_the_world() {
+        // BgStyleBytes::sheet_ids reproduces world_bg_sheet_ids for the same
+        // styles (the guard trials the same set the loader packs).
+        let mut w = tr_core::world::World::new("t".into(), 64, 64);
+        w.snow_bg_style = 7;
+        w.desert_bg_style = 4;
+        w.ocean_bg_style = 5;
+        let from_world = world_bg_sheet_ids(&w);
+        let from_bytes = BgStyleBytes::from_world(&w).sheet_ids();
+        assert_eq!(from_world, from_bytes);
+    }
+
+    #[test]
+    fn w4_g71_packed_height_matches_build_ref() {
+        // The cheap height probe equals the full build's height (same dedup,
+        // sort, skyline) — the guard's measurements are faithful.
+        let imgs = vec![
+            raw_image("a", 100, 200),
+            raw_image("b", 300, 150),
+            raw_image("c", 50, 400),
+            raw_image("a", 100, 200), // duplicate name — deduped
+        ];
+        let atlas = tr_render::Atlas::build(imgs.clone(), 8192);
+        assert_eq!(tr_render::Atlas::packed_height(&imgs, 8192), atlas.height);
+    }
+
     /// The real content atlas + Lookups, built once per process. Decodes every
     /// `Item_*.xnb` the junction carries (~6500 sheets), exactly like startup.
     fn content_lookups() -> &'static (tr_render::Atlas, Lookups) {
@@ -3697,13 +3918,13 @@ mod tests {
         let content = crate::app::find_content_dir().unwrap();
         set_content_dir(content.clone());
         let images_dir = content.join("Images");
-        let world = tr_core::world::World::new("bench".into(), 64, 64);
+        let mut world = tr_core::world::World::new("bench".into(), 64, 64);
 
         let mut cache = None;
         let mut fonts = None;
         let t0 = std::time::Instant::now();
         let first =
-            crate::app::build_atlas_reusing_static(&world, &images_dir, &mut cache, &mut fonts);
+            crate::app::build_atlas_reusing_static(&mut world, &images_dir, &mut cache, &mut fonts);
         let first_ms = t0.elapsed().as_millis();
         assert!(first.is_ok(), "boot build");
         assert!(cache.is_some(), "the boot build caches the static half");
@@ -3711,7 +3932,7 @@ mod tests {
 
         let t1 = std::time::Instant::now();
         let second =
-            crate::app::build_atlas_reusing_static(&world, &images_dir, &mut cache, &mut fonts);
+            crate::app::build_atlas_reusing_static(&mut world, &images_dir, &mut cache, &mut fonts);
         let second_ms = t1.elapsed().as_millis();
         assert!(second.is_ok(), "swap build");
         assert!(cache.is_some(), "the swap keeps the cache for the next one");

@@ -34,26 +34,27 @@ pub fn write(w: &mut Writer, world: &World) {
     write_world_flavour(w, world);
     write_times(w, world);
     // WorldFile.cs:1252-1269: the moon type, tree/cave backgrounds, the
-    // ice/jungle/hell back styles. `hellBackStyle` and the four forest-set
-    // dividers/styles are owned (`World::tree_x`, `forest_bg_styles` — the
-    // W4-g70 forest lanes); the cave arrays stay unowned (`net.rs`'s
-    // `WorldInfo` carries the same fields as zeros).
+    // ice/jungle/hell back styles. W4-g71 wiring: the tree/cave arrays and the
+    // ice/jungle/hell back styles are owned now (the wired tail rolls them).
+    // The g70 treeStyle×forest_bg_styles conflation is corrected here per the
+    // f45 fix-hunk pair (research/279 §3.3): treeStyle writes the merged
+    // `tree_style: [i32; 4]`; `forest_bg_styles` keeps ONLY the setBG seats.
     w.u8(world.moon_type);
     for x in world.tree_x {
-        w.i32(x); // treeX
+        w.i32(x); // treeX (`:1253-1255`)
     }
-    for s in world.forest_bg_styles {
-        w.i32(s as i32); // treeStyle
+    for s in world.tree_style {
+        w.i32(s); // treeStyle (`:1256-1259`)
     }
-    for _ in 0..3 {
-        w.i32(0); // caveBackX
+    for x in world.cave_back_x[..3] {
+        w.i32(x); // caveBackX (`:1260-1262` — [3] is never persisted)
     }
-    for _ in 0..4 {
-        w.i32(0); // caveBackStyle
+    for s in world.cave_back_style {
+        w.i32(s); // caveBackStyle (`:1263-1266`)
     }
-    w.i32(0); // iceBackStyle — unowned
-    w.i32(0); // jungleBackStyle — unowned
-    w.i32(world.hell_back_style as i32);
+    w.i32(world.ice_back_style as i32); // iceBackStyle (`:1267`)
+    w.i32(world.jungle_back_style as i32); // jungleBackStyle (`:1268`)
+    w.i32(world.hell_back_style as i32); // hellBackStyle (`:1269`)
     // WorldFile.cs:1270-1281: spawn, layer heights, the time snapshot, the
     // moon phase, the blood moon/eclipse, the dungeon anchor.
     w.i32(world.spawn_x);
@@ -94,20 +95,20 @@ pub fn write(w: &mut Writer, world: &World) {
     w.f32(world.max_raining); // _tempMaxRain
     // WorldFile.cs:1315-1317: the hardmode ore tiers — `World.ore_tiers`
     // owns them (M5-HARDFORCE-ores / M5-ORES-1); the eight background styles
-    // follow. The five surface-variant styles ride their byte slots (`setBG`
-    // 1 corrupt, 2 jungle, 4 hallow, 5 crimson); the rest stay at the C#
-    // default.
+    // follow. W4-g71 wiring: all eight `setBG` 0..7 styles ride their byte slots
+    // (0 treeBG1, 1 corrupt, 2 jungle, 3 snow, 4 hallow, 5 crimson, 6 desert,
+    // 7 ocean) — the wired tail rolls them.
     w.i32(world.ore_tiers.cobalt); // Cobalt
     w.i32(world.ore_tiers.mythril); // Mythril
     w.i32(world.ore_tiers.adamantite); // Adamantite
     w.u8(world.forest_bg_styles[0]); // setBG(0) treeBG1
     w.u8(world.corrupt_bg_style); // setBG(1) corruptBG
     w.u8(world.jungle_bg_style); // setBG(2) jungleBG
-    w.u8(0); // setBG(3) snowBG
+    w.u8(world.snow_bg_style); // setBG(3) snowBG
     w.u8(world.hallow_bg_style); // setBG(4) hallowBG
     w.u8(world.crimson_bg_style); // setBG(5) crimsonBG
-    w.u8(0); // setBG(6) desertBG
-    w.u8(0); // setBG(7) oceanBG
+    w.u8(world.desert_bg_style); // setBG(6) desertBG
+    w.u8(world.ocean_bg_style); // setBG(7) oceanBG
     // WorldFile.cs:1326-1332: clouds and wind — the cloud state is unowned
     // and the wind engine lives in tr-app.
     w.i32(0); // cloudBGActive
@@ -182,10 +183,10 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(world.dd2_downed_t2); // DownedInvasionT2
     w.boolean(world.dd2_downed_t3); // DownedInvasionT3
                       // WorldFile.cs:1376-1379: the remaining background styles and the
-                      // combat book. `setBG(8) mushroomBG` is port-owned; the rest are
-                      // defaults.
+                      // combat book. W4-g71 wiring: `setBG(8) mushroomBG`, `setBG(9)
+                      // underworldBG` and `setBG(10..12) treeBG2..4` are port-owned now.
     w.u8(world.mushroom_bg_style); // mushroomBG
-    w.u8(0); // underworldBG
+    w.u8(world.underworld_bg_style); // underworldBG
     w.u8(world.forest_bg_styles[1]); // treeBG2
     w.u8(world.forest_bg_styles[2]); // treeBG3
     w.u8(world.forest_bg_styles[3]); // treeBG4
@@ -376,19 +377,26 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.last_played = r.u64()? as i64; // LastPlayed (`DateTime.ToBinary`)
     }
     // WorldFile.cs:2021-2068 — moon type, the tree/cave arrays, the back styles.
-    // The moon type, the four forest-set dividers/styles (W4-g70) and
-    // `hellBackStyle` are owned; the cave arrays stay unowned.
+    // W4-g71 wiring: the moon type, the tree/cave arrays and the ice/jungle/hell
+    // back styles are owned now (the wired tail rolls them). The g70
+    // treeStyle×forest_bg_styles conflation corrected per the f45 fix-hunk
+    // pair (research/279 §3.3): treeStyle reads the merged `tree_style`.
     world.moon_type = r.u8()?.min(8);
     for x in &mut world.tree_x {
-        *x = r.i32()?; // treeX
+        *x = r.i32()?; // treeX (`:2051-2053`)
     }
-    for s in &mut world.forest_bg_styles {
-        *s = r.i32()? as u8; // treeStyle
+    for s in &mut world.tree_style {
+        *s = r.i32()?; // treeStyle (`:2054-2057`)
     }
-    r.skip(3 * 4)?; // caveBackX
-    r.skip(4 * 4)?; // caveBackStyle
-    r.skip(2 * 4)?; // iceBackStyle, jungleBackStyle
-    world.hell_back_style = r.i32()? as u8;
+    for x in &mut world.cave_back_x[..3] {
+        *x = r.i32()?; // caveBackX (`:2058-2060` — [3] keeps its new int[4] zero)
+    }
+    for s in &mut world.cave_back_style {
+        *s = r.i32()?; // caveBackStyle (`:2061-2064`)
+    }
+    world.ice_back_style = r.i32()? as u8; // iceBackStyle (`:2065`)
+    world.jungle_back_style = r.i32()? as u8; // jungleBackStyle (`:2066`)
+    world.hell_back_style = r.i32()? as u8; // hellBackStyle (`:2067`)
     // WorldFile.cs:2069-2083 — spawn, layers, time snapshot, moon phase, blood moon,
     // eclipse, dungeon.
     world.spawn_x = r.i32()?;
@@ -453,15 +461,16 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     world.ore_tiers.cobalt = r.i32()?;
     world.ore_tiers.mythril = r.i32()?;
     world.ore_tiers.adamantite = r.i32()?;
-    // `setBG` slots 0..7 (`WorldFile.cs:2211-2218`): the five surface-variant
-    // styles and the first forest style are port-owned; the rest are skip-read.
+    // `setBG` slots 0..7 (`WorldFile.cs:2211-2218`): W4-g71 wiring — all eight
+    // styles are port-owned now (slot 0 treeBG1 included).
     world.forest_bg_styles[0] = r.u8()?; // setBG(0) treeBG1
     world.corrupt_bg_style = r.u8()?; // setBG(1) corruptBG
     world.jungle_bg_style = r.u8()?; // setBG(2) jungleBG
-    r.skip(1)?; // setBG(3) snowBG
+    world.snow_bg_style = r.u8()?; // setBG(3) snowBG
     world.hallow_bg_style = r.u8()?; // setBG(4) hallowBG
     world.crimson_bg_style = r.u8()?; // setBG(5) crimsonBG
-    r.skip(2)?; // setBG(6..7) desertBG, oceanBG
+    world.desert_bg_style = r.u8()?; // setBG(6) desertBG
+    world.ocean_bg_style = r.u8()?; // setBG(7) oceanBG
     r.skip(4)?; // cloudBGActive
     r.skip(2)?; // numClouds
     r.skip(4)?; // windSpeedTarget
@@ -564,12 +573,13 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.dd2_downed_t2 = r.bool()?; // DownedInvasionT2
         world.dd2_downed_t3 = r.bool()?; // DownedInvasionT3
     }
-    // WorldFile.cs:2219-2233 — the remaining background styles.
+    // WorldFile.cs:2219-2233 — the remaining background styles. W4-g71 wiring:
+    // the underworld + treeBG2..4 styles are port-owned now.
     if version > 194 {
         world.mushroom_bg_style = r.u8()?; // setBG(8) mushroomBG
     }
     if version >= 215 {
-        r.skip(1)?; // setBG(9) underworldBG
+        world.underworld_bg_style = r.u8()?; // setBG(9) underworldBG
     }
     if version > 195 {
         for s in &mut world.forest_bg_styles[1..] {

@@ -1684,6 +1684,21 @@ mod tests {
         // (`:1413`, v261) — ride the round-trip at non-default values.
         world.combat_book_was_used = true;
         world.unlocked_slime_red_spawn = true;
+        // W4-g71: the three new setBG style bytes at non-default values.
+        world.snow_bg_style = 7;
+        world.desert_bg_style = 51;
+        world.ocean_bg_style = 6;
+        // W4-g71 wiring: the tree/cave arrays + back styles + the forest/
+        // underworld setBG bytes at non-default values (the wired tail rolls
+        // them; the round-trip must carry them).
+        world.tree_x = [17, 33, 49];
+        world.tree_style = [2, 3, 0, 5];
+        world.cave_back_x = [11, 22, 33, 0];
+        world.cave_back_style = [1, 4, 3, 0];
+        world.ice_back_style = 3;
+        world.jungle_back_style = 1;
+        world.forest_bg_styles = [1, 11, 12, 13];
+        world.underworld_bg_style = 2;
         world
     }
 
@@ -1716,6 +1731,28 @@ mod tests {
         assert_eq!(
             got.hell_back_style, want.hell_back_style,
             "{context}: hell back style"
+        );
+        // W4-g71 wiring: the tree/cave arrays + back styles + forest/underworld
+        // setBG bytes round-trip.
+        assert_eq!(got.tree_x, want.tree_x, "{context}: treeX");
+        assert_eq!(got.tree_style, want.tree_style, "{context}: treeStyle");
+        assert_eq!(got.cave_back_x, want.cave_back_x, "{context}: caveBackX");
+        assert_eq!(
+            got.cave_back_style, want.cave_back_style,
+            "{context}: caveBackStyle"
+        );
+        assert_eq!(got.ice_back_style, want.ice_back_style, "{context}: iceBackStyle");
+        assert_eq!(
+            got.jungle_back_style, want.jungle_back_style,
+            "{context}: jungleBackStyle"
+        );
+        assert_eq!(
+            got.forest_bg_styles, want.forest_bg_styles,
+            "{context}: forest_bg_styles"
+        );
+        assert_eq!(
+            got.underworld_bg_style, want.underworld_bg_style,
+            "{context}: underworld_bg_style"
         );
         assert_eq!(got.downed_eoc, want.downed_eoc, "{context}: downedBoss1");
         assert_eq!(got.downed_eow, want.downed_eow, "{context}: downedBoss2");
@@ -1910,6 +1947,13 @@ mod tests {
             got.unlocked_slime_red_spawn, want.unlocked_slime_red_spawn,
             "{context}: unlockedSlimeRedSpawn"
         );
+        // W4-g71: the three new setBG style bytes (slots 3/6/7).
+        assert_eq!(got.snow_bg_style, want.snow_bg_style, "{context}: snowBG");
+        assert_eq!(
+            got.desert_bg_style, want.desert_bg_style,
+            "{context}: desertBG"
+        );
+        assert_eq!(got.ocean_bg_style, want.ocean_bg_style, "{context}: oceanBG");
     }
 
     #[test]
@@ -2015,13 +2059,16 @@ mod tests {
         tail[68..72].copy_from_slice(&world.rain_time.to_le_bytes());
         tail[72..76].copy_from_slice(&world.max_raining.to_le_bytes());
         // The owned background styles inside setBG 0..7 at 88..95
-        // (`:1318-1325`): treeBG1@88, corrupt@89, jungle@90, hallow@92,
-        // crimson@93.
+        // (`:1318-1325`): W4-g71 wiring — treeBG1@88, corrupt@89, jungle@90,
+        // snow@91, hallow@92, crimson@93, desert@94, ocean@95.
         tail[88] = world.forest_bg_styles[0];
         tail[89] = world.corrupt_bg_style;
         tail[90] = world.jungle_bg_style;
+        tail[91] = world.snow_bg_style;
         tail[92] = world.hallow_bg_style;
         tail[93] = world.crimson_bg_style;
+        tail[94] = world.desert_bg_style;
+        tail[95] = world.ocean_bg_style;
         // savedAngler..savedGolfer follow the 4-byte angler-list count at
         // 106..110 (88 trio-end + 8 setBG + 10 clouds/wind = 106).
         tail[110] = u8::from(world.saved_angler); // savedAngler (`:1334`)
@@ -2060,6 +2107,13 @@ mod tests {
         // green/old/purple, then rainbow@2041, red@2042 (gate V3, i35).
         tail[2041] = u8::from(world.unlocked_slime_rainbow_spawn);
         tail[2042] = u8::from(world.unlocked_slime_red_spawn);
+        // W4-g71 wiring: the five remaining BG styles (mushroom/underworld/
+        // tree2-4) at tail 1934..1938, just before combatBookWasUsed@1939.
+        tail[1934] = world.mushroom_bg_style; // setBG(8) (`:1375`)
+        tail[1935] = world.underworld_bg_style; // setBG(9) (`:1374`)
+        tail[1936] = world.forest_bg_styles[1]; // treeBG2 (`:1376`)
+        tail[1937] = world.forest_bg_styles[2]; // treeBG3 (`:1377`)
+        tail[1938] = world.forest_bg_styles[3]; // treeBG4 (`:1378`)
         // combatBookWasUsed (`WorldFile.cs:1379`): trio-end 88 + 8 setBG +
         // 10 clouds/wind + 4 angler count + 8 saved-NPC/quest + 8 invasion/
         // cultist + 2+1172+2+586 banners + 1 dawn + 9+9 event/tower + 10
@@ -2078,19 +2132,26 @@ mod tests {
         b
     }
 
-    /// The owned middle of the flags table: the forest-set dividers/styles
-    /// (W4-g70), the back styles (hell only), the spawn/layers/time block —
-    /// written between the moon type and the `_tempBloodMoon` tail. The
-    /// cave arrays stay at their zero defaults.
+    /// The owned middle of the flags table: the tree/cave arrays + the
+    /// ice/jungle/hell back styles (W4-g71 wiring: all owned now), then the
+    /// spawn/layers/time block — written between the moon-type byte and the
+    /// `_tempBloodMoon` tail.
     fn flags_tail_prefix(world: &World) -> Vec<u8> {
         let mut b = Vec::new();
         for x in world.tree_x {
-            b.extend_from_slice(&x.to_le_bytes());
+            b.extend_from_slice(&x.to_le_bytes()); // treeX
         }
-        for s in world.forest_bg_styles {
-            b.extend_from_slice(&(s as i32).to_le_bytes());
+        for s in world.tree_style {
+            b.extend_from_slice(&s.to_le_bytes()); // treeStyle
         }
-        b.resize(b.len() + 3 * 4 + 4 * 4 + 2 * 4, 0); // cave arrays + ice/jungle
+        for x in world.cave_back_x[..3] {
+            b.extend_from_slice(&x.to_le_bytes()); // caveBackX
+        }
+        for s in world.cave_back_style {
+            b.extend_from_slice(&s.to_le_bytes()); // caveBackStyle
+        }
+        b.extend_from_slice(&(world.ice_back_style as i32).to_le_bytes());
+        b.extend_from_slice(&(world.jungle_back_style as i32).to_le_bytes());
         b.extend_from_slice(&(world.hell_back_style as i32).to_le_bytes());
         b.extend_from_slice(&world.spawn_x.to_le_bytes());
         b.extend_from_slice(&world.spawn_y.to_le_bytes());
@@ -2864,6 +2925,9 @@ mod tests {
         world.mushroom_bg_style = 6;
         world.tree_x = [2, 4, 6];
         world.forest_bg_styles = [1, 3, 11, 13];
+        world.snow_bg_style = 21;
+        world.desert_bg_style = 52;
+        world.ocean_bg_style = 5;
         world.hard_mode = true;
         world.downed_eoc = true;
         world.downed_plant_boss = true;
@@ -2901,6 +2965,9 @@ mod tests {
         // W4-g70: the forest-set dividers and the four tree styles.
         assert_eq!(back.tree_x, world.tree_x);
         assert_eq!(back.forest_bg_styles, world.forest_bg_styles);
+        assert_eq!(back.snow_bg_style, world.snow_bg_style);
+        assert_eq!(back.desert_bg_style, world.desert_bg_style);
+        assert_eq!(back.ocean_bg_style, world.ocean_bg_style);
         assert!(back.hard_mode);
         assert!(back.downed_eoc && back.downed_plant_boss);
         assert!(back.spawn_meteor);

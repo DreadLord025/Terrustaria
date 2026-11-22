@@ -105,16 +105,27 @@ pub(crate) fn advance_bg_style(style: &mut i32, delay: &mut i32, preferred: i32)
 
 /// `SurfaceBackgroundID.Sets.IsDesertVariant` (`ID/SurfaceBackgroundID.cs`):
 /// the four styles whose per-biome desert sets can swap without a fade.
-///
-/// `Main.UpdateBGVisibility_FrontLayer_IsDesertVariantSwap` (`Main.cs:64120-64143`)
-/// additionally requires both styles to have a set for the current desert biome
-/// (`Main.desertBackgroundSet.{Pure,Corrupt,Hallow,Crimson}.HasAny`). The port has
-/// no desert-set store, so the predicate is always false: the fade-out guard it
-/// feeds (`Main.cs:64109`, `64268`) simplifies to "always fade out".
-/// ponytail: add the sets when `WorldGen.setBG` case 6 (desert) is ported.
-#[allow(dead_code)]
 fn is_desert_variant(style: i32) -> bool {
     matches!(style, 2 | 5 | 13 | 14)
+}
+
+/// `Main.UpdateBGVisibility_FrontLayer_IsDesertVariantSwap`
+/// (`Main.cs:64120-64143`): both styles must be desert variants, and both
+/// must have a `Main.desertBackgroundSet` row for their biome
+/// (`BackgroundVariant.HasAny`). `desert_set` is `World::desert_bg_set()`'s
+/// [Pure, Corrupt, Crimson, Hallow] table.
+fn is_desert_variant_swap(target: i32, original: i32, desert_set: &[[i32; 3]; 4]) -> bool {
+    if target == original || !is_desert_variant(target) || !is_desert_variant(original) {
+        return false;
+    }
+    let has_any = |style: i32| match style {
+        2 => tr_core::world::desert_variant_has_any(desert_set[0]),
+        5 => tr_core::world::desert_variant_has_any(desert_set[1]),
+        13 => tr_core::world::desert_variant_has_any(desert_set[3]),
+        14 => tr_core::world::desert_variant_has_any(desert_set[2]),
+        _ => false,
+    };
+    has_any(target) && has_any(original)
 }
 
 /// The far-layer indexes a style targets (`Main.UpdateBGVisibility_BackLayer`,
@@ -138,35 +149,81 @@ fn far_layer_targets(style: i32, jungle_bg: i32, hallow_bg: i32) -> [Option<usiz
     }
 }
 
+/// `Main.GetPreferredBGStyleForPlayer`'s desert branch (`Main.cs:64223-64226`):
+/// `(corrupt && evil > blood && evil > holy) ? 5 : ((crimson && blood > holy)
+/// ? 14 : (!hallow ? 2 : 13))`. Pure so the branch order is witnessable
+/// without an `App`.
+pub(crate) fn desert_preferred_style(
+    zone_corrupt: bool,
+    zone_crimson: bool,
+    zone_hallow: bool,
+    evil: i32,
+    blood: i32,
+    holy: i32,
+) -> i32 {
+    if zone_corrupt && evil > blood && evil > holy {
+        5
+    } else if zone_crimson && blood > holy {
+        14
+    } else if !zone_hallow {
+        2
+    } else {
+        13
+    }
+}
+
 /// `Main.UpdateBGVisibility_BackLayer` + `Main.UpdateBGVisibility_FrontLayer`
 /// (`Main.cs:64087-64209`), the cross-fade half of `Main.DrawBG`.
 ///
 /// The front array is indexed by *style* (so hallow 6, crimson 8, mushroom 9);
 /// the far array uses the biome-layer index of `UpdateBGVisibility_BackLayer`.
+/// `desert_set` feeds the desert-variant swap guard (`Main.cs:64109`,
+/// `:64268`): while the incoming variant's own alpha is below 1, the outgoing
+/// variant keeps its alpha (no fade-out) when both sets `HasAny`.
 pub(crate) fn advance_bg_alphas(
     front: &mut [f32; 16],
     far: &mut [f32; 16],
     style: i32,
     jungle_bg: i32,
     hallow_bg: i32,
+    desert_set: &[[i32; 3]; 4],
     speed: f32,
 ) {
     // `DrawBG_ModifyBGFarBackLayerAlpha` (`Main.cs:64258-64273`): the wanted
-    // layers grow, every other non-zero layer fades out.
+    // layers grow, every other non-zero layer fades out — unless the
+    // desert-variant swap holds it (`:64268`). The C# passes the *far target
+    // index* as `targetBiome` to the style-keyed swap predicate; for the four
+    // desert-variant styles that index is 2 (Pure), so the guard fires only
+    // when the outgoing far slot is itself a desert-variant style id with a
+    // set — which the far indexing never produces (slots 5/13/14 stay 0).
+    // The verbatim call is kept so the shape matches; it is inert by
+    // construction, exactly like the original's.
     let targets = far_layer_targets(style, jungle_bg, hallow_bg);
-    for (i, a) in far.iter_mut().enumerate() {
+    let far_target = targets[0].unwrap_or(0) as i32;
+    // Index loop, not `iter_mut`: the guard reads the LIVE array
+    // (`Main.bgAlphaFarBackLayer[desiredBG]`), so a slot already visited this
+    // pass is seen at its updated value — the C#'s order, verbatim.
+    for i in 0..16 {
         let flag = targets.contains(&Some(i));
-        if flag || *a != 0.0 {
-            *a = (*a + if flag { speed } else { -speed }).clamp(0.0, 1.0);
+        if flag
+            || (far[i] != 0.0
+                && (!is_desert_variant_swap(far_target, i as i32, desert_set)
+                    || !(far[far_target as usize] < 1.0)))
+        {
+            far[i] = (far[i] + if flag { speed } else { -speed }).clamp(0.0, 1.0);
         }
     }
     // `UpdateBGVisibility_FrontLayer` (`Main.cs:64087-64118`): the target layer
-    // fades in, the rest out.
-    for (i, a) in front.iter_mut().enumerate() {
+    // fades in, the rest out — a desert-variant swap holds the outgoing layer
+    // until the incoming one reaches 1 (`:64109`). Same live-array read.
+    for i in 0..16 {
         if style == i as i32 {
-            *a = (*a + speed).min(1.0);
-        } else if *a != 0.0 {
-            *a = (*a - speed).max(0.0);
+            front[i] = (front[i] + speed).min(1.0);
+        } else if front[i] != 0.0
+            && (!is_desert_variant_swap(style, i as i32, desert_set)
+                || !(front[style as usize] < 1.0))
+        {
+            front[i] = (front[i] - speed).max(0.0);
         }
     }
 }
@@ -236,6 +293,10 @@ mod water_style_tests {
 mod bg_transition_tests {
     use super::*;
 
+    /// The style-0 desert set: only Pure has rows (`WorldGen.cs:7505-7508`),
+    /// so every variant-vs-variant swap guard is false.
+    const NO_DESERT: [[i32; 3]; 4] = [[21, 20, -1], [-1, -1, -1], [-1, -1, -1], [-1, -1, -1]];
+
     #[test]
     fn switching_into_a_non_forest_style_waits_thirty_frames() {
         // `DrawBG_HandleBackgroundTransition`: delay 30, switch when bgDelay > 30.
@@ -293,7 +354,7 @@ mod bg_transition_tests {
         far[0] = 1.0;
         // 20 frames at `backgroundLayerTransitionSpeed = 0.05` completes a fade.
         for _ in 0..20 {
-            advance_bg_alphas(&mut front, &mut far, 7, 0, 0, 0.05);
+            advance_bg_alphas(&mut front, &mut far, 7, 0, 0, &NO_DESERT, 0.05);
         }
         assert_eq!(front[0], 0.0);
         assert_eq!(far[0], 0.0);
@@ -310,7 +371,7 @@ mod bg_transition_tests {
         for (style, index) in [(0, 0), (2, 1), (4, 3), (7, 4)] {
             let mut front = [0.0; 16];
             let mut far = [0.0; 16];
-            advance_bg_alphas(&mut front, &mut far, style, 0, 0, 0.05);
+            advance_bg_alphas(&mut front, &mut far, style, 0, 0, &NO_DESERT, 0.05);
             assert_eq!(front[style as usize], 0.05, "front style {style}");
             assert_eq!(far[index], 0.05, "far style {style}");
         }
@@ -323,7 +384,7 @@ mod bg_transition_tests {
         for style in [1, 3, 6, 8, 9] {
             let mut front = [0.0; 16];
             let mut far = [0.0; 16];
-            advance_bg_alphas(&mut front, &mut far, style, 0, 0, 0.05);
+            advance_bg_alphas(&mut front, &mut far, style, 0, 0, &NO_DESERT, 0.05);
             assert_eq!(front[style as usize], 0.05, "front style {style}");
             assert_eq!(front.iter().filter(|a| **a != 0.0).count(), 1);
         }
@@ -335,7 +396,7 @@ mod bg_transition_tests {
         let far = |style, jungle, hallow| {
             let mut front = [0.0; 16];
             let mut far = [0.0; 16];
-            advance_bg_alphas(&mut front, &mut far, style, jungle, hallow, 0.05);
+            advance_bg_alphas(&mut front, &mut far, style, jungle, hallow, &NO_DESERT, 0.05);
             (0..16).filter(|&i| far[i] > 0.0).collect::<Vec<_>>()
         };
         assert_eq!(far(1, 0, 0), vec![2]); // corrupt
@@ -353,5 +414,79 @@ mod bg_transition_tests {
         assert_eq!(far(10, 0, 0), vec![10]);
         assert_eq!(far(11, 0, 0), vec![11]);
         assert_eq!(far(12, 0, 0), vec![12]);
+    }
+
+    #[test]
+    fn w4_g71_desert_variant_swap_holds_the_outgoing_alpha_until_one() {
+        // `Main.cs:64109`: with both sets populated (style 51), a 2 -> 5 swap
+        // keeps front[2] at 1 while front[5] climbs; once front[5] hits 1 the
+        // outgoing layer fades normally.
+        let set51 = tr_core::world::desert_bg_set(51);
+        let mut front = [0.0; 16];
+        let mut far = [0.0; 16];
+        front[2] = 1.0;
+        far[1] = 1.0;
+        for _ in 0..19 {
+            advance_bg_alphas(&mut front, &mut far, 5, 0, 0, &set51, 0.05);
+        }
+        // front[5] = 0.95 < 1: the outgoing desert layer is held.
+        assert!((front[5] - 0.95).abs() < 1e-5, "front5 {}", front[5]);
+        assert_eq!(front[2], 1.0, "the outgoing variant is held at 1");
+        advance_bg_alphas(&mut front, &mut far, 5, 0, 0, &set51, 0.05);
+        assert_eq!(front[5], 1.0);
+        // Now the guard's `!(front[value] < 1f)` flips: front[2] fades.
+        advance_bg_alphas(&mut front, &mut far, 5, 0, 0, &set51, 0.05);
+        assert!((front[2] - 0.95).abs() < 1e-5, "front2 {}", front[2]);
+        // The far side: both variants target far slot 2 (the corrupt-desert
+        // mountains), which stays lit through the swap.
+        assert_eq!(far[2], 1.0);
+    }
+
+    #[test]
+    fn w4_g71_desert_variant_swap_needs_both_sets() {
+        // Style 0: only Pure has rows — a 2 -> 5 swap fades front[2] normally
+        // (`HasAny(5)` is false, `Main.cs:64138-64142`).
+        let mut front = [0.0; 16];
+        let mut far = [0.0; 16];
+        front[2] = 1.0;
+        advance_bg_alphas(&mut front, &mut far, 5, 0, 0, &NO_DESERT, 0.05);
+        assert!((front[2] - 0.95).abs() < 1e-5, "front2 {}", front[2]);
+        assert!((front[5] - 0.05).abs() < 1e-5);
+        // Non-variant pairs never hold: 2 -> 7 (snow) fades even with set 51.
+        let set51 = tr_core::world::desert_bg_set(51);
+        let mut front = [0.0; 16];
+        let mut far = [0.0; 16];
+        front[2] = 1.0;
+        advance_bg_alphas(&mut front, &mut far, 7, 0, 0, &set51, 0.05);
+        assert!((front[2] - 0.95).abs() < 1e-5);
+        // The predicate itself (`Main.cs:64120-64143`).
+        assert!(is_desert_variant_swap(5, 2, &set51));
+        assert!(is_desert_variant_swap(13, 14, &set51));
+        assert!(!is_desert_variant_swap(5, 5, &set51)); // same style
+        assert!(!is_desert_variant_swap(5, 7, &set51)); // snow is no variant
+        assert!(!is_desert_variant_swap(5, 2, &NO_DESERT)); // Corrupt empty
+    }
+
+    #[test]
+    fn w4_g71_desert_preferred_style_matches_get_preferred_bg_style() {
+        // `Main.cs:64225`'s ternary chain, every arm.
+        // Corrupt desert with evil strictly above both blood and holy -> 5.
+        assert_eq!(desert_preferred_style(true, false, false, 300, 100, 50), 5);
+        // Evil tied with blood -> the corrupt arm fails (strict >).
+        assert_eq!(desert_preferred_style(true, false, false, 100, 100, 50), 2);
+        // Evil tied with holy -> fails too.
+        assert_eq!(desert_preferred_style(true, false, false, 100, 50, 100), 2);
+        // Crimson with blood > holy -> 14 (even when corrupt also present but
+        // its arm failed).
+        assert_eq!(desert_preferred_style(true, true, false, 50, 300, 100), 14);
+        assert_eq!(desert_preferred_style(false, true, false, 0, 300, 100), 14);
+        // Crimson with blood <= holy -> falls to the hallow check.
+        assert_eq!(desert_preferred_style(false, true, false, 0, 100, 100), 2);
+        assert_eq!(desert_preferred_style(false, true, true, 0, 100, 100), 13);
+        // Pure hallow desert -> 13; nothing -> 2.
+        assert_eq!(desert_preferred_style(false, false, true, 0, 0, 300), 13);
+        assert_eq!(desert_preferred_style(false, false, false, 0, 0, 0), 2);
+        // The corrupt arm outranks crimson when both would fire.
+        assert_eq!(desert_preferred_style(true, true, true, 500, 300, 100), 5);
     }
 }

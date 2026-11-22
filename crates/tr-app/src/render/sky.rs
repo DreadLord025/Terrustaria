@@ -297,18 +297,35 @@ pub(crate) fn make_clouds(world: &World, lookups: &assets::Lookups) -> Vec<Cloud
 /// which is also what the headless flow tests construct.
 #[derive(Default)]
 pub(crate) struct SkyAssets {
-    /// Snow biome: mountains `Background_35/36`, pine line `Background_37..39`.
+    /// Snow biome: mountains `Main.snowMntBG` (default `Background_35/36`),
+    /// pine line `Main.snowBG` (default `Background_37..39`), all resolved
+    /// from the world's `setBG(3)` style (W4-g71). The old fixed forest
+    /// `far`/`near`/`forest` fields retired onto the four-set
+    /// `forest_mnt`/`forest_sets` tables below (W4-g70).
     pub(crate) snow_far: Option<BgTex>,
     pub(crate) snow_near: Option<BgTex>,
     pub(crate) snow_trees: [Option<BgTex>; 3],
-    /// Ocean horizon with islands (`Background_28`, style 0).
+    /// Ocean horizon (`Main.oceanBG`, default `Background_28`), resolved from
+    /// the world's `setBG(7)` style.
     pub(crate) ocean: Option<BgTex>,
-    /// Desert dunes (`Background_21` far, `Background_20` near) plus the mountain
-    /// layers behind them (`Background_23` far, `Background_22` near).
+    /// Desert dunes: the Pure variant's far/middle rows (`Background_21/20`
+    /// at style 0) plus the mountain layers behind them (`Background_23`
+    /// far, `Background_22` near). The three evil/hallow variants live in
+    /// `desert_variants`.
     pub(crate) desert_far: Option<BgTex>,
     pub(crate) desert_near: Option<BgTex>,
+    /// The Pure variant's third row (`Background_250`, desert style 4 only).
+    pub(crate) desert_third: Option<BgTex>,
     pub(crate) desert_far_mnt: Option<BgTex>,
     pub(crate) desert_near_mnt: Option<BgTex>,
+    /// `Main.desertBackgroundSet.{Corrupt,Crimson,Hallow}` — the three rows
+    /// `DrawSurfaceBG_GoodEvilDesert` swaps in for front styles 5/14/13
+    /// (`Main.cs:60868-60884`). Index order matches `World::desert_bg_set`
+    /// minus Pure: [Corrupt, Crimson, Hallow].
+    pub(crate) desert_variants: [[Option<BgTex>; 3]; 3],
+    /// The GoodEvilDesert fallback dunes (`Background_26/27`,
+    /// `Main.cs:60885-60925`) — drawn when the style's variant set is empty.
+    pub(crate) desert_fallback: [Option<BgTex>; 2],
     /// Storm cloud banks (`Background_112/113`), faded in by `cloudBGAlpha`.
     pub(crate) storm_far: Option<BgTex>,
     pub(crate) storm_near: Option<BgTex>,
@@ -412,8 +429,8 @@ pub(crate) fn sky_tex(
 }
 
 pub(crate) fn make_sky_assets(atlas: &Atlas, world: &World) -> SkyAssets {
-    // The five surface variants draw whatever `WorldGen.setBG` rolled for this
-    // world (`Main.corruptBG` etc.); `-1` means the C# layer is skipped.
+    // The eight surface variants draw whatever `WorldGen.setBG` rolled for
+    // this world (`Main.corruptBG` etc.); `-1` means the C# layer is skipped.
     let layers = |ids: [i32; 3]| {
         ids.map(|i| {
             if i >= 0 {
@@ -423,15 +440,32 @@ pub(crate) fn make_sky_assets(atlas: &Atlas, world: &World) -> SkyAssets {
             }
         })
     };
+    let one = |id: i32| {
+        if id >= 0 {
+            sky_tex(atlas, &format!("Background_{id}"), None)
+        } else {
+            None
+        }
+    };
+    let snow_mnts = world.snow_mountains();
+    let desert = world.desert_bg_set();
     SkyAssets {
-        snow_far: sky_tex(atlas, "Background_35", None),
-        snow_near: sky_tex(atlas, "Background_36", None),
-        snow_trees: [37, 38, 39].map(|i| sky_tex(atlas, &format!("Background_{i}"), None)),
-        ocean: sky_tex(atlas, "Background_28", None),
-        desert_far: sky_tex(atlas, "Background_21", None),
-        desert_near: sky_tex(atlas, "Background_20", None),
+        // W4-g71: the snow/ocean/desert sheets resolve from the world's
+        // live `setBG(3/6/7)` styles (the fixed 35/36/37..39/28/21/20
+        // stand-ins retired); the forest sets ride the g70 four-set tables
+        // below (the old fixed far/near/forest fields dropped).
+        snow_far: one(snow_mnts[0]),
+        snow_near: one(snow_mnts[1]),
+        snow_trees: layers(world.snow_bg()),
+        ocean: one(world.ocean_bg()),
+        desert_far: one(desert[0][0]),
+        desert_near: one(desert[0][1]),
+        desert_third: one(desert[0][2]),
         desert_far_mnt: sky_tex(atlas, "Background_23", None),
         desert_near_mnt: sky_tex(atlas, "Background_22", None),
+        // [Corrupt, Crimson, Hallow] — `World::desert_bg_set`'s rows 1..3.
+        desert_variants: [layers(desert[1]), layers(desert[2]), layers(desert[3])],
+        desert_fallback: [26, 27].map(|i| sky_tex(atlas, &format!("Background_{i}"), None)),
         storm_far: sky_tex(atlas, "Background_112", None),
         storm_near: sky_tex(atlas, "Background_113", None),
         corrupt_layers: layers(world.corrupt_bg()),
@@ -1149,7 +1183,7 @@ pub(crate) fn draw_sky(
     //   6.667 = 1/0.15 (Step1, `Main.cs:59812`) — before the far mountains
     //   5.0   (`Main.cs:59878`) — between the far and near mountain rows
     //   1/parallax[i] per front-tree row (`Main.cs:61304+`, biome fns)
-    //   1.0   (`Main.cs:60186`) — after the last front row
+    //   1.0   (`Main.cs:60186`) — after the Mushroom chain (the last front row)
     //   flush (`Main.cs:59626` `DrawRemainingDepth`) — before the underground
     //   backdrop
     let mut amb_last = f32::INFINITY;
@@ -1231,8 +1265,9 @@ pub(crate) fn draw_sky(
     //
     // `DrawSurfaceBG_BackMountainsStep1`: far mountains, parallax 0.15, scale 2.0,
     // each biome at its `bgAlphaFarBackLayer` value. Vanilla order is 0, 1 (desert),
-    // then 4 (snow). `Background_22/23` are skipped for `desertBG == 4`; our
-    // generator never uses that style.
+    // then 4 (snow). `Background_22/23` are skipped for `desertBG == 4` (the
+    // oasis style, `Main.cs:59850`/`:59906`); the snow mountains come from the
+    // world's `setBG(3)` style and carry their `GetLayerYOffset`.
     // Step1's first act is `DrawToDepth(1f/0.15)` (`Main.cs:59812`): the
     // closest entities (EOC slices above depth 6.667) draw behind the
     // mountains.
@@ -1272,7 +1307,10 @@ pub(crate) fn draw_sky(
                 }
             }
         }
-        if far_desert > 0.0 {
+        // `DrawSurfaceBG_BackMountainsStep1` desert row (`Main.cs:59847-59854`):
+        // `Background_23` is skipped when `WorldGen.desertBG == 4` (the oasis
+        // style brings its own far rows).
+        if far_desert > 0.0 && world.desert_bg_style != 4 {
             if let Some(far) = sky.desert_far_mnt {
                 draw_bg_layer(
                     r,
@@ -1299,13 +1337,17 @@ pub(crate) fn draw_sky(
                     &far,
                     2.0,
                     0.15,
-                    magic * 1300.0 + 1090.0 + sc_adj + 30.0,
+                    magic * 1300.0 + 1090.0 + sc_adj + 30.0
+                        + layer_y_offset(world.snow_mountains()[0]),
                     false,
                     tint,
                     far_snow,
                 );
             }
         }
+        // Step1's corrupt-desert (24), crimson (24 unless crimsonBG == 5) and
+        // hallow-3 (246) rows (`Main.cs:59855-59877`) ride the g70 lane's
+        // far-layer slots 2/5/6; the port's cross-fade never targets them yet.
     }
 
     // `DrawClouds_Closer` (`Main.cs:59663-59680`): `cY = y * (screenHeight / 600)
@@ -1338,10 +1380,10 @@ pub(crate) fn draw_sky(
     }
 
     // `DrawSurfaceBG_BackMountainsStep2`: near mountains, parallax 0.20, scale 2.3,
-    // in vanilla order: forest set 1 (0), desert (1), ocean (`Main.oceanBG`,
-    // `Background_28`, 3), snow (4), then forest sets 2-4 (10/11/12) — the
-    // C# walks 0..6 first and the three extra forest slots last
-    // (`Main.cs:59895-59962`).
+    // in vanilla order: forest set 1 (0), desert (1), ocean (`Main.oceanBG`
+    // from `setBG(7)`, 3), snow (4, `Main.snowMntBG[1]`), then forest sets
+    // 2-4 (10/11/12) — the C# walks 0..6 first and the three extra forest
+    // slots last (`Main.cs:59895-59962`).
     if show_bg {
         // Step2's own `+16 px` gate (`Main.cs:59891`), like Step1's.
         let hills_visible = view_top < world_surface_px + TILE_PX;
@@ -1363,7 +1405,9 @@ pub(crate) fn draw_sky(
                 );
             }
         }
-        if far_desert > 0.0 {
+        // Step2's desert row skips `Background_22` for desertBG == 4
+        // (`Main.cs:59903-59910`), like Step1's 23.
+        if far_desert > 0.0 && world.desert_bg_style != 4 {
             if let Some(near) = sky.desert_near_mnt {
                 draw_bg_layer(
                     r,
@@ -1382,6 +1426,10 @@ pub(crate) fn draw_sky(
         }
         if far_ocean > 0.0 {
             if let Some(sea) = sky.ocean {
+                // `DrawSurfaceBG_DrawBackMountainsLayer(Main.oceanBG)`
+                // (`Main.cs:59916-59920`): the ocean sheet's `GetLayerYOffset`
+                // (283: -800, 332/340: -25) shifts its top like every other
+                // Step2 row.
                 draw_bg_layer(
                     r,
                     camera,
@@ -1390,7 +1438,8 @@ pub(crate) fn draw_sky(
                     &sea,
                     2.3,
                     0.20,
-                    magic * 1400.0 + 1260.0 + sc_adj + 30.0,
+                    magic * 1400.0 + 1260.0 + sc_adj + 30.0
+                        + layer_y_offset(world.ocean_bg()),
                     false,
                     tint,
                     far_ocean,
@@ -1407,7 +1456,8 @@ pub(crate) fn draw_sky(
                     &near,
                     2.3,
                     0.20,
-                    magic * 1400.0 + 1260.0 + sc_adj + 30.0,
+                    magic * 1400.0 + 1260.0 + sc_adj + 30.0
+                        + layer_y_offset(world.snow_mountains()[1]),
                     false,
                     tint,
                     far_snow,
@@ -1540,16 +1590,20 @@ pub(crate) fn draw_sky(
             false,
         );
 
-        // `DrawSurfaceBG_Desert` (`Main.cs:61019-61096`): two dune layers (21/20),
-        // parallax 0.37/0.49, scale 1.25/1.34, tops 1750/2150.
+        // `DrawSurfaceBG_Desert` (`Main.cs:61019-61096`) on
+        // `Main.desertBackgroundSet.Pure.Backgrounds`: rows gated on `id > 0`,
+        // parallax 0.37/0.49, scale 1.25/1.34, tops 1750/2150 — the oasis
+        // style 4 adds a third row (250) and `SetBackgroundOffsets` replaces
+        // all three rows' magic numbers (`:60444-60461`).
+        let desert_ids = world.desert_bg_set()[0];
         let desert = front_layers(
-            [21, 20, -1],
+            desert_ids,
             [
                 (1.25, 0.37, 1800.0, 1750.0),
                 (1.34, 0.49, 2100.0, 2150.0),
                 (1.34, 0.49, 2100.0, 2150.0),
             ],
-            [sky.desert_far, sky.desert_near, None],
+            [sky.desert_far, sky.desert_near, sky.desert_third],
             HACK,
         );
         draw_front_trees(
@@ -1609,6 +1663,64 @@ pub(crate) fn draw_sky(
             false,
         );
 
+        // `DrawSurfaceBG_GoodEvilDesert` (`Main.cs:60868-60926`, dispatch
+        // `:59573-59577`): front styles 5/14/13 draw the Corrupt/Crimson/
+        // Hallow desert variant when its set `HasAny`, else the 26/27
+        // fallback dunes. The variant arm reuses `DrawSurfaceBG_Desert`
+        // verbatim; the fallback is the same two-row shape with the classic
+        // magic numbers (no `SetBackgroundOffsets` call — 26/27 are not in
+        // the table).
+        let desert_set = world.desert_bg_set();
+        // The C# walks `l` ascending (`Main.cs:59529`), so 5 fires before 13
+        // before 14; only one alpha is non-zero at a time in practice, but the
+        // order is kept verbatim.
+        for (style, variant) in [(5usize, 1usize), (13, 3), (14, 2)] {
+            let alpha = bg_alpha_front[style];
+            if alpha <= 0.0 {
+                continue;
+            }
+            let rows = desert_set[variant];
+            let (ids, texs) = if tr_core::world::desert_variant_has_any(rows) {
+                (
+                    rows,
+                    [
+                        sky.desert_variants[variant - 1][0],
+                        sky.desert_variants[variant - 1][1],
+                        sky.desert_variants[variant - 1][2],
+                    ],
+                )
+            } else {
+                (
+                    [26, 27, -1],
+                    [sky.desert_fallback[0], sky.desert_fallback[1], None],
+                )
+            };
+            let d = front_layers(
+                ids,
+                [
+                    (1.25, 0.37, 1800.0, 1750.0),
+                    (1.34, 0.49, 2100.0, 2150.0),
+                    (1.34, 0.49, 2100.0, 2150.0),
+                ],
+                texs,
+                HACK,
+            );
+            draw_front_trees(
+                r,
+                camera,
+                zoom,
+                screen,
+                &d,
+                alpha,
+                magic,
+                sc_adj,
+                tint,
+                counter,
+                amb_pass.as_mut(),
+                false,
+            );
+        }
+
         // `DrawSurfaceBG_Hallow` (`Main.cs:60777-60866`): the rows are gated on
         // `id > 0` (`:60779`, `:60807`, `:60836`) — no style table yields 0, so
         // the `Option` guard is equivalent; the first row's `SkyManager`
@@ -1648,11 +1760,16 @@ pub(crate) fn draw_sky(
             false,
         );
 
-        // `DrawSurfaceBG_Snow` (`Main.cs:60302-60383`, `Main.snowBG` style 1 =
-        // `Background_37..39`): same parallax/scale/top as the forest, but no
-        // layer is mirrored.
+        // `DrawSurfaceBG_Snow` (`Main.cs:60302-60383`) on `Main.snowBG`: rows
+        // gated on `id >= 0` (styles 2/3/4 are all -1 — the mountains carry
+        // the biome alone), same parallax/scale/top as the forest, no layer
+        // mirrored, `GetLayerYOffset` on every row (263: -700). The C# body
+        // has NO trailing `DrawToDepth(1f)` (that close is Mushroom's,
+        // `:60186`); the stratum waits for the `DrawRemainingDepth` flush
+        // (`Main.cs:59626`).
+        let snow_ids = world.snow_bg();
         let snow = front_layers(
-            [37, 38, 39],
+            snow_ids,
             [
                 (1.25, 0.40, 1800.0, 1500.0),
                 (1.31, 0.43, 1950.0, 1750.0),
@@ -1661,6 +1778,10 @@ pub(crate) fn draw_sky(
             sky.snow_trees,
             HACK,
         );
+        let snow: [FrontLayer; 3] = std::array::from_fn(|i| FrontLayer {
+            top: snow[i].top + layer_y_offset(snow_ids[i]),
+            ..snow[i]
+        });
         draw_front_trees(
             r,
             camera,
@@ -1673,7 +1794,7 @@ pub(crate) fn draw_sky(
             tint,
             counter,
             amb_pass.as_mut(),
-            true,
+            false,
         );
 
         // `DrawSurfaceBG_Crimson` (`Main.cs:60189-60300`): rows gated on
@@ -1819,6 +1940,223 @@ pub(crate) fn draw_sky(
             anim_time,
             hell_black_box_bottom,
         );
+    }
+}
+
+#[cfg(test)]
+mod w4_g71_surface_variant_tests {
+    use super::*;
+    use crate::render::bg::{bg_offsets, front_layers, layer_y_offset};
+
+    fn sheet() -> BgTex {
+        BgTex {
+            uv: [0.0, 0.0, 0.5, 0.5],
+            w: 100.0,
+            h: 200.0,
+        }
+    }
+
+    #[test]
+    fn snow_style_rows_resolve_the_worlds_set_bg_ids() {
+        // `DrawSurfaceBG_Snow` (`Main.cs:60302-60383`) reads `Main.snowBG`;
+        // the port resolves the same triple through `World::snow_bg`. Style
+        // 7's rows are [267, 266, 268] — NOT the classic [37, 38, 39] order.
+        let mut w = World::new("t".into(), 40, 40);
+        w.set_surface_bg_style(3, 7);
+        let ids = w.snow_bg();
+        assert_eq!(ids, [267, 266, 268]);
+        let rows = front_layers(
+            ids,
+            [
+                (1.25, 0.40, 1800.0, 1500.0),
+                (1.31, 0.43, 1950.0, 1750.0),
+                (1.34, 0.49, 2100.0, 2000.0),
+            ],
+            [Some(sheet()); 3],
+            -150.0,
+        );
+        // Style 7's `SetBackgroundOffsets` replaces every row's magic numbers
+        // (`Main.cs:60426-60443`) and the scales/parallaxes.
+        assert_eq!((rows[0].scale, rows[0].parallax), (1.25 * 2.0, 0.23));
+        assert_eq!((rows[0].k, rows[0].top), (1700.0, 1300.0 - 150.0));
+        assert_eq!((rows[1].k, rows[1].top), (1950.0, 1600.0 - 150.0));
+        assert_eq!((rows[2].scale, rows[2].parallax), (1.34 * 2.0, 0.41));
+        assert_eq!((rows[2].k, rows[2].top), (2100.0, 1850.0 - 150.0));
+        // Style 6's row 0 (263) carries the -700 GetLayerYOffset on top of
+        // the replaced bgTopY (`Main.cs:60319`).
+        w.set_surface_bg_style(3, 6);
+        let ids6 = w.snow_bg();
+        let rows6 = front_layers(
+            ids6,
+            [
+                (1.25, 0.40, 1800.0, 1500.0),
+                (1.31, 0.43, 1950.0, 1750.0),
+                (1.34, 0.49, 2100.0, 2000.0),
+            ],
+            [Some(sheet()); 3],
+            -150.0,
+        );
+        let top0 = rows6[0].top + layer_y_offset(ids6[0]);
+        assert_eq!(top0, 1450.0 - 150.0 - 700.0);
+        // Styles 2/3/4: all rows -1, nothing draws (the mountains carry it).
+        for style in [2, 3, 4] {
+            w.set_surface_bg_style(3, style);
+            assert_eq!(w.snow_bg(), [-1, -1, -1], "snow style {style}");
+            assert_eq!(w.snow_mountains()[0], 98);
+        }
+        // Style 8: two rows, third -1; the mountains stay 35/36.
+        w.set_surface_bg_style(3, 8);
+        assert_eq!(w.snow_bg(), [299, 298, -1]);
+        assert_eq!(w.snow_mountains(), [35, 36]);
+    }
+
+    #[test]
+    fn desert_pure_rows_follow_the_style_including_the_oasis_third_row() {
+        // `DrawSurfaceBG_Desert` (`Main.cs:61019-61096`) on Pure.Backgrounds.
+        let mut w = World::new("t".into(), 40, 40);
+        // Style 0: [21, 20, -1], no offsets — the caller's rows win.
+        let ids = w.desert_bg_set()[0];
+        assert_eq!(ids, [21, 20, -1]);
+        let rows = front_layers(
+            ids,
+            [
+                (1.25, 0.37, 1800.0, 1750.0),
+                (1.34, 0.49, 2100.0, 2150.0),
+                (1.34, 0.49, 2100.0, 2150.0),
+            ],
+            [Some(sheet()), Some(sheet()), None],
+            -150.0,
+        );
+        assert_eq!((rows[0].scale, rows[0].parallax), (2.5, 0.37));
+        assert_eq!((rows[0].k, rows[0].top), (1800.0, 1600.0));
+        assert!(rows[2].tex.is_none());
+        // Style 4 (oasis): [248, 249, 250], all three rows replaced
+        // (`Main.cs:60444-60461`); the third row draws at scale 1.7*2.
+        w.set_surface_bg_style(6, 4);
+        let ids4 = w.desert_bg_set()[0];
+        assert_eq!(ids4, [248, 249, 250]);
+        let rows4 = front_layers(
+            ids4,
+            [
+                (1.25, 0.37, 1800.0, 1750.0),
+                (1.34, 0.49, 2100.0, 2150.0),
+                (1.34, 0.49, 2100.0, 2150.0),
+            ],
+            [Some(sheet()); 3],
+            -150.0,
+        );
+        assert_eq!((rows4[0].k, rows4[0].top), (1800.0, 1100.0 - 150.0));
+        assert_eq!((rows4[1].k, rows4[1].top), (1950.0, 1200.0 - 150.0));
+        assert_eq!((rows4[2].scale, rows4[2].parallax), (1.70 * 2.0, 0.49));
+        assert_eq!((rows4[2].k, rows4[2].top), (2000.0, 1000.0 - 150.0));
+        // Style 2: 207's parallax-only override (0.32), tops kept.
+        w.set_surface_bg_style(6, 2);
+        let ids2 = w.desert_bg_set()[0];
+        assert_eq!(ids2, [207, 208, -1]);
+        assert_eq!(bg_offsets(207), Some((None, Some(0.32), 0, 0)));
+        // Style 52: the four variants' middle rows differ, far rows shared.
+        w.set_surface_bg_style(6, 52);
+        let set = w.desert_bg_set();
+        assert_eq!(set[0], [306, 304, -1]);
+        assert_eq!(set[1], [310, 308, -1]); // Corrupt
+        assert_eq!(set[2], [318, 316, -1]); // Crimson
+        assert_eq!(set[3], [314, 312, -1]); // Hallow
+        // The 51-family middle rows share the (2400, 1900, 0.35) arm.
+        let m = front_layers(
+            set[1],
+            [
+                (1.25, 0.37, 1800.0, 1750.0),
+                (1.34, 0.49, 2100.0, 2150.0),
+                (1.34, 0.49, 2100.0, 2150.0),
+            ],
+            [Some(sheet()); 3],
+            -150.0,
+        );
+        assert_eq!((m[0].k, m[0].top, m[0].parallax), (1800.0, 1550.0, 0.26));
+        assert_eq!((m[1].k, m[1].top, m[1].parallax), (2400.0, 1750.0, 0.35));
+    }
+
+    #[test]
+    fn good_evil_desert_picks_the_variant_or_the_26_27_fallback() {
+        // `DrawSurfaceBG_GoodEvilDesert` (`Main.cs:60868-60884`): style 5 ->
+        // Corrupt, 14 -> Crimson, 13 -> Hallow, each gated on HasAny; the
+        // fallback is 26/27 with the classic magic numbers.
+        let mut w = World::new("t".into(), 40, 40);
+        // Style 0: only Pure has rows — every variant falls back.
+        let set = w.desert_bg_set();
+        for v in 1..4 {
+            assert!(!tr_core::world::desert_variant_has_any(set[v]));
+        }
+        // Style 51: all four sets populated.
+        w.set_surface_bg_style(6, 51);
+        let set = w.desert_bg_set();
+        assert_eq!(set[1], [310, 307, -1]);
+        assert_eq!(set[2], [318, 315, -1]);
+        assert_eq!(set[3], [314, 311, -1]);
+        for v in 1..4 {
+            assert!(tr_core::world::desert_variant_has_any(set[v]));
+        }
+        // The fallback rows keep the caller's scale/parallax/tops (26/27 are
+        // not in SetBackgroundOffsets).
+        let f = front_layers(
+            [26, 27, -1],
+            [
+                (1.25, 0.37, 1800.0, 1750.0),
+                (1.34, 0.49, 2100.0, 2150.0),
+                (1.34, 0.49, 2100.0, 2150.0),
+            ],
+            [Some(sheet()); 3],
+            -150.0,
+        );
+        assert_eq!((f[0].scale, f[0].parallax), (2.5, 0.37));
+        assert_eq!((f[0].k, f[0].top), (1800.0, 1600.0));
+        assert_eq!((f[1].k, f[1].top), (2100.0, 2000.0));
+    }
+
+    #[test]
+    fn ocean_style_resolves_the_single_far_layer_id() {
+        // `DrawSurfaceBG_BackMountainsStep2` draws `Main.oceanBG` at far slot
+        // 3 (`Main.cs:59916-59920`); the id comes from `setBG(7)`.
+        let mut w = World::new("t".into(), 40, 40);
+        assert_eq!(w.ocean_bg(), 28);
+        w.set_surface_bg_style(7, 5);
+        assert_eq!(w.ocean_bg(), 283);
+        // The shimmer ocean sits 800 px higher (`GetLayerYOffset` 283).
+        assert_eq!(layer_y_offset(w.ocean_bg()), -800.0);
+        w.set_surface_bg_style(7, 6);
+        assert_eq!(w.ocean_bg(), 332);
+        assert_eq!(layer_y_offset(332), -25.0);
+        w.set_surface_bg_style(7, 7);
+        assert_eq!(w.ocean_bg(), 340);
+        assert_eq!(layer_y_offset(340), -25.0);
+    }
+
+    #[test]
+    fn jungle_style_six_rows_are_already_ported_verbatim() {
+        // The jungle variant lane (g70's neighbour) is landed: style 6 =
+        // [302, 301, 300] with the 2.25/2.36/2.41 scales and the reversed
+        // row order; this witness pins the seam the g71 tables must not
+        // disturb (`WorldGen.cs:7310-7314`, `Main.cs:60631-60648`).
+        let mut w = World::new("t".into(), 40, 40);
+        w.set_surface_bg_style(2, 6);
+        let ids = w.jungle_bg();
+        assert_eq!(ids, [302, 301, 300]);
+        let rows = front_layers(
+            ids,
+            [
+                (1.25, 0.40, 1800.0, 1660.0),
+                (1.31, 0.43, 1950.0, 1840.0),
+                (1.34, 0.49, 2100.0, 2060.0),
+            ],
+            [Some(sheet()); 3],
+            -150.0,
+        );
+        assert_eq!(rows[0].scale, 2.25 * 2.0);
+        assert_eq!((rows[0].k, rows[0].top), (1400.0, 950.0 - 150.0));
+        assert_eq!(rows[1].scale, 2.36 * 2.0);
+        assert_eq!((rows[2].k, rows[2].top), (3000.0, 2050.0 - 150.0));
+        // Row 0 (302) is a 2x2 animated sheet at 15 ticks.
+        assert_eq!(rows[0].frame_step, 15);
     }
 }
 

@@ -2009,6 +2009,32 @@ impl App {
         world.day_time = info.day_time;
         world.moon_phase = info.moon_phase;
         world.moon_type = info.moon_type;
+        // W4-g71/g72 net seam: the host's rolled bg styles land here
+        // (`MessageBuffer.cs:493-505` — the 13 header bytes apply through
+        // `setBG` in the wire order 0,10,11,12,1..9).
+        const BG_SLOTS: [i32; 13] = [0, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        for (slot, style) in BG_SLOTS.iter().zip(info.backgrounds) {
+            world.set_surface_bg_style(*slot, style as i32);
+        }
+        world.ice_back_style = info.ice_back_style;
+        world.jungle_back_style = info.jungle_back_style;
+        world.hell_back_style = info.hell_back_style;
+        world.tree_x = info.tree_x;
+        world.tree_style = [
+            info.tree_style[0] as i32,
+            info.tree_style[1] as i32,
+            info.tree_style[2] as i32,
+            info.tree_style[3] as i32,
+        ];
+        // g72's cave roll (`NetMessage.cs:271-278`; `cave_back_x[3]` stays 0 —
+        // never sent).
+        world.cave_back_x = [info.cave_back_x[0], info.cave_back_x[1], info.cave_back_x[2], 0];
+        world.cave_back_style = [
+            info.cave_back_style[0] as i32,
+            info.cave_back_style[1] as i32,
+            info.cave_back_style[2] as i32,
+            info.cave_back_style[3] as i32,
+        ];
         world.blood_moon = info.blood_moon;
         world.sundial_cooldown = info.sundial_cooldown;
         world.moondial_cooldown = info.moondial_cooldown;
@@ -2088,16 +2114,46 @@ impl App {
             // pins this to the generator build).
             generator_version: save::VERSION as u64,
             moon_type: w.moon_type,
-            backgrounds: [0; 11],
-            ice_back_style: 0,
-            jungle_back_style: 0,
+            // W4-g71/g72 net seam: the rolled bg styles ride the `7 WorldInfo`
+            // header (`NetMessage.cs:245-260`). The 13 bytes are treeBG1..4,
+            // corrupt/jungle/snow/hallow/crimson/desert/ocean, mushroom,
+            // underworld; ice/jungle/hell back styles follow as singles.
+            backgrounds: [
+                w.forest_bg_styles[0],
+                w.forest_bg_styles[1],
+                w.forest_bg_styles[2],
+                w.forest_bg_styles[3],
+                w.corrupt_bg_style,
+                w.jungle_bg_style,
+                w.snow_bg_style,
+                w.hallow_bg_style,
+                w.crimson_bg_style,
+                w.desert_bg_style,
+                w.ocean_bg_style,
+                w.mushroom_bg_style,
+                w.underworld_bg_style,
+            ],
+            ice_back_style: w.ice_back_style,
+            jungle_back_style: w.jungle_back_style,
             hell_back_style: w.hell_back_style,
             wind_speed_target: 0.0,
             num_clouds: 0,
-            tree_x: [0; 3],
-            tree_style: [0; 4],
-            cave_back_x: [0; 3],
-            cave_back_style: [0; 4],
+            tree_x: [w.tree_x[0], w.tree_x[1], w.tree_x[2]],
+            tree_style: [
+                w.tree_style[0] as u8,
+                w.tree_style[1] as u8,
+                w.tree_style[2] as u8,
+                w.tree_style[3] as u8,
+            ],
+            // g72's cave roll (`NetMessage.cs:271-278`): the three boundaries
+            // as i32 (`cave_back_x[3]` is never sent) + the four style bytes.
+            cave_back_x: [w.cave_back_x[0], w.cave_back_x[1], w.cave_back_x[2]],
+            cave_back_style: [
+                w.cave_back_style[0] as u8,
+                w.cave_back_style[1] as u8,
+                w.cave_back_style[2] as u8,
+                w.cave_back_style[3] as u8,
+            ],
             tree_tops: [0; net::TREE_TOPS_BYTES],
             max_raining: 0.0,
             world_flags: [net::BitsByte::new(); 14],
@@ -5233,6 +5289,73 @@ mod message_family_tests {
             client_app.bestiary.kills.get_kill_count(credit.credit_id),
             count,
             "the join snapshot's module-4 body applies"
+        );
+    }
+}
+
+#[cfg(test)]
+mod w4_g71_bg_net_tests {
+    //! W4-g71/g72 net seam: the rolled surface + cave bg styles ride the
+    //! `7 WorldInfo` header (`NetMessage.cs:245-278`), the client's install
+    //! restores them through `setBG` (`MessageBuffer.cs:493-505`) and the
+    //! cave arrays (`cave_back_x[3]` stays 0 — never sent). WRITTEN NOT RUN
+    //! (code-only lane).
+
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::ui::save_list::{PlayerEntry, WorldEntry};
+
+    #[test]
+    fn the_world_info_header_carries_the_bg_rolls() {
+        let mut host = flow_app(None, Vec::<PlayerEntry>::new(), Vec::<WorldEntry>::new());
+        host.world.forest_bg_styles = [2, 3, 4, 5];
+        host.world.corrupt_bg_style = 51;
+        host.world.jungle_bg_style = 6;
+        host.world.snow_bg_style = 7;
+        host.world.hallow_bg_style = 4;
+        host.world.crimson_bg_style = 2;
+        host.world.desert_bg_style = 52;
+        host.world.ocean_bg_style = 1;
+        host.world.mushroom_bg_style = 3;
+        host.world.underworld_bg_style = 2;
+        host.world.tree_x = [11, 22, 33];
+        host.world.tree_style = [1, 2, 3, 4];
+        host.world.cave_back_x = [120, 240, 290, 9]; // [3] must NOT be sent
+        host.world.cave_back_style = [3, 1, 7, 5];
+        host.world.ice_back_style = 2;
+        host.world.jungle_back_style = 1;
+        host.world.hell_back_style = 2;
+        let info = host.world_info();
+        assert_eq!(info.backgrounds, [2, 3, 4, 5, 51, 6, 7, 4, 2, 52, 1, 3, 2]);
+        assert_eq!(info.tree_x, [11, 22, 33]);
+        assert_eq!(info.tree_style, [1, 2, 3, 4]);
+        assert_eq!(info.cave_back_x, [120, 240, 290]);
+        assert_eq!(info.cave_back_style, [3, 1, 7, 5]);
+        assert_eq!(
+            (info.ice_back_style, info.jungle_back_style, info.hell_back_style),
+            (2, 1, 2)
+        );
+        // The install path restores every roll onto the fresh client world.
+        let mut client = flow_app(None, Vec::<PlayerEntry>::new(), Vec::<WorldEntry>::new());
+        client.net_info = Some(info);
+        assert!(client.client_install_world(Vec::new()));
+        assert_eq!(client.world.forest_bg_styles, [2, 3, 4, 5]);
+        assert_eq!(client.world.corrupt_bg_style, 51);
+        assert_eq!(client.world.snow_bg_style, 7);
+        assert_eq!(client.world.desert_bg_style, 52);
+        assert_eq!(client.world.ocean_bg_style, 1);
+        assert_eq!(client.world.underworld_bg_style, 2);
+        assert_eq!(client.world.tree_x, [11, 22, 33]);
+        assert_eq!(client.world.tree_style, [1, 2, 3, 4]);
+        assert_eq!(client.world.cave_back_x, [120, 240, 290, 0]);
+        assert_eq!(client.world.cave_back_style, [3, 1, 7, 5]);
+        assert_eq!(
+            (
+                client.world.ice_back_style,
+                client.world.jungle_back_style,
+                client.world.hell_back_style
+            ),
+            (2, 1, 2)
         );
     }
 }

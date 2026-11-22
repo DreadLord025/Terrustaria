@@ -17,6 +17,8 @@
 
 mod biome_detail;
 mod biomes;
+pub mod bg_rolls;
+pub mod cave_bg;
 pub mod chest_stock;
 pub mod dungeon;
 pub mod dungeon_features;

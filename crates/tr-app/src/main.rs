@@ -318,7 +318,7 @@ fn main() -> Result<()> {
     // The world plus its side sections — the `.wld`'s section payloads
     // (M6-SAVE-1) or the native `.trwld`'s v7-v10 records (M6-SAVE-1b/c/d) —
     // the loaded stores the `App` merges ahead of the load-time loot roll.
-    let (world, sections) = app::load_world(&world_path)?;
+    let (mut world, sections) = app::load_world(&world_path)?;
 
     let content_dir = app::find_content_dir().context(
         "assets/Content not found: copy the retail Content directory next to the executable",
@@ -346,7 +346,7 @@ fn main() -> Result<()> {
     let mut boot_static: Option<Vec<tr_render::atlas::AtlasImage>> = None;
     let mut boot_fonts: Option<assets::FontTables> = None;
     let (atlas, font_atlas, lookups, atlas_stats) =
-        app::build_atlas_reusing_static(&world, &assets_dir, &mut boot_static, &mut boot_fonts)?;
+        app::build_atlas_reusing_static(&mut world, &assets_dir, &mut boot_static, &mut boot_fonts)?;
 
     app::log_atlas_diagnostics(&atlas, &lookups);
 

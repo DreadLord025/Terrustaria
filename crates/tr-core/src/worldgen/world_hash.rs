@@ -238,6 +238,14 @@ mod tests {
     // S1-P-i33 (code-only): the wall-framing mask fix (see DEFAULT_WORLD
     // below) moves this pin too — glass & co. beside a wall change the
     // generated `wall_frame`. Stale-by-design; the gate re-pins it.
+    // W4-g71 FINAL keep-one (code-only): the cave-bg block now draws on the
+    // shared `streams.rng` ahead of the moon `Next(9)` (g72's landed seat,
+    // `cave_bg.rs`, the C# `:11339`→`:11341` order). The 512-wide world takes
+    // arm C (512 ≠ 4200/6400): 3 band draws + 4 style draws + rejection draws
+    // + the ice/hell/jungle tail; the moon/hell VALUES shift by design. The
+    // TILE hash is UNCHANGED: the tail is the LAST `streams.rng` consumer
+    // (the seed-finish steps draw on their own `pass_rng` streams) and the
+    // block writes no tiles — the tree + surface rolls ride isolated slots.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its

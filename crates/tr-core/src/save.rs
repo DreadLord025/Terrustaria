@@ -55,6 +55,9 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// / `jungleBG` / `hallowBG` / `crimsonBG` at `WorldFile.cs:1319-1323` and
 /// `mushroomBG` at `:1375`) that the `DrawSurfaceBG_*` variants resolve their
 /// `Background_<id>` sheets from; a pre-v16 file loads the `setBG` defaults.
+/// v18 appended the three remaining surface style bytes (`snowBG`/`desertBG`/
+/// `oceanBG`, `WorldFile.cs:1321`/`:1324-1325`, the W4-g71 lane); a pre-v18
+/// file loads those three at the slot-0 defaults.
 ///
 /// **Not** in this version, and why: the TownManager rooms
 /// (`WorldFile.cs:1687-1701`), the bestiary sights/chats
@@ -428,14 +431,38 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
     // `:79349`) — S1-D-3 W-9 fishron wiring; the v15 queen-slime byte's
     // shape.
     w.write_all(&[u8::from(world.downed_fishron)])?;
-    // v18: the forest-set block (W4-g70) — the three `Main.treeX` dividers
-    // then the four `WorldGen.treeBG1..4` style bytes (`WorldFile.cs:1255-1258`
-    // / `:1319`, `:1376-1379`). The vanilla rides them in the flags block;
-    // the port's own tail, same values, same order.
+    // v18 UNION fixed head, batch-M compose (research/218 §1-FULL.2 per
+    // g88 103 §L3-ARBITER A3 — the strict-C#-row order; the 64a-stable
+    // books-in-prefix order is OVERRULED). The lanes present in this batch
+    // seat their blocks at the A3 offsets: g70 forest [0..16] → g71 surface
+    // [47..50] → identity [63..107]. The UNCLAIMED seats (g72 cave [16..47]
+    // — lands next in this batch; g69 crimson [50], c39 moon [51..56],
+    // g71 underworld [56], g87 pets [57..60], d125 empress [60], g90 books
+    // [61..63] — other batches) write their `World::new` defaults as
+    // placeholders so the identity block keeps its A3 offset; each claimant
+    // replaces its placeholder with the live write at its landing. The
+    // d109 dense-variants block rides LAST (not in this batch).
     for x in world.tree_x {
-        w.write_all(&x.to_le_bytes())?;
+        w.write_all(&x.to_le_bytes())?; // [0..12]
     }
-    w.write_all(&world.forest_bg_styles)?;
+    w.write_all(&world.forest_bg_styles)?; // [12..16] treeBG1..4
+    // [16..47] cave block (g72 seat — placeholder until its landing).
+    w.write_all(&[0u8; 31])?;
+    w.write_all(&[
+        world.snow_bg_style,
+        world.desert_bg_style,
+        world.ocean_bg_style,
+    ])?; // [47..50]
+    // [50..63] flag middle (crimson/moon/underworld/pets/empress/books —
+    // placeholders until their batches land; strict C# row order).
+    w.write_all(&[0u8; 13])?;
+    // [63..107] identity block (c43/f45 claim — the fields already live on
+    // World; the .trwld never persisted them before v18).
+    w.write_all(&world.generator_version.to_le_bytes())?; // [63..71]
+    w.write_all(&world.unique_id)?; // [71..87]
+    w.write_all(&world.world_id.to_le_bytes())?; // [87..91]
+    w.write_all(&world.creation_time.to_le_bytes())?; // [91..99]
+    w.write_all(&world.last_played.to_le_bytes())?; // [99..107]
     Ok(())
 }
 
@@ -818,16 +845,31 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
     if version >= 17 {
         world.downed_fishron = r.u8()? != 0;
     }
-    // v18: the forest-set block (see the writer's citation). A pre-v18 file
-    // keeps the `WorldGen.Reset` defaults (`World::new`): all dividers at
-    // `maxTilesX`, all four styles 0.
+    // v18 UNION fixed head (see the writer's citation — the A3 offsets).
+    // A pre-v18 file keeps the `World::new` defaults.
     if version >= 18 {
         for x in &mut world.tree_x {
-            *x = r.i32()?;
+            *x = r.i32()?; // [0..12]
         }
         for s in &mut world.forest_bg_styles {
-            *s = r.u8()?;
+            *s = r.u8()?; // [12..16]
         }
+        r.skip(31)?; // [16..47] cave block — g72 seat, read at its landing
+        world.snow_bg_style = r.u8()?; // [47]
+        world.desert_bg_style = r.u8()?; // [48]
+        world.ocean_bg_style = r.u8()?; // [49]
+        r.skip(13)?; // [50..63] flag middle — claimant batches read their seats
+        world.generator_version = r.u64()?; // [63..71]
+        world.unique_id = {
+            let mut id = [0u8; 16];
+            for b in &mut id {
+                *b = r.u8()?; // [71..87]
+            }
+            id
+        };
+        world.world_id = r.i32()?; // [87..91]
+        world.creation_time = r.u64()? as i64; // [91..99]
+        world.last_played = r.u64()? as i64; // [99..107]
     }
     world.revision = 0;
     Ok((world, side))
@@ -1091,7 +1133,14 @@ mod tests {
         w.sundial_cooldown = 7;
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        buf.truncate(buf.len() - 3);
+        // The pre-v4 stream ends after the v3 extras count; the whole v4+
+        // tail strips off: cooldowns 2 + bed presence 1 + the seeds u16 2
+        // + the v6 flags block + wires/TEs 8 + the five empty v7..v11
+        // counts 20 + the ore presence 1 + the v12 seed masks 10 +
+        // EMPTY_V16_TAIL (signs/plates 8 + rain 9 + v15 1 + v16 5 + v17 1
+        // + the v18 UNION head 107). The old `- 3` literal predated the
+        // tail's growth (stale on the code-only lanes) — merger re-pin.
+        buf.truncate(buf.len() - (2 + 1 + 2 + V6_FLAGS_LEN + 4 * 4 + 5 * 4 + 1 + 10 + EMPTY_V16_TAIL));
         buf[8..12].copy_from_slice(&3u32.to_le_bytes());
         let (back, _chests) = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 0);
@@ -1101,8 +1150,9 @@ mod tests {
     #[test]
     fn dw_1_4_version_above_4_rejected() {
         // DW-1.4 (dirty): the existing loader rejects a version above the
-        // current one (`save.rs` version gate). v18 (the forest-set block,
-        // W4-g70) is now the current format, so the gate pins 18.
+        // current one (`save.rs` version gate). v18 (the UNION fixed head,
+        // research/218 §1-FULL.2 per 103 A3) is now the current format, so
+        // the gate pins 18.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
@@ -1182,12 +1232,12 @@ mod tests {
         w.seeds = crate::seeds::SeedFlags::from_seed_text("for the worthy");
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        // The v7 block of an empty-wire/entity/chest/banner/bestiary world: the
-        // fixed flags block + four empty colour counts + one empty entity count +
-        // one empty chest count + one empty banner count + one empty bestiary count.
-        // (+1: the v17 downedFishron byte rides the flags block's tail;
-        // +16: the v18 forest-set block (3 i32 + 4 u8), W4-g70.)
-        buf.truncate(buf.len() - (V6_FLAGS_LEN + 1 + 16 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1));
+        // The v7+ tail of an empty-wire/entity/chest/banner/bestiary world:
+        // the fixed flags block + four empty colour counts + one empty
+        // entity count + the five empty v7..v11 counts (20) + the ore
+        // presence (1) + the v12 masks (10) + EMPTY_V16_TAIL (signs/plates
+        // + v14 rain + v15 + v16 + v17 fishron + the v18 UNION head 107).
+        buf.truncate(buf.len() - (V6_FLAGS_LEN + 4 * 4 + 4 + 5 * 4 + 1 + 10 + EMPTY_V16_TAIL));
         buf[8..12].copy_from_slice(&6u32.to_le_bytes());
         let (back, side) = parse(&buf).unwrap();
         let chests = side.chests;
@@ -1298,8 +1348,9 @@ mod tests {
         let mut v12 = buf.clone();
         // The v13 block is the tail: 4 + (4+len+8) + 4 + 8 bytes, then the
         // v14 rain block (9 bytes), the v15 flag (1), the v16 styles (5),
-        // the v17 fishron flag (1) and the v18 forest block (16).
-        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + 16;
+        // the v17 fishron flag (1) and the v18 UNION fixed head (107,
+        // research/218 §1-FULL.2 per 103 A3).
+        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + 107;
         v12.truncate(cur_len - tail - 1);
         v12[8..12].copy_from_slice(&12u32.to_le_bytes());
         let (back, _) = parse(&v12).unwrap();
@@ -1327,8 +1378,9 @@ mod tests {
     /// The v14 rain block: 1 bool + 4 i32 + 4 f32 (the constants-off defaults
     /// for an empty rain event), the v15 Queen Slime flag byte, the v16
     /// five style bytes, the v17 downedFishron byte (S1-D-3 W-9) and the
-    /// v18 forest-set block (3 i32 + 4 u8 = 16, W4-g70).
-    const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1 + 16;
+    /// v18 UNION fixed head (107 B — forest 16 + cave 31 + surface 3 +
+    /// flag middle 13 + identity 44; research/218 §1-FULL.2 per 103 A3).
+    const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1 + 107;
 
     fn back_flags(buf: &[u8]) -> u16 {
         let end = buf.len() - EMPTY_V16_TAIL;
@@ -1514,10 +1566,10 @@ mod tests {
         assert!(back.downed_queen_slime, "the flag survives the reload");
         // A pre-v15 file (the tail truncated, the version patched) loads
         // with the flag down — the vanilla's own reset arm (`:2376`).
-        // The v16 style bytes + the v17 fishron byte + the v18 forest block
-        // ride behind the v15 flag (22 bytes).
+        // The v16 style bytes + the v17 fishron byte + the v18 UNION head
+        // ride behind the v15 flag (113 bytes).
         let mut v14 = buf.clone();
-        v14.truncate(v14.len() - 1 - 5 - 1 - 16);
+        v14.truncate(v14.len() - 1 - 5 - 1 - 107);
         v14[8..12].copy_from_slice(&14u32.to_le_bytes());
         let (back, _) = parse(&v14).unwrap();
         assert!(!back.downed_queen_slime, "a pre-v15 file resets the flag");
@@ -1534,11 +1586,12 @@ mod tests {
         w.tile_entities.place_unchecked(TeKind::ItemFrame, 2, 2);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        // The v6 tail of an empty-wire/entity world: the fixed flags block +
-        // four empty colour counts + one empty entity count.
-        // (+1: the v17 downedFishron byte rides the flags block's tail;
-        // +16: the v18 forest-set block, W4-g70.)
-        buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 1 + 16 + 4 * 4 + 4));
+        // The v6+ tail of an empty-wire/entity world: the seeds u16 (2) +
+        // the fixed flags block + four empty colour counts + one empty
+        // entity count + the five empty v7..v11 counts (20) + the ore
+        // presence (1) + the v12 masks (10) + EMPTY_V16_TAIL (signs/plates
+        // + v14 rain + v15 + v16 + v17 + the v18 UNION head 107).
+        buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 4 * 4 + 4 + 5 * 4 + 1 + 10 + EMPTY_V16_TAIL));
         buf[8..12].copy_from_slice(&5u32.to_le_bytes());
         let (back, _chests) = parse(&buf).unwrap();
         assert!(!back.hard_mode);
@@ -2193,7 +2246,8 @@ mod tests {
     fn w4_g70_the_forest_set_block_round_trips_in_v18() {
         // `Main.treeX[0..3]` + `WorldGen.treeBG1..4` ride the vanilla flags
         // block (`WorldFile.cs:1255-1258` / `:1319`, `:1376-1379`); the
-        // port's v18 tail carries the same values, same order.
+        // port's v18 UNION head carries the same values at the A3 offsets
+        // [0..16] (research/218 §1-FULL.2).
         let mut w = World::new("Test".into(), 64, 48);
         w.tree_x = [17, 33, 49];
         w.forest_bg_styles = [1, 11, 12, 13];
@@ -2205,14 +2259,46 @@ mod tests {
         // The styles resolve through `SetForestBGSet`.
         assert_eq!(back.forest_bg(0), ([7, 8], [50, 51, 52]));
         assert_eq!(back.forest_bg(3), ([7, -1], [343, 342, 341]));
-        // A pre-v18 file (the 16-byte block truncated, the version patched)
-        // keeps the `WorldGen.Reset` defaults (`World::new`): dividers at
-        // maxTilesX, all four styles 0.
+        // A pre-v18 file (the 107-byte UNION head truncated, the version
+        // patched) keeps the `WorldGen.Reset` defaults (`World::new`):
+        // dividers at maxTilesX, all four styles 0.
         let mut v17 = buf.clone();
-        v17.truncate(v17.len() - 16);
+        v17.truncate(v17.len() - 107);
         v17[8..12].copy_from_slice(&17u32.to_le_bytes());
         let (back, _) = parse(&v17).unwrap();
         assert_eq!(back.tree_x, [64, 64, 64]);
         assert_eq!(back.forest_bg_styles, [0; 4]);
+    }
+
+    #[test]
+    fn w4_g71_snow_desert_ocean_styles_round_trip_in_v18() {
+        // The v18 UNION head's surface bytes (`setBG` slots 3/6/7 at the A3
+        // offsets [47..50]): the bytes survive the save and resolve through
+        // the new style tables.
+        let mut w = World::new("Test".into(), 32, 32);
+        w.snow_bg_style = 7;
+        w.desert_bg_style = 52;
+        w.ocean_bg_style = 5;
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        let (back, _) = parse(&buf).unwrap();
+        assert_eq!(back.snow_bg_style, 7);
+        assert_eq!(back.desert_bg_style, 52);
+        assert_eq!(back.ocean_bg_style, 5);
+        assert_eq!(back.snow_bg(), [267, 266, 268]);
+        assert_eq!(back.desert_bg_set()[3], [314, 312, -1]);
+        assert_eq!(back.ocean_bg(), 283);
+        // A pre-v18 file (the 107-byte head truncated, version patched
+        // down) keeps the slot-0 defaults.
+        let mut old = Vec::new();
+        let w0 = World::new("Test".into(), 32, 32);
+        write_world(&mut old, &w0, &WorldSide::default()).unwrap();
+        old.truncate(old.len() - 107);
+        old[8..12].copy_from_slice(&17u32.to_le_bytes());
+        let (back17, _) = parse(&old).unwrap();
+        assert_eq!(
+            (back17.snow_bg_style, back17.desert_bg_style, back17.ocean_bg_style),
+            (0, 0, 0)
+        );
     }
 }
