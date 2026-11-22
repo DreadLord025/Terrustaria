@@ -570,6 +570,48 @@ impl NpcKind {
             NpcKind::BlazingWheel => 353,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
+            // W4-d38 b7 — vanilla ids kept (free protocol slots).
+            NpcKind::SlimeRibbonWhite => 333,
+            NpcKind::SlimeRibbonYellow => 334,
+            NpcKind::SlimeRibbonGreen => 335,
+            NpcKind::SlimeRibbonRed => 336,
+            NpcKind::BunnyXmas => 337,
+            // W4-d38 b6 — vanilla ids kept (free protocol slots).
+            NpcKind::DemonEyeSpaceship => 318,
+            NpcKind::SkeletonTopHat => 322,
+            NpcKind::SkeletonAstonaut => 323,
+            NpcKind::SkeletonAlien => 324,
+            NpcKind::PumpkingBlade => 328,
+            // W4-d38 b5 — vanilla ids kept (free protocol slots).
+            NpcKind::SlimeMasked => 302,
+            NpcKind::BunnySlimed => 303,
+            NpcKind::HoppinJack => 304,
+            NpcKind::Ghost => 316,
+            NpcKind::DemonEyeOwl => 317,
+            // W4-d38 b4 — vanilla ids kept (free protocol slots).
+            NpcKind::BirdBlue => 297,
+            NpcKind::BirdRed => 298,
+            NpcKind::Squirrel => 299,
+            NpcKind::Mouse => 300,
+            NpcKind::Raven => 301,
+            // W4-d38 b3 — vanilla ids kept (free protocol slots).
+            NpcKind::TacticalSkeleton => 292,
+            NpcKind::SkeletonCommando => 293,
+            NpcKind::AngryBonesBig => 294,
+            NpcKind::AngryBonesBigMuscle => 295,
+            NpcKind::AngryBonesBigHelmet => 296,
+            // W4-d38 b2 — vanilla ids kept (free protocol slots).
+            NpcKind::DiabolistWhite => 286,
+            NpcKind::BoneLee => 287,
+            NpcKind::GiantCursedSkull => 289,
+            NpcKind::Paladin => 290,
+            NpcKind::SkeletonSniper => 291,
+            // W4-d38 b1 — vanilla ids kept (free protocol slots).
+            NpcKind::RaggedCaster => 281,
+            NpcKind::RaggedCasterOpenCoat => 282,
+            NpcKind::Necromancer => 283,
+            NpcKind::NecromancerArmored => 284,
+            NpcKind::DiabolistRed => 285,
             // The Wyvern family (`S1-D-3` wyvern, `NPCID.cs:10851-10861`):
             // the vanilla ids 87-92 collide with the port-local
             // Scutlix/saucer band (87-92 above). GATE REASSIGN (L-C): the
@@ -930,6 +972,48 @@ impl NpcKind {
             353 => NpcKind::BlazingWheel,
             250 => NpcKind::AngryNimbus,
             288 => NpcKind::DungeonSpirit,
+            // W4-d38 b7 — decode at the vanilla ids.
+            333 => NpcKind::SlimeRibbonWhite,
+            334 => NpcKind::SlimeRibbonYellow,
+            335 => NpcKind::SlimeRibbonGreen,
+            336 => NpcKind::SlimeRibbonRed,
+            337 => NpcKind::BunnyXmas,
+            // W4-d38 b6 — decode at the vanilla ids.
+            318 => NpcKind::DemonEyeSpaceship,
+            322 => NpcKind::SkeletonTopHat,
+            323 => NpcKind::SkeletonAstonaut,
+            324 => NpcKind::SkeletonAlien,
+            328 => NpcKind::PumpkingBlade,
+            // W4-d38 b5 — decode at the vanilla ids.
+            302 => NpcKind::SlimeMasked,
+            303 => NpcKind::BunnySlimed,
+            304 => NpcKind::HoppinJack,
+            316 => NpcKind::Ghost,
+            317 => NpcKind::DemonEyeOwl,
+            // W4-d38 b4 — decode at the vanilla ids.
+            297 => NpcKind::BirdBlue,
+            298 => NpcKind::BirdRed,
+            299 => NpcKind::Squirrel,
+            300 => NpcKind::Mouse,
+            301 => NpcKind::Raven,
+            // W4-d38 b3 — decode at the vanilla ids.
+            292 => NpcKind::TacticalSkeleton,
+            293 => NpcKind::SkeletonCommando,
+            294 => NpcKind::AngryBonesBig,
+            295 => NpcKind::AngryBonesBigMuscle,
+            296 => NpcKind::AngryBonesBigHelmet,
+            // W4-d38 b2 — decode at the vanilla ids.
+            286 => NpcKind::DiabolistWhite,
+            287 => NpcKind::BoneLee,
+            289 => NpcKind::GiantCursedSkull,
+            290 => NpcKind::Paladin,
+            291 => NpcKind::SkeletonSniper,
+            // W4-d38 b1 — decode at the vanilla ids.
+            281 => NpcKind::RaggedCaster,
+            282 => NpcKind::RaggedCasterOpenCoat,
+            283 => NpcKind::Necromancer,
+            284 => NpcKind::NecromancerArmored,
+            285 => NpcKind::DiabolistRed,
             // The Wyvern family (`S1-D-3` wyvern): the gate-reassigned
             // 223-228 band (`to_u16` above; the vanilla 87-92 collide with
             // the Scutlix/saucer ids). `NPCID.cs:10851-10861`.
@@ -1868,6 +1952,48 @@ impl NpcKind {
             NpcKind::BlueJellyfish => "NPC_Hit_25",   // :9591
             NpcKind::Crab => "NPC_Hit_1",             // :9648
             NpcKind::DungeonGuardian => "NPC_Hit_2",  // :9660
+            // W4-d38 b7 — SetDefaults HitSound rows.
+            NpcKind::SlimeRibbonWhite => "NPC_Hit_1",
+            NpcKind::SlimeRibbonYellow => "NPC_Hit_1",
+            NpcKind::SlimeRibbonGreen => "NPC_Hit_1",
+            NpcKind::SlimeRibbonRed => "NPC_Hit_1",
+            NpcKind::BunnyXmas => "NPC_Hit_1",
+            // W4-d38 b6 — SetDefaults HitSound rows.
+            NpcKind::DemonEyeSpaceship => "NPC_Hit_1",
+            NpcKind::SkeletonTopHat => "NPC_Hit_2",
+            NpcKind::SkeletonAstonaut => "NPC_Hit_2",
+            NpcKind::SkeletonAlien => "NPC_Hit_2",
+            NpcKind::PumpkingBlade => "NPC_Hit_1",
+            // W4-d38 b5 — SetDefaults HitSound rows.
+            NpcKind::SlimeMasked => "NPC_Hit_1",
+            NpcKind::BunnySlimed => "NPC_Hit_1",
+            NpcKind::HoppinJack => "NPC_Hit_1",
+            NpcKind::Ghost => "NPC_Hit_1",
+            NpcKind::DemonEyeOwl => "NPC_Hit_1",
+            // W4-d38 b4 — SetDefaults HitSound rows.
+            NpcKind::BirdBlue => "NPC_Hit_1",
+            NpcKind::BirdRed => "NPC_Hit_1",
+            NpcKind::Squirrel => "NPC_Hit_1",
+            NpcKind::Mouse => "NPC_Hit_1",
+            NpcKind::Raven => "NPC_Hit_1",
+            // W4-d38 b3 — SetDefaults HitSound rows.
+            NpcKind::TacticalSkeleton => "NPC_Hit_2",
+            NpcKind::SkeletonCommando => "NPC_Hit_2",
+            NpcKind::AngryBonesBig => "NPC_Hit_2",
+            NpcKind::AngryBonesBigMuscle => "NPC_Hit_2",
+            NpcKind::AngryBonesBigHelmet => "NPC_Hit_2",
+            // W4-d38 b2 — SetDefaults HitSound rows.
+            NpcKind::DiabolistWhite => "NPC_Hit_2",
+            NpcKind::BoneLee => "NPC_Hit_2",
+            NpcKind::GiantCursedSkull => "NPC_Hit_2",
+            NpcKind::Paladin => "NPC_Hit_4",
+            NpcKind::SkeletonSniper => "NPC_Hit_2",
+            // W4-d38 b1 — SetDefaults HitSound rows.
+            NpcKind::RaggedCaster => "NPC_Hit_2",
+            NpcKind::RaggedCasterOpenCoat => "NPC_Hit_2",
+            NpcKind::Necromancer => "NPC_Hit_2",
+            NpcKind::NecromancerArmored => "NPC_Hit_2",
+            NpcKind::DiabolistRed => "NPC_Hit_2",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2188,6 +2314,48 @@ impl NpcKind {
             NpcKind::BlueJellyfish => "NPC_Killed_28",   // :9592
             NpcKind::Crab => "NPC_Killed_1",             // :9649
             NpcKind::DungeonGuardian => "NPC_Killed_2",  // :9661
+            // W4-d38 b7 — SetDefaults DeathSound rows.
+            NpcKind::SlimeRibbonWhite => "NPC_Killed_1",
+            NpcKind::SlimeRibbonYellow => "NPC_Killed_1",
+            NpcKind::SlimeRibbonGreen => "NPC_Killed_1",
+            NpcKind::SlimeRibbonRed => "NPC_Killed_1",
+            NpcKind::BunnyXmas => "NPC_Killed_1",
+            // W4-d38 b6 — SetDefaults DeathSound rows.
+            NpcKind::DemonEyeSpaceship => "NPC_Killed_1",
+            NpcKind::SkeletonTopHat => "NPC_Killed_2",
+            NpcKind::SkeletonAstonaut => "NPC_Killed_2",
+            NpcKind::SkeletonAlien => "NPC_Killed_2",
+            NpcKind::PumpkingBlade => "NPC_Killed_1",
+            // W4-d38 b5 — SetDefaults DeathSound rows.
+            NpcKind::SlimeMasked => "NPC_Killed_1",
+            NpcKind::BunnySlimed => "NPC_Killed_1",
+            NpcKind::HoppinJack => "NPC_Killed_1",
+            NpcKind::Ghost => "NPC_Killed_6",
+            NpcKind::DemonEyeOwl => "NPC_Killed_1",
+            // W4-d38 b4 — SetDefaults DeathSound rows.
+            NpcKind::BirdBlue => "NPC_Killed_1",
+            NpcKind::BirdRed => "NPC_Killed_1",
+            NpcKind::Squirrel => "NPC_Killed_1",
+            NpcKind::Mouse => "NPC_Killed_4",
+            NpcKind::Raven => "NPC_Killed_1",
+            // W4-d38 b3 — SetDefaults DeathSound rows.
+            NpcKind::TacticalSkeleton => "NPC_Killed_2",
+            NpcKind::SkeletonCommando => "NPC_Killed_2",
+            NpcKind::AngryBonesBig => "NPC_Killed_2",
+            NpcKind::AngryBonesBigMuscle => "NPC_Killed_2",
+            NpcKind::AngryBonesBigHelmet => "NPC_Killed_2",
+            // W4-d38 b2 — SetDefaults DeathSound rows.
+            NpcKind::DiabolistWhite => "NPC_Killed_2",
+            NpcKind::BoneLee => "NPC_Killed_2",
+            NpcKind::GiantCursedSkull => "NPC_Killed_2",
+            NpcKind::Paladin => "NPC_Killed_6",
+            NpcKind::SkeletonSniper => "NPC_Killed_2",
+            // W4-d38 b1 — SetDefaults DeathSound rows.
+            NpcKind::RaggedCaster => "NPC_Killed_2",
+            NpcKind::RaggedCasterOpenCoat => "NPC_Killed_2",
+            NpcKind::Necromancer => "NPC_Killed_2",
+            NpcKind::NecromancerArmored => "NPC_Killed_2",
+            NpcKind::DiabolistRed => "NPC_Killed_2",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2295,6 +2463,12 @@ impl NpcKind {
             // The Angry Nimbus (250) — `SetDefaults` writes no flag, but the
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
+            // W4-d38 b2 — the noGravity SetDefaults rows.
+            NpcKind::GiantCursedSkull => true,
+            // W4-d38 b5 — the noGravity SetDefaults rows.
+            NpcKind::Ghost => true,
+            // W4-d38 b6 — the noGravity SetDefaults rows.
+            NpcKind::PumpkingBlade => true,
             NpcKind::AngryNimbus => true,
             // W4-d34: the Cursed Skull's `noGravity = true` (`NPC.cs:9160`,
             // kb 0.2 `:9163`). The ManEater (43) writes noGravity but kb 0
@@ -2583,6 +2757,48 @@ impl NpcKind {
             NpcKind::BlueJellyfish => 18,    // :9587
             NpcKind::Crab => 3,              // :9644
             NpcKind::DungeonGuardian => 11,  // :9656
+            // W4-d38 b7 — SetDefaults aiStyle rows.
+            NpcKind::SlimeRibbonWhite => 1,
+            NpcKind::SlimeRibbonYellow => 1,
+            NpcKind::SlimeRibbonGreen => 1,
+            NpcKind::SlimeRibbonRed => 1,
+            NpcKind::BunnyXmas => 7,
+            // W4-d38 b6 — SetDefaults aiStyle rows.
+            NpcKind::DemonEyeSpaceship => 2,
+            NpcKind::SkeletonTopHat => 3,
+            NpcKind::SkeletonAstonaut => 3,
+            NpcKind::SkeletonAlien => 3,
+            NpcKind::PumpkingBlade => 59,
+            // W4-d38 b5 — SetDefaults aiStyle rows.
+            NpcKind::SlimeMasked => 1,
+            NpcKind::BunnySlimed => 7,
+            NpcKind::HoppinJack => 1,
+            NpcKind::Ghost => 22,
+            NpcKind::DemonEyeOwl => 2,
+            // W4-d38 b4 — SetDefaults aiStyle rows.
+            NpcKind::BirdBlue => 24,
+            NpcKind::BirdRed => 24,
+            NpcKind::Squirrel => 7,
+            NpcKind::Mouse => 7,
+            NpcKind::Raven => 17,
+            // W4-d38 b3 — SetDefaults aiStyle rows.
+            NpcKind::TacticalSkeleton => 3,
+            NpcKind::SkeletonCommando => 3,
+            NpcKind::AngryBonesBig => 3,
+            NpcKind::AngryBonesBigMuscle => 3,
+            NpcKind::AngryBonesBigHelmet => 3,
+            // W4-d38 b2 — SetDefaults aiStyle rows.
+            NpcKind::DiabolistWhite => 8,
+            NpcKind::BoneLee => 3,
+            NpcKind::GiantCursedSkull => 10,
+            NpcKind::Paladin => 3,
+            NpcKind::SkeletonSniper => 3,
+            // W4-d38 b1 — SetDefaults aiStyle rows.
+            NpcKind::RaggedCaster => 8,
+            NpcKind::RaggedCasterOpenCoat => 8,
+            NpcKind::Necromancer => 8,
+            NpcKind::NecromancerArmored => 8,
+            NpcKind::DiabolistRed => 8,
         }
     }
 
@@ -2697,6 +2913,20 @@ impl NpcKind {
             // (`NPC.cs:57881-57906`) — cap 0.5, accel 0.03, brake 0.7 (the
             // `npc_ai3_speeds.rs:340` arm already carries the per-type step).
             NpcKind::Crab => 0.5,
+            // W4-d38 b6 — AI_003 per-type walk caps.
+            NpcKind::SkeletonTopHat => 1.0,
+            NpcKind::SkeletonAstonaut => 1.0,
+            NpcKind::SkeletonAlien => 1.0,
+            // W4-d38 b3 — AI_003 per-type walk caps.
+            NpcKind::TacticalSkeleton => 1.0,
+            NpcKind::SkeletonCommando => 1.0,
+            NpcKind::AngryBonesBig => 2.0,
+            NpcKind::AngryBonesBigMuscle => 1.75,
+            NpcKind::AngryBonesBigHelmet => 1.25,
+            // W4-d38 b2 — AI_003 per-type walk caps.
+            NpcKind::BoneLee => 5.0,
+            NpcKind::Paladin => 1.0,
+            NpcKind::SkeletonSniper => 1.0,
             _ => return None,
         })
     }
@@ -3135,6 +3365,48 @@ impl NpcKind {
             NpcKind::BlueJellyfish => (26.0, 26.0),   // :9585-9586
             NpcKind::Crab => (28.0, 20.0),            // :9642-9643
             NpcKind::DungeonGuardian => (80.0, 102.0), // :9654-9655
+            // W4-d38 b7 — SetDefaults width/height rows.
+            NpcKind::SlimeRibbonWhite => (24.0, 18.0),
+            NpcKind::SlimeRibbonYellow => (24.0, 18.0),
+            NpcKind::SlimeRibbonGreen => (24.0, 18.0),
+            NpcKind::SlimeRibbonRed => (24.0, 18.0),
+            NpcKind::BunnyXmas => (18.0, 20.0),
+            // W4-d38 b6 — SetDefaults width/height rows.
+            NpcKind::DemonEyeSpaceship => (30.0, 32.0),
+            NpcKind::SkeletonTopHat => (18.0, 40.0),
+            NpcKind::SkeletonAstonaut => (18.0, 40.0),
+            NpcKind::SkeletonAlien => (18.0, 40.0),
+            NpcKind::PumpkingBlade => (80.0, 80.0),
+            // W4-d38 b5 — SetDefaults width/height rows.
+            NpcKind::SlimeMasked => (24.0, 18.0),
+            NpcKind::BunnySlimed => (18.0, 20.0),
+            NpcKind::HoppinJack => (34.0, 28.0),
+            NpcKind::Ghost => (24.0, 44.0),
+            NpcKind::DemonEyeOwl => (30.0, 32.0),
+            // W4-d38 b4 — SetDefaults width/height rows.
+            NpcKind::BirdBlue => (14.0, 14.0),
+            NpcKind::BirdRed => (14.0, 14.0),
+            NpcKind::Squirrel => (18.0, 20.0),
+            NpcKind::Mouse => (14.0, 12.0),
+            NpcKind::Raven => (36.0, 26.0),
+            // W4-d38 b3 — SetDefaults width/height rows.
+            NpcKind::TacticalSkeleton => (18.0, 40.0),
+            NpcKind::SkeletonCommando => (18.0, 40.0),
+            NpcKind::AngryBonesBig => (18.0, 40.0),
+            NpcKind::AngryBonesBigMuscle => (18.0, 40.0),
+            NpcKind::AngryBonesBigHelmet => (18.0, 40.0),
+            // W4-d38 b2 — SetDefaults width/height rows.
+            NpcKind::DiabolistWhite => (18.0, 40.0),
+            NpcKind::BoneLee => (18.0, 40.0),
+            NpcKind::GiantCursedSkull => (44.0, 44.0),
+            NpcKind::Paladin => (34.0, 62.0),
+            NpcKind::SkeletonSniper => (18.0, 40.0),
+            // W4-d38 b1 — SetDefaults width/height rows.
+            NpcKind::RaggedCaster => (18.0, 40.0),
+            NpcKind::RaggedCasterOpenCoat => (18.0, 40.0),
+            NpcKind::Necromancer => (18.0, 40.0),
+            NpcKind::NecromancerArmored => (18.0, 40.0),
+            NpcKind::DiabolistRed => (18.0, 40.0),
         }
     }
 
@@ -3314,6 +3586,16 @@ impl NpcKind {
             // case list carries 338-340 (`NPC.cs:68603-68605`) on their
             // 15-frame strips (`Main.npcFrameCount[338..340]`, `Main.cs`).
             NpcKind::ZombieElf | NpcKind::ZombieElfBeard | NpcKind::ZombieElfGirl => 15,
+            // W4-d38 b6 — humanoid-group FindFrame strips.
+            NpcKind::SkeletonTopHat => 16,
+            NpcKind::SkeletonAstonaut => 15,
+            NpcKind::SkeletonAlien => 16,
+            // W4-d38 b3 — humanoid-group FindFrame strips.
+            NpcKind::AngryBonesBig => 16,
+            NpcKind::AngryBonesBigMuscle => 15,
+            NpcKind::AngryBonesBigHelmet => 15,
+            // W4-d38 b2 — humanoid-group FindFrame strips.
+            NpcKind::BoneLee => 16,
             _ => 1,
         }
     }
@@ -3824,6 +4106,48 @@ impl NpcKind {
             NpcKind::BlueJellyfish => 34,     // :9590
             NpcKind::Crab => 40,              // :9647
             NpcKind::DungeonGuardian => 9999, // :9659
+            // W4-d38 b7 — SetDefaults lifeMax rows.
+            NpcKind::SlimeRibbonWhite => 25,
+            NpcKind::SlimeRibbonYellow => 23,
+            NpcKind::SlimeRibbonGreen => 29,
+            NpcKind::SlimeRibbonRed => 22,
+            NpcKind::BunnyXmas => 5,
+            // W4-d38 b6 — SetDefaults lifeMax rows.
+            NpcKind::DemonEyeSpaceship => 60,
+            NpcKind::SkeletonTopHat => 115,
+            NpcKind::SkeletonAstonaut => 65,
+            NpcKind::SkeletonAlien => 70,
+            NpcKind::PumpkingBlade => 5000,
+            // W4-d38 b5 — SetDefaults lifeMax rows.
+            NpcKind::SlimeMasked => 25,
+            NpcKind::BunnySlimed => 5,
+            NpcKind::HoppinJack => 175,
+            NpcKind::Ghost => 50,
+            NpcKind::DemonEyeOwl => 75,
+            // W4-d38 b4 — SetDefaults lifeMax rows.
+            NpcKind::BirdBlue => 5,
+            NpcKind::BirdRed => 5,
+            NpcKind::Squirrel => 5,
+            NpcKind::Mouse => 5,
+            NpcKind::Raven => 35,
+            // W4-d38 b3 — SetDefaults lifeMax rows.
+            NpcKind::TacticalSkeleton => 400,
+            NpcKind::SkeletonCommando => 400,
+            NpcKind::AngryBonesBig => 70,
+            NpcKind::AngryBonesBigMuscle => 70,
+            NpcKind::AngryBonesBigHelmet => 120,
+            // W4-d38 b2 — SetDefaults lifeMax rows.
+            NpcKind::DiabolistWhite => 250,
+            NpcKind::BoneLee => 1000,
+            NpcKind::GiantCursedSkull => 400,
+            NpcKind::Paladin => 5000,
+            NpcKind::SkeletonSniper => 400,
+            // W4-d38 b1 — SetDefaults lifeMax rows.
+            NpcKind::RaggedCaster => 400,
+            NpcKind::RaggedCasterOpenCoat => 450,
+            NpcKind::Necromancer => 300,
+            NpcKind::NecromancerArmored => 450,
+            NpcKind::DiabolistRed => 200,
         }
     }
 
@@ -4206,6 +4530,48 @@ impl NpcKind {
             NpcKind::BlueJellyfish => 25,     // :9588
             NpcKind::Crab => 20,              // :9645
             NpcKind::DungeonGuardian => 9999, // :9657
+            // W4-d38 b7 — SetDefaults damage rows.
+            NpcKind::SlimeRibbonWhite => 7,
+            NpcKind::SlimeRibbonYellow => 6,
+            NpcKind::SlimeRibbonGreen => 8,
+            NpcKind::SlimeRibbonRed => 5,
+            NpcKind::BunnyXmas => 0,
+            // W4-d38 b6 — SetDefaults damage rows.
+            NpcKind::DemonEyeSpaceship => 20,
+            NpcKind::SkeletonTopHat => 23,
+            NpcKind::SkeletonAstonaut => 18,
+            NpcKind::SkeletonAlien => 22,
+            NpcKind::PumpkingBlade => 65,
+            // W4-d38 b5 — SetDefaults damage rows.
+            NpcKind::SlimeMasked => 7,
+            NpcKind::BunnySlimed => 0,
+            NpcKind::HoppinJack => 80,
+            NpcKind::Ghost => 15,
+            NpcKind::DemonEyeOwl => 16,
+            // W4-d38 b4 — SetDefaults damage rows.
+            NpcKind::BirdBlue => 0,
+            NpcKind::BirdRed => 0,
+            NpcKind::Squirrel => 0,
+            NpcKind::Mouse => 0,
+            NpcKind::Raven => 12,
+            // W4-d38 b3 — SetDefaults damage rows.
+            NpcKind::TacticalSkeleton => 60,
+            NpcKind::SkeletonCommando => 60,
+            NpcKind::AngryBonesBig => 34,
+            NpcKind::AngryBonesBigMuscle => 28,
+            NpcKind::AngryBonesBigHelmet => 24,
+            // W4-d38 b2 — SetDefaults damage rows.
+            NpcKind::DiabolistWhite => 60,
+            NpcKind::BoneLee => 90,
+            NpcKind::GiantCursedSkull => 60,
+            NpcKind::Paladin => 100,
+            NpcKind::SkeletonSniper => 60,
+            // W4-d38 b1 — SetDefaults damage rows.
+            NpcKind::RaggedCaster => 40,
+            NpcKind::RaggedCasterOpenCoat => 35,
+            NpcKind::Necromancer => 50,
+            NpcKind::NecromancerArmored => 35,
+            NpcKind::DiabolistRed => 50,
         }
     }
 }

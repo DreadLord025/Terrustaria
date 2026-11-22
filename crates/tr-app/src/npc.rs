@@ -1017,6 +1017,83 @@ pub enum NpcKind {
     /// def 14, 50 HP, kb 0.6, NPCHit19/NPCDeath22, value 150. The
     /// aiStyle-22 machine's 490 branches ride `npc_ai_drippler.rs`.
     Drippler,
+    // W4-d38 b7 — the kinds of this batch (vanilla ids, SetDefaults verbatim).
+    /// `NPCID.SlimeRibbonWhite` (333) — `NPC.cs` SetDefaults: 24x18, aiStyle 1, dmg 7, def 2, 25 HP, kb 1.0, value 25.
+    SlimeRibbonWhite,
+    /// `NPCID.SlimeRibbonYellow` (334) — `NPC.cs` SetDefaults: 24x18, aiStyle 1, dmg 6, def 2, 23 HP, kb 1.0, value 25; scale 0.9.
+    SlimeRibbonYellow,
+    /// `NPCID.SlimeRibbonGreen` (335) — `NPC.cs` SetDefaults: 24x18, aiStyle 1, dmg 8, def 3, 29 HP, kb 1.0, value 25; scale 1.05.
+    SlimeRibbonGreen,
+    /// `NPCID.SlimeRibbonRed` (336) — `NPC.cs` SetDefaults: 24x18, aiStyle 1, dmg 5, def 1, 22 HP, kb 1.0, value 25; scale 0.85.
+    SlimeRibbonRed,
+    /// `NPCID.BunnyXmas` (337) — `NPC.cs` SetDefaults: 18x20, aiStyle 7, dmg 0, def 0, 5 HP, kb 1.0, value 0; catchItem 2019.
+    BunnyXmas,
+    // W4-d38 b6 — the kinds of this batch (vanilla ids, SetDefaults verbatim).
+    /// `NPCID.DemonEyeSpaceship` (318) — `NPC.cs` SetDefaults: 30x32, aiStyle 2, dmg 20, def 4, 60 HP, kb 0.65, value 100.
+    DemonEyeSpaceship,
+    /// `NPCID.SkeletonTopHat` (322) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 23, def 0, 115 HP, kb 0.65, value 130.
+    SkeletonTopHat,
+    /// `NPCID.SkeletonAstonaut` (323) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 18, def 10, 65 HP, kb 0.5, value 120.
+    SkeletonAstonaut,
+    /// `NPCID.SkeletonAlien` (324) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 22, def 10, 70 HP, kb 0.4, value 130; scale 1.05.
+    SkeletonAlien,
+    /// `NPCID.PumpkingBlade` (328) — `NPC.cs` SetDefaults: 80x80, aiStyle 59, dmg 65, def 14, 5000 HP, kb 0.0, value 0; noGravity, noTileCollide, dontTakeDamage.
+    PumpkingBlade,
+    // W4-d38 b5 — the kinds of this batch (vanilla ids, SetDefaults verbatim).
+    /// `NPCID.SlimeMasked` (302) — `NPC.cs` SetDefaults: 24x18, aiStyle 1, dmg 7, def 2, 25 HP, kb 1.0, value 25.
+    SlimeMasked,
+    /// `NPCID.BunnySlimed` (303) — `NPC.cs` SetDefaults: 18x20, aiStyle 7, dmg 0, def 0, 5 HP, kb 1.0, value 0; catchItem 2019.
+    BunnySlimed,
+    /// `NPCID.HoppinJack` (304) — `NPC.cs` SetDefaults: 34x28, aiStyle 1, dmg 80, def 20, 175 HP, kb 0.5, value 500; scale 1.1.
+    HoppinJack,
+    /// `NPCID.Ghost` (316) — `NPC.cs` SetDefaults: 24x44, aiStyle 22, dmg 15, def 4, 50 HP, kb 0.5, value 90; noGravity, noTileCollide, alpha 100.
+    Ghost,
+    /// `NPCID.DemonEyeOwl` (317) — `NPC.cs` SetDefaults: 30x32, aiStyle 2, dmg 16, def 6, 75 HP, kb 0.7, value 100.
+    DemonEyeOwl,
+    // W4-d38 b4 — the kinds of this batch (vanilla ids, SetDefaults verbatim).
+    /// `NPCID.BirdBlue` (297) — `NPC.cs` SetDefaults: 14x14, aiStyle 24, dmg 0, def 0, 5 HP, kb 0.8, value 0; catchItem 2016.
+    BirdBlue,
+    /// `NPCID.BirdRed` (298) — `NPC.cs` SetDefaults: 14x14, aiStyle 24, dmg 0, def 0, 5 HP, kb 0.8, value 0; catchItem 2017.
+    BirdRed,
+    /// `NPCID.Squirrel` (299) — `NPC.cs` SetDefaults: 18x20, aiStyle 7, dmg 0, def 0, 5 HP, kb 1.0, value 0; catchItem 2018.
+    Squirrel,
+    /// `NPCID.Mouse` (300) — `NPC.cs` SetDefaults: 14x12, aiStyle 7, dmg 0, def 0, 5 HP, kb 1.0, value 0; catchItem 2003.
+    Mouse,
+    /// `NPCID.Raven` (301) — `NPC.cs` SetDefaults: 36x26, aiStyle 17, dmg 12, def 2, 35 HP, kb 0.85, value 50.
+    Raven,
+    // W4-d38 b3 — the kinds of this batch (vanilla ids, SetDefaults verbatim).
+    /// `NPCID.TacticalSkeleton` (292) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 60, def 28, 400 HP, kb 0.4, value 1000.
+    TacticalSkeleton,
+    /// `NPCID.SkeletonCommando` (293) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 60, def 28, 400 HP, kb 0.4, value 1000.
+    SkeletonCommando,
+    /// `NPCID.AngryBonesBig` (294) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 34, def 6, 70 HP, kb 0.9, value 130.
+    AngryBonesBig,
+    /// `NPCID.AngryBonesBigMuscle` (295) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 28, def 12, 70 HP, kb 0.7, value 130.
+    AngryBonesBigMuscle,
+    /// `NPCID.AngryBonesBigHelmet` (296) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 24, def 14, 120 HP, kb 0.6, value 130.
+    AngryBonesBigHelmet,
+    // W4-d38 b2 — the kinds of this batch (vanilla ids, SetDefaults verbatim).
+    /// `NPCID.DiabolistWhite` (286) — `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 60, def 10, 250 HP, kb 0.65, value 1500.
+    DiabolistWhite,
+    /// `NPCID.BoneLee` (287) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 90, def 42, 1000 HP, kb 0.3, value 2000.
+    BoneLee,
+    /// `NPCID.GiantCursedSkull` (289) — `NPC.cs` SetDefaults: 44x44, aiStyle 10, dmg 60, def 20, 400 HP, kb 0.2, value 150; noGravity, noTileCollide.
+    GiantCursedSkull,
+    /// `NPCID.Paladin` (290) — `NPC.cs` SetDefaults: 34x62, aiStyle 3, dmg 100, def 50, 5000 HP, kb 0.0, value 50000.
+    Paladin,
+    /// `NPCID.SkeletonSniper` (291) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 60, def 28, 400 HP, kb 0.4, value 1000.
+    SkeletonSniper,
+    // W4-d38 b1 — the kinds of this batch (vanilla ids, SetDefaults verbatim).
+    /// `NPCID.RaggedCaster` (281) — `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 40, def 20, 400 HP, kb 0.6, value 1500.
+    RaggedCaster,
+    /// `NPCID.RaggedCasterOpenCoat` (282) — `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 35, def 28, 450 HP, kb 0.5, value 1500.
+    RaggedCasterOpenCoat,
+    /// `NPCID.Necromancer` (283) — `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 50, def 18, 300 HP, kb 0.55, value 1500.
+    Necromancer,
+    /// `NPCID.NecromancerArmored` (284) — `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 35, def 24, 450 HP, kb 0.5, value 1500.
+    NecromancerArmored,
+    /// `NPCID.DiabolistRed` (285) — `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 50, def 12, 200 HP, kb 0.7, value 1500.
+    DiabolistRed,
     /// `NPCID.ZombieElf` (338) — the Frost Moon wave's walker (`aiStyle 3`):
     /// 18x40, dmg 65, def 18, 600 HP, kb 0.4, value 1200, npcSlots 0.5
     /// (`NPC.cs:13281-13296`).
@@ -3063,8 +3140,15 @@ impl Npc {
                 .or_else(|| kind.holiday_zombie_scale())
                 // The BlazingWheel's `scale = 1.2f` row (`NPC.cs:9730`,
                 // the small-kinds wiring wave).
+                // W4-d38 b5/b6/b7 — the SetDefaults scale rows (the
+                // BlazingWheel 1.2 row shared with the small-kinds wave).
                 .unwrap_or(match kind {
                     NpcKind::BlazingWheel => 1.2,
+                    NpcKind::SlimeRibbonYellow => 0.9,
+                    NpcKind::SlimeRibbonGreen => 1.05,
+                    NpcKind::SlimeRibbonRed => 0.85,
+                    NpcKind::SkeletonAlien => 1.05,
+                    NpcKind::HoppinJack => 1.1,
                     _ => 1.0,
                 }),
             net_offset: Vec2::ZERO,
@@ -3147,6 +3231,8 @@ impl Npc {
             dont_take_damage: matches!(
                 kind,
                 NpcKind::PlanterasHook | NpcKind::MartianSaucerCore | NpcKind::BlazingWheel
+                // W4-d38 b6 — dontTakeDamage row.
+                | NpcKind::PumpkingBlade
             ),
             // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
             behind_tiles: kind.behind_tiles(),
@@ -3247,6 +3333,8 @@ impl Npc {
                             // W4-d34: the BlueJellyfish's `alpha = 20` row
                             // (`NPC.cs:9594`).
                             NpcKind::BlueJellyfish => 20,
+                            // W4-d38 b5 — the alpha row (NPC.cs).
+                            NpcKind::Ghost => 100,
                             _ => 0,
                         }
                     }),
@@ -3664,6 +3752,48 @@ impl Npc {
             NpcKind::BlueJellyfish => 1.0,    // no row — the class default 1f (`:8533`)
             NpcKind::Crab => 1.0,             // no row — the class default 1f (`:8533`)
             NpcKind::DungeonGuardian => 0.0,  // :9664
+            // W4-d38 b7 — SetDefaults knockBackResist rows.
+            NpcKind::SlimeRibbonWhite => 1.0,
+            NpcKind::SlimeRibbonYellow => 1.0,
+            NpcKind::SlimeRibbonGreen => 1.0,
+            NpcKind::SlimeRibbonRed => 1.0,
+            NpcKind::BunnyXmas => 1.0,
+            // W4-d38 b6 — SetDefaults knockBackResist rows.
+            NpcKind::DemonEyeSpaceship => 0.65,
+            NpcKind::SkeletonTopHat => 0.65,
+            NpcKind::SkeletonAstonaut => 0.5,
+            NpcKind::SkeletonAlien => 0.4,
+            NpcKind::PumpkingBlade => 0.0,
+            // W4-d38 b5 — SetDefaults knockBackResist rows.
+            NpcKind::SlimeMasked => 1.0,
+            NpcKind::BunnySlimed => 1.0,
+            NpcKind::HoppinJack => 0.5,
+            NpcKind::Ghost => 0.5,
+            NpcKind::DemonEyeOwl => 0.7,
+            // W4-d38 b4 — SetDefaults knockBackResist rows.
+            NpcKind::BirdBlue => 0.8,
+            NpcKind::BirdRed => 0.8,
+            NpcKind::Squirrel => 1.0,
+            NpcKind::Mouse => 1.0,
+            NpcKind::Raven => 0.85,
+            // W4-d38 b3 — SetDefaults knockBackResist rows.
+            NpcKind::TacticalSkeleton => 0.4,
+            NpcKind::SkeletonCommando => 0.4,
+            NpcKind::AngryBonesBig => 0.9,
+            NpcKind::AngryBonesBigMuscle => 0.7,
+            NpcKind::AngryBonesBigHelmet => 0.6,
+            // W4-d38 b2 — SetDefaults knockBackResist rows.
+            NpcKind::DiabolistWhite => 0.65,
+            NpcKind::BoneLee => 0.3,
+            NpcKind::GiantCursedSkull => 0.2,
+            NpcKind::Paladin => 0.0,
+            NpcKind::SkeletonSniper => 0.4,
+            // W4-d38 b1 — SetDefaults knockBackResist rows.
+            NpcKind::RaggedCaster => 0.6,
+            NpcKind::RaggedCasterOpenCoat => 0.5,
+            NpcKind::Necromancer => 0.55,
+            NpcKind::NecromancerArmored => 0.5,
+            NpcKind::DiabolistRed => 0.7,
             _ => 0.4,
         }
     }
@@ -4061,6 +4191,48 @@ impl Npc {
             NpcKind::BlueJellyfish => 4,      // :9589
             NpcKind::Crab => 10,              // :9646
             NpcKind::DungeonGuardian => 9999, // :9658
+            // W4-d38 b7 — SetDefaults defense rows.
+            NpcKind::SlimeRibbonWhite => 2,
+            NpcKind::SlimeRibbonYellow => 2,
+            NpcKind::SlimeRibbonGreen => 3,
+            NpcKind::SlimeRibbonRed => 1,
+            NpcKind::BunnyXmas => 0,
+            // W4-d38 b6 — SetDefaults defense rows.
+            NpcKind::DemonEyeSpaceship => 4,
+            NpcKind::SkeletonTopHat => 0,
+            NpcKind::SkeletonAstonaut => 10,
+            NpcKind::SkeletonAlien => 10,
+            NpcKind::PumpkingBlade => 14,
+            // W4-d38 b5 — SetDefaults defense rows.
+            NpcKind::SlimeMasked => 2,
+            NpcKind::BunnySlimed => 0,
+            NpcKind::HoppinJack => 20,
+            NpcKind::Ghost => 4,
+            NpcKind::DemonEyeOwl => 6,
+            // W4-d38 b4 — SetDefaults defense rows.
+            NpcKind::BirdBlue => 0,
+            NpcKind::BirdRed => 0,
+            NpcKind::Squirrel => 0,
+            NpcKind::Mouse => 0,
+            NpcKind::Raven => 2,
+            // W4-d38 b3 — SetDefaults defense rows.
+            NpcKind::TacticalSkeleton => 28,
+            NpcKind::SkeletonCommando => 28,
+            NpcKind::AngryBonesBig => 6,
+            NpcKind::AngryBonesBigMuscle => 12,
+            NpcKind::AngryBonesBigHelmet => 14,
+            // W4-d38 b2 — SetDefaults defense rows.
+            NpcKind::DiabolistWhite => 10,
+            NpcKind::BoneLee => 42,
+            NpcKind::GiantCursedSkull => 20,
+            NpcKind::Paladin => 50,
+            NpcKind::SkeletonSniper => 28,
+            // W4-d38 b1 — SetDefaults defense rows.
+            NpcKind::RaggedCaster => 20,
+            NpcKind::RaggedCasterOpenCoat => 28,
+            NpcKind::Necromancer => 18,
+            NpcKind::NecromancerArmored => 24,
+            NpcKind::DiabolistRed => 12,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4449,6 +4621,48 @@ impl Npc {
             NpcKind::BlueJellyfish => 100.0,  // :9593
             NpcKind::Crab => 60.0,            // :9650
             NpcKind::DungeonGuardian => 0.0,  // no value row (`:9652-9665`)
+            // W4-d38 b7 — SetDefaults value rows (copper).
+            NpcKind::SlimeRibbonWhite => 25.0,
+            NpcKind::SlimeRibbonYellow => 25.0,
+            NpcKind::SlimeRibbonGreen => 25.0,
+            NpcKind::SlimeRibbonRed => 25.0,
+            NpcKind::BunnyXmas => 0.0,
+            // W4-d38 b6 — SetDefaults value rows (copper).
+            NpcKind::DemonEyeSpaceship => 100.0,
+            NpcKind::SkeletonTopHat => 130.0,
+            NpcKind::SkeletonAstonaut => 120.0,
+            NpcKind::SkeletonAlien => 130.0,
+            NpcKind::PumpkingBlade => 0.0,
+            // W4-d38 b5 — SetDefaults value rows (copper).
+            NpcKind::SlimeMasked => 25.0,
+            NpcKind::BunnySlimed => 0.0,
+            NpcKind::HoppinJack => 500.0,
+            NpcKind::Ghost => 90.0,
+            NpcKind::DemonEyeOwl => 100.0,
+            // W4-d38 b4 — SetDefaults value rows (copper).
+            NpcKind::BirdBlue => 0.0,
+            NpcKind::BirdRed => 0.0,
+            NpcKind::Squirrel => 0.0,
+            NpcKind::Mouse => 0.0,
+            NpcKind::Raven => 50.0,
+            // W4-d38 b3 — SetDefaults value rows (copper).
+            NpcKind::TacticalSkeleton => 1000.0,
+            NpcKind::SkeletonCommando => 1000.0,
+            NpcKind::AngryBonesBig => 130.0,
+            NpcKind::AngryBonesBigMuscle => 130.0,
+            NpcKind::AngryBonesBigHelmet => 130.0,
+            // W4-d38 b2 — SetDefaults value rows (copper).
+            NpcKind::DiabolistWhite => 1500.0,
+            NpcKind::BoneLee => 2000.0,
+            NpcKind::GiantCursedSkull => 150.0,
+            NpcKind::Paladin => 50000.0,
+            NpcKind::SkeletonSniper => 1000.0,
+            // W4-d38 b1 — SetDefaults value rows (copper).
+            NpcKind::RaggedCaster => 1500.0,
+            NpcKind::RaggedCasterOpenCoat => 1500.0,
+            NpcKind::Necromancer => 1500.0,
+            NpcKind::NecromancerArmored => 1500.0,
+            NpcKind::DiabolistRed => 1500.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6493,6 +6707,76 @@ impl Npc {
             NpcKind::Crab => self.update_skeleton(world, player, dt),
             NpcKind::DungeonGuardian => self.update_skeletron(world, player, rng, false),
 
+            // W4-d38 b7 — aiStyle 1.
+            NpcKind::SlimeRibbonWhite => self.update_slime(world, player, dt),
+            // W4-d38 b7 — aiStyle 1.
+            NpcKind::SlimeRibbonYellow => self.update_slime(world, player, dt),
+            // W4-d38 b7 — aiStyle 1.
+            NpcKind::SlimeRibbonGreen => self.update_slime(world, player, dt),
+            // W4-d38 b7 — aiStyle 1.
+            NpcKind::SlimeRibbonRed => self.update_slime(world, player, dt),
+            // W4-d38 b7 — aiStyle 7.
+            NpcKind::BunnyXmas => self.update_critter(world, player, rng),
+            // W4-d38 b6 — aiStyle 2.
+            NpcKind::DemonEyeSpaceship => self.update_eye(world, player, dt),
+            // W4-d38 b6 — aiStyle 3, num107 default NPC.cs:58322.
+            NpcKind::SkeletonTopHat => self.update_skeleton(world, player, dt),
+            // W4-d38 b6 — aiStyle 3, num107 default.
+            NpcKind::SkeletonAstonaut => self.update_skeleton(world, player, dt),
+            // W4-d38 b6 — aiStyle 3, num107 default.
+            NpcKind::SkeletonAlien => self.update_skeleton(world, player, dt),
+            // W4-d38 b6 — aiStyle 59, NPC.cs:33198-33373.
+            NpcKind::PumpkingBlade => unreachable!("aiStyle 59 rides the sim pre-pass (W4-d38)"),
+            // W4-d38 b5 — aiStyle 1, AI_001_Slimes.
+            NpcKind::SlimeMasked => self.update_slime(world, player, dt),
+            // W4-d38 b5 — aiStyle 7.
+            NpcKind::BunnySlimed => self.update_critter(world, player, rng),
+            // W4-d38 b5 — aiStyle 1.
+            NpcKind::HoppinJack => self.update_slime(world, player, dt),
+            // W4-d38 b5 — aiStyle 22, NPC.cs:24666-25234.
+            NpcKind::Ghost => self.update_ghost(world, player, rng),
+            // W4-d38 b5 — aiStyle 2, AI_002_FloatingEye.
+            NpcKind::DemonEyeOwl => self.update_eye(world, player, dt),
+            // W4-d38 b4 — aiStyle 24, NPC.cs:25313-25537.
+            NpcKind::BirdBlue => self.update_bird(world, player, rng),
+            // W4-d38 b4 — aiStyle 24.
+            NpcKind::BirdRed => self.update_bird(world, player, rng),
+            // W4-d38 b4 — aiStyle 7, AI_007_TownEntities NPC.cs:52965+.
+            NpcKind::Squirrel => self.update_critter(world, player, rng),
+            // W4-d38 b4 — aiStyle 7.
+            NpcKind::Mouse => self.update_critter(world, player, rng),
+            // W4-d38 b4 — aiStyle 17, NPC.cs:24022-24151.
+            NpcKind::Raven => self.update_raven(world, player),
+            // W4-d38 b3 — aiStyle 3 shooter.
+            NpcKind::TacticalSkeleton => self.update_dungeon_shooter(world, player, rng),
+            // W4-d38 b3 — aiStyle 3 shooter.
+            NpcKind::SkeletonCommando => self.update_dungeon_shooter(world, player, rng),
+            // W4-d38 b3 — aiStyle 3, num83 group NPC.cs:57606.
+            NpcKind::AngryBonesBig => self.update_skeleton(world, player, dt),
+            // W4-d38 b3 — aiStyle 3, num83 group.
+            NpcKind::AngryBonesBigMuscle => self.update_skeleton(world, player, dt),
+            // W4-d38 b3 — aiStyle 3, num83 group.
+            NpcKind::AngryBonesBigHelmet => self.update_skeleton(world, player, dt),
+            // W4-d38 b2 — aiStyle 8 caster.
+            NpcKind::DiabolistWhite => self.update_caster(world, player, rng),
+            // W4-d38 b2 — aiStyle 3, the 5/0.2 cap NPC.cs:57944-57971.
+            NpcKind::BoneLee => self.update_skeleton(world, player, dt),
+            // W4-d38 b2 — aiStyle 10, NPC.cs:21572-21918.
+            NpcKind::GiantCursedSkull => self.update_giant_cursed_skull(world, player, rng),
+            // W4-d38 b2 — aiStyle 3 shooter, NPC.cs:59069-59800.
+            NpcKind::Paladin => self.update_dungeon_shooter(world, player, rng),
+            // W4-d38 b2 — aiStyle 3 shooter.
+            NpcKind::SkeletonSniper => self.update_dungeon_shooter(world, player, rng),
+            // W4-d38 b1 — aiStyle 8 caster, NPC.cs:20817-21376.
+            NpcKind::RaggedCaster => self.update_caster(world, player, rng),
+            // W4-d38 b1 — aiStyle 8 caster.
+            NpcKind::RaggedCasterOpenCoat => self.update_caster(world, player, rng),
+            // W4-d38 b1 — aiStyle 8 caster.
+            NpcKind::Necromancer => self.update_caster(world, player, rng),
+            // W4-d38 b1 — aiStyle 8 caster.
+            NpcKind::NecromancerArmored => self.update_caster(world, player, rng),
+            // W4-d38 b1 — aiStyle 8 caster.
+            NpcKind::DiabolistRed => self.update_caster(world, player, rng),
         }
     }
 
@@ -9615,6 +9899,386 @@ impl Npc {
             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                 self.frame = 1;
             }
+            // W4-d38 b7 — case 333-336 (NPC.cs:70801-70846): the slime hop strip,
+            // the num2 motion class doubling/tripling the counter.
+            NpcKind::SlimeRibbonWhite => {
+                let num2 = if self.ai_action == 0 {
+                    if self.vy < 0.0 { 2 } else if self.vy > 0.0 { 3 }
+                    else if self.vx != 0.0 { 1 } else { 0 }
+                } else if self.ai_action == 1 { 4 } else { 0 };
+                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
+                if self.frame_counter >= 8.0 { self.frame += 1; self.frame_counter = 0.0; }
+                if self.frame >= self.rows() { self.frame = 0; }
+            }
+            // W4-d38 b7 — case 333-336 (NPC.cs:70801-70846): the slime hop strip,
+            // the num2 motion class doubling/tripling the counter.
+            NpcKind::SlimeRibbonYellow => {
+                let num2 = if self.ai_action == 0 {
+                    if self.vy < 0.0 { 2 } else if self.vy > 0.0 { 3 }
+                    else if self.vx != 0.0 { 1 } else { 0 }
+                } else if self.ai_action == 1 { 4 } else { 0 };
+                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
+                if self.frame_counter >= 8.0 { self.frame += 1; self.frame_counter = 0.0; }
+                if self.frame >= self.rows() { self.frame = 0; }
+            }
+            // W4-d38 b7 — case 333-336 (NPC.cs:70801-70846): the slime hop strip,
+            // the num2 motion class doubling/tripling the counter.
+            NpcKind::SlimeRibbonGreen => {
+                let num2 = if self.ai_action == 0 {
+                    if self.vy < 0.0 { 2 } else if self.vy > 0.0 { 3 }
+                    else if self.vx != 0.0 { 1 } else { 0 }
+                } else if self.ai_action == 1 { 4 } else { 0 };
+                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
+                if self.frame_counter >= 8.0 { self.frame += 1; self.frame_counter = 0.0; }
+                if self.frame >= self.rows() { self.frame = 0; }
+            }
+            // W4-d38 b7 — case 333-336 (NPC.cs:70801-70846): the slime hop strip,
+            // the num2 motion class doubling/tripling the counter.
+            NpcKind::SlimeRibbonRed => {
+                let num2 = if self.ai_action == 0 {
+                    if self.vy < 0.0 { 2 } else if self.vy > 0.0 { 3 }
+                    else if self.vx != 0.0 { 1 } else { 0 }
+                } else if self.ai_action == 1 { 4 } else { 0 };
+                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
+                if self.frame_counter >= 8.0 { self.frame += 1; self.frame_counter = 0.0; }
+                if self.frame >= self.rows() { self.frame = 0; }
+            }
+            // W4-d38 b7 — case 303/337 (NPC.cs:76853-76904): the grounded flip, the
+            // |vx|+1 walk over count rows, the air rows 4 (rise)/6 (fall).
+            NpcKind::BunnyXmas => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.vx == 0.0 { self.frame = 0; self.frame_counter = 0.0; }
+                    else {
+                        self.frame_counter += self.vx.abs() + 1.0;
+                        if self.frame_counter > 6.0 { self.frame += 1; self.frame_counter = 0.0; }
+                        if self.frame >= self.rows() { self.frame = 0; }
+                    }
+                } else if self.vy < 0.0 { self.frame_counter = 0.0; self.frame = 4; }
+                else { self.frame_counter = 0.0; self.frame = 6; }
+            }
+            // W4-d38 b6 — case 317/318 (NPC.cs:74019-74058): the vx-sign flip +
+            // atan2 rotation (+3.14 left), the 8-tick flap over 2 rows.
+            NpcKind::DemonEyeSpaceship => {
+                if self.vx > 0.0 {
+                    self.sprite_dir = 1; self.rotation = self.vy.atan2(self.vx);
+                }
+                if self.vx < 0.0 {
+                    self.sprite_dir = -1; self.rotation = self.vy.atan2(self.vx) + 3.14;
+                }
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 { self.frame += 1; self.frame_counter = 0.0; }
+                if self.frame >= self.rows() { self.frame = 0; }
+            }
+            // W4-d38 b6 — FindFrame humanoid-group case list (NPC.cs:68590-68601).
+            NpcKind::SkeletonTopHat => self.humanoid_town_frame(),
+            // W4-d38 b6 — FindFrame humanoid-group case list (NPC.cs:68590-68601).
+            NpcKind::SkeletonAstonaut => self.humanoid_town_frame(),
+            // W4-d38 b6 — FindFrame humanoid-group case list (NPC.cs:68590-68601).
+            NpcKind::SkeletonAlien => self.humanoid_town_frame(),
+            // W4-d38 b6 — case 328 has no FindFrame arm (NPC.cs:66705-77291);
+            // Main.npcFrameCount[328] = 1 — the single frame holds row 0.
+            NpcKind::PumpkingBlade => { self.frame_counter = 0.0; self.frame = 0; }
+            // W4-d38 b5 — case 302/304 (NPC.cs:70801-70846): the slime hop strip
+            // PLUS the type-302/304 spriteDirection = direction snap (:70824).
+            NpcKind::SlimeMasked => {
+                self.sprite_dir = self.facing;
+                let num2 = if self.ai_action == 0 {
+                    if self.vy < 0.0 { 2 } else if self.vy > 0.0 { 3 }
+                    else if self.vx != 0.0 { 1 } else { 0 }
+                } else if self.ai_action == 1 { 4 } else { 0 };
+                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
+                if self.frame_counter >= 8.0 { self.frame += 1; self.frame_counter = 0.0; }
+                if self.frame >= self.rows() { self.frame = 0; }
+            }
+            // W4-d38 b5 — case 303/337 (NPC.cs:76853-76904): the grounded flip, the
+            // |vx|+1 walk over count rows, the air rows 4 (rise)/6 (fall).
+            NpcKind::BunnySlimed => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.vx == 0.0 { self.frame = 0; self.frame_counter = 0.0; }
+                    else {
+                        self.frame_counter += self.vx.abs() + 1.0;
+                        if self.frame_counter > 6.0 { self.frame += 1; self.frame_counter = 0.0; }
+                        if self.frame >= self.rows() { self.frame = 0; }
+                    }
+                } else if self.vy < 0.0 { self.frame_counter = 0.0; self.frame = 4; }
+                else { self.frame_counter = 0.0; self.frame = 6; }
+            }
+            // W4-d38 b5 — case 302/304 (NPC.cs:70801-70846): the slime hop strip
+            // PLUS the type-302/304 spriteDirection = direction snap (:70824).
+            NpcKind::HoppinJack => {
+                self.sprite_dir = self.facing;
+                let num2 = if self.ai_action == 0 {
+                    if self.vy < 0.0 { 2 } else if self.vy > 0.0 { 3 }
+                    else if self.vx != 0.0 { 1 } else { 0 }
+                } else if self.ai_action == 1 { 4 } else { 0 };
+                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
+                if self.frame_counter >= 8.0 { self.frame += 1; self.frame_counter = 0.0; }
+                if self.frame >= self.rows() { self.frame = 0; }
+            }
+            // W4-d38 b5 — case 316 (NPC.cs:74834-74885): the vx-sign flip + vx*0.1
+            // tilt, the 6-tick flap over the 4-row strip (no reserved row).
+            NpcKind::Ghost => {
+                if self.vx > 0.0 { self.sprite_dir = 1; }
+                if self.vx < 0.0 { self.sprite_dir = -1; }
+                self.rotation = self.vx * 0.1;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 { self.frame += 1; self.frame_counter = 0.0; }
+                if self.frame >= self.rows() { self.frame = 0; }
+            }
+            // W4-d38 b5 — case 317/318 (NPC.cs:74019-74058): the vx-sign flip +
+            // atan2 rotation (+3.14 left), the 8-tick flap over 2 rows.
+            NpcKind::DemonEyeOwl => {
+                if self.vx > 0.0 {
+                    self.sprite_dir = 1; self.rotation = self.vy.atan2(self.vx);
+                }
+                if self.vx < 0.0 {
+                    self.sprite_dir = -1; self.rotation = self.vy.atan2(self.vx) + 3.14;
+                }
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 { self.frame += 1; self.frame_counter = 0.0; }
+                if self.frame >= self.rows() { self.frame = 0; }
+            }
+            // W4-d38 b4 — case 297/298 (NPC.cs:73629-73653): the flip + vx*0.1 tilt,
+            // the perched row 4, the 4-tick flap over count-1 rows.
+            NpcKind::BirdBlue => {
+                self.sprite_dir = self.facing;
+                self.rotation = self.vx * 0.1;
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 4; self.frame_counter = 0.0;
+                } else {
+                    let num124 = self.rows() - 1;
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 { self.frame += 1; self.frame_counter = 0.0; }
+                    if self.frame >= num124 { self.frame = 0; }
+                }
+            }
+            // W4-d38 b4 — case 297/298 (NPC.cs:73629-73653): the flip + vx*0.1 tilt,
+            // the perched row 4, the 4-tick flap over count-1 rows.
+            NpcKind::BirdRed => {
+                self.sprite_dir = self.facing;
+                self.rotation = self.vx * 0.1;
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 4; self.frame_counter = 0.0;
+                } else {
+                    let num124 = self.rows() - 1;
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 { self.frame += 1; self.frame_counter = 0.0; }
+                    if self.frame >= num124 { self.frame = 0; }
+                }
+            }
+            // W4-d38 b4 — case 299 (NPC.cs:76458-76512): the grounded flip, the
+            // |vx|*0.5+1 walk over count-1 rows, the air rows 2/4.
+            NpcKind::Squirrel => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.vx == 0.0 { self.frame = 0; self.frame_counter = 0.0; }
+                    else {
+                        self.frame_counter += self.vx.abs() * 0.5 + 1.0;
+                        if self.frame_counter > 6.0 { self.frame += 1; self.frame_counter = 0.0; }
+                        if self.frame >= self.rows() - 1 { self.frame = 1; }
+                    }
+                } else if self.vy < 0.0 { self.frame_counter = 0.0; self.frame = 2; }
+                else { self.frame_counter = 0.0; self.frame = 4; }
+            }
+            // W4-d38 b4 — case 300 (NPC.cs:76513-76565): the grounded flip, the
+            // idle 2-row blink (>8), the |vx|*0.5+1 walk rows 2.., air same.
+            NpcKind::Mouse => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.vx == 0.0 {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 8.0 { self.frame += 1; self.frame_counter = 0.0; }
+                        if self.frame > 1 { self.frame = 0; }
+                    } else {
+                        self.frame_counter += self.vx.abs() * 0.5 + 1.0;
+                        if self.frame_counter > 6.0 { self.frame += 1; self.frame_counter = 0.0; }
+                        if self.frame >= self.rows() { self.frame = 2; }
+                    }
+                } else {
+                    self.frame_counter += self.vx.abs() * 0.5 + 1.0;
+                    if self.frame_counter > 6.0 { self.frame += 1; self.frame_counter = 0.0; }
+                    if self.frame >= self.rows() { self.frame = 2; }
+                }
+            }
+            // W4-d38 b4 — case 301 (NPC.cs:73559-73606): the grounded -direction flip,
+            // the air vx-sign flip, the vx*0.1 tilt, the >4 flap rows 1..4.
+            NpcKind::Raven => {
+                if self.vy == 0.0 { self.sprite_dir = -self.facing; }
+                else {
+                    if self.vx > 0.5 { self.sprite_dir = -1; }
+                    if self.vx < -0.5 { self.sprite_dir = 1; }
+                }
+                self.rotation = self.vx * 0.1;
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 0; self.frame_counter = 0.0;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 4.0 { self.frame_counter = 0.0; self.frame += 1; }
+                    if self.frame > 4 || self.frame == 0 { self.frame = 1; }
+                }
+            }
+            // W4-d38 b3 — case 291/292 (NPC.cs:76139-76178): the grounded flip, the
+            // ai[2]>0 aim row (ai[2]-1), the |vx|*3.3 walk rows 7.., air row 6.
+            NpcKind::TacticalSkeleton => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.ai[2] > 0.0 {
+                        self.sprite_dir = self.facing;
+                        self.frame = (self.ai[2] as i32 - 1) as u32;
+                        self.frame_counter = 0.0;
+                    } else {
+                        if self.frame < 7 { self.frame = 7; }
+                        self.frame_counter += self.vx.abs() * 3.3;
+                        if self.frame_counter > 6.0 { self.frame += 1; self.frame_counter = 0.0; }
+                        if self.frame >= self.rows() { self.frame = 7; }
+                    }
+                } else { self.frame_counter = 0.0; self.frame = 6; }
+            }
+            // W4-d38 b3 — case 293 (NPC.cs:76021-76059): the grounded flip, the
+            // ai[2]>0 aim row (ai[2]), the |vx|*3 walk rows 6.., air row 0.
+            NpcKind::SkeletonCommando => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.ai[2] > 0.0 {
+                        self.sprite_dir = self.facing;
+                        self.frame = self.ai[2] as i32 as u32;
+                        self.frame_counter = 0.0;
+                    } else {
+                        if self.frame < 6 { self.frame = 6; }
+                        self.frame_counter += self.vx.abs() * 3.0;
+                        if self.frame_counter > 6.0 { self.frame += 1; self.frame_counter = 0.0; }
+                        if self.frame >= self.rows() { self.frame = 6; }
+                    }
+                } else { self.frame_counter = 0.0; self.frame = 0; }
+            }
+            // W4-d38 b3 — FindFrame humanoid-group case list (NPC.cs:68590-68601).
+            NpcKind::AngryBonesBig => self.humanoid_town_frame(),
+            // W4-d38 b3 — FindFrame humanoid-group case list (NPC.cs:68590-68601).
+            NpcKind::AngryBonesBigMuscle => self.humanoid_town_frame(),
+            // W4-d38 b3 — FindFrame humanoid-group case list (NPC.cs:68590-68601).
+            NpcKind::AngryBonesBigHelmet => self.humanoid_town_frame(),
+            // W4-d38 b2 — case 281-286 (NPC.cs:77023-77054): the grounded flip,
+            // row 0 standing, row 1 windup (ai[1] > 0), row 2 airborne.
+            NpcKind::DiabolistWhite => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                }
+                self.frame = 0;
+                if self.vy != 0.0 { self.frame = 2; }
+                else if self.ai[1] > 0.0 { self.frame = 1; }
+            }
+            // W4-d38 b2 — FindFrame humanoid-group case list (NPC.cs:68590-68601).
+            NpcKind::BoneLee => self.humanoid_town_frame(),
+            // W4-d38 b2 — case 289 (NPC.cs:72652-72675): the <4/<8/else counter
+            // bands rows 0/1/2, the ai[3]==1 dash adds row 3.
+            NpcKind::GiantCursedSkull => {
+                self.frame_counter += 1.0;
+                if self.frame_counter < 4.0 { self.frame = 0; }
+                else if self.frame_counter < 8.0 { self.frame = 1; }
+                else { self.frame = 2; self.frame_counter = 0.0; }
+                if self.ai[3] == 1.0 { self.frame += 3; }
+            }
+            // W4-d38 b2 — case 290 (NPC.cs:75963-76016): the grounded flip, the
+            // ai[2]>0 throw rows 11/10/9, the |vx| walk rows 2..8, air row 1.
+            NpcKind::Paladin => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.ai[2] > 0.0 {
+                        self.frame = if self.ai[1] < 10.0 { 11 }
+                            else if self.ai[1] < 20.0 { 10 } else { 9 };
+                    } else if self.vx == 0.0 {
+                        self.frame_counter = 0.0; self.frame = 0;
+                    } else {
+                        if self.frame < 2 { self.frame = 2; }
+                        self.frame_counter += self.vx.abs();
+                        if self.frame_counter > 6.0 { self.frame += 1; self.frame_counter = 0.0; }
+                        if self.frame > 8 { self.frame = 2; }
+                    }
+                } else { self.frame_counter = 0.0; self.frame = 1; }
+            }
+            // W4-d38 b2 — case 291/292 (NPC.cs:76139-76178): the grounded flip, the
+            // ai[2]>0 aim row (ai[2]-1), the |vx|*3.3 walk rows 7.., air row 6.
+            NpcKind::SkeletonSniper => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.ai[2] > 0.0 {
+                        self.sprite_dir = self.facing;
+                        self.frame = (self.ai[2] as i32 - 1) as u32;
+                        self.frame_counter = 0.0;
+                    } else {
+                        if self.frame < 7 { self.frame = 7; }
+                        self.frame_counter += self.vx.abs() * 3.3;
+                        if self.frame_counter > 6.0 { self.frame += 1; self.frame_counter = 0.0; }
+                        if self.frame >= self.rows() { self.frame = 7; }
+                    }
+                } else { self.frame_counter = 0.0; self.frame = 6; }
+            }
+            // W4-d38 b1 — case 281-286 (NPC.cs:77023-77054): the grounded flip,
+            // row 0 standing, row 1 windup (ai[1] > 0), row 2 airborne.
+            NpcKind::RaggedCaster => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                }
+                self.frame = 0;
+                if self.vy != 0.0 { self.frame = 2; }
+                else if self.ai[1] > 0.0 { self.frame = 1; }
+            }
+            // W4-d38 b1 — case 281-286 (NPC.cs:77023-77054): the grounded flip,
+            // row 0 standing, row 1 windup (ai[1] > 0), row 2 airborne.
+            NpcKind::RaggedCasterOpenCoat => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                }
+                self.frame = 0;
+                if self.vy != 0.0 { self.frame = 2; }
+                else if self.ai[1] > 0.0 { self.frame = 1; }
+            }
+            // W4-d38 b1 — case 281-286 (NPC.cs:77023-77054): the grounded flip,
+            // row 0 standing, row 1 windup (ai[1] > 0), row 2 airborne.
+            NpcKind::Necromancer => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                }
+                self.frame = 0;
+                if self.vy != 0.0 { self.frame = 2; }
+                else if self.ai[1] > 0.0 { self.frame = 1; }
+            }
+            // W4-d38 b1 — case 281-286 (NPC.cs:77023-77054): the grounded flip,
+            // row 0 standing, row 1 windup (ai[1] > 0), row 2 airborne.
+            NpcKind::NecromancerArmored => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                }
+                self.frame = 0;
+                if self.vy != 0.0 { self.frame = 2; }
+                else if self.ai[1] > 0.0 { self.frame = 1; }
+            }
+            // W4-d38 b1 — case 281-286 (NPC.cs:77023-77054): the grounded flip,
+            // row 0 standing, row 1 windup (ai[1] > 0), row 2 airborne.
+            NpcKind::DiabolistRed => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                }
+                self.frame = 0;
+                if self.vy != 0.0 { self.frame = 2; }
+                else if self.ai[1] > 0.0 { self.frame = 1; }
+            }
             // `case 370` (`NPC.cs:72142-72236`): the boss's state-keyed
             // strip over `Main.npcFrameCount[370]` = 8 (`Main.cs:67121`).
             // The hover cycle animates rows 0..5 (the >5 / >4 counters);
@@ -12591,6 +13255,270 @@ impl Npc {
         // The stop state's X damp (`:59626`'s `velocity.X *= 0.9`).
         if self.ai[2] > 0.0 {
             self.vx *= 0.9;
+        }
+    }
+
+    /// W4-d38 — the hardmode dungeon shooters (290 Paladin / 291 Sniper /
+    /// 292 Tactical / 293 Commando) through the faithful
+    /// `npc_ai_dungeon_shooter::dungeon_shooter_ai` (`NPC.cs:59069-59800`).
+    /// The four are excluded from the generic AI_003 walker (`:58322`); the
+    /// shooter block IS their walk + fire. The shots drain into
+    /// `wants_hostile_shot` (the Tactical's four-bolt volley included).
+    fn update_dungeon_shooter(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        crate::npc_ai_dungeon_shooter::dungeon_shooter_ai(self, world, player, rng);
+    }
+
+    /// W4-d38 — the Giant Cursed Skull (289) through the faithful
+    /// `npc_ai_style10::style10_ai` (`NPC.cs:21572-21918`, the aiStyle-10
+    /// arm). The 289 path: the 600-tick cycle, the distance-banded approach,
+    /// the 120-tick charge → 40-tick dash with the tick-20 Shadowflames bolt
+    /// (299, 25 dmg, 6 speed, `:21804-21811`). The module owns the
+    /// noTileCollide integration; the bolt drains into `wants_hostile_shot`.
+    /// The 34/289 paths draw NO `Main.rand` (the only draw is the 694 book
+    /// tail's, `:21851`). `justHit` folds onto `hurt_cd > 0` (the module
+    /// convention); netMode 0 (single-player).
+    fn update_giant_cursed_skull(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let out = crate::npc_ai_style10::style10_ai(
+            self,
+            world,
+            player,
+            crate::npc_ai_style10::GIANT_CURSED_SKULL,
+            self.hurt_cd > 0.0,
+            0,
+            rng,
+        );
+        // The 289 path writes no knockBackResist override and spawns no
+        // Water Sphere (those are the 694 book's); the Item8 play is the
+        // book's too. The bolt already rode `wants_hostile_shot` in-module.
+        let _ = out;
+    }
+
+    /// W4-d38 — the birds (297 Blue Jay / 298 Cardinal) through the faithful
+    /// `npc_ai_style24::ai_style_24` (`NPC.cs:25313-25537`). The module is
+    /// velocity-only (the perch/startle/descend/flight state machine, the
+    /// ground probe, the wet tail); this wrapper feeds the single session
+    /// player + the carried collide flags and runs the tile-collision
+    /// integration the C#'s `UpdateNPC` tail applies (the birds have
+    /// noTileCollide false; noGravity rides the module's per-state write).
+    /// The poop gate's `RollOnlyBadLuckExtreme(50)` draws only for a
+    /// negative-luck player (the port's session luck is 0 → no draw); the
+    /// 1080 BirdDroppings shot drains into `wants_hostile_shot`.
+    fn update_bird(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let cand = crate::npc_target::session_candidate_for(player, self.kind);
+        let p = crate::npc_ai_style24::Style24Player {
+            candidate: cand,
+            luck: 0.0,
+            is_cenx: false,
+        };
+        let ctx = crate::npc_ai_style24::Style24Ctx {
+            players: &[p],
+            neighbors: &[],
+            net_mode: 0,
+            cloud_alpha: 0.0,
+            day_time: world.day_time,
+            release_owner: self.release_owner as i32,
+            ticker: 0,
+        };
+        let out = crate::npc_ai_style24::ai_style_24(self, self.kind.cs_id() as i32, world, &ctx, rng);
+        // The poop shot (the 1080 BirdDroppings, zero velocity/damage).
+        if let Some((x, y)) = out.poop_shot {
+            self.wants_hostile_shot.push((1080, x, y, 0.0, 0.0, 0));
+        }
+        // The module's last noGravity write (perched false, flight true).
+        // The port's gravity pass reads `kind.no_gravity()` (false for the
+        // birds) — the perched gravity is the C#'s own; the flight's
+        // noGravity is the module's velocity-only hover (the integration
+        // below applies no gravity when the module set it).
+        let (w, h) = self.size();
+        self.old_vx = self.vx;
+        self.old_vy = self.vy;
+        self.collide_x = false;
+        self.collide_y = false;
+        let nx = self.x + self.vx;
+        if !collides_rect(world, nx, self.y, w, h) {
+            self.x = nx;
+        } else {
+            self.vx = 0.0;
+            self.collide_x = true;
+        }
+        let ny = self.y + self.vy;
+        if !collides_rect(world, self.x, ny, w, h) {
+            self.y = ny;
+            self.on_ground = false;
+        } else if self.vy > 0.0 {
+            let ty = ((ny + h) / TILE_PX).floor() as i32;
+            self.y = ty as f32 * TILE_PX - h;
+            self.vy = 0.0;
+            self.on_ground = true;
+            self.collide_y = true;
+        } else if self.vy < 0.0 {
+            let ty = (ny / TILE_PX).floor() as i32;
+            self.y = (ty + 1) as f32 * TILE_PX;
+            self.vy = 0.0;
+            self.collide_y = true;
+        }
+    }
+
+    /// W4-d38 — the catchable critters (299 Squirrel / 300 Mouse / 303
+    /// BunnySlimed / 337 BunnyXmas) through `npc_ai_critter::critter_ai`
+    /// (the `AI_007_TownEntities` wander/hop subset, `NPC.cs:52965-55563`).
+    /// The idle/walk durations draw on the caller stream (module docs).
+    fn update_critter(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        crate::npc_ai_critter::critter_ai(self, world, player, rng);
+    }
+
+    /// W4-d38 — the Ghost (316) through `npc_ai_ghost::ghost_ai` (the
+    /// aiStyle-22 arm's 316 branches, `NPC.cs:24666-25234`). The far/dead
+    /// gate's fade + flee, the dwell/dash anchor, the floor probe, the 0.1
+    /// gravity / 3 cap, the num320 = 2 approach. The module owns the
+    /// noTileCollide integration; the flee drift draws one Next(-1, 2).
+    fn update_ghost(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        crate::npc_ai_ghost::ghost_ai(self, world, player, rng);
+    }
+
+    /// W4-d38 — the Raven (301) through the aiStyle-17 arm
+    /// (`NPC.cs:24022-24151`): the perched startle (the player within the
+    /// ±100 box or any damage → the -6 hop), the flight's collideX/Y
+    /// bounces (×-0.5, the ±2/±1 floors), the ±3 X/Y caps with the 0.1
+    /// accel + the 0.05 near-zero brake, the hover anchor (the player's
+    /// top -100 when >50 px aside), the wet tail. noGravity rides the
+    /// per-tick write (perched false, flight true). RNG-free by
+    /// construction (the arm draws no Main.rand).
+    fn update_raven(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (cx, _cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // `:24024-24047` — the perch: noGravity off, the startle gate.
+        if self.ai[0] == 0.0 {
+            // The facing follows the player (TargetClosest, `:24028`).
+            self.facing = if pcx >= cx { 1 } else { -1 };
+            self.sprite_dir = self.facing;
+            // `:24031-24044` — moving, rising, falling fast, the player
+            // close, or any damage → the flight startle.
+            let close = (pcx - cx).abs() < 100.0 + w * 0.5
+                && (pcy - self.y).abs() < 100.0 + h * 0.5;
+            if self.vx != 0.0 || self.vy < 0.0 || (self.vy as f64) > 0.3
+                || close || self.hp < self.max_hp
+            {
+                self.ai[0] = 1.0;
+                if !(self.vx != 0.0 || self.vy < 0.0 || (self.vy as f64) > 0.3) {
+                    self.vy -= 6.0;
+                }
+                self.net_update = true;
+            }
+        } else if !player.dead {
+            // `:24048-24137` — the flight. The collide bounces.
+            if self.collide_x {
+                self.vx = self.old_vx * -0.5;
+                if self.facing == -1 && self.vx > 0.0 && self.vx < 2.0 {
+                    self.vx = 2.0;
+                }
+                if self.facing == 1 && self.vx < 0.0 && self.vx > -2.0 {
+                    self.vx = -2.0;
+                }
+            }
+            if self.collide_y {
+                self.vy = self.old_vy * -0.5;
+                if self.vy > 0.0 && self.vy < 1.0 {
+                    self.vy = 1.0;
+                }
+                if self.vy < 0.0 && self.vy > -1.0 {
+                    self.vy = -1.0;
+                }
+            }
+            // TargetClosest (`:24074`).
+            self.facing = if pcx >= cx { 1 } else { -1 };
+            self.sprite_dir = self.facing;
+            // `:24075-24106` — the X approach (±3 cap, 0.1 accel, the
+            // 0.1 double-add past the far cap, the 0.05 near-zero brake).
+            if self.facing == -1 && self.vx > -3.0 {
+                self.vx -= 0.1;
+                if self.vx > 3.0 {
+                    self.vx -= 0.1;
+                } else if self.vx > 0.0 {
+                    self.vx -= 0.05;
+                }
+                if self.vx < -3.0 {
+                    self.vx = -3.0;
+                }
+            } else if self.facing == 1 && self.vx < 3.0 {
+                self.vx += 0.1;
+                if self.vx < -3.0 {
+                    self.vx += 0.1;
+                } else if self.vx < 0.0 {
+                    self.vx += 0.05;
+                }
+                if self.vx > 3.0 {
+                    self.vx = 3.0;
+                }
+            }
+            // `:24107-24136` — the hover anchor: the player's top -100
+            // when >50 px aside, else the player's top - height/2.
+            let dx = (cx - pcx).abs();
+            let mut anchor_y = player.y - h * 0.5;
+            if dx > 50.0 {
+                anchor_y -= 100.0;
+            }
+            if self.y < anchor_y {
+                self.vy += 0.05;
+                if self.vy < 0.0 {
+                    self.vy += 0.01;
+                }
+            } else {
+                self.vy -= 0.05;
+                if self.vy > 0.0 {
+                    self.vy -= 0.01;
+                }
+            }
+            if self.vy < -3.0 {
+                self.vy = -3.0;
+            }
+            if self.vy > 3.0 {
+                self.vy = 3.0;
+            }
+        }
+        // `:24138-24150` — the wet tail.
+        if self.wet {
+            if self.vy > 0.0 {
+                self.vy *= 0.95;
+            }
+            self.vy -= 0.5;
+            if self.vy < -4.0 {
+                self.vy = -4.0;
+            }
+        }
+        // The integration: noGravity in flight (the module's per-tick write),
+        // gravity on the perch. The tile collision (the raven has no
+        // noTileCollide).
+        if self.ai[0] == 0.0 {
+            self.vy = (self.vy + GRAVITY).min(MAX_FALL);
+        }
+        self.old_vx = self.vx;
+        self.old_vy = self.vy;
+        self.collide_x = false;
+        self.collide_y = false;
+        let nx = self.x + self.vx;
+        if !collides_rect(world, nx, self.y, w, h) {
+            self.x = nx;
+        } else {
+            self.vx = 0.0;
+            self.collide_x = true;
+        }
+        let ny = self.y + self.vy;
+        if !collides_rect(world, self.x, ny, w, h) {
+            self.y = ny;
+            self.on_ground = false;
+        } else if self.vy > 0.0 {
+            let ty = ((ny + h) / TILE_PX).floor() as i32;
+            self.y = ty as f32 * TILE_PX - h;
+            self.vy = 0.0;
+            self.on_ground = true;
+            self.collide_y = true;
+        } else if self.vy < 0.0 {
+            let ty = (ny / TILE_PX).floor() as i32;
+            self.y = (ty + 1) as f32 * TILE_PX;
+            self.vy = 0.0;
+            self.collide_y = true;
         }
     }
 
@@ -19573,6 +20501,48 @@ impl Npc {
             NpcKind::BlazingWheel => 353,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
+            // W4-d38 b7 — vanilla types (G6 key injective).
+            NpcKind::SlimeRibbonWhite => 333,
+            NpcKind::SlimeRibbonYellow => 334,
+            NpcKind::SlimeRibbonGreen => 335,
+            NpcKind::SlimeRibbonRed => 336,
+            NpcKind::BunnyXmas => 337,
+            // W4-d38 b6 — vanilla types (G6 key injective).
+            NpcKind::DemonEyeSpaceship => 318,
+            NpcKind::SkeletonTopHat => 322,
+            NpcKind::SkeletonAstonaut => 323,
+            NpcKind::SkeletonAlien => 324,
+            NpcKind::PumpkingBlade => 328,
+            // W4-d38 b5 — vanilla types (G6 key injective).
+            NpcKind::SlimeMasked => 302,
+            NpcKind::BunnySlimed => 303,
+            NpcKind::HoppinJack => 304,
+            NpcKind::Ghost => 316,
+            NpcKind::DemonEyeOwl => 317,
+            // W4-d38 b4 — vanilla types (G6 key injective).
+            NpcKind::BirdBlue => 297,
+            NpcKind::BirdRed => 298,
+            NpcKind::Squirrel => 299,
+            NpcKind::Mouse => 300,
+            NpcKind::Raven => 301,
+            // W4-d38 b3 — vanilla types (G6 key injective).
+            NpcKind::TacticalSkeleton => 292,
+            NpcKind::SkeletonCommando => 293,
+            NpcKind::AngryBonesBig => 294,
+            NpcKind::AngryBonesBigMuscle => 295,
+            NpcKind::AngryBonesBigHelmet => 296,
+            // W4-d38 b2 — vanilla types (G6 key injective).
+            NpcKind::DiabolistWhite => 286,
+            NpcKind::BoneLee => 287,
+            NpcKind::GiantCursedSkull => 289,
+            NpcKind::Paladin => 290,
+            NpcKind::SkeletonSniper => 291,
+            // W4-d38 b1 — vanilla types (G6 key injective).
+            NpcKind::RaggedCaster => 281,
+            NpcKind::RaggedCasterOpenCoat => 282,
+            NpcKind::Necromancer => 283,
+            NpcKind::NecromancerArmored => 284,
+            NpcKind::DiabolistRed => 285,
             // The wyvern family (S1-D-3): the gate-reassigned protocol ids
             // (`to_u16`'s 223-228 band) — the vanilla 87-92 collide with the
             // Scutlix/saucer arms above, so the hash rides the port band
@@ -24674,7 +25644,10 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 290] = [
+    // Wave-1 splice pin (367 §1): 322 = the pre-wave 270 + W4-d34's 17 +
+    // W4-d38's 35 (the declared 290/305 branch pins were stale-by-design;
+    // the roster grows to 665 by the spine end).
+    pub(super) const ALL_KINDS: [NpcKind; 322] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24924,6 +25897,48 @@ mod tests {
         // S1-D-3z — the blood-moon pair.
         NpcKind::BloodZombie,
         NpcKind::Drippler,
+        // W4-d38 b7.
+        NpcKind::SlimeRibbonWhite,
+        NpcKind::SlimeRibbonYellow,
+        NpcKind::SlimeRibbonGreen,
+        NpcKind::SlimeRibbonRed,
+        NpcKind::BunnyXmas,
+        // W4-d38 b6.
+        NpcKind::DemonEyeSpaceship,
+        NpcKind::SkeletonTopHat,
+        NpcKind::SkeletonAstonaut,
+        NpcKind::SkeletonAlien,
+        NpcKind::PumpkingBlade,
+        // W4-d38 b5.
+        NpcKind::SlimeMasked,
+        NpcKind::BunnySlimed,
+        NpcKind::HoppinJack,
+        NpcKind::Ghost,
+        NpcKind::DemonEyeOwl,
+        // W4-d38 b4.
+        NpcKind::BirdBlue,
+        NpcKind::BirdRed,
+        NpcKind::Squirrel,
+        NpcKind::Mouse,
+        NpcKind::Raven,
+        // W4-d38 b3.
+        NpcKind::TacticalSkeleton,
+        NpcKind::SkeletonCommando,
+        NpcKind::AngryBonesBig,
+        NpcKind::AngryBonesBigMuscle,
+        NpcKind::AngryBonesBigHelmet,
+        // W4-d38 b2.
+        NpcKind::DiabolistWhite,
+        NpcKind::BoneLee,
+        NpcKind::GiantCursedSkull,
+        NpcKind::Paladin,
+        NpcKind::SkeletonSniper,
+        // W4-d38 b1.
+        NpcKind::RaggedCaster,
+        NpcKind::RaggedCasterOpenCoat,
+        NpcKind::Necromancer,
+        NpcKind::NecromancerArmored,
+        NpcKind::DiabolistRed,
         NpcKind::ZombieElf,
         NpcKind::ZombieElfBeard,
         NpcKind::ZombieElfGirl,
@@ -29434,8 +30449,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            290,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
+            322,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate; wave-1: W4-d34's 17 (266-280 keeps + Crab/DungeonGuardian @791/792) + W4-d38's 35 (the 281-337 anchor), 367 §1)"
         );
         assert!(
             covered > 43,
@@ -33062,6 +34077,48 @@ mod s1_d_2_tests {
         // S1-D-3z — the blood-moon pair (`NPC.cs:14609`/`:14623`).
         (NpcKind::BloodZombie, 3),
         (NpcKind::Drippler, 22),
+        // W4-d38 b7.
+        (NpcKind::SlimeRibbonWhite, 1),
+        (NpcKind::SlimeRibbonYellow, 1),
+        (NpcKind::SlimeRibbonGreen, 1),
+        (NpcKind::SlimeRibbonRed, 1),
+        (NpcKind::BunnyXmas, 7),
+        // W4-d38 b6.
+        (NpcKind::DemonEyeSpaceship, 2),
+        (NpcKind::SkeletonTopHat, 3),
+        (NpcKind::SkeletonAstonaut, 3),
+        (NpcKind::SkeletonAlien, 3),
+        (NpcKind::PumpkingBlade, 59),
+        // W4-d38 b5.
+        (NpcKind::SlimeMasked, 1),
+        (NpcKind::BunnySlimed, 7),
+        (NpcKind::HoppinJack, 1),
+        (NpcKind::Ghost, 22),
+        (NpcKind::DemonEyeOwl, 2),
+        // W4-d38 b4.
+        (NpcKind::BirdBlue, 24),
+        (NpcKind::BirdRed, 24),
+        (NpcKind::Squirrel, 7),
+        (NpcKind::Mouse, 7),
+        (NpcKind::Raven, 17),
+        // W4-d38 b3.
+        (NpcKind::TacticalSkeleton, 3),
+        (NpcKind::SkeletonCommando, 3),
+        (NpcKind::AngryBonesBig, 3),
+        (NpcKind::AngryBonesBigMuscle, 3),
+        (NpcKind::AngryBonesBigHelmet, 3),
+        // W4-d38 b2.
+        (NpcKind::DiabolistWhite, 8),
+        (NpcKind::BoneLee, 3),
+        (NpcKind::GiantCursedSkull, 10),
+        (NpcKind::Paladin, 3),
+        (NpcKind::SkeletonSniper, 3),
+        // W4-d38 b1.
+        (NpcKind::RaggedCaster, 8),
+        (NpcKind::RaggedCasterOpenCoat, 8),
+        (NpcKind::Necromancer, 8),
+        (NpcKind::NecromancerArmored, 8),
+        (NpcKind::DiabolistRed, 8),
         (NpcKind::ZombieElf, 3),
         (NpcKind::ZombieElfBeard, 3),
         (NpcKind::ZombieElfGirl, 3),
@@ -35419,5 +36476,586 @@ mod s1_f_13d_tests {
             assert_eq!(n.vy, 0.0);
             assert!(n.wants_hostile_shot.is_empty(), "{kind:?} fires nothing");
         }
+    }
+
+    // ---- W4-d38 b1 — the hardmode dungeon casters (281-285). Tests-as-code,
+    // WRITTEN NOT RUN (code-only mode). Every constant pins to its C# literal
+    // (`NPC.cs:12640-12709` SetDefaults, `:21011-21227` the caster arms). ----
+
+    /// The five casters' `SetDefaults` rows (`NPC.cs:12640-12709`): size,
+    /// aiStyle, lifeMax, damage, defense, value, knockBackResist, sounds and
+    /// the {20, 31} debuff immunity (`NPCID.cs:7731-7766`).
+    #[test]
+    fn w4_d38_b1_the_dungeon_caster_setdefaults_rows() {
+        // (kind, vanilla, w, h, ai, hp, dmg, def, value, kb)
+        let table = [
+            (NpcKind::RaggedCaster, 281u16, 18.0, 40.0, 8u8, 400, 40, 20, 1500.0, 0.6),
+            (NpcKind::RaggedCasterOpenCoat, 282, 18.0, 40.0, 8, 450, 35, 28, 1500.0, 0.5),
+            (NpcKind::Necromancer, 283, 18.0, 40.0, 8, 300, 50, 18, 1500.0, 0.55),
+            (NpcKind::NecromancerArmored, 284, 18.0, 40.0, 8, 450, 35, 24, 1500.0, 0.5),
+            (NpcKind::DiabolistRed, 285, 18.0, 40.0, 8, 200, 50, 12, 1500.0, 0.7),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb) in table {
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+            assert_eq!(kind.cs_id(), vanilla, "{kind:?} vanilla type");
+            assert_eq!(kind.net_id(), vanilla as i32, "{kind:?} net id");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_2"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_2"), "{kind:?} death");
+            // The {20, 31} immunity (Poisoned + Confused).
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[20], "{kind:?} immune to 20");
+            assert!(b.buff_immune[31], "{kind:?} immune to 31");
+        }
+    }
+
+    /// The casters ride the case-281..286 FindFrame arm (`NPC.cs:77023-77054`):
+    /// row 0 standing, row 1 while the windup (ai[1] > 0) runs, row 2 airborne.
+    #[test]
+    fn w4_d38_b1_the_casters_find_frame_three_rows() {
+        for kind in [
+            NpcKind::RaggedCaster,
+            NpcKind::RaggedCasterOpenCoat,
+            NpcKind::Necromancer,
+            NpcKind::NecromancerArmored,
+            NpcKind::DiabolistRed,
+        ] {
+            let mut n = bare(kind);
+            n.vx = 0.0;
+            n.vy = 0.0;
+            n.ai[1] = 0.0;
+            n.find_frame();
+            assert_eq!(n.frame, 0, "{kind:?} standing row 0");
+            n.ai[1] = 10.0;
+            n.find_frame();
+            assert_eq!(n.frame, 1, "{kind:?} windup row 1");
+            n.vy = 2.0;
+            n.find_frame();
+            assert_eq!(n.frame, 2, "{kind:?} airborne row 2");
+        }
+    }
+
+    /// The necromancer's shoot tick (`NPC.cs:21193-21223`): the ±30 jitter
+    /// draws TWO Next(-30,31) (X then Y) on the caller stream and leads the
+    /// player's velocity ×10; the shot is the 290 bolt at 30 damage, speed 6.
+    #[test]
+    fn w4_d38_b1_the_necromancer_shoot_draws_two_jitters() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for _ in 0..120 {
+            player.update(&w, crate::player::PlayerInput::default());
+        }
+        let mut n = bare(NpcKind::Necromancer);
+        n.x = player.x - 200.0;
+        n.y = player.y;
+        // Arm the windup so the next step lands on the shoot tick (ai[1]==25).
+        n.ai[0] = 100.0;
+        n.ai[1] = 26.0;
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        let mut witness = tr_core::UnifiedRandom::new(7);
+        let _ = witness.next_range(-30, 31);
+        let _ = witness.next_range(-30, 31);
+        n.update_caster(&w, &player, &mut rng);
+        assert_eq!(rng.peek(), witness.peek(), "the two jitter draws");
+        assert_eq!(n.wants_hostile_shot.len(), 1, "one 290 bolt");
+        let (kind, _, _, _, _, dmg) = n.wants_hostile_shot[0];
+        assert_eq!(kind, 290, "the necromancer bolt");
+        assert_eq!(dmg, 30, "classic damage");
+    }
+
+    // ---- W4-d38 b2 — DiabolistWhite 286, BoneLee 287, GiantCursedSkull 289,
+    // Paladin 290, SkeletonSniper 291. Tests-as-code, WRITTEN NOT RUN. ----
+
+    /// The batch's `SetDefaults` rows (`NPC.cs:12710-12782`): size, aiStyle,
+    /// lifeMax, damage, defense, value, knockBackResist, sounds, immunities.
+    #[test]
+    fn w4_d38_b2_the_setdefaults_rows() {
+        // (kind, vanilla, w, h, ai, hp, dmg, def, value, kb, hit, death)
+        let table = [
+            (NpcKind::DiabolistWhite, 286u16, 18.0, 40.0, 8u8, 250, 60, 10, 1500.0, 0.65, "NPC_Hit_2", "NPC_Killed_2"),
+            (NpcKind::BoneLee, 287, 18.0, 40.0, 3, 1000, 90, 42, 2000.0, 0.3, "NPC_Hit_2", "NPC_Killed_2"),
+            (NpcKind::GiantCursedSkull, 289, 44.0, 44.0, 10, 400, 60, 20, 150.0, 0.2, "NPC_Hit_2", "NPC_Killed_2"),
+            (NpcKind::Paladin, 290, 34.0, 62.0, 3, 5000, 100, 50, 50000.0, 0.0, "NPC_Hit_4", "NPC_Killed_6"),
+            (NpcKind::SkeletonSniper, 291, 18.0, 40.0, 3, 400, 60, 28, 1000.0, 0.4, "NPC_Hit_2", "NPC_Killed_2"),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb, hit, death) in table {
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+            assert_eq!(kind.cs_id(), vanilla, "{kind:?} vanilla type");
+            assert_eq!(kind.net_id(), vanilla as i32, "{kind:?} net id");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.hit_sound(), Some(hit), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some(death), "{kind:?} death");
+        }
+        // The Giant Cursed Skull is noGravity + noTileCollide (`NPC.cs:12763-12764`).
+        assert!(NpcKind::GiantCursedSkull.no_gravity());
+        // The Paladin's {20, 31, 69} immunity (`NPCID.cs:7794`); 69 folds 36.
+        let b = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::Paladin);
+        assert!(b.buff_immune[20] && b.buff_immune[31] && b.buff_immune[69]);
+        assert!(b.buff_immune[36], "the 69 -> 36 fold");
+        // BoneLee / Sniper carry {20} only (`NPCID.cs:7773`/`:7801`).
+        let bl = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::BoneLee);
+        assert!(bl.buff_immune[20] && !bl.buff_immune[31]);
+    }
+
+    /// The AI_003 walk caps (`NPC.cs:57944-57971` the BoneLee 5/0.2 arm;
+    /// `:59717` the shooters' 1f default — the Paladin/Sniper are excluded
+    /// from the num107 ladder by `:58322`).
+    #[test]
+    fn w4_d38_b2_the_walk_caps() {
+        assert_eq!(NpcKind::BoneLee.ai3_walk_speed(), Some(5.0));
+        assert_eq!(NpcKind::Paladin.ai3_walk_speed(), Some(1.0));
+        assert_eq!(NpcKind::SkeletonSniper.ai3_walk_speed(), Some(1.0));
+    }
+
+    /// The BoneLee rides the humanoid-group FindFrame (`NPC.cs:68590`): the
+    /// 16-row strip, idle row 0, the walk accumulator stepping rows 2..15.
+    #[test]
+    fn w4_d38_b2_the_bone_lee_humanoid_frame() {
+        assert_eq!(NpcKind::BoneLee.humanoid_frame_count(), 16);
+        let mut n = bare(NpcKind::BoneLee);
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.find_frame();
+        assert_eq!(n.frame, 0, "idle row 0");
+        n.vx = 2.0;
+        for _ in 0..20 {
+            n.find_frame();
+        }
+        assert!(n.frame >= 2, "the walk steps past row 1, got {}", n.frame);
+    }
+
+    /// The Giant Cursed Skull's FindFrame (`NPC.cs:72652-72675`): the <4/<8
+    /// counter bands rows 0/1/2, the ai[3]==1 dash adds row 3.
+    #[test]
+    fn w4_d38_b2_the_giant_skull_frame_bands() {
+        let mut n = bare(NpcKind::GiantCursedSkull);
+        n.frame_counter = 0.0;
+        n.find_frame();
+        assert_eq!(n.frame, 0, "counter 1 < 4 -> row 0");
+        n.frame_counter = 4.0;
+        n.find_frame();
+        assert_eq!(n.frame, 1, "counter 5 < 8 -> row 1");
+        n.frame_counter = 8.0;
+        n.find_frame();
+        assert_eq!(n.frame, 2, "counter 9 -> row 2, reset");
+        assert_eq!(n.frame_counter, 0.0);
+        n.ai[3] = 1.0;
+        n.frame_counter = 0.0;
+        n.find_frame();
+        assert_eq!(n.frame, 3, "the dash adds row 3");
+    }
+
+    // ---- W4-d38 b3 — TacticalSkeleton 292, SkeletonCommando 293,
+    // AngryBonesBig 294, AngryBonesBigMuscle 295, AngryBonesBigHelmet 296.
+    // Tests-as-code, WRITTEN NOT RUN. ----
+
+    /// The batch's `SetDefaults` rows (`NPC.cs:12797-12863`).
+    #[test]
+    fn w4_d38_b3_the_setdefaults_rows() {
+        let table = [
+            (NpcKind::TacticalSkeleton, 292u16, 18.0, 40.0, 3u8, 400, 60, 28, 1000.0, 0.4),
+            (NpcKind::SkeletonCommando, 293, 18.0, 40.0, 3, 400, 60, 28, 1000.0, 0.4),
+            (NpcKind::AngryBonesBig, 294, 18.0, 40.0, 3, 70, 34, 6, 130.0, 0.9),
+            (NpcKind::AngryBonesBigMuscle, 295, 18.0, 40.0, 3, 70, 28, 12, 130.0, 0.7),
+            (NpcKind::AngryBonesBigHelmet, 296, 18.0, 40.0, 3, 120, 24, 14, 130.0, 0.6),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb) in table {
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+            assert_eq!(kind.cs_id(), vanilla, "{kind:?} vanilla type");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_2"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_2"), "{kind:?} death");
+            // All five carry {20} only (`NPCID.cs:7808-7836`).
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[20] && !b.buff_immune[31], "{kind:?} immunity");
+        }
+    }
+
+    /// The walk caps: the Tactical/Commando ride the shooters' 1f default
+    /// (`NPC.cs:59717`); the Angry Bones trio the num83 group's per-type rows
+    /// (`:57613-57624` — 294 2f, 295 1.75f, 296 1.25f).
+    #[test]
+    fn w4_d38_b3_the_walk_caps() {
+        assert_eq!(NpcKind::TacticalSkeleton.ai3_walk_speed(), Some(1.0));
+        assert_eq!(NpcKind::SkeletonCommando.ai3_walk_speed(), Some(1.0));
+        assert_eq!(NpcKind::AngryBonesBig.ai3_walk_speed(), Some(2.0));
+        assert_eq!(NpcKind::AngryBonesBigMuscle.ai3_walk_speed(), Some(1.75));
+        assert_eq!(NpcKind::AngryBonesBigHelmet.ai3_walk_speed(), Some(1.25));
+    }
+
+    /// The Angry Bones trio's humanoid strips (`Main.npcFrameCount` 294 16,
+    /// 295 15, 296 15) and the Commando's case-293 FindFrame air row 0
+    /// (`NPC.cs:76054-76058`, unlike the Sniper/Tactical's air row 6).
+    #[test]
+    fn w4_d38_b3_the_frames() {
+        assert_eq!(NpcKind::AngryBonesBig.humanoid_frame_count(), 16);
+        assert_eq!(NpcKind::AngryBonesBigMuscle.humanoid_frame_count(), 15);
+        assert_eq!(NpcKind::AngryBonesBigHelmet.humanoid_frame_count(), 15);
+        let mut n = bare(NpcKind::SkeletonCommando);
+        n.vy = 2.0;
+        n.find_frame();
+        assert_eq!(n.frame, 0, "the Commando's air row 0");
+        let mut t = bare(NpcKind::TacticalSkeleton);
+        t.vy = 2.0;
+        t.find_frame();
+        assert_eq!(t.frame, 6, "the Tactical's air row 6");
+    }
+
+    // ---- W4-d38 b4 — BirdBlue 297, BirdRed 298, Squirrel 299, Mouse 300,
+    // Raven 301. Tests-as-code, WRITTEN NOT RUN. ----
+
+    /// The batch's `SetDefaults` rows (`NPC.cs:9747-9771` the birds,
+    /// `:12864-12901` the Squirrel/Mouse/Raven). The birds share the 74 arm
+    /// (14x14, aiStyle 24, kb 0.8, npcSlots 0.4, catchItem 2016/2017); the
+    /// Squirrel/Mouse the critter arm (aiStyle 7, 5 HP, catchItem 2018/2003).
+    #[test]
+    fn w4_d38_b4_the_setdefaults_rows() {
+        let table = [
+            (NpcKind::BirdBlue, 297u16, 14.0, 14.0, 24u8, 5, 0, 0, 0.0, 0.8, "NPC_Hit_1", "NPC_Killed_1"),
+            (NpcKind::BirdRed, 298, 14.0, 14.0, 24, 5, 0, 0, 0.0, 0.8, "NPC_Hit_1", "NPC_Killed_1"),
+            (NpcKind::Squirrel, 299, 18.0, 20.0, 7, 5, 0, 0, 0.0, 1.0, "NPC_Hit_1", "NPC_Killed_1"),
+            (NpcKind::Mouse, 300, 14.0, 12.0, 7, 5, 0, 0, 0.0, 1.0, "NPC_Hit_1", "NPC_Killed_4"),
+            (NpcKind::Raven, 301, 36.0, 26.0, 17, 35, 12, 2, 50.0, 0.85, "NPC_Hit_1", "NPC_Killed_1"),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb, hit, death) in table {
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+            assert_eq!(kind.cs_id(), vanilla, "{kind:?} vanilla type");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.hit_sound(), Some(hit), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some(death), "{kind:?} death");
+            // All five carry {31} only (Confused; `NPCID.cs:7843-7906`).
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[31] && !b.buff_immune[20], "{kind:?} immunity");
+        }
+        // The catchable critters spawn friendly (the bug_net catchable arm).
+        assert!(crate::bug_net::npc_catchable(297));
+        assert!(crate::bug_net::npc_catchable(299));
+        assert!(crate::bug_net::npc_catchable(300));
+        assert!(!crate::bug_net::npc_catchable(301), "the Raven is not catchable");
+    }
+
+    /// The birds' FindFrame (`NPC.cs:73629-73653`): the perched row 4, the
+    /// 4-tick flap over count-1 rows, the vx*0.1 tilt. The Raven's
+    /// (`:73559-73606`): the grounded -direction flip, the air row band.
+    #[test]
+    fn w4_d38_b4_the_bird_and_raven_frames() {
+        let mut b = bare(NpcKind::BirdBlue);
+        b.vx = 0.0;
+        b.vy = 0.0;
+        b.find_frame();
+        assert_eq!(b.frame, 4, "the perched row 4");
+        b.vx = 2.0;
+        b.frame_counter = 0.0;
+        for _ in 0..4 {
+            b.find_frame();
+        }
+        assert_eq!(b.frame, 0, "the flap wraps over count-1 = 4 rows");
+        let mut r = bare(NpcKind::Raven);
+        r.vx = 0.0;
+        r.vy = 0.0;
+        r.facing = 1;
+        r.find_frame();
+        assert_eq!(r.sprite_dir, -1, "the grounded -direction flip");
+        assert_eq!(r.frame, 0, "the perched row 0");
+    }
+
+    /// The Squirrel/Mouse FindFrame air rows (`NPC.cs:76502-76511` the
+    /// Squirrel rise 2 / fall 4; `:76551-76564` the Mouse walks in the air).
+    #[test]
+    fn w4_d38_b4_the_critter_air_frames() {
+        let mut s = bare(NpcKind::Squirrel);
+        s.vy = -2.0;
+        s.find_frame();
+        assert_eq!(s.frame, 2, "the Squirrel rise row 2");
+        s.vy = 2.0;
+        s.find_frame();
+        assert_eq!(s.frame, 4, "the Squirrel fall row 4");
+    }
+
+    // ---- W4-d38 b5 — SlimeMasked 302, BunnySlimed 303, HoppinJack 304,
+    // Ghost 316, DemonEyeOwl 317. Tests-as-code, WRITTEN NOT RUN. ----
+
+    /// The batch's `SetDefaults` rows (`NPC.cs:12902-12928` the slimes/bunny,
+    /// `:12991-13019` the Ghost/DemonEyeOwl). The Ghost noGravity +
+    /// noTileCollide + alpha 100; the HoppinJack scale 1.1.
+    #[test]
+    fn w4_d38_b5_the_setdefaults_rows() {
+        let table = [
+            (NpcKind::SlimeMasked, 302u16, 24.0, 18.0, 1u8, 25, 7, 2, 25.0, 1.0, "NPC_Hit_1", "NPC_Killed_1"),
+            (NpcKind::BunnySlimed, 303, 18.0, 20.0, 7, 5, 0, 0, 0.0, 1.0, "NPC_Hit_1", "NPC_Killed_1"),
+            (NpcKind::HoppinJack, 304, 34.0, 28.0, 1, 175, 80, 20, 500.0, 0.5, "NPC_Hit_1", "NPC_Killed_1"),
+            (NpcKind::Ghost, 316, 24.0, 44.0, 22, 50, 15, 4, 90.0, 0.5, "NPC_Hit_1", "NPC_Killed_6"),
+            (NpcKind::DemonEyeOwl, 317, 30.0, 32.0, 2, 75, 16, 6, 100.0, 0.7, "NPC_Hit_1", "NPC_Killed_1"),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb, hit, death) in table {
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+            assert_eq!(kind.cs_id(), vanilla, "{kind:?} vanilla type");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.hit_sound(), Some(hit), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some(death), "{kind:?} death");
+        }
+        // The Ghost's flags + alpha (`NPC.cs:12991-13002`).
+        assert!(NpcKind::Ghost.no_gravity());
+        assert_eq!(bare(NpcKind::Ghost).alpha, 100);
+        // The HoppinJack's scale (`NPC.cs:12925`).
+        assert_eq!(bare(NpcKind::HoppinJack).scale, 1.1);
+        // The Ghost's 14-immunity row (`NPCID.cs:7951`); the DemonEyeOwl null.
+        let g = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::Ghost);
+        assert!(g.buff_immune[20] && g.buff_immune[24] && g.buff_immune[31] && g.buff_immune[323]);
+        let owl = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::DemonEyeOwl);
+        assert!(!owl.buff_immune.iter().any(|x| *x), "the null immunity row");
+        // The SlimeMasked/HoppinJack {20}, the BunnySlimed {31}.
+        let sm = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::SlimeMasked);
+        assert!(sm.buff_immune[20] && !sm.buff_immune[31]);
+        let bs = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::BunnySlimed);
+        assert!(bs.buff_immune[31] && !bs.buff_immune[20]);
+    }
+
+    /// The SlimeMasked/HoppinJack FindFrame (`NPC.cs:70824-70827`): the
+    /// type-302/304 spriteDirection = direction snap (the plain slime arm
+    /// lacks it). The DemonEyeOwl rides the eye aim branch (`:74019-74031`).
+    #[test]
+    fn w4_d38_b5_the_slime_and_eye_frames() {
+        let mut s = bare(NpcKind::SlimeMasked);
+        s.facing = -1;
+        s.sprite_dir = 1;
+        s.vx = 0.0;
+        s.vy = 0.0;
+        s.find_frame();
+        assert_eq!(s.sprite_dir, -1, "the 302 spriteDirection snap");
+        let mut e = bare(NpcKind::DemonEyeOwl);
+        e.vx = 2.0;
+        e.vy = 0.0;
+        e.find_frame();
+        assert_eq!(e.sprite_dir, 1, "the eye vx-sign flip");
+        assert_eq!(e.rotation, 0.0, "atan2(0, 2) = 0");
+    }
+
+    // ---- W4-d38 b6 — DemonEyeSpaceship 318, SkeletonTopHat 322,
+    // SkeletonAstonaut 323, SkeletonAlien 324, PumpkingBlade 328.
+    // Tests-as-code, WRITTEN NOT RUN. ----
+
+    /// The batch's `SetDefaults` rows (`NPC.cs:13020-13032` the DemonEye,
+    /// `:13075-13114` the skeletons, `:13158-13174` the blade). The blade
+    /// noGravity + noTileCollide + dontTakeDamage + npcSlots 0; the
+    /// SkeletonAlien scale 1.05.
+    #[test]
+    fn w4_d38_b6_the_setdefaults_rows() {
+        let table = [
+            (NpcKind::DemonEyeSpaceship, 318u16, 30.0, 32.0, 2u8, 60, 20, 4, 100.0, 0.65, "NPC_Hit_1", "NPC_Killed_1"),
+            (NpcKind::SkeletonTopHat, 322, 18.0, 40.0, 3, 115, 23, 0, 130.0, 0.65, "NPC_Hit_2", "NPC_Killed_2"),
+            (NpcKind::SkeletonAstonaut, 323, 18.0, 40.0, 3, 65, 18, 10, 120.0, 0.5, "NPC_Hit_2", "NPC_Killed_2"),
+            (NpcKind::SkeletonAlien, 324, 18.0, 40.0, 3, 70, 22, 10, 130.0, 0.4, "NPC_Hit_2", "NPC_Killed_2"),
+            (NpcKind::PumpkingBlade, 328, 80.0, 80.0, 59, 5000, 65, 14, 0.0, 0.0, "NPC_Hit_1", "NPC_Killed_1"),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb, hit, death) in table {
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+            assert_eq!(kind.cs_id(), vanilla, "{kind:?} vanilla type");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.hit_sound(), Some(hit), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some(death), "{kind:?} death");
+        }
+        // The blade's flags (`NPC.cs:13166-13172`).
+        assert!(NpcKind::PumpkingBlade.no_gravity());
+        assert!(bare(NpcKind::PumpkingBlade).dont_take_damage);
+        // The SkeletonAlien's scale (`NPC.cs:13113`).
+        assert_eq!(bare(NpcKind::SkeletonAlien).scale, 1.05);
+        // The skeletons {20}, the blade {20,24,31,323}, the DemonEye null.
+        let sk = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::SkeletonTopHat);
+        assert!(sk.buff_immune[20] && !sk.buff_immune[31]);
+        let bl = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::PumpkingBlade);
+        assert!(bl.buff_immune[20] && bl.buff_immune[24] && bl.buff_immune[31] && bl.buff_immune[323]);
+        let de = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::DemonEyeSpaceship);
+        assert!(!de.buff_immune.iter().any(|x| *x), "the null immunity row");
+    }
+
+    /// The skeleton variants' humanoid strips (`Main.npcFrameCount` 322 16,
+    /// 323 15, 324 16) and the num107 default 1f walk cap (`NPC.cs:58322` —
+    /// 322-324 carry no per-type override). The blade's FindFrame holds row 0
+    /// (no case 328 arm; `Main.npcFrameCount[328]` = 1).
+    #[test]
+    fn w4_d38_b6_the_skeleton_and_blade_frames() {
+        assert_eq!(NpcKind::SkeletonTopHat.humanoid_frame_count(), 16);
+        assert_eq!(NpcKind::SkeletonAstonaut.humanoid_frame_count(), 15);
+        assert_eq!(NpcKind::SkeletonAlien.humanoid_frame_count(), 16);
+        assert_eq!(NpcKind::SkeletonTopHat.ai3_walk_speed(), Some(1.0));
+        assert_eq!(NpcKind::SkeletonAstonaut.ai3_walk_speed(), Some(1.0));
+        assert_eq!(NpcKind::SkeletonAlien.ai3_walk_speed(), Some(1.0));
+        let mut b = bare(NpcKind::PumpkingBlade);
+        b.frame = 0;
+        b.frame_counter = 5.0;
+        b.find_frame();
+        assert_eq!(b.frame, 0, "the blade holds row 0");
+        assert_eq!(b.frame_counter, 0.0);
+    }
+
+    // ---- W4-d38 b7 — SlimeRibbonWhite 333, SlimeRibbonYellow 334,
+    // SlimeRibbonGreen 335, SlimeRibbonRed 336, BunnyXmas 337.
+    // Tests-as-code, WRITTEN NOT RUN. ----
+
+    /// The batch's `SetDefaults` rows (`NPC.cs:13230-13279` the ribbon slimes,
+    /// `:9336-9347` the BunnyXmas's shared bunny arm). The ribbon scales:
+    /// 334 0.9, 335 1.05, 336 0.85 (333 none).
+    #[test]
+    fn w4_d38_b7_the_setdefaults_rows() {
+        let table = [
+            (NpcKind::SlimeRibbonWhite, 333u16, 24.0, 18.0, 1u8, 25, 7, 2, 25.0, 1.0, 1.0),
+            (NpcKind::SlimeRibbonYellow, 334, 24.0, 18.0, 1, 23, 6, 2, 25.0, 1.0, 0.9),
+            (NpcKind::SlimeRibbonGreen, 335, 24.0, 18.0, 1, 29, 8, 3, 25.0, 1.0, 1.05),
+            (NpcKind::SlimeRibbonRed, 336, 24.0, 18.0, 1, 22, 5, 1, 25.0, 1.0, 0.85),
+            (NpcKind::BunnyXmas, 337, 18.0, 20.0, 7, 5, 0, 0, 0.0, 1.0, 1.0),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb, scale) in table {
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+            assert_eq!(kind.cs_id(), vanilla, "{kind:?} vanilla type");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(n.scale, scale, "{kind:?} scale");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
+        }
+        // The ribbon slimes {20}, the BunnyXmas {31} (`NPCID.cs:8026-8054`).
+        for kind in [NpcKind::SlimeRibbonWhite, NpcKind::SlimeRibbonYellow,
+                     NpcKind::SlimeRibbonGreen, NpcKind::SlimeRibbonRed] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[20] && !b.buff_immune[31], "{kind:?} immunity");
+        }
+        let bx = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::BunnyXmas);
+        assert!(bx.buff_immune[31] && !bx.buff_immune[20]);
+        // The BunnyXmas is catchable (catchItem 2019, the shared bunny arm).
+        assert!(crate::bug_net::npc_catchable(337));
+    }
+
+    /// The ribbon slimes ride the plain slime FindFrame (`NPC.cs:70801-70846`,
+    /// NO 302/304 spriteDirection snap); the BunnyXmas the bunny arm
+    /// (`:76853-76904`, the rise-4/fall-6 air rows).
+    #[test]
+    fn w4_d38_b7_the_ribbon_and_bunny_frames() {
+        let mut s = bare(NpcKind::SlimeRibbonWhite);
+        s.facing = -1;
+        s.sprite_dir = 1;
+        s.vx = 0.0;
+        s.vy = 0.0;
+        s.find_frame();
+        assert_eq!(s.sprite_dir, 1, "the plain slime arm keeps the sprite");
+        let mut b = bare(NpcKind::BunnyXmas);
+        b.vy = -2.0;
+        b.find_frame();
+        assert_eq!(b.frame, 4, "the bunny rise row 4");
+        b.vy = 2.0;
+        b.find_frame();
+        assert_eq!(b.frame, 6, "the bunny fall row 6");
+    }
+
+    /// W4-d38 FINAL sheet 2 (research/293 §7) — the 7 humanoid-group
+    /// `humanoid_town_frame` stand-ins are the wiring-round gap list.
+    /// The C# fighter group (`NPC.cs:68647-69655`) flips spriteDirection
+    /// grounded, walks with the |vx|*2+1 accumulator, and pins the air
+    /// row 1 (`:69642-69645`) then the `:69647` pin list snaps 294/295/296
+    /// to row 0. The stand-in (`npc.rs:6600-6626`) has NO grounded flip
+    /// and NO air tail — this witness pins that CURRENT behavior so the
+    /// wiring round's replacement is a deliberate, witnessed edit (the
+    /// d44 master table's keep-one: 287/295 → extra6 WIRED(d44),
+    /// 294/296 → the wave-B module, 322/323/324 → extra7; the module
+    /// hook precedes the body match at merge). The dedicated 27 arms'
+    /// faithfulness is witnessed per batch (b1-b7 above); the 328 row-0
+    /// pin is correct by construction (NO FindFrame case, count 1).
+    #[test]
+    fn w4_d38_final_the_seven_town_standins_are_the_wiring_gap() {
+        for kind in [
+            NpcKind::BoneLee,            // 287 — extra6 (WIRED d44)
+            NpcKind::AngryBonesBig,      // 294 — wave-B module
+            NpcKind::AngryBonesBigMuscle,// 295 — extra6 (WIRED d44)
+            NpcKind::AngryBonesBigHelmet,// 296 — wave-B module
+            NpcKind::SkeletonTopHat,     // 322 — extra7 (MODULE-LANDED)
+            NpcKind::SkeletonAstonaut,   // 323 — extra7
+            NpcKind::SkeletonAlien,      // 324 — extra7
+        ] {
+            // The air tail is MISSING: the C# pins row 1 (then 0 for
+            // 294/295/296); the stand-in leaves the row untouched.
+            let mut n = bare(kind);
+            n.frame = 5;
+            n.frame_counter = 3.0;
+            n.vy = 2.0;
+            n.find_frame();
+            assert_eq!(n.frame, 5, "{kind:?}: the stand-in has no air tail");
+            assert_eq!(n.frame_counter, 3.0, "{kind:?}: counter untouched in air");
+            // The grounded flip is MISSING: the C# copies direction ±1
+            // (`:68649-68656`); the stand-in never writes sprite_dir.
+            let mut g = bare(kind);
+            g.facing = -1;
+            g.sprite_dir = 1;
+            g.vx = -2.0;
+            g.vy = 0.0;
+            g.find_frame();
+            assert_eq!(g.sprite_dir, 1, "{kind:?}: the stand-in has no grounded flip");
+            // The walk band itself IS right (extra_frames_count 0 for all
+            // seven — the wrap rides the full npcFrameCount).
+            assert_eq!(kind.extra_frames_count(), 0, "{kind:?}");
+            assert!(g.frame >= 2, "{kind:?}: the walk lifts to row 2+");
+        }
+        // The 328 no-case pin: FindFrame has no case 328 (the :77828
+        // label is DoesntDespawnToInactivity), npcFrameCount[328] = 1.
+        let mut blade = bare(NpcKind::PumpkingBlade);
+        blade.frame = 0;
+        blade.frame_counter = 9.0;
+        blade.find_frame();
+        assert_eq!(blade.frame, 0);
+        assert_eq!(blade.frame_counter, 0.0);
     }
 }

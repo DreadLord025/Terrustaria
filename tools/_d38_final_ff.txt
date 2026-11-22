@@ -1,0 +1,7 @@
+find_frame range: [6874, 9705]
+port arms (35): ['AngryBonesBig', 'AngryBonesBigHelmet', 'AngryBonesBigMuscle', 'BirdBlue', 'BirdRed', 'BoneLee', 'BunnySlimed', 'BunnyXmas', 'DemonEyeOwl', 'DemonEyeSpaceship', 'DiabolistRed', 'DiabolistWhite', 'Ghost', 'GiantCursedSkull', 'HoppinJack', 'Mouse', 'Necromancer', 'NecromancerArmored', 'Paladin', 'PumpkingBlade', 'RaggedCaster', 'RaggedCasterOpenCoat', 'Raven', 'SkeletonAlien', 'SkeletonAstonaut', 'SkeletonCommando', 'SkeletonSniper', 'SkeletonTopHat', 'SlimeMasked', 'SlimeRibbonGreen', 'SlimeRibbonRed', 'SlimeRibbonWhite', 'SlimeRibbonYellow', 'Squirrel', 'TacticalSkeleton']
+port MISSING (0): []
+classes: Counter({'inline': 33, 'row0': 2})
+f26 7f38fd345 claims over our ids: {'289': ['npc_findframe_b.rs'], '290': ['npc_findframe_extra6.rs'], '281': ['npc_findframe_extra6.rs'], '291': ['npc_findframe_extra6.rs'], '293': ['npc_findframe_extra6.rs']}
+f27 1a24a133c claims over our ids: {'289': ['npc_findframe_b.rs'], '316': ['npc_findframe_extra7.rs'], '317': ['npc_findframe_extra7.rs'], '322': ['npc_findframe_extra7.rs'], '333': ['npc_findframe_extra7.rs'], '337': ['npc_findframe_extra7.rs']}
+d44 7c430def6 claims over our ids: {'289': ['npc_findframe_b.rs'], '290': ['npc_findframe_extra6.rs'], '281': ['npc_findframe_extra6.rs'], '291': ['npc_findframe_extra6.rs'], '293': ['npc_findframe_extra6.rs']}

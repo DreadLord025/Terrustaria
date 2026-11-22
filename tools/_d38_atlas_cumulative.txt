@@ -1,0 +1,60 @@
+IMAGES = C:\Users\DreadLord\Desktop\TR-W4-d38\assets\Content\Images | exists: true
+Gore_1 dims: {"w":18,"h":22} | Gore files: 1404
+d35 deferred sheets: 33 | undecodable: []
+
+A: HEAD static-only (d38 35 packed): 8130 sheets, padded 61.89 Mpx
+  best-fit shelves: 8750 OVERFLOW(+558)
+  skyline (waste):  7867 fits(325 headroom) (det:true, verified)
+  maxrects BAF:     7728 fits(464 headroom) (verified)
+
+B: HEAD static-only minus d38 (pre-d38 baseline): 8095 sheets, padded 61.18 Mpx
+  best-fit shelves: 8628 OVERFLOW(+436)
+  skyline (waste):  7711 fits(481 headroom) (det:true, verified)
+  maxrects BAF:     7946 fits(246 headroom) (verified)
+
+C: HEAD static-only + d35 33: 8163 sheets, padded 62.84 Mpx
+  best-fit shelves: 8840 OVERFLOW(+648)
+  skyline (waste):  8035 fits(157 headroom) (det:true, verified)
+  maxrects BAF:     7771 fits(421 headroom) (verified)
+
+A+gore: HEAD (E-4b landed set): 9532 sheets, padded 64.96 Mpx
+  best-fit shelves: 9116 OVERFLOW(+924)
+  skyline (waste):  8236 OVERFLOW(+44) (det:true, verified)
+  maxrects BAF:     8058 fits(134 headroom) (verified)
+
+B+gore: pre-d38 baseline: 9497 sheets, padded 64.24 Mpx
+  best-fit shelves: 9012 OVERFLOW(+820)
+  skyline (waste):  8115 fits(77 headroom) (det:true, verified)
+  maxrects BAF:     7956 fits(236 headroom) (verified)
+
+C+gore: HEAD + d35 33 (CUMULATIVE): 9565 sheets, padded 65.91 Mpx
+  best-fit shelves: 9204 OVERFLOW(+1012)
+  skyline (waste):  8452 OVERFLOW(+260) (det:true, verified)
+  maxrects BAF:     8170 fits(22 headroom) (verified)
+
+D+gore: pre-d38 + d35 33 (attribution): 9530 sheets, padded 65.19 Mpx
+  best-fit shelves: 9123 OVERFLOW(+931)
+  skyline (waste):  8267 OVERFLOW(+75) (det:true, verified)
+  maxrects BAF:     8094 fits(98 headroom) (verified)
+
+E+gore: CUMULATIVE + boot font: 9566 sheets, padded 65.91 Mpx
+  best-fit shelves: 9204 OVERFLOW(+1012)
+  skyline (waste):  8452 OVERFLOW(+260) (det:true, verified)
+  maxrects BAF:     8170 fits(22 headroom) (verified)
+
+F: c4 baseline check (HEAD minus d38 plus c4 4): 8099 sheets, padded 61.30 Mpx
+  best-fit shelves: 8634 OVERFLOW(+442)
+  skyline (waste):  7757 fits(435 headroom) (det:true, verified)
+  maxrects BAF:     7880 fits(312 headroom) (verified)
+
+F+gore: c4 baseline check: 9501 sheets, padded 64.37 Mpx
+  best-fit shelves: 9022 OVERFLOW(+830)
+  skyline (waste):  8141 fits(51 headroom) (det:true, verified)
+  maxrects BAF:     7946 fits(246 headroom) (verified)
+
+G+gore: d38 + d35 + c4 (three-wave cumulative): 9569 sheets, padded 66.03 Mpx
+  best-fit shelves: 9215 OVERFLOW(+1023)
+  skyline (waste):  8461 OVERFLOW(+269) (det:true, verified)
+  maxrects BAF:     8152 fits(40 headroom) (verified)
+main + gore + font (c4 quote base 8119): skyline 8119
+c4 + gore + font (c4 quote 8143): skyline 8143

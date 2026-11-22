@@ -1,0 +1,756 @@
+{
+ "rows": {
+  "RaggedCaster": {
+   "id": 281,
+   "critter": false,
+   "cs": {
+    "banner": 156,
+    "item": 2965,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 156,
+    "item": 2965,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "RaggedCasterOpenCoat": {
+   "id": 282,
+   "critter": false,
+   "cs": {
+    "banner": 156,
+    "item": 2965,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 156,
+    "item": 2965,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "Necromancer": {
+   "id": 283,
+   "critter": false,
+   "cs": {
+    "banner": 147,
+    "item": 2956,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 147,
+    "item": 2956,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "NecromancerArmored": {
+   "id": 284,
+   "critter": false,
+   "cs": {
+    "banner": 147,
+    "item": 2956,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 147,
+    "item": 2956,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "DiabolistRed": {
+   "id": 285,
+   "critter": false,
+   "cs": {
+    "banner": 105,
+    "item": 2914,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 105,
+    "item": 2914,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "DiabolistWhite": {
+   "id": 286,
+   "critter": false,
+   "cs": {
+    "banner": 105,
+    "item": 2914,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 105,
+    "item": 2914,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "BoneLee": {
+   "id": 287,
+   "critter": false,
+   "cs": {
+    "banner": 95,
+    "item": 2904,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 95,
+    "item": 2904,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "GiantCursedSkull": {
+   "id": 289,
+   "critter": false,
+   "cs": {
+    "banner": 115,
+    "item": 2924,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 115,
+    "item": 2924,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "Paladin": {
+   "id": 290,
+   "critter": false,
+   "cs": {
+    "banner": 149,
+    "item": 2958,
+    "kills_full": 25,
+    "tier2": 5,
+    "tier3": 12
+   },
+   "port": {
+    "banner": 149,
+    "item": 2958,
+    "kills_full": 25,
+    "tier2": 5,
+    "tier3": 12
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "SkeletonSniper": {
+   "id": 291,
+   "critter": false,
+   "cs": {
+    "banner": 166,
+    "item": 2975,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 166,
+    "item": 2975,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "TacticalSkeleton": {
+   "id": 292,
+   "critter": false,
+   "cs": {
+    "banner": 175,
+    "item": 2984,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 175,
+    "item": 2984,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "SkeletonCommando": {
+   "id": 293,
+   "critter": false,
+   "cs": {
+    "banner": 165,
+    "item": 2974,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 165,
+    "item": 2974,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "AngryBonesBig": {
+   "id": 294,
+   "critter": false,
+   "cs": {
+    "banner": 247,
+    "item": 3451,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 247,
+    "item": 3451,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "AngryBonesBigMuscle": {
+   "id": 295,
+   "critter": false,
+   "cs": {
+    "banner": 247,
+    "item": 3451,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 247,
+    "item": 3451,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "AngryBonesBigHelmet": {
+   "id": 296,
+   "critter": false,
+   "cs": {
+    "banner": 247,
+    "item": 3451,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 247,
+    "item": 3451,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "BirdBlue": {
+   "id": 297,
+   "critter": true,
+   "cs": {
+    "banner": 8,
+    "item": 1622,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 8,
+    "item": 1622,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "Critter(sight->4)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "BirdRed": {
+   "id": 298,
+   "critter": true,
+   "cs": {
+    "banner": 8,
+    "item": 1622,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 8,
+    "item": 1622,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "Critter(sight->4)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "Squirrel": {
+   "id": 299,
+   "critter": true,
+   "cs": {
+    "banner": 0,
+    "item": 1614,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 0,
+    "item": 1614,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "Critter(sight->4)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "Mouse": {
+   "id": 300,
+   "critter": true,
+   "cs": {
+    "banner": 0,
+    "item": 1614,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 0,
+    "item": 1614,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "Critter(sight->4)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "Raven": {
+   "id": 301,
+   "critter": false,
+   "cs": {
+    "banner": 158,
+    "item": 2967,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 158,
+    "item": 2967,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "SlimeMasked": {
+   "id": 302,
+   "critter": false,
+   "cs": {
+    "banner": 69,
+    "item": 1683,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 69,
+    "item": 1683,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "BunnySlimed": {
+   "id": 303,
+   "critter": true,
+   "cs": {
+    "banner": 14,
+    "item": 1628,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 14,
+    "item": 1628,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "Critter(sight->4)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "HoppinJack": {
+   "id": 304,
+   "critter": false,
+   "cs": {
+    "banner": 123,
+    "item": 2932,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 123,
+    "item": 2932,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "Ghost": {
+   "id": 316,
+   "critter": false,
+   "cs": {
+    "banner": 113,
+    "item": 2922,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 113,
+    "item": 2922,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "DemonEyeOwl": {
+   "id": 317,
+   "critter": false,
+   "cs": {
+    "banner": 25,
+    "item": 1639,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 25,
+    "item": 1639,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "DemonEyeSpaceship": {
+   "id": 318,
+   "critter": false,
+   "cs": {
+    "banner": 25,
+    "item": 1639,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 25,
+    "item": 1639,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "SkeletonTopHat": {
+   "id": 322,
+   "critter": false,
+   "cs": {
+    "banner": 67,
+    "item": 1681,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 67,
+    "item": 1681,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "SkeletonAstonaut": {
+   "id": 323,
+   "critter": false,
+   "cs": {
+    "banner": 67,
+    "item": 1681,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 67,
+    "item": 1681,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "SkeletonAlien": {
+   "id": 324,
+   "critter": false,
+   "cs": {
+    "banner": 67,
+    "item": 1681,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 67,
+    "item": 1681,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "PumpkingBlade": {
+   "id": 328,
+   "critter": false,
+   "cs": {
+    "banner": 0,
+    "item": 1614,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 0,
+    "item": 1614,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "SlimeRibbonWhite": {
+   "id": 333,
+   "critter": false,
+   "cs": {
+    "banner": 69,
+    "item": 1683,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 69,
+    "item": 1683,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "SlimeRibbonYellow": {
+   "id": 334,
+   "critter": false,
+   "cs": {
+    "banner": 69,
+    "item": 1683,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 69,
+    "item": 1683,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "SlimeRibbonGreen": {
+   "id": 335,
+   "critter": false,
+   "cs": {
+    "banner": 69,
+    "item": 1683,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 69,
+    "item": 1683,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "SlimeRibbonRed": {
+   "id": 336,
+   "critter": false,
+   "cs": {
+    "banner": 69,
+    "item": 1683,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 69,
+    "item": 1683,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "CommonEnemy(kill-ladder)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  },
+  "BunnyXmas": {
+   "id": 337,
+   "critter": true,
+   "cs": {
+    "banner": 14,
+    "item": 1628,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "port": {
+    "banner": 14,
+    "item": 1628,
+    "kills_full": 50,
+    "tier2": 10,
+    "tier3": 25
+   },
+   "agree": true,
+   "cs_provider": "Critter(sight->4)",
+   "port_provider": "kill-ladder (unlock_state, no critter branch)"
+  }
+ },
+ "all_chains_agree": true,
+ "critter_gap": [
+  "BirdBlue",
+  "BirdRed",
+  "Squirrel",
+  "Mouse",
+  "BunnySlimed",
+  "BunnyXmas"
+ ],
+ "rare_spawns": {
+  "TacticalSkeleton": 1.0,
+  "SkeletonCommando": 1.0,
+  "BoneLee": 1.0,
+  "Paladin": 2.0,
+  "SkeletonSniper": 1.0
+ },
+ "quick_unlock_any": false
+}

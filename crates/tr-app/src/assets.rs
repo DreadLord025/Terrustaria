@@ -1301,6 +1301,48 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // dropped with the g8-owned dups — 367 §1).
         "NPC_67",
         "NPC_68",
+        // W4-d38 b7 — the kinds' own sheets.
+        "NPC_333",
+        "NPC_334",
+        "NPC_335",
+        "NPC_336",
+        "NPC_337",
+        // W4-d38 b6 — the kinds' own sheets.
+        "NPC_318",
+        "NPC_322",
+        "NPC_323",
+        "NPC_324",
+        "NPC_328",
+        // W4-d38 b5 — the kinds' own sheets.
+        "NPC_302",
+        "NPC_303",
+        "NPC_304",
+        "NPC_316",
+        "NPC_317",
+        // W4-d38 b4 — the kinds' own sheets.
+        "NPC_297",
+        "NPC_298",
+        "NPC_299",
+        "NPC_300",
+        "NPC_301",
+        // W4-d38 b3 — the kinds' own sheets.
+        "NPC_292",
+        "NPC_293",
+        "NPC_294",
+        "NPC_295",
+        "NPC_296",
+        // W4-d38 b2 — the kinds' own sheets.
+        "NPC_286",
+        "NPC_287",
+        "NPC_289",
+        "NPC_290",
+        "NPC_291",
+        // W4-d38 b1 — the kinds' own sheets.
+        "NPC_281",
+        "NPC_282",
+        "NPC_283",
+        "NPC_284",
+        "NPC_285",
 ];
 
 
@@ -1891,7 +1933,9 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 198] = [
+// W4-d34+d38 wave-1 union (367 §1): 181 base + 17 d34 (266-280 + Crab/
+// DungeonGuardian) + 35 d38 (281-337 corridor) = 233 slots.
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 233] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1936,6 +1980,13 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 198] = [
         // W4-d34 kinds 1-70 coverage wave (phase 4) — appended last
         // (merge-side: 64/69/70 dropped with the g8-owned dups — 367 §1).
         67, 68,
+        // W4-d38 crossnote — the wave's 35 packed kinds' portrait slots
+        // (research/108 §5's d38 half of the gap close), appended last so
+        // the earlier slots keep their indexes; ENTRIES order (b7..b1).
+        333, 334, 335, 336, 337, 318, 322, 323, 324, 328,
+        302, 303, 304, 316, 317, 297, 298, 299, 300, 301,
+        292, 293, 294, 295, 296, 286, 287, 289, 290, 291,
+        281, 282, 283, 284, 285,
     ];
 
 
@@ -2722,6 +2773,43 @@ impl Lookups {
                 // 64/69/70 dropped with the g8-owned dups — 367 §1).
                 atlas.sheet("NPC_67").copied(),
                 atlas.sheet("NPC_68").copied(),
+                // W4-d38 crossnote — the wave's 35 strips, parallel to the
+                // BESTIARY_NPC_SHEET_IDS append above (ENTRIES order).
+                atlas.sheet("NPC_333").copied(),
+                atlas.sheet("NPC_334").copied(),
+                atlas.sheet("NPC_335").copied(),
+                atlas.sheet("NPC_336").copied(),
+                atlas.sheet("NPC_337").copied(),
+                atlas.sheet("NPC_318").copied(),
+                atlas.sheet("NPC_322").copied(),
+                atlas.sheet("NPC_323").copied(),
+                atlas.sheet("NPC_324").copied(),
+                atlas.sheet("NPC_328").copied(),
+                atlas.sheet("NPC_302").copied(),
+                atlas.sheet("NPC_303").copied(),
+                atlas.sheet("NPC_304").copied(),
+                atlas.sheet("NPC_316").copied(),
+                atlas.sheet("NPC_317").copied(),
+                atlas.sheet("NPC_297").copied(),
+                atlas.sheet("NPC_298").copied(),
+                atlas.sheet("NPC_299").copied(),
+                atlas.sheet("NPC_300").copied(),
+                atlas.sheet("NPC_301").copied(),
+                atlas.sheet("NPC_292").copied(),
+                atlas.sheet("NPC_293").copied(),
+                atlas.sheet("NPC_294").copied(),
+                atlas.sheet("NPC_295").copied(),
+                atlas.sheet("NPC_296").copied(),
+                atlas.sheet("NPC_286").copied(),
+                atlas.sheet("NPC_287").copied(),
+                atlas.sheet("NPC_289").copied(),
+                atlas.sheet("NPC_290").copied(),
+                atlas.sheet("NPC_291").copied(),
+                atlas.sheet("NPC_281").copied(),
+                atlas.sheet("NPC_282").copied(),
+                atlas.sheet("NPC_283").copied(),
+                atlas.sheet("NPC_284").copied(),
+                atlas.sheet("NPC_285").copied(),
             ],
 
 

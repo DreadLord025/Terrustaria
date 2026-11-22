@@ -1,0 +1,35 @@
+d35 packed: 21 | d35 deferred: 12 | d40 forecast: 56 | all decodable, none on HEAD
+
+P: HEAD + d35 21 packed (d35-tip reconciliation): 9553 sheets, padded 65.24 Mpx, area bound 7969 fits(223 headroom)
+  skyline (waste): 8232 OVERFLOW(+40) (det:true, verified)
+  maxrects BAF:    8070 fits(122 headroom) (verified)
+
+P: HEAD + d35 21 packed (d35-tip reconciliation) + boot font: 9554 sheets, padded 65.25 Mpx, area bound 7970 fits(222 headroom)
+  skyline (waste): 8232 OVERFLOW(+40) (det:true, verified)
+  maxrects BAF:    8070 fits(122 headroom) (verified)
+
+R: HEAD + d35 21 + d40 56 (d40b lands): 9609 sheets, padded 66.95 Mpx, area bound 8177 fits(15 headroom)
+  skyline (waste): 8688 OVERFLOW(+496) (det:true, verified)
+  maxrects BAF:    8278 OVERFLOW(+86) (verified)
+
+R: HEAD + d35 21 + d40 56 (d40b lands) + boot font: 9610 sheets, padded 66.96 Mpx, area bound 8178 fits(14 headroom)
+  skyline (waste): 8688 OVERFLOW(+496) (det:true, verified)
+  maxrects BAF:    8278 OVERFLOW(+86) (verified)
+
+Q: HEAD + d35 33 + d40 56 (FULL wave forecast): 9621 sheets, padded 67.61 Mpx, area bound 8258 OVERFLOW(+66)
+  skyline (waste): 8621 OVERFLOW(+429) (det:true, verified)
+  maxrects BAF:    8371 OVERFLOW(+179) (verified)
+
+Q: HEAD + d35 33 + d40 56 (FULL wave forecast) + boot font: 9622 sheets, padded 67.62 Mpx, area bound 8259 OVERFLOW(+67)
+  skyline (waste): 8621 OVERFLOW(+429) (det:true, verified)
+  maxrects BAF:    8371 OVERFLOW(+179) (verified)
+
+S: Q + c4 4 (four-wave check): 9625 sheets, padded 67.74 Mpx, area bound 8273 OVERFLOW(+81)
+  skyline (waste): 8640 OVERFLOW(+448) (det:true, verified)
+  maxrects BAF:    8373 OVERFLOW(+181) (verified)
+
+S: Q + c4 4 (four-wave check) + boot font: 9626 sheets, padded 67.74 Mpx, area bound 8274 OVERFLOW(+82)
+  skyline (waste): 8642 OVERFLOW(+450) (det:true, verified)
+  maxrects BAF:    8373 OVERFLOW(+181) (verified)
+
+wrote tools/_d38_crossnote.json (8 rows)

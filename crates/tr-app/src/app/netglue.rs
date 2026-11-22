@@ -3239,6 +3239,27 @@ fn npc_seed(
         // S1-D-3z — the Blood Zombie plants its feet on the column
         // surface like the wave-A walkers (the aiStyle-3 family machine
         // takes over on the first tick).
+        // W4-d38 b2 — the walkers/critters plant their feet on the column.
+        | crate::npc::NpcKind::BoneLee
+        | crate::npc::NpcKind::Paladin
+        | crate::npc::NpcKind::SkeletonSniper
+        // W4-d38 b3 — the walkers/critters plant their feet on the column.
+        | crate::npc::NpcKind::TacticalSkeleton
+        | crate::npc::NpcKind::SkeletonCommando
+        | crate::npc::NpcKind::AngryBonesBig
+        | crate::npc::NpcKind::AngryBonesBigMuscle
+        | crate::npc::NpcKind::AngryBonesBigHelmet
+        // W4-d38 b4 — the walkers/critters plant their feet on the column.
+        | crate::npc::NpcKind::Squirrel
+        | crate::npc::NpcKind::Mouse
+        // W4-d38 b5 — the walkers/critters plant their feet on the column.
+        | crate::npc::NpcKind::BunnySlimed
+        // W4-d38 b6 — the walkers/critters plant their feet on the column.
+        | crate::npc::NpcKind::SkeletonTopHat
+        | crate::npc::NpcKind::SkeletonAstonaut
+        | crate::npc::NpcKind::SkeletonAlien
+        // W4-d38 b7 — the walkers/critters plant their feet on the column.
+        | crate::npc::NpcKind::BunnyXmas
         | crate::npc::NpcKind::BloodZombie => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
@@ -3518,6 +3539,32 @@ fn npc_seed(
         | crate::npc::NpcKind::Poltergeist
         // S1-D-3z — the Drippler (490, noGravity aiStyle 22) rides the
         // hover ctor like the Poltergeist.
+        // W4-d38 b1 — the flyers ride the hover ctor.
+        | crate::npc::NpcKind::RaggedCaster
+        | crate::npc::NpcKind::RaggedCasterOpenCoat
+        | crate::npc::NpcKind::Necromancer
+        | crate::npc::NpcKind::NecromancerArmored
+        | crate::npc::NpcKind::DiabolistRed
+        // W4-d38 b2 — the flyers ride the hover ctor.
+        | crate::npc::NpcKind::DiabolistWhite
+        | crate::npc::NpcKind::GiantCursedSkull
+        // W4-d38 b4 — the flyers ride the hover ctor.
+        | crate::npc::NpcKind::BirdBlue
+        | crate::npc::NpcKind::BirdRed
+        | crate::npc::NpcKind::Raven
+        // W4-d38 b5 — the flyers ride the hover ctor.
+        | crate::npc::NpcKind::SlimeMasked
+        | crate::npc::NpcKind::HoppinJack
+        | crate::npc::NpcKind::Ghost
+        | crate::npc::NpcKind::DemonEyeOwl
+        // W4-d38 b6 — the flyers ride the hover ctor.
+        | crate::npc::NpcKind::DemonEyeSpaceship
+        | crate::npc::NpcKind::PumpkingBlade
+        // W4-d38 b7 — the flyers ride the hover ctor.
+        | crate::npc::NpcKind::SlimeRibbonWhite
+        | crate::npc::NpcKind::SlimeRibbonYellow
+        | crate::npc::NpcKind::SlimeRibbonGreen
+        | crate::npc::NpcKind::SlimeRibbonRed
         | crate::npc::NpcKind::Drippler => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?

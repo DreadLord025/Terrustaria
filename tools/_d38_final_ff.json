@@ -1,0 +1,463 @@
+{
+ "find_frame_range": [
+  6874,
+  9705
+ ],
+ "port_arms": {
+  "SlimeRibbonWhite": [
+   [
+    9256,
+    "NpcKind::SlimeRibbonWhite"
+   ]
+  ],
+  "SlimeRibbonYellow": [
+   [
+    9267,
+    "NpcKind::SlimeRibbonYellow"
+   ]
+  ],
+  "SlimeRibbonGreen": [
+   [
+    9278,
+    "NpcKind::SlimeRibbonGreen"
+   ]
+  ],
+  "SlimeRibbonRed": [
+   [
+    9289,
+    "NpcKind::SlimeRibbonRed"
+   ]
+  ],
+  "BunnyXmas": [
+   [
+    9300,
+    "NpcKind::BunnyXmas"
+   ]
+  ],
+  "DemonEyeSpaceship": [
+   [
+    9315,
+    "NpcKind::DemonEyeSpaceship"
+   ]
+  ],
+  "SkeletonTopHat": [
+   [
+    9327,
+    "NpcKind::SkeletonTopHat"
+   ]
+  ],
+  "SkeletonAstonaut": [
+   [
+    9329,
+    "NpcKind::SkeletonAstonaut"
+   ]
+  ],
+  "SkeletonAlien": [
+   [
+    9331,
+    "NpcKind::SkeletonAlien"
+   ]
+  ],
+  "PumpkingBlade": [
+   [
+    9334,
+    "NpcKind::PumpkingBlade"
+   ]
+  ],
+  "SlimeMasked": [
+   [
+    9337,
+    "NpcKind::SlimeMasked"
+   ]
+  ],
+  "BunnySlimed": [
+   [
+    9349,
+    "NpcKind::BunnySlimed"
+   ]
+  ],
+  "HoppinJack": [
+   [
+    9364,
+    "NpcKind::HoppinJack"
+   ]
+  ],
+  "Ghost": [
+   [
+    9376,
+    "NpcKind::Ghost"
+   ]
+  ],
+  "DemonEyeOwl": [
+   [
+    9386,
+    "NpcKind::DemonEyeOwl"
+   ]
+  ],
+  "BirdBlue": [
+   [
+    9399,
+    "NpcKind::BirdBlue"
+   ]
+  ],
+  "BirdRed": [
+   [
+    9413,
+    "NpcKind::BirdRed"
+   ]
+  ],
+  "Squirrel": [
+   [
+    9427,
+    "NpcKind::Squirrel"
+   ]
+  ],
+  "Mouse": [
+   [
+    9442,
+    "NpcKind::Mouse"
+   ]
+  ],
+  "Raven": [
+   [
+    9463,
+    "NpcKind::Raven"
+   ]
+  ],
+  "TacticalSkeleton": [
+   [
+    9480,
+    "NpcKind::TacticalSkeleton"
+   ]
+  ],
+  "SkeletonCommando": [
+   [
+    9498,
+    "NpcKind::SkeletonCommando"
+   ]
+  ],
+  "AngryBonesBig": [
+   [
+    9515,
+    "NpcKind::AngryBonesBig"
+   ]
+  ],
+  "AngryBonesBigMuscle": [
+   [
+    9517,
+    "NpcKind::AngryBonesBigMuscle"
+   ]
+  ],
+  "AngryBonesBigHelmet": [
+   [
+    9519,
+    "NpcKind::AngryBonesBigHelmet"
+   ]
+  ],
+  "DiabolistWhite": [
+   [
+    9522,
+    "NpcKind::DiabolistWhite"
+   ]
+  ],
+  "BoneLee": [
+   [
+    9532,
+    "NpcKind::BoneLee"
+   ]
+  ],
+  "GiantCursedSkull": [
+   [
+    9535,
+    "NpcKind::GiantCursedSkull"
+   ]
+  ],
+  "Paladin": [
+   [
+    9544,
+    "NpcKind::Paladin"
+   ]
+  ],
+  "SkeletonSniper": [
+   [
+    9563,
+    "NpcKind::SkeletonSniper"
+   ]
+  ],
+  "RaggedCaster": [
+   [
+    9581,
+    "NpcKind::RaggedCaster"
+   ]
+  ],
+  "RaggedCasterOpenCoat": [
+   [
+    9592,
+    "NpcKind::RaggedCasterOpenCoat"
+   ]
+  ],
+  "Necromancer": [
+   [
+    9603,
+    "NpcKind::Necromancer"
+   ]
+  ],
+  "NecromancerArmored": [
+   [
+    9614,
+    "NpcKind::NecromancerArmored"
+   ]
+  ],
+  "DiabolistRed": [
+   [
+    9625,
+    "NpcKind::DiabolistRed"
+   ]
+  ]
+ },
+ "port_covered": [
+  "AngryBonesBig",
+  "AngryBonesBigHelmet",
+  "AngryBonesBigMuscle",
+  "BirdBlue",
+  "BirdRed",
+  "BoneLee",
+  "BunnySlimed",
+  "BunnyXmas",
+  "DemonEyeOwl",
+  "DemonEyeSpaceship",
+  "DiabolistRed",
+  "DiabolistWhite",
+  "Ghost",
+  "GiantCursedSkull",
+  "HoppinJack",
+  "Mouse",
+  "Necromancer",
+  "NecromancerArmored",
+  "Paladin",
+  "PumpkingBlade",
+  "RaggedCaster",
+  "RaggedCasterOpenCoat",
+  "Raven",
+  "SkeletonAlien",
+  "SkeletonAstonaut",
+  "SkeletonCommando",
+  "SkeletonSniper",
+  "SkeletonTopHat",
+  "SlimeMasked",
+  "SlimeRibbonGreen",
+  "SlimeRibbonRed",
+  "SlimeRibbonWhite",
+  "SlimeRibbonYellow",
+  "Squirrel",
+  "TacticalSkeleton"
+ ],
+ "port_missing": [],
+ "arm_bodies": {
+  "SlimeRibbonWhite": {
+   "class": "inline",
+   "head": "NpcKind::SlimeRibbonWhite => {\n                let num2 = if self.ai_action == 0 {\n                    if self.vy < 0.0 { 2 } else if self.vy > 0.0 { 3 }\n                    else if self.vx != 0.0 { 1"
+  },
+  "SlimeRibbonYellow": {
+   "class": "inline",
+   "head": "NpcKind::SlimeRibbonYellow => {\n                let num2 = if self.ai_action == 0 {\n                    if self.vy < 0.0 { 2 } else if self.vy > 0.0 { 3 }\n                    else if self.vx != 0.0 { "
+  },
+  "SlimeRibbonGreen": {
+   "class": "inline",
+   "head": "NpcKind::SlimeRibbonGreen => {\n                let num2 = if self.ai_action == 0 {\n                    if self.vy < 0.0 { 2 } else if self.vy > 0.0 { 3 }\n                    else if self.vx != 0.0 { 1"
+  },
+  "SlimeRibbonRed": {
+   "class": "inline",
+   "head": "NpcKind::SlimeRibbonRed => {\n                let num2 = if self.ai_action == 0 {\n                    if self.vy < 0.0 { 2 } else if self.vy > 0.0 { 3 }\n                    else if self.vx != 0.0 { 1 }"
+  },
+  "BunnyXmas": {
+   "class": "inline",
+   "head": "NpcKind::BunnyXmas => {\n                if self.vy == 0.0 {\n                    if self.facing == 1 { self.sprite_dir = 1; }\n                    if self.facing == -1 { self.sprite_dir = -1; }\n        "
+  },
+  "DemonEyeSpaceship": {
+   "class": "inline",
+   "head": "NpcKind::DemonEyeSpaceship => {\n                if self.vx > 0.0 {\n                    self.sprite_dir = 1; self.rotation = self.vy.atan2(self.vx);\n                }\n                if self.vx < 0.0 {"
+  },
+  "SkeletonTopHat": {
+   "class": "inline",
+   "head": "NpcKind::SkeletonTopHat => self.humanoid_town_frame(),\n            // W4-d38 b6 \u2014 FindFrame humanoid-group case list (NPC.cs:68590-68601).\n            NpcKind::SkeletonAstonaut => self.humanoid_town_f"
+  },
+  "SkeletonAstonaut": {
+   "class": "inline",
+   "head": "NpcKind::SkeletonAstonaut => self.humanoid_town_frame(),\n            // W4-d38 b6 \u2014 FindFrame humanoid-group case list (NPC.cs:68590-68601).\n            NpcKind::SkeletonAlien => self.humanoid_town_fr"
+  },
+  "SkeletonAlien": {
+   "class": "row0",
+   "head": "NpcKind::SkeletonAlien => self.humanoid_town_frame(),\n            // W4-d38 b6 \u2014 case 328 has no FindFrame arm (NPC.cs:66705-77291);\n            // Main.npcFrameCount[328] = 1 \u2014 the single frame holds"
+  },
+  "PumpkingBlade": {
+   "class": "row0",
+   "head": "NpcKind::PumpkingBlade => { self.frame_counter = 0.0; self.frame = 0; }"
+  },
+  "SlimeMasked": {
+   "class": "inline",
+   "head": "NpcKind::SlimeMasked => {\n                self.sprite_dir = self.facing;\n                let num2 = if self.ai_action == 0 {\n                    if self.vy < 0.0 { 2 } else if self.vy > 0.0 { 3 }\n    "
+  },
+  "BunnySlimed": {
+   "class": "inline",
+   "head": "NpcKind::BunnySlimed => {\n                if self.vy == 0.0 {\n                    if self.facing == 1 { self.sprite_dir = 1; }\n                    if self.facing == -1 { self.sprite_dir = -1; }\n      "
+  },
+  "HoppinJack": {
+   "class": "inline",
+   "head": "NpcKind::HoppinJack => {\n                self.sprite_dir = self.facing;\n                let num2 = if self.ai_action == 0 {\n                    if self.vy < 0.0 { 2 } else if self.vy > 0.0 { 3 }\n     "
+  },
+  "Ghost": {
+   "class": "inline",
+   "head": "NpcKind::Ghost => {\n                if self.vx > 0.0 { self.sprite_dir = 1; }\n                if self.vx < 0.0 { self.sprite_dir = -1; }\n                self.rotation = self.vx * 0.1;\n                "
+  },
+  "DemonEyeOwl": {
+   "class": "inline",
+   "head": "NpcKind::DemonEyeOwl => {\n                if self.vx > 0.0 {\n                    self.sprite_dir = 1; self.rotation = self.vy.atan2(self.vx);\n                }\n                if self.vx < 0.0 {\n     "
+  },
+  "BirdBlue": {
+   "class": "inline",
+   "head": "NpcKind::BirdBlue => {\n                self.sprite_dir = self.facing;\n                self.rotation = self.vx * 0.1;\n                if self.vx == 0.0 && self.vy == 0.0 {\n                    self.fram"
+  },
+  "BirdRed": {
+   "class": "inline",
+   "head": "NpcKind::BirdRed => {\n                self.sprite_dir = self.facing;\n                self.rotation = self.vx * 0.1;\n                if self.vx == 0.0 && self.vy == 0.0 {\n                    self.frame"
+  },
+  "Squirrel": {
+   "class": "inline",
+   "head": "NpcKind::Squirrel => {\n                if self.vy == 0.0 {\n                    if self.facing == 1 { self.sprite_dir = 1; }\n                    if self.facing == -1 { self.sprite_dir = -1; }\n         "
+  },
+  "Mouse": {
+   "class": "inline",
+   "head": "NpcKind::Mouse => {\n                if self.vy == 0.0 {\n                    if self.facing == 1 { self.sprite_dir = 1; }\n                    if self.facing == -1 { self.sprite_dir = -1; }\n            "
+  },
+  "Raven": {
+   "class": "inline",
+   "head": "NpcKind::Raven => {\n                if self.vy == 0.0 { self.sprite_dir = -self.facing; }\n                else {\n                    if self.vx > 0.5 { self.sprite_dir = -1; }\n                    if s"
+  },
+  "TacticalSkeleton": {
+   "class": "inline",
+   "head": "NpcKind::TacticalSkeleton => {\n                if self.vy == 0.0 {\n                    if self.facing == 1 { self.sprite_dir = 1; }\n                    if self.facing == -1 { self.sprite_dir = -1; }\n "
+  },
+  "SkeletonCommando": {
+   "class": "inline",
+   "head": "NpcKind::SkeletonCommando => {\n                if self.vy == 0.0 {\n                    if self.facing == 1 { self.sprite_dir = 1; }\n                    if self.facing == -1 { self.sprite_dir = -1; }\n "
+  },
+  "AngryBonesBig": {
+   "class": "inline",
+   "head": "NpcKind::AngryBonesBig => self.humanoid_town_frame(),\n            // W4-d38 b3 \u2014 FindFrame humanoid-group case list (NPC.cs:68590-68601).\n            NpcKind::AngryBonesBigMuscle => self.humanoid_town"
+  },
+  "AngryBonesBigMuscle": {
+   "class": "inline",
+   "head": "NpcKind::AngryBonesBigMuscle => self.humanoid_town_frame(),\n            // W4-d38 b3 \u2014 FindFrame humanoid-group case list (NPC.cs:68590-68601).\n            NpcKind::AngryBonesBigHelmet => self.humanoi"
+  },
+  "AngryBonesBigHelmet": {
+   "class": "inline",
+   "head": "NpcKind::AngryBonesBigHelmet => self.humanoid_town_frame(),\n            // W4-d38 b2 \u2014 case 281-286 (NPC.cs:77023-77054): the grounded flip,"
+  },
+  "DiabolistWhite": {
+   "class": "inline",
+   "head": "NpcKind::DiabolistWhite => {\n                if self.vy == 0.0 {\n                    if self.facing == 1 { self.sprite_dir = 1; }\n                    if self.facing == -1 { self.sprite_dir = -1; }\n   "
+  },
+  "BoneLee": {
+   "class": "inline",
+   "head": "NpcKind::BoneLee => self.humanoid_town_frame(),\n            // W4-d38 b2 \u2014 case 289 (NPC.cs:72652-72675): the <4/<8/else counter\n            // bands rows 0/1/2, the ai[3]==1 dash adds row 3.\n        "
+  },
+  "GiantCursedSkull": {
+   "class": "inline",
+   "head": "NpcKind::GiantCursedSkull => {\n                self.frame_counter += 1.0;\n                if self.frame_counter < 4.0 { self.frame = 0; }\n                else if self.frame_counter < 8.0 { self.frame "
+  },
+  "Paladin": {
+   "class": "inline",
+   "head": "NpcKind::Paladin => {\n                if self.vy == 0.0 {\n                    if self.facing == 1 { self.sprite_dir = 1; }\n                    if self.facing == -1 { self.sprite_dir = -1; }\n          "
+  },
+  "SkeletonSniper": {
+   "class": "inline",
+   "head": "NpcKind::SkeletonSniper => {\n                if self.vy == 0.0 {\n                    if self.facing == 1 { self.sprite_dir = 1; }\n                    if self.facing == -1 { self.sprite_dir = -1; }\n   "
+  },
+  "RaggedCaster": {
+   "class": "inline",
+   "head": "NpcKind::RaggedCaster => {\n                if self.vy == 0.0 {\n                    if self.facing == 1 { self.sprite_dir = 1; }\n                    if self.facing == -1 { self.sprite_dir = -1; }\n     "
+  },
+  "RaggedCasterOpenCoat": {
+   "class": "inline",
+   "head": "NpcKind::RaggedCasterOpenCoat => {\n                if self.vy == 0.0 {\n                    if self.facing == 1 { self.sprite_dir = 1; }\n                    if self.facing == -1 { self.sprite_dir = -1;"
+  },
+  "Necromancer": {
+   "class": "inline",
+   "head": "NpcKind::Necromancer => {\n                if self.vy == 0.0 {\n                    if self.facing == 1 { self.sprite_dir = 1; }\n                    if self.facing == -1 { self.sprite_dir = -1; }\n      "
+  },
+  "NecromancerArmored": {
+   "class": "inline",
+   "head": "NpcKind::NecromancerArmored => {\n                if self.vy == 0.0 {\n                    if self.facing == 1 { self.sprite_dir = 1; }\n                    if self.facing == -1 { self.sprite_dir = -1; }"
+  },
+  "DiabolistRed": {
+   "class": "inline",
+   "head": "NpcKind::DiabolistRed => {\n                if self.vy == 0.0 {\n                    if self.facing == 1 { self.sprite_dir = 1; }\n                    if self.facing == -1 { self.sprite_dir = -1; }\n     "
+  }
+ },
+ "lane_claims": {
+  "f26": {
+   "tip": "7f38fd345",
+   "our_ids_claimed": {
+    "289": [
+     "npc_findframe_b.rs"
+    ],
+    "290": [
+     "npc_findframe_extra6.rs"
+    ],
+    "281": [
+     "npc_findframe_extra6.rs"
+    ],
+    "291": [
+     "npc_findframe_extra6.rs"
+    ],
+    "293": [
+     "npc_findframe_extra6.rs"
+    ]
+   }
+  },
+  "f27": {
+   "tip": "1a24a133c",
+   "our_ids_claimed": {
+    "289": [
+     "npc_findframe_b.rs"
+    ],
+    "316": [
+     "npc_findframe_extra7.rs"
+    ],
+    "317": [
+     "npc_findframe_extra7.rs"
+    ],
+    "322": [
+     "npc_findframe_extra7.rs"
+    ],
+    "333": [
+     "npc_findframe_extra7.rs"
+    ],
+    "337": [
+     "npc_findframe_extra7.rs"
+    ]
+   }
+  },
+  "d44": {
+   "tip": "7c430def6",
+   "our_ids_claimed": {
+    "289": [
+     "npc_findframe_b.rs"
+    ],
+    "290": [
+     "npc_findframe_extra6.rs"
+    ],
+    "281": [
+     "npc_findframe_extra6.rs"
+    ],
+    "291": [
+     "npc_findframe_extra6.rs"
+    ],
+    "293": [
+     "npc_findframe_extra6.rs"
+    ]
+   }
+  }
+ }
+}

@@ -504,6 +504,56 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // documented `&[]` gap (the saucer-family precedent); the whip tag
         // rides `whip_immune` below.
         NpcKind::DungeonGuardian => &[],
+        // W4-d38 b7 — SpecificallyImmuneTo {20}.
+        NpcKind::SlimeRibbonWhite
+        | NpcKind::SlimeRibbonYellow
+        | NpcKind::SlimeRibbonGreen
+        | NpcKind::SlimeRibbonRed => &[20],
+        // W4-d38 b7 — SpecificallyImmuneTo {31}.
+        NpcKind::BunnyXmas => &[31],
+        // W4-d38 b6 — null DebuffImmunitySets row.
+        NpcKind::DemonEyeSpaceship => &[],
+        // W4-d38 b6 — SpecificallyImmuneTo {20}.
+        NpcKind::SkeletonTopHat
+        | NpcKind::SkeletonAstonaut
+        | NpcKind::SkeletonAlien => &[20],
+        // W4-d38 b6 — SpecificallyImmuneTo {20, 24, 31, 323}.
+        NpcKind::PumpkingBlade => &[20, 24, 31, 323],
+        // W4-d38 b5 — SpecificallyImmuneTo {20}.
+        NpcKind::SlimeMasked
+        | NpcKind::HoppinJack => &[20],
+        // W4-d38 b5 — SpecificallyImmuneTo {31}.
+        NpcKind::BunnySlimed => &[31],
+        // W4-d38 b5 — SpecificallyImmuneTo {20, 24, 31, 39, 44, 69, 70, 395, 153, 189, 203, 204, 323, 324}.
+        NpcKind::Ghost => &[20, 24, 31, 39, 44, 69, 70, 395, 153, 189, 203, 204, 323, 324],
+        // W4-d38 b5 — null DebuffImmunitySets row.
+        NpcKind::DemonEyeOwl => &[],
+        // W4-d38 b4 — SpecificallyImmuneTo {31}.
+        NpcKind::BirdBlue
+        | NpcKind::BirdRed
+        | NpcKind::Squirrel
+        | NpcKind::Mouse
+        | NpcKind::Raven => &[31],
+        // W4-d38 b3 — SpecificallyImmuneTo {20}.
+        NpcKind::TacticalSkeleton
+        | NpcKind::SkeletonCommando
+        | NpcKind::AngryBonesBig
+        | NpcKind::AngryBonesBigMuscle
+        | NpcKind::AngryBonesBigHelmet => &[20],
+        // W4-d38 b2 — SpecificallyImmuneTo {20, 31}.
+        NpcKind::DiabolistWhite
+        | NpcKind::GiantCursedSkull => &[20, 31],
+        // W4-d38 b2 — SpecificallyImmuneTo {20}.
+        NpcKind::BoneLee
+        | NpcKind::SkeletonSniper => &[20],
+        // W4-d38 b2 — SpecificallyImmuneTo {20, 31, 69}.
+        NpcKind::Paladin => &[20, 31, 69],
+        // W4-d38 b1 — SpecificallyImmuneTo {20, 31}.
+        NpcKind::RaggedCaster
+        | NpcKind::RaggedCasterOpenCoat
+        | NpcKind::Necromancer
+        | NpcKind::NecromancerArmored
+        | NpcKind::DiabolistRed => &[20, 31],
     }
 }
 

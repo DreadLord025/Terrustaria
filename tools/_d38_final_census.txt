@@ -1,0 +1,8 @@
+35 kinds: 35 | band: [281, 337] | protocol==vanilla: True
+holes: [288, 305, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 319, 320, 321, 325, 326, 327, 329, 330, 331, 332]
+entries: 35 | critters: ['BunnyXmas', 'BunnySlimed', 'BirdBlue', 'BirdRed', 'Squirrel', 'Mouse']
+rare: {'TacticalSkeleton': 1.0, 'SkeletonCommando': 1.0, 'BoneLee': 1.0, 'Paladin': 2.0, 'SkeletonSniper': 1.0} | bosses: []
+FindFrame covered (34): ['AngryBonesBig', 'AngryBonesBigHelmet', 'AngryBonesBigMuscle', 'BirdBlue', 'BirdRed', 'BoneLee', 'BunnySlimed', 'BunnyXmas', 'DemonEyeOwl', 'DemonEyeSpaceship', 'DiabolistRed', 'DiabolistWhite', 'Ghost', 'GiantCursedSkull', 'HoppinJack', 'Mouse', 'Necromancer', 'NecromancerArmored', 'Paladin', 'RaggedCaster', 'RaggedCasterOpenCoat', 'Raven', 'SkeletonAlien', 'SkeletonAstonaut', 'SkeletonCommando', 'SkeletonSniper', 'SkeletonTopHat', 'SlimeMasked', 'SlimeRibbonGreen', 'SlimeRibbonRed', 'SlimeRibbonWhite', 'SlimeRibbonYellow', 'Squirrel', 'TacticalSkeleton']
+FindFrame NO case (1): ['PumpkingBlade']
+frameCount rows found: 35
+frameCount missing ids: []
