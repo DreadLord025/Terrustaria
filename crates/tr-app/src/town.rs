@@ -7,21 +7,36 @@
 //! load-path `FixAgainstExploits` home re-validation, and `ShimmeredTownNpcs`
 //! = `NPC.ShimmeredTownNPCs` (`NPC.cs:6071`).
 
-use tr_core::housing::{check_room, room_needs, score_room, start_room_check};
+use tr_core::housing::{check_room, room_needs, start_room_check};
 use tr_core::wld::sections::npcs::NPCID_COUNT;
 use tr_core::world::World;
 use tr_core::wld::sections::WldTownRoom;
 
 use crate::npc::Npc;
 
-/// `QuickFindHome` (`WorldGen.cs:5732-5795`): the three-pass room scan
-/// around `(tile_x, tile_y)` — the exact tile, the ±1 ring, the ±10 ring
-/// with stride 2 — the first pass whose room both scans and furnishes
-/// wins. Returns the `(best_x, best_y)` spot.
+/// `WorldGen.QuickFindHome` (`WorldGen.cs:5732-5794`): the three-pass room
+/// search around the asking NPC's home tile — pass 1 the exact tile (the
+/// scan reads `homeTileY - 1`, `:5739`), pass 2 the ±1 ring (`:5742-5747`),
+/// pass 3 the ±10 ring with stride 2 (`:5751-5757`). The C# only keeps the
+/// LAST successful `StartRoomCheck` state (`WorldGen.canSpawn`), then runs
+/// `CheckSpecialTownNPCSpawningConditions` (`:5759-5762`) → `RoomNeeds`
+/// (`:5765`) → `ScoreRoom(npc, type)` (`:5768`) → the `hiScore > 0` gate
+/// (`:5770`) → `IsRoomConsideredOccupiedForNPCIndex` (`:5772`) on that one
+/// room — not "the first pass that furnishes". Returns the score-best
+/// `(bestX, bestY)` (`:5776-5777`).
+///
+/// The `Main.tileSolid[379] = true` window (`:5734-5735`, restored
+/// `:5793`) is the generated `TILE_SOLID` base state (379 set) — the
+/// housing tests' candelabra witness pins it, no toggle needed.
+///
+/// The outer guard's Y arm is `homeTileY < Main.maxTilesY` (`:5736`) —
+/// NOT `maxTilesY - 10`; the −10 cut lives inside `StartRoomCheck` alone.
 ///
 /// `npcs` is the live NPC list (the room's occupancy, `ScoreRoom`'s
 /// `ScoreRoom_IsThisRoomOccupiedBySomeone` `:5814-5829`); `ignore` is the
-/// NPC asking for the home (the C#'s `ignoreNPC`).
+/// NPC asking for the home (the C#'s `ignoreNPC` — `QuickFindHome` passes
+/// its own index). `unlocked_truffle_spawn` is `NPC.unlockedTruffleSpawn`
+/// for the special-conditions gate.
 pub fn quick_find_home(
     world: &World,
     npcs: &[Npc],
@@ -29,40 +44,94 @@ pub fn quick_find_home(
     tile_y: i32,
     ignore: Option<usize>,
     asking_net_id: i32,
+    unlocked_truffle_spawn: bool,
 ) -> Option<(i32, i32)> {
-    if tile_x <= 10 || tile_y <= 10 || tile_x >= world.width - 10 || tile_y >= world.height - 10 {
+    if tile_x <= 10 || tile_y <= 10 || tile_x >= world.width - 10 || tile_y >= world.height {
+        return None; // `:5736`
+    }
+    // Every `StartRoomCheck` call writes `WorldGen.canSpawn` (`:6059` true
+    // at entry, false on failure), so a later failing check in the same
+    // pass RESETS the flag — the kept room state is the LAST successful
+    // scan, and the passes gate on the flag, not on "any success".
+    let mut last_ok: Option<tr_core::housing::RoomScan> = None;
+    let mut can_spawn = match check_room(world, tile_x, tile_y - 1) {
+        Ok(s) => {
+            last_ok = Some(s);
+            true
+        }
+        Err(_) => false,
+    };
+    if !can_spawn {
+        // The pass 2: the ±1 ring (`:5742-5747`) — the inner loop stops at
+        // the first success, the outer keeps walking.
+        for i in (tile_x - 1)..=(tile_x + 1) {
+            for j in (tile_y - 1)..=(tile_y + 1) {
+                match check_room(world, i, j) {
+                    Ok(s) => {
+                        last_ok = Some(s);
+                        can_spawn = true;
+                        break;
+                    }
+                    Err(_) => can_spawn = false,
+                }
+            }
+        }
+    }
+    if !can_spawn {
+        // The pass 3: the ±10 ring with stride 2 (`:5751-5757`).
+        let num = 10;
+        for k in (tile_x - num..=(tile_x + num)).step_by(2) {
+            for l in (tile_y - num..=(tile_y + num)).step_by(2) {
+                match check_room(world, k, l) {
+                    Ok(s) => {
+                        last_ok = Some(s);
+                        can_spawn = true;
+                        break;
+                    }
+                    Err(_) => can_spawn = false,
+                }
+            }
+        }
+    }
+    if !can_spawn {
+        return None; // `:5788-5791`: `homeless = true`
+    }
+    let scan = last_ok.expect("can_spawn implies a successful scan");
+    // `:5759-5762`: the special conditions gate the kept scan (the Truffle).
+    if !tr_core::housing::check_special_town_npc_spawning_conditions(
+        world,
+        &scan,
+        asking_net_id,
+        unlocked_truffle_spawn,
+    ) {
         return None;
     }
-    // The pass 1: the exact tile (the scan reads `homeTileY - 1`).
-    if let Some((bx, by)) = scan_spot(world, npcs, tile_x, tile_y - 1, ignore, asking_net_id) {
-        return Some((bx, by));
+    // `:5765-5766`: the furniture needs.
+    if !room_needs(&scan.house_tiles) {
+        return None;
     }
-    // The pass 2: the ±1 ring.
-    for i in (tile_x - 1)..=(tile_x + 1) {
-        for j in (tile_y - 1)..=(tile_y + 1) {
-            if let Some((bx, by)) = scan_spot(world, npcs, i, j, ignore, asking_net_id) {
-                return Some((bx, by));
-            }
-        }
+    // `:5768`: `ScoreRoom(npc, type)` — the occupancy half runs first.
+    let (occupied, shared_room_x) = room_occupancy(&scan, npcs, ignore, asking_net_id);
+    let report = tr_core::housing::score_room_report(world, &scan, occupied, shared_room_x);
+    // `:5770-5772`: the score gate, then the best-spot occupancy check.
+    if report.hi_score <= 0 {
+        return None;
     }
-    // The pass 3: the ±10 ring with stride 2.
-    let num = 10;
-    for k in (tile_x - num..=(tile_x + num)).step_by(2) {
-        for l in (tile_y - num..=(tile_y + num)).step_by(2) {
-            if let Some((bx, by)) = scan_spot(world, npcs, k, l, ignore, asking_net_id) {
-                return Some((bx, by));
-            }
-        }
+    let (bx, by) = report.best?;
+    if !is_room_considered_occupied_for_npc_index(npcs, ignore, bx, by, asking_net_id) {
+        return None;
     }
-    None
+    Some((bx, by))
 }
 
-/// One scan spot: the room check + the furniture needs + the room score.
-///
-/// `WorldGen.QuickFindHome` (`WorldGen.cs:5732-5795`) runs `RoomNeeds` and
-/// then `ScoreRoom` (`:5858-5992`), which picks the room's **best** home
-/// spot — `WorldGen.bestX/bestY` — not the scan's centre. The C# writes the
-/// home only when `hiScore > 0` (`:5769-5771`).
+/// One scan spot: the room check + the furniture needs + the room score —
+/// the `SpawnTownNPC` chain's shape (`WorldGen.cs:5419-5438`): the room
+/// check at exactly `(x, y)`, `RoomNeeds`, then `ScoreRoom(-1, type)` and
+/// the `hiScore > 0` gate. Returns the room's **best** home spot —
+/// `WorldGen.bestX/bestY` — not the scan's centre. (No
+/// `IsRoomConsideredOccupiedForNPCIndex` here: `SpawnTownNPC` runs the
+/// separate `IsRoomConsideredAlreadyOccupied` gate on the new-spawn arm
+/// alone, `:5486`.)
 fn scan_spot(
     world: &World,
     npcs: &[Npc],
@@ -75,21 +144,12 @@ fn scan_spot(
     if !room_needs(&scan.house_tiles) {
         return None;
     }
-    // `ScoreRoom_IsThisRoomOccupiedBySomeone` (`WorldGen.cs:5814-5829`): a
-    // housed town NPC whose home is in the room occupies it, so the room
-    // scores −1 and no home is assigned. The C#'s
-    // `CanNPCsLiveWithEachOther` compares the two `housingCategory` fields
-    // (`TownRoomManager.cs:144-156`), so a same-category occupant refuses the
-    // room while a different-category one only sets `sharedRoomX`.
     let (occupied, shared_room_x) = room_occupancy(&scan, npcs, ignore, asking_net_id);
-    if occupied {
+    let report = tr_core::housing::score_room_report(world, &scan, occupied, shared_room_x);
+    if report.hi_score <= 0 {
         return None;
     }
-    let (bx, by, score) = score_room(world, &scan, shared_room_x)?;
-    if score <= 0 {
-        return None;
-    }
-    Some((bx, by))
+    report.best
 }
 
 /// `WorldGen.ScoreRoom_IsThisRoomOccupiedBySomeone` (`WorldGen.cs:5814-5829`):
@@ -140,11 +200,132 @@ pub fn housing_category(net_id: i32) -> i32 {
 }
 
 /// `TownRoomManager.CanNPCsLiveWithEachOther(int npc1ByType, NPC npc2)`
-/// (`TownRoomManager.cs:144-156`): resolve the asking type through the content
-/// table (an id with no sample lives with anyone, `:146-149`) and then compare
-/// the two `housingCategory` fields (`:153-156`).
+/// (`TownRoomManager.cs:144-151`): resolve the asking type through the
+/// content table — an id with no sample lives with anyone (`:146-149`) —
+/// then compare the two `housingCategory` fields (`:153-156`).
+/// `ContentSamples.NpcsByNetId` holds a sample for every net id in
+/// `-65..NPCID.Count` (`ContentSamples.cs:863-867`), so the port's
+/// membership test is that range — an id outside it has no sample and
+/// lives with anyone.
 pub fn can_npcs_live_with_each_other(asking_net_id: i32, occupant_net_id: i32) -> bool {
+    // `:146-149`: `ContentSamples.NpcsByNetId.TryGetValue` fails → true.
+    if !(-65..NPCID_COUNT as i32).contains(&asking_net_id) {
+        return true;
+    }
     housing_category(asking_net_id) != housing_category(occupant_net_id)
+}
+
+/// `WorldGen.IsRoomConsideredOccupiedForNPCIndex` (`WorldGen.cs:5796-5812`):
+/// `QuickFindHome`'s best-spot gate (`:5772`) — true when NO other housed
+/// town NPC sits exactly on `(bestX, bestY)` with a conflicting category.
+/// `asking` is the C#'s `npc` index (the `i != npc` skip, `:5801`); the
+/// asking type resolves through the NPC-NPC overload
+/// (`CanNPCsLiveWithEachOther(Main.npc[npc], nPC)`, `:5804` — no
+/// content-table lookup on this path).
+pub fn is_room_considered_occupied_for_npc_index(
+    npcs: &[Npc],
+    asking: Option<usize>,
+    best_x: i32,
+    best_y: i32,
+    asking_net_id: i32,
+) -> bool {
+    for (i, npc) in npcs.iter().enumerate() {
+        if Some(i) == asking {
+            continue; // `:5801`
+        }
+        if !npc.kind.is_town_npc() {
+            continue; // `active && townNPC` (`:5804`)
+        }
+        let Some((hx, hy)) = npc.home else {
+            continue; // `!homeless`
+        };
+        if hx == best_x
+            && hy == best_y
+            && housing_category(asking_net_id) == housing_category(npc.kind.net_id())
+        {
+            return false; // `:5806`
+        }
+    }
+    true
+}
+
+/// `WorldGen.IsRoomConsideredAlreadyOccupied` (`WorldGen.cs:5644-5657`):
+/// `SpawnTownNPC`'s new-spawn gate (`:5486`) — true when ANY housed town
+/// NPC sits exactly on `(spawnTileX, spawnTileY)` whose category conflicts
+/// with the type to spawn (the int-overload `CanNPCsLiveWithEachOther`, so
+/// an unmodelled asking type lives with anyone).
+pub fn is_room_considered_already_occupied(
+    npcs: &[Npc],
+    spawn_tile_x: i32,
+    spawn_tile_y: i32,
+    npc_type_to_spawn: i32,
+) -> bool {
+    for npc in npcs {
+        if !npc.kind.is_town_npc() {
+            continue; // `active && townNPC` (`:5650`)
+        }
+        let Some((hx, hy)) = npc.home else {
+            continue; // `!homeless`
+        };
+        if hx == spawn_tile_x
+            && hy == spawn_tile_y
+            && !can_npcs_live_with_each_other(npc_type_to_spawn, npc.kind.net_id())
+        {
+            return true; // `:5652`
+        }
+    }
+    false
+}
+
+/// `WorldGen.FindNPCLookingForHomeThatCanMoveIn` (`WorldGen.cs:5617-5627`):
+/// the first live homeless NPC of `npc_type` whose `lookForHomeTimeout`
+/// has expired AND whose special spawning conditions pass (the Truffle's
+/// mushroom room). Returns the `Main.npc[]` index or `None` (the C#'s −1).
+/// The scan reads the kept room state (`WorldGen.roomY2` etc.), so the
+/// caller passes the last successful scan.
+pub fn find_npc_looking_for_home_that_can_move_in(
+    world: &World,
+    scan: &tr_core::housing::RoomScan,
+    npcs: &[Npc],
+    npc_type: i32,
+    unlocked_truffle_spawn: bool,
+) -> Option<usize> {
+    for (i, npc) in npcs.iter().enumerate() {
+        // `:5621`: active && homeless && type && timeout == 0 && conditions.
+        if npc.home.is_none()
+            && npc.kind.net_id() == npc_type
+            && npc.look_for_home_timeout == 0
+            && tr_core::housing::check_special_town_npc_spawning_conditions(
+                world,
+                scan,
+                npc.kind.net_id(),
+                unlocked_truffle_spawn,
+            )
+        {
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// `WorldGen.FindAnyHomelessTownNPC` (`WorldGen.cs:5629-5642`): the first
+/// live homeless town NPC, excluding the Old Man (37), the Skeleton
+/// Merchant (453), the Travelling Merchant (368) and the Truffle (160);
+/// the Guide (22) joins only when `include_guide` (`SpawnHomelessNPC`
+/// passes true, `:5051`). Returns the index or `None` (the C#'s −1).
+pub fn find_any_homeless_town_npc(npcs: &[Npc], include_guide: bool) -> Option<usize> {
+    for (i, npc) in npcs.iter().enumerate() {
+        let id = npc.kind.net_id();
+        // `:5635`: active && townNPC && homeless && the exclusion ids.
+        if npc.kind.is_town_npc()
+            && npc.home.is_none()
+            && !matches!(id, 37 | 453 | 368 | 160)
+            && (include_guide || id != 22)
+        {
+            return Some(i);
+        }
+    }
+    None
 }
 
 
@@ -685,7 +866,7 @@ mod tests {
         // the Guide's position up to 10 tiles away.
         let mut w = ground();
         build_furnished_room(&mut w, 60, 100, 12, 9);
-        let home = quick_find_home(&w, &[], 72, 108, None, GUIDE_ID);
+        let home = quick_find_home(&w, &[], 72, 108, None, GUIDE_ID, false);
         assert!(home.is_some(), "the scan finds the room");
         let (hx, hy) = home.unwrap();
         assert!((60..=71).contains(&hx), "hx {hx}");
@@ -706,12 +887,12 @@ mod tests {
             Some((65, 106)),
         );
         assert!(
-            quick_find_home(&w, &[resident], 72, 108, None, GUIDE_ID).is_none(),
+            quick_find_home(&w, &[resident], 72, 108, None, GUIDE_ID, false).is_none(),
             "the occupied room is refused"
         );
         // The asking NPC itself does not block its own room (`ignoreNPC`).
         assert!(
-            quick_find_home(&w, &[], 72, 108, None, GUIDE_ID).is_some(),
+            quick_find_home(&w, &[], 72, 108, None, GUIDE_ID, false).is_some(),
             "the empty room still answers"
         );
     }
@@ -732,7 +913,7 @@ mod tests {
             Some((65, 106)),
         );
         assert!(
-            quick_find_home(&w, &[resident], 72, 108, None, TOWN_CAT_ID).is_some(),
+            quick_find_home(&w, &[resident], 72, 108, None, TOWN_CAT_ID, false).is_some(),
             "a different-category tenant may share the room"
         );
     }
@@ -742,7 +923,7 @@ mod tests {
         // A room without furniture: the scan fails everywhere.
         let mut w = ground();
         build_furnished_room_with(&mut w, 60, 100, 12, 9, &[]);
-        assert!(quick_find_home(&w, &[], 72, 108, None, GUIDE_ID).is_none());
+        assert!(quick_find_home(&w, &[], 72, 108, None, GUIDE_ID, false).is_none());
     }
 
     #[test]
@@ -1192,7 +1373,7 @@ mod tests {
             assert_eq!(rooms.has_room(GUIDE_ID), Some((hx, hy)));
             assert!(chat.messages.is_empty(), "a successful move prints nothing");
             // The old room is free again: another Guide may take it.
-            assert!(quick_find_home(&w, &npcs, 72, 108, None, GUIDE_ID).is_some());
+            assert!(quick_find_home(&w, &npcs, 72, 108, None, GUIDE_ID, false).is_some());
 
             // A failed move changes nothing (`Main.cs:45174-45179` only
             // acts on `true`): solid stone refuses with the reason text.
