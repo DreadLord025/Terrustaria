@@ -507,6 +507,17 @@ impl App {
                                     self.entity_lights.add(x, y, rgb);
                                 }
                             }
+                            // W4-c11: the Tesla Turret's blue light — the
+                            // ai[1]/60-scaled fade (`NPC.cs:35167`) then
+                            // the constant (0.1, 0.5, 0.7) (`:35175`), at
+                            // the truncated centre tile 10 px up. RNG-free.
+                            NpcKind::MartianTurret => {
+                                let (x, y, rgb) = crate::npc_ai_style73::turret_light(
+                                    n.ai[1],
+                                    (pos.x + w / 2.0, pos.y + h / 2.0),
+                                );
+                                self.entity_lights.add(x, y, rgb);
+                            }
                             _ => {}
                         }
                         // W4-d31 style83 wiring — the cultist tablet's

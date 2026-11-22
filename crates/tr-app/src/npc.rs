@@ -5372,6 +5372,16 @@ impl Npc {
                 self.x += self.vx;
                 self.y += self.vy;
             }
+            // `else if (this.aiStyle == 73)` (`NPC.cs:35102-35217`) — the
+            // MartianTurret 387, the style's only user (W4-c11). The
+            // faithful `npc_ai_style73::style73_step` claims the axis: the
+            // materialize fade + the four-draw shot cycle ride the pure
+            // module; this arm owns the post-`AI()` tail — the turret is
+            // noGravity/noTileCollide FALSE (`SetDefaults` 387 writes
+            // neither, `:13922-13934`), so the depth-scaled 0.3 gravity +
+            // the 10 fall cap apply (`:90465-90472`), then UpdateCollision
+            // (the spore family's blocked-axis fold, `:92538-92544`).
+            73 => self.ai_073_martian_turret(world, player, rng, dust, dust_ctx),
             // `else if (this.aiStyle == 30)` (`NPC.cs:26405-27014`) -
             // the Retinazer (125), the style's only user. S1-D-3
             // wire-retinazer: the faithful machine lives in
@@ -7390,6 +7400,105 @@ impl Npc {
         }
     }
 
+    /// W4-c11 wiring — the aiStyle-73 adapter: the MartianTurret 387's
+    /// faithful arm (`npc_ai_style73::style73_step`, `NPC.cs:35102-35217`).
+    /// The session player is the slot-0 candidate (the S1-D-3p convention),
+    /// `netMode` folds 0 (single-player host), difficulty 1.0 (the port's
+    /// single-difficulty classic), ticker 0 (the `EverLastingTicker` is not
+    /// plumbed) and `justHit` rides the one-tick `self.just_hit` flag (the
+    /// style-55 convention — NOT the hurt_cd cooldown). The shot request
+    /// queues on `wants_hostile_shot` (the sim's spawn drain resolves the
+    /// 435 row); the light is the draw-side feed's (`app/frame/draw.rs`,
+    /// the ForceBubble precedent); the fade's dust ring is ACTIVATED by
+    /// the retire phase — `turret_materialize_ring` (the W4-e2 batch-6
+    /// STAGED emitter adopted verbatim, keep-one) draws the eight
+    /// `Dust.NewDust` internals in C# order on the caller's `UpdateNPCs`
+    /// stream through the live pool (the Everscream S1-F-13c precedent;
+    /// research/356 §3).
+    ///
+    /// The tail: `SetDefaults` 387 writes no noGravity/noTileCollide
+    /// (`:13922-13934`), so `UpdateNPC` runs the depth-scaled gravity
+    /// (`:90465-90472` + `UpdateNPC_UpdateGravity` `:90877-90936` — the
+    /// `body_gravity` port, the style-72 arm's precedent) then
+    /// `UpdateCollision` — folded to the blocked-axis collision with the
+    /// `collideX/Y` latches (the spore family's `:92538-92544` fold; the
+    /// turret never walks, so the slope/stair tails stay inert).
+    fn ai_073_martian_turret(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        let cand = crate::npc_target::session_candidate(player);
+        let just_hit = self.just_hit;
+        let out = crate::npc_ai_style73::style73_step(
+            self,
+            world,
+            &[cand],
+            0,
+            self.kind.cs_id() as i32,
+            just_hit,
+            0,
+            1.0,
+            rng,
+        );
+        if let Some(s) = out.shot {
+            // `:35215` — the 435 bolt: kb 0, the difficulty-remapped
+            // damage; the sim's drain spawns it through the data row.
+            self.wants_hostile_shot.push((
+                crate::projectile::MARTIAN_TURRET_BOLT,
+                s.x,
+                s.y,
+                s.vx,
+                s.vy,
+                s.damage,
+            ));
+        }
+        // The fade pins `frameCounter = 0` / `frame.Y = 0` (`:35129-35130`)
+        // BEFORE `FindFrame` runs — the counter field is private to this
+        // module's siblings, so the pin lands here on the fade ticks.
+        // The ring itself (`:35157`/`:35162`) draws the eight pool
+        // internals on THIS stream, after the plan, before the arm's
+        // early return propagates (the C#'s ring precedes the AddLight).
+        if let Some(plan) = out.materialize_dust {
+            self.frame_counter = 0.0;
+            let (cx, cy) = self.center();
+            crate::npc_ai_style73::turret_materialize_ring(
+                cx, cy, &plan.placements, rng, dust, dust_ctx, world,
+            );
+        }
+        // `NPC.cs:90465-90472` — the depth-scaled gravity + the fall cap
+        // (the style-72 tail's shape; 387 has no per-type gravity arm).
+        self.vy = (self.vy
+            + crate::npc_ai_golem::body_gravity(self.y, world.width as i32, world.world_surface))
+        .min(10.0);
+        // `:90473-90476` — the dead-band X snap (double compare).
+        if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
+            self.vx = 0.0;
+        }
+        // `UpdateCollision`'s dry move (`:92538-92544`, the spore fold):
+        // the blocked axes zero the velocity and latch collideX/Y.
+        self.old_vx = self.vx;
+        self.old_vy = self.vy;
+        let (w, h) = self.size();
+        let nx = self.x + self.vx;
+        self.collide_x = crate::player::collides_rect(world, nx, self.y, w, h);
+        if self.collide_x {
+            self.vx = 0.0;
+        } else {
+            self.x = nx;
+        }
+        let ny = self.y + self.vy;
+        self.collide_y = crate::player::collides_rect(world, self.x, ny, w, h);
+        if self.collide_y {
+            self.vy = 0.0;
+        } else {
+            self.y = ny;
+        }
+    }
+
     /// The kind-keyed dispatch — the pre-S1-D-2 `match self.kind`, unchanged
     /// for every style the axis has not claimed yet. D-3 migrates one family
     /// at a time into the axis above; this match shrinks as they land.
@@ -7649,11 +7758,14 @@ impl Npc {
                 unreachable!("aiStyle 72 rides the style axis (S1-D-3-wire-smallkinds)")
             }
             // The Tesla Turret: aiStyle 73's warp-in machine
-            // (`NPC.cs:35102-35216` — the 120-tick teleport-in alpha ramp,
-            // then the aim/fire cycle). The Engineer's placement arm
-            // (`NPC.cs:59004-59030`) and the machine ride a LATER wave —
-            // the stand-in holds still.
-            NpcKind::MartianTurret => {}
+            // (`NPC.cs:35102-35216`) is WIRED by W4-c11 (the axis' 73 arm
+            // runs `npc_ai_style73::style73_step` + the gravity/collision
+            // tail) — this kind arm is unreachable through `update_rng`
+            // (the stand-in retired). The Engineer's placement arm
+            // (`NPC.cs:59004-59030`) rides the invasion wave.
+            NpcKind::MartianTurret => {
+                unreachable!("aiStyle 73 rides the style axis (W4-c11)")
+            }
             // The pirate ship: aiStyle 93 rides the style axis
             // (W4-d32 — the `update_flying_dutchman` machine is
             // UNCHANGED, the axis arm above calls it); its cannons'
@@ -9077,27 +9189,16 @@ impl Npc {
             // The Tesla Turret: `case 387` (`NPC.cs:71663-71696`) — the
             // firing machine (`ai[0] > 0`) accelerates the accumulator
             // (+1 more at ai[0] >= 20, +1 at >= 40) and steps the 2-row
-            // strip every 10; idle steps every 15.
+            // strip every 10; idle steps every 15. W4-c11: delegated to
+            // the pure pair fn (the BlazingWheel precedent).
             NpcKind::MartianTurret => {
-                if self.ai[0] > 0.0 {
-                    self.frame_counter += 1.0;
-                    if self.ai[0] >= 20.0 {
-                        self.frame_counter += 1.0;
-                    }
-                    if self.ai[0] >= 40.0 {
-                        self.frame_counter += 1.0;
-                    }
-                    if self.frame_counter >= 10.0 {
-                        self.frame_counter = 0.0;
-                        self.frame = (self.frame + 1) % 2;
-                    }
-                } else {
-                    self.frame_counter += 1.0;
-                    if self.frame_counter >= 15.0 {
-                        self.frame_counter = 0.0;
-                        self.frame = (self.frame + 1) % 2;
-                    }
-                }
+                let (row, counter) = crate::npc_ai_style73::turret_find_frame(
+                    self.frame,
+                    self.frame_counter,
+                    self.ai[0],
+                );
+                self.frame = row;
+                self.frame_counter = counter;
             }
             // The rider: `case 390` (`NPC.cs:71779-71805`) — the row is
             // purely `ai[2]`-driven (the aim octant 1..5 the AI writes:
@@ -35499,6 +35600,19 @@ mod s1_f_13c_wire_tests {
         n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
     }
 
+    /// W4-c11 witness 2 — the Tesla Turret's hold-still stand-in is
+    /// retired: the kind-match arm panics (the axis' 73 claim owns the
+    /// machine), the Everscream precedent's guard.
+    #[test]
+    #[should_panic(expected = "rides the style axis")]
+    fn w4_c11_the_turret_stand_in_is_retired() {
+        let w = tr_core::World::new("t".into(), 200, 120);
+        let mut p = crate::player::Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::MartianTurret, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(0);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+    }
+
     /// The shot rows exist: the drained kinds resolve through `proj_data`
     /// (the data-carrying spawn lands them; without the rows the requests
     /// silently dropped — the W1-1 finding's second half).
@@ -36666,11 +36780,15 @@ mod s1_f_13d_tests {
         assert!(!crate::npc_buffs::whip_immune(NpcKind::ForceBubble));
     }
 
-    /// The AI stand-ins hold still: neither kind moves nor fires until
-    /// its machine lands with the AI wave (the Officer's spawn arm
-    /// `NPC.cs:56222-56249` / the Engineer's placement `:59004-59030`).
+    /// W4-c11 wiring witness — the Tesla Turret's aiStyle-73 machine is
+    /// LIVE through `update_rng` (the axis' 73 claim): the 120-tick
+    /// materialize fade holds the ghost (alpha 255, dontTakeDamage, no
+    /// shot), the 121st tick latches solid, and the shot cycle fires the
+    /// 435 bolt at the classic 35 damage — queued on `wants_hostile_shot`
+    /// for the sim's drain. The gravity/collision tail keeps the turret
+    /// planted on the surface (no walking — the X decay snaps to zero).
     #[test]
-    fn s1_f_13d_the_stand_ins_hold_still() {
+    fn w4_c11_the_turret_warp_fires_through_the_axis() {
         let mut w = tr_core::World::new("t".into(), 200, 120);
         for x in 0..200 {
             for y in 100..120 {
@@ -36686,23 +36804,118 @@ mod s1_f_13d_tests {
         player.x = 120.0 * TILE_PX;
         player.y = 95.0 * TILE_PX;
         let mut rng = UnifiedRandom::new(7);
-        // L-B fix round: the ForceBubble's aiStyle-72 machine is WIRED
-        // (S1-D-3-wire-smallkinds — the world-sim host pre-pass + the
-        // axis' 72 tail); its kind arm is an unreachable! marker, so the
-        // stand-in witness covers only the still-unwired Tesla Turret.
-        for kind in [NpcKind::MartianTurret] {
-            let mut n = Npc::new(kind, 100.0 * TILE_PX, 99.0 * TILE_PX, 1, 0.0);
-            n.hp = n.max_hp;
-            let (x0, y0) = (n.x, n.y);
-            for _ in 0..120 {
-                n.update_kind_ai(&w, &mut player, 1.0 / 60.0, &mut rng);
-            }
-            assert_eq!(n.x, x0, "{kind:?} stand-in holds its x");
-            assert_eq!(n.y, y0, "{kind:?} stand-in holds its y");
-            assert_eq!(n.vx, 0.0);
-            assert_eq!(n.vy, 0.0);
-            assert!(n.wants_hostile_shot.is_empty(), "{kind:?} fires nothing");
+        // Planted on the surface: feet at the tile row 100.
+        let mut n = Npc::new(NpcKind::MartianTurret, 100.0 * TILE_PX, 100.0 * TILE_PX - 50.0, 1, 0.0);
+        n.hp = n.max_hp;
+        let (x0, y0) = (n.x, n.y);
+        // The fade: 120 ticks of ghost, no shot, the frame pinned.
+        for _ in 0..120 {
+            n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
         }
+        assert_eq!(n.ai[1], 120.0, ":35119 the fade increments");
+        assert_eq!(n.alpha, 0, "the last fade tick's ramp: (1-60/60)*255 = 0");
+        assert!(n.dont_take_damage, ":35128");
+        assert!(n.wants_hostile_shot.is_empty(), "the fade never fires");
+        assert_eq!((n.x, n.y), (x0, y0), "the turret holds its plant");
+        // The latch tick: solid, hittable, opaque.
+        n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[1], 121.0, ":35170-35174 the one-shot latch");
+        assert!(!n.dont_take_damage, ":35176");
+        assert_eq!(n.alpha, 0, ":35177");
+        // The latch tick already climbed ai[0] to 1; 59 more ticks reach
+        // the 60 trigger and fire (the shot tick re-arms to -120).
+        for _ in 0..59 {
+            n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.wants_hostile_shot.len(), 1, "the ai[0]==60 shot");
+        let (kind, sx, sy, _, _, dmg) = n.wants_hostile_shot[0];
+        assert_eq!(kind, crate::projectile::MARTIAN_TURRET_BOLT, "type 435");
+        assert_eq!(dmg, 35, "classic GetAttackDamage_ForProjectiles(35, 28)");
+        // The muzzle: Centre - (0, 10) — the plant never moved.
+        assert_eq!((sx, sy), (x0 + 10.0, y0 + 25.0 - 10.0), ":35197");
+        assert_eq!(n.ai[0], -120.0, ":35194 the post-shot re-arm");
+        assert_eq!((n.x, n.y), (x0, y0), "still planted after the shot");
+        assert_eq!(n.vx, 0.0);
+        assert_eq!(n.vy, 0.0, "the collision tail zeroes the fall");
+    }
+
+    /// W4-c11 retire witness — the materialize ring is ACTIVATED on the
+    /// live pool: one `update_rng_dust` fade tick spawns EIGHT type-226
+    /// dusts through the caller's stream (the e2 STAGED emitter adopted
+    /// into `npc_ai_style73::turret_materialize_ring`), the latch tick
+    /// spawns NONE, and the stream consumption equals the mirrored
+    /// eight-dust pool replay (the adapter draws nothing else on fade
+    /// ticks — the arm's early return precedes the shot cycle).
+    #[test]
+    fn w4_c11_the_fade_ring_draws_on_the_live_pool() {
+        let mut w = tr_core::World::new("t".into(), 200, 120);
+        for x in 0..200 {
+            for y in 100..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 120.0 * TILE_PX;
+        player.y = 95.0 * TILE_PX;
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(200.0 * TILE_PX, 120.0 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        let mut n = Npc::new(NpcKind::MartianTurret, 100.0 * TILE_PX, 100.0 * TILE_PX - 50.0, 1, 0.0);
+        n.hp = n.max_hp;
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut rng = UnifiedRandom::new(7);
+        // One fade tick: ai[1] 0 → 1, the ring's eight spawns.
+        n.update_rng_dust(&w, &mut player, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+        let live: Vec<usize> = (0..16).filter(|&i| dust.slot(i).active).collect();
+        assert_eq!(live.len(), 8, "the fade tick spawns the eight-dust ring");
+        for &i in &live {
+            assert_eq!(dust.slot(i).dust_type, 226);
+            assert!(dust.slot(i).no_gravity);
+            assert_eq!(dust.slot(i).velocity, Vec2::ZERO);
+        }
+        // The mirror: the same tick on a twin pool/stream — the plan at
+        // ai[1] = 1, the eight verbatim NewDust replays. No other draws.
+        let mut mdust = tr_core::particles::DustPool::new();
+        let mut mrng = UnifiedRandom::new(7);
+        let plan = crate::npc_ai_style73::turret_materialize_dust_plan(
+            1.0, (n.x + 10.0, n.y + 25.0),
+        );
+        crate::npc_ai_style73::turret_materialize_ring(
+            n.x + 10.0, n.y + 25.0, &plan.placements, &mut mrng, &mut mdust, &ctx, &w,
+        );
+        for &i in &live {
+            assert_eq!(dust.slot(i).position, mdust.slot(i).position);
+            assert_eq!(dust.slot(i).scale, mdust.slot(i).scale);
+        }
+        assert_eq!(rng.next(), mrng.next(), "the fade tick draws ONLY the ring");
+        // Run the fade out to the latch on a fresh turret: the LAST fade
+        // tick (119 → 120) still rings; the latch tick (120 → 121) spawns
+        // NOTHING and draws NOTHING (the solid arm's idle climb is
+        // RNG-free; the shot cycle is 60 ticks away; the player is far —
+        // contact never fires). The stream pin is the WHOLE-state
+        // equality against an untouched twin (UnifiedRandom: PartialEq).
+        let mut n2 = Npc::new(NpcKind::MartianTurret, 100.0 * TILE_PX, 100.0 * TILE_PX - 50.0, 1, 0.0);
+        n2.hp = n2.max_hp;
+        n2.ai[1] = 119.0;
+        let mut dust2 = tr_core::particles::DustPool::new();
+        let mut rng2 = UnifiedRandom::new(11);
+        n2.update_rng_dust(&w, &mut player, 1.0 / 60.0, &mut rng2, &mut dust2, &ctx);
+        assert_eq!(n2.ai[1], 120.0);
+        let live2: Vec<usize> = (0..16).filter(|&i| dust2.slot(i).active).collect();
+        assert_eq!(live2.len(), 8, "the last fade tick still rings");
+        let frozen = rng2.clone();
+        n2.update_rng_dust(&w, &mut player, 1.0 / 60.0, &mut rng2, &mut dust2, &ctx);
+        assert_eq!(n2.ai[1], 121.0);
+        let live3: Vec<usize> = (0..16).filter(|&i| dust2.slot(i).active).collect();
+        assert_eq!(live3.len(), 8, "still exactly the last fade tick's ring");
+        assert_eq!(rng2, frozen, "the latch tick draws NOTHING");
     }
 }
 
