@@ -2319,6 +2319,40 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Water Bolt Mimic",
     },
+    // W4-c7 — the firefly family's own entries (the populator registers
+    // all four; `NPCID.Search.GetName` credits).
+    BestiaryEntryDef {
+        credit_id: "Firefly",
+        net_id: 355,
+        kind: NpcKind::Firefly,
+        variant: None,
+        quick_unlock: false,
+        name: "Firefly",
+    },
+    BestiaryEntryDef {
+        credit_id: "LightningBug",
+        net_id: 358,
+        kind: NpcKind::LightningBug,
+        variant: None,
+        quick_unlock: false,
+        name: "Lightning Bug",
+    },
+    BestiaryEntryDef {
+        credit_id: "Lavafly",
+        net_id: 654,
+        kind: NpcKind::Lavafly,
+        variant: None,
+        quick_unlock: false,
+        name: "Lavafly",
+    },
+    BestiaryEntryDef {
+        credit_id: "Shimmerfly",
+        net_id: 677,
+        kind: NpcKind::Shimmerfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Shimmerfly",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -2628,5 +2662,95 @@ mod tests {
             unlock_state(king, &kills),
             UnlockState::CanShowDropsWithDropRates
         );
+    }
+}
+
+/// W4-c7 SEAL (research/350) — the critter-family cross-lane receipts,
+/// pinned against the CURRENT tip's tables. The c8 generic gate +
+/// GOLD_PEER_TABLE land with c8's merge; these witnesses pin the c7-side
+/// facts that hold TODAY (the auto-cover inputs + the gold absence).
+/// WRITTEN, NOT RUN (code-only mode — no compiler invoked).
+#[cfg(test)]
+mod w4_c7_seal_tests {
+    use super::*;
+
+    /// The c8 generalized `counts_as_a_critter` predicate (c8 tip
+    /// `7c2de9c06`, bestiary.rs:2280-2285) — the C# property
+    /// `NPC.CountsAsACritter` (`NPC.cs:6887-6897`: lifeMax <= 5 &&
+    /// damage == 0 && type != 594 && type != 686). Mirrored here so the
+    /// receipt compiles before c8's merge; the merge keeps c8's fn.
+    fn counts_as_a_critter(kind: NpcKind) -> bool {
+        kind.max_hp() <= 5
+            && kind.contact_damage() == 0
+            && kind.cs_id() != 594
+            && kind.cs_id() != 686
+    }
+
+    /// research/350 §2 — the four c7 kinds auto-cover the sight provider
+    /// with ZERO provider wiring: hp 5 (`npc/data.rs:3666`) / dmg 0
+    /// (`:4034`) / cs_id ∉ {594, 686}. The 549 DD2LanePortal passes the
+    /// RAW gate (hp 5 `:3470`, dmg 0 `:3835`) but is Hide
+    /// (`NPCID.cs:4910-4915`) — the populator's `GetExclusions`
+    /// (`BestiaryDatabaseNPCsPopulator.cs:870-886`) never registers it,
+    /// so c8's fold row keeps the kill provider (the counter-case).
+    #[test]
+    fn w4_c7_seal_the_sight_gate_auto_covers_the_firefly_four() {
+        for (kind, net) in [
+            (NpcKind::Firefly, 355i32),
+            (NpcKind::LightningBug, 358),
+            (NpcKind::Lavafly, 654),
+            (NpcKind::Shimmerfly, 677),
+        ] {
+            assert_eq!(kind.max_hp(), 5, "{kind:?} lifeMax (NPC.cs rows)");
+            assert_eq!(kind.contact_damage(), 0, "{kind:?} damage");
+            assert!(counts_as_a_critter(kind), "{kind:?} auto-covers");
+            // The bestiary entry rides the vanilla net id (the sight
+            // provider keys on the credit id, not the protocol id).
+            let e = entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net, "{kind:?} entry net id");
+            assert_eq!(e.kind, kind);
+        }
+        // The 549 counter-case: raw gate TRUE, Hide exclusion keeps it
+        // off the critter provider (c8's fold row, research/262 §1).
+        assert!(counts_as_a_critter(NpcKind::DD2LanePortal));
+        assert_eq!(NpcKind::DD2LanePortal.cs_id(), 549);
+    }
+
+    /// research/350 §4 — c7's gold kinds: NONE. The 14-member
+    /// `NPCID.Sets.GoldCrittersCollection` (`NPCID.cs:10121-10125`,
+    /// verbatim) contains no firefly id; the 13-row provider dictionary
+    /// (`BestiaryDatabaseNPCsPopulator.cs:703-716`, verbatim pairs) has
+    /// no firefly key — 356 appears ONLY as the 444 GoldButterfly's
+    /// peer (the row activates when the f18/d39 keep-one lands the
+    /// canonical Butterfly, research/350 §3).
+    #[test]
+    fn w4_c7_seal_the_gold_table_has_no_firefly_row() {
+        const GOLD_COLLECTION: [u16; 14] = [
+            443, 442, 592, 593, 444, 601, 445, 446, 605, 447, 627, 613, 448, 539,
+        ];
+        // (gold id, peer ids) — the populator's 13 registrations; 593
+        // is collection-only (its own entry rides the plain provider).
+        const GOLD_PEERS: [(u16, &[u16]); 13] = [
+            (443, &[46]),
+            (442, &[74]),
+            (592, &[55]),
+            (444, &[356]),
+            (601, &[599]),
+            (445, &[361]),
+            (446, &[377]),
+            (605, &[604]),
+            (447, &[300]),
+            (627, &[626]),
+            (613, &[612]),
+            (448, &[357]),
+            (539, &[299, 538]),
+        ];
+        for id in [355u16, 358, 654, 677] {
+            assert!(!GOLD_COLLECTION.contains(&id), "{id} is not a gold critter");
+            assert!(!GOLD_PEERS.iter().any(|(g, _)| *g == id), "{id} has no gold row");
+        }
+        assert!(!GOLD_PEERS.iter().any(|(g, _)| *g == 593), "593 collection-only");
+        let butterfly = GOLD_PEERS.iter().find(|(g, _)| *g == 444).unwrap();
+        assert_eq!(butterfly.1, &[356], "the GoldButterfly peer contract");
     }
 }

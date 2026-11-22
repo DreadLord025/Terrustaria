@@ -23,11 +23,17 @@
 //! block (`:34070-34153`), the 358/654/else glow colours (`:34160-34171`)
 //! and the 677 rotation tail (`:34234-34237`).
 //!
-//! The port has no `NpcKind` for any of the four yet, so this module lands
-//! UNWIRED (the `npc_ai_style53.rs` tentacle precedent, 89a9b808): pure fns
-//! + the [`Ai64Ctx`]/[`Ai64Effects`] seam, keyed on the vanilla type so the
-//! branch is reachable and testable before the kinds land. The wiring step
-//! adds the four kinds + their `SetDefaults` rows + the style-axis claim.
+//! The port's four kinds (`NpcKind::Firefly`/`LightningBug`/`Lavafly`/
+//! `Shimmerfly`, vanilla ids 355/358/654/677) landed with W4-c7: the
+//! `SetDefaults` rows ride `npc/data.rs` + `npc.rs`'s tables, the
+//! aiStyle-64 axis claim lives in `update_rng_dust`, and the SIM runs
+//! this arm as a POOL step in `world_sim/npcs.rs`'s tick closure (the
+//! 677 threat scan reads the slot-ordered pool; the style75 precedent).
+//! The solo `update_rng` path runs [`ai_064_step`] with an empty sibling
+//! view; both feed the glow request to the shared `EntityLights` pair
+//! (the sim at the slot turn, the solo wrapper via `wants_ai_light`).
+//! The integration tail is `Npc::ai_064_integrate` (the dead-band snap +
+//! the noTileCollide/`UpdateCollision` split, `NPC.cs:90473-90503`).
 //!
 //! Seam: the module writes only the fields the C# arm writes — velocity,
 //! `ai[0]`/`ai[1]`/`ai[3]`, `localAI[0..3]`, `scale`, `rotation` (677),
@@ -117,7 +123,7 @@
 //! stream and compare state (`PartialEq`), so a drifted order or a
 //! skipped draw fails by construction.
 
-#![allow(dead_code)] // the kinds + style-axis wiring is the merge step (S1-D-3)
+#![allow(dead_code)] // WIRED by W4-c7 (the pool pass + axis 64); the witnesses stay as the audit cross-check
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};

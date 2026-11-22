@@ -4591,6 +4591,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         let npcs = &mut app.npcs;
         let audio = &mut app.audio;
         let dust = &mut app.dust;
+        // W4-c7 — the firefly glow tail's `Lighting.AddLight` requests
+        // drain into the shared `EntityLights` pair at the NPC's slot
+        // turn (the `item_lights::rand_light` fixed-step precedent,
+        // `world_sim/items.rs`); the C# appends inside `NPC.AI`
+        // (`NPC.cs:34162`/`:34166`/`:34170`), mid-`UpdateNPCs`.
+        let entity_lights = &mut app.entity_lights;
         // The aiStyle-75 family's per-tick difficulty inputs: the port is
         // single-difficulty classic (the expert bridge arm is constants-off
         // until the difficulty system lands — the module's `ctx.expert`).
@@ -4758,9 +4764,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // preamble + find_frame + contact tail match `update_rng`.
                     // S1-F-13c wiring: the non-75 kinds ride `update_rng_dust`
                     // so the Everscream/Santa dust arms reach the live pool.
-                    let is_style75 = npcs[i].kind.ai_style() == 75;
-                    let is_style83 = npcs[i].kind.ai_style() == 83;
-                    if is_style83 && npcs[i].hp > 0 {
+                    let style = npcs[i].kind.ai_style();
+                    if style == 83 && npcs[i].hp > 0 {
                         // W4-d31 style83 wiring (the d10 activation
                         // contract, the style75 pool precedent): the cultist
                         // ritual is a POOL step — the tablet reads the
@@ -4808,7 +4813,67 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         npcs[i].style83_movement_tail(world);
                         npcs[i].find_frame();
                         npcs[i].contact(player, npcs_rng);
-                    } else if !is_style75 {
+                    // W4-c7: the aiStyle-64 fireflies are a POOL step too
+                    // (the 677 threat scan reads `Main.npc[0..maxNPCs]` in
+                    // slot order, `NPC.cs:34120-34128`) — they run here on
+                    // the `UpdateNPCs` stream, ahead of the solo axis.
+                    } else if style == 64 {
+                        // The shared `NPC.Update` preamble + the gfxOffY
+                        // decay (the style75 pooled wrapper's shape).
+                        npcs[i].update_preamble(step);
+                        npcs[i].gfx_off_y = crate::npc_ai_unicorn_b::gfx_off_y_decay(
+                            npcs[i].gfx_off_y,
+                            npcs[i].vx,
+                            npcs[i].step_speed,
+                        );
+                        // The slot-ordered sibling views — the f32 threat
+                        // sum accumulates in this order. The firefly's own
+                        // view rides along: its `damage == 0` excludes it
+                        // (`:34123`), byte-identical to dropping it (the
+                        // module's documented fold).
+                        let views: Vec<crate::npc_ai_style64::Ai64NpcView> = npcs
+                            .iter()
+                            .map(|n| crate::npc_ai_style64::Ai64NpcView {
+                                active: n.hp > 0,
+                                damage: n.kind.contact_damage(),
+                                friendly: n.friendly,
+                                x: n.x,
+                                y: n.y,
+                                width: n.size().0 as i32,
+                                height: n.size().1 as i32,
+                            })
+                            .collect();
+                        let ctx64 = crate::npc_ai_style64::Ai64Ctx {
+                            players: &players,
+                            npcs: &views,
+                            // The `EverLastingTicker` stand-in (the zombie
+                            // convention): 0 until the ticker migration.
+                            ticker: 0,
+                        };
+                        let fx = crate::npc_ai_style64::ai_064_step(
+                            npcs[i].kind.cs_id() as i32,
+                            &mut npcs[i],
+                            world,
+                            &ctx64,
+                            npcs_rng,
+                        );
+                        // The glow request lands in the shared pair NOW,
+                        // at the C# call position (no RNG — the feed's
+                        // placement cannot move any stream).
+                        if let Some((lx, ly, rgb)) = fx.light {
+                            entity_lights.add(lx, ly, rgb);
+                        }
+                        // The post-AI movement: the dead-band snap + the
+                        // noTileCollide/UpdateCollision split
+                        // (`NPC.cs:90473-90503`).
+                        npcs[i].ai_064_integrate(world);
+                        // `NPC.UpdateNPC`'s tail (`:90511`/`:90516`): the
+                        // frame cycle, then the contact pass + justHit
+                        // clear (the `update_rng_dust` tail's order).
+                        npcs[i].just_hit = false;
+                        npcs[i].find_frame();
+                        npcs[i].contact(player, npcs_rng);
+                    } else if style != 75 {
                         npcs[i].update_rng_dust(world, player, step, npcs_rng, dust, &dust_spawn_ctx);
                     } else {
                         npcs[i].update_preamble(step);

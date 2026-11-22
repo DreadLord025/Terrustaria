@@ -3603,6 +3603,14 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-c7 — the firefly family (355/358/654/677): the noGravity
+        // glow critters seed bare at the net position (the Plantera
+        // minion arm's shape — the machine takes over on the first tick
+        // and the net state overwrites the position below).
+        crate::npc::NpcKind::Firefly
+        | crate::npc::NpcKind::LightningBug
+        | crate::npc::NpcKind::Lavafly
+        | crate::npc::NpcKind::Shimmerfly => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
     })
 }
 

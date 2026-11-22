@@ -1182,6 +1182,25 @@ pub enum NpcKind {
     /// summons the Water Sphere (33) at the truncated centre+10
     /// (`NPC.cs:21896-21900`).
     WaterBoltMimic,
+    /// `NPCID.Firefly` (355, `ID/NPCID.cs:11387`) — the night-surface
+    /// glow critter (`aiStyle 64`): 10x10, dmg 0, def 0, 5 HP, npcSlots
+    /// 0.2, noGravity, catchItem 1992 (`NPC.cs:13517-13530`). WIRED by
+    /// W4-c7: the world-sim pool pass runs `npc_ai_style64::ai_064_step`
+    /// (the threat scan reads the whole pool); the axis' 64 arm owns the
+    /// `UpdateCollision` integration tail.
+    Firefly,
+    /// `NPCID.LightningBug` (358, `ID/NPCID.cs:11393`) — the jungle/hallow
+    /// night glow critter (`aiStyle 64`): 12x12, the same zero-stat row,
+    /// catchItem 2004 (`NPC.cs:13559-13572`).
+    LightningBug,
+    /// `NPCID.Lavafly` (654, `ID/NPCID.cs:11985`) — the underworld glow
+    /// critter (`aiStyle 64`): 10x10, lavaImmune, catchItem 4847
+    /// (`NPC.cs:17265-17279`).
+    Lavafly,
+    /// `NPCID.Shimmerfly` (677, `ID/NPCID.cs:12031`) — the Aether glow
+    /// critter (`aiStyle 64`): 10x10, noTileCollide, catchItem 5350
+    /// (`NPC.cs:17579-17593`); the world-margin + threat-flee member.
+    Shimmerfly,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -1970,6 +1989,14 @@ pub struct Npc {
     /// on the `UpdateNPCs` stream at the C# call position, and this queue
     /// is the fallback drain (the `wants_hostile_shot` pattern).
     pub wants_item_sounds: Vec<(i32, f32, f32)>,
+    /// The aiStyle-64 glow tail's `Lighting.AddLight(i2, j2, r, g, b)`
+    /// request (`NPC.cs:34162`/`:34166`/`:34170`) — `(tile_x, tile_y,
+    /// [r, g, b])`, the colours already scaled by `this.scale` and the
+    /// tile coords TRUNCATED (`(int)Center / 16`, `:34156-34157`). The
+    /// sim drains it into the shared `EntityLights` pair at the NPC's
+    /// slot turn (the `item_lights::rand_light` fixed-step precedent);
+    /// the solo `update_rng` wrapper queues it for the caller. W4-c7.
+    pub wants_ai_light: Vec<(i32, i32, [f32; 3])>,
     /// `NPC.alpha`: the spawn fade (`SetDefaults` 245/246/247/248's
     /// `alpha = 255`, `NPC.cs:12176/12190/12201`); the Golem family's
     /// machines decrement it by 10 per tick and the draw reads it as
@@ -3317,6 +3344,7 @@ impl Npc {
             wants_ritual: None,
             ritual_uids: [0; 4],
             wants_item_sounds: Vec::new(),
+            wants_ai_light: Vec::new(),
             // `NPC.alpha`'s `SetDefaults` row — the kind-level default (the
             // Poltergeist's 100, `NPC.cs:13202`); the Destroyer family's
             // 255 fade-in start (`NPC.cs:10678`/`:10698`/`:10718`,
@@ -3774,6 +3802,11 @@ impl Npc {
             // The 694's live 0/1/0.2 writes ride `kb_resist_override`
             // (the axis adapter, `Style10Out::knock_back_resist`).
             NpcKind::CursedSkull | NpcKind::GiantCursedSkull | NpcKind::WaterBoltMimic => 0.2,
+            // W4-c7 — the firefly family writes NO knockBackResist row
+            // (`NPC.cs:13517-13530`/`:13559-13572`/`:17265-17279`/
+            // `:17579-17593`), so the class default 1f stands (`:8533`) —
+            // the stock `_ => 0.4` below never sees them.
+            NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => 1.0,
             _ => 0.4,
         }
     }
@@ -4178,6 +4211,9 @@ impl Npc {
             NpcKind::CursedSkull => 6,
             NpcKind::GiantCursedSkull => 20,
             NpcKind::WaterBoltMimic => 4,
+            // W4-c7 — the firefly family's `defense = 0` rows
+            // (`NPC.cs:13523`/`:13565`/`:17271`/`:17585`).
+            NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4575,6 +4611,9 @@ impl Npc {
             // W4-c3 (the style-10 family): 34/289/694 all write
             // `value = 150f` (`NPC.cs:9162`/`:12765`/`:17749`).
             NpcKind::CursedSkull | NpcKind::GiantCursedSkull | NpcKind::WaterBoltMimic => 150.0,
+            // W4-c7 — the firefly family writes no value row (the head's
+            // `value = 0f`, `NPC.cs:8544`).
+            NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -5317,6 +5356,15 @@ impl Npc {
             // resolve. The retired `update_scutlix_rider`/`update_saucer_mount`/
             // `update_solar_drakomire_rider` stand-ins are gone.
             75 => self.update_rng_style75_solo(world, player, rng),
+            // `else if (this.aiStyle == 64)` (`NPC.cs:34019-34248`) — the
+            // firefly family (355/358/654/677). W4-c7: the SOLO path runs
+            // the faithful `ai_064_step` with an empty sibling view (the
+            // 677 threat scan sees only the player); the SIM's pooled
+            // path (`world_sim/npcs.rs`'s tick closure) hands it the
+            // slot-ordered pool so the scan's f32 sums keep their order.
+            // The arm is pure velocity — the integration tail is the
+            // shared `ai_064_integrate` (the `UpdateCollision`/raw split).
+            64 => self.update_rng_style64_solo(world, player, rng),
             // W4-d31 axis census (research/25 rows 76-82): the faithful
             // per-kind machines claim their styles — the S1-D-2 migration
             // step for the saucer/Moon-Lord/probe band. The machines are
@@ -5546,6 +5594,71 @@ impl Npc {
         );
         *self = pool[0].clone();
         self.drain_style75_out(out);
+    }
+
+    /// The SOLO aiStyle-64 step (`NPC.cs:34019-34248`) for a bare
+    /// `update_rng` caller (the unit tests): the faithful `ai_064_step`
+    /// with an EMPTY sibling view — the 677 threat scan sees only the
+    /// session player (the style75 solo wrapper's precedent). The SIM's
+    /// pooled path (`world_sim/npcs.rs`'s tick closure) hands the arm the
+    /// slot-ordered `App::npcs` views. The glow request queues on
+    /// `wants_ai_light` for the caller's `EntityLights` feed; the
+    /// integration tail is [`Self::ai_064_integrate`].
+    fn update_rng_style64_solo(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+    ) {
+        let cand = crate::npc_target::session_candidate(player);
+        let ctx = crate::npc_ai_style64::Ai64Ctx {
+            players: &[cand],
+            npcs: &[],
+            // The `EverLastingTicker` stand-in (the zombie convention):
+            // 0 until the ticker migration.
+            ticker: 0,
+        };
+        let fx = crate::npc_ai_style64::ai_064_step(
+            self.kind.cs_id() as i32,
+            self,
+            world,
+            &ctx,
+            rng,
+        );
+        if let Some(light) = fx.light {
+            self.wants_ai_light.push(light);
+        }
+        self.ai_064_integrate(world);
+    }
+
+    /// The firefly family's post-`AI()` movement — `NPC.UpdateNPC`'s
+    /// integration split (`NPC.cs:90490-90503`). All four are noGravity
+    /// (`:13528`/`:13570`/`:17276`/`:17590`), so no gravity applies; the
+    /// dead-band X snap (`:90473-90476`, the double f64 compare) runs for
+    /// every kind. The Shimmerfly (677) is noTileCollide (`:17592`): the
+    /// raw `position += velocity` branch with the oldPosition/
+    /// oldDirection stamps (`:90496-90498`). The other three ride the
+    /// no-gravity `UpdateCollision` stand-in (`integrate_flyer_collision`,
+    /// the bat/fish tail shape — the blocked axes latch collideX/collideY
+    /// for the NEXT tick's bounce arm). The wet probe rides the same
+    /// `is_wet` seam the bat wiring uses.
+    pub(crate) fn ai_064_integrate(&mut self, world: &World) {
+        // `:90473-90476` — the dead-band X snap (double compare).
+        if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
+            self.vx = 0.0;
+        }
+        if self.kind == NpcKind::Shimmerfly {
+            // `:90496-90498` — the stamps + the raw integration.
+            self.old_x = self.x;
+            self.old_y = self.y;
+            self.old_direction = self.facing;
+            self.x += self.vx;
+            self.y += self.vy;
+        } else {
+            let (w, h) = self.size();
+            self.wet = is_wet(world, self.x, self.y, w, h);
+            self.integrate_flyer_collision(world);
+        }
     }
 
     /// Land a `Style75Out` on this NPC: the shots ride the established
@@ -7344,6 +7457,13 @@ impl Npc {
                 self.ai_112_fairy(world, player, rng, &mut dust, &ctx);
             }
             NpcKind::WindyBalloon => self.ai_113_balloon(world, player, rng),
+            // W4-c7 — the firefly family (355/358/654/677, aiStyle 64):
+            // the world-sim pool pass runs `ai_064_step` (the 677 threat
+            // scan reads the whole pool), so these arms are unreachable
+            // through `update_rng` (the axis claims style 64 first).
+            NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => {
+                unreachable!("aiStyle 64 rides the world-sim pool pass (W4-c7)")
+            }
         }
     }
 
@@ -7861,6 +7981,46 @@ impl Npc {
             // is the same row-0 pin — one arm kept, the dup removed.)
             NpcKind::ForceBubble => {
                 self.frame = 0;
+            }
+            // W4-c7 — `case 355 : case 358 : case 654` (`NPC.cs:72688-
+            // 72708`): the 7-tick flap — row 0 while the counter < 4, row
+            // 1 at 4..6 (reset at 7), PLUS two rows while the glow timer
+            // (`localAI[2]`) is spent (the dark pose). `num` is the
+            // sheet's integer row height (16 for all three: NPC_355
+            // 10x64, NPC_358/654 14x64 over 4 rows — measured via the
+            // LZX harness), so the pixel writes fold to rows.
+            NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly => {
+                self.sprite_dir = self.facing;
+                self.frame_counter += 1.0;
+                let row = if self.frame_counter < 4.0 {
+                    0
+                } else {
+                    if self.frame_counter >= 7.0 {
+                        self.frame_counter = 0.0;
+                    }
+                    1
+                };
+                if self.local_ai[2] <= 0.0 {
+                    row += 2;
+                }
+                self.frame = row;
+            }
+            // W4-c7 — `case 677` (`NPC.cs:72710-72720`): the double
+            // counter increment, the 6-tick reset and the wrap at 5.
+            // THE VANILLA QUIRK: `frame.Y` is PIXELS but the wrap
+            // compares the literal 5 — with NPC_677 88x110 over
+            // `npcFrameCount[677]` = 4 (`Main.cs:67142`), `num` = 27, so
+            // the first advance (27 >= 5) wraps straight back to 0: the
+            // Shimmerfly shows row 0 forever, verbatim.
+            NpcKind::Shimmerfly => {
+                self.sprite_dir = self.facing;
+                self.frame_counter += 1.0;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame_counter = 0.0;
+                    // `++this.frame.Y >= 5` on the pixel value (num = 27).
+                    self.frame = 0;
+                }
             }
             // The Wizard/Mechanic: `FindFrame`'s humanoid-group case list
             // carries them (`NPC.cs:68554`/`:68556`) with no arm of their
@@ -19819,6 +19979,14 @@ impl Npc {
             NpcKind::CursedSkull => 355,
             NpcKind::GiantCursedSkull => 289,
             NpcKind::WaterBoltMimic => 694,
+            // W4-c7 — the firefly family's protocol ids (the E8
+            // renumber 735/736 executed at the batch-E merge — c3's
+            // CursedSkull hash rides 355 above; 654/677 unused, the
+            // G6 key stays injective).
+            NpcKind::Firefly => 735,
+            NpcKind::LightningBug => 736,
+            NpcKind::Lavafly => 654,
+            NpcKind::Shimmerfly => 677,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -24887,7 +25055,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 285] = [
+    pub(super) const ALL_KINDS: [NpcKind; 289] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -25186,6 +25354,11 @@ mod tests {
         NpcKind::CursedSkull,
         NpcKind::GiantCursedSkull,
         NpcKind::WaterBoltMimic,
+        // The firefly family (W4-c7).
+        NpcKind::Firefly,
+        NpcKind::LightningBug,
+        NpcKind::Lavafly,
+        NpcKind::Shimmerfly,
     ];
 
     #[test]
@@ -25426,6 +25599,162 @@ mod tests {
         assert_eq!(o.local_ai[0], 0.0, "the cooldown expires");
         o.martian_officer_bubble();
         assert!(o.wants_force_bubble, "the re-spawn request fires at 0");
+    }
+
+    /// W4-c7 — the firefly family's `SetDefaults` rows pin against the C#
+    /// (`NPC.cs:13517-13530` / `:13559-13572` / `:17265-17279` /
+    /// `:17579-17593`), through the port's tables — the small-kinds pin's
+    /// shape. The four are aiStyle 64 with damage/defense/value 0, lifeMax
+    /// 5, noGravity, the class-default kb 1f (no row written), NPCHit1/
+    /// NPCDeath1 cues, the 10x10 box (the Lightning Bug's 12x12). The
+    /// protocol ids ride the E8 renumber EXECUTED at the batch-E merge
+    /// (research/350 §3: Firefly 735 / LightningBug 736 — c3's CursedSkull
+    /// owns port-local 355 here); Lavafly/Shimmerfly keep 654/677. The
+    /// cs_id seams never move (R1). WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c7_the_firefly_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, post-E8 protocol id, w, h)
+        let rows = [
+            (NpcKind::Firefly, 355u16, 735u16, 10.0, 10.0),
+            (NpcKind::LightningBug, 358, 736, 12.0, 12.0),
+            (NpcKind::Lavafly, 654, 654, 10.0, 10.0),
+            (NpcKind::Shimmerfly, 677, 677, 10.0, 10.0),
+        ];
+        for (kind, ty, proto, w, h) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), 64, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), 0, "{kind:?} damage");
+            assert_eq!(shell.defense(), 0, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), 5, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, 5, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), 1.0, "{kind:?} kb (class default)");
+            assert_eq!(shell.value(), 0.0, "{kind:?} value (no row)");
+            assert!(kind.no_gravity(), "{kind:?} noGravity");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} HitSound");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} DeathSound");
+            assert_eq!(kind.to_u16(), proto, "{kind:?} post-E8 protocol id");
+            assert_eq!(NpcKind::from_u16(proto), Some(kind), "{kind:?} round-trip");
+        }
+        // `Main.npcFrameCount[355/358/654/677]` = 4 (the FindFrame strips:
+        // the 7-tick flap + the two dark-pose rows; the 677's pixel-wrap
+        // quirk still reads a 4-row sheet, NPC_677 88x110 → num 27).
+        for (kind, _, _, _, _) in rows {
+            assert_eq!(
+                crate::render::entities::npc_rows(crate::render::entities::texture_net_id(kind)),
+                4,
+                "{kind:?} frame rows"
+            );
+        }
+    }
+
+    /// W4-c7 — the axis claims aiStyle 64: a bare `update_rng` tick runs
+    /// the faithful solo wrapper (never `update_kind_ai`'s `unreachable!`
+    /// stand-ins), the scale latch rides the caller's stream in C# order,
+    /// the glow request queues on `wants_ai_light` at the truncated tile
+    /// coords and drains byte-exact into the shared `EntityLights` pair,
+    /// and `ai_064_integrate` splits the movement: the 677's raw
+    /// `position += velocity` + stamps (`NPC.cs:90496-90498`) vs the other
+    /// three's no-gravity flyer collision (`:90490-90503`), both behind
+    /// the dead-band X snap (`:90473-90476`). WRITTEN, NOT RUN (code-only).
+    #[test]
+    fn w4_c7_the_style64_axis_runs_solo_feeds_the_glow_and_splits_the_integration() {
+        // The module witnesses' air world (400x300, day, worldSurface 75):
+        // the fly at y 1000 sits ABOVE surface + 10 (62.5 <= 85), so the
+        // idle else draws only the pause — no glow-length draw.
+        let mut w = World::new("t".into(), 400, 300);
+        let mut player = surface_player(&w); // (1600, 1856) — near in X
+        let mut rng = UnifiedRandom::new(42);
+        let mut mirror = rng.clone();
+        // A full solo tick on a fresh Firefly at (1600, 1000): the rearm
+        // timer is 0 → the NEAR quad, then the idle else rolls the pause
+        // — the five cited draws, in order.
+        let mut n = Npc::new(NpcKind::Firefly, 1600.0, 1000.0, 1, 0.0);
+        let latch = mirror.next_range(75, 111) as f32 * 0.01; // :34028
+        let timer = mirror.next_range(60, 180); // :34033
+        let _ = mirror.next_range(5, 151); // the near quad :34059-34061
+        let _ = mirror.next_range(-100, 101);
+        let _ = mirror.next_range(-100, 101);
+        let pause = mirror.next_range(30, 180); // the idle :34180 (day: no glow draw)
+        n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, mirror, "the axis claimed 64 — the solo stream matches");
+        assert_eq!(n.ai[3], latch, "the scale latch");
+        assert_eq!(n.scale, latch, ":34069");
+        assert_eq!(n.local_ai[0], timer as f32, "the rearm timer");
+        assert_eq!(n.local_ai[1], pause as f32, "the idle pause");
+        assert_eq!(n.local_ai[3], 1.0, "the near latch :34058");
+        assert!(n.wants_ai_light.is_empty(), "the glow timer is 0 — no light yet");
+        // Force a glow tick: localAI[2] = 10 lights while > 3 (:34158),
+        // the colour rides the CURRENT scale, the coords TRUNCATE
+        // (:34156-34157). Centre (1605, 1005) → tile (100, 62) — the
+        // first tick's blend moved the fly by < 0.02 px, inside the tile.
+        n.local_ai[2] = 10.0;
+        n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.local_ai[2], 9.0, ":34173 decrements every glow tick");
+        let (lx, ly, rgb) = *n.wants_ai_light.last().expect("the glow queued");
+        assert_eq!((lx, ly), (100, 62), "the truncated tile coords");
+        assert_eq!(rgb, [0.109500006 * latch, 0.15 * latch, 0.0615 * latch]);
+        // The drain: the queued request lands byte-exact in the shared
+        // pair and reads one frame late (LightingEngine.cs:210-233).
+        let mut lights = crate::entity_lights::EntityLights::default();
+        lights.add(lx, ly, rgb);
+        lights.end_frame();
+        assert_eq!(lights.visible().len(), 1);
+        assert_eq!((lights.visible()[0].x, lights.visible()[0].y), (100, 62));
+        assert_eq!(lights.visible()[0].rgb, rgb);
+        // The integration split, on hand-set velocities (the dead-band
+        // snap first, :90473-90476 — the double f64 compare).
+        let mut fly = Npc::new(NpcKind::Firefly, 1600.0, 1000.0, 1, 0.0);
+        fly.vx = 2.0;
+        fly.vy = 1.0;
+        fly.ai_064_integrate(&w);
+        assert_eq!((fly.x, fly.y), (1602.0, 1001.0), "the flyer moved both axes");
+        assert!(!fly.collide_x && !fly.collide_y, "free air");
+        // A wall directly right (tile x 101 → pixel 1616, rows 62/63 for
+        // the 10-px box at y 1000): the blocked X latches collideX for
+        // the NEXT tick's bounce arm, vx zeroes.
+        for ty in 62..64 {
+            let t = w.tile_mut(101, ty).unwrap();
+            *t = Tile {
+                kind: 1, // stone — in TILE_SOLID
+                flags: FLAG_ACTIVE,
+                ..Tile::default()
+            };
+        }
+        let mut blocked = Npc::new(NpcKind::Firefly, 1600.0, 1000.0, 1, 0.0);
+        blocked.vx = 20.0;
+        blocked.ai_064_integrate(&w);
+        assert!(blocked.collide_x, "the flyer collision latches the bounce flag");
+        assert_eq!(blocked.vx, 0.0);
+        assert_eq!(blocked.x, 1600.0, "the blocked axis did not move");
+        // The 677: noTileCollide (:17592) — the SAME wall does not stop
+        // it; the raw integration stamps oldPosition/oldDirection first.
+        let mut shim = Npc::new(NpcKind::Shimmerfly, 1600.0, 1000.0, -1, 0.0);
+        shim.vx = 20.0;
+        shim.vy = -1.0;
+        shim.ai_064_integrate(&w);
+        assert_eq!((shim.x, shim.y), (1620.0, 999.0), "raw position += velocity");
+        assert_eq!((shim.old_x, shim.old_y), (1600.0, 1000.0), ":90496-90497");
+        assert_eq!(shim.old_direction, -1, ":90498");
+        assert!(!shim.collide_x && !shim.collide_y, "no tile collision");
+        // The dead-band X snap zeroes a sub-0.005 velocity for BOTH shapes.
+        let mut tiny = Npc::new(NpcKind::Shimmerfly, 1600.0, 1000.0, 1, 0.0);
+        tiny.vx = 0.004;
+        tiny.ai_064_integrate(&w);
+        assert_eq!(tiny.vx, 0.0, ":90473-90476");
+        assert_eq!(tiny.x, 1600.0, "the snapped velocity moved nothing");
+        // The other three keep integrating through the flyer collision:
+        // a full tick per kind never reaches the unreachable! kind arms.
+        let mut player2 = surface_player(&w);
+        for kind in [NpcKind::Firefly, NpcKind::LightningBug, NpcKind::Lavafly, NpcKind::Shimmerfly] {
+            let mut k = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            for _ in 0..60 {
+                k.update(&w, &mut player2, 1.0 / 60.0);
+                assert!(k.frame < 4, "{kind:?} row {} of 4", k.frame);
+            }
+        }
     }
 
     /// The Dye Trader's shop (`case 12`): the four always rows, the moon-phase
@@ -28888,8 +29217,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            285,
-            "every decodable kind resolves (the wire roster's size - 285 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d33's seven dragonflies + W4-d33 wiring's three fairies + the windy balloon + W4-c3's style-10 three, L-B gate + W4-d25 STYLE-26 wiring's Unicorn; the Wolf/Tumbleweed dropped per keep-one f5f486c7c; the c3 34/289 kind rows re-pin to d34@267/d38@289 at their merges, research/329 E8)"
+            289,
+            "every decodable kind resolves (the wire roster's size - 289 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d33's seven dragonflies + W4-d33 wiring's three fairies + the windy balloon + W4-c3's style-10 three + W4-c7's firefly four (E8 renumber 735/736 executed), L-B gate + W4-d25 STYLE-26 wiring's Unicorn; the Wolf/Tumbleweed dropped per keep-one f5f486c7c; the c3 34/289 kind rows re-pin to d34@267/d38@289 at their merges, research/329 E8)"
         );
         assert!(
             covered > 43,
@@ -32554,6 +32883,12 @@ mod s1_d_2_tests {
         (NpcKind::CursedSkull, 10),
         (NpcKind::GiantCursedSkull, 10),
         (NpcKind::WaterBoltMimic, 10),
+        // W4-c7 (the firefly family, `NPC.cs:13521`/`:13563`/`:17269`/
+        // `:17583` — the four aiStyle-64 rows).
+        (NpcKind::Firefly, 64),
+        (NpcKind::LightningBug, 64),
+        (NpcKind::Lavafly, 64),
+        (NpcKind::Shimmerfly, 64),
     ];
 
     #[test]
@@ -36708,5 +37043,57 @@ mod w4_d33_fairy_balloon_tests {
         assert!(b.net_update, "the first tick nets");
         assert_eq!(b.sprite_dir, 1, "case 594's spriteDirection");
         assert_eq!(b.frame, b.ai[2] as u32, "the raw colour column");
+    }
+}
+/// W4-c7 SEAL (research/350 §3/§6) — the d37 E8 roster receipts, pinned
+/// against the CURRENT tip. The E8 renumber (Firefly 355→735,
+/// LightningBug 358→736) is MERGE-TIME work (the 108 merge order); this
+/// witness pins the as-pushed state + the seams that must NOT move
+/// (cs_id, the bestiary net ids, the sheet keys — R1's seam evidence).
+/// WRITTEN, NOT RUN (code-only mode — no compiler invoked).
+#[cfg(test)]
+mod w4_c7_seal_roster_tests {
+    use super::*;
+
+    /// research/350 §3 — the E8 renumber EXECUTED at the batch-E merge
+    /// (c3's CursedSkull owns port-local 355 here): Firefly rides 735,
+    /// LightningBug 736; Lavafly/Shimmerfly keep 654/677. The cs_id hand
+    /// rows NEVER move (R1's seam evidence); the Shimmerfly 677 is
+    /// CANONICAL-c7 (c9's duplicate drops at merge — E8 c9 table), so
+    /// `from_u16(677)` decodes to c7's kind and the G6 key stays injective.
+    #[test]
+    fn w4_c7_seal_the_roster_e8_receipts_hold() {
+        // (kind, post-E8 protocol id, cs_id — never moves)
+        let rows = [
+            (NpcKind::Firefly, 735u16, 355u16),
+            (NpcKind::LightningBug, 736, 358),
+            (NpcKind::Lavafly, 654, 654),
+            (NpcKind::Shimmerfly, 677, 677),
+        ];
+        for (kind, proto, cs) in rows {
+            assert_eq!(kind.to_u16(), proto, "{kind:?} post-E8 protocol id");
+            assert_eq!(NpcKind::from_u16(proto), Some(kind), "{kind:?} round-trip");
+            assert_eq!(kind.cs_id(), cs, "{kind:?} cs_id never moves (R1)");
+            // The frame strips: Main.npcFrameCount[355/358/654/677] = 4
+            // (Main.cs:67082, machine-counted; the 677's pixel-wrap quirk
+            // still reads a 4-row sheet).
+            assert_eq!(
+                crate::render::entities::npc_rows(crate::render::entities::texture_net_id(kind)),
+                4,
+                "{kind:?} frame rows"
+            );
+        }
+        // The Shimmerfly canonical-owner pin: 677 decodes to c7's kind
+        // (c9's duplicate row drops at the 108 merge, E8 c9 table).
+        assert_eq!(NpcKind::from_u16(677), Some(NpcKind::Shimmerfly));
+        // The style axis: all four claim 64 (the pooled sim arm subsumes
+        // c9's kind-gated arm at merge — c9's 109 §4e compose).
+        for (kind, _, _) in rows {
+            assert_eq!(kind.ai_style(), 64, "{kind:?} aiStyle");
+        }
+        // The freed as-pushed slots: 355 decodes to c3's CursedSkull
+        // (its port-local claim), 358 is free again.
+        assert_eq!(NpcKind::from_u16(355), Some(NpcKind::CursedSkull));
+        assert_eq!(NpcKind::from_u16(358), None);
     }
 }

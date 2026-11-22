@@ -515,6 +515,10 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // `SpecificallyImmuneTo = { 20, 31 }` (`NPCID.cs:6286-6292`/
         // `:7787-7793`/`:10066-10072`) — Poisoned + On Fire!.
         NpcKind::CursedSkull | NpcKind::GiantCursedSkull | NpcKind::WaterBoltMimic => &[20, 31],
+        // W4-c7: none of 355/358/654/677 has a `DebuffImmunitySets` row
+        // (`NPCID.cs:6075+`'s dictionary carries no keys for them) — the
+        // C# else-branch's no-immunity (`NPC.cs:17826-17832`).
+        NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => &[],
     }
 }
 

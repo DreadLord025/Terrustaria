@@ -33169,6 +33169,34 @@ vanilla type id with the box on `size_override` (the
 is reused UNMODIFIED (style 64 — the `:77761` fighter arm is
 style-3-only, so no `directionY` rewrite).
 
+**WIRED 2026-11-20 (W4-c7, `task/W4-c7-style64-fireflies`, code-only —
+no compiler/tests run).** Phase 1 (81094ca0): the four kinds joined the
+roster (`NpcKind::Firefly`/`LightningBug`/`Lavafly`/`Shimmerfly`, vanilla
+ids 355/358/654/677 kept in the protocol space), the `SetDefaults` tables
+(10x10, the Bug's 12x12; dmg/def/value 0, lifeMax 5, noGravity all four,
+class-default kb 1f, NPCHit1/NPCDeath1, the bestiary entries, the G6
+render rows over `FIREFLY_SHEETS`, the Shimmerfly rotation whitelist, the
+FindFrame cases — the 7-tick flap + dark-pose +2 rows and the 677's
+double-counter pixel-vs-5 wrap quirk, num 27 → row 0 forever). Phase 2
+(045922d9): the `64 =>` axis arm (`update_rng_style64_solo`, empty sibling
+view, the style75 solo precedent), the SIM's POOL pass at the slot turn
+on the `UpdateNPCs` stream (the slot-ordered `Ai64NpcView` list feeds the
+677 threat scan; the fly's own damage-0 view rides along — the module's
+byte-identical fold), the glow drains into the shared `EntityLights`
+pair at the C# call position (the solo path queues `wants_ai_light`),
+and `Npc::ai_064_integrate` owns the post-AI movement: the dead-band X
+snap (`:90473-90476`) + the 677 raw integration (`:90496-90498`) vs the
+other three's no-gravity `UpdateCollision` stand-in. Phase 3: two wiring
+witnesses in `npc.rs` (`w4_c7_the_firefly_defaults_match_the_csharp_rows`
+— the four rows through the port's tables incl. the 4-row frame counts;
+`w4_c7_the_style64_axis_runs_solo_feeds_the_glow_and_splits_the_integration`
+— the solo stream-clone replay, the glow queue → EntityLights byte-exact
+drain, the collideX-latching flyer vs the wall-passing 677, the dead-band
+snap, 60 full ticks per kind never reaching the unreachable! kind arms).
+WRITTEN, NOT RUN. The catch-item/lavaImmune/npcSlots rows ride the
+bug-net/critter systems outside this lane (the bestiary/netglue rows
+landed).
+
 **Verification.** Code-only mode: the whole arm was re-read line-by-line
 against the module (resume re-verification 2026-11-19: the census, the
 four SetDefaults rows, `Utils.cs:1507-1542`/`:1807-1810`/`:1837-1844`/
@@ -39891,3 +39919,42 @@ precedent) BEFORE the first 467 tick, and the row-85 verbatim audit
 `w4_d32_seal_the_unwired_band_kinds_stay_unrowed_here` witness stays
 green on this batch (467 absent) and flips at the d40 merge — the
 spine agent re-pins it there.
+## The critter-family SEAL (W4-c7, research/350, 2026-11-21, code-only mode)
+
+The c7 lane's FINAL artifact (`task/W4-c7-style65-critters`, stacked on
+the pushed style-64 tip `c2cc6ec61`): **research/350** — the
+critter-family census + bible, registry-number adjudicated per
+research/150 (the fresh 360-tip sweep caught 281 TRIPLE-claimed
+(d30 `ec89521fb` 15:42:58 wins / d125 `5a26ae348` / g48 `9c776ca2f`)
+and 282 DOUBLE-claimed (d125 wins / g48); the seal self-picked 283
+"first free" — a post-§8 tips-only pick, CONTESTED: registry-150 §8.7's
+FROZEN table (`a15cb634b`) assigns c7 **350**, 283 stays f26's
+reservation; **number chain 283 → 350**, executed as the assignment).
+NO style-65 code was ported on this
+lane — the census found the machine already five-way copied across the
+wave; d30's research/281 §3 keep-one (the whole-arm
+`ai_065_butterflies` CANONICAL, the f18/d39 356-only `ai_065_step`
+subsets + d125's lacewing module DROP, c10's adapter + d125's
+pre-pass/drain COMPOSE) is re-verified and adopted. The seal's four
+receipts: (1) the git-log census — the c7 three phases
+(81094ca06/045922d95/c2cc6ec61) landed exactly Firefly 355 /
+LightningBug 358 / Lavafly 654 / Shimmerfly 677 (the brief's
+"Butterfly356/LightningBug357" labels corrected: 356 was never c7's,
+357 is c8's Worm); (2) the SIGHT gate — c8's generalized
+`counts_as_a_critter` (`NPC.cs:6887-6897`, hp<=5 && dmg==0 &&
+cs_id∉{594,686}) auto-covers all four c7 kinds with zero provider
+wiring (the hit-side `NPCID.Sets.CountsAsCritter` 99-id set
+`NPCID.cs:10460` is a DIFFERENT gate, cited not conflated); (3) the d37
+E8 roster receipts — c7's 355→735/358→736 renumber owed at the 108
+merge (cs_id/net/sheets never move), Shimmerfly 677 canonical-c7 (c9
+dup drops), the Butterfly 356 f18×d39 keep-one verdict (d39's @817
+roster row keeps, f18's @238 verify-lane row drops, f18's FindFrame
+saturation fix `a832d38ea` composes onto d39's case); (4) the gold peer
+table — c7's gold kinds NONE (the 14-member collection + 13-row
+provider dictionary carry no firefly id; 444→{356} activates with the
+Butterfly keep-one). Three witnesses WRITTEN NOT RUN
+(`bestiary.rs::w4_c7_seal_tests` ×2, `npc.rs::w4_c7_seal_roster_tests`
+×1) + three anchors canary rows. **No deliberate deviations** — the
+seal is receipts-only; the merge-time work (E8 renumbers, keep-one
+drops, sheet-grid gap closes) is itemized in research/350 §5's bible
+paragraph. No cargo/tests/rustfmt/graphify invoked.
