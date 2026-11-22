@@ -8449,6 +8449,33 @@ impl Npc {
         }
     }
 
+    /// W4-d45 low-2 — the bridge into `npc_findframe_low2`'s pure
+    /// machines: copy the four `FindFrame` fields out, run one tick,
+    /// copy them back (the `find_frame_wave_a` precedent). `direction`
+    /// is `facing` (the C#'s `Entity.direction`); `wet`/`ai` ride the
+    /// NPC's own fields (the Angler Fish's wet/dry bands read `wet`,
+    /// the Antlion/weapon/jellyfish gates read `ai`).
+    fn find_frame_wave_low2(&mut self, kind: crate::npc_findframe_low2::FindFrameLow2Kind) {
+        let mut s = crate::npc_findframe_low2::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+        };
+        let i = crate::npc_findframe_low2::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            wet: self.wet,
+            ai: self.ai,
+        };
+        crate::npc_findframe_low2::find_frame_low2(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+    }
+
     pub(crate) fn find_frame(&mut self) {
         // W4-d44 wire (d48 wave C) — the `cs_id`-keyed hook into the
         // wave-C pure machines (`npc_findframe_c.rs`) via
@@ -8575,6 +8602,18 @@ impl Npc {
         // precedent; research/125 §14.
         if let Some(kind) = Self::find_frame_kind_b_claimed(self.kind.cs_id()) {
             self.find_frame_wave_b(kind);
+            return;
+        }
+        // W4-d45 low-2 — the `cs_id`-keyed hook into the low-band
+        // wave's pure machines (`npc_findframe_low2.rs`, the SECOND-12
+        // missing set 69/73/74/83/84/93/94/101/102/103/116/120). NO
+        // current kind's `cs_id` lands in the set (the roster wave
+        // adds them), so this is stream-inert today; the arms
+        // themselves draw no RNG. The W4-d46 mid-1 hook precedent.
+        if let Some(kind) =
+            crate::npc_findframe_low2::find_frame_kind_for_cs_id(self.kind.cs_id())
+        {
+            self.find_frame_wave_low2(kind);
             return;
         }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
@@ -36698,6 +36737,71 @@ mod b1_skeletron_tests {
 /// owner-pin `NPC.cs:35081-35101`, AI_073's warp-in `:35102-35216`) ride a
 /// LATER wave; the stand-ins hold still. Tests written, not run (code-only
 /// mode).
+#[cfg(test)]
+mod w4_d45_low2_tests {
+    use super::tests::{bare, ALL_KINDS};
+    use super::*;
+
+    // ---- W4-d45 low-2 — the `find_frame` hook into `npc_findframe_low2` ----
+    // The pure machines carry their own 16 pinned witnesses in
+    // `npc_findframe_low2.rs`; these pin the NPC-side seam: the hook is
+    // inert for every current kind, and the bridge copies the four
+    // fields both ways. WRITTEN NOT RUN (code-only mode — no compiler
+    // invoked on this branch).
+
+    /// The `cs_id` hook fires for NO current kind — the inertness proof
+    /// (the roster wave has not added the 12 low-2 kinds; the bestiary's
+    /// net ids skip all twelve — `bestiary.rs`'s entry list, the
+    /// Hungry's 115 and the LeechHead's 117 straddle the 116).
+    #[test]
+    fn w4_d45_the_low2_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                crate::npc_findframe_low2::find_frame_kind_for_cs_id(kind.cs_id()),
+                None,
+                "{kind:?} cs_id {} must not ride the low-2 hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The bridge copies row/counter/sprite_dir/rotation both ways and
+    /// feeds vx/vy/facing/wet/ai through — pinned on the Angler Fish
+    /// (the fish wet/dry bands, `NPC.cs:74181-74226`) and the Giant Bat
+    /// (the floater group's velocity-sign flip + tilt, `:74850-74858`).
+    #[test]
+    fn w4_d45_the_low2_bridge_copies_the_four_fields_both_ways() {
+        let mut n = bare(NpcKind::Piranha);
+        // The Angler Fish dry: the <6 band pins row 4, the counter
+        // ticks once from the preset 2 → 3; the flip rides facing.
+        n.frame = 0;
+        n.frame_counter = 2.0;
+        n.sprite_dir = 1;
+        n.facing = -1;
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.wet = false;
+        n.find_frame_wave_low2(crate::npc_findframe_low2::FindFrameLow2Kind::AnglerFish);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (4, 3.0, -1));
+        // Wet: the <6 band pins row 0, the counter ticks 3 → 4.
+        n.wet = true;
+        n.find_frame_wave_low2(crate::npc_findframe_low2::FindFrameLow2Kind::AnglerFish);
+        assert_eq!((n.frame, n.frame_counter), (0, 4.0));
+        // The floater group writes the rotation off vx and flips by
+        // the velocity sign (not facing); the counter rides through.
+        n.frame = 3;
+        n.frame_counter = 5.0;
+        n.sprite_dir = -1;
+        n.facing = -1;
+        n.vx = 2.0;
+        n.rotation = 0.0;
+        n.find_frame_wave_low2(crate::npc_findframe_low2::FindFrameLow2Kind::GiantBat);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0), "row 3 + step wraps");
+        assert_eq!(n.sprite_dir, 1, "the velocity-sign flip");
+        assert_eq!(n.rotation, 0.2, "the vx * 0.1 tilt");
+    }
+}
+
 #[cfg(test)]
 mod s1_f_13d_tests {
     use super::*;

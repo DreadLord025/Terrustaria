@@ -42486,3 +42486,86 @@ wired siblings (693→g5, 636/661→d125, 11 town pets→g10, 694→c3,
 refresh-5 probe-time tips; the in-flight lanes (f26/f27/d41/d42/d43)
 may push more claims before merge — the merger re-probes at merge
 time. **No cargo/rustc/tests/rustfmt/graphify invoked** (code-only
+
+## W4-d45 FindFrame low-band slice 2 (2026-11-20, code-only mode)
+`crates/tr-app/src/npc_findframe_low2.rs` ports the SECOND 12 missing
+list — the d44 slice-1 doc's split): **69/73/74/83/84/93/94/101/102/103/
+116/120**, landed in two 6-kind commits (69/73/74/83/84/93, then
+94/101/102/103/116/120). Slice 1 (`task/W4-d44-findframe-low-1`,
+`npc_findframe_low1.rs`) owns the first 12 (37-67). The kinds are NOT in
+`NpcKind` yet — the machines land as pure functions over
+`FrameState`/`FrameInput` (the waves A/B and W4-d46/d47 precedent). The
+wiring seam IS included (the W4-d46 mid-1 precedent, unlike d44):
+`find_frame_kind_for_cs_id` + the `cs_id`-keyed hook at the head of
+`npc.rs::find_frame` + the `find_frame_wave_low2` bridge. NO current
+kind's `cs_id` lands in the set (the bestiary's net ids skip all twelve
+— the Hungry's 115 and the LeechHead's 117 straddle the 116), so the
+hook is stream-inert today and auto-activates when the roster wave adds
+the kinds; the inertness is pinned over `ALL_KINDS`. No arm draws
+`Main.rand` (the floater group's dust spawns are types 60/634's, not the
+Giant Bat's), so the wiring cannot move a stream.
+* **69 Antlion** (`NPC.cs:74291-74310`, 5 rows): while `ai[0] < 190`
+  the 6-tick clock walks rows 0..3 — the wrap is INSIDE the step
+  (`>= count - 1` → 0), so row 4 is never reached through the cycle;
+  `ai[0] >= 190` (the buried pose) pins the LAST row 4 + zero counter.
+  No flip/tilt writes.
+* **73 GoblinScout / 120 ChaosElemental** (`:68557`/`:68565` in the
+  humanoid town case list, `:68634-69655`, 16/15 rows): both are
+  aiStyle-3 fighters with NO `townNPC` row (`:9732-9746`/`:10453-
+  10465`), so `num57 = ExtraFramesCount` never applies
+  (`isLikeATownNPC` is `townNPC || type == 453`, `:6856-6866`) — the
+  walk band wraps at the FULL count (rows 2..count-1), unlike d44's
+  town-like OldMan. The idle snaps to row 0 (neither is the 140/489
+  idle-row-1 pair); the air holds row 1 for 73, but 120 IS in the
+  `:69647` pin list — its air row is OVERWRITTEN to 0 (the wave-B
+  AngryBones tail). The town `ai[0]` pose zones (`:68662-69488`) are
+  the documented skip (the fighters' turn counter leaves `ai[0]` at
+  0/1, `:57381-57397`).
+* **74 Bird** (`:73628-73653`, the 297/298/442 group, 5 rows): the
+  unconditional flip + `vx * 0.1` tilt; the FULL still snap
+  (`vx == 0 && vy == 0`) pins row 4 (`num * 4` — the LAST row, not 0
+  like the d44 Vulture); the 4-tick cycle's wrap bound is
+  `count - 1`, so the moving strip walks rows 0..3 and never shows
+  the still row.
+* **83/84 CursedHammer/EnchantedSword** (`:74622-74641`, the 179
+  group, 6 rows): the `ai[0] == 2` pin (row 0 + zero counter, exact
+  `==`), else the 4-tick spin over the FULL count with the wrap
+  inside the step. No flip/tilt writes.
+* **93 GiantBat** (`:74828` in the floater group `:74823-74885`,
+  4 rows): the velocity-sign flip (0 leaves it alone) + `vx * 0.1`
+  tilt + the plain 6-tick step over the FULL count — 93 is in
+  NEITHER the `num291 = 5` type-48 override (`:74871-74874`) nor the
+  `num292--` 49/51/60/634 list (`:74867-74870`). The group's dust
+  spawns (60's flame, 634's `Next(10)`) and the 210/211
+  double-increment are other members', skipped with cites.
+* **94 Corruptor** (`:76943-76965`, 3 rows): the <6/<12/<18 bands
+  over rows 0/1/2, the tail pins row **1** (NOT the jellyfish
+  group's 3) and the >= 23 reset zeroes the counter — the
+  0/1/2/1 spit cycle.
+* **101 Clinger** (`:75018-75029`, 5 rows): TWO rows per >6 counter
+  and the clamp is `> num * 2` AFTER the add — from row 2 the add
+  lands 4 and the clamp resets to 0, so the cycle shows only rows
+  0/2 (rows 1/3/4 unreachable through it); an odd preset row rides
+  1 → 3 → 0. The quirk is kept verbatim.
+* **102 AnglerFish** (`:74184` in the fish group `:74181-74226`,
+  6 rows): the d44 CorruptGoldfish's identical arm — the
+  unconditional flip, the wet 0/1/2/3 bands with the row-3 hold at
+  the >= 24 tail, the dry 4/5 bands with the row-5 hold at the >= 12
+  tail.
+* **103 GreenJellyfish** (`:73918` in the jellyfish group
+  `:73916-73960`, 7 rows): 103 IS in the `ai[1] == 1` attack gate's
+  type list (`:73921` — 63/64/103/242, NOT 256): the >4 counter over
+  rows 4..6 (both clamps every tick) RETURNS before the normal
+  strip; the normal strip is the d44 pair's 0/1/2/3 bands + >= 23
+  reset.
+* **116 TheHungryII** (`:74091-74112`, 6 rows): vx > 0 faces +1 with
+  `rotation = atan2(vy, vx)`; vx < 0 faces -1 with `atan2 + 3.14f`
+  (the LITERAL, not PI — the wave-A demon-eye precedent); vx == 0
+  writes NEITHER flip nor rotation (the two independent `if`s, not
+  an else); the 5-tick strip walks the FULL count.
+The 12 `Main.npcFrameCount` rows (`Main.cs:67090-67096`) were counted
+`render/entities.rs::NPC_FRAME_COUNT` table (69=5, 73=16, 74=5,
+83/84=6, 93=4, 94=3, 101=5, 102=6, 103=7, 116=6, 120=15). 16 module
+witnesses + 2 NPC-side seam witnesses (the ALL_KINDS inertness sweep +
+the bridge field-copy pin) are WRITTEN, NOT RUN — **no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked** (code-only mode).
