@@ -5055,6 +5055,44 @@ impl Npc {
             // `7fec14aa`) — until they land no kind has ai_style 83 and this
             // arm is dormant (the style75 precedent).
             83 => self.update_rng_style83_solo(world, player, rng),
+            // W4-d32 axis census (research/25 row 85): the hover/attach
+            // family — `else if (this.aiStyle == 85)` (`NPC.cs:36930-37220`).
+            // The census's three kinds: StardustCellBig 405 (`NPC.cs:15026`),
+            // BrainSuckler 421 (`:15134`), DeadlySphere 467 (`:15564` — no
+            // ported kind yet, the roster wave). The two ported machines
+            // claim the style here (the S1-D-2 migration step, machines
+            // UNCHANGED verify-only — both are the documented PARTIAL
+            // stand-ins, the row-85 audit stays open); the kind arms below
+            // are `unreachable!` markers (the W4-d31 precedent).
+            85 => match self.kind {
+                NpcKind::StardustCellBig => self.update_stardust_cell_big(world, player),
+                NpcKind::BrainSuckler => self.update_brain_suckler(world, player, rng),
+                // Batch-E merge obligation (research/348 §2 G2, the 367
+                // §2 Lead-flag): d40's roster wave rows DeadlySphere 467
+                // onto aiStyle 85 — WITHOUT this guard the first 467 tick
+                // would hit the `_ => unreachable!` below (the PANIC
+                // HAZARD). The kind is NOT rowed on this branch (d40 is
+                // not in batch-E), so the arm cannot be spelled here yet
+                // — this documented obligation stands in its place: at
+                // the d40 merge, EXTEND this match with
+                // `NpcKind::DeadlySphere => {}` (the empty-arm stand-in,
+                // the d40 precedent) until the row-85 verbatim audit
+                // ports the C# 467 branch (`NPC.cs:36930-37220`'s third
+                // member). Do NOT delete this note before that arm lands.
+                _ => unreachable!("no other ported kind carries aiStyle 85"),
+            },
+            // W4-d32 axis census (research/25 row 93): the Flying
+            // Dutchman — `else if (this.aiStyle == 93)`
+            // (`NPC.cs:38858-38967`). The census's only kind is the
+            // FlyingDutchman 491 (`NPC.cs:14637`); its cannons 492
+            // ride aiStyle 75 (already claimed above). The ported
+            // machine claims the style here (the S1-D-2 migration
+            // step, machine UNCHANGED verify-only — the row-93
+            // verbatim audit stays open: the stand-in's init latch /
+            // crew count / ai[0] counter deviations are documented
+            // at `update_flying_dutchman`); the kind arm below is an
+            // `unreachable!` marker (the W4-d31 precedent).
+            93 => self.update_flying_dutchman(world, player, rng),
             _ => self.update_kind_ai(world, player, dt, rng),
         }
         // `NPC.UpdateNPC`'s tail (`NPC.cs:90516`): `this.justHit = false`
@@ -6244,9 +6282,13 @@ impl Npc {
             // (`NPC.cs:59004-59030`) and the machine ride a LATER wave —
             // the stand-in holds still.
             NpcKind::MartianTurret => {}
-            // The pirate ship: aiStyle 93's crew-carrier machine; its
-            // cannons' aiStyle-75 ride claims the style axis.
-            NpcKind::FlyingDutchman => self.update_flying_dutchman(world, player, rng),
+            // The pirate ship: aiStyle 93 rides the style axis
+            // (W4-d32 — the `update_flying_dutchman` machine is
+            // UNCHANGED, the axis arm above calls it); its cannons'
+            // aiStyle-75 ride claims the style axis too.
+            NpcKind::FlyingDutchman => {
+                unreachable!("aiStyle 93 rides the style axis (W4-d32)")
+            }
             NpcKind::FlyingDutchmanCannon => {
                 unreachable!("aiStyle 75 rides the style axis (S1-D-3-wire-saucer)")
             }
@@ -6354,7 +6396,12 @@ impl Npc {
             // suckler's aiStyle-85 hover + attachment, the predictor's
             // 573 fan.
             NpcKind::NebulaFloater => self.update_nebula_floater(world, player, rng),
-            NpcKind::BrainSuckler => self.update_brain_suckler(world, player, rng),
+            // The suckler: aiStyle 85 rides the style axis (W4-d32 — the
+            // hover/attach machine, `NPC.cs:36930-37220`) — this arm is
+            // unreachable.
+            NpcKind::BrainSuckler => {
+                unreachable!("aiStyle 85 rides the style axis (W4-d32)")
+            }
             NpcKind::Predictor => self.update_nebula_predictor(world, player, rng),
             // The vortex trio: the hunter's shooter arm, the alien's dive
             // + the `Transform(426)`, the headcrab's roll + the
@@ -6366,7 +6413,11 @@ impl Npc {
             // Vortex pair's aiStyle-3 riders.
             NpcKind::StardustCellSmall => self.update_stardust_cell(world, player),
             NpcKind::StardustJellyfishBig => self.update_stardust_jellyfish(world, player, rng),
-            NpcKind::StardustCellBig => self.update_stardust_cell_big(world, player),
+            // The big cell: aiStyle 85 rides the style axis (W4-d32 —
+            // `NPC.cs:36930-37220`) — this arm is unreachable.
+            NpcKind::StardustCellBig => {
+                unreachable!("aiStyle 85 rides the style axis (W4-d32)")
+            }
             // W4-d25: aiStyle 26 rides the style axis (the M4-EVENT-9
             // stand-in routes unchanged through the 26 arm) — this arm
             // is an unreachable marker (the S1-D-3 W-1 precedent).
@@ -34924,3 +34975,278 @@ mod w4_d31_axis_census_tests {
         assert_eq!(n2.vx.to_bits(), 0.01f32.to_bits(), "outside the band keeps vx");
     }
 }
+
+/// W4-d32 (research/25 row 85, code-only — WRITTEN NOT RUN): the
+/// aiStyle-85 axis census. The band's two ported machines (the
+/// StardustCellBig 405 / BrainSuckler 421 PARTIAL stand-ins) move from
+/// the kind match to the axis arm — machines UNCHANGED (verify-only,
+/// the W4-d31 76-82 precedent); the row-85 verbatim audit stays open.
+/// The census's third kind, DeadlySphere 467 (`NPC.cs:15560-15573`),
+/// has no `NpcKind` yet — the roster wave.
+#[cfg(test)]
+mod w4_d32_style85_census_tests {
+    use super::*;
+    use super::tests::{ground, ALL_KINDS};
+
+    /// The census: the 85-band kinds carry their `SetDefaults` aiStyle
+    /// rows (`this.aiStyle = 85;` at `NPC.cs:15026` (405), `:15134`
+    /// (421), `:15564` (467)); the 467 gap is the census's unported
+    /// third member.
+    #[test]
+    fn w4_d32_s85_the_band_kinds_carry_their_csharp_styles() {
+        assert_eq!(NpcKind::StardustCellBig.ai_style(), 85);
+        assert_eq!(NpcKind::BrainSuckler.ai_style(), 85);
+        assert_eq!(NpcKind::StardustCellBig.cs_id(), 405);
+        assert_eq!(NpcKind::BrainSuckler.cs_id(), 421);
+        assert!(
+            !ALL_KINDS.iter().any(|k| k.cs_id() == 467),
+            "no kind claims the DeadlySphere 467 until the roster wave"
+        );
+        assert!(
+            ALL_KINDS.iter().filter(|k| k.ai_style() == 85).count() == 2,
+            "exactly the two ported kinds ride aiStyle 85"
+        );
+    }
+
+    /// The frozen-behaviour A/B + stream parity (the
+    /// `w4_d31_the_axis_claims_keep_the_machine_behaviour_and_stream`
+    /// precedent): the axis-routed arm must produce the exact pre-axis
+    /// state sequence — the kind match's old bodies called the SAME
+    /// machines with the same args.
+    #[test]
+    fn w4_d32_s85_the_axis_claim_keeps_the_machine_behaviour_and_stream() {
+        let w = ground();
+        for kind in [NpcKind::StardustCellBig, NpcKind::BrainSuckler] {
+            let mut player_a = Player::spawn(&w);
+            let mut player_b = Player::spawn(&w);
+            let mut axis = Npc::new(kind, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+            axis.hp = axis.max_hp;
+            let mut legacy = axis.clone();
+            let mut rng_a = UnifiedRandom::new(85);
+            let mut rng_b = UnifiedRandom::new(85);
+            for tick in 0..120 {
+                axis.update_rng(&w, &mut player_a, 1.0 / 60.0, &mut rng_a);
+                // The pre-axis arms, verbatim (the kind match's old bodies).
+                match kind {
+                    NpcKind::StardustCellBig => legacy.update_stardust_cell_big(&w, &player_b),
+                    NpcKind::BrainSuckler => legacy.update_brain_suckler(&w, &player_b, &mut rng_b),
+                    _ => unreachable!(),
+                }
+                legacy.find_frame();
+                legacy.contact(&mut player_b, &mut rng_b);
+                assert_eq!(axis.x.to_bits(), legacy.x.to_bits(), "{kind:?} x @{tick}");
+                assert_eq!(axis.y.to_bits(), legacy.y.to_bits(), "{kind:?} y @{tick}");
+                assert_eq!(axis.vx.to_bits(), legacy.vx.to_bits(), "{kind:?} vx @{tick}");
+                assert_eq!(axis.vy.to_bits(), legacy.vy.to_bits(), "{kind:?} vy @{tick}");
+                for i in 0..4 {
+                    assert_eq!(axis.ai[i].to_bits(), legacy.ai[i].to_bits(), "{kind:?} ai[{i}] @{tick}");
+                }
+                assert_eq!(axis.hp, legacy.hp, "{kind:?} hp @{tick}");
+                assert_eq!(axis.frame, legacy.frame, "{kind:?} frame @{tick}");
+                assert_eq!(axis.rotation.to_bits(), legacy.rotation.to_bits(), "{kind:?} rot @{tick}");
+                assert_eq!(rng_a.peek(), rng_b.peek(), "{kind:?} stream @{tick}");
+            }
+        }
+    }
+
+    /// The zero-draw census: both stand-in machines consume NO
+    /// `Main.rand` at arm level — `update_stardust_cell_big` takes no
+    /// stream at all and `update_brain_suckler`'s `_rng` is unused (the
+    /// PARTIAL stand-ins' documented shape; the verbatim C# arm
+    /// `NPC.cs:36930-37220` also draws nothing — TargetClosest and
+    /// Collision.CanHit are deterministic, the 421 attachment latch is
+    /// a scan, not a roll).
+    #[test]
+    fn w4_d32_s85_the_stand_in_arms_draw_nothing() {
+        let w = ground();
+        let p = Player::spawn(&w);
+        let mut rng = UnifiedRandom::new(467);
+        let mut cell = Npc::new(NpcKind::StardustCellBig, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        cell.hp = cell.max_hp;
+        for _ in 0..300 {
+            cell.update_stardust_cell_big(&w, &p);
+        }
+        let mut suckler = Npc::new(NpcKind::BrainSuckler, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        suckler.hp = suckler.max_hp;
+        for _ in 0..300 {
+            suckler.update_brain_suckler(&w, &p, &mut rng);
+        }
+        assert_eq!(rng.peek(), UnifiedRandom::new(467).peek(), "the 85 stand-ins are draw-free");
+    }
+
+    /// The kind-match stand-ins are retired: calling `update_kind_ai`
+    /// directly on a band kind panics (the W4-d31 guard precedent).
+    #[test]
+    #[should_panic(expected = "rides the style axis")]
+    fn w4_d32_s85_the_suckler_kind_arm_is_retired() {
+        let w = ground();
+        let mut p = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::BrainSuckler, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(0);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+    }
+}
+
+/// W4-d32 style 93 (research/25 row 93, code-only): the Flying
+/// Dutchman's axis claim — the S1-D-2 migration step. The ported
+/// machine (`update_flying_dutchman`, `NPC.cs:38858-38967`'s arm) is
+/// UNCHANGED verify-only; the row-93 verbatim audit stays open (the
+/// stand-in's documented deviations: the `wants_scutlix` init latch
+/// stands in for `localAI[0]`, `crew_cannons` for the ai-slot crew
+/// scan, `ai[0]` for `localAI[3]`'s 64-cycle, the missing sprite
+/// flip + the 228 wake dusts). These witnesses pin the SEAM, not the
+/// audit. WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d32_style93_census_tests {
+    use super::*;
+    use super::tests::{ground, ALL_KINDS};
+
+    /// The census: `this.aiStyle = 93;` has exactly ONE assignment
+    /// (`NPC.cs:14637`, the type-491 row `:14632-14650`); the ported
+    /// FlyingDutchman carries it and no other kind does. The cannons
+    /// 492 ride aiStyle 75 (`NPC.cs:14655` region — the mount axis).
+    #[test]
+    fn w4_d32_s93_the_band_kind_carries_its_csharp_style() {
+        assert_eq!(NpcKind::FlyingDutchman.ai_style(), 93);
+        assert_eq!(NpcKind::FlyingDutchman.cs_id(), 491);
+        assert_eq!(NpcKind::FlyingDutchmanCannon.cs_id(), 492);
+        assert_eq!(NpcKind::FlyingDutchmanCannon.ai_style(), 75);
+        assert!(
+            ALL_KINDS.iter().filter(|k| k.ai_style() == 93).count() == 1,
+            "exactly the ship rides aiStyle 93"
+        );
+    }
+
+    /// The frozen-behaviour A/B + stream parity (the
+    /// `w4_d32_s85_the_axis_claim_keeps_the_machine_behaviour_and_stream`
+    /// precedent): the axis-routed arm must produce the exact
+    /// pre-axis state sequence — the kind match's old body called
+    /// the SAME machine with the same args.
+    #[test]
+    fn w4_d32_s93_the_axis_claim_keeps_the_machine_behaviour_and_stream() {
+        let w = ground();
+        let mut player_a = Player::spawn(&w);
+        let mut player_b = Player::spawn(&w);
+        let mut axis = Npc::new(NpcKind::FlyingDutchman, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        axis.hp = axis.max_hp;
+        axis.crew_cannons = 4; // the crew-alive stand-in (the sim links the real cannons)
+        let mut legacy = axis.clone();
+        let mut rng_a = UnifiedRandom::new(93);
+        let mut rng_b = UnifiedRandom::new(93);
+        for tick in 0..120 {
+            axis.update_rng(&w, &mut player_a, 1.0 / 60.0, &mut rng_a);
+            // The pre-axis arm, verbatim (the kind match's old body).
+            legacy.update_flying_dutchman(&w, &player_b, &mut rng_b);
+            legacy.find_frame();
+            legacy.contact(&mut player_b, &mut rng_b);
+            assert_eq!(axis.x.to_bits(), legacy.x.to_bits(), "x @{tick}");
+            assert_eq!(axis.y.to_bits(), legacy.y.to_bits(), "y @{tick}");
+            assert_eq!(axis.vx.to_bits(), legacy.vx.to_bits(), "vx @{tick}");
+            assert_eq!(axis.vy.to_bits(), legacy.vy.to_bits(), "vy @{tick}");
+            for i in 0..4 {
+                assert_eq!(axis.ai[i].to_bits(), legacy.ai[i].to_bits(), "ai[{i}] @{tick}");
+            }
+            assert_eq!(axis.hp, legacy.hp, "hp @{tick}");
+            assert_eq!(axis.rotation.to_bits(), legacy.rotation.to_bits(), "rot @{tick}");
+            assert_eq!(
+                axis.wants_dutchman_drop.is_some(),
+                legacy.wants_dutchman_drop.is_some(),
+                "drop @{tick}"
+            );
+            assert_eq!(rng_a.peek(), rng_b.peek(), "stream @{tick}");
+            // The drop request drains identically (the sim's seam).
+            axis.wants_dutchman_drop = None;
+            legacy.wants_dutchman_drop = None;
+        }
+    }
+
+    /// The kind-match stand-in is retired: calling `update_kind_ai`
+    /// directly on the ship panics (the W4-d31 guard precedent).
+    #[test]
+    #[should_panic(expected = "rides the style axis")]
+    fn w4_d32_s93_the_ship_kind_arm_is_retired() {
+        let w = ground();
+        let mut p = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::FlyingDutchman, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(0);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+    }
+}
+
+/// W4-d32 RETIRE/SEAL (research/348, code-only): the band 85-93 FINAL
+/// census pins. The band is CLAIM-COMPLETE — 85/93 axis-claimed here
+/// (machines frozen verify-only, the verbatim audits open), 86-92
+/// ported UNWIRED (`npc_ai_style86..92.rs`, zero call sites), the
+/// kinds rowed on d40 `8fe1d6d31` (467/472-479/483/488) + base
+/// (405/421/491/492); 521 unrowed. The merge fix-list: the wiring
+/// wave's 86-92 axis arms + the 467→85 panic-hazard match extension
+/// (d40 rows DeadlySphere onto the 85 arm whose `_` is `unreachable!`
+/// here). Cross-lane: d30 research/281 §3a mutual DISJOINT, d31
+/// keep-both frictions only, g65-Kill-309 compose (the 240 shell's
+/// death dust is g65's, the request is the inherited 75 seam).
+/// WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d32_seal_tests {
+    use super::*;
+    use super::tests::ALL_KINDS;
+
+    /// SEAL (research/348 §2a/§4): the band's axis census is exact at
+    /// this tip — 85 carries exactly the two PARTIAL stand-in kinds,
+    /// 93 exactly the ship, the cannons ride 75, and NO kind carries
+    /// 86-92 (the d40 rows are the roster wave's, the modules UNWIRED).
+    #[test]
+    fn w4_d32_seal_the_band_axis_census_is_exact() {
+        let s85: Vec<_> = ALL_KINDS.iter().filter(|k| k.ai_style() == 85).collect();
+        assert_eq!(s85.len(), 2, "405 + 421 only (467 is d40's row)");
+        assert_eq!(NpcKind::StardustCellBig.ai_style(), 85);
+        assert_eq!(NpcKind::BrainSuckler.ai_style(), 85);
+        let s93: Vec<_> = ALL_KINDS.iter().filter(|k| k.ai_style() == 93).collect();
+        assert_eq!(s93.len(), 1, "the ship only");
+        assert_eq!(NpcKind::FlyingDutchman.cs_id(), 491);
+        assert_eq!(NpcKind::FlyingDutchmanCannon.cs_id(), 492);
+        assert_eq!(NpcKind::FlyingDutchmanCannon.ai_style(), 75);
+        for style in 86..=92u8 {
+            assert!(
+                !ALL_KINDS.iter().any(|k| k.ai_style() == style),
+                "style {style} stays unrowed until the d40 merge"
+            );
+        }
+    }
+
+    /// SEAL (research/348 §3c): the g65 "Kill-309" is projectile 309
+    /// FrostBlastFriendly (`Projectile.cs:75347-75361`, the drain arm
+    /// `projectile_death_dust.rs:1100`), NPC 309 is Scarecrow5 (aiStyle
+    /// 3) — three id spaces, zero overlap with the band. The band's
+    /// only projectile seam is the 492 cannon's 240 CannonballHostile
+    /// shell (`NPC.cs:35771-35785` → `style75_step`'s request); its
+    /// Kill dust is g65's 240 arm (`Projectile.cs:75855-75894`), not
+    /// d32's. Pin both consts so no future census folds the axes.
+    #[test]
+    fn w4_d32_seal_the_g65_kill_309_and_the_240_shell_are_other_id_spaces() {
+        assert_eq!(crate::projectile::FROST_BLAST_FRIENDLY, 309);
+        assert_eq!(NpcKind::Scarecrow5.cs_id(), 309);
+        assert_eq!(NpcKind::Scarecrow5.ai_style(), 3);
+        assert_ne!(NpcKind::Scarecrow5.ai_style(), 93);
+        assert_eq!(crate::projectile::DUTCHMAN_SHELL, 240);
+        // The shell's request rides the inherited aiStyle-75 seam
+        // (`npc_ai_style75.rs`'s 492 block pushes kind 240); the band
+        // claims no projectile style and pushes no Kill dust.
+        assert_eq!(NpcKind::FlyingDutchmanCannon.ai_style(), 75);
+    }
+
+    /// SEAL (research/348 §2b/G2/G4): the unwired band kinds stay
+    /// unrowed HERE — d40's 467/472-479/483/488 rows and the 521
+    /// roster gap are the merge-time census. The G2 hazard is pinned
+    /// by absence: no kind reaches the 85 arm's `unreachable!` at
+    /// this tip; the d40 merge MUST extend the match first.
+    #[test]
+    fn w4_d32_seal_the_unwired_band_kinds_stay_unrowed_here() {
+        for id in [467u16, 472, 473, 474, 475, 476, 477, 478, 479, 483, 488, 521] {
+            assert!(
+                !ALL_KINDS.iter().any(|k| k.cs_id() == id),
+                "cs_id {id} is the roster wave's row, not this tip's"
+            );
+        }
+    }
+}
+

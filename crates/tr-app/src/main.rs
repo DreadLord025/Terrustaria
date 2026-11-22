@@ -145,6 +145,31 @@ mod npc_ai_style75;
 // passes); the 437/438 kinds ride the roster wave (W4-d40 7fec14aa), so
 // the dispatch is dormant until they merge (see the module doc).
 mod npc_ai_style83;
+mod npc_ai_style86;
+// W4-d32 style 87: UNWIRED Big Mimic machine (NPC.cs:37471-37826) -
+// the 473-476 kinds + the axis arm wait on the roster wave (the
+// style86 precedent; see the module doc).
+mod npc_ai_style87;
+// W4-d32 style 88: UNWIRED Mothron machine (NPC.cs:37827-38351) -
+// the 477 kind + the axis arm wait on the roster wave (the style86
+// precedent; see the module doc).
+mod npc_ai_style88;
+// W4-d32 style 89: UNWIRED Mothron Egg machine (NPC.cs:38352-38393) -
+// the 478 kind + the axis arm wait on the roster wave (the style86
+// precedent; see the module doc).
+mod npc_ai_style89;
+// W4-d32 style 90: UNWIRED Mothron Spawn machine (NPC.cs:38394-38628) -
+// the 479 kind + the axis arm wait on the roster wave (the style86
+// precedent; see the module doc).
+mod npc_ai_style90;
+// W4-d32 style 91: UNWIRED Granite Flyer machine (NPC.cs:38629-38809) -
+// the 483 kind + the axis arm wait on the roster wave (the style86
+// precedent; see the module doc).
+mod npc_ai_style91;
+// W4-d32 style 92: UNWIRED Target Dummy machine (NPC.cs:38810-38857) -
+// the 488 kind + the axis arm wait on the roster wave (the style86
+// precedent; see the module doc).
+mod npc_ai_style92;
 mod npc_ai_wyvern;
 mod npc_ai_style9;
 mod npc_ai_style30;
