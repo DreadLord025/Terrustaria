@@ -94,6 +94,9 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
 | `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED (subset) | `tileobject.rs` (tests `get_tile_data_resolution`, `coordinate_full_extents`; W4-d113: `try_get_tile_bounds` — the :5163-5194 coordinate walk, resolver-parameterised on d112's `GetTileData(Tile)` seam, tests `w4_d113_walk_*`) | `CoordinateFullWidth/Height` `:256-263` |
 
 | `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED (subset) | `tileobject.rs` (tests `get_tile_data_resolution`, `coordinate_full_extents`) | `CoordinateFullWidth/Height` `:256-263`; **W4-e12**: the int overload's alternate tail corrected 1:1 (:5150-5159 — an out-of-range alternate KEEPS the resolved def, the port answered None; consumers `TileObject.Place` :31 / `DrawPreview` :859; witnesses `test_w4_e12_*` written-not-run). The Tile overload :5196-5261 + bounds :5163-5194 are the d112/d113/e11/d114 branch claims |
+
+| `TileObjectData` style alternation (`RandomStyleRange`, `GetStyle_Detritus/SmallPiles/Stalactite` `:5294-5327`) | PORTED | `tileobject.rs::get_tile_data_for_tile` + `resolve_from_frames` (W4-e11) | the frameY override arms + the `[Style, Style+RandomStyleRange]` bands (:5249-5258); witnesses `tileobject_frame_resolution_witness.rs` (written-not-run) |
+| `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED | `tileobject.rs` (`get_tile_data`, `get_tile_data_for_tile` :5196-5261, `try_get_tile_bounds` :5163-5194, `check_water_death`/`check_lava_death` :5083-5119 — W4-e11) | `CoordinateFullWidth/Height` `:256-263`; the `Liquid.cs:1190` settlement-kill wiring is the liquid task's seam |
 | `tiledata` sets | PARTIAL | `tiledata/sets.rs` | 46 `TileSet`s vs 152 `Factory.CreateBoolSet(` sites in `TileID.cs` (upper bound: nested/Conversion sets) |
 | `tiledata` merge relation | PORTED | `tiledata/merge.rs` | dense 754×12-word bitset, generated |
 | emissive tile/wall tables | PORTED | `tiledata/emissive.rs` | full coverage 754 + 367 |
@@ -229,6 +232,14 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
   (W4-d112, `tileobject::resolve_tile_def` — the `GetTileData(Tile)` consumer
   `:5196-5261`; witnesses written-not-run). Remaining: wire the framing /
   liquid-death consumers onto the resolver + `TryGetTileBounds` `:5163-5194`.
+
+  **DONE**: the generator landed with S1-F-7 wave A (389 tiles/604 defs,
+  d111 census proved it complete); the `RandomStyleRange` runtime hook with
+  wave B (S1-F-7b); the tile-based `GetTileData(Tile)` frameY resolution
+  (:5196-5261, the override arms :5294-5327) with **W4-e11** —
+  `tileobject::get_tile_data_for_tile` + `try_get_tile_bounds` + the
+  tile-based `check_water_death`/`check_lava_death`, witnessed by
+  `tests/tileobject_frame_resolution_witness.rs` (written-not-run).
 - **S** — Audit `tiledata` coverage: list `TileID.Sets.*` actually consumed across
   `crates/`, diff against `tiledata/sets.rs`, migrate hand-copied sets (e.g.
   `wind.rs`'s `SwaysInWindBasic`) into the generator.

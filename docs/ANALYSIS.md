@@ -27494,6 +27494,43 @@ alternate tail, where the port diverged from the source:
   `test_w4_e12_place_rides_the_alternate_overflow` (chair placement with
   `alternate = 5` runs and is tile-byte-equal to the alternate-0 placement).
 
+### W4-e11 (2026-11-20): the tile-based GetTileData(Tile) frameY resolution
+The d111-researched "open half" of wave B — `TileObjectData.cs:5196-5261` —
+is ported as `tileobject::get_tile_data_for_tile` (+ the private
+`resolve_from_frames` body split, so synthetic defs can pin branches the
+generated table never combines):
+* The frame decode (:5212-5221): `num = frameX / CoordinateFullWidth`,
+  `num2 = frameY / CoordinateFullHeight`, wrap-0 → 1, horizontal vs vertical
+  index, `style = num4 / StyleMultiplier`, `remainder = num4 % StyleMultiplier`.
+* The `GetStyleOverride` short-circuit (:5222-5226) with the three arms:
+  `GetStyle_Detritus` (:5294-5301, frameY ≥ 36 → SubTiles[0], kind 233),
+  `GetStyle_SmallPiles` (:5303-5310, frameY ≥ 18 → SubTiles[0], kind 185),
+  `GetStyle_Stalactite` (:5312-5327, frameY ≥ 90/72/36 → SubTiles[2/1/0],
+  kind 165). A null sub-tile slot answers None (the C# returns the null
+  element); every generated override def carries its slots.
+* `StyleLineSkip > 1` re-decodes (:5227-5240); `SubTiles[style]` narrows
+  (:5241-5248, null slot keeps the def); the resolved def's alternates answer
+  on the inclusive band `[Style, Style + RandomStyleRange]` (:5249-5258).
+* Direct consumers ported beside it: `TryGetTileBounds` (:5163-5194 →
+  `try_get_tile_bounds` + `TileBounds`) and the tile-based
+  `CheckWaterDeath`/`CheckLavaDeath` (:5083-5119 → `check_water_death`/
+  `check_lava_death`, resolved-def flags vs the `Main.tile*Death` globals).
+  The `Liquid.cs:1190` settlement-kill wiring stays the liquid task's seam;
+  `object_tiles_at` keeps its wooden-slice `frame/18 % width` derivation
+  (the `WorldGen.Check*` per-type loops it cites — a different C# body).
+* **Derived quirk (1:1, not a deviation)**: with `StyleMultiplier = 1` the
+  remainder is always 0, so multiplier-1 alternates with `Style > 0`
+  (sunflower 20's 3..30 bands, lightbulb 149's 6/12/18) are unreachable from
+  frames — they are placement-time only (`TileObject.cs:761-825`, wave B).
+  Pinned by the sunflower/lightbulb witnesses.
+  `tests/tileobject_frame_resolution_witness.rs` (10 integration tests over
+  real registry defs — stalactite/piles/detritus bands, torch multiplier-6
+  sub+alternate walk, closed/open door line-skip, boulder wrap-16, bounds
+  walk, death-check fallbacks) + 4 synthetic unit tests in `tileobject.rs`
+  (`test_w4_e11_*`: horizontal line-skip — no generated def combines
+  horizontal + skip; null sub-tile slot; inclusive band edges; inactive/
+  unregistered None arms).
+
 ## The legacy lighting engine (S1-E-19 wave A, 2026-11-18)
 
 `crates/tr-core/src/lighting/legacy.rs` ports `Terraria.Graphics.Light.LegacyLighting`
