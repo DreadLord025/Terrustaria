@@ -2584,6 +2584,30 @@ impl Npc {
             && !self.immortal
     }
 
+    /// `NPC.CountsAsACritter` (`NPC.cs:6887-6897`): `lifeMax <= 5 &&
+    /// damage == 0`, with the WindyBalloon (594) and the
+    /// BoundTownSlimePurple (686) excluded (both are `lifeMax 5` but NOT
+    /// critters). The damage read is the live contact damage (the port's
+    /// `damage_override` over the kind's `SetDefaults` value, the
+    /// `:5532` convention). W4-d12 FINAL item 1.
+    pub fn counts_as_a_critter(&self) -> bool {
+        let id = self.kind.to_u16();
+        self.max_hp <= 5
+            && self.damage_override.unwrap_or(self.kind.contact_damage()) == 0
+            && id != 594
+            && id != 686
+    }
+
+    /// `NPC.HittableForOnHitRewards` (`NPC.cs:90043-90050`):
+    /// `!CountsAsACritter && !immortal` — the Volcano (item 121) / BatBat
+    /// (5097) on-hit proc gate. UNLIKE `CanBeChasedBy` it reads NO
+    /// liveness/active term, so a killing blow STILL passes it (the
+    /// `Volcano_TrySpawningVolcano` proc fires on the strike that killed
+    /// the victim, `Player.cs:44152`). W4-d12 FINAL item 1.
+    pub fn hittable_for_on_hit_rewards(&self) -> bool {
+        !self.counts_as_a_critter() && !self.immortal
+    }
+
     pub fn spawn_slime(world: &World, x_tile: i32) -> Option<Self> {
         Self::spawn_slime_variant(world, x_tile, SlimeVariant::Blue)
     }
@@ -20623,6 +20647,52 @@ mod tests {
         assert!(!e.can_be_chased_by());
         e.immortal = false;
         assert!(e.can_be_chased_by());
+    }
+
+    /// W4-d12 FINAL item 1 — `NPC.HittableForOnHitRewards`
+    /// (`NPC.cs:90043-90050`) + `CountsAsACritter` (`:6887-6897`): the
+    /// Volcano proc gate is `!critter && !immortal` — NO liveness term
+    /// (a killing blow still passes), NO chaseable/friendly/dontTakeDamage
+    /// terms (unlike `CanBeChasedBy`). The critter test is
+    /// `lifeMax <= 5 && damage == 0` with the 594/686 exclusions.
+    #[test]
+    fn w4_d12_final_hittable_for_on_hit_rewards_matches_the_csharp() {
+        let mut e = bare(NpcKind::Slime); // contact damage 7 — not a critter
+        e.max_hp = 30;
+        e.hp = 30;
+        assert!(e.hittable_for_on_hit_rewards());
+        // NO liveness term — the dead victim still passes (:90045 reads
+        // only CountsAsACritter/immortal).
+        e.hp = 0;
+        assert!(
+            e.hittable_for_on_hit_rewards(),
+            "the killing blow still fires the Volcano (:44152)"
+        );
+        e.hp = 30;
+        // immortal blocks.
+        e.immortal = true;
+        assert!(!e.hittable_for_on_hit_rewards());
+        e.immortal = false;
+        // chaseable/friendly/dontTakeDamage do NOT block (CanBeChasedBy terms).
+        e.chaseable = false;
+        e.friendly = true;
+        e.dont_take_damage = true;
+        assert!(e.hittable_for_on_hit_rewards());
+        e.chaseable = true;
+        e.friendly = false;
+        e.dont_take_damage = false;
+        // The critter shape: lifeMax <= 5 AND damage == 0.
+        e.max_hp = 5;
+        assert!(
+            e.hittable_for_on_hit_rewards(),
+            "lifeMax 5 with damage 7 is NOT a critter (:6891)"
+        );
+        e.damage_override = Some(0);
+        assert!(!e.hittable_for_on_hit_rewards(), "the critter refuses (:90045)");
+        assert!(e.counts_as_a_critter());
+        // lifeMax 6 with damage 0 is not a critter either.
+        e.max_hp = 6;
+        assert!(e.hittable_for_on_hit_rewards());
     }
 
     #[test]

@@ -837,6 +837,15 @@ pub const HIVE_FIVE: u16 = 999;
 /// (`Projectile.cs:9237-9252`'s SetDefaults, `AI_188_LightsBane`
 /// `:42229-42262`, `Main.DrawProj_LightsBane` `Main.cs:27455-27495`).
 pub const LIGHTS_BANE: u16 = 974;
+/// `ProjectileID.Volcano` (978) — the Fiery Greatsword / Volcano (item 121)
+/// melee on-hit explosion (`Projectile.cs:9253-9268`'s SetDefaults, aiStyle
+/// 189 `AI_189_Volcano` `:42264-42371`). W4-d12 DOC-SWEEP item 7: d19's
+/// a4185f89 landed the 189 ARM + the 182-186/190 rows but NOT this row, so it
+/// ports here (the row is the spawn's only gate — `spawn_with_data` declines
+/// rowless kinds). The spawn site is `Player.Volcano_TrySpawningVolcano`
+/// (`Player.cs:44150-44158`), the item-121 melee proc — W4-d12 FINAL item 1
+/// ports it (`spawn_volcano_proc` + the `_spawnVolcanoExplosion` latch).
+pub const VOLCANO: u16 = 978;
 
 // ===== S1-D-4: the Empress of Light's projectile family =====
 // The five kinds the Empress `AI_120_HallowBoss` machine spawns (R7's
@@ -1106,6 +1115,56 @@ pub const SPECTRE_WRATH: u16 = 356;
 /// `ProjectileID.Typhoon` (409) — the Razorblade Typhoon's vortex (aiStyle
 /// 71, 30x30, `penetrate = -1`, `timeLeft = 300`).
 pub const TYPHOON: u16 = 409;
+/// `ProjectileID.DryadsWardCircle` (586, `ProjectileID.cs:1726`) — the
+/// Dryad's ward ring (aiStyle 111, `AI_111_DryadsWard`). W4-d12.
+pub const DRYADS_WARD_CIRCLE: u16 = 586;
+/// `ProjectileID.TruffleSpore` (590, `ProjectileID.cs:1734`) — the Truffle
+/// worm's spore (aiStyle 112's 590 sub-arm). W4-d12.
+pub const TRUFFLE_SPORE: u16 = 590;
+/// `ProjectileID.PortalGunGate` (602, `ProjectileID.cs:1758`) — the Portal
+/// Gun's gate (aiStyle 114). W4-d12.
+pub const PORTAL_GUN_GATE: u16 = 602;
+/// `ProjectileID.SolarFlareRay` (607, `ProjectileID.cs:1768`) — the Solar
+/// armor's orbiting flare ray (aiStyle 116). W4-d12.
+pub const SOLAR_FLARE_RAY: u16 = 607;
+/// `ProjectileID.SolarCounter` (608, `ProjectileID.cs:1770`) — the Solar
+/// shield's counter-explosion (aiStyle 117; the spawn sites `Kill()` it
+/// immediately, so its burst rides the Kill path `:72177-72225`). W4-d12.
+pub const SOLAR_COUNTER: u16 = 608;
+/// `ProjectileID.SolarWhipSwordExplosion` (612, `ProjectileID.cs:1778`) —
+/// the Solar whip's explosion (aiStyle 117). W4-d12.
+pub const SOLAR_WHIP_SWORD_EXPLOSION: u16 = 612;
+/// `ProjectileID.StardustGuardianExplosion` (624, `ProjectileID.cs:1802`) —
+/// the Stardust Guardian's dash explosion (aiStyle 117, the pet-shader
+/// dust family). W4-d12.
+pub const STARDUST_GUARDIAN_EXPLOSION: u16 = 624;
+/// `ProjectileID.DaybreakExplosion` (953, `ProjectileID.cs:2460`) — the
+/// Daybreak's explosion (aiStyle 117). W4-d12.
+pub const DAYBREAK_EXPLOSION: u16 = 953;
+/// `ProjectileID.DeadCellsMushroomBoiMinionExplosion` (1044,
+/// `ProjectileID.cs:2642`) — the Mushroom Boi's explosion (aiStyle 117,
+/// the ParticleOrchestrator family). W4-d12.
+pub const DEAD_CELLS_MUSHROOM_BOI_EXPLOSION: u16 = 1044;
+/// `ProjectileID.DandelionSeed` (836, `ProjectileID.cs:2226`) — the
+/// Dandelion's wind-borne seed (aiStyle 112's 836 sub-arm, hostile). W4-d12.
+pub const DANDELION_SEED: u16 = 836;
+/// `ProjectileID.StardustCellMinionShot` (614) — the Stardust Cell's homing
+/// shot, aiStyle 113's chase branch (`Projectile.cs:6611-6619`). W4-d12 F1.
+pub const STARDUST_CELL_MINION_SHOT: u16 = 614;
+/// `ProjectileID.Daybreak` (636) — the Daybreak's thrown spear, aiStyle 113
+/// (`Projectile.cs:6838-6849`); its Kill spawns the 953 explosion
+/// (`:72126-72145`). W4-d12 F1.
+pub const DAYBREAK: u16 = 636;
+/// `ProjectileID.TentacleSpike` (971) — the Scourge of the Corruptor's
+/// splitting spike, aiStyle 113 (`Projectile.cs:9197-9206`). W4-d12 F1.
+pub const TENTACLE_SPIKE: u16 = 971;
+/// `ProjectileID.BloodButcherer` (975) — the Blood Butcherer's butcher
+/// blade, aiStyle 113 (`Projectile.cs:9287-9296`, `hide = true`). W4-d12 F1.
+pub const BLOOD_BUTCHERER: u16 = 975;
+/// `ProjectileID.DeadCellsKillingDeckCard` (1024) — the Killing Deck's
+/// thrown card, aiStyle 113's three-state machine (`Projectile.cs:9693-9706`).
+/// W4-d12 F1.
+pub const DEAD_CELLS_KILLING_DECK_CARD: u16 = 1024;
 /// `ProjectileID.NebulaArcanum` (617) — the Arcanum's homing bolt (aiStyle
 /// 118, local-immunity 8).
 pub const NEBULA_ARCANUM: u16 = 617;
@@ -1854,6 +1913,42 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 (false, -2, false, -1, 255, 1.0),
             ),
+            // W4-d12 F1 — `Projectile.cs:6611-6619` StardustCellMinionShot
+            // (614): 16x16, aiStyle 113, friendly, `penetrate = -1`,
+            // `alpha = 255`; the stock `timeLeft = 3600` (`:787`) and
+            // `tileCollide` (`:775`). The chase branch reads `ai[1]` as the
+            // target index (`:40592-40607`); MINION_SHOT already lists it.
+            STARDUST_CELL_MINION_SHOT => {
+                (16.0, 16.0, 113, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // W4-d12 F1 — `Projectile.cs:6838-6849` Daybreak (636): 16x16,
+            // aiStyle 113, friendly, melee, `penetrate = -1`, `alpha = 255`,
+            // `drawLayer = 3` (draw-only — the F3 skip), `MaxUpdates = 2` →
+            // extraUpdates 1. Kill spawns the 953 explosion (`:72143`).
+            DAYBREAK => {
+                (16.0, 16.0, 113, -1, TIME_LEFT_DEFAULT, 1, true, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // W4-d12 F1 — `Projectile.cs:9197-9206` TentacleSpike (971):
+            // 16x16, aiStyle 113, friendly, melee, `penetrate = -1`,
+            // `alpha = 255`, `drawLayer = 3` (draw-only — the F3 skip).
+            TENTACLE_SPIKE => {
+                (16.0, 16.0, 113, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // W4-d12 F1 — `Projectile.cs:9287-9296` BloodButcherer (975):
+            // 16x16, aiStyle 113, friendly, melee, `penetrate = -1`,
+            // `alpha = 0`, `hide = true` (draw-only — the F3 skip).
+            BLOOD_BUTCHERER => {
+                (16.0, 16.0, 113, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
+            // W4-d12 F1 — `Projectile.cs:9693-9706` DeadCellsKillingDeckCard
+            // (1024): 16x16, aiStyle 113, friendly, magic, `penetrate = -1`,
+            // `alpha = 255`, `drawLayer = 3` (draw-only — the F3 skip), the
+            // local-immunity pair with cooldown −1 (one hit per NPC per
+            // pass; the ai[0]=2 return re-arms it via
+            // ResetLocalNPCHitImmunity `:40783`), `extraUpdates = 1`.
+            DEAD_CELLS_KILLING_DECK_CARD => {
+                (16.0, 16.0, 113, -1, TIME_LEFT_DEFAULT, 1, true, false, false, (true, -1, false, -1, 255, 1.0))
+            }
             // `Projectile.cs:5770-5778` — the Javelin (507): 16x16, aiStyle 1,
             // `penetrate = 3`, friendly+ranged; the stock `timeLeft = 3600`
             // (`:787`) and `tileCollide` (`:775`). The flight is the `AI_001`
@@ -2960,6 +3055,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // alpha 255, `timeLeft = 300`, `extraUpdates = 2`, `ignoreWater`
             // dropped.
             TYPHOON => (30.0, 30.0, 71, -1, 300, 2, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d12 — `:6358-6366` DryadsWardCircle — 26x26, aiStyle 111,
+            // alpha 255, friendly, `penetrate = -1`; the stock 3600 life
+            // (`:787`) and tileCollide (`:775`) stand — the AI's 570-tick
+            // kill (`:41236-41239`) ends the ring long before either.
+            DRYADS_WARD_CIRCLE => (26.0, 26.0, 111, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
             // `:6644-6657` NebulaArcanum — 32x32, aiStyle 118, alpha 255,
             // `penetrate = 3`, local-immunity with the 8-tick cooldown
             // (`ignoreWater`/`drawLayer` dropped).
@@ -3015,6 +3115,25 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 189,
                 4,
                 TIME_LEFT_DEFAULT,
+                0,
+                false,
+                false,
+                false,
+                (true, -1, false, -1, 255, 1.0),
+            ),
+            // W4-d12 DOC-SWEEP item 7 — `Projectile.cs:9253-9268` Volcano
+            // (978): 160×160, aiStyle 189, friendly, melee, `alpha = 255`,
+            // `ignoreWater`, `tileCollide = false`, `ownerHitCheck = true`
+            // (no port field — the spear family's gate is the only ported
+            // ownerHitCheck consumer, ANALYSIS), `penetrate = 3`,
+            // local-immunity −1. The `timeLeft = 60` (`:9261`) is OVERWRITTEN
+            // by the second `timeLeft = 30` (`:9268`) — the row keeps 30.
+            VOLCANO => (
+                160.0,
+                160.0,
+                189,
+                3,
+                30,
                 0,
                 false,
                 false,
@@ -3712,6 +3831,72 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             RAINBOW_CRYSTAL_EXPLOSION => {
                 (14.0, 14.0, 112, 1, 900, 0, false, false, false, (false, -2, true, -1, 255, 1.0))
             }
+            // W4-d12 — `Projectile.cs:6385-6396` TruffleSpore (590): 14x14,
+            // aiStyle 112, friendly, `penetrate = 1`, `alpha = 255`,
+            // `timeLeft = 900`, `tileCollide = false`, `ignoreWater`.
+            TRUFFLE_SPORE => {
+                (14.0, 14.0, 112, 1, 900, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // W4-d12 — `Projectile.cs:8060-8066` DandelionSeed (836): 4x4,
+            // aiStyle 112, HOSTILE (the pool's `spawn_hostile_ai` flips
+            // `friendly`); the stock `penetrate = 1` (`:774`), `timeLeft =
+            // 3600` (`:787`), `tileCollide = true` (`:775`), alpha 0.
+            DANDELION_SEED => {
+                (4.0, 4.0, 112, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
+            // W4-d12 — `Projectile.cs:6511-6520` PortalGunGate (602): 10x10,
+            // aiStyle 114, `alpha = 255`, friendly, `tileCollide = false`,
+            // `netImportant`; the stock `penetrate = 1` (`:774`) and
+            // `timeLeft = 3600` (`:787`) — the AI pins `timeLeft = 3` every
+            // tick (`:34375`).
+            PORTAL_GUN_GATE => {
+                (10.0, 10.0, 114, 1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // W4-d12 — `Projectile.cs:6542-6553` SolarFlareRay (607): 10x10,
+            // aiStyle 116, friendly, `alpha = 255`, `timeLeft = 600`,
+            // `ignoreWater`, `tileCollide = false`, `penetrate = -1`.
+            SOLAR_FLARE_RAY => {
+                (10.0, 10.0, 116, -1, 600, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // W4-d12 — `Projectile.cs:6554-6566` SolarCounter (608): 160x160,
+            // aiStyle 117, friendly, `alpha = 255`, `timeLeft = 3`,
+            // `ignoreWater`, `tileCollide = false`, `penetrate = -1`,
+            // `hide = true` (draw-only, no port field — F3). The spawn
+            // sites `Kill()` it immediately (`Player.cs:21171`/`:38318`),
+            // so the AI arm never runs in vanilla; the burst rides the
+            // Kill path (`:72177-72225`).
+            SOLAR_COUNTER => {
+                (160.0, 160.0, 117, -1, 3, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // W4-d12 — `Projectile.cs:6584-6597` SolarWhipSwordExplosion
+            // (612): 8x8, aiStyle 117, friendly, `alpha = 255`,
+            // `ignoreWater`, `timeLeft = 60`, `tileCollide = false`,
+            // `penetrate = -1`, local-immunity 6.
+            SOLAR_WHIP_SWORD_EXPLOSION => {
+                (8.0, 8.0, 117, -1, 60, 0, false, false, false, (true, 6, false, -1, 255, 1.0))
+            }
+            // W4-d12 — `Projectile.cs:6717-6728` StardustGuardianExplosion
+            // (624): 8x8, aiStyle 117, friendly, `alpha = 255`,
+            // `ignoreWater`, `timeLeft = 60`, `tileCollide = false`,
+            // `penetrate = -1` (no immunity pair — the stock reset).
+            STARDUST_GUARDIAN_EXPLOSION => {
+                (8.0, 8.0, 117, -1, 60, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // W4-d12 — `Projectile.cs:8988-9001` DaybreakExplosion (953):
+            // 8x8, aiStyle 117, friendly, `alpha = 255`, `ignoreWater`,
+            // `timeLeft = 60`, `tileCollide = false`, `penetrate = -1`,
+            // local-immunity 80.
+            DAYBREAK_EXPLOSION => {
+                (8.0, 8.0, 117, -1, 60, 0, false, false, false, (true, 80, false, -1, 255, 1.0))
+            }
+            // W4-d12 — `Projectile.cs:9875-9889` DeadCellsMushroomBoiMinion-
+            // Explosion (1044): 8x8, aiStyle 117, friendly, `alpha = 255`,
+            // `ignoreWater`, `timeLeft = 60`, `tileCollide = false`,
+            // `penetrate = -1`, `hide = true` (draw-only — F3),
+            // local-immunity −1 (one hit per NPC for the shot's life).
+            DEAD_CELLS_MUSHROOM_BOI_EXPLOSION => {
+                (8.0, 8.0, 117, -1, 60, 0, false, false, false, (true, -1, false, -1, 255, 1.0))
+            }
             FLAME_BURST_TOWER_1 => (30.0, 54.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
             FLAME_BURST_TOWER_2 => (28.0, 58.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
             FLAME_BURST_TOWER_3 => (28.0, 60.0, 130, 1, 36000, 0, false, false, false, RESET_STATE),
@@ -4261,6 +4446,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-P-i21: the Nimbus Rod's two clouds set `netImportant`
             // (`Projectile.cs:3186`/`:3194`); the rain drop 239 keeps false.
             || matches!(kind, RAIN_CLOUD_MOVING | RAIN_CLOUD_RAINING)
+            // W4-d12 — `Projectile.cs:6519`: the Portal gate's
+            // `netImportant = true`.
+            || kind == PORTAL_GUN_GATE
             // S1-P-i35 — the bobber family sets `netImportant` itself
             // (`Projectile.cs:4514`/`:9428`).
             || BOBBER_KINDS.contains(&kind)
@@ -4326,6 +4514,22 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == LIGHTS_BANE
             // `Projectile.cs:6949`: the crystal shard's `ignoreWater = true`.
             || kind == RAINBOW_CRYSTAL_EXPLOSION
+            // W4-d12 — `Projectile.cs:6395`: the Truffle spore's
+            // `ignoreWater = true` (the 836 seed keeps the stock false).
+            || kind == TRUFFLE_SPORE
+            // W4-d12 — `Projectile.cs:6550`: the Solar flare ray's
+            // `ignoreWater = true`.
+            || kind == SOLAR_FLARE_RAY
+            // W4-d12 — the aiStyle-117 explosion family's `ignoreWater`
+            // (`Projectile.cs:6562`/`:6591`/`:6724`/`:8995`/`:9882`).
+            || matches!(
+                kind,
+                SOLAR_COUNTER | SOLAR_WHIP_SWORD_EXPLOSION | STARDUST_GUARDIAN_EXPLOSION
+                    | DAYBREAK_EXPLOSION | DEAD_CELLS_MUSHROOM_BOI_EXPLOSION
+            )
+            // W4-d12 DOC-SWEEP item 7 — `Projectile.cs:9260`: the Volcano
+            // explosion's `ignoreWater = true`.
+            || kind == VOLCANO
             // `Projectile.cs:9517` — the Horseman's pumpkin lob (1001).
             || kind == HORSEMAN_PUMPKIN
             // S1-D-3 W-9: the sharknado clouds' `ignoreWater = true`
@@ -4424,6 +4628,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                    // W4-d12 DOC-SWEEP item 7 — the Volcano explosion's melee
+                    // flag (`Projectile.cs:9267`).
+                    | VOLCANO
+                    // W4-d12 F1 — the aiStyle-113 melee sticks: the Daybreak
+                    // (636, `:6844`), the Tentacle Spike (971, `:9203`) and
+                    // the Blood Butcherer (975, `:9293`).
+                    | DAYBREAK | TENTACLE_SPIKE | BLOOD_BUTCHERER
             ),
         ranged: matches!(
             kind,
@@ -4490,6 +4701,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (`Projectile.cs:6117`); the 591 mech laser does NOT
             // (`:6397-6408` has no such line).
                 | MEDUSA_HEAD_RAY
+                // W4-d12 F1 — the Killing Deck card (1024, `:9699`).
+                | DEAD_CELLS_KILLING_DECK_CARD
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
@@ -4829,6 +5042,33 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // 3-tick frame machine (`Projectile.cs:37113-37120`) wraps at it.
         // The turret 641 has no `projFrames` row (the stock 1).
         RAINBOW_CRYSTAL => 8,
+        // W4-d12 — the Dandelion seed's 4-frame sheet (`Main.cs:8653`) —
+        // the aiStyle-112 836 arm's 6-tick machine wraps at 4
+        // (`Projectile.cs:34128-34135`). The 590 spore has NO `projFrames`
+        // row (the init 1, `Main.cs:8441`); its arm's frame machine walks
+        // the literal 0-2 / 3-5 bands (`:34196-34210`), not `projFrames`.
+        DANDELION_SEED => 4,
+        // W4-d12 — the Portal gate's 4-frame sheet (`Main.cs:8625`) — the
+        // aiStyle-114 arm's 6-tick machine wraps at `projFrames`
+        // (`Projectile.cs:34404-34411`).
+        PORTAL_GUN_GATE => 4,
+        // W4-d12 — the aiStyle-117 explosions' 5-frame sheets
+        // (`Main.cs:8492` 612, `:8509` 953) — the shared arm's 3-tick
+        // machine wraps at `projFrames` (`Projectile.cs:34472-34479`) and
+        // the `3 * projFrames` life cap reads it (`:34467`). The 608/624/
+        // 1044 keep the init 1 (no override — `Main.cs:8441`).
+        SOLAR_WHIP_SWORD_EXPLOSION | DAYBREAK_EXPLOSION => 5,
+        // W4-d12 DOC-SWEEP item 7 — the Volcano explosion's 5-frame sheet
+        // (`Main.cs:8493`); the aiStyle-189 arm's 2-tick machine wraps at 5
+        // (`Projectile.cs:42282-42289`).
+        VOLCANO => 5,
+        // W4-d12 F1 — the aiStyle-113 family's sheets: the Stardust Cell's
+        // shot is 4 frames (`Main.cs:8495`), the Killing Deck card 8
+        // (`Main.cs:8444`). The 598/636/971/975 keep the init 1 (no
+        // override — `Main.cs:8441`); the card's frame machine wraps at
+        // `projFrames` (`Projectile.cs:40579-40589`).
+        STARDUST_CELL_MINION_SHOT => 4,
+        DEAD_CELLS_KILLING_DECK_CARD => 8,
         // S1-D-3 W-9 fishron wiring — the sharknado family's strips
         // (`Main.cs:8512-8514`): the clouds 6 rows, the bolt 3.
         FORCE_BUBBLE | CTHULUNADO => 6,
@@ -4989,5 +5229,90 @@ mod tests {
         assert!(!proj_data(RAINBOW_CRYSTAL_EXPLOSION).unwrap().applies_immunity_time_on_single_hits);
         assert!(!proj_data(WOODEN_ARROW).unwrap().applies_immunity_time_on_single_hits);
         assert!(!proj_data(BLAND_WHIP).unwrap().applies_immunity_time_on_single_hits);
+    }
+
+    /// W4-d12 census F1 — the EXACT aiStyle-113 SetDefaults census: six kinds
+    /// ride `this.aiStyle = 113` (`Projectile.cs:6474`/`:6615`/`:6842`/
+    /// `:9201`/`:9291`/`:9697`); every one carries a row. The shadowflame
+    /// family is NOT on the style: 495 is aiStyle 1 (`:5681`, the arrow row),
+    /// 496 is aiStyle 91 (`:5692`, d10's decade), 659 is aiStyle 129
+    /// (`:7083`, the rowed Spirit Flame).
+    #[test]
+    fn w4_d12_f1_the_113_census_rows() {
+        for k in [BONE_JAVELIN, STARDUST_CELL_MINION_SHOT, DAYBREAK, TENTACLE_SPIKE,
+                  BLOOD_BUTCHERER, DEAD_CELLS_KILLING_DECK_CARD] {
+            let d = proj_data(k).expect("the 113 census row");
+            assert_eq!(d.ai_style, 113, "kind {k}");
+            assert_eq!((d.w, d.h), (16.0, 16.0), "kind {k}: the 16x16 box");
+            assert_eq!(d.penetrate, -1, "kind {k}: penetrate -1");
+            assert_eq!(d.time_left, 3600, "kind {k}: the stock life (:787)");
+            assert!(d.tile_collide, "kind {k}: the stock tileCollide (:775)");
+            assert!(!d.arrow && !d.trap, "kind {k}");
+        }
+        // The shadowflame guess stays OUT of the style.
+        assert_eq!(proj_data(495).unwrap().ai_style, 1, ":5681");
+        assert_eq!(proj_data(SPIRIT_FLAME).unwrap().ai_style, 129, ":7083");
+        // 496 ShadowFlame rides aiStyle 91 (`:5692`, d10's decade) — rowless
+        // on this branch; when d10 lands its row the style must be 91.
+        if let Some(d) = proj_data(496) {
+            assert_eq!(d.ai_style, 91, ":5692");
+        }
+        // The per-kind state: alpha / class flags / updates / immunity.
+        let cell = proj_data(STARDUST_CELL_MINION_SHOT).unwrap();
+        assert_eq!(cell.alpha, 255, ":6617");
+        assert_eq!(cell.extra_updates, 0, ":6611-6619 no MaxUpdates");
+        assert!(!cell.melee && !cell.ranged && !cell.magic, "the cell sets no class");
+        assert!(!cell.uses_local_immunity, "the stock reset");
+        let day = proj_data(DAYBREAK).unwrap();
+        assert_eq!(day.alpha, 255, ":6846");
+        assert_eq!(day.extra_updates, 1, ":6848 MaxUpdates = 2");
+        assert!(day.melee, ":6844");
+        let spike = proj_data(TENTACLE_SPIKE).unwrap();
+        assert_eq!(spike.alpha, 255, ":9204");
+        assert!(spike.melee, ":9203");
+        let butcher = proj_data(BLOOD_BUTCHERER).unwrap();
+        assert_eq!(butcher.alpha, 0, ":9294 (hide=true is the F3 skip)");
+        assert!(butcher.melee, ":9293");
+        let card = proj_data(DEAD_CELLS_KILLING_DECK_CARD).unwrap();
+        assert_eq!(card.alpha, 255, ":9700");
+        assert_eq!(card.extra_updates, 1, ":9705");
+        assert!(card.magic, ":9699");
+        assert!(card.uses_local_immunity && card.local_hit_cooldown == -1, ":9702-9703");
+        // The frame sheets (`Main.cs:8495`/`:8444`; the rest init 1).
+        assert_eq!(proj_frames(STARDUST_CELL_MINION_SHOT), 4);
+        assert_eq!(proj_frames(DEAD_CELLS_KILLING_DECK_CARD), 8);
+        for k in [BONE_JAVELIN, DAYBREAK, TENTACLE_SPIKE, BLOOD_BUTCHERER] {
+            assert_eq!(proj_frames(k), 1, "kind {k}: no override (Main.cs:8441)");
+        }
+    }
+
+    /// W4-d12 census F1 — the explosion kinds the d12 round armed ALL carry
+    /// rows (`spawn_with_data` declines rowless kinds): 612/624/953/1044 the
+    /// 117 family, 608 the Kill-path counter, 644 the 112 crystal shard.
+    #[test]
+    fn w4_d12_f1_the_explosion_kinds_all_have_rows() {
+        for (k, style) in [
+            (SOLAR_WHIP_SWORD_EXPLOSION, 117u8),
+            (STARDUST_GUARDIAN_EXPLOSION, 117),
+            (DAYBREAK_EXPLOSION, 117),
+            (DEAD_CELLS_MUSHROOM_BOI_EXPLOSION, 117),
+            (SOLAR_COUNTER, 117),
+            (RAINBOW_CRYSTAL_EXPLOSION, 112),
+        ] {
+            let d = proj_data(k).unwrap_or_else(|| panic!("kind {k} rowless"));
+            assert_eq!(d.ai_style, style, "kind {k}");
+        }
+        // The 978 flag58 term: Volcano's SetDefaults is aiStyle 189
+        // (`Projectile.cs:9253-9268`). W4-d12 DOC-SWEEP item 7: d19's
+        // a4185f89 landed the 189 ARM but NOT the row, so the row ports here
+        // (`VOLCANO`). The flag58 term in the 117 arm stays unreachable for
+        // it (verbatim) — the 978 rides the 189 dispatch.
+        let d = proj_data(VOLCANO).expect("the Volcano row landed (DOC-SWEEP item 7)");
+        assert_eq!(d.ai_style, 189, ":9257");
+        assert_eq!(d.time_left, 30, "the second timeLeft = 30 wins (:9268)");
+        assert_eq!(d.penetrate, 3, ":9264");
+        assert!(d.uses_local_immunity && d.local_hit_cooldown == -1, ":9265-9266");
+        assert!(d.melee, ":9267");
+        assert_eq!(proj_frames(VOLCANO), 5, "Main.cs:8493");
     }
 }

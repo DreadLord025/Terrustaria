@@ -37845,6 +37845,31 @@ covers the beenade 183 and the greek fires 400-402 via the default arm
   (60·15), the kill on expiry / dead target. The stick pin itself
   (`:13210-13217`), the Daybroken debuff and the 6-javelin cap ride the
   pool's on-hit seam.
+  **W4-d12 census F1 — the WHOLE style is now ported.** The exact
+  SetDefaults census is SIX kinds: 598/614/636/971/975/1024
+  (`Projectile.cs:6474`/`:6615`/`:6842`/`:9201`/`:9291`/`:9697`). The
+  shadowflame family is NOT on the style (495 is aiStyle 1 `:5681`, 496 is
+  91 `:5692` — d10's decade, 659 is 129 `:7083`). The five missing rows
+  landed verbatim; `target_sticker_step` serves all six: the 614 chase
+  lerp (14-speed /5) + 63-fade, the 636's 0.995/0.15 fall + 10 s stick, the
+  971/975's 9 s sticks + pulse draw censuses + rotation latches, the 1024
+  card's three-state machine (4-tick frames, the 60-tick sine flutter, the
+  4×4 tile-stick probe `:18287-18302`, the `ai[0]=2` return at 16 with the
+  inline `ResetLocalNPCHitImmunity`+`Damage` `:40783-40784`, the +6 hitbox
+  `:14988` and the ×1.5 return multiplier `:14553`). The pool generalizes
+  the pin/caps (6/8/10, `_javelinsMax6/8/10` `:79773-79775`)/debuffs
+  (189/300, 337/540, 344/540, 183/900 `:11339-11378`) and adds the
+  `Damage_CanDealDamage` stuck gate (`:12448`) + the 614/636 Colliding 1/8
+  shrink (`:15738`/`:15782`). Kill paths: the 636 spawns the 953 explosion
+  (`:72126-72145`), the 1024 plays Item8 + the 12-dust ring (`:74817-74829`),
+  the 614/971 puffs draw zero. The 612/953 Daybroken grants (`:11355-11366`)
+  ride both damage walks. Deliberate skips: the dust/gore bodies (explicit
+  argument draws kept — the census standard), the 614/636 light casts
+  (`:40890-40897`), `AI_113_UpdateDrawLayer` (draw-only), the card's
+  `Shimmer()` bounce (`:22424`, the shimmer layer), the 975 `hide` (draw).
+  The 978 Volcano flag58 term stays verbatim — its row is aiStyle 189
+  (`:9253-9268`), d19's decade (181-190); d19/d20 carried no pushed commits
+  at the census, so the row is NOT claimed here.
 - **aiStyle 36 (bees 181/566)** `:27292-27471`: the alpha fade-in + the
   `extraUpdates` collapse, the 3-frame flutter, the 30-tick then 800-Manhattan
   homing scan, the per-axis accel steering (the giant bee 6.8/0.14 vs the bee
@@ -37979,6 +38004,107 @@ test-pinned `ai_spear` tile scan respectively) — left consistent with the
 port's state, not changed here. The javelin spawn-Y witness was tightened to
 the exact top-left (`spawn_with_data_ai` takes the point as `pos`, not a
 centre). All fixes are code-only; the witnesses remain WRITTEN, NOT RUN.
+
+## The proj-111-120 DOC-SWEEP FINAL phase (W4-d12, task/W4-d12-proj-ai-111-120, 2026-11-21, code-only mode)
+
+The FINAL round of the lane-38 sweep (research/127). Five items; the
+substantive ports/fixes and their deliberate folds:
+
+- **The 978 item-121 Volcano proc** (`Player.Volcano_TrySpawningVolcano`
+  `Player.cs:44150-44158`): the `_spawnVolcanoExplosion` use-start latch
+  (`:43476-43479`), the `ApplyNPCOnHitEffects` consumption at
+  `(int)(dmg * 0.75)` (`:44487`), `spawn_volcano_proc` (the 978 at the victim
+  centre, ai0=0/ai1=2, vel `(0, -gravDir)`). The gate is
+  `HittableForOnHitRewards` (`NPC.cs:90043-90050`) — `!CountsAsACritter &&
+  !immortal`, NO liveness term, so a killing blow still fires (the 971/975
+  `CanBeChasedBy` contrast). `CountsAsACritter` (`:6887-6897`) excludes the
+  594 WindyBalloon / 686 BoundTownSlimePurple. **gravDir folds to 1** (no
+  gravity potion in the port, the `bow_launch.rs` precedent). NO StatusNPC
+  at spawn (the OnFire 24/180 rides the explosion walks `:11359-11362`), NO
+  javelin cap. The 978 `ownerHitCheck` gate stays unmodelled (the row's
+  documented skip — the spear family is the only ported consumer).
+- **The items-3/4 `proc_damage` E0425 fix**: the first pass read `dmg`
+  before its declaration; the C# value at the capture point is the
+  class-multiplied `raw` (`ApplyRapidAttackBonus` is a no-op for 5094/795/
+  121 — the set is {2608, 3349, 672}, `ItemID.cs:344`). The 971/975 witness
+  re-press rigs were repaired (autoReuse false + the rig's undecayed
+  `attack_cd`/`hurt_cd` need the release/press edge + timer clears).
+- **The 1024 recall no-active-gate fix**: the C# state-3 scan
+  (`Player.cs:49243`) and the no-outbound pre-check (`:49198`) read type +
+  owner with NO `active` gate, and `Kill()` never clears type/owner/ai/
+  damage (`Projectile.cs:77262`). A DEAD stuck card is recalled too (ai0=2
+  + the inline ×1.5 `Damage()`), then re-killed by the return-state check
+  next tick (`:40866`). The first pass's `p.active` gates dropped verbatim.
+  The `KillOldestJavelin` interplay: recalled ai0=2 cards NEVER count toward
+  a cap (the scan predicate is `ai[0]==1`, `:15079`), and the 1024 has no
+  cap arm (`:13979` names 598/636/614 only; 971/975 cap at the spawn proc).
+- **The 111-120 band census**: ALL ten styles ARMED + ROWED (the table in
+  research/127 FINAL item 2); NONE UNARMED_ROWED.
+- **The 614 ai1 chase witness + a9 compose-contract**: the chase reads
+  `ai[1]` (`:40594`); a9's four machines (156/164/169/206) spawn their own
+  shots with ai0=features/ai1=0 and never touch the 62-arm/614 — the lanes
+  compose.
+
+CODE-ONLY MODE: no cargo/rustc/rustfmt/tests/graphify invoked. 8 witnesses
+WRITTEN, NOT RUN; every expected value hand-derived from the cited C#
+lines. Every seam call site checked against the actual signatures by
+read/grep (`spawn_with_data_ai_owned`'s 10-arg shape, `Npc`'s
+`damage_override`/`contact_damage`/`to_u16` reads, the `kill_oldest_javelin`
+4-arg form, the `recall_killing_deck_cards`/`killing_deck_recall_damage`
+seams, the shooter/melee rig helpers).
+
+## W4-d12 PROJ-111 RETIRE (task/W4-d12-proj-ai-111-120, 2026-11-21, code-only mode)
+
+The lane is SEALED at `c98bd8937` (research/127's RETIRE section, §R1–R5).
+Four receipts, zero behaviour change; the standing deviations are unchanged
+(the Volcano gravDir fold + the 978 ownerHitCheck skip, the recall
+no-active-gate, the cap orthogonality — the FINAL section above). What the
+retire pass adds:
+
+- **The 978 keep-d12c verdict survives the FINAL phase.** The FINAL round's
+  only `projectile/data.rs` delta is a comment (the const doc's spawn-proc
+  pointer); the row/frames/gate tuples are byte-identical to d19's 26g §6a
+  receipt. d19's SEALED tip `61f7638a5` drifted docs-only since that
+  receipt; d18 MOVED `8248a54be` → `6e8083751` (26h SEALED) and its 978
+  copy drop-hunks are ALREADY EXECUTED (`f53de9c71`, D1–D5: the const/row/
+  melee sites are tombstone comments, the ignoreWater overlay keeps only
+  the d18-unique 964 half, the residual witness re-pointed to
+  `proj_data(978).is_none()` at d18 `projectile.rs:40979`) — the merger
+  owes no further d18 drop. d18's retire arm-total (`damage_kind_gate_
+  refuses` rowless terms + `proj_pet_contact_refuses`) adds no d12
+  overlap: `PROJ_PET` names none of the six stickers nor the 978, and its
+  one band kind (the 623 guardian) is the ai0==2 attack-state exception
+  that composes with d12's 120 arm. The item-121 proc
+  (`spawn_volcano_proc`) is d12-only across all 357 pushed branches.
+- **The 1024 item lane is single-owner.** The 5461 cycle + the recall +
+  the `killing_card_fire_type` field exist on this branch only (the
+  all-branch census); the cap interplay is closed — recalled ai0=2 cards
+  never count toward a javelin cap (`:15079`'s ai0==1 predicate) and the
+  1024 has no cap arm (`:13979` = 598/636/614 only).
+- **The a9 compose-contract is hunk-verified.** a9 (`8c4fded81`) touches
+  only `projectile.rs` + `data.rs`, with zero hunks in the 62 dispatch
+  arm / the 614 seating; its one production spawn is the 206 machine's
+  1120 sign shot (ai0=features/ai1=0, `Projectile.cs:37592`). The
+  `UNARMED_ROWED` pin-emptying and the `trailing_mode(1120)` test flip are
+  a9-owned edits this branch never touches — the FINAL band witness's
+  local pin (`projectile.rs:25038`) composes untouched.
+- **The 113-stickers gate claim (`719ffb76c`) is confirmed against both
+  neighbours.** d18's `damage_kind_gate_refuses` explicitly defers the
+  sticker term to this branch (its doc cites `719ffb76c`) — the merger
+  must NOT re-add the term there; d12's walk-head gates in
+  `damage_pve`/`damage_pve_boxed` are the single copy (the C# `Damage()`
+  wrap position, `:12497`). The EVP walk needs no sticker term: every
+  census row is friendly and the pool's `damage_player` call is gated
+  `!friendly` (`projectile.rs:20663-20668`) — a behaviour-neutral absence.
+  d77 (`5f10560b2`) has no Damage-switch work; its death-cue map owns the
+  598 Dig thud only, while d12's `sticker_death` owns 636/614/971/1024 and
+  is silent on 598 — one cue per kind at the merge.
+
+CODE-ONLY MODE: no cargo/rustc/rustfmt/tests/graphify invoked; no new
+witnesses (the lane's witnesses stand WRITTEN NOT RUN). Verification =
+whole-window C# re-reads at the cited lines, git-diff drift censuses,
+ancestry checks and the 357-branch ownership census (the ledger in
+research/127's RETIRE section).
 
 ## The item-use timing machinery (S1-P-i12, task/S1-P-i12-autoswing-usetime, 2026-11-20, code-only mode)
 

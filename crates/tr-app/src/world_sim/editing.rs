@@ -498,6 +498,31 @@ pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
             app.rngs.stream(crate::app::RngKey::UpdatePlayers),
         );
     }
+    // W4-d12 DOC-SWEEP items 3/4 + FINAL item 1 — the
+    // `Player.ItemCheck_OwnerOnlyCode` use-start proc latches
+    // (`Player.cs:43468-43479`): the Tentacle Spike (5094), the Blood
+    // Butcherer (795) and the Fiery Greatsword / Volcano (121) arm their
+    // on-hit spawn flag on `ItemAnimationJustStarted` — the swing's first
+    // tick, which this seam is (every swing/shot/consume start calls it).
+    // The flag is consumed by the first landed melee hit
+    // (`resolve_melee_strike`'s `ApplyNPCOnHitEffects` tail). The 155
+    // Muramasa / 5097 BatBat latches are the other `ItemCheck_OwnerOnlyCode`
+    // arms — their procs are the player-lane follow-ups, not this lane.
+    if held_kind == 5094 {
+        if let Some(p) = app.player.as_mut() {
+            p.spawn_tentacle_spikes = true;
+        }
+    }
+    if held_kind == 795 {
+        if let Some(p) = app.player.as_mut() {
+            p.spawn_blood_butcherer = true;
+        }
+    }
+    if held_kind == 121 {
+        if let Some(p) = app.player.as_mut() {
+            p.spawn_volcano_explosion = true;
+        }
+    }
 }
 
 /// The gem-bolt kinds the gem-staff shoot fires (`Player.cs:49262`'s kind
@@ -4060,6 +4085,121 @@ fn fire_non_ammo_shot(
                 // ApplyStatsFromSource stamps ride every spawn (:11128-11132).
                 app.projectiles.set_armor_penetration(slot, arpen);
                 app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+            }
+        }
+    } else if held.kind == 5461 {
+        // W4-d12 DOC-SWEEP item 5 — `Player.ItemCheck_Shoot`'s Dead Cells
+        // Killing Deck arm (`Player.cs:49190-49261`): the four-mode card-draw
+        // cycle (`killingCardFireType` 0..3). The C# `return`s here, so the
+        // generic tail never runs for the deck. The spawn point/aim are the
+        // shared `pointPosition`/`num4,num5` (the port's `spawn`/`shot`); the
+        // damage is the class-multiplied `Damage` (`raw as i32`, the generic
+        // tail's form), the knockback the folded `fx_kb`. Every card spawns
+        // ai0=ai1=0 and seats its spin in ai2 (the `FinalizeProjectile`
+        // aiStyle-113 rotation latch cancels the +π/2 for the card).
+        //
+        // The state-3 pre-check (`:49192-49208`): if NO active 1024 of this
+        // owner is still outbound/stuck (ai[0] != 2), the cycle resets to 0
+        // BEFORE the switch — so a recall with nothing out fires a single
+        // card instead. The scan draws nothing.
+        let owner = app.local_id as u8;
+        let mut fire_type = app.player.as_ref().map_or(0, |pl| pl.killing_card_fire_type);
+        if fire_type == 3 {
+            // `:49195-49203` — the pre-check scans type + owner + ai0 != 2
+            // with NO active gate either (FINAL item 3: a dead stuck card
+            // still reads ai0=1, so it keeps the cycle at 3 until the
+            // recall seats ai0=2 on it too).
+            let any_out = app.projectiles.slots().iter().any(|s| {
+                s.kind == crate::projectile::DEAD_CELLS_KILLING_DECK_CARD
+                    && s.owner == owner
+                    && s.ai[0] != 2.0
+            });
+            if !any_out {
+                fire_type = 0;
+            }
+        }
+        // The card spawn helper: ai0/ai1 = 0, ai2 = the spin, the shared
+        // damage/knockback. `NewProjectile` centres the box (`:10876-10877`);
+        // the generic shoot seam takes the point as-is (the established
+        // convention — the card's box is 16×16).
+        let card_damage = raw as i32;
+        let spawn_card = |projectiles: &mut crate::projectile::ProjectilePool,
+                          vx: f32,
+                          vy: f32,
+                          spin: f32| {
+            if let Some(slot) = projectiles.spawn_with_data_ai(
+                crate::projectile::DEAD_CELLS_KILLING_DECK_CARD,
+                spawn.x,
+                spawn.y,
+                vx,
+                vy,
+                card_damage,
+                fx_kb,
+                0.0,
+                0.0,
+            ) {
+                projectiles.set_ai2(slot, spin);
+            }
+        };
+        match fire_type {
+            1 => {
+                // `:49215-49219` — forward + back, each a ±0.4 spin
+                // (`Next(2) * 2 - 1`), two draws in spawn order.
+                let spin_a = (loot_rng.next_range(0, 2) * 2 - 1) as f32 * 0.4;
+                spawn_card(&mut app.projectiles, shot.x, shot.y, spin_a);
+                let spin_b = (loot_rng.next_range(0, 2) * 2 - 1) as f32 * 0.4;
+                spawn_card(&mut app.projectiles, -shot.x, -shot.y, spin_b);
+            }
+            2 => {
+                // `:49220-49237` — the six-card fan: the aim rotated by
+                // `(π/4 / 5) * (-2.5 + i)` for i in 0..6, the spin alternating
+                // sign on `Next(2) == 0` (one draw per card, AFTER its spawn).
+                let step = std::f32::consts::FRAC_PI_4 / 5.0;
+                let mut sign = -1.0f32;
+                for i in 0..6 {
+                    let angle = step * (-2.5 + i as f32);
+                    let v = shot.rotate(Vec2::from_angle(angle));
+                    spawn_card(&mut app.projectiles, v.x, v.y, sign * 0.4);
+                    if loot_rng.next_range(0, 2) == 0 {
+                        sign *= -1.0;
+                    }
+                }
+            }
+            3 => {
+                // `:49238-49253` — the recall: every active 1024 of this owner
+                // takes velocity 0 / ai0=2 / the immunity reset + the inline
+                // Damage(). No new card spawns. The boxed walk reads the
+                // player's doll flags + luck and rides the UpdatePlayers
+                // stream (the melee/shoot pass's `Main.rand`).
+                let dolls = app.player.as_ref().map_or((false, false), |pl| pl.doll_flags());
+                let luck = app.player.as_ref().map_or(0.0, |pl| pl.luck_state.luck);
+                let recalled = app.projectiles.recall_killing_deck_cards(owner);
+                for slot in recalled {
+                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    app.projectiles.killing_deck_recall_damage(
+                        slot,
+                        &mut app.npcs,
+                        dolls,
+                        rng,
+                        luck,
+                    );
+                }
+            }
+            _ => {
+                // `:49212-49214` (default / state 0) — the single card, one
+                // ±0.4 spin draw.
+                let spin = (loot_rng.next_range(0, 2) * 2 - 1) as f32 * 0.4;
+                spawn_card(&mut app.projectiles, shot.x, shot.y, spin);
+            }
+        }
+        // `:49255-49259` — the cycle advances after EVERY use, wraps >3 → 0.
+        // (The pre-check may have folded fire_type to 0, but the C# increments
+        // the FIELD, which the pre-check also wrote — so the advance reads the
+        // post-pre-check value.)
+        if let Some(pl) = app.player.as_mut() {
+            pl.killing_card_fire_type = fire_type + 1;
+            if pl.killing_card_fire_type < 0 || pl.killing_card_fire_type > 3 {
+                pl.killing_card_fire_type = 0;
             }
         }
     } else if tr_core::whip::is_whip(proj) {
@@ -7731,6 +7871,18 @@ fn resolve_melee_strike(
                 // `UpdatePlayers` swap (`Main.cs:17754`).
                 let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                 let crit = tr_core::damage::crit_roll(loot_rng, class_crit + item_crit);
+                // W4-d12 DOC-SWEEP items 3/4 + FINAL item 1 — the
+                // `ProcessHitAgainstNPC` `dmg` local (`Player.cs:44291`,
+                // `ApplyRapidAttackBonus`'s result; the 5094/795/121 are NOT in
+                // `RapidAttackBonusDamage` — the set is {2608, 3349, 672},
+                // `ItemID.cs:344` — so it is the class-multiplied `raw`).
+                // `ApplyNPCOnHitEffects` receives THIS pre-DamageVar value as
+                // its `damage` arg (`:44404`); the 971/975 stickers spawn at it
+                // (`:44167`/`:44181`) and the 121 Volcano at its ×0.75
+                // (`:44487`). Captured before DamageVar mutates `dmg` below
+                // (FINAL-phase fix: the first pass read `dmg` here, BEFORE its
+                // declaration — an E0425; the C# value at this point is `raw`).
+                let proc_damage = raw as i32;
                 let mut dmg = tr_core::damage::damage_var(loot_rng, raw, luck);
                 // `if (sItem.type == 5129 && nPC.isLikeATownNPC)`
                 // (`Player.cs:44344-44353`): the Flymeal takes full armour
@@ -7826,6 +7978,99 @@ fn resolve_melee_strike(
                 let landed = crate::npc::Npc::strike_melee(
                     &mut app.npcs, idx, dmg, pcx, kb, crit, Some(me), expert,
                 );
+                // W4-d12 DOC-SWEEP items 3/4 — `ApplyNPCOnHitEffects`' sticker
+                // procs (`Player.cs:44404` calls it right after `StrikeNPC`
+                // `:44403`, BEFORE the cooldown/DPS tail): the Tentacle Spike
+                // (5094, `:44477-44480`) and the Blood Butcherer (795,
+                // `:44481-44484`) spawn their pre-pinned sticker on the FIRST
+                // landed hit of the swing that armed the latch. The C# runs
+                // the proc regardless of the kill (`:44404` precedes the
+                // `DidNPCDie` check `:44415`) but gates on `CanBeChasedBy`
+                // (`:44162`/`:44176`) — a killing blow deactivated the victim,
+                // so the post-strike chaseable read refuses it (the port's
+                // `hp > 0` liveness, the S1-P-i27 precedent). The latch is
+                // consumed ONLY when the spawn fires (`:44170`/`:44184` set
+                // the flag false INSIDE the gate). The draws ride the
+                // `UpdatePlayers` stream (`Main.cs:17754`): the 971 draws
+                // nothing, the 975 one `NextDouble` (the rotation).
+                if landed {
+                    let proc_kind = match held.kind {
+                        5094 => Some(crate::projectile::TENTACLE_SPIKE),
+                        795 => Some(crate::projectile::BLOOD_BUTCHERER),
+                        _ => None,
+                    };
+                    if let Some(pk) = proc_kind {
+                        let armed = app.player.as_ref().is_some_and(|p| {
+                            if pk == crate::projectile::TENTACLE_SPIKE {
+                                p.spawn_tentacle_spikes
+                            } else {
+                                p.spawn_blood_butcherer
+                            }
+                        });
+                        if armed && app.npcs[idx].can_be_chased_by() {
+                            let mounted = app
+                                .player
+                                .as_ref()
+                                .map(|p| {
+                                    let (mx, my) = p.mounted_center();
+                                    Vec2::new(mx, my)
+                                })
+                                .unwrap_or(Vec2::new(pcx, 0.0));
+                            let proc_rng =
+                                app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                            let spawned = app.projectiles.spawn_melee_sticker_proc(
+                                pk,
+                                me,
+                                mounted,
+                                idx,
+                                &mut app.npcs,
+                                proc_damage,
+                                kb,
+                                proc_rng,
+                            );
+                            if spawned.is_some() {
+                                if let Some(p) = app.player.as_mut() {
+                                    if pk == crate::projectile::TENTACLE_SPIKE {
+                                        p.spawn_tentacle_spikes = false;
+                                    } else {
+                                        p.spawn_blood_butcherer = false;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // W4-d12 FINAL item 1 — `ApplyNPCOnHitEffects`' 121 arm
+                // (`Player.cs:44485-44488`): `Volcano_TrySpawningVolcano(npc,
+                // sItem, (int)((float)damage * 0.75f), knockBack, ...)` — the
+                // SAME pre-DamageVar `proc_damage`, times 0.75 truncated.
+                // The gate is `HittableForOnHitRewards` (`:44152`,
+                // `NPC.cs:90043-90050`): `!CountsAsACritter && !immortal` —
+                // NO liveness term, so a KILLING blow still fires the
+                // explosion (the 971/975's `CanBeChasedBy` refuses it). The
+                // latch consumes INSIDE the gate (`:44156`). ZERO RNG draws.
+                // The 978's OnFire 24/180 rides its own damage walks
+                // (`Projectile.cs:11359-11362`) — no StatusNPC at spawn.
+                if landed && held.kind == 121 {
+                    let armed = app
+                        .player
+                        .as_ref()
+                        .is_some_and(|p| p.spawn_volcano_explosion);
+                    if armed && app.npcs[idx].hittable_for_on_hit_rewards() {
+                        let (ncx, ncy) = app.npcs[idx].center();
+                        let spawned = app.projectiles.spawn_volcano_proc(
+                            me,
+                            Vec2::new(ncx, ncy),
+                            (proc_damage as f32 * 0.75) as i32,
+                            kb,
+                        );
+                        if spawned.is_some() {
+                            if let Some(p) = app.player.as_mut() {
+                                p.spawn_volcano_explosion = false;
+                            }
+                        }
+                    }
+                }
                 // S1-P-i05: `ProcessHitAgainstNPC`'s tail
                 // (`Player.cs:44414/:44419`) — the landed hit re-arms the
                 // per-NPC melee lock to the CURRENT `itemAnimation` ticks
@@ -8433,6 +8678,216 @@ mod tests {
         let n = &a.npcs[0];
         let slot = n.buffs.find_buff_index(31).expect("Confused lands");
         assert_eq!(n.buffs.buff_time[slot], 120, "the fixed 120 (:6614)");
+    }
+
+    /// W4-d12 DOC-SWEEP item 3 — the Tentacle Spike (5094) melee on-hit proc:
+    /// the use start arms `_spawnTentacleSpikes` (`Player.cs:43468-43471`),
+    /// the first landed hit of the NEXT swing spawns the pre-pinned 971
+    /// (`TentacleSpike_TrySpiking` `:44160-44172`): ai0=1, ai1=victim, the
+    /// StatusNPC TentacleSpike debuff 337/540 (`Projectile.cs:11343-11346`),
+    /// and the latch consumes. The 971 draws NOTHING (the 975's rotation is
+    /// the only draw in the pair). The rig's first swing lands the strike and
+    /// arms the latch; the second swing's hit fires the proc. FINAL-phase
+    /// rig fix: the 5094 is `autoReuse: false` and the rig never decays
+    /// `attack_cd`/`hurt_cd` (those passes live in `world_sim/npcs.rs`) —
+    /// the re-press needs the explicit release/press edge + timer clears
+    /// (the established `repress`/i05 convention), and the victim's life
+    /// parked so swing 2 lands on a live target.
+    #[test]
+    fn w4_d12_doc_sweep_the_tentacle_spike_procs_a_pinned_971() {
+        let mut a = melee_app();
+        a.inventory[a.selected].kind = 5094; // Tentacle Spike (melee, no shoot)
+        a.inventory[a.selected].count = 1;
+        // Swing 1: the strike lands, the use start arms the latch.
+        mine_frames(&mut a, 1);
+        assert!(
+            a.player.as_ref().unwrap().spawn_tentacle_spikes,
+            "the use start arms the latch (:43470)"
+        );
+        assert_eq!(
+            a.projectiles.slots().iter().filter(|p| p.active && p.kind == 971).count(),
+            0,
+            "the first swing's strike precedes the latch arming — no proc yet"
+        );
+        // Run the swing out, then re-press (release edge → press edge).
+        mine_frames(&mut a, 30);
+        a.npcs[0].hp = a.npcs[0].max_hp;
+        a.npcs[0].hurt_cd = 0.0;
+        a.attack_cd = 0.0;
+        a.mine_down = false;
+        mine_frames(&mut a, 2);
+        a.mine_down = true;
+        // Swing 2: the armed latch fires the proc on the landed hit.
+        mine_frames(&mut a, 1);
+        let spike = a
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == 971)
+            .expect("the second swing's hit spawns the 971 sticker");
+        assert_eq!(spike.ai[0], 1.0, "pre-pinned ai0 = 1 (:44167)");
+        assert_eq!(spike.ai[1], 0.0, "ai1 = the victim's slot (:44167)");
+        assert!(
+            !a.player.as_ref().unwrap().spawn_tentacle_spikes,
+            "the proc consumes the latch (:44170)"
+        );
+        // The StatusNPC at spawn grants TentacleSpike 337 for 540.
+        let n = &a.npcs[0];
+        let slot = n.buffs.find_buff_index(337).expect("the 337 debuff lands at spawn");
+        assert_eq!(n.buffs.buff_time[slot], 540, "the fixed 540 (:11345)");
+    }
+
+    /// W4-d12 DOC-SWEEP item 4 — the Blood Butcherer (795) melee on-hit proc:
+    /// the same shape as the 971 but the velocity rotates by
+    /// `NextFloatDirection() * π/4` (ONE `NextDouble`, `Player.cs:44180`) and
+    /// the StatusNPC grants BloodButcherer 344/540 (`Projectile.cs:11347-11350`).
+    /// The re-press rig is the 971's (FINAL-phase fix — the release/press
+    /// edge + the timer clears + the parked life).
+    #[test]
+    fn w4_d12_doc_sweep_the_blood_butcherer_procs_a_pinned_975() {
+        let mut a = melee_app();
+        a.inventory[a.selected].kind = 795; // Blood Butcherer (melee, no shoot)
+        a.inventory[a.selected].count = 1;
+        mine_frames(&mut a, 1);
+        assert!(
+            a.player.as_ref().unwrap().spawn_blood_butcherer,
+            "the use start arms the latch (:43474)"
+        );
+        mine_frames(&mut a, 30);
+        a.npcs[0].hp = a.npcs[0].max_hp;
+        a.npcs[0].hurt_cd = 0.0;
+        a.attack_cd = 0.0;
+        a.mine_down = false;
+        mine_frames(&mut a, 2);
+        a.mine_down = true;
+        mine_frames(&mut a, 1);
+        let butcher = a
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == 975)
+            .expect("the second swing's hit spawns the 975 sticker");
+        assert_eq!(butcher.ai[0], 1.0, "pre-pinned ai0 = 1 (:44181)");
+        assert_eq!(butcher.ai[1], 0.0, "ai1 = the victim's slot (:44181)");
+        assert!(
+            !a.player.as_ref().unwrap().spawn_blood_butcherer,
+            "the proc consumes the latch (:44184)"
+        );
+        let n = &a.npcs[0];
+        let slot = n.buffs.find_buff_index(344).expect("the 344 debuff lands at spawn");
+        assert_eq!(n.buffs.buff_time[slot], 540, "the fixed 540 (:11349)");
+    }
+
+    /// W4-d12 FINAL item 1 — the Fiery Greatsword / Volcano (121) melee
+    /// on-hit proc: the use start arms `_spawnVolcanoExplosion`
+    /// (`Player.cs:43476-43479`), the next swing's landed hit spawns the
+    /// 978 explosion at the victim's centre (`Volcano_TrySpawningVolcano`
+    /// `:44150-44158`): ai0=0 / ai1=2, velocity (0, -1·gravDir), damage
+    /// `(int)(dmg * 0.75)` = 30 on the sword's 40 (`:44487`). NO StatusNPC
+    /// at spawn (the OnFire rides the explosion's own walks) and NO cap.
+    /// The re-press rig is the 971's (the 121 is `autoReuse: false`,
+    /// 40-tick animation).
+    #[test]
+    fn w4_d12_final_the_volcano_procs_a_978_at_the_victim_centre() {
+        let mut a = melee_app();
+        a.inventory[a.selected].kind = 121; // Fiery Greatsword (melee, no shoot)
+        a.inventory[a.selected].count = 1;
+        // Swing 1: the strike lands, the use start arms the latch.
+        mine_frames(&mut a, 1);
+        assert!(
+            a.player.as_ref().unwrap().spawn_volcano_explosion,
+            "the use start arms the latch (:43478)"
+        );
+        assert_eq!(
+            a.projectiles.slots().iter().filter(|p| p.active && p.kind == 978).count(),
+            0,
+            "the first swing's strike precedes the latch arming — no proc yet"
+        );
+        // Run the 40-tick swing out, then re-press.
+        mine_frames(&mut a, 45);
+        a.npcs[0].hp = a.npcs[0].max_hp;
+        a.npcs[0].hurt_cd = 0.0;
+        a.attack_cd = 0.0;
+        a.mine_down = false;
+        mine_frames(&mut a, 2);
+        a.mine_down = true;
+        // Swing 2: the armed latch fires the proc on the landed hit.
+        let (ncx, ncy) = a.npcs[0].center();
+        mine_frames(&mut a, 1);
+        let boom = a
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == 978)
+            .expect("the second swing's hit spawns the 978 explosion");
+        assert_eq!(boom.ai[0], 0.0, "ai0 = 0 (:44155)");
+        assert_eq!(boom.ai[1], 2.0, "ai1 = 2 (:44155)");
+        assert_eq!(boom.damage, 30, "(int)(40 * 0.75) (:44487)");
+        assert_eq!(boom.vel.x, 0.0, "velocity X = 0 (:44155)");
+        assert!(boom.vel.y <= -1.0, "velocity Y = -1·gravDir (:44155)");
+        // The centre→top-left recentre (`Projectile.cs:10876-10877`): the
+        // 160×160 box centres on the victim (± one tick of drift).
+        let (bx, by) = (boom.pos.x + boom.w * 0.5, boom.pos.y + boom.h * 0.5);
+        assert!((bx - ncx).abs() < 2.0 && (by - ncy).abs() < 2.0);
+        assert!(
+            !a.player.as_ref().unwrap().spawn_volcano_explosion,
+            "the proc consumes the latch (:44156)"
+        );
+        // NO StatusNPC at spawn — the OnFire 24 comes from the explosion's
+        // own damage walk, not the proc (:44155 has no StatusNPC call).
+        assert!(a.npcs[0].buffs.find_buff_index(24).is_none());
+    }
+
+    /// W4-d12 FINAL item 1 — the killing-blow contrast: the Volcano gate is
+    /// `HittableForOnHitRewards` (NO liveness term, `NPC.cs:90043-90050`),
+    /// so the strike that KILLS the victim still spawns the 978 — while the
+    /// 971's `CanBeChasedBy` gate refuses the same blow (`:44162`).
+    #[test]
+    fn w4_d12_final_the_killing_blow_still_fires_the_volcano_but_not_the_spike() {
+        let mut a = melee_app();
+        a.inventory[a.selected].kind = 121;
+        a.inventory[a.selected].count = 1;
+        mine_frames(&mut a, 1); // swing 1 arms the latch
+        mine_frames(&mut a, 45); // the 40-tick swing runs out
+        a.npcs[0].hp = 1; // swing 2's hit kills
+        a.npcs[0].hurt_cd = 0.0;
+        a.attack_cd = 0.0;
+        a.mine_down = false;
+        mine_frames(&mut a, 2);
+        a.mine_down = true;
+        mine_frames(&mut a, 1);
+        assert!(a.npcs[0].hp <= 0, "the second swing's hit kills the slime");
+        assert!(
+            a.projectiles.slots().iter().any(|p| p.active && p.kind == 978),
+            "the Volcano fires on the killing blow (:44152 — no active gate)"
+        );
+        assert!(
+            !a.player.as_ref().unwrap().spawn_volcano_explosion,
+            "the latch consumed inside the gate (:44156)"
+        );
+        // The contrast: the Tentacle Spike's CanBeChasedBy reads post-strike
+        // liveness — the same killing blow refuses the 971.
+        let mut b = melee_app();
+        b.inventory[b.selected].kind = 5094;
+        b.inventory[b.selected].count = 1;
+        mine_frames(&mut b, 1);
+        mine_frames(&mut b, 30);
+        b.npcs[0].hp = 1;
+        b.npcs[0].hurt_cd = 0.0;
+        b.attack_cd = 0.0;
+        b.mine_down = false;
+        mine_frames(&mut b, 2);
+        b.mine_down = true;
+        mine_frames(&mut b, 1);
+        assert!(b.npcs[0].hp <= 0);
+        assert!(
+            !b.projectiles.slots().iter().any(|p| p.active && p.kind == 971),
+            "the spike refuses the killing blow (CanBeChasedBy :44162)"
+        );
+        assert!(
+            b.player.as_ref().unwrap().spawn_tentacle_spikes,
+            "the refused proc leaves the latch armed (:44170 is inside the gate)"
+        );
     }
 
     /// S1-P-i10 — the Magma Stone's OnFire3 ALWAYS lands (the 360/240/120
@@ -10313,6 +10768,95 @@ mod tests {
         assert_eq!(resolved.damage, 10, "the resolver returns the unscaled num");
         let fused = 31 + resolved.damage;
         assert_eq!((fused as f32 * 1.25) as i32, 51, "one fused ×1.25");
+    }
+
+    /// W4-d12 DOC-SWEEP item 5 — the Killing Deck's four-mode card cycle
+    /// (`Player.cs:49190-49261`): use 1 (state 0) fires ONE card, use 2
+    /// (state 1) fires TWO (forward + back), use 3 (state 2) fires the SIX-card
+    /// fan, use 4 (state 3) recalls them all (ai0=2, velocity 0) and spawns
+    /// nothing. The cycle field advances 0→1→2→3→0. The deck is autoReuse, so
+    /// holding the button re-fires every `useTime` (20) ticks.
+    #[test]
+    fn w4_d12_doc_sweep_the_killing_deck_cycles_single_pair_fan_recall() {
+        let mut app = shooter_rig(5461, "Dead Cells Killing Deck", &[]);
+        let screen = app.screen_size().into();
+        let cards = |a: &App| {
+            a.projectiles
+                .slots()
+                .iter()
+                .filter(|p| p.active && p.kind == crate::projectile::DEAD_CELLS_KILLING_DECK_CARD)
+                .count()
+        };
+        let mut log = Vec::new();
+        // Use 1 (state 0): the single card.
+        hold(&mut app, screen, 1, &mut log);
+        assert_eq!(cards(&app), 1, "state 0 fires one card (:49213)");
+        assert_eq!(app.player.as_ref().unwrap().killing_card_fire_type, 1);
+        // Run the cadence out to the next shot (useTime 20).
+        hold(&mut app, screen, 20, &mut log);
+        // Use 2 (state 1): forward + back → 3 total.
+        assert_eq!(cards(&app), 3, "state 1 adds two (:49217-49218)");
+        assert_eq!(app.player.as_ref().unwrap().killing_card_fire_type, 2);
+        hold(&mut app, screen, 20, &mut log);
+        // Use 3 (state 2): the six-card fan → 9 total.
+        assert_eq!(cards(&app), 9, "state 2 adds six (:49227-49235)");
+        assert_eq!(app.player.as_ref().unwrap().killing_card_fire_type, 3);
+        hold(&mut app, screen, 20, &mut log);
+        // Use 4 (state 3): the recall — no new card, all nine return.
+        assert_eq!(cards(&app), 9, "state 3 spawns nothing (:49238-49253)");
+        assert_eq!(app.player.as_ref().unwrap().killing_card_fire_type, 0, "wraps >3 → 0");
+        let returning = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == crate::projectile::DEAD_CELLS_KILLING_DECK_CARD)
+            .filter(|p| p.ai[0] == 2.0 && p.vel == Vec2::ZERO)
+            .count();
+        assert_eq!(returning, 9, "every card takes ai0=2 / velocity 0 (:49245-49246)");
+    }
+
+    /// W4-d12 FINAL item 3 — the state-3 pre-check's NO-active-gate census
+    /// (`Player.cs:49195-49203`): a DEAD stuck card (ai0=1, the victim died
+    /// under it) still counts as outbound, so the cycle stays at 3 and the
+    /// recall fires on it too — the dead card takes ai0=2 (and its inline
+    /// Damage lands one more ×1.5 hit, pinned at the pool level by
+    /// `w4_d12_final_the_recall_census_dead_cards_and_the_javelin_cap`).
+    /// Only after the recall seats ai0=2 on every card does the next
+    /// state-3 use reset the cycle to 0 and fire a fresh single.
+    #[test]
+    fn w4_d12_final_the_pre_check_counts_a_dead_stuck_card() {
+        let mut app = shooter_rig(5461, "Dead Cells Killing Deck", &[]);
+        let screen = app.screen_size().into();
+        let mut log = Vec::new();
+        // One card out (state 0 → 1), then park the cycle at 3.
+        hold(&mut app, screen, 1, &mut log);
+        let card = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|p| p.active && p.kind == crate::projectile::DEAD_CELLS_KILLING_DECK_CARD)
+            .expect("the single card");
+        app.player.as_mut().unwrap().killing_card_fire_type = 3;
+        // The victim died under it: stuck, then dead — ai0 stays 1.
+        app.projectiles.slots_mut()[card].ai[0] = 1.0;
+        app.projectiles.kill(card);
+        hold(&mut app, screen, 20, &mut log);
+        // The dead stuck card counted as outbound: the recall ran, NOT a
+        // fresh single — the card is still dead, now seated ai0=2.
+        assert_eq!(
+            app.projectiles.slots().iter().filter(|p| p.active && p.kind == crate::projectile::DEAD_CELLS_KILLING_DECK_CARD).count(),
+            0,
+            "no fresh card — the pre-check kept the cycle at 3 (:49198 no active gate)"
+        );
+        assert_eq!(app.projectiles.slots()[card].ai[0], 2.0, "the dead card was recalled (:49246)");
+        assert_eq!(app.player.as_ref().unwrap().killing_card_fire_type, 0, "3 → wrap 0");
+        // The next state-0 use fires the fresh single.
+        hold(&mut app, screen, 20, &mut log);
+        assert_eq!(
+            app.projectiles.slots().iter().filter(|p| p.active && p.kind == crate::projectile::DEAD_CELLS_KILLING_DECK_CARD).count(),
+            1,
+            "the cycle reset — state 0 fires one card (:49213)"
+        );
     }
 
     #[test]

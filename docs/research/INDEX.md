@@ -77,6 +77,7 @@ per `docs/superpowers` agreements).
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base - no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 164 | Projectile aiStyles 101-110 census + port (W4-d11; renumbered 26d per registry-150: the ten-style coverage table, the DOC-SWEEP wave, the nebula-sweep producer + the sibling dedupe notes, the RETIRE closeout) | `164-projectile-ai-101-110-census.md` | ✅ |
 | 355 | W4-d11 RETIRE FINAL (the band-101-110 git-log census - nebula-sweep NOT on main, branch-sole; the d77c 539/576 cue compose; the 813 three-way keep-one g64-superset + d11-row-byte-equal EXECUTED; the all-armed/rowed census + gaps; the nebula producer-unique/lifecycle-fold keep-one table + the can_ghost_heal d6-field ruling; the family declaration) — chain 245→355 (registry-150 §9.2 row 355, d54 `e9ac39459`: g48 WINS 245 pre-publish `2b61530b4`) | `355-w4-d11-retire-final.md` | ✅ SEALED |
+| 127 | proj 111-120 spawns DOC-SWEEP + FINAL + RETIRE (W4-d12: the 113 six-kind sticker census, the 971/975/121 melee procs, the 5461 card cycle + recall no-active-gate, the 614 ai1 seating, the 978 row keep-d12c; SEALED at c98bd8937 — §R1–R5 receipts + the proj-111-family declaration) | `127-doc-sweep-proj-111.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

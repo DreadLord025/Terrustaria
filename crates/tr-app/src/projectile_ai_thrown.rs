@@ -11,11 +11,16 @@
 //!   resize-to-80 prime and the wet prime; the `HandleMovement`-68 collision
 //!   (`:19780-19786`) stops the bottle and primes it instead of killing it.
 //!   The death burst (`Kill()` `:73921-73951`) spawns the three greek fires.
-//! * **aiStyle 113 — the Bone javelin (598)** (`AI_113_TargetSticker`
-//!   `Projectile.cs:40562-40899`): the flying arc (45-tick then 0.98/0.35
-//!   gravity), the stick state (`ai[0]==1`) that pins the javelin to its NPC
-//!   for 900 ticks, and the kill on expiry / dead target. The stick itself,
-//!   the Daybroken debuff and the per-NPC 6-javelin cap ride the pool's
+//! * **aiStyle 113 — the target-sticker census (W4-d12 F1)**
+//!   (`AI_113_TargetSticker` `Projectile.cs:40562-40899`): the SIX
+//!   SetDefaults kinds — the Bone javelin (598), the Stardust Cell's shot
+//!   (614, the chase branch), the Daybreak (636), the Tentacle Spike (971),
+//!   the Blood Butcherer (975) and the Killing Deck card (1024, the
+//!   three-state tile-stick/return machine). The flying arc (45-tick then
+//!   0.98/0.35 gravity; the 636's 0.995/0.15, the card's 60-tick + sine
+//!   flutter), the stick state (`ai[0]==1`) that pins to its NPC for
+//!   60·num11 ticks, and the kill on expiry / dead target. The stick pin,
+//!   the per-kind debuffs and the 6/8/10-javelin caps ride the pool's
 //!   on-hit seam ([`crate::projectile::ProjectilePool`]).
 //! * **aiStyle 36 — the bees (181/566)** (`Projectile.cs:27292-27471`): the
 //!   beenade's children. The alpha fade-in, the `extraUpdates` collapse, the
@@ -38,13 +43,17 @@
 //! javelin has `tileCollide=false` so it integrates freely.
 //!
 //! RNG by construction (ANALYSIS "The thrown consumables (S1-P-i28)"):
-//! - The flight arms (68/113/36/507) draw ZERO `Main.rand` — their only rand
-//!   riders are dust/sound (the molotov's `alpha==0` dust `:30191-30220`, the
-//!   bee's frame flutter rolls nothing), skipped whole with their draws (the
-//!   `ai_style2`/frostmoon precedent).
+//! - The flight arms (68/36/507) and the 113 census' 598/636 draw ZERO
+//!   `Main.rand` — their only rand riders are dust/sound (the molotov's
+//!   `alpha==0` dust `:30191-30220`, the bee's frame flutter rolls nothing),
+//!   skipped whole with their draws (the `ai_style2`/frostmoon precedent).
+//!   The W4-d12 F1 census round KEEPS the explicit dust-argument draws the
+//!   614/971/975/1024 arms make (the explosions-module census standard):
+//!   the card's frame roll + 6/12/6-dust fans, the 971 pulse jitter, the
+//!   975 pulse's rotation chains + clone gate + 10-unit latch ring.
 //! - The on-hit debuffs KEEP their explicit rolls in C# order: the poisoned
 //!   knife's `Next(2)` (`:11630`), the molotov/fire's `Next(3,7)` (`:11508`).
-//!   The bone javelin's Daybroken is unconditional (no roll).
+//!   The sticker debuffs (169/189/337/344/183) are unconditional (no roll).
 //! - The beenade death burst KEEPS its draws: the `Next(15,25)` bee count
 //!   (`:76457`) then, per bee, the velocity `Next(-35,36)` X-then-Y pair
 //!   (`:76460`), the `beeType()` coin flip, `beeDamage` and `beeKB` (the
@@ -195,82 +204,376 @@ pub(crate) fn molotov_step(p: &mut Projectile, world: &World) {
     }
 }
 
-/// `AI_113_TargetSticker` (`Projectile.cs:40562-40899`) for the bone javelin
-/// (598). `npcs` is the pool's NPC slice (the stick state reads its pinned
-/// target); the stick's `ai[1]` is the NPC's index in that slice (the port's
-/// stable-index convention, ANALYSIS). Zero RNG.
-pub(crate) fn bone_javelin_step(p: &mut Projectile, world: &World, npcs: &[Npc]) {
-    // `:40564-40576` — the alpha fade: `num=25` (598 is not 614), `alpha-=25`,
-    // clamp 0.
+/// W4-d12 F1 — the aiStyle-113 census: the six `SetDefaults` kinds that ride
+/// `AI_113_TargetSticker` (`Projectile.cs:6474`/`:6615`/`:6842`/`:9201`/
+/// `:9291`/`:9697`). The shadowflame family is NOT on the style (495 is
+/// aiStyle 1, 496 is 91, 659 is 129).
+pub(crate) const TARGET_STICKERS: [u16; 6] = [
+    BONE_JAVELIN,
+    crate::projectile::STARDUST_CELL_MINION_SHOT,
+    crate::projectile::DAYBREAK,
+    crate::projectile::TENTACLE_SPIKE,
+    crate::projectile::BLOOD_BUTCHERER,
+    crate::projectile::DEAD_CELLS_KILLING_DECK_CARD,
+];
+
+/// The 1024 return-state's owner snapshot (`Main.player[this.owner]`,
+/// `Projectile.cs:40856-40862`): the centre, the dead flag and the hitbox.
+/// `None` = an inactive player (a foreign owner reads the inactive zeros —
+/// the 116 arm's precedent), which kills the returning card.
+pub(crate) struct StickerOwner {
+    pub center: Vec2,
+    pub dead: bool,
+    pub hitbox: tr_core::whip::Rect,
+}
+
+/// `Utils.RotatedByRandom(max)` (`Utils.cs:1697-1700`): TWO `NextDouble`
+/// draws, left operand first (the explosions module's census shape).
+fn rbr_draws(rng: &mut dyn DropRng, max: f64) -> f32 {
+    (rng.next_double() * max - rng.next_double() * max) as f32
+}
+
+/// `Utils.NextFloatDirection` (`Utils.cs:1203-1206`): `NextDouble * 2 - 1`.
+fn nfd(rng: &mut dyn DropRng) -> f32 {
+    rng.next_double() as f32 * 2.0 - 1.0
+}
+
+/// The 1024 card's 4-tick frame machine (`Projectile.cs:40579-40589` /
+/// `:40851-40861`): `frameCounter++`, `> 3` wraps the frame at `projFrames`.
+fn card_frame_machine(p: &mut Projectile) {
+    p.frame_counter += 1;
+    if p.frame_counter > 3 {
+        p.frame_counter = 0;
+        p.frame += 1;
+        if p.frame >= crate::projectile::proj_frames(p.kind) as i32 {
+            p.frame = 0;
+        }
+    }
+}
+
+/// `AI_113_TargetSticker` (`Projectile.cs:40562-40899`) — the WHOLE six-kind
+/// family (W4-d12 F1; the S1-P-i28 slice ported the 598 arm only). `npcs` is
+/// the pool's NPC slice (the stick pin's `ai[1]` is the stable index,
+/// ANALYSIS); `owner` feeds the 1024 return state. Returns `true` when the
+/// 1024's stuck→return transition armed its inline `Damage()` (`:40784`) —
+/// the dispatch runs the full PVE walk for it (the 117 burst precedent).
+///
+/// RNG census (explicit draws stay, dust bodies skipped — the module
+/// contract): the 1024 flight tick-1 `Next(projFrames)` + 6×2 `NextFloat`
+/// (`:40634-40644`); the 1024 stick-entry 12×2 `NextFloat` (`:40690-40699`);
+/// the 971 pulse's `NextFloatDirection` (`:40795`); the 975 pulse's two
+/// `RotatedByRandom`/`RotatedBy` chains + the `Next(3)` clone gate
+/// (`:40812-40826`) and the latch's 10 `NextVector2CircularEdge` unit draws
+/// (`:40838-40845`); the 1024 return-latch 6×3 `NextFloat` (`:40877-40887`).
+/// The 598/636 arms draw ZERO.
+///
+/// The movement stand-in (ANALYSIS): the flying stickers ride the
+/// kill-on-tile default arm at the FULL 16×16 box — the C#'s
+/// `GetCollisionParams` 10×10 collision box (`:19957-19961`, the card 4×4
+/// `:19962-19966`) is the port's documented `kill_step` deviation. The card
+/// sticks to tiles instead (`HandleMovement`'s 1024 arm `:18287-18302`);
+/// the `Shimmer()` bounce arm (`:22424`, the card is in the type list) is
+/// the shimmer layer's documented skip.
+pub(crate) fn target_sticker_step(
+    p: &mut Projectile,
+    world: &World,
+    npcs: &[Npc],
+    rng: &mut dyn DropRng,
+    owner: Option<StickerOwner>,
+) -> bool {
+    use crate::projectile::{
+        DAYBREAK, DEAD_CELLS_KILLING_DECK_CARD, STARDUST_CELL_MINION_SHOT, TENTACLE_SPIKE,
+        BLOOD_BUTCHERER,
+    };
+    let card = p.kind == DEAD_CELLS_KILLING_DECK_CARD;
+    // `:40564-40576` — the alpha fade: `num = 25`, the 614 reads 63.
+    let num = if p.kind == STARDUST_CELL_MINION_SHOT { 63 } else { 25 };
     if p.alpha > 0 {
-        p.alpha -= 25;
+        p.alpha -= num;
     }
     if p.alpha < 0 {
         p.alpha = 0;
     }
     if p.ai[0] == 0.0 {
-        // `:40610-40664` — the flying arc (598 is neither 1024 nor 614).
-        // `:40612` — `ai[1]++` (the flight-age counter).
-        p.ai[1] += 1.0;
-        // `:40613-40629` — `num4=45`; from `ai[1] >= 45`: `num5=0.98`,
-        // `num6=0.35` (598 is not 636), `X *= 0.98`, `Y += 0.35`.
-        if p.ai[1] >= 45.0 {
-            p.vel.x *= 0.98;
-            p.vel.y += 0.35;
+        if card {
+            // `:40579-40589` — the flight frame machine.
+            card_frame_machine(p);
         }
-        // `:40648` — `rotation = velocity.ToRotation() + π/2` (598 not 1024).
-        p.rot = p.vel.y.atan2(p.vel.x) + std::f32::consts::FRAC_PI_2;
+        if p.kind == STARDUST_CELL_MINION_SHOT {
+            // `:40592-40607` — the chase branch: `ai[1]` is the target index.
+            let num2 = p.ai[1] as i32;
+            if num2 < 0 || num2 as usize >= npcs.len() || !chaseable(&npcs[num2 as usize]) {
+                p.kill_time_left = p.time_left;
+                p.active = false;
+                p.time_left = 0;
+                return false;
+            }
+            let n = &npcs[num2 as usize];
+            let (ncx, ncy) = n.center();
+            let mut vector = Vec2::new(
+                ncx - (p.pos.x + p.w * 0.5),
+                ncy - (p.pos.y + p.h * 0.5),
+            );
+            if vector != Vec2::ZERO {
+                vector = vector.normalize_or_zero() * 14.0;
+            }
+            // `velocity = (velocity * (5 - 1) + vector) / 5`.
+            p.vel = (p.vel * 4.0 + vector) / 5.0;
+        } else {
+            // `:40610-40664` — the flying arc.
+            p.ai[1] += 1.0;
+            let num4 = if card { 60.0 } else { 45.0 };
+            if p.ai[1] >= num4 {
+                // `:40619-40628` — the 636's softer fall (0.995 / 0.15).
+                let (num5, num6) = if p.kind == DAYBREAK { (0.995, 0.15) } else { (0.98, 0.35) };
+                p.vel.x *= num5;
+                p.vel.y += num6;
+            }
+            if card {
+                // `:40630-40645` — the Y clamp + the tick-1 frame roll and
+                // the six-dust spawn (bodies skipped, draws kept).
+                if p.vel.y > 12.0 {
+                    p.vel.y = 12.0;
+                }
+                if p.ai[1] == 1.0 {
+                    p.frame = rng.next_range(0, crate::projectile::proj_frames(p.kind) as i32);
+                    for _ in 0..6 {
+                        let _ = rng.next_float(); // scale 0.8 + NextFloat * 1.7
+                        let _ = rng.next_float(); // velocity 0.1 + NextFloat * 1.2
+                    }
+                }
+            }
+            // `:40648-40652` — the rotation (the card cancels the +π/2).
+            p.rot = p.vel.y.atan2(p.vel.x) + std::f32::consts::FRAC_PI_2;
+            if card {
+                p.rot -= std::f32::consts::FRAC_PI_2;
+            }
+            if card {
+                // `:40653-40663` — the sine flutter (double maths, the
+                // `0.10000000149011612` float literal is π·0.1's f32 cast).
+                let num7 = std::f32::consts::PI / 30.0;
+                let num8 = 40.0 * p.ai[2];
+                let mut num9 =
+                    (num8 * num7 * num7) as f64 * (0.0 - ((p.ai[1] * num7) as f64).sin());
+                if p.ai[1] == 1.0 {
+                    num9 += (num8 * num7) as f64;
+                }
+                p.vel += crate::projectile::rotate(Vec2::UNIT_Y, p.rot) * num9 as f32;
+            }
+        }
     }
+    let mut inline_damage = false;
     if p.ai[0] == 1.0 {
         // `:40666-40848` — the stick state.
-        // `:40668` — `frame = 0`.
         p.frame = 0;
-        // `:40671-40672` — `ignoreWater=true`, `tileCollide=false`.
+        // `:40669` — `center` captured BEFORE the pin (the dust anchors).
+        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
         p.ignore_water = true;
         p.tile_collide = false;
-        // `:40673-40689` — `num11=15` (598 is none of 636/971/975/1024).
-        let num11 = 15.0f32;
-        // `:40702` — `localAI[0]++` (the stick-age counter).
+        // `:40673-40689` — the stick lifetime: 15 s stock; the 636/1024 read
+        // 5·MaxUpdates, the 971/975 read 9·MaxUpdates.
+        let max_updates = p.extra_updates as f32 + 1.0;
+        let num11 = match p.kind {
+            DAYBREAK | DEAD_CELLS_KILLING_DECK_CARD => 5.0 * max_updates,
+            TENTACLE_SPIKE | BLOOD_BUTCHERER => 9.0 * max_updates,
+            _ => 15.0,
+        };
+        if card && p.local_ai[0] == 0.0 {
+            // `:40690-40699` — the 12-dust stick-entry ring (draws kept).
+            for _ in 0..12 {
+                let _ = rng.next_float(); // scale
+                let _ = rng.next_float(); // velocity magnitude
+            }
+        }
+        // `:40701-40709` — the age + the 30-tick HitEffect pulse flag (the
+        // pulse body is a visual skip; the card never pulses).
         p.local_ai[0] += 1.0;
-        // `:40703-40706` — `localAI[0] % 30 == 0` → the HitEffect pulse
-        // (SKIPPED — a visual, no state the port reads).
-        // `:40711` — `num12 = (int)ai[1]` (the pinned NPC index).
+        let _flag2 = p.local_ai[0] % 30.0 == 0.0 && !card;
         let num12 = p.ai[1] as i32;
-        // `:40753-40773` — the expiry / target-validity ladder (598 not 1024).
         let mut kill = false;
-        if p.local_ai[0] >= 60.0 * num11 {
+        if card && num12 == -1 {
+            // `:40714-40752` — the tile-stuck scan: a solid (non-platform)
+            // tile within the ±7-padded box zeroes the velocity; no tile
+            // found means the card returns to the owner.
+            let x0 = ((p.pos.x / 16.0) as i32 - 1).clamp(0, world.width);
+            let x1 = (((p.pos.x + p.w) / 16.0) as i32 + 2).clamp(0, world.width);
+            let y0 = ((p.pos.y / 16.0) as i32 - 1).clamp(0, world.height);
+            let y1 = (((p.pos.y + p.h) / 16.0) as i32 + 2).clamp(0, world.height);
+            let mut found = false;
+            for k in x0..x1 {
+                for l in y0..y1 {
+                    let Some(t) = world.tile(k, l) else { continue };
+                    if t.active()
+                        && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                        && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+                    {
+                        let (vx, vy) = (k as f32 * 16.0, l as f32 * 16.0);
+                        if p.pos.x + p.w + 7.0 > vx
+                            && p.pos.x - 7.0 < vx + 16.0
+                            && p.pos.y + p.h + 7.0 > vy
+                            && p.pos.y - 7.0 < vy + 16.0
+                        {
+                            p.vel = Vec2::ZERO;
+                            found = true;
+                        }
+                    }
+                }
+            }
+            if !found {
+                kill = true;
+            }
+            if p.local_ai[0] >= 60.0 * num11 {
+                kill = true;
+            }
+        } else if p.local_ai[0] >= 60.0 * num11 {
             kill = true;
         } else if num12 < 0 || num12 as usize >= npcs.len() {
             kill = true;
         } else {
             let n = &npcs[num12 as usize];
-            // `Main.npc[num12].active && !dontTakeDamage` — the port's live
-            // list stands in for `active` (the `hp > 0` scan convention).
             if n.hp > 0 && !n.dont_take_damage {
-                // `:40763` — `Center = npc.Center - velocity * 2`.
+                // `:40763-40764` — the pin: `Center = npc.Center - vel * 2`.
                 let (ncx, ncy) = n.center();
                 let cx = ncx - p.vel.x * 2.0;
                 let cy = ncy - p.vel.y * 2.0;
                 p.pos = Vec2::new(cx - p.w * 0.5, cy - p.h * 0.5);
-                // `:40764` — `gfxOffY = npc.gfxOffY`.
                 p.gfx_off_y = n.gfx_off_y;
-                // `:40765-40768` — the 30-tick HitEffect (SKIPPED, visual).
             } else {
                 kill = true;
             }
         }
-        // `:40774-40791` — `flag` → `Kill()` (598 not 1024, so no ai[0]=2).
         if kill {
+            if card {
+                // `:40776-40786` — the return transition: velocity zero,
+                // ai[0]=2, the local-immunity reset + the inline Damage().
+                p.vel = Vec2::ZERO;
+                p.ai[0] = 2.0;
+                inline_damage = true; // the dispatch resets immunity + walks
+            } else {
+                p.kill_time_left = p.time_left;
+                p.active = false;
+                p.time_left = 0;
+                return false;
+            }
+        }
+        if !kill && p.kind == TENTACLE_SPIKE {
+            // `:40792-40808` — the every-other-tick blood pulse (the dust
+            // body skips; the NextFloatDirection draw stays) + the rotation
+            // latch. The C# gate is `num12 > 0` (index 0 draws nothing).
+            if num12 > 0
+                && (num12 as usize) < npcs.len()
+                && p.time_left % 2 == 0
+            {
+                let _ = nfd(rng); // the velocity jitter X
+            }
+            if p.local_ai[1] == 0.0 {
+                p.local_ai[1] = 1.0;
+                p.rot = p.vel.y.atan2(p.vel.x) + std::f32::consts::FRAC_PI_2;
+            }
+        }
+        if !kill && p.kind == BLOOD_BUTCHERER {
+            // `:40810-40847` — the every-other-tick gore pulse + the latch's
+            // 10-dust ring. Draw order: the RotatedByRandom pair, the two
+            // NextFloatDirection spins, the Next(3) clone gate (on 0: one
+            // more RotatedByRandom pair), then the ring's 10 unit draws.
+            if num12 > 0
+                && (num12 as usize) < npcs.len()
+                && p.time_left % 2 == 0
+            {
+                let _ = rbr_draws(rng, 0.19634954631328583);
+                let _ = nfd(rng); // the first clone's spin
+                let _ = nfd(rng); // the second clone's spin
+                if rng.next_range(0, 3) == 0 {
+                    let _ = rbr_draws(rng, 0.39269909262657166);
+                }
+            }
+            if p.local_ai[1] == 0.0 {
+                p.local_ai[1] = 1.0;
+                p.rot = p.vel.y.atan2(p.vel.x) + std::f32::consts::FRAC_PI_2;
+                for _ in 0..10 {
+                    let _ = rng.next_float(); // NextVector2CircularEdge unit
+                }
+            }
+        }
+        let _ = center; // the dust anchors feed only skipped bodies
+    }
+    if p.ai[0] == 2.0 {
+        // `:40849-40889` — the card's return-to-owner state (1024 only).
+        if card {
+            card_frame_machine(p);
+        }
+        p.tile_collide = false;
+        let Some(pl) = owner else {
+            // `!player.active` — the inactive player kills the card. The
+            // transition's inline Damage() already ran in C# order
+            // (`:40784` precedes this block), so the request survives.
             p.kill_time_left = p.time_left;
             p.active = false;
             p.time_left = 0;
-            return;
+            return inline_damage;
+        };
+        let proj_rect = tr_core::whip::Rect::new(
+            p.pos.x as i32, p.pos.y as i32, p.w as i32, p.h as i32,
+        );
+        if pl.dead || pl.hitbox.intersects(proj_rect) {
+            p.kill_time_left = p.time_left;
+            p.active = false;
+            p.time_left = 0;
+            return inline_damage;
+        }
+        let dir = (pl.center - Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5))
+            .normalize_or_zero();
+        p.vel = dir * 16.0;
+        // `:40869-40874` — the rotation (+π/2 then the card's −π/2).
+        p.rot = p.vel.y.atan2(p.vel.x);
+        if card && p.local_ai[1] == 0.0 {
+            // `:40877-40887` — the return-latch six-dust fan: per dust the
+            // scale argument's NextFloat (`0.8 + NextFloat * 1.7`), the
+            // velocity's NextFloat (`-1 + NextFloat * 2`) then
+            // NextVector2Circular(1,1)'s unit + radius (two more).
+            p.local_ai[1] += 1.0;
+            for _ in 0..6 {
+                let _ = rng.next_float(); // the scale argument
+                let _ = rng.next_float(); // the −1..1 spread
+                let _ = rng.next_float(); // the circular unit
+                let _ = rng.next_float(); // the circular radius
+            }
         }
     }
-    // `:40849-40889` — the `ai[0]==2` return-to-owner state is 1024-only.
-    // Movement: the flying javelin rides the kill-on-tile default arm; the
-    // stuck javelin has `tileCollide=false` so it integrates freely.
+    // `:40890-40897` — the 614/636 light casts: SKIPPED (no light layer).
+    // `AI_113_UpdateDrawLayer` (`:40901-40919`): draw-only, the F3 skip.
+    // Movement: the kill-on-tile stand-in; the card sticks to tiles instead
+    // (`HandleMovement`'s 1024 arm `:18287-18302`).
+    if card && p.tile_collide && p.ai[0] < 2.0 {
+        // `GetCollisionParams` (`:19962-19966`): the card's collision box is
+        // 4×4 centred (`Center - (4,4) * 0.5`).
+        let (cw, ch) = (4.0f32, 4.0f32);
+        let ox = p.pos.x + p.w * 0.5 - cw * 0.5;
+        let oy = p.pos.y + p.h * 0.5 - ch * 0.5;
+        let nx = ox + p.vel.x;
+        let ny = oy + p.vel.y;
+        let hit = crate::player::collides_rect(world, nx, oy, cw, ch)
+            || crate::player::collides_rect(world, ox, ny, cw, ch);
+        if hit {
+            if p.ai[0] == 0.0 {
+                // `:18291-18293` — HitTiles (skip) + the Item10 cue.
+                p.wants_sound = Some((2, 10, p.pos.x, p.pos.y, 0.0));
+            }
+            // `:18295-18301` — the tile pin: ai[0]=1, ai[1]=-1, the velocity
+            // collapses to its unit heading. The stand-in does not integrate
+            // the post-collision step (the kill_step convention, ANALYSIS).
+            p.ai[0] = 1.0;
+            p.ai[1] = -1.0;
+            p.vel = p.vel.normalize_or_zero();
+            return inline_damage;
+        }
+        // No contact: integrate the full step (the collision box is centred,
+        // so the slot moves by the same velocity).
+        p.pos += p.vel;
+        return inline_damage;
+    }
     kill_step(p, world);
+    inline_damage
 }
 
 /// `AI()`'s aiStyle-36 arm (`Projectile.cs:27292-27471`) for the bees
@@ -399,6 +702,26 @@ pub(crate) fn thrown_on_hit(p: &Projectile, npc: &mut Npc, npc_idx: u16, rng: &m
     // this NPC (`ai[1] == i`).
     if p.kind == BONE_JAVELIN && p.ai[1] == npc_idx as f32 {
         npc.buffs.add_buff(169, 900);
+    }
+    // W4-d12 F1 — the rest of the 113 census' pin-gated debuffs, in the C#
+    // StatusNPC order: the Daybreak's Daybreak 300 (`:11339-11342`), the
+    // Tentacle Spike's TentacleSpike 540 (`:11343-11346`), the Blood
+    // Butcherer's BloodButcherer 540 (`:11347-11350`), the Stardust Cell's
+    // StardustMinionBleed 900 (`:11375-11378`). All unconditional (no roll).
+    use crate::projectile::{
+        BLOOD_BUTCHERER, DAYBREAK, STARDUST_CELL_MINION_SHOT, TENTACLE_SPIKE,
+    };
+    if p.kind == DAYBREAK && p.ai[1] == npc_idx as f32 {
+        npc.buffs.add_buff(189, 300);
+    }
+    if p.kind == TENTACLE_SPIKE && p.ai[1] == npc_idx as f32 {
+        npc.buffs.add_buff(337, 540);
+    }
+    if p.kind == BLOOD_BUTCHERER && p.ai[1] == npc_idx as f32 {
+        npc.buffs.add_buff(344, 540);
+    }
+    if p.kind == STARDUST_CELL_MINION_SHOT && p.ai[1] == npc_idx as f32 {
+        npc.buffs.add_buff(183, 900);
     }
 }
 
@@ -551,6 +874,80 @@ pub(crate) fn molotov_death(p: &Projectile, rng: &mut dyn DropRng) -> Vec<FireSp
     out
 }
 
+/// W4-d12 F1 — the 636 Daybreak's `Kill()` spawn request: the 953 explosion
+/// at the spear's centre (`Projectile.cs:72143`), damage carried, kb 10,
+/// `ai1 = 0.85 + NextFloat * 1.15` (the explosion's scale seed).
+pub(crate) struct DaybreakBlast {
+    pub x: f32,
+    pub y: f32,
+    pub damage: i32,
+    pub ai1: f32,
+}
+
+/// W4-d12 F1 — the target-sticker census' `Kill()` arms, in C# body order:
+/// the Daybreak's dust + 953 spawn (`Projectile.cs:72126-72145`), the
+/// Stardust Cell shot's 10-dust puff (`:72146-72154`, ZERO explicit draws),
+/// the Tentacle Spike's 6-dust trail (`:73996-74010`, ZERO explicit draws)
+/// and the Killing Deck card's Item8 + 12-dust ring (`:74817-74829`).
+/// `local` is the C#'s `Main.myPlayer == this.owner` spawn gate (`:72141`).
+/// Returns the 953 spawn request (the pool resolves it) and parks the
+/// card's Item8 cue on `wants_sound`. The 636 dust census: 2 trail points
+/// (`oldPos[0]`/`oldPos[3]`, `:72129`) × 5 dust, each a `SelectRandom`
+/// `Next(3)` type pick + a `NextFloat` scale bump (`:72135-72138`); then
+/// the spawn's `NextFloat` scale seed INSIDE the owner gate.
+pub(crate) fn sticker_death(
+    p: &mut Projectile,
+    local: bool,
+    rng: &mut dyn DropRng,
+) -> Option<DaybreakBlast> {
+    use crate::projectile::{
+        DAYBREAK, DEAD_CELLS_KILLING_DECK_CARD, STARDUST_CELL_MINION_SHOT, TENTACLE_SPIKE,
+    };
+    match p.kind {
+        DAYBREAK => {
+            // `:72129-72140` — the two trail points × five dust.
+            for _ in 0..2 {
+                for _ in 0..5 {
+                    let _ = rng.next_range(0, 3); // SelectRandom(6, 259, 158)
+                    let _ = rng.next_float(); // scale += NextFloat
+                }
+            }
+            if !local {
+                return None;
+            }
+            // `:72143` — the 953 spawn: ai0 = 0, ai1 = 0.85 + NextFloat * 1.15.
+            let ai1 = 0.85 + rng.next_float() * 1.15;
+            Some(DaybreakBlast {
+                x: p.pos.x + p.w * 0.5,
+                y: p.pos.y + p.h * 0.5,
+                damage: p.damage,
+                ai1,
+            })
+        }
+        STARDUST_CELL_MINION_SHOT => {
+            // `:72148-72153` — 10× dust-229: the NewDust internal rolls go
+            // with the dust layer (the module contract). ZERO draws.
+            None
+        }
+        TENTACLE_SPIKE => {
+            // `:73998-74009` — 6× dust-4: same skip. ZERO draws.
+            None
+        }
+        DEAD_CELLS_KILLING_DECK_CARD => {
+            // `:74819` — the Item8 cue (the pool drains `wants_sound`).
+            p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0));
+            // `:74820-74827` — the 12-dust ring: per dust the scale
+            // argument's NextFloat + the velocity magnitude's NextFloat.
+            for _ in 0..12 {
+                let _ = rng.next_float();
+                let _ = rng.next_float();
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
 // =====================================================================
 // Witness tests — WRITTEN, NOT RUN (code-only mode: no cargo/rustc).
 // Every expected value below is hand-derived from the cited C# lines.
@@ -671,15 +1068,17 @@ mod tests {
         p.pos = Vec2::new(500.0, 500.0);
         p.vel = Vec2::new(10.0, 0.0);
         p.ai[0] = 0.0;
+        let mut rng = ScriptRng::with_rolls(&[]);
         for _ in 0..44 {
-            bone_javelin_step(&mut p, &w, &[]);
+            target_sticker_step(&mut p, &w, &[], &mut rng, None);
         }
         assert_eq!(p.ai[1], 44.0, "the flight-age counter");
         assert_eq!(p.vel.y, 0.0, "no gravity through age 44");
-        bone_javelin_step(&mut p, &w, &[]);
+        target_sticker_step(&mut p, &w, &[], &mut rng, None);
         assert_eq!(p.ai[1], 45.0);
         assert!((p.vel.y - 0.35).abs() < 1e-6, "age 45 adds 0.35 (>= 45)");
         assert!((p.vel.x - 9.8).abs() < 1e-6, "age 45 decays X by 0.98");
+        assert!(rng.draws.is_empty(), "the 598 flight draws ZERO");
     }
 
     /// The stuck javelin expires at localAI[0] >= 900 (60*15)
@@ -697,9 +1096,10 @@ mod tests {
         let mut n = Npc::new(crate::npc::NpcKind::Zombie, 600.0, 500.0, 0, 0.0);
         n.hp = n.max_hp;
         p.local_ai[0] = 898.0;
-        bone_javelin_step(&mut p, &w, std::slice::from_ref(&n));
+        let mut rng = ScriptRng::with_rolls(&[]);
+        target_sticker_step(&mut p, &w, std::slice::from_ref(&n), &mut rng, None);
         assert!(p.active, "899 < 900 still stuck");
-        bone_javelin_step(&mut p, &w, std::slice::from_ref(&n));
+        target_sticker_step(&mut p, &w, std::slice::from_ref(&n), &mut rng, None);
         assert!(!p.active, "900 >= 900 expires");
     }
 
@@ -898,5 +1298,376 @@ mod tests {
         assert_eq!(jav.penetrate, 3);
         assert_eq!((jav.w, jav.h), (16.0, 16.0));
         assert!(crate::projectile_ai_thrown::covers_ai001(507));
+    }
+
+    // ===== W4-d12 census F1 — the full aiStyle-113 family =====
+
+    /// A census RNG: `next_range` returns `max - 1`, floats/doubles 0.5;
+    /// counts every draw class (the explosions module's CensusRng shape).
+    struct CensusRng {
+        ints: usize,
+        floats: usize,
+        doubles: usize,
+    }
+    impl DropRng for CensusRng {
+        fn next_range(&mut self, _min: i32, _max: i32) -> i32 {
+            self.ints += 1;
+            _max - 1
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.5
+        }
+        fn next_double(&mut self) -> f64 {
+            self.doubles += 1;
+            0.5
+        }
+    }
+    fn census() -> CensusRng {
+        CensusRng { ints: 0, floats: 0, doubles: 0 }
+    }
+
+    /// The Daybreak's softer fall (`:40622-40628`): 0.995 / 0.15 FROM age 45,
+    /// and the 614 alpha fade reads 63 (`:40565-40567`).
+    #[test]
+    fn w4_d12_f1_daybreak_fall_and_cell_fade() {
+        let w = empty_world();
+        let mut rng = census();
+        let mut p = proj(crate::projectile::DAYBREAK);
+        p.pos = Vec2::new(500.0, 500.0);
+        p.vel = Vec2::new(10.0, 0.0);
+        for _ in 0..44 {
+            target_sticker_step(&mut p, &w, &[], &mut rng, None);
+        }
+        assert_eq!(p.vel.y, 0.0, "no gravity through age 44");
+        target_sticker_step(&mut p, &w, &[], &mut rng, None);
+        assert!((p.vel.y - 0.15).abs() < 1e-6, "the 636 adds 0.15 (:40626)");
+        assert!((p.vel.x - 9.95).abs() < 1e-6, "the 636 decays 0.995 (:40625)");
+        assert_eq!(p.alpha, 0, "the 636 fades 25/tick, clamped at 0");
+        assert_eq!(rng.floats + rng.doubles + rng.ints, 0, "the 636 draws ZERO");
+        let mut c = proj(crate::projectile::STARDUST_CELL_MINION_SHOT);
+        c.pos = Vec2::new(500.0, 500.0);
+        c.ai[1] = 0.0;
+        let mut n = Npc::new(crate::npc::NpcKind::Zombie, 600.0, 500.0, 0, 0.0);
+        n.hp = 100;
+        n.max_hp = 100;
+        target_sticker_step(&mut c, &w, std::slice::from_ref(&n), &mut rng, None);
+        assert_eq!(c.alpha, 255 - 63, "the 614 fades 63 (:40566)");
+        // The chase lerp: (0*4 + normalize(delta)*14)/5 → length 2.8.
+        assert!((c.vel.length() - 2.8).abs() < 1e-4, "the 14-speed /5 lerp (:40600-40606)");
+        assert!(c.vel.x > 0.0, "the target is to the +X side");
+        assert_eq!(c.ai[1], 0.0, "the chase branch does NOT age ai[1]");
+    }
+
+    /// The 614 chase kills on a dead/invalid target (`:40594-40597`).
+    #[test]
+    fn w4_d12_f1_cell_chase_kills_on_dead_target() {
+        let w = empty_world();
+        let mut rng = census();
+        let mut p = proj(crate::projectile::STARDUST_CELL_MINION_SHOT);
+        p.active = true;
+        p.pos = Vec2::new(500.0, 500.0);
+        p.ai[1] = 0.0;
+        let mut n = Npc::new(crate::npc::NpcKind::Zombie, 600.0, 500.0, 0, 0.0);
+        n.hp = 0; // dead → not chaseable
+        target_sticker_step(&mut p, &w, std::slice::from_ref(&n), &mut rng, None);
+        assert!(!p.active, "the dead target kills the shot");
+        // An out-of-range index kills too.
+        let mut p2 = proj(crate::projectile::STARDUST_CELL_MINION_SHOT);
+        p2.active = true;
+        p2.ai[1] = 5.0;
+        target_sticker_step(&mut p2, &w, &[], &mut rng, None);
+        assert!(!p2.active);
+    }
+
+    /// W4-d12 FINAL item 4 — the 614 chase reads `ai[1]`, NOT `ai[0]`
+    /// (`Projectile.cs:40594` `int num2 = (int)this.ai[1]`). The DOC-SWEEP
+    /// item-1 fix seats the Cell fire's target in ai1 (`:66088` ai0=0/
+    /// ai1=num13); this witness pins the CONSEQUENCE at the chase machine:
+    /// with the target at index 1 (to the −X side) and a dead NPC at index
+    /// 0 (to the +X side), a correctly-seated shot (ai1=1) chases −X toward
+    /// the live target — the OLD mis-seating (ai0=target, ai1=0) would read
+    /// NPC 0 and either chase +X or kill on the dead target. The a9-side
+    /// compose-contract: the cell→614 spawn passes the scan's NPC index as
+    /// the target (the `MinionShot.target` field), the dispatch seats it in
+    /// ai1 for the 614 only — a9's four machines (156/164/169/206) spawn
+    /// their OWN shots (755/946/831/970/864/1119/1120) with ai0=features/
+    /// ai1=0 and never touch the 62-arm/614, so the seating composes.
+    #[test]
+    fn w4_d12_final_the_614_chase_reads_ai1_not_ai0() {
+        let w = empty_world();
+        let mut rng = census();
+        // Index 0: a DEAD NPC to the +X side (the old ai0=target mis-read).
+        let mut dead = Npc::new(crate::npc::NpcKind::Zombie, 700.0, 500.0, 0, 0.0);
+        dead.hp = 0;
+        dead.max_hp = 100;
+        // Index 1: the LIVE target to the −X side.
+        let mut live = Npc::new(crate::npc::NpcKind::Zombie, 300.0, 500.0, 0, 0.0);
+        live.hp = 100;
+        live.max_hp = 100;
+        let npcs = vec![dead, live];
+        let mut p = proj(crate::projectile::STARDUST_CELL_MINION_SHOT);
+        p.active = true;
+        p.pos = Vec2::new(500.0, 500.0);
+        p.ai[0] = 0.0; // the fire passes ai0 = 0 (:66088)
+        p.ai[1] = 1.0; // the target index rides ai1 (:66088)
+        target_sticker_step(&mut p, &w, &npcs, &mut rng, None);
+        assert!(p.active, "the live target at ai1=1 keeps the shot alive");
+        assert!(p.vel.x < 0.0, "the chase aims at NPC 1 (−X), not NPC 0 (+X)");
+        // The mis-seating contrast: ai1=0 reads the DEAD NPC 0 → kill.
+        let mut mis = proj(crate::projectile::STARDUST_CELL_MINION_SHOT);
+        mis.active = true;
+        mis.pos = Vec2::new(500.0, 500.0);
+        mis.ai[0] = 1.0; // the OLD wrong seating (target in ai0)
+        mis.ai[1] = 0.0;
+        target_sticker_step(&mut mis, &w, &npcs, &mut rng, None);
+        assert!(!mis.active, "the old ai0=target seating chased the dead NPC 0");
+    }
+
+    /// The stick lifetimes (`:40673-40689`): the Daybreak 5·MaxUpdates = 10 s
+    /// (600 ticks), the Tentacle Spike / Blood Butcherer 9·MaxUpdates = 540.
+    #[test]
+    fn w4_d12_f1_stick_lifetimes() {
+        let w = empty_world();
+        let mut rng = census();
+        let mut n = Npc::new(crate::npc::NpcKind::Zombie, 600.0, 500.0, 0, 0.0);
+        n.hp = 100;
+        n.max_hp = 100;
+        let mut day = proj(crate::projectile::DAYBREAK);
+        day.active = true;
+        day.ai[0] = 1.0;
+        day.ai[1] = 0.0;
+        day.local_ai[0] = 598.0;
+        target_sticker_step(&mut day, &w, std::slice::from_ref(&n), &mut rng, None);
+        assert!(day.active, "599 < 600");
+        target_sticker_step(&mut day, &w, std::slice::from_ref(&n), &mut rng, None);
+        assert!(!day.active, "600 >= 5 * 2 * 60 (:40674-40677)");
+        let mut spike = proj(crate::projectile::TENTACLE_SPIKE);
+        spike.active = true;
+        spike.ai[0] = 1.0;
+        spike.ai[1] = 0.0;
+        spike.local_ai[0] = 538.0;
+        target_sticker_step(&mut spike, &w, std::slice::from_ref(&n), &mut rng, None);
+        assert!(spike.active, "539 < 540");
+        target_sticker_step(&mut spike, &w, std::slice::from_ref(&n), &mut rng, None);
+        assert!(!spike.active, "540 >= 9 * 1 * 60 (:40678-40685)");
+    }
+
+    /// The card's flight tick-1 census (`:40632-40644`): one Next(projFrames)
+    /// frame roll + 6 dust × 2 NextFloat = 12 floats; the Y clamp at 12; the
+    /// stick-entry ring adds 12 × 2 = 24 floats (`:40690-40699`).
+    #[test]
+    fn w4_d12_f1_card_flight_and_stick_entry_census() {
+        let w = empty_world();
+        let mut rng = census();
+        let mut p = proj(crate::projectile::DEAD_CELLS_KILLING_DECK_CARD);
+        p.active = true;
+        p.pos = Vec2::new(500.0, 500.0);
+        p.vel = Vec2::new(3.0, 20.0);
+        target_sticker_step(&mut p, &w, &[], &mut rng, None);
+        assert_eq!(p.vel.y, 12.0, "the Y clamp (:40632-40635)");
+        assert_eq!(rng.ints, 1, "the frame roll Next(8)");
+        assert_eq!(p.frame, 7, "max-1 scripted roll");
+        assert_eq!(rng.floats, 12, "6 dust × (scale + velocity)");
+        assert_eq!(rng.doubles, 0);
+        // The stick entry (pinned to a tile, ai[1] = -1).
+        p.ai[0] = 1.0;
+        p.ai[1] = -1.0;
+        p.local_ai[0] = 0.0;
+        let mut rng2 = census();
+        target_sticker_step(&mut p, &w, &[], &mut rng2, None);
+        assert_eq!(rng2.floats, 24, "the 12-dust ring (:40690-40699)");
+        assert_eq!(rng2.ints, 0);
+    }
+
+    /// The card's tile-stuck → return transition (`:40776-40786`): no solid
+    /// tile in the ±7 scan → ai[0]=2, velocity zero, the inline Damage()
+    /// request; the return state flies at the owner at 16 (`:40866`).
+    #[test]
+    fn w4_d12_f1_card_returns_to_owner() {
+        let w = empty_world();
+        let mut rng = census();
+        let mut p = proj(crate::projectile::DEAD_CELLS_KILLING_DECK_CARD);
+        p.active = true;
+        p.pos = Vec2::new(500.0, 500.0);
+        p.ai[0] = 1.0;
+        p.ai[1] = -1.0; // tile-stuck, no tile in the empty world
+        p.local_ai[0] = 0.0; // the stick-entry ring fires this tick
+        let owner = StickerOwner {
+            center: Vec2::new(508.0, 400.0),
+            dead: false,
+            hitbox: tr_core::whip::Rect::new(498, 379, 20, 42),
+        };
+        let dmg = target_sticker_step(&mut p, &w, &[], &mut rng, Some(owner));
+        assert!(dmg, "the transition arms the inline Damage() (:40784)");
+        assert_eq!(p.ai[0], 2.0, "the return state");
+        // The return block ran the same call: velocity aims at the owner.
+        assert!((p.vel.length() - 16.0).abs() < 1e-4, "the 16-speed return");
+        assert!(p.vel.y < 0.0, "the owner is above");
+        assert_eq!(p.local_ai[1], 1.0, "the return latch fired");
+        assert_eq!(rng.floats, 24 + 24, "the stick ring + the 6×4 latch fan");
+        // A dead owner kills the returning card (`:40858-40862`).
+        let dead_owner = StickerOwner {
+            center: Vec2::new(508.0, 400.0),
+            dead: true,
+            hitbox: tr_core::whip::Rect::new(498, 379, 20, 42),
+        };
+        target_sticker_step(&mut p, &w, &[], &mut rng, Some(dead_owner));
+        assert!(!p.active, "the dead owner kills the card");
+    }
+
+    /// The 975 pulse census (`:40810-40847`): the every-other-tick pulse is
+    /// one RotatedByRandom pair (2 doubles) + 2 NextFloatDirection (2
+    /// doubles) + the Next(3) clone gate; on 0 one more pair (2 doubles).
+    /// The latch adds 10 CircularEdge unit floats.
+    #[test]
+    fn w4_d12_f1_butcherer_pulse_census() {
+        let w = empty_world();
+        let mut n = Npc::new(crate::npc::NpcKind::Zombie, 600.0, 500.0, 1, 0.0);
+        n.hp = 100;
+        n.max_hp = 100;
+        let mut p = proj(crate::projectile::BLOOD_BUTCHERER);
+        p.active = true;
+        p.ai[0] = 1.0;
+        p.ai[1] = 1.0; // pinned to NPC 1 (> 0, the pulse gate)
+        p.time_left = 100; // even → the pulse fires
+        let mut rng = ScriptRng::with_rolls(&[1]); // the clone gate rolls 1 (no clone)
+        target_sticker_step(&mut p, &w, &[n.clone(), n], &mut rng, None);
+        assert_eq!(rng.draws, vec![(0, 3)], "only the clone gate is an int");
+        assert_eq!(p.local_ai[1], 1.0, "the rotation latch fired");
+        // The latch's rotation: velocity (2,0) → π/2.
+        let mut p2 = proj(crate::projectile::BLOOD_BUTCHERER);
+        p2.active = true;
+        p2.ai[0] = 1.0;
+        p2.ai[1] = 1.0;
+        p2.time_left = 101; // odd → no pulse
+        p2.vel = Vec2::new(2.0, 0.0);
+        let mut n2 = Npc::new(crate::npc::NpcKind::Zombie, 600.0, 500.0, 1, 0.0);
+        n2.hp = 100;
+        n2.max_hp = 100;
+        let mut rng2 = ScriptRng::with_rolls(&[]);
+        target_sticker_step(&mut p2, &w, &[n2.clone(), n2], &mut rng2, None);
+        assert!(rng2.draws.is_empty(), "odd timeLeft: no pulse, no gate");
+        assert!((p2.rot - std::f32::consts::FRAC_PI_2).abs() < 1e-5, "the latch rotation");
+    }
+
+    /// The F1 census' pin-gated debuffs (`:11339-11350`, `:11375-11378`):
+    /// Daybreak 189/300, TentacleSpike 337/540, BloodButcherer 344/540,
+    /// StardustMinionBleed 183/900 — all gated on `ai[1] == i`, no rolls.
+    #[test]
+    fn w4_d12_f1_sticker_debuff_pin_gates() {
+        for (kind, buff) in [
+            (crate::projectile::DAYBREAK, 189),
+            (crate::projectile::TENTACLE_SPIKE, 337),
+            (crate::projectile::BLOOD_BUTCHERER, 344),
+            (crate::projectile::STARDUST_CELL_MINION_SHOT, 183),
+        ] {
+            let mut p = proj(kind);
+            p.ai[1] = 2.0;
+            let mut n = Npc::new(crate::npc::NpcKind::Zombie, 0.0, 0.0, 0, 0.0);
+            let mut rng = ScriptRng::with_rolls(&[]);
+            thrown_on_hit(&p, &mut n, 2, &mut rng);
+            assert!(n.buffs.find_buff_index(buff).is_some(), "kind {kind}: pin → buff {buff}");
+            assert!(rng.draws.is_empty(), "kind {kind}: unconditional");
+            let mut n2 = Npc::new(crate::npc::NpcKind::Zombie, 0.0, 0.0, 0, 0.0);
+            thrown_on_hit(&p, &mut n2, 3, &mut rng);
+            assert!(n2.buffs.find_buff_index(buff).is_none(), "kind {kind}: mismatch → none");
+        }
+    }
+
+    /// W4-d12 F1 — the Daybreak's Kill census (`:72129-72143`): 2×5 dust
+    /// (Next(3) type + NextFloat scale each = 10 ints + 10 floats), then the
+    /// owner-gated spawn's NextFloat scale seed; ai1 = 0.85 + 0.5·1.15.
+    #[test]
+    fn w4_d12_f1_daybreak_death_spawns_the_953() {
+        let mut p = proj(crate::projectile::DAYBREAK);
+        p.damage = 40;
+        p.pos = Vec2::new(500.0, 300.0);
+        let mut rng = census();
+        let blast = sticker_death(&mut p, true, &mut rng).expect("the 953 request");
+        assert_eq!(rng.ints, 10, "2 trail points × 5 type picks");
+        assert_eq!(rng.floats, 11, "10 scale bumps + the spawn seed");
+        assert_eq!(blast.damage, 40, "the damage carries");
+        assert!((blast.ai1 - (0.85 + 0.5 * 1.15)).abs() < 1e-6, ":72143");
+        assert!((blast.x - 508.0).abs() < 1e-6, "the centre X");
+        assert!((blast.y - 308.0).abs() < 1e-6, "the centre Y");
+        // A foreign owner: the dust census still runs, NO spawn (`:72141`).
+        let mut p2 = proj(crate::projectile::DAYBREAK);
+        let mut rng2 = census();
+        assert!(sticker_death(&mut p2, false, &mut rng2).is_none());
+        assert_eq!(rng2.ints, 10);
+        assert_eq!(rng2.floats, 10, "no spawn seed for a foreign owner");
+    }
+
+    /// W4-d12 F1 — the card's Kill census (`:74817-74829`): the Item8 cue +
+    /// 12×2 NextFloat; the 614/971 puffs draw ZERO.
+    #[test]
+    fn w4_d12_f1_card_and_puff_death_censuses() {
+        let mut p = proj(crate::projectile::DEAD_CELLS_KILLING_DECK_CARD);
+        p.pos = Vec2::new(500.0, 300.0);
+        let mut rng = census();
+        assert!(sticker_death(&mut p, true, &mut rng).is_none());
+        assert_eq!(rng.floats, 24, "the 12-dust ring × 2");
+        assert_eq!(p.wants_sound, Some((2, 8, 500.0, 300.0, 0.0)), "the Item8 cue");
+        for kind in [crate::projectile::STARDUST_CELL_MINION_SHOT, crate::projectile::TENTACLE_SPIKE] {
+            let mut q = proj(kind);
+            let mut r = census();
+            assert!(sticker_death(&mut q, true, &mut r).is_none());
+            assert_eq!(r.ints + r.floats + r.doubles, 0, "kind {kind}: zero draws");
+        }
+    }
+
+    /// W4-d12 F1 — the spawn-time rotation latch (`FinalizeProjectile`
+    /// `:22049-22056`): a fresh sticker reads velocity-heading + π/2 (the
+    /// card cancels it); the 614 chase keeps it for its whole flight.
+    #[test]
+    fn w4_d12_f1_spawn_rotation_latch() {
+        use crate::projectile::ProjectilePool;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(crate::projectile::DAYBREAK, 0, 400.0, 300.0, 4.0, 0.0, 10, 2.0, 0.0, 0.0)
+            .unwrap();
+        assert!(
+            (pool.slots()[slot].rot - std::f32::consts::FRAC_PI_2).abs() < 1e-5,
+            "the +X heading latches +π/2"
+        );
+        let card = pool
+            .spawn_with_data_ai_owned(crate::projectile::DEAD_CELLS_KILLING_DECK_CARD, 0, 400.0, 300.0, 4.0, 0.0, 10, 2.0, 0.0, 0.0)
+            .unwrap();
+        assert!(pool.slots()[card].rot.abs() < 1e-5, "the card cancels the +π/2");
+    }
+
+    /// The dispatch serves the WHOLE census: a pool-spawned 636 runs the
+    /// arm through `match data.ai_style` 113 (the age counter advances),
+    /// and the rowless-decline is gone for every census kind.
+    #[test]
+    fn w4_d12_f1_the_dispatch_serves_the_census() {
+        use crate::projectile::{ProjectilePool, FlailInputs, YoyoInputs};
+        let mut pool = ProjectilePool::new();
+        let mut w = World::new("t".into(), 128, 128);
+        let mut rng = census();
+        let mut npcs: [Npc; 0] = [];
+        for kind in TARGET_STICKERS {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 400.0, 300.0, 4.0, 0.0, 10, 2.0, 0.0, 0.0)
+                .unwrap_or_else(|| panic!("kind {kind} declines (rowless?)"));
+            pool.update(
+                &mut w, &mut npcs, None, None, None,
+                YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+            );
+            let p = &pool.slots()[slot];
+            // The flight-age counter advanced once per sub-step (the 636/
+            // 1024 carry extraUpdates 1 → two sub-steps). The 614 chase
+            // branch keeps ai[1] as the target index — it kills on the
+            // empty NPC list.
+            if kind != crate::projectile::STARDUST_CELL_MINION_SHOT {
+                assert!(p.active, "kind {kind} survives tick 1");
+                let steps = 1.0 + p.extra_updates as f32;
+                assert_eq!(p.ai[1], steps, "kind {kind}: the arm ran (:40612)");
+            } else {
+                assert!(!p.active, "the 614 chase kills on the empty NPC list");
+            }
+            pool.kill(slot);
+        }
     }
 }

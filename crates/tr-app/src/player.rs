@@ -675,6 +675,13 @@ pub struct Player {
     /// +level per tick, one mana per 6. NOT reset by ResetEffects (no
     /// C# reset site); the zero-level arm zeroes it.
     pub nebula_mana_counter: i32,
+    /// `Player.setSolar` (`Player.cs:2816`, `ApplySetBonus_Solar`
+    /// `:16369`) — the Solar armor set bonus flag; the aiStyle-116
+    /// SolarFlareRay's `timeLeft = 2` keep-alive gate
+    /// (`Projectile.cs:34446-34449`). W4-d12 lands the flag-only wiring
+    /// (the `set_stardust` precedent); the endurance +0.12 / solarCounter
+    /// / solarShields halves are the shield lane's (deferred, ANALYSIS).
+    pub set_solar: bool,
     /// `Player.ownedProjectileCounts[ProjectileID.Count]` (`Player.cs:2992`)
     /// — recounted every tick from the live pool (`:25565`); the summon
     /// buff-arms and the keep-alive checks read exactly this.
@@ -2060,6 +2067,31 @@ pub struct Player {
     /// `Player.meleeEnchant` (`Player.cs:1068`, arms `:12013-12044`): the
     /// weapon-imbuement id 1..8 (0 = none).
     pub melee_enchant: u8,
+    /// `Player._spawnTentacleSpikes` (`Player.cs:2896`): the Tentacle Spike
+    /// (item 5094) melee on-hit proc latch — armed on the use start
+    /// (`ItemCheck_OwnerOnlyCode` `:43468-43471`, `ItemAnimationJustStarted`),
+    /// consumed by the first landed melee hit (`TentacleSpike_TrySpiking`
+    /// `:44160-44172`). W4-d12 DOC-SWEEP item 3.
+    pub spawn_tentacle_spikes: bool,
+    /// `Player._spawnBloodButcherer` (`Player.cs:2898`): the Blood Butcherer
+    /// (item 795) melee on-hit proc latch — armed on the use start
+    /// (`:43472-43475`), consumed by `BloodButcherer_TryButchering`
+    /// (`:44174-44186`). W4-d12 DOC-SWEEP item 4.
+    pub spawn_blood_butcherer: bool,
+    /// `Player._spawnVolcanoExplosion` (`Player.cs:2900`): the Fiery
+    /// Greatsword / Volcano (item 121) melee on-hit proc latch — armed on
+    /// the use start (`ItemCheck_OwnerOnlyCode` `:43476-43479`), consumed
+    /// by `Volcano_TrySpawningVolcano` (`:44150-44158`) at
+    /// `ApplyNPCOnHitEffects` `:44485-44488` (damage ×0.75). The gate is
+    /// `HittableForOnHitRewards` — NO liveness term, so a killing blow
+    /// still fires the explosion. W4-d12 FINAL item 1.
+    pub spawn_volcano_explosion: bool,
+    /// `Player.killingCardFireType` (`Player.cs:3188`): the Dead Cells Killing
+    /// Deck (item 5461) card-draw cycle 0..3 — the four fire modes
+    /// (`ItemCheck_Shoot`'s 5461 arm `:49190-49261`): 0 single, 1 forward+back,
+    /// 2 six-card fan, 3 recall-all. Advances after every use, wraps >3 → 0;
+    /// `UpdateDead` zeroes it (`:16992`). W4-d12 DOC-SWEEP item 5.
+    pub killing_card_fire_type: i32,
     /// The `petFlag*`/light-pet bools (`Player.cs:18413-18600`'s clears),
     /// indexed by the PET PROJECTILE id — the C# flags are per-pet (buff 341
     /// sets the 881 and 934 flags shared with buffs 284/317).
@@ -2558,6 +2590,7 @@ impl Player {
             nebula_level_mana: 0,
             nebula_level_damage: 0,
             nebula_mana_counter: 0,
+            set_solar: false,
             tag_effects: crate::tag_effects::TagEffectStack::default(),
             whip_range_multiplier: 1.0,
             whip_use_time_multiplier: 1.0,
@@ -2944,6 +2977,14 @@ impl Player {
             sunflower: false,
             rabid: false,
             melee_enchant: 0,
+            // W4-d12 DOC-SWEEP items 3/4 — the melee on-hit proc latches
+            // (`Player.cs:2896`/`:2898`'s bool field defaults).
+            spawn_tentacle_spikes: false,
+            spawn_blood_butcherer: false,
+            spawn_volcano_explosion: false,
+            // W4-d12 DOC-SWEEP item 5 — the card-draw cycle opens at 0
+            // (`Player.cs:3188`'s int field default).
+            killing_card_fire_type: 0,
             pet_flags: [false; PROJ_COUNT],
             shroomite_stealth: false,
             stealth: 0.0,
@@ -3844,6 +3885,9 @@ impl Player {
         // flag read (M4-PROJ-8 phase 4) despawns the minions.
         self.num_minions = 0;
         self.slots_minions = 0.0;
+        // W4-d12 DOC-SWEEP item 5 — `Player.cs:16992`: the dead tick zeroes
+        // the Killing Deck card-draw cycle.
+        self.killing_card_fire_type = 0;
         // `Player.cs:17020` — `this.chest = -1`: the dead tick force-closes
         // the open container SILENTLY (no sound — the range close's 11 never
         // fires; S1-P-i43). `chestX/Y` stay, exactly like the C#.
@@ -6297,6 +6341,13 @@ impl Player {
         self.nebula_level_life = 0;
         self.nebula_level_mana = 0;
         self.nebula_level_damage = 0;
+        // W4-d12 — the per-tick `setSolar = false` clear (`Player.cs:25620`,
+        // the `Player.Update` body ahead of `UpdateEquips` — the same
+        // pre-equip position as the C#): the Solar triple's armor-set arm
+        // below re-derives it per tick (the `set_stardust` flag-only
+        // precedent). The `ApplySetBonus_Solar` endurance +0.12 /
+        // solarCounter halves are the shield lane's (deferred, ANALYSIS).
+        self.set_solar = false;
         // `:18663`: `lavaMax = 0` — the charm rows below re-add it.
         self.lava_max = 0;
         // `:18659`: `dashType = 0` - the armor-set rows and the accessory
@@ -6547,6 +6598,16 @@ impl Player {
                     self.nebula_cd -= 1;
                 }
                 self.set_nebula = true;
+            }
+            // W4-d12 — the Solar triple (`ArmorSetBonuses.cs:479`,
+            // `Benefits.Solar` `:37-40` → `ApplySetBonus_Solar`
+            // `Player.cs:16366-16369`): `setSolar` gates the aiStyle-116
+            // SolarFlareRay's keep-alive (`Projectile.cs:34446-34449`).
+            // The flag-only landing (the Stardust precedent); the
+            // endurance +0.12 / solarCounter++ / solarShields halves are
+            // the shield lane's (deferred, ANALYSIS).
+            (2763, 2764, 2765) => {
+                self.set_solar = true;
             }
             _ => {}
         }
@@ -21821,5 +21882,26 @@ mod s1_p_i27_tests {
         p.equipped[2] = 0;
         p.update(&w, PlayerInput::default());
         assert!(!p.set_stardust, "(:18743)");
+    }
+
+    /// W4-d12 — the Solar triple's flag grant + the per-tick reset
+    /// (`ArmorSetBonuses.cs:479`, `ApplySetBonus_Solar` `Player.cs:16369`,
+    /// the `Player.Update` clear `:25620`): the 2763/2764/2765 triple arms
+    /// `setSolar`; taking the armor off clears it on the next tick (the
+    /// `set_stardust` flag-only precedent).
+    #[test]
+    fn w4_d12_the_solar_flag_grants_and_resets() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[0] = 2763;
+        p.equipped[1] = 2764;
+        p.equipped[2] = 2765;
+        p.update(&w, PlayerInput::default());
+        assert!(p.set_solar, "the Solar triple (ArmorSetBonuses.cs:479)");
+        p.equipped[0] = 0;
+        p.equipped[1] = 0;
+        p.equipped[2] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.set_solar, "the per-tick clear (:25620)");
     }
 }
