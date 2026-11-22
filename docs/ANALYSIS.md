@@ -5689,6 +5689,43 @@ the stand-interaction input seam (a separate slice).
 invoked this round. Every citation re-verified against the decompiled
 source.
 
+## The Old One's Army's starter crystals + tier-persistence witnesses (W4-d124)
+
+The research/36 gap list's two remaining crystal/persistence items closed:
+
+* **Starter crystals** — `DropStarterCrystals` (`DD2Event.cs:929-942`,
+  `SummonCrystalDirect`'s `:598` call — right after the crystal's `NewNPC`
+  at `:597`) lands in `use_etherian_crystal` (`world_sim/editing.rs`): the
+  FIRST active 548 in `Main.npc` order pays FIVE `Item.NewItem(source,
+  Center, 3822, 2)` drops (`:935-938`) then breaks (`:939`). The port just
+  pushed the only crystal, so its centre is the drop point; the drops ride
+  `spawn_item_drop_px` on the use-path's `UpdatePlayers` stream. **RNG
+  census**: the summon's gates draw nothing (the arena walker is zero-RNG,
+  S1-E-12d); each `Item.NewItem` (`Item.cs:49654-49772`) draws the velocity
+  pair `Next(-30,31)*0.1` / `Next(-40,-15)*0.1` (`:49749-49750` — 3822 is
+  NOT in `ItemID.Sets.ItemNoGravity`, `ItemID.cs:1320`) and `Prefix(0)`
+  draws nothing (`Item.cs:515-518`'s early return); the port's pinned
+  triplet+phase is 3 draws per drop — **15 draws total**, witness-pinned
+  against a fresh stream advanced 15 `next_float`s
+  (`crystal_summon_tests::the_crystal_on_the_stand_starts_the_army`).
+* **Tier persistence witnesses** — the three `DownedInvasionT1/2/3` flags
+  (`DD2Event.Save` `:151-156` / `Load` `:158-170`) were already written/read
+  by `wld/sections/flags.rs` (S1-E-12c) but had NO round-trip coverage:
+  `owned_world`/`assert_owned_fields`/`expected_flags_block` (`wld/mod.rs`)
+  now carry them in an alternating pattern (T1=true, T2=false, T3=true —
+  an adjacent byte swap breaks the assert), pinned at tail offsets
+  **1931/1932/1933** (savedBartender@1930 stays unowned — the port skips
+  the byte, `:166`); the reader witness patches the synthetic fixture at
+  those offsets and walks the **v178 gate** (the quartet ends the tail at
+  178) plus the below-177 clear (`ResetProgressEntirely` `:160-165`, the
+  World defaults already false). The golden-file rewrite test's DD2T1/2/3
+  cmp rows (`:3301`) keep guarding the reader/writer agreement on the C#
+  fixture's own values.
+
+**Code-only mode** (user directive): witnesses WRITTEN, NOT RUN; no cargo
+invoked this round. Every citation re-verified against the decompiled
+source. d123 owns the loss/medals lane — untouched here.
+
 ## The Ancient Cultist (M4-EVENT-6)
 
 The Lunar Events' summoner (422, aiStyle 94): the 180-tick ritual

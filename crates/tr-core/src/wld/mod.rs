@@ -1684,6 +1684,12 @@ mod tests {
         // (`:1413`, v261) — ride the round-trip at non-default values.
         world.combat_book_was_used = true;
         world.unlocked_slime_red_spawn = true;
+        // W4-d124: the DD2 tier flags (`DD2Event.Save`, `DD2Event.cs:151-156`)
+        // ride the round-trip in an ALTERNATING pattern — an adjacent byte
+        // swap (T1/T2 or T2/T3) breaks the assert, so the offsets are pinned.
+        world.dd2_downed_t1 = true;
+        world.dd2_downed_t2 = false;
+        world.dd2_downed_t3 = true;
         world
     }
 
@@ -1910,6 +1916,11 @@ mod tests {
             got.unlocked_slime_red_spawn, want.unlocked_slime_red_spawn,
             "{context}: unlockedSlimeRedSpawn"
         );
+        // W4-d124: `DD2Event.Load` (`DD2Event.cs:158-170`) — the three
+        // downed-tier flags (`Save` `:151-156`).
+        assert_eq!(got.dd2_downed_t1, want.dd2_downed_t1, "{context}: DownedInvasionT1");
+        assert_eq!(got.dd2_downed_t2, want.dd2_downed_t2, "{context}: DownedInvasionT2");
+        assert_eq!(got.dd2_downed_t3, want.dd2_downed_t3, "{context}: DownedInvasionT3");
     }
 
     #[test]
@@ -2064,6 +2075,13 @@ mod tests {
         // party + 13 sandstorm + 4 DD2 + 5 BG (mushroom/underworld/tree2-4)
         // = tail offset 1939 (gate V3, i35).
         tail[1939] = u8::from(world.combat_book_was_used);
+        // W4-d124: `DD2Event.Save`'s three tier flags (`WorldFile.cs:1374-1375`,
+        // `DD2Event.cs:153-155`) sit right behind savedBartender@1930 (unowned,
+        // stays the table's 0): T1@1931, T2@1932, T3@1933 — the combat book's
+        // 1939 minus the 5 BG bytes (1934..1938) and the book byte itself.
+        tail[1931] = u8::from(world.dd2_downed_t1); // DownedInvasionT1
+        tail[1932] = u8::from(world.dd2_downed_t2); // DownedInvasionT2
+        tail[1933] = u8::from(world.dd2_downed_t3); // DownedInvasionT3
         tail[2045] = u8::from(world.fast_forward_to_dusk); // fastForwardTimeToDusk (`:1416`)
         tail[2046] = world.moondial_cooldown; // moondialCooldown (`:1417`)
         b.extend(tail);
@@ -3532,6 +3550,46 @@ mod tests {
             &buf[flags_at..ptr1],
             &want[..],
             "the owned flags block matches the C# table byte for byte"
+        );
+    }
+
+    #[test]
+    fn w4_d124_the_dd2_tier_flags_land_at_their_csharp_byte_offsets() {
+        // `DD2Event.Load` (`DD2Event.cs:158-170`): savedBartender first
+        // (`:166`, unowned — the port skips it), then DownedInvasionT1/T2/T3
+        // (`:167-169`). The reader must land each tier byte in its World
+        // field at tail 1931/1932/1933 — the writer's offsets pinned by
+        // `expected_flags_block` (the owned-world sweep above).
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        data[tail_at + 1931] = 1; // DownedInvasionT1 (`:167`)
+        data[tail_at + 1933] = 1; // DownedInvasionT3 (`:169`)
+        let w = parse(&data).expect("the DD2 fixture parses");
+        assert!(w.dd2_downed_t1, "DownedInvasionT1 at tail 1931");
+        assert!(!w.dd2_downed_t2, "T2 untouched at tail 1932");
+        assert!(w.dd2_downed_t3, "DownedInvasionT3 at tail 1933");
+        // The savedBartender byte at 1930 is consumed, not stored.
+        data[tail_at + 1930] = 1; // savedBartender (`:166`, unowned)
+        let w = parse(&data).expect("the bartender byte parses");
+        assert!(w.dd2_downed_t1 && w.dd2_downed_t3, "the skip keeps alignment");
+        // The minimum gate version: at v178 the DD2 quartet ENDS the tail
+        // (`flags_tail`'s >194+ gates are all absent) — the reader's last
+        // four bytes are savedBartender + the three tiers.
+        let mut data = synthetic_file(178, &[2, 144], 160, 6);
+        let tail_at = tail_offset_in_synthetic(&data, 178);
+        let end = tail_at + flags_tail(178).len();
+        data[end - 3] = 1; // DownedInvasionT1
+        data[end - 1] = 1; // DownedInvasionT3
+        let w = parse(&data).expect("v178 loads");
+        assert!(w.dd2_downed_t1, "the v178 gate reads T1");
+        assert!(!w.dd2_downed_t2, "T2 stays false");
+        assert!(w.dd2_downed_t3, "the v178 gate reads T3");
+        // Below 178 nothing is read (`DD2Event.cs:160-165` clears the tiers
+        // via `ResetProgressEntirely`; the World defaults are already false).
+        let w = parse(&synthetic_file(177, &[2, 144], 160, 6)).expect("v177 loads");
+        assert!(
+            !w.dd2_downed_t1 && !w.dd2_downed_t2 && !w.dd2_downed_t3,
+            "below 178 the tiers stay at their fresh-world defaults"
         );
     }
 
