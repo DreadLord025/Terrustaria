@@ -302,7 +302,9 @@ fn main() -> Result<()> {
     let world_path = if let Some(p) = crate::env::world_path() {
         p
     } else {
-        match args.get(1) {
+        // The vanilla launch flags are `key=value` args (`Main.cs:5040+`),
+        // never world paths — skip them when picking the positional path.
+        match args.iter().skip(1).find(|a| !a.contains('=')) {
             Some(p) => PathBuf::from(p),
             None => app::latest_own_world().unwrap_or(app::terrstaria_world()?),
         }
@@ -325,7 +327,12 @@ fn main() -> Result<()> {
     // register the shipped resources and apply the saved culture before the
     // first menu draws. `TR_LANG` mirrors LaunchInitializer's `-lang` flag
     // (`LaunchInitializer.cs:120` sets the culture ahead of the config read).
-    let settings = settings::Settings::load();
+    let mut settings = settings::Settings::load();
+    // `Main.cs:5079-5083` — the `slowliquids=1` launch flag raises
+    // `Setting_UseReducedMaxLiquids` (no config.json key; the settings
+    // screens never write it). Applied ahead of `App::new` so the boot
+    // settle's `ReInit` cap (`Liquid.cs:98-101`) sees it.
+    settings.apply_launch_args(&args);
     let culture = crate::env::lang()
         .map(|name| tr_core::localization::GameCulture::from_name(&name))
         .unwrap_or_else(|| tr_core::localization::GameCulture::from_name(&settings.language));

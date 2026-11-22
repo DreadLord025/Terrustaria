@@ -18287,6 +18287,612 @@ Documented deviations, none reachable from the ported runtime surface:
   (both `false` вЂ” the exact runtime state) and
   `createMergeTilesDuringGen` rides the `WorldGen.cs:22480` caller.
 
+## The liquid skip/settle surface (W4-g47, 2026-11-21, code-only mode)
+
+The settled-liquid skip/settle semantics (`Liquid.cs`) are ported into
+`crates/tr-core/src/liquid.rs` in three phases, each with written-not-run
+witnesses (code-only mode — no cargo/tests this lane):
+
+- **Phase 1 (`047f37f3`)** — the `quickSettle` flag (`Liquid.cs:35`) and its
+  two `Liquid.Update` arms: the fall's remainder clamp (`:588-591`) and the
+  254 settle-step promotion (`:944-948`), plus the pass-head `quickFall`
+  derivation (`:1056-1068`). The `skipLiquid` tile flag (`Tile.cs:511-521`)
+  and its per-entry gate (`:1096-1104`) / post-fall writes (`:586-587`) /
+  `AddWater` clear (`:1173`) were already landed (anchors `set_skip`).
+- **Phase 2 (`e43fa0bc`)** — `DelWater` (`:1470-1599`): the <2 / <20 / >=20
+  drain rules, the keep-alive (`:1506-1510`), the wake/type bookkeeping, the
+  lava grass-ring conversions, the swap-remove (kill rides, delay does not),
+  and the `CheckAlch`/`CheckLilyPad` tail. The `kill >= 8` retirement sweep's
+  254->255 promotion (`:1109-1119`), the `LiquidBuffer.AddBuffer`/`DelBuffer`
+  counts (`LiquidBuffer.cs:11-27` — the `checkingLiquid` bit, the
+  `maxLiquidBuffer - 2` cap, the swap-remove promotion), the stuck band's
+  10 000-cycle self-clear (`:1131-1149`), and the gfx-quality `quickSettle`
+  override (`Main.cs:17105-17113`). `CheckAlch`/`CheckLilyPad` are public
+  kill-executing seams in `edit/kill.rs` (`WorldGen.cs:45972`/`:59203`);
+  their drops ride `LiquidSystem::drain_edit_kills`.
+- **Phase 3 (`dab3df3d`)** — the force-settle family `QuickWater`/
+  `SettleWaterAt`/`AttemptToMoveLava|Honey|Shimmer` (`:104-433`), panic mode
+  `StartPanic` + the 5-row drain (`:966-1054`), `ReInit` (`:83-102`),
+  `WaterCheck` (`WorldGen.cs:80415-80494`), and the load-settle driver
+  `settle_loaded_world` (`WorldFile.cs:733-764`). The
+  `GetTileData(Tile)`/`CheckWaterDeath`/`CheckLavaDeath` seams
+  (`TileObjectData.cs:5196`/`:5083`/`:5107`) resolve the liquid-death kills.
+  The `edit_kills` drops resolve under the `UpdateLiquid` RNG swap
+  (`WorldGen.cs:71529`) in `world_sim/liquids.rs`.
+
+Documented deviations / deferred items — **re-marked by the W4-g46 RE-FOLD
+(union `e7626b72`..`d95911ce`, research/252's graft order)**: the three
+"NOT ported" deferrals below are now LANDED on the union branch; the g47
+lane's original deferral text is kept struck for the record.
+
+- ~~**Underworld evaporation (`:466-474`) is NOT ported.**~~ **PORTED on the
+  union (W4-g46 graft, research/252 step 2).** `LiquidSystem::underworld_layer`
+  seeds `height - 200` in `new` (runtime-faithful, unguarded `y > layer`,
+  water-only `min(2, liquid)` shed pre-flow, zero-kill `KILL_DEAD`); the fall
+  arm reads the LIVE post-evaporation level (`own_now`), the kill bookkeeping
+  keeps the pre-evap capture. The mass-conservation pins stay out of the band
+  via the `#[cfg(test)] new_flow_fixture` sentinel (`underworld_layer =
+  i32::MAX`, the `tool.rs` convention) — EVERY flow witness uses it; the
+  evaporation witnesses (`liquid_evaporation` ×4 + the re-pinned layer-row
+  boundary in `liquid_merge_cadence`) use `new`. Census deviation 3 FIXED.
+- ~~**`AddWater`'s guards are NOT ported into `add_water`.**~~ **PORTED on the
+  union (W4-g45 round 2 `daa1cdb0` carried per research/252 step 5).** The
+  `:1163` 5-tile border exclusion + the `type != 546` carve-out + the
+  `:1183-1206` inline `CheckLavaDeath`/`CheckWaterDeath` → `KillTile` are on
+  `add_water(&mut World, …)`; the inline kill's `TileKill` queues on
+  `edit_kills` (the LOOT UPGRADE — g45b discarded it). The `:1183` gate reads
+  the port's `generating` field, which IS `isGeneratingOrLoadingWorld` (armed
+  during the LOAD settle too). The ~40 fixtures are embedded (+6,+6) past the
+  border with containment walls; `liquid_addwater_guards` ×10 witness the
+  arms (the inline-death witness asserts the queued record). Census
+  deviation 7 FIXED.
+- ~~**The merger keeps g45's nudge (`World.frame_rng`).**~~ **SUPERSEDED —
+  the union keeps g46's arm + per-consumer `surface_rng`** (research/69 row
+  10 / research/252 step 3): world-seeded `UnifiedRandom`, drawn ONLY on a
+  254 3-cell average, pinned draw-for-draw by
+  `surface_rng_is_the_world_seeded_unified_stream`. g45's three nudge
+  witnesses are RE-PINNED onto it (`w.seed = 35/0`). The 7/5-neighbour extra
+  wake passes (`:748-771`/`:821-836`, g45 `ccfe0b42`) are carried (research/252
+  step 4); the extra-wake witness is re-derived onto the 7-arm fixed-point
+  fixture (the C# 3-cell arm has no extra wakes). Census deviations 5/6
+  FIXED on the union.
+- **`settle_loaded_world` IS wired into the load path (W4-g47 settle wiring,
+  `551c1e7b`).** The hook rides the [`App::new`] tail — the shared boot +
+  `swap_world` construction, the port's `Main.LoadWorld` tail — so a swapped
+  world settles exactly as a booted one. The round-trip pins do NOT move:
+  every `saveglue.rs` fixture is DRY, and a dry world's settle mutates zero
+  tiles, bumps zero revisions and consumes zero `frame_rng` draws (witnessed:
+  `liquid_settle_wiring::the_load_settle_on_a_dry_world_is_a_byte_and_rng_noop`,
+  `saveglue::w4_g47_app_new_on_a_dry_world_moves_no_liquid_bytes`).
+  **Re-pin obligation:** a WET saved world with objects near liquid WILL
+  re-pin `frame_rng` (the kill cascades' `SquareTileFrame` reset rolls) and
+  change its liquid bytes on load — the vanilla behaviour. Any future pin over
+  a wet world must re-derive against the settled state, not the raw file.
+  The load context arms `isGeneratingOrLoadingWorld` (the merge selector takes
+  the `LiquidOverwriteStrip` arm, `Liquid.cs:1329`) + the `waterLine = maxTilesY`
+  pin (`WorldFile.cs:734`, the re-type stays dead); `generatingWorld` stays down;
+  both drop at `:764`. `TR_NO_SETTLE` is the A/B escape hatch; the `TR_POOL`/
+  `TR_SPOUT` staging fixtures opt out (they stage pre-settle liquid the verified
+  S1-G-14 captures need).
+- **The gfx-quality `quickSettle` override (`Main.cs:17105-17113`) IS wired**
+  (census): `gfx_quality.rs::apply` reads `app.liquids.quick_settle()` and
+  restores the full window + single cycle, called every frame at
+  `frame/world.rs:669` (`gfx_quality_apply`). Both it and the budget block
+  (`:17076-17091`) are gated on `!isGeneratingOrLoadingWorld`, so neither fires
+  during the load drain — the driver runs on the `ReInit` stock pair, exactly
+  as the C# load does. **The `Setting_UseReducedMaxLiquids` caps ARE ported
+  (W4-g47 final phase, `d3a30ebf`)**: the settings field
+  (`settings.reduced_max_liquids`, launch-flag-only — `slowliquids=1`,
+  `Main.cs:5079-5083`, no config.json key, default false `:67008`), the
+  `ReInit` 5000 cap (`Liquid.cs:98-101`), the gfx `2500 + 2500 * gfxQuality`
+  budget (`:17080-17083`) + flat-5000 quickSettle override (`:17108-17111`),
+  and the pass-head `numLiquid > 2000` quickFall OR-arm (`:1057-1060`). The
+  MP-only `:1000-1003` cap stays out of scope (census deviation 9). Stock
+  (flag false) is byte-identical to the pre-port behaviour. Witnesses:
+  `gfx_quality::quick_settle_overrides_the_quality_liquid_budgets`,
+  `gfx_quality::reduced_max_liquids_caps_the_quality_and_quick_settle_budgets`,
+  `settings::slowliquids_launch_flag_sets_reduced_max_liquids`,
+  `liquid_settle_wiring::reduced_max_liquids_caps_reinit_at_5000`,
+  `liquid_settle_wiring::reduced_max_liquids_ors_numliquid_over_2000_into_quick_fall`.
+- **The `SettleWaterAt` gen re-type arm (`:178-192`) IS ported (W4-g47 settle
+  wiring)** — gated on `generating`: the classic `waterLine` boundary (`:184-187`)
+  and the remix `lavaLine`/`rockLayer`/`oceanDepths` band (`:182`), honey/shimmer
+  keep their type (`:178`). `set_gen_settle_context` is R-12-5's plumbing seam.
+  **The dungeon re-type (`:188-191`) IS ported (W4-g47 final phase,
+  `d3a30ebf`)** — `GenDungeonContext` (`liquid.rs`): the outer potential-bounds
+  hitboxes (the f24/c30 `create_potential_dungeon_bounds` products, converted
+  from `DualDungeonSetup.dungeons[i].outer`) + the `Main.wallDungeon` base set
+  (`dungeon_features::is_dungeon_wall`) unioned with the dual-dungeon style-wall
+  extensions (`DungeonCrawler.cs:155-181`). STRICT `generatingWorld`-gated; the
+  wall reads the ORIGIN cell (the C# `tile` reference is bound at `:152` —
+  **f25's gen-local copy reads the LANDING cell instead, a deviation the merger
+  reconciles onto this form**). An un-armed context = the C# empty
+  `dungeonGenVars` list, arm dead; the runtime/load settle never arms it. The
+  runtime settle keeps `generating` down; the load settle arms it but the
+  `waterLine` pin keeps the classic arm dead. Witnesses:
+  `liquid_settle_wiring::the_gen_settle_dungeon_arm_retypes_lava_back_to_water`,
+  `...::the_dungeon_arm_needs_bounds_and_wall_and_stays_dead_unarmed`.
+  **`QuickWater`'s `ShimmerRemoveWater` (`:108`/`:138`) IS ported (final
+  phase)** — `WorldGen.cs:34823-34851` (the 150-radius circle, rows
+  `sy-150..=sy+75`, non-shimmer liquid zeroed + tombstone 162 deactivated),
+  STRICT `generatingWorld`-gated (`:34825`), position via
+  `set_gen_shimmer_position` — the gen driver copies the g36-A1 GenVars slot
+  (`gv.shimmer_position`, the `WorldGen.cs:15241` Shimmer-step write); `None`
+  mirrors the `Vector2D.Zero` reset (`:7039`), a corner no-op. Witnesses:
+  `liquid_settle_wiring::shimmer_remove_water_clears_the_circle_but_keeps_shimmer`,
+  `...::shimmer_remove_water_is_dead_on_load_and_without_a_position`.
+  **Still deferred:** the noTraps boulder swap (subsumed by the pass-scoped
+  `tilesIgnoreWater`) and `LiquidInteractionsCleanup` (`generatingWorld &&
+  !skyblock`, strips gen merge tiles 56/659 — f25's gen module carries it).
+- **MP scaling / net change set** (`:987-1004`/`:1151-1156`) stay out of
+  scope (single-player target, census deviation 9/10).
+
+### The runtime settle-pump driver (R-12-5, W4-g47 continuation)
+
+The per-tick driver census: C# `Liquid.UpdateLiquid` (`Liquid.cs:983-1158`)
+is consumed by THREE drivers, and the port now carries all three:
+
+1. **The runtime pump** — `WorldGen.UpdateWorld` (`WorldGen.cs:71526-71534`):
+   `Liquid.skipCount++; if (skipCount > 1) { using
+   (Main.SwapRandom("UpdateLiquid")) Liquid.UpdateLiquid(); skipCount = 0; }`
+   — one pass per two 60 Hz world ticks (30 Hz), wrapped in the named RNG
+   stream. Ported VERBATIM as `LiquidSystem::update_world_tick` (the
+   `skip_count` field is the C# static `Liquid.cs:19`, zeroed by `ReInit`
+   `:85` — a world swap starts a fresh window). The app consumer
+   `world_sim/liquids.rs` now calls the engine driver instead of its own
+   `app.liquid_tick % 2` divider (field REMOVED — the counter's C# home is
+   the Liquid statics, not Main; the old divider never reset on world swap,
+   a phase deviation the driver port fixes). The `SwapRandom` block is the
+   caller's seam: the drained `edit_kills` resolve on `RngKey::UpdateLiquid`
+   (`resolve_liquid_edit_kills`), the exact stream the C# `KillTile` drops
+   draw under the swap; the engine pass itself draws nothing on this lane
+   (the g45/g46 nudge is their seam). The `isGeneratingOrLoadingWorld`
+   early-return (`:71497-71500`) is the frame loop's own gate (worldgen
+   completes before the loop starts). Cadence-identical to the old divider
+   on a fresh boot (both fire on ticks 2, 4, ...); witnesses:
+   `liquid_force_settle::the_update_world_driver_runs_the_pass_every_second_tick`
+   (byte-equal twin vs direct `update` over 40 ticks),
+   `...::re_init_resets_the_driver_divider`. Written, NOT run.
+   Pass-internal census (already landed, re-verified against the driver
+   read): the stride window `curMaxLiquid / cycles` with the `numLiquid`
+   clamp re-walk (`:1069-1105`), the quickFall two-loop shape (`:1083-1105`
+   — delay-10 force + skip-clear vs the skip-honouring normal loop), the
+   `wetCounter >= cycles` tail (`:1106-1149` — the descending `kill >= 8`
+   sweep with the 254→255 promotion, the `num8` buffer promotion with
+   `DelBuffer(0)`'s swap-remove, the ±50 stuck band), and the panic gate
+   (`:1005-1054`). The `:1087` quickFall loop writes `delay = 10` INTO the
+   entry; the port's pass loop passes the local 10 into `update_tile`,
+   whose quickFall arms return it unchanged (`Liquid.cs:483-491`/`:512-521`
+   skip the delay writes under quickFall), and the write-back
+   `self.active[i].delay = delay` persists it — the entry carries 10 out
+   of a quickSettle window exactly as the C# does (the first non-quickFall
+   lava visit flows immediately, no 5-tick re-throttle).
+2. **The load drain** — `settle_loaded_world` (`WorldFile.cs:733-764`),
+   WIRED at `App::new` (g47 `551c1e7b`); calls `update` directly (no
+   skipCount — the C# load loop does the same).
+3. **The gen settle loops** — `WorldGen.cs:16132-16210` /
+   `:21246-21309` (f25's lane; the gen/runtime split contract is recorded
+   in the f25 gen-pass census below).
+
+**The LiquidBuffer driver arm** (census re-verified, R-12-5): the buffer is
+NOT scanned per tick — it drains ONLY inside the `wetCounter >= cycles`
+tail (`Liquid.cs:1120-1130`), budget `num8 = min(numLiquid, numLiquidBuffer)`
+where `numLiquid` is the POST-retirement-sweep count (the C#'s
+`curMaxLiquid - (curMaxLiquid - numLiquid)` algebra). Each promotion clears
+the buffered cell's `checkingLiquid` (`:1127`), calls `AddWater` (which may
+REFUSE — dry/solid/border cells) and `DelBuffer(0)` UNCONDITIONALLY
+(`:1129`), the swap-remove moving the LAST entry into slot 0
+(`LiquidBuffer.cs:22-27`) — so a refused cell still leaves the buffer and
+the head order is LIFO-ish, not FIFO. `AddBuffer` (`LiquidBuffer.cs:11-20`)
+caps at `maxLiquidBuffer - 2` and marks `checkingLiquid` for dedupe; the
+port's `add_water` carries both arms (`:1167-1171` overflow threshold
+`curMaxLiquid - 1`). The ≥90%-full panic gate reads `buffer.len()` per
+update (`:1009-1020`). New witnesses (written, NOT run):
+`liquid_settle::the_promotion_budget_is_the_post_sweep_active_count_clamped_to_the_buffer`
+(the 1→2 budget growth over two cycles + the swap-remove head order),
+`...::the_promotion_delbuffers_even_when_addwater_refuses_the_cell`.
+
+**The f25 gen-pass split contract** (R-12-5 census of `0ed1f3cf` on
+`task/W4-f25`, claims read in `docs/research/12g-f25-settle-liquids.md`):
+f25 owns the GEN side — `worldgen/settle_liquids.rs` (the ocean retype
+sweep `:16137-16146`, the `QuickWater(3)` pre-settle, the 10-round budget
+loop, `ClearPendingLiquid`, `LiquidInteractionsCleanup` with the `:23755`
+up-shimmer quirk) + the pipeline step; g47 owns the RUNTIME side (the
+skipCount pump above, the load drain, the panic/stuck/buffer machinery).
+The shared `Liquid.UpdateLiquid` engine is ONE body — f25's gen-local
+copies dedupe onto the g47 surfaces at the g46c graft (research/252 step 6).
+Carried onto the g47 machinery here (the export surface f25's module
+drives): `tiles_ignore_water`, `world_gen_tiles_ignore_water` (the
+`gen_ignore_water` field + the `kind_solid` fold — the C# pokes the RAW
+`Main.tileSolid` table, so the lift rides the shared read), `set_bubble_solid`,
+`num_liquid_total`, `clear_pending_liquid` (`WorldGen.cs:80496-80513` —
+drops both lists + their checking bits, leaves the skip bits), 
+`liquid_reaction_check`, and the NEW shared driver `gen_settle_loop`
+(`WorldGen.cs:16158-16206` verbatim: WaterCheck → quickSettle up → 10
+rounds × `num3 * 5` budget with the live-count re-raise → WaterCheck
+between rounds → ClearPendingLiquid → quickSettle down; the Part-2 twin
+`:21265-21305` is classic-identical — its only deltas are the
+`getGoodWorldGen` tileSolid[56] poke `:21250-21253`, the absent
+extraLiquid round bump, and the progress fractions). f25's
+`set_generating(remix)` maps onto `set_gen_settle_context` (which arms
+the STRICT `generating_world` too — the fuller C# context; f25's flag
+only armed `generating` + `remix`, so its dungeon/shimmer arms were dead
+by flag as well as by un-armed context — same classic result). The
+context arming stays the GEN DRIVER's job (research/252 step 7:
+`set_gen_settle_context(water_line, lava_line, remix)` +
+`set_gen_shimmer_position(gv.shimmer_position)` + the f24/c30
+`GenDungeonContext`; `edit_kills` drained/discarded at the pass tail —
+records must not leak across the per-pass instance). f25's claimed
+"no RNG draws in the whole pass" holds only for ITS discard-only
+`end_pass`; on the g47 machinery the DelWater grass-ring/lily kills fire
+during gen and ride `edit_kills` (the world-hash RE-DERIVE obligation,
+research/252's witness table — unchanged by this carry). Witnesses
+(written, NOT run): `liquid_gen_driver::world_gen_tiles_ignore_water_lifts_the_door_family`,
+`...::clear_pending_liquid_drops_both_lists_and_their_checking_bits`,
+`...::the_gen_settle_loop_drains_the_lists_and_drops_quick_settle`,
+`...::the_gen_settle_loop_on_a_diffusing_film_still_clears_the_tail`.
+
+**The e21 pump/settle compose** (R-12-5 driver 4): the pump active-gate
+(`Wiring.cs:2043-2125` — the 142/143 registration, the 19-cap, the 2×2
+SkipWire) and `XferWater` (`:475-523` — the type-matched 255-capped
+teleport with the live in-tile re-read) were landed by M7-WIRE/e21, but
+the compose with the settle pump was MISSING: the C# fires
+`WorldGen.SquareTileFrame` after every out transfer (`:512`), on the
+emptied in tile (`:516`) and on the in tail (`:521`), and `TileFrame`
+re-queues every wet cell through `Liquid.AddWater`
+(`WorldGen.cs:81344-81346`, `netMode != 1 && !generatingWorld`) — that is
+how pump-teleported liquid joins the active lists and flows. The port's
+`xfer_water` mutated the tiles and never woke the settle (its doc claimed
+"the port's liquid sim reads the tiles next tick" — false: the sim walks
+its ACTIVE LIST, not the grid). Fixed: `Wiring` queues the touched
+positions (`pump_wakes`, in the C#'s call order — the emptied-in arm
+queues twice, `:516` + `:521`), the app wiring tick drains them into
+`LiquidSystem::wake_around(x, y, 1)` (the 3×3 `TileFrame` walk; the
+dry/solid/checking guards are `AddWater`'s own). The reframe's
+neighbour-frame half is a no-op for pumps (the transfer touches only
+liquid, the bodies keep their frames). The wake is dedupe-safe
+(`checkingLiquid`) and RNG-free. Witnesses (written, NOT run):
+`wiring::tests::the_pump_moves_water_and_adopts_the_type` extended (the
+three wake sites in order + the drain),
+`world_sim::wiring::tests::r_12_5_the_pump_transfer_wakes_the_settle_and_the_water_flows`
+(the full compose: trip → transfer → wake → skipCount pass → the blob
+falls out of the out body).
+
+### The DelWater keep-one (W4-g47 vs W4-g45, for the merger)
+
+Both branches ported `Liquid.DelWater` (`:1470-1599`) independently. **g47's
+`liquid.rs::del_water` is canonical** — keep it, drop g45's. Arm-by-arm:
+
+| Arm (C#) | g47 | g45 | Verdict |
+| --- | --- | --- | --- |
+| `<2` dry + side wakes (`:1478-1498`) | edge-safe probe + chunk marks | edge-safe probe (`2249cf59`), no chunk marks | g47 (superset; adopted g45's probe form) |
+| `<20` drain (`:1499-1505`) | `tile_open` fold, live `here` | `!tile_is_solid` fold | equivalent (`tile_open` == the C# `!nactive \|\| !solid \|\| solidTop`) |
+| `>=20` keep-alive (`:1506-1510`) | `kill=0; return` (no retire) | `return false` (caller skips swap) | equivalent |
+| above-wake + type-clear (`:1511-1518`) | live re-read | live re-read | equivalent |
+| side wakes (`:1519-1528`) | **live re-read** (adopted) | live re-read | g45's form adopted into g47 |
+| lava grass ring (`:1529-1560`) | converts + **chunk-dirty mark** (adopted) | converts + mark | g45's marking adopted into g47 |
+| honey/shimmer re-check (`:1562-1569`) | yes | yes | equivalent |
+| swap-remove (`:1575-1579`) | **INSIDE** `del_water` (self-copy-then-pop) | caller-side (`retire_sweep`: pop-then-copy-if-`l<len`) | equivalent (both match the C# `numLiquid--` then copy `liquid[numLiquid]`; at `l==last` g47 self-copies+pops, g45 just pops — same result). g47 keeps it in one body, so the stuck self-clear and the sweep share it without a second caller |
+| `CheckAlch` tail (`:1580-1583`) | `check_alch` → `edit_kills` (drops resolved) | `check_alch_tile` wrapper (discards drops) | **g47** — the drop records ride `drain_edit_kills` → `resolve_liquid_edit_kills`; g45's wrapper drops the herb loot |
+| `CheckLilyPad` tail (`:1584-1597`) | explicit 3-arm order (adopted) + `edit_kills` | explicit 3-arm order, `check_lily_pad` wrapper (discards drops) | **g47** — same arm order, but keeps the drop seam |
+
+The merger should take g47's `del_water`/`end_pass`/`add_water` wholesale and
+NOT g45's `retire_sweep`/`refill_from_buffer`/`check_alch_tile`/`check_lily_pad`
+wrappers. The decisive difference is the **drop seam**: g47's `Check*` kills
+ride `edit_kills` (the herb/lily-pad loot resolves into item drops through
+`resolve_liquid_edit_kills`, the same path the live liquid tick uses), while
+g45's `check_alch_tile`/`check_lily_pad` wrappers execute the kill but discard
+the drop record — a behavioural loss. The swap-remove shapes are equivalent.
+g45's genuinely-better details (edge probe, live side reads, ring
+chunk-marking, explicit lily arm order) are already folded into g47's body
+(`551c1e7b`). g45's `genRand` nudge + 7/5-neighbour wakes (`ccfe0b42`) are a
+SEPARATE seam (`update_tile`'s averaging arms, not `del_water`) — keep those.
+
+### The g46c graft-union verdict (W4-g47 final phase, cross-note to research/69)
+
+The g46c in-flight graft (on `task/W4-g46-liquid-evaporation`, base
+research/69 `f3b33b92`) MUST adopt this keep-one table. research/69 was
+written against g47 `cfe5f1c9` — BEFORE the settle wiring (`551c1e7b` /
+`ba694653` / `95e9c1ef`) folded g45's details in and BEFORE the final phase
+(`d3a30ebf`) adopted g46's last loot delta. The updated adoption set:
+
+1. **`del_water` = g47 canonical, WHOLESALE** (this branch's tip). research/69
+   row 1's recipe ("g46 body grafted onto g47's skeleton") is SUPERSEDED: the
+   g45 details it wanted (edge probe, live side reads, ring marking, lily arm
+   order) are already in g47's body, and the one remaining g46 delta — the
+   `square_tile_frame_record` loot seam on the grass-ring / lily-reframe arms
+   (row 1's "g47 `square_tile_frame_default` DISCARDS the kill/drop records"
+   cell) — is ADOPTED into g47 at `d3a30ebf` (one `edit_kills` queue, g46's
+   `retire_kills` name dropped per row 1 step 2's own recommendation). g46's
+   `check_alch_tile` wrapper is NOT needed — g47's `edit::check_alch` already
+   returns the record. **Do NOT graft g46's `del_water` body over this one.**
+2. **g45-details-adopted**: `2249cf59` (edge probe), the live side re-reads,
+   the ring chunk-marking, the explicit lily 3-arm order — all in `551c1e7b`.
+   g45's nudge + extra wakes (`ccfe0b42`) stay a separate carry (research/69
+   rows 10/12: g46's `surface_rng` arm wins the stream pick; g45's 7/5-wakes
+   are the one non-superseded g45 item).
+3. **g45b AddWater-guards (`daa1cdb0`/`8e81814e`) are a SEPARATE seam — carry
+   them** (research/69's fixture note said "stays deferred"; that verdict is
+   now stale: g45 round 2 landed the guards WITH the fixture widening). The
+   graft takes g45b's `add_water` guards (the `:1163` border + `type != 546`
+   carve-out + the `:1183-1206` inline death check) onto g47's `add_water`
+   body, with g45b's embedded (+6,+6) fixtures. Two reconciliations: (a) the
+   `:1183` early-return reads `isGeneratingOrLoadingWorld` — g47's field for
+   that flag is `generating` (armed during the LOAD settle too), so g45b's
+   `self.generating` gate is already the right one; (b) g45b's inline
+   `kill_tile` discards the drop record — upgrade it to push the `TileKill`
+   onto `edit_kills` (the same loot-seam argument as the DelWater keep-one).
+4. **g46 evap (`524faa8b`) grafts as research/69 row 9 says** (faithful
+   unguarded `y > height-200`, `new_flow_fixture` sentinel) — g47 never
+   ported evaporation, no conflict.
+5. **The final-phase surfaces g46c must NOT overwrite** (`d3a30ebf`):
+   `reduced_max_liquids` (ReInit cap + pass-head OR-arm + gfx pair),
+   `GenDungeonContext` + `set_gen_dungeon_context` (the `:188-191` arm —
+   ORIGIN wall read; f25's gen-local landing-wall read is the deviation),
+   `set_gen_shimmer_position` + `shimmer_remove_water` (both `QuickWater`
+   arms), and the WIRED load hook (`App::new` → `settle_loaded_world`,
+   research/69 row 8's "stays UNWIRED" is stale — wired at `551c1e7b` with
+   the dry-world no-op proof). f25's gen-local `shimmer_remove_water` /
+   `in_any_potential_dungeon_bounds` copies dedupe onto these LiquidSystem
+   surfaces at the gen-driver graft (research/69 rows 4/5's "keep both"
+   becomes "keep one" — the gen module calls `sys.set_gen_shimmer_position`
+   / `sys.set_gen_dungeon_context` and drops its private copies).
+
+The full graft order, the producer wiring and the witness re-pin table live
+in **`docs/research/252-liquid-merge-order-g46.md`** (the FINAL liquid merge-order
+doc — which branch base, graft steps 1-7, re-pins, gate checklist).
+
+### The g46c RE-FOLD landing record (W4-g46 union, 2026-11-21, code-only)
+
+The graft above EXECUTED on `task/W4-g46-liquid-evaporation` in research/252's
+order (the stale `f57d7bac` union — built against g47 `cfe5f1c9` — was
+replaced, not patched):
+
+| Step | Commit | Scope |
+| --- | --- | --- |
+| 1 base swap + evap/nudge/wakes | `e7626b72` | g47 `95e9c1ef` wholesale (liquid.rs + edit.rs/edit/kill.rs + app/mod WIRED hook + saveglue/env/editing/gfx_quality/liquids); g46 evap (`underworld_layer`/`own_now`/sentinel) + `surface_rng` nudge + g45 7/5-wakes re-grafted; `retire_kills` name DROPPED (`edit_kills` canonical), `check_alch_tile` wrapper dropped (`edit::check_alch` returns the record), g46 `check_lily_pad` pure form replaced by g47's `raw_solid` closure form |
+| 2 g47c final code | `f588d53c` | `d3a30ebf` folded: reduced-liquids (settings/launch/gfx/ReInit/OR-arm), `GenDungeonContext` + ORIGIN-wall dungeon re-type, `ShimmerRemoveWater` both arms, the g46 `square_tile_frame_record` loot seam adoption, 8 witnesses |
+| 3 g45b guards | `16fd6ad7` | `8e81814e` carried: border + 546 carve-out + inline death with the `edit_kills` loot upgrade, `&mut World` ripple (5 app callers + every test), ~40 fixtures (+6,+6)-widened, the g45 witness union (delwater ×5 / nudge ×3 re-pinned / extra-wake re-derived / guards ×10), g46's `TileFrameImportant` case-518 dispatch restored into `square_tile_frame` (the g47 base lacked it — `WorldGen.cs:84966-84968`) |
+| 4 g47d drivers | `d95911ce` | R-12-5 ×4 (`3dbbe3ef`/`d9445fc4`/`4288657c`/`ae688401`): `update_world_tick` + the app divider removal, buffer-arm witnesses, the f25 export surface + `gen_settle_loop`, the e21 `pump_wakes` compose |
+
+Witness count: **102 `#[test]` fns** in the union `liquid.rs` (g47's base +
+final + driver pins, g46's evap/stream/lily pins, g45's cadence/delwater/
+nudge/guard carries — the duplicates dropped per research/252's table). All
+written-not-run; compile-by-inspection only. Steps 6/7 (the f25 gen-module
+dedupe + the f24/c30/g36 producer wiring) stay with the worldgen master
+merge — the export surface + context setters they call are ON this branch;
+the f25 gen-hash RE-DERIVE obligation (research/252 witness table) stands,
+and the gen-side `edit_kills` drain choice must be picked + recorded there.
+The runtime-inert gen-fields contract (research/69 §contract, research/252
+gate 3) holds: `generating`/`generating_world`/`gen_ignore_water`/
+`quick_settle` default false; the context setters are gen-driver-only; the
+load driver arms `generating` but never `generating_world`;
+`underworld_layer` is runtime-faithful; `surface_rng` advances only on a
+254 average.
+
+### The Liquid.cs FULL-FN final census (W4-g47 closeout, SEAL carry `4c81731b`)
+
+The whole decompiled `Liquid.cs` function list (24 members, script-diffed
+against the port's fn list at `dd66fa3a` + the closeout) — the final
+per-fn verdict, nothing left unaccounted:
+
+| C# fn (`Liquid.cs`) | Port home | Verdict |
+| --- | --- | --- |
+| statics + static ctor (`:15-55`/`:1669-1677`) | `LiquidSystem` fields + `MAX_ACTIVE`/`MAX_BUFFER`/`CYCLES` consts | PORTED (instance-per-world instead of statics — the ReInit contract) |
+| `NetSendLiquid` (`:57-67`) + `_netChangeSet`/`_swapNetChangeSet` + the `UpdateLiquid` broadcast tail (`:1151-1156`) | — | OUT OF SCOPE (MP; census deviation 9/10, single-player target) |
+| `tilesIgnoreWater` (`:69-73`) | `tiles_ignore_water` + the `kind_solid` grate/boulder fold | PORTED (`4288657c` export; the pass wraps itself `:986`/`:1157`) |
+| `worldGenTilesIgnoreWater` (`:75-81`) | `world_gen_tiles_ignore_water` + the `gen_ignore_water` `kind_solid` fold | PORTED (`4288657c`) |
+| `ReInit` (`:83-102`) | `re_init` (incl the reduced-liquids 5000 cap) | PORTED |
+| `QuickWater` (`:104-148`) | `quick_water` + `shimmer_remove_water` | PORTED; the `verbose` progress arm + the noTraps boulder swap + `LiquidInteractionsCleanup` ride f25's gen module (cited-dropped here: the boulder swap is subsumed by the pass-scoped ignore, the cleanup is f25's `:23755` carry) |
+| `SettleWaterAt` (`:150-289`) | `settle_water_at` (gen re-type + dungeon arm + ORIGIN wall) | PORTED |
+| `AttemptToMoveHoney/Lava/Shimmer` (`:291-433`) | `attempt_to_move_honey/lava/shimmer` | PORTED (left/right/up/down order, the had-type XOR gate) |
+| `UpdateProgressDisplay` (`:435-447`) | — | UI-ONLY (the `Main.statusText` gen loading bar; no tile effect, no RNG — the port's loader owns its own progress text) |
+| `Update` (`:449-964`) | `update_tile` (+ the fall/row/kill arms) | PORTED — the evap block (`:466-474`) and the Next(30) nudge (`:892-895`) are ON the union (the g46 graft steps 2/3, `e7626b72`); the g45 doc-sweep's LIVE reads (fall `own_now`, down-arm post-burn re-read) sealed onto it |
+| `StartPanic` (`:966-981`) | `start_panic` | PORTED |
+| `UpdateLiquid` (`:983-1158`) | `update` + `end_pass` | PORTED except the MP cycle scaling (`:987-1004`), the MP section-reset (`:1038-1051`), the `Misc.WaterSettled` console line (`:1034`) and the net broadcast (`:1151-1156`) — all MP/console, cited-dropped |
+| `AddWater` (`:1160-1207`) | `add_water` | PORTED — the `:1163` 5-tile border exclusion + `type != 546` carve-out and the `:1183-1206` inline water/lava-death check are ON the union (g45b's guards, `16fd6ad7`, with the `edit_kills` loot upgrade; research/252 step 5) |
+| `UndergroundDesertCheck` (`:1209-1223`) | `underground_desert_check` | PORTED |
+| `LiquidCheck` (`:1225-1309`) | `liquid_check` (the `create_merge_tiles_during_gen` param carried) | PORTED; the down arm's LIVE post-burn reads sealed (`c8908a55` carry); the `WorldGen.cs:22480` gen finalize-sweep CALLER is f25's lane (the fn is here, the gen driver calls it) |
+| `LiquidOverwriteStrip` (`:1311-1323`) | `liquid_overwrite_strip` | PORTED |
+| `CreateLiquidMergeTile` (`:1325-1373`) | `create_liquid_merge_tile` | PORTED with the cited `ReplaceTile` fallback (`KillTile` + forced `PlaceTile`, ANALYSIS above) |
+| `GetLiquidMergeTypes` (`:1375-1443`) | `get_liquid_merge_types` + `get_liquid_change_type` | PORTED |
+| `LavaCheck`/`HoneyCheck`/`ShimmerCheck` (`:1445-1468`) | `lava_check`/`honey_check`/`shimmer_check` | PORTED (the lava desert strip rides `generating && !remix && !dual_dungeons`) |
+| `DelWater` (`:1470-1599`) | `del_water` (canonical, keep-one) | PORTED (the g46 evap-adjacent drained-type `mark_chunk` rides the union re-fold) |
+| `AddGameplaySnapshotComponents` (`:1601-1667`) | — | OUT OF SCOPE (the `StateSnapshot` dev/rollback tooling; no gameplay effect) |
+| instance fields `x/y/kill/delay` (`:45-51`) | `Entry` | PORTED |
+
+`LiquidBuffer.cs` (both fns, `:11-27`): PORTED inside `add_water`/
+`end_pass` (the `maxLiquidBuffer-2` cap, the checking mark, the
+swap-remove promotion — the buffer-arm census, R-12-5 driver 2).
+
+**"LiquidEdge" does not exist** — a full-tree grep of `decompiled/` and
+`decompiled-libs/` finds zero hits. The liquid EDGE surface is
+`LiquidRenderer.InternalPrepareDraw`'s Pass-4 edge flags
+(`LiquidRenderer.cs:161-613`), ported in `liquid_draw.rs`
+(`has_left/right/top/bottom_edge` + the wall levels, the `Cache` struct ≈
+`LiquidCache`/`LiquidDrawCache`). The waterfall-source family
+(`WaterfallManager.cs`: `CheckForWaterfall` `:95`, `FindWaterfalls`
+`:107`, `UpdateFrame` `:257`, both `DrawWaterfall` overloads,
+`StylizeColor`/`GetAlpha`/`TrySparkling`/`AddLight`, `Draw` `:1118`) is
+ported in `waterfall/mod.rs` + `waterfall/draw.rs` (the A4 landing,
+witnessed). **Gaps-list (LiquidRenderer.cs, render-side, NOT liquid.rs
+scope)**: `HasFullWater` (`:799-813`, the `Main.DrawBlack` `:58008`
+background-coverage gate — the port's black-merge in `render/tiles.rs`
+keys on light-zero + wall coverage, no liquid probe), `GetVisibleLiquid`
+(`:815-829`, zero C# callers found in the decompile — dead surface),
+`SetWaveMaskData` (`:854-880`, the `WaterShaderData.cs:166` viscosity
+mask chain — the port's `water_mask.rs` renders its own mask from the
+liquid rects, no per-cell viscosity read), and the wind-driven
+`_frameState` (`Update` `:831-847`: `windSpeedCurrent*25 ± 6` — the port's
+`anim_time*8` clock is wind-INDEPENDENT, a render-cadence deviation).
+All four are draw-side follow-ups, cited here, none blocks the liquid
+SIM merger.
+
+### The honey/shimmer settle specifics (W4-g47 closeout per-liquid census, SEAL carry)
+
+The drivers are NOT water-centric — the per-liquid arms verified against
+`Liquid.Update` (`Liquid.cs:480-566`) arm-for-arm:
+
+- **lava**: `LavaCheck` EVERY visit (`:482`, before the gate), then the
+  `delay < 5` throttle (`:485-490`) — one fall per SIX visits (five
+  throttled + one flow), reset to 0. Port: `update_tile`'s lava arm.
+- **honey**: non-lava cells wake their lava neighbours first (`:495-510`),
+  then `HoneyCheck` EVERY visit (`:513`), then the `delay < 10` throttle
+  (`:516-521`) — one fall per ELEVEN visits. Port: the honey arm.
+- **shimmer**: non-lava/non-honey cells wake their honey neighbours
+  (`:526-541`), then `ShimmerCheck` (`:544`) with **NO delay gate at all**
+  — the C# arm has no `delay++`/return; shimmer flows at the water
+  cadence (one tile per two passes via the down-arm `skipLiquid` pair).
+  Port: the shimmer arm — same shape, no gate. The `delay` field stays 0.
+- **water**: the else-arm wakes shimmer neighbours (`:548-563`), ungated.
+- The neighbour-wake cascade is per-kind EXCLUSIVE (a lava cell never
+  wakes lava neighbours; a honey cell wakes lava but not honey; a shimmer
+  cell wakes lava+honey but not shimmer) — the port's nested else-chain
+  mirrors it exactly.
+- `quickFall` bypasses BOTH gates (`:1083-1090` forces `delay = 10`
+  pre-Update — above both thresholds); the reduced-liquids
+  `numLiquid > 2000` OR-arm feeds the same bypass for all four kinds.
+- The settle drivers (`update_world_tick`, `gen_settle_loop`,
+  `settle_loaded_world`, the panic drain) are kind-agnostic by design —
+  the C# drivers never branch on liquid type; the per-kind behaviour
+  lives entirely in `Update`/`DelWater`/the checks, all ported.
+- The `DelWater` reaction tail is per-kind too (`:1529-1569`): lava →
+  `LavaCheck` + the grass ring, honey → `HoneyCheck` only, shimmer →
+  `ShimmerCheck` only; the port reads the LIVE cell kind post-drain,
+  same arms.
+- The e21 pump transfer is type-locked (`Wiring.cs:501` `b2 == b`) for
+  ALL four kinds — an empty out tile adopts the in type (`:497-499`),
+  including honey/shimmer; the port's `xfer_water` carries the same
+  lock + adoption + the three wakes per transfer regardless of kind.
+
+Closeout witnesses (written, NOT run — SEAL-carried with the §11
+dispositions): `shimmer_falls_every_visit_ungated` (the no-gate proof +
+the zero-delay pin, `liquid_sim`, sentinel-switched + border-re-pinned),
+`quick_fall_bypasses_both_delay_gates` (the lava+honey twins — the
+union's lava-only pin widened under the closeout name,
+`liquid_merge_cadence`). The honey 1-in-11 pin keeps the union's
+`honey_falls_once_every_eleven_visits` (same assertions, the pair
+deduped); the lava six-visit pin is the union's
+`lava_falls_once_every_six_visits` (the g47 machinery it pins is
+identical).
+
+### The liquid render-gaps closure (W4-g47 retire, SEAL carry `a9dba7cf1` via `a4d49b355`)
+
+The FULL-FN census's four draw-side follow-ups, each re-censused against
+the source and closed (code-only — witnesses written, NOT run; the code
+landed on this union in the A9.2 rows 6+7 fold):
+
+- **`HasFullWater` (`LiquidRenderer.cs:799-813`)** — ported as
+  `liquid_draw::has_full_water` over the prepared records (visible +
+  non-surface = full water; out-of-area = the C# out-of-cache `true`).
+  The consumer census: its ONLY caller is `Main.DrawBlack`'s run-break
+  (`Main.cs:58008`), and `DrawBlack` early-returns whenever
+  `TileDrawingBase.DrawOwnBlacks` is true (`:57943`) — the static ctor
+  sets it true (`TileDrawingBase.cs:54`) and the only writer is the dev
+  A/B tooling (`TimeLogger.ABTestFlag`, `TimeLogger.cs:443-453/:712`).
+  The port's merged wall+black path in `render/tiles.rs` IS the
+  DrawOwnBlacks=true default path (per-cell blacks in
+  `DrawSingleTile`/`WallDrawing`), so the gate has NO runtime consumer
+  in the shipped configuration — the query is ported for surface
+  completeness, cited unwired. NOT a sim-merger blocker (unchanged).
+- **`GetVisibleLiquid` (`:815-829`)** — re-grepped `decompiled/` AND
+  `decompiled-libs/`: zero callers. Dead surface, cited-dropped (the
+  research/02 pipeline row's stand-in verdict stands).
+- **`SetWaveMaskData` (`:854-880`) + the viscosity chain** — the data
+  census: `WAVE_MASK_STRENGTH = new byte[5]` (`:891`) is NEVER assigned
+  anywhere in the decompile, so the mask's R/G/A strength channels are
+  all-zero in 1.4.5.8; the only live byte is `VISCOSITY_MASK`
+  (`:892` = {0, 200, 240, 0, 0}) on B. Ported as
+  `liquid_draw::{VISCOSITY_MASK, WAVE_MASK_STRENGTH, WaveMaskCell,
+  wave_mask}` — the `:499-549` fill over the records (the fill gate is
+  `HasVisibleLiquid`, wider than the sprite pass's `IsVisible`; the
+  above-copy `:529-531` runs in the same column-major order; the
+  slot-3/slot-4 rows are byte-identical so the no-solidity distinction
+  cannot change a byte). `LiquidDraw` grows
+  `is_solid`/`is_half_brick`/`has_visible_liquid` for the probes. The
+  GPU consumer (`WaterShaderData.StepLiquids`' viscosity-filter chain,
+  `WaterShaderData.cs:164-182`, WaveQuality >= 3) stays shader-infra
+  scope: the port's `water_mask.rs` coverage mask (M1.4-BG-18 phase 4)
+  is the WaterDistortion input the port models; the per-cell viscosity
+  FILTER is the remaining infra step, cited — the data half is now
+  ported and witnessed.
+- **The wind-driven `_frameState` (`Update`, `:831-847`)** — PORTED and
+  WIRED: `liquid_draw::LiquidAnimClock` (`wind*25 ± 6` frames/s body
+  clock, wind-independent 0.5 frames/s waterfall clock, the single
+  +16 negative wrap then `%16` — a west wind below -0.24 leaves a
+  NEGATIVE frame, `(int)` truncation kept), ticked once per client
+  update in the frame head beside the sway counters
+  (`Main.cs:17043`'s site), stored on `App::liquid_clock`. The two
+  integer frames feed `draw_waters`/`draw_liquids`/`draw_shimmer`
+  (the `src_x == 16` interior rows ride the waterfall frame —
+  `LiquidRenderer.cs:634-641` — the shimmer pass the body frame only,
+  `:697`) and ride the G6 key's existing `anim` slot packed
+  (body frame low byte — the two's-complement cast keeps -15..15
+  injective — waterfall frame byte 1), gated on `has_liquids` exactly
+  as before. The old `anim_time*8`/`anim_time*0.5` derivations are
+  retired: **deliberate behaviour change** (the render-cadence
+  deviation the census cited is fixed): calm air now animates liquid
+  at 6 fps (was 8), wind accelerates/reverses it. Determinism holds:
+  the clock is a pure function of (dt, windSpeedCurrent), both
+  already G6-keyed inputs (`TR_WIND_FORCE` pins it for A/B shots);
+  liquid-free worlds keep the old cache behaviour bit-for-bit.
+  `FocusHelper.PauseLiquidRenderer` (the unfocused pause) has no port
+  analogue — the port has no unfocused-update path. The compile-critical
+  rider rode with it: the `liquid_clock` field on the flow.rs
+  front-end-boot App literal (`bf5fc4ffb`, the second full-App
+  construction site — both App literals covered).
+
+New witnesses (written, NOT run — `liquid_draw::tests`):
+`the_wave_mask_carries_only_the_viscosity_channel` (the four kinds +
+the above-copy + the solid no-copy), `has_full_water_reads_the_visible_non_surface_records`
+(interior true / surface false / dry false / out-of-area true),
+`the_liquid_clock_is_wind_driven_and_wraps_at_sixteen` (calm 6 fps,
+storm 37, the negative west remainder, the wind-independent waterfall
+clock). 3 anchors rows carried (`LiquidAnimClock`, `wave_mask`,
+`has_full_water`).
+
+### The g45d co-lane carry (W4-g47 retire, SEAL carry `2bbadd9bd`/`8d581953`/`c8908a55` via `a4d49b355`)
+
+The g45 doc-sweep's two liquid.rs sim fixes adopted onto the g47 canonical
+base and folded onto this union (research/252 §13's FINAL owner table; both
+were real fidelity gaps in the base body, not lane-specific deltas):
+
+- **The fall arm's LIVE read** (`Liquid.cs:570-575`, g45 `8d581953`):
+  `update_tile`'s down transfer now reads `own_now` (the live cell) after
+  the reaction block, not the `:464` entry snapshot — the side/up merge
+  can zero the checking cell mid-visit and the old pre-read resurrected
+  the consumed units into the cell below. The union already carried
+  `own_now` — ZERO code delta, the comment upgrade only (the base cite
+  `:570-575` + the reaction-consumption case); the g46 evap case rides
+  the same live read.
+  Witness: `the_fall_arm_reads_the_live_post_reaction_level` (lava+water
+  side merge under quickSettle, the fall moves the live 0 —
+  `new_flow_fixture` sentinel, the `add_water(&mut w)` re-pin per the
+  A9 rider).
+- **The down arm's LIVE post-burn reads** (`Liquid.cs:1278-1306`, g45
+  `c8908a55`): `liquid_check` re-reads the cell after the `tileCut` burn
+  before the `:1286` gate + the `:1303` merge-type reads; `flag` stays
+  the pre-kill `:1274` read. The seven cut kinds outside
+  `tileObsidianKill` (444/518/519/549/637/638/711) now drain/merge like
+  the C#. The union carried the SAME stale read — the `2bbadd9bd` hunk
+  landed VERBATIM (the re-fold's stale copy superseded, NOT arm-merged).
+  Witnesses: the 4-pin `liquid_downarm_live` module carried verbatim
+  (ONE copy, sentinel-switched).
+
+The g45 bucket module (`fa96cf32a`, `editing/buckets.rs`) is a
+Player/editing surface — g45 owns it whole; the seal carried it with the
+`mod/use_buckets` pre-melee wire + `bucket_use_tests` restored to ×15
+(the 5 LIQUID-FINAL sponge/stack/bottomless witnesses the partial carry
+had dropped). The g45 shimmer-flow witness (`99a4f8ccf`) drops onto the
+closeout's `shimmer_falls_every_visit_ungated` — the keep-ONE MERGED form
+(the g47 shelf fixture + entry.delay==0 asserts AND the g45 cadence-trace
+asserts ride one pin, per the g45 research/69 A9.2 row 4). Post-fold
+count RE-MEASURED on this tip: **109 `liquid.rs` pins + 2 wiring compose
+pins** (research/252 §15 Seal 4's sealed expectation; §13's 99+2 as
+projected, +10 guards arrived early at re-fold step 3). All written,
+NOT run. 2 anchors rows carried (`the_fall_arm_reads…`,
+`liquid_downarm_live`).
+
 ## The Frost Legion machine (R-25-1, 2026-11-13)
 
 `NPC.AI()`'s aiStyle-38 block (`NPC.cs:28995-29145`) is ported 1:1 as

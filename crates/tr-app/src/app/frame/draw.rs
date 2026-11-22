@@ -875,10 +875,24 @@ impl App {
                         }
                     }
 
-                    // Liquids animate the texture at 8 fps; include the frame in the G6
-                    // key only when the world has any liquid.
+                    // `LiquidRenderer.Update` (`LiquidRenderer.cs:831-847`,
+                    // called once per client update at `Main.cs:17043`): the
+                    // liquid texture clock is WIND-driven — `wind*25 ± 6`
+                    // frames/s for the body/edge rows, a wind-independent
+                    // 0.5 frames/s for the interior waterfall rows. Both
+                    // integer frames ride the G6 key (packed) only when the
+                    // world has any liquid; a calm world advances at 6 fps
+                    // (the old wind-independent `anim_time*8` approximation
+                    // is retired — ANALYSIS "the liquid render-gaps census").
+                    let (liquid_anim_frame, liquid_waterfall_frame) =
+                        self.liquid_clock.update(dt, wind.speed_current);
+                    // The body frame can be NEGATIVE (a west wind below
+                    // -0.24 — the C# single +16 wrap keeps the remainder's
+                    // sign); the low byte of the two's-complement cast keeps
+                    // -15..15 injective, the waterfall frame rides byte 1.
                     let liquid_anim = if *has_liquids {
-                        ((anim_time * 8.0) as u32) & 15
+                        (liquid_anim_frame as u32 & 0xFF)
+                            | ((liquid_waterfall_frame as u32 & 0xFF) << 8)
                     } else {
                         0
                     };
@@ -1111,6 +1125,7 @@ impl App {
                             &style,
                             &self.entity_lights,
                             anim_time,
+                            (liquid_anim_frame, liquid_waterfall_frame),
                             waterfall,
                             render_player.as_ref(),
                             player_assets,

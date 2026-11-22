@@ -74,6 +74,15 @@ pub struct Settings {
     /// under `"GraphicsQuality"` (`Put` `Main.cs:4130`, `Get` `:4371`) — the
     /// port's old key was `"Quality"`.
     pub quality: u8,
+    /// `Main.Setting_UseReducedMaxLiquids` (`Main.cs:1665`): default
+    /// **false** (`static Main()`, `Main.cs:67008`). NOT a config.json key
+    /// — the only vanilla writer is the `slowliquids=1` command-line
+    /// argument (`Main.cs:5079-5083`), which [`Settings::apply_launch_args`]
+    /// mirrors; `parse`/`to_json` never touch it. Consumers: the liquid
+    /// `curMaxLiquid` 5000 cap (`Liquid.cs:98-101`, `Main.cs:17080-17083`/
+    /// `:17108-17111`) + the `numLiquid > 2000` quickFall arm
+    /// (`Liquid.cs:1057-1060`).
+    pub reduced_max_liquids: bool,
     /// `Main.BackgroundEnabled`.
     pub background: bool,
     /// `ChildSafety.Disabled` (blood and gore), persisted under
@@ -279,6 +288,8 @@ impl Default for Settings {
             frame_skip: 2,
             light_mode: 0,
             quality: 0,
+            // `Main.Setting_UseReducedMaxLiquids = false` (`Main.cs:67008`).
+            reduced_max_liquids: false,
             background: true,
             blood: true,
             miners_wobble: true,
@@ -339,6 +350,23 @@ impl Settings {
     /// [`ui_scale_max`].
     pub fn applied_ui_scale(&self, real_screen_w: f32, real_screen_h: f32) -> f32 {
         self.ui_scale.min(ui_scale_max(real_screen_w, real_screen_h))
+    }
+
+    /// The vanilla launch-argument arms this port consumes
+    /// (`Main.cs:5079-5083`): `slowliquids=1` raises
+    /// `Setting_UseReducedMaxLiquids`. The C# matches the prefix
+    /// case-insensitively and the value against the exact string `"1"`;
+    /// any other argument is ignored here (the other launch arms —
+    /// `secure=`/`upnp=`/`npcstream=` — are netplay/out-of-scope).
+    pub fn apply_launch_args(&mut self, args: &[String]) {
+        for arg in args {
+            let lower = arg.to_lowercase();
+            if let Some(value) = lower.strip_prefix("slowliquids=") {
+                if value == "1" {
+                    self.reduced_max_liquids = true;
+                }
+            }
+        }
     }
 
     pub fn load() -> Self {
@@ -938,6 +966,9 @@ mod tests {
         assert_eq!(s.frame_skip, 2);
         assert_eq!(s.light_mode, 0);
         assert_eq!(s.quality, 0);
+        // `Main.Setting_UseReducedMaxLiquids = false` (`Main.cs:67008`) —
+        // launch-flag-only, no config key.
+        assert!(!s.reduced_max_liquids);
         assert!(s.background);
         assert!(s.blood);
         // `Main.invasionProgressMode = 2` (`Main.cs:67080`).
@@ -985,6 +1016,26 @@ mod tests {
         assert_eq!(s.portrait_preference, 0);
         assert!(s.boss_bar_text, "the static ctor sets ShowText = true");
         assert!(s.flashy_effects_interface);
+    }
+
+    /// W4-g47 — `Main.cs:5079-5083`: the `slowliquids=1` launch arm —
+    /// case-insensitive prefix, exact `"1"` value; anything else leaves
+    /// the flag at its false default (`Main.cs:67008`). Written, NOT run
+    /// (code-only mode).
+    #[test]
+    fn slowliquids_launch_flag_sets_reduced_max_liquids() {
+        let mut s = Settings::default();
+        s.apply_launch_args(&["game.exe".into(), "SlowLiquids=1".into()]);
+        assert!(s.reduced_max_liquids, "the case-insensitive prefix match");
+        // Non-"1" values and other args never raise it.
+        let mut s2 = Settings::default();
+        s2.apply_launch_args(&["slowliquids=0".into(), "slowliquids=true".into()]);
+        assert!(!s2.reduced_max_liquids, "only the exact \"1\" value fires");
+        // The flag has no config.json key: a round trip cannot resurrect it.
+        let mut s3 = Settings::default();
+        s3.reduced_max_liquids = true;
+        let back = Settings::parse(&s3.to_json());
+        assert!(!back.reduced_max_liquids, "launch-only, never persisted");
     }
 
     #[test]

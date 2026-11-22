@@ -111,13 +111,29 @@ impl GfxQuality {
         // `:17075` — `Gore.goreTime`.
         self.gore_time = (600.0 * self.quality) as i32;
         // `:17077-17091` — the liquid budgets (the runtime pair S1-A-8 walks).
-        // `Liquid.quickSettle`'s full-window arm (`:17098-17104`) rides
-        // R-11-7's flag — the port's settlement pass keeps it `false`, so the
-        // quality values hold.
         app.liquids.set_cycles((17.0 - 10.0 * self.quality) as usize);
         let max_liquid = app.liquids.max_active();
+        // The launch flag is process-wide in the C# (`Main.cs:1665`); the
+        // settings copy is the master (re-read here so a mid-session sim
+        // rebuild — `LiquidSystem::new` resets the field — cannot drop it).
+        let reduced = app.settings.reduced_max_liquids;
+        app.liquids.set_reduced_max_liquids(reduced);
         app.liquids
             .set_cur_max_liquid((max_liquid as f64 * 0.25 + max_liquid as f64 * 0.75 * self.quality as f64) as usize);
+        // `:17080-17083` — `Setting_UseReducedMaxLiquids` overrides the
+        // quality window with `2500 + 2500 * gfxQuality` (W4-g47 census).
+        if reduced {
+            app.liquids
+                .set_cur_max_liquid((2500.0 + 2500.0 * self.quality) as usize);
+        }
+        // `:17105-17113` — quickSettle overrides the quality budgets: the
+        // full window and a single cycle, so the settle drain walks the
+        // whole active list every update (W4-g47). The reduced-liquids
+        // setting caps the override at a flat 5000 (`:17108-17111`).
+        if app.liquids.quick_settle() {
+            app.liquids.set_cur_max_liquid(if reduced { 5000 } else { max_liquid });
+            app.liquids.set_cycles(1);
+        }
         // `:17085-17101` — the legacy light scanner's render phases.
         self.render_phases = if (self.quality as f64) < 0.2 {
             8
@@ -239,5 +255,64 @@ fn int_ceil(v: f32) -> i32 {
         assert_eq!(half, 510, "`600 * 0.75 + 60` at q=0.5");
         assert_eq!(zero, 360, "`600 * 0.5 + 60` at q=0");
         assert!(half < full && zero < half, "low quality flakes fewer");
+    }
+
+    /// W4-g47 — `Main.cs:17105-17113`: quickSettle overrides the quality
+    /// liquid budgets — the full window and a single cycle — so the
+    /// settle drain walks the whole list every update. Written, NOT run
+    /// (code-only mode).
+    #[test]
+    fn quick_settle_overrides_the_quality_liquid_budgets() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut gfx = GfxQuality::default();
+        app.settings.quality = 3; // q=0 — the quarter window, 17 cycles
+        app.liquids.set_quick_settle(true);
+        gfx.apply(&mut app);
+        assert_eq!(
+            app.liquids.cur_max_liquid(),
+            app.liquids.max_active(),
+            ":17107 restores the full window"
+        );
+        assert_eq!(app.liquids.cycles(), 1, ":17112 forces the single cycle");
+        // The flag down: the quality budgets hold again.
+        app.liquids.set_quick_settle(false);
+        gfx.apply(&mut app);
+        assert_eq!(app.liquids.cycles(), 17);
+        assert_eq!(
+            app.liquids.cur_max_liquid(),
+            app.liquids.max_active() / 4
+        );
+    }
+
+    /// W4-g47 — `Main.cs:17080-17083`/`:17108-17111`: the
+    /// `Setting_UseReducedMaxLiquids` caps — `2500 + 2500 * gfxQuality` on
+    /// the quality budget, a flat 5000 on the quickSettle override. The
+    /// settings copy is the master (the apply re-seeds the sim field).
+    /// Written, NOT run (code-only mode).
+    #[test]
+    fn reduced_max_liquids_caps_the_quality_and_quick_settle_budgets() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut gfx = GfxQuality::default();
+        app.settings.reduced_max_liquids = true;
+        // q=1: the quality arm caps at 2500 + 2500 * 1 = 5000 (`:17082`).
+        app.settings.quality = 1;
+        gfx.apply(&mut app);
+        assert_eq!(app.liquids.cur_max_liquid(), 5000, ":17082 the q=1 cap");
+        // q=0: 2500 + 0 = 2500 — NOT the stock quarter window (6250).
+        app.settings.quality = 3;
+        gfx.apply(&mut app);
+        assert_eq!(app.liquids.cur_max_liquid(), 2500, ":17082 the q=0 cap");
+        // quickSettle: the flat 5000 override (`:17110`), single cycle.
+        app.liquids.set_quick_settle(true);
+        gfx.apply(&mut app);
+        assert_eq!(app.liquids.cur_max_liquid(), 5000, ":17110 the flat cap");
+        assert_eq!(app.liquids.cycles(), 1);
+        // The apply re-seeded the sim field from the settings master.
+        assert!(app.liquids.reduced_max_liquids(), "the flag rides the sim");
+        // Flag off: the stock formulas hold (the re-seed clears the sim).
+        app.settings.reduced_max_liquids = false;
+        gfx.apply(&mut app);
+        assert_eq!(app.liquids.cur_max_liquid(), app.liquids.max_active());
+        assert!(!app.liquids.reduced_max_liquids());
     }
 }
