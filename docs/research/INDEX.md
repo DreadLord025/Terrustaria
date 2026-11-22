@@ -77,6 +77,8 @@ per `docs/superpowers` agreements).
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 270 | W4-c10 waterfowl band FINAL (aiStyle-68 + walkers + 1080 drop: the one-paragraph bible, band-complete ledger, the b3/d20/d76/d36/g8/d40 cross-lane contracts incl the roster-tail + d76 keep-ones, 37-witness index, merge checklist; code-only; renumber chain 145→149→270 — g89's rod doc pushed first at 145, e20's devices bible pushed first at 149, see the doc's renumber notes + d54's 150 registry §6.3) | `270-waterfowl-band-final.md` | ✅ SEALED |
 
+| 315 | The convert-tables family bible (W4-c32-convert FINAL: the c32 tables-only census, BiomeDungeonRoom→DungeonUtils.ChangeTileType NOT Convert, f25's zero-call-site 15/16/18/19 cells, g42's FOUR Convert(3) sites, the whole-switch ownership map + tip hashes + merger contracts; number 315 per registry 150 §9 UNIFIED FINAL, d54 b243c7086, chain 281→315 — the original 281 self-pick per the ≥281 free block, fresh 362-tip sweep) | `315-convert-tables-family-bible.md` | ✅ |
+
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
   counts question is ticketed.
