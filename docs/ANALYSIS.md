@@ -39650,3 +39650,89 @@ slot `type % 10`): 367 = 4 (`:67120`), 374/375 = 4, 377 = 2, 378 = 4, 379 = 12 (
 round, gated on `task/W4-d39`..`d43`); the case-group siblings 446/435/436/591 (next
 waves); the scorpion keep-one dedupe at the d48/d49 merge (DONE — the shared
 `npc_findframe_c::scorpion_scuttle` machine).
+
+## The tile-draw particle layer (W4-d60, 2026-11-20, code-only)
+
+`crates/tr-app/src/tile_draw_particles.rs` ports
+`TileDrawing.DrawTiles_EmitParticles` (`TileDrawing.cs:6688-7547`) — the
+per-drawn-tile particle battery — plus its private helpers
+`EmitLivingTreeLeaf`/`_Below`/`_Sideways` (`:7549-7592`),
+`EmitAlchemyHerbParticles` (`:9605-9655`) and `IsVisible` (`:1411-1432`).
+CODE-ONLY MODE: no compiler invoked, the 22 witness tests are WRITTEN NOT
+RUN. The module is UNWIRED (the `npc_ai_style70` precedent); the
+`DrawSingleTile` call-site gate (`:965-968` — `_isActiveAndNotPaused` and
+the `!Lighting.UpdateEveryFrame || FastRandom(TileFrameSeed).WithModifier
+(x,y).Next(4)==0` quarter-roll) is the wiring wave's obligation.
+
+**Scope.** The grass SWAY draws already landed with TILE-DRAW-3
+(`render/tiles.rs` + `tr_core::wind`); this adds the particle EMISSION
+layer riding the same wind inputs: the star-cloud night sparkles (718),
+the fog-machine plume (565), chimney smoke (406), balloon-machine bubbles
+(452), the living-wood leaf shed (192/384), the lava-bubble emitters
+(42 case 51 / 93 case 45 / 100 case 45 / 34 case 51 / 372 — dust 242),
+torch smoke (4), herb bloom sparkles (83), the ore/gem shine
+(`Main.tileShine`) and the shimmer sparkle on lit solids. Four
+`ParticleOrchestrator.RequestParticleSpawn` sites (PooFly 31,
+RainbowBoulder3 49, RainbowBoulder2 48, NatureFly 53) return
+`ParticleRequest`s carrying the net-module byte kind
+(`app/netmodules.rs::Particles`); the orchestrator itself is unported.
+
+**RNG census — two streams kept separate (S1-A-10).** The C# interleaves
+`TileDrawing._rand` (every gate `Next`, the post-spawn slot tweaks, the
+gore scale ARGUMENTS, the 100/42 position picks, the nature-fly
+`NextFloat`/`Next(600)`/`Next(48)`, the rubble `Next(1200)`/`Next(10)`/
+`Next(2)`, the shine `Next(tileShine)`, the shimmer `Next(500)`, the leaf
+`Next(2)`, and the DISCARDED `Next(2)` of type 646 `:7256-7259`) with
+`Main.rand` (the `Dust.NewDust`/`Gore.NewGore` pool internals,
+`Player.RollLuck` — `Luck.cs:5-16` rolls `Main.rand`, NOT `_rand` — the
+565 `NewGorePerfect` arguments and the 711 `NextVector2Circular` pairs).
+The port takes both (`rand` = `_rand`, `main_rand` = `Main.rand`) and
+draws in C# order. TILE-DRAW-3 folded the two into one pinned `FastRandom`
+for the inline leaf arm; this module keeps them separate.
+
+**Deliberate deviations / deferred seams.**
+- The inline 192-leaf arm (`render/tiles.rs:1078-1122`) gates on
+  `wind.sway_enabled` (the C# does NOT) and draws the sideways `Next(2)`
+  only when the wind pick is non-zero (the C# draws it unconditionally
+  after the below-spawn). `emit_living_tree_leaf` is the faithful body;
+  the wiring wave must reconcile the inline arm with it (and the
+  `sway_enabled` gate is a TILE-DRAW-3 approximation to retire).
+- The rubble gate block (`:6901-6951`) is ported verbatim (its three
+  `_rand` draws included); the per-dust spawn body
+  `WorldGen.KillTile_MakeTileDust` (`WorldGen.cs:66687-68600+`, a ~2000-line
+  type table with its own `Main.rand`/`genRand` draws) is the **d54
+  (dust-sites-world)** seam — returned as a `RubbleDustPlan` (count + the
+  surface `flag4` scale cut). Skipping the body is NOT stream-neutral;
+  the census is recorded so the wiring can replay it.
+- **d50 (dust-type-table)** runs in parallel; this module only CALLS
+  `DustPool::new_dust` (S1-E-1) and never touches the per-type colour
+  table (`tr_core::dust_table`, S1-E-2), so the lanes do not collide.
+- `EmitLiquidDrops` (`:7594-7674`, the stalactite drip gores) is called
+  from `CacheSpecialDraws` (`:693`), NOT from this body — it rides the
+  **d56/d57** special-tile cache lane. The danger-sense / spelunker /
+  biome-sight dust arms (`:911-962`) are `DrawSingleTile` prologue arms,
+  also out of scope.
+- `Tile.invisibleBlock` (the `bTileHeader3` bit) is unported (the S1-G-1e
+  deviation); `is_visible` reads it false, so only the 19-row-48 / 541 /
+  631 arms can hide a tile. `Main.tileFrame[type]` (the 452 balloon colour
+  row) is 0 until the animator lands (`drawdata.rs` convention); the
+  caller passes the live row as `EmitCtx::tile_frame_anim`.
+
+**Faithfulness pins.** The 215 gate draws `Next(3)` before the `frameY==0`
+re-test; the torch/93/100/34 gates draw `Next(40)` before the frameX test;
+the 592/406/452 arms and the 22→shimmer tail are else-if CHAINS (a failed
+gate falls through — a type-22 tile whose `Next(400)` misses still rolls
+the shine `Next(1150)`); the 71/72 paint gate reads `color()==0` before its
+`Next(500)`; the shine `Next(tileShine)` is drawn before the frame-window
+`||` terms and after the dark-light early return; the 139/497 arms read
+the RAW `tileCache.frameX/Y`, not the resolved frames; the torch
+`MathHelper.Clamp(frameY/22, 0, 23)` is an integer divide then a clamp.
+
+Verification: 22 witness tests (`tile_draw_particles::tests`) covering the
+four data tables, `is_visible`, the 646 discarded draw, the torch/lava/
+campfire gate orders, the disco-torch colour, the living-wood sideways
+roll, the two-stream boulder census, the nature-fly gust window, the
+rubble count/surface cut, the shine/shimmer arms, the herb styles, the
+star-cloud gore-pair copy, the pumpkin tier chain, the chimney wind push
+and the lantern-petal cadence — WRITTEN, NOT RUN (no cargo/rustc invoked).
+

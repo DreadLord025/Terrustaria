@@ -254,6 +254,12 @@ mod craft_filter;
 mod registry;
 mod variants;
 mod render;
+// W4-d60: UNWIRED tile-draw particle layer (TileDrawing.DrawTiles_EmitParticles,
+// TileDrawing.cs:6688-7547) - grass-sway leaf shed / petals / lava bubbles /
+// herb sparkles / ore shine; the DrawSingleTile call-site gate + the inline
+// 192-leaf reconciliation are the wiring wave (see the module doc +
+// docs/ANALYSIS.md "The tile-draw particle layer (W4-d60)").
+mod tile_draw_particles;
 mod spawner;
 mod tag_effects;
 mod settings;
