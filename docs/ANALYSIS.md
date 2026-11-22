@@ -1741,9 +1741,11 @@ the top-left origin. `SetBackColor`'s `1 - cloudAlpha * 0.9 * atmo` multiplies t
 colour, which also dims surface sunlight via `ApplyColorOfTheSkiesToTiles`.
 
 Storms add two pieces from `Main.DrawSurfaceBG`/`Main.SpawnStormLightning`: the
-`cloudBG` layers (`Background_112/113`, scale 1.65/1.85, parallax 0.09/0.12) fade in with a
-`cloudBGAlpha`-style ramp tied to the rain intensity, and heavy rain (> 0.65) throws a
-lightning flash every 5–15 s. The flash is a 0.38-alpha full-screen white overlay that
+`cloudBG` layers (`Background_112/113`, scale 1.65/1.85, parallax 0.09/0.12) fade in with
+the C# `cloudBGAlpha` ramp (`Main.cs:59358-59373` — per draw, ±0.0005·dayRate toward 1/0
+by the live `cloudBGActive` overcast machine, W4-g69; the earlier intensity-tied
+stand-in is retired), and heavy rain (> 0.65) throws a
+lightning flash every 5вЂ“15 s. The flash is a 0.38-alpha full-screen white overlay that
 decays over ~11 ticks; there is no bolt geometry or thunder audio yet.
 
 The ambient snowfall is `Main.snowing()` (`Main.cs:13032-13116`), ported verbatim as
@@ -2179,35 +2181,93 @@ Not ported: the eclipse (`Sun3`), the `head == 12` sun (`Sun2` + `Extra_280`), t
 moons (`Moon_Pumpkin`/`Moon_Snow`/`Moon_Smile`) and the title-screen grab-the-sun
 interaction. The first sun pass is always `Color.White` because no eclipse is modelled.
 
-### Clouds and stars (M1.4-BG-11/16)
+### Clouds and stars (M1.4-BG-11/16, W4-g69)
 
-`make_clouds`/`make_stars` port the spawn recipes; `draw_sky` ports the draw passes.
+`make_stars` ports the star spawn recipe; `draw_sky` ports the draw passes.
 
-Clouds: the field is a deterministic stand-in for the live 200-slot array
-(`Cloud.resetClouds`/`addCloud`/`UpdateClouds`, `Cloud.cs:39-293`) вЂ” the original's array
-state (wind-drift integration, the spawn/kill cycle, the spawn-time overlap rejection of
-`Cloud.cs:170-177`) is not simulated. Per-cloud attributes follow `Cloud.addCloud` in its
-RNG order (scale `Next(70,131)В·0.01` clamped 0.7..1.3 with the `Cloud.Update` 1/1.15 nudge
-already applied, rotation `Next(-10,11)В·0.01` clamped В±0.02, the flip coin, spawn heights
-`-0.25h..0.15h` in the 600 px reference screen, and the clear-weather type branches of
-`Cloud.cs:128-139`); the count is the clear-weather steady state `numClouds = 100` (the
-`numCloudsTemp` clamp of `Main.cs:58980-58982`, which the `weatherCounter` jumps drive it
-into). Anchors spread over a world-span band so every camera cuts about `numClouds` of
-them. The draw runs as the three `DrawSurfaceBG` passes in the original order вЂ” distant
-(`Main.cs:59334`), closer (`Main.cs:59449`), closest (`Main.cs:59520`) вЂ” with the
-`DrawClouds_*` cY formulas (the closer pass reads the `bgTopY` `BackMountainsStep1`
-leaves, `Main.cs:59808`; the closest the near-mountain setup, `Main.cs:59514`), and the
-screen X is the world anchor minus `Cloud.GetParallax(scale)` (`Cloud.cs:318-338`) of the
-camera pan, the world-space form of `Cloud.UpdateCloudParallax` (`Cloud.cs:295-316`).
-Colour is `Cloud.cloudColor` (`Cloud.cs:227-235`) with the distant pass's
-`OriginalColorsForCloud` pull (`NextHorizonRenderer.cs:254-263`).
+Clouds (W4-g69, `task/W4-g69-weather-clouds-parallax`, code-only): the field is the LIVE
+200-slot pool — `crates/tr-app/src/cloud.rs` (`CloudField`) ports `Cloud.cs:9-451` 1:1
+(`resetClouds`/`addCloud` in its exact RNG order incl. the rain-cloud dark types 18-21 and
+`RollRareCloud`, `Update`'s wind drift `windSpeedCurrent·9·GetParallax·dayRate`
+(`Cloud.cs:391`), alpha ramps, rotation jitter, retire bounds, `UpdateClouds`' bubble pass
+with the `j > 1` quirk and the one-add/one-kill balance, `UpdateCloudParallax`). The
+`Main` walkers ride the shared world tick (`world_sim/weather.rs`): `updateCloudLayer`
+(`Main.cs:13174-13231`, once per tick at `:17226`) and the `numCloudsTemp` walk
+(`Main.cs:58952-59036`, once per dayRate iteration) on the bare `Main.rand` stand-in
+(`NamedRngs::global`), then `Cloud.UpdateClouds` gated on
+`screenPosition.Y < worldSurface·16 + 16` (`Main.cs:17249-17254`). The draw head
+(`app/frame/draw.rs`) runs `UpdateCloudParallax` per draw (`Main.cs:61833`) and the
+`DrawBG` `resetClouds` latch (`Main.cs:63980-63984`, `windSpeedCurrent = windSpeedTarget`
+first). `Cloud.rand` is the C#'s private static stream, pinned to the world seed (the
+`make_stars` precedent). The retired `make_clouds`/`CloudSprite` static stand-in is gone.
 
-Cloud deviations: the wind drift is a constant light wind scaled by `GetParallax` (the
-original integrates `windSpeedCurrentВ·9В·GetParallax` per tick, `Cloud.cs:391`); the storm
-type branch (`Cloud.cs:116-127`) and `RollRareCloud` (`Cloud.cs:140-147`, needs the boss
-flags) are not applied at generation; `globalCloudAlpha` (= `ProcessCloudAlpha В· atmo`) is
-1 because no active skies/`atmo` are modelled; and the `HorizonClouds` shader of
-`NextHorizonRenderer.CloudsEnd` (sun-tinted cloud shading) is not ported.
+The draw runs as the three `DrawSurfaceBG` passes in the original order — distant
+(`Main.cs:59334`), closer (`Main.cs:59449`), closest (`Main.cs:59520`) — over the pool in
+slot order with the verbatim bucket gates (scale 1.15f passes BOTH closer and closest, the
+C# double/float edge, `cloud.rs::cloud_in_bucket`), the `DrawClouds_*` cY formulas
+(`cloud_distant_cy`/`cloud_closer_cy`/`cloud_closest_cy`; the closer pass reads the
+`bgTopY` `BackMountainsStep1` leaves, `Main.cs:59808`; the closest the near-mountain setup,
+`Main.cs:59514`), and the screen X straight off `Cloud.position.X`. Colour is the verbatim
+`DrawCloud` byte chain (`render/sky.rs::draw_cloud_color`): `Cloud.cloudColor`
+(`Cloud.cs:227-235`) on `ColorOfTheSkies`, the distant `OriginalColorsForCloud` pull
+(`NextHorizonRenderer.cs:254-263`), the `atmo < 1` byte-truncated dim and the
+`globalCloudAlpha = ProcessCloudAlpha()·atmo` multiply (`Main.cs:59330`; no custom skies
+are active in-world so `ProcessCloudAlpha` clamps 1). The `ShouldDrawSurfaceBackground`
+gate (`Main.cs:59707-59720`) folds the remix seed + the fullscreen map.
+
+Cloud deviations (W4-g69, deviation-fix round): `CloudEnv::gather` reads the LIVE
+`World.crimson` (`WorldGen.crimson`, persisted in the `.wld` flags byte
+`WorldFile.cs:1281/2080` and the `.trwld` v18 tail; generation sets it from
+`GenOptions.crimson`) and `downed_eow` for `NPC.downedBoss2` — the shared flag covers
+both orb bosses (`NPC.cs:79443-79458`'s shared death case 13/14/15/266), so the
+`RollRareCloud` type-36 gate (`Cloud.cs:196`, `downedBoss2 && crimson`) is complete.
+The DOC-SWEEP round (docs/research/117) wired the five small constants-false
+consumers to the live field — the Dryad chat lines (`NPC.cs:94038-94080`), the
+Dryad shop blood-moon seed + 3217/3218 painting splits (`Chest.cs:1571-1594`,
+`:1665-1672`), the angler quest re-roll (`Main.cs:3769-3817`), the EoC loot
+ore/seed split (`Conditions.IsCrimson/CorruptionAndNotExpert`) and the
+`WorldEvilStone` lang token (`Lang.cs:145`) — plus the drunk-world dawn evil flip
+(`Main.cs:65403-65406`, `clock.rs`, no draw). The large consumers (powder
+proj 10/11/463 + `AttemptToConvertNPCToEvil`, `GERunner` spread, mimic 473/474,
+WoF brick 347/140, altar drop 5532/5533, boss-bag open 3319, shimmer decraft
+variant preference, Painter case-11, Guide help-text) stay unported — their
+lanes' rows (117 §2). The `.trwld` v18 tail is a FIVE-block union conflict
+(c43 identity 44 / d109 variants w×h / g69 crimson 1 / g70 forest 16 / g71
+surface 3); g71b's `92-doc-sweep-bg.md` owns the layout, 117 §1 cross-notes the
+crimson byte at C#-order offset 16 (variants last). The drunk-menu type
+override's gen flags stay false in-world. `Rain::change_rain` reads the LIVE
+`CloudField.num_clouds`/`cloud_bg_active` (`Main.cs:64730`'s `cloudBGActive >= 1f ||
+(double)numClouds > 150.0` then `> 100.0` — all three bands reachable; the pinned
+`NUM_CLOUDS_STAND_IN` is retired), and the ×4.25 start arm reads the live
+`cloudBGActive` too (`:64916`). The `cloudBGAlpha` visual ramp is the C# schedule now:
+`Rain::cloud_bg_draw_step` at the draw head, `±0.0005·dayRate` (RAW, no `max(1,…)`)
+per draw toward 1/0 by `cloudBGActive > 0`, inside the `DrawSurfaceBG` gate chain
+(`Main.cs:59354-59373`: `!drunkWorldGen && ShouldDrawSurfaceBackground() &&
+screenPosition.Y/16 <= worldSurface+10` AND `BackgroundEnabled`) — the retired
+10×-per-tick intensity chase is gone (one documented placement deviation: the C#
+ramps between the distant and closer cloud passes, the port at the draw head; no
+pass before the storm banks reads the value). The `HorizonClouds` shader of
+`NextHorizonRenderer.CloudsEnd` (`:323-356` — the sun/moon-tinted cloud shading:
+celestial colour + position, visibility × `1 - cloudBGAlpha`; needs the unported
+`GameShaders.Misc` infrastructure) and the dead `BetterColorsForClouds` (never
+called in 1.4.5.8) are not ported — the passes draw the byte-chain colours directly.
+The old 100 px screen cull is gone — the C# draws every active in-bucket cloud (the
+retire bounds of `Cloud.cs:417-420` keep them near the screen anyway).
+
+Rain-cloud darkening (W4-g69 DOC-SWEEP, docs/research/117 §4): `Cloud.cloudColor`
+(`Cloud.cs:227-235`) carries NO per-cloud rain tint — the darkening is the dark
+storm TYPES 18-21 (`addCloud` `:116-127`, landed) plus the GLOBAL `SetBackColor`
+dim `1 − cloudAlpha·0.9·atmo` (`Main.cs:63546-63552`, byte-truncated, gated
+`cloudAlpha>0 && !remixWorld`). The port's two sky-tint sites ran a divergent
+stand-in (clamped `visual_alpha`, no atmo, no remix exclusion, a 0.1 floor, no
+byte truncation); the shared `render::sky::rain_dim_sky` helper now ports the
+formula verbatim (byte-first truncation + the unchecked `as i32 as u8` wrap for
+over-1 pins) and both sites feed `modify_horizon_light` the RAW alpha. The
+`numCloudsTemp` spawn cadence (`Main.cs:58952-59036`) was re-verified VERBATIM;
+one init deviation: the C# re-rolls `numClouds = Next(200)` at content load
+(`:10876`) after the ctor 200 (`:66839-66840`), the port keeps 200 — the first
+tick's `weatherCounter` jump overwrites it before any in-world draw, and wiring
+the load-time draw would shift the bare global stream every sibling witness pins.
 
 Stars: `make_stars` ports `Star.SpawnStars` (`Star.cs:86-158`) in its RNG order вЂ” count
 `Next(200,400)`, positions in the 1920x1200 design space, `rotation Next(628)В·0.01`,
@@ -2217,7 +2277,7 @@ coins and the 1-in-40 giant-star roll. The original seeds it with
 pins the stream to the world seed so screenshots stay deterministic. `draw_sky` ports
 `DrawStarsInBackground`/`DrawStar` (`Main.cs:63030-63173`): the sky-colour visibility gate
 `255В·(1 в€’ cloudAlphaВ·atmo) в€’ skyR в€’ 25 > 0` (fades the field out across dawn; the
-graveyard dim is not modelled), the greyscale brightness formula, the
+graveyard dim is PORTED at the W4-g69 retire, see the RETIRE UPDATE below), the greyscale brightness formula, the
 `position/1920В·screenWidth + sceneArea.bgTopY` mapping with the frame wrap, and the
 `tex.Size()В·scaleВ·twinkle` draw with `Star.Update`'s rotation/twinkle speeds (the 0.6..1
 twinkle oscillation is sine-approximated around the same centre and range). Two known
@@ -2225,6 +2285,47 @@ deviations: `DrawStar` builds its colour from `default` and assigns only R/G/B
 (`Main.cs:63083-63086`) вЂ” a zero alpha would make every star invisible, so the port draws
 them fully opaque at the computed brightness вЂ” and the per-tick twinkle/rotation advance
 is driven by the pinned animation clock instead of integrated state.
+
+Falling-star VISUAL (W4-g69 DOC-SWEEP census, docs/research/117 §5): the port's
+starfield is STATIC — `StarSprite` carries no `falling`/`hidden`/`fadeIn`/
+`fallSpeed`/`fallTime`, and `draw_sky` derives twinkle/rotation from `anim_time`,
+not integrated `Star.Update`. The C# falling-star chain (`Star.Fall`
+`Star.cs:160-169`, the `Update` falling branch `:173-205`, the `DrawStar` trail
+`Main.cs:63140-63171`, `Star.StarFall` `:62-84`, `NightSetup`'s `starfallBoost`
+`:41-60`, `UpdateStars` `:237-260`, the spawn triggers `Main.cs:17259-17272`/
+`:19865-19871`) is a coherent UNPORTED subsystem — a follow-up lane, not a small
+fix. The falling-star SOUND pair (cases 37/38) is g23b's (dormant); the
+sky-sweep visibility gate is g70b's. Cross-note: the port's star gate
+(`sky.rs:704`) reads `storm` (cloudBGAlpha) where the C# (`Main.cs:63051`) reads
+`cloudAlpha·atmo` — g70b's sky-sweep adds the `cloud_alpha` param; flagged so the
+two lanes don't both rewrite it.
+
+Star-pass RETIRE UPDATE (W4-g69 retire, `99a67f9e`, docs/research/117 §6 SEALED):
+the cross-note above is DISCHARGED — g69 owns the gate fix. New shared helpers in
+`render/sky.rs`: `star_pass_heads` (`Main.cs:63030-63058`) ports the graveyard
+opacity head (`1 − GraveyardVisualIntensity·1.4`, the field dead at ≤ 0 — the
+"not modelled" note is retired), the shimmer sky dim (`colorOfTheSkies *=
+1 − shimmerAlpha`, XNA byte multiply, feeding BOTH the gate and DrawStar), the
+`shimmerAlpha == 1` whole-pass skip (`:62086-62088`), and the gate itself on the
+RAW `cloudAlpha·atmo` with the `remixWorld ||` unconditional arm — the
+cloudBGAlpha stand-in is gone. `draw_star_color` (`Main.cs:63066-63110`) ports
+the full DrawStar colour chain: the per-channel `(int)` truncation before the
+/3 average, the `(double)·1.4` cap-255, `color *= starOpacity`, the shimmer i%3
+channel tint (0→G, 1→B, 2→R; the literal `(1f − num·0f)` = 1; two sequential
+twinkle multiplies), `Color.Lerp` byte lerp and the artificial-false
+`*= 1 − num`. The `artificial: true` shimmer-surface star pass (`:62203`, the
+`*= num` arm) stays unported with its surface pass. DrawStar's skyblock bgTopY
+zero (`worldSurface ≤ 30`, `:63114-63117`) landed inline. `draw_sky` gains
+`graveyard_intensity`/`shimmer_alpha`/`cloud_alpha` params fed from
+`scene_state` + `rain.raw_alpha()`; g70's tip adds a `cloud_alpha` param with
+the SAME name/semantics for its celestial dims — ONE param at the merge. The
+falling-star visual stays UNCLAIMED at every sibling tip → the research/117 §6
+task-seed (five-step port plan; g23's dormant sound pair activates from it).
+The hardmode-V evil flavour also went live this retire (`fd0edd6b6`):
+`initialize_hard_mode` reads `world.crimson` (the C# GERunner reads the
+`WorldGen.crimson` static inside the convert arm, `WorldGen.cs:76304`) —
+the `(seed >> 56) & 1` re-derivation that ignored the UI pick / persisted
+flavour / drunk dawn flip is retired at all three callers.
 
 Screenshot harness: `TR_SHOT` runs pin `dt` to exactly 1/60 (so `anim_time`-driven phases
 land on the same value per frame) and `TR_MOUSE=x,y` pins the OS pointer вЂ” the vanilla
@@ -9328,6 +9429,9 @@ with the overshoot snap; while NOT raining it decays toward 0 UNCONDITIONALLY
 observation-equal only because `StopRain` zeroes the target). `ChangeRain`'s
 three strength bands (`:64730`), the `IsRainingForever` floor skip and the
 `instant` arm were verified covered — no change.
+W4-g69 deviation fix: the `cloudBGAlpha` ramp is the C# per-draw schedule
+(`Main.cs:59358-59373`, +0.0005 x dayRate RAW - `Rain::cloud_bg_draw_step`
+at the draw head); the tick-side intensity-tied stand-in is retired.
 
 RNG stays per-consumer (the WEATHER-2 convention): Rain's splitmix is the single
 rain-consumer stream (the thunder tiers, the `update_time` rolls, the
@@ -9345,13 +9449,14 @@ Deviations, all deliberate:
   and `WorldGen.GetWorldUpdateRate` (`WorldGen.cs:72020-72028`) only clamps it at 24
   and freeze-gates it. `world_sim/growth.rs:18` passes the literal `1`; never feed it
   `day_rate()`.
-- **The `numClouds` stand-in is pinned at 100** (`NUM_CLOUDS_STAND_IN`, matching
-  `render/sky.rs` `make_clouds`' static `num_clouds = 100.0`): with exactly 100 the
-  `numClouds > 150`/`> 100` ChangeRain bands are dead and only the storm gate
-  (`cloudBGActive >= 1f` в†’ `cloud_bg >= 1.0`) reaches the heavy bands; the same
-  `cloud_bg` stand-in reads the Г—4.25 start arm (`:64916`). The live cloud-count
-  system (`Main.cs:58952-59036`) is unported вЂ” revisit both with the
-  weather-completion row.
+- **RESOLVED (W4-g69 deviation-fix round): the `numClouds` stand-in.** The pinned
+  `NUM_CLOUDS_STAND_IN` (100) is retired — `Rain::change_rain` reads the live
+  `CloudField.num_clouds`/`cloud_bg_active` (`Main.cs:64730`'s `cloudBGActive >= 1f
+  || (double)numClouds > 150.0`, then `> 100.0` — all three bands reachable), and
+  the ×4.25 start arm reads the live `cloudBGActive` (`:64916`). The `cloudBGAlpha`
+  visual ramp moved to the C# per-draw schedule (`Rain::cloud_bg_draw_step`,
+  `Main.cs:59358-59373`, ±0.0005·dayRate RAW inside the `DrawSurfaceBG` gate
+  chain) — see "Clouds and stars (M1.4-BG-11/16, W4-g69)".
 - **`Rain.wind` (the drop drift) is static now.** The retired session schedule was
   its last writer; vanilla's drops read the live `Main.windSpeedCurrent` per tick
   (`:58830-58950` feeds `Wind` directly). The field stays seed-time-fixed until a

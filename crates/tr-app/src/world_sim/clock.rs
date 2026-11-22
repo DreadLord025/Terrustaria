@@ -92,6 +92,13 @@ pub(crate) fn advance_time(
         } else {
             world.moon_phase + 1
         };
+        // `Main.cs:65403-65406`: the drunk world flips the evil flavour at
+        // EVERY dawn (`WorldGen.crimson = !WorldGen.crimson`) — W4-g69
+        // doc-sweep: `World.crimson` is live now, so the flip lands. No RNG
+        // draw; the `netMode != 1` guard is the single-player session.
+        if world.seeds.contains(tr_core::seeds::SeedFlags::DRUNK) {
+            world.crimson = !world.crimson;
+        }
         // `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()`
         // (`Main.cs:65373`) — the day's quest re-roll is the FIRST call
         // in the C#'s StartDay; the port arms the request and the app
@@ -316,6 +323,34 @@ pub(crate) fn advance_disco(app: &mut App) {
 
 #[cfg(test)]
 mod tests {
+    /// W4-g69 doc-sweep — `Main.cs:65403-65406`: the drunk world flips
+    /// `WorldGen.crimson` at every dawn; a classic world never flips.
+    #[test]
+    fn w4_g69_the_drunk_dawn_flips_the_world_evil() {
+        let mut w = World::new("t".into(), 40, 40);
+        w.seeds.insert(tr_core::seeds::SeedFlags::DRUNK);
+        w.day_time = false;
+        w.time = 32399.0;
+        w.crimson = false;
+        let mut rng = UnifiedRandom::new(1);
+        advance_time(&mut w, 5.0, &mut rng, false);
+        assert!(w.day_time, "the dawn boundary ran");
+        assert!(w.crimson, "the drunk dawn flipped corruption -> crimson");
+        // The next dawn flips back.
+        w.day_time = false;
+        w.time = 32399.0;
+        advance_time(&mut w, 5.0, &mut rng, false);
+        assert!(!w.crimson, "the second dawn flips back");
+        // A classic world keeps its flavour across the same boundary.
+        let mut c = World::new("t".into(), 40, 40);
+        c.day_time = false;
+        c.time = 32399.0;
+        c.crimson = true;
+        advance_time(&mut c, 5.0, &mut rng, false);
+        assert!(c.day_time);
+        assert!(c.crimson, "no flip without the drunk seed");
+    }
+
     #[test]
     fn the_dusk_boundary_rolls_and_reports_the_blood_moon() {
         // The StartNight boundary returns the event so the host broadcasts.

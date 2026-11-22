@@ -219,8 +219,9 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
     // the surviving GetChat re-pin at the merge.
     // The context off the live state. The world flags the port does not
     // carry yet (the storm clock, the happy-windy-day, `BirthdayParty`,
-    // `LanternNight`, the remix world, `WorldGen.crimson`, the Moon Lord)
-    // default off — each noted at its field.
+    // `LanternNight`, the remix world, the Moon Lord) default off — each
+    // noted at its field. `WorldGen.crimson` reads the LIVE `World.crimson`
+    // (W4-g69 doc-sweep).
     let day_time = app.world.day_time;
     let time = app.world.time;
     let blood_moon = app.world.blood_moon;
@@ -268,7 +269,9 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         // W4-c39 exec (research/114 §1h): the live-feed hunks DROP — d120's
         // superset ctx (research/70 drop 8) is the survivor at the merge.
         party_is_up: false,    // `BirthdayParty.PartyIsUp` — unported
-        crimson: false,        // `WorldGen.crimson` — the world-evil flag
+        // `WorldGen.crimson` — the LIVE world evil type (W4-g69 doc-sweep:
+        // `World.crimson`, the `.wld` flags byte + the `.trwld` v18 tail).
+        crimson: app.world.crimson,
         downed_boss1: app.world.downed_eoc, // `NPC.downedBoss1`
         downed_boss2: app.world.downed_eow, // `NPC.downedBoss2`
         downed_boss3: app.world.downed_skeletron, // `NPC.downedBoss3`
@@ -729,10 +732,10 @@ pub(crate) fn resolve_angler_swap(app: &mut App) {
     app.world.angler_quest_turned_in = false;
     let gates = crate::angler::QuestGates {
         hard_mode: app.world.hard_mode,
-        // `WorldGen.crimson` — the port has no evil-kind field, so the
-        // corruption default stands (the crimson quest rows 2457/2463/
-        // 2477/2485 then re-roll exactly like a corruption world).
-        crimson: false,
+        // `WorldGen.crimson` (`Main.cs:3769-3817`) — the LIVE world evil
+        // type (W4-g69 doc-sweep): the crimson quest rows 2454/2457/2463/
+        // 2477/2485 re-roll per the world's own flavour.
+        crimson: app.world.crimson,
         downed_boss1: app.world.downed_eoc,
         downed_boss2: app.world.downed_eow,
         downed_boss3: app.world.downed_skeletron,
@@ -973,7 +976,8 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             .world
             .micro_seeds
             .contains(tr_core::seeds::MicroSeedFlags::WORLD_IS_INFECTED),
-        crimson_world: false, // the port persists no world-evil type (see `shop.rs`)
+        // `WorldGen.crimson` — the live world evil type (W4-g69 doc-sweep).
+        crimson_world: app.world.crimson,
         travel_stock: app.world.travel_shop,
         // W4-f39: the resolved season flags + the anniversary block's gates.
         halloween: app.world.halloween,
@@ -7533,6 +7537,10 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             // read the live wind target through the wind-flag owner's getter
             // (`wind.rs`, `|windSpeedTarget| >= _maxWind 0.4`).
             windy: app.wind.windy_enough_for_kite_drops(),
+            // `WorldGen.crimson` — the world evil type (W4-g69 doc-sweep):
+            // `Conditions.IsCrimsonAndNotExpert`/`IsCorruptionAndNotExpert`
+            // (`loot.rs:1744-1745`) read the WORLD flag, not the player zone.
+            crimson_world: app.world.crimson,
             ..Default::default()
         },
         npc: tr_core::loot::LootNpc {
@@ -8773,6 +8781,65 @@ mod tests {
             "endlessHalloween drops the Goodie Bag"
         );
         assert!(xmas.contains(&1869), "endlessChristmas drops the Present");
+    }
+
+    /// W4-g69 doc-sweep — `spawn_loot`'s `LootFlags.crimson_world` reads the
+    /// LIVE `World.crimson` (`Conditions.IsCrimsonAndNotExpert`/
+    /// `IsCorruptionAndNotExpert`, `loot.rs:1744-1745`): the Eye of Cthulhu's
+    /// ore/seed rows split by the world flavour (`loot_db_gen.rs:1332-1335`
+    /// — 880/2171 crimson vs 56/59 corruption). Engine-level replay over
+    /// many streams; both halves must appear on their own world only.
+    #[test]
+    fn w4_g69_the_world_evil_splits_the_eye_loot() {
+        let drops_for = |crimson_world: bool| -> Vec<i32> {
+            let mut out = Vec::new();
+            for seed in 1..300u64 {
+                let mut rng = tr_core::tile_light::FastRandom::new(seed);
+                let mut info = tr_core::loot::DropAttemptInfo {
+                    rng: &mut rng,
+                    luck: 0.0,
+                    is_expert: false,
+                    is_master: false,
+                    active_players: 1,
+                    extra_gel: false,
+                    is_in_simulation: false,
+                    get_text_value: None,
+                    flags: tr_core::loot::LootFlags {
+                        crimson_world,
+                        ..Default::default()
+                    },
+                    npc: tr_core::loot::LootNpc {
+                        kind: 4,
+                        value: 1.0,
+                        life_max: 2800,
+                        ..Default::default()
+                    },
+                };
+                tr_core::loot::try_dropping(crate::loot_db::database(), 4, &mut info, &mut out);
+            }
+            let mut ids: Vec<i32> = out.iter().map(|r| r.item).collect();
+            ids.sort_unstable();
+            ids.dedup();
+            ids
+        };
+        let corrupt = drops_for(false);
+        let crimson = drops_for(true);
+        assert!(
+            corrupt.contains(&56) && corrupt.contains(&59),
+            "a corruption world drops Demonite + Corrupt Seeds"
+        );
+        assert!(
+            !corrupt.contains(&880) && !corrupt.contains(&2171),
+            "no crimson rows on a corruption world"
+        );
+        assert!(
+            crimson.contains(&880) && crimson.contains(&2171),
+            "a crimson world drops Crimtane + Crimson Seeds"
+        );
+        assert!(
+            !crimson.contains(&56) && !crimson.contains(&59),
+            "no corruption rows on a crimson world"
+        );
     }
 
     #[cfg(test)]
@@ -17976,6 +18043,86 @@ mod dw3_tests {
             *twin_rngs.stream(RngKey::UpdateTime),
             "the UpdateTime draw shape matches"
         );
+    }
+
+    /// W4-g69 doc-sweep — `resolve_angler_swap` reads the LIVE
+    /// `World.crimson` (`Main.cs:3769-3817`): on a crimson hardmode world
+    /// the 2454/2463 rows stay IN the pool and 2457/2485 re-roll; a
+    /// corruption world does the opposite. State pin: the twin replay over
+    /// the same `UpdateTime` stream lands on the same quest index.
+    #[test]
+    fn w4_g69_the_angler_swap_reads_the_live_world_evil() {
+        for crimson in [false, true] {
+            let mut a = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+            a.world.crimson = crimson;
+            a.world.hard_mode = true; // opens the hardmode-gated fish
+            a.world.angler_swap_pending = true;
+            resolve_angler_swap(&mut a);
+            let gates = crate::angler::QuestGates {
+                hard_mode: true,
+                crimson,
+                downed_boss1: a.world.downed_eoc,
+                downed_boss2: a.world.downed_eow,
+                downed_boss3: a.world.downed_skeletron,
+                downed_slime_king: a.world.downed_slime_king,
+                downed_queen_bee: a.world.downed_queen_bee,
+                has_world_surface: true,
+            };
+            let mut twin_rngs = rng_seeded(&a);
+            let want =
+                crate::angler::angler_quest_swap(&gates, twin_rngs.stream(RngKey::UpdateTime));
+            assert_eq!(a.world.angler_quest as u16, want, "crimson={crimson}");
+            let item = crate::angler::QUEST_POOL[a.world.angler_quest as usize];
+            // Hardmode on: `2454` rejects only on crimson (`!hard || crimson`),
+            // `2463` only on corruption (`!hard || !crimson`).
+            if crimson {
+                assert!(
+                    item != 2454 && item != 2457 && item != 2485,
+                    "crimson rejects {item}"
+                );
+            } else {
+                assert!(
+                    item != 2463 && item != 2477,
+                    "corrupt rejects {item}"
+                );
+            }
+        }
+    }
+
+    /// W4-g69 doc-sweep — the shop-open seam feeds `ShopFlags.crimson_world`
+    /// from the LIVE `World.crimson` (`Chest.cs:1571-1594`/`:1665-1672`):
+    /// a crimson Dryad's blood-moon stock carries 2886/2171/4508 + 3218,
+    /// a corruption one 67/59/4504 + 3217.
+    #[test]
+    fn w4_g69_the_dryad_shop_open_reads_the_live_world_evil() {
+        for crimson in [false, true] {
+            let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+            app.world.crimson = crimson;
+            app.world.blood_moon = true;
+            let dryad = Npc::new(NpcKind::Dryad, 100.0, 100.0, 100, 0.0);
+            app.npcs.push(dryad);
+            let (w, h) = app.npcs[0].size();
+            assert!(try_open_town_shop_at_cursor(
+                &mut app,
+                Vec2::new(100.0 + w * 0.5, 100.0 + h * 0.5)
+            ));
+            let ids: Vec<u16> = app.shop_stock.iter().map(|e| e.item).collect();
+            if crimson {
+                for id in [2886u16, 2171, 4508, 3218] {
+                    assert!(ids.contains(&id), "crimson row {id} missing");
+                }
+                for id in [67u16, 59, 4504, 3217] {
+                    assert!(!ids.contains(&id), "corruption row {id} leaked");
+                }
+            } else {
+                for id in [67u16, 59, 4504, 3217] {
+                    assert!(ids.contains(&id), "corruption row {id} missing");
+                }
+                for id in [2886u16, 4508, 3218] {
+                    assert!(!ids.contains(&id), "crimson row {id} leaked");
+                }
+            }
+        }
     }
 
     /// DW-3.4: the angler turn-in's reward rolls ride `stream(UpdatePlayers)`

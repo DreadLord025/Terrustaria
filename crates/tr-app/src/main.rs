@@ -24,6 +24,7 @@ mod buff_effects_accessory;
 mod bug_net;
 mod chat;
 mod chest;
+mod cloud;
 mod collision;
 mod combat_text;
 #[cfg(feature = "debug")]

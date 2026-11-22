@@ -203,7 +203,7 @@ impl App {
                     world,
                     atlas,
                     lookups,
-                    clouds,
+                    cloud_field,
                     sky,
                     bg_alpha_front,
                     bg_alpha_far,
@@ -298,23 +298,31 @@ impl App {
                     let quantised = (natural_time / 60.0).floor() * 60.0;
                     let sky_tint = color_of_the_skies(quantised, is_day, world.moon_phase);
                     let clock_time = natural_time;
-                    // `SetBackColor`: rain multiplies the sky (and therefore the surface
-                    // sunlight) by `1 - cloudAlpha * 0.9`.
-                    let rain_alpha = rain.visual_alpha();
-                    let rain_dim = (1.0 - rain_alpha * 0.9).max(0.1);
-                    let mut sky_tint = [
-                        sky_tint[0] * rain_dim,
-                        sky_tint[1] * rain_dim,
-                        sky_tint[2] * rain_dim,
-                    ];
-                    // `Main.instance.HorizonRenderer.ModifyHorizonLight`
-                    // (`Main.cs:63921`): the sunrise/sunset gradient entries blend
-                    // into the sky colour before it becomes the tile light.
+                    // `SetBackColor`: rain multiplies the sky (and therefore
+                    // the surface sunlight) by `1 - cloudAlpha * 0.9 * atmo`
+                    // (`Main.cs:63546-63552`, byte-truncated per channel —
+                    // `rain_dim_sky`). W4-g69 doc-sweep: the RAW cloudAlpha,
+                    // the atmo factor and the remix exclusion replaced the
+                    // clamped-visual/no-atmo/0.1-floor stand-in. The atmo
+                    // here is the early atmosphere_factor estimate (the C#
+                    // reads last frame's Main.atmo at SetBackColor; the
+                    // refined self.atmo below re-derives the same value at
+                    // the surface).
+                    let rain_alpha = rain.raw_alpha();
                     let atmo = crate::render::sky::atmosphere_factor(
                         camera.y,
                         world.world_surface,
                         world.width,
                     );
+                    let mut sky_tint = crate::render::sky::rain_dim_sky(
+                        sky_tint,
+                        rain_alpha,
+                        atmo,
+                        world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+                    );
+                    // `Main.instance.HorizonRenderer.ModifyHorizonLight`
+                    // (`Main.cs:63921`): the sunrise/sunset gradient entries blend
+                    // into the sky colour before it becomes the tile light.
                     crate::render::sky::modify_horizon_light(
                         &mut sky_tint,
                         world.moon_phase,
@@ -1169,13 +1177,65 @@ impl App {
                         world.width,
                     );
                     draw_phase("sky");
+                    // `Main.cs:61832-61833`: `Cloud.UpdateCloudParallax` runs
+                    // per draw, right after the camera update — each active
+                    // cloud shifts against the camera-centre X delta by its
+                    // own `GetParallax` fraction (W4-g69).
+                    cloud_field.update_parallax(draw_cam);
+                    // `Main.DrawBG`'s head (`Main.cs:63980-63984`): the
+                    // `resetClouds` latch — `windSpeedCurrent = windSpeedTarget`
+                    // then the full respawn (`Cloud.cs:39-58`).
+                    if cloud_field.reset_pending {
+                        wind.speed_current = wind.speed_target;
+                        let (sw, sh) = (screen.x, screen.y);
+                        let env = crate::cloud::CloudEnv::gather(
+                            world,
+                            Vec2::new(sw, sh),
+                            wind.speed_current,
+                            player.as_ref().map(|p| p.vx).unwrap_or(0.0),
+                            menu.is_some() || front.is_some(),
+                            world.day_rate(),
+                            rain.raw_alpha(),
+                            bg_alpha_front[4],
+                        );
+                        cloud_field.reset_clouds(&env, lookups);
+                        cloud_field.reset_pending = false;
+                    }
+                    // `DrawSurfaceBG`'s `cloudBGAlpha` ramp
+                    // (`Main.cs:59358-59373`) — per draw, gated on
+                    // `!drunkWorldGen && ShouldDrawSurfaceBackground() &&
+                    // screenPosition.Y/16 <= worldSurface + 10` (`:59354`)
+                    // AND `BackgroundEnabled` (`:59356`); the same gate
+                    // chain `draw_sky`'s storm-bank block folds (W4-g69
+                    // deviation fix — the retired 10×-per-tick intensity
+                    // chase is gone). The C# runs it between the distant
+                    // and closer cloud passes; the port runs it at the draw
+                    // head — no pass before the storm banks reads the value.
+                    {
+                        let ramp_view_top = draw_cam.y - screen.y * 0.5;
+                        let ramp_should_draw = !world
+                            .seeds
+                            .contains(tr_core::seeds::SeedFlags::REMIX)
+                            && !(settings.map_enabled
+                                && map.as_ref().is_some_and(|m| m.open));
+                        if !world.seeds.contains(tr_core::seeds::SeedFlags::DRUNK)
+                            && ramp_should_draw
+                            && ramp_view_top <= surface_px + 10.0 * TILE_PX
+                            && settings.background
+                        {
+                            rain.cloud_bg_draw_step(
+                                cloud_field.cloud_bg_active,
+                                world.day_rate(),
+                            );
+                        }
+                    }
                     draw_sky(
                         renderer,
                         draw_cam,
                         bg_zoom,
                         screen,
                         world,
-                        clouds,
+                        cloud_field,
                         sky,
                         stars,
                         surface_px,
@@ -1186,6 +1246,7 @@ impl App {
                         sky_tint,
                         rain.cloud_bg(),
                         settings.background,
+                        settings.map_enabled && map.as_ref().is_some_and(|m| m.open),
                         cave_parallax(settings.parallax_scroll),
                         bg_alpha_front,
                         bg_alpha_far,
@@ -1207,6 +1268,12 @@ impl App {
                         // W4-c39 exec: the PartySky balloons ride the sky
                         // pass's depth boundaries (research/114 §1e).
                         &self.event_skies,
+                        // `DrawStarsInBackground`'s head (W4-g69 retire sweep):
+                        // the graveyard/shimmer statics + the RAW cloudAlpha
+                        // for the `:63051` star gate.
+                        scene_state.graveyard_visual_intensity,
+                        scene_state.shimmer_alpha,
+                        rain.raw_alpha(),
                     );
                     // `Main.cs:62217`: `ScreenDarkness.DrawBack` sits right after
                     // `Overlays.Scene.Draw(Background)`.

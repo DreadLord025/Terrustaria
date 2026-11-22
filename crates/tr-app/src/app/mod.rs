@@ -68,9 +68,7 @@ use crate::rain::Rain;
 use crate::registry;
 use crate::render::debug::{DebugCache, StatsAcc};
 use crate::render::entities::{NpcAssets, PlayerAssets, make_npc_assets, make_player_assets};
-use crate::render::sky::{
-    CloudSprite, SkyAssets, StarSprite, make_clouds, make_sky_assets, make_stars,
-};
+use crate::render::sky::{SkyAssets, StarSprite, make_sky_assets, make_stars};
 use crate::render::tiles::{DrawScratch, TileDrawStats};
 use crate::settings;
 use crate::ui;
@@ -135,7 +133,10 @@ pub(crate) struct App {
     /// `SpriteRenderer::new`); `None` without the retail fonts.
     pub(crate) font_atlas: Option<tr_render::FontAtlas>,
     pub(crate) lookups: assets::Lookups,
-    pub(crate) clouds: Vec<CloudSprite>,
+    /// The live cloud field (W4-g69): `Main.cloud[200]` + the `numClouds`
+    /// statics (`crate::cloud::CloudField`), ticked by the world tick and
+    /// drawn by `render/sky.rs`'s three `DrawClouds_*` passes.
+    pub(crate) cloud_field: crate::cloud::CloudField,
     pub(crate) sky: SkyAssets,
     /// `Main.bgStyle`: the biome background style currently being drawn (0 forest,
     /// 2 desert, 4 ocean, 7 snow; the full vanilla table also has 1/3/5/6/8/9/10..14).
@@ -2887,7 +2888,7 @@ impl App {
         atlas_stats: (u32, u32, usize, usize),
     ) -> App {
         let mut world = world;
-        let clouds = make_clouds(&world, &lookups);
+        let cloud_field = crate::cloud::CloudField::new(world.seed);
         let sky = make_sky_assets(&atlas, &world);
         let stars = make_stars(&world);
         let player_assets = make_player_assets(&atlas);
@@ -3657,7 +3658,7 @@ impl App {
             atlas: Some(atlas),
             font_atlas,
             lookups,
-            clouds,
+            cloud_field,
             sky,
             // `Main` statics initialise `bgAlphaFrontLayer[0] = bgAlphaFarBackLayer[0] = 1`
             // (forest visible from the start).
