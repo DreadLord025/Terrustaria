@@ -209,9 +209,9 @@ pub fn write(w: &mut Writer, world: &World) {
     w.i32(world.ore_tiers.iron); // Iron
     w.i32(world.ore_tiers.silver); // Silver
     w.i32(world.ore_tiers.gold); // Gold
-    w.boolean(false); // boughtCat
-    w.boolean(false); // boughtDog
-    w.boolean(false); // boughtBunny
+    w.boolean(world.bought_cat); // boughtCat
+    w.boolean(world.bought_dog); // boughtDog
+    w.boolean(world.bought_bunny); // boughtBunny
     // WorldFile.cs:1392-1397: the two post-1.4 bosses; `downedQueenSlime` and
     // `downedDeerclops` are owned, the Empress has no port state.
     w.boolean(false); // downedEmpressOfLight — unowned
@@ -231,8 +231,8 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(false); // unlockedArmsDealerSpawn
     w.boolean(false); // unlockedNurseSpawn
     w.boolean(world.unlocked_princess); // unlockedPrincessSpawn
-    w.boolean(false); // combatBookVolumeTwoWasUsed
-    w.boolean(false); // peddlersSatchelWasUsed
+    w.boolean(world.combat_book_volume_two_was_used); // combatBookVolumeTwoWasUsed
+    w.boolean(world.peddlers_satchel_was_used); // peddlersSatchelWasUsed
     w.boolean(false); // unlockedSlimeGreenSpawn
     w.boolean(false); // unlockedSlimeOldSpawn
     w.boolean(false); // unlockedSlimePurpleSpawn
@@ -605,7 +605,9 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.ore_tiers.gold = -1;
     }
     if version >= 217 {
-        r.skip(3)?; // boughtCat/Dog/Bunny
+        world.bought_cat = r.bool()?; // boughtCat
+        world.bought_dog = r.bool()?; // boughtDog
+        world.bought_bunny = r.bool()?; // boughtBunny
     }
     if version >= 223 {
         r.skip(1)?; // downedEmpressOfLight — unowned
@@ -626,10 +628,10 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.unlocked_princess = r.bool()?; // unlockedPrincessSpawn
     }
     if version >= 259 {
-        r.skip(1)?; // combatBookVolumeTwoWasUsed
+        world.combat_book_volume_two_was_used = r.bool()?; // combatBookVolumeTwoWasUsed
     }
     if version >= 260 {
-        r.skip(1)?; // peddlersSatchelWasUsed
+        world.peddlers_satchel_was_used = r.bool()?; // peddlersSatchelWasUsed
     }
     if version >= 261 {
         r.skip(3)?; // unlockedSlimeGreen/Old/Purple

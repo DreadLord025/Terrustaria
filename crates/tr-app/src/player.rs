@@ -1100,14 +1100,16 @@ pub struct Player {
     /// `HasItem(4131)`): refreshed per tick beside the other scans.
     pub void_vault_enabled: bool,
     /// `Player.ateArtisanBread` (`Player.cs:2048`): the artisan loaf's
-    /// +4-tile crafting reach (`Player.AdjTiles`, `:35671`). The item that
-    /// sets it (5326, `Player.cs:45218-45221`) has no ported use effect yet,
-    /// so the flag stays false in play — the reach formula reads it.
+    /// +4-tile crafting reach (`Player.AdjTiles`, `:35671`). The 5326 use
+    /// (`Player.cs:45218-45221`) rides `powerups::use_artisan_loaf` (W4-a6)
+    /// — the reach formula reads it.
     pub ate_artisan_bread: bool,
     /// `Player.unlockedBiomeTorches` (`Player.cs:2046`): the Torch God's
     /// biome torches — the gate on the `needTorchGodsFavor` recipes
-    /// (`Recipe.cs:353-356`). The unlock itself (the Torch God's dialogue)
-    /// is unported, so the flag stays false in play.
+    /// (`Recipe.cs:353-356`). The Torch God's Favor 5043 use
+    /// (`Player.cs:45226-45243`) rides `powerups::use_torch_gods_favor`
+    /// (W4-a6) — it also sets `builder_acc_status[11] = 0` (the
+    /// `UsingBiomeTorches` property, `:3950-3963`).
     pub unlocked_biome_torches: bool,
     /// The `TR_JUMPS`/`TR_BOOTS`/`TR_WINGS` pins: the debug stand-ins for the
     /// granting equipment, re-applied by the accessory pass every tick (the
@@ -1120,8 +1122,8 @@ pub struct Player {
     pub pinned_dash: i32,
     /// `Player.extraAccessory` (`Player.cs:866`): the Demon Heart's use-grant
     /// (`:45197`) - unlocks the 6th accessory slot in expert mode
-    /// (`IsItemSlotUnlockedAndUsable` `:12587`). The consumable use is
-    /// unported, so the flag stays false in play.
+    /// (`IsItemSlotUnlockedAndUsable` `:12587`). The consumable use rides
+    /// `powerups::use_demon_heart` (W4-a6).
     pub extra_accessory: bool,
     /// The `TR_MOUNT=<id|name>` pin: the debug stand-in for the saddle item
     /// (the real items equip through `Item.mountType`), re-applied after the
@@ -1289,6 +1291,13 @@ pub struct Player {
     pub potion_of_return_home_position: Option<(f32, f32)>,
     pub hp: i32,
     pub max_hp: i32,
+    /// `Player.statLifeMax` (`Player.cs:1924`): the PERMANENT life cap — the
+    /// character file's `lifeMax` (`:55221`, clamped to 500) and the Life
+    /// Crystal's +20 (`:45306-45320`) / Life Fruit's +5 (`:45290-45304`)
+    /// use-grants. The crystal/fruit gates read THIS base (not the effective
+    /// `max_hp`), mirroring `mana_max_base`'s shape (`:1931`). A new character
+    /// starts at 100 (`UICharacterCreation.cs`; `Player.Initialize` `:56074`).
+    pub life_max_base: i32,
     /// `Player.statMana` / `Player.statManaMax` (`Player.cs:1930-1932`). A new
     /// character starts at `20/20` (`UICharacterCreation.cs:1721`; the default max
     /// is also 20 in `Player.Initialize`, `Player.cs:56075`).
@@ -1793,8 +1802,10 @@ pub struct Player {
     /// (`Player.cs:28123-28130`).
     pub cart_flip: bool,
     /// `Player.unlockedSuperCart` (`Player.cs:2052`): the Super Cart is
-    /// unlocked by the item 3353 (`Player.cs:45207-45211`, `:55718`) — that
-    /// writer is not ported yet, so the flag stays false in play.
+    /// unlocked by the Minecart Powerup 5289's use (`Player.cs:45207-45211`)
+    /// — `powerups::use_minecart_powerup` (W4-a6) raises it and grants the
+    /// Minecart Mech 3353 (`:45212`); the `UsingSuperCart` property
+    /// (`:3966`, `:55718`) reads it.
     pub unlocked_super_cart: bool,
     /// `Player.enabledSuperCart` (`Player.cs:2054`, default true): the
     /// player's Super Cart toggle. The UI that flips it is not ported yet.
@@ -2148,8 +2159,39 @@ pub struct Player {
     pub override_fishing_bobber: i32,
     /// `Player.usedGummyWorm` (`Player.cs:2074`): the 5341 permanent +3
     /// fishing skill (`:45411-45416`, `:12857-12860`). NOT cleared by
-    /// ResetEffects — a permanent unlock (the player-file field).
+    /// ResetEffects — a permanent unlock (the player-file field). The
+    /// 5341 use rides `powerups::use_shimmer_permanent` (W4-a6).
     pub used_gummy_worm: bool,
+    /// `Player.usedAegisCrystal` (`Player.cs:852`): the 5337 Aegis Crystal
+    /// — the permanent +0.2 lifeRegenTime per tick (`:19113-19116`, the
+    /// `regen.rs` `aegis_crystal` input — its own slot so the add runs
+    /// BETWEEN the base +1 and the crimson +1 in the C#'s f32 order). The
+    /// 5337 use rides `powerups::use_shimmer_permanent` (W4-a6).
+    pub used_aegis_crystal: bool,
+    /// `Player.usedAegisFruit` (`Player.cs:854`): the 5338 Aegis Fruit —
+    /// the permanent +4 defense (`UpdatePermanentBoosters`, `:12853-
+    /// 12856`). The 5338 use rides `powerups::use_shimmer_permanent`
+    /// (W4-a6).
+    pub used_aegis_fruit: bool,
+    /// `Player.usedArcaneCrystal` (`Player.cs:856`): the 5339 Arcane
+    /// Crystal — the permanent −0.05 manaRegenDelay per delay tick +
+    /// statManaMax2/50 mana regen (`:19430-19433`, `:19453-19456`). The
+    /// 5339 use rides `powerups::use_shimmer_permanent` (W4-a6).
+    pub used_arcane_crystal: bool,
+    /// `Player.usedAmbrosia` (`Player.cs:862`): the 5342 Ambrosia — the
+    /// permanent +0.05 pick/tile/wall speed (`UpdatePermanentBoosters`,
+    /// `:12861-12866`). The 5342 use rides `powerups::use_shimmer_permanent`
+    /// (W4-a6).
+    pub used_ambrosia: bool,
+    /// `Player.usedGalaxyPearl` (`Player.cs:858`): the 5340 Galaxy Pearl —
+    /// the permanent +0.03 luck (`RecalculateLuck`, `:29142-29145`). The
+    /// 5340 use rides `powerups::use_shimmer_permanent` (W4-a6). The
+    /// PERSISTENCE OWNER is this Player field (the `.plr` slot
+    /// `:54784`/`:55258`); `update_luck` mirrors it into the consumer
+    /// `LuckState.used_galaxy_pearl` before every recalculation (the g90
+    /// lane-7 shape, research/138 §2 — the C# reads the player field
+    /// directly, the LuckState copy is the port's consumer split).
+    pub used_galaxy_pearl: bool,
     /// (Gate merge i35 ⨉ i41: `can_float_in_water` and `no_items` are
     /// declared ONCE, with the mount block above — the i35 duplicates
     /// folded into them; the fishing float bonus / bobber kill gate read
@@ -2742,6 +2784,7 @@ impl Player {
             potion_of_return_home_position: None,
             hp: 100,
             max_hp: 100,
+            life_max_base: 100,
             armor_penetration: 0,
             melee_armor_penetration: 0,
             lava_time: 0,
@@ -2954,6 +2997,11 @@ impl Player {
             acc_lava_fishing: false,
             override_fishing_bobber: -1,
             used_gummy_worm: false,
+            used_aegis_crystal: false,
+            used_aegis_fruit: false,
+            used_arcane_crystal: false,
+            used_ambrosia: false,
+            used_galaxy_pearl: false, // `Player.cs:56081`
             acc_sentry_backpack: false,
             acc_sentry_backpack_grab_cooldown: 0,
             ballista_panic: false,
@@ -6923,10 +6971,26 @@ impl Player {
         // `set_player_caps` form (the same three C# `if`s, same order,
         // same values). i27's `add_player_scalars` twin was dropped at the
         // gate (it would double the adds); the seam stays available.
-        // S1-P-i35 — `UpdatePermanentBoosters`' Gummy Worm row
-        // (`Player.cs:12857-12860`): the permanent +3 fishing skill.
+        // W4-a6 — `UpdatePermanentBoosters` (`Player.cs:12851-12867`,
+        // called at `:25644` right after `UpdateEquips`): the C#'s OWN row
+        // order — Aegis Fruit +4 (`:12853-12856`), Gummy Worm +3
+        // (`:12857-12860`, the S1-P-i35 row), Ambrosia's speed triple LAST
+        // (`:12861-12866`). The port folds the pass into this post-equip
+        // seam (the Gummy Worm row's convention); the reconcile re-ordered
+        // the fruit row AHEAD of the worm row to the C# order (g89's
+        // verbatim shape, research/138 §2). `pickSpeed -= 0.05` is the
+        // port's signed bonus `pick_speed_bonus += 0.05` (`:4545`'s
+        // `1.0 - bonus` form).
+        if self.used_aegis_fruit {
+            self.stat_defense += 4;
+        }
         if self.used_gummy_worm {
             self.fishing_skill += 3;
+        }
+        if self.used_ambrosia {
+            self.pick_speed_bonus += 0.05;
+            self.tile_speed_bonus += 0.05;
+            self.wall_speed_bonus += 0.05;
         }
         // S1-P-i35 — `UpdateEquips`' post-loop bobber row
         // (`Player.cs:12985-12988`): the glow-bobber accessory's +10 skill,
@@ -10670,6 +10734,12 @@ impl Player {
             self.zones,
         );
         self.luck_state.update_broken_mirror_decay(day_rate);
+        // W4-a6 — the Galaxy Pearl mirror: `RecalculateLuck`
+        // (`Player.cs:29142-29145`) reads the player-file flag directly; the
+        // port's consumer lives in `LuckState.used_galaxy_pearl`, so the
+        // persistence owner (`Player.used_galaxy_pearl`, the 5340 use) seeds
+        // it before every recalculation (the g90 lane-7 shape, research/138).
+        self.luck_state.used_galaxy_pearl = self.used_galaxy_pearl;
         self.luck_state.recalculate_luck();
     }
 
@@ -11244,6 +11314,7 @@ impl Player {
                 max_mana: self.mana_max,
                 mana_regen_bonus: self.mana_regen_bonus,
                 mana_regen_buff: self.mana_regen_buff,
+                used_arcane_crystal: self.used_arcane_crystal,
                 well_fed: self.well_fed,
                 campfire: self.auras.campfire,
                 heart_lantern: self.auras.heart_lantern,
@@ -11262,6 +11333,11 @@ impl Player {
                 // ×1.5 (`:19242-19245`), in the engine's own input slots.
                 extra_time: if self.crimson_regen { 1.0 } else { 0.0 },
                 extra_ramp_scale: if self.crimson_regen { 1.5 } else { 1.0 },
+                // W4-a6 — the Aegis Crystal's permanent +0.2 time add
+                // (`Player.cs:19113-19116`) rides its OWN slot so the add
+                // lands BETWEEN the base +1 and the crimson row (the C#'s
+                // f32 order; the g90 lane-7 shape, research/138 §2).
+                aegis_crystal: self.used_aegis_crystal,
                 ..RegenInputs::default()
             };
             if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {

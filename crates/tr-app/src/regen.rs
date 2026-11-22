@@ -94,13 +94,27 @@ pub struct RegenInputs {
     /// to the base `statManaMax2 / 3 + 1` line).
     pub mana_regen_bonus: i32,
     pub mana_regen_buff: bool,
+    /// `Player.usedArcaneCrystal` (`Player.cs:856`): the permanent Arcane
+    /// Crystal — −0.05 off the delay per delay tick (`:19430-19433`) and
+    /// `statManaMax2 / 50` extra regen inside the expired-delay window
+    /// (`:19453-19456`). W4-a6.
+    pub used_arcane_crystal: bool,
     // — items / misc states (M3-EQUIP) —
     /// soulDrain / heartyMeal / honey / shinyStone-still regen adds
     /// (`:19156-19168`), folded by the owner.
     pub extra_regen: i32,
-    /// aegis +0.2, soulDrain +2, shinyStone-still +4, honey +2 time adds
-    /// (`:19112-19137`).
+    /// soulDrain +2, shinyStone-still +4, honey +2 time adds
+    /// (`:19121-19137`), folded by the owner (the aegis +0.2 has its OWN
+    /// slot below — the C# adds it BETWEEN the base +1 and these).
     pub extra_time: f32,
+    /// `Player.usedAegisCrystal` (`Player.cs:852`): the 5337 permanent
+    /// `lifeRegenTime += 0.2f` (`:19113-19116`) — its own slot so the add
+    /// runs BETWEEN the base `+1` (`:19112`) and the crimson `+1`
+    /// (`:19117-19120`)/soulDrain adds folded into `extra_time`, the C#'s
+    /// f32 accumulation order (W4-a6 reconcile: the g90 lane-7 shape,
+    /// research/138 §2 — pre-summing 0.2+1.0 into `extra_time` reorders
+    /// the f32 adds).
+    pub aegis_crystal: bool,
     /// crimson ×1.5 / shinyStone ×1.1 / rabid ramp scale (`:19247-19258`).
     pub extra_ramp_scale: f32,
     /// palladium's +4 straight into the counter (`:19264`).
@@ -133,8 +147,10 @@ impl Default for RegenInputs {
             heart_lantern: false,
             mana_regen_bonus: 0,
             mana_regen_buff: false,
+            used_arcane_crystal: false,
             extra_regen: 0,
             extra_time: 0.0,
+            aegis_crystal: false,
             extra_ramp_scale: 1.0,
             extra_count: 0,
             sitting_or_sleeping: false,
@@ -172,6 +188,12 @@ pub fn update_life_regen(
         state.life_regen_time = 0.0;
     }
     state.life_regen_time += 1.0; // (`:19112`)
+    // `:19113-19116` — the Aegis Crystal's +0.2, between the base +1 and
+    // the crimson/soulDrain adds folded into `extra_time` (W4-a6 reconcile,
+    // the g90 lane-7 slot — the C#'s f32 accumulation order).
+    if in_.aegis_crystal {
+        state.life_regen_time += 0.2;
+    }
     state.life_regen_time += in_.extra_time;
     state.life_regen += in_.extra_regen;
     if in_.campfire {
@@ -350,9 +372,10 @@ pub fn check_mana(
 /// `Player.UpdateManaRegen` (`Player.cs:19418-19563`). Returns true when this
 /// tick refilled the last missing mana point (the full-bar sound + dust in the
 /// C# — M6-AUDIO polish). `manaRegenDelayBonus` has no grant source in the
-/// source (`:18656` is its only write) and the arcane crystal is unported —
-/// both folded out (noted in ANALYSIS). `flags.item_in_use` is the C# `flag`
-/// (`:19420`) feeding the ManaV2 animation gate.
+/// source (`:18656` is its only write) — folded out (noted in ANALYSIS).
+/// The Arcane Crystal's two rows ride `RegenInputs::used_arcane_crystal`
+/// (W4-a6). `flags.item_in_use` is the C# `flag` (`:19420`) feeding the
+/// ManaV2 animation gate.
 pub fn update_mana_regen(
     state: &mut RegenState,
     in_: &RegenInputs,
@@ -363,6 +386,11 @@ pub fn update_mana_regen(
         state.mana_regen_delay -= 1.0;
         if in_.standing_still || in_.grappling || in_.mana_regen_buff {
             state.mana_regen_delay -= 1.0;
+        }
+        // `:19430-19433` — the Arcane Crystal's permanent −0.05 per delay
+        // tick (inside the `> 0` guard, after the still/grapple extra).
+        if in_.used_arcane_crystal {
+            state.mana_regen_delay -= 0.05;
         }
     }
     // `:19435-19441`: the ManaV2 sub-4 window counts as expired (flag3) and
@@ -380,6 +408,11 @@ pub fn update_mana_regen(
         state.mana_regen = num5;
         if in_.standing_still || in_.grappling || in_.mana_regen_buff {
             state.mana_regen += num5;
+        }
+        // `:19453-19456` — the Arcane Crystal's `statManaMax2 / 50` extra
+        // (integer division), after the still/grapple double.
+        if in_.used_arcane_crystal {
+            state.mana_regen += in_.max_mana / 50;
         }
         let num6 = *mana as f32 / in_.max_mana as f32;
         let num9: f32 = if in_.mana_regen_buff { 1.0 } else { 0.5 };
@@ -623,6 +656,50 @@ mod tests {
                                              // Once the delay is gone the regen line starts: base 200/3+1 = 67,
                                              // doubled while still → 134, ×(0.5+0.5·frac).
         assert!(st.mana_regen > 0);
+    }
+
+    /// W4-a6 — the Arcane Crystal's two rows (`Player.cs:19430-19433`,
+    /// `:19453-19456`): −0.05 off the delay per delay tick (after the
+    /// still/grapple extra) and `statManaMax2 / 50` extra regen inside the
+    /// expired-delay window.
+    #[test]
+    fn the_arcane_crystal_shaves_the_delay_and_adds_regen() {
+        let mut st = RegenState::default();
+        let mut mana = 100;
+        let mut in_ = inputs(400, 200);
+        in_.standing_still = true;
+        in_.used_arcane_crystal = true;
+        apply_mana_regen_delay(&mut st, 200, mana, false); // 4
+        update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+        // −1 base −1 still −0.05 crystal = 1.95 (the plain path lands 2.0).
+        assert!((st.mana_regen_delay - 1.95).abs() < 1e-5);
+        // Drain the delay, then pin the regen line: base 200/3+1 = 67,
+        // doubled while still → 134, + 200/50 = 4 → 138, ×(0.5+0.5·0.5).
+        st.mana_regen_delay = 0.0;
+        update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
+        assert_eq!(st.mana_regen, (138.0 * 0.75) as i32, "the +max/50 row");
+    }
+
+    /// W4-a6 reconcile — the Aegis Crystal's +0.2 rides its OWN input slot
+    /// (`Player.cs:19113-19116`), added BETWEEN the base +1 (`:19112`) and
+    /// the crimson +1 folded into `extra_time` (`:19117-19120`) — the C#'s
+    /// f32 accumulation order (the g90 lane-7 shape, research/138 §2).
+    #[test]
+    fn the_aegis_crystal_adds_between_the_base_and_the_crimson() {
+        let mut st = RegenState::default();
+        let mut life = 100;
+        let mut in_ = inputs(400, 200);
+        in_.aegis_crystal = true;
+        let _ = update_life_regen(&mut st, &in_, &mut life);
+        assert!(
+            (st.life_regen_time - 1.2).abs() < 1e-5,
+            "base +1 then crystal +0.2 (`:19112-19116`)"
+        );
+        // With the crimson row: +1 base, +0.2 crystal, +1 crimson = 2.2 —
+        // the crystal's add lands BEFORE the extra_time fold, verbatim.
+        in_.extra_time = 1.0;
+        let _ = update_life_regen(&mut st, &in_, &mut life);
+        assert!((st.life_regen_time - 3.4).abs() < 1e-5, "1.2 + 1.0 + 1.2");
     }
 
     #[test]

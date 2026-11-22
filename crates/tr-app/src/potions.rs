@@ -840,7 +840,7 @@ pub fn undo_slow_magic_use(app: &mut App) {
 /// 4529`): the player hitbox rect, the HealLife colour, the UpdatePlayers
 /// stream. Shared by the ItemCheck and quick-use paths. Reads the player
 /// coords into locals first so the pool/rng borrows stay disjoint.
-fn spawn_heal_text(app: &mut App, amount: i32) {
+pub(crate) fn spawn_heal_text(app: &mut App, amount: i32) {
     let Some(p) = app.player.as_ref() else {
         return;
     };
