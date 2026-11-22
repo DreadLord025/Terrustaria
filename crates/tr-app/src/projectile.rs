@@ -3770,24 +3770,36 @@ impl Projectile {
 
     /// `AI()`'s aiStyle-108 block (`Projectile.cs:33679-34025`) — the
     /// ritual markers (the 578 lightning / the 579 portal / the 813 Blood
-    /// Nautilus tears, W4-d11): the timeline `ai[0] <= 50 -> <= 90 ->
+    /// Nautilus tears, W4-d11/W4-d13): the timeline `ai[0] <= 50 -> <= 90 ->
     /// <= 120 -> else` with the scale/alpha ramps and the rotation
     /// decrements, the 578's aim rotation, the 580 bolt it fires at the
     /// 90th tick, the 579's two VortexAliens, and the 813's BloodSquid
-    /// (619) spawn + its per-stage dust-gate census.
+    /// (619) spawn + its per-stage dust census + the tick-90 Item8 cue.
     ///
     /// Deviations: the 578/579 dust arms (229/240, the `ai[1] == 1f`
     /// burst) stay unmodelled (the pre-existing recorded skip — their
     /// gate rolls are NOT on the stream, the 578/579 witnesses pin the
-    /// current stream); the 813's dust GATES are modelled (the W4-d11
-    /// census, the bodies skip). The late-stage clone spawn rides the
-    /// 580's own machine. The 813's 619 spawn intent carries the rowed
+    /// current stream); the 813's 13 dust SITES keep their explicit draws
+    /// on the stream (the W4-d13 census — the bodies skip, g64c's
+    /// emitters land at the keep-one). The late-stage clone spawn rides
+    /// the 580's own machine. The 813's 619 spawn intent carries the rowed
     /// BloodSquid kind (W4-d11 DOC-SWEEP — `NpcKind::BloodSquid.to_u16()`
-    /// keeps the vanilla 619; the drain's `from_u16` resolves it).
+    /// keeps the vanilla 619; the drain's `from_u16` resolves it). The
+    /// `SoundID.Item8` tick-90 cue rides `wants_sound` (the 578/579's
+    /// Item113/Item117 stay unported).
+    ///
+    /// BATCH-D KEEP-ONE NOTE (research/355 §3): g64 `3cdc6423`'s dust-wired
+    /// 5-arg superset WINS this machine wholesale when g64 merges — it
+    /// absorbed every d13 fix kept here (the wind-up no-scale, the
+    /// once-per-death Kill head + `kill_time_left`, the Item8 cue) and the
+    /// 619 spawn resolves through d11's kind row. This interim keeps d13's
+    /// census machine (the g64-stream-matching value shape) over d11's
+    /// gates-only stand-in; NO hybrid machine is built (355 §3 DROP rule).
     fn ai_vortex_ritual(&mut self, player: (f32, f32), rng: &mut dyn tr_core::loot::DropRng) {
         // `:33681` — flag53: the 578/579 pair (the 813 is NOT on it).
         let flag53 = self.kind == VORTEX_PORTAL || self.kind == VORTEX_LIGHTNING;
-        // `:33696-33700`'s first-tick sound latch (the 578/579 only).
+        // `:33696-33700`'s first-tick sound latch (the 578/579 only; the
+        // cue itself is unported — the latch state is kept).
         if flag53 && self.local_ai[1] == 0.0 {
             self.local_ai[1] = 1.0;
         }
@@ -3803,24 +3815,33 @@ impl Projectile {
             };
         }
         self.ai[0] += 1.0;
+        // W4-d13 fix: the wind-up arm (`:33714-33783`) writes NO scale —
+        // the C# keeps the stock spawn 1 through it (only the charge
+        // `:33797`, the full `:33891` and the dissolve `:33944` write).
+        // The old tail wrote 0.0 unconditionally — invisible while the
+        // bodies were skipped, wrong for g64c's emitters (the drip's
+        // `scale = this.scale` and the dissolve's `vector * this.scale`
+        // read it) and for the generic draw.
         let scale;
         if self.ai[0] <= 50.0 {
-            // The wind-up: the 578/579 dust arms (unmodelled). The 813's
-            // two Next(4) gates (`:33762`/`:33772`) — the bodies skip.
-            // W4-d11 RETIRE item 3: this gates-only stand-in machine DROPS
-            // at the three-way keep-one — g64 `3cdc6423`'s dust-wired
-            // superset survives (it carries the d13 b56db900 wind-up scale
-            // fix: the C# `:33714-33783` writes NO scale, the stock 1 holds;
-            // this arm's `scale = 0.0` is the stale stand-in the g64 machine
-            // corrects). The shared ROW above is byte-equal across the three.
-            scale = 0.0;
+            // The wind-up: the 578/579 dust arms (unmodelled, g64 batch 2).
+            scale = self.scale;
             if self.kind == BLOOD_NAUTILUS_TEARS {
+                // `:33760-33782` — two independent Next(4) gates: the
+                // type-5 ring (the Next(10,21) radius draw) and the
+                // type-240 ring (the fixed 30). Per pass: RotatedByRandom's
+                // TWO NextDouble draws (the ai067_b next_float convention),
+                // the optional radius, the NextFloat scale. Bodies skipped.
                 if rng.next_range(0, 4) == 0 {
-                    // `:33764-33770` — the 5 dust (RotatedByRandom pair +
-                    // Next(10,21) + NextFloat): body skipped, gates only.
+                    let _ = rng.next_float();
+                    let _ = rng.next_float();
+                    let _ = rng.next_range(10, 21); // `:33767`
+                    let _ = rng.next_float(); // `:33769`
                 }
                 if rng.next_range(0, 4) == 0 {
-                    // `:33774-33780` — the 240 dust: body skipped.
+                    let _ = rng.next_float();
+                    let _ = rng.next_float();
+                    let _ = rng.next_float(); // `:33779`
                 }
             }
         } else if self.ai[0] <= 90.0 {
@@ -3828,13 +3849,21 @@ impl Projectile {
             scale = (self.ai[0] - 50.0) / 40.0;
             self.alpha = 255 - (255.0 * scale) as i32;
             self.rot -= std::f32::consts::PI / 20.0;
-            // The 813's two Next(2) gates (`:33860`/`:33871`).
             if self.kind == BLOOD_NAUTILUS_TEARS {
+                // `:33858-33881` — the charge's two Next(2) gates (the
+                // type-5 ring draws the Next(10,21) radius, the type-240
+                // ring sits at the fixed 30; both carry the dropped
+                // customData tag).
                 if rng.next_range(0, 2) == 0 {
-                    // `:33862-33869` — the 5 dust: body skipped.
+                    let _ = rng.next_float();
+                    let _ = rng.next_float();
+                    let _ = rng.next_range(10, 21); // `:33865`
+                    let _ = rng.next_float(); // `:33867`
                 }
                 if rng.next_range(0, 2) == 0 {
-                    // `:33873-33880` — the 240 dust: body skipped.
+                    let _ = rng.next_float();
+                    let _ = rng.next_float();
+                    let _ = rng.next_float(); // `:33878`
                 }
             }
         } else if self.ai[0] <= 120.0 {
@@ -3842,34 +3871,50 @@ impl Projectile {
             scale = 1.0;
             self.alpha = 0;
             self.rot -= std::f32::consts::PI / 60.0;
-            // The 813's if/else Next(2) gate (`:33896` — ONE roll, the
-            // taken branch's dust body skips).
             if self.kind == BLOOD_NAUTILUS_TEARS {
-                if rng.next_range(0, 2) == 0 {
-                    // `:33898-33905` — the 5 dust: body skipped.
-                } else {
-                    // `:33909-33916` — the 240 dust: body skipped.
+                // `:33894-33918` — ONE Next(2) pick: the 0 arm's type-5
+                // ring draws the Next(10,21) radius, the else arm's
+                // type-240 ring sits at 30; both draw the NextFloat scale.
+                let pick = rng.next_range(0, 2);
+                let _ = rng.next_float();
+                let _ = rng.next_float();
+                if pick == 0 {
+                    let _ = rng.next_range(10, 21); // `:33901`
                 }
+                let _ = rng.next_float(); // `:33903`/`:33914`
             }
         } else {
             // `:33944-33950`'s dissolve.
             scale = 1.0 - (self.ai[0] - 120.0) / 60.0;
             self.alpha = 255 - (255.0 * scale) as i32;
             self.rot -= std::f32::consts::PI / 30.0;
-            if self.alpha >= 255 {
+            if self.active && self.alpha >= 255 {
+                // `:33949`'s Kill — the C# does NOT return: the dust loops
+                // and the `:34018` drip gate still run on the kill tick.
+                // The `!active` head (`:70644`) keeps it once-per-death.
+                self.kill_time_left = self.time_left;
                 self.active = false;
-                // W4-d11: the C# `Kill()` does NOT return (`:33947-33950`)
-                // — the 813's death-tick dust gates + opacity tail below
-                // still roll. The old `return` here is dropped: for the
-                // 578/579 it is a no-op (the slot is dead, `ai[0] != 90`,
-                // the opacity tail is 813-only), so their state stays
-                // byte-identical.
+                self.time_left = 0;
+                // The C# `Kill()` does NOT return (`:33947-33950`) — the
+                // 813's death-tick dust picks + opacity tail below still
+                // roll (the d11 be58df9e no-return fix + the d13 kill-head
+                // shape, both absorbed by the g64 superset at the keep-one).
             }
-            // The 813's two Next(3) switch gates (`:33955`, the case-2
-            // no-op draws nothing further).
             if self.kind == BLOOD_NAUTILUS_TEARS {
+                // `:33951-33983` — TWO Next(3) switch picks: case 0 the
+                // type-5 ring (the Next(10,21) radius), case 1 the type-240
+                // ring (fixed 30), case 2 draws NOTHING. The scale-folded
+                // rotation vector feeds the bodies only (skipped).
                 for _ in 0..2 {
-                    let _ = rng.next_range(0, 3);
+                    let pick = rng.next_range(0, 3);
+                    if pick < 2 {
+                        let _ = rng.next_float();
+                        let _ = rng.next_float();
+                        if pick == 0 {
+                            let _ = rng.next_range(10, 21); // `:33962`
+                        }
+                        let _ = rng.next_float(); // `:33964`/`:33976`
+                    }
                 }
             }
         }
@@ -3881,7 +3926,17 @@ impl Projectile {
                 // centre, `ai0 = ai[1]`.
                 let (vx, vy) = (self.ai[1].cos() * 8.0, self.ai[1].sin() * 8.0);
                 self.wants_ritual_bolt = Some((self.pos.x - vx, self.pos.y - vy, vx, vy, self.ai[1]));
-            } else if self.kind == VORTEX_PORTAL {
+            } else if self.kind == BLOOD_NAUTILUS_TEARS {
+                // `:33792-33795` — the non-flag53 arm's Item8 cue.
+                self.wants_sound = Some((2, 8, self.pos.x, self.pos.y, 0.0));
+                // `:33882-33886`'s BloodSquid (619) at the Centre, zero
+                // velocity. W4-d11 DOC-SWEEP: the kind is rowed now —
+                // `to_u16` keeps the vanilla 619, the drain's `from_u16`
+                // resolves the real kind (the old raw-id fold is gone).
+                let (cx, cy) = (self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+                self.wants_mark_spawn
+                    .push((NpcKind::BloodSquid.to_u16(), cx, cy, 0.0, 0.0));
+            } else {
                 // `:33844-33856`'s two VortexAliens (427) at the centre
                 // with `-UnitY.RotatedByRandom(2*PI) * rand.Next(4, 9) - UnitY*2`.
                 // B-6d: BOTH spawn (`for num815 < 2`) — the single-Option
@@ -3904,24 +3959,17 @@ impl Projectile {
                     self.wants_mark_spawn
                         .push((NpcKind::VortexAlien.to_u16(), self.pos.x, self.pos.y, vx, vy));
                 }
-            } else if self.kind == BLOOD_NAUTILUS_TEARS {
-                // `:33882-33886`'s BloodSquid (619) at the centre, zero
-                // velocity. W4-d11 DOC-SWEEP: the kind is rowed now —
-                // `to_u16` keeps the vanilla 619, the drain's `from_u16`
-                // resolves the real kind (the old raw-id fold is gone).
-                self.wants_mark_spawn
-                    .push((NpcKind::BloodSquid.to_u16(), self.pos.x, self.pos.y, 0.0, 0.0));
             }
         }
-        // `:34018-34024` — the 813's opacity dust tail: one NextFloat
-        // gate against Opacity (1 - alpha/255), the taken branch's
-        // NextVector2Circular pair (the 90 dust body skips).
-        if self.kind == BLOOD_NAUTILUS_TEARS {
-            let opacity = 1.0 - self.alpha as f32 / 255.0;
-            if rng.next_float() < opacity {
-                let _ = rng.next_float(); // NextVector2Circular X
-                let _ = rng.next_float(); // NextVector2Circular Y
-            }
+        // `:34018-34024` — the 813's Opacity-gated drip: ONE NextFloat
+        // gate; on a pass the NextVector2Circular(3, 20) = the unit-angle
+        // NextFloat then the radius NextFloat (Utils.cs:1261-1269, the
+        // empress form — two draws). The type-90 body (velocity UnitY,
+        // noGravity, scale = this.scale) is skipped. Runs even on the
+        // kill tick (the C# has no return after the Kill).
+        if self.kind == BLOOD_NAUTILUS_TEARS && rng.next_float() < opacity_of(self.alpha) {
+            let _ = rng.next_float(); // the unit angle
+            let _ = rng.next_float(); // the radius
         }
     }
 
@@ -10680,6 +10728,28 @@ impl Projectile {
             [c[0], c[1], c[2], 1.0],
             self.rot,
         );
+        // W4-d13 — `Main.cs:34007-34027`: the 650's spelunker pointer draws
+        // AFTER the generic sprite (`:33674`'s common push), on the
+        // `TextureAssets.Extra[66]` sheet with its OWN origin
+        // (`texture.Size()/2`) and scale (`1 + floor(localAI[1])·0.02`, NOT
+        // `proj.scale` — that rides the offset only), `SpriteEffects.None`.
+        // The pose decode is `tentacle_pointer_pose` (the steering tail's
+        // `:35694-35695` re-encode inverse). The pets' generic-sprite
+        // `origin32.Y -= 4` tweak (`:33629-33632`) is the generic arm's own
+        // unported origin ladder — cited, not this arm's.
+        if self.kind == SUSPICIOUS_TENTACLE {
+            if let Some(sheet) = lookups.extra_66 {
+                let q = self.tentacle_pointer_quad(
+                    &sheet,
+                    lookups.atlas_size,
+                    light,
+                    camera,
+                    zoom,
+                    screen,
+                );
+                r.push_ui_sprite_rot(q.tl, q.size, q.uv, q.tint, self.rot);
+            }
+        }
     }
 
     /// `Main.DrawProj_LightsBane` (`Main.cs:27455-27495`) — the Light's Bane
@@ -10785,6 +10855,62 @@ impl Projectile {
             size,
             uv,
             tint: [c[0] * fade, c[1] * fade, c[2] * fade, fade],
+        }
+    }
+
+    /// `Main.cs:34007-34027` — the 650 spelunker-pointer quad, computed pure
+    /// so the unit tests pin it without a GPU (the [`Self::frame_quad`]
+    /// pattern). The anchor is `vector98 + vector111`: the box centre +
+    /// `gfxOffY` (`:33174`) plus [`crate::projectile_ai_pets124::tentacle_pointer_pose`]'s
+    /// offset; the sheet is `Extra_66` whole (`sourceRectangle: null`,
+    /// `:34026`), the origin its own `Size()/2`, the scale the pose's
+    /// `1 + floor(localAI[1])·0.02` — the `origin − R·origin` top-left shift
+    /// keeps the C# pivot pinned like `frame_quad`. The tint is `color80 =
+    /// proj.GetAlpha(projectileColor)` (`:33227`) — the same light × fade
+    /// the generic arm reads at the box centre (the port's `GetAlpha`
+    /// convention, `frame_quad`'s tint doc).
+    fn tentacle_pointer_quad(
+        &self,
+        sheet: &tr_render::SheetRect,
+        atlas_size: (u32, u32),
+        light: &LightMap,
+        camera: Vec2,
+        zoom: f32,
+        screen: Vec2,
+    ) -> FrameQuad {
+        let (off, pose_scale) = crate::projectile_ai_pets124::tentacle_pointer_pose(
+            self.local_ai[0],
+            self.local_ai[1],
+            self.scale,
+        );
+        let size = [
+            sheet.width as f32 * pose_scale * zoom,
+            sheet.height as f32 * pose_scale * zoom,
+        ];
+        // `:34024`'s `vector98 + vector111` — the ui batch's screen-px
+        // conversion (the `frame_quad` anchor).
+        let anchor = [
+            (self.pos.x + self.w * 0.5 + off.x - camera.x) * zoom + screen.x * 0.5,
+            (self.pos.y + self.h * 0.5 + self.gfx_off_y + off.y - camera.y) * zoom
+                + screen.y * 0.5,
+        ];
+        // `:34026`'s `origin = texture2D4.Size() / 2f`, scaled.
+        let origin = [size[0] * 0.5, size[1] * 0.5];
+        let (s, c) = self.rot.sin_cos();
+        let tl = [
+            anchor[0] - (origin[0] * c - origin[1] * s),
+            anchor[1] - (origin[0] * s + origin[1] * c),
+        ];
+        let lc = crate::rain::light_at(
+            light,
+            Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5),
+        );
+        let fade = (1.0 - self.alpha as f32 / 255.0).clamp(0.0, 1.0);
+        FrameQuad {
+            tl,
+            size,
+            uv: assets::uv_rect(sheet, atlas_size, 0, 0, sheet.width, sheet.height),
+            tint: [lc[0] * fade, lc[1] * fade, lc[2] * fade, fade],
         }
     }
 
@@ -13678,7 +13804,7 @@ pub fn randomize_insanity_shadow_for(
 /// the setter writes `alpha = (int)Clamp((1 - value) * 255, 0, 255)`. The
 /// aiStyle-133 raise marker ramps it 0 → 1 → 0 over its 80 ticks
 /// (`:36442-36453`) and the aiStyle-157 spikes ride it (`:51442-51451`).
-fn opacity_of(alpha: i32) -> f32 {
+pub(crate) fn opacity_of(alpha: i32) -> f32 {
     1.0 - alpha as f32 / 255.0
 }
 
@@ -15115,6 +15241,34 @@ pub struct ProjectilePool {
     /// [`ProjectilePool::set_mouse_text_color`] (the `set_disco` setter
     /// pattern); the default is the 225 stock (`app/mod.rs:3973`).
     mouse_text_color: u8,
+    /// W4-d13 — `Main.screenWidth` for the aiStyle-124 tentacle's ore-scan
+    /// gate (`Projectile.cs:35577`); the world sim feeds it per tick
+    /// (`set_screen_width`, the `set_disco` pattern). The default is the
+    /// headless 1280 fallback (`App::screen_size`).
+    screen_width: f32,
+    /// W4-d13 — the aiStyle-125 Wire Kite's per-tick mouse/channel snapshot
+    /// (`Projectile.cs:35697-35833`'s `Main.mouseRight`/`mouseRightRelease`
+    /// + the screen-space mouse point). The world sim feeds it before the
+    /// pass (the `set_bobber_inputs` pattern); `None` keeps the arm inert.
+    wire_kite_inputs: Option<crate::projectile_ai_wire_kite::WireKiteInputs>,
+    /// W4-d13 — the kite arm's `Main.blockMouse = true` intent
+    /// (`Projectile.cs:35714`), drained by the world-sim pass (the
+    /// `pending_spear_hold` pattern).
+    pending_block_mouse: bool,
+    /// W4-d13 — the kite arm's `SetDummyItemTime(2)` hold
+    /// (`Projectile.cs:35831`), drained by the world-sim pass onto
+    /// `app.swing`/`app.item_time` (the `pending_spear_hold` pattern).
+    pending_kite_hold: bool,
+    /// W4-d13 — `Kill()`'s type-651 arm (`Projectile.cs:72051-72067`): the
+    /// `localAI[0] == 1` release latch's `Wiring.MassWireOperation(ps, pe,
+    /// master)` request — `(owner, ps_x, ps_y, pe_x, pe_y)`. `ps` is the
+    /// `ai[0]/ai[1]` tile anchor (`new Vector2(ai0, ai1).ToPoint()`), `pe`
+    /// is `Center.ToTileCoordinates()` (`(int)X >> 4`, Utils.cs:1807-1810).
+    /// The world-sim pass drains it into the app's pending request (the
+    /// `pending_spear_hold` pattern); the APPLY stays the wiring lane's
+    /// documented deferral (`world_sim/editing/wiring.rs:28-29` — the
+    /// `WiresUI` tool modes, f11's claim).
+    pending_mass_wire_ops: Vec<(u8, i32, i32, i32, i32)>,
     /// S1-E-21 wave C — the landed strikes' `NPC.HitSound` intents
     /// (`NPC.cs:81544-81553` via `Projectile.Damage`'s `StrikeNPC`,
     /// `Projectile.cs:13649`): `(cue, npc.x, npc.y)` per landed hit, drained
@@ -15565,6 +15719,11 @@ impl ProjectilePool {
             hook_blacklist: HashMap::new(),
             disco: [255, 0, 0],
             mouse_text_color: 225,
+            screen_width: 1280.0,
+            wire_kite_inputs: None,
+            pending_block_mouse: false,
+            pending_kite_hold: false,
+            pending_mass_wire_ops: Vec::new(),
             pending_npc_hit_sounds: Vec::new(),
             pending_proj_sounds: Vec::new(),
             pending_channel_tracks: Vec::new(),
@@ -15657,6 +15816,46 @@ impl ProjectilePool {
     /// reads it (the `set_disco` setter pattern).
     pub fn set_mouse_text_color(&mut self, mouse_text_color: u8) {
         self.mouse_text_color = mouse_text_color;
+    }
+
+    /// W4-d13 — `Main.screenWidth` as the aiStyle-124 tentacle's ore-scan
+    /// distance gate reads it (`Projectile.cs:35577`). The world-sim pass
+    /// feeds the swapchain width per tick (the `set_disco` pattern); the
+    /// default mirrors the headless 1280 fallback (`App::screen_size`).
+    pub fn set_screen_width(&mut self, screen_width: f32) {
+        self.screen_width = screen_width;
+    }
+
+    /// W4-d13 — the aiStyle-125 Wire Kite's per-tick snapshot
+    /// (`Projectile.cs:35697-35833`). The world sim builds it from the live
+    /// mouse/channel state before the pass (the `set_bobber_inputs` pattern).
+    pub fn set_wire_kite_inputs(
+        &mut self,
+        inputs: Option<crate::projectile_ai_wire_kite::WireKiteInputs>,
+    ) {
+        self.wire_kite_inputs = inputs;
+    }
+
+    /// W4-d13 — the kite arm's `Main.blockMouse = true` drain
+    /// (`Projectile.cs:35714`): the world sim applies it to `app.block_mouse`.
+    pub fn take_block_mouse(&mut self) -> bool {
+        std::mem::take(&mut self.pending_block_mouse)
+    }
+
+    /// W4-d13 — the kite arm's `SetDummyItemTime(2)` drain
+    /// (`Projectile.cs:35831`): the world sim re-arms the swing/item timers
+    /// at 2 ticks (the `take_spear_hold` pattern).
+    pub fn take_kite_hold(&mut self) -> bool {
+        std::mem::take(&mut self.pending_kite_hold)
+    }
+
+    /// W4-d13 — `Kill()`'s type-651 MassWireOperation request drain
+    /// (`Projectile.cs:72051-72067`): `(owner, ps_x, ps_y, pe_x, pe_y)` per
+    /// latched release death. The world sim forwards them to the app's
+    /// pending-request slot; the wiring lane's apply consumes them when the
+    /// `WiresUI` tool modes land (f11's deferral).
+    pub fn take_mass_wire_ops(&mut self) -> Vec<(u8, i32, i32, i32, i32)> {
+        std::mem::take(&mut self.pending_mass_wire_ops)
     }
 
     /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
@@ -18141,6 +18340,146 @@ impl ProjectilePool {
                                 rng,
                                 local_owner,
                             );
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                        }
+                        // W4-d13 — `AI()`'s `else if (this.aiStyle == 124)`
+                        // (`Projectile.cs:34970-35696`): the seven pet rows
+                        // (650 + 882/888/895/896/898/957, `STYLE124_PETS`).
+                        // The keep-alive pins, the home-spot ladder, the
+                        // frame machines, the 957 ground bounce and the 650
+                        // ore scan + steering tail live in
+                        // `projectile_ai_pets124` (the module's RNG census).
+                        124 => {
+                            let screen_width = self.screen_width;
+                            self.slots[i].ai_pets_style124(
+                                world,
+                                &npcs[..],
+                                player.as_deref(),
+                                rng,
+                                screen_width,
+                            );
+                            // `HandleMovement`: `tileCollide = false`
+                            // (every row) and 124 is not in `UpdatePosition`'s
+                            // skip list (`:20435`) — the free integrate runs
+                            // every sub-step, dead slots included (the C#
+                            // moves before the `!active` return, `:17027`).
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                        }
+                        // W4-d13 — `AI()`'s `else if (this.aiStyle == 125)`
+                        // (`Projectile.cs:35697-35833`): the Wire Kite
+                        // (651). The mouse/channel snapshot rides
+                        // `wire_kite_inputs` (the bobber pattern); the
+                        // blockMouse + dummy-time intents drain at the
+                        // pass tail. The arm pins the velocity to zero, so
+                        // the free integrate is a no-op move.
+                        125 => {
+                            let mk = self.wire_kite_inputs.unwrap_or_default();
+                            let aim_pt = inputs.aim.map(|(x, y)| Vec2::new(x, y));
+                            let tick = self.slots[i].ai_wire_kite(
+                                player.as_deref_mut(),
+                                aim_pt,
+                                mk.mouse_right,
+                                mk.mouse_right_release,
+                                local_owner,
+                                i,
+                            );
+                            if tick.block_mouse {
+                                self.pending_block_mouse = true;
+                            }
+                            if tick.dummy_hold {
+                                self.pending_kite_hold = true;
+                            }
+                            // `HandleMovement`: `tileCollide = false`
+                            // (`:6997`) — the free integrate (`:20445`).
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                        }
+                        // W4-d13 — `AI()`'s `else if (this.aiStyle == 126)`
+                        // (`Projectile.cs:35834-35997`): the Geyser Trap
+                        // (654) / Ogre Stomp (670) column. The dust census
+                        // rides the pass's stream (the module doc); the
+                        // stomp's tick-12 children spawn through the pool.
+                        126 => {
+                            let children =
+                                self.slots[i].ai_geyser_stomp(world, rng, local_owner);
+                            let (kind, damage, kb, owner_id) = {
+                                let p = &self.slots[i];
+                                (p.kind, p.damage, p.knock_back, p.owner)
+                            };
+                            for c in children {
+                                // `NewProjectile` centres the box
+                                // (`:10876-10877`); velocity -UnitY.
+                                if let Some(s) = self.spawn_with_data_ai_owned(
+                                    kind,
+                                    owner_id,
+                                    c.x - 15.0,
+                                    c.y - 15.0,
+                                    0.0,
+                                    -1.0,
+                                    damage,
+                                    kb,
+                                    0.0,
+                                    0.0,
+                                ) {
+                                    self.slots[s].local_ai[1] = c.local_ai1;
+                                    self.slots[s].friendly = false;
+                                }
+                            }
+                            // `HandleMovement`: `tileCollide = false`
+                            // (`:7030`/`:7180`) — the free integrate.
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                        }
+                        // W4-d13 — `AI()`'s `else if (this.aiStyle == 127)`
+                        // (`Projectile.cs:35998-36085`): the sandnado column
+                        // (656 friendly / 657 hostile). The box grows from
+                        // the vertical expand; the tail dust census rides
+                        // the pass's stream (the module doc).
+                        127 => {
+                            self.slots[i].ai_sandnado(
+                                world,
+                                player.as_deref(),
+                                rng,
+                                local_owner,
+                            );
+                            // `HandleMovement`: `tileCollide = false`
+                            // (`:7055`/`:7067`) — the free integrate.
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                        }
+                        // W4-d13 — `AI()`'s `else if (this.aiStyle == 128)`
+                        // (`Projectile.cs:36086-36197`): the hostile
+                        // Sandnado's spawn mark (658). The spin/fade/scale
+                        // machine + the dust census ride the pass's stream;
+                        // the tick-60 sandnado (657) spawn resolves here.
+                        128 => {
+                            let expert =
+                                player.as_deref().is_some_and(|p| p.buffs.expert_mode);
+                            let spawn =
+                                self.slots[i].ai_sandnado_mark(rng, expert, local_owner);
+                            if let Some(s) = spawn {
+                                let owner_id = self.slots[i].owner;
+                                // `NewProjectile` centres the box
+                                // (`:10876-10877`); the 657 is hostile.
+                                if let Some(slot) = self.spawn_with_data_ai_owned(
+                                    SANDNADO_HOSTILE,
+                                    owner_id,
+                                    s.x - 5.0,
+                                    s.y - 5.0,
+                                    0.0,
+                                    0.0,
+                                    s.damage,
+                                    3.0,
+                                    0.0,
+                                    0.0,
+                                ) {
+                                    self.slots[slot].friendly = false;
+                                }
+                            }
+                            // `HandleMovement`: `tileCollide = false`
+                            // (`:7078`) — the free integrate.
                             let v = self.slots[i].vel;
                             self.slots[i].pos += v;
                         }
@@ -21104,6 +21443,29 @@ impl ProjectilePool {
                 // called from `Kill()` `:77258-77261`): the trio's death
                 // crack roll on the tile below its centre.
                 self.debris_death_crack(i, world, rng, local_owner);
+                // W4-d13 — `Kill()`'s type-651 arm (`Projectile.cs:72051-
+                // 72067`): the Wire Kite's `localAI[0] == 1` release latch
+                // (the aiStyle-125 arm sets it, `:35720`) queues the
+                // `Wiring.MassWireOperation(ps, pe, master)` request —
+                // `ps = (ai[0], ai[1]).ToPoint()`, `pe =
+                // Center.ToTileCoordinates()` (`(int)X >> 4`). The
+                // `owner == Main.myPlayer` gate folds to the simulated-slot
+                // set (the pool only walks local-owned slots). The APPLY
+                // stays the wiring lane's deferral (`world_sim/editing/
+                // wiring.rs:28-29` — the `WiresUI` tool modes, f11's
+                // claim); the request rides the pool's drain.
+                if self.slots[i].kind == WIRE_KITE
+                    && self.slots[i].local_ai[0] == 1.0
+                    && self.slots[i].owner == local_owner
+                {
+                    let p = &self.slots[i];
+                    let ps_x = p.ai[0] as i32;
+                    let ps_y = p.ai[1] as i32;
+                    let pe_x = (p.pos.x + p.w * 0.5) as i32 >> 4;
+                    let pe_y = (p.pos.y + p.h * 0.5) as i32 >> 4;
+                    self.pending_mass_wire_ops
+                        .push((p.owner, ps_x, ps_y, pe_x, pe_y));
+                }
                 // `Kill()`'s floating-turret arms (`Projectile.cs:72068-72093`/
                 // `:72155-72176`, S1-D-4b-3): the turret/crystal sweep their
                 // shots, the shard runs its death burst.
@@ -21120,6 +21482,15 @@ impl ProjectilePool {
                     // `:72182` — the Item14 cue.
                     let p = &self.slots[i];
                     self.pending_proj_sounds.push((2, 14, p.pos.x, p.pos.y, 0.0));
+                }
+                // W4-d13 — `Kill()`'s type-658 arm (`Projectile.cs:72374-
+                // 72393`): the Sandnado Mark's death dust burst (10 dust
+                // 269, the Next(3) gate + the fadeIn/scale rolls). The C#
+                // body order: the 608 arm (`:72177`) precedes the 658 arm
+                // (`:72374`), which sits AFTER the 644 shard (`:72155`)
+                // and BEFORE the 444 bubble (`:73398`).
+                if self.slots[i].kind == SANDNADO_MARK {
+                    crate::projectile_ai_sandnado_mark::sandnado_mark_kill_draws(rng);
                 }
                 // S1-D-4 unarmed styles: the 932's death-dust census
                 // (`:71109-71147`) and the Celebration rockets' Kill arm
@@ -24661,6 +25032,13 @@ impl ProjectilePool {
                 if matches!(p.kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL) {
                     p.damage = (p.damage as f64 * 0.96) as i32;
                 }
+                // W4-d13 — `Damage_PVE_Inner`'s type-656 arm
+                // (`Projectile.cs:14181-14184`): the friendly Sandnado's
+                // per-hit counter — every landed hit ticks `localAI[0]`,
+                // the 30-hit fade the aiStyle-127 arm reads (`:36015`).
+                if p.kind == SANDNADO_FRIENDLY {
+                    p.local_ai[0] += 1.0;
+                }
                 // S1-P-i21 — `Damage_PVE_Inner`'s type-294 arm
                 // (`Projectile.cs:13411-13413`): the Shadowbeam's stored damage
                 // decays ×0.9 (the `(int)((double)damage * 0.9)` truncation) on
@@ -24887,12 +25265,23 @@ impl ProjectilePool {
         if p.damage <= 0 {
             return;
         }
-        let cx = p.pos.x + SIZE * 0.5;
-        let cy = p.pos.y + SIZE * 0.5;
-        let inside = cx >= player.x
-            && cx < player.x + crate::player::WIDTH
-            && cy >= player.y
-            && cy < player.y + crate::player::HEIGHT;
+        let cx = p.pos.x + p.w * 0.5;
+        let cy = p.pos.y + p.h * 0.5;
+        // W4-d13 fix — `Damage_EVP`'s `Colliding(projRectangle, getRect())`
+        // (`Projectile.cs:14816`): the generic `Colliding` tail is the full
+        // `Rectangle.Intersects` (`:15887-15890`, strict edge overlap), NOT
+        // a centre-point test. The geyser/stomp/sandnado columns (30-wide,
+        // up to 320-tall) hit anywhere their box overlaps the player.
+        let inside = crate::item::rects_intersect(
+            p.pos.x,
+            p.pos.y,
+            p.w,
+            p.h,
+            player.x,
+            player.y,
+            crate::player::WIDTH,
+            crate::player::HEIGHT,
+        );
         if !inside {
             return;
         }
@@ -24901,11 +25290,20 @@ impl ProjectilePool {
         // with `Crit: false` and `PlayerDeathReason.ByProjectile` — the port
         // hands the shot's type over for the dismount-on-hit gate
         // (`Player.cs:38396-38400`, S1-C-7 wave B).
-        // The single-hit kill below runs after `Hurt` regardless of the
-        // dodge (the C# `Damage()`'s kill block follows the `Hurt` arm).
         player.hurt_with_source(p.damage, cx, rng, p.is_damage_dodgeable(), p.kind);
-        self.slots[slot].active = false;
-        self.slots[slot].time_left = 0;
+        // W4-d13 fix — `Damage_EVP` has NO generic kill after the Hurt arm
+        // (`:14868-14899`: only the trap flag + the 435/436/437/681/682
+        // penetrate specials). The port's standing single-hit convention
+        // (the S1-C-7 witnesses) keeps killing the finite-penetrate shots;
+        // the `penetrate = -1` columns (the geyser/stomp/sandnado family)
+        // are exempt — they keep hurting through their 60-tick life, the
+        // player i-frames pace the hits (the C# behaviour).
+        // (`trapDebuffSource`/the dead-man's-sweater halving `:14845-14848`
+        // have no port fields — the standing hazard-lane deviation.)
+        if self.slots[slot].penetrate > 0 {
+            self.slots[slot].active = false;
+            self.slots[slot].time_left = 0;
+        }
     }
 }
 
@@ -25965,6 +26363,72 @@ mod tests {
         pool.damage_player(slot, Some(&mut player), &mut rng);
         assert!(player.hp < hp0, "the 9999 shot lands through the belt");
         assert!(rng.draws.is_empty(), "no dodge roll ran");
+    }
+
+    /// W4-d13 — the geyser column's hostile proxy (`Projectile.cs:7024-7037`
+    /// friendly AND hostile, penetrate -1; `Damage_EVP` `:14816`'s
+    /// `Colliding` full-box test + `:14868-14899`'s NO-kill tail): a 30-wide
+    /// column whose CENTRE sits outside the player box still hits when its
+    /// box overlaps, and the hit does NOT kill the column — it keeps
+    /// hurting through its life (the i-frames pace the repeats).
+    #[test]
+    fn w4_d13_the_geyser_column_hits_by_box_and_survives_the_hit() {
+        let w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        player.immune = false;
+        player.immune_time = 0;
+        player.hurt_cd = 0.0;
+        let mut pool = ProjectilePool::new();
+        // The column's centre is 25 px right of the player's left edge —
+        // outside the old 6-px centre-point test's reach only when the
+        // centre leaves the box; here the centre IS inside but the old
+        // test read a 6-px box at pos, so place the column so its centre
+        // is OUTSIDE the player box while the boxes overlap: the player
+        // spans [x, x+20]; the column at x+18 spans [x+18, x+48], centre
+        // x+33 — outside. The full-box test still overlaps.
+        let px = player.x;
+        let py = player.y;
+        pool.slots[0] = Projectile {
+            active: true,
+            kind: GEYSER_TRAP,
+            friendly: false,
+            penetrate: -1,
+            max_penetrate: -1,
+            damage: 20,
+            w: 30.0,
+            h: 30.0,
+            pos: Vec2::new(px + 18.0, py + 5.0),
+            ..Default::default()
+        };
+        let hp0 = player.hp;
+        let mut rng = DodgeScript::with_rolls(&[]);
+        pool.damage_player(0, Some(&mut player), &mut rng);
+        assert!(player.hp < hp0, "the box overlap lands the hit");
+        assert!(pool.slots[0].active, "the penetrate -1 column survives");
+        assert_eq!(pool.slots[0].time_left, 3600, "no kill — the life keeps ticking");
+        // The i-frames swallow the immediate second hit; the column lives.
+        let hp1 = player.hp;
+        pool.damage_player(0, Some(&mut player), &mut rng);
+        assert_eq!(player.hp, hp1, "the i-frames pace the repeat");
+        assert!(pool.slots[0].active, "still alive after the refused hit");
+        // A finite-penetrate hostile shot keeps the single-hit kill (the
+        // standing S1-C-7 convention).
+        let mut player2 = crate::player::Player::spawn(&w);
+        player2.immune = false;
+        player2.immune_time = 0;
+        player2.hurt_cd = 0.0;
+        let (pcx, pcy) = player2.center();
+        pool.slots[1] = Projectile {
+            active: true,
+            kind: 100,
+            friendly: false,
+            penetrate: 3,
+            damage: 25,
+            pos: Vec2::new(pcx - 5.0, pcy - 5.0),
+            ..Default::default()
+        };
+        pool.damage_player(1, Some(&mut player2), &mut rng);
+        assert!(!pool.slots[1].active, "the finite-penetrate shot dies on hit");
     }
 
     /// The shielded NPC refuses the shot — `Damage_PVE`'s outer gate
@@ -32870,83 +33334,262 @@ mod ritual_projectile_tests {
         assert!(tears.ignore_water, ":6290 the flag-list entry");
     }
 
-    /// W4-d11 — the 813's 90th-tick BloodSquid (619) spawn
-    /// (`Projectile.cs:33882-33886`): one intent, the raw C# id, zero
-    /// velocity. The 813 is NOT on flag53 (no sound latch, no aim).
+    // BATCH-D keep-one (research/355 §3): d11's gates-only machine retired
+    // into d13's census machine (the interim g64-stream-matching shape —
+    // g64's dust-wired superset wins wholesale when it merges), so d11's
+    // machine-pinning witnesses (`..._the_tears_spawn_the_blood_squid_at_90`
+    // top-left position + `..._the_tears_dust_gate_census` gates-only
+    // stream) DROP with it; the row witnesses above survive (the row is
+    // byte-equal three-way) and d13's spawn witness below carries the
+    // from_u16 DOC-SWEEP resolution assert.
+
+    /// W4-d13 activation — `Main.cs:34007-34027`'s pointer quad: the pivot
+    /// lands on `centre + gfxOffY + pose offset` (the `vector98 + vector111`
+    /// anchor), the size rides the POSE scale (`1 + floor(localAI[1])·0.02`)
+    /// — not `proj.scale`, which multiplies the offset only — and the uv
+    /// covers the whole Extra_66 sheet (`sourceRectangle: null`). The
+    /// `origin − R·origin` shift keeps the rotated pivot pinned (the
+    /// `the_quads_place_the_origin_texel_on_the_anchor` precedent).
     #[test]
-    fn w4_d11_108_the_tears_spawn_the_blood_squid_at_90() {
+    fn w4_d13_the_pointer_quad_places_the_pivot_on_the_pose_anchor() {
+        use std::f32::consts::PI;
+        let sheet = tr_render::SheetRect {
+            x: 8,
+            y: 16,
+            width: 14,
+            height: 10,
+            plain_frame: (0, 0),
+        };
+        let atlas = (512u32, 512u32);
+        let light = LightMap::default(); // w/h 0 → the bright [1;3] read
+        let mut p = rspawn(SUSPICIOUS_TENTACLE, 200.0, 200.0);
+        p.w = 20.0;
+        p.h = 20.0;
+        p.gfx_off_y = 3.0;
+        p.scale = 2.0;
+        // The idle rest pose: localAI[0] = π (angle 0, state 0), ext 0.05
+        // → off = (0.05·5·2, 0) = (0.5, 0), pose scale 1.
+        p.local_ai[0] = PI;
+        p.local_ai[1] = 0.05;
+        let cam = Vec2::new(150.0, 150.0);
+        let screen = Vec2::new(800.0, 600.0);
+        let q = p.tentacle_pointer_quad(&sheet, atlas, &light, cam, 1.0, screen);
+        // Anchor: centre (210, 210) + gfxOffY (0, 3) + off (0.5, 0), then
+        // the screen conversion (−cam)·1 + screen/2.
+        let anchor = [210.5 - 150.0 + 400.0, 213.0 - 150.0 + 300.0];
+        let near = |a: [f32; 2], b: [f32; 2]| {
+            assert!((a[0] - b[0]).abs() < 1e-4 && (a[1] - b[1]).abs() < 1e-4, "{a:?} vs {b:?}");
+        };
+        near([q.tl[0] + q.size[0] * 0.5, q.tl[1] + q.size[1] * 0.5], anchor);
+        near(q.size, [14.0, 10.0]); // pose scale 1 — NOT proj.scale 2
+        assert_eq!(
+            q.uv,
+            assets::uv_rect(&sheet, atlas, 0, 0, 14, 10),
+            "the whole sheet"
+        );
+        assert_eq!(q.tint, [1.0; 4], "alpha 0, bright light");
+        // The floor ladder: localAI[1] = 10.75 → pose scale 1.2, ext 0.75
+        // (the IEEERemainder fraction), state 0 → off (0.75·5·2, 0).
+        p.local_ai[1] = 10.75;
+        let q = p.tentacle_pointer_quad(&sheet, atlas, &light, cam, 1.0, screen);
+        near(q.size, [14.0 * 1.2, 10.0 * 1.2]);
+        let anchor = [210.0 + 7.5 - 150.0 + 400.0, 213.0 - 150.0 + 300.0];
+        near([q.tl[0] + q.size[0] * 0.5, q.tl[1] + q.size[1] * 0.5], anchor);
+        // Rotated: the pivot still lands on the anchor (the R·origin shift).
+        p.rot = 0.7;
+        let q = p.tentacle_pointer_quad(&sheet, atlas, &light, cam, 1.0, screen);
+        let (s, c) = 0.7f32.sin_cos();
+        let o = [q.size[0] * 0.5, q.size[1] * 0.5];
+        near(
+            [q.tl[0] + o[0] * c - o[1] * s, q.tl[1] + o[0] * s + o[1] * c],
+            anchor,
+        );
+        // Zoom 2 scales the size AND the anchor conversion.
+        p.rot = 0.0;
+        let q = p.tentacle_pointer_quad(&sheet, atlas, &light, cam, 2.0, screen);
+        near(q.size, [14.0 * 1.2 * 2.0, 10.0 * 1.2 * 2.0]);
+        let anchor = [(217.5 - 150.0) * 2.0 + 400.0, (213.0 - 150.0) * 2.0 + 300.0];
+        near([q.tl[0] + q.size[0] * 0.5, q.tl[1] + q.size[1] * 0.5], anchor);
+    }
+
+    /// W4-d13 — the 813 row (`Projectile.cs:6282-6293`, the shared block):
+    /// 32x32, aiStyle 108, alpha 255, the STOCK penetrate 1 (`:774` — the
+    /// block never sets it), tileCollide false, ignoreWater.
+    #[test]
+    fn w4_d13_the_813_row_shares_the_ritual_block() {
+        let d = proj_data(BLOOD_NAUTILUS_TEARS).expect("the row");
+        assert_eq!((d.w, d.h), (32.0, 32.0));
+        assert_eq!(d.ai_style, 108);
+        assert_eq!(d.alpha, 255);
+        assert_eq!(d.penetrate, 1, "the stock reset — the block sets none");
+        assert!(!d.tile_collide);
+        assert!(d.ignore_water);
+        assert_eq!(d.time_left, 3600, "the stock life");
+    }
+
+    /// W4-d13 — the 813 wind-up census (`:33760-33782`): two independent
+    /// Next(4) gates per tick; a pass draws RotatedByRandom's TWO floats,
+    /// the type-5 arm's Next(10,21) radius (the type-240 arm has none) and
+    /// the NextFloat scale. The scripted stream: gate 0 passes (type-5),
+    /// gate 1 passes (type-240), then the `:34018` drip gate fails.
+    #[test]
+    fn w4_d13_the_813_windup_draws_the_two_gate_rings() {
         let mut p = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
-        let mut rng = tr_core::tile_light::FastRandom::new(7);
-        for _ in 0..90 {
-            p.ai_vortex_ritual((300.0, 300.0), &mut rng);
-        }
+        let mut rng = ScriptedBurstRng {
+            floats: [0.1f32, 0.2, 0.3, 0.4, 0.5, 0.6, 0.99].into_iter().collect(),
+            ints: [(0, 4, 0), (0, 4, 0), (10, 21, 15)].into_iter().collect(),
+            log: Vec::new(),
+        };
+        p.ai_vortex_ritual((300.0, 300.0), &mut rng);
+        assert_eq!(p.ai[0], 1.0);
+        assert_eq!(p.scale, 1.0, "the wind-up writes NO scale — the stock 1 holds");
+        assert_eq!(
+            rng.log,
+            [
+                "int", // gate 1 (Next(4) == 0)
+                "float", "float", // RotatedByRandom
+                "int", // the Next(10,21) radius (type-5 arm only)
+                "float", // scale
+                "int", // gate 2 (Next(4) == 0)
+                "float", "float", // RotatedByRandom
+                "float", // scale (no radius — the type-240 arm)
+                "float", // the :34018 drip gate (0.99 >= Opacity 0)
+            ],
+            "the wind-up's draw order"
+        );
+        assert!(rng.floats.is_empty() && rng.ints.is_empty());
+        assert!(p.wants_mark_spawn.is_empty(), "no spawn before tick 90");
+    }
+
+    /// W4-d13 — the 813 tick-90 payload (`:33882-33886` + `:33792-33795`):
+    /// the BloodSquid (619) intent at the Centre with zero velocity, and
+    /// the non-flag53 Item8 cue. The charge tick's two Next(2) gates fail
+    /// (no dust); the drip gate PASSES (alpha 0 → Opacity 1, every
+    /// NextFloat < 1) and draws the circular pair.
+    #[test]
+    fn w4_d13_the_813_spawns_the_blood_squid_at_tick_90() {
+        let mut p = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
+        p.ai[0] = 89.0;
+        let mut rng = ScriptedBurstRng {
+            floats: [0.99f32, 0.4, 0.5].into_iter().collect(),
+            ints: [(0, 2, 1), (0, 2, 1)].into_iter().collect(),
+            log: Vec::new(),
+        };
+        p.ai_vortex_ritual((300.0, 300.0), &mut rng);
         assert_eq!(p.ai[0], 90.0);
-        assert_eq!(p.wants_mark_spawn.len(), 1, "one BloodSquid");
+        assert_eq!(p.wants_mark_spawn.len(), 1, "the one BloodSquid");
         let (kind, x, y, vx, vy) = p.wants_mark_spawn[0];
-        assert_eq!(kind, 619, "the rowed BloodSquid keeps the vanilla id");
+        assert_eq!(kind, 619, "NPCID.BloodSquid (NPCID.cs:11915)");
         assert_eq!(
             crate::npc::NpcKind::from_u16(kind),
             Some(crate::npc::NpcKind::BloodSquid),
             "W4-d11 DOC-SWEEP: the drain resolves the real kind"
         );
-        assert!((x - 200.0).abs() < 1.0 && (y - 200.0).abs() < 1.0);
-        assert_eq!((vx, vy), (0.0, 0.0), ":33884's zero velocity");
-        assert_eq!(p.local_ai[1], 0.0, "the 813 is not on flag53");
+        assert_eq!((x, y), (216.0, 216.0), "the Centre (200 + 32/2)");
+        assert_eq!((vx, vy), (0.0, 0.0), "NewNPC's zero velocity");
+        assert_eq!(
+            p.wants_sound,
+            Some((2, 8, 200.0, 200.0, 0.0)),
+            "the non-flag53 Item8 cue at base.position"
+        );
+        assert!(p.wants_ritual_bolt.is_none(), "the 813 fires no 580");
+        assert_eq!(
+            rng.log,
+            ["int", "int", "float", "float", "float"],
+            "the two failed gates, then the always-passing drip's pair"
+        );
     }
 
-    /// W4-d11 — the 813's per-stage dust-gate census (the bodies skip):
-    /// wind-up two Next(4), charge two Next(2), full-charge ONE Next(2)
-    /// if/else, dissolve two Next(3); plus the per-tick opacity NextFloat
-    /// gate (`:34018`). A scripted stream proves the order.
+    /// W4-d13 — the 813 full-charge pick (`:33894-33918`): ONE Next(2)
+    /// decides the ring; the 0 arm draws the Next(10,21) radius, the else
+    /// arm does not. Both draw the two rotation floats + the scale float.
+    /// The drip gate always passes here (alpha 0 → Opacity 1) and draws
+    /// the circular pair.
     #[test]
-    fn w4_d11_108_the_tears_dust_gate_census() {
-        struct CountRng {
-            ranges: Vec<(i32, i32)>,
-            floats: usize,
-        }
-        impl DropRng for CountRng {
-            fn next_range(&mut self, min: i32, max: i32) -> i32 {
-                self.ranges.push((min, max));
-                min
-            }
-            fn next_float(&mut self) -> f32 {
-                self.floats += 1;
-                0.0
-            }
-        }
-        // Wind-up tick (ai[0] = 1): two Next(4) + the opacity gate. The
-        // 813 spawns alpha 255 (the shared row), but the wind-up keeps
-        // alpha 255 -> opacity 0 -> the gate FAILS (one NextFloat, no
-        // circular pair). Set alpha 0 to exercise the taken branch.
+    fn w4_d13_the_813_full_charge_picks_one_ring() {
         let mut p = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
-        p.alpha = 0;
-        let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
+        p.ai[0] = 100.0;
+        let mut rng = ScriptedBurstRng {
+            floats: [0.1f32, 0.2, 0.3, 0.99, 0.4, 0.5].into_iter().collect(),
+            ints: [(0, 2, 0), (10, 21, 12)].into_iter().collect(),
+            log: Vec::new(),
+        };
         p.ai_vortex_ritual((300.0, 300.0), &mut rng);
-        assert_eq!(rng.ranges, vec![(0, 4), (0, 4)], ":33762/:33772");
-        assert_eq!(rng.floats, 3, "the opacity gate + the circular pair");
-        // The stock alpha-255 wind-up: the gate fails, one float only.
+        assert_eq!(p.alpha, 0, "the full charge is opaque");
+        assert_eq!(
+            rng.log,
+            [
+                "int", // the pick
+                "float", "float", // the rotation pair
+                "int", // the radius (0 arm)
+                "float", // the scale
+                "float", "float", "float", // the drip gate + the circular pair
+            ],
+            "the pick, the rotation pair, the radius (0 arm), the scale, the drip"
+        );
+        // The else arm: no radius draw.
+        let mut q = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
+        q.ai[0] = 100.0;
+        let mut rng2 = ScriptedBurstRng {
+            floats: [0.1f32, 0.2, 0.3, 0.99, 0.4, 0.5].into_iter().collect(),
+            ints: [(0, 2, 1)].into_iter().collect(),
+            log: Vec::new(),
+        };
+        q.ai_vortex_ritual((300.0, 300.0), &mut rng2);
+        assert_eq!(
+            rng2.log,
+            ["int", "float", "float", "float", "float", "float", "float"],
+            "the else arm skips the radius"
+        );
+    }
+
+    /// W4-d13 — the 813 dissolve census (`:33951-33983` + `:34018-34024`):
+    /// TWO Next(3) switch picks (case 2 draws nothing), then the Opacity
+    /// drip gate; a passing gate draws the NextVector2Circular pair (the
+    /// unit-angle float then the radius float). The kill tick keeps
+    /// drawing (the C# Kill does not return).
+    #[test]
+    fn w4_d13_the_813_dissolve_draws_the_switch_pair_and_the_drip() {
         let mut p = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
-        let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
+        p.ai[0] = 130.0; // the ++ makes 131: scale 1 - 11/60, alpha ~46
+        let mut rng = ScriptedBurstRng {
+            // switch 0 (type-5: radius), switch 2 (nothing), the drip
+            // gate passes (0.0 < Opacity), the circular pair.
+            floats: [0.1f32, 0.2, 0.3, 0.0, 0.4, 0.5].into_iter().collect(),
+            ints: [(0, 3, 0), (0, 3, 2), (10, 21, 11)].into_iter().collect(),
+            log: Vec::new(),
+        };
         p.ai_vortex_ritual((300.0, 300.0), &mut rng);
-        assert_eq!(rng.floats, 1, "opacity 0 -> the gate fails");
-        // Charge tick (ai[0] = 51): two Next(2) + the opacity gate.
-        let mut p = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
-        p.ai[0] = 50.0;
-        let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
-        p.ai_vortex_ritual((300.0, 300.0), &mut rng);
-        assert_eq!(rng.ranges, vec![(0, 2), (0, 2)], ":33860/:33871");
-        // Full-charge tick (ai[0] = 91): ONE Next(2) if/else.
-        let mut p = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
-        p.ai[0] = 90.0;
-        let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
-        p.ai_vortex_ritual((300.0, 300.0), &mut rng);
-        assert_eq!(rng.ranges, vec![(0, 2)], ":33896's single if/else roll");
-        // Dissolve tick (ai[0] = 121): two Next(3).
-        let mut p = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
-        p.ai[0] = 120.0;
-        let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
-        p.ai_vortex_ritual((300.0, 300.0), &mut rng);
-        assert_eq!(rng.ranges, vec![(0, 3), (0, 3)], ":33955's two switch rolls");
+        assert!(p.active, "the dissolve is not over");
+        assert_eq!(
+            rng.log,
+            [
+                "int", // switch 1 pick (case 0)
+                "float", "float", // rotation pair
+                "int", // the radius (case 0)
+                "float", // scale
+                "int", // switch 2 pick (case 2 — nothing)
+                "float", // the drip gate (passes)
+                "float", "float", // NextVector2Circular's pair
+            ],
+            "the dissolve's draw order"
+        );
+        // The kill tick: alpha 255 kills, but the loops + drip still draw.
+        let mut q = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
+        q.ai[0] = 179.0; // the ++ makes 180: scale 0, alpha 255 → Kill
+        let mut rng2 = ScriptedBurstRng {
+            floats: [0.99f32].into_iter().collect(),
+            ints: [(0, 3, 2), (0, 3, 2)].into_iter().collect(),
+            log: Vec::new(),
+        };
+        q.ai_vortex_ritual((300.0, 300.0), &mut rng2);
+        assert!(!q.active, "the Kill fires");
+        assert_eq!(q.time_left, 0, "Kill zeroes");
+        assert_eq!(
+            rng2.log,
+            ["int", "int", "float"],
+            "the kill tick still draws the two picks + the drip gate"
+        );
     }
 
     #[test]

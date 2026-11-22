@@ -192,6 +192,30 @@ mod special_arrows;
 mod projectile_frost_shots;
 mod projectile_ai001_c;
 mod projectile_ai067_b;
+// W4-d13 — the aiStyle-124 pet family (650/882/888/895/896/898/957): the
+// keep-alive pins, the home-spot ladder, the flight/idle frame machines,
+// the 957 ground bounce and the 650 ore scan + steering tail
+// (`Projectile.cs:34970-35696`). Code-only — witnesses written not run.
+mod projectile_ai_pets124;
+// W4-d13 — the aiStyle-125 Wire Kite (651): the channel mouse-follow, the
+// three kill gates and the owner tail (`Projectile.cs:35697-35833`).
+// Code-only — witnesses written not run.
+mod projectile_ai_wire_kite;
+// W4-d13 — the aiStyle-126 column family (654 geyser / 670 ogre stomp): the
+// anchor scan, the column-height growth, the stomp's tick-12 child split and
+// the dust RNG census (`Projectile.cs:35834-35997`). Code-only — witnesses
+// written not run.
+mod projectile_ai_geyser;
+// W4-d13 — the aiStyle-127 sandnado column (656 friendly / 657 hostile): the
+// life cap, the 656 fade + owner sight test, the vertical-expand box and the
+// tail dust census (`Projectile.cs:35998-36085`). Code-only — witnesses
+// written not run.
+mod projectile_ai_sandnado;
+// W4-d13 — the aiStyle-128 sandnado mark (658): the spin/fade/scale machine,
+// the tick-60 hostile-sandnado spawn and the dust census + Kill burst
+// (`Projectile.cs:36086-36197`, `:72374-72393`). Code-only — witnesses
+// written not run.
+mod projectile_ai_sandnado_mark;
 mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;

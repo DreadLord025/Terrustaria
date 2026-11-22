@@ -341,6 +341,19 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     app.projectiles.set_wind(wind);
     let mouse_text_color = app.mouse_text_color;
     app.projectiles.set_mouse_text_color(mouse_text_color);
+    // W4-d13 — `Main.screenWidth` for the aiStyle-124 tentacle's ore-scan
+    // distance gate (`Projectile.cs:35577`); the same swapchain width the
+    // dust cull reads (`App::spawn_ctx`).
+    app.projectiles.set_screen_width(sw);
+    // W4-d13 — the aiStyle-125 Wire Kite's mouse-right pair
+    // (`Projectile.cs:35710`). The release flag lags one frame in the C#
+    // (`Main.cs:62458-62465` runs after Draw), so the pair's `true && true`
+    // is the PRESS tick — the golf context's same-edge convention. The
+    // mouse world point rides `inputs.aim` (the yoyo's math, gravDir = 1).
+    app.projectiles.set_wire_kite_inputs(Some(crate::projectile_ai_wire_kite::WireKiteInputs {
+        mouse_right: app.place_down,
+        mouse_right_release: !app.place_prev_down,
+    }));
     // S1-P-i55 — the golf context (`Main.LocalGolfState` + `Main.MouseWorld`
     // + the mouse-right pair + the player snapshot). The C# reads the live
     // state mid-walk; the port clones it into the pool for the tick and
@@ -429,6 +442,51 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         app.swing = secs;
         app.item_time = secs;
     }
+    // W4-d13 — the Wire Kite's per-tick writes (`Projectile.cs:35714`/
+    // `:35831`): `Main.blockMouse = true` on the right-click press kill and
+    // `SetDummyItemTime(2)` while the kite lives (the `take_spear_hold`
+    // pattern; `Player.cs:4432-4441` — itemAnimation = itemTime = 2).
+    if app.projectiles.take_block_mouse() {
+        app.block_mouse = true;
+    }
+    if app.projectiles.take_kite_hold() {
+        let secs = 2.0 / 60.0;
+        app.swing = secs;
+        app.item_time = secs;
+    }
+    // W4-d13 — `Kill()`'s type-651 MassWireOperation requests
+    // (`Projectile.cs:72051-72067`): the release-latch deaths queued their
+    // `(owner, ps, pe)` anchors; the app slot holds THIS tick's requests
+    // (a per-tick buffer — the C# applies synchronously inside Kill).
+    // ACTIVATION CONTRACT — SEALED against f11's retire (tip `14ca0a8d`,
+    // research/235 §2; renumbered 136→153→235 per the registry-150 key-136
+    // row). f11's apply landed on ITS branch (`24fa39f1` + the `84ed6342b`
+    // stream close): `wiring_devices::mass_wire_operation(app, ps, pe,
+    // mode, drop_rng)`, unmerged here. The merge wave drains THIS buffer
+    // at THIS seam (after `take_spear_hold`), before the next pass
+    // replaces it —
+    //   for (owner, psx, psy, pex, pey) in take_mass_wire_ops() {
+    //       if owner as u32 != app.local_id { continue; } // the Kill gate
+    //       mass_wire_operation(app, (psx, psy), (pex, pey),
+    //                           app.wire_tool_mode, // :3241 ToolMode, UNMASKED
+    //                           crate::app::RngKey::UpdateProjectiles);
+    //   }
+    // The shapes compose verbatim: ps/pe are TILE coords on both sides
+    // (`(int)X >> 4`, `Utils.cs:1807-1810`); the mode is the RAW
+    // `WiresUI.Settings.ToolMode` (`Wiring.cs:3241` — the kite does NOT
+    // strip the Actuator bit; only the 3625 click arm masks, f11's
+    // `Player.cs:46908`). No `wire_operations_cooldown` gate on this path
+    // (the C# Kill hook has none — the throttle is CanUseItem's, the use
+    // arm's). STREAM NOTE CLOSED (f11 `84ed6342b`): the fn rolls its
+    // cut-cache `Item.DropCache` drops on the CALLER's stage stream —
+    // the 3625 use arm passes `RngKey::UpdatePlayers` (unchanged), THIS
+    // drain passes `RngKey::UpdateProjectiles` (the Kill runs inside
+    // `Main.cs:17775`'s swap); no deviation to record. ONE drain shape
+    // (research/235 §2): the merger keeps EITHER this direct drain OR
+    // the buffer + a second-pass drain, never both (the buffer field
+    // drops if the direct drain wins). Until f11 merges, the requests
+    // drop tick-end (the documented deferral).
+    app.pending_mass_wire_ops = app.projectiles.take_mass_wire_ops();
     // S1-C-7 wave B — the hostile-shot lane's hurt modifiers (`Player.Hurt`
     // `:38396-38517` via `Projectile.Damage` `Projectile.cs:14868`): the
     // accepted shot queued its retaliate request and possibly a dismount-on-

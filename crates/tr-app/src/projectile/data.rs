@@ -359,6 +359,13 @@ pub const VORTEX_PORTAL: u16 = 579;
 /// tileCollide false, ignoreWater, drawLayer 1). W4-d11.
 pub const BLOOD_NAUTILUS_TEARS: u16 = 813;
 pub const VORTEX_RITUAL_BOLT: u16 = 580;
+/// `ProjectileID.BloodNautilusTears` (813) — the Blood Nautilus' ritual
+/// marker, the THIRD aiStyle-108 row (`Projectile.cs:6282-6293` shares the
+/// 578/579 block). W4-d13 residual: g64's ledger deferred its 13-site dust
+/// machine as "a whole-machine port" — the behaviour half lands here (the
+/// four phase windows + the tick-90 BloodSquid 619 + the Opacity-gated
+/// drip census), the dust BODIES stay g64's lane.
+pub const BLOOD_NAUTILUS_TEARS: u16 = 813;
 pub const TOWER_DAMAGE_BOLT: u16 = 629;
 pub const VORTEX_DART: u16 = 581;
 pub const PHANTASMAL_EYE: u16 = 452;
@@ -1072,6 +1079,51 @@ pub const PINK_DUNGEON_DEBRIS: u16 = 738;
 /// `:57942`, `:58073`, `:77369`).
 pub const DUNGEON_DEBRIS: [u16; 3] =
     [BLUE_DUNGEON_DEBRIS, GREEN_DUNGEON_DEBRIS, PINK_DUNGEON_DEBRIS];
+/// `ProjectileID.SuspiciousTentacle` (650) — the Suspicious Looking Tentacle
+/// light pet (aiStyle 124, the ore-highlight scan; `ProjectileID.cs:1698`).
+pub const SUSPICIOUS_TENTACLE: u16 = 650;
+/// `ProjectileID.EyeOfCthulhuPet` (882) — the aiStyle-124 pet row
+/// (`ProjectileID.cs:2478`).
+pub const EOC_PET: u16 = 882;
+/// `ProjectileID.TwinsPet` (888) — the aiStyle-124 pet row
+/// (`ProjectileID.cs:2496`).
+pub const TWINS_PET: u16 = 888;
+/// `ProjectileID.FairyQueenPet` (895) — the aiStyle-124 pet row
+/// (`ProjectileID.cs:2517`).
+pub const FAIRY_QUEEN_PET: u16 = 895;
+/// `ProjectileID.PumpkingPet` (896) — the aiStyle-124 pet row
+/// (`ProjectileID.cs:2520`).
+pub const PUMPKING_PET: u16 = 896;
+/// `ProjectileID.IceQueenPet` (898) — the aiStyle-124 pet row
+/// (`ProjectileID.cs:2526`).
+pub const ICE_QUEEN_PET: u16 = 898;
+/// `ProjectileID.GlommerPet` (957) — the aiStyle-124 pet row
+/// (`ProjectileID.cs:2703`).
+pub const GLOMMER_PET: u16 = 957;
+/// The seven aiStyle-124 rows — `AI()`'s `else if (this.aiStyle == 124)`
+/// (`Projectile.cs:34970-35696`): the 650 light pet + the six flying pets.
+pub const STYLE124_PETS: [u16; 7] = [
+    SUSPICIOUS_TENTACLE, EOC_PET, TWINS_PET, FAIRY_QUEEN_PET, PUMPKING_PET,
+    ICE_QUEEN_PET, GLOMMER_PET,
+];
+/// `ProjectileID.WireKite` (651) — the Grand Design / Multicolor Wrench's
+/// mass-wire kite (aiStyle 125, `Projectile.cs:6990-7000`).
+pub const WIRE_KITE: u16 = 651;
+/// `ProjectileID.GeyserTrap` (654) — the geyser's steam column (aiStyle 126,
+/// `Projectile.cs:7024-7037`); the friendly + hostile + trap row.
+pub const GEYSER_TRAP: u16 = 654;
+/// `ProjectileID.DD2OgreStomp` (670) — the Ogre's stomp shockwave (aiStyle
+/// 126, `Projectile.cs:7174-7185`); the hostile-only row, the ±3 split.
+pub const OGRE_STOMP: u16 = 670;
+/// `ProjectileID.SandnadoFriendly` (656) — the Sand Elemental's friendly
+/// sandnado (aiStyle 127, `Projectile.cs:7048-7060`).
+pub const SANDNADO_FRIENDLY: u16 = 656;
+/// `ProjectileID.SandnadoHostile` (657) — the hostile sandnado (aiStyle 127,
+/// `Projectile.cs:7061-7070`).
+pub const SANDNADO_HOSTILE: u16 = 657;
+/// `ProjectileID.SandnadoHostileMark` (658) — the hostile sandnado's spawn
+/// mark (aiStyle 128, `Projectile.cs:7071-7082`).
+pub const SANDNADO_MARK: u16 = 658;
 /// `ProjectileID.SpiritFlame` (659) — the Spirit Flame's shot (aiStyle 129).
 pub const SPIRIT_FLAME: u16 = 659;
 /// `ProjectileID.SkyFracture` (660) — the Sky Fracture's aiStyle-1 rider.
@@ -3768,6 +3820,48 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             DD2_BETSY_PET => (20.0, 20.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
             // `Projectile.cs:9908-9917` (1046 Pufferfish): 26x26.
             PUFFERFISH => (26.0, 26.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // W4-d13 — the aiStyle-124 pets (`AI()` `Projectile.cs:34970-
+            // 35696`): the Suspicious Looking Tentacle (`:6977-6989`), the
+            // Eye of Cthulhu pet (`:8461-8473`), the Twins pet (`:8508-8520`),
+            // the Fairy Queen / Pumpking pair (`:8553-8565`), the Ice Queen
+            // pet (`:8576-8588`) and the Glommer pet (`:9034-9046`). Every
+            // row: 20x20, `penetrate = -1`, `netImportant`, `timeLeft *= 5`
+            // (3600 → 18000), `friendly = true` (the pool default),
+            // `ignoreWater`, `tileCollide = false`; `manualDirectionChange`
+            // is a draw-side field with no pool consumer (the arm writes
+            // `direction`/`spriteDirection` itself, `:35007`).
+            SUSPICIOUS_TENTACLE | EOC_PET | TWINS_PET | FAIRY_QUEEN_PET | PUMPKING_PET
+            | ICE_QUEEN_PET | GLOMMER_PET => {
+                (20.0, 20.0, 124, -1, 18000, 0, false, false, false, RESET_STATE)
+            }
+            // W4-d13 — `Projectile.cs:6990-7000` (651, the Wire Kite): 10x10,
+            // aiStyle 125, `friendly = true` (the pool default), `ignoreWater`,
+            // `tileCollide = false`, `penetrate = -1`; `drawLayer = 5` is a
+            // draw-side field with no pool consumer. The stock 3600 life.
+            WIRE_KITE => (10.0, 10.0, 125, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            // W4-d13 — `Projectile.cs:7024-7037` (654, the Geyser Trap): 30x30,
+            // aiStyle 126, `alpha = 255`, `tileCollide = false`, `ignoreWater`,
+            // `timeLeft = 120`, friendly AND hostile, `penetrate = -1`, `trap`.
+            // The row shape carries neither friendly nor hostile (the
+            // data-row deviation census); the spawn path sets friendly=false.
+            GEYSER_TRAP => (30.0, 30.0, 126, -1, 120, 0, false, false, true, (false, -2, false, -1, 255, 1.0)),
+            // W4-d13 — `Projectile.cs:7174-7185` (670, the Ogre Stomp): the
+            // same 30x30 aiStyle-126 row MINUS friendly/trap — hostile only.
+            OGRE_STOMP => (30.0, 30.0, 126, -1, 120, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d13 — `Projectile.cs:7048-7060` (656, the friendly Sandnado):
+            // 10x10, aiStyle 127, friendly, `magic = true` (the crit block's
+            // overlay below), `tileCollide = false`, `penetrate = -1`, the
+            // LOCAL immunity pair (8), `timeLeft = 1200`.
+            SANDNADO_FRIENDLY => (10.0, 10.0, 127, -1, 1200, 0, false, false, false, (true, 8, false, -1, 0, 1.0)),
+            // W4-d13 — `Projectile.cs:7061-7070` (657, the hostile Sandnado):
+            // 10x10, aiStyle 127, hostile, `tileCollide = false`,
+            // `penetrate = -1`, `timeLeft = 1200`, NO immunity pair.
+            SANDNADO_HOSTILE => (10.0, 10.0, 127, -1, 1200, 0, false, false, false, RESET_STATE),
+            // W4-d13 — `Projectile.cs:7071-7082` (658, the Sandnado Mark):
+            // 14x14, aiStyle 128, `penetrate = 1` (the stock), `timeLeft =
+            // 900`, `tileCollide = false`, `ignoreWater`, `alpha = 255`,
+            // hostile.
+            SANDNADO_MARK => (14.0, 14.0, 128, 1, 900, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
             // The sentries: the aiStyle-53 placeable staff sentries —
             // FrostHydra (`Projectile.cs:3997`; the `light = 0.25f`/
             // `coldDamage` lines have no port consumer, the module doc),
@@ -4467,6 +4561,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // AI_026 slice B: the boss-head pets' `netImportant = true`
             // (`Projectile.cs:8488`/`:8523`).
             || matches!(kind, SKELETRON_PET | SKELETRON_PRIME_PET)
+            // W4-d13 — the aiStyle-124 pets set `netImportant` themselves
+            // (`Projectile.cs:6983`/`:8467`/`:8514`/`:8559`/`:8582`/`:9036`).
+            || STYLE124_PETS.contains(&kind)
             // AI_026 slice A: the flyer pets' `netImportant = true`
             // (`Projectile.cs:2833/2843/2853/2994/4647/7913/7965/7985/
             // 8488/8523/8545/8591/9910`; the 175's block `:2612-2620`
@@ -4507,6 +4604,16 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // The slice-B pets set `ignoreWater` themselves
             // (`Projectile.cs:5422`/`:9646`/`:9996`) — they are not minions.
             || matches!(kind, CRIMSON_HEART | DIRTIEST_BLOCK | BOULDER_PET)
+            // W4-d13 — the aiStyle-124 pets set `ignoreWater` themselves
+            // (`Projectile.cs:6986`/`:8470`/`:8516`/`:8562`/`:8584`/`:9043`).
+            || STYLE124_PETS.contains(&kind)
+            // W4-d13 — the Wire Kite / geyser / stomp / sandnado mark set
+            // `ignoreWater` (`Projectile.cs:6996`/`:7031`/`:7181`/`:7079`).
+            || matches!(kind, WIRE_KITE | GEYSER_TRAP | OGRE_STOMP | SANDNADO_MARK)
+            // W4-d13 residual — the aiStyle-108 ritual markers' shared block
+            // sets `ignoreWater` (`Projectile.cs:6290`); the 578/579 rows
+            // predated the flag list, the 813 joins them.
+            || matches!(kind, VORTEX_LIGHTNING | VORTEX_PORTAL | BLOOD_NAUTILUS_TEARS)
             // AI_026 slice A: the Tiki Spirit (`Projectile.cs:2860`) and the
             // Wisp (`:3002`) set `ignoreWater`; the other flyers keep false.
             || matches!(kind, TIKI_SPIRIT | WISP)
@@ -4703,6 +4810,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | MEDUSA_HEAD_RAY
                 // W4-d12 F1 — the Killing Deck card (1024, `:9699`).
                 | DEAD_CELLS_KILLING_DECK_CARD
+            // W4-d13 — the friendly Sandnado's `magic = true`
+            // (`Projectile.cs:7054`).
+                | SANDNADO_FRIENDLY
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
@@ -4889,6 +4999,59 @@ pub const MINION_STAFF_PET_BUFF_ITEMS: &[u16] = &[
     4281, 4607, 4758, 5005, 5069, 5114, 5456, 5663, 5664, 6148, 6149, 6161, 6164,
 ];
 
+/// W4-d13 — `ItemCheck_ApplyPetBuffs`' PET-item rows: the same use-start
+/// `AddBuff(sItem.buffType, 3600)` grant, for the pet/light-pet items whose
+/// `Item.buffTime` is 0 (the `:42880` grant is a ghost for them too — the
+/// 3600 grant is what the `UpdateBuffs` keep-alive arm's 18000 refresh
+/// pins). Verbatim: the 3577 Suspicious Looking Tentacle single-item arm
+/// (`Player.cs:53117-53120`) + the 54-case vanity-pet switch
+/// (`:53286-53341`). The six aiStyle-124 pet items are 4798 (EOC), 4804
+/// (Twins), 4811 (Fairy Queen), 4812 (Pumpking), 4814 (Ice Queen), 5089
+/// (Glommer — `Item.cs:40791-40795` `DefaultToVanitypet(957, 328)`; NOT
+/// 5117, the Xenopopper gun `:40997-41013`).
+/// RETIRE census (research/336 §3): the function's remaining single-item
+/// arms — the CLASSIC pets/light pets (`:53097-53116`, `:53146-53189`,
+/// `:53198-53233`, `:53242-53249`) — carry the SAME buffTime=0 ghost and
+/// their keep-alives are ALL ported (`buff_effects_misc.rs`'s pet table +
+/// `buff_effects_accessory.rs`), so they join the grant verbatim. TWO
+/// exclusions: 603 (the Carrot — the `:53093` arm gates on
+/// `Main.runningCollectorsEdition`, a flag the port does not carry; the
+/// non-CE default false keeps the arm dead) and 425 (the Fairy Bell —
+/// the `:53121-53145` `Next(3)` 27/101/102 buff pick is d2's light-pets
+/// lane, a different arm shape). The g10 town pets do NOT consume this
+/// table: the licenses 4829/4830/4910 ride `ItemCheck_UsePetLicenses`
+/// (`Player.cs:45352-45366` → `NPC.UnlockOrExchangePet` `NPC.cs:80894-
+/// 80918`), no buff, no projectile. The d43 pal reward staves 5663/5664/
+/// 6148/6149 are the i25 `MINION_STAFF_PET_BUFF_ITEMS` rows; 5665/5666
+/// are Chillet MOUNTS (`Item.cs:44509-44532`, mountType 62/63), no buff.
+pub const PET_ITEM_BUFF_GRANTS: &[u16] = &[
+    3577, // :53117 — the Suspicious Looking Tentacle (buff 190 → 650)
+    // :53286-53341 — the vanity-pet switch, verbatim order.
+    3855, 3856, 3857, 4365, 4366, 4425, 4550, 4551, 4603, 4604, 4605, 4701, 4735, 4736, 4737,
+    4777, 4797, 4798, 4799, 4800, 4801, 4802, 4803, 4804, 4805, 4806, 4807, 4808, 4809, 4810,
+    4811, 4812, 4813, 4814, 4815, 4816, 4817, 4960, 5088, 5089, 5090, 5091, 5098, 5131, 5276,
+    5297, 5332, 5333, 5400, 5466, 5513, 5517, 5523, 5654,
+    // The classic single-item arms, verbatim C# order (the retire census).
+    669,  // :53097 — Fish (buff 41 → the 112 Penguin)
+    115,  // :53101 — Shadow Orb (buff 19 → 18, light pet)
+    3060, // :53105 — Bone Rattle (buff 154 → the 499 Baby Face Monster)
+    3628, // :53109 — Companion Cube (buff 191 → 653)
+    3062, // :53113 — Crimson Heart (buff 155 → 500, light pet)
+    753,  // :53146 — Seaweed (buff 42 → the 127 Turtle)
+    994,  // :53150 — Eater's Bone (buff 45 → the 175 Baby Eater)
+    1169, 1170, 1171, 1172, // :53154-53169 — Bone Key/Nectar/Tiki Totem/Lizard Egg (50-53)
+    1180, 1181, 1182, 1183, // :53170-53185 — Parrot Cracker/Mushroom/Seedling/Wisp (54-57)
+    1242, // :53186 — Amber Mosquito (buff 61 → the 236 Dino)
+    1311, // :53198 — Eye Spring (buff 65 → 268)
+    1837, // :53202 — Cursed Sapling (buff 85 → 324)
+    1312, // :53206 — Toy Sled (buff 66 → the 269 Snowman)
+    1798, 1799, // :53210/:53214 — Spider Egg/Magical Pumpkin Seed (81/82)
+    1810, // :53222 — Unlucky Yarn (buff 84 → the 319 Black Cat)
+    1927, 1959, // :53226/:53230 — Dog Whistle/Grinch Whistle (91/92)
+    3043, // :53242 — Magic Lantern (buff 152 → 492, light pet)
+    2420, // :53246 — Zephyr Fish (buff 127 → 380)
+];
+
 /// `ProjectileID.Sets.MinionShot` (`ProjectileID.cs:431`): the minion attack
 /// shot kinds — `WhipTagEffect.CanRunHitEffects`'s gate
 /// (`GameContent/Items/WhipTagEffect.cs:81-85`) treats them as summon shots
@@ -4995,6 +5158,17 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // 6/12-tick pulse wraps at it (`Projectile.cs:49473`). The 1018/1056
         // keep the init default 1 (no override in `Main.cs:8444-8727`).
         CRIMSON_HEART => 4,
+        // W4-d13 — the aiStyle-124 pets' sheets (`Main.cs:8500` 650 → 4,
+        // `:8670` 882 → 20, `:8676` 888 → 36, `:8683-8684` 895 → 6 /
+        // 896 → 16, `:8686` 898 → 16, `:8697` 957 → 12). The flight/idle
+        // frame machines (`Projectile.cs:35124-35565`) wrap at these; the
+        // 957's ground bounce reads `projFrames * 2` / `* 3`.
+        SUSPICIOUS_TENTACLE => 4,
+        EOC_PET => 20,
+        TWINS_PET => 36,
+        FAIRY_QUEEN_PET => 6,
+        PUMPKING_PET | ICE_QUEEN_PET => 16,
+        GLOMMER_PET => 12,
 
         // The Explosive Trap family (`Main.cs:8467-8472`): the traps and the
         // T1/T2 blasts animate 4 frames, the T3 blast 5 — `AI_138`'s wrap

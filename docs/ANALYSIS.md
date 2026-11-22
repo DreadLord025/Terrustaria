@@ -39418,3 +39418,337 @@ The family declaration (research/355 s6): the band-101-110 family is
 d11-owned wholesale; the 813 machine g64's, the 596 machine d11's, the 576
 overlay f20's, the 539/576 Kill cues d77's, the nebula lifecycle the
 mana-family's, the can_ghost_heal gate d6's. No further d11 commits planned.
+## W4-d13 residuals - the PET/124 census, the 813 machine, the kite latch drain, the geyser hostile proxy (task/W4-d13-proj-ai-121-130, 2026-11-21, code-only mode)
+
+**The AI_124 kind census (the g64-deferral question resolved).** The
+`else if (this.aiStyle == 124)` arm (`Projectile.cs:34970-35696`) reads
+exactly SEVEN kinds: 650 (flag65), 882, 888, 895, 896, 898, 957 - the
+keep-alive pins `:34979-35006`, the home ladder `:35044-35091`, the
+flight machines `:35124-35325` and the idle machines `:35326-35565`
+carry no other type gate. All seven are rowed (`STYLE124_PETS`) with
+their per-kind frame machines; the arm is COMPLETE. The two kinds the
+task brief asked about:
+- **813 is NOT aiStyle 124.** It is `ProjectileID.BloodNautilusTears`
+  (`ProjectileID.cs:2180`), the THIRD aiStyle-108 ritual marker sharing
+  the 578/579 `SetDefaults` block (`Projectile.cs:6282-6293`). g64's
+  ledger deferred its 13-site four-phase dust machine as "a whole-machine
+  port" - that machine lands HERE (below), not in the pet arm.
+- **957 IS rowed** (`GLOMMER_PET`, the ground-bounce machine
+  `:35462-35565` incl. the `Next(150)` rest roll). g64's "957
+  behaviour-coupled spelunker tile scan" deferral is the **650** scan's
+  dust bodies (`:35587-35604`'s per-tile `Next(8)` + the <2 sparkle) -
+  the scan's behaviour + RNG census were already ported in
+  `ai_pets_style124`; the 204/242/80 dust BODIES stay the dust lanes'
+  (g64 batch 4 owns the 895/898 frame-reset trail pair).
+
+**The 813 machine (`ai_vortex_ritual`'s extension).** The four phase
+windows keep their explicit draws on the `UpdateProjectiles` stream in
+C# order (the W4-d13 census convention - bodies skipped, draws kept):
+wind-up two `Next(4)` gates (the type-5 ring's `Next(10,21)` radius,
+the type-240 ring's fixed 30), charge two `Next(2)` gates, full charge
+ONE `Next(2)` pick, dissolve TWO `Next(3)` switch picks (case 2 draws
+nothing), then the `:34018` `NextFloat() < Opacity` drip gate (the
+`NextVector2Circular(3,20)` unit-angle + radius pair). Per ring:
+`RotatedByRandom`'s TWO NextDouble draws (the ai067_b next_float
+convention) then the NextFloat scale. The tick-90 payload: the non-flag53
+`SoundID.Item8` cue (`wants_sound`) + the BloodSquid 619
+(`wants_mark_spawn` - the kind has no NpcKind row, the drain drops it,
+the statue_npc roster-gap precedent). The dissolve's Kill does NOT return
+(the C# `:33949`) - the loops + drip still draw on the kill tick; the
+port's old early-return was a 578/579-visible deviation, fixed (the
+markers' dust was unmodelled so no witness pinned it). The shared row's
+`penetrate` corrected -1 -> 1 (the stock reset `:774`; the block sets
+none) and `alpha` 0 -> 255 (`:6288`); `ignoreWater` added for all
+three (`:6290`). The 578/579 first-tick latch is now flag53-gated
+(`:33696`) - the 813 keeps localAI[1] free.
+
+**The kite MassWireOperation latch drain (f11 coordination).** f11's tip
+(`cf0737da`) keeps the apply deferred (`world_sim/editing/wiring.rs:28-29`
+- the `WiresUI` tool modes, `Wiring.cs:3241`'s `ToolMode` read). The
+pool-side seam is now WIRED: the death hook (`Projectile.cs:72051-72067`)
+queues `(owner, ps, pe)` on the `localAI[0] == 1` latch (ps =
+`(ai[0], ai[1]).ToPoint()`, pe = `Center.ToTileCoordinates()` =
+`(int)X >> 4`, `Utils.cs:1807-1810`), `take_mass_wire_ops` drains at
+the pass tail into `app.pending_mass_wire_ops` - a PER-TICK buffer (the
+C# applies synchronously inside Kill; the apply wave consumes it at the
+same seam before the next pass replaces it). Until the apply lands the
+requests drop tick-end (the documented deferral, no unbounded growth).
+
+**The geyser hostile proxy (e20 coordination).** e20 owns the geyser TILE
+443's wiring arms (the trap trip / the frame-column direction); the 654
+SHOT chain is d13's. Two `damage_player` defects fixed against
+`Damage_EVP`: (1) the hit test was a 6-px centre-point probe - the C#
+`Colliding(projRectangle, getRect())` (`:14816`) is the full
+`Rectangle.Intersects` (`:15887-15890`, strict edge overlap); the
+30-wide/320-tall columns now hit anywhere their box overlaps the player.
+(2) The unconditional post-Hurt kill fired on EVERY hostile shot - the C#
+`Damage_EVP` tail (`:14868-14899`) has NO generic kill (only the trap
+flag + the 435/436/437/681/682 specials). The port's standing single-hit
+convention keeps killing the finite-penetrate shots (the S1-C-7 witnesses
+hold); the `penetrate = -1` columns are exempt - they keep hurting
+through their 60-tick life, the player i-frames pace the repeats.
+`trapDebuffSource`/the dead-man's-sweater halving (`:14845-14848`) have
+no port fields - the standing hazard-lane deviation.
+
+**The 650 pointer pose (g78 coordination).** `tentacle_pointer_pose`
+ports `DrawProjectile`'s 650 arm (`Main.cs:34007-34027`): the state tag
+`(int)(localAI[0]/2pi)` picks the reach (state 1 -> 7 px, else 5), the
+fractional angle + IEEERemainder extension place the Extra[66] sprite,
+`1 + floor(localAI[1])*0.02` scales it. PORTED-UNWIRED at the residual
+wave - WIRED by the activation wave below (the Extra-66 atlas slot landed).
+g78 owns the ECHO-sight chain (`ShouldShowInvisibleBlocksAndWalls`), not
+the spelunker pointer; no g78b branch exists. The 650 scan's
+`IsTileSpelunkable` table was re-censused against `Main.cs:9420-9467`
++ `:9651` + `:21783-21798` - all 49 ids + the two frame-window arms
+match the port verbatim.
+
+### The activation wave (W4-d13, 2026-11-21, code-only mode)
+
+**(1) The 650 pointer WIRED into the proj-draw pass.** The draw-side census:
+`Main.cs:33674`'s common `EntitySpriteDraw` push draws the pet's generic
+sprite for EVERY kind in the `:33172` list (the 650 included), THEN the
+`:34007-34027` else-if chain adds the Extra[66] pointer BEHIND it — own
+sheet (`sourceRectangle: null`), own origin (`texture.Size()/2`), own scale
+(`num438 = 1 + floor(localAI[1])*0.02` — `proj.scale` multiplies the OFFSET
+only, `:34024`), `SpriteEffects.None` (no facing flip), tint `color80 =
+proj.GetAlpha(projectileColor)` (`:33227`), anchor `vector98 + vector111`
+where `vector98` carries `gfxOffY` (`:33174`). The port wires it at
+`Projectile::draw_with_hand`'s tail behind the generic push (the
+`draw_lights_bane` per-type-arm seam pattern): `tentacle_pointer_quad`
+(the pure `frame_quad` shape — the ui batch's screen-px anchor + the
+`origin − R·origin` pivot shift) consumes `tentacle_pointer_pose`; the
+`#[allow(dead_code)]` PORTED-UNWIRED marker is REMOVED. `Extra_66` joins
+the static-sheet load list + `Lookups.extra_66` (the `extra_49` pattern);
+the sheet missing → the pointer arm skips (the generic sprite keeps
+drawing — the shuriken-fallback precedent). The pets' generic-sprite
+`origin32.Y -= 4` tweak (`:33629-33632`) stays the generic arm's unported
+origin ladder — cited at the wire site, not this arm's (the pointer's
+origin is the Extra sheet's own half). 1 witness
+(`w4_d13_the_pointer_quad_places_the_pivot_on_the_pose_anchor`) WRITTEN
+NOT RUN.
+
+**(2) The 813 dust bodies — g64's lane, the g64c activation cross-note.**
+g64's wiring wave (`77616a7d`, read) keeps 813 in its "Still deferred"
+ledger with "no row on any pushed branch" — STALE: the row + the
+four-phase machine landed on THIS branch (`21a222d9`,
+`projectile/data.rs`'s `BLOOD_NAUTILUS_TEARS` row + `projectile.rs::ai_vortex_ritual`'s
+813 arms). g64c's brief item-2 reads THIS row now. The activation
+contract for g64c's emitters (the 13 sites, C# `Projectile.cs`):
+
+| phase | C# window | sites | per-pass draws (in order) |
+| --- | --- | --- | --- |
+| wind-up `ai[0]<=50` | `:33760-33782` | 2 (dust 5 @ `:33765`, 240 @ `:33775`) | two INDEPENDENT `Next(4)` gates; a pass → RotatedByRandom (2×NextDouble), the 5-arm's `Next(10,21)` radius (the 240-arm none), the NextFloat scale |
+| charge `<=90` | `:33858-33881` | 2 (5 @ `:33863`, 240 @ `:33874`) | two INDEPENDENT `Next(2)` gates; the same per-pass shape |
+| full `<=120` | `:33894-33918` | 2 (5 @ `:33899`, 240 @ `:33910`) | ONE `Next(2)` pick: 0 → the 5-arm (radius), else the 240-arm; rotation pair + scale float on both |
+| dissolve `>120` | `:33951-33983` | 4 (2× switch: 5 @ `:33960`, 240 @ `:33972`) | TWO `Next(3)` picks: case 0 the 5-arm (radius), case 1 the 240-arm, case 2 NOTHING; the rotation vector is ×`this.scale` (the phase's shrinking scale) |
+| drip (every phase) | `:34018-34024` | 1 (`NewDustPerfect` 90 @ `:34020`) | `NextFloat() < Opacity` gate; a pass → `NextVector2Circular(3,20)` = unit-angle NextFloat + radius NextFloat; body velocity UnitY, noGravity, `scale = this.scale` |
+
+The machine's census sites (`projectile.rs`'s `ai_vortex_ritual` 813
+blocks) hold these draws on the UpdateProjectiles stream TODAY — g64c's
+wiring REPLACES each `let _ = …` block with the emitter at the same site
+(the 642/509 draws-kept-skip replacement pattern); it must NOT add draws
+beside them. Body specifics the C# pins: the 5-arms' velocity
+`vector.RotatedBy(+π/2) * 6` (wind-up `* 4`), the 240-arms'
+`vector.RotatedBy(−π/2) * 3` (wind-up `* 2`); position `Center − vector *
+Next(10,21)` (5-arms) / `Center − vector * 30` (240-arms); `scale = 0.5 +
+NextFloat`, `fadeIn = 0.5`, `noGravity = true`; `customData = Center` on
+every site EXCEPT the wind-up pair (`:33765-33780` set none — the pool's
+dropped field either way). The tick-90 payloads (the Item8 cue + the
+BloodSquid 619 `wants_mark_spawn`) are d13's, already wired — g64c
+touches dust only. The kill tick keeps drawing (the C# `:33949` Kill has
+no return; the dissolve loops + drip run post-kill).
+
+**The wind-up scale fix (this wave).** Re-reading `:33714-33783` for the
+cross-note exposed a machine deviation: the wind-up arm writes NO scale
+in the C# (only the charge `:33797`, the full `:33891` and the dissolve
+`:33944` do) — the stock spawn 1 holds through the first 50 ticks. The
+port's shared tail wrote `scale = 0.0` unconditionally in that arm:
+invisible while the bodies were skipped and alpha stays 255, but wrong
+for g64c's emitters (the drip's `scale = this.scale`, the dissolve's
+`vector * this.scale`) and for the generic sprite draw. Fixed: the
+wind-up holds `self.scale`; the wind-up witness re-pinned to 1.0.
+
+The 957/670 ledger rows stay as g64 wrote them with one correction: the
+957's tile-scan dust sits behind `SolidTileAllowBottomSlope` which
+`ai_pets_style124` DOES model (the scan landed — the `:35571-35601` dust
+bodies are the skipped part), so g64c can read the scan's tile hits off
+the machine; the 670 style-126 sites are style-generic (no 670-gated
+dust).
+
+**(3) The wire-kite apply — f11's mass-wire landed, the activation
+contract published.** f11's tip (`dda240eec`, read: `6bc1547d` docs +
+`24fa39f1` code + research/133 §1g/§2a-d) ports the FULL apply on ITS
+branch: `tr_core::wiring::mass_wire_operation_step`/`_inner`
+(`Wiring.cs:3329-3421`/`:3235-3327`) + the app half
+`wiring_devices::mass_wire_operation(app, ps: (i32,i32), pe: (i32,i32),
+mode: u8)` (`:419-453` — the 58-slot stock census, the ConsumeItem bill,
+the cut-cache drops at `master.Center`) + `App.wire_tool_mode`
+(`WiresUI.cs:23`, default Red) + the 3625 Multicolor Wrench click arm.
+It does NOT consume `app.pending_mass_wire_ops` — f11's ANALYSIS records
+"the projectile family is unported, so only the 3625 click arm lands"
+(stale for THIS branch: the 651 machine + the Kill-hook drain landed
+`dc8630b8`). The shapes COMPOSE verbatim: my `(owner u8, ps_x, ps_y, pe_x,
+pe_y)` tuples carry TILE coords on both sides (`(int)X >> 4`,
+`Utils.cs:1807-1810`), so the merge wave's drain is a destructure + call.
+The contract (published at `world_sim/projectiles.rs`'s drain seam, the
+`app/mod.rs` field doc and the wire-kite module doc):
+
+* drain `take_mass_wire_ops`'s parked buffer at the SAME pass-tail seam,
+  before the next pass replaces it (the C# applies synchronously inside
+  Kill; the per-tick park is the port's one-seam-late convention);
+* gate `owner == app.local_id` (the C# `owner == Main.myPlayer`,
+  `:72053` — the pool already simulates local-owned slots only, the gate
+  is belt-and-braces);
+* pass `app.wire_tool_mode` RAW — the kite path reads
+  `WiresUI.Settings.ToolMode` unmasked (`Wiring.cs:3241`); only the 3625
+  click arm strips the Actuator bit (`Player.cs:46908`, f11's arm) — the
+  kite must NOT reuse that mask;
+* NO `wire_operations_cooldown` gate on this path (the C# Kill hook has
+  none — the throttle is `CanUseItem`'s, the use arm's);
+* STREAM NOTE: f11's `mass_wire_operation` rolls its cut-cache
+  `Item.NewItem` drops on `RngKey::UpdatePlayers` (the 3625 use path's
+  stage); the kite's Kill runs INSIDE `UpdateProjectiles`
+  (`Main.cs:17775`'s SwapRandom) — the merge wave must thread the
+  caller's stage stream into the drop spawns (the
+  `spawn_item_drop_px_fields` field-wise precedent) or record the fold
+  as a deviation. The placement/bill halves draw no RNG.
+
+f11 is NOT merged into this branch (the code-only co-lane rule); nothing
+here calls the unmerged fn. 1 shape-composition witness
+(`w4_d13_the_queued_tuple_composes_with_the_f11_apply_shape`) WRITTEN NOT
+RUN.
+
+**(4) The PET lights — the c19/e6 AddLight family covers NOTHING of the
+seven pets, correctly (census, no gap).** c19's first wave (`4eedcb32`,
+read: ANALYSIS "The projectile AI-arm lights, first wave") + e6's second
+wave CLOSE the `Projectile.cs` AddLight family at 107 sites (67 + 40).
+The seven aiStyle-124 pets contribute ZERO sites to that family:
+
+* **No `AddLight` call exists in the whole aiStyle-124 arm**
+  (`Projectile.cs:34970-35696` — grepped: the only light writes are the
+  `Utils.PlotTileLine` casts below). The c19 register's absent-42 list
+  never names 650/882/888/895/896/898/957 because the C# has no sites
+  there to absent.
+* **No `light` amount either**: the seven `SetDefaults` rows
+  (`:6977-6989`/`:8461-8473`/`:8508-8520`/`:8553-8565`/`:8576-8588`/
+  `:9034-9046` — all re-read) set no `this.light`/`DelegateMethods.v3_1`,
+  so the `ProjLight` chain (`:16153-16661`, the `light > 0f` early return)
+  never fires for them. The module doc's "the ProjLight chain carries
+  only the SetDefaults amount" phrasing was misleading — the amount is
+  ZERO; corrected in `projectile_ai_pets124.rs`'s doc.
+* **The pets' actual light is the `PlotTileLine`/`CastLightOpen` layer**
+  (`:35008-35043`): the 650 casts `(0.5, 0.9, 1)·2` over its own
+  centre→velocity·6 line (width 20) + Left→Right (20) + the OWNER's
+  centre→velocity·6 (40) + Left→Right (40); the 895 `(1, 0.6, 1)·1.5`
+  (×0.8 when `!Lighting.NotRetro`) at ×1.5 self / ×0.75 owner; the 896
+  `(1, 0.7, 0.05)·1.5` same ladder. The other four pets (882/888/898/957)
+  cast NOTHING — they are dark in the C# too. This is the light-map
+  WRITE layer (`Utils.PlotTileLine` walks tiles and calls
+  `Lighting.AddLight` per tile through the delegate), NOT the entity
+  list the c19/e6 feeds append to — the standing per-frame PlotTileLine
+  deferral (the 870 `FloodFillTile` / hooks' rope-spread precedent, the
+  empress module's 13-point walk note). d2's player-lights census
+  already cross-noted the same split from the other side ("the light
+  pets are not Player.cs sites at all — Fairy Bell / Wisp / Magic
+  Lantern / Suspicious Looking Tentacle emit from Projectile.AI");
+  this note closes the projectile side: when the PlotTileLine layer
+  lands, the 650/895/896 casts are its rows (the colours/widths/anchors
+  above), the retro ×0.8 gate rides `LightParams`. No c19/e6 gap to file.
+
+**(5) The pet item-use census — the 3600 grant gap FOUND and FIXED.** The
+brief's "pet item 5117?" is WRONG: 5117 is the Xenopopper gun
+(`Item.cs:40997-41013` — shoot 968, useAmmo Bullet, no buff). The Glommer
+pet item is **5089** (`:40791-40795`, `DefaultToVanitypet(957, 328)` —
+useStyle 1, useTime/Animation 20, UseSound Item2, buff 328). The full
+use-arm chain, censused end-to-end:
+
+* item row → `ItemCheck`'s use start (`Player.cs:42733-42785`):
+  `ItemCheck_ApplyPetBuffs` (`:42766` → `:53091-53344`) grants
+  `AddBuff(buffType, 3600)` — the 3577 tentacle has its OWN single-item
+  arm (`:53117-53120`), the six flyers ride the 54-case vanity-pet switch
+  (`:53286-53341`: 4798 EOC / 4804 Twins / 4811 Fairy Queen / 4812
+  Pumpking / 4814 Ice Queen / 5089 Glommer among them);
+* `FreeUpPetsAndMinions` (`:42778`, the `LightPet || projPet` gate) —
+  already ported (the i25 wave, `PROJ_PET`/`LIGHT_PET_PROJ`);
+* `ItemCheck_StartActualUse` → the `item.buffType > 0` grant (`:42876-
+  42883`, `AddBuff(buffType, item.buffTime)`) — already ported, but ALL
+  seven pet items carry `buffTime = 0` (the `DefaultToVanitypet` helper
+  `Item.cs:47936-47950` sets none; the 3577 case `:32257-32272` none
+  either), so this grant is the documented ghost;
+* `ItemCheck_Shoot`'s pet arm (`:48561-48583`: the same-kind kill sweep +
+  the zero-damage `NewProjectile`) — the port's generic shoot tail fires
+  the pet; the buff-side keep-alive is the persistence mechanism;
+* `UpdateBuffs`' keep-alive (`:11093`/`:11117`/`:11145`/`:11149`/
+  `:11157`/`:11181` → `BuffHandle_SpawnPetIfNeededAndSetTime` `:12227-
+  12258`: buffTime = 18000, the pet flag, the spawn-if-none) — already
+  ported (`PET_BUFF_ARMS` + the 190 special case,
+  `buff_effects_accessory.rs`).
+
+**The gap:** the port's use path granted ONLY the `:42880` ghost for the
+pet items — the `MINION_STAFF_PET_BUFF_ITEMS` 3600 grant (the i25 wave)
+covered the summon staves but NOT the 3577 arm or the vanity-pet switch.
+Without the 3600 grant the ghost is swept (`buffTime <= 0` skip + the
+expiry sweep) and the keep-alive arm never pins: every pet summoned
+through its item despawned. FIXED: `PET_ITEM_BUFF_GRANTS` (the 3577 +
+the 54 switch cases verbatim, `projectile/data.rs`) + the grant beside
+the staff grant in `world_sim/editing.rs`'s use-start block. The C#
+order composes: ApplyPetBuffs (`:42766`) runs BEFORE StartActualUse's
+ghost grant (`:42880`), whose 0-time `AddBuff_TryUpdatingExistingBuffTime`
+keeps the 3600 (`buff_time < time` false, `Player.cs:5399-5416`). The
+light-pet eviction (`AddBuff_RemoveOldPetBuffsOfMatchingType`,
+`:5377-5385`) already ported — the 3577 use drops any rival light-pet
+buff. d2 co-lane read: the fairy-bell 425's `Next(3)` buff pick
+(`:53121-53145`) is a DIFFERENT ApplyPetBuffs arm (the 27/101/102 fairy
+buffs, d2's light-pets lane) — not in this grant table, no overlap. 3
+witnesses (the 5089 use → 3600 → 18000 + the 957 spawn, the 3577 use →
+the eviction + 3600 → 18000 + the 650 flag, the grant-row/registry
+agreement incl. the 5117 exclusion) WRITTEN NOT RUN.
+
+**(6) PET-LIGHT RETIRE (research/336, the FINAL census; CHAIN 243→304→336 per registry-150 §9.2 UNIFIED FINAL — g58 owns 243, d50 owns 304).** The three
+activation cross-notes composed against the consumed lanes' landed
+tips: **(a)** c19 (`a160ad9ff`, research/65→189 per registry-150)
+CONFIRMS the zero-pet-site claim from its own register — no pet kind in
+the ported-44 or absent-21 columns, e6's 40 likewise; d13's 658 row
+ACTIVATED c19's site 28 (`:36150`, the round-2 blocker-3 list cites
+"d13 (658)"); the pets' PlotTileLine casts are the SAME light-map-write
+deferral c19 records for the hooks' rope spreads. **(b)** f11's retire
+(`14ca0a8d`, research/235 §2 — renumbered 136→153→235) CLOSED the
+stream note: `mass_wire_operation` gained `drop_rng: RngKey`, the kite
+drain passes `UpdateProjectiles`; the drain-contract doc trio + the
+composition witness re-pinned to the five-param shape (the one-drain-
+shape rule: direct drain OR buffer, never both). **(c)** The g10 town
+pets (11 kinds, `5dee28650`) do NOT consume the 3600 grant — the
+licenses 4829/4830/4910 ride `ItemCheck_UsePetLicenses`
+(`Player.cs:45352-45366` → `NPC.UnlockOrExchangePet` `NPC.cs:80894-
+80918`), no buff/projectile, the town machine spawns the NPCs; the d43
+distressed pals 695/696 spawn wild (`NPC.cs:4371-4384`) and their
+rescue drops are the i25-already-granted staves 5663/5664; the Chillets
+5665/5666 are mounts 62/63. **(d) ONE NEW GAP FOUND + FIXED:** the 5/5
+fix missed `ApplyPetBuffs`' CLASSIC single-item arms (`:53097-53116`,
+`:53146-53189`, `:53198-53233`, `:53242-53249` — the Shadow Orb 115,
+the Companion Cube 3628, the Bone Key 1169 … the Zephyr Fish 2420, 26
+items): all buffTime=0 ghosts, all keep-alives already ported
+(`buff_effects_misc.rs`'s pet table + the accessory arms) — the same
+despawn failure. They join `PET_ITEM_BUFF_GRANTS` verbatim; TWO
+exclusions: 603 (the `:53093` `runningCollectorsEdition` gate — no CE
+flag in the port) and 425 (d2's `Next(3)` fairy arm, not a plain
+grant). The equip-arm `UpdatePet`/`UpdatePetLight` (`:17298-17340`)
+deferral is UNCHANGED (the i53 note's seam). The pet-light-family
+declaration (research/336 §4): the seven kinds contribute ZERO
+AddLight sites + ZERO `this.light`; the 650/895/896 PlotTileLine rows
+(colours/retro gate/widths/anchors) are censused for the standing
+light-map-write layer; 882/888/898/957 are dark in C# too. 2 new
+witnesses (the Shadow Orb use → eviction + 3600 → 18000 + the 18 flag,
+the classic-row/registry agreement + the nine exclusions) WRITTEN NOT
+RUN.
+
+### Verification
+
+Code-only: every change re-read against the cited C# windows; the seam
+signatures checked by read/grep (`ProjectilePool::update`,
+`spawn_with_data_ai_owned`, `rects_intersect`, `hurt_inner`'s dodge
+short-circuits, the `wants_sound`/`wants_mark_spawn` drains). The 13
+new witnesses (5x 813 census/row, 2x pointer pose, 1x kite latch drain,
+1x geyser box/survival, 1x geyser trip end-to-end, plus the re-derived
+drip-gate expectations) are WRITTEN, NOT RUN - **no cargo/rustc/rustfmt/
+tests/graphify invoked** (user directive).
