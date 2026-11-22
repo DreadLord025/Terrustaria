@@ -1350,6 +1350,14 @@ pub(crate) fn play_npc_sound_request(
         NpcSoundCue::NpcDeath13 => {
             audio.play_npc_death_style(13, req.x, req.y, rng);
         }
+        // W4-c2 — the pillar shield cues (`NPC.cs:39089`/`:39093`): both
+        // the style façades, case 4.
+        NpcSoundCue::NpcDeath58 => {
+            audio.play_npc_death_style(58, req.x, req.y, rng);
+        }
+        NpcSoundCue::NpcDeath3 => {
+            audio.play_npc_death_style(3, req.x, req.y, rng);
+        }
         NpcSoundCue::EowDig => {
             audio.play_eow_dig(req.x, req.y);
         }
@@ -2806,14 +2814,13 @@ pub(crate) fn tower_shield_absorb(world: &mut tr_core::World, tower: usize) -> b
 /// the 629 bolt contact ([`tower_shield_absorb`]). When the last bolt
 /// zeroes the shield, the next tick's gate opens the tower to damage.
 ///
-/// B-6b wiring: the C# runs this inside the pillar machine; the port's
-/// stand-in (`update_ancient_cultist`) is B-6a's re-port territory, so the
-/// gate rides the sim pass instead — once per `update_npcs`, right after
-/// the death path (so towers spawned by this tick's cultist death are
-/// gated the same tick). B-6a folds it into the re-ported machine at the
-/// C# position; the ai[3] shield-break flash cycle (`NPC.cs:39069-39100`,
-/// NPCDeath58 on the flip / NPCDeath3 at ai[3]==1 / the 120-wrap) rides
-/// that re-port too — it reads the `ai[3] = 1` trigger R71's spend writes.
+/// B-6b wiring: the C# runs this inside the pillar machine; W4-c2 landed
+/// that machine on the style axis (`npc.rs::ai_094_pillar_family` →
+/// `npc_ai_pillar::pillar_ai_step`, which writes the gate AND the ai[3]
+/// shield-break flash cycle at the C# position, `NPC.cs:39069-39115`).
+/// This pass STAYS as the same-tick backstop right after the death path:
+/// towers spawned by this tick's cultist death are gated before their
+/// first AI turn, and the write is idempotent with the machine's own.
 pub(crate) fn apply_tower_shield_gates(app: &mut App) {
     for n in app.npcs.iter_mut() {
         let shield = match n.kind {
@@ -5749,6 +5756,18 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // 600-tick win-death resolve) rides before the death retain: the
     // win-death zeroes the crystal's hp AND stops the event in one pass.
     update_dd2_event(app, dt);
+    // W4-c2 — `NPC.checkDead`'s pillar intercept (`NPC.cs:78080-78086`):
+    // a dying tower does NOT die — `ai[2] = 1`, `ai[1] = 0`,
+    // `PrepareForDeathAnimation` (`life = lifeMax`, `dontTakeDamage`,
+    // `netUpdate`) — and enters the 180-tick dissolve the aiStyle-94
+    // machine owns. Runs BEFORE the retain, the crystal-intercept shape
+    // (`update_dd2_event` above). RNG-free; the second death (ai[2]==1,
+    // the dissolve's ai[1] >= 180 kill) passes through to the death arms.
+    for n in app.npcs.iter_mut() {
+        if n.hp <= 0 {
+            crate::npc_ai_pillar::check_dead_pillar_intercept(n);
+        }
+    }
     let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
     app.npcs.retain(|n| n.hp > 0);
     // The invasion kill credit (`NPC.cs:78236-78279`): the group match
@@ -6328,6 +6347,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         bees.push(bee);
     }
     app.npcs.append(&mut bees);
+    // W4-c2 — the Solar pillar's goop request (`NPC.cs:39376-39381`'s
+    // `NewNPC(..., 519)` + the launch velocity + netUpdate): the machine
+    // drew the arm's five rolls on the UpdateNPCs stream at request time;
+    // SolarGoop 519 has NO ported kind yet (aiStyle 99, `NPC.cs:
+    // 15409-15423` — the npc_ai_pillar census row), so the spawn body is
+    // the documented kind-wave skip. The drain keeps the queue from
+    // leaking across ticks; no draws here (the C#'s NewNPC(519) draws
+    // nothing beyond the arm's own).
+    for n in app.npcs.iter_mut() {
+        n.wants_solar_goop = None;
+    }
     // Plantera's spawn requests (S1-D-3-plantera, `NPC.cs:31736-31742` /
     // `:31983-31994` / `:32054-32073`): S1-D-3-wire-plantera-minions
     // replaces the drain-only stand-in with the real `NewNPC` spawns —
@@ -14052,10 +14082,12 @@ mod cultist_tests {
     }
 
     #[test]
-    fn the_cultist_bobs_and_regen_when_far() {
-        // `AI()`'s aiStyle-94 block (`NPC.cs:38968+`): the sine bob and the
-        // +200 regen per 60 ticks while the player stays 2000+ px.
-        // (S1-D-3b: Lunar Pillar machine, not CultistBoss 439's AI_084.)
+    fn the_pillar_regen_counter_is_inert_like_vanilla() {
+        // W4-c2 re-pin (the stand-in's accumulating `caster_counter` was
+        // a different, wrong machine): `NPC.cs:39117-39130` — the far
+        // player increments `localAI[0]`, but the SECOND if's else zeroes
+        // it whenever < 60, so the counter never accumulates past 1 and
+        // the +200 heal only fires from an externally seeded >= 59.
         let (mut app, mut player) = {
             let mut a = base_app();
             let p = Player::spawn(&a.world);
@@ -14070,22 +14102,31 @@ mod cultist_tests {
             0.0,
         );
         n.hp = 3000;
-        // The player far away.
+        // The player far away (> 2000 px from the tower centre).
         player.x = 20.0 * TILE_PX;
         player.y = 118.0 * TILE_PX;
         let before = n.hp;
         let mut rng = UnifiedRandom::new(7);
         for _ in 0..61 {
             n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            assert_eq!(n.local_ai[0], 0.0, "the vanilla counter never accumulates");
         }
-        assert_eq!(n.hp - before, 200, "the far regen (+200)");
+        assert_eq!(n.hp, before, "no unprovoked regen through this arm");
+        // The externally seeded 59 → the increment reaches 60 → +200.
+        n.local_ai[0] = 59.0;
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.hp - before, 200, "the seeded far regen (+200)");
+        assert_eq!(n.local_ai[0], 0.0);
         let _ = app;
     }
 
     #[test]
-    fn the_cultist_dissolves_after_the_180_tick_ritual() {
-        // The ai[2] timer's 180-tick dissolve (`:39060-39066`): life 0.
-        // (S1-D-3b: aiStyle 94 Lunar Pillar behavior.)
+    fn the_pillar_lives_until_the_checkdead_dissolve() {
+        // W4-c2 re-pin (the stand-in's ai[2]-as-timer self-kill retired):
+        // `ai[2]` is the C#'s dissolve FLAG (`NPC.cs:78080-78086`), not a
+        // counter — an idle tower never dies on its own. The death comes
+        // from the intercept (`check_dead_pillar_intercept`) + the 180
+        // ticks of the `ai[2] == 1` arm (`:38970-39067`, ai[1] the timer).
         let (_app, mut player) = {
             let mut a = base_app();
             let p = Player::spawn(&a.world);
@@ -14099,13 +14140,24 @@ mod cultist_tests {
             1,
             0.0,
         );
+        n.hp = n.max_hp;
         player.x = 20.0 * TILE_PX;
         player.y = 118.0 * TILE_PX;
         let mut rng = UnifiedRandom::new(7);
         for _ in 0..180 {
             n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
         }
-        assert_eq!(n.hp, 0, "the ritual's dissolve");
+        assert!(n.hp > 0, "no unprovoked 180-tick self-kill");
+        assert_eq!(n.ai[2], 0.0, "ai[2] is the flag, not a timer");
+        // The kill → the intercept → the dissolve's 180 ticks → death.
+        n.hp = 0;
+        assert!(crate::npc_ai_pillar::check_dead_pillar_intercept(&mut n));
+        assert_eq!(n.hp, n.max_hp, "PrepareForDeathAnimation");
+        for _ in 0..180 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.ai[1], 180.0, "the dissolve's own timer");
+        assert_eq!(n.hp, 0, "the dissolve's death (`:39061-39066`)");
     }
 
     fn surface_world_fixture() -> World {
@@ -14524,7 +14576,9 @@ mod lunar_chain_tests {
         // towers down → `StartImpendingDoom(3600)` → `Main.cs:64987`'s
         // spawn of the 398 core.
         let mut app = app_ready();
-        // The apocalypse is up with all four towers.
+        // The apocalypse is up with all four towers. W4-c2: ai[2] = 1
+        // marks the post-dissolve death — a first death is intercepted
+        // (`NPC.cs:78080-78086`) into the 180-tick dissolve instead.
         app.world.lunar_apocalypse_is_up = true;
         for kind in [
             NpcKind::SolarTower,
@@ -14534,6 +14588,7 @@ mod lunar_chain_tests {
         ] {
             let mut t = Npc::new(kind, 60.0 * TILE_PX, 112.0 * TILE_PX, 1, 0.0);
             t.hp = 0;
+            t.ai[2] = 1.0;
             app.npcs.push(t);
         }
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
@@ -17426,7 +17481,9 @@ mod pillar_mob_tests {
     fn the_tower_death_flags_the_shield_reset() {
         // The tower's death raises its downed flag + deactivates it
         // (`NPC.cs:79288`'s family at the death) — and the shield's
-        // reset fires once all four are down.
+        // reset fires once all four are down. W4-c2: ai[2] = 1 marks the
+        // post-dissolve death (a first death is intercepted into the
+        // dissolve, `NPC.cs:78080-78086`).
         let mut app = base_app();
         let _player = Player::spawn(&app.world);
         crate::world_sim::npcs::raise_tower_shield(&mut app.world);
@@ -17438,10 +17495,86 @@ mod pillar_mob_tests {
             0.0,
         );
         n.hp = 0;
+        n.ai[2] = 1.0;
         app.npcs.push(n);
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
         assert!(app.world.downed_tower_solar, "the downed flag");
         assert!(!app.world.tower_active_solar, "the tower deactivates");
+    }
+
+    /// W4-c2 witness 1 — the death-pass intercept rides BEFORE the
+    /// retain: a tower killed by damage does not die — `ai[2] = 1`,
+    /// `ai[1] = 0`, life restored (`PrepareForDeathAnimation`,
+    /// `NPC.cs:78032-78038`), no downed flag, no death cue; the NEXT
+    /// ticks run the dissolve arm on the axis machine (ai[1] climbs).
+    #[test]
+    fn w4c2_the_death_sweep_intercepts_the_first_tower_kill() {
+        let mut app = base_app();
+        app.player = Some(Player::spawn(&app.world));
+        raise_tower_shield(&mut app.world);
+        let mut n = Npc::new(
+            NpcKind::SolarTower,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = 0;
+        n.ai[1] = 42.0; // the intercept zeroes the dissolve timer
+        app.npcs.push(n);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.npcs.len(), 1, "the tower survives its first death");
+        let t = &app.npcs[0];
+        assert_eq!(t.ai[2], 1.0, "the dissolve flag");
+        // The intercept rides the death sweep AFTER the tick (the port's
+        // batched-death fold — the C# runs checkDead inside StrikeNPC):
+        // this tick's arm saw ai[2] == 0, the intercept zeroed ai[1].
+        assert_eq!(t.ai[1], 0.0, "zeroed by the intercept");
+        assert_eq!(t.hp, t.max_hp, "life = lifeMax");
+        assert!(t.dont_take_damage, "the shield stands");
+        assert!(!app.world.downed_tower_solar, "no death events ran");
+        // The dissolve keeps ticking through the axis arm.
+        for _ in 0..10 {
+            update_npcs(&mut app, 1.0 / 60.0);
+        }
+        assert_eq!(app.npcs[0].ai[1], 10.0, "the dissolve timer climbs");
+        assert!(app.npcs[0].hp > 0);
+    }
+
+    /// W4-c2 witness 2 — the draw delta: an idle tower tick on the axis
+    /// arm spends exactly the FOUR ambient `Next(5)` gate draws
+    /// (`NPC.cs:39251`/`:39260` for the vortex row) on the caller's
+    /// stream — the retired stand-in discarded `rng` entirely (zero
+    /// draws), and the every-tick 579 ritual is gone. The queued plays
+    /// drain after the machine (the shield gate holds → no flash cue).
+    #[test]
+    fn w4c2_the_idle_pillar_tick_draws_the_four_ambient_gates() {
+        let mut app = base_app();
+        app.player = Some(Player::spawn(&app.world));
+        raise_tower_shield(&mut app.world);
+        let mut n = Npc::new(
+            NpcKind::VortexTower,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        app.npcs.push(n);
+        let mut rng = UnifiedRandom::new(11);
+        let mut mirror = UnifiedRandom::new(11);
+        let mut player = app.player.take().unwrap();
+        app.npcs[0].update_rng(&app.world, &mut player, 1.0 / 60.0, &mut rng);
+        for _ in 0..4 {
+            mirror.next_max(5);
+        }
+        assert_eq!(rng, mirror, "four ambient gate draws, nothing else");
+        assert!(
+            app.npcs[0].wants_hostile_shot.is_empty(),
+            "the stand-in's every-tick 579 spam is retired"
+        );
+        assert!(app.npcs[0].dont_take_damage, "the machine's own shield gate");
+        app.player = Some(player);
     }
 }
 

@@ -106,6 +106,11 @@ const SFX_CUES: &[(&str, u32)] = &[
     // laser wind-up, `:41838`/`:42338`/`:42611`) is already above.
     ("NPC_Killed_13", 4),
     ("NPC_Killed_61", 4),
+    // W4-c2 — the pillar shield-flash pair (`NPC.cs:39089`'s NPCDeath58
+    // on the state flip, `:39093`'s NPCDeath3 on the first flash tick);
+    // `Sounds/NPC_Killed_58.xnb` ships with the content, `NPC_Killed_3`
+    // is already above — the bank-gap close for the 58 slot.
+    ("NPC_Killed_58", 4),
     // S1-E-21g — the attack/shot cues the caster teleport plays
     // (`SoundID.Item8`, `NPC.cs:20862`/`:20931`) and the EoC servant
     // launch (`SoundID.Item14`, the goblin-fist arm `:19415`) — Item_8
@@ -1579,7 +1584,9 @@ impl Audio {
             // `PlaySound(SoundID.NPCDeath7, x*16+8, y*16+8)` — the style
             // façade, the GetRandomPitch NextFloat rides the audio stream).
             7 => "NPC_Killed_7",
+            3 => "NPC_Killed_3",
             13 => "NPC_Killed_13",
+            58 => "NPC_Killed_58",
             61 => "NPC_Killed_61",
             _ => return None,
         };
