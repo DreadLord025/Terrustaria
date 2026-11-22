@@ -4967,6 +4967,29 @@ impl Npc {
                 }
                 self.integrate_no_tile_collide();
             }
+            // `else if (this.aiStyle == 46)` (`NPC.cs:31129-31346`) — the
+            // Golem's ATTACHED head (246), the style's only user. W4-c5:
+            // the faithful `npc_ai_style46::golem_head_step` claims the
+            // axis (the aiStyle-42 `8ac80b4e` precedent); the stand-in
+            // inside `update_golem_rng`'s GolemHead arm is retired. The
+            // flags ride the LIVE feeds: getGood = the FTW seed (the
+            // style30/43 precedent), the temple/jungle zones = the
+            // player's zone scan (the body arm's precedent). The beams'
+            // `timeLeft = 300` rides the sim drain's timed list
+            // (`world_sim/npcs.rs`, `NPC.cs:31307`/`:31333`).
+            46 => crate::npc_ai_style46::golem_head_step(
+                self,
+                world,
+                player,
+                crate::npc_ai_style46::Style46Flags {
+                    get_good_world: world
+                        .seeds
+                        .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+                    player_zone_temple: player.zones.temple,
+                    player_zone_jungle: player.zones.jungle,
+                },
+                rng,
+            ),
             // `else if (this.aiStyle == 47) { this.AI_047_GolemFist(); }`
             // (`NPC.cs:31347-31350`) - the Golem's fists. The three-way
             // reconcile (TR-D3s48 note) prefers golem-audit's faithful
@@ -8567,18 +8590,19 @@ impl Npc {
                 }
             }
             NpcKind::GolemHead => {
-                // `FindFrame`'s case 246 (`NPC.cs:72931-72961`): the mouth
-                // row rides the fireball window (the first/last 20 of the
-                // 300 cadence — `:31178`'s window with the localAI[0]
-                // writes at `:31181`/`:31186` (phase 0) and
-                // `:31240`/`:31244` (phase 1), folded: the port tests the
-                // window directly); in phase 1 the head-turn rows ride
-                // `localAI[1]` (`npc.head_turn`): +4 on the left side
-                // (`:72953-72955`), +2 on the right (`:72957-72959`),
-                // NOTHING in-band (`:31223`'s zero — the three-way the
-                // v1 missed).
-                let mouth = self.ai[1] < 20.0 || self.ai[1] > 280.0;
-                let mut row = if mouth { 1 } else { 0 };
+                // `FindFrame`'s case 246 (`NPC.cs:72931-72961`): W4-c5 —
+                // the mouth row reads the STORED `localAI[0]` flag the AI
+                // writes on the first/last 20 of the 300 cadence
+                // (`:31181`/`:31186` phase 0, `:31238`/`:31242` phase 1 —
+                // `:72934`/`:72945` read `localAI[0] == 1f`), NOT a
+                // recomputed ai[1] window (the case-249 R23 G5 precedent:
+                // the flag can diverge from the post-write counter, e.g.
+                // the fire tick's reset). In phase 1 the head-turn rows
+                // ride `localAI[1]` (mirrored to `npc.head_turn` by
+                // `golem_head_step`): +4 on the left side (`:72953-72955`),
+                // +2 on the right (`:72957-72959`), NOTHING in-band
+                // (`:31223`'s zero — the three-way the v1 missed).
+                let mut row = if self.local_ai[0] == 1.0 { 1 } else { 0 };
                 if self.ai[0] == 1.0 {
                     row += match self.head_turn {
                         -1 => 4,
@@ -17563,131 +17587,32 @@ impl Npc {
             }
             NpcKind::GolemHead => {
                 // The attached head (`aiStyle 46`, `NPC.cs:31129-31346`).
-                // The body-gone self-kill (`:31141-31145`'s
-                // `StrikeNPCNoInteraction(9999)` — the port's hp = 0).
-                if !world.golem_present {
-                    self.hp = 0;
-                    return;
-                }
-                // The snap tether (`:31146-31164`): inside 100 px the
-                // RAW delta (rotation 0), beyond it the 100-normalised
-                // velocity with `rotation = vx * 0.1`. The v1 ran an
-                // invented +9 accel with a +-7 clamp.
-                let (vx, vy, rot) = crate::npc_ai_golem::head_tether_velocity(
-                    cx, cy, world.golem_x, world.golem_y, 1.0,
+                // W4-c5: the faithful `npc_ai_style46::golem_head_step`
+                // owns the machine — the axis `46 =>` claim above routes
+                // the live sim there; this delegate keeps the direct-call
+                // tests (`update_golem`) on the SAME machine (the
+                // `ai_047_golem_fist_family` reconcile precedent). The
+                // stand-in's remaining fold-outs vs the module: the
+                // scale-blind dock/muzzles (the module rides `npc.scale`),
+                // the missing TargetClosest sites (`:31190`/`:31208`/
+                // `:31245`), the velocity-sign facing stand-in (`:31338`'s
+                // tail writes only ai[0]; the facing comes from the
+                // scans), and the missing below-world despawn guard.
+                // The flags mirror the axis claim (FTW seed + the live
+                // zone scan).
+                crate::npc_ai_style46::golem_head_step(
+                    self,
+                    world,
+                    player,
+                    crate::npc_ai_style46::Style46Flags {
+                        get_good_world: world
+                            .seeds
+                            .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+                        player_zone_temple: player.zones.temple,
+                        player_zone_jungle: player.zones.jungle,
+                    },
+                    rng,
                 );
-                self.vx = vx;
-                self.vy = vy;
-                self.rotation = rot;
-                // The alpha fade (`:31165-31173`): `ai[1] = 30`.
-                if self.alpha > 0 {
-                    self.alpha = self.alpha.saturating_sub(10);
-                    self.ai[1] = 30.0;
-                }
-                // The fireball cycle (`:31174-31260`): the phase arms
-                // read the CURRENT ai[0] — the half-life phase write
-                // lands at the END (`:31338-31345`), the v1 had it first.
-                if self.ai[0] == 0.0 {
-                    self.ai[1] += 1.0;
-                    let mouth = self.ai[1] < 20.0 || self.ai[1] > 280.0;
-                    self.ai[1] += crate::npc_ai_golem::head_fireball_step(
-                        num, false, mouth, self.hp, self.max_hp,
-                    ) - 1.0;
-                    self.local_ai[0] = if mouth { 1.0 } else { 0.0 };
-                    if self.ai[1] >= 300.0 {
-                        self.ai[1] = 0.0;
-                        // The 8-speed fireball (`:31192-31204`): the v1
-                        // pushed the RAW delta — the normalise was missing.
-                        // W1-6: the invented `.max(0.001)` guard is dropped —
-                        // the C# divides by the RAW sqrt (`:31196`), NaN/inf
-                        // passes through on coincident centres.
-                        let (sx, sy) = (cx, cy + 10.0);
-                        let (mut dvx, mut dvy) = (pcx - sx, pcy - sy);
-                        let d = (dvx * dvx + dvy * dvy).sqrt();
-                        dvx = dvx / d * 8.0;
-                        dvy = dvy / d * 8.0;
-                        self.wants_hostile_shot.push((
-                            crate::projectile::GOLEM_FIREBALL,
-                            sx, sy, dvx, dvy, 18,
-                        ));
-                    }
-                } else if self.ai[0] == 1.0 {
-                    // The phase-1 turn (`:31209-31224`): the three-way
-                    // about `Center.X +- width`, the +-40 volley offset.
-                    let ox = if pcx < cx - w {
-                        self.head_turn = -1;
-                        -40.0
-                    } else if pcx > cx + w {
-                        self.head_turn = 1;
-                        40.0
-                    } else {
-                        self.head_turn = 0;
-                        0.0
-                    };
-                    self.ai[1] += crate::npc_ai_golem::head_fireball_step(
-                        num, true, false, self.hp, self.max_hp,
-                    );
-                    self.local_ai[0] =
-                        if self.ai[1] < 20.0 || self.ai[1] > 280.0 { 1.0 } else { 0.0 };
-                    if self.ai[1] >= 300.0 {
-                        self.ai[1] = 0.0;
-                        let (sx, sy) = (cx + ox, cy + 10.0);
-                        let (mut dvx, mut dvy) = (pcx - sx, pcy - sy);
-                        // W1-6: raw sqrt, no guard (`:31251` — NaN pass-through).
-                        let d = (dvx * dvx + dvy * dvy).sqrt();
-                        dvx = dvx / d * 8.0;
-                        dvy = dvy / d * 8.0;
-                        self.wants_hostile_shot.push((
-                            crate::projectile::GOLEM_FIREBALL,
-                            sx, sy, dvx, dvy, 24,
-                        ));
-                    }
-                    // The beam volley (`:31261-31336`): the num688 ladder,
-                    // the RESTORED `60 + Main.rand.Next(600)` trigger
-                    // (`:31278` — one draw per tick, the v1 folded it to
-                    // a flat 300). In-band: the two-shot +-18 at 11; a
-                    // side turn: the single +-30 at 12; both dmg 28 with
-                    // the 3-tick lead and the timeLeft 300 (the sim's
-                    // timed-spawn arm).
-                    self.ai[2] += crate::npc_ai_golem::head_beam_step(
-                        num,
-                        self.hp,
-                        self.max_hp,
-                        !crate::projectile::can_hit(world, cx, cy, 1.0, 1.0, pcx, pcy, 1.0, 1.0),
-                    );
-                    if self.ai[2] > crate::npc_ai_golem::head_beam_trigger(rng) {
-                        self.ai[2] = 0.0;
-                        let (shots, count) = if self.head_turn == 0 {
-                            ([(-18.0, 11.0), (18.0, 11.0)], 2)
-                        } else if self.head_turn == -1 {
-                            ([(-30.0, 12.0), (0.0, 0.0)], 1)
-                        } else {
-                            ([(30.0, 12.0), (0.0, 0.0)], 1)
-                        };
-                        for (sx, sp) in shots.into_iter().take(count) {
-                            let mut vx = pcx - (cx + sx);
-                            let mut vy = pcy - (cy - 22.0);
-                            // W1-6: raw sqrt, no guard (`:31299`/`:31325`).
-                            let vd = (vx * vx + vy * vy).sqrt();
-                            vx = vx / vd * sp;
-                            vy = vy / vd * sp;
-                            self.wants_hostile_shot.push((
-                                crate::projectile::GOLEM_EYE_BEAM,
-                                cx + sx + vx * 3.0,
-                                cy - 22.0 + vy * 3.0,
-                                vx,
-                                vy,
-                                28,
-                            ));
-                        }
-                    }
-                }
-                // The phase write LAST (`:31338-31345`).
-                self.ai[0] = if self.hp < self.max_hp / 2 { 1.0 } else { 0.0 };
-                self.facing = if self.vx >= 0.0 { 1 } else { -1 };
-                self.sprite_dir = self.facing;
-                self.x += self.vx;
-                self.y += self.vy;
             }
             NpcKind::GolemFistLeft | NpcKind::GolemFistRight => {
                 // The fists (`AI_047_GolemFist`, `NPC.cs:19231-19503`).
@@ -23688,45 +23613,59 @@ mod tests {
 
     #[test]
     fn the_golem_head_turn_rows_and_free_head_mouth_row() {
-        // `FindFrame` cases 246/249 (`NPC.cs:72931-72981`): the mouth row
-        // rides the 300-cadence window; the attached head's phase-1 rows
-        // add the three-way `localAI[1]` turn (+4 left / +2 right / 0
-        // in-band); the free head carries the mouth row alone.
+        // W4-c5 — `FindFrame` cases 246/249 (`NPC.cs:72931-72981`): the
+        // attached head's mouth row reads the STORED `localAI[0]` flag
+        // the aiStyle-46 machine writes (`:72934`/`:72945`), NOT a
+        // recomputed ai[1] window (the case-249 R23 G5 precedent); the
+        // phase-1 rows add the three-way `localAI[1]` turn (+4 left /
+        // +2 right / 0 in-band, mirrored to `head_turn`); the free head
+        // carries the mouth row alone.
         let mut w = ground_air();
         w.golem_present = true;
         w.golem_x = 100.0 * 16.0;
         w.golem_y = 100.0 * 16.0;
         let mut player = crate::player::Player::spawn(&w);
+        // In-band (|pcx - cx| <= 70) and below the surface line: the
+        // jungle zone keeps the solo balance calm (num675 = 1,
+        // num688 = 1 — at hp max/3 the 0.4 tier doubles the add to 2).
+        player.x = 100.0 * 16.0 - 10.0;
+        player.y = 100.0 * 16.0;
+        player.zones.jungle = true;
         let mut head = Npc::new(
             NpcKind::GolemHead,
-            100.0 * 16.0 - 3.0,
-            100.0 * 16.0 - 57.0,
+            100.0 * 16.0 - 3.0 - 35.0,
+            100.0 * 16.0 - 57.0 - 35.0,
             -1,
             0.0,
         );
         head.hp = head.max_hp / 3;
         head.ai[0] = 1.0;
-        // The in-band player (inside `Center.X +- width`): the turn is 0,
-        // the mouth window (first/last 20 of 300) selects row 1.
+        // The in-band player: the turn is 0; ai[1] = 5 -> 7 (the 0.4
+        // tier's double add) < 20 opens the mouth (`:31238`) -> row 1
+        // without the turn offset.
         head.ai[1] = 5.0;
         head.update_golem(&w, &player);
         head.find_frame();
+        assert_eq!(head.local_ai[0], 1.0, "the AI's open-mouth write");
         assert_eq!(head.head_turn, 0, "the in-band turn");
         assert_eq!(head.frame, 1, "the mouth row without the turn offset");
         // The player to the left: -1 -> +4; mid-cadence -> the closed
-        // mouth (row 0 + 4).
+        // mouth (row 0 + 4). W4-c5: ai[1] is preset BEFORE the tick — the
+        // row reads the flag the AI writes on the post-add counter.
         player.x = (100.0 * 16.0 - 200.0) as f32;
-        head.update_golem(&w, &player);
         head.ai[1] = 150.0;
+        head.update_golem(&w, &player);
         head.find_frame();
         assert_eq!(head.head_turn, -1, "the left turn");
+        assert_eq!(head.local_ai[1], -1.0, "the C# slot the turn mirrors");
         assert_eq!(head.frame, 4, "the +4 row");
         // The player to the right: +1 -> +2 with the mouth open.
         player.x = (100.0 * 16.0 + 200.0) as f32;
-        head.update_golem(&w, &player);
         head.ai[1] = 295.0;
+        head.update_golem(&w, &player);
         head.find_frame();
         assert_eq!(head.head_turn, 1, "the right turn");
+        assert_eq!(head.local_ai[0], 1.0, "the AI wrote the mouth flag");
         assert_eq!(head.frame, 3, "the mouth +2 row");
         // The free head: case 249's mouth-only rows, no turn — R23 G5:
         // the row reads the STORED `localAI[0]` flag (`NPC.cs:72963`),
@@ -23739,6 +23678,87 @@ mod tests {
         free.local_ai[0] = 0.0;
         free.find_frame();
         assert_eq!(free.frame, 0, "the free head's closed row");
+    }
+
+    /// W4-c5 witness 1 — `FindFrame` case 246 reads the STORED
+    /// `localAI[0]` mouth flag (`NPC.cs:72934`/`:72945`), NOT a recomputed
+    /// `ai[1]` window (the case-249 R23 G5 precedent): the flag can
+    /// diverge from the counter, and the row follows the FLAG.
+    #[test]
+    fn w4_c5_the_head_mouth_row_reads_the_stored_local_ai0_flag() {
+        let mut head = Npc::new(NpcKind::GolemHead, 1600.0, 1543.0, -1, 0.0);
+        head.hp = head.max_hp;
+        // Phase 0: the counter is mid-cadence (the old window read would
+        // pick row 0) but the flag rides OPEN — the C# picks row 1.
+        head.ai[0] = 0.0;
+        head.ai[1] = 150.0;
+        head.local_ai[0] = 1.0;
+        head.find_frame();
+        assert_eq!(head.frame, 1, "the flag wins over the window (phase 0)");
+        // And the mirror: a window-open counter with the flag CLOSED
+        // picks row 0 — the read is the flag alone.
+        head.ai[1] = 5.0;
+        head.local_ai[0] = 0.0;
+        head.find_frame();
+        assert_eq!(head.frame, 0, "the closed flag holds row 0");
+        // Phase 1: the same flag read, then the turn adds ride on top
+        // (`:72943-72960`). The flag open + a left turn -> 1 + 4.
+        head.ai[0] = 1.0;
+        head.ai[1] = 150.0;
+        head.local_ai[0] = 1.0;
+        head.head_turn = -1;
+        head.find_frame();
+        assert_eq!(head.frame, 5, "the phase-1 mouth + left turn");
+        head.head_turn = 1;
+        head.find_frame();
+        assert_eq!(head.frame, 3, "the phase-1 mouth + right turn");
+    }
+
+    /// W4-c5 witness 2 — the AI→frame seam end to end: `golem_head_step`
+    /// writes `localAI[0]` on the 300-cadence window (`NPC.cs:31181`/
+    /// `:31186` phase 0, `:31238`/`:31242` phase 1) and `find_frame` reads
+    /// it back — the fire tick's counter reset leaves the flag OPEN (the
+    /// divergence the window recompute could never show).
+    #[test]
+    fn w4_c5_the_ai_written_mouth_flag_drives_the_head_frame() {
+        let mut w = ground_air();
+        w.golem_present = true;
+        w.golem_x = 100.0 * 16.0;
+        w.golem_y = 100.0 * 16.0;
+        let mut player = crate::player::Player::spawn(&w);
+        player.zones.jungle = true; // solo balance: the enrage gate off
+        let mut head = Npc::new(
+            NpcKind::GolemHead,
+            100.0 * 16.0 - 3.0 - 35.0,
+            100.0 * 16.0 - 57.0 - 35.0,
+            -1,
+            0.0,
+        );
+        head.hp = head.max_hp;
+        head.alpha = 0;
+        // Phase 0, the last-20 window: 299 -> 300 fires, the reset leaves
+        // ai[1] = 0 with the flag OPEN (`:31181` wrote it pre-fire).
+        head.ai[1] = 299.0;
+        head.update_golem(&w, &player);
+        assert_eq!(head.ai[1], 0.0, "the fire tick's reset");
+        assert_eq!(head.local_ai[0], 1.0, "the window write survives it");
+        head.find_frame();
+        assert_eq!(head.frame, 1, "the stored flag drives the row");
+        // Mid-cadence: the flag closes and the row follows.
+        head.ai[1] = 150.0;
+        head.update_golem(&w, &player);
+        assert_eq!(head.local_ai[0], 0.0);
+        head.find_frame();
+        assert_eq!(head.frame, 0);
+        // Phase 1: the same seam on the num688 ladder (solo balance 1 ->
+        // 1/tick at full hp); 295 -> 296 opens the mouth, no fire.
+        head.hp = head.max_hp / 3;
+        head.ai[0] = 1.0;
+        head.ai[1] = 295.0;
+        head.update_golem(&w, &player);
+        assert_eq!(head.local_ai[0], 1.0, "the phase-1 window write");
+        head.find_frame();
+        assert_eq!(head.frame, 1, "in-band: no turn offset");
     }
 
     #[test]
