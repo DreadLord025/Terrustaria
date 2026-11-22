@@ -721,6 +721,92 @@ pub fn hovered_slot(
     None
 }
 
+/// The sign hover tooltip (`Main.DrawMouseOver`'s sign arm,
+/// `Main.cs:42940-42986`): the hovered sign's text preview. The gate
+/// (`:42940`): no earlier mouse text, `signHover != -1`, the record live,
+/// `!mouseInterface` and the text not all-whitespace. The text wraps at
+/// 460 px / 10 lines (`Utils.WordwrapString`, `:42942` — the same wrap the
+/// dialog's `TextDisplayCache` uses, [`super::npc_chat::panel_lines`]);
+/// the box width is the widest line capped at 460 (`:42946-42958`). The
+/// origin is `mouse + 16` (`:42960`), `+ (8, 2)` with the opaque-box
+/// setting (`:42961-42964`), clamped to `screenHeight − 30·lines` /
+/// `screenWidth − width` (`:42965-42972`). The text colour is
+/// `Color(mouseTextColor ×4)` (`:42973`); with the opaque box it lerps to
+/// White (`:42976` — `Lerp(c, White, 1)` IS White) over a
+/// `DrawInvBG(23, 25, 81)·0.925·0.85` box at `(x−10, y−5, w+20,
+/// 30·lines+7)` (`:42977-42979`). Each line draws through
+/// `DrawBorderStringFourWay` at `y + l·30` (`:42981-42984`). W4-f22.
+pub fn draw_sign_hover_tooltip(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    mouse: Vec2,
+    text: &str,
+    screen: Vec2,
+    pulse: UiPulse,
+    opaque_box: bool,
+) {
+    if text.trim().is_empty() {
+        return; // `!string.IsNullOrWhiteSpace` (`:42940`)
+    }
+    let lines = super::npc_chat::panel_lines(lookups, text);
+    if lines.is_empty() {
+        return;
+    }
+    let line_amount = lines.len() as f32;
+    let mut w = 0.0f32;
+    for line in &lines {
+        w = w.max(hud_text_width(r, lookups, line, 1.0));
+    }
+    if w > 460.0 {
+        w = 460.0; // `:42955-42958`
+    }
+    let mut pos = mouse + Vec2::splat(16.0); // `:42960`
+    if opaque_box {
+        pos += Vec2::new(8.0, 2.0); // `:42963`
+    }
+    if pos.y > screen.y - 30.0 * line_amount {
+        pos.y = screen.y - 30.0 * line_amount; // `:42965-42968`
+    }
+    if pos.x > screen.x - w {
+        pos.x = screen.x - w; // `:42969-42972`
+    }
+    let m = pulse.text;
+    let mut color = [m; 4]; // `:42973`
+    if opaque_box {
+        color = [1.0; 4]; // `:42976` — `Color.Lerp(color, White, 1f)`
+        // `:42977-42979`: `num3 = 10`, `num4 = 5`, the box
+        // `(x−10, y−5, w+20, 30·lines + 5 + 2)`.
+        let rect = [
+            pos.x - 10.0,
+            pos.y - 5.0,
+            w + 20.0,
+            30.0 * line_amount + 5.0 + 2.0,
+        ];
+        let bg = [
+            23.0 / 255.0 * 0.925 * 0.85,
+            25.0 / 255.0 * 0.925 * 0.85,
+            81.0 / 255.0 * 0.925 * 0.85,
+            0.925 * 0.85,
+        ];
+        draw_inv_bg(r, lookups, rect, bg);
+    }
+    for (l, line) in lines.iter().enumerate() {
+        // `Utils.DrawBorderStringFourWay` (`Utils.cs:2464-2496`): the four
+        // ±2 px side passes in Black, then the colour.
+        super::text::draw_border_string(
+            r,
+            lookups,
+            super::text::BorderFont::Ui,
+            pos.x,
+            pos.y + l as f32 * 30.0,
+            1.0,
+            &[[-2.0, 0.0], [2.0, 0.0], [0.0, -2.0], [0.0, 2.0]],
+            color,
+            line,
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     /// M7-UI-6: the tooltip row set — the equipable row (`tip[23]`), the

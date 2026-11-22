@@ -397,6 +397,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
         app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
     );
+    // `Main.MouseOversClear` (`Main.cs:17035` -> `:46511-46512`) + the sign
+    // hover scan (`Player.LookForTileInteractions` -> the long-distance
+    // arm's `tileSign` block, `Player.cs:32098-32115`) — W4-f22: the
+    // bubble/tooltip latches re-derive every player tick.
+    crate::signs::mouse_overs_clear(app);
+    crate::signs::sign_hover_scan(app, mouse_world);
     // S1-P-i27 — `Main.ReversedUpDownArmorSetBonuses` (`Main.cs:273`), copied
     // out before the player borrow (the rest-target command reads it).
     let reversed_armor_bonuses = app.settings.reversed_armor_bonuses;
@@ -1686,6 +1692,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         }
     }
     crate::chest::tick_open(app); // `Player.HandleBeingInChestRange` (`Player.cs:25290`/:31015-31124)
+    crate::signs::sign_tick(app); // the sign range close (`Player.cs:27504-27518`) + the editSign gate (`Main.cs:17389-17394`), W4-f22
     if map_open {
         app.update_map_input();
     }

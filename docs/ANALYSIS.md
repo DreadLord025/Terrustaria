@@ -3030,11 +3030,12 @@ keyboard, credits вЂ” commits `02182dc..043e11c`) is ported at the source
 geometry; the screens, coordinates and flow are in `docs/UI.md` в†’
 "Front-end screens (P6)". The deviations and stand-ins:
 
-* **No `.plr` reader/writer** (spec В§9.4). Characters are the implicit
-  session entry plus optional `TR_FAKE_CHARS` fakes; Create records the
-  session draft instead of writing a character file. The `.plr` directory
-  scan stays so a future reader slots into the same shape (`Main.cs:4007`);
-  a scanned `.plr` is skipped like `Player.GetFileData`'s null return.
+* ~~**No `.plr` reader/writer** (spec §9.4).~~ **Closed (S1-J-3/S1-J-5 +
+  W4-f22).** The `.plr` reader/writer are live (`player_file.rs`, release 326,
+  the full `Serialize`), the listing reads real files, Create writes one, and
+  the card renames read-modify-write it (W4-f22, research/19 M1 — see "The
+  card renames" below). The session stand-in plus optional `TR_FAKE_CHARS`
+  fakes remain alongside the disk cards.
 * **World metadata stand-ins.** Favourites are a `<world>.trfav` marker file
   (`Main.LocalFavoriteData` has no port); creation time is the file's mtime;
   the world writer stores no `GameMode`, so every real entry reads Classic
@@ -3099,6 +3100,48 @@ geometry; the screens, coordinates and flow are in `docs/UI.md` в†’
 * **`Color` multiplication wraps, not saturates** (`color.rs`'s pinned
   convention, re-pinned by the Task 8b review): `DarkGray * 1.2` =
   `[202, 202, 202, 50]` вЂ” the ghosted Master-difficulty bunny preview.
+
+### The card renames (W4-f22, research/19 M1)
+
+The select screens' Rename buttons now WRITE. `KeyboardTail::Rename` (the
+character card) and the new `KeyboardTail::WorldRename` (the world card) run
+`OnFinishedSettingName` (`UICharacterListItem.cs:208-214`,
+`UIWorldListItem.cs:427-432`) instead of the historical "Renaming is not
+ported yet" notice; `KeyboardSession.rename_index` carries the clicked card
+(`this._data`), so the submit writes THAT entry, not a name search.
+
+- **Character** — `player_file::rename_player_file` is `PlayerFileData.Rename`
+  (`IO/PlayerFileData.cs:207-214`) as a read-modify-write: the vanilla mutates
+  the live `Player.name` and re-serializes the whole player; the port models
+  only the card state, so it decrypts the `.plr`, replaces ONLY `Serialize`'s
+  first field (`Player.cs:54752`, offset 24 = release 4 + FileMetadata 20),
+  keeps every other byte (the unmodelled tail is NOT re-defaulted), and
+  re-encrypts with the write-side PKCS7 envelope. The `.bak` copy is
+  `InternalSavePlayerFile:54730-54733`. The load gate runs first
+  (`Player.GetFileData`'s null-skip, `:55862-55881`).
+- **World** — `save_list::rename_world` is `WorldGen.RenameWorldCallBack`
+  (`WorldGen.cs:6727-6753`: load, `Main.worldName = newName`, save) as the
+  `.trwld` header-name splice (`save.rs:230-232`'s u32-length + UTF-8 field at
+  offset 20); the tile body and the v7+ side sections ride through unchanged.
+  The callback's sound 10 (`GetRenameCallback`, `WorldFileData.cs:473`) plays
+  after the submit cue, then the `menuMode = 6` reopen re-lists.
+- **Deviations**: (1) the world file keeps its stem — the vanilla
+  `GetWorldPathFromName` move belongs to the cloud path (`WorldFileData.cs:433`),
+  and `RenameWorldCallBack` itself rewrites the loaded file in place; (2) the
+  session stand-in IS the live player, so its rename lands on
+  `player_name`/`session_draft` (`PlayerFileData.cs:209-212`'s `Player.name`
+  write) and survives the re-list; a `TR_FAKE_CHARS` fake renames in memory
+  only and the re-list rebuilds it (the fake-erase shape); (3) a failed write
+  keeps the old name and surfaces `front_hint` — the vanilla
+  `FancyErrorPrinter` dialog has no port; (4) the `menuMode = 10` saving
+  pass-through is synchronous (the port's saves are inline).
+- Witnesses (written, not run — code-only): `player_file::tests` (4: the
+  rename + `.bak` + untouched-fields round-trip, the byte-splice invariant,
+  the garbage refusal, the multibyte 7-bit-length name), `save_list::tests`
+  (3: the header rewrite + re-list + full-parse survival, the splice
+  invariant, the invalid/missing refusal), `flow::front_flow_tests` (the
+  rename-click session shape, the submit seam, the world rename click +
+  submit end-to-end).
 
 ## UIElement framework (M7-UI-1, 2026-11-08)
 
@@ -6872,15 +6915,24 @@ Deliberate deviations / deferred:
 - **The other interaction buttons** (`NPCInteractions.All`,
   `NPCInteractions.cs:486-531` вЂ” shop, happiness, housing, reforge, the
   Dryad/Tavernkeep/Dye-Trader specials, вЂ¦) are deferred: they ride systems
-  this panel task does not own. The port renders only `CloseChat`, so
-  `_neededInteractionLines` is the constant 1 (`ceil(1/4)`, `:174`).
+  this panel task does not own. The port renders only `CloseChat` (+ the
+  sign's Edit/Save while a sign is open), but the layout is dynamic:
+  `interaction_lines = ceil(count/4)` (`:174`) feeds the panel height
+  (`:68`) and the `num % 4 == 0` reset steps the row y by `num/4*22`
+  (`:106`) — the W4-d120 >4-button fix (research/143 §1's 2-hunk patch,
+  ported ahead of its publication and verified equivalent: the same
+  `div_ceil(4)` fn, `panel_rect`'s live-count parameter, the y-step; the
+  port's `interaction_count(sign_open)` helper answers the same count the
+  patch's `interactions(...).len()` call-sites compute). The merge lane
+  only grows `interactions` / `interaction_count`.
 - **The portrait** (`Main.DrawNPCPortrait`, `Main.cs:40318`, called at
   `NPCChatPanel.cs:79`) and **the corner item**
   (`Main.DrawNPCChatBottomRightItem`, `:39789`/`:80`) are deferred.
-- **The sign half**: `CanHoldConversation`'s `sign != -1` arm (`:276-283`),
-  the `editSign` blinker/IME composition (`DrawText` `:236-262`) and
-  `CloseNPCChatOrSign`'s `CloseSign` (`Main.cs:40682`) are unported вЂ” the
-  port's panel draws only while `talk_npc` holds.
+- **The sign half** landed with W4-f22: `CanHoldConversation`'s `sign != -1`
+  arm (`:276-283`), the `editSign` blinker (`DrawText` `:254-261`) and
+  `CloseNPCChatOrSign`'s `CloseSign` (`Main.cs:40682`) are live — ANALYSIS
+  "The sign keyboard (W4-f22)". The IME composition (`:242-253`) stays
+  deferred with the IME service.
 - **The Dryad Stardew override** (`OverrideChatTextWithShenanigans`,
   `:195-213`) is deferred with the animation system.
 - **The gamepad/virtual-keyboard arms** (`PrepareVirtualKeyboard`
@@ -6902,6 +6954,318 @@ Deliberate deviations / deferred:
   HUD spine draws the chat input strip early too; the panel sits under the
   inventory/bestiary/options layers, which is the visible-order difference
   that matters.
+
+## The sign keyboard (W4-f22, 2026-11-20, code-only mode)
+
+The sign editor end-to-end: `IngameFancyUI.OpenVirtualKeyboard(1)`
+(`IngameFancyUI.cs:86-145`) on the existing `ui/keyboard.rs`, the sign domain
+in `crates/tr-app/src/signs.rs` (the S1-E-27 net half extended), and the
+NPCChatPanel dialog's sign half. **Code-only mode**: no compiler/tests were
+invoked; the 14 witnesses are written not run (4 in `ui/keyboard.rs`, 9 in
+`signs.rs`, 1 in `ui/npc_chat.rs`), verified by re-reading the C#.
+
+**The 2026-11-21 follow-up round** (code-only, 7 new witnesses in `signs.rs`,
+written not run) landed the four hover/break deviations: the signHover
+tooltip (`Main.cs:42940-42986`), the SignTileBubble
+(`Main.cs:45739-45760` + the `Player.cs:32098-32115` latch), the lazy
+kill-on-break (`WorldGen.cs:43686-43689`) and the tombstone epitaph display
+census; the IME/clrInput/blockKey skip is final (input-system scope) and the
+1200-cap scroll census confirms the source carries no scroll (the dialog's
+10-line wrap is the display cap). See the deviation bullets below.
+
+**The sign-TILE placement + style census (W4-f22 retire, 2026-11-21,
+code-only)** — the place-arm and the sign-style text-store questions,
+answered against the source:
+
+- **The sign item is 171, NOT 177** (`ItemID.cs:2025` Sign = 171; 177 is
+  Sapphire `:2037`). The full place-item family (itemdata rows verified):
+  171 Sign → tile 55 (`Item.cs:3477-3487`), 321 Tombstone → 85 style 0
+  (`:5186-5195`), 1173-1177 Grave Marker/Cross/Headstone/Gravestone/Obelisk
+  → 85 styles 1-5 (`:14405-14459`), 3229-3233 Rich Gravestones → 85 styles
+  6-10 (`:29791-29805`, `placeStyle = 6 + type - 3229`), 3617 Announcement
+  Box → 425 (`:32574-32585`, `mech: true`), 4319/4320 Arrow Sign/Painted
+  Arrow Sign → 510/511 (`:36997-37020`), 4710 Tattered Wood Sign → 573
+  (`:38711-38721`). There is NO wood/stone/metal sign-item family and NO
+  "gold sign" item — the gold variants are the Rich Gravestones (tombstone
+  styles 6-10), and the one Sign item places the one tile 55.
+- **The place-route is the TileObject registry, complete**: all six kinds
+  (55/85/425/573/510/511) carry `UsesCustomCanPlace` defs
+  (`TileObjectData.cs:3822-3947`) and route through `TileObject.CanPlace`/
+  `Place` (`Player.cs:39771-39773` → the port's `place_item_tile` registry
+  arm). The legacy `WorldGen.PlaceSign` (`WorldGen.cs:43781-43861`) is
+  reached ONLY from the `PlaceTile` dispatcher (`:60166-60171`) — the
+  item-use path never enters it, so the port needs no `PlaceSign` port.
+  The base def is 2x2 `Style2x2` (`:3451-3460`: origin (0,1), AnchorBottom
+  SolidTile|SolidWithTop|Table|SolidSide ×2) + four mounting alternates
+  (alt 1 ceiling/AnchorTop, alt 2 left wall, alt 3 right wall, alt 4
+  AnchorWall — `:3824-3844`); tile 85 has NO alternates (floor-only,
+  `LavaDeath false`, `DrawYOffset 2`, `:3942-3947`) and tile 511 keeps the
+  four (`:3918-3941`). The port's generated `D_55/D_85/D_425/D_510/D_511/
+  D_573` defs match field-for-field (witnessed in `tr-core/edit/place.rs`).
+- **The frame census — the mount rides frameX, the style rides frameX,
+  frameY is always 0/18**: `TileObject.Place` writes `frameX =
+  CoordinateFullWidth(36) · CalculatePlacementStyle + 18·col`, `frameY =
+  18·row` (`TileObject.cs:60-109`; `CalculatePlacementStyle = style ·
+  StyleMultiplier + Style`, `TileObjectData.cs:1990-1998` — the alternates
+  carry Style 1-4, the tombstone styles 0-10 ride the base Style 0). So
+  `Sign.ReadSign`'s origin decode (`frameX/18 % 2`, `frameY/18`,
+  `Sign.cs:26-29`) resolves EVERY mount and EVERY style to the same 2x2
+  top-left — the record lookup is mount/style-agnostic by construction.
+  The death-drop projectiles pick the tombstone style the same way
+  (`Projectile.cs:25339-25350`: 201-205 → styles 1-5, 527-531 → 6-10, the
+  43 tombstone → 0; the `DropTombstone` coin gate `Player.cs:39116-39117`:
+  >10 gold → `Next(5)+527`, else `Next(6)` with 0 → the 43 plain tombstone).
+- **All sign styles read/write the SAME text-store**: `Main.sign[0..31999]`
+  keyed by the frame-decoded origin — `Sign.ReadSign`/`TextSign`/`KillSign`
+  (`Sign.cs`) never read the style or the mount; the tombstone epitaph
+  write (`Projectile.cs:25358-25363`, the d2 sweep), the editor
+  (`Main.SubmitSignText`), the hover tooltip and the wiring announcement
+  all ride the one store. VERIFIED — no per-style store exists.
+- **The announcement box (425) wiring arm** (`Wiring.cs:1177-1233`): the
+  2x2 SkipWire, the `-disableannouncementbox` guard, then
+  `Sign.ReadSign(num7, num8, CreateIfMissing: false)` — the SAME store,
+  printed pink via `NewTextMultiline(…, 460)` (SP) / message 107 (MP), with
+  the `-announcementboxrange` distance gate. The port's
+  `tr-core/wiring.rs` 425 arm carried a 2x2-BOX record scan instead of
+  ReadSign's EXACT-origin match — the retire census fixed it to the exact
+  (x, y) lookup + the `!tileSign` origin kill arm (`Sign.cs:30-34`), with
+  the off-origin-record and stale-origin witnesses.
+- **The `tileSign` set is exactly {55, 85, 425, 573}** (`Main.cs:10081-
+  10084`) — the arrow signs 510/511 place through the same registry route
+  but are NOT sign kinds (no record, no right-click editor, no hover). The
+  port's two `is_sign_tile` copies carried wrong tile NAMES in their doc
+  comments (85 "Tattered Wood Sign", 425 "Illuminant Hanging Sign", 573
+  "Sunplate Sign") — corrected to Tombstones/Announcement Box/Tattered
+  Wood Sign; the sets themselves were already right.
+- **The CheckSign break cascade** (`WorldGen.cs:43548-43779`, dispatch
+  `:85761-85768` — 55/85/395/425/510/511/573): the destroy tail's
+  `Sign.KillSign` (`:43686-43689`) is the lazy sweep already landed; the
+  drop arms (`:43690-43764`) map 85 → 321/1173+style-1/3229+style-6 by the
+  frameX style (`num12`), 425 → 3617, 573 → 4710, 511 → 4320, 510 → 4319,
+  default → 171, plus the 85 ghost roll (`genRand.Next(8/4/2)`, NPC 316,
+  `:43708-43742`). The port's `check_object` has no CheckSign arm (the
+  pre-existing lazy-sweep deviation) — the per-cell drops are suppressed
+  by `KILL_TILE_NO_CELL_DROP` (all six kinds true), so a broken sign
+  currently drops NO item; the cascade + drops stay the break-lane's
+  follow-up (recorded, not ported here).
+
+**The census pin: the sign text cap is 1200, NOT 500.** `IngameFancyUI.cs:145`
+passes `allowEmpty: false, 1200` to the `UIVirtualKeyboard` ctor (the ctor
+default `maxLength` is 20, `:159`); pinned as `signs::SIGN_MAX_TEXT_LENGTH`
+and witnessed by `the_sign_keyboard_opens_with_the_1200_cap` (a 1300-char
+write trims to 1200 through `SetTextMaxLength`, `:428`).
+
+What landed:
+
+- **The open chain** — the `Main.tileSign` right-click arm
+  (`Player.cs:32693-32724`, wired in `world_sim/editing/doors.rs` between the
+  bed and clock arms + the `app/clicks.rs` open-inventory route): a re-click
+  on the OPEN sign closes it (`:32697-32701`), single player opens
+  `Sign.ReadSign`'s record (`:32704-32707`), the MP client sends `46` at the
+  frame-decoded origin (`:32710-32721`); the host resolves locally (the `46 ->
+  47` loopback's net effect, the chest `31` precedent). The client's `47`
+  open arm (`MessageBuffer.cs:2400-2403` — sender == myPlayer, the record
+  survived `TextSign`, `!flags[0]`) lands in `netglue.rs`'s `S2c::SignData`.
+- **`Player.OpenSign`/`CloseSign`** (`Player.cs:33542-33551`/`:33528-33540`) —
+  `signs::open_sign`/`close_sign`: `IngameUIWindows.CloseAll(quiet)`'s live
+  pieces (map/options/emotes/bestiary/talk), sound 10/11, the `player.sign`
+  latch (`Player.cs:1440`, the `:17014` `UpdateDead` clear) and the
+  `Main.npcChatText = Main.sign[s].text` read display.
+- **The Edit/Save toggle** — `NPCInteractions.Actions.OpenSign`
+  (`NPCInteractions.cs:15-42`, registered after CloseChat at `:515-516`):
+  `Lang.inter[48]` "Edit" opens the keyboard, `Lang.inter[47]` "Save" submits;
+  `ui/npc_chat.rs::interactions`/`interaction_rects` draw and hit the row
+  (`DrawButtons`' per-button walk, `NPCChatPanel.cs:93-135`), the click runs
+  through `handle_npc_chat_clicks` index 1.
+- **The ctx-1 keyboard** (`ui/keyboard.rs`, phase A): `Context::Sign` /
+  `editing_sign` (`UIVirtualKeyboard.cs:166`), the `-5000` sign offset parks
+  the textbox/label off-screen (`:176` — the text edits in the dialog),
+  `TextIsValidForSubmit`'s `_editingSign` always-valid gate (`:621`), the
+  `UI.Save` submit label on both layers (`:291`/`:327`), and
+  `BuildSpaceBarArea`'s bottom row (`:444-489`, `bottom_row()`): space 3-wide
+  (2 with the restore key), the `UI.EnterButton` newline key at x = 5 (4 with
+  restore), the `UI.RestoreButton` at `(6, 4, 2)` while `CanRestore()` holds
+  (`_cancelCacheSign.Length > 0`, `:504-515`). `Click::Newline`/`Restore`
+  play sound 12 and write `"\n"` / spend the cache (`:462-467`/`:476-484`).
+- **The multi-line edit** — the physical Enter appends `"\n"` in the sign
+  context (`UIVirtualKeyboard.cs:751-754`) instead of submitting; the submit
+  rides the Save button or the dialog's Save interaction. `CopyTextToSign`
+  (`:1049-1059`) syncs the live keyboard text into `npcChatText` per frame
+  (`App::keyboard_sync_chat_text`), so the dialog shows the edit; the dialog
+  draws UNDER the keyboard (`IngameFancyUI.Draw`'s `GUIChatDraw` arm,
+  `IngameFancyUI.cs:212-215` — the port's front-draw arm in
+  `app/frame/draw.rs`, its clicks take the press first in `app/loop.rs`),
+  gated by `GUIChatDraw`'s `npcChatText != "" || sign != -1` and `!editChest`
+  (`Main.cs:46713`). The edit caret is `DrawText`'s 20-tick `textBlinker`
+  (`NPCChatPanel.cs:254-261`, the chest `TextBlinker` reused on
+  `App.sign_text_blinker`).
+- **Submit/cancel** — `Main.SubmitSignText` (`Main.cs:40694-40704`): sound
+  12, `Sign.TextSign(player.sign, Main.npcChatText)` (the closure ignores its
+  trimmed argument — the live UNTRIMMED text lands), `editSign = false`, the
+  netMode-1 client sends `47` (sender byte 0, flags 0).
+  `Main.InputTextSignCancel` (`Main.cs:19817-19826`): `CacheCanceledInput(1)`
+  parks the live text in `_cancelCacheSign` (`App.sign_cancel_cache`,
+  `UIVirtualKeyboard.cs:1031-1037`), `npcChatText` re-reads the stored record;
+  `RestoreCanceledInput(1)` (`:1039-1047`) returns the cache to the box and
+  empties it (the bottom row rebuilds without the restore key, `:481-484`).
+- **The closes** — the per-tick range close (`Player.cs:27504-27518`: the
+  32x32 sign box vs the `TileReachCheckSettings.Simple` world region, sound
+  11), the `Main.editSign` gate (`Main.cs:17389-17394`: the editor dies when
+  the index clears) — both in `signs::sign_tick` beside `chest::tick_open`;
+  `ToggleInv`'s sign Escape arm (`Player.cs:5017-5020` — `CloseSign()`, no
+  inventory toggle); `CloseNPCChatOrSign`'s `CloseSign(quiet: true)` half
+  (`Main.cs:40682`).
+
+Deliberate deviations / deferred:
+
+- **`Main.editSign` is the session** — the port models the flag as "the
+  `KeyboardTail::SignEdit` session is open" (`App::sign_editing`, the
+  chest-rename shape); there is no separate boolean to drift.
+- **The `screenHeight > 700` gate is not ported** —
+  `CanShowVirtualKeyboard(1)` → `UIVirtualKeyboard.CanDisplay`
+  (`UIVirtualKeyboard.cs:1022-1029`) falls back to the inline
+  `Main.InputTextSign` editor (`Main.cs:19782-19799`) on short screens; the
+  port carries no inline editor, so the keyboard opens at every height.
+- **IME / input plumbing — FINAL SKIP (input-system scope, W4-f22
+  2026-11-21)** — `Main.instance.HandleIME()` / `SetIMEPanelAnchor`
+  (`UIVirtualKeyboard.cs:747-749`), the composition string draw + anchor
+  (`NPCChatPanel.cs:242-253`, `UITextBox.cs:26-33`/`:92-98`),
+  `Main.clrInput()` (`Main.cs:20001-20005` — `keyCount = 0`,
+  `inputTextEscape = false`; called at `IngameFancyUI.cs:128`) and
+  `Main.blockKey` (`Main.cs:1751`, set at `:19820`/`:67025`) have no port
+  route and are deliberately NOT ported: they ride the XNA key-polling
+  input system (`Main.GetInputText`, `Main.cs:20010`) and the ReLogic
+  `IImeService` platform layer, both replaced wholesale by the port's winit
+  text path. This is a final scope decision, not a deferral — the IME
+  composition window, the per-key `clrInput` flush and the `blockKey`
+  one-frame key suppression belong to an input-system port the project
+  does not carry.
+- **The sign hover surfaces landed (W4-f22 follow-up, 2026-11-21)** — the
+  `Player.cs:32098-32115` hover latch (`signs::sign_hover_scan` +
+  `mouse_overs_clear`, run per player tick in `world_sim/player.rs`):
+  `Main.signBubble`/`signX`/`signY` (`App.sign_bubble`/`sign_x`/`sign_y`) and
+  `Main.signHover` (`App.sign_hover`, init -1 `Main.cs:67189`). The
+  `signHover` mouse tooltip (`Main.cs:42940-42986`,
+  `ui/tooltip.rs::draw_sign_hover_tooltip` — the 460 px/10-line wrap at the
+  cursor, the `mouse + 16` origin + the opaque-box `(8, 2)` offset and the
+  `screenHeight − 30·lines` / `screenWidth − width` clamps, the
+  `DrawInvBG(23,25,81)·0.925·0.85` box and the four-way ±2 px border) draws
+  as the LAST interface layer (`DrawInterface_39_MouseOver`,
+  `Main.cs:44904-44908`), gated on `!mouseText && !mouseInterface`.
+  `DrawInterface_19_SignTileBubble` (`Main.cs:45739-45760`,
+  `ui/npc_chat.rs::draw_sign_bubble` — the `Chat2` sheet over the sign, the
+  `signX > position.X + width` horizontal flip + `−8 − width` / `+8` shift,
+  the `−22` y lift, tint `mouseTextColor ×4`) draws under the world→UI zoom
+  transform before the dialog (layer 19 < 23). The `Chat2` sheet
+  (`AssetInitializer.cs:564`) joins the packing list + `Lookups`
+  (`ui_sign_bubble`). **The `gravDir == -1` flip** (`:45745-45748`) stays
+  unreachable: the port keeps `gravDir = 1` (the same fold as the NPC
+  bubble's `:43149-43153` arm). The `mouseInterface` gate is a
+  pointer-over-panel stand-in (the open inventory/shop grid rects, the
+  chest panel, the dialog box, the fullscreen bestiary) — the C# sets the
+  flag from the per-cell `ItemSlot.Handle` hits (`Main.cs:41811-41813`);
+  the `cursorItemIcon*` clears (`:32112-32113`, `:46507-46510`) have no port
+  state (the cursor-icon system is unported). The smart-interact target
+  override (`Player.cs:31930-31934`) is unported: the cursor cell IS
+  `tileTargetX/Y`.
+- **Kill-on-break landed (W4-f22 follow-up, 2026-11-21)** —
+  `WorldGen.CheckSign`'s destroy tail `Sign.KillSign`
+  (`WorldGen.cs:43686-43689`, every type except 395) is wired into
+  `world_sim/editing.rs::break_tile` through `signs::kill_broken_sign_record`:
+  the hit cell's pre-kill frames decode the origin (`frameX/18 % 2`,
+  `frameY/18 % 2`, `WorldGen.cs:43573-43578`) and the record dies there.
+  The port has no `CheckSign` cascade arm (the remaining cells float — the
+  pre-existing deviation), so the sweep is LAZY per hit cell. The C# nulls
+  the slot in place; the port's dense store SPLICES, so the open
+  `Player.sign` / `signHover` indices remap through the surviving records —
+  a killed open record becomes a NULL SLOT (an index past the store, the
+  module's `Main.sign[i] == null` convention) so the lazy `sign_tick`
+  (`Player.cs:27509-27513`) closes the dialog + editor with sound 11 on the
+  next tick, exactly like the C#; a surviving open record keeps its
+  identity across the splice. The 395 item frame is not a `tileSign` kind,
+  so it never reaches the sweep (`type != 395`, `:43686`).
+- **The tombstone epitaph DISPLAY (W4-f22 follow-up, 2026-11-21)** — tile 85
+  IS a `tileSign` kind (`Main.cs:10082`), so the C# carries NO read-only
+  difference for tombstones: the sign-read path shows the epitaph exactly
+  like any sign text. The d2 sweep (`origin/task/W4-d2-proj-ai-11-20`,
+  `projectile_ai_tombstone.rs`) owns the `misc_text` WRITE
+  (`Sign.ReadSign`/`TextSign` at the tile-85 origin, `Projectile.cs:25358-
+  25363`); f22's read/display half (the `OpenSign` `npcChatText` read, the
+  hover tooltip, the editor prefill) surfaces it unchanged — witnessed by
+  `the_tombstone_epitaph_reads_through_the_sign_path`. The editor is NOT
+  read-only for tombstones (the C# has no such lock).
+- **The 1200-cap multi-line scroll census (W4-f22 follow-up, 2026-11-21)** —
+  `UIVirtualKeyboard` carries NO scroll mechanism (a `scroll`/`Scroll` grep
+  over `UIVirtualKeyboard.cs` is empty): the textbox is a `UITextBox`
+  (`UITextBox.cs`, a `UITextPanel<string>`) whose `DrawSelf` draws the whole
+  text centred, and the sign context parks the textbox off-screen (`-5000`,
+  `:176`) — the text edits in the NPCChatPanel dialog, whose
+  `TextDisplayCache` wraps at 460 px / **10 lines** (`TextDisplayCache.cs:27`,
+  `Utils.WordwrapString`). So a 1200-char sign shows its first 10 wrapped
+  lines in the dialog (the C# behaviour — no scroll, the tail is clipped by
+  the line cap), and the 1200 cap is the only length gate (the submit-gate
+  `SetTextMaxLength`, `:428`). The port's `panel_lines` already caps at 10;
+  no scroll is ported because none exists in the source.
+- **The front-screen keyboard pauses the sim** — the chest-rename precedent
+  (ANALYSIS "Chest UI + world chests (M3-CHEST-UI)"): vanilla keeps the
+  world ticking and draws the game UI under `InGameUI`; the port's keyboard
+  is a front screen, so the world sim pauses and the HUD hides while the
+  editor is open. The dialog-under-keyboard draw arm + the click-first
+  routing keep the visible interaction identical.
+
+Co-claims for the merger: `ui/keyboard.rs` is also edited by
+`origin/task/W4-c25-keyboard-text-field` (pure `TextField`/`get_input_text`
+bindings, +516 lines, no App wiring) — f22 changes the
+`layout`/`click_at`/`draw` signatures and adds `Context`/`bottom_row`, c25
+appends self-contained bindings; keep both halves. The sign net ids
+(`46`/`47`) already landed on main (S1-E-27); f22 adds only the client-open
+arm. `origin/task/W4-d98-net-ids-items-chests` may overlap `net.rs`/
+`netglue.rs`; the i43 chest/sign work is already on main.
+
+**The c25 co-lane FINAL compose-verify (W4-f22 retire, 2026-11-21)** —
+the keep-both note above is now VERIFIED mechanically: a read-only
+`git merge-tree --write-tree` of f22's tip against
+`origin/task/W4-c25-keyboard-text-field` (e5daa96f7) auto-merges
+`crates/tr-app/src/ui/keyboard.rs` with ZERO conflicts — c25's +516-line
+block inserts after `write_str` (before the label tables) and its 9 tests
+insert inside `mod tests` before `panel_bg_truncates_to_the_xna_bytes`;
+f22's signature changes (`layout`/`click_at`/`draw` + `Context::Sign`/
+`bottom_row`) touch disjoint regions. The composed file carries both
+halves with no duplicate top-level symbols and one `mod tests`; c25's
+bindings are self-contained (`TextField`/`InputKeys`/`InputTextResult`/
+`BackspaceRepeat`/`get_input_text`/`trim_user_string`/`trim_last_character`/
+`sanitize_clipboard_text`/`round_to_even` — none calls f22's changed
+signatures, all `#[allow(dead_code)]` until the search/rename consumers
+attach). **Merger instruction: keep BOTH halves of `ui/keyboard.rs`
+verbatim (the auto-merge is correct); the only real conflicts are the
+`anchors.txt` + `docs/PORT_MAP.md` append races — keep BOTH sides' rows
+(f22's sign/rename rows AND c25's `TextField`/`get_input_text` rows; the
+PORT_MAP `UIVirtualKeyboard.cs` row takes f22's superset description and
+c25's separate `UITextBox.cs`/`GetInputText` row stays). `docs/UI.md` and
+`docs/ANALYSIS.md` auto-merge.** The c25 bindings' `char`-index caret vs
+the C# UTF-16 code-unit index is c25's documented mapping (its own
+ANALYSIS deviation); f22's sign editor keeps the `KeyboardState` text
+path — the two layers do not interact until a consumer wires
+`get_input_text` into a front screen.
+
+**The W4-f22 RETIRE declaration (2026-11-21, code-only)** — the UI-screens
+family is COMPLETE (research/264, renumbered 144→264 per registry
+research/150 §6.3 — c4 keeps 144): all 28 `UIState` descendants accounted
+— 26 ported (10 base re-verified in research/18d + 16 across the
+d84/d85/d86/c24 waves) and 2 standing scope-outs (`UIWorldGenDebug`
+dev-only, `UITextWrappingTest` test-only — d86's records). The f22 lane's
+own ports (the card renames, the sign editor end-to-end + the hover/break
+surfaces) are landed; the retire round closed the five hand-off items:
+the d120 dynamic-lines patch (research/143 §1, ported + verified
+equivalent), the sign-TILE placement census (item 171, the registry route
+complete), the one-text-store style verify (+ the wiring-425 exact-origin
+fix), the c25 keep-both compose (above), and the family declaration. The
+recorded follow-ups ride their lanes: the `CheckSign` break-cascade +
+sign-item drops (the break lane — the port's lazy `KillSign` sweep is
+live, the cascade/drops are not), the d2 epitaph write, the g58/f38/d120
+interaction buttons (the panel layout is already dynamic for them). No
+f22 follow-up is open; no cargo/tests/rustfmt/graphify invoked this phase
+— the witnesses are written not run, verified by the C# re-read.
 
 ## Town housing (S1-E-11a, 2026-11-14)
 

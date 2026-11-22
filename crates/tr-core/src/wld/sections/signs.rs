@@ -45,8 +45,8 @@ pub struct WldSign {
 }
 
 /// `Main.tileSign` (`Main.cs:10081-10084`): the tile kinds a sign text may sit
-/// on (55 Sign, 85 Tattered Wood Sign, 425 Illuminant Hanging Sign, 573
-/// Sunplate Sign). Hand-transcribed exactly as `chest.rs:65-67`'s
+/// on (55 Sign, 85 Tombstones, 425 Announcement Box, 573 Tattered Wood Sign).
+/// Hand-transcribed exactly as `chest.rs:65-67`'s
 /// `is_tile_container` — the set is not in the generated tables.
 fn is_sign_tile(kind: u16) -> bool {
     matches!(kind, 55 | 85 | 425 | 573)

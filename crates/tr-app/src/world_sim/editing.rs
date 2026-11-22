@@ -5593,6 +5593,14 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, false) else {
         return;
     };
+    // The lazy kill-on-break sign record sweep (`WorldGen.CheckSign`'s
+    // destroy tail, `WorldGen.cs:43686-43689` — W4-f22): a broken sign
+    // tile loses its record at the frame-decoded origin; the open/hover
+    // indices remap through the dense-store splice, and the lazy
+    // `sign_tick` closes the dialog + editor when the open record died.
+    if let Some(hit) = &hit {
+        crate::signs::kill_broken_sign_record(app, hit.kind, hit.x, hit.y, hit.frame_x, hit.frame_y);
+    }
     // `Chest.DestroyChest` (`Chest.cs:625-645`, called from
     // `CheckTileBreakability2_ShouldTileSurvive`, `WorldGen.cs:62506`/:62514):
     // a broken chest 21/467 (2 wide) or dresser 88 (3 wide) loses its store

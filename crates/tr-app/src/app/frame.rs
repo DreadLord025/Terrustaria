@@ -358,6 +358,13 @@ impl App {
         // drives `MenuUI.Update` ahead of `DoDraw`.
         self.update_world_load();
 
+        // `UIVirtualKeyboard.DrawSelf`'s tail (`:789-796`): the sign/chest
+        // editor syncs its live text into `Main.npcChatText` every drawn
+        // frame (`CopyTextToSign`/`CopyTextToChest`) — the dialog draw
+        // reads it. Runs on the front path too (the world branch parks
+        // while a front screen is live). W4-f22.
+        self.keyboard_sync_chat_text();
+
         // The front end's Play tail (`UIWorldListItem.PlayGame` →
         // `Main.LoadWorld`, BUG-04): the pending world is swapped at a frame
         // boundary — after the front screens' clicks parked it and before the

@@ -875,6 +875,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // `NPCChatPanel.cs:71-72`; `AssetInitializer.cs:563-565`).
         "Chat",
         "Chat_Back",
+        // W4-f22: the placed-sign bubble (`TextureAssets.Chat2`,
+        // `Main.DrawInterface_19_SignTileBubble` `Main.cs:45739-45760`;
+        // `AssetInitializer.cs:564`).
+        "Chat2",
         "Extra_48",
         // The emote wheel's per-cell border (`EmoteButton._textureBorder`,
         // `EmoteButton.cs:25`: `Images/UI/EmoteBubbleBorder`, 36x30) — the
@@ -2150,6 +2154,10 @@ pub struct Lookups {
     /// `AssetInitializer.cs:565`): the dialogue panel's top/bottom
     /// splices (`NPCChatPanel.cs:71-72`).
     pub ui_chat_back: Option<tr_render::SheetRect>,
+    /// `Images/Chat2` (`TextureAssets.Chat2`, `AssetInitializer.cs:564`):
+    /// the placed-sign bubble (`Main.DrawInterface_19_SignTileBubble`,
+    /// `Main.cs:45739-45760`). W4-f22.
+    pub ui_sign_bubble: Option<tr_render::SheetRect>,
     /// `Images/Extra_48`: the emote sheet (`EmoteBubble.Draw`, `:209`).
     pub ui_emote_sheet: Option<tr_render::SheetRect>,
     /// `Images/UI/EmoteBubbleBorder`: the emote wheel cell's 36x30 border
@@ -2670,6 +2678,7 @@ impl Lookups {
             ui_text_back: atlas.sheet("Text_Back").copied(),
             ui_chat_bubble: atlas.sheet("Chat").copied(),
             ui_chat_back: atlas.sheet("Chat_Back").copied(),
+            ui_sign_bubble: atlas.sheet("Chat2").copied(),
             ui_emote_sheet: atlas.sheet("Extra_48").copied(),
             ui_emote_border: atlas.sheet("UI/EmoteBubbleBorder").copied(),
             ui_hue: atlas.sheet("Hue").copied(),

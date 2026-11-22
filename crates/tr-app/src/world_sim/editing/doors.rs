@@ -185,6 +185,23 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
     {
         return use_golem_altar(app);
     }
+    // The `Main.tileSign` arm (`TileInteractionsUse`, `Player.cs:32693-
+    // 32724`, W4-f22): the re-click closes the open sign, single player
+    // opens the record (sound 10 + the dialog), the MP client asks with
+    // `46`. Every sign tile consumes the click. The arm sits between the
+    // bed (`:32654-32692`) and the clock (`:32725`) in the C# chain — the
+    // sign kinds have no registry def, so it reads the kind literals like
+    // the altar does.
+    if app
+        .world
+        .tile(tx, ty)
+        .is_some_and(|t| t.active() && matches!(t.kind, 55 | 85 | 425 | 573))
+    {
+        return crate::signs::try_open_sign_at_cursor(
+            app,
+            glam::Vec2::new(tx as f32 * 16.0 + 8.0, ty as f32 * 16.0 + 8.0),
+        );
+    }
     let direction = app.player.as_ref().map(|p| p.facing).unwrap_or(1);
     // The entity half of `Collision.EmptyTile` (`Collision.cs:1359`): the
     // closing column must be free of the player and NPCs. Disjoint field

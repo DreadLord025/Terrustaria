@@ -2414,11 +2414,25 @@ impl Wiring {
                     return; // `:1190-1192`
                 }
                 // `Sign.ReadSign(num7, num8, CreateIfMissing: false)` (`:1195`):
-                // the existing sign at the 2×2 anchor only.
+                // the anchor IS the record's origin — `ReadSign` at an origin
+                // cell decodes to itself (`Sign.cs:26-29`, frameX/18 % 2 = 0,
+                // frameY/18 = 0 there) and scans for the EXACT (x, y) match
+                // (`:36-43`), then the `!Main.tileSign[type]` kill arm (`:30-34`)
+                // nulls a record whose origin tile is no longer a sign kind.
+                // The W4-f22 retire census replaces the earlier 2x2-box scan:
+                // a record at a NON-origin cell of the box is not ReadSign's
+                // answer (and a stale record on a non-sign origin dies).
+                let origin_live = world
+                    .tile(num7, num8)
+                    .is_some_and(|t| t.active() && matches!(t.kind, 55 | 85 | 425 | 573));
+                if !origin_live {
+                    world.signs.retain(|s| !(s.x == num7 && s.y == num8)); // `Sign.KillSign` (`:32`)
+                    return; // ReadSign -1 (`:1196`)
+                }
                 let sign = world
                     .signs
                     .iter()
-                    .find(|s| (s.x == num7 || s.x == num7 + 1) && (s.y == num8 || s.y == num8 + 1))
+                    .find(|s| s.x == num7 && s.y == num8)
                     .map(|s| s.text.clone());
                 let Some(text) = sign else {
                     return;
@@ -5924,6 +5938,11 @@ mod s1_l6_tests {
         // (anchor, text) pair.
         let mut w = world();
         put(&mut w, 10, 20, 425, 0, 0);
+        // The full 2x2 box the SkipWire walk covers (`:1183-1189`); the
+        // record sits at the ORIGIN (10, 20) — ReadSign's exact match.
+        put(&mut w, 11, 20, 425, 18, 0);
+        put(&mut w, 10, 21, 425, 0, 18);
+        put(&mut w, 11, 21, 425, 18, 18);
         w.signs.push(crate::wld::sections::WldSign {
             text: "hello wiring".into(),
             x: 10,
@@ -5949,6 +5968,53 @@ mod s1_l6_tests {
         w.announcement_box_disabled = true;
         wiring.trip_wire(&mut w, 8, 20, 1, 1);
         assert!(wiring.take_announcement_events().is_empty());
+    }
+
+    /// W4-f22 retire — the 425 arm's `Sign.ReadSign(num7, num8,
+    /// CreateIfMissing: false)` (`Wiring.cs:1195`, `Sign.cs:24-60`): the
+    /// record lookup is the EXACT origin match, not a 2x2-box scan — a
+    /// record parked at a non-origin cell of the box is invisible; and the
+    /// `!Main.tileSign[type]` arm (`Sign.cs:30-34`) kills a stale record
+    /// whose origin tile is no longer a sign kind, answering -1.
+    #[test]
+    fn the_announcement_box_reads_only_the_exact_origin_record() {
+        let mut w = world();
+        put(&mut w, 10, 20, 425, 0, 0);
+        put(&mut w, 11, 20, 425, 18, 0);
+        put(&mut w, 10, 21, 425, 0, 18);
+        put(&mut w, 11, 21, 425, 18, 18);
+        // A record at the box's BOTTOM-RIGHT cell — not the origin.
+        w.signs.push(crate::wld::sections::WldSign {
+            text: "off-origin".into(),
+            x: 11,
+            y: 21,
+        });
+        let si = w.index(8, 20);
+        w.tiles[si] = Tile { kind: 135, ..Default::default() };
+        w.tiles[si].flags |= FLAG_ACTIVE;
+        w.wires.set(8, 20, WireColor::Red, true);
+        w.wires.set(9, 20, WireColor::Red, true);
+        w.wires.set(10, 20, WireColor::Red, true);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert!(
+            wiring.take_announcement_events().is_empty(),
+            "ReadSign finds no record at the origin"
+        );
+        // Move the record to the origin: now it announces.
+        w.signs[0].x = 10;
+        w.signs[0].y = 20;
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert_eq!(wiring.take_announcement_events().len(), 1);
+        // The origin tile turns to stone while the OTHER cells stay 425:
+        // the flood still hits the 425 cells, their decode lands on the
+        // stone origin, and ReadSign's `!Main.tileSign[type]` arm kills the
+        // stale record (`Sign.cs:30-34`) — nothing announces.
+        put(&mut w, 10, 20, 1, 0, 0);
+        w.wires.set(11, 20, WireColor::Red, true);
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert!(wiring.take_announcement_events().is_empty());
+        assert!(w.signs.is_empty(), "the non-sign origin killed the record");
     }
 
     #[test]
