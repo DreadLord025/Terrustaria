@@ -2342,7 +2342,6 @@ pub(crate) mod front_flow_tests {
             cursor: ui::cursor::CursorState::default(),
             // S1-W4-g81 residuals — the held-tool cursor-icon latch +
             // the 10-frame cache (`Main.cs:2411-2415`), both start off.
-            cursor_item_icon_enabled: false,
             item_icon_cache_pos: Vec2::ZERO,
             item_icon_cache_kind: 0,
             item_icon_cache_time: 0,

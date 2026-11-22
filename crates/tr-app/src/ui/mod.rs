@@ -20,6 +20,7 @@ pub mod crafting;
 pub mod cursor;
 pub mod ingame_options;
 pub mod housing;
+pub(crate) mod interact_icon;
 pub mod inventory;
 pub mod keyboard;
 pub mod minimap;
@@ -718,11 +719,13 @@ pub fn draw_hud(
     // bubble's hover pick reads the NPC list + player already passed above.
     talk_npc: Option<usize>,
     npc_chat_text: &str,
-    // S1-W4-g81 residuals — `DrawInterface_40_InteractItemIcon`
-    // (`Main.cs:45037-45115`): the held-tool cursor icon + the 10-frame
-    // cache linger. `icon_enabled` is `Player.cursorItemIconEnabled`,
-    // `icon_cache` the `(kind, time)` pair the verification left.
-    icon_enabled: bool,
+    // W4-g79 — the cursor interact-icon pass
+    // (`DrawInterface_40_InteractItemIcon`, `Main.cs:45038-45115`): the
+    // world the biome-torch/campfire hold-style conversions read.
+    world: &tr_core::world::World,
+    // S1-W4-g81 residuals — the 10-frame cache linger (`Main.cs:45063`):
+    // the `(kind, time)` pair the verification left (the batch-H keep-one
+    // compose — g79's module draws, g81's cache feeds the linger arm).
     icon_cache: (u16, i32),
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
@@ -1116,6 +1119,26 @@ pub fn draw_hud(
         }
     }
 
+    // W4-g79 — `DrawInterface_40_InteractItemIcon` (`Main.cs:45038-45115`),
+    // interface layer 40 after the mouse-item layer 38 (`:44899-44913`):
+    // the held tool's cursor icon while a tile-interaction gate arms
+    // `cursorItemIconEnabled` (the paint-tool gates), plus the paint
+    // preview riding it (`TryGetAmmo`'s brush/roller arm through
+    // `item::paint_tool_preview`).
+    interact_icon::draw(
+        r,
+        lookups,
+        inventory,
+        equip,
+        selected,
+        player,
+        world,
+        mouse_item,
+        [mouse_pos.x, mouse_pos.y],
+        pulse.cursor_scale,
+        icon_cache,
+    );
+
     // Boss bar: `BigProgressBarHelper.DrawFancyBar` (`BigProgressBarHelper.cs:25-57`,
     // the 4-arg overload via `CommonBossBigProgressBar`) — the 456x22 bar at the
     // bottom centre (`ui/bars.rs`). `boss_bar_text` is the `ShowText` gate on
@@ -1208,45 +1231,9 @@ pub fn draw_hud(
         tooltip::draw_mouse_text(r, lookups, mouse_pos, text, screen, pulse);
     }
 
-    // S1-W4-g81 residuals — `DrawInterface_40_InteractItemIcon`
-    // (`Main.cs:45037-45115`): the held-tool icon beside the cursor. The
-    // wiring/mining tools' latch (`Player.cs:46756-46760`/`:45620-45624`)
-    // arms `icon_enabled` in reach; the cache linger draws the last kind
-    // for 10 frames after the tool leaves reach (`:45063`'s
-    // `_itemIconCacheTime > 0 && mouseItem.type < 1`). The icon rides
-    // `ItemSlot.DrawItemIcon` at context 21, sizeLimit 9999 (no clamp),
-    // centred on `mouse + (10,10) + hitbox.Size()*cursorScale/2`
-    // (`:45089-45092`). The `cursorItemIconID != 0` override arm is
-    // unported (the tile-interaction icon system) — the wiring tools
-    // keep ID 0, so the held kind is the icon.
-    {
-        let held = &inventory[selected.min(INV - 1)];
-        let cache_live = icon_cache.1 > 0 && mouse_item.count == 0;
-        let kind = if icon_enabled && held.count > 0 {
-            held.kind
-        } else if cache_live {
-            icon_cache.0
-        } else {
-            0
-        };
-        if kind > 0 {
-            if let Some((uv, iw, ih)) = lookups.item_icon(kind) {
-                let s = pulse.cursor_scale;
-                let center = [
-                    mouse_pos.x + 10.0 + iw * s * 0.5,
-                    mouse_pos.y + 10.0 + ih * s * 0.5,
-                ];
-                let w = iw * s;
-                let h = ih * s;
-                r.push_ui_sprite(
-                    [center[0] - w * 0.5, center[1] - h * 0.5],
-                    [w, h],
-                    uv,
-                    [1.0; 4],
-                );
-            }
-        }
-    }
+    // (Batch-H keep-one: the g81 inline icon block dropped — g79's
+    // `interact_icon::draw` above is the ONE `DrawInterface_40_InteractItemIcon`
+    // port, now carrying g81's cache-linger arm; the C# has one pass.)
 
     // `Main.DrawPendingMouseText()` then `Main.DrawCursor(...)` are the last
     // things `Main.DrawInterface` draws (`Main.cs:44939`); the OS pointer is

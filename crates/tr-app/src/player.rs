@@ -867,6 +867,12 @@ pub struct Player {
     /// branches (`:4486`/`:4490`) read the inverted multipliers.
     pub tile_speed_bonus: f32,
     pub wall_speed_bonus: f32,
+    /// `Player.blockRange` (`Player.cs:2738`, reset 0 `:18689`): the Builder
+    /// buff's +1 (`:10162`) and the Toolbelt accessory's +1 (`:15426`). Added
+    /// to the held item's `tileBoost` in every `IsInTileInteractionRange`
+    /// placement/tool gate (`:39602`/`:39721`/`:41810`/`:41893`/`:41911`/
+    /// `:46752`) — the paint tools read it through the same seam (W4-g79).
+    pub block_range: i32,
     /// `Player.autoReuseGlove` (`Player.cs:2384`, reset `:18710`): the
     /// Feral Claws and the glove family grant it (`:15107`, `:14413`,
     /// `:14602`, `:15304`, `:15311`, `:15374`); `TryAllowingItemReuse`
@@ -1048,6 +1054,20 @@ pub struct Player {
     /// (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594`) is a
     /// recorded follow-up (ANALYSIS "The wiring tools (S1-P-i34)").
     pub auto_actuator: bool,
+    // (Batch-H keep-one: g79's duplicate `auto_paint` declaration dropped —
+    // the g81 builder-toggle grant above is the ONE `Player.autoPaint`
+    // field; both lanes' consumers read it.)
+    /// `Player.cursorItemIconEnabled` (`Player.cs:1850`): the cursor
+    /// item-icon pass's gate — `Main.MouseOversClear` clears it at every
+    /// update head (`Main.cs:46507`), the tile-interaction arms and the
+    /// paint-tool gates set it (`Player.cs:41828`/`:41877`/`:41901`/
+    /// `:41919`, W4-g79 phase 4c). The draw site
+    /// (`Main.DrawInterface_40_InteractItemIcon`, `Main.cs:45038-45115`) is
+    /// the phase-5 port; the flag rides ready like the other cursor-icon
+    /// arms. The `cursorItemIconID`/`Text`/`Push`/`Reversed` companions
+    /// (`:1852-1858`) stay with that draw port — no ported setter writes
+    /// them yet.
+    pub cursor_item_icon_enabled: bool,
     /// `Player.builderAccStatus` (`Player.cs:814`, `BuilderAccToggleIDs.Count
     /// = 12` at `:77`): the info-accessory toggle states. Slots 4/5/6/7 are
     /// the red/blue/green/yellow wire visibility, 9 the actuator visibility
@@ -2583,6 +2603,7 @@ impl Player {
             melee_speed_bonus: 0.0,
             tile_speed_bonus: 0.0,
             wall_speed_bonus: 0.0,
+            block_range: 0,
             auto_reuse_glove: false,
             stress_ball: false,
             held_item_kind: 0,
@@ -2673,6 +2694,7 @@ impl Player {
             auto_paint: false,
             sign: -1,
             auto_actuator: false,
+            cursor_item_icon_enabled: false,
             // `Player.cs:814`'s all-zero field init + the reset's `[0] = 1`
             // (`:56092`): the ruler-line toggle starts off, the rest on.
             builder_acc_status: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -4679,6 +4701,17 @@ impl Player {
         speed * self.whip_use_time_multiplier
     }
 
+    /// `Player.UsingBiomeTorches` (`Player.cs:3950-3959`): the Torch God's
+    /// favour unlock AND the builder toggle `builderAccStatus[11] == 0`
+    /// (the toggle's UI cycle, `Main.cs:47549-47555`). The hold-style
+    /// consumers (`BiomeTorchHoldStyle`/`BiomeCampfireHoldStyle`) and the
+    /// placement conversions read it; the port's `player_lights` /
+    /// `biome_torch_place_style` callers fold the toggle to 0/on (their
+    /// documented deviation) — this accessor is the full gate.
+    pub fn using_biome_torches(&self) -> bool {
+        self.unlocked_biome_torches && self.builder_acc_status[11] == 0
+    }
+
     /// `Player.tileSpeed` as `ApplyItemAnimation` reads it (`:4486`):
     /// `UpdateEquips`' tail caps the accumulated speed at 3f and inverts
     /// (`Player.cs:25913-25917`).
@@ -5068,6 +5101,10 @@ impl Player {
             // (the Echo-sight half of `Main.ShouldShowInvisibleBlocksAndWalls`,
             // `Main.cs:58027`). `ResetEffects` clears it (`:18742`).
             4409 => self.can_see_invisible_blocks = true,
+            // `Player.cs:15424-15427` — the Toolbelt (407): `blockRange++`.
+            // The equipped accessory raises the placement/tool reach the
+            // paint tools and the tile/wall routes read (W4-g79).
+            407 => self.block_range += 1,
             // S1-P-i35 — `ApplyEquipFunctional`' fishing rows
             // (`Player.cs:14651-14683`), in the C#'s order: the High Test
             // Line 2373, the Angler Earring 2374 (+10), the glow-bobber
@@ -6003,6 +6040,9 @@ impl Player {
         // (`RefreshMechanicalAccsFromItemType`, `:12799-12820`).
         self.info_acc_mech_show_wires = false;
         self.auto_actuator = false;
+        // `Player.cs:18533` — `autoPaint = false` clears beside the actuator;
+        // the sprayer/gizmo grants re-set it per tick (W4-g79).
+        self.auto_paint = false;
         // `Mount.CheckMountBuff` via `ResetEffects` (`Player.cs:18832` ->
         // `Mount.cs:5275-5281`): the buff gone means dismount.
         if self.mount.is_active()
@@ -6138,6 +6178,9 @@ impl Player {
         // below re-add them per tick, like the melee speed sum.
         self.tile_speed_bonus = 0.0;
         self.wall_speed_bonus = 0.0;
+        // `Player.cs:18689` — `blockRange = 0` resets with the speeds; the
+        // Builder buff (`:10162`) and the Toolbelt (`:15426`) re-add per tick.
+        self.block_range = 0;
         self.auto_reuse_glove = false;
         self.stress_ball = false;
         // `ResetEffects`' `statDefense = 0` (`Player.cs:18327`): the buff arms
@@ -6658,10 +6701,12 @@ impl Player {
                 308 => self.summoner_weapon_speed_bonus += 0.25,
                 314 => self.summoner_weapon_speed_bonus += 0.12,
                 // `:10158-10163` — the Builder Potion (107): tileSpeed /
-                // wallSpeed += 0.25 (the blockRange half rides the reach).
+                // wallSpeed += 0.25 and blockRange++ (the placement-reach
+                // half the paint tools and the tile/wall routes read).
                 107 => {
                     self.tile_speed_bonus += 0.25;
                     self.wall_speed_bonus += 0.25;
+                    self.block_range += 1;
                 }
 
                 // S1-P-i35 — `UpdateBuffs`' fishing potions
@@ -20515,6 +20560,23 @@ mod summon_tests {
         let mut q = Player::spawn(&w);
         assert!(q.set_mount(10, false));
         assert!(q.mount.allow_direction_change());
+    }
+
+    /// W4-g79 — `Player.UsingBiomeTorches` (`Player.cs:3950-3959`): the
+    /// Torch God unlock AND the builder toggle `builderAccStatus[11] == 0`.
+    /// The hold-style consumers and the cursor icon pass read the full gate.
+    #[test]
+    fn w4_g79_using_biome_torches_reads_the_unlock_and_the_toggle() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.unlocked_biome_torches = false;
+        assert!(!p.using_biome_torches(), "no unlock");
+        p.unlocked_biome_torches = true;
+        assert!(p.using_biome_torches(), "unlock + toggle 0");
+        p.builder_acc_status[11] = 1;
+        assert!(!p.using_biome_torches(), "the toggle off wins");
+        p.builder_acc_status[11] = 2;
+        assert!(!p.using_biome_torches(), "only 0 is on");
     }
 }
 

@@ -40331,3 +40331,209 @@ Six code fixes landed at the seal (87f7b159, d17a9da7, b8c46275,
 The mass-op drop notes re-point at the compose verdict (§2 above +
 research/382 §4); the radial's icon_enabled doc-comments drop the stale
 "stand-in" wording (the field IS the sim latch since 851a73e1).
+## Tile paint draw residuals (W4-g79, 2026-11-20, code-only)
+
+The paint-coating DRAW residuals left after TILE-DRAW-4 (the shader-side
+recolor) and W4-d66 (the light-scanner paint flags + the wall /765 gate,
+`35b595d7`). Three unclaimed pieces, ported verbatim; the g78 echo co-lane
+owns the Echo-visibility draw arms and was not touched.
+
+### 1. The pre-258 Illuminant load conversion
+
+`WorldFile.LoadWorld_LastMinuteFixes` (`WorldFile.cs:1854-1860`) runs
+`ConvertIlluminantPaintToNewField` (`:2807-2825`) on every file older than
+258: Illuminant used to be paint id 31 and became the Glow coating bits —
+`if (tile.active() && tile.color() == 31) { tile.color(0);
+tile.fullbrightBlock(true); }` and the wall arm WITHOUT the active gate.
+The port's `.wld` load never converted, so a pre-258 world drew its
+illuminant tiles through the paint-31 path (unpainted AND dark — the Glow
+bit the tile pass reads, `tiles.rs` `fullbright_block`, was never set)
+and its illuminant walls took the paint-31 tint instead of white light.
+`wld/mod.rs::convert_illuminant_paint_to_new_field` now runs in
+`parse_table` (before `check_saved_ore_tiers`, matching the C#'s
+post-load fix order): tile paint 31 → 0 + `FLAG_FULLBRIGHT` on active
+tiles only; wall paint 31 → 0 + extras `0x80` with the Echo/Glow-block
+bits preserved. Modern (≥ 258) files load verbatim — the gate is the
+file version, not the paint value.
+
+### 2. The paint → shader-pass selection
+
+`Main.ConvertPaintIdToTileShaderIndex` (`Main.cs:58677-58696`) is the
+ladder every baked paint target selects its compiled pass with
+(`TilePaintSystemV2.cs:77`; the wall settings carry
+`UseWallShaderHacks = true`, `TreePaintSystemData.cs:220-224`; the
+display dolls call it flags-off, `PlayerDrawHelper.cs:55`):
+illuminant 31 → pass 0 (drawn UNPAINTED — the glow is light-side, the
+S1-G-4 `sprite.wgsl` behaviour confirmed); negative 30 → pass **43** on
+walls but **42** on tiles (the `>= 28` +12 shift); brown 28 / shadow 29 →
+40/41; the grass special-group arm remaps ONLY the basic hues 1..12 →
++27 (deep 13..24 keep their own passes). Ported as
+`drawdata.rs::convert_paint_id_to_tile_shader_index`. The pass BODIES
+stay compiled-HLSL-absent: the port's per-pixel `paint_recolor`
+reconstruction (ANALYSIS "Paint and coatings") is unchanged — this pins
+the pass SELECTION, including the negative-on-walls quirk the shader
+reconstruction cannot express (documented deviation stands).
+
+### 3. The paint-preview lookup chain
+
+`Player.FindPaintOrCoating` (`Player.cs:41927-41944`): the first
+stocked `Item.PaintOrCoating` (`Item.cs:353-362`) in the ammo slots
+54..57 wins, else the first over the flat 0..58 carry range (grid, coins,
+ammo). Ported as `item.rs::find_paint_or_coating` over the port's split
+arrays in the C# index order. Two consumers:
+
+* `SmartCursorHelper.TryFindingPaintInplayerInventory`
+  (`SmartCursorHelper.cs:93`/`:177-191`): only the held brush/roller
+  ids (1071/1543/1072/1544) scan; the pick fills
+  `paintLookup`/`paintCoatingLookup`. The seam
+  (`world_sim/smart_cursor.rs`) fed hardcoded 0/0, so the already-ported
+  `Step_PaintBrush`/`Step_PaintRoller` (`:727-812`) stood down —
+  they now re-point at the closest cell that still needs the selected
+  paint/coating. `Player.HeldItem` is `inventory[selectedItem]`
+  (`Player.cs:3853`); an emptied slot is air, so the wiring gates on
+  count > 0.
+* `Main.TryGetAmmo`'s brush/roller arm (`Main.cs:45117-45136`): the
+  cursor paint preview — offset (22, 22) for the brush, (28, 28) for the
+  roller, the previewed item the same lookup pick, out-defaults
+  `Color.White`/scale 0.8. Ported as `item.rs::paint_tool_preview`.
+  WIRED by the phase-5 icon pass (`ui/interact_icon.rs`, ANALYSIS "Tile
+  paint use paths (W4-g79)" below). The `FlexibleTileWand` arm
+  (`:45137-45142`) stays out (no wand placement cycle). The previewed
+  paint's tint is `GetAlpha`'s default arm (`Item.cs:49324-49339`, white
+  at alpha 0); the spectre tools' own gFade arm (`:49246-49252`) needs
+  `Main.gFade` (unported).
+
+### Verification
+
+Code-only: every arm re-read against the cited C# windows; the wiring
+checked against the actual signatures (`App.inventory`/`equip`,
+`inv::EquipSlots`, `registry::get`'s `paint`/`paint_coating`
+fields, the `Lookup` seam). 8 witnesses WRITTEN NOT RUN — **no
+cargo/tests/graphify invoked**: `wld/mod.rs` 3 (the v250 record fixture
+through the real parser, the direct body's inactive/Echo-bit arms, the
+v326 no-conversion gate), `drawdata.rs` 1 (the exhaustive pass ladder
+incl. the wall-hack 43 and the grass remap bounds), `item.rs` 2 (the
+ammo-first/coin-row/empty-slot scan order; the verbatim preview offsets +
+the no-paint None), `world_sim/smart_cursor.rs` 2 (the Red-Paint floor
+re-point + painted-cell skip; the Glow-coating lookup + the non-tool
+gate).
+
+## Tile paint use paths (W4-g79, 2026-11-21, code-only)
+
+The paint-tool USE family and the cursor-icon draw site the residuals
+section above left open. Phases 4a-4b landed the prerequisites
+(`block_range`/`auto_paint`, the core `edit::paint_*` writes); this wave
+wires the use arms and the preview draw.
+
+### 1. The paint-tool use family (phase 4c)
+
+`world_sim/editing/paint.rs::use_paint_tool` answers `Player.PlaceThing`'s
+brush → roller → scraper order (`Player.cs:39586-39588`) ahead of the
+extractinator and the tile/wall routes in `update_editing`; the tools
+place no tile/wall, so the generic route never competes. The three gates
+(`PlaceThing_Paintbrush`/`_PaintRoller`/`_PaintScraper`,
+`Player.cs:41808-41925`) keep their C# shape: the reach gate
+(`IsInTileInteractionRange(Simple, tileBoost + blockRange)`, the phase-4a
+flags), the cell gate (active tile / wall > 0 / the scraper's bit-or
+composition `:41873`), the cursor-icon set, then the
+`ItemTimeIsZero && itemAnimation > 0 && controlUseItem` action gate. The
+port maps the placement family to the right-button `place_down` like the
+rest of the place route (the caller's `starting`/`inside_swing` windows
+stand in for the C# button/animation reads).
+
+* `TryPainting`/`ApplyCoating`/`ApplyPaint` (`:41946-42024`): the
+  `FindPaintOrCoating` pick resolved to its SLOT (ammo 54..57 first, then
+  the flat 0..58 pass — `PaintSlot` keeps the C# index order over the
+  port's split arrays), the coating arm before the paint arm, the
+  same-colour refusal BEFORE the write (`:41999`/`:42012`), one
+  `stack--`/`SetDefaults(0)` consume per landed write, and the
+  speed-scaled `ApplyItemTime` — `(int)(useTime * mult)` floored at 1
+  (`:4421-4430`), tileSpeed for tiles / wallSpeed for walls.
+* The scraper's `TryScraping` (`:41870-41889`): the short-circuit `||`
+  chain tile paint 0 → tile coating 0 (tileSpeed) else wall paint 0 →
+  wall coating 0 (wallSpeed) — one cadence re-arm per action tick, no
+  paint consumed. `LongMoss` (`:41822-41868`): the 184 cell breaks
+  through the shared `break_tile` route, the plain `ApplyItemTime`, and
+  the `Main.rand.Next(9) == 0` drop — `4349 + frameX/22` with the five
+  switch overrides (6→4377, 7→4378, 8→4389, 9→5127, 10→5128) — spawned
+  at the cell CENTRE (`Point.ToWorldCoordinates()` = `(x*16+8, y*16+8)`).
+  The scrape's re-armed `itemTime` shuts the moss arm's gate on the same
+  tick, exactly like the C#'s sequential calls.
+* The app-side tails the core writes left out (phase 4b): the
+  `paintEffect`/`paintCoatEffect` dust (`WorldGen.cs:44064-44108`) — ten
+  dust 143 per write in the paint/coating colour, the `genRand.Next(2)`
+  noGravity+×1.2-vs-×0.5 arm on the one-throw-seeded `FastRandom`
+  stand-in (the `break_tile` palm-roll precedent), the id-0 scrape's
+  OLD-colour fallback and the id-0 coating clear's per-dust
+  `Main.rand.Next(oldColors.Count)` pick from the PRE-write coating
+  list. The C#'s per-function order is kept: the tile paint plays dust
+  BEFORE the write (`:44122-44126`), the wall paint and both coating
+  arms broadcast BEFORE the dust.
+* The 63/64 broadcasts ride the port's `request_edit` kinds 4..7 (4 tile
+  paint / 5 wall paint / 6 tile coating / 7 wall coating — the
+  `number7 = 0/1f` split); `apply_edit` replays them as the
+  `MessageBuffer.cs:2909-2948` world writes. The receiver-side dust
+  those C# arms play is not ported (`apply_edit` is world-only, the
+  kill/place replay precedent); the host's `SectionRange` tile record
+  carries the paint/coating bits regardless.
+
+### 2. The cursor item-icon pass (phases 5a/5b)
+
+`Player.cursorItemIconEnabled` (`Player.cs:1850`) is the one icon field
+with ported setters: the paint-tool gates set it, and
+`Main.MouseOversClear` (`Main.cs:46503-46513`, run at every update head
+`:17035`) clears it at the `update_editing` head. The
+`ID`/`Text`/`Push`/`Reversed` companions have no ported setters (the
+tile-interaction icon arms are unported) and ride with a future wave.
+
+`ui/interact_icon.rs` ports `DrawInterface_40_InteractItemIcon`
+(`Main.cs:45038-45115`), drawn from `draw_hud` after the mouse-item layer
+38 like the C#'s layer order (`:44899-44913`):
+
+* The drawn kind is the held item, biome-converted under
+  `Player.using_biome_torches` (the new full-gate accessor —
+  `unlockedBiomeTorches && builderAccStatus[11] == 0`,
+  `Player.cs:3950-3959`): the torch 8 through the existing
+  `biome_torch_hold_style`, the campfire 966 through the new
+  `biome_campfire_hold_style` (`Player.cs:40403-40458` — the
+  glowshroom-before-temple order differs from the torch chain).
+* The gate is `enabled && kind != 0 && MouseDisplayItem.IsAir`
+  (`:45061`); the main icon draws through `slot::draw_item_icon` at
+  `mouse + 10 + hitbox*cursorScale/2` with sizeLimit 9999 (the new
+  `size_limit` parameter — the slot draws keep 32).
+* The paint preview (`:45093-45100`) fires only while the drawn kind IS
+  the held kind: `item::paint_tool_preview`'s pick at the verbatim
+  (22,22)/(28,28) offsets, ×0.8 scale, drawn as the raw
+  `spriteBatch.Draw` — the position is the TOP-LEFT (default origin),
+  not a centre like the main icon.
+
+Recorded deviations: `Main.HoveringOverAnNPC`/`mouseInterface`
+suppression (`:45039`) has no ported fields; the `_itemIconCacheTime`
+linger (`:45062-45071`, `ItemIconCacheUpdate`/`Verification`
+`:46515-46540`) has no ported writer, so the gate reduces to the `flag`
+half; every tint is `GetAlpha`'s default arm at alpha 0 (white — the
+spectre gFade arm needs `Main.gFade`, `GetItemLight`'s disco/pulse arms
+need the essScale/disco feeds the HUD pass does not carry, the slot-draw
+precedent); `Item.GetDrawHitbox`'s animation-frame arms are unported
+(the item's own sheet stands, the `draw_item_icon` precedent); the
+`cursorItemIconText` MouseText arm (`:45102-45105`) and the rarity-colour
+second draw (`:45106-45110`) never fire (no setters).
+
+### Verification
+
+Code-only: every arm re-read against the cited C# windows; the wiring
+checked against the actual signatures (`App` fields, the
+`start_use_timers`/`ticks_of`/`tile_in_reach_rect` seams, the
+`request_edit`/`apply_edit` pair, the `draw_hud` call site). 17
+witnesses WRITTEN NOT RUN — **no cargo/tests/rustfmt/graphify invoked**:
+`editing/paint.rs` 10 (the ammo-first consume + ten-Red-dust pin, the
+same-colour refusal, the roller's wall-not-tile write + wall-less
+refusal, the Glow coating + its dust colour, the scraper's tile-then-
+wall chain, the coating clear's old-colour dust + bare-cell refusal,
+the LongMoss break + style-6 override drop, the tileBoost+blockRange
+reach, the Builder ×0.8 cadence, the apply_edit 4..7 replay),
+`player_lights.rs` 1 (the campfire zone ladder), `player.rs` 1 (the
+UsingBiomeTorches gate), `ui/slot.rs` 1 (the size-limit clamp),
+`ui/interact_icon.rs` 4 (the three-conjunct gate, the torch/campfire
+conversion, the centre-vs-top-left geometry at ×0.8, the brush/roller-
+only preview pick).

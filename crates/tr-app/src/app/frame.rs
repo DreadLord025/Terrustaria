@@ -443,8 +443,13 @@ impl App {
         if !focus_paused && self.menu.is_none() && self.front.is_none() {
             // S1-W4-g81 residuals — `Main.MouseOversClear` (`Main.cs:17035`
             // → `:46503-46513`): the per-update cursor-icon clear, ahead of
-            // the player pass that re-arms it in reach.
-            self.cursor_item_icon_enabled = false;
+            // the player pass that re-arms it in reach. (Batch-H keep-one:
+            // the C# clears `Main.player[myPlayer].cursorItemIconEnabled` —
+            // the PLAYER field, the one g79's paint gates + the icon pass
+            // read; the g81 App-field mirror dropped, one truth.)
+            if let Some(p) = self.player.as_mut() {
+                p.cursor_item_icon_enabled = false;
+            }
             // S1-E-17: `DoUpdate`'s capture gate (`Main.cs:16886-16890`):
             // `if (CaptureManager.Instance.IsCapturing) { FocusHelper.UpdateFocus;
             // return; }` — while a capture renders the ENTIRE game update

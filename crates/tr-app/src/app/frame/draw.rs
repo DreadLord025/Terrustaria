@@ -1628,11 +1628,13 @@ impl App {
                             );
                             // The cursor-icon latch (`Player.cs:46756-46760`)
                             // — the sim's per-update in-reach write (the
-                            // `cursor_item_icon_enabled` field, S1-W4-g81;
-                            // the icon ID stays 0 for the wiring tools, so
-                            // the `:130` ID gate never trips — the g86
-                            // research/244 override system owns the ID).
-                            let icon_enabled = self.cursor_item_icon_enabled;
+                            // PLAYER field, the batch-H keep-one — g79's
+                            // paint gates share it; the icon ID stays 0 for
+                            // the wiring tools, so the `:130` ID gate never
+                            // trips — the g86 research/244 override system
+                            // owns the ID).
+                            let icon_enabled =
+                                player.as_ref().is_some_and(|p| p.cursor_item_icon_enabled);
                             // The slot-surface hit tests over disjoint fields
                             // (the destructure holds `renderer`/`lookups` —
                             // a whole-`self` method call would conflict).
@@ -1924,7 +1926,11 @@ impl App {
                             // draws while the talk latch holds.
                             self.talk_npc,
                             &self.npc_chat_text,
-                            self.cursor_item_icon_enabled,
+                            // W4-g79 — the cursor interact-icon pass's world
+                            // (the biome hold-style conversions).
+                            world,
+                            // S1-W4-g81 — the 10-frame cache linger pair
+                            // (the batch-H keep-one compose).
                             (self.item_icon_cache_kind, self.item_icon_cache_time),
                         );
                         // S1-W4-g81 residuals — `Main.ItemIconCacheVerification`

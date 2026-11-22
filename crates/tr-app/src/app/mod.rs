@@ -695,11 +695,10 @@ pub(crate) struct App {
     /// `Main.cursorAlpha`/`cursorColorDirection`/`cursorScale`: the vanilla cursor
     /// pulse, advanced once per frame by `Main.CursorColor` (`Main.cs:52477`).
     pub(crate) cursor: ui::cursor::CursorState,
-    /// `Player.cursorItemIconEnabled` (`Player.cs:1856`): the held-tool
-    /// cursor-icon latch — the wiring/mining tools arm it in reach
-    /// (`Player.cs:46756-46760`/`:45620-45624`), `MouseOversClear` clears
-    /// it per update (`Main.cs:46503-46513`, `:17035`). S1-W4-g81.
-    pub(crate) cursor_item_icon_enabled: bool,
+    // (Batch-H keep-one: the g81 App-level `cursor_item_icon_enabled`
+    // mirror dropped — the C# field is `Player.cursorItemIconEnabled`
+    // (`Player.cs:1850`), the ONE truth g79's paint gates, the wiring/
+    // mining in-reach latch and the icon pass all read.)
     /// `Main._itemIconCacheScreenPosition`/`_itemIconCacheSelectedItemID`/
     /// `_itemIconCacheTime` (`Main.cs:2411-2415`): the 10-frame icon
     /// linger after the tool leaves reach (`ItemIconCacheUpdate`
@@ -3943,7 +3942,6 @@ impl App {
                 crate::env::mouse_pin().unwrap_or(Vec2::ZERO)
             },
             cursor: ui::cursor::CursorState::with_mouse_color(cursor_mouse_color),
-            cursor_item_icon_enabled: false,
             item_icon_cache_pos: Vec2::ZERO,
             item_icon_cache_kind: 0,
             item_icon_cache_time: 0,

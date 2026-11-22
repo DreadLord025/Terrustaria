@@ -23,10 +23,12 @@ mod doors;
 use doors::interact_tile;
 pub(crate) use doors::{bed_spawn_valid, check_bed_spawn};
 mod sentry;
+mod paint;
+use paint::use_paint_tool;
 
 /// One 60 Hz tick in seconds — the fixed step the swing/item timers are paced
 /// against (`Player.Update`'s tick, `frame.rs`'s `FixedStepper::new(1.0 / 60.0)`).
-const ONE_TICK_SECS: f32 = 1.0 / 60.0;
+pub(super) const ONE_TICK_SECS: f32 = 1.0 / 60.0;
 
 // ---------------------------------------------------------------------------
 // S1-P-i22 — the magic guns + tomes' use arms (`Player.ItemCheck_Shoot`,
@@ -306,7 +308,7 @@ fn shooter_use_anim_ticks(kind: u16, prefix: u16) -> i32 {
 /// whole animation — the C#'s `Item.useTime` stock is 100,
 /// `Item.cs:49028`-adjacent), and the vanilla value for the four `gunProj`
 /// placeholders.
-fn shooter_use_time_secs(kind: u16, prefix: u16, swing_secs: f32) -> f32 {
+pub(super) fn shooter_use_time_secs(kind: u16, prefix: u16, swing_secs: f32) -> f32 {
     gun_proj_row(kind).map_or_else(
         || {
             crate::prefix::prefixed_stats(kind, prefix)
@@ -325,14 +327,14 @@ fn shooter_use_time_secs(kind: u16, prefix: u16, swing_secs: f32) -> f32 {
 /// decay by the frame's `dt`, so every window the roll chain reads is derived
 /// from these counts — never from a raw float compare against "eight ticks",
 /// which would drift with the frame time.
-fn ticks_of(secs: f32) -> i32 {
+pub(super) fn ticks_of(secs: f32) -> i32 {
     (secs * 60.0).round() as i32
 }
 
 /// `SetItemAnimation(int baseFrames, float multiplier)` (`Player.cs:4453-4461`):
 /// `val = (int)((float)baseFrames * multiplier)` — truncation, NOT rounding —
 /// floored at 1 when `baseFrames > 0`. Seconds out of the tick count.
-fn scaled_anim_secs(base_frames: i32, multiplier: f32) -> f32 {
+pub(super) fn scaled_anim_secs(base_frames: i32, multiplier: f32) -> f32 {
     let mut val = (base_frames as f32 * multiplier) as i32;
     if base_frames > 0 {
         val = val.max(1);
@@ -380,7 +382,7 @@ fn summoner_weapon_scales_with_attack_speed(kind: u16) -> bool {
 /// non-melee/summon/tile/wall branches. The tail (`:4496`) re-arms
 /// `reuseDelay = sItem.reuseDelay` — the caller applies it through
 /// [`arm_reuse_delay`].
-fn apply_item_animation_secs(app: &App, held: ItemSlot) -> f32 {
+pub(super) fn apply_item_animation_secs(app: &App, held: ItemSlot) -> f32 {
     let Some(def) = registry::get(held.kind) else {
         return crate::item::use_animation_secs_of(held.kind, held.prefix);
     };
@@ -440,7 +442,7 @@ fn apply_item_animation_secs(app: &App, held: ItemSlot) -> f32 {
 /// with `spd`). The C# never decrements the lock per tick; `ApplyReuseDelay`
 /// (`:52835-52840`) consumes it whole at the next animation-zero head,
 /// converting it into a silent `itemAnimation = itemTime = reuseDelay` hold.
-fn arm_reuse_delay(app: &mut App, held: ItemSlot) {
+pub(super) fn arm_reuse_delay(app: &mut App, held: ItemSlot) {
     let rd = crate::prefix::prefixed_stats(held.kind, held.prefix)
         .map(|s| s.reuse_delay)
         .or_else(|| registry::get(held.kind).map(|d| d.reuse_delay))
@@ -455,7 +457,7 @@ fn arm_reuse_delay(app: &mut App, held: ItemSlot) {
 /// timers, so the unit rigs that drive `update_editing` alone see ONE use per
 /// press — the same stand-in the pre-i12 gates used). The reuse lock rides the
 /// same start (`:4496`).
-fn start_use_timers(app: &mut App, held: ItemSlot) {
+pub(super) fn start_use_timers(app: &mut App, held: ItemSlot) {
     app.swing_max = apply_item_animation_secs(app, held);
     app.swing = app.swing_max;
     start_swing_extras(app, held.kind);
@@ -702,7 +704,7 @@ fn limit_point_to_player_reachable_area(
 /// `x`/`y` are `tileRangeX/Y + TB` clamped by `TileReachLimit = 20`
 /// (`TileReachCheckSettings.cs:20-34`, `:81-85`). The port's player hitbox
 /// is `WIDTH`×`height` at `(p.x, p.y)` (`player.rs`).
-fn tile_in_reach_rect(p: &Player, tx: i32, ty: i32, range_x: i32, range_y: i32, tb: i32) -> bool {
+pub(super) fn tile_in_reach_rect(p: &Player, tx: i32, ty: i32, range_x: i32, range_y: i32, tb: i32) -> bool {
     let x = (range_x + tb).min(20);
     let y = (range_y + tb).min(20);
     let lx = (p.x / TILE_PX) as i32 - x;
@@ -719,7 +721,7 @@ fn tile_in_reach_rect(p: &Player, tx: i32, ty: i32, range_x: i32, range_y: i32, 
 /// `+1/+1` (`Player.cs:14954-14958`). The `TileReachLimit` clamp rides
 /// [`tile_in_reach_rect`]; the artisan bread's `TB = 4` is the placement
 /// path's (`Player.cs:35671`), not the mining reach's.
-fn mining_tile_range(app: &App) -> (i32, i32) {
+pub(super) fn mining_tile_range(app: &App) -> (i32, i32) {
     let Some(p) = app.player.as_ref() else {
         return (5, 3);
     };
@@ -1679,7 +1681,7 @@ fn rearm_axe_item_time(app: &mut App, held: ItemSlot) {
 /// The held item's `useTime` in ticks, prefix-aware (`Item.Prefix` scales
 /// `useTime`, `prefix.rs:400`). The mining `itemTime` re-arm reads it
 /// (`Player.cs:45779`).
-fn held_use_time_ticks(held: ItemSlot) -> i32 {
+pub(super) fn held_use_time_ticks(held: ItemSlot) -> i32 {
     if held.prefix != 0 {
         if let Some(s) = crate::prefix::prefixed_stats(held.kind, held.prefix) {
             return s.use_time;
@@ -1703,6 +1705,11 @@ fn sync_mine_crack_state(app: &mut App, tx: i32, ty: i32) {
 }
 
 pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
+    // (Batch-H keep-one: the g79 `MouseOversClear` head-clear moved to the
+    // ONE site at the `DoUpdateInWorld` head (`app/frame.rs`, the g81
+    // position — `Main.cs:17035` runs before the whole player pass); the
+    // C# clears `Player.cursorItemIconEnabled` once per update, the paint
+    // gates + the wiring/mining latch re-set it the same tick.)
     #[cfg(test)]
     if std::env::var("AMMO_TRACE").is_ok() {
         eprintln!("[trace-top] entered, screen={}x{}", screen.x, screen.y);
@@ -2220,7 +2227,12 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 tile_in_reach_rect(p, tx, ty, rx, ry, tb)
             });
             if in_reach {
-                app.cursor_item_icon_enabled = true;
+                // The PLAYER field (the batch-H keep-one — the C# writes
+                // `Main.player[myPlayer].cursorItemIconEnabled`, the same
+                // flag g79's paint gates + the icon pass read).
+                if let Some(p) = app.player.as_mut() {
+                    p.cursor_item_icon_enabled = true;
+                }
                 app.item_icon_cache_update(tool_kind);
             }
         }
@@ -5307,7 +5319,17 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
             }
         }
     }
-    if app.place_down && !app.inventory_open && (starting || inside_swing) {
+    // W4-g79 — the paint-tool family (`Player.PlaceThing_Paintbrush` /
+    // `PlaceThing_PaintRoller` / `PlaceThing_PaintScraper`, `Player.cs:39586-
+    // 39588`): the brush/roller/scraper answer before the extractinator and
+    // the tile/wall routes. They place no tile/wall, so the generic place
+    // route never competes; the arm owns its own swing start + `ApplyItemTime`
+    // cadence (tileSpeed for the brush/scraper-tile, wallSpeed for the roller/
+    // scraper-wall) and returns whether the held item IS a paint tool (the
+    // place route below must not run under it).
+    if use_paint_tool(app, tx, ty, starting, inside_swing) {
+        // The paint arm owns the timers; nothing below re-arms them.
+    } else if app.place_down && !app.inventory_open && (starting || inside_swing) {
         // The extractinator arm first (`PlaceThing`'s order, `Player.cs:39586-39597`:
         // `PlaceThing_ItemInExtractinator` runs before the tile/wall routes). It
         // consumes the tick on its own terms — `ApplyItemTime` makes the swing
@@ -7802,6 +7824,32 @@ pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16)
         2 => edit::break_wall(world, x, y),
         3 => {
             edit::place_wall(world, x, y, tile);
+            None
+        }
+        // W4-g79 — the paint broadcasts (`NetMessage.SendData(63/64)`,
+        // `WorldGen.cs:44127-44130`/`:44171-44174`/`:44219-44222`/`:44243-
+        // 44246`): the port's `request_edit` kinds 4..7 stand in for the
+        // 63/64 pair — 4 tile paint / 5 wall paint (`number7 = 0`), 6 tile
+        // coating / 7 wall coating (`number7 = 1f`). The replay is the
+        // `MessageBuffer.cs:2909-2948` arms' world writes; the receiver-side
+        // dust those arms play (`paintEffects: true` default) is not ported
+        // here — `apply_edit` is world-only, the same shape as the kill/place
+        // replays above. The host's `request_edit` carries the paint/coating
+        // bits in the `SectionRange` tile record regardless of kind.
+        4 => {
+            edit::paint_tile(world, x, y, tile as u8);
+            None
+        }
+        5 => {
+            edit::paint_wall(world, x, y, tile as u8);
+            None
+        }
+        6 => {
+            edit::paint_coat_tile(world, x, y, tile as u8);
+            None
+        }
+        7 => {
+            edit::paint_coat_wall(world, x, y, tile as u8);
             None
         }
         _ => None,
