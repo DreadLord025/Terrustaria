@@ -67,7 +67,7 @@ use crate::projectile::{
     ICE_BLOCK, ICE_BOOMERANG, ICHOR_BULLET,
     ILLUMINANT_HOOK, LIGHT_BEAM, MAGIC_MISSILE, MAGNET_SPHERE_BALL, METEOR_SHOT, MINI_RETINA_LASER,
     MUSKET_BALL, NANO_BULLET, NIGHT_BEAM, PARTY_BULLET, PIRATE_ARROW, PURPLE_LASER,
-    RAINBOW_ROD_BULLET, SWORD_BEAM,
+    RAINBOW_ROD_BULLET, SILVER_BULLET, SWORD_BEAM,
     TERRA_BEAM, UNHOLY_TRIDENT, UNHOLY_TRIDENT_HOSTILE, VENOM_BULLET, WATER_BOLT,
 };
 
@@ -163,6 +163,11 @@ pub(crate) fn proj_light(
         // num3 *= 0.1f;`.
         g *= 0.7;
         b *= 0.1;
+    } else if kind == SILVER_BULLET {
+        // `:16343-16347` — 981 (W4-g2d): `num2 *= 0.7f; num3 *= 0.7f;` —
+        // the silver shot's own arm, NOT the common bullet's 0.1 blue.
+        g *= 0.7;
+        b *= 0.7;
     } else if kind == BALL_OF_FIRE {
         // `:16348-16353` — 15: `num2 *= 0.4f; num3 *= 0.1f; num = 1f;`.
         g *= 0.4;
