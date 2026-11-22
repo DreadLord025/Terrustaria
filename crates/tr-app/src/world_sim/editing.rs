@@ -8041,8 +8041,10 @@ fn resolve_melee_strike(
                     );
                 }
                 // A joining client's strike goes to the host as `28`
-                // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
-                app.send_npc_strike(idx, dmg, kb, crit, pcx >= nx);
+                // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`);
+                // the landed damage folds into the pending-damage entry
+                // (`AddStrikeDamage`, `NPC.cs:81383`, W4-g51 id-162).
+                app.send_npc_strike(idx, dmg, kb, crit, pcx >= nx, if landed { dmg } else { 0 });
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
                 // (`NPC.cs:81544-81553`) — the kind's own hit cue through
                 // the faithful case-3 path (S1-E-21 wave C): the volume

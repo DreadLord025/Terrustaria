@@ -39745,3 +39745,224 @@ REGISTRY-RENAME receipt, research/272's sibling-chain note, the two
 docs' headers/chain-banners). The research/17 SEAL stands — renumber
 citations only, no scope re-open. Docs-only — no
 cargo/rustc/tests/rustfmt/graphify invoked.
+## The g51 apply-arm parks + the f21 cross-check (S1-I-1 W4-g51, 2026-11-21)
+
+The g51 lane wires the APPLY arms for the in-range ids whose codecs the
+d89-d100 lanes parked, then deepens the four self-contained parks and
+cross-checks the f21 tail codecs (origin/task/W4-f21-net-ids-verify-tail
+5274a097) for the SMALL apply arms in its range. Code-only: every arm
+re-read against the cited C# windows; the witnesses are WRITTEN, NOT RUN
+(no cargo/rustc/rustfmt/tests/graphify invoked).
+
+### The four deepened parks
+
+- **id-136 SyncCavernMonsterType — WIRED (store + consumer census).**
+  `World::cavern_monster_type` (the `NPC.cs:6585` `int[2,3]`
+  Main-global standing-in) + `World::set_world_specific_monsters`
+  (`NPC.cs:18102-18134` verbatim: `UnifiedRandom(worldID)`, two
+  DISTINCT `Next(3)` bands with the num-only re-roll, per-cell
+  `Next(494,496)`/`Next(496,498)`/`Next(498,507)`), rolled at
+  `enter_loaded_world` (the `WorldFile.cs:771` load tail). The client
+  arm stores the six ushorts row-major (`MessageBuffer.cs:4210-4216`);
+  the join bundle pushes the grid (`:870`, before the `:871` bestiary
+  burst). The ONLY grid read is `NPC.cs:5099` (`SpawnNPC`'s
+  `Next(3)==0` → `cavernMonsterType[Next(2),Next(3)]`); the spawner's
+  cavern ladder draws 3+2+3 exactly there (between the miner `:5075`
+  and skeleton `:5133` arms). The 494-506 kinds (Crawdads/Giant
+  Shellies/Salamanders) have no `NpcKind` — the roster gap falls
+  through, `kind_from_net_id` resolves live if they land.
+- **id-140 SetMiscEventValues — the three kinds WIRED to their observable
+  state.** Kind 0 (client `CreditsRollEvent.SetRemainingTimeDirect`):
+  `World::credits_roll_remaining_time` + the Clamp 0..28800 setter +
+  `tick_credits_roll` (one decrement per UpdateTime call, independent of
+  dayRate — sits OUTSIDE the creative-freeze gate, `Main.cs:64968` runs
+  UpdateTime even at dayRate 0); the join push (`NetMessage.cs:2818`,
+  the `!=0` gate). The CreditsRollSky cinematic stays unported. Kinds
+  1/2 (host `TransformCopperSlime`/`TransformElderSlime`): the unlock
+  gate ONCE + the type gate + the `7 WorldData` re-push;
+  `World::unlocked_slime_old_spawn`/`unlocked_slime_copper_spawn` +
+  .wld persistence (the v261 7-slime block, tail 2039/2044). The
+  `Transform(684/679)` + particle park with the town-slime kinds (the
+  `check_real_estate_and_town_slimes` roster gap). The
+  `GetPickedUpByMonsters_Special` pickup (`WorldItem.cs:1086-1116`,
+  the kind-1 send site) rides the items-pass post-pass + the 684 kind —
+  cited follow-up.
+- **id-162 DamageNPCAck — WIRED (the client prediction queue).**
+  `NPC.pendingDamages` (`NPC.cs:6159`) ported as
+  `App::net_pending_damages` + the pure helpers
+  (`net_npc_sync::PendingDamage`/push/add/ack/get, the Matches
+  slot+generation gate, the FIFO pop, the empty-queue no-op-log). The
+  client strike pushes (carrier-resolved) + folds the landed damage
+  (`send_npc_strike` `&mut self`); the host acks EVERY `28` with a
+  bodyless `162` BEFORE the generation gate
+  (`MessageBuffer.cs:1768-1771`); the client pops FIFO; the `23`
+  reader reconciles (`life_full` → lifeMax, then wire_life − pending;
+  the despawn gate reads the WIRE life, not the reconciled one). The
+  phase-change ai-copy half is structural (the port's `23` body carries
+  no ai array; `SetStrikePhaseChange` has no ported trigger — the flag
+  stays false). `ClearAll` clears the queue on world install
+  (`NPC.cs:8369`).
+- **id-158 ExtraSpawnSectionLoaded — DOCUMENTED SKIP (netMode+seed-gated,
+  large).** The client arm runs `Spawn(PlayerSpawnContext.TeamSwap)` →
+  `Spawn_SetPositionAtTeamSpawn` (`Player.cs:37993-38011`), gated on
+  `Main.teamBasedSpawnsSeed` + a successful
+  `TryGetExtraSpawnPointForTeam`. The send is the `157` tail
+  (`MessageBuffer.cs:2355-2363`) behind the same seed gate. The spawn
+  points are a secret-seed WORLDGEN feature: `ExtraSpawnPointManager`
+  (446 lines, the skyblock/roundLandmass/extraLiquid landmass scans) fills
+  the per-team `Point[]`; `MicroSeedFlags::TEAM_BASED_SPAWNS` (bit 33)
+  has no ported generator. The port's `teamBasedSpawnsSeed` reads false,
+  so the arm is unreachable until the seed + manager + Spawn team-position
+  land (M5-seed rows). The `7 WorldInfo` body already carries
+  `extra_spawn_points` (the empty Vec today).
+
+### The f21 cross-check — the 107-compatible status table
+
+The f21 lane's 43 tail codecs include 17 ids in the g51 range. The SMALL
+apply arms (bodyless/ignore/small-store, self-contained consumers) were
+lifted onto this branch and WIRED in the cross-check phase; the BIG ones
+(the TE families, the dryad animation) landed in the FINAL phase below —
+the g50 86/87 TE-store seams (`write_net`/`read_net`/`add_net`/
+`remove_by_id`) are the consumers now, so the apply arms wire through them
+(the draw halves stay d57-TE-render / M7-TE-2).
+
+| id | C# name | Apply size | Verdict on g51 |
+| --- | --- | --- | --- |
+| 129 | FinishedConnectingToServer | bodyless | WIRED — the team re-push (`45` when team>0); the UI-scale/preparation-state are front-end internals the install owns |
+| 138 | ClientSyncedInventory | bodyless, no reader | WIRED — the host no-op (the C# default-arm drop) |
+| 139 | SetCountsAsHostForGameplay | small store | WIRED — `PlayerNet::counts_as_host` + the FINAL join push (`DoesPlayerSlotCountAsAHost` = the peer's IPv4 loopback address, `NetMessage.cs:2876-2883` / `TcpAddress.cs:23-26`); the g52c master input |
+| 145 | SyncItemsWithShimmerDeprecated | dead | census constant only (no variant; the 24 precedent) — FINALIZED |
+| 146 | ShimmerActions | small (2 kinds) | WIRED — kind 1 `AddCoinLuck` (the local player's coin_luck, 1000px gate, 1e6 cap); kind 0 `ShimmerEffect` FX parks with the shimmer dust/sound system |
+| 148 | SyncItemCannotBeTakenByEnemiesDeprecated | dead | census constant only (no variant) — FINALIZED |
+| 152 | ItemUseSound | small (byte player) | WIRED — host id-force + relay; client plays the peer's held item's UseSound at its Centre (`initial_use_sound`) |
+| 160 | ItemPosition | small (slot+Vector2) | WIRED — the drop position snap (no velocity), `net_items` |
+| 161 | HostToken | small (string) | WIRED — the host compare against the empty configured token refuses every claim; `PlayerNet::host` stays false (no HostToken config) |
+| 121 | TEDisplayDollDataSync | BIG (TE doll) | WIRED (FINAL) — host id-force + `ReadData`/`ReadDummySync` into the doll store + relay re-derived from the live doll; client `ReadData`. The doll draw is d57-TE-render |
+| 122 | RequestTileEntityInteraction | BIG (TE anchor) | WIRED (FINAL) — host `IsOccupied` gate + `net_te_anchors` Set/Clear + relay; client `SetInteractionAnchor` (chest/talk close + the local UI tail). The TE-interaction UI is M7-TE-2 |
+| 123 | WeaponsRackTryPlacing | BIG (TE rack) | WIRED (FINAL) — the 89 body twin via `host_try_placing` (drop-old + set-item + `86` share); the rack draw is d57-TE-render |
+| 124 | TEHatRackItemSync | BIG (TE hat rack) | WIRED (FINAL) — the dye +2 fold/unfold + `ReadItem` into the hat-rack store + relay re-folded from the live slot; client `ReadItem` |
+| 133 | FoodPlatterTryPlacing | BIG (TE platter) | WIRED (FINAL) — the 89 body twin via `host_try_placing`; the platter draw is d57-TE-render |
+| 144 | RequestQuestEffect | BIG (dryad) | WIRED (FINAL) — `HaveDryadDoStardewAnimation` (`NPC.cs:19184-19229`): the dryad ai writes + the ground probe + the 995 Jumino spawn (`proj_data` row) + the `27` broadcast. The AI_192 frame machine + the Stardew draw are the animation lane's |
+| 149 | DeadCellsDisplayJarTryPlacing | BIG (TE jar) | WIRED (FINAL) — the 89 body twin via `host_try_placing`; the jar joined `has_item_slot`/`place`/`read` (its `TryPlacing` writes `result.item`) |
+| 156 | TELeashedEntityAnchorPlaceItem | BIG (TE anchor) | WIRED (FINAL) — `InsertItem` stores the itemType on the kite/critter anchor (`TeData::Anchor`); the `RespawnLeashedEntity` half is the unported LeashedEntity system (M7-TE-2) |
+
+The BIG ids' codecs were lifted from the f21 branch (origin/task/W4-f21-
+net-ids-verify-tail 5274a097) in the FINAL phase; the g50 86/87 TE-store
+seams (origin/task/W4-g50-net-apply-arms-3 549819cb's `write_net`/
+`read_net`/`add_net`/`remove_by_id`) are the consumers the apply arms wire
+through. The TryPlacing quadruplet (89/123/133/149) shares one
+`TryPlacingItem` body (byte-equality pinned by f21, re-pinned by
+`w4_g51_try_placing_quadruplet_is_byte_equal`); all four route through
+`host_try_placing` (the per-kind `TryPlacing` differs only in the
+`RangeFrame` rectangle + the `DropItem` box, which the port's edit chain
+owns). The 89 item-frame arm rides the same helper.
+
+### The g51 FINAL phase — the 8 BIG apply arms + the 139 master input
+
+The FINAL phase lifts the 8 BIG ids' codecs (f21) + the g50 86/87 TE-store
+seams and wires the apply arms through the TE store:
+
+- **The TE-store seams (tr-core `tile_entities.rs`).** `TeData::write_net`/
+  `read_net` + `TileEntity::write_net`/`read_net` (the `networkSend: true`
+  shape: the one-slot item kinds drop the presence byte, the dummy narrows
+  to a short, the logic sensor writes nothing), `TileEntities::add_net`
+  (the forced-id `ByID[ent.ID] = ent` insert) + `remove_by_id` (the
+  tombstone). The Dead Cells jar joined `has_item_slot`/`place`/
+  `place_unchecked`/`read` (its `TryPlacing` writes `result.item`,
+  `TEDeadCellsDisplayJar.cs:69-86`); the display doll's ctor payload
+  (the empty arrays + pose 0) lands in `place`/`place_unchecked`.
+- **The TryPlacing quadruplet (89/123/133/149).** One `host_try_placing`
+  helper: no entity at the cell drops the item back (`Item.NewItem`, exact
+  prefix, the sender's grab-delay lock); a held entity drops its old
+  contents first (`DropItem`, count 1), then takes the new item and shares
+  the entity with an `86`. The `87` placement arm (the g50 lift) places the
+  entity + answers with the `86`; the client's `86` reader re-adds under the
+  leading id (`add_net`) or tombstones (`remove_by_id`).
+- **121 doll sync.** Host id-force + `apply_doll_sync` (`ReadData`'s
+  command-keyed equip/dye/misc/pose write, the `itemIndex < Length` gate,
+  the no-entity `ReadDummySync` no-relay) + the relay re-derived from the
+  live doll (`doll_sync_relay`). Client `apply_doll_sync` (no relay).
+- **122 interaction.** Host `IsOccupied` scan over `net_te_anchors` (the
+  `App`-level `Player.tileEntityAnchor` stand-in, keyed by player slot) +
+  the `TryGet` gate + Set/Clear + relay; the leaving peer's anchor clears
+  (`host_slot_left`). Client `SetInteractionAnchor` (chest = -1,
+  `SetTalkNPC(-1)`, the local-player inventory-open + 10/12 cue).
+- **124 hat-rack sync.** The dye +2 fold/unfold (`HatRackItemSync::is_dye`/
+  `slot_index`), the `TryGet<TEHatRack>` + `slot >= 2` refusal, `ReadItem`
+  into the store + the relay re-folded from the live slot.
+- **144 dryad Stardew.** `host_dryad_stardew`: the first active type-20
+  dryad's ai writes (`localAI[2]=480`, `ai[0]=24`, `ai[1]=480`, `ai[2]=0`,
+  `localAI[3]=0`, `netUpdate`, `direction=1`, `spriteDirection=1`), the
+  ground probe (`Bottom+(100,0)` → tile coords, `Clamp(Y-10,10,maxTilesY-10)`,
+  the 15-row solid scan, the first-row-solid → own-bottom vs probe-tile
+  world-coords choice), the 995 Jumino spawn (`STARDEW_JUMINO` `proj_data`
+  row: 240×104, aiStyle 192, friendly, penetrate -1, tileCollide false,
+  ignoreWater, netImportant, `timeLeft *= 5`) + the `27` broadcast.
+- **156 leashed anchor.** `InsertItem` stores the itemType on the
+  kite/critter anchor (`TeData::Anchor`); the `RespawnLeashedEntity` half
+  parks with the LeashedEntity system (M7-TE-2).
+- **139 master input (g52c).** The join arm's `DoesPlayerSlotCountAsAHost`
+  push: `Server::slot_counts_as_host` reads the peer's recorded remote IP
+  (`Slot::peer_ip`, captured at accept) against IPv4 loopback exactly
+  (`TcpAddress.IsLocalHost` = `Address.Equals(IPAddress.Loopback)`), gated
+  on State 10; the flag stores host-side + pushes `139` only when true. The
+  client stores it on its own slot (the g52c host-authority master input).
+- **145/148 dead constants.** FINALIZED — census constants only (no
+  variant, the 24 precedent), re-verified never-dispatched.
+
+Witnesses: `net.rs::tests::w4_g51_f21_*` (the bodyless pair, the
+CountsAsHost/ShimmerAction/ItemUseSound/ItemPosition/HostToken round
+trips) + the FINAL codec witnesses (`w4_g51_try_placing_quadruplet_is_byte_equal`,
+`w4_g51_display_doll_sync_round_trips`, `w4_g51_te_interaction_round_trips`,
+`w4_g51_hat_rack_item_sync_round_trips_and_folds`,
+`w4_g51_request_quest_effect_is_bodyless`,
+`w4_g51_leashed_anchor_place_item_round_trips`,
+`w4_g51_tile_entity_sharing_round_trips`,
+`w4_g51_tile_entity_placement_round_trips`); the tr-core seam witnesses
+(`w4_g51_the_net_codec_differs_from_the_save_codec`,
+`w4_g51_add_net_forces_the_id_and_remove_tombstones`); the netglue apply
+witnesses (`w4_g51_the_try_placing_quadruplet_stores_and_shares`,
+`w4_g51_the_doll_sync_stores_and_relays`,
+`w4_g51_the_te_interaction_sets_clears_and_refuses_occupied`,
+`w4_g51_the_hat_rack_sync_folds_the_dye_and_relays`,
+`w4_g51_the_dryad_stardew_writes_the_ai_and_spawns_the_jumino`,
+`w4_g51_the_leashed_anchor_stores_the_item_type`,
+`w4_g51_the_counts_as_host_join_push_lands_for_a_loopback_peer`), plus
+`the_f21_small_apply_arms_store_and_snap` and the four park witnesses
+(`w4_g51_the_cavern_grid_*`, `the_credits_roll_time_*`/
+`the_town_slime_transform_*`, `w4_g51_the_pending_*`/
+`the_pending_damage_queue_*`). WRITTEN NOT RUN (code-only lane).
+
+### The g51 SEAL (research/359, 2026-11-21)
+
+The FINAL state was re-verified against the C# and the sibling tips
+(g50 `e2fd0637d`, f21 `5dfc6a764`, g52 `0224fff80`, f30 `973ec04c4`) —
+the full receipt + the net-121-family bible is `docs/research/359-g51-net-te-family-seal.md`.
+Verdicts: the 8 BIG arms + 139 + 145/148 all match their cited C# windows;
+the f21 lifted codecs are BYTE-EQUAL (per-block raw compare, re-pinned);
+the g50 TE-store lift is NOT byte-identical — g51's `tile_entities.rs` is
+the SUPERSET (the jar + the doll ctor + the `remove_by_id` tombstone gate)
+and wins keep-one whole. Two fidelity fixes landed:
+
+- **The host dryad spawn centre** (`host_dryad_stardew`): the C#
+  `NewProjectile` X/Y overload centres the box on the spawn point
+  (`Projectile.cs:10876-10877`, `X − width/2, Y − height/2`); the arm now
+  passes `spawn − (120, 52)` for the 240×104 Jumino row (the f30 local
+  twin's convention). The dryad witness pins the exact position + the
+  row flags; its probe-maths comment was corrected (tile (13,40), spawn
+  (216,588), centred (96,536)).
+- **The tombstoned-id `TryGet` gates**: the C# `TileEntity.Remove` deletes
+  the `ByID` entry (`TileEntity.cs:126`) so `TryGet` fails on it; the
+  port's id book tombstones slots instead, so the 121/122/124 host gates,
+  the 121/124 relays and the 122/124 client gates now filter on
+  position-book liveness (the `broadcast_tile_entity` pattern). A dead id
+  refuses the interaction, consume-and-drops the hat sync and falls to
+  the doll dummy paths. New witness
+  `w4_g51_a_tombstoned_te_id_refuses_the_interaction_and_the_hat_sync`.
+
+The f30 compose (disjoint keep-both: f30's decision core + gift vs the
+g51 net arm) + the `STARDEW_JUMINO` row-dup (f30's literal `995 =>` row
+vs g51's named-constant row — `#[deny(unreachable_patterns)]`, keep g51's,
+drop f30's) are recorded in research/359 §4 for the union merger. The 139
+join push is the g52c master's input (g52 tip carries no `counts_as_host`;
+research/139 stays RESERVED). WRITTEN NOT RUN (code-only lane).

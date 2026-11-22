@@ -121,6 +121,13 @@ pub mod id {
     /// present (`MessageID.cs:186`, `NetMessage.cs:1216-1225`,
     /// `MessageBuffer.cs:3272-3293`, host→client only).
     pub const TILE_ENTITY_SHARING: u8 = 86;
+
+    // ---- W4-g51 FINAL: the 8 BIG apply-owner-needed ids' codecs, lifted
+    // from origin/task/W4-f21-net-ids-verify-tail 5274a097 (the TE families
+    // + the dryad). The g50 86/87 seams (write_net/read_net/add_net) ride
+    // tr-core; the consumers land in netglue (the TE store is the consumer
+    // now — the draw halves stay d57-TE-render / M7-TE-2).
+
     /// `87 TileEntityPlacement` (W4-g50, S1-I-4): `(short)x, (short)y,
     /// (byte)type` (`MessageID.cs:188`, `NetMessage.cs:1227-1231`,
     /// `MessageBuffer.cs:3294-3305`, client→host only).
@@ -363,7 +370,11 @@ pub mod id {
     pub const DEAD_PLAYER: u8 = 135; // MessageID.cs:284 / NetMessage.cs:1569-1571 / MessageBuffer.cs:4195-4203
     /// `140 SetMiscEventValues` (`MessageID.cs:294`) — kind 0 is the credits
     /// roll's remaining time (`NetMessage.cs:1591-1594`,
-    /// `CreditsRollEvent.cs:27-33`, `MessageBuffer.cs:4238-4249`).
+    /// `CreditsRollEvent.cs:27-33`, `MessageBuffer.cs:4238-4249`); kinds 1/2
+    /// are the client's town-slime transform requests (`NPC.cs:19164`/
+    /// `:19140`). W4-g51 wired kind 0 (the world field + the join push) and
+    /// the host's kind 1/2 unlock gates; the Transform halves park with the
+    /// unported town-slime kinds.
     pub const MISC_EVENT_VALUES: u8 = 140;
     pub const PROJECTILE_TRACKERS: u8 = 142; // MessageID.cs:298 / NetMessage.cs:1603-1610 / MessageBuffer.cs:4282-4297
     pub const SYNC_LOADOUT: u8 = 147; // MessageID.cs:308 / NetMessage.cs:1624-1628 / MessageBuffer.cs:4328-4343
@@ -525,6 +536,166 @@ pub mod id {
     pub const INT_JOINED: u8 = 203; // peer-join notice
     pub const INT_LEFT: u8 = 204; // peer-leave notice
     pub const INT_TIME: u8 = 205; // clock broadcast
+    /// `127 RemoveRevengeMarker` (`MessageID.cs:268`) — the 126 marker's
+    /// removal twin (`NetMessage.cs:1518-1520`, `MessageBuffer.cs:4049-4057`).
+    /// W4-g51 lifted the parked d99 codec and wired the client arm.
+    pub const REMOVE_REVENGE_MARKER: u8 = 127;
+    /// `130 FishOutNPC` (`MessageID.cs:274`) — a client fished an NPC out
+    /// (`NetMessage.cs:1528-1532`, `MessageBuffer.cs:4086-4120`). W4-g51
+    /// lifted the parked d92 codec and wired the host spawn arm.
+    pub const FISH_OUT_NPC: u8 = 130;
+    /// `131 TamperWithNPC` (`MessageID.cs:276`) — the host tames an NPC's
+    /// immunity (`NetMessage.cs:1533-1541`, `MessageBuffer.cs:4122-4133`).
+    /// W4-g51 lifted the parked d92 codec and wired the client arm.
+    pub const TAMPER_WITH_NPC: u8 = 131;
+    /// `134 UpdatePlayerLuckFactors` (`MessageID.cs:282`) — a player's luck
+    /// factors (`NetMessage.cs:1555-1567`, `MessageBuffer.cs:4164-4193`).
+    /// W4-g51 lifted the parked d97 codec and wired the apply+relay arms.
+    pub const UPDATE_PLAYER_LUCK_FACTORS: u8 = 134;
+    /// `136 SyncCavernMonsterType` (`MessageID.cs:286`) — the cavern spawn
+    /// grid (`NetMessage.cs:1572-1582`, `MessageBuffer.cs:4204-4217`).
+    /// W4-g51 lifted the parked d92 codec and wired the client store
+    /// (`World::cavern_monster_type`) + the join push (`:870`).
+    pub const CAVERN_MONSTER_TYPES: u8 = 136;
+    /// `137 RequestNPCBuffRemoval` (`MessageID.cs:288`) — a client asks the
+    /// host to drop an NPC buff (`NetMessage.cs:1583-1586`,
+    /// `MessageBuffer.cs:4219-4228`). W4-g51 lifted the parked d92 codec and
+    /// wired the host gate (the `CanBeRemovedByNetMessage` set is empty).
+    pub const NPC_BUFF_REMOVAL_REQUEST: u8 = 137;
+    /// `141 LucyTheAxeMessage` (`MessageID.cs:296`) — a talking-axe popup
+    /// (`NetMessage.cs:1595-1602`, `MessageBuffer.cs:4265-4281`). W4-g51
+    /// lifted the parked d99 codec; the host relay is wired, the client
+    /// `CreateFromNet` popup is parked (no Lucy popup system yet).
+    pub const LUCY_POPUP: u8 = 141;
+    /// `143 CrystalInvasionRequestedToSkipWaitTime` (`MessageID.cs:300`) —
+    /// a client asked to skip the DD2 wave break, no body
+    /// (`DD2Event.cs:1790`, `MessageBuffer.cs:4298-4303`). W4-g51 lifted the
+    /// parked d99 codec and wired the host `AttemptToSkipWaitTime` arm.
+    pub const CRYSTAL_INVASION_SKIP: u8 = 143;
+    /// `150 SpectatePlayer` (`MessageID.cs:314`) — a player (re)targets
+    /// spectating (`NetMessage.cs:1639-1642`, `MessageBuffer.cs:4361-4384`).
+    /// W4-g51 lifted the parked d97 codec; the apply is parked (the port has
+    /// no spectating system yet).
+    pub const SPECTATE_PLAYER: u8 = 150;
+    /// `153 NPCDebuffDamage` (`MessageID.cs:320`) — an NPC's debuff tick
+    /// damage, host-sent (`NetMessage.cs:1646-1649`,
+    /// `MessageBuffer.cs:4408-4417`). W4-g51 lifted the parked d92 codec and
+    /// wired the client `GetHurtByDebuff` arm.
+    pub const NPC_DEBUFF_DAMAGE: u8 = 153;
+    /// `162 DamageNPCAck` (`MessageID.cs:338`) — the host's ack of a `28`
+    /// strike, no body (`MessageBuffer.cs:1768-1771` sends, `:1819-1824`
+    /// pops `NPC.pendingDamages[0]`). W4-g51 lifted the parked d92 codec and
+    /// wired the queue: the client strike pushes (`send_npc_strike`), the
+    /// `23` reader subtracts the pending sum, the ack pops FIFO.
+    pub const NPC_STRIKE_ACK: u8 = 162;
+
+    // ---- W4-g51 f21 cross-check: the SMALL apply arms lifted from the
+    // W4-f21 tail census (origin/task/W4-f21-net-ids-verify-tail 5274a097).
+    // The bodyless/ignore/small-store ids whose apply is self-contained.
+    // The BIG ones (the TE families 121/122/123/124/133/149/156, the dryad
+    // 144) landed in the FINAL phase below (the ANALYSIS status table).
+    /// `129 FinishedConnectingToServer` (`MessageID.cs:272`) — NO writer
+    /// case: `TrySendData(129, whoAmI)` (`MessageBuffer.cs:937`, the
+    /// State-3→10 join arm) writes a bare frame. The reader is client-only
+    /// (`MessageBuffer.cs:4075-4085`): the team re-push (`45` when
+    /// `team > 0`), `FixUIScale`, `TrySetPreparationState(ProcessingData)`.
+    /// S2c-only, bodyless.
+    pub const FINISHED_CONNECTING: u8 = 129;
+    /// `138 ClientSyncedInventory` (`MessageID.cs:290`) — NO writer case
+    /// (`SendData(138)` at `Main.cs:17700`, after the inventory-sync sweep,
+    /// writes a bare frame) and NO reader case: the frame falls to the
+    /// `default` arm (`MessageBuffer.cs:4477-4482`), which only boots a
+    /// State-0 sender and otherwise does nothing. C2s-only, bodyless.
+    pub const CLIENT_SYNCED_INVENTORY: u8 = 138;
+    /// `139 SetCountsAsHostForGameplay` (`MessageID.cs:292`) — writer
+    /// `NetMessage.cs:1587-1590` (`(byte)player + (number2 == 1f)` bool),
+    /// reader `MessageBuffer.cs:4230-4237` (`netMode != 2` →
+    /// `Main.countsAsHostForGameplay[id] = flag`). Host send: the join
+    /// arm's `DoesPlayerSlotCountAsAHost` push (`MessageBuffer.cs:934`).
+    /// S2c-only.
+    pub const COUNTS_AS_HOST: u8 = 139;
+    /// `145 SyncItemsWithShimmerDeprecated` (`MessageID.cs:304`) — DEAD:
+    /// no writer case, no reader case (the default arm drops it), zero send
+    /// sites tree-wide. The shimmer item sync became `146 ShimmerActions`.
+    /// Constant + census doc only (the 24 precedent).
+    pub const SHIMMER_ITEMS_DEPRECATED: u8 = 145;
+    /// `146 ShimmerActions` (`MessageID.cs:306`) — writer
+    /// `NetMessage.cs:1611-1623` (`(byte)kind` then kind 0: a Vector2;
+    /// kind 1: a Vector2 + `(int)amount`), reader
+    /// `MessageBuffer.cs:4310-4327` (client-only: kind 0
+    /// `WorldItem.ShimmerEffect`, kind 1 `AddCoinLuck`). Host sends:
+    /// `WorldItem.cs:1665` (the shimmer FX) + `:1716` (the coin luck).
+    /// S2c-only.
+    pub const SHIMMER_ACTIONS: u8 = 146;
+    /// `148 SyncItemCannotBeTakenByEnemiesDeprecated` (`MessageID.cs:310`)
+    /// — DEAD: no writer case, no reader case, zero send sites tree-wide.
+    /// The enemy-grab lock became the `21` bit-3 tail. Constant + census
+    /// doc only (the 24/145 precedent).
+    pub const ITEM_ENEMY_LOCK_DEPRECATED: u8 = 148;
+    /// `152 ItemUseSound` (`MessageID.cs:318`) — writer
+    /// `NetMessage.cs:1643-1645` (`(byte)player` only), reader
+    /// `MessageBuffer.cs:4386-4407` (host id-force + relay; client plays
+    /// the peer's held item's `UseSound` at its Centre with
+    /// `useSoundPitch`). Client send: `Player.cs:51692`. Both directions.
+    pub const ITEM_USE_SOUND: u8 = 152;
+    /// `160 ItemPosition` (`MessageID.cs:334`) — writer
+    /// `NetMessage.cs:1666-1672` (`(short)slot + WriteVector2(position)`),
+    /// reader `MessageBuffer.cs:4463-4470` (`netMode != 2` → the position
+    /// snap). Host send: the section item sweep
+    /// (`WorldItem.SyncItemsInSection`, `WorldItem.cs:1864`). S2c-only.
+    pub const ITEM_POSITION: u8 = 160;
+    /// `161 HostToken` (`MessageID.cs:336`) — writer
+    /// `NetMessage.cs:1673-1675` (`text.ToString()` — a plain string),
+    /// reader `MessageBuffer.cs:4471-4476` (host-only:
+    /// `player.host = HostToken non-empty && == text`). Client send: the
+    /// join push when `Netplay.HostToken` is set (`MessageBuffer.cs:275`).
+    /// Gate-whitelisted pre-spawn (`:165`). C2s-only.
+    pub const HOST_TOKEN: u8 = 161;
+    /// `121 TEDisplayDollDataSync` (`MessageID.cs:256`) — writer
+    /// `NetMessage.cs:1458-1474` (byte player + int entityId + byte
+    /// itemIndex + byte command + `WriteData`/`WriteDummySync`), reader
+    /// `MessageBuffer.cs:3920-3941` (host id-force + relay; client
+    /// `ReadData`). Both directions. W4-g51 FINAL.
+    pub const TE_DISPLAY_DOLL_SYNC: u8 = 121;
+    /// `122 RequestTileEntityInteraction` (`MessageID.cs:258`) — writer
+    /// `NetMessage.cs:1475-1478` (int entityId + byte player; -1 clears),
+    /// reader `MessageBuffer.cs:3942-3977` (host IsOccupied gate + relay;
+    /// client Set/Clear anchor). Both directions. W4-g51 FINAL.
+    pub const TE_INTERACTION_REQUEST: u8 = 122;
+    /// `123 WeaponsRackTryPlacing` (`MessageID.cs:260`) — the exact 89
+    /// body (`NetMessage.cs:1479-1488`, reader `MessageBuffer.cs:3978-3994`,
+    /// host-only `TEWeaponsRack.TryPlacing`). Client send:
+    /// `TEWeaponsRack.cs:212`. C2s-only. W4-g51 FINAL.
+    pub const WEAPONS_RACK_TRY_PLACING: u8 = 123;
+    /// `124 TEHatRackItemSync` (`MessageID.cs:262`) — writer
+    /// `NetMessage.cs:1489-1508` (byte player + int entityId + byte slot
+    /// with the DYE +2 fold, then `TEHatRack.WriteItem` — STACK BEFORE
+    /// PREFIX), reader `MessageBuffer.cs:3995-4022` (host id-force +
+    /// relay; client `ReadItem`). Both directions. W4-g51 FINAL.
+    pub const TE_HAT_RACK_ITEM_SYNC: u8 = 124;
+    /// `133 FoodPlatterTryPlacing` (`MessageID.cs:280`) — the exact 89
+    /// body (`NetMessage.cs:1545-1554`, reader `MessageBuffer.cs:4147-4163`,
+    /// host-only `TEFoodPlatter.TryPlacing`). Client send:
+    /// `TEFoodPlatter.cs:133`. C2s-only. W4-g51 FINAL.
+    pub const FOOD_PLATTER_TRY_PLACING: u8 = 133;
+    /// `144 RequestQuestEffect` (`MessageID.cs:302`) — NO writer case:
+    /// `SendData(144)` writes a bare frame (`Main.cs:40287`, the Stardew
+    /// dryad bit). Reader `MessageBuffer.cs:4304-4309`: host-only
+    /// `NPC.HaveDryadDoStardewAnimation` (`NPC.cs:19184-19229`). C2s-only,
+    /// bodyless. W4-g51 FINAL.
+    pub const REQUEST_QUEST_EFFECT: u8 = 144;
+    /// `149 DeadCellsDisplayJarTryPlacing` (`MessageID.cs:312`) — the exact
+    /// 89 body (`NetMessage.cs:1629-1638`, reader
+    /// `MessageBuffer.cs:4344-4360`, host-only
+    /// `TEDeadCellsDisplayJar.TryPlacing`). Client send:
+    /// `TEDeadCellsDisplayJar.cs:150`. C2s-only. W4-g51 FINAL.
+    pub const DEAD_CELLS_JAR_TRY_PLACING: u8 = 149;
+    /// `156 TELeashedEntityAnchorPlaceItem` (`MessageID.cs:326`) — writer
+    /// `NetMessage.cs:1654-1658` (three shorts: x, y, itemType), reader
+    /// `MessageBuffer.cs:4439-4449` (host-only `Point16` lookup +
+    /// `InsertItem`). Client sends: `TELeashedEntityAnchorWithItem.cs:60`,
+    /// `TEKiteAnchor.cs:66`. C2s-only. W4-g51 FINAL.
+    pub const LEASHED_ANCHOR_PLACE_ITEM: u8 = 156;
 }
 
 // ===========================================================================
@@ -1001,6 +1172,32 @@ pub struct PlayerNet {
     /// fed by `115 MinionAttackTargetUpdate` (`MessageBuffer.cs:3591`;
     /// W4-g50).
     pub minion_attack_target_npc: i32,
+    /// `Main.player[id]`'s luck factors, fed by `134 UpdatePlayerLuckFactors`
+    /// (`MessageBuffer.cs:4164-4193`). Stored-not-simulated on the peer (the
+    /// port does not run remote player sims); the local player's live state
+    /// is `Player.luck_state`. `None` = never synced (the C# field defaults).
+    pub luck: Option<UpdatePlayerLuckFactors>,
+    /// `Main.player[id].piggyBankProjTracker` / `.voidLensChest`, fed by
+    /// `142 SyncProjectileTrackers` (`MessageBuffer.cs:4282-4297`).
+    /// Stored-not-simulated (the port has no piggy-bank/void-lens projectile
+    /// tracking consumer yet). `None` = never synced (the C# field defaults).
+    pub trackers: Option<ProjectileTrackers>,
+    /// `Main.player[id].CurrentLoadoutIndex` / `.hideVisibleAccessory`, fed
+    /// by `147 SyncLoadout` (`MessageBuffer.cs:4328-4343`). The loadout swap
+    /// is unported (no loadout system); the accessory-visibility bits are
+    /// stored-not-simulated on the peer. `None` = never synced.
+    pub loadout: Option<SyncLoadout>,
+    /// `Main.player[id].host`, fed by `161 HostToken`
+    /// (`MessageBuffer.cs:4471-4476`). The port has no `Netplay.HostToken`
+    /// config, so the compare refuses every claim and this stays false
+    /// (stored-not-simulated). W4-g51 f21 cross-check.
+    pub host: bool,
+    /// `Main.countsAsHostForGameplay[id]`, fed by `139 SetCountsAsHostForGameplay`
+    /// (`MessageBuffer.cs:4230-4237`). The flag gates a co-op peer's host-side
+    /// gameplay authority (`CreativePowersHelper.cs:217`); the port stores it
+    /// on the peer snapshot (the creative-power authority check is unported).
+    /// W4-g51 f21 cross-check.
+    pub counts_as_host: bool,
 }
 
 impl Default for PlayerNet {
@@ -1047,6 +1244,11 @@ impl Default for PlayerNet {
             last_portal_color_index: 0,
             minion_rest_target_point: (0.0, 0.0),
             minion_attack_target_npc: -1,
+            luck: None,
+            trackers: None,
+            loadout: None,
+            host: false,
+            counts_as_host: false,
         }
     }
 }
@@ -2478,9 +2680,10 @@ pub struct RevengeMarker {
 }
 
 /// `msg 140 SetMiscEventValues`'s body (`NetMessage.cs:1591-1594`): a kind
-/// byte then an `int`. The join bundle only sends kind 0 — the credits roll's
-/// remaining frames (`CreditsRollEvent.cs:27-33`); kinds 1/2 are the server's
-/// slime transforms (`MessageBuffer.cs:4250-4260`) and stay unported.
+/// byte then an `int`. Kind 0 is the credits roll's remaining frames
+/// (`CreditsRollEvent.cs:27-33`, S2c); kinds 1/2 are the client's town-slime
+/// transform requests (`NPC.cs:19164`/`:19140`, C2s) — the host applies
+/// (`MessageBuffer.cs:4250-4260`). Both directions since W4-g51 id-140.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MiscEventValue {
     pub kind: u8,
@@ -2891,7 +3094,7 @@ pub enum C2s {
     /// `89 ItemFrameTryPlacing` - a client placed an item into a frame
     /// (`TEItemFrame.PlaceItemInFrame`, `TEItemFrame.cs:154`;
     /// `MessageBuffer.cs:3377-3393`; W4-g50).
-    ItemFrameTryPlacing(ItemFrameTryPlacing),
+    ItemFrameTryPlacing(TryPlacingItem),
     /// `96 TeleportPlayerThroughPortal` — the portal-gun owner's self
     /// teleport (`PortalHelper.cs:188-192`); the host forces the id to the
     /// sender and relays (`MessageBuffer.cs:3541-3555`; W4-g50).
@@ -2938,6 +3141,73 @@ pub enum C2s {
     /// the reader gates on `enableDebugCommands` (`MessageBuffer.cs:3463-3518`;
     /// W4-g50).
     DevCommands(DevCommands),
+    /// `130 FishOutNPC` - a client fished an NPC out at the tile point
+    /// (`Player.cs:52423-52426`; the host spawns, `MessageBuffer.cs:4086-4121`).
+    FishOutNpc(FishOutNpc),
+    /// `134 UpdatePlayerLuckFactors` - a client's luck factors
+    /// (`Player.UpdateLuck`'s `luckNeedsSync` send, `Player.cs:29048`; the
+    /// host applies + relays, `MessageBuffer.cs:4164-4193`).
+    UpdatePlayerLuckFactors(UpdatePlayerLuckFactors),
+    /// `137 RequestNPCBuffRemoval` - a client asks the host to drop an NPC
+    /// buff (`NPC.cs:89995-89998`; `MessageBuffer.cs:4219-4229`).
+    NpcBuffRemovalRequest(NpcBuffRemovalRequest),
+    /// `140 SetMiscEventValues` - kinds 1/2 are the CLIENT's town-slime
+    /// transform requests (`NPC.TransformCopperSlime`/`TransformElderSlime`'s
+    /// `netMode == 1` arms, `NPC.cs:19164`/`:19140`); the host applies
+    /// (`MessageBuffer.cs:4250-4260`). Kind 0 is host-sent only (the credits
+    /// roll, `S2c::MiscEventValue`).
+    MiscEventValue(MiscEventValue),
+    /// `141 LucyTheAxeMessage` - a talking-axe popup
+    /// (`LucyAxeMessage.cs:133`; the host relays, `:4274`).
+    LucyPopup(LucyPopup),
+    /// `143 DD2EventSkipWaitTime` - a client asked to skip the DD2 wait,
+    /// no body (`DD2Event.cs:1790`, `MessageBuffer.cs:4298-4303`).
+    CrystalInvasionSkip,
+    /// `150 SpectatePlayer` - a client (re)targets spectating
+    /// (`Player.SetOrRequestSpectating`, `Player.cs:17252`; the host arm
+    /// `MessageBuffer.cs:4361-4384`).
+    SpectatePlayer(SpectatePlayer),
+    /// `138 ClientSyncedInventory` — the client's "inventory sweep done"
+    /// notice, bodyless (`Main.cs:17700`); NO reader case — the default
+    /// arm drops it (`MessageBuffer.cs:4477-4482`). C2s-only. W4-g51 f21.
+    ClientSyncedInventory,
+    /// `152 ItemUseSound` — a client used an item with a sound
+    /// (`Player.cs:51692`; host id-force + relay
+    /// `MessageBuffer.cs:4386-4407`). Both directions. W4-g51 f21.
+    ItemUseSound { player_id: u8 },
+    /// `161 HostToken` — the client's host-token claim, pushed in the
+    /// join bundle when set (`MessageBuffer.cs:275`; host compare
+    /// `:4471-4476`). Gate-whitelisted pre-spawn (`:165`). C2s-only.
+    /// W4-g51 f21.
+    HostToken(String),
+    /// `121 TEDisplayDollDataSync` — a client changed a display-doll slot
+    /// or pose (`MessageBuffer.cs:3920-3941`). Both directions. W4-g51.
+    DisplayDollSync(DisplayDollSync),
+    /// `122 RequestTileEntityInteraction` — a client opened/closed a
+    /// tile-entity interaction (`MessageBuffer.cs:3942-3977`). Both
+    /// directions. W4-g51.
+    TileEntityInteraction(TileEntityInteraction),
+    /// `123 WeaponsRackTryPlacing` — a client placed an item on a weapon
+    /// rack (`MessageBuffer.cs:3978-3994`, host-only). C2s-only. W4-g51.
+    WeaponsRackTryPlacing(TryPlacingItem),
+    /// `124 TEHatRackItemSync` — a client changed a hat-rack slot/dye
+    /// (`MessageBuffer.cs:3995-4022`). Both directions. W4-g51.
+    HatRackItemSync(HatRackItemSync),
+    /// `133 FoodPlatterTryPlacing` — a client placed food on a platter
+    /// (`MessageBuffer.cs:4147-4163`, host-only). C2s-only. W4-g51.
+    FoodPlatterTryPlacing(TryPlacingItem),
+    /// `144 RequestQuestEffect` — the client's Stardew-dryad ask,
+    /// bodyless (`MessageBuffer.cs:4304-4309`, host-only). C2s-only.
+    /// W4-g51.
+    RequestQuestEffect,
+    /// `149 DeadCellsDisplayJarTryPlacing` — a client placed an item in
+    /// a Dead Cells display jar (`MessageBuffer.cs:4344-4360`, host-only).
+    /// C2s-only. W4-g51.
+    DeadCellsJarTryPlacing(TryPlacingItem),
+    /// `156 TELeashedEntityAnchorPlaceItem` — a client placed an item on
+    /// a kite/critter anchor (`MessageBuffer.cs:4439-4449`, host-only).
+    /// C2s-only. W4-g51.
+    LeashedAnchorPlaceItem(LeashedAnchorPlaceItem),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -3233,6 +3503,74 @@ pub enum S2c {
     /// (`DebugOptions.SyncToJoiningPlayer`, `DebugOptions.cs:64-72`;
     /// `MessageBuffer.cs:3463-3518`; W4-g50).
     DevCommands(DevCommands),
+    /// `125 SyncTilePicking` — another player's pickaxe hit
+    /// (`MessageBuffer.cs:4033-4036` applies it to the local player).
+    TilePicking(TilePicking),
+    /// `127 RemoveRevengeMarker` - a coin-loss revenge marker is gone
+    /// (`CoinLossRevengeSystem.cs:451`, `MessageBuffer.cs:4049-4057`).
+    RemoveRevengeMarker(RemoveRevengeMarker),
+    /// `131 TamperWithNPC` - the host tames an NPC's immunity (the 485
+    /// statue-break 582 spawns, `WorldGen.cs:48373-48376`;
+    /// `MessageBuffer.cs:4122-4133`).
+    TamperWithNpc(TamperWithNpc),
+    /// `134 UpdatePlayerLuckFactors` - a peer's luck factors, relayed by the
+    /// host (`MessageBuffer.cs:4191`); the client applies the eight fields +
+    /// `RecalculateLuck` (`:4180-4188`).
+    UpdatePlayerLuckFactors(UpdatePlayerLuckFactors),
+    /// `136 SyncCavernMonsterType` - the cavern spawn grid, the join push
+    /// (`MessageBuffer.cs:870`, read `:4204-4218`).
+    CavernMonsterTypes(CavernMonsterTypes),
+    /// `141 LucyTheAxeMessage` - the host's relay of a talking-axe popup
+    /// (`MessageBuffer.cs:4274`; the client CreateFromNet, `:4278`).
+    LucyPopup(LucyPopup),
+    /// `150 SpectatePlayer` - a peer's spectate target, relayed by the host
+    /// on a stop (`MessageBuffer.cs:4378`) or sent from the host's own
+    /// `SetOrRequestSpectating` (`Player.cs:17271`); the client applies a
+    /// peer's value or its own stop (`:4380-4383`).
+    SpectatePlayer(SpectatePlayer),
+    /// `153 NPCDebuffDamage` - an NPC's debuff tick damage, host-sent and
+    /// relayed (`MessageBuffer.cs:4408-4417`); the client applies
+    /// `GetHurtByDebuff` (`NPC.cs:91864-91888`).
+    NpcDebuffDamage(NpcDebuffDamage),
+    /// `158 ExtraSpawnSectionLoaded` — the team-swap respawn: the extra
+    /// spawn section is in, `Spawn(TeamSwap)` (`MessageBuffer.cs:4450-4456`,
+    /// sent by the `157` tail `:2361`).
+    ExtraSpawnLoaded {
+        player_id: u8,
+    },
+    /// `129 FinishedConnectingToServer` — the join arm's "you're in"
+    /// notice, bodyless (`MessageBuffer.cs:937`; the client's team
+    /// re-push + UI-scale + preparation-state tail `:4075-4085`).
+    /// S2c-only. W4-g51 f21.
+    FinishedConnecting,
+    /// `139 SetCountsAsHostForGameplay` — the join arm's host-authority
+    /// flag push (`MessageBuffer.cs:934`; client-only store
+    /// `:4230-4237`). S2c-only. W4-g51 f21.
+    CountsAsHost(CountsAsHost),
+    /// `146 ShimmerActions` — the shimmer FX / coin-luck push
+    /// (`WorldItem.cs:1665`/`:1716`; client-only reader
+    /// `MessageBuffer.cs:4310-4327`). S2c-only. W4-g51 f21.
+    ShimmerAction(ShimmerAction),
+    /// `152 ItemUseSound` — a peer's item-use sound, host relay
+    /// (`MessageBuffer.cs:4395`). Both directions. W4-g51 f21.
+    ItemUseSound { player_id: u8 },
+    /// `160 ItemPosition` — a drop's position snap, the section sweep
+    /// (`WorldItem.cs:1864`; client-only reader
+    /// `MessageBuffer.cs:4463-4470`). S2c-only. W4-g51 f21.
+    ItemPosition(ItemPosition),
+    /// `121 TEDisplayDollDataSync` — the host's doll relay
+    /// (`MessageBuffer.cs:3938`). Both directions. W4-g51.
+    DisplayDollSync(DisplayDollSync),
+    /// `122 RequestTileEntityInteraction` — the host's anchor relay
+    /// (`MessageBuffer.cs:3955`/`:3961`). Both directions. W4-g51.
+    TileEntityInteraction(TileEntityInteraction),
+    /// `124 TEHatRackItemSync` — the host's hat-rack relay
+    /// (`MessageBuffer.cs:4019`). Both directions. W4-g51.
+    HatRackItemSync(HatRackItemSync),
+    /// `162 DamageNPCAck` - the host's ack of a `28` strike, no body
+    /// (`MessageBuffer.cs:1768-1771` sends, `:1819-1824` pops
+    /// `NPC.pendingDamages[0]`).
+    NpcStrikeAck,
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -3273,15 +3611,6 @@ pub enum S2c {
     /// `19 ToggleDoorState` — the host's door/trapdoor/gate relay
     /// (`MessageBuffer.cs:1330`).
     DoorToggle(DoorToggle),
-    /// `125 SyncTilePicking` — another player's pickaxe hit
-    /// (`MessageBuffer.cs:4039`).
-    TilePicking(TilePicking),
-    /// `158 ExtraSpawnSectionLoaded` — the team-swap respawn: the extra
-    /// spawn section is in, `Spawn(TeamSwap)` (`MessageBuffer.cs:4450-4456`,
-    /// sent by the `157` tail `:2361`).
-    ExtraSpawnLoaded {
-        player_id: u8,
-    },
     /// `23 NPCInfo` — one NPC's state (the C#'s per-NPC `SendData(23)`,
     /// `NPC.cs:90613`).
     NpcInfo(Box<NpcInfo>),
@@ -3392,6 +3721,24 @@ impl C2s {
             Self::Emoji(_) => id::EMOJI,
             Self::QuickStackRequest(_) => id::QUICK_STACK_CHESTS,
             Self::DevCommands(_) => id::DEV_COMMANDS,
+            Self::FishOutNpc(_) => id::FISH_OUT_NPC,
+            Self::UpdatePlayerLuckFactors(_) => id::UPDATE_PLAYER_LUCK_FACTORS,
+            Self::NpcBuffRemovalRequest(_) => id::NPC_BUFF_REMOVAL_REQUEST,
+            Self::MiscEventValue(_) => id::MISC_EVENT_VALUES,
+            Self::LucyPopup(_) => id::LUCY_POPUP,
+            Self::CrystalInvasionSkip => id::CRYSTAL_INVASION_SKIP,
+            Self::SpectatePlayer(_) => id::SPECTATE_PLAYER,
+            Self::ClientSyncedInventory => id::CLIENT_SYNCED_INVENTORY,
+            Self::ItemUseSound { .. } => id::ITEM_USE_SOUND,
+            Self::HostToken(_) => id::HOST_TOKEN,
+            Self::DisplayDollSync(_) => id::TE_DISPLAY_DOLL_SYNC,
+            Self::TileEntityInteraction(_) => id::TE_INTERACTION_REQUEST,
+            Self::WeaponsRackTryPlacing(_) => id::WEAPONS_RACK_TRY_PLACING,
+            Self::HatRackItemSync(_) => id::TE_HAT_RACK_ITEM_SYNC,
+            Self::FoodPlatterTryPlacing(_) => id::FOOD_PLATTER_TRY_PLACING,
+            Self::RequestQuestEffect => id::REQUEST_QUEST_EFFECT,
+            Self::DeadCellsJarTryPlacing(_) => id::DEAD_CELLS_JAR_TRY_PLACING,
+            Self::LeashedAnchorPlaceItem(_) => id::LEASHED_ANCHOR_PLACE_ITEM,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -3567,6 +3914,71 @@ impl C2s {
             // `NetMessage.cs:1014-1018`: (byte)action + two (short)s; the
             // player id is NOT written.
             Self::LockAndUnlock(l) => w.u8(l.action).i16(l.x).i16(l.y),
+            // `NetMessage.cs:1521-1527`: byte owner + ushort x + ushort y +
+            // ushort hits + ushort type (the writer's field order).
+            Self::GolfBallInCup(g) => w.u8(g.owner).u16(g.x).u16(g.y).u16(g.hits).u16(g.ball_type),
+            // `NetMessage.cs:1528-1532`: (ushort)tile x, (ushort)tile y,
+            // (short)npc type.
+            Self::FishOutNpc(f) => w.u16(f.tile_x).u16(f.tile_y).i16(f.npc_type),
+            // `NetMessage.cs:1555-1567`: the eight luck fields in writer order.
+            Self::UpdatePlayerLuckFactors(l) => l.write_to(w),
+            // `NetMessage.cs:1583-1586`: (short)npc, (ushort)buff type.
+            Self::NpcBuffRemovalRequest(q) => w.i16(q.npc).u16(q.buff_type),
+            // `NetMessage.cs:1591-1594`: (byte)kind + (int)number.
+            Self::MiscEventValue(v) => w.u8(v.kind).i32(v.value),
+            // `NetMessage.cs:1595-1602`: (byte)source + (byte)variation +
+            // the velocity floats + (int)x + (int)y.
+            Self::LucyPopup(l) => w
+                .u8(l.source)
+                .u8(l.variation)
+                .f32(l.velocity_x)
+                .f32(l.velocity_y)
+                .i32(l.x)
+                .i32(l.y),
+            // No writer arm — bodyless (`DD2Event.cs:1790` SendData(143)).
+            Self::CrystalInvasionSkip => w,
+            // `NetMessage.cs:1639-1642`: (byte)number, (short)number2.
+            Self::SpectatePlayer(s) => w.u8(s.player_id).i16(s.target),
+            // No writer arm — bodyless (`Main.cs:17700` SendData(138)).
+            Self::ClientSyncedInventory => w,
+            // `NetMessage.cs:1643-1645`: (byte)player only.
+            Self::ItemUseSound { player_id } => w.u8(*player_id),
+            // `NetMessage.cs:1673-1675`: a plain string.
+            Self::HostToken(t) => w.str(t),
+            // `NetMessage.cs:1227-1231`: short x, short y, byte type.
+            Self::TileEntityPlacement(p) => w.i16(p.x).i16(p.y).u8(p.kind),
+            // `NetMessage.cs:1297-1306` — the TryPlacing body (the 123/133/
+            // 149 twins are byte-identical, f21's pin).
+            Self::ItemFrameTryPlacing(p) => {
+                w.i16(p.x).i16(p.y).i16(p.kind).u8(p.prefix).i16(p.stack)
+            }
+            // `NetMessage.cs:1458-1474`: (byte)player + int id +
+            // (byte)itemIndex + (byte)command + WriteData/WriteDummySync.
+            Self::DisplayDollSync(d) => write_doll_sync(d, w),
+            // `NetMessage.cs:1475-1478`: int entityId + (byte)player.
+            Self::TileEntityInteraction(t) => w.i32(t.entity_id).u8(t.player_id),
+            // `NetMessage.cs:1479-1488` — the exact 89 body under id 123.
+            Self::WeaponsRackTryPlacing(p) => {
+                w.i16(p.x).i16(p.y).i16(p.kind).u8(p.prefix).i16(p.stack)
+            }
+            // `NetMessage.cs:1489-1508`: (byte)player + int id + the
+            // already-folded wire slot + WriteItem (or the air fallback,
+            // which is the same 5 bytes as an air TeItem slot).
+            Self::HatRackItemSync(h) => h
+                .item
+                .write_slot(w.u8(h.player_id).i32(h.entity_id).u8(h.wire_slot)),
+            // `NetMessage.cs:1545-1554` — the exact 89 body under id 133.
+            Self::FoodPlatterTryPlacing(p) => {
+                w.i16(p.x).i16(p.y).i16(p.kind).u8(p.prefix).i16(p.stack)
+            }
+            // No writer case for 144 — `SendData(144)` writes a bare frame.
+            Self::RequestQuestEffect => w,
+            // `NetMessage.cs:1629-1638` — the exact 89 body under id 149.
+            Self::DeadCellsJarTryPlacing(p) => {
+                w.i16(p.x).i16(p.y).i16(p.kind).u8(p.prefix).i16(p.stack)
+            }
+            // `NetMessage.cs:1654-1658`: three (short)s.
+            Self::LeashedAnchorPlaceItem(p) => w.i16(p.x).i16(p.y).i16(p.item_type),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             // `NetMessage.cs:433-445`: (byte)number leads the spawn body.
             Self::PlayerSpawn(s) => w
@@ -3589,13 +4001,6 @@ impl C2s {
             Self::PlayerStealth(s) => w.u8(s.player_id).f32(s.stealth),
             // `NetMessage.cs:1321-1326` — short npc, int value, two floats.
             Self::NpcExtraValue(e) => w.i16(e.npc).i32(e.value).f32(e.x).f32(e.y),
-            // `NetMessage.cs:1227-1231` — short x, short y, byte type.
-            Self::TileEntityPlacement(p) => w.i16(p.x).i16(p.y).u8(p.kind),
-            // `NetMessage.cs:1297-1306` — short x, short y, short type,
-            // byte prefix, short stack.
-            Self::ItemFrameTryPlacing(p) => {
-                w.i16(p.x).i16(p.y).i16(p.kind).u8(p.prefix).i16(p.stack)
-            }
             // `NetMessage.cs:1337-1346` — byte player, short color, dest
             // floats, live-velocity floats.
             Self::PlayerPortalTeleport(p) => w
@@ -3665,9 +4070,6 @@ impl C2s {
             }
             // `NetMessage.cs:1333-1336` — `(ushort)number + (byte)number2`.
             Self::MurderPortal { owner, form } => w.u16(*owner).u8(*form),
-            // `NetMessage.cs:1521-1527` — owner byte, then the four ushorts
-            // in the WRITER's order (x, y, hits, type — not the arg order).
-            Self::GolfBallInCup(g) => w.u8(g.owner).u16(g.x).u16(g.y).u16(g.hits).u16(g.ball_type),
             // `NetMessage.cs:1412-1418` — four (short)s, then the (byte) mode.
             Self::MassWireOperation(m) => w
                 .i16(m.start_x)
@@ -3923,6 +4325,126 @@ impl C2s {
                 x: r.i16()?,
                 y: r.i16()?,
             }),
+            // `MessageBuffer.cs:4060-4064`: owner, x, y, hits, type.
+            id::GOLF_BALL_IN_CUP => Self::GolfBallInCup(GolfBallInCup {
+                owner: r.u8()?,
+                x: r.u16()?,
+                y: r.u16()?,
+                hits: r.u16()?,
+                ball_type: r.u16()?,
+            }),
+            // `MessageBuffer.cs:4092-4094`: (ushort)x, (ushort)y, (short)type.
+            id::FISH_OUT_NPC => Self::FishOutNpc(FishOutNpc {
+                tile_x: r.u16()?,
+                tile_y: r.u16()?,
+                npc_type: r.i16()?,
+            }),
+            // `MessageBuffer.cs:4166-4174`: the eight luck fields.
+            id::UPDATE_PLAYER_LUCK_FACTORS => {
+                Self::UpdatePlayerLuckFactors(UpdatePlayerLuckFactors::read_from(r)?)
+            }
+            // `MessageBuffer.cs:4222-4223`: (short)npc, (ushort)buff type.
+            id::NPC_BUFF_REMOVAL_REQUEST => Self::NpcBuffRemovalRequest(NpcBuffRemovalRequest {
+                npc: r.i16()?,
+                buff_type: r.u16()?,
+            }),
+            // `MessageBuffer.cs:4240-4241`: (byte)kind + (int)value.
+            id::MISC_EVENT_VALUES => Self::MiscEventValue(MiscEventValue {
+                kind: r.u8()?,
+                value: r.i32()?,
+            }),
+            // `MessageBuffer.cs:4267-4271`: source, variation, velocity
+            // floats, then the position ints.
+            id::LUCY_POPUP => Self::LucyPopup(LucyPopup {
+                source: r.u8()?,
+                variation: r.u8()?,
+                velocity_x: r.f32()?,
+                velocity_y: r.f32()?,
+                x: r.i32()?,
+                y: r.i32()?,
+            }),
+            // `MessageBuffer.cs:4298-4303`: no body.
+            id::CRYSTAL_INVASION_SKIP => Self::CrystalInvasionSkip,
+            // `MessageBuffer.cs:4363-4368`: (byte)player, (short)target.
+            id::SPECTATE_PLAYER => Self::SpectatePlayer(SpectatePlayer {
+                player_id: r.u8()?,
+                target: r.i16()?,
+            }),
+            // No reader case in the C# (the default arm drops it); the port
+            // decodes the bare frame so the host arm can no-op explicitly.
+            id::CLIENT_SYNCED_INVENTORY => Self::ClientSyncedInventory,
+            // `MessageBuffer.cs:4388`: (byte)player.
+            id::ITEM_USE_SOUND => Self::ItemUseSound {
+                player_id: r.u8()?,
+            },
+            // `MessageBuffer.cs:4473`: a plain string.
+            id::HOST_TOKEN => Self::HostToken(r.str()?),
+            // `MessageBuffer.cs:3297-3299`: short x, short y, byte type.
+            id::TILE_ENTITY_PLACEMENT => Self::TileEntityPlacement(TileEntityPlacement {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.u8()?,
+            }),
+            // `MessageBuffer.cs:3383-3387`: two ReadInt16 + ReadInt16 type
+            // + ReadByte prefix + ReadInt16 stack.
+            id::ITEM_FRAME_TRY_PLACING => Self::ItemFrameTryPlacing(TryPlacingItem {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.i16()?,
+                prefix: r.u8()?,
+                stack: r.i16()?,
+            }),
+            // `MessageBuffer.cs:3922-3935` — the shared doll read.
+            id::TE_DISPLAY_DOLL_SYNC => Self::DisplayDollSync(read_doll_sync(r)?),
+            // `MessageBuffer.cs:3944-3945`: ReadInt32 + ReadByte.
+            id::TE_INTERACTION_REQUEST => Self::TileEntityInteraction(TileEntityInteraction {
+                entity_id: r.i32()?,
+                player_id: r.u8()?,
+            }),
+            // `MessageBuffer.cs:3984-3988` — the exact 89 read under 123.
+            id::WEAPONS_RACK_TRY_PLACING => Self::WeaponsRackTryPlacing(TryPlacingItem {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.i16()?,
+                prefix: r.u8()?,
+                stack: r.i16()?,
+            }),
+            // `MessageBuffer.cs:3997-4016`: byte + int + byte slot; the
+            // dye unfold + the >= 2 refusal are the apply arm's — the
+            // codec keeps the wire slot verbatim and reads the 5-byte
+            // tail either way (the refusal path reads int+byte, the same
+            // width as ReadItem's ushort+ushort+byte).
+            id::TE_HAT_RACK_ITEM_SYNC => Self::HatRackItemSync(HatRackItemSync {
+                player_id: r.u8()?,
+                entity_id: r.i32()?,
+                wire_slot: r.u8()?,
+                item: TeItem::read_slot(r)?,
+            }),
+            // `MessageBuffer.cs:4153-4157` — the exact 89 read under 133.
+            id::FOOD_PLATTER_TRY_PLACING => Self::FoodPlatterTryPlacing(TryPlacingItem {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.i16()?,
+                prefix: r.u8()?,
+                stack: r.i16()?,
+            }),
+            // `MessageBuffer.cs:4304-4309`: the host reads NOTHING.
+            id::REQUEST_QUEST_EFFECT => Self::RequestQuestEffect,
+            // `MessageBuffer.cs:4350-4354` — the exact 89 read under 149.
+            id::DEAD_CELLS_JAR_TRY_PLACING => Self::DeadCellsJarTryPlacing(TryPlacingItem {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.i16()?,
+                prefix: r.u8()?,
+                stack: r.i16()?,
+            }),
+            // `MessageBuffer.cs:4442-4443`: two ReadInt16 (the Point16) +
+            // ReadInt16 itemType.
+            id::LEASHED_ANCHOR_PLACE_ITEM => Self::LeashedAnchorPlaceItem(LeashedAnchorPlaceItem {
+                x: r.i16()?,
+                y: r.i16()?,
+                item_type: r.i16()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -3988,14 +4510,6 @@ impl C2s {
                 owner: r.u16()?,
                 form: r.u8()?,
             },
-            // `MessageBuffer.cs:4060-4064` — owner, x, y, hits, type.
-            id::GOLF_BALL_IN_CUP => Self::GolfBallInCup(GolfBallInCup {
-                owner: r.u8()?,
-                x: r.u16()?,
-                y: r.u16()?,
-                hits: r.u16()?,
-                ball_type: r.u16()?,
-            }),
             // `MessageBuffer.cs:3777-3781` — the four shorts + the mode byte.
             id::MASS_WIRE_OPERATION => Self::MassWireOperation(MassWireOperation {
                 start_x: r.i16()?,
@@ -4016,21 +4530,6 @@ impl C2s {
                 value: r.i32()?,
                 x: r.f32()?,
                 y: r.f32()?,
-            }),
-            // `MessageBuffer.cs:3297-3299` — short x, short y, byte type.
-            id::TILE_ENTITY_PLACEMENT => Self::TileEntityPlacement(TileEntityPlacement {
-                x: r.i16()?,
-                y: r.i16()?,
-                kind: r.u8()?,
-            }),
-            // `MessageBuffer.cs:3383-3387` — short x, short y, short type,
-            // byte prefix, short stack.
-            id::ITEM_FRAME_TRY_PLACING => Self::ItemFrameTryPlacing(ItemFrameTryPlacing {
-                x: r.i16()?,
-                y: r.i16()?,
-                kind: r.i16()?,
-                prefix: r.u8()?,
-                stack: r.i16()?,
             }),
             // `MessageBuffer.cs:3540-3548` — byte player, short color, dest
             // Vector2, live-velocity Vector2.
@@ -4308,6 +4807,22 @@ impl S2c {
             Self::Unknown67 => id::UNKNOWN_67,
             Self::LiquidUpdate(_) => id::LIQUID_UPDATE,
             Self::LockAndUnlock(_) => id::LOCK_AND_UNLOCK,
+            Self::RemoveRevengeMarker(_) => id::REMOVE_REVENGE_MARKER,
+            Self::TamperWithNpc(_) => id::TAMPER_WITH_NPC,
+            Self::UpdatePlayerLuckFactors(_) => id::UPDATE_PLAYER_LUCK_FACTORS,
+            Self::CavernMonsterTypes(_) => id::CAVERN_MONSTER_TYPES,
+            Self::LucyPopup(_) => id::LUCY_POPUP,
+            Self::SpectatePlayer(_) => id::SPECTATE_PLAYER,
+            Self::NpcDebuffDamage(_) => id::NPC_DEBUFF_DAMAGE,
+            Self::FinishedConnecting => id::FINISHED_CONNECTING,
+            Self::CountsAsHost(_) => id::COUNTS_AS_HOST,
+            Self::ShimmerAction(_) => id::SHIMMER_ACTIONS,
+            Self::ItemUseSound { .. } => id::ITEM_USE_SOUND,
+            Self::ItemPosition(_) => id::ITEM_POSITION,
+            Self::DisplayDollSync(_) => id::TE_DISPLAY_DOLL_SYNC,
+            Self::TileEntityInteraction(_) => id::TE_INTERACTION_REQUEST,
+            Self::HatRackItemSync(_) => id::TE_HAT_RACK_ITEM_SYNC,
+            Self::NpcStrikeAck => id::NPC_STRIKE_ACK,
         }
     }
 
@@ -4708,6 +5223,73 @@ impl S2c {
             // `NetMessage.cs:1327-1332`: string command, int number, float
             // number2, float number3.
             Self::DevCommands(d) => w.str(&d.command).i32(d.number).f32(d.number2).f32(d.number3),
+            // `NetMessage.cs:1518-1520`: one raw (int) UniqueID.
+            Self::RemoveRevengeMarker(m) => w.i32(m.unique_id),
+            // `NetMessage.cs:1533-1541`: (ushort)npc, (byte)kind; kind 1
+            // appends (int)time + (short)fromWho.
+            Self::TamperWithNpc(t) => {
+                let w = w.u16(t.npc).u8(t.kind);
+                match t.immune {
+                    Some((time, from_who)) => w.i32(time).i16(from_who),
+                    None => w,
+                }
+            }
+            // `NetMessage.cs:1555-1567`: the eight luck fields (the relay
+            // reuses the writer case).
+            Self::UpdatePlayerLuckFactors(l) => l.write_to(w),
+            // `NetMessage.cs:1572-1582`: the 2×3 grid, row-major (ushort)s.
+            Self::CavernMonsterTypes(c) => {
+                let mut w = w;
+                for row in &c.types {
+                    for ty in row {
+                        w = w.u16(*ty);
+                    }
+                }
+                w
+            }
+            // `NetMessage.cs:1595-1602`: (byte)source + (byte)variation +
+            // the velocity floats + (int)x + (int)y (the relay reuses the
+            // writer case).
+            Self::LucyPopup(l) => w
+                .u8(l.source)
+                .u8(l.variation)
+                .f32(l.velocity_x)
+                .f32(l.velocity_y)
+                .i32(l.x)
+                .i32(l.y),
+            // `NetMessage.cs:1639-1642`: (byte)number, (short)number2 (the
+            // relay reuses the writer case).
+            Self::SpectatePlayer(s) => w.u8(s.player_id).i16(s.target),
+            // `NetMessage.cs:1646-1649`: (byte)npc, (short)damage.
+            Self::NpcDebuffDamage(d) => w.u8(d.npc).i16(d.damage),
+            // No writer arm — bodyless (`MessageBuffer.cs:937` TrySendData(129)).
+            Self::FinishedConnecting => w,
+            // `NetMessage.cs:1587-1590`: (byte)player + bool.
+            Self::CountsAsHost(c) => w.u8(c.player_id).bool(c.counts_as_host),
+            // `NetMessage.cs:1611-1623`: (byte)kind + the kind's tail.
+            Self::ShimmerAction(a) => match *a {
+                ShimmerAction::Effect { x, y } => w.u8(0).f32(x).f32(y),
+                ShimmerAction::CoinLuck { x, y, amount } => {
+                    w.u8(1).f32(x).f32(y).i32(amount)
+                }
+                ShimmerAction::Unknown(k) => w.u8(k),
+            },
+            // `NetMessage.cs:1643-1645`: (byte)player only.
+            Self::ItemUseSound { player_id } => w.u8(*player_id),
+            // `NetMessage.cs:1666-1672`: (short)slot + Vector2 position.
+            Self::ItemPosition(p) => w.i16(p.slot).f32(p.x).f32(p.y),
+            // `NetMessage.cs:1458-1474` — the shared doll writer (the relay
+            // re-derives the tail from the live doll, `MessageBuffer.cs:3938`).
+            Self::DisplayDollSync(d) => write_doll_sync(d, w),
+            // `NetMessage.cs:1475-1478`: int entityId + (byte)player.
+            Self::TileEntityInteraction(t) => w.i32(t.entity_id).u8(t.player_id),
+            // `NetMessage.cs:1489-1508` — the folded slot + WriteItem (the
+            // relay re-folds the dye flag, `MessageBuffer.cs:4019`).
+            Self::HatRackItemSync(h) => h
+                .item
+                .write_slot(w.u8(h.player_id).i32(h.entity_id).u8(h.wire_slot)),
+            // `SendData` has no case 162 — the bare id is the whole frame.
+            Self::NpcStrikeAck => w,
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -5022,14 +5604,6 @@ impl S2c {
                 player_id: r.u8()?,
             },
 
-            // `MessageBuffer.cs:4060-4064` — owner, x, y, hits, type.
-            id::GOLF_BALL_IN_CUP => Self::GolfBallInCup(GolfBallInCup {
-                owner: r.u8()?,
-                x: r.u16()?,
-                y: r.u16()?,
-                hits: r.u16()?,
-                ball_type: r.u16()?,
-            }),
             // `MessageBuffer.cs:3795-3797` — type, count, player.
             id::MASS_WIRE_OPERATION_PAY => Self::MassWireOperationPay(MassWireOperationPay {
                 item_type: r.i16()?,
@@ -5304,6 +5878,104 @@ impl S2c {
                 number2: r.f32()?,
                 number3: r.f32()?,
             }),
+            // `MessageBuffer.cs:4051`: one raw (int) UniqueID.
+            id::REMOVE_REVENGE_MARKER => Self::RemoveRevengeMarker(RemoveRevengeMarker {
+                unique_id: r.i32()?,
+            }),
+            // `MessageBuffer.cs:4125-4131`: (ushort)npc, (byte)kind; kind 1
+            // appends (int)time + (short)fromWho.
+            id::TAMPER_WITH_NPC => {
+                let npc = r.u16()?;
+                let kind = r.u8()?;
+                let immune = if kind == 1 {
+                    Some((r.i32()?, r.i16()?))
+                } else {
+                    None
+                };
+                Self::TamperWithNpc(TamperWithNpc { npc, kind, immune })
+            }
+            // `MessageBuffer.cs:4166-4174`: the eight luck fields.
+            id::UPDATE_PLAYER_LUCK_FACTORS => {
+                Self::UpdatePlayerLuckFactors(UpdatePlayerLuckFactors::read_from(r)?)
+            }
+            // `MessageBuffer.cs:4210-4216`: exactly six (ushort)s, row-major.
+            id::CAVERN_MONSTER_TYPES => {
+                let mut types = [[0u16; 3]; 2];
+                for row in &mut types {
+                    for ty in row {
+                        *ty = r.u16()?;
+                    }
+                }
+                Self::CavernMonsterTypes(CavernMonsterTypes { types })
+            }
+            // `MessageBuffer.cs:4267-4271`: source, variation, velocity
+            // floats, then the position ints.
+            id::LUCY_POPUP => Self::LucyPopup(LucyPopup {
+                source: r.u8()?,
+                variation: r.u8()?,
+                velocity_x: r.f32()?,
+                velocity_y: r.f32()?,
+                x: r.i32()?,
+                y: r.i32()?,
+            }),
+            // `MessageBuffer.cs:4363-4368`: (byte)player, (short)target.
+            id::SPECTATE_PLAYER => Self::SpectatePlayer(SpectatePlayer {
+                player_id: r.u8()?,
+                target: r.i16()?,
+            }),
+            // `MessageBuffer.cs:4410-4411`: (byte)npc, (short)damage.
+            id::NPC_DEBUFF_DAMAGE => Self::NpcDebuffDamage(NpcDebuffDamage {
+                npc: r.u8()?,
+                damage: r.i16()?,
+            }),
+            // `MessageBuffer.cs:4075-4085`: no body.
+            id::FINISHED_CONNECTING => Self::FinishedConnecting,
+            // `MessageBuffer.cs:4233-4234`: (byte)player + bool.
+            id::COUNTS_AS_HOST => Self::CountsAsHost(CountsAsHost {
+                player_id: r.u8()?,
+                counts_as_host: r.bool()?,
+            }),
+            // `MessageBuffer.cs:4313-4325`: (byte)kind + the kind's tail.
+            id::SHIMMER_ACTIONS => Self::ShimmerAction(match r.u8()? {
+                0 => ShimmerAction::Effect {
+                    x: r.f32()?,
+                    y: r.f32()?,
+                },
+                1 => ShimmerAction::CoinLuck {
+                    x: r.f32()?,
+                    y: r.f32()?,
+                    amount: r.i32()?,
+                },
+                k => ShimmerAction::Unknown(k),
+            }),
+            // `MessageBuffer.cs:4388`: (byte)player.
+            id::ITEM_USE_SOUND => Self::ItemUseSound {
+                player_id: r.u8()?,
+            },
+            // `MessageBuffer.cs:4466-4467`: (short)slot + Vector2.
+            id::ITEM_POSITION => Self::ItemPosition(ItemPosition {
+                slot: r.i16()?,
+                x: r.f32()?,
+                y: r.f32()?,
+            }),
+            // `MessageBuffer.cs:3922-3935` — the shared doll read.
+            id::TE_DISPLAY_DOLL_SYNC => Self::DisplayDollSync(read_doll_sync(r)?),
+            // `MessageBuffer.cs:3944-3945`: ReadInt32 + ReadByte.
+            id::TE_INTERACTION_REQUEST => Self::TileEntityInteraction(TileEntityInteraction {
+                entity_id: r.i32()?,
+                player_id: r.u8()?,
+            }),
+            // `MessageBuffer.cs:3997-4016`: byte + int + byte slot + the
+            // 5-byte WriteItem tail (the refusal path reads int+byte, the
+            // same width).
+            id::TE_HAT_RACK_ITEM_SYNC => Self::HatRackItemSync(HatRackItemSync {
+                player_id: r.u8()?,
+                entity_id: r.i32()?,
+                wire_slot: r.u8()?,
+                item: TeItem::read_slot(r)?,
+            }),
+            // `MessageBuffer.cs:1819-1824`: no body.
+            id::NPC_STRIKE_ACK => Self::NpcStrikeAck,
             _ => return None,
         })
     }
@@ -6161,6 +6833,10 @@ pub struct Slot {
     pub sections: Vec<bool>,
     /// The grid width the latch is sized for (0 = not allocated yet).
     pub sections_w: i32,
+    /// The peer's remote IP (`Netplay.Clients[id].Socket.GetRemoteAddress()`,
+    /// `NetMessage.cs:2880`'s `DoesPlayerSlotCountAsAHost` input). `None`
+    /// until the accept records it. W4-g51 FINAL id-139.
+    pub peer_ip: Option<std::net::IpAddr>,
 }
 
 type Slots = Arc<Mutex<HashMap<u32, Slot>>>;
@@ -6217,6 +6893,9 @@ impl Server {
                 }
                 let id = next_id;
                 next_id += 1;
+                // The peer's remote IP — `DoesPlayerSlotCountAsAHost`'s
+                // `IsLocalHost` input (`NetMessage.cs:2880`, W4-g51 id-139).
+                let peer_ip = stream.peer_addr().ok().map(|a| a.ip());
                 let outbox = Arc::new(Outbox::new());
                 clients_accept
                     .lock()
@@ -6231,6 +6910,7 @@ impl Server {
                         inventory: HashMap::new(),
                         sections: Vec::new(),
                         sections_w: 0,
+                        peer_ip,
                     },
                 );
                 let Ok(mut reader) = stream.try_clone() else {
@@ -6328,6 +7008,25 @@ impl Server {
                 c.name = name;
             }
         }
+    }
+
+    /// `NetMessage.DoesPlayerSlotCountAsAHost` (`NetMessage.cs:2876-2883`):
+    /// `State == 10 && Socket.GetRemoteAddress().IsLocalHost()`. The C#
+    /// `TcpAddress.IsLocalHost` is `Address.Equals(IPAddress.Loopback)`
+    /// (`Net/TcpAddress.cs:23-26`) — exactly IPv4 127.0.0.1 (NOT the IPv6
+    /// loopback, NOT the whole 127/8 block). W4-g51 FINAL id-139.
+    pub fn slot_counts_as_host(&self, id: u32) -> bool {
+        self.slots
+            .lock()
+            .ok()
+            .and_then(|s| {
+                s.get(&id).map(|c| {
+                    c.state == slot_state::IN_WORLD
+                        && c.peer_ip
+                            == Some(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST))
+                })
+            })
+            .unwrap_or(false)
     }
 
     /// Stores one peer inventory slot — `Main.player[id].inventory[slot]`
@@ -10204,7 +10903,7 @@ mod tests {
     /// (`MessageBuffer.cs:3377-3393`).
     #[test]
     fn w4_g50_item_frame_try_placing_round_trips() {
-        let p = ItemFrameTryPlacing {
+        let p = TryPlacingItem {
             x: 120,
             y: 340,
             kind: 29,
@@ -11013,6 +11712,804 @@ mod tests {
             other => panic!("expected 94, got {:?}", other.msg_id()),
         }
     }
+
+    /// W4-g51: the `125 SyncTilePicking` body byte-pins the writer order
+    /// (`NetMessage.cs:1509-1514`: byte player, short x, short y, byte
+    /// damage) and round-trips both directions.
+    #[test]
+    fn w4_g51_tile_picking_round_trips() {
+        let p = TilePicking {
+            player_id: 3,
+            x: 120,
+            y: -45,
+            damage: 37,
+        };
+        let mut body = vec![3u8];
+        body.extend_from_slice(&120i16.to_le_bytes());
+        body.extend_from_slice(&(-45i16).to_le_bytes());
+        body.push(37);
+        let c = C2s::TilePicking(p).encode();
+        assert_eq!(c[2], 125);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::TilePicking(d) => assert_eq!(d, p),
+            other => panic!("expected 125, got {:?}", other.msg_id()),
+        }
+        let f = S2c::TilePicking(p).encode();
+        assert_eq!(f[2], 125);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TilePicking(d) => assert_eq!(d, p),
+            other => panic!("expected 125, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `127 RemoveRevengeMarker` body is one raw (int) UniqueID
+    /// (`NetMessage.cs:1518-1520`); S2c-only.
+    #[test]
+    fn w4_g51_remove_revenge_marker_round_trips() {
+        let f = S2c::RemoveRevengeMarker(RemoveRevengeMarker { unique_id: -7 }).encode();
+        assert_eq!(f[2], 127);
+        assert_eq!(&f[3..], &(-7i32).to_le_bytes());
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::RemoveRevengeMarker(d) => assert_eq!(d.unique_id, -7),
+            other => panic!("expected 127, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `128 LandGolfBallInCup` body byte-pins the writer's field
+    /// order (`NetMessage.cs:1521-1527`: owner, x, y, hits, type — NOT the
+    /// argument order) and round-trips both directions.
+    #[test]
+    fn w4_g51_golf_ball_in_cup_round_trips() {
+        let g = GolfBallInCup {
+            owner: 2,
+            x: 300,
+            y: 400,
+            hits: 3,
+            ball_type: 706,
+        };
+        let mut body = vec![2u8];
+        body.extend_from_slice(&300u16.to_le_bytes());
+        body.extend_from_slice(&400u16.to_le_bytes());
+        body.extend_from_slice(&3u16.to_le_bytes());
+        body.extend_from_slice(&706u16.to_le_bytes());
+        let c = C2s::GolfBallInCup(g).encode();
+        assert_eq!(c[2], 128);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::GolfBallInCup(d) => assert_eq!(d, g),
+            other => panic!("expected 128, got {:?}", other.msg_id()),
+        }
+        let f = S2c::GolfBallInCup(g).encode();
+        assert_eq!(f[2], 128);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::GolfBallInCup(d) => assert_eq!(d, g),
+            other => panic!("expected 128, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `130 FishOutNPC` body byte-pins the tile-coordinate order
+    /// (`NetMessage.cs:1528-1532`: ushort x, ushort y, short type); C2s-only.
+    #[test]
+    fn w4_g51_fish_out_npc_round_trips() {
+        let f = FishOutNpc {
+            tile_x: 100,
+            tile_y: 200,
+            npc_type: 682,
+        };
+        let mut body = Vec::new();
+        body.extend_from_slice(&100u16.to_le_bytes());
+        body.extend_from_slice(&200u16.to_le_bytes());
+        body.extend_from_slice(&682i16.to_le_bytes());
+        let c = C2s::FishOutNpc(f).encode();
+        assert_eq!(c[2], 130);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::FishOutNpc(d) => assert_eq!(d, f),
+            other => panic!("expected 130, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `131 TamperWithNPC` body byte-pins the kind-1 tail
+    /// (`NetMessage.cs:1533-1541`: ushort npc, byte kind, then int time +
+    /// short fromWho ONLY when kind==1); S2c-only. The bare kind-0 body
+    /// carries no tail.
+    #[test]
+    fn w4_g51_tamper_with_npc_round_trips() {
+        let t = TamperWithNpc {
+            npc: 7,
+            kind: 1,
+            immune: Some((20, -1)),
+        };
+        let mut body = Vec::new();
+        body.extend_from_slice(&7u16.to_le_bytes());
+        body.push(1);
+        body.extend_from_slice(&20i32.to_le_bytes());
+        body.extend_from_slice(&(-1i16).to_le_bytes());
+        let f = S2c::TamperWithNpc(t).encode();
+        assert_eq!(f[2], 131);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TamperWithNpc(d) => assert_eq!(d, t),
+            other => panic!("expected 131, got {:?}", other.msg_id()),
+        }
+        // The bare kind-0 body: no tail.
+        let bare = TamperWithNpc {
+            npc: 7,
+            kind: 0,
+            immune: None,
+        };
+        let g = S2c::TamperWithNpc(bare).encode();
+        assert_eq!(&g[3..], &[7, 0, 0]);
+        match S2c::decode(g[2], &mut NetReader::new(&g[3..])).expect("decode") {
+            S2c::TamperWithNpc(d) => assert_eq!(d, bare),
+            other => panic!("expected 131, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `134 UpdatePlayerLuckFactors` body byte-pins the eight
+    /// luck fields in writer order (`NetMessage.cs:1555-1567`) and
+    /// round-trips both directions.
+    #[test]
+    fn w4_g51_update_player_luck_factors_round_trips() {
+        let l = UpdatePlayerLuckFactors {
+            player_id: 2,
+            ladybug_luck_time_left: 3600,
+            torch_luck: 0.25,
+            luck_potion: 3,
+            has_garden_gnome_nearby: true,
+            broken_mirror_bad_luck: false,
+            equipment_based_luck_bonus: 0.05,
+            coin_luck: 1234.5,
+            kite_luck_level: 2,
+        };
+        let mut body = vec![2u8];
+        body.extend_from_slice(&3600i32.to_le_bytes());
+        body.extend_from_slice(&0.25f32.to_le_bytes());
+        body.push(3);
+        body.push(1); // gnome true
+        body.push(0); // mirror false
+        body.extend_from_slice(&0.05f32.to_le_bytes());
+        body.extend_from_slice(&1234.5f32.to_le_bytes());
+        body.push(2);
+        let c = C2s::UpdatePlayerLuckFactors(l).encode();
+        assert_eq!(c[2], 134);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::UpdatePlayerLuckFactors(d) => assert_eq!(d, l),
+            other => panic!("expected 134, got {:?}", other.msg_id()),
+        }
+        let f = S2c::UpdatePlayerLuckFactors(l).encode();
+        assert_eq!(f[2], 134);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::UpdatePlayerLuckFactors(d) => assert_eq!(d, l),
+            other => panic!("expected 134, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `136 SyncCavernMonsterType` body byte-pins the 2×3 grid
+    /// row-major (`NetMessage.cs:1572-1582`: six ushorts, outer i<2 inner
+    /// j<3); S2c-only.
+    #[test]
+    fn w4_g51_cavern_monster_types_round_trips() {
+        let c = CavernMonsterTypes {
+            types: [[1, 2, 3], [4, 5, 6]],
+        };
+        let mut body = Vec::new();
+        for row in &c.types {
+            for ty in row {
+                body.extend_from_slice(&ty.to_le_bytes());
+            }
+        }
+        let f = S2c::CavernMonsterTypes(c).encode();
+        assert_eq!(f[2], 136);
+        assert_eq!(&f[3..], &body);
+        assert_eq!(body.len(), 12, "six ushorts");
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::CavernMonsterTypes(d) => assert_eq!(d, c),
+            other => panic!("expected 136, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `137 RequestNPCBuffRemoval` body byte-pins the slot+buff
+    /// pair (`NetMessage.cs:1583-1586`: short npc, ushort buff); C2s-only.
+    #[test]
+    fn w4_g51_npc_buff_removal_request_round_trips() {
+        let q = NpcBuffRemovalRequest {
+            npc: 7,
+            buff_type: 20,
+        };
+        let mut body = Vec::new();
+        body.extend_from_slice(&7i16.to_le_bytes());
+        body.extend_from_slice(&20u16.to_le_bytes());
+        let c = C2s::NpcBuffRemovalRequest(q).encode();
+        assert_eq!(c[2], 137);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::NpcBuffRemovalRequest(d) => assert_eq!(d, q),
+            other => panic!("expected 137, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51 f21 cross-check: the bodyless `129 FinishedConnecting` (S2c) and
+    /// `138 ClientSyncedInventory` (C2s) are bare 3-byte frames; the deprecated
+    /// `145`/`148` are census constants with no variant.
+    #[test]
+    fn w4_g51_f21_bodyless_and_deprecated_ids() {
+        let f = S2c::FinishedConnecting.encode();
+        assert_eq!(f.len(), 3);
+        assert_eq!(f[2], 129);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::FinishedConnecting => {}
+            other => panic!("expected 129, got {:?}", other.msg_id()),
+        }
+        let c = C2s::ClientSyncedInventory.encode();
+        assert_eq!(c.len(), 3);
+        assert_eq!(c[2], 138);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ClientSyncedInventory => {}
+            other => panic!("expected 138, got {:?}", other.msg_id()),
+        }
+        assert_eq!(id::SHIMMER_ITEMS_DEPRECATED, 145);
+        assert_eq!(id::ITEM_ENEMY_LOCK_DEPRECATED, 148);
+    }
+
+    /// W4-g51 f21 cross-check: `139 CountsAsHost` byte-pins the player+bool
+    /// pair (`NetMessage.cs:1587-1590`) and round-trips S2c.
+    #[test]
+    fn w4_g51_f21_counts_as_host_round_trips() {
+        for flag in [false, true] {
+            let c = CountsAsHost { player_id: 3, counts_as_host: flag };
+            let f = S2c::CountsAsHost(c).encode();
+            assert_eq!(f[2], 139);
+            assert_eq!(&f[3..], &[3u8, u8::from(flag)]);
+            match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                S2c::CountsAsHost(d) => assert_eq!(d, c),
+                other => panic!("expected 139, got {:?}", other.msg_id()),
+            }
+        }
+    }
+
+    /// W4-g51 f21 cross-check: `146 ShimmerAction`'s three shapes — kind 0
+    /// Vector2, kind 1 Vector2+int, unknown kind no tail
+    /// (`NetMessage.cs:1611-1623`).
+    #[test]
+    fn w4_g51_f21_shimmer_action_round_trips() {
+        let fx = ShimmerAction::Effect { x: 100.5, y: -20.25 };
+        let f = S2c::ShimmerAction(fx).encode();
+        assert_eq!(f[2], 146);
+        assert_eq!(f[3], 0);
+        assert_eq!(f.len(), 3 + 1 + 8);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ShimmerAction(d) => assert_eq!(d, fx),
+            other => panic!("expected 146, got {:?}", other.msg_id()),
+        }
+        let coin = ShimmerAction::CoinLuck { x: 1.0, y: 2.0, amount: 10000 };
+        let f = S2c::ShimmerAction(coin).encode();
+        assert_eq!(f[3], 1);
+        assert_eq!(f.len(), 3 + 1 + 8 + 4);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ShimmerAction(d) => assert_eq!(d, coin),
+            other => panic!("expected 146, got {:?}", other.msg_id()),
+        }
+        let f = S2c::ShimmerAction(ShimmerAction::Unknown(7)).encode();
+        assert_eq!(f.len(), 3 + 1, "unknown kind: no tail");
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ShimmerAction(d) => assert_eq!(d, ShimmerAction::Unknown(7)),
+            other => panic!("expected 146, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51 f21 cross-check: `152 ItemUseSound` is one player byte, both
+    /// directions (`NetMessage.cs:1643-1645`).
+    #[test]
+    fn w4_g51_f21_item_use_sound_round_trips() {
+        let c = C2s::ItemUseSound { player_id: 5 }.encode();
+        assert_eq!(c[2], 152);
+        assert_eq!(&c[3..], &[5u8]);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ItemUseSound { player_id } => assert_eq!(player_id, 5),
+            other => panic!("expected 152, got {:?}", other.msg_id()),
+        }
+        let f = S2c::ItemUseSound { player_id: 5 }.encode();
+        assert_eq!(f[2], 152);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemUseSound { player_id } => assert_eq!(player_id, 5),
+            other => panic!("expected 152, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51 f21 cross-check: `160 ItemPosition` byte-pins slot+Vector2 (no
+    /// velocity, `NetMessage.cs:1666-1672`) and round-trips S2c.
+    #[test]
+    fn w4_g51_f21_item_position_round_trips() {
+        let p = ItemPosition { slot: 399, x: 1234.5, y: -67.25 };
+        let mut body = Vec::new();
+        body.extend_from_slice(&399i16.to_le_bytes());
+        body.extend_from_slice(&1234.5f32.to_le_bytes());
+        body.extend_from_slice(&(-67.25f32).to_le_bytes());
+        let f = S2c::ItemPosition(p).encode();
+        assert_eq!(f[2], 160);
+        assert_eq!(&f[3..], &body);
+        assert_eq!(f.len(), 3 + 2 + 8, "no velocity");
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemPosition(d) => assert_eq!(d, p),
+            other => panic!("expected 160, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51 f21 cross-check: `161 HostToken` is a plain string, C2s
+    /// (`NetMessage.cs:1673-1675`); the empty token round-trips too.
+    #[test]
+    fn w4_g51_f21_host_token_round_trips() {
+        for token in ["secret-host-token".to_string(), String::new()] {
+            let c = C2s::HostToken(token.clone()).encode();
+            assert_eq!(c[2], 161);
+            match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+                C2s::HostToken(d) => assert_eq!(d, token),
+                other => panic!("expected 161, got {:?}", other.msg_id()),
+            }
+        }
+    }
+
+    // ---- W4-g51 FINAL: the 8 BIG ids' codec witnesses (f21 lifts) ----
+    // WRITTEN NOT RUN (code-only lane).
+
+    /// The TryPlacing quadruplet (89/123/133/149) shares ONE body — f21's
+    /// byte-equality pin: the four ids encode the SAME bytes for the same
+    /// `TryPlacingItem` (`NetMessage.cs:1297-1306`/`:1479-1488`/`:1545-1554`/
+    /// `:1629-1638`). The 89/123/133/149 readers are byte-identical too.
+    #[test]
+    fn w4_g51_try_placing_quadruplet_is_byte_equal() {
+        let p = TryPlacingItem {
+            x: 120,
+            y: 240,
+            kind: 29,
+            prefix: 81,
+            stack: 1,
+        };
+        let mut body = Vec::new();
+        body.extend_from_slice(&120i16.to_le_bytes());
+        body.extend_from_slice(&240i16.to_le_bytes());
+        body.extend_from_slice(&29i16.to_le_bytes());
+        body.push(81);
+        body.extend_from_slice(&1i16.to_le_bytes());
+        let frames = [
+            C2s::ItemFrameTryPlacing(p).encode(),
+            C2s::WeaponsRackTryPlacing(p).encode(),
+            C2s::FoodPlatterTryPlacing(p).encode(),
+            C2s::DeadCellsJarTryPlacing(p).encode(),
+        ];
+        let ids = [89u8, 123, 133, 149];
+        for (f, id) in frames.iter().zip(ids) {
+            assert_eq!(f[2], id);
+            assert_eq!(&f[3..], &body, "id {id} shares the 89 body");
+        }
+        // Each reader decodes its own id back to the same body.
+        assert!(matches!(
+            C2s::decode(123, &mut NetReader::new(&body)).unwrap(),
+            C2s::WeaponsRackTryPlacing(d) if d == p
+        ));
+        assert!(matches!(
+            C2s::decode(133, &mut NetReader::new(&body)).unwrap(),
+            C2s::FoodPlatterTryPlacing(d) if d == p
+        ));
+        assert!(matches!(
+            C2s::decode(149, &mut NetReader::new(&body)).unwrap(),
+            C2s::DeadCellsJarTryPlacing(d) if d == p
+        ));
+    }
+
+    /// `121 TEDisplayDollDataSync`: the command-keyed tail — command 2 is
+    /// the pose byte, commands 0/1/3 are the STACK-BEFORE-PREFIX slot triple
+    /// (`TEDisplayDoll.cs:758-764`). The dummy fallback is byte-width-
+    /// identical, so it decodes as the real shape (`DollSyncData::Dummy` is
+    /// writer-side only). Both directions.
+    #[test]
+    fn w4_g51_display_doll_sync_round_trips() {
+        // command 2 (pose): header + one pose byte.
+        let pose = DisplayDollSync {
+            player_id: 3,
+            entity_id: 77,
+            item_index: 0,
+            command: 2,
+            data: DollSyncData::Pose(5),
+        };
+        let f = C2s::DisplayDollSync(pose).encode();
+        assert_eq!(f[2], 121);
+        // byte player + int id + byte idx + byte cmd + byte pose = 8 bytes.
+        assert_eq!(f.len(), 3 + 1 + 4 + 1 + 1 + 1);
+        assert_eq!(f[3], 3);
+        assert_eq!(&f[4..8], &77i32.to_le_bytes());
+        assert_eq!(f[10], 2);
+        assert_eq!(f[11], 5);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+            C2s::DisplayDollSync(d) => assert_eq!(d, pose),
+            other => panic!("expected 121, got {:?}", other.msg_id()),
+        }
+        // command 0 (equip slot): the WriteItem order type+stack+prefix.
+        let item = DisplayDollSync {
+            player_id: 3,
+            entity_id: 77,
+            item_index: 4,
+            command: 0,
+            data: DollSyncData::Item(TeItem {
+                kind: 100,
+                prefix: 81,
+                stack: 1,
+            }),
+        };
+        let f = S2c::DisplayDollSync(item).encode();
+        assert_eq!(f[2], 121);
+        // header 7 + ushort type + ushort stack + byte prefix = 12 bytes.
+        assert_eq!(f.len(), 3 + 7 + 5);
+        assert_eq!(&f[10..12], &100u16.to_le_bytes());
+        assert_eq!(&f[12..14], &1u16.to_le_bytes());
+        assert_eq!(f[14], 81);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+            S2c::DisplayDollSync(d) => assert_eq!(d, item),
+            other => panic!("expected 121, got {:?}", other.msg_id()),
+        }
+        // The dummy fallback (command 0): int 0 + byte 0 — decodes as an
+        // air slot (the byte widths match WriteItem).
+        let dummy = DisplayDollSync {
+            player_id: 0,
+            entity_id: -1,
+            item_index: 0,
+            command: 0,
+            data: DollSyncData::Dummy,
+        };
+        let f = C2s::DisplayDollSync(dummy).encode();
+        assert_eq!(f.len(), 3 + 7 + 5);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+            C2s::DisplayDollSync(d) => {
+                assert!(matches!(d.data, DollSyncData::Item(it) if it.is_air()));
+            }
+            other => panic!("expected 121, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `122 RequestTileEntityInteraction`: int entityId + byte player; -1
+    /// clears. Both directions (`NetMessage.cs:1475-1478`).
+    #[test]
+    fn w4_g51_te_interaction_round_trips() {
+        for entity_id in [42i32, -1] {
+            let t = TileEntityInteraction {
+                entity_id,
+                player_id: 2,
+            };
+            let mut body = Vec::new();
+            body.extend_from_slice(&entity_id.to_le_bytes());
+            body.push(2);
+            let c = C2s::TileEntityInteraction(t).encode();
+            assert_eq!(c[2], 122);
+            assert_eq!(&c[3..], &body);
+            match C2s::decode(c[2], &mut NetReader::new(&c[3..])).unwrap() {
+                C2s::TileEntityInteraction(d) => assert_eq!(d, t),
+                other => panic!("expected 122, got {:?}", other.msg_id()),
+            }
+            let f = S2c::TileEntityInteraction(t).encode();
+            assert_eq!(f[2], 122);
+            assert_eq!(&f[3..], &body);
+            match S2c::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+                S2c::TileEntityInteraction(d) => assert_eq!(d, t),
+                other => panic!("expected 122, got {:?}", other.msg_id()),
+            }
+        }
+    }
+
+    /// `124 TEHatRackItemSync`: the +2 dye fold/unfold + the STACK-BEFORE-
+    /// PREFIX WriteItem tail (`NetMessage.cs:1489-1508`,
+    /// `MessageBuffer.cs:4005-4009`). Both directions.
+    #[test]
+    fn w4_g51_hat_rack_item_sync_round_trips_and_folds() {
+        // wire slot 3 = dye slot 1 (the +2 fold).
+        let h = HatRackItemSync {
+            player_id: 1,
+            entity_id: 9,
+            wire_slot: 3,
+            item: TeItem {
+                kind: 3454,
+                prefix: 0,
+                stack: 1,
+            },
+        };
+        assert!(h.is_dye());
+        assert_eq!(h.slot_index(), 1);
+        let f = C2s::HatRackItemSync(h).encode();
+        assert_eq!(f[2], 124);
+        // byte player + int id + byte slot + ushort type + ushort stack +
+        // byte prefix = 1+4+1+5 = 11 bytes.
+        assert_eq!(f.len(), 3 + 11);
+        assert_eq!(f[3], 1);
+        assert_eq!(&f[4..8], &9i32.to_le_bytes());
+        assert_eq!(f[8], 3);
+        assert_eq!(&f[9..11], &3454u16.to_le_bytes());
+        assert_eq!(&f[11..13], &1u16.to_le_bytes());
+        assert_eq!(f[13], 0);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+            C2s::HatRackItemSync(d) => assert_eq!(d, h),
+            other => panic!("expected 124, got {:?}", other.msg_id()),
+        }
+        // wire slot 0 = item slot 0 (no fold).
+        let item = HatRackItemSync {
+            wire_slot: 0,
+            ..h
+        };
+        assert!(!item.is_dye());
+        assert_eq!(item.slot_index(), 0);
+        let f = S2c::HatRackItemSync(item).encode();
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+            S2c::HatRackItemSync(d) => assert_eq!(d, item),
+            other => panic!("expected 124, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `144 RequestQuestEffect` is bodyless (NO writer case, the host reads
+    /// nothing — `MessageBuffer.cs:4304-4309`). C2s-only.
+    #[test]
+    fn w4_g51_request_quest_effect_is_bodyless() {
+        let f = C2s::RequestQuestEffect.encode();
+        assert_eq!(f.len(), 3, "the bare 3-byte frame");
+        assert_eq!(f[2], 144);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+            C2s::RequestQuestEffect => {}
+            other => panic!("expected 144, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `156 TELeashedEntityAnchorPlaceItem`: three shorts x/y/itemType
+    /// (`NetMessage.cs:1654-1658`). C2s-only.
+    #[test]
+    fn w4_g51_leashed_anchor_place_item_round_trips() {
+        let p = LeashedAnchorPlaceItem {
+            x: 50,
+            y: 60,
+            item_type: 3034,
+        };
+        let mut body = Vec::new();
+        body.extend_from_slice(&50i16.to_le_bytes());
+        body.extend_from_slice(&60i16.to_le_bytes());
+        body.extend_from_slice(&3034i16.to_le_bytes());
+        let f = C2s::LeashedAnchorPlaceItem(p).encode();
+        assert_eq!(f[2], 156);
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+            C2s::LeashedAnchorPlaceItem(d) => assert_eq!(d, p),
+            other => panic!("expected 156, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `86 TileEntitySharing`: int id + bool present + the networkSend
+    /// record; the absent shape carries no record (`NetMessage.cs:1216-1225`,
+    /// `MessageBuffer.cs:3278-3291`). S2c-only.
+    #[test]
+    fn w4_g51_tile_entity_sharing_round_trips() {
+        // A live item-frame record: type 1 + x + y + the raw triple.
+        let e = tr_core::tile_entities::TileEntity {
+            id: 0,
+            x: 10,
+            y: 20,
+            kind: tr_core::tile_entities::TeKind::ItemFrame,
+            data: tr_core::tile_entities::TeData::Item(Some(tr_core::tile_entities::TeItem {
+                kind: 29,
+                prefix: 81,
+                stack: 1,
+            })),
+        };
+        let mut w = tr_core::binio::Writer::new();
+        e.write_net(&mut w);
+        let record = w.into_inner();
+        let t = TileEntitySharing {
+            id: 5,
+            record: record.clone(),
+        };
+        let f = S2c::TileEntitySharing(t.clone()).encode();
+        assert_eq!(f[2], 86);
+        assert_eq!(&f[3..7], &5i32.to_le_bytes());
+        assert_eq!(f[7], 1); // present
+        assert_eq!(&f[8..], &record);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+            S2c::TileEntitySharing(d) => assert_eq!(d, t),
+            other => panic!("expected 86, got {:?}", other.msg_id()),
+        }
+        // The removal shape: present false, no record.
+        let gone = TileEntitySharing {
+            id: 5,
+            record: Vec::new(),
+        };
+        let f = S2c::TileEntitySharing(gone.clone()).encode();
+        assert_eq!(f.len(), 3 + 4 + 1);
+        assert_eq!(f[7], 0);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+            S2c::TileEntitySharing(d) => assert_eq!(d, gone),
+            other => panic!("expected 86, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `87 TileEntityPlacement`: short x + short y + byte type
+    /// (`NetMessage.cs:1227-1231`). C2s-only.
+    #[test]
+    fn w4_g51_tile_entity_placement_round_trips() {
+        let p = TileEntityPlacement {
+            x: 10,
+            y: 20,
+            kind: 1,
+        };
+        let f = C2s::TileEntityPlacement(p).encode();
+        assert_eq!(f[2], 87);
+        assert_eq!(&f[3..5], &10i16.to_le_bytes());
+        assert_eq!(&f[5..7], &20i16.to_le_bytes());
+        assert_eq!(f[7], 1);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).unwrap() {
+            C2s::TileEntityPlacement(d) => assert_eq!(d, p),
+            other => panic!("expected 87, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `141 LucyTheAxeMessage` body byte-pins the swapped-pair
+    /// trap (`NetMessage.cs:1595-1602`: source, variation, the velocity
+    /// floats BEFORE the position ints) and round-trips both directions.
+    #[test]
+    fn w4_g51_lucy_popup_round_trips() {
+        let l = LucyPopup {
+            source: 2,
+            variation: 5,
+            velocity_x: 1.5,
+            velocity_y: -2.0,
+            x: 100,
+            y: 200,
+        };
+        let mut body = vec![2u8, 5];
+        body.extend_from_slice(&1.5f32.to_le_bytes());
+        body.extend_from_slice(&(-2.0f32).to_le_bytes());
+        body.extend_from_slice(&100i32.to_le_bytes());
+        body.extend_from_slice(&200i32.to_le_bytes());
+        let c = C2s::LucyPopup(l).encode();
+        assert_eq!(c[2], 141);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::LucyPopup(d) => assert_eq!(d, l),
+            other => panic!("expected 141, got {:?}", other.msg_id()),
+        }
+        let f = S2c::LucyPopup(l).encode();
+        assert_eq!(f[2], 141);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::LucyPopup(d) => assert_eq!(d, l),
+            other => panic!("expected 141, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51 id-140: the `140` C2s twin (kinds 1/2, the client's town-slime
+    /// transform requests) byte-pins the kind byte + int value
+    /// (`NetMessage.cs:1591-1594`) and round-trips — the same body the S2c
+    /// kind-0 credits arm carries.
+    #[test]
+    fn w4_g51_misc_event_value_c2s_round_trips() {
+        for (kind, value) in [(1u8, 7i32), (2, 12), (0, 28800)] {
+            let v = MiscEventValue { kind, value };
+            let mut body = vec![kind];
+            body.extend_from_slice(&value.to_le_bytes());
+            let c = C2s::MiscEventValue(v).encode();
+            assert_eq!(c[2], 140);
+            assert_eq!(&c[3..], &body);
+            match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+                C2s::MiscEventValue(d) => assert_eq!(d, v),
+                other => panic!("expected 140, got {:?}", other.msg_id()),
+            }
+        }
+    }
+
+    /// W4-g51: the `143 CrystalInvasionSkip` frame is bodyless — a bare
+    /// 3-byte frame (length 3, id 143, no body; `DD2Event.cs:1790`).
+    #[test]
+    fn w4_g51_crystal_invasion_skip_is_bodyless() {
+        let c = C2s::CrystalInvasionSkip.encode();
+        assert_eq!(c.len(), 3, "the bare 3-byte frame");
+        assert_eq!(c[2], 143);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::CrystalInvasionSkip => {}
+            other => panic!("expected 143, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `150 SpectatePlayer` body byte-pins the player+target
+    /// pair (`NetMessage.cs:1639-1642`: byte player, short target; -1 stops)
+    /// and round-trips both directions.
+    #[test]
+    fn w4_g51_spectate_player_round_trips() {
+        let s = SpectatePlayer {
+            player_id: 3,
+            target: -1,
+        };
+        let mut body = vec![3u8];
+        body.extend_from_slice(&(-1i16).to_le_bytes());
+        let c = C2s::SpectatePlayer(s).encode();
+        assert_eq!(c[2], 150);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::SpectatePlayer(d) => assert_eq!(d, s),
+            other => panic!("expected 150, got {:?}", other.msg_id()),
+        }
+        let f = S2c::SpectatePlayer(s).encode();
+        assert_eq!(f[2], 150);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::SpectatePlayer(d) => assert_eq!(d, s),
+            other => panic!("expected 150, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `153 NPCDebuffDamage` body byte-pins the slot+damage pair
+    /// (`NetMessage.cs:1646-1649`: byte npc, short damage); S2c-only.
+    #[test]
+    fn w4_g51_npc_debuff_damage_round_trips() {
+        let d = NpcDebuffDamage { npc: 7, damage: 50 };
+        let mut body = vec![7u8];
+        body.extend_from_slice(&50i16.to_le_bytes());
+        let f = S2c::NpcDebuffDamage(d).encode();
+        assert_eq!(f[2], 153);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::NpcDebuffDamage(x) => assert_eq!(x, d),
+            other => panic!("expected 153, got {:?}", other.msg_id()),
+        }
+    }
+
+
+    /// W4-g51: the `158 ExtraSpawnLoaded` body is one byte
+    /// (`NetMessage.cs:1659-1661`); S2c-only.
+    #[test]
+    fn w4_g51_extra_spawn_loaded_round_trips() {
+        let f = S2c::ExtraSpawnLoaded { player_id: 4 }.encode();
+        assert_eq!(f[2], 158);
+        assert_eq!(&f[3..], &[4]);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ExtraSpawnLoaded { player_id } => assert_eq!(player_id, 4),
+            other => panic!("expected 158, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `159 RequestSection` body byte-pins the two section
+    /// indices (`NetMessage.cs:1662-1665` writes shorts, the reader reads
+    /// ushorts — same bytes for non-negative indices); C2s-only.
+    #[test]
+    fn w4_g51_section_request_round_trips() {
+        let mut body = Vec::new();
+        body.extend_from_slice(&21u16.to_le_bytes());
+        body.extend_from_slice(&7u16.to_le_bytes());
+        let c = C2s::SectionRequest {
+            section_x: 21,
+            section_y: 7,
+        }
+        .encode();
+        assert_eq!(c[2], 159);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::SectionRequest {
+                section_x,
+                section_y,
+            } => assert_eq!((section_x, section_y), (21, 7)),
+            other => panic!("expected 159, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `162 DamageNPCAck` frame is bodyless — a bare 3-byte
+    /// frame (`SendData` has no case 162; `MessageBuffer.cs:1819-1824`).
+    #[test]
+    fn w4_g51_npc_strike_ack_is_bodyless() {
+        let f = S2c::NpcStrikeAck.encode();
+        assert_eq!(f.len(), 3, "the bare 3-byte frame");
+        assert_eq!(f[2], 162);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::NpcStrikeAck => {}
+            other => panic!("expected 162, got {:?}", other.msg_id()),
+        }
+    }
 }
 
 /// `msg 119 CombatTextString`'s body (`NetMessage.cs:1188-1196`, W4-g50):
@@ -11235,20 +12732,6 @@ impl ItemTweaker {
         }
         Some(t)
     }
-}
-
-/// `msg 89 ItemFrameTryPlacing`'s body (`NetMessage.cs:1297-1306`, W4-g50):
-/// `(short)` x, `(short)` y, `(short)` the item type, `(byte)` prefix,
-/// `(short)` stack. The host runs `TEItemFrame.TryPlacing` under
-/// `Item.DefaultAssignNewItemsToPlayer(whoAmI)` (`MessageBuffer.cs:3377-
-/// 3393`): place the item in the frame at (x, y), dropping any old contents.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ItemFrameTryPlacing {
-    pub x: i16,
-    pub y: i16,
-    pub kind: i16,
-    pub prefix: u8,
-    pub stack: i16,
 }
 
 /// `msg 91 SyncEmoteBubble`'s body (`NetMessage.cs:1307-1320`): the bubble
@@ -11861,4 +13344,400 @@ pub struct DevCommands {
     pub number: i32,
     pub number2: f32,
     pub number3: f32,
+}
+
+/// `msg 127 RemoveRevengeMarker`'s body (`NetMessage.cs:1518-1520`): one raw
+/// `(int)` — the marker's `UniqueID`. The dedicated server sends it when a
+/// marker spawns its enemy or expires/goes invalid
+/// (`CoinLossRevengeSystem.cs:451`/`:473`/`:477`, all `Main.dedServ` gates);
+/// the client destroys the marker (`MessageBuffer.cs:4049-4057`). The `126`
+/// marker's twin (wave A). Server→client only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RemoveRevengeMarker {
+    pub unique_id: i32,
+}
+
+/// `msg 130 FishOutNPC`'s body (`NetMessage.cs:1528-1532`): `(ushort)` tile
+/// x, `(ushort)` tile y, `(short)` npc type. The host multiplies both
+/// coordinates by 16 and `NPC.NewNPC`s the type (`MessageBuffer.cs:4104-4110`);
+/// type 682 (Red Slime) also flips `NPC.unlockedSlimeRedSpawn` once and
+/// re-pushes `7 WorldData` (`:4095-4103`). The wire carries TILE coordinates
+/// — the sender already divided by 16 (`Player.cs:52425`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FishOutNpc {
+    pub tile_x: u16,
+    pub tile_y: u16,
+    pub npc_type: i16,
+}
+
+/// `msg 131 TamperWithNPC`'s body (`NetMessage.cs:1533-1541`): `(ushort)` npc
+/// slot, `(byte)` kind; kind 1 appends `(int)` immune time + `(short)`
+/// fromWho. The client's kind-1 arm calls `GetImmuneTime(time, fromWho)`
+/// (`MessageBuffer.cs:4128-4131`); a slot ≥ `Main.maxNPCs` tames a throwaway
+/// `new NPC()` instead (`:4127`). The only send site is the 485 statue-break
+/// 582 spawn's `GetImmuneTime(-1, 20)` (`WorldGen.cs:48373-48376`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TamperWithNpc {
+    pub npc: u16,
+    pub kind: u8,
+    /// Present only when `kind == 1` (the `(int)` time + `(short)` fromWho).
+    pub immune: Option<(i32, i16)>,
+}
+
+/// `msg 134 UpdatePlayerLuckFactors`'s body (`NetMessage.cs:1555-1567`):
+/// `(byte)number`, then the eight `Player` luck fields in writer order —
+/// `ladyBugLuckTimeLeft` (int, `Player.cs:3084`), `torchLuck` (float,
+/// `:3062`), `luckPotion` (byte, `:1134`), `HasGardenGnomeNearby` (bool,
+/// `:2076`), `brokenMirrorBadLuck` (bool, `:2078`),
+/// `equipmentBasedLuckBonus` (float, `:2774`), `coinLuck` (float, `:3092`),
+/// `kiteLuckLevel` (byte, `:3094`). The reader mirrors the order
+/// (`MessageBuffer.cs:4166-4174`) and applies + `RecalculateLuck` (`:4188`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct UpdatePlayerLuckFactors {
+    pub player_id: u8,
+    pub ladybug_luck_time_left: i32,
+    pub torch_luck: f32,
+    pub luck_potion: u8,
+    pub has_garden_gnome_nearby: bool,
+    pub broken_mirror_bad_luck: bool,
+    pub equipment_based_luck_bonus: f32,
+    pub coin_luck: f32,
+    pub kite_luck_level: u8,
+}
+
+impl UpdatePlayerLuckFactors {
+    fn write_to(&self, w: NetWriter) -> NetWriter {
+        w.u8(self.player_id)
+            .i32(self.ladybug_luck_time_left)
+            .f32(self.torch_luck)
+            .u8(self.luck_potion)
+            .bool(self.has_garden_gnome_nearby)
+            .bool(self.broken_mirror_bad_luck)
+            .f32(self.equipment_based_luck_bonus)
+            .f32(self.coin_luck)
+            .u8(self.kite_luck_level)
+    }
+
+    fn read_from(r: &mut NetReader) -> Option<Self> {
+        Some(Self {
+            player_id: r.u8()?,
+            ladybug_luck_time_left: r.i32()?,
+            torch_luck: r.f32()?,
+            luck_potion: r.u8()?,
+            has_garden_gnome_nearby: r.bool()?,
+            broken_mirror_bad_luck: r.bool()?,
+            equipment_based_luck_bonus: r.f32()?,
+            coin_luck: r.f32()?,
+            kite_luck_level: r.u8()?,
+        })
+    }
+}
+
+/// `msg 136 SyncCavernMonsterType`'s body (`NetMessage.cs:1572-1582`): the
+/// 2×3 `NPC.cavernMonsterType` grid (`NPC.cs:6585`, allocated `new int[2, 3]`
+/// at `:95268`) written row-major as six `(ushort)`s — outer loop `i < 2`,
+/// inner `j < 3`. The client stores them verbatim (`MessageBuffer.cs:4210-4216`);
+/// the join push is `MessageBuffer.cs:870`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CavernMonsterTypes {
+    /// `[i][j]`, row-major — the C#'s `int[2, 3]` narrowed to the wire's
+    /// `ushort` (the values are npc types, `NPC.cs:18123-18129`).
+    pub types: [[u16; 3]; 2],
+}
+
+/// `msg 137 RequestNPCBuffRemoval`'s body (`NetMessage.cs:1583-1586`):
+/// `(short)` npc slot + `(ushort)` buff type. The host gates the slot to
+/// `0..Main.maxNPCs` then runs `RequestBuffRemoval` (`MessageBuffer.cs:4222-4227`);
+/// the client sends it from `NPC.RequestBuffRemoval` behind the
+/// `BuffID.Sets.CanBeRemovedByNetMessage` gate (`NPC.cs:89987-89998`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NpcBuffRemovalRequest {
+    pub npc: i16,
+    pub buff_type: u16,
+}
+
+/// `msg 141 LucyTheAxeMessage`'s body (`NetMessage.cs:1595-1602`):
+/// `(byte)` message source, `(byte)` variation, the velocity floats, then
+/// `(int)` x, `(int)` y — the position ints come AFTER the velocity on the
+/// wire (`LucyAxeMessage.cs:133`'s send order). The client creates the
+/// popup via `CreateFromNet(source, variation, new Vector2(x, y), velocity)`
+/// (`MessageBuffer.cs:4278`); the host relays verbatim (`:4274`). Both
+/// directions.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LucyPopup {
+    pub source: u8,
+    pub variation: u8,
+    pub velocity_x: f32,
+    pub velocity_y: f32,
+    pub x: i32,
+    pub y: i32,
+}
+
+/// `msg 150 SpectatePlayer`'s body (`NetMessage.cs:1639-1642`):
+/// `(byte)number` the spectating player, `(short)number2` the target —
+/// -1 stops spectating (`MessageBuffer.cs:4372-4378`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpectatePlayer {
+    pub player_id: u8,
+    pub target: i16,
+}
+
+/// `msg 153 NPCDebuffDamage`'s body (`NetMessage.cs:1646-1649`): `(byte)` npc
+/// slot + `(short)` damage. BOTH sides apply `GetHurtByDebuff` and the host
+/// relays to the others (`MessageBuffer.cs:4410-4416`); the damage lands on
+/// `realLife` when set, the immortal gate skips the subtraction, and a
+/// life ≤ 0 is floored to 1 + a 9999 `StrikeNPCNoInteraction`
+/// (`NPC.cs:91864-91888`). Host-sent only (the electric-eel pulse,
+/// `NPC.cs:91853-91860`), so it is `S2c`-only like `97`/`98`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NpcDebuffDamage {
+    pub npc: u8,
+    pub damage: i16,
+}
+
+/// `msg 139 SetCountsAsHostForGameplay`'s body
+/// (`NetMessage.cs:1587-1590`): the player byte and `number2 == 1f` as a
+/// bool. The reader stores `Main.countsAsHostForGameplay[id]` when
+/// `netMode != 2` (`MessageBuffer.cs:4231-4236`) — the flag gates the
+/// host-side gameplay authority for a co-op peer. W4-g51 f21 cross-check.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CountsAsHost {
+    pub player_id: u8,
+    pub counts_as_host: bool,
+}
+
+/// `msg 146 ShimmerActions`'s body (`NetMessage.cs:1611-1623`): the kind
+/// byte, then kind 0 → `WriteVector2(number2, number3)` (the shimmer FX
+/// position); kind 1 → the Vector2 + `(int)number4` (the coin amount).
+/// Any other kind writes NOTHING after the byte (the switch has no
+/// default). The reader (`MessageBuffer.cs:4313-4325`) mirrors the two
+/// arms; unknown kinds read nothing. W4-g51 f21 cross-check.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ShimmerAction {
+    /// kind 0 — `WorldItem.ShimmerEffect(position)`
+    /// (`MessageBuffer.cs:4316`).
+    Effect { x: f32, y: f32 },
+    /// kind 1 — `AddCoinLuck(position, amount)` (`:4320-4322`).
+    CoinLuck { x: f32, y: f32, amount: i32 },
+    /// Any other kind byte — no tail on either side.
+    Unknown(u8),
+}
+
+/// `msg 160 ItemPosition`'s body (`NetMessage.cs:1666-1672`): the item
+/// slot `(short)` then `WriteVector2(worldItem.position)`. The reader
+/// (`MessageBuffer.cs:4466-4468`) snaps `Main.item[slot].position` when
+/// `netMode != 2` — the section-sweep position correction, no velocity.
+/// W4-g51 f21 cross-check.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ItemPosition {
+    pub slot: i16,
+    pub x: f32,
+    pub y: f32,
+}
+
+// ---- W4-g51 FINAL: the TE-family bodies (f21 codecs lifted) ----
+
+/// One `(short)type + (byte)prefix + (short)stack` item triple — the shape
+/// every tile-entity `WriteExtraData` uses for a non-air slot
+/// (`TEItemFrame.cs:42-44` and its five twins). The TryPlacing quadruplet's
+/// wire item; the doll/hat-rack `WriteItem` order is STACK BEFORE PREFIX
+/// (`write_slot`/`read_slot` below). W4-g51 FINAL (f21's `TeItem`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TeItem {
+    pub kind: i16,
+    pub prefix: u8,
+    pub stack: i16,
+}
+
+impl TeItem {
+    /// The `WriteExtraData` triple order: `(short)type + (byte)prefix +
+    /// (short)stack` (`TEItemFrame.cs:42-44` and its twins).
+    fn write_to(self, w: NetWriter) -> NetWriter {
+        w.i16(self.kind).u8(self.prefix).i16(self.stack)
+    }
+    fn read_from(r: &mut NetReader) -> Option<Self> {
+        Some(Self {
+            kind: r.i16()?,
+            prefix: r.u8()?,
+            stack: r.i16()?,
+        })
+    }
+    /// The `WriteItem` single-slot order: `(ushort)type + (ushort)stack +
+    /// (byte)prefix` — STACK BEFORE PREFIX, unlike the extra-data triple
+    /// (`TEDisplayDoll.cs:758-764`, `TEHatRack.cs:378-388`; the readers
+    /// `:766-770` / `:390-394` match).
+    fn write_slot(self, w: NetWriter) -> NetWriter {
+        w.u16(self.kind as u16).u16(self.stack as u16).u8(self.prefix)
+    }
+    fn read_slot(r: &mut NetReader) -> Option<Self> {
+        Some(Self {
+            kind: r.u16()? as i16,
+            stack: r.u16()? as i16,
+            prefix: r.u8()?,
+        })
+    }
+    /// C#'s `IsAir` (`Item.cs:385-394`): `type <= 0 || stack <= 0`.
+    pub fn is_air(self) -> bool {
+        self.kind <= 0 || self.stack <= 0
+    }
+}
+
+/// `msg 89 ItemFrameTryPlacing`'s body (`NetMessage.cs:1297-1306`): the
+/// tile as two `(short)`s, the held item's `(short)` type, its prefix
+/// byte, and the `(short)` stack (`number5` — always 1 at the send site,
+/// `TEItemFrame.cs:150`). The player/slot indices (`number4`/`number3`)
+/// select the item on the WRITER side only; they never ride the wire.
+/// The 123 WeaponsRack / 133 FoodPlatter / 149 DeadCellsJar twins share
+/// this exact shape (`NetMessage.cs:1479-1488`/`:1545-1554`/`:1629-1638`)
+/// — f21's byte-equality pin. W4-g51 FINAL.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TryPlacingItem {
+    pub x: i16,
+    pub y: i16,
+    pub kind: i16,
+    pub prefix: u8,
+    pub stack: i16,
+}
+
+/// The doll-sync tail (`TEDisplayDoll.WriteData`, `TEDisplayDoll.cs:780-800`
+/// / `WriteDummySync` `:824-833`): command 2 carries the pose byte;
+/// commands 0/1/3 carry one item triple from the equip/dye/misc array.
+/// The no-entity fallback (`Dummy`) writes a zero pose byte for command 2
+/// and `int 0 + byte 0` otherwise — the SAME byte widths as the real
+/// shapes (1, and 4+1 = 2+1+2 = 5), so a dummy frame decodes cleanly as
+/// `Pose(0)` / an air `TeItem` and the C# reader's `ReadDummySync`
+/// (`:835-844`) likewise just consumes and discards. `Dummy` is therefore
+/// a writer-side variant; decode always yields the real-doll shapes.
+/// W4-g51 FINAL (f21's `DollSyncData`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DollSyncData {
+    /// command 2 — the pose byte (`ReadPose`, `:846-849`).
+    Pose(u8),
+    /// commands 0 (equip) / 1 (dyes) / 3 (misc) — one item triple.
+    Item(TeItem),
+    /// The no-entity fallback (`WriteDummySync`): command 2 → one zero
+    /// byte; else `int 0 + byte 0`. Writer-side only (see above).
+    Dummy,
+}
+
+/// `msg 121 TEDisplayDollDataSync`'s body (`NetMessage.cs:1458-1474`):
+/// `(byte)player + int entityId + (byte)itemIndex + (byte)command`, then
+/// the doll's `WriteData(itemIndex, command)` when the entity exists,
+/// else `WriteDummySync`. The reader (`MessageBuffer.cs:3920-3941`)
+/// forces the player id to the sender on the host and relays.
+/// W4-g51 FINAL.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DisplayDollSync {
+    pub player_id: u8,
+    pub entity_id: i32,
+    pub item_index: u8,
+    /// 0 equip, 1 dyes, 2 pose, 3 misc (`TEDisplayDoll.cs:782-798`).
+    pub command: u8,
+    pub data: DollSyncData,
+}
+
+/// `msg 122 RequestTileEntityInteraction`'s body
+/// (`NetMessage.cs:1475-1478`): the entity `int` id (`-1` = clear the
+/// anchor) and the player byte. The host
+/// (`MessageBuffer.cs:3942-3977`) forces the player to the sender,
+/// refuses an occupied entity (`TileEntity.IsOccupied`) and relays; the
+/// client clears or sets the interaction anchor. W4-g51 FINAL.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TileEntityInteraction {
+    /// `-1` clears the anchor (`MessageBuffer.cs:3952-3956`).
+    pub entity_id: i32,
+    pub player_id: u8,
+}
+
+/// `msg 124 TEHatRackItemSync`'s body (`NetMessage.cs:1489-1508`):
+/// `(byte)player + int entityId + (byte)slot`, where the writer FOLDS the
+/// dye flag into the slot (`num4 += 2` when `number4 == 1f`, `:1492-1496`)
+/// and the reader UNFOLDS it (`>= 2` → dye, `-2`,
+/// `MessageBuffer.cs:4005-4009`). The tail is `TEHatRack.WriteItem`
+/// (`TEHatRack.cs:378-388`: ushort type + ushort stack + byte prefix) or
+/// the no-entity `int 0 + byte 0` fallback (`:1505-1506`) — again
+/// byte-width-identical (5), so the fallback decodes as an air slot.
+/// W4-g51 FINAL.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HatRackItemSync {
+    pub player_id: u8,
+    pub entity_id: i32,
+    /// The WIRE slot byte: 0/1 items, 2/3 dyes (the +2 fold).
+    pub wire_slot: u8,
+    pub item: TeItem,
+}
+
+impl HatRackItemSync {
+    /// The reader's unfold (`MessageBuffer.cs:4005-4009`): `>= 2` is a
+    /// dye slot, the index is `wire_slot - 2`.
+    pub fn is_dye(&self) -> bool {
+        self.wire_slot >= 2
+    }
+    pub fn slot_index(&self) -> u8 {
+        if self.wire_slot >= 2 {
+            self.wire_slot - 2
+        } else {
+            self.wire_slot
+        }
+    }
+}
+
+/// `msg 156 TELeashedEntityAnchorPlaceItem`'s body
+/// (`NetMessage.cs:1654-1658`): three `(short)`s — the anchor tile x, y
+/// and the item type. The reader (`MessageBuffer.cs:4439-4449`) builds
+/// the `Point16(x, y)`, looks up the `TELeashedEntityAnchorWithItem` and
+/// calls `InsertItem(itemType)` (which respawns the leashed entity,
+/// `TELeashedEntityAnchorWithItem.cs:32-36`). W4-g51 FINAL.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LeashedAnchorPlaceItem {
+    pub x: i16,
+    pub y: i16,
+    pub item_type: i16,
+}
+
+/// `121`'s shared writer (`NetMessage.cs:1458-1474`): the header then the
+/// command-keyed tail — `TEDisplayDoll.WriteData` (`TEDisplayDoll.cs:780-800`)
+/// for a real doll, `WriteDummySync` (`:824-833`) for the fallback.
+/// W4-g51 FINAL (f21's `write_doll_sync`).
+fn write_doll_sync(d: &DisplayDollSync, w: NetWriter) -> NetWriter {
+    let w = w
+        .u8(d.player_id)
+        .i32(d.entity_id)
+        .u8(d.item_index)
+        .u8(d.command);
+    match d.data {
+        DollSyncData::Pose(p) => w.u8(p),
+        DollSyncData::Item(i) => i.write_slot(w),
+        DollSyncData::Dummy => {
+            if d.command == 2 {
+                w.u8(0)
+            } else {
+                w.i32(0).u8(0)
+            }
+        }
+    }
+}
+
+/// `121`'s shared reader (`MessageBuffer.cs:3922-3935` →
+/// `TEDisplayDoll.ReadData` `:802-822` / `ReadDummySync` `:835-844`): the
+/// command byte keys the tail; the dummy shapes are byte-width-identical
+/// to the real ones, so both decode as the real shapes (see
+/// [`DollSyncData`]). W4-g51 FINAL (f21's `read_doll_sync`).
+fn read_doll_sync(r: &mut NetReader) -> Option<DisplayDollSync> {
+    let player_id = r.u8()?;
+    let entity_id = r.i32()?;
+    let item_index = r.u8()?;
+    let command = r.u8()?;
+    let data = if command == 2 {
+        DollSyncData::Pose(r.u8()?)
+    } else {
+        DollSyncData::Item(TeItem::read_slot(r)?)
+    };
+    Some(DisplayDollSync {
+        player_id,
+        entity_id,
+        item_index,
+        command,
+        data,
+    })
 }

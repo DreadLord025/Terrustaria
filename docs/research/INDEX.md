@@ -94,6 +94,7 @@ with f26's §7.3-assigned block and the UNIFIED FINAL (research/150
 §9.2, d54 `b243c7086`) re-assigns **310/318** — only the doc filenames
 renumber; the correction receipt appended AFTER
 the seal in research/17 (re-probe citations only, the seal stands).
+| 359 | W4-g51 SEAL: the net TE-family FINAL verification (the 8 BIG apply arms + 139 + 145/148; the g50 TE-store superset keep-one + the f21 byte-equal codec re-pin + the f30 dryad compose/995-row-dup; the net-121-family bible; registry §9.2 assignment 309→359, d125-KEEPS-309) | `359-g51-net-te-family-seal.md` | ✅ SEALED (code-only, witnesses WRITTEN NOT RUN) |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

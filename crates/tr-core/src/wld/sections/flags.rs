@@ -234,12 +234,12 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(false); // combatBookVolumeTwoWasUsed
     w.boolean(false); // peddlersSatchelWasUsed
     w.boolean(false); // unlockedSlimeGreenSpawn
-    w.boolean(false); // unlockedSlimeOldSpawn
+    w.boolean(world.unlocked_slime_old_spawn); // unlockedSlimeOldSpawn
     w.boolean(false); // unlockedSlimePurpleSpawn
     w.boolean(world.unlocked_slime_rainbow_spawn); // unlockedSlimeRainbowSpawn
     w.boolean(world.unlocked_slime_red_spawn); // unlockedSlimeRedSpawn
     w.boolean(false); // unlockedSlimeYellowSpawn
-    w.boolean(false); // unlockedSlimeCopperSpawn
+    w.boolean(world.unlocked_slime_copper_spawn); // unlockedSlimeCopperSpawn
     // WorldFile.cs:1416-1423: the moondial, the forced seasons and the secret
     // seeds — the seasons/seeds have no World store (the port's `micro_seeds`
     // bitmask rides the `.trwld` v12 tail only, `save.rs:382-383`); the two
@@ -632,10 +632,13 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         r.skip(1)?; // peddlersSatchelWasUsed
     }
     if version >= 261 {
-        r.skip(3)?; // unlockedSlimeGreen/Old/Purple
+        r.skip(1)?; // unlockedSlimeGreenSpawn
+        world.unlocked_slime_old_spawn = r.bool()?; // unlockedSlimeOldSpawn
+        r.skip(1)?; // unlockedSlimePurpleSpawn
         world.unlocked_slime_rainbow_spawn = r.bool()?; // unlockedSlimeRainbowSpawn
         world.unlocked_slime_red_spawn = r.bool()?; // unlockedSlimeRedSpawn
-        r.skip(2)?; // unlockedSlimeYellow/Copper
+        r.skip(1)?; // unlockedSlimeYellowSpawn
+        world.unlocked_slime_copper_spawn = r.bool()?; // unlockedSlimeCopperSpawn
     }
     // WorldFile.cs:2306-2319 — the moondial, the forced seasons, the secret seeds, the
     // meteor shower, the team spawns and the extra spawn points.

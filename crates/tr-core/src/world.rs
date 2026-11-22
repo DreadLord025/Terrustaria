@@ -305,6 +305,21 @@ pub struct World {
     /// 682 raises it; `Projectile.cs:20819`'s enemy roll gates on it) — the
     /// same Main-global standing-in (S1-P-i35).
     pub unlocked_slime_red_spawn: bool,
+    /// `NPC.unlockedSlimeOldSpawn` (`NPC.TransformElderSlime`,
+    /// `NPC.cs:19142-19147` — the 685 → 679 transform raises it once, then
+    /// re-pushes `7 WorldData`) — the same standing-in (W4-g51 id-140).
+    pub unlocked_slime_old_spawn: bool,
+    /// `NPC.unlockedSlimeCopperSpawn` (`NPC.TransformCopperSlime`,
+    /// `NPC.cs:19166-19171` — a `CanConvertIntoCopperSlimeTownNPC` NPC →
+    /// 684 raises it once) — the same standing-in (W4-g51 id-140).
+    pub unlocked_slime_copper_spawn: bool,
+    /// `CreditsRollEvent._creditsRollRemainingTime`
+    /// (`CreditsRollEvent.cs:10`) — the end-game credits roll's remaining
+    /// frames, clamped 0..28800 (`:8`'s MAX_TIME). A private static in the
+    /// C#; a world field is the port's standing-in (W4-g51 id-140). The
+    /// `140` kind-0 client arm writes it (`SetRemainingTimeDirect`,
+    /// `:45-48`); `UpdateTime` decrements (`:35-38`, `Main.cs:64968`).
+    pub credits_roll_remaining_time: i32,
     /// `NPC.combatBookWasUsed` (`WorldFile.cs`'s combatBookWasUsed flag;
     /// `FishingConditions.DidNotUseCombatBook` reads it, `Projectile.cs`'s
     /// `PrepareFishingContext` context) — the world-field standing-in
@@ -604,6 +619,15 @@ pub struct World {
     pub unique_id: [u8; 16],
     /// `Main.ActiveWorldFileData.WorldId` (`WorldFile.cs:1227`, footer `:1756`).
     pub world_id: i32,
+    /// `NPC.cavernMonsterType` (`NPC.cs:6585`, `new int[2, 3]` at `:95268`) —
+    /// the world-id-seeded cavern roster the deep-cavern spawn roll reads
+    /// (`NPC.cs:5099`'s `[rand.Next(2), rand.Next(3)]`). A `Main`-global in
+    /// the C#; a world field is the port's standing-in (the
+    /// `unlocked_slime_red_spawn` precedent). Rolled by
+    /// [`World::set_world_specific_monsters`] at the world-load tail
+    /// (`WorldFile.cs:771`); the `136 SyncCavernMonsterType` client arm
+    /// overwrites it verbatim (`MessageBuffer.cs:4210-4216`).
+    pub cavern_monster_type: [[i32; 3]; 2],
     /// `Main.ActiveWorldFileData.LastPlayed` as `DateTime.ToBinary` ticks
     /// (`WorldFile.cs:1251` write, `:2048`/`:313` read). 0 = unset/min.
     pub last_played: i64,
@@ -693,6 +717,9 @@ impl World {
             golem_fist_right_alive: false,
             unlocked_slime_rainbow_spawn: false,
             unlocked_slime_red_spawn: false,
+            unlocked_slime_old_spawn: false,
+            unlocked_slime_copper_spawn: false,
+            credits_roll_remaining_time: 0,
             combat_book_was_used: false,
             golem_vx: 0.0,
             slime_rain: false,
@@ -815,9 +842,59 @@ impl World {
             generator_version: 0,
             unique_id: [0u8; 16],
             world_id: 0,
+            cavern_monster_type: [[0; 3]; 2],
             last_played: 0,
             creation_time: 0,
         }
+    }
+
+    /// `NPC.SetWorldSpecificMonstersByWorldID` (`NPC.cs:18102-18134`): a
+    /// fresh `UnifiedRandom(Main.worldID)` picks two DISTINCT column bands
+    /// (`Next(3)` twice, re-rolling the first while equal — the re-roll
+    /// draws only `num`, `:18107-18110`), then each row's three cells roll
+    /// the band's range: 0 → `Next(494, 496)` (Crawdads), 1 →
+    /// `Next(496, 498)` (Giant Shellies), else `Next(498, 507)`
+    /// (Salamanders). Called at the world-load tail (`WorldFile.cs:771`).
+    pub fn set_world_specific_monsters(&mut self) {
+        let mut rng = crate::unified_random::UnifiedRandom::new(self.world_id);
+        let mut num = rng.next_max(3);
+        let num2 = rng.next_max(3);
+        while num == num2 {
+            num = rng.next_max(3);
+        }
+        for i in 0..2 {
+            let band = if i == 1 { num2 } else { num };
+            for j in 0..3 {
+                self.cavern_monster_type[i][j] = match band {
+                    0 => rng.next_range(494, 496),
+                    1 => rng.next_range(496, 498),
+                    _ => rng.next_range(498, 507),
+                };
+            }
+        }
+    }
+
+    /// `CreditsRollEvent.MAX_TIME_FOR_CREDITS_ROLL_IN_FRAMES`
+    /// (`CreditsRollEvent.cs:8`).
+    pub const CREDITS_ROLL_MAX_TIME: i32 = 28800;
+
+    /// `CreditsRollEvent.IsEventOngoing` (`CreditsRollEvent.cs:12`).
+    pub fn credits_roll_ongoing(&self) -> bool {
+        self.credits_roll_remaining_time > 0
+    }
+
+    /// `CreditsRollEvent.SetRemainingTimeDirect` (`CreditsRollEvent.cs:45-48`):
+    /// `Utils.Clamp(time, 0, 28800)` — the `140` kind-0 client arm.
+    pub fn set_credits_roll_remaining_time(&mut self, time: i32) {
+        self.credits_roll_remaining_time = time.clamp(0, Self::CREDITS_ROLL_MAX_TIME);
+    }
+
+    /// `CreditsRollEvent.UpdateTime` (`CreditsRollEvent.cs:35-38`):
+    /// `Clamp(remaining - 1, 0, 28800)` — one tick, called from
+    /// `Main.UpdateTime` (`Main.cs:64968`) regardless of the day rate.
+    pub fn tick_credits_roll(&mut self) {
+        self.credits_roll_remaining_time =
+            (self.credits_roll_remaining_time - 1).clamp(0, Self::CREDITS_ROLL_MAX_TIME);
     }
 
     /// `Main.IsFastForwardingTime` (`Main.cs:6160-6167`): a dial fast-forward is
@@ -1472,6 +1549,44 @@ impl World {
 
 #[cfg(test)]
 mod tests {
+    /// W4-g51 id-136: `NPC.SetWorldSpecificMonstersByWorldID`
+    /// (`NPC.cs:18102-18134`) — the two rows carry DISTINCT bands, every
+    /// cell lands in its band's range, and the roll is a pure function of
+    /// the world id (the same id replays the same grid).
+    #[test]
+    fn w4_g51_the_cavern_grid_rolls_two_distinct_bands_from_the_world_id() {
+        for id in [0i32, 1, 7, 4242, 0x1234_5678, -3] {
+            let mut w = super::World::new("t".into(), 8, 8);
+            w.world_id = id;
+            w.set_world_specific_monsters();
+            let band = |t: i32| match t {
+                494..=495 => 0,
+                496..=497 => 1,
+                498..=506 => 2,
+                _ => panic!("cell {t} outside every band range"),
+            };
+            let b0 = band(w.cavern_monster_type[0][0]);
+            let b1 = band(w.cavern_monster_type[1][0]);
+            assert_ne!(b0, b1, "id {id}: the two rows must differ");
+            for row in 0..2 {
+                for col in 0..3 {
+                    assert_eq!(
+                        band(w.cavern_monster_type[row][col]),
+                        if row == 0 { b0 } else { b1 },
+                        "id {id}: row {row} stays in its band"
+                    );
+                }
+            }
+            let mut again = super::World::new("t".into(), 8, 8);
+            again.world_id = id;
+            again.set_world_specific_monsters();
+            assert_eq!(
+                again.cavern_monster_type, w.cavern_monster_type,
+                "id {id}: the roll replays"
+            );
+        }
+    }
+
     #[test]
     fn surface_bg_style_tables_match_set_bg() {
         // Spot rows from `WorldGen.setBG`, including the `default:` rows and

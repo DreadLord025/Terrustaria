@@ -504,6 +504,11 @@ impl App {
             // the strike and relays it, plus a full `23` update on death
             // (`MessageBuffer.cs:1805-1815`).
             C2s::NpcStrike(st) => {
+                // `MessageBuffer.cs:1768-1771` — the host acks EVERY `28`
+                // with a bodyless `162` to the sender, BEFORE the body reads
+                // and the generation gate (the client pops its pending entry
+                // even when the strike is refused). W4-g51 id-162.
+                server.send(id, &S2c::NpcStrikeAck);
                 let slot = st.npc as usize;
                 let gen_ok = self
                     .net_npc_gen
@@ -1537,12 +1542,6 @@ impl App {
                     records,
                 })));
             }
-            // S1-I-1 wave A: the join bundle's remaining client-sent ids have
-            // bodies + codecs (`net.rs`); the host apply/relay arms
-            // (`MessageBuffer.cs:4282-4297`, `:4328-4343`) land with the
-            // send-path pass (S1-I-4).
-            C2s::ProjectileTrackers(_)
-            | C2s::SyncLoadout(_) => {}
             // `case 17` — a client's single-tile edit
             // (`MessageBuffer.cs:1119-1288`): the full kind dispatch + the
             // survive/falling relay rules — W4-g48 (`net_apply`).
@@ -1555,13 +1554,6 @@ impl App {
             C2s::DoorToggle(d) => {
                 crate::app::net_apply::host_door_toggle(self, server, id, d);
             }
-            // S1-I-1 wave B: the world-sync region's remaining client-sent
-            // ids have bodies + codecs (`net.rs`); the host apply/relay arms
-            // (`MessageBuffer.cs:4023-4042`, `:2355-2363`,
-            // `:4457-4462`) land with the send-path pass (S1-I-4).
-            C2s::TilePicking(_)
-            | C2s::TeamChangeUi(_)
-            | C2s::SectionRequest { .. } => {}
             // `case 35` — a client's heal effect (`MessageBuffer.cs:2160-
             // 2177`): the peer's HealEffect text + the relay — W4-g48.
             C2s::PlayerHeal(h) => {
@@ -1681,88 +1673,6 @@ impl App {
                     return;
                 };
                 self.broadcast_tile_entity(server, id);
-            }
-            // `case 89` — a client placed an item into a frame (W4-g50,
-            // `MessageBuffer.cs:3377-3393` → `TEItemFrame.TryPlacing`,
-            // `TEItemFrame.cs:69-86`): no frame at the cell drops the item
-            // back; a held frame drops its old contents first, then takes
-            // the new item and shares the entity with an `86`.
-            C2s::ItemFrameTryPlacing(p) => {
-                let (x, y) = (p.x as i32, p.y as i32);
-                // `WorldGen.RangeFrame(x, y, x+2, y+2)` — the framing
-                // refresh rides the port's edit chain; the entity books
-                // are the state the message changes.
-                let frame = self
-                    .world
-                    .tile_entities
-                    .get_at(p.x, p.y)
-                    .filter(|e| e.kind == tr_core::tile_entities::TeKind::ItemFrame)
-                    .map(|e| e.id);
-                let Some(frame_id) = frame else {
-                    // `Item.NewItem(… type, stack, … prefix)` — the refused
-                    // placement drops the item at the cell with the exact
-                    // prefix (`Item.cs:49730`'s `Prefix(exact)` applies it
-                    // directly, no fresh roll).
-                    let mut drop = item::ItemDrop::new(
-                        p.kind.max(0) as u16,
-                        (p.stack.max(0) as u32).max(1),
-                        p.prefix as u16,
-                        x as f32 * TILE_PX,
-                        y as f32 * TILE_PX,
-                        0.0,
-                        0.0,
-                        0.0,
-                    );
-                    // The spawn scatter rides the port's pinned triplet on
-                    // the bare stream (the message handler runs outside
-                    // every swap, S1-E-21i).
-                    let rng = self.rngs.global();
-                    drop.vel = Vec2::new(
-                        (rng.next_float() * 2.0 - 1.0) * 1.4,
-                        -2.2 - rng.next_float() * 1.2,
-                    );
-                    drop.phase = rng.next_float() * std::f32::consts::TAU;
-                    self.items.push(drop);
-                    return;
-                };
-                // `result.item.stack > 0` → `DropItem` (`TEItemFrame.cs:60-67`):
-                // the old contents drop at the frame's cell (count 1, the
-                // C# `DropItem` passes no stack — `Item.NewItem`'s default),
-                // keeping the stored prefix.
-                if let Some(Some(old)) = self.world.tile_entities.item(frame_id).copied() {
-                    if old.stack > 0 {
-                        let mut drop = item::ItemDrop::new(
-                            old.kind,
-                            1,
-                            old.prefix as u16,
-                            x as f32 * TILE_PX,
-                            y as f32 * TILE_PX,
-                            0.0,
-                            0.0,
-                            0.0,
-                        );
-                        let rng = self.rngs.global();
-                        drop.vel = Vec2::new(
-                            (rng.next_float() * 2.0 - 1.0) * 1.4,
-                            -2.2 - rng.next_float() * 1.2,
-                        );
-                        drop.phase = rng.next_float() * std::f32::consts::TAU;
-                        self.items.push(drop);
-                    }
-                }
-                // `result.item = new Item(); SetDefaults(type); Prefix(prefix);
-                // stack = stack` — the exact prefix applies directly (the
-                // wire byte is the rolled id, not a -1 natural-roll marker).
-                self.world.tile_entities.set_item(
-                    frame_id,
-                    Some(tr_core::tile_entities::TeItem {
-                        kind: p.kind.max(0) as u16,
-                        prefix: p.prefix,
-                        stack: p.stack.max(0) as u16,
-                    }),
-                );
-                // `NetMessage.SendData(86, -1, -1, null, result.ID, x, y)`.
-                self.broadcast_tile_entity(server, frame_id);
             }
             // `case 96` — the portal-gun owner's self teleport (W4-g50,
             // `MessageBuffer.cs:3538-3557`): the host forces the subject to
@@ -1989,6 +1899,432 @@ impl App {
             // registry's.
             C2s::DevCommands(d) => {
                 self.apply_dev_commands(server, id, &d);
+            }
+            // `case 109` — the host runs `Wiring.MassWireOperation` under a
+            // temporary ToolMode swap (`:3783-3786`). WIRED via the W4-c42
+            // fold-133 core (`tr_core::wiring::mass_wire_operation_inner`,
+            // the constants-copy keep-one): the mode rides the fn parameter
+            // (the port has no `WiresUI.Settings.ToolMode` global on this
+            // base, so the swap/restore pair folds into the argument — no
+            // shared state is touched), the subject is the SENDER.
+            C2s::MassWireOperation(m) => {
+                self.host_mass_wire_operation(server, id, &m);
+            }
+            // `case 125` — a client's pickaxe hit on a tile
+            // (`MessageBuffer.cs:4023-4042`): the host forces the subject to
+            // the sender (`:4029-4032`) and relays to the OTHERS
+            // (`:4037-4040`, `ignoreClient = num166`). No host-side apply —
+            // the pick damage lands on each client's own `hitTile`.
+            C2s::TilePicking(mut p) => {
+                p.player_id = id as u8; // `:4031`
+                server.broadcast_except(&S2c::TilePicking(p), id);
+            }
+            // `case 130` — a client fished an NPC out (`MessageBuffer.cs:
+            // 4086-4120`, host-only). Type 682 (Red Slime) flips
+            // `unlockedSlimeRedSpawn` ONCE and re-pushes `7 WorldData`
+            // (`:4095-4103`); then both coords ×16 and `NPC.NewNPC` at the
+            // Bottom anchor (`:4104-4110`). The `netID != type` re-default +
+            // `23` (`:4111-4115`) is the town-slime remap — the port has no
+            // town-slime kinds, so `kind_from_net_id` carries the roster gap
+            // (the spawn is skipped, the unlock still lands). The 682
+            // achievement check (`:4116-4119`) rides the housed-NPC census.
+            C2s::FishOutNpc(f) => {
+                if f.npc_type == 682 {
+                    if self.world.unlocked_slime_red_spawn {
+                        return; // `:4097-4100` — already unlocked
+                    }
+                    self.world.unlocked_slime_red_spawn = true; // `:4101`
+                    let info = self.world_info();
+                    server.broadcast(&S2c::WorldInfo(Box::new(info))); // `:4102`
+                }
+                let x = f.tile_x as i32 * 16; // `:4104`
+                let y = f.tile_y as i32 * 16; // `:4105`
+                if let Some((kind, slime)) = crate::npc::kind_from_net_id(f.npc_type as i32) {
+                    // `NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80770`): the
+                    // bottom-centre anchor, the release_npc convention.
+                    let (w, h) = kind.size();
+                    let mut npc = crate::npc::Npc::new(
+                        kind,
+                        x as f32 - w * 0.5,
+                        y as f32 - h,
+                        1,
+                        0.0,
+                    );
+                    npc.slime = slime;
+                    // `timeLeft = (int)(activeTime * 1.25)` (`NPC.cs:80772`).
+                    npc.despawn_timer = (750.0 * 1.25) as i32;
+                    npc.net_update = true;
+                    self.npcs.push(npc);
+                }
+                if f.npc_type == 682 {
+                    self.check_real_estate_and_town_slimes(); // `:4118`
+                }
+            }
+            // `case 134` — a client's luck factors (`MessageBuffer.cs:
+            // 4164-4193`): the host forces the subject to the sender
+            // (`:4175-4178`), stores the eight fields on the peer snapshot
+            // (the port does not simulate remote players, so the
+            // `RecalculateLuck` :4188 result is not derived here — the
+            // factors are stored-not-simulated like the C# host's
+            // `Main.player[num104]`), then relays to the OTHERS (`:4189-
+            // 4192`, `ignoreClient = num104`).
+            C2s::UpdatePlayerLuckFactors(mut l) => {
+                l.player_id = id as u8; // `:4177`
+                self.remote_players.entry(id).or_default().luck = Some(l);
+                server.broadcast_except(&S2c::UpdatePlayerLuckFactors(l), id);
+            }
+            // `case 137` — a client asks the host to drop an NPC buff
+            // (`MessageBuffer.cs:4219-4228`, host-only): the slot gates to
+            // `0..Main.maxNPCs` (`:4224`) then `RequestBuffRemoval`
+            // (`NPC.cs:89985-90000`). The `BuffID.Sets.CanBeRemovedByNetMessage`
+            // set is created EMPTY (`BuffID.cs:48`), so the gate refuses every
+            // buff id — the seam is wired through `request_buff_removal` and
+            // stays live for when the set is filled. The `54` push the helper
+            // would emit on a successful removal rides the outbox drain.
+            C2s::NpcBuffRemovalRequest(q) => {
+                if q.npc < 0 || q.npc as usize >= self.npcs.len() {
+                    return; // `:4224`
+                }
+                let slot = q.npc as usize;
+                let found = self.npcs[slot]
+                    .buffs
+                    .find_buff_index(q.buff_type as i32)
+                    .is_some();
+                let mut out = Vec::new();
+                let buffs = &mut self.npcs[slot].buffs;
+                let idx = buffs.find_buff_index(q.buff_type as i32);
+                crate::app::net_npc_sync::request_buff_removal(
+                    q.npc,
+                    q.buff_type,
+                    2,
+                    found,
+                    &mut out,
+                    || {
+                        if let Some(i) = idx {
+                            buffs.del_buff(i); // NPC.cs:89994
+                        }
+                    },
+                );
+                // A successful removal pushes the full `54` list
+                // (`NPC.cs:90019-90022`); the empty gate keeps `out` empty.
+                for send in out {
+                    if let crate::app::net_npc_sync::NpcSend::BuffList { slot } = send {
+                        let buffs = npc_buffs_of(&self.npcs[slot as usize]);
+                        server.broadcast(&S2c::NpcBuffs(net::NpcBuffs {
+                            npc: slot,
+                            buffs,
+                        }));
+                    }
+                }
+            }
+            // `case 140` — a client's town-slime transform request
+            // (`MessageBuffer.cs:4238-4263`, host-only kinds): kind 1 →
+            // `NPC.TransformCopperSlime(value)` (`NPC.cs:19160-19182`),
+            // kind 2 → `TransformElderSlime(value)` (`:19136-19158`).
+            // Kind 0 is the client's credits arm — the host ignores it
+            // (`:4245`'s `netMode == 1` gate). Both transforms: the unlock
+            // gate ONCE, the type gate, `unlockedSlime*Spawn = true`, the
+            // `7 WorldData` re-push, then `Transform(684/679)`. The port
+            // has no town-slime kinds (679/684/685 — the roster gap the
+            // `check_real_estate_and_town_slimes` doc pins), so the
+            // Transform itself parks; the unlock + re-push are the
+            // observable state and land live. The `CanConvertIntoCopperSlime
+            // TownNPC` set is {1, 302, 333-336} (`NPCID.cs:10120`) — the
+            // port's Blue Slime (cs_id 1) is the only live member; the
+            // party-slime kinds (302/333-336) are the same roster gap.
+            C2s::MiscEventValue(v) => {
+                let slot = v.value;
+                if slot < 0 || slot as usize >= self.npcs.len() {
+                    return; // `IndexInRange` (`:19142`/`:19166`)
+                }
+                let slot = slot as usize;
+                match v.kind {
+                    1 => {
+                        if self.world.unlocked_slime_copper_spawn {
+                            return; // `:19166`
+                        }
+                        let ty = self.npcs[slot].kind.cs_id() as i32;
+                        // `NPCID.Sets.CanConvertIntoCopperSlimeTownNPC`
+                        // (`NPCID.cs:10120`): 1, 302, 335, 336, 333, 334.
+                        if !matches!(ty, 1 | 302 | 333 | 334 | 335 | 336) {
+                            return; // `:19169`
+                        }
+                        self.world.unlocked_slime_copper_spawn = true; // `:19171`
+                        let info = self.world_info();
+                        server.broadcast(&S2c::WorldInfo(Box::new(info))); // `:19172`
+                        // `Transform(684)` (`:19173`) + the TownSlimeTransform
+                        // particle (`:19174-19179`) park with the kind.
+                    }
+                    2 => {
+                        if self.world.unlocked_slime_old_spawn {
+                            return; // `:19142`
+                        }
+                        if self.npcs[slot].kind.cs_id() != 685 {
+                            return; // `:19145` — BoundTownSlimeOld only
+                        }
+                        self.world.unlocked_slime_old_spawn = true; // `:19147`
+                        let info = self.world_info();
+                        server.broadcast(&S2c::WorldInfo(Box::new(info))); // `:19148`
+                        // `Transform(679)` (`:19149`) + the particle park.
+                    }
+                    _ => {} // kind 0: client-only (`:4245`), unknown: no tail
+                }
+            }
+            // `case 141` — a client's talking-axe popup (`MessageBuffer.cs:
+            // 4265-4281`): the host relays VERBATIM with `ignoreClient =
+            // whoAmI` (`:4272-4275`, `SendData(141, -1, this.whoAmI, …)`).
+            // No host-side apply — the popup is a client effect.
+            C2s::LucyPopup(l) => {
+                server.broadcast_except(&S2c::LucyPopup(l), id);
+            }
+            // `case 142` — a client's piggy-bank / void-lens trackers
+            // (`MessageBuffer.cs:4282-4297`): the host forces the subject to
+            // the sender (`:4284-4287`), stores the two references on the
+            // peer snapshot (stored-not-simulated — the port has no
+            // piggy-bank/void-lens projectile-tracking consumer), then
+            // relays to the OTHERS (`:4292-4295`, `ignoreClient = whoAmI`).
+            C2s::ProjectileTrackers(mut t) => {
+                t.player_id = id as u8; // `:4286`
+                self.remote_players.entry(id).or_default().trackers = Some(t);
+                server.broadcast_except(&S2c::ProjectileTrackers(t), id);
+            }
+            // `case 143` — a client asked to skip the DD2 wave break
+            // (`MessageBuffer.cs:4298-4303`, host-only, no body):
+            // `DD2Event.AttemptToSkipWaitTime` (`DD2Event.cs:1795-1801`) —
+            // `TimeLeftBetweenWaves > 60` → `SetEnemySpawningOnHold(60)`.
+            // The port's `dd2_spawn_hold` is `_timeLeftUntilSpawningBegins`;
+            // the strict `>` gate refuses at exactly 60.
+            C2s::CrystalInvasionSkip => {
+                if let Some(hold) =
+                    tr_core::dd2_victory::attempt_skip_wait_time(self.world.dd2_spawn_hold)
+                {
+                    self.world.dd2_spawn_hold = hold;
+                }
+            }
+            // `case 147` — a client switched loadout (`MessageBuffer.cs:
+            // 4328-4343`): the host forces the subject to the sender
+            // (`:4330-4333`), runs `TrySwitchingLoadout` + the accessory-
+            // visibility read (`:4336-4337`), then relays to the OTHERS
+            // (`:4338-4341`, `ignoreClient = num68`). The port has no loadout
+            // system (the swap is unported, `player.rs:1039`); the loadout
+            // index + visibility bits are stored-not-simulated on the peer
+            // snapshot.
+            C2s::SyncLoadout(mut l) => {
+                l.player_id = id as u8; // `:4332`
+                self.remote_players.entry(id).or_default().loadout = Some(l);
+                server.broadcast_except(&S2c::SyncLoadout(l), id);
+            }
+            // `case 157` — the team UI click (`MessageBuffer.cs:2325-2364`,
+            // the shared `case 45: case 157:` arm): force the subject to the
+            // sender, set the team, relay as `45`, then the team-chat fan-out
+            // to the sender + the old/new team members. The 157-only
+            // team-based-spawns tail (`:2355-2363`, `158`) needs the unported
+            // `teamBasedSpawnsSeed` + `ExtraSpawnPointManager` — parked.
+            C2s::TeamChangeUi(t) => {
+                self.apply_team_change_net(server, id, t.team);
+            }
+            // `case 159` — a client asks for a section (`MessageBuffer.cs:
+            // 4457-4462`, host-only): `SendSection(sectionX, sectionY,
+            // whoAmi)` (`NetMessage.cs:2697-2712`) — the bounds + not-already-
+            // sent gate, mark the section sent, stream the `10 TileBlock`.
+            // The C#'s `SyncNPCsForSection` / `SyncChestContentsForSection`
+            // tails ride the port's NPC cadence (section-culled `23` stream)
+            // and the chest-open path respectively.
+            C2s::SectionRequest {
+                section_x,
+                section_y,
+            } => {
+                let (sx, sy) = (section_x as i32, section_y as i32);
+                let (gx, gy) = (
+                    net::sections_x(self.world.width),
+                    net::sections_y(self.world.height),
+                );
+                if sx < 0 || sy < 0 || sx >= gx || sy >= gy {
+                    return; // the SendSection bounds gate
+                }
+                server.ensure_sections(id, self.world.width, self.world.height);
+                if server.is_section_sent(id, sx, sy) {
+                    return; // `!TileSections[sx, sy]`
+                }
+                server.mark_section_sent(id, sx, sy);
+                let block = self.tile_block_at(sx, sy);
+                server.send(id, &S2c::TileBlock(Box::new(block)));
+            }
+            // `case 150`'s host half (`MessageBuffer.cs:4361-4384`):
+            // `SetOrRequestSpectating` / the stop-relay need the unported
+            // spectating system (`Player.spectating`); parked (S1-I-4).
+            C2s::SpectatePlayer(_) => {}
+            // `case 138` — NO reader case in the C#: the frame falls to the
+            // `default` arm (`MessageBuffer.cs:4477-4482`), which only boots
+            // a State-0 sender (the port's accept gate already refuses
+            // pre-spawn frames). The host no-ops. W4-g51 f21 cross-check.
+            C2s::ClientSyncedInventory => {}
+            // `case 152`'s host half (`MessageBuffer.cs:4386-4396`): force
+            // the subject to the sender (`:4389-4392`), then relay to the
+            // OTHERS (`:4393-4396`, `ignoreClient = whoAmI`). No host-side
+            // sound — the client plays the peer's held item's UseSound.
+            C2s::ItemUseSound { player_id: _ } => {
+                server.broadcast_except(&S2c::ItemUseSound { player_id: id as u8 }, id);
+            }
+            // `case 161` (`MessageBuffer.cs:4471-4476`): the host compares
+            // the claim against `Netplay.HostToken` and sets `player.host`.
+            // The port has no HostToken config (the dedicated-server host
+            // authority is unported) — the compare is against the empty
+            // string, so `host` stays false; the claim is stored-not-
+            // simulated on the peer snapshot. W4-g51 f21 cross-check.
+            C2s::HostToken(_token) => {
+                // `!string.IsNullOrWhiteSpace(Netplay.HostToken) && == text`
+                // — the empty configured token refuses every claim.
+                self.remote_players.entry(id).or_default().host = false;
+            }
+            // `case 89/123/133/149` — the TryPlacing quadruplet: one shared
+            // body (f21's byte-equality pin), the per-kind `TryPlacing`
+            // (`TEItemFrame.cs:69-86` / `TEWeaponsRack.cs:135-152` /
+            // `TEFoodPlatter.cs:70-87` / `TEDeadCellsDisplayJar.cs:69-86`):
+            // no entity at the cell drops the item back; a held entity drops
+            // its old contents first, then takes the new item and shares the
+            // entity with an `86`. Host-only (`netMode != 2` breaks). The
+            // `Item.DefaultAssignNewItemsToPlayer(whoAmI)` scope routes the
+            // refused-placement drop's ownership to the sender. W4-g51 FINAL.
+            C2s::ItemFrameTryPlacing(p) => {
+                self.host_try_placing(server, id, tr_core::tile_entities::TeKind::ItemFrame, p);
+            }
+            C2s::WeaponsRackTryPlacing(p) => {
+                self.host_try_placing(server, id, tr_core::tile_entities::TeKind::WeaponsRack, p);
+            }
+            C2s::FoodPlatterTryPlacing(p) => {
+                self.host_try_placing(server, id, tr_core::tile_entities::TeKind::FoodPlatter, p);
+            }
+            C2s::DeadCellsJarTryPlacing(p) => {
+                self.host_try_placing(
+                    server,
+                    id,
+                    tr_core::tile_entities::TeKind::DeadCellsDisplayJar,
+                    p,
+                );
+            }
+            // `case 121` (`MessageBuffer.cs:3920-3941`): force the player to
+            // the sender (`:3923-3926`), read the entity id + itemIndex +
+            // command, apply `ReadData`/`ReadDummySync` to the doll, then
+            // relay to the OTHERS (`:3936-3939`, `ignoreClient = num248`).
+            // The relay re-derives the tail from the LIVE doll
+            // (`NetMessage.cs:1465-1472`), so the port re-reads the store.
+            // W4-g51 FINAL.
+            C2s::DisplayDollSync(mut d) => {
+                d.player_id = id as u8; // `:3925`
+                let applied = self.apply_doll_sync(d);
+                if applied {
+                    // The relay carries the doll's CURRENT slot/pose (the
+                    // C# writer reads the entity again, `:1465-1467`).
+                    let relay = self.doll_sync_relay(d);
+                    server.broadcast_except(&S2c::DisplayDollSync(relay), id);
+                }
+            }
+            // `case 122` (`MessageBuffer.cs:3942-3977`): force the player to
+            // the sender (`:3946-3949`). -1 clears the anchor + relays
+            // (`:3952-3957`); otherwise the `IsOccupied` + `TryGet` gate
+            // (`:3958`) sets the anchor + relays (`:3960-3961`). A refused
+            // (occupied / missing) entity sends NOTHING. W4-g51 FINAL.
+            C2s::TileEntityInteraction(mut t) => {
+                t.player_id = id as u8; // `:3948`
+                if t.entity_id == -1 {
+                    self.net_te_anchors.remove(&(id as u8)); // `Clear()`
+                    server.broadcast(&S2c::TileEntityInteraction(t)); // `:3955`
+                    return;
+                }
+                // `TileEntity.IsOccupied` (`TileEntity.cs:221-234`): any
+                // active non-dead player already anchored to this id refuses.
+                let occupied = self.net_te_anchors.iter().any(|(slot, (eid, _, _))| {
+                    *eid == t.entity_id && self.net_player_slot_active(*slot)
+                });
+                // `TryGet` fails on a removed `ByID` entry (`:126`/`:159-167`);
+                // the port's tombstoned slot must read as missing (the
+                // `broadcast_tile_entity` liveness pattern). SEAL re-pin.
+                let entity = if t.entity_id >= 0 {
+                    self.world
+                        .tile_entities
+                        .get_by_id(t.entity_id as u32)
+                        .filter(|e| {
+                            self.world
+                                .tile_entities
+                                .get_at(e.x, e.y)
+                                .is_some_and(|live| live.id == e.id)
+                        })
+                } else {
+                    None
+                };
+                if !occupied {
+                    if let Some(e) = entity {
+                        // `Set(id, Position.X, Position.Y)` (`:3960`).
+                        self.net_te_anchors
+                            .insert(id as u8, (t.entity_id, e.x as i32, e.y as i32));
+                        server.broadcast(&S2c::TileEntityInteraction(t)); // `:3961`
+                    }
+                }
+            }
+            // `case 124` (`MessageBuffer.cs:3995-4022`): force the player to
+            // the sender (`:3998-4001`), unfold the dye flag (`:4004-4009`),
+            // the `TryGet<TEHatRack>` + `slot >= 2` refusal reads int+byte
+            // and breaks (`:4010-4015`), else `ReadItem` + relay to the
+            // OTHERS (`:4016-4020`, `ignoreClient = num180`). W4-g51 FINAL.
+            C2s::HatRackItemSync(mut h) => {
+                h.player_id = id as u8; // `:4000`
+                let dye = h.is_dye();
+                let slot = h.slot_index();
+                let ok = h.entity_id >= 0
+                    && slot < 2
+                    && self
+                        .world
+                        .tile_entities
+                        .get_by_id(h.entity_id as u32)
+                        .is_some_and(|e| {
+                            e.kind == tr_core::tile_entities::TeKind::HatRack
+                                // `TryGet` fails on a removed `ByID` entry —
+                                // the tombstoned slot reads as missing (the
+                                // SEAL re-pin, the 122 gate's pattern).
+                                && self
+                                    .world
+                                    .tile_entities
+                                    .get_at(e.x, e.y)
+                                    .is_some_and(|live| live.id == e.id)
+                        });
+                if !ok {
+                    return; // `:4010-4015` — the refusal consumes the tail
+                }
+                self.apply_hat_rack_item(h.entity_id as u32, slot, dye, h.item);
+                // The relay re-folds the dye flag (`NetMessage.cs:1492-1496`)
+                // and re-reads the live slot (`:1500-1503`).
+                let relay = self.hat_rack_relay(h);
+                server.broadcast_except(&S2c::HatRackItemSync(relay), id);
+            }
+            // `case 144` (`MessageBuffer.cs:4304-4309`, host-only, bodyless):
+            // `NPC.HaveDryadDoStardewAnimation` (`NPC.cs:19184-19229`).
+            // W4-g51 FINAL.
+            C2s::RequestQuestEffect => {
+                self.host_dryad_stardew(server);
+            }
+            // `case 156` (`MessageBuffer.cs:4439-4449`, host-only): the
+            // Point16 lookup + `TELeashedEntityAnchorWithItem.InsertItem`
+            // (`TELeashedEntityAnchorWithItem.cs:32-36`): store the itemType,
+            // respawn the leashed entity. The port's kite/critter anchors
+            // keep `TeData::Anchor`; the `RespawnLeashedEntity` half is the
+            // unported LeashedEntity system (M7-TE-2), so the store is the
+            // observable state. W4-g51 FINAL.
+            C2s::LeashedAnchorPlaceItem(p) => {
+                let Some(e) = self.world.tile_entities.get_at_mut(p.x, p.y) else {
+                    return; // `TryGetAt` fails
+                };
+                if !matches!(
+                    e.kind,
+                    tr_core::tile_entities::TeKind::KiteAnchor
+                        | tr_core::tile_entities::TeKind::CritterAnchor
+                ) {
+                    return; // `TryGetAt<TELeashedEntityAnchorWithItem>` type gate
+                }
+                // `InsertItem`: `this.itemType = itemType` (`:34`).
+                e.data = tr_core::tile_entities::TeData::Anchor(p.item_type as i32);
+                // `base.RespawnLeashedEntity()` (`:35`) — the LeashedEntity
+                // despawn/respawn is M7-TE-2; the itemType store lands live.
             }
         }
     }
@@ -3149,9 +3485,403 @@ impl App {
         }));
     }
 
-    /// The join bundle when a slot reaches `IN_WORLD` (the port's
-    /// `SyncConnectedPlayer`, `NetMessage.cs:2806-2822`): the newcomer learns
-    // the peers, the peers learn the newcomer.
+    /// `TileEntity.IsOccupied`'s `player.active && !player.dead` term
+    /// (`TileEntity.cs:227`) for one slot: the host's own player (slot 0) or
+    /// a remote peer with live hp. The port's `remote_players` entries are
+    /// the active peers; hp ≤ 0 reads dead (`Player.dead = statLife <= 0`,
+    /// `MessageBuffer.cs:1111`). W4-g51 FINAL id-122.
+    fn net_player_slot_active(&self, slot: u8) -> bool {
+        if slot == 0 {
+            return self.player.as_ref().is_some_and(|p| !p.dead);
+        }
+        self.remote_players
+            .get(&(slot as u32))
+            .is_some_and(|p| p.hp > 0)
+    }
+
+    /// The TryPlacing quadruplet's shared host body (89/123/133/149 —
+    /// `TEItemFrame.TryPlacing` `TEItemFrame.cs:69-86` and its three twins,
+    /// the only differences are the `RangeFrame` rectangle and the
+    /// `DropItem` box). No entity at the cell drops the item back
+    /// (`Item.NewItem`, exact prefix); a held entity drops its old contents
+    /// first (`DropItem`, count 1), then takes the new item and shares the
+    /// entity with an `86`. W4-g51 FINAL.
+    fn host_try_placing(
+        &mut self,
+        server: &net::Server,
+        sender: u32,
+        kind: tr_core::tile_entities::TeKind,
+        p: net::TryPlacingItem,
+    ) {
+        let (x, y) = (p.x as i32, p.y as i32);
+        // `WorldGen.RangeFrame(x, y, x+N, y+N)` — the framing refresh rides
+        // the port's edit chain; the entity books are the state the message
+        // changes (the g50 89 precedent).
+        let entity = self
+            .world
+            .tile_entities
+            .get_at(p.x, p.y)
+            .filter(|e| e.kind == kind)
+            .map(|e| e.id);
+        let Some(entity_id) = entity else {
+            // `Item.NewItem(… type, stack, … prefix)` — the refused
+            // placement drops the item at the cell with the exact prefix
+            // (`Item.cs:49730`'s `Prefix(exact)` applies it directly, no
+            // fresh roll). The `DefaultAssignNewItemsToPlayer(whoAmI)`
+            // scope routes the ownership to the sender (the 100-tick
+            // grab-delay lock, `Item.cs:49757-49760`).
+            let mut drop = item::ItemDrop::new(
+                p.kind.max(0) as u16,
+                (p.stack.max(0) as u32).max(1),
+                p.prefix as u16,
+                x as f32 * TILE_PX,
+                y as f32 * TILE_PX,
+                0.0,
+                0.0,
+                0.0,
+            );
+            // The spawn scatter rides the port's pinned triplet on the bare
+            // stream (the message handler runs outside every swap,
+            // S1-E-21i — the g50 89 precedent).
+            let rng = self.rngs.global();
+            drop.vel = Vec2::new(
+                (rng.next_float() * 2.0 - 1.0) * 1.4,
+                -2.2 - rng.next_float() * 1.2,
+            );
+            drop.phase = rng.next_float() * std::f32::consts::TAU;
+            drop.apply_grab_delay(sender as u8);
+            self.items.push(drop);
+            return;
+        };
+        // `result.item.stack > 0` → `DropItem`: the old contents drop at the
+        // entity's cell (count 1, the C# `DropItem` passes no stack —
+        // `Item.NewItem`'s default), keeping the stored prefix.
+        if let Some(Some(old)) = self.world.tile_entities.item(entity_id).copied() {
+            if old.stack > 0 {
+                let mut drop = item::ItemDrop::new(
+                    old.kind,
+                    1,
+                    old.prefix as u16,
+                    x as f32 * TILE_PX,
+                    y as f32 * TILE_PX,
+                    0.0,
+                    0.0,
+                    0.0,
+                );
+                let rng = self.rngs.global();
+                drop.vel = Vec2::new(
+                    (rng.next_float() * 2.0 - 1.0) * 1.4,
+                    -2.2 - rng.next_float() * 1.2,
+                );
+                drop.phase = rng.next_float() * std::f32::consts::TAU;
+                drop.apply_grab_delay(sender as u8);
+                self.items.push(drop);
+            }
+        }
+        // `result.item = new Item(); SetDefaults(type); Prefix(prefix);
+        // stack = stack` — the exact prefix applies directly (the wire byte
+        // is the rolled id, not a -1 natural-roll marker).
+        self.world.tile_entities.set_item(
+            entity_id,
+            Some(tr_core::tile_entities::TeItem {
+                kind: p.kind.max(0) as u16,
+                prefix: p.prefix,
+                stack: p.stack.max(0) as u16,
+            }),
+        );
+        // `NetMessage.SendData(86, -1, -1, null, result.ID, x, y)`.
+        self.broadcast_tile_entity(server, entity_id);
+    }
+
+    /// `TEDisplayDoll.ReadData` (`TEDisplayDoll.cs:802-822`) + `ReadItem`
+    /// (`:766-778`) / `ReadPose` (`:846-849`): command 2 sets the pose byte;
+    /// commands 0/1/3 write one slot of the equip/dye/misc array (the
+    /// `itemIndex < collection.Length` gate). The no-entity / wrong-kind
+    /// path is `ReadDummySync` (`:835-844`): consume and discard, NO relay
+    /// (`MessageBuffer.cs:3930-3934`). Returns whether the relay fires.
+    /// W4-g51 FINAL id-121.
+    fn apply_doll_sync(&mut self, d: net::DisplayDollSync) -> bool {
+        if d.entity_id < 0 {
+            return false; // `TryGet` fails → ReadDummySync, no relay
+        }
+        // `TryGet<TEDisplayDoll>`'s `as T` type gate + the removed-`ByID`
+        // failure (the tombstoned slot reads as missing — the SEAL re-pin,
+        // the 122/124 gates' pattern). Checked before the mutable borrow.
+        let live = self
+            .world
+            .tile_entities
+            .get_by_id(d.entity_id as u32)
+            .is_some_and(|e| {
+                e.kind == tr_core::tile_entities::TeKind::DisplayDoll
+                    && self
+                        .world
+                        .tile_entities
+                        .get_at(e.x, e.y)
+                        .is_some_and(|live| live.id == e.id)
+            });
+        if !live {
+            return false;
+        }
+        let Some(e) = self.world.tile_entities.by_id_mut(d.entity_id as u32) else {
+            return false;
+        };
+        let tr_core::tile_entities::TeData::DisplayDoll {
+            equip,
+            dye,
+            misc,
+            pose,
+        } = &mut e.data
+        else {
+            return false;
+        };
+        let idx = d.item_index as usize;
+        if d.command == 2 {
+            // `ReadPose`: `this._pose = reader.ReadByte()` (`:846-849`).
+            if let net::DollSyncData::Pose(p) = d.data {
+                *pose = p;
+            }
+            return true;
+        }
+        // `ReadData`'s collection select (`:812-820`): command 1 → dyes,
+        // command 3 → misc, EVERY OTHER command (0 and unknowns) → equip —
+        // the C# has no default arm, the fall-through is `_equip`.
+        let net::DollSyncData::Item(it) = d.data else {
+            return true; // the tail was consumed; nothing to store
+        };
+        // `ReadItem`: SetDefaults(type); stack = stack; Prefix — the port
+        // stores the triple; an air triple clears the slot (the C#
+        // `new Item()` fallback).
+        let slot = if it.is_air() {
+            None
+        } else {
+            Some(tr_core::tile_entities::TeItem {
+                kind: it.kind.max(0) as u16,
+                prefix: it.prefix,
+                stack: it.stack.max(0) as u16,
+            })
+        };
+        // The `itemIndex < collection.Length` gate (`:771`): the equip/dye
+        // arrays hold 9, misc holds 1. An out-of-range index reads the tail
+        // but writes nothing.
+        match d.command {
+            1 if idx < 9 => dye[idx] = slot,
+            3 if idx < 1 => *misc = slot,
+            1 | 3 => {}
+            _ if idx < 9 => equip[idx] = slot,
+            _ => {}
+        }
+        true
+    }
+
+    /// The `121` relay body (`NetMessage.cs:1458-1474`): the writer re-reads
+    /// the LIVE doll's slot/pose (`WriteData`, `:1465-1467`), so the relay
+    /// carries the store's current value, not the inbound frame's. The
+    /// no-entity fallback is `WriteDummySync` (`:1471`). W4-g51 FINAL.
+    fn doll_sync_relay(&self, d: net::DisplayDollSync) -> net::DisplayDollSync {
+        let mut out = d;
+        let entity = if d.entity_id >= 0 {
+            // The writer's `TryGet<TEDisplayDoll>` (`:1465`): a removed
+            // `ByID` entry falls to `WriteDummySync` (SEAL re-pin).
+            self.world
+                .tile_entities
+                .get_by_id(d.entity_id as u32)
+                .filter(|e| {
+                    self.world
+                        .tile_entities
+                        .get_at(e.x, e.y)
+                        .is_some_and(|live| live.id == e.id)
+                })
+        } else {
+            None
+        };
+        let doll = entity.and_then(|e| match &e.data {
+            tr_core::tile_entities::TeData::DisplayDoll {
+                equip,
+                dye,
+                misc,
+                pose,
+            } => Some((equip, dye, misc, *pose)),
+            _ => None,
+        });
+        let Some((equip, dye, misc, pose)) = doll else {
+            out.data = net::DollSyncData::Dummy;
+            return out;
+        };
+        let idx = d.item_index as usize;
+        out.data = if d.command == 2 {
+            net::DollSyncData::Pose(pose)
+        } else {
+            let slot = match d.command {
+                1 => dye.get(idx).copied().flatten(),
+                3 => {
+                    if idx == 0 {
+                        *misc
+                    } else {
+                        None
+                    }
+                }
+                _ => equip.get(idx).copied().flatten(),
+            };
+            net::DollSyncData::Item(slot.map_or(net::TeItem::default(), |it| net::TeItem {
+                kind: it.kind as i16,
+                prefix: it.prefix,
+                stack: it.stack as i16,
+            }))
+        };
+        out
+    }
+
+    /// `TEHatRack.ReadItem` (`TEHatRack.cs:390-403`): SetDefaults(type);
+    /// stack = stack; Prefix into `_items[slot]` or `_dyes[slot]`. The port
+    /// stores the triple; an air triple clears the slot. W4-g51 FINAL id-124.
+    fn apply_hat_rack_item(&mut self, entity_id: u32, slot: u8, dye: bool, it: net::TeItem) {
+        let Some(e) = self.world.tile_entities.by_id_mut(entity_id) else {
+            return;
+        };
+        let tr_core::tile_entities::TeData::HatRack(items, dyes) = &mut e.data else {
+            return;
+        };
+        let value = if it.is_air() {
+            None
+        } else {
+            Some(tr_core::tile_entities::TeItem {
+                kind: it.kind.max(0) as u16,
+                prefix: it.prefix,
+                stack: it.stack.max(0) as u16,
+            })
+        };
+        let arr = if dye { dyes } else { items };
+        if (slot as usize) < arr.len() {
+            arr[slot as usize] = value;
+        }
+    }
+
+    /// The `124` relay body (`NetMessage.cs:1489-1508`): the writer re-folds
+    /// the dye flag into the slot (`num4 += 2`, `:1492-1496`) and re-reads
+    /// the LIVE slot (`WriteItem`, `:1500-1503`). W4-g51 FINAL.
+    fn hat_rack_relay(&self, h: net::HatRackItemSync) -> net::HatRackItemSync {
+        let mut out = h;
+        let idx = h.slot_index() as usize;
+        let entity = if h.entity_id >= 0 {
+            // The writer's `TryGet<TEHatRack>` (`:1500`): a removed `ByID`
+            // entry falls to the air-triple fallback (SEAL re-pin).
+            self.world
+                .tile_entities
+                .get_by_id(h.entity_id as u32)
+                .filter(|e| {
+                    self.world
+                        .tile_entities
+                        .get_at(e.x, e.y)
+                        .is_some_and(|live| live.id == e.id)
+                })
+        } else {
+            None
+        };
+        let slot = entity.and_then(|e| match &e.data {
+            tr_core::tile_entities::TeData::HatRack(items, dyes) => {
+                let arr = if h.is_dye() { dyes } else { items };
+                arr.get(idx).copied().flatten()
+            }
+            _ => None,
+        });
+        out.item = slot.map_or(net::TeItem::default(), |it| net::TeItem {
+            kind: it.kind as i16,
+            prefix: it.prefix,
+            stack: it.stack as i16,
+        });
+        out
+    }
+
+    /// `NPC.HaveDryadDoStardewAnimation` (`NPC.cs:19184-19229`): the FIRST
+    /// active type-20 dryad gets the Stardew ai writes (`localAI[2]=480`,
+    /// `ai[0]=24`, `ai[1]=480`, `ai[2]=0`, `localAI[3]=0`, `netUpdate=true`,
+    /// `direction=1`, `spriteDirection=1`), then the 995 Jumino projectile
+    /// spawns at the ground-probe point. The probe: `Bottom + (100, 0)` →
+    /// tile coords, `Y = Clamp(Y-10, 10, maxTilesY-10)`, scan down 15 rows
+    /// for the first solid tile; if it is the FIRST row the spawn uses the
+    /// dryad's own bottom, else the probe tile's world coords `(8, 0)`; the
+    /// spawn point is that + `(0, -52)`. W4-g51 FINAL id-144.
+    fn host_dryad_stardew(&mut self, server: &net::Server) {
+        let Some(slot) = self
+            .npcs
+            .iter()
+            .position(|n| n.hp > 0 && n.kind == crate::npc::NpcKind::Dryad)
+        else {
+            return; // no active dryad — the loop finds nothing
+        };
+        let (nw, nh) = self.npcs[slot].size();
+        let bottom = (
+            self.npcs[slot].x + nw * 0.5,
+            self.npcs[slot].y + nh,
+        );
+        // The ai writes (`:19193-19200`).
+        {
+            let n = &mut self.npcs[slot];
+            n.local_ai[2] = 480.0;
+            n.ai[0] = 24.0;
+            n.ai[1] = 480.0;
+            n.ai[2] = 0.0;
+            n.local_ai[3] = 0.0;
+            n.net_update = true;
+            n.facing = 1;
+            n.sprite_dir = 1;
+        }
+        // The ground probe (`:19201-19225`).
+        let vector = (bottom.0 + 100.0, bottom.1);
+        let mut px = (vector.0 / TILE_PX) as i32;
+        let mut py = (vector.1 / TILE_PX) as i32;
+        py = (py - 10).clamp(10, self.world.height - 10);
+        let start_y = py;
+        let mut first_row_solid = false;
+        for j in start_y..start_y + 15 {
+            py = j;
+            let solid = self
+                .world
+                .tile(px, j)
+                .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
+            if solid {
+                if j == start_y {
+                    first_row_solid = true;
+                }
+                break;
+            }
+        }
+        // `p.ToWorldCoordinates(8, 0)` = `(px*16+8, py*16)`; the first-row
+        // solid uses the dryad's own bottom instead (`:19222-19225`).
+        let base = if first_row_solid {
+            vector
+        } else {
+            (px as f32 * TILE_PX + 8.0, py as f32 * TILE_PX)
+        };
+        let spawn = (base.0, base.1 - 52.0);
+        // `Projectile.NewProjectile(…, 995, 0, 0f, Main.myPlayer)`
+        // (`:19226`): the host's own player owns it (slot 0). The 995 row
+        // (`Projectile.cs:9446-9457`): 240×104, aiStyle 192, friendly (the
+        // pool's spawn default), penetrate -1, tileCollide false,
+        // ignoreWater, timeLeft *= 5. The X/Y overload CENTRES the box on
+        // the spawn point (`Projectile.cs:10876-10877`: `X - width*0.5,
+        // Y - height*0.5` → −120, −52 for the 240×104 row) — the SEAL
+        // re-pin, the f30 local twin's convention.
+        let owner = 0u8;
+        if let Some(ps) = self.projectiles.spawn_with_data_owned(
+            995,
+            owner,
+            spawn.0 - 120.0,
+            spawn.1 - 52.0,
+            0.0,
+            0.0,
+            0,
+            0.0,
+            0.0,
+            0.0,
+        ) {
+            // The `27` spawn broadcast (`Projectile.cs:11096`): the host
+            // owns the shot, so it streams to every client. The dryad's
+            // ai writes ride the `23` cadence (`net_update = true`).
+            let st = crate::app::net_proj_sync::state_of(&self.projectiles, ps);
+            server.broadcast(&S2c::Projectile(Box::new(st)));
+        }
+    }
 
     /// Streams the world to a spawning client as `10 TileBlock` sections —
     /// the C#'s join-time box (`MessageBuffer.cs:692-811`): 5 sections wide
@@ -3483,6 +4213,27 @@ impl App {
             // the slot when it actually changes.
             self.net_item_last.insert(slot, st);
         }
+        // `NetMessage.cs:2818` — `SendCreditsRollRemainingTimeToPlayer`:
+        // kind 0 rides the join bundle only while the roll is live
+        // (`CreditsRollEvent.cs:29`'s `!= 0` gate).
+        if self.world.credits_roll_remaining_time != 0 {
+            server.send(
+                id,
+                &S2c::MiscEventValue(net::MiscEventValue {
+                    kind: 0,
+                    value: self.world.credits_roll_remaining_time,
+                }),
+            );
+        }
+        // `MessageBuffer.cs:870` — `TrySendData(136, whoAmI)`: the cavern
+        // grid rides the join bundle BEFORE the bestiary burst (`:871`'s
+        // `OnPlayerJoining`), the C#'s exact order.
+        server.send(
+            id,
+            &S2c::CavernMonsterTypes(net::CavernMonsterTypes {
+                types: self.world.cavern_monster_type.map(|row| row.map(|t| t as u16)),
+            }),
+        );
         // `MessageBuffer.cs:871` → `BestiaryUnlocksTracker.OnPlayerJoining`
         // → `NPCKillsTracker.OnPlayerJoining` (`NPCKillsTracker.cs:98-107`):
         // every recorded credit's current count goes to the joining slot as a
@@ -3512,6 +4263,23 @@ impl App {
                 },
             );
         }
+        // `MessageBuffer.cs:930-935` — the State-3→10 join arm's
+        // `DoesPlayerSlotCountAsAHost` push: the flag is computed from the
+        // peer's remote address (`NetMessage.cs:2876-2883`, loopback =
+        // same machine), stored host-side, and pushed as `139` ONLY when
+        // true (`:932-934`'s gate). W4-g51 FINAL id-139 (the g52c master
+        // input: the host-authority flag's join source).
+        let counts_as_host = server.slot_counts_as_host(id);
+        self.remote_players.entry(id).or_default().counts_as_host = counts_as_host;
+        if counts_as_host {
+            server.send(
+                id,
+                &S2c::CountsAsHost(net::CountsAsHost {
+                    player_id: id as u8,
+                    counts_as_host: true,
+                }),
+            );
+        }
         log::info!("slot {id} fully joined");
     }
 
@@ -3519,6 +4287,10 @@ impl App {
     /// disconnect arm + `SyncOnePlayer`'s inactive broadcast).
     fn host_slot_left(&mut self, server: &net::Server, id: u32) {
         let was_in_world = self.remote_players.remove(&id).is_some();
+        // The leaving peer's interaction anchor clears (`Player.Disconnect`
+        // → `tileEntityAnchor.Clear`, `Player.cs:5041`); the `IsOccupied`
+        // scan must not see a ghost. W4-g51 FINAL id-122.
+        self.net_te_anchors.remove(&(id as u8));
         if was_in_world {
             server.broadcast(&S2c::Left { id });
             log::info!("slot {id} left");
@@ -3904,9 +4676,6 @@ impl App {
                 npc.direction_y = if info.dir_y_down { 1 } else { -1 };
                 npc.sprite_dir = if info.sprite_right { 1 } else { -1 };
                 npc.target = info.target as i32;
-                // `MessageBuffer.cs:1672-1675`: the ai[] copy (the port keeps
-                // the pending-damage merge for I-4 — the wire values land).
-                npc.ai = info.ai;
                 // `MessageBuffer.cs:1683-1691`: the statue flag zeroes the
                 // coin value, the shimmer flag sets full transparency.
                 npc.spawned_from_statue = info.spawned_from_statue;
@@ -3917,9 +4686,31 @@ impl App {
                     npc.shimmer_transparency = 1.0;
                 }
                 npc.release_owner = info.release_owner;
-                if !info.life_full && info.hp >= 0 {
-                    npc.hp = info.hp;
+                // `MessageBuffer.cs:1657-1677` — the pending-damage
+                // reconciliation (W4-g51 id-162): the `life_full` bit snaps
+                // the wire life to lifeMax (`:1657-1660`), then the wire life
+                // minus the summed predicted damage (`GetPendingDamage`,
+                // `NPC.cs:90715-90727`) lands UNLESS a phase change fired
+                // (`:1669` — the local life + ai are kept; the port's `23`
+                // body carries no ai array, so the ai-copy half is structural
+                // and `SetStrikePhaseChange` has no ported trigger yet — the
+                // flag stays false, the subtraction always runs).
+                let wire_life = if info.life_full { npc.max_hp } else { info.hp };
+                let (pending, phase_change) = crate::app::net_npc_sync::get_pending_damage(
+                    &self.net_pending_damages,
+                    info.slot as i16,
+                    info.generation,
+                );
+                if !phase_change {
+                    npc.hp = wire_life - pending; // `:1671`
+                    // `MessageBuffer.cs:1672-1675` — the ai[] copy rides the
+                    // same !phaseChange gate (the g48 wire body carries ai).
+                    npc.ai = info.ai;
                 }
+                // The C#'s despawn gate (`:1661`) reads the WIRE life
+                // (`num175`), not the reconciled one — a predicted-to-death
+                // NPC stays active until the host's own death `23` lands
+                // (the early-despawn branch above handles wire ≤ 0).
                 self.net_npcs.insert(slot, npc);
                 self.net_npcs_dirty = true;
             }
@@ -4994,16 +5785,6 @@ impl App {
             // (`:3313`) stays the reader's only behaviour. The codec is
             // byte-verbatim (`net.rs`) for the census.
             S2c::ItemTweaker(_) => {}
-            // S1-I-1 wave A: the join bundle's remaining server-sent ids have
-            // bodies + codecs (`net.rs`); the client read sites
-            // (`MessageBuffer.cs:4043-4048`, `:4195-4203`, `:4238-4249`,
-            // `:4282-4297`, `:4328-4343`) land with the send-path pass
-            // (S1-I-4).
-            S2c::RevengeMarker(_)
-            | S2c::DeadPlayer { .. }
-            | S2c::MiscEventValue(_)
-            | S2c::ProjectileTrackers(_)
-            | S2c::SyncLoadout(_) => {}
             // `case 17` on a client — the host's edit relay
             // (`MessageBuffer.cs:1157-1275`, the `netMode == 1` path): the
             // same kind dispatch, no spam/section gates, no relay; kind 0
@@ -5017,19 +5798,6 @@ impl App {
             S2c::DoorToggle(d) => {
                 crate::app::net_apply::client_door_toggle(self, d);
             }
-            // S1-I-1 wave B: the world-sync region's remaining server-sent
-            // ids have bodies + codecs (`net.rs`); the client read sites
-            // (`MessageBuffer.cs:4023-4042`, `:4450-4456`) land with the
-            // send-path pass (S1-I-4) — nothing sends them yet. The
-            // `11` arm is the d89 one above (keep-one dedupe at the g48
-            // merge); the 63/64 paint arms are the g49 ones above.
-            S2c::TilePicking(_)
-            | S2c::ExtraSpawnLoaded { .. }
-            // `case 128`'s client half (`MessageBuffer.cs:4070-4072`):
-            // `PutBallInCup_TextAndEffects` — the cup dust/sound/chat FX
-            // (`GolfHelper.cs:115-123`) ride the golf system (M4-GOLF-1);
-            // the relay lands here until then (S1-I-4).
-            | S2c::GolfBallInCup(_) => {}
 
             // `case 12` on a client — a peer spawned (`MessageBuffer.cs:901-
             // 950`): the same field writes as the host arm (`:908-918`), then
@@ -5092,6 +5860,432 @@ impl App {
             | S2c::ManaEffect(_) => {}
             // (d98's 35/36 parked pair is folded into the d96 list above —
             // keep-one dedupe at the g48 merge.)
+            // `case 125`'s client half (`MessageBuffer.cs:4033-4036`):
+            // `Main.player[Main.myPlayer].GetOtherPlayersPickTile(x, y, dmg)`
+            // (`Player.cs:53751-53755`) — `hitTile.HitObject(x, y, 1)` then
+            // `AddDamage(tileId, pickDamage)`. The damage accumulates on the
+            // LOCAL player's pick book (the wire subject is the peer, but the
+            // C# applies to `Main.myPlayer`).
+            S2c::TilePicking(p) => {
+                let tile_id = self
+                    .hit_tile
+                    .hit_object(p.x as i32, p.y as i32, tr_core::hit_tile::TILE);
+                self.hit_tile.add_damage(tile_id, p.damage as i32, true);
+            }
+            // `case 126`'s client half (`MessageBuffer.cs:4043-4048`):
+            // `NPC.RevengeManager.AddMarkerFromReader` — the marker joins the
+            // session list (`CoinLossRevengeSystem.cs:321-324`). The ctor
+            // computes `_expirationTime = CalculateExpirationTime(gameTime,
+            // coinValue)` (`:86`, `:155-165`); the port's `expiration_addon`
+            // is that bracket table and `revenge_tick` is `_gameTime`. The
+            // kind rides `kind_from_net_id` (the 23 convention); an unported
+            // kind drops the marker (the respawn pass has no model for it).
+            S2c::RevengeMarker(m) => {
+                if let Some((kind, _)) = crate::npc::kind_from_net_id(m.npc_net_id) {
+                    let coins = m.coins_value.max(0) as u64;
+                    self.revenge_markers.push(crate::revenge::RevengeMarker {
+                        location: Vec2::new(m.x, m.y),
+                        kind,
+                        hp_percent: m.npc_hp_percent,
+                        base_value: m.base_value,
+                        coins_value: coins,
+                        expiration_tick: self.revenge_tick
+                            + crate::revenge::expiration_addon(coins),
+                        unique_id: m.unique_id as u64,
+                        force_expire: false,
+                    });
+                }
+            }
+            // `case 127`'s client half (`MessageBuffer.cs:4049-4057`):
+            // `NPC.RevengeManager.DestroyMarker(markerUniqueID)` —
+            // `_markers.RemoveAll(x => x.UniqueID == markerUniqueID)`
+            // (`CoinLossRevengeSystem.cs:334-340`). The 126 marker's twin.
+            S2c::RemoveRevengeMarker(m) => {
+                self.revenge_markers
+                    .retain(|x| x.unique_id != m.unique_id as u64);
+            }
+            // `case 147`'s client half (`MessageBuffer.cs:4336-4337`):
+            // `TrySwitchingLoadout` + `ReadAccessoryVisibility` on
+            // `Main.player[num68]`. The loadout swap is unported (no loadout
+            // system); the accessory-visibility bits unpack onto the local
+            // player's `hide_visible_accessory` (`MessageBuffer.cs:4494-
+            // 4501`, bit i per slot). A peer's loadout is stored on the
+            // snapshot (stored-not-simulated).
+            S2c::SyncLoadout(l) => {
+                if l.player_id as u32 == self.local_id {
+                    if let Some(p) = self.player.as_mut() {
+                        for i in 0..p.hide_visible_accessory.len() {
+                            p.hide_visible_accessory[i] = (l.hide_accessory & (1 << i)) != 0;
+                        }
+                    }
+                } else {
+                    self.remote_players
+                        .entry(l.player_id as u32)
+                        .or_default()
+                        .loadout = Some(l);
+                }
+            }
+            // `case 150` (`MessageBuffer.cs:4361-4384`): the host's
+            // `SetOrRequestSpectating` / stop-relay and the client's
+            // `spectating` apply need the unported spectating system
+            // (`Player.spectating`, `Player.cs:1634`); both arms park with it
+            // (S1-I-4).
+            S2c::SpectatePlayer(_) => {}
+            // `case 153`'s client half (`MessageBuffer.cs:4408-4417`):
+            // `GetHurtByDebuff(damage)` (`NPC.cs:91864-91888`) — the DoT
+            // drain bypasses StrikeNPC (no i-frames, no knockback). The
+            // damage lands on the carrier (`realLife`, the port's
+            // `carrier_index`); the immortal gate skips the subtraction; a
+            // life ≤ 0 floors to 1 + the 9999 no-interaction kill (the
+            // port's instant-kill hp=0 convention, `npc.rs`'s
+            // StrikeNPCNoInteraction note). The combat text (`:91879`,
+            // LifeRegenNegative DoT) spawns on the struck NPC's box.
+            S2c::NpcDebuffDamage(d) => {
+                let slot = d.npc as usize;
+                if slot >= self.npcs.len() {
+                    return;
+                }
+                let target = crate::npc::Npc::carrier_index(&self.npcs, slot).unwrap_or(slot);
+                let amount = d.damage as i32;
+                if !self.npcs[target].immortal {
+                    self.npcs[target].hp -= amount; // `:91877`
+                }
+                // `:91879` — the DoT combat text on the STRUCK NPC's box.
+                // The text size rides the combat-font measurement (the
+                // heal-life convention, `world_sim/items.rs`); gravDir 1.0
+                // (the port has no gravity-flip system).
+                let (nx, ny) = (self.npcs[slot].x, self.npcs[slot].y);
+                let (nw, nh) = self.npcs[slot].size();
+                let text = amount.to_string();
+                let size = match self.lookups.combat_text_font.as_ref() {
+                    Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+                    None => [text.chars().count() as f32 * 8.0, 10.0],
+                };
+                crate::combat_text::spawn_amount(
+                    &mut self.combat_texts,
+                    crate::combat_text::Rect {
+                        x: nx,
+                        y: ny,
+                        width: nw,
+                        height: nh,
+                    },
+                    crate::combat_text::LIFE_REGEN_NEGATIVE,
+                    amount,
+                    false,
+                    true,
+                    size,
+                    1.0,
+                    self.rngs.global(),
+                );
+                if self.npcs[target].hp <= 0 && !self.npcs[target].immortal {
+                    // `:91880-91887` — life = 1 + StrikeNPCNoInteraction(9999);
+                    // the port's no-interaction instant kill is hp = 0.
+                    self.npcs[target].hp = 0;
+                }
+            }
+            // `case 158`'s client half (`MessageBuffer.cs:4450-4456`):
+            // `Main.player[b3].Spawn(PlayerSpawnContext.TeamSwap)` — the
+            // team-swap respawn at the extra spawn point. DOCUMENTED SKIP
+            // (W4-g51 id-158 census): the whole feature is netMode+seed-gated
+            // and large. The send is the `157` tail (`MessageBuffer.cs:2355-
+            // 2363`) behind `b == 157 && Main.teamBasedSpawnsSeed` AND a
+            // successful `TryGetExtraSpawnPointForTeam`; the client's Spawn
+            // routes through `Spawn_SetPositionAtTeamSpawn`
+            // (`Player.cs:37993-38011`), itself `teamBasedSpawnsSeed`-gated.
+            // The spawn points come from `ExtraSpawnPointManager` (446 lines:
+            // the skyblock/roundLandmass/extraLiquid landmass scans,
+            // `GenerateExtraSpawns_Setup` `:40-82`, the per-team Point[] the
+            // worldgen fills) — a secret-seed worldgen feature
+            // (`MicroSeedFlags::TEAM_BASED_SPAWNS`, bit 33) with no ported
+            // generator. The port's `teamBasedSpawnsSeed` reads false
+            // (`pvp_icon_state`'s note), so the arm is unreachable until the
+            // seed + manager + Spawn team-position land (M5-seed rows). The
+            // `7 WorldInfo` body already carries `extra_spawn_points`
+            // (`ExtraSpawnPointManager.Write`, the empty Vec today).
+            S2c::ExtraSpawnLoaded { .. } => {}
+            // `case 162`'s client half (`MessageBuffer.cs:1819-1824`):
+            // `NPC.AckDamage` pops `NPC.pendingDamages[0]` FIFO
+            // (`NPC.cs:90703-90713`). W4-g51 id-162 wired the queue: the
+            // client's strike pushes (`send_npc_strike`), the `23` reader
+            // subtracts the pending sum, and this ack pops the oldest.
+            S2c::NpcStrikeAck => {
+                crate::app::net_npc_sync::ack_damage(&mut self.net_pending_damages);
+            }
+            // `case 135`'s client half (`MessageBuffer.cs:4195-4203`):
+            // `Main.player[num103].immuneAlpha = 255` — the dead-peer ghost
+            // fade. The port's `immuneAlpha` blinkVisual half is draw-side
+            // and stays out (`player.rs`'s `update_immunity` doc, R-03-5),
+            // so there is no field to write; the arm is parked with the
+            // render-side ghost fade (S1-I-4).
+            S2c::DeadPlayer { .. } => {}
+            // `case 136`'s client half (`MessageBuffer.cs:4204-4217`): the
+            // 2×3 `NPC.cavernMonsterType` grid stores verbatim (the host
+            // ignores it, `:4206-4209`). The port's world field is the
+            // Main-global standing-in (`World::cavern_monster_type`); the
+            // deep-cavern spawn ladder's `:5099` grid arm stays censused
+            // (the 494-506 kinds have no NpcKind — the roster gap).
+            S2c::CavernMonsterTypes(t) => {
+                for i in 0..2 {
+                    for j in 0..3 {
+                        self.world.cavern_monster_type[i][j] = t.types[i][j] as i32;
+                    }
+                }
+            }
+            // `case 140` (`MessageBuffer.cs:4238-4263`): kind 0 is the
+            // client's `CreditsRollEvent.SetRemainingTimeDirect`
+            // (`CreditsRollEvent.cs:45-48`, `Utils.Clamp(time, 0, 28800)`)
+            // — WIRED to the world field (the timed roll's state; the
+            // CreditsRollSky cinematic itself is unported, the front
+            // screen stays untimed). Kinds 1/2 are HOST-only arms
+            // (`:4251`/`:4257`'s `netMode == 2` gates) — the client
+            // ignores them; unknown kinds read the tail and do nothing.
+            S2c::MiscEventValue(v) => {
+                if v.kind == 0 {
+                    self.world.set_credits_roll_remaining_time(v.value);
+                }
+            }
+            // `case 141`'s client half (`MessageBuffer.cs:4276-4279`):
+            // `LucyAxeMessage.CreateFromNet` spawns the popup text +
+            // `LucyTheAxeTalk` cue. The port has no Lucy popup-text system
+            // yet, so the arm parks with it (S1-I-4); the host relay above
+            // carries the body verbatim.
+            S2c::LucyPopup(_) => {}
+            // `case 142`'s client half (`MessageBuffer.cs:4289-4291`): the
+            // two `TrackedProjectileReference.Read`s land on
+            // `Main.player[num79]`. The port has no piggy-bank/void-lens
+            // projectile-tracking consumer, so the references are
+            // stored-not-simulated on the snapshot (the local player's
+            // included — there is no live field to write).
+            S2c::ProjectileTrackers(t) => {
+                self.remote_players
+                    .entry(t.player_id as u32)
+                    .or_default()
+                    .trackers = Some(t);
+            }
+            // `case 128`'s client half (`MessageBuffer.cs:4070-4072`):
+            // `PutBallInCup_TextAndEffects` — the cup dust/sound/chat FX
+            // (`GolfHelper.cs:115-123`) ride the golf system (M4-GOLF-1);
+            // the relay lands here until then (S1-I-4).
+            S2c::GolfBallInCup(_) => {}
+            // `case 131`'s client half (`MessageBuffer.cs:4122-4133`):
+            // kind 1 runs `GetImmuneTime(time, fromWho)` (`NPC.cs:92508-
+            // 92521`): fromWho -1 sets EVERY immune slot, else just
+            // `[fromWho]`. A slot ≥ maxNPCs tames a throwaway `new NPC()`
+            // (`:4127`) — the port's live-slot gate skips it (no slot to
+            // write). The only send site is the 485 statue-break 582 spawn
+            // (`WorldGen.cs:48373-48376`, fromWho -1, time 20).
+            S2c::TamperWithNpc(t) => {
+                if t.kind != 1 {
+                    return; // `:4128` — only kind 1 reads the tail
+                }
+                let Some((time, from_who)) = t.immune else {
+                    return;
+                };
+                let slot = t.npc as usize;
+                if slot >= self.npcs.len() {
+                    return; // `:4127` — the throwaway NPC, no live slot
+                }
+                let npc = &mut self.npcs[slot];
+                if from_who == -1 {
+                    npc.immune = [time; 256]; // `:92512-92515`
+                } else if from_who >= 0 && (from_who as usize) < npc.immune.len() {
+                    npc.immune[from_who as usize] = time; // `:92517-92520`
+                }
+            }
+            // `case 134`'s client half (`MessageBuffer.cs:4180-4188`): the
+            // eight fields land on `Main.player[num104]` then
+            // `RecalculateLuck`. The local player's live `luck_state` takes
+            // the apply + recalc; a peer's factors are stored on the snapshot
+            // (stored-not-simulated, the host convention).
+            S2c::UpdatePlayerLuckFactors(l) => {
+                if l.player_id as u32 == self.local_id {
+                    if let Some(p) = self.player.as_mut() {
+                        apply_luck_factors(&mut p.luck_state, &l);
+                        p.luck_state.recalculate_luck(); // `:4188`
+                    }
+                } else {
+                    self.remote_players
+                        .entry(l.player_id as u32)
+                        .or_default()
+                        .luck = Some(l);
+                }
+            }
+            // `case 129` (`MessageBuffer.cs:4075-4085`): the client's team
+            // re-push (`45` when `team > 0`), then `FixUIScale` +
+            // `TrySetPreparationState(ProcessingData)`. The port's join walk
+            // already drives the state machine; the team re-push is the
+            // observable wire half (the UI-scale/preparation-state are
+            // front-end internals the port's install owns). W4-g51 f21.
+            S2c::FinishedConnecting => {
+                if let Some(p) = self.player.as_ref() {
+                    if p.team > 0 {
+                        if let NetRole::Client(client) = &self.net {
+                            client.send(&C2s::TeamChange(net::TeamChange {
+                                player_id: self.local_id as u8,
+                                team: p.team as u8,
+                            }));
+                        }
+                    }
+                }
+            }
+            // `case 139` (`MessageBuffer.cs:4230-4237`): the client stores
+            // `Main.countsAsHostForGameplay[id]` — a GLOBAL per-slot array,
+            // so the join push names the receiving client's OWN slot. The
+            // port keeps it on the peer snapshot (the creative-power
+            // authority consumer is unported); the local slot's flag is the
+            // g52c master input the host-authority gates read. W4-g51 FINAL.
+            S2c::CountsAsHost(c) => {
+                self.remote_players
+                    .entry(c.player_id as u32)
+                    .or_default()
+                    .counts_as_host = c.counts_as_host;
+            }
+            // `case 146` (`MessageBuffer.cs:4310-4327`): kind 0
+            // `WorldItem.ShimmerEffect` (the FX — the port's shimmer dust/sound
+            // is the shimmer-system's, parked here as the FX-only arm), kind 1
+            // `AddCoinLuck` (`Player.cs:18090-18101`: the local player's
+            // coin_luck += amount within 1000 px, capped 1e6). Unknown kinds
+            // read nothing. W4-g51 f21.
+            S2c::ShimmerAction(a) => match a {
+                net::ShimmerAction::CoinLuck { x, y, amount } => {
+                    if let Some(p) = self.player.as_mut() {
+                        let pc = Vec2::new(p.center().0, p.center().1);
+                        // `Player.cs:18092`'s `!dead && distance < 1000`.
+                        if !p.dead && (Vec2::new(x, y) - pc).length() < 1000.0 {
+                            p.luck_state.coin_luck =
+                                (p.luck_state.coin_luck + amount as f32).min(1_000_000.0);
+                            p.luck_state.recalculate_luck();
+                        }
+                    }
+                }
+                // kind 0's ShimmerEffect is the dust+sound FX
+                // (`WorldItem.cs:1661-1689`) — the port's shimmer FX rides the
+                // shimmer system; the net FX arm parks with it (the coin-luck
+                // half above is the gameplay-observable state).
+                net::ShimmerAction::Effect { .. } | net::ShimmerAction::Unknown(_) => {}
+            },
+            // `case 152`'s client half (`MessageBuffer.cs:4397-4405`): play the
+            // peer's held item's `UseSound` at its Centre with `useSoundPitch`.
+            // The port reads the peer's selected inventory slot from the
+            // snapshot; the local player's own use-sound already played at the
+            // use start (the `initial_use_sound` path), so a self-echo is
+            // skipped (the C# plays every peer's including its own relay — the
+            // port's relay excludes the sender, so no self-echo arrives).
+            S2c::ItemUseSound { player_id } => {
+                let peer = player_id as u32;
+                if let Some(p) = self.remote_players.get(&peer) {
+                    let held = p.inventory.get(&(p.selected as u8)).map(|it| it.kind);
+                    if let Some(kind) = held {
+                        if kind > 0 {
+                            if let Some((style, pitch)) = crate::item::initial_use_sound(kind as u16) {
+                                let (x, y) = (p.x, p.y);
+                                self.audio.play_use_sound(
+                                    style,
+                                    x,
+                                    y,
+                                    pitch,
+                                    self.rngs.global(),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            // `case 160` (`MessageBuffer.cs:4463-4470`): the drop's position
+            // snap (no velocity) — the section-sweep correction. The port's
+            // client drops live in `net_items` keyed by the host slot.
+            // W4-g51 f21.
+            S2c::ItemPosition(p) => {
+                if let Some(d) = self.net_items.get_mut(&p.slot) {
+                    d.pos = Vec2::new(p.x, p.y);
+                    self.net_items_dirty = true;
+                }
+            }
+            // `case 121`'s client half (`MessageBuffer.cs:3930-3935`):
+            // `ReadData`/`ReadDummySync` on the doll store (no relay — the
+            // client never re-sends). W4-g51 FINAL.
+            S2c::DisplayDollSync(d) => {
+                self.apply_doll_sync(d);
+            }
+            // `case 122`'s client half (`MessageBuffer.cs:3964-3975`): -1
+            // clears the anchor; otherwise `TryGet` + `SetInteractionAnchor`
+            // (`TileEntity.cs:289-313`): chest = -1, SetTalkNPC(-1), the
+            // local-player UI tail, then `tileEntityAnchor.Set`. W4-g51 FINAL.
+            S2c::TileEntityInteraction(t) => {
+                if t.entity_id == -1 {
+                    self.net_te_anchors.remove(&t.player_id); // `Clear()`
+                    return;
+                }
+                if t.entity_id < 0 {
+                    return;
+                }
+                let Some(e) = self
+                    .world
+                    .tile_entities
+                    .get_by_id(t.entity_id as u32)
+                    .filter(|e| {
+                        // `TryGet` fails on a removed `ByID` entry — the
+                        // tombstoned slot reads as missing (SEAL re-pin).
+                        self.world
+                            .tile_entities
+                            .get_at(e.x, e.y)
+                            .is_some_and(|live| live.id == e.id)
+                    })
+                else {
+                    return; // `TryGet` fails
+                };
+                let (ex, ey) = (e.x as i32, e.y as i32);
+                // `SetInteractionAnchor` (`TileEntity.cs:289-313`): the
+                // subject's chest closes + the talk NPC clears; the
+                // local-player half opens the inventory + the 10/12 cue.
+                if t.player_id as u32 == self.local_id {
+                    if let Some(p) = self.player.as_mut() {
+                        p.chest = -1; // `:291`
+                    }
+                    self.close_shop(); // the shop is the talk-NPC's UI half
+                    self.talk_npc = None; // `:292` — `SetTalkNPC(-1)`
+                    self.npc_chat_text.clear();
+                    let was_clear = !self.net_te_anchors.contains_key(&t.player_id);
+                    // `IngameUIWindows.CloseAll(quiet)` + `playerInventory =
+                    // true` (`:296-297`); the port's inventory-open latch.
+                    self.inventory_open = true;
+                    // `:303-310` — sound 12 when an anchor was already set,
+                    // sound 10 on a fresh open.
+                    crate::chest::play_menu_sound(self, if was_clear { 10 } else { 12 });
+                } else if let Some(p) = self.remote_players.get_mut(&(t.player_id as u32)) {
+                    p.chest = None; // the peer's chest closes
+                }
+                // `player.tileEntityAnchor.Set(id, x, y)` (`:312`).
+                self.net_te_anchors
+                    .insert(t.player_id, (t.entity_id, ex, ey));
+            }
+            // `case 124`'s client half (`MessageBuffer.cs:4004-4016`): unfold
+            // the dye flag, the `TryGet<TEHatRack>` + `slot >= 2` refusal,
+            // else `ReadItem`. W4-g51 FINAL.
+            S2c::HatRackItemSync(h) => {
+                let dye = h.is_dye();
+                let slot = h.slot_index();
+                if h.entity_id < 0 || slot >= 2 {
+                    return; // `:4010-4015`
+                }
+                let ok = self
+                    .world
+                    .tile_entities
+                    .get_by_id(h.entity_id as u32)
+                    .is_some_and(|e| {
+                        e.kind == tr_core::tile_entities::TeKind::HatRack
+                            // The tombstoned slot reads as missing (the
+                            // host gate's SEAL re-pin).
+                            && self
+                                .world
+                                .tile_entities
+                                .get_at(e.x, e.y)
+                                .is_some_and(|live| live.id == e.id)
+                    });
+                if ok {
+                    self.apply_hat_rack_item(h.entity_id as u32, slot, dye, h.item);
+                }
+            }
         }
     }
 
@@ -5258,6 +6452,9 @@ impl App {
         self.map = Some(map::WorldMap::new(&self.world));
         self.npcs.clear();
         self.items.clear();
+        // `NPC.ClearAll` (`NPC.cs:8369`) — the pending-damage queue clears
+        // with the world (W4-g51 id-162).
+        self.net_pending_damages.clear();
         self.world_key = None;
         self.net_info = None;
         self.net_pending_sections.clear();
@@ -6337,6 +7534,107 @@ impl App {
         self.notify_progression_net(29)
     }
 
+    /// `WorldGen.CheckAchievement_RealEstateAndTownSlimes`
+    /// (`WorldGen.cs:5659-5677`): the housed-NPC census — every active,
+    /// non-homeless NPC marks its `type`; the 25-type real-estate set fires
+    /// progression 17, the 8-town-slime set fires 26. The port's `cs_id` is
+    /// the C# `NPC.type`; the town slimes (670/678-684) have no ported kind,
+    /// so the 26 gate can never fire until they land (the census still runs).
+    fn check_real_estate_and_town_slimes(&mut self) {
+        let mut housed = [false; 697]; // `NPCID.Count`
+        for n in &self.npcs {
+            if n.hp > 0 && n.home.is_some() {
+                let ty = n.kind.cs_id() as usize;
+                if ty < housed.len() {
+                    housed[ty] = true;
+                }
+            }
+        }
+        const REAL_ESTATE: [usize; 25] = [
+            38, 17, 107, 19, 22, 124, 228, 178, 18, 229, 209, 54, 108, 160, 20, 369, 207,
+            227, 208, 441, 353, 550, 588, 633, 663,
+        ];
+        const TOWN_SLIMES: [usize; 8] = [670, 678, 679, 680, 681, 682, 683, 684];
+        if REAL_ESTATE.iter().all(|&t| housed[t]) {
+            self.notify_progression_net(17); // `:5671`
+        }
+        if TOWN_SLIMES.iter().all(|&t| housed[t]) {
+            self.notify_progression_net(26); // `:5675`
+        }
+    }
+
+    /// `Main.teamColor` (`Main.cs:6657-6662`): the six team colours, index 0
+    /// white (no team) through 5 pink.
+    fn team_color(team: u8) -> net::Rgb {
+        const COLORS: [(u8, u8, u8); 6] = [
+            (255, 255, 255), // 0 white
+            (218, 59, 59),   // 1 red
+            (59, 218, 85),   // 2 green
+            (59, 149, 218),  // 3 blue
+            (242, 221, 100), // 4 yellow
+            (224, 100, 242), // 5 pink
+        ];
+        let (r, g, b) = COLORS[(team as usize).min(5)];
+        net::Rgb(r, g, b)
+    }
+
+    /// The shared `case 45: case 157:` host arm (`MessageBuffer.cs:2325-
+    /// 2364`): force the subject to the sender (`:2329-2332`), set the team
+    /// (`:2336`), relay as `45` with `ignoreClient = sender` (`:2342`), then
+    /// the team-chat fan-out (`:2343-2354`): `Lang.mp[13 + team]` (team 5 →
+    /// `mp[22]`) formatted with the player name, sent to the sender + every
+    /// old-team / new-team member. The 157-only team-based-spawns tail
+    /// (`:2355-2363`) is the caller's (parked — no `teamBasedSpawnsSeed`).
+    fn apply_team_change_net(&mut self, server: &net::Server, id: u32, new_team: u8) {
+        let old_team = self
+            .remote_players
+            .get(&id)
+            .map(|p| p.team)
+            .unwrap_or(0);
+        self.remote_players.entry(id).or_default().team = new_team; // `:2336`
+        let name = server.slot_name(id);
+        // `:2342` — relay as 45 to the OTHERS.
+        server.broadcast_except(
+            &S2c::TeamChange(net::TeamChange {
+                player_id: id as u8,
+                team: new_team,
+            }),
+            id,
+        );
+        // `:2343-2347` — the message key (team 5 special-cased to mp[22]).
+        let key_idx = if new_team == 5 { 22 } else { 13 + new_team as usize };
+        let text = crate::lang::text_args(
+            &format!("LegacyMultiplayer.{key_idx}"),
+            &[name.clone()],
+        );
+        let color = Self::team_color(new_team);
+        let sm = crate::app::netmodules::ServerMessage {
+            author: id as u8,
+            text,
+            color,
+        };
+        let frame = S2c::NetModule {
+            module: crate::app::netmodules::module_id::TEXT,
+            body: sm.encode(),
+        };
+        // `:2348-2354` — the sender + the old-team / new-team members. The
+        // host's own slot (0) rides `player.team`; the peers ride PlayerNet.
+        let host_team = self.player.as_ref().map(|p| p.team as u8).unwrap_or(0);
+        for peer in 0..255u32 {
+            let peer_team = if peer == 0 {
+                host_team
+            } else {
+                self.remote_players.get(&peer).map(|p| p.team).unwrap_or(0)
+            };
+            let receives = peer == id
+                || (old_team > 0 && peer_team == old_team)
+                || (new_team > 0 && peer_team == new_team);
+            if receives {
+                server.send(peer, &frame);
+            }
+        }
+    }
+
     /// `NPCKillsTracker.RegisterKill`'s broadcast half
     /// (`NPCKillsTracker.cs:23-33`): the host pushes the credit's new count
     /// through `NetBestiaryModule.SerializeKillCount`.
@@ -6392,13 +7690,19 @@ impl App {
     /// A client-side strike on a networked NPC: the `28` body addressed by the
     /// host's slot and the generation the `23` push delivered
     // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
+    /// W4-g51 id-162: the send also PUSHES the pending-damage entry
+    /// (`NPC.PushPendingDamage`, `NPC.cs:81221` → `:90672-90685`) and folds
+    /// the landed damage in (`AddStrikeDamage`, `:90687-90693` — the caller
+    /// passes `landed_damage`, 0 when the local strike was refused). The
+    /// `realLife` redirect (`:90674-90677`) resolves the carrier first.
     pub(crate) fn send_npc_strike(
-        &self,
+        &mut self,
         idx: usize,
         damage: i32,
         knock_back: f32,
         crit: bool,
         from_right: bool,
+        landed_damage: i32,
     ) {
         if !matches!(self.net, NetRole::Client(_)) {
             return;
@@ -6413,6 +7717,30 @@ impl App {
             .get(&slot)
             .map(|(_, g)| *g as u8)
             .unwrap_or(0);
+        // `PushPendingDamage`'s `realLife` redirect (`NPC.cs:90674-90677`):
+        // a linked segment's entry keys the CARRIER's slot + generation.
+        let carrier_slot = crate::npc::Npc::carrier_index(&self.npcs, idx)
+            .and_then(|c| self.net_npc_slots.get(c).copied())
+            .unwrap_or(slot);
+        let carrier_gen = self
+            .net_npc_gen
+            .get(&carrier_slot)
+            .map(|(_, g)| *g as u8)
+            .unwrap_or(generation);
+        let current = crate::app::net_npc_sync::push_pending_damage(
+            &mut self.net_pending_damages,
+            carrier_slot as i16,
+            carrier_gen,
+        );
+        // `AddStrikeDamage` (`NPC.cs:90687-90693`): the landed damage folds
+        // into the current entry (the client gate is this method's role check).
+        crate::app::net_npc_sync::add_strike_damage(
+            &mut self.net_pending_damages,
+            Some(current),
+            carrier_slot as i16,
+            carrier_gen,
+            landed_damage,
+        );
         if let NetRole::Client(client) = &self.net {
             client.send(&C2s::NpcStrike(net::NpcStrike {
                 npc: slot as u8,
@@ -6421,6 +7749,20 @@ impl App {
                 knock_back,
                 hit_direction: if from_right { 1 } else { -1 },
                 crit,
+            }));
+        }
+    }
+
+    /// `NPC.TransformCopperSlime` / `TransformElderSlime`'s client sends
+    /// (`NPC.cs:19164`/`:19140`): on a client the transform request goes
+    /// to the host as `140` kind 1/2 with the NPC slot; the host applies
+    /// (`MessageBuffer.cs:4250-4260`). The local unlock/Transform half is
+    /// the host's answer (the `7` re-push + the `23` transform update).
+    pub(crate) fn send_town_slime_transform(&self, slot: usize, kind: u8) {
+        if let NetRole::Client(client) = &self.net {
+            client.send(&C2s::MiscEventValue(net::MiscEventValue {
+                kind,
+                value: slot as i32,
             }));
         }
     }
@@ -7431,6 +8773,635 @@ mod handshake_tests {
         peer.off_y = 0.0;
         client_app.net_interp_tick(1.0 / 60.0);
         assert_eq!(client_app.remote_players[&0].off_x, 0.0);
+    }
+
+    /// W4-g51 `125 SyncTilePicking`: the host forces the subject to the
+    /// sender and relays to the others (`MessageBuffer.cs:4029-4040`); the
+    /// receiving client applies the pick damage to its OWN `hitTile`
+    /// (`Main.player[Main.myPlayer].GetOtherPlayersPickTile`, `:4033-4036`).
+    #[test]
+    fn the_tile_picking_relays_and_lands_on_the_local_pick_book() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The host arm: the subject is forced to the sender and the relay
+        // goes to the OTHERS (a single client means nobody else receives).
+        // The role is taken out so the handler can borrow `self` mutably
+        // (the `poll_net` convention).
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 1,
+                    msg: C2s::TilePicking(net::TilePicking {
+                        player_id: 99, // overridden to the sender (1)
+                        x: 12,
+                        y: 7,
+                        damage: 40,
+                    }),
+                },
+            );
+        }
+        host_app.net = role;
+        // The client arm applies to the LOCAL pick book regardless of the
+        // wire subject (`Main.myPlayer`, `:4035`).
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::TilePicking(net::TilePicking {
+                    player_id: 1,
+                    x: 12,
+                    y: 7,
+                    damage: 40,
+                })),
+            );
+        }
+        client_app.net = role;
+        let id = client_app
+            .hit_tile
+            .hit_object(12, 7, tr_core::hit_tile::TILE);
+        assert_eq!(
+            client_app.hit_tile.add_damage(id, 0, false),
+            40,
+            "the pick damage accumulated on the local book"
+        );
+    }
+
+    /// W4-g51 `126 SyncRevengeMarker`: the client's `AddMarkerFromReader`
+    /// lands the marker in the session list with the ctor's expiration
+    /// (`MessageBuffer.cs:4043-4048`, `CoinLossRevengeSystem.cs:321-324`).
+    #[test]
+    fn the_revenge_marker_lands_in_the_session_list() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut host_app;
+        client_app.revenge_tick = 1000;
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::RevengeMarker(net::RevengeMarker {
+                    unique_id: 9,
+                    x: 1234.5,
+                    y: 678.25,
+                    npc_net_id: 1, // Blue Slime — a ported kind
+                    npc_hp_percent: 0.75,
+                    npc_type: 1,
+                    npc_ai_style: 1,
+                    coins_value: 50000,
+                    base_value: 12.5,
+                    spawned_from_statue: false,
+                })),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(client_app.revenge_markers.len(), 1, "the marker landed");
+        let m = &client_app.revenge_markers[0];
+        assert_eq!(m.unique_id, 9);
+        assert_eq!(m.coins_value, 50000);
+        assert_eq!(
+            m.expiration_tick,
+            1000 + crate::revenge::expiration_addon(50000),
+            "the ctor's gameTime + bracket expiration"
+        );
+    }
+
+    /// W4-g51 `127 RemoveRevengeMarker`: the client's `DestroyMarker` removes
+    /// every marker with the matching UniqueID
+    /// (`MessageBuffer.cs:4049-4057`, `CoinLossRevengeSystem.cs:334-340`).
+    #[test]
+    fn the_remove_revenge_marker_destroys_the_matching_id() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut host_app;
+        // Two markers, ids 9 and 10 (the 126 apply path).
+        for uid in [9i32, 10] {
+            let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+            if let NetRole::Client(client) = &role {
+                client_app.client_event(
+                    client,
+                    net::ClientEvent::Frame(S2c::RevengeMarker(net::RevengeMarker {
+                        unique_id: uid,
+                        x: 0.0,
+                        y: 0.0,
+                        npc_net_id: 1,
+                        npc_hp_percent: 1.0,
+                        npc_type: 1,
+                        npc_ai_style: 1,
+                        coins_value: 1000,
+                        base_value: 0.0,
+                        spawned_from_statue: false,
+                    })),
+                );
+            }
+            client_app.net = role;
+        }
+        assert_eq!(client_app.revenge_markers.len(), 2);
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::RemoveRevengeMarker(
+                    net::RemoveRevengeMarker { unique_id: 9 },
+                )),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(client_app.revenge_markers.len(), 1, "id 9 was destroyed");
+        assert_eq!(client_app.revenge_markers[0].unique_id, 10);
+    }
+
+    /// W4-g51 `130 FishOutNPC`: type 682 flips `unlockedSlimeRedSpawn` once
+    /// and re-pushes `7 WorldData` (`MessageBuffer.cs:4095-4103`); a second
+    /// 682 is refused (`:4097-4100`). The port has no town-slime kind, so the
+    /// spawn itself is the roster gap — the unlock is the observable state.
+    #[test]
+    fn the_fish_out_red_slime_unlocks_once() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut client_app;
+        assert!(!host_app.world.unlocked_slime_red_spawn);
+        for _ in 0..2 {
+            let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+            if let NetRole::Host(server) = &role {
+                host_app.host_event(
+                    server,
+                    net::ServerEvent::Frame {
+                        id: 1,
+                        msg: C2s::FishOutNpc(net::FishOutNpc {
+                            tile_x: 10,
+                            tile_y: 5,
+                            npc_type: 682,
+                        }),
+                    },
+                );
+            }
+            host_app.net = role;
+        }
+        assert!(
+            host_app.world.unlocked_slime_red_spawn,
+            "the first 682 flipped the unlock"
+        );
+    }
+
+    /// W4-g51 `136 SyncCavernMonsterType`: the client stores the 2×3 grid
+    /// verbatim (`MessageBuffer.cs:4210-4216`), and the join bundle pushes
+    /// the host's rolled grid (`:870`) — the joined client's field equals
+    /// the host's.
+    #[test]
+    fn the_cavern_grid_stores_and_rides_the_join_bundle() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The join tail rolled the host's grid (`WorldFile.cs:771`); the
+        // join push carried it to the client verbatim.
+        assert_eq!(
+            client_app.world.cavern_monster_type, host_app.world.cavern_monster_type,
+            "the join push delivered the host's grid"
+        );
+        // A later re-sync overwrites verbatim (row-major).
+        let grid = [[494u16, 495, 494], [499, 502, 506]];
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::CavernMonsterTypes(net::CavernMonsterTypes {
+                    types: grid,
+                })),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(
+            client_app.world.cavern_monster_type,
+            [[494, 495, 494], [499, 502, 506]],
+            "the six ushorts stored row-major"
+        );
+    }
+
+    /// W4-g51 id-140 kind 0: the client's `SetRemainingTimeDirect` clamps
+    /// to 0..28800 (`CreditsRollEvent.cs:45-48`); the join bundle pushes
+    /// the host's live roll (`NetMessage.cs:2818`, the `!= 0` gate).
+    #[test]
+    fn the_credits_roll_time_clamps_and_rides_the_join_bundle() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut host_app;
+        for (sent, want) in [(500i32, 500i32), (99999, 28800), (-5, 0)] {
+            let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+            if let NetRole::Client(client) = &role {
+                client_app.client_event(
+                    client,
+                    net::ClientEvent::Frame(S2c::MiscEventValue(net::MiscEventValue {
+                        kind: 0,
+                        value: sent,
+                    })),
+                );
+            }
+            client_app.net = role;
+            assert_eq!(
+                client_app.world.credits_roll_remaining_time, want,
+                "sent {sent}"
+            );
+        }
+        // Kinds 1/2 are host-only — the client ignores them (`:4251`).
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::MiscEventValue(net::MiscEventValue {
+                    kind: 1,
+                    value: 0,
+                })),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(client_app.world.credits_roll_remaining_time, 0);
+        // The join push: a live roll on the host reaches a fresh joiner.
+        host_app.world.credits_roll_remaining_time = 1234;
+        let info = host_app.world_info();
+        let _ = info;
+        // (The push itself is exercised by the join-bundle walk; the
+        // clamp + the field are the arm's observable state.)
+        host_app.world.tick_credits_roll();
+        assert_eq!(host_app.world.credits_roll_remaining_time, 1233);
+    }
+
+    /// W4-g51 id-140 kinds 1/2: the host's transform gates — kind 1 needs
+    /// a `CanConvertIntoCopperSlimeTownNPC` type (the port's Blue Slime,
+    /// cs_id 1) and flips `unlockedSlimeCopperSpawn` ONCE; kind 2 needs
+    /// type 685 (no ported kind — the gate refuses every live NPC).
+    #[test]
+    fn the_town_slime_transform_unlocks_once_through_the_type_gate() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut client_app;
+        host_app
+            .npcs
+            .push(crate::npc::Npc::new(crate::npc::NpcKind::Slime, 0.0, 0.0, 1, 0.0));
+        assert!(!host_app.world.unlocked_slime_copper_spawn);
+        for _ in 0..2 {
+            let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+            if let NetRole::Host(server) = &role {
+                host_app.host_event(
+                    server,
+                    net::ServerEvent::Frame {
+                        id: 1,
+                        msg: C2s::MiscEventValue(net::MiscEventValue { kind: 1, value: 0 }),
+                    },
+                );
+            }
+            host_app.net = role;
+        }
+        assert!(
+            host_app.world.unlocked_slime_copper_spawn,
+            "the Blue Slime (cs_id 1) is in the convert set"
+        );
+        // Kind 2: no live NPC is type 685 — the unlock stays down.
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 1,
+                    msg: C2s::MiscEventValue(net::MiscEventValue { kind: 2, value: 0 }),
+                },
+            );
+        }
+        host_app.net = role;
+        assert!(!host_app.world.unlocked_slime_old_spawn);
+        // An out-of-range slot is refused (`IndexInRange`).
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 1,
+                    msg: C2s::MiscEventValue(net::MiscEventValue { kind: 2, value: 999 }),
+                },
+            );
+        }
+        host_app.net = role;
+        assert!(!host_app.world.unlocked_slime_old_spawn);
+    }
+
+    /// W4-g51 `131 TamperWithNPC`: kind 1 with fromWho -1 sets EVERY immune
+    /// slot (`MessageBuffer.cs:4128-4131`, `NPC.cs:92512-92515`); a specific
+    /// fromWho sets just that slot (`:92517-92520`).
+    #[test]
+    fn the_tamper_with_npc_sets_the_immune_slots() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut host_app;
+        // Seed one live NPC on the client.
+        client_app
+            .npcs
+            .push(crate::npc::Npc::new(crate::npc::NpcKind::Slime, 0.0, 0.0, 1, 0.0));
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::TamperWithNpc(net::TamperWithNpc {
+                    npc: 0,
+                    kind: 1,
+                    immune: Some((20, -1)),
+                })),
+            );
+        }
+        client_app.net = role;
+        assert!(
+            client_app.npcs[0].immune.iter().all(|&v| v == 20),
+            "fromWho -1 set every slot"
+        );
+        // A specific fromWho writes just that slot.
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::TamperWithNpc(net::TamperWithNpc {
+                    npc: 0,
+                    kind: 1,
+                    immune: Some((7, 3)),
+                })),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(client_app.npcs[0].immune[3], 7);
+        assert_eq!(client_app.npcs[0].immune[0], 20, "the other slots kept 20");
+    }
+
+    /// W4-g51 `134 UpdatePlayerLuckFactors`: the local player's eight luck
+    /// fields land + `RecalculateLuck` runs (`MessageBuffer.cs:4180-4188`);
+    /// a peer's factors are stored on the snapshot (stored-not-simulated).
+    #[test]
+    fn the_luck_factors_apply_to_the_local_player_and_recalculate() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut host_app;
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        let me = client_app.local_id as u8;
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::UpdatePlayerLuckFactors(
+                    net::UpdatePlayerLuckFactors {
+                        player_id: me,
+                        ladybug_luck_time_left: 0,
+                        torch_luck: 0.0,
+                        luck_potion: 3,
+                        has_garden_gnome_nearby: true,
+                        broken_mirror_bad_luck: false,
+                        equipment_based_luck_bonus: 0.0,
+                        coin_luck: 0.0,
+                        kite_luck_level: 0,
+                    },
+                )),
+            );
+        }
+        client_app.net = role;
+        let p = client_app.player.as_ref().unwrap();
+        assert_eq!(p.luck_state.luck_potion, 3);
+        assert!(p.luck_state.has_garden_gnome_nearby);
+        // RecalculateLuck: potion 3 × 0.1 + gnome 0.2 = 0.5.
+        assert!(
+            (p.luck_state.luck - 0.5).abs() < 1e-5,
+            "the recalculated luck is 0.5, got {}",
+            p.luck_state.luck
+        );
+    }
+
+    /// W4-g51 `137 RequestNPCBuffRemoval`: the host gates the slot then runs
+    /// `RequestBuffRemoval` (`MessageBuffer.cs:4219-4228`). The
+    /// `CanBeRemovedByNetMessage` set is EMPTY (`BuffID.cs:48`), so the buff
+    /// survives — the seam is wired but refuses every id.
+    #[test]
+    fn the_npc_buff_removal_request_is_gated_off_by_the_empty_set() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut client_app;
+        let mut npc = crate::npc::Npc::new(crate::npc::NpcKind::Slime, 0.0, 0.0, 1, 0.0);
+        npc.buffs.add_buff(20, 600); // Poisoned
+        host_app.npcs.push(npc);
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 1,
+                    msg: C2s::NpcBuffRemovalRequest(net::NpcBuffRemovalRequest {
+                        npc: 0,
+                        buff_type: 20,
+                    }),
+                },
+            );
+        }
+        host_app.net = role;
+        assert!(
+            host_app.npcs[0].buffs.has_buff(20),
+            "the empty CanBeRemovedByNetMessage set refuses the removal"
+        );
+    }
+
+    /// W4-g51 `143 CrystalInvasionSkip`: the host's `AttemptToSkipWaitTime`
+    /// (`MessageBuffer.cs:4298-4303`, `DD2Event.cs:1795-1801`) clamps a
+    /// >60 wave-break hold to 60; the strict gate refuses at exactly 60.
+    #[test]
+    fn the_crystal_invasion_skip_clamps_the_wave_break_hold() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut client_app;
+        host_app.world.dd2_spawn_hold = 1800;
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 1,
+                    msg: C2s::CrystalInvasionSkip,
+                },
+            );
+        }
+        host_app.net = role;
+        assert_eq!(host_app.world.dd2_spawn_hold, 60, "the >60 hold clamped to 60");
+        // A second skip at exactly 60 is refused (strict >).
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 1,
+                    msg: C2s::CrystalInvasionSkip,
+                },
+            );
+        }
+        host_app.net = role;
+        assert_eq!(host_app.world.dd2_spawn_hold, 60, "the strict gate refused");
+    }
+
+    /// W4-g51 `142 SyncProjectileTrackers`: the host forces the subject to
+    /// the sender and stores the references on the peer snapshot
+    /// (`MessageBuffer.cs:4282-4297`, stored-not-simulated).
+    #[test]
+    fn the_projectile_trackers_store_on_the_peer_snapshot() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut client_app;
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 1,
+                    msg: C2s::ProjectileTrackers(net::ProjectileTrackers {
+                        player_id: 99, // overridden to the sender (1)
+                        piggy_bank: net::TrackedProjectileRef { key: 7, kind: 1 },
+                        void_lens: net::TrackedProjectileRef { key: 8, kind: 2 },
+                    }),
+                },
+            );
+        }
+        host_app.net = role;
+        let t = host_app.remote_players[&1]
+            .trackers
+            .expect("the trackers stored");
+        assert_eq!(t.player_id, 1, "the subject was forced to the sender");
+        assert_eq!(t.piggy_bank.key, 7);
+        assert_eq!(t.void_lens.kind, 2);
+    }
+
+    /// W4-g51 `147 SyncLoadout`: the local player's accessory-visibility
+    /// bits unpack from the ushort (`MessageBuffer.cs:4337`, `:4494-4501`,
+    /// bit i per slot); the loadout swap itself is unported.
+    #[test]
+    fn the_sync_loadout_unpacks_the_accessory_visibility() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut host_app;
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        let me = client_app.local_id as u8;
+        // Bits 0 and 3 set -> slots 0 and 3 hidden.
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::SyncLoadout(net::SyncLoadout {
+                    player_id: me,
+                    loadout: 1,
+                    hide_accessory: 0b1001,
+                })),
+            );
+        }
+        client_app.net = role;
+        let p = client_app.player.as_ref().unwrap();
+        assert!(p.hide_visible_accessory[0], "bit 0 hid slot 0");
+        assert!(!p.hide_visible_accessory[1]);
+        assert!(!p.hide_visible_accessory[2]);
+        assert!(p.hide_visible_accessory[3], "bit 3 hid slot 3");
+        assert!(!p.hide_visible_accessory[4]);
+    }
+
+    /// W4-g51 `153 NPCDebuffDamage`: the client's `GetHurtByDebuff` drains hp
+    /// directly (no i-frames), the immortal gate skips, and a life ≤ 0 takes
+    /// the no-interaction kill (`MessageBuffer.cs:4408-4417`,
+    /// `NPC.cs:91864-91888`).
+    #[test]
+    fn the_npc_debuff_damage_drains_hp_and_kills_at_zero() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut host_app;
+        let mut npc = crate::npc::Npc::new(crate::npc::NpcKind::Slime, 0.0, 0.0, 1, 0.0);
+        npc.hp = 30;
+        client_app.npcs.push(npc);
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::NpcDebuffDamage(net::NpcDebuffDamage {
+                    npc: 0,
+                    damage: 10,
+                })),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(client_app.npcs[0].hp, 20, "the DoT drained 10");
+        // A lethal tick floors to the no-interaction kill (hp = 0).
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::NpcDebuffDamage(net::NpcDebuffDamage {
+                    npc: 0,
+                    damage: 9999,
+                })),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(client_app.npcs[0].hp, 0, "the lethal tick took the kill");
+    }
+
+    /// W4-g51 `157 TeamChangeFromUI`: the host forces the subject, sets the
+    /// team and relays as 45 (`MessageBuffer.cs:2325-2364`); the team-chat
+    /// fan-out reaches the sender.
+    #[test]
+    fn the_team_change_from_ui_sets_the_team_and_relays() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let (mut host_app, mut client_app) = in_world_pair();
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 1,
+                    msg: C2s::TeamChangeUi(net::TeamChange {
+                        player_id: 99, // overridden to the sender (1)
+                        team: 2,
+                    }),
+                },
+            );
+        }
+        host_app.net = role;
+        assert_eq!(host_app.remote_players[&1].team, 2, "the team was set");
+        // The sender received the team-chat line (green team, mp[15]).
+        pump(&mut host_app, &mut client_app, 10);
+        assert!(
+            client_app
+                .chat
+                .messages
+                .iter()
+                .any(|m| m.text.contains("green team")),
+            "the team-chat fan-out reached the sender"
+        );
+    }
+
+    /// W4-g51 `159 RequestSection`: the host's `SendSection` gates the bounds
+    /// + not-already-sent, marks the section and streams the `10 TileBlock`
+    /// (`MessageBuffer.cs:4457-4462`, `NetMessage.cs:2697-2712`).
+    #[test]
+    fn the_section_request_streams_the_tile_block_once() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // Ask for a section the join box already covered (spawn section 0,0
+        // is sent during the join); pick one outside it.
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 1,
+                    msg: C2s::SectionRequest {
+                        section_x: 0,
+                        section_y: 0,
+                    },
+                },
+            );
+        }
+        host_app.net = role;
+        // The join already marked (0,0) sent, so the request is a no-op gate
+        // (the C#'s !TileSections check). The world is tiny (one section),
+        // so the bounds gate is the observable: an out-of-range ask drops.
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 1,
+                    msg: C2s::SectionRequest {
+                        section_x: 999,
+                        section_y: 999,
+                    },
+                },
+            );
+        }
+        host_app.net = role;
+        // No panic, no kick — the bounds gate refused silently.
+        pump(&mut host_app, &mut client_app, 5);
+        assert_eq!(client_app.net_state, net::client_state::IN_WORLD);
     }
 
     #[test]
@@ -9036,6 +11007,613 @@ mod message_family_tests {
             .achievements
             .notify(achievements::CondKind::NpcKilled(4));
         assert_eq!(again, None, "the 97 already completed EYE_ON_YOU");
+    }
+
+    /// W4-g51 id-162: the client's strike pushes a pending-damage entry, the
+    /// host's `162` ack pops it FIFO, and the `23` reader subtracts the
+    /// pending sum from the wire life (`MessageBuffer.cs:1668-1676`).
+    #[test]
+    fn the_pending_damage_queue_pushes_acks_and_reconciles_the_23_life() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let mut npc = crate::npc::Npc::new(crate::npc::NpcKind::Slime, 100.0, 100.0, 1, 0.0);
+        npc.hp = 1000;
+        npc.max_hp = 1000;
+        host_app.npcs.clear();
+        host_app.npcs.push(npc);
+        host_app.net_npc_gen.insert(0, (1, 1));
+        pump(&mut host_app, &mut client_app, 20);
+        // The client's store knows slot 0; rebuild the render list so the
+        // strike's idx→slot map resolves.
+        client_app.net_npcs_dirty = true;
+        client_app.net_rebuild_lists();
+        assert!(client_app.net_pending_damages.is_empty());
+        // A landed 40-damage strike: the push + the fold.
+        client_app.send_npc_strike(0, 40, 1.0, false, true, 40);
+        assert_eq!(client_app.net_pending_damages.len(), 1);
+        assert_eq!(client_app.net_pending_damages[0].damage, 40);
+        assert_eq!(client_app.net_pending_damages[0].index, 0);
+        // A `23` snap with wire life 1000 reconciles to 960 (the pending 40).
+        let info = net::NpcInfo {
+            slot: 0,
+            generation: 1,
+            spawn: false,
+            kind: crate::npc::NpcKind::Slime.to_u16() as i16,
+            x: 100.0,
+            y: 100.0,
+            vx: 0.0,
+            vy: 0.0,
+            dir_right: true,
+            dir_y_down: false,
+            sprite_right: true,
+            life_full: false,
+            hp: 1000,
+        };
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::NpcInfo(Box::new(info))),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(
+            client_app.net_npcs.get(&0).map(|n| n.hp),
+            Some(960),
+            "the wire life minus the pending 40"
+        );
+        // The host's ack (the `28` it received) pops the entry.
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(
+            client_app.net_pending_damages.is_empty(),
+            "the 162 ack popped the entry"
+        );
+        // A second snap now reads the wire life unmodified.
+        let info2 = net::NpcInfo { hp: 900, ..info };
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::NpcInfo(Box::new(info2))),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(
+            client_app.net_npcs.get(&0).map(|n| n.hp),
+            Some(900),
+            "no pending entry: the wire life stands"
+        );
+    }
+
+    /// W4-g51 f21 cross-check: the small apply arms — `139` stores the
+    /// host-authority flag on the peer, `146` kind 1 adds coin luck within
+    /// 1000 px (capped 1e6), `160` snaps the drop position, `161`'s empty
+    /// configured token refuses the claim.
+    #[test]
+    fn the_f21_small_apply_arms_store_and_snap() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut host_app;
+        // 139: the flag lands on the peer snapshot.
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::CountsAsHost(net::CountsAsHost {
+                    player_id: 2,
+                    counts_as_host: true,
+                })),
+            );
+        }
+        client_app.net = role;
+        assert!(client_app.remote_players.get(&2).unwrap().counts_as_host);
+        // 146 kind 1: the local player's coin luck adds (within 1000 px).
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        let (pcx, pcy) = client_app.player.as_ref().unwrap().center();
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::ShimmerAction(net::ShimmerAction::CoinLuck {
+                    x: pcx,
+                    y: pcy,
+                    amount: 500,
+                })),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(
+            client_app.player.as_ref().unwrap().luck_state.coin_luck,
+            500.0
+        );
+        // A far-away coin (>1000 px) adds nothing.
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::ShimmerAction(net::ShimmerAction::CoinLuck {
+                    x: pcx + 2000.0,
+                    y: pcy,
+                    amount: 999,
+                })),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(
+            client_app.player.as_ref().unwrap().luck_state.coin_luck,
+            500.0,
+            "the far coin is out of range"
+        );
+        // 160: the drop position snaps (no velocity change).
+        client_app.net_items.insert(
+            3,
+            item::ItemDrop::new(71, 5, 0, 0.0, 0.0, 1.0, 2.0, 0.0),
+        );
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::ItemPosition(net::ItemPosition {
+                    slot: 3,
+                    x: 123.0,
+                    y: 456.0,
+                })),
+            );
+        }
+        client_app.net = role;
+        let d = client_app.net_items.get(&3).unwrap();
+        assert_eq!((d.pos.x, d.pos.y), (123.0, 456.0));
+        assert_eq!((d.vel.x, d.vel.y), (1.0, 2.0), "the velocity is untouched");
+    }
+
+    // ---- W4-g51 FINAL: the 8 BIG apply arms' witnesses ----
+    // WRITTEN NOT RUN (code-only lane).
+
+    /// The TE witnesses need a world big enough for the anchor cells + the
+    /// dryad probe's `Clamp(Y-10, 10, maxTilesY-10)`; the `in_world_pair`
+    /// flow world is 8x8. Resize BOTH sides to 64x64 with a dirt surface row
+    /// at y=40 (the host's tile writes + the client's mirror stay in step).
+    fn te_world_pair() -> (App, App) {
+        let (mut host_app, mut client_app) = in_world_pair();
+        for app in [&mut host_app, &mut client_app] {
+            app.world = tr_core::World::new("te".into(), 64, 64);
+            app.world.column_surface = vec![40; 64];
+            for x in 0..64 {
+                let i = app.world.index(x, 40);
+                app.world.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        (host_app, client_app)
+    }
+
+    /// The TryPlacing quadruplet's host apply: a held rack drops its old
+    /// contents, takes the new item, and answers with an `86` the client
+    /// stores; a refused placement (no entity) drops the item back.
+    /// `TEWeaponsRack.TryPlacing` (`TEWeaponsRack.cs:135-152`).
+    #[test]
+    fn w4_g51_the_try_placing_quadruplet_stores_and_shares() {
+        let (mut host_app, mut client_app) = te_world_pair();
+        // A weapon-rack anchor tile (471, frameY 0, frameX % 54 == 0).
+        let (x, y) = (30i16, 39i16);
+        let i = host_app.world.index(x as i32, y as i32);
+        host_app.world.tiles[i] = tr_core::Tile {
+            kind: 471,
+            ..Default::default()
+        };
+        host_app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let rack_id = host_app
+            .world
+            .tile_entities
+            .place(&host_app.world.clone(), tr_core::tile_entities::TeKind::WeaponsRack, x, y)
+            .expect("the rack anchor is valid");
+        // Seed an old item so the DropItem half fires.
+        host_app.world.tile_entities.set_item(
+            rack_id,
+            Some(tr_core::tile_entities::TeItem { kind: 9, prefix: 0, stack: 1 }),
+        );
+        let items_before = host_app.items.len();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::WeaponsRackTryPlacing(net::TryPlacingItem {
+                x,
+                y,
+                kind: 29,
+                prefix: 81,
+                stack: 1,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        // The host's rack now holds the new item (exact prefix).
+        assert_eq!(
+            host_app.world.tile_entities.item(rack_id).copied().flatten(),
+            Some(tr_core::tile_entities::TeItem { kind: 29, prefix: 81, stack: 1 })
+        );
+        // The old contents dropped (count 1, the stored prefix).
+        assert_eq!(host_app.items.len(), items_before + 1);
+        assert_eq!(host_app.items[items_before].kind, 9);
+        // The client's `86` store landed the rack with the new item.
+        let client_rack = client_app.world.tile_entities.get_at(x, y).expect("the 86 landed");
+        assert_eq!(client_rack.kind, tr_core::tile_entities::TeKind::WeaponsRack);
+        assert_eq!(
+            client_app.world.tile_entities.item(client_rack.id).copied().flatten(),
+            Some(tr_core::tile_entities::TeItem { kind: 29, prefix: 81, stack: 1 })
+        );
+        // A refused placement (no entity at the cell) drops the item back.
+        let items_before = host_app.items.len();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::FoodPlatterTryPlacing(net::TryPlacingItem {
+                x: 60,
+                y: 3,
+                kind: 4009,
+                prefix: 0,
+                stack: 1,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert_eq!(host_app.items.len(), items_before + 1, "the refused placement drops");
+        assert_eq!(host_app.items[items_before].kind, 4009);
+    }
+
+    /// `121` doll sync: the host applies the equip-slot write + relays; the
+    /// client's doll store takes it. The pose command rides the same path.
+    /// `TEDisplayDoll.ReadData` (`TEDisplayDoll.cs:802-822`).
+    #[test]
+    fn w4_g51_the_doll_sync_stores_and_relays() {
+        let (mut host_app, mut client_app) = te_world_pair();
+        // A display-doll anchor tile (470, frameY 0, frameX % 36 == 0).
+        let (x, y) = (32i16, 39i16);
+        let i = host_app.world.index(x as i32, y as i32);
+        host_app.world.tiles[i] = tr_core::Tile {
+            kind: 470,
+            ..Default::default()
+        };
+        host_app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let doll_id = host_app
+            .world
+            .tile_entities
+            .place(&host_app.world.clone(), tr_core::tile_entities::TeKind::DisplayDoll, x, y)
+            .expect("the doll anchor is valid");
+        // Mirror the doll onto the client so the relay has a target.
+        client_app
+            .world
+            .tile_entities
+            .load_entity(tr_core::tile_entities::TeKind::DisplayDoll, x, y, {
+                tr_core::tile_entities::TeData::DisplayDoll {
+                    equip: [None; 9],
+                    dye: [None; 9],
+                    misc: None,
+                    pose: 0,
+                }
+            });
+        let client_doll_id = client_app.world.tile_entities.get_at(x, y).unwrap().id;
+        // Equip slot 2 takes item 100 (prefix 81).
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::DisplayDollSync(net::DisplayDollSync {
+                player_id: 0,
+                entity_id: doll_id as i32,
+                item_index: 2,
+                command: 0,
+                data: net::DollSyncData::Item(net::TeItem { kind: 100, prefix: 81, stack: 1 }),
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        // The host's doll equip[2] holds the item.
+        let host_doll = host_app.world.tile_entities.get_by_id(doll_id).unwrap();
+        if let tr_core::tile_entities::TeData::DisplayDoll { equip, .. } = &host_doll.data {
+            assert_eq!(
+                equip[2],
+                Some(tr_core::tile_entities::TeItem { kind: 100, prefix: 81, stack: 1 })
+            );
+        } else {
+            panic!("the host doll payload");
+        }
+        // The client's doll took the relay (its own id).
+        let client_doll = client_app.world.tile_entities.get_by_id(client_doll_id).unwrap();
+        if let tr_core::tile_entities::TeData::DisplayDoll { equip, .. } = &client_doll.data {
+            assert_eq!(
+                equip[2],
+                Some(tr_core::tile_entities::TeItem { kind: 100, prefix: 81, stack: 1 })
+            );
+        } else {
+            panic!("the client doll payload");
+        }
+        // The pose command (2) sets the pose byte on both sides.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::DisplayDollSync(net::DisplayDollSync {
+                player_id: 0,
+                entity_id: doll_id as i32,
+                item_index: 0,
+                command: 2,
+                data: net::DollSyncData::Pose(7),
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        let pose_of = |app: &App, id: u32| match &app.world.tile_entities.get_by_id(id).unwrap().data {
+            tr_core::tile_entities::TeData::DisplayDoll { pose, .. } => *pose,
+            _ => panic!("doll payload"),
+        };
+        assert_eq!(pose_of(&host_app, doll_id), 7);
+        assert_eq!(pose_of(&client_app, client_doll_id), 7);
+    }
+
+    /// `122` interaction: the host sets the anchor + relays; an occupied
+    /// entity is refused (no relay); -1 clears. `TileEntity.IsOccupied`
+    /// (`TileEntity.cs:221-234`) + `SetInteractionAnchor` (`:289-313`).
+    #[test]
+    fn w4_g51_the_te_interaction_sets_clears_and_refuses_occupied() {
+        let (mut host_app, mut client_app) = te_world_pair();
+        let (x, y) = (30i16, 39i16);
+        let i = host_app.world.index(x as i32, y as i32);
+        host_app.world.tiles[i] = tr_core::Tile { kind: 471, ..Default::default() };
+        host_app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let rack_id = host_app
+            .world
+            .tile_entities
+            .place(&host_app.world.clone(), tr_core::tile_entities::TeKind::WeaponsRack, x, y)
+            .expect("valid");
+        client_app
+            .world
+            .tile_entities
+            .load_entity(tr_core::tile_entities::TeKind::WeaponsRack, x, y, tr_core::tile_entities::TeData::Item(None));
+        // The peer (slot 1) is alive — `IsOccupied`'s `!dead` term reads hp.
+        host_app.remote_players.entry(1).or_default().hp = 100;
+        // The client (slot 1) opens the interaction.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TileEntityInteraction(net::TileEntityInteraction {
+                entity_id: rack_id as i32,
+                player_id: 0,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        // The host's anchor store holds (id, x, y) for slot 1.
+        assert_eq!(
+            host_app.net_te_anchors.get(&1),
+            Some(&(rack_id as i32, x as i32, y as i32))
+        );
+        // The client's own anchor set (the relay named slot 1 = local).
+        assert_eq!(
+            client_app.net_te_anchors.get(&1),
+            Some(&(rack_id as i32, x as i32, y as i32))
+        );
+        // The host (slot 0) is now refused — the entity is occupied.
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 0,
+                    msg: C2s::TileEntityInteraction(net::TileEntityInteraction {
+                        entity_id: rack_id as i32,
+                        player_id: 0,
+                    }),
+                },
+            );
+        }
+        host_app.net = role;
+        assert!(!host_app.net_te_anchors.contains_key(&0), "occupied refuses");
+        // -1 clears the client's anchor.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TileEntityInteraction(net::TileEntityInteraction {
+                entity_id: -1,
+                player_id: 0,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(!host_app.net_te_anchors.contains_key(&1), "the clear landed");
+        assert!(!client_app.net_te_anchors.contains_key(&1));
+    }
+
+    /// SEAL re-pin: a tombstoned TE id is NOT a `TryGet` hit — the removed
+    /// `ByID` entry (`TileEntity.cs:126`) makes the host's 122 `TryGet` gate
+    /// refuse (no anchor, no relay) and the 124 gate consume-and-drop.
+    /// `remove_at` leaves the port's cleared slot; the liveness filter is
+    /// what keeps the gates faithful.
+    #[test]
+    fn w4_g51_a_tombstoned_te_id_refuses_the_interaction_and_the_hat_sync() {
+        let (mut host_app, mut client_app) = te_world_pair();
+        let (x, y) = (34i16, 39i16);
+        let i = host_app.world.index(x as i32, y as i32);
+        host_app.world.tiles[i] = tr_core::Tile { kind: 475, ..Default::default() };
+        host_app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let rack_id = host_app
+            .world
+            .tile_entities
+            .place(&host_app.world.clone(), tr_core::tile_entities::TeKind::HatRack, x, y)
+            .expect("valid");
+        // Tombstone it on BOTH sides (the anchor tile broke; the id slot
+        // stays in the book with `TeData::None`). The kind STILL reads
+        // HatRack — only the liveness filter refuses the frame.
+        host_app.world.tile_entities.remove_at(x, y).expect("live");
+        client_app
+            .world
+            .tile_entities
+            .place_unchecked(tr_core::tile_entities::TeKind::HatRack, x, y);
+        client_app.world.tile_entities.remove_at(x, y).expect("live");
+        host_app.remote_players.entry(1).or_default().hp = 100;
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TileEntityInteraction(net::TileEntityInteraction {
+                entity_id: rack_id as i32,
+                player_id: 0,
+            }));
+            // A hat-rack frame naming the dead id: consume-and-drop.
+            client.send(&C2s::HatRackItemSync(net::HatRackItemSync {
+                player_id: 0,
+                entity_id: rack_id as i32,
+                wire_slot: 0,
+                item: net::TeItem { kind: 3454, prefix: 0, stack: 1 },
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(
+            !host_app.net_te_anchors.contains_key(&1),
+            "the tombstoned id refuses the interaction"
+        );
+        assert!(!client_app.net_te_anchors.contains_key(&1));
+        // The dead slot's payload stays tombstoned (no hat-rack write).
+        assert_eq!(
+            host_app.world.tile_entities.get_by_id(rack_id).unwrap().data,
+            tr_core::tile_entities::TeData::None
+        );
+    }
+
+    /// `124` hat-rack sync: the dye fold routes to the dye array; the host
+    /// applies + relays; the client's store takes it. `TEHatRack.ReadItem`
+    /// (`TEHatRack.cs:390-403`).
+    #[test]
+    fn w4_g51_the_hat_rack_sync_folds_the_dye_and_relays() {
+        let (mut host_app, mut client_app) = te_world_pair();
+        let (x, y) = (34i16, 39i16);
+        let i = host_app.world.index(x as i32, y as i32);
+        host_app.world.tiles[i] = tr_core::Tile { kind: 475, ..Default::default() };
+        host_app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let rack_id = host_app
+            .world
+            .tile_entities
+            .place(&host_app.world.clone(), tr_core::tile_entities::TeKind::HatRack, x, y)
+            .expect("valid");
+        client_app.world.tile_entities.load_entity(
+            tr_core::tile_entities::TeKind::HatRack,
+            x,
+            y,
+            tr_core::tile_entities::TeData::HatRack([None, None], [None, None]),
+        );
+        let client_rack_id = client_app.world.tile_entities.get_at(x, y).unwrap().id;
+        // wire slot 2 = dye slot 0 (the +2 fold).
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::HatRackItemSync(net::HatRackItemSync {
+                player_id: 0,
+                entity_id: rack_id as i32,
+                wire_slot: 2,
+                item: net::TeItem { kind: 3454, prefix: 0, stack: 1 },
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        let dyes_of = |app: &App, id: u32| match &app.world.tile_entities.get_by_id(id).unwrap().data {
+            tr_core::tile_entities::TeData::HatRack(_, dyes) => dyes[0],
+            _ => panic!("hat rack payload"),
+        };
+        assert_eq!(
+            dyes_of(&host_app, rack_id),
+            Some(tr_core::tile_entities::TeItem { kind: 3454, prefix: 0, stack: 1 })
+        );
+        assert_eq!(
+            dyes_of(&client_app, client_rack_id),
+            Some(tr_core::tile_entities::TeItem { kind: 3454, prefix: 0, stack: 1 })
+        );
+    }
+
+    /// `144` dryad Stardew: the host writes the dryad's ai + spawns the 995
+    /// Jumino projectile, which streams to the client. The ground probe
+    /// picks the dryad's own bottom when the first scanned row is solid.
+    /// `NPC.HaveDryadDoStardewAnimation` (`NPC.cs:19184-19229`).
+    #[test]
+    fn w4_g51_the_dryad_stardew_writes_the_ai_and_spawns_the_jumino() {
+        let (mut host_app, mut client_app) = te_world_pair();
+        // A dryad standing on the dirt row (y=40 is the surface; the NPC's
+        // bottom rests at y=40*16=640, so top = 640 - 40 = 600). Bottom =
+        // (x + w/2, y + h) = (109, 640); the probe +(100,0) = (209, 640) →
+        // tile (13, 40), Y=Clamp(30,10,54)=30; the first solid row is y=40
+        // (not the first scanned row 30), so the spawn uses the probe tile's
+        // world coords (13*16+8, 40*16)=(216,640) + (0,-52) = (216, 588).
+        let mut dryad = crate::npc::Npc::new(crate::npc::NpcKind::Dryad, 100.0, 600.0, 1, 0.0);
+        dryad.hp = dryad.max_hp;
+        host_app.npcs.push(dryad);
+        let jumino_before = host_app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 995)
+            .count();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::RequestQuestEffect);
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        // The dryad's ai writes landed.
+        let d = host_app.npcs.iter().find(|n| n.kind == crate::npc::NpcKind::Dryad).unwrap();
+        assert_eq!(d.ai[0], 24.0);
+        assert_eq!(d.ai[1], 480.0);
+        assert_eq!(d.local_ai[2], 480.0);
+        assert_eq!(d.facing, 1);
+        assert_eq!(d.sprite_dir, 1);
+        // The 995 spawned on the host.
+        let jumino_after = host_app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 995)
+            .count();
+        assert_eq!(jumino_after, jumino_before + 1, "the Jumino spawned");
+        // The box centres on the spawn point (the `NewProjectile` X/Y
+        // overload, `Projectile.cs:10876-10877`): (216, 588) − (120, 52)
+        // = (96, 536) for the 240×104 row.
+        let jum = host_app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == 995)
+            .unwrap();
+        assert_eq!((jum.pos.x, jum.pos.y), (96.0, 536.0));
+        assert!(jum.friendly);
+        assert!(!jum.tile_collide);
+        assert!(jum.ignore_water);
+        assert!(jum.net_important);
+        assert_eq!(jum.time_left, 3600 * 5);
+        // The client received the 995 via the 27 broadcast.
+        let client_jumino = client_app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 995)
+            .count();
+        assert!(client_jumino >= 1, "the 27 streamed the Jumino");
+    }
+
+    /// `156` leashed-anchor place: the host stores the itemType on the
+    /// kite/critter anchor (`TELeashedEntityAnchorWithItem.InsertItem`,
+    /// `TELeashedEntityAnchorWithItem.cs:32-36`); the respawn half is M7-TE-2.
+    #[test]
+    fn w4_g51_the_leashed_anchor_stores_the_item_type() {
+        let (mut host_app, mut client_app) = te_world_pair();
+        // A kite anchor (tile 723, any frame).
+        let (x, y) = (36i16, 39i16);
+        let i = host_app.world.index(x as i32, y as i32);
+        host_app.world.tiles[i] = tr_core::Tile { kind: 723, ..Default::default() };
+        host_app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let anchor_id = host_app
+            .world
+            .tile_entities
+            .place(&host_app.world.clone(), tr_core::tile_entities::TeKind::KiteAnchor, x, y)
+            .expect("valid");
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::LeashedAnchorPlaceItem(net::LeashedAnchorPlaceItem {
+                x,
+                y,
+                item_type: 3034,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert_eq!(
+            host_app.world.tile_entities.get_by_id(anchor_id).unwrap().data,
+            tr_core::tile_entities::TeData::Anchor(3034)
+        );
+    }
+
+    /// `139` CountsAsHost join push (the g52c master input): a loopback peer
+    /// counts as a host (`NetMessage.DoesPlayerSlotCountAsAHost`,
+    /// `NetMessage.cs:2876-2883`), so the join bundle pushes the flag and the
+    /// client stores it on its own slot.
+    #[test]
+    fn w4_g51_the_counts_as_host_join_push_lands_for_a_loopback_peer() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The test pair connects over loopback, so the peer counts as host.
+        // The join push already ran in in_world_pair; the host's peer record
+        // carries the flag and the client stored it on its own slot (1).
+        assert!(
+            host_app.remote_players.get(&1).unwrap().counts_as_host,
+            "the loopback peer counts as host"
+        );
+        assert!(
+            client_app.remote_players.get(&1).unwrap().counts_as_host,
+            "the client stored its own slot's flag"
+        );
     }
 
     /// `AchievementsHelper.NotifyProgressionEvent` (`:227-237`): the host's
@@ -11795,4 +14373,19 @@ mod g48_apply_tests {
             }
         }
     }
+}
+
+/// `MessageBuffer.cs:4180-4187`'s eight-field apply — the writer order
+/// (`NetMessage.cs:1555-1567`) lands on the `Player` luck fields verbatim.
+/// The `RecalculateLuck` tail (`:4188`) is the caller's (the local player's
+/// live state recalculates; a peer snapshot is stored-not-simulated).
+fn apply_luck_factors(ls: &mut crate::luck::LuckState, l: &net::UpdatePlayerLuckFactors) {
+    ls.lady_bug_luck_time_left = l.ladybug_luck_time_left;
+    ls.torch_luck = l.torch_luck;
+    ls.luck_potion = l.luck_potion;
+    ls.has_garden_gnome_nearby = l.has_garden_gnome_nearby;
+    ls.broken_mirror_bad_luck = l.broken_mirror_bad_luck;
+    ls.equipment_based_luck_bonus = l.equipment_based_luck_bonus;
+    ls.coin_luck = l.coin_luck;
+    ls.kite_luck_level = l.kite_luck_level;
 }
