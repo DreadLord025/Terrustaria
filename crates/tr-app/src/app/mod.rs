@@ -738,6 +738,9 @@ pub(crate) struct App {
     /// The world-event schedulers' state (S1-F-14): `LanternNight`,
     /// `BirthdayParty` and `CultistRitual`'s delay machine.
     pub(crate) world_events: crate::world_events::WorldEvents,
+    /// `DebugOptions`'s three shared statics (the `94 DevCommands` sync
+    /// state, `Testing/DebugOptions.cs:10-14`; W4-g50 re-probe).
+    pub(crate) debug_shared: crate::debug_options::DebugOptionsShared,
     /// The C#'s draw-time camera state (`Main.cs:463`/`:477`/`:1097-1099`):
     /// the teleport lerp pair, the object-tracking pan and the vestigial
     /// `DebugCameraPan` accumulator. S1-B-4 moved the camera update to the
@@ -1743,6 +1746,7 @@ impl App {
                     is_a_shop_item: false,
                     prefix: 0,
                     stack: 0,
+                    value: None,
                 };
             }
         }
@@ -3942,6 +3946,7 @@ impl App {
             camera_state: Default::default(),
             gfx_quality: Default::default(),
             world_events: Default::default(),
+            debug_shared: Default::default(),
             zoom: 1.0,
             zoom_pinned: crate::env::zoom_pinned(),
             debug: crate::env::debug(),
@@ -5795,6 +5800,7 @@ mod s1_p_i44_tests {
             is_a_shop_item: false,
             prefix: 0,
             stack: 2,
+            value: None,
         });
         let slot = app.shop_stock.len() - 1;
         assert!(app.buy_shop_item(slot));

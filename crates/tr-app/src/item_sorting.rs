@@ -118,6 +118,12 @@ macro_rules! rarity_desc {
     };
 }
 
+/// `ItemSorting.LayerCount` (`ItemSorting.cs:1326`, `_layerCount = list.Count`
+/// `:1394`): the 52 setup layers — the quick-stack `DestinationHelper`'s
+/// `categoryScores` array length (`QuickStacking.cs:32`). CONSTANTS-COPY of
+/// W4-g21 batch 3 (`c07c1eb95`) — keep-one at the union merge.
+pub const SETUP_LAYER_COUNT: usize = 52;
+
 /// The 52 layers in `SetupWhiteLists` order (`ItemSorting.cs:1334-1385`) — the
 /// order `Validate`'s whitelists and [`layer_of_table`] are built in. The live
 /// `Sort` reorders only the four weapon layers (see [`sort_order`]).
@@ -789,6 +795,17 @@ static SETUP_LAYERS: [Layer; 52] = [
         },
     },
 ];
+
+/// `ItemSorting.GetSortingLayerIndex` (`ItemSorting.cs:1611-1614`): the
+/// setup-layer index of an item type — the quick-stack `GetCategory`
+/// (`QuickStacking.cs:227-230`) reads it for the smart-stack category scores.
+/// CONSTANTS-COPY of W4-g21 batch 3 (`c07c1eb95`) — keep-one at the union.
+pub fn sorting_layer_index(kind: u16) -> usize {
+    layer_of_table()
+        .get(kind as usize)
+        .copied()
+        .unwrap_or(u8::MAX) as usize
+}
 
 /// `ItemSortingLayer.Validate` (`ItemSorting.cs:23-29`) precomputed: the index
 /// (in [`SETUP_LAYERS`] order) of the first layer whose filter claims each item

@@ -388,6 +388,13 @@ pub struct World {
     /// `DD2Event._crystalsDropping_toDrop`-family bookkeeping's port: the
     /// event's spawn hold (`_timeLeftUntilSpawningBegins`).
     pub dd2_spawn_hold: i32,
+    /// `DD2Event.TimeLeftBetweenWaves` (`DD2Event.cs:101`): the client-side
+    /// wave-break countdown the `116` wire sets (`MessageBuffer.cs:3864`) —
+    /// the crystal's overhead timer (`Main.cs:46100-46103`) and the
+    /// skip-wait gate (`DD2Event.cs:1781`/`:1797`) read it. Distinct from
+    /// `dd2_spawn_hold` (the host's `_timeLeftUntilSpawningBegins`); the
+    /// client never decays it (the `116` pushes refresh it). W4-g50.
+    pub dd2_time_left_between_waves: i32,
     /// `NPC.ShieldStrengthTower*` (`NPC.cs:6399-6405`): the four Lunar
     /// towers' shield strengths — raised at the spawn (`WorldGen.cs:86688`),
     /// spent by damage, zeroed at the reset (`NPC.cs:95247`).
@@ -739,6 +746,7 @@ impl World {
             dd2_wave: 1,
             dd2_wave_kills: 0.0,
             dd2_spawn_hold: 300,
+            dd2_time_left_between_waves: 0,
             dd2_lost: false,
             dd2_lane_rate: crate::dd2::LANE_SPAWN_RATE,
             dd2_crystal_alive: false,

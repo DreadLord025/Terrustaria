@@ -3104,7 +3104,7 @@ fn spawn_dd2_from_gate(app: &mut App, sx: f32, sy: f32, left_gate: bool) -> Vec<
 
 /// The reverse of `nid_of`'s ported rows — the pool's port kinds back to the
 /// vanilla ids the rolls' caps count (`CountNPCS`).
-fn dd2_pool_id(kind: NpcKind) -> Option<u16> {
+pub(crate) fn dd2_pool_id(kind: NpcKind) -> Option<u16> {
     let id = match kind {
         NpcKind::DD2GoblinT1 => 552,
         NpcKind::DD2GoblinT2 => 553,

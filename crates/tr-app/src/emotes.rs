@@ -171,14 +171,23 @@ pub const EMOTE_NAMES: [(i32, &str); 151] = [
 ];
 
 /// The bubble state — one `EmoteBubble` instance (the by-ID map folds to a
-/// list; the port's single player owns at most one at a time in practice,
-/// the cap mirrors `byID`'s unbounded growth bounded by the lifetimes).
+/// list; the cap mirrors `byID`'s unbounded growth bounded by the
+/// lifetimes).
 #[derive(Clone, Debug)]
 pub struct EmoteBubble {
     pub id: u32,
     pub emote: i32,
     /// Anchored to the local player (`WorldUIAnchor(Main.LocalPlayer)`).
+    /// Kept as the `anchor_kind == 1 && anchor_index == local` shortcut the
+    /// draw and `OnBubbleChange` read; the net anchor fields below carry
+    /// the full `WorldUIAnchor` for the `91`-synced peer/NPC bubbles.
     pub anchored_to_player: bool,
+    /// `SerializeNetAnchor`'s kind (`EmoteBubble.cs:78-98`): 0 NPC,
+    /// 1 Player, 2 Projectile. The local wheel bubbles are kind 1.
+    pub anchor_kind: u8,
+    /// The anchor entity's `whoAmI` (the local player's slot for the wheel
+    /// bubbles, the host's slot index for the `91`-synced ones).
+    pub anchor_index: u16,
     pub life_time: i32,
     pub life_time_start: i32,
     pub frame: i32,
@@ -245,24 +254,95 @@ impl EmoteSystem {
     /// `EmoteBubble.NewBubble` (`:116-131`) + `MakeLocalPlayerEmote`'s
     /// 360-tick arm (`:284`): a bubble on the local player.
     pub fn new_bubble(&mut self, emote: i32) {
+        self.new_bubble_on(emote, 1, 0, 0);
+    }
+
+    /// `EmoteBubble.NewBubble(emoticon, anchor, time)` with an explicit
+    /// `SerializeNetAnchor` pair (W4-g50): the wheel's local bubbles are
+    /// kind 1 / the local slot; the `120` host arm anchors on the sender's
+    /// slot. The id is the port's local `NextID` — the host's `91` sync
+    /// carries its own ids through [`Self::upsert_net`].
+    pub fn new_bubble_on(
+        &mut self,
+        emote: i32,
+        anchor_kind: u8,
+        anchor_index: u16,
+        local_id: u16,
+    ) {
         self.next_id += 1;
+        let id = self.next_id;
         self.bubbles.push(EmoteBubble {
-            id: self.next_id,
+            id,
             emote,
-            anchored_to_player: true,
+            anchored_to_player: anchor_kind == 1 && anchor_index == local_id,
+            anchor_kind,
+            anchor_index,
             life_time: 360,
             life_time_start: 360,
             frame: 0,
             frame_counter: 0,
         });
-        // `OnBubbleChange` (`:262-276`): every OTHER bubble on the same
-        // player pops out — the C# assigns `lifeTime = 6` unconditionally
-        // (`:273`), even for a bubble already inside its closing pop.
+        self.on_bubble_change(id);
+    }
+
+    /// `EmoteBubble.OnBubbleChange` (`:262-276`): every OTHER bubble on the
+    /// same anchor entity pops out — the C# assigns `lifeTime = 6`
+    /// unconditionally (`:273`), even for a bubble already inside its
+    /// closing pop. The anchor match is the full (kind, index) pair.
+    pub fn on_bubble_change(&mut self, id: u32) {
+        let Some(anchor) = self
+            .bubbles
+            .iter()
+            .find(|b| b.id == id)
+            .map(|b| (b.anchor_kind, b.anchor_index))
+        else {
+            return;
+        };
         for b in &mut self.bubbles {
-            if b.anchored_to_player && b.id != self.next_id {
+            if (b.anchor_kind, b.anchor_index) == anchor && b.id != id {
                 b.life_time = 6;
             }
         }
+    }
+
+    /// The `91 SyncEmoteBubble` reader's upsert
+    /// (`MessageBuffer.cs:3423-3438`): a new id lands with the wire's
+    /// lifetime/emote/anchor; an existing id refreshes all four
+    /// (`lifeTime`, `lifeTimeStart`, `emote`, `anchor`) and keeps its frame
+    /// state. `OnBubbleChange` fires either way (`:3438`). `local_id` is
+    /// the receiving client's slot — a kind-1 anchor on it is the local
+    /// player (`DeserializeNetAnchor`, `EmoteBubble.cs:100-109`).
+    pub fn upsert_net(&mut self, b: &crate::net::EmoteBubble, local_id: u16) {
+        let id = b.id.max(0) as u32;
+        let anchored = b.anchor_kind == 1 && b.anchor_index == local_id;
+        if let Some(existing) = self.bubbles.iter_mut().find(|x| x.id == id) {
+            existing.life_time = b.life_time as i32;
+            existing.life_time_start = b.life_time as i32;
+            existing.emote = b.emote;
+            existing.anchor_kind = b.anchor_kind;
+            existing.anchor_index = b.anchor_index;
+            existing.anchored_to_player = anchored;
+        } else {
+            self.bubbles.push(EmoteBubble {
+                id,
+                emote: b.emote,
+                anchored_to_player: anchored,
+                anchor_kind: b.anchor_kind,
+                anchor_index: b.anchor_index,
+                life_time: b.life_time as i32,
+                life_time_start: b.life_time as i32,
+                frame: 0,
+                frame_counter: 0,
+            });
+            self.next_id = self.next_id.max(id);
+        }
+        self.on_bubble_change(id);
+    }
+
+    /// The `91` removal arm (`MessageBuffer.cs:3402-3408`): the id leaves
+    /// the by-ID map.
+    pub fn remove_net(&mut self, id: i32) {
+        self.bubbles.retain(|b| b.id != id.max(0) as u32);
     }
 
     /// `EmoteBubble.UpdateAll` (`:46-63`) over `Update` (`:177-187`): the

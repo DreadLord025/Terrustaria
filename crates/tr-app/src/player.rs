@@ -1451,6 +1451,15 @@ pub struct Player {
     /// heart family (`:35145-35148`, `Item.cs:49964`) and `GrabItems` pulls
     /// hearts at speed 15 / acc 5 (`:34949-34952`).
     pub life_magnet: bool,
+    /// `Player.nebulaLevelLife` / `nebulaLevelMana` / `nebulaLevelDamage`
+    /// (`Player.cs:924-930`, `nebulaMaxLevel = 3` `:922`): the nebula
+    /// booster tiers — `NebulaLevelup` (`:57030-57059`) clamps each +1 to
+    /// 0..3 and grants the tier buff (`type + level - 1`, 480 ticks); the
+    /// `102` client arm calls it (W4-g50). The buff-effect consumers
+    /// (`UpdateBuffs_NebulaBuffs` `:10446-10456`) ride the buff census.
+    pub nebula_level_life: i32,
+    pub nebula_level_mana: i32,
+    pub nebula_level_damage: i32,
     /// `Player.latestManaPotionDamageBonus` / `latestManaPotionDuration`
     /// (`Player.cs:982-984`): `TryApplyManaHeat` (`:52006-52014`) writes them
     /// on every mana-star pickup (`PickupItem` `:35071`) — power 0.2, time 2 s
@@ -1493,6 +1502,12 @@ pub struct Player {
     /// `:16932`). No render consumer yet — carried for state parity (the
     /// S1-A-9 dead-slot convention).
     pub brain_of_confusion_dodge_animation_counter: i32,
+    /// `Player.wireOperationsCooldown` (`Player.cs:2868`): the Grand Design /
+    /// Multicolor Wrench use gate (`:52075`), decayed in `ResetEffects`
+    /// (`:18798-18801`); the `110` bill clears it (`MessageBuffer.cs:3805`,
+    /// W4-g50). The multi-tool use path is unported — carried for the net
+    /// apply and state parity.
+    pub wire_operations_cooldown: i32,
     /// `Player.creativeGodMode` (`Player.cs:1896`): refreshed every tick from
     /// the journey `GodmodePower` (`:25493-25497`; `ResetEffects` clears it at
     /// `:18789`). `Hurt` (`:38203`), `KillMe` (`:38809`) and
@@ -2036,6 +2051,22 @@ pub struct Player {
     // armour's ranged knockback scale (`Main.cs:20342-20345`).
     pub shroomite_stealth: bool,
     pub stealth: f32,
+    /// `Player.emoteTime` (`Player.cs:792`): the close-players overlay's
+    /// emote-icon window — the `91` reader sets 360 on a player anchor
+    /// (`MessageBuffer.cs:3421`), `Player.Update` decrements it
+    /// (`Player.cs:24456-24459`). The overlay draw is unported; the field
+    /// rides for the net apply (W4-g50).
+    pub emote_time: i32,
+    /// `Player.lastPortalColorIndex` (`Player.cs`): the portal-gun's color
+    /// latch — the `96` reader flips the parity then `Teleport(style 4)`
+    /// stores the wire value (`MessageBuffer.cs:3549`, `Player.cs:37477`;
+    /// W4-g50). The portal FX draw is unported; the field rides for the net
+    /// apply and the NPC twin's parity source.
+    pub last_portal_color_index: i16,
+    /// `Player.portalPhysicsFlag` (`Player.cs:3000`): the style-4 teleport
+    /// arms it (`:37479`); landing or a jump clears it (`:25648-25651`).
+    /// The `_portalPhysicsTime` consumer is unported (W4-g50).
+    pub portal_physics: bool,
     // `Player.spaceGun` (`Player.cs`): the mana row's exemption
     // (`Main.cs:20917`).
     pub space_gun: bool,
@@ -2753,6 +2784,9 @@ impl Player {
             has_lucky_coin: false,
             mana_magnet: false,
             life_magnet: false,
+            nebula_level_life: 0,
+            nebula_level_mana: 0,
+            nebula_level_damage: 0,
             latest_mana_potion_damage_bonus: 0.0,
             latest_mana_potion_duration: 0.0,
             star_cloak: false,
@@ -2764,6 +2798,7 @@ impl Player {
             strong_bees: false,
             shadow_dodge_timer: 0,
             brain_of_confusion_dodge_animation_counter: 0,
+            wire_operations_cooldown: 0,
             breath: BREATH_MAX,
             breath_cd: 0,
             creative_god_mode: false,
@@ -2908,6 +2943,9 @@ impl Player {
             pet_flags: [false; PROJ_COUNT],
             shroomite_stealth: false,
             stealth: 0.0,
+            emote_time: 0,
+            last_portal_color_index: 0,
+            portal_physics: false,
             space_gun: false,
             shadow_armor: false,
             crimson_regen: false,
@@ -4566,6 +4604,43 @@ impl Player {
         (self.x + self.width * 0.5, self.y + self.height * 0.5)
     }
 
+    /// `Player.NebulaLevelup` (`Player.cs:57030-57059`, W4-g50): the nebula
+    /// booster pickup's tier bump. The `whoAmI != Main.myPlayer` guard
+    /// (`:57032`) folds to the caller — the `102` client arm only calls it
+    /// on the local player. The existing tier buffs (`type..type+2`) are
+    /// deleted first (`:57037-57043`), then the matching level clamps +1 to
+    /// 0..3 (`nebulaMaxLevel`, `:922`) and the tier buff `type + level - 1`
+    /// grants for 480 ticks (`:57036`).
+    pub fn nebula_levelup(&mut self, buff_type: i32) {
+        let time = 480;
+        // `for i < maxBuffs: if buffType[i] in [type, type+3) DelBuff(i--)`.
+        let mut i = 0;
+        while i < crate::buffs::MAX_BUFFS {
+            let t = self.buffs.buff_type[i];
+            if t >= buff_type && t < buff_type + 3 {
+                self.buffs.del_buff(i);
+            } else {
+                i += 1;
+            }
+        }
+        match buff_type {
+            173 => {
+                self.nebula_level_life = (self.nebula_level_life + 1).clamp(0, 3);
+                self.buffs.add_buff(buff_type + self.nebula_level_life - 1, time);
+            }
+            176 => {
+                self.nebula_level_mana = (self.nebula_level_mana + 1).clamp(0, 3);
+                self.buffs.add_buff(buff_type + self.nebula_level_mana - 1, time);
+            }
+            179 => {
+                self.nebula_level_damage = (self.nebula_level_damage + 1).clamp(0, 3);
+                self.buffs
+                    .add_buff(buff_type + self.nebula_level_damage - 1, time);
+            }
+            _ => {}
+        }
+    }
+
     /// `Entity.Bottom` (`Entity.cs:122-132`):
     /// `(position.X + width/2, position.Y + height)` — the golf shot's
     /// legality-box anchor (`GolfHelper.ValidateShot`, `GolfHelper.cs:408`).
@@ -5665,6 +5740,11 @@ impl Player {
         if self.mana_potion_delay > 0 {
             self.mana_potion_delay -= 1;
         }
+        // `Player.Update`'s emote-window clock (`Player.cs:24456-24459`):
+        // one tick off the `91`-set 360 while it runs (W4-g50).
+        if self.emote_time > 0 {
+            self.emote_time -= 1;
+        }
         // The `flag9` pStone latch (`Player.cs:25477`): snapshotted BEFORE
         // `ResetEffects` (`:25491`) clears it; the post-`UpdateEquips` change
         // check (`:25640-25643`) rescales the live buff-21 timer.
@@ -5865,6 +5945,10 @@ impl Player {
                 honey_wet: self.honey_wet,
                 lava_wet: self.lava_wet,
                 shimmer_wet: self.shimmer_wet,
+                // W4-g50: the `96` portal teleport arms the flag
+                // (`Player.cs:37479`); the rebase reads it like the C#
+                // (`:24380-24382`'s maxFallSpeed 35).
+                portal_physics: self.portal_physics,
                 ..WetStaticsFlags::default()
             };
             let (g, mf, jh, js) =
@@ -6171,6 +6255,11 @@ impl Player {
         self.long_invince = false;
         if self.brain_of_confusion_dodge_animation_counter > 0 {
             self.brain_of_confusion_dodge_animation_counter -= 1;
+        }
+        // `ResetEffects`' wire-operations cooldown (`Player.cs:18798-18801`,
+        // W4-g50): one tick off the Grand Design / Multicolor Wrench gate.
+        if self.wire_operations_cooldown > 0 {
+            self.wire_operations_cooldown -= 1;
         }
         // The luck inputs ResetEffects owns (`Player.cs:18732` stinky,
         // `:18812` equipmentBasedLuckBonus, `:18814` luckPotion): zeroed here,
@@ -6996,6 +7085,12 @@ impl Player {
         // decay timers + `RecalculateLuck`, after the buff effects derived
         // stinky/luckPotion/kiteLuckLevel above and before movement.
         self.update_luck(world);
+        // `Player.cs:25648-25651` (W4-g50): landing or a jump clears the
+        // portal-physics flag the `96` teleport armed (`:37479`). The
+        // `_portalPhysicsTime` consumer (`:25652-25655`) is unported.
+        if self.vy == 0.0 || self.control_jump {
+            self.portal_physics = false;
+        }
         // `Player.cs:26004-26009`: the run-speed merge runs AFTER `UpdateEquips`
         // (`:25633`) - the accessory/prefix `moveSpeed` adds ride the debuff
         // multiply too. `oldStyleParkour` (the `:26007` gate) is unported

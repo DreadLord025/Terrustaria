@@ -157,6 +157,12 @@ pub struct ShopEntry {
     /// deplete (`ItemSlot.cs:2090-2093`); the plain stock rows keep the
     /// `SetDefaults` 1 and buy forever.
     pub stack: u32,
+    /// `Item.value` — the instance's store value. `None` on the fresh
+    /// `SetDefaults` stock rows (the kind default prices them); the `104`
+    /// ShopOverride wire sets it explicitly (`MessageBuffer.cs:3731`,
+    /// W4-g50). `GetStoreValue` prefers `shopCustomPrice` over it
+    /// (`Item.cs:49901-49908`).
+    pub value: Option<i32>,
 }
 
 /// The gate kinds (`Chest.cs`'s `if` arms around the `SetDefaults` rows).
@@ -1210,6 +1216,7 @@ fn row(item: u16, when: StockWhen) -> ShopEntry {
         is_a_shop_item: false,
         prefix: 0,
         stack: 1, // `Item.SetDefaults`'s default stack (`Item.cs:49022`)
+        value: None,
     }
 }
 
@@ -1372,7 +1379,10 @@ pub fn get_item_expected_price(
 /// kind default (`SetupShop` rows are fresh `SetDefaults` instances,
 /// prefix 0).
 fn row_prices(entry: &ShopEntry, discount_available: bool, price_adjustment: f32) -> (i64, i64) {
-    let store = get_store_value(ITEMS[entry.item as usize].value, entry.shop_custom_price);
+    // The instance value the `104` override sets wins over the kind default
+    // (`Item.value`); `shopCustomPrice` still wins over both.
+    let instance_value = entry.value.unwrap_or(ITEMS[entry.item as usize].value);
+    let store = get_store_value(instance_value, entry.shop_custom_price);
     get_item_expected_price(
         store,
         entry.buy_once,
@@ -1657,6 +1667,7 @@ pub fn add_item_to_shop(
         is_a_shop_item: false,
         prefix: item.prefix,
         stack: num2,
+        value: None,
     };
     if let Some(e) = stock.iter_mut().take(39).find(|e| e.item == 0 || e.stack == 0) {
         *e = clone;
@@ -1999,6 +2010,7 @@ mod tests {
             is_a_shop_item: false,
             prefix: 0,
             stack: 1,
+            value: None,
         };
         assert_eq!(buy_price_row(&custom, false, 1.0), 50);
         assert_eq!(
@@ -2327,6 +2339,7 @@ mod s1_p_i44_tests {
                 is_a_shop_item: false,
                 prefix: 0,
                 stack: 0,
+                value: None,
             },
         ];
         let mut memo = SellbackHelper::default();
