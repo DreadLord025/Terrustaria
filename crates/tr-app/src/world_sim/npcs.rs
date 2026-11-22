@@ -7135,6 +7135,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 moon_npc_counts: &moon_counts,
                 flags: spawner::SpawnFlags {
                     zone_dungeon: app.scene_metrics.zone_dungeon,
+                    // `Spawner.hardDungeon` (`NPC.cs:380`): Plantera downed
+                    // AND hardmode — the hardmode-dungeon roster's gate.
+                    hard_dungeon: app.world.downed_plant_boss && app.world.hard_mode,
                     zone_jungle: app.scene_metrics.zone_jungle,
                     // `Player.ZoneEvil` = the corrupt or crimson zone.
                     zone_evil: app.scene_metrics.zone_corrupt || app.scene_metrics.zone_crimson,

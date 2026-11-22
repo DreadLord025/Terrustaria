@@ -1577,6 +1577,28 @@ fn portrait_data(
                 .unwrap_or(26.0);
             (sheet_i, h, 26.0, h, white)
         }
+        // W4-c3 (the style-10 family): the three kinds' portraits — the
+        // sheet's own row height over `Main.npcFrameCount[type]` (34 three
+        // frames, 289 six, 694 thirty; `Main.cs:67082-67153`), the frame
+        // width the sheet's own (the small-kinds arm's shape).
+        (NpcKind::CursedSkull, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(28.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        (NpcKind::GiantCursedSkull, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 44.0, h, white)
+        }
+        (NpcKind::WaterBoltMimic, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 30.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 44.0, h, white)
+        }
         (NpcKind::ForceBubble, _) => {
             let h = entry_sheet(lookups, entry)
                 .map(|s| s.height as f32)

@@ -23435,7 +23435,17 @@ impl ProjectilePool {
         // (`Player.cs:38396-38400`, S1-C-7 wave B).
         // The single-hit kill below runs after `Hurt` regardless of the
         // dodge (the C# `Damage()`'s kill block follows the `Hurt` arm).
-        player.hurt_with_source(p.damage, cx, rng, p.is_damage_dodgeable(), p.kind);
+        let hit_landed =
+            player.hurt_with_source(p.damage, cx, rng, p.is_damage_dodgeable(), p.kind);
+        // W4-c3 — `Projectile.StatusPlayer`'s type-299 arm
+        // (`Projectile.cs:12280-12283`): the Shadowflames bolt applies
+        // Cursed (23) for 240 ticks on an accepted hit (`ApplyBuffTo` →
+        // `Player.AddBuff`, `:12391-12398`; the trap/deadMansSweater halving
+        // is inert — the bolt is not a trap). The C# runs `StatusPlayer`
+        // only when `Hurt` lands (the dodge/iframe early-outs skip it).
+        if hit_landed && p.kind == crate::projectile::SHADOWFLAMES {
+            player.buffs.add_buff(23, 240);
+        }
         self.slots[slot].active = false;
         self.slots[slot].time_left = 0;
     }

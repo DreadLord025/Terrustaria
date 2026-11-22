@@ -511,6 +511,10 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::FairyCritterGreen
         | NpcKind::FairyCritterBlue => &[],
         NpcKind::WindyBalloon => &[31],
+        // W4-c3 (the style-10 family): 34/289/694 all carry
+        // `SpecificallyImmuneTo = { 20, 31 }` (`NPCID.cs:6286-6292`/
+        // `:7787-7793`/`:10066-10072`) — Poisoned + On Fire!.
+        NpcKind::CursedSkull | NpcKind::GiantCursedSkull | NpcKind::WaterBoltMimic => &[20, 31],
     }
 }
 

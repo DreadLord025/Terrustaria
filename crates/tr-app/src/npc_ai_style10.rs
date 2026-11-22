@@ -39,30 +39,36 @@
 //!
 //! Deliberate stand-ins (house pattern, recorded in ANALYSIS "The
 //! aiStyle-10 family"):
-//! - The port has no `NpcKind` for 34/289/694 yet (`npc/data.rs`'s
-//!   protocol table maps its own ids; 34 there is the Merchant), so the
-//!   machine is keyed on the vanilla `NPCID` passed as `npc_type`, with
-//!   the `SetDefaults` box riding `Npc::size_override` — the caller
-//!   wiring lands with the kinds' identity rows.
+//! - **WIRED by W4-c3 (2026-11-20).** `NpcKind::CursedSkull` /
+//!   `GiantCursedSkull` / `WaterBoltMimic` now exist; the style axis' 10
+//!   arm (`npc.rs::update_rng_dust`) calls `style10_ai` with
+//!   `npc_type = kind.cs_id()` (34/289/694) and `just_hit = self.just_hit`.
+//!   The machine stays keyed on the vanilla `NPCID` (the module's pure
+//!   shape); the `SetDefaults` box now rides the kind's own `size()` row
+//!   (the `size_override` stand-in is retired for the wired kinds).
 //! - `justHit` folds onto a caller-supplied flag (the port's `Npc` has
-//!   no `justHit` field; the strike path sets it, as in the Poltergeist
-//!   machine's `hurt_cd` convention — here explicit to keep the module
-//!   pure).
-//! - `knockBackResist` writes land in [`Style10Out::knock_back_resist`]
-//!   (the port's `Npc::knock_back_resist()` is a per-kind table with no
-//!   runtime override slot); the wiring maps it when the kinds land.
+//!   a `just_hit` field now; the axis arm passes it — the module keeps
+//!   the explicit parameter to stay pure).
+//! - `knockBackResist` writes land in [`Style10Out::knock_back_resist`];
+//!   the axis arm maps them onto `Npc::kb_resist_override` (the runtime
+//!   override slot `knock_back_resist()` prefers over the kind table).
 //! - `SoundEngine.PlaySound(SoundID.Item8, ...)` (`:21896`, the legacy
 //!   (2, 8) cue, `ID/SoundID.cs:1391`) rides
-//!   [`Style10Out::play_item8_sound`]; the audio seam resolves it.
+//!   [`Style10Out::play_item8_sound`]; the axis arm queues it on
+//!   `Npc::wants_sound` (the S1-E-21g seam, the sim drains it after the
+//!   machine's draws).
 //! - The `NPC.NewNPC(..., 33)` Water Sphere summon (`:21899`) rides
 //!   [`Style10Out::spawn_water_sphere`] (the `wants_sphere` shape); the
-//!   spawn source arguments (`GetSpawnSourceForProjectileNPC`) are
-//!   host-only bookkeeping the port's spawn path does not model.
+//!   axis arm queues it on `Npc::wants_sphere` (the sim's sphere drain
+//!   Bottom-places it, `NPC.cs:80770`). The spawn source arguments
+//!   (`GetSpawnSourceForProjectileNPC`) are host-only bookkeeping the
+//!   port's spawn path does not model.
 //! - The Shadowflames bolt (`:21810`) rides `Npc::wants_hostile_shot`
 //!   (kind 299, damage 25, kb 0 — the C#'s `NewProjectile` arguments);
-//!   the projectile's own row lands with its identity slice.
+//!   the 299 row + its `AI_001` arm landed with W4-c3
+//!   (`projectile/data.rs`, `projectile_ai001_a.rs`).
 
-#![allow(dead_code)] // unwired until the 34/289/694 kinds land (code-only mode)
+#![allow(dead_code)] // the module's pure helpers stay test-reachable
 
 use crate::npc::Npc;
 use crate::player::Player;
@@ -157,6 +163,13 @@ pub fn style10_ai(
     // The `noTileCollide` half of `UpdateCollision` runs even on the
     // arm's early-return ticks — capture + integrate on every exit.
     let result = style10_core(npc, world, player, npc_type, just_hit, net_mode, rng, &mut out);
+    // `:90473-90476` — the dead-band X snap (`(double)velocity.X < 0.005 &&
+    // > -0.005 → 0`), the `UpdateNPC` step that runs BEFORE the noTileCollide
+    // integration (the axis 56/72 arms' precedent). The double compare is
+    // the C#'s own (the f32→f64 cast keeps the 0.005 band exact).
+    if (npc.vx as f64) < 0.005 && (npc.vx as f64) > -0.005 {
+        npc.vx = 0.0;
+    }
     // `:92538-92540` — `oldVelocity` capture, the collide flags reset.
     npc.old_vx = npc.vx;
     npc.old_vy = npc.vy;
@@ -543,9 +556,11 @@ mod tests {
     use crate::npc::NpcKind;
 
     /// A fresh NPC carrying the kind's `SetDefaults` box via
-    /// `size_override` (the kinds have no port rows yet — the module
-    /// note). The Zombie kind is only a vehicle; the machine keys on
-    /// `npc_type`, never on `npc.kind`.
+    /// `size_override`. The Zombie kind is only a vehicle; the machine
+    /// keys on `npc_type`, never on `npc.kind` (the module's pure shape —
+    /// the wired axis arm passes the real kind's `cs_id()` and the kind's
+    /// own `size()` row, but the module witnesses keep the override to
+    /// stay independent of the kind tables).
     fn skull(npc_type: i32, x: f32, y: f32) -> Npc {
         let mut n = Npc::new(NpcKind::Zombie, x, y, 1, 0.0);
         n.size_override = Some(if npc_type == CURSED_SKULL {
