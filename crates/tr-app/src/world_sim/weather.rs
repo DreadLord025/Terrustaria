@@ -755,6 +755,12 @@ pub(crate) fn unspawn_travel_npc(
 
 #[cfg(test)]
 mod tests {
+    // W4-d129 census witnesses (written-not-run, code-only lane): the
+    // any_player_120_life writer boundary, its per-frame RNG-free write and
+    // the 0.35 walk cap it feeds.
+    #[path = "weather_w4_d129.rs"]
+    mod weather_w4_d129;
+
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::rain::Rain;

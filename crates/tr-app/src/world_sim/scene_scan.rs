@@ -666,6 +666,12 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
 
 #[cfg(test)]
 mod tests {
+    // W4-d129 census witnesses (written-not-run, code-only lane): the scan
+    // window census, the RNG-free property, the aura frame edges, the banner
+    // decode convention pin and the dungeon-zone gate.
+    #[path = "scene_scan_w4_d129.rs"]
+    mod scene_scan_w4_d129;
+
     /// A ground world with one aura tile set at `(x, y)`.
     fn aura_world(kind: u16, frame_x: i16, frame_y: i16) -> World {
         let mut w = World::new("t".into(), 200, 200);
