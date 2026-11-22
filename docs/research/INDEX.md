@@ -89,6 +89,7 @@ per `docs/superpowers` agreements).
 | 66 | DrawData unwired-arm census SECOND half + wiring (W4-g34: the 50 small-animal/water/jellyfish cage ids; union-executed per research/67) | `66-drawdata-unwired-second-half.md` | ✅ |
 | 67 | Cage-animator triple-dup reconcile (W4-g34 merger assist: f14/g33/g34 KEEP/DROP + the union execution record) | `67-cage-animator-reconcile.md` | ✅ |
 | 68 | Cage critter items census + break-drop cascade + SEAL (W4-g34: the 92-kind union, the d105 Chillet port, the g78 centre-gap FIX-ONCE, the cage-family bible) | `68-cage-critter-items-census.md` | ✅ SEALED |
+| 185 | DrawData wiring lane 1 (W4-g33: the critter-cage animator + draw wire scope record + the limitations register; renumbered 65→185 per registry §3 at the batch-H merge — the g33 module/wiring dropped per research/67 §6, the g34 union is the keep-one) | `185-drawdata-wiring-lane1.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

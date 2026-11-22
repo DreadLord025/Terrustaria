@@ -172,7 +172,8 @@ module, union the 92-id draw wiring, and take f14's slice-order fix.**
 NOT dropped (explicitly kept from the "losing" branches): f14's
 composite-order placement + its order witness; g33's 40 per-machine
 witnesses and the all-92 t0 parity witness; f14's warm-up-clone witness;
-g33's documented limitations register (research/65 — 620 legacy lid pass
+g33's documented limitations register (research/185, renumbered 65→185
+at the batch-H merge per registry §3 — 620 legacy lid pass
 unwired, negative-probe clamp, fused-layer flag-clear note) — all still
 true of the merged result.
 
