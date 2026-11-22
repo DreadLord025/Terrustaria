@@ -1,4 +1,6 @@
-# 109 — W4-d36 NPC kinds 141-210: census, claims, id-band plan
+# 229 — W4-d36 NPC kinds 141-210: census, claims, id-band plan
+
+> Renumbered 109 -> 229 at integration/plan-B22 merge per the collision registry (150-research-number-registry, sec 3/4, d54 tip); winner keeps 109.
 
 Status: CENSUS + PLAN (research phase; the port batches follow).
 Branch: `task/W4-d36x-npc-kinds-141-210-exec` (isolated executor worktree

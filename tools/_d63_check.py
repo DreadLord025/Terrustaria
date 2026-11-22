@@ -1,5 +1,5 @@
 import io, re
-t = io.open(r"C:\Users\DreadLord\Desktop\TR-W4-d63\docs\research\63-drawdata-cases-3.md", encoding="utf-8").read()
+t = io.open(r"C:\Users\DreadLord\Desktop\TR-W4-d63\docs\research\173-drawdata-cases-3.md", encoding="utf-8").read()
 m = re.search(r"\*\*d63 owns these 93 ids\*\*.*?```(.*?)```", t, re.S)
 claim = m.group(1)
 ids = [int(x.group(1)) for x in re.finditer(r"(\d+)@", claim)]

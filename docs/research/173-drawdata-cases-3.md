@@ -1,4 +1,6 @@
-# 63 — DrawData case census, slice 3 (W4-d63)
+# 173 — DrawData case census, slice 3 (W4-d63)
+
+> Renumbered 63 -> 173 at integration/plan-B22 merge per the collision registry (150-research-number-registry, sec 3, d54 tip); winner keeps 63.
 
 > Wave 4 · researched 2026-11-20 · branch `task/W4-d63-drawdata-cases-3` @ base a725acb0 ·
 > code-only mode (no builds/tests run) · sources: `decompiled/Terraria/GameContent/Drawing/TileDrawing.cs`,
