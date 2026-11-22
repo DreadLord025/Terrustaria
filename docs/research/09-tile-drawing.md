@@ -203,6 +203,12 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
    (`drawdata_furniture.rs::chest_draw_rewrite`, per-case tests); what remains is the
    wiring — an open-frame field on the chest state and the `tiles.rs` call after the
    campfire epilogue (deferred to the S1-F-9 merge; waves A/B own `drawdata.rs`/`tiles.rs`).
+   **W4-f16 update (2026-11-20)**: that copy was a SECOND port of the S1-G-1e
+   `chest_frame_adjust` slice — both unwired (the d62 finding). Keep-one: the dup is
+   deleted from `drawdata_furniture.rs` (only the `is_basic_chest` gate stays); the sole
+   rewrite path is the W4-d58 keep-one move into `tr-render/src/chest_frames.rs` +
+   its `draw_tiles` wiring at the `DrawSingleTile` :993 position, lid frame via
+   `chest::chest_draw_frame` off the i43 animator's live `WorldChest.frame`.
    The cage-frame draw rewrites (deviation 4's furniture slice) are likewise ported in
    `drawdata_furniture.rs::cage_draw_data` with the `Main.*CageFrame` tables as a lookup;
    only the cage animator (`Main.AnimateTiles_CritterCages`) is still missing.
