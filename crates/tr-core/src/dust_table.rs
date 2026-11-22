@@ -18,10 +18,16 @@
 //! - **the id names** - `DustID`'s 196 named constants are transcribed at
 //!   `tr-app::id_tables::DUST_ID` (S1-F-6); the port keeps no second copy.
 //!
-//! Two arms are documented drops, both because the port has no equivalent
-//! global: type 157 reads `Main.mouseTextColor` (`Dust.cs:2630`) and type 327
-//! reads `Main.rand` + `Main.Disco*` (`Dust.cs:2658-2675`). Both fall through
-//! to the default formula instead of returning their own colour.
+//! Two arms read `Main` globals: type 157 reads `Main.mouseTextColor`
+//! (`Dust.cs:2630`) and type 327 reads `Main.rand` + `Main.Disco*` +
+//! `Main.dayTime` (`Dust.cs:2658-2675`). They are ported at
+//! [`get_alpha_with_globals`] (W4-d54 gap-closure G3/G4, research/131 §7.2):
+//! the pure [`get_alpha`] keeps its two-argument shape for callers that
+//! draw only global-free types, and the globals seam folds the two arms in
+//! at their exact C# positions. The 327 arm carries a verbatim C# quirk —
+//! `(int)(sum) * 255` truncates BEFORE the multiply, the sum is always
+//! `< 1`, so the colour never changes but the three `NextFloat` draws still
+//! ride the stream.
 //!
 //! # Numeric conventions
 //!
@@ -31,7 +37,25 @@
 //! and `Color * float` scales all four channels before that cast. `Color.Lerp`
 //! is MonoGame's float lerp + `(int)` cast per channel.
 
-use crate::particles::{Color, Dust};
+use crate::particles::{Color, Dust, DustRng};
+
+/// The `Main` statics the two globals-reading `GetAlpha` arms need
+/// (`Dust.cs:2627-2676`), sampled once per draw pass (W4-d54 gap-closure
+/// G3/G4, research/131 §7.2).
+#[derive(Clone, Copy)]
+pub struct DustDrawGlobals {
+    /// `Main.mouseTextColor` (`Main.cs:1683`, byte; the 190..=255 pulse,
+    /// `Main.cs:18216-18224`). Type 157 (`Dust.cs:2630`).
+    pub mouse_text_color: u8,
+    /// `Main.dayTime` (`Main.cs:1177`). The type-327 gate (`Dust.cs:2658`).
+    pub day_time: bool,
+    /// `Main.DiscoR/G/B` (`Main.cs:959-963`, ints; the ±7 cycle clamped to
+    /// 0..=255, `DoUpdate_AnimateDiscoRGB` `Main.cs:19591-19648`; init
+    /// `DiscoR = 255` at `Main.cs:66780`). The type-327 tint
+    /// (`Dust.cs:2660-2662`). The waterfall lane's `set_disco_rgb` latch
+    /// (g75 `d118f7ba`) is the port-wide feed precedent.
+    pub disco_rgb: [i32; 3],
+}
 
 /// `(byte)` of an XNA `new Color(int, …)` argument: truncate, wrap past 255.
 const fn byte(v: i32) -> u8 {
@@ -253,8 +277,9 @@ pub fn get_alpha(d: &Dust, new_color: Color) -> Color {
         return Color::new(255, 255, 255, 0); // `:2620-2623`
     }
     // `:2627-2651` (type 157, `Main.mouseTextColor`) and `:2658-2676` (type
-    // 327, `Main.rand` + `Main.Disco*`) are documented drops - see the module
-    // doc. Both fall through to the default formula below.
+    // 327, `Main.rand` + `Main.Disco*` + `Main.dayTime`) need Main globals —
+    // they are ported at `get_alpha_with_globals` (G3/G4); this pure entry
+    // falls through to the default formula below for those two types.
     if d.dust_type == 284 {
         // `:2652-2657` - the Vector4 product; the alpha is overwritten.
         let [r, g, b] = mul_rgb(new_color, d.color);
@@ -295,6 +320,65 @@ pub fn get_alpha(d: &Dust, new_color: Color) -> Color {
     let b = byte((new_color.b as f32 * num) as i32);
     let a = byte((new_color.a as i32 - d.alpha).clamp(0, 255));
     Color::new(r, g, b, a)
+}
+
+/// [`get_alpha`] plus the two globals-reading arms at their exact C#
+/// positions (W4-d54 gap-closure G3/G4, research/131 §7.2). Types 157/327
+/// match NO earlier arm of `Dust.cs:2427-2623` (mechanical set check), so
+/// gating on the type first is behaviour-identical to splicing the arms
+/// into the chain; every other type — and 327 by day, where the `!dayTime`
+/// gate fails and the C# falls to the default formula — delegates to the
+/// pure entry WITHOUT touching `rng`. `rng` is the DRAW-pass `Main.rand`
+/// (`Dust.cs:2660-2662` draws there, not in `UpdateDust`).
+pub fn get_alpha_with_globals(
+    d: &Dust,
+    new_color: Color,
+    globals: &DustDrawGlobals,
+    rng: &mut impl DustRng,
+) -> Color {
+    if !d.full_bright {
+        if d.dust_type == 157 {
+            // `:2629-2650` — num4/5/6 all start at 255, scale by
+            // `mouseTextColor / 100f - 1.6f`, +50, clamp >255 only (the
+            // ctor byte-casts negatives, the module `byte` convention).
+            let num7 = globals.mouse_text_color as f32 / 100.0 - 1.6;
+            let a2 = (100.0 * num7) as i32;
+            let mut n = (255.0 * num7) as i32 + 50;
+            if n > 255 {
+                n = 255;
+            }
+            return Color::new(byte(n), byte(n), byte(n), byte(a2));
+        }
+        if d.dust_type == 327 && !globals.day_time {
+            // `:2658-2675` — THREE NextFloat draws on the draw-pass stream.
+            // VERBATIM QUIRK: the C# is `(int)(sum) * 255` — the cast binds
+            // to the sum (max 0.04 + 0.1 + 255/800 < 1), so each channel
+            // computes 0 and the `> newColor` lifts never fire; the colour
+            // passes through unchanged but the draws still advance the
+            // stream. Ported structurally, not folded to a constant.
+            let mut c = new_color;
+            let n4 = ((rng.next_float() * 0.04 + 0.1 + globals.disco_rgb[0] as f32 / 800.0)
+                as i32)
+                * 255;
+            let n5 = ((rng.next_float() * 0.04 + 0.1 + globals.disco_rgb[1] as f32 / 800.0)
+                as i32)
+                * 255;
+            let n6 = ((rng.next_float() * 0.04 + 0.1 + globals.disco_rgb[2] as f32 / 800.0)
+                as i32)
+                * 255;
+            if n4 > c.r as i32 {
+                c.r = byte(n4);
+            }
+            if n5 > c.g as i32 {
+                c.g = byte(n5);
+            }
+            if n6 > c.b as i32 {
+                c.b = byte(n6);
+            }
+            return c;
+        }
+    }
+    get_alpha(d, new_color)
 }
 
 /// `Dust.GetColor(Color newColor)` (`Dust.cs:2729-2772`): the overlay pass -
@@ -654,5 +738,63 @@ mod tests {
         };
         assert_eq!(get_visual_rotation(&d), 0.75);
         assert_eq!(get_visual_scale(&d), 0.25);
+    }
+
+    /// W4-d54 G3 — the type-157 arm (`Dust.cs:2627-2651`): the
+    /// `mouseTextColor / 100f - 1.6f` scale, +50 clamp, alpha `100f * num7`.
+    #[test]
+    fn w4_d54_g3_get_alpha_157_mouse_text_pulse() {
+        let g = |m: u8| DustDrawGlobals { mouse_text_color: m, day_time: true, disco_rgb: [0; 3] };
+        let mut rng = crate::unified_random::UnifiedRandom::new(1);
+        // m = 255 → num7 = 0.95f is 0.94999993 in f32 → 242 + 50 clamped
+        // 255; a = (int)(100f * 0.94999993) = 94 (the f32 floor, not 95).
+        assert_eq!(
+            get_alpha_with_globals(&at(157), LIGHT, &g(255), &mut rng),
+            Color::new(255, 255, 255, 94)
+        );
+        // m = 225 → num7 = 0.65 → 165 + 50 = 215; a 65.
+        assert_eq!(
+            get_alpha_with_globals(&at(157), LIGHT, &g(225), &mut rng),
+            Color::new(215, 215, 215, 65)
+        );
+        // m = 190 (the pulse floor) → num7 f32 0.29999995 → 76 + 50 = 126;
+        // a = (int)29.999995 = 29.
+        assert_eq!(
+            get_alpha_with_globals(&at(157), LIGHT, &g(190), &mut rng),
+            Color::new(126, 126, 126, 29)
+        );
+        // No RNG draws in this arm.
+        assert_eq!(rng.peek(), crate::unified_random::UnifiedRandom::new(1).peek());
+        // fullBright still wins (`:2427`).
+        let d = Dust { full_bright: true, ..at(157) };
+        assert_eq!(get_alpha_with_globals(&d, LIGHT, &g(225), &mut rng), Color::WHITE);
+    }
+
+    /// W4-d54 G4 — the type-327 arm (`Dust.cs:2658-2676`): the night gate,
+    /// THREE draw-pass NextFloat draws, and the verbatim `(int)(sum) * 255`
+    /// quirk (the sum is always < 1, so the colour passes through unchanged
+    /// while the stream still advances three steps).
+    #[test]
+    fn w4_d54_g4_get_alpha_327_night_draws_and_zero_quirk() {
+        use crate::unified_random::UnifiedRandom;
+        let night = DustDrawGlobals { mouse_text_color: 255, day_time: false, disco_rgb: [255, 128, 0] };
+        let light = Color::new(30, 60, 90, 200);
+        let mut rng = UnifiedRandom::new(9);
+        let got = get_alpha_with_globals(&at(327), light, &night, &mut rng);
+        assert_eq!(got, light, "the (int)(sum)*255 quirk keeps every channel");
+        // The stream advanced exactly three NextFloat draws.
+        let mut probe = UnifiedRandom::new(9);
+        probe.next_float();
+        probe.next_float();
+        probe.next_float();
+        assert_eq!(rng.peek(), probe.peek());
+        // By day the gate fails → the default formula, NO draws.
+        let day = DustDrawGlobals { day_time: true, ..night };
+        let mut rng2 = UnifiedRandom::new(9);
+        assert_eq!(
+            get_alpha_with_globals(&at(327), light, &day, &mut rng2),
+            get_alpha(&at(327), light)
+        );
+        assert_eq!(rng2.peek(), UnifiedRandom::new(9).peek());
     }
 }

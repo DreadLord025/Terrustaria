@@ -19181,7 +19181,7 @@ What remains: E-2's if-chain arms and light arms (`Dust.cs:467-2334`) and the `c
 
 The record stays byte-based (`particles::Color`, sRGB bytes, the `Dust.color` carrier), so every `new Color(int, вЂ¦)` argument takes the C# `(byte)` cast the ctor performs: truncate, wrap past 255. The 213 draw already relied on that wrap before this task (`minecart.rs`, `int num2 = (int)(scale / 2.5f * 255f)`); it now calls the shared table instead of keeping its own copy of the arm.
 
-Two arms are documented drops because they read globals the port does not carry: type 157 (`Main.mouseTextColor`, `Dust.cs:2627-2651`) and type 327 (`Main.rand` + `Main.DiscoR/G/B`, `:2658-2676`). Both fall through to the default formula (`:2712-2724`) rather than inventing a stand-in constant. Type 157 is the rarity-sparkle dust and type 327 the disco dust; neither is spawned by any ported call site yet.
+Two arms read `Main` globals: type 157 (`Main.mouseTextColor`, `Dust.cs:2627-2651`) and type 327 (`Main.rand` + `Main.DiscoR/G/B` + `Main.dayTime`, `:2658-2676`). Originally documented drops (S1-E-2), they are PORTED since the W4-d54 gap-closure (research/131 §7.2 G3/G4) at `dust_table::get_alpha_with_globals(d, new_color, &DustDrawGlobals, rng)`: a small copy struct carries the three statics (`mouse_text_color: u8`, `day_time: bool`, `disco_rgb: [i32; 3]` — the waterfall lane's g75 `set_disco_rgb` latch is the feed precedent), and `rng` is the DRAW-pass `Main.rand` (the 327 draws happen in `GetAlpha`, not `UpdateDust`). The pure two-argument `get_alpha` keeps its shape for global-free callers (the minecart 213 draw); 157/327 fall through to the default formula there. The 327 arm carries a verbatim C# quirk: `(int)(sum) * 255` truncates BEFORE the multiply — the sum (`NextFloat * 0.04 + 0.1 + Disco/800`) is always `< 1`, so each channel computes 0, the `> newColor` lifts never fire and the colour passes through unchanged, but the THREE `NextFloat` draws still advance the draw stream (ported structurally, pinned by `w4_d54_g4_get_alpha_327_night_draws_and_zero_quirk`). The 157 alpha is f32-floor sensitive: `mouseTextColor` 255 → `num7 = 0.94999993f` → alpha 94, not 95 (`w4_d54_g3_get_alpha_157_mouse_text_pulse`). Type 327 IS spawned port-wide: the tile-718 (StarCloud) break ladder maps to dust 327 (`WorldGen.cs:68516-68518`, ported at `worldgen_dust_tile.rs:1013-1015` on this branch), so the night-gate arm is reachable from worldgen tile breaks; type 157 spawns from NPC/Projectile/PlayerDrawSet sites on the other lanes.
 
 The rowвЂ™s other columns are deliberately not in this file. Gravity / `noGravity` / velocity scaling has two halves: the spawn-time chain is already verbatim in `particles.rs::new_dust` (`Dust.cs:214-252`, S1-E-1) and the per-tick gravity tail (`:1819-1828`) belongs to the update walk that S1-E-3 sequences. The light column is the ~70 `Lighting.AddLight` arms spread from `Dust.cs:485` to `:2050`, which cannot be ported without the entity-light seam (S1-E-5) вЂ” and they are not a table anyway, they are code interleaved with the per-type update arms. The `DustID` names already live at `tr-app::id_tables::DUST_ID` (S1-F-6, 196 named constants + `DustID.Count = 332`), so no second copy exists here.
 
@@ -20770,8 +20770,13 @@ Deliberate deviations:
    dual-dungeons temple check of the same gate still needs a seed the port
    does not carry.
 3. The C#'s wire-removal dust (five dust-50 particles,
-   `WorldGen.cs:58133-58135`) and the net messages are out вЂ” the port's dust
+   `WorldGen.cs:58133-58135`) and the net messages are out — the port's dust
    pool has no per-wire removal cue and the local wire state is the truth.
+   **W4-d54 (2026-11-21): the dust half landed** — `world_dust::cutter_burst`
+   replays the five type-50 `NewDust` blocks on the `UpdatePlayers` stream
+   after the drop, for the actuator arm and all four wire colours
+   (`WorldGen.cs:58032-58035`/`:58132-58135`/`:58162-58165`/`:58192-58195`/
+   `:58222-58225`). The net messages stay out (single-player port).
 4. The C#'s cursor-item icon (`Main.ItemIconCacheUpdate`) rides the port's
    existing cursor-icon path.
 
@@ -40600,3 +40605,165 @@ remainder is the buff-VFX lanes' + g62's CloneDust ledger — nothing
 owed by f4. 1 new mirror witness + 2 leech ledgers re-mirrored + the
 storm/fan mirrors re-derived, all WRITTEN NOT RUN — no
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked.
+## W4-d54 orchestrator dust lane (2026-11-21, batches 5-8)
+
+The e4-reserved ParticleOrchestrator first-40 lane (research/67) landed as
+four latent-emitter modules: `orch_dust.rs` (sites 1-10),
+`orch_dust_lightning.rs` (11-20), `orch_dust_boulder.rs` (21-30),
+`orch_dust_town.rs` (31-40). Deliberate deviations, all cited in the
+module docs:
+
+1. **Renderer skip, draws kept.** The Fading/PrettySparkle/RandomizedFrame
+   particle requests have no port (research/15); their ARGUMENT draws are
+   consumed in C# order (the dead first-write draws in RainbowBoulder1/3
+   included) so the pass stream stays 1:1. The visual writes are dropped.
+2. **StormLightning seam.** The bolt generation
+   (`StormLightningParticle.Prepare` + `LightningGenerator`) is
+   unported: `end_position` is a caller input, the camera-punch
+   NextFloat and `Main.NewLightning`'s thunder draws are the caller's
+   ordered draws, and the per-tick bolt dust
+   (`StormLightningParticle.cs:180-221`) rides the particle-renderer
+   lane.
+3. **Gore siblings** (PaladinsHammerShockwave :871, StormLightning :1102,
+   DeadCellsFlint :1850, DownDash :2190, Digestion :2341, ElderSlime
+   :2565) are g16/g17's; their argument draws are consumed here in order.
+4. **Tile sweeps delegate** to `collision::tile_dust_amount`
+   (kind-first) + `tr_core::worldgen_dust_tile::kill_tile_make_tile_dust`
+   (g14's canonical body; the re-point LANDED in the research/66 union
+   exec, `e41a90f0` - d54's duplicate ladder/amount copies dropped).
+   The DownDash scan keeps its OWN gate variant (solidTop skips
+   only when frameY != 0; frameImportant skips unless solidTop,
+   `ParticleOrchestrator.cs:2159`) - distinct from the Flint gate.
+5. **Overlap reconciliation (merger).** d54 batches 1-4 ported the
+   original WorldGen/Main census while g14 landed all 29 WorldGen sites
+   in tr-core and g11-g13 claimed all 23 Main sites; g14/g11/g12's
+   verbatim bodies win where both exist, d54's editing.rs live seams
+   stay. The orchestrator lane itself is unclaimed-by-others (e4's
+   reservation) - no overlap.
+
+21 draw-mirror witnesses WRITTEN NOT RUN (code-only mode).
+## The WorldGen.cs dust sites (W4-g14, task/W4-g14-dust-worldgen-sites, 2026-11-21, code-only mode)
+
+The research/15 caller table's `WorldGen.cs` row (29 `Dust.NewDust*`
+sites, verdict "N/A (latent)") is now ported: all 29 sites, line-ordered,
+in three tr-core modules (`worldgen_dust.rs`, `worldgen_dust_wall.rs`,
+`worldgen_dust_tile.rs`). The in-flight probe found d54/e4/f6 at base
+with zero pushed commits — g14 adopted the whole lane (the census +
+claim doc: `docs/research/65-dust-worldgen-sites-claims.md`).
+
+**The two type ladders are RNG-bearing and port verbatim.**
+`KillWall_MakeWallDust` (`WorldGen.cs:61345-62158`, 11 genRand draws)
+and `KillTile_MakeTileDust` (`:66687-69169`, ~35 genRand draws + ONE
+`Main.rand.Next(3)` at the type-19 row-30 arm `:67402`) compute the dust
+TYPE before spawning; dropping the ladders would break the draw order,
+so they land whole (the tile ladder in 8 C#-order chunks). The C#'s own
+dead writes are kept in order: the 187 second `<= 1132` arm (`:67603`,
+shadowed), the 129 `>= 324` write overwritten by the next line's
+unconditional ternary (`:68992-68996`), the 216 duplicate arm
+(`:66698`), the tree-walk's duplicated `44/132-176` offset (`:68183`),
+the 314 arm's duplicated noGravity write (`:69127`).
+
+**Two streams per method (the S1-A-10 world-pass slots):** `gen` =
+`WorldGen.genRand` (every ladder roll + the paint post-spawn gates),
+`rng` = `Main.rand` (the `NewDust` internals through d50's
+`DustPool::new_dust` + the explicit argument draws: the ash-shake
+`RandomVector2`/`NextVector2Circular`/`NextFloat`, the 139 `Next(4)`,
+the row-30 `Next(3)`, the paintCoat old-color pick). The functions are
+stream-agnostic — the wiring wave hands the runtime `world.frame_rng`
+(the port's genRand stand-in, `framing.rs:1263`) or the pass's slot.
+
+**Deliberate deviations / drops (each cited at its site):**
+
+* **UNWIRED pure emitters** (the d50/e2 precedent): the enclosing
+  methods' tile mutations, sounds, item drops and achievement notifies
+  belong to the edit-path lanes (`edit::kill_wire`/`kill_actuator`
+  already cite "its dust are app-side" — these are those dusts). The
+  pool's `SpawnCtx.generating` guard (`Dust.cs:89-92`) means the
+  generation passes emit nothing at runtime; the sites fire from the
+  runtime edit paths at the wiring wave.
+* **The ash-shake gore sibling** (`:29669`): its ARGUMENT draws
+  (`RandomVector2(-40,40)` + `Next(3)`) are consumed in order here; the
+  `NewGoreDirect` body rolls are the W4-g17 gore-world lane's (the e2
+  argument/body split).
+* **The disco colour** (`Main.DiscoR/G/B`) is a caller snapshot — the
+  App owns the cycle (`app/mod.rs:839`); tr-core takes the bytes.
+* **The torch-disco float ctor** (`:69152`): `new Color((float)R/255f,
+  …)` goes through XNA/MonoGame's `(byte)(v*255f)` per channel — the
+  disco bytes round-trip (modulo the C#'s own f32 divide/multiply
+  rounding, kept verbatim). **Corrected in the W4-d54 union exec
+  (research/66 §1 arm 11): g14's original direct [0,1] truncation was
+  the one real fidelity divergence** — the repo convention
+  (`dust_table.rs:66`, `render/gore.rs:80-83` + witness :306, e4's
+  `color_f`, g61's pylon colour) keeps the `*255` round-trip; the arm
+  now carries d54's maths and the witness pins the round-trip. The
+  paint color-30 arm's `white.A = 150` (`:44026-44032`) landed the same
+  round (g14 forced 255; d54's conditional ported in, + a witness).
+* **`clearWorld`'s pool reset** (`:7179-7180`) is NOT a spawn site —
+  `DustPool::new` already writes `dust_index` per slot; the reset is
+  the clear-world lane's (cited in research/65 so no batch re-ports it).
+* **The 529/530 below-tile reads** use `world.tile` (None = the C#'s
+  null-tile default arm); the 5/323 column walks stop at out-of-world
+  cells exactly like the C#'s null check.
+
+Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify
+invoked** (user directive). The 24 witnesses (7 + 7 + 10) are owed a
+compile window before merge.
+
+## W4-d54j orchestrator dispatch router (2026-11-21, code-only)
+
+`orch_dispatch.rs::spawn_orchestra_d54` completes the d54 half of the
+`SpawnParticlesDirect` port (`ParticleOrchestrator.cs:162-416`): the
+24-arm d54j catalog (28 kind bytes — the recharge trio 81/80/79 shares
+one InvokedPlayer-gated arm, 50/60 share RainbowBoulder4 with the pet
+flag, 58/59 share Shadowbeam with the hostile flag). The phase-1
+skeleton (8 arms) landed `e4671580c`; this round adds the remaining 16
+routing destinations + the four line-emitter wrappers
+(UFOLaser/MagnetSphereBolt/HeatRay/Shadowbeam, `:1950-1994`) on the
+batch-7 `spawn_in_line`/`single_line_dust` helpers. Full route table +
+contracts: research/370 (registry-150 §9 assignment — the 355
+provisional self-pick renumbered 355→370, d11 keeps 355; rename
+EXECUTED at this landing).
+
+Deliberate deviations (each cited in the module):
+
+1. **Merger composition.** This module IS the `_ => {}` arm of e4's
+   `spawn_orchestra` (`orchestrator_dust.rs:775`). Kind sets are
+   DISJOINT (e4: 1/3/5/7/8/9/12/13/14/15/25/37/55/72/77); the merge
+   composes ONE dispatch — never both routers for one kind. Keep-ones
+   owed: `D54Settings`→e4's `OrchestraSettings`, `d54_kind`→e4's
+   `orchestra_kind`.
+2. **StormLightning seam without an extra parameter.** The C#'s `:1038`
+   `settings.PositionInWorld = EndPosition` write-back is modelled as
+   the CALLER pre-resolving the bolt end into `settings.position`
+   before the drain (the router keeps the 9-parameter shape); the
+   camera-punch NextFloat (`:1041`) + `Main.NewLightning` thunder draws
+   (`Main.cs:58712-58726`) stay the caller's ordered draws.
+3. **Player resolution slice.** `players: &[Option<&Player>]` models
+   `Main.player` for the SP port: the recharge trio + LoadoutChange
+   resolve `settings.invoker` (LoadoutChange also gates `player.active`
+   — a `None` slot draws nothing); ShieldHit's two indices ride the
+   truncated position components through `Utils.IndexInRange`
+   (`Utils.cs:2441-2448`, `0 <= i < len`). LoadoutChange's Hitbox reads
+   truncate to ints (`Entity.getRect`) and `gravDir` folds to 1 (the
+   port has no gravity flip).
+4. **Router draws NOTHING itself** — every draw belongs to the routed
+   body on the caller's pass stream (S1-A-10); settings argument draws
+   run inline at the queue site (the e4 S1-E-21c convention). The
+   module is LATENT (`#![allow(dead_code)]`) until the queue-drain
+   wiring (`netmodules.rs:447`'s Particles drop / e4's pending_orchestra
+   shape).
+5. **Flint empty-world pin**: kind 41 with no tile hit returns before
+   the 30-dust tail (`:1874`) — zero draws, witnessed.
+
+7 witnesses WRITTEN NOT RUN (arm-count pin incl. the Flint early
+return + 29 unported strays, armlet draw-order replay, line-wrapper
+step ledger, TownSlimeTransform info switch, LoadoutChange active gate,
+ShieldHit index resolution, StormLightning delegation parity).
+research/131 §8.2 corrections landed in the same round: named machines
+87+36→79+36, Kill()-remainder-234 CLOSED (g65 406=399+7, 316-kind FINAL
+drain), e4 UNWIRED→WIRED (wiring batches 5-8 through SEAL `c38af30f3`).
+No cargo/tests/rustfmt/graphify invoked.
+
+Merger sequencing: the 4-wave merge DAG + gate flags + cleanup checklist
+live in research/367 (Lead-assigned per registry-150 §9; roster order per
+108 §X5, atlas lazy-load per 113 §17.5, doc dedupe per registry §9/§10).

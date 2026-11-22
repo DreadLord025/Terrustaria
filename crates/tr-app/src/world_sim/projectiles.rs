@@ -733,15 +733,20 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     let orchestra = app.projectiles.drain_orchestra();
     if !orchestra.is_empty() {
         let ctx = app.spawn_ctx();
+        let disco = app.disco;
+        let players = [app.player.as_ref()];
         let rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
         for (kind, settings) in orchestra {
             crate::orchestrator_dust::spawn_orchestra(
                 kind,
                 &settings,
                 rng,
+                &mut app.world.frame_rng,
+                disco,
                 &mut app.dust,
                 &ctx,
                 &app.world,
+                &players,
             );
         }
     }

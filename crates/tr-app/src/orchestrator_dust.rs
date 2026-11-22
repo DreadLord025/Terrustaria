@@ -764,21 +764,30 @@ pub(crate) mod orchestra_kind {
 
 /// `ParticleOrchestrator.SpawnParticlesDirect` (`ParticleOrchestrator.cs:162-
 /// 420`) — the synchronous dispatch the `RequestParticleSpawn` head (`:52-59`)
-/// calls. The port routes ONLY the kinds this lane owns (sites 41-61); every
-/// other enum value is a d54 / unported `Spawn_*` body and drops here (the
-/// `netmodules.rs` Particles carrier's documented drop, extended to the local
-/// path). `BlueLightningSmall` (37) and `RedLightningSmall` (77) BOTH route to
-/// `Spawn_LightningSmall` (`:291-292`/`:399-400`); the red caller packs
+/// calls. ONE composed router (research/131 §8.5, the d54j declaration):
+/// this match owns e4's 15 lane kinds (sites 41-61); the `_` arm delegates
+/// to `orch_dispatch::spawn_orchestra_d54` (d54's 24 arms / 28 kind bytes,
+/// sites 1-40, research/370) — never both for one kind (the kind sets are
+/// DISJOINT, verified byte-for-byte). `BlueLightningSmall` (37) and
+/// `RedLightningSmall` (77) BOTH route to `Spawn_LightningSmall`
+/// (`:291-292`/`:399-400`); the red caller packs
 /// `GetLightningColor(1122).PackedValue` into `settings.info` (the emitter's
 /// `info != 0` arm re-types 226→331 and re-colours). The draws ride the
 /// CALLER's pass stream in C# statement order (the module contract).
+/// `gen` is `WorldGen.genRand`'s runtime stand-in (`World::frame_rng`),
+/// `disco` the `Main.DiscoR/G/B` snapshot, `players` the `Main.player`
+/// resolution slice — the d54 arms' inputs (the e4 arms ignore them).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_orchestra(
     kind: u8,
     s: &OrchestraSettings,
     rng: &mut UnifiedRandom,
+    gen: &mut UnifiedRandom,
+    disco: [u8; 3],
     dust: &mut DustPool,
     ctx: &SpawnCtx,
     world: &World,
+    players: crate::orch_dispatch::D54Players<'_>,
 ) {
     use orchestra_kind::*;
     match kind {
@@ -796,10 +805,10 @@ pub(crate) fn spawn_orchestra(
         BLUE_LIGHTNING_SMALL | RED_LIGHTNING_SMALL => lightning_small(s, rng, dust, ctx, world),
         CLASSY_CANE => classy_cane(s, rng, dust, ctx, world),
         FORMAT_C => format_c(s, rng, dust, ctx, world),
-        // Every other kind: a d54-reserved or unported Spawn_* body — no
-        // emitter here, no draws (the C# would run its own body; the port's
-        // lane boundary drops it, research/66).
-        _ => {}
+        // The d54 half of the ONE composed router (research/131 §8.5):
+        // its 24 arms own the first-40 kind bytes; every remaining enum
+        // value is an unported Spawn_* body and drops there (no draws).
+        _ => crate::orch_dispatch::spawn_orchestra_d54(kind, s, rng, gen, disco, dust, ctx, world, players),
     }
 }
 

@@ -5331,6 +5331,20 @@ pub(crate) fn break_wall(app: &mut App, tx: i32, ty: i32) {
         ty as f32 * TILE_PX,
         rng,
     );
+    // `KillWall`'s ten `KillWall_MakeWallDust` calls (`WorldGen.cs:60386-
+    // 60394`) run BETWEEN the sound and the drop. The type chain's
+    // `genRand` rolls ride the `frame_rng` stand-in (borrow snapshot —
+    // the dust body needs `&world`); the spawn blocks ride
+    // `UpdatePlayers` (W4-d54 batch 2).
+    {
+        let ctx = app.spawn_ctx();
+        let mut gen = app.world.frame_rng.clone();
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        crate::world_dust_wall::wall_break_burst(
+            rng, &mut gen, app.disco, &mut app.dust, &ctx, &app.world, tx, ty, wall, 10,
+        );
+        app.world.frame_rng = gen;
+    }
     // `KillWall_DropItems` (`WorldGen.cs:60443-60450`) drops the
     // `KillWall_GetItemDrops` conversion, not a reverse `createWall` lookup:
     // the unsafe dungeon walls drop their SAFE item (7→135, 94→1378, …),
@@ -5404,6 +5418,19 @@ pub(crate) fn place_wall_route(app: &mut App, tx: i32, ty: i32) -> bool {
         && edit::near_friendly_wall(&app.world, tx, ty)
     {
         if let Some(old) = edit::replace_wall(&mut app.world, tx, ty, create_wall) {
+            // `ReplaceWall` (`WorldGen.cs:62545-62551`): the ten
+            // `KillWall_MakeWallDust` calls run BEFORE the sound and the
+            // drop — the opposite order to `KillWall` (W4-d54 batch 2).
+            // The `genRand` type rolls ride the `frame_rng` snapshot.
+            {
+                let ctx = app.spawn_ctx();
+                let mut gen = app.world.frame_rng.clone();
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                crate::world_dust_wall::wall_break_burst(
+                    rng, &mut gen, app.disco, &mut app.dust, &ctx, &app.world, tx, ty, old, 10,
+                );
+                app.world.frame_rng = gen;
+            }
             // `ReplaceWall` plays the OLD wall's `KillWall_PlaySounds` cue
             // (`WorldGen.cs:62550`) and drops its `KillWall_GetItemDrops`
             // item (`:62551`) — both on the `UpdatePlayers` stream, sound
@@ -5620,6 +5647,11 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             frame_x: t.frame_x,
             frame_y: t.frame_y,
         });
+    // The FULL pre-kill tile — the C# `tile` reference of
+    // `KillTile_MakeTileDust` (`WorldGen.cs:63699-63703` reads it while
+    // the cell is still intact: the liquid, the frames, the ground
+    // scans below it). The clear happens in the drop half.
+    let dust_tile = app.world.tile(tx, ty).filter(|t| t.active()).copied();
     app.queue_map_ring(tx, ty);
     let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, false) else {
         return;
@@ -5678,6 +5710,21 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
                 volume,
             );
         }
+    }
+    // `KillTile`'s dust loop (`WorldGen.cs:63699-63703`):
+    // `KillTile_GetTileDustAmount(fail: false, tile)` calls of
+    // `KillTile_MakeTileDust` on the PRE-KILL tile, after the sounds
+    // and before the drops (W4-d54 batch 3). The type chain's genRand
+    // rolls ride the `frame_rng` snapshot; the spawn blocks ride
+    // `UpdatePlayers`.
+    if let Some(t) = &dust_tile {
+        let ctx = app.spawn_ctx();
+        let mut gen = app.world.frame_rng.clone();
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        crate::world_dust_tile::tile_break_burst(
+            rng, &mut gen, app.disco, &mut app.dust, &ctx, &app.world, tx, ty, t, false,
+        );
+        app.world.frame_rng = gen;
     }
     // The breaking player's staff bonus (`GetPlayerForTile(x, y)
     // .staffOfRegrowthBonus`, `WorldGen.cs:65689` — the flag the placement
@@ -7589,6 +7636,14 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
         ty as f32 * TILE_PX,
         app.rngs.stream(crate::app::RngKey::UpdatePlayers),
     );
+    // `PlaceTile`'s torch/campfire puff (`WorldGen.cs:60283-60289`): on
+    // the unmuted placement of kind 22/140, three type-14 dust AFTER the
+    // sound switch, on the same `UpdatePlayers` stream (W4-d54 batch 2).
+    {
+        let ctx = app.spawn_ctx();
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        crate::world_dust_wall::place_tile_torch_dust(rng, &mut app.dust, &ctx, &app.world, tx, ty, kind);
+    }
     app.request_edit(tx, ty, 1, kind);
     app.world_key = None;
     true
