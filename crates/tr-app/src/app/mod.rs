@@ -340,6 +340,42 @@ pub(crate) struct App {
     pub(crate) achievements_open: bool,
     /// The list's scroll, in px (`UIList._scrollPosition`'s stand-in).
     pub(crate) achievements_scroll: f32,
+    /// `UIDebugCommandsList`'s overlay state (W4-d85 row 7) — opened by the
+    /// `/hh` debug command (`ToolkitDebugCommands.cs:42-47` →
+    /// `IngameFancyUI.OpenUIState`), gated on `DebugOptions.enableDebugCommands`
+    /// (the port's `TR_DEBUG_COMMANDS` pin).
+    pub(crate) debug_commands_open: bool,
+    /// The wrapped search bar's contents (`_searchString`).
+    pub(crate) debug_commands_search: String,
+    /// The commands list's `UIScrollbar.ViewPosition`.
+    pub(crate) debug_commands_scroll: f32,
+    /// `UIDebugLoadoutsList`'s overlay state (W4-d85 row 8) — opened by
+    /// `/loadouts` (`ToolkitDebugCommands.cs:884-889`). The entries load
+    /// at the open (`PopulateLoadouts`, `UIDebugLoadoutsList.cs:134-145`).
+    pub(crate) debug_loadouts_open: bool,
+    pub(crate) debug_loadouts: Vec<ui::debug_loadouts::LoadoutEntry>,
+    /// The loadouts search bar's contents — seeded from the static
+    /// `_lastSearch` at the open (`:85`).
+    pub(crate) debug_loadouts_search: String,
+    /// `UIDebugLoadoutsList._lastSearch` (`:20`) — static across opens.
+    pub(crate) debug_loadouts_last_search: String,
+    pub(crate) debug_loadouts_scroll: f32,
+    /// The Advanced tab's Everything-icon glitch walker
+    /// (`WorldSeedOption_Everything.ProvideUIElement`'s closure state) —
+    /// fresh per `UIWorldCreationAdvanced` ctor, ticked once per UI update
+    /// while the screen is live (W4-d85 doc-sweep).
+    pub(crate) world_advanced_glitch: ui::world_creation_advanced::EverythingGlitch,
+    /// `Main.IssueReporter` (`Main.cs:2169`, created `:10832`) — the
+    /// general issue log the reports page reads (`OpenReportsMenu`,
+    /// `:52352-52363`). Empty in the port: the only non-Steam producer is
+    /// the resource-pack music failure, which has no pipeline here.
+    pub(crate) issue_reporter: ui::reports::GeneralIssueReporter,
+    /// `Main.IssueReporterIndicator` (`Main.cs:1813`, created `:67043`) —
+    /// the menu-tail button that opens the reports page
+    /// (`IssueReportsIndicator.cs:10-80`, drawn at `Main.cs:51886`).
+    /// Never shows in the port: its only non-Steam trigger is the same
+    /// resource-pack music failure (W4-d85 FINAL).
+    pub(crate) issue_indicator: ui::reports::IssueIndicator,
     /// The four category toggles, all on at `OnActivate`
     /// (`UIAchievementsMenu.InitializePage`'s `SetState(value: true)`).
     pub(crate) achievements_categories: [bool; 4],
@@ -1536,6 +1572,16 @@ impl App {
             Some(FrontScreen::WorldCreation(draft)) => {
                 tr_core::seeds::SeedFlags::from_seed_text(&draft.seed)
             }
+            // W4-d85: the Advanced tab carries the toggled option flags
+            // too (`Main.UpdateAudio_DecideOnNewMusic` reads the live
+            // `WorldGen.drunkWorldGen` statics the toggles write).
+            Some(FrontScreen::WorldCreationAdvanced(draft)) => {
+                tr_core::seeds::SeedFlags::from_seed_text(&draft.seed) | draft.option_flags()
+            }
+            Some(FrontScreen::SecretSeedsList(state)) => {
+                tr_core::seeds::SeedFlags::from_seed_text(&state.draft.seed)
+                    | state.draft.option_flags()
+            }
             _ => tr_core::seeds::SeedFlags::default(),
         };
         self.music.update(audio::MusicEnv {
@@ -2452,6 +2498,21 @@ impl App {
             // The generation job is started by `finish_creating_world`
             // before the hop (`WorldGen.CreateNewWorld`, `:6607-6625`).
             FrontScreen::WorldLoad(_) => {}
+            // `UIReportsPage.OnInitialize` builds the page (`:43-46`);
+            // the scroll's `GoToBottom` is set by the opener
+            // (`open_reports`), not here — the Back hop re-enters the
+            // parked screen, never the reports page itself.
+            FrontScreen::Reports(_) => {}
+            // The Advanced tab + seeds list build their pages in the ctor
+            // (`UIWorldCreationAdvanced.cs:53-60`,
+            // `UIWorldCreationAdvancedSecretSeedsList.cs:41-46`) — the
+            // draft rode in from the flow row; no re-list. The Advanced
+            // ctor's `ProvideUIElement` closures start their glitch state
+            // at 0 (`WorldSeedOption_Everything.cs:76-78`).
+            FrontScreen::WorldCreationAdvanced(_) => {
+                self.world_advanced_glitch = ui::world_creation_advanced::EverythingGlitch::default();
+            }
+            FrontScreen::SecretSeedsList(_) => {}
         }
         self.park_menu();
         self.front = Some(front);
@@ -2578,12 +2639,13 @@ impl App {
         // `RenameButtonClick`'s `this._data` — the card the keyboard belongs
         // to (`UICharacterListItem.cs:196-206`, `UIWorldListItem.cs:415-425`).
         let rename_index = session.rename_index;
+        let tail = session.tail;
         // `InternalSubmit`'s cue (`SoundEngine.PlaySound(10)`,
         // `UIVirtualKeyboard.cs:975`) — the callers' `TextIsValidForSubmit`
         // gates already ran (`:358-365`'s click gate, `keyboard_enter`'s
         // `CanSubmit`).
         self.audio.play("Menu_Open");
-        match session.tail {
+        match tail {
             KeyboardTail::Rename => {
                 // `UICharacterListItem.OnFinishedSettingName` (`:208-214`):
                 // `Main.menuMode = 10` (the saving pass-through), `_data.Rename`
@@ -2629,13 +2691,41 @@ impl App {
                 }
                 self.enter_front(back);
             }
-            // `OnFinishedSettingSeed` (`:817-831`): the trimmed seed lands
-            // (`TryApplyingCopiedSeed`'s secret-seed paths are the out-of-
-            // scope Advanced tab, plan Uncertainty 4).
+            // `OnFinishedSettingSeed` (`:817-898`): the trimmed seed lands;
+            // a classic option text selects the option (sound 24, `:834`),
+            // a micro-seed text joins the entered list and re-enables the
+            // parked ones (`:836-842`); the special-seed ring particles
+            // are not drawn (W4-d85 deviation).
             KeyboardTail::WorldSeed => {
                 let mut back = back.expect("the world-seed tail is built with a back screen");
-                if let FrontScreen::WorldCreation(draft) = &mut back {
+                let draft = match &mut back {
+                    FrontScreen::WorldCreation(draft)
+                    | FrontScreen::WorldCreationAdvanced(draft) => Some(draft),
+                    _ => None,
+                };
+                if let Some(draft) = draft {
                     draft.seed = name;
+                    // `GetOptionFromSeedText` (`:829`) + `SelectOption`.
+                    if let Some(option) = tr_core::seeds::option_for_seed_text(&draft.seed) {
+                        draft.is_special_seed_text = true;
+                        draft.select_option(option);
+                        self.audio.play("Chat"); // `SoundEngine.PlaySound(24)` (`:834`)
+                    } else {
+                        draft.is_special_seed_text = false;
+                    }
+                    // `CheckInputForSecretSeed` (`:836-842`): a new micro
+                    // seed joins the entered list, `EnableSecretSeedOptions`
+                    // re-enables the parked texts, then `ClearSeedText`
+                    // (`:887`) blanks the box.
+                    if tr_core::seeds::check_input_for_secret_seed(&draft.seed).is_some()
+                        && !draft.secret_texts.contains(&draft.seed)
+                    {
+                        let text = draft.seed.clone();
+                        draft.secret_texts.push(text);
+                        draft.enable_secret_seed_options(true);
+                        draft.seed.clear();
+                        draft.is_special_seed_text = false;
+                    }
                 }
                 self.enter_front(back);
             }
@@ -2665,6 +2755,23 @@ impl App {
             KeyboardTail::SignEdit => {
                 crate::signs::submit_sign_text(self, &live_text);
             }
+            // `SubmitVirtualText` (`UIWrappedSearchBar.cs:184-188`): the
+            // trimmed text lands in the search bar and the list returns
+            // (`SetState(this)`); the list rebuilds its rows from the new
+            // contents (`searchbar_OnSearchContentsChanged`).
+            KeyboardTail::DebugCommandSearch => {
+                self.debug_commands_search = name;
+                self.debug_commands_scroll = 0.0;
+                self.front = None;
+            }
+            // The loadouts twin — `SubmitVirtualText` trims first
+            // (`UIWrappedSearchBar.cs:186`), then
+            // `searchbar_OnSearchContentsChanged` latches `_lastSearch`
+            // (`:94`) with the trimmed contents.
+            KeyboardTail::DebugLoadoutSearch => {
+                self.set_debug_loadouts_search(name);
+                self.front = None;
+            }
         }
     }
 
@@ -2681,6 +2788,10 @@ impl App {
         let is_chest = session.tail == KeyboardTail::ChestRename;
         let is_sign = session.tail == KeyboardTail::SignEdit;
         let live_text = session.state.text.clone();
+        let is_debug_search = matches!(
+            session.tail,
+            KeyboardTail::DebugCommandSearch | KeyboardTail::DebugLoadoutSearch
+        );
         let back = session.back.clone();
         // `Cancel`'s cue (`SoundEngine.PlaySound(11)`,
         // `UIVirtualKeyboard.cs:984`) — the C# cancels play it before the
@@ -2696,6 +2807,12 @@ impl App {
             // (`IngameFancyUI.cs:141-144`): the cancel cache parks the live
             // text, `npcChatText` re-reads the stored record (W4-f22).
             crate::signs::input_text_sign_cancel(self, &live_text);
+            return;
+        }
+        if is_debug_search {
+            // `GoBackFromVirtualKeyboard` (`UIWrappedSearchBar.cs:190-197`):
+            // the list returns with its contents unchanged.
+            self.front = None;
             return;
         }
         self.enter_front(back.expect("the cancel tail is built with a back screen"));
@@ -3864,6 +3981,19 @@ impl App {
             // categories all start on (`InitializePage`'s `SetState(true)`).
             achievements_open: crate::env::achievements_open(),
             achievements_scroll: 0.0,
+            // `TR_DEBUG_COMMANDS_LIST` opens the debug list for the shot runs
+            // (the vanilla opens on `/hh` only).
+            debug_commands_open: crate::env::debug_commands_list_open(),
+            debug_commands_search: String::new(),
+            debug_commands_scroll: 0.0,
+            debug_loadouts_open: false, // the tail below runs the real opener
+            debug_loadouts: Vec::new(),
+            debug_loadouts_search: String::new(),
+            debug_loadouts_last_search: String::new(),
+            debug_loadouts_scroll: 0.0,
+            world_advanced_glitch: ui::world_creation_advanced::EverythingGlitch::default(),
+            issue_reporter: ui::reports::GeneralIssueReporter::default(),
+            issue_indicator: ui::reports::IssueIndicator::default(),
             // The filter bits default to all-on (`SetState(value: true)`);
             // a shot run can pin a single category through the bitmask.
             achievements_categories: {
@@ -4208,6 +4338,11 @@ impl App {
         // `TR_PAGE` pattern — the plan Task 5 hook table).
         if let Some(preset) = tr_ui.as_deref().and_then(tr_ui_preset) {
             app.preset_ui(preset);
+        }
+        // `TR_DEBUG_LOADOUTS_LIST` opens the loadouts overlay through the
+        // real opener (the ctor's `PopulateLoadouts` reads the dir).
+        if crate::env::debug_loadouts_list_open() {
+            app.open_debug_loadouts();
         }
         app
     }

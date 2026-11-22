@@ -1,6 +1,14 @@
 # 19 — Front-end screens (char/world create + select)
 
 > Wave 6 · researched 2026-11-12 · sources: decompiled + crates + ROADMAP/ANALYSIS/PORT_MAP
+>
+> **ALL-ROWS STATUS REFRESH 2026-11-21 (W4-d85 FINAL phase)** — every
+> status row, deviation and seed below re-verified against the branch
+> tips (d85 `23fe0d4e5`, f22 `8c1b40a46`, d84 `ba7e8f94a`, d86
+> `6b1186c1b`, c24 `ff99f1486`, c25 `e5daa96f7`, f44 `bdd1cc79a`, f45
+> `6352d3840`, c43 `076970809`). The refresh marks are inline
+> (**REFRESH**); the original 2026-11-12 text stays for history. The
+> final 28-screen coverage table is research/112 §5.
 
 ## Scope
 
@@ -204,14 +212,14 @@ Rust:
 | `UICharacterSelect` + `UICharacterListItem` cards | PORTED | `ui/char_select.rs` (layout `:176`, cards `:366`, draw `:643`, hit `:541`), `app/flow.rs` `:345-500` | `UICharacterSelect.cs:100-157`'s OnActivate re-list, card geometry, difficulty/life-mana rows, the hover labels `:140-194`, delete `:242-254`, rename `:197-201` |
 | `UIWorldSelect` + `UIWorldListItem` cards | PORTED | `ui/world_select.rs` (cards `:254`, draw `:603`, hit `:545`), `app/flow.rs` `:505-820` | `UIWorldSelect.cs:137-166`'s re-list, `UIWorldListItem.cs:494-532`'s card draw, the button table `:94-170`, delete `:346-358`, rename `:416-421`, favourite `:455-458` |
 | `UICharacterCreation` (categories, info/hairstyles/cloth/HSL menus, difficulty, naming) | PORTED (visual + flow) | `ui/char_creation.rs` (draft `:41`, layout `:476`, click `:1233`, draw `:1407`), `app/session.rs::finish_creating_character` `:18` | `UICharacterCreation.cs:730-768` categories, `:832-965` info, `:1659-1702` naming, `:1704-1711` finish. Gaps: the Randomize/Copy/Paste click arms and `GameTipsDisplay` (see deviations) |
-| `UIWorldCreation` (name/seed/size/difficulty/evil, preview, create) | PORTED (visual + flow) | `ui/world_creation.rs` (draft `:48`, click `:549`, preview `:596/:623`, create `:746`), `app/session.rs::finish_creating_world` `:50` | `UIWorldCreation.cs:313-326` defaults, `:358-495` rows, `:665-745` name/seed/back, `:845-863` finish. The Advanced seed tab and its ring effect are out of scope (ANALYSIS `:2146-2149`) |
+| `UIWorldCreation` (name/seed/size/difficulty/evil, preview, create) | PORTED (visual + flow) | `ui/world_creation.rs` (draft `:48`, click `:549`, preview `:596/:623`, create `:746`), `app/session.rs::finish_creating_world` `:50` | `UIWorldCreation.cs:313-326` defaults, `:358-495` rows, `:665-745` name/seed/back, `:845-863` finish. **REFRESH**: the Advanced seed tab LANDED (W4-d85 rows 11-12, `ui/world_creation_advanced.rs` + `ui/secret_seeds_list.rs` — the seed-icon click opens it, the ten-option grid + cascades + secret-seed list); the ring effect stays unported (that section's deviation 1). The creation plates' display trims landed the doc-sweep (`9b8cd40d`). |
 | `UIVirtualKeyboard` | PORTED | `ui/keyboard.rs` (layout `:320`, click `:605`, draw `:767`), `app/mod.rs::open_keyboard*` `:1402/:1410`, `::keyboard_submit` `:1465` | `UIVirtualKeyboard.cs:180-425` geometry, `:517-533`/`:933-950` typing, `:585-626` validation, both layers `:680-746` (the grid behind `TR_VK_GRID`, ANALYSIS `:2144-2145`) |
 | Save listing (`LoadPlayers`/`LoadWorlds`, the two orderings, `ErasePlayer`/`EraseWorld`) | PORTED | `ui/save_list.rs` `:167`/`:255`/`:397`/`:415`/`:340`/`:352`, `app/session.rs` `:117`/`:128` | `Main.cs:4001-4030`/`:3959-3981`/`:4772-4791`/`:4796-4813`; real `.plr` and `.trwld` files list (BUG-02/03's reader). **PORT_MAP:180 is stale** ("partial (no `.plr` reader…)") |
 | Journey/Classic/Expert/Master selection | PORTED both screens | `ui/char_creation.rs::DIFFICULTY_IDS` `:322`, `::difficulty_titles` `:327`, `::DIFFICULTY_COLORS` `:338`; `ui/world_creation.rs::DIFFICULTY_ROW_IDS` `:116`; `ui/char_select.rs::difficulty_text` `:454`; `ui/world_select.rs::difficulty_text` `:151` | `Player.difficulty` 0-3 = Classic/Medium/Hard/Journey; the char screen's row order is Journey/Classic/Medium/Hardcore (`UICharacterCreation.cs:889-910`), the world screen's is `Main.GameMode` `:34-40`; the `.plr` difficulty rides the card (`save_list.rs:296`) |
 | Character creation `.plr` write | PORTED | `app/session.rs::save_created_character` `:141-176` → `crate::player_file::write_player_file` | `PlayerFileData.CreateAndSave` (`PlayerFileData.cs:50-63`) with the fresh defaults and the three starter items (`Player.cs:54356-54360`) — **ANALYSIS `:2120-2124` is stale** ("no `.plr` reader/writer") |
 | Delete confirms (modes 5/9) and the discard confirm (mode 40) | PORTED | `menu/pages.rs::confirm_delete_player_items` `:1005`, `::confirm_delete_world_items` `:1023`, `::confirm_discard_items` `:1038`; `app/flow.rs::apply_front_flow` `:1056-…` | `Main.cs:49431-49467`/`:49674-49692`/`:49440-49467`; Yes erases and re-lists, No reopens the parked screen — the mode-40 No branch restores the exact `BackupConfirmationState` (`UICharacterCreation.cs:1215`, test `:1237`) |
 | Credits (mode 3000) | PARTIAL | `menu/pages.rs::credits_items` `:1053`, `flow.rs::TrUiPreset::Credits` `:239` | world backdrop + the single Back row; `SkyManager.Activate("CreditsRoll")` and the rolling credits are unported (ANALYSIS `:2150-2151`) |
-| World loading / generation progress screen | MISSING | — | `UIWorldLoad.cs:16-137` + `UIGenProgressBar.cs:8-126` have no counterpart; creation saves and the world select reopens instead (ANALYSIS `:2148-2149`, `app/session.rs:43-49`); Play swaps the world in-frame at a frame boundary (`frame.rs:303-326`) |
+| World loading / generation progress screen | ~~MISSING~~ **PORTED (REFRESH: S1-E-17, in base)** | `ui/world_load.rs` + `app/worldgen_job.rs` + `FrontScreen::WorldLoad` | `UIWorldLoad.cs:16-137` + `UIGenProgressBar.cs:8-126` ported 1:1 (the 612x70 bar, the 570/508 fills, the Inventory-abort latch, the `0.0%` half-away-from-zero formatter); `finish_creating_world` opens the screen, the worker job feeds progress through `GenProgressHook`. The drunk `Main.rand` message arms + `placingTraps` are the recorded deferrals (ANALYSIS "The loading screen + capture mode (S1-E-17)"); the F5 `UIWorldGenDebug` arm is the d86 scope-out (`19641e25f` recorded it in `world_load.rs`). The original MISSING claim was stale at research time. |
 | Cloud / Steam cloud UI | MISSING (deliberate) | — | `SocialAPI.Cloud == null` is the port's state, the exact branch vanilla takes without an account (ANALYSIS `:2135-2137`); the cloud *slot's* `num += 24` still shifts rename to Left 52 (`world_select.rs:267-271` vs `UIWorldListItem.cs:123`) |
 | Random world-name generation | PARTIAL (stand-in) | `ui/world_creation.rs::stand_in_name` `:103-105`, `::assign_random_world_name` `:97-99` | `AssignRandomWorldName`'s `RandomWorldName_*` composition and the 1-in-10000 `TheConstant` roll (`UIWorldCreation.cs:1002-1025`) are unported; the stand-in is `"World {n+1}"` (ANALYSIS `:2163-2169`) |
 | Character preview on the select cards | PORTED | `ui/char_select.rs::draw_card` `:643` (the `draw_player_preview` call `:749`), `ui/save_list.rs::Appearance` `:59-105`, `render/entities.rs::draw_player_preview` `:1197` | BUG-02: the seven `.plr` colour triplets + hair/skin variant ride the card (`save_list.rs:294-317`); deviation: only the base body sheets decode, so every skin variant renders the base frame (ROADMAP `:1677`) |
@@ -233,11 +241,11 @@ Rust:
 | Mode 9 Yes/No → reopen world select (`Main.cs:49684-49692`) | `ConfirmYes/No` on `ConfirmDeleteWorld` `:209-211` | PASS |
 | `NewWorldClick` → 888 `UIWorldCreation` (`UIWorldSelect.cs:110-116`) | `WorldNew(worlds, active)` `:191-197` | PASS — the stand-in name and the Journey default (`SetDefaultOptions` `:313-326`) ride in |
 | `Click_GoBack` → `OpenWorldSelectUI` (`UIWorldCreation.cs:665-674`) | `WorldCreateBack` `:200` | PASS — no discard confirm (the draft is choice-only) |
-| `FinishCreatingWorld` (`:845-863`) | `WorldCreate` `:203` (the App ran `create_world` first) | PASS — minus the `UIWorldLoad` screen |
+| `FinishCreatingWorld` (`:845-863`) | `WorldCreate` `:203` (the App ran `create_world` first) | ~~PASS — minus the `UIWorldLoad` screen~~ **REFRESH**: PASS — the `UIWorldLoad` screen landed S1-E-17; `finish_creating_world` starts the worker job and opens `FrontScreen::WorldLoad`, the completion tail hops to the world select (`worldGenCallback`'s `menuMode = 6`) |
 | char creation Back while dirty → mode 40 (`UICharacterCreation.cs:1210-1222`) | `Click::Back` → `apply_front_flow`'s dirty park (`flow.rs:2569`) | PASS — `front_backup` is the parked screen |
 | Mode 40 Yes → char select (`Main.cs:49454-49459`) | `ConfirmYes` on `ConfirmDiscard` `:214-216` | PASS |
 | Mode 40 No → restore `BackupConfirmationState` (`Main.cs:49460-49467`) | `ConfirmNo` on `ConfirmDiscard` `:219` | PASS — the exact parked screen (test `:1237`) |
-| The rename/naming keyboards' `_cancelAction` (`UICharacterListItem.cs:214-216`, `UIWorldListItem.cs:428-430`) | `keyboard_cancel` `:1548-1564` | PASS for the reopen; the rename *submit* only notices (no write-back) |
+| The rename/naming keyboards' `_cancelAction` (`UICharacterListItem.cs:214-216`, `UIWorldListItem.cs:428-430`) | `keyboard_cancel` `:1548-1564` | PASS for the reopen; ~~the rename *submit* only notices (no write-back)~~ **REFRESH**: the rename submit WRITES on `task/W4-f22-ui-screens-4` (`0da19e92a` — `player_file::rename_player_file` + `save_list::rename_world`, the `KeyboardTail::Rename`/`WorldRename` tails, `rename_index`; the notice is gone there). This branch's base still carries the notice — the f22 landing is the family's rename half (research/144 §2). |
 
 ### ROADMAP DONE-claim re-verification
 
@@ -325,23 +333,28 @@ written in ROADMAP/ANALYSIS/PORT_MAP.
    `menuMode == 1000000` page). `card_hit`/`elements` still offer the Play
    button for an invalid/mismatched card, as the C# does — the click is what
    rejects.
-2. ~~**`ANALYSIS.md:2120-2124` is stale**~~ **Closed (W4-f22 + S1-J-5)** — the
-   "No `.plr` reader/writer" bullet now records the live reader/writer and the
-   rename read-modify-write; `flow.rs`'s `KeyboardTail::Rename` doc and the
+2. ~~**`ANALYSIS.md:2120-2124` is stale**~~ **Closed (W4-f22 + S1-J-5;
+   confirmed W4-d85 FINAL refresh 2026-11-21)** — the "No `.plr`
+   reader/writer" bullet now records the live reader/writer and the rename
+   read-modify-write; `flow.rs`'s `KeyboardTail::Rename` doc and the
    user-visible notice are gone (the rename writes, see deviation 4).
-3. ~~**`PORT_MAP.md:180` is stale**~~ **Closed (W4-f22)** — the save_list row
-   now reads "metadata stand-ins; the `.plr` reader/writer are live", and a
-   new row maps the rename chain (`PlayerFileData.Rename`/`WorldFileData.Rename`
-   -> `rename_player_file`/`rename_world`/the keyboard tails).
-4. ~~**Rename writes nothing.**~~ **Fixed (W4-f22, research/19 M1).**
+3. ~~**`PORT_MAP.md:180` is stale**~~ **Closed (W4-f22; confirmed W4-d85
+   FINAL refresh 2026-11-21)** — the save_list row now reads "done (the
+   `.plr` reader/writer exist — S1-J-5; the card renames landed W4-f22…)",
+   and a new row maps the rename chain (`PlayerFileData.Rename`/
+   `WorldFileData.Rename` -> `rename_player_file`/`rename_world`/the
+   keyboard tails).
+4. ~~**Rename writes nothing.**~~ **Fixed (W4-f22, research/19 M1; confirmed
+   W4-d85 FINAL refresh 2026-11-21 — `0da19e92a`/`6916265d5`).**
    `KeyboardTail::Rename` runs `player_file::rename_player_file` (the `.plr`
    name-field splice + `.bak`, `PlayerFileData.cs:207-214` +
    `InternalSavePlayerFile:54730-54733`) and the new `KeyboardTail::WorldRename`
    runs `save_list::rename_world` (the `.trwld` header splice,
    `WorldGen.RenameWorldCallBack:6727-6753`); both re-list through the reopen.
-   `KeyboardSession.rename_index` carries `this._data`. ANALYSIS "The card
-   renames (W4-f22)" records the four deviations (stem kept, session arm,
-   front_hint failure notice, synchronous mode-10).
+   `KeyboardSession.rename_index` carries `this._data`. The "Renaming is not
+   ported yet" notice is gone. ANALYSIS "The card renames (W4-f22)" records
+   the four deviations (stem kept, session arm, front_hint failure notice,
+   synchronous mode-10).
 5. **World metadata stand-ins**: no GameMode (every entry Classic →
    `CanWorldBeJoinedByActivePlayer`'s Journey gate is vacuous, `save_list.rs:426-433`),
    favourites are a `<world>.trfav` sidecar (`Main.LocalFavoriteData` has no
@@ -371,12 +384,15 @@ written in ROADMAP/ANALYSIS/PORT_MAP.
    there was no clipboard bridge. Severity: behavioural (feature absent).
 8. **`GameTipsDisplay` is not ported** (`UICharacterCreation.cs:170`,
    `:1998-2005`). Severity: cosmetic. Admitted (ANALYSIS `:2161-2162`).
-9. **No loading screen.** `UIWorldLoad`/`UIGenProgressBar`/`UIWorldGenDebug`
-   have no counterpart, so `FinishCreatingWorld` reopens the world select
-   instead of showing progress (`session.rs:43-49`) and Play swaps the world
-   in-frame (`frame.rs:303-326`, ~51 ms after BUG-21). Severity: cosmetic +
-   behavioural (no cancel/abort path for a slow generation, and the abort cue
-   `UIWorldLoad.cs:54-58` has no port). Admitted (ANALYSIS `:2148-2149`).
+9. ~~**No loading screen.**~~ **STALE — closed (REFRESH 2026-11-21)**:
+   `UIWorldLoad`/`UIGenProgressBar` landed S1-E-17 (in base — the
+   `FrontScreen::WorldLoad` sixth screen, the worker job, the
+   Inventory-abort latch + sound 11, ANALYSIS "The loading screen +
+   capture mode (S1-E-17)"); d86 re-verified the row PORTED in depth
+   (`19641e25f`). `UIWorldGenDebug` is the d86-recorded dev-only
+   scope-out (the F5 arm, `UIWorldLoad.cs:50-52`). The drunk `Main.rand`
+   message arms + `placingTraps` stay deferred (the RNG-order
+   invariant). The original claim was stale at research time.
 10. **Random world name and blank seed are deterministic stand-ins.**
     `stand_in_name` = `"World {n+1}"` (`world_creation.rs:103-105`) and a
     blank seed hashes the world *name* through CRC-32
@@ -388,20 +404,23 @@ written in ROADMAP/ANALYSIS/PORT_MAP.
     re-derives `"World {n+1}"` (`:97-99`), so the C#'s re-randomisation of an
     explicitly named world (`UIWorldCreation.cs:1002-1025`) is a no-op after
     an edit. Severity: cosmetic. Admitted in code, not in ANALYSIS.
-12. **The world sort's active-player key is hardcoded false** —
-    `enter_front` calls `sort_worlds(&mut self.worlds, false)`
-    (`mod.rs:1368`) because no active player exists at that hop; the C# reads
-    `Main.ActivePlayerFileData.Player.difficulty` (`UIWorldSelect.cs:177-180`).
-    Consequence: once `.trwld` carries GameMode, the sort and the Play
-    rejection stay wrong until this is wired. Severity: behavioural (latent).
-    Admitted in code (`save_list.rs:426-433`) only.
+12. ~~**The world sort's active-player key is hardcoded false**~~
+    **FIXED (REFRESH 2026-11-21): S1-H-12 (`0d90167ed`, in base)** —
+    `resort_worlds` (`mod.rs:2419-2422`) reads
+    `active_player_difficulty()` (the session draft's difficulty, the
+    `Main.ActivePlayerFileData.Player.difficulty` stand-in) and passes
+    `== 3` into `sort_worlds`; the favourite toggle re-sorts through the
+    same lone site. The remaining latent half is the GameMode metadata
+    itself (deviation 5 / L2 — every real entry still reads Classic).
 13. **`sort_players`/`sort_worlds` have no `LastPlayed` key** — insertion
     order stands in (`save_list.rs:391-424`), and the filename tie-break
     compares the path component. Severity: behavioural. Admitted in code.
 14. **Name/rename caps and the display trims**: the keyboards cap at 20/27
-    (`char_creation.rs:1200`, `world_creation.rs:37`) and
-    `TrimDisplayIfOverElementDimensions` is not ported, so a 27-char world
-    name overflows its plate. Severity: pixel. Admitted (ANALYSIS `:2142-2143`).
+    (`char_creation.rs:1200`, `world_creation.rs:37`). The creation plates'
+    `TrimDisplayIfOverElementDimensions` **landed 2026-11-21** (W4-d85
+    doc-sweep: `trim_plate_display`, padding 27/40 on both creation
+    screens); the keyboard's own textbox trim stays unported. Severity:
+    pixel. Admitted (ANALYSIS `:2142-2143`).
 15. **Keyboard: desktop layer only, plus the two font-metric trims.**
     `ShowGamepadHints` is pinned false (`keyboard.rs:1-31`; `TR_VK_GRID=1`
     restores the grid), the textbox/label `MinWidth` growth and the `HAlign`
@@ -444,9 +463,10 @@ written in ROADMAP/ANALYSIS/PORT_MAP.
 
 S — small (single file / one table)
 
-- ~~**S1. Fix the three stale doc claims**~~ **DONE (W4-f22)** — the ANALYSIS
-  P6 bullet, the PORT_MAP save_list row and the `flow.rs`/`mod.rs` notices are
-  corrected alongside M1's landing (the rename writes now).
+- ~~**S1. Fix the three stale doc claims**~~ **DONE (W4-f22 + W4-d85 FINAL
+  refresh 2026-11-21)** — the ANALYSIS P6 bullet, the PORT_MAP save_list row
+  and the `flow.rs`/`mod.rs` notices are corrected (the rename writes now);
+  the three claims are closed family-wide.
 - ~~**S2. Gate Play on validity.**~~ **DONE 2026-11-13** (`S1-H-10`):
   `world_select::rejection_key` + `flow.rs::world_play_click` reproduce
   `IsValid` + `TryMovingToRejectionMenuIfNeeded` (`UIWorldListItem.cs:362`,
@@ -454,52 +474,83 @@ S — small (single file / one table)
   `menuMode == 1000000` page). Tests `rejection_key_ports_try_moving_to_rejection_menu_if_needed`
   + `world_select_play_gates_validity_and_the_journey_mismatch` (invalid entry,
   both Journey mismatches, the agreeing pair).
-- **S3. Wire the active player's difficulty into the world list** — pass the
-  session/selected player's difficulty into `enter_front`'s `sort_worlds`
-  (`mod.rs:1368`), matching `UIWorldSelect.cs:177-180`. Blocked by S6 (needs
-  GameMode metadata) for observable effect; the plumbing itself is local.
-- **S4. The rename display trims** — port
-  `TrimDisplayIfOverElementDimensions(27)`/`(20)` for the world/character
-  rename labels (`UIWorldListItem.cs:418`, `UICharacterListItem.cs:199`).
+- ~~**S3. Wire the active player's difficulty into the world list**~~
+  **DONE (REFRESH 2026-11-21): S1-H-12 (`0d90167ed`, in base)** —
+  `resort_worlds` passes `active_player_difficulty() == 3` into
+  `sort_worlds` (`mod.rs:2419-2422`), the lone sort site the list hop and
+  the favourite toggle share. The observable effect still needs the
+  GameMode metadata (L2 — every real entry reads Classic today).
+- ~~**S4. The rename display trims**~~ — **DONE 2026-11-21 (W4-d85
+  doc-sweep lane 30)** for the creation plates:
+  `world_creation::trim_plate_display` ports
+  `TrimDisplayIfOverElementDimensions` (`UICharacterNameButton.cs:106-131`)
+  with the int-edge comparison + the drop-one-more-plus-"…" tail, wired
+  into `draw_plate` at padding 27 (name, `UIWorldCreation.cs:737`) / 40
+  (seed, `:746`) on both the base screen and the Advanced tab. The select
+  cards' rename labels (`UIWorldListItem.cs:418`,
+  `UICharacterListItem.cs:199`) never call the trim in the C# — those two
+  citations were misattributed; the only other call site is
+  `UISearchBar.cs:83` (padding 0), which stays with the search-bar port.
 
 M — medium
 
-- ~~**M1. `.plr` rename read-modify-write**~~ **DONE (W4-f22, code-only)** —
-  `player_file::rename_player_file` (the name-field splice + `.bak`),
-  `save_list::rename_world` (the world twin), `KeyboardTail::WorldRename` +
+- ~~**M1. `.plr` rename read-modify-write**~~ **DONE (W4-f22, code-only;
+  confirmed W4-d85 FINAL refresh 2026-11-21 — `0da19e92a` + `6916265d5`)** —
+  `player_file::rename_player_file` (the decrypt → name-field splice at
+  offset 24 → re-encrypt, the `.bak` copy), `save_list::rename_world` (the
+  `.trwld` header splice), `KeyboardTail::Rename`/`WorldRename` +
   `KeyboardSession.rename_index`, `app/session.rs::rename_player_entry`/
-  `rename_world_entry`; closes deviation 4. ANALYSIS "The card renames
-  (W4-f22)"; 11 witnesses written not run.
-- **M2. The creator's Randomize/Copy/Paste arms** — port
-  `Click_RandomizePlayer` (`UICharacterCreation.cs:1545-1657`) and the
-  clipboard pair (`GetPlayerTemplateValues` `:2006-2021`) behind a clipboard
-  bridge (the SDL/winit clipboard); the hover targets already exist
-  (`char_creation.rs:1286-1294`). Depends on M1's draft-copy plumbing.
-- **M3. `GameTipsDisplay`** — the rotating hint line under the creator panel
+  `rename_world_entry` (the session stand-in's `player_name`/`session_draft`
+  rename); closes deviation 4. ANALYSIS "The card renames (W4-f22)"; 11
+  witnesses written not run.
+- ~~**M2. The creator's Randomize/Copy/Paste arms**~~ **DONE (REFRESH
+  2026-11-21): S1-H-11 (`242177718`, in base)** — deviation 7 already
+  records the fix: `click_at` routes all six buttons,
+  `Click_RandomizePlayer`/`Click_RandomizeSingleColor`/the hex pair/the
+  template pair ported, `ui/clipboard.rs` is the `arboard` bridge. The
+  seed's "depends on M1" note was wrong — the draft-copy plumbing was
+  local. The voice fields stay the recorded deviation (ANALYSIS P6).
+- **M3. `GameTipsDisplay`** — **OPEN (REFRESH 2026-11-21: re-verified
+  unported on every tip — d86/f22's `char_creation.rs:18` still records
+  the deviation)**: the rotating hint line under the creator panel
   (`UICharacterCreation.cs:170`, `:1998-2005`) and the `UIWorldLoad` tip
-  (`UIWorldLoad.cs:117-118`); needs the `GameTips` data table (the strings
-  ride `Lang.tip`-adjacent tables) and a per-screen timer.
-- **M4. Random world-name composition** — load the
+  (`UIWorldLoad.cs:117-118` — d86's re-verification keeps it M3); needs
+  the `GameTips` data table (the strings ride `Lang.tip`-adjacent
+  tables) and a per-screen timer.
+- **M4. Random world-name composition** — **OPEN (REFRESH 2026-11-21:
+  `stand_in_name` still live on every tip)**: load the
   `RandomWorldName_Composition/Adjective/Location/Noun` tables and the
   1-in-10000 `SpecialWorldName.TheConstant` roll, replacing
   `stand_in_name` (`world_creation.rs:103-105`); keep the C# RNG order so a
-  re-roll sequence matches.
+  re-roll sequence matches. Deviations 10/11 stand.
 
 L — large
 
-- **L1. `UIWorldLoad` + `UIGenProgressBar` as a sixth `FrontScreen`** — the
-  612x70 bar, the 570/508 px fills, the `WorldGenerator.CurrentController`
-  progress feed and the Inventory-abort cue
-  (`UIGenProgressBar.cs:42-86`, `UIWorldLoad.cs:46-120`); needs
-  `tr_app`'s worldgen pipeline to expose total/current progress (the pass
-  count) and to become resumable/cancellable. Then `finish_creating_world`
-  hands off to it instead of reopening the world select (`session.rs:50-62`).
-- **L2. `.trwld` metadata fields** — GameMode, evil, creation time, play
-  time, Moon-Lord/seed flags in the port's `tr_core::save` header (a version
-  bump, with the existing reader as the migration shape) plus the matching
-  `WorldEntry` fields; unlocks deviations 5/6/12 (the Journey gate, the card
-  overlays, the sort key) and S3. Depends on the save-format module's review.
-- **L3. Cloud save UI** — the cloud favourite buttons and
+- ~~**L1. `UIWorldLoad` + `UIGenProgressBar` as a sixth `FrontScreen`**~~
+  **DONE (REFRESH 2026-11-21): S1-E-17 (in base), d86 re-verified
+  (`19641e25f`)** — the 612x70 bar, the 570/508 fills, the worker-job
+  progress feed (`GenProgressHook` over `GenerationProgress`, the
+  `WorldGenerator.CurrentController` statics' port) and the
+  Inventory-abort latch + sound 11 all landed; `finish_creating_world`
+  hands off to `FrontScreen::WorldLoad`. The recorded deferrals: the
+  drunk `Main.rand` arms, `placingTraps`, the F5 `UIWorldGenDebug` arm
+  (d86 scope-out), `gameTips` (M3). The resumable/cancellable generation
+  is the abort-queue shape, not a pause/resume.
+- **L2. `.trwld` metadata fields** — **PARTIAL across lanes (REFRESH
+  2026-11-21)**: the `.wld` flags lane landed GameMode at the C# offsets
+  on f45 (`6352d3840` tip — `wld/mod.rs:2240`'s writer + the
+  `w4_f45_the_game_mode_lands_at_the_csharp_offsets_and_gates` witness);
+  c43 landed the identity block (GUID/CreationTime/LastPlayed,
+  `076970809`); f44's research/132 is the persist MASTER INDEX (the
+  three-layer contract + the merge order). The `.trwld` header's
+  GameMode + the `WorldEntry` fields stay UNPORTED on every tip
+  (`save_list.rs:118-119` still reads "the port's writer stores none") —
+  deviations 5/6 stand, deviation 12's plumbing half is S1-H-12-done.
+  The remaining work is the `.trwld`-header GameMode write + the
+  `WorldEntry.difficulty` hydration, gated on the 132 merge order.
+- **L3. Cloud save UI** — **OPEN, deliberate (REFRESH 2026-11-21:
+  unchanged)**: the cloud favourite buttons and
   `IsCloudSave`/`MoveToCloud` arms (`UIWorldListItem.cs:113-124`, `:336-343`)
   behind a `SocialAPI.Cloud`-shaped port seam; currently the deliberate
-  `Cloud == null` branch (ANALYSIS `:2135-2137`).
+  `Cloud == null` branch (ANALYSIS `:2135-2137`) — the exact vanilla
+  no-account state, not a gap.

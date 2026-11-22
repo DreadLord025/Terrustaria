@@ -4,8 +4,16 @@
 //! state-change click disable.
 //!
 //! Screen-model ruling (plan §"Chosen Approach"): this is a **pure** port — no
-//! `UserInterface` object, no history/`GoBack` (dead code in 1.4.5.8: zero call
-//! sites), no gamepad. The machine holds the *timing* half of the C# and is fed
+//! `UserInterface` object, no history/`GoBack`, no gamepad. The `GoBack`
+//! dead-code claim is VERIFIED (W4-d85 doc-sweep, 2026-11-21): a full
+//! `decompiled/` + `decompiled-libs/` sweep for `.GoBack()` finds 8 call
+//! sites, every one a UIState's OWN private/static `GoBack` method
+//! (`UICharacterCreation.cs:1207/:2378`, `UIWorldCreation.cs:667/:1375`,
+//! `UIWorldCreationAdvanced.cs:472/:530`,
+//! `UIWorldCreationAdvancedSecretSeedsList.cs:383/:410`) — zero callers of
+//! `UserInterface.GoBack` (`UserInterface.cs:305-313`), so the `_history`
+//! list (`:51`, appended by `SetState` `:317-321`) is write-only in
+//! 1.4.5.8. The machine holds the *timing* half of the C# and is fed
 //! element ids by its callers, so the screens keep drawing and hit-testing
 //! themselves (the immediate-mode shape of the rest of the `ui` kit).
 //!

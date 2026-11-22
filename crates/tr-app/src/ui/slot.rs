@@ -293,6 +293,20 @@ fn draw_item_icon(
     r.push_ui_sprite([center.0 - w * 0.5, center.1 - h * 0.5], [w, h], uv, tint);
 }
 
+/// `UIItemIcon.DrawSelf` (`UIItemIcon.cs:21-25`): `ItemSlot.DrawItemIcon(
+/// item, 31, sb, dimensions.Center(), item.scale, 32f, White)` — the debug
+/// loadout rows' 32 px preview icons (W4-d85). The item's own `scale` is
+/// the `ItemDef.scale` the registry carries.
+pub(crate) fn draw_item_icon_32(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    item: &ItemSlot,
+    center: (f32, f32),
+) {
+    let scale = crate::registry::get(item.kind).map(|d| d.scale).unwrap_or(1.0);
+    draw_item_icon(r, lookups, item, center, scale, [1.0; 4]);
+}
+
 /// `ItemSlot.cs:2490-2498`: the empty-equipment glyph — `Extra_54`,
 /// `Frame(3, 7, num15 % 3, num15 / 3)`, shrunk 2 px, drawn centred on
 /// `position + value.Size() / 2 * inventoryScale` in `White * 0.35`.

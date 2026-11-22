@@ -1,0 +1,61 @@
+{
+  "format": 1,
+  "restore": {
+    "C:\\Users\\DreadLord\\Desktop\\Terraria-Rust\\decompiled-libs\\ReLogic\\Terraria.Libraries.ReLogic.ReLogic.csproj": {}
+  },
+  "projects": {
+    "C:\\Users\\DreadLord\\Desktop\\Terraria-Rust\\decompiled-libs\\ReLogic\\Terraria.Libraries.ReLogic.ReLogic.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\DreadLord\\Desktop\\Terraria-Rust\\decompiled-libs\\ReLogic\\Terraria.Libraries.ReLogic.ReLogic.csproj",
+        "projectName": "ReLogic",
+        "projectPath": "C:\\Users\\DreadLord\\Desktop\\Terraria-Rust\\decompiled-libs\\ReLogic\\Terraria.Libraries.ReLogic.ReLogic.csproj",
+        "packagesPath": "C:\\Users\\DreadLord\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\DreadLord\\Desktop\\Terraria-Rust\\decompiled-libs\\ReLogic\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\DreadLord\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net40"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net40": {
+            "framework": "net40",
+            "targetAlias": "net40",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.400"
+      },
+      "frameworks": {
+        "net40": {
+          "framework": "net40",
+          "targetAlias": "net40",
+          "dependencies": {
+            "Microsoft.NETFramework.ReferenceAssemblies": {
+              "suppressParent": "All",
+              "target": "Package",
+              "version": "[1.0.3, )",
+              "autoReferenced": true
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.401\\RuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}
