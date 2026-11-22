@@ -202,6 +202,16 @@ mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;
 mod projectile_ai_misc;
+// W4-d21 — the projectile aiStyles 201-210 missing machines (201/202/203/
+// 204/205/208/209; 206 landed a9 8c4fded8 verify-only, 207 empty/no kinds,
+// 210 already ai_yoyo_shot). The rows land in projectile/data.rs; the
+// dispatch arms are wired in projectile.rs::update. Code-only mode —
+// witness tests written not run.
+mod projectile_ai_201_210;
+// W4-d21 folds 3+4 — the MultiPointHitbox + LightningGenerator port (the
+// 203 storm-lightning bolt paths: tile truncation + the multi-segment
+// damage hitbox; the census proved the generator is NOT render-only).
+mod lightning_generator;
 // S1-P-i42 — the torch/glowstick/flare light-item projectile family: the
 // aiStyle-14 glowsticks (50/53/473/515/870/1089) + the aiStyle-33 flares
 // (163/310/1008-1011) + the fairy's aiStyle-170 hover. The rows land in

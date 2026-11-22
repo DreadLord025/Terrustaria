@@ -875,6 +875,110 @@ fn pick_tile_hit(app: &mut App, tx: i32, ty: i32, pick_power: i32) -> bool {
     false
 }
 
+/// W4-d21 — the digtoise dig drain (`AI_204_Digtoise`'s `PickTile` calls,
+/// `Projectile.cs:38748-38800`). The pool queues the dig cells (the hit-tile
+/// book + the best-pickaxe read live on the App); this resolves them in the
+/// C#'s scan order. The 1123 reads `GetBestPickaxe` (`Player.cs:40095-
+/// 40106`) for the pick power and uses `dealDamageAsIfBaseNumberIs = 36`;
+/// the 1098 uses 26/26. Each cell: `PickTile_DetermineDamage`
+/// (`respectTransformingTiles: false`) gates the `PickTile` call, and the
+/// `dealDamageAsIfBaseNumberIs` clamp (`Player.cs:53765-53768`) caps the
+/// damage. A partially-blocked dig (not every solid cell breakable) returns
+/// the digtoise to the walk state (`ai[1] = 0`, `ai[0] = 4`, `:38795-38800`).
+pub(crate) fn drain_digtoise_digs(app: &mut App) {
+    let digs = app.projectiles.drain_digtoise_digs();
+    if digs.is_empty() {
+        return;
+    }
+    // Group by slot (the C# runs one digtoise's cells together).
+    let mut by_slot: std::collections::BTreeMap<usize, Vec<(i32, i32)>> =
+        std::collections::BTreeMap::new();
+    for (slot, tx, ty) in digs {
+        by_slot.entry(slot).or_default().push((tx, ty));
+    }
+    for (slot, cells) in by_slot {
+        let kind = app.projectiles.slots()[slot].kind;
+        let trusty = kind == crate::projectile::TRUSTY_DIGTOISE;
+        // `:38748-38758` — the pick power + the damage base.
+        let mut pick = 26;
+        let base = if trusty {
+            // GetBestPickaxe: the strongest pick across inventory 0..50.
+            let best = app.inventory[..50]
+                .iter()
+                .filter(|s| s.count > 0)
+                .filter_map(|s| crate::registry::item(s.kind))
+                .filter(|d| d.pick > 0)
+                .map(|d| d.pick)
+                .max()
+                .unwrap_or(0);
+            pick = pick.max(best);
+            36
+        } else {
+            26
+        };
+        let mut solid_count = 0;
+        let mut breakable_count = 0;
+        for (tx, ty) in cells {
+            let Some(tile) = app.world.tile(tx, ty).copied() else { continue };
+            if !tile.active() {
+                continue;
+            }
+            solid_count += 1;
+            // PickTile_DetermineDamage (respectTransformingTiles: false).
+            let buffer_index = app.hit_tile.hit_object(tx, ty, tr_core::hit_tile::TILE);
+            let mut damage = tr_core::tool::pickaxe_damage(
+                tx,
+                ty,
+                pick,
+                tile.kind,
+                i32::from(tile.frame_x),
+                i32::from(tile.frame_y),
+                &pick_world(app),
+                |x, y| app.world.tile(x, y).copied(),
+            );
+            let (redir_x, redir_y) = pick_redirect_target(&app.world, tx, ty, tile);
+            if (redir_x, redir_y) != (tx, ty) {
+                app.hit_tile.update_position(buffer_index, redir_x, redir_y);
+            }
+            if !edit::can_kill_tile(&app.world, tx, ty, chest_holds_items(app)) {
+                damage = 0;
+            }
+            if pick_world(app).get_good {
+                damage *= 2;
+            }
+            // `:38770-38774` — only a positive-damage cell takes the PickTile.
+            if damage > 0 {
+                breakable_count += 1;
+                // The dealDamageAsIfBaseNumberIs clamp (`:53765-53768`).
+                let clamped = damage.min((base as f32 * (damage as f32 / pick as f32)) as i32);
+                let total = app.hit_tile.add_damage(buffer_index, clamped, true);
+                if total >= 100 {
+                    app.hit_tile.try_clearing_and_pruning(
+                        tx,
+                        ty,
+                        tr_core::hit_tile::TILE,
+                        |x, y| app.world.tile(x, y).is_some_and(|t| t.active()),
+                        |x, y| app.world.tile(x, y).map_or(0, |t| t.wall),
+                    );
+                    break_tile(app, tx, ty);
+                } else if clamped != 0 {
+                    app.hit_tile.prune(
+                        |x, y| app.world.tile(x, y).is_some_and(|t| t.active()),
+                        |x, y| app.world.tile(x, y).map_or(0, |t| t.wall),
+                    );
+                }
+            }
+        }
+        // `:38795-38800` — a partially-blocked dig returns to walk.
+        if solid_count > 0 && breakable_count < solid_count {
+            let p = &mut app.projectiles.slots_mut()[slot];
+            p.ai[1] = 0.0;
+            p.ai[0] = 4.0;
+            p.net_update = true;
+        }
+    }
+}
+
 /// The mannequin/weapon-rack redirect target `GetPickaxeDamage`'s
 /// `UpdatePosition` calls land on (`Player.cs:53984-54043`) — the cell the
 /// hit buffer should track. Plain tiles keep their own cell.
@@ -1810,6 +1914,18 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     let prev_place_down = app.place_prev_down;
     let prev_place_released = app.place_released;
     app.place_prev_down = app.place_down;
+    // W4-d21 fold 2 — `Player.BlockInteractionWithProjectiles`' decrement
+    // (`Main.cs:16849-16852`): while the right button is released and its
+    // release latch is set, the counter counts down one per frame. The
+    // port reads the interface-draw latch (`ui_right_release_latch`,
+    // `Main.cs:62458-62465`'s `mouseRightRelease`) — the same value the
+    // pet arms gate on.
+    if app.block_interaction_with_projectiles > 0
+        && !app.place_down
+        && app.ui_right_release_latch
+    {
+        app.block_interaction_with_projectiles -= 1;
+    }
     // `releaseUseItem = !controlUseItem` (`Player.cs:42829`) runs at the END
     // of the tick — AFTER the use-start gate (`:42733`) read the PREVIOUS
     // frame's latch. So the gate this frame sees is `!controlUseItem` from
@@ -4285,6 +4401,140 @@ fn fire_non_ammo_shot(
     true
 }
 
+/// `Main.TryPetting` (`Main.cs:37925-37981`, W4-d21 fold 2) — the right-click
+/// pet interaction, one pool slot. The C# calls it from `DrawProj`'s per-type
+/// arms (the 1094/1113 foxsparks `:33203` icon 5664/6149, the 1098/1123
+/// digtoise `:33700` icon 5667, the 1093/1112/1118 cattiva/claypot `:34264`
+/// icon 5663/6148/6161); the port runs it in the sim's right-click chain
+/// after the chest/tile routes (the draw→sim deviation, ANALYSIS "The
+/// projectile aiStyles 201-210 (W4-d21)").
+///
+/// `slot` is the pool index (the C#'s `proj.whoAmI`); `mouse_world` is
+/// `Main.MouseScreen + Main.screenPosition` (the port's upright-only fold
+/// of `ReverseGravitySupport`); `press_edge` is `Main.mouseRight &&
+/// Main.mouseRightRelease` (the caller's `place_down &&
+/// ui_right_release_latch` — the interface-draw latch, `Main.cs:62458-62465`);
+/// `block_interaction` is `Player.BlockInteractionWithProjectiles`. Returns
+/// whether the fresh press was CONSUMED (the `:37964-37971` arm ran — the
+/// caller returns on it); the hover-only ticks refresh `no_throw` /
+/// `cursor_item_icon_id` and return false.
+///
+/// Folds: `Main.SmartInteractProj` (the smart-interact system is unported —
+/// the hitbox hover is the only selection), `lastMouseInterface` (the
+/// caller's `!inventory_open` gate stands in), `PlayerInput.UsingGamepad` /
+/// `SmartCursorIsUsed` (keyboard+mouse only — the return-value protocol
+/// 0/1/2 collapses to the consumed bool), `GamepadEnableGrappleCooldown`
+/// (no gamepad), `HasInteractableObjectThatIsNotATile` (the smart-cursor
+/// hint — no ported layer), the achievement (`HandleSpecialEvent` 21,
+/// `Player.cs:33397`).
+fn try_petting(
+    app: &mut App,
+    slot: usize,
+    mouse_world: Vec2,
+    press_edge: bool,
+    block_interaction: i32,
+) -> bool {
+    use crate::projectile_ai_201_210::{closest_point_in_rect, get_petting_info, is_interactable};
+    // `:37927-37930` — `gamePaused || gameMenu`: the caller's step gate
+    // (the editing pass never runs paused/in-menu) folds it.
+    let Some(p) = app.player.as_ref() else {
+        return false;
+    };
+    let q = &app.projectiles.slots()[slot];
+    // `:37932` — `IsProjectileInteractableAndInInteractionRange`
+    // (`Player.cs:23153-23169`): active + interactable + the closest-point
+    // tile inside the Simple reach region (`TileReachCheckSettings.cs:45-54`
+    // — the chest route's region, `chest.rs:1382-1387`).
+    if !q.active || !is_interactable(q.kind) {
+        return false;
+    }
+    // `TryPetting` is only called from the pet DrawProj arms (the foxsparks
+    // `:33203`, the digtoise `:33700`, the cattiva/claypot `:34264`). The
+    // other `IsInteractable` rows — the Money Trough 525, the Void Lens 734,
+    // Chester 960 — ride their own interaction machines
+    // (`TryInteractingWithMoneyTrough`/`TryInteractingWithVoidLens`, unported),
+    // so the pet seam refuses them.
+    if !matches!(q.kind, 1093 | 1094 | 1098 | 1112 | 1113 | 1118 | 1123) {
+        return false;
+    }
+    let (pcx, pcy) = p.center();
+    let closest = closest_point_in_rect(Vec2::new(pcx, pcy), q.pos, q.w, q.h);
+    let tx = (closest.x / TILE_PX) as i32;
+    let ty = (closest.y / TILE_PX) as i32;
+    let (reach_x, reach_y) = p.tile_interaction_reach();
+    if !tile_in_reach_rect(p, tx, ty, reach_x, reach_y, 0) {
+        return false;
+    }
+    // `:37936-37942` — the mouse-world point inside the hitbox; the
+    // foxsparks (1094/1113) inflate 6 each way first. XNA `Contains` is
+    // half-open on Right/Bottom; `ToPoint` truncates.
+    let inflate = if q.kind == 1094 || q.kind == 1113 { 6.0 } else { 0.0 };
+    let (hx0, hy0) = (q.pos.x - inflate, q.pos.y - inflate);
+    let (hx1, hy1) = (q.pos.x + q.w + inflate, q.pos.y + q.h + inflate);
+    let mx = mouse_world.x as i32;
+    let my = mouse_world.y as i32;
+    let hover = mx >= hx0 as i32 && mx < hx1 as i32 && my >= hy0 as i32 && my < hy1 as i32;
+    // `:37943-37952` — the hover gate (the smart-interact arm is folded).
+    if !hover {
+        return false;
+    }
+    // `:37953-37959` — the cursor icon + the throw lockout (the icon draw
+    // is the render layer's follow-up; the fields carry the state).
+    let item_icon: u16 = match q.kind {
+        1094 => 5664,
+        1113 => 6149,
+        1098 | 1123 => 5667,
+        1118 => 6161,
+        1093 => 5663,
+        _ => 6148, // 1112
+    };
+    app.no_throw = 4;
+    app.cursor_item_icon_id = item_icon;
+    // `:37964` — the fresh right press with the block counter clear.
+    if !press_edge || block_interaction != 0 {
+        return false;
+    }
+    // `:37966-37969` — the consumed click: the interface latch + the
+    // tile-interaction flags. `tileInteractAttempted`/`tileInteractionHappened`
+    // are the chat-arm's guards (`Main.cs:43077`) — the port's talk arm
+    // reads `talk_npc` instead; `releaseUseTile = false` is the port's
+    // `place_released` latch clear.
+    app.ui_right_release_latch = false;
+    app.place_released = false;
+    // `GetPettingInfo` + `PetAnimal` (`Player.cs:33358-33399`). The grapple
+    // teardown (`RemoveAllGrapplingHooks`, `:33379`) needs the pool — the
+    // caller-side order runs it BEFORE `pet_animal` when the snap is going
+    // to land (the sleep_down bobber-teardown precedent). The repeat-click
+    // toggle (`:33373-33377`) fires BEFORE the teardown in C# — probe it
+    // first so a toggle-off never kills the hooks.
+    let info = get_petting_info(
+        slot,
+        q.kind,
+        Vec2::new(q.pos.x + q.w * 0.5, q.pos.y + q.h * 0.5),
+        pcx,
+    );
+    let target_bottom = (q.pos.x + q.w * 0.5, q.pos.y + q.h);
+    let snap = (
+        (target_bottom.0 + info.offset_from_pet.0).floor(),
+        (target_bottom.1 + info.offset_from_pet.1).floor(),
+    );
+    let (bx, by) = p.bottom();
+    let toggles_off = p.petting.is_petting && (bx, by) == snap;
+    let snap_ok = p.can_snap_to(&app.world, snap.0 - bx, snap.1 - by)
+        && crate::projectile_ai026_c::solid_tile_allow_bottom_slope(
+            &app.world,
+            snap.0 as i32 / 16,
+            snap.1 as i32 / 16,
+        );
+    if !toggles_off && snap_ok {
+        let owner = app.local_id as u8;
+        app.projectiles.remove_all_grappling_hooks(owner);
+    }
+    let p = app.player.as_mut().expect("the player borrow above");
+    let _ = p.pet_animal(&app.world, info, Some(target_bottom));
+    true
+}
+
 /// `Player.ItemCheck`'s tile-first order for the tools: the cursor cell is a
 /// minable/chopable tile the held tool can work, and the vanilla checks the
 /// tile against the tool before the NPC boxes — `ItemCheck_UseMiningTools`
@@ -4622,6 +4872,35 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
     }
     if app.place_down && !prev_place_down && !app.inventory_open && interact_tile(app, tx, ty) {
         return;
+    }
+    // W4-d21 fold 2 — the pet right-click (`Main.TryPetting`,
+    // `Main.cs:37925-37981`). The C# runs it from DrawProj's per-type arms
+    // (the foxsparks `:33203`, the digtoise `:33700`, the cattiva/claypot
+    // `:34264`); the port moves it into the sim's right-click chain after
+    // the chest/tile routes (the draw→sim deviation, ANALYSIS). The hover
+    // half runs EVERY tick (the noThrow/cursor-icon refresh); the pet half
+    // fires on `mouseRight && mouseRightRelease && Block == 0` — the port's
+    // interface-draw latch (`ui_right_release_latch`, `Main.cs:62458-62465`),
+    // which the first consumed pet clears so the later slots see it false
+    // (the C#'s `mouseRightRelease = false` write, `:37966`). The
+    // `lastMouseInterface` gate folds to the inventory/shop-panel checks.
+    // The consumed press returns BEFORE the place path (the C#'s
+    // `releaseUseTile = false` suppresses the tile use, `:37969`); the
+    // hover-only tick falls through (the C# DrawProj never blocks ItemCheck).
+    {
+        let block = app.block_interaction_with_projectiles;
+        let mut consumed = false;
+        if !app.inventory_open {
+            for i in 0..app.projectiles.slots().len() {
+                let press_edge = app.place_down && app.ui_right_release_latch;
+                if try_petting(app, i, world_pos, press_edge, block) {
+                    consumed = true;
+                }
+            }
+        }
+        if consumed {
+            return;
+        }
     }
     // The town-NPC chat arm (`Main.cs:43069-43083`): the region-gated fresh
     // press latches `SetTalkNPC(i)` and fills `Main.npcChatText = GetChat()`;

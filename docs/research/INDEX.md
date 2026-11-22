@@ -1,4 +1,4 @@
-﻿# Research index вЂ” full C# Terraria audit
+# Research index вЂ” full C# Terraria audit
 
 Map of the research effort backing the new ROADMAP. One file per module,
 `docs/research/NN-slug.md`. Status: вњ… done В· рџ”„ in flight В· в¬њ planned.
@@ -77,6 +77,8 @@ per `docs/superpowers` agreements).
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 65 | Expert/master boss drop trees census + port (W4-f35: the bag OPEN side — OpenBossBag's 19 grant switches + TryGettingDevArmor + the money tail + the ItemSlot right-click open arm; the widened scope — the full 58-kind OpenableBag set: the 26 fishing crates + the presents + the misc bags + the death-heal feed; the death side already landed S1-E-14a; code-only) | `65-expert-drop-trees-census.md` | ✅ |
 | 66 | Bag-open mechanics + master-mode bag drop-rate census (W4-f35 DOC-SWEEP: the right-click open dispatch, the luck census — NO luck at open time, the death-side luck-free bag gate + the master pet/mount rule fixes, the master-mode relic/pet rates, the e25 value_multiplier boundary) | `66-bag-open-master-census.md` | ✅ |
+| 162 | Projectile aiStyles 201-210 COVERAGE census (W4-d21: 7 MISSING ported, 206 verify-only a9, 207 empty/no kinds, 210 pre-ported; renumbered 26d→162 per registry §6) | `162-projectile-ai-201-210-census.md` | 🟢 SEALED — band CLOSED (research/340) |
+| 340 | W4-d21 FINAL: the 201-210 band table + the d77c cue-1115 compose receipt + the all-styles-armed/kinds-rowed census + the proj-AI-1-210-all-decades-CLOSED ledger (renamed 308→340 per registry §9: g13 KEEPS 308 §8.5; code-only) | `340-projectile-ai-201-210-final.md` | 🟢 SEALED — 24 witnesses written not run; dirty-9 fold-2 co-lane idle NOT staged |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
