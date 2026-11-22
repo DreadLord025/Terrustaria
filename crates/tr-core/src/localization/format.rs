@@ -176,7 +176,9 @@ fn parse_substitution(chars: &[char], start: usize) -> Option<(&'static str, Str
 }
 
 /// C# `string.Format` with `String` arguments: `{0}`, `{0:spec}` (the specifier is
-/// ignoreed, as Terraria only uses `{0}`-style holes), and `{{` / `}}` escapes.
+/// honoured for the numeric section formats Terraria's language rows use —
+/// `{0:+0;-#}`, `CommonItemTooltip.PrefixArmorPenetration`/`PrefixTagDamage` —
+/// and ignored otherwise), and `{{` / `}}` escapes.
 ///
 /// An out-of-range index keeps the original token instead of throwing
 /// `FormatException`, so a malformed language file cannot crash the renderer.
@@ -206,7 +208,8 @@ pub fn format_net(format: &str, args: &[String]) -> String {
                     i += 1;
                     continue;
                 }
-                // Skip an optional format specifier.
+                // Collect an optional format specifier.
+                let spec_start = if chars.get(j) == Some(&':') { j + 1 } else { j };
                 while let Some(c) = chars.get(j) {
                     if *c == '}' {
                         break;
@@ -218,8 +221,9 @@ pub fn format_net(format: &str, args: &[String]) -> String {
                     i += 1;
                     continue;
                 }
+                let spec: String = chars[spec_start..j].iter().collect();
                 match digits.parse::<usize>().ok().and_then(|n| args.get(n)) {
-                    Some(a) => out.push_str(a),
+                    Some(a) => out.push_str(&apply_format_spec(a, &spec)),
                     None => out.extend(chars[i..=j].iter()),
                 }
                 i = j + 1;
@@ -235,4 +239,149 @@ pub fn format_net(format: &str, args: &[String]) -> String {
         }
     }
     out
+}
+
+/// The numeric custom-format subset .NET's `int.ToString(specifier)` runs for
+/// the tooltip's `{0:+0;-#}` rows (`CommonItemTooltip.PrefixArmorPenetration`
+/// / `PrefixTagDamage`, `Main.cs:21141`/`:21148`): up to three `;`-separated
+/// sections (positive;negative;zero), each a literal run with `0` mandatory
+/// digit holes and `#` optional-digit holes, filled right-to-left. With one
+/// section the sign prints outside it; with a negative section the magnitude
+/// prints WITHOUT the sign (the section's literals carry it). Non-numeric
+/// arguments and non-numeric specs pass through unchanged (the old ignore
+/// behaviour).
+fn apply_format_spec(arg: &str, spec: &str) -> String {
+    if spec.is_empty() {
+        return arg.to_string();
+    }
+    let Ok(value) = arg.parse::<i64>() else {
+        return arg.to_string();
+    };
+    // Custom numeric format vs standard specifier (.NET's rule): a
+    // multi-section spec is always custom; a single-section spec is standard
+    // when it is one alphabetic char optionally followed by digits (N0, D5,
+    // F2 — keep the ignore behaviour), custom otherwise.
+    let multi_section = spec.contains(';');
+    if !multi_section {
+        let mut chars = spec.chars();
+        if let Some(first) = chars.next() {
+            if first.is_ascii_alphabetic() && chars.all(|c| c.is_ascii_digit()) {
+                return arg.to_string();
+            }
+        }
+    }
+    if !spec.contains(['0', '#']) && !multi_section {
+        return arg.to_string();
+    }
+    let sections: Vec<&str> = spec.split(';').collect();
+    let (section, magnitude, sign) = if sections.len() >= 2 {
+        if value > 0 {
+            (sections[0], value as u64, "")
+        } else if value < 0 {
+            (sections[1], value.unsigned_abs(), "")
+        } else {
+            // .NET: an empty third section prints nothing; a missing one
+            // reuses the positive section.
+            (sections.get(2).copied().unwrap_or(sections[0]), 0u64, "")
+        }
+    } else if value < 0 {
+        (sections[0], value.unsigned_abs(), "-")
+    } else {
+        (sections[0], value as u64, "")
+    };
+    let sec: Vec<char> = section.chars().collect();
+    let holes: Vec<usize> = sec
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| matches!(c, '0' | '#'))
+        .map(|(i, _)| i)
+        .collect();
+    if holes.is_empty() {
+        return format!("{sign}{section}");
+    }
+    let digits = magnitude.to_string();
+    // Fill the holes right-to-left; a '0' hole past the digit run's left edge
+    // pads a zero, a '#' hole stays empty. Digits LEFT of the leftmost hole
+    // prepend before it (.NET's custom-format overflow rule: "0" on 123 is
+    // "123", not "3").
+    let mut fill: Vec<Option<char>> = vec![None; holes.len()];
+    let mut di = digits.len();
+    for k in (0..holes.len()).rev() {
+        if di > 0 {
+            di -= 1;
+            fill[k] = Some(digits.as_bytes()[di] as char);
+        } else if sec[holes[k]] == '0' {
+            fill[k] = Some('0');
+        }
+    }
+    let overflow = &digits[..di];
+    let mut rendered = String::new();
+    let mut k = 0usize;
+    let mut overflow_done = false;
+    for (i, c) in sec.iter().enumerate() {
+        match c {
+            '0' | '#' => {
+                if !overflow_done && i == holes[0] {
+                    rendered.push_str(overflow);
+                    overflow_done = true;
+                }
+                if let Some(d) = fill[k] {
+                    rendered.push(d);
+                }
+                k += 1;
+            }
+            literal => rendered.push(*literal),
+        }
+    }
+    format!("{sign}{rendered}")
+}
+
+#[cfg(test)]
+mod w4_f28_tests {
+    use super::format_net;
+
+    /// W4-f28 — the `{0:+0;-#}` section format the prefix tooltip's armor
+    /// penetration / tag damage rows use (`CommonItemTooltip
+    /// .PrefixArmorPenetration`, `Main.cs:21141`/`:21148`): .NET's
+    /// `(+5).ToString("+0;-#")` = "+5", `(-3)` = "-3", `(0)` = "+0"
+    /// (the positive section renders zero when no third section exists).
+    #[test]
+    fn the_prefix_rows_section_format_matches_dotnet() {
+        let f = "{0:+0;-#} armor penetration";
+        assert_eq!(format_net(f, &["5".into()]), "+5 armor penetration");
+        assert_eq!(format_net(f, &["-3".into()]), "-3 armor penetration");
+        assert_eq!(format_net(f, &["0".into()]), "+0 armor penetration");
+        assert_eq!(format_net(f, &["12".into()]), "+12 armor penetration");
+        assert_eq!(format_net(f, &["-12".into()]), "-12 armor penetration");
+    }
+
+    /// The plain holes keep their behaviour — the spec-less rows and the
+    /// two-argument `RestoresLifeRange` (`Main.cs:20881`).
+    #[test]
+    fn plain_and_two_arg_holes_still_format() {
+        assert_eq!(
+            format_net("Restores from {0} to {1} life", &["50".into(), "120".into()]),
+            "Restores from 50 to 120 life"
+        );
+        assert_eq!(format_net("{{0}}", &[]), "{0}");
+        // Out-of-range keeps the token (the no-FormatException rule).
+        assert_eq!(format_net("{1}", &["a".into()]), "{1}");
+        // A non-numeric argument passes through even with a numeric spec.
+        assert_eq!(format_net("{0:+0;-#}", &["x".into()]), "x");
+        // A standard (non-section) specifier keeps the ignore behaviour.
+        assert_eq!(format_net("{0:N0}", &["1234".into()]), "1234");
+    }
+
+    /// The zero-padding and optional-digit holes of the custom grammar
+    /// (`000` pads, `##` drops) — exercised so the fill loop cannot drift.
+    #[test]
+    fn zero_pad_and_optional_holes() {
+        assert_eq!(format_net("{0:000}", &["7".into()]), "007");
+        assert_eq!(format_net("{0:000}", &["-7".into()]), "-007");
+        assert_eq!(format_net("{0:##}", &["7".into()]), "7");
+        assert_eq!(format_net("{0:+0;-#;zero}", &["0".into()]), "zero");
+        // Digits left of the leftmost hole prepend (.NET overflow rule).
+        assert_eq!(format_net("{0:0}", &["123".into()]), "123");
+        assert_eq!(format_net("{0:+0;-#}", &["-12".into()]), "-12");
+    }
 }

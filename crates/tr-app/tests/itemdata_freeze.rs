@@ -20,9 +20,10 @@
 use std::path::PathBuf;
 
 /// FNV-1a (64-bit) over the concatenated non-comment lines, joined by `\n`.
-/// Re-pinned for S1-E-21 wave A (the `use_sound`/`use_sound_pitch` fields
-/// added to every generated row — the item-use sound wave).
-const DATA_FNV1A64: u64 = 0x8874_21a2_baf1_014e;
+/// Re-pinned for W4-f28 (the `expert`/`has_vanity_effects`/`tile_wand`/
+/// `not_ammo`/`extractinator_consumable` fields added to every generated
+/// row — the tooltip-lines second half).
+const DATA_FNV1A64: u64 = 0x1dd2_84fc_4b36_2f46;
 /// `ItemID.Count` (`ItemID.cs:14861`) — the number of `ItemDef` rows.
 const ROWS: usize = 6196;
 

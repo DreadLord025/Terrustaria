@@ -7,6 +7,7 @@ use tr_render::SpriteRenderer;
 use super::slot;
 use super::UiPulse;
 use super::text::{hud_text, hud_text_width};
+use super::tooltip_lines2::{self, HoverFlags, TooltipWorld};
 use crate::assets;
 use crate::item::{HOTBAR, INV, ItemSlot};
 use crate::registry;
@@ -206,16 +207,59 @@ pub struct TooltipContext<'a> {
     /// `Main.LocalPlayer.inventory[Main.LocalPlayer.selectedItem].crit` — the
     /// held item's own crit, which the crit row subtracts (`Main.cs:20701`).
     pub held_crit: i32,
-    /// `Item.tooltipContext` (`ItemSlot.MouseHover`, `ItemSlot.cs:3184`): the
-    /// slot context the hovered item rides — the Journey sacrifice row's
-    /// whitelist gate (`Main.cs:21318`). `-1` = no context (`Item.cs:117`).
-    pub slot_context: i32,
-    /// `Main.LocalPlayer.difficulty` (`Main.cs:21318`'s `== 3` gate) — the
-    /// session character's difficulty, the port's Journey stand-in.
-    pub journey_difficulty: u8,
-    /// `Main.LocalPlayerCreativeTracker.ItemSacrifices` (`Main.cs:21318`):
-    /// the research tracker the sacrifice row reads.
+    /// W4-f28 — the hovered instance's `ItemSlot.MouseHover` stamps +
+    /// favourite flag (`ItemSlot.cs:3183-3198`, `Item.favorited`).
+    pub flags: HoverFlags,
+    /// W4-f28 — the world/session gates (expert mode, the downed latches,
+    /// the seed flags, npcShop, the master/disco colour animators).
+    pub world: TooltipWorld,
+    /// `Main.player[myPlayer].HasItem(905)` (`Player.cs:55894-55904`) — the
+    /// coin-gun damage gate's 58-slot scan (`Main.cs:20669`). The draw site
+    /// computes it over grid + `equip.coins` + `equip.ammo` (`inv::INV_SLOTS`
+    /// = 58); a `inventory` slice alone is the 50-slot grid and would miss
+    /// the coin/ammo rows 50-57 (research/128 §4.4).
+    pub has_coin_gun: bool,
+    /// The hovered player's carry grid (`&inventory[..]`, the 50-slot
+    /// grid). Kept on the context for the shop/craft hover seams
+    /// (research/128 §4.3); the coin-gun scan rides `has_coin_gun` above —
+    /// this slice alone cannot see the coin/ammo rows 50-57.
+    pub inventory: Option<&'a [ItemSlot]>,
+    /// The held item's KIND (the inventory scan's `selectedItem` row) —
+    /// the Psycho Knife 3106 self-hold compare (`Main.cs:20762`).
+    pub held_kind: u16,
+    /// `Main.LocalPlayer.chest` (`Player.cs:2876`) — the favourite rows'
+    /// bank-blocked notice (`Main.cs:20659`). −1 closed.
+    pub open_chest: i32,
+    /// `Player.Settings.ShowLoadoutShareHint` (`Player.cs:372`, static
+    /// ctor true `:412`): the share-hint row's gate (`Main.cs:21312`).
+    pub show_loadout_share_hint: bool,
+    /// W4-f28 — `NewCraftingUI._missingRequirementsTooltipText`
+    /// (`NewCraftingUI.cs:526`): the hovered UNAVAILABLE recipe's reason,
+    /// appended after the shop lines while the crafting panel is visible
+    /// (`Main.cs:20363-20366`). The port's grid lists craftable rows only,
+    /// so the draw sites leave this `None` until the persistent recipe-list
+    /// port lands (docs/ANALYSIS.md).
+    pub crafting_missing_reason: Option<String>,
+    /// W4-f28 — `MouseTextCache.diff` (`Main.cs:20172`): the mediumcore (1)
+    /// / hardcore (2) character-colour override on the name row
+    /// (`GetItemNameColor`, `:20620-20627`). The item tooltip's own call
+    /// passes 0 (`DrawInterface_33_MouseText`, `:45419`); the stealthed-
+    /// remote-player hover passes `player.difficulty` (`:42934`, unported).
+    pub diff: u8,
+    /// W4-f28 — `Main.LocalPlayer.difficulty` (`Main.cs:21318`): 3 is the
+    /// Journey character, the research rows' gate. The c24 port's
+    /// `App.active_player_difficulty` feeds it; 0 (classic) until then.
+    pub difficulty: u8,
+    /// W4-f28 — the session sacrifice tracker (`Main.LocalPlayerCreativeTracker.
+    /// ItemSacrifices`, `Main.cs:21318`): the c24 App field feeds it;
+    /// `None` until that port lands (the research rows stay off).
     pub research: Option<&'a crate::research::ResearchTracker>,
+    /// W4-f28 — the shop price row's hover inputs
+    /// (`Main.MouseText_DrawItemTooltip_AddShopLines`, `Main.cs:20448-20555`):
+    /// `Some` while a shop is open (`Main.npcShop > 0`) — the row appends
+    /// after `GetLinesInfo` on EVERY hover, the shop grid's context-15
+    /// stamp (`buy = true`) included. `None` = no shop, no row.
+    pub shop_lines: Option<crate::shop::ShopLineContext>,
 }
 
 impl Default for TooltipContext<'_> {
@@ -225,9 +269,18 @@ impl Default for TooltipContext<'_> {
             stack: 1,
             player: None,
             held_crit: 0,
-            slot_context: -1,
-            journey_difficulty: 0,
+            flags: HoverFlags::default(),
+            world: TooltipWorld::STOCK,
+            has_coin_gun: false,
+            inventory: None,
+            held_kind: 0,
+            open_chest: -1,
+            show_loadout_share_hint: true,
+            crafting_missing_reason: None,
+            diff: 0,
+            difficulty: 0,
             research: None,
+            shop_lines: None,
         }
     }
 }
@@ -244,7 +297,7 @@ fn hover_name(kind: u16, prefix: u16, stack: u32) -> String {
 
 /// `ItemID.Sets.ToolTipDamageMultiplier` (`ItemID.cs:492`): 1 by default, 2
 /// for the nine ids the vanilla doubles.
-fn tooltip_damage_multiplier(kind: u16) -> f32 {
+pub(super) fn tooltip_damage_multiplier(kind: u16) -> f32 {
     match kind {
         162 | 163 | 220 | 389 | 1259 | 4272 | 5011 | 5012 | 5526 => 2.0,
         _ => 1.0,
@@ -253,7 +306,7 @@ fn tooltip_damage_multiplier(kind: u16) -> f32 {
 
 /// The player's crit for the hovered item's class (`Player.meleeCrit` /
 /// `rangedCrit` / `magicCrit`, `Main.cs:20701-20717`).
-fn player_crit(p: &crate::player::Player, class: registry::DamageClass) -> i32 {
+pub(super) fn player_crit(p: &crate::player::Player, class: registry::DamageClass) -> i32 {
     match class {
         registry::DamageClass::Melee => p.melee_crit,
         registry::DamageClass::Ranged => p.ranged_crit,
@@ -263,28 +316,98 @@ fn player_crit(p: &crate::player::Player, class: registry::DamageClass) -> i32 {
 }
 
 /// The item's tooltip rows — `Main.MouseText_DrawItemTooltip_GetLinesInfo`
-/// (`Main.cs:20631-21010`): line 0 is the hover name in its rare colour
+/// (`Main.cs:20631-21342`): line 0 is the hover name in its rare colour
 /// (`:20358-20360`), then the stat/tool rows each behind its own value gate,
 /// through `Lang.tip[i]` (`LegacyTooltip.{i}`, `Lang.cs:497`) and the
-/// `CommonItemTooltip.*` language rows.
+/// `CommonItemTooltip.*` language rows. The second half (the Wireable row
+/// through the armour set-bonus row) is [`tooltip_lines2::append_second_half`];
+/// the favourite/social/tile-wand rows and the W4-f28 gate repairs read the
+/// shared helpers there.
 pub fn item_tooltip_lines(
     kind: u16,
     d: &crate::itemdata::ItemDef,
     ctx: TooltipContext<'_>,
 ) -> Vec<(String, [f32; 4])> {
+    item_tooltip_rows(kind, d, ctx).0
+}
+
+/// [`item_tooltip_lines`] plus the yoyo-logo row index
+/// (`Main.MouseText_DrawItemTooltip_GetLinesInfo`'s `ref yoyoLogo`,
+/// `Main.cs:20631`/`:21019`): the draw pass paints the OneDropLogo over
+/// that row instead of its " " placeholder text (`:20408-20439`).
+pub fn item_tooltip_rows(
+    kind: u16,
+    d: &crate::itemdata::ItemDef,
+    ctx: TooltipContext<'_>,
+) -> (Vec<(String, [f32; 4])>, Option<usize>) {
+    // The hovered instance's stats: the prefix applied over the CALLER's
+    // row (`Item.Prefix`, `Item.cs:576-586`, through `prefixed_stats_of` —
+    // the e16 caller seam, research/128 §3): the C#'s HoverItem IS the
+    // prefixed instance, so a witness-overridden def reaches the math.
+    let stats = tooltip_lines2::hover_stats(d, ctx.prefix);
+    let damage = stats.damage;
+    let crit = stats.crit;
+    let use_animation = stats.use_animation;
+    let mana = stats.mana;
+    // `Main.cs:20333` — `oldKB` captured BEFORE the glove/buff/shroomite
+    // scales mutate `hoverItem.knockBack` (`:20334-20350`): the prefix
+    // comparison (`:21124`) reads the PREFIX-only knockback while the word
+    // tier reads the scaled one (research/128 §5-e16.3).
+    let old_kb = stats.knock_back;
+    let knock_back = stats.knock_back;
+    let rare = stats.rare;
     let mut lines: Vec<(String, [f32; 4])> = vec![(
         hover_name(kind, ctx.prefix, ctx.stack),
-        item_name_color(registry::rare(kind)),
+        tooltip_lines2::tooltip_name_color(rare, d.expert, ctx.diff, &ctx.world),
     )];
-    if d.damage > 0 {
+    // `:20636-20663` — the favourite / loadout-share head (the e16 arm,
+    // research/128 §5-e16.4). `flag` latches the loadout-share arm (it
+    // suppresses the equipable row, `:20816`); `flag2` latches the
+    // unfavourited shareable slot (the share-hint row at the tail,
+    // `:21312`). `GetSharedLoadoutItem` (`ItemSlot.cs:2839-2846` →
+    // `GetEffectiveArmor`/`GetEffectiveDye`) rides the g55 loadout port —
+    // `ctx.flags.shared_from_loadout` carries its `sharedFromLoadout`
+    // output (the W4-f28 contract, docs/ANALYSIS.md); until that port
+    // lands the field is `None` and the favourited arm prints
+    // `UI.ItemLoadoutShared` directly.
+    let mut loadout_share_flag = false;
+    let mut share_hint_flag = false;
+    if ctx.flags.context >= 0 && tooltip_lines2::can_loadout_share_at(ctx.flags.context) {
+        if let Some(from) = ctx.flags.shared_from_loadout {
+            // `:20641-20644` — the SharedFrom arm: the 1-based loadout index.
+            lines.push((
+                crate::lang::text_args(
+                    "UI.ItemLoadoutSharedFrom",
+                    &[(from + 1).to_string()],
+                ),
+                [1.0, 1.0, 1.0, 1.0],
+            ));
+        } else if ctx.flags.favorited {
+            lines.push((
+                crate::lang::text("UI.ItemLoadoutShared"),
+                [1.0, 1.0, 1.0, 1.0],
+            ));
+        } else {
+            share_hint_flag = true;
+        }
+        loadout_share_flag = true;
+    } else {
+        // `:20655-20663` — the plain favourite rows.
+        for row in tooltip_lines2::favorite_rows(kind, ctx.flags.favorited, ctx.open_chest) {
+            lines.push((row, [1.0, 1.0, 1.0, 1.0]));
+        }
+    }
+    // `:20664-20668` — the social-slot row.
+    if let Some(row) = tooltip_lines2::social_row(ctx.flags, d) {
+        lines.push((row, [1.0, 1.0, 1.0, 1.0]));
+    }
+    // `:20669` — the damage gate: the notAmmo/useStyle exclusion and the
+    // coin-gun `HasItem(905)` arm (the 58-slot scan rides ctx.has_coin_gun).
+    if tooltip_lines2::damage_row_gate(kind, d, damage, ctx.has_coin_gun) {
         // Damage (`:20672-20700`): the item's own damage × the per-item
-        // tooltip multiplier, then the player's weapon-damage multiplier
-        // (`Main.LocalPlayer.GetWeaponDamageMultiplier`).
-        let base = (d.damage as f32 * tooltip_damage_multiplier(kind)) as i32;
-        let multiplier = ctx.player.map_or(1.0, |p| {
-            p.weapon_damage_multiplier_with_ammo(d.class, kind, d.use_ammo)
-        });
-        let shown = (multiplier * base as f32 + 5e-6) as i32;
+        // tooltip multiplier × the rapid-attack scale, then the player's
+        // weapon-damage multiplier (`GetWeaponDamageMultiplier`).
+        let shown = tooltip_lines2::damage_row_value(kind, damage, ctx.player, d);
         // The class suffix (melee tip[2], ranged tip[3], magic tip[4],
         // summon tip[53], else tip[55]).
         let suffix = match d.class {
@@ -299,74 +422,53 @@ pub fn item_tooltip_lines(
             [1.0, 1.0, 1.0, 1.0],
         ));
         // Crit (`:20701-20717`) — the melee/ranged/magic classes only: the
-        // player's crit, minus the held item's own, plus the hovered item's.
+        // player's crit, minus the held item's own, plus the hovered item's
+        // VISUAL crit (`Item.GetVisualCritChance` — the Revolver's charge).
         if matches!(
             d.class,
             registry::DamageClass::Melee | registry::DamageClass::Ranged | registry::DamageClass::Magic
         ) {
-            let crit = ctx
-                .player
-                .map_or(d.crit, |p| player_crit(p, d.class) - ctx.held_crit + d.crit);
+            let mut crit_def = *d;
+            crit_def.crit = crit;
+            let shown_crit =
+                tooltip_lines2::crit_row_value(kind, &crit_def, ctx.player, ctx.held_crit);
             lines.push((
-                format!("{}{}", crit, crate::lang::tip(5)),
+                format!("{}{}", shown_crit, crate::lang::tip(5)),
                 [1.0, 1.0, 1.0, 1.0],
             ));
         }
         // Use time (`:20717-20747`) — the `useAnimation` tiers behind
-        // `useStyle != 0`.
-        if d.use_style != 0 {
-            let tier = if d.use_animation <= 8 {
+        // `useStyle != 0` and the summon item's whip gate.
+        if tooltip_lines2::use_time_row_gate(d) {
+            let tier = if use_animation <= 8 {
                 6
-            } else if d.use_animation <= 20 {
+            } else if use_animation <= 20 {
                 7
-            } else if d.use_animation <= 25 {
+            } else if use_animation <= 25 {
                 8
-            } else if d.use_animation <= 30 {
+            } else if use_animation <= 30 {
                 9
-            } else if d.use_animation <= 35 {
+            } else if use_animation <= 35 {
                 10
-            } else if d.use_animation <= 45 {
+            } else if use_animation <= 45 {
                 11
-            } else if d.use_animation <= 55 {
+            } else if use_animation <= 55 {
                 12
             } else {
                 13
             };
             lines.push((crate::lang::tip(tier), [1.0, 1.0, 1.0, 1.0]));
         }
-        // Knockback (`:20333-20345` + `:20749-20798`): the gloves and the
-        // buff scale the item's own knockback, the shroomite armour scales
-        // the ranged one, then the summon bonus and the quiver's ×1.1.
-        let mut kb = d.knock_back;
-        if let Some(p) = ctx.player {
-            let mut num = 1.0f32;
-            if d.class == registry::DamageClass::Melee && p.kb_glove {
-                num += 1.0;
-            }
-            if p.kb_buff {
-                num += 0.5;
-            }
-            if num != 1.0 {
-                kb *= num;
-            }
-            if d.class == registry::DamageClass::Ranged && p.shroomite_stealth {
-                kb *= 1.0 + (1.0 - p.stealth) * 0.5;
-            }
-        }
-        if d.class == registry::DamageClass::Summon {
-            kb += ctx.player.map_or(0.0, |p| p.minion_kb);
-        }
-        if ctx
-            .player
-            .map_or(false, |p| p.magic_quiver && d.use_ammo == crate::ammo::AMMO_ARROW)
-            || d.use_ammo == crate::ammo::AMMO_STAKE
-        {
-            kb *= 1.1;
-        }
-        // The nine word tiers (`:20766-20798`).
+        // Knockback (`:20333-20350` + `:20753-20765`): the gloves/buff scale,
+        // the shroomite stealth scale, the summon minionKB add, the
+        // quiver/stake ×1.1 INT truncation and the Psycho Knife self-hold —
+        // the same chain the prefix row's `oldKB` compares.
+        let kb = tooltip_lines2::display_knockback(kind, d, knock_back, ctx.player, ctx.held_kind);
+        // The nine word tiers (`:20766-20801`). The 1.5 compare is a DOUBLE
+        // compare in the C# (`(double)num6 <= 1.5`).
         let kb = if kb == 0.0 {
             14
-        } else if kb <= 1.5 {
+        } else if kb as f64 <= 1.5 {
             15
         } else if kb <= 3.0 {
             16
@@ -385,17 +487,17 @@ pub fn item_tooltip_lines(
         };
         lines.push((crate::lang::tip(kb), [1.0, 1.0, 1.0, 1.0]));
     }
-    // `:20805-20812` — the fishing rows (`GameUI.PrecentFishingPower` /
-    // `BaitRequired` / `GameUI.BaitPower`).
+    // `:20804-20815` — the fishing rows. `PrecentFishingPower` is the
+    // vanilla's OWN typo'd key (`:20806`, the shipped en-US row is
+    // "{0}% fishing power") — the base-era `RecentFishingPower` spelling
+    // resolved nothing and the row rendered blank (research/128 §5-e16.1).
+    // `BaitRequired` takes NO argument (`:20808`).
     if d.fishing_pole > 0 {
         lines.push((
-            crate::lang::game_ui_fmt("RecentFishingPower", d.fishing_pole),
+            crate::lang::game_ui_fmt("PrecentFishingPower", d.fishing_pole),
             [1.0, 1.0, 1.0, 1.0],
         ));
-        lines.push((
-            crate::lang::game_ui_fmt("BaitRequired", 0),
-            [1.0, 1.0, 1.0, 1.0],
-        ));
+        lines.push((crate::lang::game_ui("BaitRequired"), [1.0, 1.0, 1.0, 1.0]));
     }
     if d.bait > 0 {
         lines.push((
@@ -403,32 +505,42 @@ pub fn item_tooltip_lines(
             [1.0, 1.0, 1.0, 1.0],
         ));
     }
-    // `:20816-20830` — the equipable row. The C#'s gate also admits the
+    // `:20816-20827` — the equipable row. The C#'s gate also admits the
     // hook projectiles (`Main.projHook[item.shoot]`), the mounts
-    // (`item.mountType != -1`) and the light / vanity pets.
+    // (`item.mountType != -1`) and the light / vanity pets; the shopping
+    // arm swaps tip[23] for tip[60] on the Discount Card / Greedy Ring.
+    // `!flag` (`:20816`) — a loadout-shared slot never prints the row.
     let hook = d
         .projectile
         .map_or(false, |p| crate::projectile_id::is_hook_projectile(p as i32));
-    if d.head_slot > 0
-        || d.body_slot > 0
-        || d.leg_slot > 0
-        || d.accessory
-        || hook
-        || d.mount_type != -1
-        || (d.buff_type > 0
-            && (crate::buffs::is_light_pet(d.buff_type)
-                || crate::buffs::is_vanity_pet(d.buff_type)))
+    if !loadout_share_flag
+        && (d.head_slot > 0
+            || d.body_slot > 0
+            || d.leg_slot > 0
+            || d.accessory
+            || hook
+            || d.mount_type != -1
+            || (d.buff_type > 0
+                && (crate::buffs::is_light_pet(d.buff_type)
+                    || crate::buffs::is_vanity_pet(d.buff_type))))
     {
-        lines.push((crate::lang::tip(23), [1.0, 1.0, 1.0, 1.0]));
+        lines.push((
+            tooltip_lines2::equipable_row(kind, ctx.world.npc_shop),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
     }
-    // `:20828-20841` — the quest / vanity rows.
+    // `:20828-20832` — the tile-wand row: tip[52] + the consumed item's name.
+    if let Some(row) = tooltip_lines2::tile_wand_row(d.tile_wand) {
+        lines.push((row, [1.0, 1.0, 1.0, 1.0]));
+    }
+    // `:20833-20842` — the quest / vanity rows.
     if d.quest_item {
         lines.push((crate::lang::inter(65), [1.0, 1.0, 1.0, 1.0]));
     }
     if d.vanity {
         lines.push((crate::lang::tip(24), [1.0, 1.0, 1.0, 1.0]));
     }
-    // The tool rows (`:20842-20864`) — each behind its own value gate.
+    // The tool rows (`:20843-20862`) — each behind its own value gate.
     if d.defense > 0 {
         lines.push((
             format!("{}{}", d.defense, crate::lang::tip(25)),
@@ -453,7 +565,7 @@ pub fn item_tooltip_lines(
             [1.0, 1.0, 1.0, 1.0],
         ));
     }
-    // `:20865-20875` — the range bonus (`tip[54]`, the `+N` when positive:
+    // `:20863-20875` — the range bonus (`tip[54]`, the `+N` when positive:
     // `:20868` prefixes the sign only for the positive arm).
     if d.tile_boost != 0 {
         let row = if d.tile_boost > 0 {
@@ -463,10 +575,11 @@ pub fn item_tooltip_lines(
         };
         lines.push((row, [1.0, 1.0, 1.0, 1.0]));
     }
-    // `:20876-20890` — the life / mana restore rows.
+    // `:20876-20893` — the life / mana restore rows (the Strange Brew
+    // 3001 prints the RANGE form).
     if d.heal_life > 0 {
         lines.push((
-            crate::lang::common_item_tooltip_fmt("RestoresLife", d.heal_life),
+            tooltip_lines2::restores_life_row(kind, d.heal_life),
             [1.0, 1.0, 1.0, 1.0],
         ));
     }
@@ -476,7 +589,7 @@ pub fn item_tooltip_lines(
             [1.0, 1.0, 1.0, 1.0],
         ));
     }
-    // `:20891-20904` — the buff / healing / mount row.
+    // `:20894-20913` — the buff / healing / mount row.
     if d.buff_type > 0
         && !d.summon
         && !crate::buffs::is_light_pet(d.buff_type)
@@ -502,66 +615,71 @@ pub fn item_tooltip_lines(
             [1.0, 1.0, 1.0, 1.0],
         ));
     }
-    // `:20905-20910` — the mana cost row.
-    if d.mana > 0
+    // `:20914-20918` — the mana cost row.
+    if mana > 0
         && ((kind != 127 && kind != 4347 && kind != 4348 && kind != 514)
             || !ctx.player.map_or(false, |p| p.space_gun))
     {
-        let cost = (d.mana as f32 * ctx.player.map_or(1.0, |p| p.mana_cost)) as i32;
+        let cost = (mana as f32 * ctx.player.map_or(1.0, |p| p.mana_cost)) as i32;
         lines.push((
             crate::lang::common_item_tooltip_fmt("UsesMana", cost),
             [1.0, 1.0, 1.0, 1.0],
         ));
     }
-    // `:20911-20930` — the place / ammo / consumable rows.
-    if d.tile.is_some() || d.wall.is_some() || kind == 849 {
-        if d.consumable {
-            lines.push((crate::lang::tip(33), [1.0, 1.0, 1.0, 1.0]));
-        }
-    } else if d.ammo > 0 {
+    // `:20919-20936` — the place / ammo / consumable ladder: the placeable
+    // arm admits `PlaceTileOnAltUse`, the ammo row excludes `notAmmo`, the
+    // consumable row excludes the extractinator-only family.
+    if tooltip_lines2::place_row_active(d, kind) {
+        lines.push((crate::lang::tip(33), [1.0, 1.0, 1.0, 1.0]));
+    } else if tooltip_lines2::ammo_row_active(d, kind) {
         lines.push((crate::lang::tip(34), [1.0, 1.0, 1.0, 1.0]));
-    } else if d.consumable {
+    } else if tooltip_lines2::consumable_row_active(d, kind) {
         lines.push((crate::lang::tip(35), [1.0, 1.0, 1.0, 1.0]));
     }
-    // `:20931-20933` — the material row.
+    // `:20937-20941` — the material row.
     if d.material {
         lines.push((crate::lang::tip(36), [1.0, 1.0, 1.0, 1.0]));
     }
-    // `:20958-20972` — the per-item tooltip text (`Lang.GetTooltip`,
-    // `Lang.cs:193-196`): the `ItemTooltip.<ItemID name>` language rows,
-    // one line each.
-    if let Some(text) = crate::lang::item_tooltip_text(kind) {
-        for line in text.split('\n') {
-            lines.push((line.to_string(), [1.0, 1.0, 1.0, 1.0]));
+    // `:20942-21342` — the second half: the Wireable/Container/WireTrigger
+    // rows, the per-item text (with the cursed-by-Plantera swap), the seed
+    // rows, the DD2/well-fed/duration rows, the yoyo placeholder, the
+    // Expert/Master rows, the prefix comparison rows and the set-bonus row.
+    let yoyo_logo = tooltip_lines2::append_second_half(
+        kind,
+        d,
+        ctx.prefix,
+        old_kb,
+        share_hint_flag,
+        ctx.show_loadout_share_hint,
+        ctx.flags,
+        &ctx.world,
+        ctx.player,
+        ctx.difficulty,
+        ctx.research,
+        &mut lines,
+    );
+    // `Main.cs:20361-20362` — `AddShopLines` runs right after GetLinesInfo:
+    // the price row on every hover while a shop is open (the context-15
+    // shop-grid stamp prints the BUY row, every other hover the SELL row).
+    // The hover's CURRENT value is the prefixed instance's (`Item.Prefix`'s
+    // ×value², `Item.cs:614-615`) — the caller's context carries the
+    // shopCustomPrice override and the session inputs.
+    if let Some(mut shop_ctx) = ctx.shop_lines {
+        shop_ctx.instance_value = stats.value;
+        if let Some(row) =
+            crate::shop::add_shop_lines(kind, ctx.stack, ctx.world.npc_shop, shop_ctx)
+        {
+            lines.push((row.text, row.color));
         }
     }
-    // `:21318-21333` (W4-c24c) — the Journey sacrifice row: the whitelisted
-    // slot contexts + a difficulty-3 player + a catalog-capped kind print
-    // "N more needed" in `Colors.JourneyMode` while the research is partial
-    // (`CommonItemTooltip.CreativeSacrificeNeeded`, `:21323`). The teammate-
-    // credit arm (`:21327-21331`, context 29 + `TryGetTeammateUnlockCredit`)
-    // is single-player inert and stays unported (the tracker's teammate
-    // half, ANALYSIS). The bestiary-notes tail (`:21334-21342`) rides the
-    // bestiary data port, not this row set.
-    if matches!(
-        ctx.slot_context,
-        0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 15 | 22 | 29 | 32 | 34 | 35 | 41 | 42 | 43
-    ) && ctx.journey_difficulty == 3
-    {
-        if let Some((have, cap)) = ctx.research.and_then(|t| t.sacrifice_numbers(kind)) {
-            if have < cap {
-                let c = super::uistate::CREATIVE_MODE_COLOR; // Lerp(HotPink, White, 0.1)
-                lines.push((
-                    crate::lang::common_item_tooltip_fmt(
-                        "CreativeSacrificeNeeded",
-                        (cap - have) as i32,
-                    ),
-                    [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0, c[3] as f32 / 255.0],
-                ));
-            }
-        }
-    }
-    lines
+    // `Main.cs:20363-20366` — THEN `NewCraftingUI.AddTooltipLines`: the
+    // crafting row is the LAST row.
+    crate::craft::add_crafting_tooltip_lines(
+        ctx.crafting_missing_reason.as_deref(),
+        kind == 0,
+        &mut lines,
+    );
+    (lines, yoyo_logo)
 }
 
 /// `Main.MouseText_DrawItemTooltip` (`Main.cs:20322-20446`): the generic tooltip box
@@ -598,7 +716,7 @@ pub fn draw_item_tooltip(
         stack: item.count,
         ..ctx
     };
-    let lines = item_tooltip_lines(item.kind, d, ctx);
+    let (lines, yoyo_logo) = item_tooltip_rows(item.kind, d, ctx);
 
     // `Main.cs:20367-20377`: the widest line and the summed line heights, `num3 = 0`.
     let lh = line_height(lookups);
@@ -614,14 +732,44 @@ pub fn draw_item_tooltip(
         draw_inv_bg(r, lookups, rect, TOOLTIP_BG);
     }
     // `Main.cs:20406-20407`: each line colour is multiplied by `mouseTextColor/255`
-    // with the raw `mouseTextColor` as its alpha.
+    // with the raw `mouseTextColor` as its alpha. The byte multiply TRUNCATES
+    // per channel (`(byte)(c * num2)`) — the per-line alpha (the set-bonus
+    // row's 190, `:21275`) does not survive; every line draws at the tint.
     let tint = pulse.text;
     let mut line_y = 0.0;
-    for (text, color) in &lines {
+    for (i, (text, color)) in lines.iter().enumerate() {
+        // `Main.cs:20408-20439` — the yoyo-logo row draws the OneDropLogo
+        // texture INSTEAD of its " " placeholder text: four black copies
+        // at the ±1 px offsets (m 0-3), then the tinted copy (m 4,
+        // `(num10, num10, num10, num10)` with `num10 = mouseTextColor`).
+        // The row's HEIGHT still advances by the placeholder's measured
+        // line (`:20444` runs for every row, the logo included).
+        if Some(i) == yoyo_logo {
+            if let Some(sheet) = lookups.one_drop_logo.as_ref() {
+                if let Some(uv) = lookups.hud_uv(Some(sheet)) {
+                    let size = [sheet.width as f32, sheet.height as f32];
+                    for (m, (dx, dy)) in [
+                        (-1.0f32, 0.0f32),
+                        (1.0, 0.0),
+                        (0.0, -1.0),
+                        (0.0, 1.0),
+                        (0.0, 0.0),
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
+                        let c = if m == 4 { [tint; 4] } else { [0.0, 0.0, 0.0, 1.0] };
+                        r.push_ui_sprite([tx + dx, ty + line_y + dy], size, uv, c);
+                    }
+                }
+            }
+            line_y += lh;
+            continue;
+        }
         let line = [
-            color[0] * tint,
-            color[1] * tint,
-            color[2] * tint,
+            (color[0] * 255.0 * tint) as u8 as f32 / 255.0,
+            (color[1] * 255.0 * tint) as u8 as f32 / 255.0,
+            (color[2] * 255.0 * tint) as u8 as f32 / 255.0,
             tint,
         ];
         // `ChatManager.DrawColorCodedStringWithShadow` (`ChatManager.cs:333-344`):
@@ -1086,8 +1234,8 @@ mod tests {
         let mut t = crate::research::ResearchTracker::default();
         t.register_sacrifice(8, 90); // Torch cap 100 — 10 still needed
         let journey = TooltipContext {
-            slot_context: 0,
-            journey_difficulty: 3,
+            flags: tooltip_lines2::HoverFlags { context: 0, ..Default::default() },
+            difficulty: 3,
             research: Some(&t),
             ..Default::default()
         };
@@ -1104,29 +1252,29 @@ mod tests {
         let rows = item_tooltip_lines(
             8,
             torch,
-            TooltipContext { journey_difficulty: 0, ..journey },
+            TooltipContext { difficulty: 0, ..journey },
         );
         assert!(!rows.iter().any(|(text, _)| text.contains("more to unlock")));
         // A non-whitelisted context refuses (context 8 = armour, `:21318`).
         let rows = item_tooltip_lines(
             8,
             torch,
-            TooltipContext { slot_context: 8, ..journey },
+            TooltipContext { flags: tooltip_lines2::HoverFlags { context: 8, ..Default::default() }, ..journey },
         );
         assert!(!rows.iter().any(|(text, _)| text.contains("more to unlock")));
         // The duplication grid's partial cell (34) IS whitelisted.
         let rows = item_tooltip_lines(
             8,
             torch,
-            TooltipContext { slot_context: 34, ..journey },
+            TooltipContext { flags: tooltip_lines2::HoverFlags { context: 34, ..Default::default() }, ..journey },
         );
         assert!(rows.iter().any(|(text, _)| text.contains("more to unlock")));
         // A fully researched kind prints nothing (`have < cap` gate, `:21321`).
         // The context is rebuilt — the old one's `&t` borrow ends here.
         t.register_sacrifice(8, 10);
         let full = TooltipContext {
-            slot_context: 0,
-            journey_difficulty: 3,
+            flags: tooltip_lines2::HoverFlags { context: 0, ..Default::default() },
+            difficulty: 3,
             research: Some(&t),
             ..Default::default()
         };

@@ -3263,6 +3263,8 @@ pub(crate) mod front_flow_tests {
             demon_torch_dir: 1.0,
             disco: [255, 0, 0],
             disco_style: 0,
+            master_color: 1.0,
+            master_color_dir: 1,
             light_rng_seed: 1,
             anim_time: 0.0,
             has_liquids: false,

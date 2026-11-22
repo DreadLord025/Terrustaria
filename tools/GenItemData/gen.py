@@ -397,11 +397,8 @@ THIS_SKIP_FIELDS = {
     "color": "Color not provisioned",
     "glowMask": "glow-mask id not provisioned",
     "stringColor": "fishing-line colour not provisioned",
-    "tileWand": "tile-wand id not provisioned",
-    "expert": "expert flag not provisioned",
-    "expertOnly": "expert flag not provisioned",
+    "expertOnly": "expert-only flag not provisioned",
     "isAShopItem": "shop flag not provisioned",
-    "hasVanityEffects": "vanity-effects flag not provisioned",
     "sentry": "sentry flag not provisioned",
     "cartTrack": "cart-track flag not provisioned",
     "DD2Summon": "DD2 flag not provisioned",
@@ -410,8 +407,7 @@ THIS_SKIP_FIELDS = {
     "noUseGraphic": "use-graphic flag not provisioned",
     "flame": "flame flag not provisioned",
     "voiceSlot": "voice slot not provisioned",
-    "chlorophyteExtractinatorConsumable": "extractinator flag not provisioned",
-    "notAmmo": "ammo-slot flag not provisioned",
+
     "bonusTagDamage": "critter-tag damage not provisioned",
     "armorPenetration": "armor penetration not provisioned",
     "manaIncrease": "mana increase not provisioned",
@@ -1324,8 +1320,9 @@ def h_DefaultToAccessory(ctx, type_value, args, named, src, line, env):
 
 
 def h_DefaultToInfoAccessory(ctx, type_value, args, named, src, line, env):
-    """Item.cs:48619-48623 (hasVanityEffects not provisioned)."""
+    """Item.cs:48619-48623."""
     h_DefaultToAccessory(ctx, type_value, args, named, src, line, env)
+    ctx.row["hasVanityEffects"] = True
 
 
 def h_DefaultToGuitar(ctx, type_value, args, named, src, line, env):
@@ -1354,6 +1351,7 @@ def h_DefaultToMusicBox(ctx, type_value, args, named, src, line, env):
     ctx.row["rare"] = 4
     ctx.row["value"] = 100000
     ctx.row["accessory"] = True
+    ctx.row["hasVanityEffects"] = True
     ctx.row["vanity"] = True
 
 
@@ -1366,7 +1364,7 @@ def h_DefaultToQuestFish(ctx, type_value, args, named, src, line, env):
 
 
 def h_DefaultToGolfBall(ctx, type_value, args, named, src, line, env):
-    """Item.cs:35444-35460 (noUseGraphic/noMelee/hasVanityEffects not provisioned)."""
+    """Item.cs:35444-35460 (noUseGraphic/noMelee not provisioned)."""
     ctx.row["shoot"] = eval_expr(args[0], env, src, line)
     _set_sound(ctx, "Item1")
     ctx.row["useStyle"] = 1
@@ -1379,6 +1377,7 @@ def h_DefaultToGolfBall(ctx, type_value, args, named, src, line, env):
     ctx.row["accessory"] = True
     h_SetShopValues(ctx, type_value, ["ItemRarityColor.Green2", "Item.buyPrice(0, 1)"],
                     {}, src, line, env)
+    ctx.row["hasVanityEffects"] = True
 
 
 def h_DefaultToBanner(ctx, type_value, args, named, src, line, env):
@@ -1655,10 +1654,11 @@ def h_DefaultToPlaceableTile(ctx, type_value, args, named, src, line, env):
 
 
 def h_MakeUsableWithChlorophyteExtractinator(ctx, type_value, args, named, src, line, env):
-    """Item.cs:48505-48513 (chlorophyteExtractinatorConsumable not provisioned)."""
+    """Item.cs:48505-48513."""
     ctx.row["useStyle"] = 1
     ctx.row["useAnimation"] = 15
     ctx.row["useTime"] = 10
+    ctx.row["chlorophyteExtractinatorConsumable"] = True
     ctx.row["autoReuse"] = True
     ctx.row["consumable"] = True
 
@@ -1800,6 +1800,15 @@ def stock_row():
         # useSoundPitch = 0f). UseSound holds a SOUND_STYLES index or None.
         "UseSound": None,
         "useSoundPitch": 0.0,
+        # The tooltip-lines-2 flags (W4-f28): ResetStats stock
+        # (Item.cs:48951 hasVanityEffects=false, :48955 expert=false,
+        # :48966 tileWand=-1, :48967 notAmmo=false,
+        # :49008 chlorophyteExtractinatorConsumable=false).
+        "expert": False,
+        "hasVanityEffects": False,
+        "tileWand": -1,
+        "notAmmo": False,
+        "chlorophyteExtractinatorConsumable": False,
     }
 
 
@@ -2323,6 +2332,14 @@ RUST_FIELDS = [
     ("paint_coating", "paintCoating", "i32"),
     ("use_sound", "UseSound", "sound"),
     ("use_sound_pitch", "useSoundPitch", "f32"),
+    # The tooltip-lines-2 flags (W4-f28) — the second half of
+    # MouseText_DrawItemTooltip_GetLinesInfo's gates (Main.cs:20669/:20828/
+    # :20921/:20932/:21022/:20664).
+    ("expert", "expert", "bool"),
+    ("has_vanity_effects", "hasVanityEffects", "bool"),
+    ("tile_wand", "tileWand", "i32"),
+    ("not_ammo", "notAmmo", "bool"),
+    ("extractinator_consumable", "chlorophyteExtractinatorConsumable", "bool"),
 ]
 
 TYPE_RANGES = {
@@ -2544,6 +2561,26 @@ pub struct ItemDef {
     /// `:48946`): the pitch offset `PlaySound(sItem.UseSound, base.Center,
     /// sItem.useSoundPitch)` passes (`Player.cs:51696`).
     pub use_sound_pitch: f32,
+    /// `Item.expert` (`Item.cs:131`, stock false — `ResetStats` `:48955`):
+    /// the expert-exclusive flag — the tooltip's `GameUI.Expert` row
+    /// (`Main.cs:21022-21026`) and the −12 disco name colour (`:20329-20332`).
+    pub expert: bool,
+    /// `Item.hasVanityEffects` (`Item.cs:321`, stock false — `ResetStats`
+    /// `:48951`): the info-accessory / music-box / golf-ball flag the social
+    /// row's gate excludes (`Main.cs:20664`).
+    pub has_vanity_effects: bool,
+    /// `Item.tileWand` (`Item.cs:113`, stock −1 — `ResetStats` `:48966`):
+    /// the ammo item the wand consumes; `> 0` prints `Lang.tip[52]` +
+    /// its name (`Main.cs:20828-20832`).
+    pub tile_wand: i32,
+    /// `Item.notAmmo` (`Item.cs:251`, stock false — `ResetStats` `:48967`):
+    /// the acorn/coin "uses ammo but is no ammo" flag — the damage row's
+    /// gate (`Main.cs:20669`) and the ammo row's exclusion (`:20927`).
+    pub not_ammo: bool,
+    /// `Item.chlorophyteExtractinatorConsumable` (`Item.cs:295`, stock
+    /// false — `ResetStats` `:49008`): the extractinator-only consumable
+    /// the plain "Consumable" row excludes (`Main.cs:20932`).
+    pub extractinator_consumable: bool,
 }"""
 
 

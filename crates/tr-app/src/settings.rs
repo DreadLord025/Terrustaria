@@ -1518,6 +1518,22 @@ mod tests {
         assert_eq!(back.keybinds[crate::input_map::Action::Jump.index()], "Space");
     }
 
+    /// W4-f28 salvage (research/128 §5-e16.4, e16
+    /// `w4_e16_the_loadout_share_hint_round_trips`):
+    /// `Player.Settings.ShowLoadoutShareHint` round-trips under the vanilla
+    /// key (`Main.cs:4219` Put / `:4553` Get); the static-ctor default is
+    /// true (`Player.cs:412`), a missing key keeps it.
+    #[test]
+    fn w4_f28_the_loadout_share_hint_round_trips() {
+        assert!(Settings::default().show_loadout_share_hint, "Player.cs:412");
+        let s = Settings::parse("{\n \"ShowLoadoutShareHint\": false\n}");
+        assert!(!s.show_loadout_share_hint);
+        let mut w = Settings::default();
+        w.show_loadout_share_hint = false;
+        assert!(w.to_json().contains("\"ShowLoadoutShareHint\": false,"));
+        assert!(Settings::parse("{}").show_loadout_share_hint);
+    }
+
     fn test_DW_2_3_to_json_writes_the_vanilla_key_names() {
         let json = Settings::default().to_json();
         // The exact key sequence, in the writer's own order (the order the port
@@ -1571,6 +1587,8 @@ mod tests {
                 "PortraitPreference",
                 "ShowBossBarHealthText",
                 "FlashyEffectsInterface",
+                "SettingsEnabled_OpaqueBoxBehindTooltips",
+                "ShowLoadoutShareHint",
                 "MinimapFrame",
                 // `Main.cUp`..`Main.cMount` (`Main.cs:67163-67176`) and the 6
                 // map binds (`:67190-67195`), written under the names

@@ -12474,7 +12474,9 @@ per-item halves вЂ” see "The item tooltip rows (S1-E-20)" below):
   nine doubled ids ride a small table (`ItemID.cs:492`).
 - `notAmmo` is still not ported (no field), so the damage row's gate is the
   plain `damage > 0` (the coin-type exception and the ammo gate ride along
-  when the field lands).
+  when the field lands). **CLOSED (W4-f28)**: the field landed in GenItemData;
+  the gate repairs + the second half ride `tooltip_lines2.rs` — see "The
+  tooltip lines' second half (W4-f28)" below.
 - The line geometry (`tooltip_box_rect`, the `(14, 9)` inset, the shadow
   copies) is unchanged вЂ” only the row list changed.
 - Without the shipped `Terraria.Localization.Content.*.json` (the gitignored
@@ -12507,7 +12509,8 @@ Deviations:
   to `Main.mouseItem` (`Main.CraftItem_GrantItem`, `Main.cs:42607-42612`) and
   the tooltip reads that; the port's tooltip reads the hovered slot directly.
 - **The favourite / social rows are out** (`Main.cs:20646-20658`): the
-  tooltip has no favourite or social state to read.
+  tooltip has no favourite or social state to read. **CLOSED (W4-f28)**:
+  `HoverFlags` carries the `MouseHover` context stamps + the favourite flag.
 - **The shop and upgrade rows are out** (`MouseText_DrawItemTooltip_AddShopLines`,
   `Main.cs:20362`): the port's shop tooltip has no such rows.
 - **The bulk-buy / bulk-craft stack arms are out** (`ItemSlot.EstimateDisplayStack`,
@@ -12516,6 +12519,195 @@ Deviations:
   (`Lang.cs:150-161` в†’ `PlayerInput.GenerateRawInputList`,
   `PlayerInput.cs:1948`): the port has no gamepad glyph list, so the
   keyboard's key names stand in.
+
+## The tooltip lines' second half (W4-f28, 2026-11-21)
+
+`Main.MouseText_DrawItemTooltip_GetLinesInfo`'s tail (`Main.cs:20937-21342`)
+and the first half's gate repairs land in `crates/tr-app/src/ui/tooltip_lines2.rs`
+(the `append_second_half` seam + the shared gate helpers `tooltip.rs` calls).
+Code-only mode: no compiler invoked; the `w4_f28_*` witnesses WRITTEN
+NOT RUN (the base port's 15 in `tooltip_lines2.rs` + 3 in `tr-core`'s
+`format.rs`; the 128-salvage round below adds more — count by grep, the
+prose under-counts).
+
+What lands:
+
+- **The ItemDef flags** (`tools/GenItemData/gen.py`, regenerated): `expert`,
+  `hasVanityEffects`, `tileWand`, `notAmmo`,
+  `chlorophyteExtractinatorConsumable` — the `ResetStats` stock
+  (`Item.cs:48951/:48955/:48966/:48967/:49008`) plus the
+  `DefaultToInfoAccessory`/`DefaultToMusicBox`/`DefaultToGolfBall`/
+  `MakeUsableWithChlorophyteExtractinator` helper writes. The FNV freeze pin
+  re-derived (`itemdata_freeze.rs`, `0x1dd2_84fc_4b36_2f46`); the two
+  hand-written `ITEM_CORRECTIONS` rows carry the stock values.
+- **The second-half rows**: Wireable (`TileID.Sets.Wiring.IsATrigger` /
+  `IsAMechanism` — the generated `SET_IS_A_TRIGGER`/`SET_IS_A_MECHANISM`
+  bitsets — with the tile-105 `IsWireableStatue` exception, `ItemID.cs:1581`),
+  Container (tiles 21/467), WireTrigger (441/468), the cursed-by-Plantera
+  first-line swap (`UsesCursedByPlanteraTooltip`, `ItemID.cs:410`), the
+  anniversary Wizard Hat / FTW Crispy Honey rows, the Mechdusa summon
+  tail-replacement (`numLines--` arms, `:20983-20999`), the DD2 crystal-gear
+  warning (`Lang.misc[104]`), the well-fed expert row (`Lang.misc[40]`,
+  `BuffID.Sets.IsWellFed`), the buff-duration row (the INTEGER `/60` first,
+  then `Math.Round` banker's on the f64 quotient), the yoyo " " placeholder
+  (the 11 kinds, `:21016`), Expert (`GameUI.Expert`) and Master
+  (`GameUI.Master`, the INSTANCE rare — a prefix shifts −13 off and the row
+  drops, the `shift_rare` ≤ −11 clamp skip).
+- **The prefix comparison rows** (`:21032-21266`): each stat delta against
+  the fresh `SetDefaults` row through `prefix::prefixed_stats`, `Math.Round`
+  banker's on the f64 percentage, the `+` sign only on the positive arm, the
+  (190,120,120)/(120,190,120) colour pair with the MANA row's inversion; the
+  knockback row's `oldKB` is the instance knockback captured at `:20333`
+  BEFORE the draw pass's glove/buff/shroomite scaling; the armor-penetration
+  / tag-damage rows use the `{0:+0;-#}` section format (new in
+  `tr-core/src/localization/format.rs::apply_format_spec` — the .NET
+  positive;negative;zero section grammar with the digit-overflow prepend);
+  the accessory fixed rows 62-80 (the "+20 " literal's trailing space kept).
+- **The armor set-bonus row** (`:21267-21311`): the wave-D `armor_sets`
+  table's `tooltip_for_single_piece` (grey, alpha 190) unworn and
+  `best_worn_set` + `tooltip_for_worn_armor` (LimeGreen complete / grey
+  partial) worn.
+- **The first-half gate repairs**: the damage gate's `notAmmo`/`useStyle`
+  exclusion and the coin-gun `HasItem(905)` 58-slot scan (`:20669`); the
+  use-time row's summon-whip gate (`ProjectileID.Sets.IsAWhip`, `:20717`);
+  the knockback display chain's quiver/stake ×1.1 INT truncation and the
+  Psycho Knife 3106 self-hold stealth arm (`:20753-20765`); the equipable
+  row's shopping tip[60] swap (854/3035, `:20818`); the tile-wand row
+  (tip[52] + `Lang.GetItemNameValue`, `:20828`); the Strange Brew 3001
+  `RestoresLifeRange` form (`:20878`); the place/ammo/consumable ladder's
+  `PlaceTileOnAltUse` (`ItemID.cs:412`), `notAmmo` and extractinator
+  exclusions (`:20919-20936`); the favourite rows (tip[56]/[57] + the
+  bank-blocked notice, `ChestUI.cs:1291-1302`) and the social row (tip[61],
+  the `hasVanityEffects` exclusion).
+- **The prefixed-instance stats**: the stat rows read
+  `prefix::prefixed_stats_of(def, prefix)` over the CALLER's row (the e16
+  seam, research/128 §3 — the C#'s HoverItem IS the prefixed instance and
+  a witness-overridden def must reach the math; `prefixed_stats(kind, …)`
+  stays the registry wrapper for the sim lanes), the crit row
+  `Item.GetVisualCritChance` (the Revolver 2269's charging bonus clamped
+  [0,100]), the damage row the rapid-attack scale
+  (`Player.ApplyRapidAttackBonus`'s read-only half — `min(bonus, 0.5)` behind
+  the {2608, 3349, 672} set guard).
+- **The name colour**: the expert −12 disco override (`Main.DiscoR/G/B`,
+  the existing `advance_disco` cycle) and the −13 master pulse
+  (`(255, (byte)(masterColor * 200), 0)` — the `master_color`/`master_color_dir`
+  animator lands on App, `DoUpdate_AnimateCursorColors`' ±0.05 half).
+- **The draw wiring**: `draw_hud` takes a `TooltipWorld` (the App fills
+  expert_mode/downed latches/seed flags/master/disco; `npc_shop` from the
+  shop panel), the hover's `HoverFlags` (favourite from `favorite_slots`,
+  wornArmor for armor[0..3), social for armor[10..20) — the `MouseHover`
+  context stamps), the inventory slice + held kind + open chest. The line
+  tint's byte multiply now TRUNCATES per channel (`(byte)(c * num2)`,
+  `:20406`) — the set-bonus row's 190 alpha does not survive, every line
+  draws at the tint.
+
+Deferred, cited (the 128-salvage round closed the loadout head, the shop
+lines, the crafting row, the yoyo-logo draw, the diff colours and the
+rapid-attack use-site — see "The 128-salvage round" below):
+
+- **The loadout SharedFrom row** (`:20640-20643`): the row IS ported — it
+  reads `HoverFlags.shared_from_loadout` (the 0-based index, printed
+  1-based through `UI.ItemLoadoutSharedFrom`) and beats the favourited
+  arm, the C#'s if/else-if order. The FIELD's writer is the g55 loadout
+  port: `ItemSlot.GetSharedLoadoutItem` (`ItemSlot.cs:2839-2846`) →
+  `Player.GetEffectiveArmor`/`GetEffectiveDye` (`Player.cs:5690-5764`),
+  whose `sharedFromLoadout` output the g55 branch's
+  `Player::get_effective_armor` already returns (`Option<usize>`). Until
+  that branch merges, the hover sites leave the field `None` and the
+  favourited arm prints `UI.ItemLoadoutShared` directly. **Contract**:
+  the g55 merger fills `HoverFlags.shared_from_loadout` from the
+  effective-item scan at the armour/vanity/dye hover sites (contexts
+  8-12), the same scan `MouseHover` runs (`ItemSlot.cs:3171-3174`).
+- **The Journey research rows** (`:21318-21333`): the rows ARE ported —
+  `research::research_tooltip_rows` (the 17-context whitelist
+  `research_row_context`, the difficulty-3 gate, the
+  `CreativeSacrificeNeeded` remaining-count row in `Colors.JourneyMode`
+  (255,120,187 — the byte Lerp truncates: G 105+(byte)(150×0.1f)=120,
+  B 180+(byte)(75×0.1f)=187), the context-29 `ItemUnlockedByTeammate` arm) fed by
+  `TooltipContext.difficulty`/`research`; `ResearchTracker.sacrifice_numbers`
+  (the c24 accessor, `ItemsSacrificedUnlocksTracker.cs:75-86`) landed with
+  them. The c24 branch's `App.research` field + `active_player_difficulty`
+  are the writers. Until that branch merges, the draw sites pass
+  `difficulty: 0`/`research: None` and no row fires. **Contract**: the c24
+  merger fills `TooltipContext { difficulty: app.active_player_difficulty(),
+  research: Some(&app.research), .. }` at the `draw_hud` tooltip sites.
+  The teammate-credit tracker (`_unlockedByTeammate`/
+  `TryGetTeammateUnlockCredit`) is multiplayer state the c24 port itself
+  documents as unported — `teammate_credit` stays `None` (single-player).
+- **The bestiary-notes rows** (`:21334-21342`): the rows ARE ported (the
+  `HoverFlags.bestiary_notes` split-on-`\n` tail, the
+  `IsNullOrWhiteSpace` gate). The e23 branch's writer
+  `ui::bestiary::bestiary_notes` (`SetBestiaryNotesOnItemCache`,
+  `UIBestiaryInfoItemLine.cs:137-156`) exists — the non-empty condition
+  descriptions joined with `\n`. What is missing is the hover WIRE: the
+  bestiary info page's drop-row hover (`UIBestiaryInfoItemLine.cs:112-126`)
+  must stamp the joined string onto the hovered item's
+  `HoverFlags.bestiary_notes`. **Contract**: the e23 merger calls
+  `bestiary_notes(&conditions)` at that hover and passes the result
+  through the tooltip context (the field is `Option<&'static str>` — the
+  conditions are the static language rows, so the join can leak or ride
+  a per-frame cache the merger chooses).
+- **The `diff` 1/2 name colours' hover source**: the colour arms landed
+  (`tooltip_name_color(rare, expert, diff, world)`), but the item tooltip
+  call always passes 0 (`Main.cs:45419`) — the mediumcore/hardcore colours
+  fire only once a hover passes a character difficulty (the stealthed
+  remote-player hover, `:42934`, unported).
+
+### The 128-salvage round (W4-f28 × W4-e16, research/128)
+
+The e16 branch's MUST-SALVAGE items folded into this lane (research/128
+§4/§5, the two-way reconcile at `docs/research/128-tooltip-reconcile.md`
+on the e16 branch):
+
+- **`PrecentFishingPower`** (`Main.cs:20806`): the vanilla's own typo'd key
+  — the base-era `RecentFishingPower` spelling resolved nothing and the
+  power row rendered blank. `BaitRequired` takes no argument (`:20808`).
+- **The DD2 gate**: `World::downed_dd2_any()` = `dd2_downed_t1‖t2‖t3`
+  (`DD2Event.DownedInvasionAnyDifficulty`, `DD2Event.cs:89-99`, latched
+  `Player.cs:24450-24453`) — NOT the `dd2_won` current-invasion sentinel.
+- **The coin-gun scan**: `ui::has_coin_gun` over grid + `equip.coins` +
+  `equip.ammo` (`Player.HasItem`'s 58 slots, `Player.cs:55894-55904`) —
+  the old `.take(58)` over the 50-slot grid slice never reached rows 50-57.
+- **The caller stats seam**: `prefix::prefixed_stats_of(def, prefix)`
+  applies over the caller's row; `oldKB` is captured in the first half at
+  `:20333` and rides `append_second_half`/`append_prefix_rows` as a
+  parameter (the pre-glove-scale discipline, §5-e16.3).
+- **The loadout head**: `HoverFlags.context` (the full HoverRef→ctx map —
+  grid 0 / coin 1 / ammo 2 / armour 8,10 / vanity 9,11 / dye 12 / misc
+  19,20,18,17,16 per `Main.cs:41199-41215` / misc dye 33 / trash 6 /
+  bank 4 / hotbar 13 / craft 22 / shop 15), the coin/ammo favourites via
+  `inv::coin_slot_index`/`ammo_slot_index`, `can_loadout_share_at` 8-12
+  (`ItemSlot.cs:395-399`), the flag/flag2 latches (`:20636-20654`),
+  `UI.ItemLoadoutShared`, the `!flag` equipable suppression (`:20816`) and
+  the share-hint row (`:21312-21317`, OurFavoriteColor (255,231,69) α190)
+  behind `Settings.show_loadout_share_hint` (vanilla key
+  `ShowLoadoutShareHint`, Put `Main.cs:4219` / Get `:4553`, default true
+  `Player.cs:412`; no writer clears it — `DisableLoadoutShareHint` rides
+  the loadout port).
+- **The place gate**: `createWall > 0` (`:20919`) — `wall.is_some()` would
+  admit a `Some(0)` the generator can produce (`option_pos`, none at −1).
+- **The rapid-attack use-site grant** (`Player.cs:44291`):
+  `resolve_melee_strike` truncates `GetWeaponDamage` to INT (+5E-06f,
+  `:53421-53429`) then charges `ApplyRapidAttackBonus(originalDamage,
+  type, !nPC.immortal)` BEFORE the cane-1 arm (`:44292` order) — the
+  tooltip's read-only half now reads a live field; the −0.005/tick
+  `ResetEffects` decay was already in.
+- **The shop lines / crafting row / yoyo-logo draw / diff colours**: landed
+  by the concurrent f28 lane commits (`shop::add_shop_lines`,
+  `craft::add_crafting_tooltip_lines` + the `crafting_missing_reason` seam
+  — dormant until the persistent recipe-list port, the grid lists
+  craftable rows only; `item_tooltip_rows` exposes the yoyoLogo index and
+  `draw_item_tooltip` paints the 5-copy OneDropLogo pass; the mcColor/
+  hcColor overrides ride `TooltipContext.diff`).
+- **The co-lane contracts** (the f28 lane's deferral round): the
+  SharedFrom/Journey/bestiary-notes rows are ported behind their contract
+  fields (`HoverFlags.shared_from_loadout`, `TooltipContext.difficulty`/
+  `research`, `HoverFlags.bestiary_notes`) — the g55/c24/e23 writers are
+  unmerged branches (`task/W4-g55-ui-loadout-save` cde865fc,
+  `task/W4-c24-journey-ui` e2e50a42, `task/W4-e23-bestiary-ui-grid`
+  6daf6d3d, none an ancestor of main at this writing); the deferred list
+  above carries each merger's exact fill. `ResearchTracker.sacrifice_numbers`
+  landed here so the c24 merge dedupes onto it.
 
 
 ## Tile sections (M6-NET-3)

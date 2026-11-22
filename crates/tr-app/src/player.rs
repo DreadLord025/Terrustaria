@@ -1573,6 +1573,15 @@ pub struct Player {
     /// (`Projectile.ApplyStatsFromSource`, `Projectile.cs:11129-11132`); the port
     /// folds it into the throw-time crit roll (`world_sim/editing.rs`).
     pub revolver_crit_chance_bonus: i32,
+    /// `Player.rapidAttackBonus` (`Player.cs:2452`): the Falcon Blade 672 /
+    /// Dye Trader's Scimitar 3349 / Snapthorn-family charge the rapid-attack
+    /// weapons build (`ApplyRapidAttackBonus`, `Player.cs:18251-18273`,
+    /// `increaseBonus: true` at the use site) — the tooltip's damage row reads
+    /// it through the same helper (`Main.cs:20673-20676`). `ResetEffects`
+    /// decays it 0.005 per tick (`:18278-18285`); no use-site grants it yet
+    /// (the item-use wave's rapid-attack arm is unported), so it reads 0 in
+    /// the sim like the C# between swings.
+    pub rapid_attack_bonus: f32,
     /// The `Player.ZoneSnow`-family flags the torch-luck table reads
     /// (`Player.cs:17924-18036`); the app copies them from `Main.SceneMetrics`
     /// next to the aura snapshot (`UpdateBiomes`, `Player.cs:16726-16729`).
@@ -3174,6 +3183,9 @@ impl Player {
             // `Player.revolverCritChanceBonus` (`Player.cs:2456`): the int field
             // defaults to 0 (no charge at spawn).
             revolver_crit_chance_bonus: 0,
+            // `Player.rapidAttackBonus` (`Player.cs:2452`): the float field
+            // defaults to 0f.
+            rapid_attack_bonus: 0.0,
         }
     }
 
@@ -5745,6 +5757,40 @@ impl Player {
         }
     }
 
+    /// `Player.ApplyRapidAttackBonus` (`Player.cs:18251-18273`): the
+    /// rapid-attack weapons' damage scale — `damage × (1 + min(bonus, 0.5))`,
+    /// int-truncated; `increase_bonus` charges +0.12 capped at 0.62 (the use
+    /// site's arm; the tooltip's read passes false, `Main.cs:20675`).
+    /// Non-member ids pass the damage through unchanged (the C#'s own
+    /// `RapidAttackBonusDamage` guard).
+    pub fn apply_rapid_attack_bonus(
+        &mut self,
+        damage: i32,
+        item_type: u16,
+        increase_bonus: bool,
+    ) -> i32 {
+        // `ItemID.Sets.RapidAttackBonusDamage` (`ItemID.cs:344`): the set is
+        // {2608 Falcon Blade, 3349 Dye Trader's Scimitar, 672 Cutlass}.
+        if !matches!(item_type, 2608 | 3349 | 672) {
+            return damage;
+        }
+        let num3 = self.rapid_attack_scale();
+        if increase_bonus {
+            self.rapid_attack_bonus += 0.12;
+            if self.rapid_attack_bonus > 0.5 + 0.12 {
+                self.rapid_attack_bonus = 0.5 + 0.12;
+            }
+        }
+        (damage as f32 * (1.0 + num3)) as i32
+    }
+
+    /// The read-only half of [`Self::apply_rapid_attack_bonus`] —
+    /// `min(rapidAttackBonus, 0.5f)` (`Player.cs:18257-18263`), the
+    /// tooltip's `increaseBonus: false` path (`Main.cs:20675`).
+    pub fn rapid_attack_scale(&self) -> f32 {
+        self.rapid_attack_bonus.min(0.5)
+    }
+
     /// The class crit source (`Player.meleeCrit`/`rangedCrit`/`magicCrit`,
     /// `Player.cs:2430-2432`; base 4 per class).
     pub fn class_crit(&self, class: registry::DamageClass) -> i32 {
@@ -6476,6 +6522,14 @@ impl Player {
         // `meleeScaleGlove` `:18710-18711` have no port fields.)
         self.minion_kb = 0.0;
         self.kb_glove = false;
+        // W4-f28 — `ResetEffects`' rapid-attack decay (`Player.cs:18278-18285`,
+        // the method's HEAD, before every clear): −0.005 per tick, floored 0.
+        if self.rapid_attack_bonus > 0.0 {
+            self.rapid_attack_bonus -= 0.005;
+            if self.rapid_attack_bonus < 0.0 {
+                self.rapid_attack_bonus = 0.0;
+            }
+        }
         // `GrantArmorBenefits` (' armor/accessory rows, `Player.cs:13121`):
         // every equipped wearable's `Item.defense` — the three armor slots AND
         // the seven functional accessory slots (Shackle +1, Cobalt Shield +1,

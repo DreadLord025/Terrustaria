@@ -675,8 +675,10 @@ pub fn search_fits(
             // never sets it on the filter entries) — the Journey sacrifice
             // row (`Main.cs:21318`) is OUTSIDE the whitelist here, but the
             // difficulty + tracker ride for the row set's other gates.
-            slot_context: -1,
-            journey_difficulty,
+            // (W4-f28 compose: the context rides `HoverFlags.context`, the
+            // difficulty `TooltipContext.difficulty`.)
+            flags: super::tooltip_lines2::HoverFlags { context: -1, ..Default::default() },
+            difficulty: journey_difficulty,
             research: Some(tracker),
         },
     );

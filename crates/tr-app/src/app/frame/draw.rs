@@ -337,6 +337,15 @@ impl App {
                     if self.mouse_text_color <= 190 {
                         self.mouse_text_color_dir = 1;
                     }
+                    // `Main.DoUpdate_AnimateCursorColors`' master-colour half
+                    // (`Main.cs:18225-18235`): ±0.05 per frame, the direction
+                    // flips at the [0, 1] bounds — the −13 master-rarity
+                    // tooltip name pulse (W4-f28).
+                    (self.master_color, self.master_color_dir) =
+                        ui::tooltip_lines2::advance_master_color(
+                            self.master_color,
+                            self.master_color_dir,
+                        );
                     // `Main.mouseColor = Main.selColor` runs every frame the colour
                     // screen is open (`Main.cs:50324`), and `CursorColor`
                     // (`Main.cs:52490`) reads that static, so the tint follows the
@@ -1721,6 +1730,14 @@ impl App {
                                     self.discount_available,
                                 )
                             }),
+                            // W4-f28 — the shop price row's session inputs:
+                            // `ItemSlot.ShiftInUse` (the pressed-codes set,
+                            // the clicks.rs:41 shape) + the sellback memo.
+                            self.shop_npc.map(|_| ui::ShopTooltipState {
+                                shift_in_use: self.keys.contains(&winit::keyboard::KeyCode::ShiftLeft)
+                                    || self.keys.contains(&winit::keyboard::KeyCode::ShiftRight),
+                                sellback: &self.shop_sellback,
+                            }),
                             // `ChestUI.Draw`'s state (`Main.player[myPlayer].chest`
                             // + the statics) — the plan-amendment insertion
                             // (#10): the disjoint `App` fields the panel reads
@@ -1861,6 +1878,37 @@ impl App {
                             ),
                             &mut self.loadout_mouse_over,
                             self.equip_share_flags,
+                            // W4-f28 — the tooltip's world/session gates.
+                            ui::tooltip_lines2::TooltipWorld {
+                                expert_mode: player
+                                    .as_ref()
+                                    .map_or(false, |p| p.buffs.expert_mode),
+                                downed_plant_boss: world.downed_plant_boss,
+                                // `DD2Event.DownedInvasionAnyDifficulty`
+                                // (`DD2Event.cs:89-99`) = T1 ‖ T2 ‖ T3 —
+                                // `Player.cs:24450-24453` latches it into
+                                // the .plr flag; NOT the `dd2_won` sentinel
+                                // (research/128 §4.2: a T1 win already
+                                // satisfies the getter).
+                                downed_dd2_any: world.downed_dd2_any(),
+                                tenth_anniversary: world
+                                    .seeds
+                                    .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
+                                get_good_world: world
+                                    .seeds
+                                    .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+                                // `SpecialSeedFeatures.Mechdusa`
+                                // (`SpecialSeedFeatures.cs:119-129`).
+                                mechdusa: world.seeds.contains(tr_core::seeds::SeedFlags::REMIX)
+                                    && world
+                                        .seeds
+                                        .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+                                // `Main.npcShop > 0` — filled at the draw site
+                                // from the shop panel's presence.
+                                npc_shop: false,
+                                master_color: self.master_color,
+                                disco: self.disco,
+                            },
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after

@@ -903,6 +903,11 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/Creative/Research_Spark",
         "UI/Bestiary/Button_Search",
         "Text_Back",
+        // W4-f28: the yoyo tooltip's OneDropLogo (`TextureAssets.OneDropLogo`,
+        // `AssetInitializer.cs:310` — `Images/OneDropLogo`): the 5-copy
+        // shadow + tinted logo the tooltip draws over the yoyo row's " "
+        // placeholder (`Main.cs:20408-20439`).
+        "OneDropLogo",
         // S1-E-10b: the town-chatter bubble (`TextureAssets.Chat`,
         // `Main.DrawNPCChatBubble` `Main.cs:43158`) and the dialogue
         // panel's back splices (`TextureAssets.ChatBack`,
@@ -2092,6 +2097,11 @@ pub struct Lookups {
     pub ui_mana: Option<tr_render::SheetRect>,
     /// `Inventory_Back13`: the tooltip panel 9-slice (`Utils.DrawInvBG`).
     pub ui_inv_bg13: Option<tr_render::SheetRect>,
+    /// `Images/OneDropLogo` (`TextureAssets.OneDropLogo`,
+    /// `AssetInitializer.cs:310`): the yoyo tooltip's logo — the 5-copy
+    /// shadow + tinted draw over the yoyo row's " " placeholder
+    /// (`Main.cs:20408-20439`).
+    pub one_drop_logo: Option<tr_render::SheetRect>,
     /// `Inventory_Back3`: misc-equip slot frame (`ItemSlot.cs:2280`).
     pub ui_back3: Option<tr_render::SheetRect>,
     /// `Inventory_Back4`: reforge/guide/crafting slot frame (`ItemSlot.cs:2286`).
@@ -2528,6 +2538,7 @@ impl Lookups {
             cursor: [0, 1].map(|i| atlas.sheet(&format!("UI/Cursor_{i}")).copied()),
             ui_mana: atlas.sheet("Mana").copied(),
             ui_inv_bg13: atlas.sheet("Inventory_Back13").copied(),
+            one_drop_logo: atlas.sheet("OneDropLogo").copied(),
             ui_back3: atlas.sheet("Inventory_Back3").copied(),
             ui_back4: atlas.sheet("Inventory_Back4").copied(),
             ui_back5: atlas.sheet("Inventory_Back5").copied(),
@@ -3878,6 +3889,23 @@ mod tests {
             );
             assert!(w > 0.0 && h > 0.0);
         }
+    }
+
+    /// W4-f28 — the yoyo tooltip's OneDropLogo packs
+    /// (`TextureAssets.OneDropLogo`, `AssetInitializer.cs:310`): the sheet
+    /// the 5-copy shadow + tinted draw reads (`Main.cs:20408-20439`).
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_f28_the_one_drop_logo_packs() {
+        assert!(
+            STATIC_SHEET_NAMES.contains(&"OneDropLogo"),
+            "the static half must name the sheet"
+        );
+        let (_, lookups) = content_lookups();
+        let sheet = lookups
+            .one_drop_logo
+            .expect("Images/OneDropLogo must pack for the yoyo tooltip");
+        assert!(sheet.width > 0 && sheet.height > 0, "the logo has a size");
     }
 
     /// S1-G-12b: the FULL sheet set — the current enumeration PLUS the two
