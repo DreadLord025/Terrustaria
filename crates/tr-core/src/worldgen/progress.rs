@@ -141,6 +141,17 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         // no message; the slot keeps the prior step's message in vanilla, so
         // the port maps it to the same Gen(37) row for the loading feed).
         "surface ore and stone" => PassMessage::Gen(37),
+        // WorldGen.cs:18524 (FallenLogsAndWaterFeatures - Lang.gen[85]).
+        "fallen log" => PassMessage::Gen(85),
+        // WorldGen.cs:18663 (Traps - Lang.gen[34]; the no-traps seed's
+        // Lang.gen[91] override is a seed arm, the classic feed is [34]).
+        "traps" => PassMessage::Gen(34),
+        // WorldGen.cs:18792 (Piles - Lang.gen[89]).
+        "piles" => PassMessage::Gen(89),
+        // WorldGen.cs:19902 (SunflowersPart2 - Lang.gen[39]).
+        "sunflowers" => PassMessage::Gen(39),
+        // WorldGen.cs:19973 (AlchemyHerbs - Lang.gen[41]).
+        "herbs" => PassMessage::Gen(41),
         // WorldGen.cs:20910 (Micro Biomes — the grouped steps).
         "campsites" | "sword shrines" | "mahogany trees" | "mining explosives" | "thin ice" => PassMessage::Gen(76),
         // WorldGen.cs:16309 (ShellPilesMarblePilesAndSpikePits — the

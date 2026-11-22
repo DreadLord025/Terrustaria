@@ -60,6 +60,7 @@ mod spider_gem_moss;
 mod statues;
 mod skyblock;
 mod seed_tails;
+mod starter_npcs;
 mod structures;
 mod surface;
 mod temple;

@@ -576,6 +576,69 @@ mod tests {
     // are tile-state arms), so this pin moves BY DESIGN; deferred to the
     // gate. Only the 668 dirt-throw scatter is width-guarded out (the
     // `Next(50, maxX-50)` band collapses at 512). a == b untouched.
+    // W4-g38 C2 (2026-11-21, code-only): the `Traps` pass
+    // (`WorldGen.cs:18657-18787` + `placeTrap` `:8922-9513` + `PlaceSandTrap`
+    // `:35463-35739`) lands after `fallen log` on a fresh `pass_rng("Traps")`
+    // stream. The pin is EXPECTED UNCHANGED: on the 512-wide world the trap
+    // x band `[200, width−200)` = `[200, 312)` is live, BUT the classic
+    // trap count is `width * 0.05 = 25` and every attempt's floor walk /
+    // headroom scan rejects on the compact 512 terrain (the same reason the
+    // dungeon trap pass places none there) — and the sand-trap band
+    // `[0.15w, 0.85w)` needs wall 187 the 512 world's desert never paints.
+    // If a trap does place on some seed, the pin moves BY DESIGN; re-pin
+    // DEFERRED to the merge gate. a == b stays green (own fresh stream).
+    // W4-g38 C3 (2026-11-21, code-only): the `Piles` pass
+    // (`WorldGen.cs:18788-19459` + `PlaceSmallPile` `:46815-46873` + the
+    // `Place3x2`/`PlaceTile` 186/187 slices) lands after `traps` on a fresh
+    // `pass_rng("Piles")` stream. This pin MOVES BY DESIGN: the pile point
+    // band `[25, width−25)` is LIVE on the 512-wide world (unlike C1/C2's
+    // collapsed bands) — the seven ladders place 185/186/187 piles on its
+    // cave floors and surface. Re-pin DEFERRED to the merge gate (no
+    // compiler on this branch); a == b stays green (own fresh stream).
+    // W4-g38 C4 (2026-11-21, code-only): the `Spawn Point` pass
+    // (`WorldGen.cs:19460-19588`) lands after `piles` on a fresh
+    // `pass_rng("Spawn Point")` stream, replacing the compact spawn the
+    // world tail computed. This pin is EXPECTED UNCHANGED: on a classic
+    // world the pass writes ONLY `Main.spawnTileX/Y` (the port's
+    // `world.spawn_x/spawn_y`) — no tiles — and the world hash covers tile
+    // fields only. The sole worldgen spawn consumer (`micro_finish`'s
+    // actually-no-traps spike rings) is gated behind ≥4 secret seeds, so a
+    // classic world's tiles are untouched. The pass draws only its own
+    // fresh stream. a == b stays green. (Secret-seed worlds that DO consume
+    // the spawn — noSurface force-clear, the ≥4-secret spike rings — move
+    // by design; no pin covers them.)
+    // W4-g38 C5 (2026-11-21, code-only): the `Guide` pass
+    // (`SpawnStarterNPCs`, `WorldGen.cs:19685-19897`) lands after
+    // `spawn point`. This pin is EXPECTED UNCHANGED: the pass writes only
+    // the starter-NPC roster (`world.starter_npcs`, not hashed) + the owned
+    // rescue flags — no tiles, no RNG draws. a == b stays green.
+    // W4-g38 C6 (2026-11-21, code-only): the `Sunflowers` pass
+    // (`SunflowersPart2`, `WorldGen.cs:19898-19939` + `PlaceSunflower`
+    // `:53636-53686`) lands after `guide` on a fresh
+    // `pass_rng("Sunflowers")` stream. This pin MOVES BY DESIGN: the span
+    // band is live on the 512-wide world (the centre roll spans the full
+    // width) — the 2×4 tile-27 sunflowers plant on its grass seats.
+    // Re-pin DEFERRED to the merge gate; a == b stays green.
+    // W4-g38 C7 (2026-11-21, code-only): the `Herbs` pass (`AlchemyHerbs`,
+    // `WorldGen.cs:19964-19980` + `PlantAlch` `:45901-45938` +
+    // `PlaceSuitableHerbHere` `:45940-45970` + `PlaceAlch` `:45380-45479`)
+    // lands after `sunflowers` on a fresh `pass_rng("Herbs")` stream. This
+    // pin MOVES BY DESIGN: the 1.7w ladder is live on the 512-wide world
+    // (the x band `[20, 492)` spans the width) — the stage-0 tile-82 herbs
+    // plant on their soils. Re-pin DEFERRED to the merge gate; a == b
+    // stays green.
+    // W4-g38 C8 (2026-11-21, code-only): the `Dye Plants` pass
+    // (`DyePlants`, `WorldGen.cs:19981-19994` + `plantDye` `:71286-71455` +
+    // `PlaceDye` `:53988-54064` + `MatureTheHerbPlants` `:45748-45775` +
+    // `GrowGlowTulips` `:45622-45650` + `PlaceChilletEggs` `:45652-45678`)
+    // lands after `herbs` on a fresh `pass_rng("Dye Plants")` stream. This
+    // pin MOVES BY DESIGN: on the 512×512 world the w plantDye attempts
+    // roll the live [100, 412) × [100, 312) band (the 95-margin entry
+    // admits j ≤ 417), the maturity sweep rolls over every cell, and the
+    // glow-tulip/chillet budget loops run their y bands ([worldSurface,
+    // 312) / [rockLayer, 312)) — the tile-227 dye, the 82-84 stage rolls
+    // and the 656/752 objects move the hash. Re-pin DEFERRED to the merge
+    // gate; a == b stays green.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -921,6 +984,51 @@ mod tests {
     // world (the sub-vanilla guard skips it), but the sweep arms still run
     // there — SEED42_512 moves too, deferred. a == b untouched (the scatter
     // rides its own `pass_rng("Final Cleanup")` stream).
+    // W4-g38 C2 (2026-11-21, code-only): the Traps pass (see SEED42_512
+    // above) — on the 4200-wide default world the `width * 0.05` = 210
+    // trap attempts place dart/boulder/explosive/geyser traps on the cave
+    // floors (the 135 plates, 137 darts, 138-family boulders, 141
+    // explosives, 443 geysers + the red wires), and the `width * 0.003` =
+    // 13 sand-trap attempts carve the underground-desert chambers — this
+    // pin moves BY DESIGN. The pass draws only its own fresh stream; the
+    // downstream tile-dependent passes legitimately re-roll around the
+    // new traps. Re-pin DEFERRED to the merge gate; a == b stays green.
+    // W4-g38 C3 (2026-11-21, code-only): the Piles pass (see SEED42_512
+    // above) — on the 4200-wide default world the seven ladders (0.06w cave
+    // piles, 0.01w hell piles, 0.03w + 0.0035w surface/house 3×2 piles,
+    // 0.6w + 0.02w + 0.15w small-pile scatters) place the 185/186/187 piles
+    // across the surface and caves — this pin moves BY DESIGN. The pass
+    // draws only its own fresh stream. Re-pin DEFERRED to the merge gate;
+    // a == b stays green.
+    // W4-g38 C4 (2026-11-21, code-only): the Spawn Point pass (see
+    // SEED42_512 above) — on the classic default world the pass writes only
+    // the spawn coordinates, no tiles, so this pin is EXPECTED UNCHANGED
+    // (the world hash covers tile fields only; the spawn is not hashed).
+    // The compact height-map anchor the world tail used retired into the
+    // faithful pass. a == b stays green (own fresh stream).
+    // W4-g38 C5 (2026-11-21, code-only): the Guide pass (see SEED42_512
+    // above) — the roster + flags are not hashed and the pass draws
+    // nothing, so this pin is EXPECTED UNCHANGED. a == b stays green.
+    // W4-g38 C6 (2026-11-21, code-only): the Sunflowers pass (see
+    // SEED42_512 above) — on the 4200-wide default world the `width *
+    // 0.002` = 9 span attempts plant the 2×4 tile-27 sunflowers on the
+    // surface grass — this pin moves BY DESIGN. The pass draws only its
+    // own fresh stream. Re-pin DEFERRED to the merge gate; a == b stays
+    // green.
+    // W4-g38 C7 (2026-11-21, code-only): the Herbs pass (see SEED42_512
+    // above) — on the 4200-wide default world the `width * 1.7` = 7140
+    // PlantAlch attempts plant the stage-0 tile-82 herbs on the grass /
+    // mud / jungle / sand / ash / snow soils (the deep + surface + full
+    // y ladders, the ±15 count box) — this pin moves BY DESIGN. The pass
+    // draws only its own fresh stream. Re-pin DEFERRED to the merge gate;
+    // a == b stays green.
+    // W4-g38 C8 (2026-11-21, code-only): the Dye Plants pass (see
+    // SEED42_512 above) — on the 4200-wide default world the 4200 plantDye
+    // attempts plant the tile-227 dye family (styles 0-7), the maturity
+    // sweep advances the herb stages (82 → 83 → 84 + the deep-mud plants),
+    // and the budget loops place the 2 glow tulips (656) + the 6 chillet
+    // eggs (752) — this pin moves BY DESIGN. The pass draws only its own
+    // fresh stream. Re-pin DEFERRED to the merge gate; a == b stays green.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
