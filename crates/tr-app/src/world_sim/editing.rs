@@ -5728,6 +5728,48 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             0.0,
         );
     }
+    // W4-c31: the larva 231's `Check3x3` case (`WorldGen.cs:53230-53257`)
+    // — the object-drop record with `item: None` (no item spawns; the
+    // `registry::tile_drop` fallback answers None for 231 too). The C#
+    // spawns three gore shards at the check's trigger cell, then the
+    // Queen Bee on the nearest living player within Manhattan 4800 px.
+    for drop in &kill.object_drops {
+        if drop.tile_kind != 231 || drop.item.is_some() {
+            continue;
+        }
+        // `:53232-53236`: Gore.NewGore at ((i+1)*16+8, j*16 + {0,8,16}),
+        // zero velocity, types 300/301/302. The rolls ride the break's
+        // `UpdatePlayers` swap (`Main.rand`, `Main.cs:17754`).
+        let gx = (drop.x + 1) as f32 * TILE_PX + 8.0;
+        let gy = drop.y as f32 * TILE_PX;
+        for (gore_type, dy) in [(300, 0.0), (301, 8.0), (302, 16.0)] {
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            app.gore.new_gore(
+                rng,
+                &app.world,
+                Vec2::new(gx, gy + dy),
+                Vec2::ZERO,
+                gore_type,
+                1.0,
+            );
+        }
+        // `:53237-53256`: the nearest-player scan — |dx| + |dy| over the
+        // living players, the < 4800 gate, `NPC.SpawnOnPlayer(plr, 222)`.
+        // The port has one player; `Main.gameMenu` is always false here
+        // (the break runs in-game). SpawnOnPlayer's tile-scan spawn rides
+        // the Abeemination precedent (the at-the-player spawn, the
+        // `use_boss_summon_item` deviation note).
+        if let Some(p) = app.player.as_ref().filter(|p| !p.dead) {
+            let dist = (p.x - drop.x as f32 * TILE_PX).abs()
+                + (p.y - drop.y as f32 * TILE_PX).abs();
+            if dist < 4800.0 {
+                let (px, py) = p.center();
+                let mut queen = Npc::new(NpcKind::QueenBee, px, py, 1, 0.0);
+                queen.hp = queen.max_hp;
+                app.npcs.push(queen);
+            }
+        }
+    }
     app.request_edit(tx, ty, 0, 0);
     app.liquids.wake_around(&app.world, tx, ty, 3);
     // `PressurePlateHelper.DestroyPlate` (`WorldGen.cs:65327`, case 428 of
@@ -12886,6 +12928,117 @@ mod tests {
         // Styles 2 and 6 have no window.
         assert!(!is_alchemy_plant_harvestable(2, 100, &day));
         assert!(!is_alchemy_plant_harvestable(6, 100, &day));
+    }
+
+    /// W4-c31: breaking the larva's floor spawns the Queen Bee — the
+    /// `Check3x3` case 231 (`WorldGen.cs:53230-53257`): three gore shards
+    /// (300/301/302) at the trigger cell, then `NPC.SpawnOnPlayer(plr,
+    /// 222)` when the nearest living player is within Manhattan 4800 px.
+    /// No item drops (the larva has no placing item).
+    #[test]
+    fn w4_c31_breaking_the_larva_spawns_gore_and_the_queen_bee() {
+        let mut w = object_world();
+        // The larva 3×3 at (9..11, 17..19), style-0 frames (the Place3x3
+        // num=-2 shape the Larva pass writes).
+        for (row, fy) in [(17, 0i16), (18, 18), (19, 36)] {
+            for (col, fx) in [(9, 0i16), (10, 18), (11, 36)] {
+                let i = w.index(col, row);
+                w.tiles[i] = Tile {
+                    kind: 231,
+                    frame_x: fx,
+                    frame_y: fy,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.frame_important[231] = true;
+        let mut app = break_app(w, 0x5EED);
+        // The player near the larva (the mining_app placement idiom).
+        {
+            let p = app.player.as_mut().unwrap();
+            p.x = 12.0 * TILE_PX;
+            p.y = 18.0 * TILE_PX;
+        }
+        break_tile(&mut app, 10, 20); // the floor dies, the larva follows
+        // The nine larva cells are gone.
+        for row in 17..=19 {
+            for col in 9..=11 {
+                assert!(!app.world.tile(col, row).unwrap().active());
+            }
+        }
+        // No item spawned for the larva (the stone floor's drop is the
+        // only item — the hit cell).
+        assert!(
+            !app.items.iter().any(|it| it.kind == 231),
+            "the larva drops no item"
+        );
+        // The three gore shards spawned (types 300/301/302).
+        let gore_types: Vec<i32> = app
+            .gore
+            .slots()
+            .iter()
+            .filter(|g| g.active)
+            .map(|g| g.gore_type)
+            .collect();
+        for t in [300, 301, 302] {
+            assert!(gore_types.contains(&t), "gore {t} in {gore_types:?}");
+        }
+        // The Queen Bee arrived (the < 4800 gate passed).
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::QueenBee && n.hp > 0),
+            "the Queen Bee spawned"
+        );
+    }
+
+    /// W4-c31: the far player refuses the spawn — the Manhattan-4800 gate
+    /// (`:53253`): the gore still spawns, the Queen Bee does not.
+    #[test]
+    fn w4_c31_the_far_player_refuses_the_queen_bee() {
+        // A 400×400 world (the 40×40 fixture cannot reach Manhattan 4800).
+        let mut w = World::new("t".into(), 400, 400);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        for x in 0..400 {
+            let i = w.index(x, 20);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        for (row, fy) in [(17, 0i16), (18, 18), (19, 36)] {
+            for (col, fx) in [(9, 0i16), (10, 18), (11, 36)] {
+                let i = w.index(col, row);
+                w.tiles[i] = Tile {
+                    kind: 231,
+                    frame_x: fx,
+                    frame_y: fy,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.frame_important[231] = true;
+        let mut app = break_app(w, 0x5EED);
+        {
+            let p = app.player.as_mut().unwrap();
+            // > 4800 px Manhattan: dx = 29 tiles = 464 px, dy = 300 tiles
+            // = 4800 px — the sum 5264 clears the gate.
+            p.x = 39.0 * TILE_PX;
+            p.y = 318.0 * TILE_PX;
+        }
+        break_tile(&mut app, 10, 20);
+        assert!(
+            !app.npcs.iter().any(|n| n.kind == NpcKind::QueenBee),
+            "the far player refuses the spawn"
+        );
+        // The gore still spawns (the C# runs it before the player scan).
+        assert!(
+            app.gore.slots().iter().any(|g| g.active && g.gore_type == 300),
+            "the gore spawns regardless"
+        );
     }
 
     // DW-3.2: the observable break path — mining a blooming herb drops the

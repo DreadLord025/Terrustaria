@@ -79,6 +79,13 @@ pub struct World {
     pub bed_spawn: Option<(i32, i32)>,
     /// Spawn point from the save header (tile coordinates).
     pub spawn_x: i32,
+    /// `Main.dungeonX`/`Main.dungeonY` (`Main.cs:1115-1117`) — the dungeon
+    /// entrance anchor. Written by the dungeon step (the `plan_spans`
+    /// `dungeon_x` + its surface row) and read from the `.wld` header; the
+    /// Plantera bulb event's jungle-half rectangle keys on it
+    /// (`WorldGen.cs:74129`, W4-c31 jungle residuals). 0 = unset.
+    pub dungeon_x: i32,
+    pub dungeon_y: i32,
     /// `Main.worldSurface`: below this row the sun does not reach the surface.
     pub world_surface: f64,
     /// `Main.rockLayer`: top of the underground rock layer.
@@ -634,6 +641,8 @@ impl World {
             spawn_y: height / 4,
             bed_spawn: None,
             spawn_x: width / 2,
+            dungeon_x: 0,
+            dungeon_y: 0,
             world_surface: height as f64 * 0.25,
             rock_layer: height as f64 * 0.45,
             time: 0.0,

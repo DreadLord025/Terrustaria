@@ -59,7 +59,7 @@ use crate::world::World;
 /// `WorldGen.SolidTile` (`WorldGen.cs:70111-70131`) — the same fold the
 /// `evil` pass's copy carries (out-of-bounds reads as solid, no
 /// `tileSolidTop`, no half-brick, no slope).
-fn solid_tile(world: &World, x: i32, y: i32) -> bool {
+pub(crate) fn solid_tile(world: &World, x: i32, y: i32) -> bool {
     let Some(t) = world.tile(x, y) else {
         return true;
     };
@@ -1457,7 +1457,7 @@ pub(crate) fn place_honey_patches_around(
 // (3.6 KB) is the first small unported one. Wave C took `ThinIceBiome`.
 
 /// `WorldGen.InWorld(x, y, fluff)` — the padded bounds check.
-fn in_world_fluff(world: &World, x: i32, y: i32, fluff: i32) -> bool {
+pub(crate) fn in_world_fluff(world: &World, x: i32, y: i32, fluff: i32) -> bool {
     x >= fluff && y >= fluff && x < world.width - fluff && y < world.height - fluff
 }
 
@@ -1474,7 +1474,7 @@ fn is_solid_condition(world: &World, x: i32, y: i32) -> bool {
 /// `WorldGen.SolidOrSlopedTile(Tile, includePlatforms: false)`
 /// (`WorldGen.cs:69985-70009`): active, `tileSolid`, not `tileSolidTop`,
 /// not wired-inactive — slopes and half-bricks pass.
-fn solid_or_sloped(world: &World, x: i32, y: i32) -> bool {
+pub(crate) fn solid_or_sloped(world: &World, x: i32, y: i32) -> bool {
     world.tile(x, y).is_some_and(|t| {
         t.active()
             && crate::tiledata::TILE_SOLID.has(t.kind)
@@ -1617,7 +1617,7 @@ fn general_placement_tile(kind: u16) -> bool {
 /// scan against `GeneralPlacementTiles`. The port's `protected` rect list
 /// is the structure-map stand-in (the same idiom the other micro passes
 /// carry).
-fn can_place_general(
+pub(crate) fn can_place_general(
     world: &World,
     area: (i32, i32, i32, i32),
     protected: &[(i32, i32, i32, i32)],

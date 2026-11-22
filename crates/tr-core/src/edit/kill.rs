@@ -648,10 +648,10 @@ struct CheckPlan {
 /// (:46706), 79/90 → `Check4x2` (:47408), 82/83/84 → `CheckAlch` (the
 /// `Main.tileAlch` default arm, :85830-85832), 93 → `Check1xX` (:37788),
 /// 100/172 → `Check2x2`'s default (:48397), 101 → `Check3x4` (:50076),
-/// 104 → `Check2xX` (:37993), 185 → `CheckPile` (:85275), 219/642 →
+/// 104 → `Check2xX` (:37993), 185 → `CheckPile` (:85275), 219/642/231 →
 /// `Check3x3`'s bottom-support arm (:53059, the `:53114` support group — the
-/// M7-EXTRACT-1 extractinators; tile 34's is the ceiling arm, the `else` at
-/// `:53129-53139`).
+/// M7-EXTRACT-1 extractinators + W4-c31's larva; tile 34's is the ceiling
+/// arm, the `else` at `:53129-53139`).
 fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     let kind = world.tile(x, y)?.kind;
     match kind {
@@ -672,6 +672,12 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         // M7-EXTRACT-1: the extractinators ride `Check3x3`'s bottom-support
         // arm (`WorldGen.cs:53114-53127`, the group the C# lists 219/642 in).
         219 | 642 => check_3x3_bottom(world, x, y, kind),
+        // W4-c31: the larva 231 rides the same bottom-support arm (the
+        // `:53114` group lists it; `TileFrameImportant`'s dispatch
+        // `:86000-86013`). Its `Check3x3` switch case (`:53230-53257`)
+        // spawns gore + the Queen Bee, NOT an item — the record carries
+        // `item: None` and the app resolves the spawn (`break_tile`).
+        231 => check_3x3_bottom(world, x, y, kind),
         42 => check_lantern(world, x, y),
         79 | 90 => check_bed_bathtub(world, x, y),
         82 | 83 | 84 => check_alch(world, x, y),
@@ -1725,8 +1731,15 @@ fn check_3x3_bottom(world: &mut World, x: i32, y: i32, kind: u16) -> Option<Chec
             tile_kind: kind,
             x,
             y,
-            // `:53170-53175` — the item per tile kind (219 → 997, 642 → 5296).
-            item: Some(if kind == 219 { 997 } else { 5296 }),
+            // `:53170-53175` — the item per tile kind (219 → 997, 642 →
+            // 5296). The larva 231's case (`:53230-53257`, W4-c31) spawns
+            // gore 300/301/302 + `NPC.SpawnOnPlayer(plr, 222)` instead —
+            // no item; the app resolves the record (`break_tile`).
+            item: match kind {
+                219 => Some(997),
+                642 => Some(5296),
+                _ => None,
+            },
         }),
         cells: killable_cells(world, &region, kind),
         pot_event: None,
@@ -2963,6 +2976,66 @@ mod tests {
         }
         w.compute_column_surface();
         w
+    }
+
+    /// W4-c31: the larva 231 rides `Check3x3`'s bottom-support arm
+    /// (`WorldGen.cs:53114-53127` — the group lists 231; the dispatch
+    /// `:86000-86013`). Breaking a floor cell under the larva destroys
+    /// the whole 3×3 and records the object drop with `item: None` —
+    /// the `:53230-53257` case spawns gore + the Queen Bee app-side,
+    /// never an item.
+    #[test]
+    fn w4_c31_the_larva_break_records_the_no_item_object_drop() {
+        let mut w = object_world();
+        // The larva's 3×3 at (9..11, 17..19), style-0 frames — the
+        // Place3x3 num=-2 shape the Larva pass writes.
+        for (row, fy) in [(17, 0i16), (18, 18), (19, 36)] {
+            for (col, fx) in [(9, 0i16), (10, 18), (11, 36)] {
+                set_object_cell(&mut w, col, row, 231, fx, fy);
+            }
+        }
+        // Break the floor under the middle column: the support dies,
+        // the Check3x3 arm fires.
+        let kill = kill_tile(&mut w, 10, 20, false).expect("the floor dies");
+        let larva_drops: Vec<_> = kill
+            .object_drops
+            .iter()
+            .filter(|d| d.tile_kind == 231)
+            .collect();
+        assert_eq!(larva_drops.len(), 1, "one larva destruction record");
+        assert_eq!(larva_drops[0].item, None, "the 231 case spawns no item");
+        // All nine larva cells are gone.
+        for row in 17..=19 {
+            for col in 9..=11 {
+                assert!(
+                    !w.tile(col, row).unwrap().active(),
+                    "the larva cell ({col}, {row}) died"
+                );
+            }
+        }
+    }
+
+    /// W4-c31: a supported larva does NOT die — the nine frames match
+    /// and the floor row is solid, so `Check3x3` answers None.
+    #[test]
+    fn w4_c31_the_supported_larva_stays() {
+        let mut w = object_world();
+        for (row, fy) in [(17, 0i16), (18, 18), (19, 36)] {
+            for (col, fx) in [(9, 0i16), (10, 18), (11, 36)] {
+                set_object_cell(&mut w, col, row, 231, fx, fy);
+            }
+        }
+        // Break a far-away floor cell: the larva's support is intact.
+        let kill = kill_tile(&mut w, 30, 20, false).expect("the floor dies");
+        assert!(
+            !kill.object_drops.iter().any(|d| d.tile_kind == 231),
+            "no larva record"
+        );
+        for row in 17..=19 {
+            for col in 9..=11 {
+                assert!(w.tile(col, row).unwrap().active(), "({col}, {row}) stays");
+            }
+        }
     }
 
     /// BUG-16: felling the base of a tree collapses the whole trunk

@@ -379,6 +379,32 @@ mod tests {
         assert_eq!(place_cat_tail(&mut w3, 100, 209), (-1, -1), "the dry cell refuses");
     }
 
+    /// W4-c31 DUP-RECONCILE (research/300, the g42 12j phase-9 sanctioned
+    /// one-witness port): the liquid veto — a water cell at `min_j` blocks
+    /// the whole case-60 tail (`:74418`'s `|| tile[i, minJ].liquid != 0`).
+    /// Driven on the tail fn directly (flag=false) so the plant-above roll
+    /// cannot place a 61 that would wipe the liquid. The Next(25) gate may
+    /// pass, but no 236/238/233 lands and no post-gate draw is spent.
+    #[test]
+    fn w4_c31_the_liquid_veto_blocks_the_tail() {
+        let mut w = world();
+        put(&mut w, 100, 200, 60);
+        w.hard_mode = true;
+        w.downed_mech_boss1 = true;
+        w.downed_mech_boss2 = true;
+        w.downed_mech_boss3 = true;
+        let i = w.index(100, 199);
+        w.tiles[i].liquid = 200; // water at the placement row
+        let mut rng = UnifiedRandom::new(5);
+        for _ in 0..500 {
+            underground_grass_tail(&mut w, 100, 200, 199, 60, false, &mut rng);
+        }
+        assert!(
+            !w.tile(100, 199).is_some_and(|t| t.active() && matches!(t.kind, 236 | 238 | 233)),
+            "the liquid veto blocks the placement"
+        );
+    }
+
     /// W4-g42 D4: the life-fruit arm's hardmode gate — with hardmode + any
     /// mech down the `Next(40)` draws (after the Next(25) gate and the
     /// Next(60) bulb miss when all three mechs are down); a taken arm

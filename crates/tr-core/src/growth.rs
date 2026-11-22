@@ -53,9 +53,19 @@ mod herbs;
 // the runtime `PlaceCatTail` (`:58629-58742`).
 mod jungle;
 mod overworld;
+// W4-c31 jungle residuals: the Plantera bulb event placement
+// (`WorldGen.cs:74127-74267`) — the all-mechs-defeated hook. The placement
+// helper it calls is the g42 keeper `jungle::place_jungle_plant` (the c31
+// `jungle_plants.rs` duplicate DROPPED per the g42 GROWTH SEAL DUP-RECONCILE,
+// research/300; the two call sites carry the extra `inherit_paint: false`).
+pub mod plantera;
 mod pumpkins;
 mod trees;
 mod underground_tail;
+
+// W4-c31 jungle residuals: the Plantera bulb event placement
+// (`WorldGen.cs:74127-74267`) — the all-mechs-defeated hook.
+pub use plantera::generate_plantera_bulb_on_all_mechs_defeated;
 
 // S1-K-3: the tree family lives in `growth/trees.rs`; the public seams
 // stay on `growth` (verbatim move, behaviour frozen).

@@ -35,6 +35,7 @@ use super::caves;
 use super::desert;
 use super::desert_dunes;
 use super::finish_seeds;
+use super::hive;
 use super::config::{ConfigSection, WorldGenConfig};
 use super::dungeon;
 use super::evil;
@@ -361,6 +362,14 @@ pub(crate) struct GenVars {
     /// two rare overrides (`GetNextJungleChestItem`, `:10170-10196`). S1-A-4:
     /// drawn at the shrine-chest site, in the C#'s spot order.
     pub(crate) jungle_chest_cycle: u32,
+    /// `GenVars.jungleHut` (`GenVars.cs`): the shrine material pick —
+    /// `Reset` draws `Next(5)` (`WorldGen.cs:11167`) and maps it to the
+    /// brick kind (`:11317-11336`: 0→119 rich mahogany, 1→120 boreal,
+    /// 2→158 palm, 3→175 ebonwood, 4→45 living wood). The port draws it
+    /// in the Reset stand-in AFTER `crimson_left` (the C# draws it before
+    /// — the order deviation keeps every existing Reset-stream draw
+    /// byte-identical; W4-c31 jungle residuals).
+    pub(crate) jungle_hut: u16,
     /// `GenVars.skyIslandHouseCount` (`GenVars.cs`, the `IslandHouse`'s
     /// main-item cycle counter, `WorldGen.cs:79344-79363`): the sky houses'
     /// main item — the cycle with the `> 3 → Next(4)` re-roll. S1-A-4:
@@ -373,6 +382,11 @@ pub(crate) struct GenVars {
     /// name — the merge reconciles). `None` until then: the C# zero reset
     /// puts the circle off-world, a classic no-op.
     pub(crate) shimmer_position: Option<(i32, i32)>,
+    /// `GenVars.numLarva/larvaX/larvaY` (`GenVars.cs:150-154`, reset 0 at
+    /// `WorldGen.cs:11245`) — the hive stands' larva anchors (W4-c31):
+    /// `HiveBiome.CreateStandForLarva` publishes, the `Larva` pass
+    /// (`BeeLarvaInBeehives`, `:20868-20900`) consumes.
+    pub(crate) larva: hive::LarvaAnchors,
 }
 
 impl Default for GenVars {
@@ -407,6 +421,9 @@ impl Default for GenVars {
             right_beach_start: 0,
             // The shell anchors zero in Reset (`WorldGen.cs:11168-11171`).
             jungle_chest_cycle: 0,
+            // `GenVars.jungleHut`'s raw `Next(5)` pick is mapped in the
+            // Reset stand-in; the zero-init stands for "not drawn yet".
+            jungle_hut: 0,
             // `GenVars.skyIslandHouseCount` zeroes in Reset too
             // (`GenVars.cs`'s statics).
             sky_island_house_count: 0,
@@ -437,6 +454,9 @@ impl Default for GenVars {
             // (`WorldGen.cs:7039`) — `None` until d102's Shimmer step writes
             // the pool anchor (W4-f25's Settle Liquids reads it).
             shimmer_position: None,
+            // `GenVars.numLarva = 0` (`WorldGen.cs:11245`), the arrays
+            // zero-init (`GenVars.cs:446-447`).
+            larva: hive::LarvaAnchors::default(),
         }
     }
 }
@@ -1166,9 +1186,10 @@ pub(crate) const VANILLA_CHAIN: &[PassDecl] = &[
 /// `Step::vanilla` values for those constants (`ID/GenPassNameID.cs:239-325`),
 /// which is where the two vocabularies meet.
 ///
-/// Two of the twelve have no executed step in the port yet (`Larva` —
-/// `GenPassNameID.BeeLarvaInBeehives` — and `Shimmer`); listing them keeps the
-/// table 1:1 with the C# so a future step cannot silently un-prune itself.
+/// One of the twelve has no executed step in the port yet (`Shimmer`);
+/// listing it keeps the table 1:1 with the C# so a future step cannot
+/// silently un-prune itself. (`Larva` — `GenPassNameID.BeeLarvaInBeehives`
+/// — landed with W4-c31's hive rewrite.)
 pub(crate) const DUAL_DUNGEON_DISABLED_PASSES: [&str; 12] = [
     "Ice",                     // GenPassNameID.IceBiome            "Generate Ice Biome"
     "Full Desert",             // GenPassNameID.DesertBiome         "Full Desert"
@@ -1368,6 +1389,12 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         "Muds Walls In Jungle",
         step_muds_walls_in_jungle
     ),
+    // The vanilla Larva slot (`WorldGen.cs:20868`): immediately after Muds
+    // Walls In Jungle (`:20813`), before Micro Biomes (`:20901`) — W4-c31's
+    // `BeeLarvaInBeehives` port over the anchors the beehives step
+    // published. (The port's grouped micro steps run earlier — the
+    // recorded EXECUTED_PIPELINE order deviation.)
+    step!("larva", "Larva", step_larva),
     step!(
         "floating islands",
         "Floating Islands",
@@ -2002,6 +2029,10 @@ fn step_dungeon(
     let surface_row = gv.map().heights[dungeon_x as usize];
     let mut hall = dungeon::HallSeed::new(streams.pass_rng("Dungeon").0);
     dungeon::generate_dungeon(world, dungeon_x, surface_row, &mut hall);
+    // `Main.dungeonX/dungeonY` (`Main.cs:1115-1117`) — the entrance anchor
+    // the Plantera bulb event's rectangle reads (W4-c31 jungle residuals).
+    world.dungeon_x = dungeon_x;
+    world.dungeon_y = surface_row;
 }
 
 fn step_ocean_caves(
@@ -2084,11 +2115,22 @@ fn step_jungle_shrines(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
+    // The faithful `JungleShrines` (W4-c31 jungle residuals) draws from its
+    // own fresh `pass_rng("Jungle Chests")` slot — the shape-level pass rode
+    // the shared `srng`; the isolation shifts the later `srng` consumers
+    // along the stream (the accepted world change, recorded for ANALYSIS).
+    // The hut material rides `GenVars.jungle_hut` (the Reset pick).
+    let dungeon_x = gv.spans().dungeon_x;
+    let world_surface = gv.layers().world_surface;
+    let rock_layer = gv.layers().rock_layer;
+    let jungle_hut = gv.jungle_hut;
     gv.shrine_spots = structures::pass_jungle_shrines(
         world,
-        gv.spans(),
-        gv.layers().rock_layer,
-        &mut streams.srng,
+        dungeon_x,
+        world_surface,
+        rock_layer,
+        jungle_hut,
+        &mut streams.pass_rng("Jungle Chests"),
     );
 }
 
@@ -2234,7 +2276,33 @@ fn step_beehives(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    structures::pass_beehives(world, gv.spans(), gv.layers().rock_layer, &mut streams.srng);
+    // W4-c31: the faithful `HiveBiome` rewrite (the shape-level dome in
+    // `structures::pass_beehives` is retired). The pass keeps the shared
+    // `srng` stream the dome drew from (the port's stream contract — the
+    // vanilla per-pass re-seed is the recorded model); the layer anchors
+    // ride in as parameters (`world.world_surface` publishes at the tail).
+    let layers = gv.layers();
+    hive::pass_beehives(
+        world,
+        layers.world_surface,
+        layers.rock_layer,
+        &mut gv.larva,
+        &mut streams.srng,
+    );
+}
+
+/// The `Larva` pass (`GenPassNameID.BeeLarvaInBeehives`,
+/// `WorldGen.cs:20868-20900`) — W4-c31: the stand re-clear + the 231
+/// `Place3x3` per published anchor. Draws no RNG (the C# body has none).
+fn step_larva(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    hive::pass_larva(world, &gv.larva);
 }
 
 fn step_hell_forts(
@@ -2865,6 +2933,11 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[467] = true;
     world.frame_important[441] = true;
     world.frame_important[468] = true;
+    // The larva 231 (`Main.cs:7396`) — W4-c31: the `Place3x3` frames the
+    // Larva pass writes must survive the load-time framing, and the kill
+    // cascade must reach the object (`TileFrameImportant`'s Check3x3 arm,
+    // `WorldGen.cs:86000-86013`).
+    world.frame_important[231] = true;
 }
 
 /// The vanilla `RunPass` shape over the ported steps: per step, build the
@@ -2891,6 +2964,17 @@ fn reset_genvars(core: &StreamCore, opts: &GenOptions) -> GenVars {
     let mut gv = GenVars::default();
     let mut reset_rng = core.pass_rng("Reset");
     gv.crimson_left = reset_rng.range(0, 2) == 1;
+    // `GenVars.jungleHut` (`WorldGen.cs:11167` `Next(5)` → `:11317-11336`
+    // map). Drawn AFTER `crimson_left` so the existing Reset-stream draw
+    // stays byte-identical (the C# draws it earlier — the recorded order
+    // deviation, W4-c31 jungle residuals).
+    gv.jungle_hut = match reset_rng.range(0, 5) {
+        0 => 119,
+        1 => 120,
+        2 => 158,
+        3 => 175,
+        _ => 45,
+    };
     gv.flip_infections = opts.flags.flip_infections();
     gv
 }
@@ -3183,7 +3267,9 @@ mod tests {
         // `WorldGen.cs:20941`) before `campsites`.
         // W4-f25: + `settle liquids` (vanilla "Settle Liquids",
         // `WorldGen.cs:16132`) immediately before `remove water`.
-        assert_eq!(names.len(), 67);
+        // W4-c31: + `larva` (vanilla "Larva", `WorldGen.cs:20868`) after
+        // `muds walls in jungle`.
+        assert_eq!(names.len(), 68);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3269,6 +3355,7 @@ mod tests {
                 "jungle plants",
                 "vines",
                 "muds walls in jungle",
+                "larva",
                 "floating islands",
                 "settle liquids",
                 "remove water",
@@ -3409,7 +3496,10 @@ mod tests {
         assert_eq!(pos("wet jungle"), pos("altars") + 1);
         assert_eq!(pos("jungle plants"), pos("mushroom and jungle plants") + 1);
         assert_eq!(pos("muds walls in jungle"), pos("vines") + 1);
-        assert_eq!(names[pos("muds walls in jungle") + 1], "floating islands");
+        // W4-c31: the `larva` step slots between them (vanilla Muds Walls
+        // In Jungle `:20813` → Larva `:20868`).
+        assert_eq!(names[pos("muds walls in jungle") + 1], "larva");
+        assert_eq!(names[pos("larva") + 1], "floating islands");
         // The vanilla chain carries the same relative pairs.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
