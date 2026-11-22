@@ -25163,6 +25163,83 @@ Known residual deviations (unchanged, documented elsewhere): the port's
 the update-tail exponential camera ease is the port's stand-in for the
 mid-tick camera reads (the draw camera itself is the faithful snap).
 
+## The workshop publish-info form (W4-d86)
+
+`crates/tr-app/src/ui/workshop_publish_info.rs` ports the DATA/STATE half of
+`AWorkshopPublishInfoState<T>` (`AWorkshopPublishInfoState.cs:21-822`) + both
+46-line subclasses — the pair's owner decision (research/18c, f22 conflicts
+4/5). The `Social/Base` data types (`WorkshopItemPublicSettingId`,
+`WorkshopTagOption`, `WorkshopItemPublishSettings`, `FoundWorkshopEntryInfo`)
+are ported with it. Code-only lane: witnesses written, not run.
+
+- **The Steam I/O stays excluded with `Social/**`** (the standing Workshop
+  exclusion above): `FileBrowser.OpenFilePanel`, `Texture2D.FromStream`,
+  `Platform.OpenURL`, `SocialAPI.Workshop.Publish*`/`TryGetInfoFor*`/
+  `SupportedTags`. The seams take the dialog's RESULT, the decoded image's
+  SIZE, the found entry and the supported tags as inputs — a future native
+  picker or Workshop module plugs in without touching the state machine.
+  On a no-Steam build the screen is unreachable exactly as vanilla (both
+  ctors are only called from the Workshop select screens — d84's lane;
+  d84's ports may consume this module or keep their own, the merger keeps
+  one).
+- **Ported machines**: the publicity radio (Public/FriendsOnly/Private
+  array order, `:359-364`) + the 3-per-row tag grid (`:404-432`), the
+  `FoundWorkshopEntryInfo` re-import (`:179-199` — a null `tags` array
+  leaves the selection but still imports the publicity), the
+  publish-settings assembly (`:668-678`), `PrettifyPath`'s 30-char
+  truncation (`:693-713`), the >512 px preview rejection (`:732-742`), the
+  description strip incl. the source's `SteamDisclaimerDescrpition` typo
+  (`:512`), the back/publish routing (back → 0/888 by `_previousUIState`;
+  publish → 888 UNCONDITIONALLY, the Steam call gated on Workshop +
+  dataObject), the scrollbar attach/detach (`:284-300`).
+- **`PrettifyPath` counts chars, not UTF-16 units** — C#'s `Length`/
+  `Substring` are UTF-16; the port's `chars()` differs only for astral-plane
+  file names (none in the game's own paths). Recorded, not emulated.
+- **Gamepad is the Stage-1 exclusion** (`SetupGamepadPoints` `:765-821`,
+  the `UIGamepadHelper` struct — f22: not a `UIState`).
+
+## The manage-controls screen (W4-d86)
+
+`crates/tr-app/src/ui/manage_controls.rs` + `crates/tr-app/src/input_profiles.rs`
+port `UIManageControls` (`UIManageControls.cs:20-1061`) and the
+`PlayerInputProfile`/`PlayerInput` data it edits (`PlayerInputProfile.cs:9-354`,
+`KeyConfiguration.cs:22-29`, `PlayerInput.cs:713-755`, `:2046-2500`,
+`:2558-2566`). Code-only lane (research/18c): witnesses written, not run.
+Deliberate deviations:
+
+- **The `input.json` persistence is not ported.** `PlayerInput.Save/Load`
+  (`PlayerInput.cs:765-812`) is a second config file beside `config.json`;
+  the registry lives in memory exactly as a fresh vanilla boot seeds it
+  (`Initialize` `:722-755` — five profiles, four originals, "Custom"
+  selected and Redigit-seeded).
+- **The `TriggersSet` runtime consumption stays with the input pass.**
+  `KeyConfiguration.cs:31-56`'s `Processkey`/`CopyKeyState` feed the live
+  input, which today reads the 14+6 bind strings in `input_map.rs`; the
+  screen's keyboard edits reach that table at the wiring follow-up.
+- **The sprite draw + `UIList` scrolling ride the shared UI seams.** The
+  port is the state half: the tab pair, the six bind lists + the row pairing
+  (`CreateElementGroup` `:388-433` — the thin-pair arm consumes its partner
+  WITHOUT re-checking the half-single/full-line lists, so `Dash`+`sp20`
+  pair as thin rows), the group heights (`GetTotalHeight` +
+  `UIList.cs:119-127`'s padding-after-every-item, single-item lists excepted),
+  the 22 special rows' click machines, the border hover colours and the
+  `"P1"`/`"F2"` label formats (half-away-from-zero, the loading screen's
+  custom-format rule).
+- **Gamepad is the Stage-1 exclusion.** `SetupGamepadPoints` (`:949-1048`),
+  `OnActivate`'s `ChangePoint(3002)` (`:706-709`), the `ForceMoveTo` static
+  (`:69`, `:1043-1047`) and the `UILinkPointNavigator` snap-point wiring are
+  not ported; the sp3-sp8/sp18/sp19 gamepad slider steps ARE (they are pure
+  math over `HandleSliderHorizontalInput`, `UILinksInitializer.cs:86-91`,
+  with the stick X passed in — 0 at rest).
+- **The five `UIKeybinding*ListItem` row elements are d83's**
+  (`ui/keybinding_rows.rs`, research/18b rows 40-44). This module cites
+  their behaviour and stays self-contained until the merge; the merger
+  keeps d83's row module and ONE `InputMode` (both cite `InputMode.cs:3-10`;
+  `input_profiles.rs` is the data-layer home).
+- **`GoBackClick` returns 1127** (`:937-941` — `Main.menuMode = 1127` +
+  `IngameFancyUI.Close()`); 1127 is the legacy Controls menu
+  (`Main.cs:50638-50647`), already drawn by `menu/pages.rs`.
+
 ## The loading screen + capture mode (S1-E-17)
 
 `crates/tr-app/src/ui/world_load.rs` ports the loading screen:
@@ -25232,6 +25309,16 @@ plus the sprite draw (`UIGenProgressBar.cs:70-84`'s two `DrawFilling2` bars
 - `Main.gameTips` (`UIWorldLoad.cs:117-118`) is research/19 M3
   (`GameTipsDisplay`), out of scope; the gamepad squiggle (`:122-127`) and
   F5 `UIWorldGenDebug` (`:50-53`) are desktop/debug pieces, unported.
+- **W4-d86 re-verification (research/18c, f22 conflict 5).** The research/18
+  PARTIAL row ("folded into world_select/save_list") was stale: the screen
+  is a first-class `FrontScreen::WorldLoad` state and nothing was folded.
+  Verdict PORTED with the deferrals above. The F5 arm's scope-out is now
+  explicit: `UIWorldGenDebug` (1 702 ln) opens only via
+  `DebugOptions.enableDebugCommands && F5` (`UIWorldLoad.cs:50-52`) or the
+  worldgen debug hook (`WorldGenerator.cs:477`) and is excluded with
+  `Testing/**`; `OnActivate`'s `ChangePoint(3000)` (`:37-44`) joins the
+  squiggle in the Stage-1 gamepad exclusion. The note rides
+  `world_load.rs`'s module header so the code carries the record too.
 - **The `TR_UI=worldload` preset latches a fixed snapshot.** The screenshot
   preset (`settings_ui.rs`) parks a mid-generation progress (42.5% overall /
   60% current, the `LegacyWorldGen.11` "Generating jungle" label) with no
