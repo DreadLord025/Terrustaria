@@ -263,6 +263,11 @@ pub const EYE_FIRE: u16 = 101;
 /// (`Projectile.cs:2752-2763`: 6x6, aiStyle 23, friendly + hostile, trap,
 /// penetrate -1, extraUpdates 2).
 pub const FLAMES_TRAP: u16 = 188;
+/// `ProjectileID.FlamethrowerTrap` (187) — the temple flame trap's jet
+/// (`Projectile.cs:2741-2751`: 6x6, aiStyle 38, alpha 255, tileCollide false,
+/// ignoreWater, timeLeft 60, trap). The stationary 6-tick emitter of the
+/// 188 FlamesTrap children (`AI()` `:27500-27512`, W4-g43 doc-sweep).
+pub const FLAMETHROWER_TRAP: u16 = 187;
 /// `ProjectileID.BrainScramblerBolt` (436) — the Scrambler's ray
 /// (`NPC.cs`'s `num412`/`:26640`).
 pub const BRAIN_SCRAMBLER: u16 = 436;
@@ -582,10 +587,11 @@ pub const TRAP_SUPERDART: u16 = 184;
 pub const TRAP_SPIKY_BALL: u16 = 185;
 /// The Spear Trap's projectile (the C# `SpearTrap = 186`,
 /// `Projectile.cs:2728-2740`: **aiStyle 37**, 10×14, `tileCollide = false`,
-/// `ignoreWater`, `timeLeft = 300`). The port's row deliberately keeps the
-/// WIRE-1 legacy values (aiStyle 14, 14×14, 900 — the C# 185's row, a
-/// historical 185/186 swap); the faithful 37 row + `AI_037` port are a
-/// follow-up — ANALYSIS "The spiky ball's row fix (S1-D-4c)".
+/// `ignoreWater`, friendly AND hostile, `penetrate = -1`, `timeLeft = 300`,
+/// trap). The faithful row landed WITH the `ai_trap_spear` arm (the W4-d4
+/// `0f92565b` f19 F3 fix, activated on this branch by the temple FINAL —
+/// the old 185 stand-in values are retired; correcting the row before the
+/// arm existed would have parked the spear in `_ => {}`).
 pub const TRAP_SPEAR: u16 = 186;
 /// The Venom Dart Trap's projectile (the C# `VenomDartTrap = 980`,
 /// `Projectile.cs:9330-9339`; the WIRE-1 legacy named it TRAP_SPIKY).
@@ -1579,9 +1585,10 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
 }
 
 /// The ported families' `SetDefaults` slice. The spear trap's spear (186,
-/// aiStyle 37) keeps a stand-in row (see its arm) and the flame jet (187,
-/// aiStyle 38) stays a passthrough — their AI families are M4-PROJ
-/// follow-ups. The magic (caster) families' (M4-PROJ-6) rows sit in
+/// aiStyle 37) carries its faithful row since the temple FINAL (the W4-d4
+/// `ai_trap_spear` arm landed with it — the f19 F3 fix); the flame jet
+/// (187, aiStyle 38) rides the W4-d4 `ai_flame_jet` emitter (keep-one
+/// union with the W4-g43 row). The magic (caster) families' (M4-PROJ-6) rows sit in
 /// `ProjectileID` order at the end of the match: their `aiStyle` values
 /// declare the dispatch arm Phases 3-4 add.
 ///
@@ -1908,6 +1915,28 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 TIME_LEFT_DEFAULT,
                 2,
                 true,
+                false,
+                true,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-g43 doc-sweep — the FlamethrowerTrap (187, the temple flame
+            // trap's jet, `ProjectileID.cs:926`): `Projectile.cs:2741-2751`
+            // — 6x6, aiStyle 38, `alpha = 255`, `tileCollide = false`,
+            // `ignoreWater = true`, `timeLeft = 60`, `trap = true`. The
+            // stock penetrate 1 (`:774`) stands — the emitter never deals
+            // contact damage itself (the C# sets neither friendly nor
+            // hostile; the 188 children carry the damage). The aiStyle-38
+            // machine (`AI()` `:27500-27512`) is a stationary 6-tick emitter
+            // of the 188 FlamesTrap; `UpdatePosition`'s skip list (`:20435`)
+            // holds the jet in place.
+            FLAMETHROWER_TRAP => (
+                6.0,
+                6.0,
+                38,
+                1,
+                60,
+                0,
+                false,
                 false,
                 true,
                 (false, -2, false, -1, 255, 1.0),
@@ -2261,16 +2290,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 RESET_STATE,
             ),
-            // `:2728-2740` — the Spear Trap's spear (186) is really 10x14,
-            // aiStyle **37**, tileCollide false, ignoreWater, friendly AND
-            // hostile, penetrate -1, timeLeft 300, trap. aiStyle 37
-            // (`AI()` `:27472`) has no ported dispatch arm, so the row keeps
-            // the 185 stand-in values (the `:2717-2727` spiky-ball arm the
-            // trap family shared before S1-D-5 split 185 out) — correcting
-            // the row to 37 would park the spear in `_ => {}` forever. The
-            // deviation is recorded in ANALYSIS "The projectile data-row
-            // deviations (S1-D-5)" with the aiStyle-37 port as the follow-up.
-            TRAP_SPEAR => (14.0, 14.0, 14, -1, 900, 0, true, false, true, RESET_STATE),
+            // `:2728-2740` — the Spear Trap's spear (186): 10x14, aiStyle
+            // **37**, tileCollide false, ignoreWater (the overlay below),
+            // friendly AND hostile, penetrate -1, timeLeft 300, trap.
+            // The faithful row landed WITH the `ai_trap_spear` arm (the
+            // W4-d4 f19 F3 fix, temple-FINAL activation — the old 185
+            // stand-in 14x14/14/900 is retired; the ANALYSIS S1-D-5
+            // stand-in note is closed). The row shape carries neither
+            // friendly nor hostile (the 185 convention — the spawn sites
+            // own the flags; the port's `spawn_with_data` defaults friendly
+            // true).
+            TRAP_SPEAR => (10.0, 14.0, 37, -1, 300, 0, false, false, true, RESET_STATE),
             // The wiring.device arms (M7-WIRE-2): the explosives 141's
             // explosion (`Projectile.cs:1953-1965` — aiStyle 16, 260×260,
             // `timeLeft` 2, `tileCollide = false`, trap), the land mine's
@@ -4241,7 +4271,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == HIGH_VELOCITY_BULLET
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
-            || kind == GOLF_CLUB_HELPER,
+            || kind == GOLF_CLUB_HELPER
+            // The Spear Trap's spear (186) sets `ignoreWater = true`
+            // (`Projectile.cs:2735` — the row landed with the 37 arm, the
+            // W4-d4 f19 F3 fix / temple-FINAL activation).
+            || kind == TRAP_SPEAR
+            // W4-g43 doc-sweep — the FlamethrowerTrap (187) sets
+            // `ignoreWater = true` (`Projectile.cs:2748`).
+            || kind == FLAMETHROWER_TRAP,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).

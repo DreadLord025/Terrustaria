@@ -76,6 +76,7 @@ per `docs/superpowers` agreements).
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 300 | W4-c31 jungle residuals census + gap-fill + the DUP-RECONCILE EXECUTED (renumbered 12k→300 per registry-150 §7.3; the g42 GROWTH SEAL keeper adoption + the jungle-family bible) | `300-c31-jungle-residuals.md` | ✅ |
+| 246 | Temple-family SEAL (W4-g43: the FINAL trio census, the c36/d4/c31/f24 keep-one + disjointness receipts, the merger bible; code-only) | `246-temple-family-seal.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

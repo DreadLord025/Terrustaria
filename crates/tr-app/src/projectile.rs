@@ -298,12 +298,14 @@ struct FlailTick {
 }
 
 
-/// The ported families' `SetDefaults` slice. The boulder (186, aiStyle 37)
-/// and the flame jet (187, aiStyle 38) traps stay passthroughs — their AI
-/// families are M4-PROJ follow-ups.
-/// The ported families' `SetDefaults` slice. The boulder (186, aiStyle 37)
-/// and the flame jet (187, aiStyle 38) traps stay passthroughs — their AI
-/// families are M4-PROJ follow-ups.
+/// The ported families' `SetDefaults` slice. The spear trap's spear (186,
+/// aiStyle 37) rides its faithful row + the `ai_trap_spear` arm since the
+/// temple FINAL (the W4-d4 0f92565b f19 F3 fix — the 185 stand-in retired;
+/// the old comment called 186 "the boulder" — the boulder is kind 99 /
+/// aiStyle 25, d3's family); the flame jet (187, aiStyle 38) rides the
+/// `ai_flame_jet` emitter (the W4-d4 a336f4aa machine, keep-one union with
+/// the W4-g43 doc-sweep row — the stationary 6-tick emitter of the 188
+/// children).
 ///
 /// The ammo-resolution rows (M3-ITEM-6 Phase 2): the kinds
 /// `Player.PickAmmo`'s resolution chain (`Player.cs:53458-53683`) resolves —
@@ -11304,6 +11306,105 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// `AI()`'s aiStyle-37 arm (`Projectile.cs:27472-27499`) — the Spear
+    /// Trap's spear (186, the style's only `SetDefaults` row, `:2728-2740`).
+    /// The W4-d4 `0f92565b` port (the f19 F3 fix), activated on this branch
+    /// by the temple FINAL: the arm landed WITH the faithful row — the old
+    /// 185 stand-in (aiStyle 14, 14×14, 900) is retired, the temple's
+    /// style-4 spear trap now flies its true anchor-latch/reverse/return
+    /// machine instead of the spiky-ball gravity stand-in.
+    ///
+    /// The first tick latches the anchor (`Center - velocity * 1.5f`,
+    /// `:27474-27479`); the rotation always points from the anchor to the
+    /// centre minus π/2 (`:27480-27481`). Outbound (`ai[0] == 0`) a
+    /// `SolidCollision` or the 300-px range cap reverses the velocity and
+    /// arms the return (`:27482-27494`); on the return a `SolidCollision`
+    /// or reaching the anchor (`Distance < velocity.Length()`) kills
+    /// (`:27495-27498`).
+    ///
+    /// The row keeps `tileCollide = false` (`:2734`) and aiStyle 37 is not
+    /// on `UpdatePosition`'s skip list (`:20435`), so the free integrate
+    /// runs every sub-step — including the kill tick (the C# moves the
+    /// dead slot too; the `if !active` return sits AFTER, `:17027`).
+    fn ai_trap_spear(&mut self, world: &World) {
+        // `:27474-27479` — the one-shot anchor latch.
+        if self.ai[1] == 0.0 {
+            self.ai[1] = 1.0;
+            let (cx, cy) = self.center();
+            self.local_ai[0] = cx - self.vel.x * 1.5;
+            self.local_ai[1] = cy - self.vel.y * 1.5;
+        }
+        let anchor = Vec2::new(self.local_ai[0], self.local_ai[1]);
+        let center = Vec2::from(self.center());
+        // `:27480-27481` — `(Center - anchor).ToRotation() - π/2`.
+        let d = center - anchor;
+        self.rot = d.y.atan2(d.x) - std::f32::consts::FRAC_PI_2;
+        if self.ai[0] == 0.0 {
+            // `:27484-27493` — the outbound reverse: solid contact OR the
+            // 300-px range cap (the two arms share the flip + the ++).
+            if solid_collision(world, self.pos, self.w, self.h)
+                || center.distance(anchor) > 300.0
+            {
+                self.vel *= -1.0;
+                self.ai[0] += 1.0;
+            }
+        } else if solid_collision(world, self.pos, self.w, self.h)
+            || center.distance(anchor) < self.vel.length()
+        {
+            // `:27495-27498` — the return kill.
+            self.kill();
+        }
+        // `UpdatePosition`'s free integrate (`:20445`), dead tick included.
+        let v = self.vel;
+        self.pos += v;
+    }
+
+    /// `AI()`'s aiStyle-38 arm (`Projectile.cs:27500-27512`) — the
+    /// Flamethrower Trap's jet (187, the style's only `SetDefaults` row,
+    /// `:2741-2751`). The W4-d4 `ai_flame_jet` machine, keep-one union with
+    /// the W4-g43 doc-sweep's row + wiring coverage (the g43
+    /// `ai_flamethrower_trap` copy is dropped: its hardcoded owner-0 gate
+    /// and uncompensated spawn site deviate from the C# — see the spawn
+    /// note below).
+    ///
+    /// The jet counts `ai[0]`; at ≥6 it resets, plays `SoundID.Item34` and
+    /// (owner-gated) spawns the 188 FlamesTrap with the jet's own
+    /// velocity/damage/knockBack (`:27502-27511`). aiStyle 38 is on
+    /// `UpdatePosition`'s skip list (`:20435`) → NO integrate; the jet hangs
+    /// at its spawn point for its 60-tick life. The cue rides `wants_sound`,
+    /// the child spawn rides `wants_dart_spawns` (the pool cannot spawn
+    /// mid-iteration).
+    fn ai_flame_jet(&mut self, local_owner: u8) {
+        self.ai[0] += 1.0;
+        if self.ai[0] >= 6.0 {
+            self.ai[0] = 0.0;
+            // `:27506` — `SoundEngine.PlaySound(SoundID.Item34, position)`.
+            self.wants_sound = Some((2, 34, self.pos.x, self.pos.y, 0.0));
+            // `:27507-27510` — the owner-gated 188 spawn. The C# passes the
+            // jet's TOP-LEFT (`base.position.X/Y`, `:27509`) and
+            // `NewProjectile` centres the box on it (`:10876-10877`); the
+            // port's spawn seam takes the top-left directly, so the spawn
+            // site subtracts the 6×6 flame's half-box — the child's box
+            // lands centred on the jet's top-left exactly like the C#.
+            if self.owner == local_owner {
+                self.wants_dart_spawns.push((
+                    FLAMES_TRAP,
+                    self.pos.x - 3.0,
+                    self.pos.y - 3.0,
+                    self.vel.x,
+                    self.vel.y,
+                    self.damage,
+                    self.knock_back,
+                    0.0,
+                    0.0,
+                    0,
+                ));
+            }
+        }
+        // NO movement integration: aiStyle 38 is on `UpdatePosition`'s skip
+        // list (`:20435`) — the jet hangs at its spawn point.
+    }
+
     /// `AI_158_BabyBird` (`Projectile.cs:48757-48928`) — the buff-216 baby bird
     /// (759, the style's only kind): the perch keep-alive, the 6-tick 5-frame
     /// walk, the 800-px target hunt with the intersect/close/far/all-home
@@ -17566,6 +17667,21 @@ impl ProjectilePool {
                         // (`:25861-25935`): the launch ramp, the 60-tick cap
                         // and the spin.
                         23 => self.slots[i].ai_eye_fire(world),
+                        // `AI()`'s `else if (this.aiStyle == 37)`
+                        // (`Projectile.cs:27472-27499`): the Spear Trap's
+                        // spear (186, the style's only row `:2728-2740`).
+                        // The W4-d4 f19 F3 fix — the arm landed with the
+                        // faithful row (the 185 stand-in retired). The arm
+                        // owns its integration (tileCollide false, `:2734`).
+                        37 => self.slots[i].ai_trap_spear(world),
+                        // The aiStyle-38 FlamethrowerTrap (187, `AI()`
+                        // `:27500-27512`): the stationary 6-tick emitter of
+                        // the 188 FlamesTrap children. Keep-one union: the
+                        // W4-d4 `ai_flame_jet` machine (the owner gate reads
+                        // the pass's local player, the spawn site carries
+                        // the `NewProjectile` centring) over the W4-g43
+                        // doc-sweep's row + wiring coverage.
+                        38 => self.slots[i].ai_flame_jet(local_owner),
                         // S1-P-i28 — the thrown-consumable flight arms.
                         // aiStyle 68: the Molotov cocktail (399)
                         // (`Projectile.cs:30166-30239` + the movement-68
@@ -19853,6 +19969,12 @@ impl ProjectilePool {
                     && !self.slots[i].friendly
                     && !DUNGEON_DEBRIS.contains(&self.slots[i].kind)
                     && self.slots[i].kind != SLIME_MINION
+                    // The flame jet 187 is stock `hostile = false`
+                    // (`Projectile.cs:2741-2751` sets neither flag), so
+                    // `Damage_EVP` refuses (`:14775`) — the `!friendly`
+                    // proxy must not hurt the player (the debris exemption
+                    // precedent). Keep-one union: the W4-d4 refusal.
+                    && self.slots[i].kind != FLAMETHROWER_TRAP
                 {
                     self.damage_player(i, player.as_deref_mut(), rng);
                 }
@@ -22651,6 +22773,26 @@ impl ProjectilePool {
             if p.kind == 443 && !p.friendly {
                 continue;
             }
+            // The Flamethrower Trap's jet 187 (`SetDefaults`
+            // `Projectile.cs:2741-2751`): NEITHER friendly nor hostile in
+            // the C# — the jet damages no NPC (`Damage_PVE_Inner`'s
+            // `!friendly` refusal `:12611`); its damage rides the 188
+            // children. The spawn site holds friendly false. Keep-one
+            // union: the W4-d4 refusal.
+            if p.kind == FLAMETHROWER_TRAP {
+                continue;
+            }
+            // `Damage_CanDealDamage` (`:12448`): the Flames Trap 188 deals
+            // nothing during its launch ramp (`localAI[0] < 5` — the
+            // counter `ai_eye_fire` floors/counts, `:25863-25870`;
+            // extraUpdates 2 → 3 sub-steps/frame, so the ramp is ~2
+            // frames). The C# gate wraps `Damage()` whole (`:12497`); the
+            // port carries it per-kind in both walks (the FLAMETHROWER_TRAP
+            // precedent). Union: the W4-d4 DOC-SWEEP gate — the jet's
+            // children now spawn on this branch (the temple style-2 trap).
+            if p.kind == FLAMES_TRAP && p.local_ai[0] < 5.0 {
+                continue;
+            }
             if refuses_friendly(n, p.kind, kill_guide, kill_clothier) {
                 continue;
             }
@@ -23285,6 +23427,11 @@ impl ProjectilePool {
         // base-4 default is the player's; the death-burst callers pass no
         // player — the per-hit roll still rides the stream in the C# order).
         let owned_by_someone = owner < 255 && !self.slots[slot].trap;
+        // The Flames Trap's launch-ramp refusal (`Damage_CanDealDamage`
+        // `:12448`), the boxed walk's copy (the W4-d4 union gate).
+        if self.slots[slot].kind == FLAMES_TRAP && self.slots[slot].local_ai[0] < 5.0 {
+            return;
+        }
         let (px, py, pw, ph) = {
             let p = &self.slots[slot];
             (p.pos.x, p.pos.y, p.w, p.h)
@@ -23415,6 +23562,12 @@ impl ProjectilePool {
         };
         let p = &self.slots[slot];
         if p.damage <= 0 {
+            return;
+        }
+        // `Damage_CanDealDamage` (`:12448`, the `Damage()` wrap `:12497`
+        // covers EVP too): the Flames Trap's launch ramp hurts no player
+        // either (`localAI[0] < 5`). The W4-d4 union gate.
+        if p.kind == FLAMES_TRAP && p.local_ai[0] < 5.0 {
             return;
         }
         let cx = p.pos.x + SIZE * 0.5;
@@ -25599,7 +25752,8 @@ mod arrow_tests {
         // `:950-961` (the musket ball), `:1823-1832`/`:2707-2716`/`:9330-9339`
         // (the trap darts), `:6953-6966` (the poison dart), `:2717-2727`
         // (the spiky ball 185 — S1-D-5 split it out of the dart group),
-        // `:2728-2740` (the spear 186 — the stand-in row, see data.rs).
+        // `:2728-2740` (the spear 186 — the faithful 37 row, the temple
+        // FINAL / W4-d4 f19 F3).
         let arrow = proj_data(WOODEN_ARROW).unwrap();
         assert_eq!((arrow.w, arrow.h), (10.0, 10.0));
         assert_eq!(arrow.ai_style, 1);
@@ -25617,13 +25771,16 @@ mod arrow_tests {
         assert_eq!(poison.extra_updates, 5);
         // The spiky ball (185, `Projectile.cs:2717-2727` — aiStyle 14, the
         // shared S1-D-5/S1-D-4c row fix) rides the ported style-14 family.
-        // The spear trap's spear (186) keeps the 185 stand-in row until
-        // aiStyle 37 is ported (`Projectile.cs:2728-2740`, the deviation in
-        // ANALYSIS "The projectile data-row deviations (S1-D-5)").
+        // The spear trap's spear (186) carries its faithful aiStyle-37 row
+        // since the temple FINAL (`Projectile.cs:2728-2740`, the W4-d4 f19
+        // F3 fix — the arm landed with the row; the ANALYSIS S1-D-5
+        // stand-in note retired).
         let spear = proj_data(TRAP_SPEAR).unwrap();
-        assert_eq!((spear.w, spear.h), (14.0, 14.0));
-        assert_eq!(spear.ai_style, 14);
-        assert_eq!(spear.time_left, 900);
+        assert_eq!((spear.w, spear.h), (10.0, 14.0), "`:2730-2731`");
+        assert_eq!(spear.ai_style, 37, "`:2732`");
+        assert_eq!(spear.time_left, 300, "`:2738`");
+        assert!(!spear.tile_collide, "`:2734`");
+        assert!(spear.ignore_water, "`:2735`");
         // S1-D-5: the spiky ball (185) is its own row — `Projectile.cs
         // :2717-2727`: 14x14, aiStyle **14** (not the dart group's 1),
         // `penetrate = -1`, `timeLeft = 900`, trap.
@@ -25635,9 +25792,18 @@ mod arrow_tests {
         assert!(spiky.trap);
         assert_eq!(TRAP_SPIKY_BALL, 185, "the C# ProjectileID.SpikyBallTrap");
         assert_eq!(TRAP_SPEAR, 186, "the C# ProjectileID.SpearTrap");
-        // The flame jet 187 (aiStyle 38) is unported — no data, the emission
-        // drops at the drain.
-        assert!(proj_data(187).is_none());
+        // W4-g43 doc-sweep: the flame jet 187 (aiStyle 38) is now ported —
+        // `Projectile.cs:2741-2751`: 6x6, alpha 255, tileCollide false,
+        // ignoreWater, timeLeft 60, trap. The stationary 6-tick emitter of
+        // the 188 children.
+        let jet = proj_data(187).expect("the 187 row (W4-g43)");
+        assert_eq!((jet.w, jet.h), (6.0, 6.0), "`:2743-2744`");
+        assert_eq!(jet.ai_style, 38, "`:2745`");
+        assert_eq!(jet.time_left, 60, "`:2749`");
+        assert!(!jet.tile_collide, "`:2747`");
+        assert!(jet.ignore_water, "`:2748`");
+        assert!(jet.trap, "`:2750`");
+        assert_eq!(jet.alpha, 255, "`:2746`");
         // The projectile-ai task moved the shuriken onto the data table: its
         // `SetDefaults` row (`Projectile.cs:828-836`) is the 22x22 aiStyle-2
         // box with `penetrate = 4`.
@@ -25657,9 +25823,9 @@ mod arrow_tests {
             .unwrap();
         let p = &pool.slots[slot];
         assert_eq!(p.kind, TRAP_SPEAR);
-        assert_eq!(p.time_left, 900);
+        assert_eq!(p.time_left, 300);
         assert_eq!(p.penetrate, -1);
-        assert_eq!((p.w, p.h), (14.0, 14.0));
+        assert_eq!((p.w, p.h), (10.0, 14.0));
         assert!(p.trap);
         assert_eq!(p.damage, 40);
     }
@@ -25745,21 +25911,18 @@ mod arrow_tests {
         assert!(died, "the tile contact kills the arrow");
     }
 
+    /// The spear trap's spear (186) rides the aiStyle-37 arm
+    /// (`Projectile.cs:27472-27499`), NOT the old style-14 stand-in flight:
+    /// the outbound leg reverses on `SolidCollision` (`:27484-27488`) and
+    /// the return leg kills on reaching the anchor (`:27495-27498`,
+    /// `Distance < velocity.Length()`). The W4-d4 f19 F3 re-derivation,
+    /// temple-FINAL activation. WRITTEN NOT RUN (code-only mode).
     #[test]
-    fn the_spear_dies_on_the_tile_scan() {
-        let mut pool = ProjectilePool::new();
-        pool.spawn_with_data(TRAP_SPEAR, 8.0 * 16.0, 12.0 * 16.0, 0.0, 4.0, 40, 2.0);
-        let mut npcs = Vec::new();
-        let mut w = world();
-        for x in 0..16 {
-            put_solid(&mut w, x, 13);
-        }
-        // The scan runs before the move; the probe box reaches the row-13
-        // floor on the third tick.
-        let mut died = false;
-        for _ in 0..5 {
+    fn the_spear_reverses_on_solid_contact_and_kills_at_the_anchor() {
+        fn step(pool: &mut ProjectilePool, w: &mut World) {
+            let mut npcs = Vec::new();
             pool.update(
-                &mut w,
+                w,
                 &mut npcs,
                 None,
                 None,
@@ -25770,19 +25933,42 @@ mod arrow_tests {
                 0,
                 true,
             );
-            if !pool.slots[0].active {
-                died = true;
-                break;
-            }
         }
-        assert!(
-            died,
-            "the aiStyle-14 center-probe scan kills on solid contact"
-        );
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(TRAP_SPEAR, 8.0 * 16.0, 12.0 * 16.0, 0.0, 4.0, 40, 2.0);
+        let mut w = world();
+        for x in 0..16 {
+            put_solid(&mut w, x, 13);
+        }
+        // Tick 1: the anchor latch (`:27474-27479`) — Center (133, 199)
+        // minus velocity * 1.5 = (133, 193); the box (192..206) is clear
+        // of the row-13 floor (208), so the outbound leg flies on.
+        step(&mut pool, &mut w);
+        assert!(pool.slots[0].active);
+        assert_eq!(pool.slots[0].ai[1], 1.0, "the latch (`:27476`)");
+        assert_eq!(pool.slots[0].local_ai[0], 133.0, "`:27477`");
+        assert_eq!(pool.slots[0].local_ai[1], 193.0, "`:27478`");
+        assert_eq!(pool.slots[0].vel, Vec2::new(0.0, 4.0), "still outbound");
+        // Tick 2: the box (196..210) overlaps the floor — the reverse
+        // (`:27486-27487`) flips the velocity and arms the return.
+        step(&mut pool, &mut w);
+        assert!(pool.slots[0].active);
+        assert_eq!(pool.slots[0].vel, Vec2::new(0.0, -4.0), "`:27486`");
+        assert_eq!(pool.slots[0].ai[0], 1.0, "`:27487`");
+        // Ticks 3-4: the return flies back; at centre (133, 195) the
+        // anchor distance 2 < |velocity| 4 kills (`:27495-27498`).
+        step(&mut pool, &mut w);
+        assert!(pool.slots[0].active, "distance 6 is not < 4 yet");
+        step(&mut pool, &mut w);
+        assert!(!pool.slots[0].active, "the anchor-reach kill (`:27497`)");
     }
 
+    /// The style-37 arm has NO gravity (the old stand-in test pinned the
+    /// style-14 `ai[0] > 5` fall; the C# 37 body never touches `velocity.Y`
+    /// outside the reverse). The rotation points from the anchor to the
+    /// centre minus π/2 (`:27481`). WRITTEN NOT RUN (code-only mode).
     #[test]
-    fn the_spear_gains_gravity_after_5_ticks() {
+    fn the_spear_flies_straight_and_points_off_its_anchor() {
         let mut pool = ProjectilePool::new();
         // Straight right over open air.
         pool.spawn_with_data(TRAP_SPEAR, 32.0, 16.0, 4.0, 0.0, 40, 2.0);
@@ -25802,22 +25988,17 @@ mod arrow_tests {
                 true,
             );
         }
-        assert_eq!(pool.slots[0].vel.y, 0.0, "no gravity for the first 5 ticks");
-        pool.update(
-            &mut w,
-            &mut npcs,
-            None,
-            None,
-            None,
-            YoyoInputs::default(),
-            FlailInputs::default(),
-            &mut tr_core::tile_light::FastRandom::new(7),
-            0,
-            true,
-        );
+        let p = &pool.slots[0];
+        assert!(p.active);
+        assert_eq!(p.vel.y, 0.0, "the 37 arm adds no gravity");
+        assert_eq!(p.ai[0], 0.0, "no reverse in open air inside 300 px");
+        // The anchor: first-tick centre (37, 23) − (6, 0) = (31, 23).
+        assert_eq!((p.local_ai[0], p.local_ai[1]), (31.0, 23.0));
+        // After 5 ticks the centre is (57, 23): the anchor delta is +X,
+        // so the rotation is atan2(0, +) − π/2 = −π/2 (`:27481`).
         assert!(
-            (pool.slots[0].vel.y - 0.2).abs() < 1e-6,
-            "the 6th tick adds 0.2"
+            (p.rot - (-std::f32::consts::FRAC_PI_2)).abs() < 1e-6,
+            "the anchor-pointing rotation"
         );
     }
 }
@@ -31255,9 +31436,12 @@ mod widened_state_tests {
         assert_eq!(deadeye.extra_updates, 1, "`extraUpdates = 1` (`:2671`)");
         assert_eq!(deadeye.penetrate, -1, "`penetrate = -1` (`:2666`)");
         assert!(!deadeye.arrow, "the 180 arm never sets `arrow`");
-        assert!(
-            proj_data(187).is_none(),
-            "the flame jet stays a passthrough"
+        // W4-g43 doc-sweep: the flame jet 187 now carries its row (aiStyle
+        // 38, alpha 255) — the passthrough assertion retired.
+        assert_eq!(
+            proj_data(187).map(|d| d.ai_style),
+            Some(38),
+            "the flame jet rides the aiStyle-38 emitter (W4-g43)"
         );
     }
 
@@ -31270,8 +31454,8 @@ mod widened_state_tests {
             .spawn_with_data(TRAP_SPEAR, 160.0, 200.0, 4.0, 0.0, 40, 2.0)
             .unwrap();
         let p = &pool.slots[slot];
-        assert_eq!((p.time_left, p.penetrate), (900, -1));
-        assert_eq!((p.w, p.h), (14.0, 14.0));
+        assert_eq!((p.time_left, p.penetrate), (300, -1));
+        assert_eq!((p.w, p.h), (10.0, 14.0));
         assert!(p.trap);
         assert_reset_defaults(p);
         assert_eq!(p.ai, [0.0, 0.0, 0.0, 0.0], "`spawn_with_data` passes ai0/ai1 0");
@@ -31368,18 +31552,13 @@ mod widened_state_tests {
         // The seam Phase 2 rides: a kind without a row returns `None` instead
         // of an inert slot (the M4-PROJ-1 silent-None trap). The magic kinds
         // and the follow-up aiStyles have rows now (M4-PROJ-6 Phases 1-2 and
-        // M4-PROJ-6b Phase 1), so the examples move to the OUT list: the
-        // style-75 gun rider 600 and the flame jet 187.
+        // M4-PROJ-6b Phase 1); W4-g43 added the flame jet 187, so the example
+        // moves to the style-75 gun rider 600 alone.
         let mut pool = ProjectilePool::new();
         assert!(
             pool.spawn_with_data(600, 10.0, 10.0, 1.0, 0.0, 15, 3.0)
                 .is_none(),
             "the Last Prism gun rider (style 75) stays rowless"
-        );
-        assert!(
-            pool.spawn_with_data(187, 10.0, 10.0, 1.0, 0.0, 15, 3.0)
-                .is_none(),
-            "the flame jet stays a passthrough"
         );
         assert_eq!(pool.active_count(), 0);
     }
@@ -31595,15 +31774,16 @@ mod magic_data_tests {
         // 632/633, 634/635) now carry rows, so the rowless set is the plan's
         // documented OUT list — the 75/84 gun riders (439/595/600/611/735/
         // 927; 615/630/705/714 already ride the ammo-resolution row) and
-        // the hostile laser 537, plus the flame jet 187 and 502. The 642
-        // left the list with S1-D-4b-3 (the turret beam's row). S1-P-i22
-        // added the Charged Blaster Cannon 460 + Laser 461 rows, and
-        // S1-P-i29 the Laser Drill 445 (the channel beam's aiStyle-75 row —
-        // the full AI_075 laser is the follow-up, the row is the spawn/hold
-        // seam), so all three left the list. The unported-kind spawn must
-        // still reach the caller as `None`, never an inert slot.
+        // the hostile laser 537, plus 502. The 642 left the list with
+        // S1-D-4b-3 (the turret beam's row); the flame jet 187 left with
+        // W4-g43 (the aiStyle-38 emitter). S1-P-i22 added the Charged
+        // Blaster Cannon 460 + Laser 461 rows, and S1-P-i29 the Laser Drill
+        // 445 (the channel beam's aiStyle-75 row — the full AI_075 laser is
+        // the follow-up, the row is the spawn/hold seam), so all three left
+        // the list. The unported-kind spawn must still reach the caller as
+        // `None`, never an inert slot.
         for kind in [
-            439u16, 595, 600, 611, 735, 927, 537, 187, 502,
+            439u16, 595, 600, 611, 735, 927, 537, 502,
         ] {
             assert!(proj_data(kind).is_none(), "kind {kind} must stay rowless");
         }
@@ -36775,7 +36955,9 @@ mod summon_tests {
     /// The new fields leave every pre-existing row on the pool defaults —
     /// the no-behaviour-change freeze (the
     /// `test_the_resolved_rows_leave_the_existing_spawns_untouched`
-    /// precedent, widened to the summon slice).
+    /// precedent, widened to the summon slice). Temple FINAL: TRAP_SPEAR
+    /// left this sweep — its faithful row sets `ignoreWater = true`
+    /// (`Projectile.cs:2735`, the W4-d4 f19 F3 fix).
     #[test]
     fn the_summon_fields_leave_the_existing_rows_untouched() {
         for kind in [
@@ -36783,7 +36965,6 @@ mod summon_tests {
             FLAME_ARROW,
             MUSKET_BALL,
             POISON_DART,
-            TRAP_SPEAR,
             BOMB,
         ] {
             let d = proj_data(kind).unwrap();
@@ -41066,6 +41247,45 @@ mod s1_d_4b_5c_tests {
         assert!((p.rot + 0.3).abs() < 1e-6, ":25934 mirrors with direction");
     }
 
+    /// The 188 flame child's launch-ramp damage refusal
+    /// (`Damage_CanDealDamage` `Projectile.cs:12448`: `type == 188 &&
+    /// localAI[0] < 5`). The row EXISTS (`data.rs` FLAMES_TRAP, 6×6/23/−1/
+    /// extraUpdates 2/trap, `:2752-2763`) and `ai_eye_fire` counts
+    /// `local_ai[0]`; this pins the gate that count feeds. A fresh child
+    /// (localAI[0] = 0) overlapping an NPC deals nothing; after the counter
+    /// reaches 5 the hit lands. The 20-px hitbox inflate (`:15010-15013`)
+    /// makes the 6×6 box reach the NPC at 300. Keep-one union: the W4-d4
+    /// DOC-SWEEP gate — the temple style-2 trap's jet now spawns these
+    /// children on this branch. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_g43_the_flames_trap_launch_ramp_deals_no_damage() {
+        let run = |launch: f32| {
+            let w = world();
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(FLAMES_TRAP, 300.0, 300.0, 0.0, 0.0, 40, 2.0, 0.0, 0.0)
+                .unwrap();
+            pool.slots_mut()[slot].local_ai[0] = launch;
+            let mut npc = Npc::new(NpcKind::Slime, 300.0, 300.0, 1, 0.0);
+            npc.hp = 500;
+            npc.max_hp = 500;
+            let before = npc.hp;
+            pool.damage_pve(
+                &w,
+                slot,
+                std::slice::from_mut(&mut npc),
+                None,
+                None,
+                None,
+                &mut tr_core::tile_light::FastRandom::new(7),
+            );
+            before - npc.hp
+        };
+        assert_eq!(run(0.0), 0, "localAI[0] < 5 refuses the hit (`:12448`)");
+        assert_eq!(run(4.0), 0, "the ramp's last refusing tick");
+        assert!(run(5.0) > 0, "localAI[0] >= 5 the flame bites");
+    }
+
     /// The aiStyle-158 walk (`Projectile.cs:48770-48777`): 6 ticks per frame,
     /// wrapping at `projFrames - 1` (so the last frame is only reachable by
     /// the perch snap — the walk wraps before it).
@@ -42802,6 +43022,153 @@ mod s1_d_5_data_row_tests {
         assert_eq!(d.time_left, 600);
         assert_eq!(d.extra_updates, 1);
         assert_eq!(d.penetrate, 1);
+    }
+
+    /// The FlamethrowerTrap (187, aiStyle 38, `Projectile.cs:27500-27512`):
+    /// the stationary 6-tick emitter. The jet hangs at its spawn point
+    /// (`UpdatePosition`'s skip list `:20435`), `ai[0]` counts to 6, resets,
+    /// and spawns the 188 FlamesTrap child with the jet's
+    /// velocity/damage/knockBack. The child rides the aiStyle-23
+    /// `ai_eye_fire` flight. Keep-one union: the W4-d4 `ai_flame_jet`
+    /// machine — the child's box is CENTRED on the jet's top-left (the
+    /// `NewProjectile` convention `:10876-10877`, the spawn site subtracts
+    /// the 6×6 half-box), and the fresh child's 3 sub-steps run in the SAME
+    /// frame (the C# `UpdateProjectiles` walk reaches the higher-index
+    /// slot). WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_g43_the_flame_jet_emits_the_188_child_every_six_ticks() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(FLAMETHROWER_TRAP, 160.0, 160.0, 5.0, 0.0, 40, 2.0)
+            .expect("the 187 row spawns");
+        let mut w = world();
+        // Five ticks: the counter climbs, no cue and no child yet, the jet
+        // holds still.
+        for _ in 0..5 {
+            step(&mut pool, &mut w);
+        }
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[0], 5.0, "the emitter counter ticks (`:27502`)");
+        assert_eq!(p.pos, Vec2::new(160.0, 160.0), "the jet is stationary (:20435)");
+        assert!(pool.drain_proj_sounds().is_empty(), "no cue before the 6th tick");
+        assert!(
+            pool.slots().iter().all(|s| !s.active || s.kind != FLAMES_TRAP),
+            "no child before the 6th tick"
+        );
+        // The 6th tick: the counter resets, the Item34 cue queues and the
+        // owner-gated 188 child spawns.
+        step(&mut pool, &mut w);
+        assert_eq!(pool.slots()[slot].ai[0], 0.0, "the counter resets (:27505)");
+        assert_eq!(
+            pool.drain_proj_sounds(),
+            vec![(2, 34, 160.0, 160.0, 0.0)],
+            "the Item34 cue (`:27506`)"
+        );
+        let child = pool
+            .slots()
+            .iter()
+            .find(|s| s.active && s.kind == FLAMES_TRAP)
+            .expect("the 188 child spawns (:27509)");
+        // The spawn site passed the jet's top-left minus the 6×6 half-box
+        // (`NewProjectile`'s centre convention, `:10876-10877`): the child
+        // spawned at (157, 157). Its aiStyle-23 arm ran its 3 sub-steps
+        // (extraUpdates 2) in the same frame: +5 px X each, so the box sits
+        // at (172, 157) after the spawn tick.
+        assert_eq!(child.pos, Vec2::new(172.0, 157.0));
+        assert_eq!(child.vel, Vec2::new(5.0, 0.0), "the jet's velocity carries");
+        assert_eq!(child.damage, 40, "the jet's damage carries");
+        assert_eq!(child.knock_back, 2.0, "the jet's knockBack carries");
+        // The jet keeps emitting: 6 more ticks, a second child.
+        for _ in 0..6 {
+            step(&mut pool, &mut w);
+        }
+        let children = pool
+            .slots()
+            .iter()
+            .filter(|s| s.active && s.kind == FLAMES_TRAP)
+            .count();
+        assert!(children >= 2, "the jet emits every 6 ticks ({children} children)");
+        // The jet never moves — its position is the spawn point after 12
+        // ticks of `velocity = (5, 0)` (`:20435`'s aiStyle-38 skip).
+        assert_eq!(pool.slots()[slot].pos, Vec2::new(160.0, 160.0));
+        assert_eq!(pool.slots()[slot].vel, Vec2::new(5.0, 0.0));
+    }
+
+    /// The flame jet's 188 spawn is OWNER-gated (`:27507`): a foreign-owned
+    /// jet still cycles its counter and queues the cue (`:27502-27506` run
+    /// unconditionally), but never queues the child. The W4-d4 union
+    /// witness. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_g43_the_flame_jet_child_spawn_is_owner_gated() {
+        let mut p = Projectile {
+            active: true,
+            kind: FLAMETHROWER_TRAP,
+            owner: 1,
+            pos: Vec2::new(160.0, 200.0),
+            vel: Vec2::new(5.0, 0.0),
+            damage: 40,
+            knock_back: 2.0,
+            ..Default::default()
+        };
+        for _ in 0..6 {
+            p.ai_flame_jet(0);
+        }
+        assert_eq!(p.ai[0], 0.0, "the counter still cycles (`:27502-27505`)");
+        assert_eq!(
+            p.wants_sound,
+            Some((2, 34, 160.0, 200.0, 0.0)),
+            "the cue plays regardless of owner (`:27506`)"
+        );
+        assert!(
+            p.wants_dart_spawns.is_empty(),
+            "the 188 spawn is owner-gated (`:27507`)"
+        );
+    }
+
+    /// The temple-FINAL seal receipt (research/246 §1-2): the spear/jet/child
+    /// trio's data rows are the C# `SetDefaults` arms verbatim — the 185
+    /// stand-in is retired (the FINAL 2 `0f92565b` activation), the jet row is
+    /// the keep-one union's g43 half (FINAL 1), and the child row carries the
+    /// `extraUpdates = 2` three-sub-step flight the emitter witness rides.
+    /// The 188 row's fields are pinned here for the first time (the ramp
+    /// witnesses exercise the gate, not the row). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g43_seal_the_temple_trap_trio_rows_are_the_csharp_defaults() {
+        // `Projectile.cs:2728-2740` — the spear (186): 10x14, aiStyle 37,
+        // penetrate -1, timeLeft 300, tileCollide FALSE, ignoreWater, trap.
+        let spear = proj_data(TRAP_SPEAR).expect("the faithful 186 row");
+        assert_eq!((spear.w, spear.h), (10.0, 14.0));
+        assert_eq!(spear.ai_style, 37, "NOT the 185 stand-in's 14");
+        assert_eq!(spear.penetrate, -1);
+        assert_eq!(spear.time_left, 300, "NOT the stand-in's 900");
+        assert_eq!(spear.extra_updates, 0);
+        assert!(!spear.tile_collide);
+        assert!(spear.ignore_water);
+        assert!(spear.trap);
+        // `Projectile.cs:2741-2751` — the jet (187): 6x6, aiStyle 38, alpha
+        // 255, tileCollide false, ignoreWater, timeLeft 60, trap; the stock
+        // penetrate 1 (`:774`) stands (the emitter never deals contact
+        // damage — neither friendly nor hostile).
+        let jet = proj_data(FLAMETHROWER_TRAP).expect("the keep-one 187 row");
+        assert_eq!((jet.w, jet.h), (6.0, 6.0));
+        assert_eq!(jet.ai_style, 38);
+        assert_eq!(jet.penetrate, 1);
+        assert_eq!(jet.time_left, 60);
+        assert_eq!(jet.alpha, 255);
+        assert!(!jet.tile_collide);
+        assert!(jet.ignore_water);
+        assert!(jet.trap);
+        // `Projectile.cs:2752-2763` — the child (188): 6x6, aiStyle 23,
+        // alpha 255, penetrate -1, extraUpdates 2 (3 sub-steps per tick),
+        // trap; the stock tileCollide (`:775`) and stock timeLeft stand.
+        let child = proj_data(FLAMES_TRAP).expect("the 188 row");
+        assert_eq!((child.w, child.h), (6.0, 6.0));
+        assert_eq!(child.ai_style, 23);
+        assert_eq!(child.alpha, 255);
+        assert_eq!(child.penetrate, -1);
+        assert_eq!(child.extra_updates, 2);
+        assert!(child.tile_collide);
+        assert!(child.trap);
     }
 
     #[test]

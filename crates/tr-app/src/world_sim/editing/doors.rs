@@ -42,14 +42,23 @@ fn use_golem_altar(app: &mut App) -> bool {
         || !app.world.hard_mode
         || !app.world.downed_plant_boss;
     if !gated {
-        // The inventory scan: the first 1293 row decrements; a zero
-        // stack clears (`SetDefaults(0)`) exactly like the C#.
-        for slot in 0..app.inventory.len() {
-            if app.inventory[slot].kind == 1293 && app.inventory[slot].count > 0 {
-                app.inventory[slot].count -= 1;
-                if app.inventory[slot].count == 0 {
-                    app.inventory[slot].kind = 0;
+        // The inventory scan (`Player.cs:32766-32778`): the C# walks
+        // `inventory[0..58]` — the grid + the coin/ammo rows (the trash 58
+        // is OUTSIDE this loop, unlike the chest key's `<= 58`). The first
+        // 1293 row decrements; a zero stack clears (`SetDefaults(0)`).
+        // W4-g43 doc-sweep: the old grid-only scan missed the coin/ammo rows.
+        for slot in app
+            .inventory
+            .iter_mut()
+            .chain(app.equip.coins.iter_mut())
+            .chain(app.equip.ammo.iter_mut())
+        {
+            if slot.kind == 1293 && slot.count > 0 {
+                slot.count -= 1;
+                if slot.count == 0 {
+                    *slot = crate::item::EMPTY_SLOT;
                 }
+                // `:32782` — the roar BEFORE the summon (the C# order).
                 app.audio.play("Roar_0");
                 spawn_golem_on_altar(app);
                 break;
@@ -63,11 +72,23 @@ fn use_golem_altar(app: &mut App) -> bool {
 /// ±20-tile scan around the player for the altar's origin cell
 /// (`type == 237 && frameX == 18 && frameY == 0`), the 50-tile solid
 /// scans up and down that column (`WorldGen.SolidTile`'s
-/// active/!solidTop/!halfBrick/slope-0 shape — an out-of-bounds cell
-/// reads solid, the C# `null` case), then the Golem lands at the
-/// column's `(up + down) / 3` pixel Y, targeting the player, with the
-/// "HasAwoken" announcement. Returns false when no altar is in range
-/// (the C#'s try/catch no-spawn path).
+/// active/!solidTop/!halfBrick/slope-0/!inActive shape — an out-of-bounds
+/// cell reads solid, the C# `null` case), then the Golem lands at the
+/// column's `(up + up + down) / 3` pixel Y, targeting the player, with the
+/// "HasAwoken" announcement (`ChatColors.BossOrEvent`). Returns false when
+/// no altar is in range (the C#'s try/catch no-spawn path).
+/// W4-g43 doc-sweep fidelity fixes vs the C#:
+/// - the scan bounds are EXCLUSIVE-upper (`j < num2 + 20`, `:80494/:80496`
+///   — the old `..=` included the +20 row/col);
+/// - the `num4 <= 0 || num5 <= 0` refusal (`:80505`) — no altar found keeps
+///   the 0/0 init and refuses, and an altar ON row/col 0 refuses too;
+/// - `NPC.NewNPC` takes the spawn point as the BOTTOM centre (`:80770`,
+///   `nPC.Bottom = (X, Y)` → `position = (X - w/2, Y - h)`): the old
+///   top-left write sat the body 140 px too high;
+/// - `target = plr` + `targetSetFrame` (`:80528-80529`);
+/// - the announcement is `Announcement.HasAwoken` formatted with the NPC
+///   name (`:80530`), `ChatColors.BossOrEvent` — not the server-message
+///   "The Golem has awoken!" literal.
 fn spawn_golem_on_altar(app: &mut App) -> bool {
     let Some(player) = app.player.as_ref() else {
         return false;
@@ -75,9 +96,11 @@ fn spawn_golem_on_altar(app: &mut App) -> bool {
     let (pcx, pcy) = player.center();
     let cx_t = (pcx / TILE_PX) as i32;
     let cy_t = (pcy / TILE_PX) as i32;
+    // `:80492-80504` — the last-match scan (the C# keeps overwriting
+    // num4/num5, so the LAST matching cell in row-major order wins).
     let mut altar: Option<(i32, i32)> = None;
-    for j in (cx_t - 20)..=(cx_t + 20) {
-        for k in (cy_t - 20)..=(cy_t + 20) {
+    for j in (cx_t - 20)..(cx_t + 20) {
+        for k in (cy_t - 20)..(cy_t + 20) {
             if app
                 .world
                 .tile(j, k)
@@ -90,6 +113,12 @@ fn spawn_golem_on_altar(app: &mut App) -> bool {
     let Some((ax, ay)) = altar else {
         return false;
     };
+    // `:80505-80508` — the zero-coordinate refusal.
+    if ax <= 0 || ay <= 0 {
+        return false;
+    }
+    // `WorldGen.SolidTile` (`WorldGen.cs:70111-70132`): the null arm reads
+    // TRUE; the active arm also refuses actuated tiles (`!inActive()`).
     let solid = |j: i32, k: i32| -> bool {
         match app.world.tile(j, k) {
             None => true,
@@ -99,9 +128,12 @@ fn spawn_golem_on_altar(app: &mut App) -> bool {
                     && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
                     && !t.half_brick()
                     && t.slope() == 0
+                    && !t.inactive()
             }
         }
     };
+    // `:80509-80526` — both scans start at the altar row; the up-scan's
+    // exclusive lower bound is `num5 - 50` (the C# `num8 > num5 - 50`).
     let mut up = ay - 15;
     for k in ((ay - 49).max(0)..=ay).rev() {
         if solid(ax, k) {
@@ -116,14 +148,108 @@ fn spawn_golem_on_altar(app: &mut App) -> bool {
             break;
         }
     }
+    // `:80527` — NewNPC(X: num4*16+8, Y: (num6+num6+num7)/3*16): the BOTTOM
+    // centre (`:80770`), so the top-left comes off half the box / the height.
     let spawn_x = ax as f32 * TILE_PX + 8.0;
     let spawn_y = ((up + up + down) / 3) as f32 * TILE_PX;
-    let mut golem = Npc::new(NpcKind::Golem, spawn_x, spawn_y, 1, 0.0);
+    let (gw, gh) = NpcKind::Golem.size();
+    let mut golem = Npc::new(NpcKind::Golem, spawn_x - gw * 0.5, spawn_y - gh, 1, 0.0);
     golem.hp = golem.max_hp;
+    // `:80528-80529` — the target latch (the solo player is slot 0; the
+    // EverLastingTicker stand-in is the port's frame counter convention).
+    golem.target = app.local_id as i32;
+    golem.target_set_frame = app.frame_count;
     app.npcs.push(golem);
-    app.chat
-        .new_text("The Golem has awoken!", crate::chat::COLOR_SERVER_MESSAGE);
+    // `:80530` — `Announcement.HasAwoken` with the NPC's net name,
+    // `ChatColors.BossOrEvent` (the WoF precedent's literal stand-in shape,
+    // but the correct colour + the localized template).
+    let text = crate::lang::text_args(
+        "Announcement.HasAwoken",
+        &[crate::lang::npc_name(245)],
+    );
+    crate::chat::broadcast_death_text(&mut app.chat, &text, crate::chat::COLOR_BOSS_OR_EVENT);
     true
+}
+
+/// The locked-door key payment (`Player.cs:32796-32838`, W4-g43 doc-sweep):
+/// the inventory walk (grid 0-49 + coins 50-53 + ammo 54-57 — the C#'s
+/// `inventory[0..58]`, the trash slot 58 is OUTSIDE this scan) pays the
+/// first Temple Key 1141 stack and unlocks; only when NO inventory key
+/// unlocked (`!flag9`, `:32818`) does the void-bag fallback walk bank4
+/// (`:32820-32836`). `WorldGen.UnlockDoor` (`WorldGen.cs:37599-37628`)
+/// shifts the three rows' frames off the locked window; its
+/// `SoundEngine.PlaySound(22, i*16, num*16+16)` (`:37614`, the anchor row +
+/// 16 px) plays here and `NotifyProgressionEvent(22)` (`:37627`,
+/// TEMPLE_RAIDER — `AchievementInitializer.cs:112-114`) fires once per
+/// unlock. The 12 dusts (`:37622-37625`) are the unported dust layer.
+///
+/// Temple-FINAL keep-one (the c36 co-land): the W4-c36 `ec832b440` +
+/// `5f4032d02` `try_unlock_temple_door`/app-level `unlock_door` pair is the
+/// duplicate half — this arm is the superset (the shared
+/// `edit::is_locked_door` predicate over the inline frame window, the
+/// `edit::unlock_door` Option-anchor refusal gate so the cue/progression
+/// fire only on a real shift, the `world_key` clear, the next-click-open
+/// witness). Both feed the SAME `notify_progression_net(22)` seam and the
+/// registry's `Cond::Progression(22)` TEMPLE_RAIDER row
+/// (`achievements_data.rs`, `AchievementInitializer.cs:112-114`) — one
+/// receipt, no double-wire: the c36 pair drops at the merge.
+fn unlock_temple_door(app: &mut App, tx: i32, ty: i32) {
+    const TEMPLE_KEY: u16 = 1141; // ItemID.cs:3965
+    let mut unlocked = false;
+    // `:32800-32817` — the inventory scan (the chest key walk's layout:
+    // the grid, then the coin/ammo rows; `break` on the first paid key).
+    for slot in app
+        .inventory
+        .iter_mut()
+        .chain(app.equip.coins.iter_mut())
+        .chain(app.equip.ammo.iter_mut())
+    {
+        if slot.kind != TEMPLE_KEY || slot.count == 0 {
+            continue;
+        }
+        slot.count -= 1;
+        if slot.count == 0 {
+            *slot = crate::item::EMPTY_SLOT;
+        }
+        if let Some(anchor) = edit::unlock_door(&mut app.world, tx, ty) {
+            play_door_unlock(app, tx, anchor);
+        }
+        unlocked = true;
+        break;
+    }
+    // `:32818-32837` — the void-bag fallback: `!flag9 && useVoidBag()`.
+    if !unlocked && crate::chest::use_void_bag(app) {
+        let Some(p) = app.player.as_mut() else {
+            return;
+        };
+        for slot in p.banks[3].iter_mut() {
+            if slot.kind != TEMPLE_KEY || slot.count == 0 {
+                continue;
+            }
+            slot.count -= 1;
+            if slot.count == 0 {
+                *slot = crate::item::EMPTY_SLOT;
+            }
+            if let Some(anchor) = edit::unlock_door(&mut app.world, tx, ty) {
+                play_door_unlock(app, tx, anchor);
+            }
+            break;
+        }
+    }
+}
+
+/// The unlock's cue + progression (`WorldGen.cs:37614`/:37627): the
+/// `SoundID.Unlock` (22) at the anchor row's `(i*16, num*16+16)` and
+/// `NotifyProgressionEvent(22)` — TEMPLE_RAIDER.
+fn play_door_unlock(app: &mut App, tx: i32, anchor: i32) {
+    app.audio.play_at(
+        "Unlock",
+        tx as f32 * TILE_PX,
+        anchor as f32 * TILE_PX + 16.0,
+        1.0,
+    );
+    let _ = app.notify_progression_net(22);
+    app.world_key = None;
 }
 
 pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
@@ -184,6 +310,27 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
         .is_some_and(|t| t.active() && t.kind == 237)
     {
         return use_golem_altar(app);
+    }
+    // The locked-door key arm (`TileInteractionsUse`'s `type == 10` branch,
+    // `Player.cs:32793-32838`, W4-g43 doc-sweep): `WorldGen.IsLockedDoor`
+    // (`WorldGen.cs:69191-69197`) matches the golden/Lihzahrd locked frames
+    // (tile 10, frameY 594-646, frameX < 54 — the temple door's style 11
+    // rides 594/612/630). The 58-slot inventory scan (`:32800-32817`, the
+    // grid + coins + ammo, NOT the trash) pays one Temple Key 1141 and
+    // calls `WorldGen.UnlockDoor`; the void-bag fallback (`:32818-32837`,
+    // `useVoidBag`) walks bank4 the same way. The click is consumed whether
+    // or not a key was found (`flag2 = true`, `:32795`) — the door NEVER
+    // opens on a locked click; the next click opens it (`OpenDoor`'s own
+    // `IsLockedDoor` refusal, `:37654-37657`). The Plantera gate is the
+    // KEY's drop (the Temple Key drops from Plantera, `loot_db_gen.rs`'s
+    // 262 row), not a runtime check here.
+    if app
+        .world
+        .tile(tx, ty)
+        .is_some_and(|t| t.active() && edit::is_locked_door(t))
+    {
+        unlock_temple_door(app, tx, ty);
+        return true;
     }
     let direction = app.player.as_ref().map(|p| p.facing).unwrap_or(1);
     // The entity half of `Collision.EmptyTile` (`Collision.cs:1359`): the
@@ -1071,8 +1218,12 @@ mod tests {
             .iter()
             .find(|n| n.kind == NpcKind::Golem)
             .expect("the Golem spawns");
-        assert_eq!(golem.x, 30.0 * 16.0 + 8.0, "the altar column");
-        assert_eq!(golem.y, 25.0 * 16.0, "the (20+20+36)/3 row");
+        // W4-g43 doc-sweep: NewNPC's BOTTOM-centre anchor (`NPC.cs:80770`) —
+        // the body's top-left is (X - 140/2, Y - 140): the altar column's
+        // centre 488 minus 70, the (20+20+36)/3 row's 400 minus 140.
+        assert_eq!(golem.x, 30.0 * 16.0 + 8.0 - 70.0, "the altar column, bottom-centre");
+        assert_eq!(golem.y, 25.0 * 16.0 - 140.0, "the (20+20+36)/3 row, bottom-centre");
+        assert_eq!(golem.target, 0, "the summon targets the player (:80528)");
         // A living Golem refuses the re-summon; hardmode off refuses too.
         interact_tile(&mut app, 30, 30);
         assert_eq!(app.inventory[app.selected].count, 1, "the living-boss gate");
@@ -1093,6 +1244,181 @@ mod tests {
                 .iter()
                 .all(|n| n.kind != NpcKind::Golem || n.hp == 0),
             "the hardmode gate refuses"
+        );
+    }
+
+    /// W4-g43 doc-sweep — the altar's cell scan covers the coin/ammo rows
+    /// (`Player.cs:32766`'s `inventory[0..58]`, the port's grid + coins +
+    /// ammo): a Power Cell parked in an ammo slot pays exactly like a grid
+    /// slot. The trash slot is OUTSIDE the C# loop (`n < 58`).
+    #[test]
+    fn the_altar_cell_scan_covers_the_ammo_rows() {
+        let mut app = temple_door_app();
+        // Reuse the door rig's world: plant the altar + the solid scans.
+        for &(ax, ay, kind, fx, fy) in &[
+            (30, 30, 237u16, 18i16, 0i16),
+            (30, 20, 1, 0, 0),
+            (30, 36, 1, 0, 0),
+        ] {
+            let i = app.world.index(ax, ay);
+            app.world.tiles[i] = Tile {
+                kind,
+                frame_x: fx,
+                frame_y: fy,
+                ..Default::default()
+            };
+            app.world.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        {
+            let p = app.player.as_mut().unwrap();
+            p.x = 30.0 * 16.0;
+            p.y = 30.0 * 16.0;
+        }
+        app.world.hard_mode = true;
+        app.world.downed_plant_boss = true;
+        app.equip.ammo[0] = ItemSlot {
+            kind: 1293,
+            name: "Lihzahrd Power Cell".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(interact_tile(&mut app, 30, 30));
+        assert_eq!(app.equip.ammo[0].count, 0, "the ammo-row cell paid");
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Golem && n.hp > 0),
+            "the Golem spawns off the ammo-row cell"
+        );
+    }
+
+    /// The temple-door rig: a Lihzahrd door (tile 10, style 11 — the locked
+    /// frames 594/612/630, frameX 0) at column 10, rows 19-21, over a stone
+    /// floor at 22 with a ceiling at 18 (the `open_door` anchor shape).
+    fn temple_door_app() -> App {
+        let mut w = World::new("t".into(), 80, 200);
+        w.frame_important = vec![false; tr_core::tiledata::TILE_COUNT];
+        for x in 0..80 {
+            for y in [18, 22] {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for (row, fy) in [(19, 594i16), (20, 612), (21, 630)] {
+            let i = w.index(10, row);
+            w.tiles[i] = Tile {
+                kind: 10,
+                frame_x: 0,
+                frame_y: fy,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        player.x = 8.0 * 16.0;
+        player.y = 19.0 * 16.0;
+        app.player = Some(player);
+        app
+    }
+
+    /// W4-g43 doc-sweep — the Temple Key 1141 unlock (`Player.cs:32796-
+    /// 32838` + `WorldGen.UnlockDoor` `WorldGen.cs:37599-37628`): the locked
+    /// click pays one key, shifts the three rows +54 (594/612/630 →
+    /// 648/666/684 — `IsLockedDoor` stops matching) and NEVER opens the
+    /// door on the same click; the next click opens it. No key: the click
+    /// is consumed free and the door stays locked.
+    #[test]
+    fn the_temple_key_unlocks_the_door_then_the_next_click_opens_it() {
+        let mut app = temple_door_app();
+        // No key: consumed, locked, no open, no TEMPLE_RAIDER credit.
+        assert!(interact_tile(&mut app, 10, 20), "the locked click consumes");
+        assert_eq!(app.world.tile(10, 19).unwrap().frame_y, 594, "still locked");
+        assert_eq!(app.world.tile(10, 20).unwrap().kind, 10, "no open");
+        assert!(
+            !app.achievements.list.iter().any(|a| a.name == "TEMPLE_RAIDER" && a.completed),
+            "no key, no unlock, no progression 22"
+        );
+        // One key in the inventory: paid, the frames shift, still closed.
+        app.inventory[0] = ItemSlot {
+            kind: 1141,
+            name: "Temple Key".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(interact_tile(&mut app, 10, 20));
+        assert_eq!(app.inventory[0].count, 0, "one key paid");
+        assert_eq!(app.inventory[0].kind, 0, "the emptied slot turns to air");
+        for (row, fy) in [(19, 648i16), (20, 666), (21, 684)] {
+            assert_eq!(
+                app.world.tile(10, row).unwrap().frame_y,
+                fy,
+                "the +54 shift, row {row}"
+            );
+            assert_eq!(app.world.tile(10, row).unwrap().kind, 10, "still closed");
+        }
+        // The keep-one receipt (the c36 co-land): progression 22 completes
+        // the registry's TEMPLE_RAIDER row (`Cond::Progression(22)`,
+        // `AchievementInitializer.cs:112-114`) — the SAME seam the c36
+        // `try_unlock_temple_door` pair feeds, one credit not two.
+        assert!(
+            app.achievements.list.iter().any(|a| a.name == "TEMPLE_RAIDER" && a.completed),
+            "the unlock fires NotifyProgressionEvent(22) → TEMPLE_RAIDER"
+        );
+        // The next click opens the door (the player faces right, the open
+        // column lands at 10-11 — the entity gate is free of the player at
+        // x 8*16 .. 8*16+20, the column 10 starts at 160 > 148).
+        assert!(interact_tile(&mut app, 10, 20));
+        assert_eq!(
+            app.world.tile(10, 19).unwrap().kind,
+            11,
+            "the unlocked door opens on the NEXT click"
+        );
+    }
+
+    /// W4-g43 — the void-bag fallback (`Player.cs:32818-32837`): no
+    /// inventory key, but the Void Bag 4131 carried and a key in bank4 —
+    /// the bank walk pays it and unlocks. Without the bag the bank key is
+    /// never read.
+    #[test]
+    fn the_void_bag_holds_the_fallback_temple_key() {
+        let mut app = temple_door_app();
+        {
+            let p = app.player.as_mut().unwrap();
+            p.banks[3][0] = ItemSlot {
+                kind: 1141,
+                name: "Temple Key".into(),
+                count: 1,
+                prefix: 0,
+            };
+        }
+        // No Void Bag: the bank key is invisible, the door stays locked.
+        assert!(interact_tile(&mut app, 10, 20));
+        assert_eq!(app.world.tile(10, 19).unwrap().frame_y, 594);
+        assert_eq!(app.player.as_ref().unwrap().banks[3][0].count, 1);
+        // The Void Bag 4131 in the inventory opens the fallback.
+        app.inventory[1] = ItemSlot {
+            kind: 4131,
+            name: "Void Bag".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(interact_tile(&mut app, 10, 20));
+        assert_eq!(app.world.tile(10, 19).unwrap().frame_y, 648, "unlocked");
+        assert_eq!(
+            app.player.as_ref().unwrap().banks[3][0].count,
+            0,
+            "the bank key paid"
+        );
+        // The fallback fires the SAME progression 22 receipt (the c36
+        // co-land's keep-one seam — one TEMPLE_RAIDER credit).
+        assert!(
+            app.achievements.list.iter().any(|a| a.name == "TEMPLE_RAIDER" && a.completed),
+            "the void-bag unlock fires progression 22 too"
         );
     }
 }
