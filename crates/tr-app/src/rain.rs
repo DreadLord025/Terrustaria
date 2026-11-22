@@ -281,6 +281,12 @@ impl Rain {
         self.intensity.clamp(0.0, 1.0)
     }
 
+    /// `Main.lightning` (`Main.cs:1207`): the flash brightness the sky tint's
+    /// lerp-to-white reads (`SetBackColor`, `:63905-63916`). W4-g70 lane 8.
+    pub fn flash(&self) -> f32 {
+        self.flash
+    }
+
     /// `Main.raining`: the toggle the tile-light scanner reads for the water
     /// fountain (`tile.frameX == 90`) case.
     pub fn is_raining(&self) -> bool {

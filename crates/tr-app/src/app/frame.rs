@@ -602,7 +602,7 @@ mod tests {
     ///   windy day / ambience), the tile-edit pass, the net pass and the map.
     ///
     /// Every phase name is emitted once per in-world frame.
-    const WORLD_PHASES: [&str; 22] = [
+    const WORLD_PHASES: [&str; 23] = [
         "players",
         "npcs",
         // `Main.UpdateWorld_Gores` (`Main.cs:17971`, called at `:17771`) sits
@@ -621,6 +621,9 @@ mod tests {
         // cluster's tile animator, right after `DoUpdate_AnimateWalls`
         // (`:17149`) — the S1-G-1f wiring ticks it beside the waterfalls.
         "animate_tiles",
+        // `Main.DoUpdate_AnimateBackgrounds` (`Main.cs:17052`, W4-g70): the
+        // forest-set hill animators, pre-gate, before the gfx budgets.
+        "animate_backgrounds",
         "weather",
         "rain",
         "windy_day",
@@ -858,7 +861,10 @@ mod tests {
         app.achievements_open = true;
         app.frame();
         assert!(app.game_paused, "the achievements overlay pauses");
-        assert_eq!(phase_trace::take(), ["waterfalls", "animate_tiles", "windy_day"]);
+        assert_eq!(
+            phase_trace::take(),
+            ["waterfalls", "animate_tiles", "animate_backgrounds", "windy_day"]
+        );
         // The overlay's close route (`loop.rs`'s Escape arm).
         app.achievements_open = false;
         app.frame();
@@ -883,7 +889,7 @@ mod tests {
         assert!(app.game_paused, "the gate wrote gamePaused (Main.cs:17197)");
         assert_eq!(
             phase_trace::take(),
-            ["waterfalls", "animate_tiles", "windy_day"],
+            ["waterfalls", "animate_tiles", "animate_backgrounds", "windy_day"],
             "a paused frame keeps only the pre-gate Animate cluster alive"
         );
         app.ingame_options.open = false;
@@ -966,7 +972,10 @@ mod tests {
         // One more paused frame, drained alone, for the per-frame trace check.
         phase_trace::take();
         app.frame();
-        assert_eq!(phase_trace::take(), ["waterfalls", "animate_tiles", "windy_day"]);
+        assert_eq!(
+            phase_trace::take(),
+            ["waterfalls", "animate_tiles", "animate_backgrounds", "windy_day"]
+        );
         // The positive control: the same frames unpaused move everything.
         app.ingame_options.open = false;
         for _ in 0..20 {
@@ -1375,6 +1384,7 @@ mod tests {
             [
                 "waterfalls",
                 "animate_tiles",
+                "animate_backgrounds",
                 "weather",
                 "rain",
                 "windy_day",

@@ -142,6 +142,16 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // button: a tracked-shot death must be able to drop the channel mid-hold
     // (`TryCancelChannel` `Player.cs:52975`).
     let (sw, sh) = app.screen_size();
+    // W4-g70 lane 8 — the natural star's death-burst screen gate
+    // (`Projectile.cs:75704-75705`): the view rect in world pixels
+    // (`Main.screenPosition` + the screen size; the port's camera is the
+    // view centre, the zoom spans `screen / zoom` world pixels).
+    app.projectiles.set_view_rect(
+        app.camera.x - sw * 0.5 / app.zoom,
+        app.camera.y - sh * 0.5 / app.zoom,
+        sw / app.zoom,
+        sh / app.zoom,
+    );
     // The `controlUseItem` zeroing gates (`Player.cs:42804-42807`'s
     // `channel = false` on the cleared input): the inventory
     // (`Main.cs:17659-17663`'s `player.mouseInterface`/inventory arm), the
@@ -398,6 +408,22 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         );
     });
     app.projectile_step.cap_backlog();
+    // W4-g70 lane 8 — the starfall spawner's `Star.StarFall` request
+    // (`Projectile.cs:53107`): the nearest sky star converts to a
+    // shooting-star trail. The Fall's two rolls ride the same
+    // `UpdateProjectiles` stream the AI walk consumed (`Main.cs:17775`).
+    if let Some(x) = app.projectiles.take_starfall() {
+        let right_world = app.world.width as f32 * 16.0;
+        // `SecretSeed.anySecretSeedIsActive` (`WorldGen.cs:429`): the
+        // classic OR micro seed count — either bitset non-empty.
+        let any_seed = app.world.seeds.bits() != 0 || app.world.micro_seeds.bits() != 0;
+        app.stars.star_fall(
+            x,
+            right_world,
+            app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
+            any_seed,
+        );
+    }
     // S1-P-i55 — the golf context writeback: the arms mutated the clone
     // (RecordSwing / the cup scoring); the resolved state is authoritative
     // for the tick. The `golfer_score` accumulator rides the player.

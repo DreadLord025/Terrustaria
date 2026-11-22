@@ -696,6 +696,63 @@ fn create_ground_explosion(
     }
 }
 
+/// `AI_148_StarSpawner` (`Projectile.cs:53094-53128`) — the invisible
+/// starfall spawner (720, W4-g70 lane 8). The day kill (`:53096-53100`),
+/// the `ai[0] += dayRate` age, the one-shot `localAI[0]` latch that calls
+/// `Star.StarFall(position.X)` while the local player is above the surface
+/// (`:53102-53109`), and the 180-tick conversion into the natural falling
+/// star 12 (damage 1000, knockback 10, `:53110-53127`).
+///
+/// Returns `true` on the conversion tick — the caller runs
+/// [`star_spawner_convert`] with the player centre, spawns the 12 at this
+/// slot's position/velocity and kills the slot. The `StarFall` request
+/// rides `starfall_x` — the pool cannot borrow the star field, so the
+/// caller drains it after the update (the `FlailSpawnRequest` precedent).
+/// ZERO `Main.rand` draws: the Fall's two rolls happen in the star field's
+/// own pass, on this same stream.
+pub(crate) fn ai_star_spawner(
+    p: &mut Projectile,
+    day_time: bool,
+    remix: bool,
+    day_rate: i32,
+    player_above_surface: bool,
+    local_owner: u8,
+    starfall_x: &mut Option<f32>,
+) -> bool {
+    // `:53096-53100` — the day kill (the remix world keeps it alive).
+    if day_time && !remix {
+        p.active = false;
+        p.time_left = 0;
+        return false;
+    }
+    // `:53101` — the age counter rides the day rate.
+    p.ai[0] += day_rate as f32;
+    // `:53102-53109` — the one-shot latch: `Star.StarFall(base.position.X)`
+    // while the local player is above the surface line.
+    if p.local_ai[0] == 0.0 {
+        p.local_ai[0] = 1.0;
+        if player_above_surface {
+            *starfall_x = Some(p.pos.x);
+        }
+    }
+    // `:53110-53113` — the owner + 180-tick gate.
+    p.owner == local_owner && p.ai[0] >= 180.0
+}
+
+/// The conversion half of `AI_148_StarSpawner` (`Projectile.cs:53114-53125`):
+/// the velocity's X shrinks to 0.35 and turns toward the locked player's
+/// centre (`ai[1] > -1` — the starfall spawn's default ai1 = 0 passes).
+pub(crate) fn star_spawner_convert(p: &mut Projectile, target_center_x: f32) {
+    if p.ai[1] > -1.0 {
+        p.vel.x *= 0.35;
+        if p.pos.x + p.w * 0.5 < target_center_x {
+            p.vel.x = p.vel.x.abs();
+        } else {
+            p.vel.x = -p.vel.x.abs();
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Witnesses (S1-D-4 code-only round — WRITTEN NOT RUN).
 
@@ -779,6 +836,91 @@ mod tests {
         }
         assert_eq!(proj_data(932).unwrap().ai_style, 181);
         assert_eq!(proj_data(85).unwrap().ai_style, 193);
+    }
+
+    /// W4-g70 lane 8 — the starfall spawner (720) and the natural star (12)
+    /// rows: 720 is aiStyle 148 (16×16, alpha 255 invisible, penetrate −1,
+    /// tileCollide false, `Projectile.cs:7617-7625`); 12 is aiStyle 5
+    /// (18×18, alpha 50, light 1, trap, `:924-938`).
+    #[test]
+    fn w4_g70_the_starfall_rows() {
+        let spawner = proj_data(crate::projectile::FALLING_STAR_SPAWNER).unwrap();
+        assert_eq!(spawner.ai_style, 148);
+        assert_eq!((spawner.w, spawner.h), (16.0, 16.0));
+        assert_eq!(spawner.alpha, 255);
+        assert_eq!(spawner.penetrate, -1);
+        assert!(!spawner.tile_collide);
+        let star = proj_data(crate::projectile::NATURAL_FALLING_STAR).unwrap();
+        assert_eq!(star.ai_style, 5);
+        assert_eq!((star.w, star.h), (18.0, 18.0));
+        assert_eq!(star.alpha, 50);
+        assert_eq!(star.light, 1.0);
+        assert!(star.trap);
+        assert_eq!(star.penetrate, -1);
+    }
+
+    /// W4-g70 lane 8 — `AI_148_StarSpawner`'s day kill
+    /// (`Projectile.cs:53096-53100`): a non-remix day kills the spawner;
+    /// the remix world keeps it alive.
+    #[test]
+    fn w4_g70_star_spawner_day_kill() {
+        let mut p = proj(crate::projectile::FALLING_STAR_SPAWNER);
+        let mut fall = None;
+        // Day, non-remix: killed, no conversion.
+        assert!(!ai_star_spawner(&mut p, true, false, 1, true, 0, &mut fall));
+        assert!(!p.active);
+        // Night: the latch fires the StarFall request (player above surface).
+        let mut p = proj(crate::projectile::FALLING_STAR_SPAWNER);
+        assert!(!ai_star_spawner(&mut p, false, false, 1, true, 0, &mut fall));
+        assert!(p.active);
+        assert_eq!(fall, Some(p.pos.x));
+        assert_eq!(p.local_ai[0], 1.0);
+        // The latch is one-shot: a second call does not re-request.
+        fall = None;
+        ai_star_spawner(&mut p, false, false, 1, true, 0, &mut fall);
+        assert_eq!(fall, None);
+    }
+
+    /// W4-g70 lane 8 — the 180-tick conversion gate
+    /// (`Projectile.cs:53110-53113`): `ai[0] += dayRate` per call; the
+    /// conversion fires only at `ai[0] >= 180` for the local owner.
+    #[test]
+    fn w4_g70_star_spawner_conversion_gate() {
+        let mut p = proj(crate::projectile::FALLING_STAR_SPAWNER);
+        let mut fall = None;
+        // 179 ticks at dayRate 1: not yet.
+        for _ in 0..179 {
+            assert!(!ai_star_spawner(&mut p, false, false, 1, false, 0, &mut fall));
+        }
+        assert_eq!(p.ai[0], 179.0);
+        // The 180th tick converts.
+        assert!(ai_star_spawner(&mut p, false, false, 1, false, 0, &mut fall));
+        // A non-local owner never converts.
+        let mut q = proj(crate::projectile::FALLING_STAR_SPAWNER);
+        q.owner = 1;
+        q.ai[0] = 200.0;
+        assert!(!ai_star_spawner(&mut q, false, false, 1, false, 0, &mut fall));
+    }
+
+    /// W4-g70 lane 8 — the homing nudge (`Projectile.cs:53114-53125`):
+    /// `vel.x *= 0.35` then the sign flips toward the target centre.
+    #[test]
+    fn w4_g70_star_spawner_homing() {
+        let mut p = proj(crate::projectile::FALLING_STAR_SPAWNER);
+        p.vel.x = 10.0;
+        p.ai[1] = 0.0; // > -1: the homing arm runs
+        // Target to the RIGHT of the spawner's centre → positive X.
+        star_spawner_convert(&mut p, p.pos.x + p.w * 0.5 + 100.0);
+        assert!((p.vel.x - 3.5).abs() < 1e-6);
+        // Target to the LEFT → negative X.
+        p.vel.x = 10.0;
+        star_spawner_convert(&mut p, p.pos.x + p.w * 0.5 - 100.0);
+        assert!((p.vel.x + 3.5).abs() < 1e-6);
+        // ai[1] == -1: no homing (the velocity keeps its value).
+        p.vel.x = 10.0;
+        p.ai[1] = -1.0;
+        star_spawner_convert(&mut p, p.pos.x + 1000.0);
+        assert_eq!(p.vel.x, 10.0);
     }
 
     /// Style 31 (`:26826-26839`, `:26883-26885`): the owner-gated cleanse

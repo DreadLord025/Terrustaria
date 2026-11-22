@@ -110,8 +110,97 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
             let sy = rng.next_range(sy_lo, sy_hi);
             tr_core::spread::hard_update_world(world, sx, sy, false, allowed_to_spread, rng);
         }
+        // `WorldGen.SpawnFallingObjects`' starfall tail
+        // (`WorldGen.cs:71828-71856`, called at `:71624` — W4-g70 lane 8):
+        // the night-only roll, once per dayRate iteration, on the same
+        // `UpdateWorldGen` stream (`genRand` == `Main.rand` under the
+        // swap). `Next(8000) < 10 * maxTilesX/4200 * starfallBoost` arms
+        // the invisible spawner 720; the `RollLuck(15)` target scan locks
+        // it onto the player when the luck roll hits, the player is above
+        // the surface and not AFK (`afkCounter < 10800`,
+        // `Player.cs:57103` — the port has no AFK counter, so the gate is
+        // always open, recorded). The boulder/rain/meteor/coin arms above
+        // it (`:71676-71827`) are other lanes' claims — the starfall is
+        // the tail, so its stream position is the C#'s. The helper takes
+        // the disjoint fields (the closure's `rng` capture keeps the
+        // stream borrow alive across the call).
+        spawn_starfall(
+            world,
+            app.player.as_ref(),
+            &mut app.projectiles,
+            app.stars.starfall_boost,
+            rng,
+        );
     });
     app.growth_step.cap_backlog();
+}
+
+/// The starfall arm of `WorldGen.SpawnFallingObjects`
+/// (`WorldGen.cs:71828-71856`). Split out so the growth closure keeps its
+/// disjoint borrows; `rng` is the `UpdateWorldGen` stream, `boost` the
+/// night's `Star.starfallBoost` snapshot.
+fn spawn_starfall(
+    world: &World,
+    player: Option<&crate::player::Player>,
+    projectiles: &mut crate::projectile::ProjectilePool,
+    boost: f32,
+    rng: &mut UnifiedRandom,
+) {
+    // `:71828-71831`: day (non-remix) skips the whole tail.
+    let remix = world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+    if world.day_time && !remix {
+        return;
+    }
+    let day_rate = world.day_rate();
+    for _ in 0..day_rate {
+        // `:71834-71835`: the boost-scaled roll.
+        let num16 = world.width as f64 / 4200.0 * boost as f64;
+        if (rng.next_range(0, 8000) as f64) >= 10.0 * num16 {
+            continue;
+        }
+        // `:71837-71838`: the spawn position — X in 100..width-50+100
+        // tiles, Y in the top 5% of the world.
+        let mut px = (rng.next_range(0, world.width - 50) + 100) as f32 * 16.0;
+        let py = rng.next_range(0, (world.height as f64 * 0.05) as i32) as f32 * 16.0;
+        // `:71839-71847`: the luck-lock scan. `Player.FindClosest` folds
+        // to the port's single player; `RollLuck(15) == 0` (the remix
+        // world rolls BAD luck instead) + above-surface + not-AFK locks
+        // the spawn onto the player with a ±Next(1,640) X jitter.
+        let mut ai1 = -1.0f32;
+        if let Some(p) = player {
+            let luck = p.luck();
+            let roll = if remix {
+                tr_core::loot::roll_bad_luck(rng, luck, 15)
+            } else {
+                tr_core::loot::roll_luck(rng, luck, 15)
+            };
+            let (pcx, pcy) = p.center();
+            if roll == 0 && pcy < world.world_surface as f32 * 16.0 {
+                let num20 = rng.next_range(1, 640);
+                px = pcx + rng.next_range(-num20, num20 + 1) as f32;
+                ai1 = 0.0;
+            }
+        }
+        // `:71848-71854`: the solid-collision gate, then the velocity —
+        // X in −100..100, Y in 100..299, normalised to speed 12.
+        if crate::player::Player::solid_collision(world, px, py, 16.0, 16.0) {
+            continue;
+        }
+        let num21 = rng.next_range(-100, 101) as f32;
+        let num22 = (rng.next_range(0, 200) + 100) as f32;
+        let num23 = 12.0 / (num21 * num21 + num22 * num22).sqrt();
+        projectiles.spawn_with_data_ai(
+            crate::projectile::FALLING_STAR_SPAWNER,
+            px,
+            py,
+            num21 * num23,
+            num22 * num23,
+            0,
+            0.0,
+            0.0,
+            ai1,
+        );
+    }
 }
 
 #[cfg(test)]

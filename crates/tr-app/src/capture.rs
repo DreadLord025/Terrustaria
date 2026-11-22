@@ -233,11 +233,9 @@ impl CaptureBiome {
     }
 
     /// `GetPurityForPlayer` (`CaptureBiome.cs:206-222`): the player's tile
-    /// X against `Main.treeX[0..2]`. The port's `World` carries no `treeX`
-    /// (the `.wld` reader skips it, `wld/sections/flags.rs:365`), so the
-    /// App passes the three boundaries in — `[0; 3]` reproduces the
-    /// port's no-treeX state (every player lands in Purity4, the same
-    /// fall-through the C# takes when all three boundaries are 0).
+    /// X against `Main.treeX[0..2]`. The App passes `World::tree_x` in
+    /// (W4-g70): generated worlds keep the `WorldGen.Reset` maxTilesX
+    /// boundaries (every player lands in Purity), loaded worlds the file's.
     pub(crate) fn purity_for_player(player_center_x: f32, tree_x: [i32; 3]) -> CaptureBiome {
         let num = (player_center_x / 16.0) as i32;
         if num < tree_x[0] {

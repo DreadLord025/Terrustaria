@@ -28,7 +28,7 @@ pub(crate) mod wires;
 /// A decoded sprite rect on the atlas: pixel size plus the normalised UV quad.
 /// Shared by every render module (the `Background_*`/`Player_*`/`NPC_*` sheet
 /// handles of the original's draw paths).
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) struct BgTex {
     pub(crate) uv: [f32; 4],
     pub(crate) w: f32,

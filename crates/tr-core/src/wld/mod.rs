@@ -2015,7 +2015,9 @@ mod tests {
         tail[68..72].copy_from_slice(&world.rain_time.to_le_bytes());
         tail[72..76].copy_from_slice(&world.max_raining.to_le_bytes());
         // The owned background styles inside setBG 0..7 at 88..95
-        // (`:1318-1325`): corrupt@89, jungle@90, hallow@92, crimson@93.
+        // (`:1318-1325`): treeBG1@88, corrupt@89, jungle@90, hallow@92,
+        // crimson@93.
+        tail[88] = world.forest_bg_styles[0];
         tail[89] = world.corrupt_bg_style;
         tail[90] = world.jungle_bg_style;
         tail[92] = world.hallow_bg_style;
@@ -2064,18 +2066,31 @@ mod tests {
         // party + 13 sandstorm + 4 DD2 + 5 BG (mushroom/underworld/tree2-4)
         // = tail offset 1939 (gate V3, i35).
         tail[1939] = u8::from(world.combat_book_was_used);
+        // W4-g70: mushroomBG@1934, treeBG2..4@1936..1938
+        // (`WorldFile.cs:1375-1379`, the 5-BG run before the book byte).
+        tail[1934] = world.mushroom_bg_style;
+        tail[1936] = world.forest_bg_styles[1];
+        tail[1937] = world.forest_bg_styles[2];
+        tail[1938] = world.forest_bg_styles[3];
         tail[2045] = u8::from(world.fast_forward_to_dusk); // fastForwardTimeToDusk (`:1416`)
         tail[2046] = world.moondial_cooldown; // moondialCooldown (`:1417`)
         b.extend(tail);
         b
     }
 
-    /// The owned middle of the flags table: the back styles (hell only), the
-    /// spawn/layers/time block — written between the 17 zero i32s of
-    /// `treeX`..`jungleBackStyle` and the `_tempBloodMoon` tail.
+    /// The owned middle of the flags table: the forest-set dividers/styles
+    /// (W4-g70), the back styles (hell only), the spawn/layers/time block —
+    /// written between the moon type and the `_tempBloodMoon` tail. The
+    /// cave arrays stay at their zero defaults.
     fn flags_tail_prefix(world: &World) -> Vec<u8> {
         let mut b = Vec::new();
-        b.resize(3 * 4 + 4 * 4 + 3 * 4 + 4 * 4 + 2 * 4, 0); // tree/cave arrays + ice/jungle
+        for x in world.tree_x {
+            b.extend_from_slice(&x.to_le_bytes());
+        }
+        for s in world.forest_bg_styles {
+            b.extend_from_slice(&(s as i32).to_le_bytes());
+        }
+        b.resize(b.len() + 3 * 4 + 4 * 4 + 2 * 4, 0); // cave arrays + ice/jungle
         b.extend_from_slice(&(world.hell_back_style as i32).to_le_bytes());
         b.extend_from_slice(&world.spawn_x.to_le_bytes());
         b.extend_from_slice(&world.spawn_y.to_le_bytes());
@@ -2847,6 +2862,8 @@ mod tests {
         world.hallow_bg_style = 4;
         world.crimson_bg_style = 5;
         world.mushroom_bg_style = 6;
+        world.tree_x = [2, 4, 6];
+        world.forest_bg_styles = [1, 3, 11, 13];
         world.hard_mode = true;
         world.downed_eoc = true;
         world.downed_plant_boss = true;
@@ -2881,6 +2898,9 @@ mod tests {
         assert_eq!(back.hallow_bg_style, world.hallow_bg_style);
         assert_eq!(back.crimson_bg_style, world.crimson_bg_style);
         assert_eq!(back.mushroom_bg_style, world.mushroom_bg_style);
+        // W4-g70: the forest-set dividers and the four tree styles.
+        assert_eq!(back.tree_x, world.tree_x);
+        assert_eq!(back.forest_bg_styles, world.forest_bg_styles);
         assert!(back.hard_mode);
         assert!(back.downed_eoc && back.downed_plant_boss);
         assert!(back.spawn_meteor);

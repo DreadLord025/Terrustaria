@@ -34,15 +34,16 @@ pub fn write(w: &mut Writer, world: &World) {
     write_world_flavour(w, world);
     write_times(w, world);
     // WorldFile.cs:1252-1269: the moon type, tree/cave backgrounds, the
-    // ice/jungle/hell back styles. Only `hellBackStyle` is owned; the tree and
-    // cave arrays are unowned (no port state — `net.rs`'s `WorldInfo` carries
-    // the same fields as zeros).
+    // ice/jungle/hell back styles. `hellBackStyle` and the four forest-set
+    // dividers/styles are owned (`World::tree_x`, `forest_bg_styles` — the
+    // W4-g70 forest lanes); the cave arrays stay unowned (`net.rs`'s
+    // `WorldInfo` carries the same fields as zeros).
     w.u8(world.moon_type);
-    for _ in 0..3 {
-        w.i32(0); // treeX
+    for x in world.tree_x {
+        w.i32(x); // treeX
     }
-    for _ in 0..4 {
-        w.i32(0); // treeStyle
+    for s in world.forest_bg_styles {
+        w.i32(s as i32); // treeStyle
     }
     for _ in 0..3 {
         w.i32(0); // caveBackX
@@ -99,7 +100,7 @@ pub fn write(w: &mut Writer, world: &World) {
     w.i32(world.ore_tiers.cobalt); // Cobalt
     w.i32(world.ore_tiers.mythril); // Mythril
     w.i32(world.ore_tiers.adamantite); // Adamantite
-    w.u8(0); // setBG(0) treeBG1
+    w.u8(world.forest_bg_styles[0]); // setBG(0) treeBG1
     w.u8(world.corrupt_bg_style); // setBG(1) corruptBG
     w.u8(world.jungle_bg_style); // setBG(2) jungleBG
     w.u8(0); // setBG(3) snowBG
@@ -185,9 +186,9 @@ pub fn write(w: &mut Writer, world: &World) {
                       // defaults.
     w.u8(world.mushroom_bg_style); // mushroomBG
     w.u8(0); // underworldBG
-    w.u8(0); // treeBG2
-    w.u8(0); // treeBG3
-    w.u8(0); // treeBG4
+    w.u8(world.forest_bg_styles[1]); // treeBG2
+    w.u8(world.forest_bg_styles[2]); // treeBG3
+    w.u8(world.forest_bg_styles[3]); // treeBG4
     w.boolean(world.combat_book_was_used); // combatBookWasUsed
                       // WorldFile.cs:1380-1384: the lantern night snapshot — unowned.
     w.i32(0); // _tempLanternNightCooldown
@@ -374,11 +375,16 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     if version >= 284 {
         world.last_played = r.u64()? as i64; // LastPlayed (`DateTime.ToBinary`)
     }
-    // WorldFile.cs:2021-2068 — moon type, the tree/cave arrays, the back styles. Only the
-    // moon type and `hellBackStyle` are owned.
+    // WorldFile.cs:2021-2068 — moon type, the tree/cave arrays, the back styles.
+    // The moon type, the four forest-set dividers/styles (W4-g70) and
+    // `hellBackStyle` are owned; the cave arrays stay unowned.
     world.moon_type = r.u8()?.min(8);
-    r.skip(3 * 4)?; // treeX
-    r.skip(4 * 4)?; // treeStyle
+    for x in &mut world.tree_x {
+        *x = r.i32()?; // treeX
+    }
+    for s in &mut world.forest_bg_styles {
+        *s = r.i32()? as u8; // treeStyle
+    }
     r.skip(3 * 4)?; // caveBackX
     r.skip(4 * 4)?; // caveBackStyle
     r.skip(2 * 4)?; // iceBackStyle, jungleBackStyle
@@ -447,9 +453,9 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     world.ore_tiers.cobalt = r.i32()?;
     world.ore_tiers.mythril = r.i32()?;
     world.ore_tiers.adamantite = r.i32()?;
-    // `setBG` slots 0..7 (`WorldFile.cs:2211-2218`): only the five
-    // surface-variant styles are port-owned; the rest are skip-read.
-    r.skip(1)?; // setBG(0) treeBG1
+    // `setBG` slots 0..7 (`WorldFile.cs:2211-2218`): the five surface-variant
+    // styles and the first forest style are port-owned; the rest are skip-read.
+    world.forest_bg_styles[0] = r.u8()?; // setBG(0) treeBG1
     world.corrupt_bg_style = r.u8()?; // setBG(1) corruptBG
     world.jungle_bg_style = r.u8()?; // setBG(2) jungleBG
     r.skip(1)?; // setBG(3) snowBG
@@ -566,7 +572,9 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         r.skip(1)?; // setBG(9) underworldBG
     }
     if version > 195 {
-        r.skip(3)?; // setBG(10..12) treeBG2..4
+        for s in &mut world.forest_bg_styles[1..] {
+            *s = r.u8()?; // setBG(10..12) treeBG2..4
+        }
     }
     if version >= 204 {
         world.combat_book_was_used = r.bool()?; // combatBookWasUsed

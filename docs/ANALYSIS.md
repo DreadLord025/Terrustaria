@@ -1282,16 +1282,19 @@ Every layer is gated and tinted by its
 (`ColorOfSurfaceBackgroundsBase * alpha`), so two biomes blend while `Main.bgStyle`
 cross-fades; a zero alpha skips the layer.
 
-The far pass (`DrawSurfaceBG_BackMountainsStep1`) draws forest `Background_7`, desert
-`23` (only when `desertBG != 4`) and snow `35` at parallax 0.15, scale 1В·2 and top
-`magicВ·1300 + 1090 + scAdj + 30`. The near pass (`...Step2`) draws forest `8`, desert
-`22`, ocean `28` (`Main.oceanBG`, default style 0) and snow `36` at parallax 0.20,
-scale 1.15В·2 and top `magicВ·1400 + 1260 + scAdj + 30`, in the original's index order
-(0, 1, 3, 4). The front pass draws the biome's three layers: forest `50..52` and snow
-`37..39` at 1.25В·2/1.31В·2/1.34В·2, 0.40/0.43/0.49 and `magicВ·1800/1950/2100 +
-1300/1550/1800` (forest; `-50` per texture and the middle layer mirrored horizontally)
-resp. `+1350/1600/1850` (snow; no flip); desert `21`/`20` at 2.5/2.68, 0.37/0.49 and
-`+1600/+2000`, with no tree line. Everything is laid out in `Main.screenPosition` space
+The far pass (`DrawSurfaceBG_BackMountainsStep1`) draws the four forest sets' far hills
+(`Main.treeMntBGSet1..4[0]`, style 0 = `Background_7`/`93`/`171`/… per `SetForestBGSet`),
+desert `23` (only when `desertBG != 4`) and snow `35` at parallax 0.15, scale 1·2 and top
+`magic·1300 + 1090 + scAdj + 30` plus `GetLayerYOffset`. The near pass (`...Step2`) draws
+the sets' near hills (style 0 set 1 = `8`), desert `22`, ocean `28` (`Main.oceanBG`,
+default style 0) and snow `36` at parallax 0.20, scale 1.15·2 and top
+`magic·1400 + 1260 + scAdj + 30`, in the original's index order (0, 1, 3, 4, then the
+forest sets 10/11/12). The front pass draws the biome's three layers: the forest sets'
+tree lines (style 0 set 1 = `9..11`, style 1 = `50..52`) and snow `37..39` — see the
+W4-g70 note below for the forest chain's exact per-id math — resp. snow at
+1.25·2/1.31·2/1.34·2, 0.40/0.43/0.49 and `+1350/1600/1850` (no flip); desert `21`/`20`
+at 2.5/2.68, 0.37/0.49 and `+1600/+2000`, with no tree line. Everything is laid out in
+`Main.screenPosition` space
 (camera в€’ screenSize/2, **not** divided by the game zoom, so changing `GameZoomTarget`
 moves only the world) and the X phase is
 `-IEEERemainder(screenLeftВ·parallax, scaledWidth) в€’ scaledWidth/2` against the screen's
@@ -1338,9 +1341,10 @@ original for the same seed). The resulting glow oscillates over the same 28..41 
 a comparable rate; the two rolls are not bit-identical to the original's.
 
 `Main.GetPreferredBGStyleForPlayer` (`Main.cs:64211-64256`) is ported in full, including
-the beach/corrupt-blood-count branches and the glowshroom test; only its final
-`Main.treeX[]` forest sub-style selection (10/11/12) collapses to 0, and the desert
-evil variants (5/13/14) to 2 вЂ” both because those style tables are unported.
+the beach/corrupt-blood-count branches and the glowshroom test; the final
+`Main.treeX[]` forest sub-style selection (10/11/12) is ported since W4-g70, and only
+the desert evil variants (5/13/14) still collapse to 2 — their style table
+(`Main.desertBackgroundSet`) is unported.
 `DrawBG_HandleBackgroundTransition`
 waits 30 frames before adopting a new style (60 when entering a forest style), then sets
 `bgDelay = -60` as a 60-frame cooldown (0 for a forest target);
@@ -1356,14 +1360,90 @@ original's zoom-1 matrix, so the layers hold their screen size at any game zoom.
 are world objects at a fixed altitude above `worldSurface` and drift with the wind; the
 storm `cloudBG` banks (`Background_112/113`) fade in with `cloudAlpha`.
 
-Not ported: the extra forest sets 10..12 and the desert evil variants 5/13/14 (their
-style tables need `Main.treeX[]` / `Main.desertBackgroundSet`, and only the tree set 1 and
-the pure desert set are packed), the forest styles' per-texture quirks
-(`91`/`173`/`178`/`184`/`282`/`328`/`333`/`329`/`334`, `Main.cs:61278-61301`,
-`:61400-61490`), snow's 20-style table (`Main.snowBG`, style 1 assumed),
-`DrawSurfaceBG_GoodEvilDesert`, `DrawSurfaceBG_DrawChangeOverlay` (the black flash on
-first entering a background), the far-cloud depth layers (`DrawClouds_Distant/Closer`),
-the ocean water-line ambience and the `Background_49` fog.
+Not ported: the desert evil variants 5/13/14 (their style tables need
+`Main.desertBackgroundSet`; only the pure desert set is packed), snow's 20-style table
+(`Main.snowBG`, style 1 assumed), `DrawSurfaceBG_GoodEvilDesert`, the far-cloud depth
+layers (`DrawClouds_Distant/Closer`), the ocean water-line ambience and the
+`Background_49` fog.
+
+**The four forest sets (W4-g70).** `World.forest_bg_styles[4]` + `World.tree_x[3]` carry
+`WorldGen.treeBG1..4` / `Main.treeX` (the `.wld` flags block owns them now; generated
+worlds keep the `WorldGen.Reset` defaults — style 0 everywhere, dividers at `maxTilesX`,
+so the classic `Background_9/10/11` tree line and `7/8` hills draw until a loaded world
+says otherwise). `World::forest_bg_set` ports `SetForestBGSet` (`WorldGen.cs:7639-7768`)
+verbatim — all 19 style arms plus the default. `render/bg.rs::forest_layers` ports
+`DrawSurfaceBG_Forest` (`Main.cs:61273-61519`) with the C#'s exact write order, which
+differs from the other biomes' shared `front_layers` path in three ways: row 0 calls
+`SetBackgroundOffsets` **twice** (`:61302` then `:61307`), the second call landing after
+the ×2 with no re-multiply, so a tabled id's scale ends un-multiplied (282 draws at 2.6,
+not 5.2); rows 1/2 multiply first and call the offsets once after, and their
+unconditional `bgTopY` rewrites (`:61399`, `:61473`) make the table's top pair dead code
+for them; and the `ids[0] == 91` row-2 scale/parallax drop lands **after** the row's
+`DrawToDepth` (`:61456-61462`), so the depth boundary keeps the pre-drop 0.49 while the X
+phase uses 0.42. The `173` tree line swaps its drawn sheet to
+`251 + GetBackgroundCounter()/10 % 4` (`:61373`) while every offset read keeps id 173.
+The front dispatch walks the C# `l` loop's order — set 1 at `l == 0`, sets 2-4 at
+`l == 10/11/12` **after** mushroom — each followed by `DrawSurfaceBG_DrawChangeOverlay`
+(`:61098-61107`), the full-screen `Color.Black * flashPower` quad fed by
+`world_sim/bg_animation.rs::BackgroundChangeFlash` (`BackgroundChangeFlashInfo.cs`:
+latch 1 on a style change at load, 0.05 decay per update at `Main.cs:17218`). The hill
+passes draw all four sets' live ids (`App.forest_hills`, stepped by
+`DoUpdate_AnimateBackgrounds_UpdateForest` `Main.cs:19658-19735` — the 94/114-116 family
+rewrites both hill slots, the 180-183 family only the near one, 6-tick counters, 4-frame
+wrap) with the full `GetLayerYOffset` table (`:59740-59797`) and the passes' own
+`screenPosition.Y < worldSurface*16 + 16` gates. The world-half atlas packs each set's
+ids plus the animated families and the 173 frames, so a style change needs no re-pack
+within a session. TRWLD grew a v18 tail (3 i32 dividers + 4 style bytes); pre-v18 files
+load the reset defaults.
+
+**The sky chain (W4-g70 lane 8).** The doc-sweep's background/sky lane ported the
+celestial half of `DrawSurfaceBG` in three phases (`6b3049e19`/`752655914`/`9d8478278`,
+research `79-doc-sweep-sky.md`). `tr-core/sky_color.rs` carries the whole
+`SetBackColor` modifier chain (`Main.cs:63452-63924`) in XNA byte space — the
+blood-moon double-write (`:63513-63515`), the crimson G-read (`:63627`), the
+mushroom moon cross-reads (`:63773-63774`), the unconditional moon-phase floor,
+the eclipse light step (`:63845-63898`), the DontStarve hooks — and the
+`ApplyColorOfTheSkiesToTiles` integer 7/10 BEFORE the atmo colour dim
+(`:61982-61983` order). `render/sky.rs` carries `DrawSunAndMoon`'s event bodies
+(eclipse Sun3, the Sunglasses head==12 Sun2/Extra_280, the Smiley/Pumpkin/Snow
+moons), the byte-exact num12/num13 chain with the real `cloudAlpha` (the base used
+`cloudBGAlpha`), and `NextHorizonRenderer.DrawSun`'s five flare quads.
+`tr-app/star_field.rs` carries the whole `Star.cs` — the live 200..400-slot pool
+replacing the static `make_stars`/`StarSprite` stand-in — and the starfall chain
+lands end to end (`WorldGen.cs:71828-71856` roll → aiStyle-148 spawner 720 →
+natural star 12 → `Star.StarFall`). Deliberate deviations:
+
+- **Star spawn RNG pin.** The C# `SpawnStars` seeds a fresh OS-random `FastRandom`
+  per call (`Star.cs:88`); the port pins each call's stream to
+  `world.seed ^ counter × 0xA076_1D64_78BD_642F` so screenshots stay deterministic
+  (the make_stars deviation, kept).
+- **Smiley moon gate.** The C# reads `WorldGen.drunkWorldGen`, which is
+  gen-time-only (set `WorldGen.cs:11115`, cleared in the finally `:11097`) — in-game
+  it is always false, so the Smiley moon never draws in vanilla after generation.
+  The port reads the in-game DRUNK seed flag instead, so a drunk-seed world actually
+  shows the Smiley moon. The port's seed flags are the persistent in-game
+  representation of the gen-time flags.
+- **AFK gate always open.** The starfall target scan's `afkCounter < 10800` gate
+  (`Player.cs:57103`) has no port AFK counter, so the gate is always open.
+- **Flare blend.** The DrawSun flares draw at colour `(255,255,255,0) × strength` —
+  alpha 0. Under the port's premultiplied blend an alpha-0 tint leaves the
+  destination alpha untouched while the tinted rgb ADDS, matching vanilla's
+  additive glow.
+- **Star draw alpha.** The decompile builds the star colour from `default` and
+  assigns only R/G/B (`Main.cs:63083-63086`) — a zero alpha would make every star
+  invisible under the port's blend, so the port draws them at the computed
+  brightness with the byte alpha the `color *=` chain produces.
+- **Sound/dust/gore bodies skipped.** The starfall chain's dust/gore BODIES are the
+  pool-wide skip (the draws stay on the stream); the `SoundID.Item10` cue is the
+  sound skip. The gore types 16/17 carry no SpecialAI (`GoreID.cs:20`).
+- **The menu gravity block.** `Star.UpdateStars`' secret-seed menu gravity block
+  (`Star.cs:261-316`) needs `gameMenu && generatingWorld` — unreachable in the
+  port's frame loop, documented out. The `dayCheck` never-true quirk (the decompile
+  only writes `false`, `:245`/`:321`) is kept verbatim: every day tick past 27000
+  respawns the hidden slots.
+
+Remainders (research 79 §5): the artificial shimmer star pass (`Main.cs:62203`),
+the starGame minigame, the AFK counter, the menu flat-35 night, the AuroraSky tint.
 
 Also not ported: the per-biome **animated screen effects**. In particular the day-time
 desert **heat shimmer** вЂ” `SceneState.ApplyVisuals` enables the `HeatDistortion` filter
