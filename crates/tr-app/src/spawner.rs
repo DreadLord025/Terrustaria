@@ -843,6 +843,91 @@ pub fn town_npc_at_spawn(micro_seeds: tr_core::seeds::MicroSeedFlags) -> u16 {
     }
 }
 
+/// `NPC.SpawnOnPlayer`'s generic ground scan (`NPC.cs:80565-80632`) — the
+/// default arm the Plantera bulb's `SpawnOnPlayer(plr, 262)` rides (the
+/// per-type arms 245/370/398/… are their own ports: the Golem altar's
+/// `doors.rs::spawn_golem_on_altar`, the Duke's bobber scan). 500 attempts ×
+/// 50 candidates: a random tile in the spawn area, refused when
+/// `nactive && tileSolid` or `wallHouse && m < 499` (the house-wall arm is
+/// unmodelled — the port has no `wallHouse` table, the `try_spawn_an_npc`
+/// precedent); descend to the first `nactive && tileSolid` cell; the LAST
+/// attempt (`flag2`) bypasses the safe-area + spawn-space gates, every other
+/// attempt needs `!safeArea.Contains` + `HasTileSpawnSpace` +
+/// `CheckNotSpawningOnScreen`. Returns the chosen ground tile — the caller
+/// runs `SpawnBoss(num10 * 16 + 8, num11 * 16, …)` (`:80631`).
+///
+/// Deviations (the `try_spawn_an_npc` precedent): the skyblock midair arm
+/// (`WorldGen.Skyblock.lowTiles`, `:80581-80584`) and the type-50 EoW
+/// clearance special (`:80604-80614`) are constants-off / type-gated out;
+/// the `nactive` actuated-bit refinement follows the port's spawner
+/// convention (`active()` — the actuated-spawn edge is unmodelled).
+pub fn spawn_on_player_tile(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<(i32, i32)> {
+    let (spawn_area, safe_area) = get_spawn_area(ctx);
+    let num12 = 500; // `:80568` (the 316/82 arm's 200/30 is type-gated out).
+    let num13 = 50; // `:80569`.
+    // `num14 = num12 / 2` (`:80575`) feeds only the skyblock midair arm
+    // (`:80581-80584`) and the type-50 clearance special — both out of scope.
+    let solid = |x: i32, y: i32| {
+        ctx.world
+            .tile(x, y)
+            .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+    };
+    let mut found: Option<(i32, i32)> = None;
+    for m in 0..num12 {
+        let flag2 = m == num12 - 1; // `:80579`.
+        for _ in 0..num13 {
+            let num15 = rng.next_range(spawn_area.left, spawn_area.right); // `:80587`.
+            let num16 = rng.next_range(spawn_area.top, spawn_area.bottom); // `:80588`.
+            // `:80589` — the solid / house-wall refusal (the wallHouse arm
+            // unmodelled; the type-50 `Main.tile[num16, num16]` quirk arm is
+            // type-gated out).
+            if solid(num15, num16) {
+                continue;
+            }
+            // `:80593-80603` — descend to the first solid cell.
+            let mut ground: Option<i32> = None;
+            for num17 in num16..spawn_area.bottom {
+                if solid(num15, num17) && (flag2 || !safe_area.contains(num15, num16)) {
+                    ground = Some(num17);
+                    break;
+                }
+            }
+            let Some(num11) = ground else { continue };
+            // `:80615-80618` — the non-final attempts need the spawn space.
+            if !flag2 && !has_tile_spawn_space(ctx.world, num15, num11) {
+                continue;
+            }
+            found = Some((num15, num11));
+            break;
+        }
+        // `:80624-80628` — `(!flag || flag2 || CheckNotSpawningOnScreen) &&
+        // flag`: the final attempt spawns anywhere, the others must lie
+        // off-screen.
+        if let Some((x, y)) = found {
+            if flag2 || check_not_spawning_on_screen(ctx, &safe_area, x, y) {
+                return Some((x, y));
+            }
+            found = None;
+        }
+    }
+    None
+}
+
+/// `NPC.SpawnBoss`'s post-spawn stamp (`NPC.cs:80661-80714`) for the port's
+/// single-player roster: `NewNPC` seeds `timeLeft = activeTime * 1.25` = 937
+/// (`:80772`, `activeTime = 750` `:95186`), `SpawnBoss` multiplies it ×20
+/// (`:80686`) → 18740, and the default arm broadcasts `Announcement.
+/// HasAwoken` in `ChatColors.BossOrEvent` (`:80702-80704`). The caller
+/// places the NPC by `Bottom = (X, Y)` (`NewNPC` `:80770`) and pushes it.
+pub fn stamp_boss_spawn(n: &mut Npc, chat: &mut crate::chat::ChatMonitor, name: &str) {
+    n.despawn_timer = 937 * 20; // `:80772` × `:80686`.
+    crate::chat::broadcast_death_text(
+        chat,
+        &format!("{} has awoken!", name),
+        crate::chat::COLOR_BOSS_OR_EVENT,
+    );
+}
+
 pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<Npc> {
     let (spawn_area, safe_area) = get_spawn_area(ctx);
 
@@ -3557,6 +3642,54 @@ mod tests {
         for _ in 0..2000 {
             assert!(try_spawn_an_npc(&c, &mut rng).is_none());
         }
+    }
+
+    /// W4-g84: the `SpawnOnPlayer` generic ground scan
+    /// (`NPC.cs:80565-80632`) — the bulb's Plantera summon rides it. On the
+    /// open `ground_tall` floor the scan finds a ground tile inside the
+    /// spawn area, deterministically per seed; the chosen cell is solid
+    /// with the 2×3 clear rect above it (the non-final attempts' gates).
+    #[test]
+    fn w4_g84_spawn_on_player_tile_finds_open_ground() {
+        let w = ground_tall();
+        let mut c = ctx_at(&w, true);
+        c.nearby_active_npcs = 0.0;
+        let (spawn_area, _) = get_spawn_area(&c);
+        for seed in 1..40u64 {
+            let mut rng = UnifiedRandom::new(seed as i32);
+            let (x, y) = spawn_on_player_tile(&c, &mut rng)
+                .unwrap_or_else(|| panic!("seed {seed} found no ground"));
+            assert!(
+                x >= spawn_area.left && x < spawn_area.right,
+                "the column inside the spawn area"
+            );
+            assert!(
+                y >= spawn_area.top && y <= spawn_area.bottom,
+                "the ground row inside the area"
+            );
+            assert!(
+                w.tile(x, y)
+                    .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind)),
+                "the chosen cell is solid ground"
+            );
+            // Determinism: the same seed replays the same tile.
+            let mut rng2 = UnifiedRandom::new(seed as i32);
+            assert_eq!(spawn_on_player_tile(&c, &mut rng2), Some((x, y)));
+        }
+    }
+
+    /// W4-g84: `stamp_boss_spawn` — the `NewNPC` 937 window × the
+    /// `SpawnBoss` ×20 (`NPC.cs:80772`/`:80686`) and the `HasAwoken`
+    /// broadcast in `ChatColors.BossOrEvent` (`:80702-80704`).
+    #[test]
+    fn w4_g84_stamp_boss_spawn_window_and_broadcast() {
+        let mut n = Npc::new(NpcKind::Plantera, 0.0, 0.0, 1, 0.0);
+        let mut chat = crate::chat::ChatMonitor::default();
+        stamp_boss_spawn(&mut n, &mut chat, "Plantera");
+        assert_eq!(n.despawn_timer, 18740);
+        assert_eq!(chat.messages.len(), 1);
+        assert!(chat.messages[0].text.contains("Plantera has awoken"));
+        assert_eq!(chat.messages[0].color, crate::chat::COLOR_BOSS_OR_EVENT);
     }
 
     #[test]

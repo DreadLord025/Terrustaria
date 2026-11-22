@@ -1261,6 +1261,151 @@ pub(crate) fn draw_tiles(
                             stats.quads += 1;
                         }
                     }
+                } else if matches!(
+                    tile.kind,
+                    236 | 238 | 702 | 485 | 490 | 652 | 521 | 522 | 523 | 524 | 525 | 526
+                        | 527 | 530 | 651 | 705 | 489 | 493 | 233 | 519
+                ) {
+                    // W4-g84: the MultiTileGrass 2×2 / 3×2 family never draws
+                    // through `DrawSingleTile` — C# registers the object's
+                    // top-left as a MultiTileGrass special
+                    // (`TileDrawing.cs:606-687`) and
+                    // `DrawMultiTileGrass`/`DrawMultiTileGrassInWind`
+                    // (`:8760-8795`, `:8916-9032`) draw it about the
+                    // bottom-centre anchor. The row-major loop draws each
+                    // cell inline with the same per-cell transform (the
+                    // sunflower's documented z-order approximation);
+                    // `windCycle = 0` (underground / calm) degenerates to
+                    // the static draw. The 2×2 default-arm family
+                    // (236/238/702 bulb + Life Fruit, 485 antlion larva,
+                    // 490 weather vane, 652 echo detritus) takes `num = 0.15`;
+                    // the dragonfly jars 521-527 freeze (`num = 0`,
+                    // `flag = false`, `:8940-8949`); the 3×2 oasis/echo plants
+                    // 530/651/705 use the wider anchor (`:8769-8774`); the
+                    // 489 pinwheel is 2×3 (`:8788-8791`) and the 493 golf flag
+                    // 1×2 with a wind-sign flip + ∓6 px shift (`:8792-8795`,
+                    // `:8983-8997`); the 233 detritus splits 3×2 / 2×2 by frame
+                    // row (`:8765-8768`) and the 519 cattail climbs its stem
+                    // (`:8796-8800`, `ClimbCatTail :8807-8827`). Only 238
+                    // animates a row (`:5441-5444`); 485/490/489/493's
+                    // animation rides the landed `drawdata_cases_b` arms.
+                    let (sw, flip_xor, dx) = if matches!(tile.kind, 530 | 651 | 705) {
+                        (
+                            crate::render::multi_tile_grass::grass_sway_3x2(
+                                wind, world, tx, ty, tile.frame_x, tile.frame_y, dd.top,
+                                sunflower_wind_counter,
+                            ),
+                            false,
+                            0.0,
+                        )
+                    } else if tile.kind == 489 {
+                        (
+                            crate::render::multi_tile_grass::grass_sway_2x3(
+                                wind, world, tx, ty, tile.frame_x, tile.frame_y, dd.top,
+                                sunflower_wind_counter,
+                            ),
+                            false,
+                            0.0,
+                        )
+                    } else if tile.kind == 493 {
+                        crate::render::multi_tile_grass::golf_flag_sway(
+                            wind, world, tx, ty, tile.frame_x, tile.frame_y, dd.top,
+                            sunflower_wind_counter, dd.flip,
+                        )
+                    } else if tile.kind == 233 {
+                        (
+                            crate::render::multi_tile_grass::detritus_sway(
+                                wind, world, tx, ty, tile.frame_x, tile.frame_y, dd.top,
+                                sunflower_wind_counter,
+                            ),
+                            false,
+                            0.0,
+                        )
+                    } else if tile.kind == 519 {
+                        (
+                            crate::render::multi_tile_grass::cattail_sway(
+                                wind, world, tx, ty, dd.top, sunflower_wind_counter,
+                            ),
+                            false,
+                            0.0,
+                        )
+                    } else {
+                        let freeze = matches!(tile.kind, 521..=527);
+                        (
+                            crate::render::multi_tile_grass::grass_sway_2x2(
+                                wind, world, tx, ty, tile.frame_x, tile.frame_y, dd.top,
+                                sunflower_wind_counter, 0.15, freeze,
+                            ),
+                            false,
+                            0.0,
+                        )
+                    };
+                    let (dw, dh) = (dd.width as f32, dd.height as f32);
+                    // `tileLight = Lighting.GetColor(i, j)` (`:8975`) — the
+                    // special pass applies NO `GetFinalLight` actuation
+                    // ghost; `DrawTiles_GetLightOverride` (`:8977`,
+                    // `:6626-6629`) maps a Glow-coated cell to White. The
+                    // vision-changer chain (`:8976`) is identity without
+                    // the unported potions (the d56 lane).
+                    let bulb_l = if tile.fullbright_block() {
+                        [1.0; 3]
+                    } else {
+                        raw_l
+                    };
+                    let tint = style.shade(bulb_l, tx, ty, anim_time);
+                    // `DrawNature(vector + (0, vector3.Y), …, tileLight,
+                    // windCycle * num * num3, origin, …)` (`:9024`) — the
+                    // painted texture (`GetTileDrawTexture`, `:9000`), the
+                    // cell's `vector2 = (i*16, j*16 + tileTop)` (`:8982`);
+                    // the 493 golf flag's ∓6 px shift rides `vector2.X`
+                    // (`:8991-8995`) and its flip toggles `tileSpriteEffect`.
+                    r.push_sprite_origin_rot_paint(
+                        [pos[0] + dx, pos[1] + dd.top as f32 + sw.dy],
+                        [dw, dh],
+                        flip_uv(tf.uv, dd.flip ^ flip_xor),
+                        [tint[0], tint[1], tint[2], 1.0],
+                        sw.rot,
+                        sw.pivot,
+                        tile.paint(),
+                    );
+                    stats.quads += 1;
+                } else if crate::render::multi_tile_vines::is_multi_tile_vine(tile.kind) {
+                    // W4-g84 follow-up: the hanging-object bucket never draws
+                    // through `DrawSingleTile` — C# registers the object's
+                    // top-left as a MultiTileVine special
+                    // (`TileDrawing.cs:549-599`) and
+                    // `DrawMultiTileVines`/`DrawMultiTileVinesInWind`
+                    // (`:8829-8888`, `:9238-9603`) draw it about the
+                    // TOP-centre anchor with the platform lift, the style
+                    // tables, the jar glow / lid / item-icon specials and the
+                    // shared-seed flame tail. The row-major loop draws each
+                    // cell inline with the same per-cell transform (the
+                    // sunflower / bulb documented z-order approximation).
+                    let (tlx, tly, sx, sy) = crate::render::multi_tile_vines::vine_top_left(
+                        tile.kind, tx, ty, tile.frame_x, tile.frame_y,
+                    );
+                    let sw = crate::render::multi_tile_vines::vine_sway(
+                        wind, world, tx, ty, tlx, tly, sx, sy, dd.top,
+                        sunflower_wind_counter,
+                    );
+                    // `tileLight = Lighting.GetColor(i, j)` (`:9486`) — the
+                    // special pass applies NO `GetFinalLight` actuation ghost;
+                    // `DrawTiles_GetLightOverride` (`:9488`, `:6626-6629`)
+                    // maps a Glow-coated cell to White. The vision-changer
+                    // chain (`:9487`) is identity without the unported
+                    // potions (the d56 lane).
+                    let vine_l = if tile.fullbright_block() { [1.0; 3] } else { raw_l };
+                    let tint = style.shade(vine_l, tx, ty, anim_time);
+                    // The shared flame seed (`:9590-9594`): the object's
+                    // first cell in the C#'s x-outer/y-inner walk is the
+                    // top-left; the inline pass derives it from that cell.
+                    let shared_seed = tr_core::flame::frame_seed_for(
+                        tr_core::flame::tile_frame_seed_at(anim_time), tlx, tly,
+                    );
+                    stats.quads += crate::render::multi_tile_vines::draw_vine_cell(
+                        r, lookups, atlas, world, tile, &dd, tf, &sw, tlx, tly, tx, ty,
+                        tint, anim_time, params, shared_seed,
+                    );
                 } else if sway != 0.0 {
                     // `DrawGrass`'s swaying sprite: shifted by `(cycle, |cycle|)`
                     // and rotated `cycle * 0.1` about
@@ -1421,8 +1566,14 @@ pub(crate) fn draw_tiles(
                 // (`TileDrawing.cs:1723`): the flame/glow overlays draw right
                 // after the tile sprite, in the same row-major order, with their
                 // own self-lit colours (the light map does not tint them).
-                stats.quads +=
-                    draw_tile_flames(r, lookups, world, tile, &dd, tx, ty, params, anim_time);
+                // The MultiTileVine bucket draws its OWN flame tail + glow in
+                // `draw_vine_cell` (`:9585-9600`) — C# never calls
+                // `DrawSingleTile_Flames` for a special-pass tile, so the
+                // inline overlay is skipped for those kinds (no double-draw).
+                if !crate::render::multi_tile_vines::is_multi_tile_vine(tile.kind) {
+                    stats.quads +=
+                        draw_tile_flames(r, lookups, world, tile, &dd, tx, ty, params, anim_time);
+                }
             }
         }
         if run_start >= 0 {
@@ -2314,6 +2465,104 @@ mod tests {
             body.matches("ropes::draw_back_rope").count(),
             1,
             "one hook, gated by wants_back_rope for both C# sites"
+        );
+    }
+
+    /// W4-g84 draw-order witness: the bulb arm sits BEFORE the generic
+    /// `dd.top != 0` arm (the case-238 top 2 would otherwise route the cell
+    /// into the static raised draw) and AFTER the sunflower arm — the
+    /// `DrawMultiTileGrass` roster order (`TileDrawing.cs:8756-8764`, 27
+    /// first, 236/238/702 next). The transform rides the sunflower counter
+    /// (`_sunflowerWindCounter`, `:8918`) and the RAW cell light (`:8975`,
+    /// never the actuation-ghosted `l`), with the Glow-coating White
+    /// override (`DrawTiles_GetLightOverride :6626-6629`). The follow-up
+    /// folds the Life Fruit siblings 236/702 into the same arm (the shared
+    /// `236/238/702` registration `:606-613` and size arm `:8760-8764`).
+    #[test]
+    fn w4_g84_the_bulb_arm_draws_before_the_generic_raised_arm() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let sunflower = body.find("} else if tile.kind == 27 {").expect("sunflower arm");
+        let bulb = body
+            .find("236 | 238 | 702 | 485 | 490 | 652")
+            .expect("MultiTileGrass family arm");
+        let raised = body.find("} else if dd.top != 0").expect("generic raised arm");
+        assert!(sunflower < bulb && bulb < raised, "roster order 27 → MultiTileGrass family → generic");
+        let arm = &body[bulb..raised];
+        assert!(
+            arm.contains("multi_tile_grass::grass_sway_2x2")
+                && arm.contains("multi_tile_grass::grass_sway_3x2"),
+            "the family draws through the MultiTileGrass transforms"
+        );
+        assert!(
+            arm.contains("sunflower_wind_counter"),
+            "the pass rides _sunflowerWindCounter (:8918)"
+        );
+        assert!(
+            arm.contains("raw_l") && arm.contains("fullbright_block"),
+            "raw Lighting.GetColor + the Glow-coating White override"
+        );
+        assert!(
+            arm.contains("push_sprite_origin_rot_paint"),
+            "the painted DrawNature call (:9000/:9024)"
+        );
+        // The 521-527 freeze rides the general 2x2 arm's `freeze` flag.
+        assert!(
+            arm.contains("521..=527") && arm.contains("freeze"),
+            "the dragonfly jars freeze (num = 0, flag = false, :8940-8949)"
+        );
+        // Exactly one family dispatch site.
+        assert_eq!(body.matches("236 | 238 | 702 | 485").count(), 1);
+        assert_eq!(body.matches("tile.kind == 238").count(), 0);
+    }
+
+    /// W4-g84 follow-up draw-order witness: the MultiTileVine arm sits AFTER
+    /// the MultiTileGrass family and BEFORE the generic raised arm — the
+    /// `PostDrawTiles` bucket order (`TileDrawing.cs:421-422`, MultiTileVines
+    /// bucket 3 drains before MultiTileGrass bucket 2, but both precede the
+    /// inline generic draw). The arm rides the sunflower counter (`:9240`),
+    /// the RAW cell light (`:9486`) + Glow override, and skips the inline
+    /// `draw_tile_flames` (the bucket draws its own flame tail, `:9589-9600`).
+    #[test]
+    fn w4_g84_the_vine_arm_draws_before_the_generic_raised_arm() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let grass = body
+            .find("236 | 238 | 702 | 485 | 490 | 652")
+            .expect("MultiTileGrass family arm");
+        let vine = body
+            .find("multi_tile_vines::is_multi_tile_vine(tile.kind)")
+            .expect("MultiTileVine arm");
+        let raised = body.find("} else if dd.top != 0").expect("generic raised arm");
+        assert!(grass < vine && vine < raised, "roster order grass → vine → generic");
+        let arm = &body[vine..raised];
+        assert!(
+            arm.contains("multi_tile_vines::vine_sway")
+                && arm.contains("multi_tile_vines::draw_vine_cell"),
+            "the bucket draws through the MultiTileVine transform + cell draw"
+        );
+        assert!(
+            arm.contains("sunflower_wind_counter"),
+            "the pass rides _sunflowerWindCounter (:9240)"
+        );
+        assert!(
+            arm.contains("raw_l") && arm.contains("fullbright_block"),
+            "raw Lighting.GetColor + the Glow-coating White override (:9486/:9488)"
+        );
+        // The inline flame overlay is gated off for the bucket (no double-draw).
+        let flame_gate = body
+            .find("if !crate::render::multi_tile_vines::is_multi_tile_vine(tile.kind) {")
+            .expect("the flame-overlay gate");
+        assert!(
+            body[flame_gate..].contains("draw_tile_flames"),
+            "the gate guards the inline DrawSingleTile_Flames call"
+        );
+        // Exactly one vine dispatch site.
+        assert_eq!(
+            body.matches("multi_tile_vines::is_multi_tile_vine(tile.kind)").count(),
+            2, // the dispatch arm + the flame-overlay gate
         );
     }
 

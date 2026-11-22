@@ -92,6 +92,8 @@ per `docs/superpowers` agreements).
 
 | 321 | Death-effects-family bible FINAL + the W4-g59 SEAL (research FINAL; renumber 283→321 per registry-150 §9.2 — f26's §7.3 reservation KEEPS 283, g59 → 321; original round-2 pick: 283 first-free at 360 tips): SEAL 1 ACTIVATIONS-2 landed (17 newly-rowed + 15 base-folds + 129 match types / 43 row-gated remainder); SEAL 2 g60f compose consumed + refreshed at g59 d277f782b × f5 b68eac297 — g59∩f5 = 110 kinds / 56 fn-rows (+17 = the activations), strip total 221 actionable / 0 conditional (supersedes 204); SEAL 3 f5f gore-seal consumed + f10 afea4c0fc delete EXECUTED (152 fns/147 gates/157 witnesses cross-verified) + g62 f5ce54743 the 4 hit-half bodies PORTED; SEAL 4 boundary CLEAN max cs_id 229 ≤ 230 (mechanical 129-id re-check); SEAL 5 the family bible one-paragraph + gate-commands re-run (1578 Σ / 853 window) + witness union 418 distinct (was 404, +14); code-only | `321-death-effects-family-bible.md` | ✅ SEALED |
 
+| 137 | g84 inline arms vs g31 drains keep-one seam-mapping (W4-g84 final phase: the per-kind MultiTileGrass/MultiTileVines arm↔bucket table, the duplicate helpers, the animator-row feed the merger must bind) | `137-g84-g31-keep-one.md` | ✅ |
+
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
   counts question is ticketed.

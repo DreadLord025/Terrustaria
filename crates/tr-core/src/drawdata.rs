@@ -1713,6 +1713,26 @@ mod tests {
         );
     }
 
+    /// W4-g84: the bulb's animation rows — case 238 replaces the generic
+    /// `tileFrame * 38` default with `tileFrame * 36`
+    /// (`TileDrawing.cs:5441-5444`), top 2 on every row; the four rows of
+    /// the `Main.cs:18709-18718` animator map to sheet Y 0/36/72/108.
+    #[test]
+    fn w4_g84_plantera_bulb_animation_rows() {
+        for row in 0..4 {
+            let d = dd(238, 0, 0, 0, 0, row);
+            assert_eq!(d.add_fr_y, (row * 36) as i16, "row {row}");
+            assert_eq!(d.top, 2);
+            assert_eq!((d.width, d.height), (16, 16));
+            assert_eq!(d.add_fr_x, 0);
+            assert!(!d.flip);
+        }
+        // The frame columns (style/col grid) pass through untouched.
+        let d = dd(238, 4, 0, 90, 18, 2);
+        assert_eq!((d.frame_x_override, d.frame_y_override), (None, None));
+        assert_eq!(d.add_fr_y, 72);
+    }
+
     #[test]
     fn dye_plants_are_32x38_and_flip() {
         // top -20 except the planted column (tileFrameX == 238 -> -6)
