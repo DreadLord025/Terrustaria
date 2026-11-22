@@ -289,6 +289,15 @@ mod tests {
     // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
+    // W4-g72 lane 3 (2026-11-21, code-only): the cave block lands in the
+    // world tail ahead of the moon roll (see SEED42_512 above). The DEFAULT
+    // world (4200 wide) takes ARM A: 1 band draw + 2 style draws + the
+    // style[1] rejection loop + the ice/hell/jungle tail — the shared-rng
+    // tail advances by 6+ draws before the moon `Next(9)`. No tile-writing
+    // step draws after the tail (the seed-finish steps ride `pass_rng`), so
+    // the tile hash is expected UNCHANGED here too; if the gate measures a
+    // shift, re-pin (stale-by-design, after the S1-P-i33 mask fix re-pin).
+    // `a == b` stays green (both runs draw identically).
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

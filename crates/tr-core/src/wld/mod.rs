@@ -1607,6 +1607,12 @@ mod tests {
         world.day_time = false;
         world.moon_type = 5;
         world.moon_phase = 3;
+        // W4-g72: the cave-background roll rides the round-trip at distinct
+        // non-default values (arm-C-shaped: three bands, four styles).
+        world.cave_back_x = [120, 240, 290, 0];
+        world.cave_back_style = [3, 1, 7, 5];
+        world.ice_back_style = 2;
+        world.jungle_back_style = 1;
         world.hell_back_style = 2;
         world.blood_moon = true;
         world.eclipse = true;

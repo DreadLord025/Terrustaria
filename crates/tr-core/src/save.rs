@@ -446,16 +446,25 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
         w.write_all(&x.to_le_bytes())?; // [0..12]
     }
     w.write_all(&world.forest_bg_styles)?; // [12..16] treeBG1..4
-    // [16..47] cave block (g72 seat — placeholder until its landing).
-    w.write_all(&[0u8; 31])?;
+    // [16..47] cave block (W4-g72 — `WorldFile.cs:1260-1269`, the same
+    // values the `.wld` flags block carries; caveBackX[3] never persisted).
+    for i in 0..3 {
+        w.write_all(&world.cave_back_x[i].to_le_bytes())?; // [16..28]
+    }
+    for &s in &world.cave_back_style {
+        w.write_all(&s.to_le_bytes())?; // [28..44]
+    }
+    w.write_all(&[world.ice_back_style, world.jungle_back_style, world.hell_back_style])?; // [44..47]
     w.write_all(&[
         world.snow_bg_style,
         world.desert_bg_style,
         world.ocean_bg_style,
     ])?; // [47..50]
-    // [50..63] flag middle (crimson/moon/underworld/pets/empress/books —
-    // placeholders until their batches land; strict C# row order).
-    w.write_all(&[0u8; 13])?;
+    // [50..56] crimson + moon bosses (g69/c39 — other batches, placeholder).
+    w.write_all(&[0u8; 6])?;
+    w.write_all(&[world.underworld_bg_style])?; // [56] :1376 (g71 seat, live)
+    // [57..63] pets/empress/books (g87/d125/g90 — other batches, placeholder).
+    w.write_all(&[0u8; 6])?;
     // [63..107] identity block (c43/f45 claim — the fields already live on
     // World; the .trwld never persisted them before v18).
     w.write_all(&world.generator_version.to_le_bytes())?; // [63..71]
@@ -854,11 +863,24 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
         for s in &mut world.forest_bg_styles {
             *s = r.u8()?; // [12..16]
         }
-        r.skip(31)?; // [16..47] cave block — g72 seat, read at its landing
+        // [16..47] cave block (W4-g72). The C# boot roll (`Main.cs:6603`)
+        // fires BEFORE any world load, so it does NOT restore them — the
+        // load's read overwrites the boot roll (research/64 §2 corrected).
+        for slot in world.cave_back_x.iter_mut().take(3) {
+            *slot = r.i32()?; // [16..28]
+        }
+        for slot in world.cave_back_style.iter_mut() {
+            *slot = r.i32()?; // [28..44]
+        }
+        world.ice_back_style = r.u8()?; // [44]
+        world.jungle_back_style = r.u8()?; // [45]
+        world.hell_back_style = r.u8()?; // [46]
         world.snow_bg_style = r.u8()?; // [47]
         world.desert_bg_style = r.u8()?; // [48]
         world.ocean_bg_style = r.u8()?; // [49]
-        r.skip(13)?; // [50..63] flag middle — claimant batches read their seats
+        r.skip(6)?; // [50..56] crimson + moon bosses — claimant batches
+        world.underworld_bg_style = r.u8()?; // [56] :1376
+        r.skip(6)?; // [57..63] pets/empress/books — claimant batches
         world.generator_version = r.u64()?; // [63..71]
         world.unique_id = {
             let mut id = [0u8; 16];
@@ -1294,6 +1316,37 @@ mod tests {
     }
 
     #[test]
+    fn w4_g72_the_cave_background_roll_round_trips_in_v18() {
+        // The v18 UNION head's cave block at the A3 offsets [16..47]
+        // (research/218 §1-FULL.2): the three band boundaries + the four
+        // styles + the variant bytes survive the save; `cave_back_x[3]`
+        // stays 0 (never rolled/persisted — the C# writes only [0..3],
+        // `WorldFile.cs:1260-1262`).
+        let mut w = World::new("Test".into(), 32, 32);
+        w.cave_back_x = [120, 240, 290, 7]; // [3] must NOT round-trip
+        w.cave_back_style = [3, 1, 7, 5];
+        w.ice_back_style = 2;
+        w.jungle_back_style = 1;
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        let (back, _) = parse(&buf).unwrap();
+        assert_eq!(back.cave_back_x, [120, 240, 290, 0]);
+        assert_eq!(back.cave_back_style, [3, 1, 7, 5]);
+        assert_eq!((back.ice_back_style, back.jungle_back_style), (2, 1));
+        // A pre-v18 file (the 107-byte UNION head truncated, the version
+        // patched down) loads the World::new zeros — the boot roll
+        // (`Main.cs:6603`) fires before any load and does not restore them
+        // (research/64 §2 corrected: the load overwrites the boot roll).
+        let mut v17 = buf.clone();
+        v17.truncate(v17.len() - 107);
+        v17[8..12].copy_from_slice(&17u32.to_le_bytes());
+        let (back17, _) = parse(&v17).unwrap();
+        assert_eq!(back17.cave_back_x, [0; 4]);
+        assert_eq!(back17.cave_back_style, [0; 4]);
+        assert_eq!((back17.ice_back_style, back17.jungle_back_style), (0, 0));
+    }
+
+    #[test]
     fn m6_save_1b_the_signs_and_plates_round_trip_in_v13() {
         // M6-SAVE-1b: the signs and the weighted pressure plates are `World`
         // fields the C# `.wld` already loads (`LoadSigns`,
@@ -1611,7 +1664,9 @@ mod tests {
         w.tile_entities.place_unchecked(TeKind::ItemFrame, 2, 2);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        buf.truncate(buf.len() - 2); // inside the TE record
+        // Inside the TE record: the v18 cave-bg block (31) rides the stream
+        // end now, so the cut offsets by it (W4-g72).
+        buf.truncate(buf.len() - 2 - 31);
         assert!(parse(&buf).is_err());
     }
 
@@ -1727,7 +1782,7 @@ mod tests {
         }];
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &chest_side(&chests)).unwrap();
-        buf.truncate(buf.len() - 3); // inside the item record
+        buf.truncate(buf.len() - 3 - 31); // inside the item record (+31: v18 tail)
         assert!(parse(&buf).is_err());
     }
 
@@ -1847,7 +1902,7 @@ mod tests {
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
-        buf.truncate(buf.len() - 2); // inside the banner record
+        buf.truncate(buf.len() - 2 - 31); // inside the banner record (+31: v18 tail)
         assert!(parse(&buf).is_err());
     }
 
@@ -1962,7 +2017,7 @@ mod tests {
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
-        buf.truncate(buf.len() - 2); // inside the record
+        buf.truncate(buf.len() - 2 - 31); // inside the record (+31: v18 tail)
         assert!(parse(&buf).is_err());
     }
 
@@ -2089,7 +2144,7 @@ mod tests {
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
-        buf.truncate(buf.len() - 2); // inside the record
+        buf.truncate(buf.len() - 2 - 31); // inside the record (+31: v18 tail)
         assert!(parse(&buf).is_err());
     }
 
@@ -2190,7 +2245,7 @@ mod tests {
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
-        buf.truncate(buf.len() - 3); // inside the tiers
+        buf.truncate(buf.len() - 3 - 31); // inside the tiers (+31: v18 tail)
         assert!(parse(&buf).is_err());
     }
 

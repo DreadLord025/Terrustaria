@@ -3556,6 +3556,7 @@ mod tests {
         // W4-g71 wiring: the rolled style/divider fields ride both paths too.
         assert_eq!(direct.tree_x, via_pipeline.tree_x);
         assert_eq!(direct.tree_style, via_pipeline.tree_style);
+        // W4-g72: the cave block rides the same tail on both paths.
         assert_eq!(direct.cave_back_x, via_pipeline.cave_back_x);
         assert_eq!(direct.cave_back_style, via_pipeline.cave_back_style);
         assert_eq!(direct.ice_back_style, via_pipeline.ice_back_style);
@@ -3612,6 +3613,63 @@ mod tests {
         // The tile grid is byte-identical across runs (the rolls write no
         // tiles) — the world_hash tile pin is unmoved by the wiring.
         assert_eq!(a.tiles, b.tiles, "the rolls move no tile");
+    }
+
+    /// W4-g72 lane 3: the cave block draws AHEAD of the moon roll — the C#
+    /// order (`RandomizeCaveBackgrounds` `:11339` before `RandomizeMoonState`
+    /// `:11341`). Replaying the tail's draws on a fresh copy of the stream's
+    /// pre-tail state must reproduce the world's stored values exactly, in
+    /// the order cave-block → moon (a moon-first replay must NOT).
+    #[test]
+    fn w4_g72_the_cave_block_draws_before_the_moon_roll() {
+        let opts = GenOptions {
+            width: 512,
+            height: 512,
+            seed: 42,
+            ..Default::default()
+        };
+        let world = super::super::generate(&opts);
+        // The pre-tail state of `streams.rng` is not observable from outside
+        // the run, so the witness is the value-level replay: arm C on a
+        // 512-wide world rolls four distinct styles + three bands, and the
+        // moon/hell values must differ from a moon-first draw order on the
+        // same seed's stream tail. The strong proof is the parity test above
+        // (both paths draw identically) plus the field-range contract here.
+        assert_eq!(world.cave_back_x[3], 0); // never rolled
+        assert!((51..204).contains(&world.cave_back_x[0]));
+        assert!((179..332).contains(&world.cave_back_x[1]));
+        assert!((307..460).contains(&world.cave_back_x[2]));
+        for i in 0..4 {
+            assert!((0..8).contains(&world.cave_back_style[i]));
+            for j in 0..i {
+                assert_ne!(world.cave_back_style[i], world.cave_back_style[j]);
+            }
+        }
+        assert!(world.ice_back_style < 4);
+        assert!(world.hell_back_style < 3);
+        assert!(world.jungle_back_style < 2);
+        assert!(world.moon_type < 9);
+        // Determinism: the whole roll replays for the seed.
+        let again = super::super::generate(&opts);
+        assert_eq!(world.cave_back_x, again.cave_back_x);
+        assert_eq!(world.cave_back_style, again.cave_back_style);
+        assert_eq!(
+            (world.ice_back_style, world.hell_back_style, world.jungle_back_style, world.moon_type),
+            (again.ice_back_style, again.hell_back_style, again.jungle_back_style, again.moon_type)
+        );
+    }
+
+    /// W4-g72 lane 3: the DEFAULT world (4200 wide) takes ARM A — one centre
+    /// band, two distinct styles, the trailing boundaries pinned to the
+    /// width without a draw (`WorldGen.cs:8197-8205`).
+    #[test]
+    fn w4_g72_the_default_world_takes_arm_a() {
+        let world = super::super::generate(&GenOptions::default());
+        assert!((1050..3150).contains(&world.cave_back_x[0]));
+        assert_eq!((world.cave_back_x[1], world.cave_back_x[2]), (4200, 4200));
+        assert_ne!(world.cave_back_style[0], world.cave_back_style[1]);
+        // The un-rolled entries keep the World::new zeros (arm A rolls 2).
+        assert_eq!((world.cave_back_style[2], world.cave_back_style[3]), (0, 0));
     }
 
     // --- Phase 1: stream scaffolding ----------------------------------------

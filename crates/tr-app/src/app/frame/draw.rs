@@ -245,6 +245,7 @@ impl App {
                     bg_alpha_far,
                     forest_hills,
                     bg_flash,
+                    ug_back,
                     stars,
                     player_assets,
                     player,
@@ -1218,6 +1219,10 @@ impl App {
                                 }
                             }),
                         scene_state.graveyard_visual_intensity,
+                        // W4-g72: the live style pick's inputs — the scene
+                        // metrics + the underground style latch.
+                        &self.scene_metrics,
+                        ug_back,
                         scene_state.shimmer_alpha,
                     );
                     // `Main.cs:62217`: `ScreenDarkness.DrawBack` sits right after

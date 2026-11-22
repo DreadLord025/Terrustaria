@@ -106,11 +106,15 @@ pub struct World {
     /// fast-forward request, consumed by the next dusk transition. Runtime-only.
     pub fast_forward_to_dusk: bool,
     /// `Main.hellBackStyle` (0..2): picks the animated magma sheet `Background_125..127`
-    /// and the hell floor row `Background_185..187` (`Main.cs:54000-54008`). Vanilla
-    /// rolls it in `WorldGen.RandomizeCaveBackgrounds` (`WorldGen.cs:8247`); the port
-    /// draws it in the wired world tail (`cave_bg::randomize_cave_backgrounds`, the
-    /// `Next(3)` folded into the cave block) and persists it in the `.wld` flags block
-    /// (`WorldFile.cs:1269`). Loaded worlds keep the file value.
+    /// and the hell floor row `Background_185..187` (`Main.cs:54000-54008`).
+    /// Rolled by `WorldGen.RandomizeCaveBackgrounds` (`WorldGen.cs:8247`) at
+    /// generation (`:11339`, the `Next(3)` folded into the wired cave block)
+    /// and once at process boot (`Main.cs:6603`, `Initialize_AlmostEverything`
+    /// — BEFORE any world load, so the load's `WorldFile.cs:2067` read
+    /// overwrites the boot roll, not vice versa; research/64 §2 corrected).
+    /// The `.wld` DOES persist it (`WorldFile.cs:1269` write / `:2067` read —
+    /// the old "not part of the format" note here was wrong); loaded worlds
+    /// keep the stored value.
     pub hell_back_style: u8,
     /// `Main.caveBackX[0..4]` (`Main.cs:595`, `new int[4]` `Main.cs:66696`): the
     /// tile-x dividers between the four cave background bands, rolled by

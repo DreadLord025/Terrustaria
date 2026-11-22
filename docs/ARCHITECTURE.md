@@ -30,7 +30,7 @@ an agent needs before touching code.
 | Legacy menu (`Main.DrawMenu`): settings, multiplayer, confirms, credits | `menu/` — `mod.rs` (items/state) + `pages.rs` (rows) + `actions.rs` (semantics); `app/settings_ui.rs` |
 | Fixed 60 Hz simulation | `world_sim/` — `step.rs` (`FixedStepper`), `player`, `npcs`, `items`, `projectiles`, `editing`, `clock`, `liquids`, `weather`, `camera` |
 | Sky, sun/moon, clouds, surface background stack | `render/sky.rs`; style transitions in `biome.rs` |
-| Underground backgrounds (`Main.DrawBackground` family) | `render/bg.rs` |
+| Underground backgrounds (`Main.DrawBackground` family) | `render/bg.rs` (+ `render/bg_styles.rs` / `render/underworld_bg.rs`, UNWIRED style machine + hell stack — W4-g72) |
 | Tile/wall pass, liquids draw, entities, tree foliage, debug overlay | `render/{tiles,liquids,entities,foliage,debug}.rs` |
 | Player physics / collision | `player.rs`, `collision.rs`, `mount.rs` (the mount data table + state); the 60 Hz tick in `world_sim/player.rs` |
 | Minecart riding (rails/boost/ramp/sparks) | `minecart.rs` (the track state machine + the spark pool), the ride seams in `player.rs` / `world_sim/player.rs`, the pool tick/draw in `app/frame.rs` |
@@ -306,7 +306,13 @@ PNGs plus all 32 tree canopy/branch styles and the 42 cloud textures in parallel
   `app/frame.rs`: `sky.rs` (the sky gradient, stars, sun/moon arc, clouds, the
   `DrawSurfaceBG` biome layer stack and its cross-fade), `bg.rs` (the `Main.DrawBackground`
   family: surface transition, dirt sheet, underworld black box, rock, magma — with the
-  shared `PassPrologue`), `tiles.rs` (the tile/wall/slope loop + the sunflower's
+  shared `PassPrologue`), `bg_styles.rs` (the cavern style pick + 22-case sheet table +
+  `ugBackTransition` step, UNWIRED — W4-g72), `bg_target.rs` (the background-target
+  capture/consume seams — the style-specific half d69's S1-G-13 family does not own:
+  the `WorldSceneLayerTarget` camera-override adapter, the `DoDraw` consume dispatch, the
+  underworld `screenTarget` routing, the cross-fade tint, the `DrawCapture` camera override
+  and the layer-plan→sprite adapter; UNWIRED — W4-g72), `underworld_bg.rs` (the hell parallax stack
+  geometry, UNWIRED — W4-g72), `tiles.rs` (the tile/wall/slope loop + the sunflower's
   special sway pass and its own wind counter), `liquids.rs` (the two
   `Main.DrawLiquid(bg)` passes), `entities.rs` (player/NPC sprite composition, held item,
   the map head icon), `foliage.rs` (tree canopies/branches), `debug.rs` (the overlay and

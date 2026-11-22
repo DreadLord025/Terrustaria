@@ -1612,21 +1612,242 @@ hell floor line (`hellBlackBoxBottom` is produced by the previous frame's magma 
 
 Deviations kept for the rock/magma passes: the 9-slice/4-slice light smoothing
 (`Lighting.GetColor9Slice/4Slice`) is collapsed to the flat per-cell colour, like the dirt
-pass; `undergroundBackground` is pinned to the classic set (`Main.cs:53817-53824`) because
-`PickUndergroundBackgroundStyle` needs `Main.caveBackX`/`caveBackStyle` and the
-`SceneMetrics` zone counts, so the per-biome cave sets (`Main.cs:53825-53987`) and the
-`ugBackTransition` cross-fade are dead code; XNA clamps out-of-range source rectangles to
+pass; `undergroundBackground` is pinned to the classic set (`Main.cs:53817-53824`) in the
+LIVE pass — the style machine itself is now ported UNWIRED (W4-g72 lane 3,
+`render/bg_styles.rs`: `DrawBackground_PickUndergroundBackgroundStyle` `Main.cs:54033-54095`,
+the full 22-case `UpdateBackgroundStyles` sheet table `:53812-54008` and the
+`ugBackTransition` latch/decay step `:52823-52841`, 9 witnesses written not run). Wiring
+is blocked on two owned-state gaps: the per-biome sheets overflow the single 8192 px atlas
+(the full static+gore set already packs to 7530 px, measured with the `tools/atlas_sim.js`
+skyline twin — even one extra biome set overflows), and the style rolls
+(`WorldGen.RandomizeCaveBackgrounds`, `WorldGen.cs:8192-8249`) would insert draws into the
+worldgen tail and move the frozen `world_hash` pins. The wall-parallax gate IS live and
+now carries the full `WallLightAt(i, j, showInvisibleWalls)` (`Main.cs:55169-55181`): an
+Echo-coated non-light wall keeps lighting the backdrop while invisible walls are hidden
+(the coating is set by `WorldGen.cs:966/970/976` and the `.wld` load `WorldFile.cs:2672` —
+the old "never set, table alone decides" shortcut was wrong); the show flag rides the
+`TR_SHOW_INVISIBLE` pin until the Echo Monolith / see-invisible accessory lands. XNA clamps out-of-range source rectangles to
 the sheet edge (`SamplerState.PointClamp`, `Main.cs:2774`) and the port clamps the cell's
 source offset instead вЂ” the quad-UV pipeline cannot smear per pixel, which only affects
 the last 16 px column of each 128 px rock block. The draw pad `Main.offScreenRange` (the
 padded render target of `WorldSceneLayerTarget`) cancels out of the draw positions in the
 port's unpadded viewport and survives only as the dirt sheet's visibility padding.
 
+The hell parallax stack (`Main.DrawUnderworldBackground`/`DrawUnderworldBackgroundLayer`,
+`Main.cs:52665-52796` — the five-layer `TextureAssets.Underworld` stack `DrawBG` runs after
+`DrawSurfaceBG`, `:64050-64053`) is ported UNWIRED as pure geometry (W4-g72 lane 3,
+`render/underworld_bg.rs`): the `(maxTilesY - 220) * 16` gate, the `(zoom - 1) * 0.5 * 200`
+push-up, the 14-texture switch (texture 1's TRANSPOSED quadrant cycle, the `num4 = 0`
+no-op lifts, the 250/100/20×num2 scaled lifts), the truncated-numerator first index, the
+width-minus-one pitch, the `vec.Floor()` after the index, the strict off-screen walk, the
+`-2 .. +4+ceil` loop span and the layer-0 (11,3,7) black fill row, plus `WorldGen.setBG(9)`'s
+three style sets (`WorldGen.cs:7609-7635`); 9 witnesses with exact-f32-derived expectations
+written not run. Wiring needs the sheets OUTSIDE the tile atlas (the C# draws them through
+`Main.spriteBatch` under the sky matrix): one style set alone measures 8424 px against the
+8192 strict-GPU bound, so a second texture array / target must land first; the `underworldBG`
+style byte is also still skip-read from the `.wld` (`wld/sections/flags.rs:566`).
+
+**d35 atlas-repack cross-note (W4-g72 final).** The 8424/7530 numbers above predate the
+merged W4 wave. d35's atlas-extension (`origin/task/W4-d35-npc-kinds-71-140`, tip
+`6a2a155a`, research/113 §7.4/§9.1 — read, not touched) re-measured on the merged base
+(9904 sheets, skyline worst 9478): style 0 → 10407 (+929), style 1 → 11195 (+1717),
+style 2 → 10402 (+924); EVERY single style overflows page 0 but fits ONE extra page
+(≤3312 px mixed, ≤1904 px own-bg-page) — the block is a single-page artifact. All 14
+`Underworld 0..13` sheets are in d35's bg-inventory (`tools/_d35_bg_inventory.json`,
+0 missing, three style-row scenarios measured + determinism-verified). The recommended
+wiring shape is d35 §9.1's render-to-texture escape, which cites OUR `bg_target.rs`
+screenTarget census: bind `UnderworldLayerPlan` to plain textures in the d69
+`RenderTargetFamily` (≤49 MB for style 1 + one composite pass), NOT atlas pages; the
+§8.4 per-world bg pages are the fallback. The escape is underworld-specific — the
+cavern/surface sheets keep the atlas path (they are tiny: ≤0.101 Mpx per cavern style,
+d35 §7.1) via the per-world bg pages appended after the union.
+
+**Routing correction (W4-g72 lane 3 phase 5, `render/bg_target.rs`).** The earlier "the
+S1-G-13 background-target family" wording above conflated two destinations. The C# census
+(`bg_target.rs` module docs) shows the underworld stack does NOT render into
+`backgroundTarget`: `DrawBG` (`Main.cs:63973-64063`) runs `DrawSurfaceBG` +
+`DrawUnderworldBackground(GameZoomTarget)` (`:64049-64053`) while `DoDraw` has bound
+`screenTarget` via `Filters.Scene.BeginCapture` when `flag3` (`:62098-62100`, the same gate
+as d69's `sky_target_active`); `FilterManager.EndCapture` then composites `skyTarget` FIRST
+and `screenTarget` SECOND into `screenTargetSwap`, both `Color.White` under
+`GameViewMatrix.Effects` (`FilterManager.cs:146-152`). `skyTarget` holds only the gradient /
+stars / sun / moon (`:62025-62095`). The CAVERN tree (`DrawBackground`, `:52798-52853`) is the
+one that captures into `backgroundTarget` (`RenderToTargets` phase 2, `:57290` →
+`RenderBackground` `:55200-55218`), composited with the cave-parallax X shift (`:62213`). In
+both cases the "target texture" is the DESTINATION — the sheets are still `TextureAssets`
+drawn through `Main.spriteBatch`, never the tile atlas. `bg_target.rs` ports the style-specific
+seams d69's generic family (`9ba463ae`, `tr_render::targets`) does not own: the
+`WorldSceneLayerTarget.UpdateContent` camera override → `draw_background` adapter
+(`WorldSceneLayerTarget.cs:49-57` + the `:52818` `drawOffset`), the `DoDraw` background consume
+dispatch (`:62207-62215`, destination math left to d69's `layer_composite_position`), the
+underworld `screenTarget` routing, the `ugBackTransition` byte-truncate cross-fade tint
+(`:53077-53081` et al.), the `DrawCapture` `!CameraSpaceEffects` camera override
+(`:56844-56858`, `Utils.Clamp` max-first + `Rectangle.Intersect`) and the
+`underworld_layer_plan` → sprite adapter (`:52786-52795`, `None`-safe without the atlas-blocked
+sheets). UNWIRED: the frame-path composition is d69's in-flight consumers lane and the sheet
+sources still overflow the atlas; 10 witnesses WRITTEN NOT RUN. No atlas sheet added.
+
+**The cave-style rolls are unowned (W4-g72 lane 3 phase 6, `docs/research/64`).**
+`WorldGen.RandomizeCaveBackgrounds` (`WorldGen.cs:8192-8249`) draws `caveBackX[0..3]` +
+`caveBackStyle[0..4]` (with three distinctness rejection loops) + `iceBackStyle`/`hellBackStyle`/
+`jungleBackStyle` on the shared `genRand` stream, in the worldgen tail BETWEEN
+`RandomizeTreeStyle` (`:11338`) and `RandomizeBackgrounds` (`:11340`) and BEFORE
+`RandomizeMoonState`'s `Next(9)` (`:11341`); it is ALSO rolled at boot (`Main.cs:6603`).
+The port's `step_world_tail` (`pipeline.rs:2685-2731`) drew only `moon_type` + `hell_back_style`.
+Research note 64 documents the exact draw list, order, width-arm bounds and the
+moon-before-cave ordering constraint.
+
+**The cave-style rolls OWNED (W4-g72 lane 3 phases 7-8, `worldgen/cave_bg.rs`).**
+The Lead's port-gap assignment superseded the phase-6 "do not wire" verdict.
+The port now draws the whole block in `step_world_tail` AHEAD of the moon
+`Next(9)` (the C# `:11339`-before-`:11341` order) on the shared xorshift
+stream, through ONE generic driver (`randomize_cave_backgrounds<R: CaveRoll>`)
+that also serves the Knuth boot stream — the three width arms' f64-truncated
+bands (4200: `Next(1050,3150)`; 6400: `Next(857,3417)`/`Next(2988,5548)`; else
+the 0.25/0.5/0.75 ±0.15 bands), the base styles in index order, the three
+distinctness rejection loops in C# order, and the ice-`Next(4)`/hell-`Next(3)`/
+jungle-`Next(2)` tail. The old standalone hell draw is folded into the tail
+(no double draw). `World` gains `cave_back_x: [i32;4]` / `cave_back_style:
+[i32;4]` / `ice_back_style` / `jungle_back_style` (the `[3]` entries keep
+their `new int[4]` zeros — `Main.cs:66696-66697`, never rolled/sent).
+Persistence: the `.wld` flags block writes/reads the arrays
+(`WorldFile.cs:1260-1268`/`:2058-2066`, replacing the zero-writes/skip-reads);
+the `.trwld` v18 tail appends 31 bytes (3 i32 + 4 i32 + 3 u8 — `hellBackStyle`
+joins because the `.trwld` NEVER persisted it before, contrary to the old
+save.rs note); the `7 WorldInfo` header carries the roll host→client
+(`NetMessage.cs:258-278`). **Boot-roll census correction:** `Main.cs:6603`
+fires in `Initialize_AlmostEverything` ONCE per process (splash `:52572` /
+dedServ `:6499`) BEFORE any world load, with `Main.maxTilesX` still its
+static 0 (`Main.cs:1011`) — so it always takes the width-0 else arm, and the
+load's flags read OVERWRITES it (research/64 §2's "re-rolled on every load,
+overwrites the persisted arrays" was backwards). The port executes the boot
+roll in `App::new` on a dedicated `UnifiedRandom(world_seed)` as a dead store
+(the draw-order contract; `rngs.global()` untouched so the menu-path
+witnesses stay pinned). The `world_hash` pins carry stale-by-design notes:
+the tail is the last `streams.rng` consumer and writes no tiles, so the tile
+hash is expected UNCHANGED; the gate re-pins if measured otherwise, `a == b`
+stays green. The gen-side `RandomizeBackgrounds` (`:11340`, the forest
+surface rolls) remains unported — g71 owns the surface setBG slots' PERSISTENCE
+and draw tables, not that roll; inserting it later shifts the moon draw again
+(the same re-pin pattern). Witnesses WRITTEN NOT RUN (code-only).
+
+**The cave-style DRAW chain LIVE (W4-g72 final, `render/bg.rs` + `bg_styles.rs`).**
+The roll→persist→draw chain is closed on the logic side: `draw_background`
+builds `BgStylePickInput` from `World.cave_back_x`/`cave_back_style` (the
+rolled/persisted arrays — `.wld` flags, `.trwld` v18 tail and the `7 WorldInfo`
+header all land in the same fields) + the frame's `SceneMetrics`
+(`bg_style_pick_input`; the Skyblock snow-threshold 300 variant stays the
+documented normal-1500 deviation), runs the `ug_back_step` latch/decay on the
+new `App.ug_back` state (carried across frames like `hellBlackBoxBottom`,
+`Main.cs:52823-52841`), and feeds the picked style into the full 22-case
+`background_style_sheets` table (ice/jungle variants + worldID evil rows +
+hell tail). The `shimmerAlpha == 1` early return (`:52800-52805`) is ported;
+the port's shimmer ramp is unwired so the frame feeds 0.0. The dirt pass now
+draws `back[1]` (the picked style's sheet) instead of the pinned
+`Background_2`; the geometry dims keep reading `Background_2` like the C#'s
+`backgroundHeight[2]`. DEVIATION (graceful degradation): the per-biome sheets
+are still atlas-blocked (d35 research/113 §8.4 per-world bg pages), so
+`back_texture` resolves only the classic-set ids — a non-classic pick skips
+the affected passes (never draws the WRONG biome's sheet). The G6 key needs
+no new input: the backdrop rides the always-rebuilt back range, and the
+style inputs are per-world constants or the per-frame metrics scan.
+3 witnesses WRITTEN NOT RUN (the rolled-array pick + table ids, the
+latch/decay steps, the classic-set regression).
+
+### The cross-fade overlay draws LIVE (W4-g72 closeout)
+
+The `_drawBackground_oldBackTexture` overlays are now WIRED into the same
+live chain (`bg.rs::UgOld` resolves the old-style table once per frame —
+`Main.DrawBackground_UpdateBackgroundStyles`' second switch run,
+`Main.cs:53804-53810` — and every pass draws its overlay while
+`ugBackTransition > 0`). The C# census of the seven overlay families:
+
+| Slot / pass | C# overlay seat | Shape |
+| --- | --- | --- |
+| 0 surface row | `:53768-53797` | SECOND whole loop, re-phased against the OLD sheet's width (`old.Width()-32`), light re-read at the old loop's samples |
+| 1 dirt sheet | `:53651-53694` | SECOND whole corner-lit loop (`GetCornerColors(.., ugBackTransition)` scales the corner sum, `Lighting.cs:299`; alpha `(byte)(255*t)`); the per-cell twins (`:53560/:53608/:53625`) live ONLY in the collapsed slice arms — the plain arm (`:53636-53645`) draws none |
+| 2 rock band | `:53723-53730` | per-cell twin, single row (no `j` pitch) |
+| 3 rock field | `:53249/:53289/:53306/:53327` | per-cell twin in ALL four arms incl. the plain one; row pitch `backgroundHeight[oldBackTexture[3]] * j` |
+| 4 magma band | `:53369-53376` | per-cell twin, single row |
+| 5 magma FIELD | — | **NO overlay in any arm** (`backTexture[5]` at `:53002/:53033/:53041/:53049` never pairs with `oldBackTexture[5]`) — the animated hell field itself never fades |
+| 6 hell floor | `:53075-53082` | per-cell twin, single row |
+
+The per-cell twins route through `push_cave_cell`'s fade arm: the tint is
+the base cell's already-lit colour folded through the landed
+`bg_target::ug_crossfade_tint` (every channel incl. alpha byte-truncated by
+the transition), the row pitch is the OLD sheet's height
+(`backgroundHeight[oldBackTexture[slot]] * j` — the port's `UgOld::pitch`,
+falling back to the NEW pass's pitch when the old sheet is unresolved),
+and the source rect/jitter/sample point stay the NEW pass's. The dirt
+corner-lit overlay does NOT route through `ug_crossfade_tint` — its
+truncation seat is inside `GetCornerColors`' scaled corner sum
+(`Lighting.cs:299`'s `GlobalBrightness * scale * 63.75`), so the port folds
+`bg_brightness * transition` into the bilinear corner sample itself (the
+same per-vertex→quad-centre approximation `push_wall_lit` documents) and
+sets the alpha to `(byte)(255*transition)/255`. Its light gate is `InWorld`
+(no 1-margin) + any-channel-nonzero (`:53672-53679`), NOT the base pass's
+wall-light gate. DEVIATION (unchanged graceful degradation): a non-classic
+old slot resolves `None` and its overlay skips — classic↔classic fades draw
+today, the rest close when d35's per-world bg pages land. 1 witness
+WRITTEN NOT RUN (the old-table resolution + pitch fallback + degradation).
+
 The sheet is anchored to `Main.worldSurface`, so its value must match `TerrainPass.ApplyPass`:
 `worldSurface = (int)(max(surfaceY) + 25.0)` вЂ” the *deepest* column, not the mean вЂ” with
 `rockLayer` snapped up to a multiple of 6 above it (BUG-019). An earlier generator used the
 mean column height, which floated the dirt sheet ~60 tiles (в‰€1000 px) above the true layer
 boundary; the underground now begins where the original's does.
+
+### The surface-bg draw ownership (W4-g72 closeout)
+
+The live cave-chain's SURFACE arm (`render/sky.rs`'s `draw_sky` front-loop)
+was verified against the g71-shape style tables (research/64c): the five
+v16-owned variants (corrupt/jungle/hallow/crimson/mushroom) READ the
+`WorldGen.setBG` style→ids expansion through `world.*_bg()` →
+`tr_core::world::surface_bg_texture_ids` (slots 1/2/4/5/8) — NOT style-0
+pins, a non-default style byte expands to its variant rows. g71's own
+draw-side reads the SAME shape through the SAME function (its world.rs
+extends it with slot 3), so the five are already g71-compatible. The
+forest/desert/snow/ocean chains are STYLE-0 PINNED here (`[50,51,52]` /
+`[21,20,-1]` / `[37,38,39]` / `Background_28`): their style tables
+(`SetForestBGSet` slots 0/10/11/12 = g70; `setBG` 3/6/7 = g71) are those
+lanes' to port — this lane does NOT re-port them (the Lead's "SURFACE styles
+g71-owns draw-tables"); the pins lift to g70's `world.forest_bg(n)` / g71's
+`world.snow_bg()`/`desert_bg_set()[0]`/`ocean_bg()` at the merge. The
+underground-desert cavern style stays OURS (no separate desert arm in
+`PickUndergroundBackgroundStyle`, g71 research/92 §4). 1 witness WRITTEN NOT
+RUN (the five variants' style-0 + non-default rows + the g70/g71-owned-slot
+`None` verdicts).
+
+### The BG-FAMILY bible (W4-g72 retire — the one-paragraph family map)
+
+The background family is split across four lanes with ONE canonical owner
+per piece, adjudicated and receipted at the retire (research/64 §7, 64b,
+64c, 64d): **g72 (this branch) owns the CAVE canonical** —
+`worldgen/cave_bg.rs` is THE `RandomizeCaveBackgrounds` driver (g71's
+`fc76a48b3` adopted it verbatim and dropped its `bg_rolls` cave duplicate;
+the previous-value carry, `[i32;4]` shape and u8 tail decided it), plus the
+cavern/hell STYLE machine (`bg_styles.rs` pick + 22-case table + `ug_back`
+latch), the LIVE cross-fade overlays (`UgOld` + `ug_crossfade_tint`), the
+underworld DRAW stack (`underworld_bg.rs`, atlas-blocked pending d35's
+second page) and the `.wld`/`.trwld` 31-byte/net persistence trio; **g71
+owns the SURFACE rolls + tables** — `bg_rolls.rs`'s tree/surface/boot rolls
+(the composed `:11338→:11339→:11340→:11341` tail keeps our cave seat on the
+shared stream), the `setBG` style→ids expansion (`surface_bg_texture_ids`,
+which our five v16-owned surface variants already read LIVE), the
+snow/desert/ocean style bytes AND the FIRED underworld style byte (rolled +
+`.wld`-persisted; `.trwld` seat [56] of the 107-byte union, layout authority
+g88 research/103 §L3-DEFINITIVE D3/D5 @ `fc5cf11ae` — D5-RE-PIN, the
+retire-era 92 §1-FULL.2 order pin retired, books [61..63] flags-LAST);
+**g70 owns the FOREST set** — `tree_x` +
+`forest_bg_styles` (16 bytes, union offsets [0..16]) and the
+`SetForestBGSet` tables our style-0-pinned forest chain lifts to at the
+merge; **g69 owns the CRIMSON byte + consumers** — the 1-byte `crimson`
+flag (union [50], e19's duplicate drops) with its 5 wired feeds + 12
+deferred consumers censused in its research/117. The v18 `.trwld` union is
+**107-byte fixed head + d109 W×H dense LAST** (every lane's truncation
+constant moves to 107); the one OPEN cross-lane seam is d69's 10→14-arg
+`draw_background` append (research/64d §5: NOT consumed at the retire
+probe, owed on the d69 lane or at the merge).
 
 ## Sky and daylight
 

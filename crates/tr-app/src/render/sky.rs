@@ -716,6 +716,10 @@ pub(crate) fn draw_sky(
     // `Main.GraveyardVisualIntensity` — the star-field opacity
     // (`Main.cs:63037-63045`) and the sky's graveyard dim.
     graveyard: f32,
+    // `Main.SceneMetrics` + the underground style latch (W4-g72): threaded
+    // to `draw_background`'s live style pick (`Main.cs:52823-52841`).
+    metrics: &tr_core::scene::SceneMetrics,
+    ug_back: &mut super::bg_styles::UgBackState,
     // `Main.shimmerAlpha` — the star dim/recolour (`Main.cs:63047-63050`,
     // `:63087-63110`).
     shimmer_alpha: f32,
@@ -1518,6 +1522,18 @@ pub(crate) fn draw_sky(
     // Each active biome's row chain emits its own `DrawToDepth(1f/parallax)`
     // boundaries (`Main.cs:61304+`); the pass threads the tracker so a second
     // cross-fading biome's boundaries no-op like the original's.
+    //
+    // W4-g72 closeout SURFACE-OWNERSHIP cross-note (g71 owns the surface
+    // draw-tables): the five v16-owned variants below (corrupt/jungle/hallow/
+    // crimson/mushroom) read `world.*_bg()` → `surface_bg_texture_ids`
+    // (`WorldGen.setBG` slots 1/2/4/5/8) — the g71-shape style→ids expansion,
+    // already live. The forest/desert/snow/ocean chains are STYLE-0 PINNED
+    // here (`[50,51,52]` / `[21,20,-1]` / `[37,38,39]` / `Background_28`):
+    // their style tables (`SetForestBGSet` slots 0/10/11/12, `setBG` 3/6/7)
+    // are g70/g71's to port — g71's draw-side reads `world.forest_bg(n)` /
+    // `desert_bg_set()[0]` / `snow_bg()` / `ocean_bg()` (its sky.rs), so this
+    // lane does NOT re-port them; the pins lift to those reads at the merge.
+    // See docs/research/64c + ANALYSIS "The surface-bg draw ownership".
     let mut amb_pass = show_bg.then_some(crate::render::bg::AmbiencePass {
         entities: ambience,
         lookups,
@@ -1939,6 +1955,13 @@ pub(crate) fn draw_sky(
             cave_parallax,
             anim_time,
             hell_black_box_bottom,
+            // `Main.ShouldShowInvisibleBlocksAndWalls` (`Main.cs:58023`): the port
+            // has no Echo Monolith / see-invisible accessory, so the wall-parallax
+            // gate rides the `TR_SHOW_INVISIBLE` A/B pin (false in normal play).
+            crate::env::show_invisible(),
+            metrics,
+            ug_back,
+            shimmer_alpha,
         );
     }
 }
