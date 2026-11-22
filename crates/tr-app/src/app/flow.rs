@@ -2540,6 +2540,7 @@ pub(crate) mod front_flow_tests {
                 inventory,
                 inv_favorites: 0,
                 last_saved_binary: 0,
+                revision: 0,
             },
         )
         .unwrap();

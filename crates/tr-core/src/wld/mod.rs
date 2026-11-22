@@ -32,6 +32,51 @@ const FILE_TYPE_WORLD: u8 = 2;
 /// `FileMetadata.MAGIC_NUMBER` (`IO/FileMetadata.cs:8`).
 const FILE_METADATA_MAGIC: u64 = 27981915666277746;
 
+/// `WorldFile.CreateMetadata`'s `WorldGeneratorVersion` literal
+/// (`IO/WorldFile.cs:603`). A world the port *generates* stamps it; a loaded
+/// file keeps its own (`LoadHeader:1960`).
+pub const WORLD_GENERATOR_VERSION: u64 = 140_015_933_8497;
+
+/// The created world's identity stamp — `WorldFile.CreateMetadata`
+/// (`WorldFile.cs:600-604`): `CreationTime = DateTime.Now` (the port stamps
+/// Utc — ANALYSIS "The save files' wall clock"), `WorldGeneratorVersion =
+/// 1400159338497uL` (`:603`), `UniqueId = Guid.NewGuid()` (`:604`).
+///
+/// `WorldId` is NOT stamped here: the C# rolls it mid-generation from
+/// `genRand.Next(int.MaxValue)` (`WorldGen.cs:11337`) — inserting that draw
+/// into the port's frozen worldgen streams would move every world hash, so
+/// the caller rolls it from a fresh clock-seeded `UnifiedRandom` instead
+/// (the documented stand-in, same value range; ANALYSIS).
+///
+/// The GUID is the port's stand-in for `Guid.NewGuid`: a v4-shaped GUID
+/// (version nibble 4, RFC-4122 variant bits) drawn from one clock-seeded
+/// `UnifiedRandom` — `Guid.NewGuid` is cryptographic in .NET, which a
+/// deterministic port cannot reproduce; the shape and uniqueness-per-save
+/// contract are what the file format needs.
+pub fn stamp_created_identity(world: &mut World, rng: &mut crate::unified_random::UnifiedRandom) {
+    world.creation_time = crate::clock::utc_now_binary(); // `:600` (Utc stand-in)
+    world.generator_version = WORLD_GENERATOR_VERSION; // `:603`
+    let mut guid = [0u8; 16];
+    rng.next_bytes(&mut guid); // `:604` (the Guid.NewGuid stand-in)
+    guid[7] = (guid[7] & 0x0F) | 0x40; // version 4
+    guid[8] = (guid[8] & 0x3F) | 0x80; // RFC-4122 variant
+    world.unique_id = guid;
+}
+
+/// A fresh clock-seeded `UnifiedRandom` — the `new UnifiedRandom()`
+/// parameterless ctor's stand-in (`UnifiedRandom.cs:18-21` seeds from
+/// `Environment.TickCount`; the port seeds from the Unix clock's low 31
+/// bits). Used only for identity rolls, never inside the frozen worldgen
+/// contract streams.
+pub fn identity_rng() -> crate::unified_random::UnifiedRandom {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let seed = (now.as_nanos() & 0x7FFF_FFFF) as i32;
+    crate::unified_random::UnifiedRandom::new(seed)
+}
+
+
 pub fn load(path: &Path) -> Result<World> {
     let data = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     parse(&data).with_context(|| format!("parsing {}", path.display()))

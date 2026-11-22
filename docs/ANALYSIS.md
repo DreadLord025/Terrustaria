@@ -19339,6 +19339,70 @@ byte-compares offsets 2402-3827 (timestamp spliced); `the_write_envelope_is_pkcs
 pins the pad rule incl. the aligned full-block case. No new dependency вЂ”
 the existing `aes` crate's raw block API carries the PKCS7 by hand (13 lines).
 
+## The save files' wall clock + the SavePlayer envelope (W4-c43)
+
+`tr_core::clock` is the one seam for the .NET `DateTime` stamps both file
+formats carry: ticks are 100 ns units since 0001-01-01 (the Unix epoch sits
+at tick 621355968000000000), and `ToBinary` packs a 2-bit kind into bits
+62-63 (`Utc` = bit 62). Deliberate deviations:
+
+- **Every stamp the port writes is Utc-kind.** `CreationTime`'s C# source
+  is `DateTime.Now` (`WorldFile.CreateMetadata:600`, kind Local); the port
+  owns no time-zone database, so it stamps `UtcNow` instead. Reads mask
+  the kind bits off (`from_binary_ticks`); a foreign Local-kind stamp is
+  read as its stored ticks without the offset round-trip.
+- **`Guid.NewGuid` is a clock-seeded `UnifiedRandom` draw** shaped to v4
+  (version nibble 4, RFC-4122 variant bits) — .NET's GUID is cryptographic,
+  which a deterministic port cannot reproduce; the shape and
+  uniqueness-per-creation contract are what the format needs.
+- **The WorldId roll stays out of the worldgen streams.** The C# rolls
+  `WorldId = genRand.Next(int.MaxValue)` mid-`GenerateWorld`
+  (`WorldGen.cs:11337`); inserting that draw into the port's frozen
+  contract streams would move every world hash, so the creation tails roll
+  it from a fresh `identity_rng()` (same value range) after generation.
+
+The world identity lands as: the creation tails (`create_world_in`,
+`WorldGenJob`'s Completed arm) run `wld::stamp_created_identity`
+(`CreateMetadata:600-604`) + the WorldId roll; the save funnel stamps
+`world.last_played = utc_now_binary()` on every save (`SaveWorldFlags:1251`
+writes `UtcNow`, never the loaded value); `load_world` runs the load-side
+fallbacks (`LoadHeader:1962-1969`: a pre-181 `.wld` gets a fresh GUID, a
+v >= 181 one keeps its stored GUID even when Guid.Empty — only a pre-v18
+`.trwld`'s zero reads as absent; `GetFileData:315-318`'s mtime LastPlayed
+for a zero stamp). The native
+`.trwld` grows a **v18 identity tail** (generator version u64, GUID 16 B,
+world id i32, CreationTime/LastPlayed i64 each — `WorldFile.cs:1225-1227,
+1250-1251`); pre-v18 files load the zeros the old saves carried. The
+determinism contract narrows accordingly: a double-save pair is byte-equal
+**modulo the LastPlayed long** (the C# is wall-clock-bearing there too) —
+`test_DW_7_2`/`test_DW_7_3`/the `.bak` rotation test pin the normalized
+pairs; the worldgen tile hashes are untouched (the identity fields are not
+in `world_hash`'s fold).
+
+**The `.plr` envelope (Ph2).** The S1-J-5c "App stamps 0" policy is
+retired: `save_created_character` now stamps `utc_now_binary()` (the
+`Serialize:54909` `DateTime.UtcNow.ToBinary()` — `CreateAndSave` runs
+`SavePlayer` like any save, `PlayerFileData.cs:58`). The envelope completes
+`InternalSavePlayerFile`: an existing `.plr` is copied to `<path>.bak`
+before the write (`:54730-54733`), and the metadata revision rides
+`PlayerFileWrite::revision` (`:54739` writes the loaded `playerFile.
+Metadata` verbatim — `Write`, NOT `IncrementAndWrite`; a fresh character's
+`FromCurrentSettings` revision is 0, a re-save threads the read counter
+back). The reader now keeps `lastTimePlayerWasSaved`
+(`Deserialize:55687-55691`, the >= 202 gate) on
+`PlayerFile::last_saved_binary` and runs the `LoadPlayer:55096-55098`
+fallback — a zero stamp reads `File.GetLastWriteTimeUtc(path).ToBinary()`
+(`tr_core::clock::file_mtime_binary`; the port has no cloud saves, so the
+`!cloudSave` arm is the only one). Witnesses (written not run, code-only):
+`w4_c43_a_re_save_copies_the_previous_plr_into_the_bak`,
+`w4_c43_the_metadata_revision_rides_the_write`,
+`w4_c43_the_save_timestamp_round_trips` (incl. the C# fixture's pinned
+stamp), `w4_c43_a_zero_stamp_falls_back_to_the_file_mtime`,
+`w4_c43_the_timestamp_is_version_gated` (a 201-restamped stream with every
+post-201 gate stripped reads aligned, stamp 0). The golden byte-parity
+tests are untouched — the fixture's revision is 0 and its clock is the
+caller-supplied pin.
+
 ## The world-format contract (S1-J-8)
 
 **Decision: the two-format split stays, as a documented contract.** The port

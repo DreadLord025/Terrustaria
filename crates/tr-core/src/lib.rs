@@ -9,6 +9,7 @@ pub mod bcrypt;
 pub mod armor_sets;
 pub mod bestiary;
 pub mod binio;
+pub mod clock;
 pub mod damage;
 pub mod drawdata;
 pub mod drawdata_anim;
