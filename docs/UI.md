@@ -400,8 +400,11 @@ source's child order:
 * the right-aligned search bar, its width inset by the title's measured width
   (`:424`): the 22 px magnifier (`Button_Search_2`), the 24 px `Name:` text field
   and the 24 px cancel button (`UIWrappedSearchBar.cs`);
-* the 4 px `UIHorizontalSeparator`, then the empty recipe grid
-  (`Recipe.maxRecipes == 0`) with its auto-hidden scrollbar;
+* the 4 px `UIHorizontalSeparator`, then the recipe grid
+  (`UIDynamicItemCollection`, 40×40 cells on a 44 px pitch centred in the
+  `UIList`; the list is `OverflowHidden` so rows past its bottom are scissored
+  mid-cell, `UIList.cs:59` / `UIElement.cs:222-237` — W4-d67) with its
+  auto-hidden scrollbar;
 * the 11-tab filter strip (40×46 tabs cut from the 84×192 `Infinite_Tabs_B_2`
   sheet, 28×30 icons from the 330×30 `Infinite_Icons` sheet; strip at
   `(45, 316)`, above the panel body) with the non-sequential `ItemFilters.GetImage`

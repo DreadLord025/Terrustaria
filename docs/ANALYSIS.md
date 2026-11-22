@@ -1084,6 +1084,23 @@ drifted up to 7 LSB per channel. `sprite.rs`'s
 A/B screenshots show the corrected output (max 9 LSB over a world frame,
 deterministic; the invariants in AGENTS.md "Rendering" describe this as the tint
 matching XNA's byte multiplies).
+
+**W4-d67 re-verify (2026-11-20, code-only):** the EOTF helpers are intact in
+`sprite.wgsl` (`srgb_decode`/`srgb_encode` + the `_rgb` forms), every consumer
+talks to them (the tint's gamma-space product at the fragment tail, the
+paint/dye constant decodes, the negative-paint byte inversion), and no other
+shader in `tr-render` carries a `pow(x, 2.2)` shortcut (`post.wgsl` and
+`water_mask.wgsl` are colour-space-neutral; grep `pow` over `*.wgsl` hits only
+the piecewise 2.4 arms and the history comments). The CPU mirror in
+`sprite.rs`'s tests matches the WGSL branch-for-branch (0.04045 / 12.92 /
+0.0031308 / 1.055 / 2.4). The three pins stand: `srgb_eotf_round_trips_every_byte`,
+`tint_parity_with_the_csharp_byte_multiply` (256×256, exact vs the rounded float
+product, ≤1 LSB vs the truncating `Color * Color` reading) and
+`sprite_wgsl_compiles_headless`. No shader edit was owed. The committed goldens
+in `docs/screenshots/` are stale **by design** after the S1-G-12b skyline
+repack (all UVs moved); they must be re-taken per `docs/GOLDEN_REPIN.md`
+(b4, on `task/W4-b4-atlas-skyline-packer`) in the next build-allowed window —
+this branch neither re-takes them nor changes draw code to "fix" a mismatch.
 - Coatings: Echo blocks/walls are hidden (`TileDrawing.IsVisible`,
   `TileDrawing.cs:1411-1432`; `WallDrawing.cs:91`) вЂ” the port has neither the
   Echo Monolith nor the Echo sight item, so `CanSeeInvisibleBlocks` is always
@@ -3655,6 +3672,38 @@ parent special case in `Recalculate` (`:288-291`).
   the box `x 565-1022, y 484-899` (exactly the rows past the list inner bottom at
   482); two identical runs are SHA256-equal. Reverting `push_clip` reproduces the
   old overdraw.
+
+* **W4-d67 (2026-11-20, code-only): the crafting grid joins the scissor
+  consumers.** The modern crafting panel's recipe grid rides a `UIList` with
+  `OverflowHidden = true` (`UIList.cs:59`, appended at `NewCraftingUI.cs:367-386`),
+  but `ui/crafting.rs` drew the cells unclipped from the grid *container's*
+  origin — two deviations fixed together:
+  (1) `recipe_cell` now derives `startX`/`startY` from `GetGridParameters`
+  (`UIDynamicItemCollection.cs:81-97`): the collection fills the inner list
+  (`UIList.cs:57-58`), which fills the (padding-0) `UIList`, so the cells start
+  at the **list** rect (y 446 at 1600×900, below the separator that owns the
+  container's top 7 px), centred — `Center.X − (int)(44·cols·0.5)` gives the
+  5 px inset (x 37); `_itemsPerLine` is the C#'s `Width / 44` on the collection
+  width (450/44 = 10), not the old `(grid.w − 4)/44` stand-in (same 10 today,
+  wrong divisor in principle).
+  (2) The draw pass wraps the cell loop in `push_clip(l.list)`/`pop_clip` and
+  `hit_test` rejects points outside the list before testing cells — the
+  clipped-ancestor rule (`UIElement.cs:327-341`), the same `Element.viewport`
+  contract the select screens use. At 1600×900 the 404 px view holds 9 whole
+  rows; row 9 (842..882) straddles the 850 bottom and is cut mid-cell, rows ≥ 10
+  are unreachable. Pins: `the_recipe_list_clip_rect_bounds_the_grid_content`,
+  `clipped_recipe_cells_are_unreachable` (+ the re-based pitch/hit tests).
+  The C# `UIDynamicItemCollection.GetGridParameters` also *virtualises* the
+  draw range (`startItemIndex`/`endItemIndex` from the view culling area,
+  `:89-96`) — an optimisation that skips off-view rows entirely; the port draws
+  all rows and lets the fragment scissor cut them (same pixels, no LOD of world
+  state; the scroll mechanics themselves stay deferred with `UIScrollbar`).
+  The other two `GraphicsDevice.ScissorRectangle` sites (`Main.cs:25403-25424`
+  and `:40406-40414`) are the bestiary/dialogue **portrait dummies** — both ride
+  the deferred `Main.DrawNPCPortrait` system (`npc_chat.rs`'s module header),
+  so they land with it; the map/minimap "clip" is `MapOverlayDrawContext`'s
+  centre-point cull (`MapOverlayDrawContext.cs:45-48`), already ported in
+  `map_layers.rs`, not a device scissor.
 
 ## Architecture refactor (2026-11-01)
 
