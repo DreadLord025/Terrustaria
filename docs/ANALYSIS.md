@@ -2383,6 +2383,51 @@ deviations, all pinned by `lang::s1_l12b_tests`:
 - `InputTriggerUI_FavoriteItem` (`Lang.cs:149`) answers `"LeftAlt"` вЂ”
   `Main.FavoriteKey.ToString()` (`Main.cs:67177,67196`), a fixed key in vanilla.
 
+#### Token census + the condition gate (W4-c22, 2026-11-20)
+
+The en-US token census (`tools/census_tokens_w4c22.py`, `census_globals_w4c22.py`,
+`census_chatter_w4c22.py`) counts **519 token-bearing values** across the seven
+shipped files; **219 are all-global** (every `{Name}` is one of the 65
+`Lang.InitGlobalSubstitutions` keys — the old "204 {PlayerName} literals" row
+scope), **300 carry caller-supplied names** (`{NPCName}` ×169 and `{BiomeName}`
+×110 in the `TownNPCMood*` family, `{Adjective}/{Location}/{Noun}` in
+`RandomWorldName_Composition`, `{0}`-style UI counts, …) and **20 rows are
+conditional** (`{?Name}` — Bartender/Golfer/BestiaryGirl/Princess chatter, the
+trash loading tips). The all-global rows resolve through the shared
+text-resolution fn (`lang::text` → `LanguageManager.GetTextValue` →
+`LocalizedText.Value` → `VariableText.TryFormat`) with the per-frame refreshed
+table; no per-callsite patching exists or is needed.
+
+The condition half of the pipeline landed here: `VariableText` splits
+`CheckConditionsAndLoadArgs` (`VariableText.cs:73-94`) out of `TryFormat`
+(`:101-112`) and exposes `ConditionsMet` (`:96-99`); `LocalizedText` gains
+`conditions_met` (`LocalizedText.cs:35-45`) and `value_if_conditions_met`
+(`:70-78`), surfaced as `lang::conditions_met(key)` /
+`lang::value_if_conditions_met(key)` over the live substitution table. The C#
+consumers are the loading tips' reroll loop (`GameTipsProvider.cs:37-49`), the
+Guide's help-text pick (`Main.cs:39254`) and `Lang.CreateDialogFilter`'s
+`checkConditions` default (`Lang.cs:422-425`) — those *callers* (the tips
+provider, the chatter selectors) remain the d120/d121 lanes; this task ports
+only the gate they read. The gate checks conditions AND non-null variables
+(one shared `CheckConditionsAndLoadArgs`, as the C#); an unset condition
+answers false (`as bool? ?? false`), a plain string is always true /
+`Some(Value)`. Tests: `localization::tests::conditions_met_gates_the_conditional_rows`
+(tr-core) and `lang::s1_l12b_tests::{the_shared_text_fn_renders_the_global_tokens,
+the_condition_gate_reads_the_live_substitutions}` (tr-app — the shipped
+`LegacyDialog.15/.337`, `BartenderChatter.Chatter_16`, `PrincessChatter.Chatter_9`,
+`LoadingTips_Keyboard.2` rows, written NOT run — code-only lane). The 12-culture
+fallback chain is untouched: substitutions live outside the culture reload, so
+the same `{PlayerName}`/`{WorldName}` render through every culture's row (the
+ru-RU `LegacyDialog.337` witness).
+
+**Coordination (c21/c23):** the parallel `task/W4-c21-lang-name-accessors` lane
+owns the name-accessor block (`lang::npc_name`/`item_name`/… , `Lang.cs:175-249,
+441-553`); this lane touched only `LocalizedText`/`VariableText` (tr-core) and
+added NEW fns after `text_format_with` (tr-app) — no overlap with the accessor
+block or c23's `lang::init` registration order. The `format.rs` split keeps
+`try_format`'s signature and semantics byte-identical, so c21's accessors
+resolve through it unchanged.
+
 ## Audio (M6)
 
 ### XACT banks (`tr-content/xact.rs`)
